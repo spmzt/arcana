@@ -26,7 +26,8 @@ struct ietf_interfaces_interfaces_interface_arcif_lagg_port;
 struct ietf_interfaces_interfaces_interface_arcif_lagg;
 struct ietf_interfaces_interfaces_interface_arcif_bridge_member;
 struct ietf_interfaces_interfaces_interface_arcif_bridge;
-struct ietf_interfaces_interfaces_interface_arcif_epair;
+struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like;
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation;
 struct ietf_interfaces_interfaces_interface_ip_ipv4_address;
 struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor;
 struct ietf_interfaces_interfaces_interface_ip_ipv4;
@@ -415,6 +416,10 @@ enum ietf_interfaces_interfaces_interface_arcif_bridge_member_stp_role {
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_STP_ROLE_DESIGNATED = 2,
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_STP_ROLE_ALTERNATE = 3,
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_STP_ROLE_BACKUP = 4,
+};
+
+enum ietf_interfaces_interfaces_interface_if_ext_encapsulation_encaps_type {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IF_EXT_ENCAPSULATION_ENCAPS_TYPE_NONE = 0,
 };
 
 enum ietf_interfaces_interfaces_interface_ip_ipv4_address_subnet {
@@ -977,6 +982,50 @@ struct ietf_interfaces_interfaces_interface_statistics {
 	uint32_t	 out_discards;
 	bool			 has_out_errors;
 	uint32_t	 out_errors;
+	bool			 has_ethlike_in_discard_unknown_dest_mac_pkts;
+	uint64_t	 ethlike_in_discard_unknown_dest_mac_pkts;
+	bool			 has_ethlike_in_pkts_64_octets;
+	uint64_t	 ethlike_in_pkts_64_octets;
+	bool			 has_ethlike_in_pkts_65_to_127_octets;
+	uint64_t	 ethlike_in_pkts_65_to_127_octets;
+	bool			 has_ethlike_in_pkts_128_to_255_octets;
+	uint64_t	 ethlike_in_pkts_128_to_255_octets;
+	bool			 has_ethlike_in_pkts_256_to_511_octets;
+	uint64_t	 ethlike_in_pkts_256_to_511_octets;
+	bool			 has_ethlike_in_pkts_512_to_1023_octets;
+	uint64_t	 ethlike_in_pkts_512_to_1023_octets;
+	bool			 has_ethlike_in_pkts_1024_to_1518_octets;
+	uint64_t	 ethlike_in_pkts_1024_to_1518_octets;
+	bool			 has_ethlike_in_pkts_1519_to_2047_octets;
+	uint64_t	 ethlike_in_pkts_1519_to_2047_octets;
+	bool			 has_ethlike_in_pkts_2048_to_4095_octets;
+	uint64_t	 ethlike_in_pkts_2048_to_4095_octets;
+	bool			 has_ethlike_in_pkts_4096_to_8191_octets;
+	uint64_t	 ethlike_in_pkts_4096_to_8191_octets;
+	bool			 has_ethlike_in_pkts_8192_to_max_octets;
+	uint64_t	 ethlike_in_pkts_8192_to_max_octets;
+	bool			 has_ethlike_out_pkts_64_octets;
+	uint64_t	 ethlike_out_pkts_64_octets;
+	bool			 has_ethlike_out_pkts_65_to_127_octets;
+	uint64_t	 ethlike_out_pkts_65_to_127_octets;
+	bool			 has_ethlike_out_pkts_128_to_255_octets;
+	uint64_t	 ethlike_out_pkts_128_to_255_octets;
+	bool			 has_ethlike_out_pkts_256_to_511_octets;
+	uint64_t	 ethlike_out_pkts_256_to_511_octets;
+	bool			 has_ethlike_out_pkts_512_to_1023_octets;
+	uint64_t	 ethlike_out_pkts_512_to_1023_octets;
+	bool			 has_ethlike_out_pkts_1024_to_1518_octets;
+	uint64_t	 ethlike_out_pkts_1024_to_1518_octets;
+	bool			 has_ethlike_out_pkts_1519_to_2047_octets;
+	uint64_t	 ethlike_out_pkts_1519_to_2047_octets;
+	bool			 has_ethlike_out_pkts_2048_to_4095_octets;
+	uint64_t	 ethlike_out_pkts_2048_to_4095_octets;
+	bool			 has_ethlike_out_pkts_4096_to_8191_octets;
+	uint64_t	 ethlike_out_pkts_4096_to_8191_octets;
+	bool			 has_ethlike_out_pkts_8192_to_max_octets;
+	uint64_t	 ethlike_out_pkts_8192_to_max_octets;
+	bool			 has_if_ext_in_discard_overflows;
+	uint64_t	 if_ext_in_discard_overflows;
 };
 
 /* container */
@@ -1067,11 +1116,15 @@ struct ietf_interfaces_interfaces_interface_arcif_bridge {
 	}			 member;
 };
 
-/* container, presence */
-struct ietf_interfaces_interfaces_interface_arcif_epair {
-	const char	*peer;
-	bool			 has_peer_vnet;
-	bool		 peer_vnet;
+/* container */
+struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like {
+	const char	*mac_address;
+	const char	*bia_mac_address;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation {
+	enum ietf_interfaces_interfaces_interface_if_ext_encapsulation_encaps_type	 encaps_type;	/* the case given */
 };
 
 /* list entry */
@@ -1246,16 +1299,10 @@ struct ietf_interfaces_interfaces_interface {
 	uint64_t	 speed;
 	const struct ietf_interfaces_interfaces_interface_statistics	*statistics;
 	const char	*arcif_driver_name;
-	bool			 has_arcif_mtu;
-	uint32_t	 arcif_mtu;
-	const char	*arcif_ether;
-	const char	*arcif_hw_address;
 	struct {
 		size_t		 n;
 		const char	*const	*v;
 	}			 arcif_group;
-	bool			 has_arcif_fib;
-	uint32_t	 arcif_fib;
 	bool			 has_arcif_tunnel_fib;
 	uint32_t	 arcif_tunnel_fib;
 	struct cbl_bytes	 arcif_capabilities;
@@ -1264,7 +1311,15 @@ struct ietf_interfaces_interfaces_interface {
 	const struct ietf_interfaces_interfaces_interface_arcif_vlan	*arcif_vlan;
 	const struct ietf_interfaces_interfaces_interface_arcif_lagg	*arcif_lagg;
 	const struct ietf_interfaces_interfaces_interface_arcif_bridge	*arcif_bridge;
-	const struct ietf_interfaces_interfaces_interface_arcif_epair	*arcif_epair;
+	bool			 has_arcif_peer_vnet;
+	bool		 arcif_peer_vnet;
+	const struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like	*ethlike_ethernet_like;
+	const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation	*if_ext_encapsulation;
+	bool			 has_if_ext_max_frame_size;
+	uint32_t	 if_ext_max_frame_size;
+	bool			 has_if_ext_forwarding_mode;
+	uint64_t	 if_ext_forwarding_mode;	/* identityref: a SID */
+	const char	*if_ext_peer_interface;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv4	*ip_ipv4;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv6	*ip_ipv6;
 	const char	*lne_bind_lne_name;
@@ -3616,9 +3671,13 @@ int	ietf_interfaces_interfaces_interface_arcif_bridge_encode(const struct ietf_i
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_arcif_bridge_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_bridge *,
 	    cbl_yarena *, int, char *, size_t);
-int	ietf_interfaces_interfaces_interface_arcif_epair_encode(const struct ietf_interfaces_interfaces_interface_arcif_epair *,
+int	ietf_interfaces_interfaces_interface_ethlike_ethernet_like_encode(const struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like *,
 	    struct cbl_ybuf *);
-int	ietf_interfaces_interfaces_interface_arcif_epair_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_epair *,
+int	ietf_interfaces_interfaces_interface_ethlike_ethernet_like_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_encode(const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_if_ext_encapsulation *,
 	    cbl_yarena *, int, char *, size_t);
 int	ietf_interfaces_interfaces_interface_ip_ipv4_address_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv4_address *,
 	    struct cbl_ybuf *);

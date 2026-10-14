@@ -26,8 +26,8 @@ module arcana-ip-deviations {
      (RFC 4941).  Their leaves report the host's value on every
      interface, with origin system (RFC 8342), and cannot be written
      per interface.  Nor can IPv4 be turned off on one interface, nor
-     an MTU set for one family: the link MTU is arcana-interfaces'
-     mtu, for both.";
+     an MTU set for IPv6 alone: the link MTU, ipv4's mtu here
+     (ifconfig(8) mtu, SIOCSIFMTU), is both families'.";
 
   revision 2026-10-14 {
     description
@@ -53,14 +53,6 @@ module arcana-ip-deviations {
     }
   }
 
-  deviation "/if:interfaces/if:interface/ip:ipv4/ip:mtu" {
-    description
-      "The link MTU, arcana-interfaces' mtu, for both families.";
-    deviate add {
-      config false;
-    }
-  }
-
   deviation "/if:interfaces/if:interface/ip:ipv6/ip:forwarding" {
     description
       "The host's: sysctl net.inet6.ip6.forwarding.";
@@ -71,8 +63,8 @@ module arcana-ip-deviations {
 
   deviation "/if:interfaces/if:interface/ip:ipv6/ip:mtu" {
     description
-      "The link MTU, arcana-interfaces' mtu, for both families, or
-       the lower one an RA sets.";
+      "The link MTU, ipv4's mtu, or the lower one an RA set (the
+       interface's ND linkmtu, SIOCGIFINFO_IN6).";
     deviate add {
       config false;
     }

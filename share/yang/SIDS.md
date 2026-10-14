@@ -72,7 +72,7 @@ bytes on the wire, where it was 9.
 | 60 300 | 100 | `echo`, cblink's example | `cblink/examples/echo/echo@2026-10-13.sid` (7 used) |
 | 60 400 | 100 | `stream`, cblink's example | `cblink/examples/stream/stream@2026-10-13.sid` (5 used) |
 | 60 500 | 100 | `notify`, cblink's example | `cblink/examples/notify/notify@2026-10-13.sid` (4 used) |
-| 61 000 | 200 | `arcana-interfaces` | `share/yang/arcana-interfaces@2026-10-14.sid` (46 used) |
+| 61 000 | 200 | `arcana-interfaces` | `share/yang/arcana-interfaces@2026-10-14.sid` (47 used, 7 obsolete: mtu, ether, hw-address, fib, epair and its two, now the standard models') |
 | 61 200 | 100 | `arcana-ip-deviations` | `share/yang/arcana-ip-deviations@2026-10-14.sid` (1 used) |
 | 61 300 | 200 | `ietf-routing@2018-03-13` (no IETF range) | `share/yang/ietf-routing@2018-03-13.sid` (89 used) |
 | 61 500 | 100 | `ietf-ipv4-unicast-routing@2018-03-13` (no IETF range) | `share/yang/ietf-ipv4-unicast-routing@2018-03-13.sid` (29 used) |
@@ -95,6 +95,8 @@ bytes on the wire, where it was 9.
 | 67 000 | 200 | `ietf-babel@2024-10-10` (no IETF range; its identities used) | `share/yang/ietf-babel@2024-10-10.sid` (103 used) |
 | 67 200 | 1 000 | `ietf-bgp@2026-08-14`, draft-ietf-idr-bgp-model (its identities used) | `share/yang/ietf-bgp@2026-08-14.sid` (830 used) |
 | 68 200 | 100 | `ietf-bfd-types@2022-09-22` (no IETF range; bfdv1 is a routing protocol) | `share/yang/ietf-bfd-types@2022-09-22.sid` (15 used) |
+| 68 300 | 100 | `ietf-if-extensions@2025-08-07`, draft-ietf-netmod-intf-ext-yang | `share/yang/ietf-if-extensions@2025-08-07.sid` (36 used) |
+| 68 400 | 100 | `ietf-if-ethernet-like@2026-06-19`, draft-ietf-netmod-intf-ext-yang | `share/yang/ietf-if-ethernet-like@2026-06-19.sid` (26 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

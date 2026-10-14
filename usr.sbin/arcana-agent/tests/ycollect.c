@@ -10,11 +10,15 @@
  * the tree through YANG-CBOR and back, the same bytes.
  *
  *	ycollect interfaces	ietf-interfaces' leaves
- *	ycollect arcif		arcana-interfaces': key=value, '-' for none,
+ *	ycollect arcif		arcana-interfaces', and the standard leaves
+ *				for what it once had (frame= max-frame-size,
+ *				mac= and bia= ethernet-like's, peer=
+ *				peer-interface): key=value, '-' for none,
  *				lists joined by '+', bits in hex
  *	ycollect ip		ietf-ip's: v4= and v6= the addresses,
  *				address/length:origin[:status] joined by
- *				'+', ipv6= on/off and its MTU
+ *				'+', mtu4= ipv4's MTU (the link's), ipv6=
+ *				on/off and its MTU
  *	ycollect ipsys		ietf-ip's host-wide leaves, an interface a
  *				line: fwd4= fwd6= dad= temp= tvl= tpl=
  *				global= (- where absent)
@@ -115,13 +119,14 @@ arcif(const struct ietf_interfaces_interfaces_interface *e)
 	const struct ietf_interfaces_interfaces_interface_arcif_media *md;
 
 	printf("%s drv=%s", e->name, str(e->arcif_driver_name));
-	if (e->has_arcif_mtu)
-		printf(" mtu=%u", e->arcif_mtu);
-	printf(" ether=%s hw=%s groups=", str(e->arcif_ether),
-	    str(e->arcif_hw_address));
+	if (e->has_if_ext_max_frame_size)
+		printf(" frame=%u", e->if_ext_max_frame_size);
+	if (e->ethlike_ethernet_like != NULL)
+		printf(" mac=%s bia=%s",
+		    str(e->ethlike_ethernet_like->mac_address),
+		    str(e->ethlike_ethernet_like->bia_mac_address));
+	printf(" groups=");
 	joined(e->arcif_group.n, e->arcif_group.v);
-	if (e->has_arcif_fib)
-		printf(" fib=%u", e->arcif_fib);
 	if (e->has_arcif_tunnel_fib)
 		printf(" tunnelfib=%u", e->arcif_tunnel_fib);
 	if (e->arcif_capabilities.p != NULL)
@@ -150,9 +155,10 @@ arcif(const struct ietf_interfaces_interfaces_interface *e)
 			    e->arcif_bridge->member.v[i].name,
 			    bitsval(&e->arcif_bridge->member.v[i].flags));
 	}
-	if (e->arcif_epair != NULL)
-		printf(" epair=%s,%s", str(e->arcif_epair->peer),
-		    e->arcif_epair->peer_vnet ? "vnet" : "here");
+	if (e->if_ext_peer_interface != NULL)
+		printf(" peer=%s", e->if_ext_peer_interface);
+	if (e->has_arcif_peer_vnet && e->arcif_peer_vnet)
+		printf(" peer=vnet");
 	/* Last, as it has spaces: what ifconfig(8)'s media and status say. */
 	if ((md = e->arcif_media) != NULL) {
 		printf(" status=%s media=", md->has_status ?
@@ -189,6 +195,8 @@ ip(const struct ietf_interfaces_interfaces_interface *e)
 		printf("%s%s/%d:%s", i > 0 ? "+" : "", v4->address.v[i].ip,
 		    v4->address.v[i].prefix_length,
 		    origin[v4->address.v[i].origin]);
+	if (v4 != NULL && v4->has_mtu)
+		printf(" mtu4=%u", v4->mtu);
 	printf(" v6=");
 	if (v6 == NULL || v6->address.n == 0)
 		printf("-");

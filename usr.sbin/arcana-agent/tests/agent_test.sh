@@ -6033,46 +6033,54 @@ yang_interfaces_body()
 	}
 	END { exit bad }' before after ifs || atf_fail "the collector and netstat differ"
 
-	# arcana-interfaces beside ifconfig -m -D, as ifconfig shows it:
-	# no hwaddr when it is the link address, no fib when 0.
+	# arcana-interfaces, and the standard leaves for what it once had,
+	# beside ifconfig -m -D, as ifconfig shows it: max-frame-size the
+	# MTU with an Ethernet header and FCS, and a tag of a vlan or where
+	# VLAN_MTU is on; ethernet-like's addresses of an Ethernet or a
+	# lagg, no hwaddr when it is the link address; no tunnelfib when 0.
 	atf_check -o save:a "$(atf_get_srcdir)/ycollect" arcif
 	cat > ifc.awk <<'EOF'
 NR == 1 { for (i = 1; i < NF; i++) if ($i == "mtu") mtu = $(i + 1) }
-$1 ~ /^options=/ { o = $1; sub(/^options=/, "", o); sub(/<.*/, "", o) }
+$1 ~ /^options=/ { o = $1; sub(/^options=/, "", o); on = o; sub(/<.*/, "", o) }
 $1 ~ /^capabilities=/ { c = $1; sub(/^capabilities=/, "", c); sub(/<.*/, "", c) }
 $1 == "ether" { ether = $2 }
 $1 == "hwaddr" { hw = $2 }
 $1 == "groups:" { g = $2; for (i = 3; i <= NF; i++) g = g "+" $i }
-$1 == "fib:" { fib = $2 }
-$1 == "tunnelfib:" { tfib = " tunnelfib=" $2 }
+$1 == "tunnelfib:" && $2 != 0 { tfib = " tunnelfib=" $2 }
 $1 == "drivername:" { drv = $2 }
 $1 == "status:" { st = $0; sub(/^[ \t]*status: /, "", st); gsub(/ /, "-", st) }
 $1 == "media:" { m = $0; sub(/^[ \t]*media: [^ ]+ /, "", m) }
 sup && $1 == "media" { s = $0; sub(/^[ \t]*media /, "", s); sp = sp (sp == "" ? "" : "+") s }
 /supported media:/ { sup = 1 }
 END {
-	printf "drv=%s mtu=%s ether=%s hw=%s groups=%s fib=%s%s options=%s " \
-	    "capabilities=%s", drv, mtu, ether ? ether : "-", hw ? hw : "-",
-	    g ? g : "-", fib ? fib : 0, tfib, o, c
+	eth = type == "ethernetCsmacd" || type == "ieee8023adLag"
+	printf "drv=%s", drv
+	if (eth || type == "l2vlan" || type == "bridge")
+		printf " frame=%d", mtu + 18 + \
+		    (type == "l2vlan" || on ~ /[<,]VLAN_MTU[,>]/ ? 4 : 0)
+	if (eth && ether)
+		printf " mac=%s bia=%s", ether, hw ? hw : "-"
+	printf " groups=%s%s options=%s capabilities=%s", g ? g : "-", tfib,
+	    o, c
 	if (m != "")
 		printf " status=%s media=%s supported=%s", st ? st : "-", m,
 		    sp ? sp : "-"
 	printf "\n"
 }
 EOF
-	# Ours: the kinds' parts left to agent_root_test, hw as ifconfig
+	# Ours: the kinds' parts left to agent_root_test, bia as ifconfig
 	# hides it, a medium unchanged by autoselect without "(...)".
 	cat > mine.awk <<'EOF'
 {
 	sub(/^[^ ]+ /, "")
-	gsub(/ (vlan|lagg|bridge|epair)=[^ ]*/, "")
+	gsub(/ (vlan|lagg|bridge|peer)=[^ ]*/, "")
 	split($0, f, " ")
 	for (i in f)
-		if (f[i] ~ /^ether=/)
-			ether = substr(f[i], 7)
-	if (ether != "-")
-		sub(" hw=" ether, " hw=-")
-	sub(/ fib=0 tunnelfib=0/, " fib=0")
+		if (f[i] ~ /^mac=/)
+			mac = substr(f[i], 5)
+	if (mac != "")
+		sub(" bia=" mac, " bia=-")
+	sub(/ tunnelfib=0 /, " ")
 	if (match($0, / media=.* \(/)) {
 		cur = substr($0, RSTART + 7, RLENGTH - 9)
 		rest = substr($0, RSTART + RLENGTH)
@@ -6085,7 +6093,9 @@ EOF
 EOF
 	# A name two interfaces share is ifconfig's to choose: left out.
 	for i in $(ifconfig -l | tr ' ' '\n' | sort | uniq -u); do
-		ifconfig -m -D "$i" | awk -f ifc.awk > exp
+		t=$(awk -v i="$i" '$1 == i { for (k = 2; k <= NF; k++)
+		    if ($k ~ /^type=/) print substr($k, 6) }' ifs)
+		ifconfig -m -D "$i" | awk -v type="$t" -f ifc.awk > exp
 		grep "^$i " a | awk -f mine.awk > got
 		cmp -s exp got || atf_fail "$i: ifconfig says $(cat exp), the collector $(cat got)"
 	done
@@ -6125,9 +6135,10 @@ $1 == "inet6" {
 $1 == "nd6" { nd = $2 ~ /IFDISABLED/ ? "off" : "on" }
 $1 ~ /^linkmtu=/ { lm = $1; sub(/^linkmtu=/, "", lm); sub(/,$/, "", lm) }
 END {
+	m4 = v4 ? " mtu4=" mtu : ""
 	if (nd != "" && lm + 0 > 0 && lm + 0 < mtu + 0)
 		mtu = lm
-	printf "v4=%s v6=%s ipv6=%s\n", v4 ? v4 : "-", v6 ? v6 : "-",
+	printf "v4=%s%s v6=%s ipv6=%s\n", v4 ? v4 : "-", m4, v6 ? v6 : "-",
 	    nd ? nd "," mtu : "-"
 }
 EOF

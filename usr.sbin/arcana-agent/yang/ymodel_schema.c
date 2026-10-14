@@ -4,9 +4,11 @@
  * The schema tables (cbl_schema.h):
  * ietf-inet-types: 0 nodes, 0 types, 80 bytes
  * ietf-yang-types: 0 nodes, 0 types, 80 bytes
- * ietf-interfaces: 201 nodes, 48 types, 46174 bytes
+ * ietf-interfaces: 224 nodes, 50 types, 50786 bytes
  * arcana-interfaces: 0 nodes, 0 types, 80 bytes
  * iana-if-type: 0 nodes, 0 types, 80 bytes
+ * ietf-if-extensions: 0 nodes, 0 types, 310 bytes
+ * ietf-if-ethernet-like: 0 nodes, 0 types, 129 bytes
  * ietf-ip: 0 nodes, 0 types, 179 bytes
  * arcana-ip-deviations: 0 nodes, 0 types, 80 bytes
  * ietf-routing: 132 nodes, 8 types, 26347 bytes
@@ -24,8 +26,8 @@
  * arcana-sysctl: 11 nodes, 1 types, 2038 bytes
  * arcana-kernel: 36 nodes, 0 types, 5852 bytes
  * arcana-processes: 66 nodes, 3 types, 11120 bytes
- * in all, 1033 nodes (children found 164 dense, 33 by a table, 27 by a search),
- * 99 types, 35 expressions, 333 identities, 228222 bytes
+ * in all, 1056 nodes (children found 164 dense, 33 by a table, 27 by a search),
+ * 101 types, 38 expressions, 341 identities, 233901 bytes
  */
 
 #include <stdbool.h>
@@ -50,13 +52,13 @@ static const struct cbl_ymodule m16;
 static const struct cbl_ymodule m17;
 static const struct cbl_ymodule m18;
 static const struct cbl_ymodule m19;
-static const struct cbl_ymodule m24;
+static const struct cbl_ymodule m20;
+static const struct cbl_ymodule m21;
 static const struct cbl_ymodule m26;
-static const struct cbl_ymodule m27;
 static const struct cbl_ymodule m28;
+static const struct cbl_ymodule m29;
 static const struct cbl_ymodule m30;
-static const struct cbl_ymodule m43;
-static const struct cbl_ymodule m44;
+static const struct cbl_ymodule m32;
 static const struct cbl_ymodule m45;
 static const struct cbl_ymodule m46;
 static const struct cbl_ymodule m47;
@@ -66,6 +68,8 @@ static const struct cbl_ymodule m50;
 static const struct cbl_ymodule m51;
 static const struct cbl_ymodule m52;
 static const struct cbl_ymodule m53;
+static const struct cbl_ymodule m54;
+static const struct cbl_ymodule m55;
 static const struct cbl_ychoice c0;
 static const struct cbl_ychoice c1;
 static const struct cbl_ychoice c2;
@@ -1111,6 +1115,29 @@ static const struct cbl_ynode n1029;
 static const struct cbl_ynode n1030;
 static const struct cbl_ynode n1031;
 static const struct cbl_ynode n1032;
+static const struct cbl_ynode n1033;
+static const struct cbl_ynode n1034;
+static const struct cbl_ynode n1035;
+static const struct cbl_ynode n1036;
+static const struct cbl_ynode n1037;
+static const struct cbl_ynode n1038;
+static const struct cbl_ynode n1039;
+static const struct cbl_ynode n1040;
+static const struct cbl_ynode n1041;
+static const struct cbl_ynode n1042;
+static const struct cbl_ynode n1043;
+static const struct cbl_ynode n1044;
+static const struct cbl_ynode n1045;
+static const struct cbl_ynode n1046;
+static const struct cbl_ynode n1047;
+static const struct cbl_ynode n1048;
+static const struct cbl_ynode n1049;
+static const struct cbl_ynode n1050;
+static const struct cbl_ynode n1051;
+static const struct cbl_ynode n1052;
+static const struct cbl_ynode n1053;
+static const struct cbl_ynode n1054;
+static const struct cbl_ynode n1055;
 
 static const struct cbl_yitem t0_i[] = {
 	{ "up", INT64_C(1) },
@@ -1290,7 +1317,7 @@ static const struct cbl_ytype t17 = {
 	.kind = CBL_YT_STRING,
 	.csize = sizeof(const char *),
 	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
-	.path = 1,
+	.path = 2,
 };
 
 static const struct cbl_ypattern t18_p[] = {
@@ -1524,61 +1551,50 @@ static const struct cbl_ytype t33 = {
 	.items = t33_i,
 };
 
+static const struct cbl_yrange t34_l[] = {
+	{ .min.u = UINT64_C(1), .max.u = UINT64_C(15) },
+};
 static const struct cbl_ypattern t34_p[] = {
-	{ "[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}", "^([0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5})$", false, NULL, NULL },
+	{ ".*[^0-9]", "^([^\n\015]*[^0-9])$", false, NULL, NULL },
 };
 static const struct cbl_ytype t34 = {
 	.kind = CBL_YT_STRING,
 	.csize = sizeof(const char *),
 	.path = -1,
+	.length = { t34_l, 1, NULL, NULL },
 	.npatterns = 1,
 	.patterns = t34_p,
 };
 
-static const struct cbl_yrange t35_l[] = {
-	{ .min.u = UINT64_C(1), .max.u = UINT64_C(15) },
-};
-static const struct cbl_ypattern t35_p[] = {
-	{ ".*[^0-9]", "^([^\n\015]*[^0-9])$", false, NULL, NULL },
-};
-static const struct cbl_ytype t35 = {
-	.kind = CBL_YT_STRING,
-	.csize = sizeof(const char *),
-	.path = -1,
-	.length = { t35_l, 1, NULL, NULL },
-	.npatterns = 1,
-	.patterns = t35_p,
-};
-
-static const struct cbl_yitem t36_i[] = {
+static const struct cbl_yitem t35_i[] = {
 	{ "l2", INT64_C(0) },
 	{ "l3", INT64_C(1) },
 	{ "l4", INT64_C(2) },
 };
-static const struct cbl_ytype t36 = {
+static const struct cbl_ytype t35 = {
 	.kind = CBL_YT_BITS,
 	.csize = sizeof(struct cbl_bytes),
 	.path = -1,
 	.nitems = 3,
-	.items = t36_i,
+	.items = t35_i,
 };
 
-static const struct cbl_yitem t37_i[] = {
+static const struct cbl_yitem t36_i[] = {
 	{ "master", INT64_C(0) },
 	{ "stack", INT64_C(1) },
 	{ "active", INT64_C(2) },
 	{ "collecting", INT64_C(3) },
 	{ "distributing", INT64_C(4) },
 };
-static const struct cbl_ytype t37 = {
+static const struct cbl_ytype t36 = {
 	.kind = CBL_YT_BITS,
 	.csize = sizeof(struct cbl_bytes),
 	.path = -1,
 	.nitems = 5,
-	.items = t37_i,
+	.items = t36_i,
 };
 
-static const struct cbl_yitem t38_i[] = {
+static const struct cbl_yitem t37_i[] = {
 	{ "none", INT64_C(0) },
 	{ "roundrobin", INT64_C(1) },
 	{ "failover", INT64_C(2) },
@@ -1586,174 +1602,186 @@ static const struct cbl_yitem t38_i[] = {
 	{ "lacp", INT64_C(4) },
 	{ "broadcast", INT64_C(5) },
 };
-static const struct cbl_ytype t38 = {
+static const struct cbl_ytype t37 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum ietf_interfaces_interfaces_interface_arcif_lagg_protocol),
 	.path = -1,
 	.nitems = 6,
-	.items = t38_i,
+	.items = t37_i,
 };
 
-static const struct cbl_yitem t39_i[] = {
+static const struct cbl_yitem t38_i[] = {
 	{ "active", INT64_C(0) },
 	{ "no-carrier", INT64_C(1) },
 	{ "associated", INT64_C(2) },
 	{ "running", INT64_C(3) },
 };
-static const struct cbl_ytype t39 = {
+static const struct cbl_ytype t38 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum ietf_interfaces_interfaces_interface_arcif_media_status),
 	.path = -1,
 	.nitems = 4,
-	.items = t39_i,
+	.items = t38_i,
 };
 
-static const struct cbl_yitem t40_i[] = {
+static const struct cbl_yitem t39_i[] = {
 	{ "ethernet", INT64_C(32) },
 	{ "ieee80211", INT64_C(128) },
 	{ "atm", INT64_C(160) },
 };
-static const struct cbl_ytype t40 = {
+static const struct cbl_ytype t39 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum ietf_interfaces_interfaces_interface_arcif_media_type),
 	.path = -1,
 	.nitems = 3,
-	.items = t40_i,
+	.items = t39_i,
 };
 
-static const struct cbl_yrange t41_r[] = {
+static const struct cbl_yrange t40_r[] = {
 	{ .min.u = UINT64_C(0), .max.u = UINT64_C(7) },
 };
-static const struct cbl_ytype t41 = {
+static const struct cbl_ytype t40 = {
 	.kind = CBL_YT_UINT8,
 	.csize = sizeof(uint8_t),
 	.path = -1,
-	.range = { t41_r, 1, NULL, NULL },
+	.range = { t40_r, 1, NULL, NULL },
 };
 
-static const struct cbl_yitem t42_i[] = {
+static const struct cbl_yitem t41_i[] = {
 	{ "ieee802-1q", INT64_C(33024) },
 	{ "ieee802-1ad", INT64_C(34984) },
 };
-static const struct cbl_ytype t42 = {
+static const struct cbl_ytype t41 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum ietf_interfaces_interfaces_interface_arcif_vlan_protocol),
 	.path = -1,
 	.nitems = 2,
-	.items = t42_i,
+	.items = t41_i,
 };
 
-static const struct cbl_yrange t43_r[] = {
+static const struct cbl_yrange t42_r[] = {
 	{ .min.u = UINT64_C(0), .max.u = UINT64_C(4095) },
 };
-static const struct cbl_ytype t43 = {
+static const struct cbl_ytype t42 = {
 	.kind = CBL_YT_UINT16,
 	.csize = sizeof(uint16_t),
 	.path = -1,
-	.range = { t43_r, 1, NULL, NULL },
+	.range = { t42_r, 1, NULL, NULL },
 };
 
-static const struct cbl_ytype t44 = {
-	.kind = CBL_YT_STRING,
-	.csize = sizeof(const char *),
-	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
-	.path = 7,
-};
-
-static const struct cbl_ytype t45 = {
+static const struct cbl_ytype t43 = {
 	.kind = CBL_YT_STRING,
 	.csize = sizeof(const char *),
 	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
 	.path = 8,
 };
 
-static const struct cbl_yrange t46_r[] = {
-	{ .min.u = UINT64_C(0), .max.u = UINT64_C(9000) },
+static const uint64_t t44_b[] = { UINT64_C(68303) };
+static const struct cbl_ytype t44 = {
+	.kind = CBL_YT_IDENTITYREF,
+	.csize = sizeof(uint64_t),
+	.path = -1,
+	.nbases = 1,
+	.bases = t44_b,
+};
+
+static const struct cbl_yrange t45_r[] = {
+	{ .min.u = UINT64_C(64), .max.u = UINT64_C(4294967295) },
+};
+static const struct cbl_ytype t45 = {
+	.kind = CBL_YT_UINT32,
+	.csize = sizeof(uint32_t),
+	.path = -1,
+	.range = { t45_r, 1, NULL, NULL },
+};
+
+static const struct cbl_ypattern t46_p[] = {
+	{ "[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}", "^([0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5})$", false, NULL, NULL },
 };
 static const struct cbl_ytype t46 = {
-	.kind = CBL_YT_UINT16,
-	.csize = sizeof(uint16_t),
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
 	.path = -1,
-	.range = { t46_r, 1, NULL, NULL },
+	.npatterns = 1,
+	.patterns = t46_p,
 };
 
-static const struct cbl_yrange t47_r[] = {
-	{ .min.u = UINT64_C(4), .max.u = UINT64_C(1800) },
-};
 static const struct cbl_ytype t47 = {
-	.kind = CBL_YT_UINT16,
-	.csize = sizeof(uint16_t),
-	.path = -1,
-	.range = { t47_r, 1, NULL, NULL },
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
+	.path = 11,
 };
 
-static const struct cbl_ypattern t48_p[] = {
-	{ "(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])/(([0-9])|([1-2][0-9])|(3[0-2]))", "^((([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])/(([0-9])|([1-2][0-9])|(3[0-2])))$", false, NULL, NULL },
+static const struct cbl_yrange t48_r[] = {
+	{ .min.u = UINT64_C(0), .max.u = UINT64_C(9000) },
 };
 static const struct cbl_ytype t48 = {
-	.kind = CBL_YT_STRING,
-	.csize = sizeof(const char *),
+	.kind = CBL_YT_UINT16,
+	.csize = sizeof(uint16_t),
 	.path = -1,
-	.npatterns = 1,
-	.patterns = t48_p,
+	.range = { t48_r, 1, NULL, NULL },
 };
 
-static const struct cbl_ypattern t49_p[] = {
-	{ "(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])(%.+)?", "^((([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])(%[^\n\015]+)?)$", false, NULL, NULL },
+static const struct cbl_yrange t49_r[] = {
+	{ .min.u = UINT64_C(4), .max.u = UINT64_C(1800) },
 };
 static const struct cbl_ytype t49 = {
+	.kind = CBL_YT_UINT16,
+	.csize = sizeof(uint16_t),
+	.path = -1,
+	.range = { t49_r, 1, NULL, NULL },
+};
+
+static const struct cbl_ypattern t50_p[] = {
+	{ "(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])/(([0-9])|([1-2][0-9])|(3[0-2]))", "^((([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])/(([0-9])|([1-2][0-9])|(3[0-2])))$", false, NULL, NULL },
+};
+static const struct cbl_ytype t50 = {
 	.kind = CBL_YT_STRING,
 	.csize = sizeof(const char *),
 	.path = -1,
 	.npatterns = 1,
-	.patterns = t49_p,
-};
-
-static const struct cbl_yitem t50_i[] = {
-	{ "blackhole", INT64_C(0) },
-	{ "unreachable", INT64_C(1) },
-	{ "prohibit", INT64_C(2) },
-	{ "receive", INT64_C(3) },
-};
-static const struct cbl_ytype t50 = {
-	.kind = CBL_YT_ENUMERATION,
-	.csize = sizeof(enum ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_special_next_hop),
-	.path = -1,
-	.nitems = 4,
-	.items = t50_i,
+	.patterns = t50_p,
 };
 
 static const struct cbl_ypattern t51_p[] = {
-	{ "((:|[0-9a-fA-F]{0,4}):)([0-9a-fA-F]{0,4}:){0,5}((([0-9a-fA-F]{0,4}:)?(:|[0-9a-fA-F]{0,4}))|(((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])))(%[A-Za-z0-9][A-Za-z0-9\\-\\._~/]*)?", "^(((:|[0-9a-fA-F]{0,4}):)([0-9a-fA-F]{0,4}:){0,5}((([0-9a-fA-F]{0,4}:)?(:|[0-9a-fA-F]{0,4}))|(((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])))(%[A-Za-z0-9][A-Za-z0-9._~/-]*)?)$", false, NULL, NULL },
-	{ "(([^:]+:){6}(([^:]+:[^:]+)|(.*\\..*)))|((([^:]+:)*[^:]+)?::(([^:]+:)*[^:]+)?)(%.+)?", "^((([^:]+:){6}(([^:]+:[^:]+)|([^\n\015]*\\.[^\n\015]*)))|((([^:]+:)*[^:]+)?::(([^:]+:)*[^:]+)?)(%[^\n\015]+)?)$", false, NULL, NULL },
+	{ "(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])(%.+)?", "^((([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])(%[^\n\015]+)?)$", false, NULL, NULL },
 };
 static const struct cbl_ytype t51 = {
 	.kind = CBL_YT_STRING,
 	.csize = sizeof(const char *),
 	.path = -1,
-	.npatterns = 2,
+	.npatterns = 1,
 	.patterns = t51_p,
 };
 
-static const uint64_t t52_b[] = { UINT64_C(61302) };
+static const struct cbl_yitem t52_i[] = {
+	{ "blackhole", INT64_C(0) },
+	{ "unreachable", INT64_C(1) },
+	{ "prohibit", INT64_C(2) },
+	{ "receive", INT64_C(3) },
+};
 static const struct cbl_ytype t52 = {
-	.kind = CBL_YT_IDENTITYREF,
-	.csize = sizeof(uint64_t),
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_special_next_hop),
 	.path = -1,
-	.nbases = 1,
-	.bases = t52_b,
+	.nitems = 4,
+	.items = t52_i,
 };
 
-static const uint64_t t53_b[] = { UINT64_C(61306) };
+static const struct cbl_ypattern t53_p[] = {
+	{ "((:|[0-9a-fA-F]{0,4}):)([0-9a-fA-F]{0,4}:){0,5}((([0-9a-fA-F]{0,4}:)?(:|[0-9a-fA-F]{0,4}))|(((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])))(%[A-Za-z0-9][A-Za-z0-9\\-\\._~/]*)?", "^(((:|[0-9a-fA-F]{0,4}):)([0-9a-fA-F]{0,4}:){0,5}((([0-9a-fA-F]{0,4}:)?(:|[0-9a-fA-F]{0,4}))|(((25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])))(%[A-Za-z0-9][A-Za-z0-9._~/-]*)?)$", false, NULL, NULL },
+	{ "(([^:]+:){6}(([^:]+:[^:]+)|(.*\\..*)))|((([^:]+:)*[^:]+)?::(([^:]+:)*[^:]+)?)(%.+)?", "^((([^:]+:){6}(([^:]+:[^:]+)|([^\n\015]*\\.[^\n\015]*)))|((([^:]+:)*[^:]+)?::(([^:]+:)*[^:]+)?)(%[^\n\015]+)?)$", false, NULL, NULL },
+};
 static const struct cbl_ytype t53 = {
-	.kind = CBL_YT_IDENTITYREF,
-	.csize = sizeof(uint64_t),
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
 	.path = -1,
-	.nbases = 1,
-	.bases = t53_b,
+	.npatterns = 2,
+	.patterns = t53_p,
 };
 
-static const uint64_t t54_b[] = { UINT64_C(61301) };
+static const uint64_t t54_b[] = { UINT64_C(61302) };
 static const struct cbl_ytype t54 = {
 	.kind = CBL_YT_IDENTITYREF,
 	.csize = sizeof(uint64_t),
@@ -1762,156 +1790,174 @@ static const struct cbl_ytype t54 = {
 	.bases = t54_b,
 };
 
-static const struct cbl_ypattern t55_p[] = {
+static const uint64_t t55_b[] = { UINT64_C(61306) };
+static const struct cbl_ytype t55 = {
+	.kind = CBL_YT_IDENTITYREF,
+	.csize = sizeof(uint64_t),
+	.path = -1,
+	.nbases = 1,
+	.bases = t55_b,
+};
+
+static const uint64_t t56_b[] = { UINT64_C(61301) };
+static const struct cbl_ytype t56 = {
+	.kind = CBL_YT_IDENTITYREF,
+	.csize = sizeof(uint64_t),
+	.path = -1,
+	.nbases = 1,
+	.bases = t56_b,
+};
+
+static const struct cbl_ypattern t57_p[] = {
 	{ "(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])", "^((([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5]))$", false, NULL, NULL },
 };
-static const struct cbl_ytype t55 = {
+static const struct cbl_ytype t57 = {
 	.kind = CBL_YT_STRING,
 	.csize = sizeof(const char *),
 	.path = -1,
 	.npatterns = 1,
-	.patterns = t55_p,
+	.patterns = t57_p,
 };
 
-static const struct cbl_yrange t56_r[] = {
+static const struct cbl_yrange t58_r[] = {
 	{ .min.u = UINT64_C(1), .max.u = UINT64_C(65534) },
 };
-static const struct cbl_ytype t56 = {
+static const struct cbl_ytype t58 = {
 	.kind = CBL_YT_UINT16,
 	.csize = sizeof(uint16_t),
 	.path = -1,
-	.range = { t56_r, 1, NULL, NULL },
-};
-
-static const struct cbl_ytype t57 = {
-	.kind = CBL_YT_STRING,
-	.csize = sizeof(const char *),
-	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
-	.path = 29,
-};
-
-static const struct cbl_ytype t58 = {
-	.kind = CBL_YT_STRING,
-	.csize = sizeof(const char *),
-	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
-	.path = 30,
+	.range = { t58_r, 1, NULL, NULL },
 };
 
 static const struct cbl_ytype t59 = {
 	.kind = CBL_YT_STRING,
 	.csize = sizeof(const char *),
 	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
-	.path = 31,
+	.path = 32,
 };
 
 static const struct cbl_ytype t60 = {
 	.kind = CBL_YT_STRING,
 	.csize = sizeof(const char *),
 	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
-	.path = 32,
+	.path = 33,
 };
 
 static const struct cbl_ytype t61 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
+	.path = 34,
+};
+
+static const struct cbl_ytype t62 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
+	.path = 35,
+};
+
+static const struct cbl_ytype t63 = {
 	.kind = CBL_YT_DECIMAL64,
 	.csize = sizeof(int64_t),
 	.fdigits = 2,
 	.path = -1,
 };
 
-static const struct cbl_yitem t62_i[] = {
+static const struct cbl_yitem t64_i[] = {
 	{ "running", INT64_C(0) },
 	{ "stopped", INT64_C(1) },
 	{ "dying", INT64_C(2) },
 	{ "absent", INT64_C(3) },
 };
-static const struct cbl_ytype t62 = {
+static const struct cbl_ytype t64 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jails_jails_jail_kill_output_state),
 	.path = -1,
 	.nitems = 4,
-	.items = t62_i,
-};
-
-static const struct cbl_ytype t63 = {
-	.kind = CBL_YT_STRING,
-	.csize = sizeof(const char *),
-	.flags = CBL_YTF_LEAFREF,
-	.path = 33,
-};
-
-static const struct cbl_yrange t64_l[] = {
-	{ .min.u = UINT64_C(1), .max.u = UINT64_C(255) },
-};
-static const struct cbl_ytype t64 = {
-	.kind = CBL_YT_STRING,
-	.csize = sizeof(const char *),
-	.path = -1,
-	.length = { t64_l, 1, NULL, NULL },
+	.items = t64_i,
 };
 
 static const struct cbl_ytype t65 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.flags = CBL_YTF_LEAFREF,
+	.path = 36,
+};
+
+static const struct cbl_yrange t66_l[] = {
+	{ .min.u = UINT64_C(1), .max.u = UINT64_C(255) },
+};
+static const struct cbl_ytype t66 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.path = -1,
+	.length = { t66_l, 1, NULL, NULL },
+};
+
+static const struct cbl_ytype t67 = {
 	.kind = CBL_YT_INT32,
 	.csize = sizeof(int32_t),
 	.path = -1,
 };
 
-static const struct cbl_yitem t66_i[] = {
+static const struct cbl_yitem t68_i[] = {
 	{ "any", INT64_C(0) },
 	{ "ipv4", INT64_C(4) },
 	{ "ipv6", INT64_C(6) },
 };
-static const struct cbl_ytype t66 = {
+static const struct cbl_ytype t68 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jails_jails_jail_arcpkg_packages_refresh_input_ip_version),
 	.path = -1,
 	.nitems = 3,
-	.items = t66_i,
+	.items = t68_i,
 };
 
-static const struct cbl_ypattern t67_p[] = {
+static const struct cbl_ypattern t69_p[] = {
 	{ "[A-Za-z0-9_][A-Za-z0-9_.-]*", "^([A-Za-z0-9_][A-Za-z0-9_.-]*)$", false, NULL, NULL },
 };
-static const struct cbl_ytype t67 = {
+static const struct cbl_ytype t69 = {
 	.kind = CBL_YT_STRING,
 	.csize = sizeof(const char *),
 	.path = -1,
 	.npatterns = 1,
-	.patterns = t67_p,
+	.patterns = t69_p,
 };
 
-static const struct cbl_ypattern t68_p[] = {
+static const struct cbl_ypattern t70_p[] = {
 	{ "[A-Za-z_][A-Za-z0-9_]*", "^([A-Za-z_][A-Za-z0-9_]*)$", false, NULL, NULL },
 };
-static const struct cbl_ytype t68 = {
+static const struct cbl_ytype t70 = {
 	.kind = CBL_YT_STRING,
 	.csize = sizeof(const char *),
 	.path = -1,
 	.npatterns = 1,
-	.patterns = t68_p,
+	.patterns = t70_p,
 };
 
-static const struct cbl_yitem t69_i[] = {
+static const struct cbl_yitem t71_i[] = {
 	{ "queued", INT64_C(0) },
 	{ "running", INT64_C(1) },
 	{ "done", INT64_C(2) },
 	{ "cancelled", INT64_C(3) },
 	{ "unconfirmed", INT64_C(4) },
 };
-static const struct cbl_ytype t69 = {
+static const struct cbl_ytype t71 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jobs_jobs_job_cancel_output_state),
 	.path = -1,
 	.nitems = 5,
-	.items = t69_i,
+	.items = t71_i,
 };
 
-static const struct cbl_ytype t70 = {
+static const struct cbl_ytype t72 = {
 	.kind = CBL_YT_INT64,
 	.csize = sizeof(int64_t),
 	.path = -1,
 };
 
-static const struct cbl_yitem t71_i[] = {
+static const struct cbl_yitem t73_i[] = {
 	{ "jail-action", INT64_C(0) },
 	{ "address", INT64_C(1) },
 	{ "service-action", INT64_C(2) },
@@ -1950,127 +1996,127 @@ static const struct cbl_yitem t71_i[] = {
 	{ "ssh", INT64_C(35) },
 	{ "carp", INT64_C(36) },
 };
-static const struct cbl_ytype t71 = {
+static const struct cbl_ytype t73 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jobs_jobs_job_kind),
 	.path = -1,
 	.nitems = 37,
-	.items = t71_i,
+	.items = t73_i,
 };
 
-static const struct cbl_ytype t72 = {
+static const struct cbl_ytype t74 = {
 	.kind = CBL_YT_BINARY,
 	.csize = sizeof(struct cbl_bytes),
 	.path = -1,
 };
 
-static const struct cbl_yitem t73_i[] = {
+static const struct cbl_yitem t75_i[] = {
 	{ "daemon", INT64_C(0) },
 	{ "lib", INT64_C(1) },
 	{ "syscall", INT64_C(2) },
 	{ "file", INT64_C(3) },
 	{ "exec", INT64_C(4) },
 };
-static const struct cbl_ytype t73 = {
+static const struct cbl_ytype t75 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jobs_jobs_job_step_kind),
 	.path = -1,
 	.nitems = 5,
-	.items = t73_i,
+	.items = t75_i,
 };
 
-static const struct cbl_yrange t74_r[] = {
+static const struct cbl_yrange t76_r[] = {
 	{ .min.i = INT64_C(-1), .max.i = INT64_C(2147483647) },
 };
-static const struct cbl_ytype t74 = {
+static const struct cbl_ytype t76 = {
 	.kind = CBL_YT_INT32,
 	.csize = sizeof(int32_t),
 	.path = -1,
-	.range = { t74_r, 1, NULL, NULL },
+	.range = { t76_r, 1, NULL, NULL },
 };
 
-static const struct cbl_yitem t75_i[] = {
+static const struct cbl_yitem t77_i[] = {
 	{ "ok", INT64_C(0) },
 	{ "failed", INT64_C(1) },
 	{ "incomplete", INT64_C(2) },
 };
-static const struct cbl_ytype t75 = {
-	.kind = CBL_YT_ENUMERATION,
-	.csize = sizeof(enum arcana_jobs_jobs_job_step_status),
-	.path = -1,
-	.nitems = 3,
-	.items = t75_i,
-};
-
-static const struct cbl_yitem t76_i[] = {
-	{ "enable", INT64_C(0) },
-	{ "disable", INT64_C(1) },
-	{ "restart", INT64_C(2) },
-	{ "reload", INT64_C(3) },
-	{ "configure", INT64_C(4) },
-};
-static const struct cbl_ytype t76 = {
-	.kind = CBL_YT_ENUMERATION,
-	.csize = sizeof(enum arcana_jobs_submit_input_change_bird_verb),
-	.path = -1,
-	.nitems = 5,
-	.items = t76_i,
-};
-
-static const struct cbl_yitem t77_i[] = {
-	{ "add", INT64_C(0) },
-	{ "set", INT64_C(1) },
-	{ "remove", INT64_C(2) },
-};
 static const struct cbl_ytype t77 = {
 	.kind = CBL_YT_ENUMERATION,
-	.csize = sizeof(enum arcana_jobs_submit_input_change_carp_verb),
+	.csize = sizeof(enum arcana_jobs_jobs_job_step_status),
 	.path = -1,
 	.nitems = 3,
 	.items = t77_i,
 };
 
 static const struct cbl_yitem t78_i[] = {
-	{ "add", INT64_C(0) },
-	{ "remove", INT64_C(1) },
-	{ "trust", INT64_C(2) },
-	{ "untrust", INT64_C(3) },
-	{ "rehash", INT64_C(4) },
+	{ "enable", INT64_C(0) },
+	{ "disable", INT64_C(1) },
+	{ "restart", INT64_C(2) },
+	{ "reload", INT64_C(3) },
+	{ "configure", INT64_C(4) },
 };
 static const struct cbl_ytype t78 = {
 	.kind = CBL_YT_ENUMERATION,
-	.csize = sizeof(enum arcana_jobs_submit_input_change_cert_verb),
+	.csize = sizeof(enum arcana_jobs_submit_input_change_bird_verb),
 	.path = -1,
 	.nitems = 5,
 	.items = t78_i,
 };
 
 static const struct cbl_yitem t79_i[] = {
-	{ "tunnel", INT64_C(0) },
-	{ "transport", INT64_C(1) },
+	{ "add", INT64_C(0) },
+	{ "set", INT64_C(1) },
+	{ "remove", INT64_C(2) },
 };
 static const struct cbl_ytype t79 = {
 	.kind = CBL_YT_ENUMERATION,
-	.csize = sizeof(enum arcana_jobs_submit_input_change_ipsec_ipsec_mode),
+	.csize = sizeof(enum arcana_jobs_submit_input_change_carp_verb),
 	.path = -1,
-	.nitems = 2,
+	.nitems = 3,
 	.items = t79_i,
 };
 
 static const struct cbl_yitem t80_i[] = {
-	{ "start", INT64_C(0) },
-	{ "trap", INT64_C(1) },
-	{ "none", INT64_C(2) },
+	{ "add", INT64_C(0) },
+	{ "remove", INT64_C(1) },
+	{ "trust", INT64_C(2) },
+	{ "untrust", INT64_C(3) },
+	{ "rehash", INT64_C(4) },
 };
 static const struct cbl_ytype t80 = {
 	.kind = CBL_YT_ENUMERATION,
-	.csize = sizeof(enum arcana_jobs_submit_input_change_ipsec_start_action),
+	.csize = sizeof(enum arcana_jobs_submit_input_change_cert_verb),
 	.path = -1,
-	.nitems = 3,
+	.nitems = 5,
 	.items = t80_i,
 };
 
 static const struct cbl_yitem t81_i[] = {
+	{ "tunnel", INT64_C(0) },
+	{ "transport", INT64_C(1) },
+};
+static const struct cbl_ytype t81 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum arcana_jobs_submit_input_change_ipsec_ipsec_mode),
+	.path = -1,
+	.nitems = 2,
+	.items = t81_i,
+};
+
+static const struct cbl_yitem t82_i[] = {
+	{ "start", INT64_C(0) },
+	{ "trap", INT64_C(1) },
+	{ "none", INT64_C(2) },
+};
+static const struct cbl_ytype t82 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum arcana_jobs_submit_input_change_ipsec_start_action),
+	.path = -1,
+	.nitems = 3,
+	.items = t82_i,
+};
+
+static const struct cbl_yitem t83_i[] = {
 	{ "init", INT64_C(0) },
 	{ "start", INT64_C(1) },
 	{ "conn", INT64_C(2) },
@@ -2080,56 +2126,56 @@ static const struct cbl_yitem t81_i[] = {
 	{ "up", INT64_C(6) },
 	{ "down", INT64_C(7) },
 };
-static const struct cbl_ytype t81 = {
+static const struct cbl_ytype t83 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jobs_submit_input_change_ipsec_verb),
 	.path = -1,
 	.nitems = 8,
-	.items = t81_i,
+	.items = t83_i,
 };
 
-static const struct cbl_yitem t82_i[] = {
+static const struct cbl_yitem t84_i[] = {
 	{ "key", INT64_C(0) },
 	{ "set", INT64_C(1) },
 	{ "derive", INT64_C(2) },
 	{ "commit", INT64_C(3) },
 	{ "clear", INT64_C(4) },
 };
-static const struct cbl_ytype t82 = {
+static const struct cbl_ytype t84 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jobs_submit_input_change_ipsec_sa_verb),
 	.path = -1,
 	.nitems = 5,
-	.items = t82_i,
+	.items = t84_i,
 };
 
-static const struct cbl_yitem t83_i[] = {
+static const struct cbl_yitem t85_i[] = {
 	{ "start", INT64_C(0) },
 	{ "stop", INT64_C(1) },
 	{ "restart", INT64_C(2) },
 	{ "kill", INT64_C(3) },
 };
-static const struct cbl_ytype t83 = {
+static const struct cbl_ytype t85 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jobs_submit_input_change_jail_action_action),
 	.path = -1,
 	.nitems = 4,
-	.items = t83_i,
+	.items = t85_i,
 };
 
-static const struct cbl_yitem t84_i[] = {
+static const struct cbl_yitem t86_i[] = {
 	{ "clone", INT64_C(0) },
 	{ "send", INT64_C(1) },
 };
-static const struct cbl_ytype t84 = {
+static const struct cbl_ytype t86 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jobs_submit_input_change_jail_conf_copy),
 	.path = -1,
 	.nitems = 2,
-	.items = t84_i,
+	.items = t86_i,
 };
 
-static const struct cbl_yitem t85_i[] = {
+static const struct cbl_yitem t87_i[] = {
 	{ "make", INT64_C(0) },
 	{ "remove", INT64_C(1) },
 	{ "defaults", INT64_C(2) },
@@ -2137,66 +2183,66 @@ static const struct cbl_yitem t85_i[] = {
 	{ "untemplate", INT64_C(4) },
 	{ "edit", INT64_C(5) },
 };
-static const struct cbl_ytype t85 = {
+static const struct cbl_ytype t87 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jobs_submit_input_change_jail_conf_verb),
 	.path = -1,
 	.nitems = 6,
-	.items = t85_i,
-};
-
-static const struct cbl_yitem t86_i[] = {
-	{ "load", INT64_C(0) },
-	{ "unload", INT64_C(1) },
-};
-static const struct cbl_ytype t86 = {
-	.kind = CBL_YT_ENUMERATION,
-	.csize = sizeof(enum arcana_jobs_submit_input_change_kmod_verb),
-	.path = -1,
-	.nitems = 2,
-	.items = t86_i,
-};
-
-static const struct cbl_yitem t87_i[] = {
-	{ "add", INT64_C(0) },
-	{ "delete", INT64_C(1) },
-};
-static const struct cbl_ytype t87 = {
-	.kind = CBL_YT_ENUMERATION,
-	.csize = sizeof(enum arcana_jobs_submit_input_change_neighbour_verb),
-	.path = -1,
-	.nitems = 2,
 	.items = t87_i,
 };
 
 static const struct cbl_yitem t88_i[] = {
-	{ "mkpeer", INT64_C(0) },
-	{ "connect", INT64_C(1) },
-	{ "rmhook", INT64_C(2) },
-	{ "shutdown", INT64_C(3) },
-	{ "name", INT64_C(4) },
+	{ "load", INT64_C(0) },
+	{ "unload", INT64_C(1) },
 };
 static const struct cbl_ytype t88 = {
 	.kind = CBL_YT_ENUMERATION,
-	.csize = sizeof(enum arcana_jobs_submit_input_change_netgraph_verb),
+	.csize = sizeof(enum arcana_jobs_submit_input_change_kmod_verb),
 	.path = -1,
-	.nitems = 5,
+	.nitems = 2,
 	.items = t88_i,
 };
 
 static const struct cbl_yitem t89_i[] = {
-	{ "signal", INT64_C(0) },
-	{ "renice", INT64_C(1) },
+	{ "add", INT64_C(0) },
+	{ "delete", INT64_C(1) },
 };
 static const struct cbl_ytype t89 = {
 	.kind = CBL_YT_ENUMERATION,
-	.csize = sizeof(enum arcana_jobs_submit_input_change_process_verb),
+	.csize = sizeof(enum arcana_jobs_submit_input_change_neighbour_verb),
 	.path = -1,
 	.nitems = 2,
 	.items = t89_i,
 };
 
 static const struct cbl_yitem t90_i[] = {
+	{ "mkpeer", INT64_C(0) },
+	{ "connect", INT64_C(1) },
+	{ "rmhook", INT64_C(2) },
+	{ "shutdown", INT64_C(3) },
+	{ "name", INT64_C(4) },
+};
+static const struct cbl_ytype t90 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum arcana_jobs_submit_input_change_netgraph_verb),
+	.path = -1,
+	.nitems = 5,
+	.items = t90_i,
+};
+
+static const struct cbl_yitem t91_i[] = {
+	{ "signal", INT64_C(0) },
+	{ "renice", INT64_C(1) },
+};
+static const struct cbl_ytype t91 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum arcana_jobs_submit_input_change_process_verb),
+	.path = -1,
+	.nitems = 2,
+	.items = t91_i,
+};
+
+static const struct cbl_yitem t92_i[] = {
 	{ "start", INT64_C(0) },
 	{ "stop", INT64_C(1) },
 	{ "restart", INT64_C(2) },
@@ -2204,15 +2250,15 @@ static const struct cbl_yitem t90_i[] = {
 	{ "enable", INT64_C(4) },
 	{ "disable", INT64_C(5) },
 };
-static const struct cbl_ytype t90 = {
+static const struct cbl_ytype t92 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jobs_submit_input_change_service_action_action),
 	.path = -1,
 	.nitems = 6,
-	.items = t90_i,
+	.items = t92_i,
 };
 
-static const struct cbl_yitem t91_i[] = {
+static const struct cbl_yitem t93_i[] = {
 	{ "banner", INT64_C(0) },
 	{ "set", INT64_C(1) },
 	{ "authorize", INT64_C(2) },
@@ -2220,88 +2266,88 @@ static const struct cbl_yitem t91_i[] = {
 	{ "sign", INT64_C(4) },
 	{ "user-cas", INT64_C(5) },
 };
-static const struct cbl_ytype t91 = {
+static const struct cbl_ytype t93 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jobs_submit_input_change_ssh_verb),
 	.path = -1,
 	.nitems = 6,
-	.items = t91_i,
-};
-
-static const struct cbl_yitem t92_i[] = {
-	{ "init", INT64_C(0) },
-	{ "peer", INT64_C(1) },
-	{ "unpeer", INT64_C(2) },
-};
-static const struct cbl_ytype t92 = {
-	.kind = CBL_YT_ENUMERATION,
-	.csize = sizeof(enum arcana_jobs_submit_input_change_wireguard_verb),
-	.path = -1,
-	.nitems = 3,
-	.items = t92_i,
-};
-
-static const struct cbl_yitem t93_i[] = {
-	{ "on", INT64_C(0) },
-	{ "off", INT64_C(1) },
-	{ "noauto", INT64_C(2) },
-};
-static const struct cbl_ytype t93 = {
-	.kind = CBL_YT_ENUMERATION,
-	.csize = sizeof(enum arcana_storage_storage_dataset_canmount),
-	.path = -1,
-	.nitems = 3,
 	.items = t93_i,
 };
 
 static const struct cbl_yitem t94_i[] = {
+	{ "init", INT64_C(0) },
+	{ "peer", INT64_C(1) },
+	{ "unpeer", INT64_C(2) },
+};
+static const struct cbl_ytype t94 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum arcana_jobs_submit_input_change_wireguard_verb),
+	.path = -1,
+	.nitems = 3,
+	.items = t94_i,
+};
+
+static const struct cbl_yitem t95_i[] = {
+	{ "on", INT64_C(0) },
+	{ "off", INT64_C(1) },
+	{ "noauto", INT64_C(2) },
+};
+static const struct cbl_ytype t95 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum arcana_storage_storage_dataset_canmount),
+	.path = -1,
+	.nitems = 3,
+	.items = t95_i,
+};
+
+static const struct cbl_yitem t96_i[] = {
 	{ "filesystem", INT64_C(0) },
 	{ "volume", INT64_C(1) },
 };
-static const struct cbl_ytype t94 = {
+static const struct cbl_ytype t96 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_storage_storage_dataset_type),
 	.path = -1,
 	.nitems = 2,
-	.items = t94_i,
+	.items = t96_i,
 };
 
-static const struct cbl_ypattern t95_p[] = {
+static const struct cbl_ypattern t97_p[] = {
 	{ "[A-Za-z0-9_%.-]+", "^([A-Za-z0-9_%.-]+)$", false, NULL, NULL },
 };
-static const struct cbl_ytype t95 = {
+static const struct cbl_ytype t97 = {
 	.kind = CBL_YT_STRING,
 	.csize = sizeof(const char *),
 	.path = -1,
 	.npatterns = 1,
-	.patterns = t95_p,
+	.patterns = t97_p,
 };
 
-static const struct cbl_ytype t96 = {
+static const struct cbl_ytype t98 = {
 	.kind = CBL_YT_UINT64,
 	.csize = sizeof(uint64_t),
 	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
-	.path = 34,
+	.path = 37,
 };
 
-static const struct cbl_yrange t97_r[] = {
+static const struct cbl_yrange t99_r[] = {
 	{ .min.i = INT64_C(-20), .max.i = INT64_C(20) },
 };
-static const struct cbl_ytype t97 = {
+static const struct cbl_ytype t99 = {
 	.kind = CBL_YT_INT32,
 	.csize = sizeof(int32_t),
 	.path = -1,
-	.range = { t97_r, 1, NULL, NULL },
+	.range = { t99_r, 1, NULL, NULL },
 };
 
-static const struct cbl_yrange t98_r[] = {
+static const struct cbl_yrange t100_r[] = {
 	{ .min.u = UINT64_C(0), .max.u = UINT64_C(100) },
 };
-static const struct cbl_ytype t98 = {
+static const struct cbl_ytype t100 = {
 	.kind = CBL_YT_UINT8,
 	.csize = sizeof(uint8_t),
 	.path = -1,
-	.range = { t98_r, 1, NULL, NULL },
+	.range = { t100_r, 1, NULL, NULL },
 };
 
 static const uint16_t n1_p[] = {
@@ -2587,10 +2633,360 @@ static const struct cbl_ynode n28 = {
 	.module = &m10,
 };
 
+static const struct cbl_ynode n29 = {
+	.sid = UINT64_C(68334),
+	.name = "in-discard-overflows",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, if_ext_in_discard_overflows),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_if_ext_in_discard_overflows),
+	.type = &t9,
+	.units = "packets",
+	.module = &m13,
+};
+
+static const struct cbl_ywhen n30_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n30 = {
+	.sid = UINT64_C(68405),
+	.name = "in-discard-unknown-dest-mac-pkts",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_in_discard_unknown_dest_mac_pkts),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_in_discard_unknown_dest_mac_pkts),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n30_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n31_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n31 = {
+	.sid = UINT64_C(68406),
+	.name = "in-pkts-1024-to-1518-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_in_pkts_1024_to_1518_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_in_pkts_1024_to_1518_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n31_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n32_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n32 = {
+	.sid = UINT64_C(68407),
+	.name = "in-pkts-128-to-255-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_in_pkts_128_to_255_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_in_pkts_128_to_255_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n32_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n33_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n33 = {
+	.sid = UINT64_C(68408),
+	.name = "in-pkts-1519-to-2047-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_in_pkts_1519_to_2047_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_in_pkts_1519_to_2047_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n33_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n34_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n34 = {
+	.sid = UINT64_C(68409),
+	.name = "in-pkts-2048-to-4095-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_in_pkts_2048_to_4095_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_in_pkts_2048_to_4095_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n34_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n35_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n35 = {
+	.sid = UINT64_C(68410),
+	.name = "in-pkts-256-to-511-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_in_pkts_256_to_511_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_in_pkts_256_to_511_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n35_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n36_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n36 = {
+	.sid = UINT64_C(68411),
+	.name = "in-pkts-4096-to-8191-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_in_pkts_4096_to_8191_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_in_pkts_4096_to_8191_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n36_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n37_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n37 = {
+	.sid = UINT64_C(68412),
+	.name = "in-pkts-512-to-1023-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_in_pkts_512_to_1023_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_in_pkts_512_to_1023_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n37_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n38_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n38 = {
+	.sid = UINT64_C(68413),
+	.name = "in-pkts-64-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_in_pkts_64_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_in_pkts_64_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n38_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n39_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n39 = {
+	.sid = UINT64_C(68414),
+	.name = "in-pkts-65-to-127-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_in_pkts_65_to_127_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_in_pkts_65_to_127_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n39_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n40_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n40 = {
+	.sid = UINT64_C(68415),
+	.name = "in-pkts-8192-to-max-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_in_pkts_8192_to_max_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_in_pkts_8192_to_max_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n40_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n41_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n41 = {
+	.sid = UINT64_C(68416),
+	.name = "out-pkts-1024-to-1518-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_out_pkts_1024_to_1518_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_out_pkts_1024_to_1518_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n41_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n42_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n42 = {
+	.sid = UINT64_C(68417),
+	.name = "out-pkts-128-to-255-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_out_pkts_128_to_255_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_out_pkts_128_to_255_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n42_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n43_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n43 = {
+	.sid = UINT64_C(68418),
+	.name = "out-pkts-1519-to-2047-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_out_pkts_1519_to_2047_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_out_pkts_1519_to_2047_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n43_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n44_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n44 = {
+	.sid = UINT64_C(68419),
+	.name = "out-pkts-2048-to-4095-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_out_pkts_2048_to_4095_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_out_pkts_2048_to_4095_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n44_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n45_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n45 = {
+	.sid = UINT64_C(68420),
+	.name = "out-pkts-256-to-511-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_out_pkts_256_to_511_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_out_pkts_256_to_511_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n45_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n46_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n46 = {
+	.sid = UINT64_C(68421),
+	.name = "out-pkts-4096-to-8191-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_out_pkts_4096_to_8191_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_out_pkts_4096_to_8191_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n46_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n47_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n47 = {
+	.sid = UINT64_C(68422),
+	.name = "out-pkts-512-to-1023-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_out_pkts_512_to_1023_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_out_pkts_512_to_1023_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n47_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n48_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n48 = {
+	.sid = UINT64_C(68423),
+	.name = "out-pkts-64-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_out_pkts_64_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_out_pkts_64_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n48_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n49_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n49 = {
+	.sid = UINT64_C(68424),
+	.name = "out-pkts-65-to-127-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_out_pkts_65_to_127_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_out_pkts_65_to_127_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n49_w,
+	.units = "frames",
+	.module = &m14,
+};
+
+static const struct cbl_ywhen n50_w[] = {
+	{ 1, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n50 = {
+	.sid = UINT64_C(68425),
+	.name = "out-pkts-8192-to-max-octets",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_statistics, ethlike_out_pkts_8192_to_max_octets),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_statistics, has_ethlike_out_pkts_8192_to_max_octets),
+	.type = &t9,
+	.nwhen = 1,
+	.when = n50_w,
+	.units = "frames",
+	.module = &m14,
+};
+
 static const struct cbl_ynode *const n14_c[] = {
 	&n15, &n16, &n17, &n18, &n19, &n20,
 	&n21, &n22, &n23, &n24, &n25, &n26,
-	&n27, &n28
+	&n27, &n28, &n29, &n30, &n31, &n32,
+	&n33, &n34, &n35, &n36, &n37, &n38,
+	&n39, &n40, &n41, &n42, &n43, &n44,
+	&n45, &n46, &n47, &n48, &n49, &n50
 };
 static const struct cbl_ynode n14 = {
 	.sid = UINT64_C(1546),
@@ -2601,12 +2997,12 @@ static const struct cbl_ynode n14 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_statistics),
 	.nmap = 14,
-	.nchild = 14,
+	.nchild = 36,
 	.child = n14_c,
 	.module = &m10,
 };
 
-static const struct cbl_ynode n29 = {
+static const struct cbl_ynode n51 = {
 	.sid = UINT64_C(1561),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
@@ -2617,10 +3013,10 @@ static const struct cbl_ynode n29 = {
 	.module = &m10,
 };
 
-static const uint16_t n30_p[] = {
+static const uint16_t n52_p[] = {
 	1, 0, 0, 0, 0, 2, 3, 4, 5
 };
-static const struct cbl_ynode n32 = {
+static const struct cbl_ynode n54 = {
 	.sid = UINT64_C(1631),
 	.name = "ip",
 	.kind = CBL_YN_LEAF,
@@ -2628,17 +3024,17 @@ static const struct cbl_ynode n32 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4_address, ip),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t12,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n33 = {
+static const struct cbl_ynode n55 = {
 	.sid = UINT64_C(1633),
 	.name = "origin",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4_address, origin),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4_address, has_origin),
 	.type = &t13,
-	.module = &m13,
+	.module = &m15,
 };
 
 static const struct cbl_ycase c0_c[] = {
@@ -2654,7 +3050,7 @@ static const struct cbl_ychoice c0 = {
 	.mandatory = true,
 };
 
-static const struct cbl_ynode n34 = {
+static const struct cbl_ynode n56 = {
 	.sid = UINT64_C(1634),
 	.name = "prefix-length",
 	.kind = CBL_YN_LEAF,
@@ -2664,14 +3060,14 @@ static const struct cbl_ynode n34 = {
 	.type = &t14,
 	.choice = &c0,
 	.ccase = 0,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode *const n31_c[] = {
-	&n32, &n33, &n34
+static const struct cbl_ynode *const n53_c[] = {
+	&n54, &n55, &n56
 };
-static const uint32_t n31_k[] = { 0 };
-static const struct cbl_ynode n31 = {
+static const uint32_t n53_k[] = { 0 };
+static const struct cbl_ynode n53 = {
 	.sid = UINT64_C(1630),
 	.name = "address",
 	.kind = CBL_YN_LIST,
@@ -2680,14 +3076,14 @@ static const struct cbl_ynode n31 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_ip_ipv4_address),
 	.nchild = 3,
-	.child = n31_c,
+	.child = n53_c,
 	.nkeys = 1,
-	.keys = n31_k,
-	.module = &m13,
+	.keys = n53_k,
+	.module = &m15,
 };
 
-static const char *const n35_d[] = { "true" };
-static const struct cbl_ynode n35 = {
+static const char *const n57_d[] = { "true" };
+static const struct cbl_ynode n57 = {
 	.sid = UINT64_C(1635),
 	.name = "enabled",
 	.kind = CBL_YN_LEAF,
@@ -2695,12 +3091,12 @@ static const struct cbl_ynode n35 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4, has_enabled),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n35_d,
-	.module = &m13,
+	.dflt = n57_d,
+	.module = &m15,
 };
 
-static const char *const n36_d[] = { "false" };
-static const struct cbl_ynode n36 = {
+static const char *const n58_d[] = { "false" };
+static const struct cbl_ynode n58 = {
 	.sid = UINT64_C(1636),
 	.name = "forwarding",
 	.kind = CBL_YN_LEAF,
@@ -2708,22 +3104,23 @@ static const struct cbl_ynode n36 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4, has_forwarding),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n36_d,
-	.module = &m13,
+	.dflt = n58_d,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n37 = {
+static const struct cbl_ynode n59 = {
 	.sid = UINT64_C(1637),
 	.name = "mtu",
 	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4, mtu),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4, has_mtu),
 	.type = &t15,
 	.units = "octets",
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n39 = {
+static const struct cbl_ynode n61 = {
 	.sid = UINT64_C(1639),
 	.name = "ip",
 	.kind = CBL_YN_LEAF,
@@ -2731,10 +3128,10 @@ static const struct cbl_ynode n39 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor, ip),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t12,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n40 = {
+static const struct cbl_ynode n62 = {
 	.sid = UINT64_C(1640),
 	.name = "link-layer-address",
 	.kind = CBL_YN_LEAF,
@@ -2742,24 +3139,24 @@ static const struct cbl_ynode n40 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor, link_layer_address),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t8,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n41 = {
+static const struct cbl_ynode n63 = {
 	.sid = UINT64_C(1641),
 	.name = "origin",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor, origin),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor, has_origin),
 	.type = &t16,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode *const n38_c[] = {
-	&n39, &n40, &n41
+static const struct cbl_ynode *const n60_c[] = {
+	&n61, &n62, &n63
 };
-static const uint32_t n38_k[] = { 0 };
-static const struct cbl_ynode n38 = {
+static const uint32_t n60_k[] = { 0 };
+static const struct cbl_ynode n60 = {
 	.sid = UINT64_C(1638),
 	.name = "neighbor",
 	.kind = CBL_YN_LIST,
@@ -2769,13 +3166,13 @@ static const struct cbl_ynode n38 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n38_c,
+	.child = n60_c,
 	.nkeys = 1,
-	.keys = n38_k,
-	.module = &m13,
+	.keys = n60_k,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n42 = {
+static const struct cbl_ynode n64 = {
 	.sid = UINT64_C(61801),
 	.name = "bind-ni-name",
 	.kind = CBL_YN_LEAF,
@@ -2783,13 +3180,13 @@ static const struct cbl_ynode n42 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4, ni_bind_ni_name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t17,
-	.module = &m43,
+	.module = &m45,
 };
 
-static const struct cbl_ynode *const n30_c[] = {
-	&n31, &n35, &n36, &n37, &n38, &n42
+static const struct cbl_ynode *const n52_c[] = {
+	&n53, &n57, &n58, &n59, &n60, &n64
 };
-static const struct cbl_ynode n30 = {
+static const struct cbl_ynode n52 = {
 	.sid = UINT64_C(1629),
 	.name = "ipv4",
 	.kind = CBL_YN_CONTAINER,
@@ -2798,16 +3195,16 @@ static const struct cbl_ynode n30 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_ip_ipv4),
 	.nmap = 9,
-	.map = n30_p,
+	.map = n52_p,
 	.nchild = 6,
-	.child = n30_c,
-	.module = &m13,
+	.child = n52_c,
+	.module = &m15,
 };
 
-static const uint16_t n43_p[] = {
+static const uint16_t n65_p[] = {
 	1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 3, 4, 5, 6, 7
 };
-static const struct cbl_ynode n45 = {
+static const struct cbl_ynode n67 = {
 	.sid = UINT64_C(1644),
 	.name = "ip",
 	.kind = CBL_YN_LEAF,
@@ -2815,20 +3212,20 @@ static const struct cbl_ynode n45 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_address, ip),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t18,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n46 = {
+static const struct cbl_ynode n68 = {
 	.sid = UINT64_C(1645),
 	.name = "origin",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_address, origin),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_address, has_origin),
 	.type = &t13,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n47 = {
+static const struct cbl_ynode n69 = {
 	.sid = UINT64_C(1646),
 	.name = "prefix-length",
 	.kind = CBL_YN_LEAF,
@@ -2836,24 +3233,24 @@ static const struct cbl_ynode n47 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_address, prefix_length),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_address, has_prefix_length),
 	.type = &t19,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n48 = {
+static const struct cbl_ynode n70 = {
 	.sid = UINT64_C(1647),
 	.name = "status",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_address, status),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_address, has_status),
 	.type = &t20,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode *const n44_c[] = {
-	&n45, &n46, &n47, &n48
+static const struct cbl_ynode *const n66_c[] = {
+	&n67, &n68, &n69, &n70
 };
-static const uint32_t n44_k[] = { 0 };
-static const struct cbl_ynode n44 = {
+static const uint32_t n66_k[] = { 0 };
+static const struct cbl_ynode n66 = {
 	.sid = UINT64_C(1643),
 	.name = "address",
 	.kind = CBL_YN_LIST,
@@ -2863,14 +3260,14 @@ static const struct cbl_ynode n44 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_ip_ipv6_address),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n44_c,
+	.child = n66_c,
 	.nkeys = 1,
-	.keys = n44_k,
-	.module = &m13,
+	.keys = n66_k,
+	.module = &m15,
 };
 
-static const char *const n50_d[] = { "true" };
-static const struct cbl_ynode n50 = {
+static const char *const n72_d[] = { "true" };
+static const struct cbl_ynode n72 = {
 	.sid = UINT64_C(1649),
 	.name = "create-global-addresses",
 	.kind = CBL_YN_LEAF,
@@ -2879,12 +3276,12 @@ static const struct cbl_ynode n50 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf, has_create_global_addresses),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n50_d,
-	.module = &m13,
+	.dflt = n72_d,
+	.module = &m15,
 };
 
-static const char *const n51_d[] = { "false" };
-static const struct cbl_ynode n51 = {
+static const char *const n73_d[] = { "false" };
+static const struct cbl_ynode n73 = {
 	.sid = UINT64_C(1650),
 	.name = "create-temporary-addresses",
 	.kind = CBL_YN_LEAF,
@@ -2892,12 +3289,12 @@ static const struct cbl_ynode n51 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf, has_create_temporary_addresses),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n51_d,
-	.module = &m13,
+	.dflt = n73_d,
+	.module = &m15,
 };
 
-static const char *const n52_d[] = { "86400" };
-static const struct cbl_ynode n52 = {
+static const char *const n74_d[] = { "86400" };
+static const struct cbl_ynode n74 = {
 	.sid = UINT64_C(1651),
 	.name = "temporary-preferred-lifetime",
 	.kind = CBL_YN_LEAF,
@@ -2905,13 +3302,13 @@ static const struct cbl_ynode n52 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf, has_temporary_preferred_lifetime),
 	.type = &t10,
 	.ndflt = 1,
-	.dflt = n52_d,
+	.dflt = n74_d,
 	.units = "seconds",
-	.module = &m13,
+	.module = &m15,
 };
 
-static const char *const n53_d[] = { "604800" };
-static const struct cbl_ynode n53 = {
+static const char *const n75_d[] = { "604800" };
+static const struct cbl_ynode n75 = {
 	.sid = UINT64_C(1652),
 	.name = "temporary-valid-lifetime",
 	.kind = CBL_YN_LEAF,
@@ -2919,15 +3316,15 @@ static const struct cbl_ynode n53 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf, has_temporary_valid_lifetime),
 	.type = &t10,
 	.ndflt = 1,
-	.dflt = n53_d,
+	.dflt = n75_d,
 	.units = "seconds",
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode *const n49_c[] = {
-	&n50, &n51, &n52, &n53
+static const struct cbl_ynode *const n71_c[] = {
+	&n72, &n73, &n74, &n75
 };
-static const struct cbl_ynode n49 = {
+static const struct cbl_ynode n71 = {
 	.sid = UINT64_C(1648),
 	.name = "autoconf",
 	.kind = CBL_YN_CONTAINER,
@@ -2937,12 +3334,12 @@ static const struct cbl_ynode n49 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n49_c,
-	.module = &m13,
+	.child = n71_c,
+	.module = &m15,
 };
 
-static const char *const n54_d[] = { "1" };
-static const struct cbl_ynode n54 = {
+static const char *const n76_d[] = { "1" };
+static const struct cbl_ynode n76 = {
 	.sid = UINT64_C(1653),
 	.name = "dup-addr-detect-transmits",
 	.kind = CBL_YN_LEAF,
@@ -2950,12 +3347,12 @@ static const struct cbl_ynode n54 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6, has_dup_addr_detect_transmits),
 	.type = &t10,
 	.ndflt = 1,
-	.dflt = n54_d,
-	.module = &m13,
+	.dflt = n76_d,
+	.module = &m15,
 };
 
-static const char *const n55_d[] = { "true" };
-static const struct cbl_ynode n55 = {
+static const char *const n77_d[] = { "true" };
+static const struct cbl_ynode n77 = {
 	.sid = UINT64_C(1654),
 	.name = "enabled",
 	.kind = CBL_YN_LEAF,
@@ -2964,12 +3361,12 @@ static const struct cbl_ynode n55 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6, has_enabled),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n55_d,
-	.module = &m13,
+	.dflt = n77_d,
+	.module = &m15,
 };
 
-static const char *const n56_d[] = { "false" };
-static const struct cbl_ynode n56 = {
+static const char *const n78_d[] = { "false" };
+static const struct cbl_ynode n78 = {
 	.sid = UINT64_C(1655),
 	.name = "forwarding",
 	.kind = CBL_YN_LEAF,
@@ -2977,11 +3374,11 @@ static const struct cbl_ynode n56 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6, has_forwarding),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n56_d,
-	.module = &m13,
+	.dflt = n78_d,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n57 = {
+static const struct cbl_ynode n79 = {
 	.sid = UINT64_C(1656),
 	.name = "mtu",
 	.kind = CBL_YN_LEAF,
@@ -2989,10 +3386,10 @@ static const struct cbl_ynode n57 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6, has_mtu),
 	.type = &t21,
 	.units = "octets",
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n59 = {
+static const struct cbl_ynode n81 = {
 	.sid = UINT64_C(1658),
 	.name = "ip",
 	.kind = CBL_YN_LEAF,
@@ -3000,20 +3397,20 @@ static const struct cbl_ynode n59 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor, ip),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t18,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n60 = {
+static const struct cbl_ynode n82 = {
 	.sid = UINT64_C(1659),
 	.name = "is-router",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor, is_router),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t22,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n61 = {
+static const struct cbl_ynode n83 = {
 	.sid = UINT64_C(1660),
 	.name = "link-layer-address",
 	.kind = CBL_YN_LEAF,
@@ -3021,34 +3418,34 @@ static const struct cbl_ynode n61 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor, link_layer_address),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t8,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n62 = {
+static const struct cbl_ynode n84 = {
 	.sid = UINT64_C(1661),
 	.name = "origin",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor, origin),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor, has_origin),
 	.type = &t16,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n63 = {
+static const struct cbl_ynode n85 = {
 	.sid = UINT64_C(1662),
 	.name = "state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor, state),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor, has_state),
 	.type = &t23,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode *const n58_c[] = {
-	&n59, &n60, &n61, &n62, &n63
+static const struct cbl_ynode *const n80_c[] = {
+	&n81, &n82, &n83, &n84, &n85
 };
-static const uint32_t n58_k[] = { 0 };
-static const struct cbl_ynode n58 = {
+static const uint32_t n80_k[] = { 0 };
+static const struct cbl_ynode n80 = {
 	.sid = UINT64_C(1657),
 	.name = "neighbor",
 	.kind = CBL_YN_LIST,
@@ -3058,17 +3455,17 @@ static const struct cbl_ynode n58 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor),
 	.nmap = 5,
 	.nchild = 5,
-	.child = n58_c,
+	.child = n80_c,
 	.nkeys = 1,
-	.keys = n58_k,
-	.module = &m13,
+	.keys = n80_k,
+	.module = &m15,
 };
 
-static const uint16_t n64_p[] = {
+static const uint16_t n86_p[] = {
 	1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 9,
 	10, 11
 };
-static const struct cbl_ynode n65 = {
+static const struct cbl_ynode n87 = {
 	.sid = UINT64_C(61621),
 	.name = "cur-hop-limit",
 	.kind = CBL_YN_LEAF,
@@ -3076,10 +3473,10 @@ static const struct cbl_ynode n65 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements, cur_hop_limit),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_cur_hop_limit),
 	.type = &t24,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n66 = {
+static const struct cbl_ynode n88 = {
 	.sid = UINT64_C(61622),
 	.name = "default-lifetime",
 	.kind = CBL_YN_LEAF,
@@ -3088,11 +3485,11 @@ static const struct cbl_ynode n66 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_default_lifetime),
 	.type = &t25,
 	.units = "seconds",
-	.module = &m17,
+	.module = &m19,
 };
 
-static const char *const n67_d[] = { "0" };
-static const struct cbl_ynode n67 = {
+static const char *const n89_d[] = { "0" };
+static const struct cbl_ynode n89 = {
 	.sid = UINT64_C(61623),
 	.name = "link-mtu",
 	.kind = CBL_YN_LEAF,
@@ -3101,12 +3498,12 @@ static const struct cbl_ynode n67 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_link_mtu),
 	.type = &t10,
 	.ndflt = 1,
-	.dflt = n67_d,
-	.module = &m17,
+	.dflt = n89_d,
+	.module = &m19,
 };
 
-static const char *const n68_d[] = { "false" };
-static const struct cbl_ynode n68 = {
+static const char *const n90_d[] = { "false" };
+static const struct cbl_ynode n90 = {
 	.sid = UINT64_C(61624),
 	.name = "managed-flag",
 	.kind = CBL_YN_LEAF,
@@ -3115,12 +3512,12 @@ static const struct cbl_ynode n68 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_managed_flag),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n68_d,
-	.module = &m17,
+	.dflt = n90_d,
+	.module = &m19,
 };
 
-static const char *const n69_d[] = { "600" };
-static const struct cbl_ynode n69 = {
+static const char *const n91_d[] = { "600" };
+static const struct cbl_ynode n91 = {
 	.sid = UINT64_C(61625),
 	.name = "max-rtr-adv-interval",
 	.kind = CBL_YN_LEAF,
@@ -3129,15 +3526,15 @@ static const struct cbl_ynode n69 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_max_rtr_adv_interval),
 	.type = &t26,
 	.ndflt = 1,
-	.dflt = n69_d,
+	.dflt = n91_d,
 	.units = "seconds",
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ymust n70_m[] = {
-	{ 2, NULL, NULL },
+static const struct cbl_ymust n92_m[] = {
+	{ 3, NULL, NULL },
 };
-static const struct cbl_ynode n70 = {
+static const struct cbl_ynode n92 = {
 	.sid = UINT64_C(61626),
 	.name = "min-rtr-adv-interval",
 	.kind = CBL_YN_LEAF,
@@ -3146,13 +3543,13 @@ static const struct cbl_ynode n70 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_min_rtr_adv_interval),
 	.type = &t27,
 	.nmust = 1,
-	.must = n70_m,
+	.must = n92_m,
 	.units = "seconds",
-	.module = &m17,
+	.module = &m19,
 };
 
-static const char *const n71_d[] = { "false" };
-static const struct cbl_ynode n71 = {
+static const char *const n93_d[] = { "false" };
+static const struct cbl_ynode n93 = {
 	.sid = UINT64_C(61627),
 	.name = "other-config-flag",
 	.kind = CBL_YN_LEAF,
@@ -3161,11 +3558,11 @@ static const struct cbl_ynode n71 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_other_config_flag),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n71_d,
-	.module = &m17,
+	.dflt = n93_d,
+	.module = &m19,
 };
 
-static const char *const n74_d[] = { "true" };
+static const char *const n96_d[] = { "true" };
 static const struct cbl_ycase c1_c[] = {
 	{ "no-advertise", NULL, 0 },
 	{ "advertise", NULL, 0 },
@@ -3178,7 +3575,7 @@ static const struct cbl_ychoice c1 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix, control_adv_prefixes),
 };
 
-static const struct cbl_ynode n74 = {
+static const struct cbl_ynode n96 = {
 	.sid = UINT64_C(61630),
 	.name = "autonomous-flag",
 	.kind = CBL_YN_LEAF,
@@ -3187,13 +3584,13 @@ static const struct cbl_ynode n74 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix, has_autonomous_flag),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n74_d,
+	.dflt = n96_d,
 	.choice = &c1,
 	.ccase = 1,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n75 = {
+static const struct cbl_ynode n97 = {
 	.sid = UINT64_C(61631),
 	.name = "no-advertise",
 	.kind = CBL_YN_LEAF,
@@ -3203,11 +3600,11 @@ static const struct cbl_ynode n75 = {
 	.type = &t22,
 	.choice = &c1,
 	.ccase = 0,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const char *const n76_d[] = { "true" };
-static const struct cbl_ynode n76 = {
+static const char *const n98_d[] = { "true" };
+static const struct cbl_ynode n98 = {
 	.sid = UINT64_C(61632),
 	.name = "on-link-flag",
 	.kind = CBL_YN_LEAF,
@@ -3216,17 +3613,17 @@ static const struct cbl_ynode n76 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix, has_on_link_flag),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n76_d,
+	.dflt = n98_d,
 	.choice = &c1,
 	.ccase = 1,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ymust n77_m[] = {
-	{ 3, NULL, NULL },
+static const struct cbl_ymust n99_m[] = {
+	{ 4, NULL, NULL },
 };
-static const char *const n77_d[] = { "604800" };
-static const struct cbl_ynode n77 = {
+static const char *const n99_d[] = { "604800" };
+static const struct cbl_ynode n99 = {
 	.sid = UINT64_C(61633),
 	.name = "preferred-lifetime",
 	.kind = CBL_YN_LEAF,
@@ -3235,16 +3632,16 @@ static const struct cbl_ynode n77 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix, has_preferred_lifetime),
 	.type = &t10,
 	.nmust = 1,
-	.must = n77_m,
+	.must = n99_m,
 	.ndflt = 1,
-	.dflt = n77_d,
+	.dflt = n99_d,
 	.units = "seconds",
 	.choice = &c1,
 	.ccase = 1,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n78 = {
+static const struct cbl_ynode n100 = {
 	.sid = UINT64_C(61634),
 	.name = "prefix-spec",
 	.kind = CBL_YN_LEAF,
@@ -3252,11 +3649,11 @@ static const struct cbl_ynode n78 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix, prefix_spec),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t28,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const char *const n79_d[] = { "2592000" };
-static const struct cbl_ynode n79 = {
+static const char *const n101_d[] = { "2592000" };
+static const struct cbl_ynode n101 = {
 	.sid = UINT64_C(61635),
 	.name = "valid-lifetime",
 	.kind = CBL_YN_LEAF,
@@ -3265,18 +3662,18 @@ static const struct cbl_ynode n79 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix, has_valid_lifetime),
 	.type = &t10,
 	.ndflt = 1,
-	.dflt = n79_d,
+	.dflt = n101_d,
 	.units = "seconds",
 	.choice = &c1,
 	.ccase = 1,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n73_c[] = {
-	&n74, &n75, &n76, &n77, &n78, &n79
+static const struct cbl_ynode *const n95_c[] = {
+	&n96, &n97, &n98, &n99, &n100, &n101
 };
-static const uint32_t n73_k[] = { 4 };
-static const struct cbl_ynode n73 = {
+static const uint32_t n95_k[] = { 4 };
+static const struct cbl_ynode n95 = {
 	.sid = UINT64_C(61629),
 	.name = "prefix",
 	.kind = CBL_YN_LIST,
@@ -3286,16 +3683,16 @@ static const struct cbl_ynode n73 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix),
 	.nmap = 6,
 	.nchild = 6,
-	.child = n73_c,
+	.child = n95_c,
 	.nkeys = 1,
-	.keys = n73_k,
-	.module = &m17,
+	.keys = n95_k,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n72_c[] = {
-	&n73
+static const struct cbl_ynode *const n94_c[] = {
+	&n95
 };
-static const struct cbl_ynode n72 = {
+static const struct cbl_ynode n94 = {
 	.sid = UINT64_C(61628),
 	.name = "prefix-list",
 	.kind = CBL_YN_CONTAINER,
@@ -3305,12 +3702,12 @@ static const struct cbl_ynode n72 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n72_c,
-	.module = &m17,
+	.child = n94_c,
+	.module = &m19,
 };
 
-static const char *const n80_d[] = { "0" };
-static const struct cbl_ynode n80 = {
+static const char *const n102_d[] = { "0" };
+static const struct cbl_ynode n102 = {
 	.sid = UINT64_C(61636),
 	.name = "reachable-time",
 	.kind = CBL_YN_LEAF,
@@ -3319,13 +3716,13 @@ static const struct cbl_ynode n80 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_reachable_time),
 	.type = &t29,
 	.ndflt = 1,
-	.dflt = n80_d,
+	.dflt = n102_d,
 	.units = "milliseconds",
-	.module = &m17,
+	.module = &m19,
 };
 
-static const char *const n81_d[] = { "0" };
-static const struct cbl_ynode n81 = {
+static const char *const n103_d[] = { "0" };
+static const struct cbl_ynode n103 = {
 	.sid = UINT64_C(61637),
 	.name = "retrans-timer",
 	.kind = CBL_YN_LEAF,
@@ -3334,13 +3731,13 @@ static const struct cbl_ynode n81 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_retrans_timer),
 	.type = &t10,
 	.ndflt = 1,
-	.dflt = n81_d,
+	.dflt = n103_d,
 	.units = "milliseconds",
-	.module = &m17,
+	.module = &m19,
 };
 
-static const char *const n82_d[] = { "false" };
-static const struct cbl_ynode n82 = {
+static const char *const n104_d[] = { "false" };
+static const struct cbl_ynode n104 = {
 	.sid = UINT64_C(61638),
 	.name = "send-advertisements",
 	.kind = CBL_YN_LEAF,
@@ -3349,15 +3746,15 @@ static const struct cbl_ynode n82 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_send_advertisements),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n82_d,
-	.module = &m17,
+	.dflt = n104_d,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n64_c[] = {
-	&n65, &n66, &n67, &n68, &n69, &n70,
-	&n71, &n72, &n80, &n81, &n82
+static const struct cbl_ynode *const n86_c[] = {
+	&n87, &n88, &n89, &n90, &n91, &n92,
+	&n93, &n94, &n102, &n103, &n104
 };
-static const struct cbl_ynode n64 = {
+static const struct cbl_ynode n86 = {
 	.sid = UINT64_C(61620),
 	.name = "ipv6-router-advertisements",
 	.kind = CBL_YN_CONTAINER,
@@ -3366,13 +3763,13 @@ static const struct cbl_ynode n64 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements),
 	.nmap = 18,
-	.map = n64_p,
+	.map = n86_p,
 	.nchild = 11,
-	.child = n64_c,
-	.module = &m17,
+	.child = n86_c,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n83 = {
+static const struct cbl_ynode n105 = {
 	.sid = UINT64_C(61802),
 	.name = "bind-ni-name",
 	.kind = CBL_YN_LEAF,
@@ -3380,14 +3777,14 @@ static const struct cbl_ynode n83 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6, ni_bind_ni_name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t17,
-	.module = &m43,
+	.module = &m45,
 };
 
-static const struct cbl_ynode *const n43_c[] = {
-	&n44, &n49, &n54, &n55, &n56, &n57,
-	&n58, &n64, &n83
+static const struct cbl_ynode *const n65_c[] = {
+	&n66, &n71, &n76, &n77, &n78, &n79,
+	&n80, &n86, &n105
 };
-static const struct cbl_ynode n43 = {
+static const struct cbl_ynode n65 = {
 	.sid = UINT64_C(1642),
 	.name = "ipv6",
 	.kind = CBL_YN_CONTAINER,
@@ -3396,13 +3793,13 @@ static const struct cbl_ynode n43 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_ip_ipv6),
 	.nmap = 15,
-	.map = n43_p,
+	.map = n65_p,
 	.nchild = 9,
-	.child = n43_c,
-	.module = &m13,
+	.child = n65_c,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n86 = {
+static const struct cbl_ynode n108 = {
 	.sid = UINT64_C(61003),
 	.name = "flags",
 	.kind = CBL_YN_LEAF,
@@ -3413,7 +3810,7 @@ static const struct cbl_ynode n86 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n87 = {
+static const struct cbl_ynode n109 = {
 	.sid = UINT64_C(61004),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -3424,7 +3821,7 @@ static const struct cbl_ynode n87 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n88 = {
+static const struct cbl_ynode n110 = {
 	.sid = UINT64_C(61005),
 	.name = "path-cost",
 	.kind = CBL_YN_LEAF,
@@ -3435,7 +3832,7 @@ static const struct cbl_ynode n88 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n89 = {
+static const struct cbl_ynode n111 = {
 	.sid = UINT64_C(61006),
 	.name = "port-number",
 	.kind = CBL_YN_LEAF,
@@ -3445,7 +3842,7 @@ static const struct cbl_ynode n89 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n90 = {
+static const struct cbl_ynode n112 = {
 	.sid = UINT64_C(61007),
 	.name = "priority",
 	.kind = CBL_YN_LEAF,
@@ -3456,7 +3853,7 @@ static const struct cbl_ynode n90 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n91 = {
+static const struct cbl_ynode n113 = {
 	.sid = UINT64_C(61008),
 	.name = "stp-role",
 	.kind = CBL_YN_LEAF,
@@ -3466,7 +3863,7 @@ static const struct cbl_ynode n91 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n92 = {
+static const struct cbl_ynode n114 = {
 	.sid = UINT64_C(61009),
 	.name = "stp-state",
 	.kind = CBL_YN_LEAF,
@@ -3476,12 +3873,12 @@ static const struct cbl_ynode n92 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode *const n85_c[] = {
-	&n86, &n87, &n88, &n89, &n90, &n91,
-	&n92
+static const struct cbl_ynode *const n107_c[] = {
+	&n108, &n109, &n110, &n111, &n112, &n113,
+	&n114
 };
-static const uint32_t n85_k[] = { 1 };
-static const struct cbl_ynode n85 = {
+static const uint32_t n107_k[] = { 1 };
+static const struct cbl_ynode n107 = {
 	.sid = UINT64_C(61002),
 	.name = "member",
 	.kind = CBL_YN_LIST,
@@ -3491,19 +3888,19 @@ static const struct cbl_ynode n85 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member),
 	.nmap = 7,
 	.nchild = 7,
-	.child = n85_c,
+	.child = n107_c,
 	.nkeys = 1,
-	.keys = n85_k,
+	.keys = n107_k,
 	.module = &m11,
 };
 
-static const struct cbl_ynode *const n84_c[] = {
-	&n85
+static const struct cbl_ynode *const n106_c[] = {
+	&n107
 };
-static const struct cbl_ywhen n84_w[] = {
-	{ 4, CBL_YWC_SELF },
+static const struct cbl_ywhen n106_w[] = {
+	{ 5, CBL_YWC_SELF },
 };
-static const struct cbl_ynode n84 = {
+static const struct cbl_ynode n106 = {
 	.sid = UINT64_C(61001),
 	.name = "bridge",
 	.kind = CBL_YN_CONTAINER,
@@ -3513,13 +3910,13 @@ static const struct cbl_ynode n84 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_bridge),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n84_c,
+	.child = n106_c,
 	.nwhen = 1,
-	.when = n84_w,
+	.when = n106_w,
 	.module = &m11,
 };
 
-static const struct cbl_ynode n93 = {
+static const struct cbl_ynode n115 = {
 	.sid = UINT64_C(61010),
 	.name = "capabilities",
 	.kind = CBL_YN_LEAF,
@@ -3530,7 +3927,7 @@ static const struct cbl_ynode n93 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n94 = {
+static const struct cbl_ynode n116 = {
 	.sid = UINT64_C(61011),
 	.name = "capabilities-supported",
 	.kind = CBL_YN_LEAF,
@@ -3540,7 +3937,7 @@ static const struct cbl_ynode n94 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n95 = {
+static const struct cbl_ynode n117 = {
 	.sid = UINT64_C(61012),
 	.name = "driver-name",
 	.kind = CBL_YN_LEAF,
@@ -3550,108 +3947,39 @@ static const struct cbl_ynode n95 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n97 = {
-	.sid = UINT64_C(61014),
-	.name = "peer",
-	.kind = CBL_YN_LEAF,
-	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_epair, peer),
-	.hoff = CBL_YOFF_NONE,
-	.type = &t3,
-	.module = &m11,
-};
-
-static const struct cbl_ynode n98 = {
-	.sid = UINT64_C(61015),
-	.name = "peer-vnet",
-	.kind = CBL_YN_LEAF,
-	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_epair, peer_vnet),
-	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_epair, has_peer_vnet),
-	.type = &t2,
-	.module = &m11,
-};
-
-static const struct cbl_ynode *const n96_c[] = {
-	&n97, &n98
-};
-static const struct cbl_ynode n96 = {
-	.sid = UINT64_C(61013),
-	.name = "epair",
-	.kind = CBL_YN_CONTAINER,
-	.flags = 0x8,
-	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_epair),
-	.hoff = CBL_YOFF_NONE,
-	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_epair),
-	.nmap = 2,
-	.nchild = 2,
-	.child = n96_c,
-	.module = &m11,
-};
-
-static const struct cbl_ynode n99 = {
-	.sid = UINT64_C(61016),
-	.name = "ether",
-	.kind = CBL_YN_LEAF,
-	.flags = 0x1,
-	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_ether),
-	.hoff = CBL_YOFF_NONE,
-	.type = &t34,
-	.module = &m11,
-};
-
-static const struct cbl_ynode n100 = {
-	.sid = UINT64_C(61017),
-	.name = "fib",
-	.kind = CBL_YN_LEAF,
-	.flags = 0x1,
-	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_fib),
-	.hoff = offsetof(struct ietf_interfaces_interfaces_interface, has_arcif_fib),
-	.type = &t10,
-	.module = &m11,
-};
-
-static const struct cbl_ynode n101 = {
+static const struct cbl_ynode n118 = {
 	.sid = UINT64_C(61018),
 	.name = "group",
 	.kind = CBL_YN_LEAFLIST,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_group),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t35,
-	.module = &m11,
-};
-
-static const struct cbl_ynode n102 = {
-	.sid = UINT64_C(61019),
-	.name = "hw-address",
-	.kind = CBL_YN_LEAF,
-	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_hw_address),
-	.hoff = CBL_YOFF_NONE,
 	.type = &t34,
 	.module = &m11,
 };
 
-static const struct cbl_ynode n104 = {
+static const struct cbl_ynode n120 = {
 	.sid = UINT64_C(61021),
 	.name = "hash",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg, hash),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t36,
+	.type = &t35,
 	.module = &m11,
 };
 
-static const struct cbl_ynode n106 = {
+static const struct cbl_ynode n122 = {
 	.sid = UINT64_C(61023),
 	.name = "flags",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg_port, flags),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t37,
+	.type = &t36,
 	.module = &m11,
 };
 
-static const struct cbl_ynode n107 = {
+static const struct cbl_ynode n123 = {
 	.sid = UINT64_C(61024),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -3662,7 +3990,7 @@ static const struct cbl_ynode n107 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n108 = {
+static const struct cbl_ynode n124 = {
 	.sid = UINT64_C(61025),
 	.name = "priority",
 	.kind = CBL_YN_LEAF,
@@ -3672,11 +4000,11 @@ static const struct cbl_ynode n108 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode *const n105_c[] = {
-	&n106, &n107, &n108
+static const struct cbl_ynode *const n121_c[] = {
+	&n122, &n123, &n124
 };
-static const uint32_t n105_k[] = { 1 };
-static const struct cbl_ynode n105 = {
+static const uint32_t n121_k[] = { 1 };
+static const struct cbl_ynode n121 = {
 	.sid = UINT64_C(61022),
 	.name = "port",
 	.kind = CBL_YN_LIST,
@@ -3686,30 +4014,30 @@ static const struct cbl_ynode n105 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_lagg_port),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n105_c,
+	.child = n121_c,
 	.nkeys = 1,
-	.keys = n105_k,
+	.keys = n121_k,
 	.module = &m11,
 };
 
-static const struct cbl_ynode n109 = {
+static const struct cbl_ynode n125 = {
 	.sid = UINT64_C(61026),
 	.name = "protocol",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg, protocol),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg, has_protocol),
-	.type = &t38,
+	.type = &t37,
 	.module = &m11,
 };
 
-static const struct cbl_ynode *const n103_c[] = {
-	&n104, &n105, &n109
+static const struct cbl_ynode *const n119_c[] = {
+	&n120, &n121, &n125
 };
-static const struct cbl_ywhen n103_w[] = {
-	{ 5, CBL_YWC_SELF },
+static const struct cbl_ywhen n119_w[] = {
+	{ 6, CBL_YWC_SELF },
 };
-static const struct cbl_ynode n103 = {
+static const struct cbl_ynode n119 = {
 	.sid = UINT64_C(61020),
 	.name = "lagg",
 	.kind = CBL_YN_CONTAINER,
@@ -3718,16 +4046,16 @@ static const struct cbl_ynode n103 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_lagg),
 	.nchild = 3,
-	.child = n103_c,
+	.child = n119_c,
 	.nwhen = 1,
-	.when = n103_w,
+	.when = n119_w,
 	.module = &m11,
 };
 
-static const uint16_t n110_p[] = {
+static const uint16_t n126_p[] = {
 	1, 0, 0, 0, 2, 0, 0, 0, 3, 4, 5
 };
-static const struct cbl_ynode n112 = {
+static const struct cbl_ynode n128 = {
 	.sid = UINT64_C(61029),
 	.name = "mode",
 	.kind = CBL_YN_LEAF,
@@ -3737,7 +4065,7 @@ static const struct cbl_ynode n112 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n113 = {
+static const struct cbl_ynode n129 = {
 	.sid = UINT64_C(61030),
 	.name = "option",
 	.kind = CBL_YN_LEAFLIST,
@@ -3748,7 +4076,7 @@ static const struct cbl_ynode n113 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n114 = {
+static const struct cbl_ynode n130 = {
 	.sid = UINT64_C(61031),
 	.name = "subtype",
 	.kind = CBL_YN_LEAF,
@@ -3758,10 +4086,10 @@ static const struct cbl_ynode n114 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode *const n111_c[] = {
-	&n112, &n113, &n114
+static const struct cbl_ynode *const n127_c[] = {
+	&n128, &n129, &n130
 };
-static const struct cbl_ynode n111 = {
+static const struct cbl_ynode n127 = {
 	.sid = UINT64_C(61028),
 	.name = "active",
 	.kind = CBL_YN_CONTAINER,
@@ -3770,11 +4098,11 @@ static const struct cbl_ynode n111 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_media_active),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n111_c,
+	.child = n127_c,
 	.module = &m11,
 };
 
-static const struct cbl_ynode n116 = {
+static const struct cbl_ynode n132 = {
 	.sid = UINT64_C(61033),
 	.name = "mode",
 	.kind = CBL_YN_LEAF,
@@ -3785,7 +4113,7 @@ static const struct cbl_ynode n116 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n117 = {
+static const struct cbl_ynode n133 = {
 	.sid = UINT64_C(61034),
 	.name = "option",
 	.kind = CBL_YN_LEAFLIST,
@@ -3796,7 +4124,7 @@ static const struct cbl_ynode n117 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n118 = {
+static const struct cbl_ynode n134 = {
 	.sid = UINT64_C(61035),
 	.name = "subtype",
 	.kind = CBL_YN_LEAF,
@@ -3807,10 +4135,10 @@ static const struct cbl_ynode n118 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode *const n115_c[] = {
-	&n116, &n117, &n118
+static const struct cbl_ynode *const n131_c[] = {
+	&n132, &n133, &n134
 };
-static const struct cbl_ynode n115 = {
+static const struct cbl_ynode n131 = {
 	.sid = UINT64_C(61032),
 	.name = "current",
 	.kind = CBL_YN_CONTAINER,
@@ -3820,21 +4148,21 @@ static const struct cbl_ynode n115 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_media_current),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n115_c,
+	.child = n131_c,
 	.module = &m11,
 };
 
-static const struct cbl_ynode n119 = {
+static const struct cbl_ynode n135 = {
 	.sid = UINT64_C(61036),
 	.name = "status",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, status),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, has_status),
-	.type = &t39,
+	.type = &t38,
 	.module = &m11,
 };
 
-static const struct cbl_ynode n120 = {
+static const struct cbl_ynode n136 = {
 	.sid = UINT64_C(61037),
 	.name = "supported",
 	.kind = CBL_YN_LEAFLIST,
@@ -3845,20 +4173,20 @@ static const struct cbl_ynode n120 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n121 = {
+static const struct cbl_ynode n137 = {
 	.sid = UINT64_C(61038),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, type),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, has_type),
-	.type = &t40,
+	.type = &t39,
 	.module = &m11,
 };
 
-static const struct cbl_ynode *const n110_c[] = {
-	&n111, &n115, &n119, &n120, &n121
+static const struct cbl_ynode *const n126_c[] = {
+	&n127, &n131, &n135, &n136, &n137
 };
-static const struct cbl_ynode n110 = {
+static const struct cbl_ynode n126 = {
 	.sid = UINT64_C(61027),
 	.name = "media",
 	.kind = CBL_YN_CONTAINER,
@@ -3867,24 +4195,13 @@ static const struct cbl_ynode n110 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_media),
 	.nmap = 11,
-	.map = n110_p,
+	.map = n126_p,
 	.nchild = 5,
-	.child = n110_c,
+	.child = n126_c,
 	.module = &m11,
 };
 
-static const struct cbl_ynode n122 = {
-	.sid = UINT64_C(61039),
-	.name = "mtu",
-	.kind = CBL_YN_LEAF,
-	.flags = 0x1,
-	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_mtu),
-	.hoff = offsetof(struct ietf_interfaces_interfaces_interface, has_arcif_mtu),
-	.type = &t10,
-	.module = &m11,
-};
-
-static const struct cbl_ynode n123 = {
+static const struct cbl_ynode n138 = {
 	.sid = UINT64_C(61040),
 	.name = "tunnel-fib",
 	.kind = CBL_YN_LEAF,
@@ -3895,7 +4212,7 @@ static const struct cbl_ynode n123 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n125 = {
+static const struct cbl_ynode n140 = {
 	.sid = UINT64_C(61042),
 	.name = "parent",
 	.kind = CBL_YN_LEAF,
@@ -3906,46 +4223,46 @@ static const struct cbl_ynode n125 = {
 	.module = &m11,
 };
 
-static const struct cbl_ynode n126 = {
+static const struct cbl_ynode n141 = {
 	.sid = UINT64_C(61043),
 	.name = "pcp",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_vlan, pcp),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_vlan, has_pcp),
-	.type = &t41,
+	.type = &t40,
 	.module = &m11,
 };
 
-static const struct cbl_ynode n127 = {
+static const struct cbl_ynode n142 = {
 	.sid = UINT64_C(61044),
 	.name = "protocol",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_vlan, protocol),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_vlan, has_protocol),
-	.type = &t42,
+	.type = &t41,
 	.module = &m11,
 };
 
-static const struct cbl_ynode n128 = {
+static const struct cbl_ynode n143 = {
 	.sid = UINT64_C(61045),
 	.name = "vlan-id",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_vlan, vlan_id),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_vlan, has_vlan_id),
-	.type = &t43,
+	.type = &t42,
 	.module = &m11,
 };
 
-static const struct cbl_ynode *const n124_c[] = {
-	&n125, &n126, &n127, &n128
+static const struct cbl_ynode *const n139_c[] = {
+	&n140, &n141, &n142, &n143
 };
-static const struct cbl_ywhen n124_w[] = {
-	{ 6, CBL_YWC_SELF },
+static const struct cbl_ywhen n139_w[] = {
+	{ 7, CBL_YWC_SELF },
 };
-static const struct cbl_ynode n124 = {
+static const struct cbl_ynode n139 = {
 	.sid = UINT64_C(61041),
 	.name = "vlan",
 	.kind = CBL_YN_CONTAINER,
@@ -3955,13 +4272,23 @@ static const struct cbl_ynode n124 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_vlan),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n124_c,
+	.child = n139_c,
 	.nwhen = 1,
-	.when = n124_w,
+	.when = n139_w,
 	.module = &m11,
 };
 
-static const struct cbl_ynode n129 = {
+static const struct cbl_ynode n144 = {
+	.sid = UINT64_C(61046),
+	.name = "peer-vnet",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_peer_vnet),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface, has_arcif_peer_vnet),
+	.type = &t2,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n145 = {
 	.sid = UINT64_C(61803),
 	.name = "bind-ni-name",
 	.kind = CBL_YN_LEAF,
@@ -3969,27 +4296,118 @@ static const struct cbl_ynode n129 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_interface, ni_bind_ni_name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t17,
-	.module = &m43,
+	.module = &m45,
 };
 
-static const struct cbl_ynode n130 = {
+static const struct cbl_ynode n146 = {
 	.sid = UINT64_C(62001),
 	.name = "bind-lne-name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface, lne_bind_lne_name),
 	.hoff = CBL_YOFF_NONE,
+	.type = &t43,
+	.module = &m47,
+};
+
+static const struct cbl_ywhen n147_w[] = {
+	{ 9, CBL_YWC_SELF },
+};
+static const struct cbl_ynode n147 = {
+	.sid = UINT64_C(68323),
+	.name = "encapsulation",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, if_ext_encapsulation),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_interfaces_interfaces_interface_if_ext_encapsulation),
+	.nwhen = 1,
+	.when = n147_w,
+	.module = &m13,
+};
+
+static const struct cbl_ynode n148 = {
+	.sid = UINT64_C(68324),
+	.name = "forwarding-mode",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, if_ext_forwarding_mode),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface, has_if_ext_forwarding_mode),
 	.type = &t44,
-	.module = &m45,
+	.module = &m13,
+};
+
+static const struct cbl_ynode n149 = {
+	.sid = UINT64_C(68331),
+	.name = "max-frame-size",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, if_ext_max_frame_size),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface, has_if_ext_max_frame_size),
+	.type = &t45,
+	.module = &m13,
+};
+
+static const struct cbl_ynode n150 = {
+	.sid = UINT64_C(68333),
+	.name = "peer-interface",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, if_ext_peer_interface),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t3,
+	.module = &m13,
+};
+
+static const struct cbl_ynode n152 = {
+	.sid = UINT64_C(68403),
+	.name = "bia-mac-address",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like, bia_mac_address),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t46,
+	.module = &m14,
+};
+
+static const struct cbl_ynode n153 = {
+	.sid = UINT64_C(68404),
+	.name = "mac-address",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like, mac_address),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t46,
+	.module = &m14,
+};
+
+static const struct cbl_ynode *const n151_c[] = {
+	&n152, &n153
+};
+static const struct cbl_ywhen n151_w[] = {
+	{ 10, CBL_YWC_PARENT },
+};
+static const struct cbl_ynode n151 = {
+	.sid = UINT64_C(68402),
+	.name = "ethernet-like",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, ethlike_ethernet_like),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n151_c,
+	.nwhen = 1,
+	.when = n151_w,
+	.module = &m14,
 };
 
 static const struct cbl_ynode *const n1_c[] = {
 	&n2, &n3, &n4, &n5, &n6, &n7,
 	&n8, &n9, &n10, &n11, &n12, &n13,
-	&n14, &n29, &n30, &n43, &n84, &n93,
-	&n94, &n95, &n96, &n99, &n100, &n101,
-	&n102, &n103, &n110, &n122, &n123, &n124,
-	&n129, &n130
+	&n14, &n51, &n52, &n65, &n106, &n115,
+	&n116, &n117, &n118, &n119, &n126, &n138,
+	&n139, &n144, &n145, &n146, &n147, &n148,
+	&n149, &n150, &n151
 };
 static const uint32_t n1_k[] = { 8 };
 static const struct cbl_ynode n1 = {
@@ -4002,7 +4420,7 @@ static const struct cbl_ynode n1 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface),
 	.nmap = 109,
 	.map = n1_p,
-	.nchild = 32,
+	.nchild = 33,
 	.child = n1_c,
 	.nkeys = 1,
 	.keys = n1_k,
@@ -4026,7 +4444,7 @@ static const struct cbl_ynode n0 = {
 	.module = &m10,
 };
 
-static const uint16_t n132_p[] = {
+static const uint16_t n155_p[] = {
 	1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -4035,7 +4453,7 @@ static const uint16_t n132_p[] = {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13
 };
-static const struct cbl_ynode n133 = {
+static const struct cbl_ynode n156 = {
 	.sid = UINT64_C(1508),
 	.name = "admin-status",
 	.kind = CBL_YN_LEAF,
@@ -4046,18 +4464,18 @@ static const struct cbl_ynode n133 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n134 = {
+static const struct cbl_ynode n157 = {
 	.sid = UINT64_C(1509),
 	.name = "higher-layer-if",
 	.kind = CBL_YN_LEAFLIST,
 	.flags = 0x30,
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface, higher_layer_if),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t45,
+	.type = &t47,
 	.module = &m10,
 };
 
-static const struct cbl_ynode n135 = {
+static const struct cbl_ynode n158 = {
 	.sid = UINT64_C(1510),
 	.name = "if-index",
 	.kind = CBL_YN_LEAF,
@@ -4068,7 +4486,7 @@ static const struct cbl_ynode n135 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n136 = {
+static const struct cbl_ynode n159 = {
 	.sid = UINT64_C(1511),
 	.name = "last-change",
 	.kind = CBL_YN_LEAF,
@@ -4079,18 +4497,18 @@ static const struct cbl_ynode n136 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n137 = {
+static const struct cbl_ynode n160 = {
 	.sid = UINT64_C(1512),
 	.name = "lower-layer-if",
 	.kind = CBL_YN_LEAFLIST,
 	.flags = 0x30,
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface, lower_layer_if),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t45,
+	.type = &t47,
 	.module = &m10,
 };
 
-static const struct cbl_ynode n138 = {
+static const struct cbl_ynode n161 = {
 	.sid = UINT64_C(1513),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -4101,7 +4519,7 @@ static const struct cbl_ynode n138 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n139 = {
+static const struct cbl_ynode n162 = {
 	.sid = UINT64_C(1514),
 	.name = "oper-status",
 	.kind = CBL_YN_LEAF,
@@ -4112,7 +4530,7 @@ static const struct cbl_ynode n139 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n140 = {
+static const struct cbl_ynode n163 = {
 	.sid = UINT64_C(1515),
 	.name = "phys-address",
 	.kind = CBL_YN_LEAF,
@@ -4123,7 +4541,7 @@ static const struct cbl_ynode n140 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n141 = {
+static const struct cbl_ynode n164 = {
 	.sid = UINT64_C(1516),
 	.name = "speed",
 	.kind = CBL_YN_LEAF,
@@ -4135,7 +4553,7 @@ static const struct cbl_ynode n141 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n143 = {
+static const struct cbl_ynode n166 = {
 	.sid = UINT64_C(1518),
 	.name = "discontinuity-time",
 	.kind = CBL_YN_LEAF,
@@ -4146,7 +4564,7 @@ static const struct cbl_ynode n143 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n144 = {
+static const struct cbl_ynode n167 = {
 	.sid = UINT64_C(1519),
 	.name = "in-broadcast-pkts",
 	.kind = CBL_YN_LEAF,
@@ -4157,7 +4575,7 @@ static const struct cbl_ynode n144 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n145 = {
+static const struct cbl_ynode n168 = {
 	.sid = UINT64_C(1520),
 	.name = "in-discards",
 	.kind = CBL_YN_LEAF,
@@ -4168,7 +4586,7 @@ static const struct cbl_ynode n145 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n146 = {
+static const struct cbl_ynode n169 = {
 	.sid = UINT64_C(1521),
 	.name = "in-errors",
 	.kind = CBL_YN_LEAF,
@@ -4179,7 +4597,7 @@ static const struct cbl_ynode n146 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n147 = {
+static const struct cbl_ynode n170 = {
 	.sid = UINT64_C(1522),
 	.name = "in-multicast-pkts",
 	.kind = CBL_YN_LEAF,
@@ -4190,7 +4608,7 @@ static const struct cbl_ynode n147 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n148 = {
+static const struct cbl_ynode n171 = {
 	.sid = UINT64_C(1523),
 	.name = "in-octets",
 	.kind = CBL_YN_LEAF,
@@ -4201,7 +4619,7 @@ static const struct cbl_ynode n148 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n149 = {
+static const struct cbl_ynode n172 = {
 	.sid = UINT64_C(1524),
 	.name = "in-unicast-pkts",
 	.kind = CBL_YN_LEAF,
@@ -4212,7 +4630,7 @@ static const struct cbl_ynode n149 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n150 = {
+static const struct cbl_ynode n173 = {
 	.sid = UINT64_C(1525),
 	.name = "in-unknown-protos",
 	.kind = CBL_YN_LEAF,
@@ -4223,7 +4641,7 @@ static const struct cbl_ynode n150 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n151 = {
+static const struct cbl_ynode n174 = {
 	.sid = UINT64_C(1526),
 	.name = "out-broadcast-pkts",
 	.kind = CBL_YN_LEAF,
@@ -4234,7 +4652,7 @@ static const struct cbl_ynode n151 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n152 = {
+static const struct cbl_ynode n175 = {
 	.sid = UINT64_C(1527),
 	.name = "out-discards",
 	.kind = CBL_YN_LEAF,
@@ -4245,7 +4663,7 @@ static const struct cbl_ynode n152 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n153 = {
+static const struct cbl_ynode n176 = {
 	.sid = UINT64_C(1528),
 	.name = "out-errors",
 	.kind = CBL_YN_LEAF,
@@ -4256,7 +4674,7 @@ static const struct cbl_ynode n153 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n154 = {
+static const struct cbl_ynode n177 = {
 	.sid = UINT64_C(1529),
 	.name = "out-multicast-pkts",
 	.kind = CBL_YN_LEAF,
@@ -4267,7 +4685,7 @@ static const struct cbl_ynode n154 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n155 = {
+static const struct cbl_ynode n178 = {
 	.sid = UINT64_C(1530),
 	.name = "out-octets",
 	.kind = CBL_YN_LEAF,
@@ -4278,7 +4696,7 @@ static const struct cbl_ynode n155 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n156 = {
+static const struct cbl_ynode n179 = {
 	.sid = UINT64_C(1531),
 	.name = "out-unicast-pkts",
 	.kind = CBL_YN_LEAF,
@@ -4289,12 +4707,12 @@ static const struct cbl_ynode n156 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode *const n142_c[] = {
-	&n143, &n144, &n145, &n146, &n147, &n148,
-	&n149, &n150, &n151, &n152, &n153, &n154,
-	&n155, &n156
+static const struct cbl_ynode *const n165_c[] = {
+	&n166, &n167, &n168, &n169, &n170, &n171,
+	&n172, &n173, &n174, &n175, &n176, &n177,
+	&n178, &n179
 };
-static const struct cbl_ynode n142 = {
+static const struct cbl_ynode n165 = {
 	.sid = UINT64_C(1517),
 	.name = "statistics",
 	.kind = CBL_YN_CONTAINER,
@@ -4304,11 +4722,11 @@ static const struct cbl_ynode n142 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_state_interface_statistics),
 	.nmap = 14,
 	.nchild = 14,
-	.child = n142_c,
+	.child = n165_c,
 	.module = &m10,
 };
 
-static const struct cbl_ynode n157 = {
+static const struct cbl_ynode n180 = {
 	.sid = UINT64_C(1532),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
@@ -4319,10 +4737,10 @@ static const struct cbl_ynode n157 = {
 	.module = &m10,
 };
 
-static const uint16_t n158_p[] = {
+static const uint16_t n181_p[] = {
 	1, 0, 0, 0, 0, 2, 3, 4
 };
-static const struct cbl_ynode n160 = {
+static const struct cbl_ynode n183 = {
 	.sid = UINT64_C(1605),
 	.name = "ip",
 	.kind = CBL_YN_LEAF,
@@ -4330,10 +4748,10 @@ static const struct cbl_ynode n160 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4_address, ip),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t12,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n161 = {
+static const struct cbl_ynode n184 = {
 	.sid = UINT64_C(1607),
 	.name = "origin",
 	.kind = CBL_YN_LEAF,
@@ -4341,7 +4759,7 @@ static const struct cbl_ynode n161 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4_address, origin),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4_address, has_origin),
 	.type = &t13,
-	.module = &m13,
+	.module = &m15,
 };
 
 static const struct cbl_ycase c2_c[] = {
@@ -4356,7 +4774,7 @@ static const struct cbl_ychoice c2 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4_address, subnet),
 };
 
-static const struct cbl_ynode n162 = {
+static const struct cbl_ynode n185 = {
 	.sid = UINT64_C(1608),
 	.name = "prefix-length",
 	.kind = CBL_YN_LEAF,
@@ -4366,14 +4784,14 @@ static const struct cbl_ynode n162 = {
 	.type = &t14,
 	.choice = &c2,
 	.ccase = 0,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode *const n159_c[] = {
-	&n160, &n161, &n162
+static const struct cbl_ynode *const n182_c[] = {
+	&n183, &n184, &n185
 };
-static const uint32_t n159_k[] = { 0 };
-static const struct cbl_ynode n159 = {
+static const uint32_t n182_k[] = { 0 };
+static const struct cbl_ynode n182 = {
 	.sid = UINT64_C(1604),
 	.name = "address",
 	.kind = CBL_YN_LIST,
@@ -4382,13 +4800,13 @@ static const struct cbl_ynode n159 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4_address),
 	.nchild = 3,
-	.child = n159_c,
+	.child = n182_c,
 	.nkeys = 1,
-	.keys = n159_k,
-	.module = &m13,
+	.keys = n182_k,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n163 = {
+static const struct cbl_ynode n186 = {
 	.sid = UINT64_C(1609),
 	.name = "forwarding",
 	.kind = CBL_YN_LEAF,
@@ -4396,10 +4814,10 @@ static const struct cbl_ynode n163 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4, forwarding),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4, has_forwarding),
 	.type = &t2,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n164 = {
+static const struct cbl_ynode n187 = {
 	.sid = UINT64_C(1610),
 	.name = "mtu",
 	.kind = CBL_YN_LEAF,
@@ -4408,10 +4826,10 @@ static const struct cbl_ynode n164 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4, has_mtu),
 	.type = &t15,
 	.units = "octets",
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n166 = {
+static const struct cbl_ynode n189 = {
 	.sid = UINT64_C(1612),
 	.name = "ip",
 	.kind = CBL_YN_LEAF,
@@ -4419,10 +4837,10 @@ static const struct cbl_ynode n166 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor, ip),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t12,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n167 = {
+static const struct cbl_ynode n190 = {
 	.sid = UINT64_C(1613),
 	.name = "link-layer-address",
 	.kind = CBL_YN_LEAF,
@@ -4430,10 +4848,10 @@ static const struct cbl_ynode n167 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor, link_layer_address),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t8,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n168 = {
+static const struct cbl_ynode n191 = {
 	.sid = UINT64_C(1614),
 	.name = "origin",
 	.kind = CBL_YN_LEAF,
@@ -4441,14 +4859,14 @@ static const struct cbl_ynode n168 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor, origin),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor, has_origin),
 	.type = &t16,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode *const n165_c[] = {
-	&n166, &n167, &n168
+static const struct cbl_ynode *const n188_c[] = {
+	&n189, &n190, &n191
 };
-static const uint32_t n165_k[] = { 0 };
-static const struct cbl_ynode n165 = {
+static const uint32_t n188_k[] = { 0 };
+static const struct cbl_ynode n188 = {
 	.sid = UINT64_C(1611),
 	.name = "neighbor",
 	.kind = CBL_YN_LIST,
@@ -4458,16 +4876,16 @@ static const struct cbl_ynode n165 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n165_c,
+	.child = n188_c,
 	.nkeys = 1,
-	.keys = n165_k,
-	.module = &m13,
+	.keys = n188_k,
+	.module = &m15,
 };
 
-static const struct cbl_ynode *const n158_c[] = {
-	&n159, &n163, &n164, &n165
+static const struct cbl_ynode *const n181_c[] = {
+	&n182, &n186, &n187, &n188
 };
-static const struct cbl_ynode n158 = {
+static const struct cbl_ynode n181 = {
 	.sid = UINT64_C(1603),
 	.name = "ipv4",
 	.kind = CBL_YN_CONTAINER,
@@ -4476,16 +4894,16 @@ static const struct cbl_ynode n158 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_interfaces_interfaces_state_interface_ip_ipv4),
 	.nmap = 8,
-	.map = n158_p,
+	.map = n181_p,
 	.nchild = 4,
-	.child = n158_c,
-	.module = &m13,
+	.child = n181_c,
+	.module = &m15,
 };
 
-static const uint16_t n169_p[] = {
+static const uint16_t n192_p[] = {
 	1, 0, 0, 0, 0, 2, 3, 4
 };
-static const struct cbl_ynode n171 = {
+static const struct cbl_ynode n194 = {
 	.sid = UINT64_C(1617),
 	.name = "ip",
 	.kind = CBL_YN_LEAF,
@@ -4493,10 +4911,10 @@ static const struct cbl_ynode n171 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address, ip),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t18,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n172 = {
+static const struct cbl_ynode n195 = {
 	.sid = UINT64_C(1618),
 	.name = "origin",
 	.kind = CBL_YN_LEAF,
@@ -4504,10 +4922,10 @@ static const struct cbl_ynode n172 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address, origin),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address, has_origin),
 	.type = &t13,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n173 = {
+static const struct cbl_ynode n196 = {
 	.sid = UINT64_C(1619),
 	.name = "prefix-length",
 	.kind = CBL_YN_LEAF,
@@ -4515,10 +4933,10 @@ static const struct cbl_ynode n173 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address, prefix_length),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address, has_prefix_length),
 	.type = &t19,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n174 = {
+static const struct cbl_ynode n197 = {
 	.sid = UINT64_C(1620),
 	.name = "status",
 	.kind = CBL_YN_LEAF,
@@ -4526,14 +4944,14 @@ static const struct cbl_ynode n174 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address, status),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address, has_status),
 	.type = &t20,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode *const n170_c[] = {
-	&n171, &n172, &n173, &n174
+static const struct cbl_ynode *const n193_c[] = {
+	&n194, &n195, &n196, &n197
 };
-static const uint32_t n170_k[] = { 0 };
-static const struct cbl_ynode n170 = {
+static const uint32_t n193_k[] = { 0 };
+static const struct cbl_ynode n193 = {
 	.sid = UINT64_C(1616),
 	.name = "address",
 	.kind = CBL_YN_LIST,
@@ -4543,14 +4961,14 @@ static const struct cbl_ynode n170 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n170_c,
+	.child = n193_c,
 	.nkeys = 1,
-	.keys = n170_k,
-	.module = &m13,
+	.keys = n193_k,
+	.module = &m15,
 };
 
-static const char *const n175_d[] = { "false" };
-static const struct cbl_ynode n175 = {
+static const char *const n198_d[] = { "false" };
+static const struct cbl_ynode n198 = {
 	.sid = UINT64_C(1621),
 	.name = "forwarding",
 	.kind = CBL_YN_LEAF,
@@ -4559,11 +4977,11 @@ static const struct cbl_ynode n175 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6, has_forwarding),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n175_d,
-	.module = &m13,
+	.dflt = n198_d,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n176 = {
+static const struct cbl_ynode n199 = {
 	.sid = UINT64_C(1622),
 	.name = "mtu",
 	.kind = CBL_YN_LEAF,
@@ -4572,10 +4990,10 @@ static const struct cbl_ynode n176 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6, has_mtu),
 	.type = &t21,
 	.units = "octets",
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n178 = {
+static const struct cbl_ynode n201 = {
 	.sid = UINT64_C(1624),
 	.name = "ip",
 	.kind = CBL_YN_LEAF,
@@ -4583,10 +5001,10 @@ static const struct cbl_ynode n178 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor, ip),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t18,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n179 = {
+static const struct cbl_ynode n202 = {
 	.sid = UINT64_C(1625),
 	.name = "is-router",
 	.kind = CBL_YN_LEAF,
@@ -4594,10 +5012,10 @@ static const struct cbl_ynode n179 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor, is_router),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t22,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n180 = {
+static const struct cbl_ynode n203 = {
 	.sid = UINT64_C(1626),
 	.name = "link-layer-address",
 	.kind = CBL_YN_LEAF,
@@ -4605,10 +5023,10 @@ static const struct cbl_ynode n180 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor, link_layer_address),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t8,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n181 = {
+static const struct cbl_ynode n204 = {
 	.sid = UINT64_C(1627),
 	.name = "origin",
 	.kind = CBL_YN_LEAF,
@@ -4616,10 +5034,10 @@ static const struct cbl_ynode n181 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor, origin),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor, has_origin),
 	.type = &t16,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode n182 = {
+static const struct cbl_ynode n205 = {
 	.sid = UINT64_C(1628),
 	.name = "state",
 	.kind = CBL_YN_LEAF,
@@ -4627,14 +5045,14 @@ static const struct cbl_ynode n182 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor, state),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor, has_state),
 	.type = &t23,
-	.module = &m13,
+	.module = &m15,
 };
 
-static const struct cbl_ynode *const n177_c[] = {
-	&n178, &n179, &n180, &n181, &n182
+static const struct cbl_ynode *const n200_c[] = {
+	&n201, &n202, &n203, &n204, &n205
 };
-static const uint32_t n177_k[] = { 0 };
-static const struct cbl_ynode n177 = {
+static const uint32_t n200_k[] = { 0 };
+static const struct cbl_ynode n200 = {
 	.sid = UINT64_C(1623),
 	.name = "neighbor",
 	.kind = CBL_YN_LIST,
@@ -4644,17 +5062,17 @@ static const struct cbl_ynode n177 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor),
 	.nmap = 5,
 	.nchild = 5,
-	.child = n177_c,
+	.child = n200_c,
 	.nkeys = 1,
-	.keys = n177_k,
-	.module = &m13,
+	.keys = n200_k,
+	.module = &m15,
 };
 
-static const uint16_t n183_p[] = {
+static const uint16_t n206_p[] = {
 	1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 9, 10,
 	11
 };
-static const struct cbl_ynode n184 = {
+static const struct cbl_ynode n207 = {
 	.sid = UINT64_C(61603),
 	.name = "cur-hop-limit",
 	.kind = CBL_YN_LEAF,
@@ -4662,22 +5080,22 @@ static const struct cbl_ynode n184 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, cur_hop_limit),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_cur_hop_limit),
 	.type = &t24,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n185 = {
+static const struct cbl_ynode n208 = {
 	.sid = UINT64_C(61604),
 	.name = "default-lifetime",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, default_lifetime),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_default_lifetime),
-	.type = &t46,
+	.type = &t48,
 	.units = "seconds",
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n186 = {
+static const struct cbl_ynode n209 = {
 	.sid = UINT64_C(61605),
 	.name = "link-mtu",
 	.kind = CBL_YN_LEAF,
@@ -4685,10 +5103,10 @@ static const struct cbl_ynode n186 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, link_mtu),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_link_mtu),
 	.type = &t10,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n187 = {
+static const struct cbl_ynode n210 = {
 	.sid = UINT64_C(61606),
 	.name = "managed-flag",
 	.kind = CBL_YN_LEAF,
@@ -4696,22 +5114,22 @@ static const struct cbl_ynode n187 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, managed_flag),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_managed_flag),
 	.type = &t2,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n188 = {
+static const struct cbl_ynode n211 = {
 	.sid = UINT64_C(61607),
 	.name = "max-rtr-adv-interval",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, max_rtr_adv_interval),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_max_rtr_adv_interval),
-	.type = &t47,
+	.type = &t49,
 	.units = "seconds",
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n189 = {
+static const struct cbl_ynode n212 = {
 	.sid = UINT64_C(61608),
 	.name = "min-rtr-adv-interval",
 	.kind = CBL_YN_LEAF,
@@ -4720,10 +5138,10 @@ static const struct cbl_ynode n189 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_min_rtr_adv_interval),
 	.type = &t27,
 	.units = "seconds",
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n190 = {
+static const struct cbl_ynode n213 = {
 	.sid = UINT64_C(61609),
 	.name = "other-config-flag",
 	.kind = CBL_YN_LEAF,
@@ -4731,10 +5149,10 @@ static const struct cbl_ynode n190 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, other_config_flag),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_other_config_flag),
 	.type = &t2,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n193 = {
+static const struct cbl_ynode n216 = {
 	.sid = UINT64_C(61612),
 	.name = "autonomous-flag",
 	.kind = CBL_YN_LEAF,
@@ -4742,10 +5160,10 @@ static const struct cbl_ynode n193 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix, autonomous_flag),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix, has_autonomous_flag),
 	.type = &t2,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n194 = {
+static const struct cbl_ynode n217 = {
 	.sid = UINT64_C(61613),
 	.name = "on-link-flag",
 	.kind = CBL_YN_LEAF,
@@ -4753,10 +5171,10 @@ static const struct cbl_ynode n194 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix, on_link_flag),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix, has_on_link_flag),
 	.type = &t2,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n195 = {
+static const struct cbl_ynode n218 = {
 	.sid = UINT64_C(61614),
 	.name = "preferred-lifetime",
 	.kind = CBL_YN_LEAF,
@@ -4765,10 +5183,10 @@ static const struct cbl_ynode n195 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix, has_preferred_lifetime),
 	.type = &t10,
 	.units = "seconds",
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n196 = {
+static const struct cbl_ynode n219 = {
 	.sid = UINT64_C(61615),
 	.name = "prefix-spec",
 	.kind = CBL_YN_LEAF,
@@ -4776,10 +5194,10 @@ static const struct cbl_ynode n196 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix, prefix_spec),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t28,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n197 = {
+static const struct cbl_ynode n220 = {
 	.sid = UINT64_C(61616),
 	.name = "valid-lifetime",
 	.kind = CBL_YN_LEAF,
@@ -4788,14 +5206,14 @@ static const struct cbl_ynode n197 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix, has_valid_lifetime),
 	.type = &t10,
 	.units = "seconds",
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n192_c[] = {
-	&n193, &n194, &n195, &n196, &n197
+static const struct cbl_ynode *const n215_c[] = {
+	&n216, &n217, &n218, &n219, &n220
 };
-static const uint32_t n192_k[] = { 3 };
-static const struct cbl_ynode n192 = {
+static const uint32_t n215_k[] = { 3 };
+static const struct cbl_ynode n215 = {
 	.sid = UINT64_C(61611),
 	.name = "prefix",
 	.kind = CBL_YN_LIST,
@@ -4805,16 +5223,16 @@ static const struct cbl_ynode n192 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix),
 	.nmap = 5,
 	.nchild = 5,
-	.child = n192_c,
+	.child = n215_c,
 	.nkeys = 1,
-	.keys = n192_k,
-	.module = &m17,
+	.keys = n215_k,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n191_c[] = {
-	&n192
+static const struct cbl_ynode *const n214_c[] = {
+	&n215
 };
-static const struct cbl_ynode n191 = {
+static const struct cbl_ynode n214 = {
 	.sid = UINT64_C(61610),
 	.name = "prefix-list",
 	.kind = CBL_YN_CONTAINER,
@@ -4824,11 +5242,11 @@ static const struct cbl_ynode n191 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n191_c,
-	.module = &m17,
+	.child = n214_c,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n198 = {
+static const struct cbl_ynode n221 = {
 	.sid = UINT64_C(61617),
 	.name = "reachable-time",
 	.kind = CBL_YN_LEAF,
@@ -4837,10 +5255,10 @@ static const struct cbl_ynode n198 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_reachable_time),
 	.type = &t29,
 	.units = "milliseconds",
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n199 = {
+static const struct cbl_ynode n222 = {
 	.sid = UINT64_C(61618),
 	.name = "retrans-timer",
 	.kind = CBL_YN_LEAF,
@@ -4849,10 +5267,10 @@ static const struct cbl_ynode n199 = {
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_retrans_timer),
 	.type = &t10,
 	.units = "milliseconds",
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n200 = {
+static const struct cbl_ynode n223 = {
 	.sid = UINT64_C(61619),
 	.name = "send-advertisements",
 	.kind = CBL_YN_LEAF,
@@ -4860,14 +5278,14 @@ static const struct cbl_ynode n200 = {
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, send_advertisements),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements, has_send_advertisements),
 	.type = &t2,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n183_c[] = {
-	&n184, &n185, &n186, &n187, &n188, &n189,
-	&n190, &n191, &n198, &n199, &n200
+static const struct cbl_ynode *const n206_c[] = {
+	&n207, &n208, &n209, &n210, &n211, &n212,
+	&n213, &n214, &n221, &n222, &n223
 };
-static const struct cbl_ynode n183 = {
+static const struct cbl_ynode n206 = {
 	.sid = UINT64_C(61602),
 	.name = "ipv6-router-advertisements",
 	.kind = CBL_YN_CONTAINER,
@@ -4876,16 +5294,16 @@ static const struct cbl_ynode n183 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements),
 	.nmap = 17,
-	.map = n183_p,
+	.map = n206_p,
 	.nchild = 11,
-	.child = n183_c,
-	.module = &m17,
+	.child = n206_c,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n169_c[] = {
-	&n170, &n175, &n176, &n177, &n183
+static const struct cbl_ynode *const n192_c[] = {
+	&n193, &n198, &n199, &n200, &n206
 };
-static const struct cbl_ynode n169 = {
+static const struct cbl_ynode n192 = {
 	.sid = UINT64_C(1615),
 	.name = "ipv6",
 	.kind = CBL_YN_CONTAINER,
@@ -4894,19 +5312,19 @@ static const struct cbl_ynode n169 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_interfaces_interfaces_state_interface_ip_ipv6),
 	.nmap = 8,
-	.map = n169_p,
+	.map = n192_p,
 	.nchild = 5,
-	.child = n169_c,
-	.module = &m13,
+	.child = n192_c,
+	.module = &m15,
 };
 
-static const struct cbl_ynode *const n132_c[] = {
-	&n133, &n134, &n135, &n136, &n137, &n138,
-	&n139, &n140, &n141, &n142, &n157, &n158,
-	&n169
+static const struct cbl_ynode *const n155_c[] = {
+	&n156, &n157, &n158, &n159, &n160, &n161,
+	&n162, &n163, &n164, &n165, &n180, &n181,
+	&n192
 };
-static const uint32_t n132_k[] = { 5 };
-static const struct cbl_ynode n132 = {
+static const uint32_t n155_k[] = { 5 };
+static const struct cbl_ynode n155 = {
 	.sid = UINT64_C(1507),
 	.name = "interface",
 	.kind = CBL_YN_LIST,
@@ -4915,18 +5333,18 @@ static const struct cbl_ynode n132 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_interfaces_interfaces_state_interface),
 	.nmap = 108,
-	.map = n132_p,
+	.map = n155_p,
 	.nchild = 13,
-	.child = n132_c,
+	.child = n155_c,
 	.nkeys = 1,
-	.keys = n132_k,
+	.keys = n155_k,
 	.module = &m10,
 };
 
-static const struct cbl_ynode *const n131_c[] = {
-	&n132
+static const struct cbl_ynode *const n154_c[] = {
+	&n155
 };
-static const struct cbl_ynode n131 = {
+static const struct cbl_ynode n154 = {
 	.sid = UINT64_C(1506),
 	.name = "interfaces-state",
 	.kind = CBL_YN_CONTAINER,
@@ -4936,11 +5354,11 @@ static const struct cbl_ynode n131 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_state),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n131_c,
+	.child = n154_c,
 	.module = &m10,
 };
 
-static const struct cbl_ynode n204 = {
+static const struct cbl_ynode n227 = {
 	.sid = UINT64_C(61351),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
@@ -4948,10 +5366,10 @@ static const struct cbl_ynode n204 = {
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol, description),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n205 = {
+static const struct cbl_ynode n228 = {
 	.sid = UINT64_C(61352),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -4959,10 +5377,10 @@ static const struct cbl_ynode n205 = {
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n209 = {
+static const struct cbl_ynode n232 = {
 	.sid = UINT64_C(61511),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
@@ -4970,21 +5388,21 @@ static const struct cbl_ynode n209 = {
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route, description),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m16,
+	.module = &m18,
 };
 
-static const struct cbl_ynode n210 = {
+static const struct cbl_ynode n233 = {
 	.sid = UINT64_C(61512),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x7,
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route, destination_prefix),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t48,
-	.module = &m16,
+	.type = &t50,
+	.module = &m18,
 };
 
-static const uint16_t n211_p[] = {
+static const uint16_t n234_p[] = {
 	1, 2, 0, 0, 0, 0, 3, 4
 };
 static const struct cbl_ycase c3_c[] = {
@@ -5001,20 +5419,20 @@ static const struct cbl_ychoice c3 = {
 	.mandatory = true,
 };
 
-static const struct cbl_ynode n212 = {
+static const struct cbl_ynode n235 = {
 	.sid = UINT64_C(61514),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop, next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t49,
+	.type = &t51,
 	.choice = &c3,
 	.ccase = 0,
-	.module = &m16,
+	.module = &m18,
 };
 
-static const struct cbl_ynode n215 = {
+static const struct cbl_ynode n238 = {
 	.sid = UINT64_C(61517),
 	.name = "index",
 	.kind = CBL_YN_LEAF,
@@ -5022,21 +5440,21 @@ static const struct cbl_ynode n215 = {
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop, index),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m16,
+	.module = &m18,
 };
 
-static const struct cbl_ynode n216 = {
+static const struct cbl_ynode n239 = {
 	.sid = UINT64_C(61518),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop, next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t49,
-	.module = &m16,
+	.type = &t51,
+	.module = &m18,
 };
 
-static const struct cbl_ynode n217 = {
+static const struct cbl_ynode n240 = {
 	.sid = UINT64_C(61519),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
@@ -5044,14 +5462,14 @@ static const struct cbl_ynode n217 = {
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop, outgoing_interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t3,
-	.module = &m16,
+	.module = &m18,
 };
 
-static const struct cbl_ynode *const n214_c[] = {
-	&n215, &n216, &n217
+static const struct cbl_ynode *const n237_c[] = {
+	&n238, &n239, &n240
 };
-static const uint32_t n214_k[] = { 0 };
-static const struct cbl_ynode n214 = {
+static const uint32_t n237_k[] = { 0 };
+static const struct cbl_ynode n237 = {
 	.sid = UINT64_C(61516),
 	.name = "next-hop",
 	.kind = CBL_YN_LIST,
@@ -5061,16 +5479,16 @@ static const struct cbl_ynode n214 = {
 	.size = sizeof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n214_c,
+	.child = n237_c,
 	.nkeys = 1,
-	.keys = n214_k,
-	.module = &m16,
+	.keys = n237_k,
+	.module = &m18,
 };
 
-static const struct cbl_ynode *const n213_c[] = {
-	&n214
+static const struct cbl_ynode *const n236_c[] = {
+	&n237
 };
-static const struct cbl_ynode n213 = {
+static const struct cbl_ynode n236 = {
 	.sid = UINT64_C(61515),
 	.name = "next-hop-list",
 	.kind = CBL_YN_CONTAINER,
@@ -5080,13 +5498,13 @@ static const struct cbl_ynode n213 = {
 	.size = sizeof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n213_c,
+	.child = n236_c,
 	.choice = &c3,
 	.ccase = 2,
-	.module = &m16,
+	.module = &m18,
 };
 
-static const struct cbl_ynode n218 = {
+static const struct cbl_ynode n241 = {
 	.sid = UINT64_C(61520),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
@@ -5096,26 +5514,26 @@ static const struct cbl_ynode n218 = {
 	.type = &t3,
 	.choice = &c3,
 	.ccase = 0,
-	.module = &m16,
+	.module = &m18,
 };
 
-static const struct cbl_ynode n219 = {
+static const struct cbl_ynode n242 = {
 	.sid = UINT64_C(61521),
 	.name = "special-next-hop",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop, special_next_hop),
 	.hoff = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop, has_special_next_hop),
-	.type = &t50,
+	.type = &t52,
 	.choice = &c3,
 	.ccase = 1,
-	.module = &m16,
+	.module = &m18,
 };
 
-static const struct cbl_ynode *const n211_c[] = {
-	&n212, &n213, &n218, &n219
+static const struct cbl_ynode *const n234_c[] = {
+	&n235, &n236, &n241, &n242
 };
-static const struct cbl_ynode n211 = {
+static const struct cbl_ynode n234 = {
 	.sid = UINT64_C(61513),
 	.name = "next-hop",
 	.kind = CBL_YN_CONTAINER,
@@ -5124,17 +5542,17 @@ static const struct cbl_ynode n211 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop),
 	.nmap = 8,
-	.map = n211_p,
+	.map = n234_p,
 	.nchild = 4,
-	.child = n211_c,
-	.module = &m16,
+	.child = n234_c,
+	.module = &m18,
 };
 
-static const struct cbl_ynode *const n208_c[] = {
-	&n209, &n210, &n211
+static const struct cbl_ynode *const n231_c[] = {
+	&n232, &n233, &n234
 };
-static const uint32_t n208_k[] = { 1 };
-static const struct cbl_ynode n208 = {
+static const uint32_t n231_k[] = { 1 };
+static const struct cbl_ynode n231 = {
 	.sid = UINT64_C(61510),
 	.name = "route",
 	.kind = CBL_YN_LIST,
@@ -5144,16 +5562,16 @@ static const struct cbl_ynode n208 = {
 	.size = sizeof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n208_c,
+	.child = n231_c,
 	.nkeys = 1,
-	.keys = n208_k,
-	.module = &m16,
+	.keys = n231_k,
+	.module = &m18,
 };
 
-static const struct cbl_ynode *const n207_c[] = {
-	&n208
+static const struct cbl_ynode *const n230_c[] = {
+	&n231
 };
-static const struct cbl_ynode n207 = {
+static const struct cbl_ynode n230 = {
 	.sid = UINT64_C(61509),
 	.name = "ipv4",
 	.kind = CBL_YN_CONTAINER,
@@ -5163,11 +5581,11 @@ static const struct cbl_ynode n207 = {
 	.size = sizeof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n207_c,
-	.module = &m16,
+	.child = n230_c,
+	.module = &m18,
 };
 
-static const struct cbl_ynode n222 = {
+static const struct cbl_ynode n245 = {
 	.sid = UINT64_C(61648),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
@@ -5175,10 +5593,10 @@ static const struct cbl_ynode n222 = {
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route, description),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n223 = {
+static const struct cbl_ynode n246 = {
 	.sid = UINT64_C(61649),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
@@ -5186,10 +5604,10 @@ static const struct cbl_ynode n223 = {
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route, destination_prefix),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t28,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const uint16_t n224_p[] = {
+static const uint16_t n247_p[] = {
 	1, 2, 0, 0, 0, 0, 3, 4
 };
 static const struct cbl_ycase c4_c[] = {
@@ -5206,20 +5624,20 @@ static const struct cbl_ychoice c4 = {
 	.mandatory = true,
 };
 
-static const struct cbl_ynode n225 = {
+static const struct cbl_ynode n248 = {
 	.sid = UINT64_C(61651),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop, next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t51,
+	.type = &t53,
 	.choice = &c4,
 	.ccase = 0,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n228 = {
+static const struct cbl_ynode n251 = {
 	.sid = UINT64_C(61654),
 	.name = "index",
 	.kind = CBL_YN_LEAF,
@@ -5227,21 +5645,21 @@ static const struct cbl_ynode n228 = {
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_next_hop, index),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n229 = {
+static const struct cbl_ynode n252 = {
 	.sid = UINT64_C(61655),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_next_hop, next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t51,
-	.module = &m17,
+	.type = &t53,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n230 = {
+static const struct cbl_ynode n253 = {
 	.sid = UINT64_C(61656),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
@@ -5249,14 +5667,14 @@ static const struct cbl_ynode n230 = {
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_next_hop, outgoing_interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t3,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n227_c[] = {
-	&n228, &n229, &n230
+static const struct cbl_ynode *const n250_c[] = {
+	&n251, &n252, &n253
 };
-static const uint32_t n227_k[] = { 0 };
-static const struct cbl_ynode n227 = {
+static const uint32_t n250_k[] = { 0 };
+static const struct cbl_ynode n250 = {
 	.sid = UINT64_C(61653),
 	.name = "next-hop",
 	.kind = CBL_YN_LIST,
@@ -5266,16 +5684,16 @@ static const struct cbl_ynode n227 = {
 	.size = sizeof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_next_hop),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n227_c,
+	.child = n250_c,
 	.nkeys = 1,
-	.keys = n227_k,
-	.module = &m17,
+	.keys = n250_k,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n226_c[] = {
-	&n227
+static const struct cbl_ynode *const n249_c[] = {
+	&n250
 };
-static const struct cbl_ynode n226 = {
+static const struct cbl_ynode n249 = {
 	.sid = UINT64_C(61652),
 	.name = "next-hop-list",
 	.kind = CBL_YN_CONTAINER,
@@ -5285,13 +5703,13 @@ static const struct cbl_ynode n226 = {
 	.size = sizeof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n226_c,
+	.child = n249_c,
 	.choice = &c4,
 	.ccase = 2,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n231 = {
+static const struct cbl_ynode n254 = {
 	.sid = UINT64_C(61657),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
@@ -5301,26 +5719,26 @@ static const struct cbl_ynode n231 = {
 	.type = &t3,
 	.choice = &c4,
 	.ccase = 0,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode n232 = {
+static const struct cbl_ynode n255 = {
 	.sid = UINT64_C(61658),
 	.name = "special-next-hop",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop, special_next_hop),
 	.hoff = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop, has_special_next_hop),
-	.type = &t50,
+	.type = &t52,
 	.choice = &c4,
 	.ccase = 1,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n224_c[] = {
-	&n225, &n226, &n231, &n232
+static const struct cbl_ynode *const n247_c[] = {
+	&n248, &n249, &n254, &n255
 };
-static const struct cbl_ynode n224 = {
+static const struct cbl_ynode n247 = {
 	.sid = UINT64_C(61650),
 	.name = "next-hop",
 	.kind = CBL_YN_CONTAINER,
@@ -5329,17 +5747,17 @@ static const struct cbl_ynode n224 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop),
 	.nmap = 8,
-	.map = n224_p,
+	.map = n247_p,
 	.nchild = 4,
-	.child = n224_c,
-	.module = &m17,
+	.child = n247_c,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n221_c[] = {
-	&n222, &n223, &n224
+static const struct cbl_ynode *const n244_c[] = {
+	&n245, &n246, &n247
 };
-static const uint32_t n221_k[] = { 1 };
-static const struct cbl_ynode n221 = {
+static const uint32_t n244_k[] = { 1 };
+static const struct cbl_ynode n244 = {
 	.sid = UINT64_C(61647),
 	.name = "route",
 	.kind = CBL_YN_LIST,
@@ -5349,16 +5767,16 @@ static const struct cbl_ynode n221 = {
 	.size = sizeof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n221_c,
+	.child = n244_c,
 	.nkeys = 1,
-	.keys = n221_k,
-	.module = &m17,
+	.keys = n244_k,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n220_c[] = {
-	&n221
+static const struct cbl_ynode *const n243_c[] = {
+	&n244
 };
-static const struct cbl_ynode n220 = {
+static const struct cbl_ynode n243 = {
 	.sid = UINT64_C(61646),
 	.name = "ipv6",
 	.kind = CBL_YN_CONTAINER,
@@ -5368,17 +5786,17 @@ static const struct cbl_ynode n220 = {
 	.size = sizeof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n220_c,
-	.module = &m17,
+	.child = n243_c,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n206_c[] = {
-	&n207, &n220
+static const struct cbl_ynode *const n229_c[] = {
+	&n230, &n243
 };
-static const struct cbl_ywhen n206_w[] = {
-	{ 9, CBL_YWC_SELF },
+static const struct cbl_ywhen n229_w[] = {
+	{ 12, CBL_YWC_SELF },
 };
-static const struct cbl_ynode n206 = {
+static const struct cbl_ynode n229 = {
 	.sid = UINT64_C(61353),
 	.name = "static-routes",
 	.kind = CBL_YN_CONTAINER,
@@ -5388,28 +5806,28 @@ static const struct cbl_ynode n206 = {
 	.size = sizeof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes),
 	.nmap = 1,
 	.nchild = 2,
-	.child = n206_c,
+	.child = n229_c,
 	.nwhen = 1,
-	.when = n206_w,
-	.module = &m15,
+	.when = n229_w,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n233 = {
+static const struct cbl_ynode n256 = {
 	.sid = UINT64_C(61354),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x5,
 	.off = offsetof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol, type),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t52,
-	.module = &m15,
+	.type = &t54,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n203_c[] = {
-	&n204, &n205, &n206, &n233
+static const struct cbl_ynode *const n226_c[] = {
+	&n227, &n228, &n229, &n256
 };
-static const uint32_t n203_k[] = { 3, 1 };
-static const struct cbl_ynode n203 = {
+static const uint32_t n226_k[] = { 3, 1 };
+static const struct cbl_ynode n226 = {
 	.sid = UINT64_C(61350),
 	.name = "control-plane-protocol",
 	.kind = CBL_YN_LIST,
@@ -5419,16 +5837,16 @@ static const struct cbl_ynode n203 = {
 	.size = sizeof(struct ietf_routing_routing_control_plane_protocols_control_plane_protocol),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n203_c,
+	.child = n226_c,
 	.nkeys = 2,
-	.keys = n203_k,
-	.module = &m15,
+	.keys = n226_k,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n202_c[] = {
-	&n203
+static const struct cbl_ynode *const n225_c[] = {
+	&n226
 };
-static const struct cbl_ynode n202 = {
+static const struct cbl_ynode n225 = {
 	.sid = UINT64_C(61349),
 	.name = "control-plane-protocols",
 	.kind = CBL_YN_CONTAINER,
@@ -5438,11 +5856,11 @@ static const struct cbl_ynode n202 = {
 	.size = sizeof(struct ietf_routing_routing_control_plane_protocols),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n202_c,
-	.module = &m15,
+	.child = n225_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n235 = {
+static const struct cbl_ynode n258 = {
 	.sid = UINT64_C(61356),
 	.name = "interface",
 	.kind = CBL_YN_LEAFLIST,
@@ -5450,13 +5868,13 @@ static const struct cbl_ynode n235 = {
 	.off = offsetof(struct ietf_routing_routing_interfaces, interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t3,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n234_c[] = {
-	&n235
+static const struct cbl_ynode *const n257_c[] = {
+	&n258
 };
-static const struct cbl_ynode n234 = {
+static const struct cbl_ynode n257 = {
 	.sid = UINT64_C(61355),
 	.name = "interfaces",
 	.kind = CBL_YN_CONTAINER,
@@ -5465,48 +5883,48 @@ static const struct cbl_ynode n234 = {
 	.size = sizeof(struct ietf_routing_routing_interfaces),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n234_c,
-	.module = &m15,
+	.child = n257_c,
+	.module = &m17,
 };
 
-static const uint16_t n237_p[] = {
+static const uint16_t n260_p[] = {
 	1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 4,
 	5, 6
 };
-static const struct cbl_ywhen n240_w[] = {
-	{ 10, CBL_YWC_PARENT },
+static const struct cbl_ywhen n263_w[] = {
+	{ 13, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n240 = {
+static const struct cbl_ynode n263 = {
 	.sid = UINT64_C(61522),
 	.name = "destination-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_input, v4ur_destination_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t49,
+	.type = &t51,
 	.nwhen = 1,
-	.when = n240_w,
-	.module = &m16,
+	.when = n263_w,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n241_w[] = {
-	{ 11, CBL_YWC_PARENT },
+static const struct cbl_ywhen n264_w[] = {
+	{ 14, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n241 = {
+static const struct cbl_ynode n264 = {
 	.sid = UINT64_C(61659),
 	.name = "destination-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_input, v6ur_destination_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t51,
+	.type = &t53,
 	.nwhen = 1,
-	.when = n241_w,
-	.module = &m17,
+	.when = n264_w,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n239_c[] = {
-	&n240, &n241
+static const struct cbl_ynode *const n262_c[] = {
+	&n263, &n264
 };
-static const struct cbl_ynode n239 = {
+static const struct cbl_ynode n262 = {
 	.sid = UINT64_C(61360),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -5515,77 +5933,77 @@ static const struct cbl_ynode n239 = {
 	.size = sizeof(struct ietf_routing_routing_ribs_rib_active_route_input),
 	.nmap = 1,
 	.nchild = 2,
-	.child = n239_c,
-	.module = &m15,
+	.child = n262_c,
+	.module = &m17,
 };
 
-static const uint16_t n243_p[] = {
+static const uint16_t n266_p[] = {
 	1, 2, 3, 0, 0, 0, 0, 0, 4
 };
-static const struct cbl_ynode n244 = {
+static const struct cbl_ynode n267 = {
 	.sid = UINT64_C(61363),
 	.name = "active",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route, active),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t22,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n245 = {
+static const struct cbl_ynode n268 = {
 	.sid = UINT64_C(61364),
 	.name = "last-updated",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route, last_updated),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t5,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n249 = {
+static const struct cbl_ynode n272 = {
 	.sid = UINT64_C(61368),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop, outgoing_interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t3,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ywhen n250_w[] = {
-	{ 12, CBL_YWC_PARENT },
+static const struct cbl_ywhen n273_w[] = {
+	{ 15, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n250 = {
+static const struct cbl_ynode n273 = {
 	.sid = UINT64_C(61525),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop, v4ur_next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t49,
+	.type = &t51,
 	.nwhen = 1,
-	.when = n250_w,
-	.module = &m16,
+	.when = n273_w,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n251_w[] = {
-	{ 13, CBL_YWC_PARENT },
+static const struct cbl_ywhen n274_w[] = {
+	{ 16, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n251 = {
+static const struct cbl_ynode n274 = {
 	.sid = UINT64_C(61662),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop, v6ur_next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t51,
+	.type = &t53,
 	.nwhen = 1,
-	.when = n251_w,
-	.module = &m17,
+	.when = n274_w,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n248_c[] = {
-	&n249, &n250, &n251
+static const struct cbl_ynode *const n271_c[] = {
+	&n272, &n273, &n274
 };
-static const struct cbl_ynode n248 = {
+static const struct cbl_ynode n271 = {
 	.sid = UINT64_C(61367),
 	.name = "next-hop",
 	.kind = CBL_YN_LIST,
@@ -5595,12 +6013,12 @@ static const struct cbl_ynode n248 = {
 	.size = sizeof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop),
 	.nmap = 1,
 	.nchild = 3,
-	.child = n248_c,
-	.module = &m15,
+	.child = n271_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n247_c[] = {
-	&n248
+static const struct cbl_ynode *const n270_c[] = {
+	&n271
 };
 static const struct cbl_ycase c5_c[] = {
 	{ "simple-next-hop", NULL, 0 },
@@ -5616,7 +6034,7 @@ static const struct cbl_ychoice c5 = {
 	.mandatory = true,
 };
 
-static const struct cbl_ynode n247 = {
+static const struct cbl_ynode n270 = {
 	.sid = UINT64_C(61366),
 	.name = "next-hop-list",
 	.kind = CBL_YN_CONTAINER,
@@ -5625,13 +6043,13 @@ static const struct cbl_ynode n247 = {
 	.size = sizeof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n247_c,
+	.child = n270_c,
 	.choice = &c5,
 	.ccase = 2,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n252 = {
+static const struct cbl_ynode n275 = {
 	.sid = UINT64_C(61369),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
@@ -5640,59 +6058,59 @@ static const struct cbl_ynode n252 = {
 	.type = &t3,
 	.choice = &c5,
 	.ccase = 0,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n253 = {
+static const struct cbl_ynode n276 = {
 	.sid = UINT64_C(61370),
 	.name = "special-next-hop",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop, special_next_hop),
 	.hoff = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop, has_special_next_hop),
-	.type = &t50,
+	.type = &t52,
 	.choice = &c5,
 	.ccase = 1,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ywhen n254_w[] = {
-	{ 14, CBL_YWC_PARENT },
+static const struct cbl_ywhen n277_w[] = {
+	{ 17, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n254 = {
+static const struct cbl_ynode n277 = {
 	.sid = UINT64_C(61524),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop, v4ur_next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t49,
+	.type = &t51,
 	.nwhen = 1,
-	.when = n254_w,
+	.when = n277_w,
 	.choice = &c5,
 	.ccase = 0,
-	.module = &m16,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n255_w[] = {
-	{ 15, CBL_YWC_PARENT },
+static const struct cbl_ywhen n278_w[] = {
+	{ 18, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n255 = {
+static const struct cbl_ynode n278 = {
 	.sid = UINT64_C(61661),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop, v6ur_next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t51,
+	.type = &t53,
 	.nwhen = 1,
-	.when = n255_w,
+	.when = n278_w,
 	.choice = &c5,
 	.ccase = 0,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n246_c[] = {
-	&n247, &n252, &n253, &n254, &n255
+static const struct cbl_ynode *const n269_c[] = {
+	&n270, &n275, &n276, &n277, &n278
 };
-static const struct cbl_ynode n246 = {
+static const struct cbl_ynode n269 = {
 	.sid = UINT64_C(61365),
 	.name = "next-hop",
 	.kind = CBL_YN_CONTAINER,
@@ -5701,40 +6119,40 @@ static const struct cbl_ynode n246 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop),
 	.nchild = 5,
-	.child = n246_c,
-	.module = &m15,
+	.child = n269_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n256 = {
+static const struct cbl_ynode n279 = {
 	.sid = UINT64_C(61371),
 	.name = "source-protocol",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route, source_protocol),
 	.hoff = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route, has_source_protocol),
-	.type = &t53,
-	.module = &m15,
+	.type = &t55,
+	.module = &m17,
 };
 
-static const struct cbl_ywhen n257_w[] = {
-	{ 16, CBL_YWC_PARENT },
+static const struct cbl_ywhen n280_w[] = {
+	{ 19, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n257 = {
+static const struct cbl_ynode n280 = {
 	.sid = UINT64_C(61523),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route, v4ur_destination_prefix),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t48,
+	.type = &t50,
 	.nwhen = 1,
-	.when = n257_w,
-	.module = &m16,
+	.when = n280_w,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n258_w[] = {
-	{ 17, CBL_YWC_PARENT },
+static const struct cbl_ywhen n281_w[] = {
+	{ 20, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n258 = {
+static const struct cbl_ynode n281 = {
 	.sid = UINT64_C(61660),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
@@ -5742,14 +6160,14 @@ static const struct cbl_ynode n258 = {
 	.hoff = CBL_YOFF_NONE,
 	.type = &t28,
 	.nwhen = 1,
-	.when = n258_w,
-	.module = &m17,
+	.when = n281_w,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n243_c[] = {
-	&n244, &n245, &n246, &n256, &n257, &n258
+static const struct cbl_ynode *const n266_c[] = {
+	&n267, &n268, &n269, &n279, &n280, &n281
 };
-static const struct cbl_ynode n243 = {
+static const struct cbl_ynode n266 = {
 	.sid = UINT64_C(61362),
 	.name = "route",
 	.kind = CBL_YN_CONTAINER,
@@ -5758,16 +6176,16 @@ static const struct cbl_ynode n243 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing_ribs_rib_active_route_output_route),
 	.nmap = 9,
-	.map = n243_p,
+	.map = n266_p,
 	.nchild = 6,
-	.child = n243_c,
-	.module = &m15,
+	.child = n266_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n242_c[] = {
-	&n243
+static const struct cbl_ynode *const n265_c[] = {
+	&n266
 };
-static const struct cbl_ynode n242 = {
+static const struct cbl_ynode n265 = {
 	.sid = UINT64_C(61361),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -5776,14 +6194,14 @@ static const struct cbl_ynode n242 = {
 	.size = sizeof(struct ietf_routing_routing_ribs_rib_active_route_output),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n242_c,
-	.module = &m15,
+	.child = n265_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n238_c[] = {
-	&n239, &n242
+static const struct cbl_ynode *const n261_c[] = {
+	&n262, &n265
 };
-static const struct cbl_ynode n238 = {
+static const struct cbl_ynode n261 = {
 	.sid = UINT64_C(61359),
 	.name = "active-route",
 	.kind = CBL_YN_ACTION,
@@ -5791,23 +6209,23 @@ static const struct cbl_ynode n238 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n238_c,
-	.module = &m15,
+	.child = n261_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n259 = {
+static const struct cbl_ynode n282 = {
 	.sid = UINT64_C(61372),
 	.name = "address-family",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x3,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib, address_family),
 	.hoff = offsetof(struct ietf_routing_routing_ribs_rib, has_address_family),
-	.type = &t54,
-	.module = &m15,
+	.type = &t56,
+	.module = &m17,
 };
 
-static const char *const n260_d[] = { "true" };
-static const struct cbl_ynode n260 = {
+static const char *const n283_d[] = { "true" };
+static const struct cbl_ynode n283 = {
 	.sid = UINT64_C(61373),
 	.name = "default-rib",
 	.kind = CBL_YN_LEAF,
@@ -5815,11 +6233,11 @@ static const struct cbl_ynode n260 = {
 	.hoff = offsetof(struct ietf_routing_routing_ribs_rib, has_default_rib),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n260_d,
-	.module = &m15,
+	.dflt = n283_d,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n261 = {
+static const struct cbl_ynode n284 = {
 	.sid = UINT64_C(61374),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
@@ -5827,10 +6245,10 @@ static const struct cbl_ynode n261 = {
 	.off = offsetof(struct ietf_routing_routing_ribs_rib, description),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n262 = {
+static const struct cbl_ynode n285 = {
 	.sid = UINT64_C(61375),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -5838,76 +6256,76 @@ static const struct cbl_ynode n262 = {
 	.off = offsetof(struct ietf_routing_routing_ribs_rib, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const uint16_t n264_p[] = {
+static const uint16_t n287_p[] = {
 	1, 2, 3, 0, 0, 0, 0, 0, 4, 5
 };
-static const struct cbl_ynode n265 = {
+static const struct cbl_ynode n288 = {
 	.sid = UINT64_C(61378),
 	.name = "active",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route, active),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t22,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n266 = {
+static const struct cbl_ynode n289 = {
 	.sid = UINT64_C(61379),
 	.name = "last-updated",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route, last_updated),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t5,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n270 = {
+static const struct cbl_ynode n293 = {
 	.sid = UINT64_C(61383),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop, outgoing_interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t3,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ywhen n271_w[] = {
-	{ 12, CBL_YWC_PARENT },
+static const struct cbl_ywhen n294_w[] = {
+	{ 15, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n271 = {
+static const struct cbl_ynode n294 = {
 	.sid = UINT64_C(61528),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop, v4ur_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t49,
+	.type = &t51,
 	.nwhen = 1,
-	.when = n271_w,
-	.module = &m16,
+	.when = n294_w,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n272_w[] = {
-	{ 13, CBL_YWC_PARENT },
+static const struct cbl_ywhen n295_w[] = {
+	{ 16, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n272 = {
+static const struct cbl_ynode n295 = {
 	.sid = UINT64_C(61665),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop, v6ur_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t51,
+	.type = &t53,
 	.nwhen = 1,
-	.when = n272_w,
-	.module = &m17,
+	.when = n295_w,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n269_c[] = {
-	&n270, &n271, &n272
+static const struct cbl_ynode *const n292_c[] = {
+	&n293, &n294, &n295
 };
-static const struct cbl_ynode n269 = {
+static const struct cbl_ynode n292 = {
 	.sid = UINT64_C(61382),
 	.name = "next-hop",
 	.kind = CBL_YN_LIST,
@@ -5917,12 +6335,12 @@ static const struct cbl_ynode n269 = {
 	.size = sizeof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop),
 	.nmap = 1,
 	.nchild = 3,
-	.child = n269_c,
-	.module = &m15,
+	.child = n292_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n268_c[] = {
-	&n269
+static const struct cbl_ynode *const n291_c[] = {
+	&n292
 };
 static const struct cbl_ycase c6_c[] = {
 	{ "simple-next-hop", NULL, 0 },
@@ -5938,7 +6356,7 @@ static const struct cbl_ychoice c6 = {
 	.mandatory = true,
 };
 
-static const struct cbl_ynode n268 = {
+static const struct cbl_ynode n291 = {
 	.sid = UINT64_C(61381),
 	.name = "next-hop-list",
 	.kind = CBL_YN_CONTAINER,
@@ -5947,13 +6365,13 @@ static const struct cbl_ynode n268 = {
 	.size = sizeof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n268_c,
+	.child = n291_c,
 	.choice = &c6,
 	.ccase = 2,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n273 = {
+static const struct cbl_ynode n296 = {
 	.sid = UINT64_C(61384),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
@@ -5962,59 +6380,59 @@ static const struct cbl_ynode n273 = {
 	.type = &t3,
 	.choice = &c6,
 	.ccase = 0,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n274 = {
+static const struct cbl_ynode n297 = {
 	.sid = UINT64_C(61385),
 	.name = "special-next-hop",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop, special_next_hop),
 	.hoff = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop, has_special_next_hop),
-	.type = &t50,
+	.type = &t52,
 	.choice = &c6,
 	.ccase = 1,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ywhen n275_w[] = {
-	{ 14, CBL_YWC_PARENT },
+static const struct cbl_ywhen n298_w[] = {
+	{ 17, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n275 = {
+static const struct cbl_ynode n298 = {
 	.sid = UINT64_C(61527),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop, v4ur_next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t49,
+	.type = &t51,
 	.nwhen = 1,
-	.when = n275_w,
+	.when = n298_w,
 	.choice = &c6,
 	.ccase = 0,
-	.module = &m16,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n276_w[] = {
-	{ 15, CBL_YWC_PARENT },
+static const struct cbl_ywhen n299_w[] = {
+	{ 18, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n276 = {
+static const struct cbl_ynode n299 = {
 	.sid = UINT64_C(61664),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop, v6ur_next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t51,
+	.type = &t53,
 	.nwhen = 1,
-	.when = n276_w,
+	.when = n299_w,
 	.choice = &c6,
 	.ccase = 0,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n267_c[] = {
-	&n268, &n273, &n274, &n275, &n276
+static const struct cbl_ynode *const n290_c[] = {
+	&n291, &n296, &n297, &n298, &n299
 };
-static const struct cbl_ynode n267 = {
+static const struct cbl_ynode n290 = {
 	.sid = UINT64_C(61380),
 	.name = "next-hop",
 	.kind = CBL_YN_CONTAINER,
@@ -6023,50 +6441,50 @@ static const struct cbl_ynode n267 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop),
 	.nchild = 5,
-	.child = n267_c,
-	.module = &m15,
+	.child = n290_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n277 = {
+static const struct cbl_ynode n300 = {
 	.sid = UINT64_C(61386),
 	.name = "route-preference",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route, route_preference),
 	.hoff = offsetof(struct ietf_routing_routing_ribs_rib_routes_route, has_route_preference),
 	.type = &t10,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n278 = {
+static const struct cbl_ynode n301 = {
 	.sid = UINT64_C(61387),
 	.name = "source-protocol",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route, source_protocol),
 	.hoff = offsetof(struct ietf_routing_routing_ribs_rib_routes_route, has_source_protocol),
-	.type = &t53,
-	.module = &m15,
+	.type = &t55,
+	.module = &m17,
 };
 
-static const struct cbl_ywhen n279_w[] = {
-	{ 16, CBL_YWC_PARENT },
+static const struct cbl_ywhen n302_w[] = {
+	{ 19, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n279 = {
+static const struct cbl_ynode n302 = {
 	.sid = UINT64_C(61526),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route, v4ur_destination_prefix),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t48,
+	.type = &t50,
 	.nwhen = 1,
-	.when = n279_w,
-	.module = &m16,
+	.when = n302_w,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n280_w[] = {
-	{ 17, CBL_YWC_PARENT },
+static const struct cbl_ywhen n303_w[] = {
+	{ 20, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n280 = {
+static const struct cbl_ynode n303 = {
 	.sid = UINT64_C(61663),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
@@ -6074,15 +6492,15 @@ static const struct cbl_ynode n280 = {
 	.hoff = CBL_YOFF_NONE,
 	.type = &t28,
 	.nwhen = 1,
-	.when = n280_w,
-	.module = &m17,
+	.when = n303_w,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n264_c[] = {
-	&n265, &n266, &n267, &n277, &n278, &n279,
-	&n280
+static const struct cbl_ynode *const n287_c[] = {
+	&n288, &n289, &n290, &n300, &n301, &n302,
+	&n303
 };
-static const struct cbl_ynode n264 = {
+static const struct cbl_ynode n287 = {
 	.sid = UINT64_C(61377),
 	.name = "route",
 	.kind = CBL_YN_LIST,
@@ -6091,16 +6509,16 @@ static const struct cbl_ynode n264 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing_ribs_rib_routes_route),
 	.nmap = 10,
-	.map = n264_p,
+	.map = n287_p,
 	.nchild = 7,
-	.child = n264_c,
-	.module = &m15,
+	.child = n287_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n263_c[] = {
-	&n264
+static const struct cbl_ynode *const n286_c[] = {
+	&n287
 };
-static const struct cbl_ynode n263 = {
+static const struct cbl_ynode n286 = {
 	.sid = UINT64_C(61376),
 	.name = "routes",
 	.kind = CBL_YN_CONTAINER,
@@ -6109,15 +6527,15 @@ static const struct cbl_ynode n263 = {
 	.size = sizeof(struct ietf_routing_routing_ribs_rib_routes),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n263_c,
-	.module = &m15,
+	.child = n286_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n237_c[] = {
-	&n238, &n259, &n260, &n261, &n262, &n263
+static const struct cbl_ynode *const n260_c[] = {
+	&n261, &n282, &n283, &n284, &n285, &n286
 };
-static const uint32_t n237_k[] = { 4 };
-static const struct cbl_ynode n237 = {
+static const uint32_t n260_k[] = { 4 };
+static const struct cbl_ynode n260 = {
 	.sid = UINT64_C(61358),
 	.name = "rib",
 	.kind = CBL_YN_LIST,
@@ -6126,18 +6544,18 @@ static const struct cbl_ynode n237 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing_ribs_rib),
 	.nmap = 18,
-	.map = n237_p,
+	.map = n260_p,
 	.nchild = 6,
-	.child = n237_c,
+	.child = n260_c,
 	.nkeys = 1,
-	.keys = n237_k,
-	.module = &m15,
+	.keys = n260_k,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n236_c[] = {
-	&n237
+static const struct cbl_ynode *const n259_c[] = {
+	&n260
 };
-static const struct cbl_ynode n236 = {
+static const struct cbl_ynode n259 = {
 	.sid = UINT64_C(61357),
 	.name = "ribs",
 	.kind = CBL_YN_CONTAINER,
@@ -6147,14 +6565,14 @@ static const struct cbl_ynode n236 = {
 	.size = sizeof(struct ietf_routing_routing_ribs),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n236_c,
-	.module = &m15,
+	.child = n259_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n201_c[] = {
-	&n202, &n234, &n236
+static const struct cbl_ynode *const n224_c[] = {
+	&n225, &n257, &n259
 };
-static const struct cbl_ynode n201 = {
+static const struct cbl_ynode n224 = {
 	.sid = UINT64_C(61310),
 	.name = "routing",
 	.kind = CBL_YN_CONTAINER,
@@ -6163,16 +6581,16 @@ static const struct cbl_ynode n201 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing),
 	.nchild = 3,
-	.child = n201_c,
-	.module = &m15,
+	.child = n224_c,
+	.module = &m17,
 };
 
-static const uint16_t n281_p[] = {
+static const uint16_t n304_p[] = {
 	1, 0, 0, 0, 2, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 4
 };
-static const struct cbl_ynode n284 = {
+static const struct cbl_ynode n307 = {
 	.sid = UINT64_C(61314),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -6180,25 +6598,25 @@ static const struct cbl_ynode n284 = {
 	.off = offsetof(struct ietf_routing_routing_state_control_plane_protocols_control_plane_protocol, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n285 = {
+static const struct cbl_ynode n308 = {
 	.sid = UINT64_C(61315),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x44,
 	.off = offsetof(struct ietf_routing_routing_state_control_plane_protocols_control_plane_protocol, type),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t52,
-	.module = &m15,
+	.type = &t54,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n283_c[] = {
-	&n284, &n285
+static const struct cbl_ynode *const n306_c[] = {
+	&n307, &n308
 };
-static const uint32_t n283_k[] = { 1, 0 };
-static const struct cbl_ynode n283 = {
+static const uint32_t n306_k[] = { 1, 0 };
+static const struct cbl_ynode n306 = {
 	.sid = UINT64_C(61313),
 	.name = "control-plane-protocol",
 	.kind = CBL_YN_LIST,
@@ -6208,16 +6626,16 @@ static const struct cbl_ynode n283 = {
 	.size = sizeof(struct ietf_routing_routing_state_control_plane_protocols_control_plane_protocol),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n283_c,
+	.child = n306_c,
 	.nkeys = 2,
-	.keys = n283_k,
-	.module = &m15,
+	.keys = n306_k,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n282_c[] = {
-	&n283
+static const struct cbl_ynode *const n305_c[] = {
+	&n306
 };
-static const struct cbl_ynode n282 = {
+static const struct cbl_ynode n305 = {
 	.sid = UINT64_C(61312),
 	.name = "control-plane-protocols",
 	.kind = CBL_YN_CONTAINER,
@@ -6227,25 +6645,25 @@ static const struct cbl_ynode n282 = {
 	.size = sizeof(struct ietf_routing_routing_state_control_plane_protocols),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n282_c,
-	.module = &m15,
+	.child = n305_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n287 = {
+static const struct cbl_ynode n310 = {
 	.sid = UINT64_C(61317),
 	.name = "interface",
 	.kind = CBL_YN_LEAFLIST,
 	.flags = 0x50,
 	.off = offsetof(struct ietf_routing_routing_state_interfaces, interface),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t45,
-	.module = &m15,
+	.type = &t47,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n286_c[] = {
-	&n287
+static const struct cbl_ynode *const n309_c[] = {
+	&n310
 };
-static const struct cbl_ynode n286 = {
+static const struct cbl_ynode n309 = {
 	.sid = UINT64_C(61316),
 	.name = "interfaces",
 	.kind = CBL_YN_CONTAINER,
@@ -6255,50 +6673,50 @@ static const struct cbl_ynode n286 = {
 	.size = sizeof(struct ietf_routing_routing_state_interfaces),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n286_c,
-	.module = &m15,
+	.child = n309_c,
+	.module = &m17,
 };
 
-static const uint16_t n289_p[] = {
+static const uint16_t n312_p[] = {
 	1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 4,
 	5
 };
-static const struct cbl_ywhen n292_w[] = {
-	{ 18, CBL_YWC_PARENT },
+static const struct cbl_ywhen n315_w[] = {
+	{ 21, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n292 = {
+static const struct cbl_ynode n315 = {
 	.sid = UINT64_C(61502),
 	.name = "destination-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_input, v4ur_destination_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t49,
+	.type = &t51,
 	.nwhen = 1,
-	.when = n292_w,
-	.module = &m16,
+	.when = n315_w,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n293_w[] = {
-	{ 19, CBL_YWC_PARENT },
+static const struct cbl_ywhen n316_w[] = {
+	{ 22, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n293 = {
+static const struct cbl_ynode n316 = {
 	.sid = UINT64_C(61639),
 	.name = "destination-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_input, v6ur_destination_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t51,
+	.type = &t53,
 	.nwhen = 1,
-	.when = n293_w,
-	.module = &m17,
+	.when = n316_w,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n291_c[] = {
-	&n292, &n293
+static const struct cbl_ynode *const n314_c[] = {
+	&n315, &n316
 };
-static const struct cbl_ynode n291 = {
+static const struct cbl_ynode n314 = {
 	.sid = UINT64_C(61321),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -6308,14 +6726,14 @@ static const struct cbl_ynode n291 = {
 	.size = sizeof(struct ietf_routing_routing_state_ribs_rib_active_route_input),
 	.nmap = 1,
 	.nchild = 2,
-	.child = n291_c,
-	.module = &m15,
+	.child = n314_c,
+	.module = &m17,
 };
 
-static const uint16_t n295_p[] = {
+static const uint16_t n318_p[] = {
 	1, 2, 3, 0, 0, 0, 0, 0, 4
 };
-static const struct cbl_ynode n296 = {
+static const struct cbl_ynode n319 = {
 	.sid = UINT64_C(61324),
 	.name = "active",
 	.kind = CBL_YN_LEAF,
@@ -6323,10 +6741,10 @@ static const struct cbl_ynode n296 = {
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route, active),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t22,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n297 = {
+static const struct cbl_ynode n320 = {
 	.sid = UINT64_C(61325),
 	.name = "last-updated",
 	.kind = CBL_YN_LEAF,
@@ -6334,10 +6752,10 @@ static const struct cbl_ynode n297 = {
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route, last_updated),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t5,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n301 = {
+static const struct cbl_ynode n324 = {
 	.sid = UINT64_C(61329),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
@@ -6345,45 +6763,45 @@ static const struct cbl_ynode n301 = {
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop, outgoing_interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t3,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ywhen n302_w[] = {
-	{ 20, CBL_YWC_PARENT },
+static const struct cbl_ywhen n325_w[] = {
+	{ 23, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n302 = {
+static const struct cbl_ynode n325 = {
 	.sid = UINT64_C(61505),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop, v4ur_next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t49,
+	.type = &t51,
 	.nwhen = 1,
-	.when = n302_w,
-	.module = &m16,
+	.when = n325_w,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n303_w[] = {
-	{ 21, CBL_YWC_PARENT },
+static const struct cbl_ywhen n326_w[] = {
+	{ 24, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n303 = {
+static const struct cbl_ynode n326 = {
 	.sid = UINT64_C(61642),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop, v6ur_next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t51,
+	.type = &t53,
 	.nwhen = 1,
-	.when = n303_w,
-	.module = &m17,
+	.when = n326_w,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n300_c[] = {
-	&n301, &n302, &n303
+static const struct cbl_ynode *const n323_c[] = {
+	&n324, &n325, &n326
 };
-static const struct cbl_ynode n300 = {
+static const struct cbl_ynode n323 = {
 	.sid = UINT64_C(61328),
 	.name = "next-hop",
 	.kind = CBL_YN_LIST,
@@ -6393,12 +6811,12 @@ static const struct cbl_ynode n300 = {
 	.size = sizeof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop),
 	.nmap = 1,
 	.nchild = 3,
-	.child = n300_c,
-	.module = &m15,
+	.child = n323_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n299_c[] = {
-	&n300
+static const struct cbl_ynode *const n322_c[] = {
+	&n323
 };
 static const struct cbl_ycase c7_c[] = {
 	{ "simple-next-hop", NULL, 0 },
@@ -6414,7 +6832,7 @@ static const struct cbl_ychoice c7 = {
 	.mandatory = true,
 };
 
-static const struct cbl_ynode n299 = {
+static const struct cbl_ynode n322 = {
 	.sid = UINT64_C(61327),
 	.name = "next-hop-list",
 	.kind = CBL_YN_CONTAINER,
@@ -6424,13 +6842,13 @@ static const struct cbl_ynode n299 = {
 	.size = sizeof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n299_c,
+	.child = n322_c,
 	.choice = &c7,
 	.ccase = 2,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n304 = {
+static const struct cbl_ynode n327 = {
 	.sid = UINT64_C(61330),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
@@ -6440,62 +6858,62 @@ static const struct cbl_ynode n304 = {
 	.type = &t3,
 	.choice = &c7,
 	.ccase = 0,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n305 = {
+static const struct cbl_ynode n328 = {
 	.sid = UINT64_C(61331),
 	.name = "special-next-hop",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop, special_next_hop),
 	.hoff = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop, has_special_next_hop),
-	.type = &t50,
+	.type = &t52,
 	.choice = &c7,
 	.ccase = 1,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ywhen n306_w[] = {
-	{ 22, CBL_YWC_PARENT },
+static const struct cbl_ywhen n329_w[] = {
+	{ 25, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n306 = {
+static const struct cbl_ynode n329 = {
 	.sid = UINT64_C(61504),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop, v4ur_next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t49,
+	.type = &t51,
 	.nwhen = 1,
-	.when = n306_w,
+	.when = n329_w,
 	.choice = &c7,
 	.ccase = 0,
-	.module = &m16,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n307_w[] = {
-	{ 23, CBL_YWC_PARENT },
+static const struct cbl_ywhen n330_w[] = {
+	{ 26, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n307 = {
+static const struct cbl_ynode n330 = {
 	.sid = UINT64_C(61641),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop, v6ur_next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t51,
+	.type = &t53,
 	.nwhen = 1,
-	.when = n307_w,
+	.when = n330_w,
 	.choice = &c7,
 	.ccase = 0,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n298_c[] = {
-	&n299, &n304, &n305, &n306, &n307
+static const struct cbl_ynode *const n321_c[] = {
+	&n322, &n327, &n328, &n329, &n330
 };
-static const struct cbl_ynode n298 = {
+static const struct cbl_ynode n321 = {
 	.sid = UINT64_C(61326),
 	.name = "next-hop",
 	.kind = CBL_YN_CONTAINER,
@@ -6504,41 +6922,41 @@ static const struct cbl_ynode n298 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop),
 	.nchild = 5,
-	.child = n298_c,
-	.module = &m15,
+	.child = n321_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n308 = {
+static const struct cbl_ynode n331 = {
 	.sid = UINT64_C(61332),
 	.name = "source-protocol",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x42,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route, source_protocol),
 	.hoff = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route, has_source_protocol),
-	.type = &t53,
-	.module = &m15,
+	.type = &t55,
+	.module = &m17,
 };
 
-static const struct cbl_ywhen n309_w[] = {
-	{ 24, CBL_YWC_PARENT },
+static const struct cbl_ywhen n332_w[] = {
+	{ 27, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n309 = {
+static const struct cbl_ynode n332 = {
 	.sid = UINT64_C(61503),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route, v4ur_destination_prefix),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t48,
+	.type = &t50,
 	.nwhen = 1,
-	.when = n309_w,
-	.module = &m16,
+	.when = n332_w,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n310_w[] = {
-	{ 25, CBL_YWC_PARENT },
+static const struct cbl_ywhen n333_w[] = {
+	{ 28, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n310 = {
+static const struct cbl_ynode n333 = {
 	.sid = UINT64_C(61640),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
@@ -6547,14 +6965,14 @@ static const struct cbl_ynode n310 = {
 	.hoff = CBL_YOFF_NONE,
 	.type = &t28,
 	.nwhen = 1,
-	.when = n310_w,
-	.module = &m17,
+	.when = n333_w,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n295_c[] = {
-	&n296, &n297, &n298, &n308, &n309, &n310
+static const struct cbl_ynode *const n318_c[] = {
+	&n319, &n320, &n321, &n331, &n332, &n333
 };
-static const struct cbl_ynode n295 = {
+static const struct cbl_ynode n318 = {
 	.sid = UINT64_C(61323),
 	.name = "route",
 	.kind = CBL_YN_CONTAINER,
@@ -6563,16 +6981,16 @@ static const struct cbl_ynode n295 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing_state_ribs_rib_active_route_output_route),
 	.nmap = 9,
-	.map = n295_p,
+	.map = n318_p,
 	.nchild = 6,
-	.child = n295_c,
-	.module = &m15,
+	.child = n318_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n294_c[] = {
-	&n295
+static const struct cbl_ynode *const n317_c[] = {
+	&n318
 };
-static const struct cbl_ynode n294 = {
+static const struct cbl_ynode n317 = {
 	.sid = UINT64_C(61322),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -6582,14 +7000,14 @@ static const struct cbl_ynode n294 = {
 	.size = sizeof(struct ietf_routing_routing_state_ribs_rib_active_route_output),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n294_c,
-	.module = &m15,
+	.child = n317_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n290_c[] = {
-	&n291, &n294
+static const struct cbl_ynode *const n313_c[] = {
+	&n314, &n317
 };
-static const struct cbl_ynode n290 = {
+static const struct cbl_ynode n313 = {
 	.sid = UINT64_C(61320),
 	.name = "active-route",
 	.kind = CBL_YN_ACTION,
@@ -6598,23 +7016,23 @@ static const struct cbl_ynode n290 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n290_c,
-	.module = &m15,
+	.child = n313_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n311 = {
+static const struct cbl_ynode n334 = {
 	.sid = UINT64_C(61333),
 	.name = "address-family",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x42,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib, address_family),
 	.hoff = offsetof(struct ietf_routing_routing_state_ribs_rib, has_address_family),
-	.type = &t54,
-	.module = &m15,
+	.type = &t56,
+	.module = &m17,
 };
 
-static const char *const n312_d[] = { "true" };
-static const struct cbl_ynode n312 = {
+static const char *const n335_d[] = { "true" };
+static const struct cbl_ynode n335 = {
 	.sid = UINT64_C(61334),
 	.name = "default-rib",
 	.kind = CBL_YN_LEAF,
@@ -6623,11 +7041,11 @@ static const struct cbl_ynode n312 = {
 	.hoff = offsetof(struct ietf_routing_routing_state_ribs_rib, has_default_rib),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n312_d,
-	.module = &m15,
+	.dflt = n335_d,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n313 = {
+static const struct cbl_ynode n336 = {
 	.sid = UINT64_C(61335),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -6635,13 +7053,13 @@ static const struct cbl_ynode n313 = {
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const uint16_t n315_p[] = {
+static const uint16_t n338_p[] = {
 	1, 2, 3, 0, 0, 0, 0, 0, 4, 5
 };
-static const struct cbl_ynode n316 = {
+static const struct cbl_ynode n339 = {
 	.sid = UINT64_C(61338),
 	.name = "active",
 	.kind = CBL_YN_LEAF,
@@ -6649,10 +7067,10 @@ static const struct cbl_ynode n316 = {
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route, active),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t22,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n317 = {
+static const struct cbl_ynode n340 = {
 	.sid = UINT64_C(61339),
 	.name = "last-updated",
 	.kind = CBL_YN_LEAF,
@@ -6660,10 +7078,10 @@ static const struct cbl_ynode n317 = {
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route, last_updated),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t5,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n321 = {
+static const struct cbl_ynode n344 = {
 	.sid = UINT64_C(61343),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
@@ -6671,45 +7089,45 @@ static const struct cbl_ynode n321 = {
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop, outgoing_interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t3,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ywhen n322_w[] = {
-	{ 26, CBL_YWC_PARENT },
+static const struct cbl_ywhen n345_w[] = {
+	{ 29, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n322 = {
+static const struct cbl_ynode n345 = {
 	.sid = UINT64_C(61508),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop, v4ur_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t49,
+	.type = &t51,
 	.nwhen = 1,
-	.when = n322_w,
-	.module = &m16,
+	.when = n345_w,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n323_w[] = {
-	{ 21, CBL_YWC_PARENT },
+static const struct cbl_ywhen n346_w[] = {
+	{ 24, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n323 = {
+static const struct cbl_ynode n346 = {
 	.sid = UINT64_C(61645),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop, v6ur_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t51,
+	.type = &t53,
 	.nwhen = 1,
-	.when = n323_w,
-	.module = &m17,
+	.when = n346_w,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n320_c[] = {
-	&n321, &n322, &n323
+static const struct cbl_ynode *const n343_c[] = {
+	&n344, &n345, &n346
 };
-static const struct cbl_ynode n320 = {
+static const struct cbl_ynode n343 = {
 	.sid = UINT64_C(61342),
 	.name = "next-hop",
 	.kind = CBL_YN_LIST,
@@ -6719,12 +7137,12 @@ static const struct cbl_ynode n320 = {
 	.size = sizeof(struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop),
 	.nmap = 1,
 	.nchild = 3,
-	.child = n320_c,
-	.module = &m15,
+	.child = n343_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n319_c[] = {
-	&n320
+static const struct cbl_ynode *const n342_c[] = {
+	&n343
 };
 static const struct cbl_ycase c8_c[] = {
 	{ "simple-next-hop", NULL, 0 },
@@ -6740,7 +7158,7 @@ static const struct cbl_ychoice c8 = {
 	.mandatory = true,
 };
 
-static const struct cbl_ynode n319 = {
+static const struct cbl_ynode n342 = {
 	.sid = UINT64_C(61341),
 	.name = "next-hop-list",
 	.kind = CBL_YN_CONTAINER,
@@ -6750,13 +7168,13 @@ static const struct cbl_ynode n319 = {
 	.size = sizeof(struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n319_c,
+	.child = n342_c,
 	.choice = &c8,
 	.ccase = 2,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n324 = {
+static const struct cbl_ynode n347 = {
 	.sid = UINT64_C(61344),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
@@ -6766,62 +7184,62 @@ static const struct cbl_ynode n324 = {
 	.type = &t3,
 	.choice = &c8,
 	.ccase = 0,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n325 = {
+static const struct cbl_ynode n348 = {
 	.sid = UINT64_C(61345),
 	.name = "special-next-hop",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop, special_next_hop),
 	.hoff = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop, has_special_next_hop),
-	.type = &t50,
+	.type = &t52,
 	.choice = &c8,
 	.ccase = 1,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ywhen n326_w[] = {
-	{ 27, CBL_YWC_PARENT },
+static const struct cbl_ywhen n349_w[] = {
+	{ 30, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n326 = {
+static const struct cbl_ynode n349 = {
 	.sid = UINT64_C(61507),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop, v4ur_next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t49,
+	.type = &t51,
 	.nwhen = 1,
-	.when = n326_w,
+	.when = n349_w,
 	.choice = &c8,
 	.ccase = 0,
-	.module = &m16,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n327_w[] = {
-	{ 23, CBL_YWC_PARENT },
+static const struct cbl_ywhen n350_w[] = {
+	{ 26, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n327 = {
+static const struct cbl_ynode n350 = {
 	.sid = UINT64_C(61644),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop, v6ur_next_hop_address),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t51,
+	.type = &t53,
 	.nwhen = 1,
-	.when = n327_w,
+	.when = n350_w,
 	.choice = &c8,
 	.ccase = 0,
-	.module = &m17,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n318_c[] = {
-	&n319, &n324, &n325, &n326, &n327
+static const struct cbl_ynode *const n341_c[] = {
+	&n342, &n347, &n348, &n349, &n350
 };
-static const struct cbl_ynode n318 = {
+static const struct cbl_ynode n341 = {
 	.sid = UINT64_C(61340),
 	.name = "next-hop",
 	.kind = CBL_YN_CONTAINER,
@@ -6830,11 +7248,11 @@ static const struct cbl_ynode n318 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop),
 	.nchild = 5,
-	.child = n318_c,
-	.module = &m15,
+	.child = n341_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n328 = {
+static const struct cbl_ynode n351 = {
 	.sid = UINT64_C(61346),
 	.name = "route-preference",
 	.kind = CBL_YN_LEAF,
@@ -6842,40 +7260,40 @@ static const struct cbl_ynode n328 = {
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route, route_preference),
 	.hoff = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route, has_route_preference),
 	.type = &t10,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n329 = {
+static const struct cbl_ynode n352 = {
 	.sid = UINT64_C(61347),
 	.name = "source-protocol",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x42,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route, source_protocol),
 	.hoff = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route, has_source_protocol),
-	.type = &t53,
-	.module = &m15,
+	.type = &t55,
+	.module = &m17,
 };
 
-static const struct cbl_ywhen n330_w[] = {
-	{ 16, CBL_YWC_PARENT },
+static const struct cbl_ywhen n353_w[] = {
+	{ 19, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n330 = {
+static const struct cbl_ynode n353 = {
 	.sid = UINT64_C(61506),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state_ribs_rib_routes_route, v4ur_destination_prefix),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t48,
+	.type = &t50,
 	.nwhen = 1,
-	.when = n330_w,
-	.module = &m16,
+	.when = n353_w,
+	.module = &m18,
 };
 
-static const struct cbl_ywhen n331_w[] = {
-	{ 25, CBL_YWC_PARENT },
+static const struct cbl_ywhen n354_w[] = {
+	{ 28, CBL_YWC_PARENT },
 };
-static const struct cbl_ynode n331 = {
+static const struct cbl_ynode n354 = {
 	.sid = UINT64_C(61643),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
@@ -6884,15 +7302,15 @@ static const struct cbl_ynode n331 = {
 	.hoff = CBL_YOFF_NONE,
 	.type = &t28,
 	.nwhen = 1,
-	.when = n331_w,
-	.module = &m17,
+	.when = n354_w,
+	.module = &m19,
 };
 
-static const struct cbl_ynode *const n315_c[] = {
-	&n316, &n317, &n318, &n328, &n329, &n330,
-	&n331
+static const struct cbl_ynode *const n338_c[] = {
+	&n339, &n340, &n341, &n351, &n352, &n353,
+	&n354
 };
-static const struct cbl_ynode n315 = {
+static const struct cbl_ynode n338 = {
 	.sid = UINT64_C(61337),
 	.name = "route",
 	.kind = CBL_YN_LIST,
@@ -6901,16 +7319,16 @@ static const struct cbl_ynode n315 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing_state_ribs_rib_routes_route),
 	.nmap = 10,
-	.map = n315_p,
+	.map = n338_p,
 	.nchild = 7,
-	.child = n315_c,
-	.module = &m15,
+	.child = n338_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n314_c[] = {
-	&n315
+static const struct cbl_ynode *const n337_c[] = {
+	&n338
 };
-static const struct cbl_ynode n314 = {
+static const struct cbl_ynode n337 = {
 	.sid = UINT64_C(61336),
 	.name = "routes",
 	.kind = CBL_YN_CONTAINER,
@@ -6920,15 +7338,15 @@ static const struct cbl_ynode n314 = {
 	.size = sizeof(struct ietf_routing_routing_state_ribs_rib_routes),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n314_c,
-	.module = &m15,
+	.child = n337_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n289_c[] = {
-	&n290, &n311, &n312, &n313, &n314
+static const struct cbl_ynode *const n312_c[] = {
+	&n313, &n334, &n335, &n336, &n337
 };
-static const uint32_t n289_k[] = { 3 };
-static const struct cbl_ynode n289 = {
+static const uint32_t n312_k[] = { 3 };
+static const struct cbl_ynode n312 = {
 	.sid = UINT64_C(61319),
 	.name = "rib",
 	.kind = CBL_YN_LIST,
@@ -6937,19 +7355,19 @@ static const struct cbl_ynode n289 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing_state_ribs_rib),
 	.nmap = 17,
-	.map = n289_p,
+	.map = n312_p,
 	.nchild = 5,
-	.child = n289_c,
+	.child = n312_c,
 	.nkeys = 1,
-	.keys = n289_k,
+	.keys = n312_k,
 	.min = 1,
-	.module = &m15,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n288_c[] = {
-	&n289
+static const struct cbl_ynode *const n311_c[] = {
+	&n312
 };
-static const struct cbl_ynode n288 = {
+static const struct cbl_ynode n311 = {
 	.sid = UINT64_C(61318),
 	.name = "ribs",
 	.kind = CBL_YN_CONTAINER,
@@ -6959,25 +7377,25 @@ static const struct cbl_ynode n288 = {
 	.size = sizeof(struct ietf_routing_routing_state_ribs),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n288_c,
-	.module = &m15,
+	.child = n311_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n332 = {
+static const struct cbl_ynode n355 = {
 	.sid = UINT64_C(61348),
 	.name = "router-id",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
 	.off = offsetof(struct ietf_routing_routing_state, router_id),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t55,
-	.module = &m15,
+	.type = &t57,
+	.module = &m17,
 };
 
-static const struct cbl_ynode *const n281_c[] = {
-	&n282, &n286, &n288, &n332
+static const struct cbl_ynode *const n304_c[] = {
+	&n305, &n309, &n311, &n355
 };
-static const struct cbl_ynode n281 = {
+static const struct cbl_ynode n304 = {
 	.sid = UINT64_C(61311),
 	.name = "routing-state",
 	.kind = CBL_YN_CONTAINER,
@@ -6986,13 +7404,13 @@ static const struct cbl_ynode n281 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_routing_routing_state),
 	.nmap = 37,
-	.map = n281_p,
+	.map = n304_p,
 	.nchild = 4,
-	.child = n281_c,
-	.module = &m15,
+	.child = n304_c,
+	.module = &m17,
 };
 
-static const struct cbl_ynode n335 = {
+static const struct cbl_ynode n358 = {
 	.sid = UINT64_C(61815),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
@@ -7000,14 +7418,14 @@ static const struct cbl_ynode n335 = {
 	.off = offsetof(struct ietf_network_instance_network_instances_network_instance, description),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m43,
+	.module = &m45,
 };
 
-static const struct cbl_ymust n336_m[] = {
-	{ 28, "a FIB cannot be disabled", NULL },
+static const struct cbl_ymust n359_m[] = {
+	{ 31, "a FIB cannot be disabled", NULL },
 };
-static const char *const n336_d[] = { "true" };
-static const struct cbl_ynode n336 = {
+static const char *const n359_d[] = { "true" };
+static const struct cbl_ynode n359 = {
 	.sid = UINT64_C(61816),
 	.name = "enabled",
 	.kind = CBL_YN_LEAF,
@@ -7016,13 +7434,13 @@ static const struct cbl_ynode n336 = {
 	.hoff = offsetof(struct ietf_network_instance_network_instances_network_instance, has_enabled),
 	.type = &t2,
 	.nmust = 1,
-	.must = n336_m,
+	.must = n359_m,
 	.ndflt = 1,
-	.dflt = n336_d,
-	.module = &m43,
+	.dflt = n359_d,
+	.module = &m45,
 };
 
-static const struct cbl_ynode n337 = {
+static const struct cbl_ynode n360 = {
 	.sid = UINT64_C(61817),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -7030,7 +7448,7 @@ static const struct cbl_ynode n337 = {
 	.off = offsetof(struct ietf_network_instance_network_instances_network_instance, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m43,
+	.module = &m45,
 };
 
 static const struct cbl_ycase c9_c[] = {
@@ -7045,7 +7463,7 @@ static const struct cbl_ychoice c9 = {
 	.mandatory = true,
 };
 
-static const struct cbl_ynode n338 = {
+static const struct cbl_ynode n361 = {
 	.sid = UINT64_C(61818),
 	.name = "vrf-root",
 	.kind = CBL_YN_CONTAINER,
@@ -7055,7 +7473,7 @@ static const struct cbl_ynode n338 = {
 	.size = sizeof(struct ietf_network_instance_network_instances_network_instance_vrf_root),
 	.choice = &c9,
 	.ccase = 0,
-	.module = &m43,
+	.module = &m45,
 };
 
 static const struct cbl_ycase c10_c[] = {
@@ -7069,24 +7487,24 @@ static const struct cbl_ychoice c10 = {
 	.off = offsetof(struct ietf_network_instance_network_instances_network_instance, ni_type),
 };
 
-static const struct cbl_ynode n339 = {
+static const struct cbl_ynode n362 = {
 	.sid = UINT64_C(61901),
 	.name = "fib",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
 	.off = offsetof(struct ietf_network_instance_network_instances_network_instance, arcni_fib),
 	.hoff = offsetof(struct ietf_network_instance_network_instances_network_instance, has_arcni_fib),
-	.type = &t56,
+	.type = &t58,
 	.choice = &c10,
 	.ccase = 0,
-	.module = &m44,
+	.module = &m46,
 };
 
-static const struct cbl_ynode *const n334_c[] = {
-	&n335, &n336, &n337, &n338, &n339
+static const struct cbl_ynode *const n357_c[] = {
+	&n358, &n359, &n360, &n361, &n362
 };
-static const uint32_t n334_k[] = { 2 };
-static const struct cbl_ynode n334 = {
+static const uint32_t n357_k[] = { 2 };
+static const struct cbl_ynode n357 = {
 	.sid = UINT64_C(61814),
 	.name = "network-instance",
 	.kind = CBL_YN_LIST,
@@ -7096,16 +7514,16 @@ static const struct cbl_ynode n334 = {
 	.size = sizeof(struct ietf_network_instance_network_instances_network_instance),
 	.nmap = 4,
 	.nchild = 5,
-	.child = n334_c,
+	.child = n357_c,
 	.nkeys = 1,
-	.keys = n334_k,
-	.module = &m43,
+	.keys = n357_k,
+	.module = &m45,
 };
 
-static const struct cbl_ynode *const n333_c[] = {
-	&n334
+static const struct cbl_ynode *const n356_c[] = {
+	&n357
 };
-static const struct cbl_ynode n333 = {
+static const struct cbl_ynode n356 = {
 	.sid = UINT64_C(61813),
 	.name = "network-instances",
 	.kind = CBL_YN_CONTAINER,
@@ -7115,37 +7533,37 @@ static const struct cbl_ynode n333 = {
 	.size = sizeof(struct ietf_network_instance_network_instances),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n333_c,
-	.module = &m43,
+	.child = n356_c,
+	.module = &m45,
 };
 
-static const uint16_t n340_p[] = {
+static const uint16_t n363_p[] = {
 	1, 2, 0, 3, 0, 4, 0, 5
 };
-static const struct cbl_ynode n341 = {
+static const struct cbl_ynode n364 = {
 	.sid = UINT64_C(61805),
 	.name = "error-info",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_network_instance_bind_ni_name_failed, error_info),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m43,
+	.module = &m45,
 };
 
-static const struct cbl_ynode n343 = {
+static const struct cbl_ynode n366 = {
 	.sid = UINT64_C(61807),
 	.name = "bind-ni-name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_network_instance_bind_ni_name_failed_interface, bind_ni_name),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t57,
-	.module = &m43,
+	.type = &t59,
+	.module = &m45,
 };
 
-static const struct cbl_ynode *const n342_c[] = {
-	&n343
+static const struct cbl_ynode *const n365_c[] = {
+	&n366
 };
-static const struct cbl_ynode n342 = {
+static const struct cbl_ynode n365 = {
 	.sid = UINT64_C(61806),
 	.name = "interface",
 	.kind = CBL_YN_CONTAINER,
@@ -7154,24 +7572,24 @@ static const struct cbl_ynode n342 = {
 	.size = sizeof(struct ietf_network_instance_bind_ni_name_failed_interface),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n342_c,
-	.module = &m43,
+	.child = n365_c,
+	.module = &m45,
 };
 
-static const struct cbl_ynode n345 = {
+static const struct cbl_ynode n368 = {
 	.sid = UINT64_C(61809),
 	.name = "bind-ni-name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_network_instance_bind_ni_name_failed_ipv4, bind_ni_name),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t58,
-	.module = &m43,
+	.type = &t60,
+	.module = &m45,
 };
 
-static const struct cbl_ynode *const n344_c[] = {
-	&n345
+static const struct cbl_ynode *const n367_c[] = {
+	&n368
 };
-static const struct cbl_ynode n344 = {
+static const struct cbl_ynode n367 = {
 	.sid = UINT64_C(61808),
 	.name = "ipv4",
 	.kind = CBL_YN_CONTAINER,
@@ -7180,24 +7598,24 @@ static const struct cbl_ynode n344 = {
 	.size = sizeof(struct ietf_network_instance_bind_ni_name_failed_ipv4),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n344_c,
-	.module = &m43,
+	.child = n367_c,
+	.module = &m45,
 };
 
-static const struct cbl_ynode n347 = {
+static const struct cbl_ynode n370 = {
 	.sid = UINT64_C(61811),
 	.name = "bind-ni-name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_network_instance_bind_ni_name_failed_ipv6, bind_ni_name),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t59,
-	.module = &m43,
+	.type = &t61,
+	.module = &m45,
 };
 
-static const struct cbl_ynode *const n346_c[] = {
-	&n347
+static const struct cbl_ynode *const n369_c[] = {
+	&n370
 };
-static const struct cbl_ynode n346 = {
+static const struct cbl_ynode n369 = {
 	.sid = UINT64_C(61810),
 	.name = "ipv6",
 	.kind = CBL_YN_CONTAINER,
@@ -7206,11 +7624,11 @@ static const struct cbl_ynode n346 = {
 	.size = sizeof(struct ietf_network_instance_bind_ni_name_failed_ipv6),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n346_c,
-	.module = &m43,
+	.child = n369_c,
+	.module = &m45,
 };
 
-static const struct cbl_ynode n348 = {
+static const struct cbl_ynode n371 = {
 	.sid = UINT64_C(61812),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -7218,13 +7636,13 @@ static const struct cbl_ynode n348 = {
 	.off = offsetof(struct ietf_network_instance_bind_ni_name_failed, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t3,
-	.module = &m43,
+	.module = &m45,
 };
 
-static const struct cbl_ynode *const n340_c[] = {
-	&n341, &n342, &n344, &n346, &n348
+static const struct cbl_ynode *const n363_c[] = {
+	&n364, &n365, &n367, &n369, &n371
 };
-static const struct cbl_ynode n340 = {
+static const struct cbl_ynode n363 = {
 	.sid = UINT64_C(61804),
 	.name = "bind-ni-name-failed",
 	.kind = CBL_YN_NOTIF,
@@ -7232,13 +7650,13 @@ static const struct cbl_ynode n340 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_network_instance_bind_ni_name_failed),
 	.nmap = 8,
-	.map = n340_p,
+	.map = n363_p,
 	.nchild = 5,
-	.child = n340_c,
-	.module = &m43,
+	.child = n363_c,
+	.module = &m45,
 };
 
-static const struct cbl_ynode n351 = {
+static const struct cbl_ynode n374 = {
 	.sid = UINT64_C(62008),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
@@ -7246,11 +7664,11 @@ static const struct cbl_ynode n351 = {
 	.off = offsetof(struct ietf_logical_network_element_logical_network_elements_logical_network_element, description),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m45,
+	.module = &m47,
 };
 
-static const char *const n352_d[] = { "true" };
-static const struct cbl_ynode n352 = {
+static const char *const n375_d[] = { "true" };
+static const struct cbl_ynode n375 = {
 	.sid = UINT64_C(62009),
 	.name = "managed",
 	.kind = CBL_YN_LEAF,
@@ -7259,11 +7677,11 @@ static const struct cbl_ynode n352 = {
 	.hoff = offsetof(struct ietf_logical_network_element_logical_network_elements_logical_network_element, has_managed),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n352_d,
-	.module = &m45,
+	.dflt = n375_d,
+	.module = &m47,
 };
 
-static const struct cbl_ynode n353 = {
+static const struct cbl_ynode n376 = {
 	.sid = UINT64_C(62010),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -7271,10 +7689,10 @@ static const struct cbl_ynode n353 = {
 	.off = offsetof(struct ietf_logical_network_element_logical_network_elements_logical_network_element, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m45,
+	.module = &m47,
 };
 
-static const struct cbl_ynode n354 = {
+static const struct cbl_ynode n377 = {
 	.sid = UINT64_C(62011),
 	.name = "root",
 	.kind = CBL_YN_CONTAINER,
@@ -7282,14 +7700,14 @@ static const struct cbl_ynode n354 = {
 	.off = offsetof(struct ietf_logical_network_element_logical_network_elements_logical_network_element, root),
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_logical_network_element_logical_network_elements_logical_network_element_root),
-	.module = &m45,
+	.module = &m47,
 };
 
-static const struct cbl_ynode *const n350_c[] = {
-	&n351, &n352, &n353, &n354
+static const struct cbl_ynode *const n373_c[] = {
+	&n374, &n375, &n376, &n377
 };
-static const uint32_t n350_k[] = { 2 };
-static const struct cbl_ynode n350 = {
+static const uint32_t n373_k[] = { 2 };
+static const struct cbl_ynode n373 = {
 	.sid = UINT64_C(62007),
 	.name = "logical-network-element",
 	.kind = CBL_YN_LIST,
@@ -7299,16 +7717,16 @@ static const struct cbl_ynode n350 = {
 	.size = sizeof(struct ietf_logical_network_element_logical_network_elements_logical_network_element),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n350_c,
+	.child = n373_c,
 	.nkeys = 1,
-	.keys = n350_k,
-	.module = &m45,
+	.keys = n373_k,
+	.module = &m47,
 };
 
-static const struct cbl_ynode *const n349_c[] = {
-	&n350
+static const struct cbl_ynode *const n372_c[] = {
+	&n373
 };
-static const struct cbl_ynode n349 = {
+static const struct cbl_ynode n372 = {
 	.sid = UINT64_C(62006),
 	.name = "logical-network-elements",
 	.kind = CBL_YN_CONTAINER,
@@ -7318,32 +7736,32 @@ static const struct cbl_ynode n349 = {
 	.size = sizeof(struct ietf_logical_network_element_logical_network_elements),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n349_c,
-	.module = &m45,
+	.child = n372_c,
+	.module = &m47,
 };
 
-static const struct cbl_ynode n356 = {
+static const struct cbl_ynode n379 = {
 	.sid = UINT64_C(62003),
 	.name = "bind-lne-name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct ietf_logical_network_element_bind_lne_name_failed, bind_lne_name),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t60,
-	.module = &m45,
+	.type = &t62,
+	.module = &m47,
 };
 
-static const struct cbl_ynode n357 = {
+static const struct cbl_ynode n380 = {
 	.sid = UINT64_C(62004),
 	.name = "error-info",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_logical_network_element_bind_lne_name_failed, error_info),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m45,
+	.module = &m47,
 };
 
-static const struct cbl_ynode n358 = {
+static const struct cbl_ynode n381 = {
 	.sid = UINT64_C(62005),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -7351,13 +7769,13 @@ static const struct cbl_ynode n358 = {
 	.off = offsetof(struct ietf_logical_network_element_bind_lne_name_failed, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t3,
-	.module = &m45,
+	.module = &m47,
 };
 
-static const struct cbl_ynode *const n355_c[] = {
-	&n356, &n357, &n358
+static const struct cbl_ynode *const n378_c[] = {
+	&n379, &n380, &n381
 };
-static const struct cbl_ynode n355 = {
+static const struct cbl_ynode n378 = {
 	.sid = UINT64_C(62002),
 	.name = "bind-lne-name-failed",
 	.kind = CBL_YN_NOTIF,
@@ -7366,34 +7784,34 @@ static const struct cbl_ynode n355 = {
 	.size = sizeof(struct ietf_logical_network_element_bind_lne_name_failed),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n355_c,
-	.module = &m45,
+	.child = n378_c,
+	.module = &m47,
 };
 
-static const struct cbl_ynode n361 = {
+static const struct cbl_ynode n384 = {
 	.sid = UINT64_C(62103),
 	.name = "message",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_conf_error, message),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n362 = {
+static const struct cbl_ynode n385 = {
 	.sid = UINT64_C(62104),
 	.name = "scope",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_conf_error, scope),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode *const n360_c[] = {
-	&n361, &n362
+static const struct cbl_ynode *const n383_c[] = {
+	&n384, &n385
 };
-static const struct cbl_ynode n360 = {
+static const struct cbl_ynode n383 = {
 	.sid = UINT64_C(62102),
 	.name = "conf-error",
 	.kind = CBL_YN_LIST,
@@ -7403,11 +7821,11 @@ static const struct cbl_ynode n360 = {
 	.size = sizeof(struct arcana_jails_jails_conf_error),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n360_c,
-	.module = &m46,
+	.child = n383_c,
+	.module = &m48,
 };
 
-static const uint16_t n363_p[] = {
+static const uint16_t n386_p[] = {
 	1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 10, 11, 12,
 	13, 14, 0, 0, 15, 16, 17, 18, 19, 0, 0, 0, 0, 20, 21, 22,
 	23, 0, 0, 0, 0, 24, 25, 0, 0, 0, 0, 26, 0, 0, 0, 0,
@@ -7422,58 +7840,58 @@ static const uint16_t n363_p[] = {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 27
 };
-static const struct cbl_ynode n364 = {
+static const struct cbl_ynode n387 = {
 	.sid = UINT64_C(62106),
 	.name = "children",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, children),
 	.hoff = offsetof(struct arcana_jails_jails_jail, has_children),
 	.type = &t10,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n365 = {
+static const struct cbl_ynode n388 = {
 	.sid = UINT64_C(62107),
 	.name = "configured",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, configured),
 	.hoff = offsetof(struct arcana_jails_jails_jail, has_configured),
 	.type = &t2,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n366 = {
+static const struct cbl_ynode n389 = {
 	.sid = UINT64_C(62108),
 	.name = "cpu",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, cpu),
 	.hoff = offsetof(struct arcana_jails_jails_jail, has_cpu),
-	.type = &t61,
+	.type = &t63,
 	.units = "percent",
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n367 = {
+static const struct cbl_ynode n390 = {
 	.sid = UINT64_C(62109),
 	.name = "hostname",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, hostname),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n368 = {
+static const struct cbl_ynode n391 = {
 	.sid = UINT64_C(62110),
 	.name = "interface",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n369 = {
+static const struct cbl_ynode n392 = {
 	.sid = UINT64_C(62111),
 	.name = "ip4",
 	.kind = CBL_YN_LEAFLIST,
@@ -7481,10 +7899,10 @@ static const struct cbl_ynode n369 = {
 	.off = offsetof(struct arcana_jails_jails_jail, ip4),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n370 = {
+static const struct cbl_ynode n393 = {
 	.sid = UINT64_C(62112),
 	.name = "ip6",
 	.kind = CBL_YN_LEAFLIST,
@@ -7492,53 +7910,53 @@ static const struct cbl_ynode n370 = {
 	.off = offsetof(struct arcana_jails_jails_jail, ip6),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n371 = {
+static const struct cbl_ynode n394 = {
 	.sid = UINT64_C(62113),
 	.name = "jid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, jid),
 	.hoff = offsetof(struct arcana_jails_jails_jail, has_jid),
 	.type = &t10,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n373 = {
+static const struct cbl_ynode n396 = {
 	.sid = UINT64_C(62115),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jails_jails_jail_kill_input),
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n375 = {
+static const struct cbl_ynode n398 = {
 	.sid = UINT64_C(62117),
 	.name = "jid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_kill_output, jid),
 	.hoff = offsetof(struct arcana_jails_jails_jail_kill_output, has_jid),
 	.type = &t10,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n376 = {
+static const struct cbl_ynode n399 = {
 	.sid = UINT64_C(62118),
 	.name = "state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_kill_output, state),
 	.hoff = offsetof(struct arcana_jails_jails_jail_kill_output, has_state),
-	.type = &t62,
-	.module = &m46,
+	.type = &t64,
+	.module = &m48,
 };
 
-static const struct cbl_ynode *const n374_c[] = {
-	&n375, &n376
+static const struct cbl_ynode *const n397_c[] = {
+	&n398, &n399
 };
-static const struct cbl_ynode n374 = {
+static const struct cbl_ynode n397 = {
 	.sid = UINT64_C(62116),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -7547,14 +7965,14 @@ static const struct cbl_ynode n374 = {
 	.size = sizeof(struct arcana_jails_jails_jail_kill_output),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n374_c,
-	.module = &m46,
+	.child = n397_c,
+	.module = &m48,
 };
 
-static const struct cbl_ynode *const n372_c[] = {
-	&n373, &n374
+static const struct cbl_ynode *const n395_c[] = {
+	&n396, &n397
 };
-static const struct cbl_ynode n372 = {
+static const struct cbl_ynode n395 = {
 	.sid = UINT64_C(62114),
 	.name = "kill",
 	.kind = CBL_YN_ACTION,
@@ -7562,52 +7980,52 @@ static const struct cbl_ynode n372 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n372_c,
-	.module = &m46,
+	.child = n395_c,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n377 = {
+static const struct cbl_ynode n400 = {
 	.sid = UINT64_C(62119),
 	.name = "lne",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, lne),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t63,
-	.module = &m46,
+	.type = &t65,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n378 = {
+static const struct cbl_ynode n401 = {
 	.sid = UINT64_C(62120),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x4,
 	.off = offsetof(struct arcana_jails_jails_jail, name),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t64,
-	.module = &m46,
+	.type = &t66,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n379 = {
+static const struct cbl_ynode n402 = {
 	.sid = UINT64_C(62121),
 	.name = "nproc",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, nproc),
 	.hoff = offsetof(struct arcana_jails_jails_jail, has_nproc),
 	.type = &t10,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n380 = {
+static const struct cbl_ynode n403 = {
 	.sid = UINT64_C(62122),
 	.name = "osrelease",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, osrelease),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n382 = {
+static const struct cbl_ynode n405 = {
 	.sid = UINT64_C(62124),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -7615,10 +8033,10 @@ static const struct cbl_ynode n382 = {
 	.off = offsetof(struct arcana_jails_jails_jail_param, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n383 = {
+static const struct cbl_ynode n406 = {
 	.sid = UINT64_C(62125),
 	.name = "value",
 	.kind = CBL_YN_LEAFLIST,
@@ -7626,14 +8044,14 @@ static const struct cbl_ynode n383 = {
 	.off = offsetof(struct arcana_jails_jails_jail_param, value),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode *const n381_c[] = {
-	&n382, &n383
+static const struct cbl_ynode *const n404_c[] = {
+	&n405, &n406
 };
-static const uint32_t n381_k[] = { 0 };
-static const struct cbl_ynode n381 = {
+static const uint32_t n404_k[] = { 0 };
+static const struct cbl_ynode n404 = {
 	.sid = UINT64_C(62123),
 	.name = "param",
 	.kind = CBL_YN_LIST,
@@ -7643,43 +8061,43 @@ static const struct cbl_ynode n381 = {
 	.size = sizeof(struct arcana_jails_jails_jail_param),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n381_c,
+	.child = n404_c,
 	.nkeys = 1,
-	.keys = n381_k,
-	.module = &m46,
+	.keys = n404_k,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n384 = {
+static const struct cbl_ynode n407 = {
 	.sid = UINT64_C(62126),
 	.name = "parent",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, parent),
 	.hoff = offsetof(struct arcana_jails_jails_jail, has_parent),
 	.type = &t10,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n385 = {
+static const struct cbl_ynode n408 = {
 	.sid = UINT64_C(62127),
 	.name = "path",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, path),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n386 = {
+static const struct cbl_ynode n409 = {
 	.sid = UINT64_C(62128),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, persist),
 	.hoff = offsetof(struct arcana_jails_jails_jail, has_persist),
 	.type = &t2,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n387 = {
+static const struct cbl_ynode n410 = {
 	.sid = UINT64_C(62129),
 	.name = "plugin",
 	.kind = CBL_YN_LEAFLIST,
@@ -7687,43 +8105,43 @@ static const struct cbl_ynode n387 = {
 	.off = offsetof(struct arcana_jails_jails_jail, plugin),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n389 = {
+static const struct cbl_ynode n412 = {
 	.sid = UINT64_C(62131),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jails_jails_jail_restart_input),
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n391 = {
+static const struct cbl_ynode n414 = {
 	.sid = UINT64_C(62133),
 	.name = "jid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_restart_output, jid),
 	.hoff = offsetof(struct arcana_jails_jails_jail_restart_output, has_jid),
 	.type = &t10,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n392 = {
+static const struct cbl_ynode n415 = {
 	.sid = UINT64_C(62134),
 	.name = "state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_restart_output, state),
 	.hoff = offsetof(struct arcana_jails_jails_jail_restart_output, has_state),
-	.type = &t62,
-	.module = &m46,
+	.type = &t64,
+	.module = &m48,
 };
 
-static const struct cbl_ynode *const n390_c[] = {
-	&n391, &n392
+static const struct cbl_ynode *const n413_c[] = {
+	&n414, &n415
 };
-static const struct cbl_ynode n390 = {
+static const struct cbl_ynode n413 = {
 	.sid = UINT64_C(62132),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -7732,14 +8150,14 @@ static const struct cbl_ynode n390 = {
 	.size = sizeof(struct arcana_jails_jails_jail_restart_output),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n390_c,
-	.module = &m46,
+	.child = n413_c,
+	.module = &m48,
 };
 
-static const struct cbl_ynode *const n388_c[] = {
-	&n389, &n390
+static const struct cbl_ynode *const n411_c[] = {
+	&n412, &n413
 };
-static const struct cbl_ynode n388 = {
+static const struct cbl_ynode n411 = {
 	.sid = UINT64_C(62130),
 	.name = "restart",
 	.kind = CBL_YN_ACTION,
@@ -7747,11 +8165,11 @@ static const struct cbl_ynode n388 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n388_c,
-	.module = &m46,
+	.child = n411_c,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n393 = {
+static const struct cbl_ynode n416 = {
 	.sid = UINT64_C(62135),
 	.name = "rss",
 	.kind = CBL_YN_LEAF,
@@ -7759,63 +8177,63 @@ static const struct cbl_ynode n393 = {
 	.hoff = offsetof(struct arcana_jails_jails_jail, has_rss),
 	.type = &t9,
 	.units = "kibibytes",
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n394 = {
+static const struct cbl_ynode n417 = {
 	.sid = UINT64_C(62136),
 	.name = "scope",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, scope),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n395 = {
+static const struct cbl_ynode n418 = {
 	.sid = UINT64_C(62137),
 	.name = "securelevel",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, securelevel),
 	.hoff = offsetof(struct arcana_jails_jails_jail, has_securelevel),
-	.type = &t65,
-	.module = &m46,
+	.type = &t67,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n397 = {
+static const struct cbl_ynode n420 = {
 	.sid = UINT64_C(62139),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jails_jails_jail_start_input),
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n399 = {
+static const struct cbl_ynode n422 = {
 	.sid = UINT64_C(62141),
 	.name = "jid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_start_output, jid),
 	.hoff = offsetof(struct arcana_jails_jails_jail_start_output, has_jid),
 	.type = &t10,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n400 = {
+static const struct cbl_ynode n423 = {
 	.sid = UINT64_C(62142),
 	.name = "state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_start_output, state),
 	.hoff = offsetof(struct arcana_jails_jails_jail_start_output, has_state),
-	.type = &t62,
-	.module = &m46,
+	.type = &t64,
+	.module = &m48,
 };
 
-static const struct cbl_ynode *const n398_c[] = {
-	&n399, &n400
+static const struct cbl_ynode *const n421_c[] = {
+	&n422, &n423
 };
-static const struct cbl_ynode n398 = {
+static const struct cbl_ynode n421 = {
 	.sid = UINT64_C(62140),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -7824,14 +8242,14 @@ static const struct cbl_ynode n398 = {
 	.size = sizeof(struct arcana_jails_jails_jail_start_output),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n398_c,
-	.module = &m46,
+	.child = n421_c,
+	.module = &m48,
 };
 
-static const struct cbl_ynode *const n396_c[] = {
-	&n397, &n398
+static const struct cbl_ynode *const n419_c[] = {
+	&n420, &n421
 };
-static const struct cbl_ynode n396 = {
+static const struct cbl_ynode n419 = {
 	.sid = UINT64_C(62138),
 	.name = "start",
 	.kind = CBL_YN_ACTION,
@@ -7839,54 +8257,54 @@ static const struct cbl_ynode n396 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n396_c,
-	.module = &m46,
+	.child = n419_c,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n401 = {
+static const struct cbl_ynode n424 = {
 	.sid = UINT64_C(62143),
 	.name = "state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, state),
 	.hoff = offsetof(struct arcana_jails_jails_jail, has_state),
-	.type = &t62,
-	.module = &m46,
+	.type = &t64,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n403 = {
+static const struct cbl_ynode n426 = {
 	.sid = UINT64_C(62145),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jails_jails_jail_stop_input),
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n405 = {
+static const struct cbl_ynode n428 = {
 	.sid = UINT64_C(62147),
 	.name = "jid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_stop_output, jid),
 	.hoff = offsetof(struct arcana_jails_jails_jail_stop_output, has_jid),
 	.type = &t10,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n406 = {
+static const struct cbl_ynode n429 = {
 	.sid = UINT64_C(62148),
 	.name = "state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_stop_output, state),
 	.hoff = offsetof(struct arcana_jails_jails_jail_stop_output, has_state),
-	.type = &t62,
-	.module = &m46,
+	.type = &t64,
+	.module = &m48,
 };
 
-static const struct cbl_ynode *const n404_c[] = {
-	&n405, &n406
+static const struct cbl_ynode *const n427_c[] = {
+	&n428, &n429
 };
-static const struct cbl_ynode n404 = {
+static const struct cbl_ynode n427 = {
 	.sid = UINT64_C(62146),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -7895,14 +8313,14 @@ static const struct cbl_ynode n404 = {
 	.size = sizeof(struct arcana_jails_jails_jail_stop_output),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n404_c,
-	.module = &m46,
+	.child = n427_c,
+	.module = &m48,
 };
 
-static const struct cbl_ynode *const n402_c[] = {
-	&n403, &n404
+static const struct cbl_ynode *const n425_c[] = {
+	&n426, &n427
 };
-static const struct cbl_ynode n402 = {
+static const struct cbl_ynode n425 = {
 	.sid = UINT64_C(62144),
 	.name = "stop",
 	.kind = CBL_YN_ACTION,
@@ -7910,61 +8328,61 @@ static const struct cbl_ynode n402 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n402_c,
-	.module = &m46,
+	.child = n425_c,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n407 = {
+static const struct cbl_ynode n430 = {
 	.sid = UINT64_C(62149),
 	.name = "vnet",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail, vnet),
 	.hoff = offsetof(struct arcana_jails_jails_jail, has_vnet),
 	.type = &t2,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n410 = {
+static const struct cbl_ynode n433 = {
 	.sid = UINT64_C(62303),
 	.name = "automatic",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_package, automatic),
 	.hoff = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_package, has_automatic),
 	.type = &t2,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n411 = {
+static const struct cbl_ynode n434 = {
 	.sid = UINT64_C(62304),
 	.name = "available",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_package, available),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n412 = {
+static const struct cbl_ynode n435 = {
 	.sid = UINT64_C(62305),
 	.name = "comment",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_package, comment),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n413 = {
+static const struct cbl_ynode n436 = {
 	.sid = UINT64_C(62306),
 	.name = "installed",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_package, installed),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n414 = {
+static const struct cbl_ynode n437 = {
 	.sid = UINT64_C(62307),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -7972,20 +8390,20 @@ static const struct cbl_ynode n414 = {
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_package, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n415 = {
+static const struct cbl_ynode n438 = {
 	.sid = UINT64_C(62308),
 	.name = "origin",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_package, origin),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n416 = {
+static const struct cbl_ynode n439 = {
 	.sid = UINT64_C(62309),
 	.name = "size",
 	.kind = CBL_YN_LEAF,
@@ -7993,15 +8411,15 @@ static const struct cbl_ynode n416 = {
 	.hoff = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_package, has_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n409_c[] = {
-	&n410, &n411, &n412, &n413, &n414, &n415,
-	&n416
+static const struct cbl_ynode *const n432_c[] = {
+	&n433, &n434, &n435, &n436, &n437, &n438,
+	&n439
 };
-static const uint32_t n409_k[] = { 4 };
-static const struct cbl_ynode n409 = {
+static const uint32_t n432_k[] = { 4 };
+static const struct cbl_ynode n432 = {
 	.sid = UINT64_C(62302),
 	.name = "package",
 	.kind = CBL_YN_LIST,
@@ -8011,29 +8429,29 @@ static const struct cbl_ynode n409 = {
 	.size = sizeof(struct arcana_jails_jails_jail_arcpkg_packages_package),
 	.nmap = 7,
 	.nchild = 7,
-	.child = n409_c,
+	.child = n432_c,
 	.nkeys = 1,
-	.keys = n409_k,
-	.module = &m48,
+	.keys = n432_k,
+	.module = &m50,
 };
 
-static const char *const n419_d[] = { "any" };
-static const struct cbl_ynode n419 = {
+static const char *const n442_d[] = { "any" };
+static const struct cbl_ynode n442 = {
 	.sid = UINT64_C(62312),
 	.name = "ip-version",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_refresh_input, ip_version),
 	.hoff = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_refresh_input, has_ip_version),
-	.type = &t66,
+	.type = &t68,
 	.ndflt = 1,
-	.dflt = n419_d,
-	.module = &m48,
+	.dflt = n442_d,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n418_c[] = {
-	&n419
+static const struct cbl_ynode *const n441_c[] = {
+	&n442
 };
-static const struct cbl_ynode n418 = {
+static const struct cbl_ynode n441 = {
 	.sid = UINT64_C(62311),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -8042,36 +8460,36 @@ static const struct cbl_ynode n418 = {
 	.size = sizeof(struct arcana_jails_jails_jail_arcpkg_packages_refresh_input),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n418_c,
-	.module = &m48,
+	.child = n441_c,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n420 = {
+static const struct cbl_ynode n443 = {
 	.sid = UINT64_C(62313),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jails_jails_jail_arcpkg_packages_refresh_output),
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n417_c[] = {
-	&n418, &n420
+static const struct cbl_ynode *const n440_c[] = {
+	&n441, &n443
 };
-static const struct cbl_ynode n417 = {
+static const struct cbl_ynode n440 = {
 	.sid = UINT64_C(62310),
 	.name = "refresh",
 	.kind = CBL_YN_ACTION,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.nchild = 2,
-	.child = n417_c,
-	.module = &m48,
+	.child = n440_c,
+	.module = &m50,
 };
 
-static const char *const n423_d[] = { "false" };
-static const struct cbl_ynode n423 = {
+static const char *const n446_d[] = { "false" };
+static const struct cbl_ynode n446 = {
 	.sid = UINT64_C(62316),
 	.name = "dry-run",
 	.kind = CBL_YN_LEAF,
@@ -8079,12 +8497,12 @@ static const struct cbl_ynode n423 = {
 	.hoff = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input, has_dry_run),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n423_d,
-	.module = &m48,
+	.dflt = n446_d,
+	.module = &m50,
 };
 
-static const char *const n424_d[] = { "false" };
-static const struct cbl_ynode n424 = {
+static const char *const n447_d[] = { "false" };
+static const struct cbl_ynode n447 = {
 	.sid = UINT64_C(62317),
 	.name = "ignore-osversion",
 	.kind = CBL_YN_LEAF,
@@ -8092,37 +8510,37 @@ static const struct cbl_ynode n424 = {
 	.hoff = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input, has_ignore_osversion),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n424_d,
-	.module = &m48,
+	.dflt = n447_d,
+	.module = &m50,
 };
 
-static const char *const n425_d[] = { "any" };
-static const struct cbl_ynode n425 = {
+static const char *const n448_d[] = { "any" };
+static const struct cbl_ynode n448 = {
 	.sid = UINT64_C(62318),
 	.name = "ip-version",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input, ip_version),
 	.hoff = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input, has_ip_version),
-	.type = &t66,
+	.type = &t68,
 	.ndflt = 1,
-	.dflt = n425_d,
-	.module = &m48,
+	.dflt = n448_d,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n426 = {
+static const struct cbl_ynode n449 = {
 	.sid = UINT64_C(62319),
 	.name = "name",
 	.kind = CBL_YN_LEAFLIST,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n422_c[] = {
-	&n423, &n424, &n425, &n426
+static const struct cbl_ynode *const n445_c[] = {
+	&n446, &n447, &n448, &n449
 };
-static const struct cbl_ynode n422 = {
+static const struct cbl_ynode n445 = {
 	.sid = UINT64_C(62315),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -8131,51 +8549,51 @@ static const struct cbl_ynode n422 = {
 	.size = sizeof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n422_c,
-	.module = &m48,
+	.child = n445_c,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n429 = {
+static const struct cbl_ynode n452 = {
 	.sid = UINT64_C(62322),
 	.name = "automatic",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package, automatic),
 	.hoff = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package, has_automatic),
 	.type = &t2,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n430 = {
+static const struct cbl_ynode n453 = {
 	.sid = UINT64_C(62323),
 	.name = "available",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package, available),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n431 = {
+static const struct cbl_ynode n454 = {
 	.sid = UINT64_C(62324),
 	.name = "comment",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package, comment),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n432 = {
+static const struct cbl_ynode n455 = {
 	.sid = UINT64_C(62325),
 	.name = "installed",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package, installed),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n433 = {
+static const struct cbl_ynode n456 = {
 	.sid = UINT64_C(62326),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -8183,20 +8601,20 @@ static const struct cbl_ynode n433 = {
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n434 = {
+static const struct cbl_ynode n457 = {
 	.sid = UINT64_C(62327),
 	.name = "origin",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package, origin),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n435 = {
+static const struct cbl_ynode n458 = {
 	.sid = UINT64_C(62328),
 	.name = "size",
 	.kind = CBL_YN_LEAF,
@@ -8204,15 +8622,15 @@ static const struct cbl_ynode n435 = {
 	.hoff = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package, has_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n428_c[] = {
-	&n429, &n430, &n431, &n432, &n433, &n434,
-	&n435
+static const struct cbl_ynode *const n451_c[] = {
+	&n452, &n453, &n454, &n455, &n456, &n457,
+	&n458
 };
-static const uint32_t n428_k[] = { 4 };
-static const struct cbl_ynode n428 = {
+static const uint32_t n451_k[] = { 4 };
+static const struct cbl_ynode n451 = {
 	.sid = UINT64_C(62321),
 	.name = "package",
 	.kind = CBL_YN_LIST,
@@ -8222,26 +8640,26 @@ static const struct cbl_ynode n428 = {
 	.size = sizeof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package),
 	.nmap = 7,
 	.nchild = 7,
-	.child = n428_c,
+	.child = n451_c,
 	.nkeys = 1,
-	.keys = n428_k,
-	.module = &m48,
+	.keys = n451_k,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n436 = {
+static const struct cbl_ynode n459 = {
 	.sid = UINT64_C(62329),
 	.name = "upgraded",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output, upgraded),
 	.hoff = offsetof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output, has_upgraded),
 	.type = &t10,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n427_c[] = {
-	&n428, &n436
+static const struct cbl_ynode *const n450_c[] = {
+	&n451, &n459
 };
-static const struct cbl_ynode n427 = {
+static const struct cbl_ynode n450 = {
 	.sid = UINT64_C(62320),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -8249,28 +8667,28 @@ static const struct cbl_ynode n427 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output),
 	.nchild = 2,
-	.child = n427_c,
-	.module = &m48,
+	.child = n450_c,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n421_c[] = {
-	&n422, &n427
+static const struct cbl_ynode *const n444_c[] = {
+	&n445, &n450
 };
-static const struct cbl_ynode n421 = {
+static const struct cbl_ynode n444 = {
 	.sid = UINT64_C(62314),
 	.name = "upgrade",
 	.kind = CBL_YN_ACTION,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.nchild = 2,
-	.child = n421_c,
-	.module = &m48,
+	.child = n444_c,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n408_c[] = {
-	&n409, &n417, &n421
+static const struct cbl_ynode *const n431_c[] = {
+	&n432, &n440, &n444
 };
-static const struct cbl_ynode n408 = {
+static const struct cbl_ynode n431 = {
 	.sid = UINT64_C(62301),
 	.name = "packages",
 	.kind = CBL_YN_CONTAINER,
@@ -8278,19 +8696,19 @@ static const struct cbl_ynode n408 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jails_jails_jail_arcpkg_packages),
 	.nchild = 3,
-	.child = n408_c,
-	.module = &m48,
+	.child = n431_c,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n363_c[] = {
-	&n364, &n365, &n366, &n367, &n368, &n369,
-	&n370, &n371, &n372, &n377, &n378, &n379,
-	&n380, &n381, &n384, &n385, &n386, &n387,
-	&n388, &n393, &n394, &n395, &n396, &n401,
-	&n402, &n407, &n408
+static const struct cbl_ynode *const n386_c[] = {
+	&n387, &n388, &n389, &n390, &n391, &n392,
+	&n393, &n394, &n395, &n400, &n401, &n402,
+	&n403, &n404, &n407, &n408, &n409, &n410,
+	&n411, &n416, &n417, &n418, &n419, &n424,
+	&n425, &n430, &n431
 };
-static const uint32_t n363_k[] = { 10 };
-static const struct cbl_ynode n363 = {
+static const uint32_t n386_k[] = { 10 };
+static const struct cbl_ynode n386 = {
 	.sid = UINT64_C(62105),
 	.name = "jail",
 	.kind = CBL_YN_LIST,
@@ -8299,15 +8717,15 @@ static const struct cbl_ynode n363 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jails_jails_jail),
 	.nmap = 196,
-	.map = n363_p,
+	.map = n386_p,
 	.nchild = 27,
-	.child = n363_c,
+	.child = n386_c,
 	.nkeys = 1,
-	.keys = n363_k,
-	.module = &m46,
+	.keys = n386_k,
+	.module = &m48,
 };
 
-static const struct cbl_ynode n437 = {
+static const struct cbl_ynode n460 = {
 	.sid = UINT64_C(62150),
 	.name = "scope",
 	.kind = CBL_YN_LEAFLIST,
@@ -8315,13 +8733,13 @@ static const struct cbl_ynode n437 = {
 	.off = offsetof(struct arcana_jails_jails, scope),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m46,
+	.module = &m48,
 };
 
-static const struct cbl_ynode *const n359_c[] = {
-	&n360, &n363, &n437
+static const struct cbl_ynode *const n382_c[] = {
+	&n383, &n386, &n460
 };
-static const struct cbl_ynode n359 = {
+static const struct cbl_ynode n382 = {
 	.sid = UINT64_C(62101),
 	.name = "jails",
 	.kind = CBL_YN_CONTAINER,
@@ -8329,16 +8747,16 @@ static const struct cbl_ynode n359 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jails_jails),
 	.nchild = 3,
-	.child = n359_c,
-	.module = &m46,
+	.child = n382_c,
+	.module = &m48,
 };
 
-static const uint16_t n439_p[] = {
+static const uint16_t n462_p[] = {
 	1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 9, 0, 0,
 	0, 0, 0, 10, 11, 0, 0, 0, 0, 0, 12, 13, 0, 0, 0, 0,
 	0, 14
 };
-static const struct cbl_ynode n440 = {
+static const struct cbl_ynode n463 = {
 	.sid = UINT64_C(62203),
 	.name = "command",
 	.kind = CBL_YN_LEAFLIST,
@@ -8346,20 +8764,20 @@ static const struct cbl_ynode n440 = {
 	.off = offsetof(struct arcana_services_services_service, command),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n441 = {
+static const struct cbl_ynode n464 = {
 	.sid = UINT64_C(62204),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service, description),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n442 = {
+static const struct cbl_ynode n465 = {
 	.sid = UINT64_C(62205),
 	.name = "enabled",
 	.kind = CBL_YN_LEAF,
@@ -8367,94 +8785,94 @@ static const struct cbl_ynode n442 = {
 	.off = offsetof(struct arcana_services_services_service, enabled),
 	.hoff = offsetof(struct arcana_services_services_service, has_enabled),
 	.type = &t2,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n443 = {
+static const struct cbl_ynode n466 = {
 	.sid = UINT64_C(62206),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x5,
 	.off = offsetof(struct arcana_services_services_service, name),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t67,
-	.module = &m47,
+	.type = &t69,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n444 = {
+static const struct cbl_ynode n467 = {
 	.sid = UINT64_C(62207),
 	.name = "path",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service, path),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n445 = {
+static const struct cbl_ynode n468 = {
 	.sid = UINT64_C(62208),
 	.name = "pid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service, pid),
 	.hoff = offsetof(struct arcana_services_services_service, has_pid),
 	.type = &t10,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n446 = {
+static const struct cbl_ynode n469 = {
 	.sid = UINT64_C(62209),
 	.name = "rcvar",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service, rcvar),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n448 = {
+static const struct cbl_ynode n471 = {
 	.sid = UINT64_C(62211),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_services_services_service_reload_input),
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n450 = {
+static const struct cbl_ynode n473 = {
 	.sid = UINT64_C(62213),
 	.name = "pid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service_reload_output, pid),
 	.hoff = offsetof(struct arcana_services_services_service_reload_output, has_pid),
 	.type = &t10,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n451 = {
+static const struct cbl_ynode n474 = {
 	.sid = UINT64_C(62214),
 	.name = "running",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service_reload_output, running),
 	.hoff = offsetof(struct arcana_services_services_service_reload_output, has_running),
 	.type = &t2,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n452 = {
+static const struct cbl_ynode n475 = {
 	.sid = UINT64_C(62215),
 	.name = "status",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service_reload_output, status),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode *const n449_c[] = {
-	&n450, &n451, &n452
+static const struct cbl_ynode *const n472_c[] = {
+	&n473, &n474, &n475
 };
-static const struct cbl_ynode n449 = {
+static const struct cbl_ynode n472 = {
 	.sid = UINT64_C(62212),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -8463,14 +8881,14 @@ static const struct cbl_ynode n449 = {
 	.size = sizeof(struct arcana_services_services_service_reload_output),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n449_c,
-	.module = &m47,
+	.child = n472_c,
+	.module = &m49,
 };
 
-static const struct cbl_ynode *const n447_c[] = {
-	&n448, &n449
+static const struct cbl_ynode *const n470_c[] = {
+	&n471, &n472
 };
-static const struct cbl_ynode n447 = {
+static const struct cbl_ynode n470 = {
 	.sid = UINT64_C(62210),
 	.name = "reload",
 	.kind = CBL_YN_ACTION,
@@ -8478,54 +8896,54 @@ static const struct cbl_ynode n447 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n447_c,
-	.module = &m47,
+	.child = n470_c,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n454 = {
+static const struct cbl_ynode n477 = {
 	.sid = UINT64_C(62217),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_services_services_service_restart_input),
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n456 = {
+static const struct cbl_ynode n479 = {
 	.sid = UINT64_C(62219),
 	.name = "pid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service_restart_output, pid),
 	.hoff = offsetof(struct arcana_services_services_service_restart_output, has_pid),
 	.type = &t10,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n457 = {
+static const struct cbl_ynode n480 = {
 	.sid = UINT64_C(62220),
 	.name = "running",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service_restart_output, running),
 	.hoff = offsetof(struct arcana_services_services_service_restart_output, has_running),
 	.type = &t2,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n458 = {
+static const struct cbl_ynode n481 = {
 	.sid = UINT64_C(62221),
 	.name = "status",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service_restart_output, status),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode *const n455_c[] = {
-	&n456, &n457, &n458
+static const struct cbl_ynode *const n478_c[] = {
+	&n479, &n480, &n481
 };
-static const struct cbl_ynode n455 = {
+static const struct cbl_ynode n478 = {
 	.sid = UINT64_C(62218),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -8534,14 +8952,14 @@ static const struct cbl_ynode n455 = {
 	.size = sizeof(struct arcana_services_services_service_restart_output),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n455_c,
-	.module = &m47,
+	.child = n478_c,
+	.module = &m49,
 };
 
-static const struct cbl_ynode *const n453_c[] = {
-	&n454, &n455
+static const struct cbl_ynode *const n476_c[] = {
+	&n477, &n478
 };
-static const struct cbl_ynode n453 = {
+static const struct cbl_ynode n476 = {
 	.sid = UINT64_C(62216),
 	.name = "restart",
 	.kind = CBL_YN_ACTION,
@@ -8549,64 +8967,64 @@ static const struct cbl_ynode n453 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n453_c,
-	.module = &m47,
+	.child = n476_c,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n459 = {
+static const struct cbl_ynode n482 = {
 	.sid = UINT64_C(62222),
 	.name = "running",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service, running),
 	.hoff = offsetof(struct arcana_services_services_service, has_running),
 	.type = &t2,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n461 = {
+static const struct cbl_ynode n484 = {
 	.sid = UINT64_C(62224),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_services_services_service_start_input),
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n463 = {
+static const struct cbl_ynode n486 = {
 	.sid = UINT64_C(62226),
 	.name = "pid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service_start_output, pid),
 	.hoff = offsetof(struct arcana_services_services_service_start_output, has_pid),
 	.type = &t10,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n464 = {
+static const struct cbl_ynode n487 = {
 	.sid = UINT64_C(62227),
 	.name = "running",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service_start_output, running),
 	.hoff = offsetof(struct arcana_services_services_service_start_output, has_running),
 	.type = &t2,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n465 = {
+static const struct cbl_ynode n488 = {
 	.sid = UINT64_C(62228),
 	.name = "status",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service_start_output, status),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode *const n462_c[] = {
-	&n463, &n464, &n465
+static const struct cbl_ynode *const n485_c[] = {
+	&n486, &n487, &n488
 };
-static const struct cbl_ynode n462 = {
+static const struct cbl_ynode n485 = {
 	.sid = UINT64_C(62225),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -8615,14 +9033,14 @@ static const struct cbl_ynode n462 = {
 	.size = sizeof(struct arcana_services_services_service_start_output),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n462_c,
-	.module = &m47,
+	.child = n485_c,
+	.module = &m49,
 };
 
-static const struct cbl_ynode *const n460_c[] = {
-	&n461, &n462
+static const struct cbl_ynode *const n483_c[] = {
+	&n484, &n485
 };
-static const struct cbl_ynode n460 = {
+static const struct cbl_ynode n483 = {
 	.sid = UINT64_C(62223),
 	.name = "start",
 	.kind = CBL_YN_ACTION,
@@ -8630,64 +9048,64 @@ static const struct cbl_ynode n460 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n460_c,
-	.module = &m47,
+	.child = n483_c,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n466 = {
+static const struct cbl_ynode n489 = {
 	.sid = UINT64_C(62229),
 	.name = "status",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service, status),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n468 = {
+static const struct cbl_ynode n491 = {
 	.sid = UINT64_C(62231),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_services_services_service_stop_input),
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n470 = {
+static const struct cbl_ynode n493 = {
 	.sid = UINT64_C(62233),
 	.name = "pid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service_stop_output, pid),
 	.hoff = offsetof(struct arcana_services_services_service_stop_output, has_pid),
 	.type = &t10,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n471 = {
+static const struct cbl_ynode n494 = {
 	.sid = UINT64_C(62234),
 	.name = "running",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service_stop_output, running),
 	.hoff = offsetof(struct arcana_services_services_service_stop_output, has_running),
 	.type = &t2,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n472 = {
+static const struct cbl_ynode n495 = {
 	.sid = UINT64_C(62235),
 	.name = "status",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_services_services_service_stop_output, status),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode *const n469_c[] = {
-	&n470, &n471, &n472
+static const struct cbl_ynode *const n492_c[] = {
+	&n493, &n494, &n495
 };
-static const struct cbl_ynode n469 = {
+static const struct cbl_ynode n492 = {
 	.sid = UINT64_C(62232),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -8696,14 +9114,14 @@ static const struct cbl_ynode n469 = {
 	.size = sizeof(struct arcana_services_services_service_stop_output),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n469_c,
-	.module = &m47,
+	.child = n492_c,
+	.module = &m49,
 };
 
-static const struct cbl_ynode *const n467_c[] = {
-	&n468, &n469
+static const struct cbl_ynode *const n490_c[] = {
+	&n491, &n492
 };
-static const struct cbl_ynode n467 = {
+static const struct cbl_ynode n490 = {
 	.sid = UINT64_C(62230),
 	.name = "stop",
 	.kind = CBL_YN_ACTION,
@@ -8711,22 +9129,22 @@ static const struct cbl_ynode n467 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n467_c,
-	.module = &m47,
+	.child = n490_c,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n474 = {
+static const struct cbl_ynode n497 = {
 	.sid = UINT64_C(62237),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x5,
 	.off = offsetof(struct arcana_services_services_service_variable, name),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t68,
-	.module = &m47,
+	.type = &t70,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n475 = {
+static const struct cbl_ynode n498 = {
 	.sid = UINT64_C(62238),
 	.name = "value",
 	.kind = CBL_YN_LEAF,
@@ -8734,14 +9152,14 @@ static const struct cbl_ynode n475 = {
 	.off = offsetof(struct arcana_services_services_service_variable, value),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m47,
+	.module = &m49,
 };
 
-static const struct cbl_ynode *const n473_c[] = {
-	&n474, &n475
+static const struct cbl_ynode *const n496_c[] = {
+	&n497, &n498
 };
-static const uint32_t n473_k[] = { 0 };
-static const struct cbl_ynode n473 = {
+static const uint32_t n496_k[] = { 0 };
+static const struct cbl_ynode n496 = {
 	.sid = UINT64_C(62236),
 	.name = "variable",
 	.kind = CBL_YN_LIST,
@@ -8751,19 +9169,19 @@ static const struct cbl_ynode n473 = {
 	.size = sizeof(struct arcana_services_services_service_variable),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n473_c,
+	.child = n496_c,
 	.nkeys = 1,
-	.keys = n473_k,
-	.module = &m47,
+	.keys = n496_k,
+	.module = &m49,
 };
 
-static const struct cbl_ynode *const n439_c[] = {
-	&n440, &n441, &n442, &n443, &n444, &n445,
-	&n446, &n447, &n453, &n459, &n460, &n466,
-	&n467, &n473
+static const struct cbl_ynode *const n462_c[] = {
+	&n463, &n464, &n465, &n466, &n467, &n468,
+	&n469, &n470, &n476, &n482, &n483, &n489,
+	&n490, &n496
 };
-static const uint32_t n439_k[] = { 3 };
-static const struct cbl_ynode n439 = {
+static const uint32_t n462_k[] = { 3 };
+static const struct cbl_ynode n462 = {
 	.sid = UINT64_C(62202),
 	.name = "service",
 	.kind = CBL_YN_LIST,
@@ -8772,18 +9190,18 @@ static const struct cbl_ynode n439 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_services_services_service),
 	.nmap = 34,
-	.map = n439_p,
+	.map = n462_p,
 	.nchild = 14,
-	.child = n439_c,
+	.child = n462_c,
 	.nkeys = 1,
-	.keys = n439_k,
-	.module = &m47,
+	.keys = n462_k,
+	.module = &m49,
 };
 
-static const struct cbl_ynode *const n438_c[] = {
-	&n439
+static const struct cbl_ynode *const n461_c[] = {
+	&n462
 };
-static const struct cbl_ynode n438 = {
+static const struct cbl_ynode n461 = {
 	.sid = UINT64_C(62201),
 	.name = "services",
 	.kind = CBL_YN_CONTAINER,
@@ -8793,51 +9211,51 @@ static const struct cbl_ynode n438 = {
 	.size = sizeof(struct arcana_services_services),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n438_c,
-	.module = &m47,
+	.child = n461_c,
+	.module = &m49,
 };
 
-static const struct cbl_ynode n478 = {
+static const struct cbl_ynode n501 = {
 	.sid = UINT64_C(62332),
 	.name = "automatic",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_packages_packages_package, automatic),
 	.hoff = offsetof(struct arcana_packages_packages_package, has_automatic),
 	.type = &t2,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n479 = {
+static const struct cbl_ynode n502 = {
 	.sid = UINT64_C(62333),
 	.name = "available",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_packages_packages_package, available),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n480 = {
+static const struct cbl_ynode n503 = {
 	.sid = UINT64_C(62334),
 	.name = "comment",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_packages_packages_package, comment),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n481 = {
+static const struct cbl_ynode n504 = {
 	.sid = UINT64_C(62335),
 	.name = "installed",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_packages_packages_package, installed),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n482 = {
+static const struct cbl_ynode n505 = {
 	.sid = UINT64_C(62336),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -8845,20 +9263,20 @@ static const struct cbl_ynode n482 = {
 	.off = offsetof(struct arcana_packages_packages_package, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n483 = {
+static const struct cbl_ynode n506 = {
 	.sid = UINT64_C(62337),
 	.name = "origin",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_packages_packages_package, origin),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n484 = {
+static const struct cbl_ynode n507 = {
 	.sid = UINT64_C(62338),
 	.name = "size",
 	.kind = CBL_YN_LEAF,
@@ -8866,15 +9284,15 @@ static const struct cbl_ynode n484 = {
 	.hoff = offsetof(struct arcana_packages_packages_package, has_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n477_c[] = {
-	&n478, &n479, &n480, &n481, &n482, &n483,
-	&n484
+static const struct cbl_ynode *const n500_c[] = {
+	&n501, &n502, &n503, &n504, &n505, &n506,
+	&n507
 };
-static const uint32_t n477_k[] = { 4 };
-static const struct cbl_ynode n477 = {
+static const uint32_t n500_k[] = { 4 };
+static const struct cbl_ynode n500 = {
 	.sid = UINT64_C(62331),
 	.name = "package",
 	.kind = CBL_YN_LIST,
@@ -8884,29 +9302,29 @@ static const struct cbl_ynode n477 = {
 	.size = sizeof(struct arcana_packages_packages_package),
 	.nmap = 7,
 	.nchild = 7,
-	.child = n477_c,
+	.child = n500_c,
 	.nkeys = 1,
-	.keys = n477_k,
-	.module = &m48,
+	.keys = n500_k,
+	.module = &m50,
 };
 
-static const char *const n487_d[] = { "any" };
-static const struct cbl_ynode n487 = {
+static const char *const n510_d[] = { "any" };
+static const struct cbl_ynode n510 = {
 	.sid = UINT64_C(62341),
 	.name = "ip-version",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_packages_packages_refresh_input, ip_version),
 	.hoff = offsetof(struct arcana_packages_packages_refresh_input, has_ip_version),
-	.type = &t66,
+	.type = &t68,
 	.ndflt = 1,
-	.dflt = n487_d,
-	.module = &m48,
+	.dflt = n510_d,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n486_c[] = {
-	&n487
+static const struct cbl_ynode *const n509_c[] = {
+	&n510
 };
-static const struct cbl_ynode n486 = {
+static const struct cbl_ynode n509 = {
 	.sid = UINT64_C(62340),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -8915,36 +9333,36 @@ static const struct cbl_ynode n486 = {
 	.size = sizeof(struct arcana_packages_packages_refresh_input),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n486_c,
-	.module = &m48,
+	.child = n509_c,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n488 = {
+static const struct cbl_ynode n511 = {
 	.sid = UINT64_C(62342),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_packages_packages_refresh_output),
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n485_c[] = {
-	&n486, &n488
+static const struct cbl_ynode *const n508_c[] = {
+	&n509, &n511
 };
-static const struct cbl_ynode n485 = {
+static const struct cbl_ynode n508 = {
 	.sid = UINT64_C(62339),
 	.name = "refresh",
 	.kind = CBL_YN_ACTION,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.nchild = 2,
-	.child = n485_c,
-	.module = &m48,
+	.child = n508_c,
+	.module = &m50,
 };
 
-static const char *const n491_d[] = { "false" };
-static const struct cbl_ynode n491 = {
+static const char *const n514_d[] = { "false" };
+static const struct cbl_ynode n514 = {
 	.sid = UINT64_C(62345),
 	.name = "dry-run",
 	.kind = CBL_YN_LEAF,
@@ -8952,12 +9370,12 @@ static const struct cbl_ynode n491 = {
 	.hoff = offsetof(struct arcana_packages_packages_upgrade_input, has_dry_run),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n491_d,
-	.module = &m48,
+	.dflt = n514_d,
+	.module = &m50,
 };
 
-static const char *const n492_d[] = { "false" };
-static const struct cbl_ynode n492 = {
+static const char *const n515_d[] = { "false" };
+static const struct cbl_ynode n515 = {
 	.sid = UINT64_C(62346),
 	.name = "ignore-osversion",
 	.kind = CBL_YN_LEAF,
@@ -8965,37 +9383,37 @@ static const struct cbl_ynode n492 = {
 	.hoff = offsetof(struct arcana_packages_packages_upgrade_input, has_ignore_osversion),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n492_d,
-	.module = &m48,
+	.dflt = n515_d,
+	.module = &m50,
 };
 
-static const char *const n493_d[] = { "any" };
-static const struct cbl_ynode n493 = {
+static const char *const n516_d[] = { "any" };
+static const struct cbl_ynode n516 = {
 	.sid = UINT64_C(62347),
 	.name = "ip-version",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_packages_packages_upgrade_input, ip_version),
 	.hoff = offsetof(struct arcana_packages_packages_upgrade_input, has_ip_version),
-	.type = &t66,
+	.type = &t68,
 	.ndflt = 1,
-	.dflt = n493_d,
-	.module = &m48,
+	.dflt = n516_d,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n494 = {
+static const struct cbl_ynode n517 = {
 	.sid = UINT64_C(62348),
 	.name = "name",
 	.kind = CBL_YN_LEAFLIST,
 	.off = offsetof(struct arcana_packages_packages_upgrade_input, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n490_c[] = {
-	&n491, &n492, &n493, &n494
+static const struct cbl_ynode *const n513_c[] = {
+	&n514, &n515, &n516, &n517
 };
-static const struct cbl_ynode n490 = {
+static const struct cbl_ynode n513 = {
 	.sid = UINT64_C(62344),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -9004,51 +9422,51 @@ static const struct cbl_ynode n490 = {
 	.size = sizeof(struct arcana_packages_packages_upgrade_input),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n490_c,
-	.module = &m48,
+	.child = n513_c,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n497 = {
+static const struct cbl_ynode n520 = {
 	.sid = UINT64_C(62351),
 	.name = "automatic",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_packages_packages_upgrade_output_package, automatic),
 	.hoff = offsetof(struct arcana_packages_packages_upgrade_output_package, has_automatic),
 	.type = &t2,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n498 = {
+static const struct cbl_ynode n521 = {
 	.sid = UINT64_C(62352),
 	.name = "available",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_packages_packages_upgrade_output_package, available),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n499 = {
+static const struct cbl_ynode n522 = {
 	.sid = UINT64_C(62353),
 	.name = "comment",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_packages_packages_upgrade_output_package, comment),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n500 = {
+static const struct cbl_ynode n523 = {
 	.sid = UINT64_C(62354),
 	.name = "installed",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_packages_packages_upgrade_output_package, installed),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n501 = {
+static const struct cbl_ynode n524 = {
 	.sid = UINT64_C(62355),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -9056,20 +9474,20 @@ static const struct cbl_ynode n501 = {
 	.off = offsetof(struct arcana_packages_packages_upgrade_output_package, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n502 = {
+static const struct cbl_ynode n525 = {
 	.sid = UINT64_C(62356),
 	.name = "origin",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_packages_packages_upgrade_output_package, origin),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n503 = {
+static const struct cbl_ynode n526 = {
 	.sid = UINT64_C(62357),
 	.name = "size",
 	.kind = CBL_YN_LEAF,
@@ -9077,15 +9495,15 @@ static const struct cbl_ynode n503 = {
 	.hoff = offsetof(struct arcana_packages_packages_upgrade_output_package, has_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n496_c[] = {
-	&n497, &n498, &n499, &n500, &n501, &n502,
-	&n503
+static const struct cbl_ynode *const n519_c[] = {
+	&n520, &n521, &n522, &n523, &n524, &n525,
+	&n526
 };
-static const uint32_t n496_k[] = { 4 };
-static const struct cbl_ynode n496 = {
+static const uint32_t n519_k[] = { 4 };
+static const struct cbl_ynode n519 = {
 	.sid = UINT64_C(62350),
 	.name = "package",
 	.kind = CBL_YN_LIST,
@@ -9095,26 +9513,26 @@ static const struct cbl_ynode n496 = {
 	.size = sizeof(struct arcana_packages_packages_upgrade_output_package),
 	.nmap = 7,
 	.nchild = 7,
-	.child = n496_c,
+	.child = n519_c,
 	.nkeys = 1,
-	.keys = n496_k,
-	.module = &m48,
+	.keys = n519_k,
+	.module = &m50,
 };
 
-static const struct cbl_ynode n504 = {
+static const struct cbl_ynode n527 = {
 	.sid = UINT64_C(62358),
 	.name = "upgraded",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_packages_packages_upgrade_output, upgraded),
 	.hoff = offsetof(struct arcana_packages_packages_upgrade_output, has_upgraded),
 	.type = &t10,
-	.module = &m48,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n495_c[] = {
-	&n496, &n504
+static const struct cbl_ynode *const n518_c[] = {
+	&n519, &n527
 };
-static const struct cbl_ynode n495 = {
+static const struct cbl_ynode n518 = {
 	.sid = UINT64_C(62349),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -9122,28 +9540,28 @@ static const struct cbl_ynode n495 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_packages_packages_upgrade_output),
 	.nchild = 2,
-	.child = n495_c,
-	.module = &m48,
+	.child = n518_c,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n489_c[] = {
-	&n490, &n495
+static const struct cbl_ynode *const n512_c[] = {
+	&n513, &n518
 };
-static const struct cbl_ynode n489 = {
+static const struct cbl_ynode n512 = {
 	.sid = UINT64_C(62343),
 	.name = "upgrade",
 	.kind = CBL_YN_ACTION,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.nchild = 2,
-	.child = n489_c,
-	.module = &m48,
+	.child = n512_c,
+	.module = &m50,
 };
 
-static const struct cbl_ynode *const n476_c[] = {
-	&n477, &n485, &n489
+static const struct cbl_ynode *const n499_c[] = {
+	&n500, &n508, &n512
 };
-static const struct cbl_ynode n476 = {
+static const struct cbl_ynode n499 = {
 	.sid = UINT64_C(62330),
 	.name = "packages",
 	.kind = CBL_YN_CONTAINER,
@@ -9151,53 +9569,53 @@ static const struct cbl_ynode n476 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_packages_packages),
 	.nchild = 3,
-	.child = n476_c,
-	.module = &m48,
+	.child = n499_c,
+	.module = &m50,
 };
 
-static const uint16_t n505_p[] = {
+static const uint16_t n528_p[] = {
 	1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 3, 4
 };
-static const struct cbl_ynode n506 = {
+static const struct cbl_ynode n529 = {
 	.sid = UINT64_C(62402),
 	.name = "activity",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs, activity),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const uint16_t n507_p[] = {
+static const uint16_t n530_p[] = {
 	1, 0, 0, 0, 2, 3, 0, 0, 0, 4, 5, 6, 7, 8, 9, 10,
 	11, 12, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14
 };
-static const struct cbl_ynode n509 = {
+static const struct cbl_ynode n532 = {
 	.sid = UINT64_C(62405),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jobs_jobs_job_cancel_input),
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n511 = {
+static const struct cbl_ynode n534 = {
 	.sid = UINT64_C(62407),
 	.name = "state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job_cancel_output, state),
 	.hoff = offsetof(struct arcana_jobs_jobs_job_cancel_output, has_state),
-	.type = &t69,
-	.module = &m49,
+	.type = &t71,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n510_c[] = {
-	&n511
+static const struct cbl_ynode *const n533_c[] = {
+	&n534
 };
-static const struct cbl_ynode n510 = {
+static const struct cbl_ynode n533 = {
 	.sid = UINT64_C(62406),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -9206,14 +9624,14 @@ static const struct cbl_ynode n510 = {
 	.size = sizeof(struct arcana_jobs_jobs_job_cancel_output),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n510_c,
-	.module = &m49,
+	.child = n533_c,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n508_c[] = {
-	&n509, &n510
+static const struct cbl_ynode *const n531_c[] = {
+	&n532, &n533
 };
-static const struct cbl_ynode n508 = {
+static const struct cbl_ynode n531 = {
 	.sid = UINT64_C(62404),
 	.name = "cancel",
 	.kind = CBL_YN_ACTION,
@@ -9221,34 +9639,34 @@ static const struct cbl_ynode n508 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n508_c,
-	.module = &m49,
+	.child = n531_c,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n513 = {
+static const struct cbl_ynode n536 = {
 	.sid = UINT64_C(62410),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jobs_jobs_job_confirm_input),
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n515 = {
+static const struct cbl_ynode n538 = {
 	.sid = UINT64_C(62412),
 	.name = "state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job_confirm_output, state),
 	.hoff = offsetof(struct arcana_jobs_jobs_job_confirm_output, has_state),
-	.type = &t69,
-	.module = &m49,
+	.type = &t71,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n514_c[] = {
-	&n515
+static const struct cbl_ynode *const n537_c[] = {
+	&n538
 };
-static const struct cbl_ynode n514 = {
+static const struct cbl_ynode n537 = {
 	.sid = UINT64_C(62411),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -9257,14 +9675,14 @@ static const struct cbl_ynode n514 = {
 	.size = sizeof(struct arcana_jobs_jobs_job_confirm_output),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n514_c,
-	.module = &m49,
+	.child = n537_c,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n512_c[] = {
-	&n513, &n514
+static const struct cbl_ynode *const n535_c[] = {
+	&n536, &n537
 };
-static const struct cbl_ynode n512 = {
+static const struct cbl_ynode n535 = {
 	.sid = UINT64_C(62408),
 	.name = "confirm",
 	.kind = CBL_YN_ACTION,
@@ -9272,54 +9690,54 @@ static const struct cbl_ynode n512 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n512_c,
-	.module = &m49,
+	.child = n535_c,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n516 = {
+static const struct cbl_ynode n539 = {
 	.sid = UINT64_C(62409),
 	.name = "confirm-by",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job, confirm_by),
 	.hoff = offsetof(struct arcana_jobs_jobs_job, has_confirm_by),
-	.type = &t70,
+	.type = &t72,
 	.units = "seconds",
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n517 = {
+static const struct cbl_ynode n540 = {
 	.sid = UINT64_C(62413),
 	.name = "created",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job, created),
 	.hoff = offsetof(struct arcana_jobs_jobs_job, has_created),
-	.type = &t70,
+	.type = &t72,
 	.units = "seconds",
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n518 = {
+static const struct cbl_ynode n541 = {
 	.sid = UINT64_C(62414),
 	.name = "error",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job, error),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n519 = {
+static const struct cbl_ynode n542 = {
 	.sid = UINT64_C(62415),
 	.name = "finished",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job, finished),
 	.hoff = offsetof(struct arcana_jobs_jobs_job, has_finished),
-	.type = &t70,
+	.type = &t72,
 	.units = "seconds",
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n520 = {
+static const struct cbl_ynode n543 = {
 	.sid = UINT64_C(62416),
 	.name = "id",
 	.kind = CBL_YN_LEAF,
@@ -9327,61 +9745,61 @@ static const struct cbl_ynode n520 = {
 	.off = offsetof(struct arcana_jobs_jobs_job, id),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t9,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n521 = {
+static const struct cbl_ynode n544 = {
 	.sid = UINT64_C(62417),
 	.name = "kind",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job, kind),
 	.hoff = offsetof(struct arcana_jobs_jobs_job, has_kind),
-	.type = &t71,
-	.module = &m49,
+	.type = &t73,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n522 = {
+static const struct cbl_ynode n545 = {
 	.sid = UINT64_C(62418),
 	.name = "ok",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job, ok),
 	.hoff = offsetof(struct arcana_jobs_jobs_job, has_ok),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n523 = {
+static const struct cbl_ynode n546 = {
 	.sid = UINT64_C(62419),
 	.name = "peer",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job, peer),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n524 = {
+static const struct cbl_ynode n547 = {
 	.sid = UINT64_C(62420),
 	.name = "started",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job, started),
 	.hoff = offsetof(struct arcana_jobs_jobs_job, has_started),
-	.type = &t70,
+	.type = &t72,
 	.units = "seconds",
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n525 = {
+static const struct cbl_ynode n548 = {
 	.sid = UINT64_C(62421),
 	.name = "state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job, state),
 	.hoff = offsetof(struct arcana_jobs_jobs_job, has_state),
-	.type = &t69,
-	.module = &m49,
+	.type = &t71,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n527 = {
+static const struct cbl_ynode n550 = {
 	.sid = UINT64_C(62423),
 	.name = "argv",
 	.kind = CBL_YN_LEAFLIST,
@@ -9389,20 +9807,20 @@ static const struct cbl_ynode n527 = {
 	.off = offsetof(struct arcana_jobs_jobs_job_step, argv),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n528 = {
+static const struct cbl_ynode n551 = {
 	.sid = UINT64_C(62424),
 	.name = "detail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job_step, detail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n529 = {
+static const struct cbl_ynode n552 = {
 	.sid = UINT64_C(62425),
 	.name = "duration",
 	.kind = CBL_YN_LEAF,
@@ -9410,30 +9828,30 @@ static const struct cbl_ynode n529 = {
 	.hoff = offsetof(struct arcana_jobs_jobs_job_step, has_duration),
 	.type = &t9,
 	.units = "microseconds",
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n530 = {
+static const struct cbl_ynode n553 = {
 	.sid = UINT64_C(62426),
 	.name = "error-output",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job_step, error_output),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t72,
-	.module = &m49,
+	.type = &t74,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n531 = {
+static const struct cbl_ynode n554 = {
 	.sid = UINT64_C(62427),
 	.name = "exit",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job_step, exit),
 	.hoff = offsetof(struct arcana_jobs_jobs_job_step, has_exit),
-	.type = &t65,
-	.module = &m49,
+	.type = &t67,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n532 = {
+static const struct cbl_ynode n555 = {
 	.sid = UINT64_C(62428),
 	.name = "id",
 	.kind = CBL_YN_LEAF,
@@ -9441,65 +9859,65 @@ static const struct cbl_ynode n532 = {
 	.off = offsetof(struct arcana_jobs_jobs_job_step, id),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n533 = {
+static const struct cbl_ynode n556 = {
 	.sid = UINT64_C(62429),
 	.name = "kind",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job_step, kind),
 	.hoff = offsetof(struct arcana_jobs_jobs_job_step, has_kind),
-	.type = &t73,
-	.module = &m49,
+	.type = &t75,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n534 = {
+static const struct cbl_ynode n557 = {
 	.sid = UINT64_C(62430),
 	.name = "label",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job_step, label),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n535 = {
+static const struct cbl_ynode n558 = {
 	.sid = UINT64_C(62431),
 	.name = "output",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job_step, output),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t72,
-	.module = &m49,
+	.type = &t74,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n536 = {
+static const struct cbl_ynode n559 = {
 	.sid = UINT64_C(62432),
 	.name = "parent",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job_step, parent),
 	.hoff = offsetof(struct arcana_jobs_jobs_job_step, has_parent),
-	.type = &t74,
-	.module = &m49,
+	.type = &t76,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n537 = {
+static const struct cbl_ynode n560 = {
 	.sid = UINT64_C(62433),
 	.name = "status",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job_step, status),
 	.hoff = offsetof(struct arcana_jobs_jobs_job_step, has_status),
-	.type = &t75,
-	.module = &m49,
+	.type = &t77,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n526_c[] = {
-	&n527, &n528, &n529, &n530, &n531, &n532,
-	&n533, &n534, &n535, &n536, &n537
+static const struct cbl_ynode *const n549_c[] = {
+	&n550, &n551, &n552, &n553, &n554, &n555,
+	&n556, &n557, &n558, &n559, &n560
 };
-static const uint32_t n526_k[] = { 5 };
-static const struct cbl_ynode n526 = {
+static const uint32_t n549_k[] = { 5 };
+static const struct cbl_ynode n549 = {
 	.sid = UINT64_C(62422),
 	.name = "step",
 	.kind = CBL_YN_LIST,
@@ -9509,29 +9927,29 @@ static const struct cbl_ynode n526 = {
 	.size = sizeof(struct arcana_jobs_jobs_job_step),
 	.nmap = 11,
 	.nchild = 11,
-	.child = n526_c,
+	.child = n549_c,
 	.nkeys = 1,
-	.keys = n526_k,
-	.module = &m49,
+	.keys = n549_k,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n538 = {
+static const struct cbl_ynode n561 = {
 	.sid = UINT64_C(62434),
 	.name = "title",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs_job, title),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n507_c[] = {
-	&n508, &n512, &n516, &n517, &n518, &n519,
-	&n520, &n521, &n522, &n523, &n524, &n525,
-	&n526, &n538
+static const struct cbl_ynode *const n530_c[] = {
+	&n531, &n535, &n539, &n540, &n541, &n542,
+	&n543, &n544, &n545, &n546, &n547, &n548,
+	&n549, &n561
 };
-static const uint32_t n507_k[] = { 6 };
-static const struct cbl_ynode n507 = {
+static const uint32_t n530_k[] = { 6 };
+static const struct cbl_ynode n530 = {
 	.sid = UINT64_C(62403),
 	.name = "job",
 	.kind = CBL_YN_LIST,
@@ -9540,39 +9958,39 @@ static const struct cbl_ynode n507 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jobs_jobs_job),
 	.nmap = 31,
-	.map = n507_p,
+	.map = n530_p,
 	.nchild = 14,
-	.child = n507_c,
+	.child = n530_c,
 	.nkeys = 1,
-	.keys = n507_k,
-	.module = &m49,
+	.keys = n530_k,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n539 = {
+static const struct cbl_ynode n562 = {
 	.sid = UINT64_C(62435),
 	.name = "since",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs, since),
 	.hoff = offsetof(struct arcana_jobs_jobs, has_since),
-	.type = &t70,
+	.type = &t72,
 	.units = "seconds",
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n540 = {
+static const struct cbl_ynode n563 = {
 	.sid = UINT64_C(62436),
 	.name = "stopping",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_jobs, stopping),
 	.hoff = offsetof(struct arcana_jobs_jobs, has_stopping),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n505_c[] = {
-	&n506, &n507, &n539, &n540
+static const struct cbl_ynode *const n528_c[] = {
+	&n529, &n530, &n562, &n563
 };
-static const struct cbl_ynode n505 = {
+static const struct cbl_ynode n528 = {
 	.sid = UINT64_C(62401),
 	.name = "jobs",
 	.kind = CBL_YN_CONTAINER,
@@ -9580,13 +9998,13 @@ static const struct cbl_ynode n505 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jobs_jobs),
 	.nmap = 35,
-	.map = n505_p,
+	.map = n528_p,
 	.nchild = 4,
-	.child = n505_c,
-	.module = &m49,
+	.child = n528_c,
+	.module = &m51,
 };
 
-static const uint16_t n543_p[] = {
+static const uint16_t n566_p[] = {
 	1, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0,
 	4, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0,
 	0, 7, 0, 0, 0, 0, 8, 0, 0, 0, 9, 0, 0, 0, 0, 0,
@@ -9603,7 +10021,7 @@ static const uint16_t n543_p[] = {
 	34, 0, 0, 35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 36, 0,
 	0, 0, 0, 37
 };
-static const struct cbl_ynode n545 = {
+static const struct cbl_ynode n568 = {
 	.sid = UINT64_C(62441),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
@@ -9611,20 +10029,20 @@ static const struct cbl_ynode n545 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_address, address),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n546 = {
+static const struct cbl_ynode n569 = {
 	.sid = UINT64_C(62442),
 	.name = "interface",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_address, interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n547 = {
+static const struct cbl_ynode n570 = {
 	.sid = UINT64_C(62443),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
@@ -9632,41 +10050,41 @@ static const struct cbl_ynode n547 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_address, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n548 = {
+static const struct cbl_ynode n571 = {
 	.sid = UINT64_C(62444),
 	.name = "live",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_address, live),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_address, has_live),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n549 = {
+static const struct cbl_ynode n572 = {
 	.sid = UINT64_C(62445),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_address, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_address, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n550 = {
+static const struct cbl_ynode n573 = {
 	.sid = UINT64_C(62446),
 	.name = "remove",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_address, remove),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_address, has_remove),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n544_c[] = {
-	&n545, &n546, &n547, &n548, &n549, &n550
+static const struct cbl_ynode *const n567_c[] = {
+	&n568, &n569, &n570, &n571, &n572, &n573
 };
 static const struct cbl_ycase c11_c[] = {
 	{ "jail-action", NULL, 0 },
@@ -9716,7 +10134,7 @@ static const struct cbl_ychoice c11 = {
 	.mandatory = true,
 };
 
-static const struct cbl_ynode n544 = {
+static const struct cbl_ynode n567 = {
 	.sid = UINT64_C(62440),
 	.name = "address",
 	.kind = CBL_YN_CONTAINER,
@@ -9726,13 +10144,13 @@ static const struct cbl_ynode n544 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_address),
 	.nmap = 6,
 	.nchild = 6,
-	.child = n544_c,
+	.child = n567_c,
 	.choice = &c11,
 	.ccase = 1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n552 = {
+static const struct cbl_ynode n575 = {
 	.sid = UINT64_C(62448),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -9740,34 +10158,34 @@ static const struct cbl_ynode n552 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_bird, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n553 = {
+static const struct cbl_ynode n576 = {
 	.sid = UINT64_C(62449),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_bird, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n554 = {
+static const struct cbl_ynode n577 = {
 	.sid = UINT64_C(62450),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_bird, verb),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_bird, has_verb),
-	.type = &t76,
-	.module = &m49,
+	.type = &t78,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n551_c[] = {
-	&n552, &n553, &n554
+static const struct cbl_ynode *const n574_c[] = {
+	&n575, &n576, &n577
 };
-static const struct cbl_ynode n551 = {
+static const struct cbl_ynode n574 = {
 	.sid = UINT64_C(62447),
 	.name = "bird",
 	.kind = CBL_YN_CONTAINER,
@@ -9777,13 +10195,13 @@ static const struct cbl_ynode n551 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_bird),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n551_c,
+	.child = n574_c,
 	.choice = &c11,
 	.ccase = 13,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n556 = {
+static const struct cbl_ynode n579 = {
 	.sid = UINT64_C(62452),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -9791,30 +10209,30 @@ static const struct cbl_ynode n556 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_bridge, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n557 = {
+static const struct cbl_ynode n580 = {
 	.sid = UINT64_C(62453),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_bridge, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n558 = {
+static const struct cbl_ynode n581 = {
 	.sid = UINT64_C(62454),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_bridge, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_bridge, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n559 = {
+static const struct cbl_ynode n582 = {
 	.sid = UINT64_C(62455),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
@@ -9822,13 +10240,13 @@ static const struct cbl_ynode n559 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_bridge, verb),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n555_c[] = {
-	&n556, &n557, &n558, &n559
+static const struct cbl_ynode *const n578_c[] = {
+	&n579, &n580, &n581, &n582
 };
-static const struct cbl_ynode n555 = {
+static const struct cbl_ynode n578 = {
 	.sid = UINT64_C(62451),
 	.name = "bridge",
 	.kind = CBL_YN_CONTAINER,
@@ -9838,13 +10256,13 @@ static const struct cbl_ynode n555 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_bridge),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n555_c,
+	.child = n578_c,
 	.choice = &c11,
 	.ccase = 26,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n561 = {
+static const struct cbl_ynode n584 = {
 	.sid = UINT64_C(62457),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -9852,10 +10270,10 @@ static const struct cbl_ynode n561 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_cam, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n562 = {
+static const struct cbl_ynode n585 = {
 	.sid = UINT64_C(62458),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
@@ -9863,13 +10281,13 @@ static const struct cbl_ynode n562 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_cam, verb),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n560_c[] = {
-	&n561, &n562
+static const struct cbl_ynode *const n583_c[] = {
+	&n584, &n585
 };
-static const struct cbl_ynode n560 = {
+static const struct cbl_ynode n583 = {
 	.sid = UINT64_C(62456),
 	.name = "cam",
 	.kind = CBL_YN_CONTAINER,
@@ -9879,23 +10297,23 @@ static const struct cbl_ynode n560 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_cam),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n560_c,
+	.child = n583_c,
 	.choice = &c11,
 	.ccase = 23,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n564 = {
+static const struct cbl_ynode n587 = {
 	.sid = UINT64_C(62460),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_carp, address),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n565 = {
+static const struct cbl_ynode n588 = {
 	.sid = UINT64_C(62461),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -9903,10 +10321,10 @@ static const struct cbl_ynode n565 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_carp, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n566 = {
+static const struct cbl_ynode n589 = {
 	.sid = UINT64_C(62462),
 	.name = "interface",
 	.kind = CBL_YN_LEAF,
@@ -9914,65 +10332,65 @@ static const struct cbl_ynode n566 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_carp, interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n567 = {
+static const struct cbl_ynode n590 = {
 	.sid = UINT64_C(62463),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_carp, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n568 = {
+static const struct cbl_ynode n591 = {
 	.sid = UINT64_C(62464),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_carp, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_carp, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n569 = {
+static const struct cbl_ynode n592 = {
 	.sid = UINT64_C(62465),
 	.name = "preshared-key",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_carp, preshared_key),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n570 = {
+static const struct cbl_ynode n593 = {
 	.sid = UINT64_C(62466),
 	.name = "safe",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_carp, safe),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_carp, has_safe),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n571 = {
+static const struct cbl_ynode n594 = {
 	.sid = UINT64_C(62467),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_carp, verb),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_carp, has_verb),
-	.type = &t77,
-	.module = &m49,
+	.type = &t79,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n563_c[] = {
-	&n564, &n565, &n566, &n567, &n568, &n569,
-	&n570, &n571
+static const struct cbl_ynode *const n586_c[] = {
+	&n587, &n588, &n589, &n590, &n591, &n592,
+	&n593, &n594
 };
-static const struct cbl_ynode n563 = {
+static const struct cbl_ynode n586 = {
 	.sid = UINT64_C(62459),
 	.name = "carp",
 	.kind = CBL_YN_CONTAINER,
@@ -9982,57 +10400,57 @@ static const struct cbl_ynode n563 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_carp),
 	.nmap = 8,
 	.nchild = 8,
-	.child = n563_c,
+	.child = n586_c,
 	.choice = &c11,
 	.ccase = 33,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n573 = {
+static const struct cbl_ynode n596 = {
 	.sid = UINT64_C(62469),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_cert, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n574 = {
+static const struct cbl_ynode n597 = {
 	.sid = UINT64_C(62470),
 	.name = "path",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_cert, path),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n575 = {
+static const struct cbl_ynode n598 = {
 	.sid = UINT64_C(62471),
 	.name = "text",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_cert, text),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n576 = {
+static const struct cbl_ynode n599 = {
 	.sid = UINT64_C(62472),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_cert, verb),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_cert, has_verb),
-	.type = &t78,
-	.module = &m49,
+	.type = &t80,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n572_c[] = {
-	&n573, &n574, &n575, &n576
+static const struct cbl_ynode *const n595_c[] = {
+	&n596, &n597, &n598, &n599
 };
-static const struct cbl_ynode n572 = {
+static const struct cbl_ynode n595 = {
 	.sid = UINT64_C(62468),
 	.name = "cert",
 	.kind = CBL_YN_CONTAINER,
@@ -10042,13 +10460,13 @@ static const struct cbl_ynode n572 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_cert),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n572_c,
+	.child = n595_c,
 	.choice = &c11,
 	.ccase = 35,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n578 = {
+static const struct cbl_ynode n601 = {
 	.sid = UINT64_C(62474),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -10056,30 +10474,30 @@ static const struct cbl_ynode n578 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_geneve, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n579 = {
+static const struct cbl_ynode n602 = {
 	.sid = UINT64_C(62475),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_geneve, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n580 = {
+static const struct cbl_ynode n603 = {
 	.sid = UINT64_C(62476),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_geneve, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_geneve, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n581 = {
+static const struct cbl_ynode n604 = {
 	.sid = UINT64_C(62477),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
@@ -10087,13 +10505,13 @@ static const struct cbl_ynode n581 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_geneve, verb),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n577_c[] = {
-	&n578, &n579, &n580, &n581
+static const struct cbl_ynode *const n600_c[] = {
+	&n601, &n602, &n603, &n604
 };
-static const struct cbl_ynode n577 = {
+static const struct cbl_ynode n600 = {
 	.sid = UINT64_C(62473),
 	.name = "geneve",
 	.kind = CBL_YN_CONTAINER,
@@ -10103,13 +10521,13 @@ static const struct cbl_ynode n577 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_geneve),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n577_c,
+	.child = n600_c,
 	.choice = &c11,
 	.ccase = 27,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n583 = {
+static const struct cbl_ynode n606 = {
 	.sid = UINT64_C(62479),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -10117,20 +10535,20 @@ static const struct cbl_ynode n583 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_gpart, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n584 = {
+static const struct cbl_ynode n607 = {
 	.sid = UINT64_C(62480),
 	.name = "force",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_gpart, force),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_gpart, has_force),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n585 = {
+static const struct cbl_ynode n608 = {
 	.sid = UINT64_C(62481),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
@@ -10138,13 +10556,13 @@ static const struct cbl_ynode n585 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_gpart, verb),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n582_c[] = {
-	&n583, &n584, &n585
+static const struct cbl_ynode *const n605_c[] = {
+	&n606, &n607, &n608
 };
-static const struct cbl_ynode n582 = {
+static const struct cbl_ynode n605 = {
 	.sid = UINT64_C(62478),
 	.name = "gpart",
 	.kind = CBL_YN_CONTAINER,
@@ -10154,13 +10572,13 @@ static const struct cbl_ynode n582 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_gpart),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n582_c,
+	.child = n605_c,
 	.choice = &c11,
 	.ccase = 22,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n587 = {
+static const struct cbl_ynode n610 = {
 	.sid = UINT64_C(62483),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
@@ -10168,10 +10586,10 @@ static const struct cbl_ynode n587 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_address, address),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n588 = {
+static const struct cbl_ynode n611 = {
 	.sid = UINT64_C(62484),
 	.name = "interface",
 	.kind = CBL_YN_LEAF,
@@ -10179,64 +10597,64 @@ static const struct cbl_ynode n588 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_address, interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n589 = {
+static const struct cbl_ynode n612 = {
 	.sid = UINT64_C(62485),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_address, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n590 = {
+static const struct cbl_ynode n613 = {
 	.sid = UINT64_C(62486),
 	.name = "live",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_address, live),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_address, has_live),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n591 = {
+static const struct cbl_ynode n614 = {
 	.sid = UINT64_C(62487),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_address, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_address, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n592 = {
+static const struct cbl_ynode n615 = {
 	.sid = UINT64_C(62488),
 	.name = "remove",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_address, remove),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_address, has_remove),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n593 = {
+static const struct cbl_ynode n616 = {
 	.sid = UINT64_C(62489),
 	.name = "safe",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_address, safe),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_address, has_safe),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n586_c[] = {
-	&n587, &n588, &n589, &n590, &n591, &n592,
-	&n593
+static const struct cbl_ynode *const n609_c[] = {
+	&n610, &n611, &n612, &n613, &n614, &n615,
+	&n616
 };
-static const struct cbl_ynode n586 = {
+static const struct cbl_ynode n609 = {
 	.sid = UINT64_C(62482),
 	.name = "if-address",
 	.kind = CBL_YN_CONTAINER,
@@ -10246,63 +10664,63 @@ static const struct cbl_ynode n586 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_if_address),
 	.nmap = 7,
 	.nchild = 7,
-	.child = n586_c,
+	.child = n609_c,
 	.choice = &c11,
 	.ccase = 5,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n595 = {
+static const struct cbl_ynode n618 = {
 	.sid = UINT64_C(62491),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, address),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n596 = {
+static const struct cbl_ynode n619 = {
 	.sid = UINT64_C(62492),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, description),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n597 = {
+static const struct cbl_ynode n620 = {
 	.sid = UINT64_C(62493),
 	.name = "destination",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, destination),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n598 = {
+static const struct cbl_ynode n621 = {
 	.sid = UINT64_C(62494),
 	.name = "fib",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, fib),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_create, has_fib),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n599 = {
+static const struct cbl_ynode n622 = {
 	.sid = UINT64_C(62495),
 	.name = "id",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, id),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_create, has_id),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n600 = {
+static const struct cbl_ynode n623 = {
 	.sid = UINT64_C(62496),
 	.name = "interface",
 	.kind = CBL_YN_LEAF,
@@ -10310,95 +10728,95 @@ static const struct cbl_ynode n600 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n601 = {
+static const struct cbl_ynode n624 = {
 	.sid = UINT64_C(62497),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n602 = {
+static const struct cbl_ynode n625 = {
 	.sid = UINT64_C(62498),
 	.name = "mtu",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, mtu),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_create, has_mtu),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n603 = {
+static const struct cbl_ynode n626 = {
 	.sid = UINT64_C(62499),
 	.name = "parent",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, parent),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n604 = {
+static const struct cbl_ynode n627 = {
 	.sid = UINT64_C(62500),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_create, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n605 = {
+static const struct cbl_ynode n628 = {
 	.sid = UINT64_C(62501),
 	.name = "reqid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, reqid),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_create, has_reqid),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n606 = {
+static const struct cbl_ynode n629 = {
 	.sid = UINT64_C(62502),
 	.name = "tunnel-local",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, tunnel_local),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n607 = {
+static const struct cbl_ynode n630 = {
 	.sid = UINT64_C(62503),
 	.name = "tunnel-remote",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, tunnel_remote),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n608 = {
+static const struct cbl_ynode n631 = {
 	.sid = UINT64_C(62504),
 	.name = "tunnelfib",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_create, tunnelfib),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_create, has_tunnelfib),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n594_c[] = {
-	&n595, &n596, &n597, &n598, &n599, &n600,
-	&n601, &n602, &n603, &n604, &n605, &n606,
-	&n607, &n608
+static const struct cbl_ynode *const n617_c[] = {
+	&n618, &n619, &n620, &n621, &n622, &n623,
+	&n624, &n625, &n626, &n627, &n628, &n629,
+	&n630, &n631
 };
-static const struct cbl_ynode n594 = {
+static const struct cbl_ynode n617 = {
 	.sid = UINT64_C(62490),
 	.name = "if-create",
 	.kind = CBL_YN_CONTAINER,
@@ -10408,13 +10826,13 @@ static const struct cbl_ynode n594 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_if_create),
 	.nmap = 14,
 	.nchild = 14,
-	.child = n594_c,
+	.child = n617_c,
 	.choice = &c11,
 	.ccase = 9,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n610 = {
+static const struct cbl_ynode n633 = {
 	.sid = UINT64_C(62506),
 	.name = "interface",
 	.kind = CBL_YN_LEAF,
@@ -10422,33 +10840,33 @@ static const struct cbl_ynode n610 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_destroy, interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n611 = {
+static const struct cbl_ynode n634 = {
 	.sid = UINT64_C(62507),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_destroy, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n612 = {
+static const struct cbl_ynode n635 = {
 	.sid = UINT64_C(62508),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_destroy, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_destroy, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n609_c[] = {
-	&n610, &n611, &n612
+static const struct cbl_ynode *const n632_c[] = {
+	&n633, &n634, &n635
 };
-static const struct cbl_ynode n609 = {
+static const struct cbl_ynode n632 = {
 	.sid = UINT64_C(62505),
 	.name = "if-destroy",
 	.kind = CBL_YN_CONTAINER,
@@ -10458,33 +10876,33 @@ static const struct cbl_ynode n609 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_if_destroy),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n609_c,
+	.child = n632_c,
 	.choice = &c11,
 	.ccase = 10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n614 = {
+static const struct cbl_ynode n637 = {
 	.sid = UINT64_C(62510),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_set, description),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n615 = {
+static const struct cbl_ynode n638 = {
 	.sid = UINT64_C(62511),
 	.name = "fib",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_set, fib),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_set, has_fib),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n616 = {
+static const struct cbl_ynode n639 = {
 	.sid = UINT64_C(62512),
 	.name = "interface",
 	.kind = CBL_YN_LEAF,
@@ -10492,64 +10910,64 @@ static const struct cbl_ynode n616 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_set, interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n617 = {
+static const struct cbl_ynode n640 = {
 	.sid = UINT64_C(62513),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_set, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n618 = {
+static const struct cbl_ynode n641 = {
 	.sid = UINT64_C(62514),
 	.name = "mtu",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_set, mtu),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_set, has_mtu),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n619 = {
+static const struct cbl_ynode n642 = {
 	.sid = UINT64_C(62515),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_set, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_set, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n620 = {
+static const struct cbl_ynode n643 = {
 	.sid = UINT64_C(62516),
 	.name = "safe",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_set, safe),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_set, has_safe),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n621 = {
+static const struct cbl_ynode n644 = {
 	.sid = UINT64_C(62517),
 	.name = "tunnelfib",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_set, tunnelfib),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_set, has_tunnelfib),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n613_c[] = {
-	&n614, &n615, &n616, &n617, &n618, &n619,
-	&n620, &n621
+static const struct cbl_ynode *const n636_c[] = {
+	&n637, &n638, &n639, &n640, &n641, &n642,
+	&n643, &n644
 };
-static const struct cbl_ynode n613 = {
+static const struct cbl_ynode n636 = {
 	.sid = UINT64_C(62509),
 	.name = "if-set",
 	.kind = CBL_YN_CONTAINER,
@@ -10559,13 +10977,13 @@ static const struct cbl_ynode n613 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_if_set),
 	.nmap = 8,
 	.nchild = 8,
-	.child = n613_c,
+	.child = n636_c,
 	.choice = &c11,
 	.ccase = 8,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n623 = {
+static const struct cbl_ynode n646 = {
 	.sid = UINT64_C(62519),
 	.name = "interface",
 	.kind = CBL_YN_LEAF,
@@ -10573,40 +10991,40 @@ static const struct cbl_ynode n623 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_state, interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n624 = {
+static const struct cbl_ynode n647 = {
 	.sid = UINT64_C(62520),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_state, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n625 = {
+static const struct cbl_ynode n648 = {
 	.sid = UINT64_C(62521),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_state, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_state, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n626 = {
+static const struct cbl_ynode n649 = {
 	.sid = UINT64_C(62522),
 	.name = "safe",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_state, safe),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_state, has_safe),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n627 = {
+static const struct cbl_ynode n650 = {
 	.sid = UINT64_C(62523),
 	.name = "up",
 	.kind = CBL_YN_LEAF,
@@ -10614,13 +11032,13 @@ static const struct cbl_ynode n627 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_state, up),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_state, has_up),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n622_c[] = {
-	&n623, &n624, &n625, &n626, &n627
+static const struct cbl_ynode *const n645_c[] = {
+	&n646, &n647, &n648, &n649, &n650
 };
-static const struct cbl_ynode n622 = {
+static const struct cbl_ynode n645 = {
 	.sid = UINT64_C(62518),
 	.name = "if-state",
 	.kind = CBL_YN_CONTAINER,
@@ -10630,13 +11048,13 @@ static const struct cbl_ynode n622 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_if_state),
 	.nmap = 5,
 	.nchild = 5,
-	.child = n622_c,
+	.child = n645_c,
 	.choice = &c11,
 	.ccase = 6,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n629 = {
+static const struct cbl_ynode n652 = {
 	.sid = UINT64_C(62525),
 	.name = "interface",
 	.kind = CBL_YN_LEAF,
@@ -10644,10 +11062,10 @@ static const struct cbl_ynode n629 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_vnet, interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n630 = {
+static const struct cbl_ynode n653 = {
 	.sid = UINT64_C(62526),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
@@ -10655,43 +11073,43 @@ static const struct cbl_ynode n630 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_vnet, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n631 = {
+static const struct cbl_ynode n654 = {
 	.sid = UINT64_C(62527),
 	.name = "parent",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_vnet, parent),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n632 = {
+static const struct cbl_ynode n655 = {
 	.sid = UINT64_C(62528),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_vnet, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_vnet, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n633 = {
+static const struct cbl_ynode n656 = {
 	.sid = UINT64_C(62529),
 	.name = "remove",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_if_vnet, remove),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_if_vnet, has_remove),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n628_c[] = {
-	&n629, &n630, &n631, &n632, &n633
+static const struct cbl_ynode *const n651_c[] = {
+	&n652, &n653, &n654, &n655, &n656
 };
-static const struct cbl_ynode n628 = {
+static const struct cbl_ynode n651 = {
 	.sid = UINT64_C(62524),
 	.name = "if-vnet",
 	.kind = CBL_YN_CONTAINER,
@@ -10701,13 +11119,13 @@ static const struct cbl_ynode n628 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_if_vnet),
 	.nmap = 5,
 	.nchild = 5,
-	.child = n628_c,
+	.child = n651_c,
 	.choice = &c11,
 	.ccase = 14,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n635 = {
+static const struct cbl_ynode n658 = {
 	.sid = UINT64_C(62531),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -10715,40 +11133,40 @@ static const struct cbl_ynode n635 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipfw, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n636 = {
+static const struct cbl_ynode n659 = {
 	.sid = UINT64_C(62532),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipfw, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n637 = {
+static const struct cbl_ynode n660 = {
 	.sid = UINT64_C(62533),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipfw, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_ipfw, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n638 = {
+static const struct cbl_ynode n661 = {
 	.sid = UINT64_C(62534),
 	.name = "safe",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipfw, safe),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_ipfw, has_safe),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n639 = {
+static const struct cbl_ynode n662 = {
 	.sid = UINT64_C(62535),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
@@ -10756,13 +11174,13 @@ static const struct cbl_ynode n639 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipfw, verb),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n634_c[] = {
-	&n635, &n636, &n637, &n638, &n639
+static const struct cbl_ynode *const n657_c[] = {
+	&n658, &n659, &n660, &n661, &n662
 };
-static const struct cbl_ynode n634 = {
+static const struct cbl_ynode n657 = {
 	.sid = UINT64_C(62530),
 	.name = "ipfw",
 	.kind = CBL_YN_CONTAINER,
@@ -10772,199 +11190,199 @@ static const struct cbl_ynode n634 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_ipfw),
 	.nmap = 5,
 	.nchild = 5,
-	.child = n634_c,
+	.child = n657_c,
 	.choice = &c11,
 	.ccase = 25,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n641 = {
+static const struct cbl_ynode n664 = {
 	.sid = UINT64_C(62544),
 	.name = "child",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, child),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n642 = {
+static const struct cbl_ynode n665 = {
 	.sid = UINT64_C(62545),
 	.name = "conn",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, conn),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n643 = {
+static const struct cbl_ynode n666 = {
 	.sid = UINT64_C(62546),
 	.name = "ipsec-mode",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, ipsec_mode),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_ipsec, has_ipsec_mode),
-	.type = &t79,
-	.module = &m49,
+	.type = &t81,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n644 = {
+static const struct cbl_ynode n667 = {
 	.sid = UINT64_C(62547),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n645 = {
+static const struct cbl_ynode n668 = {
 	.sid = UINT64_C(62548),
 	.name = "local-cert",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, local_cert),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n646 = {
+static const struct cbl_ynode n669 = {
 	.sid = UINT64_C(62549),
 	.name = "local-id",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, local_id),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n647 = {
+static const struct cbl_ynode n670 = {
 	.sid = UINT64_C(62550),
 	.name = "local-ts",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, local_ts),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n648 = {
+static const struct cbl_ynode n671 = {
 	.sid = UINT64_C(62551),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_ipsec, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n649 = {
+static const struct cbl_ynode n672 = {
 	.sid = UINT64_C(62552),
 	.name = "pubkey",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, pubkey),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n650 = {
+static const struct cbl_ynode n673 = {
 	.sid = UINT64_C(62553),
 	.name = "remote-ca",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, remote_ca),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n651 = {
+static const struct cbl_ynode n674 = {
 	.sid = UINT64_C(62554),
 	.name = "remote-cert",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, remote_cert),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n652 = {
+static const struct cbl_ynode n675 = {
 	.sid = UINT64_C(62555),
 	.name = "remote-id",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, remote_id),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n653 = {
+static const struct cbl_ynode n676 = {
 	.sid = UINT64_C(62556),
 	.name = "remote-ts",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, remote_ts),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n654 = {
+static const struct cbl_ynode n677 = {
 	.sid = UINT64_C(62557),
 	.name = "reqid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, reqid),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_ipsec, has_reqid),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n655 = {
+static const struct cbl_ynode n678 = {
 	.sid = UINT64_C(62558),
 	.name = "start-action",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, start_action),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_ipsec, has_start_action),
-	.type = &t80,
-	.module = &m49,
+	.type = &t82,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n656 = {
+static const struct cbl_ynode n679 = {
 	.sid = UINT64_C(62559),
 	.name = "tunnel-local",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, tunnel_local),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n657 = {
+static const struct cbl_ynode n680 = {
 	.sid = UINT64_C(62560),
 	.name = "tunnel-remote",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, tunnel_remote),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n658 = {
+static const struct cbl_ynode n681 = {
 	.sid = UINT64_C(62561),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec, verb),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_ipsec, has_verb),
-	.type = &t81,
-	.module = &m49,
+	.type = &t83,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n640_c[] = {
-	&n641, &n642, &n643, &n644, &n645, &n646,
-	&n647, &n648, &n649, &n650, &n651, &n652,
-	&n653, &n654, &n655, &n656, &n657, &n658
+static const struct cbl_ynode *const n663_c[] = {
+	&n664, &n665, &n666, &n667, &n668, &n669,
+	&n670, &n671, &n672, &n673, &n674, &n675,
+	&n676, &n677, &n678, &n679, &n680, &n681
 };
-static const struct cbl_ynode n640 = {
+static const struct cbl_ynode n663 = {
 	.sid = UINT64_C(62536),
 	.name = "ipsec",
 	.kind = CBL_YN_CONTAINER,
@@ -10974,13 +11392,13 @@ static const struct cbl_ynode n640 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_ipsec),
 	.nmap = 18,
 	.nchild = 18,
-	.child = n640_c,
+	.child = n663_c,
 	.choice = &c11,
 	.ccase = 30,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n660 = {
+static const struct cbl_ynode n683 = {
 	.sid = UINT64_C(62538),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -10988,10 +11406,10 @@ static const struct cbl_ynode n660 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec_sa, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n661 = {
+static const struct cbl_ynode n684 = {
 	.sid = UINT64_C(62539),
 	.name = "interface",
 	.kind = CBL_YN_LEAF,
@@ -10999,54 +11417,54 @@ static const struct cbl_ynode n661 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec_sa, interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n662 = {
+static const struct cbl_ynode n685 = {
 	.sid = UINT64_C(62540),
 	.name = "reqid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec_sa, reqid),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_ipsec_sa, has_reqid),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n663 = {
+static const struct cbl_ynode n686 = {
 	.sid = UINT64_C(62541),
 	.name = "tunnel-local",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec_sa, tunnel_local),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n664 = {
+static const struct cbl_ynode n687 = {
 	.sid = UINT64_C(62542),
 	.name = "tunnel-remote",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec_sa, tunnel_remote),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n665 = {
+static const struct cbl_ynode n688 = {
 	.sid = UINT64_C(62543),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ipsec_sa, verb),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_ipsec_sa, has_verb),
-	.type = &t82,
-	.module = &m49,
+	.type = &t84,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n659_c[] = {
-	&n660, &n661, &n662, &n663, &n664, &n665
+static const struct cbl_ynode *const n682_c[] = {
+	&n683, &n684, &n685, &n686, &n687, &n688
 };
-static const struct cbl_ynode n659 = {
+static const struct cbl_ynode n682 = {
 	.sid = UINT64_C(62537),
 	.name = "ipsec-sa",
 	.kind = CBL_YN_CONTAINER,
@@ -11056,24 +11474,24 @@ static const struct cbl_ynode n659 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_ipsec_sa),
 	.nmap = 6,
 	.nchild = 6,
-	.child = n659_c,
+	.child = n682_c,
 	.choice = &c11,
 	.ccase = 18,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n667 = {
+static const struct cbl_ynode n690 = {
 	.sid = UINT64_C(62563),
 	.name = "action",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_jail_action, action),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_jail_action, has_action),
-	.type = &t83,
-	.module = &m49,
+	.type = &t85,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n668 = {
+static const struct cbl_ynode n691 = {
 	.sid = UINT64_C(62564),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
@@ -11081,13 +11499,13 @@ static const struct cbl_ynode n668 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_jail_action, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n666_c[] = {
-	&n667, &n668
+static const struct cbl_ynode *const n689_c[] = {
+	&n690, &n691
 };
-static const struct cbl_ynode n666 = {
+static const struct cbl_ynode n689 = {
 	.sid = UINT64_C(62562),
 	.name = "jail-action",
 	.kind = CBL_YN_CONTAINER,
@@ -11097,13 +11515,13 @@ static const struct cbl_ynode n666 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_jail_action),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n666_c,
+	.child = n689_c,
 	.choice = &c11,
 	.ccase = 0,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n670 = {
+static const struct cbl_ynode n693 = {
 	.sid = UINT64_C(62566),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -11111,95 +11529,95 @@ static const struct cbl_ynode n670 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_jail_conf, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n671 = {
+static const struct cbl_ynode n694 = {
 	.sid = UINT64_C(62567),
 	.name = "copy",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_jail_conf, copy),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_jail_conf, has_copy),
-	.type = &t84,
-	.module = &m49,
+	.type = &t86,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n672 = {
+static const struct cbl_ynode n695 = {
 	.sid = UINT64_C(62568),
 	.name = "dataset",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_jail_conf, dataset),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n673 = {
+static const struct cbl_ynode n696 = {
 	.sid = UINT64_C(62569),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_jail_conf, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n674 = {
+static const struct cbl_ynode n697 = {
 	.sid = UINT64_C(62570),
 	.name = "path",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_jail_conf, path),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n675 = {
+static const struct cbl_ynode n698 = {
 	.sid = UINT64_C(62571),
 	.name = "snapshot",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_jail_conf, snapshot),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n676 = {
+static const struct cbl_ynode n699 = {
 	.sid = UINT64_C(62572),
 	.name = "start",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_jail_conf, start),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_jail_conf, has_start),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n677 = {
+static const struct cbl_ynode n700 = {
 	.sid = UINT64_C(62573),
 	.name = "text",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_jail_conf, text),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n678 = {
+static const struct cbl_ynode n701 = {
 	.sid = UINT64_C(62574),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_jail_conf, verb),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_jail_conf, has_verb),
-	.type = &t85,
-	.module = &m49,
+	.type = &t87,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n669_c[] = {
-	&n670, &n671, &n672, &n673, &n674, &n675,
-	&n676, &n677, &n678
+static const struct cbl_ynode *const n692_c[] = {
+	&n693, &n694, &n695, &n696, &n697, &n698,
+	&n699, &n700, &n701
 };
-static const struct cbl_ynode n669 = {
+static const struct cbl_ynode n692 = {
 	.sid = UINT64_C(62565),
 	.name = "jail-conf",
 	.kind = CBL_YN_CONTAINER,
@@ -11209,13 +11627,13 @@ static const struct cbl_ynode n669 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_jail_conf),
 	.nmap = 9,
 	.nchild = 9,
-	.child = n669_c,
+	.child = n692_c,
 	.choice = &c11,
 	.ccase = 32,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n680 = {
+static const struct cbl_ynode n703 = {
 	.sid = UINT64_C(62576),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -11223,34 +11641,34 @@ static const struct cbl_ynode n680 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_kmod, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n681 = {
+static const struct cbl_ynode n704 = {
 	.sid = UINT64_C(62577),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_kmod, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_kmod, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n682 = {
+static const struct cbl_ynode n705 = {
 	.sid = UINT64_C(62578),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_kmod, verb),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_kmod, has_verb),
-	.type = &t86,
-	.module = &m49,
+	.type = &t88,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n679_c[] = {
-	&n680, &n681, &n682
+static const struct cbl_ynode *const n702_c[] = {
+	&n703, &n704, &n705
 };
-static const struct cbl_ynode n679 = {
+static const struct cbl_ynode n702 = {
 	.sid = UINT64_C(62575),
 	.name = "kmod",
 	.kind = CBL_YN_CONTAINER,
@@ -11260,13 +11678,13 @@ static const struct cbl_ynode n679 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_kmod),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n679_c,
+	.child = n702_c,
 	.choice = &c11,
 	.ccase = 15,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n684 = {
+static const struct cbl_ynode n707 = {
 	.sid = UINT64_C(62580),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -11274,20 +11692,20 @@ static const struct cbl_ynode n684 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_mount, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n685 = {
+static const struct cbl_ynode n708 = {
 	.sid = UINT64_C(62581),
 	.name = "force",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_mount, force),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_mount, has_force),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n686 = {
+static const struct cbl_ynode n709 = {
 	.sid = UINT64_C(62582),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
@@ -11295,13 +11713,13 @@ static const struct cbl_ynode n686 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_mount, verb),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n683_c[] = {
-	&n684, &n685, &n686
+static const struct cbl_ynode *const n706_c[] = {
+	&n707, &n708, &n709
 };
-static const struct cbl_ynode n683 = {
+static const struct cbl_ynode n706 = {
 	.sid = UINT64_C(62579),
 	.name = "mount",
 	.kind = CBL_YN_CONTAINER,
@@ -11311,13 +11729,13 @@ static const struct cbl_ynode n683 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_mount),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n683_c,
+	.child = n706_c,
 	.choice = &c11,
 	.ccase = 21,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n688 = {
+static const struct cbl_ynode n711 = {
 	.sid = UINT64_C(62584),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
@@ -11325,75 +11743,75 @@ static const struct cbl_ynode n688 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_neighbour, address),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n689 = {
+static const struct cbl_ynode n712 = {
 	.sid = UINT64_C(62585),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_neighbour, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n690 = {
+static const struct cbl_ynode n713 = {
 	.sid = UINT64_C(62586),
 	.name = "live",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_neighbour, live),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_neighbour, has_live),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n691 = {
+static const struct cbl_ynode n714 = {
 	.sid = UINT64_C(62587),
 	.name = "lladdr",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_neighbour, lladdr),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n692 = {
+static const struct cbl_ynode n715 = {
 	.sid = UINT64_C(62588),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_neighbour, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_neighbour, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n693 = {
+static const struct cbl_ynode n716 = {
 	.sid = UINT64_C(62589),
 	.name = "temporary",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_neighbour, temporary),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_neighbour, has_temporary),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n694 = {
+static const struct cbl_ynode n717 = {
 	.sid = UINT64_C(62590),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_neighbour, verb),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_neighbour, has_verb),
-	.type = &t87,
-	.module = &m49,
+	.type = &t89,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n687_c[] = {
-	&n688, &n689, &n690, &n691, &n692, &n693,
-	&n694
+static const struct cbl_ynode *const n710_c[] = {
+	&n711, &n712, &n713, &n714, &n715, &n716,
+	&n717
 };
-static const struct cbl_ynode n687 = {
+static const struct cbl_ynode n710 = {
 	.sid = UINT64_C(62583),
 	.name = "neighbour",
 	.kind = CBL_YN_CONTAINER,
@@ -11403,13 +11821,13 @@ static const struct cbl_ynode n687 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_neighbour),
 	.nmap = 7,
 	.nchild = 7,
-	.child = n687_c,
+	.child = n710_c,
 	.choice = &c11,
 	.ccase = 34,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n696 = {
+static const struct cbl_ynode n719 = {
 	.sid = UINT64_C(62592),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -11417,34 +11835,34 @@ static const struct cbl_ynode n696 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_netgraph, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n697 = {
+static const struct cbl_ynode n720 = {
 	.sid = UINT64_C(62593),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_netgraph, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n698 = {
+static const struct cbl_ynode n721 = {
 	.sid = UINT64_C(62594),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_netgraph, verb),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_netgraph, has_verb),
-	.type = &t88,
-	.module = &m49,
+	.type = &t90,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n695_c[] = {
-	&n696, &n697, &n698
+static const struct cbl_ynode *const n718_c[] = {
+	&n719, &n720, &n721
 };
-static const struct cbl_ynode n695 = {
+static const struct cbl_ynode n718 = {
 	.sid = UINT64_C(62591),
 	.name = "netgraph",
 	.kind = CBL_YN_CONTAINER,
@@ -11454,13 +11872,13 @@ static const struct cbl_ynode n695 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_netgraph),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n695_c,
+	.child = n718_c,
 	.choice = &c11,
 	.ccase = 11,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n700 = {
+static const struct cbl_ynode n723 = {
 	.sid = UINT64_C(62596),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -11468,33 +11886,33 @@ static const struct cbl_ynode n700 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_ntp, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n701 = {
+static const struct cbl_ynode n724 = {
 	.sid = UINT64_C(62597),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ntp, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_ntp, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n702 = {
+static const struct cbl_ynode n725 = {
 	.sid = UINT64_C(62598),
 	.name = "remove",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ntp, remove),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_ntp, has_remove),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n699_c[] = {
-	&n700, &n701, &n702
+static const struct cbl_ynode *const n722_c[] = {
+	&n723, &n724, &n725
 };
-static const struct cbl_ynode n699 = {
+static const struct cbl_ynode n722 = {
 	.sid = UINT64_C(62595),
 	.name = "ntp",
 	.kind = CBL_YN_CONTAINER,
@@ -11504,36 +11922,36 @@ static const struct cbl_ynode n699 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_ntp),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n699_c,
+	.child = n722_c,
 	.choice = &c11,
 	.ccase = 16,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n704 = {
+static const struct cbl_ynode n727 = {
 	.sid = UINT64_C(62600),
 	.name = "force",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_pkg_clean, force),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_pkg_clean, has_force),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n705 = {
+static const struct cbl_ynode n728 = {
 	.sid = UINT64_C(62601),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_pkg_clean, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n703_c[] = {
-	&n704, &n705
+static const struct cbl_ynode *const n726_c[] = {
+	&n727, &n728
 };
-static const struct cbl_ynode n703 = {
+static const struct cbl_ynode n726 = {
 	.sid = UINT64_C(62599),
 	.name = "pkg-clean",
 	.kind = CBL_YN_CONTAINER,
@@ -11543,33 +11961,33 @@ static const struct cbl_ynode n703 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_pkg_clean),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n703_c,
+	.child = n726_c,
 	.choice = &c11,
 	.ccase = 29,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n707 = {
+static const struct cbl_ynode n730 = {
 	.sid = UINT64_C(62603),
 	.name = "force",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_pkg_install, force),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_pkg_install, has_force),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n708 = {
+static const struct cbl_ynode n731 = {
 	.sid = UINT64_C(62604),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_pkg_install, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n709 = {
+static const struct cbl_ynode n732 = {
 	.sid = UINT64_C(62605),
 	.name = "packages",
 	.kind = CBL_YN_LEAFLIST,
@@ -11577,23 +11995,23 @@ static const struct cbl_ynode n709 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_pkg_install, packages),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n710 = {
+static const struct cbl_ynode n733 = {
 	.sid = UINT64_C(62606),
 	.name = "pkg-ip",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_pkg_install, pkg_ip),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_pkg_install, has_pkg_ip),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n706_c[] = {
-	&n707, &n708, &n709, &n710
+static const struct cbl_ynode *const n729_c[] = {
+	&n730, &n731, &n732, &n733
 };
-static const struct cbl_ynode n706 = {
+static const struct cbl_ynode n729 = {
 	.sid = UINT64_C(62602),
 	.name = "pkg-install",
 	.kind = CBL_YN_CONTAINER,
@@ -11603,33 +12021,33 @@ static const struct cbl_ynode n706 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_pkg_install),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n706_c,
+	.child = n729_c,
 	.choice = &c11,
 	.ccase = 31,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n712 = {
+static const struct cbl_ynode n735 = {
 	.sid = UINT64_C(62608),
 	.name = "force",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_pkg_upgrade, force),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_pkg_upgrade, has_force),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n713 = {
+static const struct cbl_ynode n736 = {
 	.sid = UINT64_C(62609),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_pkg_upgrade, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n714 = {
+static const struct cbl_ynode n737 = {
 	.sid = UINT64_C(62610),
 	.name = "packages",
 	.kind = CBL_YN_LEAFLIST,
@@ -11637,23 +12055,23 @@ static const struct cbl_ynode n714 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_pkg_upgrade, packages),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n715 = {
+static const struct cbl_ynode n738 = {
 	.sid = UINT64_C(62611),
 	.name = "pkg-ip",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_pkg_upgrade, pkg_ip),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_pkg_upgrade, has_pkg_ip),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n711_c[] = {
-	&n712, &n713, &n714, &n715
+static const struct cbl_ynode *const n734_c[] = {
+	&n735, &n736, &n737, &n738
 };
-static const struct cbl_ynode n711 = {
+static const struct cbl_ynode n734 = {
 	.sid = UINT64_C(62607),
 	.name = "pkg-upgrade",
 	.kind = CBL_YN_CONTAINER,
@@ -11663,13 +12081,13 @@ static const struct cbl_ynode n711 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_pkg_upgrade),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n711_c,
+	.child = n734_c,
 	.choice = &c11,
 	.ccase = 4,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n717 = {
+static const struct cbl_ynode n740 = {
 	.sid = UINT64_C(62613),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -11677,24 +12095,24 @@ static const struct cbl_ynode n717 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_process, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n718 = {
+static const struct cbl_ynode n741 = {
 	.sid = UINT64_C(62614),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_process, verb),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_process, has_verb),
-	.type = &t89,
-	.module = &m49,
+	.type = &t91,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n716_c[] = {
-	&n717, &n718
+static const struct cbl_ynode *const n739_c[] = {
+	&n740, &n741
 };
-static const struct cbl_ynode n716 = {
+static const struct cbl_ynode n739 = {
 	.sid = UINT64_C(62612),
 	.name = "process",
 	.kind = CBL_YN_CONTAINER,
@@ -11704,13 +12122,13 @@ static const struct cbl_ynode n716 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_process),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n716_c,
+	.child = n739_c,
 	.choice = &c11,
 	.ccase = 28,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n720 = {
+static const struct cbl_ynode n743 = {
 	.sid = UINT64_C(62616),
 	.name = "destination",
 	.kind = CBL_YN_LEAF,
@@ -11718,104 +12136,104 @@ static const struct cbl_ynode n720 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_route, destination),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n721 = {
+static const struct cbl_ynode n744 = {
 	.sid = UINT64_C(62617),
 	.name = "fib",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_route, fib),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_route, has_fib),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n722 = {
+static const struct cbl_ynode n745 = {
 	.sid = UINT64_C(62618),
 	.name = "gateway",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_route, gateway),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n723 = {
+static const struct cbl_ynode n746 = {
 	.sid = UINT64_C(62619),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_route, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n724 = {
+static const struct cbl_ynode n747 = {
 	.sid = UINT64_C(62620),
 	.name = "metric",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_route, metric),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_route, has_metric),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n725 = {
+static const struct cbl_ynode n748 = {
 	.sid = UINT64_C(62621),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_route, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_route, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n726 = {
+static const struct cbl_ynode n749 = {
 	.sid = UINT64_C(62622),
 	.name = "remove",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_route, remove),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_route, has_remove),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n727 = {
+static const struct cbl_ynode n750 = {
 	.sid = UINT64_C(62623),
 	.name = "safe",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_route, safe),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_route, has_safe),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n728 = {
+static const struct cbl_ynode n751 = {
 	.sid = UINT64_C(62624),
 	.name = "source",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_route, source),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n729 = {
+static const struct cbl_ynode n752 = {
 	.sid = UINT64_C(62625),
 	.name = "weight",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_route, weight),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_route, has_weight),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n719_c[] = {
-	&n720, &n721, &n722, &n723, &n724, &n725,
-	&n726, &n727, &n728, &n729
+static const struct cbl_ynode *const n742_c[] = {
+	&n743, &n744, &n745, &n746, &n747, &n748,
+	&n749, &n750, &n751, &n752
 };
-static const struct cbl_ynode n719 = {
+static const struct cbl_ynode n742 = {
 	.sid = UINT64_C(62615),
 	.name = "route",
 	.kind = CBL_YN_CONTAINER,
@@ -11825,13 +12243,13 @@ static const struct cbl_ynode n719 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_route),
 	.nmap = 10,
 	.nchild = 10,
-	.child = n719_c,
+	.child = n742_c,
 	.choice = &c11,
 	.ccase = 7,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n731 = {
+static const struct cbl_ynode n754 = {
 	.sid = UINT64_C(62627),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -11839,10 +12257,10 @@ static const struct cbl_ynode n731 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_rtadvd, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n732 = {
+static const struct cbl_ynode n755 = {
 	.sid = UINT64_C(62628),
 	.name = "interface",
 	.kind = CBL_YN_LEAF,
@@ -11850,33 +12268,33 @@ static const struct cbl_ynode n732 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_rtadvd, interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n733 = {
+static const struct cbl_ynode n756 = {
 	.sid = UINT64_C(62629),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_rtadvd, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_rtadvd, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n734 = {
+static const struct cbl_ynode n757 = {
 	.sid = UINT64_C(62630),
 	.name = "remove",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_rtadvd, remove),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_rtadvd, has_remove),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n730_c[] = {
-	&n731, &n732, &n733, &n734
+static const struct cbl_ynode *const n753_c[] = {
+	&n754, &n755, &n756, &n757
 };
-static const struct cbl_ynode n730 = {
+static const struct cbl_ynode n753 = {
 	.sid = UINT64_C(62626),
 	.name = "rtadvd",
 	.kind = CBL_YN_CONTAINER,
@@ -11886,24 +12304,24 @@ static const struct cbl_ynode n730 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_rtadvd),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n730_c,
+	.child = n753_c,
 	.choice = &c11,
 	.ccase = 17,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n736 = {
+static const struct cbl_ynode n759 = {
 	.sid = UINT64_C(62632),
 	.name = "action",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_service_action, action),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_service_action, has_action),
-	.type = &t90,
-	.module = &m49,
+	.type = &t92,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n737 = {
+static const struct cbl_ynode n760 = {
 	.sid = UINT64_C(62633),
 	.name = "service",
 	.kind = CBL_YN_LEAF,
@@ -11911,13 +12329,13 @@ static const struct cbl_ynode n737 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_service_action, service),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n735_c[] = {
-	&n736, &n737
+static const struct cbl_ynode *const n758_c[] = {
+	&n759, &n760
 };
-static const struct cbl_ynode n735 = {
+static const struct cbl_ynode n758 = {
 	.sid = UINT64_C(62631),
 	.name = "service-action",
 	.kind = CBL_YN_CONTAINER,
@@ -11927,13 +12345,13 @@ static const struct cbl_ynode n735 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_service_action),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n735_c,
+	.child = n758_c,
 	.choice = &c11,
 	.ccase = 2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n739 = {
+static const struct cbl_ynode n762 = {
 	.sid = UINT64_C(62635),
 	.name = "service",
 	.kind = CBL_YN_LEAF,
@@ -11941,10 +12359,10 @@ static const struct cbl_ynode n739 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_service_config, service),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n741 = {
+static const struct cbl_ynode n764 = {
 	.sid = UINT64_C(62637),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -11952,24 +12370,24 @@ static const struct cbl_ynode n741 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_service_config_set, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n742 = {
+static const struct cbl_ynode n765 = {
 	.sid = UINT64_C(62638),
 	.name = "value",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_service_config_set, value),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n740_c[] = {
-	&n741, &n742
+static const struct cbl_ynode *const n763_c[] = {
+	&n764, &n765
 };
-static const uint32_t n740_k[] = { 0 };
-static const struct cbl_ynode n740 = {
+static const uint32_t n763_k[] = { 0 };
+static const struct cbl_ynode n763 = {
 	.sid = UINT64_C(62636),
 	.name = "set",
 	.kind = CBL_YN_LIST,
@@ -11978,13 +12396,13 @@ static const struct cbl_ynode n740 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_service_config_set),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n740_c,
+	.child = n763_c,
 	.nkeys = 1,
-	.keys = n740_k,
-	.module = &m49,
+	.keys = n763_k,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n743 = {
+static const struct cbl_ynode n766 = {
 	.sid = UINT64_C(62639),
 	.name = "unset",
 	.kind = CBL_YN_LEAFLIST,
@@ -11992,13 +12410,13 @@ static const struct cbl_ynode n743 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_service_config, unset),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n738_c[] = {
-	&n739, &n740, &n743
+static const struct cbl_ynode *const n761_c[] = {
+	&n762, &n763, &n766
 };
-static const struct cbl_ynode n738 = {
+static const struct cbl_ynode n761 = {
 	.sid = UINT64_C(62634),
 	.name = "service-config",
 	.kind = CBL_YN_CONTAINER,
@@ -12007,13 +12425,13 @@ static const struct cbl_ynode n738 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jobs_submit_input_change_service_config),
 	.nchild = 3,
-	.child = n738_c,
+	.child = n761_c,
 	.choice = &c11,
 	.ccase = 3,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n745 = {
+static const struct cbl_ynode n768 = {
 	.sid = UINT64_C(62641),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -12021,75 +12439,75 @@ static const struct cbl_ynode n745 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_ssh, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n746 = {
+static const struct cbl_ynode n769 = {
 	.sid = UINT64_C(62642),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ssh, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n747 = {
+static const struct cbl_ynode n770 = {
 	.sid = UINT64_C(62643),
 	.name = "path",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ssh, path),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n748 = {
+static const struct cbl_ynode n771 = {
 	.sid = UINT64_C(62644),
 	.name = "safe",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ssh, safe),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_ssh, has_safe),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n749 = {
+static const struct cbl_ynode n772 = {
 	.sid = UINT64_C(62645),
 	.name = "text",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ssh, text),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n750 = {
+static const struct cbl_ynode n773 = {
 	.sid = UINT64_C(62646),
 	.name = "user",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ssh, user),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n751 = {
+static const struct cbl_ynode n774 = {
 	.sid = UINT64_C(62647),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_ssh, verb),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_ssh, has_verb),
-	.type = &t91,
-	.module = &m49,
+	.type = &t93,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n744_c[] = {
-	&n745, &n746, &n747, &n748, &n749, &n750,
-	&n751
+static const struct cbl_ynode *const n767_c[] = {
+	&n768, &n769, &n770, &n771, &n772, &n773,
+	&n774
 };
-static const struct cbl_ynode n744 = {
+static const struct cbl_ynode n767 = {
 	.sid = UINT64_C(62640),
 	.name = "ssh",
 	.kind = CBL_YN_CONTAINER,
@@ -12099,13 +12517,13 @@ static const struct cbl_ynode n744 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_ssh),
 	.nmap = 7,
 	.nchild = 7,
-	.child = n744_c,
+	.child = n767_c,
 	.choice = &c11,
 	.ccase = 36,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n753 = {
+static const struct cbl_ynode n776 = {
 	.sid = UINT64_C(62649),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -12113,23 +12531,23 @@ static const struct cbl_ynode n753 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_sysctl, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n754 = {
+static const struct cbl_ynode n777 = {
 	.sid = UINT64_C(62650),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_sysctl, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_sysctl, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n752_c[] = {
-	&n753, &n754
+static const struct cbl_ynode *const n775_c[] = {
+	&n776, &n777
 };
-static const struct cbl_ynode n752 = {
+static const struct cbl_ynode n775 = {
 	.sid = UINT64_C(62648),
 	.name = "sysctl",
 	.kind = CBL_YN_CONTAINER,
@@ -12139,33 +12557,33 @@ static const struct cbl_ynode n752 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_sysctl),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n752_c,
+	.child = n775_c,
 	.choice = &c11,
 	.ccase = 24,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n756 = {
+static const struct cbl_ynode n779 = {
 	.sid = UINT64_C(62652),
 	.name = "allowed-ips",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_wireguard, allowed_ips),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n757 = {
+static const struct cbl_ynode n780 = {
 	.sid = UINT64_C(62653),
 	.name = "endpoint",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_wireguard, endpoint),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n758 = {
+static const struct cbl_ynode n781 = {
 	.sid = UINT64_C(62654),
 	.name = "interface",
 	.kind = CBL_YN_LEAF,
@@ -12173,85 +12591,85 @@ static const struct cbl_ynode n758 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_wireguard, interface),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n759 = {
+static const struct cbl_ynode n782 = {
 	.sid = UINT64_C(62655),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_wireguard, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n760 = {
+static const struct cbl_ynode n783 = {
 	.sid = UINT64_C(62656),
 	.name = "keepalive",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_wireguard, keepalive),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_wireguard, has_keepalive),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n761 = {
+static const struct cbl_ynode n784 = {
 	.sid = UINT64_C(62657),
 	.name = "listen-port",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_wireguard, listen_port),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_wireguard, has_listen_port),
 	.type = &t10,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n762 = {
+static const struct cbl_ynode n785 = {
 	.sid = UINT64_C(62658),
 	.name = "peer",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_wireguard, peer),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n763 = {
+static const struct cbl_ynode n786 = {
 	.sid = UINT64_C(62659),
 	.name = "persist",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_wireguard, persist),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_wireguard, has_persist),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n764 = {
+static const struct cbl_ynode n787 = {
 	.sid = UINT64_C(62660),
 	.name = "preshared-key",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_wireguard, preshared_key),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n765 = {
+static const struct cbl_ynode n788 = {
 	.sid = UINT64_C(62661),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_jobs_submit_input_change_wireguard, verb),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_wireguard, has_verb),
-	.type = &t92,
-	.module = &m49,
+	.type = &t94,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n755_c[] = {
-	&n756, &n757, &n758, &n759, &n760, &n761,
-	&n762, &n763, &n764, &n765
+static const struct cbl_ynode *const n778_c[] = {
+	&n779, &n780, &n781, &n782, &n783, &n784,
+	&n785, &n786, &n787, &n788
 };
-static const struct cbl_ynode n755 = {
+static const struct cbl_ynode n778 = {
 	.sid = UINT64_C(62651),
 	.name = "wireguard",
 	.kind = CBL_YN_CONTAINER,
@@ -12261,13 +12679,13 @@ static const struct cbl_ynode n755 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_wireguard),
 	.nmap = 10,
 	.nchild = 10,
-	.child = n755_c,
+	.child = n778_c,
 	.choice = &c11,
 	.ccase = 12,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n767 = {
+static const struct cbl_ynode n790 = {
 	.sid = UINT64_C(62663),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -12275,30 +12693,30 @@ static const struct cbl_ynode n767 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_zfs, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n768 = {
+static const struct cbl_ynode n791 = {
 	.sid = UINT64_C(62664),
 	.name = "force",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_zfs, force),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_zfs, has_force),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n769 = {
+static const struct cbl_ynode n792 = {
 	.sid = UINT64_C(62665),
 	.name = "recursive",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_zfs, recursive),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_zfs, has_recursive),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n770 = {
+static const struct cbl_ynode n793 = {
 	.sid = UINT64_C(62666),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
@@ -12306,13 +12724,13 @@ static const struct cbl_ynode n770 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_zfs, verb),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n766_c[] = {
-	&n767, &n768, &n769, &n770
+static const struct cbl_ynode *const n789_c[] = {
+	&n790, &n791, &n792, &n793
 };
-static const struct cbl_ynode n766 = {
+static const struct cbl_ynode n789 = {
 	.sid = UINT64_C(62662),
 	.name = "zfs",
 	.kind = CBL_YN_CONTAINER,
@@ -12322,13 +12740,13 @@ static const struct cbl_ynode n766 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_zfs),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n766_c,
+	.child = n789_c,
 	.choice = &c11,
 	.ccase = 19,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n772 = {
+static const struct cbl_ynode n795 = {
 	.sid = UINT64_C(62668),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -12336,20 +12754,20 @@ static const struct cbl_ynode n772 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_zpool, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n773 = {
+static const struct cbl_ynode n796 = {
 	.sid = UINT64_C(62669),
 	.name = "force",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_jobs_submit_input_change_zpool, force),
 	.hoff = offsetof(struct arcana_jobs_submit_input_change_zpool, has_force),
 	.type = &t2,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n774 = {
+static const struct cbl_ynode n797 = {
 	.sid = UINT64_C(62670),
 	.name = "verb",
 	.kind = CBL_YN_LEAF,
@@ -12357,13 +12775,13 @@ static const struct cbl_ynode n774 = {
 	.off = offsetof(struct arcana_jobs_submit_input_change_zpool, verb),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n771_c[] = {
-	&n772, &n773, &n774
+static const struct cbl_ynode *const n794_c[] = {
+	&n795, &n796, &n797
 };
-static const struct cbl_ynode n771 = {
+static const struct cbl_ynode n794 = {
 	.sid = UINT64_C(62667),
 	.name = "zpool",
 	.kind = CBL_YN_CONTAINER,
@@ -12373,22 +12791,22 @@ static const struct cbl_ynode n771 = {
 	.size = sizeof(struct arcana_jobs_submit_input_change_zpool),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n771_c,
+	.child = n794_c,
 	.choice = &c11,
 	.ccase = 20,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n543_c[] = {
-	&n544, &n551, &n555, &n560, &n563, &n572,
-	&n577, &n582, &n586, &n594, &n609, &n613,
-	&n622, &n628, &n634, &n640, &n659, &n666,
-	&n669, &n679, &n683, &n687, &n695, &n699,
-	&n703, &n706, &n711, &n716, &n719, &n730,
-	&n735, &n738, &n744, &n752, &n755, &n766,
-	&n771
+static const struct cbl_ynode *const n566_c[] = {
+	&n567, &n574, &n578, &n583, &n586, &n595,
+	&n600, &n605, &n609, &n617, &n632, &n636,
+	&n645, &n651, &n657, &n663, &n682, &n689,
+	&n692, &n702, &n706, &n710, &n718, &n722,
+	&n726, &n729, &n734, &n739, &n742, &n753,
+	&n758, &n761, &n767, &n775, &n778, &n789,
+	&n794
 };
-static const struct cbl_ynode n543 = {
+static const struct cbl_ynode n566 = {
 	.sid = UINT64_C(62439),
 	.name = "change",
 	.kind = CBL_YN_LIST,
@@ -12397,17 +12815,17 @@ static const struct cbl_ynode n543 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_jobs_submit_input_change),
 	.nmap = 228,
-	.map = n543_p,
+	.map = n566_p,
 	.nchild = 37,
-	.child = n543_c,
+	.child = n566_c,
 	.min = 1,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n542_c[] = {
-	&n543
+static const struct cbl_ynode *const n565_c[] = {
+	&n566
 };
-static const struct cbl_ynode n542 = {
+static const struct cbl_ynode n565 = {
 	.sid = UINT64_C(62438),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -12416,11 +12834,11 @@ static const struct cbl_ynode n542 = {
 	.size = sizeof(struct arcana_jobs_submit_input),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n542_c,
-	.module = &m49,
+	.child = n565_c,
+	.module = &m51,
 };
 
-static const struct cbl_ynode n776 = {
+static const struct cbl_ynode n799 = {
 	.sid = UINT64_C(62672),
 	.name = "id",
 	.kind = CBL_YN_LEAFLIST,
@@ -12428,13 +12846,13 @@ static const struct cbl_ynode n776 = {
 	.off = offsetof(struct arcana_jobs_submit_output, id),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t9,
-	.module = &m49,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n775_c[] = {
-	&n776
+static const struct cbl_ynode *const n798_c[] = {
+	&n799
 };
-static const struct cbl_ynode n775 = {
+static const struct cbl_ynode n798 = {
 	.sid = UINT64_C(62671),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -12443,14 +12861,14 @@ static const struct cbl_ynode n775 = {
 	.size = sizeof(struct arcana_jobs_submit_output),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n775_c,
-	.module = &m49,
+	.child = n798_c,
+	.module = &m51,
 };
 
-static const struct cbl_ynode *const n541_c[] = {
-	&n542, &n775
+static const struct cbl_ynode *const n564_c[] = {
+	&n565, &n798
 };
-static const struct cbl_ynode n541 = {
+static const struct cbl_ynode n564 = {
 	.sid = UINT64_C(62437),
 	.name = "submit",
 	.kind = CBL_YN_RPC,
@@ -12458,11 +12876,11 @@ static const struct cbl_ynode n541 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 1,
 	.nchild = 2,
-	.child = n541_c,
-	.module = &m49,
+	.child = n564_c,
+	.module = &m51,
 };
 
-static const uint16_t n777_p[] = {
+static const uint16_t n800_p[] = {
 	1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -12470,11 +12888,11 @@ static const uint16_t n777_p[] = {
 	0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 6
 };
-static const uint16_t n778_p[] = {
+static const uint16_t n801_p[] = {
 	1, 2, 3, 0, 0, 0, 0, 4, 5, 6, 7, 8, 0, 0, 0, 9,
 	10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 0, 0, 20
 };
-static const struct cbl_ynode n779 = {
+static const struct cbl_ynode n802 = {
 	.sid = UINT64_C(63407),
 	.name = "avail",
 	.kind = CBL_YN_LEAF,
@@ -12482,30 +12900,30 @@ static const struct cbl_ynode n779 = {
 	.hoff = offsetof(struct arcana_storage_storage_dataset, has_avail),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n780 = {
+static const struct cbl_ynode n803 = {
 	.sid = UINT64_C(63408),
 	.name = "canmount",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_dataset, canmount),
 	.hoff = offsetof(struct arcana_storage_storage_dataset, has_canmount),
-	.type = &t93,
-	.module = &m50,
+	.type = &t95,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n783 = {
+static const struct cbl_ynode n806 = {
 	.sid = UINT64_C(63411),
 	.name = "key",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_dataset_change_key_input, key),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n784 = {
+static const struct cbl_ynode n807 = {
 	.sid = UINT64_C(63412),
 	.name = "new-key",
 	.kind = CBL_YN_LEAF,
@@ -12513,13 +12931,13 @@ static const struct cbl_ynode n784 = {
 	.off = offsetof(struct arcana_storage_storage_dataset_change_key_input, new_key),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n782_c[] = {
-	&n783, &n784
+static const struct cbl_ynode *const n805_c[] = {
+	&n806, &n807
 };
-static const struct cbl_ynode n782 = {
+static const struct cbl_ynode n805 = {
 	.sid = UINT64_C(63410),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -12528,75 +12946,75 @@ static const struct cbl_ynode n782 = {
 	.size = sizeof(struct arcana_storage_storage_dataset_change_key_input),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n782_c,
-	.module = &m50,
+	.child = n805_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n785 = {
+static const struct cbl_ynode n808 = {
 	.sid = UINT64_C(63413),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_storage_storage_dataset_change_key_output),
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n781_c[] = {
-	&n782, &n785
+static const struct cbl_ynode *const n804_c[] = {
+	&n805, &n808
 };
-static const struct cbl_ynode n781 = {
+static const struct cbl_ynode n804 = {
 	.sid = UINT64_C(63409),
 	.name = "change-key",
 	.kind = CBL_YN_ACTION,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.nchild = 2,
-	.child = n781_c,
-	.module = &m50,
+	.child = n804_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n786 = {
+static const struct cbl_ynode n809 = {
 	.sid = UINT64_C(63414),
 	.name = "compression",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_dataset, compression),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n787 = {
+static const struct cbl_ynode n810 = {
 	.sid = UINT64_C(63415),
 	.name = "encryption",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_dataset, encryption),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n788 = {
+static const struct cbl_ynode n811 = {
 	.sid = UINT64_C(63416),
 	.name = "jailed",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_dataset, jailed),
 	.hoff = offsetof(struct arcana_storage_storage_dataset, has_jailed),
 	.type = &t2,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n789 = {
+static const struct cbl_ynode n812 = {
 	.sid = UINT64_C(63417),
 	.name = "keylocation",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_dataset, keylocation),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n792 = {
+static const struct cbl_ynode n815 = {
 	.sid = UINT64_C(63420),
 	.name = "key",
 	.kind = CBL_YN_LEAF,
@@ -12604,13 +13022,13 @@ static const struct cbl_ynode n792 = {
 	.off = offsetof(struct arcana_storage_storage_dataset_load_key_input, key),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n791_c[] = {
-	&n792
+static const struct cbl_ynode *const n814_c[] = {
+	&n815
 };
-static const struct cbl_ynode n791 = {
+static const struct cbl_ynode n814 = {
 	.sid = UINT64_C(63419),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -12619,55 +13037,55 @@ static const struct cbl_ynode n791 = {
 	.size = sizeof(struct arcana_storage_storage_dataset_load_key_input),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n791_c,
-	.module = &m50,
+	.child = n814_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n793 = {
+static const struct cbl_ynode n816 = {
 	.sid = UINT64_C(63421),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_storage_storage_dataset_load_key_output),
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n790_c[] = {
-	&n791, &n793
+static const struct cbl_ynode *const n813_c[] = {
+	&n814, &n816
 };
-static const struct cbl_ynode n790 = {
+static const struct cbl_ynode n813 = {
 	.sid = UINT64_C(63418),
 	.name = "load-key",
 	.kind = CBL_YN_ACTION,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.nchild = 2,
-	.child = n790_c,
-	.module = &m50,
+	.child = n813_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n794 = {
+static const struct cbl_ynode n817 = {
 	.sid = UINT64_C(63422),
 	.name = "mounted",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_dataset, mounted),
 	.hoff = offsetof(struct arcana_storage_storage_dataset, has_mounted),
 	.type = &t2,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n795 = {
+static const struct cbl_ynode n818 = {
 	.sid = UINT64_C(63423),
 	.name = "mountpoint",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_dataset, mountpoint),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n796 = {
+static const struct cbl_ynode n819 = {
 	.sid = UINT64_C(63424),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -12675,20 +13093,20 @@ static const struct cbl_ynode n796 = {
 	.off = offsetof(struct arcana_storage_storage_dataset, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n797 = {
+static const struct cbl_ynode n820 = {
 	.sid = UINT64_C(63425),
 	.name = "origin",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_dataset, origin),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n798 = {
+static const struct cbl_ynode n821 = {
 	.sid = UINT64_C(63426),
 	.name = "quota",
 	.kind = CBL_YN_LEAF,
@@ -12696,30 +13114,30 @@ static const struct cbl_ynode n798 = {
 	.hoff = offsetof(struct arcana_storage_storage_dataset, has_quota),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n799 = {
+static const struct cbl_ynode n822 = {
 	.sid = UINT64_C(63427),
 	.name = "ratio",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_dataset, ratio),
 	.hoff = offsetof(struct arcana_storage_storage_dataset, has_ratio),
-	.type = &t61,
-	.module = &m50,
+	.type = &t63,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n800 = {
+static const struct cbl_ynode n823 = {
 	.sid = UINT64_C(63428),
 	.name = "readonly",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_dataset, readonly),
 	.hoff = offsetof(struct arcana_storage_storage_dataset, has_readonly),
 	.type = &t2,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n801 = {
+static const struct cbl_ynode n824 = {
 	.sid = UINT64_C(63429),
 	.name = "refer",
 	.kind = CBL_YN_LEAF,
@@ -12727,10 +13145,10 @@ static const struct cbl_ynode n801 = {
 	.hoff = offsetof(struct arcana_storage_storage_dataset, has_refer),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n802 = {
+static const struct cbl_ynode n825 = {
 	.sid = UINT64_C(63430),
 	.name = "reservation",
 	.kind = CBL_YN_LEAF,
@@ -12738,43 +13156,43 @@ static const struct cbl_ynode n802 = {
 	.hoff = offsetof(struct arcana_storage_storage_dataset, has_reservation),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n803 = {
+static const struct cbl_ynode n826 = {
 	.sid = UINT64_C(63431),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_dataset, type),
 	.hoff = offsetof(struct arcana_storage_storage_dataset, has_type),
-	.type = &t94,
-	.module = &m50,
+	.type = &t96,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n805 = {
+static const struct cbl_ynode n828 = {
 	.sid = UINT64_C(63433),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_storage_storage_dataset_unload_key_input),
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n806 = {
+static const struct cbl_ynode n829 = {
 	.sid = UINT64_C(63434),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_storage_storage_dataset_unload_key_output),
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n804_c[] = {
-	&n805, &n806
+static const struct cbl_ynode *const n827_c[] = {
+	&n828, &n829
 };
-static const struct cbl_ynode n804 = {
+static const struct cbl_ynode n827 = {
 	.sid = UINT64_C(63432),
 	.name = "unload-key",
 	.kind = CBL_YN_ACTION,
@@ -12782,11 +13200,11 @@ static const struct cbl_ynode n804 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n804_c,
-	.module = &m50,
+	.child = n827_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n807 = {
+static const struct cbl_ynode n830 = {
 	.sid = UINT64_C(63435),
 	.name = "used",
 	.kind = CBL_YN_LEAF,
@@ -12794,17 +13212,17 @@ static const struct cbl_ynode n807 = {
 	.hoff = offsetof(struct arcana_storage_storage_dataset, has_used),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n778_c[] = {
-	&n779, &n780, &n781, &n786, &n787, &n788,
-	&n789, &n790, &n794, &n795, &n796, &n797,
-	&n798, &n799, &n800, &n801, &n802, &n803,
-	&n804, &n807
+static const struct cbl_ynode *const n801_c[] = {
+	&n802, &n803, &n804, &n809, &n810, &n811,
+	&n812, &n813, &n817, &n818, &n819, &n820,
+	&n821, &n822, &n823, &n824, &n825, &n826,
+	&n827, &n830
 };
-static const uint32_t n778_k[] = { 10 };
-static const struct cbl_ynode n778 = {
+static const uint32_t n801_k[] = { 10 };
+static const struct cbl_ynode n801 = {
 	.sid = UINT64_C(63406),
 	.name = "dataset",
 	.kind = CBL_YN_LIST,
@@ -12813,170 +13231,170 @@ static const struct cbl_ynode n778 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_storage_storage_dataset),
 	.nmap = 29,
-	.map = n778_p,
+	.map = n801_p,
 	.nchild = 20,
-	.child = n778_c,
+	.child = n801_c,
 	.nkeys = 1,
-	.keys = n778_k,
-	.module = &m50,
+	.keys = n801_k,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n808 = {
+static const struct cbl_ynode n831 = {
 	.sid = UINT64_C(63436),
 	.name = "datasets-total",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage, datasets_total),
 	.hoff = offsetof(struct arcana_storage_storage, has_datasets_total),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const uint16_t n809_p[] = {
+static const uint16_t n832_p[] = {
 	1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0,
 	9, 10, 11, 12
 };
-static const struct cbl_ynode n810 = {
+static const struct cbl_ynode n833 = {
 	.sid = UINT64_C(63438),
 	.name = "cam",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk, cam),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n811 = {
+static const struct cbl_ynode n834 = {
 	.sid = UINT64_C(63439),
 	.name = "descr",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk, descr),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n812 = {
+static const struct cbl_ynode n835 = {
 	.sid = UINT64_C(63440),
 	.name = "first",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk, first),
 	.hoff = offsetof(struct arcana_storage_storage_disk, has_first),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n814 = {
+static const struct cbl_ynode n837 = {
 	.sid = UINT64_C(63442),
 	.name = "by",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, by),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n815 = {
+static const struct cbl_ynode n838 = {
 	.sid = UINT64_C(63443),
 	.name = "crc-errors",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, crc_errors),
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_crc_errors),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n816 = {
+static const struct cbl_ynode n839 = {
 	.sid = UINT64_C(63444),
 	.name = "life-left",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, life_left),
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_life_left),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n817 = {
+static const struct cbl_ynode n840 = {
 	.sid = UINT64_C(63445),
 	.name = "media-errors",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, media_errors),
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_media_errors),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n818 = {
+static const struct cbl_ynode n841 = {
 	.sid = UINT64_C(63446),
 	.name = "media-wearout",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, media_wearout),
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_media_wearout),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n819 = {
+static const struct cbl_ynode n842 = {
 	.sid = UINT64_C(63447),
 	.name = "note",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, note),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n820 = {
+static const struct cbl_ynode n843 = {
 	.sid = UINT64_C(63448),
 	.name = "ok",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, ok),
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_ok),
 	.type = &t2,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n821 = {
+static const struct cbl_ynode n844 = {
 	.sid = UINT64_C(63449),
 	.name = "pending",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, pending),
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_pending),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n822 = {
+static const struct cbl_ynode n845 = {
 	.sid = UINT64_C(63450),
 	.name = "power-cycles",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, power_cycles),
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_power_cycles),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n823 = {
+static const struct cbl_ynode n846 = {
 	.sid = UINT64_C(63451),
 	.name = "power-on-hours",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, power_on_hours),
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_power_on_hours),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n824 = {
+static const struct cbl_ynode n847 = {
 	.sid = UINT64_C(63452),
 	.name = "reallocated",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, reallocated),
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_reallocated),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n825 = {
+static const struct cbl_ynode n848 = {
 	.sid = UINT64_C(63453),
 	.name = "spare-pct",
 	.kind = CBL_YN_LEAF,
@@ -12984,41 +13402,41 @@ static const struct cbl_ynode n825 = {
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_spare_pct),
 	.type = &t10,
 	.units = "percent",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n826 = {
+static const struct cbl_ynode n849 = {
 	.sid = UINT64_C(63454),
 	.name = "temperature",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, temperature),
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_temperature),
-	.type = &t65,
+	.type = &t67,
 	.units = "Celsius",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n827 = {
+static const struct cbl_ynode n850 = {
 	.sid = UINT64_C(63455),
 	.name = "uncorrectable",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, uncorrectable),
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_uncorrectable),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n828 = {
+static const struct cbl_ynode n851 = {
 	.sid = UINT64_C(63456),
 	.name = "unsafe-shutdowns",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, unsafe_shutdowns),
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_unsafe_shutdowns),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n829 = {
+static const struct cbl_ynode n852 = {
 	.sid = UINT64_C(63457),
 	.name = "used-pct",
 	.kind = CBL_YN_LEAF,
@@ -13026,25 +13444,25 @@ static const struct cbl_ynode n829 = {
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_used_pct),
 	.type = &t10,
 	.units = "percent",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n830 = {
+static const struct cbl_ynode n853 = {
 	.sid = UINT64_C(63458),
 	.name = "wear-level",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_health, wear_level),
 	.hoff = offsetof(struct arcana_storage_storage_disk_health, has_wear_level),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n813_c[] = {
-	&n814, &n815, &n816, &n817, &n818, &n819,
-	&n820, &n821, &n822, &n823, &n824, &n825,
-	&n826, &n827, &n828, &n829, &n830
+static const struct cbl_ynode *const n836_c[] = {
+	&n837, &n838, &n839, &n840, &n841, &n842,
+	&n843, &n844, &n845, &n846, &n847, &n848,
+	&n849, &n850, &n851, &n852, &n853
 };
-static const struct cbl_ynode n813 = {
+static const struct cbl_ynode n836 = {
 	.sid = UINT64_C(63441),
 	.name = "health",
 	.kind = CBL_YN_CONTAINER,
@@ -13053,31 +13471,31 @@ static const struct cbl_ynode n813 = {
 	.size = sizeof(struct arcana_storage_storage_disk_health),
 	.nmap = 17,
 	.nchild = 17,
-	.child = n813_c,
-	.module = &m50,
+	.child = n836_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n831 = {
+static const struct cbl_ynode n854 = {
 	.sid = UINT64_C(63459),
 	.name = "ident",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk, ident),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n832 = {
+static const struct cbl_ynode n855 = {
 	.sid = UINT64_C(63460),
 	.name = "last",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk, last),
 	.hoff = offsetof(struct arcana_storage_storage_disk, has_last),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n833 = {
+static const struct cbl_ynode n856 = {
 	.sid = UINT64_C(63461),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -13085,40 +13503,40 @@ static const struct cbl_ynode n833 = {
 	.off = offsetof(struct arcana_storage_storage_disk, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n835 = {
+static const struct cbl_ynode n858 = {
 	.sid = UINT64_C(63463),
 	.name = "end",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_partition, end),
 	.hoff = offsetof(struct arcana_storage_storage_disk_partition, has_end),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n836 = {
+static const struct cbl_ynode n859 = {
 	.sid = UINT64_C(63464),
 	.name = "index",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_partition, index),
 	.hoff = offsetof(struct arcana_storage_storage_disk_partition, has_index),
 	.type = &t10,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n837 = {
+static const struct cbl_ynode n860 = {
 	.sid = UINT64_C(63465),
 	.name = "label",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_partition, label),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n838 = {
+static const struct cbl_ynode n861 = {
 	.sid = UINT64_C(63466),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -13126,10 +13544,10 @@ static const struct cbl_ynode n838 = {
 	.off = offsetof(struct arcana_storage_storage_disk_partition, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n839 = {
+static const struct cbl_ynode n862 = {
 	.sid = UINT64_C(63467),
 	.name = "size",
 	.kind = CBL_YN_LEAF,
@@ -13137,35 +13555,35 @@ static const struct cbl_ynode n839 = {
 	.hoff = offsetof(struct arcana_storage_storage_disk_partition, has_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n840 = {
+static const struct cbl_ynode n863 = {
 	.sid = UINT64_C(63468),
 	.name = "start",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_partition, start),
 	.hoff = offsetof(struct arcana_storage_storage_disk_partition, has_start),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n841 = {
+static const struct cbl_ynode n864 = {
 	.sid = UINT64_C(63469),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk_partition, type),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n834_c[] = {
-	&n835, &n836, &n837, &n838, &n839, &n840,
-	&n841
+static const struct cbl_ynode *const n857_c[] = {
+	&n858, &n859, &n860, &n861, &n862, &n863,
+	&n864
 };
-static const uint32_t n834_k[] = { 3 };
-static const struct cbl_ynode n834 = {
+static const uint32_t n857_k[] = { 3 };
+static const struct cbl_ynode n857 = {
 	.sid = UINT64_C(63462),
 	.name = "partition",
 	.kind = CBL_YN_LIST,
@@ -13175,33 +13593,33 @@ static const struct cbl_ynode n834 = {
 	.size = sizeof(struct arcana_storage_storage_disk_partition),
 	.nmap = 7,
 	.nchild = 7,
-	.child = n834_c,
+	.child = n857_c,
 	.nkeys = 1,
-	.keys = n834_k,
-	.module = &m50,
+	.keys = n857_k,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n842 = {
+static const struct cbl_ynode n865 = {
 	.sid = UINT64_C(63470),
 	.name = "rotation",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk, rotation),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n843 = {
+static const struct cbl_ynode n866 = {
 	.sid = UINT64_C(63471),
 	.name = "scheme",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_disk, scheme),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n844 = {
+static const struct cbl_ynode n867 = {
 	.sid = UINT64_C(63472),
 	.name = "sectorsize",
 	.kind = CBL_YN_LEAF,
@@ -13209,10 +13627,10 @@ static const struct cbl_ynode n844 = {
 	.hoff = offsetof(struct arcana_storage_storage_disk, has_sectorsize),
 	.type = &t10,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n845 = {
+static const struct cbl_ynode n868 = {
 	.sid = UINT64_C(63473),
 	.name = "size",
 	.kind = CBL_YN_LEAF,
@@ -13220,15 +13638,15 @@ static const struct cbl_ynode n845 = {
 	.hoff = offsetof(struct arcana_storage_storage_disk, has_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n809_c[] = {
-	&n810, &n811, &n812, &n813, &n831, &n832,
-	&n833, &n834, &n842, &n843, &n844, &n845
+static const struct cbl_ynode *const n832_c[] = {
+	&n833, &n834, &n835, &n836, &n854, &n855,
+	&n856, &n857, &n865, &n866, &n867, &n868
 };
-static const uint32_t n809_k[] = { 6 };
-static const struct cbl_ynode n809 = {
+static const uint32_t n832_k[] = { 6 };
+static const struct cbl_ynode n832 = {
 	.sid = UINT64_C(63437),
 	.name = "disk",
 	.kind = CBL_YN_LIST,
@@ -13237,103 +13655,103 @@ static const struct cbl_ynode n809 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_storage_storage_disk),
 	.nmap = 36,
-	.map = n809_p,
+	.map = n832_p,
 	.nchild = 12,
-	.child = n809_c,
+	.child = n832_c,
 	.nkeys = 1,
-	.keys = n809_k,
-	.module = &m50,
+	.keys = n832_k,
+	.module = &m52,
 };
 
-static const uint16_t n846_p[] = {
+static const uint16_t n869_p[] = {
 	1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0,
 	3, 4
 };
-static const struct cbl_ynode n848 = {
+static const struct cbl_ynode n871 = {
 	.sid = UINT64_C(63476),
 	.name = "file",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_fstab_entry, file),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n849 = {
+static const struct cbl_ynode n872 = {
 	.sid = UINT64_C(63477),
 	.name = "freq",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_fstab_entry, freq),
 	.hoff = offsetof(struct arcana_storage_storage_fstab_entry, has_freq),
-	.type = &t65,
-	.module = &m50,
+	.type = &t67,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n850 = {
+static const struct cbl_ynode n873 = {
 	.sid = UINT64_C(63478),
 	.name = "mntops",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_fstab_entry, mntops),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n851 = {
+static const struct cbl_ynode n874 = {
 	.sid = UINT64_C(63479),
 	.name = "mounted",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_fstab_entry, mounted),
 	.hoff = offsetof(struct arcana_storage_storage_fstab_entry, has_mounted),
 	.type = &t2,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n852 = {
+static const struct cbl_ynode n875 = {
 	.sid = UINT64_C(63480),
 	.name = "passno",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_fstab_entry, passno),
 	.hoff = offsetof(struct arcana_storage_storage_fstab_entry, has_passno),
-	.type = &t65,
-	.module = &m50,
+	.type = &t67,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n853 = {
+static const struct cbl_ynode n876 = {
 	.sid = UINT64_C(63481),
 	.name = "spec",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_fstab_entry, spec),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n854 = {
+static const struct cbl_ynode n877 = {
 	.sid = UINT64_C(63482),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_fstab_entry, type),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n855 = {
+static const struct cbl_ynode n878 = {
 	.sid = UINT64_C(63483),
 	.name = "vfstype",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_fstab_entry, vfstype),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n847_c[] = {
-	&n848, &n849, &n850, &n851, &n852, &n853,
-	&n854, &n855
+static const struct cbl_ynode *const n870_c[] = {
+	&n871, &n872, &n873, &n874, &n875, &n876,
+	&n877, &n878
 };
-static const struct cbl_ynode n847 = {
+static const struct cbl_ynode n870 = {
 	.sid = UINT64_C(63475),
 	.name = "entry",
 	.kind = CBL_YN_LIST,
@@ -13343,12 +13761,12 @@ static const struct cbl_ynode n847 = {
 	.size = sizeof(struct arcana_storage_storage_fstab_entry),
 	.nmap = 8,
 	.nchild = 8,
-	.child = n847_c,
-	.module = &m50,
+	.child = n870_c,
+	.module = &m52,
 };
 
-static const char *const n858_d[] = { "false" };
-static const struct cbl_ynode n858 = {
+static const char *const n881_d[] = { "false" };
+static const struct cbl_ynode n881 = {
 	.sid = UINT64_C(63486),
 	.name = "dry-run",
 	.kind = CBL_YN_LEAF,
@@ -13356,11 +13774,11 @@ static const struct cbl_ynode n858 = {
 	.hoff = offsetof(struct arcana_storage_storage_fstab_replace_input, has_dry_run),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n858_d,
-	.module = &m50,
+	.dflt = n881_d,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n859 = {
+static const struct cbl_ynode n882 = {
 	.sid = UINT64_C(63487),
 	.name = "sha256",
 	.kind = CBL_YN_LEAF,
@@ -13368,10 +13786,10 @@ static const struct cbl_ynode n859 = {
 	.off = offsetof(struct arcana_storage_storage_fstab_replace_input, sha256),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n860 = {
+static const struct cbl_ynode n883 = {
 	.sid = UINT64_C(63488),
 	.name = "text",
 	.kind = CBL_YN_LEAF,
@@ -13379,13 +13797,13 @@ static const struct cbl_ynode n860 = {
 	.off = offsetof(struct arcana_storage_storage_fstab_replace_input, text),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n857_c[] = {
-	&n858, &n859, &n860
+static const struct cbl_ynode *const n880_c[] = {
+	&n881, &n882, &n883
 };
-static const struct cbl_ynode n857 = {
+static const struct cbl_ynode n880 = {
 	.sid = UINT64_C(63485),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -13394,24 +13812,24 @@ static const struct cbl_ynode n857 = {
 	.size = sizeof(struct arcana_storage_storage_fstab_replace_input),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n857_c,
-	.module = &m50,
+	.child = n880_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n862 = {
+static const struct cbl_ynode n885 = {
 	.sid = UINT64_C(63490),
 	.name = "sha256",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_fstab_replace_output, sha256),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n861_c[] = {
-	&n862
+static const struct cbl_ynode *const n884_c[] = {
+	&n885
 };
-static const struct cbl_ynode n861 = {
+static const struct cbl_ynode n884 = {
 	.sid = UINT64_C(63489),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
@@ -13420,48 +13838,48 @@ static const struct cbl_ynode n861 = {
 	.size = sizeof(struct arcana_storage_storage_fstab_replace_output),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n861_c,
-	.module = &m50,
+	.child = n884_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n856_c[] = {
-	&n857, &n861
+static const struct cbl_ynode *const n879_c[] = {
+	&n880, &n884
 };
-static const struct cbl_ynode n856 = {
+static const struct cbl_ynode n879 = {
 	.sid = UINT64_C(63484),
 	.name = "replace",
 	.kind = CBL_YN_ACTION,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.nchild = 2,
-	.child = n856_c,
-	.module = &m50,
+	.child = n879_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n863 = {
+static const struct cbl_ynode n886 = {
 	.sid = UINT64_C(63491),
 	.name = "sha256",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_fstab, sha256),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n864 = {
+static const struct cbl_ynode n887 = {
 	.sid = UINT64_C(63492),
 	.name = "text",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_fstab, text),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n846_c[] = {
-	&n847, &n856, &n863, &n864
+static const struct cbl_ynode *const n869_c[] = {
+	&n870, &n879, &n886, &n887
 };
-static const struct cbl_ynode n846 = {
+static const struct cbl_ynode n869 = {
 	.sid = UINT64_C(63474),
 	.name = "fstab",
 	.kind = CBL_YN_CONTAINER,
@@ -13469,13 +13887,13 @@ static const struct cbl_ynode n846 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_storage_storage_fstab),
 	.nmap = 18,
-	.map = n846_p,
+	.map = n869_p,
 	.nchild = 4,
-	.child = n846_c,
-	.module = &m50,
+	.child = n869_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n866 = {
+static const struct cbl_ynode n889 = {
 	.sid = UINT64_C(63494),
 	.name = "id",
 	.kind = CBL_YN_LEAF,
@@ -13483,44 +13901,44 @@ static const struct cbl_ynode n866 = {
 	.off = offsetof(struct arcana_storage_storage_importable, id),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n867 = {
+static const struct cbl_ynode n890 = {
 	.sid = UINT64_C(63495),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_importable, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n868 = {
+static const struct cbl_ynode n891 = {
 	.sid = UINT64_C(63496),
 	.name = "state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_importable, state),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n869 = {
+static const struct cbl_ynode n892 = {
 	.sid = UINT64_C(63497),
 	.name = "status",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_importable, status),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n865_c[] = {
-	&n866, &n867, &n868, &n869
+static const struct cbl_ynode *const n888_c[] = {
+	&n889, &n890, &n891, &n892
 };
-static const uint32_t n865_k[] = { 0 };
-static const struct cbl_ynode n865 = {
+static const uint32_t n888_k[] = { 0 };
+static const struct cbl_ynode n888 = {
 	.sid = UINT64_C(63493),
 	.name = "importable",
 	.kind = CBL_YN_LIST,
@@ -13530,13 +13948,13 @@ static const struct cbl_ynode n865 = {
 	.size = sizeof(struct arcana_storage_storage_importable),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n865_c,
+	.child = n888_c,
 	.nkeys = 1,
-	.keys = n865_k,
-	.module = &m50,
+	.keys = n888_k,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n871 = {
+static const struct cbl_ynode n894 = {
 	.sid = UINT64_C(63499),
 	.name = "avail",
 	.kind = CBL_YN_LEAF,
@@ -13544,40 +13962,40 @@ static const struct cbl_ynode n871 = {
 	.hoff = offsetof(struct arcana_storage_storage_mount, has_avail),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n872 = {
+static const struct cbl_ynode n895 = {
 	.sid = UINT64_C(63500),
 	.name = "from",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_mount, from),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n873 = {
+static const struct cbl_ynode n896 = {
 	.sid = UINT64_C(63501),
 	.name = "on",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_mount, on),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n874 = {
+static const struct cbl_ynode n897 = {
 	.sid = UINT64_C(63502),
 	.name = "options",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_mount, options),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n875 = {
+static const struct cbl_ynode n898 = {
 	.sid = UINT64_C(63503),
 	.name = "size",
 	.kind = CBL_YN_LEAF,
@@ -13585,20 +14003,20 @@ static const struct cbl_ynode n875 = {
 	.hoff = offsetof(struct arcana_storage_storage_mount, has_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n876 = {
+static const struct cbl_ynode n899 = {
 	.sid = UINT64_C(63504),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_mount, type),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n877 = {
+static const struct cbl_ynode n900 = {
 	.sid = UINT64_C(63505),
 	.name = "used",
 	.kind = CBL_YN_LEAF,
@@ -13606,14 +14024,14 @@ static const struct cbl_ynode n877 = {
 	.hoff = offsetof(struct arcana_storage_storage_mount, has_used),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n870_c[] = {
-	&n871, &n872, &n873, &n874, &n875, &n876,
-	&n877
+static const struct cbl_ynode *const n893_c[] = {
+	&n894, &n895, &n896, &n897, &n898, &n899,
+	&n900
 };
-static const struct cbl_ynode n870 = {
+static const struct cbl_ynode n893 = {
 	.sid = UINT64_C(63498),
 	.name = "mount",
 	.kind = CBL_YN_LIST,
@@ -13623,21 +14041,21 @@ static const struct cbl_ynode n870 = {
 	.size = sizeof(struct arcana_storage_storage_mount),
 	.nmap = 7,
 	.nchild = 7,
-	.child = n870_c,
-	.module = &m50,
+	.child = n893_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n879 = {
+static const struct cbl_ynode n902 = {
 	.sid = UINT64_C(63507),
 	.name = "action",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool, action),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n880 = {
+static const struct cbl_ynode n903 = {
 	.sid = UINT64_C(63508),
 	.name = "alloc",
 	.kind = CBL_YN_LEAF,
@@ -13645,10 +14063,10 @@ static const struct cbl_ynode n880 = {
 	.hoff = offsetof(struct arcana_storage_storage_pool, has_alloc),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n881 = {
+static const struct cbl_ynode n904 = {
 	.sid = UINT64_C(63509),
 	.name = "cap",
 	.kind = CBL_YN_LEAF,
@@ -13656,30 +14074,30 @@ static const struct cbl_ynode n881 = {
 	.hoff = offsetof(struct arcana_storage_storage_pool, has_cap),
 	.type = &t10,
 	.units = "percent",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n882 = {
+static const struct cbl_ynode n905 = {
 	.sid = UINT64_C(63510),
 	.name = "dedup",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool, dedup),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n883 = {
+static const struct cbl_ynode n906 = {
 	.sid = UINT64_C(63511),
 	.name = "errors",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool, errors),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n884 = {
+static const struct cbl_ynode n907 = {
 	.sid = UINT64_C(63512),
 	.name = "frag",
 	.kind = CBL_YN_LEAF,
@@ -13687,10 +14105,10 @@ static const struct cbl_ynode n884 = {
 	.hoff = offsetof(struct arcana_storage_storage_pool, has_frag),
 	.type = &t10,
 	.units = "percent",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n885 = {
+static const struct cbl_ynode n908 = {
 	.sid = UINT64_C(63513),
 	.name = "free",
 	.kind = CBL_YN_LEAF,
@@ -13698,20 +14116,20 @@ static const struct cbl_ynode n885 = {
 	.hoff = offsetof(struct arcana_storage_storage_pool, has_free),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n886 = {
+static const struct cbl_ynode n909 = {
 	.sid = UINT64_C(63514),
 	.name = "health",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool, health),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n887 = {
+static const struct cbl_ynode n910 = {
 	.sid = UINT64_C(63515),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -13719,30 +14137,30 @@ static const struct cbl_ynode n887 = {
 	.off = offsetof(struct arcana_storage_storage_pool, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n888 = {
+static const struct cbl_ynode n911 = {
 	.sid = UINT64_C(63516),
 	.name = "scan",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool, scan),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n889 = {
+static const struct cbl_ynode n912 = {
 	.sid = UINT64_C(63517),
 	.name = "see",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool, see),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n890 = {
+static const struct cbl_ynode n913 = {
 	.sid = UINT64_C(63518),
 	.name = "size",
 	.kind = CBL_YN_LEAF,
@@ -13750,104 +14168,104 @@ static const struct cbl_ynode n890 = {
 	.hoff = offsetof(struct arcana_storage_storage_pool, has_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n891 = {
+static const struct cbl_ynode n914 = {
 	.sid = UINT64_C(63519),
 	.name = "state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool, state),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n892 = {
+static const struct cbl_ynode n915 = {
 	.sid = UINT64_C(63520),
 	.name = "status",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool, status),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n894 = {
+static const struct cbl_ynode n917 = {
 	.sid = UINT64_C(63522),
 	.name = "cksum",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool_vdev, cksum),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n895 = {
+static const struct cbl_ynode n918 = {
 	.sid = UINT64_C(63523),
 	.name = "depth",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool_vdev, depth),
 	.hoff = offsetof(struct arcana_storage_storage_pool_vdev, has_depth),
 	.type = &t10,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n896 = {
+static const struct cbl_ynode n919 = {
 	.sid = UINT64_C(63524),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool_vdev, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n897 = {
+static const struct cbl_ynode n920 = {
 	.sid = UINT64_C(63525),
 	.name = "note",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool_vdev, note),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n898 = {
+static const struct cbl_ynode n921 = {
 	.sid = UINT64_C(63526),
 	.name = "read",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool_vdev, read),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n899 = {
+static const struct cbl_ynode n922 = {
 	.sid = UINT64_C(63527),
 	.name = "state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool_vdev, state),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n900 = {
+static const struct cbl_ynode n923 = {
 	.sid = UINT64_C(63528),
 	.name = "write",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_pool_vdev, write),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n893_c[] = {
-	&n894, &n895, &n896, &n897, &n898, &n899,
-	&n900
+static const struct cbl_ynode *const n916_c[] = {
+	&n917, &n918, &n919, &n920, &n921, &n922,
+	&n923
 };
-static const struct cbl_ynode n893 = {
+static const struct cbl_ynode n916 = {
 	.sid = UINT64_C(63521),
 	.name = "vdev",
 	.kind = CBL_YN_LIST,
@@ -13857,17 +14275,17 @@ static const struct cbl_ynode n893 = {
 	.size = sizeof(struct arcana_storage_storage_pool_vdev),
 	.nmap = 7,
 	.nchild = 7,
-	.child = n893_c,
-	.module = &m50,
+	.child = n916_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n878_c[] = {
-	&n879, &n880, &n881, &n882, &n883, &n884,
-	&n885, &n886, &n887, &n888, &n889, &n890,
-	&n891, &n892, &n893
+static const struct cbl_ynode *const n901_c[] = {
+	&n902, &n903, &n904, &n905, &n906, &n907,
+	&n908, &n909, &n910, &n911, &n912, &n913,
+	&n914, &n915, &n916
 };
-static const uint32_t n878_k[] = { 8 };
-static const struct cbl_ynode n878 = {
+static const uint32_t n901_k[] = { 8 };
+static const struct cbl_ynode n901 = {
 	.sid = UINT64_C(63506),
 	.name = "pool",
 	.kind = CBL_YN_LIST,
@@ -13877,27 +14295,27 @@ static const struct cbl_ynode n878 = {
 	.size = sizeof(struct arcana_storage_storage_pool),
 	.nmap = 15,
 	.nchild = 15,
-	.child = n878_c,
+	.child = n901_c,
 	.nkeys = 1,
-	.keys = n878_k,
-	.module = &m50,
+	.keys = n901_k,
+	.module = &m52,
 };
 
-static const uint16_t n901_p[] = {
+static const uint16_t n924_p[] = {
 	1, 2, 3, 4, 0, 0, 0, 0, 5
 };
-static const struct cbl_ynode n902 = {
+static const struct cbl_ynode n925 = {
 	.sid = UINT64_C(63530),
 	.name = "creation",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_snapshot, creation),
 	.hoff = offsetof(struct arcana_storage_storage_snapshot, has_creation),
-	.type = &t70,
+	.type = &t72,
 	.units = "seconds",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n903 = {
+static const struct cbl_ynode n926 = {
 	.sid = UINT64_C(63531),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -13905,10 +14323,10 @@ static const struct cbl_ynode n903 = {
 	.off = offsetof(struct arcana_storage_storage_snapshot, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n904 = {
+static const struct cbl_ynode n927 = {
 	.sid = UINT64_C(63532),
 	.name = "refer",
 	.kind = CBL_YN_LEAF,
@@ -13916,21 +14334,21 @@ static const struct cbl_ynode n904 = {
 	.hoff = offsetof(struct arcana_storage_storage_snapshot, has_refer),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n907 = {
+static const struct cbl_ynode n930 = {
 	.sid = UINT64_C(63535),
 	.name = "from",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage_snapshot_send_input, from),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const char *const n908_d[] = { "false" };
-static const struct cbl_ynode n908 = {
+static const char *const n931_d[] = { "false" };
+static const struct cbl_ynode n931 = {
 	.sid = UINT64_C(63536),
 	.name = "recursive",
 	.kind = CBL_YN_LEAF,
@@ -13938,14 +14356,14 @@ static const struct cbl_ynode n908 = {
 	.hoff = offsetof(struct arcana_storage_storage_snapshot_send_input, has_recursive),
 	.type = &t2,
 	.ndflt = 1,
-	.dflt = n908_d,
-	.module = &m50,
+	.dflt = n931_d,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n906_c[] = {
-	&n907, &n908
+static const struct cbl_ynode *const n929_c[] = {
+	&n930, &n931
 };
-static const struct cbl_ynode n906 = {
+static const struct cbl_ynode n929 = {
 	.sid = UINT64_C(63534),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -13954,35 +14372,35 @@ static const struct cbl_ynode n906 = {
 	.size = sizeof(struct arcana_storage_storage_snapshot_send_input),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n906_c,
-	.module = &m50,
+	.child = n929_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n909 = {
+static const struct cbl_ynode n932 = {
 	.sid = UINT64_C(63537),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_storage_storage_snapshot_send_output),
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n905_c[] = {
-	&n906, &n909
+static const struct cbl_ynode *const n928_c[] = {
+	&n929, &n932
 };
-static const struct cbl_ynode n905 = {
+static const struct cbl_ynode n928 = {
 	.sid = UINT64_C(63533),
 	.name = "send",
 	.kind = CBL_YN_ACTION,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.nchild = 2,
-	.child = n905_c,
-	.module = &m50,
+	.child = n928_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n910 = {
+static const struct cbl_ynode n933 = {
 	.sid = UINT64_C(63538),
 	.name = "used",
 	.kind = CBL_YN_LEAF,
@@ -13990,14 +14408,14 @@ static const struct cbl_ynode n910 = {
 	.hoff = offsetof(struct arcana_storage_storage_snapshot, has_used),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n901_c[] = {
-	&n902, &n903, &n904, &n905, &n910
+static const struct cbl_ynode *const n924_c[] = {
+	&n925, &n926, &n927, &n928, &n933
 };
-static const uint32_t n901_k[] = { 1 };
-static const struct cbl_ynode n901 = {
+static const uint32_t n924_k[] = { 1 };
+static const struct cbl_ynode n924 = {
 	.sid = UINT64_C(63529),
 	.name = "snapshot",
 	.kind = CBL_YN_LIST,
@@ -14006,25 +14424,25 @@ static const struct cbl_ynode n901 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_storage_storage_snapshot),
 	.nmap = 9,
-	.map = n901_p,
+	.map = n924_p,
 	.nchild = 5,
-	.child = n901_c,
+	.child = n924_c,
 	.nkeys = 1,
-	.keys = n901_k,
-	.module = &m50,
+	.keys = n924_k,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n911 = {
+static const struct cbl_ynode n934 = {
 	.sid = UINT64_C(63539),
 	.name = "snapshots-total",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_storage_storage, snapshots_total),
 	.hoff = offsetof(struct arcana_storage_storage, has_snapshots_total),
 	.type = &t9,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n913 = {
+static const struct cbl_ynode n936 = {
 	.sid = UINT64_C(63541),
 	.name = "device",
 	.kind = CBL_YN_LEAF,
@@ -14032,10 +14450,10 @@ static const struct cbl_ynode n913 = {
 	.off = offsetof(struct arcana_storage_storage_swap, device),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n914 = {
+static const struct cbl_ynode n937 = {
 	.sid = UINT64_C(63542),
 	.name = "size",
 	.kind = CBL_YN_LEAF,
@@ -14043,10 +14461,10 @@ static const struct cbl_ynode n914 = {
 	.hoff = offsetof(struct arcana_storage_storage_swap, has_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n915 = {
+static const struct cbl_ynode n938 = {
 	.sid = UINT64_C(63543),
 	.name = "used",
 	.kind = CBL_YN_LEAF,
@@ -14054,14 +14472,14 @@ static const struct cbl_ynode n915 = {
 	.hoff = offsetof(struct arcana_storage_storage_swap, has_used),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n912_c[] = {
-	&n913, &n914, &n915
+static const struct cbl_ynode *const n935_c[] = {
+	&n936, &n937, &n938
 };
-static const uint32_t n912_k[] = { 0 };
-static const struct cbl_ynode n912 = {
+static const uint32_t n935_k[] = { 0 };
+static const struct cbl_ynode n935 = {
 	.sid = UINT64_C(63540),
 	.name = "swap",
 	.kind = CBL_YN_LIST,
@@ -14071,17 +14489,17 @@ static const struct cbl_ynode n912 = {
 	.size = sizeof(struct arcana_storage_storage_swap),
 	.nmap = 3,
 	.nchild = 3,
-	.child = n912_c,
+	.child = n935_c,
 	.nkeys = 1,
-	.keys = n912_k,
-	.module = &m50,
+	.keys = n935_k,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n777_c[] = {
-	&n778, &n808, &n809, &n846, &n865, &n870,
-	&n878, &n901, &n911, &n912
+static const struct cbl_ynode *const n800_c[] = {
+	&n801, &n831, &n832, &n869, &n888, &n893,
+	&n901, &n924, &n934, &n935
 };
-static const struct cbl_ynode n777 = {
+static const struct cbl_ynode n800 = {
 	.sid = UINT64_C(63405),
 	.name = "storage",
 	.kind = CBL_YN_CONTAINER,
@@ -14089,13 +14507,13 @@ static const struct cbl_ynode n777 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_storage_storage),
 	.nmap = 93,
-	.map = n777_p,
+	.map = n800_p,
 	.nchild = 10,
-	.child = n777_c,
-	.module = &m50,
+	.child = n800_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n918 = {
+static const struct cbl_ynode n941 = {
 	.sid = UINT64_C(63403),
 	.name = "dataset",
 	.kind = CBL_YN_LEAF,
@@ -14103,13 +14521,13 @@ static const struct cbl_ynode n918 = {
 	.off = offsetof(struct arcana_storage_receive_input, dataset),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n917_c[] = {
-	&n918
+static const struct cbl_ynode *const n940_c[] = {
+	&n941
 };
-static const struct cbl_ynode n917 = {
+static const struct cbl_ynode n940 = {
 	.sid = UINT64_C(63402),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -14118,46 +14536,46 @@ static const struct cbl_ynode n917 = {
 	.size = sizeof(struct arcana_storage_receive_input),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n917_c,
-	.module = &m50,
+	.child = n940_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n919 = {
+static const struct cbl_ynode n942 = {
 	.sid = UINT64_C(63404),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_storage_receive_output),
-	.module = &m50,
+	.module = &m52,
 };
 
-static const struct cbl_ynode *const n916_c[] = {
-	&n917, &n919
+static const struct cbl_ynode *const n939_c[] = {
+	&n940, &n942
 };
-static const struct cbl_ynode n916 = {
+static const struct cbl_ynode n939 = {
 	.sid = UINT64_C(63401),
 	.name = "receive",
 	.kind = CBL_YN_RPC,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.nchild = 2,
-	.child = n916_c,
-	.module = &m50,
+	.child = n939_c,
+	.module = &m52,
 };
 
-static const struct cbl_ynode n922 = {
+static const struct cbl_ynode n945 = {
 	.sid = UINT64_C(63603),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x5,
 	.off = offsetof(struct arcana_sysctl_sysctl_kept, name),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t95,
-	.module = &m51,
+	.type = &t97,
+	.module = &m53,
 };
 
-static const struct cbl_ynode n923 = {
+static const struct cbl_ynode n946 = {
 	.sid = UINT64_C(63604),
 	.name = "value",
 	.kind = CBL_YN_LEAF,
@@ -14165,14 +14583,14 @@ static const struct cbl_ynode n923 = {
 	.off = offsetof(struct arcana_sysctl_sysctl_kept, value),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m51,
+	.module = &m53,
 };
 
-static const struct cbl_ynode *const n921_c[] = {
-	&n922, &n923
+static const struct cbl_ynode *const n944_c[] = {
+	&n945, &n946
 };
-static const uint32_t n921_k[] = { 0 };
-static const struct cbl_ynode n921 = {
+static const uint32_t n944_k[] = { 0 };
+static const struct cbl_ynode n944 = {
 	.sid = UINT64_C(63602),
 	.name = "kept",
 	.kind = CBL_YN_LIST,
@@ -14182,33 +14600,33 @@ static const struct cbl_ynode n921 = {
 	.size = sizeof(struct arcana_sysctl_sysctl_kept),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n921_c,
+	.child = n944_c,
 	.nkeys = 1,
-	.keys = n921_k,
-	.module = &m51,
+	.keys = n944_k,
+	.module = &m53,
 };
 
-static const struct cbl_ynode n924 = {
+static const struct cbl_ynode n947 = {
 	.sid = UINT64_C(63605),
 	.name = "total",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_sysctl_sysctl, total),
 	.hoff = offsetof(struct arcana_sysctl_sysctl, has_total),
 	.type = &t9,
-	.module = &m51,
+	.module = &m53,
 };
 
-static const struct cbl_ynode n926 = {
+static const struct cbl_ynode n949 = {
 	.sid = UINT64_C(63607),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_sysctl_sysctl_value, description),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m51,
+	.module = &m53,
 };
 
-static const struct cbl_ynode n927 = {
+static const struct cbl_ynode n950 = {
 	.sid = UINT64_C(63608),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -14216,44 +14634,44 @@ static const struct cbl_ynode n927 = {
 	.off = offsetof(struct arcana_sysctl_sysctl_value, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m51,
+	.module = &m53,
 };
 
-static const struct cbl_ynode n928 = {
+static const struct cbl_ynode n951 = {
 	.sid = UINT64_C(63609),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_sysctl_sysctl_value, type),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m51,
+	.module = &m53,
 };
 
-static const struct cbl_ynode n929 = {
+static const struct cbl_ynode n952 = {
 	.sid = UINT64_C(63610),
 	.name = "value",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_sysctl_sysctl_value, value),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m51,
+	.module = &m53,
 };
 
-static const struct cbl_ynode n930 = {
+static const struct cbl_ynode n953 = {
 	.sid = UINT64_C(63611),
 	.name = "writable",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_sysctl_sysctl_value, writable),
 	.hoff = offsetof(struct arcana_sysctl_sysctl_value, has_writable),
 	.type = &t2,
-	.module = &m51,
+	.module = &m53,
 };
 
-static const struct cbl_ynode *const n925_c[] = {
-	&n926, &n927, &n928, &n929, &n930
+static const struct cbl_ynode *const n948_c[] = {
+	&n949, &n950, &n951, &n952, &n953
 };
-static const uint32_t n925_k[] = { 1 };
-static const struct cbl_ynode n925 = {
+static const uint32_t n948_k[] = { 1 };
+static const struct cbl_ynode n948 = {
 	.sid = UINT64_C(63606),
 	.name = "value",
 	.kind = CBL_YN_LIST,
@@ -14263,16 +14681,16 @@ static const struct cbl_ynode n925 = {
 	.size = sizeof(struct arcana_sysctl_sysctl_value),
 	.nmap = 5,
 	.nchild = 5,
-	.child = n925_c,
+	.child = n948_c,
 	.nkeys = 1,
-	.keys = n925_k,
-	.module = &m51,
+	.keys = n948_k,
+	.module = &m53,
 };
 
-static const struct cbl_ynode *const n920_c[] = {
-	&n921, &n924, &n925
+static const struct cbl_ynode *const n943_c[] = {
+	&n944, &n947, &n948
 };
-static const struct cbl_ynode n920 = {
+static const struct cbl_ynode n943 = {
 	.sid = UINT64_C(63601),
 	.name = "sysctl",
 	.kind = CBL_YN_CONTAINER,
@@ -14281,14 +14699,14 @@ static const struct cbl_ynode n920 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_sysctl_sysctl),
 	.nchild = 3,
-	.child = n920_c,
-	.module = &m51,
+	.child = n943_c,
+	.module = &m53,
 };
 
-static const uint16_t n931_p[] = {
+static const uint16_t n954_p[] = {
 	1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4
 };
-static const struct cbl_ynode n932 = {
+static const struct cbl_ynode n955 = {
 	.sid = UINT64_C(63702),
 	.name = "available",
 	.kind = CBL_YN_LEAFLIST,
@@ -14296,20 +14714,20 @@ static const struct cbl_ynode n932 = {
 	.off = offsetof(struct arcana_kernel_kernel, available),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n934 = {
+static const struct cbl_ynode n957 = {
 	.sid = UINT64_C(63704),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_kernel_kernel_file, address),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n935 = {
+static const struct cbl_ynode n958 = {
 	.sid = UINT64_C(63705),
 	.name = "id",
 	.kind = CBL_YN_LEAF,
@@ -14317,10 +14735,10 @@ static const struct cbl_ynode n935 = {
 	.off = offsetof(struct arcana_kernel_kernel_file, id),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t10,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n936 = {
+static const struct cbl_ynode n959 = {
 	.sid = UINT64_C(63706),
 	.name = "module",
 	.kind = CBL_YN_LEAFLIST,
@@ -14328,40 +14746,40 @@ static const struct cbl_ynode n936 = {
 	.off = offsetof(struct arcana_kernel_kernel_file, module),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n937 = {
+static const struct cbl_ynode n960 = {
 	.sid = UINT64_C(63707),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_kernel_kernel_file, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n938 = {
+static const struct cbl_ynode n961 = {
 	.sid = UINT64_C(63708),
 	.name = "path",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_kernel_kernel_file, path),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n939 = {
+static const struct cbl_ynode n962 = {
 	.sid = UINT64_C(63709),
 	.name = "refs",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_kernel_kernel_file, refs),
 	.hoff = offsetof(struct arcana_kernel_kernel_file, has_refs),
 	.type = &t10,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n940 = {
+static const struct cbl_ynode n963 = {
 	.sid = UINT64_C(63710),
 	.name = "size",
 	.kind = CBL_YN_LEAF,
@@ -14369,33 +14787,33 @@ static const struct cbl_ynode n940 = {
 	.hoff = offsetof(struct arcana_kernel_kernel_file, has_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n942 = {
+static const struct cbl_ynode n965 = {
 	.sid = UINT64_C(63712),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_kernel_kernel_file_unload_input),
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n943 = {
+static const struct cbl_ynode n966 = {
 	.sid = UINT64_C(63713),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_kernel_kernel_file_unload_output),
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode *const n941_c[] = {
-	&n942, &n943
+static const struct cbl_ynode *const n964_c[] = {
+	&n965, &n966
 };
-static const struct cbl_ynode n941 = {
+static const struct cbl_ynode n964 = {
 	.sid = UINT64_C(63711),
 	.name = "unload",
 	.kind = CBL_YN_ACTION,
@@ -14403,16 +14821,16 @@ static const struct cbl_ynode n941 = {
 	.hoff = CBL_YOFF_NONE,
 	.nmap = 2,
 	.nchild = 2,
-	.child = n941_c,
-	.module = &m52,
+	.child = n964_c,
+	.module = &m54,
 };
 
-static const struct cbl_ynode *const n933_c[] = {
-	&n934, &n935, &n936, &n937, &n938, &n939,
-	&n940, &n941
+static const struct cbl_ynode *const n956_c[] = {
+	&n957, &n958, &n959, &n960, &n961, &n962,
+	&n963, &n964
 };
-static const uint32_t n933_k[] = { 1 };
-static const struct cbl_ynode n933 = {
+static const uint32_t n956_k[] = { 1 };
+static const struct cbl_ynode n956 = {
 	.sid = UINT64_C(63703),
 	.name = "file",
 	.kind = CBL_YN_LIST,
@@ -14422,13 +14840,13 @@ static const struct cbl_ynode n933 = {
 	.size = sizeof(struct arcana_kernel_kernel_file),
 	.nmap = 8,
 	.nchild = 8,
-	.child = n933_c,
+	.child = n956_c,
 	.nkeys = 1,
-	.keys = n933_k,
-	.module = &m52,
+	.keys = n956_k,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n944 = {
+static const struct cbl_ynode n967 = {
 	.sid = UINT64_C(63714),
 	.name = "kept",
 	.kind = CBL_YN_LEAFLIST,
@@ -14436,13 +14854,13 @@ static const struct cbl_ynode n944 = {
 	.off = offsetof(struct arcana_kernel_kernel, kept),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const uint16_t n945_p[] = {
+static const uint16_t n968_p[] = {
 	1, 2, 3, 4, 5, 6, 0, 0, 0, 0, 7
 };
-static const struct cbl_ynode n946 = {
+static const struct cbl_ynode n969 = {
 	.sid = UINT64_C(63716),
 	.name = "files",
 	.kind = CBL_YN_LEAF,
@@ -14450,10 +14868,10 @@ static const struct cbl_ynode n946 = {
 	.hoff = offsetof(struct arcana_kernel_kernel_memory, has_files),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n947 = {
+static const struct cbl_ynode n970 = {
 	.sid = UINT64_C(63717),
 	.name = "kmem-map-free",
 	.kind = CBL_YN_LEAF,
@@ -14461,10 +14879,10 @@ static const struct cbl_ynode n947 = {
 	.hoff = offsetof(struct arcana_kernel_kernel_memory, has_kmem_map_free),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n948 = {
+static const struct cbl_ynode n971 = {
 	.sid = UINT64_C(63718),
 	.name = "kmem-map-size",
 	.kind = CBL_YN_LEAF,
@@ -14472,10 +14890,10 @@ static const struct cbl_ynode n948 = {
 	.hoff = offsetof(struct arcana_kernel_kernel_memory, has_kmem_map_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n949 = {
+static const struct cbl_ynode n972 = {
 	.sid = UINT64_C(63719),
 	.name = "kmem-size",
 	.kind = CBL_YN_LEAF,
@@ -14483,10 +14901,10 @@ static const struct cbl_ynode n949 = {
 	.hoff = offsetof(struct arcana_kernel_kernel_memory, has_kmem_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n951 = {
+static const struct cbl_ynode n974 = {
 	.sid = UINT64_C(63722),
 	.name = "bytes",
 	.kind = CBL_YN_LEAF,
@@ -14494,43 +14912,43 @@ static const struct cbl_ynode n951 = {
 	.hoff = offsetof(struct arcana_kernel_kernel_memory_malloc, has_bytes),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n952 = {
+static const struct cbl_ynode n975 = {
 	.sid = UINT64_C(63723),
 	.name = "count",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_kernel_kernel_memory_malloc, count),
 	.hoff = offsetof(struct arcana_kernel_kernel_memory_malloc, has_count),
 	.type = &t9,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n953 = {
+static const struct cbl_ynode n976 = {
 	.sid = UINT64_C(63724),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_kernel_kernel_memory_malloc, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n954 = {
+static const struct cbl_ynode n977 = {
 	.sid = UINT64_C(63725),
 	.name = "requests",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_kernel_kernel_memory_malloc, requests),
 	.hoff = offsetof(struct arcana_kernel_kernel_memory_malloc, has_requests),
 	.type = &t9,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode *const n950_c[] = {
-	&n951, &n952, &n953, &n954
+static const struct cbl_ynode *const n973_c[] = {
+	&n974, &n975, &n976, &n977
 };
-static const struct cbl_ynode n950 = {
+static const struct cbl_ynode n973 = {
 	.sid = UINT64_C(63720),
 	.name = "malloc",
 	.kind = CBL_YN_LIST,
@@ -14540,11 +14958,11 @@ static const struct cbl_ynode n950 = {
 	.size = sizeof(struct arcana_kernel_kernel_memory_malloc),
 	.nmap = 4,
 	.nchild = 4,
-	.child = n950_c,
-	.module = &m52,
+	.child = n973_c,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n955 = {
+static const struct cbl_ynode n978 = {
 	.sid = UINT64_C(63721),
 	.name = "malloc-total",
 	.kind = CBL_YN_LEAF,
@@ -14552,10 +14970,10 @@ static const struct cbl_ynode n955 = {
 	.hoff = offsetof(struct arcana_kernel_kernel_memory, has_malloc_total),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n957 = {
+static const struct cbl_ynode n980 = {
 	.sid = UINT64_C(63727),
 	.name = "bytes",
 	.kind = CBL_YN_LEAF,
@@ -14563,50 +14981,50 @@ static const struct cbl_ynode n957 = {
 	.hoff = offsetof(struct arcana_kernel_kernel_memory_zone, has_bytes),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n958 = {
+static const struct cbl_ynode n981 = {
 	.sid = UINT64_C(63728),
 	.name = "count",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_kernel_kernel_memory_zone, count),
 	.hoff = offsetof(struct arcana_kernel_kernel_memory_zone, has_count),
 	.type = &t9,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n959 = {
+static const struct cbl_ynode n982 = {
 	.sid = UINT64_C(63729),
 	.name = "free",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_kernel_kernel_memory_zone, free),
 	.hoff = offsetof(struct arcana_kernel_kernel_memory_zone, has_free),
 	.type = &t9,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n960 = {
+static const struct cbl_ynode n983 = {
 	.sid = UINT64_C(63730),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_kernel_kernel_memory_zone, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n961 = {
+static const struct cbl_ynode n984 = {
 	.sid = UINT64_C(63731),
 	.name = "requests",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_kernel_kernel_memory_zone, requests),
 	.hoff = offsetof(struct arcana_kernel_kernel_memory_zone, has_requests),
 	.type = &t9,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n962 = {
+static const struct cbl_ynode n985 = {
 	.sid = UINT64_C(63732),
 	.name = "size",
 	.kind = CBL_YN_LEAF,
@@ -14614,13 +15032,13 @@ static const struct cbl_ynode n962 = {
 	.hoff = offsetof(struct arcana_kernel_kernel_memory_zone, has_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode *const n956_c[] = {
-	&n957, &n958, &n959, &n960, &n961, &n962
+static const struct cbl_ynode *const n979_c[] = {
+	&n980, &n981, &n982, &n983, &n984, &n985
 };
-static const struct cbl_ynode n956 = {
+static const struct cbl_ynode n979 = {
 	.sid = UINT64_C(63726),
 	.name = "zone",
 	.kind = CBL_YN_LIST,
@@ -14630,15 +15048,15 @@ static const struct cbl_ynode n956 = {
 	.size = sizeof(struct arcana_kernel_kernel_memory_zone),
 	.nmap = 6,
 	.nchild = 6,
-	.child = n956_c,
-	.module = &m52,
+	.child = n979_c,
+	.module = &m54,
 };
 
-static const struct cbl_ynode *const n945_c[] = {
-	&n946, &n947, &n948, &n949, &n950, &n955,
-	&n956
+static const struct cbl_ynode *const n968_c[] = {
+	&n969, &n970, &n971, &n972, &n973, &n978,
+	&n979
 };
-static const struct cbl_ynode n945 = {
+static const struct cbl_ynode n968 = {
 	.sid = UINT64_C(63715),
 	.name = "memory",
 	.kind = CBL_YN_CONTAINER,
@@ -14646,16 +15064,16 @@ static const struct cbl_ynode n945 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_kernel_kernel_memory),
 	.nmap = 11,
-	.map = n945_p,
+	.map = n968_p,
 	.nchild = 7,
-	.child = n945_c,
-	.module = &m52,
+	.child = n968_c,
+	.module = &m54,
 };
 
-static const struct cbl_ynode *const n931_c[] = {
-	&n932, &n933, &n944, &n945
+static const struct cbl_ynode *const n954_c[] = {
+	&n955, &n956, &n967, &n968
 };
-static const struct cbl_ynode n931 = {
+static const struct cbl_ynode n954 = {
 	.sid = UINT64_C(63701),
 	.name = "kernel",
 	.kind = CBL_YN_CONTAINER,
@@ -14664,13 +15082,13 @@ static const struct cbl_ynode n931 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_kernel_kernel),
 	.nmap = 14,
-	.map = n931_p,
+	.map = n954_p,
 	.nchild = 4,
-	.child = n931_c,
-	.module = &m52,
+	.child = n954_c,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n965 = {
+static const struct cbl_ynode n988 = {
 	.sid = UINT64_C(63735),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -14678,13 +15096,13 @@ static const struct cbl_ynode n965 = {
 	.off = offsetof(struct arcana_kernel_load_input, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode *const n964_c[] = {
-	&n965
+static const struct cbl_ynode *const n987_c[] = {
+	&n988
 };
-static const struct cbl_ynode n964 = {
+static const struct cbl_ynode n987 = {
 	.sid = UINT64_C(63734),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -14693,60 +15111,60 @@ static const struct cbl_ynode n964 = {
 	.size = sizeof(struct arcana_kernel_load_input),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n964_c,
-	.module = &m52,
+	.child = n987_c,
+	.module = &m54,
 };
 
-static const struct cbl_ynode n966 = {
+static const struct cbl_ynode n989 = {
 	.sid = UINT64_C(63736),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_kernel_load_output),
-	.module = &m52,
+	.module = &m54,
 };
 
-static const struct cbl_ynode *const n963_c[] = {
-	&n964, &n966
+static const struct cbl_ynode *const n986_c[] = {
+	&n987, &n989
 };
-static const struct cbl_ynode n963 = {
+static const struct cbl_ynode n986 = {
 	.sid = UINT64_C(63733),
 	.name = "load",
 	.kind = CBL_YN_RPC,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.nchild = 2,
-	.child = n963_c,
-	.module = &m52,
+	.child = n986_c,
+	.module = &m54,
 };
 
-static const uint16_t n967_p[] = {
+static const uint16_t n990_p[] = {
 	1, 2, 0, 0, 0, 0, 0, 0, 0, 3, 4
 };
-static const struct cbl_ynode n968 = {
+static const struct cbl_ynode n991 = {
 	.sid = UINT64_C(63802),
 	.name = "elapsed",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes, elapsed),
 	.hoff = offsetof(struct arcana_processes_processes, has_elapsed),
-	.type = &t61,
+	.type = &t63,
 	.units = "seconds",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n970 = {
+static const struct cbl_ynode n993 = {
 	.sid = UINT64_C(63804),
 	.name = "cpu",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_jail, cpu),
 	.hoff = offsetof(struct arcana_processes_processes_jail, has_cpu),
-	.type = &t61,
+	.type = &t63,
 	.units = "percent",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n971 = {
+static const struct cbl_ynode n994 = {
 	.sid = UINT64_C(63805),
 	.name = "jid",
 	.kind = CBL_YN_LEAF,
@@ -14754,30 +15172,30 @@ static const struct cbl_ynode n971 = {
 	.off = offsetof(struct arcana_processes_processes_jail, jid),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t10,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n972 = {
+static const struct cbl_ynode n995 = {
 	.sid = UINT64_C(63806),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_jail, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n973 = {
+static const struct cbl_ynode n996 = {
 	.sid = UINT64_C(63807),
 	.name = "procs",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_jail, procs),
 	.hoff = offsetof(struct arcana_processes_processes_jail, has_procs),
 	.type = &t10,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n974 = {
+static const struct cbl_ynode n997 = {
 	.sid = UINT64_C(63808),
 	.name = "rss",
 	.kind = CBL_YN_LEAF,
@@ -14785,36 +15203,36 @@ static const struct cbl_ynode n974 = {
 	.hoff = offsetof(struct arcana_processes_processes_jail, has_rss),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n975 = {
+static const struct cbl_ynode n998 = {
 	.sid = UINT64_C(63809),
 	.name = "threads",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_jail, threads),
 	.hoff = offsetof(struct arcana_processes_processes_jail, has_threads),
 	.type = &t10,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n976 = {
+static const struct cbl_ynode n999 = {
 	.sid = UINT64_C(63810),
 	.name = "wcpu",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_jail, wcpu),
 	.hoff = offsetof(struct arcana_processes_processes_jail, has_wcpu),
-	.type = &t61,
+	.type = &t63,
 	.units = "percent",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode *const n969_c[] = {
-	&n970, &n971, &n972, &n973, &n974, &n975,
-	&n976
+static const struct cbl_ynode *const n992_c[] = {
+	&n993, &n994, &n995, &n996, &n997, &n998,
+	&n999
 };
-static const uint32_t n969_k[] = { 1 };
-static const struct cbl_ynode n969 = {
+static const uint32_t n992_k[] = { 1 };
+static const struct cbl_ynode n992 = {
 	.sid = UINT64_C(63803),
 	.name = "jail",
 	.kind = CBL_YN_LIST,
@@ -14824,112 +15242,112 @@ static const struct cbl_ynode n969 = {
 	.size = sizeof(struct arcana_processes_processes_jail),
 	.nmap = 7,
 	.nchild = 7,
-	.child = n969_c,
+	.child = n992_c,
 	.nkeys = 1,
-	.keys = n969_k,
-	.module = &m53,
+	.keys = n992_k,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n977 = {
+static const struct cbl_ynode n1000 = {
 	.sid = UINT64_C(63811),
 	.name = "ncpu",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes, ncpu),
 	.hoff = offsetof(struct arcana_processes_processes, has_ncpu),
 	.type = &t10,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const uint16_t n978_p[] = {
+static const uint16_t n1001_p[] = {
 	1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0, 0, 0, 4,
 	0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6
 };
-static const struct cbl_ynode n980 = {
+static const struct cbl_ynode n1003 = {
 	.sid = UINT64_C(63814),
 	.name = "fd",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_file, fd),
 	.hoff = offsetof(struct arcana_processes_processes_process_file, has_fd),
-	.type = &t65,
-	.module = &m53,
+	.type = &t67,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n981 = {
+static const struct cbl_ynode n1004 = {
 	.sid = UINT64_C(63815),
 	.name = "local",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_file, local),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n982 = {
+static const struct cbl_ynode n1005 = {
 	.sid = UINT64_C(63816),
 	.name = "mode",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_file, mode),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n983 = {
+static const struct cbl_ynode n1006 = {
 	.sid = UINT64_C(63817),
 	.name = "path",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_file, path),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n984 = {
+static const struct cbl_ynode n1007 = {
 	.sid = UINT64_C(63818),
 	.name = "proto",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_file, proto),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n985 = {
+static const struct cbl_ynode n1008 = {
 	.sid = UINT64_C(63819),
 	.name = "remote",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_file, remote),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n986 = {
+static const struct cbl_ynode n1009 = {
 	.sid = UINT64_C(63820),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_file, type),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n987 = {
+static const struct cbl_ynode n1010 = {
 	.sid = UINT64_C(63821),
 	.name = "use",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_file, use),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode *const n979_c[] = {
-	&n980, &n981, &n982, &n983, &n984, &n985,
-	&n986, &n987
+static const struct cbl_ynode *const n1002_c[] = {
+	&n1003, &n1004, &n1005, &n1006, &n1007, &n1008,
+	&n1009, &n1010
 };
-static const struct cbl_ynode n979 = {
+static const struct cbl_ynode n1002 = {
 	.sid = UINT64_C(63813),
 	.name = "file",
 	.kind = CBL_YN_LIST,
@@ -14939,33 +15357,33 @@ static const struct cbl_ynode n979 = {
 	.size = sizeof(struct arcana_processes_processes_process_file),
 	.nmap = 8,
 	.nchild = 8,
-	.child = n979_c,
-	.module = &m53,
+	.child = n1002_c,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n988 = {
+static const struct cbl_ynode n1011 = {
 	.sid = UINT64_C(63822),
 	.name = "pid",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x4,
 	.off = offsetof(struct arcana_processes_processes_process, pid),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t96,
-	.module = &m53,
+	.type = &t98,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n991 = {
+static const struct cbl_ynode n1014 = {
 	.sid = UINT64_C(63825),
 	.name = "nice",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
 	.off = offsetof(struct arcana_processes_processes_process_renice_input, nice),
 	.hoff = offsetof(struct arcana_processes_processes_process_renice_input, has_nice),
-	.type = &t97,
-	.module = &m53,
+	.type = &t99,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n992 = {
+static const struct cbl_ynode n1015 = {
 	.sid = UINT64_C(63826),
 	.name = "start-time",
 	.kind = CBL_YN_LEAF,
@@ -14973,13 +15391,13 @@ static const struct cbl_ynode n992 = {
 	.hoff = offsetof(struct arcana_processes_processes_process_renice_input, has_start_time),
 	.type = &t9,
 	.units = "nanoseconds",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode *const n990_c[] = {
-	&n991, &n992
+static const struct cbl_ynode *const n1013_c[] = {
+	&n1014, &n1015
 };
-static const struct cbl_ynode n990 = {
+static const struct cbl_ynode n1013 = {
 	.sid = UINT64_C(63824),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -14988,35 +15406,35 @@ static const struct cbl_ynode n990 = {
 	.size = sizeof(struct arcana_processes_processes_process_renice_input),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n990_c,
-	.module = &m53,
+	.child = n1013_c,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n993 = {
+static const struct cbl_ynode n1016 = {
 	.sid = UINT64_C(63827),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_processes_processes_process_renice_output),
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode *const n989_c[] = {
-	&n990, &n993
+static const struct cbl_ynode *const n1012_c[] = {
+	&n1013, &n1016
 };
-static const struct cbl_ynode n989 = {
+static const struct cbl_ynode n1012 = {
 	.sid = UINT64_C(63823),
 	.name = "renice",
 	.kind = CBL_YN_ACTION,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.nchild = 2,
-	.child = n989_c,
-	.module = &m53,
+	.child = n1012_c,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n996 = {
+static const struct cbl_ynode n1019 = {
 	.sid = UINT64_C(63830),
 	.name = "signal",
 	.kind = CBL_YN_LEAF,
@@ -15024,10 +15442,10 @@ static const struct cbl_ynode n996 = {
 	.off = offsetof(struct arcana_processes_processes_process_signal_input, signal),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n997 = {
+static const struct cbl_ynode n1020 = {
 	.sid = UINT64_C(63831),
 	.name = "start-time",
 	.kind = CBL_YN_LEAF,
@@ -15035,13 +15453,13 @@ static const struct cbl_ynode n997 = {
 	.hoff = offsetof(struct arcana_processes_processes_process_signal_input, has_start_time),
 	.type = &t9,
 	.units = "nanoseconds",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode *const n995_c[] = {
-	&n996, &n997
+static const struct cbl_ynode *const n1018_c[] = {
+	&n1019, &n1020
 };
-static const struct cbl_ynode n995 = {
+static const struct cbl_ynode n1018 = {
 	.sid = UINT64_C(63829),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
@@ -15050,35 +15468,35 @@ static const struct cbl_ynode n995 = {
 	.size = sizeof(struct arcana_processes_processes_process_signal_input),
 	.nmap = 2,
 	.nchild = 2,
-	.child = n995_c,
-	.module = &m53,
+	.child = n1018_c,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n998 = {
+static const struct cbl_ynode n1021 = {
 	.sid = UINT64_C(63832),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_processes_processes_process_signal_output),
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode *const n994_c[] = {
-	&n995, &n998
+static const struct cbl_ynode *const n1017_c[] = {
+	&n1018, &n1021
 };
-static const struct cbl_ynode n994 = {
+static const struct cbl_ynode n1017 = {
 	.sid = UINT64_C(63828),
 	.name = "signal",
 	.kind = CBL_YN_ACTION,
 	.off = CBL_YOFF_NONE,
 	.hoff = CBL_YOFF_NONE,
 	.nchild = 2,
-	.child = n994_c,
-	.module = &m53,
+	.child = n1017_c,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1000 = {
+static const struct cbl_ynode n1023 = {
 	.sid = UINT64_C(63834),
 	.name = "args",
 	.kind = CBL_YN_LEAFLIST,
@@ -15086,52 +15504,52 @@ static const struct cbl_ynode n1000 = {
 	.off = offsetof(struct arcana_processes_processes_process_state, args),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1001 = {
+static const struct cbl_ynode n1024 = {
 	.sid = UINT64_C(63835),
 	.name = "blocks-in",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, blocks_in),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_blocks_in),
 	.type = &t9,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1002 = {
+static const struct cbl_ynode n1025 = {
 	.sid = UINT64_C(63836),
 	.name = "blocks-out",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, blocks_out),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_blocks_out),
 	.type = &t9,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1003 = {
+static const struct cbl_ynode n1026 = {
 	.sid = UINT64_C(63837),
 	.name = "cpu",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, cpu),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_cpu),
-	.type = &t61,
+	.type = &t63,
 	.units = "percent",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1004 = {
+static const struct cbl_ynode n1027 = {
 	.sid = UINT64_C(63838),
 	.name = "cpu-time",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, cpu_time),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_cpu_time),
-	.type = &t61,
+	.type = &t63,
 	.units = "seconds",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1005 = {
+static const struct cbl_ynode n1028 = {
 	.sid = UINT64_C(63839),
 	.name = "cpu-usage-system",
 	.kind = CBL_YN_LEAF,
@@ -15139,10 +15557,10 @@ static const struct cbl_ynode n1005 = {
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_cpu_usage_system),
 	.type = &t9,
 	.units = "nanoseconds",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1006 = {
+static const struct cbl_ynode n1029 = {
 	.sid = UINT64_C(63840),
 	.name = "cpu-usage-user",
 	.kind = CBL_YN_LEAF,
@@ -15150,50 +15568,50 @@ static const struct cbl_ynode n1006 = {
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_cpu_usage_user),
 	.type = &t9,
 	.units = "nanoseconds",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1007 = {
+static const struct cbl_ynode n1030 = {
 	.sid = UINT64_C(63841),
 	.name = "cpu-utilization",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, cpu_utilization),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_cpu_utilization),
-	.type = &t98,
-	.module = &m53,
+	.type = &t100,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1008 = {
+static const struct cbl_ynode n1031 = {
 	.sid = UINT64_C(63842),
 	.name = "io",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, io),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_io),
-	.type = &t61,
-	.module = &m53,
+	.type = &t63,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1009 = {
+static const struct cbl_ynode n1032 = {
 	.sid = UINT64_C(63843),
 	.name = "jail",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, jail),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1010 = {
+static const struct cbl_ynode n1033 = {
 	.sid = UINT64_C(63844),
 	.name = "jid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, jid),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_jid),
 	.type = &t10,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1011 = {
+static const struct cbl_ynode n1034 = {
 	.sid = UINT64_C(63845),
 	.name = "memory-usage",
 	.kind = CBL_YN_LEAF,
@@ -15201,80 +15619,80 @@ static const struct cbl_ynode n1011 = {
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_memory_usage),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1012 = {
+static const struct cbl_ynode n1035 = {
 	.sid = UINT64_C(63846),
 	.name = "memory-utilization",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, memory_utilization),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_memory_utilization),
-	.type = &t98,
-	.module = &m53,
+	.type = &t100,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1013 = {
+static const struct cbl_ynode n1036 = {
 	.sid = UINT64_C(63847),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1014 = {
+static const struct cbl_ynode n1037 = {
 	.sid = UINT64_C(63848),
 	.name = "nice",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, nice),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_nice),
-	.type = &t65,
-	.module = &m53,
+	.type = &t67,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1015 = {
+static const struct cbl_ynode n1038 = {
 	.sid = UINT64_C(63849),
 	.name = "pid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, pid),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_pid),
 	.type = &t9,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1016 = {
+static const struct cbl_ynode n1039 = {
 	.sid = UINT64_C(63850),
 	.name = "ppid",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, ppid),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_ppid),
 	.type = &t9,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1017 = {
+static const struct cbl_ynode n1040 = {
 	.sid = UINT64_C(63851),
 	.name = "priority",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, priority),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_priority),
-	.type = &t65,
-	.module = &m53,
+	.type = &t67,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1018 = {
+static const struct cbl_ynode n1041 = {
 	.sid = UINT64_C(63852),
 	.name = "run-state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, run_state),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1019 = {
+static const struct cbl_ynode n1042 = {
 	.sid = UINT64_C(63853),
 	.name = "size",
 	.kind = CBL_YN_LEAF,
@@ -15282,10 +15700,10 @@ static const struct cbl_ynode n1019 = {
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_size),
 	.type = &t9,
 	.units = "bytes",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1020 = {
+static const struct cbl_ynode n1043 = {
 	.sid = UINT64_C(63854),
 	.name = "start-time",
 	.kind = CBL_YN_LEAF,
@@ -15293,58 +15711,58 @@ static const struct cbl_ynode n1020 = {
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_start_time),
 	.type = &t9,
 	.units = "nanoseconds",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1021 = {
+static const struct cbl_ynode n1044 = {
 	.sid = UINT64_C(63855),
 	.name = "threads",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, threads),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_threads),
 	.type = &t10,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1022 = {
+static const struct cbl_ynode n1045 = {
 	.sid = UINT64_C(63856),
 	.name = "user",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, user),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1023 = {
+static const struct cbl_ynode n1046 = {
 	.sid = UINT64_C(63857),
 	.name = "wait",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, wait),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1024 = {
+static const struct cbl_ynode n1047 = {
 	.sid = UINT64_C(63858),
 	.name = "wcpu",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_state, wcpu),
 	.hoff = offsetof(struct arcana_processes_processes_process_state, has_wcpu),
-	.type = &t61,
+	.type = &t63,
 	.units = "percent",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode *const n999_c[] = {
-	&n1000, &n1001, &n1002, &n1003, &n1004, &n1005,
-	&n1006, &n1007, &n1008, &n1009, &n1010, &n1011,
-	&n1012, &n1013, &n1014, &n1015, &n1016, &n1017,
-	&n1018, &n1019, &n1020, &n1021, &n1022, &n1023,
-	&n1024
+static const struct cbl_ynode *const n1022_c[] = {
+	&n1023, &n1024, &n1025, &n1026, &n1027, &n1028,
+	&n1029, &n1030, &n1031, &n1032, &n1033, &n1034,
+	&n1035, &n1036, &n1037, &n1038, &n1039, &n1040,
+	&n1041, &n1042, &n1043, &n1044, &n1045, &n1046,
+	&n1047
 };
-static const struct cbl_ynode n999 = {
+static const struct cbl_ynode n1022 = {
 	.sid = UINT64_C(63833),
 	.name = "state",
 	.kind = CBL_YN_CONTAINER,
@@ -15353,52 +15771,52 @@ static const struct cbl_ynode n999 = {
 	.size = sizeof(struct arcana_processes_processes_process_state),
 	.nmap = 25,
 	.nchild = 25,
-	.child = n999_c,
-	.module = &m53,
+	.child = n1022_c,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1026 = {
+static const struct cbl_ynode n1049 = {
 	.sid = UINT64_C(63860),
 	.name = "cpu-time",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_thread, cpu_time),
 	.hoff = offsetof(struct arcana_processes_processes_process_thread, has_cpu_time),
-	.type = &t61,
+	.type = &t63,
 	.units = "seconds",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1027 = {
+static const struct cbl_ynode n1050 = {
 	.sid = UINT64_C(63861),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_thread, name),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1028 = {
+static const struct cbl_ynode n1051 = {
 	.sid = UINT64_C(63862),
 	.name = "priority",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_thread, priority),
 	.hoff = offsetof(struct arcana_processes_processes_process_thread, has_priority),
-	.type = &t65,
-	.module = &m53,
+	.type = &t67,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1029 = {
+static const struct cbl_ynode n1052 = {
 	.sid = UINT64_C(63863),
 	.name = "run-state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_thread, run_state),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1030 = {
+static const struct cbl_ynode n1053 = {
 	.sid = UINT64_C(63864),
 	.name = "tid",
 	.kind = CBL_YN_LEAF,
@@ -15406,36 +15824,36 @@ static const struct cbl_ynode n1030 = {
 	.off = offsetof(struct arcana_processes_processes_process_thread, tid),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t9,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1031 = {
+static const struct cbl_ynode n1054 = {
 	.sid = UINT64_C(63865),
 	.name = "wait",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_thread, wait),
 	.hoff = CBL_YOFF_NONE,
 	.type = &t1,
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode n1032 = {
+static const struct cbl_ynode n1055 = {
 	.sid = UINT64_C(63866),
 	.name = "wcpu",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct arcana_processes_processes_process_thread, wcpu),
 	.hoff = offsetof(struct arcana_processes_processes_process_thread, has_wcpu),
-	.type = &t61,
+	.type = &t63,
 	.units = "percent",
-	.module = &m53,
+	.module = &m55,
 };
 
-static const struct cbl_ynode *const n1025_c[] = {
-	&n1026, &n1027, &n1028, &n1029, &n1030, &n1031,
-	&n1032
+static const struct cbl_ynode *const n1048_c[] = {
+	&n1049, &n1050, &n1051, &n1052, &n1053, &n1054,
+	&n1055
 };
-static const uint32_t n1025_k[] = { 4 };
-static const struct cbl_ynode n1025 = {
+static const uint32_t n1048_k[] = { 4 };
+static const struct cbl_ynode n1048 = {
 	.sid = UINT64_C(63859),
 	.name = "thread",
 	.kind = CBL_YN_LIST,
@@ -15445,17 +15863,17 @@ static const struct cbl_ynode n1025 = {
 	.size = sizeof(struct arcana_processes_processes_process_thread),
 	.nmap = 7,
 	.nchild = 7,
-	.child = n1025_c,
+	.child = n1048_c,
 	.nkeys = 1,
-	.keys = n1025_k,
-	.module = &m53,
+	.keys = n1048_k,
+	.module = &m55,
 };
 
-static const struct cbl_ynode *const n978_c[] = {
-	&n979, &n988, &n989, &n994, &n999, &n1025
+static const struct cbl_ynode *const n1001_c[] = {
+	&n1002, &n1011, &n1012, &n1017, &n1022, &n1048
 };
-static const uint32_t n978_k[] = { 1 };
-static const struct cbl_ynode n978 = {
+static const uint32_t n1001_k[] = { 1 };
+static const struct cbl_ynode n1001 = {
 	.sid = UINT64_C(63812),
 	.name = "process",
 	.kind = CBL_YN_LIST,
@@ -15464,18 +15882,18 @@ static const struct cbl_ynode n978 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_processes_processes_process),
 	.nmap = 47,
-	.map = n978_p,
+	.map = n1001_p,
 	.nchild = 6,
-	.child = n978_c,
+	.child = n1001_c,
 	.nkeys = 1,
-	.keys = n978_k,
-	.module = &m53,
+	.keys = n1001_k,
+	.module = &m55,
 };
 
-static const struct cbl_ynode *const n967_c[] = {
-	&n968, &n969, &n977, &n978
+static const struct cbl_ynode *const n990_c[] = {
+	&n991, &n992, &n1000, &n1001
 };
-static const struct cbl_ynode n967 = {
+static const struct cbl_ynode n990 = {
 	.sid = UINT64_C(63801),
 	.name = "processes",
 	.kind = CBL_YN_CONTAINER,
@@ -15484,10 +15902,10 @@ static const struct cbl_ynode n967 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct arcana_processes_processes),
 	.nmap = 11,
-	.map = n967_p,
+	.map = n990_p,
 	.nchild = 4,
-	.child = n967_c,
-	.module = &m53,
+	.child = n990_c,
+	.module = &m55,
 };
 
 static const uint64_t i0_d[] = {
@@ -15680,6 +16098,12 @@ static const uint64_t i323_d[] = {
 };
 static const uint64_t i326_d[] = {
 	UINT64_C(65802), UINT64_C(65803)
+};
+static const uint64_t i335_d[] = {
+	UINT64_C(68302), UINT64_C(68307), UINT64_C(68308)
+};
+static const uint64_t i338_d[] = {
+	UINT64_C(68301), UINT64_C(68304), UINT64_C(68305)
 };
 static const struct cbl_yident idents[] = {
 	{ UINT64_C(1501), "interface-type", &m10, 0x0, 305, i0_d },
@@ -15988,33 +16412,41 @@ static const struct cbl_yident idents[] = {
 	{ UINT64_C(2103), "x25ple", &m12, 0x0, 0, NULL },
 	{ UINT64_C(2104), "x86Laps", &m12, 0x0, 0, NULL },
 	{ UINT64_C(2105), "xboxWireless", &m12, 0x0, 0, NULL },
-	{ UINT64_C(61301), "address-family", &m15, 0x0, 4, i306_d },
-	{ UINT64_C(61302), "control-plane-protocol", &m15, 0x0, 21, i307_d },
-	{ UINT64_C(61303), "direct", &m15, 0x0, 0, NULL },
-	{ UINT64_C(61304), "ipv4", &m15, 0x0, 1, i309_d },
-	{ UINT64_C(61305), "ipv6", &m15, 0x0, 1, i310_d },
-	{ UINT64_C(61306), "routing-protocol", &m15, 0x0, 19, i311_d },
-	{ UINT64_C(61307), "static", &m15, 0x0, 0, NULL },
-	{ UINT64_C(61501), "ipv4-unicast", &m16, 0x0, 0, NULL },
-	{ UINT64_C(61601), "ipv6-unicast", &m17, 0x0, 0, NULL },
-	{ UINT64_C(61703), "bird", &m18, 0x0, 0, NULL },
-	{ UINT64_C(61704), "dhcp", &m18, 0x0, 0, NULL },
-	{ UINT64_C(61705), "freebsd-origin", &m18, 0x0, 7, i317_d },
-	{ UINT64_C(61707), "kernel", &m18, 0x0, 0, NULL },
-	{ UINT64_C(61709), "other", &m18, 0x0, 0, NULL },
-	{ UINT64_C(61710), "redirect", &m18, 0x0, 0, NULL },
-	{ UINT64_C(61712), "router-advertisement", &m18, 0x0, 0, NULL },
-	{ UINT64_C(61713), "zebra", &m18, 0x0, 0, NULL },
-	{ UINT64_C(63927), "ospf", &m19, 0x0, 2, i323_d },
-	{ UINT64_C(63929), "ospfv2", &m19, 0x0, 0, NULL },
-	{ UINT64_C(63946), "ospfv3", &m19, 0x0, 0, NULL },
-	{ UINT64_C(65801), "rip", &m26, 0x0, 2, i326_d },
-	{ UINT64_C(65802), "ripng", &m26, 0x0, 0, NULL },
-	{ UINT64_C(65803), "ripv2", &m26, 0x0, 0, NULL },
-	{ UINT64_C(66020), "isis", &m27, 0x0, 0, NULL },
-	{ UINT64_C(67001), "babel", &m28, 0x0, 0, NULL },
-	{ UINT64_C(67201), "bgp", &m30, 0x0, 0, NULL },
-	{ UINT64_C(68201), "bfdv1", &m24, 0x0, 0, NULL },
+	{ UINT64_C(61301), "address-family", &m17, 0x0, 4, i306_d },
+	{ UINT64_C(61302), "control-plane-protocol", &m17, 0x0, 21, i307_d },
+	{ UINT64_C(61303), "direct", &m17, 0x0, 0, NULL },
+	{ UINT64_C(61304), "ipv4", &m17, 0x0, 1, i309_d },
+	{ UINT64_C(61305), "ipv6", &m17, 0x0, 1, i310_d },
+	{ UINT64_C(61306), "routing-protocol", &m17, 0x0, 19, i311_d },
+	{ UINT64_C(61307), "static", &m17, 0x0, 0, NULL },
+	{ UINT64_C(61501), "ipv4-unicast", &m18, 0x0, 0, NULL },
+	{ UINT64_C(61601), "ipv6-unicast", &m19, 0x0, 0, NULL },
+	{ UINT64_C(61703), "bird", &m20, 0x0, 0, NULL },
+	{ UINT64_C(61704), "dhcp", &m20, 0x0, 0, NULL },
+	{ UINT64_C(61705), "freebsd-origin", &m20, 0x0, 7, i317_d },
+	{ UINT64_C(61707), "kernel", &m20, 0x0, 0, NULL },
+	{ UINT64_C(61709), "other", &m20, 0x0, 0, NULL },
+	{ UINT64_C(61710), "redirect", &m20, 0x0, 0, NULL },
+	{ UINT64_C(61712), "router-advertisement", &m20, 0x0, 0, NULL },
+	{ UINT64_C(61713), "zebra", &m20, 0x0, 0, NULL },
+	{ UINT64_C(63927), "ospf", &m21, 0x0, 2, i323_d },
+	{ UINT64_C(63929), "ospfv2", &m21, 0x0, 0, NULL },
+	{ UINT64_C(63946), "ospfv3", &m21, 0x0, 0, NULL },
+	{ UINT64_C(65801), "rip", &m28, 0x0, 2, i326_d },
+	{ UINT64_C(65802), "ripng", &m28, 0x0, 0, NULL },
+	{ UINT64_C(65803), "ripv2", &m28, 0x0, 0, NULL },
+	{ UINT64_C(66020), "isis", &m29, 0x0, 0, NULL },
+	{ UINT64_C(67001), "babel", &m30, 0x0, 0, NULL },
+	{ UINT64_C(67201), "bgp", &m32, 0x0, 0, NULL },
+	{ UINT64_C(68201), "bfdv1", &m26, 0x0, 0, NULL },
+	{ UINT64_C(68301), "connector", &m13, 0x0, 0, NULL },
+	{ UINT64_C(68302), "data-link", &m13, 0x0, 0, NULL },
+	{ UINT64_C(68303), "forwarding-mode", &m13, 0x0, 3, i335_d },
+	{ UINT64_C(68304), "internal", &m13, 0x0, 0, NULL },
+	{ UINT64_C(68305), "line", &m13, 0x0, 0, NULL },
+	{ UINT64_C(68306), "loopback", &m13, 0x0, 3, i338_d },
+	{ UINT64_C(68307), "network", &m13, 0x0, 0, NULL },
+	{ UINT64_C(68308), "physical", &m13, 0x0, 0, NULL },
 	{ 0, NULL, NULL, 0, 0, NULL },
 };
 
@@ -16037,7 +16469,7 @@ static const struct cbl_ymodule m6 = {
 };
 
 static const struct cbl_ynode *const m10_t[] = {
-	&n0, &n131
+	&n0, &n154
 };
 static const struct cbl_yfeature m10_f[] = {
 	{ UINT64_C(1502), "arbitrary-names", true },
@@ -16077,10 +16509,43 @@ static const struct cbl_ymodule m12 = {
 };
 
 static const struct cbl_yfeature m13_f[] = {
+	{ UINT64_C(68310), "link-flap-suppression", false },
+	{ UINT64_C(68309), "dampening", false },
+	{ UINT64_C(68311), "loopback", false },
+	{ UINT64_C(68312), "max-frame-size", true },
+	{ UINT64_C(68314), "sub-interfaces", false },
+	{ UINT64_C(68313), "peer-interface", true },
+};
+static const struct cbl_ymodule m13 = {
+	.schema = &ymodel_schema,
+	.name = "ietf-if-extensions",
+	.revision = "2025-08-07",
+	.ns = "urn:ietf:params:xml:ns:yang:ietf-if-extensions",
+	.prefix = "if-ext",
+	.sid = UINT64_C(68300),
+	.nfeature = 6,
+	.feature = m13_f,
+};
+
+static const struct cbl_yfeature m14_f[] = {
+	{ UINT64_C(68401), "configurable-mac-address", true },
+};
+static const struct cbl_ymodule m14 = {
+	.schema = &ymodel_schema,
+	.name = "ietf-if-ethernet-like",
+	.revision = "2026-06-19",
+	.ns = "urn:ietf:params:xml:ns:yang:ietf-if-ethernet-like",
+	.prefix = "ethlike",
+	.sid = UINT64_C(68400),
+	.nfeature = 1,
+	.feature = m14_f,
+};
+
+static const struct cbl_yfeature m15_f[] = {
 	{ UINT64_C(1601), "ipv4-non-contiguous-netmasks", false },
 	{ UINT64_C(1602), "ipv6-privacy-autoconf", true },
 };
-static const struct cbl_ymodule m13 = {
+static const struct cbl_ymodule m15 = {
 	.schema = &ymodel_schema,
 	.name = "ietf-ip",
 	.revision = "2018-02-22",
@@ -16088,10 +16553,10 @@ static const struct cbl_ymodule m13 = {
 	.prefix = "ip",
 	.sid = UINT64_C(1600),
 	.nfeature = 2,
-	.feature = m13_f,
+	.feature = m15_f,
 };
 
-static const struct cbl_ymodule m14 = {
+static const struct cbl_ymodule m16 = {
 	.schema = &ymodel_schema,
 	.name = "arcana-ip-deviations",
 	.revision = "2026-10-14",
@@ -16100,14 +16565,14 @@ static const struct cbl_ymodule m14 = {
 	.sid = UINT64_C(61200),
 };
 
-static const struct cbl_ynode *const m15_t[] = {
-	&n201, &n281
+static const struct cbl_ynode *const m17_t[] = {
+	&n224, &n304
 };
-static const struct cbl_yfeature m15_f[] = {
+static const struct cbl_yfeature m17_f[] = {
 	{ UINT64_C(61308), "multiple-ribs", true },
 	{ UINT64_C(61309), "router-id", false },
 };
-static const struct cbl_ymodule m15 = {
+static const struct cbl_ymodule m17 = {
 	.schema = &ymodel_schema,
 	.name = "ietf-routing",
 	.revision = "2018-03-13",
@@ -16116,12 +16581,12 @@ static const struct cbl_ymodule m15 = {
 	.sid = UINT64_C(61300),
 	.size = sizeof(struct ietf_routing),
 	.ntop = 2,
-	.top = m15_t,
+	.top = m17_t,
 	.nfeature = 2,
-	.feature = m15_f,
+	.feature = m17_f,
 };
 
-static const struct cbl_ymodule m16 = {
+static const struct cbl_ymodule m18 = {
 	.schema = &ymodel_schema,
 	.name = "ietf-ipv4-unicast-routing",
 	.revision = "2018-03-13",
@@ -16130,7 +16595,7 @@ static const struct cbl_ymodule m16 = {
 	.sid = UINT64_C(61500),
 };
 
-static const struct cbl_ymodule m17 = {
+static const struct cbl_ymodule m19 = {
 	.schema = &ymodel_schema,
 	.name = "ietf-ipv6-unicast-routing",
 	.revision = "2018-03-13",
@@ -16139,7 +16604,7 @@ static const struct cbl_ymodule m17 = {
 	.sid = UINT64_C(61600),
 };
 
-static const struct cbl_ymodule m18 = {
+static const struct cbl_ymodule m20 = {
 	.schema = &ymodel_schema,
 	.name = "arcana-routing",
 	.revision = "2026-10-14",
@@ -16148,10 +16613,10 @@ static const struct cbl_ymodule m18 = {
 	.sid = UINT64_C(61700),
 };
 
-static const struct cbl_ynode *const m43_t[] = {
-	&n340, &n333
+static const struct cbl_ynode *const m45_t[] = {
+	&n363, &n356
 };
-static const struct cbl_ymodule m43 = {
+static const struct cbl_ymodule m45 = {
 	.schema = &ymodel_schema,
 	.name = "ietf-network-instance",
 	.revision = "2019-01-21",
@@ -16160,10 +16625,10 @@ static const struct cbl_ymodule m43 = {
 	.sid = UINT64_C(61800),
 	.size = sizeof(struct ietf_network_instance),
 	.ntop = 2,
-	.top = m43_t,
+	.top = m45_t,
 };
 
-static const struct cbl_ymodule m44 = {
+static const struct cbl_ymodule m46 = {
 	.schema = &ymodel_schema,
 	.name = "arcana-network-instance",
 	.revision = "2026-10-14",
@@ -16172,10 +16637,10 @@ static const struct cbl_ymodule m44 = {
 	.sid = UINT64_C(61900),
 };
 
-static const struct cbl_ynode *const m45_t[] = {
-	&n355, &n349
+static const struct cbl_ynode *const m47_t[] = {
+	&n378, &n372
 };
-static const struct cbl_ymodule m45 = {
+static const struct cbl_ymodule m47 = {
 	.schema = &ymodel_schema,
 	.name = "ietf-logical-network-element",
 	.revision = "2019-01-25",
@@ -16184,13 +16649,13 @@ static const struct cbl_ymodule m45 = {
 	.sid = UINT64_C(62000),
 	.size = sizeof(struct ietf_logical_network_element),
 	.ntop = 2,
-	.top = m45_t,
+	.top = m47_t,
 };
 
-static const struct cbl_ynode *const m46_t[] = {
-	&n359
+static const struct cbl_ynode *const m48_t[] = {
+	&n382
 };
-static const struct cbl_ymodule m46 = {
+static const struct cbl_ymodule m48 = {
 	.schema = &ymodel_schema,
 	.name = "arcana-jails",
 	.revision = "2026-10-14",
@@ -16199,13 +16664,13 @@ static const struct cbl_ymodule m46 = {
 	.sid = UINT64_C(62100),
 	.size = sizeof(struct arcana_jails),
 	.ntop = 1,
-	.top = m46_t,
+	.top = m48_t,
 };
 
-static const struct cbl_ynode *const m47_t[] = {
-	&n438
+static const struct cbl_ynode *const m49_t[] = {
+	&n461
 };
-static const struct cbl_ymodule m47 = {
+static const struct cbl_ymodule m49 = {
 	.schema = &ymodel_schema,
 	.name = "arcana-services",
 	.revision = "2026-10-14",
@@ -16214,13 +16679,13 @@ static const struct cbl_ymodule m47 = {
 	.sid = UINT64_C(62200),
 	.size = sizeof(struct arcana_services),
 	.ntop = 1,
-	.top = m47_t,
+	.top = m49_t,
 };
 
-static const struct cbl_ynode *const m48_t[] = {
-	&n476
+static const struct cbl_ynode *const m50_t[] = {
+	&n499
 };
-static const struct cbl_ymodule m48 = {
+static const struct cbl_ymodule m50 = {
 	.schema = &ymodel_schema,
 	.name = "arcana-packages",
 	.revision = "2026-10-14",
@@ -16229,13 +16694,13 @@ static const struct cbl_ymodule m48 = {
 	.sid = UINT64_C(62300),
 	.size = sizeof(struct arcana_packages),
 	.ntop = 1,
-	.top = m48_t,
+	.top = m50_t,
 };
 
-static const struct cbl_ynode *const m49_t[] = {
-	&n505, &n541
+static const struct cbl_ynode *const m51_t[] = {
+	&n528, &n564
 };
-static const struct cbl_ymodule m49 = {
+static const struct cbl_ymodule m51 = {
 	.schema = &ymodel_schema,
 	.name = "arcana-jobs",
 	.revision = "2026-10-14",
@@ -16244,13 +16709,13 @@ static const struct cbl_ymodule m49 = {
 	.sid = UINT64_C(62400),
 	.size = sizeof(struct arcana_jobs),
 	.ntop = 2,
-	.top = m49_t,
+	.top = m51_t,
 };
 
-static const struct cbl_ynode *const m50_t[] = {
-	&n916, &n777
+static const struct cbl_ynode *const m52_t[] = {
+	&n939, &n800
 };
-static const struct cbl_ymodule m50 = {
+static const struct cbl_ymodule m52 = {
 	.schema = &ymodel_schema,
 	.name = "arcana-storage",
 	.revision = "2026-10-14",
@@ -16259,13 +16724,13 @@ static const struct cbl_ymodule m50 = {
 	.sid = UINT64_C(63400),
 	.size = sizeof(struct arcana_storage),
 	.ntop = 2,
-	.top = m50_t,
+	.top = m52_t,
 };
 
-static const struct cbl_ynode *const m51_t[] = {
-	&n920
+static const struct cbl_ynode *const m53_t[] = {
+	&n943
 };
-static const struct cbl_ymodule m51 = {
+static const struct cbl_ymodule m53 = {
 	.schema = &ymodel_schema,
 	.name = "arcana-sysctl",
 	.revision = "2026-10-14",
@@ -16274,13 +16739,13 @@ static const struct cbl_ymodule m51 = {
 	.sid = UINT64_C(63600),
 	.size = sizeof(struct arcana_sysctl),
 	.ntop = 1,
-	.top = m51_t,
+	.top = m53_t,
 };
 
-static const struct cbl_ynode *const m52_t[] = {
-	&n931, &n963
+static const struct cbl_ynode *const m54_t[] = {
+	&n954, &n986
 };
-static const struct cbl_ymodule m52 = {
+static const struct cbl_ymodule m54 = {
 	.schema = &ymodel_schema,
 	.name = "arcana-kernel",
 	.revision = "2026-10-14",
@@ -16289,13 +16754,13 @@ static const struct cbl_ymodule m52 = {
 	.sid = UINT64_C(63700),
 	.size = sizeof(struct arcana_kernel),
 	.ntop = 2,
-	.top = m52_t,
+	.top = m54_t,
 };
 
-static const struct cbl_ynode *const m53_t[] = {
-	&n967
+static const struct cbl_ynode *const m55_t[] = {
+	&n990
 };
-static const struct cbl_ymodule m53 = {
+static const struct cbl_ymodule m55 = {
 	.schema = &ymodel_schema,
 	.name = "arcana-processes",
 	.revision = "2026-10-14",
@@ -16304,10 +16769,10 @@ static const struct cbl_ymodule m53 = {
 	.sid = UINT64_C(63800),
 	.size = sizeof(struct arcana_processes),
 	.ntop = 1,
-	.top = m53_t,
+	.top = m55_t,
 };
 
-static const struct cbl_ymodule m19 = {
+static const struct cbl_ymodule m21 = {
 	.schema = &ymodel_schema,
 	.name = "ietf-ospf",
 	.revision = "2022-10-19",
@@ -16316,7 +16781,7 @@ static const struct cbl_ymodule m19 = {
 	.sid = UINT64_C(63900),
 };
 
-static const struct cbl_ymodule m24 = {
+static const struct cbl_ymodule m26 = {
 	.schema = &ymodel_schema,
 	.name = "ietf-bfd-types",
 	.revision = "2022-09-22",
@@ -16325,7 +16790,7 @@ static const struct cbl_ymodule m24 = {
 	.sid = UINT64_C(68200),
 };
 
-static const struct cbl_ymodule m26 = {
+static const struct cbl_ymodule m28 = {
 	.schema = &ymodel_schema,
 	.name = "ietf-rip",
 	.revision = "2020-02-20",
@@ -16334,7 +16799,7 @@ static const struct cbl_ymodule m26 = {
 	.sid = UINT64_C(65800),
 };
 
-static const struct cbl_ymodule m27 = {
+static const struct cbl_ymodule m29 = {
 	.schema = &ymodel_schema,
 	.name = "ietf-isis",
 	.revision = "2022-10-19",
@@ -16343,7 +16808,7 @@ static const struct cbl_ymodule m27 = {
 	.sid = UINT64_C(66000),
 };
 
-static const struct cbl_ymodule m28 = {
+static const struct cbl_ymodule m30 = {
 	.schema = &ymodel_schema,
 	.name = "ietf-babel",
 	.revision = "2024-10-10",
@@ -16352,7 +16817,7 @@ static const struct cbl_ymodule m28 = {
 	.sid = UINT64_C(67000),
 };
 
-static const struct cbl_ymodule m30 = {
+static const struct cbl_ymodule m32 = {
 	.schema = &ymodel_schema,
 	.name = "ietf-bgp",
 	.revision = "2026-08-14",
@@ -16373,8 +16838,8 @@ static const struct cbl_ymodule *const mods[] = {
 	&m16,
 	&m17,
 	&m18,
-	&m43,
-	&m44,
+	&m19,
+	&m20,
 	&m45,
 	&m46,
 	&m47,
@@ -16384,186 +16849,192 @@ static const struct cbl_ymodule *const mods[] = {
 	&m51,
 	&m52,
 	&m53,
+	&m54,
+	&m55,
 };
 
 static const struct cbl_ynode *const nodes[] = {
-	&n0, &n131, &n132, &n133, &n134, &n135,
-	&n136, &n137, &n138, &n139, &n140, &n141,
-	&n142, &n143, &n144, &n145, &n146, &n147,
-	&n148, &n149, &n150, &n151, &n152, &n153,
-	&n154, &n155, &n156, &n157, &n1, &n2,
+	&n0, &n154, &n155, &n156, &n157, &n158,
+	&n159, &n160, &n161, &n162, &n163, &n164,
+	&n165, &n166, &n167, &n168, &n169, &n170,
+	&n171, &n172, &n173, &n174, &n175, &n176,
+	&n177, &n178, &n179, &n180, &n1, &n2,
 	&n3, &n4, &n5, &n6, &n7, &n8,
 	&n9, &n10, &n11, &n12, &n13, &n14,
 	&n15, &n16, &n17, &n18, &n19, &n20,
 	&n21, &n22, &n23, &n24, &n25, &n26,
-	&n27, &n28, &n29, &n158, &n159, &n160,
-	&n161, &n162, &n163, &n164, &n165, &n166,
-	&n167, &n168, &n169, &n170, &n171, &n172,
-	&n173, &n174, &n175, &n176, &n177, &n178,
-	&n179, &n180, &n181, &n182, &n30, &n31,
-	&n32, &n33, &n34, &n35, &n36, &n37,
-	&n38, &n39, &n40, &n41, &n43, &n44,
-	&n45, &n46, &n47, &n48, &n49, &n50,
-	&n51, &n52, &n53, &n54, &n55, &n56,
-	&n57, &n58, &n59, &n60, &n61, &n62,
-	&n63, &n84, &n85, &n86, &n87, &n88,
-	&n89, &n90, &n91, &n92, &n93, &n94,
-	&n95, &n96, &n97, &n98, &n99, &n100,
-	&n101, &n102, &n103, &n104, &n105, &n106,
-	&n107, &n108, &n109, &n110, &n111, &n112,
-	&n113, &n114, &n115, &n116, &n117, &n118,
-	&n119, &n120, &n121, &n122, &n123, &n124,
-	&n125, &n126, &n127, &n128, &n201, &n281,
+	&n27, &n28, &n51, &n181, &n182, &n183,
+	&n184, &n185, &n186, &n187, &n188, &n189,
+	&n190, &n191, &n192, &n193, &n194, &n195,
+	&n196, &n197, &n198, &n199, &n200, &n201,
+	&n202, &n203, &n204, &n205, &n52, &n53,
+	&n54, &n55, &n56, &n57, &n58, &n59,
+	&n60, &n61, &n62, &n63, &n65, &n66,
+	&n67, &n68, &n69, &n70, &n71, &n72,
+	&n73, &n74, &n75, &n76, &n77, &n78,
+	&n79, &n80, &n81, &n82, &n83, &n84,
+	&n85, &n106, &n107, &n108, &n109, &n110,
+	&n111, &n112, &n113, &n114, &n115, &n116,
+	&n117, &n118, &n119, &n120, &n121, &n122,
+	&n123, &n124, &n125, &n126, &n127, &n128,
+	&n129, &n130, &n131, &n132, &n133, &n134,
+	&n135, &n136, &n137, &n138, &n139, &n140,
+	&n141, &n142, &n143, &n144, &n224, &n304,
+	&n305, &n306, &n307, &n308, &n309, &n310,
+	&n311, &n312, &n313, &n314, &n317, &n318,
+	&n319, &n320, &n321, &n322, &n323, &n324,
+	&n327, &n328, &n331, &n334, &n335, &n336,
+	&n337, &n338, &n339, &n340, &n341, &n342,
+	&n343, &n344, &n347, &n348, &n351, &n352,
+	&n355, &n225, &n226, &n227, &n228, &n229,
+	&n256, &n257, &n258, &n259, &n260, &n261,
+	&n262, &n265, &n266, &n267, &n268, &n269,
+	&n270, &n271, &n272, &n275, &n276, &n279,
 	&n282, &n283, &n284, &n285, &n286, &n287,
-	&n288, &n289, &n290, &n291, &n294, &n295,
-	&n296, &n297, &n298, &n299, &n300, &n301,
-	&n304, &n305, &n308, &n311, &n312, &n313,
-	&n314, &n315, &n316, &n317, &n318, &n319,
-	&n320, &n321, &n324, &n325, &n328, &n329,
-	&n332, &n202, &n203, &n204, &n205, &n206,
-	&n233, &n234, &n235, &n236, &n237, &n238,
-	&n239, &n242, &n243, &n244, &n245, &n246,
-	&n247, &n248, &n249, &n252, &n253, &n256,
-	&n259, &n260, &n261, &n262, &n263, &n264,
-	&n265, &n266, &n267, &n268, &n269, &n270,
-	&n273, &n274, &n277, &n278, &n292, &n309,
-	&n306, &n302, &n330, &n326, &n322, &n207,
-	&n208, &n209, &n210, &n211, &n212, &n213,
-	&n214, &n215, &n216, &n217, &n218, &n219,
-	&n240, &n257, &n254, &n250, &n279, &n275,
-	&n271, &n183, &n184, &n185, &n186, &n187,
-	&n188, &n189, &n190, &n191, &n192, &n193,
-	&n194, &n195, &n196, &n197, &n198, &n199,
-	&n200, &n64, &n65, &n66, &n67, &n68,
-	&n69, &n70, &n71, &n72, &n73, &n74,
-	&n75, &n76, &n77, &n78, &n79, &n80,
-	&n81, &n82, &n293, &n310, &n307, &n303,
-	&n331, &n327, &n323, &n220, &n221, &n222,
-	&n223, &n224, &n225, &n226, &n227, &n228,
-	&n229, &n230, &n231, &n232, &n241, &n258,
-	&n255, &n251, &n280, &n276, &n272, &n42,
-	&n83, &n129, &n340, &n341, &n342, &n343,
-	&n344, &n345, &n346, &n347, &n348, &n333,
-	&n334, &n335, &n336, &n337, &n338, &n339,
-	&n130, &n355, &n356, &n357, &n358, &n349,
-	&n350, &n351, &n352, &n353, &n354, &n359,
-	&n360, &n361, &n362, &n363, &n364, &n365,
-	&n366, &n367, &n368, &n369, &n370, &n371,
-	&n372, &n373, &n374, &n375, &n376, &n377,
-	&n378, &n379, &n380, &n381, &n382, &n383,
-	&n384, &n385, &n386, &n387, &n388, &n389,
-	&n390, &n391, &n392, &n393, &n394, &n395,
-	&n396, &n397, &n398, &n399, &n400, &n401,
-	&n402, &n403, &n404, &n405, &n406, &n407,
-	&n437, &n438, &n439, &n440, &n441, &n442,
-	&n443, &n444, &n445, &n446, &n447, &n448,
-	&n449, &n450, &n451, &n452, &n453, &n454,
-	&n455, &n456, &n457, &n458, &n459, &n460,
-	&n461, &n462, &n463, &n464, &n465, &n466,
-	&n467, &n468, &n469, &n470, &n471, &n472,
-	&n473, &n474, &n475, &n408, &n409, &n410,
-	&n411, &n412, &n413, &n414, &n415, &n416,
-	&n417, &n418, &n419, &n420, &n421, &n422,
-	&n423, &n424, &n425, &n426, &n427, &n428,
-	&n429, &n430, &n431, &n432, &n433, &n434,
-	&n435, &n436, &n476, &n477, &n478, &n479,
-	&n480, &n481, &n482, &n483, &n484, &n485,
-	&n486, &n487, &n488, &n489, &n490, &n491,
-	&n492, &n493, &n494, &n495, &n496, &n497,
-	&n498, &n499, &n500, &n501, &n502, &n503,
-	&n504, &n505, &n506, &n507, &n508, &n509,
-	&n510, &n511, &n512, &n516, &n513, &n514,
-	&n515, &n517, &n518, &n519, &n520, &n521,
-	&n522, &n523, &n524, &n525, &n526, &n527,
-	&n528, &n529, &n530, &n531, &n532, &n533,
-	&n534, &n535, &n536, &n537, &n538, &n539,
-	&n540, &n541, &n542, &n543, &n544, &n545,
-	&n546, &n547, &n548, &n549, &n550, &n551,
-	&n552, &n553, &n554, &n555, &n556, &n557,
-	&n558, &n559, &n560, &n561, &n562, &n563,
-	&n564, &n565, &n566, &n567, &n568, &n569,
-	&n570, &n571, &n572, &n573, &n574, &n575,
-	&n576, &n577, &n578, &n579, &n580, &n581,
-	&n582, &n583, &n584, &n585, &n586, &n587,
-	&n588, &n589, &n590, &n591, &n592, &n593,
-	&n594, &n595, &n596, &n597, &n598, &n599,
-	&n600, &n601, &n602, &n603, &n604, &n605,
-	&n606, &n607, &n608, &n609, &n610, &n611,
-	&n612, &n613, &n614, &n615, &n616, &n617,
-	&n618, &n619, &n620, &n621, &n622, &n623,
-	&n624, &n625, &n626, &n627, &n628, &n629,
-	&n630, &n631, &n632, &n633, &n634, &n635,
-	&n636, &n637, &n638, &n639, &n640, &n659,
-	&n660, &n661, &n662, &n663, &n664, &n665,
+	&n288, &n289, &n290, &n291, &n292, &n293,
+	&n296, &n297, &n300, &n301, &n315, &n332,
+	&n329, &n325, &n353, &n349, &n345, &n230,
+	&n231, &n232, &n233, &n234, &n235, &n236,
+	&n237, &n238, &n239, &n240, &n241, &n242,
+	&n263, &n280, &n277, &n273, &n302, &n298,
+	&n294, &n206, &n207, &n208, &n209, &n210,
+	&n211, &n212, &n213, &n214, &n215, &n216,
+	&n217, &n218, &n219, &n220, &n221, &n222,
+	&n223, &n86, &n87, &n88, &n89, &n90,
+	&n91, &n92, &n93, &n94, &n95, &n96,
+	&n97, &n98, &n99, &n100, &n101, &n102,
+	&n103, &n104, &n316, &n333, &n330, &n326,
+	&n354, &n350, &n346, &n243, &n244, &n245,
+	&n246, &n247, &n248, &n249, &n250, &n251,
+	&n252, &n253, &n254, &n255, &n264, &n281,
+	&n278, &n274, &n303, &n299, &n295, &n64,
+	&n105, &n145, &n363, &n364, &n365, &n366,
+	&n367, &n368, &n369, &n370, &n371, &n356,
+	&n357, &n358, &n359, &n360, &n361, &n362,
+	&n146, &n378, &n379, &n380, &n381, &n372,
+	&n373, &n374, &n375, &n376, &n377, &n382,
+	&n383, &n384, &n385, &n386, &n387, &n388,
+	&n389, &n390, &n391, &n392, &n393, &n394,
+	&n395, &n396, &n397, &n398, &n399, &n400,
+	&n401, &n402, &n403, &n404, &n405, &n406,
+	&n407, &n408, &n409, &n410, &n411, &n412,
+	&n413, &n414, &n415, &n416, &n417, &n418,
+	&n419, &n420, &n421, &n422, &n423, &n424,
+	&n425, &n426, &n427, &n428, &n429, &n430,
+	&n460, &n461, &n462, &n463, &n464, &n465,
+	&n466, &n467, &n468, &n469, &n470, &n471,
+	&n472, &n473, &n474, &n475, &n476, &n477,
+	&n478, &n479, &n480, &n481, &n482, &n483,
+	&n484, &n485, &n486, &n487, &n488, &n489,
+	&n490, &n491, &n492, &n493, &n494, &n495,
+	&n496, &n497, &n498, &n431, &n432, &n433,
+	&n434, &n435, &n436, &n437, &n438, &n439,
+	&n440, &n441, &n442, &n443, &n444, &n445,
+	&n446, &n447, &n448, &n449, &n450, &n451,
+	&n452, &n453, &n454, &n455, &n456, &n457,
+	&n458, &n459, &n499, &n500, &n501, &n502,
+	&n503, &n504, &n505, &n506, &n507, &n508,
+	&n509, &n510, &n511, &n512, &n513, &n514,
+	&n515, &n516, &n517, &n518, &n519, &n520,
+	&n521, &n522, &n523, &n524, &n525, &n526,
+	&n527, &n528, &n529, &n530, &n531, &n532,
+	&n533, &n534, &n535, &n539, &n536, &n537,
+	&n538, &n540, &n541, &n542, &n543, &n544,
+	&n545, &n546, &n547, &n548, &n549, &n550,
+	&n551, &n552, &n553, &n554, &n555, &n556,
+	&n557, &n558, &n559, &n560, &n561, &n562,
+	&n563, &n564, &n565, &n566, &n567, &n568,
+	&n569, &n570, &n571, &n572, &n573, &n574,
+	&n575, &n576, &n577, &n578, &n579, &n580,
+	&n581, &n582, &n583, &n584, &n585, &n586,
+	&n587, &n588, &n589, &n590, &n591, &n592,
+	&n593, &n594, &n595, &n596, &n597, &n598,
+	&n599, &n600, &n601, &n602, &n603, &n604,
+	&n605, &n606, &n607, &n608, &n609, &n610,
+	&n611, &n612, &n613, &n614, &n615, &n616,
+	&n617, &n618, &n619, &n620, &n621, &n622,
+	&n623, &n624, &n625, &n626, &n627, &n628,
+	&n629, &n630, &n631, &n632, &n633, &n634,
+	&n635, &n636, &n637, &n638, &n639, &n640,
 	&n641, &n642, &n643, &n644, &n645, &n646,
 	&n647, &n648, &n649, &n650, &n651, &n652,
 	&n653, &n654, &n655, &n656, &n657, &n658,
-	&n666, &n667, &n668, &n669, &n670, &n671,
-	&n672, &n673, &n674, &n675, &n676, &n677,
-	&n678, &n679, &n680, &n681, &n682, &n683,
-	&n684, &n685, &n686, &n687, &n688, &n689,
-	&n690, &n691, &n692, &n693, &n694, &n695,
-	&n696, &n697, &n698, &n699, &n700, &n701,
-	&n702, &n703, &n704, &n705, &n706, &n707,
-	&n708, &n709, &n710, &n711, &n712, &n713,
-	&n714, &n715, &n716, &n717, &n718, &n719,
-	&n720, &n721, &n722, &n723, &n724, &n725,
-	&n726, &n727, &n728, &n729, &n730, &n731,
-	&n732, &n733, &n734, &n735, &n736, &n737,
-	&n738, &n739, &n740, &n741, &n742, &n743,
-	&n744, &n745, &n746, &n747, &n748, &n749,
-	&n750, &n751, &n752, &n753, &n754, &n755,
-	&n756, &n757, &n758, &n759, &n760, &n761,
-	&n762, &n763, &n764, &n765, &n766, &n767,
-	&n768, &n769, &n770, &n771, &n772, &n773,
-	&n774, &n775, &n776, &n916, &n917, &n918,
-	&n919, &n777, &n778, &n779, &n780, &n781,
-	&n782, &n783, &n784, &n785, &n786, &n787,
-	&n788, &n789, &n790, &n791, &n792, &n793,
-	&n794, &n795, &n796, &n797, &n798, &n799,
-	&n800, &n801, &n802, &n803, &n804, &n805,
-	&n806, &n807, &n808, &n809, &n810, &n811,
-	&n812, &n813, &n814, &n815, &n816, &n817,
-	&n818, &n819, &n820, &n821, &n822, &n823,
-	&n824, &n825, &n826, &n827, &n828, &n829,
-	&n830, &n831, &n832, &n833, &n834, &n835,
-	&n836, &n837, &n838, &n839, &n840, &n841,
-	&n842, &n843, &n844, &n845, &n846, &n847,
-	&n848, &n849, &n850, &n851, &n852, &n853,
-	&n854, &n855, &n856, &n857, &n858, &n859,
-	&n860, &n861, &n862, &n863, &n864, &n865,
-	&n866, &n867, &n868, &n869, &n870, &n871,
-	&n872, &n873, &n874, &n875, &n876, &n877,
-	&n878, &n879, &n880, &n881, &n882, &n883,
-	&n884, &n885, &n886, &n887, &n888, &n889,
-	&n890, &n891, &n892, &n893, &n894, &n895,
-	&n896, &n897, &n898, &n899, &n900, &n901,
-	&n902, &n903, &n904, &n905, &n906, &n907,
-	&n908, &n909, &n910, &n911, &n912, &n913,
-	&n914, &n915, &n920, &n921, &n922, &n923,
-	&n924, &n925, &n926, &n927, &n928, &n929,
-	&n930, &n931, &n932, &n933, &n934, &n935,
-	&n936, &n937, &n938, &n939, &n940, &n941,
-	&n942, &n943, &n944, &n945, &n946, &n947,
-	&n948, &n949, &n950, &n955, &n951, &n952,
-	&n953, &n954, &n956, &n957, &n958, &n959,
-	&n960, &n961, &n962, &n963, &n964, &n965,
-	&n966, &n967, &n968, &n969, &n970, &n971,
-	&n972, &n973, &n974, &n975, &n976, &n977,
-	&n978, &n979, &n980, &n981, &n982, &n983,
-	&n984, &n985, &n986, &n987, &n988, &n989,
-	&n990, &n991, &n992, &n993, &n994, &n995,
-	&n996, &n997, &n998, &n999, &n1000, &n1001,
-	&n1002, &n1003, &n1004, &n1005, &n1006, &n1007,
-	&n1008, &n1009, &n1010, &n1011, &n1012, &n1013,
-	&n1014, &n1015, &n1016, &n1017, &n1018, &n1019,
-	&n1020, &n1021, &n1022, &n1023, &n1024, &n1025,
-	&n1026, &n1027, &n1028, &n1029, &n1030, &n1031,
-	&n1032
+	&n659, &n660, &n661, &n662, &n663, &n682,
+	&n683, &n684, &n685, &n686, &n687, &n688,
+	&n664, &n665, &n666, &n667, &n668, &n669,
+	&n670, &n671, &n672, &n673, &n674, &n675,
+	&n676, &n677, &n678, &n679, &n680, &n681,
+	&n689, &n690, &n691, &n692, &n693, &n694,
+	&n695, &n696, &n697, &n698, &n699, &n700,
+	&n701, &n702, &n703, &n704, &n705, &n706,
+	&n707, &n708, &n709, &n710, &n711, &n712,
+	&n713, &n714, &n715, &n716, &n717, &n718,
+	&n719, &n720, &n721, &n722, &n723, &n724,
+	&n725, &n726, &n727, &n728, &n729, &n730,
+	&n731, &n732, &n733, &n734, &n735, &n736,
+	&n737, &n738, &n739, &n740, &n741, &n742,
+	&n743, &n744, &n745, &n746, &n747, &n748,
+	&n749, &n750, &n751, &n752, &n753, &n754,
+	&n755, &n756, &n757, &n758, &n759, &n760,
+	&n761, &n762, &n763, &n764, &n765, &n766,
+	&n767, &n768, &n769, &n770, &n771, &n772,
+	&n773, &n774, &n775, &n776, &n777, &n778,
+	&n779, &n780, &n781, &n782, &n783, &n784,
+	&n785, &n786, &n787, &n788, &n789, &n790,
+	&n791, &n792, &n793, &n794, &n795, &n796,
+	&n797, &n798, &n799, &n939, &n940, &n941,
+	&n942, &n800, &n801, &n802, &n803, &n804,
+	&n805, &n806, &n807, &n808, &n809, &n810,
+	&n811, &n812, &n813, &n814, &n815, &n816,
+	&n817, &n818, &n819, &n820, &n821, &n822,
+	&n823, &n824, &n825, &n826, &n827, &n828,
+	&n829, &n830, &n831, &n832, &n833, &n834,
+	&n835, &n836, &n837, &n838, &n839, &n840,
+	&n841, &n842, &n843, &n844, &n845, &n846,
+	&n847, &n848, &n849, &n850, &n851, &n852,
+	&n853, &n854, &n855, &n856, &n857, &n858,
+	&n859, &n860, &n861, &n862, &n863, &n864,
+	&n865, &n866, &n867, &n868, &n869, &n870,
+	&n871, &n872, &n873, &n874, &n875, &n876,
+	&n877, &n878, &n879, &n880, &n881, &n882,
+	&n883, &n884, &n885, &n886, &n887, &n888,
+	&n889, &n890, &n891, &n892, &n893, &n894,
+	&n895, &n896, &n897, &n898, &n899, &n900,
+	&n901, &n902, &n903, &n904, &n905, &n906,
+	&n907, &n908, &n909, &n910, &n911, &n912,
+	&n913, &n914, &n915, &n916, &n917, &n918,
+	&n919, &n920, &n921, &n922, &n923, &n924,
+	&n925, &n926, &n927, &n928, &n929, &n930,
+	&n931, &n932, &n933, &n934, &n935, &n936,
+	&n937, &n938, &n943, &n944, &n945, &n946,
+	&n947, &n948, &n949, &n950, &n951, &n952,
+	&n953, &n954, &n955, &n956, &n957, &n958,
+	&n959, &n960, &n961, &n962, &n963, &n964,
+	&n965, &n966, &n967, &n968, &n969, &n970,
+	&n971, &n972, &n973, &n978, &n974, &n975,
+	&n976, &n977, &n979, &n980, &n981, &n982,
+	&n983, &n984, &n985, &n986, &n987, &n988,
+	&n989, &n990, &n991, &n992, &n993, &n994,
+	&n995, &n996, &n997, &n998, &n999, &n1000,
+	&n1001, &n1002, &n1003, &n1004, &n1005, &n1006,
+	&n1007, &n1008, &n1009, &n1010, &n1011, &n1012,
+	&n1013, &n1014, &n1015, &n1016, &n1017, &n1018,
+	&n1019, &n1020, &n1021, &n1022, &n1023, &n1024,
+	&n1025, &n1026, &n1027, &n1028, &n1029, &n1030,
+	&n1031, &n1032, &n1033, &n1034, &n1035, &n1036,
+	&n1037, &n1038, &n1039, &n1040, &n1041, &n1042,
+	&n1043, &n1044, &n1045, &n1046, &n1047, &n1048,
+	&n1049, &n1050, &n1051, &n1052, &n1053, &n1054,
+	&n1055, &n147, &n148, &n149, &n150, &n29,
+	&n151, &n152, &n153, &n30, &n31, &n32,
+	&n33, &n34, &n35, &n36, &n37, &n38,
+	&n39, &n40, &n41, &n42, &n43, &n44,
+	&n45, &n46, &n47, &n48, &n49, &n50
 };
 
 static const char *const xpaths[] = {
 	"/if:interfaces/if:interface/if:name",
+	"derived-from-or-self(../if:type,\n                     'ianaift:ethernetCsmacd') or\nderived-from-or-self(../if:type,\n                     'ianaift:ieee8023adLag') or\nderived-from-or-self(../if:type, 'ianaift:ifPwType')",
 	"/network-instances/network-instance/name",
 	". <= 0.75 * ../max-rtr-adv-interval",
 	". <= ../valid-lifetime",
@@ -16571,6 +17042,8 @@ static const char *const xpaths[] = {
 	"derived-from-or-self(../if:type, 'ianaift:ieee8023adLag')",
 	"derived-from-or-self(../if:type, 'ianaift:l2vlan')",
 	"/logical-network-elements/logical-network-element/name",
+	"derived-from-or-self(../if:type,\n                     'ianaift:ethernetCsmacd') or\nderived-from-or-self(../if:type,\n                     'ianaift:ieee8023adLag') or\nderived-from-or-self(../if:type, 'ianaift:pos') or\nderived-from-or-self(../if:type,\n                     'ianaift:atmSubInterface') or\nderived-from-or-self(../if:type, 'ianaift:l2vlan')",
+	"derived-from-or-self(if:type, 'ianaift:ethernetCsmacd') or\nderived-from-or-self(if:type, 'ianaift:ieee8023adLag') or\nderived-from-or-self(if:type, 'ianaift:ifPwType')",
 	"/if:interfaces-state/if:interface/if:name",
 	"derived-from-or-self(../type, 'rt:static')",
 	"derived-from-or-self(../rt:address-family, 'v4ur:ipv4-unicast')",
@@ -16602,10 +17075,10 @@ static const char *const xpaths[] = {
 
 extern const struct cbl_yschema ymodel_schema;
 const struct cbl_yschema ymodel_schema = {
-	.nmod = 22,
-	.nxpath = 35,
-	.nident = 333,
-	.nnode = 1033,
+	.nmod = 24,
+	.nxpath = 38,
+	.nident = 341,
+	.nnode = 1056,
 	.mod = mods,
 	.node = nodes,
 	.xpath = xpaths,
@@ -16664,7 +17137,7 @@ int
 ietf_interfaces_interfaces_interface_ip_ipv4_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv4 *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n30, p, b));
+	return (cbl_yencode(&n52, p, b));
 }
 
 int
@@ -16673,14 +17146,14 @@ ietf_interfaces_interfaces_interface_ip_ipv4_decode(const void *data, size_t len
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n30, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n52, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_ip_ipv4_address_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv4_address *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n31, p, b));
+	return (cbl_yencode(&n53, p, b));
 }
 
 int
@@ -16689,14 +17162,14 @@ ietf_interfaces_interfaces_interface_ip_ipv4_address_decode(const void *data, si
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n31, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n53, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_ip_ipv4_neighbor_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n38, p, b));
+	return (cbl_yencode(&n60, p, b));
 }
 
 int
@@ -16705,14 +17178,14 @@ ietf_interfaces_interfaces_interface_ip_ipv4_neighbor_decode(const void *data, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n38, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n60, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_ip_ipv6_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6 *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n43, p, b));
+	return (cbl_yencode(&n65, p, b));
 }
 
 int
@@ -16721,14 +17194,14 @@ ietf_interfaces_interfaces_interface_ip_ipv6_decode(const void *data, size_t len
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n43, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n65, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_ip_ipv6_address_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6_address *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n44, p, b));
+	return (cbl_yencode(&n66, p, b));
 }
 
 int
@@ -16737,14 +17210,14 @@ ietf_interfaces_interfaces_interface_ip_ipv6_address_decode(const void *data, si
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n44, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n66, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_ip_ipv6_autoconf_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n49, p, b));
+	return (cbl_yencode(&n71, p, b));
 }
 
 int
@@ -16753,14 +17226,14 @@ ietf_interfaces_interfaces_interface_ip_ipv6_autoconf_decode(const void *data, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n49, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n71, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_ip_ipv6_neighbor_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n58, p, b));
+	return (cbl_yencode(&n80, p, b));
 }
 
 int
@@ -16769,14 +17242,14 @@ ietf_interfaces_interfaces_interface_ip_ipv6_neighbor_decode(const void *data, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n58, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n80, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n64, p, b));
+	return (cbl_yencode(&n86, p, b));
 }
 
 int
@@ -16785,14 +17258,14 @@ ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_dec
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n64, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n86, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n72, p, b));
+	return (cbl_yencode(&n94, p, b));
 }
 
 int
@@ -16801,14 +17274,14 @@ ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_pre
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n72, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n94, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n73, p, b));
+	return (cbl_yencode(&n95, p, b));
 }
 
 int
@@ -16817,14 +17290,14 @@ ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_pre
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n73, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n95, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_arcif_bridge_encode(const struct ietf_interfaces_interfaces_interface_arcif_bridge *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n84, p, b));
+	return (cbl_yencode(&n106, p, b));
 }
 
 int
@@ -16833,14 +17306,14 @@ ietf_interfaces_interfaces_interface_arcif_bridge_decode(const void *data, size_
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n84, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n106, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_arcif_bridge_member_encode(const struct ietf_interfaces_interfaces_interface_arcif_bridge_member *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n85, p, b));
+	return (cbl_yencode(&n107, p, b));
 }
 
 int
@@ -16849,30 +17322,14 @@ ietf_interfaces_interfaces_interface_arcif_bridge_member_decode(const void *data
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n85, data, len, p, a, flags, why, whylen));
-}
-
-int
-ietf_interfaces_interfaces_interface_arcif_epair_encode(const struct ietf_interfaces_interfaces_interface_arcif_epair *p, struct cbl_ybuf *b)
-{
-
-	return (cbl_yencode(&n96, p, b));
-}
-
-int
-ietf_interfaces_interfaces_interface_arcif_epair_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_interface_arcif_epair *p,
-    cbl_yarena *a, int flags, char *why, size_t whylen)
-{
-
-	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n96, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n107, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_arcif_lagg_encode(const struct ietf_interfaces_interfaces_interface_arcif_lagg *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n103, p, b));
+	return (cbl_yencode(&n119, p, b));
 }
 
 int
@@ -16881,14 +17338,14 @@ ietf_interfaces_interfaces_interface_arcif_lagg_decode(const void *data, size_t 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n103, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n119, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_arcif_lagg_port_encode(const struct ietf_interfaces_interfaces_interface_arcif_lagg_port *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n105, p, b));
+	return (cbl_yencode(&n121, p, b));
 }
 
 int
@@ -16897,14 +17354,14 @@ ietf_interfaces_interfaces_interface_arcif_lagg_port_decode(const void *data, si
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n105, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n121, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_arcif_media_encode(const struct ietf_interfaces_interfaces_interface_arcif_media *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n110, p, b));
+	return (cbl_yencode(&n126, p, b));
 }
 
 int
@@ -16913,14 +17370,14 @@ ietf_interfaces_interfaces_interface_arcif_media_decode(const void *data, size_t
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n110, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n126, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_arcif_media_active_encode(const struct ietf_interfaces_interfaces_interface_arcif_media_active *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n111, p, b));
+	return (cbl_yencode(&n127, p, b));
 }
 
 int
@@ -16929,14 +17386,14 @@ ietf_interfaces_interfaces_interface_arcif_media_active_decode(const void *data,
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n111, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n127, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_arcif_media_current_encode(const struct ietf_interfaces_interfaces_interface_arcif_media_current *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n115, p, b));
+	return (cbl_yencode(&n131, p, b));
 }
 
 int
@@ -16945,14 +17402,14 @@ ietf_interfaces_interfaces_interface_arcif_media_current_decode(const void *data
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n115, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n131, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_interface_arcif_vlan_encode(const struct ietf_interfaces_interfaces_interface_arcif_vlan *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n124, p, b));
+	return (cbl_yencode(&n139, p, b));
 }
 
 int
@@ -16961,14 +17418,46 @@ ietf_interfaces_interfaces_interface_arcif_vlan_decode(const void *data, size_t 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n124, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n139, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_interfaces_interfaces_interface_if_ext_encapsulation_encode(const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n147, p, b));
+}
+
+int
+ietf_interfaces_interfaces_interface_if_ext_encapsulation_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_interface_if_ext_encapsulation *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n147, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_interfaces_interfaces_interface_ethlike_ethernet_like_encode(const struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n151, p, b));
+}
+
+int
+ietf_interfaces_interfaces_interface_ethlike_ethernet_like_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n151, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_state_encode(const struct ietf_interfaces_interfaces_state *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n131, p, b));
+	return (cbl_yencode(&n154, p, b));
 }
 
 int
@@ -16977,14 +17466,14 @@ ietf_interfaces_interfaces_state_decode(const void *data, size_t len, struct iet
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n131, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n154, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_state_interface_encode(const struct ietf_interfaces_interfaces_state_interface *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n132, p, b));
+	return (cbl_yencode(&n155, p, b));
 }
 
 int
@@ -16993,14 +17482,14 @@ ietf_interfaces_interfaces_state_interface_decode(const void *data, size_t len, 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n132, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n155, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_state_interface_statistics_encode(const struct ietf_interfaces_interfaces_state_interface_statistics *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n142, p, b));
+	return (cbl_yencode(&n165, p, b));
 }
 
 int
@@ -17009,14 +17498,14 @@ ietf_interfaces_interfaces_state_interface_statistics_decode(const void *data, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n142, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n165, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_state_interface_ip_ipv4_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv4 *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n158, p, b));
+	return (cbl_yencode(&n181, p, b));
 }
 
 int
@@ -17025,14 +17514,14 @@ ietf_interfaces_interfaces_state_interface_ip_ipv4_decode(const void *data, size
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n158, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n181, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_state_interface_ip_ipv4_address_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv4_address *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n159, p, b));
+	return (cbl_yencode(&n182, p, b));
 }
 
 int
@@ -17041,14 +17530,14 @@ ietf_interfaces_interfaces_state_interface_ip_ipv4_address_decode(const void *da
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n159, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n182, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n165, p, b));
+	return (cbl_yencode(&n188, p, b));
 }
 
 int
@@ -17057,14 +17546,14 @@ ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor_decode(const void *d
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n165, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n188, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_state_interface_ip_ipv6_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv6 *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n169, p, b));
+	return (cbl_yencode(&n192, p, b));
 }
 
 int
@@ -17073,14 +17562,14 @@ ietf_interfaces_interfaces_state_interface_ip_ipv6_decode(const void *data, size
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n169, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n192, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_state_interface_ip_ipv6_address_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n170, p, b));
+	return (cbl_yencode(&n193, p, b));
 }
 
 int
@@ -17089,14 +17578,14 @@ ietf_interfaces_interfaces_state_interface_ip_ipv6_address_decode(const void *da
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n170, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n193, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n177, p, b));
+	return (cbl_yencode(&n200, p, b));
 }
 
 int
@@ -17105,14 +17594,14 @@ ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor_decode(const void *d
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n177, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n200, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n183, p, b));
+	return (cbl_yencode(&n206, p, b));
 }
 
 int
@@ -17121,14 +17610,14 @@ ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisemen
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n183, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n206, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n191, p, b));
+	return (cbl_yencode(&n214, p, b));
 }
 
 int
@@ -17137,14 +17626,14 @@ ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisemen
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n191, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n214, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n192, p, b));
+	return (cbl_yencode(&n215, p, b));
 }
 
 int
@@ -17153,14 +17642,14 @@ ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisemen
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n192, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n215, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_encode(const struct ietf_routing_routing *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n201, p, b));
+	return (cbl_yencode(&n224, p, b));
 }
 
 int
@@ -17169,14 +17658,14 @@ ietf_routing_routing_decode(const void *data, size_t len, struct ietf_routing_ro
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n201, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n224, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_control_plane_protocols_encode(const struct ietf_routing_routing_control_plane_protocols *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n202, p, b));
+	return (cbl_yencode(&n225, p, b));
 }
 
 int
@@ -17185,14 +17674,14 @@ ietf_routing_routing_control_plane_protocols_decode(const void *data, size_t len
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n202, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n225, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_control_plane_protocols_control_plane_protocol_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n203, p, b));
+	return (cbl_yencode(&n226, p, b));
 }
 
 int
@@ -17201,14 +17690,14 @@ ietf_routing_routing_control_plane_protocols_control_plane_protocol_decode(const
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n203, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n226, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n206, p, b));
+	return (cbl_yencode(&n229, p, b));
 }
 
 int
@@ -17217,14 +17706,14 @@ ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_route
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n206, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n229, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4 *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n207, p, b));
+	return (cbl_yencode(&n230, p, b));
 }
 
 int
@@ -17233,14 +17722,14 @@ ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_route
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n207, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n230, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n208, p, b));
+	return (cbl_yencode(&n231, p, b));
 }
 
 int
@@ -17249,14 +17738,14 @@ ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_route
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n208, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n231, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n211, p, b));
+	return (cbl_yencode(&n234, p, b));
 }
 
 int
@@ -17265,14 +17754,14 @@ ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_route
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n211, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n234, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n213, p, b));
+	return (cbl_yencode(&n236, p, b));
 }
 
 int
@@ -17281,14 +17770,14 @@ ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_route
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n213, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n236, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n214, p, b));
+	return (cbl_yencode(&n237, p, b));
 }
 
 int
@@ -17297,14 +17786,14 @@ ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_route
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n214, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n237, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6 *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n220, p, b));
+	return (cbl_yencode(&n243, p, b));
 }
 
 int
@@ -17313,14 +17802,14 @@ ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_route
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n220, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n243, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n221, p, b));
+	return (cbl_yencode(&n244, p, b));
 }
 
 int
@@ -17329,14 +17818,14 @@ ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_route
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n221, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n244, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n224, p, b));
+	return (cbl_yencode(&n247, p, b));
 }
 
 int
@@ -17345,14 +17834,14 @@ ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_route
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n224, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n247, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n226, p, b));
+	return (cbl_yencode(&n249, p, b));
 }
 
 int
@@ -17361,14 +17850,14 @@ ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_route
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n226, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n249, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_next_hop_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_next_hop *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n227, p, b));
+	return (cbl_yencode(&n250, p, b));
 }
 
 int
@@ -17377,14 +17866,14 @@ ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_route
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n227, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n250, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_interfaces_encode(const struct ietf_routing_routing_interfaces *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n234, p, b));
+	return (cbl_yencode(&n257, p, b));
 }
 
 int
@@ -17393,14 +17882,14 @@ ietf_routing_routing_interfaces_decode(const void *data, size_t len, struct ietf
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n234, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n257, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_ribs_encode(const struct ietf_routing_routing_ribs *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n236, p, b));
+	return (cbl_yencode(&n259, p, b));
 }
 
 int
@@ -17409,14 +17898,14 @@ ietf_routing_routing_ribs_decode(const void *data, size_t len, struct ietf_routi
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n236, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n259, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_ribs_rib_encode(const struct ietf_routing_routing_ribs_rib *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n237, p, b));
+	return (cbl_yencode(&n260, p, b));
 }
 
 int
@@ -17425,14 +17914,14 @@ ietf_routing_routing_ribs_rib_decode(const void *data, size_t len, struct ietf_r
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n237, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n260, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_ribs_rib_active_route_input_encode(const struct ietf_routing_routing_ribs_rib_active_route_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n239, p, b));
+	return (cbl_yencode(&n262, p, b));
 }
 
 int
@@ -17441,14 +17930,14 @@ ietf_routing_routing_ribs_rib_active_route_input_decode(const void *data, size_t
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n239, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n262, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_ribs_rib_active_route_output_encode(const struct ietf_routing_routing_ribs_rib_active_route_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n242, p, b));
+	return (cbl_yencode(&n265, p, b));
 }
 
 int
@@ -17457,14 +17946,14 @@ ietf_routing_routing_ribs_rib_active_route_output_decode(const void *data, size_
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n242, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n265, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_ribs_rib_active_route_output_route_encode(const struct ietf_routing_routing_ribs_rib_active_route_output_route *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n243, p, b));
+	return (cbl_yencode(&n266, p, b));
 }
 
 int
@@ -17473,14 +17962,14 @@ ietf_routing_routing_ribs_rib_active_route_output_route_decode(const void *data,
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n243, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n266, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_encode(const struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n246, p, b));
+	return (cbl_yencode(&n269, p, b));
 }
 
 int
@@ -17489,14 +17978,14 @@ ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_decode(const vo
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n246, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n269, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_encode(const struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n247, p, b));
+	return (cbl_yencode(&n270, p, b));
 }
 
 int
@@ -17505,14 +17994,14 @@ ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_d
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n247, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n270, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop_encode(const struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n248, p, b));
+	return (cbl_yencode(&n271, p, b));
 }
 
 int
@@ -17521,14 +18010,14 @@ ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_n
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n248, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n271, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_ribs_rib_routes_encode(const struct ietf_routing_routing_ribs_rib_routes *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n263, p, b));
+	return (cbl_yencode(&n286, p, b));
 }
 
 int
@@ -17537,14 +18026,14 @@ ietf_routing_routing_ribs_rib_routes_decode(const void *data, size_t len, struct
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n263, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n286, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_ribs_rib_routes_route_encode(const struct ietf_routing_routing_ribs_rib_routes_route *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n264, p, b));
+	return (cbl_yencode(&n287, p, b));
 }
 
 int
@@ -17553,14 +18042,14 @@ ietf_routing_routing_ribs_rib_routes_route_decode(const void *data, size_t len, 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n264, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n287, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_ribs_rib_routes_route_next_hop_encode(const struct ietf_routing_routing_ribs_rib_routes_route_next_hop *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n267, p, b));
+	return (cbl_yencode(&n290, p, b));
 }
 
 int
@@ -17569,14 +18058,14 @@ ietf_routing_routing_ribs_rib_routes_route_next_hop_decode(const void *data, siz
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n267, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n290, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_encode(const struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n268, p, b));
+	return (cbl_yencode(&n291, p, b));
 }
 
 int
@@ -17585,14 +18074,14 @@ ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_decode(const v
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n268, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n291, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop_encode(const struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n269, p, b));
+	return (cbl_yencode(&n292, p, b));
 }
 
 int
@@ -17601,14 +18090,14 @@ ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop_decod
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n269, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n292, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_encode(const struct ietf_routing_routing_state *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n281, p, b));
+	return (cbl_yencode(&n304, p, b));
 }
 
 int
@@ -17617,14 +18106,14 @@ ietf_routing_routing_state_decode(const void *data, size_t len, struct ietf_rout
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n281, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n304, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_control_plane_protocols_encode(const struct ietf_routing_routing_state_control_plane_protocols *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n282, p, b));
+	return (cbl_yencode(&n305, p, b));
 }
 
 int
@@ -17633,14 +18122,14 @@ ietf_routing_routing_state_control_plane_protocols_decode(const void *data, size
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n282, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n305, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_control_plane_protocols_control_plane_protocol_encode(const struct ietf_routing_routing_state_control_plane_protocols_control_plane_protocol *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n283, p, b));
+	return (cbl_yencode(&n306, p, b));
 }
 
 int
@@ -17649,14 +18138,14 @@ ietf_routing_routing_state_control_plane_protocols_control_plane_protocol_decode
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n283, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n306, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_interfaces_encode(const struct ietf_routing_routing_state_interfaces *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n286, p, b));
+	return (cbl_yencode(&n309, p, b));
 }
 
 int
@@ -17665,14 +18154,14 @@ ietf_routing_routing_state_interfaces_decode(const void *data, size_t len, struc
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n286, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n309, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_ribs_encode(const struct ietf_routing_routing_state_ribs *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n288, p, b));
+	return (cbl_yencode(&n311, p, b));
 }
 
 int
@@ -17681,14 +18170,14 @@ ietf_routing_routing_state_ribs_decode(const void *data, size_t len, struct ietf
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n288, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n311, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_ribs_rib_encode(const struct ietf_routing_routing_state_ribs_rib *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n289, p, b));
+	return (cbl_yencode(&n312, p, b));
 }
 
 int
@@ -17697,14 +18186,14 @@ ietf_routing_routing_state_ribs_rib_decode(const void *data, size_t len, struct 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n289, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n312, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_ribs_rib_active_route_input_encode(const struct ietf_routing_routing_state_ribs_rib_active_route_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n291, p, b));
+	return (cbl_yencode(&n314, p, b));
 }
 
 int
@@ -17713,14 +18202,14 @@ ietf_routing_routing_state_ribs_rib_active_route_input_decode(const void *data, 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n291, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n314, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_ribs_rib_active_route_output_encode(const struct ietf_routing_routing_state_ribs_rib_active_route_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n294, p, b));
+	return (cbl_yencode(&n317, p, b));
 }
 
 int
@@ -17729,14 +18218,14 @@ ietf_routing_routing_state_ribs_rib_active_route_output_decode(const void *data,
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n294, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n317, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_ribs_rib_active_route_output_route_encode(const struct ietf_routing_routing_state_ribs_rib_active_route_output_route *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n295, p, b));
+	return (cbl_yencode(&n318, p, b));
 }
 
 int
@@ -17745,14 +18234,14 @@ ietf_routing_routing_state_ribs_rib_active_route_output_route_decode(const void 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n295, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n318, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_encode(const struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n298, p, b));
+	return (cbl_yencode(&n321, p, b));
 }
 
 int
@@ -17761,14 +18250,14 @@ ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_decode(co
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n298, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n321, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_encode(const struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n299, p, b));
+	return (cbl_yencode(&n322, p, b));
 }
 
 int
@@ -17777,14 +18266,14 @@ ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n299, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n322, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop_encode(const struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n300, p, b));
+	return (cbl_yencode(&n323, p, b));
 }
 
 int
@@ -17793,14 +18282,14 @@ ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n300, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n323, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_ribs_rib_routes_encode(const struct ietf_routing_routing_state_ribs_rib_routes *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n314, p, b));
+	return (cbl_yencode(&n337, p, b));
 }
 
 int
@@ -17809,14 +18298,14 @@ ietf_routing_routing_state_ribs_rib_routes_decode(const void *data, size_t len, 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n314, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n337, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_ribs_rib_routes_route_encode(const struct ietf_routing_routing_state_ribs_rib_routes_route *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n315, p, b));
+	return (cbl_yencode(&n338, p, b));
 }
 
 int
@@ -17825,14 +18314,14 @@ ietf_routing_routing_state_ribs_rib_routes_route_decode(const void *data, size_t
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n315, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n338, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_ribs_rib_routes_route_next_hop_encode(const struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n318, p, b));
+	return (cbl_yencode(&n341, p, b));
 }
 
 int
@@ -17841,14 +18330,14 @@ ietf_routing_routing_state_ribs_rib_routes_route_next_hop_decode(const void *dat
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n318, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n341, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_encode(const struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n319, p, b));
+	return (cbl_yencode(&n342, p, b));
 }
 
 int
@@ -17857,14 +18346,14 @@ ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_decode(c
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n319, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n342, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop_encode(const struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n320, p, b));
+	return (cbl_yencode(&n343, p, b));
 }
 
 int
@@ -17873,14 +18362,14 @@ ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n320, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n343, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_network_instance_network_instances_encode(const struct ietf_network_instance_network_instances *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n333, p, b));
+	return (cbl_yencode(&n356, p, b));
 }
 
 int
@@ -17889,14 +18378,14 @@ ietf_network_instance_network_instances_decode(const void *data, size_t len, str
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n333, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n356, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_network_instance_network_instances_network_instance_encode(const struct ietf_network_instance_network_instances_network_instance *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n334, p, b));
+	return (cbl_yencode(&n357, p, b));
 }
 
 int
@@ -17905,14 +18394,14 @@ ietf_network_instance_network_instances_network_instance_decode(const void *data
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n334, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n357, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_network_instance_network_instances_network_instance_vrf_root_encode(const struct ietf_network_instance_network_instances_network_instance_vrf_root *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n338, p, b));
+	return (cbl_yencode(&n361, p, b));
 }
 
 int
@@ -17921,14 +18410,14 @@ ietf_network_instance_network_instances_network_instance_vrf_root_decode(const v
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n338, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n361, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_network_instance_bind_ni_name_failed_encode(const struct ietf_network_instance_bind_ni_name_failed *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n340, p, b));
+	return (cbl_yencode(&n363, p, b));
 }
 
 int
@@ -17937,21 +18426,21 @@ ietf_network_instance_bind_ni_name_failed_decode(const void *data, size_t len, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n340, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n363, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_network_instance_bind_ni_name_failed_notification(const struct ietf_network_instance_bind_ni_name_failed *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode_sid(&n340, p, b));
+	return (cbl_yencode_sid(&n363, p, b));
 }
 
 int
 ietf_network_instance_bind_ni_name_failed_interface_encode(const struct ietf_network_instance_bind_ni_name_failed_interface *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n342, p, b));
+	return (cbl_yencode(&n365, p, b));
 }
 
 int
@@ -17960,14 +18449,14 @@ ietf_network_instance_bind_ni_name_failed_interface_decode(const void *data, siz
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n342, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n365, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_network_instance_bind_ni_name_failed_ipv4_encode(const struct ietf_network_instance_bind_ni_name_failed_ipv4 *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n344, p, b));
+	return (cbl_yencode(&n367, p, b));
 }
 
 int
@@ -17976,14 +18465,14 @@ ietf_network_instance_bind_ni_name_failed_ipv4_decode(const void *data, size_t l
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n344, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n367, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_network_instance_bind_ni_name_failed_ipv6_encode(const struct ietf_network_instance_bind_ni_name_failed_ipv6 *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n346, p, b));
+	return (cbl_yencode(&n369, p, b));
 }
 
 int
@@ -17992,14 +18481,14 @@ ietf_network_instance_bind_ni_name_failed_ipv6_decode(const void *data, size_t l
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n346, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n369, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_logical_network_element_logical_network_elements_encode(const struct ietf_logical_network_element_logical_network_elements *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n349, p, b));
+	return (cbl_yencode(&n372, p, b));
 }
 
 int
@@ -18008,14 +18497,14 @@ ietf_logical_network_element_logical_network_elements_decode(const void *data, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n349, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n372, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_logical_network_element_logical_network_elements_logical_network_element_encode(const struct ietf_logical_network_element_logical_network_elements_logical_network_element *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n350, p, b));
+	return (cbl_yencode(&n373, p, b));
 }
 
 int
@@ -18024,14 +18513,14 @@ ietf_logical_network_element_logical_network_elements_logical_network_element_de
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n350, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n373, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_logical_network_element_logical_network_elements_logical_network_element_root_encode(const struct ietf_logical_network_element_logical_network_elements_logical_network_element_root *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n354, p, b));
+	return (cbl_yencode(&n377, p, b));
 }
 
 int
@@ -18040,14 +18529,14 @@ ietf_logical_network_element_logical_network_elements_logical_network_element_ro
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n354, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n377, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_logical_network_element_bind_lne_name_failed_encode(const struct ietf_logical_network_element_bind_lne_name_failed *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n355, p, b));
+	return (cbl_yencode(&n378, p, b));
 }
 
 int
@@ -18056,21 +18545,21 @@ ietf_logical_network_element_bind_lne_name_failed_decode(const void *data, size_
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n355, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n378, data, len, p, a, flags, why, whylen));
 }
 
 int
 ietf_logical_network_element_bind_lne_name_failed_notification(const struct ietf_logical_network_element_bind_lne_name_failed *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode_sid(&n355, p, b));
+	return (cbl_yencode_sid(&n378, p, b));
 }
 
 int
 arcana_jails_jails_encode(const struct arcana_jails_jails *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n359, p, b));
+	return (cbl_yencode(&n382, p, b));
 }
 
 int
@@ -18079,14 +18568,14 @@ arcana_jails_jails_decode(const void *data, size_t len, struct arcana_jails_jail
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n359, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n382, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_conf_error_encode(const struct arcana_jails_jails_conf_error *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n360, p, b));
+	return (cbl_yencode(&n383, p, b));
 }
 
 int
@@ -18095,14 +18584,14 @@ arcana_jails_jails_conf_error_decode(const void *data, size_t len, struct arcana
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n360, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n383, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_encode(const struct arcana_jails_jails_jail *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n363, p, b));
+	return (cbl_yencode(&n386, p, b));
 }
 
 int
@@ -18111,14 +18600,14 @@ arcana_jails_jails_jail_decode(const void *data, size_t len, struct arcana_jails
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n363, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n386, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_kill_input_encode(const struct arcana_jails_jails_jail_kill_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n373, p, b));
+	return (cbl_yencode(&n396, p, b));
 }
 
 int
@@ -18127,14 +18616,14 @@ arcana_jails_jails_jail_kill_input_decode(const void *data, size_t len, struct a
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n373, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n396, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_kill_output_encode(const struct arcana_jails_jails_jail_kill_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n374, p, b));
+	return (cbl_yencode(&n397, p, b));
 }
 
 int
@@ -18143,14 +18632,14 @@ arcana_jails_jails_jail_kill_output_decode(const void *data, size_t len, struct 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n374, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n397, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_param_encode(const struct arcana_jails_jails_jail_param *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n381, p, b));
+	return (cbl_yencode(&n404, p, b));
 }
 
 int
@@ -18159,14 +18648,14 @@ arcana_jails_jails_jail_param_decode(const void *data, size_t len, struct arcana
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n381, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n404, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_restart_input_encode(const struct arcana_jails_jails_jail_restart_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n389, p, b));
+	return (cbl_yencode(&n412, p, b));
 }
 
 int
@@ -18175,14 +18664,14 @@ arcana_jails_jails_jail_restart_input_decode(const void *data, size_t len, struc
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n389, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n412, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_restart_output_encode(const struct arcana_jails_jails_jail_restart_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n390, p, b));
+	return (cbl_yencode(&n413, p, b));
 }
 
 int
@@ -18191,14 +18680,14 @@ arcana_jails_jails_jail_restart_output_decode(const void *data, size_t len, stru
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n390, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n413, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_start_input_encode(const struct arcana_jails_jails_jail_start_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n397, p, b));
+	return (cbl_yencode(&n420, p, b));
 }
 
 int
@@ -18207,14 +18696,14 @@ arcana_jails_jails_jail_start_input_decode(const void *data, size_t len, struct 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n397, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n420, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_start_output_encode(const struct arcana_jails_jails_jail_start_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n398, p, b));
+	return (cbl_yencode(&n421, p, b));
 }
 
 int
@@ -18223,14 +18712,14 @@ arcana_jails_jails_jail_start_output_decode(const void *data, size_t len, struct
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n398, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n421, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_stop_input_encode(const struct arcana_jails_jails_jail_stop_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n403, p, b));
+	return (cbl_yencode(&n426, p, b));
 }
 
 int
@@ -18239,14 +18728,14 @@ arcana_jails_jails_jail_stop_input_decode(const void *data, size_t len, struct a
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n403, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n426, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_stop_output_encode(const struct arcana_jails_jails_jail_stop_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n404, p, b));
+	return (cbl_yencode(&n427, p, b));
 }
 
 int
@@ -18255,14 +18744,14 @@ arcana_jails_jails_jail_stop_output_decode(const void *data, size_t len, struct 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n404, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n427, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_arcpkg_packages_encode(const struct arcana_jails_jails_jail_arcpkg_packages *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n408, p, b));
+	return (cbl_yencode(&n431, p, b));
 }
 
 int
@@ -18271,14 +18760,14 @@ arcana_jails_jails_jail_arcpkg_packages_decode(const void *data, size_t len, str
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n408, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n431, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_arcpkg_packages_package_encode(const struct arcana_jails_jails_jail_arcpkg_packages_package *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n409, p, b));
+	return (cbl_yencode(&n432, p, b));
 }
 
 int
@@ -18287,14 +18776,14 @@ arcana_jails_jails_jail_arcpkg_packages_package_decode(const void *data, size_t 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n409, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n432, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_arcpkg_packages_refresh_input_encode(const struct arcana_jails_jails_jail_arcpkg_packages_refresh_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n418, p, b));
+	return (cbl_yencode(&n441, p, b));
 }
 
 int
@@ -18303,14 +18792,14 @@ arcana_jails_jails_jail_arcpkg_packages_refresh_input_decode(const void *data, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n418, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n441, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_arcpkg_packages_refresh_output_encode(const struct arcana_jails_jails_jail_arcpkg_packages_refresh_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n420, p, b));
+	return (cbl_yencode(&n443, p, b));
 }
 
 int
@@ -18319,14 +18808,14 @@ arcana_jails_jails_jail_arcpkg_packages_refresh_output_decode(const void *data, 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n420, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n443, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_arcpkg_packages_upgrade_input_encode(const struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n422, p, b));
+	return (cbl_yencode(&n445, p, b));
 }
 
 int
@@ -18335,14 +18824,14 @@ arcana_jails_jails_jail_arcpkg_packages_upgrade_input_decode(const void *data, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n422, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n445, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_arcpkg_packages_upgrade_output_encode(const struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n427, p, b));
+	return (cbl_yencode(&n450, p, b));
 }
 
 int
@@ -18351,14 +18840,14 @@ arcana_jails_jails_jail_arcpkg_packages_upgrade_output_decode(const void *data, 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n427, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n450, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package_encode(const struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n428, p, b));
+	return (cbl_yencode(&n451, p, b));
 }
 
 int
@@ -18367,14 +18856,14 @@ arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package_decode(const void
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n428, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n451, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_services_services_encode(const struct arcana_services_services *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n438, p, b));
+	return (cbl_yencode(&n461, p, b));
 }
 
 int
@@ -18383,14 +18872,14 @@ arcana_services_services_decode(const void *data, size_t len, struct arcana_serv
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n438, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n461, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_services_services_service_encode(const struct arcana_services_services_service *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n439, p, b));
+	return (cbl_yencode(&n462, p, b));
 }
 
 int
@@ -18399,14 +18888,14 @@ arcana_services_services_service_decode(const void *data, size_t len, struct arc
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n439, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n462, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_services_services_service_reload_input_encode(const struct arcana_services_services_service_reload_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n448, p, b));
+	return (cbl_yencode(&n471, p, b));
 }
 
 int
@@ -18415,14 +18904,14 @@ arcana_services_services_service_reload_input_decode(const void *data, size_t le
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n448, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n471, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_services_services_service_reload_output_encode(const struct arcana_services_services_service_reload_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n449, p, b));
+	return (cbl_yencode(&n472, p, b));
 }
 
 int
@@ -18431,14 +18920,14 @@ arcana_services_services_service_reload_output_decode(const void *data, size_t l
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n449, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n472, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_services_services_service_restart_input_encode(const struct arcana_services_services_service_restart_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n454, p, b));
+	return (cbl_yencode(&n477, p, b));
 }
 
 int
@@ -18447,14 +18936,14 @@ arcana_services_services_service_restart_input_decode(const void *data, size_t l
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n454, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n477, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_services_services_service_restart_output_encode(const struct arcana_services_services_service_restart_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n455, p, b));
+	return (cbl_yencode(&n478, p, b));
 }
 
 int
@@ -18463,14 +18952,14 @@ arcana_services_services_service_restart_output_decode(const void *data, size_t 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n455, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n478, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_services_services_service_start_input_encode(const struct arcana_services_services_service_start_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n461, p, b));
+	return (cbl_yencode(&n484, p, b));
 }
 
 int
@@ -18479,14 +18968,14 @@ arcana_services_services_service_start_input_decode(const void *data, size_t len
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n461, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n484, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_services_services_service_start_output_encode(const struct arcana_services_services_service_start_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n462, p, b));
+	return (cbl_yencode(&n485, p, b));
 }
 
 int
@@ -18495,14 +18984,14 @@ arcana_services_services_service_start_output_decode(const void *data, size_t le
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n462, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n485, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_services_services_service_stop_input_encode(const struct arcana_services_services_service_stop_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n468, p, b));
+	return (cbl_yencode(&n491, p, b));
 }
 
 int
@@ -18511,14 +19000,14 @@ arcana_services_services_service_stop_input_decode(const void *data, size_t len,
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n468, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n491, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_services_services_service_stop_output_encode(const struct arcana_services_services_service_stop_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n469, p, b));
+	return (cbl_yencode(&n492, p, b));
 }
 
 int
@@ -18527,14 +19016,14 @@ arcana_services_services_service_stop_output_decode(const void *data, size_t len
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n469, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n492, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_services_services_service_variable_encode(const struct arcana_services_services_service_variable *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n473, p, b));
+	return (cbl_yencode(&n496, p, b));
 }
 
 int
@@ -18543,14 +19032,14 @@ arcana_services_services_service_variable_decode(const void *data, size_t len, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n473, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n496, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_packages_packages_encode(const struct arcana_packages_packages *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n476, p, b));
+	return (cbl_yencode(&n499, p, b));
 }
 
 int
@@ -18559,14 +19048,14 @@ arcana_packages_packages_decode(const void *data, size_t len, struct arcana_pack
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n476, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n499, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_packages_packages_package_encode(const struct arcana_packages_packages_package *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n477, p, b));
+	return (cbl_yencode(&n500, p, b));
 }
 
 int
@@ -18575,14 +19064,14 @@ arcana_packages_packages_package_decode(const void *data, size_t len, struct arc
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n477, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n500, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_packages_packages_refresh_input_encode(const struct arcana_packages_packages_refresh_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n486, p, b));
+	return (cbl_yencode(&n509, p, b));
 }
 
 int
@@ -18591,14 +19080,14 @@ arcana_packages_packages_refresh_input_decode(const void *data, size_t len, stru
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n486, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n509, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_packages_packages_refresh_output_encode(const struct arcana_packages_packages_refresh_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n488, p, b));
+	return (cbl_yencode(&n511, p, b));
 }
 
 int
@@ -18607,14 +19096,14 @@ arcana_packages_packages_refresh_output_decode(const void *data, size_t len, str
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n488, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n511, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_packages_packages_upgrade_input_encode(const struct arcana_packages_packages_upgrade_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n490, p, b));
+	return (cbl_yencode(&n513, p, b));
 }
 
 int
@@ -18623,14 +19112,14 @@ arcana_packages_packages_upgrade_input_decode(const void *data, size_t len, stru
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n490, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n513, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_packages_packages_upgrade_output_encode(const struct arcana_packages_packages_upgrade_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n495, p, b));
+	return (cbl_yencode(&n518, p, b));
 }
 
 int
@@ -18639,14 +19128,14 @@ arcana_packages_packages_upgrade_output_decode(const void *data, size_t len, str
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n495, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n518, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_packages_packages_upgrade_output_package_encode(const struct arcana_packages_packages_upgrade_output_package *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n496, p, b));
+	return (cbl_yencode(&n519, p, b));
 }
 
 int
@@ -18655,14 +19144,14 @@ arcana_packages_packages_upgrade_output_package_decode(const void *data, size_t 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n496, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n519, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_jobs_encode(const struct arcana_jobs_jobs *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n505, p, b));
+	return (cbl_yencode(&n528, p, b));
 }
 
 int
@@ -18671,14 +19160,14 @@ arcana_jobs_jobs_decode(const void *data, size_t len, struct arcana_jobs_jobs *p
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n505, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n528, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_jobs_job_encode(const struct arcana_jobs_jobs_job *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n507, p, b));
+	return (cbl_yencode(&n530, p, b));
 }
 
 int
@@ -18687,14 +19176,14 @@ arcana_jobs_jobs_job_decode(const void *data, size_t len, struct arcana_jobs_job
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n507, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n530, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_jobs_job_cancel_input_encode(const struct arcana_jobs_jobs_job_cancel_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n509, p, b));
+	return (cbl_yencode(&n532, p, b));
 }
 
 int
@@ -18703,14 +19192,14 @@ arcana_jobs_jobs_job_cancel_input_decode(const void *data, size_t len, struct ar
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n509, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n532, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_jobs_job_cancel_output_encode(const struct arcana_jobs_jobs_job_cancel_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n510, p, b));
+	return (cbl_yencode(&n533, p, b));
 }
 
 int
@@ -18719,14 +19208,14 @@ arcana_jobs_jobs_job_cancel_output_decode(const void *data, size_t len, struct a
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n510, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n533, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_jobs_job_confirm_input_encode(const struct arcana_jobs_jobs_job_confirm_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n513, p, b));
+	return (cbl_yencode(&n536, p, b));
 }
 
 int
@@ -18735,14 +19224,14 @@ arcana_jobs_jobs_job_confirm_input_decode(const void *data, size_t len, struct a
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n513, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n536, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_jobs_job_confirm_output_encode(const struct arcana_jobs_jobs_job_confirm_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n514, p, b));
+	return (cbl_yencode(&n537, p, b));
 }
 
 int
@@ -18751,14 +19240,14 @@ arcana_jobs_jobs_job_confirm_output_decode(const void *data, size_t len, struct 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n514, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n537, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_jobs_job_step_encode(const struct arcana_jobs_jobs_job_step *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n526, p, b));
+	return (cbl_yencode(&n549, p, b));
 }
 
 int
@@ -18767,14 +19256,14 @@ arcana_jobs_jobs_job_step_decode(const void *data, size_t len, struct arcana_job
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n526, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n549, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_encode(const struct arcana_jobs_submit_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n542, p, b));
+	return (cbl_yencode(&n565, p, b));
 }
 
 int
@@ -18783,14 +19272,14 @@ arcana_jobs_submit_input_decode(const void *data, size_t len, struct arcana_jobs
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n542, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n565, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_encode(const struct arcana_jobs_submit_input_change *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n543, p, b));
+	return (cbl_yencode(&n566, p, b));
 }
 
 int
@@ -18799,14 +19288,14 @@ arcana_jobs_submit_input_change_decode(const void *data, size_t len, struct arca
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n543, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n566, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_address_encode(const struct arcana_jobs_submit_input_change_address *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n544, p, b));
+	return (cbl_yencode(&n567, p, b));
 }
 
 int
@@ -18815,14 +19304,14 @@ arcana_jobs_submit_input_change_address_decode(const void *data, size_t len, str
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n544, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n567, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_bird_encode(const struct arcana_jobs_submit_input_change_bird *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n551, p, b));
+	return (cbl_yencode(&n574, p, b));
 }
 
 int
@@ -18831,14 +19320,14 @@ arcana_jobs_submit_input_change_bird_decode(const void *data, size_t len, struct
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n551, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n574, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_bridge_encode(const struct arcana_jobs_submit_input_change_bridge *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n555, p, b));
+	return (cbl_yencode(&n578, p, b));
 }
 
 int
@@ -18847,14 +19336,14 @@ arcana_jobs_submit_input_change_bridge_decode(const void *data, size_t len, stru
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n555, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n578, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_cam_encode(const struct arcana_jobs_submit_input_change_cam *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n560, p, b));
+	return (cbl_yencode(&n583, p, b));
 }
 
 int
@@ -18863,14 +19352,14 @@ arcana_jobs_submit_input_change_cam_decode(const void *data, size_t len, struct 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n560, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n583, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_carp_encode(const struct arcana_jobs_submit_input_change_carp *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n563, p, b));
+	return (cbl_yencode(&n586, p, b));
 }
 
 int
@@ -18879,14 +19368,14 @@ arcana_jobs_submit_input_change_carp_decode(const void *data, size_t len, struct
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n563, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n586, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_cert_encode(const struct arcana_jobs_submit_input_change_cert *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n572, p, b));
+	return (cbl_yencode(&n595, p, b));
 }
 
 int
@@ -18895,14 +19384,14 @@ arcana_jobs_submit_input_change_cert_decode(const void *data, size_t len, struct
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n572, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n595, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_geneve_encode(const struct arcana_jobs_submit_input_change_geneve *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n577, p, b));
+	return (cbl_yencode(&n600, p, b));
 }
 
 int
@@ -18911,14 +19400,14 @@ arcana_jobs_submit_input_change_geneve_decode(const void *data, size_t len, stru
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n577, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n600, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_gpart_encode(const struct arcana_jobs_submit_input_change_gpart *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n582, p, b));
+	return (cbl_yencode(&n605, p, b));
 }
 
 int
@@ -18927,14 +19416,14 @@ arcana_jobs_submit_input_change_gpart_decode(const void *data, size_t len, struc
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n582, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n605, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_if_address_encode(const struct arcana_jobs_submit_input_change_if_address *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n586, p, b));
+	return (cbl_yencode(&n609, p, b));
 }
 
 int
@@ -18943,14 +19432,14 @@ arcana_jobs_submit_input_change_if_address_decode(const void *data, size_t len, 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n586, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n609, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_if_create_encode(const struct arcana_jobs_submit_input_change_if_create *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n594, p, b));
+	return (cbl_yencode(&n617, p, b));
 }
 
 int
@@ -18959,14 +19448,14 @@ arcana_jobs_submit_input_change_if_create_decode(const void *data, size_t len, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n594, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n617, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_if_destroy_encode(const struct arcana_jobs_submit_input_change_if_destroy *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n609, p, b));
+	return (cbl_yencode(&n632, p, b));
 }
 
 int
@@ -18975,14 +19464,14 @@ arcana_jobs_submit_input_change_if_destroy_decode(const void *data, size_t len, 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n609, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n632, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_if_set_encode(const struct arcana_jobs_submit_input_change_if_set *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n613, p, b));
+	return (cbl_yencode(&n636, p, b));
 }
 
 int
@@ -18991,14 +19480,14 @@ arcana_jobs_submit_input_change_if_set_decode(const void *data, size_t len, stru
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n613, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n636, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_if_state_encode(const struct arcana_jobs_submit_input_change_if_state *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n622, p, b));
+	return (cbl_yencode(&n645, p, b));
 }
 
 int
@@ -19007,14 +19496,14 @@ arcana_jobs_submit_input_change_if_state_decode(const void *data, size_t len, st
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n622, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n645, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_if_vnet_encode(const struct arcana_jobs_submit_input_change_if_vnet *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n628, p, b));
+	return (cbl_yencode(&n651, p, b));
 }
 
 int
@@ -19023,14 +19512,14 @@ arcana_jobs_submit_input_change_if_vnet_decode(const void *data, size_t len, str
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n628, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n651, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_ipfw_encode(const struct arcana_jobs_submit_input_change_ipfw *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n634, p, b));
+	return (cbl_yencode(&n657, p, b));
 }
 
 int
@@ -19039,14 +19528,14 @@ arcana_jobs_submit_input_change_ipfw_decode(const void *data, size_t len, struct
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n634, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n657, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_ipsec_encode(const struct arcana_jobs_submit_input_change_ipsec *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n640, p, b));
+	return (cbl_yencode(&n663, p, b));
 }
 
 int
@@ -19055,14 +19544,14 @@ arcana_jobs_submit_input_change_ipsec_decode(const void *data, size_t len, struc
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n640, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n663, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_ipsec_sa_encode(const struct arcana_jobs_submit_input_change_ipsec_sa *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n659, p, b));
+	return (cbl_yencode(&n682, p, b));
 }
 
 int
@@ -19071,14 +19560,14 @@ arcana_jobs_submit_input_change_ipsec_sa_decode(const void *data, size_t len, st
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n659, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n682, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_jail_action_encode(const struct arcana_jobs_submit_input_change_jail_action *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n666, p, b));
+	return (cbl_yencode(&n689, p, b));
 }
 
 int
@@ -19087,14 +19576,14 @@ arcana_jobs_submit_input_change_jail_action_decode(const void *data, size_t len,
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n666, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n689, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_jail_conf_encode(const struct arcana_jobs_submit_input_change_jail_conf *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n669, p, b));
+	return (cbl_yencode(&n692, p, b));
 }
 
 int
@@ -19103,14 +19592,14 @@ arcana_jobs_submit_input_change_jail_conf_decode(const void *data, size_t len, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n669, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n692, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_kmod_encode(const struct arcana_jobs_submit_input_change_kmod *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n679, p, b));
+	return (cbl_yencode(&n702, p, b));
 }
 
 int
@@ -19119,14 +19608,14 @@ arcana_jobs_submit_input_change_kmod_decode(const void *data, size_t len, struct
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n679, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n702, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_mount_encode(const struct arcana_jobs_submit_input_change_mount *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n683, p, b));
+	return (cbl_yencode(&n706, p, b));
 }
 
 int
@@ -19135,14 +19624,14 @@ arcana_jobs_submit_input_change_mount_decode(const void *data, size_t len, struc
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n683, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n706, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_neighbour_encode(const struct arcana_jobs_submit_input_change_neighbour *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n687, p, b));
+	return (cbl_yencode(&n710, p, b));
 }
 
 int
@@ -19151,14 +19640,14 @@ arcana_jobs_submit_input_change_neighbour_decode(const void *data, size_t len, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n687, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n710, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_netgraph_encode(const struct arcana_jobs_submit_input_change_netgraph *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n695, p, b));
+	return (cbl_yencode(&n718, p, b));
 }
 
 int
@@ -19167,14 +19656,14 @@ arcana_jobs_submit_input_change_netgraph_decode(const void *data, size_t len, st
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n695, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n718, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_ntp_encode(const struct arcana_jobs_submit_input_change_ntp *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n699, p, b));
+	return (cbl_yencode(&n722, p, b));
 }
 
 int
@@ -19183,14 +19672,14 @@ arcana_jobs_submit_input_change_ntp_decode(const void *data, size_t len, struct 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n699, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n722, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_pkg_clean_encode(const struct arcana_jobs_submit_input_change_pkg_clean *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n703, p, b));
+	return (cbl_yencode(&n726, p, b));
 }
 
 int
@@ -19199,14 +19688,14 @@ arcana_jobs_submit_input_change_pkg_clean_decode(const void *data, size_t len, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n703, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n726, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_pkg_install_encode(const struct arcana_jobs_submit_input_change_pkg_install *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n706, p, b));
+	return (cbl_yencode(&n729, p, b));
 }
 
 int
@@ -19215,14 +19704,14 @@ arcana_jobs_submit_input_change_pkg_install_decode(const void *data, size_t len,
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n706, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n729, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_pkg_upgrade_encode(const struct arcana_jobs_submit_input_change_pkg_upgrade *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n711, p, b));
+	return (cbl_yencode(&n734, p, b));
 }
 
 int
@@ -19231,14 +19720,14 @@ arcana_jobs_submit_input_change_pkg_upgrade_decode(const void *data, size_t len,
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n711, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n734, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_process_encode(const struct arcana_jobs_submit_input_change_process *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n716, p, b));
+	return (cbl_yencode(&n739, p, b));
 }
 
 int
@@ -19247,14 +19736,14 @@ arcana_jobs_submit_input_change_process_decode(const void *data, size_t len, str
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n716, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n739, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_route_encode(const struct arcana_jobs_submit_input_change_route *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n719, p, b));
+	return (cbl_yencode(&n742, p, b));
 }
 
 int
@@ -19263,14 +19752,14 @@ arcana_jobs_submit_input_change_route_decode(const void *data, size_t len, struc
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n719, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n742, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_rtadvd_encode(const struct arcana_jobs_submit_input_change_rtadvd *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n730, p, b));
+	return (cbl_yencode(&n753, p, b));
 }
 
 int
@@ -19279,14 +19768,14 @@ arcana_jobs_submit_input_change_rtadvd_decode(const void *data, size_t len, stru
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n730, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n753, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_service_action_encode(const struct arcana_jobs_submit_input_change_service_action *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n735, p, b));
+	return (cbl_yencode(&n758, p, b));
 }
 
 int
@@ -19295,14 +19784,14 @@ arcana_jobs_submit_input_change_service_action_decode(const void *data, size_t l
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n735, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n758, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_service_config_encode(const struct arcana_jobs_submit_input_change_service_config *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n738, p, b));
+	return (cbl_yencode(&n761, p, b));
 }
 
 int
@@ -19311,14 +19800,14 @@ arcana_jobs_submit_input_change_service_config_decode(const void *data, size_t l
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n738, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n761, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_service_config_set_encode(const struct arcana_jobs_submit_input_change_service_config_set *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n740, p, b));
+	return (cbl_yencode(&n763, p, b));
 }
 
 int
@@ -19327,14 +19816,14 @@ arcana_jobs_submit_input_change_service_config_set_decode(const void *data, size
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n740, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n763, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_ssh_encode(const struct arcana_jobs_submit_input_change_ssh *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n744, p, b));
+	return (cbl_yencode(&n767, p, b));
 }
 
 int
@@ -19343,14 +19832,14 @@ arcana_jobs_submit_input_change_ssh_decode(const void *data, size_t len, struct 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n744, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n767, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_sysctl_encode(const struct arcana_jobs_submit_input_change_sysctl *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n752, p, b));
+	return (cbl_yencode(&n775, p, b));
 }
 
 int
@@ -19359,14 +19848,14 @@ arcana_jobs_submit_input_change_sysctl_decode(const void *data, size_t len, stru
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n752, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n775, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_wireguard_encode(const struct arcana_jobs_submit_input_change_wireguard *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n755, p, b));
+	return (cbl_yencode(&n778, p, b));
 }
 
 int
@@ -19375,14 +19864,14 @@ arcana_jobs_submit_input_change_wireguard_decode(const void *data, size_t len, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n755, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n778, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_zfs_encode(const struct arcana_jobs_submit_input_change_zfs *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n766, p, b));
+	return (cbl_yencode(&n789, p, b));
 }
 
 int
@@ -19391,14 +19880,14 @@ arcana_jobs_submit_input_change_zfs_decode(const void *data, size_t len, struct 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n766, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n789, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_input_change_zpool_encode(const struct arcana_jobs_submit_input_change_zpool *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n771, p, b));
+	return (cbl_yencode(&n794, p, b));
 }
 
 int
@@ -19407,14 +19896,14 @@ arcana_jobs_submit_input_change_zpool_decode(const void *data, size_t len, struc
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n771, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n794, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_jobs_submit_output_encode(const struct arcana_jobs_submit_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n775, p, b));
+	return (cbl_yencode(&n798, p, b));
 }
 
 int
@@ -19423,14 +19912,14 @@ arcana_jobs_submit_output_decode(const void *data, size_t len, struct arcana_job
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n775, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n798, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_encode(const struct arcana_storage_storage *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n777, p, b));
+	return (cbl_yencode(&n800, p, b));
 }
 
 int
@@ -19439,14 +19928,14 @@ arcana_storage_storage_decode(const void *data, size_t len, struct arcana_storag
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n777, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n800, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_dataset_encode(const struct arcana_storage_storage_dataset *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n778, p, b));
+	return (cbl_yencode(&n801, p, b));
 }
 
 int
@@ -19455,14 +19944,14 @@ arcana_storage_storage_dataset_decode(const void *data, size_t len, struct arcan
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n778, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n801, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_dataset_change_key_input_encode(const struct arcana_storage_storage_dataset_change_key_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n782, p, b));
+	return (cbl_yencode(&n805, p, b));
 }
 
 int
@@ -19471,14 +19960,14 @@ arcana_storage_storage_dataset_change_key_input_decode(const void *data, size_t 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n782, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n805, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_dataset_change_key_output_encode(const struct arcana_storage_storage_dataset_change_key_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n785, p, b));
+	return (cbl_yencode(&n808, p, b));
 }
 
 int
@@ -19487,14 +19976,14 @@ arcana_storage_storage_dataset_change_key_output_decode(const void *data, size_t
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n785, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n808, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_dataset_load_key_input_encode(const struct arcana_storage_storage_dataset_load_key_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n791, p, b));
+	return (cbl_yencode(&n814, p, b));
 }
 
 int
@@ -19503,14 +19992,14 @@ arcana_storage_storage_dataset_load_key_input_decode(const void *data, size_t le
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n791, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n814, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_dataset_load_key_output_encode(const struct arcana_storage_storage_dataset_load_key_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n793, p, b));
+	return (cbl_yencode(&n816, p, b));
 }
 
 int
@@ -19519,14 +20008,14 @@ arcana_storage_storage_dataset_load_key_output_decode(const void *data, size_t l
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n793, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n816, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_dataset_unload_key_input_encode(const struct arcana_storage_storage_dataset_unload_key_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n805, p, b));
+	return (cbl_yencode(&n828, p, b));
 }
 
 int
@@ -19535,14 +20024,14 @@ arcana_storage_storage_dataset_unload_key_input_decode(const void *data, size_t 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n805, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n828, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_dataset_unload_key_output_encode(const struct arcana_storage_storage_dataset_unload_key_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n806, p, b));
+	return (cbl_yencode(&n829, p, b));
 }
 
 int
@@ -19551,14 +20040,14 @@ arcana_storage_storage_dataset_unload_key_output_decode(const void *data, size_t
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n806, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n829, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_disk_encode(const struct arcana_storage_storage_disk *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n809, p, b));
+	return (cbl_yencode(&n832, p, b));
 }
 
 int
@@ -19567,14 +20056,14 @@ arcana_storage_storage_disk_decode(const void *data, size_t len, struct arcana_s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n809, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n832, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_disk_health_encode(const struct arcana_storage_storage_disk_health *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n813, p, b));
+	return (cbl_yencode(&n836, p, b));
 }
 
 int
@@ -19583,14 +20072,14 @@ arcana_storage_storage_disk_health_decode(const void *data, size_t len, struct a
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n813, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n836, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_disk_partition_encode(const struct arcana_storage_storage_disk_partition *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n834, p, b));
+	return (cbl_yencode(&n857, p, b));
 }
 
 int
@@ -19599,14 +20088,14 @@ arcana_storage_storage_disk_partition_decode(const void *data, size_t len, struc
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n834, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n857, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_fstab_encode(const struct arcana_storage_storage_fstab *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n846, p, b));
+	return (cbl_yencode(&n869, p, b));
 }
 
 int
@@ -19615,14 +20104,14 @@ arcana_storage_storage_fstab_decode(const void *data, size_t len, struct arcana_
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n846, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n869, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_fstab_entry_encode(const struct arcana_storage_storage_fstab_entry *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n847, p, b));
+	return (cbl_yencode(&n870, p, b));
 }
 
 int
@@ -19631,14 +20120,14 @@ arcana_storage_storage_fstab_entry_decode(const void *data, size_t len, struct a
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n847, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n870, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_fstab_replace_input_encode(const struct arcana_storage_storage_fstab_replace_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n857, p, b));
+	return (cbl_yencode(&n880, p, b));
 }
 
 int
@@ -19647,14 +20136,14 @@ arcana_storage_storage_fstab_replace_input_decode(const void *data, size_t len, 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n857, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n880, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_fstab_replace_output_encode(const struct arcana_storage_storage_fstab_replace_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n861, p, b));
+	return (cbl_yencode(&n884, p, b));
 }
 
 int
@@ -19663,14 +20152,14 @@ arcana_storage_storage_fstab_replace_output_decode(const void *data, size_t len,
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n861, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n884, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_importable_encode(const struct arcana_storage_storage_importable *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n865, p, b));
+	return (cbl_yencode(&n888, p, b));
 }
 
 int
@@ -19679,14 +20168,14 @@ arcana_storage_storage_importable_decode(const void *data, size_t len, struct ar
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n865, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n888, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_mount_encode(const struct arcana_storage_storage_mount *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n870, p, b));
+	return (cbl_yencode(&n893, p, b));
 }
 
 int
@@ -19695,14 +20184,14 @@ arcana_storage_storage_mount_decode(const void *data, size_t len, struct arcana_
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n870, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n893, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_pool_encode(const struct arcana_storage_storage_pool *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n878, p, b));
+	return (cbl_yencode(&n901, p, b));
 }
 
 int
@@ -19711,14 +20200,14 @@ arcana_storage_storage_pool_decode(const void *data, size_t len, struct arcana_s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n878, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n901, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_pool_vdev_encode(const struct arcana_storage_storage_pool_vdev *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n893, p, b));
+	return (cbl_yencode(&n916, p, b));
 }
 
 int
@@ -19727,14 +20216,14 @@ arcana_storage_storage_pool_vdev_decode(const void *data, size_t len, struct arc
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n893, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n916, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_snapshot_encode(const struct arcana_storage_storage_snapshot *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n901, p, b));
+	return (cbl_yencode(&n924, p, b));
 }
 
 int
@@ -19743,14 +20232,14 @@ arcana_storage_storage_snapshot_decode(const void *data, size_t len, struct arca
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n901, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n924, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_snapshot_send_input_encode(const struct arcana_storage_storage_snapshot_send_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n906, p, b));
+	return (cbl_yencode(&n929, p, b));
 }
 
 int
@@ -19759,14 +20248,14 @@ arcana_storage_storage_snapshot_send_input_decode(const void *data, size_t len, 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n906, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n929, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_snapshot_send_output_encode(const struct arcana_storage_storage_snapshot_send_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n909, p, b));
+	return (cbl_yencode(&n932, p, b));
 }
 
 int
@@ -19775,14 +20264,14 @@ arcana_storage_storage_snapshot_send_output_decode(const void *data, size_t len,
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n909, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n932, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_storage_swap_encode(const struct arcana_storage_storage_swap *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n912, p, b));
+	return (cbl_yencode(&n935, p, b));
 }
 
 int
@@ -19791,14 +20280,14 @@ arcana_storage_storage_swap_decode(const void *data, size_t len, struct arcana_s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n912, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n935, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_receive_input_encode(const struct arcana_storage_receive_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n917, p, b));
+	return (cbl_yencode(&n940, p, b));
 }
 
 int
@@ -19807,14 +20296,14 @@ arcana_storage_receive_input_decode(const void *data, size_t len, struct arcana_
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n917, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n940, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_storage_receive_output_encode(const struct arcana_storage_receive_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n919, p, b));
+	return (cbl_yencode(&n942, p, b));
 }
 
 int
@@ -19823,14 +20312,14 @@ arcana_storage_receive_output_decode(const void *data, size_t len, struct arcana
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n919, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n942, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_sysctl_sysctl_encode(const struct arcana_sysctl_sysctl *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n920, p, b));
+	return (cbl_yencode(&n943, p, b));
 }
 
 int
@@ -19839,14 +20328,14 @@ arcana_sysctl_sysctl_decode(const void *data, size_t len, struct arcana_sysctl_s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n920, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n943, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_sysctl_sysctl_kept_encode(const struct arcana_sysctl_sysctl_kept *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n921, p, b));
+	return (cbl_yencode(&n944, p, b));
 }
 
 int
@@ -19855,14 +20344,14 @@ arcana_sysctl_sysctl_kept_decode(const void *data, size_t len, struct arcana_sys
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n921, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n944, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_sysctl_sysctl_value_encode(const struct arcana_sysctl_sysctl_value *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n925, p, b));
+	return (cbl_yencode(&n948, p, b));
 }
 
 int
@@ -19871,14 +20360,14 @@ arcana_sysctl_sysctl_value_decode(const void *data, size_t len, struct arcana_sy
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n925, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n948, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_kernel_kernel_encode(const struct arcana_kernel_kernel *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n931, p, b));
+	return (cbl_yencode(&n954, p, b));
 }
 
 int
@@ -19887,14 +20376,14 @@ arcana_kernel_kernel_decode(const void *data, size_t len, struct arcana_kernel_k
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n931, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n954, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_kernel_kernel_file_encode(const struct arcana_kernel_kernel_file *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n933, p, b));
+	return (cbl_yencode(&n956, p, b));
 }
 
 int
@@ -19903,14 +20392,14 @@ arcana_kernel_kernel_file_decode(const void *data, size_t len, struct arcana_ker
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n933, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n956, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_kernel_kernel_file_unload_input_encode(const struct arcana_kernel_kernel_file_unload_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n942, p, b));
+	return (cbl_yencode(&n965, p, b));
 }
 
 int
@@ -19919,14 +20408,14 @@ arcana_kernel_kernel_file_unload_input_decode(const void *data, size_t len, stru
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n942, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n965, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_kernel_kernel_file_unload_output_encode(const struct arcana_kernel_kernel_file_unload_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n943, p, b));
+	return (cbl_yencode(&n966, p, b));
 }
 
 int
@@ -19935,14 +20424,14 @@ arcana_kernel_kernel_file_unload_output_decode(const void *data, size_t len, str
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n943, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n966, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_kernel_kernel_memory_encode(const struct arcana_kernel_kernel_memory *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n945, p, b));
+	return (cbl_yencode(&n968, p, b));
 }
 
 int
@@ -19951,14 +20440,14 @@ arcana_kernel_kernel_memory_decode(const void *data, size_t len, struct arcana_k
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n945, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n968, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_kernel_kernel_memory_malloc_encode(const struct arcana_kernel_kernel_memory_malloc *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n950, p, b));
+	return (cbl_yencode(&n973, p, b));
 }
 
 int
@@ -19967,14 +20456,14 @@ arcana_kernel_kernel_memory_malloc_decode(const void *data, size_t len, struct a
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n950, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n973, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_kernel_kernel_memory_zone_encode(const struct arcana_kernel_kernel_memory_zone *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n956, p, b));
+	return (cbl_yencode(&n979, p, b));
 }
 
 int
@@ -19983,14 +20472,14 @@ arcana_kernel_kernel_memory_zone_decode(const void *data, size_t len, struct arc
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n956, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n979, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_kernel_load_input_encode(const struct arcana_kernel_load_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n964, p, b));
+	return (cbl_yencode(&n987, p, b));
 }
 
 int
@@ -19999,14 +20488,14 @@ arcana_kernel_load_input_decode(const void *data, size_t len, struct arcana_kern
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n964, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n987, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_kernel_load_output_encode(const struct arcana_kernel_load_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n966, p, b));
+	return (cbl_yencode(&n989, p, b));
 }
 
 int
@@ -20015,14 +20504,14 @@ arcana_kernel_load_output_decode(const void *data, size_t len, struct arcana_ker
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n966, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n989, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_processes_processes_encode(const struct arcana_processes_processes *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n967, p, b));
+	return (cbl_yencode(&n990, p, b));
 }
 
 int
@@ -20031,14 +20520,14 @@ arcana_processes_processes_decode(const void *data, size_t len, struct arcana_pr
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n967, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n990, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_processes_processes_jail_encode(const struct arcana_processes_processes_jail *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n969, p, b));
+	return (cbl_yencode(&n992, p, b));
 }
 
 int
@@ -20047,14 +20536,14 @@ arcana_processes_processes_jail_decode(const void *data, size_t len, struct arca
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n969, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n992, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_processes_processes_process_encode(const struct arcana_processes_processes_process *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n978, p, b));
+	return (cbl_yencode(&n1001, p, b));
 }
 
 int
@@ -20063,14 +20552,14 @@ arcana_processes_processes_process_decode(const void *data, size_t len, struct a
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n978, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n1001, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_processes_processes_process_file_encode(const struct arcana_processes_processes_process_file *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n979, p, b));
+	return (cbl_yencode(&n1002, p, b));
 }
 
 int
@@ -20079,14 +20568,14 @@ arcana_processes_processes_process_file_decode(const void *data, size_t len, str
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n979, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n1002, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_processes_processes_process_renice_input_encode(const struct arcana_processes_processes_process_renice_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n990, p, b));
+	return (cbl_yencode(&n1013, p, b));
 }
 
 int
@@ -20095,14 +20584,14 @@ arcana_processes_processes_process_renice_input_decode(const void *data, size_t 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n990, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n1013, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_processes_processes_process_renice_output_encode(const struct arcana_processes_processes_process_renice_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n993, p, b));
+	return (cbl_yencode(&n1016, p, b));
 }
 
 int
@@ -20111,14 +20600,14 @@ arcana_processes_processes_process_renice_output_decode(const void *data, size_t
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n993, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n1016, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_processes_processes_process_signal_input_encode(const struct arcana_processes_processes_process_signal_input *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n995, p, b));
+	return (cbl_yencode(&n1018, p, b));
 }
 
 int
@@ -20127,14 +20616,14 @@ arcana_processes_processes_process_signal_input_decode(const void *data, size_t 
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n995, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n1018, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_processes_processes_process_signal_output_encode(const struct arcana_processes_processes_process_signal_output *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n998, p, b));
+	return (cbl_yencode(&n1021, p, b));
 }
 
 int
@@ -20143,14 +20632,14 @@ arcana_processes_processes_process_signal_output_decode(const void *data, size_t
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n998, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n1021, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_processes_processes_process_state_encode(const struct arcana_processes_processes_process_state *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n999, p, b));
+	return (cbl_yencode(&n1022, p, b));
 }
 
 int
@@ -20159,14 +20648,14 @@ arcana_processes_processes_process_state_decode(const void *data, size_t len, st
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n999, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n1022, data, len, p, a, flags, why, whylen));
 }
 
 int
 arcana_processes_processes_process_thread_encode(const struct arcana_processes_processes_process_thread *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n1025, p, b));
+	return (cbl_yencode(&n1048, p, b));
 }
 
 int
@@ -20175,6 +20664,6 @@ arcana_processes_processes_process_thread_decode(const void *data, size_t len, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n1025, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n1048, data, len, p, a, flags, why, whylen));
 }
 

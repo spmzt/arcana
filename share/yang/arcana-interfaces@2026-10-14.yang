@@ -11,21 +11,33 @@ module arcana-interfaces {
   import iana-if-type {
     prefix ianaift;
   }
-  import ietf-yang-types {
-    prefix yang;
-    reference
-      "RFC 9911: Common YANG Data Types";
-  }
 
   organization
     "Arcana";
   contact
     "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
   description
-    "What FreeBSD's interfaces have beyond RFC 8343, as ifconfig(8)
-     shows and sets it: the link MTU, the Ethernet address, media,
-     groups, the FIB, capabilities, and the parts of a vlan(4), a
-     bridge(4), a lagg(4) and an epair(4).
+    "What FreeBSD's interfaces have beyond RFC 8343 and the standard
+     models that extend it, as ifconfig(8) shows and sets it: the
+     driver's name, groups, the tunnel FIB, capabilities, media, an
+     epair(4)'s other end in a vnet, and the parts of a vlan(4), a
+     bridge(4) and a lagg(4).
+
+     What a standard model has is there, not here:
+     - the MTU (ifconfig(8) mtu, SIOCSIFMTU), FreeBSD's for both
+       families, is ietf-ip's ipv4 mtu (RFC 8344); ipv6's is it or
+       the lower one an RA set (arcana-ip-deviations), and
+       ietf-if-extensions' max-frame-size is it with the link's
+       header and frame check sequence;
+     - the Ethernet address (ifconfig(8) ether, SIOCSIFLLADDR) is
+       ietf-if-ethernet-like's mac-address, the hardware's
+       (SIOCGHWADDR) its bia-mac-address, for the interfaces it
+       applies to; a vlan's or a bridge's is its phys-address;
+     - the FIB (ifconfig(8) fib, SIOCSIFFIB) is ietf-network-instance's
+       bind-ni-name (RFC 8529): the instance whose FIB it is, none for
+       FIB 0;
+     - an epair(4) end's other end is ietf-if-extensions'
+       peer-interface.
 
      Each leaf names the FreeBSD facility it is read from and written
      to.  A list or leaf-list the system orders is in the order the
@@ -268,25 +280,6 @@ module arcana-interfaces {
          sysctl net.link.generic.ifdata.<index>.drivername, as
          ifconfig(8) -D shows it.";
     }
-    leaf mtu {
-      type uint32;
-      description
-        "The link MTU: SIOCGIFMTU, SIOCSIFMTU, ifconfig(8) mtu.";
-    }
-    leaf ether {
-      type yang:mac-address;
-      description
-        "The Ethernet address it sends from: SIOCSIFLLADDR, ifconfig(8)
-         ether; present for an interface with a 6-octet link-layer
-         address.";
-    }
-    leaf hw-address {
-      config false;
-      type yang:mac-address;
-      description
-        "The address the hardware came with: SIOCGHWADDR, as
-         ifconfig(8) shows it as hwaddr.";
-    }
     leaf-list group {
       type string {
         length "1..15";
@@ -297,12 +290,6 @@ module arcana-interfaces {
          them those the kernel puts it in (a cloned interface's
          driver's), but 'all', which every interface is in.  A group's
          name does not end in a digit.";
-    }
-    leaf fib {
-      type uint32;
-      description
-        "The FIB its traffic in is routed by: SIOCGIFFIB, SIOCSIFFIB,
-         ifconfig(8) fib.";
     }
     leaf tunnel-fib {
       type uint32;
@@ -596,28 +583,18 @@ module arcana-interfaces {
         }
       }
     }
-    container epair {
-      presence
-        "An epair(4) end.";
+    leaf peer-vnet {
       config false;
+      type boolean;
       description
-        "An end of an epair(4).  The kernel tells no other end, but
-         the two have one driver-name, 'epair' and the pair's unit,
-         whatever they are called and wherever they are.";
-      leaf peer {
-        type if:interface-ref;
-        description
-          "The other end, where the list has it: the interface of the
-           same driver-name.  Two interfaces may share a name (one
-           back from a vnet jail), and the list has the first only.";
-      }
-      leaf peer-vnet {
-        type boolean;
-        description
-          "Whether the other end is in another network stack, a vnet
-           jail's, where ifconfig(8) vnet moved it: no interface here
-           has its driver-name.";
-      }
+        "Of an epair(4) end: whether the other end is in another
+         network stack, a vnet jail's, where ifconfig(8) vnet moved it.
+         The kernel tells no other end, but the two have one
+         driver-name, 'epair' and the pair's unit, whatever they are
+         called and wherever they are: no interface here has its
+         driver-name.  Where one has, it is ietf-if-extensions'
+         peer-interface (two interfaces may share a name, one back from
+         a vnet jail, and the list has the first only).";
     }
   }
 }

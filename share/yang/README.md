@@ -67,6 +67,8 @@ origin.
 | `ietf-i2nsf-ike@2021-07-14.yang` | module | RFC 9061 |
 | `ietf-i2nsf-ikec@2021-07-14.yang` | module | RFC 9061 |
 | `ietf-i2nsf-ikeless@2021-07-14.yang` | module | RFC 9061 |
+| `ietf-if-ethernet-like@2026-06-19.yang` | module | draft-ietf-netmod-intf-ext-yang, its 2026-06-19 revision (YangModels/yang) |
+| `ietf-if-extensions@2025-08-07.yang` | module | draft-ietf-netmod-intf-ext-yang, its 2025-08-07 revision (YangModels/yang) |
 | `ietf-inet-types@2025-12-22.yang` | module | IANA, RFC 9911 |
 | `ietf-interfaces@2018-02-20.yang` | module | RFC 8343 |
 | `ietf-ip@2018-02-22.yang` | module | RFC 8344 |
@@ -126,8 +128,8 @@ Arcana's provisional block (SIDS.md), their `.sid` files beside them.
 
 | File | | What |
 |---|---|---|
-| `arcana-interfaces@2026-10-14.yang` | module | augments `ietf-interfaces`: driver name, MTU, Ethernet and hardware addresses, groups, FIB and tunnel FIB, capabilities, media; vlan(4), lagg(4), bridge(4) and epair(4) |
-| `arcana-ip-deviations@2026-10-14.yang` | module | deviates `ietf-ip`: forwarding, DAD's probes and temporary addresses are the host's sysctls, IPv4 cannot be turned off on one interface, one MTU for both families: config false |
+| `arcana-interfaces@2026-10-14.yang` | module | augments `ietf-interfaces`: driver name, groups, tunnel FIB, capabilities, media; vlan(4), lagg(4), bridge(4); an epair(4) end's other in a vnet. What a standard has is the standard's: the MTU `ietf-ip`'s ipv4 mtu (and `ietf-if-extensions`' max-frame-size), the Ethernet addresses `ietf-if-ethernet-like`'s, the FIB RFC 8529's bind-ni-name, an epair's other end `ietf-if-extensions`' peer-interface |
+| `arcana-ip-deviations@2026-10-14.yang` | module | deviates `ietf-ip`: forwarding, DAD's probes and temporary addresses are the host's sysctls, IPv4 cannot be turned off on one interface, one MTU for both families, ipv4's (the link's), so ipv6's is config false |
 | `arcana-jails@2026-10-14.yang` | module | FreeBSD's jails (jail(8), jail(2)): those jail.conf(5) defines, as jail(8) -e resolves them, and those running, as jail_get(2) gives them; start, stop, restart, kill as actions; a vnet jail's logical network element (RFC 8530); the list and action operations of arcana.yaml converted (Y-3) |
 | `arcana-sysctl@2026-10-14.yang` | module | FreeBSD's kernel state, sysctl(3): sysctl.conf(5)'s settings as configuration (written in place), the values with their kind, whether writable and what they are said to be as state; the sysctl and sysctl-parts operations of arcana.yaml converted (Y-3) |
 | `arcana-processes@2026-10-14.yang` | module | FreeBSD's processes (kvm_getprocs(3), libprocstat(3)) in OpenConfig's shape: `openconfig-procmon`'s list, augmented with what FreeBSD has besides (parent, user, jail, run state, wait channel, nice, priority, threads, CPU time and the decayed share, blocks read and written), one process's files and threads, the jails' totals; signal (kill(2)) and renice (setpriority(2)) actions; the processes operation of arcana.yaml converted (Y-3) |
