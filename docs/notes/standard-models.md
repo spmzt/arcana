@@ -30,8 +30,33 @@ where nothing exists.
 | Active measurement (probes) | STAMP: `draft-ietf-ippm-stamp-yang`; TWAMP: RFC 8913 | WG draft; RFC | the probes (3.1.11) as STAMP's, D-8 having chosen STAMP |
 | Network topology | `ietf-network`, `-topology`, RFC 8345 (in share/yang) | RFC | the mesh and the topology view |
 | SD-WAN | MEF 70.2 publishes no YANG; `draft-sun-opsawg-sdwan-service-model` (individual, expired) | none usable | `arcana-sdwan` (3.1.12) by MEF 70.2's attributes; L3NM where they overlap (D-4) |
+| NAT (ipfw nat, the SD-WAN breakout) | `ietf-nat`, RFC 8512 | RFC | NAT through it |
+| DHCPv6 server, client, relay | `ietf-dhcpv6-*`, RFC 9243; DHCPv4 `ietf-dhcp` | RFC; draft | sdwan-dhcp (dnsmasq) through them |
+| DNS resolver | `ietf-system-dns-resolver` (draft), and RFC 7317's | RFC 7317 | resolv.conf as RFC 7317's dns-resolver |
+| VRRP (beside CARP) | `ietf-vrrp`, RFC 8347 | RFC | CARP is not VRRP: carp(4) stays Arcana's, its terms kept apart |
+| Tunnels | `iana-tunnel-type` RFC 8675; `ietf-gre`, `ietf-vxlan`, `ietf-ip-tunnel` (drafts) | RFC; drafts | gif/gre/vxlan interfaces by `iana-tunnel-type`, the drafts followed for their settings |
+| VLAN sub-interfaces | `ietf-if-vlan-encapsulation` (draft-ietf-netmod-sub-intf-vlan-model) | WG draft | vlan(4) through it |
+| Bridges, VLANs on a bridge, spanning tree | IEEE 802.1Q: `ieee802-dot1q-bridge`, `-vlan-bridge`, `-rstp` | IEEE standard | if_bridge(4) through them |
+| Link aggregation | IEEE 802.1AX: `ieee802-dot1ax-linkagg` | IEEE standard | lagg(4) through it |
+| Ethernet media (speed, duplex, autonegotiation) | IEEE 802.3: `ieee802-ethernet-interface` | IEEE standard | ifmedia(4) through it |
+| LLDP, 802.1X | `ieee802-dot1ab-lldp`, `ieee802-dot1x` | IEEE standard | if ever (no daemon in base) |
+| Event-condition-action (the workflows) | `ietf-event`, `ietf-event-trigger` (draft-ietf-netmod-eca-policy), `ietf-schedule` | drafts | the workflows, when converted, by their terms |
 | WireGuard, netgraph, packet capture, plugins | none | - | Arcana's own |
 | Jails, services, sysctl, the kernel | none (a vnet jail's network is RFC 8530's LNE) | - | Arcana's own (3.1.1, 3.1.2, 3.1.6) |
+
+Also checked: [YangModels/yang](https://github.com/YangModels/yang)
+(the user's pointer): its standard/ietf, standard/ieee (802.1Q, 802.1AX,
+802.3, 802.1AB, 802.1X), standard/mef (MEF's public models are Carrier
+Ethernet's, Legato, CFM, SOAM: no SD-WAN) and the 1 367 modules
+extracted from drafts (experimental/ietf-extracted-YANG-modules), where
+the SD-WAN service models (`ietf-sdwan-svc`, `ietf-sdwan-vpn-svc`), the
+QoS, STAMP, NAT, DHCP, tunnel, VLAN and ECA modules above are, and
+nothing for WireGuard, netgraph, processes or capture.
+
+**Found late, to be reworked:** arcana-interfaces (1.9.3) models
+vlan(4), lagg(4), if_bridge(4) and the media in its own augments, where
+IEEE 802.1Q, 802.1AX, 802.3 and the VLAN sub-interface draft already
+do: those parts move to them (docs/TODO.md).
 
 Sources: [RFC 7317](https://www.rfc-editor.org/rfc/rfc7317), [RFC 8348](https://www.rfc-editor.org/rfc/rfc8348.html),
 [draft-ietf-ivy-network-inventory-software](https://datatracker.ietf.org/doc/html/draft-wzwb-ivy-network-inventory-software-02),
