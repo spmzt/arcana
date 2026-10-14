@@ -235,8 +235,17 @@
   XPath filters, RFC 6241's examples; NACM's paths; schema mount's
   parent references), held to libyang's on the corpus (xpdiff, none
   differing but where libyang departs from the RFCs: deref() of a
-  dangling leafref, substring() below 1, number("infinity")), its work
-  bounded against a client's filter, and fuzzed. Next: 2.3. As each operation is
+  dangling leafref, substring() from below 0, number("infinity")), its
+  work bounded against a client's filter, and fuzzed. On the Arcana
+  side, 2.3.1: lib/libvarconf reads and changes rc.conf and rc.conf.d
+  in place, every other byte kept (the defaults' rc.conf, a host's and
+  sh(1)'s edge cases read and written byte for byte, each value as
+  sh(1) gives it; what reading cannot settle, an expansion, an if, a
+  function, a command's environment, said so and edits of it refused),
+  and gives the fragment Arcana owns, rc.conf.d/<service>/arcana,
+  refused where rc.conf.d/<service> is the user's file; the agent
+  still edits rc.conf through sysrc(8) until 2.3.5 renders the
+  fragments. Next: 2.3.2, the conflict rule. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
