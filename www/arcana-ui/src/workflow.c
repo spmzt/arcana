@@ -640,7 +640,9 @@ view_list(struct html *h)
 			n++;
 			h_fmt(h, "<li class=\"pick %s\" data-act=\"wf-run-open\"",
 			    jstr(r, "state") != NULL ? jstr(r, "state") : "");
-			h_attr(h, "data-arg", jstr(r, "id"));
+			/* A run's id is a number. */
+			h_fmt(h, " data-arg=\"%lld\"", (long long)jint(r, "id",
+			    0));
 			h_raw(h, "><i class=\"led\"></i><b>");
 			h_txt(h, jstr(r, "name"));
 			h_raw(h, "</b><span class=\"dim\">");
@@ -700,8 +702,8 @@ view_run(struct html *h)
 	h_raw(h, "</h3>");
 	if (jstr(r, "state") != NULL && strcmp(jstr(r, "state"), "running") ==
 	    0) {
-		h_raw(h, "<button class=\"ghost small\" data-act=\"wf-run-stop\"");
-		h_attr(h, "data-arg", jstr(r, "id"));
+		h_fmt(h, "<button class=\"ghost small\" data-act=\"wf-run-stop\" "
+		    "data-arg=\"%lld\"", (long long)jint(r, "id", 0));
 		h_raw(h, ">Stop</button>");
 	}
 	h_raw(h, "<span class=\"age\">");
