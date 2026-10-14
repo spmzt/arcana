@@ -327,8 +327,13 @@
   to jls -n name vnet (yang_lne) and to a vnet jail beside one sharing
   the host's stack (yang_lne, root). 2.7.2 to 2.7.4 (the attached
   helper, the root mount, bind-lne-name's moves) need the mount and
-  cblink 2 inside the jail, after 1.11; 2.7.5, the jail.conf hooks,
-  next. As each operation is
+  cblink 2 inside the jail, after 1.11. 2.7.5: no jail.conf hooks are
+  needed, the kernel tells: ira/jailwatch.c's EVFILT_JAIL jail-state
+  events (agent 0.107.0) now watch each jail for children of its own
+  too, so a jail made in a jail, an LNE in an LNE, is told
+  (jail_events_nested); before, only the host's children were. Next:
+  2.8, yang-library, after 1.11; then the Y-3 items main can carry. As
+  each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
