@@ -169,6 +169,21 @@ int	ykernel_kld_write(struct vc_file *f,
 	    const struct arcana_kernel_kernel *want, char *err, size_t errlen);
 
 /*
+ * arcana-processes (gula/yprocs.c): the processes operation's JSON in
+ * OpenConfig procmon's shape with FreeBSD's besides; detail, the reply
+ * for one pid (NULL: none), its files and threads put on its entry.
+ */
+int	yprocs_from_json(const char *json, const char *detail, cbl_yarena *a,
+	    struct arcana_processes_processes *out);
+/*
+ * Its signal and renice actions (gula/procs.c): verb "signal" or
+ * "renice", arg the signal or nice value, start the start-time read
+ * (nanoseconds; 0, none).
+ */
+int	yprocs_action(struct work *w, uint64_t pid, const char *verb,
+	    const char *arg, uint64_t start, const char **errp);
+
+/*
  * RFC 8530's logical network elements: the vnet jails, as jls(8) lists
  * them (invidia/ylne.c).
  */

@@ -5355,6 +5355,41 @@ sshd_enable="YES"
 ' cat rc.conf
 }
 
+atf_test_case yang_processes
+yang_processes_head()
+{
+	atf_set "descr" "the processes operation's replies as" \
+	    "arcana-processes has them (PLAN-SDN-YANG 3.1.7), OpenConfig" \
+	    "procmon's shape with FreeBSD's besides: one process's files" \
+	    "and threads on its entry, through YANG-CBOR and back"
+}
+yang_processes_body()
+{
+	local y="$(atf_get_srcdir)/yprocs"
+
+	cat > ps.json <<'EOF'
+{"processes":[{"pid":812,"ppid":1,"user":"root","jid":0,"state":"sleep","wait":"select","nice":0,"pri":20,"threads":1,"rss":9437184,"size":14680064,"time":1.27,"wcpu":0.05,"cpu":0.0,"in":12,"out":3,"io":0.0,"start":1791990000,"comm":"sshd","args":"/usr/sbin/sshd -D"},{"pid":4100,"ppid":4099,"user":"www","jid":3,"jail":"web","state":"run","nice":-5,"pri":52,"threads":4,"rss":104857600,"size":209715200,"time":3600.5,"wcpu":151.25,"cpu":180.4,"in":0,"out":0,"io":2.5,"start":1791995110,"comm":"nginx","args":"nginx: worker process"}],"jails":[{"jid":3,"name":"web","procs":5,"threads":9,"cpu":180.4,"wcpu":151.25,"rss":130000000}],"ncpu":4,"elapsed":0.25}
+EOF
+	cat > one.json <<'EOF'
+{"pid":812,"comm":"sshd","files":[{"use":"cwd","type":"file","path":"/","mode":"r"},{"fd":3,"type":"socket","proto":"TCP","local":"192.0.2.1:22","remote":"198.51.100.7:51000","mode":"rw"}],"threads":[{"tid":100812,"name":"sshd","state":"sleep","wait":"select","pri":20,"wcpu":0.05,"time":1.27,"cpu":0}]}
+EOF
+	# The args split on blanks; OpenConfig's utilization at most 100,
+	# the exact share in cpu; start in nanoseconds.
+	cat > want <<'EOF'
+ncpu 4 elapsed 0.25
+process 812 name=sshd args=/usr/sbin/sshd|-D start=1791990000000000000 util=0 memory=9437184 ppid=1 user=root jail=0/- state=sleep wait=select nice=0 pri=20 threads=1 size=14680064 time=1.27 cpu=0.00 wcpu=0.05 in=12 out=3 io=0.00
+  file use=cwd type=file path=/ proto=- local=- remote=- mode=r
+  file fd=3 type=socket path=- proto=TCP local=192.0.2.1:22 remote=198.51.100.7:51000 mode=rw
+  thread 100812 name=sshd state=sleep wait=select pri=20 wcpu=0.05 time=1.27
+process 4100 name=nginx args=nginx:|worker|process start=1791995110000000000 util=100 memory=104857600 ppid=4099 user=www jail=3/web state=run wait=- nice=-5 pri=52 threads=4 size=209715200 time=3600.50 cpu=180.40 wcpu=151.25 in=0 out=0 io=2.50
+jail 3 web procs=5 threads=9 cpu=180.40 wcpu=151.25 rss=130000000
+yang-cbor 411 bytes, the same back
+EOF
+	atf_check -o file:want "$y" ps.json one.json
+	# Without the detail, no files or threads.
+	atf_check -o not-match:'^  ' "$y" ps.json
+}
+
 atf_test_case yang_storage
 yang_storage_head()
 {
@@ -6153,6 +6188,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_rtadv_conf
 	atf_add_test_case yang_jails
 	atf_add_test_case yang_system
+	atf_add_test_case yang_processes
 	atf_add_test_case yang_storage
 	atf_add_test_case yang_jobs
 	atf_add_test_case yang_packages

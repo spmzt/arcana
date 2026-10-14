@@ -61,6 +61,21 @@ yj_num(const ucl_object_t *o, const char *key, int64_t *v)
 	return (true);
 }
 
+/* A number of o's, a float or an integer, in hundredths; false: none. */
+bool
+yj_hundredths(const ucl_object_t *o, const char *key, int64_t *v)
+{
+	const ucl_object_t *x = ucl_object_lookup(o, key);
+	double d;
+
+	if (x == NULL || (ucl_object_type(x) != UCL_INT &&
+	    ucl_object_type(x) != UCL_FLOAT))
+		return (false);
+	d = ucl_object_todouble(x) * 100;
+	*v = (int64_t)(d + (d < 0 ? -0.5 : 0.5));
+	return (true);
+}
+
 /* true, "yes", "on": true; false, "no", "off": false; else none. */
 bool
 yj_yes(const ucl_object_t *o, const char *key, bool *has)

@@ -24,6 +24,10 @@ implemented (`yanglint -i`), as an implementation of them will.
 | File | | Source |
 |---|---|---|
 | `iana-crypt-hash@2014-08-06.yang` | module | IANA registry |
+| `openconfig-extensions@2025-01-02.yang` | module | OpenConfig (Apache-2.0), from YANG Catalog; `openconfig-procmon`'s import |
+| `openconfig-procmon@2019-03-15.yang` | module | OpenConfig (Apache-2.0), from YANG Catalog; its grouping is used by `arcana-processes` |
+| `openconfig-types@2024-01-31.yang` | module | OpenConfig (Apache-2.0), from YANG Catalog; `openconfig-procmon`'s import |
+| `openconfig-yang-types@2024-05-30.yang` | module | OpenConfig (Apache-2.0), from YANG Catalog; `openconfig-procmon`'s import |
 | `iana-icmpv4-types@2025-12-22.yang` | module | IANA registry |
 | `iana-icmpv6-types@2025-12-22.yang` | module | IANA registry |
 | `iana-if-type@2026-03-17.yang` | module | IANA registry |
@@ -89,6 +93,7 @@ Arcana's provisional block (SIDS.md), their `.sid` files beside them.
 | `arcana-ip-deviations@2026-10-14.yang` | module | deviates `ietf-ip`: forwarding, DAD's probes and temporary addresses are the host's sysctls, IPv4 cannot be turned off on one interface, one MTU for both families: config false |
 | `arcana-jails@2026-10-14.yang` | module | FreeBSD's jails (jail(8), jail(2)): those jail.conf(5) defines, as jail(8) -e resolves them, and those running, as jail_get(2) gives them; start, stop, restart, kill as actions; a vnet jail's logical network element (RFC 8530); the list and action operations of arcana.yaml converted (Y-3) |
 | `arcana-sysctl@2026-10-14.yang` | module | FreeBSD's kernel state, sysctl(3): sysctl.conf(5)'s settings as configuration (written in place), the values with their kind, whether writable and what they are said to be as state; the sysctl and sysctl-parts operations of arcana.yaml converted (Y-3) |
+| `arcana-processes@2026-10-14.yang` | module | FreeBSD's processes (kvm_getprocs(3), libprocstat(3)) in OpenConfig's shape: `openconfig-procmon`'s list, augmented with what FreeBSD has besides (parent, user, jail, run state, wait channel, nice, priority, threads, CPU time and the decayed share, blocks read and written), one process's files and threads, the jails' totals; signal (kill(2)) and renice (setpriority(2)) actions; the processes operation of arcana.yaml converted (Y-3) |
 | `arcana-kernel@2026-10-14.yang` | module | FreeBSD's kernel: rc.conf's kld_list as configuration; the files linked and their modules, those available, its memory (malloc(9) types, uma(9) zones) as state; load an rpc, unload an action; the kernel operation of arcana.yaml converted (Y-3) |
 | `arcana-storage@2026-10-14.yang` | module | FreeBSD's storage: GEOM's disks and partitions, each with its health (nvmecontrol, smartctl), the ZFS pools with their vdevs and those importable, datasets and snapshots, the mounts, fstab(5)'s text and entries, the swap; a dataset's key loaded, unloaded, changed, fstab replaced, a snapshot sent, one received, as actions; the storage, fstab, zfs-send, zfs-receive and zfs-key operations of arcana.yaml converted (Y-3) |
 | `arcana-jobs@2026-10-14.yang` | module | the agent's jobs: the queue, each job's trace as a flat list of steps naming their parents; submit (an rpc), cancel and confirm (actions); the job-submit, jobs, job, job-cancel and job-confirm operations of arcana.yaml converted (Y-3) |

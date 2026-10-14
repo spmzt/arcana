@@ -415,8 +415,17 @@
   and unload); superbia/ysystem.c reads the JSON back (yang/yjson.c, now
   ystorage's too) and writes the configuration in place by libvarconf:
   sysctl.conf's settings set, appended, taken out, comments kept;
-  kld_list made or taken out (yang_system). Next: 3.1.7, processes,
-  log, history, events, and the rest of 3.1 in turn; 2.8,
+  kld_list made or taken out (yang_system). 3.1.7, processes:
+  share/yang/arcana-processes (63 800) uses OpenConfig's
+  openconfig-procmon grouping (found in YANG Catalog: the list keyed by
+  pid, name, args, start-time, CPU utilization, memory; its imports
+  vendored as published) and augments it with FreeBSD's (ppid, user,
+  jail, run state, wait channel, nice, priority, threads, CPU time and
+  WCPU, blocks), one process's files and threads, the jails' totals;
+  signal and renice actions are the proc job's, a start-time guarding
+  against a pid given to another (gula/yprocs.c, yang_processes).
+  Next: 3.1.7's log (ietf-syslog for syslog.conf), history, events
+  (faults as ietf-alarms), and the rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model

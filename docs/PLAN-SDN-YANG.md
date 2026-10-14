@@ -1264,8 +1264,9 @@ A step never leaves `main` unbuildable; where a step would, it says
   root ZFS test.
 - 3.1.6 A: `arcana-sysctl` (`running` ↔ sysctl.conf, operational from
   sysctl(3)); `arcana-kernel` (modules, `kld_list`); check: tests.
-- 3.1.7 A: `arcana-processes`, `arcana-log`, `arcana-history`,
-  `arcana-events` (numbered, replayable); check: tests.
+- 3.1.7 A: `arcana-processes` (on `openconfig-procmon`; done),
+  `arcana-log`, `arcana-history`, `arcana-events` (numbered,
+  replayable); check: tests.
 - 3.1.8 A: `arcana-bird`, `arcana-wireguard`, `arcana-netgraph`,
   `arcana-plugins`; check: the plugin tests.
 - 3.1.9 A: `arcana-host` (facts, router-id, role, capabilities),

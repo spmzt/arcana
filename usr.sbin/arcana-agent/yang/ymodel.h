@@ -240,6 +240,17 @@ struct arcana_kernel_kernel;
 struct arcana_kernel;
 struct arcana_kernel_load_input;
 struct arcana_kernel_load_output;
+struct arcana_processes_processes_process_state;
+struct arcana_processes_processes_process_file;
+struct arcana_processes_processes_process_thread;
+struct arcana_processes_processes_process_signal_input;
+struct arcana_processes_processes_process_signal_output;
+struct arcana_processes_processes_process_renice_input;
+struct arcana_processes_processes_process_renice_output;
+struct arcana_processes_processes_process;
+struct arcana_processes_processes_jail;
+struct arcana_processes_processes;
+struct arcana_processes;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -3411,6 +3422,160 @@ struct arcana_kernel_load_output {
 	char			 _empty;	/* nothing in it */
 };
 
+/* container */
+struct arcana_processes_processes_process_state {
+	bool			 has_pid;
+	uint64_t	 pid;
+	const char	*name;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	bool			 has_start_time;
+	uint64_t	 start_time;
+	bool			 has_cpu_usage_user;
+	uint64_t	 cpu_usage_user;
+	bool			 has_cpu_usage_system;
+	uint64_t	 cpu_usage_system;
+	bool			 has_cpu_utilization;
+	uint8_t		 cpu_utilization;
+	bool			 has_memory_usage;
+	uint64_t	 memory_usage;
+	bool			 has_memory_utilization;
+	uint8_t		 memory_utilization;
+	bool			 has_ppid;
+	uint64_t	 ppid;
+	const char	*user;
+	bool			 has_jid;
+	uint32_t	 jid;
+	const char	*jail;
+	const char	*run_state;
+	const char	*wait;
+	bool			 has_nice;
+	int32_t		 nice;
+	bool			 has_priority;
+	int32_t		 priority;
+	bool			 has_threads;
+	uint32_t	 threads;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_cpu_time;
+	int64_t		 cpu_time;	/* decimal64, 2 fraction digits */
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 2 fraction digits */
+	bool			 has_wcpu;
+	int64_t		 wcpu;	/* decimal64, 2 fraction digits */
+	bool			 has_blocks_in;
+	uint64_t	 blocks_in;
+	bool			 has_blocks_out;
+	uint64_t	 blocks_out;
+	bool			 has_io;
+	int64_t		 io;	/* decimal64, 2 fraction digits */
+};
+
+/* list entry */
+struct arcana_processes_processes_process_file {
+	bool			 has_fd;
+	int32_t		 fd;
+	const char	*use;
+	const char	*type;
+	const char	*path;
+	const char	*proto;
+	const char	*local;
+	const char	*remote;
+	const char	*mode;
+};
+
+/* list entry */
+struct arcana_processes_processes_process_thread {
+	uint64_t	 tid;
+	const char	*name;
+	const char	*run_state;
+	const char	*wait;
+	bool			 has_priority;
+	int32_t		 priority;
+	bool			 has_wcpu;
+	int64_t		 wcpu;	/* decimal64, 2 fraction digits */
+	bool			 has_cpu_time;
+	int64_t		 cpu_time;	/* decimal64, 2 fraction digits */
+};
+
+/* input */
+struct arcana_processes_processes_process_signal_input {
+	const char	*signal;
+	bool			 has_start_time;
+	uint64_t	 start_time;
+};
+
+/* output */
+struct arcana_processes_processes_process_signal_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* input */
+struct arcana_processes_processes_process_renice_input {
+	bool			 has_nice;
+	int32_t		 nice;
+	bool			 has_start_time;
+	uint64_t	 start_time;
+};
+
+/* output */
+struct arcana_processes_processes_process_renice_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* list entry */
+struct arcana_processes_processes_process {
+	uint64_t	 pid;
+	const struct arcana_processes_processes_process_state	*state;
+	struct {
+		size_t		 n;
+		const struct arcana_processes_processes_process_file	*v;
+	}			 file;
+	struct {
+		size_t		 n;
+		const struct arcana_processes_processes_process_thread	*v;
+	}			 thread;
+};
+
+/* list entry */
+struct arcana_processes_processes_jail {
+	uint32_t	 jid;
+	const char	*name;
+	bool			 has_procs;
+	uint32_t	 procs;
+	bool			 has_threads;
+	uint32_t	 threads;
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 2 fraction digits */
+	bool			 has_wcpu;
+	int64_t		 wcpu;	/* decimal64, 2 fraction digits */
+	bool			 has_rss;
+	uint64_t	 rss;
+};
+
+/* container */
+struct arcana_processes_processes {
+	struct {
+		size_t		 n;
+		const struct arcana_processes_processes_process	*v;
+	}			 process;
+	bool			 has_ncpu;
+	uint32_t	 ncpu;
+	bool			 has_elapsed;
+	int64_t		 elapsed;	/* decimal64, 2 fraction digits */
+	struct {
+		size_t		 n;
+		const struct arcana_processes_processes_jail	*v;
+	}			 jail;
+};
+
+/* data */
+struct arcana_processes {
+	const struct arcana_processes_processes	*processes;
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -4263,6 +4428,46 @@ int	arcana_kernel_load_output_encode(const struct arcana_kernel_load_output *,
 	    struct cbl_ybuf *);
 int	arcana_kernel_load_output_decode(const void *, size_t, struct arcana_kernel_load_output *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_state_encode(const struct arcana_processes_processes_process_state *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_state_decode(const void *, size_t, struct arcana_processes_processes_process_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_file_encode(const struct arcana_processes_processes_process_file *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_file_decode(const void *, size_t, struct arcana_processes_processes_process_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_thread_encode(const struct arcana_processes_processes_process_thread *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_thread_decode(const void *, size_t, struct arcana_processes_processes_process_thread *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_signal_input_encode(const struct arcana_processes_processes_process_signal_input *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_signal_input_decode(const void *, size_t, struct arcana_processes_processes_process_signal_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_signal_output_encode(const struct arcana_processes_processes_process_signal_output *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_signal_output_decode(const void *, size_t, struct arcana_processes_processes_process_signal_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_renice_input_encode(const struct arcana_processes_processes_process_renice_input *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_renice_input_decode(const void *, size_t, struct arcana_processes_processes_process_renice_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_renice_output_encode(const struct arcana_processes_processes_process_renice_output *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_renice_output_decode(const void *, size_t, struct arcana_processes_processes_process_renice_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_encode(const struct arcana_processes_processes_process *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_decode(const void *, size_t, struct arcana_processes_processes_process *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_jail_encode(const struct arcana_processes_processes_jail *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_jail_decode(const void *, size_t, struct arcana_processes_processes_jail *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_encode(const struct arcana_processes_processes *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_decode(const void *, size_t, struct arcana_processes_processes *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -4371,5 +4576,14 @@ int	arcana_kernel_kernel_file_unload_action(cbl_req *, const struct cbl_bytes *,
 	    struct arcana_kernel_kernel_file_unload_output *, cbl_yarena *);
 int	arcana_kernel_load_rpc(cbl_req *, const struct arcana_kernel_load_input *,
 	    struct arcana_kernel_load_output *, cbl_yarena *);
+int	arcana_processes_processes_get(cbl_req *, struct arcana_processes *, cbl_yarena *);
+int	arcana_processes_processes_edit(cbl_req *, const struct arcana_processes *,
+	    const struct arcana_processes *);
+int	arcana_processes_processes_process_signal_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_processes_processes_process_signal_input *,
+	    struct arcana_processes_processes_process_signal_output *, cbl_yarena *);
+int	arcana_processes_processes_process_renice_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_processes_processes_process_renice_input *,
+	    struct arcana_processes_processes_process_renice_output *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */
