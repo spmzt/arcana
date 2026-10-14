@@ -36,6 +36,14 @@
  *   (NTF_STICKY), else dynamic; an IPv6 one's router flag (NTF_ROUTER)
  *   and its state (NUD_*), where it is not static.
  *
+ * - what FreeBSD sets for the whole host by sysctl(8), on every
+ *   interface (PLAN-SDN-YANG 1.10.3): forwarding (net.inet.ip.forwarding,
+ *   net.inet6.ip6.forwarding), DAD's probes (net.inet6.ip6.dad_count),
+ *   temporary addresses (net.inet6.ip6.use_tempaddr, tempvltime,
+ *   temppltime); arcana-ip-deviations makes them config false.  Whether
+ *   an interface makes global addresses from RAs is its own
+ *   (ND6_IFF_ACCEPT_RTADV).
+ *
  * The scope a link-local IPv6 address carries in the kernel's form is
  * taken out (ietf-ip's addresses have no zone).
  */
@@ -44,6 +52,7 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/sockio.h>
+#include <sys/sysctl.h>
 
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -270,6 +279,45 @@ v6_fill(yv6 *x, const struct ifaddrs *ifa, const struct ifip *ip, int s6,
 	return (0);
 }
 
+/* What the host sets for every interface; has_*: read. */
+struct hostip {
+	bool		 has_fwd4, fwd4, has_fwd6, fwd6;
+	bool		 has_dad, has_temp, temp, has_tvl, has_tpl;
+	uint32_t	 dad, tvl, tpl;
+};
+
+static bool
+sysctl_int(const char *name, int *v)
+{
+	size_t len = sizeof(*v);
+
+	return (sysctlbyname(name, v, &len, NULL, 0) == 0 &&
+	    len == sizeof(*v));
+}
+
+static void
+host_read(struct hostip *h)
+{
+	int v;
+
+	memset(h, 0, sizeof(*h));
+	if ((h->has_fwd4 = sysctl_int("net.inet.ip.forwarding", &v)))
+		h->fwd4 = v != 0;
+	if ((h->has_fwd6 = sysctl_int("net.inet6.ip6.forwarding", &v)))
+		h->fwd6 = v != 0;
+	if ((h->has_dad = sysctl_int("net.inet6.ip6.dad_count", &v) &&
+	    v >= 0))
+		h->dad = (uint32_t)v;
+	if ((h->has_temp = sysctl_int("net.inet6.ip6.use_tempaddr", &v)))
+		h->temp = v != 0;
+	if ((h->has_tvl = sysctl_int("net.inet6.ip6.tempvltime", &v) &&
+	    v >= 0))
+		h->tvl = (uint32_t)v;
+	if ((h->has_tpl = sysctl_int("net.inet6.ip6.temppltime", &v) &&
+	    v >= 0))
+		h->tpl = (uint32_t)v;
+}
+
 /* A neighbour as netlink(4) gives it. */
 struct nb {
 	uint32_t	 ifindex;
@@ -433,8 +481,9 @@ nb_fill(struct ifip *ip, size_t n, const struct nb *v, size_t nv,
 
 /* The interface's IPv6 as the kernel has it attached, if it is. */
 static int
-v6_on(struct ifip *ip, int s6, cbl_yarena *a)
+v6_on(struct ifip *ip, int s6, const struct hostip *h, cbl_yarena *a)
 {
+	struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf *ac;
 	struct ietf_interfaces_interfaces_interface_ip_ipv6 *v6;
 	struct in6_ndireq nd;
 	uint32_t mtu;
@@ -443,8 +492,23 @@ v6_on(struct ifip *ip, int s6, cbl_yarena *a)
 	strlcpy(nd.ifname, ip->e->name, sizeof(nd.ifname));
 	if (s6 == -1 || ioctl(s6, SIOCGIFINFO_IN6, &nd) != 0)
 		return (0);
-	if ((v6 = cbl_yarena_alloc(a, sizeof(*v6))) == NULL)
+	if ((v6 = cbl_yarena_alloc(a, sizeof(*v6))) == NULL ||
+	    (ac = cbl_yarena_alloc(a, sizeof(*ac))) == NULL)
 		return (ENOMEM);
+	v6->has_forwarding = h->has_fwd6;
+	v6->forwarding = h->fwd6;
+	v6->has_dup_addr_detect_transmits = h->has_dad;
+	v6->dup_addr_detect_transmits = h->dad;
+	ac->has_create_global_addresses = true;
+	ac->create_global_addresses =
+	    (nd.ndi.flags & ND6_IFF_ACCEPT_RTADV) != 0;
+	ac->has_create_temporary_addresses = h->has_temp;
+	ac->create_temporary_addresses = h->temp;
+	ac->has_temporary_valid_lifetime = h->has_tvl;
+	ac->temporary_valid_lifetime = h->tvl;
+	ac->has_temporary_preferred_lifetime = h->has_tpl;
+	ac->temporary_preferred_lifetime = h->tpl;
+	v6->autoconf = ac;
 	v6->has_enabled = true;
 	v6->enabled = (nd.ndi.flags & ND6_IFF_IFDISABLED) == 0;
 	mtu = ip->e->has_arcif_mtu ? ip->e->arcif_mtu : 0;
@@ -463,7 +527,7 @@ v6_on(struct ifip *ip, int s6, cbl_yarena *a)
 }
 
 static int
-v4_on(struct ifip *ip, cbl_yarena *a)
+v4_on(struct ifip *ip, const struct hostip *h, cbl_yarena *a)
 {
 	struct ietf_interfaces_interfaces_interface_ip_ipv4 *v4;
 
@@ -475,6 +539,8 @@ v4_on(struct ifip *ip, cbl_yarena *a)
 		return (ENOMEM);
 	v4->has_enabled = true;
 	v4->enabled = true;
+	v4->has_forwarding = h->has_fwd4;
+	v4->forwarding = h->fwd4;
 	if (ip->e->has_arcif_mtu) {
 		v4->has_mtu = true;
 		v4->mtu = (uint16_t)MIN(ip->e->arcif_mtu, UINT16_MAX);
@@ -494,6 +560,7 @@ yip_interfaces(yif *v, size_t n, cbl_yarena *a)
 	struct ifaddrs *ifa0, *ifa;
 	struct ifip *ips, *cur;
 	struct nb *nbs = NULL;
+	struct hostip h;
 	size_t nnbs = 0;
 	int s6, error = 0;
 
@@ -565,9 +632,10 @@ yip_interfaces(yif *v, size_t n, cbl_yarena *a)
 	if (error == 0 && (error = neighbours(&nbs, &nnbs)) == 0)
 		error = nb_fill(ips, n, nbs, nnbs, a);
 	free(nbs);
+	host_read(&h);
 	for (size_t i = 0; i < n && error == 0; i++)
-		if ((error = v4_on(&ips[i], a)) == 0)
-			error = v6_on(&ips[i], s6, a);
+		if ((error = v4_on(&ips[i], &h, a)) == 0)
+			error = v6_on(&ips[i], s6, &h, a);
 	if (s6 != -1)
 		close(s6);
 out:

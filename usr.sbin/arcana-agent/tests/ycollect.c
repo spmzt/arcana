@@ -15,6 +15,9 @@
  *	ycollect ip		ietf-ip's: v4= and v6= the addresses,
  *				address/length:origin[:status] joined by
  *				'+', ipv6= on/off and its MTU
+ *	ycollect ipsys		ietf-ip's host-wide leaves, an interface a
+ *				line: fwd4= fwd6= dad= temp= tvl= tpl=
+ *				global= (- where absent)
  *	ycollect nb		ietf-ip's neighbours, one a line: the
  *				interface, inet or inet6, the address, the
  *				link-layer address, the origin; an inet6
@@ -172,6 +175,37 @@ ip(const struct ietf_interfaces_interfaces_interface *e)
 	printf("\n");
 }
 
+static void
+ipsys(const struct ietf_interfaces_interfaces_interface *e)
+{
+	const struct ietf_interfaces_interfaces_interface_ip_ipv4 *v4 =
+	    e->ip_ipv4;
+	const struct ietf_interfaces_interfaces_interface_ip_ipv6 *v6 =
+	    e->ip_ipv6;
+	const struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf *ac =
+	    v6 != NULL ? v6->autoconf : NULL;
+
+	printf("%s fwd4=", e->name);
+	printf(v4 != NULL && v4->has_forwarding ? "%d" : "-", v4 != NULL &&
+	    v4->forwarding);
+	printf(" fwd6=");
+	printf(v6 != NULL && v6->has_forwarding ? "%d" : "-", v6 != NULL &&
+	    v6->forwarding);
+	if (v6 != NULL && v6->has_dup_addr_detect_transmits)
+		printf(" dad=%u", v6->dup_addr_detect_transmits);
+	else
+		printf(" dad=-");
+	if (ac != NULL)
+		printf(" temp=%d tvl=%u tpl=%u global=%d",
+		    ac->create_temporary_addresses,
+		    ac->temporary_valid_lifetime,
+		    ac->temporary_preferred_lifetime,
+		    ac->create_global_addresses);
+	else
+		printf(" temp=- tvl=- tpl=- global=-");
+	printf("\n");
+}
+
 static const char *const nb_origin[] = { "other", "static", "dynamic" };
 static const char *const nb_state[] = { "incomplete", "reachable", "stale",
     "delay", "probe" };
@@ -243,8 +277,9 @@ main(int argc, char **argv)
 
 	if (argc != 2 || (strcmp(argv[1], "interfaces") != 0 &&
 	    strcmp(argv[1], "arcif") != 0 && strcmp(argv[1], "ip") != 0 &&
-	    strcmp(argv[1], "nb") != 0)) {
-		fprintf(stderr, "usage: ycollect interfaces | arcif | ip | nb\n");
+	    strcmp(argv[1], "nb") != 0 && strcmp(argv[1], "ipsys") != 0)) {
+		fprintf(stderr,
+		    "usage: ycollect interfaces | arcif | ip | ipsys | nb\n");
 		return (2);
 	}
 	if ((a = cbl_yarena_new()) == NULL)
@@ -265,6 +300,10 @@ main(int argc, char **argv)
 		}
 		if (strcmp(argv[1], "nb") == 0) {
 			nb(e);
+			continue;
+		}
+		if (strcmp(argv[1], "ipsys") == 0) {
+			ipsys(e);
 			continue;
 		}
 		const struct cbl_yident *t = e->has_type ?
