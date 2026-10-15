@@ -73,12 +73,20 @@ CFLAGS.yng.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 LDADD.yplug+=	${CBLINK_LIBS} ${UCL_LIBS}
 # ymisc: the host, the agent and the jails' files as their modules have them.
 PROGS+=		ymisc
-SRCS.ymisc=	ymisc_test.c yhost.c yagent.c yjf.c yjson.c ymodel_schema.c
+SRCS.ymisc=	ymisc_test.c yhost.c yagent.c yjf.c ysshd.c yjson.c ymodel_schema.c
+CFLAGS.ysshd.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 CFLAGS.ymisc_test.c+=	-I${.OBJDIR}/..
 CFLAGS.yhost.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 CFLAGS.yagent.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 CFLAGS.yjf.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 LDADD.ymisc+=	${CBLINK_LIBS} ${UCL_LIBS}
+# ysd: the probes and the SD-WAN edge as arcana-probe and arcana-sdwan have them.
+PROGS+=		ysd
+SRCS.ysd=	ysd_test.c yprobe.c ysd.c yjson.c ymodel_schema.c
+CFLAGS.ysd_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yprobe.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+CFLAGS.ysd.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.ysd+=	${CBLINK_LIBS} ${UCL_LIBS}
 # yprocs: the processes operation's replies as arcana-processes has them.
 PROGS+=		yprocs
 SRCS.yprocs=	yprocs_test.c yprocs.c yjson.c ymodel_schema.c

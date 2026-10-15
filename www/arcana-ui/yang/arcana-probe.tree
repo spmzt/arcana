@@ -1,0 +1,72 @@
+module: arcana-probe
+  +--rw probes
+     +--rw target* [id]
+     |  +--rw id          string
+     |  +--rw address     inet:ip-address-no-zone
+     |  +--rw fib?        uint16
+     |  +--rw interval?   uint32
+     |  +--rw size?       uint16
+     |  +--rw count?      uint32
+     |  +--rw dscp?       uint8
+     |  +--rw down?       uint8
+     |  +--rw up?         uint8
+     |  +--rw timeout?    uint32
+     |  +--rw eval?       uint32
+     |  +--rw history?    uint32
+     |  +--rw report?     uint32
+     |  +--rw tca
+     |     +--rw delay?     ms
+     |     +--rw ipdv?      ms
+     |     +--rw loss?      decimal64
+     |     +--rw damping?   uint8
+     +--ro state
+     |  +--ro probing?   boolean
+     |  +--ro time?      yang:date-and-time
+     |  +--ro target* [id]
+     |     +--ro id          string
+     |     +--ro address?    inet:ip-address-no-zone
+     |     +--ro family?     enumeration
+     |     +--ro fib?        uint16
+     |     +--ro state?      enumeration
+     |     +--ro error?      string
+     |     +--ro since?      yang:date-and-time
+     |     +--ro interval?   uint32
+     |     +--ro size?       uint16
+     |     +--ro eval?       uint32
+     |     +--ro dscp?       uint8
+     |     +--ro sent?       uint64
+     |     +--ro received?   uint64
+     |     +--ro misses?     uint32
+     |     +--ro last-rtt?   ms
+     |     +--ro now
+     |     |  +--ro sent?       uint32
+     |     |  +--ro received?   uint32
+     |     |  +--ro delay?      ms
+     |     |  +--ro ipdv?       ms
+     |     |  +--ro loss?       decimal64
+     |     |  +--ro age?        ms
+     |     +--ro kept?       uint32
+     |     +--ro sample* [time]
+     |        +--ro time        yang:date-and-time
+     |        +--ro delay?      ms
+     |        +--ro ipdv?       ms
+     |        +--ro loss?       decimal64
+     |        +--ro min?        ms
+     |        +--ro max?        ms
+     |        +--ro sent?       uint32
+     |        +--ro received?   uint32
+     +---x read
+        +---w input
+        |  +---w after?   yang:date-and-time
+        +--ro output
+           +--ro target* [id]
+              +--ro id    string
+              +--ro sample* [time]
+                 +--ro time        yang:date-and-time
+                 +--ro delay?      ms
+                 +--ro ipdv?       ms
+                 +--ro loss?       decimal64
+                 +--ro min?        ms
+                 +--ro max?        ms
+                 +--ro sent?       uint32
+                 +--ro received?   uint32

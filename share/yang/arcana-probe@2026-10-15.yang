@@ -1,0 +1,433 @@
+module arcana-probe {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-probe";
+  prefix arcprobe;
+
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The tunnels a FreeBSD host measures as an SD-WAN edge does
+     (Mplify 119 §11.4): each target an ICMP echo on a raw socket
+     (root), at its interval, with its size and DSCP, down after so
+     many misses in a row and up again after so many answers; a
+     sample every evaluation interval of the one-way delay (half the
+     mean round trip), the delay variation, the loss ratio, the least
+     and the most, and the probes sent and answered; thresholds a
+     metric over which is a fault (tca).  The targets are
+     configuration, kept for the agent's next start; what the probes
+     have seen is state.  The sdwan-probes operation and the targets
+     of the sdwan read of arcana.yaml converted (Y-3); a target that
+     goes down or comes up is an arcana-events sdwan-tunnel event.";
+
+  revision 2026-10-15 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.11.";
+  }
+
+  typedef ms {
+    type decimal64 {
+      fraction-digits 3;
+    }
+    units "milliseconds";
+    description
+      "Milliseconds.";
+  }
+
+  grouping sample {
+    description
+      "One evaluation interval's figures.";
+    leaf time {
+      type yang:date-and-time;
+      description
+        "When the interval ended.";
+    }
+    leaf delay {
+      type ms;
+      description
+        "The mean one-way delay: half the mean round trip.";
+    }
+    leaf ipdv {
+      type ms;
+      description
+        "The mean delay variation.";
+    }
+    leaf loss {
+      type decimal64 {
+        fraction-digits 6;
+        range "0..1";
+      }
+      description
+        "The loss ratio: probes unanswered over probes sent.";
+    }
+    leaf min {
+      type ms;
+      description
+        "The least one-way delay.";
+    }
+    leaf max {
+      type ms;
+      description
+        "The most.";
+    }
+    leaf sent {
+      type uint32;
+      description
+        "Probes sent.";
+    }
+    leaf received {
+      type uint32;
+      description
+        "Answered.";
+    }
+  }
+
+  container probes {
+    description
+      "The targets, and what the probes have seen.";
+    list target {
+      key "id";
+      description
+        "A tunnel to measure.";
+      leaf id {
+        type string;
+        description
+          "The tunnel (TVC), as the console names it.";
+      }
+      leaf address {
+        type inet:ip-address-no-zone;
+        mandatory true;
+        description
+          "Its far end, which answers the echo.";
+      }
+      leaf fib {
+        type uint16;
+        default "0";
+        description
+          "The table it is reached by.";
+      }
+      leaf interval {
+        type uint32 {
+          range "10..60000";
+        }
+        units "milliseconds";
+        default "100";
+        description
+          "Between two probes.";
+      }
+      leaf size {
+        type uint16 {
+          range "28..9000";
+        }
+        units "bytes";
+        default "64";
+        description
+          "A probe's size.";
+      }
+      leaf count {
+        type uint32;
+        default "0";
+        description
+          "How many probes; 0 without end.";
+      }
+      leaf dscp {
+        type uint8 {
+          range "0..63";
+        }
+        default "0";
+        description
+          "The DSCP of the probes.";
+      }
+      leaf down {
+        type uint8 {
+          range "1..255";
+        }
+        default "3";
+        description
+          "Misses in a row that make it down.";
+      }
+      leaf up {
+        type uint8 {
+          range "1..255";
+        }
+        default "3";
+        description
+          "Answers in a row that make it up again.";
+      }
+      leaf timeout {
+        type uint32;
+        units "milliseconds";
+        default "1000";
+        description
+          "How long an answer is waited for.";
+      }
+      leaf eval {
+        type uint32;
+        units "milliseconds";
+        default "1000";
+        description
+          "One sample's interval.";
+      }
+      leaf history {
+        type uint32;
+        default "3600";
+        description
+          "Samples kept.";
+      }
+      leaf report {
+        type uint32;
+        units "milliseconds";
+        description
+          "How often to report, a multiple of eval.";
+      }
+      container tca {
+        description
+          "Thresholds a metric over which is a fault, cleared under
+           it again.";
+        leaf delay {
+          type ms;
+          description
+            "The delay's.";
+        }
+        leaf ipdv {
+          type ms;
+          description
+            "The delay variation's.";
+        }
+        leaf loss {
+          type decimal64 {
+            fraction-digits 6;
+            range "0..1";
+          }
+          description
+            "The loss ratio's.";
+        }
+        leaf damping {
+          type uint8;
+          default "1";
+          description
+            "Intervals in a row over it before the fault.";
+        }
+      }
+    }
+    container state {
+      config false;
+      description
+        "What the probes have seen.";
+      leaf probing {
+        type boolean;
+        description
+          "The probe thread runs.";
+      }
+      leaf time {
+        type yang:date-and-time;
+        description
+          "When read.";
+      }
+      list target {
+        key "id";
+        description
+          "Each target as it is.";
+        leaf id {
+          type string;
+          description
+            "The tunnel.";
+        }
+        leaf address {
+          type inet:ip-address-no-zone;
+          description
+            "Its far end.";
+        }
+        leaf family {
+          type enumeration {
+            enum ipv4 {
+              description
+                "IPv4.";
+            }
+            enum ipv6 {
+              description
+                "IPv6.";
+            }
+          }
+          description
+            "Its address family.";
+        }
+        leaf fib {
+          type uint16;
+          description
+            "The table it is reached by.";
+        }
+        leaf state {
+          type enumeration {
+            enum unknown {
+              description
+                "Not yet known.";
+            }
+            enum up {
+              description
+                "Answers.";
+            }
+            enum down {
+              description
+                "Does not.";
+            }
+            enum ended {
+              description
+                "The count ran out.";
+            }
+            enum error {
+              description
+                "Could not be probed.";
+            }
+          }
+          description
+            "As the probes see it.";
+        }
+        leaf error {
+          type string;
+          description
+            "Why it could not be probed.";
+        }
+        leaf since {
+          type yang:date-and-time;
+          description
+            "When the state began.";
+        }
+        leaf interval {
+          type uint32;
+          units "milliseconds";
+          description
+            "Between two probes.";
+        }
+        leaf size {
+          type uint16;
+          units "bytes";
+          description
+            "A probe's size.";
+        }
+        leaf eval {
+          type uint32;
+          units "milliseconds";
+          description
+            "One sample's interval.";
+        }
+        leaf dscp {
+          type uint8;
+          description
+            "The probes' DSCP.";
+        }
+        leaf sent {
+          type uint64;
+          description
+            "Probes sent in all.";
+        }
+        leaf received {
+          type uint64;
+          description
+            "Answered in all.";
+        }
+        leaf misses {
+          type uint32;
+          description
+            "Misses in a row now.";
+        }
+        leaf last-rtt {
+          type ms;
+          description
+            "The last round trip.";
+        }
+        container now {
+          description
+            "The sample in progress.";
+          leaf sent {
+            type uint32;
+            description
+              "Sent.";
+          }
+          leaf received {
+            type uint32;
+            description
+              "Answered.";
+          }
+          leaf delay {
+            type ms;
+            description
+              "The one-way delay so far.";
+          }
+          leaf ipdv {
+            type ms;
+            description
+              "The delay variation so far.";
+          }
+          leaf loss {
+            type decimal64 {
+              fraction-digits 6;
+            }
+            description
+              "The loss ratio so far.";
+          }
+          leaf age {
+            type ms;
+            description
+              "How far into the interval.";
+          }
+        }
+        leaf kept {
+          type uint32;
+          description
+            "Samples kept.";
+        }
+        list sample {
+          key "time";
+          description
+            "The samples kept, oldest first.";
+          uses sample;
+        }
+      }
+    }
+    action read {
+      description
+        "What the probes have seen after a time: the samples a page
+         that has the ones before asks for.";
+      input {
+        leaf after {
+          type yang:date-and-time;
+          description
+            "Only samples after this.";
+        }
+      }
+      output {
+        list target {
+          key "id";
+          description
+            "Each target's samples after the time.";
+          leaf id {
+            type string;
+            description
+              "The tunnel.";
+          }
+          list sample {
+            key "time";
+            description
+              "The samples, oldest first.";
+            uses sample;
+          }
+        }
+      }
+    }
+  }
+}

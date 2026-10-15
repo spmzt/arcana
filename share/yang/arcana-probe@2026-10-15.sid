@@ -1,0 +1,386 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-probe",
+    "module-revision": "2026-10-15",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "72000",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-probe",
+        "sid": "72000"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes",
+        "sid": "72001"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read",
+        "sid": "72002"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/input",
+        "sid": "72003"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/input/after",
+        "sid": "72004"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/output",
+        "sid": "72005"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/output/target",
+        "sid": "72006"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/output/target/id",
+        "sid": "72007"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/output/target/sample",
+        "sid": "72008"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/output/target/sample/delay",
+        "sid": "72009"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/output/target/sample/ipdv",
+        "sid": "72010"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/output/target/sample/loss",
+        "sid": "72011"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/output/target/sample/max",
+        "sid": "72012"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/output/target/sample/min",
+        "sid": "72013"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/output/target/sample/received",
+        "sid": "72014"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/output/target/sample/sent",
+        "sid": "72015"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/output/target/sample/time",
+        "sid": "72016"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state",
+        "sid": "72017"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/probing",
+        "sid": "72018"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target",
+        "sid": "72019"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/address",
+        "sid": "72020"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/dscp",
+        "sid": "72021"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/error",
+        "sid": "72022"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/eval",
+        "sid": "72023"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/family",
+        "sid": "72024"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/fib",
+        "sid": "72025"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/id",
+        "sid": "72026"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/interval",
+        "sid": "72027"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/kept",
+        "sid": "72028"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/last-rtt",
+        "sid": "72029"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/misses",
+        "sid": "72030"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/now",
+        "sid": "72031"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/now/age",
+        "sid": "72032"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/now/delay",
+        "sid": "72033"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/now/ipdv",
+        "sid": "72034"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/now/loss",
+        "sid": "72035"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/now/received",
+        "sid": "72036"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/now/sent",
+        "sid": "72037"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/received",
+        "sid": "72038"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/sample",
+        "sid": "72039"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/sample/delay",
+        "sid": "72040"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/sample/ipdv",
+        "sid": "72041"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/sample/loss",
+        "sid": "72042"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/sample/max",
+        "sid": "72043"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/sample/min",
+        "sid": "72044"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/sample/received",
+        "sid": "72045"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/sample/sent",
+        "sid": "72046"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/sample/time",
+        "sid": "72047"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/sent",
+        "sid": "72048"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/since",
+        "sid": "72049"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/size",
+        "sid": "72050"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/state",
+        "sid": "72051"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/time",
+        "sid": "72052"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target",
+        "sid": "72053"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/address",
+        "sid": "72054"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/count",
+        "sid": "72055"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/down",
+        "sid": "72056"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/dscp",
+        "sid": "72057"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/eval",
+        "sid": "72058"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/fib",
+        "sid": "72059"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/history",
+        "sid": "72060"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/id",
+        "sid": "72061"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/interval",
+        "sid": "72062"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/report",
+        "sid": "72063"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/size",
+        "sid": "72064"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/tca",
+        "sid": "72065"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/tca/damping",
+        "sid": "72066"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/tca/delay",
+        "sid": "72067"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/tca/ipdv",
+        "sid": "72068"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/tca/loss",
+        "sid": "72069"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/timeout",
+        "sid": "72070"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/up",
+        "sid": "72071"
+      }
+    ]
+  }
+}

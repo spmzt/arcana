@@ -17,6 +17,7 @@
  *	ymisc log head log.json tags.json
  *					source-log's commits and tags
  *	ymisc jail-files reply.json	the jail-files operation's JSON
+ *	ymisc sshd reply.json		the ssh operation's JSON
  *
  * Through YANG-CBOR and back, the same bytes.
  */
@@ -255,8 +256,60 @@ main(int argc, char **argv)
 			    0);
 		same((void *)arcana_jails_jails_arcjf_files_encode, (void *)
 		    arcana_jails_jails_arcjf_files_decode, &f, &back, a);
+	} else if (strcmp(argv[1], "sshd") == 0) {
+		struct arcana_sshd_sshd d, back;
+
+		if ((error = ysshd_from_json(slurp(argv[2]), a, &d)) != 0)
+			errc(1, error, "ysshd_from_json");
+		for (size_t i = 0; i < d.setting.n; i++) {
+			printf("setting %s =", d.setting.v[i].name);
+			for (size_t k = 0; k < d.setting.v[i].value.n; k++)
+				printf(" %s", d.setting.v[i].value.v[k]);
+			printf("\n");
+		}
+		printf("from-file=%s banner=%zu before-kept=%s\n", str(
+		    d.settings_from_file), d.banner != NULL ? strlen(d.banner) :
+		    0, d.before_kept ? "yes" : "no");
+		for (size_t i = 0; i < d.host_key.n; i++) {
+			const struct arcana_sshd_sshd_host_key *h =
+			    &d.host_key.v[i];
+
+			printf("host-key %s %s %u %s %s used=%s", h->path, str(
+			    h->type), h->bits, str(h->fingerprint), str(
+			    h->comment), h->certificate_used ? "yes" : "no");
+			if (h->certificate != NULL) {
+				printf(" cert %s id=%s after=%s before=%s ca=%s "
+				    "principals=", str(h->certificate->kind), str(
+				    h->certificate->id), str(
+				    h->certificate->valid_after), str(
+				    h->certificate->valid_before), str(
+				    h->certificate->ca));
+				for (size_t k = 0; k < h->certificate->principal.n;
+				    k++)
+					printf("%s%s", k > 0 ? "," : "",
+					    h->certificate->principal.v[k]);
+			}
+			printf("\n");
+		}
+		for (size_t i = 0; i < d.user.n; i++) {
+			printf("user %s uid=%u home=%s shell=%s keys=%s\n",
+			    d.user.v[i].name, d.user.v[i].uid, str(
+			    d.user.v[i].home), str(d.user.v[i].shell), str(
+			    d.user.v[i].keys_file));
+			for (size_t k = 0; k < d.user.v[i].key.n; k++)
+				printf("  key %s %s %u %s options=%s\n",
+				    d.user.v[i].key.v[k].fingerprint, str(
+				    d.user.v[i].key.v[k].type),
+				    d.user.v[i].key.v[k].bits, str(
+				    d.user.v[i].key.v[k].comment), str(
+				    d.user.v[i].key.v[k].options));
+		}
+		for (size_t i = 0; i < d.user_ca.n; i++)
+			printf("user-ca %s\n", d.user_ca.v[i]);
+		same((void *)arcana_sshd_sshd_encode, (void *)
+		    arcana_sshd_sshd_decode, &d, &back, a);
 	} else
-		errx(2, "%s: host, transport, tls, bundle, apply, log or "
-		    "jail-files", argv[1]);
+		errx(2, "%s: host, transport, tls, bundle, apply, log, "
+		    "jail-files or sshd", argv[1]);
 	return (0);
 }

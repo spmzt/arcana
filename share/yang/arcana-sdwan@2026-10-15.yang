@@ -1,0 +1,780 @@
+module arcana-sdwan {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-sdwan";
+  prefix arcsd;
+
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import arcana-firewall {
+    prefix arcfw;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "A FreeBSD host as an SD-WAN edge (MEF 70.2, Mplify 119), what the
+     console writes to it and what it tells back: the rules that
+     classify what comes in at the UNIs and steer it (an ipfw set of
+     their own, tables, dummynet and NAT objects); the policy tables'
+     candidates in the console's order, the first whose far end the
+     probes do not say is down chosen (sdwan-steer); the BIRD, dnsmasq,
+     unbound (MEF 88's DNS filter), Squid (MEF 88's url-filter, with a
+     CA of its own where TLS is opened) and Suricata (the ids
+     criterion) instances of the services, one each in its FIB
+     (setfib), as the console writes them; and as state what each is
+     doing, the security policies' record (ipfw's logdst rtsock), the
+     IPsec keys of the tunnels (sdwan-key-*.pem) and the faults of the
+     day (Mplify 119 §11.3).  The sdwan, sdwan-rules, sdwan-steer,
+     sdwan-bird, sdwan-dhcp, sdwan-dns, sdwan-proxy and sdwan-ids
+     operations of arcana.yaml converted (Y-3); the probes are
+     arcana-probe's.";
+
+  revision 2026-10-15 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.12.";
+  }
+
+  grouping instance {
+    description
+      "A service's instance of a program, in its FIB.";
+    leaf name {
+      type string;
+      description
+        "The service's name.";
+    }
+    leaf fib {
+      type uint16;
+      description
+        "The FIB it runs in (setfib).";
+    }
+    leaf conf {
+      type string;
+      description
+        "The program's configuration text, as the console writes
+         it.";
+    }
+  }
+
+  grouping running {
+    description
+      "An instance as it runs.";
+    leaf name {
+      type string;
+      description
+        "The service.";
+    }
+    leaf fib {
+      type uint16;
+      description
+        "Its FIB.";
+    }
+    leaf running {
+      type boolean;
+      description
+        "Its process is there.";
+    }
+  }
+
+  container sdwan {
+    description
+      "The edge.";
+    container rules {
+      description
+        "The classification and steering rules, as the console
+         compiles them (sdwan-rules): kept for the next start; with
+         none, the set is emptied.";
+      leaf set {
+        type uint8 {
+          range "2..31";
+        }
+        description
+          "The ipfw set they live in, emptied and filled while
+           disabled.";
+      }
+      list table {
+        key "name";
+        description
+          "The lookup tables the rules name.";
+        leaf name {
+          type string;
+          description
+            "The table.";
+        }
+        leaf valtype {
+          type enumeration {
+            enum skipto {
+              description
+                "A rule number.";
+            }
+            enum ipv4 {
+              description
+                "An IPv4 next hop.";
+            }
+            enum ipv6 {
+              description
+                "An IPv6 next hop.";
+            }
+            enum legacy {
+              description
+                "A number.";
+            }
+          }
+          description
+            "What its values are.";
+        }
+        list entry {
+          key "prefix";
+          description
+            "Its entries.";
+          leaf prefix {
+            type string;
+            description
+              "The key.";
+          }
+          leaf value {
+            type string;
+            description
+              "The value.";
+          }
+        }
+      }
+      leaf-list object {
+        type string;
+        description
+          "dummynet pipes, queues and schedulers, and NAT instances
+           the rules name, each as ipfw takes it (pipe N config ...),
+           made before the rules, deleted with them.";
+      }
+      list rule {
+        key "number";
+        description
+          "The rules.";
+        leaf number {
+          type arcfw:rule-number;
+          description
+            "Its number.";
+        }
+        leaf text {
+          type string;
+          description
+            "Its words.";
+        }
+      }
+    }
+    container steer {
+      description
+        "What the policy tables hold (sdwan-steer).";
+      list entry {
+        key "table prefix";
+        description
+          "A prefix's candidates, in the console's order.";
+        leaf table {
+          type string;
+          description
+            "The policy table.";
+        }
+        leaf prefix {
+          type string;
+          description
+            "The prefix.";
+        }
+        list candidate {
+          key "id";
+          ordered-by user;
+          description
+            "The tunnels it may go by, best first.";
+          leaf id {
+            type string;
+            description
+              "The tunnel, as the probes know it.";
+          }
+          leaf via {
+            type inet:ip-address-no-zone;
+            description
+              "The address it goes by.";
+          }
+        }
+      }
+    }
+    list bird-instance {
+      key "name";
+      description
+        "The BIRD instances of the services (sdwan-bird).";
+      uses instance;
+    }
+    list dhcp-instance {
+      key "name";
+      description
+        "The dnsmasq instances (sdwan-dhcp).";
+      uses instance;
+    }
+    list dns-instance {
+      key "name";
+      description
+        "The unbound instances (sdwan-dns).";
+      uses instance;
+    }
+    list proxy-instance {
+      key "name";
+      description
+        "The Squid instances (sdwan-proxy).";
+      uses instance;
+      leaf mode {
+        type enumeration {
+          enum sni {
+            description
+              "The TLS names looked at, nothing opened.";
+          }
+          enum inspect {
+            description
+              "TLS opened, with a CA of the instance's own.";
+          }
+        }
+        description
+          "How TLS is treated.";
+      }
+      leaf deny {
+        type string;
+        description
+          "The domains denied, one a line.";
+      }
+    }
+    list ids-instance {
+      key "name";
+      description
+        "The Suricata instances (sdwan-ids).";
+      leaf name {
+        type string;
+        description
+          "The service.";
+      }
+      leaf-list interface {
+        type string;
+        description
+          "The UNIs it watches.";
+      }
+      leaf conf {
+        type string;
+        description
+          "Suricata's YAML, with what the agent places marked.";
+      }
+      leaf rules {
+        type string;
+        description
+          "The service's own rules, one a line.";
+      }
+      leaf divert {
+        type inet:port-number;
+        description
+          "For one that prevents: the divert port it runs on.";
+      }
+    }
+    container state {
+      config false;
+      description
+        "What the edge is doing.";
+      container rules {
+        description
+          "The rules as the kernel has them.";
+        leaf set {
+          type uint8;
+          description
+            "Their set.";
+        }
+        leaf rules {
+          type uint32;
+          description
+            "How many.";
+        }
+        leaf objects {
+          type uint32;
+          description
+            "How many objects.";
+        }
+        list table {
+          key "name";
+          description
+            "The tables, and what each holds.";
+          leaf name {
+            type string;
+            description
+              "The table.";
+          }
+          leaf count {
+            type uint32;
+            description
+              "Its entries.";
+          }
+        }
+        list counter {
+          key "rule";
+          description
+            "Each rule's counters.";
+          leaf rule {
+            type arcfw:rule-number;
+            description
+              "The rule.";
+          }
+          leaf packets {
+            type uint64;
+            description
+              "Packets it matched.";
+          }
+          leaf octets {
+            type uint64;
+            description
+              "Their bytes.";
+          }
+          leaf text {
+            type string;
+            description
+              "Its words.";
+          }
+        }
+      }
+      leaf steered {
+        type boolean;
+        description
+          "The policy tables are filled as the steer says.";
+      }
+      list steer {
+        key "table prefix";
+        description
+          "What the policy tables hold now.";
+        leaf table {
+          type string;
+          description
+            "The table.";
+        }
+        leaf prefix {
+          type string;
+          description
+            "The prefix.";
+        }
+        leaf chosen {
+          type int32;
+          description
+            "Which candidate is in the table, by its place; -1
+             none.";
+        }
+        list candidate {
+          key "id";
+          ordered-by user;
+          description
+            "The candidates, with what the probes say of each.";
+          leaf id {
+            type string;
+            description
+              "The tunnel.";
+          }
+          leaf via {
+            type inet:ip-address-no-zone;
+            description
+              "Its address.";
+          }
+          leaf state {
+            type enumeration {
+              enum up {
+                description
+                  "Up.";
+              }
+              enum down {
+                description
+                  "Down.";
+              }
+              enum unknown {
+                description
+                  "Not probed, or not yet known.";
+              }
+            }
+            description
+              "As the probes see it.";
+          }
+        }
+      }
+      list bird {
+        key "name";
+        description
+          "Each BIRD instance, and its protocols.";
+        uses running;
+        list protocol {
+          key "name";
+          description
+            "Its protocols.";
+          leaf name {
+            type string;
+            description
+              "The protocol.";
+            }
+          leaf proto {
+            type string;
+            description
+              "Its kind.";
+          }
+          leaf state {
+            type string;
+            description
+              "up, down ...";
+          }
+          leaf info {
+            type string;
+            description
+              "What birdc says beside.";
+          }
+        }
+        list bfd {
+          description
+            "Its BFD sessions.";
+          leaf address {
+            type string;
+            description
+              "The far end.";
+          }
+          leaf interface {
+            type string;
+            description
+              "The interface.";
+          }
+          leaf state {
+            type enumeration {
+              enum up {
+                description
+                  "Up.";
+              }
+              enum down {
+                description
+                  "Down.";
+              }
+              enum unknown {
+                description
+                  "Not known.";
+              }
+            }
+            description
+              "The session's state.";
+          }
+          leaf since {
+            type string;
+            description
+              "Since when.";
+          }
+        }
+      }
+      list dhcp {
+        key "name";
+        description
+          "Each dnsmasq instance, and the leases it gave.";
+        uses running;
+        list lease {
+          description
+            "A lease.";
+          leaf expires {
+            type yang:date-and-time;
+            description
+              "When it ends.";
+          }
+          leaf id {
+            type string;
+            description
+              "The client's identifier (its MAC).";
+          }
+          leaf address {
+            type inet:ip-address-no-zone;
+            description
+              "The address given.";
+          }
+          leaf hostname {
+            type string;
+            description
+              "The client's name.";
+          }
+        }
+      }
+      list dns {
+        key "name";
+        description
+          "Each unbound instance.";
+        uses running;
+      }
+      list proxy {
+        key "name";
+        description
+          "Each Squid instance.";
+        uses running;
+        leaf mode {
+          type string;
+          description
+            "sni or inspect.";
+        }
+        leaf icap {
+          type boolean;
+          description
+            "Its c-icap runs.";
+        }
+        leaf ca {
+          type string;
+          description
+            "Its CA's certificate, PEM, for the clients to trust
+             where TLS is opened.";
+        }
+      }
+      list ids {
+        key "name";
+        description
+          "Each Suricata instance, and its latest alerts.";
+        leaf name {
+          type string;
+          description
+            "The service.";
+        }
+        leaf-list interface {
+          type string;
+          description
+            "The UNIs it watches.";
+        }
+        leaf mode {
+          type enumeration {
+            enum detect {
+              description
+                "Watches by libpcap.";
+            }
+            enum prevent {
+              description
+                "On a divert port: nothing passes while it is not
+                 running.";
+            }
+          }
+          description
+            "How it runs.";
+        }
+        leaf divert {
+          type inet:port-number;
+          description
+            "Its divert port, when it prevents.";
+        }
+        leaf running {
+          type boolean;
+          description
+            "Its process is there.";
+        }
+        leaf alerts-seen {
+          type uint64;
+          description
+            "Alerts read in all.";
+        }
+        list alert {
+          description
+            "The latest alerts, newest first.";
+          leaf time {
+            type string;
+            description
+              "When, as Suricata wrote it.";
+          }
+          leaf name {
+            type string;
+            description
+              "The signature.";
+          }
+          leaf source {
+            type string;
+            description
+              "Where from.";
+          }
+          leaf source-port {
+            type inet:port-number;
+            description
+              "Its port.";
+          }
+          leaf destination {
+            type string;
+            description
+              "Where to.";
+          }
+          leaf destination-port {
+            type inet:port-number;
+            description
+              "Its port.";
+          }
+          leaf proto {
+            type string;
+            description
+              "The protocol.";
+          }
+        }
+      }
+      container record {
+        description
+          "The security policies' record: what the rules that log to
+           the routing socket saw.";
+        leaf count {
+          type uint64;
+          description
+            "The day's count.";
+        }
+        leaf sequence {
+          type uint64;
+          description
+            "The latest number.";
+        }
+        list last {
+          description
+            "The latest, newest first.";
+          leaf time {
+            type yang:date-and-time;
+            description
+              "When.";
+          }
+          leaf sequence {
+            type uint64;
+            description
+              "Its number.";
+          }
+          leaf rule {
+            type uint32;
+            description
+              "The rule.";
+          }
+          leaf action {
+            type string;
+            description
+              "What it did.";
+          }
+          leaf source {
+            type string;
+            description
+              "Where from.";
+          }
+          leaf destination {
+            type string;
+            description
+              "Where to.";
+          }
+          leaf interface {
+            type string;
+            description
+              "On which interface.";
+          }
+          leaf comment {
+            type string;
+            description
+              "The rule's comment: the policy.";
+          }
+        }
+      }
+      list key {
+        key "interface";
+        description
+          "The IPsec keys of the tunnels, by interface
+           (sdwan-key-<if>.pem): public parts and times only.";
+        leaf interface {
+          type string;
+          description
+            "The tunnel's interface.";
+        }
+        leaf public {
+          type string;
+          description
+            "Its public key.";
+        }
+        leaf next {
+          type string;
+          description
+            "The next key's public part, when one waits.";
+        }
+        leaf keyed-at {
+          type yang:date-and-time;
+          description
+            "When the key was made.";
+        }
+        leaf lifetime {
+          type uint32;
+          units "seconds";
+          description
+            "How long it lives.";
+        }
+        leaf spi-in {
+          type uint32;
+          description
+            "The inbound SPI.";
+        }
+        leaf spi-out {
+          type uint32;
+          description
+            "The outbound SPI.";
+        }
+        leaf next-spi-in {
+          type uint32;
+          description
+            "The next key's inbound SPI.";
+        }
+        leaf pending {
+          type boolean;
+          description
+            "A rekey waits.";
+        }
+      }
+      list fault {
+        description
+          "The faults of the day (Mplify 119 Table 5), newest
+           first.";
+        leaf time {
+          type yang:date-and-time;
+          description
+            "When seen.";
+        }
+        leaf type {
+          type string;
+          description
+            "Its type.";
+        }
+        leaf severity {
+          type string;
+          description
+            "Critical, Major, Minor, Warning.";
+        }
+        leaf was {
+          type string;
+          description
+            "The severity before, when it changed.";
+        }
+        leaf object {
+          type string;
+          description
+            "What it is about.";
+        }
+        leaf by {
+          type string;
+          description
+            "What found it.";
+        }
+        leaf description {
+          type string;
+          description
+            "In words.";
+        }
+        leaf cleared {
+          type boolean;
+          description
+            "Gone.";
+        }
+        leaf cleared-at {
+          type yang:date-and-time;
+          description
+            "When it went.";
+        }
+      }
+    }
+  }
+}

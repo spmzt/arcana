@@ -1,0 +1,38 @@
+module: arcana-sshd
+  +--ro sshd
+     +--ro setting* [name]
+     |  +--ro name     string
+     |  +--ro value*   string
+     +--ro settings-from-file?   string
+     +--ro banner?               string
+     +--ro host-key* [path]
+     |  +--ro path                string
+     |  +--ro type?               string
+     |  +--ro bits?               uint16
+     |  +--ro fingerprint?        string
+     |  +--ro comment?            string
+     |  +--ro certificate
+     |  |  +--ro kind?           string
+     |  |  +--ro id?             string
+     |  |  +--ro principal*      string
+     |  |  +--ro valid-after?    yang:date-and-time
+     |  |  +--ro valid-before?   yang:date-and-time
+     |  |  +--ro ca?             string
+     |  +--ro certificate-used?   boolean
+     +--ro user* [name]
+     |  +--ro name         string
+     |  +--ro uid?         uint32
+     |  +--ro home?        string
+     |  +--ro shell?       string
+     |  +--ro keys-file?   string
+     |  +--ro key* [fingerprint]
+     |     +--ro fingerprint    string
+     |     +--ro type?          string
+     |     +--ro bits?          uint16
+     |     +--ro comment?       string
+     |     +--ro options?       string
+     +--ro user-ca*              string
+     +--ro before-kept?          boolean
+
+  augment /arcj:jails/arcj:jail:
+    +---u sshd

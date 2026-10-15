@@ -1282,11 +1282,15 @@ A step never leaves `main` unbuildable; where a step would, it says
   the kernel's trace as an action; done, written by jobs of kind ipfw);
   `arcana-troubleshoot` (path-check, traceroute, capture as actions;
   done); check: the firewall tests.
-- 3.1.11 A: `arcana-probe` (sessions, config, results) over today's
+- 3.1.11 A: `arcana-probe` (the targets as configuration, what the
+  probes have seen as state, a read after a time; done) over today's
   ICMP engine; check: the probe tests.
 - 3.1.12 A: the SD-WAN reads and writes (`sdwan`, `-rules`, `-steer`,
-  `-bird`, `-dhcp`, `-dns`, `-proxy`, `-ids`) as typed modules; the
-  JSON gone; check: the SD-WAN tests and the two-jail lab.
+  `-bird`, `-dhcp`, `-dns`, `-proxy`, `-ids`) as one typed module,
+  `arcana-sdwan` (done: what the console writes as configuration, the
+  sdwan read as state); the JSON still carries them on the wire, which
+  3.4's cblink streams replace; check: the SD-WAN tests and the two-jail
+  lab.
 - 3.2.1 A: `ietf-subscribed-notifications` streams list, `establish`
   as a push-stream open with the id in the accept; check: one record.
 - 3.2.2 A: periodic YANG-Push with `period` and `anchor-time`; check:

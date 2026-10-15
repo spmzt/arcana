@@ -1,0 +1,208 @@
+module arcana-sshd {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-sshd";
+  prefix arcsshd;
+
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import arcana-jails {
+    prefix arcj;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The base system's sshd(8) on a FreeBSD host, or in a jail of it,
+     as the agent reads it: the settings that matter (sshd -T, or the
+     file's where sshd_config says otherwise), the banner, the host
+     keys with their certificates (ssh-keygen -l, -L), the users who
+     may sign in with their authorized keys, and the user CAs trusted
+     (TrustedUserCAKeys).  Changes are jobs of kind ssh (banner, set,
+     sign, user-cas, authorize, unauthorize), each read by sshd -t
+     first and put back in safe mode.  The ssh operation of
+     arcana.yaml converted (Y-3).";
+
+  revision 2026-10-15 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.9.";
+  }
+
+  grouping key {
+    description
+      "A public key.";
+    leaf type {
+      type string;
+      description
+        "Its type: ssh-ed25519, ecdsa-sha2-nistp256, rsa ...";
+    }
+    leaf bits {
+      type uint16;
+      description
+        "Its size.";
+    }
+    leaf fingerprint {
+      type string;
+      description
+        "Its SHA256 fingerprint.";
+    }
+    leaf comment {
+      type string;
+      description
+        "Its comment.";
+    }
+  }
+
+  grouping sshd {
+    description
+      "sshd, where it runs.";
+    container sshd {
+      config false;
+      description
+        "The base system's sshd(8).";
+      list setting {
+        key "name";
+        description
+          "The settings that matter here, as sshd -T says them.";
+        leaf name {
+          type string;
+          description
+            "The setting, lower case as sshd prints it.";
+        }
+        leaf-list value {
+          type string;
+          description
+            "Its values.";
+        }
+      }
+      leaf settings-from-file {
+        type string;
+        description
+          "Why the settings are the file's, not sshd -T's, when they
+           are.";
+      }
+      leaf banner {
+        type string;
+        description
+          "The banner's text, when Banner names a file.";
+      }
+      list host-key {
+        key "path";
+        description
+          "The host keys.";
+        leaf path {
+          type string;
+          description
+            "The key's file.";
+        }
+        uses key;
+        container certificate {
+          description
+            "Its certificate, when one is there.";
+          leaf kind {
+            type string;
+            description
+              "host or user.";
+          }
+          leaf id {
+            type string;
+            description
+              "The certificate's identity.";
+          }
+          leaf-list principal {
+            type string;
+            description
+              "Whom it is for.";
+          }
+          leaf valid-after {
+            type yang:date-and-time;
+            description
+              "Valid from; none when forever.";
+          }
+          leaf valid-before {
+            type yang:date-and-time;
+            description
+              "Valid until; none when forever.";
+          }
+          leaf ca {
+            type string;
+            description
+              "The signing key's fingerprint.";
+          }
+        }
+        leaf certificate-used {
+          type boolean;
+          description
+            "sshd_config names the certificate (HostCertificate).";
+        }
+      }
+      list user {
+        key "name";
+        description
+          "Those who may sign in.";
+        leaf name {
+          type string;
+          description
+            "The user.";
+        }
+        leaf uid {
+          type uint32;
+          description
+            "Their id.";
+        }
+        leaf home {
+          type string;
+          description
+            "Their home.";
+        }
+        leaf shell {
+          type string;
+          description
+            "Their shell.";
+        }
+        leaf keys-file {
+          type string;
+          description
+            "Their authorized_keys.";
+        }
+        list key {
+          key "fingerprint";
+          description
+            "Their authorized keys.";
+          uses key;
+          leaf options {
+            type string;
+            description
+              "The key's options, as written before it.";
+          }
+        }
+      }
+      leaf-list user-ca {
+        type string;
+        description
+          "The CA public keys users' certificates are trusted by,
+           each a line of TrustedUserCAKeys.";
+      }
+      leaf before-kept {
+        type boolean;
+        description
+          "The file before the last change is kept beside
+           (sshd_config.arcana-before).";
+      }
+    }
+  }
+
+  uses sshd;
+
+  augment "/arcj:jails/arcj:jail" {
+    description
+      "A jail's own sshd.";
+    uses sshd;
+  }
+}

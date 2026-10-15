@@ -5851,7 +5851,8 @@ yang_host_agent_head()
 	    "host's facts, plugins as identities, stats and trust store;" \
 	    "the agent's listeners and sessions, its TLS files, a" \
 	    "configuration bundle and an apply's report, a repository's" \
-	    "log; jail.conf.d's files; through YANG-CBOR and back"
+	    "log; jail.conf.d's files; sshd's settings, host keys and" \
+	    "users; through YANG-CBOR and back"
 }
 yang_host_agent_body()
 {
@@ -5947,6 +5948,122 @@ jail web text=8
 yang-cbor 123 bytes, the same back
 EOT
 	atf_check -o file:want "$y" jail-files jf.json
+	# sshd: the settings each with its values, the host keys with
+	# their certificates (forever said as none), the users' keys.
+	cat > sshd.json <<'EOT'
+{"settings":{"permitrootlogin":["without-password"],"passwordauthentication":["no"],"port":["22","2222"]},"banner_text":"Welcome\n","host_keys":[{"path":"/etc/ssh/ssh_host_ed25519_key","type":"ED25519","bits":256,"fingerprint":"SHA256:abc","comment":"root@labvm","certificate":{"kind":"host","id":"labvm","principals":["labvm","labvm.example"],"valid_after":1791990000,"valid_before":-1,"ca":"SHA256:ca1"},"certificate_used":true},{"path":"/etc/ssh/ssh_host_rsa_key","type":"RSA","bits":3072,"fingerprint":"SHA256:def","comment":"","certificate_used":false}],"users":[{"name":"pouria","uid":1001,"home":"/home/bsdusr","shell":"/bin/sh","keys_file":"/home/bsdusr/.ssh/authorized_keys","keys":[{"type":"ED25519","fingerprint":"SHA256:k1","bits":256,"comment":"laptop","options":"restrict"}]}],"user_cas":["ssh-ed25519 AAAA ca"],"before_kept":true}
+EOT
+	cat > want <<'EOT'
+setting permitrootlogin = without-password
+setting passwordauthentication = no
+setting port = 22 2222
+from-file=- banner=8 before-kept=yes
+host-key /etc/ssh/ssh_host_ed25519_key ED25519 256 SHA256:abc root@labvm used=yes cert host id=labvm after=2026-10-14T15:00:00Z before=- ca=SHA256:ca1 principals=labvm,labvm.example
+host-key /etc/ssh/ssh_host_rsa_key RSA 3072 SHA256:def  used=no
+user pouria uid=1001 home=/home/bsdusr shell=/bin/sh keys=/home/bsdusr/.ssh/authorized_keys
+  key SHA256:k1 ED25519 256 laptop options=restrict
+user-ca ssh-ed25519 AAAA ca
+yang-cbor 439 bytes, the same back
+EOT
+	atf_check -o file:want "$y" sshd sshd.json
+}
+
+atf_test_case yang_sdwan
+yang_sdwan_head()
+{
+	atf_set "descr" "the probes and the SD-WAN edge as arcana-probe and" \
+	    "arcana-sdwan have them: the targets with their thresholds, what" \
+	    "the probes have seen with each sample taken apart; the rules," \
+	    "the steer, the instances the console writes; the edge's state:" \
+	    "rules, steer, BIRD, DHCP, DNS, proxy, IDS, the record, keys" \
+	    "and faults; through YANG-CBOR and back"
+}
+yang_sdwan_body()
+{
+	local y="$(atf_get_srcdir)/ysd"
+
+	cat > targets.json <<'EOT'
+[{"id":"tvc-1","address":"10.202.0.2","fib":1,"interval":100,"size":64,"count":0,"dscp":46,"down":3,"up":3,"timeout":1000,"eval":1000,"history":3600,"report":5000,"tca":{"delay":50,"ipdv":10,"loss":0.01,"damping":2}},{"id":"tvc-2","address":"fd00:5a::2"}]
+EOT
+	cat > want <<'EOT'
+target tvc-1 10.202.0.2 fib=1 interval=100 size=64 count=0 dscp=46 down=3 up=3 timeout=1000 eval=1000 history=3600 report=5000 tca delay=50000 ipdv=10000 loss=10000 damping=2
+target tvc-2 fd00:5a::2 fib=0 interval=0 size=0 count=0 dscp=0 down=0 up=0 timeout=0 eval=0 history=0 report=0
+yang-cbor 102 bytes, the same back
+EOT
+	atf_check -o file:want "$y" targets targets.json
+	cat > probes.json <<'EOT'
+{"targets":[{"id":"tvc-1","address":"10.202.0.2","family":"inet","fib":1,"state":"up","since":1791995000,"interval":100,"size":64,"eval":1000,"dscp":46,"sent":12000,"received":11990,"misses":0,"last_rtt":1.234,"now":{"sent":5,"recv":5,"delay":0.6,"ipdv":0.05,"loss":0,"age":512.3},"samples":[[1791995100,0.617,0.052,0.0,0.5,0.9,10,10],[1791995101,0.7,0.1,0.1,0.5,1.2,10,9]],"kept":2},{"id":"tvc-2","address":"fd00:5a::2","family":"inet6","fib":0,"state":"error","error":"no route","since":1791995000,"interval":100,"size":64,"eval":1000,"dscp":0,"sent":0,"received":0,"misses":0,"last_rtt":0,"samples":[],"kept":0}],"time":1791995110,"probing":true}
+EOT
+	cat > want <<'EOT'
+probing=yes time=2026-10-14T16:25:10Z
+target tvc-1 10.202.0.2 ipv4 fib=1 up error=- since=2026-10-14T16:23:20Z interval=100 size=64 eval=1000 dscp=46 sent=12000 received=11990 misses=0 last-rtt=1234 kept=2
+  now sent=5 received=5 delay=600 ipdv=50 loss=0 age=512300
+  sample 2026-10-14T16:25:00Z delay=617 ipdv=52 loss=0 min=500 max=900 sent=10 received=10
+  sample 2026-10-14T16:25:01Z delay=700 ipdv=100 loss=100000 min=500 max=1200 sent=10 received=9
+target tvc-2 fd00:5a::2 ipv6 fib=0 error error=no route since=2026-10-14T16:23:20Z interval=100 size=64 eval=1000 dscp=0 sent=0 received=0 misses=0 last-rtt=0 kept=0
+yang-cbor 356 bytes, the same back
+EOT
+	atf_check -o file:want "$y" probes probes.json
+	cat > rules.json <<'EOT'
+{"set":30,"tables":[{"name":"sw1_zone","valtype":"legacy","entries":[["10.1.0.0/24","1"],["10.2.0.0/24","2"]]},{"name":"sw1_p1","valtype":"ipv4","entries":[{"prefix":"10.3.0.0/24","value":"10.202.0.2"}]}],"objects":["pipe 1 config bw 10Mbit/s","queue 2 config pipe 1 weight 30"],"rules":["00100 skipto 999 ip from any to any not recv vtnet1","00110 setfib 1 ip from table(sw1_zone) to any",{"number":120,"text":"fwd tablearg ip from any to table(sw1_p1)"}]}
+EOT
+	cat > want <<'EOT'
+rules set=30
+table sw1_zone legacy 10.1.0.0/24=1 10.2.0.0/24=2
+table sw1_p1 ipv4 10.3.0.0/24=10.202.0.2
+object pipe 1 config bw 10Mbit/s
+object queue 2 config pipe 1 weight 30
+rule 100 skipto 999 ip from any to any not recv vtnet1
+rule 110 setfib 1 ip from table(sw1_zone) to any
+rule 120 fwd tablearg ip from any to table(sw1_p1)
+yang-cbor 304 bytes, the same back
+EOT
+	atf_check -o file:want "$y" rules rules.json
+	cat > steer.json <<'EOT'
+{"entries":[{"table":"sw1_p1","prefix":"10.3.0.0/24","candidates":[{"id":"tvc-1","via":"10.202.0.2"},{"id":"tvc-2","via":"10.203.0.2"}]}]}
+EOT
+	atf_check -o inline:'entry sw1_p1 10.3.0.0/24: tvc-1 via 10.202.0.2 tvc-2 via 10.203.0.2\nyang-cbor 67 bytes, the same back\n' \
+	    "$y" steer steer.json
+	cat > inst.json <<'EOT'
+{"instances":[{"name":"svc1","fib":1,"conf":"router id 10.0.0.1;\n"}]}
+EOT
+	atf_check -o inline:'instance svc1 fib=1 conf=20\nyang-cbor 34 bytes, the same back\n' \
+	    "$y" bird inst.json
+	cat > proxy.json <<'EOT'
+{"instances":[{"name":"svc1","fib":1,"mode":"inspect","conf":"http_port 3128\n","deny":"bad.example\n"}]}
+EOT
+	atf_check -o inline:'proxy svc1 fib=1 mode=inspect conf=15 deny=bad.example\n\nyang-cbor 45 bytes, the same back\n' \
+	    "$y" proxy proxy.json
+	cat > ids.json <<'EOT'
+{"instances":[{"name":"svc1","interfaces":["vtnet1","vtnet2"],"conf":"%YAML 1.1\n","rules":"alert tcp any any -> any 23 (msg:\"telnet\"; sid:1;)\n","divert":8000}]}
+EOT
+	atf_check -o inline:'ids svc1 divert=8000 conf=10 rules=51 interfaces=vtnet1,vtnet2\nyang-cbor 96 bytes, the same back\n' \
+	    "$y" ids ids.json
+	cat > state.json <<'EOT'
+{"targets":[],"probing":false,"time":1791995110,"rules":{"set":30,"rules":3,"tables":[{"name":"sw1_zone","count":2}],"objects":2,"counters":[{"rule":100,"pkts":12,"bytes":900,"text":"skipto 999 ip from any to any not recv vtnet1"}]},"steer":[{"table":"sw1_p1","prefix":"10.3.0.0/24","chosen":0,"candidates":[{"id":"tvc-1","via":"10.202.0.2","state":"up"},{"id":"tvc-2","via":"10.203.0.2","state":"down"}]}],"steered":true,"bird":[{"name":"svc1","fib":1,"running":true,"protocols":[{"name":"peer1","proto":"BGP","state":"up","info":"Established"}],"bfd":[{"address":"10.202.0.2","interface":"wg0","state":"up","since":"2026-10-15 19:00:06"}]}],"dhcp":[{"name":"svc1","fib":1,"running":true,"leases":[{"expires":1792081510,"id":"02:00:00:00:00:09","address":"10.1.0.50","name":"laptop"}]}],"dns":[{"name":"svc1","fib":1,"running":false}],"proxy":[{"name":"svc1","fib":1,"mode":"inspect","running":true,"icap":true,"ca":"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"}],"ids":[{"name":"svc1","interfaces":["vtnet1"],"mode":"prevent","divert":8000,"running":true,"alerts_seen":4,"alerts":[{"time":"2026-10-15T19:30:00.123456+0000","name":"telnet","src":"10.1.0.50","sport":4000,"dst":"10.3.0.2","dport":23,"proto":"TCP"}]}],"record":{"count":7,"seq":7,"last":[{"t":1791995119,"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"vtnet1","comment":"deny-ssh"}]},"keys":[{"interface":"ipsec0","public":"AAAA","next":"BBBB","keyed_at":1791990000,"lifetime":86400,"spi_in":1001,"spi_out":1002,"next_spi_in":1003,"pending":true}],"faults":[{"t":1791995118,"type":"tunnel","severity":"Major","object":"tvc-2","by":"probe","description":"no reply","cleared":false}]}
+EOT
+	cat > want <<'EOT'
+rules set=30 rules=3 objects=2
+  table sw1_zone count=2
+  counter 100 packets=12 octets=900 skipto 999 ip from any to any not recv vtnet1
+steered=yes
+steer sw1_p1 10.3.0.0/24 chosen=0: tvc-1 via 10.202.0.2 up tvc-2 via 10.203.0.2 down
+bird svc1 fib=1 running=yes
+  protocol peer1 BGP up Established
+  bfd 10.202.0.2 wg0 up since=2026-10-15 19:00:06
+dhcp svc1 fib=1 running=yes
+  lease 2026-10-15T16:25:10Z 02:00:00:00:00:09 10.1.0.50 laptop
+dns svc1 fib=1 running=no
+proxy svc1 fib=1 running=yes mode=inspect icap=yes ca=59
+ids svc1 prevent divert=8000 running=yes seen=4
+  alert 2026-10-15T19:30:00.123456+0000 telnet 10.1.0.50:4000 -> 10.3.0.2:23 TCP
+record count=7 seq=7
+  2026-10-14T16:25:19Z 7 rule=30010 Deny 10.1.0.2:4000 -> 10.3.0.2:22 vtnet1 (deny-ssh)
+key ipsec0 public=AAAA next=BBBB at=2026-10-14T15:00:00Z lifetime=86400 spi=1001/1002 next-spi=1003 pending=yes
+fault 2026-10-14T16:25:18Z tunnel Major was=- tvc-2 by=probe cleared=no at=-: no reply
+yang-cbor 756 bytes, the same back
+EOT
+	atf_check -o file:want "$y" state state.json
 }
 
 atf_test_case fw_walk
@@ -7180,6 +7297,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_events
 	atf_add_test_case yang_plugins
 	atf_add_test_case yang_host_agent
+	atf_add_test_case yang_sdwan
 	atf_add_test_case fw_walk
 	atf_add_test_case firewall_aliases
 	atf_add_test_case config_bundle

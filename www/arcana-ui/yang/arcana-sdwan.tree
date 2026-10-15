@@ -1,0 +1,148 @@
+module: arcana-sdwan
+  +--rw sdwan
+     +--rw rules
+     |  +--rw set?      uint8
+     |  +--rw table* [name]
+     |  |  +--rw name       string
+     |  |  +--rw valtype?   enumeration
+     |  |  +--rw entry* [prefix]
+     |  |     +--rw prefix    string
+     |  |     +--rw value?    string
+     |  +--rw object*   string
+     |  +--rw rule* [number]
+     |     +--rw number    arcfw:rule-number
+     |     +--rw text?     string
+     +--rw steer
+     |  +--rw entry* [table prefix]
+     |     +--rw table     string
+     |     +--rw prefix    string
+     |     +--rw candidate* [id]
+     |        +--rw id     string
+     |        +--rw via?   inet:ip-address-no-zone
+     +--rw bird-instance* [name]
+     |  +--rw name    string
+     |  +--rw fib?    uint16
+     |  +--rw conf?   string
+     +--rw dhcp-instance* [name]
+     |  +--rw name    string
+     |  +--rw fib?    uint16
+     |  +--rw conf?   string
+     +--rw dns-instance* [name]
+     |  +--rw name    string
+     |  +--rw fib?    uint16
+     |  +--rw conf?   string
+     +--rw proxy-instance* [name]
+     |  +--rw name    string
+     |  +--rw fib?    uint16
+     |  +--rw conf?   string
+     |  +--rw mode?   enumeration
+     |  +--rw deny?   string
+     +--rw ids-instance* [name]
+     |  +--rw name         string
+     |  +--rw interface*   string
+     |  +--rw conf?        string
+     |  +--rw rules?       string
+     |  +--rw divert?      inet:port-number
+     +--ro state
+        +--ro rules
+        |  +--ro set?       uint8
+        |  +--ro rules?     uint32
+        |  +--ro objects?   uint32
+        |  +--ro table* [name]
+        |  |  +--ro name     string
+        |  |  +--ro count?   uint32
+        |  +--ro counter* [rule]
+        |     +--ro rule       arcfw:rule-number
+        |     +--ro packets?   uint64
+        |     +--ro octets?    uint64
+        |     +--ro text?      string
+        +--ro steered?   boolean
+        +--ro steer* [table prefix]
+        |  +--ro table     string
+        |  +--ro prefix    string
+        |  +--ro chosen?   int32
+        |  +--ro candidate* [id]
+        |     +--ro id       string
+        |     +--ro via?     inet:ip-address-no-zone
+        |     +--ro state?   enumeration
+        +--ro bird* [name]
+        |  +--ro name       string
+        |  +--ro fib?       uint16
+        |  +--ro running?   boolean
+        |  +--ro protocol* [name]
+        |  |  +--ro name     string
+        |  |  +--ro proto?   string
+        |  |  +--ro state?   string
+        |  |  +--ro info?    string
+        |  +--ro bfd*
+        |     +--ro address?     string
+        |     +--ro interface?   string
+        |     +--ro state?       enumeration
+        |     +--ro since?       string
+        +--ro dhcp* [name]
+        |  +--ro name       string
+        |  +--ro fib?       uint16
+        |  +--ro running?   boolean
+        |  +--ro lease*
+        |     +--ro expires?    yang:date-and-time
+        |     +--ro id?         string
+        |     +--ro address?    inet:ip-address-no-zone
+        |     +--ro hostname?   string
+        +--ro dns* [name]
+        |  +--ro name       string
+        |  +--ro fib?       uint16
+        |  +--ro running?   boolean
+        +--ro proxy* [name]
+        |  +--ro name       string
+        |  +--ro fib?       uint16
+        |  +--ro running?   boolean
+        |  +--ro mode?      string
+        |  +--ro icap?      boolean
+        |  +--ro ca?        string
+        +--ro ids* [name]
+        |  +--ro name           string
+        |  +--ro interface*     string
+        |  +--ro mode?          enumeration
+        |  +--ro divert?        inet:port-number
+        |  +--ro running?       boolean
+        |  +--ro alerts-seen?   uint64
+        |  +--ro alert*
+        |     +--ro time?               string
+        |     +--ro name?               string
+        |     +--ro source?             string
+        |     +--ro source-port?        inet:port-number
+        |     +--ro destination?        string
+        |     +--ro destination-port?   inet:port-number
+        |     +--ro proto?              string
+        +--ro record
+        |  +--ro count?      uint64
+        |  +--ro sequence?   uint64
+        |  +--ro last*
+        |     +--ro time?          yang:date-and-time
+        |     +--ro sequence?      uint64
+        |     +--ro rule?          uint32
+        |     +--ro action?        string
+        |     +--ro source?        string
+        |     +--ro destination?   string
+        |     +--ro interface?     string
+        |     +--ro comment?       string
+        +--ro key* [interface]
+        |  +--ro interface      string
+        |  +--ro public?        string
+        |  +--ro next?          string
+        |  +--ro keyed-at?      yang:date-and-time
+        |  +--ro lifetime?      uint32
+        |  +--ro spi-in?        uint32
+        |  +--ro spi-out?       uint32
+        |  +--ro next-spi-in?   uint32
+        |  +--ro pending?       boolean
+        +--ro fault*
+           +--ro time?          yang:date-and-time
+           +--ro type?          string
+           +--ro severity?      string
+           +--ro was?           string
+           +--ro object?        string
+           +--ro by?            string
+           +--ro description?   string
+           +--ro cleared?       boolean
+           +--ro cleared-at?    yang:date-and-time
