@@ -283,4 +283,19 @@ int	rtadv_write(struct vc_capfile *f, const char *ifname,
 	    const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements *ra,
 	    char *err, size_t errlen);
 
+/*
+ * arcana-firewall (invidia/yfw.c): the network operation's ipfw kind
+ * read back as the module has it (yfw_from_json()); the kept file as
+ * the ipfw-rules operation reads it, its text and SHA-256, the rules,
+ * other lines and aliases taken from the text (yfw_kept_from_text());
+ * the fw-trace operation's packets as the trace action's output
+ * (yfw_trace_from_json()).
+ */
+int	yfw_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_firewall_firewall *out);
+int	yfw_kept_from_text(const char *text, const char *sha256,
+	    cbl_yarena *a, struct arcana_firewall_firewall_kept *out);
+int	yfw_trace_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_firewall_firewall_trace_output *out);
+
 #endif /* !_ARCANA_COLLECT_H_ */

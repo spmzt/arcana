@@ -451,7 +451,15 @@
   hold said by file and line: a program's or host's block, a pipe,
   users told, '<' '>' '!', mark, a property filter, a rotation at a
   time of day (gula/ylog.c, yang_log).  Writing syslog.conf from it is
-  not done.  Next: 3.1.7's history, events
+  not done.  3.1.10, firewall: share/yang/arcana-firewall (70 200) has
+  the kept rules file (its rules with the words they were written in,
+  the other lines, the aliases) and rc.conf's firewall variables as
+  configuration, the kernel's rules with sets and counters, dynamic
+  rules, tables, NAT and dummynet's pipes, schedulers and queues as
+  state, the kernel's trace of an address's packets as an action; a
+  vnet jail's by an augment of arcana-jails; a rule stays ipfw's words
+  (invidia/yfw.c, yang_firewall).  What changes the firewall stays a
+  job of kind ipfw.  Next: 3.1.7's history, events
   (faults as ietf-alarms), and the rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not

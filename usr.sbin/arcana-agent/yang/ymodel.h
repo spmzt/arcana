@@ -198,6 +198,26 @@ struct ietf_logical_network_element;
 struct ietf_logical_network_element_bind_lne_name_failed;
 struct arcana_jails_jails_conf_error;
 struct arcana_jails_jails_jail_param;
+struct arcana_jails_jails_jail_arcfw_firewall_kept_rule;
+struct arcana_jails_jails_jail_arcfw_firewall_kept_alias;
+struct arcana_jails_jails_jail_arcfw_firewall_kept;
+struct arcana_jails_jails_jail_arcfw_firewall_rc;
+struct arcana_jails_jails_jail_arcfw_firewall_state_rule;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dynamic;
+struct arcana_jails_jails_jail_arcfw_firewall_state_table_entry;
+struct arcana_jails_jails_jail_arcfw_firewall_state_table;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet;
+struct arcana_jails_jails_jail_arcfw_firewall_state;
+struct arcana_jails_jails_jail_arcfw_firewall_trace_input;
+struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet;
+struct arcana_jails_jails_jail_arcfw_firewall_trace_output;
+struct arcana_jails_jails_jail_arcfw_firewall;
 struct arcana_jails_jails_jail_arcpkg_packages_package;
 struct arcana_jails_jails_jail_arcpkg_packages_refresh_input;
 struct arcana_jails_jails_jail_arcpkg_packages_refresh_output;
@@ -366,6 +386,27 @@ struct ietf_syslog_syslog_actions_remote;
 struct ietf_syslog_syslog_actions;
 struct ietf_syslog_syslog;
 struct ietf_syslog;
+struct arcana_firewall_firewall_kept_rule;
+struct arcana_firewall_firewall_kept_alias;
+struct arcana_firewall_firewall_kept;
+struct arcana_firewall_firewall_rc;
+struct arcana_firewall_firewall_state_rule;
+struct arcana_firewall_firewall_state_dynamic;
+struct arcana_firewall_firewall_state_table_entry;
+struct arcana_firewall_firewall_state_table;
+struct arcana_firewall_firewall_state_dummynet_pipe_mask;
+struct arcana_firewall_firewall_state_dummynet_pipe;
+struct arcana_firewall_firewall_state_dummynet_sched_mask;
+struct arcana_firewall_firewall_state_dummynet_sched;
+struct arcana_firewall_firewall_state_dummynet_queue_mask;
+struct arcana_firewall_firewall_state_dummynet_queue;
+struct arcana_firewall_firewall_state_dummynet;
+struct arcana_firewall_firewall_state;
+struct arcana_firewall_firewall_trace_input;
+struct arcana_firewall_firewall_trace_output_packet;
+struct arcana_firewall_firewall_trace_output;
+struct arcana_firewall_firewall;
+struct arcana_firewall;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -1025,6 +1066,22 @@ enum arcana_jails_jails_jail_state {
 	ARCANA_JAILS_JAILS_JAIL_STATE_ABSENT = 3,
 };
 
+enum arcana_jails_jails_jail_arcfw_firewall_kept_alias_kind {
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_KEPT_ALIAS_KIND_ADDR = 0,
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_KEPT_ALIAS_KIND_PORTS = 1,
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_KEPT_ALIAS_KIND_VALUE = 2,
+};
+
+enum arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_family {
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_TRACE_OUTPUT_PACKET_FAMILY_IPV4 = 0,
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_TRACE_OUTPUT_PACKET_FAMILY_IPV6 = 1,
+};
+
+enum arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_direction {
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_TRACE_OUTPUT_PACKET_DIRECTION_IN = 0,
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_TRACE_OUTPUT_PACKET_DIRECTION_OUT = 1,
+};
+
 enum arcana_jails_jails_jail_arcpkg_packages_refresh_input_ip_version {
 	ARCANA_JAILS_JAILS_JAIL_ARCPKG_PACKAGES_REFRESH_INPUT_IP_VERSION_ANY = 0,
 	ARCANA_JAILS_JAILS_JAIL_ARCPKG_PACKAGES_REFRESH_INPUT_IP_VERSION_IPV4 = 4,
@@ -1423,11 +1480,51 @@ enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced
 	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_ADVANCED_COMPARE_COMPARE_EQUALS_OR_HIGHER = 1,
 };
 
+enum arcana_firewall_firewall_kept_alias_kind {
+	ARCANA_FIREWALL_FIREWALL_KEPT_ALIAS_KIND_ADDR = 0,
+	ARCANA_FIREWALL_FIREWALL_KEPT_ALIAS_KIND_PORTS = 1,
+	ARCANA_FIREWALL_FIREWALL_KEPT_ALIAS_KIND_VALUE = 2,
+};
+
+enum arcana_firewall_firewall_trace_output_packet_family {
+	ARCANA_FIREWALL_FIREWALL_TRACE_OUTPUT_PACKET_FAMILY_IPV4 = 0,
+	ARCANA_FIREWALL_FIREWALL_TRACE_OUTPUT_PACKET_FAMILY_IPV6 = 1,
+};
+
+enum arcana_firewall_firewall_trace_output_packet_direction {
+	ARCANA_FIREWALL_FIREWALL_TRACE_OUTPUT_PACKET_DIRECTION_IN = 0,
+	ARCANA_FIREWALL_FIREWALL_TRACE_OUTPUT_PACKET_DIRECTION_OUT = 1,
+};
+
 struct ieee802_dot1q_bridge_bridges_bridge_component_rstp_bridge_rstp_root_port {
 	unsigned	 which;	/* the member set, from 0 */
 	union {
 		const char	*m0;
 		bool		 m1;
+	} v;
+};
+
+struct arcana_jails_jails_jail_arcfw_firewall_trace_input_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_source {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
 	} v;
 };
 
@@ -1494,6 +1591,30 @@ struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_severi
 	union {
 		enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_severity_m0	 m0;
 		enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_severity_m1	 m1;
+	} v;
+};
+
+struct arcana_firewall_firewall_trace_input_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_firewall_firewall_trace_output_packet_source {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_firewall_firewall_trace_output_packet_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
 	} v;
 };
 
@@ -3583,6 +3704,290 @@ struct arcana_jails_jails_jail_param {
 };
 
 /* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_kept_rule {
+	uint32_t	 number;
+	const char	*text;
+	const char	*source;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_kept_alias {
+	const char	*name;
+	bool			 has_kind;
+	enum arcana_jails_jails_jail_arcfw_firewall_kept_alias_kind	 kind;
+	const char	*value;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_kept {
+	const char	*path;
+	bool			 has_present;
+	bool		 present;
+	const char	*sha256;
+	const char	*text;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_kept_rule	*v;
+	}			 rule;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 other;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_kept_alias	*v;
+	}			 alias;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_rc {
+	const char	*firewall_enable;
+	const char	*firewall_type;
+	const char	*firewall_script;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_rule {
+	uint32_t	 number;
+	uint8_t		 set;
+	bool			 has_packets;
+	uint64_t	 packets;
+	bool			 has_octets;
+	uint64_t	 octets;
+	const char	*text;
+	bool			 has_disabled;
+	bool		 disabled;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dynamic {
+	bool			 has_number;
+	uint32_t	 number;
+	bool			 has_packets;
+	uint64_t	 packets;
+	bool			 has_octets;
+	uint64_t	 octets;
+	bool			 has_ttl;
+	uint32_t	 ttl;
+	const char	*kind;
+	const char	*flow;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_table_entry {
+	const char	*key;
+	const char	*value;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_table {
+	const char	*name;
+	const char	*type;
+	bool			 has_count;
+	uint32_t	 count;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_table_entry	*v;
+	}			 entry;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask {
+	bool			 has_src;
+	uint8_t		 src;
+	bool			 has_dst;
+	uint8_t		 dst;
+	bool			 has_src_port;
+	uint16_t	 src_port;
+	bool			 has_dst_port;
+	uint16_t	 dst_port;
+	bool			 has_proto;
+	uint8_t		 proto;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe {
+	uint16_t	 number;
+	bool			 has_bandwidth;
+	uint64_t	 bandwidth;
+	bool			 has_delay;
+	uint32_t	 delay;
+	bool			 has_burst;
+	uint64_t	 burst;
+	const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask	*mask;
+	bool			 has_slots;
+	uint32_t	 slots;
+	bool			 has_bytes;
+	uint32_t	 bytes;
+	bool			 has_plr;
+	int64_t		 plr;	/* decimal64, 6 fraction digits */
+	const char	*red;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask {
+	bool			 has_src;
+	uint8_t		 src;
+	bool			 has_dst;
+	uint8_t		 dst;
+	bool			 has_src_port;
+	uint16_t	 src_port;
+	bool			 has_dst_port;
+	uint16_t	 dst_port;
+	bool			 has_proto;
+	uint8_t		 proto;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched {
+	uint16_t	 number;
+	bool			 has_bandwidth;
+	uint64_t	 bandwidth;
+	bool			 has_delay;
+	uint32_t	 delay;
+	bool			 has_burst;
+	uint64_t	 burst;
+	const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask	*mask;
+	const char	*type;
+	struct {
+		size_t		 n;
+		const uint16_t	 *v;
+	}			 queue;
+	const char	*params;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask {
+	bool			 has_src;
+	uint8_t		 src;
+	bool			 has_dst;
+	uint8_t		 dst;
+	bool			 has_src_port;
+	uint16_t	 src_port;
+	bool			 has_dst_port;
+	uint16_t	 dst_port;
+	bool			 has_proto;
+	uint8_t		 proto;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue {
+	uint16_t	 number;
+	bool			 has_sched;
+	uint16_t	 sched;
+	bool			 has_weight;
+	uint16_t	 weight;
+	bool			 has_priority;
+	uint8_t		 priority;
+	const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask	*mask;
+	bool			 has_slots;
+	uint32_t	 slots;
+	bool			 has_bytes;
+	uint32_t	 bytes;
+	bool			 has_plr;
+	int64_t		 plr;	/* decimal64, 6 fraction digits */
+	const char	*red;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet {
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe	*v;
+	}			 pipe;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched	*v;
+	}			 sched;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue	*v;
+	}			 queue;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_state {
+	bool			 has_loaded;
+	bool		 loaded;
+	bool			 has_enabled;
+	bool		 enabled;
+	bool			 has_verbose;
+	bool		 verbose;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_rule	*v;
+	}			 rule;
+	bool			 has_dynamic_total;
+	uint32_t	 dynamic_total;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_dynamic	*v;
+	}			 dynamic;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_table	*v;
+	}			 table;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 nat;
+	const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet	*dummynet;
+};
+
+/* input */
+struct arcana_jails_jails_jail_arcfw_firewall_trace_input {
+	bool			 has_address;
+	struct arcana_jails_jails_jail_arcfw_firewall_trace_input_address	 address;
+	bool			 has_seconds;
+	uint8_t		 seconds;
+	bool			 has_packets;
+	uint16_t	 packets;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet {
+	bool			 has_ms;
+	uint32_t	 ms;
+	const char	*verdict;
+	bool			 has_family;
+	enum arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_family	 family;
+	bool			 has_source;
+	struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_source	 source;
+	bool			 has_destination;
+	struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_destination	 destination;
+	bool			 has_proto;
+	uint8_t		 proto;
+	bool			 has_sport;
+	uint16_t	 sport;
+	bool			 has_dport;
+	uint16_t	 dport;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*interface;
+	bool			 has_direction;
+	enum arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_direction	 direction;
+};
+
+/* output */
+struct arcana_jails_jails_jail_arcfw_firewall_trace_output {
+	bool			 has_seconds;
+	uint8_t		 seconds;
+	bool			 has_limit;
+	uint16_t	 limit;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet	*v;
+	}			 packet;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall {
+	const struct arcana_jails_jails_jail_arcfw_firewall_kept	*kept;
+	const struct arcana_jails_jails_jail_arcfw_firewall_rc	*rc;
+	const struct arcana_jails_jails_jail_arcfw_firewall_state	*state;
+};
+
+/* list entry */
 struct arcana_jails_jails_jail_arcpkg_packages_package {
 	const char	*name;
 	const char	*installed;
@@ -3750,6 +4155,7 @@ struct arcana_jails_jails_jail {
 		const char	*const	*v;
 	}			 plugin;
 	const char	*lne;
+	const struct arcana_jails_jails_jail_arcfw_firewall	*arcfw_firewall;
 	const struct arcana_jails_jails_jail_arcpkg_packages	*arcpkg_packages;
 };
 
@@ -5448,6 +5854,295 @@ struct ietf_syslog {
 	const struct ietf_syslog_syslog	*syslog;
 };
 
+/* list entry */
+struct arcana_firewall_firewall_kept_rule {
+	uint32_t	 number;
+	const char	*text;
+	const char	*source;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_kept_alias {
+	const char	*name;
+	bool			 has_kind;
+	enum arcana_firewall_firewall_kept_alias_kind	 kind;
+	const char	*value;
+};
+
+/* container */
+struct arcana_firewall_firewall_kept {
+	const char	*path;
+	bool			 has_present;
+	bool		 present;
+	const char	*sha256;
+	const char	*text;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_kept_rule	*v;
+	}			 rule;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 other;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_kept_alias	*v;
+	}			 alias;
+};
+
+/* container */
+struct arcana_firewall_firewall_rc {
+	const char	*firewall_enable;
+	const char	*firewall_type;
+	const char	*firewall_script;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_rule {
+	uint32_t	 number;
+	uint8_t		 set;
+	bool			 has_packets;
+	uint64_t	 packets;
+	bool			 has_octets;
+	uint64_t	 octets;
+	const char	*text;
+	bool			 has_disabled;
+	bool		 disabled;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_dynamic {
+	bool			 has_number;
+	uint32_t	 number;
+	bool			 has_packets;
+	uint64_t	 packets;
+	bool			 has_octets;
+	uint64_t	 octets;
+	bool			 has_ttl;
+	uint32_t	 ttl;
+	const char	*kind;
+	const char	*flow;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_table_entry {
+	const char	*key;
+	const char	*value;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_table {
+	const char	*name;
+	const char	*type;
+	bool			 has_count;
+	uint32_t	 count;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_table_entry	*v;
+	}			 entry;
+};
+
+/* container */
+struct arcana_firewall_firewall_state_dummynet_pipe_mask {
+	bool			 has_src;
+	uint8_t		 src;
+	bool			 has_dst;
+	uint8_t		 dst;
+	bool			 has_src_port;
+	uint16_t	 src_port;
+	bool			 has_dst_port;
+	uint16_t	 dst_port;
+	bool			 has_proto;
+	uint8_t		 proto;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_dummynet_pipe {
+	uint16_t	 number;
+	bool			 has_bandwidth;
+	uint64_t	 bandwidth;
+	bool			 has_delay;
+	uint32_t	 delay;
+	bool			 has_burst;
+	uint64_t	 burst;
+	const struct arcana_firewall_firewall_state_dummynet_pipe_mask	*mask;
+	bool			 has_slots;
+	uint32_t	 slots;
+	bool			 has_bytes;
+	uint32_t	 bytes;
+	bool			 has_plr;
+	int64_t		 plr;	/* decimal64, 6 fraction digits */
+	const char	*red;
+};
+
+/* container */
+struct arcana_firewall_firewall_state_dummynet_sched_mask {
+	bool			 has_src;
+	uint8_t		 src;
+	bool			 has_dst;
+	uint8_t		 dst;
+	bool			 has_src_port;
+	uint16_t	 src_port;
+	bool			 has_dst_port;
+	uint16_t	 dst_port;
+	bool			 has_proto;
+	uint8_t		 proto;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_dummynet_sched {
+	uint16_t	 number;
+	bool			 has_bandwidth;
+	uint64_t	 bandwidth;
+	bool			 has_delay;
+	uint32_t	 delay;
+	bool			 has_burst;
+	uint64_t	 burst;
+	const struct arcana_firewall_firewall_state_dummynet_sched_mask	*mask;
+	const char	*type;
+	struct {
+		size_t		 n;
+		const uint16_t	 *v;
+	}			 queue;
+	const char	*params;
+};
+
+/* container */
+struct arcana_firewall_firewall_state_dummynet_queue_mask {
+	bool			 has_src;
+	uint8_t		 src;
+	bool			 has_dst;
+	uint8_t		 dst;
+	bool			 has_src_port;
+	uint16_t	 src_port;
+	bool			 has_dst_port;
+	uint16_t	 dst_port;
+	bool			 has_proto;
+	uint8_t		 proto;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_dummynet_queue {
+	uint16_t	 number;
+	bool			 has_sched;
+	uint16_t	 sched;
+	bool			 has_weight;
+	uint16_t	 weight;
+	bool			 has_priority;
+	uint8_t		 priority;
+	const struct arcana_firewall_firewall_state_dummynet_queue_mask	*mask;
+	bool			 has_slots;
+	uint32_t	 slots;
+	bool			 has_bytes;
+	uint32_t	 bytes;
+	bool			 has_plr;
+	int64_t		 plr;	/* decimal64, 6 fraction digits */
+	const char	*red;
+};
+
+/* container */
+struct arcana_firewall_firewall_state_dummynet {
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_dummynet_pipe	*v;
+	}			 pipe;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_dummynet_sched	*v;
+	}			 sched;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_dummynet_queue	*v;
+	}			 queue;
+};
+
+/* container */
+struct arcana_firewall_firewall_state {
+	bool			 has_loaded;
+	bool		 loaded;
+	bool			 has_enabled;
+	bool		 enabled;
+	bool			 has_verbose;
+	bool		 verbose;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_rule	*v;
+	}			 rule;
+	bool			 has_dynamic_total;
+	uint32_t	 dynamic_total;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_dynamic	*v;
+	}			 dynamic;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_table	*v;
+	}			 table;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 nat;
+	const struct arcana_firewall_firewall_state_dummynet	*dummynet;
+};
+
+/* input */
+struct arcana_firewall_firewall_trace_input {
+	bool			 has_address;
+	struct arcana_firewall_firewall_trace_input_address	 address;
+	bool			 has_seconds;
+	uint8_t		 seconds;
+	bool			 has_packets;
+	uint16_t	 packets;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_trace_output_packet {
+	bool			 has_ms;
+	uint32_t	 ms;
+	const char	*verdict;
+	bool			 has_family;
+	enum arcana_firewall_firewall_trace_output_packet_family	 family;
+	bool			 has_source;
+	struct arcana_firewall_firewall_trace_output_packet_source	 source;
+	bool			 has_destination;
+	struct arcana_firewall_firewall_trace_output_packet_destination	 destination;
+	bool			 has_proto;
+	uint8_t		 proto;
+	bool			 has_sport;
+	uint16_t	 sport;
+	bool			 has_dport;
+	uint16_t	 dport;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*interface;
+	bool			 has_direction;
+	enum arcana_firewall_firewall_trace_output_packet_direction	 direction;
+};
+
+/* output */
+struct arcana_firewall_firewall_trace_output {
+	bool			 has_seconds;
+	uint8_t		 seconds;
+	bool			 has_limit;
+	uint16_t	 limit;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_trace_output_packet	*v;
+	}			 packet;
+};
+
+/* container */
+struct arcana_firewall_firewall {
+	const struct arcana_firewall_firewall_kept	*kept;
+	const struct arcana_firewall_firewall_rc	*rc;
+	const struct arcana_firewall_firewall_state	*state;
+};
+
+/* data */
+struct arcana_firewall {
+	const struct arcana_firewall_firewall	*firewall;
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -6152,6 +6847,86 @@ int	arcana_jails_jails_jail_param_encode(const struct arcana_jails_jails_jail_pa
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_param_decode(const void *, size_t, struct arcana_jails_jails_jail_param *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_kept_rule_encode(const struct arcana_jails_jails_jail_arcfw_firewall_kept_rule *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_kept_rule_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_kept_rule *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_kept_alias_encode(const struct arcana_jails_jails_jail_arcfw_firewall_kept_alias *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_kept_alias_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_kept_alias *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_kept_encode(const struct arcana_jails_jails_jail_arcfw_firewall_kept *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_kept_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_kept *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_rc_encode(const struct arcana_jails_jails_jail_arcfw_firewall_rc *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_rc_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_rc *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_rule_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_rule *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_rule_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_rule *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dynamic_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dynamic *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dynamic_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dynamic *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_table_entry_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_table_entry *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_table_entry_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_table_entry *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_table_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_table *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_table_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_table *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_input_encode(const struct arcana_jails_jails_jail_arcfw_firewall_trace_input *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_input_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_trace_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_encode(const struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_output_encode(const struct arcana_jails_jails_jail_arcfw_firewall_trace_output *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_output_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_trace_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_encode(const struct arcana_jails_jails_jail_arcfw_firewall *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall *,
+	    cbl_yarena *, int, char *, size_t);
 int	arcana_jails_jails_jail_arcpkg_packages_package_encode(const struct arcana_jails_jails_jail_arcpkg_packages_package *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_arcpkg_packages_package_decode(const void *, size_t, struct arcana_jails_jails_jail_arcpkg_packages_package *,
@@ -6784,6 +7559,86 @@ int	ietf_syslog_syslog_encode(const struct ietf_syslog_syslog *,
 	    struct cbl_ybuf *);
 int	ietf_syslog_syslog_decode(const void *, size_t, struct ietf_syslog_syslog *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_kept_rule_encode(const struct arcana_firewall_firewall_kept_rule *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_kept_rule_decode(const void *, size_t, struct arcana_firewall_firewall_kept_rule *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_kept_alias_encode(const struct arcana_firewall_firewall_kept_alias *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_kept_alias_decode(const void *, size_t, struct arcana_firewall_firewall_kept_alias *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_kept_encode(const struct arcana_firewall_firewall_kept *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_kept_decode(const void *, size_t, struct arcana_firewall_firewall_kept *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_rc_encode(const struct arcana_firewall_firewall_rc *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_rc_decode(const void *, size_t, struct arcana_firewall_firewall_rc *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_rule_encode(const struct arcana_firewall_firewall_state_rule *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_rule_decode(const void *, size_t, struct arcana_firewall_firewall_state_rule *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dynamic_encode(const struct arcana_firewall_firewall_state_dynamic *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dynamic_decode(const void *, size_t, struct arcana_firewall_firewall_state_dynamic *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_table_entry_encode(const struct arcana_firewall_firewall_state_table_entry *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_table_entry_decode(const void *, size_t, struct arcana_firewall_firewall_state_table_entry *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_table_encode(const struct arcana_firewall_firewall_state_table *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_table_decode(const void *, size_t, struct arcana_firewall_firewall_state_table *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_pipe_mask_encode(const struct arcana_firewall_firewall_state_dummynet_pipe_mask *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_pipe_mask_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet_pipe_mask *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_pipe_encode(const struct arcana_firewall_firewall_state_dummynet_pipe *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_pipe_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet_pipe *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_sched_mask_encode(const struct arcana_firewall_firewall_state_dummynet_sched_mask *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_sched_mask_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet_sched_mask *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_sched_encode(const struct arcana_firewall_firewall_state_dummynet_sched *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_sched_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet_sched *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_queue_mask_encode(const struct arcana_firewall_firewall_state_dummynet_queue_mask *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_queue_mask_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet_queue_mask *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_queue_encode(const struct arcana_firewall_firewall_state_dummynet_queue *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_queue_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet_queue *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_encode(const struct arcana_firewall_firewall_state_dummynet *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_encode(const struct arcana_firewall_firewall_state *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_decode(const void *, size_t, struct arcana_firewall_firewall_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_trace_input_encode(const struct arcana_firewall_firewall_trace_input *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_trace_input_decode(const void *, size_t, struct arcana_firewall_firewall_trace_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_trace_output_packet_encode(const struct arcana_firewall_firewall_trace_output_packet *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_trace_output_packet_decode(const void *, size_t, struct arcana_firewall_firewall_trace_output_packet *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_trace_output_encode(const struct arcana_firewall_firewall_trace_output *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_trace_output_decode(const void *, size_t, struct arcana_firewall_firewall_trace_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_encode(const struct arcana_firewall_firewall *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_decode(const void *, size_t, struct arcana_firewall_firewall *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -6823,6 +7678,9 @@ int	ietf_logical_network_element_logical_network_elements_edit(cbl_req *, const 
 int	ietf_logical_network_element_bind_lne_name_failed_notification(const struct ietf_logical_network_element_bind_lne_name_failed *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_get(cbl_req *, struct arcana_jails *, cbl_yarena *);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_jails_jails_jail_arcfw_firewall_trace_input *,
+	    struct arcana_jails_jails_jail_arcfw_firewall_trace_output *, cbl_yarena *);
 int	arcana_jails_jails_jail_arcpkg_packages_refresh_action(cbl_req *, const struct cbl_bytes *,
 	    const struct arcana_jails_jails_jail_arcpkg_packages_refresh_input *,
 	    struct arcana_jails_jails_jail_arcpkg_packages_refresh_output *, cbl_yarena *);
@@ -6917,5 +7775,11 @@ int	arcana_log_logs_read_action(cbl_req *, const struct cbl_bytes *,
 int	ietf_syslog_syslog_get(cbl_req *, struct ietf_syslog *, cbl_yarena *);
 int	ietf_syslog_syslog_edit(cbl_req *, const struct ietf_syslog *,
 	    const struct ietf_syslog *);
+int	arcana_firewall_firewall_get(cbl_req *, struct arcana_firewall *, cbl_yarena *);
+int	arcana_firewall_firewall_edit(cbl_req *, const struct arcana_firewall *,
+	    const struct arcana_firewall *);
+int	arcana_firewall_firewall_trace_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_firewall_firewall_trace_input *,
+	    struct arcana_firewall_firewall_trace_output *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */

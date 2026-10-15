@@ -5554,6 +5554,80 @@ config_bundle_cleanup()
 	true
 }
 
+atf_test_case yang_firewall
+yang_firewall_head()
+{
+	atf_set "descr" "the firewall as arcana-firewall has it (PLAN-SDN-YANG" \
+	    "3.1.10): the ipfw read's kept rules, aliases, rc.conf, the rules" \
+	    "with counters, dynamic rules, tables, NAT and dummynet; the kept" \
+	    "file's text with its rules, other lines and aliases taken from" \
+	    "it; a kernel trace's packets; through YANG-CBOR and back"
+}
+yang_firewall_body()
+{
+	local y="$(atf_get_srcdir)/yfw"
+
+	cat > ipfw.json <<'EOT'
+{"loaded":true,"enabled":true,"rules":[{"num":5,"pkts":12,"bytes":900,"set":0,"text":"skipto 500 ip from any to any out"},{"num":1001,"pkts":3,"bytes":180,"set":0,"text":"allow tcp from any to me6 22 in"},{"num":2000,"pkts":0,"bytes":0,"set":1,"text":"deny ip from any to any","disabled":true},{"num":65535,"pkts":99,"bytes":9999,"set":31,"text":"deny ip from any to any"}],"dynamic_total":2,"dynamic":[{"num":1001,"pkts":7,"bytes":560,"ttl":298,"kind":"STATE","flow":"tcp 2001:db8::9 51234 <-> 2001:db8::1 22 :default"}],"tables":[{"name":"T46","type":"addr","entries":[{"key":"10.0.0.0/8","value":"0"},{"key":"192.0.2.0/24","value":"0"}],"count":2}],"nat":["ipfw nat 1 config if em0 same_ports"],"pipes":[],"qos":{"pipes":[{"num":1,"bw":10000000,"delay":20,"burst":0,"slots":30,"plr":0.01,"mask":{"src":0,"dst":0,"src_port":0,"dst_port":0,"proto":0}}],"scheds":[{"num":1,"bw":10000000,"delay":20,"burst":0,"type":"WF2Q+","mask":{"src":24,"dst":0,"src_port":0,"dst_port":0,"proto":0},"queues":[2]}],"queues":[{"num":2,"sched":1,"weight":30,"pri":0,"slots":50,"plr":0}]},"verbose":true,"aliases":[{"name":"web","kind":"ports","value":"80 443"},{"name":"lan","kind":"addr","value":"10.0.0.0/8 192.0.2.0/24"}],"kept":[{"num":1001,"text":"allow tcp from any to me6 22 in"},{"num":1002,"text":"allow tcp from table(lan) to me 80,443 in","source":"allow tcp from $lan to me $web in"}],"other":["# the firewall","table lan create type addr"],"file":true,"path":"/usr/local/etc/arcana/ipfw.rules","rc":{"firewall_enable":"YES","firewall_script":"/usr/local/etc/arcana/ipfw.rules.sh"}}
+EOT
+	cat > want <<'EOT'
+kept path=/usr/local/etc/arcana/ipfw.rules present=yes sha256=- text=0
+rule 1001 allow tcp from any to me6 22 in
+rule 1002 allow tcp from table(lan) to me 80,443 in <- allow tcp from $lan to me $web in
+other # the firewall
+other table lan create type addr
+alias web ports 80 443
+alias lan addr 10.0.0.0/8 192.0.2.0/24
+rc enable=YES type=- script=/usr/local/etc/arcana/ipfw.rules.sh
+state loaded=yes enabled=yes verbose=yes dynamic-total=2
+rule 5 set=0 packets=12 octets=900 skipto 500 ip from any to any out
+rule 1001 set=0 packets=3 octets=180 allow tcp from any to me6 22 in
+rule 2000 set=1 packets=0 octets=0 disabled deny ip from any to any
+rule 65535 set=31 packets=99 octets=9999 deny ip from any to any
+dynamic 1001 packets=7 ttl=298 STATE tcp 2001:db8::9 51234 <-> 2001:db8::1 22 :default
+table T46 type=addr count=2 10.0.0.0/8=0 192.0.2.0/24=0
+nat ipfw nat 1 config if em0 same_ports
+pipe 1 bw=10000000 delay=20 slots=30 plr=10000 mask=0/0:0/0/0
+sched 1 bw=10000000 type=WF2Q+ queues=2 mask=24/0:0/0/0
+queue 2 sched=1 weight=30 slots=50
+yang-cbor 763 bytes, the same back
+EOT
+	atf_check -o file:want "$y" read ipfw.json
+	# The kept file as ipfw-rules reads it: the rules, with the words
+	# they were written in; the lines that are none; the aliases.
+	cat > kept <<'EOT'
+# the firewall
+#arcana alias web ports 80 443
+#arcana alias lan addr 10.0.0.0/8 192.0.2.0/24
+table lan create type addr
+add 01001 allow tcp from any to me6 22 in
+#arcana add 01002 allow tcp from $lan to me $web in
+add 01002 allow tcp from table(lan) to me 80,443 in
+EOT
+	cat > want <<'EOT'
+kept path=- present=yes sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef text=266
+rule 1001 allow tcp from any to me6 22 in
+rule 1002 allow tcp from table(lan) to me 80,443 in <- allow tcp from $lan to me $web in
+other # the firewall
+other table lan create type addr
+alias web ports 80 443
+alias lan addr 10.0.0.0/8 192.0.2.0/24
+yang-cbor 562 bytes, the same back
+EOT
+	atf_check -o file:want "$y" kept kept \
+	    0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+	cat > trace.json <<'EOT'
+{"packets":[{"ms":12,"verdict":"pass","family":"ipv6","source":"2001:db8::9","destination":"2001:db8::1","proto":6,"sport":51234,"dport":22,"rule":1001,"interface":"em0","direction":"in"},{"ms":40,"verdict":"deny","family":"ipv4","source":"10.0.0.2","destination":"10.0.0.1","proto":17,"sport":5678,"dport":5678,"rule":9100,"interface":"em0","direction":"in"}],"seconds":3,"limit":100}
+EOT
+	cat > want <<'EOT'
+trace seconds=3 limit=100
+packet ms=12 pass ipv6 2001:db8::9 -> 2001:db8::1 proto=6 51234->22 rule=1001 em0 in
+packet ms=40 deny ipv4 10.0.0.2 -> 10.0.0.1 proto=17 5678->5678 rule=9100 em0 in
+yang-cbor 117 bytes, the same back
+EOT
+	atf_check -o file:want "$y" trace trace.json
+}
+
 atf_test_case fw_walk
 fw_walk_head()
 {
@@ -5599,6 +5673,42 @@ EOF
 	atf_check -o inline:'allow 800 keep-state\n' "$f" list tables $l in \
 	    rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 \
 	    dport=22 syn rpf reach
+	# The rules met, in order, with what each did.
+	atf_check -o inline:'allow 800 keep-state\n  400 check-state: no state of it yet, on\n  500 met, on\n  800 decides\n' \
+	    "$f" list tables $l in rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 \
+	    proto=tcp sport=40000 dport=22 syn rpf reach walk
+	# call and return as the kernel's O_CALLRETURN: into the block
+	# called, back to the rule numbered after the call (next-rulenum);
+	# a return with nothing called goes on; reass goes on; a rule of
+	# options alone (return via any) names no protocol.
+	cat > chain <<'EOT'
+00001 call 9000 ip6 from any to any
+00020 call 9100 ip from any to any in
+00099 reass ip from any to any in
+00200 check-state :default
+00300 call 9200 ip from any to any in
+00999 deny ip from any to any
+09000 allow icmp6 from fe80::/10 to fe80::/10
+09099 return via any
+09100 deny udp from any to 255.255.255.255 1900 in
+09199 return via any
+09200 allow tcp from any to me 22 in
+09299 return next-rule via any
+65535 deny ip from any to any
+EOT
+	atf_check -o inline:'deny 9100\n  20 call 9100\n  9100 decides\n' "$f" chain tables $l \
+	    in rcv=em0 src=10.0.0.5 dst=255.255.255.255 proto=udp sport=1900 \
+	    dport=1900 rpf reach walk
+	atf_check -o inline:'allow 9200\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state: no state of it yet, on\n  300 call 9200\n  9200 decides\n' \
+	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
+	    proto=tcp sport=4000 dport=22 syn rpf reach walk
+	atf_check -o inline:'deny 999\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state: no state of it yet, on\n  300 call 9200\n  9299 return, after 300\n  999 decides\n' \
+	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
+	    proto=tcp sport=4000 dport=80 syn rpf reach walk
+	# A reply with its state: check-state decides.
+	atf_check -o inline:'allow 200 by-state\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 decides: its state lets it by\n' \
+	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
+	    proto=tcp sport=4000 dport=80 ack state rpf reach walk
 	atf_check -o inline:'deny 900\n' "$f" list tables $l in rcv=vtnet0 \
 	    src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 dport=80 syn \
 	    rpf reach
@@ -6743,6 +6853,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_system
 	atf_add_test_case yang_processes
 	atf_add_test_case yang_log
+	atf_add_test_case yang_firewall
 	atf_add_test_case fw_walk
 	atf_add_test_case firewall_aliases
 	atf_add_test_case config_bundle

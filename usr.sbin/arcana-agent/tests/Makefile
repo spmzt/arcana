@@ -38,6 +38,13 @@ SRCS.ylog=	ylog_test.c ylog.c yjson.c ymodel_schema.c
 CFLAGS.ylog_test.c+=	-I${.OBJDIR}/..
 CFLAGS.ylog.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 LDADD.ylog+=	${CBLINK_LIBS} ${UCL_LIBS}
+# yfw: the firewall as arcana-firewall has it: the ipfw read, the kept
+# file, a kernel trace.
+PROGS+=		yfw
+SRCS.yfw=	yfw_test.c yfw.c yjson.c ymodel_schema.c
+CFLAGS.yfw_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yfw.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.yfw+=	${CBLINK_LIBS} ${UCL_LIBS}
 # yprocs: the processes operation's replies as arcana-processes has them.
 PROGS+=		yprocs
 SRCS.yprocs=	yprocs_test.c yprocs.c yjson.c ymodel_schema.c

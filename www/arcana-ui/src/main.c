@@ -37,7 +37,6 @@ static int	others_turn;	/* refreshes since the other hosts were read */
 #define	OTHERS_EVERY	3	/* the hosts not selected: every third refresh */
 
 static void	tick(void *);
-static void	dispatch(const char *, const char *, const char *);
 static void	close_service(void);
 static void	submit(const char *, const ucl_object_t *);
 static void	submit_form(const char *, const ucl_object_t *);
@@ -115,7 +114,7 @@ static const char *const tabnames[] = {
 
 /* A jail's name in the address: what is not a letter, a digit or ._- in
  * %XX. */
-static void
+void
 loc_enc(char *buf, size_t len, const char *s)
 {
 	static const char	hex[] = "0123456789ABCDEF";
@@ -144,7 +143,7 @@ loc_hex(int c)
 }
 
 /* A field of the address, its %XX decoded. */
-static void
+void
 loc_dec(char *buf, size_t len, const char *s)
 {
 	size_t	n;
@@ -185,7 +184,7 @@ loc_of(char *buf, size_t len)
 		snprintf(buf, len, "#/sdwan");
 		break;
 	case NODE_TROUBLE:
-		snprintf(buf, len, "#/troubleshoot");
+		trouble_loc(buf, len);
 		break;
 	case NODE_DEVICES:
 		snprintf(buf, len, "#/devices");
@@ -238,11 +237,12 @@ loc_show(void)
 static void
 loc_go(const char *r)
 {
-	char	 buf[sizeof(loc_wanted)], *f[4], *q;
+	char	 buf[sizeof(loc_wanted)], *f[4], *q, *query;
 	char	 id[sizeof(app.servers[0].id)], arg[sizeof(app.jail)];
 	int	 i, np;
 
 	snprintf(buf, sizeof(buf), "%s", r);
+	query = strchr(buf, '?');
 	buf[strcspn(buf, "?")] = '\0';
 	for (q = buf; *q == '#' || *q == '/'; q++)
 		;
@@ -263,8 +263,11 @@ loc_go(const char *r)
 		dispatch("select-workflows", "", "");
 	else if (IS(0, "sdwan"))
 		dispatch("select-sdwan", "", "");
-	else if (IS(0, "troubleshoot"))
+	else if (IS(0, "troubleshoot")) {
 		dispatch("select-trouble", "", "");
+		if (query != NULL)
+			trouble_open(query + 1);
+	}
 	else if (IS(0, "devices"))
 		dispatch("select-devices", "", "");
 	else if (IS(0, "settings")) {
@@ -851,7 +854,7 @@ submit_form(const char *form, const ucl_object_t *f)
 }
 
 /* What a control with data-act does. */
-static void
+void
 dispatch(const char *act, const char *arg, const char *value)
 {
 	struct server		*s;

@@ -34,6 +34,7 @@
 #include <fnmatch.h>
 #include <netdb.h>
 #include <stdbool.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -518,8 +519,12 @@ body_match(const struct fwset *s, char **tok, int nt, int i,
 } while (0)
 	if (i >= nt)
 		return (YES);
-	/* proto from SRC [ports] to DST [ports] */
-	AND(proto_match(tok[i++], k));
+	/* proto from SRC [ports] to DST [ports]; a rule written with
+	 * options alone (return via any) names no protocol. */
+	if (strcmp(tok[i], "in") != 0 && strcmp(tok[i], "out") != 0 &&
+	    strcmp(tok[i], "via") != 0 && strcmp(tok[i], "recv") != 0 &&
+	    strcmp(tok[i], "xmit") != 0 && strcmp(tok[i], "not") != 0)
+		AND(proto_match(tok[i++], k));
 	if (i < nt && strcmp(tok[i], "from") == 0) {
 		i++;
 		neg = i < nt && strcmp(tok[i], "not") == 0;
@@ -691,6 +696,21 @@ verdict_of(const char *act)
 	return (act);
 }
 
+/* One rule the walk met, and what it did with it. */
+static void
+step(struct fwverdict *v, size_t ri, const char *fmt, ...)
+{
+	va_list	ap;
+
+	if (v->nsteps == FW_STEPS)
+		return;
+	v->steps[v->nsteps].rule = ri;
+	va_start(ap, fmt);
+	vsnprintf(v->steps[v->nsteps].how, sizeof(v->steps[0].how), fmt, ap);
+	va_end(ap);
+	v->nsteps++;
+}
+
 void
 fw_eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v)
 {
@@ -700,8 +720,9 @@ fw_eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v)
 	size_t		 ri;
 	long		 to;
 	int		 nt, i, steps;
-	bool		 keep, looked = false;
+	bool		 keep, looked = false, retnext;
 	enum tri	 m;
+	size_t		 stack[FW_CALLS], sp = 0;
 
 	memset(v, 0, sizeof(*v));
 	v->setfib = -1;
@@ -720,19 +741,27 @@ fw_eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v)
 			continue;
 		act = tok[i++];
 		if (!action_word(act)) {
-			v->uncertain[v->nuncertain < FW_UNCERTAIN ?
-			    v->nuncertain++ : v->nuncertain - 1] = ri;
+			if (v->nuncertain < FW_UNCERTAIN) {
+				v->uncertain[v->nuncertain] = ri;
+				snprintf(v->uncertain_why[v->nuncertain],
+				    sizeof(v->uncertain_why[0]), "an action "
+				    "not known");
+				v->nuncertain++;
+			}
+			step(v, ri, "may be met: an action not known");
 			continue;
 		}
 		/* check-state has no body: a reply's state looked up. */
 		if (strcmp(act, "check-state") == 0) {
 			looked = true;
 			if (k->state) {
+				step(v, ri, "decides: its state lets it by");
 				v->verdict = "allow";
 				v->rule = ri;
 				v->by_state = true;
 				return;
 			}
+			step(v, ri, "check-state: no state of it yet, on");
 			continue;
 		}
 		/* The action's own words. */
@@ -752,6 +781,10 @@ fw_eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v)
 			arg = tok[i++];
 		if (strcmp(act, "eaction") == 0 && i + 1 < nt)
 			i += 2;
+		retnext = false;
+		if (strcmp(act, "return") == 0 && i < nt && (strcmp(tok[i],
+		    "next-rule") == 0 || strcmp(tok[i], "next-rulenum") == 0))
+			retnext = strcmp(tok[i++], "next-rule") == 0;
 		/* log [logamount N] [logdst x], altq q, tag n */
 		for (;;) {
 			if (i < nt && strcmp(tok[i], "log") == 0)
@@ -776,6 +809,7 @@ fw_eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v)
 		if (keep && !looked) {
 			looked = true;
 			if (k->state) {
+				step(v, ri, "decides: its state lets it by");
 				v->verdict = "allow";
 				v->rule = ri;
 				v->by_state = true;
@@ -790,26 +824,81 @@ fw_eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v)
 				    '\0' ? why : "an address it names");
 				v->nuncertain++;
 			}
+			step(v, ri, "may be met: %s", why[0] != '\0' ? why :
+			    "an address it names");
 			continue;
 		}
-		if (v->nmatched < FW_MATCHED)
-			v->matched[v->nmatched++] = ri;
 		if (strcmp(act, "count") == 0 || strcmp(act, "setdscp") == 0 ||
 		    strcmp(act, "tag") == 0 || strcmp(act, "untag") == 0 ||
 		    strcmp(act, "tcp-setmss") == 0 || strcmp(act,
-		    "setmark") == 0 || strcmp(act, "call") == 0 ||
-		    strcmp(act, "return") == 0)
+		    "setmark") == 0 || strcmp(act, "reass") == 0) {
+			/* reass: a packet that is no fragment goes on. */
+			step(v, ri, "met, on");
 			continue;
+		}
+		if (strcmp(act, "call") == 0) {
+			size_t	q;
+
+			/* As the kernel's O_CALLRETURN: the rule's index
+			 * pushed, the walk goes to the number called
+			 * (back or forth); a return comes back to the rule
+			 * numbered after it (next-rulenum, the default) or
+			 * the one after it (next-rule). */
+			if (arg == NULL || strcmp(arg, "tablearg") == 0) {
+				step(v, ri, "call tablearg: not known");
+				v->verdict = "unknown";
+				v->rule = ri;
+				v->note = "call tablearg: where to is the "
+				    "table's";
+				return;
+			}
+			if (sp == FW_CALLS) {
+				step(v, ri, "decides: the call stack overflows");
+				v->verdict = "deny";
+				v->rule = ri;
+				v->note = "the call stack overflows: the kernel "
+				    "denies the packet";
+				return;
+			}
+			to = strtol(arg, NULL, 10);
+			step(v, ri, "call %ld", to);
+			stack[sp++] = ri;
+			for (q = 0; q < s->n && s->rules[q].num < to; q++)
+				;
+			ri = q - 1;
+			continue;
+		}
+		if (strcmp(act, "return") == 0) {
+			size_t	q, from;
+
+			/* With nothing called, on to the next rule. */
+			if (sp == 0) {
+				step(v, ri, "return, nothing called: on");
+				continue;
+			}
+			from = stack[--sp];
+			if (retnext)
+				q = from + 1;
+			else
+				for (q = from + 1; q < s->n && s->rules[q].num ==
+				    s->rules[from].num; q++)
+					;
+			step(v, ri, "return, after %ld", s->rules[from].num);
+			ri = q - 1;
+			continue;
+		}
 		if (strcmp(act, "setfib") == 0) {
 			/* -2: the table's value, not known here. */
 			v->setfib = arg == NULL || strcmp(arg, "tablearg") == 0 ?
 			    -2 : atoi(arg);
+			step(v, ri, "setfib %s, on", arg != NULL ? arg : "?");
 			continue;
 		}
 		if (strcmp(act, "skipto") == 0) {
 			size_t	q;
 
 			if (arg == NULL || strcmp(arg, "tablearg") == 0) {
+				step(v, ri, "skipto tablearg: not known");
 				v->verdict = "unknown";
 				v->rule = ri;
 				v->note = "skipto tablearg: where to is the "
@@ -817,12 +906,14 @@ fw_eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v)
 				return;
 			}
 			to = strtol(arg, NULL, 10);
+			step(v, ri, "skipto %ld", to);
 			/* Only forward: the kernel never jumps back. */
 			for (q = ri + 1; q < s->n && s->rules[q].num < to; q++)
 				;
 			ri = q - 1;
 			continue;
 		}
+		step(v, ri, "decides");
 		if (strcmp(act, "fwd") == 0 || strcmp(act, "forward") == 0)
 			snprintf(v->fwd, sizeof(v->fwd), "%s", arg != NULL ?
 			    arg : "");

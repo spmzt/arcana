@@ -1173,6 +1173,55 @@ paths:
       responses:
         "200":
           description: ok and data, or error
+  /api/servers/{server}/ipfw/path:
+    get:
+      tags: [servers]
+      summary: What the host does with a packet, its firewall's ruleset walked
+      description: Under data, the agent's path-check for one host, as
+        /api/troubleshoot/path asks every host (its check). firewall has
+        on, and the walks in, out, reply_in and reply_out, each with its
+        verdict (allow, deny, fwd, nat, unknown, none), rule and text,
+        by_state, keep_state, setfib, fwd, note, walk (each rule met in
+        the kernel's own order with how it did, "met, on", "call N",
+        "return, after N", "skipto N", "check-state ...", "may be met ...",
+        "decides") and uncertain. ingress, route, neighbor, return and
+        findings as the troubleshoot route describes them. Nothing is
+        sent. A firewall that is off is walked all the same, its drops
+        said as what it would do, not as findings that stop the packet.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: src
+          in: query
+          required: true
+          schema: { type: string }
+        - name: dst
+          in: query
+          required: true
+          schema: { type: string }
+        - name: proto
+          in: query
+          schema: { type: string, enum: [tcp, udp, icmp, ip] }
+        - name: port
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 65535 }
+        - name: interface
+          in: query
+          description: The interface it comes in on; else the one the route back to src is by.
+          schema: { type: string }
+        - name: fib
+          in: query
+          schema: { type: integer }
+        - name: reply
+          in: query
+          description: The packet is a reply, met where no state of its request may be.
+          schema: { type: boolean }
+        - name: jail
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok and data, or error
+        "400": { $ref: "#/components/responses/Error" }
   /api/servers/{server}/sysctl:
     get:
       tags: [servers]
@@ -1265,7 +1314,9 @@ paths:
         leaves, blocked, loop, unknown) and where; return and return_end,
         the reply's way back, a place that did not see the request having
         no state of it; and findings, worst first (bad, warn, info, ok),
-        each with its place and in words.
+        each with its place (and server and jail, to find it) and in
+        words. Each walk of a check lists the rules met in order under
+        walk (see /api/servers/{server}/ipfw/path).
       responses:
         "200":
           description: ok, hops, end, return, return_end, findings
