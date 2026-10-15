@@ -22,7 +22,8 @@
  * the console sees itself (a host that stopped answering, host-down;
  * that answers again, host-up) and those the host tells (a jail made
  * or removed, jail-state; threshold, kmsg, link and the rest), each
- * with what it must match.  One that runs by itself may hold a step
+ * with what it must match, a value of which may be ${param.NAME}, that
+ * parameter's default.  One that runs by itself may hold a step
  * that destroys (jobs.yaml's destroys) only when it says so.
  *
  *	GET    /api/workflows		the workflows
@@ -1642,21 +1643,44 @@ watched_of(const char *sid)
 	return (x);
 }
 
-/* Does an event match a trigger: its name, and each of match's? */
+/*
+ * Does an event match a trigger: its name, and each of match's?  A
+ * value ${param.NAME} is that parameter's default, the run's to be: an
+ * empty one matches any.
+ */
 static bool
-matches(const ucl_object_t *on, const char *kind, const ucl_object_t *data)
+matches(const ucl_object_t *wf, const ucl_object_t *on, const char *kind,
+    const ucl_object_t *data)
 {
-	const ucl_object_t	*m, *v;
-	ucl_object_iter_t	 it;
+	const ucl_object_t	*m, *v, *p;
+	ucl_object_iter_t	 it, pit;
+	const char		*want;
+	size_t			 len;
 
 	if (strcmp(ucl_str(on, "event"), kind) != 0)
 		return (false);
 	it = NULL;
 	while ((m = ucl_object_iterate(ucl_object_lookup(on, "match"), &it,
 	    true)) != NULL) {
+		want = ucl_object_tostring_forced(m);
+		len = strlen(want);
+		if (strncmp(want, "${param.", 8) == 0 && len > 9 &&
+		    want[len - 1] == '}') {
+			pit = NULL;
+			while ((p = ucl_object_iterate(ucl_object_lookup(wf,
+			    "params"), &pit, true)) != NULL)
+				if (ucl_str(p, "name") != NULL && strlen(ucl_str(p,
+				    "name")) == len - 9 && strncmp(ucl_str(p,
+				    "name"), want + 8, len - 9) == 0)
+					break;
+			want = p != NULL && ucl_str(p, "default") != NULL ?
+			    ucl_str(p, "default") : "";
+			if (want[0] == '\0')
+				continue;
+		}
 		v = ucl_object_lookup(data, ucl_object_key(m));
-		if (v == NULL || strcmp(ucl_object_tostring_forced(v),
-		    ucl_object_tostring_forced(m)) != 0)
+		if (v == NULL || strcmp(ucl_object_tostring_forced(v), want) !=
+		    0)
 			return (false);
 	}
 	return (true);
@@ -1687,7 +1711,7 @@ fire(const ucl_object_t *wfs, const char *sid, const char *kind,
 		oit = NULL;
 		while ((on = ucl_object_iterate(ucl_object_lookup(w, "on"),
 		    &oit, true)) != NULL) {
-			if (!matches(on, kind, data))
+			if (!matches(w, on, kind, data))
 				continue;
 			hosts = ucl_object_typed_new(UCL_ARRAY);
 			ucl_array_append(hosts, ucl_object_fromstring(sid));
@@ -2052,6 +2076,43 @@ refs_tick(void *arg __unused, uint64_t now __unused)
  * few seconds; runs a restart cut said to be interrupted; and the one
  * worker that takes the lock watches for what runs by itself.
  */
+/*
+ * A run a restart cut: its hosts and steps that were running said to
+ * be interrupted, why with them; those not yet begun not run.
+ */
+static void
+run_cut(ucl_object_t *run)
+{
+	const ucl_object_t	*h, *st;
+	ucl_object_iter_t	 hit, sit;
+
+	hit = NULL;
+	while ((h = ucl_object_iterate(ucl_object_lookup(run, "hosts"), &hit,
+	    true)) != NULL) {
+		if (ucl_str(h, "state") != NULL && strcmp(ucl_str(h, "state"),
+		    "running") == 0)
+			put((ucl_object_t *)(uintptr_t)h, "state",
+			    ucl_object_fromstring("interrupted"));
+		sit = NULL;
+		while ((st = ucl_object_iterate(ucl_object_lookup(h, "steps"),
+		    &sit, true)) != NULL) {
+			if (ucl_str(st, "state") == NULL)
+				continue;
+			if (strcmp(ucl_str(st, "state"), "running") == 0) {
+				put((ucl_object_t *)(uintptr_t)st, "state",
+				    ucl_object_fromstring("interrupted"));
+				put((ucl_object_t *)(uintptr_t)st, "detail",
+				    ucl_object_fromstring("the console stopped "
+				    "while it ran (restarted, or its worker "
+				    "died): what it did on the hosts is not "
+				    "known; look at them, or run it again"));
+			} else if (strcmp(ucl_str(st, "state"), "pending") == 0)
+				put((ucl_object_t *)(uintptr_t)st, "state",
+				    ucl_object_fromstring("not run"));
+		}
+	}
+}
+
 void
 workflows_init(void)
 {
@@ -2084,6 +2145,7 @@ workflows_init(void)
 			    "state"), "running") == 0) {
 				put(o, "state", ucl_object_fromstring(
 				    "interrupted"));
+				run_cut(o);
 				changed = true;
 			}
 		if (changed)
@@ -2314,6 +2376,8 @@ api_runs(struct http_request *req)
 		    NULL) {
 			put(full, "state", ucl_object_copy(ucl_object_lookup(
 			    one, "state")));
+			if (strcmp(ucl_str(full, "state"), "interrupted") == 0)
+				run_cut(full);
 			one = full;
 		} else
 			one = ucl_object_ref(one);

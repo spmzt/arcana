@@ -206,6 +206,23 @@ int	yprocs_action(struct work *w, uint64_t pid, const char *verb,
 	    const char *arg, uint64_t start, const char **errp);
 
 /*
+ * arcana-log (gula/ylog.c): the log operation's JSON, the log
+ * directory's files (dir, the directory's path) or a read's lines,
+ * each line's facility and severity as ietf-syslog's.
+ */
+int	ylog_files_from_json(const char *json, const char *dir, cbl_yarena *a,
+	    struct arcana_log_logs *out);
+int	ylog_read_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_log_logs_read_output *out);
+/*
+ * ietf-syslog: syslog.conf conf, and the files it includes, with each
+ * file's rotation from newsyslog.conf newsyslog (NULL: none); what the
+ * model cannot hold in *u (the arena's), "file:line" and why.
+ */
+int	ysyslog_read(const char *conf, const char *newsyslog, cbl_yarena *a,
+	    struct ietf_syslog *out, struct yunread **u, size_t *nu);
+
+/*
  * RFC 8530's logical network elements: the vnet jails, as jls(8) lists
  * them (invidia/ylne.c).
  */

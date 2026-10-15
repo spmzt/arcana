@@ -1,0 +1,176 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-log",
+    "module-revision": "2026-10-14",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-syslog",
+        "module-revision": "2025-04-30"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "69900",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-log",
+        "sid": "69900"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs",
+        "sid": "69901"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/directory",
+        "sid": "69902"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/file",
+        "sid": "69903"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/file/modified",
+        "sid": "69904"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/file/name",
+        "sid": "69905"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/file/packed",
+        "sid": "69906"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/file/size",
+        "sid": "69907"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read",
+        "sid": "69908"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/input",
+        "sid": "69909"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/input/filter",
+        "sid": "69910"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/input/jail",
+        "sid": "69911"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/input/lines",
+        "sid": "69912"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/input/name",
+        "sid": "69913"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/input/position",
+        "sid": "69914"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output",
+        "sid": "69915"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/line",
+        "sid": "69916"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/line/facility",
+        "sid": "69917"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/line/host",
+        "sid": "69918"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/line/pid",
+        "sid": "69919"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/line/seen",
+        "sid": "69920"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/line/sequence",
+        "sid": "69921"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/line/severity",
+        "sid": "69922"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/line/tag",
+        "sid": "69923"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/line/text",
+        "sid": "69924"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/line/time",
+        "sid": "69925"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/name",
+        "sid": "69926"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/position",
+        "sid": "69927"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/rotated",
+        "sid": "69928"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-log:logs/read/output/size",
+        "sid": "69929"
+      }
+    ]
+  }
+}

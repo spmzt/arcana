@@ -651,7 +651,26 @@ agent_build(struct work *w, const char *source, const char *ref,
 		return (0);
 	}
 
-	/* The library the agent links, then the agent; no tests. */
+	/*
+	 * cblink, the submodule, first: cblink-gen makes the agent's
+	 * arcana.h from the spec.  A tree without it builds with the
+	 * cblink installed, as the top-level make does.
+	 */
+	if (access(wfmt(w, "%s/cblink/share/cblink/cblink.mk", src), R_OK) ==
+	    0) {
+		n = 0;
+		argv[n++] = opts.make_bin;
+		argv[n++] = "-C";
+		argv[n++] = src;
+		argv[n++] = "cblink-build";
+		argv[n] = NULL;
+		if (run_as(w, unpriv, argv, &res) != 0) {
+			rsp->error = wtext(w, exec_error(w, &res,
+			    "make cblink-build"));
+			return (0);
+		}
+	}
+	/* The libraries the agent links, then the agent; no tests. */
 	n = 0;
 	argv[n++] = opts.make_bin;
 	argv[n++] = "-C";
@@ -660,6 +679,11 @@ agent_build(struct work *w, const char *source, const char *ref,
 	argv[n] = NULL;
 	if (run_as(w, unpriv, argv, &res) != 0) {
 		rsp->error = wtext(w, exec_error(w, &res, "make libjailconf"));
+		return (0);
+	}
+	argv[2] = wfmt(w, "%s/lib/libvarconf", src);
+	if (run_as(w, unpriv, argv, &res) != 0) {
+		rsp->error = wtext(w, exec_error(w, &res, "make libvarconf"));
 		return (0);
 	}
 	argv[2] = wfmt(w, "%s/usr.sbin/arcana-agent", src);

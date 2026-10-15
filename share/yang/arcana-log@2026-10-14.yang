@@ -1,0 +1,201 @@
+module arcana-log {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-log";
+  prefix arclog;
+
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import ietf-syslog {
+    prefix syslog;
+    reference
+      "RFC 9742: A YANG Data Model for Syslog Configuration";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "What FreeBSD's syslogd(8) wrote down, read: the files of the log
+     directory (/var/log), and the lines of one, from its end or on
+     from where a read before ended, which is how a log is followed;
+     the kernel's message buffer (dmesg(8)) as the log @dmesg.
+
+     How syslogd is set to write them, syslog.conf and newsyslog.conf,
+     is ietf-syslog's (RFC 9742), whose facilities and severities a
+     line here is told by.  A line is taken apart into its time, host,
+     tag, process and text, in either of the forms syslogd writes;
+     its facility and severity are there where syslogd -v wrote them.";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.7.";
+  }
+
+  container logs {
+    config false;
+    description
+      "The log directory and its files.";
+    leaf directory {
+      type string;
+      description
+        "Where syslogd writes: the agent's -L, /var/log.";
+    }
+    list file {
+      key "name";
+      description
+        "A regular file of the log directory, by name, but utx.log's
+         kin, getutxent(3)'s, which are not text.";
+      leaf name {
+        type string {
+          length "1..128";
+          pattern '[A-Za-z0-9_][A-Za-z0-9._-]*';
+        }
+        description
+          "Its name in the log directory.";
+      }
+      leaf size {
+        type uint64;
+        units "bytes";
+        description
+          "Its size.";
+      }
+      leaf modified {
+        type yang:date-and-time;
+        description
+          "When it was last written.";
+      }
+      leaf packed {
+        type boolean;
+        description
+          "Turned over and packed by newsyslog(8) (.gz, .bz2, .xz,
+           .zst): read unpacked.";
+      }
+    }
+    action read {
+      description
+        "Lines of a log: its last ones, or with a position those
+         written after it, the end of a read before.";
+      input {
+        leaf name {
+          type string {
+            length "1..128";
+          }
+          default "messages";
+          description
+            "The log: a file's name, or @dmesg for the kernel's
+             messages, numbered as they came.";
+        }
+        leaf jail {
+          type string;
+          description
+            "A jail's log directory, not the host's.";
+        }
+        leaf lines {
+          type uint16 {
+            range "1..5000";
+          }
+          default "200";
+          description
+            "The last so many.";
+        }
+        leaf position {
+          type uint64;
+          description
+            "Read on from here: a byte of the file, or the kernel's
+             message number.";
+        }
+        leaf filter {
+          type string {
+            length "0..128";
+          }
+          description
+            "Only lines that have this text, whatever its case.";
+        }
+      }
+      output {
+        leaf name {
+          type string;
+          description
+            "The log read.";
+        }
+        leaf size {
+          type uint64;
+          units "bytes";
+          description
+            "The file's size when read.";
+        }
+        leaf position {
+          type uint64;
+          description
+            "Where the read ended: the position of the next one.";
+        }
+        leaf rotated {
+          type boolean;
+          description
+            "The file was turned over since the position given (or
+             the agent started since the message number): read from
+             its start.";
+        }
+        list line {
+          description
+            "The lines, oldest first.";
+          leaf time {
+            type string;
+            description
+              "As syslogd wrote it: 'Oct 14 12:00:01', or RFC 5424's
+               timestamp.";
+          }
+          leaf host {
+            type string;
+            description
+              "The host it came from.";
+          }
+          leaf facility {
+            type identityref {
+              base syslog:syslog-facility;
+            }
+            description
+              "Its facility, where syslogd -v wrote it (FreeBSD's
+               security is RFC 5424's audit, 13).";
+          }
+          leaf severity {
+            type syslog:syslog-severity;
+            description
+              "Its severity, where syslogd -v wrote it.";
+          }
+          leaf tag {
+            type string;
+            description
+              "The program that wrote it.";
+          }
+          leaf pid {
+            type string;
+            description
+              "Its process, as the line has it.";
+          }
+          leaf text {
+            type string;
+            description
+              "What it says.";
+          }
+          leaf sequence {
+            type uint64;
+            description
+              "A kernel message's number (@dmesg).";
+          }
+          leaf seen {
+            type yang:date-and-time;
+            description
+              "When the agent read a kernel message first.";
+          }
+        }
+      }
+    }
+  }
+}

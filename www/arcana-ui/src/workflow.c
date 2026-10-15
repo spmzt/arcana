@@ -496,6 +496,23 @@ static const struct {
 	    "plugin's package (bird3, wireguard-tools, strongswan, squid)\", "
 	    "\"job\": {\"kind\": \"pkg-install\", \"packages\": "
 	    "[\"${param.package}\"]}}]}" },
+	/*
+	 * The kernel says when a program dies of a signal that dumps core
+	 * (kern.logsigexit); the agent tells it as crash, with the
+	 * process's name and its jail (jid 0: the host's own, as services
+	 * are).  The name a process goes by is not always its service's
+	 * (postgresql's is postgres): asked for apart, the same at first.
+	 */
+	{ "service-crash", "A service restarted when it crashes",
+	    "{\"name\": \"Service restarted when it crashes\", \"hosts\": "
+	    "[\"${LOCAL}\"], \"params\": [{\"name\": \"service\", "
+	    "\"default\": \"nginx\"}, {\"name\": \"process\", \"default\": "
+	    "\"nginx\"}], \"on\": [{\"event\": \"crash\", \"match\": "
+	    "{\"process\": \"${param.process}\", \"jid\": \"0\"}}], "
+	    "\"steps\": [{\"id\": \"restart\", \"name\": \"Restart the "
+	    "service\", \"job\": {\"kind\": \"service-action\", "
+	    "\"service\": \"${param.service}\", \"action\": "
+	    "\"restart\"}}]}" },
 	{ "service-back", "A service restarted when its host answers again",
 	    "{\"name\": \"Service back with its host\", \"hosts\": "
 	    "[\"${LOCAL}\"], \"params\": [{\"name\": \"service\", "
@@ -577,9 +594,10 @@ view_list(struct html *h)
 		h_raw(h, "</option>");
 	}
 	h_raw(h, "</select><label class=\"button ghost small\" title=\"A "
-	    "workflow from a JSON file, opened to be looked over and saved\">"
-	    "Import<input type=\"file\" accept=\"application/json,.json\" "
-	    "data-file=\"wf-import\" hidden></label>");
+	    "workflow from a JSON or YAML file, opened to be looked over and "
+	    "saved\">Import<input type=\"file\" accept=\"application/json,"
+	    ".json,application/yaml,.yaml,.yml\" data-file=\"wf-import\" "
+	    "hidden></label>");
 	if (app.nbatch > 0)
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"queue-to-wf\" "
 		    "title=\"What waits in the queue, kept as a workflow\">The "
@@ -640,7 +658,9 @@ view_list(struct html *h)
 			n++;
 			h_fmt(h, "<li class=\"pick %s\" data-act=\"wf-run-open\"",
 			    jstr(r, "state") != NULL ? jstr(r, "state") : "");
-			h_attr(h, "data-arg", jstr(r, "id"));
+			/* A run's id is a number. */
+			h_fmt(h, " data-arg=\"%lld\"", (long long)jint(r, "id",
+			    0));
 			h_raw(h, "><i class=\"led\"></i><b>");
 			h_txt(h, jstr(r, "name"));
 			h_raw(h, "</b><span class=\"dim\">");
@@ -700,8 +720,8 @@ view_run(struct html *h)
 	h_raw(h, "</h3>");
 	if (jstr(r, "state") != NULL && strcmp(jstr(r, "state"), "running") ==
 	    0) {
-		h_raw(h, "<button class=\"ghost small\" data-act=\"wf-run-stop\"");
-		h_attr(h, "data-arg", jstr(r, "id"));
+		h_fmt(h, "<button class=\"ghost small\" data-act=\"wf-run-stop\" "
+		    "data-arg=\"%lld\"", (long long)jint(r, "id", 0));
 		h_raw(h, ">Stop</button>");
 	}
 	h_raw(h, "<span class=\"age\">");
@@ -1190,6 +1210,8 @@ static const struct evk {
 	    "jail", "Which jail (any, if empty)" },
 	{ "threshold", "a figure crosses its limit", "threshold", NULL, NULL,
 	    "what", "Which (cpu, mem, swap, net, disk; any, if empty)" },
+	{ "crash", "a program crashes", "crash", NULL, NULL, "process",
+	    "Which program, by its process's name (any, if empty)" },
 	{ "procs", "processes start or end", "procs", NULL, NULL, NULL,
 	    NULL },
 	{ "conf", "a configuration file changes", "conf", NULL, NULL, "file",
@@ -1651,10 +1673,12 @@ view_edit(struct html *h)
 	h_raw(h, "<div class=\"toolbar\"><button class=\"ghost small\" "
 	    "data-act=\"wf-back\">‹ Workflows</button><h3>");
 	h_raw(h, jstr(d, "id") != NULL ? "Change the workflow" : "A workflow");
-	h_raw(h, "</h3><button class=\"ghost small\" data-act=\"wf-export\" "
-	    "title=\"As a JSON file, laid out, to keep or to start another "
-	    "from\">Export</button><button class=\"small\" data-act=\""
-	    "wf-save\">Save</button></div>");
+	h_raw(h, "</h3><span class=\"tabexport\" title=\"As a file, laid "
+	    "out, to keep or to start another from\">Export <button class=\""
+	    "ghost small\" data-act=\"wf-export\" data-arg=\"json\">JSON"
+	    "</button><button class=\"ghost small\" data-act=\"wf-export\" "
+	    "data-arg=\"yaml\">YAML</button></span><button class=\"small\" "
+	    "data-act=\"wf-save\">Save</button></div>");
 	if (wf.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, wf.error);
@@ -2198,25 +2222,26 @@ wf_graph_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	if (strcmp(act, "wf-export") == 0 && wf.draft != NULL) {
-		char	*json, name[96], *p;
+		char	name[96], *p;
 
-		json = (char *)ucl_object_emit(wf.draft, UCL_EMIT_JSON);
-		snprintf(name, sizeof(name), "workflow-%s.json", jstr(wf.draft,
+		snprintf(name, sizeof(name), "workflow-%s", jstr(wf.draft,
 		    "name") != NULL ? jstr(wf.draft, "name") : "new");
 		for (p = name; *p != '\0'; p++)
 			if (*p == ' ' || *p == '/')
 				*p = '-';
-		arc_save_text(name, "application/json", json != NULL ? json :
-		    "{}");
-		free(json);
+		export_save(name, wf.draft, strcmp(arg, "yaml") == 0);
 		return (true);
 	}
 	if (strcmp(act, "file:wf-import") == 0) {
 		ucl_object_t	*o;
+		char		 why[200];
 
-		o = value[0] != '\0' ? json_parse(value) : NULL;
+		why[0] = '\0';
+		o = value[0] != '\0' ? data_parse(value, why, sizeof(why)) :
+		    NULL;
 		if (o == NULL || ucl_object_type(o) != UCL_OBJECT) {
-			toast(true, "%s: not a workflow as JSON", arg);
+			toast(true, "%s: not a workflow as JSON or YAML%s%s", arg,
+			    why[0] != '\0' ? ": " : "", why);
 			if (o != NULL)
 				ucl_object_unref(o);
 			return (true);

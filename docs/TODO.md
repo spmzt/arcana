@@ -444,7 +444,14 @@
   WCPU, blocks), one process's files and threads, the jails' totals;
   signal and renice actions are the proc job's, a start-time guarding
   against a pid given to another (gula/yprocs.c, yang_processes).
-  Next: 3.1.7's log (ietf-syslog for syslog.conf), history, events
+  3.1.7, log: share/yang/arcana-log (69 900) has the log directory's
+  files and a read's lines, each line's facility and severity
+  ietf-syslog's (RFC 9742, vendored with its TLS imports, 70 000);
+  syslog.conf and newsyslog.conf read as ietf-syslog, what it cannot
+  hold said by file and line: a program's or host's block, a pipe,
+  users told, '<' '>' '!', mark, a property filter, a rotation at a
+  time of day (gula/ylog.c, yang_log).  Writing syslog.conf from it is
+  not done.  Next: 3.1.7's history, events
   (faults as ietf-alarms), and the rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not

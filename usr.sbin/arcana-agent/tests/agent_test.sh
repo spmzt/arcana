@@ -2915,7 +2915,8 @@ fi
 for a; do last=\$a; done
 case " \$* " in *" --branch chatty "*) jot 400 | sed 's/^/remote: line /' >&2; exit 128 ;; esac
 case " \$* " in *" --branch nope "*) printf "Cloning into 'x'...\nfatal: no such branch\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n" >&2; exit 128 ;; esac
-mkdir -p "\$last/lib/libjailconf" "\$last/usr.sbin/arcana-agent"
+mkdir -p "\$last/lib/libjailconf" "\$last/lib/libvarconf" "\$last/usr.sbin/arcana-agent" "\$last/cblink/share/cblink"
+touch "\$last/cblink/share/cblink/cblink.mk"
 echo "\$*" > "\$last/CLONED"
 EOS
 	cat > fake-make <<EOS
@@ -2950,6 +2951,12 @@ EOS
 	    "$JGC" -t -c "$SOCK" agent-build -o built https://example.org/arcana.git main
 	atf_check cmp -s "$JGD" built
 	atf_check test -x built
+	# cblink (the submodule: cblink-gen makes arcana.h) and the
+	# libraries the agent links, before it, in that order.
+	atf_check -o inline:'cblink-build\nlibjailconf\nlibvarconf\narcana-agent\n' \
+	    sh -c "grep -v -e '^HOME=' -e '-V .OBJDIR' made | sed -n \
+	    -e 's,.* cblink-build\$,cblink-build,p' -e 's,.*/lib/\\(lib[a-z]*\\) .*,\\1,p' \
+	    -e 's,.*/usr.sbin/arcana-agent .*,arcana-agent,p'"
 	# What was built is said by its commit, and the head of the
 	# repository is asked without cloning or building anything.
 	atf_check -o match:'^Commit: +1111111111111111111111111111111111111111$' \
@@ -5355,6 +5362,297 @@ sshd_enable="YES"
 ' cat rc.conf
 }
 
+atf_test_case config_bundle cleanup
+config_bundle_head()
+{
+	atf_set "descr" "the host as a bundle (config-export) and a bundle" \
+	    "made the host (config-apply): the files Arcana manages, secrets" \
+	    "only when asked, the agent's identity never; the hardware" \
+	    "checked, a diff, the files before kept, no path but those a" \
+	    "bundle may carry"
+}
+config_bundle_body()
+{
+	local r="$(pwd)/root"
+
+	mkdir -p "$r/etc/rc.conf.d" "$r/boot" arcana wg
+	printf 'hostname="lab"\nsshd_enable="YES"\n' > "$r/etc/rc.conf"
+	echo 'ntpd_flags="-g"' > "$r/etc/rc.conf.d/ntpd"
+	echo 'hidden' > "$r/etc/rc.conf.d/.hidden"
+	echo '127.0.0.1 localhost' > "$r/etc/hosts"
+	echo 'kern.ipc.maxsockbuf=4194304' > "$r/boot/loader.conf"
+	printf '[Interface]\nPrivateKey = c2VjcmV0\n' > wg/wg0.conf
+	chmod 600 wg/wg0.conf
+	echo 'every 10' > arcana/history.conf
+	echo 'id' > arcana/id_ed25519
+	DAEMON_ARGS="--root $r -1 $(pwd)/arcana/history.conf"
+	start_daemon
+
+	# Without secrets: WireGuard's file said, its text not there; a
+	# hidden file and the agent's SSH key not at all.
+	atf_check -o save:b.json "$JGC" -c "$SOCK" config-export
+	atf_check -o match:'"arcana":"host","format":1' \
+	    -o match:'"path":"/etc/rc.conf","mode":"0644",' \
+	    -o match:'"text":"hostname=\\"lab\\"\\nsshd_enable=\\"YES\\"\\n"' \
+	    -o match:'"path":"/etc/rc.conf.d/ntpd"' \
+	    -o match:'"path":"/boot/loader.conf"' \
+	    -o match:'"path":"/usr/local/etc/wireguard/wg0.conf","mode":"0600","owner":"[a-z0-9]+","group":"[a-z0-9]+","secret":true\}' \
+	    -o match:'"path":"/usr/local/etc/arcana/history.conf"' \
+	    -o match:'"facts":\{"arch":"[a-z0-9_]+"' -o match:'"interfaces":\[' \
+	    -o not-match:'hidden' -o not-match:'id_ed25519' \
+	    -o not-match:'c2VjcmV0' cat b.json
+	# With them, the key's text too.
+	atf_check -o match:'"path":"/usr/local/etc/wireguard/wg0.conf".*"text":"\[Interface\]\\nPrivateKey = c2VjcmV0\\n","secret":true' \
+	    "$JGC" -c "$SOCK" config-export -s
+
+	# Another host's state: rc.conf changed, ntpd's file gone, the key
+	# another.  The report first: a diff, a new file, the key withheld.
+	printf 'hostname="other"\n' > "$r/etc/rc.conf"
+	rm "$r/etc/rc.conf.d/ntpd"
+	printf '[Interface]\nPrivateKey = b3RoZXI=\n' > wg/wg0.conf
+	atf_check -o save:n.json "$JGC" -c "$SOCK" config-apply -n b.json
+	atf_check -o match:'"path":"/etc/rc.conf","state":"changed","diff":"[^"]*-hostname=\\"other\\"\\n\+hostname=\\"lab\\"\\n\+sshd_enable=\\"YES\\"' \
+	    -o match:'"path":"/etc/rc.conf.d/ntpd","state":"new"' \
+	    -o match:'"path":"/etc/hosts","state":"same"' \
+	    -o match:'"path":"/usr/local/etc/wireguard/wg0.conf","state":"withheld"' \
+	    -o match:'"mismatches":\[\]' -o not-match:'"applied"' cat n.json
+	atf_check -o inline:'hostname="other"\n' cat "$r/etc/rc.conf"
+	# Done: in place, the ones before kept, the key as it was, a
+	# reboot said; another host name asked for.
+	atf_check -o save:a.json "$JGC" -c "$SOCK" config-apply -H lab2 b.json
+	atf_check -o match:'"applied":true' -o match:'"reboot":true' \
+	    -o match:"\"backup\":\"$r/var/backups/arcana/config-[0-9]{8}-[0-9]{6}\"" \
+	    cat a.json
+	atf_check -o inline:'sshd_enable="YES"\nhostname="lab2"\n' \
+	    cat "$r/etc/rc.conf"
+	atf_check -o inline:'ntpd_flags="-g"\n' cat "$r/etc/rc.conf.d/ntpd"
+	atf_check -o match:'b3RoZXI=' cat wg/wg0.conf
+	atf_check -o inline:'hostname="other"\n' \
+	    sh -c "cat $r/var/backups/arcana/config-*/etc/rc.conf"
+	# Again: nothing to change, nothing written; without the other
+	# name, rc.conf's would be.
+	atf_check -o not-match:'"state":"changed"' -o not-match:'"state":"new"' \
+	    -o not-match:'"applied"' "$JGC" -c "$SOCK" config-apply -H lab2 \
+	    b.json
+	atf_check -o match:'"path":"/etc/rc.conf","state":"changed"' \
+	    "$JGC" -c "$SOCK" config-apply -n b.json
+
+	# Hardware not the bundle's: refused unless anyway.
+	sed 's/"interfaces":\[/"interfaces":[{"name":"nosuch0","driver":"nosuch"},/' \
+	    b.json > hw.json
+	atf_check -s exit:1 -o match:'"mismatches":\["no interface nosuch0 here"\]' \
+	    -e match:'not the bundle.s \(1 differences\): nothing was done' \
+	    "$JGC" -c "$SOCK" config-apply hw.json
+	atf_check -o match:'"mismatches":\["no interface nosuch0 here"\]' \
+	    -o match:'"applied":true' "$JGC" -c "$SOCK" config-apply -a hw.json
+
+	# A path no bundle carries: refused, nothing written.
+	for p in /root/.ssh/authorized_keys /etc/rc.conf.d/../passwd \
+	    /usr/local/etc/arcana/id_ed25519 /etc/rc.conf.d/.hidden; do
+		sed "s|\"files\":\[|\"files\":[{\"path\":\"$p\",\"text\":\"x\"},|" \
+		    b.json > bad.json
+		atf_check -s exit:1 -e match:"$p: not a file a bundle may carry" \
+		    -o empty "$JGC" -c "$SOCK" config-apply bad.json
+	done
+	atf_check -o inline:'id\n' cat arcana/id_ed25519
+	atf_check -o inline:'hidden\n' cat "$r/etc/rc.conf.d/.hidden"
+	echo '{"arcana":"tab"}' > tab.json
+	atf_check -s exit:1 -e match:'not a host.s bundle' -o empty \
+	    "$JGC" -c "$SOCK" config-apply tab.json
+}
+config_bundle_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	true
+}
+
+atf_test_case fw_walk
+fw_walk_head()
+{
+	atf_set "descr" "ipfw's ruleset walked for a packet (fwmatch.c), as" \
+	    "path-check does: skipto, uRPF, a table, setup and keep-state," \
+	    "a reply let in by its state, a socket's rule for a packet" \
+	    "passing through, fwd by a table's value, what is not known"
+}
+fw_walk_body()
+{
+	local f="$(atf_get_srcdir)/fwmatch" l
+
+	cat > list <<'EOF'
+00100 allow ip from any to any via lo0
+00200 deny ip from any to 127.0.0.0/8
+00300 deny ip from any to any not verrevpath in
+00400 check-state :default
+00500 count ip from any to any in recv vtnet0
+00600 skipto 1000 ip from 10.0.0.0/8 to any
+00700 deny log ip from table(bad) to any in
+00800 allow tcp from any to me 22 in recv vtnet0 setup keep-state :default
+00900 deny ip from any to any in recv vtnet0
+01000 setfib 1 ip from 10.1.0.0/16 to any in
+01100 allow udp from any to any 53,123 out keep-state :default
+01200 allow ip from { 10.0.0.1 or 10.0.0.2 } to any
+01300 allow tcp from any to any established
+01400 deny ip from any to any uid 1001
+01500 nat 1 ip from 10.2.0.0/16 to any out xmit vtnet0
+01600 allow icmp from any to any icmptypes 0,8
+01700 fwd 192.0.2.1 ip from 10.3.0.0/16 to any in recv em*
+65535 deny ip from any to any
+65535 count ip from any to any not // orphaned dynamic states counter
+00012 fwd tablearg ip4 from any to table(swt)
+EOF
+	cat > tables <<'EOF'
+--- table(bad), set(0) ---
+198.51.100.0/24 0
+--- table(swt), set(0) ---
+10.20.0.0/24 100.64.0.9
+EOF
+	l="local=192.0.2.10@vtnet0 local=10.0.0.10@em0"
+	t() { "$f" list tables $l "$@"; }
+	atf_check -o inline:'allow 800 keep-state\n' "$f" list tables $l in \
+	    rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 \
+	    dport=22 syn rpf reach
+	atf_check -o inline:'deny 900\n' "$f" list tables $l in rcv=vtnet0 \
+	    src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 dport=80 syn \
+	    rpf reach
+	# The route back is another way: uRPF.
+	atf_check -o inline:'deny 300\n' "$f" list tables $l in rcv=vtnet0 \
+	    src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 dport=22 syn \
+	    reach
+	atf_check -o inline:'deny 700\n' "$f" list tables $l in rcv=vtnet0 \
+	    src=198.51.100.9 dst=192.0.2.10 proto=tcp sport=1 dport=22 syn \
+	    rpf reach
+	# The reply, by the state its request made.
+	atf_check -o inline:'allow 400 by-state\n' "$f" list tables $l in \
+	    rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 \
+	    dport=22 ack state rpf reach
+	# Passing through: no socket, so no uid rule.
+	atf_check -o inline:'deny 65535 setfib=1\n' "$f" list tables $l in \
+	    rcv=em0 src=10.1.2.3 dst=8.8.8.8 proto=udp sport=5353 dport=53 \
+	    rpf reach
+	# Made here: the uid rule cannot be judged.
+	atf_check -o inline:'allow 1100 keep-state\n' "$f" list tables $l out \
+	    xmit=vtnet0 src=192.0.2.10 dst=8.8.8.8 proto=udp sport=5353 \
+	    dport=53 srclocal
+	atf_check -o inline:'deny 65535 uncertain=1400(uid)\n' "$f" list \
+	    tables $l out xmit=vtnet0 src=192.0.2.10 dst=8.8.4.4 proto=tcp \
+	    sport=1 dport=443 syn srclocal
+	atf_check -o inline:'allow 1200\n' "$f" list tables $l in rcv=em0 \
+	    src=10.0.0.1 dst=8.8.4.4 proto=tcp sport=1 dport=443 syn rpf reach
+	atf_check -o inline:'allow 100\n' "$f" list tables $l in rcv=lo0 \
+	    src=127.0.0.1 dst=127.0.0.1 proto=tcp sport=1 dport=443 syn
+	atf_check -o inline:'allow 1600\n' "$f" list tables $l in rcv=em1 \
+	    src=10.3.0.4 dst=8.8.8.8 proto=icmp icmp=8 rpf reach
+	# fwd by a table: to the table's value.
+	atf_check -o inline:'fwd 12 fwd=100.64.0.9\n' "$f" list tables $l in \
+	    rcv=em0 src=10.0.0.5 dst=10.20.0.7 proto=icmp icmp=8 rpf reach
+}
+
+atf_test_case yang_log
+yang_log_head()
+{
+	atf_set "descr" "the log operation's replies as arcana-log has" \
+	    "them (PLAN-SDN-YANG 3.1.7), a line's facility and severity" \
+	    "ietf-syslog's; syslog.conf and newsyslog.conf as ietf-syslog," \
+	    "what it cannot hold said; through YANG-CBOR and back"
+}
+yang_log_body()
+{
+	local y="$(atf_get_srcdir)/ylog"
+
+	cat > files.json <<'EOF'
+{"name":"messages","files":[{"name":"auth.log","size":4120,"mtime":1791990000},{"name":"messages","size":88211,"mtime":1791995110},{"name":"messages.0.bz2","size":9100,"mtime":1791900000,"packed":true}],"lines":[],"size":88211,"position":88211}
+EOF
+	cat > want <<'EOF'
+directory /var/log
+file auth.log size=4120 modified=2026-10-14T15:00:00Z packed=-
+file messages size=88211 modified=2026-10-14T16:25:10Z packed=-
+file messages.0.bz2 size=9100 modified=2026-10-13T14:00:00Z packed=yes
+yang-cbor 134 bytes, the same back
+EOF
+	atf_check -o file:want "$y" files files.json
+	# syslogd -v's "facility.level": security is RFC 5424's audit.
+	cat > read.json <<'EOF'
+{"name":"messages","lines":[{"time":"Oct 14 12:00:01","level":"auth.info","host":"labvm","tag":"sshd","pid":"812","text":"Accepted publickey for root"},{"time":"Oct 14 12:00:02","level":"security.warn","host":"labvm","tag":"kernel","text":"ipfw: 100 Deny"},{"time":"Oct 14 12:00:03","host":"labvm","text":"-- MARK --"},{"text":"a line of no form"}],"size":88211,"position":88211,"rotated":true}
+EOF
+	cat > want <<'EOF'
+name messages size=88211 position=88211 rotated=yes
+line time=Oct 14 12:00:01 host=labvm facility=auth severity=info tag=sshd pid=812 seq=-1 seen=- text=Accepted publickey for root
+line time=Oct 14 12:00:02 host=labvm facility=audit severity=warning tag=kernel pid=- seq=-1 seen=- text=ipfw: 100 Deny
+line time=Oct 14 12:00:03 host=labvm facility=- severity=- tag=- pid=- seq=-1 seen=- text=-- MARK --
+line time=- host=- facility=- severity=- tag=- pid=- seq=-1 seen=- text=a line of no form
+yang-cbor 215 bytes, the same back
+EOF
+	atf_check -o file:want "$y" read read.json
+	cat > dmesg.json <<'EOF'
+{"name":"@dmesg","lines":[{"seq":41,"text":"em0: link state changed to UP"},{"seq":42,"seen":1791995110,"text":"epair0a: Ethernet address: 02:00:00:00:00:0a"}],"position":42}
+EOF
+	atf_check -o match:'^line .* seq=42 seen=2026-10-14T16:25:10Z ' \
+	    -o match:'same back' "$y" read dmesg.json
+
+	mkdir syslog.d
+	cat > syslog.conf <<'EOF'
+*.err;kern.warning;auth.notice;mail.crit		/dev/console
+*.notice;authpriv.none;kern.debug;lpr.info;mail.crit;news.err	/var/log/messages
+security.*					/var/log/security
+auth.info;authpriv.info				/var/log/auth.log
+mail.info					/var/log/maillog
+cron.*						-/var/log/cron
+*.=debug					/var/log/debug.log
+local0.*					@logs.example.net:5514
+local1.*					@[2001:db8::1]
+local5.*					@192.0.2.9
+!-devd
+daemon.info					/var/run/rc.log
+!*
+*.emerg						*
+local2.<info					/var/log/l2
+local3.*					|exec /usr/bin/logger
+mark.*						/var/log/marks
+:msg, contains, "x"				/var/log/x
+include	syslog.d
+EOF
+	echo 'devd.* /var/log/devd.log' > syslog.d/devd.conf
+	echo 'local4.*;local4.!debug /var/log/l4' > syslog.d/l4.conf
+	echo 'local6.info /var/log/l6' > syslog.d/l6.txt
+	cat > newsyslog.conf <<'EOF'
+# logfilename          [owner:group]    mode count size when  flags [/pid_file] [sig_num]
+/var/log/auth.log			600  7	   1000	@0101T JC
+/var/log/messages	root:wheel	644  5	   1000	*	JC
+/var/log/security			600  10	   100	*     JC
+/var/log/cron				600  3	   100	*     JC
+/var/log/debug.log			600  7	   *	24    JC
+/var/log/maillog			640  7	   *	$D0  JC
+EOF
+	# The file's selectors in order; newsyslog's KiB in MiB rounded
+	# up, its hours in minutes; a block, a pipe, users told, '<' and
+	# '!', mark, a property filter, a name no facility's, newsyslog's
+	# time of day: said, none guessed.  An include's .conf files only.
+	cat > want <<'EOF'
+console all.error kern.warning auth.notice mail.critical
+file file:/var/log/messages files=5 size=1 rollover=-1 all.notice authpriv.none kern.debug lpr.info mail.critical news.error
+file file:/var/log/security files=10 size=1 rollover=-1 audit.all
+file file:/var/log/auth.log files=7 size=1 rollover=-1 auth.info authpriv.info
+file file:/var/log/maillog files=7 size=-1 rollover=-1 mail.info
+file file:/var/log/cron files=3 size=1 rollover=-1 cron.all
+file file:/var/log/debug.log files=7 size=-1 rollover=1440 all.=debug
+remote logs.example.net udp name logs.example.net port=5514 local0.all
+remote 2001:db8::1 udp ipv6 2001:db8::1 port=-1 local1.all
+remote 192.0.2.9 udp ipv4 192.0.2.9 port=-1 local5.all
+unread syslog.conf:12: in a block of one program or host: ietf-syslog has no such selector
+unread syslog.conf:14: users or everyone told: ietf-syslog has no such action
+unread syslog.conf:15: a level compared by '<', '>' or '!': ietf-syslog's selectors compare equal, or that level and above
+unread syslog.conf:16: a pipe to a program: ietf-syslog has no such action
+unread syslog.conf:17: facility mark, syslogd's own marks, is none of RFC 5424's
+unread syslog.conf:18: a property filter: ietf-syslog selects by facility and severity
+unread syslog.d/devd.conf:1: a facility syslog has no name for
+unread syslog.d/l4.conf:1: a level compared by '<', '>' or '!': ietf-syslog's selectors compare equal, or that level and above
+unread newsyslog.conf:2: turned over at a time of day (@, $): ietf-syslog's rollover is an interval
+unread newsyslog.conf:7: turned over at a time of day (@, $): ietf-syslog's rollover is an interval
+yang-cbor 683 bytes, the same back
+EOF
+	atf_check -o file:want "$y" conf syslog.conf newsyslog.conf
+}
+
 atf_test_case yang_processes
 yang_processes_head()
 {
@@ -6356,6 +6654,9 @@ atf_init_test_cases()
 	atf_add_test_case yang_jails
 	atf_add_test_case yang_system
 	atf_add_test_case yang_processes
+	atf_add_test_case yang_log
+	atf_add_test_case fw_walk
+	atf_add_test_case config_bundle
 	atf_add_test_case yang_storage
 	atf_add_test_case yang_jobs
 	atf_add_test_case yang_packages

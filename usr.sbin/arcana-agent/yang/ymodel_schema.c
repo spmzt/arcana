@@ -32,8 +32,10 @@
  * arcana-sysctl: 11 nodes, 1 types, 2038 bytes
  * arcana-kernel: 36 nodes, 0 types, 5852 bytes
  * arcana-processes: 66 nodes, 3 types, 11120 bytes
- * in all, 1428 nodes (children found 227 dense, 48 by a table, 31 by a search),
- * 155 types, 53 expressions, 622 identities, 332784 bytes
+ * arcana-log: 29 nodes, 6 types, 5857 bytes
+ * ietf-syslog: 46 nodes, 9 types, 10222 bytes
+ * in all, 1503 nodes (children found 245 dense, 50 by a table, 38 by a search),
+ * 170 types, 55 expressions, 651 identities, 351023 bytes
  */
 
 #include <stdbool.h>
@@ -85,6 +87,8 @@ static const struct cbl_ymodule m63;
 static const struct cbl_ymodule m64;
 static const struct cbl_ymodule m65;
 static const struct cbl_ymodule m66;
+static const struct cbl_ymodule m71;
+static const struct cbl_ymodule m72;
 static const struct cbl_ychoice c0;
 static const struct cbl_ychoice c1;
 static const struct cbl_ychoice c2;
@@ -101,6 +105,7 @@ static const struct cbl_ychoice c12;
 static const struct cbl_ychoice c13;
 static const struct cbl_ychoice c14;
 static const struct cbl_ychoice c15;
+static const struct cbl_ychoice c16;
 static const struct cbl_ynode n0;
 static const struct cbl_ynode n1;
 static const struct cbl_ynode n2;
@@ -1529,6 +1534,81 @@ static const struct cbl_ynode n1424;
 static const struct cbl_ynode n1425;
 static const struct cbl_ynode n1426;
 static const struct cbl_ynode n1427;
+static const struct cbl_ynode n1428;
+static const struct cbl_ynode n1429;
+static const struct cbl_ynode n1430;
+static const struct cbl_ynode n1431;
+static const struct cbl_ynode n1432;
+static const struct cbl_ynode n1433;
+static const struct cbl_ynode n1434;
+static const struct cbl_ynode n1435;
+static const struct cbl_ynode n1436;
+static const struct cbl_ynode n1437;
+static const struct cbl_ynode n1438;
+static const struct cbl_ynode n1439;
+static const struct cbl_ynode n1440;
+static const struct cbl_ynode n1441;
+static const struct cbl_ynode n1442;
+static const struct cbl_ynode n1443;
+static const struct cbl_ynode n1444;
+static const struct cbl_ynode n1445;
+static const struct cbl_ynode n1446;
+static const struct cbl_ynode n1447;
+static const struct cbl_ynode n1448;
+static const struct cbl_ynode n1449;
+static const struct cbl_ynode n1450;
+static const struct cbl_ynode n1451;
+static const struct cbl_ynode n1452;
+static const struct cbl_ynode n1453;
+static const struct cbl_ynode n1454;
+static const struct cbl_ynode n1455;
+static const struct cbl_ynode n1456;
+static const struct cbl_ynode n1457;
+static const struct cbl_ynode n1458;
+static const struct cbl_ynode n1459;
+static const struct cbl_ynode n1460;
+static const struct cbl_ynode n1461;
+static const struct cbl_ynode n1462;
+static const struct cbl_ynode n1463;
+static const struct cbl_ynode n1464;
+static const struct cbl_ynode n1465;
+static const struct cbl_ynode n1466;
+static const struct cbl_ynode n1467;
+static const struct cbl_ynode n1468;
+static const struct cbl_ynode n1469;
+static const struct cbl_ynode n1470;
+static const struct cbl_ynode n1471;
+static const struct cbl_ynode n1472;
+static const struct cbl_ynode n1473;
+static const struct cbl_ynode n1474;
+static const struct cbl_ynode n1475;
+static const struct cbl_ynode n1476;
+static const struct cbl_ynode n1477;
+static const struct cbl_ynode n1478;
+static const struct cbl_ynode n1479;
+static const struct cbl_ynode n1480;
+static const struct cbl_ynode n1481;
+static const struct cbl_ynode n1482;
+static const struct cbl_ynode n1483;
+static const struct cbl_ynode n1484;
+static const struct cbl_ynode n1485;
+static const struct cbl_ynode n1486;
+static const struct cbl_ynode n1487;
+static const struct cbl_ynode n1488;
+static const struct cbl_ynode n1489;
+static const struct cbl_ynode n1490;
+static const struct cbl_ynode n1491;
+static const struct cbl_ynode n1492;
+static const struct cbl_ynode n1493;
+static const struct cbl_ynode n1494;
+static const struct cbl_ynode n1495;
+static const struct cbl_ynode n1496;
+static const struct cbl_ynode n1497;
+static const struct cbl_ynode n1498;
+static const struct cbl_ynode n1499;
+static const struct cbl_ynode n1500;
+static const struct cbl_ynode n1501;
+static const struct cbl_ynode n1502;
 
 static const struct cbl_yitem t0_i[] = {
 	{ "up", INT64_C(1) },
@@ -3321,6 +3401,180 @@ static const struct cbl_ytype t154 = {
 	.csize = sizeof(uint8_t),
 	.path = -1,
 	.range = { t154_r, 1, NULL, NULL },
+};
+
+static const struct cbl_yrange t155_l[] = {
+	{ .min.u = UINT64_C(1), .max.u = UINT64_C(128) },
+};
+static const struct cbl_ypattern t155_p[] = {
+	{ "[A-Za-z0-9_][A-Za-z0-9._-]*", "^([A-Za-z0-9_][A-Za-z0-9._-]*)$", false, NULL, NULL },
+};
+static const struct cbl_ytype t155 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.path = -1,
+	.length = { t155_l, 1, NULL, NULL },
+	.npatterns = 1,
+	.patterns = t155_p,
+};
+
+static const struct cbl_yrange t156_l[] = {
+	{ .min.u = UINT64_C(0), .max.u = UINT64_C(128) },
+};
+static const struct cbl_ytype t156 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.path = -1,
+	.length = { t156_l, 1, NULL, NULL },
+};
+
+static const struct cbl_yrange t157_r[] = {
+	{ .min.u = UINT64_C(1), .max.u = UINT64_C(5000) },
+};
+static const struct cbl_ytype t157 = {
+	.kind = CBL_YT_UINT16,
+	.csize = sizeof(uint16_t),
+	.path = -1,
+	.range = { t157_r, 1, NULL, NULL },
+};
+
+static const struct cbl_yrange t158_l[] = {
+	{ .min.u = UINT64_C(1), .max.u = UINT64_C(128) },
+};
+static const struct cbl_ytype t158 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.path = -1,
+	.length = { t158_l, 1, NULL, NULL },
+};
+
+static const uint64_t t159_b[] = { UINT64_C(70027) };
+static const struct cbl_ytype t159 = {
+	.kind = CBL_YT_IDENTITYREF,
+	.csize = sizeof(uint64_t),
+	.path = -1,
+	.nbases = 1,
+	.bases = t159_b,
+};
+
+static const struct cbl_yitem t160_i[] = {
+	{ "emergency", INT64_C(0) },
+	{ "alert", INT64_C(1) },
+	{ "critical", INT64_C(2) },
+	{ "error", INT64_C(3) },
+	{ "warning", INT64_C(4) },
+	{ "notice", INT64_C(5) },
+	{ "info", INT64_C(6) },
+	{ "debug", INT64_C(7) },
+};
+static const struct cbl_ytype t160 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum arcana_log_logs_read_output_line_severity),
+	.path = -1,
+	.nitems = 8,
+	.items = t160_i,
+};
+
+static const uint64_t t161_b[] = { UINT64_C(70001) };
+static const struct cbl_ytype t161 = {
+	.kind = CBL_YT_IDENTITYREF,
+	.csize = sizeof(uint64_t),
+	.path = -1,
+	.nbases = 1,
+	.bases = t161_b,
+};
+
+static const struct cbl_yitem t162_i[] = {
+	{ "equals", INT64_C(0) },
+	{ "equals-or-higher", INT64_C(1) },
+};
+static const struct cbl_ytype t162 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare_compare),
+	.path = -1,
+	.nitems = 2,
+	.items = t162_i,
+};
+
+static const struct cbl_yitem t163_i[] = {
+	{ "all", INT64_C(0) },
+};
+static const struct cbl_ytype t163 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum ietf_syslog_syslog_actions_console_filter_facility_list_facility_m1),
+	.path = -1,
+	.nitems = 1,
+	.items = t163_i,
+};
+
+static const struct cbl_ytype *const t164_m[] = { &t159, &t163 };
+static const struct cbl_ytype t164 = {
+	.kind = CBL_YT_UNION,
+	.csize = sizeof(struct ietf_syslog_syslog_actions_console_filter_facility_list_facility),
+	.voff = offsetof(struct ietf_syslog_syslog_actions_console_filter_facility_list_facility, v),
+	.path = -1,
+	.nmembers = 2,
+	.members = t164_m,
+};
+
+static const struct cbl_yitem t165_i[] = {
+	{ "none", INT64_C(2147483647) },
+	{ "all", INT64_C(-2147483648) },
+};
+static const struct cbl_ytype t165 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum ietf_syslog_syslog_actions_console_filter_facility_list_severity_m1),
+	.path = -1,
+	.nitems = 2,
+	.items = t165_i,
+};
+
+static const struct cbl_ytype *const t166_m[] = { &t160, &t165 };
+static const struct cbl_ytype t166 = {
+	.kind = CBL_YT_UNION,
+	.csize = sizeof(struct ietf_syslog_syslog_actions_console_filter_facility_list_severity),
+	.voff = offsetof(struct ietf_syslog_syslog_actions_console_filter_facility_list_severity, v),
+	.path = -1,
+	.nmembers = 2,
+	.members = t166_m,
+};
+
+static const struct cbl_ypattern t167_p[] = {
+	{ "[a-z][a-z0-9+.-]*:.*", "^([a-z][a-z0-9+.-]*:[^\n\015]*)$", false, NULL, NULL },
+	{ "file:.*", "^(file:[^\n\015]*)$", false, NULL, NULL },
+};
+static const struct cbl_ytype t167 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.path = -1,
+	.npatterns = 2,
+	.patterns = t167_p,
+};
+
+static const struct cbl_yrange t168_l[] = {
+	{ .min.u = UINT64_C(2), .max.u = UINT64_C(253) },
+};
+static const struct cbl_ypattern t168_p[] = {
+	{ "((([a-zA-Z0-9_]([a-zA-Z0-9\\-_]){0,61})?[a-zA-Z0-9]\\.)*([a-zA-Z0-9_]([a-zA-Z0-9\\-_]){0,61})?[a-zA-Z0-9]\\.?)|\\.", "^(((([a-zA-Z0-9_]([a-zA-Z0-9_-]){0,61})?[a-zA-Z0-9]\\.)*([a-zA-Z0-9_]([a-zA-Z0-9_-]){0,61})?[a-zA-Z0-9]\\.?)|\\.)$", false, NULL, NULL },
+	{ "[a-zA-Z0-9\\-\\.]+", "^([a-zA-Z0-9.-]+)$", false, NULL, NULL },
+};
+static const struct cbl_ytype t168 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.path = -1,
+	.length = { t168_l, 1, NULL, NULL },
+	.npatterns = 2,
+	.patterns = t168_p,
+};
+
+static const struct cbl_ytype *const t169_m[] = { &t105, &t107, &t168 };
+static const struct cbl_ytype t169 = {
+	.kind = CBL_YT_UNION,
+	.csize = sizeof(struct ietf_syslog_syslog_actions_remote_destination_tls_tls_address),
+	.voff = offsetof(struct ietf_syslog_syslog_actions_remote_destination_tls_tls_address, v),
+	.path = -1,
+	.nmembers = 3,
+	.members = t169_m,
 };
 
 static const uint16_t n1_p[] = {
@@ -21959,6 +22213,1069 @@ static const struct cbl_ynode n1362 = {
 	.module = &m66,
 };
 
+static const struct cbl_ynode n1429 = {
+	.sid = UINT64_C(69902),
+	.name = "directory",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs, directory),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1431 = {
+	.sid = UINT64_C(69904),
+	.name = "modified",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_file, modified),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t5,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1432 = {
+	.sid = UINT64_C(69905),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x4,
+	.off = offsetof(struct arcana_log_logs_file, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t155,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1433 = {
+	.sid = UINT64_C(69906),
+	.name = "packed",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_file, packed),
+	.hoff = offsetof(struct arcana_log_logs_file, has_packed),
+	.type = &t2,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1434 = {
+	.sid = UINT64_C(69907),
+	.name = "size",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_file, size),
+	.hoff = offsetof(struct arcana_log_logs_file, has_size),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m71,
+};
+
+static const struct cbl_ynode *const n1430_c[] = {
+	&n1431, &n1432, &n1433, &n1434
+};
+static const uint32_t n1430_k[] = { 1 };
+static const struct cbl_ynode n1430 = {
+	.sid = UINT64_C(69903),
+	.name = "file",
+	.kind = CBL_YN_LIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_log_logs, file),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_log_logs_file),
+	.nmap = 4,
+	.nchild = 4,
+	.child = n1430_c,
+	.nkeys = 1,
+	.keys = n1430_k,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1437 = {
+	.sid = UINT64_C(69910),
+	.name = "filter",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_input, filter),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t156,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1438 = {
+	.sid = UINT64_C(69911),
+	.name = "jail",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_input, jail),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m71,
+};
+
+static const char *const n1439_d[] = { "200" };
+static const struct cbl_ynode n1439 = {
+	.sid = UINT64_C(69912),
+	.name = "lines",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_input, lines),
+	.hoff = offsetof(struct arcana_log_logs_read_input, has_lines),
+	.type = &t157,
+	.ndflt = 1,
+	.dflt = n1439_d,
+	.module = &m71,
+};
+
+static const char *const n1440_d[] = { "messages" };
+static const struct cbl_ynode n1440 = {
+	.sid = UINT64_C(69913),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_input, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t158,
+	.ndflt = 1,
+	.dflt = n1440_d,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1441 = {
+	.sid = UINT64_C(69914),
+	.name = "position",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_input, position),
+	.hoff = offsetof(struct arcana_log_logs_read_input, has_position),
+	.type = &t9,
+	.module = &m71,
+};
+
+static const struct cbl_ynode *const n1436_c[] = {
+	&n1437, &n1438, &n1439, &n1440, &n1441
+};
+static const struct cbl_ynode n1436 = {
+	.sid = UINT64_C(69909),
+	.name = "input",
+	.kind = CBL_YN_INPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_log_logs_read_input),
+	.nmap = 5,
+	.nchild = 5,
+	.child = n1436_c,
+	.module = &m71,
+};
+
+static const uint16_t n1442_p[] = {
+	1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 4, 5
+};
+static const struct cbl_ynode n1444 = {
+	.sid = UINT64_C(69917),
+	.name = "facility",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_output_line, facility),
+	.hoff = offsetof(struct arcana_log_logs_read_output_line, has_facility),
+	.type = &t159,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1445 = {
+	.sid = UINT64_C(69918),
+	.name = "host",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_output_line, host),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1446 = {
+	.sid = UINT64_C(69919),
+	.name = "pid",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_output_line, pid),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1447 = {
+	.sid = UINT64_C(69920),
+	.name = "seen",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_output_line, seen),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t5,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1448 = {
+	.sid = UINT64_C(69921),
+	.name = "sequence",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_output_line, sequence),
+	.hoff = offsetof(struct arcana_log_logs_read_output_line, has_sequence),
+	.type = &t9,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1449 = {
+	.sid = UINT64_C(69922),
+	.name = "severity",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_output_line, severity),
+	.hoff = offsetof(struct arcana_log_logs_read_output_line, has_severity),
+	.type = &t160,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1450 = {
+	.sid = UINT64_C(69923),
+	.name = "tag",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_output_line, tag),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1451 = {
+	.sid = UINT64_C(69924),
+	.name = "text",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_output_line, text),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1452 = {
+	.sid = UINT64_C(69925),
+	.name = "time",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_output_line, time),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m71,
+};
+
+static const struct cbl_ynode *const n1443_c[] = {
+	&n1444, &n1445, &n1446, &n1447, &n1448, &n1449,
+	&n1450, &n1451, &n1452
+};
+static const struct cbl_ynode n1443 = {
+	.sid = UINT64_C(69916),
+	.name = "line",
+	.kind = CBL_YN_LIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_log_logs_read_output, line),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_log_logs_read_output_line),
+	.nmap = 9,
+	.nchild = 9,
+	.child = n1443_c,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1453 = {
+	.sid = UINT64_C(69926),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_output, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1454 = {
+	.sid = UINT64_C(69927),
+	.name = "position",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_output, position),
+	.hoff = offsetof(struct arcana_log_logs_read_output, has_position),
+	.type = &t9,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1455 = {
+	.sid = UINT64_C(69928),
+	.name = "rotated",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_output, rotated),
+	.hoff = offsetof(struct arcana_log_logs_read_output, has_rotated),
+	.type = &t2,
+	.module = &m71,
+};
+
+static const struct cbl_ynode n1456 = {
+	.sid = UINT64_C(69929),
+	.name = "size",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_log_logs_read_output, size),
+	.hoff = offsetof(struct arcana_log_logs_read_output, has_size),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m71,
+};
+
+static const struct cbl_ynode *const n1442_c[] = {
+	&n1443, &n1453, &n1454, &n1455, &n1456
+};
+static const struct cbl_ynode n1442 = {
+	.sid = UINT64_C(69915),
+	.name = "output",
+	.kind = CBL_YN_OUTPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_log_logs_read_output),
+	.nmap = 14,
+	.map = n1442_p,
+	.nchild = 5,
+	.child = n1442_c,
+	.module = &m71,
+};
+
+static const struct cbl_ynode *const n1435_c[] = {
+	&n1436, &n1442
+};
+static const struct cbl_ynode n1435 = {
+	.sid = UINT64_C(69908),
+	.name = "read",
+	.kind = CBL_YN_ACTION,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.nchild = 2,
+	.child = n1435_c,
+	.module = &m71,
+};
+
+static const struct cbl_ynode *const n1428_c[] = {
+	&n1429, &n1430, &n1435
+};
+static const struct cbl_ynode n1428 = {
+	.sid = UINT64_C(69901),
+	.name = "logs",
+	.kind = CBL_YN_CONTAINER,
+	.off = offsetof(struct arcana_log, logs),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_log_logs),
+	.nchild = 3,
+	.child = n1428_c,
+	.module = &m71,
+};
+
+static const char *const n1463_d[] = { "ietf-syslog:log" };
+static const struct cbl_ynode n1463 = {
+	.sid = UINT64_C(70046),
+	.name = "action",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare, action),
+	.hoff = offsetof(struct ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare, has_action),
+	.type = &t161,
+	.ndflt = 1,
+	.dflt = n1463_d,
+	.module = &m72,
+};
+
+static const char *const n1464_d[] = { "equals-or-higher" };
+static const struct cbl_ynode n1464 = {
+	.sid = UINT64_C(70047),
+	.name = "compare",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare, compare),
+	.hoff = offsetof(struct ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare, has_compare),
+	.type = &t162,
+	.ndflt = 1,
+	.dflt = n1464_d,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1462_c[] = {
+	&n1463, &n1464
+};
+static const struct cbl_ywhen n1462_w[] = {
+	{ 53, CBL_YWC_SELF },
+};
+static const struct cbl_ynode n1462 = {
+	.sid = UINT64_C(70045),
+	.name = "advanced-compare",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_console_filter_facility_list, advanced_compare),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n1462_c,
+	.nwhen = 1,
+	.when = n1462_w,
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1465 = {
+	.sid = UINT64_C(70048),
+	.name = "facility",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x5,
+	.off = offsetof(struct ietf_syslog_syslog_actions_console_filter_facility_list, facility),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t164,
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1466 = {
+	.sid = UINT64_C(70049),
+	.name = "severity",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x7,
+	.off = offsetof(struct ietf_syslog_syslog_actions_console_filter_facility_list, severity),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t166,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1461_c[] = {
+	&n1462, &n1465, &n1466
+};
+static const uint32_t n1461_k[] = { 1, 2 };
+static const struct cbl_ynode n1461 = {
+	.sid = UINT64_C(70044),
+	.name = "facility-list",
+	.kind = CBL_YN_LIST,
+	.flags = 0x11,
+	.off = offsetof(struct ietf_syslog_syslog_actions_console_filter, facility_list),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_console_filter_facility_list),
+	.nchild = 3,
+	.child = n1461_c,
+	.nkeys = 2,
+	.keys = n1461_k,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1460_c[] = {
+	&n1461
+};
+static const struct cbl_ynode n1460 = {
+	.sid = UINT64_C(70043),
+	.name = "filter",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_console, filter),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_console_filter),
+	.nmap = 1,
+	.nchild = 1,
+	.child = n1460_c,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1459_c[] = {
+	&n1460
+};
+static const struct cbl_ynode n1459 = {
+	.sid = UINT64_C(70042),
+	.name = "console",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x9,
+	.off = offsetof(struct ietf_syslog_syslog_actions, console),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_console),
+	.nmap = 1,
+	.nchild = 1,
+	.child = n1459_c,
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1470 = {
+	.sid = UINT64_C(70054),
+	.name = "max-file-size",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file_log_file_file_rotation, max_file_size),
+	.hoff = offsetof(struct ietf_syslog_syslog_actions_file_log_file_file_rotation, has_max_file_size),
+	.type = &t10,
+	.units = "megabytes",
+	.module = &m72,
+};
+
+static const char *const n1471_d[] = { "1" };
+static const struct cbl_ynode n1471 = {
+	.sid = UINT64_C(70055),
+	.name = "number-of-files",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file_log_file_file_rotation, number_of_files),
+	.hoff = offsetof(struct ietf_syslog_syslog_actions_file_log_file_file_rotation, has_number_of_files),
+	.type = &t10,
+	.ndflt = 1,
+	.dflt = n1471_d,
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1472 = {
+	.sid = UINT64_C(70056),
+	.name = "retention",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file_log_file_file_rotation, retention),
+	.hoff = offsetof(struct ietf_syslog_syslog_actions_file_log_file_file_rotation, has_retention),
+	.type = &t10,
+	.units = "minutes",
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1473 = {
+	.sid = UINT64_C(70057),
+	.name = "rollover",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file_log_file_file_rotation, rollover),
+	.hoff = offsetof(struct ietf_syslog_syslog_actions_file_log_file_file_rotation, has_rollover),
+	.type = &t10,
+	.units = "minutes",
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1469_c[] = {
+	&n1470, &n1471, &n1472, &n1473
+};
+static const struct cbl_ynode n1469 = {
+	.sid = UINT64_C(70053),
+	.name = "file-rotation",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file_log_file, file_rotation),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_file_log_file_file_rotation),
+	.nmap = 4,
+	.nchild = 4,
+	.child = n1469_c,
+	.module = &m72,
+};
+
+static const char *const n1477_d[] = { "ietf-syslog:log" };
+static const struct cbl_ynode n1477 = {
+	.sid = UINT64_C(70061),
+	.name = "action",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare, action),
+	.hoff = offsetof(struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare, has_action),
+	.type = &t161,
+	.ndflt = 1,
+	.dflt = n1477_d,
+	.module = &m72,
+};
+
+static const char *const n1478_d[] = { "equals-or-higher" };
+static const struct cbl_ynode n1478 = {
+	.sid = UINT64_C(70062),
+	.name = "compare",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare, compare),
+	.hoff = offsetof(struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare, has_compare),
+	.type = &t162,
+	.ndflt = 1,
+	.dflt = n1478_d,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1476_c[] = {
+	&n1477, &n1478
+};
+static const struct cbl_ywhen n1476_w[] = {
+	{ 53, CBL_YWC_SELF },
+};
+static const struct cbl_ynode n1476 = {
+	.sid = UINT64_C(70060),
+	.name = "advanced-compare",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list, advanced_compare),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n1476_c,
+	.nwhen = 1,
+	.when = n1476_w,
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1479 = {
+	.sid = UINT64_C(70063),
+	.name = "facility",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x5,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list, facility),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t164,
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1480 = {
+	.sid = UINT64_C(70064),
+	.name = "severity",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x7,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list, severity),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t166,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1475_c[] = {
+	&n1476, &n1479, &n1480
+};
+static const uint32_t n1475_k[] = { 1, 2 };
+static const struct cbl_ynode n1475 = {
+	.sid = UINT64_C(70059),
+	.name = "facility-list",
+	.kind = CBL_YN_LIST,
+	.flags = 0x11,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file_log_file_filter, facility_list),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list),
+	.nchild = 3,
+	.child = n1475_c,
+	.nkeys = 2,
+	.keys = n1475_k,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1474_c[] = {
+	&n1475
+};
+static const struct cbl_ynode n1474 = {
+	.sid = UINT64_C(70058),
+	.name = "filter",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file_log_file, filter),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_file_log_file_filter),
+	.nmap = 1,
+	.nchild = 1,
+	.child = n1474_c,
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1481 = {
+	.sid = UINT64_C(70065),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x5,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file_log_file, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t167,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1468_c[] = {
+	&n1469, &n1474, &n1481
+};
+static const uint32_t n1468_k[] = { 2 };
+static const struct cbl_ynode n1468 = {
+	.sid = UINT64_C(70052),
+	.name = "log-file",
+	.kind = CBL_YN_LIST,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_file, log_file),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_file_log_file),
+	.nchild = 3,
+	.child = n1468_c,
+	.nkeys = 1,
+	.keys = n1468_k,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1467_c[] = {
+	&n1468
+};
+static const struct cbl_ynode n1467 = {
+	.sid = UINT64_C(70051),
+	.name = "file",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions, file),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_file),
+	.nmap = 1,
+	.nchild = 1,
+	.child = n1467_c,
+	.module = &m72,
+};
+
+static const uint16_t n1483_p[] = {
+	1, 2, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0,
+	0, 0, 0, 5
+};
+static const struct cbl_ynode n1484 = {
+	.sid = UINT64_C(70070),
+	.name = "facility-override",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination, facility_override),
+	.hoff = offsetof(struct ietf_syslog_syslog_actions_remote_destination, has_facility_override),
+	.type = &t159,
+	.module = &m72,
+};
+
+static const char *const n1488_d[] = { "ietf-syslog:log" };
+static const struct cbl_ynode n1488 = {
+	.sid = UINT64_C(70074),
+	.name = "action",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare, action),
+	.hoff = offsetof(struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare, has_action),
+	.type = &t161,
+	.ndflt = 1,
+	.dflt = n1488_d,
+	.module = &m72,
+};
+
+static const char *const n1489_d[] = { "equals-or-higher" };
+static const struct cbl_ynode n1489 = {
+	.sid = UINT64_C(70075),
+	.name = "compare",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare, compare),
+	.hoff = offsetof(struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare, has_compare),
+	.type = &t162,
+	.ndflt = 1,
+	.dflt = n1489_d,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1487_c[] = {
+	&n1488, &n1489
+};
+static const struct cbl_ywhen n1487_w[] = {
+	{ 53, CBL_YWC_SELF },
+};
+static const struct cbl_ynode n1487 = {
+	.sid = UINT64_C(70073),
+	.name = "advanced-compare",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list, advanced_compare),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n1487_c,
+	.nwhen = 1,
+	.when = n1487_w,
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1490 = {
+	.sid = UINT64_C(70076),
+	.name = "facility",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x5,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list, facility),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t164,
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1491 = {
+	.sid = UINT64_C(70077),
+	.name = "severity",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x7,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list, severity),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t166,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1486_c[] = {
+	&n1487, &n1490, &n1491
+};
+static const uint32_t n1486_k[] = { 1, 2 };
+static const struct cbl_ynode n1486 = {
+	.sid = UINT64_C(70072),
+	.name = "facility-list",
+	.kind = CBL_YN_LIST,
+	.flags = 0x11,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_filter, facility_list),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list),
+	.nchild = 3,
+	.child = n1486_c,
+	.nkeys = 2,
+	.keys = n1486_k,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1485_c[] = {
+	&n1486
+};
+static const struct cbl_ynode n1485 = {
+	.sid = UINT64_C(70071),
+	.name = "filter",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination, filter),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_remote_destination_filter),
+	.nmap = 1,
+	.nchild = 1,
+	.child = n1485_c,
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1492 = {
+	.sid = UINT64_C(70078),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x5,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1495 = {
+	.sid = UINT64_C(70101),
+	.name = "address",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x5,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_tls_tls, address),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t169,
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1496 = {
+	.sid = UINT64_C(70102),
+	.name = "client-identity",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x9,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_tls_tls, client_identity),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity),
+	.module = &m72,
+};
+
+static const char *const n1497_d[] = { "6514" };
+static const struct cbl_ynode n1497 = {
+	.sid = UINT64_C(70103),
+	.name = "port",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_tls_tls, port),
+	.hoff = offsetof(struct ietf_syslog_syslog_actions_remote_destination_tls_tls, has_port),
+	.type = &t25,
+	.ndflt = 1,
+	.dflt = n1497_d,
+	.module = &m72,
+};
+
+static const struct cbl_ymust n1498_m[] = {
+	{ 54, NULL, NULL },
+};
+static const struct cbl_ynode n1498 = {
+	.sid = UINT64_C(70104),
+	.name = "server-authentication",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_tls_tls, server_authentication),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_remote_destination_tls_tls_server_authentication),
+	.nmust = 1,
+	.must = n1498_m,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1494_c[] = {
+	&n1495, &n1496, &n1497, &n1498
+};
+static const uint32_t n1494_k[] = { 0 };
+static const struct cbl_ynode n1494 = {
+	.sid = UINT64_C(70100),
+	.name = "tls",
+	.kind = CBL_YN_LIST,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_tls, tls),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_remote_destination_tls_tls),
+	.nmap = 4,
+	.nchild = 4,
+	.child = n1494_c,
+	.nkeys = 1,
+	.keys = n1494_k,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1493_c[] = {
+	&n1494
+};
+static const struct cbl_ycase c16_c[] = {
+	{ "udp", NULL, 0 },
+	{ "tls", NULL, 0 },
+};
+static const struct cbl_ychoice c16 = {
+	.name = "transport",
+	.ncases = 2,
+	.cases = c16_c,
+	.dflt = -1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination, transport),
+	.mandatory = true,
+};
+
+static const struct cbl_ynode n1493 = {
+	.sid = UINT64_C(70099),
+	.name = "tls",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination, tls),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_remote_destination_tls),
+	.nmap = 1,
+	.nchild = 1,
+	.child = n1493_c,
+	.choice = &c16,
+	.ccase = 1,
+	.module = &m72,
+};
+
+static const struct cbl_ynode n1501 = {
+	.sid = UINT64_C(70107),
+	.name = "address",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x5,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_udp_udp, address),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t169,
+	.module = &m72,
+};
+
+static const char *const n1502_d[] = { "514" };
+static const struct cbl_ynode n1502 = {
+	.sid = UINT64_C(70108),
+	.name = "port",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_udp_udp, port),
+	.hoff = offsetof(struct ietf_syslog_syslog_actions_remote_destination_udp_udp, has_port),
+	.type = &t25,
+	.ndflt = 1,
+	.dflt = n1502_d,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1500_c[] = {
+	&n1501, &n1502
+};
+static const uint32_t n1500_k[] = { 0 };
+static const struct cbl_ynode n1500 = {
+	.sid = UINT64_C(70106),
+	.name = "udp",
+	.kind = CBL_YN_LIST,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination_udp, udp),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_remote_destination_udp_udp),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n1500_c,
+	.nkeys = 1,
+	.keys = n1500_k,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1499_c[] = {
+	&n1500
+};
+static const struct cbl_ynode n1499 = {
+	.sid = UINT64_C(70105),
+	.name = "udp",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote_destination, udp),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_remote_destination_udp),
+	.nmap = 1,
+	.nchild = 1,
+	.child = n1499_c,
+	.choice = &c16,
+	.ccase = 0,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1483_c[] = {
+	&n1484, &n1485, &n1492, &n1493, &n1499
+};
+static const uint32_t n1483_k[] = { 2 };
+static const struct cbl_ynode n1483 = {
+	.sid = UINT64_C(70069),
+	.name = "destination",
+	.kind = CBL_YN_LIST,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions_remote, destination),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_remote_destination),
+	.nmap = 36,
+	.map = n1483_p,
+	.nchild = 5,
+	.child = n1483_c,
+	.nkeys = 1,
+	.keys = n1483_k,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1482_c[] = {
+	&n1483
+};
+static const struct cbl_ynode n1482 = {
+	.sid = UINT64_C(70068),
+	.name = "remote",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog_actions, remote),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions_remote),
+	.nmap = 1,
+	.nchild = 1,
+	.child = n1482_c,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1458_c[] = {
+	&n1459, &n1467, &n1482
+};
+static const struct cbl_ynode n1458 = {
+	.sid = UINT64_C(70041),
+	.name = "actions",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_syslog_syslog, actions),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog_actions),
+	.nchild = 3,
+	.child = n1458_c,
+	.module = &m72,
+};
+
+static const struct cbl_ynode *const n1457_c[] = {
+	&n1458
+};
+static const struct cbl_ynode n1457 = {
+	.sid = UINT64_C(70040),
+	.name = "syslog",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x9,
+	.off = offsetof(struct ietf_syslog, syslog),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_syslog_syslog),
+	.nmap = 1,
+	.nchild = 1,
+	.child = n1457_c,
+	.module = &m72,
+};
+
 static const uint64_t i0_d[] = {
 	UINT64_C(1801), UINT64_C(1802), UINT64_C(1803), UINT64_C(1804),
 	UINT64_C(1805), UINT64_C(1806), UINT64_C(1807), UINT64_C(1808),
@@ -22242,6 +23559,17 @@ static const uint64_t i620_d[] = {
 static const uint64_t i621_d[] = {
 	UINT64_C(69402), UINT64_C(69404), UINT64_C(69405), UINT64_C(69408),
 	UINT64_C(69412), UINT64_C(69413)
+};
+static const uint64_t i622_d[] = {
+	UINT64_C(70005), UINT64_C(70020), UINT64_C(70025)
+};
+static const uint64_t i648_d[] = {
+	UINT64_C(70002), UINT64_C(70003), UINT64_C(70004), UINT64_C(70006),
+	UINT64_C(70007), UINT64_C(70008), UINT64_C(70009), UINT64_C(70010),
+	UINT64_C(70011), UINT64_C(70012), UINT64_C(70013), UINT64_C(70014),
+	UINT64_C(70015), UINT64_C(70016), UINT64_C(70017), UINT64_C(70018),
+	UINT64_C(70019), UINT64_C(70021), UINT64_C(70022), UINT64_C(70023),
+	UINT64_C(70024), UINT64_C(70026), UINT64_C(70028), UINT64_C(70029)
 };
 static const struct cbl_yident idents[] = {
 	{ UINT64_C(1501), "interface-type", &m10, 0x0, 305, i0_d },
@@ -22866,6 +24194,35 @@ static const struct cbl_yident idents[] = {
 	{ UINT64_C(69416), "type-of-bridge", &m19, 0x0, 4, i619_d },
 	{ UINT64_C(69417), "type-of-component", &m19, 0x0, 4, i620_d },
 	{ UINT64_C(69418), "type-of-port", &m19, 0x0, 6, i621_d },
+	{ UINT64_C(70001), "action", &m72, 0x0, 3, i622_d },
+	{ UINT64_C(70002), "audit", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70003), "auth", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70004), "authpriv", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70005), "block", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70006), "console", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70007), "cron", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70008), "cron2", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70009), "daemon", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70010), "ftp", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70011), "kern", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70012), "local0", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70013), "local1", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70014), "local2", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70015), "local3", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70016), "local4", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70017), "local5", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70018), "local6", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70019), "local7", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70020), "log", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70021), "lpr", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70022), "mail", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70023), "news", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70024), "ntp", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70025), "stop", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70026), "syslog", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70027), "syslog-facility", &m72, 0x0, 24, i648_d },
+	{ UINT64_C(70028), "user", &m72, 0x0, 0, NULL },
+	{ UINT64_C(70029), "uucp", &m72, 0x0, 0, NULL },
 	{ 0, NULL, NULL, 0, 0, NULL },
 };
 
@@ -23273,6 +24630,50 @@ static const struct cbl_ymodule m66 = {
 	.top = m66_t,
 };
 
+static const struct cbl_ynode *const m71_t[] = {
+	&n1428
+};
+static const struct cbl_ymodule m71 = {
+	.schema = &ymodel_schema,
+	.name = "arcana-log",
+	.revision = "2026-10-14",
+	.ns = "urn:arcana:yang:arcana-log",
+	.prefix = "arclog",
+	.sid = UINT64_C(69900),
+	.size = sizeof(struct arcana_log),
+	.ntop = 1,
+	.top = m71_t,
+};
+
+static const struct cbl_ynode *const m72_t[] = {
+	&n1457
+};
+static const struct cbl_yfeature m72_f[] = {
+	{ UINT64_C(70030), "console-action", true },
+	{ UINT64_C(70031), "file-action", true },
+	{ UINT64_C(70033), "file-limit-size", true },
+	{ UINT64_C(70032), "file-limit-duration", true },
+	{ UINT64_C(70034), "remote-action", true },
+	{ UINT64_C(70035), "remote-source-interface", false },
+	{ UINT64_C(70036), "select-adv-compare", true },
+	{ UINT64_C(70037), "select-match", false },
+	{ UINT64_C(70039), "structured-data", false },
+	{ UINT64_C(70038), "signed-messages", false },
+};
+static const struct cbl_ymodule m72 = {
+	.schema = &ymodel_schema,
+	.name = "ietf-syslog",
+	.revision = "2025-04-30",
+	.ns = "urn:ietf:params:xml:ns:yang:ietf-syslog",
+	.prefix = "syslog",
+	.sid = UINT64_C(70000),
+	.size = sizeof(struct ietf_syslog),
+	.ntop = 1,
+	.top = m72_t,
+	.nfeature = 10,
+	.feature = m72_f,
+};
+
 static const struct cbl_ymodule m15 = {
 	.schema = &ymodel_schema,
 	.name = "ieee802-dot1q-types",
@@ -23385,6 +24786,8 @@ static const struct cbl_ymodule *const mods[] = {
 	&m64,
 	&m65,
 	&m66,
+	&m71,
+	&m72,
 };
 
 static const struct cbl_ynode *const nodes[] = {
@@ -23625,7 +25028,20 @@ static const struct cbl_ynode *const nodes[] = {
 	&n336, &n337, &n338, &n339, &n340, &n341,
 	&n342, &n343, &n344, &n345, &n346, &n347,
 	&n348, &n349, &n350, &n351, &n352, &n353,
-	&n354, &n355, &n356, &n357, &n358, &n359
+	&n354, &n355, &n356, &n357, &n358, &n359,
+	&n1428, &n1429, &n1430, &n1431, &n1432, &n1433,
+	&n1434, &n1435, &n1436, &n1437, &n1438, &n1439,
+	&n1440, &n1441, &n1442, &n1443, &n1444, &n1445,
+	&n1446, &n1447, &n1448, &n1449, &n1450, &n1451,
+	&n1452, &n1453, &n1454, &n1455, &n1456, &n1457,
+	&n1458, &n1459, &n1460, &n1461, &n1462, &n1463,
+	&n1464, &n1465, &n1466, &n1467, &n1468, &n1469,
+	&n1470, &n1471, &n1472, &n1473, &n1474, &n1475,
+	&n1476, &n1477, &n1478, &n1479, &n1480, &n1481,
+	&n1482, &n1483, &n1484, &n1485, &n1486, &n1487,
+	&n1488, &n1489, &n1490, &n1491, &n1492, &n1493,
+	&n1494, &n1495, &n1496, &n1497, &n1498, &n1499,
+	&n1500, &n1501, &n1502
 };
 
 static const char *const xpaths[] = {
@@ -23682,14 +25098,16 @@ static const char *const xpaths[] = {
 	"/if:interfaces/if:interface/lne:bind-lne-name",
 	"/lne:logical-network-elements/lne:logical-network-element/lne:name",
 	"../state/pid",
+	"../severity != \"all\" and\n../severity != \"none\"",
+	"ca-certs or ee-certs or raw-public-keys or tls12-psks\n        or tls13-epsks",
 };
 
 extern const struct cbl_yschema ymodel_schema;
 const struct cbl_yschema ymodel_schema = {
-	.nmod = 30,
-	.nxpath = 53,
-	.nident = 622,
-	.nnode = 1428,
+	.nmod = 32,
+	.nxpath = 55,
+	.nident = 651,
+	.nnode = 1503,
 	.mod = mods,
 	.node = nodes,
 	.xpath = xpaths,
@@ -28588,5 +30006,453 @@ arcana_processes_processes_process_thread_decode(const void *data, size_t len, s
 
 	memset(p, 0, sizeof(*p));
 	return (cbl_ydecode(&n1420, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_log_logs_encode(const struct arcana_log_logs *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1428, p, b));
+}
+
+int
+arcana_log_logs_decode(const void *data, size_t len, struct arcana_log_logs *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1428, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_log_logs_file_encode(const struct arcana_log_logs_file *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1430, p, b));
+}
+
+int
+arcana_log_logs_file_decode(const void *data, size_t len, struct arcana_log_logs_file *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1430, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_log_logs_read_input_encode(const struct arcana_log_logs_read_input *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1436, p, b));
+}
+
+int
+arcana_log_logs_read_input_decode(const void *data, size_t len, struct arcana_log_logs_read_input *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1436, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_log_logs_read_output_encode(const struct arcana_log_logs_read_output *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1442, p, b));
+}
+
+int
+arcana_log_logs_read_output_decode(const void *data, size_t len, struct arcana_log_logs_read_output *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1442, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_log_logs_read_output_line_encode(const struct arcana_log_logs_read_output_line *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1443, p, b));
+}
+
+int
+arcana_log_logs_read_output_line_decode(const void *data, size_t len, struct arcana_log_logs_read_output_line *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1443, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_encode(const struct ietf_syslog_syslog *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1457, p, b));
+}
+
+int
+ietf_syslog_syslog_decode(const void *data, size_t len, struct ietf_syslog_syslog *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1457, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_encode(const struct ietf_syslog_syslog_actions *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1458, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1458, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_console_encode(const struct ietf_syslog_syslog_actions_console *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1459, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_console_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_console *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1459, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_console_filter_encode(const struct ietf_syslog_syslog_actions_console_filter *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1460, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_console_filter_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_console_filter *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1460, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_console_filter_facility_list_encode(const struct ietf_syslog_syslog_actions_console_filter_facility_list *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1461, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_console_filter_facility_list_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_console_filter_facility_list *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1461, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare_encode(const struct ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1462, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1462, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_file_encode(const struct ietf_syslog_syslog_actions_file *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1467, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_file_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_file *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1467, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_file_log_file_encode(const struct ietf_syslog_syslog_actions_file_log_file *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1468, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_file_log_file_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_file_log_file *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1468, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_file_log_file_file_rotation_encode(const struct ietf_syslog_syslog_actions_file_log_file_file_rotation *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1469, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_file_log_file_file_rotation_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_file_log_file_file_rotation *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1469, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_file_log_file_filter_encode(const struct ietf_syslog_syslog_actions_file_log_file_filter *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1474, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_file_log_file_filter_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_file_log_file_filter *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1474, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_file_log_file_filter_facility_list_encode(const struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1475, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_file_log_file_filter_facility_list_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1475, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare_encode(const struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1476, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1476, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_remote_encode(const struct ietf_syslog_syslog_actions_remote *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1482, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_remote_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_remote *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1482, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_encode(const struct ietf_syslog_syslog_actions_remote_destination *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1483, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_remote_destination *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1483, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_filter_encode(const struct ietf_syslog_syslog_actions_remote_destination_filter *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1485, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_filter_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_remote_destination_filter *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1485, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_filter_facility_list_encode(const struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1486, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_filter_facility_list_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1486, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare_encode(const struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1487, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1487, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_tls_encode(const struct ietf_syslog_syslog_actions_remote_destination_tls *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1493, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_tls_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_remote_destination_tls *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1493, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_tls_tls_encode(const struct ietf_syslog_syslog_actions_remote_destination_tls_tls *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1494, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_tls_tls_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_remote_destination_tls_tls *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1494, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity_encode(const struct ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1496, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1496, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_tls_tls_server_authentication_encode(const struct ietf_syslog_syslog_actions_remote_destination_tls_tls_server_authentication *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1498, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_tls_tls_server_authentication_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_remote_destination_tls_tls_server_authentication *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1498, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_udp_encode(const struct ietf_syslog_syslog_actions_remote_destination_udp *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1499, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_udp_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_remote_destination_udp *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1499, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_udp_udp_encode(const struct ietf_syslog_syslog_actions_remote_destination_udp_udp *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1500, p, b));
+}
+
+int
+ietf_syslog_syslog_actions_remote_destination_udp_udp_decode(const void *data, size_t len, struct ietf_syslog_syslog_actions_remote_destination_udp_udp *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1500, data, len, p, a, flags, why, whylen));
 }
 

@@ -97,6 +97,7 @@ static struct {
 	char		 link_host[9];
 	char		 link_if[32];
 	bool		 ep_remote;	/* the end point form: a remote one */
+	char		 ucs_kind[8];	/* the underlay form: its tunnel's kind */
 	ucl_object_t	*ifs;		/* the link host's interfaces */
 	bool		 ifs_loading;
 	bool		 show_kept;	/* the Edges tab shows what stays too */
@@ -4041,12 +4042,16 @@ view_document(struct html *h)
 	    "</button><button type=\"button\" class=\"ghost small\" "
 	    "data-act=\"sd-revert\">Back to the kept one</button>"
 	    "<span class=\"sep\"></span><button type=\"button\" class=\""
-	    "ghost small\" data-act=\"sd-export\" title=\"The kept one as "
-	    "a JSON file, to keep elsewhere or to start another from\">"
-	    "Export</button><label class=\"button ghost small\" title=\"A "
-	    "document from a file, put in the box: check it, then keep it\">"
-	    "Import<input type=\"file\" accept=\"application/json,.json\" "
-	    "data-file=\"sd-import\" hidden></label></div></form>",
+	    "ghost small\" data-act=\"sd-export\" data-arg=\"json\" title=\""
+	    "The kept one as a JSON file, to keep elsewhere or to start "
+	    "another from\">Export JSON</button><button type=\"button\" "
+	    "class=\"ghost small\" data-act=\"sd-export\" data-arg=\"yaml\" "
+	    "title=\"The kept one as a YAML file\">YAML</button><label class="
+	    "\"button ghost small\" title=\"A document from a JSON or YAML "
+	    "file, put in the box as JSON: check it, then keep it\">Import"
+	    "<input type=\"file\" accept=\"application/json,.json,"
+	    "application/yaml,.yaml,.yml\" data-file=\"sd-import\" hidden>"
+	    "</label></div></form>",
 	    sd.busy ? " disabled" : "", sd.busy ? " disabled" : "");
 }
 
@@ -4215,7 +4220,7 @@ sdwan_modal(struct html *h)
 		option(h, "usage-based", "by usage", jstr(u, "billing"));
 		option(h, "other", "other", jstr(u, "billing"));
 		h_raw(h, "</select></label></div><div class=\"two\"><label>Tunnel "
-		    "over it<select name=\"kind\">");
+		    "over it<select name=\"kind\" data-input=\"sd-ucs-kind\">");
 		option(h, "gre", "gre: gre(4), IP in IP with a key", jstr(t,
 		    "kind") != NULL ? jstr(t, "kind") : "gre");
 		option(h, "gif", "gif: gif(4), IP in IP", jstr(t, "kind"));
@@ -4225,14 +4230,21 @@ sdwan_modal(struct html *h)
 		    "kind"));
 		option(h, "uswe", "uswe: Mplify 119, IPsec keyed by the edges",
 		    jstr(t, "kind"));
-		h_fmt(h, "</select></label><label class=\"toggle\"><input type=\""
-		    "checkbox\" name=\"ipsec\" value=\"1\"%s> IPsec IKEv2 under "
-		    "it, by strongSwan<small>Required on a public underlay by "
-		    "a policy that says so; not for wg or uswe.</small></label>"
-		    "</div>", t != NULL && jbool(t, "ipsec") ? " checked" : "");
+		h_raw(h, "</select></label>");
+		/* wg and uswe encrypt by themselves: no IPsec under them. */
+		if (strcmp(sd.ucs_kind, "wg") != 0 && strcmp(sd.ucs_kind,
+		    "uswe") != 0)
+			h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+			    "name=\"ipsec\" value=\"1\"%s> IPsec IKEv2 under it, "
+			    "by strongSwan<small>Required on a public underlay by "
+			    "a policy that says so.</small></label>", t != NULL &&
+			    jbool(t, "ipsec") ? " checked" : "");
+		h_raw(h, "</div>");
+		if (strcmp(sd.ucs_kind, "uswe") != 0)
+			return (true);
 		/* A USWE tunnel's SAs: the base system's ipsec(4) and
 		 * setkey, the keys made and derived by the agents. */
-		h_raw(h, "<fieldset><legend>uswe only <small class=\"dim\">an "
+		h_raw(h, "<fieldset><legend>uswe <small class=\"dim\">an "
 		    "ipsec(4) interface each end, ESP in tunnel mode, the keys "
 		    "derived by the two agents from a pair each (Mplify 119 "
 		    "§10)</small></legend><div class=\"two\"><label>Algorithms"
@@ -7083,12 +7095,13 @@ send(const char *text, bool keep)
 	ucl_object_t	*o;
 	unsigned char	*json;
 
-	if ((o = json_parse(text)) == NULL || ucl_object_type(o) !=
-	    UCL_OBJECT) {
+	/* What is in the box: JSON, or YAML pasted in. */
+	if ((o = data_parse(text, sd.error, sizeof(sd.error))) == NULL ||
+	    ucl_object_type(o) != UCL_OBJECT) {
 		if (o != NULL)
 			ucl_object_unref(o);
-		snprintf(sd.error, sizeof(sd.error), "It is not JSON, or not an "
-		    "object.");
+		snprintf(sd.error, sizeof(sd.error), "It is not JSON or YAML, "
+		    "or not an object.");
 		sd.note[0] = '\0';
 		return;
 	}
@@ -7275,9 +7288,17 @@ sdwan_action(const char *act, const char *arg, const char *value)
 			return (sdwan_action("sd-policy-add", "", ""));
 		return (true);
 	}
+	if (strcmp(act, "input:sd-ucs-kind") == 0) {
+		snprintf(sd.ucs_kind, sizeof(sd.ucs_kind), "%s", value);
+		return (true);
+	}
 	if (strcmp(act, "sd-ucs-add") == 0 || strcmp(act, "sd-ucs-edit") == 0) {
 		snprintf(sd.edit, sizeof(sd.edit), "%s", strcmp(act,
 		    "sd-ucs-edit") == 0 ? arg : "");
+		/* What the form shows besides follows the tunnel's kind. */
+		snprintf(sd.ucs_kind, sizeof(sd.ucs_kind), "%s", jstr(jget(
+		    ucs_by(sd.edit), "tunnel"), "kind") != NULL ? jstr(jget(
+		    ucs_by(sd.edit), "tunnel"), "kind") : "gre");
 		app.modal = MODAL_SD_UCS;
 		app.modal_error[0] = '\0';
 		return (true);
@@ -7519,23 +7540,22 @@ sdwan_action(const char *act, const char *arg, const char *value)
 	else if (strcmp(act, "sd-example") == 0)
 		example();
 	else if (strcmp(act, "sd-export") == 0 && sd.doc != NULL) {
-		char	*json, name[64];
+		char	name[64];
 
 		/* As it is kept, written for people to read. */
-		json = pretty(sd.doc);
-		snprintf(name, sizeof(name), "sdwan-v%lld.json", (long long)jint(
+		snprintf(name, sizeof(name), "sdwan-v%lld", (long long)jint(
 		    sd.doc, "version", 0));
-		arc_save_text(name, "application/json", json != NULL ? json : "{}");
-		free(json);
+		export_save(name, sd.doc, strcmp(arg, "yaml") == 0);
 	} else if (strcmp(act, "file:sd-import") == 0) {
 		ucl_object_t	*o;
 
 		/* Read and laid out, not kept: Check, then Keep. */
 		sd.error[0] = sd.note[0] = '\0';
-		o = value[0] != '\0' ? json_parse(value) : NULL;
+		o = value[0] != '\0' ? data_parse(value, sd.error,
+		    sizeof(sd.error)) : NULL;
 		if (o == NULL || ucl_object_type(o) != UCL_OBJECT)
-			snprintf(sd.error, sizeof(sd.error), "%s: not a JSON "
-			    "document (or larger than 4 MiB)", arg);
+			snprintf(sd.error, sizeof(sd.error), "%s: not a JSON or "
+			    "YAML document (or larger than 4 MiB)", arg);
 		else {
 			free(sd.text);
 			sd.text = pretty(o);

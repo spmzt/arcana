@@ -13,6 +13,7 @@
 
 #include <err.h>
 #include <errno.h>
+#include <getopt.h>
 #include <grp.h>
 #include <libutil.h>
 #include <locale.h>
@@ -97,6 +98,14 @@ struct opts opts = {
 };
 
 static bool	foreground;
+
+enum { OPT_ROOT = 1000 };
+static const struct option longopts[] = {
+	/* The system's files read and written under a directory: a test's
+	 * tree (config-export, config-apply). */
+	{ "root", required_argument, NULL, OPT_ROOT },
+	{ NULL, 0, NULL, 0 },
+};
 
 static void	usage(void) __dead2;
 static void	fatal(struct pidfh *, const char *, ...) __dead2
@@ -322,8 +331,12 @@ main(int argc, char *argv[])
 	/* Run again by the daemon, to look at a jail from inside it. */
 	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
 		return (scope_helper(argc - 2, argv + 2));
-	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:X:0:1:2:3:4:5:6:7:8:9:x:Y:y:Z:z:")) != -1) {
+	/* The letters are all taken: what comes after has a name. */
+	while ((ch = getopt_long(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:X:0:1:2:3:4:5:6:7:8:9:x:Y:y:Z:z:", longopts, NULL)) != -1) {
 		switch (ch) {
+		case OPT_ROOT:
+			opts.root = optarg;
+			break;
 		case 'A':
 			cafile = optarg;
 			break;

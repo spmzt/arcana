@@ -184,10 +184,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 jgd[MAXPATHLEN], listen[MAXPATHLEN + 16], www[MAXPATHLEN];
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
-	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN];
+	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[104];
+	char	*argv[106];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -374,6 +374,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    /* The commit a clone is at; the head, from ./head. */
 	    "[ \"$1\" = -C ] && [ \"$3\" = rev-parse ] && { cat head 2>/dev/null "
 	    "|| echo 1111111111111111111111111111111111111111; exit 0; }\n"
+	    /* ./slow: the head is a while coming. */
+	    "[ \"$1\" = ls-remote ] && [ -f slow ] && sleep 6\n"
 	    "[ \"$1\" = ls-remote ] && { printf '%s\\tHEAD\\n' \"$(cat head "
 	    "2>/dev/null || echo 1111111111111111111111111111111111111111)\"; "
 	    "exit 0; }\n"
@@ -1012,7 +1014,21 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[99] = (char *)(uintptr_t)"./fake-setkey";
 	argv[100] = (char *)(uintptr_t)"-0";
 	argv[101] = (char *)(uintptr_t)"./fake-local-unbound";
-	argv[102] = NULL;
+	/* The system's files under a tree of the test's: config-export
+	 * reads them, and nothing reads the host's own. */
+	argv[102] = (char *)(uintptr_t)"--root";
+	argv[103] = rootdir;
+	argv[104] = NULL;
+	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
+	(void)mkdir(rootdir, 0755);
+	{
+		char	etc[MAXPATHLEN + 16];
+
+		snprintf(etc, sizeof(etc), "%s/root/etc", cwd);
+		(void)mkdir(etc, 0755);
+	}
+	put("root/etc/hosts", "127.0.0.1 localhost\n");
+	put("root/etc/rc.conf", "hostname=\"lab\"\nsshd_enable=\"YES\"\n");
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	snprintf(ntpconf, sizeof(ntpconf), "%s/ntp.conf", cwd);
 	snprintf(rtadvdconf, sizeof(rtadvdconf), "%s/rtadvd.conf", cwd);
@@ -1428,3 +1444,98 @@ jail_str(const struct resp *r, const char *name, const char *path)
 	return (ucl_object_tostring_forced(o));
 }
 
+/*
+ * The troubleshooter's way across places, against a network the test
+ * makes up: three routers, vnet jails r1, r2 and r3 by the stand-ins,
+ * each with its addresses, routes and ruleset as the agent's helper and
+ * ipfw would tell them.  The client 10.1.0.2 is behind r1, the server
+ * 10.3.0.2 behind r2.
+ */
+void
+ts_net(const char *cwd, const char *r2routes, const char *r2fw)
+{
+	FILE	*fp;
+	char	 buf[8192];
+
+	/* jls: r1, r2, r3 are jails 11, 12, 13 with networks of their own. */
+	snprintf(buf, sizeof(buf), "#!/bin/sh\ncase \"$2\" in\n"
+	    "r1) echo \"11 new %s/jroot\" ;;\nr2) echo \"12 new %s/jroot\" ;;\n"
+	    "r3) echo \"13 new %s/jroot\" ;;\n"
+	    "gw) echo \"4 new %s/jroot\" ;;\n"
+	    "*) echo \"jls: jail not found\" >&2; exit 1 ;;\nesac\n", cwd, cwd,
+	    cwd, cwd);
+	ATF_REQUIRE((fp = fopen("fake-jls", "w")) != NULL);
+	fputs(buf, fp);
+	fclose(fp);
+	/* jexec: ipfw's list and tables, the jail's own. */
+	ATF_REQUIRE((fp = fopen("fake-jexec", "w")) != NULL);
+	fputs("#!/bin/sh\necho \"jexec $*\" >> jexec.log\nj=$1; shift\n"
+	    "case \"$1 $2\" in\n*fake-ipfw\\ list) cat fw-$j.list 2>/dev/null; "
+	    "exit 0 ;;\n*fake-ipfw\\ table) cat fw-$j.tables 2>/dev/null; "
+	    "exit 0 ;;\nesac\nexec \"$@\"\n", fp);
+	fclose(fp);
+	/* The helper: each jail's addresses and routes, the longest prefix
+	 * that covers an address taken; every neighbour answers. */
+	ATF_REQUIRE((fp = fopen("fake-helper", "w")) != NULL);
+	fputs("#!/bin/sh\nj=$2\ncase \"$3\" in\n"
+	    "route-addrs) cat addrs-$j 2>/dev/null; echo '{\"sysctl\":true,"
+	    "\"forwarding\":1,\"forwarding6\":0,\"fw\":1,\"fw6\":0}' ;;\n"
+	    "route-neighs) echo '{\"address\":\"'$5'\",\"state\":\"reachable\"}'"
+	    "; echo '#total 1' ;;\n"
+	    "route-get) awk -v a=\"$4\" -v fib=\"$5\" '\n"
+	    "function n(s,  p) { split(s, p, \".\"); return ((p[1]*256+p[2])*256"
+	    "+p[3])*256+p[4] }\n"
+	    "{ split($1, q, \"/\"); l = q[2]; m = 2^32 - 2^(32-l); "
+	    "if (int(n(a)/2^(32-l)) == int(n(q[1])/2^(32-l)) && l >= best) "
+	    "{ best = l; d = q[1]; g = $2; i = $3 } }\n"
+	    "END { if (i != \"\") printf \"{\\\"to\\\":\\\"%s\\\",\\\"destination\\\":"
+	    "\\\"%s\\\",\\\"prefixlen\\\":%d,\\\"gateway\\\":\\\"%s\\\",\\\"fib\\\":"
+	    "\\\"%s\\\",\\\"interface\\\":\\\"%s\\\",\\\"flags\\\":\\\"UGS\\\"}\\n\", "
+	    "a, d, best, g, fib, i }' best=-1 rt-$j 2>/dev/null ;;\n"
+	    "*) exit 0 ;;\nesac\nexit 0\n", fp);
+	fclose(fp);
+	ATF_REQUIRE(system("chmod 755 fake-jls fake-jexec fake-helper") == 0);
+#define	ADDR(j, a, l, i)	"{\"address\":\"" a "\",\"prefixlen\":" #l \
+	",\"interface\":\"" i "\",\"fib\":0,\"up\":true,\"loopback\":false}\n"
+	ATF_REQUIRE((fp = fopen("addrs-11", "w")) != NULL);
+	fputs(ADDR(11, "10.1.0.1", 24, "em0") ADDR(11, "10.12.0.1", 24,
+	    "em1") ADDR(11, "10.13.0.1", 24, "em2"), fp);
+	fclose(fp);
+	ATF_REQUIRE((fp = fopen("addrs-12", "w")) != NULL);
+	fputs(ADDR(12, "10.12.0.2", 24, "em0") ADDR(12, "10.3.0.1", 24,
+	    "em1") ADDR(12, "10.23.0.2", 24, "em2"), fp);
+	fclose(fp);
+	ATF_REQUIRE((fp = fopen("addrs-13", "w")) != NULL);
+	fputs(ADDR(13, "10.13.0.3", 24, "em0") ADDR(13, "10.23.0.3", 24,
+	    "em1"), fp);
+	fclose(fp);
+#undef	ADDR
+	/* The host itself (jail 0) is r1 too, for a page without places. */
+	ATF_REQUIRE(system("cp addrs-11 addrs-0") == 0);
+	ATF_REQUIRE((fp = fopen("rt-11", "w")) != NULL);
+	fputs("10.1.0.0/24 link#1 em0\n10.12.0.0/24 link#2 em1\n"
+	    "10.13.0.0/24 link#3 em2\n0.0.0.0/0 10.12.0.2 em1\n", fp);
+	fclose(fp);
+	ATF_REQUIRE(system("cp rt-11 rt-0") == 0);
+	ATF_REQUIRE((fp = fopen("rt-12", "w")) != NULL);
+	fprintf(fp, "10.12.0.0/24 link#1 em0\n10.3.0.0/24 link#2 em1\n"
+	    "10.23.0.0/24 link#3 em2\n%s", r2routes);
+	fclose(fp);
+	ATF_REQUIRE((fp = fopen("rt-13", "w")) != NULL);
+	fputs("10.13.0.0/24 link#1 em0\n10.23.0.0/24 link#2 em1\n"
+	    "10.1.0.0/24 10.13.0.1 em0\n10.3.0.0/24 10.23.0.2 em1\n", fp);
+	fclose(fp);
+	ATF_REQUIRE((fp = fopen("fw-12.list", "w")) != NULL);
+	fputs(r2fw, fp);
+	fclose(fp);
+	ATF_REQUIRE((fp = fopen("fw-11.list", "w")) != NULL);
+	fputs("65535 allow ip from any to any\n", fp);
+	fclose(fp);
+	/* r3 lets through only what it saw open, or what is new. */
+	ATF_REQUIRE((fp = fopen("fw-13.list", "w")) != NULL);
+	fputs("00100 check-state :default\n"
+	    "00200 allow tcp from any to any setup keep-state :default\n"
+	    "00300 allow icmp from any to any\n"
+	    "65535 deny ip from any to any\n", fp);
+	fclose(fp);
+}

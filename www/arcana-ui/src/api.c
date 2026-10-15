@@ -22,6 +22,9 @@
 struct inflight {
 	int		 id;
 	api_cb		*cb;
+	/* A GET of a host's: kept for the tab it was made for (export.c). */
+	char		 url[300];
+	int		 node, tab;
 	void		 (*wcb)(bool, const char *, void *);
 	void		*arg;
 };
@@ -73,6 +76,11 @@ api(const char *method, const char *url, const char *body, api_cb *cb,
 	p->cb = cb;
 	p->arg = arg;
 	id = p->id;
+	p->url[0] = '\0';
+	if (strcmp(method, "GET") == 0 && strlen(url) < sizeof(p->url)) {
+		snprintf(p->url, sizeof(p->url), "%s", url);
+		export_where(&p->node, &p->tab);
+	}
 	/*
 	 * A task is made just before the request that does it: the first
 	 * request after is its, said in its graph while it waits.
@@ -131,6 +139,8 @@ arc_on_http(int id, int status, char *text)
 		    o == NULL ? text : "");
 		err = why;
 	}
+	if (status == 200 && p.url[0] != '\0')
+		export_note(p.url, p.node, p.tab, o);
 	p.cb(status, o, err, p.arg);
 	if (o != NULL)
 		ucl_object_unref(o);

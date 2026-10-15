@@ -1025,6 +1025,52 @@ attribute-sets:
           when that one is still trusted afterwards.
         checks:
           max-len: 32768
+      - name: secrets
+        type: flag
+        doc: |
+          For config-export, the secrets with the files too: keys and
+          shared secrets (WireGuard's, strongSwan's, the agent's own
+          never).
+      - name: bundle
+        type: text
+        doc: For config-apply, a host's bundle, as config-export made it.
+        checks:
+          max-len: max-json
+      - name: anyway
+        type: flag
+        doc: |
+          For config-apply, though the hardware is not the bundle's: an
+          interface or a disk it names is not on this host.
+      - name: new-hostname
+        type: text
+        doc: For config-apply, the host's name instead of the bundle's.
+        checks:
+          max-len: 255
+      - name: path-src
+        type: text
+        doc: For path-check, the packet's source address.
+        checks:
+          max-len: 64
+      - name: path-dst
+        type: text
+        doc: For path-check, its destination address.
+        checks:
+          max-len: 64
+      - name: path-proto
+        type: text
+        doc: For path-check, tcp, udp, icmp or ip (any).
+        checks:
+          max-len: 8
+      - name: path-port
+        type: u32
+        doc: For path-check, the destination port of tcp or udp.
+      - name: path-reply
+        type: flag
+        doc: |
+          For path-check, the packet is a reply: from path-src's
+          path-port to an ephemeral port of path-dst, a TCP segment of
+          a connection (ACK, no SYN), an ICMP echo reply; met where no
+          state of its request may be.
 
 
   - name: host
@@ -2486,7 +2532,10 @@ operations:
       job ends.  jail-state, with jail, state (running or stopped) and
       jid, when a jail is made or removed, the host's or one made in a
       jail (its name parent.child), as kqueue(2)'s EVFILT_JAIL tells
-      it.
+      it.  crash, with pid, process (its name), jid, jail (its name,
+      empty for the host's), uid, signal and core (whether it dumped
+      one), when the kernel says a process died of a signal that
+      dumps core (kern.logsigexit).
     do:
       request:
         attributes:
@@ -3109,6 +3158,113 @@ operations:
     event:
       attributes:
         - trace
+
+  - name: config-export
+    attribute-set: arcana
+    auth: true
+    doc: |
+      All that makes the host what it is, as a JSON object, to keep or to
+      make another host the same with (config-apply): "arcana" is
+      "host", "format" 1; "host", "agent" (its version) and "taken";
+      "facts", what the hardware and the system are (arch, release,
+      cpu, ncpu, memory, "interfaces": each physical one's name, driver
+      and MAC, a cloned one is configuration, "disks": each name and
+      size); "packages", those installed by hand (pkg query, not the
+      automatic ones), each name, origin and version; "files", each
+      configuration file there is of those Arcana manages (rc.conf and
+      rc.conf.d, loader.conf, sysctl.conf, jail.conf and jail.conf.d,
+      fstab, hosts, resolv.conf, ntp.conf, rtadvd.conf, sshd_config,
+      devfs.rules, syslog.conf, the agent's ipfw.rules and history.conf,
+      bird.conf, swanctl's, WireGuard's, dnsmasq's), its path, mode,
+      owner, group and text; a secret's text only with secrets, else
+      "secret": true without it.  The agent's own keys and certificates
+      never: a host's identity is its own.  Jails' and datasets' data
+      are not configuration: zfs-send carries them.
+    do:
+      request:
+        attributes:
+          - secrets
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: config-apply
+    attribute-set: arcana
+    auth: true
+    doc: |
+      A bundle of config-export's made this host's configuration.  First
+      the hardware: each physical interface and disk the bundle names
+      has to be here, and the arch the same, else nothing is done
+      unless anyway.  json says "mismatches" (what is not), "files"
+      (each path, "state" same, changed, new or withheld, a secret the
+      bundle does not carry, which stays as it is, and "diff", a
+      unified diff, for one changed), "packages" (those the bundle has
+      that this host does not: Arcana installs none by itself), and,
+      when it was done, "backup", where the files before are kept
+      (/var/backups/arcana/config-<time>), "applied" and "reboot": what
+      the files say takes hold at boot.  new-hostname puts that in
+      rc.conf's hostname instead.  With dry-run only the report.
+    do:
+      request:
+        attributes:
+          - bundle
+          - dry-run
+          - anyway
+          - new-hostname
+        required:
+          - bundle
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: path-check
+    attribute-set: arcana
+    auth: true
+    doc: |
+      What this host does with a packet from path-src to path-dst (of
+      path-proto, to path-port), and with its reply, without one being
+      sent: as a JSON object, "host" and "addresses" (each of the host's
+      own, its interface, prefix and the interface's FIB), whether the
+      source and the destination are the host's or on a network it is
+      on ("src", "dst"), "forwarding" (net.inet.ip.forwarding and its
+      IPv6 twin), "ingress" (the interface it comes in on: interface if
+      given, else the one the route back to the source is by), "fib",
+      "route" (the route to the destination: the send route, as
+      route-lookup's best, or none), "neighbor" (the next hop's ARP or
+      NDP entry), "return" (the route back to the source from where the
+      reply comes in: the receive route, and "symmetric", whether it is
+      by the interface the request came in on), "firewall" (ipfw's
+      ruleset walked for the request in and out and the reply in and
+      out, each "verdict", "rule", "text", "by_state", what it could not
+      judge, "setfib", "fwd"), and "findings", each "severity" (bad,
+      warn, info, ok) and "what", in words.  With jail, of a vnet
+      jail's own network.  Nothing is sent, nothing is changed.
+    do:
+      request:
+        attributes:
+          - path-src
+          - path-dst
+          - path-proto
+          - path-port
+          - interface
+          - net-fib
+          - jail
+          - path-reply
+        required:
+          - path-src
+          - path-dst
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
 
 mcast-groups:
   - name: events

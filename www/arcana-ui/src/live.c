@@ -30,6 +30,7 @@ struct liveread {
 	void	*arg;
 	char	 url[400];	/* the GET it would be */
 	char	 fn[48];	/* its operation's call, as the trace says it */
+	int	 node, tab;	/* where the page was: its tab's (export.c) */
 };
 
 static struct liveread	live[LIVE_MAX];
@@ -94,6 +95,7 @@ live_read(const char *sid, const char *read, const char *url, int opid,
 	l->cb = cb;
 	l->arg = arg;
 	snprintf(l->url, sizeof(l->url), "%s", url);
+	export_where(&l->node, &l->tab);
 	/* The console's call, by which the schema panel finds it. */
 	{
 		const char	*p;
@@ -487,6 +489,8 @@ live_stream(const ucl_object_t *o)
 		struct liveread	c = *l;
 
 		memset(l, 0, sizeof(*l));
+		if (status == 200)
+			export_note(c.url, c.node, c.tab, jget(o, "reply"));
 		c.cb(status, jget(o, "reply"), err, c.arg);
 	}
 }

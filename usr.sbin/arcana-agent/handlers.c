@@ -60,6 +60,13 @@ struct job {
 	uint32_t		 log_count;	/* source-log: commits at most */
 	int			 safe_wait;	/* bird-config: s, 0 the agent's */
 	char			*peer;
+	char			*bundle;	/* config-apply */
+	bool			 anyway;
+	char			*new_host;
+	char			*psrc, *pdst, *pproto, *piface;	/* path-check */
+	uint32_t		 pport;
+	bool			 has_fib;
+	bool			 preply;
 };
 
 #define	STOPPING	"not done: arcana-agent is stopping"
@@ -339,6 +346,9 @@ worker(void *arg)
 	struct arc_zfs_key_rsp	 zkr;
 	struct arc_tls_rsp	 tlr;
 	struct arc_transport_rsp tpr;
+	struct arc_config_export_rsp cxr;
+	struct arc_config_apply_rsp car;
+	struct arc_path_check_rsp pcr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
 	struct arc_sysctl_rsp	 scr2;
@@ -498,6 +508,47 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &irr.trace.v, &irr.trace.n);
 		rc = arc_ipfw_rules_reply(j->req, &irr);
+		break;
+	case ARC_CMD_PATH_CHECK:
+		what = "path-check";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "path-check %s to %s", j->psrc, j->pdst);
+		memset(&pcr, 0, sizeof(pcr));
+		pcr.has_ok = true;
+		if (scope_enter(&w, j->jail, &pcr.error) == 0)
+			do_path_check(&w, j->psrc, j->pdst, j->pproto, j->pport,
+			    j->piface, j->has_fib, j->fib, j->preply, &pcr);
+		ok = pcr.ok;
+		error = pcr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &pcr.trace.v, &pcr.trace.n);
+		rc = arc_path_check_reply(j->req, &pcr);
+		break;
+	case ARC_CMD_CONFIG_EXPORT:
+		what = j->refresh ? "config-export, secrets too" :
+		    "config-export";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&cxr, 0, sizeof(cxr));
+		do_config_export(&w, j->refresh, &cxr);
+		ok = cxr.ok;
+		error = cxr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &cxr.trace.v, &cxr.trace.n);
+		rc = arc_config_export_reply(j->req, &cxr);
+		break;
+	case ARC_CMD_CONFIG_APPLY:
+		what = j->refresh ? "config-apply, a dry run" : "config-apply";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&car, 0, sizeof(car));
+		do_config_apply(&w, j->bundle, j->refresh, j->anyway,
+		    j->new_host, &car);
+		ok = car.ok;
+		error = car.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &car.trace.v, &car.trace.n);
+		rc = arc_config_apply_reply(j->req, &car);
 		break;
 	case ARC_CMD_TRANSPORT:
 		what = j->refresh ? "transport retry" : "transport";
@@ -1237,6 +1288,12 @@ job_free(struct job *j)
 	free((char *)(uintptr_t)j->addr.address);
 	free((char *)(uintptr_t)j->addr.interface);
 	free(j->peer);
+	free(j->bundle);
+	free(j->new_host);
+	free(j->psrc);
+	free(j->pdst);
+	free(j->pproto);
+	free(j->piface);
 	free(j);
 }
 
@@ -1775,6 +1832,61 @@ arc_ipfw_rules_doit(cbl_req *req, const struct arc_ipfw_rules_req *rq,
 	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
 	j->refresh = rq->dry_run;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	return (start(j));
+}
+
+int
+arc_path_check_doit(cbl_req *req, const struct arc_path_check_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_PATH_CHECK;
+	j->psrc = xstrdup(rq->path_src);
+	j->pdst = xstrdup(rq->path_dst);
+	j->pproto = rq->path_proto != NULL ? xstrdup(rq->path_proto) : NULL;
+	j->piface = rq->interface != NULL ? xstrdup(rq->interface) : NULL;
+	j->pport = rq->has_path_port ? rq->path_port : 0;
+	j->preply = rq->path_reply;
+	j->has_fib = rq->has_net_fib;
+	j->fib = rq->has_net_fib ? rq->net_fib : 0;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	return (start(j));
+}
+
+int
+arc_config_export_doit(cbl_req *req, const struct arc_config_export_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_CONFIG_EXPORT;
+	j->refresh = rq->secrets;
+	return (start(j));
+}
+
+int
+arc_config_apply_doit(cbl_req *req, const struct arc_config_apply_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_CONFIG_APPLY;
+	j->bundle = xstrdup(rq->bundle);
+	j->refresh = rq->dry_run;
+	j->anyway = rq->anyway;
+	j->new_host = rq->new_hostname != NULL ? xstrdup(rq->new_hostname) :
 	    NULL;
 	return (start(j));
 }

@@ -1191,8 +1191,11 @@ addToLibrary({
 	arc_save_text: function (namep, typep, textp) {
 		var url, a;
 
-		url = URL.createObjectURL(new Blob([UTF8ToString(textp)], {
-		    type: UTF8ToString(typep) }));
+		/* The last one, for whoever checks what was saved. */
+		window.arcSaved = { name: UTF8ToString(namep), type:
+		    UTF8ToString(typep), text: UTF8ToString(textp) };
+		url = URL.createObjectURL(new Blob([window.arcSaved.text], {
+		    type: window.arcSaved.type }));
 		a = document.createElement("a");
 		a.href = url;
 		a.download = UTF8ToString(namep);

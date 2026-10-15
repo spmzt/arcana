@@ -3274,6 +3274,8 @@ nav.tabs .tab.plugin:first-of-type, nav.tabs .tab:not(.plugin) + .tab.plugin { m
 nav.tabs .tab.plugin::before { content: "◆ "; font-size: .6em; vertical-align: .15em; opacity: .7; }
 /* A plugin not installed on the host or a jail of it: there, dimmer. */
 nav.tabs .tab.plugin.missing { opacity: .55; }
+/* A tab's Export, at the end of its bar. */
+nav.tabs .tabexport { margin-left: auto; display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; color: var(--dim); white-space: nowrap; }
 nav.tabs .tab.plugin.missing::before { content: "◇ "; }
 .plugin-missing p { max-width: 38rem; }
 .plugin-missing button.primary { margin-top: .4rem; }
@@ -3992,7 +3994,7 @@ ul.wfruns li.failed .led, ul.wfruns li.interrupted .led { background: var(--red)
 ul.wfruns li.running .led { background: var(--cyan); }
 ul.wfruns li.cancelled .led { background: var(--dim); }
 .chip.done { border-color: var(--green); }
-.chip.failed { border-color: var(--red); }
+.chip.failed, .chip.interrupted { border-color: var(--red); }
 .chip.running { border-color: var(--cyan); }
 .wfgraph { display: flex; flex-direction: column; gap: .7rem; overflow-x: auto; padding: .3rem 0 1rem; }
 .wfrow { display: grid; align-items: center; justify-content: start; gap: .35rem; }
@@ -4009,7 +4011,7 @@ button.wfstep b { font-size: .8rem; color: var(--fg); }
 button.wfstep small { font-size: .68rem; color: var(--dim); }
 button.wfstep small.jump { color: var(--amber); }
 button.wfstep.done { border-color: var(--green); }
-button.wfstep.failed { border-color: var(--red); }
+button.wfstep.failed, button.wfstep.interrupted { border-color: var(--red); }
 button.wfstep.running { border-color: var(--cyan); box-shadow: 0 0 10px rgba(var(--accent-rgb), .35); }
 button.wfstep.skipped, button.wfstep.not.run, button.wfstep.pending { opacity: .55; border-style: dashed; }
 button.wfstep.cancelled { opacity: .55; }
@@ -4738,3 +4740,33 @@ button.csv-btn::before { content: "\2913"; }
 button.csv-btn:hover, button.csv-btn:focus-visible { opacity: 1; }
 table.cards button.csv-btn { display: none; }
 
+/* The host's configuration as a whole: its report, what would change. */
+.hostconf .toolbar { flex-wrap: wrap; gap: .5rem; align-items: center; }
+.hcreport { margin-top: .6rem; }
+.hcreport h4 { margin: .3rem 0; }
+table.hcfiles { width: 100%; font-size: .8rem; }
+table.hcfiles td { vertical-align: top; padding: .2rem .4rem; }
+table.hcfiles tr.changed td:last-child { color: var(--amber); }
+table.hcfiles tr.new td:last-child { color: var(--green); }
+table.hcfiles tr.withheld td:last-child { color: var(--dim); }
+pre.diff { max-height: 18rem; overflow: auto; font-size: .75rem; }
+/* Troubleshoot: a packet's way, place by place, and what stops it. */
+.trouble .tsform { display: flex; flex-direction: column; gap: .6rem; max-width: 46rem; }
+.trouble .tsplaces .tsplace { display: flex; flex-wrap: wrap; gap: .2rem .9rem; margin: .2rem 0; }
+.trouble .tsplaces .tsjail { font-size: .85em; opacity: .85; }
+.tsverdict { margin: .8rem 0 .4rem; padding: .55rem .8rem; border-radius: 8px; border: 1px solid var(--line-2); display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
+.tsverdict.bad { border-color: var(--red); }
+.tsverdict.warn { border-color: var(--amber); }
+.tsverdict.ok, .tsverdict.info { border-color: var(--green); }
+ul.tsfindings { list-style: none; padding: 0; margin: .3rem 0 .8rem; font-size: .85rem; }
+ul.tsfindings li { margin: .25rem 0; }
+.chip.bad { border-color: var(--red); color: var(--red); }
+.chip.warn { border-color: var(--amber); color: var(--amber); }
+.chip.good { border-color: var(--green); }
+ol.tsway { list-style: none; padding: 0; margin: .3rem 0 1rem; display: flex; flex-direction: column; gap: .4rem; }
+ol.tsway li.tshop { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; padding: .45rem .7rem; border: 1px solid var(--line-2); border-radius: 8px; font-size: .82rem; }
+ol.tsway li.tshop details { flex-basis: 100%; }
+ol.tsway li.tshop pre { max-height: 18rem; overflow: auto; font-size: .72rem; }
+ol.tsway li.tsend { font-size: .82rem; padding: .3rem .7rem; color: var(--dim); }
+ol.tsway li.tsend.blocked, ol.tsway li.tsend.loop { color: var(--red); }
+ol.tsway li.tsend.delivered { color: var(--green); }

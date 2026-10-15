@@ -111,6 +111,19 @@ int64_t		 jint(const ucl_object_t *, const char *, int64_t);
 double		 jnum(const ucl_object_t *, const char *, double);
 bool		 jbool(const ucl_object_t *, const char *);
 char		*json_quote(const char *);
+/* yaml.c: YAML written and read. */
+char		*yaml_emit(const ucl_object_t *);
+ucl_object_t	*yaml_parse(const char *, char *, size_t);
+/* export.c: a tab's reads kept and exported; documents as JSON or YAML. */
+void		 export_where(int *, int *);
+void		 export_note(const char *, int, int, const ucl_object_t *);
+int		 export_count(void);
+void		 export_bar(struct html *, const char *);
+bool		 export_action(const char *, const char *, const char *);
+char		*data_emit(const ucl_object_t *, bool);
+ucl_object_t	*data_parse(const char *, char *, size_t);
+void		 export_save(const char *, const ucl_object_t *, bool);
+void		 export_base(char *, size_t, const char *, const char *);
 
 /* api.c: requests to the console's API with a callback each. */
 typedef void	 api_cb(int, const ucl_object_t *, const char *, void *);
@@ -148,6 +161,7 @@ enum node {
 	NODE_USAGE,		/* how busy every host has been, drawn */
 	NODE_WORKFLOWS,		/* chains of steps, run on several hosts */
 	NODE_SDWAN,		/* SD-WAN services, as MEF 70.2 says them */
+	NODE_TROUBLE,		/* a packet followed, and what stops it */
 	NODE_SETTINGS,		/* the console's settings, a tab each */
 	NODE_DEVICES,		/* the hosts as a table */
 };
@@ -631,6 +645,8 @@ void		 view_fleet(struct html *);
 void		 view_devices(struct html *);
 int		 count_state(const struct server *, const char *);
 void		 view_summary(struct html *, struct server *);
+void		 view_hostconf(struct html *, struct server *);
+bool		 hostconf_action(const char *, const char *, const char *);
 void		 view_jobs(struct html *, struct server *);
 
 /* topo.c: the fleet's network as a map, traffic, routes, netgraph. */
@@ -814,6 +830,10 @@ void		 sdwan_open(void);
 void		 sdwan_tick(double);
 void		 view_sdwan(struct html *);
 bool		 sdwan_action(const char *, const char *, const char *);
+/* trouble.c: the Troubleshoot page. */
+void		 view_trouble(struct html *);
+bool		 trouble_form(const char *, const ucl_object_t *);
+bool		 trouble_action(const char *, const char *, const char *);
 bool		 sdwan_form(const char *, const ucl_object_t *);
 bool		 sdwan_modal(struct html *);
 bool		 sdwan_blocked(void);

@@ -42,6 +42,9 @@ static const char *icon_flows = TREE_ICON("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 "
     "0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9");
 static const char *icon_sdwan = TREE_ICON("M5 7a2 2 0 1 0 0-.01M19 7a2 2 0 "
     "1 0 0-.01M12 19a2 2 0 1 0 0-.01M7 7h10M6 9l5 8M18 9l-5 8");
+/* A magnifier on a path: a packet looked for along its way. */
+static const char *icon_trouble = TREE_ICON("M3 18h5l3-6h4M11 11a4 4 0 1 0 "
+    "8 0 4 4 0 1 0-8 0M18 14l3 3");
 static const char *icon_gear = TREE_ICON("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 "
     "0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 "
     "1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 "
@@ -215,12 +218,12 @@ topbar(struct html *h)
 	if (app.node == NODE_NETWORK || app.node == NODE_FLEET || app.node ==
 	    NODE_API || app.node == NODE_USAGE || app.node == NODE_WORKFLOWS ||
 	    app.node == NODE_SDWAN || app.node == NODE_SETTINGS || app.node ==
-	    NODE_DEVICES)
+	    NODE_DEVICES || app.node == NODE_TROUBLE)
 		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
 		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
 		    app.node == NODE_USAGE ? "Utilization" : app.node ==
 		    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ?
-		    "SD-WAN" : app.node == NODE_SETTINGS ? "Settings" : app.node ==
+		    "SD-WAN" : app.node == NODE_TROUBLE ? "Troubleshoot" : app.node == NODE_SETTINGS ? "Settings" : app.node ==
 		    NODE_DEVICES ? "Devices" :
 		    "All hosts");
 	else if (s != NULL) {
@@ -354,6 +357,7 @@ rail(struct html *h)
 	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node == NODE_API ?
 	    "API" : app.node == NODE_USAGE ? "Utilization" : app.node ==
 	    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ? "SD-WAN" :
+	    app.node == NODE_TROUBLE ? "Troubleshoot" :
 	    app.node == NODE_SETTINGS ? "Settings" : app.node == NODE_DEVICES ?
 	    "Devices" : app.node == NODE_FLEET || s == NULL ? "All hosts" :
 	    s->name);
@@ -383,13 +387,16 @@ rail(struct html *h)
 	    "data-act=\"select-workflows\"><span class=\"twig\">%s</span>"
 	    "<span class=\"name\">Workflows</span></li><li class=\"titem fleet "
 	    "sdnode%s\" data-act=\"select-sdwan\"><span class=\"twig\">%s"
-	    "</span><span class=\"name\">SD-WAN</span></li>", app.node ==
+	    "</span><span class=\"name\">SD-WAN</span></li><li class=\"titem "
+	    "fleet tsnode%s\" data-act=\"select-trouble\"><span class=\"twig\">"
+	    "%s</span><span class=\"name\">Troubleshoot</span></li>", app.node ==
 	    NODE_FLEET ? " selected" : "", icon_hosts, app.nservers,
 	    app.node == NODE_DEVICES ? " selected" : "", icon_hosts,
 	    app.node == NODE_NETWORK ? " selected" : "", icon_network,
 	    app.node == NODE_USAGE ? " selected" : "", icon_usage,
 	    app.node == NODE_WORKFLOWS ? " selected" : "", icon_flows,
-	    app.node == NODE_SDWAN ? " selected" : "", icon_sdwan);
+	    app.node == NODE_SDWAN ? " selected" : "", icon_sdwan,
+	    app.node == NODE_TROUBLE ? " selected" : "", icon_trouble);
 	/* At the foot of the side bar: the console's own settings. */
 	h_fmt(h, "</ul><ul class=\"tree rail-foot\"><li class=\"titem fleet "
 	    "setnode%s\" data-act=\"settings\"><span class=\"twig\">%s"
@@ -775,6 +782,11 @@ stage(struct html *h)
 		h_raw(h, "</main>");
 		return;
 	}
+	if (app.node == NODE_TROUBLE) {
+		view_trouble(h);
+		h_raw(h, "</main>");
+		return;
+	}
 	if (app.node == NODE_JAIL) {
 		jail_page(h);
 		h_raw(h, "</main>");
@@ -831,6 +843,10 @@ stage(struct html *h)
 			    "base system's" : "A plugin, not installed here: "
 			    "open it to install its package", plugins[t].title);
 		}
+		if (app.tab != TAB_JOBS)
+			export_bar(h, plug ? (const char *[]){ "wireguard",
+			    "bird", "ipsec" }[app.net.kind == NET_WIREGUARD ? 0 :
+			    app.net.kind == NET_BIRD ? 1 : 2] : tabs[app.tab].arg);
 		h_raw(h, "</nav>");
 	}
 	if (app.tab == TAB_SUMMARY) {
@@ -838,6 +854,7 @@ stage(struct html *h)
 		view_transport(h, s);
 		view_tlscert(h, s);
 		view_safe(h, s);
+		view_hostconf(h, s);
 		peek_box(h);
 		h_raw(h, "</main>");
 		return;

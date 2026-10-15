@@ -4065,6 +4065,44 @@ part_firewall(void)
 	    10);
 
 	/*
+	 * The host as a whole: saved as a bundle, JSON and YAML, the files
+	 * Arcana manages in it (those of the test's tree, --root); a bundle
+	 * from a file, changed, checked first: the file it changes said,
+	 * with its diff, and nothing written until Apply.
+	 */
+	wait_js("document.querySelector('section.hostconf button[data-act="
+	    "hc-export][data-arg=json]')", 10);
+	run("window.arcSaved = null; document.querySelector('section.hostconf "
+	    "button[data-act=hc-export][data-arg=json]').click()");
+	wait_js("window.arcSaved && window.arcSaved.name.match(/^lab-config-"
+	    "[0-9]{8}-[0-9]{4}\\.json$/) && JSON.parse(window.arcSaved.text)"
+	    ".arcana === 'host' && JSON.parse(window.arcSaved.text).files"
+	    ".some(f => f.path === '/etc/hosts' && f.text.includes("
+	    "'localhost'))", 20);
+	run("window.arcBundle = JSON.parse(window.arcSaved.text); "
+	    "document.querySelector('section.hostconf button[data-act="
+	    "hc-export][data-arg=yaml]').click()");
+	wait_js("window.arcSaved.name.endsWith('.yaml') && window.arcSaved."
+	    "text.includes('\\narcana: host\\n') && window.arcSaved.text."
+	    "includes('  - path: /etc/hosts\\n')", 20);
+	run("const b = window.arcBundle; b.files.find(f => f.path === "
+	    "'/etc/hosts').text += '192.0.2.7 db\\n'; const dt = new "
+	    "DataTransfer(); dt.items.add(new File([JSON.stringify(b)], "
+	    "'lab.json', { type: 'application/json' })); const i = "
+	    "document.querySelector('input[data-file=hc-bundle]'); i.files = "
+	    "dt.files; i.dispatchEvent(new Event('change', { bubbles: true "
+	    "}));");
+	wait_js("document.querySelector('.hcreport') && document.querySelector("
+	    "'.hcreport').textContent.includes('what it would do') && "
+	    "document.querySelector('table.hcfiles tr.changed') && document."
+	    "querySelector('table.hcfiles tr.changed').textContent.includes("
+	    "'/etc/hosts') && document.querySelector('pre.diff').textContent"
+	    ".includes('+192.0.2.7 db') && document.querySelector("
+	    "'button[data-act=hc-apply]')", 20);
+	shot("1f-host-bundle");
+	ATF_CHECK(system("! grep -q 192.0.2.7 root/etc/hosts") == 0);
+
+	/*
 	 * Connections are read again by themselves while they are shown,
 	 * until paused.
 	 */
@@ -4169,6 +4207,34 @@ part_flows(void)
 	    "'pointerup', { bubbles: true, pointerId: 3 }));");
 	wait_js("document.querySelector('.wfpanel select[data-input=wf-kind]')"
 	    "?.value === 'pkg-install'", 10);
+	/* Saved as YAML, and read back from it: the same workflow. */
+	run("window.arcSaved = null; document.querySelector('button[data-act="
+	    "wf-export][data-arg=yaml]').click()");
+	wait_js("window.arcSaved && window.arcSaved.name === "
+	    "'workflow-Plugin-installed.yaml' && window.arcSaved.text."
+	    "includes('\\nparams:\\n  - name: package\\n    default: "
+	    "bird3\\n')", 10);
+	run("document.querySelector('button[data-act=wf-back]').click()");
+	wait_js("document.querySelector('input[data-file=wf-import]')", 10);
+	run("const dt = new DataTransfer(); dt.items.add(new File(["
+	    "window.arcSaved.text.replace('bird3', 'squid')], 'w.yaml', "
+	    "{ type: 'application/yaml' })); const i = document.querySelector("
+	    "'input[data-file=wf-import]'); i.files = dt.files; "
+	    "i.dispatchEvent(new Event('change', { bubbles: true }));");
+	wait_js("document.querySelector('input[data-arg=\"text:params.0."
+	    "default\"]')?.value === 'squid' && document.querySelectorAll("
+	    "'svg.wfdraw g.wfnode.job').length === 1", 10);
+	run("document.querySelector('button[data-act=wf-back]').click()");
+	/* A service restarted when it crashes: the trigger in words. */
+	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
+	run("const t = document.querySelector('select[data-input=wf-template]'"
+	    "); t.value = 'service-crash'; t.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelector('svg.wfdraw g.wfnode.trig') && "
+	    "document.querySelector('svg.wfdraw g.wfnode.trig').textContent."
+	    "includes('when a program crashes: ${param.process}') && "
+	    "document.querySelectorAll('svg.wfdraw g.wfnode.job').length === 1",
+	    10);
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	/* What starts one, in words: a jail stops, which jail asked. */
 	click_when("button[data-act=wf-new]", 10);
@@ -4297,10 +4363,31 @@ part_flows(void)
 	/* What waits in the queue, kept as one. */
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	ATF_CHECK(js_true("document.querySelector('ul.wfruns li.done')"));
+	/* Opened again from the list of runs: drawn, not a loader. */
+	run("document.querySelector('ul.wfruns li.done').click()");
+	wait_js("document.querySelector('.wfgraph button.wfstep') && "
+	    "!document.querySelector('.loader')", 10);
+	run("document.querySelector('button[data-act=wf-back]').click()");
 	host_open(NULL);
 	click_when("button.tab[data-arg=services]", 10);
 	wait_js("document.querySelector('button[data-act=svc][data-value="
 	    "restart]')", 10);
+	/*
+	 * The tab exported: what it read, the data without its trace, as
+	 * YAML, then as JSON.
+	 */
+	run("window.arcSaved = null; document.querySelector('nav.tabs "
+	    ".tabexport button[data-arg=yaml]').click()");
+	wait_js("window.arcSaved && window.arcSaved.name.match(/-services-"
+	    "[0-9]{8}-[0-9]{4}\\.yaml$/) && window.arcSaved.type === "
+	    "'application/yaml' && window.arcSaved.text.startsWith('---\\n"
+	    "arcana: tab\\n') && window.arcSaved.text.includes('\\nreads:"
+	    "\\n  services:\\n') && window.arcSaved.text.includes('sshd') "
+	    "&& !window.arcSaved.text.includes('trace')", 10);
+	run("document.querySelector('nav.tabs .tabexport button[data-arg="
+	    "json]').click()");
+	wait_js("window.arcSaved.name.endsWith('.json') && JSON.parse("
+	    "window.arcSaved.text).reads.services !== undefined", 10);
 	run("document.querySelector('button[data-act=svc][data-value=restart]')"
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
@@ -4323,7 +4410,7 @@ part_flows(void)
 	    20);
 	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
 	    ".click()");
-	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 12",
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 13",
 	    5);
 	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
 	    ".click()");
@@ -4371,6 +4458,21 @@ part_flows(void)
 	    "click()");
 	wait_js("document.querySelector('form[data-form=sd-ucs] input[name=id]"
 	    "')", 5);
+	/* uswe's own settings only when the tunnel is uswe. */
+	ATF_CHECK(js_true("!document.querySelector('form[data-form=sd-ucs] "
+	    "input[name=lifetime]') && document.querySelector('form[data-form="
+	    "sd-ucs] input[name=ipsec]')"));
+	run("const k = document.querySelector('form[data-form=sd-ucs] select["
+	    "name=kind]'); k.value = 'uswe'; k.dispatchEvent(new Event('input',"
+	    " { bubbles: true }));");
+	wait_js("document.querySelector('form[data-form=sd-ucs] input[name="
+	    "lifetime]') && !document.querySelector('form[data-form=sd-ucs] "
+	    "input[name=ipsec]')", 5);
+	run("const k = document.querySelector('form[data-form=sd-ucs] select["
+	    "name=kind]'); k.value = 'gre'; k.dispatchEvent(new Event('input',"
+	    " { bubbles: true }));");
+	wait_js("!document.querySelector('form[data-form=sd-ucs] input[name="
+	    "lifetime]')", 5);
 	run("const f = document.querySelector('form[data-form=sd-ucs]'); "
 	    "f.id.value = 'net'; f.type.value = 'public'; f.kind.value = "
 	    "'gre'; f.requestSubmit();");
@@ -4629,6 +4731,15 @@ part_flows(void)
 	    ".value.includes('\"swvcs\": [') && document.querySelector("
 	    "'section.sdwan .notice').textContent.includes('empty.json')", 10);
 	shot("9-sdwan-imported");
+	/* As YAML too: put in the box as JSON. */
+	run("const dt = new DataTransfer(); dt.items.add(new File(["
+	    "'# by hand\\nucs: []\\nedges: []\\nswvcs:\\n  - id: yamlsvc\\n'"
+	    "], 'svc.yaml', { type: 'application/yaml' })); const i = "
+	    "document.querySelector('input[data-file=sd-import]'); i.files = "
+	    "dt.files; i.dispatchEvent(new Event('change', { bubbles: true }));");
+	wait_js("document.querySelector('form[data-form=sd-doc] textarea')"
+	    ".value.includes('\"id\": \"yamlsvc\"') && document.querySelector("
+	    "'section.sdwan .notice').textContent.includes('svc.yaml')", 10);
 	run("document.querySelector('button[data-act=sd-revert]').click()");
 	run("document.querySelector('button[data-act=sd-tab][data-arg="
 	    "services]').click()");
@@ -5482,11 +5593,48 @@ ATF_TC_HEAD(pwa_flows, tc)
 	atf_tc_set_md_var(tc, "descr", "Workflows, the API, and SD-WAN");
 	atf_tc_set_md_var(tc, "timeout", "240");
 }
+/*
+ * Troubleshoot, in the side bar: a packet followed, the host itself a
+ * router of the made-up network (ts_net): in on em0 from the client's
+ * network, on to 10.12.0.2, which is no place of the console's; then
+ * the jails as places, and r2's firewall stopping it, said first.
+ */
+static void
+part_trouble(void)
+{
+	char	here[MAXPATHLEN];
+
+	ATF_REQUIRE(getcwd(here, sizeof(here)) != NULL);
+	ts_net(here, "10.1.0.0/24 10.12.0.1 em0\n",
+	    "01000 deny tcp from any to 10.3.0.0/24 22 in\n"
+	    "65535 allow ip from any to any\n");
+	click_when("li.tsnode[data-act=select-trouble]", 10);
+	wait_js("document.querySelector('form[data-form=ts-path]') && "
+	    "location.hash === '#/troubleshoot'", 10);
+	run("const f = document.querySelector('form[data-form=ts-path]'); "
+	    "f.src.value = '10.1.0.2'; f.dst.value = '10.3.0.2'; f.proto.value "
+	    "= 'tcp'; f.port.value = '22'; f.requestSubmit();");
+	wait_js("document.querySelector('ol.tsway li.tshop') && document."
+	    "querySelector('ol.tsway li.tshop').textContent.includes('in on "
+	    "em0') && document.querySelector('ol.tsway li.tshop').textContent"
+	    ".includes('via 10.12.0.2 on em1') && document.querySelector("
+	    "'ol.tsway li.tsend.leaves') && document.querySelector('ol.tsway "
+	    "li.tsend.leaves').textContent.includes('to 10.12.0.2')", 20);
+	shot("9t-troubleshoot");
+	/* As YAML, what was found. */
+	run("window.arcSaved = null; document.querySelector('.tsverdict "
+	    "button[data-arg=yaml]').click()");
+	wait_js("window.arcSaved && window.arcSaved.name === "
+	    "'path-10.1.0.2-to-10.3.0.2.yaml' && window.arcSaved.text."
+	    "includes('\\nhops:\\n')", 10);
+}
+
 ATF_TC_BODY(pwa_flows, tc)
 {
 
 	prologue(tc, 2);
 	part_flows();
+	part_trouble();
 }
 ATF_TC_CLEANUP(pwa_flows, tc)
 {

@@ -1257,6 +1257,39 @@ ATF_TC_BODY(workflows, tc)
 	ATF_CHECK_STREQ("skipped", jstr(&r, "hosts.0.steps.3.state"));
 	resp_free(&r);
 	ATF_CHECK(system("! grep -q clone git.log") == 0);
+	/*
+	 * A run whose worker dies under it: once one is there again, the
+	 * run, its host and the step that was running are said to be
+	 * interrupted, and why; the steps after it were not run.
+	 */
+	ATF_REQUIRE(system("touch slow") == 0);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	sleep(2);
+	ATF_REQUIRE(system("kill -9 $(sed -n 's/.*wrk 1\\] log=\\[started "
+	    "(#\\([0-9]*\\).*/\\1/p' kore.out | tail -1)") == 0);
+	(void)unlink("slow");
+	for (i = 0; i < 100; i++) {
+		snprintf(body, sizeof(body), "/api/runs/%s", run);
+		r.status = 0;
+		http("GET", body, NULL, &r);
+		if (r.status == 200 && jstr(&r, "state") != NULL &&
+		    strcmp(jstr(&r, "state"), "interrupted") == 0)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_REQUIRE_MSG(i < 100, "the run was not said to be interrupted");
+	ATF_CHECK_STREQ("interrupted", jstr(&r, "hosts.0.state"));
+	ATF_CHECK_STREQ("interrupted", jstr(&r, "hosts.0.steps.0.state"));
+	ATF_CHECK(jstr(&r, "hosts.0.steps.0.detail") != NULL && strstr(jstr(
+	    &r, "hosts.0.steps.0.detail"), "the console stopped") != NULL);
+	ATF_CHECK_STREQ("not run", jstr(&r, "hosts.0.steps.1.state"));
+	resp_free(&r);
+	/* What a run whose worker died is not, the console's end. */
+	ATF_REQUIRE(system("sed -i '' '/exited with status/d' kore.out") == 0);
 
 	/*
 	 * At an interval, counted from when it last ran by it, which a
@@ -1323,7 +1356,77 @@ ATF_TC_BODY(workflows, tc)
 	ATF_CHECK_MSG(i < 200, "no run begun by the threshold");
 	ATF_CHECK(strstr(r.body, "\"what\":\"mem\"") != NULL);
 	resp_free(&r);
-	ATF_REQUIRE(system("kill $(cat arcana-agent.pid)") == 0);
+	/*
+	 * A program that crashes (the kernel's line, kern.logsigexit):
+	 * matched by a parameter's default, as the service-crash template
+	 * does; the workflow waiting on another program is not begun.
+	 */
+	snprintf(body, sizeof(body), "{\"name\":\"on crash\",\"hosts\":"
+	    "[\"%s\"],\"params\":[{\"name\":\"process\",\"default\":"
+	    "\"arccrash\"}],\"on\":[{\"event\":\"crash\",\"match\":{"
+	    "\"process\":\"${param.process}\",\"jid\":\"0\"}}],\"steps\":"
+	    "[{\"id\":\"s\",\"read\":\"hello\"}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"on another crash\","
+	    "\"hosts\":[\"%s\"],\"params\":[{\"name\":\"process\","
+	    "\"default\":\"nginx\"}],\"on\":[{\"event\":\"crash\","
+	    "\"match\":{\"process\":\"${param.process}\"}}],\"steps\":"
+	    "[{\"id\":\"s\",\"read\":\"hello\"}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	if (system("[ \"$(sysctl -n kern.logsigexit)\" = 1 ] && "
+	    "[ \"$(sysctl -n security.bsd.unprivileged_read_msgbuf)\" = 1 ]")
+	    == 0) {
+		ATF_REQUIRE(system("cp /bin/sh arccrash && ./arccrash -c "
+		    "'ulimit -c 0; kill -SEGV $$'; true") == 0);
+		for (i = 0; i < 200; i++) {
+			http("GET", "/api/runs", NULL, &r);
+			if (strstr(r.body, "\"event crash\"") != NULL)
+				break;
+			resp_free(&r);
+			usleep(100000);
+		}
+		ATF_CHECK_MSG(i < 200, "no run begun by the crash");
+		ATF_CHECK(strstr(r.body, "\"process\":\"arccrash\"") !=
+		    NULL);
+		ATF_CHECK(strstr(r.body, "\"name\":\"on crash\"") != NULL);
+		ATF_CHECK(strstr(r.body, "\"name\":\"on another crash\"") ==
+		    NULL);
+		resp_free(&r);
+	}
+	/*
+	 * A page following the host's events when the agent goes, as an
+	 * update restarts it: told, and the worker lives on (a timer was
+	 * taken out in its own callback, and the worker died of it).
+	 */
+	{
+		char	ask[200], *m;
+		int	ws, k;
+
+		ws = ws_open("/api/stream");
+		snprintf(ask, sizeof(ask), "{\"id\":5,\"server\":\"%s\","
+		    "\"what\":\"events\"}", sid);
+		ws_send(ws, ask);
+		sleep(1);
+		ATF_REQUIRE(system("kill $(cat arcana-agent.pid)") == 0);
+		/* Events it told before it went, then why it is over. */
+		for (k = 0; k < 50 && (m = ws_recv(ws)) != NULL; k++) {
+			bool	over = strstr(m, "\"id\":5,\"error\":") != NULL;
+
+			free(m);
+			if (over)
+				break;
+		}
+		ATF_CHECK_MSG(k < 50 && m != NULL, "no error after %d", k);
+		close(ws);
+		/* Its follow gone: the ticker runs on, with none. */
+		sleep(1);
+		ATF_CHECK(system("! grep -q 'exited with status' kore.out") ==
+		    0);
+	}
 	for (i = 0; i < 200; i++) {
 		http("GET", "/api/runs", NULL, &r);
 		if (strstr(r.body, "\"event host-down\"") != NULL)
@@ -1348,6 +1451,203 @@ ATF_TC_BODY(workflows, tc)
 	http("DELETE", path, NULL, &r);
 	EXPECT(&r, 404);
 	resp_free(&r);
+}
+
+CONSOLE_TC(config_bundle, "A host as a bundle, its secrets only when "
+    "asked; another host's bundle applied here by the console, checked "
+    "first, the files before kept")
+ATF_TC_BODY(config_bundle, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[MAXPATHLEN], base[128], sid[16];
+	char		*bundle, *at;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(base, sizeof(base), "/api/servers/%s/config", sid);
+
+	/* Read: the bundle, the test's tree its files (--root). */
+	http("GET", base, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("host", jstr(&r, "data.arcana"));
+	ATF_CHECK(strstr(r.body, "\"path\":\"/etc/hosts\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"trace\":[") != NULL);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "%s/export", base);
+	http("POST", body, "{\"secrets\":true}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	/* The bundle as it is sent back, to be given again changed. */
+	{
+		struct ucl_parser	*p;
+		ucl_object_t		*o;
+
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
+		ATF_REQUIRE(ucl_parser_add_string(p, r.body, 0));
+		o = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+		bundle = (char *)ucl_object_emit(ucl_object_lookup(o, "data"),
+		    UCL_EMIT_JSON_COMPACT);
+		ucl_object_unref(o);
+	}
+	resp_free(&r);
+	ATF_REQUIRE((at = strstr(bundle, "127.0.0.1 localhost\\n")) != NULL);
+
+	/* Another host's, read by the console itself: here it is this
+	 * one, and nothing would change. */
+	snprintf(body, sizeof(body), "{\"from\":\"%s\",\"dry_run\":true}", sid);
+	http("POST", base, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK(strstr(r.body, "\"state\":\"changed\"") == NULL);
+	ATF_CHECK(strstr(r.body, "\"state\":\"same\"") != NULL);
+	resp_free(&r);
+	http("POST", base, "{\"from\":\"ffffffff\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", base, "{\"dry_run\":true}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/* A bundle given: checked, then applied; the file before kept. */
+	{
+		char	*mod, *req;
+		size_t	 n = strlen(bundle) + 64;
+
+		mod = malloc(n);
+		snprintf(mod, n, "%.*s127.0.0.1 localhost\\n192.0.2.7 db\\n%s",
+		    (int)(at - bundle), bundle, at + strlen(
+		    "127.0.0.1 localhost\\n"));
+		ATF_REQUIRE(asprintf(&req, "{\"bundle\":%s,\"dry_run\":true}",
+		    mod) != -1);
+		http("POST", base, req, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strstr(r.body, "\"path\":\"/etc/hosts\",\"state\":"
+		    "\"changed\"") != NULL, "%.400s", r.body);
+		ATF_CHECK(strstr(r.body, "+192.0.2.7 db") != NULL);
+		resp_free(&r);
+		ATF_CHECK(system("! grep -q 192.0.2.7 root/etc/hosts") == 0);
+		free(req);
+		ATF_REQUIRE(asprintf(&req, "{\"bundle\":%s}", mod) != -1);
+		http("POST", base, req, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("true", jstr(&r, "data.applied"));
+		resp_free(&r);
+		ATF_CHECK(system("grep -q 192.0.2.7 root/etc/hosts && ! grep "
+		    "-q 192.0.2.7 root/var/backups/arcana/config-*/etc/hosts")
+		    == 0);
+		free(req);
+		free(mod);
+	}
+	free(bundle);
+}
+
+CONSOLE_TC(troubleshoot, "A packet followed across the hosts' jails: the "
+    "way it goes, where it is stopped and why, the reply's way, and an "
+    "asymmetric return a stateful firewall drops")
+ATF_TC_BODY(troubleshoot, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[1024], sid[16];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	ts_net(cwd, "10.1.0.0/24 10.12.0.1 em0\n",
+	    "65535 allow ip from any to any\n");
+#define	ASK(proto, port)						\
+	snprintf(body, sizeof(body), "{\"src\":\"10.1.0.2\",\"dst\":"	\
+	    "\"10.3.0.2\",\"proto\":\"" proto "\",\"port\":" #port ","	\
+	    "\"places\":[{\"server\":\"%s\",\"jail\":\"r1\"},{\"server\":"	\
+	    "\"%s\",\"jail\":\"r2\"},{\"server\":\"%s\",\"jail\":\"r3\"}]}",	\
+	    sid, sid, sid);						\
+	http("POST", "/api/troubleshoot/path", body, &r);		\
+	EXPECT(&r, 200)
+
+	/* Through: in on r1 from the client's network, on to r2 by r1's
+	 * default route, onto the server's network; back the same way. */
+	ASK("tcp", 22);
+	ATF_CHECK_STREQ("here, jail r1", jstr(&r, "hops.0.place"));
+	ATF_CHECK_STREQ("em0", jstr(&r, "hops.0.ingress"));
+	ATF_CHECK_STREQ("10.12.0.2", jstr(&r, "hops.0.next_hop"));
+	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "hops.1.place"));
+	ATF_CHECK_STREQ("em0", jstr(&r, "hops.1.ingress"));
+	ATF_CHECK_STREQ("em1", jstr(&r, "hops.1.egress"));
+	ATF_CHECK_STREQ("delivered", jstr(&r, "end.how"));
+	ATF_CHECK(jstr(&r, "hops.2.place") == NULL);
+	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "return.0.place"));
+	ATF_CHECK_STREQ("here, jail r1", jstr(&r, "return.1.place"));
+	ATF_CHECK_STREQ("delivered", jstr(&r, "return_end.how"));
+	ATF_CHECK_MSG(strstr(r.body, "\"severity\":\"bad\"") == NULL &&
+	    strstr(r.body, "Asymmetric") == NULL, "%.600s", r.body);
+	resp_free(&r);
+
+	/* r2's firewall: stopped there, by its rule. */
+	ts_net(cwd, "10.1.0.0/24 10.12.0.1 em0\n",
+	    "01000 deny tcp from any to 10.3.0.0/24 22 in\n"
+	    "65535 allow ip from any to any\n");
+	ASK("tcp", 22);
+	ATF_CHECK_STREQ("blocked", jstr(&r, "end.how"));
+	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "end.place"));
+	ATF_CHECK_STREQ("bad", jstr(&r, "findings.0.severity"));
+	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "findings.0.place"));
+	ATF_CHECK_MSG(strstr(jstr(&r, "findings.0.what"), "The firewall drops "
+	    "it coming in on em0: rule 1000") != NULL, "%s", jstr(&r,
+	    "findings.0.what"));
+	ATF_CHECK(jstr(&r, "return.0.place") == NULL);
+	resp_free(&r);
+
+	/* r2 sends the reply back by r3, which saw no request: its
+	 * stateful firewall drops the reply.  An ICMP echo it lets by. */
+	ts_net(cwd, "10.1.0.0/24 10.23.0.3 em2\n",
+	    "65535 allow ip from any to any\n");
+	ASK("tcp", 22);
+	ATF_CHECK_STREQ("delivered", jstr(&r, "end.how"));
+	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "return.0.place"));
+	ATF_CHECK_STREQ("here, jail r3", jstr(&r, "return.1.place"));
+	ATF_CHECK_STREQ("blocked", jstr(&r, "return_end.how"));
+	ATF_CHECK_STREQ("here, jail r3", jstr(&r, "return_end.place"));
+	ATF_CHECK_MSG(strstr(r.body, "The reply: The firewall drops it coming "
+	    "in on em1: rule 65535") != NULL, "%.1500s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "Asymmetric across the places: the request "
+	    "goes here, jail r1 → here, jail r2, the reply comes back "
+	    "here, jail r3 → here, jail r2") != NULL, "%.2000s", r.body);
+	resp_free(&r);
+	ASK("icmp", 0);
+	ATF_CHECK_STREQ("delivered", jstr(&r, "return_end.how"));
+	ATF_CHECK(strstr(r.body, "\"severity\":\"bad\"") == NULL);
+	ATF_CHECK(strstr(r.body, "Asymmetric across the places") != NULL);
+	resp_free(&r);
+
+	/* Who is on no place's network: where it comes in is not known. */
+	snprintf(body, sizeof(body), "{\"src\":\"198.51.100.1\",\"dst\":"
+	    "\"10.3.0.2\",\"places\":[{\"server\":\"%s\",\"jail\":\"r1\"}]}",
+	    sid);
+	http("POST", "/api/troubleshoot/path", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("unknown", jstr(&r, "end.how"));
+	resp_free(&r);
+	http("POST", "/api/troubleshoot/path", "{\"src\":\"10.1.0.2\","
+	    "\"dst\":\"2001:db8::1\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+#undef	ASK
 }
 
 CONSOLE_TC(transfers, "A snapshot sent from one host to another, the "
@@ -5275,6 +5575,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, push);
 	ATF_TP_ADD_TC(tp, tokens);
 	ATF_TP_ADD_TC(tp, transfers);
+	ATF_TP_ADD_TC(tp, config_bundle);
+	ATF_TP_ADD_TC(tp, troubleshoot);
 	ATF_TP_ADD_TC(tp, workflows);
 	ATF_TP_ADD_TC(tp, sdwan);
 	ATF_TP_ADD_TC(tp, sdwan_apply);

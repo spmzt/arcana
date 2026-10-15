@@ -184,6 +184,9 @@ loc_of(char *buf, size_t len)
 	case NODE_SDWAN:
 		snprintf(buf, len, "#/sdwan");
 		break;
+	case NODE_TROUBLE:
+		snprintf(buf, len, "#/troubleshoot");
+		break;
 	case NODE_DEVICES:
 		snprintf(buf, len, "#/devices");
 		break;
@@ -260,6 +263,8 @@ loc_go(const char *r)
 		dispatch("select-workflows", "", "");
 	else if (IS(0, "sdwan"))
 		dispatch("select-sdwan", "", "");
+	else if (IS(0, "troubleshoot"))
+		dispatch("select-trouble", "", "");
 	else if (IS(0, "devices"))
 		dispatch("select-devices", "", "");
 	else if (IS(0, "settings")) {
@@ -586,6 +591,7 @@ submit(const char *form, const ucl_object_t *f)
 	    jailmk_form(form, f) || neigh_form(form, f) || carp_form(form, f) ||
 	    ca_form(form, f) || certs_form(form, f) || ssh_form(form, f) || span_form(form, f) ||
 	    ipsec_form(form, f) || workflows_form(form, f) || sdwan_form(form, f) ||
+	    trouble_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
 	    firewall_form(form, f) || l2_form(form, f))
@@ -854,14 +860,15 @@ dispatch(const char *act, const char *arg, const char *value)
 	bool			 replug = false;
 
 	s = cur_server();
-	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
+	if (export_action(act, arg, value) || hostconf_action(act, arg, value) ||
+	    topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
 	    jailmk_action(act, arg, value) || neigh_action(act, arg, value) ||
 	    carp_action(act, arg, value) || ca_action(act, arg, value) ||
 	    certs_action(act, arg, value) || ssh_action(act, arg, value) ||
 	    span_action(act, arg, value) ||
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
-	    sdwan_action(act, arg, value) ||
+	    sdwan_action(act, arg, value) || trouble_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
 	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||
 	    procs_action(act, arg, value) || logs_action(act, arg, value) ||

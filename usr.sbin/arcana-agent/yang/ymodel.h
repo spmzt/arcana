@@ -336,6 +336,36 @@ struct arcana_processes_processes_process;
 struct arcana_processes_processes_jail;
 struct arcana_processes_processes;
 struct arcana_processes;
+struct arcana_log_logs_file;
+struct arcana_log_logs_read_input;
+struct arcana_log_logs_read_output_line;
+struct arcana_log_logs_read_output;
+struct arcana_log_logs;
+struct arcana_log;
+struct ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare;
+struct ietf_syslog_syslog_actions_console_filter_facility_list;
+struct ietf_syslog_syslog_actions_console_filter;
+struct ietf_syslog_syslog_actions_console;
+struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare;
+struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list;
+struct ietf_syslog_syslog_actions_file_log_file_filter;
+struct ietf_syslog_syslog_actions_file_log_file_file_rotation;
+struct ietf_syslog_syslog_actions_file_log_file;
+struct ietf_syslog_syslog_actions_file;
+struct ietf_syslog_syslog_actions_remote_destination_udp_udp;
+struct ietf_syslog_syslog_actions_remote_destination_udp;
+struct ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity;
+struct ietf_syslog_syslog_actions_remote_destination_tls_tls_server_authentication;
+struct ietf_syslog_syslog_actions_remote_destination_tls_tls;
+struct ietf_syslog_syslog_actions_remote_destination_tls;
+struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare;
+struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list;
+struct ietf_syslog_syslog_actions_remote_destination_filter;
+struct ietf_syslog_syslog_actions_remote_destination;
+struct ietf_syslog_syslog_actions_remote;
+struct ietf_syslog_syslog_actions;
+struct ietf_syslog_syslog;
+struct ietf_syslog;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -1297,11 +1327,173 @@ enum arcana_storage_storage_dataset_canmount {
 	ARCANA_STORAGE_STORAGE_DATASET_CANMOUNT_NOAUTO = 2,
 };
 
+enum arcana_log_logs_read_output_line_severity {
+	ARCANA_LOG_LOGS_READ_OUTPUT_LINE_SEVERITY_EMERGENCY = 0,
+	ARCANA_LOG_LOGS_READ_OUTPUT_LINE_SEVERITY_ALERT = 1,
+	ARCANA_LOG_LOGS_READ_OUTPUT_LINE_SEVERITY_CRITICAL = 2,
+	ARCANA_LOG_LOGS_READ_OUTPUT_LINE_SEVERITY_ERROR = 3,
+	ARCANA_LOG_LOGS_READ_OUTPUT_LINE_SEVERITY_WARNING = 4,
+	ARCANA_LOG_LOGS_READ_OUTPUT_LINE_SEVERITY_NOTICE = 5,
+	ARCANA_LOG_LOGS_READ_OUTPUT_LINE_SEVERITY_INFO = 6,
+	ARCANA_LOG_LOGS_READ_OUTPUT_LINE_SEVERITY_DEBUG = 7,
+};
+
+enum ietf_syslog_syslog_actions_console_filter_facility_list_facility_m1 {
+	IETF_SYSLOG_SYSLOG_ACTIONS_CONSOLE_FILTER_FACILITY_LIST_FACILITY_M1_ALL = 0,
+};
+
+enum ietf_syslog_syslog_actions_console_filter_facility_list_severity_m0 {
+	IETF_SYSLOG_SYSLOG_ACTIONS_CONSOLE_FILTER_FACILITY_LIST_SEVERITY_M0_EMERGENCY = 0,
+	IETF_SYSLOG_SYSLOG_ACTIONS_CONSOLE_FILTER_FACILITY_LIST_SEVERITY_M0_ALERT = 1,
+	IETF_SYSLOG_SYSLOG_ACTIONS_CONSOLE_FILTER_FACILITY_LIST_SEVERITY_M0_CRITICAL = 2,
+	IETF_SYSLOG_SYSLOG_ACTIONS_CONSOLE_FILTER_FACILITY_LIST_SEVERITY_M0_ERROR = 3,
+	IETF_SYSLOG_SYSLOG_ACTIONS_CONSOLE_FILTER_FACILITY_LIST_SEVERITY_M0_WARNING = 4,
+	IETF_SYSLOG_SYSLOG_ACTIONS_CONSOLE_FILTER_FACILITY_LIST_SEVERITY_M0_NOTICE = 5,
+	IETF_SYSLOG_SYSLOG_ACTIONS_CONSOLE_FILTER_FACILITY_LIST_SEVERITY_M0_INFO = 6,
+	IETF_SYSLOG_SYSLOG_ACTIONS_CONSOLE_FILTER_FACILITY_LIST_SEVERITY_M0_DEBUG = 7,
+};
+
+enum ietf_syslog_syslog_actions_console_filter_facility_list_severity_m1 {
+	IETF_SYSLOG_SYSLOG_ACTIONS_CONSOLE_FILTER_FACILITY_LIST_SEVERITY_M1_NONE = 2147483647,
+	IETF_SYSLOG_SYSLOG_ACTIONS_CONSOLE_FILTER_FACILITY_LIST_SEVERITY_M1_ALL = -2147483648,
+};
+
+enum ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare_compare {
+	IETF_SYSLOG_SYSLOG_ACTIONS_CONSOLE_FILTER_FACILITY_LIST_ADVANCED_COMPARE_COMPARE_EQUALS = 0,
+	IETF_SYSLOG_SYSLOG_ACTIONS_CONSOLE_FILTER_FACILITY_LIST_ADVANCED_COMPARE_COMPARE_EQUALS_OR_HIGHER = 1,
+};
+
+enum ietf_syslog_syslog_actions_file_log_file_filter_facility_list_facility_m1 {
+	IETF_SYSLOG_SYSLOG_ACTIONS_FILE_LOG_FILE_FILTER_FACILITY_LIST_FACILITY_M1_ALL = 0,
+};
+
+enum ietf_syslog_syslog_actions_file_log_file_filter_facility_list_severity_m0 {
+	IETF_SYSLOG_SYSLOG_ACTIONS_FILE_LOG_FILE_FILTER_FACILITY_LIST_SEVERITY_M0_EMERGENCY = 0,
+	IETF_SYSLOG_SYSLOG_ACTIONS_FILE_LOG_FILE_FILTER_FACILITY_LIST_SEVERITY_M0_ALERT = 1,
+	IETF_SYSLOG_SYSLOG_ACTIONS_FILE_LOG_FILE_FILTER_FACILITY_LIST_SEVERITY_M0_CRITICAL = 2,
+	IETF_SYSLOG_SYSLOG_ACTIONS_FILE_LOG_FILE_FILTER_FACILITY_LIST_SEVERITY_M0_ERROR = 3,
+	IETF_SYSLOG_SYSLOG_ACTIONS_FILE_LOG_FILE_FILTER_FACILITY_LIST_SEVERITY_M0_WARNING = 4,
+	IETF_SYSLOG_SYSLOG_ACTIONS_FILE_LOG_FILE_FILTER_FACILITY_LIST_SEVERITY_M0_NOTICE = 5,
+	IETF_SYSLOG_SYSLOG_ACTIONS_FILE_LOG_FILE_FILTER_FACILITY_LIST_SEVERITY_M0_INFO = 6,
+	IETF_SYSLOG_SYSLOG_ACTIONS_FILE_LOG_FILE_FILTER_FACILITY_LIST_SEVERITY_M0_DEBUG = 7,
+};
+
+enum ietf_syslog_syslog_actions_file_log_file_filter_facility_list_severity_m1 {
+	IETF_SYSLOG_SYSLOG_ACTIONS_FILE_LOG_FILE_FILTER_FACILITY_LIST_SEVERITY_M1_NONE = 2147483647,
+	IETF_SYSLOG_SYSLOG_ACTIONS_FILE_LOG_FILE_FILTER_FACILITY_LIST_SEVERITY_M1_ALL = -2147483648,
+};
+
+enum ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare_compare {
+	IETF_SYSLOG_SYSLOG_ACTIONS_FILE_LOG_FILE_FILTER_FACILITY_LIST_ADVANCED_COMPARE_COMPARE_EQUALS = 0,
+	IETF_SYSLOG_SYSLOG_ACTIONS_FILE_LOG_FILE_FILTER_FACILITY_LIST_ADVANCED_COMPARE_COMPARE_EQUALS_OR_HIGHER = 1,
+};
+
+enum ietf_syslog_syslog_actions_remote_destination_transport {
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_TRANSPORT_NONE = 0,
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_TRANSPORT_UDP,
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_TRANSPORT_TLS,
+};
+
+enum ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity_auth_type {
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_TLS_TLS_CLIENT_IDENTITY_AUTH_TYPE_NONE = 0,
+};
+
+enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_facility_m1 {
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_FACILITY_M1_ALL = 0,
+};
+
+enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_severity_m0 {
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_SEVERITY_M0_EMERGENCY = 0,
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_SEVERITY_M0_ALERT = 1,
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_SEVERITY_M0_CRITICAL = 2,
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_SEVERITY_M0_ERROR = 3,
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_SEVERITY_M0_WARNING = 4,
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_SEVERITY_M0_NOTICE = 5,
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_SEVERITY_M0_INFO = 6,
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_SEVERITY_M0_DEBUG = 7,
+};
+
+enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_severity_m1 {
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_SEVERITY_M1_NONE = 2147483647,
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_SEVERITY_M1_ALL = -2147483648,
+};
+
+enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare_compare {
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_ADVANCED_COMPARE_COMPARE_EQUALS = 0,
+	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_ADVANCED_COMPARE_COMPARE_EQUALS_OR_HIGHER = 1,
+};
+
 struct ieee802_dot1q_bridge_bridges_bridge_component_rstp_bridge_rstp_root_port {
 	unsigned	 which;	/* the member set, from 0 */
 	union {
 		const char	*m0;
 		bool		 m1;
+	} v;
+};
+
+struct ietf_syslog_syslog_actions_console_filter_facility_list_facility {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		uint64_t	 m0;
+		enum ietf_syslog_syslog_actions_console_filter_facility_list_facility_m1	 m1;
+	} v;
+};
+
+struct ietf_syslog_syslog_actions_console_filter_facility_list_severity {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		enum ietf_syslog_syslog_actions_console_filter_facility_list_severity_m0	 m0;
+		enum ietf_syslog_syslog_actions_console_filter_facility_list_severity_m1	 m1;
+	} v;
+};
+
+struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_facility {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		uint64_t	 m0;
+		enum ietf_syslog_syslog_actions_file_log_file_filter_facility_list_facility_m1	 m1;
+	} v;
+};
+
+struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_severity {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		enum ietf_syslog_syslog_actions_file_log_file_filter_facility_list_severity_m0	 m0;
+		enum ietf_syslog_syslog_actions_file_log_file_filter_facility_list_severity_m1	 m1;
+	} v;
+};
+
+struct ietf_syslog_syslog_actions_remote_destination_udp_udp_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+		const char	*m2;
+	} v;
+};
+
+struct ietf_syslog_syslog_actions_remote_destination_tls_tls_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+		const char	*m2;
+	} v;
+};
+
+struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_facility {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		uint64_t	 m0;
+		enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_facility_m1	 m1;
+	} v;
+};
+
+struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_severity {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_severity_m0	 m0;
+		enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_severity_m1	 m1;
 	} v;
 };
 
@@ -5011,6 +5203,251 @@ struct arcana_processes {
 	const struct arcana_processes_processes	*processes;
 };
 
+/* list entry */
+struct arcana_log_logs_file {
+	const char	*name;
+	bool			 has_size;
+	uint64_t	 size;
+	const char	*modified;
+	bool			 has_packed;
+	bool		 packed;
+};
+
+/* input */
+struct arcana_log_logs_read_input {
+	const char	*name;
+	const char	*jail;
+	bool			 has_lines;
+	uint16_t	 lines;
+	bool			 has_position;
+	uint64_t	 position;
+	const char	*filter;
+};
+
+/* list entry */
+struct arcana_log_logs_read_output_line {
+	const char	*time;
+	const char	*host;
+	bool			 has_facility;
+	uint64_t	 facility;	/* identityref: a SID */
+	bool			 has_severity;
+	enum arcana_log_logs_read_output_line_severity	 severity;
+	const char	*tag;
+	const char	*pid;
+	const char	*text;
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	const char	*seen;
+};
+
+/* output */
+struct arcana_log_logs_read_output {
+	const char	*name;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_position;
+	uint64_t	 position;
+	bool			 has_rotated;
+	bool		 rotated;
+	struct {
+		size_t		 n;
+		const struct arcana_log_logs_read_output_line	*v;
+	}			 line;
+};
+
+/* container */
+struct arcana_log_logs {
+	const char	*directory;
+	struct {
+		size_t		 n;
+		const struct arcana_log_logs_file	*v;
+	}			 file;
+};
+
+/* data */
+struct arcana_log {
+	const struct arcana_log_logs	*logs;
+};
+
+/* container */
+struct ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare {
+	bool			 has_compare;
+	enum ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare_compare	 compare;
+	bool			 has_action;
+	uint64_t	 action;	/* identityref: a SID */
+};
+
+/* list entry */
+struct ietf_syslog_syslog_actions_console_filter_facility_list {
+	struct ietf_syslog_syslog_actions_console_filter_facility_list_facility	 facility;
+	struct ietf_syslog_syslog_actions_console_filter_facility_list_severity	 severity;
+	const struct ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare	*advanced_compare;
+};
+
+/* container */
+struct ietf_syslog_syslog_actions_console_filter {
+	struct {
+		size_t		 n;
+		const struct ietf_syslog_syslog_actions_console_filter_facility_list	*v;
+	}			 facility_list;
+};
+
+/* container, presence */
+struct ietf_syslog_syslog_actions_console {
+	const struct ietf_syslog_syslog_actions_console_filter	*filter;
+};
+
+/* container */
+struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare {
+	bool			 has_compare;
+	enum ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare_compare	 compare;
+	bool			 has_action;
+	uint64_t	 action;	/* identityref: a SID */
+};
+
+/* list entry */
+struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list {
+	struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_facility	 facility;
+	struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_severity	 severity;
+	const struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare	*advanced_compare;
+};
+
+/* container */
+struct ietf_syslog_syslog_actions_file_log_file_filter {
+	struct {
+		size_t		 n;
+		const struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list	*v;
+	}			 facility_list;
+};
+
+/* container */
+struct ietf_syslog_syslog_actions_file_log_file_file_rotation {
+	bool			 has_number_of_files;
+	uint32_t	 number_of_files;
+	bool			 has_max_file_size;
+	uint32_t	 max_file_size;
+	bool			 has_rollover;
+	uint32_t	 rollover;
+	bool			 has_retention;
+	uint32_t	 retention;
+};
+
+/* list entry */
+struct ietf_syslog_syslog_actions_file_log_file {
+	const char	*name;
+	const struct ietf_syslog_syslog_actions_file_log_file_filter	*filter;
+	const struct ietf_syslog_syslog_actions_file_log_file_file_rotation	*file_rotation;
+};
+
+/* container */
+struct ietf_syslog_syslog_actions_file {
+	struct {
+		size_t		 n;
+		const struct ietf_syslog_syslog_actions_file_log_file	*v;
+	}			 log_file;
+};
+
+/* list entry */
+struct ietf_syslog_syslog_actions_remote_destination_udp_udp {
+	struct ietf_syslog_syslog_actions_remote_destination_udp_udp_address	 address;
+	bool			 has_port;
+	uint16_t	 port;
+};
+
+/* container */
+struct ietf_syslog_syslog_actions_remote_destination_udp {
+	struct {
+		size_t		 n;
+		const struct ietf_syslog_syslog_actions_remote_destination_udp_udp	*v;
+	}			 udp;
+};
+
+/* container, presence */
+struct ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity {
+	enum ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity_auth_type	 auth_type;	/* the case given */
+};
+
+/* container */
+struct ietf_syslog_syslog_actions_remote_destination_tls_tls_server_authentication {
+	char			 _empty;	/* nothing in it */
+};
+
+/* list entry */
+struct ietf_syslog_syslog_actions_remote_destination_tls_tls {
+	struct ietf_syslog_syslog_actions_remote_destination_tls_tls_address	 address;
+	bool			 has_port;
+	uint16_t	 port;
+	const struct ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity	*client_identity;
+	const struct ietf_syslog_syslog_actions_remote_destination_tls_tls_server_authentication	*server_authentication;
+};
+
+/* container */
+struct ietf_syslog_syslog_actions_remote_destination_tls {
+	struct {
+		size_t		 n;
+		const struct ietf_syslog_syslog_actions_remote_destination_tls_tls	*v;
+	}			 tls;
+};
+
+/* container */
+struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare {
+	bool			 has_compare;
+	enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare_compare	 compare;
+	bool			 has_action;
+	uint64_t	 action;	/* identityref: a SID */
+};
+
+/* list entry */
+struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list {
+	struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_facility	 facility;
+	struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_severity	 severity;
+	const struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare	*advanced_compare;
+};
+
+/* container */
+struct ietf_syslog_syslog_actions_remote_destination_filter {
+	struct {
+		size_t		 n;
+		const struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list	*v;
+	}			 facility_list;
+};
+
+/* list entry */
+struct ietf_syslog_syslog_actions_remote_destination {
+	const char	*name;
+	enum ietf_syslog_syslog_actions_remote_destination_transport	 transport;	/* the case given */
+	const struct ietf_syslog_syslog_actions_remote_destination_udp	*udp;
+	const struct ietf_syslog_syslog_actions_remote_destination_tls	*tls;
+	const struct ietf_syslog_syslog_actions_remote_destination_filter	*filter;
+	bool			 has_facility_override;
+	uint64_t	 facility_override;	/* identityref: a SID */
+};
+
+/* container */
+struct ietf_syslog_syslog_actions_remote {
+	struct {
+		size_t		 n;
+		const struct ietf_syslog_syslog_actions_remote_destination	*v;
+	}			 destination;
+};
+
+/* container */
+struct ietf_syslog_syslog_actions {
+	const struct ietf_syslog_syslog_actions_console	*console;
+	const struct ietf_syslog_syslog_actions_file	*file;
+	const struct ietf_syslog_syslog_actions_remote	*remote;
+};
+
+/* container, presence */
+struct ietf_syslog_syslog {
+	const struct ietf_syslog_syslog_actions	*actions;
+};
+
+/* data */
+struct ietf_syslog {
+	const struct ietf_syslog_syslog	*syslog;
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -6235,6 +6672,118 @@ int	arcana_processes_processes_encode(const struct arcana_processes_processes *,
 	    struct cbl_ybuf *);
 int	arcana_processes_processes_decode(const void *, size_t, struct arcana_processes_processes *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_log_logs_file_encode(const struct arcana_log_logs_file *,
+	    struct cbl_ybuf *);
+int	arcana_log_logs_file_decode(const void *, size_t, struct arcana_log_logs_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_log_logs_read_input_encode(const struct arcana_log_logs_read_input *,
+	    struct cbl_ybuf *);
+int	arcana_log_logs_read_input_decode(const void *, size_t, struct arcana_log_logs_read_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_log_logs_read_output_line_encode(const struct arcana_log_logs_read_output_line *,
+	    struct cbl_ybuf *);
+int	arcana_log_logs_read_output_line_decode(const void *, size_t, struct arcana_log_logs_read_output_line *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_log_logs_read_output_encode(const struct arcana_log_logs_read_output *,
+	    struct cbl_ybuf *);
+int	arcana_log_logs_read_output_decode(const void *, size_t, struct arcana_log_logs_read_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_log_logs_encode(const struct arcana_log_logs *,
+	    struct cbl_ybuf *);
+int	arcana_log_logs_decode(const void *, size_t, struct arcana_log_logs *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare_encode(const struct ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare_decode(const void *, size_t, struct ietf_syslog_syslog_actions_console_filter_facility_list_advanced_compare *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_console_filter_facility_list_encode(const struct ietf_syslog_syslog_actions_console_filter_facility_list *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_console_filter_facility_list_decode(const void *, size_t, struct ietf_syslog_syslog_actions_console_filter_facility_list *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_console_filter_encode(const struct ietf_syslog_syslog_actions_console_filter *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_console_filter_decode(const void *, size_t, struct ietf_syslog_syslog_actions_console_filter *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_console_encode(const struct ietf_syslog_syslog_actions_console *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_console_decode(const void *, size_t, struct ietf_syslog_syslog_actions_console *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare_encode(const struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare_decode(const void *, size_t, struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list_advanced_compare *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_file_log_file_filter_facility_list_encode(const struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_file_log_file_filter_facility_list_decode(const void *, size_t, struct ietf_syslog_syslog_actions_file_log_file_filter_facility_list *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_file_log_file_filter_encode(const struct ietf_syslog_syslog_actions_file_log_file_filter *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_file_log_file_filter_decode(const void *, size_t, struct ietf_syslog_syslog_actions_file_log_file_filter *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_file_log_file_file_rotation_encode(const struct ietf_syslog_syslog_actions_file_log_file_file_rotation *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_file_log_file_file_rotation_decode(const void *, size_t, struct ietf_syslog_syslog_actions_file_log_file_file_rotation *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_file_log_file_encode(const struct ietf_syslog_syslog_actions_file_log_file *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_file_log_file_decode(const void *, size_t, struct ietf_syslog_syslog_actions_file_log_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_file_encode(const struct ietf_syslog_syslog_actions_file *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_file_decode(const void *, size_t, struct ietf_syslog_syslog_actions_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_remote_destination_udp_udp_encode(const struct ietf_syslog_syslog_actions_remote_destination_udp_udp *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_remote_destination_udp_udp_decode(const void *, size_t, struct ietf_syslog_syslog_actions_remote_destination_udp_udp *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_remote_destination_udp_encode(const struct ietf_syslog_syslog_actions_remote_destination_udp *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_remote_destination_udp_decode(const void *, size_t, struct ietf_syslog_syslog_actions_remote_destination_udp *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity_encode(const struct ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity_decode(const void *, size_t, struct ietf_syslog_syslog_actions_remote_destination_tls_tls_client_identity *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_remote_destination_tls_tls_server_authentication_encode(const struct ietf_syslog_syslog_actions_remote_destination_tls_tls_server_authentication *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_remote_destination_tls_tls_server_authentication_decode(const void *, size_t, struct ietf_syslog_syslog_actions_remote_destination_tls_tls_server_authentication *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_remote_destination_tls_tls_encode(const struct ietf_syslog_syslog_actions_remote_destination_tls_tls *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_remote_destination_tls_tls_decode(const void *, size_t, struct ietf_syslog_syslog_actions_remote_destination_tls_tls *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_remote_destination_tls_encode(const struct ietf_syslog_syslog_actions_remote_destination_tls *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_remote_destination_tls_decode(const void *, size_t, struct ietf_syslog_syslog_actions_remote_destination_tls *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare_encode(const struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare_decode(const void *, size_t, struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced_compare *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_remote_destination_filter_facility_list_encode(const struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_remote_destination_filter_facility_list_decode(const void *, size_t, struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_remote_destination_filter_encode(const struct ietf_syslog_syslog_actions_remote_destination_filter *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_remote_destination_filter_decode(const void *, size_t, struct ietf_syslog_syslog_actions_remote_destination_filter *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_remote_destination_encode(const struct ietf_syslog_syslog_actions_remote_destination *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_remote_destination_decode(const void *, size_t, struct ietf_syslog_syslog_actions_remote_destination *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_remote_encode(const struct ietf_syslog_syslog_actions_remote *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_remote_decode(const void *, size_t, struct ietf_syslog_syslog_actions_remote *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_actions_encode(const struct ietf_syslog_syslog_actions *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_actions_decode(const void *, size_t, struct ietf_syslog_syslog_actions *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_syslog_syslog_encode(const struct ietf_syslog_syslog *,
+	    struct cbl_ybuf *);
+int	ietf_syslog_syslog_decode(const void *, size_t, struct ietf_syslog_syslog *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -6361,5 +6910,12 @@ int	arcana_processes_processes_process_signal_action(cbl_req *, const struct cbl
 int	arcana_processes_processes_process_renice_action(cbl_req *, const struct cbl_bytes *,
 	    const struct arcana_processes_processes_process_renice_input *,
 	    struct arcana_processes_processes_process_renice_output *, cbl_yarena *);
+int	arcana_log_logs_get(cbl_req *, struct arcana_log *, cbl_yarena *);
+int	arcana_log_logs_read_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_log_logs_read_input *,
+	    struct arcana_log_logs_read_output *, cbl_yarena *);
+int	ietf_syslog_syslog_get(cbl_req *, struct ietf_syslog *, cbl_yarena *);
+int	ietf_syslog_syslog_edit(cbl_req *, const struct ietf_syslog *,
+	    const struct ietf_syslog *);
 
 #endif /* !_YMODEL_H_ */

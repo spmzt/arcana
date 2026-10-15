@@ -23,3 +23,4 @@ sysctl	arcana-sysctl@2026-10-14
 sysctl-parts	arcana-sysctl@2026-10-14
 kernel	arcana-kernel@2026-10-14
 processes	arcana-processes@2026-10-14
+log	arcana-log@2026-10-14
