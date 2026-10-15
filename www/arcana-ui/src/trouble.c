@@ -118,7 +118,8 @@ verdict(struct html *h, const char *where, const ucl_object_t *v)
 {
 	const char	*vd = jstr(v, "verdict");
 
-	if (v == NULL || vd == NULL)
+	/* An empty ruleset decides nothing: the kernel's default does. */
+	if (v == NULL || vd == NULL || strcmp(vd, "none") == 0)
 		return;
 	h_fmt(h, "<span class=\"chip fw %s\"", strcmp(vd, "deny") == 0 ? "bad" :
 	    strcmp(vd, "allow") == 0 ? "good" : "warn");
@@ -224,6 +225,10 @@ result(struct html *h)
 	} else if (strcmp(sev, "warn") == 0) {
 		h_raw(h, "<b>It gets through, with a doubt:</b> ");
 		h_txt(h, jstr(f, "what"));
+	} else if (jstr(r, "end.how") != NULL && strcmp(jstr(r, "end.how"),
+	    "leaves") == 0) {
+		h_raw(h, "<b>Nothing found that stops it here.</b> ");
+		h_txt(h, jstr(r, "end.what"));
 	} else
 		h_raw(h, "<b>Nothing found that stops it.</b> The places "
 		    "asked would let it through, and its reply back.");
@@ -235,6 +240,9 @@ result(struct html *h)
 	it = NULL;
 	while ((f = ucl_object_iterate(jget(r, "findings"), &it, true)) !=
 	    NULL) {
+		/* What the banner says already. */
+		if (strcmp(jstr(f, "severity"), "ok") == 0)
+			continue;
 		h_fmt(h, "<li class=\"%s\"><span class=\"chip %s\">%s</span>",
 		    jstr(f, "severity"), strcmp(jstr(f, "severity"), "bad") ==
 		    0 ? "bad" : strcmp(jstr(f, "severity"), "warn") == 0 ?
