@@ -483,7 +483,21 @@
   console-update, source-head and source-log, config-export and
   config-apply as actions) and arcana-jail-files (71 900, an augment of
   arcana-jails) (superbia/yhost.c and yagent.c, ira/yjf.c,
-  yang_host_agent).  Next: 3.1.11 probe and 3.1.12 SD-WAN
+  yang_host_agent).  3.1.11 and 3.1.12: share/yang/arcana-probe
+  (72 000: the targets with their thresholds as configuration, what the
+  probes have seen as state, each sample taken apart from its row, a
+  read after a time) and arcana-sdwan (72 100: the rules, the steer
+  and the instances the console writes as configuration; the edge's
+  state: rules with counters, steer with the probes' say, BIRD, DHCP
+  with leases, DNS, proxy with its CA, IDS with alerts, the record, the
+  keys, the faults) (gula/yprobe.c, invidia/ysd.c, yang_sdwan); and
+  arcana-sshd (72 300: sshd -T's settings, the host keys with their
+  certificates, the users' keys, the user CAs; superbia/ysshd.c).
+  Every operation of arcana.yaml has its YANG model now, shown in the
+  Schema panel (the network family's by ietf-ip, arcana-interfaces,
+  ietf-routing and arcana-network-instance); the JSON stays on the
+  wire until 3.4's streams.  Next: 2.8
+  yang-library, then 3.2 (notifications)
   (faults as ietf-alarms), and the rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not

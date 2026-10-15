@@ -374,4 +374,34 @@ int	yagent_log_from_json(const char *commit, const char *log,
 int	yjf_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_jails_jails_arcjf_files *out);
 
+/*
+ * arcana-probe (gula/yprobe.c): sdwan-probes' targets as
+ * configuration, the sdwan read's targets as state.
+ */
+int	yprobe_targets_from_json(const char *json, cbl_yarena *a, size_t *np,
+	    const struct arcana_probe_probes_target **vp);
+int	yprobe_state_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_probe_probes_state *out);
+
+/*
+ * arcana-sdwan (invidia/ysd.c): what the console writes (rules, steer,
+ * the instances of each kind) as configuration, the sdwan read as
+ * state.  The plain instances (bird, dhcp, dns) have one layout.
+ */
+#define	YSD_PLAIN	0
+#define	YSD_PROXY	1
+#define	YSD_IDS		2
+int	ysd_rules_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_sdwan_sdwan_rules *out);
+int	ysd_steer_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_sdwan_sdwan_steer *out);
+int	ysd_instances_from_json(const char *json, int kind, cbl_yarena *a,
+	    size_t *np, const void **vp);
+int	ysd_state_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_sdwan_sdwan_state *out);
+
+/* arcana-sshd (superbia/ysshd.c): the ssh operation's JSON. */
+int	ysshd_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_sshd_sshd *out);
+
 #endif /* !_ARCANA_COLLECT_H_ */
