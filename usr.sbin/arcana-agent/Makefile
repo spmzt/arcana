@@ -2,7 +2,7 @@ PROG=		arcana-agent
 # The Agent itself, then what it does by Archive (docs/NAMING.md).
 SRCS=		main.c handlers.c work.c
 # Superbia: identity, configuration, what is true of the host.
-SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c ysystem.c bundle.c l2.c ipfw.c
+SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c ysystem.c yhost.c yagent.c bundle.c l2.c ipfw.c
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c fwmatch.c pathcheck.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
 		rcroutes.c routes.c rtadv.c rtimes.c scope.c sdwan.c vnet.c \
@@ -15,7 +15,7 @@ SRCS+=		ymodel_schema.c
 SRCS+=		bird.c ybird.c ywg.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c wireguard.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c packages.c \
-		services.c update.c yjails.c yjobs.c ypackages.c yservices.c
+		services.c update.c yjails.c yjf.c yjobs.c ypackages.c yservices.c
 # Acedia: storage.  Avaritia: resources.  Gula: observation.
 SRCS+=		record.c \
 		pools.c storage.c ystorage.c zfskey.c xfer.c health.c resources.c stats.c trace.c procs.c yprocs.c log.c ylog.c yhist.c yev.c \
@@ -78,7 +78,9 @@ YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		ietf-syslog@2025-04-30 arcana-firewall@2026-10-15 \
 		arcana-troubleshoot@2026-10-15 arcana-history@2026-10-15 \
 		arcana-events@2026-10-15 arcana-bird@2026-10-15 \
-		arcana-wireguard@2026-10-15 arcana-netgraph@2026-10-15
+		arcana-wireguard@2026-10-15 arcana-netgraph@2026-10-15 \
+		arcana-host@2026-10-15 arcana-agent@2026-10-15 \
+		arcana-jail-files@2026-10-15
 # Modules only imported whose identities are used, their .sid files'
 # alone: the routing protocols', whose identities name a route's origin;
 # IEEE 802.1Q's types, a VLAN tag's; IEEE 802.3's PHY and PMD types;
@@ -106,7 +108,8 @@ YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-syslog:console-action,file-action,file-limit-size,file-limit-duration,remote-action,select-adv-compare \
 		-F arcana-firewall: -F arcana-troubleshoot: -F arcana-history: \
 		-F arcana-events: -F arcana-bird: -F arcana-wireguard: \
-		-F arcana-netgraph:
+		-F arcana-netgraph: -F arcana-host: -F arcana-agent: \
+		-F arcana-jail-files:
 YANG_OUT?=	${.CURDIR}/yang
 # The kinds of job, made from share/arcana/jobs.yaml as the console's
 # forms are: arcana-jobs's submodule, and yjobs_spec(), a change of it

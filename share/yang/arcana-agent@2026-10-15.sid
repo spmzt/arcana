@@ -1,0 +1,917 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-agent",
+    "module-revision": "2026-10-15",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "71700",
+        "size": "200"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-agent",
+        "sid": "71700"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent",
+        "sid": "71701"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build",
+        "sid": "71702"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/input",
+        "sid": "71703"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/input/host-keys",
+        "sid": "71704"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/input/ref",
+        "sid": "71705"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/input/source",
+        "sid": "71706"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/input/ssh-key",
+        "sid": "71707"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/output",
+        "sid": "71708"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/output/binary",
+        "sid": "71709"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/output/commit",
+        "sid": "71710"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/output/deploy-key",
+        "sid": "71711"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/output/fingerprint",
+        "sid": "71712"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/output/host-keys",
+        "sid": "71713"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/output/sha256",
+        "sid": "71714"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/build/output/version",
+        "sid": "71715"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply",
+        "sid": "71716"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input",
+        "sid": "71717"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/anyway",
+        "sid": "71718"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle",
+        "sid": "71719"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/agent",
+        "sid": "71720"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/facts",
+        "sid": "71721"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/facts/arch",
+        "sid": "71722"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/facts/cpu",
+        "sid": "71723"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/facts/disk",
+        "sid": "71724"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/facts/disk/name",
+        "sid": "71725"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/facts/disk/size",
+        "sid": "71726"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/facts/interface",
+        "sid": "71727"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/facts/interface/driver",
+        "sid": "71728"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/facts/interface/mac",
+        "sid": "71729"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/facts/interface/name",
+        "sid": "71730"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/facts/memory",
+        "sid": "71731"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/facts/ncpu",
+        "sid": "71732"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/facts/release",
+        "sid": "71733"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/file",
+        "sid": "71734"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/file/group",
+        "sid": "71735"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/file/mode",
+        "sid": "71736"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/file/owner",
+        "sid": "71737"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/file/path",
+        "sid": "71738"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/file/secret",
+        "sid": "71739"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/file/text",
+        "sid": "71740"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/host",
+        "sid": "71741"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/package",
+        "sid": "71742"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/package/name",
+        "sid": "71743"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/package/origin",
+        "sid": "71744"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/package/version",
+        "sid": "71745"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/bundle/taken",
+        "sid": "71746"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/dry-run",
+        "sid": "71747"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/input/hostname",
+        "sid": "71748"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/output",
+        "sid": "71749"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/output/applied",
+        "sid": "71750"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/output/backup",
+        "sid": "71751"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/output/file",
+        "sid": "71752"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/output/file/diff",
+        "sid": "71753"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/output/file/path",
+        "sid": "71754"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/output/file/state",
+        "sid": "71755"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/output/mismatch",
+        "sid": "71756"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/output/package",
+        "sid": "71757"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-apply/output/reboot",
+        "sid": "71758"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export",
+        "sid": "71759"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/input",
+        "sid": "71760"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/input/secrets",
+        "sid": "71761"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output",
+        "sid": "71762"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/agent",
+        "sid": "71763"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/facts",
+        "sid": "71764"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/facts/arch",
+        "sid": "71765"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/facts/cpu",
+        "sid": "71766"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/facts/disk",
+        "sid": "71767"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/facts/disk/name",
+        "sid": "71768"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/facts/disk/size",
+        "sid": "71769"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/facts/interface",
+        "sid": "71770"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/facts/interface/driver",
+        "sid": "71771"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/facts/interface/mac",
+        "sid": "71772"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/facts/interface/name",
+        "sid": "71773"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/facts/memory",
+        "sid": "71774"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/facts/ncpu",
+        "sid": "71775"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/facts/release",
+        "sid": "71776"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/file",
+        "sid": "71777"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/file/group",
+        "sid": "71778"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/file/mode",
+        "sid": "71779"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/file/owner",
+        "sid": "71780"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/file/path",
+        "sid": "71781"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/file/secret",
+        "sid": "71782"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/file/text",
+        "sid": "71783"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/host",
+        "sid": "71784"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/package",
+        "sid": "71785"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/package/name",
+        "sid": "71786"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/package/origin",
+        "sid": "71787"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/package/version",
+        "sid": "71788"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/config-export/output/taken",
+        "sid": "71789"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/console-update",
+        "sid": "71790"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/console-update/input",
+        "sid": "71791"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/console-update/input/host-keys",
+        "sid": "71792"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/console-update/input/ref",
+        "sid": "71793"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/console-update/input/source",
+        "sid": "71794"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/console-update/input/ssh-key",
+        "sid": "71795"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/console-update/output",
+        "sid": "71796"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/console-update/output/deploy-key",
+        "sid": "71797"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/console-update/output/fingerprint",
+        "sid": "71798"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/console-update/output/host-keys",
+        "sid": "71799"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-head",
+        "sid": "71800"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-head/input",
+        "sid": "71801"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-head/input/host-keys",
+        "sid": "71802"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-head/input/ref",
+        "sid": "71803"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-head/input/source",
+        "sid": "71804"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-head/input/ssh-key",
+        "sid": "71805"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-head/output",
+        "sid": "71806"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-head/output/commit",
+        "sid": "71807"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-head/output/deploy-key",
+        "sid": "71808"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-head/output/fingerprint",
+        "sid": "71809"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-head/output/host-keys",
+        "sid": "71810"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log",
+        "sid": "71811"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/input",
+        "sid": "71812"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/input/count",
+        "sid": "71813"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/input/host-keys",
+        "sid": "71814"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/input/ref",
+        "sid": "71815"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/input/source",
+        "sid": "71816"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/input/ssh-key",
+        "sid": "71817"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output",
+        "sid": "71818"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/commit",
+        "sid": "71819"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/commit-log",
+        "sid": "71820"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/commit-log/body",
+        "sid": "71821"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/commit-log/hash",
+        "sid": "71822"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/commit-log/subject",
+        "sid": "71823"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/commit-log/time",
+        "sid": "71824"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/deploy-key",
+        "sid": "71825"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/fingerprint",
+        "sid": "71826"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/host-keys",
+        "sid": "71827"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/tag",
+        "sid": "71828"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/tag/message",
+        "sid": "71829"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/source-log/output/tag/name",
+        "sid": "71830"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls",
+        "sid": "71831"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/ca",
+        "sid": "71832"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/ca/issuer",
+        "sid": "71833"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/ca/not-after",
+        "sid": "71834"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/ca/not-before",
+        "sid": "71835"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/ca/sha256",
+        "sid": "71836"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/ca/subject",
+        "sid": "71837"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/certificate",
+        "sid": "71838"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/certificate/chain",
+        "sid": "71839"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/certificate/issuer",
+        "sid": "71840"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/certificate/not-after",
+        "sid": "71841"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/certificate/not-before",
+        "sid": "71842"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/certificate/sha256",
+        "sid": "71843"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/certificate/subject",
+        "sid": "71844"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/csr",
+        "sid": "71845"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/csr/input",
+        "sid": "71846"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/csr/output",
+        "sid": "71847"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/csr/output/csr",
+        "sid": "71848"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/install",
+        "sid": "71849"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/install/input",
+        "sid": "71850"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/install/input/ca",
+        "sid": "71851"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/install/input/certificate",
+        "sid": "71852"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/install/input/peer",
+        "sid": "71853"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/install/output",
+        "sid": "71854"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/tls/pending",
+        "sid": "71855"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport",
+        "sid": "71856"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listener",
+        "sid": "71857"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listener/transport",
+        "sid": "71858"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listener/up",
+        "sid": "71859"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listener/uri",
+        "sid": "71860"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/listener/why",
+        "sid": "71861"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/retry",
+        "sid": "71862"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/retry/input",
+        "sid": "71863"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/retry/output",
+        "sid": "71864"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/sctp",
+        "sid": "71865"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/session",
+        "sid": "71866"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/session/address",
+        "sid": "71867"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/session/name",
+        "sid": "71868"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/session/since",
+        "sid": "71869"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/transport/session/transport",
+        "sid": "71870"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/update",
+        "sid": "71871"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/update/input",
+        "sid": "71872"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/update/input/binary",
+        "sid": "71873"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/update/input/restart",
+        "sid": "71874"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/update/input/sha256",
+        "sid": "71875"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/update/output",
+        "sid": "71876"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/update/output/restarting",
+        "sid": "71877"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-agent:agent/update/output/version",
+        "sid": "71878"
+      }
+    ]
+  }
+}

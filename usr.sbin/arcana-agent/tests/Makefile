@@ -71,6 +71,14 @@ CFLAGS.ybird.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 CFLAGS.ywg.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 CFLAGS.yng.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 LDADD.yplug+=	${CBLINK_LIBS} ${UCL_LIBS}
+# ymisc: the host, the agent and the jails' files as their modules have them.
+PROGS+=		ymisc
+SRCS.ymisc=	ymisc_test.c yhost.c yagent.c yjf.c yjson.c ymodel_schema.c
+CFLAGS.ymisc_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yhost.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+CFLAGS.yagent.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+CFLAGS.yjf.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.ymisc+=	${CBLINK_LIBS} ${UCL_LIBS}
 # yprocs: the processes operation's replies as arcana-processes has them.
 PROGS+=		yprocs
 SRCS.yprocs=	yprocs_test.c yprocs.c yjson.c ymodel_schema.c

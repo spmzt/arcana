@@ -255,6 +255,10 @@ struct arcana_jails_jails_jail_restart_output;
 struct arcana_jails_jails_jail_kill_input;
 struct arcana_jails_jails_jail_kill_output;
 struct arcana_jails_jails_jail;
+struct arcana_jails_jails_arcjf_files_defaults;
+struct arcana_jails_jails_arcjf_files_template;
+struct arcana_jails_jails_arcjf_files_jail;
+struct arcana_jails_jails_arcjf_files;
 struct arcana_jails_jails;
 struct arcana_jails;
 struct arcana_services_services_service_variable;
@@ -544,6 +548,56 @@ struct arcana_netgraph_netgraph_node_hook;
 struct arcana_netgraph_netgraph_node;
 struct arcana_netgraph_netgraph;
 struct arcana_netgraph;
+struct arcana_host_host_agent;
+struct arcana_host_host_stats_pool;
+struct arcana_host_host_stats;
+struct arcana_host_host_certificates_trusted;
+struct arcana_host_host_certificates_untrusted;
+struct arcana_host_host_certificates;
+struct arcana_host_host;
+struct arcana_host;
+struct arcana_agent_agent_transport_listener;
+struct arcana_agent_agent_transport_session;
+struct arcana_agent_agent_transport_retry_input;
+struct arcana_agent_agent_transport_retry_output;
+struct arcana_agent_agent_transport;
+struct arcana_agent_agent_tls_certificate;
+struct arcana_agent_agent_tls_ca;
+struct arcana_agent_agent_tls_csr_input;
+struct arcana_agent_agent_tls_csr_output;
+struct arcana_agent_agent_tls_install_input;
+struct arcana_agent_agent_tls_install_output;
+struct arcana_agent_agent_tls;
+struct arcana_agent_agent_update_input;
+struct arcana_agent_agent_update_output;
+struct arcana_agent_agent_build_input;
+struct arcana_agent_agent_build_output;
+struct arcana_agent_agent_console_update_input;
+struct arcana_agent_agent_console_update_output;
+struct arcana_agent_agent_source_head_input;
+struct arcana_agent_agent_source_head_output;
+struct arcana_agent_agent_source_log_input;
+struct arcana_agent_agent_source_log_output_commit_log;
+struct arcana_agent_agent_source_log_output_tag;
+struct arcana_agent_agent_source_log_output;
+struct arcana_agent_agent_config_export_input;
+struct arcana_agent_agent_config_export_output_facts_interface;
+struct arcana_agent_agent_config_export_output_facts_disk;
+struct arcana_agent_agent_config_export_output_facts;
+struct arcana_agent_agent_config_export_output_package;
+struct arcana_agent_agent_config_export_output_file;
+struct arcana_agent_agent_config_export_output;
+struct arcana_agent_agent_config_apply_input_bundle_facts_interface;
+struct arcana_agent_agent_config_apply_input_bundle_facts_disk;
+struct arcana_agent_agent_config_apply_input_bundle_facts;
+struct arcana_agent_agent_config_apply_input_bundle_package;
+struct arcana_agent_agent_config_apply_input_bundle_file;
+struct arcana_agent_agent_config_apply_input_bundle;
+struct arcana_agent_agent_config_apply_input;
+struct arcana_agent_agent_config_apply_output_file;
+struct arcana_agent_agent_config_apply_output;
+struct arcana_agent_agent;
+struct arcana_agent;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -1831,6 +1885,19 @@ enum arcana_events_event_fault_state {
 enum arcana_events_event_jail_state_state {
 	ARCANA_EVENTS_EVENT_JAIL_STATE_STATE_RUNNING = 0,
 	ARCANA_EVENTS_EVENT_JAIL_STATE_STATE_STOPPED = 1,
+};
+
+enum arcana_agent_agent_transport_listener_transport {
+	ARCANA_AGENT_AGENT_TRANSPORT_LISTENER_TRANSPORT_TCP = 0,
+	ARCANA_AGENT_AGENT_TRANSPORT_LISTENER_TRANSPORT_SCTP = 1,
+	ARCANA_AGENT_AGENT_TRANSPORT_LISTENER_TRANSPORT_UNIX = 2,
+};
+
+enum arcana_agent_agent_config_apply_output_file_state {
+	ARCANA_AGENT_AGENT_CONFIG_APPLY_OUTPUT_FILE_STATE_SAME = 0,
+	ARCANA_AGENT_AGENT_CONFIG_APPLY_OUTPUT_FILE_STATE_CHANGED = 1,
+	ARCANA_AGENT_AGENT_CONFIG_APPLY_OUTPUT_FILE_STATE_NEW = 2,
+	ARCANA_AGENT_AGENT_CONFIG_APPLY_OUTPUT_FILE_STATE_WITHHELD = 3,
 };
 
 struct ieee802_dot1q_bridge_bridges_bridge_component_rstp_bridge_rstp_root_port {
@@ -4950,9 +5017,45 @@ struct arcana_jails_jails_jail {
 	const char	*lne;
 	const struct arcana_jails_jails_jail_arcbird_bird	*arcbird_bird;
 	const struct arcana_jails_jails_jail_arcfw_firewall	*arcfw_firewall;
+	struct {
+		size_t		 n;
+		const uint64_t	 *v;
+	}			 archost_plugin;	/* identityref: a SID */
 	const struct arcana_jails_jails_jail_arcng_netgraph	*arcng_netgraph;
 	const struct arcana_jails_jails_jail_arcpkg_packages	*arcpkg_packages;
 	const struct arcana_jails_jails_jail_arcwg_wireguard	*arcwg_wireguard;
+};
+
+/* container */
+struct arcana_jails_jails_arcjf_files_defaults {
+	const char	*path;
+	const char	*text;
+};
+
+/* list entry */
+struct arcana_jails_jails_arcjf_files_template {
+	const char	*name;
+	const char	*text;
+};
+
+/* list entry */
+struct arcana_jails_jails_arcjf_files_jail {
+	const char	*name;
+	const char	*text;
+};
+
+/* container */
+struct arcana_jails_jails_arcjf_files {
+	const char	*directory;
+	const struct arcana_jails_jails_arcjf_files_defaults	*defaults;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_arcjf_files_template	*v;
+	}			 template;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_arcjf_files_jail	*v;
+	}			 jail;
 };
 
 /* container */
@@ -4969,6 +5072,7 @@ struct arcana_jails_jails {
 		size_t		 n;
 		const struct arcana_jails_jails_jail	*v;
 	}			 jail;
+	const struct arcana_jails_jails_arcjf_files	*arcjf_files;
 };
 
 /* data */
@@ -8327,6 +8431,544 @@ struct arcana_netgraph {
 	const struct arcana_netgraph_netgraph	*netgraph;
 };
 
+/* container */
+struct arcana_host_host_agent {
+	const char	*version;
+	const char	*build;
+};
+
+/* list entry */
+struct arcana_host_host_stats_pool {
+	const char	*name;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_allocated;
+	uint64_t	 allocated;
+	bool			 has_free;
+	uint64_t	 free;
+	const char	*health;
+};
+
+/* container */
+struct arcana_host_host_stats {
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 1 fraction digits */
+	bool			 has_load1;
+	int64_t		 load1;	/* decimal64, 2 fraction digits */
+	bool			 has_load5;
+	int64_t		 load5;	/* decimal64, 2 fraction digits */
+	bool			 has_load15;
+	int64_t		 load15;	/* decimal64, 2 fraction digits */
+	bool			 has_memory_total;
+	uint64_t	 memory_total;
+	bool			 has_memory_used;
+	uint64_t	 memory_used;
+	bool			 has_memory_inactive;
+	uint64_t	 memory_inactive;
+	bool			 has_memory_free;
+	uint64_t	 memory_free;
+	bool			 has_swap_total;
+	uint64_t	 swap_total;
+	bool			 has_swap_used;
+	uint64_t	 swap_used;
+	struct {
+		size_t		 n;
+		const struct arcana_host_host_stats_pool	*v;
+	}			 pool;
+};
+
+/* list entry */
+struct arcana_host_host_certificates_trusted {
+	const char	*file;
+	const char	*subject;
+	const char	*common_name;
+	const char	*organization;
+	const char	*country;
+	const char	*issuer;
+	const char	*not_before;
+	const char	*not_after;
+	const char	*sha256;
+	const char	*key;
+	bool			 has_ca;
+	bool		 ca;
+	bool			 has_self_signed;
+	bool		 self_signed;
+	const char	*local;
+};
+
+/* list entry */
+struct arcana_host_host_certificates_untrusted {
+	const char	*file;
+	const char	*subject;
+	const char	*common_name;
+	const char	*organization;
+	const char	*country;
+	const char	*issuer;
+	const char	*not_before;
+	const char	*not_after;
+	const char	*sha256;
+	const char	*key;
+	bool			 has_ca;
+	bool		 ca;
+	bool			 has_self_signed;
+	bool		 self_signed;
+	const char	*local;
+};
+
+/* container */
+struct arcana_host_host_certificates {
+	const char	*localbase;
+	const char	*added_dir;
+	const char	*distrusted_dir;
+	bool			 has_certctl;
+	bool		 certctl;
+	const char	*now;
+	struct {
+		size_t		 n;
+		const struct arcana_host_host_certificates_trusted	*v;
+	}			 trusted;
+	struct {
+		size_t		 n;
+		const struct arcana_host_host_certificates_untrusted	*v;
+	}			 untrusted;
+};
+
+/* container */
+struct arcana_host_host {
+	const char	*hostname;
+	const char	*sysname;
+	const char	*release;
+	const char	*machine;
+	bool			 has_osreldate;
+	uint32_t	 osreldate;
+	bool			 has_ncpu;
+	uint32_t	 ncpu;
+	bool			 has_physmem;
+	uint64_t	 physmem;
+	const char	*boot_time;
+	const char	*time;
+	bool			 has_securelevel;
+	int32_t		 securelevel;
+	bool			 has_privileged;
+	bool		 privileged;
+	const struct arcana_host_host_agent	*agent;
+	struct {
+		size_t		 n;
+		const uint64_t	 *v;
+	}			 plugin;	/* identityref: a SID */
+	const struct arcana_host_host_stats	*stats;
+	const struct arcana_host_host_certificates	*certificates;
+};
+
+/* data */
+struct arcana_host {
+	const struct arcana_host_host	*host;
+};
+
+/* list entry */
+struct arcana_agent_agent_transport_listener {
+	const char	*uri;
+	bool			 has_transport;
+	enum arcana_agent_agent_transport_listener_transport	 transport;
+	bool			 has_up;
+	bool		 up;
+	const char	*why;
+};
+
+/* list entry */
+struct arcana_agent_agent_transport_session {
+	const char	*transport;
+	const char	*address;
+	const char	*name;
+	const char	*since;
+};
+
+/* input */
+struct arcana_agent_agent_transport_retry_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_agent_agent_transport_retry_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* container */
+struct arcana_agent_agent_transport {
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_transport_listener	*v;
+	}			 listener;
+	bool			 has_sctp;
+	bool		 sctp;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_transport_session	*v;
+	}			 session;
+};
+
+/* container */
+struct arcana_agent_agent_tls_certificate {
+	const char	*subject;
+	const char	*issuer;
+	const char	*not_before;
+	const char	*not_after;
+	const char	*sha256;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 chain;
+};
+
+/* list entry */
+struct arcana_agent_agent_tls_ca {
+	const char	*subject;
+	const char	*issuer;
+	const char	*not_before;
+	const char	*not_after;
+	const char	*sha256;
+};
+
+/* input */
+struct arcana_agent_agent_tls_csr_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_agent_agent_tls_csr_output {
+	const char	*csr;
+};
+
+/* input */
+struct arcana_agent_agent_tls_install_input {
+	const char	*certificate;
+	const char	*ca;
+	const char	*peer;
+};
+
+/* output */
+struct arcana_agent_agent_tls_install_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* container */
+struct arcana_agent_agent_tls {
+	const struct arcana_agent_agent_tls_certificate	*certificate;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_tls_ca	*v;
+	}			 ca;
+	bool			 has_pending;
+	bool		 pending;
+};
+
+/* input */
+struct arcana_agent_agent_update_input {
+	struct cbl_bytes	 binary;
+	const char	*sha256;
+	bool			 has_restart;
+	bool		 restart;
+};
+
+/* output */
+struct arcana_agent_agent_update_output {
+	const char	*version;
+	bool			 has_restarting;
+	bool		 restarting;
+};
+
+/* input */
+struct arcana_agent_agent_build_input {
+	const char	*source;
+	const char	*ref;
+	const char	*host_keys;
+	const char	*ssh_key;
+};
+
+/* output */
+struct arcana_agent_agent_build_output {
+	struct cbl_bytes	 binary;
+	const char	*sha256;
+	const char	*version;
+	const char	*commit;
+	const char	*host_keys;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 fingerprint;
+	const char	*deploy_key;
+};
+
+/* input */
+struct arcana_agent_agent_console_update_input {
+	const char	*source;
+	const char	*ref;
+	const char	*host_keys;
+	const char	*ssh_key;
+};
+
+/* output */
+struct arcana_agent_agent_console_update_output {
+	const char	*host_keys;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 fingerprint;
+	const char	*deploy_key;
+};
+
+/* input */
+struct arcana_agent_agent_source_head_input {
+	const char	*source;
+	const char	*ref;
+	const char	*host_keys;
+	const char	*ssh_key;
+};
+
+/* output */
+struct arcana_agent_agent_source_head_output {
+	const char	*commit;
+	const char	*host_keys;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 fingerprint;
+	const char	*deploy_key;
+};
+
+/* input */
+struct arcana_agent_agent_source_log_input {
+	const char	*source;
+	const char	*ref;
+	const char	*host_keys;
+	const char	*ssh_key;
+	bool			 has_count;
+	uint32_t	 count;
+};
+
+/* list entry */
+struct arcana_agent_agent_source_log_output_commit_log {
+	const char	*hash;
+	const char	*time;
+	const char	*subject;
+	const char	*body;
+};
+
+/* list entry */
+struct arcana_agent_agent_source_log_output_tag {
+	const char	*name;
+	const char	*message;
+};
+
+/* output */
+struct arcana_agent_agent_source_log_output {
+	const char	*commit;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_source_log_output_commit_log	*v;
+	}			 commit_log;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_source_log_output_tag	*v;
+	}			 tag;
+	const char	*host_keys;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 fingerprint;
+	const char	*deploy_key;
+};
+
+/* input */
+struct arcana_agent_agent_config_export_input {
+	bool			 has_secrets;
+	bool		 secrets;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_export_output_facts_interface {
+	const char	*name;
+	const char	*driver;
+	const char	*mac;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_export_output_facts_disk {
+	const char	*name;
+	bool			 has_size;
+	uint64_t	 size;
+};
+
+/* container */
+struct arcana_agent_agent_config_export_output_facts {
+	const char	*arch;
+	const char	*release;
+	const char	*cpu;
+	bool			 has_ncpu;
+	uint32_t	 ncpu;
+	bool			 has_memory;
+	uint64_t	 memory;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_export_output_facts_interface	*v;
+	}			 interface;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_export_output_facts_disk	*v;
+	}			 disk;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_export_output_package {
+	const char	*name;
+	const char	*origin;
+	const char	*version;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_export_output_file {
+	const char	*path;
+	const char	*mode;
+	const char	*owner;
+	const char	*group;
+	const char	*text;
+	bool			 has_secret;
+	bool		 secret;
+};
+
+/* output */
+struct arcana_agent_agent_config_export_output {
+	const char	*host;
+	const char	*agent;
+	const char	*taken;
+	const struct arcana_agent_agent_config_export_output_facts	*facts;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_export_output_package	*v;
+	}			 package;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_export_output_file	*v;
+	}			 file;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_apply_input_bundle_facts_interface {
+	const char	*name;
+	const char	*driver;
+	const char	*mac;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_apply_input_bundle_facts_disk {
+	const char	*name;
+	bool			 has_size;
+	uint64_t	 size;
+};
+
+/* container */
+struct arcana_agent_agent_config_apply_input_bundle_facts {
+	const char	*arch;
+	const char	*release;
+	const char	*cpu;
+	bool			 has_ncpu;
+	uint32_t	 ncpu;
+	bool			 has_memory;
+	uint64_t	 memory;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_apply_input_bundle_facts_interface	*v;
+	}			 interface;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_apply_input_bundle_facts_disk	*v;
+	}			 disk;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_apply_input_bundle_package {
+	const char	*name;
+	const char	*origin;
+	const char	*version;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_apply_input_bundle_file {
+	const char	*path;
+	const char	*mode;
+	const char	*owner;
+	const char	*group;
+	const char	*text;
+	bool			 has_secret;
+	bool		 secret;
+};
+
+/* container */
+struct arcana_agent_agent_config_apply_input_bundle {
+	const char	*host;
+	const char	*agent;
+	const char	*taken;
+	const struct arcana_agent_agent_config_apply_input_bundle_facts	*facts;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_apply_input_bundle_package	*v;
+	}			 package;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_apply_input_bundle_file	*v;
+	}			 file;
+};
+
+/* input */
+struct arcana_agent_agent_config_apply_input {
+	const struct arcana_agent_agent_config_apply_input_bundle	*bundle;
+	bool			 has_dry_run;
+	bool		 dry_run;
+	bool			 has_anyway;
+	bool		 anyway;
+	const char	*hostname;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_apply_output_file {
+	const char	*path;
+	bool			 has_state;
+	enum arcana_agent_agent_config_apply_output_file_state	 state;
+	const char	*diff;
+};
+
+/* output */
+struct arcana_agent_agent_config_apply_output {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 mismatch;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_apply_output_file	*v;
+	}			 file;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 package;
+	const char	*backup;
+	bool			 has_applied;
+	bool		 applied;
+	bool			 has_reboot;
+	bool		 reboot;
+};
+
+/* container */
+struct arcana_agent_agent {
+	const struct arcana_agent_agent_transport	*transport;
+	const struct arcana_agent_agent_tls	*tls;
+};
+
+/* data */
+struct arcana_agent {
+	const struct arcana_agent_agent	*agent;
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -9258,6 +9900,22 @@ int	arcana_jails_jails_jail_kill_output_decode(const void *, size_t, struct arca
 int	arcana_jails_jails_jail_encode(const struct arcana_jails_jails_jail *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_decode(const void *, size_t, struct arcana_jails_jails_jail *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_arcjf_files_defaults_encode(const struct arcana_jails_jails_arcjf_files_defaults *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_arcjf_files_defaults_decode(const void *, size_t, struct arcana_jails_jails_arcjf_files_defaults *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_arcjf_files_template_encode(const struct arcana_jails_jails_arcjf_files_template *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_arcjf_files_template_decode(const void *, size_t, struct arcana_jails_jails_arcjf_files_template *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_arcjf_files_jail_encode(const struct arcana_jails_jails_arcjf_files_jail *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_arcjf_files_jail_decode(const void *, size_t, struct arcana_jails_jails_arcjf_files_jail *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_arcjf_files_encode(const struct arcana_jails_jails_arcjf_files *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_arcjf_files_decode(const void *, size_t, struct arcana_jails_jails_arcjf_files *,
 	    cbl_yarena *, int, char *, size_t);
 int	arcana_jails_jails_encode(const struct arcana_jails_jails *,
 	    struct cbl_ybuf *);
@@ -10347,6 +11005,198 @@ int	arcana_netgraph_netgraph_encode(const struct arcana_netgraph_netgraph *,
 	    struct cbl_ybuf *);
 int	arcana_netgraph_netgraph_decode(const void *, size_t, struct arcana_netgraph_netgraph *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_agent_encode(const struct arcana_host_host_agent *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_agent_decode(const void *, size_t, struct arcana_host_host_agent *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_stats_pool_encode(const struct arcana_host_host_stats_pool *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_stats_pool_decode(const void *, size_t, struct arcana_host_host_stats_pool *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_stats_encode(const struct arcana_host_host_stats *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_stats_decode(const void *, size_t, struct arcana_host_host_stats *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_certificates_trusted_encode(const struct arcana_host_host_certificates_trusted *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_certificates_trusted_decode(const void *, size_t, struct arcana_host_host_certificates_trusted *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_certificates_untrusted_encode(const struct arcana_host_host_certificates_untrusted *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_certificates_untrusted_decode(const void *, size_t, struct arcana_host_host_certificates_untrusted *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_certificates_encode(const struct arcana_host_host_certificates *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_certificates_decode(const void *, size_t, struct arcana_host_host_certificates *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_encode(const struct arcana_host_host *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_decode(const void *, size_t, struct arcana_host_host *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_transport_listener_encode(const struct arcana_agent_agent_transport_listener *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_transport_listener_decode(const void *, size_t, struct arcana_agent_agent_transport_listener *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_transport_session_encode(const struct arcana_agent_agent_transport_session *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_transport_session_decode(const void *, size_t, struct arcana_agent_agent_transport_session *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_transport_retry_input_encode(const struct arcana_agent_agent_transport_retry_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_transport_retry_input_decode(const void *, size_t, struct arcana_agent_agent_transport_retry_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_transport_retry_output_encode(const struct arcana_agent_agent_transport_retry_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_transport_retry_output_decode(const void *, size_t, struct arcana_agent_agent_transport_retry_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_transport_encode(const struct arcana_agent_agent_transport *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_transport_decode(const void *, size_t, struct arcana_agent_agent_transport *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_certificate_encode(const struct arcana_agent_agent_tls_certificate *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_certificate_decode(const void *, size_t, struct arcana_agent_agent_tls_certificate *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_ca_encode(const struct arcana_agent_agent_tls_ca *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_ca_decode(const void *, size_t, struct arcana_agent_agent_tls_ca *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_csr_input_encode(const struct arcana_agent_agent_tls_csr_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_csr_input_decode(const void *, size_t, struct arcana_agent_agent_tls_csr_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_csr_output_encode(const struct arcana_agent_agent_tls_csr_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_csr_output_decode(const void *, size_t, struct arcana_agent_agent_tls_csr_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_install_input_encode(const struct arcana_agent_agent_tls_install_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_install_input_decode(const void *, size_t, struct arcana_agent_agent_tls_install_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_install_output_encode(const struct arcana_agent_agent_tls_install_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_install_output_decode(const void *, size_t, struct arcana_agent_agent_tls_install_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_encode(const struct arcana_agent_agent_tls *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_decode(const void *, size_t, struct arcana_agent_agent_tls *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_update_input_encode(const struct arcana_agent_agent_update_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_update_input_decode(const void *, size_t, struct arcana_agent_agent_update_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_update_output_encode(const struct arcana_agent_agent_update_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_update_output_decode(const void *, size_t, struct arcana_agent_agent_update_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_build_input_encode(const struct arcana_agent_agent_build_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_build_input_decode(const void *, size_t, struct arcana_agent_agent_build_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_build_output_encode(const struct arcana_agent_agent_build_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_build_output_decode(const void *, size_t, struct arcana_agent_agent_build_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_console_update_input_encode(const struct arcana_agent_agent_console_update_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_console_update_input_decode(const void *, size_t, struct arcana_agent_agent_console_update_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_console_update_output_encode(const struct arcana_agent_agent_console_update_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_console_update_output_decode(const void *, size_t, struct arcana_agent_agent_console_update_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_source_head_input_encode(const struct arcana_agent_agent_source_head_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_source_head_input_decode(const void *, size_t, struct arcana_agent_agent_source_head_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_source_head_output_encode(const struct arcana_agent_agent_source_head_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_source_head_output_decode(const void *, size_t, struct arcana_agent_agent_source_head_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_source_log_input_encode(const struct arcana_agent_agent_source_log_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_source_log_input_decode(const void *, size_t, struct arcana_agent_agent_source_log_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_source_log_output_commit_log_encode(const struct arcana_agent_agent_source_log_output_commit_log *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_source_log_output_commit_log_decode(const void *, size_t, struct arcana_agent_agent_source_log_output_commit_log *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_source_log_output_tag_encode(const struct arcana_agent_agent_source_log_output_tag *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_source_log_output_tag_decode(const void *, size_t, struct arcana_agent_agent_source_log_output_tag *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_source_log_output_encode(const struct arcana_agent_agent_source_log_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_source_log_output_decode(const void *, size_t, struct arcana_agent_agent_source_log_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_input_encode(const struct arcana_agent_agent_config_export_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_input_decode(const void *, size_t, struct arcana_agent_agent_config_export_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_output_facts_interface_encode(const struct arcana_agent_agent_config_export_output_facts_interface *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_output_facts_interface_decode(const void *, size_t, struct arcana_agent_agent_config_export_output_facts_interface *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_output_facts_disk_encode(const struct arcana_agent_agent_config_export_output_facts_disk *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_output_facts_disk_decode(const void *, size_t, struct arcana_agent_agent_config_export_output_facts_disk *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_output_facts_encode(const struct arcana_agent_agent_config_export_output_facts *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_output_facts_decode(const void *, size_t, struct arcana_agent_agent_config_export_output_facts *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_output_package_encode(const struct arcana_agent_agent_config_export_output_package *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_output_package_decode(const void *, size_t, struct arcana_agent_agent_config_export_output_package *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_output_file_encode(const struct arcana_agent_agent_config_export_output_file *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_output_file_decode(const void *, size_t, struct arcana_agent_agent_config_export_output_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_output_encode(const struct arcana_agent_agent_config_export_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_output_decode(const void *, size_t, struct arcana_agent_agent_config_export_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_bundle_facts_interface_encode(const struct arcana_agent_agent_config_apply_input_bundle_facts_interface *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_bundle_facts_interface_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input_bundle_facts_interface *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_bundle_facts_disk_encode(const struct arcana_agent_agent_config_apply_input_bundle_facts_disk *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_bundle_facts_disk_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input_bundle_facts_disk *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_bundle_facts_encode(const struct arcana_agent_agent_config_apply_input_bundle_facts *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_bundle_facts_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input_bundle_facts *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_bundle_package_encode(const struct arcana_agent_agent_config_apply_input_bundle_package *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_bundle_package_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input_bundle_package *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_bundle_file_encode(const struct arcana_agent_agent_config_apply_input_bundle_file *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_bundle_file_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input_bundle_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_bundle_encode(const struct arcana_agent_agent_config_apply_input_bundle *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_bundle_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input_bundle *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_encode(const struct arcana_agent_agent_config_apply_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_output_file_encode(const struct arcana_agent_agent_config_apply_output_file *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_output_file_decode(const void *, size_t, struct arcana_agent_agent_config_apply_output_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_output_encode(const struct arcana_agent_agent_config_apply_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_output_decode(const void *, size_t, struct arcana_agent_agent_config_apply_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_encode(const struct arcana_agent_agent *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_decode(const void *, size_t, struct arcana_agent_agent *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -10524,5 +11374,39 @@ int	arcana_bird_bird_routes_action(cbl_req *, const struct cbl_bytes *,
 	    struct arcana_bird_bird_routes_output *, cbl_yarena *);
 int	arcana_wireguard_wireguard_get(cbl_req *, struct arcana_wireguard *, cbl_yarena *);
 int	arcana_netgraph_netgraph_get(cbl_req *, struct arcana_netgraph *, cbl_yarena *);
+int	arcana_host_host_get(cbl_req *, struct arcana_host *, cbl_yarena *);
+int	arcana_agent_agent_get(cbl_req *, struct arcana_agent *, cbl_yarena *);
+int	arcana_agent_agent_edit(cbl_req *, const struct arcana_agent *,
+	    const struct arcana_agent *);
+int	arcana_agent_agent_transport_retry_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_transport_retry_input *,
+	    struct arcana_agent_agent_transport_retry_output *, cbl_yarena *);
+int	arcana_agent_agent_tls_csr_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_tls_csr_input *,
+	    struct arcana_agent_agent_tls_csr_output *, cbl_yarena *);
+int	arcana_agent_agent_tls_install_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_tls_install_input *,
+	    struct arcana_agent_agent_tls_install_output *, cbl_yarena *);
+int	arcana_agent_agent_update_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_update_input *,
+	    struct arcana_agent_agent_update_output *, cbl_yarena *);
+int	arcana_agent_agent_build_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_build_input *,
+	    struct arcana_agent_agent_build_output *, cbl_yarena *);
+int	arcana_agent_agent_console_update_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_console_update_input *,
+	    struct arcana_agent_agent_console_update_output *, cbl_yarena *);
+int	arcana_agent_agent_source_head_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_source_head_input *,
+	    struct arcana_agent_agent_source_head_output *, cbl_yarena *);
+int	arcana_agent_agent_source_log_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_source_log_input *,
+	    struct arcana_agent_agent_source_log_output *, cbl_yarena *);
+int	arcana_agent_agent_config_export_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_config_export_input *,
+	    struct arcana_agent_agent_config_export_output *, cbl_yarena *);
+int	arcana_agent_agent_config_apply_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_config_apply_input *,
+	    struct arcana_agent_agent_config_apply_output *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */

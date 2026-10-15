@@ -1,0 +1,391 @@
+module arcana-host {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-host";
+  prefix archost;
+
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import arcana-jails {
+    prefix arcj;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "A FreeBSD host as its agent says it: what it is (uname(3), the
+     sysctls kern.osreldate, hw.ncpu, hw.physmem, kern.boottime,
+     kern.securelevel), the agent's version and build, the plugins it
+     has (programs not the base system's, found installed: BIRD,
+     WireGuard's wg, strongSwan, Squid, dnsmasq, Suricata, c-icap),
+     how busy it is at this moment (kern.cp_time, getloadavg(3),
+     vm.stats.vm, kvm_getswapinfo(3), zpool list), and the
+     certificates OpenSSL trusts (certctl(8): /etc/ssl/certs and
+     /etc/ssl/untrusted).  The hello, list (its host), stats and certs
+     operations of arcana.yaml converted (Y-3).";
+
+  revision 2026-10-15 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.9.";
+  }
+
+  identity plugin {
+    description
+      "A program that is not the base system's, which the agent works
+       through when it is installed.";
+  }
+  identity bird {
+    base plugin;
+    description
+      "The BIRD routing daemon, through birdc(8).";
+  }
+  identity wireguard {
+    base plugin;
+    description
+      "WireGuard's keys and peers, through wg(8).";
+  }
+  identity strongswan {
+    base plugin;
+    description
+      "strongSwan's IPsec, through swanctl(8).";
+  }
+  identity squid {
+    base plugin;
+    description
+      "Squid, the SD-WAN proxy.";
+  }
+  identity dnsmasq {
+    base plugin;
+    description
+      "dnsmasq, the SD-WAN DHCP and DNS.";
+  }
+  identity suricata {
+    base plugin;
+    description
+      "Suricata, the SD-WAN IDS.";
+  }
+  identity c-icap {
+    base plugin;
+    description
+      "c-icap, beside Squid.";
+  }
+
+  grouping certificate {
+    description
+      "An X.509 certificate, as OpenSSL reads it.";
+    leaf file {
+      type string;
+      description
+        "The file it is in.";
+    }
+    leaf subject {
+      type string;
+      description
+        "Its subject.";
+    }
+    leaf common-name {
+      type string;
+      description
+        "The subject's CN.";
+    }
+    leaf organization {
+      type string;
+      description
+        "The subject's O.";
+    }
+    leaf country {
+      type string;
+      description
+        "The subject's C.";
+    }
+    leaf issuer {
+      type string;
+      description
+        "Who signed it.";
+    }
+    leaf not-before {
+      type yang:date-and-time;
+      description
+        "Valid from.";
+    }
+    leaf not-after {
+      type yang:date-and-time;
+      description
+        "Valid until.";
+    }
+    leaf sha256 {
+      type string;
+      description
+        "Its fingerprint.";
+    }
+    leaf key {
+      type string;
+      description
+        "Its key's kind and size.";
+    }
+    leaf ca {
+      type boolean;
+      description
+        "It is a CA.";
+    }
+    leaf self-signed {
+      type boolean;
+      description
+        "It signed itself.";
+    }
+    leaf local {
+      type string;
+      description
+        "The copy the host was given, when it was: its path.";
+    }
+  }
+
+  container host {
+    config false;
+    description
+      "The host.";
+    leaf hostname {
+      type string;
+      description
+        "Its name (gethostname(3)).";
+    }
+    leaf sysname {
+      type string;
+      description
+        "FreeBSD.";
+    }
+    leaf release {
+      type string;
+      description
+        "The release, uname -r.";
+    }
+    leaf machine {
+      type string;
+      description
+        "The machine, uname -m.";
+    }
+    leaf osreldate {
+      type uint32;
+      description
+        "kern.osreldate.";
+    }
+    leaf ncpu {
+      type uint32;
+      description
+        "hw.ncpu.";
+    }
+    leaf physmem {
+      type uint64;
+      units "bytes";
+      description
+        "hw.physmem.";
+    }
+    leaf boot-time {
+      type yang:date-and-time;
+      description
+        "When it booted (kern.boottime).";
+    }
+    leaf time {
+      type yang:date-and-time;
+      description
+        "Its clock, when asked.";
+    }
+    leaf securelevel {
+      type int32;
+      description
+        "kern.securelevel.";
+    }
+    leaf privileged {
+      type boolean;
+      description
+        "The agent runs as root.";
+    }
+    container agent {
+      description
+        "The agent that answers.";
+      leaf version {
+        type string;
+        description
+          "arcana-agent's version.";
+      }
+      leaf build {
+        type string {
+          length "64";
+          pattern '[0-9a-f]*';
+        }
+        description
+          "The SHA-256 of the running program: two builds of one
+           version differ in it.";
+      }
+    }
+    leaf-list plugin {
+      type identityref {
+        base plugin;
+      }
+      description
+        "The plugins the host has.";
+    }
+    container stats {
+      description
+        "How busy it is at this moment.";
+      leaf cpu {
+        type decimal64 {
+          fraction-digits 1;
+        }
+        units "percent";
+        description
+          "Of all CPUs, since the sample before (kern.cp_time).";
+      }
+      leaf load1 {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        description
+          "The one-minute load average.";
+      }
+      leaf load5 {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        description
+          "The five-minute.";
+      }
+      leaf load15 {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        description
+          "The fifteen-minute.";
+      }
+      leaf memory-total {
+        type uint64;
+        units "bytes";
+        description
+          "All memory.";
+      }
+      leaf memory-used {
+        type uint64;
+        units "bytes";
+        description
+          "Active, wired and laundry pages.";
+      }
+      leaf memory-inactive {
+        type uint64;
+        units "bytes";
+        description
+          "Inactive pages.";
+      }
+      leaf memory-free {
+        type uint64;
+        units "bytes";
+        description
+          "Free pages.";
+      }
+      leaf swap-total {
+        type uint64;
+        units "bytes";
+        description
+          "All swap.";
+      }
+      leaf swap-used {
+        type uint64;
+        units "bytes";
+        description
+          "Swap in use.";
+      }
+      list pool {
+        key "name";
+        description
+          "The ZFS pools, from zpool list.";
+        leaf name {
+          type string;
+          description
+            "The pool.";
+        }
+        leaf size {
+          type uint64;
+          units "bytes";
+          description
+            "Its size.";
+        }
+        leaf allocated {
+          type uint64;
+          units "bytes";
+          description
+            "In use.";
+        }
+        leaf free {
+          type uint64;
+          units "bytes";
+          description
+            "Free.";
+        }
+        leaf health {
+          type string;
+          description
+            "ONLINE, DEGRADED, FAULTED ...";
+        }
+      }
+    }
+    container certificates {
+      description
+        "What OpenSSL trusts (certctl(8)).";
+      leaf localbase {
+        type string;
+        description
+          "Where the packages' certificates are (/usr/local).";
+      }
+      leaf added-dir {
+        type string;
+        description
+          "Where a certificate is put to be trusted.";
+      }
+      leaf distrusted-dir {
+        type string;
+        description
+          "Where one is put to be distrusted.";
+      }
+      leaf certctl {
+        type boolean;
+        description
+          "certctl(8) is there.";
+      }
+      leaf now {
+        type yang:date-and-time;
+        description
+          "When read, which the validity is judged against.";
+      }
+      list trusted {
+        key "file";
+        description
+          "Each of /etc/ssl/certs.";
+        uses certificate;
+      }
+      list untrusted {
+        key "file";
+        description
+          "Each of /etc/ssl/untrusted.";
+        uses certificate;
+      }
+    }
+  }
+
+  augment "/arcj:jails/arcj:jail" {
+    description
+      "A running jail's plugins, and what OpenSSL trusts in it.";
+    leaf-list plugin {
+      type identityref {
+        base plugin;
+      }
+      config false;
+      description
+        "The plugins the jail has: its own programs.";
+    }
+  }
+}

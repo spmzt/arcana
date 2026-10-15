@@ -5843,6 +5843,112 @@ EOT
 	atf_check -o file:want "$y" netgraph ng.json
 }
 
+atf_test_case yang_host_agent
+yang_host_agent_head()
+{
+	atf_set "descr" "the host, the agent and the jails' files as" \
+	    "arcana-host, arcana-agent and arcana-jail-files have them: the" \
+	    "host's facts, plugins as identities, stats and trust store;" \
+	    "the agent's listeners and sessions, its TLS files, a" \
+	    "configuration bundle and an apply's report, a repository's" \
+	    "log; jail.conf.d's files; through YANG-CBOR and back"
+}
+yang_host_agent_body()
+{
+	local y="$(atf_get_srcdir)/ymisc"
+
+	cat > certs.json <<'EOT'
+{"trusted":[{"file":"/etc/ssl/certs/abc123.0","subject":"CN=Example Root CA,O=Example,C=US","cn":"Example Root CA","org":"Example","country":"US","issuer":"CN=Example Root CA,O=Example,C=US","not_before":1600000000,"not_after":1900000000,"sha256":"aa11","key":"RSA 4096","ca":true,"self_signed":true,"local":"/usr/local/etc/ssl/certs/example.pem"}],"untrusted":[{"file":"/etc/ssl/untrusted/bad.0","subject":"CN=Bad CA","cn":"Bad CA","issuer":"CN=Bad CA","not_before":1600000000,"not_after":1700000000,"sha256":"bb22","key":"RSA 2048","ca":true,"self_signed":true}],"localbase":"/usr/local","added_dir":"/usr/local/etc/ssl/certs","distrusted_dir":"/usr/local/etc/ssl/untrusted","certctl":true,"now":1791995110}
+EOT
+	cat > want <<'EOT'
+host labvm FreeBSD 16.0-CURRENT amd64 osreldate=1600000 ncpu=12 physmem=25769803776 boot=2026-10-14T15:00:00Z time=2026-10-14T16:25:10Z securelevel=-1 privileged=no
+agent 0.123.0 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+plugin bird
+plugin wireguard
+stats cpu=123 load=42/50/55 memory=25769803776/8589934592/1073741824/16106127360 swap=4294967296/0
+pool zroot size=107374182400 allocated=10737418240 free=96636764160 ONLINE
+certificates localbase=/usr/local added=/usr/local/etc/ssl/certs distrusted=/usr/local/etc/ssl/untrusted certctl=yes now=2026-10-14T16:25:10Z
+trusted /etc/ssl/certs/abc123.0 cn=Example Root CA org=Example country=US issuer=CN=Example Root CA,O=Example,C=US from=2020-09-13T12:26:40Z until=2030-03-17T17:46:40Z sha256=aa11 key=RSA 4096 ca=yes self=yes local=/usr/local/etc/ssl/certs/example.pem
+untrusted /etc/ssl/untrusted/bad.0 cn=Bad CA org=- country=- issuer=CN=Bad CA from=2020-09-13T12:26:40Z until=2023-11-14T22:13:20Z sha256=bb22 key=RSA 2048 ca=yes self=yes local=-
+yang-cbor 781 bytes, the same back
+EOT
+	atf_check -o file:want "$y" host certs.json
+	cat > transport.json <<'EOT'
+{"listeners":[{"uri":"tcp://[::]:4434","transport":"tcp","up":true},{"uri":"sctp://[::]:4434","transport":"sctp","up":false,"error":"the kernel has no SCTP"},{"uri":"unix:/var/run/arcana-agent.sock","transport":"unix","up":true}],"sctp":false,"sessions":[{"transport":"tcp","address":"[2001:db8::7]:51234","subject":"CN=console","since":1791995000}],"seen":3}
+EOT
+	cat > want <<'EOT'
+transport sctp=no
+listener tcp://[::]:4434 tcp up=yes why=-
+listener sctp://[::]:4434 sctp up=no why=the kernel has no SCTP
+listener unix:/var/run/arcana-agent.sock unix up=yes why=-
+session tcp [2001:db8::7]:51234 CN=console since=2026-10-14T16:23:20Z
+yang-cbor 176 bytes, the same back
+EOT
+	atf_check -o file:want "$y" transport transport.json
+	cat > tls.json <<'EOT'
+{"cert":{"subject":"CN=labvm","issuer":"CN=Arcana CA","not_before":"2026-10-01T00:00:00Z","not_after":"2027-10-01T00:00:00Z","sha256":"cc33","chain":["CN=Arcana CA"]},"ca":[{"subject":"CN=Arcana CA","issuer":"CN=Arcana CA","not_before":"2026-01-01T00:00:00Z","not_after":"2036-01-01T00:00:00Z","sha256":"dd44"}],"pending":false}
+EOT
+	cat > want <<'EOT'
+certificate CN=labvm issuer=CN=Arcana CA from=2026-10-01T00:00:00Z until=2027-10-01T00:00:00Z sha256=cc33 chain=CN=Arcana CA
+ca CN=Arcana CA issuer=CN=Arcana CA sha256=dd44
+pending=no
+yang-cbor 176 bytes, the same back
+EOT
+	atf_check -o file:want "$y" tls tls.json
+	cat > bundle.json <<'EOT'
+{"arcana":"host","format":1,"host":"labvm","agent":"0.122.0","taken":"2026-10-15T20:00:00Z","facts":{"arch":"amd64","release":"16.0-CURRENT","cpu":"AMD EPYC","ncpu":12,"memory":25769803776,"interfaces":[{"name":"vtnet0","driver":"vtnet","mac":"02:00:00:00:00:01"}],"disks":[{"name":"vtbd0","size":107374182400}]},"packages":[{"name":"bird3","origin":"net/bird3","version":"3.1.2"}],"files":[{"path":"/etc/rc.conf","mode":"0644","owner":"root","group":"wheel","text":"hostname=\"labvm\"\n"},{"path":"/usr/local/etc/wireguard/wg0.conf","mode":"0600","owner":"root","group":"wheel","secret":true}]}
+EOT
+	cat > want <<'EOT'
+bundle host=labvm agent=0.122.0 taken=2026-10-15T20:00:00Z
+facts amd64 16.0-CURRENT cpu=AMD EPYC ncpu=12 memory=25769803776
+interface vtnet0 vtnet 02:00:00:00:00:01
+disk vtbd0 107374182400
+package bird3 net/bird3 3.1.2
+file /etc/rc.conf mode=0644 root:wheel text=17 secret=no
+file /usr/local/etc/wireguard/wg0.conf mode=0600 root:wheel text=0 secret=yes
+yang-cbor 283 bytes, the same back
+EOT
+	atf_check -o file:want "$y" bundle bundle.json
+	cat > apply.json <<'EOT'
+{"mismatches":["interface em0 is not here"],"files":[{"path":"/etc/rc.conf","state":"changed","diff":"--- a\n+++ b\n"},{"path":"/etc/sysctl.conf","state":"same"},{"path":"/usr/local/etc/wireguard/wg0.conf","state":"withheld"}],"packages":["bird3"],"backup":"/var/backups/arcana/config-20261015T200000","applied":true,"reboot":true}
+EOT
+	cat > want <<'EOT'
+mismatch interface em0 is not here
+file /etc/rc.conf changed diff=12
+file /etc/sysctl.conf same diff=0
+file /usr/local/etc/wireguard/wg0.conf withheld diff=0
+package bird3
+backup=/var/backups/arcana/config-20261015T200000 applied=yes reboot=yes
+yang-cbor 180 bytes, the same back
+EOT
+	atf_check -o file:want "$y" apply apply.json
+	cat > log.json <<'EOT'
+[{"commit":"0785917d572e9cededae598fba95ed8f84992dd5","time":1791995110,"subject":"agent 0.122.0, console 0.183.2: BIRD, WireGuard and netgraph as YANG","body":"PLAN-SDN-YANG 3.1.8"},{"commit":"e71cf597a0bf46e0514d5f8ed904e19f8a77e4b7","time":1791990000,"subject":"agent 0.121.0","body":""}]
+EOT
+	cat > tags.json <<'EOT'
+[{"name":"v0.1","time":1700000000,"message":"The first"}]
+EOT
+	cat > want <<'EOT'
+head 0785917d572e9cededae598fba95ed8f84992dd5
+commit 0785917d572e9cededae598fba95ed8f84992dd5 2026-10-14T16:25:10Z agent 0.122.0, console 0.183.2: BIRD, WireGuard and netgraph as YANG body=19
+commit e71cf597a0bf46e0514d5f8ed904e19f8a77e4b7 2026-10-14T15:00:00Z agent 0.121.0 body=0
+tag v0.1 The first
+yang-cbor 307 bytes, the same back
+EOT
+	atf_check -o file:want "$y" log \
+	    0785917d572e9cededae598fba95ed8f84992dd5 log.json tags.json
+	cat > jf.json <<'EOT'
+{"defaults":{"path":"/etc/jail.conf.d/defaults.conf","text":"exec.clean;\n"},"dir":"/etc/jail.conf.d","templates":[{"name":"pkgbase","text":"path = \"/jails/$name\";\n"}],"jails":[{"name":"web","text":"web { }\n"}]}
+EOT
+	cat > want <<'EOT'
+files /etc/jail.conf.d defaults=/etc/jail.conf.d/defaults.conf text=12
+template pkgbase text=23
+jail web text=8
+yang-cbor 123 bytes, the same back
+EOT
+	atf_check -o file:want "$y" jail-files jf.json
+}
+
 atf_test_case fw_walk
 fw_walk_head()
 {
@@ -7073,6 +7179,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_history
 	atf_add_test_case yang_events
 	atf_add_test_case yang_plugins
+	atf_add_test_case yang_host_agent
 	atf_add_test_case fw_walk
 	atf_add_test_case firewall_aliases
 	atf_add_test_case config_bundle
