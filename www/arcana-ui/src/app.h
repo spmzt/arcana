@@ -764,6 +764,7 @@ int		 usage_if_rates(const char *, const char *, bool, double,
 int		 usage_step(const char *);
 int		 topo_addr_owner(const char *, char *, size_t, char *, size_t);
 void		 topo_poll_all(void);
+void		 topo_addr_list(struct html *, const char *);
 int		 topo_gw_owner(const char *, int, const char *, char *, size_t,
 		    char *, size_t);
 bool		 ecmp_shown(void);
@@ -834,6 +835,13 @@ bool		 sdwan_action(const char *, const char *, const char *);
 void		 view_trouble(struct html *);
 bool		 trouble_form(const char *, const ucl_object_t *);
 bool		 trouble_action(const char *, const char *, const char *);
+void		 trouble_loc(char *, size_t);
+void		 trouble_open(const char *);
+
+/* main.c: what a control does, and the address's fields. */
+void		 dispatch(const char *, const char *, const char *);
+void		 loc_enc(char *, size_t, const char *);
+void		 loc_dec(char *, size_t, const char *);
 bool		 sdwan_form(const char *, const ucl_object_t *);
 bool		 sdwan_modal(struct html *);
 bool		 sdwan_blocked(void);

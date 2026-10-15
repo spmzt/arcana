@@ -109,6 +109,7 @@ bytes on the wire, where it was 9.
 | 69 800 | 100 | `ieee802-dot1q-rstp-bridge@2025-02-04`, IEEE 802.1Q | `share/yang/ieee802-dot1q-rstp-bridge@2025-02-04.sid` (58 used) |
 | 69 900 | 100 | `arcana-log` | `share/yang/arcana-log@2026-10-14.sid` (30 used) |
 | 70 000 | 200 | `ietf-syslog@2025-04-30`, RFC 9742 (no IETF range) | `share/yang/ietf-syslog@2025-04-30.sid` (109 used) |
+| 70 200 | 300 | `arcana-firewall` | `share/yang/arcana-firewall@2026-10-15.sid` (223 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

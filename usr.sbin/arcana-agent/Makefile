@@ -6,7 +6,7 @@ SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c n
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c fwmatch.c pathcheck.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
 		rcroutes.c routes.c rtadv.c rtimes.c scope.c sdwan.c vnet.c \
-		yif.c yip.c yjobs_spec.c yjson.c ylne.c yni.c yrt.c
+		yif.c yip.c yjobs_spec.c yjson.c ylne.c yni.c yrt.c yfw.c
 # The IETF modules the collectors fill (PLAN-SDN-YANG 1.9): cblink-gen's
 # structs and tables of share/yang's modules, committed, so that building
 # needs no libyang; "make regen-yang" refreshes them.
@@ -75,7 +75,7 @@ YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		arcana-jobs@2026-10-14 arcana-storage@2026-10-14 \
 		arcana-sysctl@2026-10-14 arcana-kernel@2026-10-14 \
 		arcana-processes@2026-10-14 arcana-log@2026-10-14 \
-		ietf-syslog@2025-04-30
+		ietf-syslog@2025-04-30 arcana-firewall@2026-10-15
 # Modules only imported whose identities are used, their .sid files'
 # alone: the routing protocols', whose identities name a route's origin;
 # IEEE 802.1Q's types, a VLAN tag's; IEEE 802.3's PHY and PMD types;
@@ -100,7 +100,8 @@ YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F arcana-services: -F arcana-packages: -F arcana-jobs: \
 		-F arcana-storage: -F arcana-sysctl: -F arcana-kernel: \
 		-F arcana-processes: -F arcana-log: \
-		-F ietf-syslog:console-action,file-action,file-limit-size,file-limit-duration,remote-action,select-adv-compare
+		-F ietf-syslog:console-action,file-action,file-limit-size,file-limit-duration,remote-action,select-adv-compare \
+		-F arcana-firewall:
 YANG_OUT?=	${.CURDIR}/yang
 # The kinds of job, made from share/arcana/jobs.yaml as the console's
 # forms are: arcana-jobs's submodule, and yjobs_spec(), a change of it

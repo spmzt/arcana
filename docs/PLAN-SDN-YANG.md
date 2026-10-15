@@ -1271,8 +1271,11 @@ A step never leaves `main` unbuildable; where a step would, it says
   `arcana-plugins`; check: the plugin tests.
 - 3.1.9 A: `arcana-host` (facts, router-id, role, capabilities),
   `arcana-agent` (update and build rpcs); check: `hello`'s tests.
-- 3.1.10 A: `arcana-dummynet` (schedulers, pipes, queues) read and
-  written; check: the QoS tests.
+- 3.1.10 A: `arcana-firewall` (ipfw: the kept rules, aliases and
+  rc.conf as configuration; the rules with counters, dynamic rules,
+  tables, NAT and dummynet's schedulers, pipes and queues as state;
+  the kernel's trace as an action; done, written by jobs of kind ipfw);
+  check: the firewall tests.
 - 3.1.11 A: `arcana-probe` (sessions, config, results) over today's
   ICMP engine; check: the probe tests.
 - 3.1.12 A: the SD-WAN reads and writes (`sdwan`, `-rules`, `-steer`,

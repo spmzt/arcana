@@ -66,10 +66,16 @@ struct pc {
 	int		 iffib[64];
 	size_t		 nif;
 	int		 fwd4, fwd6, fw4, fw6;	/* -1: no such sysctl */
+	bool		 fw_on;			/* the ruleset walked counts */
 	const char	*srcif, *dstif;
 	int		 sbest, dbest;
 	ucl_object_t	*addrs;
 };
+
+/* A drop by a firewall that is off is said, and not bad. */
+#define	DROP_SEV(c)	((c)->fw_on ? "bad" : "info")
+#define	DROPS(c)	((c)->fw_on ? "The firewall drops" : "The firewall, off, " \
+			    "would drop")
 
 static void
 put_s(ucl_object_t *o, const char *k, const char *v)
@@ -451,6 +457,17 @@ walk(struct pc *c, const struct fwset *set, const struct fwpkt *k,
 		put_s(o, "fwd", v->fwd);
 	if (v->note != NULL)
 		put_s(o, "note", v->note);
+	if (v->nsteps > 0) {
+		u = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < v->nsteps; i++) {
+			e = ucl_object_typed_new(UCL_OBJECT);
+			put_i(e, "rule", set->rules[v->steps[i].rule].num);
+			put_s(e, "text", set->rules[v->steps[i].rule].text);
+			put_s(e, "how", v->steps[i].how);
+			ucl_array_append(u, e);
+		}
+		ucl_object_insert_key(o, u, "walk", 0, true);
+	}
 	if (v->nuncertain > 0) {
 		u = ucl_object_typed_new(UCL_ARRAY);
 		for (i = 0; i < v->nuncertain; i++) {
@@ -598,16 +615,23 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 	/* The firewall: is it there, and on. */
 	fw_x = (c.af == AF_INET ? c.fw4 : c.fw6) != -1;
 	fw_on = (c.af == AF_INET ? c.fw4 : c.fw6) > 0;
-	have_fw = false;
-	if (fw_x && fw_on) {
-		step = step_begin(w, ARC_STEP_KIND_EXEC, "ipfw", "list, and "
-		    "the tables: the ruleset to walk");
-		fw_free(&set);
-		have_fw = ruleset(&c, &set);
-		step_end(w, step, have_fw, "%zu rules", set.n);
-	}
+	/* Off, its ruleset is still walked, for what it would do turned
+	 * on: said as such, and no finding of its is bad. */
+	step = step_begin(w, ARC_STEP_KIND_EXEC, "ipfw", "list, and the "
+	    "tables: the ruleset to walk%s", fw_on ? "" : " (the firewall "
+	    "is off)");
+	fw_free(&set);
+	have_fw = ruleset(&c, &set);
+	step_end(w, step, have_fw, "%zu rules", set.n);
 	fw = ucl_object_typed_new(UCL_OBJECT);
 	put_b(fw, "on", fw_x && fw_on);
+	if (have_fw && !fw_on)
+		finding(&c, "info", "The firewall is off (%s is %s): what its "
+		    "rules would do, turned on, is shown, and nothing of it "
+		    "stops the packet now", c.af == AF_INET ? "net.inet.ip.fw."
+		    "enable" : "net.inet6.ip6.fw.enable", fw_x ? "0" : "not "
+		    "there, ipfw is not in the kernel");
+	c.fw_on = fw_x && fw_on;
 
 	/* The packet, as the firewall sees it. */
 	k = c.base;
@@ -644,8 +668,8 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 		state = rin.keep;
 		fwd_note(&c, &rin, &set, "it");
 		if (strcmp(rin.verdict, "deny") == 0)
-			finding(&c, "bad", "The firewall drops it coming in%s%s: "
-			    "%s", ingress != NULL ? " on " : "", ingress !=
+			finding(&c, DROP_SEV(&c), "%s it coming in%s%s: %s",
+			    DROPS(&c), ingress != NULL ? " on " : "", ingress !=
 			    NULL ? ingress : "", where(&rin, &set));
 		if (rin.setfib >= 0) {
 			fib = rin.setfib;
@@ -724,8 +748,8 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 		state = state || rout.keep;
 		fwd_note(&c, &rout, &set, "it");
 		if (strcmp(rout.verdict, "deny") == 0)
-			finding(&c, "bad", "The firewall drops it going out by "
-			    "%s: %s", egress, where(&rout, &set));
+			finding(&c, DROP_SEV(&c), "%s it going out by %s: %s",
+			    DROPS(&c), egress, where(&rout, &set));
 	}
 
 	/* The reply: in where the request went out, back by the receive
@@ -783,8 +807,8 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 			    "reply_in", 0, true);
 			fwd_note(&c, &pin, &set, "the reply");
 			if (strcmp(pin.verdict, "deny") == 0)
-				finding(&c, "bad", "The firewall drops the reply "
-				    "coming in on %s: %s%s", egress, where(&pin,
+				finding(&c, DROP_SEV(&c), "%s the reply coming in "
+				    "on %s: %s%s", DROPS(&c), egress, where(&pin,
 				    &set), state ? "" : " (no state of the "
 				    "request's here to let it in)");
 		}
@@ -797,8 +821,8 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 			if (strcmp(pin.verdict, "fwd") != 0 || dst_local)
 				fwd_note(&c, &pout, &set, "the reply");
 			if (strcmp(pout.verdict, "deny") == 0)
-				finding(&c, "bad", "The firewall drops the reply "
-				    "going out by %s: %s", backif, where(&pout,
+				finding(&c, DROP_SEV(&c), "%s the reply going out "
+				    "by %s: %s", DROPS(&c), backif, where(&pout,
 				    &set));
 		}
 	}

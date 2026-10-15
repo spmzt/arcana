@@ -162,11 +162,11 @@ owner(const struct tsh *t, const char *a, const char **ifn)
 }
 
 static void
-finding(ucl_object_t *arr, const char *sev, const char *place,
+finding(ucl_object_t *arr, const char *sev, const struct place *p,
     const char *fmt, ...) __printflike(4, 5);
 
 static void
-finding(ucl_object_t *arr, const char *sev, const char *place,
+finding(ucl_object_t *arr, const char *sev, const struct place *p,
     const char *fmt, ...)
 {
 	ucl_object_t	*o;
@@ -181,7 +181,13 @@ finding(ucl_object_t *arr, const char *sev, const char *place,
 		return;
 	o = ucl_object_typed_new(UCL_OBJECT);
 	put_s(o, "severity", sev);
-	put_s(o, "place", place);
+	/* The place by name, and by what names it to the page. */
+	if (p != NULL) {
+		put_s(o, "place", place_name(p));
+		put_s(o, "server", p->sid);
+		if (p->jail[0] != '\0')
+			put_s(o, "jail", p->jail);
+	}
 	put_s(o, "what", s);
 	free(s);
 	ucl_array_append(arr, o);
@@ -246,7 +252,7 @@ follow(struct tsh *t, const char *from, const char *to, bool reply,
 			put_s(end, "how", "loop");
 			put_s(end, "what", "It comes back to a place it passed: "
 			    "the routes go round");
-			finding(findings, "bad", place_name(&t->p[i]), "A routing "
+			finding(findings, "bad", &t->p[i], "A routing "
 			    "loop: the %s comes back here on %s", reply ? "reply" :
 			    "packet", ifn != NULL ? ifn : "the same interface");
 			return;
@@ -268,7 +274,7 @@ follow(struct tsh *t, const char *from, const char *to, bool reply,
 			ucl_array_append(hops, hop);
 			put_s(end, "how", "unknown");
 			put_s(end, "what", "A place on the way did not answer");
-			finding(findings, "warn", place_name(&t->p[i]), "It did "
+			finding(findings, "warn", &t->p[i], "It did "
 			    "not answer: %s", t->p[i].error);
 			return;
 		}
@@ -295,7 +301,7 @@ follow(struct tsh *t, const char *from, const char *to, bool reply,
 			    strstr(what, "a reply") != NULL || strstr(what,
 			    "Asymmetric") != NULL))
 				continue;
-			finding(findings, sev, place_name(&t->p[i]), "%s%s",
+			finding(findings, sev, &t->p[i], "%s%s",
 			    reply ? "The reply: " : "", what);
 			if (strcmp(sev, "bad") == 0)
 				blocked = true;
@@ -381,7 +387,7 @@ ts_run(struct kore_task *task)
 		put_s(o, "place", place_name(&t->p[i]));
 		if (t->p[i].survey == NULL) {
 			put_s(o, "error", t->p[i].error);
-			finding(findings, "info", place_name(&t->p[i]), "Not "
+			finding(findings, "info", &t->p[i], "Not "
 			    "asked: %s", t->p[i].error);
 			t->p[i].survey = ucl_object_typed_new(UCL_OBJECT);
 		}
@@ -432,7 +438,7 @@ ts_run(struct kore_task *task)
 		 * whose way is known. */
 		for (i = 0; i < t->n && ucl_array_size(back) > 0; i++)
 			if (inpath[i] && !passed[i])
-				finding(findings, "info", place_name(&t->p[i]),
+				finding(findings, "info", &t->p[i],
 				    "The request passes here, the reply does "
 				    "not: a state made here is never used");
 	}

@@ -1607,6 +1607,27 @@ ATF_TC_BODY(troubleshoot, tc)
 	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "end.place"));
 	ATF_CHECK_STREQ("bad", jstr(&r, "findings.0.severity"));
 	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "findings.0.place"));
+	/* The finding names the place to the page. */
+	ATF_CHECK_STREQ(sid, jstr(&r, "findings.0.server"));
+	ATF_CHECK_STREQ("r2", jstr(&r, "findings.0.jail"));
+	resp_free(&r);
+
+	/* One host asked alone, for its firewall tab: the walk, rule by
+	 * rule, as the kernel would make it. */
+	snprintf(body, sizeof(body), "/api/servers/%s/ipfw/path?src=10.1.0.2&"
+	    "dst=10.3.0.2&proto=tcp&port=22&jail=r2", sid);
+	http("GET", body, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("deny", jstr(&r, "data.firewall.in.verdict"));
+	ATF_CHECK_STREQ("1000", jstr(&r, "data.firewall.in.walk.0.rule"));
+	ATF_CHECK_STREQ("decides", jstr(&r, "data.firewall.in.walk.0.how"));
+	ATF_CHECK_STREQ("em0", jstr(&r, "data.ingress.interface"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "/api/servers/%s/ipfw/path?src=10.1.0.2&"
+	    "dst=nowhere", sid);
+	http("GET", body, NULL, &r);
+	EXPECT(&r, 400);
+	ASK("tcp", 22);
 	ATF_CHECK_MSG(strstr(jstr(&r, "findings.0.what"), "The firewall drops "
 	    "it coming in on em0: rule 1000") != NULL, "%s", jstr(&r,
 	    "findings.0.what"));

@@ -4770,5 +4770,55 @@ ol.tsway li.tshop pre { max-height: 18rem; overflow: auto; font-size: .72rem; }
 ol.tsway li.tsend { font-size: .82rem; padding: .3rem .7rem; color: var(--dim); }
 ol.tsway li.tsend.blocked, ol.tsway li.tsend.loop { color: var(--red); }
 ol.tsway li.tsend.delivered { color: var(--green); }
+/* The way drawn: the source, the places passed, the destination; the
+ * request's row above, the reply's below. */
+.tsgraph-wrap { overflow-x: auto; margin: .4rem 0 .8rem; }
+svg.tsgraph { width: 100%; min-width: 36rem; max-width: 70rem; height: auto; display: block; font-family: var(--mono); }
+svg.tsgraph marker path { fill: var(--fg-2); }
+svg.tsgraph #tsarrowbad path { fill: var(--red); }
+svg.tsgraph .way { stroke: var(--fg-2); stroke-width: 1.6; fill: none; }
+svg.tsgraph .way.reply { stroke-dasharray: 5 4; }
+svg.tsgraph .way.bad { stroke: var(--red); }
+svg.tsgraph .way.leaves { stroke: var(--amber); stroke-dasharray: 2 4; }
+svg.tsgraph .lbl { font-size: 9.5px; fill: var(--dim); }
+svg.tsgraph .tsnode rect { fill: rgba(var(--surface-rgb), .95); stroke: var(--line-2); stroke-width: 1.2; }
+svg.tsgraph .tsnode { cursor: pointer; }
+svg.tsgraph .tsnode:hover rect { stroke: var(--accent); }
+svg.tsgraph .tsnode.blocked rect { stroke: var(--red); stroke-width: 2; }
+svg.tsgraph .tsnode.dead rect { stroke-dasharray: 3 3; }
+svg.tsgraph .tsnode.ghost rect { stroke-dasharray: 3 3; opacity: .6; }
+svg.tsgraph .tsnode .name { font-size: 11.5px; font-weight: 700; fill: var(--fg); }
+svg.tsgraph .tsnode .sub { font-size: 9.5px; fill: var(--dim); }
+svg.tsgraph .tsnode .asym { font-size: 8.5px; fill: var(--amber); }
+svg.tsgraph .tsnode circle.fw.good { fill: var(--green); }
+svg.tsgraph .tsnode circle.fw.bad { fill: var(--red); }
+svg.tsgraph .tsnode circle.fw.warn { fill: var(--amber); }
+svg.tsgraph .tsend rect { fill: rgba(var(--accent-rgb), .12); stroke: var(--accent); stroke-width: 1.2; }
+svg.tsgraph .tsend text { font-size: 10.5px; fill: var(--fg); }
+.trouble label .swap { float: right; font-size: .7rem; padding: 0 .3rem; }
+/* The firewall's chain drawn, on the Overview. */
+.fwchain-wrap { overflow-x: auto; margin: .3rem 0 1rem; }
+svg.fwchain { width: 100%; min-width: 40rem; max-width: 60rem; height: auto; display: block; font-family: var(--mono); }
+svg.fwchain marker path { fill: var(--fg-2); }
+svg.fwchain .head { font-size: 9px; fill: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
+svg.fwchain .part { cursor: pointer; }
+svg.fwchain .part rect { fill: rgba(var(--surface-rgb), .95); stroke: var(--line-2); stroke-width: 1.2; }
+svg.fwchain .part:hover rect { stroke: var(--accent); }
+svg.fwchain .part.on rect { stroke: var(--accent); stroke-width: 2; }
+svg.fwchain .part.none rect { stroke-dasharray: 3 3; opacity: .55; }
+svg.fwchain .part.none text { opacity: .6; }
+svg.fwchain .part .num { font-size: 9px; fill: var(--dim); }
+svg.fwchain .part .name { font-size: 10.5px; fill: var(--fg); }
+svg.fwchain .part .stat { font-size: 9px; fill: var(--dim); text-anchor: end; }
+svg.fwchain .part .rate { font-size: 9px; fill: var(--green); text-anchor: end; }
+svg.fwchain .call { stroke: var(--cyan); stroke-width: 1.2; fill: none; opacity: .75; }
+svg.fwchain .call.skip { stroke: var(--amber); stroke-dasharray: 5 3; }
+svg.fwchain .call:hover { stroke-width: 2.4; opacity: 1; }
+svg.fwchain .down { stroke: var(--fg-2); stroke-width: 1.2; }
+/* Follow a packet: where it is at the host, and the walk. */
+.fw-tctx { display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: center; margin: .6rem 0 .2rem; }
+ol.fw-steps li.decides { border-left: 2px solid var(--accent); margin-left: -2px; }
+details.fw-unsure { font-size: .8rem; margin: .4rem 0; }
+details.fw-unsure li { margin: .2rem 0; }
 /* A kept rule written with aliases: its own words, ipfw's on hover. */
 .fw-rules .aliased { border-bottom: 1px dotted var(--cyan); cursor: help; }

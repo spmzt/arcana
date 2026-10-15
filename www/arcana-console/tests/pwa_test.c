@@ -3823,10 +3823,15 @@ part_firewall(void)
 	run("const f = document.querySelector('form[data-form=fw-trace]'); "
 	    "f.src.value = '2001:db8::9'; f.dst.value = '2001:db8::1'; "
 	    "f.port.value = '22'; f.requestSubmit();");
+	/* The agent walks the ruleset (path-check): the call into 9100 is
+	 * followed, the rule after it decides, as the kernel would. */
 	wait_js("document.querySelectorAll('ol.fw-steps li').length === 2 && "
 	    "document.querySelector('ol.fw-steps li').textContent.includes("
-	    "'into 9100') && document.querySelector('.stage .notice.bad')."
-	    "textContent.includes('dropped')", 10);
+	    "'call 9100') && document.querySelector('ol.fw-steps li.decides')"
+	    ".textContent.includes('65535') && document.querySelector('.stage "
+	    ".fw-steps + .notice').textContent.includes('Dropped') && document."
+	    "querySelector('.fw-tctx a[href^=\"#/troubleshoot?src=2001:db8::9"
+	    "\"]')", 20);
 	shot("7o-firewall-trace");
 	/* And the kernel's own answer, for an address: the packets it
 	 * decided, each with the rule that did, a press away. */
@@ -5673,7 +5678,37 @@ part_trouble(void)
 	    ".includes('via 10.12.0.2 on em1') && document.querySelector("
 	    "'ol.tsway li.tsend.leaves') && document.querySelector('ol.tsway "
 	    "li.tsend.leaves').textContent.includes('to 10.12.0.2')", 20);
+	/* The way drawn: the source, the place, the destination, and the
+	 * address names the packet, to share. */
+	{
+		ucl_object_t	*g = js("return (document.querySelector('svg."
+		    "tsgraph') ? document.querySelector('svg.tsgraph')."
+		    "outerHTML.slice(0, 600) : 'no graph') + ' ' + location."
+		    "hash;");
+
+		ATF_CHECK_MSG(js_true("document.querySelectorAll('svg.tsgraph "
+		    "g.tsnode').length === document.querySelectorAll('ol.tsway "
+		    "li.tshop').length && document.querySelector('svg.tsgraph "
+		    "g.tsnode .name').textContent === document.querySelector("
+		    "'ol.tsway li.tshop b').textContent && document."
+		    "querySelector('svg.tsgraph .way.leaves') && location.hash "
+		    "=== '#/troubleshoot?src=10.1.0.2&dst=10.3.0.2&proto=tcp&"
+		    "port=22'"), "%s", g != NULL ? ucl_object_tostring_forced(g)
+		    : "?");
+		if (g != NULL)
+			ucl_object_unref(g);
+	}
+	ATF_CHECK(js_true("document.querySelector('datalist#ts-addrs')"));
 	shot("9t-troubleshoot");
+	/* Swapped: the other way round, asked at once. */
+	run("document.querySelector('button[data-act=ts-swap]').click()");
+	wait_js("document.querySelector('form[data-form=ts-path]').src.value "
+	    "=== '10.3.0.2' && location.hash === '#/troubleshoot?src=10.3.0.2&"
+	    "dst=10.1.0.2&proto=tcp&port=22'", 20);
+	run("document.querySelector('button[data-act=ts-swap]').click()");
+	wait_js("document.querySelector('form[data-form=ts-path]').src.value "
+	    "=== '10.1.0.2' && document.querySelector('svg.tsgraph .way."
+	    "leaves')", 20);
 	/* As YAML, what was found. */
 	run("window.arcSaved = null; document.querySelector('.tsverdict "
 	    "button[data-arg=yaml]').click()");

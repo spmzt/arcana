@@ -1,0 +1,1141 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-firewall",
+    "module-revision": "2026-10-15",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "arcana-jails",
+        "module-revision": "2026-10-14"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "70200",
+        "size": "300"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-firewall",
+        "sid": "70200"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall",
+        "sid": "70201"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept",
+        "sid": "70202"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/alias",
+        "sid": "70203"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/alias/kind",
+        "sid": "70204"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/alias/name",
+        "sid": "70205"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/alias/value",
+        "sid": "70206"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/other",
+        "sid": "70207"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/path",
+        "sid": "70208"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/present",
+        "sid": "70209"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/rule",
+        "sid": "70210"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/rule/number",
+        "sid": "70211"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/rule/source",
+        "sid": "70212"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/rule/text",
+        "sid": "70213"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/sha256",
+        "sid": "70214"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/kept/text",
+        "sid": "70215"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/rc",
+        "sid": "70216"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/rc/firewall-enable",
+        "sid": "70217"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/rc/firewall-script",
+        "sid": "70218"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/rc/firewall-type",
+        "sid": "70219"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state",
+        "sid": "70220"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet",
+        "sid": "70221"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe",
+        "sid": "70222"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/bandwidth",
+        "sid": "70223"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/burst",
+        "sid": "70224"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/bytes",
+        "sid": "70225"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/delay",
+        "sid": "70226"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/mask",
+        "sid": "70227"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/mask/dst",
+        "sid": "70228"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/mask/dst-port",
+        "sid": "70229"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/mask/proto",
+        "sid": "70230"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/mask/src",
+        "sid": "70231"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/mask/src-port",
+        "sid": "70232"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/number",
+        "sid": "70233"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/plr",
+        "sid": "70234"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/red",
+        "sid": "70235"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/pipe/slots",
+        "sid": "70236"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue",
+        "sid": "70237"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/bytes",
+        "sid": "70238"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/mask",
+        "sid": "70239"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/mask/dst",
+        "sid": "70240"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/mask/dst-port",
+        "sid": "70241"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/mask/proto",
+        "sid": "70242"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/mask/src",
+        "sid": "70243"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/mask/src-port",
+        "sid": "70244"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/number",
+        "sid": "70245"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/plr",
+        "sid": "70246"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/priority",
+        "sid": "70247"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/red",
+        "sid": "70248"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/sched",
+        "sid": "70249"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/slots",
+        "sid": "70250"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/queue/weight",
+        "sid": "70251"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched",
+        "sid": "70252"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched/bandwidth",
+        "sid": "70253"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched/burst",
+        "sid": "70254"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched/delay",
+        "sid": "70255"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched/mask",
+        "sid": "70256"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched/mask/dst",
+        "sid": "70257"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched/mask/dst-port",
+        "sid": "70258"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched/mask/proto",
+        "sid": "70259"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched/mask/src",
+        "sid": "70260"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched/mask/src-port",
+        "sid": "70261"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched/number",
+        "sid": "70262"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched/params",
+        "sid": "70263"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched/queue",
+        "sid": "70264"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dummynet/sched/type",
+        "sid": "70265"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dynamic",
+        "sid": "70266"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dynamic-total",
+        "sid": "70267"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dynamic/flow",
+        "sid": "70268"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dynamic/kind",
+        "sid": "70269"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dynamic/number",
+        "sid": "70270"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dynamic/octets",
+        "sid": "70271"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dynamic/packets",
+        "sid": "70272"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/dynamic/ttl",
+        "sid": "70273"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/enabled",
+        "sid": "70274"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/loaded",
+        "sid": "70275"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/nat",
+        "sid": "70276"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/rule",
+        "sid": "70277"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/rule/disabled",
+        "sid": "70278"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/rule/number",
+        "sid": "70279"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/rule/octets",
+        "sid": "70280"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/rule/packets",
+        "sid": "70281"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/rule/set",
+        "sid": "70282"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/rule/text",
+        "sid": "70283"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/table",
+        "sid": "70284"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/table/count",
+        "sid": "70285"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/table/entry",
+        "sid": "70286"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/table/entry/key",
+        "sid": "70287"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/table/entry/value",
+        "sid": "70288"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/table/name",
+        "sid": "70289"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/table/type",
+        "sid": "70290"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/state/verbose",
+        "sid": "70291"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace",
+        "sid": "70292"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/input",
+        "sid": "70293"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/input/address",
+        "sid": "70294"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/input/packets",
+        "sid": "70295"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/input/seconds",
+        "sid": "70296"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output",
+        "sid": "70297"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/limit",
+        "sid": "70298"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/packet",
+        "sid": "70299"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/packet/destination",
+        "sid": "70300"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/packet/direction",
+        "sid": "70301"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/packet/dport",
+        "sid": "70302"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/packet/family",
+        "sid": "70303"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/packet/interface",
+        "sid": "70304"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/packet/ms",
+        "sid": "70305"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/packet/proto",
+        "sid": "70306"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/packet/rule",
+        "sid": "70307"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/packet/source",
+        "sid": "70308"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/packet/sport",
+        "sid": "70309"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/packet/verdict",
+        "sid": "70310"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-firewall:firewall/trace/output/seconds",
+        "sid": "70311"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall",
+        "sid": "70312"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept",
+        "sid": "70313"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/alias",
+        "sid": "70314"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/alias/kind",
+        "sid": "70315"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/alias/name",
+        "sid": "70316"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/alias/value",
+        "sid": "70317"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/other",
+        "sid": "70318"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/path",
+        "sid": "70319"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/present",
+        "sid": "70320"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/rule",
+        "sid": "70321"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/rule/number",
+        "sid": "70322"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/rule/source",
+        "sid": "70323"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/rule/text",
+        "sid": "70324"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/sha256",
+        "sid": "70325"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/kept/text",
+        "sid": "70326"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/rc",
+        "sid": "70327"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/rc/firewall-enable",
+        "sid": "70328"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/rc/firewall-script",
+        "sid": "70329"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/rc/firewall-type",
+        "sid": "70330"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state",
+        "sid": "70331"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet",
+        "sid": "70332"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe",
+        "sid": "70333"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/bandwidth",
+        "sid": "70334"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/burst",
+        "sid": "70335"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/bytes",
+        "sid": "70336"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/delay",
+        "sid": "70337"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/mask",
+        "sid": "70338"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/mask/dst",
+        "sid": "70339"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/mask/dst-port",
+        "sid": "70340"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/mask/proto",
+        "sid": "70341"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/mask/src",
+        "sid": "70342"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/mask/src-port",
+        "sid": "70343"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/number",
+        "sid": "70344"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/plr",
+        "sid": "70345"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/red",
+        "sid": "70346"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/pipe/slots",
+        "sid": "70347"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue",
+        "sid": "70348"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/bytes",
+        "sid": "70349"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/mask",
+        "sid": "70350"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/mask/dst",
+        "sid": "70351"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/mask/dst-port",
+        "sid": "70352"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/mask/proto",
+        "sid": "70353"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/mask/src",
+        "sid": "70354"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/mask/src-port",
+        "sid": "70355"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/number",
+        "sid": "70356"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/plr",
+        "sid": "70357"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/priority",
+        "sid": "70358"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/red",
+        "sid": "70359"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/sched",
+        "sid": "70360"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/slots",
+        "sid": "70361"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/queue/weight",
+        "sid": "70362"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched",
+        "sid": "70363"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched/bandwidth",
+        "sid": "70364"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched/burst",
+        "sid": "70365"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched/delay",
+        "sid": "70366"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched/mask",
+        "sid": "70367"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched/mask/dst",
+        "sid": "70368"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched/mask/dst-port",
+        "sid": "70369"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched/mask/proto",
+        "sid": "70370"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched/mask/src",
+        "sid": "70371"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched/mask/src-port",
+        "sid": "70372"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched/number",
+        "sid": "70373"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched/params",
+        "sid": "70374"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched/queue",
+        "sid": "70375"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dummynet/sched/type",
+        "sid": "70376"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dynamic",
+        "sid": "70377"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dynamic-total",
+        "sid": "70378"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dynamic/flow",
+        "sid": "70379"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dynamic/kind",
+        "sid": "70380"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dynamic/number",
+        "sid": "70381"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dynamic/octets",
+        "sid": "70382"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dynamic/packets",
+        "sid": "70383"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/dynamic/ttl",
+        "sid": "70384"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/enabled",
+        "sid": "70385"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/loaded",
+        "sid": "70386"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/nat",
+        "sid": "70387"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/rule",
+        "sid": "70388"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/rule/disabled",
+        "sid": "70389"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/rule/number",
+        "sid": "70390"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/rule/octets",
+        "sid": "70391"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/rule/packets",
+        "sid": "70392"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/rule/set",
+        "sid": "70393"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/rule/text",
+        "sid": "70394"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/table",
+        "sid": "70395"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/table/count",
+        "sid": "70396"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/table/entry",
+        "sid": "70397"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/table/entry/key",
+        "sid": "70398"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/table/entry/value",
+        "sid": "70399"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/table/name",
+        "sid": "70400"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/table/type",
+        "sid": "70401"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/state/verbose",
+        "sid": "70402"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace",
+        "sid": "70403"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/input",
+        "sid": "70404"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/input/address",
+        "sid": "70405"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/input/packets",
+        "sid": "70406"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/input/seconds",
+        "sid": "70407"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output",
+        "sid": "70408"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/limit",
+        "sid": "70409"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/packet",
+        "sid": "70410"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/packet/destination",
+        "sid": "70411"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/packet/direction",
+        "sid": "70412"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/packet/dport",
+        "sid": "70413"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/packet/family",
+        "sid": "70414"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/packet/interface",
+        "sid": "70415"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/packet/ms",
+        "sid": "70416"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/packet/proto",
+        "sid": "70417"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/packet/rule",
+        "sid": "70418"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/packet/source",
+        "sid": "70419"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/packet/sport",
+        "sid": "70420"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/packet/verdict",
+        "sid": "70421"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-firewall:firewall/trace/output/seconds",
+        "sid": "70422"
+      }
+    ]
+  }
+}

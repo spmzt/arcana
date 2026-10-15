@@ -904,6 +904,48 @@ topo_host_addr(int srv, int af)
 	return (primary_addr(thost(app.servers[srv].id, false), af));
 }
 
+/*
+ * Every address the hosts have, as a datalist to offer where one is
+ * typed: each with its host, jail and interface.
+ */
+void
+topo_addr_list(struct html *h, const char *id)
+{
+	const ucl_object_t	*o, *a;
+	ucl_object_iter_t	 it, ait;
+	const struct tnode	*n;
+	int			 i, k;
+
+	h_raw(h, "<datalist");
+	h_attr(h, "id", id);
+	h_raw(h, ">");
+	for (i = 0; i < nhosts; i++) {
+		n = NULL;
+		for (k = 0; k < ntn; k++)
+			if (strcmp(tn[k].key, hosts[i].sid) == 0)
+				n = &tn[k];
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(hosts[i].ifs, "interfaces"),
+		    &it, true)) != NULL) {
+			ait = NULL;
+			while ((a = ucl_object_iterate(jget(o, "addresses"), &ait,
+			    true)) != NULL) {
+				if (jstr(a, "address") == NULL || addr_local(
+				    jstr(a, "address")))
+					continue;
+				h_raw(h, "<option");
+				h_attr(h, "value", jstr(a, "address"));
+				h_raw(h, ">");
+				h_txt(h, n != NULL ? n->label : hosts[i].sid);
+				h_raw(h, " · ");
+				h_txt(h, jstr(o, "name"));
+				h_raw(h, "</option>");
+			}
+		}
+	}
+	h_raw(h, "</datalist>");
+}
+
 /* Every host's interfaces read, for whom owns an address. */
 void
 topo_poll_all(void)

@@ -1014,7 +1014,7 @@ path_check_body()
 	atf_check -o ignore jexec arcw_pr ipfw -q add 00590 check-state
 	atf_check -o ignore jexec arcw_pr ipfw -q delete 600
 	atf_check -o ignore jexec arcw_pr ipfw -q add 00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state
-	atf_check -o match:'"reply_in":\{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true\}' \
+	atf_check -o match:'"reply_in":\{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true' \
 	    -o not-match:'"severity":"bad"' "$JGC" -c "$SOCK" -j arcw_pr path-check -p tcp -P 22 10.1.0.2 10.3.0.2
 
 	for i in "${e1}a:arcw_pc" "${e1}b:arcw_pr" "${e2}a:arcw_pr" "${e2}b:arcw_ps"; do

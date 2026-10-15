@@ -2339,6 +2339,8 @@ connected:
 		pcq.has_path_port = c->pport != 0;
 		pcq.path_port = c->pport;
 		pcq.interface = c->ifname[0] != '\0' ? c->ifname : NULL;
+		pcq.has_net_fib = c->has_pos;
+		pcq.net_fib = c->fib;
 		pcq.jail = c->jail[0] != '\0' ? c->jail : NULL;
 		pcq.path_reply = c->preply;
 		if ((error = arc_path_check(&cl, &pcq, &pcr)) != 0)
@@ -4095,6 +4097,54 @@ api_fw_trace(struct http_request *req)
 {
 
 	return (read_route(req, OP_FW_TRACE, setup_fw_trace));
+}
+
+/*
+ * GET /api/servers/<id>/ipfw/path?src=a&dst=b[&proto=p][&port=n]
+ * [&interface=i][&fib=n][&reply][&jail=j]: what the host does with a
+ * packet, its firewall's ruleset walked for it and its reply, nothing
+ * sent (the agent's path-check; the Troubleshoot page asks every host
+ * the same by /api/troubleshoot/path).
+ */
+static const char *
+setup_path(struct call *c, const struct rq *q)
+{
+	char		buf[8];
+	uint64_t	v;
+
+	(void)rq_param(q, "src", c->psrc, sizeof(c->psrc));
+	(void)rq_param(q, "dst", c->pdst, sizeof(c->pdst));
+	if (c->psrc[0] == '\0' || c->pdst[0] == '\0' || c->psrc[strspn(
+	    c->psrc, "0123456789abcdefABCDEF.:")] != '\0' || c->pdst[strspn(
+	    c->pdst, "0123456789abcdefABCDEF.:")] != '\0')
+		return ("src and dst are each an IPv4 or IPv6 address");
+	(void)rq_param(q, "proto", c->pproto, sizeof(c->pproto));
+	if (c->pproto[0] != '\0' && strcmp(c->pproto, "tcp") != 0 && strcmp(
+	    c->pproto, "udp") != 0 && strcmp(c->pproto, "icmp") != 0 &&
+	    strcmp(c->pproto, "ip") != 0)
+		return ("proto is tcp, udp, icmp or ip");
+	if (rq_u64(q, "port", 65535, &v))
+		c->pport = (uint32_t)v;
+	(void)rq_param(q, "interface", c->ifname, sizeof(c->ifname));
+	if (c->ifname[strspn(c->ifname, "abcdefghijklmnopqrstuvwxyz"
+	    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-")] != '\0')
+		return ("interface is a name");
+	if (!pick_fib(q, c))
+		return ("fib is a number");
+	c->has_pos = c->fib != 0;
+	c->preply = rq_param(q, "reply", buf, sizeof(buf)) && strcmp(buf,
+	    "0") != 0 && strcmp(buf, "false") != 0;
+	if (!pick_scope(q, c))
+		return ("jail is a name");
+	snprintf(c->jail, sizeof(c->jail), "%s", c->scope);
+	return (NULL);
+}
+
+int
+api_path(struct http_request *req)
+{
+
+	return (read_route(req, OP_PATH_CHECK, setup_path));
 }
 
 /* GET /api/servers/<id>/sysctl[?filter=name]: the kernel's state. */
