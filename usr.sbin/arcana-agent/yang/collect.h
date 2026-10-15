@@ -298,4 +298,26 @@ int	yfw_kept_from_text(const char *text, const char *sha256,
 int	yfw_trace_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_firewall_firewall_trace_output *out);
 
+/*
+ * arcana-troubleshoot (invidia/yts.c): the path-check, traceroute and
+ * capture operations' JSON as the actions' outputs.
+ */
+int	yts_path_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_troubleshoot_troubleshoot_path_check_output *out);
+int	yts_traceroute_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_troubleshoot_troubleshoot_traceroute_output *out);
+int	yts_capture_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_troubleshoot_troubleshoot_capture_output *out);
+
+/* arcana-history (gula/yhist.c): the history operation's JSON. */
+int	yhist_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_history_history *out);
+
+/* arcana-events (gula/yev.c): the events operation's JSON, and one
+ * event's (the event mcast) as the notification. */
+int	yev_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_events_events *out);
+int	yev_one_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_events_event *out);
+
 #endif /* !_ARCANA_COLLECT_H_ */

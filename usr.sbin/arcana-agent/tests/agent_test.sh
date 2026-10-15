@@ -5628,6 +5628,141 @@ EOT
 	atf_check -o file:want "$y" trace trace.json
 }
 
+atf_test_case yang_troubleshoot
+yang_troubleshoot_head()
+{
+	atf_set "descr" "path-check, traceroute and capture as" \
+	    "arcana-troubleshoot has them: a packet's way at one host, its" \
+	    "firewall's walks typed; a traceroute's hops; a capture's lines" \
+	    "and pcap; through YANG-CBOR and back"
+}
+yang_troubleshoot_body()
+{
+	local y="$(atf_get_srcdir)/yts"
+
+	cat > path.json <<'EOT'
+{"host":"labvm","addresses":[{"address":"10.1.0.1","prefixlen":24,"interface":"epair2b","fib":0,"up":true,"loopback":false},{"address":"10.3.0.1","prefixlen":24,"interface":"epair3a","fib":0,"up":true,"loopback":false}],"src":{"local":false,"connected":"epair2b"},"dst":{"local":false,"connected":"epair3a"},"forwarding":true,"ingress":{"interface":"epair2b","how":"by the route back to the source"},"route":{"to":"10.3.0.2","destination":"10.3.0.0","prefixlen":24,"gateway":"link#11","fib":"0","interface":"epair3a","flags":"U","metric":1,"weight":1},"neighbor":{"address":"10.3.0.2","state":"reachable"},"return":{"fib":0,"interface":"epair2b","gateway":"link#10","symmetric":true},"firewall":{"on":true,"in":{"verdict":"allow","rule":600,"text":"00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state :default","keep_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"check-state: no state of it yet, on"},{"rule":600,"text":"00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state :default","how":"decides"}],"uncertain":[{"text":"00550 deny ip from any to any uid 1001","because":"uid"}]},"out":{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"decides: its state lets it by"}]},"reply_in":{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"decides: its state lets it by"}]},"reply_out":{"verdict":"deny","rule":800,"text":"00800 deny tcp from any 22 to any","walk":[{"rule":800,"text":"00800 deny tcp from any 22 to any","how":"decides"}]}},"fib":0,"findings":[{"severity":"bad","what":"The firewall drops the reply going out by epair2b: rule 800 (00800 deny tcp from any 22 to any)"},{"severity":"info","what":"It goes out by epair3a"}]}
+EOT
+	cat > want <<'EOT'
+host labvm forwarding=yes fib=0 delivered=-
+address 10.1.0.1/24 epair2b fib=0 up=yes
+address 10.3.0.1/24 epair3a fib=0 up=yes
+source local=no connected=epair2b
+destination local=no connected=epair3a
+ingress epair2b (by the route back to the source)
+route 10.3.0.0/24 via link#11 on epair3a fib=0 flags=U
+neighbor 10.3.0.2 reachable
+return fib=0 epair2b via link#10 symmetric=yes
+firewall on=yes
+in allow rule=600 by-state=- keep=yes setfib=-1 fwd=-
+  590 check-state: no state of it yet, on
+  600 decides
+  ? 00550 deny ip from any to any uid 1001: uid
+out allow rule=590 by-state=yes keep=- setfib=-1 fwd=-
+  590 decides: its state lets it by
+reply-in allow rule=590 by-state=yes keep=- setfib=-1 fwd=-
+  590 decides: its state lets it by
+reply-out deny rule=800 by-state=- keep=- setfib=-1 fwd=-
+  800 decides
+finding bad The firewall drops the reply going out by epair2b: rule 800 (00800 deny tcp from any 22 to any)
+finding info It goes out by epair3a
+yang-cbor 960 bytes, the same back
+EOT
+	atf_check -o file:want "$y" path path.json
+	cat > tr.json <<'EOT'
+{"address":"2001:db8::1","family":"inet6","hops":[{"ttl":1,"address":"2001:db8:1::1","rtt":0.412},{"ttl":2,"lost":true},{"ttl":3,"address":"2001:db8::1","rtt":12.5,"note":"!X"}],"reached":true}
+EOT
+	cat > want <<'EOT'
+traceroute 2001:db8::1 ipv6 reached=yes
+hop 1 2001:db8:1::1 rtt=412 note=- lost=-
+hop 2 - rtt=-1 note=- lost=yes
+hop 3 2001:db8::1 rtt=12500 note=!X lost=-
+yang-cbor 77 bytes, the same back
+EOT
+	atf_check -o file:want "$y" traceroute tr.json
+	cat > cap.json <<'EOT'
+{"source":"em0","filter":"port 22","lines":["2026-10-15 12:00:00.000001 IP 10.0.0.2.51234 > 10.0.0.1.22: Flags [S]","2026-10-15 12:00:00.000200 IP 10.0.0.1.22 > 10.0.0.2.51234: Flags [S.]"],"packets":2,"limit":50,"seconds":10,"timed_out":true,"bytes":24,"pcap":"1MOyoQIABAAAAAAAAAAAAAAABAABAAAA"}
+EOT
+	cat > want <<'EOT'
+capture em0 filter=port 22 packets=2 limit=50 seconds=10 timed-out=yes bytes=24 pcap=24 taken=yes
+line 2026-10-15 12:00:00.000001 IP 10.0.0.2.51234 > 10.0.0.1.22: Flags [S]
+line 2026-10-15 12:00:00.000200 IP 10.0.0.1.22 > 10.0.0.2.51234: Flags [S.]
+yang-cbor 221 bytes, the same back
+EOT
+	atf_check -o file:want "$y" capture cap.json
+}
+
+atf_test_case yang_history
+yang_history_head()
+{
+	atf_set "descr" "the history operation's reply as arcana-history has" \
+	    "it: sampling and limits as configuration, the samples taken" \
+	    "apart by the names of the interfaces, disks and jails; through" \
+	    "YANG-CBOR and back"
+}
+yang_history_body()
+{
+	local y="$(atf_get_srcdir)/yhist"
+
+	cat > hist.json <<'EOT'
+{"limits":{"cpu":90,"mem":80,"swap":50},"rules":[{"kind":"net","name":"em0","limit":100000000,"over":false},{"kind":"jail-cpu","name":"web","limit":50,"over":true}],"racct":true,"step":5,"keep":720,"bytes":94560,"ncpu":12,"mem_total":25769803776,"swap_total":4294967296,"fields":["t","cpu","load","mem","swap","rx","tx","read","write"],"nets":["em0","em1"],"disks":["ada0"],"jails":["web"],"samples":[[1791995110,12.5,0.42,8589934592,0,120000,34000,4096,8192,100000,30000,20000,4000,4096,8192,3.5,268435456],[1791995115,80.0,1.10,8600000000,1024,130000,35000,0,0,110000,31000,20000,4000,0,0,55.0,268435456]]}
+EOT
+	cat > want <<'EOT'
+sampling step=5 keep=720 limits cpu=90 mem=80 swap=50
+rule net em0 limit=100000000 over=no
+rule jail-cpu web limit=50 over=yes
+state bytes=94560 ncpu=12 memory=25769803776 swap=4294967296 racct=yes
+interface em0
+interface em1
+disk ada0
+jail web
+sample 2026-10-14T16:25:10Z cpu=125 load=42 memory=8589934592 swap=0 rx=120000 tx=34000 read=4096 written=8192 em0=100000/30000 em1=20000/4000 ada0=4096/8192 web=35/268435456
+sample 2026-10-14T16:25:15Z cpu=800 load=110 memory=8600000000 swap=1024 rx=130000 tx=35000 read=0 written=0 em0=110000/31000 em1=20000/4000 ada0=0/0 web=550/268435456
+yang-cbor 376 bytes, the same back
+EOT
+	atf_check -o file:want "$y" hist.json
+}
+
+atf_test_case yang_events
+yang_events_head()
+{
+	atf_set "descr" "the events operation's reply as arcana-events has" \
+	    "it: each kind an identity, its data the case of that kind," \
+	    "typed; one event as the notification; through YANG-CBOR and" \
+	    "back"
+}
+yang_events_body()
+{
+	local y="$(atf_get_srcdir)/yev"
+
+	cat > ev.json <<'EOT'
+{"last":12,"first":3,"kept":512,"events":[{"n":3,"t":1791995110,"kind":"route-add","data":{"destination":"10.9.0.0","gateway":"10.0.0.1","flags":"UGS","nhop":5,"metric":0,"weight":1,"fib":0,"prefixlen":16,"interface":"em0","source":"static"}},{"n":4,"t":1791995111,"kind":"routes","data":{"changed":40}},{"n":5,"t":1791995112,"kind":"link","jail":"r1","data":{"interface":"epair0b","up":true,"carrier":true,"mtu":1500}},{"n":6,"t":1791995113,"kind":"address-add","data":{"interface":"em0","address":"2001:db8::7","prefixlen":64}},{"n":7,"t":1791995114,"kind":"neigh","data":{"family":"inet","interface":"em0","address":"10.0.0.9","lladdr":"02:00:00:00:00:09","state":"reachable","router":false}},{"n":8,"t":1791995115,"kind":"threshold","data":{"what":"jail-cpu","name":"web","value":55,"limit":50,"over":true}},{"n":9,"t":1791995116,"kind":"kmsg","data":{"seq":41,"text":"em0: link state changed to UP"}},{"n":10,"t":1791995117,"kind":"sdwan-tunnel","data":{"id":"tvc-1","address":"10.202.0.2","state":"down","misses":3}},{"n":11,"t":1791995118,"kind":"sdwan-fault","data":{"type":"tunnel","severity":"Major","object":"tvc-1","by":"probe","description":"no reply","state":"set"}},{"n":12,"t":1791995119,"kind":"sdwan-security","data":{"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"em0","comment":"deny-ssh"}},{"n":13,"t":1791995120,"kind":"job","data":{"id":77,"title":"ipfw table T46 add","ok":false,"error":"ipfw: bad"}},{"n":14,"t":1791995121,"kind":"jail-state","data":{"jail":"web","state":"running","jid":5}},{"n":15,"t":1791995122,"kind":"crash","data":{"pid":812,"process":"nginx","jid":5,"jail":"web","uid":80,"signal":11,"core":true}}]}
+EOT
+	cat > want <<'EOT'
+events last=12 first=3 kept=512
+3 2026-10-14T16:25:10Z route-add: route 10.9.0.0/16 via 10.0.0.1 on em0 fib=0 flags=UGS source=static
+4 2026-10-14T16:25:11Z routes: routes changed=40
+5 2026-10-14T16:25:12Z link jail=r1: link epair0b up=yes carrier=yes mtu=1500
+6 2026-10-14T16:25:13Z address-add: address em0 2001:db8::7/64
+7 2026-10-14T16:25:14Z neigh: neighbor em0 10.0.0.9 lladdr=02:00:00:00:00:09 state=reachable router=no
+8 2026-10-14T16:25:15Z threshold: threshold jail-cpu name=web value=55 limit=50 over=yes
+9 2026-10-14T16:25:16Z kmsg: kmsg seq=41 text=em0: link state changed to UP more=0
+10 2026-10-14T16:25:17Z sdwan-tunnel: tunnel tvc-1 10.202.0.2 down misses=3 by=-
+11 2026-10-14T16:25:18Z sdwan-fault: fault tunnel Major tvc-1 by=probe set: no reply
+12 2026-10-14T16:25:19Z sdwan-security: security seq=7 rule=30010 Deny 10.1.0.2:4000 -> 10.3.0.2:22 on em0 (deny-ssh)
+13 2026-10-14T16:25:20Z job: job 77 ipfw table T46 add ok=no error=ipfw: bad
+14 2026-10-14T16:25:21Z jail-state: jail-state web running jid=5
+15 2026-10-14T16:25:22Z crash: crash pid=812 nginx jid=5 jail=web uid=80 signal=11 core=yes
+yang-cbor 868 bytes, the same back
+EOT
+	atf_check -o file:want "$y" list ev.json
+	cat > one.json <<'EOT'
+{"n":16,"t":1791995123,"kind":"link-del","data":{"interface":"epair9a","up":false,"carrier":false,"mtu":1500}}
+EOT
+	atf_check -o inline:'16 2026-10-14T16:25:23Z link-del: link epair9a up=no carrier=no mtu=1500\nyang-cbor 54 bytes, the same back\n' \
+	    "$y" one one.json
+}
+
 atf_test_case fw_walk
 fw_walk_head()
 {
@@ -6854,6 +6989,9 @@ atf_init_test_cases()
 	atf_add_test_case yang_processes
 	atf_add_test_case yang_log
 	atf_add_test_case yang_firewall
+	atf_add_test_case yang_troubleshoot
+	atf_add_test_case yang_history
+	atf_add_test_case yang_events
 	atf_add_test_case fw_walk
 	atf_add_test_case firewall_aliases
 	atf_add_test_case config_bundle

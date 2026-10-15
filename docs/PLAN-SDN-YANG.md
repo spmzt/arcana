@@ -1265,8 +1265,9 @@ A step never leaves `main` unbuildable; where a step would, it says
 - 3.1.6 A: `arcana-sysctl` (`running` ↔ sysctl.conf, operational from
   sysctl(3)); `arcana-kernel` (modules, `kld_list`); check: tests.
 - 3.1.7 A: `arcana-processes` (on `openconfig-procmon`; done),
-  `arcana-log` (and syslog.conf as `ietf-syslog`; done), `arcana-history`, `arcana-events` (numbered,
-  replayable); check: tests.
+  `arcana-log` (and syslog.conf as `ietf-syslog`; done), `arcana-history`
+  (done), `arcana-events` (numbered, each kind's data typed; done;
+  replay by number is 3.2.6's); check: tests.
 - 3.1.8 A: `arcana-bird`, `arcana-wireguard`, `arcana-netgraph`,
   `arcana-plugins`; check: the plugin tests.
 - 3.1.9 A: `arcana-host` (facts, router-id, role, capabilities),
@@ -1275,7 +1276,8 @@ A step never leaves `main` unbuildable; where a step would, it says
   rc.conf as configuration; the rules with counters, dynamic rules,
   tables, NAT and dummynet's schedulers, pipes and queues as state;
   the kernel's trace as an action; done, written by jobs of kind ipfw);
-  check: the firewall tests.
+  `arcana-troubleshoot` (path-check, traceroute, capture as actions;
+  done); check: the firewall tests.
 - 3.1.11 A: `arcana-probe` (sessions, config, results) over today's
   ICMP engine; check: the probe tests.
 - 3.1.12 A: the SD-WAN reads and writes (`sdwan`, `-rules`, `-steer`,

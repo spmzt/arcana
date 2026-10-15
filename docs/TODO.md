@@ -459,7 +459,16 @@
   state, the kernel's trace of an address's packets as an action; a
   vnet jail's by an augment of arcana-jails; a rule stays ipfw's words
   (invidia/yfw.c, yang_firewall).  What changes the firewall stays a
-  job of kind ipfw.  Next: 3.1.7's history, events
+  job of kind ipfw.  3.1.10, troubleshoot: share/yang/arcana-troubleshoot
+  (70 500) has path-check, traceroute and capture as actions, a
+  firewall walk typed (verdict, the rules met, those not judged)
+  (invidia/yts.c, yang_troubleshoot).  3.1.7, history and events:
+  share/yang/arcana-history (70 700: sampling and limits as
+  configuration, the samples as state taken apart by interface, disk
+  and jail; gula/yhist.c, yang_history) and arcana-events (70 800: each
+  kind an identity, its data the case of that kind, typed, the list
+  kept, a read after a number, the notification; gula/yev.c,
+  yang_events).  Next: 3.1.8's bird, wireguard, netgraph, plugins
   (faults as ietf-alarms), and the rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not

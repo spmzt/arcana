@@ -1,0 +1,658 @@
+module arcana-events {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-events";
+  prefix arcev;
+
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "What happened on a FreeBSD host, as it happened, numbered: the
+     kernel's own netlink(4) messages of the host's network and of
+     each vnet jail's (a route added or deleted, a link, an address, a
+     neighbour), a figure of the history crossing its limit, a line
+     the kernel wrote (the message buffer, dmesg(8)), a tunnel the
+     agent measures going down or up, a fault set or cleared (Mplify
+     119 §11.3), a security policy's rule seeing a packet (ipfw's
+     logdst rtsock), a job ending, a jail made or removed (kqueue(2)'s
+     EVFILT_JAIL), a process dying of a signal that dumps core
+     (kern.logsigexit).  Each is one of the kinds, with that kind's
+     data.  The agent keeps the last 512; a read after a number
+     misses none unless the oldest kept is beyond it.  The events and
+     event operations of arcana.yaml converted (Y-3): the list is the
+     events reply, the notification one event as it happens.";
+
+  revision 2026-10-15 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.7.";
+  }
+
+  identity event-kind {
+    description
+      "A kind of event.";
+  }
+  identity route-add {
+    base event-kind;
+    description
+      "A route added (netlink RTM_NEWROUTE).";
+  }
+  identity route-del {
+    base event-kind;
+    description
+      "A route deleted (RTM_DELROUTE).";
+  }
+  identity routes {
+    base event-kind;
+    description
+      "More routes changed in a second than are said one by one.";
+  }
+  identity link {
+    base event-kind;
+    description
+      "An interface, or its state (RTM_NEWLINK).";
+  }
+  identity link-del {
+    base event-kind;
+    description
+      "An interface gone (RTM_DELLINK).";
+  }
+  identity address-add {
+    base event-kind;
+    description
+      "An address added to an interface (RTM_NEWADDR).";
+  }
+  identity address-del {
+    base event-kind;
+    description
+      "An address taken from one (RTM_DELADDR).";
+  }
+  identity neigh {
+    base event-kind;
+    description
+      "A neighbour, ARP or NDP (RTM_NEWNEIGH).";
+  }
+  identity neigh-del {
+    base event-kind;
+    description
+      "A neighbour gone (RTM_DELNEIGH).";
+  }
+  identity threshold {
+    base event-kind;
+    description
+      "A figure of the history crossed its limit, either way.";
+  }
+  identity kmsg {
+    base event-kind;
+    description
+      "A line the kernel wrote.";
+  }
+  identity sdwan-tunnel {
+    base event-kind;
+    description
+      "A tunnel the agent measures went down or came up.";
+  }
+  identity sdwan-fault {
+    base event-kind;
+    description
+      "A fault set or cleared.";
+  }
+  identity sdwan-security {
+    base event-kind;
+    description
+      "A security policy's rule saw a packet.";
+  }
+  identity job {
+    base event-kind;
+    description
+      "A job ended.";
+  }
+  identity jail-state {
+    base event-kind;
+    description
+      "A jail was made or removed.";
+  }
+  identity crash {
+    base event-kind;
+    description
+      "A process died of a signal that dumps core.";
+  }
+
+  grouping event {
+    description
+      "One event.";
+    leaf number {
+      type uint64;
+      description
+        "Its number: each one more than the last.";
+    }
+    leaf time {
+      type yang:date-and-time;
+      description
+        "When.";
+    }
+    leaf kind {
+      type identityref {
+        base event-kind;
+      }
+      description
+        "What kind.";
+    }
+    leaf jail {
+      type string;
+      description
+        "The vnet jail whose network it is of, when not the host's.";
+    }
+    choice data {
+      description
+        "The kind's data.";
+      container route {
+        description
+          "route-add, route-del: the route, as the network
+           operation's routes have one.";
+        leaf destination {
+          type inet:ip-address-no-zone;
+          description
+            "Its destination.";
+        }
+        leaf prefix-length {
+          type uint8;
+          description
+            "Its prefix length.";
+        }
+        leaf gateway {
+          type string;
+          description
+            "Its next hop, or link#N.";
+        }
+        leaf interface {
+          type string;
+          description
+            "The interface it goes by.";
+        }
+        leaf fib {
+          type uint16;
+          description
+            "The FIB.";
+        }
+        leaf flags {
+          type string;
+          description
+            "Its flags, as netstat prints them.";
+        }
+        leaf metric {
+          type uint32;
+          description
+            "Its metric.";
+        }
+        leaf weight {
+          type uint32;
+          description
+            "Its weight, among equal routes.";
+        }
+        leaf mtu {
+          type uint32;
+          description
+            "Its MTU, when one is set on it.";
+        }
+        leaf source {
+          type string;
+          description
+            "Where it came from: a protocol, or static.";
+        }
+      }
+      container routes {
+        description
+          "routes: a burst.";
+        leaf changed {
+          type uint32;
+          description
+            "How many more changed in the second than were said.";
+        }
+      }
+      container link {
+        description
+          "link, link-del: an interface.";
+        leaf interface {
+          type string;
+          description
+            "Its name.";
+        }
+        leaf up {
+          type boolean;
+          description
+            "It is up.";
+        }
+        leaf carrier {
+          type boolean;
+          description
+            "It has a carrier.";
+        }
+        leaf mtu {
+          type uint32;
+          description
+            "Its MTU.";
+        }
+      }
+      container address {
+        description
+          "address-add, address-del: an interface's address.";
+        leaf interface {
+          type string;
+          description
+            "The interface.";
+        }
+        leaf address {
+          type inet:ip-address;
+          description
+            "The address.";
+        }
+        leaf prefix-length {
+          type uint8;
+          description
+            "Its prefix length.";
+        }
+      }
+      container neighbor {
+        description
+          "neigh, neigh-del: a neighbour, as the network operation's
+           neighbours have one.";
+        leaf interface {
+          type string;
+          description
+            "The interface it is on.";
+        }
+        leaf address {
+          type inet:ip-address;
+          description
+            "Its address.";
+        }
+        leaf link-address {
+          type string;
+          description
+            "Its link-layer address.";
+        }
+        leaf state {
+          type string;
+          description
+            "Its entry's state: reachable, stale, permanent ...";
+        }
+        leaf router {
+          type boolean;
+          description
+            "It is a router (NDP).";
+        }
+      }
+      container threshold {
+        description
+          "threshold: a figure crossed its limit.";
+        leaf what {
+          type enumeration {
+            enum cpu {
+              description
+                "CPU busy, in percent.";
+            }
+            enum mem {
+              description
+                "Memory in use, in percent.";
+            }
+            enum swap {
+              description
+                "Swap in use, in percent.";
+            }
+            enum net {
+              description
+                "An interface's bytes a second.";
+            }
+            enum disk {
+              description
+                "A disk's bytes a second.";
+            }
+            enum jail-cpu {
+              description
+                "A jail's share of one CPU, in percent.";
+            }
+            enum jail-mem {
+              description
+                "A jail's memory, in bytes.";
+            }
+          }
+          description
+            "Which figure.";
+        }
+        leaf name {
+          type string;
+          description
+            "The interface's, disk's or jail's name.";
+        }
+        leaf value {
+          type uint64;
+          description
+            "The figure.";
+        }
+        leaf limit {
+          type uint64;
+          description
+            "Its limit.";
+        }
+        leaf over {
+          type boolean;
+          description
+            "Over it now, or back under.";
+        }
+      }
+      container kmsg {
+        description
+          "kmsg: a line the kernel wrote.";
+        leaf sequence {
+          type uint64;
+          description
+            "Its number in the message buffer.";
+        }
+        leaf text {
+          type string;
+          description
+            "The line.";
+        }
+        leaf more {
+          type uint32;
+          description
+            "How many more came in the second beyond the twenty
+             said one by one.";
+        }
+      }
+      container tunnel {
+        description
+          "sdwan-tunnel: a tunnel's state.";
+        leaf id {
+          type string;
+          description
+            "The tunnel (TVC).";
+        }
+        leaf address {
+          type inet:ip-address-no-zone;
+          description
+            "Its far end.";
+        }
+        leaf interface {
+          type string;
+          description
+            "Its interface, when BFD told.";
+        }
+        leaf state {
+          type enumeration {
+            enum up {
+              description
+                "Up.";
+            }
+            enum down {
+              description
+                "Down.";
+            }
+          }
+          description
+            "Which way it went.";
+        }
+        leaf misses {
+          type uint32;
+          description
+            "Probes missed in a row.";
+        }
+        leaf by {
+          type string;
+          description
+            "What said so: the agent's probes, or bfd.";
+        }
+      }
+      container fault {
+        description
+          "sdwan-fault: a fault set or cleared (Mplify 119 Table 5).";
+        leaf type {
+          type string;
+          description
+            "Its type.";
+        }
+        leaf severity {
+          type string;
+          description
+            "Critical, Major, Minor, Warning, or Cleared.";
+        }
+        leaf object {
+          type string;
+          description
+            "What it is about.";
+        }
+        leaf by {
+          type string;
+          description
+            "What found it.";
+        }
+        leaf description {
+          type string;
+          description
+            "In words.";
+        }
+        leaf state {
+          type enumeration {
+            enum set {
+              description
+                "Seen.";
+            }
+            enum cleared {
+              description
+                "Gone.";
+            }
+          }
+          description
+            "Set or cleared.";
+        }
+      }
+      container security {
+        description
+          "sdwan-security: a rule logged to the routing socket saw a
+           packet.";
+        leaf sequence {
+          type uint64;
+          description
+            "Its number in the record.";
+        }
+        leaf rule {
+          type uint32;
+          description
+            "The rule.";
+        }
+        leaf action {
+          type string;
+          description
+            "What it did.";
+        }
+        leaf source {
+          type string;
+          description
+            "Where from, address and port.";
+        }
+        leaf destination {
+          type string;
+          description
+            "Where to.";
+        }
+        leaf interface {
+          type string;
+          description
+            "On which interface.";
+        }
+        leaf comment {
+          type string;
+          description
+            "The rule's comment: the policy it enforces.";
+        }
+      }
+      container job {
+        description
+          "job: a job ended.";
+        leaf id {
+          type uint64;
+          description
+            "The job.";
+        }
+        leaf title {
+          type string;
+          description
+            "What it was.";
+        }
+        leaf ok {
+          type boolean;
+          description
+            "It succeeded.";
+        }
+        leaf error {
+          type string;
+          description
+            "Why not.";
+        }
+      }
+      container jail-state {
+        description
+          "jail-state: a jail made or removed.";
+        leaf jail {
+          type string;
+          description
+            "Its name; parent.child for one made in a jail.";
+        }
+        leaf state {
+          type enumeration {
+            enum running {
+              description
+                "Made.";
+            }
+            enum stopped {
+              description
+                "Removed.";
+            }
+          }
+          description
+            "Which.";
+        }
+        leaf jid {
+          type uint32;
+          description
+            "Its id.";
+        }
+      }
+      container crash {
+        description
+          "crash: a process died of a signal that dumps core.";
+        leaf pid {
+          type uint32;
+          description
+            "The process.";
+        }
+        leaf process {
+          type string;
+          description
+            "Its name.";
+        }
+        leaf jid {
+          type uint32;
+          description
+            "Its jail's id; 0 the host.";
+        }
+        leaf jail {
+          type string;
+          description
+            "Its jail's name; empty for the host.";
+        }
+        leaf uid {
+          type uint32;
+          description
+            "Its user.";
+        }
+        leaf signal {
+          type uint8;
+          description
+            "The signal.";
+        }
+        leaf core {
+          type boolean;
+          description
+            "It dumped core.";
+        }
+      }
+    }
+  }
+
+  container events {
+    config false;
+    description
+      "The events kept.";
+    leaf last {
+      type uint64;
+      description
+        "The newest's number.";
+    }
+    leaf first {
+      type uint64;
+      description
+        "The oldest still kept.";
+    }
+    leaf kept {
+      type uint16;
+      description
+        "How many are kept at most.";
+    }
+    list event {
+      key "number";
+      description
+        "The events, oldest first.";
+      uses event;
+    }
+    action read {
+      description
+        "The events after a number.";
+      input {
+        leaf after {
+          type uint64;
+          description
+            "Only events of a greater number.";
+        }
+      }
+      output {
+        leaf last {
+          type uint64;
+          description
+            "The newest's number.";
+        }
+        leaf first {
+          type uint64;
+          description
+            "The oldest still kept.";
+        }
+        list event {
+          key "number";
+          description
+            "The events, oldest first.";
+          uses event;
+        }
+      }
+    }
+  }
+
+  notification event {
+    description
+      "One event, the moment it happens.";
+    uses event;
+  }
+}

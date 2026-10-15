@@ -407,6 +407,98 @@ struct arcana_firewall_firewall_trace_output_packet;
 struct arcana_firewall_firewall_trace_output;
 struct arcana_firewall_firewall;
 struct arcana_firewall;
+struct arcana_troubleshoot_troubleshoot_path_check_input;
+struct arcana_troubleshoot_troubleshoot_path_check_output_address;
+struct arcana_troubleshoot_troubleshoot_path_check_output_source;
+struct arcana_troubleshoot_troubleshoot_path_check_output_destination;
+struct arcana_troubleshoot_troubleshoot_path_check_output_ingress;
+struct arcana_troubleshoot_troubleshoot_path_check_output_route;
+struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor;
+struct arcana_troubleshoot_troubleshoot_path_check_output_return;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall;
+struct arcana_troubleshoot_troubleshoot_path_check_output_finding;
+struct arcana_troubleshoot_troubleshoot_path_check_output;
+struct arcana_troubleshoot_troubleshoot_traceroute_input;
+struct arcana_troubleshoot_troubleshoot_traceroute_output_hop;
+struct arcana_troubleshoot_troubleshoot_traceroute_output;
+struct arcana_troubleshoot_troubleshoot_capture_input;
+struct arcana_troubleshoot_troubleshoot_capture_output;
+struct arcana_troubleshoot_troubleshoot;
+struct arcana_troubleshoot;
+struct arcana_history_history_sampling;
+struct arcana_history_history_limits;
+struct arcana_history_history_rule;
+struct arcana_history_history_state_sample_interface;
+struct arcana_history_history_state_sample_disk;
+struct arcana_history_history_state_sample_jail;
+struct arcana_history_history_state_sample;
+struct arcana_history_history_state;
+struct arcana_history_history_read_input;
+struct arcana_history_history_read_output_sample_interface;
+struct arcana_history_history_read_output_sample_disk;
+struct arcana_history_history_read_output_sample_jail;
+struct arcana_history_history_read_output_sample;
+struct arcana_history_history_read_output;
+struct arcana_history_history;
+struct arcana_history;
+struct arcana_events_events_event_route;
+struct arcana_events_events_event_routes;
+struct arcana_events_events_event_link;
+struct arcana_events_events_event_address;
+struct arcana_events_events_event_neighbor;
+struct arcana_events_events_event_threshold;
+struct arcana_events_events_event_kmsg;
+struct arcana_events_events_event_tunnel;
+struct arcana_events_events_event_fault;
+struct arcana_events_events_event_security;
+struct arcana_events_events_event_job;
+struct arcana_events_events_event_jail_state;
+struct arcana_events_events_event_crash;
+struct arcana_events_events_event;
+struct arcana_events_events_read_input;
+struct arcana_events_events_read_output_event_route;
+struct arcana_events_events_read_output_event_routes;
+struct arcana_events_events_read_output_event_link;
+struct arcana_events_events_read_output_event_address;
+struct arcana_events_events_read_output_event_neighbor;
+struct arcana_events_events_read_output_event_threshold;
+struct arcana_events_events_read_output_event_kmsg;
+struct arcana_events_events_read_output_event_tunnel;
+struct arcana_events_events_read_output_event_fault;
+struct arcana_events_events_read_output_event_security;
+struct arcana_events_events_read_output_event_job;
+struct arcana_events_events_read_output_event_jail_state;
+struct arcana_events_events_read_output_event_crash;
+struct arcana_events_events_read_output_event;
+struct arcana_events_events_read_output;
+struct arcana_events_events;
+struct arcana_events;
+struct arcana_events_event_route;
+struct arcana_events_event_routes;
+struct arcana_events_event_link;
+struct arcana_events_event_address;
+struct arcana_events_event_neighbor;
+struct arcana_events_event_threshold;
+struct arcana_events_event_kmsg;
+struct arcana_events_event_tunnel;
+struct arcana_events_event_fault;
+struct arcana_events_event_security;
+struct arcana_events_event_job;
+struct arcana_events_event_jail_state;
+struct arcana_events_event_crash;
+struct arcana_events_event;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -1496,6 +1588,206 @@ enum arcana_firewall_firewall_trace_output_packet_direction {
 	ARCANA_FIREWALL_FIREWALL_TRACE_OUTPUT_PACKET_DIRECTION_OUT = 1,
 };
 
+enum arcana_troubleshoot_troubleshoot_path_check_input_protocol {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_INPUT_PROTOCOL_TCP = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_INPUT_PROTOCOL_UDP = 1,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_INPUT_PROTOCOL_ICMP = 2,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_INPUT_PROTOCOL_IP = 3,
+};
+
+enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_verdict {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_ALLOW = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_DENY = 1,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_FWD = 2,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_NAT = 3,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_PIPE = 4,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_DIVERT = 5,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_UNKNOWN = 6,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_NONE = 7,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_OTHER = 8,
+};
+
+enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_verdict {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_ALLOW = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_DENY = 1,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_FWD = 2,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_NAT = 3,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_PIPE = 4,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_DIVERT = 5,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_UNKNOWN = 6,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_NONE = 7,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_OTHER = 8,
+};
+
+enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_verdict {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_ALLOW = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_DENY = 1,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_FWD = 2,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_NAT = 3,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_PIPE = 4,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_DIVERT = 5,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_UNKNOWN = 6,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_NONE = 7,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_OTHER = 8,
+};
+
+enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_verdict {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_ALLOW = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_DENY = 1,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_FWD = 2,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_NAT = 3,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_PIPE = 4,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_DIVERT = 5,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_UNKNOWN = 6,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_NONE = 7,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_OTHER = 8,
+};
+
+enum arcana_troubleshoot_troubleshoot_path_check_output_finding_severity {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FINDING_SEVERITY_BAD = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FINDING_SEVERITY_WARN = 1,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FINDING_SEVERITY_INFO = 2,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FINDING_SEVERITY_OK = 3,
+};
+
+enum arcana_troubleshoot_troubleshoot_traceroute_output_family {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_TRACEROUTE_OUTPUT_FAMILY_IPV4 = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_TRACEROUTE_OUTPUT_FAMILY_IPV6 = 1,
+};
+
+enum arcana_history_history_rule_kind {
+	ARCANA_HISTORY_HISTORY_RULE_KIND_NET = 0,
+	ARCANA_HISTORY_HISTORY_RULE_KIND_DISK = 1,
+	ARCANA_HISTORY_HISTORY_RULE_KIND_JAIL_CPU = 2,
+	ARCANA_HISTORY_HISTORY_RULE_KIND_JAIL_MEM = 3,
+};
+
+enum arcana_events_events_event_data {
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_NONE = 0,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_ROUTE,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_ROUTES,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_LINK,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_ADDRESS,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_NEIGHBOR,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_THRESHOLD,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_KMSG,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_TUNNEL,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_FAULT,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_SECURITY,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_JOB,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_JAIL_STATE,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_CRASH,
+};
+
+enum arcana_events_events_event_threshold_what {
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_CPU = 0,
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_MEM = 1,
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_SWAP = 2,
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_NET = 3,
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_DISK = 4,
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_JAIL_CPU = 5,
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_JAIL_MEM = 6,
+};
+
+enum arcana_events_events_event_tunnel_state {
+	ARCANA_EVENTS_EVENTS_EVENT_TUNNEL_STATE_UP = 0,
+	ARCANA_EVENTS_EVENTS_EVENT_TUNNEL_STATE_DOWN = 1,
+};
+
+enum arcana_events_events_event_fault_state {
+	ARCANA_EVENTS_EVENTS_EVENT_FAULT_STATE_SET = 0,
+	ARCANA_EVENTS_EVENTS_EVENT_FAULT_STATE_CLEARED = 1,
+};
+
+enum arcana_events_events_event_jail_state_state {
+	ARCANA_EVENTS_EVENTS_EVENT_JAIL_STATE_STATE_RUNNING = 0,
+	ARCANA_EVENTS_EVENTS_EVENT_JAIL_STATE_STATE_STOPPED = 1,
+};
+
+enum arcana_events_events_read_output_event_data {
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_NONE = 0,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_ROUTE,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_ROUTES,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_LINK,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_ADDRESS,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_NEIGHBOR,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_THRESHOLD,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_KMSG,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_TUNNEL,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_FAULT,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_SECURITY,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_JOB,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_JAIL_STATE,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_CRASH,
+};
+
+enum arcana_events_events_read_output_event_threshold_what {
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_CPU = 0,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_MEM = 1,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_SWAP = 2,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_NET = 3,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_DISK = 4,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_JAIL_CPU = 5,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_JAIL_MEM = 6,
+};
+
+enum arcana_events_events_read_output_event_tunnel_state {
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_TUNNEL_STATE_UP = 0,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_TUNNEL_STATE_DOWN = 1,
+};
+
+enum arcana_events_events_read_output_event_fault_state {
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_FAULT_STATE_SET = 0,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_FAULT_STATE_CLEARED = 1,
+};
+
+enum arcana_events_events_read_output_event_jail_state_state {
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_JAIL_STATE_STATE_RUNNING = 0,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_JAIL_STATE_STATE_STOPPED = 1,
+};
+
+enum arcana_events_event_data {
+	ARCANA_EVENTS_EVENT_DATA_NONE = 0,
+	ARCANA_EVENTS_EVENT_DATA_ROUTE,
+	ARCANA_EVENTS_EVENT_DATA_ROUTES,
+	ARCANA_EVENTS_EVENT_DATA_LINK,
+	ARCANA_EVENTS_EVENT_DATA_ADDRESS,
+	ARCANA_EVENTS_EVENT_DATA_NEIGHBOR,
+	ARCANA_EVENTS_EVENT_DATA_THRESHOLD,
+	ARCANA_EVENTS_EVENT_DATA_KMSG,
+	ARCANA_EVENTS_EVENT_DATA_TUNNEL,
+	ARCANA_EVENTS_EVENT_DATA_FAULT,
+	ARCANA_EVENTS_EVENT_DATA_SECURITY,
+	ARCANA_EVENTS_EVENT_DATA_JOB,
+	ARCANA_EVENTS_EVENT_DATA_JAIL_STATE,
+	ARCANA_EVENTS_EVENT_DATA_CRASH,
+};
+
+enum arcana_events_event_threshold_what {
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_CPU = 0,
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_MEM = 1,
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_SWAP = 2,
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_NET = 3,
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_DISK = 4,
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_JAIL_CPU = 5,
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_JAIL_MEM = 6,
+};
+
+enum arcana_events_event_tunnel_state {
+	ARCANA_EVENTS_EVENT_TUNNEL_STATE_UP = 0,
+	ARCANA_EVENTS_EVENT_TUNNEL_STATE_DOWN = 1,
+};
+
+enum arcana_events_event_fault_state {
+	ARCANA_EVENTS_EVENT_FAULT_STATE_SET = 0,
+	ARCANA_EVENTS_EVENT_FAULT_STATE_CLEARED = 1,
+};
+
+enum arcana_events_event_jail_state_state {
+	ARCANA_EVENTS_EVENT_JAIL_STATE_STATE_RUNNING = 0,
+	ARCANA_EVENTS_EVENT_JAIL_STATE_STATE_STOPPED = 1,
+};
+
 struct ieee802_dot1q_bridge_bridges_bridge_component_rstp_bridge_rstp_root_port {
 	unsigned	 which;	/* the member set, from 0 */
 	union {
@@ -1611,6 +1903,166 @@ struct arcana_firewall_firewall_trace_output_packet_source {
 };
 
 struct arcana_firewall_firewall_trace_output_packet_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_path_check_input_source {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_path_check_input_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_path_check_output_address_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_path_check_output_route_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_traceroute_input_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_traceroute_output_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_traceroute_output_hop_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_event_route_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_event_address_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_event_neighbor_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_event_tunnel_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_read_output_event_route_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_read_output_event_address_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_read_output_event_neighbor_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_read_output_event_tunnel_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_event_route_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_event_address_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_event_neighbor_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_event_tunnel_address {
 	unsigned	 which;	/* the member set, from 0 */
 	union {
 		const char	*m0;
@@ -6143,6 +6595,1131 @@ struct arcana_firewall {
 	const struct arcana_firewall_firewall	*firewall;
 };
 
+/* input */
+struct arcana_troubleshoot_troubleshoot_path_check_input {
+	bool			 has_source;
+	struct arcana_troubleshoot_troubleshoot_path_check_input_source	 source;
+	bool			 has_destination;
+	struct arcana_troubleshoot_troubleshoot_path_check_input_destination	 destination;
+	bool			 has_protocol;
+	enum arcana_troubleshoot_troubleshoot_path_check_input_protocol	 protocol;
+	bool			 has_port;
+	uint16_t	 port;
+	const char	*interface;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*jail;
+	bool			 has_reply;
+	bool		 reply;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_address {
+	bool			 has_address;
+	struct arcana_troubleshoot_troubleshoot_path_check_output_address_address	 address;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	const char	*interface;
+	bool			 has_fib;
+	uint16_t	 fib;
+	bool			 has_up;
+	bool		 up;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_source {
+	bool			 has_local;
+	bool		 local;
+	const char	*connected;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_destination {
+	bool			 has_local;
+	bool		 local;
+	const char	*connected;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_ingress {
+	const char	*interface;
+	const char	*how;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_route {
+	bool			 has_destination;
+	struct arcana_troubleshoot_troubleshoot_path_check_output_route_destination	 destination;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	const char	*gateway;
+	const char	*interface;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*flags;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor {
+	bool			 has_address;
+	struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor_address	 address;
+	const char	*state;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_return {
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*interface;
+	const char	*gateway;
+	bool			 has_symmetric;
+	bool		 symmetric;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step {
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	const char	*how;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain {
+	const char	*text;
+	const char	*because;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in {
+	bool			 has_verdict;
+	enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_verdict	 verdict;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	bool			 has_by_state;
+	bool		 by_state;
+	bool			 has_keep_state;
+	bool		 keep_state;
+	bool			 has_setfib;
+	int32_t		 setfib;
+	const char	*fwd;
+	const char	*note;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step	*v;
+	}			 step;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain	*v;
+	}			 uncertain;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step {
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	const char	*how;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain {
+	const char	*text;
+	const char	*because;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out {
+	bool			 has_verdict;
+	enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_verdict	 verdict;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	bool			 has_by_state;
+	bool		 by_state;
+	bool			 has_keep_state;
+	bool		 keep_state;
+	bool			 has_setfib;
+	int32_t		 setfib;
+	const char	*fwd;
+	const char	*note;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step	*v;
+	}			 step;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain	*v;
+	}			 uncertain;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step {
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	const char	*how;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain {
+	const char	*text;
+	const char	*because;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in {
+	bool			 has_verdict;
+	enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_verdict	 verdict;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	bool			 has_by_state;
+	bool		 by_state;
+	bool			 has_keep_state;
+	bool		 keep_state;
+	bool			 has_setfib;
+	int32_t		 setfib;
+	const char	*fwd;
+	const char	*note;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step	*v;
+	}			 step;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain	*v;
+	}			 uncertain;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step {
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	const char	*how;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain {
+	const char	*text;
+	const char	*because;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out {
+	bool			 has_verdict;
+	enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_verdict	 verdict;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	bool			 has_by_state;
+	bool		 by_state;
+	bool			 has_keep_state;
+	bool		 keep_state;
+	bool			 has_setfib;
+	int32_t		 setfib;
+	const char	*fwd;
+	const char	*note;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step	*v;
+	}			 step;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain	*v;
+	}			 uncertain;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall {
+	bool			 has_on;
+	bool		 on;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in	*in;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out	*out;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in	*reply_in;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out	*reply_out;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_finding {
+	bool			 has_severity;
+	enum arcana_troubleshoot_troubleshoot_path_check_output_finding_severity	 severity;
+	const char	*what;
+};
+
+/* output */
+struct arcana_troubleshoot_troubleshoot_path_check_output {
+	const char	*host;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_address	*v;
+	}			 address;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_source	*source;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_destination	*destination;
+	bool			 has_forwarding;
+	bool		 forwarding;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_ingress	*ingress;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_route	*route;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor	*neighbor;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_return	*return_;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall	*firewall;
+	bool			 has_delivered;
+	bool		 delivered;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_finding	*v;
+	}			 finding;
+};
+
+/* input */
+struct arcana_troubleshoot_troubleshoot_traceroute_input {
+	bool			 has_address;
+	struct arcana_troubleshoot_troubleshoot_traceroute_input_address	 address;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_traceroute_output_hop {
+	uint8_t		 ttl;
+	bool			 has_address;
+	struct arcana_troubleshoot_troubleshoot_traceroute_output_hop_address	 address;
+	bool			 has_rtt;
+	int64_t		 rtt;	/* decimal64, 3 fraction digits */
+	const char	*note;
+	bool			 has_lost;
+	bool		 lost;
+};
+
+/* output */
+struct arcana_troubleshoot_troubleshoot_traceroute_output {
+	bool			 has_address;
+	struct arcana_troubleshoot_troubleshoot_traceroute_output_address	 address;
+	bool			 has_family;
+	enum arcana_troubleshoot_troubleshoot_traceroute_output_family	 family;
+	bool			 has_reached;
+	bool		 reached;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_traceroute_output_hop	*v;
+	}			 hop;
+};
+
+/* input */
+struct arcana_troubleshoot_troubleshoot_capture_input {
+	const char	*interface;
+	const char	*filter;
+	bool			 has_packets;
+	uint16_t	 packets;
+	bool			 has_seconds;
+	uint8_t		 seconds;
+	const char	*jail;
+};
+
+/* output */
+struct arcana_troubleshoot_troubleshoot_capture_output {
+	const char	*source;
+	const char	*filter;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 line;
+	bool			 has_packets;
+	uint32_t	 packets;
+	bool			 has_limit;
+	uint16_t	 limit;
+	bool			 has_seconds;
+	uint8_t		 seconds;
+	bool			 has_timed_out;
+	bool		 timed_out;
+	bool			 has_bytes;
+	uint64_t	 bytes;
+	struct cbl_bytes	 pcap;
+	const char	*taken;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 capture_source;
+};
+
+/* data */
+struct arcana_troubleshoot {
+	const struct arcana_troubleshoot_troubleshoot	*troubleshoot;
+};
+
+/* container */
+struct arcana_history_history_sampling {
+	bool			 has_step;
+	uint16_t	 step;
+	bool			 has_keep;
+	uint32_t	 keep;
+};
+
+/* container */
+struct arcana_history_history_limits {
+	bool			 has_cpu;
+	uint8_t		 cpu;
+	bool			 has_memory;
+	uint8_t		 memory;
+	bool			 has_swap;
+	uint8_t		 swap;
+};
+
+/* list entry */
+struct arcana_history_history_rule {
+	enum arcana_history_history_rule_kind	 kind;
+	const char	*name;
+	bool			 has_limit;
+	uint64_t	 limit;
+	bool			 has_over;
+	bool		 over;
+};
+
+/* list entry */
+struct arcana_history_history_state_sample_interface {
+	const char	*name;
+	bool			 has_received;
+	uint64_t	 received;
+	bool			 has_sent;
+	uint64_t	 sent;
+};
+
+/* list entry */
+struct arcana_history_history_state_sample_disk {
+	const char	*name;
+	bool			 has_read;
+	uint64_t	 read;
+	bool			 has_written;
+	uint64_t	 written;
+};
+
+/* list entry */
+struct arcana_history_history_state_sample_jail {
+	const char	*name;
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 1 fraction digits */
+	bool			 has_memory;
+	uint64_t	 memory;
+};
+
+/* list entry */
+struct arcana_history_history_state_sample {
+	const char	*time;
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 1 fraction digits */
+	bool			 has_load;
+	int64_t		 load;	/* decimal64, 2 fraction digits */
+	bool			 has_memory;
+	uint64_t	 memory;
+	bool			 has_swap;
+	uint64_t	 swap;
+	bool			 has_received;
+	uint64_t	 received;
+	bool			 has_sent;
+	uint64_t	 sent;
+	bool			 has_read;
+	uint64_t	 read;
+	bool			 has_written;
+	uint64_t	 written;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_state_sample_interface	*v;
+	}			 interface;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_state_sample_disk	*v;
+	}			 disk;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_state_sample_jail	*v;
+	}			 jail;
+};
+
+/* container */
+struct arcana_history_history_state {
+	bool			 has_bytes;
+	uint64_t	 bytes;
+	bool			 has_ncpu;
+	uint16_t	 ncpu;
+	bool			 has_memory_total;
+	uint64_t	 memory_total;
+	bool			 has_swap_total;
+	uint64_t	 swap_total;
+	bool			 has_racct;
+	bool		 racct;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 interface;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 disk;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 jail;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_state_sample	*v;
+	}			 sample;
+};
+
+/* input */
+struct arcana_history_history_read_input {
+	const char	*after;
+};
+
+/* list entry */
+struct arcana_history_history_read_output_sample_interface {
+	const char	*name;
+	bool			 has_received;
+	uint64_t	 received;
+	bool			 has_sent;
+	uint64_t	 sent;
+};
+
+/* list entry */
+struct arcana_history_history_read_output_sample_disk {
+	const char	*name;
+	bool			 has_read;
+	uint64_t	 read;
+	bool			 has_written;
+	uint64_t	 written;
+};
+
+/* list entry */
+struct arcana_history_history_read_output_sample_jail {
+	const char	*name;
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 1 fraction digits */
+	bool			 has_memory;
+	uint64_t	 memory;
+};
+
+/* list entry */
+struct arcana_history_history_read_output_sample {
+	const char	*time;
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 1 fraction digits */
+	bool			 has_load;
+	int64_t		 load;	/* decimal64, 2 fraction digits */
+	bool			 has_memory;
+	uint64_t	 memory;
+	bool			 has_swap;
+	uint64_t	 swap;
+	bool			 has_received;
+	uint64_t	 received;
+	bool			 has_sent;
+	uint64_t	 sent;
+	bool			 has_read;
+	uint64_t	 read;
+	bool			 has_written;
+	uint64_t	 written;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_read_output_sample_interface	*v;
+	}			 interface;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_read_output_sample_disk	*v;
+	}			 disk;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_read_output_sample_jail	*v;
+	}			 jail;
+};
+
+/* output */
+struct arcana_history_history_read_output {
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_read_output_sample	*v;
+	}			 sample;
+};
+
+/* container */
+struct arcana_history_history {
+	const struct arcana_history_history_sampling	*sampling;
+	const struct arcana_history_history_limits	*limits;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_rule	*v;
+	}			 rule;
+	const struct arcana_history_history_state	*state;
+};
+
+/* data */
+struct arcana_history {
+	const struct arcana_history_history	*history;
+};
+
+/* container */
+struct arcana_events_events_event_route {
+	bool			 has_destination;
+	struct arcana_events_events_event_route_destination	 destination;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	const char	*gateway;
+	const char	*interface;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*flags;
+	bool			 has_metric;
+	uint32_t	 metric;
+	bool			 has_weight;
+	uint32_t	 weight;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+	const char	*source;
+};
+
+/* container */
+struct arcana_events_events_event_routes {
+	bool			 has_changed;
+	uint32_t	 changed;
+};
+
+/* container */
+struct arcana_events_events_event_link {
+	const char	*interface;
+	bool			 has_up;
+	bool		 up;
+	bool			 has_carrier;
+	bool		 carrier;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+};
+
+/* container */
+struct arcana_events_events_event_address {
+	const char	*interface;
+	bool			 has_address;
+	struct arcana_events_events_event_address_address	 address;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+};
+
+/* container */
+struct arcana_events_events_event_neighbor {
+	const char	*interface;
+	bool			 has_address;
+	struct arcana_events_events_event_neighbor_address	 address;
+	const char	*link_address;
+	const char	*state;
+	bool			 has_router;
+	bool		 router;
+};
+
+/* container */
+struct arcana_events_events_event_threshold {
+	bool			 has_what;
+	enum arcana_events_events_event_threshold_what	 what;
+	const char	*name;
+	bool			 has_value;
+	uint64_t	 value;
+	bool			 has_limit;
+	uint64_t	 limit;
+	bool			 has_over;
+	bool		 over;
+};
+
+/* container */
+struct arcana_events_events_event_kmsg {
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	const char	*text;
+	bool			 has_more;
+	uint32_t	 more;
+};
+
+/* container */
+struct arcana_events_events_event_tunnel {
+	const char	*id;
+	bool			 has_address;
+	struct arcana_events_events_event_tunnel_address	 address;
+	const char	*interface;
+	bool			 has_state;
+	enum arcana_events_events_event_tunnel_state	 state;
+	bool			 has_misses;
+	uint32_t	 misses;
+	const char	*by;
+};
+
+/* container */
+struct arcana_events_events_event_fault {
+	const char	*type;
+	const char	*severity;
+	const char	*object;
+	const char	*by;
+	const char	*description;
+	bool			 has_state;
+	enum arcana_events_events_event_fault_state	 state;
+};
+
+/* container */
+struct arcana_events_events_event_security {
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*action;
+	const char	*source;
+	const char	*destination;
+	const char	*interface;
+	const char	*comment;
+};
+
+/* container */
+struct arcana_events_events_event_job {
+	bool			 has_id;
+	uint64_t	 id;
+	const char	*title;
+	bool			 has_ok;
+	bool		 ok;
+	const char	*error;
+};
+
+/* container */
+struct arcana_events_events_event_jail_state {
+	const char	*jail;
+	bool			 has_state;
+	enum arcana_events_events_event_jail_state_state	 state;
+	bool			 has_jid;
+	uint32_t	 jid;
+};
+
+/* container */
+struct arcana_events_events_event_crash {
+	bool			 has_pid;
+	uint32_t	 pid;
+	const char	*process;
+	bool			 has_jid;
+	uint32_t	 jid;
+	const char	*jail;
+	bool			 has_uid;
+	uint32_t	 uid;
+	bool			 has_signal;
+	uint8_t		 signal;
+	bool			 has_core;
+	bool		 core;
+};
+
+/* list entry */
+struct arcana_events_events_event {
+	uint64_t	 number;
+	const char	*time;
+	bool			 has_kind;
+	uint64_t	 kind;	/* identityref: a SID */
+	const char	*jail;
+	enum arcana_events_events_event_data	 data;	/* the case given */
+	const struct arcana_events_events_event_route	*route;
+	const struct arcana_events_events_event_routes	*routes;
+	const struct arcana_events_events_event_link	*link;
+	const struct arcana_events_events_event_address	*address;
+	const struct arcana_events_events_event_neighbor	*neighbor;
+	const struct arcana_events_events_event_threshold	*threshold;
+	const struct arcana_events_events_event_kmsg	*kmsg;
+	const struct arcana_events_events_event_tunnel	*tunnel;
+	const struct arcana_events_events_event_fault	*fault;
+	const struct arcana_events_events_event_security	*security;
+	const struct arcana_events_events_event_job	*job;
+	const struct arcana_events_events_event_jail_state	*jail_state;
+	const struct arcana_events_events_event_crash	*crash;
+};
+
+/* input */
+struct arcana_events_events_read_input {
+	bool			 has_after;
+	uint64_t	 after;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_route {
+	bool			 has_destination;
+	struct arcana_events_events_read_output_event_route_destination	 destination;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	const char	*gateway;
+	const char	*interface;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*flags;
+	bool			 has_metric;
+	uint32_t	 metric;
+	bool			 has_weight;
+	uint32_t	 weight;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+	const char	*source;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_routes {
+	bool			 has_changed;
+	uint32_t	 changed;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_link {
+	const char	*interface;
+	bool			 has_up;
+	bool		 up;
+	bool			 has_carrier;
+	bool		 carrier;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_address {
+	const char	*interface;
+	bool			 has_address;
+	struct arcana_events_events_read_output_event_address_address	 address;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_neighbor {
+	const char	*interface;
+	bool			 has_address;
+	struct arcana_events_events_read_output_event_neighbor_address	 address;
+	const char	*link_address;
+	const char	*state;
+	bool			 has_router;
+	bool		 router;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_threshold {
+	bool			 has_what;
+	enum arcana_events_events_read_output_event_threshold_what	 what;
+	const char	*name;
+	bool			 has_value;
+	uint64_t	 value;
+	bool			 has_limit;
+	uint64_t	 limit;
+	bool			 has_over;
+	bool		 over;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_kmsg {
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	const char	*text;
+	bool			 has_more;
+	uint32_t	 more;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_tunnel {
+	const char	*id;
+	bool			 has_address;
+	struct arcana_events_events_read_output_event_tunnel_address	 address;
+	const char	*interface;
+	bool			 has_state;
+	enum arcana_events_events_read_output_event_tunnel_state	 state;
+	bool			 has_misses;
+	uint32_t	 misses;
+	const char	*by;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_fault {
+	const char	*type;
+	const char	*severity;
+	const char	*object;
+	const char	*by;
+	const char	*description;
+	bool			 has_state;
+	enum arcana_events_events_read_output_event_fault_state	 state;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_security {
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*action;
+	const char	*source;
+	const char	*destination;
+	const char	*interface;
+	const char	*comment;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_job {
+	bool			 has_id;
+	uint64_t	 id;
+	const char	*title;
+	bool			 has_ok;
+	bool		 ok;
+	const char	*error;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_jail_state {
+	const char	*jail;
+	bool			 has_state;
+	enum arcana_events_events_read_output_event_jail_state_state	 state;
+	bool			 has_jid;
+	uint32_t	 jid;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_crash {
+	bool			 has_pid;
+	uint32_t	 pid;
+	const char	*process;
+	bool			 has_jid;
+	uint32_t	 jid;
+	const char	*jail;
+	bool			 has_uid;
+	uint32_t	 uid;
+	bool			 has_signal;
+	uint8_t		 signal;
+	bool			 has_core;
+	bool		 core;
+};
+
+/* list entry */
+struct arcana_events_events_read_output_event {
+	uint64_t	 number;
+	const char	*time;
+	bool			 has_kind;
+	uint64_t	 kind;	/* identityref: a SID */
+	const char	*jail;
+	enum arcana_events_events_read_output_event_data	 data;	/* the case given */
+	const struct arcana_events_events_read_output_event_route	*route;
+	const struct arcana_events_events_read_output_event_routes	*routes;
+	const struct arcana_events_events_read_output_event_link	*link;
+	const struct arcana_events_events_read_output_event_address	*address;
+	const struct arcana_events_events_read_output_event_neighbor	*neighbor;
+	const struct arcana_events_events_read_output_event_threshold	*threshold;
+	const struct arcana_events_events_read_output_event_kmsg	*kmsg;
+	const struct arcana_events_events_read_output_event_tunnel	*tunnel;
+	const struct arcana_events_events_read_output_event_fault	*fault;
+	const struct arcana_events_events_read_output_event_security	*security;
+	const struct arcana_events_events_read_output_event_job	*job;
+	const struct arcana_events_events_read_output_event_jail_state	*jail_state;
+	const struct arcana_events_events_read_output_event_crash	*crash;
+};
+
+/* output */
+struct arcana_events_events_read_output {
+	bool			 has_last;
+	uint64_t	 last;
+	bool			 has_first;
+	uint64_t	 first;
+	struct {
+		size_t		 n;
+		const struct arcana_events_events_read_output_event	*v;
+	}			 event;
+};
+
+/* container */
+struct arcana_events_events {
+	bool			 has_last;
+	uint64_t	 last;
+	bool			 has_first;
+	uint64_t	 first;
+	bool			 has_kept;
+	uint16_t	 kept;
+	struct {
+		size_t		 n;
+		const struct arcana_events_events_event	*v;
+	}			 event;
+};
+
+/* data */
+struct arcana_events {
+	const struct arcana_events_events	*events;
+};
+
+/* container */
+struct arcana_events_event_route {
+	bool			 has_destination;
+	struct arcana_events_event_route_destination	 destination;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	const char	*gateway;
+	const char	*interface;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*flags;
+	bool			 has_metric;
+	uint32_t	 metric;
+	bool			 has_weight;
+	uint32_t	 weight;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+	const char	*source;
+};
+
+/* container */
+struct arcana_events_event_routes {
+	bool			 has_changed;
+	uint32_t	 changed;
+};
+
+/* container */
+struct arcana_events_event_link {
+	const char	*interface;
+	bool			 has_up;
+	bool		 up;
+	bool			 has_carrier;
+	bool		 carrier;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+};
+
+/* container */
+struct arcana_events_event_address {
+	const char	*interface;
+	bool			 has_address;
+	struct arcana_events_event_address_address	 address;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+};
+
+/* container */
+struct arcana_events_event_neighbor {
+	const char	*interface;
+	bool			 has_address;
+	struct arcana_events_event_neighbor_address	 address;
+	const char	*link_address;
+	const char	*state;
+	bool			 has_router;
+	bool		 router;
+};
+
+/* container */
+struct arcana_events_event_threshold {
+	bool			 has_what;
+	enum arcana_events_event_threshold_what	 what;
+	const char	*name;
+	bool			 has_value;
+	uint64_t	 value;
+	bool			 has_limit;
+	uint64_t	 limit;
+	bool			 has_over;
+	bool		 over;
+};
+
+/* container */
+struct arcana_events_event_kmsg {
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	const char	*text;
+	bool			 has_more;
+	uint32_t	 more;
+};
+
+/* container */
+struct arcana_events_event_tunnel {
+	const char	*id;
+	bool			 has_address;
+	struct arcana_events_event_tunnel_address	 address;
+	const char	*interface;
+	bool			 has_state;
+	enum arcana_events_event_tunnel_state	 state;
+	bool			 has_misses;
+	uint32_t	 misses;
+	const char	*by;
+};
+
+/* container */
+struct arcana_events_event_fault {
+	const char	*type;
+	const char	*severity;
+	const char	*object;
+	const char	*by;
+	const char	*description;
+	bool			 has_state;
+	enum arcana_events_event_fault_state	 state;
+};
+
+/* container */
+struct arcana_events_event_security {
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*action;
+	const char	*source;
+	const char	*destination;
+	const char	*interface;
+	const char	*comment;
+};
+
+/* container */
+struct arcana_events_event_job {
+	bool			 has_id;
+	uint64_t	 id;
+	const char	*title;
+	bool			 has_ok;
+	bool		 ok;
+	const char	*error;
+};
+
+/* container */
+struct arcana_events_event_jail_state {
+	const char	*jail;
+	bool			 has_state;
+	enum arcana_events_event_jail_state_state	 state;
+	bool			 has_jid;
+	uint32_t	 jid;
+};
+
+/* container */
+struct arcana_events_event_crash {
+	bool			 has_pid;
+	uint32_t	 pid;
+	const char	*process;
+	bool			 has_jid;
+	uint32_t	 jid;
+	const char	*jail;
+	bool			 has_uid;
+	uint32_t	 uid;
+	bool			 has_signal;
+	uint8_t		 signal;
+	bool			 has_core;
+	bool		 core;
+};
+
+/* notification */
+struct arcana_events_event {
+	bool			 has_number;
+	uint64_t	 number;
+	const char	*time;
+	bool			 has_kind;
+	uint64_t	 kind;	/* identityref: a SID */
+	const char	*jail;
+	enum arcana_events_event_data	 data;	/* the case given */
+	const struct arcana_events_event_route	*route;
+	const struct arcana_events_event_routes	*routes;
+	const struct arcana_events_event_link	*link;
+	const struct arcana_events_event_address	*address;
+	const struct arcana_events_event_neighbor	*neighbor;
+	const struct arcana_events_event_threshold	*threshold;
+	const struct arcana_events_event_kmsg	*kmsg;
+	const struct arcana_events_event_tunnel	*tunnel;
+	const struct arcana_events_event_fault	*fault;
+	const struct arcana_events_event_security	*security;
+	const struct arcana_events_event_job	*job;
+	const struct arcana_events_event_jail_state	*jail_state;
+	const struct arcana_events_event_crash	*crash;
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -7639,6 +9216,362 @@ int	arcana_firewall_firewall_encode(const struct arcana_firewall_firewall *,
 	    struct cbl_ybuf *);
 int	arcana_firewall_firewall_decode(const void *, size_t, struct arcana_firewall_firewall *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_input_encode(const struct arcana_troubleshoot_troubleshoot_path_check_input *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_input_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_address_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_address *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_address_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_source_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_source *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_source_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_source *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_destination_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_destination *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_destination_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_destination *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_ingress_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_ingress *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_ingress_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_ingress *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_route_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_route *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_route_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_neighbor_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_neighbor_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_return_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_return *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_return_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_return *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_finding_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_finding *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_finding_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_finding *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_traceroute_input_encode(const struct arcana_troubleshoot_troubleshoot_traceroute_input *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_traceroute_input_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_traceroute_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_traceroute_output_hop_encode(const struct arcana_troubleshoot_troubleshoot_traceroute_output_hop *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_traceroute_output_hop_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_traceroute_output_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_traceroute_output_encode(const struct arcana_troubleshoot_troubleshoot_traceroute_output *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_traceroute_output_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_traceroute_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_capture_input_encode(const struct arcana_troubleshoot_troubleshoot_capture_input *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_capture_input_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_capture_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_capture_output_encode(const struct arcana_troubleshoot_troubleshoot_capture_output *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_capture_output_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_capture_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_encode(const struct arcana_troubleshoot_troubleshoot *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_sampling_encode(const struct arcana_history_history_sampling *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_sampling_decode(const void *, size_t, struct arcana_history_history_sampling *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_limits_encode(const struct arcana_history_history_limits *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_limits_decode(const void *, size_t, struct arcana_history_history_limits *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_rule_encode(const struct arcana_history_history_rule *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_rule_decode(const void *, size_t, struct arcana_history_history_rule *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_state_sample_interface_encode(const struct arcana_history_history_state_sample_interface *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_state_sample_interface_decode(const void *, size_t, struct arcana_history_history_state_sample_interface *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_state_sample_disk_encode(const struct arcana_history_history_state_sample_disk *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_state_sample_disk_decode(const void *, size_t, struct arcana_history_history_state_sample_disk *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_state_sample_jail_encode(const struct arcana_history_history_state_sample_jail *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_state_sample_jail_decode(const void *, size_t, struct arcana_history_history_state_sample_jail *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_state_sample_encode(const struct arcana_history_history_state_sample *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_state_sample_decode(const void *, size_t, struct arcana_history_history_state_sample *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_state_encode(const struct arcana_history_history_state *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_state_decode(const void *, size_t, struct arcana_history_history_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_read_input_encode(const struct arcana_history_history_read_input *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_read_input_decode(const void *, size_t, struct arcana_history_history_read_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_read_output_sample_interface_encode(const struct arcana_history_history_read_output_sample_interface *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_read_output_sample_interface_decode(const void *, size_t, struct arcana_history_history_read_output_sample_interface *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_read_output_sample_disk_encode(const struct arcana_history_history_read_output_sample_disk *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_read_output_sample_disk_decode(const void *, size_t, struct arcana_history_history_read_output_sample_disk *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_read_output_sample_jail_encode(const struct arcana_history_history_read_output_sample_jail *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_read_output_sample_jail_decode(const void *, size_t, struct arcana_history_history_read_output_sample_jail *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_read_output_sample_encode(const struct arcana_history_history_read_output_sample *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_read_output_sample_decode(const void *, size_t, struct arcana_history_history_read_output_sample *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_read_output_encode(const struct arcana_history_history_read_output *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_read_output_decode(const void *, size_t, struct arcana_history_history_read_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_encode(const struct arcana_history_history *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_decode(const void *, size_t, struct arcana_history_history *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_route_encode(const struct arcana_events_events_event_route *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_route_decode(const void *, size_t, struct arcana_events_events_event_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_routes_encode(const struct arcana_events_events_event_routes *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_routes_decode(const void *, size_t, struct arcana_events_events_event_routes *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_link_encode(const struct arcana_events_events_event_link *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_link_decode(const void *, size_t, struct arcana_events_events_event_link *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_address_encode(const struct arcana_events_events_event_address *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_address_decode(const void *, size_t, struct arcana_events_events_event_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_neighbor_encode(const struct arcana_events_events_event_neighbor *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_neighbor_decode(const void *, size_t, struct arcana_events_events_event_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_threshold_encode(const struct arcana_events_events_event_threshold *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_threshold_decode(const void *, size_t, struct arcana_events_events_event_threshold *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_kmsg_encode(const struct arcana_events_events_event_kmsg *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_kmsg_decode(const void *, size_t, struct arcana_events_events_event_kmsg *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_tunnel_encode(const struct arcana_events_events_event_tunnel *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_tunnel_decode(const void *, size_t, struct arcana_events_events_event_tunnel *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_fault_encode(const struct arcana_events_events_event_fault *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_fault_decode(const void *, size_t, struct arcana_events_events_event_fault *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_security_encode(const struct arcana_events_events_event_security *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_security_decode(const void *, size_t, struct arcana_events_events_event_security *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_job_encode(const struct arcana_events_events_event_job *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_job_decode(const void *, size_t, struct arcana_events_events_event_job *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_jail_state_encode(const struct arcana_events_events_event_jail_state *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_jail_state_decode(const void *, size_t, struct arcana_events_events_event_jail_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_crash_encode(const struct arcana_events_events_event_crash *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_crash_decode(const void *, size_t, struct arcana_events_events_event_crash *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_encode(const struct arcana_events_events_event *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_decode(const void *, size_t, struct arcana_events_events_event *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_input_encode(const struct arcana_events_events_read_input *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_input_decode(const void *, size_t, struct arcana_events_events_read_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_route_encode(const struct arcana_events_events_read_output_event_route *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_route_decode(const void *, size_t, struct arcana_events_events_read_output_event_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_routes_encode(const struct arcana_events_events_read_output_event_routes *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_routes_decode(const void *, size_t, struct arcana_events_events_read_output_event_routes *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_link_encode(const struct arcana_events_events_read_output_event_link *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_link_decode(const void *, size_t, struct arcana_events_events_read_output_event_link *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_address_encode(const struct arcana_events_events_read_output_event_address *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_address_decode(const void *, size_t, struct arcana_events_events_read_output_event_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_neighbor_encode(const struct arcana_events_events_read_output_event_neighbor *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_neighbor_decode(const void *, size_t, struct arcana_events_events_read_output_event_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_threshold_encode(const struct arcana_events_events_read_output_event_threshold *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_threshold_decode(const void *, size_t, struct arcana_events_events_read_output_event_threshold *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_kmsg_encode(const struct arcana_events_events_read_output_event_kmsg *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_kmsg_decode(const void *, size_t, struct arcana_events_events_read_output_event_kmsg *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_tunnel_encode(const struct arcana_events_events_read_output_event_tunnel *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_tunnel_decode(const void *, size_t, struct arcana_events_events_read_output_event_tunnel *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_fault_encode(const struct arcana_events_events_read_output_event_fault *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_fault_decode(const void *, size_t, struct arcana_events_events_read_output_event_fault *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_security_encode(const struct arcana_events_events_read_output_event_security *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_security_decode(const void *, size_t, struct arcana_events_events_read_output_event_security *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_job_encode(const struct arcana_events_events_read_output_event_job *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_job_decode(const void *, size_t, struct arcana_events_events_read_output_event_job *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_jail_state_encode(const struct arcana_events_events_read_output_event_jail_state *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_jail_state_decode(const void *, size_t, struct arcana_events_events_read_output_event_jail_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_crash_encode(const struct arcana_events_events_read_output_event_crash *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_crash_decode(const void *, size_t, struct arcana_events_events_read_output_event_crash *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_encode(const struct arcana_events_events_read_output_event *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_decode(const void *, size_t, struct arcana_events_events_read_output_event *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_encode(const struct arcana_events_events_read_output *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_decode(const void *, size_t, struct arcana_events_events_read_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_encode(const struct arcana_events_events *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_decode(const void *, size_t, struct arcana_events_events *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_route_encode(const struct arcana_events_event_route *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_route_decode(const void *, size_t, struct arcana_events_event_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_routes_encode(const struct arcana_events_event_routes *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_routes_decode(const void *, size_t, struct arcana_events_event_routes *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_link_encode(const struct arcana_events_event_link *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_link_decode(const void *, size_t, struct arcana_events_event_link *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_address_encode(const struct arcana_events_event_address *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_address_decode(const void *, size_t, struct arcana_events_event_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_neighbor_encode(const struct arcana_events_event_neighbor *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_neighbor_decode(const void *, size_t, struct arcana_events_event_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_threshold_encode(const struct arcana_events_event_threshold *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_threshold_decode(const void *, size_t, struct arcana_events_event_threshold *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_kmsg_encode(const struct arcana_events_event_kmsg *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_kmsg_decode(const void *, size_t, struct arcana_events_event_kmsg *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_tunnel_encode(const struct arcana_events_event_tunnel *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_tunnel_decode(const void *, size_t, struct arcana_events_event_tunnel *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_fault_encode(const struct arcana_events_event_fault *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_fault_decode(const void *, size_t, struct arcana_events_event_fault *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_security_encode(const struct arcana_events_event_security *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_security_decode(const void *, size_t, struct arcana_events_event_security *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_job_encode(const struct arcana_events_event_job *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_job_decode(const void *, size_t, struct arcana_events_event_job *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_jail_state_encode(const struct arcana_events_event_jail_state *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_jail_state_decode(const void *, size_t, struct arcana_events_event_jail_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_crash_encode(const struct arcana_events_event_crash *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_crash_decode(const void *, size_t, struct arcana_events_event_crash *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_encode(const struct arcana_events_event *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_decode(const void *, size_t, struct arcana_events_event *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -7781,5 +9714,29 @@ int	arcana_firewall_firewall_edit(cbl_req *, const struct arcana_firewall *,
 int	arcana_firewall_firewall_trace_action(cbl_req *, const struct cbl_bytes *,
 	    const struct arcana_firewall_firewall_trace_input *,
 	    struct arcana_firewall_firewall_trace_output *, cbl_yarena *);
+int	arcana_troubleshoot_troubleshoot_get(cbl_req *, struct arcana_troubleshoot *, cbl_yarena *);
+int	arcana_troubleshoot_troubleshoot_edit(cbl_req *, const struct arcana_troubleshoot *,
+	    const struct arcana_troubleshoot *);
+int	arcana_troubleshoot_troubleshoot_path_check_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_troubleshoot_troubleshoot_path_check_input *,
+	    struct arcana_troubleshoot_troubleshoot_path_check_output *, cbl_yarena *);
+int	arcana_troubleshoot_troubleshoot_traceroute_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_troubleshoot_troubleshoot_traceroute_input *,
+	    struct arcana_troubleshoot_troubleshoot_traceroute_output *, cbl_yarena *);
+int	arcana_troubleshoot_troubleshoot_capture_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_troubleshoot_troubleshoot_capture_input *,
+	    struct arcana_troubleshoot_troubleshoot_capture_output *, cbl_yarena *);
+int	arcana_history_history_get(cbl_req *, struct arcana_history *, cbl_yarena *);
+int	arcana_history_history_edit(cbl_req *, const struct arcana_history *,
+	    const struct arcana_history *);
+int	arcana_history_history_read_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_history_history_read_input *,
+	    struct arcana_history_history_read_output *, cbl_yarena *);
+int	arcana_events_events_get(cbl_req *, struct arcana_events *, cbl_yarena *);
+int	arcana_events_events_read_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_events_events_read_input *,
+	    struct arcana_events_events_read_output *, cbl_yarena *);
+int	arcana_events_event_notification(const struct arcana_events_event *,
+	    struct cbl_ybuf *);
 
 #endif /* !_YMODEL_H_ */
