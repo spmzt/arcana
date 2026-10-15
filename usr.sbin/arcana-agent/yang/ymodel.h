@@ -198,6 +198,44 @@ struct ietf_logical_network_element;
 struct ietf_logical_network_element_bind_lne_name_failed;
 struct arcana_jails_jails_conf_error;
 struct arcana_jails_jails_jail_param;
+struct arcana_jails_jails_jail_arcbird_bird_configuration_file;
+struct arcana_jails_jails_jail_arcbird_bird_configuration;
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp;
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki;
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_channel;
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol;
+struct arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor;
+struct arcana_jails_jails_jail_arcbird_bird_state_bfd_session;
+struct arcana_jails_jails_jail_arcbird_bird_state_table;
+struct arcana_jails_jails_jail_arcbird_bird_state;
+struct arcana_jails_jails_jail_arcbird_bird_routes_input;
+struct arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop;
+struct arcana_jails_jails_jail_arcbird_bird_routes_output_route;
+struct arcana_jails_jails_jail_arcbird_bird_routes_output;
+struct arcana_jails_jails_jail_arcbird_bird;
+struct arcana_jails_jails_jail_arcfw_firewall_kept_rule;
+struct arcana_jails_jails_jail_arcfw_firewall_kept_alias;
+struct arcana_jails_jails_jail_arcfw_firewall_kept;
+struct arcana_jails_jails_jail_arcfw_firewall_rc;
+struct arcana_jails_jails_jail_arcfw_firewall_state_rule;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dynamic;
+struct arcana_jails_jails_jail_arcfw_firewall_state_table_entry;
+struct arcana_jails_jails_jail_arcfw_firewall_state_table;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue;
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet;
+struct arcana_jails_jails_jail_arcfw_firewall_state;
+struct arcana_jails_jails_jail_arcfw_firewall_trace_input;
+struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet;
+struct arcana_jails_jails_jail_arcfw_firewall_trace_output;
+struct arcana_jails_jails_jail_arcfw_firewall;
+struct arcana_jails_jails_jail_arcng_netgraph_node_hook;
+struct arcana_jails_jails_jail_arcng_netgraph_node;
+struct arcana_jails_jails_jail_arcng_netgraph;
 struct arcana_jails_jails_jail_arcpkg_packages_package;
 struct arcana_jails_jails_jail_arcpkg_packages_refresh_input;
 struct arcana_jails_jails_jail_arcpkg_packages_refresh_output;
@@ -205,6 +243,15 @@ struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input;
 struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package;
 struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output;
 struct arcana_jails_jails_jail_arcpkg_packages;
+struct arcana_jails_jails_jail_arcsshd_sshd_setting;
+struct arcana_jails_jails_jail_arcsshd_sshd_host_key_certificate;
+struct arcana_jails_jails_jail_arcsshd_sshd_host_key;
+struct arcana_jails_jails_jail_arcsshd_sshd_user_key;
+struct arcana_jails_jails_jail_arcsshd_sshd_user;
+struct arcana_jails_jails_jail_arcsshd_sshd;
+struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer;
+struct arcana_jails_jails_jail_arcwg_wireguard_interface;
+struct arcana_jails_jails_jail_arcwg_wireguard;
 struct arcana_jails_jails_jail_start_input;
 struct arcana_jails_jails_jail_start_output;
 struct arcana_jails_jails_jail_stop_input;
@@ -214,6 +261,10 @@ struct arcana_jails_jails_jail_restart_output;
 struct arcana_jails_jails_jail_kill_input;
 struct arcana_jails_jails_jail_kill_output;
 struct arcana_jails_jails_jail;
+struct arcana_jails_jails_arcjf_files_defaults;
+struct arcana_jails_jails_arcjf_files_template;
+struct arcana_jails_jails_arcjf_files_jail;
+struct arcana_jails_jails_arcjf_files;
 struct arcana_jails_jails;
 struct arcana_jails;
 struct arcana_services_services_service_variable;
@@ -366,6 +417,245 @@ struct ietf_syslog_syslog_actions_remote;
 struct ietf_syslog_syslog_actions;
 struct ietf_syslog_syslog;
 struct ietf_syslog;
+struct arcana_firewall_firewall_kept_rule;
+struct arcana_firewall_firewall_kept_alias;
+struct arcana_firewall_firewall_kept;
+struct arcana_firewall_firewall_rc;
+struct arcana_firewall_firewall_state_rule;
+struct arcana_firewall_firewall_state_dynamic;
+struct arcana_firewall_firewall_state_table_entry;
+struct arcana_firewall_firewall_state_table;
+struct arcana_firewall_firewall_state_dummynet_pipe_mask;
+struct arcana_firewall_firewall_state_dummynet_pipe;
+struct arcana_firewall_firewall_state_dummynet_sched_mask;
+struct arcana_firewall_firewall_state_dummynet_sched;
+struct arcana_firewall_firewall_state_dummynet_queue_mask;
+struct arcana_firewall_firewall_state_dummynet_queue;
+struct arcana_firewall_firewall_state_dummynet;
+struct arcana_firewall_firewall_state;
+struct arcana_firewall_firewall_trace_input;
+struct arcana_firewall_firewall_trace_output_packet;
+struct arcana_firewall_firewall_trace_output;
+struct arcana_firewall_firewall;
+struct arcana_firewall;
+struct arcana_troubleshoot_troubleshoot_path_check_input;
+struct arcana_troubleshoot_troubleshoot_path_check_output_address;
+struct arcana_troubleshoot_troubleshoot_path_check_output_source;
+struct arcana_troubleshoot_troubleshoot_path_check_output_destination;
+struct arcana_troubleshoot_troubleshoot_path_check_output_ingress;
+struct arcana_troubleshoot_troubleshoot_path_check_output_route;
+struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor;
+struct arcana_troubleshoot_troubleshoot_path_check_output_return;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out;
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall;
+struct arcana_troubleshoot_troubleshoot_path_check_output_finding;
+struct arcana_troubleshoot_troubleshoot_path_check_output;
+struct arcana_troubleshoot_troubleshoot_traceroute_input;
+struct arcana_troubleshoot_troubleshoot_traceroute_output_hop;
+struct arcana_troubleshoot_troubleshoot_traceroute_output;
+struct arcana_troubleshoot_troubleshoot_capture_input;
+struct arcana_troubleshoot_troubleshoot_capture_output;
+struct arcana_troubleshoot_troubleshoot;
+struct arcana_troubleshoot;
+struct arcana_history_history_sampling;
+struct arcana_history_history_limits;
+struct arcana_history_history_rule;
+struct arcana_history_history_state_sample_interface;
+struct arcana_history_history_state_sample_disk;
+struct arcana_history_history_state_sample_jail;
+struct arcana_history_history_state_sample;
+struct arcana_history_history_state;
+struct arcana_history_history_read_input;
+struct arcana_history_history_read_output_sample_interface;
+struct arcana_history_history_read_output_sample_disk;
+struct arcana_history_history_read_output_sample_jail;
+struct arcana_history_history_read_output_sample;
+struct arcana_history_history_read_output;
+struct arcana_history_history;
+struct arcana_history;
+struct arcana_events_events_event_route;
+struct arcana_events_events_event_routes;
+struct arcana_events_events_event_link;
+struct arcana_events_events_event_address;
+struct arcana_events_events_event_neighbor;
+struct arcana_events_events_event_threshold;
+struct arcana_events_events_event_kmsg;
+struct arcana_events_events_event_tunnel;
+struct arcana_events_events_event_fault;
+struct arcana_events_events_event_security;
+struct arcana_events_events_event_job;
+struct arcana_events_events_event_jail_state;
+struct arcana_events_events_event_crash;
+struct arcana_events_events_event;
+struct arcana_events_events_read_input;
+struct arcana_events_events_read_output_event_route;
+struct arcana_events_events_read_output_event_routes;
+struct arcana_events_events_read_output_event_link;
+struct arcana_events_events_read_output_event_address;
+struct arcana_events_events_read_output_event_neighbor;
+struct arcana_events_events_read_output_event_threshold;
+struct arcana_events_events_read_output_event_kmsg;
+struct arcana_events_events_read_output_event_tunnel;
+struct arcana_events_events_read_output_event_fault;
+struct arcana_events_events_read_output_event_security;
+struct arcana_events_events_read_output_event_job;
+struct arcana_events_events_read_output_event_jail_state;
+struct arcana_events_events_read_output_event_crash;
+struct arcana_events_events_read_output_event;
+struct arcana_events_events_read_output;
+struct arcana_events_events;
+struct arcana_events;
+struct arcana_events_event_route;
+struct arcana_events_event_routes;
+struct arcana_events_event_link;
+struct arcana_events_event_address;
+struct arcana_events_event_neighbor;
+struct arcana_events_event_threshold;
+struct arcana_events_event_kmsg;
+struct arcana_events_event_tunnel;
+struct arcana_events_event_fault;
+struct arcana_events_event_security;
+struct arcana_events_event_job;
+struct arcana_events_event_jail_state;
+struct arcana_events_event_crash;
+struct arcana_events_event;
+struct arcana_bird_bird_configuration_file;
+struct arcana_bird_bird_configuration;
+struct arcana_bird_bird_state_protocol_bgp;
+struct arcana_bird_bird_state_protocol_rpki;
+struct arcana_bird_bird_state_protocol_channel;
+struct arcana_bird_bird_state_protocol;
+struct arcana_bird_bird_state_ospf_neighbor;
+struct arcana_bird_bird_state_bfd_session;
+struct arcana_bird_bird_state_table;
+struct arcana_bird_bird_state;
+struct arcana_bird_bird_routes_input;
+struct arcana_bird_bird_routes_output_route_nexthop;
+struct arcana_bird_bird_routes_output_route;
+struct arcana_bird_bird_routes_output;
+struct arcana_bird_bird;
+struct arcana_bird;
+struct arcana_wireguard_wireguard_interface_peer;
+struct arcana_wireguard_wireguard_interface;
+struct arcana_wireguard_wireguard;
+struct arcana_wireguard;
+struct arcana_netgraph_netgraph_node_hook;
+struct arcana_netgraph_netgraph_node;
+struct arcana_netgraph_netgraph;
+struct arcana_netgraph;
+struct arcana_host_host_agent;
+struct arcana_host_host_stats_pool;
+struct arcana_host_host_stats;
+struct arcana_host_host_certificates_trusted;
+struct arcana_host_host_certificates_untrusted;
+struct arcana_host_host_certificates;
+struct arcana_host_host;
+struct arcana_host;
+struct arcana_agent_agent_transport_listener;
+struct arcana_agent_agent_transport_session;
+struct arcana_agent_agent_transport_retry_input;
+struct arcana_agent_agent_transport_retry_output;
+struct arcana_agent_agent_transport;
+struct arcana_agent_agent_tls_certificate;
+struct arcana_agent_agent_tls_ca;
+struct arcana_agent_agent_tls_csr_input;
+struct arcana_agent_agent_tls_csr_output;
+struct arcana_agent_agent_tls_install_input;
+struct arcana_agent_agent_tls_install_output;
+struct arcana_agent_agent_tls;
+struct arcana_agent_agent_update_input;
+struct arcana_agent_agent_update_output;
+struct arcana_agent_agent_build_input;
+struct arcana_agent_agent_build_output;
+struct arcana_agent_agent_console_update_input;
+struct arcana_agent_agent_console_update_output;
+struct arcana_agent_agent_source_head_input;
+struct arcana_agent_agent_source_head_output;
+struct arcana_agent_agent_source_log_input;
+struct arcana_agent_agent_source_log_output_commit_log;
+struct arcana_agent_agent_source_log_output_tag;
+struct arcana_agent_agent_source_log_output;
+struct arcana_agent_agent_config_export_input;
+struct arcana_agent_agent_config_export_output_facts_interface;
+struct arcana_agent_agent_config_export_output_facts_disk;
+struct arcana_agent_agent_config_export_output_facts;
+struct arcana_agent_agent_config_export_output_package;
+struct arcana_agent_agent_config_export_output_file;
+struct arcana_agent_agent_config_export_output;
+struct arcana_agent_agent_config_apply_input_bundle_facts_interface;
+struct arcana_agent_agent_config_apply_input_bundle_facts_disk;
+struct arcana_agent_agent_config_apply_input_bundle_facts;
+struct arcana_agent_agent_config_apply_input_bundle_package;
+struct arcana_agent_agent_config_apply_input_bundle_file;
+struct arcana_agent_agent_config_apply_input_bundle;
+struct arcana_agent_agent_config_apply_input;
+struct arcana_agent_agent_config_apply_output_file;
+struct arcana_agent_agent_config_apply_output;
+struct arcana_agent_agent;
+struct arcana_agent;
+struct arcana_probe_probes_target_tca;
+struct arcana_probe_probes_target;
+struct arcana_probe_probes_state_target_now;
+struct arcana_probe_probes_state_target_sample;
+struct arcana_probe_probes_state_target;
+struct arcana_probe_probes_state;
+struct arcana_probe_probes_read_input;
+struct arcana_probe_probes_read_output_target_sample;
+struct arcana_probe_probes_read_output_target;
+struct arcana_probe_probes_read_output;
+struct arcana_probe_probes;
+struct arcana_probe;
+struct arcana_sdwan_sdwan_rules_table_entry;
+struct arcana_sdwan_sdwan_rules_table;
+struct arcana_sdwan_sdwan_rules_rule;
+struct arcana_sdwan_sdwan_rules;
+struct arcana_sdwan_sdwan_steer_entry_candidate;
+struct arcana_sdwan_sdwan_steer_entry;
+struct arcana_sdwan_sdwan_steer;
+struct arcana_sdwan_sdwan_bird_instance;
+struct arcana_sdwan_sdwan_dhcp_instance;
+struct arcana_sdwan_sdwan_dns_instance;
+struct arcana_sdwan_sdwan_proxy_instance;
+struct arcana_sdwan_sdwan_ids_instance;
+struct arcana_sdwan_sdwan_state_rules_table;
+struct arcana_sdwan_sdwan_state_rules_counter;
+struct arcana_sdwan_sdwan_state_rules;
+struct arcana_sdwan_sdwan_state_steer_candidate;
+struct arcana_sdwan_sdwan_state_steer;
+struct arcana_sdwan_sdwan_state_bird_protocol;
+struct arcana_sdwan_sdwan_state_bird_bfd;
+struct arcana_sdwan_sdwan_state_bird;
+struct arcana_sdwan_sdwan_state_dhcp_lease;
+struct arcana_sdwan_sdwan_state_dhcp;
+struct arcana_sdwan_sdwan_state_dns;
+struct arcana_sdwan_sdwan_state_proxy;
+struct arcana_sdwan_sdwan_state_ids_alert;
+struct arcana_sdwan_sdwan_state_ids;
+struct arcana_sdwan_sdwan_state_record_last;
+struct arcana_sdwan_sdwan_state_record;
+struct arcana_sdwan_sdwan_state_key;
+struct arcana_sdwan_sdwan_state_fault;
+struct arcana_sdwan_sdwan_state;
+struct arcana_sdwan_sdwan;
+struct arcana_sdwan;
+struct arcana_sshd_sshd_setting;
+struct arcana_sshd_sshd_host_key_certificate;
+struct arcana_sshd_sshd_host_key;
+struct arcana_sshd_sshd_user_key;
+struct arcana_sshd_sshd_user;
+struct arcana_sshd_sshd;
+struct arcana_sshd;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -1025,6 +1315,22 @@ enum arcana_jails_jails_jail_state {
 	ARCANA_JAILS_JAILS_JAIL_STATE_ABSENT = 3,
 };
 
+enum arcana_jails_jails_jail_arcfw_firewall_kept_alias_kind {
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_KEPT_ALIAS_KIND_ADDR = 0,
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_KEPT_ALIAS_KIND_PORTS = 1,
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_KEPT_ALIAS_KIND_VALUE = 2,
+};
+
+enum arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_family {
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_TRACE_OUTPUT_PACKET_FAMILY_IPV4 = 0,
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_TRACE_OUTPUT_PACKET_FAMILY_IPV6 = 1,
+};
+
+enum arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_direction {
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_TRACE_OUTPUT_PACKET_DIRECTION_IN = 0,
+	ARCANA_JAILS_JAILS_JAIL_ARCFW_FIREWALL_TRACE_OUTPUT_PACKET_DIRECTION_OUT = 1,
+};
+
 enum arcana_jails_jails_jail_arcpkg_packages_refresh_input_ip_version {
 	ARCANA_JAILS_JAILS_JAIL_ARCPKG_PACKAGES_REFRESH_INPUT_IP_VERSION_ANY = 0,
 	ARCANA_JAILS_JAILS_JAIL_ARCPKG_PACKAGES_REFRESH_INPUT_IP_VERSION_IPV4 = 4,
@@ -1423,11 +1729,330 @@ enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_advanced
 	IETF_SYSLOG_SYSLOG_ACTIONS_REMOTE_DESTINATION_FILTER_FACILITY_LIST_ADVANCED_COMPARE_COMPARE_EQUALS_OR_HIGHER = 1,
 };
 
+enum arcana_firewall_firewall_kept_alias_kind {
+	ARCANA_FIREWALL_FIREWALL_KEPT_ALIAS_KIND_ADDR = 0,
+	ARCANA_FIREWALL_FIREWALL_KEPT_ALIAS_KIND_PORTS = 1,
+	ARCANA_FIREWALL_FIREWALL_KEPT_ALIAS_KIND_VALUE = 2,
+};
+
+enum arcana_firewall_firewall_trace_output_packet_family {
+	ARCANA_FIREWALL_FIREWALL_TRACE_OUTPUT_PACKET_FAMILY_IPV4 = 0,
+	ARCANA_FIREWALL_FIREWALL_TRACE_OUTPUT_PACKET_FAMILY_IPV6 = 1,
+};
+
+enum arcana_firewall_firewall_trace_output_packet_direction {
+	ARCANA_FIREWALL_FIREWALL_TRACE_OUTPUT_PACKET_DIRECTION_IN = 0,
+	ARCANA_FIREWALL_FIREWALL_TRACE_OUTPUT_PACKET_DIRECTION_OUT = 1,
+};
+
+enum arcana_troubleshoot_troubleshoot_path_check_input_protocol {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_INPUT_PROTOCOL_TCP = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_INPUT_PROTOCOL_UDP = 1,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_INPUT_PROTOCOL_ICMP = 2,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_INPUT_PROTOCOL_IP = 3,
+};
+
+enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_verdict {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_ALLOW = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_DENY = 1,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_FWD = 2,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_NAT = 3,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_PIPE = 4,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_DIVERT = 5,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_UNKNOWN = 6,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_NONE = 7,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_IN_VERDICT_OTHER = 8,
+};
+
+enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_verdict {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_ALLOW = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_DENY = 1,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_FWD = 2,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_NAT = 3,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_PIPE = 4,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_DIVERT = 5,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_UNKNOWN = 6,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_NONE = 7,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_OUT_VERDICT_OTHER = 8,
+};
+
+enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_verdict {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_ALLOW = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_DENY = 1,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_FWD = 2,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_NAT = 3,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_PIPE = 4,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_DIVERT = 5,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_UNKNOWN = 6,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_NONE = 7,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_IN_VERDICT_OTHER = 8,
+};
+
+enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_verdict {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_ALLOW = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_DENY = 1,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_FWD = 2,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_NAT = 3,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_PIPE = 4,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_DIVERT = 5,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_UNKNOWN = 6,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_NONE = 7,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FIREWALL_REPLY_OUT_VERDICT_OTHER = 8,
+};
+
+enum arcana_troubleshoot_troubleshoot_path_check_output_finding_severity {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FINDING_SEVERITY_BAD = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FINDING_SEVERITY_WARN = 1,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FINDING_SEVERITY_INFO = 2,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_PATH_CHECK_OUTPUT_FINDING_SEVERITY_OK = 3,
+};
+
+enum arcana_troubleshoot_troubleshoot_traceroute_output_family {
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_TRACEROUTE_OUTPUT_FAMILY_IPV4 = 0,
+	ARCANA_TROUBLESHOOT_TROUBLESHOOT_TRACEROUTE_OUTPUT_FAMILY_IPV6 = 1,
+};
+
+enum arcana_history_history_rule_kind {
+	ARCANA_HISTORY_HISTORY_RULE_KIND_NET = 0,
+	ARCANA_HISTORY_HISTORY_RULE_KIND_DISK = 1,
+	ARCANA_HISTORY_HISTORY_RULE_KIND_JAIL_CPU = 2,
+	ARCANA_HISTORY_HISTORY_RULE_KIND_JAIL_MEM = 3,
+};
+
+enum arcana_events_events_event_data {
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_NONE = 0,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_ROUTE,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_ROUTES,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_LINK,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_ADDRESS,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_NEIGHBOR,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_THRESHOLD,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_KMSG,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_TUNNEL,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_FAULT,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_SECURITY,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_JOB,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_JAIL_STATE,
+	ARCANA_EVENTS_EVENTS_EVENT_DATA_CRASH,
+};
+
+enum arcana_events_events_event_threshold_what {
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_CPU = 0,
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_MEM = 1,
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_SWAP = 2,
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_NET = 3,
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_DISK = 4,
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_JAIL_CPU = 5,
+	ARCANA_EVENTS_EVENTS_EVENT_THRESHOLD_WHAT_JAIL_MEM = 6,
+};
+
+enum arcana_events_events_event_tunnel_state {
+	ARCANA_EVENTS_EVENTS_EVENT_TUNNEL_STATE_UP = 0,
+	ARCANA_EVENTS_EVENTS_EVENT_TUNNEL_STATE_DOWN = 1,
+};
+
+enum arcana_events_events_event_fault_state {
+	ARCANA_EVENTS_EVENTS_EVENT_FAULT_STATE_SET = 0,
+	ARCANA_EVENTS_EVENTS_EVENT_FAULT_STATE_CLEARED = 1,
+};
+
+enum arcana_events_events_event_jail_state_state {
+	ARCANA_EVENTS_EVENTS_EVENT_JAIL_STATE_STATE_RUNNING = 0,
+	ARCANA_EVENTS_EVENTS_EVENT_JAIL_STATE_STATE_STOPPED = 1,
+};
+
+enum arcana_events_events_read_output_event_data {
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_NONE = 0,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_ROUTE,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_ROUTES,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_LINK,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_ADDRESS,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_NEIGHBOR,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_THRESHOLD,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_KMSG,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_TUNNEL,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_FAULT,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_SECURITY,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_JOB,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_JAIL_STATE,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_DATA_CRASH,
+};
+
+enum arcana_events_events_read_output_event_threshold_what {
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_CPU = 0,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_MEM = 1,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_SWAP = 2,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_NET = 3,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_DISK = 4,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_JAIL_CPU = 5,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_THRESHOLD_WHAT_JAIL_MEM = 6,
+};
+
+enum arcana_events_events_read_output_event_tunnel_state {
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_TUNNEL_STATE_UP = 0,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_TUNNEL_STATE_DOWN = 1,
+};
+
+enum arcana_events_events_read_output_event_fault_state {
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_FAULT_STATE_SET = 0,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_FAULT_STATE_CLEARED = 1,
+};
+
+enum arcana_events_events_read_output_event_jail_state_state {
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_JAIL_STATE_STATE_RUNNING = 0,
+	ARCANA_EVENTS_EVENTS_READ_OUTPUT_EVENT_JAIL_STATE_STATE_STOPPED = 1,
+};
+
+enum arcana_events_event_data {
+	ARCANA_EVENTS_EVENT_DATA_NONE = 0,
+	ARCANA_EVENTS_EVENT_DATA_ROUTE,
+	ARCANA_EVENTS_EVENT_DATA_ROUTES,
+	ARCANA_EVENTS_EVENT_DATA_LINK,
+	ARCANA_EVENTS_EVENT_DATA_ADDRESS,
+	ARCANA_EVENTS_EVENT_DATA_NEIGHBOR,
+	ARCANA_EVENTS_EVENT_DATA_THRESHOLD,
+	ARCANA_EVENTS_EVENT_DATA_KMSG,
+	ARCANA_EVENTS_EVENT_DATA_TUNNEL,
+	ARCANA_EVENTS_EVENT_DATA_FAULT,
+	ARCANA_EVENTS_EVENT_DATA_SECURITY,
+	ARCANA_EVENTS_EVENT_DATA_JOB,
+	ARCANA_EVENTS_EVENT_DATA_JAIL_STATE,
+	ARCANA_EVENTS_EVENT_DATA_CRASH,
+};
+
+enum arcana_events_event_threshold_what {
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_CPU = 0,
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_MEM = 1,
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_SWAP = 2,
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_NET = 3,
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_DISK = 4,
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_JAIL_CPU = 5,
+	ARCANA_EVENTS_EVENT_THRESHOLD_WHAT_JAIL_MEM = 6,
+};
+
+enum arcana_events_event_tunnel_state {
+	ARCANA_EVENTS_EVENT_TUNNEL_STATE_UP = 0,
+	ARCANA_EVENTS_EVENT_TUNNEL_STATE_DOWN = 1,
+};
+
+enum arcana_events_event_fault_state {
+	ARCANA_EVENTS_EVENT_FAULT_STATE_SET = 0,
+	ARCANA_EVENTS_EVENT_FAULT_STATE_CLEARED = 1,
+};
+
+enum arcana_events_event_jail_state_state {
+	ARCANA_EVENTS_EVENT_JAIL_STATE_STATE_RUNNING = 0,
+	ARCANA_EVENTS_EVENT_JAIL_STATE_STATE_STOPPED = 1,
+};
+
+enum arcana_agent_agent_transport_listener_transport {
+	ARCANA_AGENT_AGENT_TRANSPORT_LISTENER_TRANSPORT_TCP = 0,
+	ARCANA_AGENT_AGENT_TRANSPORT_LISTENER_TRANSPORT_SCTP = 1,
+	ARCANA_AGENT_AGENT_TRANSPORT_LISTENER_TRANSPORT_UNIX = 2,
+};
+
+enum arcana_agent_agent_config_apply_output_file_state {
+	ARCANA_AGENT_AGENT_CONFIG_APPLY_OUTPUT_FILE_STATE_SAME = 0,
+	ARCANA_AGENT_AGENT_CONFIG_APPLY_OUTPUT_FILE_STATE_CHANGED = 1,
+	ARCANA_AGENT_AGENT_CONFIG_APPLY_OUTPUT_FILE_STATE_NEW = 2,
+	ARCANA_AGENT_AGENT_CONFIG_APPLY_OUTPUT_FILE_STATE_WITHHELD = 3,
+};
+
+enum arcana_probe_probes_state_target_family {
+	ARCANA_PROBE_PROBES_STATE_TARGET_FAMILY_IPV4 = 0,
+	ARCANA_PROBE_PROBES_STATE_TARGET_FAMILY_IPV6 = 1,
+};
+
+enum arcana_probe_probes_state_target_state {
+	ARCANA_PROBE_PROBES_STATE_TARGET_STATE_UNKNOWN = 0,
+	ARCANA_PROBE_PROBES_STATE_TARGET_STATE_UP = 1,
+	ARCANA_PROBE_PROBES_STATE_TARGET_STATE_DOWN = 2,
+	ARCANA_PROBE_PROBES_STATE_TARGET_STATE_ENDED = 3,
+	ARCANA_PROBE_PROBES_STATE_TARGET_STATE_ERROR = 4,
+};
+
+enum arcana_sdwan_sdwan_rules_table_valtype {
+	ARCANA_SDWAN_SDWAN_RULES_TABLE_VALTYPE_SKIPTO = 0,
+	ARCANA_SDWAN_SDWAN_RULES_TABLE_VALTYPE_IPV4 = 1,
+	ARCANA_SDWAN_SDWAN_RULES_TABLE_VALTYPE_IPV6 = 2,
+	ARCANA_SDWAN_SDWAN_RULES_TABLE_VALTYPE_LEGACY = 3,
+};
+
+enum arcana_sdwan_sdwan_proxy_instance_mode {
+	ARCANA_SDWAN_SDWAN_PROXY_INSTANCE_MODE_SNI = 0,
+	ARCANA_SDWAN_SDWAN_PROXY_INSTANCE_MODE_INSPECT = 1,
+};
+
+enum arcana_sdwan_sdwan_state_steer_candidate_state {
+	ARCANA_SDWAN_SDWAN_STATE_STEER_CANDIDATE_STATE_UP = 0,
+	ARCANA_SDWAN_SDWAN_STATE_STEER_CANDIDATE_STATE_DOWN = 1,
+	ARCANA_SDWAN_SDWAN_STATE_STEER_CANDIDATE_STATE_UNKNOWN = 2,
+};
+
+enum arcana_sdwan_sdwan_state_bird_bfd_state {
+	ARCANA_SDWAN_SDWAN_STATE_BIRD_BFD_STATE_UP = 0,
+	ARCANA_SDWAN_SDWAN_STATE_BIRD_BFD_STATE_DOWN = 1,
+	ARCANA_SDWAN_SDWAN_STATE_BIRD_BFD_STATE_UNKNOWN = 2,
+};
+
+enum arcana_sdwan_sdwan_state_ids_mode {
+	ARCANA_SDWAN_SDWAN_STATE_IDS_MODE_DETECT = 0,
+	ARCANA_SDWAN_SDWAN_STATE_IDS_MODE_PREVENT = 1,
+};
+
 struct ieee802_dot1q_bridge_bridges_bridge_component_rstp_bridge_rstp_root_port {
 	unsigned	 which;	/* the member set, from 0 */
 	union {
 		const char	*m0;
 		bool		 m1;
+	} v;
+};
+
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp_neighbor {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp_source {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_jails_jails_jail_arcfw_firewall_trace_input_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_source {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer_allowed_ip {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
 	} v;
 };
 
@@ -1494,6 +2119,254 @@ struct ietf_syslog_syslog_actions_remote_destination_filter_facility_list_severi
 	union {
 		enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_severity_m0	 m0;
 		enum ietf_syslog_syslog_actions_remote_destination_filter_facility_list_severity_m1	 m1;
+	} v;
+};
+
+struct arcana_firewall_firewall_trace_input_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_firewall_firewall_trace_output_packet_source {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_firewall_firewall_trace_output_packet_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_path_check_input_source {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_path_check_input_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_path_check_output_address_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_path_check_output_route_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_traceroute_input_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_traceroute_output_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_troubleshoot_troubleshoot_traceroute_output_hop_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_event_route_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_event_address_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_event_neighbor_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_event_tunnel_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_read_output_event_route_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_read_output_event_address_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_read_output_event_neighbor_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_events_read_output_event_tunnel_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_event_route_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_event_address_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_event_neighbor_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_events_event_tunnel_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_bird_bird_state_protocol_bgp_neighbor {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_bird_bird_state_protocol_bgp_source {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_wireguard_wireguard_interface_peer_allowed_ip {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_probe_probes_target_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_probe_probes_state_target_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_sdwan_sdwan_steer_entry_candidate_via {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_sdwan_sdwan_state_steer_candidate_via {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_sdwan_sdwan_state_dhcp_lease_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
 	} v;
 };
 
@@ -3583,6 +4456,496 @@ struct arcana_jails_jails_jail_param {
 };
 
 /* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_configuration_file {
+	const char	*path;
+	const char	*text;
+	const char	*sha256;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcbird_bird_configuration {
+	const char	*path;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_configuration_file	*v;
+	}			 file;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp {
+	const char	*state;
+	bool			 has_neighbor;
+	struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp_neighbor	 neighbor;
+	bool			 has_neighbor_as;
+	uint32_t	 neighbor_as;
+	bool			 has_local_as;
+	uint32_t	 local_as;
+	const char	*neighbor_id;
+	bool			 has_source;
+	struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp_source	 source;
+	const char	*session;
+	const char	*hold;
+	const char	*keepalive;
+	const char	*last_error;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki {
+	const char	*cache;
+	const char	*status;
+	const char	*serial;
+	const char	*last_update;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_channel {
+	const char	*name;
+	const char	*state;
+	const char	*table;
+	const char	*input_filter;
+	const char	*output_filter;
+	const char	*routes;
+	bool			 has_imported;
+	uint64_t	 imported;
+	bool			 has_exported;
+	uint64_t	 exported;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol {
+	const char	*name;
+	const char	*type;
+	const char	*table;
+	const char	*state;
+	const char	*since;
+	const char	*info;
+	const char	*description;
+	const struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp	*bgp;
+	const struct arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki	*rpki;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_state_protocol_channel	*v;
+	}			 channel;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor {
+	const char	*protocol;
+	const char	*router_id;
+	const char	*priority;
+	const char	*state;
+	const char	*dead_time;
+	const char	*interface;
+	const char	*address;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_state_bfd_session {
+	const char	*protocol;
+	const char	*address;
+	const char	*interface;
+	const char	*state;
+	const char	*since;
+	const char	*interval;
+	const char	*timeout;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_state_table {
+	const char	*name;
+	bool			 has_routes;
+	uint64_t	 routes;
+	bool			 has_networks;
+	uint64_t	 networks;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcbird_bird_state {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 status;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_state_protocol	*v;
+	}			 protocol;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor	*v;
+	}			 ospf_neighbor;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_state_bfd_session	*v;
+	}			 bfd_session;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_state_table	*v;
+	}			 table;
+};
+
+/* input */
+struct arcana_jails_jails_jail_arcbird_bird_routes_input {
+	const char	*filter;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop {
+	const char	*via;
+	const char	*interface;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_routes_output_route {
+	const char	*table;
+	const char	*prefix;
+	const char	*type;
+	const char	*protocol;
+	const char	*from;
+	const char	*since;
+	bool			 has_primary;
+	bool		 primary;
+	const char	*preference;
+	const char	*info;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop	*v;
+	}			 nexthop;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 attribute;
+};
+
+/* output */
+struct arcana_jails_jails_jail_arcbird_bird_routes_output {
+	bool			 has_count;
+	uint64_t	 count;
+	const char	*message;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_routes_output_route	*v;
+	}			 route;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcbird_bird {
+	const struct arcana_jails_jails_jail_arcbird_bird_configuration	*configuration;
+	const struct arcana_jails_jails_jail_arcbird_bird_state	*state;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_kept_rule {
+	uint32_t	 number;
+	const char	*text;
+	const char	*source;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_kept_alias {
+	const char	*name;
+	bool			 has_kind;
+	enum arcana_jails_jails_jail_arcfw_firewall_kept_alias_kind	 kind;
+	const char	*value;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_kept {
+	const char	*path;
+	bool			 has_present;
+	bool		 present;
+	const char	*sha256;
+	const char	*text;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_kept_rule	*v;
+	}			 rule;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 other;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_kept_alias	*v;
+	}			 alias;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_rc {
+	const char	*firewall_enable;
+	const char	*firewall_type;
+	const char	*firewall_script;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_rule {
+	uint32_t	 number;
+	uint8_t		 set;
+	bool			 has_packets;
+	uint64_t	 packets;
+	bool			 has_octets;
+	uint64_t	 octets;
+	const char	*text;
+	bool			 has_disabled;
+	bool		 disabled;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dynamic {
+	bool			 has_number;
+	uint32_t	 number;
+	bool			 has_packets;
+	uint64_t	 packets;
+	bool			 has_octets;
+	uint64_t	 octets;
+	bool			 has_ttl;
+	uint32_t	 ttl;
+	const char	*kind;
+	const char	*flow;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_table_entry {
+	const char	*key;
+	const char	*value;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_table {
+	const char	*name;
+	const char	*type;
+	bool			 has_count;
+	uint32_t	 count;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_table_entry	*v;
+	}			 entry;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask {
+	bool			 has_src;
+	uint8_t		 src;
+	bool			 has_dst;
+	uint8_t		 dst;
+	bool			 has_src_port;
+	uint16_t	 src_port;
+	bool			 has_dst_port;
+	uint16_t	 dst_port;
+	bool			 has_proto;
+	uint8_t		 proto;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe {
+	uint16_t	 number;
+	bool			 has_bandwidth;
+	uint64_t	 bandwidth;
+	bool			 has_delay;
+	uint32_t	 delay;
+	bool			 has_burst;
+	uint64_t	 burst;
+	const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask	*mask;
+	bool			 has_slots;
+	uint32_t	 slots;
+	bool			 has_bytes;
+	uint32_t	 bytes;
+	bool			 has_plr;
+	int64_t		 plr;	/* decimal64, 6 fraction digits */
+	const char	*red;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask {
+	bool			 has_src;
+	uint8_t		 src;
+	bool			 has_dst;
+	uint8_t		 dst;
+	bool			 has_src_port;
+	uint16_t	 src_port;
+	bool			 has_dst_port;
+	uint16_t	 dst_port;
+	bool			 has_proto;
+	uint8_t		 proto;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched {
+	uint16_t	 number;
+	bool			 has_bandwidth;
+	uint64_t	 bandwidth;
+	bool			 has_delay;
+	uint32_t	 delay;
+	bool			 has_burst;
+	uint64_t	 burst;
+	const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask	*mask;
+	const char	*type;
+	struct {
+		size_t		 n;
+		const uint16_t	 *v;
+	}			 queue;
+	const char	*params;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask {
+	bool			 has_src;
+	uint8_t		 src;
+	bool			 has_dst;
+	uint8_t		 dst;
+	bool			 has_src_port;
+	uint16_t	 src_port;
+	bool			 has_dst_port;
+	uint16_t	 dst_port;
+	bool			 has_proto;
+	uint8_t		 proto;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue {
+	uint16_t	 number;
+	bool			 has_sched;
+	uint16_t	 sched;
+	bool			 has_weight;
+	uint16_t	 weight;
+	bool			 has_priority;
+	uint8_t		 priority;
+	const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask	*mask;
+	bool			 has_slots;
+	uint32_t	 slots;
+	bool			 has_bytes;
+	uint32_t	 bytes;
+	bool			 has_plr;
+	int64_t		 plr;	/* decimal64, 6 fraction digits */
+	const char	*red;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet {
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe	*v;
+	}			 pipe;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched	*v;
+	}			 sched;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue	*v;
+	}			 queue;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall_state {
+	bool			 has_loaded;
+	bool		 loaded;
+	bool			 has_enabled;
+	bool		 enabled;
+	bool			 has_verbose;
+	bool		 verbose;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_rule	*v;
+	}			 rule;
+	bool			 has_dynamic_total;
+	uint32_t	 dynamic_total;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_dynamic	*v;
+	}			 dynamic;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_state_table	*v;
+	}			 table;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 nat;
+	const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet	*dummynet;
+};
+
+/* input */
+struct arcana_jails_jails_jail_arcfw_firewall_trace_input {
+	bool			 has_address;
+	struct arcana_jails_jails_jail_arcfw_firewall_trace_input_address	 address;
+	bool			 has_seconds;
+	uint8_t		 seconds;
+	bool			 has_packets;
+	uint16_t	 packets;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet {
+	bool			 has_ms;
+	uint32_t	 ms;
+	const char	*verdict;
+	bool			 has_family;
+	enum arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_family	 family;
+	bool			 has_source;
+	struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_source	 source;
+	bool			 has_destination;
+	struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_destination	 destination;
+	bool			 has_proto;
+	uint8_t		 proto;
+	bool			 has_sport;
+	uint16_t	 sport;
+	bool			 has_dport;
+	uint16_t	 dport;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*interface;
+	bool			 has_direction;
+	enum arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_direction	 direction;
+};
+
+/* output */
+struct arcana_jails_jails_jail_arcfw_firewall_trace_output {
+	bool			 has_seconds;
+	uint8_t		 seconds;
+	bool			 has_limit;
+	uint16_t	 limit;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet	*v;
+	}			 packet;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcfw_firewall {
+	const struct arcana_jails_jails_jail_arcfw_firewall_kept	*kept;
+	const struct arcana_jails_jails_jail_arcfw_firewall_rc	*rc;
+	const struct arcana_jails_jails_jail_arcfw_firewall_state	*state;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcng_netgraph_node_hook {
+	const char	*name;
+	const char	*peer;
+	const char	*peer_type;
+	const char	*peer_id;
+	const char	*peer_hook;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcng_netgraph_node {
+	const char	*id;
+	const char	*name;
+	const char	*type;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcng_netgraph_node_hook	*v;
+	}			 hook;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcng_netgraph {
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcng_netgraph_node	*v;
+	}			 node;
+};
+
+/* list entry */
 struct arcana_jails_jails_jail_arcpkg_packages_package {
 	const char	*name;
 	const char	*installed;
@@ -3649,6 +5012,131 @@ struct arcana_jails_jails_jail_arcpkg_packages {
 		size_t		 n;
 		const struct arcana_jails_jails_jail_arcpkg_packages_package	*v;
 	}			 package;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcsshd_sshd_setting {
+	const char	*name;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 value;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcsshd_sshd_host_key_certificate {
+	const char	*kind;
+	const char	*id;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 principal;
+	const char	*valid_after;
+	const char	*valid_before;
+	const char	*ca;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcsshd_sshd_host_key {
+	const char	*path;
+	const char	*type;
+	bool			 has_bits;
+	uint16_t	 bits;
+	const char	*fingerprint;
+	const char	*comment;
+	const struct arcana_jails_jails_jail_arcsshd_sshd_host_key_certificate	*certificate;
+	bool			 has_certificate_used;
+	bool		 certificate_used;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcsshd_sshd_user_key {
+	const char	*fingerprint;
+	const char	*type;
+	bool			 has_bits;
+	uint16_t	 bits;
+	const char	*comment;
+	const char	*options;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcsshd_sshd_user {
+	const char	*name;
+	bool			 has_uid;
+	uint32_t	 uid;
+	const char	*home;
+	const char	*shell;
+	const char	*keys_file;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcsshd_sshd_user_key	*v;
+	}			 key;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcsshd_sshd {
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcsshd_sshd_setting	*v;
+	}			 setting;
+	const char	*settings_from_file;
+	const char	*banner;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcsshd_sshd_host_key	*v;
+	}			 host_key;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcsshd_sshd_user	*v;
+	}			 user;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 user_ca;
+	bool			 has_before_kept;
+	bool		 before_kept;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer {
+	const char	*public_key;
+	bool			 has_preshared_key;
+	bool		 preshared_key;
+	const char	*endpoint;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer_allowed_ip	 *v;
+	}			 allowed_ip;
+	const char	*latest_handshake;
+	bool			 has_received;
+	uint64_t	 received;
+	bool			 has_sent;
+	uint64_t	 sent;
+	bool			 has_keepalive;
+	uint16_t	 keepalive;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcwg_wireguard_interface {
+	const char	*name;
+	bool			 has_private_key;
+	bool		 private_key;
+	const char	*public_key;
+	bool			 has_listen_port;
+	uint16_t	 listen_port;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer	*v;
+	}			 peer;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcwg_wireguard {
+	const char	*now;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcwg_wireguard_interface	*v;
+	}			 interface;
 };
 
 /* input */
@@ -3750,7 +5238,48 @@ struct arcana_jails_jails_jail {
 		const char	*const	*v;
 	}			 plugin;
 	const char	*lne;
+	const struct arcana_jails_jails_jail_arcbird_bird	*arcbird_bird;
+	const struct arcana_jails_jails_jail_arcfw_firewall	*arcfw_firewall;
+	struct {
+		size_t		 n;
+		const uint64_t	 *v;
+	}			 archost_plugin;	/* identityref: a SID */
+	const struct arcana_jails_jails_jail_arcng_netgraph	*arcng_netgraph;
 	const struct arcana_jails_jails_jail_arcpkg_packages	*arcpkg_packages;
+	const struct arcana_jails_jails_jail_arcsshd_sshd	*arcsshd_sshd;
+	const struct arcana_jails_jails_jail_arcwg_wireguard	*arcwg_wireguard;
+};
+
+/* container */
+struct arcana_jails_jails_arcjf_files_defaults {
+	const char	*path;
+	const char	*text;
+};
+
+/* list entry */
+struct arcana_jails_jails_arcjf_files_template {
+	const char	*name;
+	const char	*text;
+};
+
+/* list entry */
+struct arcana_jails_jails_arcjf_files_jail {
+	const char	*name;
+	const char	*text;
+};
+
+/* container */
+struct arcana_jails_jails_arcjf_files {
+	const char	*directory;
+	const struct arcana_jails_jails_arcjf_files_defaults	*defaults;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_arcjf_files_template	*v;
+	}			 template;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_arcjf_files_jail	*v;
+	}			 jail;
 };
 
 /* container */
@@ -3767,6 +5296,7 @@ struct arcana_jails_jails {
 		size_t		 n;
 		const struct arcana_jails_jails_jail	*v;
 	}			 jail;
+	const struct arcana_jails_jails_arcjf_files	*arcjf_files;
 };
 
 /* data */
@@ -5448,6 +6978,2902 @@ struct ietf_syslog {
 	const struct ietf_syslog_syslog	*syslog;
 };
 
+/* list entry */
+struct arcana_firewall_firewall_kept_rule {
+	uint32_t	 number;
+	const char	*text;
+	const char	*source;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_kept_alias {
+	const char	*name;
+	bool			 has_kind;
+	enum arcana_firewall_firewall_kept_alias_kind	 kind;
+	const char	*value;
+};
+
+/* container */
+struct arcana_firewall_firewall_kept {
+	const char	*path;
+	bool			 has_present;
+	bool		 present;
+	const char	*sha256;
+	const char	*text;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_kept_rule	*v;
+	}			 rule;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 other;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_kept_alias	*v;
+	}			 alias;
+};
+
+/* container */
+struct arcana_firewall_firewall_rc {
+	const char	*firewall_enable;
+	const char	*firewall_type;
+	const char	*firewall_script;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_rule {
+	uint32_t	 number;
+	uint8_t		 set;
+	bool			 has_packets;
+	uint64_t	 packets;
+	bool			 has_octets;
+	uint64_t	 octets;
+	const char	*text;
+	bool			 has_disabled;
+	bool		 disabled;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_dynamic {
+	bool			 has_number;
+	uint32_t	 number;
+	bool			 has_packets;
+	uint64_t	 packets;
+	bool			 has_octets;
+	uint64_t	 octets;
+	bool			 has_ttl;
+	uint32_t	 ttl;
+	const char	*kind;
+	const char	*flow;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_table_entry {
+	const char	*key;
+	const char	*value;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_table {
+	const char	*name;
+	const char	*type;
+	bool			 has_count;
+	uint32_t	 count;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_table_entry	*v;
+	}			 entry;
+};
+
+/* container */
+struct arcana_firewall_firewall_state_dummynet_pipe_mask {
+	bool			 has_src;
+	uint8_t		 src;
+	bool			 has_dst;
+	uint8_t		 dst;
+	bool			 has_src_port;
+	uint16_t	 src_port;
+	bool			 has_dst_port;
+	uint16_t	 dst_port;
+	bool			 has_proto;
+	uint8_t		 proto;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_dummynet_pipe {
+	uint16_t	 number;
+	bool			 has_bandwidth;
+	uint64_t	 bandwidth;
+	bool			 has_delay;
+	uint32_t	 delay;
+	bool			 has_burst;
+	uint64_t	 burst;
+	const struct arcana_firewall_firewall_state_dummynet_pipe_mask	*mask;
+	bool			 has_slots;
+	uint32_t	 slots;
+	bool			 has_bytes;
+	uint32_t	 bytes;
+	bool			 has_plr;
+	int64_t		 plr;	/* decimal64, 6 fraction digits */
+	const char	*red;
+};
+
+/* container */
+struct arcana_firewall_firewall_state_dummynet_sched_mask {
+	bool			 has_src;
+	uint8_t		 src;
+	bool			 has_dst;
+	uint8_t		 dst;
+	bool			 has_src_port;
+	uint16_t	 src_port;
+	bool			 has_dst_port;
+	uint16_t	 dst_port;
+	bool			 has_proto;
+	uint8_t		 proto;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_dummynet_sched {
+	uint16_t	 number;
+	bool			 has_bandwidth;
+	uint64_t	 bandwidth;
+	bool			 has_delay;
+	uint32_t	 delay;
+	bool			 has_burst;
+	uint64_t	 burst;
+	const struct arcana_firewall_firewall_state_dummynet_sched_mask	*mask;
+	const char	*type;
+	struct {
+		size_t		 n;
+		const uint16_t	 *v;
+	}			 queue;
+	const char	*params;
+};
+
+/* container */
+struct arcana_firewall_firewall_state_dummynet_queue_mask {
+	bool			 has_src;
+	uint8_t		 src;
+	bool			 has_dst;
+	uint8_t		 dst;
+	bool			 has_src_port;
+	uint16_t	 src_port;
+	bool			 has_dst_port;
+	uint16_t	 dst_port;
+	bool			 has_proto;
+	uint8_t		 proto;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_state_dummynet_queue {
+	uint16_t	 number;
+	bool			 has_sched;
+	uint16_t	 sched;
+	bool			 has_weight;
+	uint16_t	 weight;
+	bool			 has_priority;
+	uint8_t		 priority;
+	const struct arcana_firewall_firewall_state_dummynet_queue_mask	*mask;
+	bool			 has_slots;
+	uint32_t	 slots;
+	bool			 has_bytes;
+	uint32_t	 bytes;
+	bool			 has_plr;
+	int64_t		 plr;	/* decimal64, 6 fraction digits */
+	const char	*red;
+};
+
+/* container */
+struct arcana_firewall_firewall_state_dummynet {
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_dummynet_pipe	*v;
+	}			 pipe;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_dummynet_sched	*v;
+	}			 sched;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_dummynet_queue	*v;
+	}			 queue;
+};
+
+/* container */
+struct arcana_firewall_firewall_state {
+	bool			 has_loaded;
+	bool		 loaded;
+	bool			 has_enabled;
+	bool		 enabled;
+	bool			 has_verbose;
+	bool		 verbose;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_rule	*v;
+	}			 rule;
+	bool			 has_dynamic_total;
+	uint32_t	 dynamic_total;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_dynamic	*v;
+	}			 dynamic;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_state_table	*v;
+	}			 table;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 nat;
+	const struct arcana_firewall_firewall_state_dummynet	*dummynet;
+};
+
+/* input */
+struct arcana_firewall_firewall_trace_input {
+	bool			 has_address;
+	struct arcana_firewall_firewall_trace_input_address	 address;
+	bool			 has_seconds;
+	uint8_t		 seconds;
+	bool			 has_packets;
+	uint16_t	 packets;
+};
+
+/* list entry */
+struct arcana_firewall_firewall_trace_output_packet {
+	bool			 has_ms;
+	uint32_t	 ms;
+	const char	*verdict;
+	bool			 has_family;
+	enum arcana_firewall_firewall_trace_output_packet_family	 family;
+	bool			 has_source;
+	struct arcana_firewall_firewall_trace_output_packet_source	 source;
+	bool			 has_destination;
+	struct arcana_firewall_firewall_trace_output_packet_destination	 destination;
+	bool			 has_proto;
+	uint8_t		 proto;
+	bool			 has_sport;
+	uint16_t	 sport;
+	bool			 has_dport;
+	uint16_t	 dport;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*interface;
+	bool			 has_direction;
+	enum arcana_firewall_firewall_trace_output_packet_direction	 direction;
+};
+
+/* output */
+struct arcana_firewall_firewall_trace_output {
+	bool			 has_seconds;
+	uint8_t		 seconds;
+	bool			 has_limit;
+	uint16_t	 limit;
+	struct {
+		size_t		 n;
+		const struct arcana_firewall_firewall_trace_output_packet	*v;
+	}			 packet;
+};
+
+/* container */
+struct arcana_firewall_firewall {
+	const struct arcana_firewall_firewall_kept	*kept;
+	const struct arcana_firewall_firewall_rc	*rc;
+	const struct arcana_firewall_firewall_state	*state;
+};
+
+/* data */
+struct arcana_firewall {
+	const struct arcana_firewall_firewall	*firewall;
+};
+
+/* input */
+struct arcana_troubleshoot_troubleshoot_path_check_input {
+	bool			 has_source;
+	struct arcana_troubleshoot_troubleshoot_path_check_input_source	 source;
+	bool			 has_destination;
+	struct arcana_troubleshoot_troubleshoot_path_check_input_destination	 destination;
+	bool			 has_protocol;
+	enum arcana_troubleshoot_troubleshoot_path_check_input_protocol	 protocol;
+	bool			 has_port;
+	uint16_t	 port;
+	const char	*interface;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*jail;
+	bool			 has_reply;
+	bool		 reply;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_address {
+	bool			 has_address;
+	struct arcana_troubleshoot_troubleshoot_path_check_output_address_address	 address;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	const char	*interface;
+	bool			 has_fib;
+	uint16_t	 fib;
+	bool			 has_up;
+	bool		 up;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_source {
+	bool			 has_local;
+	bool		 local;
+	const char	*connected;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_destination {
+	bool			 has_local;
+	bool		 local;
+	const char	*connected;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_ingress {
+	const char	*interface;
+	const char	*how;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_route {
+	bool			 has_destination;
+	struct arcana_troubleshoot_troubleshoot_path_check_output_route_destination	 destination;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	const char	*gateway;
+	const char	*interface;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*flags;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor {
+	bool			 has_address;
+	struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor_address	 address;
+	const char	*state;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_return {
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*interface;
+	const char	*gateway;
+	bool			 has_symmetric;
+	bool		 symmetric;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step {
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	const char	*how;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain {
+	const char	*text;
+	const char	*because;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in {
+	bool			 has_verdict;
+	enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_verdict	 verdict;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	bool			 has_by_state;
+	bool		 by_state;
+	bool			 has_keep_state;
+	bool		 keep_state;
+	bool			 has_setfib;
+	int32_t		 setfib;
+	const char	*fwd;
+	const char	*note;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step	*v;
+	}			 step;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain	*v;
+	}			 uncertain;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step {
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	const char	*how;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain {
+	const char	*text;
+	const char	*because;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out {
+	bool			 has_verdict;
+	enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_verdict	 verdict;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	bool			 has_by_state;
+	bool		 by_state;
+	bool			 has_keep_state;
+	bool		 keep_state;
+	bool			 has_setfib;
+	int32_t		 setfib;
+	const char	*fwd;
+	const char	*note;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step	*v;
+	}			 step;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain	*v;
+	}			 uncertain;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step {
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	const char	*how;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain {
+	const char	*text;
+	const char	*because;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in {
+	bool			 has_verdict;
+	enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_verdict	 verdict;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	bool			 has_by_state;
+	bool		 by_state;
+	bool			 has_keep_state;
+	bool		 keep_state;
+	bool			 has_setfib;
+	int32_t		 setfib;
+	const char	*fwd;
+	const char	*note;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step	*v;
+	}			 step;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain	*v;
+	}			 uncertain;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step {
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	const char	*how;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain {
+	const char	*text;
+	const char	*because;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out {
+	bool			 has_verdict;
+	enum arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_verdict	 verdict;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*text;
+	bool			 has_by_state;
+	bool		 by_state;
+	bool			 has_keep_state;
+	bool		 keep_state;
+	bool			 has_setfib;
+	int32_t		 setfib;
+	const char	*fwd;
+	const char	*note;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step	*v;
+	}			 step;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain	*v;
+	}			 uncertain;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot_path_check_output_firewall {
+	bool			 has_on;
+	bool		 on;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in	*in;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out	*out;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in	*reply_in;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out	*reply_out;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_path_check_output_finding {
+	bool			 has_severity;
+	enum arcana_troubleshoot_troubleshoot_path_check_output_finding_severity	 severity;
+	const char	*what;
+};
+
+/* output */
+struct arcana_troubleshoot_troubleshoot_path_check_output {
+	const char	*host;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_address	*v;
+	}			 address;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_source	*source;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_destination	*destination;
+	bool			 has_forwarding;
+	bool		 forwarding;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_ingress	*ingress;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_route	*route;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor	*neighbor;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_return	*return_;
+	const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall	*firewall;
+	bool			 has_delivered;
+	bool		 delivered;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_path_check_output_finding	*v;
+	}			 finding;
+};
+
+/* input */
+struct arcana_troubleshoot_troubleshoot_traceroute_input {
+	bool			 has_address;
+	struct arcana_troubleshoot_troubleshoot_traceroute_input_address	 address;
+};
+
+/* list entry */
+struct arcana_troubleshoot_troubleshoot_traceroute_output_hop {
+	uint8_t		 ttl;
+	bool			 has_address;
+	struct arcana_troubleshoot_troubleshoot_traceroute_output_hop_address	 address;
+	bool			 has_rtt;
+	int64_t		 rtt;	/* decimal64, 3 fraction digits */
+	const char	*note;
+	bool			 has_lost;
+	bool		 lost;
+};
+
+/* output */
+struct arcana_troubleshoot_troubleshoot_traceroute_output {
+	bool			 has_address;
+	struct arcana_troubleshoot_troubleshoot_traceroute_output_address	 address;
+	bool			 has_family;
+	enum arcana_troubleshoot_troubleshoot_traceroute_output_family	 family;
+	bool			 has_reached;
+	bool		 reached;
+	struct {
+		size_t		 n;
+		const struct arcana_troubleshoot_troubleshoot_traceroute_output_hop	*v;
+	}			 hop;
+};
+
+/* input */
+struct arcana_troubleshoot_troubleshoot_capture_input {
+	const char	*interface;
+	const char	*filter;
+	bool			 has_packets;
+	uint16_t	 packets;
+	bool			 has_seconds;
+	uint8_t		 seconds;
+	const char	*jail;
+};
+
+/* output */
+struct arcana_troubleshoot_troubleshoot_capture_output {
+	const char	*source;
+	const char	*filter;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 line;
+	bool			 has_packets;
+	uint32_t	 packets;
+	bool			 has_limit;
+	uint16_t	 limit;
+	bool			 has_seconds;
+	uint8_t		 seconds;
+	bool			 has_timed_out;
+	bool		 timed_out;
+	bool			 has_bytes;
+	uint64_t	 bytes;
+	struct cbl_bytes	 pcap;
+	const char	*taken;
+};
+
+/* container */
+struct arcana_troubleshoot_troubleshoot {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 capture_source;
+};
+
+/* data */
+struct arcana_troubleshoot {
+	const struct arcana_troubleshoot_troubleshoot	*troubleshoot;
+};
+
+/* container */
+struct arcana_history_history_sampling {
+	bool			 has_step;
+	uint16_t	 step;
+	bool			 has_keep;
+	uint32_t	 keep;
+};
+
+/* container */
+struct arcana_history_history_limits {
+	bool			 has_cpu;
+	uint8_t		 cpu;
+	bool			 has_memory;
+	uint8_t		 memory;
+	bool			 has_swap;
+	uint8_t		 swap;
+};
+
+/* list entry */
+struct arcana_history_history_rule {
+	enum arcana_history_history_rule_kind	 kind;
+	const char	*name;
+	bool			 has_limit;
+	uint64_t	 limit;
+	bool			 has_over;
+	bool		 over;
+};
+
+/* list entry */
+struct arcana_history_history_state_sample_interface {
+	const char	*name;
+	bool			 has_received;
+	uint64_t	 received;
+	bool			 has_sent;
+	uint64_t	 sent;
+};
+
+/* list entry */
+struct arcana_history_history_state_sample_disk {
+	const char	*name;
+	bool			 has_read;
+	uint64_t	 read;
+	bool			 has_written;
+	uint64_t	 written;
+};
+
+/* list entry */
+struct arcana_history_history_state_sample_jail {
+	const char	*name;
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 1 fraction digits */
+	bool			 has_memory;
+	uint64_t	 memory;
+};
+
+/* list entry */
+struct arcana_history_history_state_sample {
+	const char	*time;
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 1 fraction digits */
+	bool			 has_load;
+	int64_t		 load;	/* decimal64, 2 fraction digits */
+	bool			 has_memory;
+	uint64_t	 memory;
+	bool			 has_swap;
+	uint64_t	 swap;
+	bool			 has_received;
+	uint64_t	 received;
+	bool			 has_sent;
+	uint64_t	 sent;
+	bool			 has_read;
+	uint64_t	 read;
+	bool			 has_written;
+	uint64_t	 written;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_state_sample_interface	*v;
+	}			 interface;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_state_sample_disk	*v;
+	}			 disk;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_state_sample_jail	*v;
+	}			 jail;
+};
+
+/* container */
+struct arcana_history_history_state {
+	bool			 has_bytes;
+	uint64_t	 bytes;
+	bool			 has_ncpu;
+	uint16_t	 ncpu;
+	bool			 has_memory_total;
+	uint64_t	 memory_total;
+	bool			 has_swap_total;
+	uint64_t	 swap_total;
+	bool			 has_racct;
+	bool		 racct;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 interface;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 disk;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 jail;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_state_sample	*v;
+	}			 sample;
+};
+
+/* input */
+struct arcana_history_history_read_input {
+	const char	*after;
+};
+
+/* list entry */
+struct arcana_history_history_read_output_sample_interface {
+	const char	*name;
+	bool			 has_received;
+	uint64_t	 received;
+	bool			 has_sent;
+	uint64_t	 sent;
+};
+
+/* list entry */
+struct arcana_history_history_read_output_sample_disk {
+	const char	*name;
+	bool			 has_read;
+	uint64_t	 read;
+	bool			 has_written;
+	uint64_t	 written;
+};
+
+/* list entry */
+struct arcana_history_history_read_output_sample_jail {
+	const char	*name;
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 1 fraction digits */
+	bool			 has_memory;
+	uint64_t	 memory;
+};
+
+/* list entry */
+struct arcana_history_history_read_output_sample {
+	const char	*time;
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 1 fraction digits */
+	bool			 has_load;
+	int64_t		 load;	/* decimal64, 2 fraction digits */
+	bool			 has_memory;
+	uint64_t	 memory;
+	bool			 has_swap;
+	uint64_t	 swap;
+	bool			 has_received;
+	uint64_t	 received;
+	bool			 has_sent;
+	uint64_t	 sent;
+	bool			 has_read;
+	uint64_t	 read;
+	bool			 has_written;
+	uint64_t	 written;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_read_output_sample_interface	*v;
+	}			 interface;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_read_output_sample_disk	*v;
+	}			 disk;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_read_output_sample_jail	*v;
+	}			 jail;
+};
+
+/* output */
+struct arcana_history_history_read_output {
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_read_output_sample	*v;
+	}			 sample;
+};
+
+/* container */
+struct arcana_history_history {
+	const struct arcana_history_history_sampling	*sampling;
+	const struct arcana_history_history_limits	*limits;
+	struct {
+		size_t		 n;
+		const struct arcana_history_history_rule	*v;
+	}			 rule;
+	const struct arcana_history_history_state	*state;
+};
+
+/* data */
+struct arcana_history {
+	const struct arcana_history_history	*history;
+};
+
+/* container */
+struct arcana_events_events_event_route {
+	bool			 has_destination;
+	struct arcana_events_events_event_route_destination	 destination;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	const char	*gateway;
+	const char	*interface;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*flags;
+	bool			 has_metric;
+	uint32_t	 metric;
+	bool			 has_weight;
+	uint32_t	 weight;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+	const char	*source;
+};
+
+/* container */
+struct arcana_events_events_event_routes {
+	bool			 has_changed;
+	uint32_t	 changed;
+};
+
+/* container */
+struct arcana_events_events_event_link {
+	const char	*interface;
+	bool			 has_up;
+	bool		 up;
+	bool			 has_carrier;
+	bool		 carrier;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+};
+
+/* container */
+struct arcana_events_events_event_address {
+	const char	*interface;
+	bool			 has_address;
+	struct arcana_events_events_event_address_address	 address;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+};
+
+/* container */
+struct arcana_events_events_event_neighbor {
+	const char	*interface;
+	bool			 has_address;
+	struct arcana_events_events_event_neighbor_address	 address;
+	const char	*link_address;
+	const char	*state;
+	bool			 has_router;
+	bool		 router;
+};
+
+/* container */
+struct arcana_events_events_event_threshold {
+	bool			 has_what;
+	enum arcana_events_events_event_threshold_what	 what;
+	const char	*name;
+	bool			 has_value;
+	uint64_t	 value;
+	bool			 has_limit;
+	uint64_t	 limit;
+	bool			 has_over;
+	bool		 over;
+};
+
+/* container */
+struct arcana_events_events_event_kmsg {
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	const char	*text;
+	bool			 has_more;
+	uint32_t	 more;
+};
+
+/* container */
+struct arcana_events_events_event_tunnel {
+	const char	*id;
+	bool			 has_address;
+	struct arcana_events_events_event_tunnel_address	 address;
+	const char	*interface;
+	bool			 has_state;
+	enum arcana_events_events_event_tunnel_state	 state;
+	bool			 has_misses;
+	uint32_t	 misses;
+	const char	*by;
+};
+
+/* container */
+struct arcana_events_events_event_fault {
+	const char	*type;
+	const char	*severity;
+	const char	*object;
+	const char	*by;
+	const char	*description;
+	bool			 has_state;
+	enum arcana_events_events_event_fault_state	 state;
+};
+
+/* container */
+struct arcana_events_events_event_security {
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*action;
+	const char	*source;
+	const char	*destination;
+	const char	*interface;
+	const char	*comment;
+};
+
+/* container */
+struct arcana_events_events_event_job {
+	bool			 has_id;
+	uint64_t	 id;
+	const char	*title;
+	bool			 has_ok;
+	bool		 ok;
+	const char	*error;
+};
+
+/* container */
+struct arcana_events_events_event_jail_state {
+	const char	*jail;
+	bool			 has_state;
+	enum arcana_events_events_event_jail_state_state	 state;
+	bool			 has_jid;
+	uint32_t	 jid;
+};
+
+/* container */
+struct arcana_events_events_event_crash {
+	bool			 has_pid;
+	uint32_t	 pid;
+	const char	*process;
+	bool			 has_jid;
+	uint32_t	 jid;
+	const char	*jail;
+	bool			 has_uid;
+	uint32_t	 uid;
+	bool			 has_signal;
+	uint8_t		 signal;
+	bool			 has_core;
+	bool		 core;
+};
+
+/* list entry */
+struct arcana_events_events_event {
+	uint64_t	 number;
+	const char	*time;
+	bool			 has_kind;
+	uint64_t	 kind;	/* identityref: a SID */
+	const char	*jail;
+	enum arcana_events_events_event_data	 data;	/* the case given */
+	const struct arcana_events_events_event_route	*route;
+	const struct arcana_events_events_event_routes	*routes;
+	const struct arcana_events_events_event_link	*link;
+	const struct arcana_events_events_event_address	*address;
+	const struct arcana_events_events_event_neighbor	*neighbor;
+	const struct arcana_events_events_event_threshold	*threshold;
+	const struct arcana_events_events_event_kmsg	*kmsg;
+	const struct arcana_events_events_event_tunnel	*tunnel;
+	const struct arcana_events_events_event_fault	*fault;
+	const struct arcana_events_events_event_security	*security;
+	const struct arcana_events_events_event_job	*job;
+	const struct arcana_events_events_event_jail_state	*jail_state;
+	const struct arcana_events_events_event_crash	*crash;
+};
+
+/* input */
+struct arcana_events_events_read_input {
+	bool			 has_after;
+	uint64_t	 after;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_route {
+	bool			 has_destination;
+	struct arcana_events_events_read_output_event_route_destination	 destination;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	const char	*gateway;
+	const char	*interface;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*flags;
+	bool			 has_metric;
+	uint32_t	 metric;
+	bool			 has_weight;
+	uint32_t	 weight;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+	const char	*source;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_routes {
+	bool			 has_changed;
+	uint32_t	 changed;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_link {
+	const char	*interface;
+	bool			 has_up;
+	bool		 up;
+	bool			 has_carrier;
+	bool		 carrier;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_address {
+	const char	*interface;
+	bool			 has_address;
+	struct arcana_events_events_read_output_event_address_address	 address;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_neighbor {
+	const char	*interface;
+	bool			 has_address;
+	struct arcana_events_events_read_output_event_neighbor_address	 address;
+	const char	*link_address;
+	const char	*state;
+	bool			 has_router;
+	bool		 router;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_threshold {
+	bool			 has_what;
+	enum arcana_events_events_read_output_event_threshold_what	 what;
+	const char	*name;
+	bool			 has_value;
+	uint64_t	 value;
+	bool			 has_limit;
+	uint64_t	 limit;
+	bool			 has_over;
+	bool		 over;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_kmsg {
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	const char	*text;
+	bool			 has_more;
+	uint32_t	 more;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_tunnel {
+	const char	*id;
+	bool			 has_address;
+	struct arcana_events_events_read_output_event_tunnel_address	 address;
+	const char	*interface;
+	bool			 has_state;
+	enum arcana_events_events_read_output_event_tunnel_state	 state;
+	bool			 has_misses;
+	uint32_t	 misses;
+	const char	*by;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_fault {
+	const char	*type;
+	const char	*severity;
+	const char	*object;
+	const char	*by;
+	const char	*description;
+	bool			 has_state;
+	enum arcana_events_events_read_output_event_fault_state	 state;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_security {
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*action;
+	const char	*source;
+	const char	*destination;
+	const char	*interface;
+	const char	*comment;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_job {
+	bool			 has_id;
+	uint64_t	 id;
+	const char	*title;
+	bool			 has_ok;
+	bool		 ok;
+	const char	*error;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_jail_state {
+	const char	*jail;
+	bool			 has_state;
+	enum arcana_events_events_read_output_event_jail_state_state	 state;
+	bool			 has_jid;
+	uint32_t	 jid;
+};
+
+/* container */
+struct arcana_events_events_read_output_event_crash {
+	bool			 has_pid;
+	uint32_t	 pid;
+	const char	*process;
+	bool			 has_jid;
+	uint32_t	 jid;
+	const char	*jail;
+	bool			 has_uid;
+	uint32_t	 uid;
+	bool			 has_signal;
+	uint8_t		 signal;
+	bool			 has_core;
+	bool		 core;
+};
+
+/* list entry */
+struct arcana_events_events_read_output_event {
+	uint64_t	 number;
+	const char	*time;
+	bool			 has_kind;
+	uint64_t	 kind;	/* identityref: a SID */
+	const char	*jail;
+	enum arcana_events_events_read_output_event_data	 data;	/* the case given */
+	const struct arcana_events_events_read_output_event_route	*route;
+	const struct arcana_events_events_read_output_event_routes	*routes;
+	const struct arcana_events_events_read_output_event_link	*link;
+	const struct arcana_events_events_read_output_event_address	*address;
+	const struct arcana_events_events_read_output_event_neighbor	*neighbor;
+	const struct arcana_events_events_read_output_event_threshold	*threshold;
+	const struct arcana_events_events_read_output_event_kmsg	*kmsg;
+	const struct arcana_events_events_read_output_event_tunnel	*tunnel;
+	const struct arcana_events_events_read_output_event_fault	*fault;
+	const struct arcana_events_events_read_output_event_security	*security;
+	const struct arcana_events_events_read_output_event_job	*job;
+	const struct arcana_events_events_read_output_event_jail_state	*jail_state;
+	const struct arcana_events_events_read_output_event_crash	*crash;
+};
+
+/* output */
+struct arcana_events_events_read_output {
+	bool			 has_last;
+	uint64_t	 last;
+	bool			 has_first;
+	uint64_t	 first;
+	struct {
+		size_t		 n;
+		const struct arcana_events_events_read_output_event	*v;
+	}			 event;
+};
+
+/* container */
+struct arcana_events_events {
+	bool			 has_last;
+	uint64_t	 last;
+	bool			 has_first;
+	uint64_t	 first;
+	bool			 has_kept;
+	uint16_t	 kept;
+	struct {
+		size_t		 n;
+		const struct arcana_events_events_event	*v;
+	}			 event;
+};
+
+/* data */
+struct arcana_events {
+	const struct arcana_events_events	*events;
+};
+
+/* container */
+struct arcana_events_event_route {
+	bool			 has_destination;
+	struct arcana_events_event_route_destination	 destination;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	const char	*gateway;
+	const char	*interface;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*flags;
+	bool			 has_metric;
+	uint32_t	 metric;
+	bool			 has_weight;
+	uint32_t	 weight;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+	const char	*source;
+};
+
+/* container */
+struct arcana_events_event_routes {
+	bool			 has_changed;
+	uint32_t	 changed;
+};
+
+/* container */
+struct arcana_events_event_link {
+	const char	*interface;
+	bool			 has_up;
+	bool		 up;
+	bool			 has_carrier;
+	bool		 carrier;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+};
+
+/* container */
+struct arcana_events_event_address {
+	const char	*interface;
+	bool			 has_address;
+	struct arcana_events_event_address_address	 address;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+};
+
+/* container */
+struct arcana_events_event_neighbor {
+	const char	*interface;
+	bool			 has_address;
+	struct arcana_events_event_neighbor_address	 address;
+	const char	*link_address;
+	const char	*state;
+	bool			 has_router;
+	bool		 router;
+};
+
+/* container */
+struct arcana_events_event_threshold {
+	bool			 has_what;
+	enum arcana_events_event_threshold_what	 what;
+	const char	*name;
+	bool			 has_value;
+	uint64_t	 value;
+	bool			 has_limit;
+	uint64_t	 limit;
+	bool			 has_over;
+	bool		 over;
+};
+
+/* container */
+struct arcana_events_event_kmsg {
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	const char	*text;
+	bool			 has_more;
+	uint32_t	 more;
+};
+
+/* container */
+struct arcana_events_event_tunnel {
+	const char	*id;
+	bool			 has_address;
+	struct arcana_events_event_tunnel_address	 address;
+	const char	*interface;
+	bool			 has_state;
+	enum arcana_events_event_tunnel_state	 state;
+	bool			 has_misses;
+	uint32_t	 misses;
+	const char	*by;
+};
+
+/* container */
+struct arcana_events_event_fault {
+	const char	*type;
+	const char	*severity;
+	const char	*object;
+	const char	*by;
+	const char	*description;
+	bool			 has_state;
+	enum arcana_events_event_fault_state	 state;
+};
+
+/* container */
+struct arcana_events_event_security {
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*action;
+	const char	*source;
+	const char	*destination;
+	const char	*interface;
+	const char	*comment;
+};
+
+/* container */
+struct arcana_events_event_job {
+	bool			 has_id;
+	uint64_t	 id;
+	const char	*title;
+	bool			 has_ok;
+	bool		 ok;
+	const char	*error;
+};
+
+/* container */
+struct arcana_events_event_jail_state {
+	const char	*jail;
+	bool			 has_state;
+	enum arcana_events_event_jail_state_state	 state;
+	bool			 has_jid;
+	uint32_t	 jid;
+};
+
+/* container */
+struct arcana_events_event_crash {
+	bool			 has_pid;
+	uint32_t	 pid;
+	const char	*process;
+	bool			 has_jid;
+	uint32_t	 jid;
+	const char	*jail;
+	bool			 has_uid;
+	uint32_t	 uid;
+	bool			 has_signal;
+	uint8_t		 signal;
+	bool			 has_core;
+	bool		 core;
+};
+
+/* notification */
+struct arcana_events_event {
+	bool			 has_number;
+	uint64_t	 number;
+	const char	*time;
+	bool			 has_kind;
+	uint64_t	 kind;	/* identityref: a SID */
+	const char	*jail;
+	enum arcana_events_event_data	 data;	/* the case given */
+	const struct arcana_events_event_route	*route;
+	const struct arcana_events_event_routes	*routes;
+	const struct arcana_events_event_link	*link;
+	const struct arcana_events_event_address	*address;
+	const struct arcana_events_event_neighbor	*neighbor;
+	const struct arcana_events_event_threshold	*threshold;
+	const struct arcana_events_event_kmsg	*kmsg;
+	const struct arcana_events_event_tunnel	*tunnel;
+	const struct arcana_events_event_fault	*fault;
+	const struct arcana_events_event_security	*security;
+	const struct arcana_events_event_job	*job;
+	const struct arcana_events_event_jail_state	*jail_state;
+	const struct arcana_events_event_crash	*crash;
+};
+
+/* list entry */
+struct arcana_bird_bird_configuration_file {
+	const char	*path;
+	const char	*text;
+	const char	*sha256;
+};
+
+/* container */
+struct arcana_bird_bird_configuration {
+	const char	*path;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_configuration_file	*v;
+	}			 file;
+};
+
+/* container */
+struct arcana_bird_bird_state_protocol_bgp {
+	const char	*state;
+	bool			 has_neighbor;
+	struct arcana_bird_bird_state_protocol_bgp_neighbor	 neighbor;
+	bool			 has_neighbor_as;
+	uint32_t	 neighbor_as;
+	bool			 has_local_as;
+	uint32_t	 local_as;
+	const char	*neighbor_id;
+	bool			 has_source;
+	struct arcana_bird_bird_state_protocol_bgp_source	 source;
+	const char	*session;
+	const char	*hold;
+	const char	*keepalive;
+	const char	*last_error;
+};
+
+/* container */
+struct arcana_bird_bird_state_protocol_rpki {
+	const char	*cache;
+	const char	*status;
+	const char	*serial;
+	const char	*last_update;
+};
+
+/* list entry */
+struct arcana_bird_bird_state_protocol_channel {
+	const char	*name;
+	const char	*state;
+	const char	*table;
+	const char	*input_filter;
+	const char	*output_filter;
+	const char	*routes;
+	bool			 has_imported;
+	uint64_t	 imported;
+	bool			 has_exported;
+	uint64_t	 exported;
+};
+
+/* list entry */
+struct arcana_bird_bird_state_protocol {
+	const char	*name;
+	const char	*type;
+	const char	*table;
+	const char	*state;
+	const char	*since;
+	const char	*info;
+	const char	*description;
+	const struct arcana_bird_bird_state_protocol_bgp	*bgp;
+	const struct arcana_bird_bird_state_protocol_rpki	*rpki;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_state_protocol_channel	*v;
+	}			 channel;
+};
+
+/* list entry */
+struct arcana_bird_bird_state_ospf_neighbor {
+	const char	*protocol;
+	const char	*router_id;
+	const char	*priority;
+	const char	*state;
+	const char	*dead_time;
+	const char	*interface;
+	const char	*address;
+};
+
+/* list entry */
+struct arcana_bird_bird_state_bfd_session {
+	const char	*protocol;
+	const char	*address;
+	const char	*interface;
+	const char	*state;
+	const char	*since;
+	const char	*interval;
+	const char	*timeout;
+};
+
+/* list entry */
+struct arcana_bird_bird_state_table {
+	const char	*name;
+	bool			 has_routes;
+	uint64_t	 routes;
+	bool			 has_networks;
+	uint64_t	 networks;
+};
+
+/* container */
+struct arcana_bird_bird_state {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 status;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_state_protocol	*v;
+	}			 protocol;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_state_ospf_neighbor	*v;
+	}			 ospf_neighbor;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_state_bfd_session	*v;
+	}			 bfd_session;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_state_table	*v;
+	}			 table;
+};
+
+/* input */
+struct arcana_bird_bird_routes_input {
+	const char	*filter;
+};
+
+/* list entry */
+struct arcana_bird_bird_routes_output_route_nexthop {
+	const char	*via;
+	const char	*interface;
+};
+
+/* list entry */
+struct arcana_bird_bird_routes_output_route {
+	const char	*table;
+	const char	*prefix;
+	const char	*type;
+	const char	*protocol;
+	const char	*from;
+	const char	*since;
+	bool			 has_primary;
+	bool		 primary;
+	const char	*preference;
+	const char	*info;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_routes_output_route_nexthop	*v;
+	}			 nexthop;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 attribute;
+};
+
+/* output */
+struct arcana_bird_bird_routes_output {
+	bool			 has_count;
+	uint64_t	 count;
+	const char	*message;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_routes_output_route	*v;
+	}			 route;
+};
+
+/* container */
+struct arcana_bird_bird {
+	const struct arcana_bird_bird_configuration	*configuration;
+	const struct arcana_bird_bird_state	*state;
+};
+
+/* data */
+struct arcana_bird {
+	const struct arcana_bird_bird	*bird;
+};
+
+/* list entry */
+struct arcana_wireguard_wireguard_interface_peer {
+	const char	*public_key;
+	bool			 has_preshared_key;
+	bool		 preshared_key;
+	const char	*endpoint;
+	struct {
+		size_t		 n;
+		const struct arcana_wireguard_wireguard_interface_peer_allowed_ip	 *v;
+	}			 allowed_ip;
+	const char	*latest_handshake;
+	bool			 has_received;
+	uint64_t	 received;
+	bool			 has_sent;
+	uint64_t	 sent;
+	bool			 has_keepalive;
+	uint16_t	 keepalive;
+};
+
+/* list entry */
+struct arcana_wireguard_wireguard_interface {
+	const char	*name;
+	bool			 has_private_key;
+	bool		 private_key;
+	const char	*public_key;
+	bool			 has_listen_port;
+	uint16_t	 listen_port;
+	struct {
+		size_t		 n;
+		const struct arcana_wireguard_wireguard_interface_peer	*v;
+	}			 peer;
+};
+
+/* container */
+struct arcana_wireguard_wireguard {
+	const char	*now;
+	struct {
+		size_t		 n;
+		const struct arcana_wireguard_wireguard_interface	*v;
+	}			 interface;
+};
+
+/* data */
+struct arcana_wireguard {
+	const struct arcana_wireguard_wireguard	*wireguard;
+};
+
+/* list entry */
+struct arcana_netgraph_netgraph_node_hook {
+	const char	*name;
+	const char	*peer;
+	const char	*peer_type;
+	const char	*peer_id;
+	const char	*peer_hook;
+};
+
+/* list entry */
+struct arcana_netgraph_netgraph_node {
+	const char	*id;
+	const char	*name;
+	const char	*type;
+	struct {
+		size_t		 n;
+		const struct arcana_netgraph_netgraph_node_hook	*v;
+	}			 hook;
+};
+
+/* container */
+struct arcana_netgraph_netgraph {
+	struct {
+		size_t		 n;
+		const struct arcana_netgraph_netgraph_node	*v;
+	}			 node;
+};
+
+/* data */
+struct arcana_netgraph {
+	const struct arcana_netgraph_netgraph	*netgraph;
+};
+
+/* container */
+struct arcana_host_host_agent {
+	const char	*version;
+	const char	*build;
+};
+
+/* list entry */
+struct arcana_host_host_stats_pool {
+	const char	*name;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_allocated;
+	uint64_t	 allocated;
+	bool			 has_free;
+	uint64_t	 free;
+	const char	*health;
+};
+
+/* container */
+struct arcana_host_host_stats {
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 1 fraction digits */
+	bool			 has_load1;
+	int64_t		 load1;	/* decimal64, 2 fraction digits */
+	bool			 has_load5;
+	int64_t		 load5;	/* decimal64, 2 fraction digits */
+	bool			 has_load15;
+	int64_t		 load15;	/* decimal64, 2 fraction digits */
+	bool			 has_memory_total;
+	uint64_t	 memory_total;
+	bool			 has_memory_used;
+	uint64_t	 memory_used;
+	bool			 has_memory_inactive;
+	uint64_t	 memory_inactive;
+	bool			 has_memory_free;
+	uint64_t	 memory_free;
+	bool			 has_swap_total;
+	uint64_t	 swap_total;
+	bool			 has_swap_used;
+	uint64_t	 swap_used;
+	struct {
+		size_t		 n;
+		const struct arcana_host_host_stats_pool	*v;
+	}			 pool;
+};
+
+/* list entry */
+struct arcana_host_host_certificates_trusted {
+	const char	*file;
+	const char	*subject;
+	const char	*common_name;
+	const char	*organization;
+	const char	*country;
+	const char	*issuer;
+	const char	*not_before;
+	const char	*not_after;
+	const char	*sha256;
+	const char	*key;
+	bool			 has_ca;
+	bool		 ca;
+	bool			 has_self_signed;
+	bool		 self_signed;
+	const char	*local;
+};
+
+/* list entry */
+struct arcana_host_host_certificates_untrusted {
+	const char	*file;
+	const char	*subject;
+	const char	*common_name;
+	const char	*organization;
+	const char	*country;
+	const char	*issuer;
+	const char	*not_before;
+	const char	*not_after;
+	const char	*sha256;
+	const char	*key;
+	bool			 has_ca;
+	bool		 ca;
+	bool			 has_self_signed;
+	bool		 self_signed;
+	const char	*local;
+};
+
+/* container */
+struct arcana_host_host_certificates {
+	const char	*localbase;
+	const char	*added_dir;
+	const char	*distrusted_dir;
+	bool			 has_certctl;
+	bool		 certctl;
+	const char	*now;
+	struct {
+		size_t		 n;
+		const struct arcana_host_host_certificates_trusted	*v;
+	}			 trusted;
+	struct {
+		size_t		 n;
+		const struct arcana_host_host_certificates_untrusted	*v;
+	}			 untrusted;
+};
+
+/* container */
+struct arcana_host_host {
+	const char	*hostname;
+	const char	*sysname;
+	const char	*release;
+	const char	*machine;
+	bool			 has_osreldate;
+	uint32_t	 osreldate;
+	bool			 has_ncpu;
+	uint32_t	 ncpu;
+	bool			 has_physmem;
+	uint64_t	 physmem;
+	const char	*boot_time;
+	const char	*time;
+	bool			 has_securelevel;
+	int32_t		 securelevel;
+	bool			 has_privileged;
+	bool		 privileged;
+	const struct arcana_host_host_agent	*agent;
+	struct {
+		size_t		 n;
+		const uint64_t	 *v;
+	}			 plugin;	/* identityref: a SID */
+	const struct arcana_host_host_stats	*stats;
+	const struct arcana_host_host_certificates	*certificates;
+};
+
+/* data */
+struct arcana_host {
+	const struct arcana_host_host	*host;
+};
+
+/* list entry */
+struct arcana_agent_agent_transport_listener {
+	const char	*uri;
+	bool			 has_transport;
+	enum arcana_agent_agent_transport_listener_transport	 transport;
+	bool			 has_up;
+	bool		 up;
+	const char	*why;
+};
+
+/* list entry */
+struct arcana_agent_agent_transport_session {
+	const char	*transport;
+	const char	*address;
+	const char	*name;
+	const char	*since;
+};
+
+/* input */
+struct arcana_agent_agent_transport_retry_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_agent_agent_transport_retry_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* container */
+struct arcana_agent_agent_transport {
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_transport_listener	*v;
+	}			 listener;
+	bool			 has_sctp;
+	bool		 sctp;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_transport_session	*v;
+	}			 session;
+};
+
+/* container */
+struct arcana_agent_agent_tls_certificate {
+	const char	*subject;
+	const char	*issuer;
+	const char	*not_before;
+	const char	*not_after;
+	const char	*sha256;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 chain;
+};
+
+/* list entry */
+struct arcana_agent_agent_tls_ca {
+	const char	*subject;
+	const char	*issuer;
+	const char	*not_before;
+	const char	*not_after;
+	const char	*sha256;
+};
+
+/* input */
+struct arcana_agent_agent_tls_csr_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_agent_agent_tls_csr_output {
+	const char	*csr;
+};
+
+/* input */
+struct arcana_agent_agent_tls_install_input {
+	const char	*certificate;
+	const char	*ca;
+	const char	*peer;
+};
+
+/* output */
+struct arcana_agent_agent_tls_install_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* container */
+struct arcana_agent_agent_tls {
+	const struct arcana_agent_agent_tls_certificate	*certificate;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_tls_ca	*v;
+	}			 ca;
+	bool			 has_pending;
+	bool		 pending;
+};
+
+/* input */
+struct arcana_agent_agent_update_input {
+	struct cbl_bytes	 binary;
+	const char	*sha256;
+	bool			 has_restart;
+	bool		 restart;
+};
+
+/* output */
+struct arcana_agent_agent_update_output {
+	const char	*version;
+	bool			 has_restarting;
+	bool		 restarting;
+};
+
+/* input */
+struct arcana_agent_agent_build_input {
+	const char	*source;
+	const char	*ref;
+	const char	*host_keys;
+	const char	*ssh_key;
+};
+
+/* output */
+struct arcana_agent_agent_build_output {
+	struct cbl_bytes	 binary;
+	const char	*sha256;
+	const char	*version;
+	const char	*commit;
+	const char	*host_keys;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 fingerprint;
+	const char	*deploy_key;
+};
+
+/* input */
+struct arcana_agent_agent_console_update_input {
+	const char	*source;
+	const char	*ref;
+	const char	*host_keys;
+	const char	*ssh_key;
+};
+
+/* output */
+struct arcana_agent_agent_console_update_output {
+	const char	*host_keys;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 fingerprint;
+	const char	*deploy_key;
+};
+
+/* input */
+struct arcana_agent_agent_source_head_input {
+	const char	*source;
+	const char	*ref;
+	const char	*host_keys;
+	const char	*ssh_key;
+};
+
+/* output */
+struct arcana_agent_agent_source_head_output {
+	const char	*commit;
+	const char	*host_keys;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 fingerprint;
+	const char	*deploy_key;
+};
+
+/* input */
+struct arcana_agent_agent_source_log_input {
+	const char	*source;
+	const char	*ref;
+	const char	*host_keys;
+	const char	*ssh_key;
+	bool			 has_count;
+	uint32_t	 count;
+};
+
+/* list entry */
+struct arcana_agent_agent_source_log_output_commit_log {
+	const char	*hash;
+	const char	*time;
+	const char	*subject;
+	const char	*body;
+};
+
+/* list entry */
+struct arcana_agent_agent_source_log_output_tag {
+	const char	*name;
+	const char	*message;
+};
+
+/* output */
+struct arcana_agent_agent_source_log_output {
+	const char	*commit;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_source_log_output_commit_log	*v;
+	}			 commit_log;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_source_log_output_tag	*v;
+	}			 tag;
+	const char	*host_keys;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 fingerprint;
+	const char	*deploy_key;
+};
+
+/* input */
+struct arcana_agent_agent_config_export_input {
+	bool			 has_secrets;
+	bool		 secrets;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_export_output_facts_interface {
+	const char	*name;
+	const char	*driver;
+	const char	*mac;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_export_output_facts_disk {
+	const char	*name;
+	bool			 has_size;
+	uint64_t	 size;
+};
+
+/* container */
+struct arcana_agent_agent_config_export_output_facts {
+	const char	*arch;
+	const char	*release;
+	const char	*cpu;
+	bool			 has_ncpu;
+	uint32_t	 ncpu;
+	bool			 has_memory;
+	uint64_t	 memory;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_export_output_facts_interface	*v;
+	}			 interface;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_export_output_facts_disk	*v;
+	}			 disk;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_export_output_package {
+	const char	*name;
+	const char	*origin;
+	const char	*version;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_export_output_file {
+	const char	*path;
+	const char	*mode;
+	const char	*owner;
+	const char	*group;
+	const char	*text;
+	bool			 has_secret;
+	bool		 secret;
+};
+
+/* output */
+struct arcana_agent_agent_config_export_output {
+	const char	*host;
+	const char	*agent;
+	const char	*taken;
+	const struct arcana_agent_agent_config_export_output_facts	*facts;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_export_output_package	*v;
+	}			 package;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_export_output_file	*v;
+	}			 file;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_apply_input_bundle_facts_interface {
+	const char	*name;
+	const char	*driver;
+	const char	*mac;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_apply_input_bundle_facts_disk {
+	const char	*name;
+	bool			 has_size;
+	uint64_t	 size;
+};
+
+/* container */
+struct arcana_agent_agent_config_apply_input_bundle_facts {
+	const char	*arch;
+	const char	*release;
+	const char	*cpu;
+	bool			 has_ncpu;
+	uint32_t	 ncpu;
+	bool			 has_memory;
+	uint64_t	 memory;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_apply_input_bundle_facts_interface	*v;
+	}			 interface;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_apply_input_bundle_facts_disk	*v;
+	}			 disk;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_apply_input_bundle_package {
+	const char	*name;
+	const char	*origin;
+	const char	*version;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_apply_input_bundle_file {
+	const char	*path;
+	const char	*mode;
+	const char	*owner;
+	const char	*group;
+	const char	*text;
+	bool			 has_secret;
+	bool		 secret;
+};
+
+/* container */
+struct arcana_agent_agent_config_apply_input_bundle {
+	const char	*host;
+	const char	*agent;
+	const char	*taken;
+	const struct arcana_agent_agent_config_apply_input_bundle_facts	*facts;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_apply_input_bundle_package	*v;
+	}			 package;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_apply_input_bundle_file	*v;
+	}			 file;
+};
+
+/* input */
+struct arcana_agent_agent_config_apply_input {
+	const struct arcana_agent_agent_config_apply_input_bundle	*bundle;
+	bool			 has_dry_run;
+	bool		 dry_run;
+	bool			 has_anyway;
+	bool		 anyway;
+	const char	*hostname;
+};
+
+/* list entry */
+struct arcana_agent_agent_config_apply_output_file {
+	const char	*path;
+	bool			 has_state;
+	enum arcana_agent_agent_config_apply_output_file_state	 state;
+	const char	*diff;
+};
+
+/* output */
+struct arcana_agent_agent_config_apply_output {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 mismatch;
+	struct {
+		size_t		 n;
+		const struct arcana_agent_agent_config_apply_output_file	*v;
+	}			 file;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 package;
+	const char	*backup;
+	bool			 has_applied;
+	bool		 applied;
+	bool			 has_reboot;
+	bool		 reboot;
+};
+
+/* container */
+struct arcana_agent_agent {
+	const struct arcana_agent_agent_transport	*transport;
+	const struct arcana_agent_agent_tls	*tls;
+};
+
+/* data */
+struct arcana_agent {
+	const struct arcana_agent_agent	*agent;
+};
+
+/* container */
+struct arcana_probe_probes_target_tca {
+	bool			 has_delay;
+	int64_t		 delay;	/* decimal64, 3 fraction digits */
+	bool			 has_ipdv;
+	int64_t		 ipdv;	/* decimal64, 3 fraction digits */
+	bool			 has_loss;
+	int64_t		 loss;	/* decimal64, 6 fraction digits */
+	bool			 has_damping;
+	uint8_t		 damping;
+};
+
+/* list entry */
+struct arcana_probe_probes_target {
+	const char	*id;
+	bool			 has_address;
+	struct arcana_probe_probes_target_address	 address;
+	bool			 has_fib;
+	uint16_t	 fib;
+	bool			 has_interval;
+	uint32_t	 interval;
+	bool			 has_size;
+	uint16_t	 size;
+	bool			 has_count;
+	uint32_t	 count;
+	bool			 has_dscp;
+	uint8_t		 dscp;
+	bool			 has_down;
+	uint8_t		 down;
+	bool			 has_up;
+	uint8_t		 up;
+	bool			 has_timeout;
+	uint32_t	 timeout;
+	bool			 has_eval;
+	uint32_t	 eval;
+	bool			 has_history;
+	uint32_t	 history;
+	bool			 has_report;
+	uint32_t	 report;
+	const struct arcana_probe_probes_target_tca	*tca;
+};
+
+/* container */
+struct arcana_probe_probes_state_target_now {
+	bool			 has_sent;
+	uint32_t	 sent;
+	bool			 has_received;
+	uint32_t	 received;
+	bool			 has_delay;
+	int64_t		 delay;	/* decimal64, 3 fraction digits */
+	bool			 has_ipdv;
+	int64_t		 ipdv;	/* decimal64, 3 fraction digits */
+	bool			 has_loss;
+	int64_t		 loss;	/* decimal64, 6 fraction digits */
+	bool			 has_age;
+	int64_t		 age;	/* decimal64, 3 fraction digits */
+};
+
+/* list entry */
+struct arcana_probe_probes_state_target_sample {
+	const char	*time;
+	bool			 has_delay;
+	int64_t		 delay;	/* decimal64, 3 fraction digits */
+	bool			 has_ipdv;
+	int64_t		 ipdv;	/* decimal64, 3 fraction digits */
+	bool			 has_loss;
+	int64_t		 loss;	/* decimal64, 6 fraction digits */
+	bool			 has_min;
+	int64_t		 min;	/* decimal64, 3 fraction digits */
+	bool			 has_max;
+	int64_t		 max;	/* decimal64, 3 fraction digits */
+	bool			 has_sent;
+	uint32_t	 sent;
+	bool			 has_received;
+	uint32_t	 received;
+};
+
+/* list entry */
+struct arcana_probe_probes_state_target {
+	const char	*id;
+	bool			 has_address;
+	struct arcana_probe_probes_state_target_address	 address;
+	bool			 has_family;
+	enum arcana_probe_probes_state_target_family	 family;
+	bool			 has_fib;
+	uint16_t	 fib;
+	bool			 has_state;
+	enum arcana_probe_probes_state_target_state	 state;
+	const char	*error;
+	const char	*since;
+	bool			 has_interval;
+	uint32_t	 interval;
+	bool			 has_size;
+	uint16_t	 size;
+	bool			 has_eval;
+	uint32_t	 eval;
+	bool			 has_dscp;
+	uint8_t		 dscp;
+	bool			 has_sent;
+	uint64_t	 sent;
+	bool			 has_received;
+	uint64_t	 received;
+	bool			 has_misses;
+	uint32_t	 misses;
+	bool			 has_last_rtt;
+	int64_t		 last_rtt;	/* decimal64, 3 fraction digits */
+	const struct arcana_probe_probes_state_target_now	*now;
+	bool			 has_kept;
+	uint32_t	 kept;
+	struct {
+		size_t		 n;
+		const struct arcana_probe_probes_state_target_sample	*v;
+	}			 sample;
+};
+
+/* container */
+struct arcana_probe_probes_state {
+	bool			 has_probing;
+	bool		 probing;
+	const char	*time;
+	struct {
+		size_t		 n;
+		const struct arcana_probe_probes_state_target	*v;
+	}			 target;
+};
+
+/* input */
+struct arcana_probe_probes_read_input {
+	const char	*after;
+};
+
+/* list entry */
+struct arcana_probe_probes_read_output_target_sample {
+	const char	*time;
+	bool			 has_delay;
+	int64_t		 delay;	/* decimal64, 3 fraction digits */
+	bool			 has_ipdv;
+	int64_t		 ipdv;	/* decimal64, 3 fraction digits */
+	bool			 has_loss;
+	int64_t		 loss;	/* decimal64, 6 fraction digits */
+	bool			 has_min;
+	int64_t		 min;	/* decimal64, 3 fraction digits */
+	bool			 has_max;
+	int64_t		 max;	/* decimal64, 3 fraction digits */
+	bool			 has_sent;
+	uint32_t	 sent;
+	bool			 has_received;
+	uint32_t	 received;
+};
+
+/* list entry */
+struct arcana_probe_probes_read_output_target {
+	const char	*id;
+	struct {
+		size_t		 n;
+		const struct arcana_probe_probes_read_output_target_sample	*v;
+	}			 sample;
+};
+
+/* output */
+struct arcana_probe_probes_read_output {
+	struct {
+		size_t		 n;
+		const struct arcana_probe_probes_read_output_target	*v;
+	}			 target;
+};
+
+/* container */
+struct arcana_probe_probes {
+	struct {
+		size_t		 n;
+		const struct arcana_probe_probes_target	*v;
+	}			 target;
+	const struct arcana_probe_probes_state	*state;
+};
+
+/* data */
+struct arcana_probe {
+	const struct arcana_probe_probes	*probes;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_rules_table_entry {
+	const char	*prefix;
+	const char	*value;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_rules_table {
+	const char	*name;
+	bool			 has_valtype;
+	enum arcana_sdwan_sdwan_rules_table_valtype	 valtype;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_rules_table_entry	*v;
+	}			 entry;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_rules_rule {
+	uint32_t	 number;
+	const char	*text;
+};
+
+/* container */
+struct arcana_sdwan_sdwan_rules {
+	bool			 has_set;
+	uint8_t		 set;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_rules_table	*v;
+	}			 table;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 object;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_rules_rule	*v;
+	}			 rule;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_steer_entry_candidate {
+	const char	*id;
+	bool			 has_via;
+	struct arcana_sdwan_sdwan_steer_entry_candidate_via	 via;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_steer_entry {
+	const char	*table;
+	const char	*prefix;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_steer_entry_candidate	*v;
+	}			 candidate;
+};
+
+/* container */
+struct arcana_sdwan_sdwan_steer {
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_steer_entry	*v;
+	}			 entry;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_bird_instance {
+	const char	*name;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*conf;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_dhcp_instance {
+	const char	*name;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*conf;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_dns_instance {
+	const char	*name;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*conf;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_proxy_instance {
+	const char	*name;
+	bool			 has_fib;
+	uint16_t	 fib;
+	const char	*conf;
+	bool			 has_mode;
+	enum arcana_sdwan_sdwan_proxy_instance_mode	 mode;
+	const char	*deny;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_ids_instance {
+	const char	*name;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 interface;
+	const char	*conf;
+	const char	*rules;
+	bool			 has_divert;
+	uint16_t	 divert;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_rules_table {
+	const char	*name;
+	bool			 has_count;
+	uint32_t	 count;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_rules_counter {
+	uint32_t	 rule;
+	bool			 has_packets;
+	uint64_t	 packets;
+	bool			 has_octets;
+	uint64_t	 octets;
+	const char	*text;
+};
+
+/* container */
+struct arcana_sdwan_sdwan_state_rules {
+	bool			 has_set;
+	uint8_t		 set;
+	bool			 has_rules;
+	uint32_t	 rules;
+	bool			 has_objects;
+	uint32_t	 objects;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_rules_table	*v;
+	}			 table;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_rules_counter	*v;
+	}			 counter;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_steer_candidate {
+	const char	*id;
+	bool			 has_via;
+	struct arcana_sdwan_sdwan_state_steer_candidate_via	 via;
+	bool			 has_state;
+	enum arcana_sdwan_sdwan_state_steer_candidate_state	 state;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_steer {
+	const char	*table;
+	const char	*prefix;
+	bool			 has_chosen;
+	int32_t		 chosen;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_steer_candidate	*v;
+	}			 candidate;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_bird_protocol {
+	const char	*name;
+	const char	*proto;
+	const char	*state;
+	const char	*info;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_bird_bfd {
+	const char	*address;
+	const char	*interface;
+	bool			 has_state;
+	enum arcana_sdwan_sdwan_state_bird_bfd_state	 state;
+	const char	*since;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_bird {
+	const char	*name;
+	bool			 has_fib;
+	uint16_t	 fib;
+	bool			 has_running;
+	bool		 running;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_bird_protocol	*v;
+	}			 protocol;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_bird_bfd	*v;
+	}			 bfd;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_dhcp_lease {
+	const char	*expires;
+	const char	*id;
+	bool			 has_address;
+	struct arcana_sdwan_sdwan_state_dhcp_lease_address	 address;
+	const char	*hostname;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_dhcp {
+	const char	*name;
+	bool			 has_fib;
+	uint16_t	 fib;
+	bool			 has_running;
+	bool		 running;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_dhcp_lease	*v;
+	}			 lease;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_dns {
+	const char	*name;
+	bool			 has_fib;
+	uint16_t	 fib;
+	bool			 has_running;
+	bool		 running;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_proxy {
+	const char	*name;
+	bool			 has_fib;
+	uint16_t	 fib;
+	bool			 has_running;
+	bool		 running;
+	const char	*mode;
+	bool			 has_icap;
+	bool		 icap;
+	const char	*ca;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_ids_alert {
+	const char	*time;
+	const char	*name;
+	const char	*source;
+	bool			 has_source_port;
+	uint16_t	 source_port;
+	const char	*destination;
+	bool			 has_destination_port;
+	uint16_t	 destination_port;
+	const char	*proto;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_ids {
+	const char	*name;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 interface;
+	bool			 has_mode;
+	enum arcana_sdwan_sdwan_state_ids_mode	 mode;
+	bool			 has_divert;
+	uint16_t	 divert;
+	bool			 has_running;
+	bool		 running;
+	bool			 has_alerts_seen;
+	uint64_t	 alerts_seen;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_ids_alert	*v;
+	}			 alert;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_record_last {
+	const char	*time;
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	bool			 has_rule;
+	uint32_t	 rule;
+	const char	*action;
+	const char	*source;
+	const char	*destination;
+	const char	*interface;
+	const char	*comment;
+};
+
+/* container */
+struct arcana_sdwan_sdwan_state_record {
+	bool			 has_count;
+	uint64_t	 count;
+	bool			 has_sequence;
+	uint64_t	 sequence;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_record_last	*v;
+	}			 last;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_key {
+	const char	*interface;
+	const char	*public;
+	const char	*next;
+	const char	*keyed_at;
+	bool			 has_lifetime;
+	uint32_t	 lifetime;
+	bool			 has_spi_in;
+	uint32_t	 spi_in;
+	bool			 has_spi_out;
+	uint32_t	 spi_out;
+	bool			 has_next_spi_in;
+	uint32_t	 next_spi_in;
+	bool			 has_pending;
+	bool		 pending;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_fault {
+	const char	*time;
+	const char	*type;
+	const char	*severity;
+	const char	*was;
+	const char	*object;
+	const char	*by;
+	const char	*description;
+	bool			 has_cleared;
+	bool		 cleared;
+	const char	*cleared_at;
+};
+
+/* container */
+struct arcana_sdwan_sdwan_state {
+	const struct arcana_sdwan_sdwan_state_rules	*rules;
+	bool			 has_steered;
+	bool		 steered;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_steer	*v;
+	}			 steer;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_bird	*v;
+	}			 bird;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_dhcp	*v;
+	}			 dhcp;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_dns	*v;
+	}			 dns;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_proxy	*v;
+	}			 proxy;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_ids	*v;
+	}			 ids;
+	const struct arcana_sdwan_sdwan_state_record	*record;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_key	*v;
+	}			 key;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_fault	*v;
+	}			 fault;
+};
+
+/* container */
+struct arcana_sdwan_sdwan {
+	const struct arcana_sdwan_sdwan_rules	*rules;
+	const struct arcana_sdwan_sdwan_steer	*steer;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_bird_instance	*v;
+	}			 bird_instance;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_dhcp_instance	*v;
+	}			 dhcp_instance;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_dns_instance	*v;
+	}			 dns_instance;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_proxy_instance	*v;
+	}			 proxy_instance;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_ids_instance	*v;
+	}			 ids_instance;
+	const struct arcana_sdwan_sdwan_state	*state;
+};
+
+/* data */
+struct arcana_sdwan {
+	const struct arcana_sdwan_sdwan	*sdwan;
+};
+
+/* list entry */
+struct arcana_sshd_sshd_setting {
+	const char	*name;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 value;
+};
+
+/* container */
+struct arcana_sshd_sshd_host_key_certificate {
+	const char	*kind;
+	const char	*id;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 principal;
+	const char	*valid_after;
+	const char	*valid_before;
+	const char	*ca;
+};
+
+/* list entry */
+struct arcana_sshd_sshd_host_key {
+	const char	*path;
+	const char	*type;
+	bool			 has_bits;
+	uint16_t	 bits;
+	const char	*fingerprint;
+	const char	*comment;
+	const struct arcana_sshd_sshd_host_key_certificate	*certificate;
+	bool			 has_certificate_used;
+	bool		 certificate_used;
+};
+
+/* list entry */
+struct arcana_sshd_sshd_user_key {
+	const char	*fingerprint;
+	const char	*type;
+	bool			 has_bits;
+	uint16_t	 bits;
+	const char	*comment;
+	const char	*options;
+};
+
+/* list entry */
+struct arcana_sshd_sshd_user {
+	const char	*name;
+	bool			 has_uid;
+	uint32_t	 uid;
+	const char	*home;
+	const char	*shell;
+	const char	*keys_file;
+	struct {
+		size_t		 n;
+		const struct arcana_sshd_sshd_user_key	*v;
+	}			 key;
+};
+
+/* container */
+struct arcana_sshd_sshd {
+	struct {
+		size_t		 n;
+		const struct arcana_sshd_sshd_setting	*v;
+	}			 setting;
+	const char	*settings_from_file;
+	const char	*banner;
+	struct {
+		size_t		 n;
+		const struct arcana_sshd_sshd_host_key	*v;
+	}			 host_key;
+	struct {
+		size_t		 n;
+		const struct arcana_sshd_sshd_user	*v;
+	}			 user;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 user_ca;
+	bool			 has_before_kept;
+	bool		 before_kept;
+};
+
+/* data */
+struct arcana_sshd {
+	const struct arcana_sshd_sshd	*sshd;
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -6152,6 +10578,158 @@ int	arcana_jails_jails_jail_param_encode(const struct arcana_jails_jails_jail_pa
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_param_decode(const void *, size_t, struct arcana_jails_jails_jail_param *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_configuration_file_encode(const struct arcana_jails_jails_jail_arcbird_bird_configuration_file *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_configuration_file_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_configuration_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_configuration_encode(const struct arcana_jails_jails_jail_arcbird_bird_configuration *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_configuration_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_configuration *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_channel_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_protocol_channel *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_channel_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_protocol_channel *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_protocol *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_protocol *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_bfd_session_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_bfd_session *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_bfd_session_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_bfd_session *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_table_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_table *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_table_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_table *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_encode(const struct arcana_jails_jails_jail_arcbird_bird_state *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_routes_input_encode(const struct arcana_jails_jails_jail_arcbird_bird_routes_input *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_routes_input_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_routes_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop_encode(const struct arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_routes_output_route_encode(const struct arcana_jails_jails_jail_arcbird_bird_routes_output_route *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_routes_output_route_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_routes_output_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_routes_output_encode(const struct arcana_jails_jails_jail_arcbird_bird_routes_output *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_routes_output_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_routes_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_encode(const struct arcana_jails_jails_jail_arcbird_bird *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_kept_rule_encode(const struct arcana_jails_jails_jail_arcfw_firewall_kept_rule *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_kept_rule_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_kept_rule *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_kept_alias_encode(const struct arcana_jails_jails_jail_arcfw_firewall_kept_alias *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_kept_alias_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_kept_alias *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_kept_encode(const struct arcana_jails_jails_jail_arcfw_firewall_kept *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_kept_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_kept *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_rc_encode(const struct arcana_jails_jails_jail_arcfw_firewall_rc *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_rc_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_rc *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_rule_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_rule *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_rule_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_rule *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dynamic_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dynamic *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dynamic_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dynamic *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_table_entry_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_table_entry *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_table_entry_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_table_entry *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_table_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_table *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_table_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_table *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_mask *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_pipe *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_mask *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_sched *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_mask *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet_queue *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_dummynet_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state_dummynet *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_state_encode(const struct arcana_jails_jails_jail_arcfw_firewall_state *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_state_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_input_encode(const struct arcana_jails_jails_jail_arcfw_firewall_trace_input *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_input_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_trace_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_encode(const struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_output_encode(const struct arcana_jails_jails_jail_arcfw_firewall_trace_output *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_output_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_trace_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcfw_firewall_encode(const struct arcana_jails_jails_jail_arcfw_firewall *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcfw_firewall_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcng_netgraph_node_hook_encode(const struct arcana_jails_jails_jail_arcng_netgraph_node_hook *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcng_netgraph_node_hook_decode(const void *, size_t, struct arcana_jails_jails_jail_arcng_netgraph_node_hook *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcng_netgraph_node_encode(const struct arcana_jails_jails_jail_arcng_netgraph_node *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcng_netgraph_node_decode(const void *, size_t, struct arcana_jails_jails_jail_arcng_netgraph_node *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcng_netgraph_encode(const struct arcana_jails_jails_jail_arcng_netgraph *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcng_netgraph_decode(const void *, size_t, struct arcana_jails_jails_jail_arcng_netgraph *,
+	    cbl_yarena *, int, char *, size_t);
 int	arcana_jails_jails_jail_arcpkg_packages_package_encode(const struct arcana_jails_jails_jail_arcpkg_packages_package *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_arcpkg_packages_package_decode(const void *, size_t, struct arcana_jails_jails_jail_arcpkg_packages_package *,
@@ -6179,6 +10757,42 @@ int	arcana_jails_jails_jail_arcpkg_packages_upgrade_output_decode(const void *, 
 int	arcana_jails_jails_jail_arcpkg_packages_encode(const struct arcana_jails_jails_jail_arcpkg_packages *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_arcpkg_packages_decode(const void *, size_t, struct arcana_jails_jails_jail_arcpkg_packages *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcsshd_sshd_setting_encode(const struct arcana_jails_jails_jail_arcsshd_sshd_setting *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcsshd_sshd_setting_decode(const void *, size_t, struct arcana_jails_jails_jail_arcsshd_sshd_setting *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcsshd_sshd_host_key_certificate_encode(const struct arcana_jails_jails_jail_arcsshd_sshd_host_key_certificate *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcsshd_sshd_host_key_certificate_decode(const void *, size_t, struct arcana_jails_jails_jail_arcsshd_sshd_host_key_certificate *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcsshd_sshd_host_key_encode(const struct arcana_jails_jails_jail_arcsshd_sshd_host_key *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcsshd_sshd_host_key_decode(const void *, size_t, struct arcana_jails_jails_jail_arcsshd_sshd_host_key *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcsshd_sshd_user_key_encode(const struct arcana_jails_jails_jail_arcsshd_sshd_user_key *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcsshd_sshd_user_key_decode(const void *, size_t, struct arcana_jails_jails_jail_arcsshd_sshd_user_key *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcsshd_sshd_user_encode(const struct arcana_jails_jails_jail_arcsshd_sshd_user *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcsshd_sshd_user_decode(const void *, size_t, struct arcana_jails_jails_jail_arcsshd_sshd_user *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcsshd_sshd_encode(const struct arcana_jails_jails_jail_arcsshd_sshd *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcsshd_sshd_decode(const void *, size_t, struct arcana_jails_jails_jail_arcsshd_sshd *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcwg_wireguard_interface_peer_encode(const struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcwg_wireguard_interface_peer_decode(const void *, size_t, struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcwg_wireguard_interface_encode(const struct arcana_jails_jails_jail_arcwg_wireguard_interface *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcwg_wireguard_interface_decode(const void *, size_t, struct arcana_jails_jails_jail_arcwg_wireguard_interface *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcwg_wireguard_encode(const struct arcana_jails_jails_jail_arcwg_wireguard *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcwg_wireguard_decode(const void *, size_t, struct arcana_jails_jails_jail_arcwg_wireguard *,
 	    cbl_yarena *, int, char *, size_t);
 int	arcana_jails_jails_jail_start_input_encode(const struct arcana_jails_jails_jail_start_input *,
 	    struct cbl_ybuf *);
@@ -6215,6 +10829,22 @@ int	arcana_jails_jails_jail_kill_output_decode(const void *, size_t, struct arca
 int	arcana_jails_jails_jail_encode(const struct arcana_jails_jails_jail *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_decode(const void *, size_t, struct arcana_jails_jails_jail *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_arcjf_files_defaults_encode(const struct arcana_jails_jails_arcjf_files_defaults *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_arcjf_files_defaults_decode(const void *, size_t, struct arcana_jails_jails_arcjf_files_defaults *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_arcjf_files_template_encode(const struct arcana_jails_jails_arcjf_files_template *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_arcjf_files_template_decode(const void *, size_t, struct arcana_jails_jails_arcjf_files_template *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_arcjf_files_jail_encode(const struct arcana_jails_jails_arcjf_files_jail *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_arcjf_files_jail_decode(const void *, size_t, struct arcana_jails_jails_arcjf_files_jail *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_arcjf_files_encode(const struct arcana_jails_jails_arcjf_files *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_arcjf_files_decode(const void *, size_t, struct arcana_jails_jails_arcjf_files *,
 	    cbl_yarena *, int, char *, size_t);
 int	arcana_jails_jails_encode(const struct arcana_jails_jails *,
 	    struct cbl_ybuf *);
@@ -6784,6 +11414,914 @@ int	ietf_syslog_syslog_encode(const struct ietf_syslog_syslog *,
 	    struct cbl_ybuf *);
 int	ietf_syslog_syslog_decode(const void *, size_t, struct ietf_syslog_syslog *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_kept_rule_encode(const struct arcana_firewall_firewall_kept_rule *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_kept_rule_decode(const void *, size_t, struct arcana_firewall_firewall_kept_rule *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_kept_alias_encode(const struct arcana_firewall_firewall_kept_alias *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_kept_alias_decode(const void *, size_t, struct arcana_firewall_firewall_kept_alias *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_kept_encode(const struct arcana_firewall_firewall_kept *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_kept_decode(const void *, size_t, struct arcana_firewall_firewall_kept *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_rc_encode(const struct arcana_firewall_firewall_rc *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_rc_decode(const void *, size_t, struct arcana_firewall_firewall_rc *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_rule_encode(const struct arcana_firewall_firewall_state_rule *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_rule_decode(const void *, size_t, struct arcana_firewall_firewall_state_rule *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dynamic_encode(const struct arcana_firewall_firewall_state_dynamic *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dynamic_decode(const void *, size_t, struct arcana_firewall_firewall_state_dynamic *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_table_entry_encode(const struct arcana_firewall_firewall_state_table_entry *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_table_entry_decode(const void *, size_t, struct arcana_firewall_firewall_state_table_entry *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_table_encode(const struct arcana_firewall_firewall_state_table *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_table_decode(const void *, size_t, struct arcana_firewall_firewall_state_table *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_pipe_mask_encode(const struct arcana_firewall_firewall_state_dummynet_pipe_mask *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_pipe_mask_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet_pipe_mask *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_pipe_encode(const struct arcana_firewall_firewall_state_dummynet_pipe *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_pipe_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet_pipe *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_sched_mask_encode(const struct arcana_firewall_firewall_state_dummynet_sched_mask *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_sched_mask_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet_sched_mask *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_sched_encode(const struct arcana_firewall_firewall_state_dummynet_sched *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_sched_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet_sched *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_queue_mask_encode(const struct arcana_firewall_firewall_state_dummynet_queue_mask *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_queue_mask_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet_queue_mask *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_queue_encode(const struct arcana_firewall_firewall_state_dummynet_queue *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_queue_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet_queue *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_dummynet_encode(const struct arcana_firewall_firewall_state_dummynet *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_dummynet_decode(const void *, size_t, struct arcana_firewall_firewall_state_dummynet *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_state_encode(const struct arcana_firewall_firewall_state *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_state_decode(const void *, size_t, struct arcana_firewall_firewall_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_trace_input_encode(const struct arcana_firewall_firewall_trace_input *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_trace_input_decode(const void *, size_t, struct arcana_firewall_firewall_trace_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_trace_output_packet_encode(const struct arcana_firewall_firewall_trace_output_packet *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_trace_output_packet_decode(const void *, size_t, struct arcana_firewall_firewall_trace_output_packet *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_trace_output_encode(const struct arcana_firewall_firewall_trace_output *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_trace_output_decode(const void *, size_t, struct arcana_firewall_firewall_trace_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_firewall_firewall_encode(const struct arcana_firewall_firewall *,
+	    struct cbl_ybuf *);
+int	arcana_firewall_firewall_decode(const void *, size_t, struct arcana_firewall_firewall *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_input_encode(const struct arcana_troubleshoot_troubleshoot_path_check_input *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_input_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_address_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_address *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_address_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_source_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_source *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_source_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_source *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_destination_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_destination *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_destination_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_destination *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_ingress_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_ingress *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_ingress_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_ingress *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_route_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_route *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_route_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_neighbor_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_neighbor_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_return_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_return *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_return_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_return *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_step *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_uncertain *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_in_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_in *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_step *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_uncertain *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_out_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_out *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_step *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_uncertain *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_in *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_step *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_uncertain *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall_reply_out *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_firewall *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_firewall_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_firewall *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_finding_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output_finding *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_finding_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output_finding *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_path_check_output_encode(const struct arcana_troubleshoot_troubleshoot_path_check_output *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_path_check_output_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_path_check_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_traceroute_input_encode(const struct arcana_troubleshoot_troubleshoot_traceroute_input *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_traceroute_input_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_traceroute_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_traceroute_output_hop_encode(const struct arcana_troubleshoot_troubleshoot_traceroute_output_hop *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_traceroute_output_hop_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_traceroute_output_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_traceroute_output_encode(const struct arcana_troubleshoot_troubleshoot_traceroute_output *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_traceroute_output_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_traceroute_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_capture_input_encode(const struct arcana_troubleshoot_troubleshoot_capture_input *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_capture_input_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_capture_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_capture_output_encode(const struct arcana_troubleshoot_troubleshoot_capture_output *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_capture_output_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot_capture_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_troubleshoot_troubleshoot_encode(const struct arcana_troubleshoot_troubleshoot *,
+	    struct cbl_ybuf *);
+int	arcana_troubleshoot_troubleshoot_decode(const void *, size_t, struct arcana_troubleshoot_troubleshoot *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_sampling_encode(const struct arcana_history_history_sampling *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_sampling_decode(const void *, size_t, struct arcana_history_history_sampling *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_limits_encode(const struct arcana_history_history_limits *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_limits_decode(const void *, size_t, struct arcana_history_history_limits *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_rule_encode(const struct arcana_history_history_rule *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_rule_decode(const void *, size_t, struct arcana_history_history_rule *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_state_sample_interface_encode(const struct arcana_history_history_state_sample_interface *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_state_sample_interface_decode(const void *, size_t, struct arcana_history_history_state_sample_interface *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_state_sample_disk_encode(const struct arcana_history_history_state_sample_disk *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_state_sample_disk_decode(const void *, size_t, struct arcana_history_history_state_sample_disk *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_state_sample_jail_encode(const struct arcana_history_history_state_sample_jail *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_state_sample_jail_decode(const void *, size_t, struct arcana_history_history_state_sample_jail *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_state_sample_encode(const struct arcana_history_history_state_sample *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_state_sample_decode(const void *, size_t, struct arcana_history_history_state_sample *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_state_encode(const struct arcana_history_history_state *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_state_decode(const void *, size_t, struct arcana_history_history_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_read_input_encode(const struct arcana_history_history_read_input *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_read_input_decode(const void *, size_t, struct arcana_history_history_read_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_read_output_sample_interface_encode(const struct arcana_history_history_read_output_sample_interface *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_read_output_sample_interface_decode(const void *, size_t, struct arcana_history_history_read_output_sample_interface *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_read_output_sample_disk_encode(const struct arcana_history_history_read_output_sample_disk *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_read_output_sample_disk_decode(const void *, size_t, struct arcana_history_history_read_output_sample_disk *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_read_output_sample_jail_encode(const struct arcana_history_history_read_output_sample_jail *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_read_output_sample_jail_decode(const void *, size_t, struct arcana_history_history_read_output_sample_jail *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_read_output_sample_encode(const struct arcana_history_history_read_output_sample *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_read_output_sample_decode(const void *, size_t, struct arcana_history_history_read_output_sample *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_read_output_encode(const struct arcana_history_history_read_output *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_read_output_decode(const void *, size_t, struct arcana_history_history_read_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_history_history_encode(const struct arcana_history_history *,
+	    struct cbl_ybuf *);
+int	arcana_history_history_decode(const void *, size_t, struct arcana_history_history *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_route_encode(const struct arcana_events_events_event_route *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_route_decode(const void *, size_t, struct arcana_events_events_event_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_routes_encode(const struct arcana_events_events_event_routes *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_routes_decode(const void *, size_t, struct arcana_events_events_event_routes *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_link_encode(const struct arcana_events_events_event_link *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_link_decode(const void *, size_t, struct arcana_events_events_event_link *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_address_encode(const struct arcana_events_events_event_address *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_address_decode(const void *, size_t, struct arcana_events_events_event_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_neighbor_encode(const struct arcana_events_events_event_neighbor *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_neighbor_decode(const void *, size_t, struct arcana_events_events_event_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_threshold_encode(const struct arcana_events_events_event_threshold *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_threshold_decode(const void *, size_t, struct arcana_events_events_event_threshold *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_kmsg_encode(const struct arcana_events_events_event_kmsg *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_kmsg_decode(const void *, size_t, struct arcana_events_events_event_kmsg *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_tunnel_encode(const struct arcana_events_events_event_tunnel *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_tunnel_decode(const void *, size_t, struct arcana_events_events_event_tunnel *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_fault_encode(const struct arcana_events_events_event_fault *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_fault_decode(const void *, size_t, struct arcana_events_events_event_fault *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_security_encode(const struct arcana_events_events_event_security *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_security_decode(const void *, size_t, struct arcana_events_events_event_security *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_job_encode(const struct arcana_events_events_event_job *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_job_decode(const void *, size_t, struct arcana_events_events_event_job *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_jail_state_encode(const struct arcana_events_events_event_jail_state *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_jail_state_decode(const void *, size_t, struct arcana_events_events_event_jail_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_crash_encode(const struct arcana_events_events_event_crash *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_crash_decode(const void *, size_t, struct arcana_events_events_event_crash *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_event_encode(const struct arcana_events_events_event *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_event_decode(const void *, size_t, struct arcana_events_events_event *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_input_encode(const struct arcana_events_events_read_input *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_input_decode(const void *, size_t, struct arcana_events_events_read_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_route_encode(const struct arcana_events_events_read_output_event_route *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_route_decode(const void *, size_t, struct arcana_events_events_read_output_event_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_routes_encode(const struct arcana_events_events_read_output_event_routes *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_routes_decode(const void *, size_t, struct arcana_events_events_read_output_event_routes *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_link_encode(const struct arcana_events_events_read_output_event_link *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_link_decode(const void *, size_t, struct arcana_events_events_read_output_event_link *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_address_encode(const struct arcana_events_events_read_output_event_address *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_address_decode(const void *, size_t, struct arcana_events_events_read_output_event_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_neighbor_encode(const struct arcana_events_events_read_output_event_neighbor *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_neighbor_decode(const void *, size_t, struct arcana_events_events_read_output_event_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_threshold_encode(const struct arcana_events_events_read_output_event_threshold *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_threshold_decode(const void *, size_t, struct arcana_events_events_read_output_event_threshold *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_kmsg_encode(const struct arcana_events_events_read_output_event_kmsg *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_kmsg_decode(const void *, size_t, struct arcana_events_events_read_output_event_kmsg *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_tunnel_encode(const struct arcana_events_events_read_output_event_tunnel *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_tunnel_decode(const void *, size_t, struct arcana_events_events_read_output_event_tunnel *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_fault_encode(const struct arcana_events_events_read_output_event_fault *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_fault_decode(const void *, size_t, struct arcana_events_events_read_output_event_fault *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_security_encode(const struct arcana_events_events_read_output_event_security *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_security_decode(const void *, size_t, struct arcana_events_events_read_output_event_security *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_job_encode(const struct arcana_events_events_read_output_event_job *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_job_decode(const void *, size_t, struct arcana_events_events_read_output_event_job *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_jail_state_encode(const struct arcana_events_events_read_output_event_jail_state *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_jail_state_decode(const void *, size_t, struct arcana_events_events_read_output_event_jail_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_crash_encode(const struct arcana_events_events_read_output_event_crash *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_crash_decode(const void *, size_t, struct arcana_events_events_read_output_event_crash *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_event_encode(const struct arcana_events_events_read_output_event *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_event_decode(const void *, size_t, struct arcana_events_events_read_output_event *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_read_output_encode(const struct arcana_events_events_read_output *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_read_output_decode(const void *, size_t, struct arcana_events_events_read_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_events_encode(const struct arcana_events_events *,
+	    struct cbl_ybuf *);
+int	arcana_events_events_decode(const void *, size_t, struct arcana_events_events *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_route_encode(const struct arcana_events_event_route *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_route_decode(const void *, size_t, struct arcana_events_event_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_routes_encode(const struct arcana_events_event_routes *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_routes_decode(const void *, size_t, struct arcana_events_event_routes *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_link_encode(const struct arcana_events_event_link *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_link_decode(const void *, size_t, struct arcana_events_event_link *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_address_encode(const struct arcana_events_event_address *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_address_decode(const void *, size_t, struct arcana_events_event_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_neighbor_encode(const struct arcana_events_event_neighbor *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_neighbor_decode(const void *, size_t, struct arcana_events_event_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_threshold_encode(const struct arcana_events_event_threshold *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_threshold_decode(const void *, size_t, struct arcana_events_event_threshold *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_kmsg_encode(const struct arcana_events_event_kmsg *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_kmsg_decode(const void *, size_t, struct arcana_events_event_kmsg *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_tunnel_encode(const struct arcana_events_event_tunnel *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_tunnel_decode(const void *, size_t, struct arcana_events_event_tunnel *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_fault_encode(const struct arcana_events_event_fault *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_fault_decode(const void *, size_t, struct arcana_events_event_fault *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_security_encode(const struct arcana_events_event_security *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_security_decode(const void *, size_t, struct arcana_events_event_security *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_job_encode(const struct arcana_events_event_job *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_job_decode(const void *, size_t, struct arcana_events_event_job *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_jail_state_encode(const struct arcana_events_event_jail_state *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_jail_state_decode(const void *, size_t, struct arcana_events_event_jail_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_crash_encode(const struct arcana_events_event_crash *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_crash_decode(const void *, size_t, struct arcana_events_event_crash *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_events_event_encode(const struct arcana_events_event *,
+	    struct cbl_ybuf *);
+int	arcana_events_event_decode(const void *, size_t, struct arcana_events_event *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_configuration_file_encode(const struct arcana_bird_bird_configuration_file *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_configuration_file_decode(const void *, size_t, struct arcana_bird_bird_configuration_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_configuration_encode(const struct arcana_bird_bird_configuration *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_configuration_decode(const void *, size_t, struct arcana_bird_bird_configuration *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_protocol_bgp_encode(const struct arcana_bird_bird_state_protocol_bgp *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_protocol_bgp_decode(const void *, size_t, struct arcana_bird_bird_state_protocol_bgp *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_protocol_rpki_encode(const struct arcana_bird_bird_state_protocol_rpki *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_protocol_rpki_decode(const void *, size_t, struct arcana_bird_bird_state_protocol_rpki *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_protocol_channel_encode(const struct arcana_bird_bird_state_protocol_channel *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_protocol_channel_decode(const void *, size_t, struct arcana_bird_bird_state_protocol_channel *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_protocol_encode(const struct arcana_bird_bird_state_protocol *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_protocol_decode(const void *, size_t, struct arcana_bird_bird_state_protocol *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_ospf_neighbor_encode(const struct arcana_bird_bird_state_ospf_neighbor *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_ospf_neighbor_decode(const void *, size_t, struct arcana_bird_bird_state_ospf_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_bfd_session_encode(const struct arcana_bird_bird_state_bfd_session *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_bfd_session_decode(const void *, size_t, struct arcana_bird_bird_state_bfd_session *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_table_encode(const struct arcana_bird_bird_state_table *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_table_decode(const void *, size_t, struct arcana_bird_bird_state_table *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_encode(const struct arcana_bird_bird_state *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_decode(const void *, size_t, struct arcana_bird_bird_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_routes_input_encode(const struct arcana_bird_bird_routes_input *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_routes_input_decode(const void *, size_t, struct arcana_bird_bird_routes_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_routes_output_route_nexthop_encode(const struct arcana_bird_bird_routes_output_route_nexthop *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_routes_output_route_nexthop_decode(const void *, size_t, struct arcana_bird_bird_routes_output_route_nexthop *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_routes_output_route_encode(const struct arcana_bird_bird_routes_output_route *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_routes_output_route_decode(const void *, size_t, struct arcana_bird_bird_routes_output_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_routes_output_encode(const struct arcana_bird_bird_routes_output *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_routes_output_decode(const void *, size_t, struct arcana_bird_bird_routes_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_encode(const struct arcana_bird_bird *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_decode(const void *, size_t, struct arcana_bird_bird *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_wireguard_wireguard_interface_peer_encode(const struct arcana_wireguard_wireguard_interface_peer *,
+	    struct cbl_ybuf *);
+int	arcana_wireguard_wireguard_interface_peer_decode(const void *, size_t, struct arcana_wireguard_wireguard_interface_peer *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_wireguard_wireguard_interface_encode(const struct arcana_wireguard_wireguard_interface *,
+	    struct cbl_ybuf *);
+int	arcana_wireguard_wireguard_interface_decode(const void *, size_t, struct arcana_wireguard_wireguard_interface *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_wireguard_wireguard_encode(const struct arcana_wireguard_wireguard *,
+	    struct cbl_ybuf *);
+int	arcana_wireguard_wireguard_decode(const void *, size_t, struct arcana_wireguard_wireguard *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_netgraph_netgraph_node_hook_encode(const struct arcana_netgraph_netgraph_node_hook *,
+	    struct cbl_ybuf *);
+int	arcana_netgraph_netgraph_node_hook_decode(const void *, size_t, struct arcana_netgraph_netgraph_node_hook *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_netgraph_netgraph_node_encode(const struct arcana_netgraph_netgraph_node *,
+	    struct cbl_ybuf *);
+int	arcana_netgraph_netgraph_node_decode(const void *, size_t, struct arcana_netgraph_netgraph_node *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_netgraph_netgraph_encode(const struct arcana_netgraph_netgraph *,
+	    struct cbl_ybuf *);
+int	arcana_netgraph_netgraph_decode(const void *, size_t, struct arcana_netgraph_netgraph *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_agent_encode(const struct arcana_host_host_agent *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_agent_decode(const void *, size_t, struct arcana_host_host_agent *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_stats_pool_encode(const struct arcana_host_host_stats_pool *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_stats_pool_decode(const void *, size_t, struct arcana_host_host_stats_pool *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_stats_encode(const struct arcana_host_host_stats *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_stats_decode(const void *, size_t, struct arcana_host_host_stats *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_certificates_trusted_encode(const struct arcana_host_host_certificates_trusted *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_certificates_trusted_decode(const void *, size_t, struct arcana_host_host_certificates_trusted *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_certificates_untrusted_encode(const struct arcana_host_host_certificates_untrusted *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_certificates_untrusted_decode(const void *, size_t, struct arcana_host_host_certificates_untrusted *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_certificates_encode(const struct arcana_host_host_certificates *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_certificates_decode(const void *, size_t, struct arcana_host_host_certificates *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_host_host_encode(const struct arcana_host_host *,
+	    struct cbl_ybuf *);
+int	arcana_host_host_decode(const void *, size_t, struct arcana_host_host *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_transport_listener_encode(const struct arcana_agent_agent_transport_listener *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_transport_listener_decode(const void *, size_t, struct arcana_agent_agent_transport_listener *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_transport_session_encode(const struct arcana_agent_agent_transport_session *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_transport_session_decode(const void *, size_t, struct arcana_agent_agent_transport_session *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_transport_retry_input_encode(const struct arcana_agent_agent_transport_retry_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_transport_retry_input_decode(const void *, size_t, struct arcana_agent_agent_transport_retry_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_transport_retry_output_encode(const struct arcana_agent_agent_transport_retry_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_transport_retry_output_decode(const void *, size_t, struct arcana_agent_agent_transport_retry_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_transport_encode(const struct arcana_agent_agent_transport *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_transport_decode(const void *, size_t, struct arcana_agent_agent_transport *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_certificate_encode(const struct arcana_agent_agent_tls_certificate *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_certificate_decode(const void *, size_t, struct arcana_agent_agent_tls_certificate *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_ca_encode(const struct arcana_agent_agent_tls_ca *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_ca_decode(const void *, size_t, struct arcana_agent_agent_tls_ca *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_csr_input_encode(const struct arcana_agent_agent_tls_csr_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_csr_input_decode(const void *, size_t, struct arcana_agent_agent_tls_csr_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_csr_output_encode(const struct arcana_agent_agent_tls_csr_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_csr_output_decode(const void *, size_t, struct arcana_agent_agent_tls_csr_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_install_input_encode(const struct arcana_agent_agent_tls_install_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_install_input_decode(const void *, size_t, struct arcana_agent_agent_tls_install_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_install_output_encode(const struct arcana_agent_agent_tls_install_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_install_output_decode(const void *, size_t, struct arcana_agent_agent_tls_install_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_tls_encode(const struct arcana_agent_agent_tls *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_tls_decode(const void *, size_t, struct arcana_agent_agent_tls *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_update_input_encode(const struct arcana_agent_agent_update_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_update_input_decode(const void *, size_t, struct arcana_agent_agent_update_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_update_output_encode(const struct arcana_agent_agent_update_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_update_output_decode(const void *, size_t, struct arcana_agent_agent_update_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_build_input_encode(const struct arcana_agent_agent_build_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_build_input_decode(const void *, size_t, struct arcana_agent_agent_build_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_build_output_encode(const struct arcana_agent_agent_build_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_build_output_decode(const void *, size_t, struct arcana_agent_agent_build_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_console_update_input_encode(const struct arcana_agent_agent_console_update_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_console_update_input_decode(const void *, size_t, struct arcana_agent_agent_console_update_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_console_update_output_encode(const struct arcana_agent_agent_console_update_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_console_update_output_decode(const void *, size_t, struct arcana_agent_agent_console_update_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_source_head_input_encode(const struct arcana_agent_agent_source_head_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_source_head_input_decode(const void *, size_t, struct arcana_agent_agent_source_head_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_source_head_output_encode(const struct arcana_agent_agent_source_head_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_source_head_output_decode(const void *, size_t, struct arcana_agent_agent_source_head_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_source_log_input_encode(const struct arcana_agent_agent_source_log_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_source_log_input_decode(const void *, size_t, struct arcana_agent_agent_source_log_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_source_log_output_commit_log_encode(const struct arcana_agent_agent_source_log_output_commit_log *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_source_log_output_commit_log_decode(const void *, size_t, struct arcana_agent_agent_source_log_output_commit_log *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_source_log_output_tag_encode(const struct arcana_agent_agent_source_log_output_tag *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_source_log_output_tag_decode(const void *, size_t, struct arcana_agent_agent_source_log_output_tag *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_source_log_output_encode(const struct arcana_agent_agent_source_log_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_source_log_output_decode(const void *, size_t, struct arcana_agent_agent_source_log_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_input_encode(const struct arcana_agent_agent_config_export_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_input_decode(const void *, size_t, struct arcana_agent_agent_config_export_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_output_facts_interface_encode(const struct arcana_agent_agent_config_export_output_facts_interface *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_output_facts_interface_decode(const void *, size_t, struct arcana_agent_agent_config_export_output_facts_interface *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_output_facts_disk_encode(const struct arcana_agent_agent_config_export_output_facts_disk *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_output_facts_disk_decode(const void *, size_t, struct arcana_agent_agent_config_export_output_facts_disk *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_output_facts_encode(const struct arcana_agent_agent_config_export_output_facts *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_output_facts_decode(const void *, size_t, struct arcana_agent_agent_config_export_output_facts *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_output_package_encode(const struct arcana_agent_agent_config_export_output_package *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_output_package_decode(const void *, size_t, struct arcana_agent_agent_config_export_output_package *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_output_file_encode(const struct arcana_agent_agent_config_export_output_file *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_output_file_decode(const void *, size_t, struct arcana_agent_agent_config_export_output_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_export_output_encode(const struct arcana_agent_agent_config_export_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_export_output_decode(const void *, size_t, struct arcana_agent_agent_config_export_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_bundle_facts_interface_encode(const struct arcana_agent_agent_config_apply_input_bundle_facts_interface *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_bundle_facts_interface_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input_bundle_facts_interface *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_bundle_facts_disk_encode(const struct arcana_agent_agent_config_apply_input_bundle_facts_disk *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_bundle_facts_disk_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input_bundle_facts_disk *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_bundle_facts_encode(const struct arcana_agent_agent_config_apply_input_bundle_facts *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_bundle_facts_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input_bundle_facts *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_bundle_package_encode(const struct arcana_agent_agent_config_apply_input_bundle_package *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_bundle_package_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input_bundle_package *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_bundle_file_encode(const struct arcana_agent_agent_config_apply_input_bundle_file *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_bundle_file_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input_bundle_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_bundle_encode(const struct arcana_agent_agent_config_apply_input_bundle *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_bundle_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input_bundle *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_input_encode(const struct arcana_agent_agent_config_apply_input *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_input_decode(const void *, size_t, struct arcana_agent_agent_config_apply_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_output_file_encode(const struct arcana_agent_agent_config_apply_output_file *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_output_file_decode(const void *, size_t, struct arcana_agent_agent_config_apply_output_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_config_apply_output_encode(const struct arcana_agent_agent_config_apply_output *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_config_apply_output_decode(const void *, size_t, struct arcana_agent_agent_config_apply_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_agent_agent_encode(const struct arcana_agent_agent *,
+	    struct cbl_ybuf *);
+int	arcana_agent_agent_decode(const void *, size_t, struct arcana_agent_agent *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_probe_probes_target_tca_encode(const struct arcana_probe_probes_target_tca *,
+	    struct cbl_ybuf *);
+int	arcana_probe_probes_target_tca_decode(const void *, size_t, struct arcana_probe_probes_target_tca *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_probe_probes_target_encode(const struct arcana_probe_probes_target *,
+	    struct cbl_ybuf *);
+int	arcana_probe_probes_target_decode(const void *, size_t, struct arcana_probe_probes_target *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_probe_probes_state_target_now_encode(const struct arcana_probe_probes_state_target_now *,
+	    struct cbl_ybuf *);
+int	arcana_probe_probes_state_target_now_decode(const void *, size_t, struct arcana_probe_probes_state_target_now *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_probe_probes_state_target_sample_encode(const struct arcana_probe_probes_state_target_sample *,
+	    struct cbl_ybuf *);
+int	arcana_probe_probes_state_target_sample_decode(const void *, size_t, struct arcana_probe_probes_state_target_sample *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_probe_probes_state_target_encode(const struct arcana_probe_probes_state_target *,
+	    struct cbl_ybuf *);
+int	arcana_probe_probes_state_target_decode(const void *, size_t, struct arcana_probe_probes_state_target *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_probe_probes_state_encode(const struct arcana_probe_probes_state *,
+	    struct cbl_ybuf *);
+int	arcana_probe_probes_state_decode(const void *, size_t, struct arcana_probe_probes_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_probe_probes_read_input_encode(const struct arcana_probe_probes_read_input *,
+	    struct cbl_ybuf *);
+int	arcana_probe_probes_read_input_decode(const void *, size_t, struct arcana_probe_probes_read_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_probe_probes_read_output_target_sample_encode(const struct arcana_probe_probes_read_output_target_sample *,
+	    struct cbl_ybuf *);
+int	arcana_probe_probes_read_output_target_sample_decode(const void *, size_t, struct arcana_probe_probes_read_output_target_sample *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_probe_probes_read_output_target_encode(const struct arcana_probe_probes_read_output_target *,
+	    struct cbl_ybuf *);
+int	arcana_probe_probes_read_output_target_decode(const void *, size_t, struct arcana_probe_probes_read_output_target *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_probe_probes_read_output_encode(const struct arcana_probe_probes_read_output *,
+	    struct cbl_ybuf *);
+int	arcana_probe_probes_read_output_decode(const void *, size_t, struct arcana_probe_probes_read_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_probe_probes_encode(const struct arcana_probe_probes *,
+	    struct cbl_ybuf *);
+int	arcana_probe_probes_decode(const void *, size_t, struct arcana_probe_probes *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_rules_table_entry_encode(const struct arcana_sdwan_sdwan_rules_table_entry *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_rules_table_entry_decode(const void *, size_t, struct arcana_sdwan_sdwan_rules_table_entry *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_rules_table_encode(const struct arcana_sdwan_sdwan_rules_table *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_rules_table_decode(const void *, size_t, struct arcana_sdwan_sdwan_rules_table *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_rules_rule_encode(const struct arcana_sdwan_sdwan_rules_rule *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_rules_rule_decode(const void *, size_t, struct arcana_sdwan_sdwan_rules_rule *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_rules_encode(const struct arcana_sdwan_sdwan_rules *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_rules_decode(const void *, size_t, struct arcana_sdwan_sdwan_rules *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_steer_entry_candidate_encode(const struct arcana_sdwan_sdwan_steer_entry_candidate *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_steer_entry_candidate_decode(const void *, size_t, struct arcana_sdwan_sdwan_steer_entry_candidate *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_steer_entry_encode(const struct arcana_sdwan_sdwan_steer_entry *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_steer_entry_decode(const void *, size_t, struct arcana_sdwan_sdwan_steer_entry *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_steer_encode(const struct arcana_sdwan_sdwan_steer *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_steer_decode(const void *, size_t, struct arcana_sdwan_sdwan_steer *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_bird_instance_encode(const struct arcana_sdwan_sdwan_bird_instance *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_bird_instance_decode(const void *, size_t, struct arcana_sdwan_sdwan_bird_instance *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_dhcp_instance_encode(const struct arcana_sdwan_sdwan_dhcp_instance *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_dhcp_instance_decode(const void *, size_t, struct arcana_sdwan_sdwan_dhcp_instance *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_dns_instance_encode(const struct arcana_sdwan_sdwan_dns_instance *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_dns_instance_decode(const void *, size_t, struct arcana_sdwan_sdwan_dns_instance *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_proxy_instance_encode(const struct arcana_sdwan_sdwan_proxy_instance *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_proxy_instance_decode(const void *, size_t, struct arcana_sdwan_sdwan_proxy_instance *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_ids_instance_encode(const struct arcana_sdwan_sdwan_ids_instance *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_ids_instance_decode(const void *, size_t, struct arcana_sdwan_sdwan_ids_instance *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_rules_table_encode(const struct arcana_sdwan_sdwan_state_rules_table *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_rules_table_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_rules_table *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_rules_counter_encode(const struct arcana_sdwan_sdwan_state_rules_counter *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_rules_counter_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_rules_counter *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_rules_encode(const struct arcana_sdwan_sdwan_state_rules *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_rules_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_rules *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_steer_candidate_encode(const struct arcana_sdwan_sdwan_state_steer_candidate *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_steer_candidate_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_steer_candidate *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_steer_encode(const struct arcana_sdwan_sdwan_state_steer *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_steer_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_steer *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_bird_protocol_encode(const struct arcana_sdwan_sdwan_state_bird_protocol *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_bird_protocol_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_bird_protocol *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_bird_bfd_encode(const struct arcana_sdwan_sdwan_state_bird_bfd *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_bird_bfd_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_bird_bfd *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_bird_encode(const struct arcana_sdwan_sdwan_state_bird *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_bird_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_bird *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_dhcp_lease_encode(const struct arcana_sdwan_sdwan_state_dhcp_lease *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_dhcp_lease_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_dhcp_lease *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_dhcp_encode(const struct arcana_sdwan_sdwan_state_dhcp *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_dhcp_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_dhcp *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_dns_encode(const struct arcana_sdwan_sdwan_state_dns *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_dns_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_dns *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_proxy_encode(const struct arcana_sdwan_sdwan_state_proxy *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_proxy_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_proxy *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_ids_alert_encode(const struct arcana_sdwan_sdwan_state_ids_alert *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_ids_alert_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_ids_alert *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_ids_encode(const struct arcana_sdwan_sdwan_state_ids *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_ids_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_ids *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_record_last_encode(const struct arcana_sdwan_sdwan_state_record_last *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_record_last_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_record_last *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_record_encode(const struct arcana_sdwan_sdwan_state_record *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_record_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_record *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_key_encode(const struct arcana_sdwan_sdwan_state_key *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_key_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_key *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_fault_encode(const struct arcana_sdwan_sdwan_state_fault *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_fault_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_fault *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_encode(const struct arcana_sdwan_sdwan_state *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_decode(const void *, size_t, struct arcana_sdwan_sdwan_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_encode(const struct arcana_sdwan_sdwan *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_decode(const void *, size_t, struct arcana_sdwan_sdwan *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sshd_sshd_setting_encode(const struct arcana_sshd_sshd_setting *,
+	    struct cbl_ybuf *);
+int	arcana_sshd_sshd_setting_decode(const void *, size_t, struct arcana_sshd_sshd_setting *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sshd_sshd_host_key_certificate_encode(const struct arcana_sshd_sshd_host_key_certificate *,
+	    struct cbl_ybuf *);
+int	arcana_sshd_sshd_host_key_certificate_decode(const void *, size_t, struct arcana_sshd_sshd_host_key_certificate *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sshd_sshd_host_key_encode(const struct arcana_sshd_sshd_host_key *,
+	    struct cbl_ybuf *);
+int	arcana_sshd_sshd_host_key_decode(const void *, size_t, struct arcana_sshd_sshd_host_key *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sshd_sshd_user_key_encode(const struct arcana_sshd_sshd_user_key *,
+	    struct cbl_ybuf *);
+int	arcana_sshd_sshd_user_key_decode(const void *, size_t, struct arcana_sshd_sshd_user_key *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sshd_sshd_user_encode(const struct arcana_sshd_sshd_user *,
+	    struct cbl_ybuf *);
+int	arcana_sshd_sshd_user_decode(const void *, size_t, struct arcana_sshd_sshd_user *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sshd_sshd_encode(const struct arcana_sshd_sshd *,
+	    struct cbl_ybuf *);
+int	arcana_sshd_sshd_decode(const void *, size_t, struct arcana_sshd_sshd *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -6823,6 +12361,12 @@ int	ietf_logical_network_element_logical_network_elements_edit(cbl_req *, const 
 int	ietf_logical_network_element_bind_lne_name_failed_notification(const struct ietf_logical_network_element_bind_lne_name_failed *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_get(cbl_req *, struct arcana_jails *, cbl_yarena *);
+int	arcana_jails_jails_jail_arcbird_bird_routes_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_jails_jails_jail_arcbird_bird_routes_input *,
+	    struct arcana_jails_jails_jail_arcbird_bird_routes_output *, cbl_yarena *);
+int	arcana_jails_jails_jail_arcfw_firewall_trace_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_jails_jails_jail_arcfw_firewall_trace_input *,
+	    struct arcana_jails_jails_jail_arcfw_firewall_trace_output *, cbl_yarena *);
 int	arcana_jails_jails_jail_arcpkg_packages_refresh_action(cbl_req *, const struct cbl_bytes *,
 	    const struct arcana_jails_jails_jail_arcpkg_packages_refresh_input *,
 	    struct arcana_jails_jails_jail_arcpkg_packages_refresh_output *, cbl_yarena *);
@@ -6917,5 +12461,87 @@ int	arcana_log_logs_read_action(cbl_req *, const struct cbl_bytes *,
 int	ietf_syslog_syslog_get(cbl_req *, struct ietf_syslog *, cbl_yarena *);
 int	ietf_syslog_syslog_edit(cbl_req *, const struct ietf_syslog *,
 	    const struct ietf_syslog *);
+int	arcana_firewall_firewall_get(cbl_req *, struct arcana_firewall *, cbl_yarena *);
+int	arcana_firewall_firewall_edit(cbl_req *, const struct arcana_firewall *,
+	    const struct arcana_firewall *);
+int	arcana_firewall_firewall_trace_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_firewall_firewall_trace_input *,
+	    struct arcana_firewall_firewall_trace_output *, cbl_yarena *);
+int	arcana_troubleshoot_troubleshoot_get(cbl_req *, struct arcana_troubleshoot *, cbl_yarena *);
+int	arcana_troubleshoot_troubleshoot_edit(cbl_req *, const struct arcana_troubleshoot *,
+	    const struct arcana_troubleshoot *);
+int	arcana_troubleshoot_troubleshoot_path_check_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_troubleshoot_troubleshoot_path_check_input *,
+	    struct arcana_troubleshoot_troubleshoot_path_check_output *, cbl_yarena *);
+int	arcana_troubleshoot_troubleshoot_traceroute_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_troubleshoot_troubleshoot_traceroute_input *,
+	    struct arcana_troubleshoot_troubleshoot_traceroute_output *, cbl_yarena *);
+int	arcana_troubleshoot_troubleshoot_capture_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_troubleshoot_troubleshoot_capture_input *,
+	    struct arcana_troubleshoot_troubleshoot_capture_output *, cbl_yarena *);
+int	arcana_history_history_get(cbl_req *, struct arcana_history *, cbl_yarena *);
+int	arcana_history_history_edit(cbl_req *, const struct arcana_history *,
+	    const struct arcana_history *);
+int	arcana_history_history_read_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_history_history_read_input *,
+	    struct arcana_history_history_read_output *, cbl_yarena *);
+int	arcana_events_events_get(cbl_req *, struct arcana_events *, cbl_yarena *);
+int	arcana_events_events_read_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_events_events_read_input *,
+	    struct arcana_events_events_read_output *, cbl_yarena *);
+int	arcana_events_event_notification(const struct arcana_events_event *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_get(cbl_req *, struct arcana_bird *, cbl_yarena *);
+int	arcana_bird_bird_edit(cbl_req *, const struct arcana_bird *,
+	    const struct arcana_bird *);
+int	arcana_bird_bird_routes_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_bird_bird_routes_input *,
+	    struct arcana_bird_bird_routes_output *, cbl_yarena *);
+int	arcana_wireguard_wireguard_get(cbl_req *, struct arcana_wireguard *, cbl_yarena *);
+int	arcana_netgraph_netgraph_get(cbl_req *, struct arcana_netgraph *, cbl_yarena *);
+int	arcana_host_host_get(cbl_req *, struct arcana_host *, cbl_yarena *);
+int	arcana_agent_agent_get(cbl_req *, struct arcana_agent *, cbl_yarena *);
+int	arcana_agent_agent_edit(cbl_req *, const struct arcana_agent *,
+	    const struct arcana_agent *);
+int	arcana_agent_agent_transport_retry_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_transport_retry_input *,
+	    struct arcana_agent_agent_transport_retry_output *, cbl_yarena *);
+int	arcana_agent_agent_tls_csr_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_tls_csr_input *,
+	    struct arcana_agent_agent_tls_csr_output *, cbl_yarena *);
+int	arcana_agent_agent_tls_install_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_tls_install_input *,
+	    struct arcana_agent_agent_tls_install_output *, cbl_yarena *);
+int	arcana_agent_agent_update_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_update_input *,
+	    struct arcana_agent_agent_update_output *, cbl_yarena *);
+int	arcana_agent_agent_build_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_build_input *,
+	    struct arcana_agent_agent_build_output *, cbl_yarena *);
+int	arcana_agent_agent_console_update_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_console_update_input *,
+	    struct arcana_agent_agent_console_update_output *, cbl_yarena *);
+int	arcana_agent_agent_source_head_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_source_head_input *,
+	    struct arcana_agent_agent_source_head_output *, cbl_yarena *);
+int	arcana_agent_agent_source_log_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_source_log_input *,
+	    struct arcana_agent_agent_source_log_output *, cbl_yarena *);
+int	arcana_agent_agent_config_export_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_config_export_input *,
+	    struct arcana_agent_agent_config_export_output *, cbl_yarena *);
+int	arcana_agent_agent_config_apply_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_agent_agent_config_apply_input *,
+	    struct arcana_agent_agent_config_apply_output *, cbl_yarena *);
+int	arcana_probe_probes_get(cbl_req *, struct arcana_probe *, cbl_yarena *);
+int	arcana_probe_probes_edit(cbl_req *, const struct arcana_probe *,
+	    const struct arcana_probe *);
+int	arcana_probe_probes_read_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_probe_probes_read_input *,
+	    struct arcana_probe_probes_read_output *, cbl_yarena *);
+int	arcana_sdwan_sdwan_get(cbl_req *, struct arcana_sdwan *, cbl_yarena *);
+int	arcana_sdwan_sdwan_edit(cbl_req *, const struct arcana_sdwan *,
+	    const struct arcana_sdwan *);
+int	arcana_sshd_sshd_get(cbl_req *, struct arcana_sshd *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */

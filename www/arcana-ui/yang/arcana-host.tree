@@ -1,0 +1,71 @@
+module: arcana-host
+  +--ro host
+     +--ro hostname?       string
+     +--ro sysname?        string
+     +--ro release?        string
+     +--ro machine?        string
+     +--ro osreldate?      uint32
+     +--ro ncpu?           uint32
+     +--ro physmem?        uint64
+     +--ro boot-time?      yang:date-and-time
+     +--ro time?           yang:date-and-time
+     +--ro securelevel?    int32
+     +--ro privileged?     boolean
+     +--ro agent
+     |  +--ro version?   string
+     |  +--ro build?     string
+     +--ro plugin*         identityref
+     +--ro stats
+     |  +--ro cpu?               decimal64
+     |  +--ro load1?             decimal64
+     |  +--ro load5?             decimal64
+     |  +--ro load15?            decimal64
+     |  +--ro memory-total?      uint64
+     |  +--ro memory-used?       uint64
+     |  +--ro memory-inactive?   uint64
+     |  +--ro memory-free?       uint64
+     |  +--ro swap-total?        uint64
+     |  +--ro swap-used?         uint64
+     |  +--ro pool* [name]
+     |     +--ro name         string
+     |     +--ro size?        uint64
+     |     +--ro allocated?   uint64
+     |     +--ro free?        uint64
+     |     +--ro health?      string
+     +--ro certificates
+        +--ro localbase?        string
+        +--ro added-dir?        string
+        +--ro distrusted-dir?   string
+        +--ro certctl?          boolean
+        +--ro now?              yang:date-and-time
+        +--ro trusted* [file]
+        |  +--ro file            string
+        |  +--ro subject?        string
+        |  +--ro common-name?    string
+        |  +--ro organization?   string
+        |  +--ro country?        string
+        |  +--ro issuer?         string
+        |  +--ro not-before?     yang:date-and-time
+        |  +--ro not-after?      yang:date-and-time
+        |  +--ro sha256?         string
+        |  +--ro key?            string
+        |  +--ro ca?             boolean
+        |  +--ro self-signed?    boolean
+        |  +--ro local?          string
+        +--ro untrusted* [file]
+           +--ro file            string
+           +--ro subject?        string
+           +--ro common-name?    string
+           +--ro organization?   string
+           +--ro country?        string
+           +--ro issuer?         string
+           +--ro not-before?     yang:date-and-time
+           +--ro not-after?      yang:date-and-time
+           +--ro sha256?         string
+           +--ro key?            string
+           +--ro ca?             boolean
+           +--ro self-signed?    boolean
+           +--ro local?          string
+
+  augment /arcj:jails/arcj:jail:
+    +--ro plugin*   identityref

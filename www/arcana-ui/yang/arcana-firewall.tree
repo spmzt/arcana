@@ -1,0 +1,115 @@
+module: arcana-firewall
+  +--rw firewall
+     +--rw kept
+     |  +--ro path?      string
+     |  +--ro present?   boolean
+     |  +--ro sha256?    string
+     |  +--rw text?      string
+     |  +--rw rule* [number]
+     |  |  +--rw number    rule-number
+     |  |  +--rw text?     string
+     |  |  +--rw source?   string
+     |  +--rw other*     string
+     |  +--rw alias* [name]
+     |     +--rw name     string
+     |     +--rw kind?    enumeration
+     |     +--rw value?   string
+     +--rw rc
+     |  +--rw firewall-enable?   string
+     |  +--rw firewall-type?     string
+     |  +--rw firewall-script?   string
+     +--ro state
+     |  +--ro loaded?          boolean
+     |  +--ro enabled?         boolean
+     |  +--ro verbose?         boolean
+     |  +--ro rule* [number set]
+     |  |  +--ro number      rule-number
+     |  |  +--ro set         uint8
+     |  |  +--ro packets?    uint64
+     |  |  +--ro octets?     uint64
+     |  |  +--ro text?       string
+     |  |  +--ro disabled?   boolean
+     |  +--ro dynamic-total?   uint32
+     |  +--ro dynamic*
+     |  |  +--ro number?    rule-number
+     |  |  +--ro packets?   uint64
+     |  |  +--ro octets?    uint64
+     |  |  +--ro ttl?       uint32
+     |  |  +--ro kind?      string
+     |  |  +--ro flow?      string
+     |  +--ro table* [name]
+     |  |  +--ro name     string
+     |  |  +--ro type?    string
+     |  |  +--ro count?   uint32
+     |  |  +--ro entry* [key]
+     |  |     +--ro key      string
+     |  |     +--ro value?   string
+     |  +--ro nat*             string
+     |  +--ro dummynet
+     |     +--ro pipe* [number]
+     |     |  +--ro number       uint16
+     |     |  +--ro bandwidth?   uint64
+     |     |  +--ro delay?       uint32
+     |     |  +--ro burst?       uint64
+     |     |  +--ro mask
+     |     |  |  +--ro src?        uint8
+     |     |  |  +--ro dst?        uint8
+     |     |  |  +--ro src-port?   uint16
+     |     |  |  +--ro dst-port?   uint16
+     |     |  |  +--ro proto?      uint8
+     |     |  +--ro slots?       uint32
+     |     |  +--ro bytes?       uint32
+     |     |  +--ro plr?         decimal64
+     |     |  +--ro red?         string
+     |     +--ro sched* [number]
+     |     |  +--ro number       uint16
+     |     |  +--ro bandwidth?   uint64
+     |     |  +--ro delay?       uint32
+     |     |  +--ro burst?       uint64
+     |     |  +--ro mask
+     |     |  |  +--ro src?        uint8
+     |     |  |  +--ro dst?        uint8
+     |     |  |  +--ro src-port?   uint16
+     |     |  |  +--ro dst-port?   uint16
+     |     |  |  +--ro proto?      uint8
+     |     |  +--ro type?        string
+     |     |  +--ro queue*       uint16
+     |     |  +--ro params?      string
+     |     +--ro queue* [number]
+     |        +--ro number      uint16
+     |        +--ro sched?      uint16
+     |        +--ro weight?     uint16
+     |        +--ro priority?   uint8
+     |        +--ro mask
+     |        |  +--ro src?        uint8
+     |        |  +--ro dst?        uint8
+     |        |  +--ro src-port?   uint16
+     |        |  +--ro dst-port?   uint16
+     |        |  +--ro proto?      uint8
+     |        +--ro slots?      uint32
+     |        +--ro bytes?      uint32
+     |        +--ro plr?        decimal64
+     |        +--ro red?        string
+     +---x trace
+        +---w input
+        |  +---w address    inet:ip-address-no-zone
+        |  +---w seconds?   uint8
+        |  +---w packets?   uint16
+        +--ro output
+           +--ro seconds?   uint8
+           +--ro limit?     uint16
+           +--ro packet*
+              +--ro ms?            uint32
+              +--ro verdict?       string
+              +--ro family?        enumeration
+              +--ro source?        inet:ip-address-no-zone
+              +--ro destination?   inet:ip-address-no-zone
+              +--ro proto?         uint8
+              +--ro sport?         inet:port-number
+              +--ro dport?         inet:port-number
+              +--ro rule?          rule-number
+              +--ro interface?     string
+              +--ro direction?     enumeration
+
+  augment /arcj:jails/arcj:jail:
+    +---u firewall

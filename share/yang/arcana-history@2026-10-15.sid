@@ -1,0 +1,377 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-history",
+    "module-revision": "2026-10-15",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "70700",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-history",
+        "sid": "70700"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history",
+        "sid": "70701"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/limits",
+        "sid": "70702"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/limits/cpu",
+        "sid": "70703"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/limits/memory",
+        "sid": "70704"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/limits/swap",
+        "sid": "70705"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read",
+        "sid": "70706"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/input",
+        "sid": "70707"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/input/after",
+        "sid": "70708"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output",
+        "sid": "70709"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample",
+        "sid": "70710"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/cpu",
+        "sid": "70711"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/disk",
+        "sid": "70712"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/disk/name",
+        "sid": "70713"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/disk/read",
+        "sid": "70714"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/disk/written",
+        "sid": "70715"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/interface",
+        "sid": "70716"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/interface/name",
+        "sid": "70717"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/interface/received",
+        "sid": "70718"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/interface/sent",
+        "sid": "70719"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/jail",
+        "sid": "70720"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/jail/cpu",
+        "sid": "70721"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/jail/memory",
+        "sid": "70722"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/jail/name",
+        "sid": "70723"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/load",
+        "sid": "70724"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/memory",
+        "sid": "70725"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/read",
+        "sid": "70726"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/received",
+        "sid": "70727"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/sent",
+        "sid": "70728"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/swap",
+        "sid": "70729"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/time",
+        "sid": "70730"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/written",
+        "sid": "70731"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/rule",
+        "sid": "70732"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/rule/kind",
+        "sid": "70733"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/rule/limit",
+        "sid": "70734"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/rule/name",
+        "sid": "70735"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/rule/over",
+        "sid": "70736"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/sampling",
+        "sid": "70737"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/sampling/keep",
+        "sid": "70738"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/sampling/step",
+        "sid": "70739"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state",
+        "sid": "70740"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/bytes",
+        "sid": "70741"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/disk",
+        "sid": "70742"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/interface",
+        "sid": "70743"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/jail",
+        "sid": "70744"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/memory-total",
+        "sid": "70745"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/ncpu",
+        "sid": "70746"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/racct",
+        "sid": "70747"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample",
+        "sid": "70748"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/cpu",
+        "sid": "70749"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/disk",
+        "sid": "70750"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/disk/name",
+        "sid": "70751"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/disk/read",
+        "sid": "70752"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/disk/written",
+        "sid": "70753"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/interface",
+        "sid": "70754"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/interface/name",
+        "sid": "70755"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/interface/received",
+        "sid": "70756"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/interface/sent",
+        "sid": "70757"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/jail",
+        "sid": "70758"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/jail/cpu",
+        "sid": "70759"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/jail/memory",
+        "sid": "70760"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/jail/name",
+        "sid": "70761"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/load",
+        "sid": "70762"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/memory",
+        "sid": "70763"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/read",
+        "sid": "70764"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/received",
+        "sid": "70765"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/sent",
+        "sid": "70766"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/swap",
+        "sid": "70767"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/time",
+        "sid": "70768"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/written",
+        "sid": "70769"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/swap-total",
+        "sid": "70770"
+      }
+    ]
+  }
+}

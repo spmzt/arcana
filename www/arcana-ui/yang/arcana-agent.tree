@@ -1,0 +1,175 @@
+module: arcana-agent
+  +--rw agent
+     +--ro transport
+     |  +--ro listener* [uri]
+     |  |  +--ro uri          string
+     |  |  +--ro transport?   enumeration
+     |  |  +--ro up?          boolean
+     |  |  +--ro why?         string
+     |  +--ro sctp?      boolean
+     |  +--ro session*
+     |  |  +--ro transport?   string
+     |  |  +--ro address?     string
+     |  |  +--ro name?        string
+     |  |  +--ro since?       yang:date-and-time
+     |  +---x retry
+     +--ro tls
+     |  +--ro certificate
+     |  |  +--ro subject?      string
+     |  |  +--ro issuer?       string
+     |  |  +--ro not-before?   yang:date-and-time
+     |  |  +--ro not-after?    yang:date-and-time
+     |  |  +--ro sha256?       string
+     |  |  +--ro chain*        string
+     |  +--ro ca*
+     |  |  +--ro subject?      string
+     |  |  +--ro issuer?       string
+     |  |  +--ro not-before?   yang:date-and-time
+     |  |  +--ro not-after?    yang:date-and-time
+     |  |  +--ro sha256?       string
+     |  +--ro pending?       boolean
+     |  +---x csr
+     |  |  +--ro output
+     |  |     +--ro csr?   string
+     |  +---x install
+     |     +---w input
+     |        +---w certificate?   string
+     |        +---w ca?            string
+     |        +---w peer?          string
+     +---x update
+     |  +---w input
+     |  |  +---w binary     binary
+     |  |  +---w sha256     string
+     |  |  +---w restart?   boolean
+     |  +--ro output
+     |     +--ro version?      string
+     |     +--ro restarting?   boolean
+     +---x build
+     |  +---w input
+     |  |  +---w source       string
+     |  |  +---w ref?         string
+     |  |  +---w host-keys?   string
+     |  |  +---w ssh-key?     string
+     |  +--ro output
+     |     +--ro binary?        binary
+     |     +--ro sha256?        string
+     |     +--ro version?       string
+     |     +--ro commit?        string
+     |     +--ro host-keys?     string
+     |     +--ro fingerprint*   string
+     |     +--ro deploy-key?    string
+     +---x console-update
+     |  +---w input
+     |  |  +---w source       string
+     |  |  +---w ref?         string
+     |  |  +---w host-keys?   string
+     |  |  +---w ssh-key?     string
+     |  +--ro output
+     |     +--ro host-keys?     string
+     |     +--ro fingerprint*   string
+     |     +--ro deploy-key?    string
+     +---x source-head
+     |  +---w input
+     |  |  +---w source       string
+     |  |  +---w ref?         string
+     |  |  +---w host-keys?   string
+     |  |  +---w ssh-key?     string
+     |  +--ro output
+     |     +--ro commit?        string
+     |     +--ro host-keys?     string
+     |     +--ro fingerprint*   string
+     |     +--ro deploy-key?    string
+     +---x source-log
+     |  +---w input
+     |  |  +---w source       string
+     |  |  +---w ref?         string
+     |  |  +---w host-keys?   string
+     |  |  +---w ssh-key?     string
+     |  |  +---w count?       uint32
+     |  +--ro output
+     |     +--ro commit?        string
+     |     +--ro commit-log*
+     |     |  +--ro hash?      string
+     |     |  +--ro time?      yang:date-and-time
+     |     |  +--ro subject?   string
+     |     |  +--ro body?      string
+     |     +--ro tag* [name]
+     |     |  +--ro name       string
+     |     |  +--ro message?   string
+     |     +--ro host-keys?     string
+     |     +--ro fingerprint*   string
+     |     +--ro deploy-key?    string
+     +---x config-export
+     |  +---w input
+     |  |  +---w secrets?   boolean
+     |  +--ro output
+     |     +--ro host?    string
+     |     +--ro agent?   string
+     |     +--ro taken?   yang:date-and-time
+     |     +--ro facts
+     |     |  +--ro arch?      string
+     |     |  +--ro release?   string
+     |     |  +--ro cpu?       string
+     |     |  +--ro ncpu?      uint32
+     |     |  +--ro memory?    uint64
+     |     |  +--ro interface* [name]
+     |     |  |  +--ro name      string
+     |     |  |  +--ro driver?   string
+     |     |  |  +--ro mac?      yang:mac-address
+     |     |  +--ro disk* [name]
+     |     |     +--ro name    string
+     |     |     +--ro size?   uint64
+     |     +--ro package* [name]
+     |     |  +--ro name       string
+     |     |  +--ro origin?    string
+     |     |  +--ro version?   string
+     |     +--ro file* [path]
+     |        +--ro path      string
+     |        +--ro mode?     string
+     |        +--ro owner?    string
+     |        +--ro group?    string
+     |        +--ro text?     string
+     |        +--ro secret?   boolean
+     +---x config-apply
+        +---w input
+        |  +---w bundle
+        |  |  +---w host?    string
+        |  |  +---w agent?   string
+        |  |  +---w taken?   yang:date-and-time
+        |  |  +---w facts
+        |  |  |  +---w arch?      string
+        |  |  |  +---w release?   string
+        |  |  |  +---w cpu?       string
+        |  |  |  +---w ncpu?      uint32
+        |  |  |  +---w memory?    uint64
+        |  |  |  +---w interface* [name]
+        |  |  |  |  +---w name      string
+        |  |  |  |  +---w driver?   string
+        |  |  |  |  +---w mac?      yang:mac-address
+        |  |  |  +---w disk* [name]
+        |  |  |     +---w name    string
+        |  |  |     +---w size?   uint64
+        |  |  +---w package* [name]
+        |  |  |  +---w name       string
+        |  |  |  +---w origin?    string
+        |  |  |  +---w version?   string
+        |  |  +---w file* [path]
+        |  |     +---w path      string
+        |  |     +---w mode?     string
+        |  |     +---w owner?    string
+        |  |     +---w group?    string
+        |  |     +---w text?     string
+        |  |     +---w secret?   boolean
+        |  +---w dry-run?    boolean
+        |  +---w anyway?     boolean
+        |  +---w hostname?   string
+        +--ro output
+           +--ro mismatch*   string
+           +--ro file* [path]
+           |  +--ro path     string
+           |  +--ro state?   enumeration
+           |  +--ro diff?    string
+           +--ro package*    string
+           +--ro backup?     string
+           +--ro applied?    boolean
+           +--ro reboot?     boolean

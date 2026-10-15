@@ -3829,6 +3829,94 @@ fw_trace_cleanup()
 	stop_daemon
 }
 
+atf_test_case firewall_aliases cleanup
+firewall_aliases_head()
+{
+	atf_set "descr" "ipfw aliases: an address list made a table, a port" \
+	    "list and a value written into the rules that name them; a" \
+	    "rule kept with its own words, written again when an alias it" \
+	    "names changes; the kept file loadable as it is"
+}
+firewall_aliases_body()
+{
+	printf '#!/bin/sh\necho "ipfw $*" >> %s/ipfw.log\nexit 0\n' "$(pwd)" \
+	    > fake-ipfw
+	chmod +x fake-ipfw
+	mkdir fw
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules"
+	start_daemon
+
+	# An address list: a table of its name, now and kept.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias lan addr \
+	    10.0.0.0/8 192.168.1.0/24
+	atf_check -o match:'^ipfw -q table lan flush$' \
+	    -o match:'^ipfw -q table lan add 10.0.0.0/8$' \
+	    -o match:'^ipfw -q table lan add 192.168.1.0/24$' cat ipfw.log
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias web ports 80,443
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias wan value vtnet0
+	# A rule by its aliases: the table named, the others written in.
+	: > ipfw.log
+	atf_check -o match:'done' "$JGC" -c "$SOCK" -p ipfw add 1000 allow \
+	    tcp from '$lan' to me '$web' in via '$wan'
+	atf_check -o inline:'ipfw -q add 1000 allow tcp from table(lan) to me 80,443 in via vtnet0\n' \
+	    cat ipfw.log
+	atf_check -o match:'^#arcana alias lan addr$' \
+	    -o match:'^table lan create type addr$' \
+	    -o match:'^table lan add 10.0.0.0/8$' \
+	    -o match:'^#arcana alias web ports 80,443$' \
+	    -o match:'^#arcana alias wan value vtnet0$' \
+	    -o match:'^#arcana add 01000 allow tcp from \$lan to me \$web in via \$wan$' \
+	    -o match:'^add 01000 allow tcp from table\(lan\) to me 80,443 in via vtnet0$' \
+	    cat fw/ipfw.rules
+	# Read back: the aliases, and the rule's own words beside it.
+	atf_check -o match:'"aliases":\[' \
+	    -o match:'\{"name":"lan","kind":"addr","value":"10.0.0.0/8 192.168.1.0/24"\}' \
+	    -o match:'\{"name":"web","kind":"ports","value":"80,443"\}' \
+	    -o match:'"num":1000,"text":"allow tcp from table\(lan\) to me 80,443 in via vtnet0","source":"allow tcp from \$lan to me \$web in via \$wan"' \
+	    "$JGC" -c "$SOCK" net ipfw
+	# A port list changed: the rule written again, kept and now.
+	: > ipfw.log
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias web ports 8080
+	atf_check -o match:'^add 01000 allow tcp from table\(lan\) to me 8080 in via vtnet0$' \
+	    -o not-match:'80,443' cat fw/ipfw.rules
+	atf_check -o match:'^ipfw -q delete 1000$' \
+	    -o match:'^ipfw -q add 1000 allow tcp from table\(lan\) to me 8080 in via vtnet0$' \
+	    cat ipfw.log
+	# The address list changed: its table, no rule.
+	: > ipfw.log
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias lan addr 10.1.0.0/16
+	atf_check -o not-match:'add 1000' -o match:'table lan add 10.1.0.0/16' cat ipfw.log
+	atf_check -o match:'^table lan add 10.1.0.0/16$' -o not-match:'192.168' \
+	    cat fw/ipfw.rules
+	# What a rule names is not deleted; one there is not is said.
+	atf_check -s exit:1 -o match:'rule 1000 names \$web' \
+	    sh -c '"$0" -c "$1" ipfw alias web delete 2>&1' "$JGC" "$SOCK"
+	atf_check -s exit:1 -o match:'\$nope: there is no such alias' \
+	    sh -c '"$0" -c "$1" ipfw add 1001 allow ip from \$nope to any 2>&1' \
+	    "$JGC" "$SOCK"
+	atf_check -s exit:1 -o match:'a port list is ports' \
+	    sh -c '"$0" -c "$1" ipfw alias web ports http 2>&1' "$JGC" "$SOCK"
+	# The kept rules as text: a rule written with aliases by hand is
+	# kept with its own words and as ipfw reads it.
+	"$JGC" -c "$SOCK" ipfw rules > text
+	echo 'add 02000 deny ip from $lan to any via $wan' >> text
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w text
+	atf_check -o match:'^#arcana add 02000 deny ip from \$lan to any via \$wan$' \
+	    -o match:'^add 02000 deny ip from table\(lan\) to any via vtnet0$' \
+	    cat fw/ipfw.rules
+	# Deleted kept: the rule and its own words.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" -p ipfw delete 1000
+	atf_check -o not-match:'01000' cat fw/ipfw.rules
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw keep delete 2000
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias web delete
+	atf_check -o not-match:'alias web' cat fw/ipfw.rules
+}
+firewall_aliases_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	true
+}
+
 atf_test_case firewall cleanup
 firewall_head()
 {
@@ -4097,7 +4185,7 @@ add 400 count ip from any to any
 	    "$JGC" -c "$SOCK" ipfw add 10 set 1 allow ip from any to any
 	atf_check -s exit:1 -e match:'not put back by itself' -o ignore \
 	    "$JGC" -s -c "$SOCK" ipfw delete 5
-	atf_check -s exit:1 -e match:'is add, delete, apply' -o ignore \
+	atf_check -s exit:1 -e match:'is add, delete, alias, apply' -o ignore \
 	    "$JGC" -c "$SOCK" ipfw flush
 	atf_check -o empty cat ipfw.log
 	atf_check -s exit:1 -o match:'unrecognised option refuse' \
@@ -5466,6 +5554,518 @@ config_bundle_cleanup()
 	true
 }
 
+atf_test_case yang_firewall
+yang_firewall_head()
+{
+	atf_set "descr" "the firewall as arcana-firewall has it (PLAN-SDN-YANG" \
+	    "3.1.10): the ipfw read's kept rules, aliases, rc.conf, the rules" \
+	    "with counters, dynamic rules, tables, NAT and dummynet; the kept" \
+	    "file's text with its rules, other lines and aliases taken from" \
+	    "it; a kernel trace's packets; through YANG-CBOR and back"
+}
+yang_firewall_body()
+{
+	local y="$(atf_get_srcdir)/yfw"
+
+	cat > ipfw.json <<'EOT'
+{"loaded":true,"enabled":true,"rules":[{"num":5,"pkts":12,"bytes":900,"set":0,"text":"skipto 500 ip from any to any out"},{"num":1001,"pkts":3,"bytes":180,"set":0,"text":"allow tcp from any to me6 22 in"},{"num":2000,"pkts":0,"bytes":0,"set":1,"text":"deny ip from any to any","disabled":true},{"num":65535,"pkts":99,"bytes":9999,"set":31,"text":"deny ip from any to any"}],"dynamic_total":2,"dynamic":[{"num":1001,"pkts":7,"bytes":560,"ttl":298,"kind":"STATE","flow":"tcp 2001:db8::9 51234 <-> 2001:db8::1 22 :default"}],"tables":[{"name":"T46","type":"addr","entries":[{"key":"10.0.0.0/8","value":"0"},{"key":"192.0.2.0/24","value":"0"}],"count":2}],"nat":["ipfw nat 1 config if em0 same_ports"],"pipes":[],"qos":{"pipes":[{"num":1,"bw":10000000,"delay":20,"burst":0,"slots":30,"plr":0.01,"mask":{"src":0,"dst":0,"src_port":0,"dst_port":0,"proto":0}}],"scheds":[{"num":1,"bw":10000000,"delay":20,"burst":0,"type":"WF2Q+","mask":{"src":24,"dst":0,"src_port":0,"dst_port":0,"proto":0},"queues":[2]}],"queues":[{"num":2,"sched":1,"weight":30,"pri":0,"slots":50,"plr":0}]},"verbose":true,"aliases":[{"name":"web","kind":"ports","value":"80 443"},{"name":"lan","kind":"addr","value":"10.0.0.0/8 192.0.2.0/24"}],"kept":[{"num":1001,"text":"allow tcp from any to me6 22 in"},{"num":1002,"text":"allow tcp from table(lan) to me 80,443 in","source":"allow tcp from $lan to me $web in"}],"other":["# the firewall","table lan create type addr"],"file":true,"path":"/usr/local/etc/arcana/ipfw.rules","rc":{"firewall_enable":"YES","firewall_script":"/usr/local/etc/arcana/ipfw.rules.sh"}}
+EOT
+	cat > want <<'EOT'
+kept path=/usr/local/etc/arcana/ipfw.rules present=yes sha256=- text=0
+rule 1001 allow tcp from any to me6 22 in
+rule 1002 allow tcp from table(lan) to me 80,443 in <- allow tcp from $lan to me $web in
+other # the firewall
+other table lan create type addr
+alias web ports 80 443
+alias lan addr 10.0.0.0/8 192.0.2.0/24
+rc enable=YES type=- script=/usr/local/etc/arcana/ipfw.rules.sh
+state loaded=yes enabled=yes verbose=yes dynamic-total=2
+rule 5 set=0 packets=12 octets=900 skipto 500 ip from any to any out
+rule 1001 set=0 packets=3 octets=180 allow tcp from any to me6 22 in
+rule 2000 set=1 packets=0 octets=0 disabled deny ip from any to any
+rule 65535 set=31 packets=99 octets=9999 deny ip from any to any
+dynamic 1001 packets=7 ttl=298 STATE tcp 2001:db8::9 51234 <-> 2001:db8::1 22 :default
+table T46 type=addr count=2 10.0.0.0/8=0 192.0.2.0/24=0
+nat ipfw nat 1 config if em0 same_ports
+pipe 1 bw=10000000 delay=20 slots=30 plr=10000 mask=0/0:0/0/0
+sched 1 bw=10000000 type=WF2Q+ queues=2 mask=24/0:0/0/0
+queue 2 sched=1 weight=30 slots=50
+yang-cbor 763 bytes, the same back
+EOT
+	atf_check -o file:want "$y" read ipfw.json
+	# The kept file as ipfw-rules reads it: the rules, with the words
+	# they were written in; the lines that are none; the aliases.
+	cat > kept <<'EOT'
+# the firewall
+#arcana alias web ports 80 443
+#arcana alias lan addr 10.0.0.0/8 192.0.2.0/24
+table lan create type addr
+add 01001 allow tcp from any to me6 22 in
+#arcana add 01002 allow tcp from $lan to me $web in
+add 01002 allow tcp from table(lan) to me 80,443 in
+EOT
+	cat > want <<'EOT'
+kept path=- present=yes sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef text=266
+rule 1001 allow tcp from any to me6 22 in
+rule 1002 allow tcp from table(lan) to me 80,443 in <- allow tcp from $lan to me $web in
+other # the firewall
+other table lan create type addr
+alias web ports 80 443
+alias lan addr 10.0.0.0/8 192.0.2.0/24
+yang-cbor 562 bytes, the same back
+EOT
+	atf_check -o file:want "$y" kept kept \
+	    0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+	cat > trace.json <<'EOT'
+{"packets":[{"ms":12,"verdict":"pass","family":"ipv6","source":"2001:db8::9","destination":"2001:db8::1","proto":6,"sport":51234,"dport":22,"rule":1001,"interface":"em0","direction":"in"},{"ms":40,"verdict":"deny","family":"ipv4","source":"10.0.0.2","destination":"10.0.0.1","proto":17,"sport":5678,"dport":5678,"rule":9100,"interface":"em0","direction":"in"}],"seconds":3,"limit":100}
+EOT
+	cat > want <<'EOT'
+trace seconds=3 limit=100
+packet ms=12 pass ipv6 2001:db8::9 -> 2001:db8::1 proto=6 51234->22 rule=1001 em0 in
+packet ms=40 deny ipv4 10.0.0.2 -> 10.0.0.1 proto=17 5678->5678 rule=9100 em0 in
+yang-cbor 117 bytes, the same back
+EOT
+	atf_check -o file:want "$y" trace trace.json
+}
+
+atf_test_case yang_troubleshoot
+yang_troubleshoot_head()
+{
+	atf_set "descr" "path-check, traceroute and capture as" \
+	    "arcana-troubleshoot has them: a packet's way at one host, its" \
+	    "firewall's walks typed; a traceroute's hops; a capture's lines" \
+	    "and pcap; through YANG-CBOR and back"
+}
+yang_troubleshoot_body()
+{
+	local y="$(atf_get_srcdir)/yts"
+
+	cat > path.json <<'EOT'
+{"host":"labvm","addresses":[{"address":"10.1.0.1","prefixlen":24,"interface":"epair2b","fib":0,"up":true,"loopback":false},{"address":"10.3.0.1","prefixlen":24,"interface":"epair3a","fib":0,"up":true,"loopback":false}],"src":{"local":false,"connected":"epair2b"},"dst":{"local":false,"connected":"epair3a"},"forwarding":true,"ingress":{"interface":"epair2b","how":"by the route back to the source"},"route":{"to":"10.3.0.2","destination":"10.3.0.0","prefixlen":24,"gateway":"link#11","fib":"0","interface":"epair3a","flags":"U","metric":1,"weight":1},"neighbor":{"address":"10.3.0.2","state":"reachable"},"return":{"fib":0,"interface":"epair2b","gateway":"link#10","symmetric":true},"firewall":{"on":true,"in":{"verdict":"allow","rule":600,"text":"00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state :default","keep_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"check-state: no state of it yet, on"},{"rule":600,"text":"00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state :default","how":"decides"}],"uncertain":[{"text":"00550 deny ip from any to any uid 1001","because":"uid"}]},"out":{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"decides: its state lets it by"}]},"reply_in":{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"decides: its state lets it by"}]},"reply_out":{"verdict":"deny","rule":800,"text":"00800 deny tcp from any 22 to any","walk":[{"rule":800,"text":"00800 deny tcp from any 22 to any","how":"decides"}]}},"fib":0,"findings":[{"severity":"bad","what":"The firewall drops the reply going out by epair2b: rule 800 (00800 deny tcp from any 22 to any)"},{"severity":"info","what":"It goes out by epair3a"}]}
+EOT
+	cat > want <<'EOT'
+host labvm forwarding=yes fib=0 delivered=-
+address 10.1.0.1/24 epair2b fib=0 up=yes
+address 10.3.0.1/24 epair3a fib=0 up=yes
+source local=no connected=epair2b
+destination local=no connected=epair3a
+ingress epair2b (by the route back to the source)
+route 10.3.0.0/24 via link#11 on epair3a fib=0 flags=U
+neighbor 10.3.0.2 reachable
+return fib=0 epair2b via link#10 symmetric=yes
+firewall on=yes
+in allow rule=600 by-state=- keep=yes setfib=-1 fwd=-
+  590 check-state: no state of it yet, on
+  600 decides
+  ? 00550 deny ip from any to any uid 1001: uid
+out allow rule=590 by-state=yes keep=- setfib=-1 fwd=-
+  590 decides: its state lets it by
+reply-in allow rule=590 by-state=yes keep=- setfib=-1 fwd=-
+  590 decides: its state lets it by
+reply-out deny rule=800 by-state=- keep=- setfib=-1 fwd=-
+  800 decides
+finding bad The firewall drops the reply going out by epair2b: rule 800 (00800 deny tcp from any 22 to any)
+finding info It goes out by epair3a
+yang-cbor 960 bytes, the same back
+EOT
+	atf_check -o file:want "$y" path path.json
+	cat > tr.json <<'EOT'
+{"address":"2001:db8::1","family":"inet6","hops":[{"ttl":1,"address":"2001:db8:1::1","rtt":0.412},{"ttl":2,"lost":true},{"ttl":3,"address":"2001:db8::1","rtt":12.5,"note":"!X"}],"reached":true}
+EOT
+	cat > want <<'EOT'
+traceroute 2001:db8::1 ipv6 reached=yes
+hop 1 2001:db8:1::1 rtt=412 note=- lost=-
+hop 2 - rtt=-1 note=- lost=yes
+hop 3 2001:db8::1 rtt=12500 note=!X lost=-
+yang-cbor 77 bytes, the same back
+EOT
+	atf_check -o file:want "$y" traceroute tr.json
+	cat > cap.json <<'EOT'
+{"source":"em0","filter":"port 22","lines":["2026-10-15 12:00:00.000001 IP 10.0.0.2.51234 > 10.0.0.1.22: Flags [S]","2026-10-15 12:00:00.000200 IP 10.0.0.1.22 > 10.0.0.2.51234: Flags [S.]"],"packets":2,"limit":50,"seconds":10,"timed_out":true,"bytes":24,"pcap":"1MOyoQIABAAAAAAAAAAAAAAABAABAAAA"}
+EOT
+	cat > want <<'EOT'
+capture em0 filter=port 22 packets=2 limit=50 seconds=10 timed-out=yes bytes=24 pcap=24 taken=yes
+line 2026-10-15 12:00:00.000001 IP 10.0.0.2.51234 > 10.0.0.1.22: Flags [S]
+line 2026-10-15 12:00:00.000200 IP 10.0.0.1.22 > 10.0.0.2.51234: Flags [S.]
+yang-cbor 221 bytes, the same back
+EOT
+	atf_check -o file:want "$y" capture cap.json
+}
+
+atf_test_case yang_history
+yang_history_head()
+{
+	atf_set "descr" "the history operation's reply as arcana-history has" \
+	    "it: sampling and limits as configuration, the samples taken" \
+	    "apart by the names of the interfaces, disks and jails; through" \
+	    "YANG-CBOR and back"
+}
+yang_history_body()
+{
+	local y="$(atf_get_srcdir)/yhist"
+
+	cat > hist.json <<'EOT'
+{"limits":{"cpu":90,"mem":80,"swap":50},"rules":[{"kind":"net","name":"em0","limit":100000000,"over":false},{"kind":"jail-cpu","name":"web","limit":50,"over":true}],"racct":true,"step":5,"keep":720,"bytes":94560,"ncpu":12,"mem_total":25769803776,"swap_total":4294967296,"fields":["t","cpu","load","mem","swap","rx","tx","read","write"],"nets":["em0","em1"],"disks":["ada0"],"jails":["web"],"samples":[[1791995110,12.5,0.42,8589934592,0,120000,34000,4096,8192,100000,30000,20000,4000,4096,8192,3.5,268435456],[1791995115,80.0,1.10,8600000000,1024,130000,35000,0,0,110000,31000,20000,4000,0,0,55.0,268435456]]}
+EOT
+	cat > want <<'EOT'
+sampling step=5 keep=720 limits cpu=90 mem=80 swap=50
+rule net em0 limit=100000000 over=no
+rule jail-cpu web limit=50 over=yes
+state bytes=94560 ncpu=12 memory=25769803776 swap=4294967296 racct=yes
+interface em0
+interface em1
+disk ada0
+jail web
+sample 2026-10-14T16:25:10Z cpu=125 load=42 memory=8589934592 swap=0 rx=120000 tx=34000 read=4096 written=8192 em0=100000/30000 em1=20000/4000 ada0=4096/8192 web=35/268435456
+sample 2026-10-14T16:25:15Z cpu=800 load=110 memory=8600000000 swap=1024 rx=130000 tx=35000 read=0 written=0 em0=110000/31000 em1=20000/4000 ada0=0/0 web=550/268435456
+yang-cbor 376 bytes, the same back
+EOT
+	atf_check -o file:want "$y" hist.json
+}
+
+atf_test_case yang_events
+yang_events_head()
+{
+	atf_set "descr" "the events operation's reply as arcana-events has" \
+	    "it: each kind an identity, its data the case of that kind," \
+	    "typed; one event as the notification; through YANG-CBOR and" \
+	    "back"
+}
+yang_events_body()
+{
+	local y="$(atf_get_srcdir)/yev"
+
+	cat > ev.json <<'EOT'
+{"last":12,"first":3,"kept":512,"events":[{"n":3,"t":1791995110,"kind":"route-add","data":{"destination":"10.9.0.0","gateway":"10.0.0.1","flags":"UGS","nhop":5,"metric":0,"weight":1,"fib":0,"prefixlen":16,"interface":"em0","source":"static"}},{"n":4,"t":1791995111,"kind":"routes","data":{"changed":40}},{"n":5,"t":1791995112,"kind":"link","jail":"r1","data":{"interface":"epair0b","up":true,"carrier":true,"mtu":1500}},{"n":6,"t":1791995113,"kind":"address-add","data":{"interface":"em0","address":"2001:db8::7","prefixlen":64}},{"n":7,"t":1791995114,"kind":"neigh","data":{"family":"inet","interface":"em0","address":"10.0.0.9","lladdr":"02:00:00:00:00:09","state":"reachable","router":false}},{"n":8,"t":1791995115,"kind":"threshold","data":{"what":"jail-cpu","name":"web","value":55,"limit":50,"over":true}},{"n":9,"t":1791995116,"kind":"kmsg","data":{"seq":41,"text":"em0: link state changed to UP"}},{"n":10,"t":1791995117,"kind":"sdwan-tunnel","data":{"id":"tvc-1","address":"10.202.0.2","state":"down","misses":3}},{"n":11,"t":1791995118,"kind":"sdwan-fault","data":{"type":"tunnel","severity":"Major","object":"tvc-1","by":"probe","description":"no reply","state":"set"}},{"n":12,"t":1791995119,"kind":"sdwan-security","data":{"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"em0","comment":"deny-ssh"}},{"n":13,"t":1791995120,"kind":"job","data":{"id":77,"title":"ipfw table T46 add","ok":false,"error":"ipfw: bad"}},{"n":14,"t":1791995121,"kind":"jail-state","data":{"jail":"web","state":"running","jid":5}},{"n":15,"t":1791995122,"kind":"crash","data":{"pid":812,"process":"nginx","jid":5,"jail":"web","uid":80,"signal":11,"core":true}}]}
+EOT
+	cat > want <<'EOT'
+events last=12 first=3 kept=512
+3 2026-10-14T16:25:10Z route-add: route 10.9.0.0/16 via 10.0.0.1 on em0 fib=0 flags=UGS source=static
+4 2026-10-14T16:25:11Z routes: routes changed=40
+5 2026-10-14T16:25:12Z link jail=r1: link epair0b up=yes carrier=yes mtu=1500
+6 2026-10-14T16:25:13Z address-add: address em0 2001:db8::7/64
+7 2026-10-14T16:25:14Z neigh: neighbor em0 10.0.0.9 lladdr=02:00:00:00:00:09 state=reachable router=no
+8 2026-10-14T16:25:15Z threshold: threshold jail-cpu name=web value=55 limit=50 over=yes
+9 2026-10-14T16:25:16Z kmsg: kmsg seq=41 text=em0: link state changed to UP more=0
+10 2026-10-14T16:25:17Z sdwan-tunnel: tunnel tvc-1 10.202.0.2 down misses=3 by=-
+11 2026-10-14T16:25:18Z sdwan-fault: fault tunnel Major tvc-1 by=probe set: no reply
+12 2026-10-14T16:25:19Z sdwan-security: security seq=7 rule=30010 Deny 10.1.0.2:4000 -> 10.3.0.2:22 on em0 (deny-ssh)
+13 2026-10-14T16:25:20Z job: job 77 ipfw table T46 add ok=no error=ipfw: bad
+14 2026-10-14T16:25:21Z jail-state: jail-state web running jid=5
+15 2026-10-14T16:25:22Z crash: crash pid=812 nginx jid=5 jail=web uid=80 signal=11 core=yes
+yang-cbor 868 bytes, the same back
+EOT
+	atf_check -o file:want "$y" list ev.json
+	cat > one.json <<'EOT'
+{"n":16,"t":1791995123,"kind":"link-del","data":{"interface":"epair9a","up":false,"carrier":false,"mtu":1500}}
+EOT
+	atf_check -o inline:'16 2026-10-14T16:25:23Z link-del: link epair9a up=no carrier=no mtu=1500\nyang-cbor 54 bytes, the same back\n' \
+	    "$y" one one.json
+}
+
+atf_test_case yang_plugins
+yang_plugins_head()
+{
+	atf_set "descr" "BIRD, WireGuard and netgraph as arcana-bird," \
+	    "arcana-wireguard and arcana-netgraph have them: birdc's" \
+	    "protocols with a BGP neighbour's own and its channels, OSPF" \
+	    "neighbours, BFD sessions, tables, routes; bird.conf with its" \
+	    "SHA-256; wg show's interfaces and peers, keys only said to be" \
+	    "there; ngctl's nodes and hooks; through YANG-CBOR and back"
+}
+yang_plugins_body()
+{
+	local y="$(atf_get_srcdir)/yplug"
+
+	cat > bird.json <<'EOT'
+{"status":["BIRD 3.1.2","Router ID is 10.0.0.1","Current server time is 2026-10-15 20:00:00.123","Daemon is up and running"],"protocols":[{"name":"device1","proto":"Device","table":"---","state":"up","since":"2026-10-15 19:00:00","info":""},{"name":"peer_as65002","proto":"BGP","table":"---","state":"up","since":"2026-10-15 19:00:05","info":"Established","description":"the other site","bgp-state":"Established","neighbor":"10.202.0.2","neighbor-as":"65002","local-as":"65001","neighbor-id":"10.0.0.2","source":"10.202.0.1","session":"external AS4","hold":"240/240","keepalive":"80/80","channels":[{"name":"ipv4","state":"UP","table":"master4","input-filter":"ACCEPT","output-filter":"ACCEPT","routes":"3 imported, 2 exported, 3 preferred","imported":3,"exported":2}]},{"name":"rpki1","proto":"RPKI","table":"---","state":"up","since":"2026-10-15 19:00:00","info":"Established","cache":"rpki.example.net","rpki-status":"Established","serial":"12","last-update":"2026-10-15 19:50:00"}],"ospf":[{"proto":"ospf1","router-id":"10.0.0.2","pri":"1","state":"Full/DR","dtime":"38.3","interface":"em1","address":"10.1.0.2"}],"bfd":[{"proto":"bfd1","address":"10.202.0.2","interface":"wg0","state":"Up","since":"2026-10-15 19:00:06","interval":"0.300","timeout":"1.000"}],"tables":[{"name":"master4","routes":5,"networks":5},{"name":"master6","routes":2,"networks":2}]}
+EOT
+	cat > want <<'EOT'
+status BIRD 3.1.2
+status Router ID is 10.0.0.1
+status Current server time is 2026-10-15 20:00:00.123
+status Daemon is up and running
+protocol device1 Device table=--- up since=2026-10-15 19:00:00 info= description=-
+protocol peer_as65002 BGP table=--- up since=2026-10-15 19:00:05 info=Established description=the other site
+  bgp Established neighbor=10.202.0.2 as=65002 local-as=65001 id=10.0.0.2 source=10.202.0.1 session=external AS4 hold=240/240 keepalive=80/80 error=-
+  channel ipv4 UP table=master4 in=ACCEPT out=ACCEPT routes=3 imported, 2 exported, 3 preferred imported=3 exported=2
+protocol rpki1 RPKI table=--- up since=2026-10-15 19:00:00 info=Established description=-
+  rpki cache=rpki.example.net status=Established serial=12 update=2026-10-15 19:50:00
+ospf ospf1 10.0.0.2 pri=1 Full/DR dead=38.3 em1 10.1.0.2
+bfd bfd1 10.202.0.2 wg0 Up since=2026-10-15 19:00:06 0.300/1.000
+table master4 routes=5 networks=5
+table master6 routes=2 networks=2
+yang-cbor 686 bytes, the same back
+EOT
+	atf_check -o file:want "$y" bird bird.json
+	cat > br.json <<'EOT'
+{"routes":[{"table":"master4","prefix":"10.9.0.0/16","type":"unicast","protocol":"peer_as65002","from":"10.202.0.2","since":"2026-10-15 19:00:06","primary":true,"preference":"100","info":"AS65002i","nexthops":[{"via":"10.202.0.2","interface":"wg0"}],"attrs":["BGP.origin: IGP","BGP.as_path: 65002"]},{"table":"master4","prefix":"0.0.0.0/0","type":"unicast","protocol":"static1","since":"2026-10-15 19:00:00","primary":true,"preference":"200","nexthops":[{"via":"10.0.0.254","interface":"em0"}]}],"count":2}
+EOT
+	cat > want <<'EOT'
+routes count=2 message=-
+route master4 10.9.0.0/16 unicast peer_as65002 from=10.202.0.2 since=2026-10-15 19:00:06 primary=yes pref=100 info=AS65002i via 10.202.0.2 on wg0 [BGP.origin: IGP] [BGP.as_path: 65002]
+route master4 0.0.0.0/0 unicast static1 from=- since=2026-10-15 19:00:00 primary=yes pref=200 info=- via 10.0.0.254 on em0
+yang-cbor 245 bytes, the same back
+EOT
+	atf_check -o file:want "$y" bird-routes br.json
+	printf 'router id 10.0.0.1;\ninclude "peers.conf";\n' > bird.conf
+	cat > want <<'EOT'
+configuration /usr/local/etc/bird.conf
+file /usr/local/etc/bird.conf text=42 sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+file /usr/local/etc/peers.conf text=0 sha256=-
+yang-cbor 199 bytes, the same back
+EOT
+	atf_check -o file:want "$y" bird-config /usr/local/etc/bird.conf bird.conf \
+	    0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+	    /usr/local/etc/bird.conf /usr/local/etc/peers.conf
+	cat > wg.json <<'EOT'
+{"interfaces":[{"name":"wg0","private-key":true,"public-key":"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=","listen-port":51820,"peers":[{"public-key":"TrMvSoP4jYQlY6RIzBgbssQqY3vxI2Pi+y71lOWWXX0=","preshared-key":false,"endpoint":"203.0.113.2:51820","allowed-ips":["10.202.0.2/32","fd00:5a::2/128"],"latest-handshake":1791995110,"rx":123456,"tx":654321,"keepalive":25},{"public-key":"gN65BkIKy1eCE9pP1wdc8ROUtkHLF2PfAqYdyYBz6EA=","preshared-key":true,"allowed-ips":["10.202.0.3/32"],"latest-handshake":0,"rx":0,"tx":0,"keepalive":0}]}],"now":1791995200}
+EOT
+	cat > want <<'EOT'
+wireguard now=2026-10-14T16:26:40Z
+interface wg0 private=yes public=xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg= port=51820
+  peer TrMvSoP4jYQlY6RIzBgbssQqY3vxI2Pi+y71lOWWXX0= preshared=no endpoint=203.0.113.2:51820 handshake=2026-10-14T16:25:10Z rx=123456 tx=654321 keepalive=25 allowed=10.202.0.2/32,fd00:5a::2/128
+  peer gN65BkIKy1eCE9pP1wdc8ROUtkHLF2PfAqYdyYBz6EA= preshared=yes endpoint=- handshake=- rx=0 tx=0 keepalive=0 allowed=10.202.0.3/32
+yang-cbor 295 bytes, the same back
+EOT
+	atf_check -o file:want "$y" wireguard wg.json
+	cat > ng.json <<'EOT'
+{"nodes":[{"name":"em0","type":"ether","id":"00000001","hooks":[{"hook":"lower","peer":"ngbr0","peer-type":"bridge","peer-id":"00000005","peer-hook":"link0"}]},{"name":"ngbr0","type":"bridge","id":"00000005","hooks":[{"hook":"link0","peer":"em0","peer-type":"ether","peer-id":"00000001","peer-hook":"lower"},{"hook":"link1","peer":"ngeth0","peer-type":"eiface","peer-id":"00000007","peer-hook":"ether"}]}]}
+EOT
+	cat > want <<'EOT'
+node 00000001 em0 ether
+  hook lower -> ngbr0 bridge 00000005 link0
+node 00000005 ngbr0 bridge
+  hook link0 -> em0 ether 00000001 lower
+  hook link1 -> ngeth0 eiface 00000007 ether
+yang-cbor 174 bytes, the same back
+EOT
+	atf_check -o file:want "$y" netgraph ng.json
+}
+
+atf_test_case yang_host_agent
+yang_host_agent_head()
+{
+	atf_set "descr" "the host, the agent and the jails' files as" \
+	    "arcana-host, arcana-agent and arcana-jail-files have them: the" \
+	    "host's facts, plugins as identities, stats and trust store;" \
+	    "the agent's listeners and sessions, its TLS files, a" \
+	    "configuration bundle and an apply's report, a repository's" \
+	    "log; jail.conf.d's files; sshd's settings, host keys and" \
+	    "users; through YANG-CBOR and back"
+}
+yang_host_agent_body()
+{
+	local y="$(atf_get_srcdir)/ymisc"
+
+	cat > certs.json <<'EOT'
+{"trusted":[{"file":"/etc/ssl/certs/abc123.0","subject":"CN=Example Root CA,O=Example,C=US","cn":"Example Root CA","org":"Example","country":"US","issuer":"CN=Example Root CA,O=Example,C=US","not_before":1600000000,"not_after":1900000000,"sha256":"aa11","key":"RSA 4096","ca":true,"self_signed":true,"local":"/usr/local/etc/ssl/certs/example.pem"}],"untrusted":[{"file":"/etc/ssl/untrusted/bad.0","subject":"CN=Bad CA","cn":"Bad CA","issuer":"CN=Bad CA","not_before":1600000000,"not_after":1700000000,"sha256":"bb22","key":"RSA 2048","ca":true,"self_signed":true}],"localbase":"/usr/local","added_dir":"/usr/local/etc/ssl/certs","distrusted_dir":"/usr/local/etc/ssl/untrusted","certctl":true,"now":1791995110}
+EOT
+	cat > want <<'EOT'
+host labvm FreeBSD 16.0-CURRENT amd64 osreldate=1600000 ncpu=12 physmem=25769803776 boot=2026-10-14T15:00:00Z time=2026-10-14T16:25:10Z securelevel=-1 privileged=no
+agent 0.123.0 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+plugin bird
+plugin wireguard
+stats cpu=123 load=42/50/55 memory=25769803776/8589934592/1073741824/16106127360 swap=4294967296/0
+pool zroot size=107374182400 allocated=10737418240 free=96636764160 ONLINE
+certificates localbase=/usr/local added=/usr/local/etc/ssl/certs distrusted=/usr/local/etc/ssl/untrusted certctl=yes now=2026-10-14T16:25:10Z
+trusted /etc/ssl/certs/abc123.0 cn=Example Root CA org=Example country=US issuer=CN=Example Root CA,O=Example,C=US from=2020-09-13T12:26:40Z until=2030-03-17T17:46:40Z sha256=aa11 key=RSA 4096 ca=yes self=yes local=/usr/local/etc/ssl/certs/example.pem
+untrusted /etc/ssl/untrusted/bad.0 cn=Bad CA org=- country=- issuer=CN=Bad CA from=2020-09-13T12:26:40Z until=2023-11-14T22:13:20Z sha256=bb22 key=RSA 2048 ca=yes self=yes local=-
+yang-cbor 781 bytes, the same back
+EOT
+	atf_check -o file:want "$y" host certs.json
+	cat > transport.json <<'EOT'
+{"listeners":[{"uri":"tcp://[::]:4434","transport":"tcp","up":true},{"uri":"sctp://[::]:4434","transport":"sctp","up":false,"error":"the kernel has no SCTP"},{"uri":"unix:/var/run/arcana-agent.sock","transport":"unix","up":true}],"sctp":false,"sessions":[{"transport":"tcp","address":"[2001:db8::7]:51234","subject":"CN=console","since":1791995000}],"seen":3}
+EOT
+	cat > want <<'EOT'
+transport sctp=no
+listener tcp://[::]:4434 tcp up=yes why=-
+listener sctp://[::]:4434 sctp up=no why=the kernel has no SCTP
+listener unix:/var/run/arcana-agent.sock unix up=yes why=-
+session tcp [2001:db8::7]:51234 CN=console since=2026-10-14T16:23:20Z
+yang-cbor 176 bytes, the same back
+EOT
+	atf_check -o file:want "$y" transport transport.json
+	cat > tls.json <<'EOT'
+{"cert":{"subject":"CN=labvm","issuer":"CN=Arcana CA","not_before":"2026-10-01T00:00:00Z","not_after":"2027-10-01T00:00:00Z","sha256":"cc33","chain":["CN=Arcana CA"]},"ca":[{"subject":"CN=Arcana CA","issuer":"CN=Arcana CA","not_before":"2026-01-01T00:00:00Z","not_after":"2036-01-01T00:00:00Z","sha256":"dd44"}],"pending":false}
+EOT
+	cat > want <<'EOT'
+certificate CN=labvm issuer=CN=Arcana CA from=2026-10-01T00:00:00Z until=2027-10-01T00:00:00Z sha256=cc33 chain=CN=Arcana CA
+ca CN=Arcana CA issuer=CN=Arcana CA sha256=dd44
+pending=no
+yang-cbor 176 bytes, the same back
+EOT
+	atf_check -o file:want "$y" tls tls.json
+	cat > bundle.json <<'EOT'
+{"arcana":"host","format":1,"host":"labvm","agent":"0.122.0","taken":"2026-10-15T20:00:00Z","facts":{"arch":"amd64","release":"16.0-CURRENT","cpu":"AMD EPYC","ncpu":12,"memory":25769803776,"interfaces":[{"name":"vtnet0","driver":"vtnet","mac":"02:00:00:00:00:01"}],"disks":[{"name":"vtbd0","size":107374182400}]},"packages":[{"name":"bird3","origin":"net/bird3","version":"3.1.2"}],"files":[{"path":"/etc/rc.conf","mode":"0644","owner":"root","group":"wheel","text":"hostname=\"labvm\"\n"},{"path":"/usr/local/etc/wireguard/wg0.conf","mode":"0600","owner":"root","group":"wheel","secret":true}]}
+EOT
+	cat > want <<'EOT'
+bundle host=labvm agent=0.122.0 taken=2026-10-15T20:00:00Z
+facts amd64 16.0-CURRENT cpu=AMD EPYC ncpu=12 memory=25769803776
+interface vtnet0 vtnet 02:00:00:00:00:01
+disk vtbd0 107374182400
+package bird3 net/bird3 3.1.2
+file /etc/rc.conf mode=0644 root:wheel text=17 secret=no
+file /usr/local/etc/wireguard/wg0.conf mode=0600 root:wheel text=0 secret=yes
+yang-cbor 283 bytes, the same back
+EOT
+	atf_check -o file:want "$y" bundle bundle.json
+	cat > apply.json <<'EOT'
+{"mismatches":["interface em0 is not here"],"files":[{"path":"/etc/rc.conf","state":"changed","diff":"--- a\n+++ b\n"},{"path":"/etc/sysctl.conf","state":"same"},{"path":"/usr/local/etc/wireguard/wg0.conf","state":"withheld"}],"packages":["bird3"],"backup":"/var/backups/arcana/config-20261015T200000","applied":true,"reboot":true}
+EOT
+	cat > want <<'EOT'
+mismatch interface em0 is not here
+file /etc/rc.conf changed diff=12
+file /etc/sysctl.conf same diff=0
+file /usr/local/etc/wireguard/wg0.conf withheld diff=0
+package bird3
+backup=/var/backups/arcana/config-20261015T200000 applied=yes reboot=yes
+yang-cbor 180 bytes, the same back
+EOT
+	atf_check -o file:want "$y" apply apply.json
+	cat > log.json <<'EOT'
+[{"commit":"0785917d572e9cededae598fba95ed8f84992dd5","time":1791995110,"subject":"agent 0.122.0, console 0.183.2: BIRD, WireGuard and netgraph as YANG","body":"PLAN-SDN-YANG 3.1.8"},{"commit":"e71cf597a0bf46e0514d5f8ed904e19f8a77e4b7","time":1791990000,"subject":"agent 0.121.0","body":""}]
+EOT
+	cat > tags.json <<'EOT'
+[{"name":"v0.1","time":1700000000,"message":"The first"}]
+EOT
+	cat > want <<'EOT'
+head 0785917d572e9cededae598fba95ed8f84992dd5
+commit 0785917d572e9cededae598fba95ed8f84992dd5 2026-10-14T16:25:10Z agent 0.122.0, console 0.183.2: BIRD, WireGuard and netgraph as YANG body=19
+commit e71cf597a0bf46e0514d5f8ed904e19f8a77e4b7 2026-10-14T15:00:00Z agent 0.121.0 body=0
+tag v0.1 The first
+yang-cbor 307 bytes, the same back
+EOT
+	atf_check -o file:want "$y" log \
+	    0785917d572e9cededae598fba95ed8f84992dd5 log.json tags.json
+	cat > jf.json <<'EOT'
+{"defaults":{"path":"/etc/jail.conf.d/defaults.conf","text":"exec.clean;\n"},"dir":"/etc/jail.conf.d","templates":[{"name":"pkgbase","text":"path = \"/jails/$name\";\n"}],"jails":[{"name":"web","text":"web { }\n"}]}
+EOT
+	cat > want <<'EOT'
+files /etc/jail.conf.d defaults=/etc/jail.conf.d/defaults.conf text=12
+template pkgbase text=23
+jail web text=8
+yang-cbor 123 bytes, the same back
+EOT
+	atf_check -o file:want "$y" jail-files jf.json
+	# sshd: the settings each with its values, the host keys with
+	# their certificates (forever said as none), the users' keys.
+	cat > sshd.json <<'EOT'
+{"settings":{"permitrootlogin":["without-password"],"passwordauthentication":["no"],"port":["22","2222"]},"banner_text":"Welcome\n","host_keys":[{"path":"/etc/ssh/ssh_host_ed25519_key","type":"ED25519","bits":256,"fingerprint":"SHA256:abc","comment":"root@labvm","certificate":{"kind":"host","id":"labvm","principals":["labvm","labvm.example"],"valid_after":1791990000,"valid_before":-1,"ca":"SHA256:ca1"},"certificate_used":true},{"path":"/etc/ssh/ssh_host_rsa_key","type":"RSA","bits":3072,"fingerprint":"SHA256:def","comment":"","certificate_used":false}],"users":[{"name":"pouria","uid":1001,"home":"/home/bsdusr","shell":"/bin/sh","keys_file":"/home/bsdusr/.ssh/authorized_keys","keys":[{"type":"ED25519","fingerprint":"SHA256:k1","bits":256,"comment":"laptop","options":"restrict"}]}],"user_cas":["ssh-ed25519 AAAA ca"],"before_kept":true}
+EOT
+	cat > want <<'EOT'
+setting permitrootlogin = without-password
+setting passwordauthentication = no
+setting port = 22 2222
+from-file=- banner=8 before-kept=yes
+host-key /etc/ssh/ssh_host_ed25519_key ED25519 256 SHA256:abc root@labvm used=yes cert host id=labvm after=2026-10-14T15:00:00Z before=- ca=SHA256:ca1 principals=labvm,labvm.example
+host-key /etc/ssh/ssh_host_rsa_key RSA 3072 SHA256:def  used=no
+user pouria uid=1001 home=/home/bsdusr shell=/bin/sh keys=/home/bsdusr/.ssh/authorized_keys
+  key SHA256:k1 ED25519 256 laptop options=restrict
+user-ca ssh-ed25519 AAAA ca
+yang-cbor 439 bytes, the same back
+EOT
+	atf_check -o file:want "$y" sshd sshd.json
+}
+
+atf_test_case yang_sdwan
+yang_sdwan_head()
+{
+	atf_set "descr" "the probes and the SD-WAN edge as arcana-probe and" \
+	    "arcana-sdwan have them: the targets with their thresholds, what" \
+	    "the probes have seen with each sample taken apart; the rules," \
+	    "the steer, the instances the console writes; the edge's state:" \
+	    "rules, steer, BIRD, DHCP, DNS, proxy, IDS, the record, keys" \
+	    "and faults; through YANG-CBOR and back"
+}
+yang_sdwan_body()
+{
+	local y="$(atf_get_srcdir)/ysd"
+
+	cat > targets.json <<'EOT'
+[{"id":"tvc-1","address":"10.202.0.2","fib":1,"interval":100,"size":64,"count":0,"dscp":46,"down":3,"up":3,"timeout":1000,"eval":1000,"history":3600,"report":5000,"tca":{"delay":50,"ipdv":10,"loss":0.01,"damping":2}},{"id":"tvc-2","address":"fd00:5a::2"}]
+EOT
+	cat > want <<'EOT'
+target tvc-1 10.202.0.2 fib=1 interval=100 size=64 count=0 dscp=46 down=3 up=3 timeout=1000 eval=1000 history=3600 report=5000 tca delay=50000 ipdv=10000 loss=10000 damping=2
+target tvc-2 fd00:5a::2 fib=0 interval=0 size=0 count=0 dscp=0 down=0 up=0 timeout=0 eval=0 history=0 report=0
+yang-cbor 102 bytes, the same back
+EOT
+	atf_check -o file:want "$y" targets targets.json
+	cat > probes.json <<'EOT'
+{"targets":[{"id":"tvc-1","address":"10.202.0.2","family":"inet","fib":1,"state":"up","since":1791995000,"interval":100,"size":64,"eval":1000,"dscp":46,"sent":12000,"received":11990,"misses":0,"last_rtt":1.234,"now":{"sent":5,"recv":5,"delay":0.6,"ipdv":0.05,"loss":0,"age":512.3},"samples":[[1791995100,0.617,0.052,0.0,0.5,0.9,10,10],[1791995101,0.7,0.1,0.1,0.5,1.2,10,9]],"kept":2},{"id":"tvc-2","address":"fd00:5a::2","family":"inet6","fib":0,"state":"error","error":"no route","since":1791995000,"interval":100,"size":64,"eval":1000,"dscp":0,"sent":0,"received":0,"misses":0,"last_rtt":0,"samples":[],"kept":0}],"time":1791995110,"probing":true}
+EOT
+	cat > want <<'EOT'
+probing=yes time=2026-10-14T16:25:10Z
+target tvc-1 10.202.0.2 ipv4 fib=1 up error=- since=2026-10-14T16:23:20Z interval=100 size=64 eval=1000 dscp=46 sent=12000 received=11990 misses=0 last-rtt=1234 kept=2
+  now sent=5 received=5 delay=600 ipdv=50 loss=0 age=512300
+  sample 2026-10-14T16:25:00Z delay=617 ipdv=52 loss=0 min=500 max=900 sent=10 received=10
+  sample 2026-10-14T16:25:01Z delay=700 ipdv=100 loss=100000 min=500 max=1200 sent=10 received=9
+target tvc-2 fd00:5a::2 ipv6 fib=0 error error=no route since=2026-10-14T16:23:20Z interval=100 size=64 eval=1000 dscp=0 sent=0 received=0 misses=0 last-rtt=0 kept=0
+yang-cbor 356 bytes, the same back
+EOT
+	atf_check -o file:want "$y" probes probes.json
+	cat > rules.json <<'EOT'
+{"set":30,"tables":[{"name":"sw1_zone","valtype":"legacy","entries":[["10.1.0.0/24","1"],["10.2.0.0/24","2"]]},{"name":"sw1_p1","valtype":"ipv4","entries":[{"prefix":"10.3.0.0/24","value":"10.202.0.2"}]}],"objects":["pipe 1 config bw 10Mbit/s","queue 2 config pipe 1 weight 30"],"rules":["00100 skipto 999 ip from any to any not recv vtnet1","00110 setfib 1 ip from table(sw1_zone) to any",{"number":120,"text":"fwd tablearg ip from any to table(sw1_p1)"}]}
+EOT
+	cat > want <<'EOT'
+rules set=30
+table sw1_zone legacy 10.1.0.0/24=1 10.2.0.0/24=2
+table sw1_p1 ipv4 10.3.0.0/24=10.202.0.2
+object pipe 1 config bw 10Mbit/s
+object queue 2 config pipe 1 weight 30
+rule 100 skipto 999 ip from any to any not recv vtnet1
+rule 110 setfib 1 ip from table(sw1_zone) to any
+rule 120 fwd tablearg ip from any to table(sw1_p1)
+yang-cbor 304 bytes, the same back
+EOT
+	atf_check -o file:want "$y" rules rules.json
+	cat > steer.json <<'EOT'
+{"entries":[{"table":"sw1_p1","prefix":"10.3.0.0/24","candidates":[{"id":"tvc-1","via":"10.202.0.2"},{"id":"tvc-2","via":"10.203.0.2"}]}]}
+EOT
+	atf_check -o inline:'entry sw1_p1 10.3.0.0/24: tvc-1 via 10.202.0.2 tvc-2 via 10.203.0.2\nyang-cbor 67 bytes, the same back\n' \
+	    "$y" steer steer.json
+	cat > inst.json <<'EOT'
+{"instances":[{"name":"svc1","fib":1,"conf":"router id 10.0.0.1;\n"}]}
+EOT
+	atf_check -o inline:'instance svc1 fib=1 conf=20\nyang-cbor 34 bytes, the same back\n' \
+	    "$y" bird inst.json
+	cat > proxy.json <<'EOT'
+{"instances":[{"name":"svc1","fib":1,"mode":"inspect","conf":"http_port 3128\n","deny":"bad.example\n"}]}
+EOT
+	atf_check -o inline:'proxy svc1 fib=1 mode=inspect conf=15 deny=bad.example\n\nyang-cbor 45 bytes, the same back\n' \
+	    "$y" proxy proxy.json
+	cat > ids.json <<'EOT'
+{"instances":[{"name":"svc1","interfaces":["vtnet1","vtnet2"],"conf":"%YAML 1.1\n","rules":"alert tcp any any -> any 23 (msg:\"telnet\"; sid:1;)\n","divert":8000}]}
+EOT
+	atf_check -o inline:'ids svc1 divert=8000 conf=10 rules=51 interfaces=vtnet1,vtnet2\nyang-cbor 96 bytes, the same back\n' \
+	    "$y" ids ids.json
+	cat > state.json <<'EOT'
+{"targets":[],"probing":false,"time":1791995110,"rules":{"set":30,"rules":3,"tables":[{"name":"sw1_zone","count":2}],"objects":2,"counters":[{"rule":100,"pkts":12,"bytes":900,"text":"skipto 999 ip from any to any not recv vtnet1"}]},"steer":[{"table":"sw1_p1","prefix":"10.3.0.0/24","chosen":0,"candidates":[{"id":"tvc-1","via":"10.202.0.2","state":"up"},{"id":"tvc-2","via":"10.203.0.2","state":"down"}]}],"steered":true,"bird":[{"name":"svc1","fib":1,"running":true,"protocols":[{"name":"peer1","proto":"BGP","state":"up","info":"Established"}],"bfd":[{"address":"10.202.0.2","interface":"wg0","state":"up","since":"2026-10-15 19:00:06"}]}],"dhcp":[{"name":"svc1","fib":1,"running":true,"leases":[{"expires":1792081510,"id":"02:00:00:00:00:09","address":"10.1.0.50","name":"laptop"}]}],"dns":[{"name":"svc1","fib":1,"running":false}],"proxy":[{"name":"svc1","fib":1,"mode":"inspect","running":true,"icap":true,"ca":"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"}],"ids":[{"name":"svc1","interfaces":["vtnet1"],"mode":"prevent","divert":8000,"running":true,"alerts_seen":4,"alerts":[{"time":"2026-10-15T19:30:00.123456+0000","name":"telnet","src":"10.1.0.50","sport":4000,"dst":"10.3.0.2","dport":23,"proto":"TCP"}]}],"record":{"count":7,"seq":7,"last":[{"t":1791995119,"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"vtnet1","comment":"deny-ssh"}]},"keys":[{"interface":"ipsec0","public":"AAAA","next":"BBBB","keyed_at":1791990000,"lifetime":86400,"spi_in":1001,"spi_out":1002,"next_spi_in":1003,"pending":true}],"faults":[{"t":1791995118,"type":"tunnel","severity":"Major","object":"tvc-2","by":"probe","description":"no reply","cleared":false}]}
+EOT
+	cat > want <<'EOT'
+rules set=30 rules=3 objects=2
+  table sw1_zone count=2
+  counter 100 packets=12 octets=900 skipto 999 ip from any to any not recv vtnet1
+steered=yes
+steer sw1_p1 10.3.0.0/24 chosen=0: tvc-1 via 10.202.0.2 up tvc-2 via 10.203.0.2 down
+bird svc1 fib=1 running=yes
+  protocol peer1 BGP up Established
+  bfd 10.202.0.2 wg0 up since=2026-10-15 19:00:06
+dhcp svc1 fib=1 running=yes
+  lease 2026-10-15T16:25:10Z 02:00:00:00:00:09 10.1.0.50 laptop
+dns svc1 fib=1 running=no
+proxy svc1 fib=1 running=yes mode=inspect icap=yes ca=59
+ids svc1 prevent divert=8000 running=yes seen=4
+  alert 2026-10-15T19:30:00.123456+0000 telnet 10.1.0.50:4000 -> 10.3.0.2:23 TCP
+record count=7 seq=7
+  2026-10-14T16:25:19Z 7 rule=30010 Deny 10.1.0.2:4000 -> 10.3.0.2:22 vtnet1 (deny-ssh)
+key ipsec0 public=AAAA next=BBBB at=2026-10-14T15:00:00Z lifetime=86400 spi=1001/1002 next-spi=1003 pending=yes
+fault 2026-10-14T16:25:18Z tunnel Major was=- tvc-2 by=probe cleared=no at=-: no reply
+yang-cbor 756 bytes, the same back
+EOT
+	atf_check -o file:want "$y" state state.json
+}
+
 atf_test_case fw_walk
 fw_walk_head()
 {
@@ -5511,6 +6111,42 @@ EOF
 	atf_check -o inline:'allow 800 keep-state\n' "$f" list tables $l in \
 	    rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 \
 	    dport=22 syn rpf reach
+	# The rules met, in order, with what each did.
+	atf_check -o inline:'allow 800 keep-state\n  400 check-state: no state of it yet, on\n  500 met, on\n  800 decides\n' \
+	    "$f" list tables $l in rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 \
+	    proto=tcp sport=40000 dport=22 syn rpf reach walk
+	# call and return as the kernel's O_CALLRETURN: into the block
+	# called, back to the rule numbered after the call (next-rulenum);
+	# a return with nothing called goes on; reass goes on; a rule of
+	# options alone (return via any) names no protocol.
+	cat > chain <<'EOT'
+00001 call 9000 ip6 from any to any
+00020 call 9100 ip from any to any in
+00099 reass ip from any to any in
+00200 check-state :default
+00300 call 9200 ip from any to any in
+00999 deny ip from any to any
+09000 allow icmp6 from fe80::/10 to fe80::/10
+09099 return via any
+09100 deny udp from any to 255.255.255.255 1900 in
+09199 return via any
+09200 allow tcp from any to me 22 in
+09299 return next-rule via any
+65535 deny ip from any to any
+EOT
+	atf_check -o inline:'deny 9100\n  20 call 9100\n  9100 decides\n' "$f" chain tables $l \
+	    in rcv=em0 src=10.0.0.5 dst=255.255.255.255 proto=udp sport=1900 \
+	    dport=1900 rpf reach walk
+	atf_check -o inline:'allow 9200\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state: no state of it yet, on\n  300 call 9200\n  9200 decides\n' \
+	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
+	    proto=tcp sport=4000 dport=22 syn rpf reach walk
+	atf_check -o inline:'deny 999\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state: no state of it yet, on\n  300 call 9200\n  9299 return, after 300\n  999 decides\n' \
+	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
+	    proto=tcp sport=4000 dport=80 syn rpf reach walk
+	# A reply with its state: check-state decides.
+	atf_check -o inline:'allow 200 by-state\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 decides: its state lets it by\n' \
+	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
+	    proto=tcp sport=4000 dport=80 ack state rpf reach walk
 	atf_check -o inline:'deny 900\n' "$f" list tables $l in rcv=vtnet0 \
 	    src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 dport=80 syn \
 	    rpf reach
@@ -6655,7 +7291,15 @@ atf_init_test_cases()
 	atf_add_test_case yang_system
 	atf_add_test_case yang_processes
 	atf_add_test_case yang_log
+	atf_add_test_case yang_firewall
+	atf_add_test_case yang_troubleshoot
+	atf_add_test_case yang_history
+	atf_add_test_case yang_events
+	atf_add_test_case yang_plugins
+	atf_add_test_case yang_host_agent
+	atf_add_test_case yang_sdwan
 	atf_add_test_case fw_walk
+	atf_add_test_case firewall_aliases
 	atf_add_test_case config_bundle
 	atf_add_test_case yang_storage
 	atf_add_test_case yang_jobs

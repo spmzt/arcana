@@ -1691,12 +1691,28 @@ part_nettab(void)
 	run("document.querySelector('button[data-act=net-lookup]').click()");
 	wait_js("document.querySelector('form[data-form=lookup] input[name="
 	    "address]')", 5);
+	/* As pasted, blanks around it: IPv4 by its form. */
 	run("const f = document.querySelector('form[data-form=lookup]'); "
-	    "f.address.value = '10.77.5.5'; f.requestSubmit();");
+	    "f.address.value = ' 10.77.5.5\\n'; f.requestSubmit();");
 	wait_js("document.querySelector('.modal .notice.lookup') && document."
 	    "querySelector('.modal .notice.lookup').textContent.includes("
 	    "'10.0.0.1')", 10);
 	shot("7a-lookup");
+	/* IPv6, a prefix's address, a zone: each looked up; what is no
+	 * address said to be none, by what it is. */
+	run("const f = document.querySelector('form[data-form=lookup]'); "
+	    "f.address.value = 'fe80::1%em0'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal .notice.lookup') && "
+	    "!document.querySelector('.modal .notice.bad')", 10);
+	run("const f = document.querySelector('form[data-form=lookup]'); "
+	    "f.address.value = '10.77.0.0/16'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal .notice.lookup') && "
+	    "!document.querySelector('.modal .notice.bad')", 10);
+	run("const f = document.querySelector('form[data-form=lookup]'); "
+	    "f.address.value = 'gateway'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal .notice.bad') && document."
+	    "querySelector('.modal .notice.bad').textContent.includes("
+	    "'gateway is not an address')", 10);
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	wait_js("!document.querySelector('.modal')", 5);
 	run("document.querySelector('button[data-act=net-kind]"
@@ -3634,6 +3650,43 @@ part_firewall(void)
 	    "8443 in$' ipfw.log && grep -q '^add 01500 allow tcp from any to "
 	    "me6 8443 in$' ipfw.rules") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/*
+	 * Aliases: an address list made (a table of its name), then a
+	 * rule written with it, kept with its own words and loaded as
+	 * ipfw reads it; shown by its own words, ipfw's when hovered.
+	 */
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-10\"]').click()");
+	wait_js("document.querySelector('form[data-form=fw-alias]')", 10);
+	run("const f = document.querySelector('form[data-form=fw-alias]'); "
+	    "f.name.value = 'lan'; f.kind.value = 'addr'; f.value.value = "
+	    "'10.0.0.0/8, 192.168.1.0/24'; f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('table.fwaliases') && document."
+	    "querySelector('table.fwaliases').textContent.includes('$lan') && "
+	    "document.querySelector('table.fwaliases').textContent.includes("
+	    "'10.0.0.0/8 192.168.1.0/24')", 20);
+	ATF_CHECK(system("grep -q '^ipfw -q table lan add 192.168.1.0/24$' "
+	    "ipfw.log && grep -q '^#arcana alias lan addr$' ipfw.rules") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('.fwrail .titem.fw[data-arg=\"10\"]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=fw-add] input[name=num]"
+	    "') && document.querySelector('form[data-form=fw-add] input[name="
+	    "rule]')", 10);
+	run("const f = document.querySelector('form[data-form=fw-add]'); "
+	    "f.num.value = '1600'; f.rule.value = 'allow tcp from $lan to me "
+	    "443 in'; f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('table.fw-rules tr[data-rule=\"1600\"]"
+	    " .aliased') && document.querySelector('table.fw-rules tr[data-rule"
+	    "=\"1600\"] .aliased').textContent === 'allow tcp from $lan to me "
+	    "443 in' && document.querySelector('table.fw-rules tr[data-rule="
+	    "\"1600\"] .aliased').title.includes('table(lan)')", 20);
+	ATF_CHECK(system("grep -q '^ipfw -q add 1600 allow tcp from table(lan) "
+	    "to me 443 in$' ipfw.log && grep -q '^#arcana add 01600 allow tcp "
+	    "from \\$lan to me 443 in$' ipfw.rules") == 0);
+	run("document.querySelector('.dock > header').click()");
 	/* A rule's number is one of its part's. */
 	run("const f = document.querySelector('form[data-form=fw-add]'); "
 	    "f.num.value = '5'; f.rule.value = 'allow ip from any to any'; "
@@ -3770,10 +3823,15 @@ part_firewall(void)
 	run("const f = document.querySelector('form[data-form=fw-trace]'); "
 	    "f.src.value = '2001:db8::9'; f.dst.value = '2001:db8::1'; "
 	    "f.port.value = '22'; f.requestSubmit();");
+	/* The agent walks the ruleset (path-check): the call into 9100 is
+	 * followed, the rule after it decides, as the kernel would. */
 	wait_js("document.querySelectorAll('ol.fw-steps li').length === 2 && "
 	    "document.querySelector('ol.fw-steps li').textContent.includes("
-	    "'into 9100') && document.querySelector('.stage .notice.bad')."
-	    "textContent.includes('dropped')", 10);
+	    "'call 9100') && document.querySelector('ol.fw-steps li.decides')"
+	    ".textContent.includes('65535') && document.querySelector('.stage "
+	    ".fw-steps + .notice').textContent.includes('Dropped') && document."
+	    "querySelector('.fw-tctx a[href^=\"#/troubleshoot?src=2001:db8::9"
+	    "\"]')", 20);
 	shot("7o-firewall-trace");
 	/* And the kernel's own answer, for an address: the packets it
 	 * decided, each with the rule that did, a press away. */
@@ -5620,7 +5678,37 @@ part_trouble(void)
 	    ".includes('via 10.12.0.2 on em1') && document.querySelector("
 	    "'ol.tsway li.tsend.leaves') && document.querySelector('ol.tsway "
 	    "li.tsend.leaves').textContent.includes('to 10.12.0.2')", 20);
+	/* The way drawn: the source, the place, the destination, and the
+	 * address names the packet, to share. */
+	{
+		ucl_object_t	*g = js("return (document.querySelector('svg."
+		    "tsgraph') ? document.querySelector('svg.tsgraph')."
+		    "outerHTML.slice(0, 600) : 'no graph') + ' ' + location."
+		    "hash;");
+
+		ATF_CHECK_MSG(js_true("document.querySelectorAll('svg.tsgraph "
+		    "g.tsnode').length === document.querySelectorAll('ol.tsway "
+		    "li.tshop').length && document.querySelector('svg.tsgraph "
+		    "g.tsnode .name').textContent === document.querySelector("
+		    "'ol.tsway li.tshop b').textContent && document."
+		    "querySelector('svg.tsgraph .way.leaves') && location.hash "
+		    "=== '#/troubleshoot?src=10.1.0.2&dst=10.3.0.2&proto=tcp&"
+		    "port=22'"), "%s", g != NULL ? ucl_object_tostring_forced(g)
+		    : "?");
+		if (g != NULL)
+			ucl_object_unref(g);
+	}
+	ATF_CHECK(js_true("document.querySelector('datalist#ts-addrs')"));
 	shot("9t-troubleshoot");
+	/* Swapped: the other way round, asked at once. */
+	run("document.querySelector('button[data-act=ts-swap]').click()");
+	wait_js("document.querySelector('form[data-form=ts-path]').src.value "
+	    "=== '10.3.0.2' && location.hash === '#/troubleshoot?src=10.3.0.2&"
+	    "dst=10.1.0.2&proto=tcp&port=22'", 20);
+	run("document.querySelector('button[data-act=ts-swap]').click()");
+	wait_js("document.querySelector('form[data-form=ts-path]').src.value "
+	    "=== '10.1.0.2' && document.querySelector('svg.tsgraph .way."
+	    "leaves')", 20);
 	/* As YAML, what was found. */
 	run("window.arcSaved = null; document.querySelector('.tsverdict "
 	    "button[data-arg=yaml]').click()");

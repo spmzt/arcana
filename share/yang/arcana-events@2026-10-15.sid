@@ -1,0 +1,1401 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-events",
+    "module-revision": "2026-10-15",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "70800",
+        "size": "400"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-events",
+        "sid": "70800"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "address-add",
+        "sid": "70801"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "address-del",
+        "sid": "70802"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "crash",
+        "sid": "70803"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "event-kind",
+        "sid": "70804"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "jail-state",
+        "sid": "70805"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "job",
+        "sid": "70806"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "kmsg",
+        "sid": "70807"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "link",
+        "sid": "70808"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "link-del",
+        "sid": "70809"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "neigh",
+        "sid": "70810"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "neigh-del",
+        "sid": "70811"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "route-add",
+        "sid": "70812"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "route-del",
+        "sid": "70813"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "routes",
+        "sid": "70814"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "sdwan-fault",
+        "sid": "70815"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "sdwan-security",
+        "sid": "70816"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "sdwan-tunnel",
+        "sid": "70817"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "threshold",
+        "sid": "70818"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event",
+        "sid": "70819"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/address",
+        "sid": "70820"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/address/address",
+        "sid": "70821"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/address/interface",
+        "sid": "70822"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/address/prefix-length",
+        "sid": "70823"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/crash",
+        "sid": "70824"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/crash/core",
+        "sid": "70825"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/crash/jail",
+        "sid": "70826"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/crash/jid",
+        "sid": "70827"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/crash/pid",
+        "sid": "70828"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/crash/process",
+        "sid": "70829"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/crash/signal",
+        "sid": "70830"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/crash/uid",
+        "sid": "70831"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/fault",
+        "sid": "70832"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/fault/by",
+        "sid": "70833"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/fault/description",
+        "sid": "70834"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/fault/object",
+        "sid": "70835"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/fault/severity",
+        "sid": "70836"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/fault/state",
+        "sid": "70837"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/fault/type",
+        "sid": "70838"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/jail",
+        "sid": "70839"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/jail-state",
+        "sid": "70840"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/jail-state/jail",
+        "sid": "70841"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/jail-state/jid",
+        "sid": "70842"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/jail-state/state",
+        "sid": "70843"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/job",
+        "sid": "70844"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/job/error",
+        "sid": "70845"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/job/id",
+        "sid": "70846"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/job/ok",
+        "sid": "70847"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/job/title",
+        "sid": "70848"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/kind",
+        "sid": "70849"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/kmsg",
+        "sid": "70850"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/kmsg/more",
+        "sid": "70851"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/kmsg/sequence",
+        "sid": "70852"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/kmsg/text",
+        "sid": "70853"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/link",
+        "sid": "70854"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/link/carrier",
+        "sid": "70855"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/link/interface",
+        "sid": "70856"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/link/mtu",
+        "sid": "70857"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/link/up",
+        "sid": "70858"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/neighbor",
+        "sid": "70859"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/neighbor/address",
+        "sid": "70860"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/neighbor/interface",
+        "sid": "70861"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/neighbor/link-address",
+        "sid": "70862"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/neighbor/router",
+        "sid": "70863"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/neighbor/state",
+        "sid": "70864"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/number",
+        "sid": "70865"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route",
+        "sid": "70866"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/destination",
+        "sid": "70867"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/fib",
+        "sid": "70868"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/flags",
+        "sid": "70869"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/gateway",
+        "sid": "70870"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/interface",
+        "sid": "70871"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/metric",
+        "sid": "70872"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/mtu",
+        "sid": "70873"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/prefix-length",
+        "sid": "70874"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/source",
+        "sid": "70875"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/route/weight",
+        "sid": "70876"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/routes",
+        "sid": "70877"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/routes/changed",
+        "sid": "70878"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/security",
+        "sid": "70879"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/security/action",
+        "sid": "70880"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/security/comment",
+        "sid": "70881"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/security/destination",
+        "sid": "70882"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/security/interface",
+        "sid": "70883"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/security/rule",
+        "sid": "70884"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/security/sequence",
+        "sid": "70885"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/security/source",
+        "sid": "70886"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/threshold",
+        "sid": "70887"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/threshold/limit",
+        "sid": "70888"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/threshold/name",
+        "sid": "70889"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/threshold/over",
+        "sid": "70890"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/threshold/value",
+        "sid": "70891"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/threshold/what",
+        "sid": "70892"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/time",
+        "sid": "70893"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/tunnel",
+        "sid": "70894"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/tunnel/address",
+        "sid": "70895"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/tunnel/by",
+        "sid": "70896"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/tunnel/id",
+        "sid": "70897"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/tunnel/interface",
+        "sid": "70898"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/tunnel/misses",
+        "sid": "70899"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/tunnel/state",
+        "sid": "70900"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events",
+        "sid": "70901"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event",
+        "sid": "70902"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/address",
+        "sid": "70903"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/address/address",
+        "sid": "70904"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/address/interface",
+        "sid": "70905"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/address/prefix-length",
+        "sid": "70906"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/crash",
+        "sid": "70907"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/crash/core",
+        "sid": "70908"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/crash/jail",
+        "sid": "70909"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/crash/jid",
+        "sid": "70910"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/crash/pid",
+        "sid": "70911"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/crash/process",
+        "sid": "70912"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/crash/signal",
+        "sid": "70913"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/crash/uid",
+        "sid": "70914"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/fault",
+        "sid": "70915"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/fault/by",
+        "sid": "70916"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/fault/description",
+        "sid": "70917"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/fault/object",
+        "sid": "70918"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/fault/severity",
+        "sid": "70919"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/fault/state",
+        "sid": "70920"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/fault/type",
+        "sid": "70921"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/jail",
+        "sid": "70922"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/jail-state",
+        "sid": "70923"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/jail-state/jail",
+        "sid": "70924"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/jail-state/jid",
+        "sid": "70925"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/jail-state/state",
+        "sid": "70926"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/job",
+        "sid": "70927"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/job/error",
+        "sid": "70928"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/job/id",
+        "sid": "70929"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/job/ok",
+        "sid": "70930"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/job/title",
+        "sid": "70931"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/kind",
+        "sid": "70932"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/kmsg",
+        "sid": "70933"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/kmsg/more",
+        "sid": "70934"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/kmsg/sequence",
+        "sid": "70935"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/kmsg/text",
+        "sid": "70936"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/link",
+        "sid": "70937"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/link/carrier",
+        "sid": "70938"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/link/interface",
+        "sid": "70939"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/link/mtu",
+        "sid": "70940"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/link/up",
+        "sid": "70941"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/neighbor",
+        "sid": "70942"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/neighbor/address",
+        "sid": "70943"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/neighbor/interface",
+        "sid": "70944"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/neighbor/link-address",
+        "sid": "70945"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/neighbor/router",
+        "sid": "70946"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/neighbor/state",
+        "sid": "70947"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/number",
+        "sid": "70948"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route",
+        "sid": "70949"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/destination",
+        "sid": "70950"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/fib",
+        "sid": "70951"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/flags",
+        "sid": "70952"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/gateway",
+        "sid": "70953"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/interface",
+        "sid": "70954"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/metric",
+        "sid": "70955"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/mtu",
+        "sid": "70956"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/prefix-length",
+        "sid": "70957"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/source",
+        "sid": "70958"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/route/weight",
+        "sid": "70959"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/routes",
+        "sid": "70960"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/routes/changed",
+        "sid": "70961"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/security",
+        "sid": "70962"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/security/action",
+        "sid": "70963"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/security/comment",
+        "sid": "70964"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/security/destination",
+        "sid": "70965"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/security/interface",
+        "sid": "70966"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/security/rule",
+        "sid": "70967"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/security/sequence",
+        "sid": "70968"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/security/source",
+        "sid": "70969"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/threshold",
+        "sid": "70970"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/threshold/limit",
+        "sid": "70971"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/threshold/name",
+        "sid": "70972"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/threshold/over",
+        "sid": "70973"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/threshold/value",
+        "sid": "70974"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/threshold/what",
+        "sid": "70975"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/time",
+        "sid": "70976"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/tunnel",
+        "sid": "70977"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/tunnel/address",
+        "sid": "70978"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/tunnel/by",
+        "sid": "70979"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/tunnel/id",
+        "sid": "70980"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/tunnel/interface",
+        "sid": "70981"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/tunnel/misses",
+        "sid": "70982"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/tunnel/state",
+        "sid": "70983"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/first",
+        "sid": "70984"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/kept",
+        "sid": "70985"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/last",
+        "sid": "70986"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read",
+        "sid": "70987"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/input",
+        "sid": "70988"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/input/after",
+        "sid": "70989"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output",
+        "sid": "70990"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event",
+        "sid": "70991"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/address",
+        "sid": "70992"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/address/address",
+        "sid": "70993"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/address/interface",
+        "sid": "70994"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/address/prefix-length",
+        "sid": "70995"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/crash",
+        "sid": "70996"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/crash/core",
+        "sid": "70997"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/crash/jail",
+        "sid": "70998"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/crash/jid",
+        "sid": "70999"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/crash/pid",
+        "sid": "71000"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/crash/process",
+        "sid": "71001"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/crash/signal",
+        "sid": "71002"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/crash/uid",
+        "sid": "71003"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/fault",
+        "sid": "71004"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/fault/by",
+        "sid": "71005"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/fault/description",
+        "sid": "71006"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/fault/object",
+        "sid": "71007"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/fault/severity",
+        "sid": "71008"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/fault/state",
+        "sid": "71009"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/fault/type",
+        "sid": "71010"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/jail",
+        "sid": "71011"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/jail-state",
+        "sid": "71012"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/jail-state/jail",
+        "sid": "71013"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/jail-state/jid",
+        "sid": "71014"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/jail-state/state",
+        "sid": "71015"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/job",
+        "sid": "71016"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/job/error",
+        "sid": "71017"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/job/id",
+        "sid": "71018"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/job/ok",
+        "sid": "71019"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/job/title",
+        "sid": "71020"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/kind",
+        "sid": "71021"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/kmsg",
+        "sid": "71022"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/kmsg/more",
+        "sid": "71023"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/kmsg/sequence",
+        "sid": "71024"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/kmsg/text",
+        "sid": "71025"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/link",
+        "sid": "71026"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/link/carrier",
+        "sid": "71027"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/link/interface",
+        "sid": "71028"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/link/mtu",
+        "sid": "71029"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/link/up",
+        "sid": "71030"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/neighbor",
+        "sid": "71031"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/neighbor/address",
+        "sid": "71032"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/neighbor/interface",
+        "sid": "71033"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/neighbor/link-address",
+        "sid": "71034"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/neighbor/router",
+        "sid": "71035"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/neighbor/state",
+        "sid": "71036"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/number",
+        "sid": "71037"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route",
+        "sid": "71038"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/destination",
+        "sid": "71039"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/fib",
+        "sid": "71040"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/flags",
+        "sid": "71041"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/gateway",
+        "sid": "71042"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/interface",
+        "sid": "71043"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/metric",
+        "sid": "71044"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/mtu",
+        "sid": "71045"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/prefix-length",
+        "sid": "71046"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/source",
+        "sid": "71047"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/route/weight",
+        "sid": "71048"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/routes",
+        "sid": "71049"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/routes/changed",
+        "sid": "71050"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/security",
+        "sid": "71051"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/security/action",
+        "sid": "71052"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/security/comment",
+        "sid": "71053"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/security/destination",
+        "sid": "71054"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/security/interface",
+        "sid": "71055"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/security/rule",
+        "sid": "71056"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/security/sequence",
+        "sid": "71057"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/security/source",
+        "sid": "71058"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/threshold",
+        "sid": "71059"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/threshold/limit",
+        "sid": "71060"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/threshold/name",
+        "sid": "71061"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/threshold/over",
+        "sid": "71062"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/threshold/value",
+        "sid": "71063"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/threshold/what",
+        "sid": "71064"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/time",
+        "sid": "71065"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/tunnel",
+        "sid": "71066"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/tunnel/address",
+        "sid": "71067"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/tunnel/by",
+        "sid": "71068"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/tunnel/id",
+        "sid": "71069"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/tunnel/interface",
+        "sid": "71070"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/tunnel/misses",
+        "sid": "71071"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/tunnel/state",
+        "sid": "71072"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/first",
+        "sid": "71073"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/last",
+        "sid": "71074"
+      }
+    ]
+  }
+}

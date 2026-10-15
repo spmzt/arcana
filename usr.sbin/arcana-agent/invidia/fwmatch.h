@@ -20,7 +20,8 @@
 #define	FW_TABLES		64
 #define	FW_TABLE_ENTRIES	4096
 #define	FW_UNCERTAIN		16
-#define	FW_MATCHED		32
+#define	FW_STEPS		64
+#define	FW_CALLS		16	/* IPFW_CALLSTACK_SIZE */
 #define	FW_LOCAL		256
 
 struct fwentry {
@@ -86,8 +87,14 @@ struct fwverdict {
 	size_t		 uncertain[FW_UNCERTAIN];
 	char		 uncertain_why[FW_UNCERTAIN][32];
 	size_t		 nuncertain;
-	size_t		 matched[FW_MATCHED];	/* count, setfib ... and it */
-	size_t		 nmatched;
+	/* The rules the walk met, in order: each with what it did. */
+	struct fwstep {
+		size_t		 rule;
+		char		 how[40];	/* met, may be met, skipto N,
+						 * call N, return, check-state,
+						 * decides */
+	}		 steps[FW_STEPS];
+	size_t		 nsteps;
 };
 
 int	fw_parse(struct fwset *, const char *, const char *);

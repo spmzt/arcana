@@ -451,7 +451,53 @@
   hold said by file and line: a program's or host's block, a pipe,
   users told, '<' '>' '!', mark, a property filter, a rotation at a
   time of day (gula/ylog.c, yang_log).  Writing syslog.conf from it is
-  not done.  Next: 3.1.7's history, events
+  not done.  3.1.10, firewall: share/yang/arcana-firewall (70 200) has
+  the kept rules file (its rules with the words they were written in,
+  the other lines, the aliases) and rc.conf's firewall variables as
+  configuration, the kernel's rules with sets and counters, dynamic
+  rules, tables, NAT and dummynet's pipes, schedulers and queues as
+  state, the kernel's trace of an address's packets as an action; a
+  vnet jail's by an augment of arcana-jails; a rule stays ipfw's words
+  (invidia/yfw.c, yang_firewall).  What changes the firewall stays a
+  job of kind ipfw.  3.1.10, troubleshoot: share/yang/arcana-troubleshoot
+  (70 500) has path-check, traceroute and capture as actions, a
+  firewall walk typed (verdict, the rules met, those not judged)
+  (invidia/yts.c, yang_troubleshoot).  3.1.7, history and events:
+  share/yang/arcana-history (70 700: sampling and limits as
+  configuration, the samples as state taken apart by interface, disk
+  and jail; gula/yhist.c, yang_history) and arcana-events (70 800: each
+  kind an identity, its data the case of that kind, typed, the list
+  kept, a read after a number, the notification; gula/yev.c,
+  yang_events).  3.1.8: share/yang/arcana-bird (71 200: bird.conf and
+  its includes as configuration with their SHA-256, birdc's status,
+  protocols with a BGP neighbour's own, channels, OSPF neighbours, BFD
+  sessions and tables as state, the routes of a table as an action),
+  arcana-wireguard (71 400: wg show dump, keys only said to be there)
+  and arcana-netgraph (71 500: ngctl list -l), each the host's and a
+  vnet jail's by an augment of arcana-jails (luxuria/ybird.c, ywg.c,
+  invidia/yng.c, yang_plugins).  The changes stay jobs (bird-config,
+  wireguard, netgraph).  3.1.9: share/yang/arcana-host (71 600: the
+  host's facts, the plugins as identities, a jail's too, the stats, the
+  trust store), arcana-agent (71 700: listeners and sessions, the
+  agent's TLS files with csr and install, update, build,
+  console-update, source-head and source-log, config-export and
+  config-apply as actions) and arcana-jail-files (71 900, an augment of
+  arcana-jails) (superbia/yhost.c and yagent.c, ira/yjf.c,
+  yang_host_agent).  3.1.11 and 3.1.12: share/yang/arcana-probe
+  (72 000: the targets with their thresholds as configuration, what the
+  probes have seen as state, each sample taken apart from its row, a
+  read after a time) and arcana-sdwan (72 100: the rules, the steer
+  and the instances the console writes as configuration; the edge's
+  state: rules with counters, steer with the probes' say, BIRD, DHCP
+  with leases, DNS, proxy with its CA, IDS with alerts, the record, the
+  keys, the faults) (gula/yprobe.c, invidia/ysd.c, yang_sdwan); and
+  arcana-sshd (72 300: sshd -T's settings, the host keys with their
+  certificates, the users' keys, the user CAs; superbia/ysshd.c).
+  Every operation of arcana.yaml has its YANG model now, shown in the
+  Schema panel (the network family's by ietf-ip, arcana-interfaces,
+  ietf-routing and arcana-network-instance); the JSON stays on the
+  wire until 3.4's streams.  Next: 2.8
+  yang-library, then 3.2 (notifications)
   (faults as ietf-alarms), and the rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not

@@ -904,6 +904,48 @@ topo_host_addr(int srv, int af)
 	return (primary_addr(thost(app.servers[srv].id, false), af));
 }
 
+/*
+ * Every address the hosts have, as a datalist to offer where one is
+ * typed: each with its host, jail and interface.
+ */
+void
+topo_addr_list(struct html *h, const char *id)
+{
+	const ucl_object_t	*o, *a;
+	ucl_object_iter_t	 it, ait;
+	const struct tnode	*n;
+	int			 i, k;
+
+	h_raw(h, "<datalist");
+	h_attr(h, "id", id);
+	h_raw(h, ">");
+	for (i = 0; i < nhosts; i++) {
+		n = NULL;
+		for (k = 0; k < ntn; k++)
+			if (strcmp(tn[k].key, hosts[i].sid) == 0)
+				n = &tn[k];
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(hosts[i].ifs, "interfaces"),
+		    &it, true)) != NULL) {
+			ait = NULL;
+			while ((a = ucl_object_iterate(jget(o, "addresses"), &ait,
+			    true)) != NULL) {
+				if (jstr(a, "address") == NULL || addr_local(
+				    jstr(a, "address")))
+					continue;
+				h_raw(h, "<option");
+				h_attr(h, "value", jstr(a, "address"));
+				h_raw(h, ">");
+				h_txt(h, n != NULL ? n->label : hosts[i].sid);
+				h_raw(h, " · ");
+				h_txt(h, jstr(o, "name"));
+				h_raw(h, "</option>");
+			}
+		}
+	}
+	h_raw(h, "</datalist>");
+}
+
 /* Every host's interfaces read, for whom owns an address. */
 void
 topo_poll_all(void)
@@ -4712,21 +4754,31 @@ void
 topo_lookup(struct server *s, const char *addr, int fib)
 {
 	unsigned char	raw[16];
-	char		url[520];
+	char		url[520], clean[80];
+	size_t		n;
 	int		af;
 
+	/*
+	 * The address as it is meant: blanks around it (pasted) left out,
+	 * a prefix's address looked up (10.1.0.0/24), an IPv6 zone
+	 * (fe80::1%vtnet0) left out; IPv4 or IPv6 by its form.
+	 */
+	addr += strspn(addr, " \t\r\n");
+	n = strcspn(addr, " \t\r\n/%");
+	snprintf(clean, sizeof(clean), "%.*s", (int)(n < sizeof(clean) ? n :
+	    sizeof(clean) - 1), addr);
 	snprintf(lk.sid, sizeof(lk.sid), "%s", s->id);
-	snprintf(lk.addr, sizeof(lk.addr), "%s", addr);
+	snprintf(lk.addr, sizeof(lk.addr), "%s", clean);
 	if (lk.data != NULL)
 		ucl_object_unref(lk.data);
 	lk.data = NULL;
-	if (!addr_bytes(addr, &af, raw) || strchr(addr, '/') != NULL ||
-	    strchr(addr, '%') != NULL) {
-		snprintf(lk.error, sizeof(lk.error), "Type the address to find "
-		    "the route to in the filter, an IPv4 or IPv6 one, then "
-		    "press Lookup");
+	if (!addr_bytes(clean, &af, raw)) {
+		snprintf(lk.error, sizeof(lk.error), "%s is not an address: "
+		    "an IPv4 one (192.0.2.10) or an IPv6 one (2001:db8::10)",
+		    clean[0] != '\0' ? clean : "Nothing");
 		return;
 	}
+	addr = lk.addr;
 	lk.error[0] = '\0';
 	lk.busy = true;
 	snprintf(url, sizeof(url), "/api/servers/%s/net/lookup?to=%s&fib=%d"

@@ -480,6 +480,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\\n' ;;\n"
 	    "'list 1001') printf '01001 allow tcp from any to me6 22 in\\n' "
 	    ";;\n"
+	    /* What path-check walks: the same rules, without counters; the
+	     * troubleshoot lab's host (ts_net) has its own, fw-0.list. */
+	    "'list') [ -f fw-0.list ] && { cat fw-0.list; exit 0; }; "
+	    "printf '00005 skipto 500 ip from any to any out\\n00020 "
+	    "call 9100 ip from any to any in\\n00200 check-state :default\\n"
+	    "01001 allow tcp from any to me6 22 in\\n01999 return via any\\n"
+	    "09100 deny udp from any 5678 to any 5678 in\\n65535 deny ip from "
+	    "any to any\\n' ;;\n"
 	    "'table all info') printf -- '--- table(T46), set(0) ---\\n "
 	    "kindex: 1, type: addr\\n' ;;\n"
 	    "'table T46 list') printf -- '--- table(T46), set(0) ---\\n"
@@ -1517,6 +1525,9 @@ ts_net(const char *cwd, const char *r2routes, const char *r2fw)
 	    "10.13.0.0/24 link#3 em2\n0.0.0.0/0 10.12.0.2 em1\n", fp);
 	fclose(fp);
 	ATF_REQUIRE(system("cp rt-11 rt-0") == 0);
+	/* The host's own ruleset: none, as before the lab. */
+	ATF_REQUIRE((fp = fopen("fw-0.list", "w")) != NULL);
+	fclose(fp);
 	ATF_REQUIRE((fp = fopen("rt-12", "w")) != NULL);
 	fprintf(fp, "10.12.0.0/24 link#1 em0\n10.3.0.0/24 link#2 em1\n"
 	    "10.23.0.0/24 link#3 em2\n%s", r2routes);

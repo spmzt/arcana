@@ -283,4 +283,125 @@ int	rtadv_write(struct vc_capfile *f, const char *ifname,
 	    const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements *ra,
 	    char *err, size_t errlen);
 
+/*
+ * arcana-firewall (invidia/yfw.c): the network operation's ipfw kind
+ * read back as the module has it (yfw_from_json()); the kept file as
+ * the ipfw-rules operation reads it, its text and SHA-256, the rules,
+ * other lines and aliases taken from the text (yfw_kept_from_text());
+ * the fw-trace operation's packets as the trace action's output
+ * (yfw_trace_from_json()).
+ */
+int	yfw_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_firewall_firewall *out);
+int	yfw_kept_from_text(const char *text, const char *sha256,
+	    cbl_yarena *a, struct arcana_firewall_firewall_kept *out);
+int	yfw_trace_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_firewall_firewall_trace_output *out);
+
+/*
+ * arcana-troubleshoot (invidia/yts.c): the path-check, traceroute and
+ * capture operations' JSON as the actions' outputs.
+ */
+int	yts_path_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_troubleshoot_troubleshoot_path_check_output *out);
+int	yts_traceroute_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_troubleshoot_troubleshoot_traceroute_output *out);
+int	yts_capture_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_troubleshoot_troubleshoot_capture_output *out);
+
+/* arcana-history (gula/yhist.c): the history operation's JSON. */
+int	yhist_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_history_history *out);
+
+/* arcana-events (gula/yev.c): the events operation's JSON, and one
+ * event's (the event mcast) as the notification. */
+int	yev_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_events_events *out);
+int	yev_one_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_events_event *out);
+
+/*
+ * arcana-bird (luxuria/ybird.c): the bird kind of the network
+ * operation as the module's state, the bird-routes kind as the routes
+ * action's output, the bird-config reply as the configuration's files.
+ */
+int	ybird_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_bird_bird_state *out);
+int	ybird_routes_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_bird_bird_routes_output *out);
+int	ybird_config_from(const char *path, const char *text,
+	    const char *sha256, const char *const *files, size_t nfiles,
+	    cbl_yarena *a, struct arcana_bird_bird_configuration *out);
+
+/* arcana-wireguard (luxuria/ywg.c): the wireguard kind. */
+int	ywg_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_wireguard_wireguard *out);
+
+/* arcana-netgraph (invidia/yng.c): the netgraph kind. */
+int	yng_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_netgraph_netgraph *out);
+
+/*
+ * arcana-host (superbia/yhost.c): the host attribute set with the
+ * stats and the certs operation's JSON (yhost_certs_from_json()).
+ */
+struct arc_host;
+struct arc_stats;
+int	yhost_certs_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_host_host_certificates *out);
+int	yhost_from(const struct arc_host *h, const struct arc_stats *st,
+	    const struct arcana_host_host_certificates *certs, cbl_yarena *a,
+	    struct arcana_host_host *out);
+
+/*
+ * arcana-agent (superbia/yagent.c): the transport and tls operations'
+ * JSON as state; config-export's bundle and config-apply's report, and
+ * source-log's commits and tags, as the actions' outputs.
+ */
+int	yagent_transport_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_agent_agent_transport *out);
+int	yagent_tls_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_agent_agent_tls *out);
+int	yagent_bundle_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_agent_agent_config_export_output *out);
+int	yagent_apply_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_agent_agent_config_apply_output *out);
+int	yagent_log_from_json(const char *commit, const char *log,
+	    const char *tags, cbl_yarena *a,
+	    struct arcana_agent_agent_source_log_output *out);
+
+/* arcana-jail-files (ira/yjf.c): the jail-files operation's JSON. */
+int	yjf_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_jails_jails_arcjf_files *out);
+
+/*
+ * arcana-probe (gula/yprobe.c): sdwan-probes' targets as
+ * configuration, the sdwan read's targets as state.
+ */
+int	yprobe_targets_from_json(const char *json, cbl_yarena *a, size_t *np,
+	    const struct arcana_probe_probes_target **vp);
+int	yprobe_state_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_probe_probes_state *out);
+
+/*
+ * arcana-sdwan (invidia/ysd.c): what the console writes (rules, steer,
+ * the instances of each kind) as configuration, the sdwan read as
+ * state.  The plain instances (bird, dhcp, dns) have one layout.
+ */
+#define	YSD_PLAIN	0
+#define	YSD_PROXY	1
+#define	YSD_IDS		2
+int	ysd_rules_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_sdwan_sdwan_rules *out);
+int	ysd_steer_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_sdwan_sdwan_steer *out);
+int	ysd_instances_from_json(const char *json, int kind, cbl_yarena *a,
+	    size_t *np, const void **vp);
+int	ysd_state_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_sdwan_sdwan_state *out);
+
+/* arcana-sshd (superbia/ysshd.c): the ssh operation's JSON. */
+int	ysshd_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_sshd_sshd *out);
+
 #endif /* !_ARCANA_COLLECT_H_ */

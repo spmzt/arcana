@@ -38,6 +38,55 @@ SRCS.ylog=	ylog_test.c ylog.c yjson.c ymodel_schema.c
 CFLAGS.ylog_test.c+=	-I${.OBJDIR}/..
 CFLAGS.ylog.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 LDADD.ylog+=	${CBLINK_LIBS} ${UCL_LIBS}
+# yfw: the firewall as arcana-firewall has it: the ipfw read, the kept
+# file, a kernel trace.
+PROGS+=		yfw
+SRCS.yfw=	yfw_test.c yfw.c yjson.c ymodel_schema.c
+CFLAGS.yfw_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yfw.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.yfw+=	${CBLINK_LIBS} ${UCL_LIBS}
+# yts: path-check, traceroute and capture as arcana-troubleshoot has them.
+PROGS+=		yts
+SRCS.yts=	yts_test.c yts.c yjson.c ymodel_schema.c
+CFLAGS.yts_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yts.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.yts+=	${CBLINK_LIBS} ${UCL_LIBS}
+# yhist: the history operation's reply as arcana-history has it.
+PROGS+=		yhist
+SRCS.yhist=	yhist_test.c yhist.c yjson.c ymodel_schema.c
+CFLAGS.yhist_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yhist.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.yhist+=	${CBLINK_LIBS} ${UCL_LIBS}
+# yev: the events operation's reply, and one event, as arcana-events has them.
+PROGS+=		yev
+SRCS.yev=	yev_test.c yev.c yjson.c ymodel_schema.c
+CFLAGS.yev_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yev.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.yev+=	${CBLINK_LIBS} ${UCL_LIBS}
+# yplug: BIRD, WireGuard and netgraph as their modules have them.
+PROGS+=		yplug
+SRCS.yplug=	yplug_test.c ybird.c ywg.c yng.c yjson.c ymodel_schema.c
+CFLAGS.yplug_test.c+=	-I${.OBJDIR}/..
+CFLAGS.ybird.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+CFLAGS.ywg.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+CFLAGS.yng.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.yplug+=	${CBLINK_LIBS} ${UCL_LIBS}
+# ymisc: the host, the agent and the jails' files as their modules have them.
+PROGS+=		ymisc
+SRCS.ymisc=	ymisc_test.c yhost.c yagent.c yjf.c ysshd.c yjson.c ymodel_schema.c
+CFLAGS.ysshd.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+CFLAGS.ymisc_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yhost.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+CFLAGS.yagent.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+CFLAGS.yjf.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.ymisc+=	${CBLINK_LIBS} ${UCL_LIBS}
+# ysd: the probes and the SD-WAN edge as arcana-probe and arcana-sdwan have them.
+PROGS+=		ysd
+SRCS.ysd=	ysd_test.c yprobe.c ysd.c yjson.c ymodel_schema.c
+CFLAGS.ysd_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yprobe.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+CFLAGS.ysd.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.ysd+=	${CBLINK_LIBS} ${UCL_LIBS}
 # yprocs: the processes operation's replies as arcana-processes has them.
 PROGS+=		yprocs
 SRCS.yprocs=	yprocs_test.c yprocs.c yjson.c ymodel_schema.c
@@ -84,6 +133,7 @@ CFLAGS+=	-I${.CURDIR}/../../../lib/libvarconf
 LDADD.yrcroutes+=	${CBLINK_LIBS} \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
 .PATH:		${.CURDIR}/../invidia ${.CURDIR}/../ira ${.CURDIR}/../acedia \
+		${.CURDIR}/../luxuria \
 		${.CURDIR}/../superbia ${.CURDIR}/../gula ${.CURDIR}/../yang
 CFLAGS+=	-I${.CURDIR}/../yang -I${.CURDIR}/../invidia ${CBLINK_CFLAGS}
 LDADD.ycollect+=	${CBLINK_LIBS} -ljail -lnv

@@ -1265,19 +1265,32 @@ A step never leaves `main` unbuildable; where a step would, it says
 - 3.1.6 A: `arcana-sysctl` (`running` ↔ sysctl.conf, operational from
   sysctl(3)); `arcana-kernel` (modules, `kld_list`); check: tests.
 - 3.1.7 A: `arcana-processes` (on `openconfig-procmon`; done),
-  `arcana-log` (and syslog.conf as `ietf-syslog`; done), `arcana-history`, `arcana-events` (numbered,
-  replayable); check: tests.
-- 3.1.8 A: `arcana-bird`, `arcana-wireguard`, `arcana-netgraph`,
-  `arcana-plugins`; check: the plugin tests.
-- 3.1.9 A: `arcana-host` (facts, router-id, role, capabilities),
-  `arcana-agent` (update and build rpcs); check: `hello`'s tests.
-- 3.1.10 A: `arcana-dummynet` (schedulers, pipes, queues) read and
-  written; check: the QoS tests.
-- 3.1.11 A: `arcana-probe` (sessions, config, results) over today's
+  `arcana-log` (and syslog.conf as `ietf-syslog`; done), `arcana-history`
+  (done), `arcana-events` (numbered, each kind's data typed; done;
+  replay by number is 3.2.6's); check: tests.
+- 3.1.8 A: `arcana-bird`, `arcana-wireguard`, `arcana-netgraph` (done:
+  what birdc, wg show and ngctl list tell, bird.conf as configuration;
+  the changes stay jobs), `arcana-plugins` (with `arcana-host`, 3.1.9);
+  check: the plugin tests.
+- 3.1.9 A: `arcana-host` (facts, the plugins as identities, the stats,
+  the trust store; done), `arcana-agent` (transport, TLS, update, build,
+  console-update, the sources, the configuration bundle as actions;
+  done), `arcana-jail-files` (done); check: `hello`'s tests.
+- 3.1.10 A: `arcana-firewall` (ipfw: the kept rules, aliases and
+  rc.conf as configuration; the rules with counters, dynamic rules,
+  tables, NAT and dummynet's schedulers, pipes and queues as state;
+  the kernel's trace as an action; done, written by jobs of kind ipfw);
+  `arcana-troubleshoot` (path-check, traceroute, capture as actions;
+  done); check: the firewall tests.
+- 3.1.11 A: `arcana-probe` (the targets as configuration, what the
+  probes have seen as state, a read after a time; done) over today's
   ICMP engine; check: the probe tests.
 - 3.1.12 A: the SD-WAN reads and writes (`sdwan`, `-rules`, `-steer`,
-  `-bird`, `-dhcp`, `-dns`, `-proxy`, `-ids`) as typed modules; the
-  JSON gone; check: the SD-WAN tests and the two-jail lab.
+  `-bird`, `-dhcp`, `-dns`, `-proxy`, `-ids`) as one typed module,
+  `arcana-sdwan` (done: what the console writes as configuration, the
+  sdwan read as state); the JSON still carries them on the wire, which
+  3.4's cblink streams replace; check: the SD-WAN tests and the two-jail
+  lab.
 - 3.2.1 A: `ietf-subscribed-notifications` streams list, `establish`
   as a push-stream open with the id in the accept; check: one record.
 - 3.2.2 A: periodic YANG-Push with `period` and `anchor-time`; check:

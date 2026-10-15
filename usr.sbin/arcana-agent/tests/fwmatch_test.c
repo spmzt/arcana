@@ -67,16 +67,20 @@ main(int argc, char **argv)
 	int			 i, af;
 	size_t			 j;
 	char			*at;
+	bool			 walk;
 
 	if (argc < 4)
 		errx(2, "usage: fwmatch list tables word...");
 	if (fw_parse(&set, slurp(argv[1]), slurp(argv[2])) != 0)
 		errx(1, "fw_parse");
 	k.sport = k.dport = k.icmptype = -1;
+	walk = false;
 	for (i = 3; i < argc; i++) {
 		const char *w = argv[i];
 
-		if (strcmp(w, "in") == 0)
+		if (strcmp(w, "walk") == 0)
+			walk = true;
+		else if (strcmp(w, "in") == 0)
 			k.out = false;
 		else if (strcmp(w, "out") == 0)
 			k.out = true;
@@ -146,6 +150,10 @@ main(int argc, char **argv)
 		printf(" uncertain=%ld(%s)", set.rules[v.uncertain[j]].num,
 		    v.uncertain_why[j]);
 	printf("\n");
+	/* The rules met, a line each, with "walk". */
+	for (j = 0; walk && j < v.nsteps; j++)
+		printf("  %ld %s\n", set.rules[v.steps[j].rule].num,
+		    v.steps[j].how);
 	fw_free(&set);
 	return (0);
 }

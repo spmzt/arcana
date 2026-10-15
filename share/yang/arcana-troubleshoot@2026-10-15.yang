@@ -1,0 +1,654 @@
+module arcana-troubleshoot {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-troubleshoot";
+  prefix arcts;
+
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import arcana-firewall {
+    prefix arcfw;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "What a FreeBSD host says of a packet, asked: path-check, what it
+     would do with one from a source to a destination and with its
+     reply, nothing sent (its addresses, net.inet.ip.forwarding, the
+     routes by netlink(4) RTM_GETROUTE per FIB, the neighbours by
+     RTM_GETNEIGH, and ipfw's ruleset walked for it as ip_fw2.c would,
+     rule by rule); traceroute, one round of traceroute(8) or
+     traceroute6(8) to an address; capture, packets taken off an
+     interface with tcpdump(1), as lines and as a pcap file.  Each is
+     an action of the troubleshoot container; with jail, of a vnet
+     jail's own network.  The path-check, traceroute and capture
+     operations of arcana.yaml converted.";
+
+  revision 2026-10-15 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.10.";
+  }
+
+  typedef severity {
+    type enumeration {
+      enum bad {
+        description
+          "It stops the packet.";
+      }
+      enum warn {
+        description
+          "It may stop the packet, or its reply.";
+      }
+      enum info {
+        description
+          "Worth knowing; it stops nothing.";
+      }
+      enum ok {
+        description
+          "Nothing stops it here.";
+      }
+    }
+    description
+      "How much a finding matters.";
+  }
+
+  grouping walk {
+    description
+      "ipfw's ruleset walked for one packet, as the kernel would walk
+       it: call and return, skipto, check-state and the first
+       keep-state followed, me and the tables by what the host has.";
+    leaf verdict {
+      type enumeration {
+        enum allow {
+          description
+            "Let through.";
+        }
+        enum deny {
+          description
+            "Dropped, or refused with a word to its sender.";
+        }
+        enum fwd {
+          description
+            "Sent on to another next hop than the route's.";
+        }
+        enum nat {
+          description
+            "Its addresses rewritten by NAT, and let on.";
+        }
+        enum pipe {
+          description
+            "Through dummynet, then on.";
+        }
+        enum divert {
+          description
+            "Given to a program: what it does is its own.";
+        }
+        enum unknown {
+          description
+            "A table decides where it goes; not known here.";
+        }
+        enum none {
+          description
+            "No rule decides it: the ruleset is empty.";
+        }
+        enum other {
+          description
+            "An action the walk does not follow.";
+        }
+      }
+      description
+        "What becomes of the packet.";
+    }
+    leaf rule {
+      type arcfw:rule-number;
+      description
+        "The rule that decided it.";
+    }
+    leaf text {
+      type string;
+      description
+        "That rule, in ipfw's words.";
+    }
+    leaf by-state {
+      type boolean;
+      description
+        "Let through by a state a rule kept of its connection.";
+    }
+    leaf keep-state {
+      type boolean;
+      description
+        "The rule that decided it kept a state for its reply.";
+    }
+    leaf setfib {
+      type int32;
+      description
+        "The FIB a setfib rule gave it; -2 when a table's value.";
+    }
+    leaf fwd {
+      type string;
+      description
+        "Where a fwd rule sends it.";
+    }
+    leaf note {
+      type string;
+      description
+        "What the verdict means, in words.";
+    }
+    list step {
+      description
+        "The rules met, in order.";
+      leaf rule {
+        type arcfw:rule-number;
+        description
+          "Its number.";
+      }
+      leaf text {
+        type string;
+        description
+          "Its words.";
+      }
+      leaf how {
+        type string;
+        description
+          "What it did: met and on, call N, return after N, skipto
+           N, check-state, may be met (and why), decides.";
+      }
+    }
+    list uncertain {
+      description
+        "Rules the walk could not judge for a packet never sent.";
+      leaf text {
+        type string;
+        description
+          "The rule.";
+      }
+      leaf because {
+        type string;
+        description
+          "What it asks that is not known.";
+      }
+    }
+  }
+
+  grouping route {
+    description
+      "A route, as the kernel chose it.";
+    leaf destination {
+      type inet:ip-address-no-zone;
+      description
+        "The route's destination.";
+    }
+    leaf prefix-length {
+      type uint8 {
+        range "0..128";
+      }
+      description
+        "Its prefix length.";
+    }
+    leaf gateway {
+      type string;
+      description
+        "The next hop, or link#N for a connected network.";
+    }
+    leaf interface {
+      type string;
+      description
+        "The interface it goes by.";
+    }
+    leaf fib {
+      type uint16;
+      description
+        "The FIB it is in.";
+    }
+    leaf flags {
+      type string;
+      description
+        "Its flags, as netstat prints them (U, G, S, B blackhole, R
+         reject).";
+    }
+  }
+
+  container troubleshoot {
+    description
+      "What the host says of a packet, asked.";
+    leaf-list capture-source {
+      type string;
+      config false;
+      description
+        "Where packets can be taken from: what tcpdump -D lists.";
+    }
+    action path-check {
+      description
+        "What this host does with a packet from a source to a
+         destination, and with its reply, nothing sent.";
+      input {
+        leaf source {
+          type inet:ip-address-no-zone;
+          mandatory true;
+          description
+            "Where the packet is from.";
+        }
+        leaf destination {
+          type inet:ip-address-no-zone;
+          mandatory true;
+          description
+            "Where it goes.";
+        }
+        leaf protocol {
+          type enumeration {
+            enum tcp {
+              description
+                "A TCP connection's first segment (SYN).";
+            }
+            enum udp {
+              description
+                "A UDP datagram.";
+            }
+            enum icmp {
+              description
+                "An echo request.";
+            }
+            enum ip {
+              description
+                "Any IP.";
+            }
+          }
+          default "tcp";
+          description
+            "What kind of packet.";
+        }
+        leaf port {
+          type inet:port-number;
+          description
+            "The destination port, of tcp or udp.";
+        }
+        leaf interface {
+          type string;
+          description
+            "The interface it comes in on; else the one the route
+             back to the source is by.";
+        }
+        leaf fib {
+          type uint16;
+          description
+            "The FIB to route it in; else the ingress interface's.";
+        }
+        leaf jail {
+          type string;
+          description
+            "A vnet jail's own network, not the host's.";
+        }
+        leaf reply {
+          type boolean;
+          default "false";
+          description
+            "The packet is a reply: from the source's port to an
+             ephemeral port of the destination, a segment of a
+             connection (ACK), an echo reply; met where no state of
+             its request may be.";
+        }
+      }
+      output {
+        leaf host {
+          type string;
+          description
+            "The host's name.";
+        }
+        list address {
+          description
+            "The host's own addresses.";
+          leaf address {
+            type inet:ip-address-no-zone;
+            description
+              "The address.";
+          }
+          leaf prefix-length {
+            type uint8;
+            description
+              "Its prefix length.";
+          }
+          leaf interface {
+            type string;
+            description
+              "The interface it is on.";
+          }
+          leaf fib {
+            type uint16;
+            description
+              "That interface's FIB.";
+          }
+          leaf up {
+            type boolean;
+            description
+              "The interface is up.";
+          }
+        }
+        container source {
+          description
+            "The source, as seen from here.";
+          leaf local {
+            type boolean;
+            description
+              "It is one of the host's own.";
+          }
+          leaf connected {
+            type string;
+            description
+              "The interface on its network, when it is on one.";
+          }
+        }
+        container destination {
+          description
+            "The destination, as seen from here.";
+          leaf local {
+            type boolean;
+            description
+              "It is one of the host's own: the packet ends here.";
+          }
+          leaf connected {
+            type string;
+            description
+              "The interface on its network, when it is on one.";
+          }
+        }
+        leaf forwarding {
+          type boolean;
+          description
+            "The host forwards: net.inet.ip.forwarding, or
+             net.inet6.ip6.forwarding.";
+        }
+        container ingress {
+          description
+            "Where the packet comes in.";
+          leaf interface {
+            type string;
+            description
+              "The interface.";
+          }
+          leaf how {
+            type string;
+            description
+              "How that was known: given, made here, by the route
+               back to the source, not known.";
+          }
+        }
+        leaf fib {
+          type uint16;
+          description
+            "The FIB the packet is routed in.";
+        }
+        container route {
+          description
+            "The send route: how it goes on.";
+          uses route;
+        }
+        container neighbor {
+          description
+            "The next hop's ARP or NDP entry.";
+          leaf address {
+            type inet:ip-address-no-zone;
+            description
+              "The next hop.";
+          }
+          leaf state {
+            type string;
+            description
+              "Its entry's state: reachable, stale, incomplete,
+               failed, none.";
+          }
+        }
+        container return {
+          description
+            "The receive route: how the reply comes back.";
+          leaf fib {
+            type uint16;
+            description
+              "The FIB the reply is routed in.";
+          }
+          leaf interface {
+            type string;
+            description
+              "The interface the reply goes back by.";
+          }
+          leaf gateway {
+            type string;
+            description
+              "Its next hop.";
+          }
+          leaf symmetric {
+            type boolean;
+            description
+              "By the interface the request came in on.";
+          }
+        }
+        container firewall {
+          description
+            "ipfw's ruleset walked for the request and the reply, in
+             and out.";
+          leaf on {
+            type boolean;
+            description
+              "The firewall is on; off, the walks say what it would
+               do turned on.";
+          }
+          container in {
+            description
+              "The request coming in.";
+            uses walk;
+          }
+          container out {
+            description
+              "The request going out.";
+            uses walk;
+          }
+          container reply-in {
+            description
+              "The reply coming in.";
+            uses walk;
+          }
+          container reply-out {
+            description
+              "The reply going out.";
+            uses walk;
+          }
+        }
+        leaf delivered {
+          type boolean;
+          description
+            "The destination is this host's: the packet ends here.";
+        }
+        list finding {
+          description
+            "What was found, worst first.";
+          leaf severity {
+            type severity;
+            description
+              "How much it matters.";
+          }
+          leaf what {
+            type string;
+            description
+              "In words.";
+          }
+        }
+      }
+    }
+    action traceroute {
+      description
+        "One round of traceroute(8), or traceroute6(8): a probe for
+         each hop, numeric, a second's wait each, 30 hops at most.";
+      input {
+        leaf address {
+          type inet:ip-address-no-zone;
+          mandatory true;
+          description
+            "Where to.";
+        }
+      }
+      output {
+        leaf address {
+          type inet:ip-address-no-zone;
+          description
+            "Where to, as asked.";
+        }
+        leaf family {
+          type enumeration {
+            enum ipv4 {
+              description
+                "IPv4.";
+            }
+            enum ipv6 {
+              description
+                "IPv6.";
+            }
+          }
+          description
+            "Which traceroute ran.";
+        }
+        leaf reached {
+          type boolean;
+          description
+            "The address answered.";
+        }
+        list hop {
+          key "ttl";
+          description
+            "Each hop, by the TTL of the probe it answered.";
+          leaf ttl {
+            type uint8;
+            description
+              "The probe's TTL.";
+          }
+          leaf address {
+            type inet:ip-address-no-zone;
+            description
+              "Who answered.";
+          }
+          leaf rtt {
+            type decimal64 {
+              fraction-digits 3;
+            }
+            units "milliseconds";
+            description
+              "How long it took.";
+          }
+          leaf note {
+            type string;
+            description
+              "What traceroute noted of it (!H, !N, !X ...).";
+          }
+          leaf lost {
+            type boolean;
+            description
+              "Nothing answered.";
+          }
+        }
+      }
+    }
+    action capture {
+      description
+        "Packets taken with tcpdump(1) off an interface, of the host
+         or of a vnet jail's own network: an interface, a bridge's
+         span port, or a bpf(4) tap, as ipfw's per-rule ipfw<number>
+         of a rule with log (logdst bpf).";
+      input {
+        leaf interface {
+          type string;
+          mandatory true;
+          description
+            "Where to take them from.";
+        }
+        leaf filter {
+          type string;
+          description
+            "A pcap-filter(7) expression.";
+        }
+        leaf packets {
+          type uint16 {
+            range "1..500";
+          }
+          default "50";
+          description
+            "How many, at most.";
+        }
+        leaf seconds {
+          type uint8 {
+            range "1..60";
+          }
+          default "10";
+          description
+            "How long, at most.";
+        }
+        leaf jail {
+          type string;
+          description
+            "A vnet jail's own network.";
+        }
+      }
+      output {
+        leaf source {
+          type string;
+          description
+            "Where they were taken from.";
+        }
+        leaf filter {
+          type string;
+          description
+            "The filter used.";
+        }
+        leaf-list line {
+          type string;
+          description
+            "tcpdump -n -tttt's lines, one a packet.";
+        }
+        leaf packets {
+          type uint32;
+          description
+            "How many were taken.";
+        }
+        leaf limit {
+          type uint16;
+          description
+            "How many were to be taken at most.";
+        }
+        leaf seconds {
+          type uint8;
+          description
+            "How long it was to run at most.";
+        }
+        leaf timed-out {
+          type boolean;
+          description
+            "The seconds ran out before the packets did.";
+        }
+        leaf bytes {
+          type uint64;
+          description
+            "The capture's size.";
+        }
+        leaf pcap {
+          type binary;
+          description
+            "The capture, a pcap file.";
+        }
+        leaf taken {
+          type yang:date-and-time;
+          description
+            "When it ended.";
+        }
+      }
+    }
+  }
+}

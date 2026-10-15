@@ -1,0 +1,770 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-troubleshoot",
+    "module-revision": "2026-10-15",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "arcana-firewall",
+        "module-revision": "2026-10-15"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "70500",
+        "size": "200"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-troubleshoot",
+        "sid": "70500"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot",
+        "sid": "70501"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture",
+        "sid": "70502"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture-source",
+        "sid": "70503"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/input",
+        "sid": "70504"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/input/filter",
+        "sid": "70505"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/input/interface",
+        "sid": "70506"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/input/jail",
+        "sid": "70507"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/input/packets",
+        "sid": "70508"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/input/seconds",
+        "sid": "70509"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/output",
+        "sid": "70510"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/output/bytes",
+        "sid": "70511"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/output/filter",
+        "sid": "70512"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/output/limit",
+        "sid": "70513"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/output/line",
+        "sid": "70514"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/output/packets",
+        "sid": "70515"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/output/pcap",
+        "sid": "70516"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/output/seconds",
+        "sid": "70517"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/output/source",
+        "sid": "70518"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/output/taken",
+        "sid": "70519"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/capture/output/timed-out",
+        "sid": "70520"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check",
+        "sid": "70521"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/input",
+        "sid": "70522"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/input/destination",
+        "sid": "70523"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/input/fib",
+        "sid": "70524"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/input/interface",
+        "sid": "70525"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/input/jail",
+        "sid": "70526"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/input/port",
+        "sid": "70527"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/input/protocol",
+        "sid": "70528"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/input/reply",
+        "sid": "70529"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/input/source",
+        "sid": "70530"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output",
+        "sid": "70531"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/address",
+        "sid": "70532"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/address/address",
+        "sid": "70533"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/address/fib",
+        "sid": "70534"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/address/interface",
+        "sid": "70535"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/address/prefix-length",
+        "sid": "70536"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/address/up",
+        "sid": "70537"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/delivered",
+        "sid": "70538"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/destination",
+        "sid": "70539"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/destination/connected",
+        "sid": "70540"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/destination/local",
+        "sid": "70541"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/fib",
+        "sid": "70542"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/finding",
+        "sid": "70543"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/finding/severity",
+        "sid": "70544"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/finding/what",
+        "sid": "70545"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall",
+        "sid": "70546"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in",
+        "sid": "70547"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/by-state",
+        "sid": "70548"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/fwd",
+        "sid": "70549"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/keep-state",
+        "sid": "70550"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/note",
+        "sid": "70551"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/rule",
+        "sid": "70552"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/setfib",
+        "sid": "70553"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/step",
+        "sid": "70554"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/step/how",
+        "sid": "70555"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/step/rule",
+        "sid": "70556"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/step/text",
+        "sid": "70557"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/text",
+        "sid": "70558"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/uncertain",
+        "sid": "70559"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/uncertain/because",
+        "sid": "70560"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/uncertain/text",
+        "sid": "70561"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/in/verdict",
+        "sid": "70562"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/on",
+        "sid": "70563"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out",
+        "sid": "70564"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/by-state",
+        "sid": "70565"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/fwd",
+        "sid": "70566"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/keep-state",
+        "sid": "70567"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/note",
+        "sid": "70568"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/rule",
+        "sid": "70569"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/setfib",
+        "sid": "70570"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/step",
+        "sid": "70571"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/step/how",
+        "sid": "70572"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/step/rule",
+        "sid": "70573"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/step/text",
+        "sid": "70574"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/text",
+        "sid": "70575"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/uncertain",
+        "sid": "70576"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/uncertain/because",
+        "sid": "70577"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/uncertain/text",
+        "sid": "70578"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/out/verdict",
+        "sid": "70579"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in",
+        "sid": "70580"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/by-state",
+        "sid": "70581"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/fwd",
+        "sid": "70582"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/keep-state",
+        "sid": "70583"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/note",
+        "sid": "70584"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/rule",
+        "sid": "70585"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/setfib",
+        "sid": "70586"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/step",
+        "sid": "70587"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/step/how",
+        "sid": "70588"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/step/rule",
+        "sid": "70589"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/step/text",
+        "sid": "70590"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/text",
+        "sid": "70591"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/uncertain",
+        "sid": "70592"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/uncertain/because",
+        "sid": "70593"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/uncertain/text",
+        "sid": "70594"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-in/verdict",
+        "sid": "70595"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out",
+        "sid": "70596"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/by-state",
+        "sid": "70597"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/fwd",
+        "sid": "70598"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/keep-state",
+        "sid": "70599"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/note",
+        "sid": "70600"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/rule",
+        "sid": "70601"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/setfib",
+        "sid": "70602"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/step",
+        "sid": "70603"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/step/how",
+        "sid": "70604"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/step/rule",
+        "sid": "70605"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/step/text",
+        "sid": "70606"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/text",
+        "sid": "70607"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/uncertain",
+        "sid": "70608"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/uncertain/because",
+        "sid": "70609"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/uncertain/text",
+        "sid": "70610"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/firewall/reply-out/verdict",
+        "sid": "70611"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/forwarding",
+        "sid": "70612"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/host",
+        "sid": "70613"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/ingress",
+        "sid": "70614"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/ingress/how",
+        "sid": "70615"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/ingress/interface",
+        "sid": "70616"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/neighbor",
+        "sid": "70617"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/neighbor/address",
+        "sid": "70618"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/neighbor/state",
+        "sid": "70619"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/return",
+        "sid": "70620"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/return/fib",
+        "sid": "70621"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/return/gateway",
+        "sid": "70622"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/return/interface",
+        "sid": "70623"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/return/symmetric",
+        "sid": "70624"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/route",
+        "sid": "70625"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/route/destination",
+        "sid": "70626"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/route/fib",
+        "sid": "70627"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/route/flags",
+        "sid": "70628"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/route/gateway",
+        "sid": "70629"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/route/interface",
+        "sid": "70630"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/route/prefix-length",
+        "sid": "70631"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/source",
+        "sid": "70632"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/source/connected",
+        "sid": "70633"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/path-check/output/source/local",
+        "sid": "70634"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/traceroute",
+        "sid": "70635"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/traceroute/input",
+        "sid": "70636"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/traceroute/input/address",
+        "sid": "70637"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/traceroute/output",
+        "sid": "70638"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/traceroute/output/address",
+        "sid": "70639"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/traceroute/output/family",
+        "sid": "70640"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/traceroute/output/hop",
+        "sid": "70641"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/traceroute/output/hop/address",
+        "sid": "70642"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/traceroute/output/hop/lost",
+        "sid": "70643"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/traceroute/output/hop/note",
+        "sid": "70644"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/traceroute/output/hop/rtt",
+        "sid": "70645"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/traceroute/output/hop/ttl",
+        "sid": "70646"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-troubleshoot:troubleshoot/traceroute/output/reached",
+        "sid": "70647"
+      }
+    ]
+  }
+}

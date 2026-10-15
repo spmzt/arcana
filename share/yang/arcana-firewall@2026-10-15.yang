@@ -1,0 +1,619 @@
+module arcana-firewall {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-firewall";
+  prefix arcfw;
+
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import arcana-jails {
+    prefix arcj;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "FreeBSD's firewall, ipfw(8), of the host and of each vnet jail
+     (ipfw run inside it): the kept rules, a file of ipfw commands the
+     host loads at boot (rc.conf's firewall_script), as configuration,
+     with the names written $name in them (aliases) and what rc.conf
+     says of the firewall; what the kernel has now as state: whether
+     ipfw is in the kernel and on, each rule with its set and counters
+     (ipfw -S show), the dynamic rules a stateful rule kept (ipfw -D
+     show), the tables (ipfw table all list), the NAT instances (ipfw
+     nat show config) and dummynet's pipes, schedulers and queues
+     (ipfw pipe|sched|queue show).  A rule is kept as ipfw's own words:
+     the model carries them, it does not take them apart.  What changes
+     the firewall is a job of kind ipfw (arcana-jobs).  The trace action
+     has the kernel itself tell which rule decided each packet of an
+     address (dtrace(1), ipfw:::rule-matched).";
+
+  revision 2026-10-15 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.10.";
+  }
+
+  typedef rule-number {
+    type uint32 {
+      range "1..65535";
+    }
+    description
+      "An ipfw rule's number; 65535 is the kernel's own last rule.";
+  }
+
+  grouping flow-mask {
+    description
+      "A dummynet mask: which fields of a packet pick its flow.";
+    leaf src {
+      type uint8 {
+        range "0..128";
+      }
+      description
+        "The source address's prefix length taken; 0 none.";
+    }
+    leaf dst {
+      type uint8 {
+        range "0..128";
+      }
+      description
+        "The destination address's.";
+    }
+    leaf src-port {
+      type uint16;
+      description
+        "The source port's mask.";
+    }
+    leaf dst-port {
+      type uint16;
+      description
+        "The destination port's mask.";
+    }
+    leaf proto {
+      type uint8;
+      description
+        "The protocol's mask.";
+    }
+  }
+
+  grouping link {
+    description
+      "What a pipe and a scheduler share: a link's bandwidth and delay.";
+    leaf number {
+      type uint16;
+      description
+        "Its number.";
+    }
+    leaf bandwidth {
+      type uint64;
+      units "bit/s";
+      description
+        "Its bandwidth; 0 unlimited.";
+    }
+    leaf delay {
+      type uint32;
+      units "milliseconds";
+      description
+        "Its delay.";
+    }
+    leaf burst {
+      type uint64;
+      units "bytes";
+      description
+        "What may pass at once above the bandwidth.";
+    }
+    container mask {
+      description
+        "Its flow mask.";
+      uses flow-mask;
+    }
+  }
+
+  grouping queue-fields {
+    description
+      "A flowset's queue: its size and drop policy.";
+    leaf slots {
+      type uint32;
+      description
+        "The queue's size in packets, when so sized.";
+    }
+    leaf bytes {
+      type uint32;
+      description
+        "The queue's size in bytes, when so sized.";
+    }
+    leaf plr {
+      type decimal64 {
+        fraction-digits 6;
+        range "0..1";
+      }
+      description
+        "The packet loss rate dummynet adds.";
+    }
+    leaf red {
+      type string;
+      description
+        "RED or GRED, with its parameters as ipfw prints them.";
+    }
+  }
+
+  grouping firewall {
+    description
+      "A firewall, the host's or a vnet jail's.";
+    container firewall {
+      description
+        "ipfw(8), where this network lives.";
+      container kept {
+        description
+          "The kept rules: /usr/local/etc/arcana/ipfw.rules (the
+           agent's -R), ipfw commands one a line, which rc(8) loads at
+           boot by firewall_script and Apply loads whole without a
+           gap (into set 1, swapped with set 0).  Written as a whole
+           (the ipfw-rules operation, checked by ipfw -n first) or a
+           rule at a time (a job of kind ipfw with persist).";
+        leaf path {
+          type string;
+          config false;
+          description
+            "Where the file is.";
+        }
+        leaf present {
+          type boolean;
+          config false;
+          description
+            "The file is there.";
+        }
+        leaf sha256 {
+          type string {
+            length "64";
+            pattern '[0-9a-f]*';
+          }
+          config false;
+          description
+            "The SHA-256 of its text, which a write names so that no
+             other change is lost.";
+        }
+        leaf text {
+          type string;
+          description
+            "The whole file, as it is.";
+        }
+        list rule {
+          key "number";
+          description
+            "Each add line of it, by number.";
+          leaf number {
+            type rule-number;
+            description
+              "The rule's number.";
+          }
+          leaf text {
+            type string;
+            description
+              "The rule after its number, in ipfw's words.";
+          }
+          leaf source {
+            type string;
+            description
+              "The rule as it was written, with its $aliases, kept
+               beside it in an #arcana line, when any.";
+          }
+        }
+        leaf-list other {
+          type string;
+          description
+            "Lines of the file that are no rule: comments, and the
+             table, nat, pipe, queue and sched commands a job wrote
+             at its head.";
+        }
+        list alias {
+          key "name";
+          description
+            "A name for an address list, a port list or a value,
+             written $name in a rule; kept as #arcana alias lines.";
+          leaf name {
+            type string {
+              length "1..32";
+              pattern '[A-Za-z_][A-Za-z0-9_]*';
+            }
+            description
+              "The name.";
+          }
+          leaf kind {
+            type enumeration {
+              enum addr {
+                description
+                  "Addresses and networks: an ipfw table of the name,
+                   so that the list changes and the rules do not.";
+              }
+              enum ports {
+                description
+                  "Ports, written into each rule that names it.";
+              }
+              enum value {
+                description
+                  "One word, written into each rule that names it.";
+              }
+            }
+            description
+              "What it names.";
+          }
+          leaf value {
+            type string;
+            description
+              "The addresses, ports or word, space-separated.";
+          }
+        }
+      }
+      container rc {
+        description
+          "What rc.conf(5) says of the firewall: how it starts.";
+        leaf firewall-enable {
+          type string;
+          description
+            "firewall_enable: YES to load a firewall at boot.";
+        }
+        leaf firewall-type {
+          type string;
+          description
+            "firewall_type: a type of rc.firewall's, or a file of
+             rules.";
+        }
+        leaf firewall-script {
+          type string;
+          description
+            "firewall_script: the script that loads the rules,
+             /etc/rc.firewall unless another.";
+        }
+      }
+      container state {
+        config false;
+        description
+          "What the kernel has now.";
+        leaf loaded {
+          type boolean;
+          description
+            "ipfw is in the kernel (ipfw.ko, or compiled in).";
+        }
+        leaf enabled {
+          type boolean;
+          description
+            "net.inet.ip.fw.enable: the firewall is on.";
+        }
+        leaf verbose {
+          type boolean;
+          description
+            "net.inet.ip.fw.verbose: rules with log write to the log.";
+        }
+        list rule {
+          key "number set";
+          description
+            "The ruleset, as ipfw -S show prints it: each rule with its
+             counters; the last, 65535, the kernel's own.";
+          leaf number {
+            type rule-number;
+            description
+              "Its number.";
+          }
+          leaf set {
+            type uint8 {
+              range "0..31";
+            }
+            description
+              "Its set; a set can be disabled whole.";
+          }
+          leaf packets {
+            type uint64;
+            description
+              "Packets that matched it since its counter was cleared.";
+          }
+          leaf octets {
+            type uint64;
+            description
+              "Their bytes.";
+          }
+          leaf text {
+            type string;
+            description
+              "The rule after its counters, in ipfw's words.";
+          }
+          leaf disabled {
+            type boolean;
+            description
+              "Its set is disabled: it is skipped.";
+          }
+        }
+        leaf dynamic-total {
+          type uint32;
+          description
+            "How many dynamic rules there are; the list holds the
+             first of them.";
+        }
+        list dynamic {
+          description
+            "The dynamic rules, as ipfw -D show has them: each
+             connection a keep-state or limit rule let through, with
+             the rule that made it and how long it still lives.";
+          leaf number {
+            type rule-number;
+            description
+              "The rule that made it.";
+          }
+          leaf packets {
+            type uint64;
+            description
+              "Packets of it.";
+          }
+          leaf octets {
+            type uint64;
+            description
+              "Their bytes.";
+          }
+          leaf ttl {
+            type uint32;
+            units "seconds";
+            description
+              "How long it lives unless renewed.";
+          }
+          leaf kind {
+            type string;
+            description
+              "STATE, PARENT or LIMIT.";
+          }
+          leaf flow {
+            type string;
+            description
+              "The flow: protocol, addresses and ports, as printed.";
+          }
+        }
+        list table {
+          key "name";
+          description
+            "The lookup tables (ipfw table all list).";
+          leaf name {
+            type string;
+            description
+              "Its name.";
+          }
+          leaf type {
+            type string;
+            description
+              "Its type: addr, iface, number, flow, mac.";
+          }
+          leaf count {
+            type uint32;
+            description
+              "How many entries it has; the list holds the first.";
+          }
+          list entry {
+            key "key";
+            description
+              "Its entries.";
+            leaf key {
+              type string;
+              description
+                "The entry's key: an address with its prefix length,
+                 an interface, a number.";
+            }
+            leaf value {
+              type string;
+              description
+                "Its value, what tablearg stands for.";
+            }
+          }
+        }
+        leaf-list nat {
+          type string;
+          description
+            "The NAT instances, each as ipfw nat show config prints
+             it.";
+        }
+        container dummynet {
+          description
+            "dummynet(4): the traffic shaper's pipes, schedulers and
+             queues, when its module is loaded.";
+          list pipe {
+            key "number";
+            description
+              "A pipe: a link of a bandwidth and a delay, with the
+               queue in front of it (ipfw pipe show).";
+            uses link;
+            uses queue-fields;
+          }
+          list sched {
+            key "number";
+            description
+              "A scheduler: a link shared among its queues by a
+               discipline (ipfw sched show).";
+            uses link;
+            leaf type {
+              type string;
+              description
+                "The discipline: WF2Q+, FIFO, RR, QFQ, PRIO, FQ_CODEL,
+                 FQ_PIE.";
+            }
+            leaf-list queue {
+              type uint16;
+              description
+                "The queues (flowsets) that feed it.";
+            }
+            leaf params {
+              type string;
+              description
+                "The discipline's own parameters, as printed.";
+            }
+          }
+          list queue {
+            key "number";
+            description
+              "A queue (flowset): what it feeds, its share of it, and
+               its own size and drop policy (ipfw queue show).";
+            leaf number {
+              type uint16;
+              description
+                "Its number.";
+            }
+            leaf sched {
+              type uint16;
+              description
+                "The scheduler it feeds.";
+            }
+            leaf weight {
+              type uint16;
+              description
+                "Its share of the scheduler's bandwidth.";
+            }
+            leaf priority {
+              type uint8;
+              description
+                "Its priority, in a PRIO scheduler.";
+            }
+            container mask {
+              description
+                "Its flow mask.";
+              uses flow-mask;
+            }
+            uses queue-fields;
+          }
+        }
+      }
+      action trace {
+        description
+          "Packets followed by the kernel itself through the
+           firewall: each that ipfw decides on whose source or
+           destination is the address given, as the kernel's
+           ipfw:::rule-matched probe tells dtrace(1), for up to so
+           many seconds or packets, whichever ends first.  It needs
+           dtraceall(4) loaded.";
+        input {
+          leaf address {
+            type inet:ip-address-no-zone;
+            mandatory true;
+            description
+              "The address watched for.";
+          }
+          leaf seconds {
+            type uint8 {
+              range "1..60";
+            }
+            default "10";
+            description
+              "How long, at most.";
+          }
+          leaf packets {
+            type uint16 {
+              range "1..1000";
+            }
+            default "100";
+            description
+              "How many, at most.";
+          }
+        }
+        output {
+          leaf seconds {
+            type uint8;
+            description
+              "How long it ran for.";
+          }
+          leaf limit {
+            type uint16;
+            description
+              "How many it was to take at most.";
+          }
+          list packet {
+            description
+              "Each packet, as it was decided on.";
+            leaf ms {
+              type uint32;
+              units "milliseconds";
+              description
+                "When, since the trace began.";
+            }
+            leaf verdict {
+              type string;
+              description
+                "pass, deny, divert, tee, dummynet, netgraph, ngtee,
+                 nat, reass or nat64.";
+            }
+            leaf family {
+              type enumeration {
+                enum ipv4 {
+                  description
+                    "IPv4.";
+                }
+                enum ipv6 {
+                  description
+                    "IPv6.";
+                }
+              }
+              description
+                "Its address family.";
+            }
+            leaf source {
+              type inet:ip-address-no-zone;
+              description
+                "Where from.";
+            }
+            leaf destination {
+              type inet:ip-address-no-zone;
+              description
+                "Where to.";
+            }
+            leaf proto {
+              type uint8;
+              description
+                "Its protocol number.";
+            }
+            leaf sport {
+              type inet:port-number;
+              description
+                "Its source port, of tcp or udp.";
+            }
+            leaf dport {
+              type inet:port-number;
+              description
+                "Its destination port.";
+            }
+            leaf rule {
+              type rule-number;
+              description
+                "The rule that decided it.";
+            }
+            leaf interface {
+              type string;
+              description
+                "The interface it was on.";
+            }
+            leaf direction {
+              type enumeration {
+                enum in {
+                  description
+                    "Coming in.";
+                }
+                enum out {
+                  description
+                    "Going out.";
+                }
+              }
+              description
+                "Which way it was going.";
+            }
+          }
+        }
+      }
+    }
+  }
+
+  uses firewall;
+
+  augment "/arcj:jails/arcj:jail" {
+    description
+      "A vnet jail's own firewall: ipfw run inside it.";
+    uses firewall;
+  }
+}

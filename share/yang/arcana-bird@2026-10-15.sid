@@ -1,0 +1,851 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-bird",
+    "module-revision": "2026-10-15",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "arcana-jails",
+        "module-revision": "2026-10-14"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "71200",
+        "size": "200"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-bird",
+        "sid": "71200"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird",
+        "sid": "71201"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/configuration",
+        "sid": "71202"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/configuration/file",
+        "sid": "71203"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/configuration/file/path",
+        "sid": "71204"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/configuration/file/sha256",
+        "sid": "71205"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/configuration/file/text",
+        "sid": "71206"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/configuration/path",
+        "sid": "71207"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes",
+        "sid": "71208"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/input",
+        "sid": "71209"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/input/filter",
+        "sid": "71210"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output",
+        "sid": "71211"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/count",
+        "sid": "71212"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/message",
+        "sid": "71213"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route",
+        "sid": "71214"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route/attribute",
+        "sid": "71215"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route/from",
+        "sid": "71216"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route/info",
+        "sid": "71217"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route/nexthop",
+        "sid": "71218"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route/nexthop/interface",
+        "sid": "71219"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route/nexthop/via",
+        "sid": "71220"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route/preference",
+        "sid": "71221"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route/prefix",
+        "sid": "71222"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route/primary",
+        "sid": "71223"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route/protocol",
+        "sid": "71224"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route/since",
+        "sid": "71225"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route/table",
+        "sid": "71226"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/routes/output/route/type",
+        "sid": "71227"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state",
+        "sid": "71228"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/bfd-session",
+        "sid": "71229"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/bfd-session/address",
+        "sid": "71230"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/bfd-session/interface",
+        "sid": "71231"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/bfd-session/interval",
+        "sid": "71232"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/bfd-session/protocol",
+        "sid": "71233"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/bfd-session/since",
+        "sid": "71234"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/bfd-session/state",
+        "sid": "71235"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/bfd-session/timeout",
+        "sid": "71236"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/ospf-neighbor",
+        "sid": "71237"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/ospf-neighbor/address",
+        "sid": "71238"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/ospf-neighbor/dead-time",
+        "sid": "71239"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/ospf-neighbor/interface",
+        "sid": "71240"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/ospf-neighbor/priority",
+        "sid": "71241"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/ospf-neighbor/protocol",
+        "sid": "71242"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/ospf-neighbor/router-id",
+        "sid": "71243"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/ospf-neighbor/state",
+        "sid": "71244"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol",
+        "sid": "71245"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/bgp",
+        "sid": "71246"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/bgp/hold",
+        "sid": "71247"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/bgp/keepalive",
+        "sid": "71248"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/bgp/last-error",
+        "sid": "71249"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/bgp/local-as",
+        "sid": "71250"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/bgp/neighbor",
+        "sid": "71251"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/bgp/neighbor-as",
+        "sid": "71252"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/bgp/neighbor-id",
+        "sid": "71253"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/bgp/session",
+        "sid": "71254"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/bgp/source",
+        "sid": "71255"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/bgp/state",
+        "sid": "71256"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/channel",
+        "sid": "71257"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/channel/exported",
+        "sid": "71258"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/channel/imported",
+        "sid": "71259"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/channel/input-filter",
+        "sid": "71260"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/channel/name",
+        "sid": "71261"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/channel/output-filter",
+        "sid": "71262"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/channel/routes",
+        "sid": "71263"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/channel/state",
+        "sid": "71264"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/channel/table",
+        "sid": "71265"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/description",
+        "sid": "71266"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/info",
+        "sid": "71267"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/name",
+        "sid": "71268"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/rpki",
+        "sid": "71269"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/rpki/cache",
+        "sid": "71270"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/rpki/last-update",
+        "sid": "71271"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/rpki/serial",
+        "sid": "71272"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/rpki/status",
+        "sid": "71273"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/since",
+        "sid": "71274"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/state",
+        "sid": "71275"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/table",
+        "sid": "71276"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/protocol/type",
+        "sid": "71277"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/status",
+        "sid": "71278"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/table",
+        "sid": "71279"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/table/name",
+        "sid": "71280"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/table/networks",
+        "sid": "71281"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-bird:bird/state/table/routes",
+        "sid": "71282"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird",
+        "sid": "71283"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/configuration",
+        "sid": "71284"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/configuration/file",
+        "sid": "71285"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/configuration/file/path",
+        "sid": "71286"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/configuration/file/sha256",
+        "sid": "71287"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/configuration/file/text",
+        "sid": "71288"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/configuration/path",
+        "sid": "71289"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes",
+        "sid": "71290"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/input",
+        "sid": "71291"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/input/filter",
+        "sid": "71292"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output",
+        "sid": "71293"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/count",
+        "sid": "71294"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/message",
+        "sid": "71295"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route",
+        "sid": "71296"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route/attribute",
+        "sid": "71297"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route/from",
+        "sid": "71298"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route/info",
+        "sid": "71299"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route/nexthop",
+        "sid": "71300"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route/nexthop/interface",
+        "sid": "71301"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route/nexthop/via",
+        "sid": "71302"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route/preference",
+        "sid": "71303"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route/prefix",
+        "sid": "71304"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route/primary",
+        "sid": "71305"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route/protocol",
+        "sid": "71306"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route/since",
+        "sid": "71307"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route/table",
+        "sid": "71308"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/routes/output/route/type",
+        "sid": "71309"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state",
+        "sid": "71310"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/bfd-session",
+        "sid": "71311"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/bfd-session/address",
+        "sid": "71312"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/bfd-session/interface",
+        "sid": "71313"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/bfd-session/interval",
+        "sid": "71314"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/bfd-session/protocol",
+        "sid": "71315"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/bfd-session/since",
+        "sid": "71316"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/bfd-session/state",
+        "sid": "71317"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/bfd-session/timeout",
+        "sid": "71318"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/ospf-neighbor",
+        "sid": "71319"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/ospf-neighbor/address",
+        "sid": "71320"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/ospf-neighbor/dead-time",
+        "sid": "71321"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/ospf-neighbor/interface",
+        "sid": "71322"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/ospf-neighbor/priority",
+        "sid": "71323"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/ospf-neighbor/protocol",
+        "sid": "71324"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/ospf-neighbor/router-id",
+        "sid": "71325"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/ospf-neighbor/state",
+        "sid": "71326"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol",
+        "sid": "71327"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/bgp",
+        "sid": "71328"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/bgp/hold",
+        "sid": "71329"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/bgp/keepalive",
+        "sid": "71330"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/bgp/last-error",
+        "sid": "71331"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/bgp/local-as",
+        "sid": "71332"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/bgp/neighbor",
+        "sid": "71333"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/bgp/neighbor-as",
+        "sid": "71334"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/bgp/neighbor-id",
+        "sid": "71335"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/bgp/session",
+        "sid": "71336"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/bgp/source",
+        "sid": "71337"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/bgp/state",
+        "sid": "71338"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/channel",
+        "sid": "71339"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/channel/exported",
+        "sid": "71340"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/channel/imported",
+        "sid": "71341"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/channel/input-filter",
+        "sid": "71342"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/channel/name",
+        "sid": "71343"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/channel/output-filter",
+        "sid": "71344"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/channel/routes",
+        "sid": "71345"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/channel/state",
+        "sid": "71346"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/channel/table",
+        "sid": "71347"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/description",
+        "sid": "71348"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/info",
+        "sid": "71349"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/name",
+        "sid": "71350"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/rpki",
+        "sid": "71351"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/rpki/cache",
+        "sid": "71352"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/rpki/last-update",
+        "sid": "71353"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/rpki/serial",
+        "sid": "71354"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/rpki/status",
+        "sid": "71355"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/since",
+        "sid": "71356"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/state",
+        "sid": "71357"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/table",
+        "sid": "71358"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/protocol/type",
+        "sid": "71359"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/status",
+        "sid": "71360"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/table",
+        "sid": "71361"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/table/name",
+        "sid": "71362"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/table/networks",
+        "sid": "71363"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-bird:bird/state/table/routes",
+        "sid": "71364"
+      }
+    ]
+  }
+}

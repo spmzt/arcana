@@ -1,0 +1,411 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-host",
+    "module-revision": "2026-10-15",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "arcana-jails",
+        "module-revision": "2026-10-14"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "71600",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-host",
+        "sid": "71600"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "bird",
+        "sid": "71601"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "c-icap",
+        "sid": "71602"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "dnsmasq",
+        "sid": "71603"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "plugin",
+        "sid": "71604"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "squid",
+        "sid": "71605"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "strongswan",
+        "sid": "71606"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "suricata",
+        "sid": "71607"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "wireguard",
+        "sid": "71608"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host",
+        "sid": "71609"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/agent",
+        "sid": "71610"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/agent/build",
+        "sid": "71611"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/agent/version",
+        "sid": "71612"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/boot-time",
+        "sid": "71613"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates",
+        "sid": "71614"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/added-dir",
+        "sid": "71615"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/certctl",
+        "sid": "71616"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/distrusted-dir",
+        "sid": "71617"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/localbase",
+        "sid": "71618"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/now",
+        "sid": "71619"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted",
+        "sid": "71620"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted/ca",
+        "sid": "71621"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted/common-name",
+        "sid": "71622"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted/country",
+        "sid": "71623"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted/file",
+        "sid": "71624"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted/issuer",
+        "sid": "71625"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted/key",
+        "sid": "71626"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted/local",
+        "sid": "71627"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted/not-after",
+        "sid": "71628"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted/not-before",
+        "sid": "71629"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted/organization",
+        "sid": "71630"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted/self-signed",
+        "sid": "71631"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted/sha256",
+        "sid": "71632"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/trusted/subject",
+        "sid": "71633"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted",
+        "sid": "71634"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted/ca",
+        "sid": "71635"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted/common-name",
+        "sid": "71636"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted/country",
+        "sid": "71637"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted/file",
+        "sid": "71638"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted/issuer",
+        "sid": "71639"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted/key",
+        "sid": "71640"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted/local",
+        "sid": "71641"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted/not-after",
+        "sid": "71642"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted/not-before",
+        "sid": "71643"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted/organization",
+        "sid": "71644"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted/self-signed",
+        "sid": "71645"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted/sha256",
+        "sid": "71646"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/certificates/untrusted/subject",
+        "sid": "71647"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/hostname",
+        "sid": "71648"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/machine",
+        "sid": "71649"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/ncpu",
+        "sid": "71650"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/osreldate",
+        "sid": "71651"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/physmem",
+        "sid": "71652"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/plugin",
+        "sid": "71653"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/privileged",
+        "sid": "71654"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/release",
+        "sid": "71655"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/securelevel",
+        "sid": "71656"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats",
+        "sid": "71657"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/cpu",
+        "sid": "71658"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/load1",
+        "sid": "71659"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/load15",
+        "sid": "71660"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/load5",
+        "sid": "71661"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/memory-free",
+        "sid": "71662"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/memory-inactive",
+        "sid": "71663"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/memory-total",
+        "sid": "71664"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/memory-used",
+        "sid": "71665"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/pool",
+        "sid": "71666"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/pool/allocated",
+        "sid": "71667"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/pool/free",
+        "sid": "71668"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/pool/health",
+        "sid": "71669"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/pool/name",
+        "sid": "71670"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/pool/size",
+        "sid": "71671"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/swap-total",
+        "sid": "71672"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/stats/swap-used",
+        "sid": "71673"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/sysname",
+        "sid": "71674"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-host:host/time",
+        "sid": "71675"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-host:plugin",
+        "sid": "71676"
+      }
+    ]
+  }
+}

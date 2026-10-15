@@ -118,7 +118,8 @@ verdict(struct html *h, const char *where, const ucl_object_t *v)
 {
 	const char	*vd = jstr(v, "verdict");
 
-	if (v == NULL || vd == NULL)
+	/* An empty ruleset decides nothing: the kernel's default does. */
+	if (v == NULL || vd == NULL || strcmp(vd, "none") == 0)
 		return;
 	h_fmt(h, "<span class=\"chip fw %s\"", strcmp(vd, "deny") == 0 ? "bad" :
 	    strcmp(vd, "allow") == 0 ? "good" : "warn");
@@ -201,6 +202,230 @@ way(struct html *h, const char *title, const ucl_object_t *hops,
 	(void)reply;
 }
 
+
+/* A firewall's verdict as a dot on the graph, its rule in the title. */
+static void
+dot(struct html *h, double x, double y, const char *where,
+    const ucl_object_t *v)
+{
+	const char	*vd = jstr(v, "verdict");
+
+	if (v == NULL || vd == NULL || strcmp(vd, "none") == 0)
+		return;
+	h_fmt(h, "<circle class=\"fw %s\" cx=\"%.0f\" cy=\"%.0f\" r=\"4\">"
+	    "<title>", strcmp(vd, "deny") == 0 ? "bad" : strcmp(vd, "allow")
+	    == 0 ? "good" : "warn", x, y);
+	h_txt(h, where);
+	h_raw(h, ": ");
+	h_txt(h, strcmp(vd, "allow") == 0 ? (jbool(v, "by_state") ? "let by "
+	    "its state" : "allowed") : strcmp(vd, "deny") == 0 ? "dropped" :
+	    vd);
+	if (jint(v, "rule", 0) != 0)
+		h_fmt(h, " by rule %lld", (long long)jint(v, "rule", 0));
+	if (jstr(v, "text") != NULL) {
+		h_raw(h, "\n");
+		h_txt(h, jstr(v, "text"));
+	}
+	h_raw(h, "</title></circle>");
+}
+
+#define	TS_BW	150		/* a place's box */
+#define	TS_BH	50
+#define	TS_COL	190		/* a column's pitch */
+#define	TS_X0	110		/* the first column, after the source */
+
+/* The column a place stands in: the request's, in its order. */
+static int
+column(const ucl_object_t *hops, const char *key, int *extra)
+{
+	const ucl_object_t	*hop;
+	ucl_object_iter_t	 it;
+	int			 i;
+
+	it = NULL;
+	for (i = 0; (hop = ucl_object_iterate(hops, &it, true)) != NULL; i++)
+		if (jstr(hop, "key") != NULL && key != NULL && strcmp(jstr(hop,
+		    "key"), key) == 0)
+			return (i);
+	return ((*extra)++);
+}
+
+/* One place's box. */
+static void
+place_node(struct html *h, double x, double y, const ucl_object_t *hop,
+    bool blocked_here)
+{
+	const ucl_object_t	*c = jget(hop, "check");
+	char			 arg[120];
+
+	snprintf(arg, sizeof(arg), "%s", jstr(hop, "key") != NULL ? jstr(hop,
+	    "key") : "");
+	h_fmt(h, "<g class=\"tsnode%s%s\" transform=\"translate(%.0f,%.0f)\" "
+	    "data-act=\"ts-host\"", blocked_here ? " blocked" : "", jstr(hop,
+	    "error") != NULL ? " dead" : "", x, y);
+	h_attr(h, "data-arg", arg);
+	h_fmt(h, "><rect width=\"%d\" height=\"%d\" rx=\"8\"/><text class=\""
+	    "name\" x=\"8\" y=\"17\">", TS_BW, TS_BH);
+	h_txt(h, jstr(hop, "place"));
+	h_raw(h, "</text><text class=\"sub\" x=\"8\" y=\"33\">");
+	if (jstr(hop, "error") != NULL)
+		h_txt(h, "did not answer");
+	else {
+		h_txt(h, jstr(hop, "ingress") != NULL ? jstr(hop, "ingress") :
+		    jbool(c, "src.local") ? "made here" : "?");
+		h_raw(h, " → ");
+		h_txt(h, jbool(c, "dst.local") ? "here" : jstr(hop, "egress") !=
+		    NULL ? jstr(hop, "egress") : "no route");
+	}
+	h_raw(h, "</text>");
+	if (jget(c, "fib") != NULL)
+		h_fmt(h, "<text class=\"sub\" x=\"%d\" y=\"33\" text-anchor=\""
+		    "end\">FIB %lld</text>", TS_BW - 8, (long long)jint(c, "fib",
+		    0));
+	dot(h, 8, TS_BH - 6, "firewall in", jget(c, "firewall.in"));
+	dot(h, 20, TS_BH - 6, "firewall out", jget(c, "firewall.out"));
+	if (jget(c, "return.symmetric") != NULL && !jbool(c, "return.symmetric"))
+		h_fmt(h, "<text class=\"asym\" x=\"%d\" y=\"%d\" text-anchor=\""
+		    "end\"><title>The reply goes back by another interface "
+		    "than the request came in on</title>asymmetric</text>",
+		    TS_BW - 8, TS_BH - 3);
+	h_raw(h, "</g>");
+}
+
+/* An arrow from one column to the next, what it carries written on it. */
+static void
+arrow(struct html *h, double x1, double x2, double y, bool reply,
+    const char *label, const char *cls)
+{
+
+	h_fmt(h, "<path class=\"way %s%s\" d=\"M%.0f %.0fL%.0f %.0f\" "
+	    "marker-end=\"url(#tsarrow%s)\"/>", reply ? "reply" : "", cls,
+	    x1, y, x2, y, cls[0] != '\0' ? cls : "");
+	if (label != NULL && label[0] != '\0') {
+		h_fmt(h, "<text class=\"lbl\" x=\"%.0f\" y=\"%.0f\" text-anchor="
+		    "\"middle\">", (x1 + x2) / 2, y - 5);
+		h_txt(h, label);
+		h_raw(h, "</text>");
+	}
+}
+
+/*
+ * The way drawn: the source at the left, the destination at the right,
+ * the places passed as boxes between, the request's way above the
+ * boxes, left to right, the reply's below, right to left; where either
+ * is stopped, a bar.  A place the reply passes that the request did not
+ * gets a column of its own.
+ */
+static void
+path_graph(struct html *h, const ucl_object_t *r)
+{
+	const ucl_object_t	*hops = jget(r, "hops"), *ret = jget(r, "return");
+	const ucl_object_t	*hop, *end = jget(r, "end"), *rend = jget(r,
+	    "return_end");
+	ucl_object_iter_t	 it;
+	const char		*how;
+	int			 nf, nr, extra, ncol, i, col, prev;
+	double			 w, y1, y2, x, xp, xdst;
+	bool			 two;
+
+	nf = (int)ucl_array_size(hops);
+	nr = (int)ucl_array_size(ret);
+	if (nf == 0)
+		return;
+	/* The columns: the request's places, then the reply's others. */
+	extra = nf;
+	it = NULL;
+	while ((hop = ucl_object_iterate(ret, &it, true)) != NULL)
+		(void)column(hops, jstr(hop, "key"), &extra);
+	ncol = extra;
+	two = nr > 0;
+	w = TS_X0 + ncol * TS_COL + 110;
+	y1 = 24;			/* the request's row */
+	y2 = two ? y1 + TS_BH + 44 : y1;	/* the reply's */
+	xdst = TS_X0 + ncol * TS_COL;
+	h_fmt(h, "<div class=\"tsgraph-wrap\"><svg class=\"tsgraph\" viewBox=\""
+	    "0 0 %.0f %.0f\" role=\"img\" aria-label=\"The packet's way, and "
+	    "its reply's\"><defs><marker id=\"tsarrow\" viewBox=\"0 0 8 8\" "
+	    "refX=\"7\" refY=\"4\" markerWidth=\"7\" markerHeight=\"7\" orient="
+	    "\"auto\"><path d=\"M0 0L8 4L0 8z\"/></marker><marker id=\""
+	    "tsarrowbad\" viewBox=\"0 0 8 8\" refX=\"4\" refY=\"4\" markerWidth="
+	    "\"8\" markerHeight=\"8\" orient=\"auto\"><path d=\"M3 0h2v8h-2z\"/>"
+	    "</marker></defs>", w, y2 + TS_BH + 24);
+	/* The ends: where it comes from, where it goes. */
+	h_fmt(h, "<g class=\"tsend src\" transform=\"translate(8,%.0f)\"><rect "
+	    "width=\"94\" height=\"%d\" rx=\"%d\"/><text x=\"47\" y=\"%d\" "
+	    "text-anchor=\"middle\">", y1 + (two ? (y2 - y1) / 2 : 0), TS_BH,
+	    TS_BH / 2, TS_BH / 2 + 4);
+	h_txt(h, ts.src);
+	h_raw(h, "</text></g>");
+	h_fmt(h, "<g class=\"tsend dst\" transform=\"translate(%.0f,%.0f)\">"
+	    "<rect width=\"94\" height=\"%d\" rx=\"%d\"/><text x=\"47\" y=\"%d\" "
+	    "text-anchor=\"middle\">", xdst + 8, y1 + (two ? (y2 - y1) / 2 :
+	    0), TS_BH, TS_BH / 2, TS_BH / 2 + 4);
+	h_txt(h, ts.dst);
+	h_raw(h, "</text></g>");
+	/* The request: left to right. */
+	how = jstr(end, "how") != NULL ? jstr(end, "how") : "";
+	xp = 102;
+	it = NULL;
+	for (i = 0; (hop = ucl_object_iterate(hops, &it, true)) != NULL; i++) {
+		x = TS_X0 + i * TS_COL;
+		arrow(h, xp, x, y1 + TS_BH / 2, false, i == 0 ? jstr(hop,
+		    "ingress") : NULL, "");
+		place_node(h, x, y1, hop, i == nf - 1 && (strcmp(how, "blocked")
+		    == 0 || strcmp(how, "loop") == 0 || strcmp(how, "unknown")
+		    == 0));
+		xp = x + TS_BW;
+	}
+	if (strcmp(how, "delivered") == 0)
+		arrow(h, xp, xdst + 8, y1 + TS_BH / 2, false, NULL, "");
+	else if (strcmp(how, "leaves") == 0)
+		arrow(h, xp, xdst + 8, y1 + TS_BH / 2, false, jstr(
+		    ucl_array_find_index(hops, (unsigned)nf - 1), "next_hop"),
+		    "leaves");
+	else
+		arrow(h, xp, xp + 24, y1 + TS_BH / 2, false, NULL, "bad");
+	/* The reply: right to left, under. */
+	if (!two) {
+		h_raw(h, "</svg></div>");
+		return;
+	}
+	how = jstr(rend, "how") != NULL ? jstr(rend, "how") : "";
+	xp = xdst + 8;
+	prev = -1;
+	extra = nf;
+	it = NULL;
+	for (i = 0; (hop = ucl_object_iterate(ret, &it, true)) != NULL; i++) {
+		col = column(hops, jstr(hop, "key"), &extra);
+		x = TS_X0 + col * TS_COL;
+		arrow(h, xp, x + TS_BW, y2 + TS_BH / 2, true, i == 0 ? jstr(hop,
+		    "ingress") : NULL, "");
+		/* A place of the request's is drawn there already: its
+		 * reply row is a faint copy; a new one is drawn whole. */
+		if (col >= nf)
+			place_node(h, x, y2, hop, i == nr - 1 && strcmp(how,
+			    "delivered") != 0);
+		else
+			h_fmt(h, "<g class=\"tsnode ghost%s\" transform=\""
+			    "translate(%.0f,%.0f)\"><rect width=\"%d\" height=\""
+			    "%d\" rx=\"8\"/><text class=\"sub\" x=\"8\" y=\"30\">"
+			    "the same, back</text></g>", i == nr - 1 && strcmp(
+			    how, "delivered") != 0 ? " blocked" : "", x, y2,
+			    TS_BW, TS_BH);
+		xp = x;
+		prev = col;
+	}
+	(void)prev;
+	if (strcmp(how, "delivered") == 0)
+		arrow(h, xp, 102, y2 + TS_BH / 2, true, NULL, "");
+	else if (strcmp(how, "leaves") == 0)
+		arrow(h, xp, 102, y2 + TS_BH / 2, true, jstr(ucl_array_find_index(
+		    ret, (unsigned)nr - 1), "next_hop"), "leaves");
+	else
+		arrow(h, xp, xp - 24, y2 + TS_BH / 2, true, NULL, "bad");
+	h_raw(h, "</svg></div>");
+}
+
 static void
 result(struct html *h)
 {
@@ -224,6 +449,10 @@ result(struct html *h)
 	} else if (strcmp(sev, "warn") == 0) {
 		h_raw(h, "<b>It gets through, with a doubt:</b> ");
 		h_txt(h, jstr(f, "what"));
+	} else if (jstr(r, "end.how") != NULL && strcmp(jstr(r, "end.how"),
+	    "leaves") == 0) {
+		h_raw(h, "<b>Nothing found that stops it here.</b> ");
+		h_txt(h, jstr(r, "end.what"));
 	} else
 		h_raw(h, "<b>Nothing found that stops it.</b> The places "
 		    "asked would let it through, and its reply back.");
@@ -235,6 +464,9 @@ result(struct html *h)
 	it = NULL;
 	while ((f = ucl_object_iterate(jget(r, "findings"), &it, true)) !=
 	    NULL) {
+		/* What the banner says already. */
+		if (strcmp(jstr(f, "severity"), "ok") == 0)
+			continue;
 		h_fmt(h, "<li class=\"%s\"><span class=\"chip %s\">%s</span>",
 		    jstr(f, "severity"), strcmp(jstr(f, "severity"), "bad") ==
 		    0 ? "bad" : strcmp(jstr(f, "severity"), "warn") == 0 ?
@@ -245,9 +477,24 @@ result(struct html *h)
 			h_raw(h, "</b> ");
 		}
 		h_txt(h, jstr(f, "what"));
+		/* A firewall's finding: its rule, a press away. */
+		if (jstr(f, "server") != NULL && strstr(jstr(f, "what"),
+		    "firewall") != NULL) {
+			const char	*rule = strstr(jstr(f, "what"), "rule ");
+			char		 arg[120];
+
+			snprintf(arg, sizeof(arg), "%s/%s/%ld", jstr(f, "server"),
+			    jstr(f, "jail") != NULL ? jstr(f, "jail") : "", rule !=
+			    NULL ? strtol(rule + 5, NULL, 10) : 0L);
+			h_raw(h, " <button class=\"ghost small\" data-act=\""
+			    "ts-firewall\"");
+			h_attr(h, "data-arg", arg);
+			h_raw(h, ">Its firewall ›</button>");
+		}
 		h_raw(h, "</li>");
 	}
 	h_raw(h, "</ul>");
+	path_graph(h, r);
 	way(h, "The way there", jget(r, "hops"), jget(r, "end"), false);
 	if (jget(r, "return") != NULL)
 		way(h, "The way back, the reply's", jget(r, "return"), jget(r,
@@ -272,12 +519,17 @@ view_trouble(struct html *h)
 	    "it by, and the reply's way back. Nothing is sent: each place says "
 	    "what it would do, from its routes, its ARP and NDP entries, its "
 	    "sysctls and its ruleset as the kernel has them.</p>");
-	h_fmt(h, "<form class=\"tsform\" data-form=\"ts-path\"><div "
-	    "class=\"two\"><label>From<input name=\"src\" required "
-	    "placeholder=\"10.1.0.2\" maxlength=\"63\"");
+	topo_addr_list(h, "ts-addrs");
+	h_fmt(h, "<form class=\"tsform\" data-form=\"ts-path\" id=\"ts-path\">"
+	    "<div class=\"two\"><label>From<input name=\"src\" required "
+	    "placeholder=\"10.1.0.2\" maxlength=\"63\" list=\"ts-addrs\" "
+	    "spellcheck=\"false\" autocomplete=\"off\"");
 	h_attr(h, "value", ts.src);
-	h_raw(h, "></label><label>To<input name=\"dst\" required "
-	    "placeholder=\"10.3.0.2\" maxlength=\"63\"");
+	h_raw(h, "></label><label>To <button type=\"button\" class=\"ghost "
+	    "small swap\" data-act=\"ts-swap\" title=\"The other way round: "
+	    "from the destination to the source\">⇄ swap</button><input "
+	    "name=\"dst\" required placeholder=\"10.3.0.2\" maxlength=\"63\" "
+	    "list=\"ts-addrs\" spellcheck=\"false\" autocomplete=\"off\"");
 	h_attr(h, "value", ts.dst);
 	h_raw(h, "></label></div><div class=\"two\"><label>Protocol<select "
 	    "name=\"proto\">");
@@ -375,10 +627,47 @@ trouble_action(const char *act, const char *arg, const char *value)
 		app.node = NODE_TROUBLE;
 		app.jail[0] = '\0';
 		app.rail_open = false;
+		/* The hosts' addresses, to offer. */
+		topo_poll_all();
 		return (true);
 	}
 	if (strcmp(act, "ts-tab") == 0)
 		return (true);
+	if (strcmp(act, "ts-swap") == 0) {
+		char	t[sizeof(ts.src)];
+
+		snprintf(t, sizeof(t), "%s", ts.src);
+		snprintf(ts.src, sizeof(ts.src), "%s", ts.dst);
+		snprintf(ts.dst, sizeof(ts.dst), "%s", t);
+		if (ts.src[0] != '\0' && ts.dst[0] != '\0')
+			ask();
+		return (true);
+	}
+	/* A place on the graph: its host's page, its jail's. */
+	if (strcmp(act, "ts-host") == 0 || strcmp(act, "ts-firewall") == 0) {
+		char	sid[16], jail[64], *p;
+		long	rule;
+
+		snprintf(sid, sizeof(sid), "%.*s", (int)strcspn(arg, "/"), arg);
+		p = strchr(arg, '/');
+		snprintf(jail, sizeof(jail), "%.*s", p != NULL ? (int)strcspn(
+		    p + 1, "/") : 0, p != NULL ? p + 1 : "");
+		rule = p != NULL && (p = strchr(p + 1, '/')) != NULL ? strtol(
+		    p + 1, NULL, 10) : 0;
+		dispatch("select-server", sid, "");
+		if (strcmp(act, "ts-firewall") == 0) {
+			dispatch("tab", "firewall", "");
+			dispatch("fw-jail", jail, "");
+			if (rule > 0) {
+				char	num[16];
+
+				snprintf(num, sizeof(num), "%ld", rule);
+				dispatch("fw-goto", num, "");
+			}
+		} else if (jail[0] != '\0')
+			dispatch("open-jail", jail, sid);
+		return (true);
+	}
 	if (strcmp(act, "ts-export") == 0 && ts.result != NULL) {
 		snprintf(base, sizeof(base), "path-%s-to-%s", ts.src, ts.dst);
 		for (char *p = base; *p != '\0'; p++)
@@ -388,4 +677,52 @@ trouble_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	return (false);
+}
+
+/* The page's address, with what is asked. */
+void
+trouble_loc(char *buf, size_t len)
+{
+	char	src[200], dst[200];
+
+	if (ts.src[0] == '\0' || ts.dst[0] == '\0') {
+		snprintf(buf, len, "#/troubleshoot");
+		return;
+	}
+	loc_enc(src, sizeof(src), ts.src);
+	loc_enc(dst, sizeof(dst), ts.dst);
+	snprintf(buf, len, "#/troubleshoot?src=%s&dst=%s&proto=%s&port=%s", src,
+	    dst, ts.proto, ts.port);
+}
+
+/* Opened at an address naming a packet: asked at once. */
+void
+trouble_open(const char *query)
+{
+	char	buf[512], *p, *q, *v, val[200];
+
+	if (query == NULL || *query == '\0')
+		return;
+	snprintf(buf, sizeof(buf), "%s", query);
+	for (p = buf; p != NULL && *p != '\0'; p = q) {
+		if ((q = strchr(p, '&')) != NULL)
+			*q++ = '\0';
+		if ((v = strchr(p, '=')) == NULL)
+			continue;
+		*v++ = '\0';
+		loc_dec(val, sizeof(val), v);
+		if (strcmp(p, "src") == 0)
+			snprintf(ts.src, sizeof(ts.src), "%s", val);
+		else if (strcmp(p, "dst") == 0)
+			snprintf(ts.dst, sizeof(ts.dst), "%s", val);
+		else if (strcmp(p, "proto") == 0 && (strcmp(val, "tcp") == 0 ||
+		    strcmp(val, "udp") == 0 || strcmp(val, "icmp") == 0 ||
+		    strcmp(val, "ip") == 0))
+			snprintf(ts.proto, sizeof(ts.proto), "%s", val);
+		else if (strcmp(p, "port") == 0)
+			snprintf(ts.port, sizeof(ts.port), "%.5s", val[strspn(
+			    val, "0123456789")] == '\0' ? val : "");
+	}
+	if (ts.src[0] != '\0' && ts.dst[0] != '\0' && !ts.busy)
+		ask();
 }

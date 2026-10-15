@@ -82,7 +82,8 @@ static const struct sect {
 #define	FW_TRACE	(-7)	/* a packet followed through the rules */
 #define	FW_LOG		(-8)	/* what the rules with log wrote down */
 #define	FW_QOS		(-9)	/* dummynet's pipes, schedulers, queues */
-#define	FW_FIRST	FW_QOS
+#define	FW_ALIASES	(-10)	/* names for lists and values, $name */
+#define	FW_FIRST	FW_ALIASES
 #define	FW_PREV		2048	/* rules whose counters are remembered */
 #define	FW_HITS		60	/* a rule's rates kept, the newest last */
 #define	FW_HITS_EVERY	5000	/* ms between two looks while a part is shown */
@@ -111,9 +112,13 @@ static struct {
 		int		n;
 	}		 hits[FW_PREV];
 	int		 nhits;
-	/* A packet to follow: what was asked, as it was typed. */
+	/* A packet to follow: what was asked, as it was typed, and the
+	 * agent's answer (path-check), of which one walk is shown. */
 	char		 t_proto[8], t_src[64], t_dst[64], t_port[8], t_if[16];
-	bool		 t_out, t_asked;
+	char		 t_dir[12];	/* in, out, reply_in, reply_out */
+	bool		 t_asked, t_loading;
+	char		 t_error[300];
+	ucl_object_t	*t_data;
 	/* The kernel's own: the packets of an address it decided on. */
 	char		 k_addr[64];
 	int		 k_secs;
@@ -131,7 +136,7 @@ static struct {
 	bool		 file_loading;
 	char		 file_error[300];
 	char		 file_note[160];
-} fw = { .sect = FW_LAYOUT };
+} fw = { .sect = FW_LAYOUT, .t_proto = "tcp", .t_dir = "in" };
 
 /*
  * The layout as rules, for a host that keeps none yet: the main chain
@@ -505,7 +510,8 @@ kept_text(long long num)
 	while ((o = ucl_object_iterate(jget(fw.data, "kept"), &it, true)) !=
 	    NULL)
 		if (jint(o, "num", 0) == num)
-			return (jstr(o, "text"));
+			return (jstr(o, "source") != NULL ? jstr(o, "source") :
+			    jstr(o, "text"));
 	return (NULL);
 }
 
@@ -588,6 +594,8 @@ firewall_rail(struct html *h)
 			    "beside what the kernel has" },
 			{ FW_TRACE, "Follow a packet", "Which rules a packet "
 			    "meets, and what becomes of it" },
+			{ FW_ALIASES, "Aliases", "Names for address lists, port "
+			    "lists and values, written $name in a rule" },
 			{ FW_TABLES, "Tables", "The tables and what is in them" },
 			{ FW_QOS, "QoS", "dummynet's pipes, schedulers and "
 			    "queues, and the rules that send to them" },
@@ -781,6 +789,120 @@ object_job(struct server *s, const char *verb, const char *words, bool keep)
 	snprintf(title, sizeof(title), "ipfw %s %.180s", verb, words);
 	fw_job(s, b.s, title);
 	free(b.s);
+}
+
+/* The alias the form shows, to be changed; "" a new one. */
+static char	alias_edit[33];
+
+/* How many kept rules name $name. */
+static int
+alias_uses(const char *name)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it = NULL;
+	char			 w[48];
+	const char		*src, *p;
+	int			 n = 0;
+
+	snprintf(w, sizeof(w), "$%s", name);
+	while ((o = ucl_object_iterate(jget(fw.data, "kept"), &it, true)) !=
+	    NULL) {
+		if ((src = jstr(o, "source")) == NULL)
+			continue;
+		for (p = src; (p = strstr(p, w)) != NULL; p += strlen(w))
+			if (p[strlen(w)] == '\0' || p[strlen(w)] == ' ') {
+				n++;
+				break;
+			}
+	}
+	return (n);
+}
+
+/*
+ * The aliases: names for what rules say again and again.  An address
+ * list is a table of its name, so that changing it changes no rule; a
+ * port list and a value are written into each rule that names them.
+ */
+static void
+view_aliases(struct html *h)
+{
+	const ucl_object_t	*a;
+	ucl_object_iter_t	 it;
+	int			 n, u;
+
+	h_raw(h, "<h4 class=\"family\">Aliases</h4><p class=\"dim\">A name "
+	    "for what rules say again and again, written <code>$name</code> "
+	    "in a rule: <b>addresses</b>, a list of addresses and networks, "
+	    "is an ipfw table of its name (the rule says <code>table(name)"
+	    "</code>, so changing the list changes the table and no rule); "
+	    "<b>ports</b> (80,443,8000-8080) and a <b>value</b> (an "
+	    "interface, an address) are written into each rule that names "
+	    "them, which are written again, kept and now, when it changes. "
+	    "The kept rules stay ipfw's own commands, loaded at boot as they "
+	    "are; a rule's own words, its aliases in them, are a comment "
+	    "line before it.</p>");
+	{
+		const ucl_object_t	*e = NULL;
+		const char		*kind;
+
+		it = NULL;
+		while (alias_edit[0] != '\0' && (a = ucl_object_iterate(jget(
+		    fw.data, "aliases"), &it, true)) != NULL)
+			if (jstr(a, "name") != NULL && strcmp(jstr(a, "name"),
+			    alias_edit) == 0)
+				e = a;
+		kind = e != NULL && jstr(e, "kind") != NULL ? jstr(e, "kind") :
+		    "addr";
+		/* An id: the page's patch makes no other form of it. */
+		h_raw(h, "<form id=\"fw-alias-form\" data-form=\"fw-alias\" "
+		    "class=\"fw-add\"><input "
+		    "name=\"name\" spellcheck=\"false\" autocomplete=\"off\" "
+		    "placeholder=\"lan\" size=\"12\" maxlength=\"32\"");
+		h_attr(h, "value", e != NULL ? jstr(e, "name") : "");
+		h_fmt(h, "><select name=\"kind\"><option value=\"addr\"%s>"
+		    "addresses</option><option value=\"ports\"%s>ports"
+		    "</option><option value=\"value\"%s>value</option>"
+		    "</select><input name=\"value\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"10.0.0.0/8 "
+		    "192.168.1.0/24, or 80,443, or vtnet0\" size=\"36\"",
+		    strcmp(kind, "addr") == 0 ? " selected" : "",
+		    strcmp(kind, "ports") == 0 ? " selected" : "",
+		    strcmp(kind, "value") == 0 ? " selected" : "");
+		h_attr(h, "value", e != NULL ? jstr(e, "value") : "");
+		h_raw(h, "><button class=\"small\">Keep</button></form>");
+	}
+	h_raw(h, "<table class=\"net fwaliases\"><thead><tr><th>Name</th>"
+	    "<th>Kind</th><th>What it is</th><th>Rules</th><th></th></tr>"
+	    "</thead><tbody>");
+	n = 0;
+	it = NULL;
+	while ((a = ucl_object_iterate(jget(fw.data, "aliases"), &it, true)) !=
+	    NULL) {
+		if (jstr(a, "name") == NULL)
+			continue;
+		n++;
+		u = alias_uses(jstr(a, "name"));
+		h_raw(h, "<tr class=\"pick\" data-act=\"fw-alias-edit\"");
+		h_attr(h, "data-arg", jstr(a, "name"));
+		h_raw(h, "><td class=\"mono\"><b>$");
+		h_txt(h, jstr(a, "name"));
+		h_raw(h, "</b></td><td>");
+		h_txt(h, strcmp(jstr(a, "kind"), "addr") == 0 ? "addresses "
+		    "(a table)" : jstr(a, "kind"));
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(a, "value"));
+		h_fmt(h, "</td><td>%d</td><td class=\"acts\"><button class=\""
+		    "icon\" data-act=\"fw-alias-del\" title=\"%s\"%s", u,
+		    u > 0 ? "A rule names it: it stays while one does" :
+		    "Delete it", u > 0 ? " disabled" : "");
+		h_attr(h, "data-arg", jstr(a, "name"));
+		h_raw(h, ">×</button></td></tr>");
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">No alias yet: "
+		    "name a list of the addresses your rules keep saying, and "
+		    "write $name in them.</td></tr>");
+	h_raw(h, "</tbody></table>");
 }
 
 /* The tables: each with what is in it, to add to and take from. */
@@ -1016,259 +1138,6 @@ view_diff(struct html *h)
 		    differ);
 }
 
-/*
- * A packet followed through the rules of the kernel, as well as a page
- * can: a rule's words are read for what they ask of the protocol, the
- * addresses, the port, the direction and the interface, and each rule
- * matches, does not, or cannot be told (me, a table that was cut off,
- * an option not known here).  What cannot be told is taken as matching
- * and said so.
- */
-enum { T_NO, T_YES, T_MAYBE };
-
-static bool
-v4(const char *s, unsigned int *ip, int *plen)
-{
-	unsigned int	a, b, c, d;
-	int		n, len;
-
-	len = 32;
-	n = 0;
-	if (sscanf(s, "%u.%u.%u.%u%n", &a, &b, &c, &d, &n) != 4 || a > 255 ||
-	    b > 255 || c > 255 || d > 255)
-		return (false);
-	if (s[n] == '/')
-		len = atoi(s + n + 1);
-	else if (s[n] != '\0')
-		return (false);
-	if (len < 0 || len > 32)
-		return (false);
-	*ip = a << 24 | b << 16 | c << 8 | d;
-	*plen = len;
-	return (true);
-}
-
-static int
-in_net(const char *addr, const char *net)
-{
-	unsigned int	a, n, mask;
-	int		pa, pn;
-
-	if (!v4(addr, &a, &pa) || !v4(net, &n, &pn))
-		return (strchr(addr, ':') != NULL && strchr(net, ':') !=
-		    NULL ? (strcmp(addr, net) == 0 ? T_YES : T_MAYBE) : T_NO);
-	mask = pn == 0 ? 0 : 0xffffffffu << (32 - pn);
-	return ((a & mask) == (n & mask) ? T_YES : T_NO);
-}
-
-/* Does the address answer the rule's word for one? */
-static int
-addr_match(const char *addr, const char *word)
-{
-	const ucl_object_t	*t, *e;
-	ucl_object_iter_t	 it, eit;
-	char			 name[64];
-	int			 r, best;
-
-	if (strcmp(word, "any") == 0)
-		return (T_YES);
-	if (addr[0] == '\0')
-		return (T_MAYBE);
-	if (strcmp(word, "me") == 0 || strcmp(word, "me6") == 0)
-		return ((strchr(addr, ':') != NULL) == (word[2] == '6') ?
-		    T_MAYBE : T_NO);
-	if (strncmp(word, "table(", 6) == 0) {
-		snprintf(name, sizeof(name), "%.*s", (int)strcspn(word + 6,
-		    ",)"), word + 6);
-		it = NULL;
-		while ((t = ucl_object_iterate(jget(fw.data, "tables"), &it,
-		    true)) != NULL) {
-			if (jstr(t, "name") == NULL || strcmp(jstr(t, "name"),
-			    name) != 0)
-				continue;
-			best = T_NO;
-			eit = NULL;
-			while ((e = ucl_object_iterate(jget(t, "entries"),
-			    &eit, true)) != NULL)
-				if ((r = in_net(addr, jstr(e, "key") != NULL ?
-				    jstr(e, "key") : "")) == T_YES)
-					return (T_YES);
-				else if (r == T_MAYBE)
-					best = T_MAYBE;
-			return (jint(t, "count", 0) > (int64_t)ucl_array_size(
-			    jget(t, "entries")) ? T_MAYBE : best);
-		}
-		return (T_MAYBE);
-	}
-	if (strchr(word, '.') != NULL || strchr(word, ':') != NULL)
-		return (in_net(addr, word));
-	return (T_MAYBE);
-}
-
-static bool
-is_number_list(const char *w)
-{
-
-	return (w[0] != '\0' && w[strspn(w, "0123456789,-")] == '\0');
-}
-
-static int
-port_match(const char *port, const char *list)
-{
-	char	*copy, *it, *one, *dash;
-	int	 p, r;
-
-	if (port[0] == '\0')
-		return (T_MAYBE);
-	p = atoi(port);
-	r = T_NO;
-	copy = strdup(list);
-	for (it = copy; (one = strsep(&it, ",")) != NULL; ) {
-		if ((dash = strchr(one, '-')) != NULL) {
-			*dash = '\0';
-			if (p >= atoi(one) && p <= atoi(dash + 1))
-				r = T_YES;
-		} else if (atoi(one) == p)
-			r = T_YES;
-	}
-	free(copy);
-	return (r);
-}
-
-#define	AND(r, x)	do {						\
-	int _x = (x);							\
-	if (_x == T_NO)							\
-		(r) = T_NO;						\
-	else if (_x == T_MAYBE && (r) == T_YES)				\
-		(r) = T_MAYBE;						\
-} while (0)
-
-/*
- * Whether the packet asked about matches the rule; *actp is where the
- * rule's action begins in v, *argp the number after skipto, call or nat.
- */
-static int
-rule_match(char **v, int n, const char **actp, int *argp)
-{
-	const char	*proto;
-	int		 i, r, x;
-	bool		 six, not;
-
-	i = 0;
-	*argp = 0;
-	/* prob 0.5, and what else comes before the action. */
-	if (i < n && strcmp(v[i], "prob") == 0)
-		i += 2;
-	if (i >= n)
-		return (T_NO);
-	*actp = v[i];
-	if (strcmp(v[i], "skipto") == 0 || strcmp(v[i], "call") == 0 ||
-	    strcmp(v[i], "nat") == 0 || strcmp(v[i], "divert") == 0 ||
-	    strcmp(v[i], "pipe") == 0 || strcmp(v[i], "queue") == 0 ||
-	    strcmp(v[i], "setfib") == 0 || strcmp(v[i], "tee") == 0 ||
-	    strcmp(v[i], "fwd") == 0 || strcmp(v[i], "forward") == 0 ||
-	    strcmp(v[i], "unreach") == 0 || strcmp(v[i], "unreach6") == 0 ||
-	    strcmp(v[i], "nat64lsn") == 0 || strcmp(v[i], "nat64stl") == 0 ||
-	    strcmp(v[i], "nat64clat") == 0 || strcmp(v[i], "nptv6") == 0 ||
-	    strcmp(v[i], "netgraph") == 0 || strcmp(v[i], "ngtee") == 0) {
-		if (i + 1 < n)
-			*argp = atoi(v[i + 1]);
-		i += 2;
-	} else if (strcmp(v[i], "check-state") == 0) {
-		/* A state there may be: only the kernel knows. */
-		return (T_MAYBE);
-	} else
-		i++;
-	/* log, logamount n, tag n, altq name: not what is matched. */
-	while (i < n && (strcmp(v[i], "log") == 0 || strcmp(v[i],
-	    "logamount") == 0 || strcmp(v[i], "tag") == 0 || strcmp(v[i],
-	    "untag") == 0 || strcmp(v[i], "altq") == 0))
-		i += strcmp(v[i], "log") == 0 ? 1 : 2;
-	if (i >= n)
-		return (T_YES);
-	r = T_YES;
-	six = strchr(fw.t_dst, ':') != NULL || strchr(fw.t_src, ':') != NULL;
-	proto = v[i++];
-	if (strcmp(proto, "ip") != 0 && strcmp(proto, "all") != 0) {
-		if (strcmp(proto, "ip4") == 0 || strcmp(proto, "ipv4") == 0)
-			AND(r, six ? T_NO : T_YES);
-		else if (strcmp(proto, "ip6") == 0 || strcmp(proto, "ipv6") ==
-		    0)
-			AND(r, six ? T_YES : T_NO);
-		else if (proto[0] == '{' || proto[0] == '(')
-			AND(r, T_MAYBE);
-		else if (strcmp(proto, "from") == 0)
-			i--;
-		else
-			AND(r, strcmp(proto, fw.t_proto) == 0 || (strcmp(proto,
-			    "ipv6-icmp") == 0 && strcmp(fw.t_proto, "icmp") ==
-			    0 && six) ? T_YES : T_NO);
-	}
-	if (i < n && strcmp(v[i], "from") == 0) {
-		i++;
-		not = i < n && strcmp(v[i], "not") == 0;
-		if (not)
-			i++;
-		if (i < n) {
-			x = addr_match(fw.t_src, v[i++]);
-			AND(r, not ? (x == T_YES ? T_NO : x == T_NO ? T_YES :
-			    T_MAYBE) : x);
-		}
-		/* A source port: not asked for here. */
-		if (i < n && is_number_list(v[i])) {
-			AND(r, T_MAYBE);
-			i++;
-		}
-	}
-	if (i < n && strcmp(v[i], "to") == 0) {
-		i++;
-		not = i < n && strcmp(v[i], "not") == 0;
-		if (not)
-			i++;
-		if (i < n) {
-			x = addr_match(fw.t_dst, v[i++]);
-			AND(r, not ? (x == T_YES ? T_NO : x == T_NO ? T_YES :
-			    T_MAYBE) : x);
-		}
-		if (i < n && is_number_list(v[i]))
-			AND(r, port_match(fw.t_port, v[i++]));
-	}
-	for (; i < n && r != T_NO; i++) {
-		if (strcmp(v[i], "in") == 0)
-			AND(r, fw.t_out ? T_NO : T_YES);
-		else if (strcmp(v[i], "out") == 0)
-			AND(r, fw.t_out ? T_YES : T_NO);
-		else if ((strcmp(v[i], "via") == 0 || strcmp(v[i], "recv") ==
-		    0 || strcmp(v[i], "xmit") == 0) && i + 1 < n) {
-			if (strcmp(v[i], "recv") == 0 && fw.t_out)
-				AND(r, T_MAYBE);
-			else if (strcmp(v[i], "xmit") == 0 && !fw.t_out)
-				AND(r, T_NO);
-			else if (fw.t_if[0] == '\0' || strcmp(v[i + 1],
-			    "any") == 0 || strchr(v[i + 1], '*') != NULL ||
-			    strncmp(v[i + 1], "table(", 6) == 0)
-				AND(r, strcmp(v[i + 1], "any") == 0 ? T_YES :
-				    T_MAYBE);
-			else
-				AND(r, strcmp(v[i + 1], fw.t_if) == 0 ? T_YES :
-				    T_NO);
-			i++;
-		} else if (strcmp(v[i], "dst-port") == 0 && i + 1 < n)
-			AND(r, port_match(fw.t_port, v[++i]));
-		else if (strcmp(v[i], "keep-state") == 0 || strcmp(v[i],
-		    "record-state") == 0 || strcmp(v[i], "setup") == 0 ||
-		    strncmp(v[i], ":", 1) == 0 || strcmp(v[i], "//") == 0)
-			;	/* the first packet of a connection is asked about */
-		else if (strcmp(v[i], "established") == 0)
-			AND(r, T_NO);
-		else if (strcmp(v[i], "//") == 0)
-			break;
-		else
-			AND(r, T_MAYBE);
-	}
-	return (r);
-}
-
 static int
 num_cmp(const void *a, const void *b)
 {
@@ -1282,22 +1151,68 @@ num_cmp(const void *a, const void *b)
 static void	view_ktrace(struct html *);
 
 static void
+trace_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	fw.t_loading = false;
+	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
+		snprintf(fw.t_error, sizeof(fw.t_error), "%s", status == 200 &&
+		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
+		    err : "no answer");
+		return;
+	}
+	fw.t_error[0] = '\0';
+	if (fw.t_data != NULL)
+		ucl_object_unref(fw.t_data);
+	fw.t_data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+}
+
+/* What a walk's verdict comes to, in words. */
+static const char *
+verdict_words(const ucl_object_t *w)
+{
+	const char	*v = jstr(w, "verdict");
+
+	if (v == NULL || strcmp(v, "none") == 0)
+		return ("No rule decides it: the ruleset is empty, and ipfw's "
+		    "default does");
+	if (strcmp(v, "allow") == 0)
+		return (jbool(w, "by_state") ? "Let through, by the state a "
+		    "rule kept of its connection" : "Let through");
+	if (strcmp(v, "deny") == 0)
+		return ("Dropped");
+	if (strcmp(v, "fwd") == 0)
+		return ("Sent on to another next hop than the route's");
+	if (strcmp(v, "unknown") == 0)
+		return ("Not known: a table decides where it goes");
+	return (jstr(w, "note") != NULL ? jstr(w, "note") : v);
+}
+
+/*
+ * A packet followed through the ruleset by the agent (path-check): the
+ * rules it meets, in the kernel's own order, call and return, skipto
+ * and check-state followed as ip_fw2.c does; what it could not judge
+ * said.  Nothing is sent.
+ */
+static void
 view_trace_fw(struct html *h)
 {
-	const ucl_object_t	**rules, *o;
-	ucl_object_iter_t	  it;
-	const char		 *act, *verdict;
-	char			 *copy, *p, *w, *v[128];
-	int			  n, nr, i, r, arg, steps, stack[16], sp;
-	bool			  unsure;
+	const ucl_object_t	*d, *w, *st, *c;
+	ucl_object_iter_t	 it;
+	const char		*vd, *how, *t;
+	char			 q[400];
+	bool			 maybe, off;
 
 	h_raw(h, "<h4 class=\"family\">Follow a packet</h4><p class=\"dim\">"
-	    "The first packet of a connection, walked through the rules "
-	    "the kernel has now: which it meets, where it is sent on, and "
-	    "what becomes of it. A rule the page cannot judge (me, a state, "
-	    "an option it does not know) is taken as met and marked; the "
-	    "kernel alone knows.</p><form data-form=\"fw-trace\" class=\""
-	    "fw-add fw-trace\"><select name=\"proto\">");
+	    "The first packet of a connection, or its reply, walked through "
+	    "the rules the kernel has now by the agent, which follows call "
+	    "and return, skipto and check-state as the kernel does, and "
+	    "knows the host's addresses and tables: which rules it meets, "
+	    "where it is sent on, and what becomes of it. A rule it cannot "
+	    "judge (a state, a user, an option it does not know) is marked. "
+	    "Nothing is sent.</p><form data-form=\"fw-trace\" class=\""
+	    "fw-add fw-trace\" id=\"fw-trace-form\"><select name=\"proto\">");
 	{
 		static const char *const protos[] = { "tcp", "udp", "icmp",
 		    "ip" };
@@ -1308,111 +1223,147 @@ view_trace_fw(struct html *h)
 			    protos[k]) == 0 ? " selected" : "", protos[k]);
 	}
 	h_raw(h, "</select><input name=\"src\" spellcheck=\"false\" "
-	    "autocomplete=\"off\" placeholder=\"from 203.0.113.9\"");
+	    "autocomplete=\"off\" placeholder=\"from 203.0.113.9\" required");
 	h_attr(h, "value", fw.t_src);
 	h_raw(h, "><input name=\"dst\" spellcheck=\"false\" autocomplete=\""
-	    "off\" placeholder=\"to 192.0.2.1\"");
+	    "off\" placeholder=\"to 192.0.2.1\" required");
 	h_attr(h, "value", fw.t_dst);
 	h_raw(h, "><input name=\"port\" inputmode=\"numeric\" size=\"6\" "
 	    "placeholder=\"port\"");
 	h_attr(h, "value", fw.t_port);
-	h_fmt(h, "><select name=\"dir\"><option value=\"in\"%s>coming in"
-	    "</option><option value=\"out\"%s>going out</option></select>"
-	    "<input name=\"iface\" spellcheck=\"false\" autocomplete=\"off\" "
-	    "size=\"8\" placeholder=\"on em0\"", fw.t_out ? "" : " selected",
-	    fw.t_out ? " selected" : "");
+	h_fmt(h, "><select name=\"dir\" title=\"Which walk to show: the "
+	    "packet coming in, going out, or its reply\"><option value=\"in\""
+	    "%s>coming in</option><option value=\"out\"%s>going out</option>"
+	    "<option value=\"reply_in\"%s>its reply, coming in</option>"
+	    "<option value=\"reply_out\"%s>its reply, going out</option>"
+	    "</select><input name=\"iface\" spellcheck=\"false\" "
+	    "autocomplete=\"off\" size=\"8\" placeholder=\"in on em0\" "
+	    "title=\"The interface it comes in on; else the one the route "
+	    "back to its source is by\"", strcmp(fw.t_dir, "in") == 0 ? " "
+	    "selected" : "", strcmp(fw.t_dir, "out") == 0 ? " selected" : "",
+	    strcmp(fw.t_dir, "reply_in") == 0 ? " selected" : "", strcmp(
+	    fw.t_dir, "reply_out") == 0 ? " selected" : "");
 	h_attr(h, "value", fw.t_if);
-	h_raw(h, "><button class=\"small\">Follow</button></form>");
-	if (!fw.t_asked) {
+	h_fmt(h, "><button class=\"small\"%s>Follow</button></form>",
+	    fw.t_loading ? " disabled" : "");
+	if (fw.t_error[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, fw.t_error);
+		h_raw(h, "</div>");
+	}
+	if (fw.t_loading)
+		h_raw(h, "<div class=\"loader\"></div>");
+	d = fw.t_data;
+	if (d == NULL || !fw.t_asked) {
 		view_ktrace(h);
 		return;
 	}
-	nr = (int)ucl_array_size(jget(fw.data, "rules"));
-	if ((rules = calloc((size_t)nr + 1, sizeof(*rules))) == NULL)
-		abort();
-	nr = 0;
-	it = NULL;
-	while ((o = ucl_object_iterate(jget(fw.data, "rules"), &it, true)) !=
-	    NULL)
-		if (!jbool(o, "disabled"))
-			rules[nr++] = o;
-	qsort(rules, (size_t)nr, sizeof(*rules), num_cmp);
-	h_raw(h, "<ol class=\"fw-steps\">");
-	verdict = NULL;
-	unsure = false;
-	sp = 0;
-	steps = 0;
-	for (i = 0; i < nr && verdict == NULL && steps < 400; i++) {
-		o = rules[i];
-		copy = strdup(jstr(o, "text") != NULL ? jstr(o, "text") : "");
-		n = 0;
-		p = copy;
-		while (n < 127 && (w = strsep(&p, " \t")) != NULL)
-			if (*w != '\0')
-				v[n++] = w;
-		act = "";
-		r = rule_match(v, n, &act, &arg);
-		if (r == T_NO) {
-			free(copy);
-			continue;
-		}
-		steps++;
-		if (r == T_MAYBE)
-			unsure = true;
-		h_fmt(h, "<li class=\"%s pick\" data-act=\"fw-goto\" data-arg=\""
-		    "%lld\"><b>%05lld</b> <code>", r == T_YES ? "met" :
-		    "maybe", (long long)jint(o, "num", 0), (long long)jint(o,
-		    "num", 0));
-		h_txt(h, jstr(o, "text"));
-		h_fmt(h, "</code> <span class=\"chip%s\">%s</span> ", r ==
-		    T_YES ? "" : " warn", r == T_YES ? "met" : "may be met");
-		if (strcmp(act, "allow") == 0 || strcmp(act, "accept") == 0 ||
-		    strcmp(act, "pass") == 0 || strcmp(act, "permit") == 0)
-			verdict = "let through";
-		else if (strcmp(act, "deny") == 0 || strcmp(act, "drop") == 0)
-			verdict = "dropped";
-		else if (strcmp(act, "reject") == 0 || strncmp(act, "unreach",
-		    7) == 0 || strcmp(act, "reset") == 0 || strcmp(act,
-		    "reset6") == 0 || strcmp(act, "abort") == 0)
-			verdict = "refused, and its sender told";
-		else if (strcmp(act, "fwd") == 0 || strcmp(act, "forward") ==
-		    0 || strcmp(act, "divert") == 0)
-			verdict = "handed on, away from the rules";
-		else if (strcmp(act, "skipto") == 0 && arg > 0) {
-			h_fmt(h, "<small>on to %d</small>", arg);
-			while (i + 1 < nr && jint(rules[i + 1], "num", 0) < arg)
-				i++;
-		} else if (strcmp(act, "call") == 0 && arg > 0 && sp < 16) {
-			h_fmt(h, "<small>into %d, and back</small>", arg);
-			stack[sp++] = i;
-			while (i + 1 < nr && jint(rules[i + 1], "num", 0) < arg)
-				i++;
-		} else if (strcmp(act, "return") == 0) {
-			if (sp > 0) {
-				i = stack[--sp];
-				h_fmt(h, "<small>back after %05lld</small>",
-				    (long long)jint(rules[i], "num", 0));
-			}
-		} else if (strcmp(act, "check-state") == 0)
-			h_raw(h, "<small>passes here once a rule kept its "
-			    "state; a first packet goes on</small>");
-		else if (strncmp(act, "nat", 3) == 0 || strcmp(act, "nptv6") ==
-		    0)
-			h_fmt(h, "<small>translated by %s %d, and on (when "
-			    "net.inet.ip.fw.one_pass is 0)</small>", act, arg);
-		else
-			h_raw(h, "<small>and on</small>");
-		h_raw(h, "</li>");
-		free(copy);
+	/* Where it is at this host: in by, out by, for the walk shown. */
+	h_raw(h, "<p class=\"fw-tctx\">");
+	if (jbool(d, "src.local"))
+		h_raw(h, "<span class=\"chip\">from this host</span>");
+	else {
+		h_raw(h, "<span class=\"chip\">in on ");
+		h_txt(h, jstr(d, "ingress.interface") != NULL ? jstr(d,
+		    "ingress.interface") : "? (no route back to its source)");
+		h_raw(h, "</span>");
 	}
-	free(rules);
+	if (jbool(d, "dst.local"))
+		h_raw(h, "<span class=\"chip good\">to this host</span>");
+	else if (jget(d, "route") != NULL) {
+		h_raw(h, "<span class=\"chip\">out by ");
+		h_txt(h, jstr(d, "route.interface"));
+		if (jstr(d, "route.gateway") != NULL && strncmp(jstr(d,
+		    "route.gateway"), "link#", 5) != 0) {
+			h_raw(h, " via ");
+			h_txt(h, jstr(d, "route.gateway"));
+		}
+		h_fmt(h, ", FIB %lld</span>", (long long)jint(d, "fib", 0));
+	} else
+		h_raw(h, "<span class=\"chip bad\">no route to it</span>");
+	if (jget(d, "firewall.on") != NULL && !jbool(d, "firewall.on"))
+		h_raw(h, "<span class=\"chip warn\" title=\"net.inet.ip.fw."
+		    "enable is 0: nothing of the ruleset stops a packet now; "
+		    "what it would do, turned on, is shown\">firewall off"
+		    "</span>");
+	snprintf(q, sizeof(q), "#/troubleshoot?src=%s&dst=%s&proto=%s&port=%s",
+	    fw.t_src, fw.t_dst, fw.t_proto, fw.t_port);
+	h_raw(h, "<a class=\"ghost small\"");
+	h_attr(h, "href", q);
+	h_raw(h, " title=\"The same packet followed across every host and "
+	    "jail, and its reply\">Across the hosts ›</a></p>");
+	snprintf(q, sizeof(q), "firewall.%s", fw.t_dir);
+	w = jget(d, q);
+	if (w == NULL) {
+		h_fmt(h, "<div class=\"notice info\">%s</div>", strcmp(fw.t_dir,
+		    "in") == 0 ? "It is this host's own packet: nothing comes "
+		    "in. See it going out." : strncmp(fw.t_dir, "reply", 5) ==
+		    0 ? "No reply walked: the packet does not get out, or the "
+		    "firewall has no ruleset." : "It does not go out: the "
+		    "packet is this host's, or has no route, or the firewall "
+		    "has no ruleset.");
+		view_ktrace(h);
+		return;
+	}
+	h_raw(h, "<ol class=\"fw-steps\">");
+	maybe = false;
+	it = NULL;
+	while ((st = ucl_object_iterate(jget(w, "walk"), &it, true)) != NULL) {
+		how = jstr(st, "how") != NULL ? jstr(st, "how") : "";
+		if (strncmp(how, "may be met", 10) == 0)
+			maybe = true;
+		h_fmt(h, "<li class=\"%s pick\" data-act=\"fw-goto\" data-arg=\""
+		    "%lld\"><b>%05lld</b> <code>", strncmp(how, "may be met",
+		    10) == 0 ? "maybe" : strncmp(how, "decides", 7) == 0 ?
+		    "decides" : "met", (long long)jint(st, "rule", 0),
+		    (long long)jint(st, "rule", 0));
+		/* Its words, the number before them written already. */
+		t = jstr(st, "text") != NULL ? jstr(st, "text") : "";
+		t += strspn(t, "0123456789");
+		t += strspn(t, " ");
+		h_txt(h, t);
+		h_raw(h, "</code> <small>");
+		h_txt(h, how);
+		h_raw(h, "</small></li>");
+	}
 	h_raw(h, "</ol>");
-	h_fmt(h, "<div class=\"notice %s\"><b>%s</b>%s</div>", verdict ==
-	    NULL ? "warn" : strcmp(verdict, "let through") == 0 ? "info" :
-	    "bad", verdict != NULL ? verdict : "No rule decides it, which "
-	    "ipfw's last rule then does", unsure ? ", if every rule marked "
-	    "\"may be met\" is, and none before it decided otherwise." :
-	    ".");
+	vd = jstr(w, "verdict");
+	off = jget(d, "firewall.on") != NULL && !jbool(d, "firewall.on");
+	h_fmt(h, "<div class=\"notice %s\"><b>", off ? "info" : vd == NULL ||
+	    strcmp(vd, "deny") == 0 || strcmp(vd, "unknown") == 0 ? "bad" :
+	    strcmp(vd, "allow") == 0 ? "info" : "warn");
+	if (off)
+		h_raw(h, "Were the firewall on: ");
+	h_txt(h, verdict_words(w));
+	h_raw(h, "</b>");
+	if (jint(w, "rule", 0) != 0)
+		h_fmt(h, " by rule %lld", (long long)jint(w, "rule", 0));
+	if (jstr(w, "fwd") != NULL) {
+		h_raw(h, ", to ");
+		h_txt(h, jstr(w, "fwd"));
+	}
+	if (jint(w, "setfib", -1) >= 0)
+		h_fmt(h, "; routed in FIB %lld from then on", (long long)jint(
+		    w, "setfib", 0));
+	if (jbool(w, "keep_state"))
+		h_raw(h, "; a state kept for its reply");
+	h_raw(h, maybe ? ", if no rule marked \"may be met\" decided "
+	    "otherwise first." : ".");
+	h_raw(h, "</div>");
+	if (ucl_array_size(jget(w, "uncertain")) > 0) {
+		h_raw(h, "<details class=\"fw-unsure\"><summary>What it could "
+		    "not judge</summary><ul>");
+		it = NULL;
+		while ((c = ucl_object_iterate(jget(w, "uncertain"), &it,
+		    true)) != NULL) {
+			h_raw(h, "<li><code>");
+			h_txt(h, jstr(c, "text"));
+			h_raw(h, "</code> <span class=\"dim\">");
+			h_txt(h, jstr(c, "because"));
+			h_raw(h, "</span></li>");
+		}
+		h_raw(h, "</ul></details>");
+	}
 	view_ktrace(h);
 }
 
@@ -1611,7 +1562,7 @@ words_ok(const char *s)
 
 	return (s[0] != '\0' && strlen(s) < 400 && s[strspn(s, "abcdefghijklm"
 	    "nopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ._:/,-@{}!()="
-	    "<>*+%[]")] == '\0');
+	    "<>*+%[]$")] == '\0');
 }
 
 /*
@@ -1722,6 +1673,19 @@ rule_words(struct html *h)
 		h_attr(h, "value", copy);
 		h_raw(h, "></option>");
 	}
+	/* The aliases: an address list where an address goes, any of them
+	 * after the protocol. */
+	it = NULL;
+	while (n > 0 && (t = ucl_object_iterate(jget(fw.data, "aliases"), &it,
+	    true)) != NULL)
+		if (jstr(t, "name") != NULL && (tbl || strcmp(jstr(t, "kind"),
+		    "addr") != 0)) {
+			snprintf(copy, sizeof(copy), "%s$%s", head, jstr(t,
+			    "name"));
+			h_raw(h, "<option");
+			h_attr(h, "value", copy);
+			h_raw(h, "></option>");
+		}
 	/* The host's tables, as an address. */
 	it = NULL;
 	while (tbl && (t = ucl_object_iterate(jget(fw.data, "tables"), &it,
@@ -2436,6 +2400,41 @@ more_form(const char *form, const ucl_object_t *f)
 	const char	*a, *b;
 	char		 words[500];
 
+	if (strcmp(form, "fw-alias") == 0) {
+		a = jstr(f, "name") != NULL ? jstr(f, "name") : "";
+		b = jstr(f, "value") != NULL ? jstr(f, "value") : "";
+		if ((s = cur_server()) == NULL)
+			return (true);
+		if (a[0] == '$')
+			a++;
+		if (a[0] == '\0' || a[strspn(a, "abcdefghijklmnopqrstuvwxyz"
+		    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")] != '\0' ||
+		    (a[0] >= '0' && a[0] <= '9') || strlen(a) > 32) {
+			toast(true, "An alias's name is letters, digits and _, "
+			    "not a digit first");
+			return (true);
+		}
+		if (!words_ok(b) || strchr(b, '$') != NULL) {
+			toast(true, "Its addresses with blanks between, its ports "
+			    "with commas, or one word");
+			return (true);
+		}
+		/* An address list's entries with commas or blanks between. */
+		{
+			char	vb[400], *c;
+
+			snprintf(vb, sizeof(vb), "%s", b);
+			if (strcmp(jstr(f, "kind") != NULL ? jstr(f, "kind") :
+			    "", "addr") == 0)
+				for (c = vb; *c != '\0'; c++)
+					if (*c == ',')
+						*c = ' ';
+			snprintf(words, sizeof(words), "%s %s %s", a, jstr(f,
+			    "kind") != NULL ? jstr(f, "kind") : "addr", vb);
+		}
+		object_job(s, "alias", words, true);
+		return (true);
+	}
 	if (strcmp(form, "fw-table") != 0 && strcmp(form, "fw-entry") != 0 &&
 	    strcmp(form, "fw-object") != 0 && strcmp(form, "fw-trace") != 0 &&
 	    strcmp(form, "fw-ktrace") != 0 && strcmp(form, "fw-nat") != 0 &&
@@ -2486,9 +2485,31 @@ more_form(const char *form, const ucl_object_t *f)
 		    NULL ? jstr(f, "port") : "");
 		snprintf(fw.t_if, sizeof(fw.t_if), "%s", jstr(f, "iface") !=
 		    NULL ? jstr(f, "iface") : "");
-		fw.t_out = jstr(f, "dir") != NULL && strcmp(jstr(f, "dir"),
-		    "out") == 0;
+		snprintf(fw.t_dir, sizeof(fw.t_dir), "%s", jstr(f, "dir") !=
+		    NULL ? jstr(f, "dir") : "in");
+		if (fw.t_src[strspn(fw.t_src, "0123456789abcdefABCDEF.:")] !=
+		    '\0' || fw.t_dst[strspn(fw.t_dst, "0123456789abcdefABCDEF"
+		    ".:")] != '\0' || fw.t_src[0] == '\0' || fw.t_dst[0] ==
+		    '\0') {
+			toast(true, "A packet is followed from one IPv4 or IPv6 "
+			    "address to another");
+			return (true);
+		}
+		if (fw.t_loading)
+			return (true);
 		fw.t_asked = true;
+		fw.t_loading = true;
+		fw.t_error[0] = '\0';
+		{
+			char	url[640];
+
+			snprintf(url, sizeof(url), "/api/servers/%s/ipfw/path?"
+			    "src=%s&dst=%s&proto=%s&port=%s&interface=%s%s%s",
+			    s->id, fw.t_src, fw.t_dst, fw.t_proto, fw.t_port,
+			    fw.t_if, fw.jail[0] != '\0' ? "&jail=" : "",
+			    fw.jail);
+			api("GET", url, NULL, trace_cb, NULL);
+		}
 		return (true);
 	}
 	if (strcmp(form, "fw-table") == 0) {
@@ -2540,6 +2561,16 @@ more_action(struct server *s, const char *act, const char *arg,
 	long long		 before, after, cur;
 	int			 n, i;
 
+	if (strcmp(act, "fw-alias-edit") == 0) {
+		snprintf(alias_edit, sizeof(alias_edit), "%s", arg);
+		return (true);
+	}
+	if (strcmp(act, "fw-alias-del") == 0) {
+		snprintf(words, sizeof(words), "%s delete", arg);
+		object_job(s, "alias", words, true);
+		alias_edit[0] = '\0';
+		return (true);
+	}
 	if (strcmp(act, "fw-entry-del") == 0) {
 		snprintf(words, sizeof(words), "%s delete %s", arg, value);
 		object_job(s, "table", words, false);
@@ -2674,6 +2705,143 @@ more_action(struct server *s, const char *act, const char *arg,
 	return (true);
 }
 
+/* The part a rule's number is in, or -1. */
+static int
+sect_of(long long num)
+{
+	size_t	i;
+
+	for (i = 0; i < nitems(sects); i++)
+		if (num >= sects[i].lo && num <= sects[i].hi)
+			return ((int)i);
+	return (-1);
+}
+
+/*
+ * The chain drawn: the parts every packet walks down the left, the
+ * parts they call on the right, an arrow for each call or skipto a
+ * rule makes, and on each part how many rules it has and what they take
+ * a second (while Live counters are read).  Pressed, a part opens.
+ */
+#define	CH_W	200
+#define	CH_H	30
+#define	CH_GAP	8
+#define	CH_X2	430
+#define	CH_CW	250
+static void
+chain_graph(struct html *h, const ucl_object_t *live,
+    const ucl_object_t *kept)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	double			 rate[nitems(sects)], r;
+	int			 n[nitems(sects)], k[nitems(sects)], i, j, to;
+	int			 x1, y1, x2, y2, ymax;
+	char			 edges[64][2];
+	const char		*t, *p;
+	int			 ne = 0, e;
+	bool			 dup;
+
+	for (i = 0; i < (int)nitems(sects); i++) {
+		n[i] = count(live, sects[i].lo, sects[i].hi);
+		k[i] = count(kept, sects[i].lo, sects[i].hi);
+		rate[i] = 0;
+	}
+	/* What each part takes, and whom it calls. */
+	it = NULL;
+	while ((o = ucl_object_iterate(live, &it, true)) != NULL) {
+		if ((i = sect_of(jint(o, "num", 0))) < 0)
+			continue;
+		if ((r = rate_of(jint(o, "num", 0), jint(o, "pkts", 0))) > 0)
+			rate[i] += r;
+		t = jstr(o, "text") != NULL ? jstr(o, "text") : "";
+		if ((p = strstr(t, " call ")) == NULL && (p = strstr(t,
+		    " skipto ")) == NULL)
+			continue;
+		p += p[1] == 'c' ? 6 : 8;
+		if ((to = sect_of(atoi(p))) < 0 || to == i || ne == 64)
+			continue;
+		dup = false;
+		for (e = 0; e < ne; e++)
+			if (edges[e][0] == i && edges[e][1] == to)
+				dup = true;
+		if (!dup) {
+			edges[ne][0] = (char)i;
+			edges[ne][1] = (char)to;
+			ne++;
+		}
+	}
+	ymax = 14 + 15 * (CH_H + CH_GAP);
+	h_fmt(h, "<div class=\"fwchain-wrap\"><svg class=\"fwchain\" viewBox=\""
+	    "0 0 %d %d\" role=\"img\" aria-label=\"The chain of the "
+	    "firewall's parts\"><defs><marker id=\"fwarrow\" viewBox=\"0 0 "
+	    "8 8\" refX=\"7\" refY=\"4\" markerWidth=\"6\" markerHeight="
+	    "\"6\" orient=\"auto\"><path d=\"M0 0L8 4L0 8z\"/></marker>"
+	    "</defs>", CH_X2 + CH_CW + 10, ymax);
+	h_fmt(h, "<text class=\"head\" x=\"%d\" y=\"9\">The chain, down</text>"
+	    "<text class=\"head\" x=\"%d\" y=\"9\">Called from it</text>",
+	    10, CH_X2);
+	/* The calls first, under the boxes. */
+	for (e = 0; e < ne; e++) {
+		i = edges[e][0];
+		j = edges[e][1];
+		if (i < 10) {
+			x1 = 10 + CH_W;
+			y1 = 14 + i * (CH_H + CH_GAP) * 3 / 2 + CH_H / 2;
+		} else {
+			x1 = CH_X2;
+			y1 = 14 + (i - 10) * (CH_H + CH_GAP) + CH_H / 2;
+		}
+		if (j < 10) {
+			x2 = 10 + CH_W;
+			y2 = 14 + j * (CH_H + CH_GAP) * 3 / 2 + CH_H / 2;
+		} else {
+			x2 = CH_X2;
+			y2 = 14 + (j - 10) * (CH_H + CH_GAP) + CH_H / 2;
+		}
+		h_fmt(h, "<path class=\"call%s\" d=\"M%d %dC%d %d %d %d %d %d\" "
+		    "marker-end=\"url(#fwarrow)\"><title>%s %s %s</title></path>",
+		    j < 10 ? " skip" : "", x1, y1, x1 + 80, y1, x2 - 80, y2,
+		    x2, y2, sects[i].name, j < 10 ? "skips to" : "calls",
+		    sects[j].name);
+	}
+	for (i = 0; i < (int)nitems(sects); i++) {
+		if (i < 10) {
+			x1 = 10;
+			y1 = 14 + i * (CH_H + CH_GAP) * 3 / 2;
+			x2 = CH_W;
+		} else {
+			x1 = CH_X2;
+			y1 = 14 + (i - 10) * (CH_H + CH_GAP);
+			x2 = CH_CW;
+		}
+		h_fmt(h, "<g class=\"part%s%s\" data-act=\"fw-sect\" data-arg=\""
+		    "%d\" transform=\"translate(%d,%d)\"><title>%d to %d: %s"
+		    "</title><rect width=\"%d\" height=\"%d\" rx=\"6\"/>"
+		    "<text class=\"num\" x=\"8\" y=\"14\">%d</text><text class="
+		    "\"name\" x=\"8\" y=\"28\">", n[i] == 0 && k[i] == 0 ?
+		    " none" : "", fw.sect == i ? " on" : "", i, x1, y1,
+		    sects[i].lo, sects[i].hi, sects[i].what[0] != '\0' ?
+		    sects[i].what : sects[i].name, x2, CH_H, sects[i].lo);
+		h_txt(h, sects[i].name);
+		h_fmt(h, "</text><text class=\"stat\" x=\"%d\" y=\"14\">%d",
+		    x2 - 8, n[i]);
+		if (k[i] != n[i])
+			h_fmt(h, " · %d kept", k[i]);
+		h_raw(h, "</text>");
+		if (rate[i] >= 0.05)
+			h_fmt(h, "<text class=\"rate\" x=\"%d\" y=\"28\">+%.1f"
+			    "/s</text>", x2 - 8, rate[i]);
+		h_raw(h, "</g>");
+		/* Down the chain. */
+		if (i < 9)
+			h_fmt(h, "<path class=\"down\" d=\"M%d %dL%d %d\" "
+			    "marker-end=\"url(#fwarrow)\"/>", x1 + 40, y1 + CH_H,
+			    x1 + 40, y1 + (CH_H + CH_GAP) * 3 / 2);
+	}
+	h_raw(h, "</svg></div>");
+}
+
 void
 view_firewall(struct html *h, struct server *s)
 {
@@ -2798,6 +2966,10 @@ view_firewall(struct html *h, struct server *s)
 		view_tables(h);
 		return;
 	}
+	if (fw.sect == FW_ALIASES) {
+		view_aliases(h);
+		return;
+	}
 	if (fw.sect == FW_OBJECTS) {
 		view_objects(h);
 		return;
@@ -2819,6 +2991,7 @@ view_firewall(struct html *h, struct server *s)
 		return;
 	}
 	if (fw.sect < 0 || fw.sect >= (int)nitems(sects)) {
+		chain_graph(h, live, kept);
 		h_raw(h, "<table class=\"net fw-layout\"><thead><tr><th>Numbers"
 		    "</th><th>Part</th><th>Now</th><th>Kept</th><th></th></tr>"
 		    "</thead><tbody>");
@@ -2952,7 +3125,26 @@ view_firewall(struct html *h, struct server *s)
 		    "\"fw\" title=\"Press to change it; drag it to another "
 		    "place\"><td><b>%05lld</b></td><td class=\"mono rule\">",
 		    now ? "" : " off", num, num, num);
-		h_txt(h, jstr(o, "text"));
+		/* Kept with aliases: its own words, ipfw's when hovered. */
+		{
+			const char	*src = NULL;
+			const ucl_object_t *kk;
+			ucl_object_iter_t   kit = NULL;
+
+			while ((kk = ucl_object_iterate(jget(fw.data, "kept"),
+			    &kit, true)) != NULL)
+				if (jint(kk, "num", 0) == num && jstr(kk,
+				    "source") != NULL)
+					src = jstr(kk, "source");
+			if (src != NULL) {
+				h_raw(h, "<span class=\"aliased\"");
+				h_attr(h, "title", jstr(o, "text"));
+				h_raw(h, ">");
+				h_txt(h, src);
+				h_raw(h, "</span>");
+			} else
+				h_txt(h, jstr(o, "text"));
+		}
 		h_raw(h, "</td><td>");
 		if (now) {
 			double	rate = rate_of(num, jint(o, "pkts", 0));
