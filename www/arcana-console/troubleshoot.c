@@ -428,7 +428,9 @@ ts_run(struct kore_task *task)
 			    ret);
 			finding(findings, "warn", NULL, "%s", how);
 		}
-		for (i = 0; i < t->n; i++)
+		/* A state the reply never comes by: said only of a reply
+		 * whose way is known. */
+		for (i = 0; i < t->n && ucl_array_size(back) > 0; i++)
 			if (inpath[i] && !passed[i])
 				finding(findings, "info", place_name(&t->p[i]),
 				    "The request passes here, the reply does "
