@@ -18,6 +18,17 @@
  * mode the old rules wait in set 1, disabled, and are swapped back
  * unless the change is confirmed: a ruleset that cuts the console off
  * takes itself back.
+ *
+ * Aliases: a name for what rules say again and again, written $name in
+ * a rule.  An address list is an ipfw table of its name, the rule
+ * saying table(name), so that changing the list changes the table and
+ * no rule; a port list or a single value (an interface, an address) is
+ * written into each rule that names it.  The kept file stays ipfw's own
+ * commands, which the host loads at boot as they are: an alias is a
+ * comment line, "#arcana alias name kind value", and a rule written
+ * with aliases is its own comment line, "#arcana add number words",
+ * before the rule as ipfw reads it, written again whenever an alias it
+ * names changes.
  */
 
 #include <sys/param.h>
@@ -47,6 +58,18 @@
 #define	IPFW_TABLE_ROWS	500	/* of one table, and no more are sent */
 #define	IPFW_WORDS	120
 #define	IPFW_DYN_MAX	3000	/* dynamic rules in a reply, at most */
+#define	ALIAS_MAX	256
+
+/* An alias, $name in a rule. */
+struct alias {
+	char		 name[33];
+	char		 kind[8];	/* addr, ports, value */
+	char		*value;		/* addr: the entries, a space between */
+};
+
+static size_t	aliases_of(struct work *, const char *, struct alias *,
+		    size_t);
+static char	*text_expand(struct work *, const char *, const char **);
 
 static pthread_mutex_t	file_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -149,6 +172,13 @@ word_ok(const char *s)
 
 	if (s == NULL || s[0] == '\0' || strlen(s) > 255)
 		return (false);
+	/* An alias: $ and its name, a word of its own. */
+	if (s[0] == '$') {
+		for (i = 1; s[i] != '\0'; i++)
+			if (!isalnum((unsigned char)s[i]) && s[i] != '_')
+				return (false);
+		return (i > 1 && i <= 33 && !isdigit((unsigned char)s[1]));
+	}
 	for (i = 0; s[i] != '\0'; i++)
 		if (!isalnum((unsigned char)s[i]) && strchr("._:/,-{}!()=+*@"
 		    "<>[]%~^&|#", s[i]) == NULL)
@@ -190,6 +220,10 @@ kept_rule(const char *line, long *nump, const char **restp)
 	*restp = end + strspn(end, " \t");
 	return (true);
 }
+
+static bool	alias_name_ok(const char *);
+static bool	src_rule(const char *, long *, const char **);
+static bool	prefix_ok(const char *);
 
 /*
  * Is there a firewall to ask?  ipfw in the kernel; or another program
@@ -689,19 +723,48 @@ do_ipfw(struct work *w, struct arc_network_rsp *rsp)
 	pthread_mutex_lock(&file_lock);
 	text = file_read(w, &len);
 	pthread_mutex_unlock(&file_lock);
-	p = text;
-	while (p != NULL && (line = strsep(&p, "\n")) != NULL) {
-		line += strspn(line, " \t");
-		if (line[0] == '\0' || line[0] == '#')
-			continue;
-		if (kept_rule(line, &num, &rest)) {
+	/* The aliases, an address list with its entries. */
+	{
+		struct alias	al[ALIAS_MAX];
+		size_t		nal, i;
+
+		nal = aliases_of(w, text, al, nitems(al));
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < nal; i++) {
 			o = ucl_object_typed_new(UCL_OBJECT);
-			ucl_object_insert_key(o, ucl_object_fromint(num), "num",
-			    0, false);
-			put(o, "text", rest);
-			ucl_array_append(kept, o);
-		} else
-			ucl_array_append(other, ucl_object_fromstring(line));
+			put(o, "name", al[i].name);
+			put(o, "kind", al[i].kind);
+			put(o, "value", al[i].value);
+			ucl_array_append(arr, o);
+		}
+		ucl_object_insert_key(top, arr, "aliases", 0, false);
+	}
+	{
+		const char	*src = NULL;
+		long		 srcnum = -1;
+
+		p = text;
+		while (p != NULL && (line = strsep(&p, "\n")) != NULL) {
+			line += strspn(line, " \t");
+			/* A rule's own words, its aliases in them. */
+			if (src_rule(line, &srcnum, &src))
+				continue;
+			if (line[0] == '\0' || line[0] == '#')
+				continue;
+			if (kept_rule(line, &num, &rest)) {
+				o = ucl_object_typed_new(UCL_OBJECT);
+				ucl_object_insert_key(o, ucl_object_fromint(num),
+				    "num", 0, false);
+				put(o, "text", rest);
+				if (src != NULL && srcnum == num)
+					put(o, "source", src);
+				ucl_array_append(kept, o);
+			} else
+				ucl_array_append(other, ucl_object_fromstring(
+				    line));
+			src = NULL;
+			srcnum = -1;
+		}
 	}
 	ucl_object_insert_key(top, kept, "kept", 0, false);
 	ucl_object_insert_key(top, other, "other", 0, false);
@@ -962,13 +1025,14 @@ int
 do_ipfw_rules(struct work *w, const struct arc_ipfw_rules_req *rq,
     struct arc_ipfw_rules_rsp *rsp)
 {
-	const char	*sha, *bad, *e;
+	const char	*sha, *bad, *e, *rq_text;
 	char		*old, *copy, *p, *line;
 	size_t		 oldlen, len;
 	int		 step, n;
 
 	rsp->has_ok = true;
 	rsp->ok = false;
+	rq_text = rq->conf_text;
 	pthread_mutex_lock(&file_lock);
 	step = step_begin(w, ARC_STEP_KIND_FILE, "read", "%s", opts.ipfw_rules);
 	old = file_read(w, &oldlen);
@@ -1011,8 +1075,25 @@ do_ipfw_rules(struct work *w, const struct arc_ipfw_rules_req *rq,
 		    "the last line has to end as the others do";
 		goto out;
 	}
+	/* Rules written with aliases, as ipfw is to read them. */
+	{
+		const char	*xe = NULL;
+		char		*x;
+
+		if ((x = text_expand(w, rq->conf_text, &xe)) == NULL) {
+			rsp->error = xe;
+			goto out;
+		}
+		rq_text = x;
+		len = strlen(x);
+	}
+	if (len > IPFW_FILE_MAX) {
+		rsp->error = len > IPFW_FILE_MAX ? "too large for a ruleset" :
+		    "the last line has to end as the others do";
+		goto out;
+	}
 	/* The sets are the agent's to swap: a line does not name one. */
-	copy = wstrdup(w, rq->conf_text);
+	copy = wstrdup(w, rq_text);
 	p = copy;
 	n = 0;
 	while ((line = strsep(&p, "\n")) != NULL) {
@@ -1028,7 +1109,7 @@ do_ipfw_rules(struct work *w, const struct arc_ipfw_rules_req *rq,
 			goto out;
 		}
 	}
-	if ((bad = file_wrong(w, rq->conf_text, len)) != NULL) {
+	if ((bad = file_wrong(w, rq_text, len)) != NULL) {
 		rsp->error = bad;
 		goto out;
 	}
@@ -1039,15 +1120,15 @@ do_ipfw_rules(struct work *w, const struct arc_ipfw_rules_req *rq,
 	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s",
 	    opts.ipfw_rules);
 	e = NULL;
-	if (file_write(w, rq->conf_text, len, &e) != 0) {
+	if (file_write(w, rq_text, len, &e) != 0) {
 		rsp->error = e;
 		step_end(w, step, false, "%s", e);
 		goto out;
 	}
 	step_end(w, step, true, "the one before it is kept as %s.arcana-old",
 	    opts.ipfw_rules);
-	rsp->conf_text = wtext(w, wstrdup(w, rq->conf_text));
-	rsp->sha256 = sha_hex(w, rq->conf_text, len);
+	rsp->conf_text = wtext(w, wstrdup(w, rq_text));
+	rsp->sha256 = sha_hex(w, rq_text, len);
 	rsp->ok = true;
 out:
 	pthread_mutex_unlock(&file_lock);
@@ -1119,6 +1200,36 @@ ipfw_check(const struct arc_job_spec *sp)
 		if (sp->safe)
 			return ("a rule deleted is not put back by itself: "
 			    "apply the kept rules in safe mode instead");
+	} else if (strcmp(verb, "alias") == 0) {
+		if (sp->names.n < 2 || !alias_name_ok(sp->names.v[0]))
+			return ("an alias is its name (letters, digits, _), and "
+			    "addr, ports or value with what it is, or delete");
+		if (strcmp(sp->names.v[1], "delete") == 0) {
+			if (sp->names.n != 2)
+				return ("an alias deleted is named alone");
+		} else if (strcmp(sp->names.v[1], "addr") == 0) {
+			if (sp->names.n < 3)
+				return ("an address list has an address or a "
+				    "network at least");
+			for (i = 2; i < sp->names.n; i++)
+				if (!prefix_ok(sp->names.v[i]))
+					return ("an address list is of addresses "
+					    "and networks (10.0.0.0/8, "
+					    "2001:db8::/32)");
+		} else if (strcmp(sp->names.v[1], "ports") == 0) {
+			if (sp->names.n != 3 || strspn(sp->names.v[2],
+			    "0123456789,-") != strlen(sp->names.v[2]))
+				return ("a port list is ports and ranges with "
+				    "commas between: 80,443,8000-8080");
+		} else if (strcmp(sp->names.v[1], "value") == 0) {
+			if (sp->names.n != 3 || !word_ok(sp->names.v[2]) ||
+			    sp->names.v[2][0] == '$')
+				return ("a value is one word of ipfw's: an "
+				    "interface, an address, a number");
+		} else
+			return ("an alias is addr, ports or value");
+		if (sp->safe)
+			return ("an alias is not taken back by itself");
 	} else if (strcmp(verb, "apply") == 0 || strcmp(verb, "enable") == 0 ||
 	    strcmp(verb, "disable") == 0) {
 		if (sp->names.n != 0)
@@ -1147,8 +1258,8 @@ ipfw_check(const struct arc_job_spec *sp)
 		if (sp->safe)
 			return ("it is not taken back by itself");
 	} else
-		return ("an ipfw job is add, delete, apply, enable, disable, "
-		    "zero, or table, nat, nat64lsn, nat64stl, nat64clat, "
+		return ("an ipfw job is add, delete, alias, apply, enable, "
+		    "disable, zero, or table, nat, nat64lsn, nat64stl, nat64clat, "
 		    "nptv6, pipe, queue, sched with their words");
 	return (NULL);
 }
@@ -1183,7 +1294,20 @@ ipfw_title(const struct arc_job_spec *sp)
  * number taken out.  0, or -1 and why.
  */
 static int
+kept_change_src(struct work *w, long num, const char *rule, const char *src,
+    const char **errp);
+
+static int
 kept_change(struct work *w, long num, const char *rule, const char **errp)
+{
+
+	return (kept_change_src(w, num, rule, NULL, errp));
+}
+
+/* The same, the rule's own words with aliases kept before it. */
+static int
+kept_change_src(struct work *w, long num, const char *rule, const char *src,
+    const char **errp)
 {
 	char		*old, *out, *p, *line;
 	const char	*rest;
@@ -1201,18 +1325,26 @@ kept_change(struct work *w, long num, const char *rule, const char **errp)
 	}
 	if (old == NULL)
 		old = wstrdup(w, "");
-	cap = oldlen + (rule != NULL ? strlen(rule) : 0) + 64;
+	cap = oldlen + (rule != NULL ? strlen(rule) : 0) + (src != NULL ?
+	    strlen(src) : 0) + 128;
 	out = wcalloc(w, cap, 1);
 	len = 0;
 	done = rule == NULL;
 	p = old;
 	while (p != NULL && *p != '\0' && (line = strsep(&p, "\n")) != NULL) {
-		if (kept_rule(line, &n, &rest)) {
+		/* A rule's own words go with it when it is deleted. */
+		if (src_rule(line, &n, &rest) && rule == NULL && n == num)
+			continue;
+		if (kept_rule(line, &n, &rest) || src_rule(line, &n, &rest)) {
 			/* Deleted: every line of the number goes. */
 			if (rule == NULL && n == num)
 				continue;
 			/* Added: before the first of a higher number. */
 			if (!done && n > num) {
+				if (src != NULL)
+					len += (size_t)snprintf(out + len,
+					    cap - len, "#arcana add %05ld %s\n",
+					    num, src);
 				len += (size_t)snprintf(out + len, cap - len,
 				    "add %05ld %s\n", num, rule);
 				done = true;
@@ -1220,12 +1352,235 @@ kept_change(struct work *w, long num, const char *rule, const char **errp)
 		}
 		len += (size_t)snprintf(out + len, cap - len, "%s\n", line);
 	}
-	if (!done)
+	if (!done) {
+		if (src != NULL)
+			len += (size_t)snprintf(out + len, cap - len,
+			    "#arcana add %05ld %s\n", num, src);
 		len += (size_t)snprintf(out + len, cap - len, "add %05ld %s\n",
 		    num, rule);
+	}
 	rc = file_write(w, out, len, errp);
 	pthread_mutex_unlock(&file_lock);
 	return (rc);
+}
+
+/* ---- Aliases --------------------------------------------------------- */
+
+
+static bool
+alias_name_ok(const char *s)
+{
+	size_t	i;
+
+	if (s == NULL || s[0] == '\0' || isdigit((unsigned char)s[0]) ||
+	    strlen(s) > 32)
+		return (false);
+	for (i = 0; s[i] != '\0'; i++)
+		if (!isalnum((unsigned char)s[i]) && s[i] != '_')
+			return (false);
+	return (true);
+}
+
+/* "#arcana add 01000 words": a rule's own words, aliases and all. */
+static bool
+src_rule(const char *line, long *nump, const char **restp)
+{
+	const char	*p = line + strspn(line, " \t");
+
+	if (strncmp(p, "#arcana ", 8) != 0)
+		return (false);
+	return (kept_rule(p + 8, nump, restp));
+}
+
+/* The aliases of the kept text; an address list's entries from its
+ * table's lines. */
+static size_t
+aliases_of(struct work *w, const char *text, struct alias *a, size_t max)
+{
+	char	*copy, *p, *line, *sp, *k[4];
+	size_t	 n = 0, i;
+	int	 nk;
+
+	if (text == NULL)
+		return (0);
+	copy = wstrdup(w, text);
+	for (p = copy; (line = strsep(&p, "\n")) != NULL && n < max; ) {
+		line += strspn(line, " \t");
+		if (strncmp(line, "#arcana alias ", 14) != 0)
+			continue;
+		sp = line + 14;
+		for (nk = 0; nk < 3 && (k[nk] = strsep(&sp, " \t")) != NULL;
+		    nk++)
+			if (*k[nk] == '\0')
+				nk--;
+		if (nk < 2 || !alias_name_ok(k[0]))
+			continue;
+		memset(&a[n], 0, sizeof(a[n]));
+		strlcpy(a[n].name, k[0], sizeof(a[n].name));
+		strlcpy(a[n].kind, k[1], sizeof(a[n].kind));
+		a[n].value = wstrdup(w, nk > 2 ? k[2] : "");
+		if (sp != NULL && strcmp(a[n].kind, "addr") != 0)
+			a[n].value = wfmt(w, "%s %s", a[n].value, sp);
+		n++;
+	}
+	/* An address list: what its table's lines add. */
+	copy = wstrdup(w, text);
+	for (p = copy; (line = strsep(&p, "\n")) != NULL; ) {
+		char	tn[64], ad[80];
+
+		line += strspn(line, " \t");
+		if (sscanf(line, "table %63s add %79s", tn, ad) != 2)
+			continue;
+		for (i = 0; i < n; i++)
+			if (strcmp(a[i].kind, "addr") == 0 && strcmp(a[i].name,
+			    tn) == 0)
+				a[i].value = a[i].value[0] == '\0' ? wstrdup(w,
+				    ad) : wfmt(w, "%s %s", a[i].value, ad);
+	}
+	return (n);
+}
+
+/*
+ * A rule's words with its aliases put in: $list as table(list), $ports
+ * and $value as what they are.  NULL with why in *errp for one that
+ * there is not.
+ */
+static const char **
+expand(struct work *w, const struct alias *a, size_t na,
+    const char *const *words, size_t nw, const char **errp)
+{
+	const char	**out;
+	size_t		  i, k;
+
+	out = wcalloc(w, nw + 1, sizeof(*out));
+	for (i = 0; i < nw; i++) {
+		if (words[i][0] != '$') {
+			out[i] = words[i];
+			continue;
+		}
+		for (k = 0; k < na && strcmp(a[k].name, words[i] + 1) != 0; k++)
+			;
+		if (k == na) {
+			*errp = wfmt(w, "%s: there is no such alias", words[i]);
+			return (NULL);
+		}
+		out[i] = strcmp(a[k].kind, "addr") == 0 ? wfmt(w, "table(%s)",
+		    a[k].name) : a[k].value;
+	}
+	return (out);
+}
+
+static bool
+uses_alias(const char *const *words, size_t n)
+{
+	size_t	i;
+
+	for (i = 0; i < n; i++)
+		if (words[i][0] == '$')
+			return (true);
+	return (false);
+}
+
+static char *
+join(struct work *w, const char *const *words, size_t n)
+{
+	size_t	 i, len = 1;
+	char	*s;
+
+	for (i = 0; i < n; i++)
+		len += strlen(words[i]) + 1;
+	s = wcalloc(w, len, 1);
+	for (i = 0; i < n; i++) {
+		if (i > 0)
+			strlcat(s, " ", len);
+		strlcat(s, words[i], len);
+	}
+	return (s);
+}
+
+/* A rule's text split into its words, in the arena. */
+static size_t
+split(struct work *w, const char *text, const char **v, size_t max)
+{
+	char	*c = wstrdup(w, text), *x;
+	size_t	 n = 0;
+
+	while ((x = strsep(&c, " \t")) != NULL && n < max)
+		if (*x != '\0')
+			v[n++] = x;
+	return (n);
+}
+
+/* The aliases kept now. */
+static size_t
+aliases_now(struct work *w, struct alias *a, size_t max)
+{
+	char	*text;
+	size_t	 len;
+
+	pthread_mutex_lock(&file_lock);
+	text = file_read(w, &len);
+	pthread_mutex_unlock(&file_lock);
+	return (aliases_of(w, text, a, max));
+}
+
+/*
+ * The kept text with every rule of its own words written again from
+ * them, as its aliases say now; a rule written with aliases and no
+ * line of its own words given one.  NULL with why in *errp.
+ */
+static char *
+text_expand(struct work *w, const char *text, const char **errp)
+{
+	struct alias	 a[ALIAS_MAX];
+	const char	*v[IPFW_WORDS], **e, *rest;
+	char		*copy, *p, *line, *out;
+	size_t		 na, nv, cap, len;
+	long		 num, pend = -1;
+	int		 ln = 0;
+
+	na = aliases_of(w, text, a, nitems(a));
+	cap = strlen(text) * 2 + 1024;
+	out = wcalloc(w, cap, 1);
+	len = 0;
+	copy = wstrdup(w, text);
+	for (p = copy; p != NULL && *p != '\0' &&
+	    (line = strsep(&p, "\n")) != NULL; ) {
+		ln++;
+		if (src_rule(line, &num, &rest)) {
+			nv = split(w, rest, v, nitems(v));
+			if ((e = expand(w, a, na, v, nv, errp)) == NULL) {
+				*errp = wfmt(w, "line %d: %s", ln, *errp);
+				return (NULL);
+			}
+			len += (size_t)snprintf(out + len, cap - len, "%s\n"
+			    "add %05ld %s\n", line, num, join(w, e, nv));
+			pend = num;
+			continue;
+		}
+		if (kept_rule(line, &num, &rest)) {
+			/* The one its own words were just written again. */
+			if (num == pend) {
+				pend = -1;
+				continue;
+			}
+			pend = -1;
+			nv = split(w, rest, v, nitems(v));
+			if (uses_alias(v, nv)) {
+				if ((e = expand(w, a, na, v, nv, errp)) == NULL) {
+					*errp = wfmt(w, "line %d: %s", ln, *errp);
+					return (NULL);
+				}
+				len += (size_t)snprintf(out + len, cap - len,
+				    "#arcana add %05ld %s\nadd %05ld %s\n", num,
+				    rest, num, join(w, e, nv));
+				continue;
+			}
+		} else
+			pend = -1;
+		len += (size_t)snprintf(out + len, cap - len, "%s\n", line);
+	}
+	return (out);
 }
 
 /*
@@ -1496,7 +1851,7 @@ replace(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	const char *const	 pre_add[] = { "-q", "add" };
 	struct execres		 res;
 	const char		**words, *e;
-	char			*argv[5], *text, *p, *line, *rule, *wp, *wd;
+	char			*argv[5], *text, *p, *line, *rule, *wp, *wd, *src;
 	const char		*oldv[IPFW_WORDS + 2];
 	size_t			 i, len, nw, no;
 	bool			 had;
@@ -1504,6 +1859,22 @@ replace(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	words = (const char **)(uintptr_t)(sp->names.v + 1);
 	nw = sp->names.n - 1;
 	text = NULL;
+	src = NULL;
+	/* $aliases put in, the rule's own words kept beside. */
+	if (uses_alias(words + 1, nw - 1)) {
+		struct alias	a[ALIAS_MAX];
+		const char	**ex;
+		size_t		na;
+
+		na = aliases_now(w, a, nitems(a));
+		if ((ex = expand(w, a, na, words + 1, nw - 1, errp)) == NULL)
+			return (-1);
+		src = join(w, words + 1, nw - 1);
+		words = wcalloc(w, nw + 1, sizeof(*words));
+		words[0] = sp->names.v[1];
+		for (i = 1; i < nw; i++)
+			words[i] = ex[i - 1];
+	}
 	if (sp->live) {
 		if (ipfw_words(w, errp, pre_n, nitems(pre_n), words, nw) != 0) {
 			*errp = wfmt(w, "ipfw does not take the new rule, so "
@@ -1545,18 +1916,182 @@ replace(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		}
 	}
 	if (sp->persist) {
-		len = 1;
-		for (i = 2; i < sp->names.n; i++)
-			len += strlen(sp->names.v[i]) + 1;
-		rule = wcalloc(w, len, 1);
-		for (i = 2; i < sp->names.n; i++) {
-			if (i > 2)
-				strlcat(rule, " ", len);
-			strlcat(rule, sp->names.v[i], len);
-		}
+		rule = join(w, words + 1, nw - 1);
+		(void)len;
 		if (kept_change(w, strtol(sp->names.v[0], NULL, 10), NULL,
-		    errp) != 0 || kept_change(w, strtol(sp->names.v[1], NULL,
-		    10), rule, errp) != 0)
+		    errp) != 0 || kept_change_src(w, strtol(sp->names.v[1],
+		    NULL, 10), rule, src, errp) != 0)
+			return (-1);
+	}
+	return (0);
+}
+
+/* A prefix of an address list: an address, its length after a slash. */
+static bool
+prefix_ok(const char *s)
+{
+	char		 buf[64], *slash, *e;
+	unsigned char	 a[16];
+	long		 l;
+	int		 af;
+
+	if (strlcpy(buf, s, sizeof(buf)) >= sizeof(buf))
+		return (false);
+	if ((slash = strchr(buf, '/')) != NULL)
+		*slash++ = '\0';
+	if (inet_pton(AF_INET, buf, a) == 1)
+		af = 32;
+	else if (inet_pton(AF_INET6, buf, a) == 1)
+		af = 128;
+	else
+		return (false);
+	if (slash == NULL)
+		return (true);
+	l = strtol(slash, &e, 10);
+	return (*e == '\0' && l >= 0 && l <= af);
+}
+
+/*
+ * alias name kind value...: set, kind addr (the entries), ports ("80,443")
+ * or value (one word); alias name delete.  Kept as a line of the kept
+ * file; an address list as its table's lines too.  The rules that name
+ * it are written again, and in the kernel the table made again and
+ * those rules replaced, as a table's change is made now.
+ */
+static int
+alias_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	struct alias	 a[ALIAS_MAX];
+	const char	*name, *kind, *rest, *v[IPFW_WORDS], **e;
+	char		*text, *copy, *p, *line, *out, *val;
+	size_t		 len, cap, olen, na, nv, i, k;
+	long		 num;
+	bool		 del, addr, named;
+	struct {
+		long	 num;
+		char	*rule;
+	}		 redo[512];
+	size_t		 nredo = 0;
+
+	name = sp->names.v[0];
+	kind = sp->names.v[1];
+	del = strcmp(kind, "delete") == 0;
+	addr = strcmp(kind, "addr") == 0;
+	pthread_mutex_lock(&file_lock);
+	text = file_read(w, &len);
+	if (text == NULL)
+		text = wstrdup(w, "");
+	/* A rule that names it: deleted, it would name none. */
+	if (del) {
+		copy = wstrdup(w, text);
+		for (p = copy; (line = strsep(&p, "\n")) != NULL; ) {
+			if (!src_rule(line, &num, &rest))
+				continue;
+			nv = split(w, rest, v, nitems(v));
+			for (i = 0; i < nv; i++)
+				if (v[i][0] == '$' && strcmp(v[i] + 1, name) ==
+				    0) {
+					pthread_mutex_unlock(&file_lock);
+					*errp = wfmt(w, "rule %ld names $%s: it is "
+					    "not deleted while a rule names it",
+					    num, name);
+					return (-1);
+				}
+		}
+	}
+	val = del || addr ? NULL : join(w, (const char *const *)(uintptr_t)
+	    (sp->names.v + 2), sp->names.n - 2);
+	/* The file again: the alias's lines out, its new ones in at the
+	 * head; an address list's table made there too. */
+	cap = len + 4096 + (sp->names.n * 80);
+	out = wcalloc(w, cap, 1);
+	olen = 0;
+	if (!del) {
+		olen += (size_t)snprintf(out + olen, cap - olen, "#arcana alias "
+		    "%s %s%s%s\n", name, kind, val != NULL ? " " : "", val !=
+		    NULL ? val : "");
+		if (addr) {
+			olen += (size_t)snprintf(out + olen, cap - olen, "table %s "
+			    "create type addr\n", name);
+			for (i = 2; i < sp->names.n; i++)
+				olen += (size_t)snprintf(out + olen, cap - olen,
+				    "table %s add %s\n", name, sp->names.v[i]);
+		}
+	}
+	copy = wstrdup(w, text);
+	for (p = copy; p != NULL && *p != '\0' && (line = strsep(&p, "\n")) !=
+	    NULL; ) {
+		const char	*t = line + strspn(line, " \t");
+		char		 an[40];
+
+		if (sscanf(t, "#arcana alias %39s", an) == 1 && strcmp(an,
+		    name) == 0)
+			continue;
+		/* Its table's lines, when it is (or was) an address list. */
+		if (strncmp(t, "table ", 6) == 0 && strncmp(t + 6, name,
+		    strlen(name)) == 0 && t[6 + strlen(name)] == ' ') {
+			na = aliases_of(w, text, a, nitems(a));
+			for (k = 0; k < na; k++)
+				if (strcmp(a[k].name, name) == 0 && strcmp(
+				    a[k].kind, "addr") == 0)
+					break;
+			if (k < na || addr)
+				continue;
+		}
+		olen += (size_t)snprintf(out + olen, cap - olen, "%s\n", line);
+	}
+	/* The rules that name it, written again from their own words. */
+	if ((out = text_expand(w, out, errp)) == NULL) {
+		pthread_mutex_unlock(&file_lock);
+		return (-1);
+	}
+	if (file_write(w, out, strlen(out), errp) != 0) {
+		pthread_mutex_unlock(&file_lock);
+		return (-1);
+	}
+	pthread_mutex_unlock(&file_lock);
+	/* Now too, as a table's or a NAT's change is: the table made
+	 * again, the rules that name it replaced. */
+	if (del)
+		return (0);
+	if (addr) {
+		(void)ipfw(w, NULL, true, "table", name, "create", "type",
+		    "addr", NULL);
+		if (ipfw(w, errp, true, "table", name, "flush", NULL) != 0)
+			return (-1);
+		for (i = 2; i < sp->names.n; i++)
+			if (ipfw(w, errp, true, "table", name, "add",
+			    sp->names.v[i], NULL) != 0)
+				return (-1);
+		return (0);
+	}
+	na = aliases_of(w, out, a, nitems(a));
+	copy = wstrdup(w, out);
+	for (p = copy; (line = strsep(&p, "\n")) != NULL && nredo <
+	    nitems(redo); ) {
+		if (!src_rule(line, &num, &rest))
+			continue;
+		nv = split(w, rest, v, nitems(v));
+		named = false;
+		for (i = 0; i < nv; i++)
+			named = named || (v[i][0] == '$' && strcmp(v[i] + 1,
+			    name) == 0);
+		if (!named || (e = expand(w, a, na, v, nv, errp)) == NULL)
+			continue;
+		redo[nredo].num = num;
+		redo[nredo].rule = join(w, e, nv);
+		nredo++;
+	}
+	for (i = 0; i < nredo; i++) {
+		const char	*pre[] = { "-q", "add" };
+		const char	*wv[IPFW_WORDS + 1];
+		char		 nb[16];
+
+		snprintf(nb, sizeof(nb), "%ld", redo[i].num);
+		(void)ipfw(w, NULL, true, "delete", nb, NULL);
+		wv[0] = wstrdup(w, nb);
+		nv = split(w, redo[i].rule, wv + 1, nitems(wv) - 1);
+		if (ipfw_words(w, errp, pre, nitems(pre), wv, nv + 1) != 0)
 			return (-1);
 	}
 	return (0);
@@ -1579,14 +2114,35 @@ do_ipfw_job(struct work *w, const struct arc_job_spec *sp, bool *heldp,
 		return (-1);
 	verb = sp->verb;
 	(void)argvv;
+	if (strcmp(verb, "alias") == 0)
+		return (alias_job(w, sp, errp));
 	if (strcmp(verb, "add") == 0) {
+		const char	**words = (const char **)(uintptr_t)sp->names.v;
+		char		 *src = NULL;
+
+		/* $aliases put in, the rule's own words kept beside. */
+		if (uses_alias(words + 1, sp->names.n - 1)) {
+			struct alias	a[ALIAS_MAX];
+			const char	**e;
+			size_t		na;
+
+			na = aliases_now(w, a, nitems(a));
+			if ((e = expand(w, a, na, words + 1, sp->names.n - 1,
+			    errp)) == NULL)
+				return (-1);
+			src = join(w, words + 1, sp->names.n - 1);
+			words = wcalloc(w, sp->names.n + 1, sizeof(*words));
+			words[0] = sp->names.v[0];
+			for (i = 1; i < sp->names.n; i++)
+				words[i] = e[i - 1];
+		}
 		if (sp->live) {
 			n = 0;
 			argv[n++] = (char *)(uintptr_t)opts.ipfw_bin;
 			argv[n++] = (char *)(uintptr_t)"-q";
 			argv[n++] = (char *)(uintptr_t)"add";
 			for (i = 0; i < sp->names.n; i++)
-				argv[n++] = (char *)(uintptr_t)sp->names.v[i];
+				argv[n++] = (char *)(uintptr_t)words[i];
 			argv[n] = NULL;
 			if (run_exec(w, scope_argv(w, argv), &res) != 0) {
 				*errp = scope_missing(w, &res, "ipfw", NULL);
@@ -1597,17 +2153,9 @@ do_ipfw_job(struct work *w, const struct arc_job_spec *sp, bool *heldp,
 			}
 		}
 		if (sp->persist) {
-			len = 1;
-			for (i = 1; i < sp->names.n; i++)
-				len += strlen(sp->names.v[i]) + 1;
-			rule = wcalloc(w, len, 1);
-			for (i = 1; i < sp->names.n; i++) {
-				if (i > 1)
-					strlcat(rule, " ", len);
-				strlcat(rule, sp->names.v[i], len);
-			}
-			if (kept_change(w, strtol(sp->names.v[0], NULL, 10),
-			    rule, errp) != 0)
+			rule = join(w, words + 1, sp->names.n - 1);
+			if (kept_change_src(w, strtol(sp->names.v[0], NULL, 10),
+			    rule, src, errp) != 0)
 				return (-1);
 		}
 		return (0);

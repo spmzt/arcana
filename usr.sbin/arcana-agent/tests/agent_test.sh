@@ -3829,6 +3829,94 @@ fw_trace_cleanup()
 	stop_daemon
 }
 
+atf_test_case firewall_aliases cleanup
+firewall_aliases_head()
+{
+	atf_set "descr" "ipfw aliases: an address list made a table, a port" \
+	    "list and a value written into the rules that name them; a" \
+	    "rule kept with its own words, written again when an alias it" \
+	    "names changes; the kept file loadable as it is"
+}
+firewall_aliases_body()
+{
+	printf '#!/bin/sh\necho "ipfw $*" >> %s/ipfw.log\nexit 0\n' "$(pwd)" \
+	    > fake-ipfw
+	chmod +x fake-ipfw
+	mkdir fw
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules"
+	start_daemon
+
+	# An address list: a table of its name, now and kept.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias lan addr \
+	    10.0.0.0/8 192.168.1.0/24
+	atf_check -o match:'^ipfw -q table lan flush$' \
+	    -o match:'^ipfw -q table lan add 10.0.0.0/8$' \
+	    -o match:'^ipfw -q table lan add 192.168.1.0/24$' cat ipfw.log
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias web ports 80,443
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias wan value vtnet0
+	# A rule by its aliases: the table named, the others written in.
+	: > ipfw.log
+	atf_check -o match:'done' "$JGC" -c "$SOCK" -p ipfw add 1000 allow \
+	    tcp from '$lan' to me '$web' in via '$wan'
+	atf_check -o inline:'ipfw -q add 1000 allow tcp from table(lan) to me 80,443 in via vtnet0\n' \
+	    cat ipfw.log
+	atf_check -o match:'^#arcana alias lan addr$' \
+	    -o match:'^table lan create type addr$' \
+	    -o match:'^table lan add 10.0.0.0/8$' \
+	    -o match:'^#arcana alias web ports 80,443$' \
+	    -o match:'^#arcana alias wan value vtnet0$' \
+	    -o match:'^#arcana add 01000 allow tcp from \$lan to me \$web in via \$wan$' \
+	    -o match:'^add 01000 allow tcp from table\(lan\) to me 80,443 in via vtnet0$' \
+	    cat fw/ipfw.rules
+	# Read back: the aliases, and the rule's own words beside it.
+	atf_check -o match:'"aliases":\[' \
+	    -o match:'\{"name":"lan","kind":"addr","value":"10.0.0.0/8 192.168.1.0/24"\}' \
+	    -o match:'\{"name":"web","kind":"ports","value":"80,443"\}' \
+	    -o match:'"num":1000,"text":"allow tcp from table\(lan\) to me 80,443 in via vtnet0","source":"allow tcp from \$lan to me \$web in via \$wan"' \
+	    "$JGC" -c "$SOCK" net ipfw
+	# A port list changed: the rule written again, kept and now.
+	: > ipfw.log
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias web ports 8080
+	atf_check -o match:'^add 01000 allow tcp from table\(lan\) to me 8080 in via vtnet0$' \
+	    -o not-match:'80,443' cat fw/ipfw.rules
+	atf_check -o match:'^ipfw -q delete 1000$' \
+	    -o match:'^ipfw -q add 1000 allow tcp from table\(lan\) to me 8080 in via vtnet0$' \
+	    cat ipfw.log
+	# The address list changed: its table, no rule.
+	: > ipfw.log
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias lan addr 10.1.0.0/16
+	atf_check -o not-match:'add 1000' -o match:'table lan add 10.1.0.0/16' cat ipfw.log
+	atf_check -o match:'^table lan add 10.1.0.0/16$' -o not-match:'192.168' \
+	    cat fw/ipfw.rules
+	# What a rule names is not deleted; one there is not is said.
+	atf_check -s exit:1 -o match:'rule 1000 names \$web' \
+	    sh -c '"$0" -c "$1" ipfw alias web delete 2>&1' "$JGC" "$SOCK"
+	atf_check -s exit:1 -o match:'\$nope: there is no such alias' \
+	    sh -c '"$0" -c "$1" ipfw add 1001 allow ip from \$nope to any 2>&1' \
+	    "$JGC" "$SOCK"
+	atf_check -s exit:1 -o match:'a port list is ports' \
+	    sh -c '"$0" -c "$1" ipfw alias web ports http 2>&1' "$JGC" "$SOCK"
+	# The kept rules as text: a rule written with aliases by hand is
+	# kept with its own words and as ipfw reads it.
+	"$JGC" -c "$SOCK" ipfw rules > text
+	echo 'add 02000 deny ip from $lan to any via $wan' >> text
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w text
+	atf_check -o match:'^#arcana add 02000 deny ip from \$lan to any via \$wan$' \
+	    -o match:'^add 02000 deny ip from table\(lan\) to any via vtnet0$' \
+	    cat fw/ipfw.rules
+	# Deleted kept: the rule and its own words.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" -p ipfw delete 1000
+	atf_check -o not-match:'01000' cat fw/ipfw.rules
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw keep delete 2000
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias web delete
+	atf_check -o not-match:'alias web' cat fw/ipfw.rules
+}
+firewall_aliases_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	true
+}
+
 atf_test_case firewall cleanup
 firewall_head()
 {
@@ -4097,7 +4185,7 @@ add 400 count ip from any to any
 	    "$JGC" -c "$SOCK" ipfw add 10 set 1 allow ip from any to any
 	atf_check -s exit:1 -e match:'not put back by itself' -o ignore \
 	    "$JGC" -s -c "$SOCK" ipfw delete 5
-	atf_check -s exit:1 -e match:'is add, delete, apply' -o ignore \
+	atf_check -s exit:1 -e match:'is add, delete, alias, apply' -o ignore \
 	    "$JGC" -c "$SOCK" ipfw flush
 	atf_check -o empty cat ipfw.log
 	atf_check -s exit:1 -o match:'unrecognised option refuse' \
@@ -6656,6 +6744,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_processes
 	atf_add_test_case yang_log
 	atf_add_test_case fw_walk
+	atf_add_test_case firewall_aliases
 	atf_add_test_case config_bundle
 	atf_add_test_case yang_storage
 	atf_add_test_case yang_jobs

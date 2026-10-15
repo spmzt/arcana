@@ -233,6 +233,7 @@ usage(void)
 	    "    ipfw [keep] add number rule ...\n"
 	    "    ipfw [keep] delete number\n"
 	    "    ipfw [keep] replace number new-number rule ...\n"
+	    "    ipfw alias name addr address ... | ports 80,443 | value word | delete\n"
 	    "    ipfw apply | enable | disable | zero [number]\n"
 	    "    ipfw table | nat | nat64lsn | nat64stl | nat64clat | nptv6 | "
 	    "pipe |\n        queue | sched name word ...\n"
