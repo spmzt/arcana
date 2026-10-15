@@ -1453,6 +1453,104 @@ ATF_TC_BODY(workflows, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(config_bundle, "A host as a bundle, its secrets only when "
+    "asked; another host's bundle applied here by the console, checked "
+    "first, the files before kept")
+ATF_TC_BODY(config_bundle, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[MAXPATHLEN], base[128], sid[16];
+	char		*bundle, *at;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(base, sizeof(base), "/api/servers/%s/config", sid);
+
+	/* Read: the bundle, the test's tree its files (--root). */
+	http("GET", base, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("host", jstr(&r, "data.arcana"));
+	ATF_CHECK(strstr(r.body, "\"path\":\"/etc/hosts\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"trace\":[") != NULL);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "%s/export", base);
+	http("POST", body, "{\"secrets\":true}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	/* The bundle as it is sent back, to be given again changed. */
+	{
+		struct ucl_parser	*p;
+		ucl_object_t		*o;
+
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
+		ATF_REQUIRE(ucl_parser_add_string(p, r.body, 0));
+		o = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+		bundle = (char *)ucl_object_emit(ucl_object_lookup(o, "data"),
+		    UCL_EMIT_JSON_COMPACT);
+		ucl_object_unref(o);
+	}
+	resp_free(&r);
+	ATF_REQUIRE((at = strstr(bundle, "127.0.0.1 localhost\\n")) != NULL);
+
+	/* Another host's, read by the console itself: here it is this
+	 * one, and nothing would change. */
+	snprintf(body, sizeof(body), "{\"from\":\"%s\",\"dry_run\":true}", sid);
+	http("POST", base, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK(strstr(r.body, "\"state\":\"changed\"") == NULL);
+	ATF_CHECK(strstr(r.body, "\"state\":\"same\"") != NULL);
+	resp_free(&r);
+	http("POST", base, "{\"from\":\"ffffffff\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", base, "{\"dry_run\":true}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/* A bundle given: checked, then applied; the file before kept. */
+	{
+		char	*mod, *req;
+		size_t	 n = strlen(bundle) + 64;
+
+		mod = malloc(n);
+		snprintf(mod, n, "%.*s127.0.0.1 localhost\\n192.0.2.7 db\\n%s",
+		    (int)(at - bundle), bundle, at + strlen(
+		    "127.0.0.1 localhost\\n"));
+		ATF_REQUIRE(asprintf(&req, "{\"bundle\":%s,\"dry_run\":true}",
+		    mod) != -1);
+		http("POST", base, req, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strstr(r.body, "\"path\":\"/etc/hosts\",\"state\":"
+		    "\"changed\"") != NULL, "%.400s", r.body);
+		ATF_CHECK(strstr(r.body, "+192.0.2.7 db") != NULL);
+		resp_free(&r);
+		ATF_CHECK(system("! grep -q 192.0.2.7 root/etc/hosts") == 0);
+		free(req);
+		ATF_REQUIRE(asprintf(&req, "{\"bundle\":%s}", mod) != -1);
+		http("POST", base, req, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("true", jstr(&r, "data.applied"));
+		resp_free(&r);
+		ATF_CHECK(system("grep -q 192.0.2.7 root/etc/hosts && ! grep "
+		    "-q 192.0.2.7 root/var/backups/arcana/config-*/etc/hosts")
+		    == 0);
+		free(req);
+		free(mod);
+	}
+	free(bundle);
+}
+
 CONSOLE_TC(transfers, "A snapshot sent from one host to another, the "
     "console carrying it at the pace the receiver takes it")
 ATF_TC_BODY(transfers, tc)
@@ -5378,6 +5476,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, push);
 	ATF_TP_ADD_TC(tp, tokens);
 	ATF_TP_ADD_TC(tp, transfers);
+	ATF_TP_ADD_TC(tp, config_bundle);
 	ATF_TP_ADD_TC(tp, workflows);
 	ATF_TP_ADD_TC(tp, sdwan);
 	ATF_TP_ADD_TC(tp, sdwan_apply);

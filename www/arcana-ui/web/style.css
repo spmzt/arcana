@@ -4740,3 +4740,13 @@ button.csv-btn::before { content: "\2913"; }
 button.csv-btn:hover, button.csv-btn:focus-visible { opacity: 1; }
 table.cards button.csv-btn { display: none; }
 
+/* The host's configuration as a whole: its report, what would change. */
+.hostconf .toolbar { flex-wrap: wrap; gap: .5rem; align-items: center; }
+.hcreport { margin-top: .6rem; }
+.hcreport h4 { margin: .3rem 0; }
+table.hcfiles { width: 100%; font-size: .8rem; }
+table.hcfiles td { vertical-align: top; padding: .2rem .4rem; }
+table.hcfiles tr.changed td:last-child { color: var(--amber); }
+table.hcfiles tr.new td:last-child { color: var(--green); }
+table.hcfiles tr.withheld td:last-child { color: var(--dim); }
+pre.diff { max-height: 18rem; overflow: auto; font-size: .75rem; }

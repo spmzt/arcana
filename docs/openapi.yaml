@@ -1251,6 +1251,53 @@ paths:
           description: ok and the host, as hello; the server's uri changed
         "400": { $ref: "#/components/responses/Error" }
         "502": { $ref: "#/components/responses/Error" }
+  /api/servers/{server}/config:
+    get:
+      tags: [servers]
+      summary: The host as a bundle, its secrets left out
+      description: Under data, config-export's bundle. arcana is host,
+        format 1; facts what the hardware is (arch, release, cpu, ncpu,
+        memory, the physical interfaces with driver and MAC, the disks
+        with their size); packages those installed by hand; files each
+        configuration file Arcana manages (path, mode, owner, group,
+        text), a secret with secret true and no text. The agent's own
+        keys are never in it.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and data, or error
+    post:
+      tags: [servers]
+      summary: Make the host what a bundle says
+      description: With bundle, a host's bundle, or from, another host's
+        id, whose bundle the console reads there with its secrets; and
+        dry_run, anyway (though the hardware differs), hostname (another
+        name in rc.conf). Under data, mismatches (the hardware not the
+        bundle's: nothing is done unless anyway), files (each path and
+        state same, changed with its diff, new, or withheld, a secret the
+        bundle does not carry), packages (those the bundle has and the
+        host lacks; none is installed), and when done backup, where the
+        files before are kept, applied and reboot. Needs one who may
+        change the host.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and data, or error
+        "400": { $ref: "#/components/responses/Error" }
+  /api/servers/{server}/config/export:
+    post:
+      tags: [servers]
+      summary: The host as a bundle, its secrets too when asked
+      description: With secrets true, WireGuard's and strongSwan's keys
+        are in the bundle; for one who may change the host. Otherwise as
+        GET config.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and data, or error
   /api/servers/{server}/stats:
     get:
       tags: [servers]

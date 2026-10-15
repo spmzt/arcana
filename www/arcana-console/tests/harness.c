@@ -184,10 +184,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 jgd[MAXPATHLEN], listen[MAXPATHLEN + 16], www[MAXPATHLEN];
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
-	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN];
+	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[104];
+	char	*argv[106];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -1014,7 +1014,21 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[99] = (char *)(uintptr_t)"./fake-setkey";
 	argv[100] = (char *)(uintptr_t)"-0";
 	argv[101] = (char *)(uintptr_t)"./fake-local-unbound";
-	argv[102] = NULL;
+	/* The system's files under a tree of the test's: config-export
+	 * reads them, and nothing reads the host's own. */
+	argv[102] = (char *)(uintptr_t)"--root";
+	argv[103] = rootdir;
+	argv[104] = NULL;
+	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
+	(void)mkdir(rootdir, 0755);
+	{
+		char	etc[MAXPATHLEN + 16];
+
+		snprintf(etc, sizeof(etc), "%s/root/etc", cwd);
+		(void)mkdir(etc, 0755);
+	}
+	put("root/etc/hosts", "127.0.0.1 localhost\n");
+	put("root/etc/rc.conf", "hostname=\"lab\"\nsshd_enable=\"YES\"\n");
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	snprintf(ntpconf, sizeof(ntpconf), "%s/ntp.conf", cwd);
 	snprintf(rtadvdconf, sizeof(rtadvdconf), "%s/rtadvd.conf", cwd);

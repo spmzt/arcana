@@ -91,6 +91,8 @@ static int	cmd_gula(struct arc_client *, int, char **);
 static int	cmd_ipfw(struct arc_client *, int, char **);
 static int	cmd_l2(struct arc_client *, int, char **);
 static int	cmd_transport(struct arc_client *, int, char **);
+static int	cmd_config_export(struct arc_client *, int, char **);
+static int	cmd_config_apply(struct arc_client *, int, char **);
 static int	cmd_storage(struct arc_client *, int, char **);
 static int	cmd_storage_job(struct arc_client *, int, char **);
 static int	cmd_fstab(struct arc_client *, int, char **);
@@ -205,6 +207,8 @@ usage(void)
 	    "    sysctl parts [name | start of a name]\n"
 	    "    sysctl name=value\n"
 	    "    transport [retry]\n"
+	    "    config-export [-s]\n"
+	    "    config-apply [-an] [-H hostname] bundle.json\n"
 	    "    ps [pid]\n"
 	    "    signal pid [name | number]\n"
 	    "    renice pid nice\n"
@@ -2777,6 +2781,83 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
+ * config-export: the host as a bundle, JSON on stdout; -s with the
+ * secrets.
+ */
+static int
+cmd_config_export(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_config_export_req	 req;
+	struct arc_config_export_rsp	*rsp;
+	int				 error;
+
+	if (argc > 2 || (argc == 2 && strcmp(argv[1], "-s") != 0))
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.secrets = argc == 2;
+	if ((error = arc_config_export(cl, &req, &rsp)) != 0)
+		fail(cl, error, "config-export");
+	if (rsp->json != NULL)
+		xo_emit("{:json/%s}\n", rsp->json);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("config-export: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_config_export_rsp_free(rsp);
+	return (error);
+}
+
+/*
+ * config-apply [-an] [-H hostname] bundle: a bundle made this host's
+ * configuration; -n only the report, -a though the hardware differs,
+ * -H another host name in rc.conf.  The report, JSON, on stdout.
+ */
+static int
+cmd_config_apply(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_config_apply_req	 req;
+	struct arc_config_apply_rsp	*rsp;
+	char				*text;
+	int				 ch, error;
+
+	memset(&req, 0, sizeof(req));
+	optind = 1;
+	optreset = 1;
+	while ((ch = getopt(argc, argv, "anH:")) != -1) {
+		switch (ch) {
+		case 'a':
+			req.anyway = true;
+			break;
+		case 'n':
+			req.dry_run = true;
+			break;
+		case 'H':
+			req.new_hostname = optarg;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (argc != optind + 1)
+		usage();
+	text = slurp(argv[optind]);
+	req.bundle = text;
+	if ((error = arc_config_apply(cl, &req, &rsp)) != 0)
+		fail(cl, error, "config-apply");
+	if (rsp->json != NULL)
+		xo_emit("{:json/%s}\n", rsp->json);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("config-apply: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_config_apply_rsp_free(rsp);
+	free(text);
+	return (error);
+}
+
+/*
  * transport: the agent's listeners and the connections open to it.
  * transport retry: start the SCTP listeners that are not up.
  */
@@ -3858,6 +3939,10 @@ main(int argc, char *argv[])
 		rc = cmd_gula(&cl, argc, argv);
 	else if (strcmp(argv[0], "transport") == 0)
 		rc = cmd_transport(&cl, argc, argv);
+	else if (strcmp(argv[0], "config-export") == 0)
+		rc = cmd_config_export(&cl, argc, argv);
+	else if (strcmp(argv[0], "config-apply") == 0)
+		rc = cmd_config_apply(&cl, argc, argv);
 	else if (strcmp(argv[0], "storage") == 0)
 		rc = cmd_storage(&cl, argc, argv);
 	else if (strcmp(argv[0], "zfs") == 0 || strcmp(argv[0], "zpool") == 0 ||

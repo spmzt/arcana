@@ -186,6 +186,18 @@ stamp(char *iso, size_t ilen, char *file, size_t flen)
 	strftime(file, flen, "%Y%m%d-%H%M", &tm);
 }
 
+/* A saved document's name, less its ending: host-what-date. */
+void
+export_base(char *buf, size_t len, const char *host, const char *what)
+{
+	char	iso[32], when[32], hn[80], wn[80];
+
+	stamp(iso, sizeof(iso), when, sizeof(when));
+	fname(hn, sizeof(hn), host);
+	fname(wn, sizeof(wn), what);
+	snprintf(buf, len, "%s-%s-%s", hn, wn, when);
+}
+
 /* How many reads the open tab has to export. */
 int
 export_count(void)
