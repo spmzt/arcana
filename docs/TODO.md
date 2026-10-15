@@ -476,8 +476,14 @@
   and arcana-netgraph (71 500: ngctl list -l), each the host's and a
   vnet jail's by an augment of arcana-jails (luxuria/ybird.c, ywg.c,
   invidia/yng.c, yang_plugins).  The changes stay jobs (bird-config,
-  wireguard, netgraph).  Next: 3.1.9's host and agent (plugins with
-  the host), then 3.1.11 probe and 3.1.12 SD-WAN
+  wireguard, netgraph).  3.1.9: share/yang/arcana-host (71 600: the
+  host's facts, the plugins as identities, a jail's too, the stats, the
+  trust store), arcana-agent (71 700: listeners and sessions, the
+  agent's TLS files with csr and install, update, build,
+  console-update, source-head and source-log, config-export and
+  config-apply as actions) and arcana-jail-files (71 900, an augment of
+  arcana-jails) (superbia/yhost.c and yagent.c, ira/yjf.c,
+  yang_host_agent).  Next: 3.1.11 probe and 3.1.12 SD-WAN
   (faults as ietf-alarms), and the rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not

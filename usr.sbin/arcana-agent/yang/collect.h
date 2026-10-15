@@ -341,4 +341,37 @@ int	ywg_from_json(const char *json, cbl_yarena *a,
 int	yng_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_netgraph_netgraph *out);
 
+/*
+ * arcana-host (superbia/yhost.c): the host attribute set with the
+ * stats and the certs operation's JSON (yhost_certs_from_json()).
+ */
+struct arc_host;
+struct arc_stats;
+int	yhost_certs_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_host_host_certificates *out);
+int	yhost_from(const struct arc_host *h, const struct arc_stats *st,
+	    const struct arcana_host_host_certificates *certs, cbl_yarena *a,
+	    struct arcana_host_host *out);
+
+/*
+ * arcana-agent (superbia/yagent.c): the transport and tls operations'
+ * JSON as state; config-export's bundle and config-apply's report, and
+ * source-log's commits and tags, as the actions' outputs.
+ */
+int	yagent_transport_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_agent_agent_transport *out);
+int	yagent_tls_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_agent_agent_tls *out);
+int	yagent_bundle_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_agent_agent_config_export_output *out);
+int	yagent_apply_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_agent_agent_config_apply_output *out);
+int	yagent_log_from_json(const char *commit, const char *log,
+	    const char *tags, cbl_yarena *a,
+	    struct arcana_agent_agent_source_log_output *out);
+
+/* arcana-jail-files (ira/yjf.c): the jail-files operation's JSON. */
+int	yjf_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_jails_jails_arcjf_files *out);
+
 #endif /* !_ARCANA_COLLECT_H_ */

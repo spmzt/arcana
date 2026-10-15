@@ -1,0 +1,85 @@
+module arcana-jail-files {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-jail-files";
+  prefix arcjf;
+
+  import arcana-jails {
+    prefix arcj;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The files FreeBSD's jails are made with, as the jail-conf job
+     writes them: jail.conf.d, the file every jail includes, the
+     templates, and each jail's own file; files of 64 KiB and less.
+     An augment of arcana-jails; the jail-files operation of
+     arcana.yaml converted (Y-3).";
+
+  revision 2026-10-15 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.1.";
+  }
+
+  augment "/arcj:jails" {
+    description
+      "The files the jails are made with.";
+    container files {
+      description
+        "jail.conf(5)'s files.";
+      leaf directory {
+        type string;
+        description
+          "Where the jails' files are (/etc/jail.conf.d).";
+      }
+      container defaults {
+        description
+          "The file every jail includes.";
+        leaf path {
+          type string;
+          description
+            "Where it is.";
+        }
+        leaf text {
+          type string;
+          description
+            "Its text; none when there is no such file.";
+        }
+      }
+      list template {
+        key "name";
+        description
+          "The templates a jail is made from.";
+        leaf name {
+          type string;
+          description
+            "Its name.";
+        }
+        leaf text {
+          type string;
+          description
+            "Its text.";
+        }
+      }
+      list jail {
+        key "name";
+        description
+          "Each jail's file there.";
+        leaf name {
+          type string;
+          description
+            "The jail.";
+        }
+        leaf text {
+          type string;
+          description
+            "Its text.";
+        }
+      }
+    }
+  }
+}

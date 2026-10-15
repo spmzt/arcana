@@ -1,0 +1,670 @@
+module arcana-agent {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-agent";
+  prefix arcagent;
+
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The agent itself, arcana-agent: how it is reached (its listeners
+     over TCP, SCTP and a unix socket, the sessions open), its own TLS
+     files (the host's key and certificate, the CAs it trusts, renewed
+     without a restart), and what it does to Arcana: replaced by a
+     program sent (checked by its SHA-256 and by running it), built
+     from a git repository on the host (cloned afresh, make(1) as an
+     unprivileged user, nothing installed), the whole tree built and
+     installed to update the console that runs on the host, a
+     repository's head and log read over SSH with host keys a person
+     confirmed; and the host's configuration as a bundle, to keep or to
+     make another host the same with.  The transport, tls, agent-update,
+     agent-build, console-update, source-head, source-log, config-export
+     and config-apply operations of arcana.yaml converted (Y-3).";
+
+  revision 2026-10-15 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.9.";
+  }
+
+  grouping repository {
+    description
+      "A git repository, as agent-build fetches it.";
+    leaf source {
+      type string;
+      mandatory true;
+      description
+        "The repository, as git clone takes it.";
+    }
+    leaf ref {
+      type string;
+      description
+        "The branch or tag; the repository's default if absent.";
+    }
+    leaf host-keys {
+      type string;
+      description
+        "SSH host keys of the repository's server, as known_hosts
+         lines, which a person confirmed.";
+    }
+    leaf ssh-key {
+      type string;
+      description
+        "A private key on this host for git to show the server.";
+    }
+  }
+
+  grouping fetched {
+    description
+      "What a fetch tells of the server.";
+    leaf host-keys {
+      type string;
+      description
+        "The server's host keys, as known_hosts lines.";
+    }
+    leaf-list fingerprint {
+      type string;
+      description
+        "Their fingerprints, as ssh-keygen -l prints them.";
+    }
+    leaf deploy-key {
+      type string;
+      description
+        "The public key this host shows the server, to be given
+         access.";
+    }
+  }
+
+  grouping cert {
+    description
+      "A certificate of the agent's own.";
+    leaf subject {
+      type string;
+      description
+        "Its subject.";
+    }
+    leaf issuer {
+      type string;
+      description
+        "Who signed it.";
+    }
+    leaf not-before {
+      type yang:date-and-time;
+      description
+        "Valid from.";
+    }
+    leaf not-after {
+      type yang:date-and-time;
+      description
+        "Valid until.";
+    }
+    leaf sha256 {
+      type string;
+      description
+        "Its fingerprint.";
+    }
+  }
+
+  grouping bundle {
+    description
+      "All that makes a host what it is (config-export).";
+    leaf host {
+      type string;
+      description
+        "The host's name.";
+    }
+    leaf agent {
+      type string;
+      description
+        "The agent's version that made it.";
+    }
+    leaf taken {
+      type yang:date-and-time;
+      description
+        "When.";
+    }
+    container facts {
+      description
+        "What the hardware and the system are.";
+      leaf arch {
+        type string;
+        description
+          "The machine.";
+      }
+      leaf release {
+        type string;
+        description
+          "The release.";
+      }
+      leaf cpu {
+        type string;
+        description
+          "The CPU's model.";
+      }
+      leaf ncpu {
+        type uint32;
+        description
+          "How many CPUs.";
+      }
+      leaf memory {
+        type uint64;
+        units "bytes";
+        description
+          "The memory.";
+      }
+      list interface {
+        key "name";
+        description
+          "Each physical interface; a cloned one is configuration.";
+        leaf name {
+          type string;
+          description
+            "Its name.";
+        }
+        leaf driver {
+          type string;
+          description
+            "Its driver.";
+        }
+        leaf mac {
+          type yang:mac-address;
+          description
+            "Its address.";
+        }
+      }
+      list disk {
+        key "name";
+        description
+          "Each disk.";
+        leaf name {
+          type string;
+          description
+            "Its name.";
+        }
+        leaf size {
+          type uint64;
+          units "bytes";
+          description
+            "Its size.";
+        }
+      }
+    }
+    list package {
+      key "name";
+      description
+        "The packages installed by hand (pkg query), not the automatic
+         ones.";
+      leaf name {
+        type string;
+        description
+          "Its name.";
+      }
+      leaf origin {
+        type string;
+        description
+          "Its origin in the ports tree.";
+      }
+      leaf version {
+        type string;
+        description
+          "Its version.";
+      }
+    }
+    list file {
+      key "path";
+      description
+        "Each configuration file there is of those Arcana manages.";
+      leaf path {
+        type string;
+        description
+          "Where it is.";
+      }
+      leaf mode {
+        type string;
+        description
+          "Its mode, octal.";
+      }
+      leaf owner {
+        type string;
+        description
+          "Its owner.";
+      }
+      leaf group {
+        type string;
+        description
+          "Its group.";
+      }
+      leaf text {
+        type string;
+        description
+          "Its text; a secret's only when asked for.";
+      }
+      leaf secret {
+        type boolean;
+        description
+          "It holds a secret, left out unless asked for.";
+      }
+    }
+  }
+
+  container agent {
+    description
+      "The agent.";
+    container transport {
+      config false;
+      description
+        "How the agent is reached.";
+      list listener {
+        key "uri";
+        description
+          "Where it listens.";
+        leaf uri {
+          type string;
+          description
+            "The address, as a URI.";
+        }
+        leaf transport {
+          type enumeration {
+            enum tcp {
+              description
+                "TCP.";
+            }
+            enum sctp {
+              description
+                "SCTP.";
+            }
+            enum unix {
+              description
+                "A unix socket.";
+            }
+          }
+          description
+            "Which.";
+        }
+        leaf up {
+          type boolean;
+          description
+            "It listens.";
+        }
+        leaf why {
+          type string;
+          description
+            "Why not, when it does not.";
+        }
+      }
+      leaf sctp {
+        type boolean;
+        description
+          "The kernel has SCTP: the agent listens on it beside TCP.";
+      }
+      list session {
+        description
+          "The connections open now.";
+        leaf transport {
+          type string;
+          description
+            "By which transport.";
+        }
+        leaf address {
+          type string;
+          description
+            "Who is at the other end.";
+        }
+        leaf name {
+          type string;
+          description
+            "Their certificate's name.";
+        }
+        leaf since {
+          type yang:date-and-time;
+          description
+            "Since when.";
+        }
+      }
+      action retry {
+        description
+          "Try SCTP again now.";
+      }
+    }
+    container tls {
+      config false;
+      description
+        "The host's own TLS files.";
+      container certificate {
+        description
+          "The host's certificate.";
+        uses cert;
+        leaf-list chain {
+          type string;
+          description
+            "The CAs sent after it, each its subject.";
+        }
+      }
+      list ca {
+        description
+          "Each CA trusted.";
+        uses cert;
+      }
+      leaf pending {
+        type boolean;
+        description
+          "A key waits for its certificate (csr made).";
+      }
+      action csr {
+        description
+          "A new EC P-256 key made beside the host's (never sent) and
+           a certificate request for it.";
+        output {
+          leaf csr {
+            type string;
+            description
+              "The request, PEM.";
+          }
+        }
+      }
+      action install {
+        description
+          "A certificate for the waiting key, the CAs to trust, or
+           both; the files before kept beside; read again for the
+           connections made from now on.  The asking console's own
+           certificate must still be trusted after: nothing locks it
+           out.";
+        input {
+          leaf certificate {
+            type string;
+            description
+              "The certificate, PEM.";
+          }
+          leaf ca {
+            type string;
+            description
+              "The CAs to trust, PEM.";
+          }
+          leaf peer {
+            type string;
+            description
+              "The asking console's certificate, PEM.";
+          }
+        }
+      }
+    }
+    action update {
+      description
+        "Replace arcana-agent with the program sent, checked by its
+         SHA-256 and by running it with -V; the one before kept beside
+         with the suffix .old.";
+      input {
+        leaf binary {
+          type binary;
+          mandatory true;
+          description
+            "The program.";
+        }
+        leaf sha256 {
+          type string;
+          mandatory true;
+          description
+            "Its SHA-256.";
+        }
+        leaf restart {
+          type boolean;
+          default "false";
+          description
+            "Restart the service after the reply.";
+        }
+      }
+      output {
+        leaf version {
+          type string;
+          description
+            "The version the program in place reports.";
+        }
+        leaf restarting {
+          type boolean;
+          description
+            "The service is being restarted; the connection drops.";
+        }
+      }
+    }
+    action build {
+      description
+        "Build arcana-agent from a git repository on this host and
+         give the program back; nothing installed.";
+      input {
+        uses repository;
+      }
+      output {
+        leaf binary {
+          type binary;
+          description
+            "The program built.";
+        }
+        leaf sha256 {
+          type string;
+          description
+            "Its SHA-256.";
+        }
+        leaf version {
+          type string;
+          description
+            "Its version.";
+        }
+        leaf commit {
+          type string;
+          description
+            "The commit built.";
+        }
+        uses fetched;
+      }
+    }
+    action console-update {
+      description
+        "Build the whole tree from a git repository on this host,
+         install it and restart the console's service: how a console
+         updates itself, through the agent of its host.";
+      input {
+        uses repository;
+      }
+      output {
+        uses fetched;
+      }
+    }
+    action source-head {
+      description
+        "The commit at the head of a repository's branch, as git
+         ls-remote tells it; nothing cloned.";
+      input {
+        uses repository;
+      }
+      output {
+        leaf commit {
+          type string;
+          description
+            "The commit.";
+        }
+        uses fetched;
+      }
+    }
+    action source-log {
+      description
+        "What is new in a repository's branch: its latest commits,
+         newest first, and its tags with their messages.";
+      input {
+        uses repository;
+        leaf count {
+          type uint32;
+          default "100";
+          description
+            "How many commits at most.";
+        }
+      }
+      output {
+        leaf commit {
+          type string;
+          description
+            "The head.";
+        }
+        list commit-log {
+          description
+            "Each commit, newest first.";
+          leaf hash {
+            type string;
+            description
+              "Its hash.";
+          }
+          leaf time {
+            type yang:date-and-time;
+            description
+              "When.";
+          }
+          leaf subject {
+            type string;
+            description
+              "Its subject.";
+          }
+          leaf body {
+            type string;
+            description
+              "Its body.";
+          }
+        }
+        list tag {
+          key "name";
+          description
+            "Each tag, newest first: the release notes where there are
+             any.";
+          leaf name {
+            type string;
+            description
+              "The tag.";
+          }
+          leaf message {
+            type string;
+            description
+              "Its message.";
+          }
+        }
+        uses fetched;
+      }
+    }
+    action config-export {
+      description
+        "The host's configuration as a bundle.";
+      input {
+        leaf secrets {
+          type boolean;
+          default "false";
+          description
+            "With the secrets' texts.";
+        }
+      }
+      output {
+        uses bundle;
+      }
+    }
+    action config-apply {
+      description
+        "A bundle made this host's configuration: the hardware checked
+         first, each file written with the ones before kept, the
+         packages missing only told (Arcana installs none itself),
+         what the files say taking hold at boot.";
+      input {
+        container bundle {
+          description
+            "The bundle, as config-export made it.";
+          uses bundle;
+        }
+        leaf dry-run {
+          type boolean;
+          default "false";
+          description
+            "Only the report.";
+        }
+        leaf anyway {
+          type boolean;
+          default "false";
+          description
+            "Even when the hardware differs.";
+        }
+        leaf hostname {
+          type string;
+          description
+            "This name in rc.conf, instead of the bundle's.";
+        }
+      }
+      output {
+        leaf-list mismatch {
+          type string;
+          description
+            "What of the hardware is not here.";
+        }
+        list file {
+          key "path";
+          description
+            "Each file, and what became of it.";
+          leaf path {
+            type string;
+            description
+              "Where.";
+          }
+          leaf state {
+            type enumeration {
+              enum same {
+                description
+                  "As it is.";
+              }
+              enum changed {
+                description
+                  "Changed.";
+              }
+              enum new {
+                description
+                  "Made.";
+              }
+              enum withheld {
+                description
+                  "A secret the bundle does not carry: stays as it
+                   is.";
+              }
+            }
+            description
+              "What became of it.";
+          }
+          leaf diff {
+            type string;
+            description
+              "A unified diff, for one changed.";
+          }
+        }
+        leaf-list package {
+          type string;
+          description
+            "Packages the bundle has that this host does not.";
+        }
+        leaf backup {
+          type string;
+          description
+            "Where the files before are kept.";
+        }
+        leaf applied {
+          type boolean;
+          description
+            "It was done.";
+        }
+        leaf reboot {
+          type boolean;
+          description
+            "What the files say takes hold at boot.";
+        }
+      }
+    }
+  }
+}

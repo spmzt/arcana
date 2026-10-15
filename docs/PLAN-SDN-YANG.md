@@ -1272,8 +1272,10 @@ A step never leaves `main` unbuildable; where a step would, it says
   what birdc, wg show and ngctl list tell, bird.conf as configuration;
   the changes stay jobs), `arcana-plugins` (with `arcana-host`, 3.1.9);
   check: the plugin tests.
-- 3.1.9 A: `arcana-host` (facts, router-id, role, capabilities),
-  `arcana-agent` (update and build rpcs); check: `hello`'s tests.
+- 3.1.9 A: `arcana-host` (facts, the plugins as identities, the stats,
+  the trust store; done), `arcana-agent` (transport, TLS, update, build,
+  console-update, the sources, the configuration bundle as actions;
+  done), `arcana-jail-files` (done); check: `hello`'s tests.
 - 3.1.10 A: `arcana-firewall` (ipfw: the kept rules, aliases and
   rc.conf as configuration; the rules with counters, dynamic rules,
   tables, NAT and dummynet's schedulers, pipes and queues as state;

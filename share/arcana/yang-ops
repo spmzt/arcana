@@ -33,3 +33,16 @@ history	arcana-history@2026-10-15
 events	arcana-events@2026-10-15
 event	arcana-events@2026-10-15
 bird-config	arcana-bird@2026-10-15
+hello	arcana-host@2026-10-15
+stats	arcana-host@2026-10-15
+certs	arcana-host@2026-10-15
+agent-update	arcana-agent@2026-10-15
+agent-build	arcana-agent@2026-10-15
+console-update	arcana-agent@2026-10-15
+source-head	arcana-agent@2026-10-15
+source-log	arcana-agent@2026-10-15
+transport	arcana-agent@2026-10-15
+tls	arcana-agent@2026-10-15
+config-export	arcana-agent@2026-10-15
+config-apply	arcana-agent@2026-10-15
+jail-files	arcana-jail-files@2026-10-15
