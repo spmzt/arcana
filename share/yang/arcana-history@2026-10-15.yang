@@ -1,0 +1,340 @@
+module arcana-history {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-history";
+  prefix archist;
+
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "How busy a FreeBSD host has been, which the agent samples by
+     itself and keeps the last of: CPU (kern.cp_time), the load
+     average (getloadavg(3)), memory and swap in use (vm.stats.vm,
+     kvm_getswapinfo(3)), bytes a second in and out of each interface
+     but the loopback (getifaddrs(3)) and read from and written to
+     each disk (devstat(3)), and each running jail's share of a CPU
+     and memory as the kernel's resource accounting has them
+     (rctl(8), kern.racct.enable=1).  How it samples (step, keep) and
+     the limits above which an event (threshold) is made are
+     configuration, kept for the agent's next start; the samples are
+     state, written down when the agent stops and read again when it
+     starts.  The history operation of arcana.yaml converted (Y-3).";
+
+  revision 2026-10-15 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.7.";
+  }
+
+  typedef percent {
+    type decimal64 {
+      fraction-digits 1;
+      range "0..100";
+    }
+    description
+      "A percentage.";
+  }
+
+  grouping sample {
+    description
+      "One sample.";
+    leaf time {
+      type yang:date-and-time;
+      description
+        "When it was taken.";
+    }
+    leaf cpu {
+      type percent;
+      description
+        "CPU busy, of all CPUs.";
+    }
+    leaf load {
+      type decimal64 {
+        fraction-digits 2;
+      }
+      description
+        "The one-minute load average.";
+    }
+    leaf memory {
+      type uint64;
+      units "bytes";
+      description
+        "Memory in use.";
+    }
+    leaf swap {
+      type uint64;
+      units "bytes";
+      description
+        "Swap in use.";
+    }
+    leaf received {
+      type uint64;
+      units "bytes/second";
+      description
+        "Received on all interfaces but the loopback.";
+    }
+    leaf sent {
+      type uint64;
+      units "bytes/second";
+      description
+        "Sent on them.";
+    }
+    leaf read {
+      type uint64;
+      units "bytes/second";
+      description
+        "Read from all disks.";
+    }
+    leaf written {
+      type uint64;
+      units "bytes/second";
+      description
+        "Written to them.";
+    }
+    list interface {
+      key "name";
+      description
+        "Each interface told apart, at most 16.";
+      leaf name {
+        type string;
+        description
+          "The interface.";
+      }
+      leaf received {
+        type uint64;
+        units "bytes/second";
+        description
+          "In.";
+      }
+      leaf sent {
+        type uint64;
+        units "bytes/second";
+        description
+          "Out.";
+      }
+    }
+    list disk {
+      key "name";
+      description
+        "Each disk told apart, at most 16.";
+      leaf name {
+        type string;
+        description
+          "The disk.";
+      }
+      leaf read {
+        type uint64;
+        units "bytes/second";
+        description
+          "Read.";
+      }
+      leaf written {
+        type uint64;
+        units "bytes/second";
+        description
+          "Written.";
+      }
+    }
+    list jail {
+      key "name";
+      description
+        "Each running jail told apart, at most 16, as the kernel's
+         resource accounting has it.";
+      leaf name {
+        type string;
+        description
+          "The jail.";
+      }
+      leaf cpu {
+        type percent;
+        description
+          "Its share of one CPU.";
+      }
+      leaf memory {
+        type uint64;
+        units "bytes";
+        description
+          "Its memory.";
+      }
+    }
+  }
+
+  container history {
+    description
+      "The sampler and what it kept.";
+    container sampling {
+      description
+        "How the agent samples, kept for its next start: an hour
+         every five seconds until told otherwise.";
+      leaf step {
+        type uint16 {
+          range "1..3600";
+        }
+        units "seconds";
+        default "5";
+        description
+          "Seconds between two samples.";
+      }
+      leaf keep {
+        type uint32 {
+          range "1..100000";
+        }
+        default "720";
+        description
+          "How many samples are kept.";
+      }
+    }
+    container limits {
+      description
+        "The percentages above which an event (threshold) is made,
+         either way across; 0 none.";
+      leaf cpu {
+        type uint8 {
+          range "0..100";
+        }
+        description
+          "CPU busy.";
+      }
+      leaf memory {
+        type uint8 {
+          range "0..100";
+        }
+        description
+          "Memory in use, of the whole.";
+      }
+      leaf swap {
+        type uint8 {
+          range "0..100";
+        }
+        description
+          "Swap in use, of the whole.";
+      }
+    }
+    list rule {
+      key "kind name";
+      description
+        "A limit of one interface, disk or jail.";
+      leaf kind {
+        type enumeration {
+          enum net {
+            description
+              "An interface: bytes a second, in and out together.";
+          }
+          enum disk {
+            description
+              "A disk: bytes a second, read and written together.";
+          }
+          enum jail-cpu {
+            description
+              "A jail's share of one CPU, in percent.";
+          }
+          enum jail-mem {
+            description
+              "A jail's memory, in bytes.";
+          }
+        }
+        description
+          "What is limited.";
+      }
+      leaf name {
+        type string;
+        description
+          "The interface's, the disk's or the jail's name.";
+      }
+      leaf limit {
+        type uint64;
+        description
+          "The limit, in the kind's unit.";
+      }
+      leaf over {
+        type boolean;
+        config false;
+        description
+          "Over it at the last sample.";
+      }
+    }
+    container state {
+      config false;
+      description
+        "The sampler as it is.";
+      leaf bytes {
+        type uint64;
+        units "bytes";
+        description
+          "The memory the samples take.";
+      }
+      leaf ncpu {
+        type uint16;
+        description
+          "How many CPUs the host has.";
+      }
+      leaf memory-total {
+        type uint64;
+        units "bytes";
+        description
+          "The host's memory.";
+      }
+      leaf swap-total {
+        type uint64;
+        units "bytes";
+        description
+          "Its swap.";
+      }
+      leaf racct {
+        type boolean;
+        description
+          "The kernel accounts resources per jail
+           (kern.racct.enable).";
+      }
+      leaf-list interface {
+        type string;
+        description
+          "The interfaces told apart.";
+      }
+      leaf-list disk {
+        type string;
+        description
+          "The disks told apart.";
+      }
+      leaf-list jail {
+        type string;
+        description
+          "The jails told apart.";
+      }
+      list sample {
+        key "time";
+        description
+          "The samples kept, oldest first.";
+        uses sample;
+      }
+    }
+    action read {
+      description
+        "The samples after a time: what a page that has the ones
+         before asks for.";
+      input {
+        leaf after {
+          type yang:date-and-time;
+          description
+            "Only samples taken after this.";
+        }
+      }
+      output {
+        list sample {
+          key "time";
+          description
+            "The samples, oldest first.";
+          uses sample;
+        }
+      }
+    }
+  }
+}

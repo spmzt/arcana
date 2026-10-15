@@ -26,3 +26,9 @@ processes	arcana-processes@2026-10-14
 log	arcana-log@2026-10-14
 ipfw-rules	arcana-firewall@2026-10-15
 fw-trace	arcana-firewall@2026-10-15
+path-check	arcana-troubleshoot@2026-10-15
+traceroute	arcana-troubleshoot@2026-10-15
+capture	arcana-troubleshoot@2026-10-15
+history	arcana-history@2026-10-15
+events	arcana-events@2026-10-15
+event	arcana-events@2026-10-15

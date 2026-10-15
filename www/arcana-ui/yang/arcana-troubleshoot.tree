@@ -1,0 +1,148 @@
+module: arcana-troubleshoot
+  +--rw troubleshoot
+     +--ro capture-source*   string
+     +---x path-check
+     |  +---w input
+     |  |  +---w source         inet:ip-address-no-zone
+     |  |  +---w destination    inet:ip-address-no-zone
+     |  |  +---w protocol?      enumeration
+     |  |  +---w port?          inet:port-number
+     |  |  +---w interface?     string
+     |  |  +---w fib?           uint16
+     |  |  +---w jail?          string
+     |  |  +---w reply?         boolean
+     |  +--ro output
+     |     +--ro host?          string
+     |     +--ro address*
+     |     |  +--ro address?         inet:ip-address-no-zone
+     |     |  +--ro prefix-length?   uint8
+     |     |  +--ro interface?       string
+     |     |  +--ro fib?             uint16
+     |     |  +--ro up?              boolean
+     |     +--ro source
+     |     |  +--ro local?       boolean
+     |     |  +--ro connected?   string
+     |     +--ro destination
+     |     |  +--ro local?       boolean
+     |     |  +--ro connected?   string
+     |     +--ro forwarding?    boolean
+     |     +--ro ingress
+     |     |  +--ro interface?   string
+     |     |  +--ro how?         string
+     |     +--ro fib?           uint16
+     |     +--ro route
+     |     |  +--ro destination?     inet:ip-address-no-zone
+     |     |  +--ro prefix-length?   uint8
+     |     |  +--ro gateway?         string
+     |     |  +--ro interface?       string
+     |     |  +--ro fib?             uint16
+     |     |  +--ro flags?           string
+     |     +--ro neighbor
+     |     |  +--ro address?   inet:ip-address-no-zone
+     |     |  +--ro state?     string
+     |     +--ro return
+     |     |  +--ro fib?         uint16
+     |     |  +--ro interface?   string
+     |     |  +--ro gateway?     string
+     |     |  +--ro symmetric?   boolean
+     |     +--ro firewall
+     |     |  +--ro on?          boolean
+     |     |  +--ro in
+     |     |  |  +--ro verdict?      enumeration
+     |     |  |  +--ro rule?         arcfw:rule-number
+     |     |  |  +--ro text?         string
+     |     |  |  +--ro by-state?     boolean
+     |     |  |  +--ro keep-state?   boolean
+     |     |  |  +--ro setfib?       int32
+     |     |  |  +--ro fwd?          string
+     |     |  |  +--ro note?         string
+     |     |  |  +--ro step*
+     |     |  |  |  +--ro rule?   arcfw:rule-number
+     |     |  |  |  +--ro text?   string
+     |     |  |  |  +--ro how?    string
+     |     |  |  +--ro uncertain*
+     |     |  |     +--ro text?      string
+     |     |  |     +--ro because?   string
+     |     |  +--ro out
+     |     |  |  +--ro verdict?      enumeration
+     |     |  |  +--ro rule?         arcfw:rule-number
+     |     |  |  +--ro text?         string
+     |     |  |  +--ro by-state?     boolean
+     |     |  |  +--ro keep-state?   boolean
+     |     |  |  +--ro setfib?       int32
+     |     |  |  +--ro fwd?          string
+     |     |  |  +--ro note?         string
+     |     |  |  +--ro step*
+     |     |  |  |  +--ro rule?   arcfw:rule-number
+     |     |  |  |  +--ro text?   string
+     |     |  |  |  +--ro how?    string
+     |     |  |  +--ro uncertain*
+     |     |  |     +--ro text?      string
+     |     |  |     +--ro because?   string
+     |     |  +--ro reply-in
+     |     |  |  +--ro verdict?      enumeration
+     |     |  |  +--ro rule?         arcfw:rule-number
+     |     |  |  +--ro text?         string
+     |     |  |  +--ro by-state?     boolean
+     |     |  |  +--ro keep-state?   boolean
+     |     |  |  +--ro setfib?       int32
+     |     |  |  +--ro fwd?          string
+     |     |  |  +--ro note?         string
+     |     |  |  +--ro step*
+     |     |  |  |  +--ro rule?   arcfw:rule-number
+     |     |  |  |  +--ro text?   string
+     |     |  |  |  +--ro how?    string
+     |     |  |  +--ro uncertain*
+     |     |  |     +--ro text?      string
+     |     |  |     +--ro because?   string
+     |     |  +--ro reply-out
+     |     |     +--ro verdict?      enumeration
+     |     |     +--ro rule?         arcfw:rule-number
+     |     |     +--ro text?         string
+     |     |     +--ro by-state?     boolean
+     |     |     +--ro keep-state?   boolean
+     |     |     +--ro setfib?       int32
+     |     |     +--ro fwd?          string
+     |     |     +--ro note?         string
+     |     |     +--ro step*
+     |     |     |  +--ro rule?   arcfw:rule-number
+     |     |     |  +--ro text?   string
+     |     |     |  +--ro how?    string
+     |     |     +--ro uncertain*
+     |     |        +--ro text?      string
+     |     |        +--ro because?   string
+     |     +--ro delivered?     boolean
+     |     +--ro finding*
+     |        +--ro severity?   severity
+     |        +--ro what?       string
+     +---x traceroute
+     |  +---w input
+     |  |  +---w address    inet:ip-address-no-zone
+     |  +--ro output
+     |     +--ro address?   inet:ip-address-no-zone
+     |     +--ro family?    enumeration
+     |     +--ro reached?   boolean
+     |     +--ro hop* [ttl]
+     |        +--ro ttl        uint8
+     |        +--ro address?   inet:ip-address-no-zone
+     |        +--ro rtt?       decimal64
+     |        +--ro note?      string
+     |        +--ro lost?      boolean
+     +---x capture
+        +---w input
+        |  +---w interface    string
+        |  +---w filter?      string
+        |  +---w packets?     uint16
+        |  +---w seconds?     uint8
+        |  +---w jail?        string
+        +--ro output
+           +--ro source?      string
+           +--ro filter?      string
+           +--ro line*        string
+           +--ro packets?     uint32
+           +--ro limit?       uint16
+           +--ro seconds?     uint8
+           +--ro timed-out?   boolean
+           +--ro bytes?       uint64
+           +--ro pcap?        binary
+           +--ro taken?       yang:date-and-time

@@ -1,0 +1,71 @@
+module: arcana-history
+  +--rw history
+     +--rw sampling
+     |  +--rw step?   uint16
+     |  +--rw keep?   uint32
+     +--rw limits
+     |  +--rw cpu?      uint8
+     |  +--rw memory?   uint8
+     |  +--rw swap?     uint8
+     +--rw rule* [kind name]
+     |  +--rw kind     enumeration
+     |  +--rw name     string
+     |  +--rw limit?   uint64
+     |  +--ro over?    boolean
+     +--ro state
+     |  +--ro bytes?          uint64
+     |  +--ro ncpu?           uint16
+     |  +--ro memory-total?   uint64
+     |  +--ro swap-total?     uint64
+     |  +--ro racct?          boolean
+     |  +--ro interface*      string
+     |  +--ro disk*           string
+     |  +--ro jail*           string
+     |  +--ro sample* [time]
+     |     +--ro time        yang:date-and-time
+     |     +--ro cpu?        percent
+     |     +--ro load?       decimal64
+     |     +--ro memory?     uint64
+     |     +--ro swap?       uint64
+     |     +--ro received?   uint64
+     |     +--ro sent?       uint64
+     |     +--ro read?       uint64
+     |     +--ro written?    uint64
+     |     +--ro interface* [name]
+     |     |  +--ro name        string
+     |     |  +--ro received?   uint64
+     |     |  +--ro sent?       uint64
+     |     +--ro disk* [name]
+     |     |  +--ro name       string
+     |     |  +--ro read?      uint64
+     |     |  +--ro written?   uint64
+     |     +--ro jail* [name]
+     |        +--ro name      string
+     |        +--ro cpu?      percent
+     |        +--ro memory?   uint64
+     +---x read
+        +---w input
+        |  +---w after?   yang:date-and-time
+        +--ro output
+           +--ro sample* [time]
+              +--ro time        yang:date-and-time
+              +--ro cpu?        percent
+              +--ro load?       decimal64
+              +--ro memory?     uint64
+              +--ro swap?       uint64
+              +--ro received?   uint64
+              +--ro sent?       uint64
+              +--ro read?       uint64
+              +--ro written?    uint64
+              +--ro interface* [name]
+              |  +--ro name        string
+              |  +--ro received?   uint64
+              |  +--ro sent?       uint64
+              +--ro disk* [name]
+              |  +--ro name       string
+              |  +--ro read?      uint64
+              |  +--ro written?   uint64
+              +--ro jail* [name]
+                 +--ro name      string
+                 +--ro cpu?      percent
+                 +--ro memory?   uint64

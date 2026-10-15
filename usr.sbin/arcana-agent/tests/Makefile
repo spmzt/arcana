@@ -45,6 +45,24 @@ SRCS.yfw=	yfw_test.c yfw.c yjson.c ymodel_schema.c
 CFLAGS.yfw_test.c+=	-I${.OBJDIR}/..
 CFLAGS.yfw.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 LDADD.yfw+=	${CBLINK_LIBS} ${UCL_LIBS}
+# yts: path-check, traceroute and capture as arcana-troubleshoot has them.
+PROGS+=		yts
+SRCS.yts=	yts_test.c yts.c yjson.c ymodel_schema.c
+CFLAGS.yts_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yts.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.yts+=	${CBLINK_LIBS} ${UCL_LIBS}
+# yhist: the history operation's reply as arcana-history has it.
+PROGS+=		yhist
+SRCS.yhist=	yhist_test.c yhist.c yjson.c ymodel_schema.c
+CFLAGS.yhist_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yhist.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.yhist+=	${CBLINK_LIBS} ${UCL_LIBS}
+# yev: the events operation's reply, and one event, as arcana-events has them.
+PROGS+=		yev
+SRCS.yev=	yev_test.c yev.c yjson.c ymodel_schema.c
+CFLAGS.yev_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yev.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.yev+=	${CBLINK_LIBS} ${UCL_LIBS}
 # yprocs: the processes operation's replies as arcana-processes has them.
 PROGS+=		yprocs
 SRCS.yprocs=	yprocs_test.c yprocs.c yjson.c ymodel_schema.c
