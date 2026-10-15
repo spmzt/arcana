@@ -4712,21 +4712,31 @@ void
 topo_lookup(struct server *s, const char *addr, int fib)
 {
 	unsigned char	raw[16];
-	char		url[520];
+	char		url[520], clean[80];
+	size_t		n;
 	int		af;
 
+	/*
+	 * The address as it is meant: blanks around it (pasted) left out,
+	 * a prefix's address looked up (10.1.0.0/24), an IPv6 zone
+	 * (fe80::1%vtnet0) left out; IPv4 or IPv6 by its form.
+	 */
+	addr += strspn(addr, " \t\r\n");
+	n = strcspn(addr, " \t\r\n/%");
+	snprintf(clean, sizeof(clean), "%.*s", (int)(n < sizeof(clean) ? n :
+	    sizeof(clean) - 1), addr);
 	snprintf(lk.sid, sizeof(lk.sid), "%s", s->id);
-	snprintf(lk.addr, sizeof(lk.addr), "%s", addr);
+	snprintf(lk.addr, sizeof(lk.addr), "%s", clean);
 	if (lk.data != NULL)
 		ucl_object_unref(lk.data);
 	lk.data = NULL;
-	if (!addr_bytes(addr, &af, raw) || strchr(addr, '/') != NULL ||
-	    strchr(addr, '%') != NULL) {
-		snprintf(lk.error, sizeof(lk.error), "Type the address to find "
-		    "the route to in the filter, an IPv4 or IPv6 one, then "
-		    "press Lookup");
+	if (!addr_bytes(clean, &af, raw)) {
+		snprintf(lk.error, sizeof(lk.error), "%s is not an address: "
+		    "an IPv4 one (192.0.2.10) or an IPv6 one (2001:db8::10)",
+		    clean[0] != '\0' ? clean : "Nothing");
 		return;
 	}
+	addr = lk.addr;
 	lk.error[0] = '\0';
 	lk.busy = true;
 	snprintf(url, sizeof(url), "/api/servers/%s/net/lookup?to=%s&fib=%d"

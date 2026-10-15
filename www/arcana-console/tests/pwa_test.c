@@ -1691,12 +1691,28 @@ part_nettab(void)
 	run("document.querySelector('button[data-act=net-lookup]').click()");
 	wait_js("document.querySelector('form[data-form=lookup] input[name="
 	    "address]')", 5);
+	/* As pasted, blanks around it: IPv4 by its form. */
 	run("const f = document.querySelector('form[data-form=lookup]'); "
-	    "f.address.value = '10.77.5.5'; f.requestSubmit();");
+	    "f.address.value = ' 10.77.5.5\\n'; f.requestSubmit();");
 	wait_js("document.querySelector('.modal .notice.lookup') && document."
 	    "querySelector('.modal .notice.lookup').textContent.includes("
 	    "'10.0.0.1')", 10);
 	shot("7a-lookup");
+	/* IPv6, a prefix's address, a zone: each looked up; what is no
+	 * address said to be none, by what it is. */
+	run("const f = document.querySelector('form[data-form=lookup]'); "
+	    "f.address.value = 'fe80::1%em0'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal .notice.lookup') && "
+	    "!document.querySelector('.modal .notice.bad')", 10);
+	run("const f = document.querySelector('form[data-form=lookup]'); "
+	    "f.address.value = '10.77.0.0/16'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal .notice.lookup') && "
+	    "!document.querySelector('.modal .notice.bad')", 10);
+	run("const f = document.querySelector('form[data-form=lookup]'); "
+	    "f.address.value = 'gateway'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal .notice.bad') && document."
+	    "querySelector('.modal .notice.bad').textContent.includes("
+	    "'gateway is not an address')", 10);
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	wait_js("!document.querySelector('.modal')", 5);
 	run("document.querySelector('button[data-act=net-kind]"
