@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.118.0"
+#define	ARCANA_AGENT_VERSION	"0.118.1"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -575,7 +575,7 @@ int		 do_config_apply(struct work *, const char *, bool, bool,
 		    const char *, struct arc_config_apply_rsp *);
 /* invidia/pathcheck.c: what this host does with a packet and its reply. */
 int		 do_path_check(struct work *, const char *, const char *,
-		    const char *, uint32_t, const char *, bool, uint32_t,
+		    const char *, uint32_t, const char *, bool, uint32_t, bool,
 		    struct arc_path_check_rsp *);
 bool		 kmod_loaded(const char *);
 

@@ -79,6 +79,7 @@ enum op {
 	OP_TRANSPORT,
 	OP_CONFIG_EXPORT,
 	OP_CONFIG_APPLY,
+	OP_PATH_CHECK,
 	OP_SYSCTL,
 	OP_PROCESSES,
 	OP_LOG,
@@ -143,6 +144,10 @@ struct call {
 	char			*from_peer;
 	bool			 anyway;
 	char			 hostname[256];
+	/* path-check: the packet. */
+	char			 psrc[64], pdst[64], pproto[8];
+	uint32_t		 pport;
+	bool			 preply;
 	char			*json;		/* the reply, from the thread */
 	int			 status;
 };
@@ -1197,7 +1202,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1559,6 +1564,8 @@ call_run(struct kore_task *t)
 	struct arc_config_export_rsp *cxr;
 	struct arc_config_apply_req caq;
 	struct arc_config_apply_rsp *car;
+	struct arc_path_check_req pcq;
+	struct arc_path_check_rsp *pcr;
 	char			*bundle;
 	struct arc_sysctl_req	 syq;
 	struct arc_sysctl_rsp	*syr;
@@ -1672,6 +1679,7 @@ call_run(struct kore_task *t)
 	tpr = NULL;
 	cxr = NULL;
 	car = NULL;
+	pcr = NULL;
 	bundle = NULL;
 	syr = NULL;
 	prr = NULL;
@@ -2323,6 +2331,25 @@ connected:
 		steps = fsr->trace.v;
 		nsteps = fsr->trace.n;
 		break;
+	case OP_PATH_CHECK:
+		memset(&pcq, 0, sizeof(pcq));
+		pcq.path_src = c->psrc;
+		pcq.path_dst = c->pdst;
+		pcq.path_proto = c->pproto[0] != '\0' ? c->pproto : NULL;
+		pcq.has_path_port = c->pport != 0;
+		pcq.path_port = c->pport;
+		pcq.interface = c->ifname[0] != '\0' ? c->ifname : NULL;
+		pcq.jail = c->jail[0] != '\0' ? c->jail : NULL;
+		pcq.path_reply = c->preply;
+		if ((error = arc_path_check(&cl, &pcq, &pcr)) != 0)
+			goto rpcfail;
+		ok = pcr->ok;
+		put_str(top, "error", pcr->error);
+		if ((e = parse_json(pcr->json)) != NULL)
+			put(top, "data", e);
+		steps = pcr->trace.v;
+		nsteps = pcr->trace.n;
+		break;
 	case OP_CONFIG_EXPORT:
 		memset(&cxq, 0, sizeof(cxq));
 		cxq.secrets = c->refresh;
@@ -2898,6 +2925,8 @@ done:
 		arc_config_export_rsp_free(cxr);
 	if (car != NULL)
 		arc_config_apply_rsp_free(car);
+	if (pcr != NULL)
+		arc_path_check_rsp_free(pcr);
 	free(bundle);
 	if (syr != NULL)
 		arc_sysctl_rsp_free(syr);
@@ -4937,6 +4966,34 @@ self_call(struct call *c, const char *uri, const char *peer,
 	call_release(c);
 	kore_free(c);
 	return (json);
+}
+
+/*
+ * What a host, or a vnet jail of it, does with a packet and its reply
+ * (path-check), for the troubleshooter's task; iface: where it comes in,
+ * or NULL: by the route back.
+ */
+char *
+hosts_path_check(const char *uri, const char *peer, const char *name,
+    const char *jail, const char *src, const char *dst, const char *proto,
+    uint32_t port, const char *iface, bool reply, int *status)
+{
+	struct call	*c;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_PATH_CHECK;
+	c->preply = reply;
+	c->reads = true;
+	snprintf(c->psrc, sizeof(c->psrc), "%s", src);
+	snprintf(c->pdst, sizeof(c->pdst), "%s", dst);
+	snprintf(c->pproto, sizeof(c->pproto), "%s", proto != NULL ? proto :
+	    "");
+	c->pport = port;
+	snprintf(c->ifname, sizeof(c->ifname), "%s", iface != NULL ? iface :
+	    "");
+	snprintf(c->jail, sizeof(c->jail), "%s", jail != NULL ? jail : "");
+	snprintf(c->route, sizeof(c->route), "troubleshoot path-check");
+	return (self_call(c, uri, peer, name, "path-check", status));
 }
 
 /* A job queued on a host; NULL and *errp when it is not one. */

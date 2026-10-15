@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.180.0"
+#define	ARCW_VERSION		"0.181.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -257,6 +257,12 @@ int		 api_zfs_key(struct http_request *);
 int		 api_tls(struct http_request *);
 int		 api_transport(struct http_request *);
 int		 api_config_export(struct http_request *);
+char		*hosts_path_check(const char *, const char *, const char *,
+		    const char *, const char *, const char *, const char *,
+		    uint32_t, const char *, bool, int *);
+/* troubleshoot.c: a packet's path across the hosts, and what stops it. */
+int		 api_troubleshoot_path(struct http_request *);
+void		 api_troubleshoot_free(struct http_request *);
 int		 api_config_apply(struct http_request *);
 int		 api_transport_switch(struct http_request *);
 int		 api_sysctl(struct http_request *);

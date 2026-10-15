@@ -210,7 +210,7 @@ usage(void)
 	    "    transport [retry]\n"
 	    "    config-export [-s]\n"
 	    "    config-apply [-an] [-H hostname] bundle.json\n"
-	    "    path-check [-F fib] [-i interface] [-p proto] [-P port] src dst\n"
+	    "    path-check [-r] [-F fib] [-i interface] [-p proto] [-P port] src dst\n"
 	    "    ps [pid]\n"
 	    "    signal pid [name | number]\n"
 	    "    renice pid nice\n"
@@ -2874,8 +2874,11 @@ cmd_path_check(struct arc_client *cl, int argc, char **argv)
 	memset(&req, 0, sizeof(req));
 	optind = 1;
 	optreset = 1;
-	while ((ch = getopt(argc, argv, "F:i:p:P:")) != -1) {
+	while ((ch = getopt(argc, argv, "F:i:p:P:r")) != -1) {
 		switch (ch) {
+		case 'r':
+			req.path_reply = true;
+			break;
 		case 'F':
 			req.has_net_fib = true;
 			req.net_fib = (uint32_t)strtoul(optarg, NULL, 10);

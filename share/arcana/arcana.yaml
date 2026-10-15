@@ -1064,6 +1064,13 @@ attribute-sets:
       - name: path-port
         type: u32
         doc: For path-check, the destination port of tcp or udp.
+      - name: path-reply
+        type: flag
+        doc: |
+          For path-check, the packet is a reply: from path-src's
+          path-port to an ephemeral port of path-dst, a TCP segment of
+          a connection (ACK, no SYN), an ICMP echo reply; met where no
+          state of its request may be.
 
 
   - name: host
@@ -3248,6 +3255,7 @@ operations:
           - interface
           - net-fib
           - jail
+          - path-reply
         required:
           - path-src
           - path-dst

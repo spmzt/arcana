@@ -4750,3 +4750,23 @@ table.hcfiles tr.changed td:last-child { color: var(--amber); }
 table.hcfiles tr.new td:last-child { color: var(--green); }
 table.hcfiles tr.withheld td:last-child { color: var(--dim); }
 pre.diff { max-height: 18rem; overflow: auto; font-size: .75rem; }
+/* Troubleshoot: a packet's way, place by place, and what stops it. */
+.trouble .tsform { display: flex; flex-direction: column; gap: .6rem; max-width: 46rem; }
+.trouble .tsplaces .tsplace { display: flex; flex-wrap: wrap; gap: .2rem .9rem; margin: .2rem 0; }
+.trouble .tsplaces .tsjail { font-size: .85em; opacity: .85; }
+.tsverdict { margin: .8rem 0 .4rem; padding: .55rem .8rem; border-radius: 8px; border: 1px solid var(--line-2); display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; }
+.tsverdict.bad { border-color: var(--red); }
+.tsverdict.warn { border-color: var(--amber); }
+.tsverdict.ok, .tsverdict.info { border-color: var(--green); }
+ul.tsfindings { list-style: none; padding: 0; margin: .3rem 0 .8rem; font-size: .85rem; }
+ul.tsfindings li { margin: .25rem 0; }
+.chip.bad { border-color: var(--red); color: var(--red); }
+.chip.warn { border-color: var(--amber); color: var(--amber); }
+.chip.good { border-color: var(--green); }
+ol.tsway { list-style: none; padding: 0; margin: .3rem 0 1rem; display: flex; flex-direction: column; gap: .4rem; }
+ol.tsway li.tshop { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; padding: .45rem .7rem; border: 1px solid var(--line-2); border-radius: 8px; font-size: .82rem; }
+ol.tsway li.tshop details { flex-basis: 100%; }
+ol.tsway li.tshop pre { max-height: 18rem; overflow: auto; font-size: .72rem; }
+ol.tsway li.tsend { font-size: .82rem; padding: .3rem .7rem; color: var(--dim); }
+ol.tsway li.tsend.blocked, ol.tsway li.tsend.loop { color: var(--red); }
+ol.tsway li.tsend.delivered { color: var(--green); }
