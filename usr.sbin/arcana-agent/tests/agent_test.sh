@@ -5466,6 +5466,87 @@ config_bundle_cleanup()
 	true
 }
 
+atf_test_case fw_walk
+fw_walk_head()
+{
+	atf_set "descr" "ipfw's ruleset walked for a packet (fwmatch.c), as" \
+	    "path-check does: skipto, uRPF, a table, setup and keep-state," \
+	    "a reply let in by its state, a socket's rule for a packet" \
+	    "passing through, fwd by a table's value, what is not known"
+}
+fw_walk_body()
+{
+	local f="$(atf_get_srcdir)/fwmatch" l
+
+	cat > list <<'EOF'
+00100 allow ip from any to any via lo0
+00200 deny ip from any to 127.0.0.0/8
+00300 deny ip from any to any not verrevpath in
+00400 check-state :default
+00500 count ip from any to any in recv vtnet0
+00600 skipto 1000 ip from 10.0.0.0/8 to any
+00700 deny log ip from table(bad) to any in
+00800 allow tcp from any to me 22 in recv vtnet0 setup keep-state :default
+00900 deny ip from any to any in recv vtnet0
+01000 setfib 1 ip from 10.1.0.0/16 to any in
+01100 allow udp from any to any 53,123 out keep-state :default
+01200 allow ip from { 10.0.0.1 or 10.0.0.2 } to any
+01300 allow tcp from any to any established
+01400 deny ip from any to any uid 1001
+01500 nat 1 ip from 10.2.0.0/16 to any out xmit vtnet0
+01600 allow icmp from any to any icmptypes 0,8
+01700 fwd 192.0.2.1 ip from 10.3.0.0/16 to any in recv em*
+65535 deny ip from any to any
+65535 count ip from any to any not // orphaned dynamic states counter
+00012 fwd tablearg ip4 from any to table(swt)
+EOF
+	cat > tables <<'EOF'
+--- table(bad), set(0) ---
+198.51.100.0/24 0
+--- table(swt), set(0) ---
+10.20.0.0/24 100.64.0.9
+EOF
+	l="local=192.0.2.10@vtnet0 local=10.0.0.10@em0"
+	t() { "$f" list tables $l "$@"; }
+	atf_check -o inline:'allow 800 keep-state\n' "$f" list tables $l in \
+	    rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 \
+	    dport=22 syn rpf reach
+	atf_check -o inline:'deny 900\n' "$f" list tables $l in rcv=vtnet0 \
+	    src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 dport=80 syn \
+	    rpf reach
+	# The route back is another way: uRPF.
+	atf_check -o inline:'deny 300\n' "$f" list tables $l in rcv=vtnet0 \
+	    src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 dport=22 syn \
+	    reach
+	atf_check -o inline:'deny 700\n' "$f" list tables $l in rcv=vtnet0 \
+	    src=198.51.100.9 dst=192.0.2.10 proto=tcp sport=1 dport=22 syn \
+	    rpf reach
+	# The reply, by the state its request made.
+	atf_check -o inline:'allow 400 by-state\n' "$f" list tables $l in \
+	    rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 \
+	    dport=22 ack state rpf reach
+	# Passing through: no socket, so no uid rule.
+	atf_check -o inline:'deny 65535 setfib=1\n' "$f" list tables $l in \
+	    rcv=em0 src=10.1.2.3 dst=8.8.8.8 proto=udp sport=5353 dport=53 \
+	    rpf reach
+	# Made here: the uid rule cannot be judged.
+	atf_check -o inline:'allow 1100 keep-state\n' "$f" list tables $l out \
+	    xmit=vtnet0 src=192.0.2.10 dst=8.8.8.8 proto=udp sport=5353 \
+	    dport=53 srclocal
+	atf_check -o inline:'deny 65535 uncertain=1400(uid)\n' "$f" list \
+	    tables $l out xmit=vtnet0 src=192.0.2.10 dst=8.8.4.4 proto=tcp \
+	    sport=1 dport=443 syn srclocal
+	atf_check -o inline:'allow 1200\n' "$f" list tables $l in rcv=em0 \
+	    src=10.0.0.1 dst=8.8.4.4 proto=tcp sport=1 dport=443 syn rpf reach
+	atf_check -o inline:'allow 100\n' "$f" list tables $l in rcv=lo0 \
+	    src=127.0.0.1 dst=127.0.0.1 proto=tcp sport=1 dport=443 syn
+	atf_check -o inline:'allow 1600\n' "$f" list tables $l in rcv=em1 \
+	    src=10.3.0.4 dst=8.8.8.8 proto=icmp icmp=8 rpf reach
+	# fwd by a table: to the table's value.
+	atf_check -o inline:'fwd 12 fwd=100.64.0.9\n' "$f" list tables $l in \
+	    rcv=em0 src=10.0.0.5 dst=10.20.0.7 proto=icmp icmp=8 rpf reach
+}
+
 atf_test_case yang_log
 yang_log_head()
 {
@@ -6574,6 +6655,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_system
 	atf_add_test_case yang_processes
 	atf_add_test_case yang_log
+	atf_add_test_case fw_walk
 	atf_add_test_case config_bundle
 	atf_add_test_case yang_storage
 	atf_add_test_case yang_jobs

@@ -820,6 +820,229 @@ carp_cleanup()
 	true
 }
 
+atf_test_case fwmatch_kernel cleanup
+fwmatch_kernel_head()
+{
+	atf_set "descr" "path-check's ipfw walk (fwmatch.c) says what the" \
+	    "kernel does: a ruleset in a vnet jail, packets sent at it from" \
+	    "another, and the rule whose counter moved is the rule the walk" \
+	    "names, for each"
+	atf_set "require.user" "root"
+}
+fwmatch_kernel_body()
+{
+	local f="$(atf_get_srcdir)/fwmatch" ep a b
+
+	kldstat -q -m ipfw || atf_skip "ipfw(4) is not loaded"
+	if jls -j arcw_f1 >/dev/null 2>&1 || jls -j arcw_f2 >/dev/null 2>&1; then
+		atf_skip "a jail arcw_f1 or arcw_f2 is there already"
+	fi
+	touch mine
+	ep=$(ifconfig epair create)
+	echo "${ep%a}" > epair
+	a="${ep%a}a"
+	b="${ep%a}b"
+	atf_check -o ignore jail -c name=arcw_f1 vnet persist path=/ vnet.interface="$a"
+	atf_check -o ignore jail -c name=arcw_f2 vnet persist path=/ vnet.interface="$b"
+	atf_check jexec arcw_f1 ifconfig "$a" inet 192.0.2.2/24 up
+	atf_check jexec arcw_f1 ifconfig "$a" inet 192.0.2.12/32 alias
+	atf_check jexec arcw_f1 ifconfig lo0 up
+	atf_check jexec arcw_f2 ifconfig "$b" inet 192.0.2.3/24 up
+	atf_check jexec arcw_f2 ifconfig lo0 up
+	# 198.51.100.0/24 is routed back elsewhere: verrevpath fails.
+	atf_check -o ignore jexec arcw_f2 route add -net 198.51.100.0/24 -iface lo0
+	atf_check jexec arcw_f1 ifconfig "$a" inet 198.51.100.7/32 alias
+	# Out goes out: only what comes in is walked here.
+	cat > rules <<EOF
+add 00050 allow ip from any to any out
+add 00100 allow ip from any to any via lo0
+add 00300 deny ip from any to any not verrevpath in
+add 00400 check-state :default
+add 00500 count ip from any to any in recv $b
+add 00600 skipto 1000 ip from 192.0.2.12 to any
+add 00700 deny ip from table(bad) to any in
+add 00800 allow tcp from any to me 22 in recv $b setup keep-state :default
+add 00900 deny tcp from any to any 23 in
+add 00950 allow icmp from any to me icmptypes 8 in
+add 01000 deny udp from any to any 5000 in
+add 01100 allow udp from any to { 192.0.2.3 or 192.0.2.9 } 53,123 in
+add 01200 deny tcp from any to me 1024-2000 in
+add 01300 allow udp from any to any in
+add 65000 deny ip from any to any
+EOF
+	atf_check -o ignore jexec arcw_f2 sysctl net.inet.ip.fw.enable=1
+	atf_check -o ignore jexec arcw_f2 ipfw -q flush
+	atf_check -o ignore jexec arcw_f2 ipfw -q table bad create
+	atf_check -o ignore jexec arcw_f2 ipfw -q table bad add 192.0.2.66/32
+	atf_check -o ignore jexec arcw_f2 ipfw -q "$(pwd)/rules"
+	jexec arcw_f2 ipfw list > list
+	jexec arcw_f2 ipfw table all list > tables
+	awk '$2 == "count" || $2 == "skipto" || $1 == "00050" {print $1}' \
+	    list > notdeciding
+	atf_check jexec arcw_f1 ifconfig "$a" inet 192.0.2.66/32 alias
+
+	# One probe: the packet sent, the in rules (not count) whose
+	# counters moved, against the walk's verdict for it.
+	probe() {
+		local from=$1 what=$2 port=$3 words before after got want
+		before=$(jexec arcw_f2 ipfw show | awk '{print $1, $2}')
+		case $what in
+		icmp) jexec arcw_f1 ping -c 1 -t 1 -S $from 192.0.2.3 >/dev/null 2>&1
+		      words="proto=icmp icmp=8" ;;
+		udp)  echo x | jexec arcw_f1 nc -u -w 1 -s $from 192.0.2.3 $port >/dev/null 2>&1
+		      words="proto=udp sport=40000 dport=$port" ;;
+		tcp)  jexec arcw_f1 nc -z -w 1 -s $from 192.0.2.3 $port >/dev/null 2>&1
+		      words="proto=tcp sport=40000 dport=$port syn" ;;
+		esac
+		after=$(jexec arcw_f2 ipfw show | awk '{print $1, $2}')
+		# The rule that decided: one whose count rose, not of those
+		# that only count or jump, nor the out one.
+		got=$(printf '%s\n' "$after" | while read n c; do
+			old=$(printf '%s\n' "$before" | awk -v n=$n '$1==n{print $2; exit}')
+			[ "$c" != "${old:-0}" ] && echo $n
+		done | grep -v -x -F -f notdeciding | head -1)
+		rpf=rpf
+		[ "$from" = 198.51.100.7 ] && rpf=
+		want=$("$f" list tables local=192.0.2.3@$b in rcv=$b src=$from dst=192.0.2.3 $words $rpf reach | awk '{print $2}')
+		echo "$from $what $port: kernel $got, walk $want"
+		[ "$(printf %05d $want 2>/dev/null)" = "$got" ] || [ "$want" = "$got" ]
+	}
+	for p in "192.0.2.2 icmp" "192.0.2.2 tcp 22" "192.0.2.2 tcp 23" \
+	    "192.0.2.2 tcp 1500" "192.0.2.2 tcp 80" "192.0.2.2 udp 53" \
+	    "192.0.2.2 udp 5000" "192.0.2.2 udp 7000" "192.0.2.12 udp 5000" \
+	    "192.0.2.12 udp 53" "192.0.2.66 icmp" "198.51.100.7 icmp"; do
+		probe $p > out || atf_fail "$(cat out)"
+		cat out
+	done
+	atf_check ifconfig "$a" -vnet arcw_f1
+	atf_check ifconfig "$b" -vnet arcw_f2
+	atf_check -o ignore jail -r arcw_f1
+	atf_check -o ignore jail -r arcw_f2
+	atf_check ifconfig "$a" destroy
+}
+fwmatch_kernel_cleanup()
+{
+	if [ -f mine ]; then
+		e=$(cat epair 2>/dev/null)
+		[ -n "$e" ] && ifconfig "${e}a" -vnet arcw_f1 >/dev/null 2>&1
+		[ -n "$e" ] && ifconfig "${e}b" -vnet arcw_f2 >/dev/null 2>&1
+		jail -r arcw_f1 >/dev/null 2>&1
+		jail -r arcw_f2 >/dev/null 2>&1
+		[ -n "$e" ] && ifconfig "${e}a" destroy >/dev/null 2>&1
+	fi
+	true
+}
+
+atf_test_case path_check cleanup
+path_check_head()
+{
+	atf_set "descr" "path-check in a vnet jail between two others: what" \
+	    "the router does with a packet and its reply, and why one does" \
+	    "not get through: forwarding off, no send route, the firewall," \
+	    "an asymmetric return with uRPF, a reply with no state"
+	atf_set "require.user" "root"
+}
+path_check_body()
+{
+	local e1 e2 r
+
+	kldstat -q -m ipfw || atf_skip "ipfw(4) is not loaded"
+	for j in arcw_pc arcw_pr arcw_ps; do
+		jls -j $j >/dev/null 2>&1 && atf_skip "a jail $j is there already"
+	done
+	touch mine
+	e1=$(ifconfig epair create); e1=${e1%a}
+	e2=$(ifconfig epair create); e2=${e2%a}
+	echo "$e1 $e2" > epairs
+	atf_check -o ignore jail -c name=arcw_pc vnet persist path=/ vnet.interface="${e1}a"
+	atf_check -o ignore jail -c name=arcw_pr vnet persist path=/ vnet.interface="${e1}b" vnet.interface="${e2}a"
+	atf_check -o ignore jail -c name=arcw_ps vnet persist path=/ vnet.interface="${e2}b"
+	atf_check jexec arcw_pc ifconfig "${e1}a" inet 10.1.0.2/24 up
+	atf_check jexec arcw_pr ifconfig "${e1}b" inet 10.1.0.1/24 up
+	atf_check jexec arcw_pr ifconfig "${e2}a" inet 10.3.0.1/24 up
+	atf_check jexec arcw_ps ifconfig "${e2}b" inet 10.3.0.2/24 up
+	atf_check -o ignore jexec arcw_pc route add default 10.1.0.1
+	atf_check -o ignore jexec arcw_ps route add default 10.3.0.1
+	atf_check -o ignore jexec arcw_pr sysctl net.inet.ip.forwarding=1
+	atf_check -o ignore jexec arcw_pr sysctl net.inet.ip.fw.enable=1
+	atf_check -o ignore jexec arcw_pr ipfw -q flush
+	atf_check -o ignore jexec arcw_pr ipfw -q add 65000 allow ip from any to any
+	# The neighbours known, as a packet that went before would leave
+	# them.
+	atf_check -o ignore jexec arcw_pc ping -c 1 -t 2 10.3.0.2
+	start_daemon
+
+	# Through: in on e1b by the route back, out on e2a, the next hop
+	# known, the reply back the same way.
+	atf_check -o match:"\"ingress\":\{\"interface\":\"${e1}b\",\"how\":\"by the route back to the source\"\}" \
+	    -o match:"\"route\":\{[^}]*\"interface\":\"${e2}a\"" \
+	    -o match:'"neighbor":\{"address":"10.3.0.2","state":"[a-z]+"\}' \
+	    -o match:'"symmetric":true' -o match:'"forwarding":true' \
+	    -o match:'"severity":"ok","what":"Nothing here stops it, nor its reply"' \
+	    -o not-match:'"severity":"bad"' "$JGC" -c "$SOCK" -j arcw_pr path-check -p tcp -P 22 10.1.0.2 10.3.0.2
+	# Forwarding off.
+	atf_check -o ignore jexec arcw_pr sysctl net.inet.ip.forwarding=0
+	atf_check -o match:'"severity":"bad","what":"This host does not forward IPv4: net.inet.ip.forwarding is 0' \
+	    "$JGC" -c "$SOCK" -j arcw_pr path-check -p icmp 10.1.0.2 10.3.0.2
+	atf_check -o ignore jexec arcw_pr sysctl net.inet.ip.forwarding=1
+	# No send route.
+	atf_check -o match:'"severity":"bad","what":"No route to 10.9.0.5 in FIB 0: the send route is missing' \
+	    "$JGC" -c "$SOCK" -j arcw_pr path-check -p icmp 10.1.0.2 10.9.0.5
+	# The firewall: dropped going out, by its rule.
+	atf_check -o ignore jexec arcw_pr ipfw -q add 01000 deny tcp from any to 10.3.0.2 22 out
+	atf_check -o match:"\"severity\":\"bad\",\"what\":\"The firewall drops it going out by ${e2}a: rule 1000 \(01000 deny tcp from any to 10.3.0.2 22 out\)\"" \
+	    -o match:'"out":\{"verdict":"deny","rule":1000' \
+	    "$JGC" -c "$SOCK" -j arcw_pr path-check -p tcp -P 22 10.1.0.2 10.3.0.2
+	atf_check -o not-match:'"severity":"bad"' "$JGC" -c "$SOCK" -j arcw_pr path-check -p tcp -P 80 10.1.0.2 10.3.0.2
+	atf_check -o ignore jexec arcw_pr ipfw -q delete 1000
+	# Asymmetric: the route back to the client by the other side; a
+	# uRPF rule then drops what comes in.
+	atf_check -o ignore jexec arcw_pr route add -host 10.1.0.2 -iface "${e2}a"
+	atf_check -o match:"\"severity\":\"warn\",\"what\":\"Asymmetric: the request comes in on ${e1}b, the reply goes back by ${e2}a" \
+	    -o match:'"symmetric":false' "$JGC" -c "$SOCK" -j arcw_pr path-check -i "${e1}b" -p icmp 10.1.0.2 10.3.0.2
+	atf_check -o ignore jexec arcw_pr ipfw -q add 00500 deny ip from any to any not verrevpath in
+	atf_check -o match:"\"severity\":\"bad\",\"what\":\"The firewall drops it coming in on ${e1}b: rule 500 " \
+	    "$JGC" -c "$SOCK" -j arcw_pr path-check -i "${e1}b" -p icmp 10.1.0.2 10.3.0.2
+	atf_check -o ignore jexec arcw_pr ipfw -q delete 500
+	atf_check -o ignore jexec arcw_pr route delete -host 10.1.0.2
+	# A reply with no state: let in only by one the request made.
+	atf_check -o ignore jexec arcw_pr ipfw -q add 00600 allow tcp from 10.1.0.0/24 to any 22 in
+	atf_check -o ignore jexec arcw_pr ipfw -q add 00700 allow tcp from 10.1.0.0/24 to any 22 out
+	atf_check -o ignore jexec arcw_pr ipfw -q add 00800 deny tcp from any 22 to any
+	atf_check -o match:"The firewall drops the reply coming in on ${e2}a: rule 800 \(00800 deny tcp from any 22 to any\) \(no state of the request's here to let it in\)" \
+	    "$JGC" -c "$SOCK" -j arcw_pr path-check -p tcp -P 22 10.1.0.2 10.3.0.2
+	atf_check -o ignore jexec arcw_pr ipfw -q add 00590 check-state
+	atf_check -o ignore jexec arcw_pr ipfw -q delete 600
+	atf_check -o ignore jexec arcw_pr ipfw -q add 00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state
+	atf_check -o match:'"reply_in":\{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true\}' \
+	    -o not-match:'"severity":"bad"' "$JGC" -c "$SOCK" -j arcw_pr path-check -p tcp -P 22 10.1.0.2 10.3.0.2
+
+	for i in "${e1}a:arcw_pc" "${e1}b:arcw_pr" "${e2}a:arcw_pr" "${e2}b:arcw_ps"; do
+		atf_check ifconfig "${i%%:*}" -vnet "${i##*:}"
+	done
+	for j in arcw_pc arcw_pr arcw_ps; do
+		atf_check -o ignore jail -r $j
+	done
+	atf_check ifconfig "${e1}a" destroy
+	atf_check ifconfig "${e2}a" destroy
+}
+path_check_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	if [ -f mine ]; then
+		read e1 e2 < epairs 2>/dev/null
+		for i in "${e1}a:arcw_pc" "${e1}b:arcw_pr" "${e2}a:arcw_pr" "${e2}b:arcw_ps"; do
+			[ -n "$e1" ] && ifconfig "${i%%:*}" -vnet "${i##*:}" >/dev/null 2>&1
+		done
+		for j in arcw_pc arcw_pr arcw_ps; do
+			jail -r $j >/dev/null 2>&1
+		done
+		[ -n "$e1" ] && ifconfig "${e1}a" destroy >/dev/null 2>&1
+		[ -n "$e2" ] && ifconfig "${e2}a" destroy >/dev/null 2>&1
+	fi
+	true
+}
+
 atf_test_case zfs_key cleanup
 zfs_key_head()
 {
@@ -1656,6 +1879,8 @@ atf_init_test_cases()
 	atf_add_test_case fw_trace
 	atf_add_test_case resnapshot
 	atf_add_test_case kmsg
+	atf_add_test_case fwmatch_kernel
+	atf_add_test_case path_check
 	atf_add_test_case crash_event
 	atf_add_test_case sdwan_probe
 	atf_add_test_case sdwan_record

@@ -27,6 +27,10 @@ CFLAGS.ysystem_test.c+=	-I${.OBJDIR}/..
 CFLAGS.ysystem.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 LDADD.ysystem+=	${CBLINK_LIBS} ${UCL_LIBS} \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
+# fwmatch: a packet walked through an ipfw ruleset.
+PROGS+=		fwmatch
+SRCS.fwmatch=	fwmatch_test.c fwmatch.c
+CFLAGS.fwmatch_test.c+=	-I${.CURDIR}/../invidia
 # ylog: the log operation's replies as arcana-log has them, and
 # syslog.conf as ietf-syslog.
 PROGS+=		ylog

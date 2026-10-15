@@ -709,6 +709,8 @@ route_helper(int argc, char **argv)
 	if (strcmp(argv[0], "route-get") == 0 && argc == 3)
 		return (route_lookup(stdout, argv[1], (uint32_t)strtoul(
 		    argv[2], NULL, 10)));
+	if (strcmp(argv[0], "route-addrs") == 0 && argc == 1)
+		return (addr_lines(stdout));
 	if (strcmp(argv[0], "route-socket") == 0 && argc == 1)
 		return (route_socket());
 	if (strcmp(argv[0], "route-neighs") == 0 && argc == 3)
