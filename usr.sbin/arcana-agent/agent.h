@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.116.0"
+#define	ARCANA_AGENT_VERSION	"0.117.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -138,6 +138,7 @@ struct opts {
 	const char	*make_bin;
 	const char	*build_dir;	/* where a tree is cloned and built */
 	const char	*build_conf;	/* this host's config.mk for it */
+	const char	*root;		/* --root: the system's files under it */
 	char		 build[65];	/* SHA-256 of the running program */
 	bool		 debug;
 };
@@ -566,6 +567,12 @@ void		 do_tls(struct work *, const char *, const char *,
 		    const char *, const char *, const uint8_t *,
 		    struct arc_tls_rsp *);
 int		 do_transport(struct work *, bool, struct arc_transport_rsp *);
+bool		 tls_file_is(const char *);
+/* superbia/bundle.c: the host as a bundle, a bundle made the host. */
+int		 do_config_export(struct work *, bool,
+		    struct arc_config_export_rsp *);
+int		 do_config_apply(struct work *, const char *, bool, bool,
+		    const char *, struct arc_config_apply_rsp *);
 bool		 kmod_loaded(const char *);
 
 /* acedia/storage.c: disks, pools, datasets, mounts. */

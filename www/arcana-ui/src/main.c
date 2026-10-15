@@ -854,7 +854,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	bool			 replug = false;
 
 	s = cur_server();
-	if (export_action(act, arg, value) ||
+	if (export_action(act, arg, value) || hostconf_action(act, arg, value) ||
 	    topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
 	    jailmk_action(act, arg, value) || neigh_action(act, arg, value) ||

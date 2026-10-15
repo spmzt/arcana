@@ -5362,6 +5362,110 @@ sshd_enable="YES"
 ' cat rc.conf
 }
 
+atf_test_case config_bundle cleanup
+config_bundle_head()
+{
+	atf_set "descr" "the host as a bundle (config-export) and a bundle" \
+	    "made the host (config-apply): the files Arcana manages, secrets" \
+	    "only when asked, the agent's identity never; the hardware" \
+	    "checked, a diff, the files before kept, no path but those a" \
+	    "bundle may carry"
+}
+config_bundle_body()
+{
+	local r="$(pwd)/root"
+
+	mkdir -p "$r/etc/rc.conf.d" "$r/boot" arcana wg
+	printf 'hostname="lab"\nsshd_enable="YES"\n' > "$r/etc/rc.conf"
+	echo 'ntpd_flags="-g"' > "$r/etc/rc.conf.d/ntpd"
+	echo 'hidden' > "$r/etc/rc.conf.d/.hidden"
+	echo '127.0.0.1 localhost' > "$r/etc/hosts"
+	echo 'kern.ipc.maxsockbuf=4194304' > "$r/boot/loader.conf"
+	printf '[Interface]\nPrivateKey = c2VjcmV0\n' > wg/wg0.conf
+	chmod 600 wg/wg0.conf
+	echo 'every 10' > arcana/history.conf
+	echo 'id' > arcana/id_ed25519
+	DAEMON_ARGS="--root $r -1 $(pwd)/arcana/history.conf"
+	start_daemon
+
+	# Without secrets: WireGuard's file said, its text not there; a
+	# hidden file and the agent's SSH key not at all.
+	atf_check -o save:b.json "$JGC" -c "$SOCK" config-export
+	atf_check -o match:'"arcana":"host","format":1' \
+	    -o match:'"path":"/etc/rc.conf","mode":"0644",' \
+	    -o match:'"text":"hostname=\\"lab\\"\\nsshd_enable=\\"YES\\"\\n"' \
+	    -o match:'"path":"/etc/rc.conf.d/ntpd"' \
+	    -o match:'"path":"/boot/loader.conf"' \
+	    -o match:'"path":"/usr/local/etc/wireguard/wg0.conf","mode":"0600","owner":"[a-z0-9]+","group":"[a-z0-9]+","secret":true\}' \
+	    -o match:'"path":"/usr/local/etc/arcana/history.conf"' \
+	    -o match:'"facts":\{"arch":"[a-z0-9_]+"' -o match:'"interfaces":\[' \
+	    -o not-match:'hidden' -o not-match:'id_ed25519' \
+	    -o not-match:'c2VjcmV0' cat b.json
+	# With them, the key's text too.
+	atf_check -o match:'"path":"/usr/local/etc/wireguard/wg0.conf".*"text":"\[Interface\]\\nPrivateKey = c2VjcmV0\\n","secret":true' \
+	    "$JGC" -c "$SOCK" config-export -s
+
+	# Another host's state: rc.conf changed, ntpd's file gone, the key
+	# another.  The report first: a diff, a new file, the key withheld.
+	printf 'hostname="other"\n' > "$r/etc/rc.conf"
+	rm "$r/etc/rc.conf.d/ntpd"
+	printf '[Interface]\nPrivateKey = b3RoZXI=\n' > wg/wg0.conf
+	atf_check -o save:n.json "$JGC" -c "$SOCK" config-apply -n b.json
+	atf_check -o match:'"path":"/etc/rc.conf","state":"changed","diff":"[^"]*-hostname=\\"other\\"\\n\+hostname=\\"lab\\"\\n\+sshd_enable=\\"YES\\"' \
+	    -o match:'"path":"/etc/rc.conf.d/ntpd","state":"new"' \
+	    -o match:'"path":"/etc/hosts","state":"same"' \
+	    -o match:'"path":"/usr/local/etc/wireguard/wg0.conf","state":"withheld"' \
+	    -o match:'"mismatches":\[\]' -o not-match:'"applied"' cat n.json
+	atf_check -o inline:'hostname="other"\n' cat "$r/etc/rc.conf"
+	# Done: in place, the ones before kept, the key as it was, a
+	# reboot said; another host name asked for.
+	atf_check -o save:a.json "$JGC" -c "$SOCK" config-apply -H lab2 b.json
+	atf_check -o match:'"applied":true' -o match:'"reboot":true' \
+	    -o match:"\"backup\":\"$r/var/backups/arcana/config-[0-9]{8}-[0-9]{6}\"" \
+	    cat a.json
+	atf_check -o inline:'sshd_enable="YES"\nhostname="lab2"\n' \
+	    cat "$r/etc/rc.conf"
+	atf_check -o inline:'ntpd_flags="-g"\n' cat "$r/etc/rc.conf.d/ntpd"
+	atf_check -o match:'b3RoZXI=' cat wg/wg0.conf
+	atf_check -o inline:'hostname="other"\n' \
+	    sh -c "cat $r/var/backups/arcana/config-*/etc/rc.conf"
+	# Again: nothing to change, nothing written; without the other
+	# name, rc.conf's would be.
+	atf_check -o not-match:'"state":"changed"' -o not-match:'"state":"new"' \
+	    -o not-match:'"applied"' "$JGC" -c "$SOCK" config-apply -H lab2 \
+	    b.json
+	atf_check -o match:'"path":"/etc/rc.conf","state":"changed"' \
+	    "$JGC" -c "$SOCK" config-apply -n b.json
+
+	# Hardware not the bundle's: refused unless anyway.
+	sed 's/"interfaces":\[/"interfaces":[{"name":"nosuch0","driver":"nosuch"},/' \
+	    b.json > hw.json
+	atf_check -s exit:1 -o match:'"mismatches":\["no interface nosuch0 here"\]' \
+	    -e match:'not the bundle.s \(1 differences\): nothing was done' \
+	    "$JGC" -c "$SOCK" config-apply hw.json
+	atf_check -o match:'"mismatches":\["no interface nosuch0 here"\]' \
+	    -o match:'"applied":true' "$JGC" -c "$SOCK" config-apply -a hw.json
+
+	# A path no bundle carries: refused, nothing written.
+	for p in /root/.ssh/authorized_keys /etc/rc.conf.d/../passwd \
+	    /usr/local/etc/arcana/id_ed25519 /etc/rc.conf.d/.hidden; do
+		sed "s|\"files\":\[|\"files\":[{\"path\":\"$p\",\"text\":\"x\"},|" \
+		    b.json > bad.json
+		atf_check -s exit:1 -e match:"$p: not a file a bundle may carry" \
+		    -o empty "$JGC" -c "$SOCK" config-apply bad.json
+	done
+	atf_check -o inline:'id\n' cat arcana/id_ed25519
+	atf_check -o inline:'hidden\n' cat "$r/etc/rc.conf.d/.hidden"
+	echo '{"arcana":"tab"}' > tab.json
+	atf_check -s exit:1 -e match:'not a host.s bundle' -o empty \
+	    "$JGC" -c "$SOCK" config-apply tab.json
+}
+config_bundle_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	true
+}
+
 atf_test_case yang_log
 yang_log_head()
 {
@@ -6470,6 +6574,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_system
 	atf_add_test_case yang_processes
 	atf_add_test_case yang_log
+	atf_add_test_case config_bundle
 	atf_add_test_case yang_storage
 	atf_add_test_case yang_jobs
 	atf_add_test_case yang_packages

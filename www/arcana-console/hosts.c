@@ -77,6 +77,8 @@ enum op {
 	OP_FSTAB,
 	OP_IPFW_RULES,
 	OP_TRANSPORT,
+	OP_CONFIG_EXPORT,
+	OP_CONFIG_APPLY,
 	OP_SYSCTL,
 	OP_PROCESSES,
 	OP_LOG,
@@ -136,6 +138,11 @@ struct call {
 	void			(*on_step)(const char *, void *);
 	void			*step_arg;
 	bool			 moved;		/* transport switch: it answered */
+	/* config-apply: the bundle in text, or the host to read it from. */
+	char			*from_uri;
+	char			*from_peer;
+	bool			 anyway;
+	char			 hostname[256];
 	char			*json;		/* the reply, from the thread */
 	int			 status;
 };
@@ -1190,7 +1197,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1469,6 +1476,48 @@ put_json(ucl_object_t *top, const char *json)
 		put(top, "data", e);
 }
 
+/*
+ * In a call's task: a host's bundle, its secrets too, from config-export
+ * there, malloc(3)ed into *out; NULL, or why not.
+ */
+static const char *
+bundle_of(const char *uri, const char *peer, char **out)
+{
+	static _Thread_local char	 why[300];
+	struct arc_config_export_req	 q;
+	struct arc_config_export_rsp	*r;
+	struct arc_client		 cl;
+	cbl_conn			*conn;
+	cbl_tls				*tls;
+	const char			*msg;
+	int				 error;
+
+	*out = NULL;
+	if ((msg = hosts_connect(uri, peer, &conn, &tls, &cl)) != NULL) {
+		snprintf(why, sizeof(why), "the host the bundle is read from: "
+		    "%s", msg);
+		return (why);
+	}
+	memset(&q, 0, sizeof(q));
+	q.secrets = true;
+	if ((error = arc_config_export(&cl, &q, &r)) != 0) {
+		snprintf(why, sizeof(why), "the host the bundle is read from "
+		    "did not answer: %s", strerror(error));
+		hosts_release(uri, peer, conn, tls, &cl, false);
+		return (why);
+	}
+	if (!r->ok || r->json == NULL)
+		snprintf(why, sizeof(why), "the host the bundle is read from: "
+		    "%s", r->error != NULL ? r->error : "no bundle");
+	else if ((*out = strdup(r->json)) == NULL)
+		snprintf(why, sizeof(why), "no memory");
+	else
+		why[0] = '\0';
+	arc_config_export_rsp_free(r);
+	hosts_release(uri, peer, conn, tls, &cl, true);
+	return (why[0] != '\0' ? why : NULL);
+}
+
 static int
 call_run(struct kore_task *t)
 {
@@ -1506,6 +1555,11 @@ call_run(struct kore_task *t)
 	struct arc_tls_rsp	*tlr;
 	struct arc_transport_req tpq;
 	struct arc_transport_rsp *tpr;
+	struct arc_config_export_req cxq;
+	struct arc_config_export_rsp *cxr;
+	struct arc_config_apply_req caq;
+	struct arc_config_apply_rsp *car;
+	char			*bundle;
 	struct arc_sysctl_req	 syq;
 	struct arc_sysctl_rsp	*syr;
 	struct arc_processes_req prq;
@@ -1616,6 +1670,9 @@ call_run(struct kore_task *t)
 	zkr = NULL;
 	tlr = NULL;
 	tpr = NULL;
+	cxr = NULL;
+	car = NULL;
+	bundle = NULL;
 	syr = NULL;
 	prr = NULL;
 	lgr = NULL;
@@ -2266,6 +2323,43 @@ connected:
 		steps = fsr->trace.v;
 		nsteps = fsr->trace.n;
 		break;
+	case OP_CONFIG_EXPORT:
+		memset(&cxq, 0, sizeof(cxq));
+		cxq.secrets = c->refresh;
+		if ((error = arc_config_export(&cl, &cxq, &cxr)) != 0)
+			goto rpcfail;
+		ok = cxr->ok;
+		put_str(top, "error", cxr->error);
+		if ((e = parse_json(cxr->json)) != NULL)
+			put(top, "data", e);
+		steps = cxr->trace.v;
+		nsteps = cxr->trace.n;
+		break;
+	case OP_CONFIG_APPLY:
+		/* Another host's bundle, secrets too, read by the console:
+		 * not through the page. */
+		if (c->from_uri != NULL) {
+			if ((msg = bundle_of(c->from_uri, c->from_peer,
+			    &bundle)) != NULL) {
+				ok = false;
+				put_str(top, "error", msg);
+				break;
+			}
+		}
+		memset(&caq, 0, sizeof(caq));
+		caq.bundle = bundle != NULL ? bundle : c->text;
+		caq.dry_run = c->dry_run;
+		caq.anyway = c->anyway;
+		caq.new_hostname = c->hostname[0] != '\0' ? c->hostname : NULL;
+		if ((error = arc_config_apply(&cl, &caq, &car)) != 0)
+			goto rpcfail;
+		ok = car->ok;
+		put_str(top, "error", car->error);
+		if ((e = parse_json(car->json)) != NULL)
+			put(top, "data", e);
+		steps = car->trace.v;
+		nsteps = car->trace.n;
+		break;
 	case OP_TRANSPORT:
 		memset(&tpq, 0, sizeof(tpq));
 		tpq.retry = c->retry;
@@ -2800,6 +2894,11 @@ done:
 		arc_tls_rsp_free(tlr);
 	if (tpr != NULL)
 		arc_transport_rsp_free(tpr);
+	if (cxr != NULL)
+		arc_config_export_rsp_free(cxr);
+	if (car != NULL)
+		arc_config_apply_rsp_free(car);
+	free(bundle);
 	if (syr != NULL)
 		arc_sysctl_rsp_free(syr);
 	if (prr != NULL)
@@ -2888,6 +2987,8 @@ call_new(struct http_request *req, enum op op)
 	    HTTP_METHOD_POST) ||
 	    op == OP_AGENT_UPDATE || op == OP_AGENT_BUILD ||
 	    op == OP_CONSOLE_UPDATE ||
+	    op == OP_CONFIG_APPLY || (op == OP_CONFIG_EXPORT &&
+	    req->method == HTTP_METHOD_POST) ||
 	    ((op == OP_SERVICE_CONFIG || op == OP_TRANSPORT || op ==
 	    OP_IPFW_RULES || op == OP_FSTAB || op == OP_HISTORY) &&
 	    req->method ==
@@ -3003,6 +3104,9 @@ call_release(struct call *c)
 	c->host_keys = NULL;
 	kore_free(c->text);
 	c->text = NULL;
+	kore_free(c->from_uri);
+	kore_free(c->from_peer);
+	c->from_uri = c->from_peer = NULL;
 	if (c->key != NULL)
 		explicit_bzero(c->key, strlen(c->key));
 	if (c->new_key != NULL)
@@ -3643,6 +3747,85 @@ api_transport(struct http_request *req)
 		c->retry = ucl_flag(body, "retry");
 		ucl_object_unref(body);
 	}
+	return (call_start(req, c));
+}
+
+/*
+ * GET /api/servers/<id>/config: the host as a bundle, its secrets not
+ * in it (config-export).  POST /api/servers/<id>/config/export
+ * {"secrets": true}: with them, for one who may change the host.
+ */
+int
+api_config_export(struct http_request *req)
+{
+	struct call	*c;
+	ucl_object_t	*body;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_CONFIG_EXPORT)) == NULL)
+		return (KORE_RESULT_OK);
+	c->reads = true;
+	if (req->method == HTTP_METHOD_POST && (body = read_json(req)) !=
+	    NULL) {
+		c->refresh = ucl_flag(body, "secrets");
+		ucl_object_unref(body);
+	}
+	return (call_start(req, c));
+}
+
+/*
+ * POST /api/servers/<id>/config {"bundle": {...} | "from": "<id>",
+ * "dry_run", "anyway", "hostname"}: a bundle made this host's
+ * configuration (config-apply); from another host the console has, its
+ * bundle read there with its secrets, which do not pass through the
+ * page.
+ */
+int
+api_config_apply(struct http_request *req)
+{
+	const struct server	*from;
+	struct call		*c;
+	ucl_object_t		*body;
+	const ucl_object_t	*b;
+	const char		*fid, *hn;
+	unsigned char		*text;
+
+	if (req->method == HTTP_METHOD_GET)
+		return (api_config_export(req));
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_CONFIG_APPLY)) == NULL)
+		return (KORE_RESULT_OK);
+	if ((body = read_json(req)) == NULL) {
+		call_release(c);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "a JSON object: bundle "
+		    "or from"));
+	}
+	c->dry_run = ucl_flag(body, "dry_run");
+	c->anyway = ucl_flag(body, "anyway");
+	if ((hn = ucl_str(body, "hostname")) != NULL)
+		snprintf(c->hostname, sizeof(c->hostname), "%s", hn);
+	fid = ucl_str(body, "from");
+	b = ucl_object_lookup(body, "bundle");
+	if (fid != NULL && (from = server_find(fid)) != NULL) {
+		c->from_uri = kore_strdup(from->uri);
+		c->from_peer = from->peer_name != NULL ?
+		    kore_strdup(from->peer_name) : NULL;
+	} else if (b != NULL && ucl_object_type(b) == UCL_OBJECT &&
+	    (text = ucl_object_emit(b, UCL_EMIT_JSON_COMPACT)) != NULL) {
+		c->text = kore_strdup((char *)text);
+		free(text);
+	} else {
+		ucl_object_unref(body);
+		call_release(c);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", fid != NULL ? "no "
+		    "such host to read the bundle from" : "bundle, a host's "
+		    "bundle as config-export made it, or from, a host"));
+	}
+	ucl_object_unref(body);
 	return (call_start(req, c));
 }
 

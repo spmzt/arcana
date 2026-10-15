@@ -4065,6 +4065,44 @@ part_firewall(void)
 	    10);
 
 	/*
+	 * The host as a whole: saved as a bundle, JSON and YAML, the files
+	 * Arcana manages in it (those of the test's tree, --root); a bundle
+	 * from a file, changed, checked first: the file it changes said,
+	 * with its diff, and nothing written until Apply.
+	 */
+	wait_js("document.querySelector('section.hostconf button[data-act="
+	    "hc-export][data-arg=json]')", 10);
+	run("window.arcSaved = null; document.querySelector('section.hostconf "
+	    "button[data-act=hc-export][data-arg=json]').click()");
+	wait_js("window.arcSaved && window.arcSaved.name.match(/^lab-config-"
+	    "[0-9]{8}-[0-9]{4}\\.json$/) && JSON.parse(window.arcSaved.text)"
+	    ".arcana === 'host' && JSON.parse(window.arcSaved.text).files"
+	    ".some(f => f.path === '/etc/hosts' && f.text.includes("
+	    "'localhost'))", 20);
+	run("window.arcBundle = JSON.parse(window.arcSaved.text); "
+	    "document.querySelector('section.hostconf button[data-act="
+	    "hc-export][data-arg=yaml]').click()");
+	wait_js("window.arcSaved.name.endsWith('.yaml') && window.arcSaved."
+	    "text.includes('\\narcana: host\\n') && window.arcSaved.text."
+	    "includes('  - path: /etc/hosts\\n')", 20);
+	run("const b = window.arcBundle; b.files.find(f => f.path === "
+	    "'/etc/hosts').text += '192.0.2.7 db\\n'; const dt = new "
+	    "DataTransfer(); dt.items.add(new File([JSON.stringify(b)], "
+	    "'lab.json', { type: 'application/json' })); const i = "
+	    "document.querySelector('input[data-file=hc-bundle]'); i.files = "
+	    "dt.files; i.dispatchEvent(new Event('change', { bubbles: true "
+	    "}));");
+	wait_js("document.querySelector('.hcreport') && document.querySelector("
+	    "'.hcreport').textContent.includes('what it would do') && "
+	    "document.querySelector('table.hcfiles tr.changed') && document."
+	    "querySelector('table.hcfiles tr.changed').textContent.includes("
+	    "'/etc/hosts') && document.querySelector('pre.diff').textContent"
+	    ".includes('+192.0.2.7 db') && document.querySelector("
+	    "'button[data-act=hc-apply]')", 20);
+	shot("1f-host-bundle");
+	ATF_CHECK(system("! grep -q 192.0.2.7 root/etc/hosts") == 0);
+
+	/*
 	 * Connections are read again by themselves while they are shown,
 	 * until paused.
 	 */

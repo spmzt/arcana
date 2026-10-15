@@ -123,6 +123,7 @@ bool		 export_action(const char *, const char *, const char *);
 char		*data_emit(const ucl_object_t *, bool);
 ucl_object_t	*data_parse(const char *, char *, size_t);
 void		 export_save(const char *, const ucl_object_t *, bool);
+void		 export_base(char *, size_t, const char *, const char *);
 
 /* api.c: requests to the console's API with a callback each. */
 typedef void	 api_cb(int, const ucl_object_t *, const char *, void *);
@@ -643,6 +644,8 @@ void		 view_fleet(struct html *);
 void		 view_devices(struct html *);
 int		 count_state(const struct server *, const char *);
 void		 view_summary(struct html *, struct server *);
+void		 view_hostconf(struct html *, struct server *);
+bool		 hostconf_action(const char *, const char *, const char *);
 void		 view_jobs(struct html *, struct server *);
 
 /* topo.c: the fleet's network as a map, traffic, routes, netgraph. */

@@ -58,6 +58,26 @@ tls_files_init(cbl_tls *tls, const char *ca, const char *cert,
 		snprintf(f_key, sizeof(f_key), "%s", key);
 }
 
+/* Is path one of the agent's own TLS files, or one made beside it? */
+bool
+tls_file_is(const char *path)
+{
+	const char *const	 f[] = { f_ca, f_cert, f_key };
+	char			 real[MAXPATHLEN];
+	size_t			 i, n;
+
+	if (realpath(path, real) == NULL)
+		snprintf(real, sizeof(real), "%s", path);
+	for (i = 0; i < nitems(f); i++) {
+		n = strlen(f[i]);
+		if (n > 0 && strncmp(real, f[i], n) == 0 && (real[n] == '\0' ||
+		    strcmp(real + n, ".next") == 0 || strcmp(real + n,
+		    ".before") == 0))
+			return (true);
+	}
+	return (false);
+}
+
 static const char *
 ssl_err(struct work *w)
 {

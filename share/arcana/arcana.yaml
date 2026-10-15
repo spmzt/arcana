@@ -1025,6 +1025,27 @@ attribute-sets:
           when that one is still trusted afterwards.
         checks:
           max-len: 32768
+      - name: secrets
+        type: flag
+        doc: |
+          For config-export, the secrets with the files too: keys and
+          shared secrets (WireGuard's, strongSwan's, the agent's own
+          never).
+      - name: bundle
+        type: text
+        doc: For config-apply, a host's bundle, as config-export made it.
+        checks:
+          max-len: max-json
+      - name: anyway
+        type: flag
+        doc: |
+          For config-apply, though the hardware is not the bundle's: an
+          interface or a disk it names is not on this host.
+      - name: new-hostname
+        type: text
+        doc: For config-apply, the host's name instead of the bundle's.
+        checks:
+          max-len: 255
 
 
   - name: host
@@ -3112,6 +3133,70 @@ operations:
     event:
       attributes:
         - trace
+
+  - name: config-export
+    attribute-set: arcana
+    auth: true
+    doc: |
+      All that makes the host what it is, as a JSON object, to keep or to
+      make another host the same with (config-apply): "arcana" is
+      "host", "format" 1; "host", "agent" (its version) and "taken";
+      "facts", what the hardware and the system are (arch, release,
+      cpu, ncpu, memory, "interfaces": each physical one's name, driver
+      and MAC, a cloned one is configuration, "disks": each name and
+      size); "packages", those installed by hand (pkg query, not the
+      automatic ones), each name, origin and version; "files", each
+      configuration file there is of those Arcana manages (rc.conf and
+      rc.conf.d, loader.conf, sysctl.conf, jail.conf and jail.conf.d,
+      fstab, hosts, resolv.conf, ntp.conf, rtadvd.conf, sshd_config,
+      devfs.rules, syslog.conf, the agent's ipfw.rules and history.conf,
+      bird.conf, swanctl's, WireGuard's, dnsmasq's), its path, mode,
+      owner, group and text; a secret's text only with secrets, else
+      "secret": true without it.  The agent's own keys and certificates
+      never: a host's identity is its own.  Jails' and datasets' data
+      are not configuration: zfs-send carries them.
+    do:
+      request:
+        attributes:
+          - secrets
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: config-apply
+    attribute-set: arcana
+    auth: true
+    doc: |
+      A bundle of config-export's made this host's configuration.  First
+      the hardware: each physical interface and disk the bundle names
+      has to be here, and the arch the same, else nothing is done
+      unless anyway.  json says "mismatches" (what is not), "files"
+      (each path, "state" same, changed, new or withheld, a secret the
+      bundle does not carry, which stays as it is, and "diff", a
+      unified diff, for one changed), "packages" (those the bundle has
+      that this host does not: Arcana installs none by itself), and,
+      when it was done, "backup", where the files before are kept
+      (/var/backups/arcana/config-<time>), "applied" and "reboot": what
+      the files say takes hold at boot.  new-hostname puts that in
+      rc.conf's hostname instead.  With dry-run only the report.
+    do:
+      request:
+        attributes:
+          - bundle
+          - dry-run
+          - anyway
+          - new-hostname
+        required:
+          - bundle
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
 
 mcast-groups:
   - name: events

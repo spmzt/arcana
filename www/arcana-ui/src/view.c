@@ -842,6 +842,7 @@ stage(struct html *h)
 		view_transport(h, s);
 		view_tlscert(h, s);
 		view_safe(h, s);
+		view_hostconf(h, s);
 		peek_box(h);
 		h_raw(h, "</main>");
 		return;
