@@ -3650,6 +3650,43 @@ part_firewall(void)
 	    "8443 in$' ipfw.log && grep -q '^add 01500 allow tcp from any to "
 	    "me6 8443 in$' ipfw.rules") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/*
+	 * Aliases: an address list made (a table of its name), then a
+	 * rule written with it, kept with its own words and loaded as
+	 * ipfw reads it; shown by its own words, ipfw's when hovered.
+	 */
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-10\"]').click()");
+	wait_js("document.querySelector('form[data-form=fw-alias]')", 10);
+	run("const f = document.querySelector('form[data-form=fw-alias]'); "
+	    "f.name.value = 'lan'; f.kind.value = 'addr'; f.value.value = "
+	    "'10.0.0.0/8, 192.168.1.0/24'; f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('table.fwaliases') && document."
+	    "querySelector('table.fwaliases').textContent.includes('$lan') && "
+	    "document.querySelector('table.fwaliases').textContent.includes("
+	    "'10.0.0.0/8 192.168.1.0/24')", 20);
+	ATF_CHECK(system("grep -q '^ipfw -q table lan add 192.168.1.0/24$' "
+	    "ipfw.log && grep -q '^#arcana alias lan addr$' ipfw.rules") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('.fwrail .titem.fw[data-arg=\"10\"]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=fw-add] input[name=num]"
+	    "') && document.querySelector('form[data-form=fw-add] input[name="
+	    "rule]')", 10);
+	run("const f = document.querySelector('form[data-form=fw-add]'); "
+	    "f.num.value = '1600'; f.rule.value = 'allow tcp from $lan to me "
+	    "443 in'; f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('table.fw-rules tr[data-rule=\"1600\"]"
+	    " .aliased') && document.querySelector('table.fw-rules tr[data-rule"
+	    "=\"1600\"] .aliased').textContent === 'allow tcp from $lan to me "
+	    "443 in' && document.querySelector('table.fw-rules tr[data-rule="
+	    "\"1600\"] .aliased').title.includes('table(lan)')", 20);
+	ATF_CHECK(system("grep -q '^ipfw -q add 1600 allow tcp from table(lan) "
+	    "to me 443 in$' ipfw.log && grep -q '^#arcana add 01600 allow tcp "
+	    "from \\$lan to me 443 in$' ipfw.rules") == 0);
+	run("document.querySelector('.dock > header').click()");
 	/* A rule's number is one of its part's. */
 	run("const f = document.querySelector('form[data-form=fw-add]'); "
 	    "f.num.value = '5'; f.rule.value = 'allow ip from any to any'; "

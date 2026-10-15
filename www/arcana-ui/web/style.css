@@ -4770,3 +4770,5 @@ ol.tsway li.tshop pre { max-height: 18rem; overflow: auto; font-size: .72rem; }
 ol.tsway li.tsend { font-size: .82rem; padding: .3rem .7rem; color: var(--dim); }
 ol.tsway li.tsend.blocked, ol.tsway li.tsend.loop { color: var(--red); }
 ol.tsway li.tsend.delivered { color: var(--green); }
+/* A kept rule written with aliases: its own words, ipfw's on hover. */
+.fw-rules .aliased { border-bottom: 1px dotted var(--cyan); cursor: help; }

@@ -82,7 +82,8 @@ static const struct sect {
 #define	FW_TRACE	(-7)	/* a packet followed through the rules */
 #define	FW_LOG		(-8)	/* what the rules with log wrote down */
 #define	FW_QOS		(-9)	/* dummynet's pipes, schedulers, queues */
-#define	FW_FIRST	FW_QOS
+#define	FW_ALIASES	(-10)	/* names for lists and values, $name */
+#define	FW_FIRST	FW_ALIASES
 #define	FW_PREV		2048	/* rules whose counters are remembered */
 #define	FW_HITS		60	/* a rule's rates kept, the newest last */
 #define	FW_HITS_EVERY	5000	/* ms between two looks while a part is shown */
@@ -505,7 +506,8 @@ kept_text(long long num)
 	while ((o = ucl_object_iterate(jget(fw.data, "kept"), &it, true)) !=
 	    NULL)
 		if (jint(o, "num", 0) == num)
-			return (jstr(o, "text"));
+			return (jstr(o, "source") != NULL ? jstr(o, "source") :
+			    jstr(o, "text"));
 	return (NULL);
 }
 
@@ -588,6 +590,8 @@ firewall_rail(struct html *h)
 			    "beside what the kernel has" },
 			{ FW_TRACE, "Follow a packet", "Which rules a packet "
 			    "meets, and what becomes of it" },
+			{ FW_ALIASES, "Aliases", "Names for address lists, port "
+			    "lists and values, written $name in a rule" },
 			{ FW_TABLES, "Tables", "The tables and what is in them" },
 			{ FW_QOS, "QoS", "dummynet's pipes, schedulers and "
 			    "queues, and the rules that send to them" },
@@ -781,6 +785,120 @@ object_job(struct server *s, const char *verb, const char *words, bool keep)
 	snprintf(title, sizeof(title), "ipfw %s %.180s", verb, words);
 	fw_job(s, b.s, title);
 	free(b.s);
+}
+
+/* The alias the form shows, to be changed; "" a new one. */
+static char	alias_edit[33];
+
+/* How many kept rules name $name. */
+static int
+alias_uses(const char *name)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it = NULL;
+	char			 w[48];
+	const char		*src, *p;
+	int			 n = 0;
+
+	snprintf(w, sizeof(w), "$%s", name);
+	while ((o = ucl_object_iterate(jget(fw.data, "kept"), &it, true)) !=
+	    NULL) {
+		if ((src = jstr(o, "source")) == NULL)
+			continue;
+		for (p = src; (p = strstr(p, w)) != NULL; p += strlen(w))
+			if (p[strlen(w)] == '\0' || p[strlen(w)] == ' ') {
+				n++;
+				break;
+			}
+	}
+	return (n);
+}
+
+/*
+ * The aliases: names for what rules say again and again.  An address
+ * list is a table of its name, so that changing it changes no rule; a
+ * port list and a value are written into each rule that names them.
+ */
+static void
+view_aliases(struct html *h)
+{
+	const ucl_object_t	*a;
+	ucl_object_iter_t	 it;
+	int			 n, u;
+
+	h_raw(h, "<h4 class=\"family\">Aliases</h4><p class=\"dim\">A name "
+	    "for what rules say again and again, written <code>$name</code> "
+	    "in a rule: <b>addresses</b>, a list of addresses and networks, "
+	    "is an ipfw table of its name (the rule says <code>table(name)"
+	    "</code>, so changing the list changes the table and no rule); "
+	    "<b>ports</b> (80,443,8000-8080) and a <b>value</b> (an "
+	    "interface, an address) are written into each rule that names "
+	    "them, which are written again, kept and now, when it changes. "
+	    "The kept rules stay ipfw's own commands, loaded at boot as they "
+	    "are; a rule's own words, its aliases in them, are a comment "
+	    "line before it.</p>");
+	{
+		const ucl_object_t	*e = NULL;
+		const char		*kind;
+
+		it = NULL;
+		while (alias_edit[0] != '\0' && (a = ucl_object_iterate(jget(
+		    fw.data, "aliases"), &it, true)) != NULL)
+			if (jstr(a, "name") != NULL && strcmp(jstr(a, "name"),
+			    alias_edit) == 0)
+				e = a;
+		kind = e != NULL && jstr(e, "kind") != NULL ? jstr(e, "kind") :
+		    "addr";
+		/* An id: the page's patch makes no other form of it. */
+		h_raw(h, "<form id=\"fw-alias-form\" data-form=\"fw-alias\" "
+		    "class=\"fw-add\"><input "
+		    "name=\"name\" spellcheck=\"false\" autocomplete=\"off\" "
+		    "placeholder=\"lan\" size=\"12\" maxlength=\"32\"");
+		h_attr(h, "value", e != NULL ? jstr(e, "name") : "");
+		h_fmt(h, "><select name=\"kind\"><option value=\"addr\"%s>"
+		    "addresses</option><option value=\"ports\"%s>ports"
+		    "</option><option value=\"value\"%s>value</option>"
+		    "</select><input name=\"value\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"10.0.0.0/8 "
+		    "192.168.1.0/24, or 80,443, or vtnet0\" size=\"36\"",
+		    strcmp(kind, "addr") == 0 ? " selected" : "",
+		    strcmp(kind, "ports") == 0 ? " selected" : "",
+		    strcmp(kind, "value") == 0 ? " selected" : "");
+		h_attr(h, "value", e != NULL ? jstr(e, "value") : "");
+		h_raw(h, "><button class=\"small\">Keep</button></form>");
+	}
+	h_raw(h, "<table class=\"net fwaliases\"><thead><tr><th>Name</th>"
+	    "<th>Kind</th><th>What it is</th><th>Rules</th><th></th></tr>"
+	    "</thead><tbody>");
+	n = 0;
+	it = NULL;
+	while ((a = ucl_object_iterate(jget(fw.data, "aliases"), &it, true)) !=
+	    NULL) {
+		if (jstr(a, "name") == NULL)
+			continue;
+		n++;
+		u = alias_uses(jstr(a, "name"));
+		h_raw(h, "<tr class=\"pick\" data-act=\"fw-alias-edit\"");
+		h_attr(h, "data-arg", jstr(a, "name"));
+		h_raw(h, "><td class=\"mono\"><b>$");
+		h_txt(h, jstr(a, "name"));
+		h_raw(h, "</b></td><td>");
+		h_txt(h, strcmp(jstr(a, "kind"), "addr") == 0 ? "addresses "
+		    "(a table)" : jstr(a, "kind"));
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(a, "value"));
+		h_fmt(h, "</td><td>%d</td><td class=\"acts\"><button class=\""
+		    "icon\" data-act=\"fw-alias-del\" title=\"%s\"%s", u,
+		    u > 0 ? "A rule names it: it stays while one does" :
+		    "Delete it", u > 0 ? " disabled" : "");
+		h_attr(h, "data-arg", jstr(a, "name"));
+		h_raw(h, ">×</button></td></tr>");
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">No alias yet: "
+		    "name a list of the addresses your rules keep saying, and "
+		    "write $name in them.</td></tr>");
+	h_raw(h, "</tbody></table>");
 }
 
 /* The tables: each with what is in it, to add to and take from. */
@@ -1611,7 +1729,7 @@ words_ok(const char *s)
 
 	return (s[0] != '\0' && strlen(s) < 400 && s[strspn(s, "abcdefghijklm"
 	    "nopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ._:/,-@{}!()="
-	    "<>*+%[]")] == '\0');
+	    "<>*+%[]$")] == '\0');
 }
 
 /*
@@ -1722,6 +1840,19 @@ rule_words(struct html *h)
 		h_attr(h, "value", copy);
 		h_raw(h, "></option>");
 	}
+	/* The aliases: an address list where an address goes, any of them
+	 * after the protocol. */
+	it = NULL;
+	while (n > 0 && (t = ucl_object_iterate(jget(fw.data, "aliases"), &it,
+	    true)) != NULL)
+		if (jstr(t, "name") != NULL && (tbl || strcmp(jstr(t, "kind"),
+		    "addr") != 0)) {
+			snprintf(copy, sizeof(copy), "%s$%s", head, jstr(t,
+			    "name"));
+			h_raw(h, "<option");
+			h_attr(h, "value", copy);
+			h_raw(h, "></option>");
+		}
 	/* The host's tables, as an address. */
 	it = NULL;
 	while (tbl && (t = ucl_object_iterate(jget(fw.data, "tables"), &it,
@@ -2436,6 +2567,41 @@ more_form(const char *form, const ucl_object_t *f)
 	const char	*a, *b;
 	char		 words[500];
 
+	if (strcmp(form, "fw-alias") == 0) {
+		a = jstr(f, "name") != NULL ? jstr(f, "name") : "";
+		b = jstr(f, "value") != NULL ? jstr(f, "value") : "";
+		if ((s = cur_server()) == NULL)
+			return (true);
+		if (a[0] == '$')
+			a++;
+		if (a[0] == '\0' || a[strspn(a, "abcdefghijklmnopqrstuvwxyz"
+		    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")] != '\0' ||
+		    (a[0] >= '0' && a[0] <= '9') || strlen(a) > 32) {
+			toast(true, "An alias's name is letters, digits and _, "
+			    "not a digit first");
+			return (true);
+		}
+		if (!words_ok(b) || strchr(b, '$') != NULL) {
+			toast(true, "Its addresses with blanks between, its ports "
+			    "with commas, or one word");
+			return (true);
+		}
+		/* An address list's entries with commas or blanks between. */
+		{
+			char	vb[400], *c;
+
+			snprintf(vb, sizeof(vb), "%s", b);
+			if (strcmp(jstr(f, "kind") != NULL ? jstr(f, "kind") :
+			    "", "addr") == 0)
+				for (c = vb; *c != '\0'; c++)
+					if (*c == ',')
+						*c = ' ';
+			snprintf(words, sizeof(words), "%s %s %s", a, jstr(f,
+			    "kind") != NULL ? jstr(f, "kind") : "addr", vb);
+		}
+		object_job(s, "alias", words, true);
+		return (true);
+	}
 	if (strcmp(form, "fw-table") != 0 && strcmp(form, "fw-entry") != 0 &&
 	    strcmp(form, "fw-object") != 0 && strcmp(form, "fw-trace") != 0 &&
 	    strcmp(form, "fw-ktrace") != 0 && strcmp(form, "fw-nat") != 0 &&
@@ -2540,6 +2706,16 @@ more_action(struct server *s, const char *act, const char *arg,
 	long long		 before, after, cur;
 	int			 n, i;
 
+	if (strcmp(act, "fw-alias-edit") == 0) {
+		snprintf(alias_edit, sizeof(alias_edit), "%s", arg);
+		return (true);
+	}
+	if (strcmp(act, "fw-alias-del") == 0) {
+		snprintf(words, sizeof(words), "%s delete", arg);
+		object_job(s, "alias", words, true);
+		alias_edit[0] = '\0';
+		return (true);
+	}
 	if (strcmp(act, "fw-entry-del") == 0) {
 		snprintf(words, sizeof(words), "%s delete %s", arg, value);
 		object_job(s, "table", words, false);
@@ -2798,6 +2974,10 @@ view_firewall(struct html *h, struct server *s)
 		view_tables(h);
 		return;
 	}
+	if (fw.sect == FW_ALIASES) {
+		view_aliases(h);
+		return;
+	}
 	if (fw.sect == FW_OBJECTS) {
 		view_objects(h);
 		return;
@@ -2952,7 +3132,26 @@ view_firewall(struct html *h, struct server *s)
 		    "\"fw\" title=\"Press to change it; drag it to another "
 		    "place\"><td><b>%05lld</b></td><td class=\"mono rule\">",
 		    now ? "" : " off", num, num, num);
-		h_txt(h, jstr(o, "text"));
+		/* Kept with aliases: its own words, ipfw's when hovered. */
+		{
+			const char	*src = NULL;
+			const ucl_object_t *kk;
+			ucl_object_iter_t   kit = NULL;
+
+			while ((kk = ucl_object_iterate(jget(fw.data, "kept"),
+			    &kit, true)) != NULL)
+				if (jint(kk, "num", 0) == num && jstr(kk,
+				    "source") != NULL)
+					src = jstr(kk, "source");
+			if (src != NULL) {
+				h_raw(h, "<span class=\"aliased\"");
+				h_attr(h, "title", jstr(o, "text"));
+				h_raw(h, ">");
+				h_txt(h, src);
+				h_raw(h, "</span>");
+			} else
+				h_txt(h, jstr(o, "text"));
+		}
 		h_raw(h, "</td><td>");
 		if (now) {
 			double	rate = rate_of(num, jint(o, "pkts", 0));
