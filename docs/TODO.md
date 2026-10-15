@@ -468,7 +468,16 @@
   and jail; gula/yhist.c, yang_history) and arcana-events (70 800: each
   kind an identity, its data the case of that kind, typed, the list
   kept, a read after a number, the notification; gula/yev.c,
-  yang_events).  Next: 3.1.8's bird, wireguard, netgraph, plugins
+  yang_events).  3.1.8: share/yang/arcana-bird (71 200: bird.conf and
+  its includes as configuration with their SHA-256, birdc's status,
+  protocols with a BGP neighbour's own, channels, OSPF neighbours, BFD
+  sessions and tables as state, the routes of a table as an action),
+  arcana-wireguard (71 400: wg show dump, keys only said to be there)
+  and arcana-netgraph (71 500: ngctl list -l), each the host's and a
+  vnet jail's by an augment of arcana-jails (luxuria/ybird.c, ywg.c,
+  invidia/yng.c, yang_plugins).  The changes stay jobs (bird-config,
+  wireguard, netgraph).  Next: 3.1.9's host and agent (plugins with
+  the host), then 3.1.11 probe and 3.1.12 SD-WAN
   (faults as ietf-alarms), and the rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not

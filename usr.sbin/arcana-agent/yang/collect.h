@@ -320,4 +320,25 @@ int	yev_from_json(const char *json, cbl_yarena *a,
 int	yev_one_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_events_event *out);
 
+/*
+ * arcana-bird (luxuria/ybird.c): the bird kind of the network
+ * operation as the module's state, the bird-routes kind as the routes
+ * action's output, the bird-config reply as the configuration's files.
+ */
+int	ybird_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_bird_bird_state *out);
+int	ybird_routes_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_bird_bird_routes_output *out);
+int	ybird_config_from(const char *path, const char *text,
+	    const char *sha256, const char *const *files, size_t nfiles,
+	    cbl_yarena *a, struct arcana_bird_bird_configuration *out);
+
+/* arcana-wireguard (luxuria/ywg.c): the wireguard kind. */
+int	ywg_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_wireguard_wireguard *out);
+
+/* arcana-netgraph (invidia/yng.c): the netgraph kind. */
+int	yng_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_netgraph_netgraph *out);
+
 #endif /* !_ARCANA_COLLECT_H_ */
