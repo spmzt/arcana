@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.117.0"
+#define	ARCANA_AGENT_VERSION	"0.118.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -573,6 +573,10 @@ int		 do_config_export(struct work *, bool,
 		    struct arc_config_export_rsp *);
 int		 do_config_apply(struct work *, const char *, bool, bool,
 		    const char *, struct arc_config_apply_rsp *);
+/* invidia/pathcheck.c: what this host does with a packet and its reply. */
+int		 do_path_check(struct work *, const char *, const char *,
+		    const char *, uint32_t, const char *, bool, uint32_t,
+		    struct arc_path_check_rsp *);
 bool		 kmod_loaded(const char *);
 
 /* acedia/storage.c: disks, pools, datasets, mounts. */
@@ -614,6 +618,7 @@ int		 route_helper(int, char **);
 int		 route_list(FILE *, int, uint32_t, const char *, const char *);
 int		 route_lookup(FILE *, const char *, uint32_t);
 int		 neigh_list(FILE *, int, const char *);
+int		 addr_lines(FILE *);
 int		 route_socket(void);
 int		 helper_netlink(int);
 int		 jail_jid_name(int, char *, size_t, char *, size_t);

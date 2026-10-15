@@ -63,6 +63,9 @@ struct job {
 	char			*bundle;	/* config-apply */
 	bool			 anyway;
 	char			*new_host;
+	char			*psrc, *pdst, *pproto, *piface;	/* path-check */
+	uint32_t		 pport;
+	bool			 has_fib;
 };
 
 #define	STOPPING	"not done: arcana-agent is stopping"
@@ -344,6 +347,7 @@ worker(void *arg)
 	struct arc_transport_rsp tpr;
 	struct arc_config_export_rsp cxr;
 	struct arc_config_apply_rsp car;
+	struct arc_path_check_rsp pcr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
 	struct arc_sysctl_rsp	 scr2;
@@ -503,6 +507,21 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &irr.trace.v, &irr.trace.n);
 		rc = arc_ipfw_rules_reply(j->req, &irr);
+		break;
+	case ARC_CMD_PATH_CHECK:
+		what = "path-check";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "path-check %s to %s", j->psrc, j->pdst);
+		memset(&pcr, 0, sizeof(pcr));
+		pcr.has_ok = true;
+		if (scope_enter(&w, j->jail, &pcr.error) == 0)
+			do_path_check(&w, j->psrc, j->pdst, j->pproto, j->pport,
+			    j->piface, j->has_fib, j->fib, &pcr);
+		ok = pcr.ok;
+		error = pcr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &pcr.trace.v, &pcr.trace.n);
+		rc = arc_path_check_reply(j->req, &pcr);
 		break;
 	case ARC_CMD_CONFIG_EXPORT:
 		what = j->refresh ? "config-export, secrets too" :
@@ -1270,6 +1289,10 @@ job_free(struct job *j)
 	free(j->peer);
 	free(j->bundle);
 	free(j->new_host);
+	free(j->psrc);
+	free(j->pdst);
+	free(j->pproto);
+	free(j->piface);
 	free(j);
 }
 
@@ -1807,6 +1830,28 @@ arc_ipfw_rules_doit(cbl_req *req, const struct arc_ipfw_rules_req *rq,
 	    rq->conf_text) : NULL;
 	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
 	j->refresh = rq->dry_run;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	return (start(j));
+}
+
+int
+arc_path_check_doit(cbl_req *req, const struct arc_path_check_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_PATH_CHECK;
+	j->psrc = xstrdup(rq->path_src);
+	j->pdst = xstrdup(rq->path_dst);
+	j->pproto = rq->path_proto != NULL ? xstrdup(rq->path_proto) : NULL;
+	j->piface = rq->interface != NULL ? xstrdup(rq->interface) : NULL;
+	j->pport = rq->has_path_port ? rq->path_port : 0;
+	j->has_fib = rq->has_net_fib;
+	j->fib = rq->has_net_fib ? rq->net_fib : 0;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
 	return (start(j));

@@ -1046,6 +1046,24 @@ attribute-sets:
         doc: For config-apply, the host's name instead of the bundle's.
         checks:
           max-len: 255
+      - name: path-src
+        type: text
+        doc: For path-check, the packet's source address.
+        checks:
+          max-len: 64
+      - name: path-dst
+        type: text
+        doc: For path-check, its destination address.
+        checks:
+          max-len: 64
+      - name: path-proto
+        type: text
+        doc: For path-check, tcp, udp, icmp or ip (any).
+        checks:
+          max-len: 8
+      - name: path-port
+        type: u32
+        doc: For path-check, the destination port of tcp or udp.
 
 
   - name: host
@@ -3191,6 +3209,48 @@ operations:
           - new-hostname
         required:
           - bundle
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: path-check
+    attribute-set: arcana
+    auth: true
+    doc: |
+      What this host does with a packet from path-src to path-dst (of
+      path-proto, to path-port), and with its reply, without one being
+      sent: as a JSON object, "host" and "addresses" (each of the host's
+      own, its interface, prefix and the interface's FIB), whether the
+      source and the destination are the host's or on a network it is
+      on ("src", "dst"), "forwarding" (net.inet.ip.forwarding and its
+      IPv6 twin), "ingress" (the interface it comes in on: interface if
+      given, else the one the route back to the source is by), "fib",
+      "route" (the route to the destination: the send route, as
+      route-lookup's best, or none), "neighbor" (the next hop's ARP or
+      NDP entry), "return" (the route back to the source from where the
+      reply comes in: the receive route, and "symmetric", whether it is
+      by the interface the request came in on), "firewall" (ipfw's
+      ruleset walked for the request in and out and the reply in and
+      out, each "verdict", "rule", "text", "by_state", what it could not
+      judge, "setfib", "fwd"), and "findings", each "severity" (bad,
+      warn, info, ok) and "what", in words.  With jail, of a vnet
+      jail's own network.  Nothing is sent, nothing is changed.
+    do:
+      request:
+        attributes:
+          - path-src
+          - path-dst
+          - path-proto
+          - path-port
+          - interface
+          - net-fib
+          - jail
+        required:
+          - path-src
+          - path-dst
       reply:
         attributes:
           - ok
