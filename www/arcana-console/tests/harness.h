@@ -58,6 +58,9 @@ void		 http_bearer(const char *, const char *, const char *,
 void		 http_on(int, const char *, const char *, const char *,
 		    const char *, const char *, struct resp *);
 void		 resp_free(struct resp *);
+/* A network made up for the troubleshooter: routers r1, r2, r3 as
+ * jails 11, 12, 13 by the stand-ins; r2's routes back and ruleset given. */
+void		 ts_net(const char *, const char *, const char *);
 const char	*jstr(const struct resp *, const char *);
 const ucl_object_t *jail_named(const struct resp *, const char *);
 const char	*jail_str(const struct resp *, const char *, const char *);

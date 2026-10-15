@@ -1551,6 +1551,105 @@ ATF_TC_BODY(config_bundle, tc)
 	free(bundle);
 }
 
+CONSOLE_TC(troubleshoot, "A packet followed across the hosts' jails: the "
+    "way it goes, where it is stopped and why, the reply's way, and an "
+    "asymmetric return a stateful firewall drops")
+ATF_TC_BODY(troubleshoot, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[1024], sid[16];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	ts_net(cwd, "10.1.0.0/24 10.12.0.1 em0\n",
+	    "65535 allow ip from any to any\n");
+#define	ASK(proto, port)						\
+	snprintf(body, sizeof(body), "{\"src\":\"10.1.0.2\",\"dst\":"	\
+	    "\"10.3.0.2\",\"proto\":\"" proto "\",\"port\":" #port ","	\
+	    "\"places\":[{\"server\":\"%s\",\"jail\":\"r1\"},{\"server\":"	\
+	    "\"%s\",\"jail\":\"r2\"},{\"server\":\"%s\",\"jail\":\"r3\"}]}",	\
+	    sid, sid, sid);						\
+	http("POST", "/api/troubleshoot/path", body, &r);		\
+	EXPECT(&r, 200)
+
+	/* Through: in on r1 from the client's network, on to r2 by r1's
+	 * default route, onto the server's network; back the same way. */
+	ASK("tcp", 22);
+	ATF_CHECK_STREQ("here, jail r1", jstr(&r, "hops.0.place"));
+	ATF_CHECK_STREQ("em0", jstr(&r, "hops.0.ingress"));
+	ATF_CHECK_STREQ("10.12.0.2", jstr(&r, "hops.0.next_hop"));
+	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "hops.1.place"));
+	ATF_CHECK_STREQ("em0", jstr(&r, "hops.1.ingress"));
+	ATF_CHECK_STREQ("em1", jstr(&r, "hops.1.egress"));
+	ATF_CHECK_STREQ("delivered", jstr(&r, "end.how"));
+	ATF_CHECK(jstr(&r, "hops.2.place") == NULL);
+	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "return.0.place"));
+	ATF_CHECK_STREQ("here, jail r1", jstr(&r, "return.1.place"));
+	ATF_CHECK_STREQ("delivered", jstr(&r, "return_end.how"));
+	ATF_CHECK_MSG(strstr(r.body, "\"severity\":\"bad\"") == NULL &&
+	    strstr(r.body, "Asymmetric") == NULL, "%.600s", r.body);
+	resp_free(&r);
+
+	/* r2's firewall: stopped there, by its rule. */
+	ts_net(cwd, "10.1.0.0/24 10.12.0.1 em0\n",
+	    "01000 deny tcp from any to 10.3.0.0/24 22 in\n"
+	    "65535 allow ip from any to any\n");
+	ASK("tcp", 22);
+	ATF_CHECK_STREQ("blocked", jstr(&r, "end.how"));
+	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "end.place"));
+	ATF_CHECK_STREQ("bad", jstr(&r, "findings.0.severity"));
+	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "findings.0.place"));
+	ATF_CHECK_MSG(strstr(jstr(&r, "findings.0.what"), "The firewall drops "
+	    "it coming in on em0: rule 1000") != NULL, "%s", jstr(&r,
+	    "findings.0.what"));
+	ATF_CHECK(jstr(&r, "return.0.place") == NULL);
+	resp_free(&r);
+
+	/* r2 sends the reply back by r3, which saw no request: its
+	 * stateful firewall drops the reply.  An ICMP echo it lets by. */
+	ts_net(cwd, "10.1.0.0/24 10.23.0.3 em2\n",
+	    "65535 allow ip from any to any\n");
+	ASK("tcp", 22);
+	ATF_CHECK_STREQ("delivered", jstr(&r, "end.how"));
+	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "return.0.place"));
+	ATF_CHECK_STREQ("here, jail r3", jstr(&r, "return.1.place"));
+	ATF_CHECK_STREQ("blocked", jstr(&r, "return_end.how"));
+	ATF_CHECK_STREQ("here, jail r3", jstr(&r, "return_end.place"));
+	ATF_CHECK_MSG(strstr(r.body, "The reply: The firewall drops it coming "
+	    "in on em1: rule 65535") != NULL, "%.1500s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "Asymmetric across the places: the request "
+	    "goes here, jail r1 → here, jail r2, the reply comes back "
+	    "here, jail r3 → here, jail r2") != NULL, "%.2000s", r.body);
+	resp_free(&r);
+	ASK("icmp", 0);
+	ATF_CHECK_STREQ("delivered", jstr(&r, "return_end.how"));
+	ATF_CHECK(strstr(r.body, "\"severity\":\"bad\"") == NULL);
+	ATF_CHECK(strstr(r.body, "Asymmetric across the places") != NULL);
+	resp_free(&r);
+
+	/* Who is on no place's network: where it comes in is not known. */
+	snprintf(body, sizeof(body), "{\"src\":\"198.51.100.1\",\"dst\":"
+	    "\"10.3.0.2\",\"places\":[{\"server\":\"%s\",\"jail\":\"r1\"}]}",
+	    sid);
+	http("POST", "/api/troubleshoot/path", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("unknown", jstr(&r, "end.how"));
+	resp_free(&r);
+	http("POST", "/api/troubleshoot/path", "{\"src\":\"10.1.0.2\","
+	    "\"dst\":\"2001:db8::1\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+#undef	ASK
+}
+
 CONSOLE_TC(transfers, "A snapshot sent from one host to another, the "
     "console carrying it at the pace the receiver takes it")
 ATF_TC_BODY(transfers, tc)
@@ -5477,6 +5576,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, tokens);
 	ATF_TP_ADD_TC(tp, transfers);
 	ATF_TP_ADD_TC(tp, config_bundle);
+	ATF_TP_ADD_TC(tp, troubleshoot);
 	ATF_TP_ADD_TC(tp, workflows);
 	ATF_TP_ADD_TC(tp, sdwan);
 	ATF_TP_ADD_TC(tp, sdwan_apply);

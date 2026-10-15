@@ -161,6 +161,7 @@ enum node {
 	NODE_USAGE,		/* how busy every host has been, drawn */
 	NODE_WORKFLOWS,		/* chains of steps, run on several hosts */
 	NODE_SDWAN,		/* SD-WAN services, as MEF 70.2 says them */
+	NODE_TROUBLE,		/* a packet followed, and what stops it */
 	NODE_SETTINGS,		/* the console's settings, a tab each */
 	NODE_DEVICES,		/* the hosts as a table */
 };
@@ -829,6 +830,10 @@ void		 sdwan_open(void);
 void		 sdwan_tick(double);
 void		 view_sdwan(struct html *);
 bool		 sdwan_action(const char *, const char *, const char *);
+/* trouble.c: the Troubleshoot page. */
+void		 view_trouble(struct html *);
+bool		 trouble_form(const char *, const ucl_object_t *);
+bool		 trouble_action(const char *, const char *, const char *);
 bool		 sdwan_form(const char *, const ucl_object_t *);
 bool		 sdwan_modal(struct html *);
 bool		 sdwan_blocked(void);

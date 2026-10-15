@@ -1251,6 +1251,25 @@ paths:
           description: ok and the host, as hello; the server's uri changed
         "400": { $ref: "#/components/responses/Error" }
         "502": { $ref: "#/components/responses/Error" }
+  /api/troubleshoot/path:
+    post:
+      tags: [servers]
+      summary: Follow a packet across the hosts, and say what stops it
+      description: With src and dst (addresses, both IPv4 or both IPv6),
+        proto (tcp, udp, icmp or ip), port, and places, each a server and
+        a vnet jail of it or none (every host when not given). Nothing is
+        sent; each place says what it would do (the agent's path-check).
+        The answer has hops, each place in turn with its ingress, egress,
+        next_hop and check (the place's own answer, its firewall walked
+        for the request and the reply); end, how the way ended (delivered,
+        leaves, blocked, loop, unknown) and where; return and return_end,
+        the reply's way back, a place that did not see the request having
+        no state of it; and findings, worst first (bad, warn, info, ok),
+        each with its place and in words.
+      responses:
+        "200":
+          description: ok, hops, end, return, return_end, findings
+        "400": { $ref: "#/components/responses/Error" }
   /api/servers/{server}/config:
     get:
       tags: [servers]

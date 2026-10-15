@@ -493,7 +493,7 @@ where(const struct fwverdict *v, const struct fwset *set)
 int
 do_path_check(struct work *w, const char *srcs, const char *dsts,
     const char *proto, uint32_t port, const char *iface, bool has_fib,
-    uint32_t fib0, struct arc_path_check_rsp *rsp)
+    uint32_t fib0, bool reply, struct arc_path_check_rsp *rsp)
 {
 	static struct fwset	 set;
 	struct pc		 c;
@@ -536,8 +536,14 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 	}
 	c.port = (c.proto == IPPROTO_TCP || c.proto == IPPROTO_UDP) ?
 	    (int)port : -1;
-	/* A source port an operating system would pick: above them. */
+	/* A source port an operating system would pick: above them.  A
+	 * reply's is the service's, to such a one. */
 	c.sport = c.port >= 0 ? 49152 : -1;
+	if (reply && c.port >= 0) {
+		c.sport = c.port;
+		c.port = 49152;
+	}
+	put_b(c.top, "reply", reply);
 	c.top = ucl_object_typed_new(UCL_OBJECT);
 	c.findings = ucl_object_typed_new(UCL_ARRAY);
 	gethostname(host, sizeof(host));
@@ -610,9 +616,10 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 	k.proto = c.proto;
 	k.sport = c.sport;
 	k.dport = c.port;
-	k.icmptype = c.proto == IPPROTO_ICMP ? 8 : c.proto == IPPROTO_ICMPV6 ?
-	    128 : -1;
-	k.syn = c.proto == IPPROTO_TCP;
+	k.icmptype = c.proto == IPPROTO_ICMP ? (reply ? 0 : 8) : c.proto ==
+	    IPPROTO_ICMPV6 ? (reply ? 129 : 128) : -1;
+	k.syn = c.proto == IPPROTO_TCP && !reply;
+	k.ack = c.proto == IPPROTO_TCP && reply;
 	k.src_local = src_local;
 	k.dst_local = dst_local;
 	k.fib = fib;

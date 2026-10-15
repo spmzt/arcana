@@ -66,6 +66,7 @@ struct job {
 	char			*psrc, *pdst, *pproto, *piface;	/* path-check */
 	uint32_t		 pport;
 	bool			 has_fib;
+	bool			 preply;
 };
 
 #define	STOPPING	"not done: arcana-agent is stopping"
@@ -516,7 +517,7 @@ worker(void *arg)
 		pcr.has_ok = true;
 		if (scope_enter(&w, j->jail, &pcr.error) == 0)
 			do_path_check(&w, j->psrc, j->pdst, j->pproto, j->pport,
-			    j->piface, j->has_fib, j->fib, &pcr);
+			    j->piface, j->has_fib, j->fib, j->preply, &pcr);
 		ok = pcr.ok;
 		error = pcr.error;
 		step_end(&w, root, ok, NULL);
@@ -1850,6 +1851,7 @@ arc_path_check_doit(cbl_req *req, const struct arc_path_check_req *rq,
 	j->pproto = rq->path_proto != NULL ? xstrdup(rq->path_proto) : NULL;
 	j->piface = rq->interface != NULL ? xstrdup(rq->interface) : NULL;
 	j->pport = rq->has_path_port ? rq->path_port : 0;
+	j->preply = rq->path_reply;
 	j->has_fib = rq->has_net_fib;
 	j->fib = rq->has_net_fib ? rq->net_fib : 0;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :

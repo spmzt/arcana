@@ -5593,11 +5593,48 @@ ATF_TC_HEAD(pwa_flows, tc)
 	atf_tc_set_md_var(tc, "descr", "Workflows, the API, and SD-WAN");
 	atf_tc_set_md_var(tc, "timeout", "240");
 }
+/*
+ * Troubleshoot, in the side bar: a packet followed, the host itself a
+ * router of the made-up network (ts_net): in on em0 from the client's
+ * network, on to 10.12.0.2, which is no place of the console's; then
+ * the jails as places, and r2's firewall stopping it, said first.
+ */
+static void
+part_trouble(void)
+{
+	char	here[MAXPATHLEN];
+
+	ATF_REQUIRE(getcwd(here, sizeof(here)) != NULL);
+	ts_net(here, "10.1.0.0/24 10.12.0.1 em0\n",
+	    "01000 deny tcp from any to 10.3.0.0/24 22 in\n"
+	    "65535 allow ip from any to any\n");
+	click_when("li.tsnode[data-act=select-trouble]", 10);
+	wait_js("document.querySelector('form[data-form=ts-path]') && "
+	    "location.hash === '#/troubleshoot'", 10);
+	run("const f = document.querySelector('form[data-form=ts-path]'); "
+	    "f.src.value = '10.1.0.2'; f.dst.value = '10.3.0.2'; f.proto.value "
+	    "= 'tcp'; f.port.value = '22'; f.requestSubmit();");
+	wait_js("document.querySelector('ol.tsway li.tshop') && document."
+	    "querySelector('ol.tsway li.tshop').textContent.includes('in on "
+	    "em0') && document.querySelector('ol.tsway li.tshop').textContent"
+	    ".includes('via 10.12.0.2 on em1') && document.querySelector("
+	    "'ol.tsway li.tsend.leaves') && document.querySelector('ol.tsway "
+	    "li.tsend.leaves').textContent.includes('to 10.12.0.2')", 20);
+	shot("9t-troubleshoot");
+	/* As YAML, what was found. */
+	run("window.arcSaved = null; document.querySelector('.tsverdict "
+	    "button[data-arg=yaml]').click()");
+	wait_js("window.arcSaved && window.arcSaved.name === "
+	    "'path-10.1.0.2-to-10.3.0.2.yaml' && window.arcSaved.text."
+	    "includes('\\nhops:\\n')", 10);
+}
+
 ATF_TC_BODY(pwa_flows, tc)
 {
 
 	prologue(tc, 2);
 	part_flows();
+	part_trouble();
 }
 ATF_TC_CLEANUP(pwa_flows, tc)
 {
