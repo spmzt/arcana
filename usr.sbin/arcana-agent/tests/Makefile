@@ -63,6 +63,14 @@ SRCS.yev=	yev_test.c yev.c yjson.c ymodel_schema.c
 CFLAGS.yev_test.c+=	-I${.OBJDIR}/..
 CFLAGS.yev.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 LDADD.yev+=	${CBLINK_LIBS} ${UCL_LIBS}
+# yplug: BIRD, WireGuard and netgraph as their modules have them.
+PROGS+=		yplug
+SRCS.yplug=	yplug_test.c ybird.c ywg.c yng.c yjson.c ymodel_schema.c
+CFLAGS.yplug_test.c+=	-I${.OBJDIR}/..
+CFLAGS.ybird.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+CFLAGS.ywg.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+CFLAGS.yng.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.yplug+=	${CBLINK_LIBS} ${UCL_LIBS}
 # yprocs: the processes operation's replies as arcana-processes has them.
 PROGS+=		yprocs
 SRCS.yprocs=	yprocs_test.c yprocs.c yjson.c ymodel_schema.c
@@ -109,6 +117,7 @@ CFLAGS+=	-I${.CURDIR}/../../../lib/libvarconf
 LDADD.yrcroutes+=	${CBLINK_LIBS} \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
 .PATH:		${.CURDIR}/../invidia ${.CURDIR}/../ira ${.CURDIR}/../acedia \
+		${.CURDIR}/../luxuria \
 		${.CURDIR}/../superbia ${.CURDIR}/../gula ${.CURDIR}/../yang
 CFLAGS+=	-I${.CURDIR}/../yang -I${.CURDIR}/../invidia ${CBLINK_CFLAGS}
 LDADD.ycollect+=	${CBLINK_LIBS} -ljail -lnv

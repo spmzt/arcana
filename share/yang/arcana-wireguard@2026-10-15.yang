@@ -1,0 +1,148 @@
+module arcana-wireguard {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-wireguard";
+  prefix arcwg;
+
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import arcana-jails {
+    prefix arcj;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "WireGuard on a FreeBSD host, or in a vnet jail of it: the if_wg(4)
+     interfaces as wg(8) show dump tells of them, each with its public
+     key and listen port, and its peers with their public keys,
+     endpoints, allowed IPs, last handshake, bytes and keepalive.  A
+     private key, or a preshared one, is never read out: that there is
+     one is said.  The interfaces are made by ifconfig(8) (the base
+     system's, arcana-interfaces); their keys and peers by jobs of kind
+     wireguard (init, peer, unpeer, kept in rc.conf's wireguard_
+     variables and /usr/local/etc/wireguard).  The wireguard kind of
+     the network operation of arcana.yaml converted (Y-3).";
+
+  revision 2026-10-15 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.8.";
+  }
+
+  typedef key {
+    type string {
+      length "44";
+      pattern '[A-Za-z0-9+/]{43}=';
+    }
+    description
+      "A WireGuard key, base64.";
+  }
+
+  grouping wireguard {
+    description
+      "The WireGuard interfaces.";
+    container wireguard {
+      config false;
+      description
+        "WireGuard, where it runs.";
+      leaf now {
+        type yang:date-and-time;
+        description
+          "When it was read, which the handshakes are measured
+           against.";
+      }
+      list interface {
+        key "name";
+        description
+          "An if_wg(4) interface.";
+        leaf name {
+          type string;
+          description
+            "Its name, wgN.";
+        }
+        leaf private-key {
+          type boolean;
+          description
+            "It has a private key.";
+        }
+        leaf public-key {
+          type key;
+          description
+            "Its public key.";
+        }
+        leaf listen-port {
+          type inet:port-number;
+          description
+            "The port it listens on.";
+        }
+        list peer {
+          key "public-key";
+          description
+            "Its peers.";
+          leaf public-key {
+            type key;
+            description
+              "The peer's public key.";
+          }
+          leaf preshared-key {
+            type boolean;
+            description
+              "A preshared key is set.";
+          }
+          leaf endpoint {
+            type string;
+            description
+              "Where it is: address and port.";
+          }
+          leaf-list allowed-ip {
+            type inet:ip-prefix;
+            description
+              "What goes to it, and may come from it.";
+          }
+          leaf latest-handshake {
+            type yang:date-and-time;
+            description
+              "When the last handshake was; none, never.";
+          }
+          leaf received {
+            type uint64;
+            units "bytes";
+            description
+              "Bytes from it.";
+          }
+          leaf sent {
+            type uint64;
+            units "bytes";
+            description
+              "Bytes to it.";
+          }
+          leaf keepalive {
+            type uint16;
+            units "seconds";
+            description
+              "The persistent keepalive; 0 none.";
+          }
+        }
+      }
+    }
+  }
+
+  uses wireguard;
+
+  augment "/arcj:jails/arcj:jail" {
+    description
+      "A vnet jail's own WireGuard interfaces.";
+    uses wireguard;
+  }
+}

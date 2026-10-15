@@ -5763,6 +5763,86 @@ EOT
 	    "$y" one one.json
 }
 
+atf_test_case yang_plugins
+yang_plugins_head()
+{
+	atf_set "descr" "BIRD, WireGuard and netgraph as arcana-bird," \
+	    "arcana-wireguard and arcana-netgraph have them: birdc's" \
+	    "protocols with a BGP neighbour's own and its channels, OSPF" \
+	    "neighbours, BFD sessions, tables, routes; bird.conf with its" \
+	    "SHA-256; wg show's interfaces and peers, keys only said to be" \
+	    "there; ngctl's nodes and hooks; through YANG-CBOR and back"
+}
+yang_plugins_body()
+{
+	local y="$(atf_get_srcdir)/yplug"
+
+	cat > bird.json <<'EOT'
+{"status":["BIRD 3.1.2","Router ID is 10.0.0.1","Current server time is 2026-10-15 20:00:00.123","Daemon is up and running"],"protocols":[{"name":"device1","proto":"Device","table":"---","state":"up","since":"2026-10-15 19:00:00","info":""},{"name":"peer_as65002","proto":"BGP","table":"---","state":"up","since":"2026-10-15 19:00:05","info":"Established","description":"the other site","bgp-state":"Established","neighbor":"10.202.0.2","neighbor-as":"65002","local-as":"65001","neighbor-id":"10.0.0.2","source":"10.202.0.1","session":"external AS4","hold":"240/240","keepalive":"80/80","channels":[{"name":"ipv4","state":"UP","table":"master4","input-filter":"ACCEPT","output-filter":"ACCEPT","routes":"3 imported, 2 exported, 3 preferred","imported":3,"exported":2}]},{"name":"rpki1","proto":"RPKI","table":"---","state":"up","since":"2026-10-15 19:00:00","info":"Established","cache":"rpki.example.net","rpki-status":"Established","serial":"12","last-update":"2026-10-15 19:50:00"}],"ospf":[{"proto":"ospf1","router-id":"10.0.0.2","pri":"1","state":"Full/DR","dtime":"38.3","interface":"em1","address":"10.1.0.2"}],"bfd":[{"proto":"bfd1","address":"10.202.0.2","interface":"wg0","state":"Up","since":"2026-10-15 19:00:06","interval":"0.300","timeout":"1.000"}],"tables":[{"name":"master4","routes":5,"networks":5},{"name":"master6","routes":2,"networks":2}]}
+EOT
+	cat > want <<'EOT'
+status BIRD 3.1.2
+status Router ID is 10.0.0.1
+status Current server time is 2026-10-15 20:00:00.123
+status Daemon is up and running
+protocol device1 Device table=--- up since=2026-10-15 19:00:00 info= description=-
+protocol peer_as65002 BGP table=--- up since=2026-10-15 19:00:05 info=Established description=the other site
+  bgp Established neighbor=10.202.0.2 as=65002 local-as=65001 id=10.0.0.2 source=10.202.0.1 session=external AS4 hold=240/240 keepalive=80/80 error=-
+  channel ipv4 UP table=master4 in=ACCEPT out=ACCEPT routes=3 imported, 2 exported, 3 preferred imported=3 exported=2
+protocol rpki1 RPKI table=--- up since=2026-10-15 19:00:00 info=Established description=-
+  rpki cache=rpki.example.net status=Established serial=12 update=2026-10-15 19:50:00
+ospf ospf1 10.0.0.2 pri=1 Full/DR dead=38.3 em1 10.1.0.2
+bfd bfd1 10.202.0.2 wg0 Up since=2026-10-15 19:00:06 0.300/1.000
+table master4 routes=5 networks=5
+table master6 routes=2 networks=2
+yang-cbor 686 bytes, the same back
+EOT
+	atf_check -o file:want "$y" bird bird.json
+	cat > br.json <<'EOT'
+{"routes":[{"table":"master4","prefix":"10.9.0.0/16","type":"unicast","protocol":"peer_as65002","from":"10.202.0.2","since":"2026-10-15 19:00:06","primary":true,"preference":"100","info":"AS65002i","nexthops":[{"via":"10.202.0.2","interface":"wg0"}],"attrs":["BGP.origin: IGP","BGP.as_path: 65002"]},{"table":"master4","prefix":"0.0.0.0/0","type":"unicast","protocol":"static1","since":"2026-10-15 19:00:00","primary":true,"preference":"200","nexthops":[{"via":"10.0.0.254","interface":"em0"}]}],"count":2}
+EOT
+	cat > want <<'EOT'
+routes count=2 message=-
+route master4 10.9.0.0/16 unicast peer_as65002 from=10.202.0.2 since=2026-10-15 19:00:06 primary=yes pref=100 info=AS65002i via 10.202.0.2 on wg0 [BGP.origin: IGP] [BGP.as_path: 65002]
+route master4 0.0.0.0/0 unicast static1 from=- since=2026-10-15 19:00:00 primary=yes pref=200 info=- via 10.0.0.254 on em0
+yang-cbor 245 bytes, the same back
+EOT
+	atf_check -o file:want "$y" bird-routes br.json
+	printf 'router id 10.0.0.1;\ninclude "peers.conf";\n' > bird.conf
+	cat > want <<'EOT'
+configuration /usr/local/etc/bird.conf
+file /usr/local/etc/bird.conf text=42 sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+file /usr/local/etc/peers.conf text=0 sha256=-
+yang-cbor 199 bytes, the same back
+EOT
+	atf_check -o file:want "$y" bird-config /usr/local/etc/bird.conf bird.conf \
+	    0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+	    /usr/local/etc/bird.conf /usr/local/etc/peers.conf
+	cat > wg.json <<'EOT'
+{"interfaces":[{"name":"wg0","private-key":true,"public-key":"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=","listen-port":51820,"peers":[{"public-key":"TrMvSoP4jYQlY6RIzBgbssQqY3vxI2Pi+y71lOWWXX0=","preshared-key":false,"endpoint":"203.0.113.2:51820","allowed-ips":["10.202.0.2/32","fd00:5a::2/128"],"latest-handshake":1791995110,"rx":123456,"tx":654321,"keepalive":25},{"public-key":"gN65BkIKy1eCE9pP1wdc8ROUtkHLF2PfAqYdyYBz6EA=","preshared-key":true,"allowed-ips":["10.202.0.3/32"],"latest-handshake":0,"rx":0,"tx":0,"keepalive":0}]}],"now":1791995200}
+EOT
+	cat > want <<'EOT'
+wireguard now=2026-10-14T16:26:40Z
+interface wg0 private=yes public=xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg= port=51820
+  peer TrMvSoP4jYQlY6RIzBgbssQqY3vxI2Pi+y71lOWWXX0= preshared=no endpoint=203.0.113.2:51820 handshake=2026-10-14T16:25:10Z rx=123456 tx=654321 keepalive=25 allowed=10.202.0.2/32,fd00:5a::2/128
+  peer gN65BkIKy1eCE9pP1wdc8ROUtkHLF2PfAqYdyYBz6EA= preshared=yes endpoint=- handshake=- rx=0 tx=0 keepalive=0 allowed=10.202.0.3/32
+yang-cbor 295 bytes, the same back
+EOT
+	atf_check -o file:want "$y" wireguard wg.json
+	cat > ng.json <<'EOT'
+{"nodes":[{"name":"em0","type":"ether","id":"00000001","hooks":[{"hook":"lower","peer":"ngbr0","peer-type":"bridge","peer-id":"00000005","peer-hook":"link0"}]},{"name":"ngbr0","type":"bridge","id":"00000005","hooks":[{"hook":"link0","peer":"em0","peer-type":"ether","peer-id":"00000001","peer-hook":"lower"},{"hook":"link1","peer":"ngeth0","peer-type":"eiface","peer-id":"00000007","peer-hook":"ether"}]}]}
+EOT
+	cat > want <<'EOT'
+node 00000001 em0 ether
+  hook lower -> ngbr0 bridge 00000005 link0
+node 00000005 ngbr0 bridge
+  hook link0 -> em0 ether 00000001 lower
+  hook link1 -> ngeth0 eiface 00000007 ether
+yang-cbor 174 bytes, the same back
+EOT
+	atf_check -o file:want "$y" netgraph ng.json
+}
+
 atf_test_case fw_walk
 fw_walk_head()
 {
@@ -6992,6 +7072,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_troubleshoot
 	atf_add_test_case yang_history
 	atf_add_test_case yang_events
+	atf_add_test_case yang_plugins
 	atf_add_test_case fw_walk
 	atf_add_test_case firewall_aliases
 	atf_add_test_case config_bundle

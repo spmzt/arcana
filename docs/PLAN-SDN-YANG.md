@@ -1268,8 +1268,10 @@ A step never leaves `main` unbuildable; where a step would, it says
   `arcana-log` (and syslog.conf as `ietf-syslog`; done), `arcana-history`
   (done), `arcana-events` (numbered, each kind's data typed; done;
   replay by number is 3.2.6's); check: tests.
-- 3.1.8 A: `arcana-bird`, `arcana-wireguard`, `arcana-netgraph`,
-  `arcana-plugins`; check: the plugin tests.
+- 3.1.8 A: `arcana-bird`, `arcana-wireguard`, `arcana-netgraph` (done:
+  what birdc, wg show and ngctl list tell, bird.conf as configuration;
+  the changes stay jobs), `arcana-plugins` (with `arcana-host`, 3.1.9);
+  check: the plugin tests.
 - 3.1.9 A: `arcana-host` (facts, router-id, role, capabilities),
   `arcana-agent` (update and build rpcs); check: `hello`'s tests.
 - 3.1.10 A: `arcana-firewall` (ipfw: the kept rules, aliases and

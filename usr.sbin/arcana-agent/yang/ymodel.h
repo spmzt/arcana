@@ -198,6 +198,21 @@ struct ietf_logical_network_element;
 struct ietf_logical_network_element_bind_lne_name_failed;
 struct arcana_jails_jails_conf_error;
 struct arcana_jails_jails_jail_param;
+struct arcana_jails_jails_jail_arcbird_bird_configuration_file;
+struct arcana_jails_jails_jail_arcbird_bird_configuration;
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp;
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki;
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_channel;
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol;
+struct arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor;
+struct arcana_jails_jails_jail_arcbird_bird_state_bfd_session;
+struct arcana_jails_jails_jail_arcbird_bird_state_table;
+struct arcana_jails_jails_jail_arcbird_bird_state;
+struct arcana_jails_jails_jail_arcbird_bird_routes_input;
+struct arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop;
+struct arcana_jails_jails_jail_arcbird_bird_routes_output_route;
+struct arcana_jails_jails_jail_arcbird_bird_routes_output;
+struct arcana_jails_jails_jail_arcbird_bird;
 struct arcana_jails_jails_jail_arcfw_firewall_kept_rule;
 struct arcana_jails_jails_jail_arcfw_firewall_kept_alias;
 struct arcana_jails_jails_jail_arcfw_firewall_kept;
@@ -218,6 +233,9 @@ struct arcana_jails_jails_jail_arcfw_firewall_trace_input;
 struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet;
 struct arcana_jails_jails_jail_arcfw_firewall_trace_output;
 struct arcana_jails_jails_jail_arcfw_firewall;
+struct arcana_jails_jails_jail_arcng_netgraph_node_hook;
+struct arcana_jails_jails_jail_arcng_netgraph_node;
+struct arcana_jails_jails_jail_arcng_netgraph;
 struct arcana_jails_jails_jail_arcpkg_packages_package;
 struct arcana_jails_jails_jail_arcpkg_packages_refresh_input;
 struct arcana_jails_jails_jail_arcpkg_packages_refresh_output;
@@ -225,6 +243,9 @@ struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input;
 struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package;
 struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output;
 struct arcana_jails_jails_jail_arcpkg_packages;
+struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer;
+struct arcana_jails_jails_jail_arcwg_wireguard_interface;
+struct arcana_jails_jails_jail_arcwg_wireguard;
 struct arcana_jails_jails_jail_start_input;
 struct arcana_jails_jails_jail_start_output;
 struct arcana_jails_jails_jail_stop_input;
@@ -499,6 +520,30 @@ struct arcana_events_event_job;
 struct arcana_events_event_jail_state;
 struct arcana_events_event_crash;
 struct arcana_events_event;
+struct arcana_bird_bird_configuration_file;
+struct arcana_bird_bird_configuration;
+struct arcana_bird_bird_state_protocol_bgp;
+struct arcana_bird_bird_state_protocol_rpki;
+struct arcana_bird_bird_state_protocol_channel;
+struct arcana_bird_bird_state_protocol;
+struct arcana_bird_bird_state_ospf_neighbor;
+struct arcana_bird_bird_state_bfd_session;
+struct arcana_bird_bird_state_table;
+struct arcana_bird_bird_state;
+struct arcana_bird_bird_routes_input;
+struct arcana_bird_bird_routes_output_route_nexthop;
+struct arcana_bird_bird_routes_output_route;
+struct arcana_bird_bird_routes_output;
+struct arcana_bird_bird;
+struct arcana_bird;
+struct arcana_wireguard_wireguard_interface_peer;
+struct arcana_wireguard_wireguard_interface;
+struct arcana_wireguard_wireguard;
+struct arcana_wireguard;
+struct arcana_netgraph_netgraph_node_hook;
+struct arcana_netgraph_netgraph_node;
+struct arcana_netgraph_netgraph;
+struct arcana_netgraph;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -1796,6 +1841,22 @@ struct ieee802_dot1q_bridge_bridges_bridge_component_rstp_bridge_rstp_root_port 
 	} v;
 };
 
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp_neighbor {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp_source {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
 struct arcana_jails_jails_jail_arcfw_firewall_trace_input_address {
 	unsigned	 which;	/* the member set, from 0 */
 	union {
@@ -1813,6 +1874,14 @@ struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_source {
 };
 
 struct arcana_jails_jails_jail_arcfw_firewall_trace_output_packet_destination {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer_allowed_ip {
 	unsigned	 which;	/* the member set, from 0 */
 	union {
 		const char	*m0;
@@ -2063,6 +2132,30 @@ struct arcana_events_event_neighbor_address {
 };
 
 struct arcana_events_event_tunnel_address {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_bird_bird_state_protocol_bgp_neighbor {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_bird_bird_state_protocol_bgp_source {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_wireguard_wireguard_interface_peer_allowed_ip {
 	unsigned	 which;	/* the member set, from 0 */
 	union {
 		const char	*m0;
@@ -4156,6 +4249,184 @@ struct arcana_jails_jails_jail_param {
 };
 
 /* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_configuration_file {
+	const char	*path;
+	const char	*text;
+	const char	*sha256;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcbird_bird_configuration {
+	const char	*path;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_configuration_file	*v;
+	}			 file;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp {
+	const char	*state;
+	bool			 has_neighbor;
+	struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp_neighbor	 neighbor;
+	bool			 has_neighbor_as;
+	uint32_t	 neighbor_as;
+	bool			 has_local_as;
+	uint32_t	 local_as;
+	const char	*neighbor_id;
+	bool			 has_source;
+	struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp_source	 source;
+	const char	*session;
+	const char	*hold;
+	const char	*keepalive;
+	const char	*last_error;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki {
+	const char	*cache;
+	const char	*status;
+	const char	*serial;
+	const char	*last_update;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol_channel {
+	const char	*name;
+	const char	*state;
+	const char	*table;
+	const char	*input_filter;
+	const char	*output_filter;
+	const char	*routes;
+	bool			 has_imported;
+	uint64_t	 imported;
+	bool			 has_exported;
+	uint64_t	 exported;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_state_protocol {
+	const char	*name;
+	const char	*type;
+	const char	*table;
+	const char	*state;
+	const char	*since;
+	const char	*info;
+	const char	*description;
+	const struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp	*bgp;
+	const struct arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki	*rpki;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_state_protocol_channel	*v;
+	}			 channel;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor {
+	const char	*protocol;
+	const char	*router_id;
+	const char	*priority;
+	const char	*state;
+	const char	*dead_time;
+	const char	*interface;
+	const char	*address;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_state_bfd_session {
+	const char	*protocol;
+	const char	*address;
+	const char	*interface;
+	const char	*state;
+	const char	*since;
+	const char	*interval;
+	const char	*timeout;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_state_table {
+	const char	*name;
+	bool			 has_routes;
+	uint64_t	 routes;
+	bool			 has_networks;
+	uint64_t	 networks;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcbird_bird_state {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 status;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_state_protocol	*v;
+	}			 protocol;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor	*v;
+	}			 ospf_neighbor;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_state_bfd_session	*v;
+	}			 bfd_session;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_state_table	*v;
+	}			 table;
+};
+
+/* input */
+struct arcana_jails_jails_jail_arcbird_bird_routes_input {
+	const char	*filter;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop {
+	const char	*via;
+	const char	*interface;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcbird_bird_routes_output_route {
+	const char	*table;
+	const char	*prefix;
+	const char	*type;
+	const char	*protocol;
+	const char	*from;
+	const char	*since;
+	bool			 has_primary;
+	bool		 primary;
+	const char	*preference;
+	const char	*info;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop	*v;
+	}			 nexthop;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 attribute;
+};
+
+/* output */
+struct arcana_jails_jails_jail_arcbird_bird_routes_output {
+	bool			 has_count;
+	uint64_t	 count;
+	const char	*message;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcbird_bird_routes_output_route	*v;
+	}			 route;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcbird_bird {
+	const struct arcana_jails_jails_jail_arcbird_bird_configuration	*configuration;
+	const struct arcana_jails_jails_jail_arcbird_bird_state	*state;
+};
+
+/* list entry */
 struct arcana_jails_jails_jail_arcfw_firewall_kept_rule {
 	uint32_t	 number;
 	const char	*text;
@@ -4440,6 +4711,34 @@ struct arcana_jails_jails_jail_arcfw_firewall {
 };
 
 /* list entry */
+struct arcana_jails_jails_jail_arcng_netgraph_node_hook {
+	const char	*name;
+	const char	*peer;
+	const char	*peer_type;
+	const char	*peer_id;
+	const char	*peer_hook;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcng_netgraph_node {
+	const char	*id;
+	const char	*name;
+	const char	*type;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcng_netgraph_node_hook	*v;
+	}			 hook;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcng_netgraph {
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcng_netgraph_node	*v;
+	}			 node;
+};
+
+/* list entry */
 struct arcana_jails_jails_jail_arcpkg_packages_package {
 	const char	*name;
 	const char	*installed;
@@ -4506,6 +4805,48 @@ struct arcana_jails_jails_jail_arcpkg_packages {
 		size_t		 n;
 		const struct arcana_jails_jails_jail_arcpkg_packages_package	*v;
 	}			 package;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer {
+	const char	*public_key;
+	bool			 has_preshared_key;
+	bool		 preshared_key;
+	const char	*endpoint;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer_allowed_ip	 *v;
+	}			 allowed_ip;
+	const char	*latest_handshake;
+	bool			 has_received;
+	uint64_t	 received;
+	bool			 has_sent;
+	uint64_t	 sent;
+	bool			 has_keepalive;
+	uint16_t	 keepalive;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcwg_wireguard_interface {
+	const char	*name;
+	bool			 has_private_key;
+	bool		 private_key;
+	const char	*public_key;
+	bool			 has_listen_port;
+	uint16_t	 listen_port;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer	*v;
+	}			 peer;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcwg_wireguard {
+	const char	*now;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcwg_wireguard_interface	*v;
+	}			 interface;
 };
 
 /* input */
@@ -4607,8 +4948,11 @@ struct arcana_jails_jails_jail {
 		const char	*const	*v;
 	}			 plugin;
 	const char	*lne;
+	const struct arcana_jails_jails_jail_arcbird_bird	*arcbird_bird;
 	const struct arcana_jails_jails_jail_arcfw_firewall	*arcfw_firewall;
+	const struct arcana_jails_jails_jail_arcng_netgraph	*arcng_netgraph;
 	const struct arcana_jails_jails_jail_arcpkg_packages	*arcpkg_packages;
+	const struct arcana_jails_jails_jail_arcwg_wireguard	*arcwg_wireguard;
 };
 
 /* container */
@@ -7720,6 +8064,269 @@ struct arcana_events_event {
 	const struct arcana_events_event_crash	*crash;
 };
 
+/* list entry */
+struct arcana_bird_bird_configuration_file {
+	const char	*path;
+	const char	*text;
+	const char	*sha256;
+};
+
+/* container */
+struct arcana_bird_bird_configuration {
+	const char	*path;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_configuration_file	*v;
+	}			 file;
+};
+
+/* container */
+struct arcana_bird_bird_state_protocol_bgp {
+	const char	*state;
+	bool			 has_neighbor;
+	struct arcana_bird_bird_state_protocol_bgp_neighbor	 neighbor;
+	bool			 has_neighbor_as;
+	uint32_t	 neighbor_as;
+	bool			 has_local_as;
+	uint32_t	 local_as;
+	const char	*neighbor_id;
+	bool			 has_source;
+	struct arcana_bird_bird_state_protocol_bgp_source	 source;
+	const char	*session;
+	const char	*hold;
+	const char	*keepalive;
+	const char	*last_error;
+};
+
+/* container */
+struct arcana_bird_bird_state_protocol_rpki {
+	const char	*cache;
+	const char	*status;
+	const char	*serial;
+	const char	*last_update;
+};
+
+/* list entry */
+struct arcana_bird_bird_state_protocol_channel {
+	const char	*name;
+	const char	*state;
+	const char	*table;
+	const char	*input_filter;
+	const char	*output_filter;
+	const char	*routes;
+	bool			 has_imported;
+	uint64_t	 imported;
+	bool			 has_exported;
+	uint64_t	 exported;
+};
+
+/* list entry */
+struct arcana_bird_bird_state_protocol {
+	const char	*name;
+	const char	*type;
+	const char	*table;
+	const char	*state;
+	const char	*since;
+	const char	*info;
+	const char	*description;
+	const struct arcana_bird_bird_state_protocol_bgp	*bgp;
+	const struct arcana_bird_bird_state_protocol_rpki	*rpki;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_state_protocol_channel	*v;
+	}			 channel;
+};
+
+/* list entry */
+struct arcana_bird_bird_state_ospf_neighbor {
+	const char	*protocol;
+	const char	*router_id;
+	const char	*priority;
+	const char	*state;
+	const char	*dead_time;
+	const char	*interface;
+	const char	*address;
+};
+
+/* list entry */
+struct arcana_bird_bird_state_bfd_session {
+	const char	*protocol;
+	const char	*address;
+	const char	*interface;
+	const char	*state;
+	const char	*since;
+	const char	*interval;
+	const char	*timeout;
+};
+
+/* list entry */
+struct arcana_bird_bird_state_table {
+	const char	*name;
+	bool			 has_routes;
+	uint64_t	 routes;
+	bool			 has_networks;
+	uint64_t	 networks;
+};
+
+/* container */
+struct arcana_bird_bird_state {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 status;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_state_protocol	*v;
+	}			 protocol;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_state_ospf_neighbor	*v;
+	}			 ospf_neighbor;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_state_bfd_session	*v;
+	}			 bfd_session;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_state_table	*v;
+	}			 table;
+};
+
+/* input */
+struct arcana_bird_bird_routes_input {
+	const char	*filter;
+};
+
+/* list entry */
+struct arcana_bird_bird_routes_output_route_nexthop {
+	const char	*via;
+	const char	*interface;
+};
+
+/* list entry */
+struct arcana_bird_bird_routes_output_route {
+	const char	*table;
+	const char	*prefix;
+	const char	*type;
+	const char	*protocol;
+	const char	*from;
+	const char	*since;
+	bool			 has_primary;
+	bool		 primary;
+	const char	*preference;
+	const char	*info;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_routes_output_route_nexthop	*v;
+	}			 nexthop;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 attribute;
+};
+
+/* output */
+struct arcana_bird_bird_routes_output {
+	bool			 has_count;
+	uint64_t	 count;
+	const char	*message;
+	struct {
+		size_t		 n;
+		const struct arcana_bird_bird_routes_output_route	*v;
+	}			 route;
+};
+
+/* container */
+struct arcana_bird_bird {
+	const struct arcana_bird_bird_configuration	*configuration;
+	const struct arcana_bird_bird_state	*state;
+};
+
+/* data */
+struct arcana_bird {
+	const struct arcana_bird_bird	*bird;
+};
+
+/* list entry */
+struct arcana_wireguard_wireguard_interface_peer {
+	const char	*public_key;
+	bool			 has_preshared_key;
+	bool		 preshared_key;
+	const char	*endpoint;
+	struct {
+		size_t		 n;
+		const struct arcana_wireguard_wireguard_interface_peer_allowed_ip	 *v;
+	}			 allowed_ip;
+	const char	*latest_handshake;
+	bool			 has_received;
+	uint64_t	 received;
+	bool			 has_sent;
+	uint64_t	 sent;
+	bool			 has_keepalive;
+	uint16_t	 keepalive;
+};
+
+/* list entry */
+struct arcana_wireguard_wireguard_interface {
+	const char	*name;
+	bool			 has_private_key;
+	bool		 private_key;
+	const char	*public_key;
+	bool			 has_listen_port;
+	uint16_t	 listen_port;
+	struct {
+		size_t		 n;
+		const struct arcana_wireguard_wireguard_interface_peer	*v;
+	}			 peer;
+};
+
+/* container */
+struct arcana_wireguard_wireguard {
+	const char	*now;
+	struct {
+		size_t		 n;
+		const struct arcana_wireguard_wireguard_interface	*v;
+	}			 interface;
+};
+
+/* data */
+struct arcana_wireguard {
+	const struct arcana_wireguard_wireguard	*wireguard;
+};
+
+/* list entry */
+struct arcana_netgraph_netgraph_node_hook {
+	const char	*name;
+	const char	*peer;
+	const char	*peer_type;
+	const char	*peer_id;
+	const char	*peer_hook;
+};
+
+/* list entry */
+struct arcana_netgraph_netgraph_node {
+	const char	*id;
+	const char	*name;
+	const char	*type;
+	struct {
+		size_t		 n;
+		const struct arcana_netgraph_netgraph_node_hook	*v;
+	}			 hook;
+};
+
+/* container */
+struct arcana_netgraph_netgraph {
+	struct {
+		size_t		 n;
+		const struct arcana_netgraph_netgraph_node	*v;
+	}			 node;
+};
+
+/* data */
+struct arcana_netgraph {
+	const struct arcana_netgraph_netgraph	*netgraph;
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -8424,6 +9031,66 @@ int	arcana_jails_jails_jail_param_encode(const struct arcana_jails_jails_jail_pa
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_param_decode(const void *, size_t, struct arcana_jails_jails_jail_param *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_configuration_file_encode(const struct arcana_jails_jails_jail_arcbird_bird_configuration_file *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_configuration_file_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_configuration_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_configuration_encode(const struct arcana_jails_jails_jail_arcbird_bird_configuration *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_configuration_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_configuration *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_protocol_bgp *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_protocol_rpki *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_channel_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_protocol_channel *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_channel_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_protocol_channel *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_protocol *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_protocol_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_protocol *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_ospf_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_bfd_session_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_bfd_session *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_bfd_session_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_bfd_session *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_table_encode(const struct arcana_jails_jails_jail_arcbird_bird_state_table *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_table_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state_table *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_state_encode(const struct arcana_jails_jails_jail_arcbird_bird_state *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_state_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_routes_input_encode(const struct arcana_jails_jails_jail_arcbird_bird_routes_input *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_routes_input_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_routes_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop_encode(const struct arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_routes_output_route_nexthop *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_routes_output_route_encode(const struct arcana_jails_jails_jail_arcbird_bird_routes_output_route *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_routes_output_route_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_routes_output_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_routes_output_encode(const struct arcana_jails_jails_jail_arcbird_bird_routes_output *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_routes_output_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird_routes_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcbird_bird_encode(const struct arcana_jails_jails_jail_arcbird_bird *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcbird_bird_decode(const void *, size_t, struct arcana_jails_jails_jail_arcbird_bird *,
+	    cbl_yarena *, int, char *, size_t);
 int	arcana_jails_jails_jail_arcfw_firewall_kept_rule_encode(const struct arcana_jails_jails_jail_arcfw_firewall_kept_rule *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_arcfw_firewall_kept_rule_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall_kept_rule *,
@@ -8504,6 +9171,18 @@ int	arcana_jails_jails_jail_arcfw_firewall_encode(const struct arcana_jails_jail
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_arcfw_firewall_decode(const void *, size_t, struct arcana_jails_jails_jail_arcfw_firewall *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcng_netgraph_node_hook_encode(const struct arcana_jails_jails_jail_arcng_netgraph_node_hook *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcng_netgraph_node_hook_decode(const void *, size_t, struct arcana_jails_jails_jail_arcng_netgraph_node_hook *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcng_netgraph_node_encode(const struct arcana_jails_jails_jail_arcng_netgraph_node *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcng_netgraph_node_decode(const void *, size_t, struct arcana_jails_jails_jail_arcng_netgraph_node *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcng_netgraph_encode(const struct arcana_jails_jails_jail_arcng_netgraph *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcng_netgraph_decode(const void *, size_t, struct arcana_jails_jails_jail_arcng_netgraph *,
+	    cbl_yarena *, int, char *, size_t);
 int	arcana_jails_jails_jail_arcpkg_packages_package_encode(const struct arcana_jails_jails_jail_arcpkg_packages_package *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_arcpkg_packages_package_decode(const void *, size_t, struct arcana_jails_jails_jail_arcpkg_packages_package *,
@@ -8531,6 +9210,18 @@ int	arcana_jails_jails_jail_arcpkg_packages_upgrade_output_decode(const void *, 
 int	arcana_jails_jails_jail_arcpkg_packages_encode(const struct arcana_jails_jails_jail_arcpkg_packages *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_arcpkg_packages_decode(const void *, size_t, struct arcana_jails_jails_jail_arcpkg_packages *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcwg_wireguard_interface_peer_encode(const struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcwg_wireguard_interface_peer_decode(const void *, size_t, struct arcana_jails_jails_jail_arcwg_wireguard_interface_peer *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcwg_wireguard_interface_encode(const struct arcana_jails_jails_jail_arcwg_wireguard_interface *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcwg_wireguard_interface_decode(const void *, size_t, struct arcana_jails_jails_jail_arcwg_wireguard_interface *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcwg_wireguard_encode(const struct arcana_jails_jails_jail_arcwg_wireguard *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcwg_wireguard_decode(const void *, size_t, struct arcana_jails_jails_jail_arcwg_wireguard *,
 	    cbl_yarena *, int, char *, size_t);
 int	arcana_jails_jails_jail_start_input_encode(const struct arcana_jails_jails_jail_start_input *,
 	    struct cbl_ybuf *);
@@ -9572,6 +10263,90 @@ int	arcana_events_event_encode(const struct arcana_events_event *,
 	    struct cbl_ybuf *);
 int	arcana_events_event_decode(const void *, size_t, struct arcana_events_event *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_configuration_file_encode(const struct arcana_bird_bird_configuration_file *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_configuration_file_decode(const void *, size_t, struct arcana_bird_bird_configuration_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_configuration_encode(const struct arcana_bird_bird_configuration *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_configuration_decode(const void *, size_t, struct arcana_bird_bird_configuration *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_protocol_bgp_encode(const struct arcana_bird_bird_state_protocol_bgp *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_protocol_bgp_decode(const void *, size_t, struct arcana_bird_bird_state_protocol_bgp *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_protocol_rpki_encode(const struct arcana_bird_bird_state_protocol_rpki *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_protocol_rpki_decode(const void *, size_t, struct arcana_bird_bird_state_protocol_rpki *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_protocol_channel_encode(const struct arcana_bird_bird_state_protocol_channel *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_protocol_channel_decode(const void *, size_t, struct arcana_bird_bird_state_protocol_channel *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_protocol_encode(const struct arcana_bird_bird_state_protocol *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_protocol_decode(const void *, size_t, struct arcana_bird_bird_state_protocol *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_ospf_neighbor_encode(const struct arcana_bird_bird_state_ospf_neighbor *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_ospf_neighbor_decode(const void *, size_t, struct arcana_bird_bird_state_ospf_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_bfd_session_encode(const struct arcana_bird_bird_state_bfd_session *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_bfd_session_decode(const void *, size_t, struct arcana_bird_bird_state_bfd_session *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_table_encode(const struct arcana_bird_bird_state_table *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_table_decode(const void *, size_t, struct arcana_bird_bird_state_table *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_state_encode(const struct arcana_bird_bird_state *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_state_decode(const void *, size_t, struct arcana_bird_bird_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_routes_input_encode(const struct arcana_bird_bird_routes_input *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_routes_input_decode(const void *, size_t, struct arcana_bird_bird_routes_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_routes_output_route_nexthop_encode(const struct arcana_bird_bird_routes_output_route_nexthop *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_routes_output_route_nexthop_decode(const void *, size_t, struct arcana_bird_bird_routes_output_route_nexthop *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_routes_output_route_encode(const struct arcana_bird_bird_routes_output_route *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_routes_output_route_decode(const void *, size_t, struct arcana_bird_bird_routes_output_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_routes_output_encode(const struct arcana_bird_bird_routes_output *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_routes_output_decode(const void *, size_t, struct arcana_bird_bird_routes_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_bird_bird_encode(const struct arcana_bird_bird *,
+	    struct cbl_ybuf *);
+int	arcana_bird_bird_decode(const void *, size_t, struct arcana_bird_bird *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_wireguard_wireguard_interface_peer_encode(const struct arcana_wireguard_wireguard_interface_peer *,
+	    struct cbl_ybuf *);
+int	arcana_wireguard_wireguard_interface_peer_decode(const void *, size_t, struct arcana_wireguard_wireguard_interface_peer *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_wireguard_wireguard_interface_encode(const struct arcana_wireguard_wireguard_interface *,
+	    struct cbl_ybuf *);
+int	arcana_wireguard_wireguard_interface_decode(const void *, size_t, struct arcana_wireguard_wireguard_interface *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_wireguard_wireguard_encode(const struct arcana_wireguard_wireguard *,
+	    struct cbl_ybuf *);
+int	arcana_wireguard_wireguard_decode(const void *, size_t, struct arcana_wireguard_wireguard *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_netgraph_netgraph_node_hook_encode(const struct arcana_netgraph_netgraph_node_hook *,
+	    struct cbl_ybuf *);
+int	arcana_netgraph_netgraph_node_hook_decode(const void *, size_t, struct arcana_netgraph_netgraph_node_hook *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_netgraph_netgraph_node_encode(const struct arcana_netgraph_netgraph_node *,
+	    struct cbl_ybuf *);
+int	arcana_netgraph_netgraph_node_decode(const void *, size_t, struct arcana_netgraph_netgraph_node *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_netgraph_netgraph_encode(const struct arcana_netgraph_netgraph *,
+	    struct cbl_ybuf *);
+int	arcana_netgraph_netgraph_decode(const void *, size_t, struct arcana_netgraph_netgraph *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -9611,6 +10386,9 @@ int	ietf_logical_network_element_logical_network_elements_edit(cbl_req *, const 
 int	ietf_logical_network_element_bind_lne_name_failed_notification(const struct ietf_logical_network_element_bind_lne_name_failed *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_get(cbl_req *, struct arcana_jails *, cbl_yarena *);
+int	arcana_jails_jails_jail_arcbird_bird_routes_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_jails_jails_jail_arcbird_bird_routes_input *,
+	    struct arcana_jails_jails_jail_arcbird_bird_routes_output *, cbl_yarena *);
 int	arcana_jails_jails_jail_arcfw_firewall_trace_action(cbl_req *, const struct cbl_bytes *,
 	    const struct arcana_jails_jails_jail_arcfw_firewall_trace_input *,
 	    struct arcana_jails_jails_jail_arcfw_firewall_trace_output *, cbl_yarena *);
@@ -9738,5 +10516,13 @@ int	arcana_events_events_read_action(cbl_req *, const struct cbl_bytes *,
 	    struct arcana_events_events_read_output *, cbl_yarena *);
 int	arcana_events_event_notification(const struct arcana_events_event *,
 	    struct cbl_ybuf *);
+int	arcana_bird_bird_get(cbl_req *, struct arcana_bird *, cbl_yarena *);
+int	arcana_bird_bird_edit(cbl_req *, const struct arcana_bird *,
+	    const struct arcana_bird *);
+int	arcana_bird_bird_routes_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_bird_bird_routes_input *,
+	    struct arcana_bird_bird_routes_output *, cbl_yarena *);
+int	arcana_wireguard_wireguard_get(cbl_req *, struct arcana_wireguard *, cbl_yarena *);
+int	arcana_netgraph_netgraph_get(cbl_req *, struct arcana_netgraph *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */

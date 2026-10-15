@@ -1,0 +1,96 @@
+module arcana-netgraph {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-netgraph";
+  prefix arcng;
+
+  import arcana-jails {
+    prefix arcj;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "FreeBSD's netgraph(4) graph on a host, or in a vnet jail of it,
+     as ngctl(8) list -l tells of it: each node with its name, type and
+     id, and each of its hooks with the node and hook at the other end.
+     The graph is changed by jobs of kind netgraph (mkpeer, connect,
+     rmhook, shutdown, ngctl's own words).  The netgraph kind of the
+     network operation of arcana.yaml converted (Y-3).";
+
+  revision 2026-10-15 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.8.";
+  }
+
+  grouping netgraph {
+    description
+      "The graph.";
+    container netgraph {
+      config false;
+      description
+        "netgraph(4), where it runs.";
+      list node {
+        key "id";
+        description
+          "A node.";
+        leaf id {
+          type string;
+          description
+            "Its id, hexadecimal, as ngctl prints it.";
+        }
+        leaf name {
+          type string;
+          description
+            "Its name, when it has one.";
+        }
+        leaf type {
+          type string;
+          description
+            "Its type: ether, bridge, eiface, socket ...";
+        }
+        list hook {
+          key "name";
+          description
+            "Its hooks, each connected to a hook of another node.";
+          leaf name {
+            type string;
+            description
+              "The hook's name.";
+          }
+          leaf peer {
+            type string;
+            description
+              "The node at the other end, by name.";
+          }
+          leaf peer-type {
+            type string;
+            description
+              "Its type.";
+          }
+          leaf peer-id {
+            type string;
+            description
+              "Its id.";
+          }
+          leaf peer-hook {
+            type string;
+            description
+              "Its hook.";
+          }
+        }
+      }
+    }
+  }
+
+  uses netgraph;
+
+  augment "/arcj:jails/arcj:jail" {
+    description
+      "A vnet jail's own graph.";
+    uses netgraph;
+  }
+}

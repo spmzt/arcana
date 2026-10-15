@@ -1,0 +1,463 @@
+module arcana-bird {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-bird";
+  prefix arcbird;
+
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+  import arcana-jails {
+    prefix arcj;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The BIRD routing daemon (net/bird3) on a FreeBSD host, or in a
+     vnet jail of it, as birdc(8) tells of it: its status, each
+     protocol (show protocols all: a BGP neighbour's address and AS,
+     its session, its channels with their filters and how many routes
+     came and went), the OSPF neighbours, the BFD sessions, the routing
+     tables and what they hold, and the routes of a table (show route),
+     each with its next hops and, asked for, its attributes.  Its
+     configuration is the file bird.conf and those it includes, held
+     as text with the SHA-256 of it: a write names the SHA-256 it was
+     made from, bird parses the whole first (bird -p) and what it
+     refuses is not left in place, then the daemon is told to read it
+     (birdc configure); with safe the daemon takes it back by itself
+     unless confirmed.  The bird and bird-routes kinds of the network
+     operation and the bird-config operation of arcana.yaml converted
+     (Y-3).  What a protocol is in RFC 8349's terms is its
+     type: ietf-bgp's, ietf-ospf's, ietf-rip's, ietf-babel's,
+     ietf-isis's identities name them, here as BIRD names them.";
+
+  revision 2026-10-15 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.8.";
+  }
+
+  grouping bird {
+    description
+      "A BIRD daemon.";
+    container bird {
+      description
+        "BIRD, where it runs.";
+      container configuration {
+        description
+          "Its configuration files: the main one and those it
+           includes.";
+        leaf path {
+          type string;
+          description
+            "The main file: /usr/local/etc/bird.conf.";
+        }
+        list file {
+          key "path";
+          description
+            "Each file the configuration is made of.";
+          leaf path {
+            type string;
+            description
+              "Its path.";
+          }
+          leaf text {
+            type string;
+            description
+              "Its text, as it is.";
+          }
+          leaf sha256 {
+            type string {
+              length "64";
+              pattern '[0-9a-f]*';
+            }
+            config false;
+            description
+              "The SHA-256 of its text, which a write names so that no
+               other change is lost.";
+          }
+        }
+      }
+      container state {
+        config false;
+        description
+          "What birdc says.";
+        leaf-list status {
+          type string;
+          description
+            "The lines of show status.";
+        }
+        list protocol {
+          key "name";
+          description
+            "Each protocol, as show protocols all tells of it.";
+          leaf name {
+            type string;
+            description
+              "Its name.";
+          }
+          leaf type {
+            type string;
+            description
+              "What it is: BGP, OSPF, Static, Kernel, Device, Direct,
+               BFD, RPKI, Babel, RIP, Pipe.";
+          }
+          leaf table {
+            type string;
+            description
+              "The table it feeds.";
+          }
+          leaf state {
+            type string;
+            description
+              "up, down, start, flush.";
+          }
+          leaf since {
+            type string;
+            description
+              "Since when, as birdc prints it.";
+          }
+          leaf info {
+            type string;
+            description
+              "What birdc says beside: Established, Idle, ...";
+          }
+          leaf description {
+            type string;
+            description
+              "Its description, from the configuration.";
+          }
+          container bgp {
+            description
+              "A BGP protocol's own.";
+            leaf state {
+              type string;
+              description
+                "The session's state.";
+            }
+            leaf neighbor {
+              type inet:ip-address-no-zone;
+              description
+                "The neighbour's address.";
+            }
+            leaf neighbor-as {
+              type inet:as-number;
+              description
+                "Its AS.";
+            }
+            leaf local-as {
+              type inet:as-number;
+              description
+                "Our AS.";
+            }
+            leaf neighbor-id {
+              type string;
+              description
+                "Its router ID.";
+            }
+            leaf source {
+              type inet:ip-address-no-zone;
+              description
+                "Our address for the session.";
+            }
+            leaf session {
+              type string;
+              description
+                "external, internal, multihop ...";
+            }
+            leaf hold {
+              type string;
+              description
+                "The hold timer, as printed (remaining/configured).";
+            }
+            leaf keepalive {
+              type string;
+              description
+                "The keepalive timer, as printed.";
+            }
+            leaf last-error {
+              type string;
+              description
+                "The last error.";
+            }
+          }
+          container rpki {
+            description
+              "An RPKI protocol's own.";
+            leaf cache {
+              type string;
+              description
+                "The cache server.";
+            }
+            leaf status {
+              type string;
+              description
+                "Its status.";
+            }
+            leaf serial {
+              type string;
+              description
+                "The serial number.";
+            }
+            leaf last-update {
+              type string;
+              description
+                "The last update.";
+            }
+          }
+          list channel {
+            key "name";
+            description
+              "Its channels: ipv4, ipv6, ...";
+            leaf name {
+              type string;
+              description
+                "The channel.";
+            }
+            leaf state {
+              type string;
+              description
+                "UP, DOWN, FLUSHING.";
+            }
+            leaf table {
+              type string;
+              description
+                "The table it feeds.";
+            }
+            leaf input-filter {
+              type string;
+              description
+                "What it takes in.";
+            }
+            leaf output-filter {
+              type string;
+              description
+                "What it gives out.";
+            }
+            leaf routes {
+              type string;
+              description
+                "As printed: imported, exported, preferred.";
+            }
+            leaf imported {
+              type uint64;
+              description
+                "Routes that came in.";
+            }
+            leaf exported {
+              type uint64;
+              description
+                "Routes that went out.";
+            }
+          }
+        }
+        list ospf-neighbor {
+          description
+            "The OSPF neighbours (show ospf neighbors).";
+          leaf protocol {
+            type string;
+            description
+              "The OSPF protocol.";
+          }
+          leaf router-id {
+            type string;
+            description
+              "The neighbour's router ID.";
+          }
+          leaf priority {
+            type string;
+            description
+              "Its priority.";
+          }
+          leaf state {
+            type string;
+            description
+              "Full/DR, 2-Way/Other ...";
+          }
+          leaf dead-time {
+            type string;
+            description
+              "Its dead timer.";
+          }
+          leaf interface {
+            type string;
+            description
+              "The interface it is on.";
+          }
+          leaf address {
+            type string;
+            description
+              "Its address.";
+          }
+        }
+        list bfd-session {
+          description
+            "The BFD sessions (show bfd sessions).";
+          leaf protocol {
+            type string;
+            description
+              "The BFD protocol.";
+          }
+          leaf address {
+            type string;
+            description
+              "The far end.";
+          }
+          leaf interface {
+            type string;
+            description
+              "The interface.";
+          }
+          leaf state {
+            type string;
+            description
+              "Up, Down, Init, AdminDown.";
+          }
+          leaf since {
+            type string;
+            description
+              "Since when.";
+          }
+          leaf interval {
+            type string;
+            description
+              "The transmit interval.";
+          }
+          leaf timeout {
+            type string;
+            description
+              "The detection time.";
+          }
+        }
+        list table {
+          key "name";
+          description
+            "The routing tables, and what each holds.";
+          leaf name {
+            type string;
+            description
+              "Its name: master4, master6, ...";
+          }
+          leaf routes {
+            type uint64;
+            description
+              "Routes in it.";
+          }
+          leaf networks {
+            type uint64;
+            description
+              "Networks they cover.";
+          }
+        }
+      }
+      action routes {
+        description
+          "Routes of BIRD's tables (show route), as asked for in
+           birdc's own words.";
+        input {
+          leaf filter {
+            type string;
+            description
+              "for and an address or a prefix; protocol or export and
+               a protocol's name; table and a table's name; all for
+               the attributes.";
+          }
+        }
+        output {
+          leaf count {
+            type uint64;
+            description
+              "How many there are; more than fit are counted, not
+               sent.";
+          }
+          leaf message {
+            type string;
+            description
+              "What birdc said instead, when it did.";
+          }
+          list route {
+            description
+              "Each route.";
+            leaf table {
+              type string;
+              description
+                "Its table.";
+            }
+            leaf prefix {
+              type string;
+              description
+                "Its prefix.";
+            }
+            leaf type {
+              type string;
+              description
+                "unicast, blackhole, unreachable, prohibit.";
+            }
+            leaf protocol {
+              type string;
+              description
+                "The protocol it came by.";
+            }
+            leaf from {
+              type string;
+              description
+                "Whom it came from.";
+            }
+            leaf since {
+              type string;
+              description
+                "Since when.";
+            }
+            leaf primary {
+              type boolean;
+              description
+                "The best for its prefix.";
+            }
+            leaf preference {
+              type string;
+              description
+                "Its preference.";
+            }
+            leaf info {
+              type string;
+              description
+                "What birdc says in brackets: AS path, metric ...";
+            }
+            list nexthop {
+              description
+                "Its next hops.";
+              leaf via {
+                type string;
+                description
+                  "The next hop's address.";
+              }
+              leaf interface {
+                type string;
+                description
+                  "By which interface.";
+              }
+            }
+            leaf-list attribute {
+              type string;
+              description
+                "Its attributes, each as printed (with all).";
+            }
+          }
+        }
+      }
+    }
+  }
+
+  uses bird;
+
+  augment "/arcj:jails/arcj:jail" {
+    description
+      "A vnet jail's own BIRD.";
+    uses bird;
+  }
+}
