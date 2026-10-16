@@ -741,6 +741,16 @@ packages_body()
 	    "$JGC" -c "$SOCK" pkg-upgrade
 	atf_check -s exit:1 -o ignore -e match:"'a;b' is not a package name" \
 	    "$JGC" -c "$SOCK" pkg-upgrade 'a;b'
+	# Of every running jail, by the agent: none runs here, said so.
+	atf_check -s exit:1 -o ignore -e match:'no jail is running' \
+	    "$JGC" -c "$SOCK" pkg-upgrade -J
+	atf_check -o match:'1 queued +pkg upgrade in every jail' \
+	    "$JGC" -q -c "$SOCK" pkg-upgrade -J
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'queued\|running' || break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'no jail is running' "$JGC" -c "$SOCK" job 1
 	# The installed, from the host's own database: no repository.
 	atf_check -o match:'^aria2 +1\.37\.0_1 +by hand +5242880 Download utility' \
 	    -o match:'^pimd +3\.1\.0 +automatic' -o match:'fake-pkg query' \
@@ -2830,6 +2840,22 @@ EOS
 	test ! -f "$(dirname "$f")/sdwan-icap-sw1.conf" || atf_fail "the c-icap file stayed"
 	kill -0 "$ipid" 2>/dev/null && atf_fail "c-icap still runs"
 	atf_check -o match:'"proxy":\[\]' "$JGC" -c "$SOCK" sdwan
+	# The Security section's own (group security, named sec-): kept
+	# apart, neither list stopping the other's; its forms told back.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\n","deny":""}]}'
+	atf_check -s exit:1 -e match:'named sec-' -o ignore "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"group":"security","instances":[{"name":"web","fib":0,"mode":"sni","conf":"pid_filename @PID@\n","deny":""}]}'
+	atf_check -s exit:1 -e match:'named sec-' -o ignore "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sec-web","fib":0,"mode":"sni","conf":"pid_filename @PID@\n","deny":""}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"group":"security","instances":[{"name":"sec-web","fib":0,"mode":"sni","conf":"pid_filename @PID@\n","deny":"","spec":{"name":"sec-web","listen":["10.1.0.1"]}}]}'
+	atf_check -o match:'"name":"sw1",[^]]*"group":"sdwan"' -o match:'"name":"sec-web",[^]]*"group":"security"' \
+	    -o match:'"security_proxy":\[\{"name":"sec-web","listen":\["10.1.0.1"\]\}\]' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"instances":[]}'
+	atf_check -o match:'"proxy":\[\{"name":"sec-web"' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"group":"security","instances":[]}'
+	atf_check -o match:'"proxy":\[\]' -o match:'"security_proxy":\[\]' "$JGC" -c "$SOCK" sdwan
 	# Intrusion detection (SASE-4): Suricata of each instance checked,
 	# started on its interfaces, its alerts read into events and the
 	# read; the same files again leave it be; gone with the instance.
@@ -2883,7 +2909,16 @@ EOS
 	sleep 2
 	atf_check -o match:'"alerts_seen":1,' "$JGC" -c "$SOCK" sdwan
 	atf_check -o inline:'4\n' sh -c "grep -c '\"event_type\":\"alert\"' '$(dirname "$f")/sdwan-ids-sw1.d/eve.json'"
+	# The Security section's Suricata beside SD-WAN's: each list its
+	# own, what was read of the other's kept.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids \
+	    '{"group":"security","instances":[{"name":"sec-lan","interfaces":["wg5"],"conf":"default-log-dir: @LOGDIR@\nrule-files:\n  - @RULES@\n","spec":{"name":"sec-lan"}}]}'
+	atf_check -o match:'"ids":\[\{"name":"sw1",.*"alerts_seen":1,.*\{"name":"sec-lan",' \
+	    -o match:'"security_ids":\[\{"name":"sec-lan"\}\]' "$JGC" -c "$SOCK" sdwan
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
+	atf_check -o match:'"ids":\[\{"name":"sec-lan"' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"group":"security","instances":[]}'
+	atf_check -o match:'"ids":\[\]' "$JGC" -c "$SOCK" sdwan
 }
 sdwan_cleanup()
 {
@@ -3246,6 +3281,15 @@ EOS
 	atf_check -o match:'done +kldunload sctp \(kept\)' \
 	    -o match:'fake-kldunload sctp' "$JGC" -p -c "$SOCK" kmod unload sctp
 	atf_check -o match:'^kld_list="if_bridge"$' cat rc.conf
+	# Kept at boot, and taken out, the kernel as it is: no kldload.
+	: > kld.log
+	atf_check -o match:'done +sctp into kld_list$' \
+	    "$JGC" -c "$SOCK" kmod keep sctp
+	atf_check -o match:'^kld_list="if_bridge sctp"$' cat rc.conf
+	atf_check -o match:'done +sctp out of kld_list$' \
+	    "$JGC" -c "$SOCK" kmod forget sctp
+	atf_check -o match:'^kld_list="if_bridge"$' cat rc.conf
+	atf_check -o empty cat kld.log
 	atf_check -s exit:1 -o match:'Device busy' \
 	    "$JGC" -c "$SOCK" kmod unload zfs
 	atf_check -s exit:1 -o match:'No such file' \
@@ -5145,6 +5189,22 @@ EOT
 	    atf_fail "alice's key"
 	atf_check -s exit:1 -o match:'has that key already' \
 	    "$JGC" -c "$SOCK" sshd authorize alice alice_key.pub
+	# Its options changed in place, the key and its comment as they
+	# were; options that make no key sshd reads are refused.
+	atf_check -o match:'done +sshd options of alice$' \
+	    "$JGC" -c "$SOCK" sshd options alice "$alicefp" \
+	    'principals="alice,admin",no-pty'
+	atf_check -o inline:"principals=\"alice,admin\",no-pty $(cut -d' ' -f1-2 alice_key.pub) alice@lab\n" \
+	    cat $R/home/alice/.ssh/authorized_keys
+	atf_check -o save:list "$JGC" -c "$SOCK" sshd
+	grep -qF '"options":"principals=\"alice,admin\",no-pty"' list ||
+	    atf_fail "the options listed"
+	atf_check -s exit:1 -o match:'no key OpenSSH reads' \
+	    "$JGC" -c "$SOCK" sshd options alice "$alicefp" 'from="10.0.0.0/8'
+	atf_check -o match:'done +sshd options of alice$' \
+	    "$JGC" -c "$SOCK" sshd options alice "$alicefp"
+	atf_check -o inline:"$(cut -d' ' -f1-2 alice_key.pub) alice@lab\n" \
+	    cat $R/home/alice/.ssh/authorized_keys
 	atf_check -s exit:1 -o match:'daemon is no user who signs in here' \
 	    "$JGC" -c "$SOCK" sshd authorize daemon alice_key.pub
 	atf_check -o match:'done +sshd unauthorize of alice$' \
@@ -5184,7 +5244,7 @@ EOT
 		sleep 0.1
 	done
 	atf_check -o match:'not confirmed within 2 s: undone' -s exit:1 \
-	    "$JGC" -c "$SOCK" job 13
+	    "$JGC" -c "$SOCK" job 16
 	atf_check -o file:before cat $R/etc/ssh/sshd_config
 	# What passwd and sshd say is the host's or a jail's, not the
 	# agent's to trust: a long home in a keys file of %h four times
@@ -5647,7 +5707,7 @@ yang_troubleshoot_body()
 	local y="$(atf_get_srcdir)/yts"
 
 	cat > path.json <<'EOT'
-{"host":"labvm","addresses":[{"address":"10.1.0.1","prefixlen":24,"interface":"epair2b","fib":0,"up":true,"loopback":false},{"address":"10.3.0.1","prefixlen":24,"interface":"epair3a","fib":0,"up":true,"loopback":false}],"src":{"local":false,"connected":"epair2b"},"dst":{"local":false,"connected":"epair3a"},"forwarding":true,"ingress":{"interface":"epair2b","how":"by the route back to the source"},"route":{"to":"10.3.0.2","destination":"10.3.0.0","prefixlen":24,"gateway":"link#11","fib":"0","interface":"epair3a","flags":"U","metric":1,"weight":1},"neighbor":{"address":"10.3.0.2","state":"reachable"},"return":{"fib":0,"interface":"epair2b","gateway":"link#10","symmetric":true},"firewall":{"on":true,"in":{"verdict":"allow","rule":600,"text":"00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state :default","keep_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"check-state: no state of it yet, on"},{"rule":600,"text":"00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state :default","how":"decides"}],"uncertain":[{"text":"00550 deny ip from any to any uid 1001","because":"uid"}]},"out":{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"decides: its state lets it by"}]},"reply_in":{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"decides: its state lets it by"}]},"reply_out":{"verdict":"deny","rule":800,"text":"00800 deny tcp from any 22 to any","walk":[{"rule":800,"text":"00800 deny tcp from any 22 to any","how":"decides"}]}},"fib":0,"findings":[{"severity":"bad","what":"The firewall drops the reply going out by epair2b: rule 800 (00800 deny tcp from any 22 to any)"},{"severity":"info","what":"It goes out by epair3a"}]}
+{"host":"labvm","addresses":[{"address":"10.1.0.1","prefixlen":24,"interface":"epair2b","fib":0,"up":true,"loopback":false},{"address":"10.3.0.1","prefixlen":24,"interface":"epair3a","fib":0,"up":true,"loopback":false}],"src":{"local":false,"connected":"epair2b"},"dst":{"local":false,"connected":"epair3a"},"forwarding":true,"ingress":{"interface":"epair2b","how":"by the route back to the source"},"route":{"to":"10.3.0.2","destination":"10.3.0.0","prefixlen":24,"gateway":"link#11","fib":"0","interface":"epair3a","flags":"U","metric":1,"weight":1},"neighbor":{"address":"10.3.0.2","state":"reachable"},"return":{"fib":0,"interface":"epair2b","gateway":"link#10","symmetric":true},"firewall":{"on":true,"in":{"verdict":"allow","rule":600,"text":"00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state :default","keep_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"check-state :default: no state of it yet, on"},{"rule":600,"text":"00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state :default","how":"decides"}],"uncertain":[{"text":"00550 deny ip from any to any uid 1001","because":"uid"}]},"out":{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"decides: its state lets it by"}]},"reply_in":{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"decides: its state lets it by"}]},"reply_out":{"verdict":"deny","rule":800,"text":"00800 deny tcp from any 22 to any","walk":[{"rule":800,"text":"00800 deny tcp from any 22 to any","how":"decides"}]}},"fib":0,"findings":[{"severity":"bad","what":"The firewall drops the reply going out by epair2b: rule 800 (00800 deny tcp from any 22 to any)"},{"severity":"info","what":"It goes out by epair3a"}]}
 EOT
 	cat > want <<'EOT'
 host labvm forwarding=yes fib=0 delivered=-
@@ -5661,7 +5721,7 @@ neighbor 10.3.0.2 reachable
 return fib=0 epair2b via link#10 symmetric=yes
 firewall on=yes
 in allow rule=600 by-state=- keep=yes setfib=-1 fwd=-
-  590 check-state: no state of it yet, on
+  590 check-state :default: no state of it yet, on
   600 decides
   ? 00550 deny ip from any to any uid 1001: uid
 out allow rule=590 by-state=yes keep=- setfib=-1 fwd=-
@@ -5672,7 +5732,7 @@ reply-out deny rule=800 by-state=- keep=- setfib=-1 fwd=-
   800 decides
 finding bad The firewall drops the reply going out by epair2b: rule 800 (00800 deny tcp from any 22 to any)
 finding info It goes out by epair3a
-yang-cbor 960 bytes, the same back
+yang-cbor 969 bytes, the same back
 EOT
 	atf_check -o file:want "$y" path path.json
 	cat > tr.json <<'EOT'
@@ -6118,7 +6178,7 @@ EOF
 	    rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 \
 	    dport=22 syn rpf reach
 	# The rules met, in order, with what each did.
-	atf_check -o inline:'allow 800 keep-state\n  400 check-state: no state of it yet, on\n  500 met, on\n  800 decides\n' \
+	atf_check -o inline:'allow 800 keep-state\n  400 check-state :default: no state of it yet, on\n  500 met, on\n  800 decides\n' \
 	    "$f" list tables $l in rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 \
 	    proto=tcp sport=40000 dport=22 syn rpf reach walk
 	# call and return as the kernel's O_CALLRETURN: into the block
@@ -6143,10 +6203,10 @@ EOT
 	atf_check -o inline:'deny 9100\n  20 call 9100\n  9100 decides\n' "$f" chain tables $l \
 	    in rcv=em0 src=10.0.0.5 dst=255.255.255.255 proto=udp sport=1900 \
 	    dport=1900 rpf reach walk
-	atf_check -o inline:'allow 9200\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state: no state of it yet, on\n  300 call 9200\n  9200 decides\n' \
+	atf_check -o inline:'allow 9200\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state :default: no state of it yet, on\n  300 call 9200\n  9200 decides\n' \
 	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
 	    proto=tcp sport=4000 dport=22 syn rpf reach walk
-	atf_check -o inline:'deny 999\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state: no state of it yet, on\n  300 call 9200\n  9299 return, after 300\n  999 decides\n' \
+	atf_check -o inline:'deny 999\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state :default: no state of it yet, on\n  300 call 9200\n  9299 return, after 300\n  999 decides\n' \
 	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
 	    proto=tcp sport=4000 dport=80 syn rpf reach walk
 	# As edge-a's ruleset writes them: a return of no addresses
@@ -6179,6 +6239,31 @@ EOT
 	atf_check -o inline:'deny 9252\n  20 call 9100\n  9199 return, after 20\n  30 call 9200\n  9252 decides\n' \
 	    "$f" edge-a tables $l in rcv=em0 src=203.0.113.9 dst=10.0.0.10 \
 	    proto=tcp sport=40000 dport=443 rpf reach walk
+	# record-state with defer-immediate-action, as edge-a's outgoing
+	# rules: the state made, the packet on, and a check-state of the
+	# same flow decides by it (of another flow, not).
+	{
+		echo '00001 call 9000 ip6 from any to any'
+		echo '00005 skipto 500 ip from any to any out'
+		echo '00200 check-state :default'
+		echo '00510 call 5000 ip6 from me6 to any out'
+		echo '00700 check-state :default'
+		echo '00999 deny log logamount 500 ip from any to any'
+		echo '05012 allow ip6 from me6 to any out record-state :default defer-immediate-action'
+		echo '05999 return next-rulenum proto ip'
+		echo '09000 allow icmp6 from fe80::/10 to fe80::/10'
+		echo '09099 return next-rulenum proto ip'
+		echo '65535 deny ip from any to any'
+	} > defer
+	atf_check -o inline:'allow 700 by-state keep-state\n  1 call 9000\n  9099 return, after 1\n  5 skipto 500\n  510 call 5000\n  5012 makes a state :default, its allow deferred: on\n  5999 return, after 510\n  700 decides: the state 5012 made (:default)\n' \
+	    "$f" defer tables local=2001:db8::10@em0 out xmit=wg0 \
+	    src=2001:db8::10 dst=2001:db8:99::1 proto=tcp sport=40000 \
+	    dport=4310 syn reach walk
+	sed 's/:default defer/:other defer/' defer > defer2
+	atf_check -o match:'^deny 999' -o match:'700 check-state :default: no state of it yet, on' \
+	    "$f" defer2 tables local=2001:db8::10@em0 out xmit=wg0 \
+	    src=2001:db8::10 dst=2001:db8:99::1 proto=tcp sport=40000 \
+	    dport=4310 syn reach walk
 	# A reply with its state: check-state decides.
 	atf_check -o inline:'allow 200 by-state\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 decides: its state lets it by\n' \
 	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \

@@ -42,6 +42,9 @@ static const char *icon_flows = TREE_ICON("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 "
     "0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9");
 static const char *icon_sdwan = TREE_ICON("M5 7a2 2 0 1 0 0-.01M19 7a2 2 0 "
     "1 0 0-.01M12 19a2 2 0 1 0 0-.01M7 7h10M6 9l5 8M18 9l-5 8");
+/* A shield: the Security page. */
+static const char *icon_shield = TREE_ICON("M12 3l7 3v5c0 4.5-3 8.2-7 "
+    "10-4-1.8-7-5.5-7-10V6l7-3zM9 12l2 2 4-4");
 /* A magnifier on a path: a packet looked for along its way. */
 static const char *icon_trouble = TREE_ICON("M3 18h5l3-6h4M11 11a4 4 0 1 0 "
     "8 0 4 4 0 1 0-8 0M18 14l3 3");
@@ -74,6 +77,7 @@ static void	actions(struct html *, struct server *, const ucl_object_t *,
 static void	dock(struct html *);
 static void	modal(struct html *);
 static void	toasts(struct html *);
+static void	safe_hosts(struct html *);
 static void	token_qr(struct html *, const char *);
 static void	auth_screen(struct html *);
 static void	fmt_kb(char *, size_t, int64_t);
@@ -218,12 +222,15 @@ topbar(struct html *h)
 	if (app.node == NODE_NETWORK || app.node == NODE_FLEET || app.node ==
 	    NODE_API || app.node == NODE_USAGE || app.node == NODE_WORKFLOWS ||
 	    app.node == NODE_SDWAN || app.node == NODE_SETTINGS || app.node ==
-	    NODE_DEVICES || app.node == NODE_TROUBLE)
+	    NODE_DEVICES || app.node == NODE_TROUBLE || app.node ==
+	    NODE_SECURITY)
 		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
 		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
 		    app.node == NODE_USAGE ? "Utilization" : app.node ==
 		    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ?
-		    "SD-WAN" : app.node == NODE_TROUBLE ? "Troubleshoot" : app.node == NODE_SETTINGS ? "Settings" : app.node ==
+		    "SD-WAN" : app.node == NODE_TROUBLE ? "Troubleshoot" : app.node ==
+		    NODE_SECURITY ? "Security" : app.node == NODE_SETTINGS ?
+		    "Settings" : app.node ==
 		    NODE_DEVICES ? "Devices" :
 		    "All hosts");
 	else if (s != NULL) {
@@ -359,6 +366,7 @@ rail(struct html *h)
 	    "API" : app.node == NODE_USAGE ? "Utilization" : app.node ==
 	    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ? "SD-WAN" :
 	    app.node == NODE_TROUBLE ? "Troubleshoot" :
+	    app.node == NODE_SECURITY ? "Security" :
 	    app.node == NODE_SETTINGS ? "Settings" : app.node == NODE_DEVICES ?
 	    "Devices" : app.node == NODE_FLEET || s == NULL ? "All hosts" :
 	    s->name);
@@ -389,6 +397,9 @@ rail(struct html *h)
 	    "<span class=\"name\">Workflows</span></li><li class=\"titem fleet "
 	    "sdnode%s\" data-act=\"select-sdwan\"><span class=\"twig\">%s"
 	    "</span><span class=\"name\">SD-WAN</span></li><li class=\"titem "
+	    "fleet secnode%s\" data-act=\"select-security\"><span class=\""
+	    "twig\">%s</span><span class=\"name\">Security</span></li>"
+	    "<li class=\"titem "
 	    "fleet tsnode%s\" data-act=\"select-trouble\"><span class=\"twig\">"
 	    "%s</span><span class=\"name\">Troubleshoot</span></li>", app.node ==
 	    NODE_FLEET ? " selected" : "", icon_hosts, app.nservers,
@@ -397,6 +408,7 @@ rail(struct html *h)
 	    app.node == NODE_USAGE ? " selected" : "", icon_usage,
 	    app.node == NODE_WORKFLOWS ? " selected" : "", icon_flows,
 	    app.node == NODE_SDWAN ? " selected" : "", icon_sdwan,
+	    app.node == NODE_SECURITY ? " selected" : "", icon_shield,
 	    app.node == NODE_TROUBLE ? " selected" : "", icon_trouble);
 	/* At the foot of the side bar: the console's own settings. */
 	h_fmt(h, "</ul><ul class=\"tree rail-foot\"><li class=\"titem fleet "
@@ -799,6 +811,11 @@ stage(struct html *h)
 	}
 	if (app.node == NODE_TROUBLE) {
 		view_trouble(h);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.node == NODE_SECURITY) {
+		view_secpage(h);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -1531,6 +1548,109 @@ set_keys(struct html *h)
 	    "</button></div></form>", app.modal_busy ? " disabled" : "");
 }
 
+/*
+ * The rollback timer each host has, by where it comes from: its own
+ * (the host's System tab), the one above for every host, or its agent's
+ * own (-w), which the agent says (an older one does not).  The timer
+ * goes with each change, so what is shown is what the next one gets.
+ */
+static const struct tcol	safecols[] = {
+	{ "Host", "name", false }, { "Its own", "own", true },
+	{ "Its agent's own", "agent", true }, { "The next change waits",
+	    "wait", true }, { "Because", NULL, false },
+};
+
+static void
+safe_hosts(struct html *h)
+{
+	const ucl_object_t	**rows, *k, *r;
+	ucl_object_iter_t	  it;
+	ucl_object_t		 *arr, *o;
+	const char		 *g;
+	int			  i, all, own, agent, wait;
+
+	all = 0;
+	it = NULL;
+	while ((k = ucl_object_iterate(jget(app.settings, "settings"), &it,
+	    true)) != NULL)
+		if (jstr(k, "key") != NULL && strcmp(jstr(k, "key"),
+		    "safe_wait") == 0 && (g = jstr(k, "value")) != NULL)
+			all = atoi(g);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < app.nservers; i++) {
+		const struct server	*s = &app.servers[i];
+
+		own = s->safe_wait;
+		agent = (int)jint(s->list, "host.safe_wait", 0);
+		wait = own > 0 ? own : all > 0 ? all : agent;
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(s->name), "name",
+		    0, false);
+		ucl_object_insert_key(o, ucl_object_fromstring(s->id), "id", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromint(own), "own", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromint(agent), "agent", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromint(wait), "wait", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(own > 0 ?
+		    "its own" : all > 0 ? "every host's" : agent > 0 ?
+		    "its agent's" : "unknown"), "why", 0, false);
+		ucl_array_append(arr, o);
+	}
+	h_raw(h, "<h3 class=\"set-sub\">Rollback timer, host by host</h3><p "
+	    "class=\"dim\">What each host's next change made in safe mode "
+	    "waits for the console before the host undoes it. A host's own "
+	    "timer (its System tab) comes first; the one above is for every "
+	    "other host.</p>");
+	if (app.nservers == 0) {
+		ucl_object_unref(arr);
+		h_raw(h, "<p class=\"dim safehosts-none\">No host yet.</p>");
+		return;
+	}
+	h_raw(h, "<table class=\"net safehosts\">");
+	tbl_head(h, "safehosts", safecols, 5, 1);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("safehosts", arr, safecols, 5, NULL);
+	for (i = 0; (r = rows[i]) != NULL; i++) {
+		h_raw(h, "<tr><td><b>");
+		h_txt(h, jstr(r, "name"));
+		h_raw(h, "</b></td><td>");
+		if (jint(r, "own", 0) > 0)
+			h_fmt(h, "%lld s", (long long)jint(r, "own", 0));
+		else
+			h_raw(h, "<span class=\"dim\">none</span>");
+		h_raw(h, "</td><td>");
+		if (jint(r, "agent", 0) > 0)
+			h_fmt(h, "%lld s", (long long)jint(r, "agent", 0));
+		else
+			h_raw(h, "<span class=\"dim\" title=\"An agent before "
+			    "0.131 does not say it: 60 s unless its -w says\">"
+			    "not said</span>");
+		h_raw(h, "</td><td>");
+		if (jint(r, "wait", 0) > 0)
+			h_fmt(h, "<b>%lld s</b>", (long long)jint(r, "wait", 0));
+		else
+			h_raw(h, "<span class=\"dim\">its agent's own</span>");
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(r, "why"));
+		h_raw(h, "</td><td class=\"acts\">");
+		/* Its own set, and one for every host: its own let go. */
+		if (jint(r, "own", 0) > 0 && all > 0) {
+			h_raw(h, "<button class=\"ghost small\" "
+			    "data-act=\"safe-follow\"");
+			h_attr(h, "data-arg", jstr(r, "id"));
+			h_fmt(h, " title=\"Its own timer let go: it waits %d s, as "
+			    "every host\">Use every host's</button>", all);
+		}
+		h_raw(h, "</td></tr>");
+	}
+	free(rows);
+	ucl_object_unref(arr);
+	h_raw(h, "</tbody></table>");
+}
+
 static void
 set_console(struct html *h)
 {
@@ -1548,6 +1668,7 @@ set_console(struct html *h)
 	settings_fields(h, false);
 	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
 	    "</button></div></form>", app.modal_busy ? " disabled" : "");
+	safe_hosts(h);
 }
 
 /* The editable settings, the mail's or the others, as fields. */
@@ -1561,8 +1682,50 @@ settings_fields(struct html *h, bool mail)
 	while ((k = ucl_object_iterate(jget(app.settings, "settings"), &it,
 	    true)) != NULL) {
 		if (!jbool(k, "editable") || jstr(k, "key") == NULL ||
-		    (strncmp(jstr(k, "key"), "mail_", 5) == 0) != mail)
+		    (strncmp(jstr(k, "key"), "mail_", 5) == 0 || strncmp(jstr(k,
+		    "key"), "smtp_", 5) == 0) != mail)
 			continue;
+		/* The ways mail goes, and the relay's security: chosen. */
+		if (strcmp(jstr(k, "key"), "mail_via") == 0 || strcmp(jstr(k,
+		    "key"), "smtp_security") == 0) {
+			static const char *const via[] = { "sendmail", "smtp",
+			    NULL }, *const sec[] = { "starttls", "tls", "none",
+			    NULL };
+			const char *const *o = jstr(k, "key")[0] == 'm' ? via :
+			    sec;
+
+			h_raw(h, "<label>");
+			h_txt(h, jstr(k, "label"));
+			h_raw(h, "<select");
+			h_attr(h, "name", jstr(k, "key"));
+			h_raw(h, ">");
+			for (; *o != NULL; o++) {
+				h_raw(h, "<option");
+				h_attr(h, "value", *o);
+				h_fmt(h, "%s>%s</option>", strcmp(jstr(k, "value") !=
+				    NULL ? jstr(k, "value") : "", *o) == 0 ?
+				    " selected" : "", *o);
+			}
+			h_raw(h, "</select><small>");
+			h_txt(h, jstr(k, "help"));
+			h_raw(h, "</small></label>");
+			continue;
+		}
+		/* A secret: never shown, said to be set, typed to change. */
+		if (jstr(k, "type") != NULL && strcmp(jstr(k, "type"),
+		    "secret") == 0) {
+			h_raw(h, "<label>");
+			h_txt(h, jstr(k, "label"));
+			h_raw(h, "<input type=\"password\" autocomplete=\""
+			    "new-password\"");
+			h_attr(h, "name", jstr(k, "key"));
+			h_attr(h, "placeholder", jbool(k, "set") ? "set: type to "
+			    "change it" : "none");
+			h_raw(h, "><small>");
+			h_txt(h, jstr(k, "help"));
+			h_raw(h, "</small></label>");
+			continue;
+		}
 		if (jstr(k, "type") != NULL && strcmp(jstr(k, "type"),
 		    "bool") == 0) {
 			h_raw(h, "<fieldset class=\"toggles\"><label class=\""
@@ -1970,6 +2133,7 @@ modal(struct html *h)
 	case MODAL_SSH_SET:
 	case MODAL_SSH_SIGN:
 	case MODAL_SSH_KEY:
+	case MODAL_SSH_OPTS:
 		if (!ssh_modal(h))
 			return;
 		break;
@@ -2354,6 +2518,10 @@ modal(struct html *h)
 			break;
 		case MODAL_SSH_KEY:
 			h_raw(h, "<button class=\"primary\">Add the key</button>");
+			break;
+		case MODAL_SSH_OPTS:
+			h_raw(h, "<button class=\"primary\">Save its options"
+			    "</button>");
 			break;
 		case MODAL_FW_QOS:
 			h_raw(h, "<button class=\"primary\">Configure</button>");

@@ -2286,7 +2286,8 @@ arc_pkg_upgrade_doit(cbl_req *req, const struct arc_pkg_upgrade_req *rq,
 	const char	**v;
 	size_t		 i;
 
-	if (rq->jail != NULL && !valid_jail(rq->jail))
+	if (rq->jail != NULL && strcmp(rq->jail, "*") != 0 &&
+	    !valid_jail(rq->jail))
 		return (reject(req, "invalid jail name"));
 	for (i = 0; i < rq->names.n; i++)
 		if (rq->names.v[i] == NULL)
@@ -2441,8 +2442,10 @@ check_spec(const struct arc_job_spec *sp)
 		if (sp->jail != NULL && sp->jail[0] != '\0')
 			return ("a jail has no kernel of its own");
 		if (sp->verb == NULL || (strcmp(sp->verb, "load") != 0 &&
-		    strcmp(sp->verb, "unload") != 0))
-			return ("a module is loaded or unloaded: load, unload");
+		    strcmp(sp->verb, "unload") != 0 && strcmp(sp->verb,
+		    "keep") != 0 && strcmp(sp->verb, "forget") != 0))
+			return ("a module is loaded, unloaded, kept or "
+			    "forgotten: load, unload, keep, forget");
 		if (sp->names.n != 1 || !kmod_name_ok(sp->names.v[0]))
 			return ("name one module, as kldload(8) finds it, "
 			    "without a path: letters, digits and . _ -");
@@ -2570,7 +2573,9 @@ check_spec(const struct arc_job_spec *sp)
 		}
 		break;
 	default:
-		if (sp->jail != NULL && !valid_jail(sp->jail))
+		/* "*": every running jail's, one after the other. */
+		if (sp->jail != NULL && strcmp(sp->jail, "*") != 0 &&
+		    !valid_jail(sp->jail))
 			return ("invalid jail name");
 		for (i = 0; i < sp->names.n; i++)
 			if (sp->names.v[i] == NULL)

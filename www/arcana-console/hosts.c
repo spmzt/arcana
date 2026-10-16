@@ -1034,6 +1034,8 @@ host_object(const struct arc_host *h)
 	put_str(o, "version", h->version);
 	put_str(o, "build", h->build);
 	put(o, "plugins", strs(h->plugins.v, h->plugins.n));
+	if (h->has_safe_wait)
+		put(o, "safe_wait", ucl_object_fromint(h->safe_wait));
 	return (o);
 }
 
@@ -3014,7 +3016,8 @@ call_new(struct http_request *req, enum op op)
 	if (!guard(req, op == OP_ACTION || op == OP_ADDRESS ||
 	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
 	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL || op == OP_CAPTURE ||
-	    op == OP_ZFS_KEY || (op == OP_TLS && req->method ==
+	    op == OP_ZFS_KEY || op == OP_SDWAN_PROXY || op == OP_SDWAN_IDS ||
+	    (op == OP_TLS && req->method ==
 	    HTTP_METHOD_POST) ||
 	    op == OP_AGENT_UPDATE || op == OP_AGENT_BUILD ||
 	    op == OP_CONSOLE_UPDATE ||
@@ -3040,7 +3043,7 @@ call_new(struct http_request *req, enum op op)
 	c->sname = kore_strdup(s->name);
 	c->uri = kore_strdup(s->uri);
 	c->peer = s->peer_name != NULL ? kore_strdup(s->peer_name) : NULL;
-	c->safe_wait = s->safe_wait;
+	c->safe_wait = servers_safe_wait(s->uri);
 	snprintf(c->route, sizeof(c->route), "%s %s",
 	    req->method == HTTP_METHOD_GET ? "GET" :
 	    req->method == HTTP_METHOD_DELETE ? "DELETE" : "POST", req->path);
@@ -4120,9 +4123,9 @@ setup_path(struct call *c, const struct rq *q)
 		return ("src and dst are each an IPv4 or IPv6 address");
 	(void)rq_param(q, "proto", c->pproto, sizeof(c->pproto));
 	if (c->pproto[0] != '\0' && strcmp(c->pproto, "tcp") != 0 && strcmp(
-	    c->pproto, "udp") != 0 && strcmp(c->pproto, "icmp") != 0 &&
-	    strcmp(c->pproto, "ip") != 0)
-		return ("proto is tcp, udp, icmp or ip");
+	    c->pproto, "udp") != 0 && strcmp(c->pproto, "sctp") != 0 &&
+	    strcmp(c->pproto, "icmp") != 0 && strcmp(c->pproto, "ip") != 0)
+		return ("proto is tcp, udp, sctp, icmp or ip");
 	if (rq_u64(q, "port", 65535, &v))
 		c->pport = (uint32_t)v;
 	(void)rq_param(q, "interface", c->ifname, sizeof(c->ifname));
@@ -5333,6 +5336,45 @@ hosts_sdwan_set(const char *uri, const char *peer, const char *name,
 	c->text = kore_strdup(json);
 	snprintf(label, sizeof(label), "sdwan-%s", what);
 	return (self_call(c, uri, peer, name, label, status));
+}
+
+/*
+ * POST /api/servers/<id>/security: the Security section's instances of
+ * a kind, {"what": "proxy" or "ids", "instances": [the page's forms]},
+ * made by security.c into what the agent takes and applied; [] stops
+ * them all.
+ */
+int
+api_security(struct http_request *req)
+{
+	struct call	*c;
+	ucl_object_t	*body;
+	const char	*what;
+	char		 err[256], *json;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((body = read_json(req)) == NULL)
+		return (reply_error(req, 400, "invalid", "a JSON object: what "
+		    "(proxy or ids) and instances"));
+	what = ucl_str(body, "what") != NULL ? ucl_str(body, "what") : "";
+	if ((c = call_new(req, strcmp(what, "ids") == 0 ? OP_SDWAN_IDS :
+	    OP_SDWAN_PROXY)) == NULL) {
+		ucl_object_unref(body);
+		return (KORE_RESULT_OK);
+	}
+	if ((json = security_build(what, ucl_object_lookup(body,
+	    "instances"), c->sname, err, sizeof(err))) == NULL) {
+		ucl_object_unref(body);
+		call_release(c);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "%s", err));
+	}
+	ucl_object_unref(body);
+	c->text = json;
+	c->reads = false;
+	snprintf(c->route, sizeof(c->route), "POST security %s", what);
+	return (call_start(req, c));
 }
 
 /* GET /api/servers/<id>/sdwan: what the host's probes have seen. */

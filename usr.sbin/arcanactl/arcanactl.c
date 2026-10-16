@@ -184,7 +184,7 @@ usage(void)
 	    "    bird routes [prefix | for address] [protocol | export name]\n"
 	    "        [table name] [all]\n"
 	    "    stats\n"
-	    "    kmod [load | unload module]\n"
+	    "    kmod [load | unload | keep | forget module]\n"
 	    "    jailconf make jail file [dataset snapshot clone|send path] "
 	    "[start]\n"
 	    "    jailconf edit jail file | remove jail [dataset] |\n"
@@ -201,6 +201,7 @@ usage(void)
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
 	    "    sshd [list] | banner file | set Setting [value ...] |\n"
 	    "        authorize user keyfile | unauthorize user fingerprint |\n"
+	    "        options user fingerprint [options] |\n"
 	    "        sign ca-key-file [principal ...] | user-cas file\n"
 	    "    ntp server ... | remove\n"
 	    "    rtadvd interface prefix [dns ...] | interface remove\n"
@@ -278,7 +279,7 @@ usage(void)
 	    "    cam rescan\n"
 	    "    fstab [-w new-text [-n]]\n"
 	    "    packages [-i] [-r] [-4 | -6] [jail]\n"
-	    "    pkg-upgrade [-n] [-O] [-4 | -6] [-j jail] [package ...]\n"
+	    "    pkg-upgrade [-n] [-O] [-4 | -6] [-j jail | -J] [package ...]\n"
 	    "    pkg-clean [-a] [-j jail | -J]\n"
 	    "    pkg-install [-O] [-4 | -6] [-j jail] package ...\n"
 	    "    jobs\n"
@@ -1938,6 +1939,7 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 /*
  * kmod: the kernel's modules and its memory, as the host says them.
  * kmod load | unload module: a job; with -p also in rc.conf's kld_list.
+ * kmod keep | forget module: rc.conf's kld_list alone, the kernel as is.
  */
 /* ntp server...; ntp remove: the NTP servers of the host. */
 static int
@@ -2282,7 +2284,8 @@ cmd_capture(struct arc_client *cl, int argc, char **argv)
 
 /*
  * sshd [list] | banner file | set Setting [value ...] | authorize user
- * keyfile | unauthorize user fingerprint | sign ca-key-file [principal
+ * keyfile | unauthorize user fingerprint | options user fingerprint
+ * [options] | sign ca-key-file [principal
  * ...] | user-cas file: the base system's sshd, of the host or of -j's jail; a change is
  * a job, and with -s undone unless confirmed.
  */
@@ -2328,6 +2331,14 @@ cmd_sshd(struct arc_client *cl, int argc, char **argv)
 	} else if (argc == 4 && strcmp(argv[1], "unauthorize") == 0) {
 		sp.user = argv[2];
 		sp.text = argv[3];
+	} else if ((argc == 4 || argc == 5) && strcmp(argv[1], "options") ==
+	    0) {
+		/* A key's options, its fingerprint naming it: none when
+		 * left out. */
+		sp.user = argv[2];
+		sp.names.v = (const char **)(uintptr_t)&argv[3];
+		sp.names.n = 1;
+		sp.text = argc == 5 ? argv[4] : "";
 	} else if (argc >= 3 && strcmp(argv[1], "sign") == 0) {
 		sp.text = slurp(argv[2]);
 		sp.names.v = (const char **)(uintptr_t)&argv[3];
@@ -2461,7 +2472,8 @@ cmd_kmod(struct arc_client *cl, int argc, char **argv)
 	int			 error;
 
 	if (argc == 3 && (strcmp(argv[1], "load") == 0 || strcmp(argv[1],
-	    "unload") == 0)) {
+	    "unload") == 0 || strcmp(argv[1], "keep") == 0 || strcmp(argv[1],
+	    "forget") == 0)) {
 		memset(&sp, 0, sizeof(sp));
 		sp.has_kind = true;
 		sp.kind = ARC_JOB_KIND_KMOD;
@@ -3600,7 +3612,8 @@ cmd_ipsec(struct arc_client *cl, int argc, char **argv)
 	return (submit(cl, &sp));
 }
 
-/* pkg-upgrade [-n] [-O] [-4 | -6] [-j jail] [package ...] */
+/* pkg-upgrade [-n] [-O] [-4 | -6] [-j jail | -J] [package ...]: -J, of
+ * every running jail, by the agent, one after the other. */
 static int
 cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 {
@@ -3610,7 +3623,7 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 
 	memset(&req, 0, sizeof(req));
 	optind = 1;
-	while ((ch = getopt(argc, argv, "46Oj:n")) != -1) {
+	while ((ch = getopt(argc, argv, "46OJj:n")) != -1) {
 		switch (ch) {
 		case '4':
 		case '6':
@@ -3624,6 +3637,9 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 			break;
 		case 'j':
 			req.jail = optarg;
+			break;
+		case 'J':
+			req.jail = "*";
 			break;
 		case 'n':
 			req.dry_run = true;

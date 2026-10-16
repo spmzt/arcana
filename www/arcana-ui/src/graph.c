@@ -335,9 +335,18 @@ view_trace(struct html *h, const struct op *o)
 	if (o->trace == NULL) {
 		if (o->state == OP_RUNNING)
 			pending(h, o);
+		else if (o->watched > 0 && o->stage[0] != '\0') {
+			h_fmt(h, "<p class=\"dim\">No trace: job %lld is ",
+			    o->watched);
+			h_txt(h, o->stage);
+			h_raw(h, ".</p>");
+		} else if (o->watched > 0)
+			h_fmt(h, "<p class=\"dim\">Reading job %lld's trace from "
+			    "its host…</p>", o->watched);
 		else
 			h_raw(h, "<p class=\"dim\">No trace: the request did not "
-			    "get an answer.</p>");
+			    "get an answer, or it was too large to keep in this "
+			    "browser.</p>");
 		h_raw(h, "</div>");
 		return;
 	}

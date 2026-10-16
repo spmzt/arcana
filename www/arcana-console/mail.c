@@ -12,7 +12,9 @@
  *
  * The console's host sends it: sendmail(8) -t, as FreeBSD comes, is
  * mailwrapper(8) and dma(8), which relays as /etc/dma/dma.conf says;
- * web.conf's sendmail names another.  Arcana sets up no mail server.
+ * web.conf's sendmail names another.  Or, with Settings' mail_via
+ * smtp, the console hands it to the relay they name itself (smtp.c).
+ * Arcana sets up no mail server.
  *
  * One worker reads each host's events, from the newest it has seen, a
  * tick at a time: those that are mailed go out in one mail a tick, and
@@ -72,6 +74,7 @@ static size_t		ncursors;
 struct mailconf {
 	char	*to, *from, *faults, *jobs, *runs;
 	bool	 limits;
+	char	*via, *host, *port, *security, *user, *pass;
 };
 
 static void
@@ -87,6 +90,12 @@ mc_load(struct mailconf *mc)
 	l = settings_peek("mail_limits");
 	mc->limits = strcmp(l, "true") == 0;
 	free(l);
+	mc->via = settings_peek("mail_via");
+	mc->host = settings_peek("smtp_host");
+	mc->port = settings_peek("smtp_port");
+	mc->security = settings_peek("smtp_security");
+	mc->user = settings_peek("smtp_user");
+	mc->pass = settings_peek("smtp_password");
 }
 
 static void
@@ -98,6 +107,13 @@ mc_free(struct mailconf *mc)
 	free(mc->faults);
 	free(mc->jobs);
 	free(mc->runs);
+	free(mc->via);
+	free(mc->host);
+	free(mc->port);
+	free(mc->security);
+	free(mc->user);
+	explicit_bzero(mc->pass, strlen(mc->pass));
+	free(mc->pass);
 }
 
 static const char *
@@ -198,6 +214,31 @@ send_with(const struct mailconf *mc, const char *subject, const char *body,
 	    "") == -1) {
 		snprintf(err, errlen, "out of memory");
 		return (-1);
+	}
+	/* By the relay Settings name, from the console itself. */
+	if (strcmp(mc->via, "smtp") == 0) {
+		const char	*rcpt[32];
+		char		*list, *rp, *ra;
+		size_t		 nr;
+
+		if (mc->host[0] == '\0') {
+			snprintf(err, errlen, "no SMTP relay named in Settings");
+			free(msg);
+			return (-1);
+		}
+		if ((list = strdup(mc->to)) == NULL)
+			abort();
+		nr = 0;
+		for (rp = list; nr < nitems(rcpt) && (ra = strsep(&rp,
+		    " ,;\t")) != NULL; )
+			if (ra[0] != '\0')
+				rcpt[nr++] = ra;
+		st = smtp_send(mc->host, atoi(mc->port), mc->security, mc->user,
+		    mc->pass, from_address(mc, from, sizeof(from)), rcpt, nr, msg,
+		    err, errlen);
+		free(list);
+		free(msg);
+		return (st);
 	}
 	if (pipe2(in, O_CLOEXEC) == -1 || pipe2(out, O_CLOEXEC) == -1) {
 		snprintf(err, errlen, "pipe: %s", strerror(errno));

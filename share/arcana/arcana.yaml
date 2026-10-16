@@ -1116,6 +1116,12 @@ attribute-sets:
           BIRD, through birdc(8); wireguard is WireGuard's keys and
           peers, through wg(8); strongswan is IPsec, through
           swanctl(8).
+      - name: safe-wait
+        type: u32
+        doc: |
+          The seconds a change made in safe mode waits to be confirmed
+          before the agent undoes it, when the change does not say:
+          the agent's own (-w).
 
   - name: jail
     attributes:

@@ -223,7 +223,10 @@ view_kernel(struct html *h, struct server *s)
 		    "<code>kld_list</code>, and not in the kernel now: " : ", ");
 		h_raw(h, "<b>");
 		h_txt(h, name);
-		h_raw(h, "</b>");
+		h_raw(h, "</b> <button class=\"icon\" data-act=\"kmod-forget\" "
+		    "title=\"Out of kld_list: not loaded at the next boot\"");
+		h_attr(h, "data-arg", name);
+		h_raw(h, ">×</button>");
 		first = false;
 	}
 	if (!first)
@@ -276,8 +279,19 @@ view_kernel(struct html *h, struct server *s)
 			first = false;
 		}
 		h_raw(h, n > 6 ? "</details></td><td>" : "</td><td>");
-		if (in_list(jget(kn.data, "kept"), name))
-			h_raw(h, "<span class=\"chip\">kld_list</span>");
+		/* At boot or not: kld_list alone, the kernel as it is. */
+		if (strcmp(name, "kernel") != 0 && jint(o, "id", 0) != 1) {
+			bool	kept = in_list(jget(kn.data, "kept"), name);
+
+			h_fmt(h, "<button class=\"chip%s\" data-act=\"kmod-%s\" "
+			    "title=\"%s\"", kept ? " on" : "", kept ? "forget" :
+			    "keep", kept ? "In rc.conf's kld_list: loaded when "
+			    "the host starts. Press to take it out (it stays "
+			    "loaded now)" : "Not in kld_list: gone after a "
+			    "reboot. Press to load it at every boot");
+			h_attr(h, "data-arg", name);
+			h_fmt(h, ">%s</button>", kept ? "at boot" : "not at boot");
+		}
 		h_raw(h, "</td><td class=\"acts\">");
 		if (jint(o, "id", 0) != 1 && strcmp(name, "kernel") != 0) {
 			h_raw(h, "<button class=\"ghost small\" data-act=\""
@@ -357,7 +371,11 @@ kmod_job(struct server *s, const char *verb, const char *name, bool persist)
 	    "\"persist\":%s}", verb, q, persist ? "true" : "false") == -1)
 		abort();
 	free(q);
-	snprintf(title, sizeof(title), "kld%s %s", verb, name);
+	if (strcmp(verb, "keep") == 0 || strcmp(verb, "forget") == 0)
+		snprintf(title, sizeof(title), "%s %s kld_list", name, verb[0] ==
+		    'k' ? "into" : "out of");
+	else
+		snprintf(title, sizeof(title), "kld%s %s", verb, name);
 	job_send_host(s, json, title, JOB_KERNEL, name);
 }
 
@@ -398,7 +416,8 @@ kernel_action(const char *act, const char *arg, const char *value)
 	char		 body[400];
 
 	if (strcmp(act, "kmem") != 0 && strcmp(act, "kmod-unload") != 0 &&
-	    strcmp(act, "do-kmod-unload") != 0)
+	    strcmp(act, "do-kmod-unload") != 0 && strcmp(act, "kmod-keep") !=
+	    0 && strcmp(act, "kmod-forget") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
@@ -415,6 +434,9 @@ kernel_action(const char *act, const char *arg, const char *value)
 		    "do-kmod-unload", arg, value);
 	} else if (strcmp(act, "do-kmod-unload") == 0 && name_ok(arg)) {
 		kmod_job(s, "unload", arg, value[0] != '\0');
+	} else if ((strcmp(act, "kmod-keep") == 0 || strcmp(act,
+	    "kmod-forget") == 0) && name_ok(arg)) {
+		kmod_job(s, act + 5, arg, false);
 	}
 	return (true);
 }

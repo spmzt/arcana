@@ -1029,7 +1029,48 @@ paths:
             UCS end points' instances (ucs<vrf>) with the services';
             faults, the day's,
             each t, type, severity (Cleared when it is), was, object,
-            by, description, cleared and cleared_at.
+            by, description, cleared and cleared_at. proxy and ids say
+            each instance's group, sdwan or security; security_proxy
+            and security_ids are the Security page's forms as it saved
+            them; clamav, where /var/db/clamav is, its databases (name,
+            file, version, signatures, built) and whether freshclam
+            runs.
+  /api/servers/{server}/security:
+    post:
+      tags: [servers]
+      summary: The Security page's URL filters or intrusion detection
+      description: >-
+        The whole list of a kind, made into the agent's configuration
+        and applied (group security: named sec-, apart from SD-WAN's
+        instances, which are left as they are); [] stops them all. A
+        URL filter is Squid as a proxy the clients are told of: name,
+        listen (addresses), port (3128), allow (networks), mode (sni:
+        a TLS name looked at, a denied one ended; inspect: TLS opened
+        with the filter's own CA), deny (domains, the names beneath
+        them too), malware (c-icap with ClamAV on the loopback scans
+        what it fetches) and fib. An intrusion detection is Suricata:
+        name, interfaces (watched by pcap), home (HOME_NET; the private
+        ranges when empty), rules (of its own, a line each), ruleset
+        (the one suricata-update keeps) and divert (a port: it
+        prevents, taking what an ipfw divert rule sends). The plugins
+        are the host's own: Arcana installs none.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [what]
+              properties:
+                what: { type: string, enum: [proxy, ids] }
+                instances: { type: array, items: { type: object } }
+      responses:
+        "200":
+          description: ok, error and the agent's trace.
+        "400":
+          description: A form not right, and why.
   /api/servers/{server}/history:
     get:
       tags: [servers]
@@ -1200,7 +1241,7 @@ paths:
           schema: { type: string }
         - name: proto
           in: query
-          schema: { type: string, enum: [tcp, udp, icmp, ip] }
+          schema: { type: string, enum: [tcp, udp, sctp, icmp, ip] }
         - name: port
           in: query
           schema: { type: integer, minimum: 1, maximum: 65535 }
@@ -1305,7 +1346,7 @@ paths:
       tags: [servers]
       summary: Follow a packet across the hosts, and say what stops it
       description: With src and dst (addresses, both IPv4 or both IPv6),
-        proto (tcp, udp, icmp or ip), port, and places, each a server and
+        proto (tcp, udp, sctp, icmp or ip), port, and places, each a server and
         a vnet jail of it or none (every host when not given). Nothing is
         sent; each place says what it would do (the agent's path-check).
         The answer has hops, each place in turn with its ingress, egress,

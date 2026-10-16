@@ -94,7 +94,8 @@ ask(void)
 	    true);
 	ucl_object_insert_key(b, ucl_object_fromstring(ts.proto), "proto", 0,
 	    true);
-	if ((strcmp(ts.proto, "tcp") == 0 || strcmp(ts.proto, "udp") == 0) &&
+	if ((strcmp(ts.proto, "tcp") == 0 || strcmp(ts.proto, "udp") == 0 ||
+	    strcmp(ts.proto, "sctp") == 0) &&
 	    ts.port[0] != '\0')
 		ucl_object_insert_key(b, ucl_object_fromint(atoi(ts.port)),
 		    "port", 0, true);
@@ -267,6 +268,20 @@ dot(struct html *h, double x, double y, const char *where,
 #define	TS_COL	190		/* a column's pitch */
 #define	TS_X0	170		/* the first column, after the source */
 
+/* What the path's lines, boxes and dots mean. */
+static void
+ts_legend(struct html *h, bool reply)
+{
+
+	h_fmt(h, "<ul class=\"glegend\"><li class=\"ts-way\">the way there"
+	    "</li>%s<li class=\"ts-bad\">stopped</li><li class=\"ts-leaves\">"
+	    "leaves the places asked</li><li class=\"box dashed\">did not "
+	    "answer</li><li class=\"ts-fw good\">its firewall lets it by</li>"
+	    "<li class=\"ts-fw warn\">may</li><li class=\"ts-fw bad\">drops "
+	    "it</li></ul>", reply ? "<li class=\"ts-reply\">the reply</li>" :
+	    "");
+}
+
 /* One place's box. */
 static void
 place_node(struct html *h, double x, double y, const ucl_object_t *hop,
@@ -397,7 +412,9 @@ path_graph(struct html *h, const ucl_object_t *r)
 	else
 		arrow(h, xp, xp + 24, y1 + TS_BH / 2, false, NULL, "bad");
 	if (nr == 0) {
-		h_raw(h, "</svg></div>");
+		h_raw(h, "</svg>");
+		ts_legend(h, false);
+		h_raw(h, "</div>");
 		return;
 	}
 	/* The reply: from the destination's side, right to left, a slot
@@ -420,7 +437,9 @@ path_graph(struct html *h, const ucl_object_t *r)
 		    ret, (unsigned)nr - 1), "next_hop"), "leaves");
 	else
 		arrow(h, xp, xp - 24, y2 + TS_BH / 2, true, NULL, "bad");
-	h_raw(h, "</svg></div>");
+	h_raw(h, "</svg>");
+	ts_legend(h, true);
+	h_raw(h, "</div>");
 }
 
 static void
@@ -541,15 +560,16 @@ view_trouble(struct html *h)
 	h_raw(h, "></label></div><div class=\"two\"><label>Protocol<select "
 	    "name=\"proto\">");
 	{
-		static const char *const pr[] = { "tcp", "udp", "icmp", "ip" };
+		static const char *const pr[] = { "tcp", "udp", "sctp",
+		    "icmp", "ip" };
 
-		for (i = 0; i < 4; i++)
+		for (i = 0; i < 5; i++)
 			h_fmt(h, "<option value=\"%s\"%s>%s</option>", pr[i],
 			    strcmp(ts.proto, pr[i]) == 0 ? " selected" : "",
-			    i == 2 ? "icmp (ping)" : i == 3 ? "ip (any)" :
+			    i == 3 ? "icmp (ping)" : i == 4 ? "ip (any)" :
 			    pr[i]);
 	}
-	h_raw(h, "</select></label><label>Port, of tcp or udp<input "
+	h_raw(h, "</select></label><label>Port, of tcp, udp or sctp<input "
 	    "name=\"port\" type=\"number\" min=\"1\" max=\"65535\" "
 	    "placeholder=\"22\"");
 	h_attr(h, "value", ts.port);
@@ -723,7 +743,8 @@ trouble_open(const char *query)
 		else if (strcmp(p, "dst") == 0)
 			snprintf(ts.dst, sizeof(ts.dst), "%s", val);
 		else if (strcmp(p, "proto") == 0 && (strcmp(val, "tcp") == 0 ||
-		    strcmp(val, "udp") == 0 || strcmp(val, "icmp") == 0 ||
+		    strcmp(val, "udp") == 0 || strcmp(val, "sctp") == 0 ||
+		    strcmp(val, "icmp") == 0 ||
 		    strcmp(val, "ip") == 0))
 			snprintf(ts.proto, sizeof(ts.proto), "%s", val);
 		else if (strcmp(p, "port") == 0)

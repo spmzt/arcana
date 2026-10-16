@@ -113,7 +113,8 @@ function flush_field() {
 		return
 	nf++
 	ff[nf] = fname; ft[nf] = ftype; fl[nf] = flabel; fa[nf] = fattr
-	fname = ftype = flabel = fattr = ""
+	fh[nf] = fhelp; fc[nf] = fchoices; fp[nf] = fpicker
+	fname = ftype = flabel = fattr = fhelp = fchoices = fpicker = ""
 }
 
 function flush_kind() {
@@ -161,6 +162,9 @@ section == "f" && /^  - field:/ { flush_field(); fname = value($0); next }
 section == "f" && /^    type:/ { ftype = value($0); next }
 section == "f" && /^    label:/ { flabel = value($0); next }
 section == "f" && /^    attribute:/ { fattr = value($0); next }
+section == "f" && /^    help:/ { fhelp = value($0); next }
+section == "f" && /^    choices:/ { fchoices = value($0); next }
+section == "f" && /^    picker:/ { fpicker = value($0); next }
 section == "k" && /^  - kind:/ { flush_kind(); kname = value($0); next }
 section == "k" && /^    title:/ { ktitle = value($0); next }
 section == "k" && /^    needs:/ { kneeds = value($0); next }
@@ -227,8 +231,25 @@ END {
 		exit
 	}
 	printf "{\"fields\":["
-	for (i = 1; i <= nf; i++)
-		printf "%s{\"field\":%s,\"type\":%s,\"label\":%s}", (i > 1 ? "," : ""), jstr(ff[i]), jstr(ft[i]), jstr(fl[i])
+	for (i = 1; i <= nf; i++) {
+		printf "%s{\"field\":%s,\"type\":%s,\"label\":%s", (i > 1 ? "," : ""), jstr(ff[i]), jstr(ft[i]), jstr(fl[i])
+		# The page's: a line under the field, labelled values to
+		# choose from (v=label|v=label), and what fills a list.
+		if (fh[i] != "")
+			printf ",\"help\":%s", jstr(fh[i])
+		if (fp[i] != "")
+			printf ",\"picker\":%s", jstr(fp[i])
+		if (fc[i] != "") {
+			m = split(fc[i], w, "|")
+			printf ",\"choices\":["
+			for (j = 1; j <= m; j++) {
+				split(w[j], kvp, "=")
+				printf "%s{\"value\":%s,\"label\":%s}", (j > 1 ? "," : ""), jstr(kvp[1]), jstr(kvp[2] != "" ? kvp[2] : kvp[1])
+			}
+			printf "]"
+		}
+		printf "}"
+	}
 	printf "],\"kinds\":["
 	for (i = 1; i <= nk; i++)
 		printf "%s{\"kind\":%s,\"title\":%s,\"needs\":%s,\"uses\":%s,\"values\":%s,\"destroys\":%s}", (i > 1 ? "," : ""), jstr(kk[i]), jstr(kt[i]), jlist(kn[i]), jlist(ku[i]), jvalues(kv[i]), jstr(kd[i])

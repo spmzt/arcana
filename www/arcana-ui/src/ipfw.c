@@ -1214,8 +1214,8 @@ view_trace_fw(struct html *h)
 	    "Nothing is sent.</p><form data-form=\"fw-trace\" class=\""
 	    "fw-add fw-trace\" id=\"fw-trace-form\"><select name=\"proto\">");
 	{
-		static const char *const protos[] = { "tcp", "udp", "icmp",
-		    "ip" };
+		static const char *const protos[] = { "tcp", "udp", "sctp",
+		    "icmp", "ip" };
 		size_t	k;
 
 		for (k = 0; k < nitems(protos); k++)
@@ -1580,7 +1580,7 @@ rule_words(struct html *h)
 	    "pipe", "queue", "fwd", "divert", "tee", "setfib", "tag",
 	    "unreach", "reset", "log" };
 	static const char *const protos[] = { "ip", "all", "tcp", "udp",
-	    "icmp", "ipv6-icmp", "ip4", "ip6" };
+	    "sctp", "icmp", "ipv6-icmp", "ip4", "ip6" };
 	static const char *const addrs[] = { "any", "me", "me6", "not" };
 	static const char *const opts[] = { "in", "out", "via", "recv",
 	    "xmit", "keep-state", "record-state", "setup", "established",
@@ -2356,8 +2356,9 @@ qos_form(const ucl_object_t *f)
 		    port == NULL || via[strspn(via, "abcdefghijklmnopqrstuvwxyz"
 		    "0123456789._")] != '\0' || (strcmp(proto, "ip") != 0 &&
 		    strcmp(proto, "tcp") != 0 && strcmp(proto, "udp") != 0 &&
-		    strcmp(proto, "icmp") != 0) || (port[0] != '\0' &&
-		    strcmp(proto, "tcp") != 0 && strcmp(proto, "udp") != 0)) {
+		    strcmp(proto, "sctp") != 0 && strcmp(proto, "icmp") !=
+		    0) || (port[0] != '\0' && strcmp(proto, "tcp") != 0 &&
+		    strcmp(proto, "udp") != 0 && strcmp(proto, "sctp") != 0)) {
 			snprintf(app.modal_error, sizeof(app.modal_error), "A rule "
 			    "number 1 to 65534, a pipe or queue, addresses or any; "
 			    "a port is of tcp or udp");
@@ -2852,7 +2853,11 @@ chain_graph(struct html *h, const ucl_object_t *live,
 			    "marker-end=\"url(#fwarrow)\"/>", x1 + 40, y1 + CH_H,
 			    x1 + 40, y1 + (CH_H + CH_GAP) * 3 / 2);
 	}
-	h_raw(h, "</svg></div>");
+	h_raw(h, "</svg><ul class=\"glegend\"><li class=\"fw-down\">down the "
+	    "chain, part to part</li><li class=\"fw-call\">call: there and "
+	    "back</li><li class=\"fw-skip\">skipto: there, not back</li><li "
+	    "class=\"box dashed\">a part no rule is in</li><li class=\"fw-rate"
+	    "\"><b>12/s</b> packets a second, now</li></ul></div>");
 }
 
 /* A count in a few characters: 950, 12.4k, 3.1M, 2.0G. */

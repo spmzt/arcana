@@ -55,7 +55,79 @@ static struct {
 	char		 error[300];
 	char		 set[40];	/* the setting being changed */
 	char		 user[64];	/* whose key is being added */
+	char		 fp[128];	/* the key whose options change */
+	char		*opts;		/* its options now */
 } sh;
+
+/* The options authorized_keys gives a key a field of their own. */
+static const struct {
+	const char	*name;
+	bool		 flag;		/* a word alone; else name="value" */
+	const char	*say;
+	const char	*hint;
+} kopt[] = {
+	{ "principals", false, "Principals", "the names it may sign in as, "
+	    "with a certificate: alice,admin" },
+	{ "from", false, "From", "where it may sign in from: 10.0.0.0/8,"
+	    "*.example.org,!bad.example.org" },
+	{ "command", false, "Command", "run whatever is asked: backup.sh" },
+	{ "expiry-time", false, "Good until", "YYYYMMDD[HHMM[SS]]" },
+	{ "cert-authority", true, "A CA's key: certificates it signed sign "
+	    "in", NULL },
+	{ "restrict", true, "Restrict: no forwarding, no PTY, no ~/.ssh/rc",
+	    NULL },
+	{ "no-pty", true, "No terminal (no-pty)", NULL },
+	{ "no-port-forwarding", true, "No port forwarding", NULL },
+	{ "no-agent-forwarding", true, "No agent forwarding", NULL },
+	{ "no-X11-forwarding", true, "No X11 forwarding", NULL },
+	{ "no-user-rc", true, "No ~/.ssh/rc", NULL },
+};
+#define	NKOPT	(sizeof(kopt) / sizeof(kopt[0]))
+
+/*
+ * The options of a key, one at a time from *pp: its name into name,
+ * its value (unquoted) into val, or val empty for a word alone.  Commas
+ * inside quotes are the value's.  false at the end.
+ */
+static bool
+kopt_next(const char **pp, char *name, size_t nlen, char *val, size_t vlen,
+    bool *quoted)
+{
+	const char	*p = *pp;
+	size_t		 n;
+
+	while (*p == ',' || *p == ' ')
+		p++;
+	if (*p == '\0')
+		return (false);
+	for (n = 0; *p != '\0' && *p != '=' && *p != ',' && *p != ' '; p++)
+		if (n + 1 < nlen)
+			name[n++] = *p;
+	name[n] = '\0';
+	val[0] = '\0';
+	*quoted = false;
+	if (*p == '=') {
+		p++;
+		n = 0;
+		if (*p == '"') {
+			*quoted = true;
+			for (p++; *p != '\0' && *p != '"'; p++) {
+				if (*p == '\\' && p[1] != '\0')
+					p++;
+				if (n + 1 < vlen)
+					val[n++] = *p;
+			}
+			if (*p == '"')
+				p++;
+		} else
+			for (; *p != '\0' && *p != ','; p++)
+				if (n + 1 < vlen)
+					val[n++] = *p;
+		val[n] = '\0';
+	}
+	*pp = p;
+	return (true);
+}
 
 static void
 ssh_cb(int status, const ucl_object_t *o, const char *err, void *arg)
@@ -487,7 +559,12 @@ view_ssh(struct html *h, struct server *s)
 		    "authorized_keys\"");
 		h_attr(h, "data-arg", jstr(r, "fingerprint"));
 		h_attr(h, "data-value", jstr(r, "user"));
-		h_raw(h, ">×</button></td></tr>");
+		h_raw(h, ">×</button><button class=\"ghost small\" data-act=\""
+		    "ssh-key-opts\" title=\"Its options: principals, from, "
+		    "command, forwarding\"");
+		h_attr(h, "data-arg", jstr(r, "fingerprint"));
+		h_attr(h, "data-value", jstr(r, "user"));
+		h_raw(h, ">Options</button></td></tr>");
 	}
 	if (n == 0)
 		h_raw(h, "<tr><td colspan=\"6\" class=\"dim\">No keys.</td></tr>");
@@ -567,6 +644,66 @@ ssh_modal(struct html *h)
 		    "autocomplete=\"off\" placeholder=\"host.example.org "
 		    "host\"></label>");
 		return (true);
+	case MODAL_SSH_OPTS: {
+		char	name[64], val[1024], other[2048];
+		bool	q, on[NKOPT];
+		char	vals[NKOPT][1024];
+		size_t	k;
+
+		memset(on, 0, sizeof(on));
+		memset(vals, 0, sizeof(vals));
+		other[0] = '\0';
+		for (p = sh.opts != NULL ? sh.opts : ""; kopt_next(&p, name,
+		    sizeof(name), val, sizeof(val), &q); ) {
+			for (k = 0; k < NKOPT && strcasecmp(kopt[k].name, name) !=
+			    0; k++)
+				;
+			/* One of a field's: in it; another, or a second of
+			 * one (environment=, permitopen= come many), kept
+			 * as written among the others. */
+			if (k < NKOPT && !on[k] && kopt[k].flag == (val[0] ==
+			    '\0' && !q)) {
+				on[k] = true;
+				snprintf(vals[k], sizeof(vals[k]), "%s", val);
+			} else
+				snprintf(other + strlen(other), sizeof(other) -
+				    strlen(other), "%s%s%s%s%s%s", other[0] !=
+				    '\0' ? "," : "", name, val[0] != '\0' || q ?
+				    "=" : "", q ? "\"" : "", val, q ? "\"" : "");
+		}
+		h_raw(h, "<form data-form=\"ssh-opts\" class=\"wide\"><h2>");
+		h_txt(h, sh.user);
+		h_raw(h, "'s key <small class=\"mono\">");
+		h_txt(h, sh.fp);
+		h_raw(h, "</small></h2><p class=\"dim\">What sshd(8) allows "
+		    "with this key, as its line of authorized_keys says before "
+		    "the key: the key itself and its comment stay as they are."
+		    "</p><div class=\"two\">");
+		for (k = 0; k < NKOPT; k++) {
+			if (kopt[k].flag)
+				continue;
+			h_fmt(h, "<label>%s<input name=\"o_%s\" spellcheck=\""
+			    "false\" autocomplete=\"off\"", kopt[k].say,
+			    kopt[k].name);
+			h_attr(h, "value", on[k] ? vals[k] : "");
+			h_attr(h, "placeholder", kopt[k].hint);
+			h_raw(h, "></label>");
+		}
+		h_raw(h, "</div><div class=\"checks\">");
+		for (k = 0; k < NKOPT; k++)
+			if (kopt[k].flag)
+				h_fmt(h, "<label class=\"toggle\"><input type=\""
+				    "checkbox\" name=\"o_%s\"%s> %s</label>",
+				    kopt[k].name, on[k] ? " checked" : "",
+				    kopt[k].say);
+		h_raw(h, "</div><label>Other options <small>as authorized_keys "
+		    "writes them, commas between: environment=\"A=b\","
+		    "permitopen=\"host:22\"</small><input name=\"other\" "
+		    "class=\"mono\" spellcheck=\"false\" autocomplete=\"off\"");
+		h_attr(h, "value", other);
+		h_raw(h, "></label>");
+		return (true);
+	}
 	case MODAL_SSH_KEY:
 		h_raw(h, "<form data-form=\"ssh-key\"><h2>A key ");
 		h_txt(h, sh.user);
@@ -645,6 +782,51 @@ ssh_form(const char *form, const ucl_object_t *f)
 		ssh_job(s, "authorize", NULL, NULL, line, sh.user, what);
 		free(line);
 		app.modal = MODAL_NONE;
+	} else if (strcmp(form, "ssh-opts") == 0) {
+		struct html	 o;
+		char		 key[48];
+		const char	*v;
+		size_t		 k;
+
+		/* The options again, in the order sshd's page has them:
+		 * each field's, then the others as written. */
+		memset(&o, 0, sizeof(o));
+		for (k = 0; k < NKOPT; k++) {
+			snprintf(key, sizeof(key), "o_%s", kopt[k].name);
+			if (kopt[k].flag) {
+				if (jbool(f, key))
+					h_fmt(&o, "%s%s", o.s != NULL ? "," : "",
+					    kopt[k].name);
+				continue;
+			}
+			v = jstr(f, key) != NULL ? jstr(f, key) : "";
+			v += strspn(v, " ");
+			if (v[0] == '\0')
+				continue;
+			if (strpbrk(v, "\"\\\r\n") != NULL) {
+				free(o.s);
+				snprintf(app.modal_error, sizeof(app.modal_error),
+				    "%s takes no \" or \\", kopt[k].say);
+				return (true);
+			}
+			h_fmt(&o, "%s%s=\"%s\"", o.s != NULL ? "," : "",
+			    kopt[k].name, v);
+		}
+		v = jstr(f, "other") != NULL ? jstr(f, "other") : "";
+		v += strspn(v, " ,");
+		if (strpbrk(v, "\r\n") != NULL) {
+			free(o.s);
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "The other options are one line");
+			return (true);
+		}
+		if (v[0] != '\0')
+			h_fmt(&o, "%s%s", o.s != NULL ? "," : "", v);
+		snprintf(what, sizeof(what), "options of %s's key", sh.user);
+		ssh_job(s, "options", NULL, sh.fp, o.s != NULL ? o.s : "",
+		    sh.user, what);
+		free(o.s);
+		app.modal = MODAL_NONE;
 	}
 	return (true);
 }
@@ -678,6 +860,31 @@ ssh_action(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "ssh-key-add") == 0) {
 		snprintf(sh.user, sizeof(sh.user), "%s", arg);
 		app.modal = MODAL_SSH_KEY;
+		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "ssh-key-opts") == 0) {
+		const ucl_object_t	*u, *kk;
+		ucl_object_iter_t	 ui, ki;
+
+		snprintf(sh.user, sizeof(sh.user), "%s", value);
+		snprintf(sh.fp, sizeof(sh.fp), "%s", arg);
+		free(sh.opts);
+		sh.opts = NULL;
+		/* Its options as listed now. */
+		ui = NULL;
+		while ((u = ucl_object_iterate(jget(sh.data, "users"), &ui,
+		    true)) != NULL) {
+			if (jstr(u, "name") == NULL || strcmp(jstr(u, "name"),
+			    value) != 0)
+				continue;
+			ki = NULL;
+			while ((kk = ucl_object_iterate(jget(u, "keys"), &ki,
+			    true)) != NULL)
+				if (jstr(kk, "fingerprint") != NULL && strcmp(jstr(
+				    kk, "fingerprint"), arg) == 0 && jstr(kk,
+				    "options") != NULL)
+					sh.opts = strdup(jstr(kk, "options"));
+		}
+		app.modal = MODAL_SSH_OPTS;
 		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "ssh-key-del") == 0) {
 		snprintf(body, sizeof(body), "The key %s taken out of %s's "

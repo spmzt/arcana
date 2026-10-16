@@ -43,6 +43,15 @@
 
 #define	FW_TOKENS	128
 
+/* What a rule says of states: keep-state, record-state or limit, the
+ * flow's name, and whether its action waits (defer-action). */
+struct stinfo {
+	bool	keep;
+	bool	record;
+	bool	defer;
+	char	flow[32];
+};
+
 /* The value of the table entry a rule's address last matched: what
  * its tablearg stands for (fwd, setfib, skipto). */
 static char	tablearg[64];
@@ -566,13 +575,14 @@ action_word(const char *w)
 /* Does the body of a rule (after its action) match the packet. */
 static enum tri
 body_match(const struct fwset *s, char **tok, int nt, int i,
-    const struct fwpkt *k, bool *keep, char *why, size_t whylen)
+    const struct fwpkt *k, struct stinfo *st, char *why, size_t whylen)
 {
 	enum tri	 r = YES, one;
 	bool		 neg, ok;
 	const char	*w;
 
-	*keep = false;
+	memset(st, 0, sizeof(*st));
+	strlcpy(st->flow, ":default", sizeof(st->flow));
 	why[0] = '\0';
 #define	AND(x)	do {							\
 	enum tri x_ = (x);						\
@@ -641,7 +651,11 @@ body_match(const struct fwset *s, char **tok, int nt, int i,
 			one = if_match(s, tok[++i], ifn, k);
 		} else if (strcmp(w, "keep-state") == 0 || strcmp(w,
 		    "record-state") == 0 || strcmp(w, "limit") == 0) {
-			*keep = true;
+			st->keep = true;
+			st->record = strcmp(w, "record-state") == 0;
+			/* Its flow's name, when it has one. */
+			if (i + 1 < nt && tok[i + 1][0] == ':')
+				strlcpy(st->flow, tok[++i], sizeof(st->flow));
 			if (strcmp(w, "limit") == 0)
 				while (i + 1 < nt && tok[i + 1][0] != ':' &&
 				    strcmp(tok[i + 1], "not") != 0 && !isdigit(
@@ -657,6 +671,12 @@ body_match(const struct fwset *s, char **tok, int nt, int i,
 			continue;
 		} else if (w[0] == ':')
 			continue;	/* a state's flow name */
+		/* The state made, the rule's action not taken: on. */
+		else if (strcmp(w, "defer-action") == 0 || strcmp(w,
+		    "defer-immediate-action") == 0) {
+			st->defer = true;
+			continue;
+		}
 		else if (strcmp(w, "setup") == 0)
 			one = k->proto == IPPROTO_TCP && k->syn ? YES : NO;
 		else if (strcmp(w, "established") == 0)
@@ -791,9 +811,15 @@ eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v,
 	size_t		 ri;
 	long		 to;
 	int		 nt, i, steps;
-	bool		 keep, looked = false, retnext;
+	bool		 looked = false, retnext;
 	enum tri	 m;
 	size_t		 stack[FW_CALLS], sp = 0;
+	struct stinfo	 st;
+	/* A state this walk's packet made, its action deferred. */
+	bool		 made = false;
+	char		 made_flow[32] = "";
+	char		 made_act[24] = "";
+	size_t		 made_ri = 0;
 
 	memset(v, 0, sizeof(*v));
 	v->setfib = -1;
@@ -822,8 +848,12 @@ eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v,
 			step(v, ri, "may be met: an action not known");
 			continue;
 		}
-		/* check-state has no body: a reply's state looked up. */
+		/* check-state has no body: a reply's state looked up, or
+		 * the one this packet made at a rule whose action waited. */
 		if (strcmp(act, "check-state") == 0) {
+			const char *flow = i < nt && tok[i][0] == ':' ? tok[i] :
+			    ":default";
+
 			looked = true;
 			if (k->state) {
 				step(v, ri, "decides: its state lets it by");
@@ -832,7 +862,17 @@ eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v,
 				v->by_state = true;
 				return;
 			}
-			step(v, ri, "check-state: no state of it yet, on");
+			if (made && strcmp(flow, made_flow) == 0) {
+				step(v, ri, "decides: the state %ld made (%s)",
+				    s->rules[made_ri].num, made_flow);
+				v->verdict = verdict_of(made_act);
+				v->rule = ri;
+				v->by_state = true;
+				v->keep = true;
+				return;
+			}
+			step(v, ri, "check-state%s%s: no state of it yet, on",
+			    flow[0] != '\0' ? " " : "", flow);
 			continue;
 		}
 		/* The action's own words. */
@@ -869,15 +909,16 @@ eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v,
 				break;
 		}
 		tablearg[0] = '\0';
-		m = body_match(s, tok, nt, i, k, &keep, why, sizeof(why));
+		m = body_match(s, tok, nt, i, k, &st, why, sizeof(why));
 		if (arg != NULL && strcmp(arg, "tablearg") == 0 &&
 		    tablearg[0] != '\0')
 			arg = tablearg;
 		if (m == NO)
 			continue;
 		/* The first keep-state or limit looks the flow up, matched
-		 * or not by its body: as check-state does. */
-		if (keep && !looked) {
+		 * or not by its body: as check-state does; record-state
+		 * does not. */
+		if (st.keep && !st.record && !looked) {
 			looked = true;
 			if (k->state) {
 				step(v, ri, "decides: its state lets it by");
@@ -886,6 +927,17 @@ eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v,
 				v->by_state = true;
 				return;
 			}
+		}
+		/* Met, its state made and its action deferred: the packet
+		 * goes on, and a check-state of the flow takes the action. */
+		if (m == YES && st.keep && st.defer) {
+			made = true;
+			strlcpy(made_flow, st.flow, sizeof(made_flow));
+			strlcpy(made_act, act, sizeof(made_act));
+			made_ri = ri;
+			step(v, ri, "makes a state %s, its %s deferred: on",
+			    st.flow, act);
+			continue;
 		}
 		if (m == MAYBE) {
 			if (v->nuncertain < FW_UNCERTAIN) {
@@ -990,7 +1042,7 @@ eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v,
 			    arg : "");
 		v->verdict = verdict_of(act);
 		v->rule = ri;
-		v->keep = keep;
+		v->keep = st.keep || made;
 		if (strcmp(act, "fwd") == 0 || strcmp(act, "forward") == 0) {
 			v->verdict = "fwd";
 			v->note = "sent on to another next hop than the route's";

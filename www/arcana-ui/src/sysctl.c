@@ -605,6 +605,22 @@ safe_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	servers_cb(status, o, err, arg);
 }
 
+/* Settings' rollback timer for every host, 0 when there is none. */
+static int
+safe_all(void)
+{
+	const ucl_object_t	*k;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((k = ucl_object_iterate(jget(app.settings, "settings"), &it,
+	    true)) != NULL)
+		if (jstr(k, "key") != NULL && strcmp(jstr(k, "key"),
+		    "safe_wait") == 0 && jstr(k, "value") != NULL)
+			return (atoi(jstr(k, "value")));
+	return (0);
+}
+
 /*
  * The host's rollback timer: how long a change made in safe mode waits
  * for the console to be heard from again before the agent undoes it.
@@ -625,10 +641,14 @@ view_safe(struct html *h, struct server *s)
 	    "by the agent unless the console reaches the host again within "
 	    "this time: a change that cut the host off puts itself back. ");
 	if (s->safe_wait > 0)
-		h_fmt(h, "This host waits %d s.", s->safe_wait);
+		h_fmt(h, "This host waits %d s, its own.", s->safe_wait);
+	else if (safe_all() > 0)
+		h_fmt(h, "This host waits %d s, Settings' for every host "
+		    "without a timer of its own.", safe_all());
 	else
-		h_raw(h, "This host waits as long as its agent's own "
-		    "<code>-w</code> says, 60 s unless set.");
+		h_fmt(h, "This host waits as long as its agent's own "
+		    "<code>-w</code> says: %lld s.", (long long)jint(s->list,
+		    "host.safe_wait", 60));
 	h_raw(h, "</p><form class=\"toolbar\" data-form=\"tr-safe\">"
 	    "<label>Seconds <input name=\"wait\" type=\"number\" min=\"10\" "
 	    "max=\"3600\" placeholder=\"the agent's own\"");
@@ -923,6 +943,12 @@ sysctl_action(const char *act, const char *arg, const char *value)
 	struct server	*s;
 	char		 url[96], body[64], text[400];
 
+	/* Settings' table: a host's own timer let go, for every host's. */
+	if (strcmp(act, "safe-follow") == 0) {
+		snprintf(url, sizeof(url), "/api/servers/%.16s", arg);
+		api("POST", url, "{\"safe_wait\":0}", safe_cb, NULL);
+		return (true);
+	}
 	if (strncmp(act, "sy-", 3) != 0 && strncmp(act, "tr-", 3) != 0 &&
 	    strcmp(act, "do-tr-switch") != 0 && strcmp(act, "do-tr-renew") !=
 	    0)

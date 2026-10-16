@@ -110,12 +110,12 @@ arc_on_http(int id, int status, char *text)
 	p = *pp;
 	memset(pp, 0, sizeof(*pp));
 	o = status != 0 ? json_parse(text) : NULL;
+	/* The console's reason: error.message, or an error as a text. */
+	err = NULL;
 	if (status == 0)
 		err = text;
 	else if (status >= 400 && (err = jstr(o, "error.message")) == NULL)
 		err = jstr(o, "error");
-	else
-		err = NULL;
 	if (status >= 200 && status < 300 && o == NULL)
 		err = "the console sent something that is not JSON";
 	/* Every answer means the console is up; a 401 means log in. */

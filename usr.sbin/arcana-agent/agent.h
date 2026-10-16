@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.126.0"
+#define	ARCANA_AGENT_VERSION	"0.131.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -441,6 +441,7 @@ int		 do_bird_routes(struct work *, const char *,
 		    struct arc_network_rsp *);
 /* superbia/kernel.c: the kernel's modules and memory. */
 int		 do_kernel(struct work *, struct arc_kernel_rsp *);
+bool		 kld_listed(struct work *, const char *);
 int		 do_kmod(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 kmod_name_ok(const char *);
@@ -505,6 +506,7 @@ void		 sdwan_dns_json(struct work *, struct ucl_object_s *);
 int		 do_sdwan_proxy(struct work *, const char *, const char **);
 void		 sdwan_proxy_start(void);
 void		 sdwan_proxy_json(struct work *, struct ucl_object_s *);
+void		 security_specs(const char *, struct ucl_object_s *, const char *);
 int		 do_sdwan_ids(struct work *, const char *, const char **);
 void		 sdwan_ids_start(void);
 void		 sdwan_ids_json(struct work *, struct ucl_object_s *);

@@ -292,45 +292,92 @@ op_new(const char *title, const char *server)
 }
 
 /*
- * The tasks that ended, kept in the browser so that they are still
- * there when the page is opened again: "state started finished
- * server<TAB>title" a line, newest first.  Their traces are not kept.
+ * The finished tasks kept in the browser, so that a reload has them with
+ * what was seen of them: each its title, host, times and outcome, its
+ * job on the host (whose trace is read from there again when it is
+ * opened), its request, its error, and its trace and diff when they are
+ * small enough to keep.
  */
+#define	OPS_KEPT	24
+#define	OPS_KEPT_TRACE	(16 * 1024)
+
 void
 ops_save(void)
 {
-	static unsigned long	last;
-	struct html		b;
-	unsigned long		sig;
-	int			i, n;
+	static unsigned long	 last;
+	ucl_object_t		*arr, *e;
+	unsigned long		 sig;
+	char			*json, *t;
+	int			 i, n;
 
 	sig = 5381;
 	for (i = 0; i < app.nops; i++)
-		sig = sig * 33 + (unsigned long)app.ops[i].id * 4 +
-		    (unsigned long)app.ops[i].state;
+		sig = sig * 33 + (unsigned long)app.ops[i].id * 8 +
+		    (unsigned long)app.ops[i].state * 2 + (app.ops[i].trace !=
+		    NULL ? 1 : 0);
 	if (sig == last)
 		return;
 	last = sig;
-	memset(&b, 0, sizeof(b));
-	for (i = 0, n = 0; i < app.nops && n < 24; i++) {
-		if (app.ops[i].state == OP_RUNNING)
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0, n = 0; i < app.nops && n < OPS_KEPT; i++) {
+		struct op	*o = &app.ops[i];
+
+		if (o->state == OP_RUNNING)
 			continue;
-		h_fmt(&b, "%d %.0f %.0f %s\t%s\n", app.ops[i].state == OP_OK ?
-		    1 : 0, app.ops[i].started, app.ops[i].finished,
-		    app.ops[i].server, app.ops[i].title);
+		e = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(e, ucl_object_frombool(o->state == OP_OK),
+		    "ok", 0, false);
+		ucl_object_insert_key(e, ucl_object_fromdouble(o->started),
+		    "started", 0, false);
+		ucl_object_insert_key(e, ucl_object_fromdouble(o->finished),
+		    "finished", 0, false);
+		ucl_object_insert_key(e, ucl_object_fromstring(o->server),
+		    "server", 0, false);
+		ucl_object_insert_key(e, ucl_object_fromstring(o->title),
+		    "title", 0, false);
+		if (o->sid[0] != '\0')
+			ucl_object_insert_key(e, ucl_object_fromstring(o->sid),
+			    "sid", 0, false);
+		if (o->watched > 0)
+			ucl_object_insert_key(e, ucl_object_fromint(o->watched),
+			    "job", 0, false);
+		if (o->method[0] != '\0')
+			ucl_object_insert_key(e, ucl_object_fromstring(o->method),
+			    "method", 0, false);
+		if (o->url[0] != '\0')
+			ucl_object_insert_key(e, ucl_object_fromstring(o->url),
+			    "url", 0, false);
+		if (o->error[0] != '\0')
+			ucl_object_insert_key(e, ucl_object_fromstring(o->error),
+			    "error", 0, false);
+		if (o->diff != NULL && strlen(o->diff) < OPS_KEPT_TRACE)
+			ucl_object_insert_key(e, ucl_object_fromstring(o->diff),
+			    "diff", 0, false);
+		/* A job's trace is its host's to give again. */
+		if (o->trace != NULL && o->watched == 0 && (t = (char *)
+		    ucl_object_emit(o->trace, UCL_EMIT_JSON_COMPACT)) != NULL) {
+			if (strlen(t) < OPS_KEPT_TRACE)
+				ucl_object_insert_key(e, ucl_object_ref(o->trace),
+				    "trace", 0, false);
+			free(t);
+		}
+		ucl_array_append(arr, e);
 		n++;
 	}
-	arc_store_set("arc_tasks", b.s != NULL ? b.s : "");
-	free(b.s);
+	json = (char *)ucl_object_emit(arr, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(arr);
+	arc_store_set("arc_tasks", json != NULL ? json : "[]");
+	free(json);
 }
 
 void
 ops_load(void)
 {
-	struct op	*o;
-	char		*text, *p, *line, *tab, server[65];
-	double		 started, finished;
-	int		 ok, used;
+	struct op		*o;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*arr;
+	char			*text;
 
 	static bool	 loaded;
 
@@ -340,27 +387,80 @@ ops_load(void)
 	loaded = true;
 	if ((text = arc_store_get("arc_tasks")) == NULL)
 		return;
-	p = text;
-	while ((line = strsep(&p, "\n")) != NULL && app.nops < MAX_OPS) {
-		if ((tab = strchr(line, '\t')) == NULL)
+	arr = json_parse(text);
+	free(text);
+	if (arr == NULL)
+		return;
+	it = NULL;
+	while ((e = ucl_object_iterate(arr, &it, true)) != NULL &&
+	    app.nops < MAX_OPS) {
+		if (jstr(e, "title") == NULL)
 			continue;
-		*tab++ = '\0';
-		used = 0;
-		if (sscanf(line, "%d %lf %lf %n", &ok, &started, &finished,
-		    &used) < 3 || used == 0)
-			continue;
-		snprintf(server, sizeof(server), "%s", line + used);
 		/* In the order they were kept: the oldest comes last. */
 		o = &app.ops[app.nops++];
 		memset(o, 0, sizeof(*o));
 		o->id = ++app.nextop;
-		snprintf(o->title, sizeof(o->title), "%s", tab);
-		snprintf(o->server, sizeof(o->server), "%s", server);
-		o->state = ok ? OP_OK : OP_FAILED;
-		o->started = started;
-		o->finished = finished;
+		snprintf(o->title, sizeof(o->title), "%s", jstr(e, "title"));
+		snprintf(o->server, sizeof(o->server), "%s", jstr(e, "server") !=
+		    NULL ? jstr(e, "server") : "");
+		snprintf(o->sid, sizeof(o->sid), "%s", jstr(e, "sid") != NULL ?
+		    jstr(e, "sid") : "");
+		snprintf(o->method, sizeof(o->method), "%s", jstr(e, "method") !=
+		    NULL ? jstr(e, "method") : "");
+		snprintf(o->url, sizeof(o->url), "%s", jstr(e, "url") != NULL ?
+		    jstr(e, "url") : "");
+		snprintf(o->error, sizeof(o->error), "%s", jstr(e, "error") !=
+		    NULL ? jstr(e, "error") : "");
+		o->state = jbool(e, "ok") ? OP_OK : OP_FAILED;
+		o->started = jnum(e, "started", 0);
+		o->finished = jnum(e, "finished", 0);
+		o->watched = jint(e, "job", 0);
+		if (jstr(e, "diff") != NULL && (o->diff = strdup(jstr(e,
+		    "diff"))) == NULL)
+			abort();
+		if (jget(e, "trace") != NULL)
+			o->trace = ucl_object_copy(jget(e, "trace"));
 	}
-	free(text);
+	ucl_object_unref(arr);
+}
+
+static void
+trace_fetch_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct ctx	*c;
+	struct op	*op;
+
+	(void)err;
+	c = arg;
+	op = op_find(c->op);
+	free(c);
+	if (op == NULL || op->trace != NULL)
+		return;
+	if (status == 200 && jget(o, "job.trace") != NULL)
+		op->trace = ucl_object_copy(jget(o, "job.trace"));
+	else
+		snprintf(op->stage, sizeof(op->stage), "%s", status == 404 ?
+		    "gone from its host" : "its host did not answer");
+}
+
+/*
+ * A task opened whose trace is not here (a job kept over a reload of
+ * the page): read from its host, which keeps its jobs.
+ */
+void
+op_trace_fetch(struct op *op)
+{
+	struct ctx	*c;
+	char		 url[128];
+
+	if (op == NULL || op->trace != NULL || op->watched <= 0 ||
+	    op->sid[0] == '\0' || op->state == OP_RUNNING)
+		return;
+	c = ctx_new();
+	c->op = op->id;
+	snprintf(url, sizeof(url), "/api/servers/%s/jobs/%lld", op->sid,
+	    op->watched);
+	api("GET", url, NULL, trace_fetch_cb, c);
 }
 
 static void
@@ -1057,6 +1157,9 @@ refresh_servers(void)
 {
 
 	api("GET", "/api/servers", NULL, servers_cb, NULL);
+	/* Settings' rollback timer is told on each host's System tab. */
+	if (app.settings == NULL)
+		load_settings();
 }
 
 static void
@@ -3005,7 +3108,8 @@ save_settings(const ucl_object_t *f, bool mail)
 	while ((e = ucl_object_iterate(jget(app.settings, "settings"), &it,
 	    true)) != NULL) {
 		if (!jbool(e, "editable") || (key = jstr(e, "key")) == NULL ||
-		    (strncmp(key, "mail_", 5) == 0) != mail)
+		    (strncmp(key, "mail_", 5) == 0 || strncmp(key, "smtp_",
+		    5) == 0) != mail)
 			continue;
 		q = json_quote(key);
 		h_raw(&b, first ? "" : ",");

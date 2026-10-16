@@ -307,6 +307,48 @@ link_address(const char *ifn, int af)
 	return (NULL);
 }
 
+/*
+ * The interface of the link's host (sd.ifs) that has the address the
+ * console reaches its agent at, or NULL: a new address there, or a
+ * routing table of its own, may lose the host to the console.
+ */
+static const char *
+way_in_if(const char *sid)
+{
+	const ucl_object_t	*o, *a;
+	ucl_object_iter_t	 it, ait;
+	const char		*u, *e;
+	char			 host[80];
+	int			 i;
+
+	for (i = 0; i < app.nservers; i++)
+		if (strcmp(app.servers[i].id, sid) == 0)
+			break;
+	if (i == app.nservers || (u = strstr(app.servers[i].uri, "://")) ==
+	    NULL)
+		return (NULL);
+	u += 3;
+	if (*u == '[') {
+		u++;
+		e = strchr(u, ']');
+	} else
+		e = u + strcspn(u, ":/");
+	if (e == NULL || e == u || (size_t)(e - u) >= sizeof(host))
+		return (NULL);
+	snprintf(host, sizeof(host), "%.*s", (int)(e - u), u);
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(sd.ifs, "interfaces"), &it,
+	    true)) != NULL) {
+		ait = NULL;
+		while ((a = ucl_object_iterate(jget(o, "addresses"), &ait,
+		    true)) != NULL)
+			if (jstr(a, "address") != NULL && strcmp(jstr(a,
+			    "address"), host) == 0)
+				return (jstr(o, "name"));
+	}
+	return (NULL);
+}
+
 /* ---- Reading -------------------------------------------------------- */
 
 static char *
@@ -1001,8 +1043,7 @@ view_dashboard(struct html *h)
 	if (nedges > 0) {
 		h_raw(h, "<div class=\"sd-block\"><h3>Topology <small class=\""
 		    "dim\">the edges and the tunnels between them, each as its "
-		    "probes see it: green up, red down, dashed a backup, a lock "
-		    "encrypted</small></h3><div class=\"sd-topo-wrap\"><svg "
+		    "probes see it</small></h3><div class=\"sd-topo-wrap\"><svg "
 		    "class=\"sd-topo\" viewBox=\"0 0 640 300\" role=\"img\">");
 		cx = 320;
 		cy = 150;
@@ -1183,7 +1224,11 @@ view_dashboard(struct html *h)
 			    " · breakout" : "");
 			i++;
 		}
-		h_raw(h, "</svg></div></div>");
+		h_raw(h, "</svg><ul class=\"glegend\"><li class=\"sd-t up\">up"
+		    "</li><li class=\"sd-t half\">up at one end</li><li class="
+		    "\"sd-t down\">down</li><li class=\"sd-t backup\">a backup "
+		    "tunnel</li><li class=\"text\"><b>🔒</b>encrypted</li></ul>"
+		    "</div></div>");
 	}
 	view_overview(h);
 }
@@ -4328,11 +4373,17 @@ sdwan_modal(struct html *h)
 		    "forwarding</code>), kept in <code>/etc/sysctl.conf</code>."
 		    "</li><li>With NTP servers: <code>ntpd</code>(8) set to them, "
 		    "in <code>/etc/ntp.conf</code> and <code>rc.conf</code>."
-		    "</li><li>Each WAN link: its interface addressed by DHCP "
-		    "(<code>dhclient</code>) or SLAAC (<code>rtsol</code>) "
-		    "where it says so, put in its own routing table (<code>"
-		    "ifconfig fib</code>) where it has one, BIRD for its BGP or "
-		    "OSPF.</li><li>Once a service uses it: more routing tables "
+		    "</li><li>A WAN link left <b>Static</b> with no routing "
+		    "table of its own, as a link is unless you change it, is "
+		    "not touched: its address stays as the host has it. Only "
+		    "a link you set to DHCP gets <code>dhclient</code>, to "
+		    "SLAAC <code>rtsol</code>, and only one given a table "
+		    "(VRF) is put in it (<code>ifconfig fib</code>); BIRD for "
+		    "its BGP or OSPF where it has them. The link the console "
+		    "reaches the host through is said, and kept as it is "
+		    "unless you agree. <a href=\"https://spmzt.github.io/"
+		    "arcana-docs/sdwan/apply.html#what-an-edge-changes-on-its-"
+		    "host\" target=\"_blank\" rel=\"noopener\">More</a></li><li>Once a service uses it: more routing tables "
 		    "(<code>net.fibs</code>), the service's tunnels (gre(4), "
 		    "gif(4), geneve(4), wg(4), ipsec(4)) in its table, its "
 		    "routes, <code>ipfw</code>(8) rules in set 30, and BIRD, "
@@ -4407,7 +4458,29 @@ sdwan_modal(struct html *h)
 			h_attr(h, "value", ifn != NULL ? ifn : "");
 			h_raw(h, ">");
 		}
-		h_raw(h, "</label><div class=\"two\"><label>Address<input name=\""
+		h_raw(h, "</label>");
+		/* The way the console reaches this host: said, and to be
+		 * agreed to before it is given DHCP, SLAAC or a table. */
+		{
+			const char	*wi = way_in_if(sd.link_host);
+
+			if (wi != NULL && ifn != NULL && strcmp(wi, ifn) == 0)
+				h_fmt(h, "<div class=\"notice warn\"><b>The console "
+				    "reaches this host through %s.</b> Static "
+				    "addressing and no table of its own leave it "
+				    "as it is. DHCP or SLAAC may give it another "
+				    "address, and a table of its own (VRF) moves "
+				    "its replies there: either can lose the host "
+				    "to the console. <label class=\"toggle\"><input "
+				    "type=\"checkbox\" name=\"wayin_ok\"> I reach it "
+				    "another way too, or its address and routes "
+				    "stay</label> <a href=\"https://spmzt.github.io/"
+				    "arcana-docs/sdwan/apply.html#what-an-edge-"
+				    "changes-on-its-host\" target=\"_blank\" rel="
+				    "\"noopener\">What an edge changes</a></div>",
+				    wi);
+		}
+		h_raw(h, "<div class=\"two\"><label>Address<input name=\""
 		    "address\" spellcheck=\"false\" autocomplete=\"off\" "
 		    "placeholder=\"the interface's\"");
 		v = lk != NULL && sd.link_if[0] == '\0' ? jstr(lk, "address") :
@@ -4453,9 +4526,10 @@ sdwan_modal(struct html *h)
 			    != NULL ? jstr(lk, "addressing") : NULL);
 			option(h, "slaac", "SLAAC: router advertisements, rtsol", lk
 			    != NULL ? jstr(lk, "addressing") : NULL);
-			h_raw(h, "</select><small>With DHCP or SLAAC the address "
-			    "above may stay empty: the edge's is read from the host "
-			    "when a plan is made.</small></label>");
+			h_raw(h, "</select><small>Static leaves the interface as "
+			    "it is: nothing of its address is changed. With DHCP or "
+			    "SLAAC the address above may stay empty: the edge's is "
+			    "read from the host when a plan is made.</small></label>");
 			snprintf(nb, sizeof(nb), "%lld", lk != NULL ? (long long)
 			    jint(lk, "vrf", 0) : 0LL);
 			text_field(h, "Routing table (VRF)", "vrf", lk != NULL &&
@@ -5920,6 +5994,25 @@ sd_forms(const char *form, const ucl_object_t *f)
 		    "server", id)) == NULL) {
 			ucl_object_unref(doc);
 			return (true);
+		}
+		/* Not the console's way in, unless agreed to (above). */
+		{
+			const char	*wi = way_in_if(id);
+
+			if (wi != NULL && jstr(f, "interface") != NULL &&
+			    strcmp(wi, jstr(f, "interface")) == 0 &&
+			    !checked(f, "wayin_ok") && (((v = jstr(f,
+			    "addressing")) != NULL && v[0] != '\0' && strcmp(v,
+			    "static") != 0) || ((v = jstr(f, "vrf")) != NULL &&
+			    v[0] != '\0' && strtoll(v, NULL, 10) > 0))) {
+				snprintf(app.modal_error, sizeof(app.modal_error),
+				    "The console reaches this host through %s: "
+				    "DHCP, SLAAC or a table of its own there may "
+				    "lose it. Tick that you reach it another way "
+				    "too, or leave the link static.", wi);
+				ucl_object_unref(doc);
+				return (true);
+			}
 		}
 		if (jstr(f, "interface") == NULL || jstr(f, "interface")[0] ==
 		    '\0' || jstr(f, "ucs") == NULL) {

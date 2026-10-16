@@ -657,6 +657,9 @@ part_shell(void)
 		usleep(100000);
 	ATF_CHECK(system("grep -q '/usr/local/etc/arcana/id_ed25519' "
 	    "data/settings.json") == 0);
+	/* The rollback timer for every host: none to show yet. */
+	ATF_CHECK(js_true("document.querySelector('form[data-form=settings]')"
+	    ".safe_wait && document.querySelector('.safehosts-none')"));
 	/* The keys that sign in, a tab of their own. */
 	run("document.querySelector('button[data-act=set-tab][data-arg=keys]')"
 	    ".click()");
@@ -1242,13 +1245,21 @@ part_hosts(void)
 	    "&& [...document.querySelectorAll('.dock .recent .last small')]."
 	    "some(e => /done|failed/.test(e.textContent))", 20);
 	/* Kept as the page keeps them, which may come a moment after. */
-	wait_js("(localStorage.getItem('arc_tasks') || '').split('\\n')"
+	wait_js("JSON.parse(localStorage.getItem('arc_tasks') || '[]')"
 	    ".length > 5", 5);
 	shot("9a-recent-tasks");
 	run("[...document.querySelectorAll('.dock .recent .last')].pop()."
 	    "click()");
 	wait_js("document.querySelector('.dock.open ol.ops li.op.selected .w')",
 	    5);
+	/* A job kept over the reload: its trace read from its host again
+	 * as it is opened. */
+	run("const k = JSON.parse(localStorage.getItem('arc_tasks')).find(t => "
+	    "t.job); window.keptJob = k ? k.title : ''; [...document."
+	    "querySelectorAll('.dock.open ol.ops li.op')].find(l => l."
+	    "querySelector('.t').textContent === window.keptJob).click()");
+	wait_js("window.keptJob !== '' && document.querySelector('.trace-pane "
+	    ".trace svg')", 10);
 	run("document.querySelector('.dock > header').click()");
 	wait_js("!document.querySelector('.dock.open')", 5);
 	/*
@@ -2918,6 +2929,29 @@ part_ssh(void)
 	wait_js("[...document.querySelectorAll('table.ssh-keys tbody tr')]"
 	    ".some(r => r.textContent.includes('alice@lab'))", 20);
 	run("document.querySelector('.dock > header').click()");
+	/* Its options in a form: principals and no-pty set, read back
+	 * into the form when opened again. */
+	run("document.querySelector('button[data-act=ssh-key-opts]').click()");
+	wait_js("document.querySelector('form[data-form=ssh-opts] "
+	    "input[name=o_principals]')", 5);
+	run("const f = document.querySelector('form[data-form=ssh-opts]'); "
+	    "f.o_principals.value = 'alice,admin'; f['o_no-pty'].checked = "
+	    "true; f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('table.ssh-keys td.opts')]"
+	    ".some(t => t.textContent === 'principals=\"alice,admin\",no-pty')",
+	    20);
+	ATF_CHECK(system("grep -q '^principals=\"alice,admin\",no-pty "
+	    "ssh-ed25519 ' tools/sshroot/home/alice/.ssh/authorized_keys") ==
+	    0);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('button[data-act=ssh-key-opts]').click()");
+	wait_js("document.querySelector('form[data-form=ssh-opts]').o_principals"
+	    ".value === 'alice,admin' && document.querySelector('form"
+	    "[data-form=ssh-opts]')['o_no-pty'].checked", 5);
+	shot("7e-ssh-key-options");
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('.modal')", 5);
 	run("document.querySelector('button[data-act=ssh-key-del]').click()");
 	click_when(".modal button.danger", 5);
 	click_when("button[data-act=queue-run]", 5);
@@ -3339,6 +3373,28 @@ part_storage(void)
 	wait_js("document.querySelector('.notice.info') && document."
 	    "querySelector('.notice.info').textContent.includes('if_disc')", 20);
 	run("document.querySelector('.dock > header').click()");
+	/* Out of kld_list from the notice, the kernel as it is; and one
+	 * loaded kept at boot by its row's button, not loaded again. */
+	run("document.querySelector('.notice.info button[data-act=kmod-forget]"
+	    "[data-arg=if_disc]').click()");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('if_disc out of kld_list'))", 20);
+	ATF_CHECK(system("! grep -q 'if_disc' rc.conf") == 0);
+	run("document.querySelector('.dock > header').click()");
+	wait_js("document.querySelector('table.kmods button[data-act="
+	    "kmod-keep]')", 20);
+	run("window.kept = document.querySelector('table.kmods button[data-act="
+	    "kmod-keep]').dataset.arg; document.querySelector('table.kmods "
+	    "button[data-act=kmod-keep]').click()");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes(window.kept + ' into kld_list')) && "
+	    "document.querySelector('table.kmods button.on[data-act="
+	    "kmod-forget][data-arg=\"' + window.kept + '\"]')", 20);
+	ATF_CHECK(system("grep -q '^kld_list=' rc.conf && test \"$(grep -c "
+	    "'^kldload' kld.log)\" = 1") == 0);
+	run("document.querySelector('.dock > header').click()");
 	/* One that is in is unloaded once its name is typed. */
 	run("window.kld = [...document.querySelectorAll('table.kmods button"
 	    "[data-act=kmod-unload]')][0].dataset.arg; document.querySelector("
@@ -3734,6 +3790,10 @@ part_firewall(void)
 	ATF_CHECK(js_true("document.querySelectorAll('svg.fwchain path.call:"
 	    "not(.skip)').length === 1 && document.querySelectorAll('svg."
 	    "fwchain path.call.skip').length === 1"));
+	/* Each line said what it is, beside the graph. */
+	ATF_CHECK(js_true("document.querySelector('svg.fwchain + ul.glegend "
+	    "li.fw-call') && document.querySelector('svg.fwchain + ul.glegend "
+	    "li.fw-skip')"));
 	/* What the rules take: the busiest as bars, 9100 never matched
 	 * (check-state at 200 and the returns pass, they are left out). */
 	ATF_CHECK_MSG(js_true("document.querySelectorAll('ol.fwbusy li')."
@@ -4283,6 +4343,29 @@ part_firewall(void)
 	    "f.requestSubmit();");
 	wait_js("document.body.textContent.includes('its agent\\'s own')",
 	    10);
+	/* Its agent says its own; Settings' for every host comes before
+	 * it, told there host by host, and here. */
+	wait_js("document.body.textContent.includes(\"its agent's own <code>"
+	    "\") || document.body.textContent.includes('-w says: 60 s')", 10);
+	run("document.querySelector('.rail-foot li[data-act=settings]')"
+	    ".click()");
+	click_when("button[data-act=set-tab][data-arg=console]", 10);
+	wait_js("document.querySelector('table.safehosts tbody tr') && "
+	    "document.querySelector('table.safehosts').textContent.includes("
+	    "\"its agent's\") && document.querySelector('table.safehosts')."
+	    "textContent.includes('60 s')", 10);
+	run("const f = document.querySelector('form[data-form=settings]'); "
+	    "f.safe_wait.value = '45'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('table.safehosts tbody tr')]."
+	    "every(r => r.textContent.includes('45 s') && r.textContent."
+	    "includes(\"every host's\"))", 10);
+	shot("1f-rollback-hosts");
+	run("const f = document.querySelector('form[data-form=settings]'); "
+	    "f.safe_wait.value = ''; f.requestSubmit();");
+	wait_js("![...document.querySelectorAll('table.safehosts tbody tr')]."
+	    "some(r => r.textContent.includes('45 s'))", 10);
+	host_open(NULL);
+	click_when("button.tab[data-arg=summary]", 10);
 
 	/*
 	 * The host as a whole: saved as a bundle, JSON and YAML, the files
@@ -4455,6 +4538,49 @@ part_flows(void)
 	    "includes('when a program crashes: ${param.process}') && "
 	    "document.querySelectorAll('svg.wfdraw g.wfnode.job').length === 1",
 	    10);
+	run("document.querySelector('button[data-act=wf-back]').click()");
+	/*
+	 * Every jail's packages: the jail a choice among the fleet's, every
+	 * running one here; pkg's network a choice in words, under More
+	 * options; and a field turned to an expression, a variable put in.
+	 */
+	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
+	run("const t = document.querySelector('select[data-input=wf-template]'"
+	    "); t.value = 'pkg-every-jail'; t.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelectorAll('svg.wfdraw g.wfnode.job').length === "
+	    "2", 10);
+	ATF_CHECK(js_true("document.querySelector('ul.glegend li.wf-fail') && "
+	    "document.querySelector('ul.glegend li.wf-then')"));
+	run("document.querySelectorAll('svg.wfdraw g.wfnode.job')[1]."
+	    "dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, "
+	    "pointerId: 6, button: 0 })); document.dispatchEvent(new "
+	    "PointerEvent('pointerup', { bubbles: true, pointerId: 6 }));");
+	wait_js("document.querySelector('select[data-arg=\"text:steps.1.job."
+	    "jail\"]') && document.querySelector('select[data-arg=\"text:steps.1."
+	    "job.jail\"]').value === '*' && [...document.querySelectorAll("
+	    "'select[data-arg=\"num:steps.1.job.pkg_ip\"] option')].some(o => "
+	    "o.textContent === 'IPv6 only (pkg -6)') && document.querySelector("
+	    "'details.wfmore')", 10);
+	ATF_CHECK(js_true("[...document.querySelectorAll('.wffield small.help')]"
+	    ".some(s => s.textContent.includes('Which way pkg reaches'))"));
+	run("document.querySelector('details.wfmore').open = true; "
+	    "document.querySelector('button[data-act=wf-expr][data-arg=\"steps.1."
+	    "job.pkg_ip\"]').click()");
+	wait_js("document.querySelector('select.wfvar[data-arg=\"steps.1.job."
+	    "pkg_ip\"]')", 5);
+	run("setf('select.wfvar[data-arg=\"steps.1.job.pkg_ip\"]', "
+	    "'${host.name}')");
+	wait_js("document.querySelector('input[data-arg=\"text:steps.1.job."
+	    "pkg_ip\"]') && document.querySelector('input[data-arg=\"text:steps."
+	    "1.job.pkg_ip\"]').value === '${host.name}'", 5);
+	shot("9-workflow-fields");
+	/* Back to a value of its own: the expression goes. */
+	run("document.querySelector('button[data-act=wf-expr][data-arg=\"steps.1."
+	    "job.pkg_ip\"]').click()");
+	wait_js("document.querySelector('select[data-arg=\"num:steps.1.job."
+	    "pkg_ip\"]') && document.querySelector('select[data-arg=\"num:steps."
+	    "1.job.pkg_ip\"]').value === ''", 5);
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	/* What starts one, in words: a jail stops, which jail asked. */
 	click_when("button[data-act=wf-new]", 10);
@@ -5954,7 +6080,9 @@ part_trouble(void)
 		    "li.tshop').length && document.querySelector('svg.tsgraph "
 		    "g.tsnode .name').textContent === document.querySelector("
 		    "'ol.tsway li.tshop b').textContent && document."
-		    "querySelector('svg.tsgraph .way.leaves') && location.hash "
+		    "querySelector('svg.tsgraph .way.leaves') && document."
+		    "querySelector('svg.tsgraph + ul.glegend li.ts-leaves') && "
+		    "location.hash "
 		    "=== '#/troubleshoot?src=10.1.0.2&dst=10.3.0.2&proto=tcp&"
 		    "port=22'"), "%s", g != NULL ? ucl_object_tostring_forced(g)
 		    : "?");
@@ -5981,12 +6109,90 @@ part_trouble(void)
 	    "includes('\\nhops:\\n')", 10);
 }
 
+/*
+ * The Security page: a host chosen; a URL filter made by its form (the
+ * stand-in Squid takes it), shown running with its CA where TLS is
+ * opened; scanning for malware listed on its tab; Suricata made the
+ * same way; each removed after asking.
+ */
+static void
+part_security(void)
+{
+
+	click_when("li.secnode[data-act=select-security]", 10);
+	wait_js("location.hash.startsWith('#/security/url') && document."
+	    "querySelector('select[data-input=sec-host]')", 10);
+	run("const s = document.querySelector('select[data-input=sec-host]'); "
+	    "s.value = s.options[s.options.length - 1].value; s.dispatchEvent("
+	    "new Event('input', { bubbles: true }))");
+	wait_js("document.querySelector('.secpage .empty') && document."
+	    "querySelector('button[data-act=sec-new]')", 20);
+	click_when("button[data-act=sec-new]", 10);
+	wait_js("document.querySelector('form[data-form=sec-proxy]')", 10);
+	run("const f = document.querySelector('form[data-form=sec-proxy]'); "
+	    "f.listen.value = '127.0.0.1'; f.allow.value = '10.0.0.0/8, "
+	    "192.168.0.0/16'; f.deny.value = 'bad.example\\nworse.example'; "
+	    "f.mode.value = 'inspect'; f.malware.checked = true; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('table.secproxy') && document."
+	    "querySelector('table.secproxy td b').textContent === 'sec-web' "
+	    "&& document.querySelector('table.secproxy').textContent."
+	    "includes('inspected') && !document.querySelector("
+	    "'form[data-form=sec-proxy]')", 30);
+	wait_js("document.querySelector('table.secproxy .chip.st-up') && "
+	    "document.querySelector('table.secproxy details pre.cert')", 30);
+	shot("9u-security-url");
+	/* Its form again, as it was saved. */
+	click_when("table.secproxy button[data-act=sec-edit]", 10);
+	wait_js("document.querySelector('form[data-form=sec-proxy]') && "
+	    "document.querySelector('form[data-form=sec-proxy]').deny.value "
+	    "=== 'bad.example\\nworse.example' && document.querySelector("
+	    "'form[data-form=sec-proxy]').allow.value === '10.0.0.0/8, "
+	    "192.168.0.0/16'", 10);
+	click_when("form[data-form=sec-proxy] button[data-act=sec-cancel]", 10);
+	click_when("button[data-act=sec-tab][data-arg=malware]", 10);
+	wait_js("location.hash.startsWith('#/security/malware/') && document."
+	    "querySelector('table.secproxy button[data-act=sec-unscan]')", 10);
+	click_when("button[data-act=sec-tab][data-arg=signatures]", 10);
+	wait_js("document.querySelector('.secpage .empty') || document."
+	    "querySelector('table.secsigs')", 10);
+	/* Suricata: refused with neither rules nor the ruleset; made. */
+	click_when("button[data-act=sec-tab][data-arg=ids]", 10);
+	click_when("button[data-act=sec-new]", 10);
+	wait_js("document.querySelector('form[data-form=sec-ids]')", 10);
+	run("const f = document.querySelector('form[data-form=sec-ids]'); "
+	    "f.interfaces.value = 'lo0'; f.ruleset.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => t."
+	    "textContent.includes('suricata-update'))", 20);
+	run("const f = document.querySelector('form[data-form=sec-ids]'); "
+	    "f.rules.value = 'alert tcp any any -> any 23 (sid:1000009;)'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('table.secids') && document."
+	    "querySelector('table.secids').textContent.includes('lo0') && "
+	    "document.querySelector('table.secids').textContent.includes("
+	    "'detects')", 30);
+	shot("9v-security-ids");
+	/* Removed, after asking. */
+	click_when("table.secids button[data-act=sec-remove]", 10);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("!document.querySelector('table.secids') && document."
+	    "querySelector('.secpage .empty')", 30);
+	click_when("button[data-act=sec-tab][data-arg=url]", 10);
+	click_when("table.secproxy button[data-act=sec-remove]", 10);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("!document.querySelector('table.secproxy')", 30);
+}
+
 ATF_TC_BODY(pwa_flows, tc)
 {
 
 	prologue(tc, 2);
 	part_flows();
 	part_trouble();
+	part_security();
 }
 ATF_TC_CLEANUP(pwa_flows, tc)
 {

@@ -4980,3 +4980,91 @@ html:not(.neon) label.button {
 }
 .who a.help:hover { color: var(--fg); border-color: var(--cyan); }
 .rt-legend .arc::before { width: 12px; height: 12px; border: 2px solid var(--slate); border-right: none; border-radius: 12px 0 0 12px; }
+
+/* An error copies its text when clicked (bridge.js). */
+.toast.bad, .notice.bad, .notice.warn, p.error, .err, td.err { cursor: copy; }
+.modal form .checks { display: flex; flex-wrap: wrap; gap: .35rem 1.2rem; margin: .5rem 0; }
+.modal form .checks label.toggle { flex: none; align-items: center; }
+
+/*
+ * A step's field: its label and {x} on a line, its control (a choice, a
+ * box, a number, a jail) or its expression with what can be put in it,
+ * its help under it.  What the step may take besides, folded.
+ */
+.wffields { align-items: start; }
+.wffield { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+.wflabel { display: flex; align-items: center; gap: .4rem; font-size: .74rem; color: var(--fg-2); }
+.wflabel em { font-style: normal; color: var(--amber); font-size: .7rem; }
+.wflabel .wfexpr { margin-left: auto; min-height: 0; padding: 0 .35rem; font-family: var(--mono); font-size: .7rem; line-height: 1.5; color: var(--dim); background: transparent; border: 1px solid var(--line-2); border-radius: 4px; text-transform: none; letter-spacing: 0; }
+.wflabel .wfexpr.on { color: var(--violet); border-color: var(--violet); }
+.wffield input[data-arg^="text:"]:has(+ .wfvar) { font-family: var(--mono); color: var(--violet); }
+.wffield select.wfvar { font-size: .74rem; color: var(--fg-2); }
+.wffield small.help { color: var(--dim); font-size: .7rem; line-height: 1.35; }
+.wffield label.toggle { display: inline-flex; flex-direction: row; align-items: center; gap: .4rem; font-size: .8rem; }
+details.wfmore { border-top: 1px dashed var(--line); padding-top: .35rem; }
+details.wfmore > summary { cursor: pointer; font-size: .76rem; color: var(--fg-2); }
+details.wfmore[open] > summary { margin-bottom: .45rem; }
+
+/* In the narrow panel beside the drawing: the step's name a line of its
+ * own, its id and what it is beside each other under it. */
+.wfpanel .wfedhead { grid-template-columns: 1.6rem minmax(0, 1fr) minmax(0, 1fr) auto; }
+.wfpanel .wfedhead > input[data-arg$=".name"] { grid-column: 2 / -1; grid-row: 1; }
+.wfpanel .wfedhead > .num { grid-row: 1; }
+.wfpanel .wfedhead > input[data-arg$=".id"] { grid-column: 2; grid-row: 2; }
+.wfpanel .wfedhead > select { grid-column: 3; grid-row: 2; }
+.wfpanel .wfedhead > .acts { grid-column: 4; grid-row: 2; }
+
+/*
+ * A graph's legend: a line or a box as the graph draws it, and what it
+ * means, beside it; each graph names its own (glegend li's classes).
+ */
+.glegend { display: flex; flex-wrap: wrap; gap: .3rem 1.1rem; list-style: none; margin: .45rem 0 0; padding: 0; font-size: .72rem; color: var(--dim); }
+.glegend li { display: inline-flex; align-items: center; }
+.glegend li::before { content: ""; display: inline-block; width: 20px; height: 0; margin-right: .4rem; border-top: 2px solid var(--slate); }
+.glegend li.box::before { width: 14px; height: 10px; border: 1.5px solid var(--line-2); border-radius: 3px; }
+.glegend li.dashed::before { border-style: dashed; }
+.glegend li.dotted::before { border-top-style: dotted; }
+.glegend li.text::before { display: none; }
+.glegend li b { color: var(--fg-2); margin-right: .3rem; font-weight: 600; }
+.glegend .fw-down::before { border-color: var(--fg-2); }
+.glegend .fw-call::before { border-color: var(--cyan); }
+.glegend .fw-skip::before { border-top: 2px dashed var(--amber); }
+.glegend .fw-rate::before { display: none; }
+.glegend .fw-rate b { color: var(--green); }
+.glegend .ts-way::before { border-color: var(--fg-2); }
+.glegend .ts-reply::before { border-top: 2px dashed var(--fg-2); }
+.glegend .ts-bad::before { border-color: var(--red); }
+.glegend .ts-leaves::before { border-top: 2px dotted var(--amber); }
+.glegend .ts-fw::before { width: 8px; height: 8px; border: none; border-radius: 50%; background: var(--slate); }
+.glegend .ts-fw.good::before { background: var(--green); }
+.glegend .ts-fw.warn::before { background: var(--amber); }
+.glegend .ts-fw.bad::before { background: var(--red); }
+.glegend .wf-then::before { border-color: var(--line-2); }
+.glegend .wf-fail::before { border-top: 1.5px dashed var(--red); }
+.glegend .wf-port::before { width: 8px; height: 8px; border: 2px solid var(--cyan); border-radius: 50%; }
+.glegend .wf-port.fail::before { border-color: var(--red); }
+.glegend .wf-cond b { color: var(--amber); font-weight: 500; }
+.glegend .sd-t::before { border-top-width: 3px; }
+.glegend .sd-t.up::before { border-color: var(--green); }
+.glegend .sd-t.half::before { border-color: var(--amber); }
+.glegend .sd-t.down::before { border-color: var(--red); }
+.glegend .sd-t.backup::before { border-top: 3px dashed var(--line-2); }
+.glegend .ecmp-w::before { border-top: 1px dashed var(--fg); }
+/* The Security page: a host, its plugins a tab each. */
+.secpage .sechead { display: flex; align-items: center; gap: .8rem; margin-bottom: .6rem; }
+.secpage .secpick { display: inline-flex; align-items: center; gap: .5rem; font-size: .85rem; color: var(--fg-2); }
+.secpage p.lead { color: var(--fg-2); font-size: .85rem; max-width: 60rem; margin: .6rem 0; }
+.secform { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: .6rem .9rem; align-items: start; border: 1px solid var(--line); border-radius: 8px; padding: .8rem 1rem; margin: .6rem 0 1rem; background: var(--panel); }
+.secform h4, .secform details, .secform .actions { grid-column: 1 / -1; margin: 0; }
+.secform label { display: flex; flex-direction: column; gap: .3rem; min-width: 0; font-size: .8rem; color: var(--fg-2); }
+.secform label.check { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.secform label.check small.help { flex-basis: 100%; }
+.secform small.help { color: var(--dim); font-size: .7rem; line-height: 1.35; }
+.secform textarea { font-family: var(--mono); font-size: .78rem; }
+.secform details label { margin-top: .4rem; }
+.secform .actions { display: flex; justify-content: flex-end; gap: .5rem; }
+table.net td.acts { white-space: nowrap; text-align: right; }
+table.net td.acts button + button { margin-left: .3rem; }
+ul.secalerts { list-style: none; margin: 0; padding: 0; font-size: .78rem; display: grid; gap: .2rem; }
+pre.cert { font-size: .7rem; max-height: 14rem; overflow: auto; user-select: all; }
+.secform label.check input { width: auto; flex: none; margin: 0; }

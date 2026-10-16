@@ -186,6 +186,9 @@ loc_of(char *buf, size_t len)
 	case NODE_TROUBLE:
 		trouble_loc(buf, len);
 		break;
+	case NODE_SECURITY:
+		secpage_loc(buf, len);
+		break;
 	case NODE_DEVICES:
 		snprintf(buf, len, "#/devices");
 		break;
@@ -263,7 +266,14 @@ loc_go(const char *r)
 		dispatch("select-workflows", "", "");
 	else if (IS(0, "sdwan"))
 		dispatch("select-sdwan", "", "");
-	else if (IS(0, "troubleshoot")) {
+	else if (IS(0, "security")) {
+		char	rest[64];
+
+		dispatch("select-security", "", "");
+		snprintf(rest, sizeof(rest), "%s%s%s", np > 1 ? f[1] : "",
+		    np > 2 ? "/" : "", np > 2 ? f[2] : "");
+		secpage_open(rest);
+	} else if (IS(0, "troubleshoot")) {
 		dispatch("select-trouble", "", "");
 		if (query != NULL)
 			trouble_open(query + 1);
@@ -465,6 +475,7 @@ tick(void *arg)
 			storage_tick(now);
 			workflows_tick(now);
 			sdwan_tick(now);
+			secpage_tick(now);
 			live_tick(now);
 		}
 		app.quiet = false;
@@ -594,7 +605,7 @@ submit(const char *form, const ucl_object_t *f)
 	    jailmk_form(form, f) || neigh_form(form, f) || carp_form(form, f) ||
 	    ca_form(form, f) || certs_form(form, f) || ssh_form(form, f) || span_form(form, f) ||
 	    ipsec_form(form, f) || workflows_form(form, f) || sdwan_form(form, f) ||
-	    trouble_form(form, f) ||
+	    trouble_form(form, f) || secpage_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
 	    firewall_form(form, f) || l2_form(form, f))
@@ -872,6 +883,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	    span_action(act, arg, value) ||
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
 	    sdwan_action(act, arg, value) || trouble_action(act, arg, value) ||
+	    secpage_action(act, arg, value) ||
 	    routing_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
 	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||
@@ -1553,6 +1565,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.trace_op = atoi(arg);
 		app.trace_step = -1;
 		app.dock_open = true;
+		op_trace_fetch(op_find(app.trace_op));
 	} else if (strcmp(act, "schema") == 0) {
 		app.trace_schema = !app.trace_schema;
 	} else if (strcmp(act, "schema-tab") == 0) {

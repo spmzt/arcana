@@ -22,6 +22,8 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 
+#include <netinet/in.h>
+
 #include <openssl/evp.h>
 #include <openssl/x509.h>
 
@@ -29,6 +31,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1732,6 +1735,19 @@ ATF_TC_BODY(troubleshoot, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("unknown", jstr(&r, "end.how"));
 	resp_free(&r);
+	/* SCTP, with its port: asked as TCP and UDP are. */
+	snprintf(body, sizeof(body), "{\"src\":\"198.51.100.1\",\"dst\":"
+	    "\"10.3.0.2\",\"proto\":\"sctp\",\"port\":4310,\"places\":"
+	    "[{\"server\":\"%s\",\"jail\":\"r1\"}]}", sid);
+	http("POST", "/api/troubleshoot/path", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("sctp", jstr(&r, "proto"));
+	ATF_CHECK_STREQ("em1", jstr(&r, "hops.0.ingress"));
+	resp_free(&r);
+	http("POST", "/api/troubleshoot/path", "{\"src\":\"10.1.0.2\","
+	    "\"dst\":\"10.1.0.3\",\"proto\":\"gre\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
 	http("POST", "/api/troubleshoot/path", "{\"src\":\"10.1.0.2\","
 	    "\"dst\":\"2001:db8::1\"}", &r);
 	EXPECT(&r, 400);
@@ -2374,6 +2390,119 @@ ATF_TC_BODY(settings, tc)
 	resp_free(&r);
 }
 
+/*
+ * A relay of the test's own: SMTP in the clear on 127.0.0.1, each line
+ * it is told written to smtp.out, one mail taken and then QUIT.  Its
+ * port is returned; it runs in a child.
+ */
+static int
+smtp_sink(pid_t *pidp)
+{
+	struct sockaddr_in	 sin;
+	socklen_t		 sl;
+	char			 line[1024];
+	FILE			*io, *out;
+	int			 ls, fd;
+	bool			 data;
+
+	ATF_REQUIRE((ls = socket(AF_INET, SOCK_STREAM, 0)) != -1);
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_len = sizeof(sin);
+	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	ATF_REQUIRE(bind(ls, (struct sockaddr *)&sin, sizeof(sin)) == 0);
+	ATF_REQUIRE(listen(ls, 4) == 0);
+	sl = sizeof(sin);
+	ATF_REQUIRE(getsockname(ls, (struct sockaddr *)&sin, &sl) == 0);
+	if ((*pidp = fork()) != 0) {
+		close(ls);
+		return (ntohs(sin.sin_port));
+	}
+	for (;;) {
+		if ((fd = accept(ls, NULL, NULL)) == -1)
+			_exit(1);
+		io = fdopen(fd, "r+");
+		out = fopen("smtp.out", "a");
+		setvbuf(io, NULL, _IONBF, 0);
+		fputs("220 sink ESMTP\r\n", io);
+		data = false;
+		while (fgets(line, sizeof(line), io) != NULL) {
+			line[strcspn(line, "\r\n")] = '\0';
+			fprintf(out, "%s\n", line);
+			fflush(out);
+			if (data) {
+				if (strcmp(line, ".") == 0) {
+					data = false;
+					fputs("250 queued\r\n", io);
+				}
+				continue;
+			}
+			if (strncmp(line, "EHLO", 4) == 0)
+				fputs("250-sink\r\n250 8BITMIME\r\n", io);
+			else if (strncmp(line, "DATA", 4) == 0) {
+				data = true;
+				fputs("354 go on\r\n", io);
+			} else if (strncmp(line, "QUIT", 4) == 0) {
+				fputs("221 bye\r\n", io);
+				break;
+			} else
+				fputs("250 OK\r\n", io);
+		}
+		fclose(out);
+		fclose(io);
+	}
+}
+
+CONSOLE_TC(mail_smtp, "Mail handed to an SMTP relay by the console "
+    "itself, as Settings name it; its password never read back")
+ATF_TC_BODY(mail_smtp, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		body[512];
+	pid_t		sink;
+	int		port;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	port = smtp_sink(&sink);
+	snprintf(body, sizeof(body), "{\"set\":{\"mail_to\":\"ops@example.org,"
+	    " noc@example.org\",\"mail_via\":\"smtp\",\"smtp_host\":"
+	    "\"127.0.0.1\",\"smtp_port\":\"%d\",\"smtp_security\":\"none\"}}",
+	    port);
+	http("POST", "/api/settings", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/settings/mail-test", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^EHLO ' smtp.out && grep -q '^MAIL FROM:<"
+	    "arcana@' smtp.out && grep -qx 'RCPT TO:<ops@example.org>' smtp.out "
+	    "&& grep -qx 'RCPT TO:<noc@example.org>' smtp.out && grep -qx "
+	    "'Subject: Arcana: a test' smtp.out && grep -qx '.' smtp.out && "
+	    "grep -qx QUIT smtp.out") == 0);
+	/* A password, never in the clear, and never read back. */
+	http("POST", "/api/settings", "{\"set\":{\"smtp_user\":\"arcana\","
+	    "\"smtp_password\":\"hunter2\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/settings", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "hunter2") == NULL);
+	resp_free(&r);
+	http("POST", "/api/settings/mail-test", "{}", &r);
+	EXPECT(&r, 502);
+	ATF_CHECK(strstr(jstr(&r, "error.message"), "over TLS only") != NULL);
+	resp_free(&r);
+	/* Left empty, it stays; and no relay at all is said. */
+	http("POST", "/api/settings", "{\"set\":{\"smtp_password\":\"\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q hunter2 data/settings.json") == 0);
+	(void)kill(sink, SIGTERM);
+	(void)waitpid(sink, NULL, 0);
+}
+
 CONSOLE_TC(mail, "Faults, jobs and runs mailed by sendmail(8), as the "
     "settings say")
 ATF_TC_BODY(mail, tc)
@@ -2704,6 +2833,34 @@ ATF_TC_BODY(services, tc)
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^lo0 inet 10.9.0.6/24 alias$' ifconfig.log "
 	    "&& ! grep -q '10.9.0.6 -alias' ifconfig.log") == 0);
+	/* None of its own: Settings' for every host goes with the change. */
+	http("POST", "/api/settings", "{\"set\":{\"safe_wait\":\"5\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"safe_wait\":\"25\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"if-address\","
+	    "\"interface\":\"lo0\",\"address\":\"10.9.0.7/24\","
+	    "\"safe\":true}]}", &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "jobs.0.id") != NULL);
+	snprintf(body, sizeof(body), "%s/%s", path, jstr(&r, "jobs.0.id"));
+	resp_free(&r);
+	for (i = 0; i < 200; i++) {
+		http("GET", body, NULL, &r);
+		EXPECT(&r, 200);
+		if (strcmp(jstr(&r, "job.state"), "done") == 0)
+			break;
+		resp_free(&r);
+		usleep(50000);
+	}
+	ATF_REQUIRE_MSG(i < 200, "the safe job did not finish");
+	ATF_CHECK_MSG(strstr(r.body, "the timer was 25 s") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"safe_wait\":\"\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
 
 	/* A static route, added and deleted with route(8). */
 	http("POST", path, "{\"jobs\":[{\"kind\":\"route\",\"destination\":"
@@ -5638,6 +5795,72 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"local\",\"%s\",\"remote\",\"10.99.0.1\"]", laddr);
 	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
 	resp_free(&r);
+
+	/* The Security page's own: a form not right refused; one made into
+	 * Squid's and c-icap's files beside SD-WAN's, its form told back;
+	 * Suricata's the same; [] stops them. */
+	snprintf(t2, sizeof(t2), "/api/servers/%s/security", sa);
+	http("POST", t2, "{\"what\":\"proxy\",\"instances\":[{\"name\":"
+	    "\"web\",\"listen\":[\"10.1.0.1\"],\"allow\":[\"10.1.0.0/24\"]}]}",
+	    &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "sec-") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"proxy\",\"instances\":[{\"name\":"
+	    "\"sec-web\",\"listen\":[\"10.1.0.1\"],\"allow\":[\"10.1.0.0/x\"]}]}",
+	    &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "allow") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"proxy\",\"instances\":[{\"name\":"
+	    "\"sec-web\",\"listen\":[\"10.1.0.1\",\"2001:db8::1\"],\"allow\":"
+	    "[\"10.1.0.0/24\"],\"deny\":[\".bad.example\",\"worse.example\"],"
+	    "\"malware\":true}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"ok\":true") != NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^http_port 10.1.0.1:3128 ssl-bump tls-cert=' "
+	    "sdwan-proxy-sec-web.conf && grep -q '^http_port \\[2001:db8::1\\]:"
+	    "3128 ' sdwan-proxy-sec-web.conf && grep -q '^acl localnet src "
+	    "10.1.0.0/24$' sdwan-proxy-sec-web.conf && grep -q 'icap://"
+	    "127.0.0.1:1345/avscan' sdwan-proxy-sec-web.conf && grep -q "
+	    "'^ssl_bump splice all$' sdwan-proxy-sec-web.conf") == 0);
+	ATF_CHECK(system("grep -qx '.bad.example' sdwan-proxy-sec-web.deny && "
+	    "grep -qx '.worse.example' sdwan-proxy-sec-web.deny") == 0);
+	ATF_CHECK(system("grep -q '^Port 127.0.0.1:1345$' "
+	    "sdwan-icap-sec-web.conf") == 0);
+	snprintf(t1, sizeof(t1), "/api/servers/%s/sdwan", sa);
+	http("GET", t1, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "data.security_proxy.0.name") != NULL && strcmp(jstr(
+	    &r, "data.security_proxy.0.name"), "sec-web") == 0 && strstr(r.body,
+	    "\"name\":\"sw1\"") != NULL && strstr(r.body, "\"group\":"
+	    "\"security\"") != NULL && strstr(r.body, "acl localnet") == NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"]}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "ruleset") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"rules\":\"alert tcp any any "
+	    "-> any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"ok\":true") != NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^  - interface: lo0$' sdwan-ids-sec-lan.yaml "
+	    "&& grep -q 'HOME_NET: \"\\[10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'"
+	    " sdwan-ids-sec-lan.yaml && grep -q 'sid:1000009' "
+	    "sdwan-ids-sec-lan.rules") == 0);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"proxy\",\"instances\":[]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(access("sdwan-proxy-sec-web.conf", F_OK) != 0);
+	ATF_CHECK(access("sdwan-proxy-sw1.conf", F_OK) == 0);
 }
 
 ATF_TP_ADD_TCS(tp)
@@ -5658,6 +5881,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, update_notes);
 	ATF_TP_ADD_TC(tp, settings);
 	ATF_TP_ADD_TC(tp, mail);
+	ATF_TP_ADD_TC(tp, mail_smtp);
 	ATF_TP_ADD_TC(tp, local_agent);
 	ATF_TP_ADD_TC(tp, local_same);
 	ATF_TP_ADD_TC(tp, local_absent);

@@ -23,7 +23,7 @@ static const char *const bird_verb[] = {
 	"enable", "disable", "restart", "reload", "configure",
 };
 static const char *const kmod_verb[] = {
-	"load", "unload",
+	"load", "unload", "keep", "forget",
 };
 static const char *const ipsec_sa_verb[] = {
 	"key", "set", "derive", "commit", "clear",
@@ -56,7 +56,8 @@ static const char *const cert_verb[] = {
 	"add", "remove", "trust", "untrust", "rehash",
 };
 static const char *const ssh_verb[] = {
-	"banner", "set", "authorize", "unauthorize", "sign", "user-cas",
+	"banner", "set", "authorize", "unauthorize", "options", "sign",
+	"user-cas",
 };
 
 /*

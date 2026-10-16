@@ -69,6 +69,8 @@ host_info(struct work *w, struct arc_host *h)
 	h->time = time(NULL);
 	h->has_privileged = true;
 	h->privileged = geteuid() == 0;
+	h->has_safe_wait = true;
+	h->safe_wait = (uint32_t)opts.safe_wait;
 	h->version = ARCANA_AGENT_VERSION;
 	if (opts.build[0] != '\0')
 		h->build = opts.build;

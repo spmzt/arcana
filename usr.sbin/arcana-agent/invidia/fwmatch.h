@@ -90,7 +90,7 @@ struct fwverdict {
 	/* The rules the walk met, in order: each with what it did. */
 	struct fwstep {
 		size_t		 rule;
-		char		 how[40];	/* met, may be met, skipto N,
+		char		 how[64];	/* met, may be met, skipto N,
 						 * call N, return, check-state,
 						 * decides */
 	}		 steps[FW_STEPS];

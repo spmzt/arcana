@@ -298,7 +298,7 @@ submodule arcana-jobs-kinds {
           leaf pkg-ip {
             type uint32;
             description
-              "pkg over IPv4 (4) or IPv6 (6)";
+              "pkg's network";
           }
         }
       }
@@ -759,11 +759,13 @@ submodule arcana-jobs-kinds {
           presence
             "This kind of job.";
           description
-            "A kernel module loaded or unloaded";
+            "A kernel module loaded or unloaded, or kept in kld_list or not";
           leaf verb {
             type enumeration {
               enum load;
               enum unload;
+              enum keep;
+              enum forget;
             }
             mandatory true;
             description
@@ -1303,7 +1305,7 @@ submodule arcana-jobs-kinds {
           leaf pkg-ip {
             type uint32;
             description
-              "pkg over IPv4 (4) or IPv6 (6)";
+              "pkg's network";
           }
         }
       }
@@ -1522,6 +1524,7 @@ submodule arcana-jobs-kinds {
               enum set;
               enum authorize;
               enum unauthorize;
+              enum options;
               enum sign;
               enum user-cas;
             }

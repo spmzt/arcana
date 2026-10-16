@@ -19,6 +19,7 @@
 #include <err.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 
 #include "agent.h"
 #include "collect.h"
@@ -212,6 +213,70 @@ do_packages(struct work *w, const char *jail, bool refresh, bool inst,
 	return (0);
 }
 
+/*
+ * Every running jail's packages upgraded, one jail after the other: one
+ * without pkg (never bootstrapped, pkg -N says) left out and said so,
+ * one that fails not stopping the rest; what each did is a step of the
+ * trace, and the error, when there is one, names each that failed.
+ */
+static int
+upgrade_every_jail(struct work *w, const struct arc_pkg_upgrade_req *rq,
+    struct arc_pkg_upgrade_rsp *rsp)
+{
+	struct arc_pkg_upgrade_req	 one;
+	struct arc_pkg_upgrade_rsp	 r;
+	struct execres			 res;
+	struct jinfo			*list;
+	const char			*e, *failed, *skipped;
+	static const char *const	 bootstrapped[] = { "-N" };
+	size_t				 n, i, done;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	list = NULL;
+	n = 0;
+	if (jails_running(w, &list, &n, &e) != 0) {
+		rsp->error = e != NULL ? e : "the jails could not be listed";
+		return (0);
+	}
+	failed = skipped = NULL;
+	done = 0;
+	rsp->has_upgraded = true;
+	rsp->upgraded = 0;
+	for (i = 0; i < n; i++) {
+		if (list[i].dying || list[i].name == NULL)
+			continue;
+		if (pkg_run(w, list[i].name, false, rq->pkg_ip, bootstrapped,
+		    1, &res) != 0) {
+			skipped = skipped == NULL ? list[i].name : wfmt(w,
+			    "%s, %s", skipped, list[i].name);
+			continue;
+		}
+		one = *rq;
+		one.jail = list[i].name;
+		memset(&r, 0, sizeof(r));
+		(void)do_pkg_upgrade(w, &one, &r);
+		if (!r.ok)
+			failed = wfmt(w, "%s%s%s: %s", failed != NULL ? failed :
+			    "", failed != NULL ? "; " : "", list[i].name,
+			    r.error != NULL ? r.error : "failed");
+		else
+			rsp->upgraded += r.upgraded;
+		done++;
+	}
+	if (skipped != NULL)
+		logmsg(LOG_INFO, "pkg upgrade of every jail: without pkg, "
+		    "left out: %s", skipped);
+	if (failed != NULL)
+		rsp->error = wfmt(w, "pkg upgrade failed in %s", failed);
+	else if (done == 0)
+		rsp->error = skipped != NULL ? wfmt(w, "no running jail has pkg "
+		    "(%s have none)", skipped) : "no jail is running";
+	else
+		rsp->ok = true;
+	return (0);
+}
+
 int
 do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
     struct arc_pkg_upgrade_rsp *rsp)
@@ -222,6 +287,8 @@ do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
 	const char		**args, *e, *p;
 	size_t			 n, i;
 
+	if (rq->jail != NULL && strcmp(rq->jail, "*") == 0)
+		return (upgrade_every_jail(w, rq, rsp));
 	rsp->has_ok = true;
 	rsp->ok = false;
 	if ((e = check_jail(w, rq->jail)) != NULL) {

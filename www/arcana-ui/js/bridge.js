@@ -174,6 +174,28 @@ addToLibrary({
 				return;
 			}
 
+			/*
+			 * An error, a toast or one said in the page: its text
+			 * copied when clicked (nothing selected in it, and
+			 * not on a control of its own), to be pasted into a
+			 * report; a toast then goes away as it did.
+			 */
+			c = e.target.closest(".toast.bad, .notice.bad, " +
+			    ".notice.warn, p.error, .err, td.err");
+			if (c !== null && e.target.closest("a, button, input, " +
+			    "select, textarea, label") === null &&
+			    String(window.getSelection()) === "" &&
+			    navigator.clipboard) {
+				navigator.clipboard.writeText(c.innerText.trim())
+				    .then(function () {
+					act("copied", "", "");
+				}, function () {
+					act("copied", "", "no");
+				});
+				if (!c.classList.contains("toast"))
+					return;
+			}
+
 			/* A table as CSV. */
 			c = e.target.closest("button.csv-btn");
 			if (c !== null) {
