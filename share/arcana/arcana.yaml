@@ -101,7 +101,9 @@ definitions:
           Load a kernel module, or unload one: verb is load or unload,
           and names the one module, as kldload(8) finds it, without a
           path.  With persist, also into or out of rc.conf's kld_list,
-          which is what is loaded when the host starts.
+          which is what is loaded when the host starts.  keep and
+          forget put it in kld_list or take it out (foo or foo.ko,
+          however it is spelt there) without loading or unloading it.
       - name: zfs
         doc: |
           zfs(8).  verb and names: snapshot and dataset@name; destroy
@@ -332,7 +334,11 @@ definitions:
           (sshd_config.arcana-before) and put back in safe mode, and sshd
           reloaded.  authorize adds the key line text to user's
           authorized_keys, unauthorize takes away the key whose
-          fingerprint text is.  In jail's when jail names one.
+          fingerprint text is, options sets the options of user's key
+          whose fingerprint names says to text (as sshd(8) reads them:
+          principals="...", from="...", restrict and the rest; empty for
+          none), the key itself left as it is.  In jail's when jail
+          names one.
       - name: carp
         doc: |
           An address that hosts on one network share with carp(4), held
@@ -1624,7 +1630,7 @@ attribute-sets:
         doc: For neighbour add, one that ages out as the others do.
       - name: user
         type: text
-        doc: For ssh authorize and unauthorize, the user whose keys.
+        doc: For ssh authorize, unauthorize and options, the user whose keys.
         checks:
           max-len: 32
 

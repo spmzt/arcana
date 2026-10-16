@@ -77,14 +77,29 @@ str(const ucl_object_t *o, const char *key)
 	return (ucl_object_tostring_forced(v));
 }
 
-/* The object a fault is of: the protocol, the jail's before it. */
+/*
+ * The object a fault is of: the protocol, where it is before it
+ * ("host:" or "jail:name/"), apart from SD-WAN's BIRD instances, whose
+ * faults are of the same types and named by the instance.
+ */
 static void
 object(char *buf, size_t len, const char *place, const char *a,
     const char *b)
 {
 
-	snprintf(buf, len, "%s%s%s%s%s", place, place[0] != '\0' ? "/" : "",
-	    a, b != NULL ? "/" : "", b != NULL ? b : "");
+	snprintf(buf, len, "%s%s%s%s%s%s", place[0] != '\0' ? "jail:" :
+	    "host:", place, place[0] != '\0' ? "/" : "", a, b != NULL ? "/" :
+	    "", b != NULL ? b : "");
+}
+
+/* The BIRD of a place, as a fault's object. */
+static const char *
+instance(char *buf, size_t len, const char *place)
+{
+
+	snprintf(buf, len, "%s%s", place[0] != '\0' ? "jail:" : "host:",
+	    place[0] != '\0' ? place : "bird");
+	return (buf);
 }
 
 static void
@@ -174,6 +189,7 @@ place_watch(struct work *w, const char *place)
 	const ucl_object_t	*top, *o;
 	ucl_object_iter_t	 it;
 	struct seen		*s;
+	char			 inst[80];
 	int			 i;
 
 	memset(&rsp, 0, sizeof(rsp));
@@ -181,14 +197,15 @@ place_watch(struct work *w, const char *place)
 		return;
 	if (do_bird(w, &rsp) != 0 || !rsp.ok || rsp.json == NULL) {
 		if (s->up)
-			fault_set("bird-instance", "Critical", place[0] != '\0' ?
-			    place : "bird", "bird", "BIRD%s%s does not answer%s%s",
-			    place[0] != '\0' ? " in " : "", place, rsp.error !=
-			    NULL ? ": " : "", rsp.error != NULL ? rsp.error : "");
+			fault_set("bird-instance", "Critical", instance(inst,
+			    sizeof(inst), place), "bird", "BIRD%s%s does not "
+			    "answer%s%s", place[0] != '\0' ? " in " : "", place,
+			    rsp.error != NULL ? ": " : "", rsp.error != NULL ?
+			    rsp.error : "");
 		return;
 	}
 	if (s->up)
-		fault_clear("bird-instance", place[0] != '\0' ? place : "bird",
+		fault_clear("bird-instance", instance(inst, sizeof(inst), place),
 		    "BIRD%s%s answers again", place[0] != '\0' ? " in " : "",
 		    place);
 	s->up = true;
@@ -222,30 +239,61 @@ place_watch(struct work *w, const char *place)
 	for (i = 0; i < nseen; i++)
 		if (strcmp(seen[i].place, place) == 0 && !seen[i].here &&
 		    seen[i].up && (seen[i].kind == K_OSPF || seen[i].kind ==
-		    K_BFD))
+		    K_BFD)) {
 			fault_set(seen[i].kind == K_BFD ? "bfd" : "ospf-neighbor",
 			    "Major", seen[i].key, "bird", "%s %s is gone from "
 			    "BIRD's list", seen[i].kind == K_BFD ? "BFD session" :
-			    "OSPF neighbour", seen[i].key);
+			    "OSPF neighbour", seen[i].key + (strncmp(seen[i].key,
+			    "host:", 5) == 0 ? 5 : 0));
+			seen[i].up = false;
+		}
+	/* Those gone and said: no longer looked for, room for others. */
+	for (i = 0; i < nseen; )
+		if (strcmp(seen[i].place, place) == 0 && !seen[i].here &&
+		    !seen[i].up && seen[i].kind != K_BIRD)
+			seen[i] = seen[--nseen];
+		else
+			i++;
+}
+
+/* The places not watched this round (a jail gone) forgotten. */
+static void
+places_prune(char (*places)[64], size_t np)
+{
+	size_t	k;
+	int	i;
+
+	for (i = 0; i < nseen; ) {
+		for (k = 0; k < np && strcmp(places[k], seen[i].place) != 0; k++)
+			;
+		if (k == np)
+			seen[i] = seen[--nseen];
+		else
+			i++;
+	}
 }
 
 static void *
 watch(void *arg __unused)
 {
+	static char	 places[256][64];
 	struct work	 w;
 	struct jinfo	*list;
 	const char	*e, *const *pl;
-	size_t		 n, i, np, k;
+	size_t		 n, i, np, k, nplaces;
 
 	for (;;) {
 		sleep((unsigned int)opts.bird_watch_s);
 		work_init(&w);
+		nplaces = 0;
 		plugins_there(&w, 0, NULL, &pl, &np);
 		for (k = 0; k < np; k++)
 			if (strcmp(pl[k], "bird") == 0)
 				break;
-		if (k < np)
+		if (k < np) {
 			place_watch(&w, "");
+			places[nplaces++][0] = '\0';
+		}
 		list = NULL;
 		n = 0;
 		if (jails_running(&w, &list, &n, &e) == 0)
@@ -262,7 +310,11 @@ watch(void *arg __unused)
 					continue;
 				place_watch(&w, list[i].name);
 				(void)scope_enter(&w, NULL, &e);
+				if (nplaces < nitems(places))
+					snprintf(places[nplaces++],
+					    sizeof(places[0]), "%s", list[i].name);
 			}
+		places_prune(places, nplaces);
 		work_free(&w);
 	}
 	return (NULL);

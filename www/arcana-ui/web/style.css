@@ -4838,11 +4838,11 @@ svg.wftl .grid { stroke: var(--line); stroke-width: 1; }
 svg.wftl .tick { font-size: 9px; fill: var(--dim); text-anchor: middle; }
 svg.wftl .host { font-size: 11px; fill: var(--fg-2); text-anchor: end; }
 svg.wftl .bar { cursor: pointer; }
-svg.wftl .bar rect { stroke: rgba(var(--surface-rgb), 1); stroke-width: 2; }
+svg.wftl .bar rect { fill: var(--fg-2); stroke: rgba(var(--surface-rgb), 1); stroke-width: 2; }
 svg.wftl .bar.done rect { fill: var(--green); }
 svg.wftl .bar.failed rect { fill: var(--red); }
 svg.wftl .bar.running rect { fill: var(--amber); }
-svg.wftl .bar.interrupted rect, svg.wftl .bar.skipped rect, svg.wftl .bar.pending rect { fill: var(--fg-2); opacity: .55; }
+svg.wftl .bar.interrupted rect, svg.wftl .bar.skipped rect, svg.wftl .bar.pending rect, svg.wftl .bar.cancelled rect { fill: var(--fg-2); opacity: .55; }
 svg.wftl .bar.notrun rect { fill: none; stroke: var(--dim); stroke-dasharray: 3 3; stroke-width: 1.2; }
 svg.wftl .bar:hover rect, svg.wftl .bar.on rect { stroke: var(--fg); stroke-width: 2; }
 svg.wftl .bar .lbl { font-size: 10px; fill: var(--bg); pointer-events: none; }
@@ -5077,3 +5077,5 @@ table.sessions .path.unconfirmed { border-style: dashed; }
 table.sessions .path b { font-weight: 500; color: var(--cyan); }
 .transport ul.listeners .warn { color: var(--amber); }
 .wfpalette li.notify { border-left-color: var(--violet, var(--cyan)); }
+/* A chip that is a switch, on. */
+button.chip.on { border-color: var(--green); color: var(--green); }

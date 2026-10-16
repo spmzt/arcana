@@ -93,13 +93,6 @@
 #define	JOB_WAIT_S	3600
 #define	TRACE_MAX	(64 * 1024)	/* of a step's answer, kept */
 
-struct hostref {
-	char	id[9];
-	char	name[128];
-	char	uri[256];
-	char	peer[256];
-};
-
 /* Where each server is reached: copied by the worker, read by threads. */
 static pthread_mutex_t	ref_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct hostref	refs[256];
@@ -154,6 +147,22 @@ refs_copy(void)
 	memcpy(refs, v, sizeof(v[0]) * (size_t)n);
 	nrefs = n;
 	pthread_mutex_unlock(&ref_lock);
+}
+
+/*
+ * The servers as the worker last copied them (every 2 s), for a thread
+ * that may not touch the table: up to max into out; how many.
+ */
+int
+host_refs_get(struct hostref *out, int max)
+{
+	int	n;
+
+	pthread_mutex_lock(&ref_lock);
+	n = nrefs < max ? nrefs : max;
+	memcpy(out, refs, sizeof(refs[0]) * (size_t)n);
+	pthread_mutex_unlock(&ref_lock);
+	return (n);
 }
 
 /* In the worker, before a thread of another part looks at the servers. */
@@ -424,27 +433,49 @@ expand(const char *s, const ucl_object_t *params, const struct hostref *h,
 	return (out);
 }
 
-/* The job with every string expanded: a new object. */
+/* The type jobs.yaml gives a field of a job: number, bool, text... */
+static const char *
+field_type(const char *field)
+{
+	size_t	i;
+
+	for (i = 0; field != NULL && i < nitems(jobfields); i++)
+		if (strcmp(jobfields[i].field, field) == 0)
+			return (jobfields[i].type);
+	return ("text");
+}
+
+/*
+ * One value of the job with every string expanded, field the job's
+ * field it is (NULL for the job itself, "" within a list or a map): a
+ * value made of ${...}
+ * becomes what the field is, a number field's digits a number and a
+ * bool field's true or false one; a text field's stays text, whatever
+ * it looks like (a jail named 101, a ticket 4711, 007).
+ */
 static ucl_object_t *
-expand_obj(const ucl_object_t *o, const ucl_object_t *params,
-    const struct hostref *h, const ucl_object_t *answers,
-    const ucl_object_t *event)
+expand_val(const ucl_object_t *o, const char *field,
+    const ucl_object_t *params, const struct hostref *h,
+    const ucl_object_t *answers, const ucl_object_t *event)
 {
 	ucl_object_t		*c, *x;
 	const ucl_object_t	*v;
 	ucl_object_iter_t	 it;
+	const char		*type;
 	char			*s;
+	bool			 made;
 
 	switch (ucl_object_type(o)) {
 	case UCL_STRING:
 		s = expand(ucl_object_tostring(o), params, h, answers, event);
-		/* A value made of ${...} that comes out a number is one: a
-		 * number field (an MTU, pkg's network, a port) asked for in a
-		 * parameter. */
-		if (strstr(ucl_object_tostring(o), "${") != NULL && s[0] !=
-		    '\0' && strlen(s) <= 18 && s[strspn(s, "0123456789")] ==
-		    '\0')
+		made = strstr(ucl_object_tostring(o), "${") != NULL;
+		type = field_type(field);
+		if (made && strcmp(type, "number") == 0 && s[0] != '\0' &&
+		    strlen(s) <= 18 && s[strspn(s, "0123456789")] == '\0')
 			c = ucl_object_fromint(strtoll(s, NULL, 10));
+		else if (made && strcmp(type, "bool") == 0 && (strcmp(s,
+		    "true") == 0 || strcmp(s, "false") == 0))
+			c = ucl_object_frombool(strcmp(s, "true") == 0);
 		else
 			c = ucl_object_fromstring(s);
 		free(s);
@@ -453,7 +484,9 @@ expand_obj(const ucl_object_t *o, const ucl_object_t *params,
 		c = ucl_object_typed_new(UCL_OBJECT);
 		it = NULL;
 		while ((v = ucl_object_iterate(o, &it, true)) != NULL) {
-			x = expand_obj(v, params, h, answers, event);
+			/* A job's own fields are typed; within a map, text. */
+			x = expand_val(v, field == NULL ? ucl_object_key(v) :
+			    "", params, h, answers, event);
 			ucl_object_insert_key(c, x, ucl_object_key(v), 0, true);
 		}
 		return (c);
@@ -461,12 +494,22 @@ expand_obj(const ucl_object_t *o, const ucl_object_t *params,
 		c = ucl_object_typed_new(UCL_ARRAY);
 		it = NULL;
 		while ((v = ucl_object_iterate(o, &it, true)) != NULL)
-			ucl_array_append(c, expand_obj(v, params, h, answers,
-			    event));
+			ucl_array_append(c, expand_val(v, "", params, h,
+			    answers, event));
 		return (c);
 	default:
 		return (ucl_object_copy(o));
 	}
+}
+
+/* The job with every string expanded: a new object. */
+static ucl_object_t *
+expand_obj(const ucl_object_t *o, const ucl_object_t *params,
+    const struct hostref *h, const ucl_object_t *answers,
+    const ucl_object_t *event)
+{
+
+	return (expand_val(o, NULL, params, h, answers, event));
 }
 
 /* A condition's test of what is at its path. */
@@ -1281,6 +1324,7 @@ run_notify(struct hostrun *hr, int k, const ucl_object_t *step)
 	const ucl_object_t	*nt;
 	ucl_object_t		*ans;
 	char			*text, subject[300], err[600];
+	int			 rc;
 
 	nt = ucl_object_lookup(step, "notify");
 	text = expand(ucl_str(nt, "text"), hr->run->params, &hr->h,
@@ -1288,8 +1332,10 @@ run_notify(struct hostrun *hr, int k, const ucl_object_t *step)
 	snprintf(subject, sizeof(subject), "Arcana: workflow %s on %s",
 	    ucl_str(hr->run->wf, "name") != NULL ? ucl_str(hr->run->wf,
 	    "name") : "?", hr->h.name);
-	if (alert_send(ucl_str(nt, "via"), subject, text, err,
-	    sizeof(err)) != 0) {
+	/* Gone by one way of two: done, and what did not go said; sent
+	 * again, it would go twice by the other. */
+	if ((rc = alert_send(ucl_str(nt, "via"), subject, text, err,
+	    sizeof(err))) < 0) {
 		free(text);
 		step_set(hr, k, "failed", "%s", err);
 		return (false);
@@ -1297,6 +1343,8 @@ run_notify(struct hostrun *hr, int k, const ucl_object_t *step)
 	ans = ucl_object_typed_new(UCL_OBJECT);
 	put(ans, "via", ucl_object_fromstring(ucl_str(nt, "via")));
 	put(ans, "text", ucl_object_fromstring(text));
+	if (rc > 0)
+		put(ans, "not_sent", ucl_object_fromstring(err));
 	free(text);
 	step_answer(hr, k, step, ans);
 	step_set(hr, k, "done", NULL);

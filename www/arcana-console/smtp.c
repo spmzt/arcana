@@ -59,8 +59,12 @@ conv_write(struct conv *c, const char *s, size_t len)
 	while (len > 0) {
 		n = c->ssl != NULL ? SSL_write(c->ssl, s, (int)len) :
 		    write(c->fd, s, len);
-		if (n <= 0)
+		if (n <= 0) {
+			snprintf(c->err, c->errlen, "the relay closed, or took "
+			    "nothing in %d s, while the console wrote to it",
+			    SMTP_WAIT_S);
 			return (-1);
+		}
 		s += n;
 		len -= (size_t)n;
 	}
@@ -169,12 +173,17 @@ tls_start(struct conv *c, const char *host)
 	unsigned char		 ip[16];
 	char			 why[256];
 
+	snprintf(c->err, c->errlen, "TLS could not be set up");
 	if ((c->ctx = SSL_CTX_new(TLS_client_method())) == NULL)
 		return (-1);
 	SSL_CTX_set_min_proto_version(c->ctx, TLS1_2_VERSION);
 	SSL_CTX_set_verify(c->ctx, SSL_VERIFY_PEER, NULL);
-	if (SSL_CTX_set_default_verify_paths(c->ctx) != 1 || (c->ssl =
-	    SSL_new(c->ctx)) == NULL)
+	if (SSL_CTX_set_default_verify_paths(c->ctx) != 1) {
+		snprintf(c->err, c->errlen, "TLS: the system's CAs could not "
+		    "be read");
+		return (-1);
+	}
+	if ((c->ssl = SSL_new(c->ctx)) == NULL)
 		return (-1);
 	vp = SSL_get0_param(c->ssl);
 	/*
@@ -263,6 +272,7 @@ smtp_send(const char *host, int port, const char *security,
 	int		 rc;
 
 	memset(&c, 0, sizeof(c));
+	err[0] = '\0';
 	c.err = err;
 	c.errlen = errlen;
 	c.fd = -1;
@@ -305,6 +315,7 @@ smtp_send(const char *host, int port, const char *security,
 		if ((auth = malloc(ulen + plen + 3)) == NULL || (b64 =
 		    malloc(4 * ((ulen + plen + 4) / 3) + 1)) == NULL) {
 			free(auth);
+			snprintf(err, errlen, "out of memory");
 			goto out;
 		}
 		auth[0] = '\0';

@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.200.1"
+#define	ARCW_VERSION		"0.200.2"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -90,6 +90,14 @@ int		 smtp_send(const char *, int, const char *, const char *,
 int		 mail_send(const char *, const char *, char *, size_t);
 void		 mail_run(const char *, unsigned int, const char *);
 void		 mail_flush(void);
+/* Where a server is reached, as a thread may keep it (workflows.c). */
+struct hostref {
+	char	id[9];
+	char	name[128];
+	char	uri[256];
+	char	peer[256];
+};
+int		 host_refs_get(struct hostref *, int);
 int		 alert_send(const char *, const char *, const char *, char *,
 		    size_t);
 int		 api_telegram_test(struct http_request *);

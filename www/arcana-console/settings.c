@@ -266,9 +266,11 @@ static const char *
 v_host(const char *s)
 {
 
+	/* An IPv6 address as it is, without brackets: getaddrinfo(3) and
+	 * the certificate's check take it so. */
 	if (s[0] == '\0' || strlen(s) > 253 || s[strspn(s,
-	    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:"
-	    "[]")] != '\0')
+	    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:")]
+	    != '\0')
 		return ("a host's name or address");
 	return (NULL);
 }
@@ -277,7 +279,10 @@ static const char *
 v_port(const char *s)
 {
 
-	return (v_count(s, 1, 65535));
+	/* Empty: the relay's usual port for its security. */
+	if (s[0] == '\0')
+		return (NULL);
+	return (v_count(s, 1, 65535) != NULL ? "a port, 1 to 65535" : NULL);
 }
 
 static const char *

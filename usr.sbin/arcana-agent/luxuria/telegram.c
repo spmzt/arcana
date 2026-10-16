@@ -15,6 +15,7 @@
 #include <sys/param.h>
 
 #include <ctype.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <fetch.h>
 #include <stdlib.h>
@@ -26,6 +27,9 @@
 
 #define	TG_REPLY_MAX	(64 * 1024)
 #define	TG_WAIT_S	15
+
+/* fetch(3)'s timeout and last error are the process's: one at a time. */
+static pthread_mutex_t	tg_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* digits, a colon, then letters, digits, _ and -: as BotFather gives. */
 static bool
@@ -120,6 +124,7 @@ do_notify(struct work *w, const char *token, const char *chat,
 	step = step_begin(w, ARC_STEP_KIND_LIB, "libfetch fetchReqHTTP()",
 	    "Telegram sendMessage to chat %s, %zu characters", chat,
 	    strlen(text));
+	pthread_mutex_lock(&tg_lock);
 	fetchTimeout = TG_WAIT_S;
 	f = fetchReqHTTP(u, "POST", "", "application/json", json);
 	explicit_bzero(u->doc, strlen(u->doc));
@@ -131,11 +136,13 @@ do_notify(struct work *w, const char *token, const char *chat,
 		    "Unauthorized") != NULL ? " (the bot's token is not "
 		    "right)" : strstr(fetchLastErrString, "Bad Request") !=
 		    NULL ? " (no such chat, or the bot is not in it)" : "");
+		pthread_mutex_unlock(&tg_lock);
 		step_end(w, step, false, "%s", *errp);
 		return (-1);
 	}
 	n = fread(buf, 1, sizeof(buf) - 1, f);
 	fclose(f);
+	pthread_mutex_unlock(&tg_lock);
 	buf[n] = '\0';
 	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
 	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);

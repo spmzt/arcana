@@ -96,13 +96,20 @@ prefix_ok(const char *s)
 	    AF_INET ? 32 : 128));
 }
 
-/* A domain: letters, digits, - and dots, a leading dot let be. */
+/*
+ * A domain: labels of letters, digits and -, a dot between them; one
+ * leading dot let be (".example.org" as it is often written).
+ */
 static bool
 domain_ok(const char *s)
 {
 	size_t	i;
 
-	if (s == NULL || s[0] == '\0' || strlen(s) > 253)
+	if (s != NULL && s[0] == '.')
+		s++;
+	if (s == NULL || s[0] == '\0' || strlen(s) > 253 || s[0] == '.' ||
+	    s[0] == '-' || s[strlen(s) - 1] == '.' || s[strlen(s) - 1] ==
+	    '-' || strstr(s, "..") != NULL)
 		return (false);
 	for (i = 0; s[i] != '\0'; i++)
 		if (!isalnum((unsigned char)s[i]) && s[i] != '-' && s[i] != '.')
@@ -137,6 +144,12 @@ list_of(const ucl_object_t *in, const char *k, bool (*ok)(const char *),
 	ucl_object_iter_t	 it;
 	int			 n;
 
+	/* A list, not one string standing for it. */
+	if (ucl_object_lookup(in, k) != NULL && ucl_object_type(
+	    ucl_object_lookup(in, k)) != UCL_ARRAY) {
+		snprintf(err, errlen, "%s: %s: a list", name, what);
+		return (false);
+	}
 	n = 0;
 	it = NULL;
 	while ((e = ucl_object_iterate(ucl_object_lookup(in, k), &it, true)) !=
@@ -219,6 +232,10 @@ proxy_one(const ucl_object_t *in, int idx, const char *host, char *err,
 	    "visible_hostname %s\n", name, host, mode, (intmax_t)fib, name, name,
 	    name);
 	/* Where the clients reach it: each address told, its port. */
+	if (ucl_object_type(ucl_object_lookup(in, "listen")) != UCL_ARRAY) {
+		snprintf(err, errlen, "%s: listen: a list of addresses", name);
+		goto bad;
+	}
 	it = NULL;
 	while ((e = ucl_object_iterate(ucl_object_lookup(in, "listen"), &it,
 	    true)) != NULL) {
@@ -412,8 +429,11 @@ security_build(const char *what, const ucl_object_t *list, const char *host,
 		snprintf(err, errlen, "what is proxy or ids");
 		return (NULL);
 	}
-	if (list != NULL && ucl_object_type(list) != UCL_ARRAY) {
-		snprintf(err, errlen, "instances is a list");
+	/* The whole list, always: [] stops them all, nothing is no
+	 * list (a word mistyped must not stop them). */
+	if (list == NULL || ucl_object_type(list) != UCL_ARRAY) {
+		snprintf(err, errlen, "instances is the whole list of them, [] "
+		    "for none");
 		return (NULL);
 	}
 	top = ucl_object_typed_new(UCL_OBJECT);

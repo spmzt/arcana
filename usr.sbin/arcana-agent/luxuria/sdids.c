@@ -569,6 +569,20 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			}
 		n++;
 	}
+	/* The two groups' together within the table: refused before any
+	 * is started, none started and then not kept. */
+	pthread_mutex_lock(&lock);
+	for (i = nkeep = 0; i < ninstances; i++)
+		if (IS_SEC(instances[i].name) != sec)
+			nkeep++;
+	pthread_mutex_unlock(&lock);
+	if (nkeep + n > INSTANCES_MAX) {
+		ucl_object_unref(top);
+		*errp = wfmt(w, "%d instances at most, SD-WAN's and the Security "
+		    "section's together: the other has %d", INSTANCES_MAX,
+		    nkeep);
+		return (-1);
+	}
 	if (n > 0 && access(suricata_bin(w), X_OK) != 0) {
 		ucl_object_unref(top);
 		*errp = wfmt(w, "the host has no suricata (%s): it is a plugin, "
@@ -687,8 +701,6 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			else
 				alerts_free(&instances[i]);
 		}
-		if (nkeep + n > INSTANCES_MAX)
-			n = INSTANCES_MAX - nkeep;
 		memcpy(instances + nkeep, ni, sizeof(*ni) * (size_t)n);
 		ninstances = nkeep + n;
 	}

@@ -5272,8 +5272,14 @@ EOT
 	atf_check -o save:list "$JGC" -c "$SOCK" sshd
 	grep -qF '"options":"principals=\"alice,admin\",no-pty"' list ||
 	    atf_fail "the options listed"
-	atf_check -s exit:1 -o match:'no key OpenSSH reads' \
+	atf_check -s exit:1 -o match:"a value's quote is not closed" \
 	    "$JGC" -c "$SOCK" sshd options alice "$alicefp" 'from="10.0.0.0/8'
+	# Options sshd does not know, or a flag given a value: refused,
+	# the key line as it was.
+	atf_check -s exit:1 -o match:'not an option sshd knows' \
+	    "$JGC" -c "$SOCK" sshd options alice "$alicefp" 'frm="10.0.0.0/8"'
+	atf_check -s exit:1 -o match:'that option takes no value' \
+	    "$JGC" -c "$SOCK" sshd options alice "$alicefp" 'no-pty="x"'
 	atf_check -o match:'done +sshd options of alice$' \
 	    "$JGC" -c "$SOCK" sshd options alice "$alicefp"
 	atf_check -o inline:"$(cut -d' ' -f1-2 alice_key.pub) alice@lab\n" \
@@ -5316,8 +5322,11 @@ EOT
 		    break
 		sleep 0.1
 	done
+	# The newest job, whatever its number.
+	jid=$("$JGC" -c "$SOCK" jobs | awk '$1 ~ /^[0-9]+$/ {print $1}' |
+	    sort -n | tail -1)
 	atf_check -o match:'not confirmed within 2 s: undone' -s exit:1 \
-	    "$JGC" -c "$SOCK" job 16
+	    "$JGC" -c "$SOCK" job "$jid"
 	atf_check -o file:before cat $R/etc/ssh/sshd_config
 	# What passwd and sshd say is the host's or a jail's, not the
 	# agent's to trust: a long home in a keys file of %h four times
@@ -7512,9 +7521,9 @@ EOS
 		[ $("$JGC" -c "$SOCK" events | grep -o '"state":"set"' | wc -l) -ge 3 ] && break
 		sleep 0.2
 	done
-	atf_check -o match:'"type":"bgp-neighbor","severity":"Major","object":"bgp1","by":"bird","description":"BGP bgp1 to 192.0.2.7 is Active: Socket: Connection refused","state":"set"' \
-	    -o match:'"type":"ospf-neighbor","severity":"Major","object":"ospf1/10.0.0.2@gif0","by":"bird","description":"OSPF neighbour ospf1/10.0.0.2@gif0 is gone from BIRD.s list","state":"set"' \
-	    -o match:'"type":"bfd","severity":"Major","object":"bfd1/fe80::2@gif0","by":"bird","description":"BFD to fe80::2 on gif0 is Down","state":"set"' \
+	atf_check -o match:'"type":"bgp-neighbor","severity":"Major","object":"host:bgp1","by":"bird","description":"BGP bgp1 to 192.0.2.7 is Active: Socket: Connection refused","state":"set"' \
+	    -o match:'"type":"ospf-neighbor","severity":"Major","object":"host:ospf1/10.0.0.2@gif0","by":"bird","description":"OSPF neighbour ospf1/10.0.0.2@gif0 is gone from BIRD.s list","state":"set"' \
+	    -o match:'"type":"bfd","severity":"Major","object":"host:bfd1/fe80::2@gif0","by":"bird","description":"BFD to fe80::2 on gif0 is Down","state":"set"' \
 	    -o not-match:'"object":"off1"' \
 	    "$JGC" -c "$SOCK" events
 	# Well again: each cleared.
@@ -7523,9 +7532,9 @@ EOS
 		[ $("$JGC" -c "$SOCK" events | grep -o '"state":"cleared"' | wc -l) -ge 3 ] && break
 		sleep 0.2
 	done
-	atf_check -o match:'"type":"bgp-neighbor","severity":"Cleared","object":"bgp1","description":"BGP bgp1 is established","state":"cleared"' \
-	    -o match:'"type":"ospf-neighbor","severity":"Cleared","object":"ospf1/10.0.0.2@gif0"' \
-	    -o match:'"type":"bfd","severity":"Cleared","object":"bfd1/fe80::2@gif0"' \
+	atf_check -o match:'"type":"bgp-neighbor","severity":"Cleared","object":"host:bgp1","description":"BGP bgp1 is established","state":"cleared"' \
+	    -o match:'"type":"ospf-neighbor","severity":"Cleared","object":"host:ospf1/10.0.0.2@gif0"' \
+	    -o match:'"type":"bfd","severity":"Cleared","object":"host:bfd1/fe80::2@gif0"' \
 	    "$JGC" -c "$SOCK" events
 }
 bird_watch_cleanup()
