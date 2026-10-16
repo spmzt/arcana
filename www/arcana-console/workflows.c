@@ -2283,9 +2283,13 @@ api_workflows(struct http_request *req)
 		it = NULL;
 		while ((e = ucl_object_iterate(ucl_object_lookup(top,
 		    "workflows"), &it, true)) != NULL)
-			if (strcmp(ucl_str(e, "id"), wid) == 0)
+			if (strcmp(ucl_str(e, "id"), wid) == 0) {
 				found = true;
-			else
+				/* Said in the log, as a server removed is. */
+				kore_log(LOG_NOTICE, "workflow %s deleted: %s", wid,
+				    ucl_str(e, "name") != NULL ? ucl_str(e, "name") :
+				    "");
+			} else
 				ucl_array_append(keep, ucl_object_copy(e));
 		put(top, "workflows", keep);
 		if (found)
@@ -2334,6 +2338,9 @@ api_workflows(struct http_request *req)
 		ucl_array_append(keep, ucl_object_ref(w));
 	put(top, "workflows", keep);
 	(void)store_save(WF_FILE, top);
+	kore_log(LOG_NOTICE, "workflow %s %s: %s", ucl_str(w, "id") != NULL ?
+	    ucl_str(w, "id") : "", found ? "changed" : "made", ucl_str(w,
+	    "name") != NULL ? ucl_str(w, "name") : "");
 	pthread_mutex_unlock(&wf_lock);
 	ucl_object_unref(top);
 	return (reply_json(req, 200, w));
