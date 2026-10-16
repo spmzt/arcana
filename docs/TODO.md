@@ -688,6 +688,38 @@
   never made nor taken away.  The IPFW tab's Load the current file
   verified in a jail with its own rc.conf and script (the lab's
   arcswan1 root).
+- Asked for on 2026-10-16, in the order they are being done (done ones
+  move to their own notes):
+  - SD-WAN, adding an edge: a WAN link is not moved from its static
+    addressing unless its form says DHCP or SLAAC (checked 2026-10-16);
+    said plainly in the form and the book now, and the link the console
+    reaches the host through refused DHCP, SLAAC or a VRF unless agreed.
+  - Kernel: beside each module, keep it in rc.conf's kld_list or take
+    it out, without loading or unloading it.
+  - SSH: a user's key changed in place (its options, principals= among
+    them).
+  - Mail by SMTP: a relay (host, port, STARTTLS or TLS, a user and
+    password) for the console's mail, not only the host's sendmail(8).
+  - Workflows: the steps' forms remade (a value's field as what it is,
+    pkg's IPv4 or IPv6 a choice, not "a value, or ${param.x}"; the
+    parameters apart), after a look at how others do it; a template
+    that upgrades the packages of every jail.
+  - Legends for every graph whose lines differ by colour or dash (the
+    firewall's first).
+  - A Security section in the side bar: the luxuria plugins SD-WAN
+    uses (Squid with its URL filter, c-icap with ClamAV and freshclam,
+    Suricata) each a tab, usable without SD-WAN.
+  - The activity bar's tasks, kept over a reload of the page (the
+    hosts keep their jobs and traces: read back from them).
+  - A rollback timer for every agent at once, in the console's
+    Settings, each host said to have it or not.
+  - Undoing an SD-WAN link's DHCP or SLAAC sets it static: it should go
+    back to what it was (a host on SLAAC by rc.conf before).
+  - SCTP multi-homed between console and agent (several addresses each
+    end, the association's paths shown), and an agent's address
+    changed from the panel: the agent listens on the new one beside the
+    old, the console moves to it, and only then is the old one closed;
+    else all goes back.
 - Alert management (asked 2026-10-16): who is told of what, and how.
   Alerts from the events the console already reads (faults, BIRD's
   sessions among them, limits crossed, jobs, workflow runs), each rule
