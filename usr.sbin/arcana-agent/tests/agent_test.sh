@@ -277,7 +277,7 @@ start_daemon()
 	    -X "$(pwd)/fake-traceroute" -4 "$(pwd)/ntp.conf" \
 	    -6 "$(pwd)/rtadvd.conf" -7 "$(pwd)/fake-dnsmasq" -8 "$(pwd)/fake-rtsol" \
 	    -9 "$(pwd)/fake-setkey" -0 "$(pwd)/fake-local-unbound" \
-	    $DAEMON_ARGS \
+	    --bird-watch 0 $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
@@ -7308,8 +7308,70 @@ EOF
 	done
 }
 
+atf_test_case bird_watch cleanup
+bird_watch_head()
+{
+	atf_set "descr" "BIRD's sessions watched: a BGP session, an OSPF neighbour and a BFD session that go down are faults, cleared when they are up again"
+}
+bird_watch_body()
+{
+	# birdc(8): what each session is, from files the test changes.
+	cat > fake-birdc <<EOS
+#!/bin/sh
+[ "\$1" = -r ] && shift
+d=$(pwd)
+case "\$*" in
+'show status') printf 'BIRD 2.15.1 ready.\\nRouter ID is 192.0.2.1\\n' ;;
+'show protocols all')
+	st=up; info=Established; bs=Established; err=
+	[ -e \$d/bgp.down ] && { st=start; info=Active; bs=Active; err='    Last error:       Socket: Connection refused'; }
+	printf 'BIRD 2.15.1 ready.\\nName Proto Table State Since Info\\n'
+	printf 'bgp1 BGP --- %s 12:00:00 %s\\n  BGP state:          %s\\n    Neighbor address: 192.0.2.7\\n    Neighbor AS:      65001\\n%s\\n' \$st \$info \$bs "\$err"
+	printf 'off1 BGP --- down 12:00:00\\n  BGP state:          Down\\n' ;;
+'show ospf neighbors')
+	printf 'ospf1:\\nRouter ID Pri State DTime Interface Router IP\\n'
+	[ -e \$d/ospf.gone ] || printf '10.0.0.2 1 Full/PtP 00:00:35 gif0 10.255.0.2\\n' ;;
+'show bfd sessions')
+	s=Up; [ -e \$d/bfd.down ] && s=Down
+	printf 'bfd1:\\nIP address Interface State Since Interval Timeout\\nfe80::2 gif0 %s 13:01:27 0.200 1.000\\n' \$s ;;
+*) printf 'BIRD 2.15.1 ready.\\n' ;;
+esac
+EOS
+	chmod +x fake-birdc
+	DAEMON_ARGS="--bird-watch 1"
+	start_daemon
+	# All well: no fault, but the session turned off is none either.
+	sleep 2.5
+	atf_check -o not-match:'sdwan-fault' "$JGC" -c "$SOCK" events
+	touch bgp.down ospf.gone bfd.down
+	for i in $(seq 1 40); do
+		[ $("$JGC" -c "$SOCK" events | grep -o '"state":"set"' | wc -l) -ge 3 ] && break
+		sleep 0.2
+	done
+	atf_check -o match:'"type":"bgp-neighbor","severity":"Major","object":"bgp1","by":"bird","description":"BGP bgp1 to 192.0.2.7 is Active: Socket: Connection refused","state":"set"' \
+	    -o match:'"type":"ospf-neighbor","severity":"Major","object":"ospf1/10.0.0.2@gif0","by":"bird","description":"OSPF neighbour ospf1/10.0.0.2@gif0 is gone from BIRD.s list","state":"set"' \
+	    -o match:'"type":"bfd","severity":"Major","object":"bfd1/fe80::2@gif0","by":"bird","description":"BFD to fe80::2 on gif0 is Down","state":"set"' \
+	    -o not-match:'"object":"off1"' \
+	    "$JGC" -c "$SOCK" events
+	# Well again: each cleared.
+	rm -f bgp.down ospf.gone bfd.down
+	for i in $(seq 1 40); do
+		[ $("$JGC" -c "$SOCK" events | grep -o '"state":"cleared"' | wc -l) -ge 3 ] && break
+		sleep 0.2
+	done
+	atf_check -o match:'"type":"bgp-neighbor","severity":"Cleared","object":"bgp1","description":"BGP bgp1 is established","state":"cleared"' \
+	    -o match:'"type":"ospf-neighbor","severity":"Cleared","object":"ospf1/10.0.0.2@gif0"' \
+	    -o match:'"type":"bfd","severity":"Cleared","object":"bfd1/fe80::2@gif0"' \
+	    "$JGC" -c "$SOCK" events
+}
+bird_watch_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case bird_watch
 	atf_add_test_case yang_interfaces
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_origins

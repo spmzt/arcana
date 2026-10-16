@@ -61,6 +61,7 @@
 .Op Fl W Ar swapinfo
 .Op Fl Z Ar zpool
 .Op Fl P Ar pkg
+.Op Fl -bird-watch Ar seconds
 .Nm
 .Fl V
 .Sh DESCRIPTION
@@ -275,6 +276,22 @@ Print the version and exit.
 .It Fl w Ar seconds
 How long a change made in safe mode waits to be confirmed.
 Default 60.
+.It Fl -bird-watch Ar seconds
+How often the BIRD of the host, and that of each running jail with a
+network of its own where
+.Xr birdc 8
+is, are read for faults: a BGP session turned on but not established
+.Pq Ql bgp-neighbor ,
+an OSPF neighbour that was full and is no more
+.Pq Ql ospf-neighbor ,
+a BFD session that was up and is down
+.Pq Ql bfd ,
+a BIRD that answered and does not
+.Pq Ql bird-instance .
+Each is cleared when it is well again, and is an
+.Ql sdwan-fault
+event too.
+Default 15; 0 reads them never.
 .It Fl I Ar ifconfig , Fl n Ar ngctl , Fl k Ar wg , Fl b Ar birdc
 The
 .Xr ifconfig 8 ,

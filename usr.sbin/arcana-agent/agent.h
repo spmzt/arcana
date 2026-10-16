@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.124.1"
+#define	ARCANA_AGENT_VERSION	"0.125.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -139,6 +139,7 @@ struct opts {
 	const char	*build_dir;	/* where a tree is cloned and built */
 	const char	*build_conf;	/* this host's config.mk for it */
 	const char	*root;		/* --root: the system's files under it */
+	int		 bird_watch_s;	/* --bird-watch: BIRD's sessions, how often */
 	char		 build[65];	/* SHA-256 of the running program */
 	bool		 debug;
 };
@@ -423,6 +424,7 @@ int		 do_ipsec_job(struct work *, const struct arc_job_spec *,
 
 /* luxuria/bird.c: a plugin, through birdc(8). */
 int		 do_bird(struct work *, struct arc_network_rsp *);
+void		 bird_watch_start(void);
 const char	*bird_check(const char *, const char *const *, size_t);
 int		 do_bird_verb(struct work *, const char *, const char *const *,
 		    size_t, const char **);
