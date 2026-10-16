@@ -710,9 +710,9 @@ struct bfconf;
 struct bfconf	*bf_new(const char *);
 struct bfconf	*bf_parse(const char *, const char *);
 struct bfconf	*bf_read(const char *, const ucl_object_t *,
-		    const char *const *, char *, size_t);
+		    const char *const *, const char *const *, char *, size_t);
 void		 bf_fields(struct html *, const struct bfconf *,
-		    const char *const *, bool);
+		    const char *const *, const char *const *, bool);
 char		*bf_text(const struct bfconf *);
 const char	*bf_name(const struct bfconf *);
 void		 bf_summary(char *, size_t, const struct bfconf *);

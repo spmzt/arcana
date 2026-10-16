@@ -95,6 +95,7 @@ static const char *past(const char *);
 static void	want_open(void);
 static void	proto_view(struct html *, const ucl_object_t *, int);
 static int	filter_names(const char **, int);
+static int	template_names(const char **, int);
 static const ucl_object_t *proto_find(const ucl_object_t *, const char *);
 static const char *state_of(const ucl_object_t *);
 static void	count(char *, size_t, int64_t);
@@ -519,6 +520,19 @@ filter_names(const char **v, int max)
 	for (i = n = 0; i < bd.nb && n < max; i++)
 		if (strcmp(bd.b[i].kind, "filter") == 0 && bd.b[i].name[0] !=
 		    '\0')
+			v[n++] = bd.b[i].name;
+	return (n);
+}
+
+/* The names of the file's BGP templates, at most max. */
+static int
+template_names(const char **v, int max)
+{
+	int	i, n;
+
+	for (i = n = 0; i < bd.nb && n < max; i++)
+		if (strcmp(bd.b[i].kind, "template") == 0 && strcmp(bd.b[i].type,
+		    "bgp") == 0 && bd.b[i].name[0] != '\0')
 			v[n++] = bd.b[i].name;
 	return (n);
 }
@@ -1919,6 +1933,7 @@ bird_modal(struct html *h)
 		return (true);
 	case MODAL_BIRD_FORM: {
 		const char	*filters[FILTERS_MAX + 1];
+		const char	*templates[FILTERS_MAX + 1];
 		struct bfconf	*c;
 		static const char *const what[] = { "BGP neighbour",
 		    "OSPF instance", "BFD" };
@@ -1949,7 +1964,8 @@ bird_modal(struct html *h)
 			return (true);
 		}
 		filters[filter_names(filters, FILTERS_MAX)] = NULL;
-		bf_fields(h, c, filters, i >= 0);
+		templates[template_names(templates, FILTERS_MAX)] = NULL;
+		bf_fields(h, c, filters, templates, i >= 0);
 		bf_free(c);
 		h_raw(h, "<p class=\"dim\">Written into BIRD's configuration as "
 		    "a protocol of its own; bird parses the whole file before "
@@ -2021,12 +2037,14 @@ bird_form(const char *form, const ucl_object_t *f)
 		return (false);
 	if (strcmp(form, "bird-pform") == 0) {
 		const char	*filters[FILTERS_MAX + 1];
+		const char	*templates[FILTERS_MAX + 1];
 		struct bfconf	*c;
 
 		if ((s = cur_server()) == NULL || bd.text == NULL)
 			return (true);
 		filters[filter_names(filters, FILTERS_MAX)] = NULL;
-		if ((c = bf_read(bd.fkind, f, filters, app.modal_error,
+		templates[template_names(templates, FILTERS_MAX)] = NULL;
+		if ((c = bf_read(bd.fkind, f, filters, templates, app.modal_error,
 		    sizeof(app.modal_error))) == NULL)
 			return (true);
 		if (bd.edit < 0 && block_find("protocol", bf_name(c)) >= 0) {

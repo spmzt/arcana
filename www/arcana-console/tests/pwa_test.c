@@ -2616,9 +2616,9 @@ part_plugins(void)
 	    "f.elements.name.value = 'transit1'; f.nbr.value = '203.0.113.9'; "
 	    "f.nas.value = '70000000000'; f.las.value = '65000'; f.requestSubmit();");
 	wait_js("document.querySelector('.modal .err') && document."
-	    "querySelector('.modal .err').textContent.includes('An AS is')", 5);
+	    "querySelector('.modal .err').textContent.includes('AS is a number')", 5);
 	run("const f = document.querySelector('form[data-form=bird-pform]'); "
-	    "f.nas.value = '64500'; f.bfd.checked = true; f.imp0.value = "
+	    "f.nas.value = '64500'; f.bfd.value = 'on'; f.imp0.value = "
 	    "'filter bgp_in'; f.ch1.checked = true; f.requestSubmit();");
 	wait_js("!document.querySelector('.modal') && [...document."
 	    "querySelectorAll('table.bird-bgp tbody tr')].some(r => r."
@@ -2628,6 +2628,22 @@ part_plugins(void)
 	    "grep -q '^\tbfd on;$' bird/bird.conf && grep -q '^\t\timport "
 	    "filter bgp_in;$' bird/bird.conf && grep -q '^\tipv6 {$' "
 	    "bird/bird.conf") == 0);
+	/* One from a template: what it leaves empty, the template says. */
+	run("document.querySelector('button[data-act=bird-pnew][data-arg=bgp]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=bird-pform] "
+	    "select[name=tmpl] option[value=ibgp_t]')", 5);
+	run("const f = document.querySelector('form[data-form=bird-pform]'); "
+	    "f.elements.name.value = 'core2'; f.tmpl.value = 'ibgp_t'; "
+	    "f.nbr.value = '2001:db8::7'; f.ch0.checked = false; "
+	    "f.efa.value = 'on'; f.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('table.bird-bgp tbody tr')].some(r => r."
+	    "textContent.includes('ibgp_t · '))", 20);
+	ATF_CHECK(system("grep -q '^protocol bgp core2 from ibgp_t {$' "
+	    "bird/bird.conf && grep -q '^\tneighbor 2001:db8::7;$' bird/bird.conf "
+	    "&& grep -q '^\tenforce first as on;$' bird/bird.conf && ! grep -A4 "
+	    "'^protocol bgp core2' bird/bird.conf | grep -q 'local as'") == 0);
 	shot("7g-bird-bgp-tab");
 	/* One there already, read into the form and changed. */
 	run("[...document.querySelectorAll('table.bird-bgp tbody tr')].find(r "
@@ -2697,7 +2713,7 @@ part_plugins(void)
 	wait_js("!document.querySelector('.modal') && document.querySelector("
 	    "'table.bird-bfd tbody tr')", 20);
 	ATF_CHECK(system("grep -q '^protocol bfd bfd1 {$' bird/bird.conf && "
-	    "grep -q '^\t\tmin rx interval 200 ms;$' bird/bird.conf && grep -q "
+	    "grep -q '^\t\tinterval 200 ms;$' bird/bird.conf && grep -q "
 	    "'^\tneighbor 10.255.0.2;$' bird/bird.conf") == 0);
 	run("document.querySelector('button[data-act=bird-sub][data-arg=\"0\"]')"
 	    ".click()");
