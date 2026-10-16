@@ -1071,6 +1071,27 @@ attribute-sets:
           path-port to an ephemeral port of path-dst, a TCP segment of
           a connection (ACK, no SYN), an ICMP echo reply; met where no
           state of its request may be.
+      - name: listen
+        type: text
+        doc: |
+          For transport: a listener the agent has now as well, tcp://
+          or sctp:// and an address and port (and an SCTP one beside a
+          TCP one, once the kernel has SCTP); none when it has it.
+        checks:
+          max-len: 255
+      - name: unlisten
+        type: text
+        doc: |
+          For transport: a listener the agent closes (with the SCTP one
+          beside it); the local socket is not one.
+        checks:
+          max-len: 255
+      - name: listen-keep
+        type: flag
+        doc: |
+          For transport, with listen and unlisten: kept for the next
+          start too, listen taking unlisten's place in rc.conf
+          (arcana_agent_listen, or -l in arcana_agent_flags).
 
 
   - name: host
@@ -2301,11 +2322,17 @@ operations:
       the other end, and since when.  An agent that listens on TCP
       listens on SCTP at the same address and port as well, once the
       kernel has SCTP: it does not load it, and does not try by itself
-      again.  With retry it tries now.
+      again.  With retry it tries now.  With listen it listens there
+      too, with unlisten it closes that one: an address changed from
+      the console, the new one listened on and tried before the old
+      one is closed.
     do:
       request:
         attributes:
           - retry
+          - listen
+          - unlisten
+          - listen-keep
       reply:
         attributes:
           - ok

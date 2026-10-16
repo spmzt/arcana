@@ -130,6 +130,9 @@ struct call {
 	size_t			 nvars;
 	bool			 reads;		/* changes nothing: may be asked twice */
 	bool			 retry;		/* transport: try SCTP again */
+	char			*listen;	/* transport: listen there too */
+	char			*unlisten;	/* and close this one */
+	bool			 listen_keep;	/* kept in rc.conf */
 	char			 logname[129];	/* log: the file */
 	uint64_t		 pos;		/* log: from where; history: after when */
 	bool			 has_pos;
@@ -2394,6 +2397,9 @@ connected:
 	case OP_TRANSPORT:
 		memset(&tpq, 0, sizeof(tpq));
 		tpq.retry = c->retry;
+		tpq.listen = c->listen;
+		tpq.unlisten = c->unlisten;
+		tpq.listen_keep = c->listen_keep;
 		if ((error = arc_transport(&cl, &tpq, &tpr)) != 0)
 			goto rpcfail;
 		ok = tpr->ok;
@@ -3138,6 +3144,9 @@ call_release(struct call *c)
 	c->host_keys = NULL;
 	kore_free(c->text);
 	c->text = NULL;
+	kore_free(c->listen);
+	kore_free(c->unlisten);
+	c->listen = c->unlisten = NULL;
 	kore_free(c->from_uri);
 	kore_free(c->from_peer);
 	c->from_uri = c->from_peer = NULL;
@@ -5035,6 +5044,29 @@ self_call(struct call *c, const char *uri, const char *peer,
 	call_release(c);
 	kore_free(c);
 	return (json);
+}
+
+/*
+ * The host's listeners changed, for the move's task: listen there too,
+ * unlisten that one, keep the change in rc.conf; on a connection of its
+ * own.
+ */
+char *
+hosts_listen(const char *uri, const char *peer, const char *name,
+    const char *listen, const char *unlisten, bool keep, int *status)
+{
+	struct call	*c;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_TRANSPORT;
+	c->fresh = true;
+	c->listen = listen != NULL ? kore_strdup(listen) : NULL;
+	c->unlisten = unlisten != NULL ? kore_strdup(unlisten) : NULL;
+	c->listen_keep = keep;
+	snprintf(c->route, sizeof(c->route), "move %s%s%s", listen != NULL ?
+	    "listen " : "", listen != NULL ? listen : "", unlisten != NULL ?
+	    " unlisten" : "");
+	return (self_call(c, uri, peer, name, "transport", status));
 }
 
 /*

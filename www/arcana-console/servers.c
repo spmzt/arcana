@@ -513,3 +513,215 @@ api_server(struct http_request *req)
 	req->method = HTTP_METHOD_GET;
 	return (api_servers(req));
 }
+
+/*
+ * POST /api/servers/<id>/move {"uri": "tcp://address:port"}: the host
+ * reached at another address.  The agent is asked, where it is reached
+ * now, to listen on the new one too; the new one is tried on a
+ * connection of its own; only when it answers is the server moved, and
+ * then the old listener closed, by the new way, and the change kept in
+ * the host's rc.conf.  When the new one does not answer, or the move
+ * cannot be saved, the agent closes the new listener again: the host is
+ * reached as before.
+ */
+struct mv {
+	struct kore_task task;		/* first */
+	int		 stage;		/* MV_* */
+	char		 sid[16];
+	char		 from[256];
+	char		 to[256];
+	char		 peer[256];
+	char		 name[128];
+	bool		 ok;
+	char		 error[600];
+	char		 note[400];
+};
+
+enum { MV_TRY, MV_DROP, MV_BACK };
+
+/* What an agent's answer said went wrong, or NULL when it went right. */
+static const char *
+mv_why(const char *json, int status, char *buf, size_t len)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o;
+	const ucl_object_t	*e;
+
+	o = NULL;
+	if (json != NULL) {
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+		if (ucl_parser_add_string(p, json, 0))
+			o = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+	}
+	if (status == 200 && o != NULL && ((e = ucl_object_lookup(o, "ok")) ==
+	    NULL || ucl_object_toboolean(e)) && ((e = ucl_object_lookup(o,
+	    "error")) == NULL || ucl_object_type(e) == UCL_NULL)) {
+		ucl_object_unref(o);
+		return (NULL);
+	}
+	e = o != NULL ? ucl_object_lookup(o, "error") : NULL;
+	if (e != NULL && ucl_object_type(e) == UCL_OBJECT)
+		e = ucl_object_lookup(e, "message");
+	snprintf(buf, len, "%s", e != NULL && ucl_object_type(e) ==
+	    UCL_STRING ? ucl_object_tostring(e) : status == 0 ? "no answer" :
+	    "it did not say why");
+	if (o != NULL)
+		ucl_object_unref(o);
+	return (buf);
+}
+
+static int
+mv_run(struct kore_task *t)
+{
+	struct mv	*m = (struct mv *)t;
+	char		*json, why[400];
+	const char	*e;
+	int		 status;
+
+	switch (m->stage) {
+	case MV_TRY:
+		json = hosts_listen(m->from, m->peer, m->name, m->to, NULL,
+		    false, &status);
+		e = mv_why(json, status, why, sizeof(why));
+		free(json);
+		if (e != NULL) {
+			snprintf(m->error, sizeof(m->error), "The agent did not "
+			    "listen on %s: %s. Nothing changed.", m->to, e);
+			break;
+		}
+		json = hosts_read(m->to, m->peer, m->name, "hello", &status);
+		e = mv_why(json, status, why, sizeof(why));
+		free(json);
+		if (e == NULL) {
+			m->ok = true;
+			break;
+		}
+		snprintf(m->error, sizeof(m->error), "It does not answer at "
+		    "%s (%s): the host is reached as before", m->to, e);
+		json = hosts_listen(m->from, m->peer, m->name, NULL, m->to,
+		    false, &status);
+		if ((e = mv_why(json, status, why, sizeof(why))) != NULL)
+			snprintf(m->note, sizeof(m->note), "The agent still "
+			    "listens on %s as well: %s", m->to, e);
+		free(json);
+		break;
+	case MV_DROP:
+		/* By the new way: the old listener closed, the new kept. */
+		json = hosts_listen(m->to, m->peer, m->name, m->to, m->from,
+		    true, &status);
+		if ((e = mv_why(json, status, why, sizeof(why))) != NULL)
+			snprintf(m->note, sizeof(m->note), "Moved; but the "
+			    "agent still listens on %s, or did not keep %s in "
+			    "rc.conf: %s", m->from, m->to, e);
+		free(json);
+		break;
+	case MV_BACK:
+		json = hosts_listen(m->from, m->peer, m->name, NULL, m->to,
+		    false, &status);
+		if ((e = mv_why(json, status, why, sizeof(why))) != NULL)
+			snprintf(m->note, sizeof(m->note), "The agent still "
+			    "listens on %s as well: %s", m->to, e);
+		free(json);
+		break;
+	}
+	return (KORE_RESULT_OK);
+}
+
+static void
+mv_start(struct http_request *req, struct mv *m, int stage)
+{
+
+	m->stage = stage;
+	kore_task_create(&m->task, mv_run);
+	kore_task_bind_request(&m->task, req);
+	kore_task_run(&m->task);
+}
+
+int
+api_server_move(struct http_request *req)
+{
+	const struct server	*s;
+	struct mv		*m;
+	ucl_object_t		*body, *top;
+	const char		*to;
+	char			 id[16];
+
+	if ((m = req->hdlr_extra) != NULL) {
+		if (kore_task_state(&m->task) != KORE_TASK_STATE_FINISHED) {
+			http_request_sleep(req);
+			return (KORE_RESULT_RETRY);
+		}
+		if (m->stage == MV_TRY && m->ok) {
+			kore_task_destroy(&m->task);
+			if (servers_move(m->sid, m->to) == -1) {
+				m->ok = false;
+				snprintf(m->error, sizeof(m->error), "It answers "
+				    "at %s, but the console could not keep the "
+				    "change: the host is reached as before",
+				    m->to);
+				mv_start(req, m, MV_BACK);
+			} else
+				mv_start(req, m, MV_DROP);
+			return (KORE_RESULT_RETRY);
+		}
+		top = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(top, ucl_object_frombool(m->ok), "ok", 0,
+		    false);
+		ucl_object_insert_key(top, ucl_object_fromstring(m->ok ? m->to :
+		    m->from), "uri", 0, false);
+		if (!m->ok)
+			ucl_object_insert_key(top, ucl_object_fromstring(m->error),
+			    "error", 0, false);
+		if (m->note[0] != '\0')
+			ucl_object_insert_key(top, ucl_object_fromstring(m->note),
+			    "note", 0, false);
+		kore_log(LOG_NOTICE, "server %s: move to %s: %s", m->sid, m->to,
+		    m->ok ? "done" : m->error);
+		return (reply_json(req, 200, top));
+	}
+	if (!guard(req, true))
+		return (KORE_RESULT_OK);
+	if (!capture(req, 3, id, sizeof(id)) || (s = server_find(id)) == NULL)
+		return (reply_error(req, 404, "not_found", "no such server"));
+	if ((body = read_json(req)) == NULL)
+		return (reply_error(req, 400, "invalid", "a JSON object: uri"));
+	to = ucl_str(body, "uri");
+	if (to == NULL || (strncmp(to, "tcp://", 6) != 0 && strncmp(to,
+	    "sctp://", 7) != 0) || !valid_uri(to) || strlen(to) >= 256) {
+		ucl_object_unref(body);
+		return (reply_error(req, 400, "invalid", "uri is tcp:// or "
+		    "sctp://, an address and a port"));
+	}
+	if ((strncmp(s->uri, "tcp://", 6) != 0 && strncmp(s->uri, "sctp://",
+	    7) != 0) || strcmp(s->uri, to) == 0) {
+		ucl_object_unref(body);
+		return (reply_error(req, 400, "invalid", strcmp(s->uri, to) ==
+		    0 ? "it is reached there already" : "a host reached by "
+		    "its local socket is not moved"));
+	}
+	m = kore_calloc(1, sizeof(*m));
+	snprintf(m->sid, sizeof(m->sid), "%s", s->id);
+	snprintf(m->from, sizeof(m->from), "%s", s->uri);
+	snprintf(m->to, sizeof(m->to), "%s", to);
+	snprintf(m->peer, sizeof(m->peer), "%s", s->peer_name != NULL ?
+	    s->peer_name : "");
+	snprintf(m->name, sizeof(m->name), "%s", s->name);
+	ucl_object_unref(body);
+	req->hdlr_extra = m;
+	mv_start(req, m, MV_TRY);
+	return (KORE_RESULT_RETRY);
+}
+
+void
+api_server_move_free(struct http_request *req)
+{
+	struct mv	*m = req->hdlr_extra;
+
+	if (m == NULL)
+		return;
+	kore_task_destroy(&m->task);
+	kore_free(m);
+	req->hdlr_extra = NULL;
+}

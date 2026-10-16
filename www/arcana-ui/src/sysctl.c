@@ -434,10 +434,34 @@ sysctl_form(const char *form, const ucl_object_t *f)
 	char		*qn, *qv, *json, title[300];
 
 	if (strcmp(form, "sy-set") != 0 && strcmp(form, "sy-from") != 0 &&
-	    strcmp(form, "tr-safe") != 0)
+	    strcmp(form, "tr-safe") != 0 && strcmp(form, "tr-move") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
+	if (strcmp(form, "tr-move") == 0) {
+		char	text[600];
+
+		v = jstr(f, "uri") != NULL ? jstr(f, "uri") : "";
+		if (strncmp(v, "tcp://", 6) != 0 && strncmp(v, "sctp://", 7) !=
+		    0) {
+			toast(true, "An address the console reaches the agent "
+			    "at is tcp:// or sctp://, an address and a port");
+			return (true);
+		}
+		if (strcmp(v, s->uri) == 0) {
+			toast(true, "It is reached there already");
+			return (true);
+		}
+		snprintf(text, sizeof(text), "The agent on %s listens on %s "
+		    "too, and the console tries it. Only when the agent "
+		    "answers there is the host reached that way, and its "
+		    "listener at %s closed; when it does not, the agent stops "
+		    "listening there and nothing else changes.", s->name, v,
+		    s->uri);
+		confirm("Move the host", text, "Test and move", false, "",
+		    "do-tr-move", v, "");
+		return (true);
+	}
 	if (strcmp(form, "tr-safe") == 0) {
 		char	*end, url[64], body[48];
 		long	 k;
@@ -568,6 +592,24 @@ switch_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		    jstr(o, "error.message") : err != NULL ? err :
 		    "no answer");
 	free(to);
+}
+
+static void
+move_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	tr.busy = false;
+	if (status == 200 && jbool(o, "ok")) {
+		toast(false, "Reached at %s from now on", jstr(o, "uri") !=
+		    NULL ? jstr(o, "uri") : "the new address");
+		tr.sid[0] = '\0';
+		refresh_servers();
+	} else
+		toast(true, "%s", jstr(o, "error") != NULL ? jstr(o, "error") :
+		    err != NULL ? err : "not moved: no answer");
+	if (jstr(o, "note") != NULL)
+		toast(true, "%s", jstr(o, "note"));
 }
 
 /*
@@ -904,6 +946,25 @@ view_transport(struct html *h, struct server *s)
 		h_raw(h, "<span class=\"dim\">The kernel has no SCTP: load "
 		    "the <code>sctp</code> module from the Kernel tab.</span>");
 	h_raw(h, "</div>");
+	/* Another address: listened on beside, tried, then the old let go. */
+	if (tcp || sctp) {
+		h_raw(h, "<details class=\"wfmore trmove\"><summary>Move to "
+		    "another address</summary><form class=\"toolbar\" "
+		    "data-form=\"tr-move\"><label>Reached at <input name=\"uri\" "
+		    "required spellcheck=\"false\" autocomplete=\"off\" "
+		    "size=\"36\"");
+		h_attr(h, "value", uri);
+		h_fmt(h, "></label><button class=\"ghost small\"%s>Test and "
+		    "move</button></form><p class=\"dim\">The agent listens "
+		    "there too; the console tries it on a connection of its "
+		    "own; only when the agent answers there is the host reached "
+		    "that way, the old listener closed and the new one kept in "
+		    "rc.conf (<code>arcana_agent_listen</code>). When it does not "
+		    "answer, the agent stops listening there and nothing else "
+		    "changes. Its certificate must name the new address, or the "
+		    "name the console checks.</p></details>", tr.busy ?
+		    " disabled" : "");
+	}
 	if (tr.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, tr.error);
@@ -951,7 +1012,7 @@ sysctl_action(const char *act, const char *arg, const char *value)
 	}
 	if (strncmp(act, "sy-", 3) != 0 && strncmp(act, "tr-", 3) != 0 &&
 	    strcmp(act, "do-tr-switch") != 0 && strcmp(act, "do-tr-renew") !=
-	    0)
+	    0 && strcmp(act, "do-tr-move") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
@@ -992,6 +1053,15 @@ sysctl_action(const char *act, const char *arg, const char *value)
 		    's' ? "SCTP" : "TCP");
 		confirm(arg[0] == 's' ? "Switch to SCTP" : "Switch to TCP",
 		    text, "Test and switch", false, "", "do-tr-switch", arg, "");
+	} else if (strcmp(act, "do-tr-move") == 0) {
+		char	*q;
+
+		tr.busy = true;
+		snprintf(url, sizeof(url), "/api/servers/%s/move", s->id);
+		q = json_quote(arg);
+		snprintf(text, sizeof(text), "{\"uri\":%s}", q);
+		free(q);
+		api("POST", url, text, move_cb, NULL);
 	} else if (strcmp(act, "do-tr-switch") == 0 && (strcmp(arg, "sctp") ==
 	    0 || strcmp(arg, "tcp") == 0)) {
 		tr.busy = true;

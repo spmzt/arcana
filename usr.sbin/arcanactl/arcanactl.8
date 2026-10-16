@@ -547,13 +547,31 @@ of the jail's own firewall.
 The host needs
 .Xr dtrace 4
 loaded.
-.It Cm transport Op Cm retry
+.It Cm transport Oo Cm retry | Cm listen Ar uri | Cm unlisten Ar uri Oo Cm for Ar new Op Cm keep Oc Oc
 How the agent is reached: its listeners, each up or not and why not,
 whether the kernel has SCTP, and the connections open to the agent now.
 With
 .Cm retry
 the agent starts the SCTP listeners that are not up, which it does not
 do by itself once the kernel had no SCTP when it started.
+With
+.Cm listen
+it listens on
+.Ar uri
+too
+.Pq tcp:// or sctp:// , an address and a port; an SCTP listener beside a TCP one ;
+with
+.Cm unlisten
+it closes that listener and the SCTP one beside it, but not the local
+socket, nor the last one it is reached by;
+.Cm for Ar new Cm keep
+puts
+.Ar new
+in its place in
+.Xr rc.conf 5
+.Pq arcana_agent_listen , or Fl l No in arcana_agent_flags .
+The console moves a host this way: listened on, tried, and only then
+the old one closed.
 .It Cm storage health
 How each disk says it is: asked with
 .Xr nvmecontrol 8

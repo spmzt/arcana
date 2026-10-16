@@ -16,6 +16,11 @@
  *
  * The connections open now are kept here too, as cblink says they come
  * and go, for who wants to see them.
+ *
+ * A listener is added or closed while the agent runs, when the console
+ * moves the host to another address: the new one listened on beside
+ * the old, tried, and only then the old one closed (and the change kept
+ * in rc.conf); each in the loop's thread, as the listeners are its.
  */
 
 #include <sys/param.h>
@@ -140,6 +145,17 @@ transport_watch(cbl_ctx *ctx)
 	return (cbl_ctx_set_conn_cbs(ctx, &cbs, NULL));
 }
 
+/* What the loop was given to do is done: the next may begin. */
+static void
+loop_done(void)
+{
+
+	pthread_mutex_lock(&t_lock);
+	t_busy = false;
+	pthread_cond_broadcast(&t_cv);
+	pthread_mutex_unlock(&t_lock);
+}
+
 /* A listener the agent was told to have, and has. */
 void
 transport_add(const char *uri, cbl_listener *l)
@@ -189,10 +205,7 @@ sctp_start(void *arg __unused)
 		t->up = true;
 		logmsg(LOG_INFO, "listening on %s", t->uri);
 	}
-	pthread_mutex_lock(&t_lock);
-	t_busy = false;
-	pthread_cond_broadcast(&t_cv);
-	pthread_mutex_unlock(&t_lock);
+	loop_done();
 }
 
 /*
@@ -254,32 +267,278 @@ transport_init(cbl_ctx *ctx, cbl_loop *loop, cbl_tls *tls)
 		sctp_start(NULL);
 }
 
-/* From a request's thread: have the loop start them, and wait for it. */
+/*
+ * From a request's thread: fn run by the loop, one at a time, and waited
+ * for; fn says it is done by loop_done().
+ */
 static const char *
-transport_retry(void)
+in_loop(void (*fn)(void *), void *arg)
 {
 	int	error;
 
-	if (!kernel_has_sctp())
-		return ("the kernel has no SCTP: it is not compiled in "
-		    "(kern.features.sctp), so load the sctp module first, from "
-		    "the kernel's modules");
 	pthread_mutex_lock(&t_lock);
 	while (t_busy)
 		pthread_cond_wait(&t_cv, &t_lock);
 	t_busy = true;
 	pthread_mutex_unlock(&t_lock);
-	if ((error = cbl_loop_post(t_loop, sctp_start, NULL)) != 0) {
-		pthread_mutex_lock(&t_lock);
-		t_busy = false;
-		pthread_cond_broadcast(&t_cv);
-		pthread_mutex_unlock(&t_lock);
+	if ((error = cbl_loop_post(t_loop, fn, arg)) != 0) {
+		loop_done();
 		return (strerror(error));
 	}
 	pthread_mutex_lock(&t_lock);
 	while (t_busy)
 		pthread_cond_wait(&t_cv, &t_lock);
 	pthread_mutex_unlock(&t_lock);
+	return (NULL);
+}
+
+/* From a request's thread: have the loop start them, and wait for it. */
+static const char *
+transport_retry(void)
+{
+
+	if (!kernel_has_sctp())
+		return ("the kernel has no SCTP: it is not compiled in "
+		    "(kern.features.sctp), so load the sctp module first, from "
+		    "the kernel's modules");
+	return (in_loop(sctp_start, NULL));
+}
+
+struct tchange {
+	const char	*uri;
+	bool		 add;
+	char		 error[200];
+};
+
+/* A listener at uri, up: its error said when it is not. */
+static int
+listener_up(const char *uri, cbl_listener **lp, char *why, size_t len)
+{
+	cbl_listener	*l;
+	int		 error;
+
+	*lp = NULL;
+	if ((error = cbl_listener_new(t_ctx, uri, 0, &l)) != 0) {
+		snprintf(why, len, "%s", strerror(error));
+		return (-1);
+	}
+	if ((error = cbl_listener_set_tls(l, t_tls)) != 0 ||
+	    (error = cbl_listener_start(l, t_loop)) != 0) {
+		snprintf(why, len, "%s", cbl_listener_errstr(l) != NULL &&
+		    cbl_listener_errstr(l)[0] != '\0' ? cbl_listener_errstr(l) :
+		    strerror(error));
+		cbl_listener_free(l);
+		return (-1);
+	}
+	*lp = l;
+	return (0);
+}
+
+/*
+ * In the loop's thread: a listener added (an SCTP one beside a TCP one,
+ * once the kernel has SCTP: its failing is said, not fatal), or one
+ * closed with the SCTP one beside it.
+ */
+static void
+listen_change(void *arg)
+{
+	struct tchange	*tc = arg;
+	cbl_listener	*l;
+	char		 sib[256], why[160];
+	int		 i;
+
+	sib[0] = '\0';
+	if (strncmp(tc->uri, "tcp://", 6) == 0)
+		snprintf(sib, sizeof(sib), "sctp://%s", tc->uri + 6);
+	if (tc->add) {
+		for (i = 0; i < nlst; i++)
+			if (strcmp(lst[i].uri, tc->uri) == 0 && lst[i].up)
+				goto out;
+		if (nlst + 2 > T_LISTEN) {
+			snprintf(tc->error, sizeof(tc->error), "%d listeners "
+			    "at most", T_LISTEN);
+			goto out;
+		}
+		if (listener_up(tc->uri, &l, why, sizeof(why)) != 0) {
+			snprintf(tc->error, sizeof(tc->error), "%s: %s",
+			    tc->uri, why);
+			goto out;
+		}
+		pthread_mutex_lock(&t_lock);
+		memset(&lst[nlst], 0, sizeof(lst[nlst]));
+		snprintf(lst[nlst].uri, sizeof(lst[nlst].uri), "%s", tc->uri);
+		lst[nlst].l = l;
+		lst[nlst].up = true;
+		nlst++;
+		pthread_mutex_unlock(&t_lock);
+		logmsg(LOG_INFO, "listening on %s", tc->uri);
+		if (sib[0] == '\0')
+			goto out;
+		pthread_mutex_lock(&t_lock);
+		memset(&lst[nlst], 0, sizeof(lst[nlst]));
+		snprintf(lst[nlst].uri, sizeof(lst[nlst].uri), "%s", sib);
+		lst[nlst].sctp = true;
+		if (!kernel_has_sctp())
+			snprintf(lst[nlst].error, sizeof(lst[nlst].error), "the "
+			    "kernel has no SCTP");
+		nlst++;
+		pthread_mutex_unlock(&t_lock);
+		if (kernel_has_sctp()) {
+			if (listener_up(sib, &l, why, sizeof(why)) != 0) {
+				pthread_mutex_lock(&t_lock);
+				snprintf(lst[nlst - 1].error,
+				    sizeof(lst[nlst - 1].error), "%s", why);
+				pthread_mutex_unlock(&t_lock);
+			} else {
+				pthread_mutex_lock(&t_lock);
+				lst[nlst - 1].l = l;
+				lst[nlst - 1].up = true;
+				pthread_mutex_unlock(&t_lock);
+				logmsg(LOG_INFO, "listening on %s", sib);
+			}
+		}
+		goto out;
+	}
+	pthread_mutex_lock(&t_lock);
+	for (i = 0; i < nlst; ) {
+		if (strcmp(lst[i].uri, tc->uri) != 0 && (sib[0] == '\0' ||
+		    !lst[i].sctp || strcmp(lst[i].uri, sib) != 0)) {
+			i++;
+			continue;
+		}
+		if (lst[i].l != NULL)
+			cbl_listener_free(lst[i].l);
+		logmsg(LOG_INFO, "no longer listening on %s", lst[i].uri);
+		memmove(&lst[i], &lst[i + 1], (size_t)(nlst - i - 1) *
+		    sizeof(lst[0]));
+		nlst--;
+	}
+	pthread_mutex_unlock(&t_lock);
+out:
+	loop_done();
+}
+
+/*
+ * listen kept in rc.conf in unlisten's place: a word of
+ * arcana_agent_listen, or of -l in arcana_agent_flags; added to
+ * arcana_agent_listen when neither has it.
+ */
+static const char *
+listen_keep(struct work *w, const char *from, const char *to)
+{
+	static const char *const vars[] = { "arcana_agent_listen",
+	    "arcana_agent_flags" };
+	const char	*v, *e;
+	char		*words, *word, *rest, out[1024];
+	size_t		 i;
+	bool		 found;
+
+	for (i = 0; i < nitems(vars); i++) {
+		if ((v = rc_get(w, vars[i])) == NULL)
+			continue;
+		out[0] = '\0';
+		found = false;
+		words = wstrdup(w, v);
+		for (rest = words; (word = strsep(&rest, " \t")) != NULL; ) {
+			if (word[0] == '\0')
+				continue;
+			if (strcmp(word, from) == 0) {
+				word = (char *)(uintptr_t)to;
+				found = true;
+			}
+			if (strlen(out) + strlen(word) + 2 >= sizeof(out))
+				return ("rc.conf's line would be too long");
+			snprintf(out + strlen(out), sizeof(out) - strlen(out),
+			    "%s%s", out[0] != '\0' ? " " : "", word);
+		}
+		if (!found)
+			continue;
+		e = NULL;
+		if (rc_set(w, vars[i], "=", out, &e) != 0)
+			return (e);
+		return (NULL);
+	}
+	v = rc_get(w, "arcana_agent_listen");
+	e = NULL;
+	if (rc_set(w, "arcana_agent_listen", "=", v != NULL && v[0] != '\0' ?
+	    wfmt(w, "%s %s", v, to) : to, &e) != 0)
+		return (e);
+	return (NULL);
+}
+
+/*
+ * A listener added (listen), one closed (unlisten), or both, kept with
+ * keep: what the console moving the host asks for.
+ */
+static const char *
+listen_set(struct work *w, const char *listen, const char *unlisten,
+    bool keep)
+{
+	struct tchange	 tc;
+	const char	*e;
+	int		 i, n, step;
+
+	if (listen != NULL && strncmp(listen, "tcp://", 6) != 0 &&
+	    strncmp(listen, "sctp://", 7) != 0)
+		return ("listen is tcp:// or sctp://, an address and a port");
+	if (unlisten != NULL) {
+		if (strncmp(unlisten, "unix:", 5) == 0)
+			return ("the local socket is always listened on");
+		/* Not the last one the console can reach it by. */
+		pthread_mutex_lock(&t_lock);
+		for (i = n = 0; i < nlst; i++)
+			if (lst[i].up && strncmp(lst[i].uri, "unix:", 5) != 0 &&
+			    strcmp(lst[i].uri, unlisten) != 0 && (strncmp(
+			    unlisten, "tcp://", 6) != 0 || !lst[i].sctp ||
+			    strcmp(lst[i].uri + 7, unlisten + 6) != 0))
+				n++;
+		pthread_mutex_unlock(&t_lock);
+		if (n == 0 && (listen == NULL || strcmp(listen, unlisten) ==
+		    0))
+			return ("it is the last listener the console reaches the "
+			    "agent by");
+	}
+	if (listen != NULL) {
+		memset(&tc, 0, sizeof(tc));
+		tc.uri = listen;
+		tc.add = true;
+		step = step_begin(w, ARC_STEP_KIND_LIB, "libcblink "
+		    "cbl_listener_start()", "listening on %s too", listen);
+		if ((e = in_loop(listen_change, &tc)) == NULL && tc.error[0] !=
+		    '\0')
+			e = wtext(w, tc.error);
+		step_end(w, step, e == NULL, e != NULL ? "%s" : NULL, e);
+		if (e != NULL)
+			return (e);
+	}
+	if (unlisten != NULL) {
+		pthread_mutex_lock(&t_lock);
+		for (i = 0; i < nlst; i++)
+			if (strcmp(lst[i].uri, unlisten) == 0)
+				break;
+		n = i;
+		i = nlst;
+		pthread_mutex_unlock(&t_lock);
+		if (n == i)
+			return (wfmt(w, "it does not listen on %s", unlisten));
+		memset(&tc, 0, sizeof(tc));
+		tc.uri = unlisten;
+		step = step_begin(w, ARC_STEP_KIND_LIB, "libcblink "
+		    "cbl_listener_free()", "no longer listening on %s",
+		    unlisten);
+		e = in_loop(listen_change, &tc);
+		step_end(w, step, e == NULL, e != NULL ? "%s" : NULL, e);
+		if (e != NULL)
+			return (e);
+	}
+	if (keep && listen != NULL && unlisten != NULL) {
+		step = step_begin(w, ARC_STEP_KIND_FILE, "/etc/rc.conf",
+		    "%s in %s's place, for the next start", listen, unlisten);
+		e = listen_keep(w, unlisten, listen);
+		step_end(w, step, e == NULL, e != NULL ? "%s" : NULL, e);
+		if (e != NULL)
+			return (e);
+	}
 	return (NULL);
 }
 
@@ -292,7 +551,8 @@ put(ucl_object_t *o, const char *key, const char *v)
 
 /* {"listeners":[...],"sctp":bool,"sessions":[...],"seen":n} */
 int
-do_transport(struct work *w, bool retry, struct arc_transport_rsp *rsp)
+do_transport(struct work *w, bool retry, const char *listen,
+    const char *unlisten, bool keep, struct arc_transport_rsp *rsp)
 {
 	ucl_object_t	*top, *arr, *o;
 	unsigned char	*json;
@@ -312,9 +572,16 @@ do_transport(struct work *w, bool retry, struct arc_transport_rsp *rsp)
 			return (0);
 		}
 	}
+	if ((listen != NULL || unlisten != NULL) && (e = listen_set(w, listen,
+	    unlisten, keep)) != NULL) {
+		rsp->error = e;
+		return (0);
+	}
 	top = ucl_object_typed_new(UCL_OBJECT);
 	arr = ucl_object_typed_new(UCL_ARRAY);
-	/* The loop's thread alone changes them, and only by retry. */
+	/* The loop's thread changes them, under t_lock when it adds or
+	 * takes one away. */
+	pthread_mutex_lock(&t_lock);
 	for (i = 0; i < nlst; i++) {
 		o = ucl_object_typed_new(UCL_OBJECT);
 		put(o, "uri", lst[i].uri);
@@ -327,6 +594,7 @@ do_transport(struct work *w, bool retry, struct arc_transport_rsp *rsp)
 			put(o, "error", lst[i].error);
 		ucl_array_append(arr, o);
 	}
+	pthread_mutex_unlock(&t_lock);
 	ucl_object_insert_key(top, arr, "listeners", 0, false);
 	ucl_object_insert_key(top, ucl_object_frombool(kernel_has_sctp()),
 	    "sctp", 0, false);

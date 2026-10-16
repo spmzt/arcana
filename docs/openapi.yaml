@@ -1035,6 +1035,36 @@ paths:
             them; clamav, where /var/db/clamav is, its databases (name,
             file, version, signatures, built) and whether freshclam
             runs.
+  /api/servers/{server}/move:
+    post:
+      tags: [servers]
+      summary: The host reached at another address, safely
+      description: >-
+        The agent, asked where it is reached now, listens on uri too;
+        the console tries uri on a connection of its own; only when the
+        agent answers there is the server moved, the old listener
+        closed by the new way and uri kept in the host's rc.conf in the
+        old one's place. Otherwise the agent stops listening on uri and
+        nothing else changes. ok says which; uri is where the host is
+        reached after; error why not; note what was left undone (an old
+        listener still open, the change not kept).
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uri]
+              properties:
+                uri: { type: string, example: "tcp://192.0.2.10:4430" }
+      responses:
+        "200":
+          description: ok, uri, error, note.
+        "400":
+          description: Not a tcp:// or sctp:// address, the same one,
+            or a host reached by its local socket.
   /api/servers/{server}/security:
     post:
       tags: [servers]

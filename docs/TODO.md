@@ -739,7 +739,10 @@
     end, the association's paths shown), and an agent's address
     changed from the panel: the agent listens on the new one beside the
     old, the console moves to it, and only then is the old one closed;
-    else all goes back.
+    else all goes back.  The move done 2026-10-16 (transport listen,
+    unlisten and listen-keep; POST /api/servers/<id>/move; the host's
+    How it is reached › Move to another address).  Multi-homing not
+    yet.
 - Alert management (asked 2026-10-16): who is told of what, and how.
   Alerts from the events the console already reads (faults, BIRD's
   sessions among them, limits crossed, jobs, workflow runs), each rule
