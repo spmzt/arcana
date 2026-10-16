@@ -14,6 +14,7 @@
  * waits in the queue can be kept as a workflow.
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -573,6 +574,77 @@ draft_template(const char *name)
 	return (true);
 }
 
+/* A span of seconds in a few characters: 0.8 s, 42 s, 3 min, 2 h 5 min. */
+static void
+span_text(char *buf, size_t len, double s)
+{
+
+	if (s < 10)
+		snprintf(buf, len, "%.1f s", s);
+	else if (s < 120)
+		snprintf(buf, len, "%.0f s", s);
+	else if (s < 7200)
+		snprintf(buf, len, "%.0f min", s / 60);
+	else
+		snprintf(buf, len, "%.0f h %.0f min", s / 3600, fmod(s, 3600) /
+		    60);
+}
+
+/*
+ * A workflow's last runs, the oldest first, a square each in its
+ * state's colour, and the last one in words: how it ended, when, and
+ * how long it took.  A square pressed opens its run.
+ */
+#define	RECENT	12
+static void
+recent(struct html *h, const char *id)
+{
+	const ucl_object_t	*r, *v[RECENT];
+	ucl_object_iter_t	 it;
+	char			 age[32], took[32];
+	int			 n = 0, k;
+
+	it = NULL;
+	while (id != NULL && (r = ucl_object_iterate(jget(wf.runs, "runs"),
+	    &it, true)) != NULL) {
+		if (jstr(r, "workflow") == NULL || strcmp(jstr(r, "workflow"),
+		    id) != 0)
+			continue;
+		if (n == RECENT) {
+			memmove(v, v + 1, (RECENT - 1) * sizeof(v[0]));
+			n--;
+		}
+		v[n++] = r;
+	}
+	if (n == 0)
+		return;
+	h_raw(h, "<span class=\"wfrecent\">");
+	for (k = 0; k < n; k++) {
+		fmt_age(age, sizeof(age), (double)jint(v[k], "started", 0) *
+		    1000);
+		h_fmt(h, "<i class=\"%s\" data-act=\"wf-run-open\" data-arg=\""
+		    "%lld\" title=\"", jstr(v[k], "state") != NULL ? jstr(v[k],
+		    "state") : "", (long long)jint(v[k], "id", 0));
+		h_txt(h, jstr(v[k], "state"));
+		h_raw(h, ", ");
+		h_txt(h, age);
+		h_raw(h, "\"></i>");
+	}
+	r = v[n - 1];
+	fmt_age(age, sizeof(age), (double)jint(r, "started", 0) * 1000);
+	h_raw(h, "<small>last ");
+	h_txt(h, jstr(r, "state"));
+	h_raw(h, " ");
+	h_txt(h, age);
+	if (jint(r, "ended", 0) > 0) {
+		span_text(took, sizeof(took), (double)(jint(r, "ended", 0) -
+		    jint(r, "started", 0)));
+		h_raw(h, ", took ");
+		h_txt(h, took);
+	}
+	h_raw(h, "</small></span>");
+}
+
 static void
 view_list(struct html *h)
 {
@@ -623,6 +695,7 @@ view_list(struct html *h)
 		}
 		h_raw(h, "</span>");
 		triggers(h, w);
+		recent(h, jstr(w, "id"));
 		if (jbool(w, "destructive"))
 			h_raw(h, "<span class=\"chip warn\">destroys, by "
 			    "itself</span>");
@@ -705,6 +778,175 @@ wf_by_id(const char *id)
 	return (NULL);
 }
 
+/* A tick step for a span of seconds: about five ticks on the axis. */
+static double
+tick_of(double span)
+{
+	static const double	steps[] = { 1, 2, 5, 10, 15, 30, 60, 120, 300,
+	    600, 900, 1800, 3600, 7200, 14400, 43200, 86400 };
+	size_t			i;
+
+	for (i = 0; i < nitems(steps); i++)
+		if (span / steps[i] <= 6)
+			return (steps[i]);
+	return (86400);
+}
+
+#define	TL_W	1000	/* the drawing's width */
+#define	TL_L	150	/* the hosts' names, at the left */
+#define	TL_R	16
+#define	TL_ROW	30	/* a host's lane */
+#define	TL_TOP	22	/* the axis */
+
+/*
+ * The run on its clock: a lane for each host, each step a bar from when
+ * it began to when it ended, in its state's colour, its name on it
+ * where it fits; a step that did not run waits after the lane's end,
+ * dashed.  Pressed, a bar shows what the step did, as the boxes below
+ * do.  Above, what the run came to.
+ */
+static void
+run_timeline(struct html *h, const ucl_object_t *r, const ucl_object_t *w)
+{
+	const ucl_object_t	*x, *s, *def;
+	ucl_object_iter_t	 it, sit;
+	double			 t0, t1, now, span, tick, t, sx, ex, scale;
+	char			 buf[48], key[32];
+	int			 hi, si, nh, ok_h, bad_h, ok_s, bad_s, ns, ghost;
+
+	now = arc_now() / 1000;
+	t0 = jnum(r, "started", 0);
+	t1 = jint(r, "ended", 0) > 0 ? (double)jint(r, "ended", 0) : now;
+	nh = ok_h = bad_h = ok_s = bad_s = ns = 0;
+	it = NULL;
+	while ((x = ucl_object_iterate(jget(r, "hosts"), &it, true)) != NULL) {
+		nh++;
+		if (jstr(x, "state") != NULL && strcmp(jstr(x, "state"),
+		    "done") == 0)
+			ok_h++;
+		else if (jstr(x, "state") != NULL && strcmp(jstr(x, "state"),
+		    "failed") == 0)
+			bad_h++;
+		sit = NULL;
+		while ((s = ucl_object_iterate(jget(x, "steps"), &sit, true)) !=
+		    NULL) {
+			ns++;
+			if (jstr(s, "state") != NULL && strcmp(jstr(s, "state"),
+			    "done") == 0)
+				ok_s++;
+			else if (jstr(s, "state") != NULL && strcmp(jstr(s,
+			    "state"), "failed") == 0)
+				bad_s++;
+			if (jnum(s, "ended", 0) > t1)
+				t1 = jnum(s, "ended", 0);
+		}
+	}
+	if (t0 <= 0 || nh == 0)
+		return;
+	/* What it came to, in words and figures. */
+	span_text(buf, sizeof(buf), t1 - t0);
+	h_fmt(h, "<div class=\"wfsum\"><span><b>%s</b> %s</span><span><b>"
+	    "%d</b>/%d hosts done</span><span><b>%d</b>/%d steps done</span>",
+	    buf, jint(r, "ended", 0) > 0 ? "it took" : "so far", ok_h, nh,
+	    ok_s, ns);
+	if (bad_h > 0 || bad_s > 0)
+		h_fmt(h, "<span class=\"bad\"><b>%d</b> host%s failed, <b>%d"
+		    "</b> step%s</span>", bad_h, bad_h == 1 ? "" : "s", bad_s,
+		    bad_s == 1 ? "" : "s");
+	h_raw(h, "</div>");
+	span = t1 - t0 < 1 ? 1 : t1 - t0;
+	scale = (TL_W - TL_L - TL_R - 90) / span;	/* room for the dashed */
+	tick = tick_of(span);
+	h_fmt(h, "<div class=\"wftl-wrap\"><svg class=\"wftl\" viewBox=\"0 0 "
+	    "%d %d\" role=\"img\" aria-label=\"The run on its clock: a lane "
+	    "for each host, a bar for each step\">", TL_W, TL_TOP + nh *
+	    TL_ROW + 6);
+	/* The axis: recessive, a tick every so often. */
+	for (t = 0; t <= span + 1e-9; t += tick) {
+		sx = TL_L + t * scale;
+		span_text(buf, sizeof(buf), t);
+		h_fmt(h, "<line class=\"grid\" x1=\"%.1f\" y1=\"%d\" x2=\"%.1f\" "
+		    "y2=\"%d\"/><text class=\"tick\" x=\"%.1f\" y=\"12\">%s"
+		    "</text>", sx, TL_TOP - 4, sx, TL_TOP + nh * TL_ROW, sx,
+		    t == 0 ? "0" : buf);
+	}
+	it = NULL;
+	hi = 0;
+	while ((x = ucl_object_iterate(jget(r, "hosts"), &it, true)) != NULL) {
+		double	y = TL_TOP + hi * TL_ROW, last = TL_L;
+
+		h_fmt(h, "<text class=\"host\" x=\"%d\" y=\"%.1f\">", TL_L - 10,
+		    y + TL_ROW / 2 + 4);
+		h_txt(h, jstr(x, "name"));
+		h_raw(h, "</text>");
+		sit = NULL;
+		si = 0;
+		ghost = 0;
+		while ((s = ucl_object_iterate(jget(x, "steps"), &sit, true)) !=
+		    NULL) {
+			const char	*st = jstr(s, "state") != NULL ? jstr(s,
+			    "state") : "pending";
+			double		 a = jnum(s, "started", 0);
+			double		 b = jnum(s, "ended", 0);
+			const char	*name;
+
+			def = w != NULL ? ucl_array_find_index(jget(w, "steps"),
+			    (unsigned int)si) : NULL;
+			name = def != NULL && jstr(def, "name") != NULL ?
+			    jstr(def, "name") : jstr(s, "id");
+			snprintf(key, sizeof(key), "%d:%d", hi, si);
+			if (a > 0) {
+				if (b <= 0)
+					b = strcmp(st, "running") == 0 ? now : a;
+				sx = TL_L + (a - t0) * scale;
+				ex = TL_L + (b - t0) * scale;
+				if (ex - sx < 4)
+					ex = sx + 4;
+				last = ex;
+			} else {
+				/* Not run: after the lane's end, dashed. */
+				sx = last + 6 + ghost * 26;
+				ex = sx + 22;
+				ghost++;
+			}
+			h_fmt(h, "<g class=\"bar %s%s\" data-act=\"wf-step-pick\" "
+			    "data-arg=\"%s\"><title>", a > 0 ? st : "notrun",
+			    strcmp(wf.pick, key) == 0 ? " on" : "", key);
+			h_txt(h, jstr(x, "name"));
+			h_raw(h, " · ");
+			h_txt(h, name);
+			h_raw(h, ": ");
+			h_txt(h, st);
+			if (a > 0) {
+				span_text(buf, sizeof(buf), b - a);
+				h_raw(h, ", ");
+				h_txt(h, buf);
+				span_text(buf, sizeof(buf), a - t0);
+				h_raw(h, " from ");
+				h_txt(h, buf);
+			}
+			if (jstr(s, "error") != NULL) {
+				h_raw(h, "\n");
+				h_txt(h, jstr(s, "error"));
+			}
+			h_fmt(h, "</title><rect x=\"%.1f\" y=\"%.1f\" width=\"%.1f\" "
+			    "height=\"%d\" rx=\"4\"/>", sx, y + 6, ex - sx, TL_ROW -
+			    12);
+			/* Its name on it, where it fits. */
+			if (ex - sx > 7.0 * (double)strlen(name) + 12) {
+				h_fmt(h, "<text class=\"lbl\" x=\"%.1f\" y=\"%.1f\">",
+				    sx + 6, y + TL_ROW / 2 + 4);
+				h_txt(h, name);
+				h_raw(h, "</text>");
+			}
+			h_raw(h, "</g>");
+			si++;
+		}
+		hi++;
+	}
+	h_raw(h, "</svg></div>");
+}
+
 static void
 view_run(struct html *h)
 {
@@ -734,6 +976,7 @@ view_run(struct html *h)
 		return;
 	}
 	w = wf_by_id(jstr(r, "workflow"));
+	run_timeline(h, r, w);
 	/*
 	 * A row for each host: its steps in order, as they went, on a grid
 	 * whose columns are the steps and the arrows between them.  Where

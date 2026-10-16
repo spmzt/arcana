@@ -4080,7 +4080,8 @@ svg.wfdraw line.wflinking.then { stroke: var(--cyan); }
 .wfpanel .wfsteps.one { list-style: none; padding: 0; margin: 0; }
 .wfpanel .wfedhead > input, .wfpanel .wfedhead > select { flex: 1 1 7rem; min-width: 0; }
 .wfpanel .wfwhen { padding-left: 0; flex-direction: column; align-items: stretch; }
-.wfrow { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+/* The editor's rows of fields; a run's grid (.wfgraph .wfrow) is not. */
+.wfrow:not(.wfgraph .wfrow) { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 .wfrow input[type=number] { width: 5rem; }
 .wfsays { margin: .3rem 0 0; font-size: .78rem; color: var(--amber); }
 .wfon { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .5rem; }
@@ -4827,3 +4828,43 @@ details.fw-unsure li { margin: .2rem 0; }
 /* A kept rule written with aliases: its own words, ipfw's on hover. */
 .fw-rules .aliased { border-bottom: 1px dotted var(--cyan); cursor: help; }
 .hostcard p.warn { color: var(--amber); font-size: .78rem; margin: .5rem 0 0; }
+/* A workflow's run on its clock: a lane a host, a bar a step. */
+.wfsum { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; margin: .2rem 0 .6rem; font-size: .82rem; color: var(--fg-2); }
+.wfsum b { color: var(--fg); font-size: 1.05rem; }
+.wfsum .bad, .wfsum .bad b { color: var(--red); }
+.wftl-wrap { overflow-x: auto; margin: 0 0 .8rem; }
+svg.wftl { width: 100%; min-width: 36rem; height: auto; display: block; font-family: var(--mono); }
+svg.wftl .grid { stroke: var(--line); stroke-width: 1; }
+svg.wftl .tick { font-size: 9px; fill: var(--dim); text-anchor: middle; }
+svg.wftl .host { font-size: 11px; fill: var(--fg-2); text-anchor: end; }
+svg.wftl .bar { cursor: pointer; }
+svg.wftl .bar rect { stroke: rgba(var(--surface-rgb), 1); stroke-width: 2; }
+svg.wftl .bar.done rect { fill: var(--green); }
+svg.wftl .bar.failed rect { fill: var(--red); }
+svg.wftl .bar.running rect { fill: var(--amber); }
+svg.wftl .bar.interrupted rect, svg.wftl .bar.skipped rect, svg.wftl .bar.pending rect { fill: var(--fg-2); opacity: .55; }
+svg.wftl .bar.notrun rect { fill: none; stroke: var(--dim); stroke-dasharray: 3 3; stroke-width: 1.2; }
+svg.wftl .bar:hover rect, svg.wftl .bar.on rect { stroke: var(--fg); stroke-width: 2; }
+svg.wftl .bar .lbl { font-size: 10px; fill: var(--bg); pointer-events: none; }
+/* A workflow's last runs, a square each. */
+.wfrecent { display: inline-flex; align-items: center; gap: 3px; margin-left: .6rem; }
+.wfrecent i { width: 10px; height: 10px; border-radius: 2px; background: var(--fg-2); opacity: .5; cursor: pointer; }
+.wfrecent i.done { background: var(--green); opacity: 1; }
+.wfrecent i.failed { background: var(--red); opacity: 1; }
+.wfrecent i.running { background: var(--amber); opacity: 1; }
+.wfrecent i:hover { outline: 2px solid var(--fg); }
+.wfrecent small { margin-left: .4rem; color: var(--dim); font-size: .72rem; }
+/* The firewall's load: the busiest rules as bars, those never matched. */
+.fwload { display: grid; grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); gap: 1rem 2rem; margin: 0 0 1rem; }
+ol.fwbusy, ul.fwnever { list-style: none; padding: 0; margin: .3rem 0; font-size: .8rem; }
+ol.fwbusy li { display: grid; grid-template-columns: 3.4rem 1fr 6rem; grid-template-rows: auto auto; gap: 0 .5rem; align-items: center; padding: .25rem .3rem; border-radius: 6px; }
+ol.fwbusy li:hover, ul.fwnever li:hover { background: rgba(var(--accent-rgb), .07); }
+ol.fwbusy li b { color: var(--fg-2); font-family: var(--mono); font-weight: 400; }
+ol.fwbusy .track { height: 8px; background: transparent; }
+ol.fwbusy .track i { display: block; height: 8px; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--accent); }
+ol.fwbusy .val { font-family: var(--mono); color: var(--fg); text-align: right; }
+ol.fwbusy .val .rate { color: var(--green); }
+ol.fwbusy code { grid-column: 2 / 4; font-size: .72rem; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+ul.fwnever li { padding: .2rem .3rem; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+ul.fwnever li b { color: var(--fg-2); font-family: var(--mono); font-weight: 400; margin-right: .4rem; }
+ul.fwnever code { font-size: .74rem; color: var(--fg-2); }

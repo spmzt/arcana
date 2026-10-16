@@ -3586,6 +3586,12 @@ part_firewall(void)
 	ATF_CHECK(js_true("document.querySelectorAll('svg.fwchain path.call:"
 	    "not(.skip)').length === 1 && document.querySelectorAll('svg."
 	    "fwchain path.call.skip').length === 1"));
+	/* What the rules take: the busiest as bars, 9100 never matched
+	 * (check-state at 200 and the returns pass, they are left out). */
+	ATF_CHECK_MSG(js_true("document.querySelectorAll('ol.fwbusy li')."
+	    "length >= 4 && document.querySelector('ul.fwnever').textContent."
+	    "includes('09100') && !document.querySelector('ul.fwnever')."
+	    "textContent.includes('00200')"), "%s", "the rule load");
 	shot("7o-firewall-layout");
 	run("document.querySelector('.fwrail .titem.fw[data-arg=\"10\"]')."
 	    "click()");
@@ -4409,7 +4415,12 @@ part_flows(void)
 	    "f.p_svc.value = 'sshd'; f.requestSubmit();");
 	wait_js("document.querySelectorAll('.wfgraph button.wfstep.done')."
 	    "length === 2", 30);
-	/* The jump drawn under the row, not taken: the first did not fail. */
+	/* The jump drawn under the row, from the first step to the next,
+	 * not beside them; not taken: the first did not fail. */
+	ATF_CHECK(js_true("(() => { const j = document.querySelector('.wfgraph "
+	    ".wfjump').getBoundingClientRect(), a = document.querySelector("
+	    "'.wfgraph button.wfstep').getBoundingClientRect(); return j.top "
+	    ">= a.bottom - 4 && j.left < a.right; })()"));
 	ATF_CHECK(js_true("document.querySelector('.wfgraph .wfjump') && "
 	    "!document.querySelector('.wfgraph .wfjump.taken') && document."
 	    "querySelector('.wfgraph .wfjump').textContent.includes("
@@ -4418,14 +4429,25 @@ part_flows(void)
 	wait_js("document.querySelector('.dock').textContent.includes("
 	    "'workflow restart a service') && document.querySelector('.dock')"
 	    ".textContent.includes('done')", 15);
-	run("document.querySelector('.wfgraph button.wfstep').click()");
+	/* On its clock: a lane for the host, a bar a step, done; what it
+	 * came to above.  A bar pressed shows the step as a box does. */
+	ATF_CHECK(js_true("document.querySelectorAll('svg.wftl .bar.done')."
+	    "length === 2 && document.querySelector('.wfsum').textContent."
+	    "includes('1/1 hosts done') && document.querySelector('.wfsum')."
+	    "textContent.includes('2/2 steps done')"));
+	run("document.querySelector('svg.wftl .bar.done').dispatchEvent(new "
+	    "MouseEvent('click', {bubbles: true}))");
 	wait_js("document.querySelector('section.wftrace') && document."
-	    "querySelector('section.wftrace').textContent.includes('sshd')",
-	    10);
+	    "querySelector('section.wftrace').textContent.includes('sshd') "
+	    "&& document.querySelector('svg.wftl .bar.on')", 10);
 	shot("9b-workflow-run");
 	/* What waits in the queue, kept as one. */
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	ATF_CHECK(js_true("document.querySelector('ul.wfruns li.done')"));
+	/* The workflow's last runs beside it, the last in words. */
+	ATF_CHECK(js_true("document.querySelector('ul.wflist .wfrecent i."
+	    "done') && document.querySelector('ul.wflist .wfrecent small')."
+	    "textContent.includes('last done')"));
 	/* Opened again from the list of runs: drawn, not a loader. */
 	run("document.querySelector('ul.wfruns li.done').click()");
 	wait_js("document.querySelector('.wfgraph button.wfstep') && "
