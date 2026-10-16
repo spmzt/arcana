@@ -4120,9 +4120,9 @@ setup_path(struct call *c, const struct rq *q)
 		return ("src and dst are each an IPv4 or IPv6 address");
 	(void)rq_param(q, "proto", c->pproto, sizeof(c->pproto));
 	if (c->pproto[0] != '\0' && strcmp(c->pproto, "tcp") != 0 && strcmp(
-	    c->pproto, "udp") != 0 && strcmp(c->pproto, "icmp") != 0 &&
-	    strcmp(c->pproto, "ip") != 0)
-		return ("proto is tcp, udp, icmp or ip");
+	    c->pproto, "udp") != 0 && strcmp(c->pproto, "sctp") != 0 &&
+	    strcmp(c->pproto, "icmp") != 0 && strcmp(c->pproto, "ip") != 0)
+		return ("proto is tcp, udp, sctp, icmp or ip");
 	if (rq_u64(q, "port", 65535, &v))
 		c->pport = (uint32_t)v;
 	(void)rq_param(q, "interface", c->ifname, sizeof(c->ifname));

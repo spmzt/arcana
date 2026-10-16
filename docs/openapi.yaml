@@ -1200,7 +1200,7 @@ paths:
           schema: { type: string }
         - name: proto
           in: query
-          schema: { type: string, enum: [tcp, udp, icmp, ip] }
+          schema: { type: string, enum: [tcp, udp, sctp, icmp, ip] }
         - name: port
           in: query
           schema: { type: integer, minimum: 1, maximum: 65535 }
@@ -1305,7 +1305,7 @@ paths:
       tags: [servers]
       summary: Follow a packet across the hosts, and say what stops it
       description: With src and dst (addresses, both IPv4 or both IPv6),
-        proto (tcp, udp, icmp or ip), port, and places, each a server and
+        proto (tcp, udp, sctp, icmp or ip), port, and places, each a server and
         a vnet jail of it or none (every host when not given). Nothing is
         sent; each place says what it would do (the agent's path-check).
         The answer has hops, each place in turn with its ingress, egress,

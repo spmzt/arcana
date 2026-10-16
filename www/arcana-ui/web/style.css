@@ -4980,3 +4980,6 @@ html:not(.neon) label.button {
 }
 .who a.help:hover { color: var(--fg); border-color: var(--cyan); }
 .rt-legend .arc::before { width: 12px; height: 12px; border: 2px solid var(--slate); border-right: none; border-radius: 12px 0 0 12px; }
+
+/* An error copies its text when clicked (bridge.js). */
+.toast.bad, .notice.bad, .notice.warn, p.error, .err, td.err { cursor: copy; }
