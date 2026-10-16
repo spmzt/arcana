@@ -5647,7 +5647,7 @@ yang_troubleshoot_body()
 	local y="$(atf_get_srcdir)/yts"
 
 	cat > path.json <<'EOT'
-{"host":"labvm","addresses":[{"address":"10.1.0.1","prefixlen":24,"interface":"epair2b","fib":0,"up":true,"loopback":false},{"address":"10.3.0.1","prefixlen":24,"interface":"epair3a","fib":0,"up":true,"loopback":false}],"src":{"local":false,"connected":"epair2b"},"dst":{"local":false,"connected":"epair3a"},"forwarding":true,"ingress":{"interface":"epair2b","how":"by the route back to the source"},"route":{"to":"10.3.0.2","destination":"10.3.0.0","prefixlen":24,"gateway":"link#11","fib":"0","interface":"epair3a","flags":"U","metric":1,"weight":1},"neighbor":{"address":"10.3.0.2","state":"reachable"},"return":{"fib":0,"interface":"epair2b","gateway":"link#10","symmetric":true},"firewall":{"on":true,"in":{"verdict":"allow","rule":600,"text":"00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state :default","keep_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"check-state: no state of it yet, on"},{"rule":600,"text":"00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state :default","how":"decides"}],"uncertain":[{"text":"00550 deny ip from any to any uid 1001","because":"uid"}]},"out":{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"decides: its state lets it by"}]},"reply_in":{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"decides: its state lets it by"}]},"reply_out":{"verdict":"deny","rule":800,"text":"00800 deny tcp from any 22 to any","walk":[{"rule":800,"text":"00800 deny tcp from any 22 to any","how":"decides"}]}},"fib":0,"findings":[{"severity":"bad","what":"The firewall drops the reply going out by epair2b: rule 800 (00800 deny tcp from any 22 to any)"},{"severity":"info","what":"It goes out by epair3a"}]}
+{"host":"labvm","addresses":[{"address":"10.1.0.1","prefixlen":24,"interface":"epair2b","fib":0,"up":true,"loopback":false},{"address":"10.3.0.1","prefixlen":24,"interface":"epair3a","fib":0,"up":true,"loopback":false}],"src":{"local":false,"connected":"epair2b"},"dst":{"local":false,"connected":"epair3a"},"forwarding":true,"ingress":{"interface":"epair2b","how":"by the route back to the source"},"route":{"to":"10.3.0.2","destination":"10.3.0.0","prefixlen":24,"gateway":"link#11","fib":"0","interface":"epair3a","flags":"U","metric":1,"weight":1},"neighbor":{"address":"10.3.0.2","state":"reachable"},"return":{"fib":0,"interface":"epair2b","gateway":"link#10","symmetric":true},"firewall":{"on":true,"in":{"verdict":"allow","rule":600,"text":"00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state :default","keep_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"check-state :default: no state of it yet, on"},{"rule":600,"text":"00600 allow tcp from 10.1.0.0/24 to any 22 in keep-state :default","how":"decides"}],"uncertain":[{"text":"00550 deny ip from any to any uid 1001","because":"uid"}]},"out":{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"decides: its state lets it by"}]},"reply_in":{"verdict":"allow","rule":590,"text":"00590 check-state :default","by_state":true,"walk":[{"rule":590,"text":"00590 check-state :default","how":"decides: its state lets it by"}]},"reply_out":{"verdict":"deny","rule":800,"text":"00800 deny tcp from any 22 to any","walk":[{"rule":800,"text":"00800 deny tcp from any 22 to any","how":"decides"}]}},"fib":0,"findings":[{"severity":"bad","what":"The firewall drops the reply going out by epair2b: rule 800 (00800 deny tcp from any 22 to any)"},{"severity":"info","what":"It goes out by epair3a"}]}
 EOT
 	cat > want <<'EOT'
 host labvm forwarding=yes fib=0 delivered=-
@@ -5661,7 +5661,7 @@ neighbor 10.3.0.2 reachable
 return fib=0 epair2b via link#10 symmetric=yes
 firewall on=yes
 in allow rule=600 by-state=- keep=yes setfib=-1 fwd=-
-  590 check-state: no state of it yet, on
+  590 check-state :default: no state of it yet, on
   600 decides
   ? 00550 deny ip from any to any uid 1001: uid
 out allow rule=590 by-state=yes keep=- setfib=-1 fwd=-
@@ -5672,7 +5672,7 @@ reply-out deny rule=800 by-state=- keep=- setfib=-1 fwd=-
   800 decides
 finding bad The firewall drops the reply going out by epair2b: rule 800 (00800 deny tcp from any 22 to any)
 finding info It goes out by epair3a
-yang-cbor 960 bytes, the same back
+yang-cbor 969 bytes, the same back
 EOT
 	atf_check -o file:want "$y" path path.json
 	cat > tr.json <<'EOT'
@@ -6118,7 +6118,7 @@ EOF
 	    rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 \
 	    dport=22 syn rpf reach
 	# The rules met, in order, with what each did.
-	atf_check -o inline:'allow 800 keep-state\n  400 check-state: no state of it yet, on\n  500 met, on\n  800 decides\n' \
+	atf_check -o inline:'allow 800 keep-state\n  400 check-state :default: no state of it yet, on\n  500 met, on\n  800 decides\n' \
 	    "$f" list tables $l in rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 \
 	    proto=tcp sport=40000 dport=22 syn rpf reach walk
 	# call and return as the kernel's O_CALLRETURN: into the block
@@ -6143,10 +6143,10 @@ EOT
 	atf_check -o inline:'deny 9100\n  20 call 9100\n  9100 decides\n' "$f" chain tables $l \
 	    in rcv=em0 src=10.0.0.5 dst=255.255.255.255 proto=udp sport=1900 \
 	    dport=1900 rpf reach walk
-	atf_check -o inline:'allow 9200\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state: no state of it yet, on\n  300 call 9200\n  9200 decides\n' \
+	atf_check -o inline:'allow 9200\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state :default: no state of it yet, on\n  300 call 9200\n  9200 decides\n' \
 	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
 	    proto=tcp sport=4000 dport=22 syn rpf reach walk
-	atf_check -o inline:'deny 999\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state: no state of it yet, on\n  300 call 9200\n  9299 return, after 300\n  999 decides\n' \
+	atf_check -o inline:'deny 999\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state :default: no state of it yet, on\n  300 call 9200\n  9299 return, after 300\n  999 decides\n' \
 	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
 	    proto=tcp sport=4000 dport=80 syn rpf reach walk
 	# As edge-a's ruleset writes them: a return of no addresses
@@ -6179,6 +6179,31 @@ EOT
 	atf_check -o inline:'deny 9252\n  20 call 9100\n  9199 return, after 20\n  30 call 9200\n  9252 decides\n' \
 	    "$f" edge-a tables $l in rcv=em0 src=203.0.113.9 dst=10.0.0.10 \
 	    proto=tcp sport=40000 dport=443 rpf reach walk
+	# record-state with defer-immediate-action, as edge-a's outgoing
+	# rules: the state made, the packet on, and a check-state of the
+	# same flow decides by it (of another flow, not).
+	{
+		echo '00001 call 9000 ip6 from any to any'
+		echo '00005 skipto 500 ip from any to any out'
+		echo '00200 check-state :default'
+		echo '00510 call 5000 ip6 from me6 to any out'
+		echo '00700 check-state :default'
+		echo '00999 deny log logamount 500 ip from any to any'
+		echo '05012 allow ip6 from me6 to any out record-state :default defer-immediate-action'
+		echo '05999 return next-rulenum proto ip'
+		echo '09000 allow icmp6 from fe80::/10 to fe80::/10'
+		echo '09099 return next-rulenum proto ip'
+		echo '65535 deny ip from any to any'
+	} > defer
+	atf_check -o inline:'allow 700 by-state keep-state\n  1 call 9000\n  9099 return, after 1\n  5 skipto 500\n  510 call 5000\n  5012 makes a state :default, its allow deferred: on\n  5999 return, after 510\n  700 decides: the state 5012 made (:default)\n' \
+	    "$f" defer tables local=2001:db8::10@em0 out xmit=wg0 \
+	    src=2001:db8::10 dst=2001:db8:99::1 proto=tcp sport=40000 \
+	    dport=4310 syn reach walk
+	sed 's/:default defer/:other defer/' defer > defer2
+	atf_check -o match:'^deny 999' -o match:'700 check-state :default: no state of it yet, on' \
+	    "$f" defer2 tables local=2001:db8::10@em0 out xmit=wg0 \
+	    src=2001:db8::10 dst=2001:db8:99::1 proto=tcp sport=40000 \
+	    dport=4310 syn reach walk
 	# A reply with its state: check-state decides.
 	atf_check -o inline:'allow 200 by-state\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 decides: its state lets it by\n' \
 	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \

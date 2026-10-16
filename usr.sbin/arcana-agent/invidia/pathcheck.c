@@ -545,14 +545,15 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 	}
 	c.proto = proto == NULL || strcmp(proto, "ip") == 0 || proto[0] ==
 	    '\0' ? 0 : strcmp(proto, "tcp") == 0 ? IPPROTO_TCP : strcmp(proto,
-	    "udp") == 0 ? IPPROTO_UDP : strcmp(proto, "icmp") == 0 ?
-	    (c.af == AF_INET ? IPPROTO_ICMP : IPPROTO_ICMPV6) : -1;
+	    "udp") == 0 ? IPPROTO_UDP : strcmp(proto, "sctp") == 0 ?
+	    IPPROTO_SCTP : strcmp(proto, "icmp") == 0 ? (c.af == AF_INET ?
+	    IPPROTO_ICMP : IPPROTO_ICMPV6) : -1;
 	if (c.proto == -1) {
-		rsp->error = "the protocol is tcp, udp, icmp or ip";
+		rsp->error = "the protocol is tcp, udp, sctp, icmp or ip";
 		return (0);
 	}
-	c.port = (c.proto == IPPROTO_TCP || c.proto == IPPROTO_UDP) ?
-	    (int)port : -1;
+	c.port = (c.proto == IPPROTO_TCP || c.proto == IPPROTO_UDP ||
+	    c.proto == IPPROTO_SCTP) ? (int)port : -1;
 	/* A source port an operating system would pick: above them.  A
 	 * reply's is the service's, to such a one. */
 	c.sport = c.port >= 0 ? 49152 : -1;

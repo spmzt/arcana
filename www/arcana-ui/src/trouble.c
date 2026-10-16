@@ -94,7 +94,8 @@ ask(void)
 	    true);
 	ucl_object_insert_key(b, ucl_object_fromstring(ts.proto), "proto", 0,
 	    true);
-	if ((strcmp(ts.proto, "tcp") == 0 || strcmp(ts.proto, "udp") == 0) &&
+	if ((strcmp(ts.proto, "tcp") == 0 || strcmp(ts.proto, "udp") == 0 ||
+	    strcmp(ts.proto, "sctp") == 0) &&
 	    ts.port[0] != '\0')
 		ucl_object_insert_key(b, ucl_object_fromint(atoi(ts.port)),
 		    "port", 0, true);
@@ -541,15 +542,16 @@ view_trouble(struct html *h)
 	h_raw(h, "></label></div><div class=\"two\"><label>Protocol<select "
 	    "name=\"proto\">");
 	{
-		static const char *const pr[] = { "tcp", "udp", "icmp", "ip" };
+		static const char *const pr[] = { "tcp", "udp", "sctp",
+		    "icmp", "ip" };
 
-		for (i = 0; i < 4; i++)
+		for (i = 0; i < 5; i++)
 			h_fmt(h, "<option value=\"%s\"%s>%s</option>", pr[i],
 			    strcmp(ts.proto, pr[i]) == 0 ? " selected" : "",
-			    i == 2 ? "icmp (ping)" : i == 3 ? "ip (any)" :
+			    i == 3 ? "icmp (ping)" : i == 4 ? "ip (any)" :
 			    pr[i]);
 	}
-	h_raw(h, "</select></label><label>Port, of tcp or udp<input "
+	h_raw(h, "</select></label><label>Port, of tcp, udp or sctp<input "
 	    "name=\"port\" type=\"number\" min=\"1\" max=\"65535\" "
 	    "placeholder=\"22\"");
 	h_attr(h, "value", ts.port);
@@ -723,7 +725,8 @@ trouble_open(const char *query)
 		else if (strcmp(p, "dst") == 0)
 			snprintf(ts.dst, sizeof(ts.dst), "%s", val);
 		else if (strcmp(p, "proto") == 0 && (strcmp(val, "tcp") == 0 ||
-		    strcmp(val, "udp") == 0 || strcmp(val, "icmp") == 0 ||
+		    strcmp(val, "udp") == 0 || strcmp(val, "sctp") == 0 ||
+		    strcmp(val, "icmp") == 0 ||
 		    strcmp(val, "ip") == 0))
 			snprintf(ts.proto, sizeof(ts.proto), "%s", val);
 		else if (strcmp(p, "port") == 0)

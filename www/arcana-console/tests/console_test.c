@@ -1732,6 +1732,19 @@ ATF_TC_BODY(troubleshoot, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("unknown", jstr(&r, "end.how"));
 	resp_free(&r);
+	/* SCTP, with its port: asked as TCP and UDP are. */
+	snprintf(body, sizeof(body), "{\"src\":\"198.51.100.1\",\"dst\":"
+	    "\"10.3.0.2\",\"proto\":\"sctp\",\"port\":4310,\"places\":"
+	    "[{\"server\":\"%s\",\"jail\":\"r1\"}]}", sid);
+	http("POST", "/api/troubleshoot/path", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("sctp", jstr(&r, "proto"));
+	ATF_CHECK_STREQ("em1", jstr(&r, "hops.0.ingress"));
+	resp_free(&r);
+	http("POST", "/api/troubleshoot/path", "{\"src\":\"10.1.0.2\","
+	    "\"dst\":\"10.1.0.3\",\"proto\":\"gre\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
 	http("POST", "/api/troubleshoot/path", "{\"src\":\"10.1.0.2\","
 	    "\"dst\":\"2001:db8::1\"}", &r);
 	EXPECT(&r, 400);

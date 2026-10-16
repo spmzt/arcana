@@ -682,11 +682,11 @@ api_troubleshoot_path(struct http_request *req)
 		    "addresses, both IPv4 or both IPv6"));
 	}
 	if (proto != NULL && proto[0] != '\0' && strcmp(proto, "tcp") != 0 &&
-	    strcmp(proto, "udp") != 0 && strcmp(proto, "icmp") != 0 &&
-	    strcmp(proto, "ip") != 0) {
+	    strcmp(proto, "udp") != 0 && strcmp(proto, "sctp") != 0 &&
+	    strcmp(proto, "icmp") != 0 && strcmp(proto, "ip") != 0) {
 		ucl_object_unref(body);
 		return (reply_error(req, 400, "invalid", "proto is tcp, udp, "
-		    "icmp or ip"));
+		    "sctp, icmp or ip"));
 	}
 	t = kore_calloc(1, sizeof(*t));
 	snprintf(t->src, sizeof(t->src), "%s", ucl_str(body, "src"));
