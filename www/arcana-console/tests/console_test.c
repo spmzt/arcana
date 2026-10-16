@@ -1612,6 +1612,28 @@ ATF_TC_BODY(troubleshoot, tc)
 	ATF_CHECK_STREQ("r2", jstr(&r, "findings.0.jail"));
 	resp_free(&r);
 
+	/* From the Internet: no place has 203.0.113.9 nor its network; r2
+	 * is the edge, its default route leaving the places asked, so the
+	 * packet comes in there, on em2, and is delivered. */
+	ts_net(cwd, "10.1.0.0/24 10.12.0.1 em0\n0.0.0.0/0 10.23.0.9 em2\n",
+	    "65535 allow ip from any to any\n");
+	snprintf(body, sizeof(body), "{\"src\":\"203.0.113.9\",\"dst\":"
+	    "\"10.3.0.2\",\"proto\":\"tcp\",\"port\":443,\"places\":[{"
+	    "\"server\":\"%s\",\"jail\":\"r1\"},{\"server\":\"%s\",\"jail"
+	    "\":\"r2\"},{\"server\":\"%s\",\"jail\":\"r3\"}]}", sid, sid,
+	    sid);
+	http("POST", "/api/troubleshoot/path", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("here, jail r2", jstr(&r, "hops.0.place"));
+	ATF_CHECK_STREQ("em2", jstr(&r, "hops.0.ingress"));
+	ATF_CHECK_STREQ("delivered", jstr(&r, "end.how"));
+	ATF_CHECK_MSG(strstr(r.body, "comes from beyond the hosts asked") !=
+	    NULL, "%.500s", r.body);
+	resp_free(&r);
+	ts_net(cwd, "10.1.0.0/24 10.12.0.1 em0\n",
+	    "01000 deny tcp from any to 10.3.0.0/24 22 in\n"
+	    "65535 allow ip from any to any\n");
+
 	/* r3's agent call hangs: the survey waits for it no longer than
 	 * its deadline, and the way is still followed by r1 and r2. */
 	ATF_REQUIRE(system("touch hang-13") == 0);
@@ -1672,9 +1694,19 @@ ATF_TC_BODY(troubleshoot, tc)
 	ATF_CHECK(strstr(r.body, "Asymmetric across the places") != NULL);
 	resp_free(&r);
 
-	/* Who is on no place's network: where it comes in is not known. */
+	/* Who is on no place's network comes in where the route back to
+	 * it leaves the places asked: r1 alone asked, by its default route,
+	 * on em1. */
 	snprintf(body, sizeof(body), "{\"src\":\"198.51.100.1\",\"dst\":"
 	    "\"10.3.0.2\",\"places\":[{\"server\":\"%s\",\"jail\":\"r1\"}]}",
+	    sid);
+	http("POST", "/api/troubleshoot/path", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("em1", jstr(&r, "hops.0.ingress"));
+	resp_free(&r);
+	/* And with no route back to it out of them at all: not known. */
+	snprintf(body, sizeof(body), "{\"src\":\"198.51.100.1\",\"dst\":"
+	    "\"10.3.0.2\",\"places\":[{\"server\":\"%s\",\"jail\":\"r3\"}]}",
 	    sid);
 	http("POST", "/api/troubleshoot/path", body, &r);
 	EXPECT(&r, 200);
