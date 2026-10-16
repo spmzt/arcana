@@ -1693,6 +1693,7 @@ settings_select(struct html *h, const ucl_object_t *k,
 {
 	const char	*cur;
 	int		 i;
+	bool		 shown;
 
 	cur = jstr(k, "value") != NULL ? jstr(k, "value") : "";
 	h_raw(h, "<label>");
@@ -1700,11 +1701,22 @@ settings_select(struct html *h, const ucl_object_t *k,
 	h_raw(h, "<select");
 	h_attr(h, "name", jstr(k, "key"));
 	h_raw(h, ">");
+	shown = false;
 	for (i = 0; vals[i] != NULL; i++) {
 		h_raw(h, "<option");
 		h_attr(h, "value", vals[i]);
 		h_fmt(h, "%s>", strcmp(cur, vals[i]) == 0 ? " selected" : "");
 		h_txt(h, titles != NULL ? titles[i] : vals[i]);
+		h_raw(h, "</option>");
+		shown = shown || strcmp(cur, vals[i]) == 0;
+	}
+	/* What it is set to, though none of these (a host by its id, or
+	 * one gone): kept as it is unless another is chosen. */
+	if (!shown) {
+		h_raw(h, "<option selected");
+		h_attr(h, "value", cur);
+		h_raw(h, ">");
+		h_txt(h, cur);
 		h_raw(h, "</option>");
 	}
 	h_raw(h, "</select><small>");

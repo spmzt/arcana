@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.135.1"
+#define	ARCANA_AGENT_VERSION	"0.135.2"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -385,8 +385,9 @@ void		 if_addr_state(struct work *, const char *,
 		    struct addr_state *);
 int		 if_addr_restore(struct work *, const char *,
 		    const struct addr_state *, bool, const char **);
-bool		 if_addr_recorded(struct work *, const char *);
 void		 if_addr_forget(struct work *, const char *);
+const char	*if_addr_record_get(struct work *, const char *);
+void		 if_addr_record_set(struct work *, const char *, const char *);
 int		 do_if_set(struct work *, const char *,
 		    const struct if_change *, bool, const char **);
 int		 do_if_create(struct work *, const struct arc_job_spec *,
@@ -589,6 +590,7 @@ void		 tls_files_init(cbl_tls *, const char *, const char *,
 void		 do_tls(struct work *, const char *, const char *,
 		    const char *, const char *, const uint8_t *,
 		    struct arc_tls_rsp *);
+void		 transport_fini(void);
 int		 do_transport(struct work *, bool, const char *, const char *,
 		    bool, const char *, struct arc_transport_rsp *);
 bool		 tls_file_is(const char *);

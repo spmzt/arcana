@@ -39,8 +39,14 @@ static const char *const tabs[] = { "url", "malware", "signatures", "ids" };
 static void
 sec_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
+	char	*sid = arg;
 
-	(void)arg;
+	/* Another host's, asked before this one was chosen: not its. */
+	if (strcmp(sid, sec.sid) != 0) {
+		free(sid);
+		return;
+	}
+	free(sid);
 	sec.loading = false;
 	if (status != 200) {
 		snprintf(sec.error, sizeof(sec.error), "%s", err != NULL ? err :
@@ -61,13 +67,15 @@ sec_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 sec_load(void)
 {
-	char	url[96];
+	char	url[96], *sid;
 
 	if (sec.sid[0] == '\0')
 		return;
+	if ((sid = strdup(sec.sid)) == NULL)
+		abort();
 	snprintf(url, sizeof(url), "/api/servers/%s/sdwan", sec.sid);
 	sec.loading = true;
-	api("GET", url, NULL, sec_cb, NULL);
+	api("GET", url, NULL, sec_cb, sid);
 }
 
 /* The kind's forms on the host: what the page last saved. */

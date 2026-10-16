@@ -43,7 +43,7 @@ struct qjob {
 	int			 undo_tunnelfib;
 	const char		*undo_descr;
 	struct addr_state	 undo_addr;	/* if-set addressing: as it was */
-	bool			 undo_addr_new;	/* kept by this job, first */
+	const char		*undo_addr_rec;	/* its record for was, or NULL */
 	const char		*made;		/* if-create: the name it got */
 	struct arc_variable	*undo_vars;	/* service-config: as they were */
 	size_t			 undo_nvars;
@@ -585,7 +585,7 @@ undo_prepare(struct qjob *j)
 		j->undo_descr = wstrdup(&j->w, descr);
 		if (sp->addressing != NULL) {
 			if_addr_state(&j->w, sp->interface, &j->undo_addr);
-			j->undo_addr_new = !if_addr_recorded(&j->w,
+			j->undo_addr_rec = if_addr_record_get(&j->w,
 			    sp->interface);
 		}
 		break;
@@ -811,8 +811,12 @@ undo(struct qjob *j)
 			if (rc == 0 && sp->addressing != NULL) {
 				rc = if_addr_restore(&j->w, sp->interface,
 				    &j->undo_addr, sp->persist, &e);
-				if (rc == 0 && j->undo_addr_new)
-					if_addr_forget(&j->w, sp->interface);
+				/* And was's record as it was: kept again
+				 * when the job let it go, let go when the
+				 * job made it. */
+				if (rc == 0)
+					if_addr_record_set(&j->w, sp->interface,
+					    j->undo_addr_rec);
 			}
 		}
 		break;

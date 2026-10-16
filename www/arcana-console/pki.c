@@ -1105,17 +1105,17 @@ host_tls(const char *uri, const char *peer, const char *verb,
 	return (out);
 }
 
-struct hostref {
+struct tlshost {
 	char	 id[9];
 	char	*name, *uri, *peer;
 };
 
 /* The hosts reached over TLS, copied: the list may change meanwhile. */
 static int
-tls_hosts(struct hostref **vp)
+tls_hosts(struct tlshost **vp)
 {
 	const struct server	*s;
-	struct hostref		*v;
+	struct tlshost		*v;
 	int			 i, n;
 
 	for (n = 0; server_at(n) != NULL; n++)
@@ -1137,7 +1137,7 @@ tls_hosts(struct hostref **vp)
 }
 
 static void
-hosts_free(struct hostref *v, int n)
+hosts_free(struct tlshost *v, int n)
 {
 	int	i;
 
@@ -1205,7 +1205,7 @@ bundle(const char *a, const char *b)
 static void *
 rollout_run(void *arg)
 {
-	struct hostref	*hv;
+	struct tlshost	*hv;
 	ucl_object_t	*st;
 	char		 nca[MAXPATHLEN], nkey[MAXPATHLEN], ncon[MAXPATHLEN],
 			 nconkey[MAXPATHLEN], why[400], hb[300], bak[MAXPATHLEN];
@@ -1355,7 +1355,7 @@ out:
 static void *
 finish_run(void *arg)
 {
-	struct hostref	*hv;
+	struct tlshost	*hv;
 	ucl_object_t	*st;
 	const ucl_object_t *h;
 	char		 why[400], *roots, *mine, *j, *t;

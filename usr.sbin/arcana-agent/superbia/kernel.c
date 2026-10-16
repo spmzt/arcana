@@ -309,29 +309,71 @@ do_kernel(struct work *w, struct arc_kernel_rsp *rsp)
 	return (0);
 }
 
+/* Are the two the same module, with or without .ko? */
+static bool
+kld_same(const char *a, const char *b)
+{
+	size_t	n, m;
+
+	n = strlen(a);
+	if (n > 3 && strcmp(a + n - 3, ".ko") == 0)
+		n -= 3;
+	m = strlen(b);
+	if (m > 3 && strcmp(b + m - 3, ".ko") == 0)
+		m -= 3;
+	return (n == m && strncmp(a, b, n) == 0);
+}
+
 /* Is the module named in rc.conf's kld_list, with or without its .ko? */
 bool
 kld_listed(struct work *w, const char *name)
 {
 	const char	*v;
 	char		*words, *word, *rest;
-	size_t		 n;
 
 	if ((v = rc_get(w, "kld_list")) == NULL)
 		return (false);
-	n = strlen(name);
-	if (n > 3 && strcmp(name + n - 3, ".ko") == 0)
-		n -= 3;
 	words = wstrdup(w, v);
-	for (rest = words; (word = strsep(&rest, " \t")) != NULL; ) {
-		size_t	 m = strlen(word);
-
-		if (m > 3 && strcmp(word + m - 3, ".ko") == 0)
-			m -= 3;
-		if (m == n && strncmp(word, name, n) == 0)
+	for (rest = words; (word = strsep(&rest, " \t")) != NULL; )
+		if (word[0] != '\0' && kld_same(word, name))
 			return (true);
-	}
 	return (false);
+}
+
+/*
+ * The module put in kld_list (keep) or taken out of it, however it is
+ * spelt there: kept once, foo or foo.ko, and forgotten in every
+ * spelling, the other words left as they were.
+ */
+static int
+kld_list_set(struct work *w, const char *name, bool keep, const char **errp)
+{
+	const char	*v;
+	char		*words, *word, *rest, out[1024];
+
+	if (keep && kld_listed(w, name))
+		return (0);
+	out[0] = '\0';
+	v = rc_get(w, "kld_list");
+	words = wstrdup(w, v != NULL ? v : "");
+	for (rest = words; (word = strsep(&rest, " \t")) != NULL; ) {
+		if (word[0] == '\0' || (!keep && kld_same(word, name)))
+			continue;
+		if (strlen(out) + strlen(word) + 2 >= sizeof(out)) {
+			*errp = "kld_list would be too long";
+			return (-1);
+		}
+		snprintf(out + strlen(out), sizeof(out) - strlen(out), "%s%s",
+		    out[0] != '\0' ? " " : "", word);
+	}
+	if (keep)
+		snprintf(out + strlen(out), sizeof(out) - strlen(out), "%s%s",
+		    out[0] != '\0' ? " " : "", name);
+	if (out[0] == '\0') {
+		rc_unset(w, "kld_list");
+		return (0);
+	}
+	return (rc_set(w, "kld_list", "=", out, errp) != 0 ? -1 : 0);
 }
 
 /*
@@ -362,8 +404,7 @@ do_kmod(struct work *w, const char *verb, const char *name, bool persist,
 	}
 	/* kld_list alone: loaded at the next boot, or not. */
 	if (strcmp(verb, "keep") == 0 || strcmp(verb, "forget") == 0)
-		return (rc_set(w, "kld_list", verb[0] == 'k' ? "+=" : "-=",
-		    name, errp) != 0 ? -1 : 0);
+		return (kld_list_set(w, name, verb[0] == 'k', errp));
 	if (!load && (strcmp(name, "kernel") == 0 || strcmp(name,
 	    "kernel.ko") == 0)) {
 		*errp = "the kernel itself is not unloaded";

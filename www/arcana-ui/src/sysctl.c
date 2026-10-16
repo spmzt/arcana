@@ -1066,8 +1066,7 @@ view_transport(struct html *h, struct server *s)
 			while ((pa = ucl_object_iterate(jget(o, "paths"), &pit,
 			    true)) != NULL) {
 				h_fmt(h, "<span class=\"path %s\" title=\"",
-				    jstr(pa, "state") != NULL ? jstr(pa,
-				    "state") : "other");
+				    h_word(jstr(pa, "state"), "other"));
 				h_txt(h, jstr(pa, "state"));
 				h_fmt(h, ", smoothed round trip %lld ms%s\">",
 				    (long long)jint(pa, "srtt_ms", 0), jbool(pa,

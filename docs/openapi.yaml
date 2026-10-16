@@ -414,8 +414,10 @@ paths:
       description: |
         How long a change made in safe mode on the host waits to be
         confirmed before the agent undoes it: 10 to 3600 seconds, or 0
-        for the agent's own (arcana-agent -w, 60 s unless set). Sent
-        with every safe job and BIRD configuration from then on.
+        for none of its own: then Settings' safe_wait, for every host,
+        and without it the agent's own (arcana-agent -w, 60 s unless
+        set, which hello's host.safe_wait says). Sent with every safe
+        job and BIRD configuration from then on.
       parameters:
         - $ref: "#/components/parameters/server"
       requestBody:
@@ -2862,8 +2864,14 @@ components:
               key: { type: string }
               label: { type: string }
               help: { type: string }
-              type: { type: string, enum: [text, bool] }
-              value: { type: string }
+              type: { type: string, enum: [text, bool, secret] }
+              value:
+                type: string
+                description: Not of a secret, which is never sent back.
+              set:
+                type: boolean
+                description: Of a secret, whether one is kept. Sent
+                  empty in a POST, a secret is left as it is.
               base: { type: string, description: What web.conf says. }
               overridden: { type: boolean }
               editable: { type: boolean }
@@ -2988,8 +2996,8 @@ components:
           type: string
           enum: [running, done, failed, cancelled, interrupted]
           description: interrupted when the console stopped while it ran.
-        started: { type: integer, description: Unix time. }
-        ended: { type: integer, description: Unix time. }
+        started: { type: number, description: Unix time, to the millisecond. }
+        ended: { type: number, description: Unix time, to the millisecond. }
         params: { type: object, additionalProperties: { type: string } }
         event: { type: object, description: The event that began it. }
         cancel: { type: boolean, description: A stop was asked for. }
@@ -3015,8 +3023,8 @@ components:
                     job: { type: integer, description: The host's job number. }
                     title: { type: string }
                     error: { type: string }
-                    started: { type: integer }
-                    ended: { type: integer }
+                    started: { type: number, description: Unix time, to the millisecond. }
+                    ended: { type: number, description: Unix time, to the millisecond. }
                     trace:
                       type: object
                       description: >-

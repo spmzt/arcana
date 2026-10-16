@@ -693,19 +693,6 @@ if_addr_state(struct work *w, const char *ifname, struct addr_state *a)
 	    strstr(a->rc6, "accept_rtadv") != NULL;
 }
 
-/* Whether the interface's addressing before Arcana's is kept. */
-bool
-if_addr_recorded(struct work *w, const char *ifname)
-{
-	ucl_object_t	*all;
-	bool		 r;
-
-	all = addr_kept();
-	r = ucl_object_lookup(all, addr_key(w, ifname)) != NULL;
-	ucl_object_unref(all);
-	return (r);
-}
-
 /* What was kept of it let go. */
 void
 if_addr_forget(struct work *w, const char *ifname)
@@ -789,9 +776,81 @@ if_addr_restore(struct work *w, const char *ifname,
 	return (0);
 }
 
+/* line's words but those of drop, a space between them (w's pool). */
+static char *
+words_but(struct work *w, const char *line, const char *const *drop)
+{
+	char	*words, *word, *rest, *out;
+	size_t	 i, len;
+
+	len = strlen(line) + 1;
+	out = wcalloc(w, 1, len);
+	words = wstrdup(w, line);
+	for (rest = words; (word = strsep(&rest, " \t")) != NULL; ) {
+		if (word[0] == '\0')
+			continue;
+		for (i = 0; drop[i] != NULL && strcmp(word, drop[i]) != 0; i++)
+			;
+		if (drop[i] != NULL)
+			continue;
+		if (out[0] != '\0')
+			strlcat(out, " ", len);
+		strlcat(out, word, len);
+	}
+	return (out);
+}
+
+/* The kept record of an interface, as JSON (w's pool), or NULL. */
+const char *
+if_addr_record_get(struct work *w, const char *ifname)
+{
+	ucl_object_t		*all;
+	const ucl_object_t	*k;
+	char			*json;
+	const char		*out;
+
+	all = addr_kept();
+	out = NULL;
+	if ((k = ucl_object_lookup(all, addr_key(w, ifname))) != NULL &&
+	    (json = (char *)ucl_object_emit(k, UCL_EMIT_JSON_COMPACT)) !=
+	    NULL) {
+		out = wstrdup(w, json);
+		free(json);
+	}
+	ucl_object_unref(all);
+	return (out);
+}
+
+/* That record kept again, as it was (json), or let go (NULL). */
+void
+if_addr_record_set(struct work *w, const char *ifname, const char *json)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*all, *k;
+
+	if (json == NULL) {
+		if_addr_forget(w, ifname);
+		return;
+	}
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	k = ucl_parser_add_string(p, json, 0) ? ucl_parser_get_object(p) :
+	    NULL;
+	ucl_parser_free(p);
+	if (k == NULL)
+		return;
+	all = addr_kept();
+	ucl_object_insert_key(all, k, addr_key(w, ifname), 0, true);
+	addr_keep(w, all);
+	ucl_object_unref(all);
+}
+
 /*
  * "was": the addressing kept before Arcana first changed it, put back
- * and let go; nothing kept, nothing changes.
+ * and let go; nothing kept, nothing changes.  Only the addressing goes
+ * back: DHCP's word in ifconfig_<if>, accept_rtadv in its _ipv6 line,
+ * the other words as they are now (an MTU, a table set since stays); a
+ * line taken away since comes back whole.
  */
 static int
 if_addr_was(struct work *w, const char *ifname, bool persist,
@@ -799,7 +858,7 @@ if_addr_was(struct work *w, const char *ifname, bool persist,
 {
 	ucl_object_t		*all;
 	const ucl_object_t	*k;
-	struct addr_state	 a;
+	struct addr_state	 a, now;
 	int			 step, rc;
 
 	all = addr_kept();
@@ -812,12 +871,39 @@ if_addr_was(struct work *w, const char *ifname, bool persist,
 		return (0);
 	}
 	memset(&a, 0, sizeof(a));
-	a.rc = ucl_object_lookup(k, "rc") != NULL ? wstrdup(w,
-	    ucl_object_tostring_forced(ucl_object_lookup(k, "rc"))) : NULL;
-	a.rc6 = ucl_object_lookup(k, "rc6") != NULL ? wstrdup(w,
-	    ucl_object_tostring_forced(ucl_object_lookup(k, "rc6"))) : NULL;
 	a.dhcp = ucl_object_toboolean(ucl_object_lookup(k, "dhcp"));
 	a.slaac = ucl_object_toboolean(ucl_object_lookup(k, "slaac"));
+	if_addr_state(w, ifname, &now);
+	{
+		static const char *const v4[] = { "DHCP", "SYNCDHCP", NULL };
+		static const char *const v6[] = { "inet6", "accept_rtadv",
+		    "-accept_rtadv", NULL };
+		const char	*rec4, *rec6;
+		char		*rest;
+
+		rec4 = ucl_object_lookup(k, "rc") != NULL ?
+		    ucl_object_tostring_forced(ucl_object_lookup(k, "rc")) :
+		    NULL;
+		rec6 = ucl_object_lookup(k, "rc6") != NULL ?
+		    ucl_object_tostring_forced(ucl_object_lookup(k, "rc6")) :
+		    NULL;
+		if (now.rc == NULL)
+			a.rc = rec4 != NULL ? wstrdup(w, rec4) : NULL;
+		else {
+			rest = words_but(w, now.rc, v4);
+			a.rc = a.dhcp ? wfmt(w, "DHCP%s%s", rest[0] != '\0' ?
+			    " " : "", rest) : rest[0] != '\0' ? rest : NULL;
+		}
+		if (now.rc6 == NULL)
+			a.rc6 = rec6 != NULL ? wstrdup(w, rec6) : a.slaac ?
+			    "inet6 accept_rtadv" : NULL;
+		else {
+			rest = words_but(w, now.rc6, v6);
+			a.rc6 = a.slaac ? wfmt(w, "inet6 %s%saccept_rtadv", rest,
+			    rest[0] != '\0' ? " " : "") : rest[0] != '\0' ?
+			    wfmt(w, "inet6 %s", rest) : NULL;
+		}
+	}
 	step = step_begin(w, ARC_STEP_KIND_FILE, "arcana-agent",
 	    "%s: addressed as before: %s%s%s", ifname, a.dhcp ? "DHCP" :
 	    "static", a.slaac ? ", SLAAC" : "", a.rc != NULL ? wfmt(w,

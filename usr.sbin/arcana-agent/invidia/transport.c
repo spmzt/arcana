@@ -299,10 +299,12 @@ also_change(void *arg)
 	struct talso	*ta = arg;
 	int		 i;
 
+	pthread_mutex_lock(&t_lock);
 	for (i = 0; i < nlst; i++) {
 		sctp_also_bind(&lst[i], ta->was, false);
 		sctp_also_bind(&lst[i], ta->now, true);
 	}
+	pthread_mutex_unlock(&t_lock);
 	loop_done();
 }
 
@@ -314,6 +316,25 @@ loop_done(void)
 	pthread_mutex_lock(&t_lock);
 	t_busy = false;
 	pthread_cond_broadcast(&t_cv);
+	pthread_mutex_unlock(&t_lock);
+}
+
+/*
+ * At the end, after the loop: every listener freed, those main() was
+ * given and those added or closed since alike, each once.
+ */
+void
+transport_fini(void)
+{
+	int	i;
+
+	pthread_mutex_lock(&t_lock);
+	for (i = 0; i < nlst; i++)
+		if (lst[i].l != NULL) {
+			cbl_listener_free(lst[i].l);
+			lst[i].l = NULL;
+		}
+	nlst = 0;
 	pthread_mutex_unlock(&t_lock);
 }
 
@@ -337,6 +358,8 @@ sctp_start(void *arg __unused)
 	struct tlisten	*t;
 	int		 i, error;
 
+	/* What the readers read under the lock, written under it. */
+	pthread_mutex_lock(&t_lock);
 	for (i = 0; i < nlst; i++) {
 		t = &lst[i];
 		if (!t->sctp || t->up)
@@ -367,6 +390,7 @@ sctp_start(void *arg __unused)
 		sctp_also_bind(t, opts.sctp_also, true);
 		logmsg(LOG_INFO, "listening on %s", t->uri);
 	}
+	pthread_mutex_unlock(&t_lock);
 	loop_done();
 }
 
@@ -649,9 +673,22 @@ listen_set(struct work *w, const char *listen, const char *unlisten,
 	if (listen != NULL && strncmp(listen, "tcp://", 6) != 0 &&
 	    strncmp(listen, "sctp://", 7) != 0)
 		return ("listen is tcp:// or sctp://, an address and a port");
+	if (listen != NULL && unlisten != NULL && strcmp(listen, unlisten) ==
+	    0)
+		return ("listen and unlisten are the same listener");
 	if (unlisten != NULL) {
 		if (strncmp(unlisten, "unix:", 5) == 0)
 			return ("the local socket is always listened on");
+		/* There, before anything is changed. */
+		pthread_mutex_lock(&t_lock);
+		for (i = 0; i < nlst; i++)
+			if (strcmp(lst[i].uri, unlisten) == 0)
+				break;
+		n = i;
+		i = nlst;
+		pthread_mutex_unlock(&t_lock);
+		if (n == i)
+			return (wfmt(w, "it does not listen on %s", unlisten));
 		/* Not the last one the console can reach it by. */
 		pthread_mutex_lock(&t_lock);
 		for (i = n = 0; i < nlst; i++)
@@ -680,15 +717,6 @@ listen_set(struct work *w, const char *listen, const char *unlisten,
 			return (e);
 	}
 	if (unlisten != NULL) {
-		pthread_mutex_lock(&t_lock);
-		for (i = 0; i < nlst; i++)
-			if (strcmp(lst[i].uri, unlisten) == 0)
-				break;
-		n = i;
-		i = nlst;
-		pthread_mutex_unlock(&t_lock);
-		if (n == i)
-			return (wfmt(w, "it does not listen on %s", unlisten));
 		memset(&tc, 0, sizeof(tc));
 		tc.uri = unlisten;
 		step = step_begin(w, ARC_STEP_KIND_LIB, "libcblink "
@@ -842,7 +870,10 @@ do_transport(struct work *w, bool retry, const char *listen,
 		ucl_object_insert_key(o, ucl_object_fromint(ses[i].since),
 		    "since", 0, false);
 		/* An association: its addresses here, and each path to the
-		 * other end's, as the kernel sees it now. */
+		 * other end's, as the kernel sees it now.  cblink closes a
+		 * connection's socket before on_close takes it off the list:
+		 * one closing just now may answer for nothing, or for the
+		 * socket that took its number. */
 		if (strcmp(ses[i].transport, "sctp") == 0 && ses[i].conn !=
 		    NULL && cbl_conn_fd(ses[i].conn) != -1) {
 			ucl_object_t	*paths;

@@ -147,7 +147,8 @@ usage(void)
 	    "[-5 swanctl-directory]\n"
 	    "                 [-N netstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n"
-	    "                 [-X traceroute] [--sctp-also addresses]\n");
+	    "                 [-X traceroute] [--bird-watch seconds]\n"
+	    "                 [--sctp-also addresses] [--telegram-api url]\n");
 	exit(2);
 }
 
@@ -692,8 +693,9 @@ main(int argc, char *argv[])
 	else
 		logmsg(LOG_NOTICE, "stopped");
 
-	for (i = 0; i < nl; i++)
-		cbl_listener_free(ls[i]);
+	/* The listeners are transport.c's now: some closed, some added
+	 * while it ran. */
+	transport_fini();
 	event_family(NULL);
 	(void)cbl_family_unregister(fam);
 	cbl_loop_free(loop);

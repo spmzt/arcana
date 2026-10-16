@@ -719,7 +719,8 @@ api_server_move_free(struct http_request *req)
 {
 	struct mv	*m = req->hdlr_extra;
 
-	if (m == NULL)
+	/* Asked while the task runs too: only once it is done. */
+	if (m == NULL || !kore_task_finished(&m->task))
 		return;
 	kore_task_destroy(&m->task);
 	kore_free(m);

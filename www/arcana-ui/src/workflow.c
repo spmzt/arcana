@@ -606,6 +606,7 @@ draft_template(const char *name)
 	if (wf.draft != NULL)
 		ucl_object_unref(wf.draft);
 	wf.draft = o;
+	wf.nexpr = 0;	/* the fields' of another */
 	return (true);
 }
 
@@ -658,8 +659,8 @@ recent(struct html *h, const char *id)
 		fmt_age(age, sizeof(age), (double)jint(v[k], "started", 0) *
 		    1000);
 		h_fmt(h, "<i class=\"%s\" data-act=\"wf-run-open\" data-arg=\""
-		    "%lld\" title=\"", jstr(v[k], "state") != NULL ? jstr(v[k],
-		    "state") : "", (long long)jint(v[k], "id", 0));
+		    "%lld\" title=\"", h_word(jstr(v[k], "state"), ""),
+		    (long long)jint(v[k], "id", 0));
 		h_txt(h, jstr(v[k], "state"));
 		h_raw(h, ", ");
 		h_txt(h, age);
@@ -955,8 +956,8 @@ run_timeline(struct html *h, const ucl_object_t *r, const ucl_object_t *w)
 		ghost = 0;
 		while ((s = ucl_object_iterate(jget(x, "steps"), &sit, true)) !=
 		    NULL) {
-			const char	*st = jstr(s, "state") != NULL ? jstr(s,
-			    "state") : "pending";
+			/* A word, as a class takes it ("not run" is two). */
+			const char	*st = h_word(jstr(s, "state"), "pending");
 			double		 a = jnum(s, "started", 0);
 			double		 b = jnum(s, "ended", 0);
 			const char	*name;
@@ -1163,8 +1164,8 @@ view_run(struct html *h)
 	h_raw(h, "<ol class=\"wftsteps\">");
 	tit = NULL;
 	while ((t = ucl_object_iterate(tr, &tit, true)) != NULL) {
-		h_fmt(h, "<li class=\"%s\"><b>", jstr(t, "status") != NULL ?
-		    jstr(t, "status") : "");
+		h_fmt(h, "<li class=\"%s\"><b>", h_word(jstr(t, "status"),
+		    ""));
 		h_txt(h, jstr(t, "label"));
 		h_raw(h, "</b> ");
 		h_txt(h, jstr(t, "detail"));
@@ -2309,6 +2310,7 @@ saved_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (wf.draft != NULL)
 		ucl_object_unref(wf.draft);
 	wf.draft = NULL;
+	wf.nexpr = 0;	/* the fields' of another */
 	toast(false, "Workflow kept");
 	wf_load();
 }
@@ -2467,6 +2469,7 @@ draft_new(void)
 	if (wf.draft != NULL)
 		ucl_object_unref(wf.draft);
 	wf.draft = ucl_object_typed_new(UCL_OBJECT);
+	wf.nexpr = 0;	/* the fields' of another */
 	ucl_object_insert_key(wf.draft, ucl_object_typed_new(UCL_ARRAY),
 	    "hosts", 0, true);
 	if ((s = cur_server()) != NULL)
@@ -2534,6 +2537,8 @@ step_move(int from, int to)
 	ucl_object_t	*a, *o, *rest[WF_EDIT_STEPS];
 	int		 n, nr;
 
+	/* The fields' expressions go by step number: others' now. */
+	wf.nexpr = 0;
 	a = arr_at("steps");
 	n = (int)ucl_array_size(a);
 	if (from < 0 || from >= n || to < 0 || to >= n || to == from ||
@@ -2792,6 +2797,7 @@ wf_graph_action(const char *act, const char *arg, const char *value)
 		if (wf.draft != NULL)
 			ucl_object_unref(wf.draft);
 		wf.draft = o;
+		wf.nexpr = 0;	/* the fields' of another */
 		wf.error[0] = '\0';
 		wf.mode = WM_EDIT;
 		wf.sel = -2;
@@ -2934,6 +2940,7 @@ workflows_action(const char *act, const char *arg, const char *value)
 		if (wf.draft != NULL)
 			ucl_object_unref(wf.draft);
 		wf.draft = ucl_object_copy(w);
+		wf.nexpr = 0;	/* the fields' of another */
 		wf.error[0] = '\0';
 		wf.mode = WM_EDIT;
 		wf.sel = -2;
@@ -3003,6 +3010,7 @@ workflows_action(const char *act, const char *arg, const char *value)
 		if (act[3] == 's') {
 			fails_forward();
 			wf.sel = -2;
+			wf.nexpr = 0;	/* by step number: another's now */
 		}
 	} else if (strcmp(act, "wf-step-add") == 0) {
 		st = ucl_object_typed_new(UCL_OBJECT);
