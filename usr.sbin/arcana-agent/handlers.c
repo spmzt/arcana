@@ -2370,8 +2370,9 @@ check_spec(const struct arc_job_spec *sp)
 			    "tunnelfib, addressing, or several");
 		if (sp->addressing != NULL && strcmp(sp->addressing, "dhcp") != 0
 		    && strcmp(sp->addressing, "slaac") != 0 && strcmp(
-		    sp->addressing, "static") != 0)
-			return ("addressing is dhcp, slaac or static");
+		    sp->addressing, "static") != 0 && strcmp(sp->addressing,
+		    "was") != 0)
+			return ("addressing is dhcp, slaac, static or was");
 		if ((sp->has_fib && sp->fib > 65535) || (sp->has_tunnelfib &&
 		    sp->tunnelfib > 65535))
 			return ("a routing table is a number of one");

@@ -5313,6 +5313,10 @@ ATF_TC_BODY(sdwan_apply, tc)
 		    "\"persist\":true,\"addressing\":\"dhcp\"", lifn);
 		ATF_CHECK_MSG(strstr(r.body, "\"key\":\"ucs:b-mpls\"") != NULL &&
 		    strstr(r.body, t2) != NULL, "%s", r.body);
+		/* Undone, addressed as before, not static. */
+		snprintf(t2, sizeof(t2), "\"kind\":\"if-set\",\"interface\":"
+		    "\"%s\",\"persist\":true,\"addressing\":\"was\"", lifn);
+		ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
 	}
 	snprintf(t2, sizeof(t2), "\"tunnel_remote\":\"%s\"", laddr);
 	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);

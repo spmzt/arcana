@@ -1019,6 +1019,20 @@ EOS
 	test ! -f running.dhclient || atf_fail "dhclient was not stopped"
 	atf_check -o match:'fake-ifconfig lo0 inet6 -accept_rtadv' "$JGC" -p -c "$SOCK" interface lo0 addressing static
 	atf_check -o not-match:'ifconfig_lo0_ipv6' -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up"$' cat rc.conf
+	# was: what it had before Arcana's first DHCP or SLAAC, put back
+	# (a host on SLAAC by rc.conf stays so), and let go; then nothing
+	# kept, nothing changes.
+	echo 'ifconfig_lo0_ipv6="inet6 accept_rtadv"' >> rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 addressing dhcp
+	atf_check -o match:'^ifconfig_lo0="DHCP inet 127.0.0.1/8 mtu 1300 up"$' -o not-match:'ifconfig_lo0_ipv6' cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 addressing dhcp
+	atf_check -o match:'addressed as before: static, SLAAC' -o match:'inet6 accept_rtadv -ifdisabled' \
+	    -o match:'inet 127.0.0.1/8 mtu 1300 up' "$JGC" -t -p -c "$SOCK" interface lo0 addressing was
+	atf_check -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up"$' -o match:'^ifconfig_lo0_ipv6="inet6 accept_rtadv"$' cat rc.conf
+	test ! -f running.dhclient || atf_fail "dhclient was not stopped"
+	atf_check -o match:'not kept: left as it is' "$JGC" -t -p -c "$SOCK" interface lo0 addressing was
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 addressing static
+	atf_check -o not-match:'ifconfig_lo0_ipv6' cat rc.conf
 
 	# Addresses kept as aliases: numbered from 0, and without gaps
 	# when one in the middle goes.
@@ -2316,6 +2330,19 @@ safe_mode_body()
 	atf_check test -f running.sshd
 	atf_check -o match:'it was so before, and is left so' \
 	    "$JGC" -c "$SOCK" jobs
+	# Addressing undone: as it was before the change (SLAAC by
+	# rc.conf), not static.
+	echo 'ifconfig_lo0_ipv6="inet6 accept_rtadv"' >> rc.conf
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" interface lo0 \
+	    addressing dhcp
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'^ifconfig_lo0_ipv6="inet6 accept_rtadv"$' \
+	    -o not-match:'DHCP' cat rc.conf
+	atf_check -o match:'^lo0 inet6 accept_rtadv -ifdisabled$' cat ifconfig.log
 	# And stays when confirmed.
 	atf_check -o match:'confirmed: it stays' \
 	    "$JGC" -s -c "$SOCK" service sshd config sshd_flags=-6
