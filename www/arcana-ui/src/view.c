@@ -77,6 +77,7 @@ static void	actions(struct html *, struct server *, const ucl_object_t *,
 static void	dock(struct html *);
 static void	modal(struct html *);
 static void	toasts(struct html *);
+static void	safe_hosts(struct html *);
 static void	token_qr(struct html *, const char *);
 static void	auth_screen(struct html *);
 static void	fmt_kb(char *, size_t, int64_t);
@@ -1547,6 +1548,109 @@ set_keys(struct html *h)
 	    "</button></div></form>", app.modal_busy ? " disabled" : "");
 }
 
+/*
+ * The rollback timer each host has, by where it comes from: its own
+ * (the host's System tab), the one above for every host, or its agent's
+ * own (-w), which the agent says (an older one does not).  The timer
+ * goes with each change, so what is shown is what the next one gets.
+ */
+static const struct tcol	safecols[] = {
+	{ "Host", "name", false }, { "Its own", "own", true },
+	{ "Its agent's own", "agent", true }, { "The next change waits",
+	    "wait", true }, { "Because", NULL, false },
+};
+
+static void
+safe_hosts(struct html *h)
+{
+	const ucl_object_t	**rows, *k, *r;
+	ucl_object_iter_t	  it;
+	ucl_object_t		 *arr, *o;
+	const char		 *g;
+	int			  i, all, own, agent, wait;
+
+	all = 0;
+	it = NULL;
+	while ((k = ucl_object_iterate(jget(app.settings, "settings"), &it,
+	    true)) != NULL)
+		if (jstr(k, "key") != NULL && strcmp(jstr(k, "key"),
+		    "safe_wait") == 0 && (g = jstr(k, "value")) != NULL)
+			all = atoi(g);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < app.nservers; i++) {
+		const struct server	*s = &app.servers[i];
+
+		own = s->safe_wait;
+		agent = (int)jint(s->list, "host.safe_wait", 0);
+		wait = own > 0 ? own : all > 0 ? all : agent;
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(s->name), "name",
+		    0, false);
+		ucl_object_insert_key(o, ucl_object_fromstring(s->id), "id", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromint(own), "own", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromint(agent), "agent", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromint(wait), "wait", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(own > 0 ?
+		    "its own" : all > 0 ? "every host's" : agent > 0 ?
+		    "its agent's" : "unknown"), "why", 0, false);
+		ucl_array_append(arr, o);
+	}
+	h_raw(h, "<h3 class=\"set-sub\">Rollback timer, host by host</h3><p "
+	    "class=\"dim\">What each host's next change made in safe mode "
+	    "waits for the console before the host undoes it. A host's own "
+	    "timer (its System tab) comes first; the one above is for every "
+	    "other host.</p>");
+	if (app.nservers == 0) {
+		ucl_object_unref(arr);
+		h_raw(h, "<p class=\"dim safehosts-none\">No host yet.</p>");
+		return;
+	}
+	h_raw(h, "<table class=\"net safehosts\">");
+	tbl_head(h, "safehosts", safecols, 5, 1);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("safehosts", arr, safecols, 5, NULL);
+	for (i = 0; (r = rows[i]) != NULL; i++) {
+		h_raw(h, "<tr><td><b>");
+		h_txt(h, jstr(r, "name"));
+		h_raw(h, "</b></td><td>");
+		if (jint(r, "own", 0) > 0)
+			h_fmt(h, "%lld s", (long long)jint(r, "own", 0));
+		else
+			h_raw(h, "<span class=\"dim\">none</span>");
+		h_raw(h, "</td><td>");
+		if (jint(r, "agent", 0) > 0)
+			h_fmt(h, "%lld s", (long long)jint(r, "agent", 0));
+		else
+			h_raw(h, "<span class=\"dim\" title=\"An agent before "
+			    "0.131 does not say it: 60 s unless its -w says\">"
+			    "not said</span>");
+		h_raw(h, "</td><td>");
+		if (jint(r, "wait", 0) > 0)
+			h_fmt(h, "<b>%lld s</b>", (long long)jint(r, "wait", 0));
+		else
+			h_raw(h, "<span class=\"dim\">its agent's own</span>");
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(r, "why"));
+		h_raw(h, "</td><td class=\"acts\">");
+		/* Its own set, and one for every host: its own let go. */
+		if (jint(r, "own", 0) > 0 && all > 0) {
+			h_raw(h, "<button class=\"ghost small\" "
+			    "data-act=\"safe-follow\"");
+			h_attr(h, "data-arg", jstr(r, "id"));
+			h_fmt(h, " title=\"Its own timer let go: it waits %d s, as "
+			    "every host\">Use every host's</button>", all);
+		}
+		h_raw(h, "</td></tr>");
+	}
+	free(rows);
+	ucl_object_unref(arr);
+	h_raw(h, "</tbody></table>");
+}
+
 static void
 set_console(struct html *h)
 {
@@ -1564,6 +1668,7 @@ set_console(struct html *h)
 	settings_fields(h, false);
 	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
 	    "</button></div></form>", app.modal_busy ? " disabled" : "");
+	safe_hosts(h);
 }
 
 /* The editable settings, the mail's or the others, as fields. */

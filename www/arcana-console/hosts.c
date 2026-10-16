@@ -1034,6 +1034,8 @@ host_object(const struct arc_host *h)
 	put_str(o, "version", h->version);
 	put_str(o, "build", h->build);
 	put(o, "plugins", strs(h->plugins.v, h->plugins.n));
+	if (h->has_safe_wait)
+		put(o, "safe_wait", ucl_object_fromint(h->safe_wait));
 	return (o);
 }
 
@@ -3041,7 +3043,7 @@ call_new(struct http_request *req, enum op op)
 	c->sname = kore_strdup(s->name);
 	c->uri = kore_strdup(s->uri);
 	c->peer = s->peer_name != NULL ? kore_strdup(s->peer_name) : NULL;
-	c->safe_wait = s->safe_wait;
+	c->safe_wait = servers_safe_wait(s->uri);
 	snprintf(c->route, sizeof(c->route), "%s %s",
 	    req->method == HTTP_METHOD_GET ? "GET" :
 	    req->method == HTTP_METHOD_DELETE ? "DELETE" : "POST", req->path);

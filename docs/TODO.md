@@ -726,7 +726,10 @@
     trace read from its host when the task is opened, another's kept
     when small.
   - A rollback timer for every agent at once, in the console's
-    Settings, each host said to have it or not.
+    Settings, each host said to have it or not.  Done 2026-10-16: sent
+    with each safe change (nothing pushed nor restarted), a host's own
+    first; the agent says its -w in hello; Settings › Console tells
+    each host's timer and why.
   - Undoing an SD-WAN link's DHCP or SLAAC sets it static: it should go
     back to what it was (a host on SLAAC by rc.conf before).
   - SCTP multi-homed between console and agent (several addresses each

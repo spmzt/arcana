@@ -657,6 +657,9 @@ part_shell(void)
 		usleep(100000);
 	ATF_CHECK(system("grep -q '/usr/local/etc/arcana/id_ed25519' "
 	    "data/settings.json") == 0);
+	/* The rollback timer for every host: none to show yet. */
+	ATF_CHECK(js_true("document.querySelector('form[data-form=settings]')"
+	    ".safe_wait && document.querySelector('.safehosts-none')"));
 	/* The keys that sign in, a tab of their own. */
 	run("document.querySelector('button[data-act=set-tab][data-arg=keys]')"
 	    ".click()");
@@ -4340,6 +4343,29 @@ part_firewall(void)
 	    "f.requestSubmit();");
 	wait_js("document.body.textContent.includes('its agent\\'s own')",
 	    10);
+	/* Its agent says its own; Settings' for every host comes before
+	 * it, told there host by host, and here. */
+	wait_js("document.body.textContent.includes(\"its agent's own <code>"
+	    "\") || document.body.textContent.includes('-w says: 60 s')", 10);
+	run("document.querySelector('.rail-foot li[data-act=settings]')"
+	    ".click()");
+	click_when("button[data-act=set-tab][data-arg=console]", 10);
+	wait_js("document.querySelector('table.safehosts tbody tr') && "
+	    "document.querySelector('table.safehosts').textContent.includes("
+	    "\"its agent's\") && document.querySelector('table.safehosts')."
+	    "textContent.includes('60 s')", 10);
+	run("const f = document.querySelector('form[data-form=settings]'); "
+	    "f.safe_wait.value = '45'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('table.safehosts tbody tr')]."
+	    "every(r => r.textContent.includes('45 s') && r.textContent."
+	    "includes(\"every host's\"))", 10);
+	shot("1f-rollback-hosts");
+	run("const f = document.querySelector('form[data-form=settings]'); "
+	    "f.safe_wait.value = ''; f.requestSubmit();");
+	wait_js("![...document.querySelectorAll('table.safehosts tbody tr')]."
+	    "some(r => r.textContent.includes('45 s'))", 10);
+	host_open(NULL);
+	click_when("button.tab[data-arg=summary]", 10);
 
 	/*
 	 * The host as a whole: saved as a bundle, JSON and YAML, the files

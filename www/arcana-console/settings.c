@@ -57,6 +57,7 @@ static const char	*v_port(const char *);
 static const char	*v_security(const char *);
 static const char	*v_user(const char *);
 static const char	*v_secret(const char *);
+static const char	*v_safe(const char *);
 
 static struct setting {
 	const char	*key;
@@ -134,6 +135,12 @@ static struct setting {
 	{ "smtp_password", K_SECRET, "SMTP password",
 	    "Kept in the data directory, readable by the console alone; never "
 	    "shown again: typed again to change it.", v_secret, NULL, NULL },
+	{ "safe_wait", K_TEXT, "Rollback timer, every host, in seconds",
+	    "How long a change made in safe mode waits for the console to be "
+	    "heard from again before the host undoes it, for every host "
+	    "without a timer of its own: 10 to 3600. Sent with each change, "
+	    "so it holds from the next one on. Empty: each agent's own (-w, "
+	    "60 unless its flags say).", v_safe, NULL, NULL },
 };
 
 static struct timespec	loaded;		/* settings.json's mtime when read */
@@ -272,6 +279,17 @@ v_secret(const char *s)
 {
 
 	return (strlen(s) > 1024 ? "1024 characters at most" : NULL);
+}
+
+static const char *
+v_safe(const char *s)
+{
+
+	/* Empty: each agent's own. */
+	if (s[0] == '\0')
+		return (NULL);
+	return (v_count(s, SAFE_WAIT_MIN, SAFE_WAIT_MAX) != NULL ? "a number "
+	    "of seconds, 10 to 3600" : NULL);
 }
 
 static const char *
