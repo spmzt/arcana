@@ -759,11 +759,13 @@ submodule arcana-jobs-kinds {
           presence
             "This kind of job.";
           description
-            "A kernel module loaded or unloaded";
+            "A kernel module loaded or unloaded, or kept in kld_list or not";
           leaf verb {
             type enumeration {
               enum load;
               enum unload;
+              enum keep;
+              enum forget;
             }
             mandatory true;
             description

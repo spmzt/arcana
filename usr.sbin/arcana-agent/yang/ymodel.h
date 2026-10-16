@@ -1543,6 +1543,8 @@ enum arcana_jobs_submit_input_change_bird_verb {
 enum arcana_jobs_submit_input_change_kmod_verb {
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KMOD_VERB_LOAD = 0,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KMOD_VERB_UNLOAD = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KMOD_VERB_KEEP = 2,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KMOD_VERB_FORGET = 3,
 };
 
 enum arcana_jobs_submit_input_change_ipsec_sa_verb {

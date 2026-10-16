@@ -278,6 +278,14 @@ With
 it is also put into
 .Va kld_list ,
 or taken out of it.
+.It Cm kmod keep | forget Ar module
+Put the module into
+.Xr rc.conf 5 Ns 's
+.Va kld_list ,
+so that
+.Xr rc 8
+loads it when the host starts, or take it out; the kernel is left as
+it is.
 .It Cm sysctl Op Ar name
 The kernel's state, as
 .Xr sysctl 8

@@ -27,7 +27,7 @@
  * arcana-jails: 345 nodes, 20 types, 59474 bytes
  * arcana-services: 38 nodes, 2 types, 6632 bytes
  * arcana-packages: 29 nodes, 0 types, 4786 bytes
- * arcana-jobs: 272 nodes, 24 types, 51008 bytes
+ * arcana-jobs: 272 nodes, 24 types, 51052 bytes
  * arcana-storage: 143 nodes, 2 types, 23626 bytes
  * arcana-sysctl: 11 nodes, 1 types, 2038 bytes
  * arcana-kernel: 36 nodes, 0 types, 5852 bytes
@@ -48,7 +48,7 @@
  * arcana-sdwan: 147 nodes, 5 types, 24792 bytes
  * arcana-sshd: 34 nodes, 0 types, 5622 bytes
  * in all, 2959 nodes (children found 438 dense, 115 by a table, 74 by a search),
- * 211 types, 55 expressions, 677 identities, 609351 bytes
+ * 211 types, 55 expressions, 677 identities, 609395 bytes
  */
 
 #include <stdbool.h>
@@ -4894,12 +4894,14 @@ static const struct cbl_ytype t155 = {
 static const struct cbl_yitem t156_i[] = {
 	{ "load", INT64_C(0) },
 	{ "unload", INT64_C(1) },
+	{ "keep", INT64_C(2) },
+	{ "forget", INT64_C(3) },
 };
 static const struct cbl_ytype t156 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jobs_submit_input_change_kmod_verb),
 	.path = -1,
-	.nitems = 2,
+	.nitems = 4,
 	.items = t156_i,
 };
 

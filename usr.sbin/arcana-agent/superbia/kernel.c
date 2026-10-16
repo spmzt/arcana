@@ -309,9 +309,35 @@ do_kernel(struct work *w, struct arc_kernel_rsp *rsp)
 	return (0);
 }
 
+/* Is the module named in rc.conf's kld_list, with or without its .ko? */
+bool
+kld_listed(struct work *w, const char *name)
+{
+	const char	*v;
+	char		*words, *word, *rest;
+	size_t		 n;
+
+	if ((v = rc_get(w, "kld_list")) == NULL)
+		return (false);
+	n = strlen(name);
+	if (n > 3 && strcmp(name + n - 3, ".ko") == 0)
+		n -= 3;
+	words = wstrdup(w, v);
+	for (rest = words; (word = strsep(&rest, " \t")) != NULL; ) {
+		size_t	 m = strlen(word);
+
+		if (m > 3 && strcmp(word + m - 3, ".ko") == 0)
+			m -= 3;
+		if (m == n && strncmp(word, name, n) == 0)
+			return (true);
+	}
+	return (false);
+}
+
 /*
  * Load a module, or unload one.  Kept, it is in rc.conf's kld_list, or
- * out of it: what rc(8) loads when the host starts.
+ * out of it: what rc(8) loads when the host starts.  keep and forget
+ * change kld_list alone, the kernel as it is.
  */
 int
 do_kmod(struct work *w, const char *verb, const char *name, bool persist,
@@ -323,8 +349,10 @@ do_kmod(struct work *w, const char *verb, const char *name, bool persist,
 	int		 n;
 
 	load = strcmp(verb, "load") == 0;
-	if (!load && strcmp(verb, "unload") != 0) {
-		*errp = "a module is loaded or unloaded: load, unload";
+	if (!load && strcmp(verb, "unload") != 0 && strcmp(verb, "keep") !=
+	    0 && strcmp(verb, "forget") != 0) {
+		*errp = "a module is loaded, unloaded, kept or forgotten: "
+		    "load, unload, keep, forget";
 		return (-1);
 	}
 	if (!kmod_name_ok(name)) {
@@ -332,6 +360,10 @@ do_kmod(struct work *w, const char *verb, const char *name, bool persist,
 		    "path: letters, digits and . _ -";
 		return (-1);
 	}
+	/* kld_list alone: loaded at the next boot, or not. */
+	if (strcmp(verb, "keep") == 0 || strcmp(verb, "forget") == 0)
+		return (rc_set(w, "kld_list", verb[0] == 'k' ? "+=" : "-=",
+		    name, errp) != 0 ? -1 : 0);
 	if (!load && (strcmp(name, "kernel") == 0 || strcmp(name,
 	    "kernel.ko") == 0)) {
 		*errp = "the kernel itself is not unloaded";

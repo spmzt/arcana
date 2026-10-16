@@ -258,10 +258,10 @@ kinds:
     needs: interface jail
     uses: remove parent persist
   - kind: kmod
-    title: A kernel module loaded or unloaded
+    title: A kernel module loaded or unloaded, or kept in kld_list or not
     needs: verb args
     uses: persist
-    values: verb=load|unload
+    values: verb=load|unload|keep|forget
   - kind: ntp
     title: The NTP servers the host keeps time by
     needs: args
