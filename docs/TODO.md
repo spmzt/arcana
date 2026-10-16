@@ -721,7 +721,10 @@
     agent (group security, named sec-, a file of their own).  Not tried
     with the real plugins yet: stand-ins in the tests.
   - The activity bar's tasks, kept over a reload of the page (the
-    hosts keep their jobs and traces: read back from them).
+    hosts keep their jobs and traces: read back from them).  Done
+    2026-10-16: kept as JSON in the browser with their errors, a job's
+    trace read from its host when the task is opened, another's kept
+    when small.
   - A rollback timer for every agent at once, in the console's
     Settings, each host said to have it or not.
   - Undoing an SD-WAN link's DHCP or SLAAC sets it static: it should go

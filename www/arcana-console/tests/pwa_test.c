@@ -1242,13 +1242,21 @@ part_hosts(void)
 	    "&& [...document.querySelectorAll('.dock .recent .last small')]."
 	    "some(e => /done|failed/.test(e.textContent))", 20);
 	/* Kept as the page keeps them, which may come a moment after. */
-	wait_js("(localStorage.getItem('arc_tasks') || '').split('\\n')"
+	wait_js("JSON.parse(localStorage.getItem('arc_tasks') || '[]')"
 	    ".length > 5", 5);
 	shot("9a-recent-tasks");
 	run("[...document.querySelectorAll('.dock .recent .last')].pop()."
 	    "click()");
 	wait_js("document.querySelector('.dock.open ol.ops li.op.selected .w')",
 	    5);
+	/* A job kept over the reload: its trace read from its host again
+	 * as it is opened. */
+	run("const k = JSON.parse(localStorage.getItem('arc_tasks')).find(t => "
+	    "t.job); window.keptJob = k ? k.title : ''; [...document."
+	    "querySelectorAll('.dock.open ol.ops li.op')].find(l => l."
+	    "querySelector('.t').textContent === window.keptJob).click()");
+	wait_js("window.keptJob !== '' && document.querySelector('.trace-pane "
+	    ".trace svg')", 10);
 	run("document.querySelector('.dock > header').click()");
 	wait_js("!document.querySelector('.dock.open')", 5);
 	/*

@@ -1565,6 +1565,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.trace_op = atoi(arg);
 		app.trace_step = -1;
 		app.dock_open = true;
+		op_trace_fetch(op_find(app.trace_op));
 	} else if (strcmp(act, "schema") == 0) {
 		app.trace_schema = !app.trace_schema;
 	} else if (strcmp(act, "schema-tab") == 0) {
