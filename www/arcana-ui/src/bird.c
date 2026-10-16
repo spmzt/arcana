@@ -1955,8 +1955,9 @@ bird_modal(struct html *h)
 		h_raw(h, "</h2>");
 		if (c == NULL) {
 			h_raw(h, "<p>This protocol says more than the form "
-			    "shows: comments, filters written in it, or "
-			    "options the form has no field for. It is changed "
+			    "shows: a /* */ comment, a filter written in it, "
+			    "or an option the form has no field for. It is "
+			    "changed "
 			    "as text, so that nothing of it is lost.</p><p>"
 			    "<button type=\"button\" class=\"primary\" "
 			    "data-act=\"bird-astext\">Change it as text"
