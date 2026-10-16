@@ -465,6 +465,9 @@ result(struct html *h)
 		return;
 	f = ucl_array_find_index(jget(r, "findings"), 0);
 	sev = jstr(f, "severity") != NULL ? jstr(f, "severity") : "ok";
+	if (strcmp(sev, "bad") != 0 && jstr(r, "end.how") != NULL &&
+	    strcmp(jstr(r, "end.how"), "unknown") == 0)
+		sev = "warn";
 	h_fmt(h, "<div class=\"tsverdict %s\">", sev);
 	if (strcmp(sev, "bad") == 0) {
 		h_raw(h, "<b>Stopped");
@@ -474,6 +477,11 @@ result(struct html *h)
 		}
 		h_raw(h, ":</b> ");
 		h_txt(h, jstr(f, "what"));
+	} else if (jstr(r, "end.how") != NULL && strcmp(jstr(r, "end.how"),
+	    "unknown") == 0) {
+		/* Not followed: nothing found is not nothing there. */
+		h_raw(h, "<b>Could not follow it.</b> ");
+		h_txt(h, jstr(r, "end.what"));
 	} else if (strcmp(sev, "warn") == 0) {
 		h_raw(h, "<b>It gets through, with a doubt:</b> ");
 		h_txt(h, jstr(f, "what"));

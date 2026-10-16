@@ -367,14 +367,40 @@ follow(struct tsh *t, const char *from, const char *to, bool reply,
 			    "src.connected")) != NULL)
 				break;
 	}
+	/*
+	 * From beyond the hosts asked (the Internet, say): it comes in at
+	 * the edge, the place whose route to where it is from leaves them,
+	 * by that route's interface.
+	 */
+	if (i == t->n) {
+		const char	*via, *dummy;
+
+		for (i = 0; i < t->n; i++) {
+			via = str(t->p[i].survey, reply ? "route.gateway" :
+			    "return.gateway");
+			ifn = str(t->p[i].survey, reply ? "route.interface" :
+			    "return.interface");
+			if (via != NULL && ifn != NULL && strncmp(via, "link#",
+			    5) != 0 && owner(t, via, &dummy) < 0)
+				break;
+		}
+		if (i < t->n)
+			finding(findings, "info", &t->p[i], "%s comes from beyond "
+			    "the hosts asked: in here on %s, where the route back "
+			    "to %s leaves them", reply ? "The reply" : "It", ifn,
+			    from);
+		else
+			ifn = NULL;
+	}
 	if (i == t->n) {
 		put_s(end, "how", "unknown");
 		put_s(end, "what", reply ? "No place of the console's has the "
-		    "destination, nor a network it is on: where its reply "
-		    "begins is not known" : "No place of the console's has the "
-		    "source, nor a network it is on: where the packet comes in "
-		    "is not known. Name the places to look at, or check that "
-		    "the source is right");
+		    "destination, nor a network it is on, nor a route to it "
+		    "out of the hosts asked: where its reply begins is not "
+		    "known" : "No place of the console's has the source, nor a "
+		    "network it is on, nor a route back to it out of the hosts "
+		    "asked: where the packet comes in is not known. Name the "
+		    "places to look at, or check that the source is right");
 		return;
 	}
 	for (k = 0; k < TS_HOPS; k++) {
