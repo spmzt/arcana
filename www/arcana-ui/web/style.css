@@ -4875,13 +4875,16 @@ ul.wfruns .why { flex: 1 1 12rem; min-width: 0; overflow: hidden; text-overflow:
 .map-wrap.rtgraph { min-height: 0; padding: .6rem .6rem .4rem; margin-bottom: 1rem; overflow-x: auto; }
 /* On a phone the graph keeps a readable size and scrolls in its frame. */
 .rtgraph svg { display: block; width: 100%; min-width: 640px; height: auto; }
-.rtg .edge { fill: none; stroke-width: 2; stroke: var(--slate); }
-.rtg .edge:hover { stroke-width: 4; }
-.rtg .edge.up { stroke: var(--green); }
-.rtg .edge.warn { stroke: var(--amber); }
-.rtg .edge.down { stroke: var(--red); }
-.rtg.ospf .edge { stroke-dasharray: 7 4; }
-.rtg.bfd .edge { stroke-dasharray: 2 4; stroke-linecap: round; }
+.rtg .edge path { fill: none; stroke-width: 2; stroke: var(--slate); }
+.rtg .edge:hover path { stroke-width: 4; }
+.rtg .edge.up path { stroke: var(--green); }
+.rtg .edge.warn path { stroke: var(--amber); }
+.rtg .edge.down path { stroke: var(--red); }
+.rtg.ospf .edge path { stroke-dasharray: 7 4; }
+.rtg.bfd .edge path { stroke-dasharray: 2 4; stroke-linecap: round; }
+.rtg .edge .cnt { fill: var(--fg); font-size: 11px; font-weight: 600; text-anchor: end; font-variant-numeric: tabular-nums; }
+.rt-legend .cnt::before { display: none; }
+.rt-legend .cnt b { color: var(--fg); margin-right: .2rem; }
 .rtg .rnode rect { fill: var(--panel); stroke: var(--line-2); stroke-width: 1.2; }
 .rtg .rnode.mine { cursor: pointer; }
 .rtg .rnode.mine rect { stroke: rgb(var(--accent-rgb)); }
