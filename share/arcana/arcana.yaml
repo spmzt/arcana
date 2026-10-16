@@ -1507,9 +1507,12 @@ attribute-sets:
         doc: |
           For if-set, how the interface gets its address: dhcp
           (dhclient, by rc.conf's DHCP word, so with persist), slaac
-          (inet6 accept_rtadv and rtsol, kept in ifconfig_<if>_ipv6)
-          or static, which takes both off (Mplify 119 §12.2.3.2,
-          §12.2.3.3).
+          (inet6 accept_rtadv and rtsol, kept in ifconfig_<if>_ipv6),
+          static, which takes both off, or was: as it was before
+          Arcana first set dhcp or slaac on it (rc.conf's two lines,
+          DHCP and SLAAC, kept by the agent then), nothing when that
+          was not kept (Mplify 119 §12.2.3.2, §12.2.3.3).  A safe
+          change undone puts back what the interface had before it.
         checks:
           max-len: 8
       - name: safe-wait

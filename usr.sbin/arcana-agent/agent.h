@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.131.0"
+#define	ARCANA_AGENT_VERSION	"0.132.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -369,8 +369,22 @@ struct if_change {
 	const char	*descr;		/* "" takes it off */
 	int		 fib;
 	int		 tunnelfib;
-	const char	*addressing;	/* dhcp, slaac or static; NULL as is */
+	const char	*addressing;	/* dhcp, slaac, static or was; NULL as
+					 * is */
 };
+/* An interface's addressing by rc.conf: its two lines (NULL unset). */
+struct addr_state {
+	const char	*rc;		/* ifconfig_<if> */
+	const char	*rc6;		/* ifconfig_<if>_ipv6 */
+	bool		 dhcp;
+	bool		 slaac;
+};
+void		 if_addr_state(struct work *, const char *,
+		    struct addr_state *);
+int		 if_addr_restore(struct work *, const char *,
+		    const struct addr_state *, bool, const char **);
+bool		 if_addr_recorded(struct work *, const char *);
+void		 if_addr_forget(struct work *, const char *);
 int		 do_if_set(struct work *, const char *,
 		    const struct if_change *, bool, const char **);
 int		 do_if_create(struct work *, const struct arc_job_spec *,

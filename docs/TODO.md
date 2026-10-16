@@ -731,7 +731,10 @@
     first; the agent says its -w in hello; Settings › Console tells
     each host's timer and why.
   - Undoing an SD-WAN link's DHCP or SLAAC sets it static: it should go
-    back to what it was (a host on SLAAC by rc.conf before).
+    back to what it was (a host on SLAAC by rc.conf before).  Done
+    2026-10-16: if-set's addressing was (kept by the agent at its first
+    DHCP or SLAAC), sent by SD-WAN's undo; a safe change undone puts
+    back what was just before it.
   - SCTP multi-homed between console and agent (several addresses each
     end, the association's paths shown), and an agent's address
     changed from the panel: the agent listens on the new one beside the

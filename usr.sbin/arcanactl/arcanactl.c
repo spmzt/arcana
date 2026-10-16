@@ -142,7 +142,7 @@ usage(void)
 	    "    interface name mtu number\n"
 	    "    interface name description text\n"
 	    "    interface name fib | tunnelfib number\n"
-	    "    interface name addressing dhcp | slaac | static\n"
+	    "    interface name addressing dhcp | slaac | static | was\n"
 	    "    interface name create [tunnel local remote] [address "
 	    "address [peer address]]\n        [mtu number] [description "
 	    "text] [id number] [parent interface] [reqid number]\n"

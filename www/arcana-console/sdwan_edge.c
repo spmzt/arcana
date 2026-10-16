@@ -4981,10 +4981,12 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 			if (vrf > 0)
 				put(j, "fib", I(vrf));
 			make(o, j);
+			/* Undone: addressed as it was before (a host on
+			 * SLAAC or DHCP by rc.conf stays so), not static. */
 			j = job("if-set", "interface", S(str(uep, "interface")),
 			    "persist", B(true), NULL);
 			if (how != NULL && strcmp(how, "static") != 0)
-				put(j, "addressing", S("static"));
+				put(j, "addressing", S("was"));
 			if (vrf > 0)
 				put(j, "fib", I(0));
 			unmake(o, j);

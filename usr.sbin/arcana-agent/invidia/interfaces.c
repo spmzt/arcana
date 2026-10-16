@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <time.h>
 #include <ucl.h>
 #include <unistd.h>
@@ -622,11 +623,249 @@ do_if_set(struct work *w, const char *ifname, const struct if_change *ch,
 }
 
 /*
+ * An interface's addressing as Arcana found it, the first time it was
+ * changed (dhcp or slaac): kept in a file beside the agent's other
+ * state, by jail and interface, for "was" to put back; let go when it
+ * is put back, or static is chosen.
+ */
+#define	ADDR_WAS_FILE	"addressing-was.json"
+
+static const char *
+addr_key(struct work *w, const char *ifname)
+{
+
+	return (wfmt(w, "%s%s%s", w->jail != NULL ? w->jail : "", w->jail !=
+	    NULL ? "/" : "", ifname));
+}
+
+static ucl_object_t *
+addr_kept(void)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o;
+	char			*json;
+
+	o = NULL;
+	if ((json = sdwan_kept_read(ADDR_WAS_FILE)) != NULL) {
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+		if (ucl_parser_add_string(p, json, 0))
+			o = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+		free(json);
+	}
+	if (o == NULL || ucl_object_type(o) != UCL_OBJECT) {
+		if (o != NULL)
+			ucl_object_unref(o);
+		o = ucl_object_typed_new(UCL_OBJECT);
+	}
+	return (o);
+}
+
+static void
+addr_keep(struct work *w, ucl_object_t *all)
+{
+	char		*json;
+	const char	*e;
+
+	json = (char *)ucl_object_emit(all, UCL_EMIT_JSON_COMPACT);
+	e = NULL;
+	if (json == NULL || sdwan_conf_write(ADDR_WAS_FILE, json, &e) != 0)
+		logmsg(LOG_WARNING, "%s: %s", ADDR_WAS_FILE, e != NULL ? e :
+		    "not written");
+	(void)w;
+	free(json);
+}
+
+/* How the interface is addressed now, by rc.conf's words. */
+void
+if_addr_state(struct work *w, const char *ifname, struct addr_state *a)
+{
+	const char	*v;
+
+	memset(a, 0, sizeof(*a));
+	v = rc_get(w, wfmt(w, "ifconfig_%s", rc_ifname(w, ifname)));
+	a->rc = v != NULL ? wstrdup(w, v) : NULL;
+	v = rc_get(w, wfmt(w, "ifconfig_%s_ipv6", rc_ifname(w, ifname)));
+	a->rc6 = v != NULL ? wstrdup(w, v) : NULL;
+	a->dhcp = a->rc != NULL && (strstr(a->rc, "DHCP") != NULL);
+	a->slaac = a->rc6 != NULL && strstr(a->rc6, "-accept_rtadv") == NULL &&
+	    strstr(a->rc6, "accept_rtadv") != NULL;
+}
+
+/* Whether the interface's addressing before Arcana's is kept. */
+bool
+if_addr_recorded(struct work *w, const char *ifname)
+{
+	ucl_object_t	*all;
+	bool		 r;
+
+	all = addr_kept();
+	r = ucl_object_lookup(all, addr_key(w, ifname)) != NULL;
+	ucl_object_unref(all);
+	return (r);
+}
+
+/* What was kept of it let go. */
+void
+if_addr_forget(struct work *w, const char *ifname)
+{
+	ucl_object_t	*all;
+
+	all = addr_kept();
+	if (ucl_object_delete_key(all, addr_key(w, ifname)))
+		addr_keep(w, all);
+	ucl_object_unref(all);
+}
+
+/*
+ * The interface addressed as a says: rc.conf's two lines as they were
+ * (persist), and now: IPv6's accept_rtadv and rtsol, dhclient started
+ * or stopped, and a static line's words given to ifconfig again.
+ */
+int
+if_addr_restore(struct work *w, const char *ifname,
+    const struct addr_state *a, bool persist, const char **errp)
+{
+	struct execres	 res;
+	const char	*rcn, *rc6;
+	char		*argv[16], *words, *word, *rest;
+	int		 n;
+
+	rcn = wfmt(w, "ifconfig_%s", rc_ifname(w, ifname));
+	rc6 = wfmt(w, "ifconfig_%s_ipv6", rc_ifname(w, ifname));
+	if (persist) {
+		if (a->rc == NULL)
+			rc_unset(w, rcn);
+		else if (rc_set(w, rcn, "=", a->rc, errp) != 0)
+			return (-1);
+		if (a->rc6 == NULL)
+			rc_unset(w, rc6);
+		else if (rc_set(w, rc6, "=", a->rc6, errp) != 0)
+			return (-1);
+	}
+	argv[0] = (char *)(uintptr_t)opts.ifconfig_bin;
+	argv[1] = (char *)(uintptr_t)ifname;
+	argv[2] = (char *)(uintptr_t)"inet6";
+	argv[3] = (char *)(uintptr_t)(a->slaac ? "accept_rtadv" :
+	    "-accept_rtadv");
+	argv[4] = (char *)(uintptr_t)(a->slaac ? "-ifdisabled" : NULL);
+	argv[5] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "ifconfig"));
+		return (-1);
+	}
+	if (a->slaac) {
+		argv[0] = (char *)(uintptr_t)opts.rtsol_bin;
+		argv[1] = (char *)(uintptr_t)ifname;
+		argv[2] = NULL;
+		(void)run_exec(w, argv, &res);
+	}
+	argv[0] = (char *)(uintptr_t)opts.service_bin;
+	argv[1] = (char *)(uintptr_t)"dhclient";
+	argv[2] = (char *)(uintptr_t)(a->dhcp ? "restart" : "stop");
+	argv[3] = (char *)(uintptr_t)ifname;
+	argv[4] = NULL;
+	if (run_exec(w, argv, &res) != 0 && a->dhcp) {
+		*errp = wtext(w, exec_error(w, &res, "service dhclient"));
+		return (-1);
+	}
+	/* A static IPv4 line's address again: what dhclient left goes. */
+	if (!a->dhcp && a->rc != NULL && strstr(a->rc, "inet ") != NULL) {
+		n = 0;
+		argv[n++] = (char *)(uintptr_t)opts.ifconfig_bin;
+		argv[n++] = (char *)(uintptr_t)ifname;
+		words = wstrdup(w, strstr(a->rc, "inet "));
+		for (rest = words; (word = strsep(&rest, " ")) != NULL &&
+		    n < 15; )
+			if (word[0] != '\0')
+				argv[n++] = word;
+		argv[n] = NULL;
+		if (run_exec(w, argv, &res) != 0) {
+			*errp = wtext(w, exec_error(w, &res, "ifconfig"));
+			return (-1);
+		}
+	}
+	return (0);
+}
+
+/*
+ * "was": the addressing kept before Arcana first changed it, put back
+ * and let go; nothing kept, nothing changes.
+ */
+static int
+if_addr_was(struct work *w, const char *ifname, bool persist,
+    const char **errp)
+{
+	ucl_object_t		*all;
+	const ucl_object_t	*k;
+	struct addr_state	 a;
+	int			 step, rc;
+
+	all = addr_kept();
+	if ((k = ucl_object_lookup(all, addr_key(w, ifname))) == NULL) {
+		ucl_object_unref(all);
+		step = step_begin(w, ARC_STEP_KIND_FILE, "arcana-agent",
+		    "%s: its addressing before is not kept: left as it is",
+		    ifname);
+		step_end(w, step, true, NULL);
+		return (0);
+	}
+	memset(&a, 0, sizeof(a));
+	a.rc = ucl_object_lookup(k, "rc") != NULL ? wstrdup(w,
+	    ucl_object_tostring_forced(ucl_object_lookup(k, "rc"))) : NULL;
+	a.rc6 = ucl_object_lookup(k, "rc6") != NULL ? wstrdup(w,
+	    ucl_object_tostring_forced(ucl_object_lookup(k, "rc6"))) : NULL;
+	a.dhcp = ucl_object_toboolean(ucl_object_lookup(k, "dhcp"));
+	a.slaac = ucl_object_toboolean(ucl_object_lookup(k, "slaac"));
+	step = step_begin(w, ARC_STEP_KIND_FILE, "arcana-agent",
+	    "%s: addressed as before: %s%s%s", ifname, a.dhcp ? "DHCP" :
+	    "static", a.slaac ? ", SLAAC" : "", a.rc != NULL ? wfmt(w,
+	    " (ifconfig_%s=\"%s\")", rc_ifname(w, ifname), a.rc) : "");
+	rc = if_addr_restore(w, ifname, &a, persist, errp);
+	step_end(w, step, rc == 0, rc == 0 ? NULL : "%s", *errp);
+	if (rc == 0) {
+		(void)ucl_object_delete_key(all, addr_key(w, ifname));
+		addr_keep(w, all);
+	}
+	ucl_object_unref(all);
+	return (rc);
+}
+
+/* The addressing as it is, kept unless something is already. */
+static void
+if_addr_record(struct work *w, const char *ifname)
+{
+	ucl_object_t		*all, *k;
+	struct addr_state	 a;
+
+	all = addr_kept();
+	if (ucl_object_lookup(all, addr_key(w, ifname)) == NULL) {
+		if_addr_state(w, ifname, &a);
+		k = ucl_object_typed_new(UCL_OBJECT);
+		if (a.rc != NULL)
+			ucl_object_insert_key(k, ucl_object_fromstring(a.rc),
+			    "rc", 0, false);
+		if (a.rc6 != NULL)
+			ucl_object_insert_key(k, ucl_object_fromstring(a.rc6),
+			    "rc6", 0, false);
+		ucl_object_insert_key(k, ucl_object_frombool(a.dhcp), "dhcp",
+		    0, false);
+		ucl_object_insert_key(k, ucl_object_frombool(a.slaac), "slaac",
+		    0, false);
+		ucl_object_insert_key(all, k, addr_key(w, ifname), 0, true);
+		addr_keep(w, all);
+	}
+	ucl_object_unref(all);
+}
+
+/*
  * How an interface gets its address (Mplify 119 §12.2.3.2, §12.2.3.3):
  * dhcp, dhclient(8) by the DHCP word of ifconfig_<if> in rc.conf,
  * which its rc script insists on, so kept; slaac, inet6 accept_rtadv on
  * the interface and rtsol(8) once, kept in ifconfig_<if>_ipv6; static,
- * both off, dhclient stopped.
+ * both off, dhclient stopped; was, as it was before Arcana first set
+ * dhcp or slaac on it.
  */
 static int
 if_addressing(struct work *w, const char *ifname, const char *how,
@@ -639,8 +878,10 @@ if_addressing(struct work *w, const char *ifname, const char *how,
 
 	dhcp = strcmp(how, "dhcp") == 0;
 	slaac = strcmp(how, "slaac") == 0;
+	if (strcmp(how, "was") == 0)
+		return (if_addr_was(w, ifname, persist, errp));
 	if (!dhcp && !slaac && strcmp(how, "static") != 0) {
-		*errp = "addressing is dhcp, slaac or static";
+		*errp = "addressing is dhcp, slaac, static or was";
 		return (-1);
 	}
 	if (dhcp && !persist) {
@@ -648,6 +889,12 @@ if_addressing(struct work *w, const char *ifname, const char *how,
 		    "rc script reads: say persist";
 		return (-1);
 	}
+	/* What it was before Arcana's first change, for was; a static
+	 * chosen lets that go. */
+	if (dhcp || slaac)
+		if_addr_record(w, ifname);
+	else
+		if_addr_forget(w, ifname);
 	rcn = wfmt(w, "ifconfig_%s", rc_ifname(w, ifname));
 	rc6 = wfmt(w, "ifconfig_%s_ipv6", rc_ifname(w, ifname));
 	if (persist) {
