@@ -566,6 +566,7 @@ void		 op_retry(int);
 bool		 box_shut(const char *);
 void		 box_head(struct html *, const char *, const char *);
 void		 ops_load(void);
+void		 op_trace_fetch(struct op *);
 void		 job_send(struct server *, char *, const char *, int,
 		    const char *);
 void		 job_send_host(struct server *, char *, const char *, int,
