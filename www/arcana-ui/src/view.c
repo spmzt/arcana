@@ -749,14 +749,28 @@ stage(struct html *h)
 		    "both ends\">Nexthop groups</button><button class=\"tab%s\" "
 		    "data-act=\"netsect-tab\" data-arg=\"traceroute\" title=\"The "
 		    "way from a host to an address, hop by hop, again and again "
-		    "as mtr does\">Traceroute</button></nav>",
+		    "as mtr does\">Traceroute</button><button class=\"tab%s\" "
+		    "data-act=\"netsect-tab\" data-arg=\"bgp\" title=\"Every BGP "
+		    "session of every BIRD in the fleet\">BGP</button><button "
+		    "class=\"tab%s\" data-act=\"netsect-tab\" data-arg=\"ospf\" "
+		    "title=\"Every OSPF neighbour of every BIRD in the fleet\">"
+		    "OSPF</button><button class=\"tab%s\" data-act=\"netsect-tab\" "
+		    "data-arg=\"bfd\" title=\"Every BFD session of every BIRD in "
+		    "the fleet\">BFD</button></nav>",
 		    app.netsect == NETSECT_MAP ? " on" : "", app.netsect ==
 		    NETSECT_GROUPS ? " on" : "", app.netsect == NETSECT_TRACE ?
-		    " on" : "");
+		    " on" : "", app.netsect == NETSECT_BGP ? " on" : "",
+		    app.netsect == NETSECT_OSPF ? " on" : "", app.netsect ==
+		    NETSECT_BFD ? " on" : "");
 		if (app.netsect == NETSECT_GROUPS)
 			view_ecmp(h);
 		else if (app.netsect == NETSECT_TRACE)
 			view_traceroute(h);
+		else if (app.netsect >= NETSECT_BGP) {
+			h_raw(h, "<div class=\"rtview\">");
+			view_routing(h);
+			h_raw(h, "</div>");
+		}
 		else
 			view_netmap(h);
 		h_raw(h, "</div></main>");

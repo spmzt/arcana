@@ -4869,3 +4869,34 @@ ul.fwnever li { padding: .2rem .3rem; border-radius: 6px; white-space: nowrap; o
 ul.fwnever li b { color: var(--fg-2); font-family: var(--mono); font-weight: 400; margin-right: .4rem; }
 ul.fwnever code { font-size: .74rem; color: var(--fg-2); }
 ul.wfruns .why { flex: 1 1 12rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .74rem; color: var(--red); }
+
+/* Network → BGP, OSPF, BFD: every BIRD session of the fleet. */
+.rt-tiles .tile b small { font-size: .7rem; color: var(--dim); font-weight: 400; }
+.map-wrap.rtgraph { min-height: 0; padding: .6rem .6rem .4rem; margin-bottom: 1rem; overflow-x: auto; }
+/* On a phone the graph keeps a readable size and scrolls in its frame. */
+.rtgraph svg { display: block; width: 100%; min-width: 640px; height: auto; }
+.rtg .edge { fill: none; stroke-width: 2; stroke: var(--slate); }
+.rtg .edge:hover { stroke-width: 4; }
+.rtg .edge.up { stroke: var(--green); }
+.rtg .edge.warn { stroke: var(--amber); }
+.rtg .edge.down { stroke: var(--red); }
+.rtg.ospf .edge { stroke-dasharray: 7 4; }
+.rtg.bfd .edge { stroke-dasharray: 2 4; stroke-linecap: round; }
+.rtg .rnode rect { fill: var(--panel); stroke: var(--line-2); stroke-width: 1.2; }
+.rtg .rnode.mine { cursor: pointer; }
+.rtg .rnode.mine rect { stroke: rgb(var(--accent-rgb)); }
+.rtg .rnode.mine:hover rect { stroke-width: 2.4; }
+.rtg .rnode.fleet rect { stroke: rgb(var(--accent-rgb)); stroke-dasharray: 4 3; }
+.rtg .rnode .name { fill: var(--fg); font-size: 13px; font-weight: 600; }
+.rtg .rnode.mine .name { dominant-baseline: middle; }
+.rtg .rnode .sub { fill: var(--dim); font-size: 11px; font-family: var(--mono); }
+.rt-legend { position: static; margin-top: .4rem; }
+.rt-legend .up::before { border-color: var(--green); }
+.rt-legend .warn::before { border-color: var(--amber); }
+.rt-legend .down::before { border-color: var(--red); }
+.rt-legend .fleet::before { width: 12px; height: 10px; border: 1.5px dashed rgb(var(--accent-rgb)); border-radius: 3px; }
+.rtgraph .dim { margin: .3rem 0 0; font-size: .75rem; }
+table.rt td.err { color: var(--red); max-width: 22rem; }
+table.rt td.num { font-variant-numeric: tabular-nums; }
+.rt-note { margin: .2rem 0 .8rem; font-size: .8rem; }
+.netsect > .rtview { flex: 1; min-height: 0; overflow-y: auto; }

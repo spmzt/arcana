@@ -5396,6 +5396,74 @@ part_netsect(void)
 	shot("8-network-traceroute");
 	run("document.querySelector('button[data-act=mtr-stop]').click()");
 	wait_js("document.querySelector('button[data-act=mtr-start]')", 5);
+	/*
+	 * BGP, OSPF and BFD across the fleet: both agents' BIRD, a row a
+	 * session, a line each in the colour of its state.
+	 */
+	run("document.querySelector('.netsect button.tab[data-arg=bgp]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('table.rt-bgp tbody tr').length === 4 "
+	    "&& document.querySelectorAll('svg.rtg.bgp .edge.up').length === 2 "
+	    "&& document.querySelectorAll('svg.rtg.bgp .edge.warn').length === "
+	    "2", 30);
+	ATF_CHECK(js_true("[...document.querySelectorAll('.rt-tiles .tile')]"
+	    ".some(t => t.textContent.includes('2 of 4') && t.textContent."
+	    "includes('BGP sessions')) && [...document.querySelectorAll("
+	    "'.rt-tiles .tile')].some(t => t.textContent.includes('2 of 2') && "
+	    "t.textContent.includes('BFD sessions'))"));
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.rt-bgp tbody "
+	    "tr')].some(r => r.textContent.includes('Established') && r."
+	    "textContent.includes('845233') && r.textContent.includes('65001'))"
+	    " && [...document.querySelectorAll('table.rt-bgp tbody tr')].some("
+	    "r => r.textContent.includes('Active') && r.querySelector("
+	    "'.chip.warn'))"));
+	/* Sorted by what came in, most first; filtered by a state. */
+	run("document.querySelector('table.rt-bgp th[data-value=\"7\"]')"
+	    ".click()");
+	run("document.querySelector('table.rt-bgp th[data-value=\"7\"]')"
+	    ".click()");
+	wait_js("document.querySelector('table.rt-bgp th.desc') && document."
+	    "querySelector('table.rt-bgp tbody tr').textContent.includes("
+	    "'845233')", 5);
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = 'Active'; i.dispatchEvent(new Event('input', { "
+	    "bubbles: true }));");
+	wait_js("document.querySelectorAll('table.rt-bgp tbody tr').length === 2 "
+	    "&& document.querySelectorAll('svg.rtg .edge').length === 2", 5);
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true "
+	    "}));");
+	wait_js("document.querySelectorAll('table.rt-bgp tbody tr').length === 4",
+	    5);
+	shot("8-network-bgp");
+	run("document.querySelector('.netsect button.tab[data-arg=ospf]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('table.rt-ospf tbody tr').length === "
+	    "2 && document.querySelectorAll('svg.rtg.ospf .edge.up').length === "
+	    "2 && document.querySelector('table.rt-ospf').textContent.includes("
+	    "'Full/PtP')", 10);
+	shot("8-network-ospf");
+	run("document.querySelector('.netsect button.tab[data-arg=bfd]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('table.rt-bfd tbody tr').length === "
+	    "2 && document.querySelectorAll('svg.rtg.bfd .edge.up').length === "
+	    "2 && document.querySelector('table.rt-bfd').textContent.includes("
+	    "'fe80::2')", 10);
+	/* A row opens its protocol in its host's BIRD. */
+	run("document.querySelector('.netsect button.tab[data-arg=bgp]')"
+	    ".click()");
+	wait_js("document.querySelector('table.rt-bgp tbody tr')", 10);
+	run("[...document.querySelectorAll('table.rt-bgp tbody tr')].find(r => "
+	    "r.dataset.value === 'bgp_core').click()");
+	wait_js("document.querySelector('button.tab.plugin[data-arg=bird].on') "
+	    "&& document.querySelector('form[data-form=bird-block] h2') && "
+	    "document.querySelector('form[data-form=bird-block] h2')"
+	    ".textContent.includes('bgp_core')", 20);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('.modal')", 5);
+	run("document.querySelector('li[data-act=select-network]').click()");
+	wait_js("document.querySelector('.netsect button.tab[data-arg=map]')",
+	    10);
 	run("window.fetch = window.fetchL;");
 	run("document.querySelector('.netsect button.tab[data-arg=map]')"
 	    ".click()");
