@@ -1257,6 +1257,26 @@ ATF_TC_BODY(workflows, tc)
 	ATF_CHECK_STREQ("skipped", jstr(&r, "hosts.0.steps.3.state"));
 	resp_free(&r);
 	ATF_CHECK(system("! grep -q clone git.log") == 0);
+	/* A host that cannot take the agent is named, and why, in the
+	 * step's error: a run's row says it. */
+	http("POST", "/api/servers", "{\"name\":\"gone\",\"uri\":"
+	    "\"unix:/nonexistent/arcana.sock\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE(system("echo 5555555555555555555555555555555555555555 > "
+	    "head") == 0);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	run_wait(run, &r);
+	ATF_CHECK_STREQ("failed", jstr(&r, "hosts.0.steps.2.state"));
+	ATF_CHECK_MSG(jstr(&r, "hosts.0.steps.2.error") != NULL && strstr(jstr(
+	    &r, "hosts.0.steps.2.error"), "hosts did not take it (") != NULL &&
+	    strstr(jstr(&r, "hosts.0.steps.2.error"), "gone: the host did not "
+	    "answer") != NULL && strstr(jstr(&r, "hosts.0.steps.2.error"),
+	    "gone: gone") == NULL, "%s", jstr(&r, "hosts.0.steps.2.error"));
+	resp_free(&r);
 	/*
 	 * A run whose worker dies under it: once one is there again, the
 	 * run, its host and the step that was running are said to be

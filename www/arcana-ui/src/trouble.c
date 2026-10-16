@@ -30,6 +30,7 @@ static struct {
 	char		 places[64][80];	/* "sid" or "sid/jail" */
 	int		 nplaces;		/* 0: every host */
 	bool		 busy;
+	unsigned	 asked;		/* the latest ask's number */
 	char		 error[400];
 	ucl_object_t	*result;
 } ts = { .proto = "tcp" };
@@ -38,7 +39,10 @@ static void
 path_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
-	(void)arg;
+	/* An answer to an ask made before the latest is not shown: a swap
+	 * pressed twice must not show the first's answer last. */
+	if ((unsigned)(uintptr_t)arg != ts.asked)
+		return;
 	ts.busy = false;
 	if (status != 200 || o == NULL || !jbool(o, "ok")) {
 		snprintf(ts.error, sizeof(ts.error), "%s", jstr(o,
@@ -113,7 +117,8 @@ ask(void)
 	ucl_object_unref(b);
 	ts.busy = true;
 	ts.error[0] = '\0';
-	api("POST", "/api/troubleshoot/path", json, path_cb, NULL);
+	api("POST", "/api/troubleshoot/path", json, path_cb, (void *)(uintptr_t)
+	    ++ts.asked);
 	free(json);
 }
 
