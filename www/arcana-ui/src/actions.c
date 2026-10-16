@@ -1157,6 +1157,9 @@ refresh_servers(void)
 {
 
 	api("GET", "/api/servers", NULL, servers_cb, NULL);
+	/* Settings' rollback timer is told on each host's System tab. */
+	if (app.settings == NULL)
+		load_settings();
 }
 
 static void

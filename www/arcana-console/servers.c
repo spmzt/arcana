@@ -301,12 +301,14 @@ servers_move(const char *id, const char *uri)
 
 /*
  * The rollback timer of the server reached at uri: the seconds a change
- * made in safe mode waits to be confirmed there, 0 for the agent's own.
+ * made in safe mode waits to be confirmed there: the server's own, else
+ * Settings' for every host, else 0 for the agent's own.
  */
 int
 servers_safe_wait(const char *uri)
 {
-	int	i, k;
+	char	*all;
+	int	 i, k;
 
 	k = 0;
 	pthread_mutex_lock(&table_lock);
@@ -316,6 +318,12 @@ servers_safe_wait(const char *uri)
 			break;
 		}
 	pthread_mutex_unlock(&table_lock);
+	if (k == 0 && (all = settings_peek("safe_wait")) != NULL) {
+		k = atoi(all);
+		if (k < SAFE_WAIT_MIN || k > SAFE_WAIT_MAX)
+			k = 0;
+		free(all);
+	}
 	return (k);
 }
 

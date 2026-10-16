@@ -2833,6 +2833,34 @@ ATF_TC_BODY(services, tc)
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^lo0 inet 10.9.0.6/24 alias$' ifconfig.log "
 	    "&& ! grep -q '10.9.0.6 -alias' ifconfig.log") == 0);
+	/* None of its own: Settings' for every host goes with the change. */
+	http("POST", "/api/settings", "{\"set\":{\"safe_wait\":\"5\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"safe_wait\":\"25\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"if-address\","
+	    "\"interface\":\"lo0\",\"address\":\"10.9.0.7/24\","
+	    "\"safe\":true}]}", &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "jobs.0.id") != NULL);
+	snprintf(body, sizeof(body), "%s/%s", path, jstr(&r, "jobs.0.id"));
+	resp_free(&r);
+	for (i = 0; i < 200; i++) {
+		http("GET", body, NULL, &r);
+		EXPECT(&r, 200);
+		if (strcmp(jstr(&r, "job.state"), "done") == 0)
+			break;
+		resp_free(&r);
+		usleep(50000);
+	}
+	ATF_REQUIRE_MSG(i < 200, "the safe job did not finish");
+	ATF_CHECK_MSG(strstr(r.body, "the timer was 25 s") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"safe_wait\":\"\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
 
 	/* A static route, added and deleted with route(8). */
 	http("POST", path, "{\"jobs\":[{\"kind\":\"route\",\"destination\":"
