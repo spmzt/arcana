@@ -438,7 +438,15 @@ expand_obj(const ucl_object_t *o, const ucl_object_t *params,
 	switch (ucl_object_type(o)) {
 	case UCL_STRING:
 		s = expand(ucl_object_tostring(o), params, h, answers, event);
-		c = ucl_object_fromstring(s);
+		/* A value made of ${...} that comes out a number is one: a
+		 * number field (an MTU, pkg's network, a port) asked for in a
+		 * parameter. */
+		if (strstr(ucl_object_tostring(o), "${") != NULL && s[0] !=
+		    '\0' && strlen(s) <= 18 && s[strspn(s, "0123456789")] ==
+		    '\0')
+			c = ucl_object_fromint(strtoll(s, NULL, 10));
+		else
+			c = ucl_object_fromstring(s);
 		free(s);
 		return (c);
 	case UCL_OBJECT:

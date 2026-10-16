@@ -2286,7 +2286,8 @@ arc_pkg_upgrade_doit(cbl_req *req, const struct arc_pkg_upgrade_req *rq,
 	const char	**v;
 	size_t		 i;
 
-	if (rq->jail != NULL && !valid_jail(rq->jail))
+	if (rq->jail != NULL && strcmp(rq->jail, "*") != 0 &&
+	    !valid_jail(rq->jail))
 		return (reject(req, "invalid jail name"));
 	for (i = 0; i < rq->names.n; i++)
 		if (rq->names.v[i] == NULL)
@@ -2572,7 +2573,9 @@ check_spec(const struct arc_job_spec *sp)
 		}
 		break;
 	default:
-		if (sp->jail != NULL && !valid_jail(sp->jail))
+		/* "*": every running jail's, one after the other. */
+		if (sp->jail != NULL && strcmp(sp->jail, "*") != 0 &&
+		    !valid_jail(sp->jail))
 			return ("invalid jail name");
 		for (i = 0; i < sp->names.n; i++)
 			if (sp->names.v[i] == NULL)

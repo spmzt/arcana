@@ -741,6 +741,16 @@ packages_body()
 	    "$JGC" -c "$SOCK" pkg-upgrade
 	atf_check -s exit:1 -o ignore -e match:"'a;b' is not a package name" \
 	    "$JGC" -c "$SOCK" pkg-upgrade 'a;b'
+	# Of every running jail, by the agent: none runs here, said so.
+	atf_check -s exit:1 -o ignore -e match:'no jail is running' \
+	    "$JGC" -c "$SOCK" pkg-upgrade -J
+	atf_check -o match:'1 queued +pkg upgrade in every jail' \
+	    "$JGC" -q -c "$SOCK" pkg-upgrade -J
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'queued\|running' || break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'no jail is running' "$JGC" -c "$SOCK" job 1
 	# The installed, from the host's own database: no repository.
 	atf_check -o match:'^aria2 +1\.37\.0_1 +by hand +5242880 Download utility' \
 	    -o match:'^pimd +3\.1\.0 +automatic' -o match:'fake-pkg query' \

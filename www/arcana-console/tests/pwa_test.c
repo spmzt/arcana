@@ -4501,6 +4501,47 @@ part_flows(void)
 	    "document.querySelectorAll('svg.wfdraw g.wfnode.job').length === 1",
 	    10);
 	run("document.querySelector('button[data-act=wf-back]').click()");
+	/*
+	 * Every jail's packages: the jail a choice among the fleet's, every
+	 * running one here; pkg's network a choice in words, under More
+	 * options; and a field turned to an expression, a variable put in.
+	 */
+	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
+	run("const t = document.querySelector('select[data-input=wf-template]'"
+	    "); t.value = 'pkg-every-jail'; t.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelectorAll('svg.wfdraw g.wfnode.job').length === "
+	    "2", 10);
+	run("document.querySelectorAll('svg.wfdraw g.wfnode.job')[1]."
+	    "dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, "
+	    "pointerId: 6, button: 0 })); document.dispatchEvent(new "
+	    "PointerEvent('pointerup', { bubbles: true, pointerId: 6 }));");
+	wait_js("document.querySelector('select[data-arg=\"text:steps.1.job."
+	    "jail\"]') && document.querySelector('select[data-arg=\"text:steps.1."
+	    "job.jail\"]').value === '*' && [...document.querySelectorAll("
+	    "'select[data-arg=\"num:steps.1.job.pkg_ip\"] option')].some(o => "
+	    "o.textContent === 'IPv6 only (pkg -6)') && document.querySelector("
+	    "'details.wfmore')", 10);
+	ATF_CHECK(js_true("[...document.querySelectorAll('.wffield small.help')]"
+	    ".some(s => s.textContent.includes('Which way pkg reaches'))"));
+	run("document.querySelector('details.wfmore').open = true; "
+	    "document.querySelector('button[data-act=wf-expr][data-arg=\"steps.1."
+	    "job.pkg_ip\"]').click()");
+	wait_js("document.querySelector('select.wfvar[data-arg=\"steps.1.job."
+	    "pkg_ip\"]')", 5);
+	run("setf('select.wfvar[data-arg=\"steps.1.job.pkg_ip\"]', "
+	    "'${host.name}')");
+	wait_js("document.querySelector('input[data-arg=\"text:steps.1.job."
+	    "pkg_ip\"]') && document.querySelector('input[data-arg=\"text:steps."
+	    "1.job.pkg_ip\"]').value === '${host.name}'", 5);
+	shot("9-workflow-fields");
+	/* Back to a value of its own: the expression goes. */
+	run("document.querySelector('button[data-act=wf-expr][data-arg=\"steps.1."
+	    "job.pkg_ip\"]').click()");
+	wait_js("document.querySelector('select[data-arg=\"num:steps.1.job."
+	    "pkg_ip\"]') && document.querySelector('select[data-arg=\"num:steps."
+	    "1.job.pkg_ip\"]').value === ''", 5);
+	run("document.querySelector('button[data-act=wf-back]').click()");
 	/* What starts one, in words: a jail stops, which jail asked. */
 	click_when("button[data-act=wf-new]", 10);
 	wait_js("document.querySelector('.wfpanel select[data-input=wf-kind]') "

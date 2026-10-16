@@ -286,7 +286,8 @@ title_of(const struct arc_job_spec *sp)
 		break;
 	default:
 		rc = asprintf(&t, "pkg upgrade%s%s%s%s", sp->jail != NULL ?
-		    " in " : "", sp->jail != NULL ? sp->jail : "",
+		    " in " : "", sp->jail == NULL ? "" : strcmp(sp->jail,
+		    "*") == 0 ? "every jail" : sp->jail,
 		    sp->names.n > 0 ? " of some" : "", sp->force ?
 		    ", ignoring OSVERSION" : "");
 		break;

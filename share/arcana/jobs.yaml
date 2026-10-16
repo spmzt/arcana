@@ -13,24 +13,34 @@ fields:
   - field: jail
     type: text
     label: Jail
+    help: The jail it is done in; empty for the host itself.
+    picker: jail
   - field: action
     type: text
     label: Action
+    help: What is done to it.
   - field: address
     type: text
     label: Address
+    help: An address with its prefix: 192.0.2.1/24, 2001:db8::1/64.
   - field: interface
     type: text
     label: Interface
+    help: Its name on the host: em0, wg0, bridge0.
+    picker: interface
   - field: service
     type: text
     label: Service
+    help: An rc.d script of the host or jail: nginx, sshd.
+    picker: service
   - field: destination
     type: text
     label: Destination
+    help: A network, or default: 10.0.0.0/8, default.
   - field: gateway
     type: text
     label: Gateway
+    help: The next hop: an address, or an interface.
   - field: tunnel_local
     type: text
     label: Tunnel, this end
@@ -46,14 +56,17 @@ fields:
   - field: args
     type: list
     label: Arguments
+    help: Words, a space between them, as the job takes them.
     attribute: names
   - field: packages
     type: list
     label: Packages
+    help: Package names, a space between them; empty for every one installed.
     attribute: names
   - field: set
     type: map
     label: Variables to set
+    help: One NAME=value a line.
     attribute: variables
   - field: unset
     type: list
@@ -74,18 +87,22 @@ fields:
   - field: keepalive
     type: number
     label: Keepalive, seconds
+    help: Seconds between keepalives; empty for none.
   - field: listen_port
     type: number
     label: Port
+    help: A UDP port, 1 to 65535.
   - field: description
     type: text
     label: Description
   - field: mtu
     type: number
     label: MTU
+    help: Bytes; empty for the interface's own.
   - field: fib
     type: number
     label: Routing table
+    help: A routing table, 0 the default (setfib(1)).
   - field: tunnelfib
     type: number
     label: Routing table of the tunnel's outer packets
@@ -107,30 +124,38 @@ fields:
   - field: remove
     type: bool
     label: Remove
+    help: Taken away, rather than added.
   - field: live
     type: bool
     label: Live
+    help: Done in the running system, now.
   - field: persist
     type: bool
     label: Kept for a boot
+    help: Kept in the configuration, so it is there after a reboot.
   - field: safe
     type: bool
     label: Safe, undone unless confirmed
+    help: Undone by itself unless confirmed, in case the host is lost by it.
   - field: recursive
     type: bool
     label: Recursive
   - field: force
     type: bool
     label: Force
+    help: Done even where pkg or the tool would refuse.
   - field: pkg_ip
     type: number
-    label: pkg over IPv4 (4) or IPv6 (6)
+    label: pkg's network
+    help: Which way pkg reaches its repository.
+    choices: 4=IPv4 only (pkg -4)|6=IPv6 only (pkg -6)
   - field: conn
     type: text
     label: Connection
   - field: ipsec_mode
     type: text
     label: Mode
+    help: tunnel wraps whole packets; transport protects the hosts' own.
   - field: pubkey
     type: text
     label: Peer's public key
@@ -191,6 +216,7 @@ fields:
   - field: user
     type: text
     label: User
+    help: A user of the host who signs in.
 
 kinds:
   - kind: jail-action

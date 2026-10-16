@@ -677,10 +677,16 @@ automatically as what another needs, its size and what it is.
 or
 .Fl 6
 has pkg reach the repository over IPv4 or IPv6 only.
-.It Cm pkg-upgrade Oo Fl n Oc Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl j Ar jail Oc Op Ar package ...
+.It Cm pkg-upgrade Oo Fl n Oc Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl j Ar jail | Fl J Oc Op Ar package ...
 .Nm pkg upgrade Fl y
 of the named packages, or of all of them, on the host or in the running
 .Ar jail ;
+with
+.Fl J ,
+in every running jail that has
+.Xr pkg 8 ,
+one after the other by the agent, a jail that fails not stopping the
+others, which the error names;
 .Fl n
 only shows what would be done;
 .Fl O

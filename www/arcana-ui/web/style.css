@@ -4985,3 +4985,31 @@ html:not(.neon) label.button {
 .toast.bad, .notice.bad, .notice.warn, p.error, .err, td.err { cursor: copy; }
 .modal form .checks { display: flex; flex-wrap: wrap; gap: .35rem 1.2rem; margin: .5rem 0; }
 .modal form .checks label.toggle { flex: none; align-items: center; }
+
+/*
+ * A step's field: its label and {x} on a line, its control (a choice, a
+ * box, a number, a jail) or its expression with what can be put in it,
+ * its help under it.  What the step may take besides, folded.
+ */
+.wffields { align-items: start; }
+.wffield { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+.wflabel { display: flex; align-items: center; gap: .4rem; font-size: .74rem; color: var(--fg-2); }
+.wflabel em { font-style: normal; color: var(--amber); font-size: .7rem; }
+.wflabel .wfexpr { margin-left: auto; min-height: 0; padding: 0 .35rem; font-family: var(--mono); font-size: .7rem; line-height: 1.5; color: var(--dim); background: transparent; border: 1px solid var(--line-2); border-radius: 4px; text-transform: none; letter-spacing: 0; }
+.wflabel .wfexpr.on { color: var(--violet); border-color: var(--violet); }
+.wffield input[data-arg^="text:"]:has(+ .wfvar) { font-family: var(--mono); color: var(--violet); }
+.wffield select.wfvar { font-size: .74rem; color: var(--fg-2); }
+.wffield small.help { color: var(--dim); font-size: .7rem; line-height: 1.35; }
+.wffield label.toggle { display: inline-flex; flex-direction: row; align-items: center; gap: .4rem; font-size: .8rem; }
+details.wfmore { border-top: 1px dashed var(--line); padding-top: .35rem; }
+details.wfmore > summary { cursor: pointer; font-size: .76rem; color: var(--fg-2); }
+details.wfmore[open] > summary { margin-bottom: .45rem; }
+
+/* In the narrow panel beside the drawing: the step's name a line of its
+ * own, its id and what it is beside each other under it. */
+.wfpanel .wfedhead { grid-template-columns: 1.6rem minmax(0, 1fr) minmax(0, 1fr) auto; }
+.wfpanel .wfedhead > input[data-arg$=".name"] { grid-column: 2 / -1; grid-row: 1; }
+.wfpanel .wfedhead > .num { grid-row: 1; }
+.wfpanel .wfedhead > input[data-arg$=".id"] { grid-column: 2; grid-row: 2; }
+.wfpanel .wfedhead > select { grid-column: 3; grid-row: 2; }
+.wfpanel .wfedhead > .acts { grid-column: 4; grid-row: 2; }
