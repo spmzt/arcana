@@ -2853,7 +2853,11 @@ chain_graph(struct html *h, const ucl_object_t *live,
 			    "marker-end=\"url(#fwarrow)\"/>", x1 + 40, y1 + CH_H,
 			    x1 + 40, y1 + (CH_H + CH_GAP) * 3 / 2);
 	}
-	h_raw(h, "</svg></div>");
+	h_raw(h, "</svg><ul class=\"glegend\"><li class=\"fw-down\">down the "
+	    "chain, part to part</li><li class=\"fw-call\">call: there and "
+	    "back</li><li class=\"fw-skip\">skipto: there, not back</li><li "
+	    "class=\"box dashed\">a part no rule is in</li><li class=\"fw-rate"
+	    "\"><b>12/s</b> packets a second, now</li></ul></div>");
 }
 
 /* A count in a few characters: 950, 12.4k, 3.1M, 2.0G. */

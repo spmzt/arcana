@@ -2005,6 +2005,12 @@ view_graph(struct html *h)
 	if (n == 0)
 		h_raw(h, "<p class=\"wfhint-empty\">Drag a step here from the "
 		    "left, or click one there.</p>");
+	h_raw(h, "<ul class=\"glegend\"><li class=\"wf-then\">then, the next "
+	    "step</li><li class=\"wf-fail\">when it fails, on to</li><li "
+	    "class=\"wf-port next\">drag to the next</li><li class=\"wf-port "
+	    "fail\">drag to where a failure goes</li><li class=\"box dashed\">"
+	    "the end</li><li class=\"text wf-cond\"><b>only when…</b>a "
+	    "condition</li></ul>");
 	h_raw(h, "</div>");
 }
 
