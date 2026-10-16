@@ -2694,6 +2694,20 @@ tls_sink(const char *name, const char *out, pid_t *pidp)
 	return (port);
 }
 
+/* The relay given time to write what it was told (to QUIT), then ended. */
+static void
+tls_sink_end(pid_t pid, const char *out)
+{
+	char	cmd[128];
+	int	i;
+
+	snprintf(cmd, sizeof(cmd), "grep -q '^QUIT' %s", out);
+	for (i = 0; i < 50 && system(cmd) != 0; i++)
+		usleep(100000);
+	(void)kill(-pid, SIGTERM);
+	(void)waitpid(pid, NULL, 0);
+}
+
 CONSOLE_TC(mail_tls, "Mail to an SMTP relay over TLS: its certificate "
     "checked against the CAs and its name or address, the password sent "
     "only then")
@@ -2727,8 +2741,7 @@ ATF_TC_BODY(mail_tls, tc)
 	http("POST", "/api/settings/mail-test", "{}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	(void)kill(-sink, SIGTERM);
-	(void)waitpid(sink, NULL, 0);
+	tls_sink_end(sink, "tls1.out");
 	/* "\0arcana\0hunter2", base64. */
 	ATF_CHECK(system("grep -q '^EHLO ' tls1.out && grep -q '^AUTH PLAIN "
 	    "AGFyY2FuYQBodW50ZXIy' tls1.out && grep -q '^RCPT TO:<ops@example."
@@ -2745,8 +2758,7 @@ ATF_TC_BODY(mail_tls, tc)
 	http("POST", "/api/settings/mail-test", "{}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	(void)kill(-sink, SIGTERM);
-	(void)waitpid(sink, NULL, 0);
+	tls_sink_end(sink, "tls2.out");
 	ATF_CHECK(system("grep -q '^RCPT TO:<ops@example.org>' tls2.out") ==
 	    0);
 	/* A certificate no CA of the console's signed: nothing is said

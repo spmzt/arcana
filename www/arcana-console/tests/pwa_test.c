@@ -3071,8 +3071,9 @@ part_storage(void)
 	wait_js("document.querySelector('button[data-act=st-pool-import]')", 20);
 	run("document.querySelector('button[data-act=st-pool-import]')."
 	    "click()");
+	/* Read once the jobs before it are through: as long as they take. */
 	wait_js("document.querySelector('.modal li[data-act=st-import]"
-	    "[data-arg=spare]')", 10);
+	    "[data-arg=spare]')", 30);
 	shot("7j-storage-import");
 	run("document.querySelector('.modal li[data-act=st-import]').click()");
 	click_when("button[data-act=queue-run]", 5);
