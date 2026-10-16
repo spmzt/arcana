@@ -162,6 +162,7 @@ enum node {
 	NODE_WORKFLOWS,		/* chains of steps, run on several hosts */
 	NODE_SDWAN,		/* SD-WAN services, as MEF 70.2 says them */
 	NODE_TROUBLE,		/* a packet followed, and what stops it */
+	NODE_SECURITY,		/* the luxuria plugins that guard a host */
 	NODE_SETTINGS,		/* the console's settings, a tab each */
 	NODE_DEVICES,		/* the hosts as a table */
 };
@@ -862,6 +863,14 @@ void		 sdwan_open(void);
 void		 sdwan_tick(double);
 void		 view_sdwan(struct html *);
 bool		 sdwan_action(const char *, const char *, const char *);
+/* secpage.c: the Security page. */
+void		 view_secpage(struct html *);
+bool		 secpage_form(const char *, const ucl_object_t *);
+bool		 secpage_action(const char *, const char *, const char *);
+void		 secpage_loc(char *, size_t);
+void		 secpage_open(const char *);
+void		 secpage_tick(double);
+
 /* trouble.c: the Troubleshoot page. */
 void		 view_trouble(struct html *);
 bool		 trouble_form(const char *, const ucl_object_t *);

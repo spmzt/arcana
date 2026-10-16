@@ -43,6 +43,10 @@
 #include "agent.h"
 
 #define	IDS_FILE	"sdwan-ids.json"
+/* The Security section's own, apart: named sec-, kept in a file of
+ * their own, neither group's list stopping the other's. */
+#define	SEC_FILE	"security-ids.json"
+#define	IS_SEC(name)	(strncmp((name), "sec-", 4) == 0)
 #define	INSTANCES_MAX	64
 #define	IFS_MAX		16
 #define	CONF_MAX	(256 * 1024)
@@ -487,8 +491,8 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 	struct execres		 res;
 	char			*argv[6], *conf, *was;
 	const char		*rules, *e;
-	int			 n, i, k, step;
-	bool			 ok, same;
+	int			 n, i, k, step, nkeep;
+	bool			 ok, same, sec;
 
 	if ((top = parse(json)) == NULL || ucl_object_type(top) != UCL_OBJECT) {
 		if (top != NULL)
@@ -497,6 +501,9 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		    "its interfaces, its conf and its rules";
 		return (-1);
 	}
+	sec = ucl_object_lookup(top, "group") != NULL && strcmp(
+	    ucl_object_tostring_forced(ucl_object_lookup(top, "group")),
+	    "security") == 0;
 	memset(ni, 0, sizeof(ni));
 	n = 0;
 	it = NULL;
@@ -519,6 +526,12 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		}
 		snprintf(ni[n].name, sizeof(ni[n].name), "%s",
 		    ucl_object_tostring(v));
+		if (IS_SEC(ni[n].name) != sec) {
+			ucl_object_unref(top);
+			*errp = wfmt(w, "instance %s: the Security section's are "
+			    "named sec-, SD-WAN's not", ni[n].name);
+			return (-1);
+		}
 		if ((f = ucl_object_lookup(in, "divert")) != NULL) {
 			if (ucl_object_type(f) != UCL_INT || ucl_object_toint(f) <
 			    1 || ucl_object_toint(f) > 65535) {
@@ -563,8 +576,11 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		return (-1);
 	}
 	pthread_mutex_lock(&lock);
-	/* Those not named any more: stopped, their files gone. */
+	/* Those not named any more: stopped, their files gone; the other
+	 * group's are not this list's. */
 	for (i = 0; i < ninstances; i++) {
+		if (IS_SEC(instances[i].name) != sec)
+			continue;
 		for (k = 0; k < n; k++)
 			if (strcmp(ni[k].name, instances[i].name) == 0)
 				break;
@@ -662,10 +678,19 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 						    "Suricata %s detects now, "
 						    "nothing diverted", ni[k].name);
 				}
-		for (i = 0; i < ninstances; i++)
-			alerts_free(&instances[i]);
-		memcpy(instances, ni, sizeof(*ni) * (size_t)n);
-		ninstances = n;
+		/* The other group's kept as they are, this group's
+		 * replaced by the list. */
+		nkeep = 0;
+		for (i = 0; i < ninstances; i++) {
+			if (IS_SEC(instances[i].name) != sec)
+				instances[nkeep++] = instances[i];
+			else
+				alerts_free(&instances[i]);
+		}
+		if (nkeep + n > INSTANCES_MAX)
+			n = INSTANCES_MAX - nkeep;
+		memcpy(instances + nkeep, ni, sizeof(*ni) * (size_t)n);
+		ninstances = nkeep + n;
 	}
 	if (!reading && ninstances > 0) {
 		pthread_t	tid;
@@ -680,8 +705,8 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 	if (!ok)
 		return (-1);
 	e = NULL;
-	if (sdwan_conf_write(IDS_FILE, json, &e) != 0) {
-		*errp = wfmt(w, "%s: %s", IDS_FILE, e);
+	if (sdwan_conf_write(sec ? SEC_FILE : IDS_FILE, json, &e) != 0) {
+		*errp = wfmt(w, "%s: %s", sec ? SEC_FILE : IDS_FILE, e);
 		return (-1);
 	}
 	return (0);
@@ -700,6 +725,12 @@ sdwan_ids_start(void)
 		e = NULL;
 		if (do_sdwan_ids(&w, json, &e) != 0)
 			logmsg(LOG_WARNING, "sdwan ids: %s", e);
+		free(json);
+	}
+	if ((json = sdwan_kept_read(SEC_FILE)) != NULL) {
+		e = NULL;
+		if (do_sdwan_ids(&w, json, &e) != 0)
+			logmsg(LOG_WARNING, "security ids: %s", e);
 		free(json);
 	}
 	work_free(&w);
@@ -742,8 +773,12 @@ sdwan_ids_json(struct work *w, ucl_object_t *top)
 				ucl_array_append(al, a);
 		}
 		ucl_object_insert_key(o, al, "alerts", 0, false);
+		ucl_object_insert_key(o, ucl_object_fromstring(IS_SEC(
+		    instances[i].name) ? "security" : "sdwan"), "group", 0,
+		    false);
 		ucl_array_append(arr, o);
 	}
 	pthread_mutex_unlock(&lock);
 	ucl_object_insert_key(top, arr, "ids", 0, false);
+	security_specs(SEC_FILE, top, "security_ids");
 }

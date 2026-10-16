@@ -29,6 +29,8 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
@@ -42,6 +44,14 @@
 #include "agent.h"
 
 #define	PROXY_FILE	"sdwan-proxy.json"
+/* The Security section's own, apart: named sec-, kept in a file of
+ * their own, neither group's list stopping the other's. */
+#define	SEC_FILE	"security-proxy.json"
+#define	SEC_PREFIX	"sec-"
+#define	IS_SEC(name)	(strncmp((name), SEC_PREFIX, 4) == 0)
+/* Where freshclam keeps ClamAV's signatures, and its pid (the port's). */
+#define	CLAMAV_DB	"/var/db/clamav"
+#define	FRESHCLAM_PID	"/var/run/clamav/freshclam.pid"
 #define	INSTANCES_MAX	64
 #define	CONF_MAX	(256 * 1024)
 #define	DENY_MAX	(8 * 1024 * 1024)
@@ -533,7 +543,8 @@ parse(const char *json)
 
 /*
  * The instances applied: {"instances": [{"name", "fib", "mode", "conf",
- * "deny"}, ...]}.  Squid must be there (a plugin); each instance's CA
+ * "deny"}, ...]}, of SD-WAN; with "group": "security", of the Security
+ * section, each named sec-, those of the other group left as they are.  Squid must be there (a plugin); each instance's CA
  * is made once; its file, the places filled, is checked by squid -k
  * parse before it is made the instance's; a running one is told to
  * reconfigure, one not yet is started in its table; those not named
@@ -549,8 +560,8 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 	struct execres		 res;
 	char			*argv[6], *text;
 	const char		*conf, *deny, *mode, *e;
-	int			 n, i, k, step;
-	bool			 was, ok;
+	int			 n, i, k, step, nkeep;
+	bool			 was, ok, sec;
 
 	if ((top = parse(json)) == NULL || ucl_object_type(top) != UCL_OBJECT) {
 		if (top != NULL)
@@ -559,6 +570,9 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 		    "a fib, a mode, its conf and its deny";
 		return (-1);
 	}
+	sec = ucl_object_lookup(top, "group") != NULL && strcmp(
+	    ucl_object_tostring_forced(ucl_object_lookup(top, "group")),
+	    "security") == 0;
 	n = 0;
 	it = NULL;
 	while ((in = ucl_object_iterate(ucl_object_lookup(top, "instances"),
@@ -589,6 +603,13 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 				    ni[i].name);
 				return (-1);
 			}
+		if (IS_SEC(ucl_object_tostring(v)) != sec) {
+			ucl_object_unref(top);
+			*errp = wfmt(w, "instance %s: the Security section's are "
+			    "named " SEC_PREFIX ", SD-WAN's not",
+			    ucl_object_tostring(v));
+			return (-1);
+		}
 		snprintf(ni[n].name, sizeof(ni[n].name), "%s",
 		    ucl_object_tostring(v));
 		snprintf(ni[n].mode, sizeof(ni[n].mode), "%s", mode);
@@ -617,6 +638,9 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 		}
 	pthread_mutex_lock(&lock);
 	for (i = 0; i < ninstances; i++) {
+		/* The other group's are not this list's to stop. */
+		if (IS_SEC(instances[i].name) != sec)
+			continue;
 		for (k = 0; k < n; k++)
 			if (strcmp(ni[k].name, instances[i].name) == 0)
 				break;
@@ -692,16 +716,23 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 		step_end(w, step, true, NULL);
 	}
 	if (ok) {
-		memcpy(instances, ni, sizeof(*ni) * (size_t)n);
-		ninstances = n;
+		/* The other group's kept, then this list's. */
+		nkeep = 0;
+		for (i = 0; i < ninstances; i++)
+			if (IS_SEC(instances[i].name) != sec)
+				instances[nkeep++] = instances[i];
+		if (nkeep + n > INSTANCES_MAX)
+			n = INSTANCES_MAX - nkeep;
+		memcpy(instances + nkeep, ni, sizeof(*ni) * (size_t)n);
+		ninstances = nkeep + n;
 	}
 	pthread_mutex_unlock(&lock);
 	ucl_object_unref(top);
 	if (!ok)
 		return (-1);
 	e = NULL;
-	if (sdwan_conf_write(PROXY_FILE, json, &e) != 0) {
-		*errp = wfmt(w, "%s: %s", PROXY_FILE, e);
+	if (sdwan_conf_write(sec ? SEC_FILE : PROXY_FILE, json, &e) != 0) {
+		*errp = wfmt(w, "%s: %s", sec ? SEC_FILE : PROXY_FILE, e);
 		return (-1);
 	}
 	return (0);
@@ -722,7 +753,113 @@ sdwan_proxy_start(void)
 			logmsg(LOG_WARNING, "sdwan proxy: %s", e);
 		free(json);
 	}
+	if ((json = sdwan_kept_read(SEC_FILE)) != NULL) {
+		e = NULL;
+		if (do_sdwan_proxy(&w, json, &e) != 0)
+			logmsg(LOG_WARNING, "security proxy: %s", e);
+		free(json);
+	}
 	work_free(&w);
+}
+
+/*
+ * What the Security section asked for of a kind, kept with what was
+ * applied: each instance's "spec", the form's own words, for its page
+ * to show and change (not the configurations made of them), as key.
+ */
+void
+security_specs(const char *file, ucl_object_t *top, const char *key)
+{
+	const ucl_object_t	*in;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*kept, *arr;
+	char			*json;
+
+	if ((json = sdwan_kept_read(file)) == NULL)
+		return;
+	kept = parse(json);
+	free(json);
+	if (kept == NULL)
+		return;
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((in = ucl_object_iterate(ucl_object_lookup(kept, "instances"),
+	    &it, true)) != NULL)
+		if (ucl_object_lookup(in, "spec") != NULL)
+			ucl_array_append(arr, ucl_object_copy(ucl_object_lookup(
+			    in, "spec")));
+	ucl_object_unref(kept);
+	ucl_object_insert_key(top, arr, key, 0, false);
+}
+
+/*
+ * ClamAV's signatures as freshclam left them: each database's version,
+ * signatures and when it was built, read from the head of its file
+ * ("ClamAV-VDB:time:version:signatures:level:..."), and whether
+ * freshclam runs.  Nothing when there is no database.
+ */
+static void
+clamav_json(ucl_object_t *top)
+{
+	static const char *const dbs[] = { "main", "daily", "bytecode" };
+	ucl_object_t	*o, *arr, *d;
+	char		 head[513], path[PATH_MAX], *f[6], *p;
+	size_t		 i, k;
+	ssize_t		 n;
+	int		 fd;
+	FILE		*pf;
+	long		 pid;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < nitems(dbs); i++) {
+		snprintf(path, sizeof(path), "%s/%s.cvd", CLAMAV_DB, dbs[i]);
+		if ((fd = open(path, O_RDONLY | O_CLOEXEC)) == -1) {
+			snprintf(path, sizeof(path), "%s/%s.cld", CLAMAV_DB,
+			    dbs[i]);
+			if ((fd = open(path, O_RDONLY | O_CLOEXEC)) == -1)
+				continue;
+		}
+		n = read(fd, head, sizeof(head) - 1);
+		close(fd);
+		if (n <= 0)
+			continue;
+		head[n] = '\0';
+		if (strncmp(head, "ClamAV-VDB:", 11) != 0)
+			continue;
+		head[strcspn(head, "\n")] = '\0';
+		p = head;
+		for (k = 0; k < nitems(f); k++)
+			f[k] = strsep(&p, ":");
+		if (f[3] == NULL)
+			continue;
+		d = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(d, ucl_object_fromstring(dbs[i]), "name",
+		    0, false);
+		ucl_object_insert_key(d, ucl_object_fromstring(path), "file", 0,
+		    false);
+		ucl_object_insert_key(d, ucl_object_fromstring(f[1]), "built", 0,
+		    false);
+		ucl_object_insert_key(d, ucl_object_fromint(strtol(f[2], NULL,
+		    10)), "version", 0, false);
+		ucl_object_insert_key(d, ucl_object_fromint(strtol(f[3], NULL,
+		    10)), "signatures", 0, false);
+		ucl_array_append(arr, d);
+	}
+	if (ucl_array_size(arr) == 0 && access(CLAMAV_DB, F_OK) != 0) {
+		ucl_object_unref(arr);
+		return;
+	}
+	o = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(o, arr, "databases", 0, false);
+	pid = 0;
+	if ((pf = fopen(FRESHCLAM_PID, "re")) != NULL) {
+		if (fscanf(pf, "%ld", &pid) != 1)
+			pid = 0;
+		fclose(pf);
+	}
+	ucl_object_insert_key(o, ucl_object_frombool(pid > 0 && kill((pid_t)pid,
+	    0) == 0), "freshclam", 0, false);
+	ucl_object_insert_key(top, o, "clamav", 0, false);
 }
 
 /* The instances as they are, into the sdwan reply: each its name, fib,
@@ -753,8 +890,13 @@ sdwan_proxy_json(struct work *w, ucl_object_t *top)
 		    NULL)
 			ucl_object_insert_key(o, ucl_object_fromstring(ca), "ca", 0,
 			    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(IS_SEC(
+		    instances[i].name) ? "security" : "sdwan"), "group", 0,
+		    false);
 		ucl_array_append(arr, o);
 	}
 	pthread_mutex_unlock(&lock);
 	ucl_object_insert_key(top, arr, "proxy", 0, false);
+	security_specs(SEC_FILE, top, "security_proxy");
+	clamav_json(top);
 }

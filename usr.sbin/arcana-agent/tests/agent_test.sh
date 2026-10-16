@@ -2840,6 +2840,22 @@ EOS
 	test ! -f "$(dirname "$f")/sdwan-icap-sw1.conf" || atf_fail "the c-icap file stayed"
 	kill -0 "$ipid" 2>/dev/null && atf_fail "c-icap still runs"
 	atf_check -o match:'"proxy":\[\]' "$JGC" -c "$SOCK" sdwan
+	# The Security section's own (group security, named sec-): kept
+	# apart, neither list stopping the other's; its forms told back.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\n","deny":""}]}'
+	atf_check -s exit:1 -e match:'named sec-' -o ignore "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"group":"security","instances":[{"name":"web","fib":0,"mode":"sni","conf":"pid_filename @PID@\n","deny":""}]}'
+	atf_check -s exit:1 -e match:'named sec-' -o ignore "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sec-web","fib":0,"mode":"sni","conf":"pid_filename @PID@\n","deny":""}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"group":"security","instances":[{"name":"sec-web","fib":0,"mode":"sni","conf":"pid_filename @PID@\n","deny":"","spec":{"name":"sec-web","listen":["10.1.0.1"]}}]}'
+	atf_check -o match:'"name":"sw1",[^]]*"group":"sdwan"' -o match:'"name":"sec-web",[^]]*"group":"security"' \
+	    -o match:'"security_proxy":\[\{"name":"sec-web","listen":\["10.1.0.1"\]\}\]' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"instances":[]}'
+	atf_check -o match:'"proxy":\[\{"name":"sec-web"' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"group":"security","instances":[]}'
+	atf_check -o match:'"proxy":\[\]' -o match:'"security_proxy":\[\]' "$JGC" -c "$SOCK" sdwan
 	# Intrusion detection (SASE-4): Suricata of each instance checked,
 	# started on its interfaces, its alerts read into events and the
 	# read; the same files again leave it be; gone with the instance.
@@ -2893,7 +2909,16 @@ EOS
 	sleep 2
 	atf_check -o match:'"alerts_seen":1,' "$JGC" -c "$SOCK" sdwan
 	atf_check -o inline:'4\n' sh -c "grep -c '\"event_type\":\"alert\"' '$(dirname "$f")/sdwan-ids-sw1.d/eve.json'"
+	# The Security section's Suricata beside SD-WAN's: each list its
+	# own, what was read of the other's kept.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids \
+	    '{"group":"security","instances":[{"name":"sec-lan","interfaces":["wg5"],"conf":"default-log-dir: @LOGDIR@\nrule-files:\n  - @RULES@\n","spec":{"name":"sec-lan"}}]}'
+	atf_check -o match:'"ids":\[\{"name":"sw1",.*"alerts_seen":1,.*\{"name":"sec-lan",' \
+	    -o match:'"security_ids":\[\{"name":"sec-lan"\}\]' "$JGC" -c "$SOCK" sdwan
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
+	atf_check -o match:'"ids":\[\{"name":"sec-lan"' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"group":"security","instances":[]}'
+	atf_check -o match:'"ids":\[\]' "$JGC" -c "$SOCK" sdwan
 }
 sdwan_cleanup()
 {

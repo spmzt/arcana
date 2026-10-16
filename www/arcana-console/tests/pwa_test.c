@@ -6075,12 +6075,90 @@ part_trouble(void)
 	    "includes('\\nhops:\\n')", 10);
 }
 
+/*
+ * The Security page: a host chosen; a URL filter made by its form (the
+ * stand-in Squid takes it), shown running with its CA where TLS is
+ * opened; scanning for malware listed on its tab; Suricata made the
+ * same way; each removed after asking.
+ */
+static void
+part_security(void)
+{
+
+	click_when("li.secnode[data-act=select-security]", 10);
+	wait_js("location.hash.startsWith('#/security/url') && document."
+	    "querySelector('select[data-input=sec-host]')", 10);
+	run("const s = document.querySelector('select[data-input=sec-host]'); "
+	    "s.value = s.options[s.options.length - 1].value; s.dispatchEvent("
+	    "new Event('input', { bubbles: true }))");
+	wait_js("document.querySelector('.secpage .empty') && document."
+	    "querySelector('button[data-act=sec-new]')", 20);
+	click_when("button[data-act=sec-new]", 10);
+	wait_js("document.querySelector('form[data-form=sec-proxy]')", 10);
+	run("const f = document.querySelector('form[data-form=sec-proxy]'); "
+	    "f.listen.value = '127.0.0.1'; f.allow.value = '10.0.0.0/8, "
+	    "192.168.0.0/16'; f.deny.value = 'bad.example\\nworse.example'; "
+	    "f.mode.value = 'inspect'; f.malware.checked = true; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('table.secproxy') && document."
+	    "querySelector('table.secproxy td b').textContent === 'sec-web' "
+	    "&& document.querySelector('table.secproxy').textContent."
+	    "includes('inspected') && !document.querySelector("
+	    "'form[data-form=sec-proxy]')", 30);
+	wait_js("document.querySelector('table.secproxy .chip.st-up') && "
+	    "document.querySelector('table.secproxy details pre.cert')", 30);
+	shot("9u-security-url");
+	/* Its form again, as it was saved. */
+	click_when("table.secproxy button[data-act=sec-edit]", 10);
+	wait_js("document.querySelector('form[data-form=sec-proxy]') && "
+	    "document.querySelector('form[data-form=sec-proxy]').deny.value "
+	    "=== 'bad.example\\nworse.example' && document.querySelector("
+	    "'form[data-form=sec-proxy]').allow.value === '10.0.0.0/8, "
+	    "192.168.0.0/16'", 10);
+	click_when("form[data-form=sec-proxy] button[data-act=sec-cancel]", 10);
+	click_when("button[data-act=sec-tab][data-arg=malware]", 10);
+	wait_js("location.hash.startsWith('#/security/malware/') && document."
+	    "querySelector('table.secproxy button[data-act=sec-unscan]')", 10);
+	click_when("button[data-act=sec-tab][data-arg=signatures]", 10);
+	wait_js("document.querySelector('.secpage .empty') || document."
+	    "querySelector('table.secsigs')", 10);
+	/* Suricata: refused with neither rules nor the ruleset; made. */
+	click_when("button[data-act=sec-tab][data-arg=ids]", 10);
+	click_when("button[data-act=sec-new]", 10);
+	wait_js("document.querySelector('form[data-form=sec-ids]')", 10);
+	run("const f = document.querySelector('form[data-form=sec-ids]'); "
+	    "f.interfaces.value = 'lo0'; f.ruleset.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => t."
+	    "textContent.includes('suricata-update'))", 20);
+	run("const f = document.querySelector('form[data-form=sec-ids]'); "
+	    "f.rules.value = 'alert tcp any any -> any 23 (sid:1000009;)'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('table.secids') && document."
+	    "querySelector('table.secids').textContent.includes('lo0') && "
+	    "document.querySelector('table.secids').textContent.includes("
+	    "'detects')", 30);
+	shot("9v-security-ids");
+	/* Removed, after asking. */
+	click_when("table.secids button[data-act=sec-remove]", 10);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("!document.querySelector('table.secids') && document."
+	    "querySelector('.secpage .empty')", 30);
+	click_when("button[data-act=sec-tab][data-arg=url]", 10);
+	click_when("table.secproxy button[data-act=sec-remove]", 10);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("!document.querySelector('table.secproxy')", 30);
+}
+
 ATF_TC_BODY(pwa_flows, tc)
 {
 
 	prologue(tc, 2);
 	part_flows();
 	part_trouble();
+	part_security();
 }
 ATF_TC_CLEANUP(pwa_flows, tc)
 {

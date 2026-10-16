@@ -5050,3 +5050,21 @@ details.wfmore[open] > summary { margin-bottom: .45rem; }
 .glegend .sd-t.down::before { border-color: var(--red); }
 .glegend .sd-t.backup::before { border-top: 3px dashed var(--line-2); }
 .glegend .ecmp-w::before { border-top: 1px dashed var(--fg); }
+/* The Security page: a host, its plugins a tab each. */
+.secpage .sechead { display: flex; align-items: center; gap: .8rem; margin-bottom: .6rem; }
+.secpage .secpick { display: inline-flex; align-items: center; gap: .5rem; font-size: .85rem; color: var(--fg-2); }
+.secpage p.lead { color: var(--fg-2); font-size: .85rem; max-width: 60rem; margin: .6rem 0; }
+.secform { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: .6rem .9rem; align-items: start; border: 1px solid var(--line); border-radius: 8px; padding: .8rem 1rem; margin: .6rem 0 1rem; background: var(--panel); }
+.secform h4, .secform details, .secform .actions { grid-column: 1 / -1; margin: 0; }
+.secform label { display: flex; flex-direction: column; gap: .3rem; min-width: 0; font-size: .8rem; color: var(--fg-2); }
+.secform label.check { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.secform label.check small.help { flex-basis: 100%; }
+.secform small.help { color: var(--dim); font-size: .7rem; line-height: 1.35; }
+.secform textarea { font-family: var(--mono); font-size: .78rem; }
+.secform details label { margin-top: .4rem; }
+.secform .actions { display: flex; justify-content: flex-end; gap: .5rem; }
+table.net td.acts { white-space: nowrap; text-align: right; }
+table.net td.acts button + button { margin-left: .3rem; }
+ul.secalerts { list-style: none; margin: 0; padding: 0; font-size: .78rem; display: grid; gap: .2rem; }
+pre.cert { font-size: .7rem; max-height: 14rem; overflow: auto; user-select: all; }
+.secform label.check input { width: auto; flex: none; margin: 0; }

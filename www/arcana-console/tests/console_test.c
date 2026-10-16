@@ -5767,6 +5767,72 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"local\",\"%s\",\"remote\",\"10.99.0.1\"]", laddr);
 	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
 	resp_free(&r);
+
+	/* The Security page's own: a form not right refused; one made into
+	 * Squid's and c-icap's files beside SD-WAN's, its form told back;
+	 * Suricata's the same; [] stops them. */
+	snprintf(t2, sizeof(t2), "/api/servers/%s/security", sa);
+	http("POST", t2, "{\"what\":\"proxy\",\"instances\":[{\"name\":"
+	    "\"web\",\"listen\":[\"10.1.0.1\"],\"allow\":[\"10.1.0.0/24\"]}]}",
+	    &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "sec-") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"proxy\",\"instances\":[{\"name\":"
+	    "\"sec-web\",\"listen\":[\"10.1.0.1\"],\"allow\":[\"10.1.0.0/x\"]}]}",
+	    &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "allow") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"proxy\",\"instances\":[{\"name\":"
+	    "\"sec-web\",\"listen\":[\"10.1.0.1\",\"2001:db8::1\"],\"allow\":"
+	    "[\"10.1.0.0/24\"],\"deny\":[\".bad.example\",\"worse.example\"],"
+	    "\"malware\":true}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"ok\":true") != NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^http_port 10.1.0.1:3128 ssl-bump tls-cert=' "
+	    "sdwan-proxy-sec-web.conf && grep -q '^http_port \\[2001:db8::1\\]:"
+	    "3128 ' sdwan-proxy-sec-web.conf && grep -q '^acl localnet src "
+	    "10.1.0.0/24$' sdwan-proxy-sec-web.conf && grep -q 'icap://"
+	    "127.0.0.1:1345/avscan' sdwan-proxy-sec-web.conf && grep -q "
+	    "'^ssl_bump splice all$' sdwan-proxy-sec-web.conf") == 0);
+	ATF_CHECK(system("grep -qx '.bad.example' sdwan-proxy-sec-web.deny && "
+	    "grep -qx '.worse.example' sdwan-proxy-sec-web.deny") == 0);
+	ATF_CHECK(system("grep -q '^Port 127.0.0.1:1345$' "
+	    "sdwan-icap-sec-web.conf") == 0);
+	snprintf(t1, sizeof(t1), "/api/servers/%s/sdwan", sa);
+	http("GET", t1, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "data.security_proxy.0.name") != NULL && strcmp(jstr(
+	    &r, "data.security_proxy.0.name"), "sec-web") == 0 && strstr(r.body,
+	    "\"name\":\"sw1\"") != NULL && strstr(r.body, "\"group\":"
+	    "\"security\"") != NULL && strstr(r.body, "acl localnet") == NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"]}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "ruleset") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"rules\":\"alert tcp any any "
+	    "-> any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"ok\":true") != NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^  - interface: lo0$' sdwan-ids-sec-lan.yaml "
+	    "&& grep -q 'HOME_NET: \"\\[10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'"
+	    " sdwan-ids-sec-lan.yaml && grep -q 'sid:1000009' "
+	    "sdwan-ids-sec-lan.rules") == 0);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"proxy\",\"instances\":[]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(access("sdwan-proxy-sec-web.conf", F_OK) != 0);
+	ATF_CHECK(access("sdwan-proxy-sw1.conf", F_OK) == 0);
 }
 
 ATF_TP_ADD_TCS(tp)
