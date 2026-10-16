@@ -5076,3 +5076,4 @@ table.sessions .path.inactive { border-color: var(--red); color: var(--red); }
 table.sessions .path.unconfirmed { border-style: dashed; }
 table.sessions .path b { font-weight: 500; color: var(--cyan); }
 .transport ul.listeners .warn { color: var(--amber); }
+.wfpalette li.notify { border-left-color: var(--violet, var(--cyan)); }

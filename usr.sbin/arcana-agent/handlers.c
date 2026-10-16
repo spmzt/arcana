@@ -71,6 +71,7 @@ struct job {
 	char			*unlisten;
 	bool			 listen_keep;
 	char			*sctp_also;	/* transport: "" none */
+	char			*token;		/* notify: zeroed when used */
 };
 
 #define	STOPPING	"not done: arcana-agent is stopping"
@@ -353,6 +354,7 @@ worker(void *arg)
 	struct arc_config_export_rsp cxr;
 	struct arc_config_apply_rsp car;
 	struct arc_path_check_rsp pcr;
+	struct arc_notify_rsp	 ntr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
 	struct arc_sysctl_rsp	 scr2;
@@ -512,6 +514,23 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &irr.trace.v, &irr.trace.n);
 		rc = arc_ipfw_rules_reply(j->req, &irr);
+		break;
+	case ARC_CMD_NOTIFY:
+		what = "notify";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "notify chat %s", j->psrc);
+		memset(&ntr, 0, sizeof(ntr));
+		ntr.has_ok = true;
+		error = NULL;
+		ntr.ok = do_notify(&w, j->token, j->psrc, j->pdst, &error) ==
+		    0;
+		ntr.error = error;
+		/* The token goes as soon as it is used. */
+		explicit_bzero(j->token, strlen(j->token));
+		ok = ntr.ok;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &ntr.trace.v, &ntr.trace.n);
+		rc = arc_notify_reply(j->req, &ntr);
 		break;
 	case ARC_CMD_PATH_CHECK:
 		what = "path-check";
@@ -1298,6 +1317,9 @@ job_free(struct job *j)
 	free((char *)(uintptr_t)j->addr.address);
 	free((char *)(uintptr_t)j->addr.interface);
 	free(j->peer);
+	if (j->token != NULL)
+		explicit_bzero(j->token, strlen(j->token));
+	free(j->token);
 	free(j->bundle);
 	free(j->new_host);
 	free(j->psrc);
@@ -1866,6 +1888,23 @@ arc_path_check_doit(cbl_req *req, const struct arc_path_check_req *rq,
 	j->fib = rq->has_net_fib ? rq->net_fib : 0;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
+	return (start(j));
+}
+
+/* notify: the token, the chat and the text, the job's own copies. */
+int
+arc_notify_doit(cbl_req *req, const struct arc_notify_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_NOTIFY;
+	j->token = xstrdup(rq->notify_token);
+	j->psrc = xstrdup(rq->notify_chat);
+	j->pdst = xstrdup(rq->notify_text);
 	return (start(j));
 }
 

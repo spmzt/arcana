@@ -841,9 +841,11 @@ submit_form(const char *form, const ucl_object_t *f)
 				agent_build(&app.servers[i], jstr(app.build_reply,
 				    "host_keys"), app.build_console);
 	} else if (strcmp(form, "settings") == 0) {
-		save_settings(f, false);
+		save_settings(f, SETG_CONSOLE);
 	} else if (strcmp(form, "settings-mail") == 0) {
-		save_settings(f, true);
+		save_settings(f, SETG_MAIL);
+	} else if (strcmp(form, "settings-telegram") == 0) {
+		save_settings(f, SETG_TELEGRAM);
 	} else if (strcmp(form, "agent-update") == 0) {
 		app.modal = MODAL_NONE;
 		for (i = 0; i < app.nservers; i++) {
@@ -1701,6 +1703,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			notes_load("console", app.version, NULL, false);
 	} else if (strcmp(act, "mail-test") == 0) {
 		mail_test();
+	} else if (strcmp(act, "telegram-test") == 0) {
+		telegram_test();
 	} else if (strcmp(act, "notes-reload") == 0) {
 		notes_load("console", app.version, NULL, true);
 		app.modal_error[0] = '\0';

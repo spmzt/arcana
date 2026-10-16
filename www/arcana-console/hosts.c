@@ -86,6 +86,7 @@ enum op {
 	OP_HISTORY,
 	OP_EVENTS,
 	OP_FW_TRACE,
+	OP_NOTIFY,
 };
 
 struct call {
@@ -135,6 +136,7 @@ struct call {
 	bool			 listen_keep;	/* kept in rc.conf */
 	char			*sctp_also;	/* transport: SCTP's other
 						 * addresses, "" none */
+	char			*chat;		/* notify: where to */
 	char			 logname[129];	/* log: the file */
 	uint64_t		 pos;		/* log: from where; history: after when */
 	bool			 has_pos;
@@ -1214,6 +1216,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
 	    OP_EVENTS ? "arc_events" : c->op == OP_FW_TRACE ? "arc_fw_trace" :
+	    c->op == OP_NOTIFY ? "arc_notify" :
 	    c->op == OP_SYSCTL ? "arc_sysctl" : c->op == OP_STATS ? "arc_stats" : c->op == OP_PACKAGES ? "arc_packages" :
 	    c->op == OP_PKG_UPGRADE ? "arc_pkg_upgrade" :
 	    c->op == OP_JOB_SUBMIT ? "arc_job_submit" : c->op == OP_JOBS ?
@@ -1573,6 +1576,8 @@ call_run(struct kore_task *t)
 	struct arc_config_apply_rsp *car;
 	struct arc_path_check_req pcq;
 	struct arc_path_check_rsp *pcr;
+	struct arc_notify_req	 ntq;
+	struct arc_notify_rsp	*ntr;
 	char			*bundle;
 	struct arc_sysctl_req	 syq;
 	struct arc_sysctl_rsp	*syr;
@@ -1687,6 +1692,7 @@ call_run(struct kore_task *t)
 	cxr = NULL;
 	car = NULL;
 	pcr = NULL;
+	ntr = NULL;
 	bundle = NULL;
 	syr = NULL;
 	prr = NULL;
@@ -2359,6 +2365,19 @@ connected:
 		steps = pcr->trace.v;
 		nsteps = pcr->trace.n;
 		break;
+	case OP_NOTIFY:
+		/* The token is the call's key: zeroed as the call goes. */
+		memset(&ntq, 0, sizeof(ntq));
+		ntq.notify_token = c->key;
+		ntq.notify_chat = c->chat;
+		ntq.notify_text = c->text;
+		if ((error = arc_notify(&cl, &ntq, &ntr)) != 0)
+			goto rpcfail;
+		ok = ntr->ok;
+		put_str(top, "error", ntr->error);
+		steps = ntr->trace.v;
+		nsteps = ntr->trace.n;
+		break;
 	case OP_CONFIG_EXPORT:
 		memset(&cxq, 0, sizeof(cxq));
 		cxq.secrets = c->refresh;
@@ -2940,6 +2959,8 @@ done:
 		arc_config_apply_rsp_free(car);
 	if (pcr != NULL)
 		arc_path_check_rsp_free(pcr);
+	if (ntr != NULL)
+		arc_notify_rsp_free(ntr);
 	free(bundle);
 	if (syr != NULL)
 		arc_sysctl_rsp_free(syr);
@@ -3150,7 +3171,8 @@ call_release(struct call *c)
 	kore_free(c->listen);
 	kore_free(c->unlisten);
 	kore_free(c->sctp_also);
-	c->listen = c->unlisten = c->sctp_also = NULL;
+	kore_free(c->chat);
+	c->listen = c->unlisten = c->sctp_also = c->chat = NULL;
 	kore_free(c->from_uri);
 	kore_free(c->from_peer);
 	c->from_uri = c->from_peer = NULL;
@@ -5051,6 +5073,25 @@ self_call(struct call *c, const char *uri, const char *peer,
 	call_release(c);
 	kore_free(c);
 	return (json);
+}
+
+/*
+ * A Telegram message sent by the host's agent (notify), for the alerts'
+ * thread or a task: the bot's token, the chat, the text.
+ */
+char *
+hosts_notify(const char *uri, const char *peer, const char *name,
+    const char *token, const char *chat, const char *text, int *status)
+{
+	struct call	*c;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_NOTIFY;
+	c->key = kore_strdup(token);
+	c->chat = kore_strdup(chat);
+	c->text = kore_strdup(text);
+	snprintf(c->route, sizeof(c->route), "notify %s", chat);
+	return (self_call(c, uri, peer, name, "notify", status));
 }
 
 /*

@@ -46,6 +46,7 @@ bool		 harness_newer_agent;
 bool		 harness_local_agent;
 /* web.conf's local_agent is the test's own line. */
 bool		 harness_webconf_only_local;
+char		 harness_telegram_api[128];	/* the agent's Bot API, or "" */
 
 extern char	**environ;
 
@@ -187,7 +188,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[108];
+	char	*argv[110];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -1037,6 +1038,12 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[104] = (char *)(uintptr_t)"--bird-watch";
 	argv[105] = (char *)(uintptr_t)"0";
 	argv[106] = NULL;
+	/* Telegram's Bot API: a sink of the test's, or a port nothing
+	 * listens on; never the real one. */
+	argv[106] = (char *)(uintptr_t)"--telegram-api";
+	argv[107] = harness_telegram_api[0] != '\0' ? harness_telegram_api :
+	    (char *)(uintptr_t)"http://127.0.0.1:9";
+	argv[108] = NULL;
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
 	(void)mkdir(rootdir, 0755);
 	{

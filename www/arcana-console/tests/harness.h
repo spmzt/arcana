@@ -35,6 +35,7 @@ extern bool		 harness_other_agent;
 extern bool		 harness_newer_agent;
 extern bool		 harness_local_agent;
 extern bool		 harness_webconf_only_local;
+extern char		 harness_telegram_api[128];
 
 const char	*locate(const atf_tc_t *, const char *, const char *,
 		    const char *);

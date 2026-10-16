@@ -63,6 +63,7 @@
 .Op Fl P Ar pkg
 .Op Fl -bird-watch Ar seconds
 .Op Fl -sctp-also Ar addresses
+.Op Fl -telegram-api Ar url
 .Nm
 .Fl V
 .Sh DESCRIPTION
@@ -287,6 +288,11 @@ An IPv4 listener takes IPv4 addresses, an IPv6 one either.
 What cannot be bound is said with the listener in the transport
 operation, and the addresses are changed there while the agent runs
 .Pq kept in rc.conf as arcana_agent_sctp_also .
+.It Fl -telegram-api Ar url
+Where the Telegram Bot API is, for the notify operation.
+Default
+.Pa https://api.telegram.org ;
+a test's own server otherwise.
 .It Fl -bird-watch Ar seconds
 How often the BIRD of the host, and that of each running jail with a
 network of its own where

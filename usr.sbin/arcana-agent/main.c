@@ -91,6 +91,7 @@ struct opts opts = {
 	.rtsol_bin = PATH_RTSOL_BIN,
 	.setkey_bin = PATH_SETKEY_BIN,
 	.safe_wait = 60,
+	.telegram_api = "https://api.telegram.org",
 	.make_bin = PATH_MAKE_BIN,
 	.keyscan_bin = PATH_KEYSCAN_BIN,
 	.keygen_bin = PATH_KEYGEN_BIN,
@@ -100,7 +101,7 @@ struct opts opts = {
 
 static bool	foreground;
 
-enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO };
+enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
@@ -111,6 +112,8 @@ static const struct option longopts[] = {
 	 * separated by spaces: an association with the console over
 	 * several paths. */
 	{ "sctp-also", required_argument, NULL, OPT_SCTP_ALSO },
+	/* Where the Telegram Bot API is, for notify: a test's own. */
+	{ "telegram-api", required_argument, NULL, OPT_TELEGRAM_API },
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -346,6 +349,9 @@ main(int argc, char *argv[])
 			break;
 		case OPT_SCTP_ALSO:
 			opts.sctp_also = optarg;
+			break;
+		case OPT_TELEGRAM_API:
+			opts.telegram_api = optarg;
 			break;
 		case OPT_BIRD_WATCH:
 			opts.bird_watch_s = (int)strtonum(optarg, 0, 3600, &errstr);

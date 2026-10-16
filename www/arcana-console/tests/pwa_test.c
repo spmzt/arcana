@@ -623,6 +623,25 @@ part_shell(void)
 	    10);
 	ATF_CHECK(system("grep -qx 'To: ops@example.org' mail.out") == 0);
 	shot("0b-mail");
+	/* By Telegram: its own form, its choices chosen, its token kept
+	 * and never shown; the test says why it cannot be sent here. */
+	run("const f = document.querySelector('form[data-form="
+	    "settings-telegram]'); f.telegram_chats.value = '-100'; "
+	    "f.telegram_token.value = '123:abc_DEF'; f.telegram_faults.value "
+	    "= 'Critical'; f.requestSubmit();");
+	for (i = 0; i < 100 && system("grep -q '\"telegram_chats\": *\"-100\"'"
+	    " data/settings.json") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q '\"telegram_faults\": *\"Critical\"' "
+	    "data/settings.json") == 0);
+	wait_js("document.querySelector('form[data-form=settings-telegram]') "
+	    "&& document.querySelector('form[data-form=settings-telegram] "
+	    "select[name=telegram_via]') && !document.body.innerHTML.includes("
+	    "'abc_DEF')", 10);
+	run("document.querySelector('button[data-act=telegram-test]')."
+	    "click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('No message sent'))", 20);
 	/*
 	 * What is typed in a field stays there when the page is drawn
 	 * again under it: the key's path typed first is still there when
@@ -4657,6 +4676,22 @@ part_flows(void)
 	wait_js("document.querySelectorAll('svg.wfdraw g.wfnode.read').length "
 	    "=== 1 && document.querySelector('.wfpanel select[data-input="
 	    "wf-type][data-arg=\"1\"]')?.value === 'read:hello'", 5);
+	/* The read made a message instead: how it goes, and its text,
+	 * said on the drawing; and back. */
+	run("setf('.wfpanel select[data-input=wf-type][data-arg=\"1\"]', "
+	    "'notify')");
+	wait_js("document.querySelector('.wfpanel select[data-arg=\"text:"
+	    "steps.1.notify.via\"]') && document.querySelector('svg.wfdraw "
+	    "g.wfnode.notify')", 5);
+	run("setf('input[data-arg=\"text:steps.1.notify.text\"]', "
+	    "'${host.name} is ready')");
+	wait_js("document.querySelector('svg.wfdraw g.wfnode.notify')."
+	    "textContent.includes('tell: ${host.name} is ready')", 5);
+	run("setf('.wfpanel select[data-input=wf-type][data-arg=\"1\"]', "
+	    "'read:hello')");
+	wait_js("document.querySelectorAll('svg.wfdraw g.wfnode.read').length "
+	    "=== 1 && !document.querySelector('svg.wfdraw g.wfnode.notify')",
+	    5);
 	/*
 	 * Steps dragged to another place in the drawing: the read put
 	 * first, and back again.

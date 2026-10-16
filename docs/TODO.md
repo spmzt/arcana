@@ -756,6 +756,15 @@
   over the Bot API's HTTPS).  A workflow step sends one too: the
   workflow menu has "notify" by mail or Telegram among its steps.
   Not started.
+  Done 2026-10-16: mail and Telegram each a way with its own filters
+  (faults by severity, limits, jobs, runs), mail.c's watcher holding
+  and sending on both, twenty an hour each; Telegram by an agent's
+  luxuria/telegram.c (the notify operation, fetch(3) to the Bot API,
+  the token in no trace or log), the host Settings name or the one
+  beside the console; Settings, Notifications, By Telegram with a test;
+  a workflow's notify step (via mail, telegram or all, ${...} in its
+  text).  Not tried against the real Bot API: a sink in the tests.
+
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
     sees and changes which hosts and services.

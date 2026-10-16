@@ -1102,6 +1102,25 @@ attribute-sets:
           has a path by each.
         checks:
           max-len: 512
+      - name: notify-token
+        type: text
+        doc: |
+          For notify, the Telegram bot's token, as BotFather gave it:
+          used for this message, neither kept nor logged nor traced.
+        checks:
+          max-len: 128
+      - name: notify-chat
+        type: text
+        doc: |
+          For notify, the chat the message goes to: a number (a user,
+          a group, negative), or @ and a channel's name.
+        checks:
+          max-len: 64
+      - name: notify-text
+        type: text
+        doc: For notify, the message.
+        checks:
+          max-len: 4096
 
 
   - name: host
@@ -3311,6 +3330,31 @@ operations:
           - ok
           - error
           - json
+          - trace
+
+  - name: notify
+    attribute-set: arcana
+    auth: true
+    doc: |
+      A message sent to a Telegram chat by a bot, over the Bot API's
+      HTTPS (sendMessage, by fetch(3), the server's certificate checked
+      against the host's CAs): the console's alerts and a workflow's
+      notify step, sent from a host that reaches the world outside.
+      The token is not kept; the trace names the chat, not the token.
+    do:
+      request:
+        attributes:
+          - notify-token
+          - notify-chat
+          - notify-text
+        required:
+          - notify-token
+          - notify-chat
+          - notify-text
+      reply:
+        attributes:
+          - ok
+          - error
           - trace
 
 mcast-groups:

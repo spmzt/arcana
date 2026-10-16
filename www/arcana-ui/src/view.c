@@ -1380,7 +1380,7 @@ set_look(struct html *h)
 	    "in this browser</em></span></label>", app.fx ? " checked" : "");
 }
 
-static void	settings_fields(struct html *, bool);
+static void	settings_fields(struct html *, int);
 
 static void
 set_notify(struct html *h)
@@ -1434,10 +1434,24 @@ set_notify(struct html *h)
 	    "workflow runs, mailed whether or not a page is open: the console "
 	    "reads each host's events, and its host's <code>sendmail(8)</code> "
 	    "sends them, twenty mails an hour at most.</p>");
-	settings_fields(h, true);
+	settings_fields(h, SETG_MAIL);
 	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
 	    "</button> <button type=\"button\" class=\"ghost\" data-act=\""
 	    "mail-test\"%s>Send a test mail</button></div></form>",
+	    app.modal_busy ? " disabled" : "", app.modal_busy ? " disabled" :
+	    "");
+	/* By Telegram: the same, to chats, by a bot, from a host. */
+	h_raw(h, "<h3>By Telegram</h3><form data-form=\"settings-telegram\" "
+	    "class=\"settings set-form mail\"><p class=\"dim\">The same, as "
+	    "messages a bot of yours writes to your chats: make one with "
+	    "@BotFather, give its token here, and write to it once (or add "
+	    "it to the group) so that it may write back. A host's agent "
+	    "sends them to <code>api.telegram.org</code> over HTTPS, one that "
+	    "reaches the world outside; twenty an hour at most.</p>");
+	settings_fields(h, SETG_TELEGRAM);
+	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
+	    "</button> <button type=\"button\" class=\"ghost\" data-act=\""
+	    "telegram-test\"%s>Send a test message</button></div></form>",
 	    app.modal_busy ? " disabled" : "", app.modal_busy ? " disabled" :
 	    "");
 }
@@ -1665,15 +1679,41 @@ set_console(struct html *h)
 	h_raw(h, "</code> and takes the place of <code>web.conf</code>'s "
 	    "value; a field put back to that value follows <code>web.conf"
 	    "</code> again.</p>");
-	settings_fields(h, false);
+	settings_fields(h, SETG_CONSOLE);
 	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
 	    "</button></div></form>", app.modal_busy ? " disabled" : "");
 	safe_hosts(h);
 }
 
 /* The editable settings, the mail's or the others, as fields. */
+/* A choice of a setting's, as a select of the values it takes. */
 static void
-settings_fields(struct html *h, bool mail)
+settings_select(struct html *h, const ucl_object_t *k,
+    const char *const *vals, const char *const *titles)
+{
+	const char	*cur;
+	int		 i;
+
+	cur = jstr(k, "value") != NULL ? jstr(k, "value") : "";
+	h_raw(h, "<label>");
+	h_txt(h, jstr(k, "label"));
+	h_raw(h, "<select");
+	h_attr(h, "name", jstr(k, "key"));
+	h_raw(h, ">");
+	for (i = 0; vals[i] != NULL; i++) {
+		h_raw(h, "<option");
+		h_attr(h, "value", vals[i]);
+		h_fmt(h, "%s>", strcmp(cur, vals[i]) == 0 ? " selected" : "");
+		h_txt(h, titles != NULL ? titles[i] : vals[i]);
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select><small>");
+	h_txt(h, jstr(k, "help"));
+	h_raw(h, "</small></label>");
+}
+
+static void
+settings_fields(struct html *h, int group)
 {
 	const ucl_object_t	*k;
 	ucl_object_iter_t	 it;
@@ -1682,9 +1722,44 @@ settings_fields(struct html *h, bool mail)
 	while ((k = ucl_object_iterate(jget(app.settings, "settings"), &it,
 	    true)) != NULL) {
 		if (!jbool(k, "editable") || jstr(k, "key") == NULL ||
-		    (strncmp(jstr(k, "key"), "mail_", 5) == 0 || strncmp(jstr(k,
-		    "key"), "smtp_", 5) == 0) != mail)
+		    setting_group(jstr(k, "key")) != group)
 			continue;
+		/* What is told, chosen: a severity, which jobs and runs. */
+		{
+			static const char *const sev[] = { "Critical", "Major",
+			    "Minor", "Warning", "none", NULL }, *const which[] = {
+			    "failed", "all", "none", NULL };
+			const char	*key = jstr(k, "key");
+			size_t		 kl = strlen(key);
+
+			if (kl > 7 && strcmp(key + kl - 7, "_faults") == 0) {
+				settings_select(h, k, sev, NULL);
+				continue;
+			}
+			if (kl > 5 && (strcmp(key + kl - 5, "_jobs") == 0 ||
+			    strcmp(key + kl - 5, "_runs") == 0)) {
+				settings_select(h, k, which, NULL);
+				continue;
+			}
+			/* The host that sends: one of the console's. */
+			if (strcmp(key, "telegram_via") == 0) {
+				const char	*vals[MAX_SERVERS + 2],
+						*titles[MAX_SERVERS + 2];
+				int		 i, n;
+
+				n = 0;
+				vals[n] = "";
+				titles[n++] = "the agent beside the console";
+				for (i = 0; i < app.nservers && n <
+				    MAX_SERVERS + 1; i++) {
+					vals[n] = app.servers[i].name;
+					titles[n++] = app.servers[i].name;
+				}
+				vals[n] = titles[n] = NULL;
+				settings_select(h, k, vals, titles);
+				continue;
+			}
+		}
 		/* The ways mail goes, and the relay's security: chosen. */
 		if (strcmp(jstr(k, "key"), "mail_via") == 0 || strcmp(jstr(k,
 		    "key"), "smtp_security") == 0) {
