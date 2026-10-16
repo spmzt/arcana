@@ -77,6 +77,16 @@ parse_versions(struct work *w, const struct execres *res,
 		if ((nv = strsep(&line, " \t")) == NULL || *nv == '\0' ||
 		    (dash = strrchr(nv, '-')) == NULL)
 			continue;
+		/*
+		 * A package's line has the comparison after its name,
+		 * "<"; what else pkg says, each repository's "FreeBSD-ports
+		 * repository is up to date." among it, is no package.
+		 */
+		if (line != NULL)
+			line += strspn(line, " \t");
+		if (line == NULL || strchr("<=>?!", line[0]) == NULL ||
+		    (line[1] != '\0' && line[1] != ' ' && line[1] != '\t'))
+			continue;
 		if ((v = reallocarray(v, n + 1, sizeof(*v))) == NULL)
 			err(1, "reallocarray");
 		memset(&v[n], 0, sizeof(v[n]));

@@ -223,6 +223,32 @@ view_certs(struct html *h, struct server *s)
 		h_raw(h, " <span class=\"chip warn\">no certctl here: nothing "
 		    "is changed</span>");
 	h_raw(h, "</p>");
+	/* Why a list of untrusted ones at all, most of them nobody's here. */
+	if (ct.untrusted) {
+		const ucl_object_t	*u;
+		ucl_object_iter_t	 ui;
+		int			 base_n, own_n;
+
+		base_n = own_n = 0;
+		ui = NULL;
+		while ((u = ucl_object_iterate(jget(ct.data, "untrusted"), &ui,
+		    true)) != NULL) {
+			if (jstr(u, "local") != NULL && strstr(jstr(u, "local"),
+			    "/share/certs/untrusted/") == NULL)
+				own_n++;
+			else
+				base_n++;
+		}
+		h_fmt(h, "<p class=\"notice\"><b>%d come with FreeBSD</b>: root "
+		    "authorities Mozilla stopped trusting (a key misused, or "
+		    "its owner no longer kept to the rules), which FreeBSD's "
+		    "base system (the caroot package, "
+		    "<code>/usr/share/certs/untrusted</code>) keeps listed so "
+		    "that they stay distrusted even where another program "
+		    "brings them along. Nothing here added them. %d %s "
+		    "distrusted on this host.</p>", base_n, own_n, own_n == 1 ?
+		    "was" : "were");
+	}
 	arr = jget(ct.data, ct.untrusted ? "untrusted" : "trusted");
 	h_raw(h, "<table class=\"net certs\">");
 	tbl_head(h, "certs", cols, 7, 0);

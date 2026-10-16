@@ -20,11 +20,14 @@
  */
 
 #include <sys/param.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1232,11 +1235,24 @@ tmp_gone(struct work *w, const char *dir, const char *ca, int nkeys)
 /*
  * Each host key signed by the CA key given, its certificate beside it,
  * and sshd told of each (HostCertificate).  The signing is the host's,
- * in a directory of /tmp only root reads: the CA's key is there only
- * while ssh-keygen reads it, and never in a jail, whose root could
- * read it there; of a jail, only its public host keys come out, and
- * only their certificates go in.
+ * through an ssh-agent of its own whose socket is in a directory of
+ * /tmp only root reads: the CA's key is in that agent's memory alone,
+ * for two minutes at most, never in a file and never in a jail, whose
+ * root could read it there; of a jail, only its public host keys come
+ * out, and only their certificates go in.
  */
+/* The signing's ssh-agent ended, and what it left taken away. */
+static void
+agent_stop(struct work *w, pid_t apid, const char *sock, const char *dir,
+    const char *ca)
+{
+
+	(void)kill(apid, SIGTERM);
+	exec_set_env(w, NULL, NULL);
+	(void)unlink(sock);
+	tmp_gone(w, dir, ca, 0);
+}
+
 static int
 sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
@@ -1244,7 +1260,9 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	ucl_object_t		*set;
 	const ucl_object_t	*v;
 	ucl_object_iter_t	 it;
-	const char		*why, *prog, *ca, *id, *p, *pr, *pub, *cert;
+	const char		*why, *prog, *ca, *id, *p, *pr, *pub, *cert,
+				*sock, *agent, *add;
+	pid_t			 apid;
 	char			*argv[16], *text, host[MAXHOSTNAMELEN],
 				 dir[MAXPATHLEN];
 	size_t			 i, len;
@@ -1262,7 +1280,44 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		*errp = wfmt(w, "%s: %s", dir, strerror(errno));
 		return (-1);
 	}
-	ca = wfmt(w, "%s/ca", dir);
+	/*
+	 * The CA's key is never written to a file: on ZFS a block written
+	 * over is a new block, the old one kept until freed, or for good
+	 * in a snapshot.  It goes to an ssh-agent(1) of this signing's own
+	 * through ssh-add(1)'s standard input, lives there for two minutes
+	 * at most, and ssh-keygen -U signs with it there; only the CA's
+	 * public key is in the directory.
+	 */
+	ca = wfmt(w, "%s/ca.pub", dir);
+	sock = wfmt(w, "%s/agent", dir);
+	if ((agent = tool(w, "ssh-agent")) == NULL || (add = tool(w,
+	    "ssh-add")) == NULL) {
+		*errp = "there is no ssh-agent or ssh-add here";
+		(void)rmdir(dir);
+		return (-1);
+	}
+	if (strlen(sock) >= sizeof(((struct sockaddr_un *)0)->sun_path)) {
+		*errp = wfmt(w, "%s: too long a path for a socket", sock);
+		(void)rmdir(dir);
+		return (-1);
+	}
+	n = 0;
+	argv[n++] = (char *)(uintptr_t)agent;
+	argv[n++] = (char *)(uintptr_t)"-a";
+	argv[n++] = (char *)(uintptr_t)sock;
+	argv[n++] = (char *)(uintptr_t)"-t";
+	argv[n++] = (char *)(uintptr_t)"120";
+	argv[n] = NULL;
+	apid = -1;
+	if (run_exec(w, argv, &res) != 0 || res.out == NULL || (p = strstr(
+	    res.out, "SSH_AGENT_PID=")) == NULL || (apid = (pid_t)strtol(p +
+	    14, NULL, 10)) <= 1) {
+		*errp = wtext(w, exec_error(w, &res, "ssh-agent"));
+		(void)unlink(sock);
+		(void)rmdir(dir);
+		return (-1);
+	}
+	exec_set_env(w, "SSH_AUTH_SOCK", sock);
 	/* A copy of its own, with its last line ended, zeroed after:
 	 * not by wfmt, whose own copy is not. */
 	len = strlen(sp->text);
@@ -1270,11 +1325,30 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	memcpy(text, sp->text, len);
 	if (len == 0 || text[len - 1] != '\n')
 		text[len++] = '\n';
-	rc = put_tmp(ca, text, len);
+	n = 0;
+	argv[n++] = (char *)(uintptr_t)add;
+	argv[n++] = (char *)(uintptr_t)"-q";
+	argv[n++] = (char *)(uintptr_t)"-";
+	argv[n] = NULL;
+	exec_set_secret(true);
+	exec_set_stdin(text, len);
+	rc = run_exec(w, argv, &res);
+	exec_set_stdin(NULL, 0);
+	exec_set_secret(false);
 	explicit_bzero(text, len);
 	if (rc != 0) {
-		*errp = wfmt(w, "%s: %s", ca, strerror(errno));
-		(void)rmdir(dir);
+		*errp = "ssh-add: not a private key it can read";
+		agent_stop(w, apid, sock, dir, ca);
+		return (-1);
+	}
+	/* Its public key, for ssh-keygen to name the one to sign with. */
+	argv[1] = (char *)(uintptr_t)"-L";
+	argv[2] = NULL;
+	if (run_exec(w, argv, &res) != 0 || res.out == NULL ||
+	    put_tmp(ca, res.out, res.outlen) != 0) {
+		*errp = wfmt(w, "ssh-add -L: %s", res.errlen > 0 ? wstrndup(w,
+		    res.err, strcspn(res.err, "\r\n")) : "no key");
+		agent_stop(w, apid, sock, dir, ca);
 		return (-1);
 	}
 	if (w->jail != NULL)
@@ -1310,6 +1384,7 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		argv[n++] = (char *)(uintptr_t)"-q";
 		argv[n++] = (char *)(uintptr_t)"-s";
 		argv[n++] = (char *)(uintptr_t)ca;
+		argv[n++] = (char *)(uintptr_t)"-U";
 		argv[n++] = (char *)(uintptr_t)"-I";
 		argv[n++] = (char *)(uintptr_t)wfmt(w, "arcana:%s", id);
 		argv[n++] = (char *)(uintptr_t)"-h";
@@ -1338,6 +1413,9 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		}
 		signed_++;
 	}
+	(void)kill(apid, SIGTERM);
+	exec_set_env(w, NULL, NULL);
+	(void)unlink(sock);
 	tmp_gone(w, dir, ca, k);
 	if (rc != 0) {
 		ucl_object_unref(set);

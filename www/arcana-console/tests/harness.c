@@ -766,6 +766,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "exit 1\n");
 	ATF_REQUIRE(chmod("tools/sshd", 0755) == 0);
 	put("tools/ssh-keygen", "#!/bin/sh\nexec /usr/bin/ssh-keygen \"$@\"\n");
+	/* The signing's own ssh-agent, and ssh-add to give it the key. */
+	put("tools/ssh-agent", "#!/bin/sh\nexec /usr/bin/ssh-agent \"$@\"\n");
+	put("tools/ssh-add", "#!/bin/sh\nexec /usr/bin/ssh-add \"$@\"\n");
 	put("tools/growfs", "#!/bin/sh\necho \"growfs $*\" >> storage.log\n");
 	put("tools/swapon", "#!/bin/sh\necho \"swapon $*\" >> storage.log\n");
 	put("tools/swapoff", "#!/bin/sh\necho \"swapoff $*\" >> storage.log\n");

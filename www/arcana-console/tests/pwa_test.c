@@ -5584,6 +5584,9 @@ part_netsect(void)
 	wait_js("document.querySelectorAll('table.rt-bgp tbody tr').length === 4",
 	    5);
 	shot("8-network-bgp");
+	/* The top bar's ? opens this page in the book. */
+	ATF_CHECK(js_true("document.querySelector('.who a.help').href.endsWith("
+	    "'sections/map.html#bgp-ospf-and-bfd')"));
 	run("document.querySelector('.netsect button.tab[data-arg=ospf]')"
 	    ".click()");
 	wait_js("document.querySelectorAll('table.rt-ospf tbody tr').length === "
