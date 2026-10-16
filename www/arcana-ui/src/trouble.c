@@ -15,6 +15,10 @@
  * goes next.  Nothing is sent to find it out.
  */
 
+#include <sys/socket.h>
+
+#include <arpa/inet.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,12 +52,36 @@ path_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	ts.result = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
 }
 
+/* Is it an address, and of which family: 4, 6, or 0 for neither. */
+static int
+family(const char *s)
+{
+	unsigned char	raw[16];
+
+	if (inet_pton(AF_INET, s, raw) == 1)
+		return (4);
+	if (inet_pton(AF_INET6, s, raw) == 1)
+		return (6);
+	return (0);
+}
+
 static void
 ask(void)
 {
 	ucl_object_t	*b, *pl, *p;
 	char		*json, *slash, sid[16];
-	int		 i;
+	int		 i, fs, fd;
+
+	/* What is not an address is said here, not asked of every host. */
+	fs = family(ts.src);
+	fd = family(ts.dst);
+	if (fs == 0 || fd == 0 || fs != fd) {
+		snprintf(ts.error, sizeof(ts.error), "%s", fs == 0 ? "From is "
+		    "not an IPv4 or IPv6 address" : fd == 0 ? "To is not an "
+		    "IPv4 or IPv6 address" : "From and To are of two families: "
+		    "a packet is IPv4 or IPv6 end to end");
+		return;
+	}
 
 	b = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(b, ucl_object_fromstring(ts.src), "src", 0,
@@ -525,9 +553,11 @@ view_trouble(struct html *h)
 	    "placeholder=\"10.1.0.2\" maxlength=\"63\" list=\"ts-addrs\" "
 	    "spellcheck=\"false\" autocomplete=\"off\"");
 	h_attr(h, "value", ts.src);
-	h_raw(h, "></label><label>To <button type=\"button\" class=\"ghost "
-	    "small swap\" data-act=\"ts-swap\" title=\"The other way round: "
-	    "from the destination to the source\">⇄ swap</button><input "
+	h_raw(h, "></label><label><span class=\"lblrow\">To<button type=\""
+	    "button\" class=\"ghost small swap\" data-act=\"ts-swap\" title="
+	    "\"The other way round: from the destination to the source\"><svg "
+	    "class=\"ti\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d="
+	    "\"M7 7h12l-3-3M17 17H5l3 3\"/></svg> swap</button></span><input "
 	    "name=\"dst\" required placeholder=\"10.3.0.2\" maxlength=\"63\" "
 	    "list=\"ts-addrs\" spellcheck=\"false\" autocomplete=\"off\"");
 	h_attr(h, "value", ts.dst);

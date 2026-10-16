@@ -33,6 +33,8 @@
 
 #include <arpa/inet.h>
 
+#include <errno.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +43,7 @@
 
 #define	TS_PLACES	64
 #define	TS_HOPS		16
+#define	TS_WAIT_S	20	/* the survey waits no longer for a place */
 
 struct place {
 	char		 sid[9];
@@ -103,20 +106,13 @@ place_name(const struct place *p)
 	return (buf);
 }
 
-/* A place's check: its data, or NULL with why in the place. */
+/* A place's answer, as JSON: its data, or NULL with why in the place. */
 static ucl_object_t *
-check(struct place *p, const struct tsh *t, const char *src,
-    const char *dst, const char *iface, bool reply)
+answer(struct place *p, char *json)
 {
 	struct ucl_parser	*ps;
 	ucl_object_t		*o, *d;
-	char			*json;
-	int			 status;
 
-	json = hosts_path_check(p->uri, p->peer[0] != '\0' ? p->peer : NULL,
-	    p->name, p->jail[0] != '\0' ? p->jail : NULL, src, dst,
-	    t->proto[0] != '\0' ? t->proto : NULL, t->port, iface, reply,
-	    &status);
 	o = NULL;
 	if (json != NULL) {
 		ps = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
@@ -138,6 +134,149 @@ check(struct place *p, const struct tsh *t, const char *src,
 	d = ucl_object_ref(d);
 	ucl_object_unref(o);
 	return (d);
+}
+
+/* A place's check: its data, or NULL with why in the place. */
+static ucl_object_t *
+check(struct place *p, const struct tsh *t, const char *src,
+    const char *dst, const char *iface, bool reply)
+{
+	int	status;
+
+	return (answer(p, hosts_path_check(p->uri, p->peer[0] != '\0' ?
+	    p->peer : NULL, p->name, p->jail[0] != '\0' ? p->jail : NULL,
+	    src, dst, t->proto[0] != '\0' ? t->proto : NULL, t->port, iface,
+	    reply, &status)));
+}
+
+/*
+ * The survey: every place asked at once, each in a thread of its own,
+ * and none waited for longer than TS_WAIT_S: a host whose agent takes
+ * the connection and never answers holds up only itself.  A thread
+ * still asking when the wait ends is left to end by itself; what it
+ * holds is its own, and the last of it and the survey frees the round.
+ */
+struct round {
+	pthread_mutex_t	 m;
+	pthread_cond_t	 c;
+	int		 refs;		/* the survey's, and each thread's */
+	int		 pending;
+};
+
+struct ask {
+	struct round	*r;
+	struct place	 p;		/* a copy: the thread's own */
+	char		 src[64], dst[64], proto[8];
+	uint32_t	 port;
+	char		*json;
+	bool		 done, abandoned;
+};
+
+static void
+round_drop(struct round *r)
+{
+	bool	last;
+
+	pthread_mutex_lock(&r->m);
+	last = --r->refs == 0;
+	pthread_mutex_unlock(&r->m);
+	if (last) {
+		pthread_mutex_destroy(&r->m);
+		pthread_cond_destroy(&r->c);
+		free(r);
+	}
+}
+
+static void *
+ask_run(void *arg)
+{
+	struct ask	*a = arg;
+	struct round	*r = a->r;
+	char		*json;
+	int		 status;
+	bool		 abandoned;
+
+	json = hosts_path_check(a->p.uri, a->p.peer[0] != '\0' ? a->p.peer :
+	    NULL, a->p.name, a->p.jail[0] != '\0' ? a->p.jail : NULL, a->src,
+	    a->dst, a->proto[0] != '\0' ? a->proto : NULL, a->port, NULL,
+	    false, &status);
+	pthread_mutex_lock(&r->m);
+	abandoned = a->abandoned;
+	a->json = json;
+	a->done = true;
+	r->pending--;
+	pthread_cond_signal(&r->c);
+	pthread_mutex_unlock(&r->m);
+	if (abandoned) {
+		free(json);
+		free(a);
+	}
+	round_drop(r);
+	return (NULL);
+}
+
+static void
+survey(struct tsh *t)
+{
+	struct round	*r;
+	struct ask	*a[TS_PLACES];
+	struct timespec	 until;
+	pthread_t	 th;
+	int		 i;
+
+	if ((r = calloc(1, sizeof(*r))) == NULL)
+		abort();
+	pthread_mutex_init(&r->m, NULL);
+	pthread_cond_init(&r->c, NULL);
+	r->refs = 1;
+	for (i = 0; i < t->n; i++) {
+		if ((a[i] = calloc(1, sizeof(*a[i]))) == NULL)
+			abort();
+		a[i]->r = r;
+		a[i]->p = t->p[i];
+		snprintf(a[i]->src, sizeof(a[i]->src), "%s", t->src);
+		snprintf(a[i]->dst, sizeof(a[i]->dst), "%s", t->dst);
+		snprintf(a[i]->proto, sizeof(a[i]->proto), "%s", t->proto);
+		a[i]->port = t->port;
+		pthread_mutex_lock(&r->m);
+		r->refs++;
+		r->pending++;
+		pthread_mutex_unlock(&r->m);
+		if (pthread_create(&th, NULL, ask_run, a[i]) != 0) {
+			/* No thread: asked here, in turn. */
+			pthread_mutex_lock(&r->m);
+			r->refs--;
+			r->pending--;
+			pthread_mutex_unlock(&r->m);
+			t->p[i].survey = check(&t->p[i], t, t->src, t->dst,
+			    NULL, false);
+			free(a[i]);
+			a[i] = NULL;
+			continue;
+		}
+		pthread_detach(th);
+	}
+	clock_gettime(CLOCK_REALTIME, &until);
+	until.tv_sec += TS_WAIT_S;
+	pthread_mutex_lock(&r->m);
+	while (r->pending > 0 && pthread_cond_timedwait(&r->c, &r->m,
+	    &until) != ETIMEDOUT)
+		;
+	for (i = 0; i < t->n; i++) {
+		if (a[i] == NULL)
+			continue;
+		if (a[i]->done) {
+			t->p[i].survey = answer(&t->p[i], a[i]->json);
+			free(a[i]);
+		} else {
+			a[i]->abandoned = true;
+			snprintf(t->p[i].error, sizeof(t->p[0].error), "no "
+			    "answer in %d seconds", TS_WAIT_S);
+			t->p[i].survey = NULL;
+		}
+	}
+	pthread_mutex_unlock(&r->m);
+	round_drop(r);
 }
 
 /* The place that has address a, and the interface it is on. */
@@ -380,8 +519,8 @@ ts_run(struct kore_task *task)
 	findings = ucl_object_typed_new(UCL_ARRAY);
 	places = ucl_object_typed_new(UCL_ARRAY);
 	/* Every place asked once: where the ends are. */
+	survey(t);
 	for (i = 0; i < t->n; i++) {
-		t->p[i].survey = check(&t->p[i], t, t->src, t->dst, NULL, false);
 		o = ucl_object_typed_new(UCL_OBJECT);
 		put_s(o, "server", t->p[i].sid);
 		put_s(o, "place", place_name(&t->p[i]));

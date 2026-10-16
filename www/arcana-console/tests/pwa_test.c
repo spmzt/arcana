@@ -3581,6 +3581,11 @@ part_firewall(void)
 	    "fw-onoff]') && document.querySelector('.fw-count').textContent."
 	    "includes('7 rules now') && !document.querySelector('.tree "
 	    "[data-act=select-devices]')"));
+	/* The chain drawn: rule 20's call into 9100 an arrow across, rule
+	 * 5's skipto 500 a dashed one down the chain. */
+	ATF_CHECK(js_true("document.querySelectorAll('svg.fwchain path.call:"
+	    "not(.skip)').length === 1 && document.querySelectorAll('svg."
+	    "fwchain path.call.skip').length === 1"));
 	shot("7o-firewall-layout");
 	run("document.querySelector('.fwrail .titem.fw[data-arg=\"10\"]')."
 	    "click()");
@@ -5669,6 +5674,9 @@ part_trouble(void)
 	click_when("li.tsnode[data-act=select-trouble]", 10);
 	wait_js("document.querySelector('form[data-form=ts-path]') && "
 	    "location.hash === '#/troubleshoot'", 10);
+	/* A box opened by hand stays open when the page draws again: the
+	 * answer below redraws the whole page. */
+	run("document.querySelector('details.tsplaces').open = true");
 	run("const f = document.querySelector('form[data-form=ts-path]'); "
 	    "f.src.value = '10.1.0.2'; f.dst.value = '10.3.0.2'; f.proto.value "
 	    "= 'tcp'; f.port.value = '22'; f.requestSubmit();");
@@ -5699,6 +5707,7 @@ part_trouble(void)
 			ucl_object_unref(g);
 	}
 	ATF_CHECK(js_true("document.querySelector('datalist#ts-addrs')"));
+	ATF_CHECK(js_true("document.querySelector('details.tsplaces').open"));
 	shot("9t-troubleshoot");
 	/* Swapped: the other way round, asked at once. */
 	run("document.querySelector('button[data-act=ts-swap]').click()");

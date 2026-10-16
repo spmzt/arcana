@@ -232,8 +232,7 @@ fw_parse(struct fwset *s, const char *list, const char *tables)
 		e = e != NULL ? e + 1 : p + n;
 		while (n > 0 && isspace((unsigned char)p[n - 1]))
 			n--;
-		if (n == 0 || !isdigit((unsigned char)*p) || n >=
-		    sizeof(r->text))
+		if (n == 0 || !isdigit((unsigned char)*p))
 			continue;
 		if (s->n == s->cap) {
 			struct fwrule	*nr;
@@ -246,13 +245,15 @@ fw_parse(struct fwset *s, const char *list, const char *tables)
 		}
 		r = &s->rules[s->n];
 		memset(r, 0, sizeof(*r));
-		memcpy(r->text, p, n);
-		r->text[n] = '\0';
+		if ((r->text = strndup(p, n)) == NULL)
+			return (-1);
 		r->num = strtol(r->text, NULL, 10);
 		/* "65535 count ... not // orphaned dynamic states counter":
 		 * the kernel's own, of states, not of packets. */
-		if (strstr(r->text, "orphaned dynamic states") != NULL)
+		if (strstr(r->text, "orphaned dynamic states") != NULL) {
+			free(r->text);
 			continue;
+		}
 		s->n++;
 	}
 	/* In the kernel's order, whatever order they were given in. */
@@ -269,6 +270,8 @@ fw_free(struct fwset *s)
 
 	for (i = 0; i < s->ntables; i++)
 		free(s->tables[i].v);
+	for (i = 0; i < s->n; i++)
+		free(s->rules[i].text);
 	free(s->rules);
 	memset(s, 0, sizeof(*s));
 }
@@ -371,43 +374,104 @@ addr_match(const struct fwset *s, const char *w, const struct fwpkt *k,
 		snprintf(tablearg, sizeof(tablearg), "%s", en->value);
 		return (YES);
 	}
-	/* { a or b }, and a,b,c/24 lists: any of them. */
+	/* { a or b }, and a,b,c/24 lists: any of them, however long. */
 	if (w[0] == '{') {
-		if (strlcpy(buf, w + 1, sizeof(buf)) >= sizeof(buf))
+		char	*copy;
+
+		if ((copy = strdup(w + 1)) == NULL)
 			return (MAYBE);
-		if ((x = strrchr(buf, '}')) != NULL)
+		if ((x = strrchr(copy, '}')) != NULL)
 			*x = '\0';
 		r = NO;
-		for (sp = buf; (x = strsep(&sp, " \t")) != NULL; ) {
+		for (sp = copy; (x = strsep(&sp, " \t")) != NULL; ) {
 			if (*x == '\0' || strcmp(x, "or") == 0)
 				continue;
 			one = addr_match(s, x, k, a);
-			if (one == YES)
-				return (YES);
+			if (one == YES) {
+				r = YES;
+				break;
+			}
 			if (one == MAYBE)
 				r = MAYBE;
 		}
+		free(copy);
 		return (r);
 	}
 	if (strchr(w, ',') != NULL && strncmp(w, "table(", 6) != 0) {
-		if (strlcpy(buf, w, sizeof(buf)) >= sizeof(buf))
+		char	*copy;
+
+		/* 1.2.3.0/24{1,5}: a set; not read here. */
+		if (strchr(w, '{') != NULL || (copy = strdup(w)) == NULL)
 			return (MAYBE);
 		r = NO;
-		for (sp = buf; (x = strsep(&sp, ",")) != NULL; ) {
-			/* 1.2.3.0/24{1,5}: a set; not read here. */
-			if (strchr(x, '{') != NULL)
-				return (MAYBE);
+		for (sp = copy; (x = strsep(&sp, ",")) != NULL; ) {
 			one = addr_match(s, x, k, a);
-			if (one == YES)
-				return (YES);
+			if (one == YES) {
+				r = YES;
+				break;
+			}
 			if (one == MAYBE)
 				r = MAYBE;
 		}
+		free(copy);
 		return (r);
 	}
 	if (!prefix_parse(w, &paf, pa, &plen))
 		return (MAYBE);		/* a host name, a set: not known */
 	return (in_prefix(k->af, a, paf, pa, plen) ? YES : NO);
+}
+
+/*
+ * A list of flags, "syn,!ack": each named one must be set, each with !
+ * must be clear.  The packet's: a request's first segment SYN alone, a
+ * reply's ACK alone; fin, rst, psh, urg, ece, cwr none.
+ */
+static enum tri
+tcpflags_match(const char *w, const struct fwpkt *k)
+{
+	char	*copy, *sp, *x;
+	bool	 neg, set;
+	enum tri r = YES;
+
+	if (k->proto != IPPROTO_TCP)
+		return (NO);
+	if ((copy = strdup(w)) == NULL)
+		return (MAYBE);
+	for (sp = copy; (x = strsep(&sp, ",")) != NULL; ) {
+		if ((neg = *x == '!'))
+			x++;
+		if (strcmp(x, "syn") == 0)
+			set = k->syn;
+		else if (strcmp(x, "ack") == 0)
+			set = k->ack;
+		else if (strcmp(x, "fin") == 0 || strcmp(x, "rst") == 0 ||
+		    strcmp(x, "psh") == 0 || strcmp(x, "urg") == 0 ||
+		    strcmp(x, "ece") == 0 || strcmp(x, "cwr") == 0)
+			set = false;
+		else {
+			r = MAYBE;
+			continue;
+		}
+		if (set == neg) {
+			r = NO;
+			break;
+		}
+	}
+	free(copy);
+	return (r);
+}
+
+/* A list of options none of which the packet has: met when each one
+ * is named with !. */
+static enum tri
+flags_none(const char *w)
+{
+	const char	*p;
+
+	for (p = w; *p != '\0'; p += strcspn(p, ","), p += *p == ',')
+		if (*p != '!')
+			return (NO);
+	return (YES);
 }
 
 /* The rule's protocol word against the packet's. */
@@ -521,9 +585,9 @@ body_match(const struct fwset *s, char **tok, int nt, int i,
 		return (YES);
 	/* proto from SRC [ports] to DST [ports]; a rule written with
 	 * options alone (return via any) names no protocol. */
-	if (strcmp(tok[i], "in") != 0 && strcmp(tok[i], "out") != 0 &&
-	    strcmp(tok[i], "via") != 0 && strcmp(tok[i], "recv") != 0 &&
-	    strcmp(tok[i], "xmit") != 0 && strcmp(tok[i], "not") != 0)
+	/* The protocol word stands before from, or alone; ipfw writes a
+	 * rule of no addresses with options only (return proto ip). */
+	if (i + 1 == nt || strcmp(tok[i + 1], "from") == 0)
 		AND(proto_match(tok[i++], k));
 	if (i < nt && strcmp(tok[i], "from") == 0) {
 		i++;
@@ -637,6 +701,12 @@ body_match(const struct fwset *s, char **tok, int nt, int i,
 		    "diverted-loopback") == 0 || strcmp(w,
 		    "diverted-output") == 0)
 			one = NO;	/* not a fragment, not of layer 2 */
+		else if (strcmp(w, "tcpflags") == 0 && i + 1 < nt)
+			one = tcpflags_match(tok[++i], k);
+		else if (strcmp(w, "ipoptions") == 0 && i + 1 < nt)
+			/* The packet carries no IP option: those named are
+			 * not there, those named with ! are absent. */
+			one = flags_none(tok[++i]);
 		else if (strcmp(w, "fib") == 0 && i + 1 < nt)
 			one = atoi(tok[++i]) == k->fib ? YES : NO;
 		else if ((strcmp(w, "uid") == 0 || strcmp(w, "gid") == 0 ||
@@ -711,10 +781,11 @@ step(struct fwverdict *v, size_t ri, const char *fmt, ...)
 	v->nsteps++;
 }
 
-void
-fw_eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v)
+static void
+eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v,
+    char *buf)
 {
-	char		 buf[sizeof(((struct fwrule *)0)->text)], *tok[FW_TOKENS];
+	char		*tok[FW_TOKENS];
 	char		 why[64];
 	const char	*act, *arg;
 	size_t		 ri;
@@ -727,7 +798,7 @@ fw_eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v)
 	memset(v, 0, sizeof(*v));
 	v->setfib = -1;
 	for (ri = 0, steps = 0; ri < s->n && steps < 100000; ri++, steps++) {
-		memcpy(buf, s->rules[ri].text, sizeof(buf));
+		strcpy(buf, s->rules[ri].text);
 		nt = tokens(buf, tok, FW_TOKENS);
 		if (nt < 2)
 			continue;
@@ -938,4 +1009,26 @@ fw_eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v)
 		return;
 	}
 	v->verdict = "none";
+}
+
+/* The walk, with a buffer as long as the longest rule to take each
+ * rule's words apart in. */
+void
+fw_eval(const struct fwset *s, const struct fwpkt *k, struct fwverdict *v)
+{
+	char	*buf;
+	size_t	 i, max = 1;
+
+	for (i = 0; i < s->n; i++)
+		if (strlen(s->rules[i].text) + 1 > max)
+			max = strlen(s->rules[i].text) + 1;
+	if ((buf = malloc(max)) == NULL) {
+		memset(v, 0, sizeof(*v));
+		v->setfib = -1;
+		v->verdict = "unknown";
+		v->note = "no memory to walk the rules";
+		return;
+	}
+	eval(s, k, v, buf);
+	free(buf);
 }
