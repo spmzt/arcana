@@ -187,7 +187,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[106];
+	char	*argv[108];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -766,6 +766,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "exit 1\n");
 	ATF_REQUIRE(chmod("tools/sshd", 0755) == 0);
 	put("tools/ssh-keygen", "#!/bin/sh\nexec /usr/bin/ssh-keygen \"$@\"\n");
+	/* The signing's own ssh-agent, and ssh-add to give it the key. */
+	put("tools/ssh-agent", "#!/bin/sh\nexec /usr/bin/ssh-agent \"$@\"\n");
+	put("tools/ssh-add", "#!/bin/sh\nexec /usr/bin/ssh-add \"$@\"\n");
 	put("tools/growfs", "#!/bin/sh\necho \"growfs $*\" >> storage.log\n");
 	put("tools/swapon", "#!/bin/sh\necho \"swapon $*\" >> storage.log\n");
 	put("tools/swapoff", "#!/bin/sh\necho \"swapoff $*\" >> storage.log\n");
@@ -809,8 +812,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\t(65000,301) /* ix-b */\n];\n\n"
 	    "roa4 table r4;\n\nfilter bgp_in {\n\tif bgp_community ~ CUSTOMERS "
 	    "then accept;\n\treject;\n}\n\nfilter bgp_out {\n\taccept;\n}\n\n"
-	    "protocol device device1 {\n}\n\nprotocol bgp bgp_core {\n"
-	    "\tdescription \"Core uplink\";\n\tlocal as MY_AS;\n\tneighbor "
+	    "protocol device device1 {\n}\n\ntemplate bgp ibgp_t {\n\tlocal as "
+	    "MY_AS;\n\tipv6 {\n\t\timport all;\n\t\texport all;\n\t};\n}\n\n"
+	    "protocol bgp bgp_core {\n"
+	    "\tdescription \"Core uplink\";\n\t# the old uplink: 192.0.2.9\n"
+	    "\tlocal as MY_AS;\n\tneighbor "
 	    "192.0.2.1 as 65001;\n\tipv4 {\n\t\timport filter bgp_in;\n"
 	    "\t\texport filter bgp_out;\n\t};\n}\n\nprotocol bgp bgp_edge {\n"
 	    "\tlocal as MY_AS;\n\tneighbor 198.51.100.7 as 65002;\n}\n\n"
@@ -1026,7 +1032,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	 * reads them, and nothing reads the host's own. */
 	argv[102] = (char *)(uintptr_t)"--root";
 	argv[103] = rootdir;
-	argv[104] = NULL;
+	/* BIRD's sessions are not watched for faults by the tests'
+	 * agents: a fault would come among those a test looks for. */
+	argv[104] = (char *)(uintptr_t)"--bird-watch";
+	argv[105] = (char *)(uintptr_t)"0";
+	argv[106] = NULL;
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
 	(void)mkdir(rootdir, 0755);
 	{
@@ -1478,6 +1488,8 @@ ts_net(const char *cwd, const char *r2routes, const char *r2fw)
 	/* jexec: ipfw's list and tables, the jail's own. */
 	ATF_REQUIRE((fp = fopen("fake-jexec", "w")) != NULL);
 	fputs("#!/bin/sh\necho \"jexec $*\" >> jexec.log\nj=$1; shift\n"
+	    /* A jail whose answers hang, while hang-<jid> is there. */
+	    "[ -f hang-$j ] && sleep 45\n"
 	    "case \"$1 $2\" in\n*fake-ipfw\\ list) cat fw-$j.list 2>/dev/null; "
 	    "exit 0 ;;\n*fake-ipfw\\ table) cat fw-$j.tables 2>/dev/null; "
 	    "exit 0 ;;\nesac\nexec \"$@\"\n", fp);

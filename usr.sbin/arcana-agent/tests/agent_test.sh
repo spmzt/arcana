@@ -227,6 +227,8 @@ clean)	echo "$*" >> clean.log ;;
 install) echo "$*" >> install.log ;;
 version)
 	[ -s pending ] || exit 1
+	# pkg 2 says how each repository is first.
+	printf 'FreeBSD-ports repository is up to date.\nFreeBSD-ports-kmods repository is up to date.\nFreeBSD-base repository is up to date.\nAll repositories are up to date.\n'
 	while read nv remote; do
 		printf '%-30s <   needs updating (remote has %s)
 ' "$nv" "$remote"
@@ -277,7 +279,7 @@ start_daemon()
 	    -X "$(pwd)/fake-traceroute" -4 "$(pwd)/ntp.conf" \
 	    -6 "$(pwd)/rtadvd.conf" -7 "$(pwd)/fake-dnsmasq" -8 "$(pwd)/fake-rtsol" \
 	    -9 "$(pwd)/fake-setkey" -0 "$(pwd)/fake-local-unbound" \
-	    $DAEMON_ARGS \
+	    --bird-watch 0 $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
@@ -717,6 +719,8 @@ packages_body()
 	atf_check -o save:pk.out "$JGC" -t -c "$SOCK" packages -r
 	atf_check -o match:'^aria2 +1\.37\.0_1 +1\.37\.0_2' cat pk.out
 	atf_check -o match:'^pimd +3\.1\.0 +3\.2\.0' cat pk.out
+	# A repository's line is no package.
+	atf_check -o not-match:'^FreeBSD' -o not-match:'^All ' cat pk.out
 	atf_check -o match:'fake-pkg update -q' cat pk.out
 	atf_check -o match:"fake-pkg version -vRl <" cat pk.out
 	# No refresh: no pkg update.
@@ -5086,6 +5090,8 @@ exit 1
 EOT
 	chmod +x tools/sshd
 	ln -s "$(which ssh-keygen)" tools/ssh-keygen
+	ln -s "$(which ssh-agent)" tools/ssh-agent
+	ln -s "$(which ssh-add)" tools/ssh-add
 	printf 'PermitRootLogin no\nPasswordAuthentication yes\nMatch User nobody\n\tPasswordAuthentication no\n' \
 	    > $R/etc/ssh/sshd_config
 	printf 'root:*:0:0:Charlie &:/root:/bin/sh\nalice:*:%d:%d:Alice:/home/alice:/bin/sh\ndaemon:*:1:1::/root:/usr/sbin/nologin\n' \
@@ -6143,6 +6149,36 @@ EOT
 	atf_check -o inline:'deny 999\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state: no state of it yet, on\n  300 call 9200\n  9299 return, after 300\n  999 decides\n' \
 	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
 	    proto=tcp sport=4000 dport=80 syn rpf reach walk
+	# As edge-a's ruleset writes them: a return of no addresses
+	# (return next-rulenum proto ip) returns; tcpflags and ipoptions
+	# are judged of the packet modelled (a SYN, no IP option); a long
+	# { a or b } list is read whole.
+	{
+		echo '00020 call 9100 ip from any to any in'
+		echo '00030 call 9200 ip from any to any in'
+		echo '00099 allow tcp from any to any 443 in'
+		echo '09100 deny udp from any to any 1900 in'
+		echo '09199 return next-rulenum proto ip'
+		echo '09251 deny log logamount 500 tcp from any to any tcpflags fin,psh,urg in'
+		echo '09252 deny log logamount 500 tcp from any to any tcpflags !syn,!fin,!ack,!psh,!rst,!urg in'
+		echo '09253 deny log logamount 500 tcp from any to any tcpflags syn,fin in'
+		echo '09255 deny log logamount 500 ip from any to any ipoptions ssrr,lsrr,rr,ts in'
+		printf '09301 deny ip4 from { '
+		n=0; while [ $n -lt 60 ]; do printf '198.18.%d.0/24 or ' $n; n=$((n + 1)); done
+		echo '198.19.0.1 } to any in'
+		echo '09999 return next-rulenum proto ip'
+		echo '65535 deny ip from any to any'
+	} > edge-a
+	atf_check -o inline:'allow 99\n  20 call 9100\n  9199 return, after 20\n  30 call 9200\n  9999 return, after 30\n  99 decides\n' \
+	    "$f" edge-a tables $l in rcv=em0 src=203.0.113.9 dst=10.0.0.10 \
+	    proto=tcp sport=40000 dport=443 syn rpf reach walk
+	atf_check -o inline:'deny 9301\n  20 call 9100\n  9199 return, after 20\n  30 call 9200\n  9301 decides\n' \
+	    "$f" edge-a tables $l in rcv=em0 src=198.18.59.7 dst=10.0.0.10 \
+	    proto=tcp sport=40000 dport=443 syn rpf reach walk
+	# A segment of no flags at all: 9252 drops it.
+	atf_check -o inline:'deny 9252\n  20 call 9100\n  9199 return, after 20\n  30 call 9200\n  9252 decides\n' \
+	    "$f" edge-a tables $l in rcv=em0 src=203.0.113.9 dst=10.0.0.10 \
+	    proto=tcp sport=40000 dport=443 rpf reach walk
 	# A reply with its state: check-state decides.
 	atf_check -o inline:'allow 200 by-state\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 decides: its state lets it by\n' \
 	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
@@ -7278,8 +7314,70 @@ EOF
 	done
 }
 
+atf_test_case bird_watch cleanup
+bird_watch_head()
+{
+	atf_set "descr" "BIRD's sessions watched: a BGP session, an OSPF neighbour and a BFD session that go down are faults, cleared when they are up again"
+}
+bird_watch_body()
+{
+	# birdc(8): what each session is, from files the test changes.
+	cat > fake-birdc <<EOS
+#!/bin/sh
+[ "\$1" = -r ] && shift
+d=$(pwd)
+case "\$*" in
+'show status') printf 'BIRD 2.15.1 ready.\\nRouter ID is 192.0.2.1\\n' ;;
+'show protocols all')
+	st=up; info=Established; bs=Established; err=
+	[ -e \$d/bgp.down ] && { st=start; info=Active; bs=Active; err='    Last error:       Socket: Connection refused'; }
+	printf 'BIRD 2.15.1 ready.\\nName Proto Table State Since Info\\n'
+	printf 'bgp1 BGP --- %s 12:00:00 %s\\n  BGP state:          %s\\n    Neighbor address: 192.0.2.7\\n    Neighbor AS:      65001\\n%s\\n' \$st \$info \$bs "\$err"
+	printf 'off1 BGP --- down 12:00:00\\n  BGP state:          Down\\n' ;;
+'show ospf neighbors')
+	printf 'ospf1:\\nRouter ID Pri State DTime Interface Router IP\\n'
+	[ -e \$d/ospf.gone ] || printf '10.0.0.2 1 Full/PtP 00:00:35 gif0 10.255.0.2\\n' ;;
+'show bfd sessions')
+	s=Up; [ -e \$d/bfd.down ] && s=Down
+	printf 'bfd1:\\nIP address Interface State Since Interval Timeout\\nfe80::2 gif0 %s 13:01:27 0.200 1.000\\n' \$s ;;
+*) printf 'BIRD 2.15.1 ready.\\n' ;;
+esac
+EOS
+	chmod +x fake-birdc
+	DAEMON_ARGS="--bird-watch 1"
+	start_daemon
+	# All well: no fault, but the session turned off is none either.
+	sleep 2.5
+	atf_check -o not-match:'sdwan-fault' "$JGC" -c "$SOCK" events
+	touch bgp.down ospf.gone bfd.down
+	for i in $(seq 1 40); do
+		[ $("$JGC" -c "$SOCK" events | grep -o '"state":"set"' | wc -l) -ge 3 ] && break
+		sleep 0.2
+	done
+	atf_check -o match:'"type":"bgp-neighbor","severity":"Major","object":"bgp1","by":"bird","description":"BGP bgp1 to 192.0.2.7 is Active: Socket: Connection refused","state":"set"' \
+	    -o match:'"type":"ospf-neighbor","severity":"Major","object":"ospf1/10.0.0.2@gif0","by":"bird","description":"OSPF neighbour ospf1/10.0.0.2@gif0 is gone from BIRD.s list","state":"set"' \
+	    -o match:'"type":"bfd","severity":"Major","object":"bfd1/fe80::2@gif0","by":"bird","description":"BFD to fe80::2 on gif0 is Down","state":"set"' \
+	    -o not-match:'"object":"off1"' \
+	    "$JGC" -c "$SOCK" events
+	# Well again: each cleared.
+	rm -f bgp.down ospf.gone bfd.down
+	for i in $(seq 1 40); do
+		[ $("$JGC" -c "$SOCK" events | grep -o '"state":"cleared"' | wc -l) -ge 3 ] && break
+		sleep 0.2
+	done
+	atf_check -o match:'"type":"bgp-neighbor","severity":"Cleared","object":"bgp1","description":"BGP bgp1 is established","state":"cleared"' \
+	    -o match:'"type":"ospf-neighbor","severity":"Cleared","object":"ospf1/10.0.0.2@gif0"' \
+	    -o match:'"type":"bfd","severity":"Cleared","object":"bfd1/fe80::2@gif0"' \
+	    "$JGC" -c "$SOCK" events
+}
+bird_watch_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case bird_watch
 	atf_add_test_case yang_interfaces
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_origins

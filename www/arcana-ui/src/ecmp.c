@@ -533,10 +533,15 @@ ecmp_action(const char *act, const char *arg, const char *value)
 	}
 	if (strcmp(act, "netsect-tab") == 0) {
 		app.netsect = strcmp(arg, "groups") == 0 ? NETSECT_GROUPS :
-		    strcmp(arg, "traceroute") == 0 ? NETSECT_TRACE : NETSECT_MAP;
+		    strcmp(arg, "traceroute") == 0 ? NETSECT_TRACE :
+		    strcmp(arg, "bgp") == 0 ? NETSECT_BGP : strcmp(arg,
+		    "ospf") == 0 ? NETSECT_OSPF : strcmp(arg, "bfd") == 0 ?
+		    NETSECT_BFD : NETSECT_MAP;
 		ec.ifs_asked = 0;
 		if (app.netsect == NETSECT_GROUPS)
 			ecmp_tick(arc_now());
+		else if (app.netsect >= NETSECT_BGP)
+			topo_bird_now();
 		return (true);
 	}
 	return (false);

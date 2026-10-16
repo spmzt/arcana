@@ -4943,6 +4943,22 @@ api_jobs(struct http_request *req)
 		    NULL)
 			e = spec_from_json(v, &c->specs[c->nspecs++]);
 	}
+	/* The keys a job carries, copied into its spec: the parsed body's
+	 * copies overwritten before they are freed. */
+	it = NULL;
+	while (a != NULL && (v = ucl_object_iterate(a, &it, true)) != NULL) {
+		static const char *const secret[] = { "text",
+		    "preshared_key" };
+		const ucl_object_t	*t;
+		size_t			 k;
+
+		for (k = 0; k < nitems(secret); k++)
+			if ((t = ucl_object_lookup(v, secret[k])) != NULL &&
+			    ucl_object_type(t) == UCL_STRING)
+				explicit_bzero((char *)(uintptr_t)
+				    ucl_object_tostring(t), strlen(
+				    ucl_object_tostring(t)));
+	}
 	ucl_object_unref(body);
 	if (e != NULL) {
 		for (n = 0; n < c->nspecs; n++)

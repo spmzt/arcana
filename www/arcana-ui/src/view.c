@@ -253,6 +253,7 @@ topbar(struct html *h)
 	    "title=\"Notifications, log out\" aria-label=\"Menu\"><svg class=\"ti\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5h.01M12 12h.01M12 19h.01\"/></svg></button>"
 	    "<div class=\"who%s\">", app.who_open ? " on" : "", app.who_open ?
 	    " open" : "");
+	help_button(h);
 	if (app.notify != 3)
 		h_fmt(h, "<button class=\"ghost%s\" data-act=\"notify\" title=\""
 		    "Notify when a task that took more than ten seconds "
@@ -749,14 +750,28 @@ stage(struct html *h)
 		    "both ends\">Nexthop groups</button><button class=\"tab%s\" "
 		    "data-act=\"netsect-tab\" data-arg=\"traceroute\" title=\"The "
 		    "way from a host to an address, hop by hop, again and again "
-		    "as mtr does\">Traceroute</button></nav>",
+		    "as mtr does\">Traceroute</button><button class=\"tab%s\" "
+		    "data-act=\"netsect-tab\" data-arg=\"bgp\" title=\"Every BGP "
+		    "session of every BIRD in the fleet\">BGP</button><button "
+		    "class=\"tab%s\" data-act=\"netsect-tab\" data-arg=\"ospf\" "
+		    "title=\"Every OSPF neighbour of every BIRD in the fleet\">"
+		    "OSPF</button><button class=\"tab%s\" data-act=\"netsect-tab\" "
+		    "data-arg=\"bfd\" title=\"Every BFD session of every BIRD in "
+		    "the fleet\">BFD</button></nav>",
 		    app.netsect == NETSECT_MAP ? " on" : "", app.netsect ==
 		    NETSECT_GROUPS ? " on" : "", app.netsect == NETSECT_TRACE ?
-		    " on" : "");
+		    " on" : "", app.netsect == NETSECT_BGP ? " on" : "",
+		    app.netsect == NETSECT_OSPF ? " on" : "", app.netsect ==
+		    NETSECT_BFD ? " on" : "");
 		if (app.netsect == NETSECT_GROUPS)
 			view_ecmp(h);
 		else if (app.netsect == NETSECT_TRACE)
 			view_traceroute(h);
+		else if (app.netsect >= NETSECT_BGP) {
+			h_raw(h, "<div class=\"rtview\">");
+			view_routing(h);
+			h_raw(h, "</div>");
+		}
 		else
 			view_netmap(h);
 		h_raw(h, "</div></main>");
@@ -1989,6 +2004,7 @@ modal(struct html *h)
 	case MODAL_BIRD_BLOCK:
 	case MODAL_BIRD_RPKI:
 	case MODAL_BIRD_FILE:
+	case MODAL_BIRD_FORM:
 		if (!bird_modal(h))
 			return;
 		break;
@@ -2361,6 +2377,7 @@ modal(struct html *h)
 		case MODAL_BIRD_BLOCK:
 		case MODAL_BIRD_RPKI:
 		case MODAL_BIRD_FILE:
+		case MODAL_BIRD_FORM:
 			bird_modal_buttons(h);
 			break;
 		case MODAL_NG_CONNECT:

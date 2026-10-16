@@ -2592,7 +2592,7 @@ html.fx .edges path { animation: flow 1.2s linear infinite; }
 		padding-right: .75rem;
 	}
 
-	.crumbs, .who button:first-child {
+	.crumbs, .who button[data-act=notify] {
 		display: none;
 	}
 
@@ -3874,6 +3874,9 @@ form.fw-add input[name=name], form.fw-add input[name=value] { flex: 0 1 12rem; w
 form.fw-trace input[name=src], form.fw-trace input[name=dst] { flex: 1 1 11rem; min-width: 0; width: auto; }
 form.fw-trace input[name=port] { flex: 0 0 5.5rem; width: 5.5rem; }
 form.fw-trace input[name=iface] { flex: 0 0 7rem; width: 7rem; }
+form.fw-trace input[name=address] { flex: 1 1 14rem; min-width: 0; width: auto; }
+form.fw-trace input[name=seconds] { flex: 0 0 4rem; width: 4rem; }
+form.fw-trace > span.dim { margin-left: -.3rem; }
 ol.fw-steps { list-style: none; margin: .8rem 0; padding: 0; border-left: 2px solid var(--line-2); }
 ol.fw-steps li { padding: .35rem .7rem; cursor: pointer; }
 ol.fw-steps li:hover { background: rgba(var(--accent-rgb), .05); }
@@ -4077,7 +4080,8 @@ svg.wfdraw line.wflinking.then { stroke: var(--cyan); }
 .wfpanel .wfsteps.one { list-style: none; padding: 0; margin: 0; }
 .wfpanel .wfedhead > input, .wfpanel .wfedhead > select { flex: 1 1 7rem; min-width: 0; }
 .wfpanel .wfwhen { padding-left: 0; flex-direction: column; align-items: stretch; }
-.wfrow { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+/* The editor's rows of fields; a run's grid (.wfgraph .wfrow) is not. */
+.wfrow:not(.wfgraph .wfrow) { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 .wfrow input[type=number] { width: 5rem; }
 .wfsays { margin: .3rem 0 0; font-size: .78rem; color: var(--amber); }
 .wfon { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .5rem; }
@@ -4656,7 +4660,7 @@ table.ipsec td .child small { color: var(--dim); }
 /* SD-WAN dashboard: the topology of edges and tunnels. */
 .sd-topo-wrap { max-width: 760px; }
 svg.sd-topo { width: 100%; height: auto; display: block; font-family: var(--font); }
-svg.sd-topo .node circle { fill: rgba(var(--surface-rgb), .9); stroke: var(--accent); stroke-width: 2; }
+svg.sd-topo .node circle { fill: rgba(var(--surface-rgb), .9); stroke: rgb(var(--accent-rgb)); stroke-width: 2; }
 svg.sd-topo .node text { text-anchor: middle; fill: var(--fg); font-size: 12px; }
 svg.sd-topo .node text.sub { fill: var(--dim); font-size: 10px; }
 svg.sd-topo .tun path { fill: none; stroke: var(--line-2); stroke-width: 3; }
@@ -4783,7 +4787,7 @@ svg.tsgraph .way.leaves { stroke: var(--amber); stroke-dasharray: 2 4; }
 svg.tsgraph .lbl { font-size: 9.5px; fill: var(--dim); }
 svg.tsgraph .tsnode rect { fill: rgba(var(--surface-rgb), .95); stroke: var(--line-2); stroke-width: 1.2; }
 svg.tsgraph .tsnode { cursor: pointer; }
-svg.tsgraph .tsnode:hover rect { stroke: var(--accent); }
+svg.tsgraph .tsnode:hover rect { stroke: rgb(var(--accent-rgb)); }
 svg.tsgraph .tsnode.blocked rect { stroke: var(--red); stroke-width: 2; }
 svg.tsgraph .tsnode.dead rect { stroke-dasharray: 3 3; }
 svg.tsgraph .tsnode.ghost rect { stroke-dasharray: 3 3; opacity: .6; }
@@ -4793,9 +4797,10 @@ svg.tsgraph .tsnode .asym { font-size: 8.5px; fill: var(--amber); }
 svg.tsgraph .tsnode circle.fw.good { fill: var(--green); }
 svg.tsgraph .tsnode circle.fw.bad { fill: var(--red); }
 svg.tsgraph .tsnode circle.fw.warn { fill: var(--amber); }
-svg.tsgraph .tsend rect { fill: rgba(var(--accent-rgb), .12); stroke: var(--accent); stroke-width: 1.2; }
+svg.tsgraph .tsend rect { fill: rgba(var(--accent-rgb), .12); stroke: rgb(var(--accent-rgb)); stroke-width: 1.2; }
 svg.tsgraph .tsend text { font-size: 10.5px; fill: var(--fg); }
-.trouble label .swap { float: right; font-size: .7rem; padding: 0 .3rem; }
+.trouble label .lblrow { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.trouble label .swap { font-size: .7rem; padding: 0 .4rem; line-height: 1.4; }
 /* The firewall's chain drawn, on the Overview. */
 .fwchain-wrap { overflow-x: auto; margin: .3rem 0 1rem; }
 svg.fwchain { width: 100%; min-width: 40rem; max-width: 60rem; height: auto; display: block; font-family: var(--mono); }
@@ -4803,8 +4808,8 @@ svg.fwchain marker path { fill: var(--fg-2); }
 svg.fwchain .head { font-size: 9px; fill: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
 svg.fwchain .part { cursor: pointer; }
 svg.fwchain .part rect { fill: rgba(var(--surface-rgb), .95); stroke: var(--line-2); stroke-width: 1.2; }
-svg.fwchain .part:hover rect { stroke: var(--accent); }
-svg.fwchain .part.on rect { stroke: var(--accent); stroke-width: 2; }
+svg.fwchain .part:hover rect { stroke: rgb(var(--accent-rgb)); }
+svg.fwchain .part.on rect { stroke: rgb(var(--accent-rgb)); stroke-width: 2; }
 svg.fwchain .part.none rect { stroke-dasharray: 3 3; opacity: .55; }
 svg.fwchain .part.none text { opacity: .6; }
 svg.fwchain .part .num { font-size: 9px; fill: var(--dim); }
@@ -4817,8 +4822,161 @@ svg.fwchain .call:hover { stroke-width: 2.4; opacity: 1; }
 svg.fwchain .down { stroke: var(--fg-2); stroke-width: 1.2; }
 /* Follow a packet: where it is at the host, and the walk. */
 .fw-tctx { display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: center; margin: .6rem 0 .2rem; }
-ol.fw-steps li.decides { border-left: 2px solid var(--accent); margin-left: -2px; }
+ol.fw-steps li.decides { border-left: 2px solid rgb(var(--accent-rgb)); margin-left: -2px; }
 details.fw-unsure { font-size: .8rem; margin: .4rem 0; }
 details.fw-unsure li { margin: .2rem 0; }
 /* A kept rule written with aliases: its own words, ipfw's on hover. */
 .fw-rules .aliased { border-bottom: 1px dotted var(--cyan); cursor: help; }
+.hostcard p.warn { color: var(--amber); font-size: .78rem; margin: .5rem 0 0; }
+/* A workflow's run on its clock: a lane a host, a bar a step. */
+.wfsum { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; margin: .2rem 0 .6rem; font-size: .82rem; color: var(--fg-2); }
+.wfsum b { color: var(--fg); font-size: 1.05rem; }
+.wfsum .bad, .wfsum .bad b { color: var(--red); }
+.wftl-wrap { overflow-x: auto; margin: 0 0 .8rem; }
+svg.wftl { width: 100%; min-width: 36rem; height: auto; display: block; font-family: var(--mono); }
+svg.wftl .grid { stroke: var(--line); stroke-width: 1; }
+svg.wftl .tick { font-size: 9px; fill: var(--dim); text-anchor: middle; }
+svg.wftl .host { font-size: 11px; fill: var(--fg-2); text-anchor: end; }
+svg.wftl .bar { cursor: pointer; }
+svg.wftl .bar rect { stroke: rgba(var(--surface-rgb), 1); stroke-width: 2; }
+svg.wftl .bar.done rect { fill: var(--green); }
+svg.wftl .bar.failed rect { fill: var(--red); }
+svg.wftl .bar.running rect { fill: var(--amber); }
+svg.wftl .bar.interrupted rect, svg.wftl .bar.skipped rect, svg.wftl .bar.pending rect { fill: var(--fg-2); opacity: .55; }
+svg.wftl .bar.notrun rect { fill: none; stroke: var(--dim); stroke-dasharray: 3 3; stroke-width: 1.2; }
+svg.wftl .bar:hover rect, svg.wftl .bar.on rect { stroke: var(--fg); stroke-width: 2; }
+svg.wftl .bar .lbl { font-size: 10px; fill: var(--bg); pointer-events: none; }
+/* A workflow's last runs, a square each. */
+.wfrecent { display: inline-flex; align-items: center; gap: 3px; margin-left: .6rem; }
+.wfrecent i { width: 10px; height: 10px; border-radius: 2px; background: var(--fg-2); opacity: .5; cursor: pointer; }
+.wfrecent i.done { background: var(--green); opacity: 1; }
+.wfrecent i.failed { background: var(--red); opacity: 1; }
+.wfrecent i.running { background: var(--amber); opacity: 1; }
+.wfrecent i:hover { outline: 2px solid var(--fg); }
+.wfrecent small { margin-left: .4rem; color: var(--dim); font-size: .72rem; }
+/* The firewall's load: the busiest rules as bars, those never matched. */
+.fwload { display: grid; grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); gap: 1rem 2rem; margin: 0 0 1rem; }
+ol.fwbusy, ul.fwnever { list-style: none; padding: 0; margin: .3rem 0; font-size: .8rem; }
+ol.fwbusy li { display: grid; grid-template-columns: 3.4rem 1fr 6rem; grid-template-rows: auto auto; gap: 0 .5rem; align-items: center; padding: .25rem .3rem; border-radius: 6px; }
+ol.fwbusy li:hover, ul.fwnever li:hover { background: rgba(var(--accent-rgb), .07); }
+ol.fwbusy li b { color: var(--fg-2); font-family: var(--mono); font-weight: 400; }
+ol.fwbusy .track { height: 8px; background: transparent; }
+ol.fwbusy .track i { display: block; height: 8px; min-width: 2px; border-radius: 0 4px 4px 0; background: rgb(var(--accent-rgb)); }
+ol.fwbusy .val { font-family: var(--mono); color: var(--fg); text-align: right; }
+ol.fwbusy .val .rate { color: var(--green); }
+ol.fwbusy code { grid-column: 2 / 4; font-size: .72rem; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+ul.fwnever li { padding: .2rem .3rem; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+ul.fwnever li b { color: var(--fg-2); font-family: var(--mono); font-weight: 400; margin-right: .4rem; }
+ul.fwnever code { font-size: .74rem; color: var(--fg-2); }
+ul.wfruns .why { flex: 1 1 12rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .74rem; color: var(--red); }
+
+/* Network → BGP, OSPF, BFD: every BIRD session of the fleet. */
+.rt-tiles .tile b small { font-size: .7rem; color: var(--dim); font-weight: 400; }
+.map-wrap.rtgraph { min-height: 0; padding: .6rem .6rem .4rem; margin-bottom: 1rem; overflow-x: auto; }
+/* On a phone the graph keeps a readable size and scrolls in its frame. */
+.rtgraph svg { display: block; width: 100%; min-width: 640px; height: auto; }
+.rtg .edge path { fill: none; stroke-width: 2; stroke: var(--slate); }
+.rtg .edge:hover path { stroke-width: 4; }
+.rtg .edge.up path { stroke: var(--green); }
+.rtg .edge.warn path { stroke: var(--amber); }
+.rtg .edge.down path { stroke: var(--red); }
+.rtg.ospf .edge path { stroke-dasharray: 7 4; }
+.rtg.bfd .edge path { stroke-dasharray: 2 4; stroke-linecap: round; }
+.rtg .edge .cnt { fill: var(--fg); font-size: 11px; font-weight: 600; text-anchor: end; font-variant-numeric: tabular-nums; }
+.rt-legend .cnt::before { display: none; }
+.rt-legend .cnt b { color: var(--fg); margin-right: .2rem; }
+.rtg .rnode rect { fill: var(--panel); stroke: var(--line-2); stroke-width: 1.2; }
+.rtg .rnode.mine { cursor: pointer; }
+.rtg .rnode.mine rect { stroke: rgb(var(--accent-rgb)); }
+.rtg .rnode.mine:hover rect { stroke-width: 2.4; }
+.rtg .rnode.fleet rect { stroke: rgb(var(--accent-rgb)); stroke-dasharray: 4 3; }
+.rtg .rnode .name { fill: var(--fg); font-size: 13px; font-weight: 600; }
+.rtg .rnode.mine .name { dominant-baseline: middle; }
+.rtg .rnode .sub { fill: var(--dim); font-size: 11px; font-family: var(--mono); }
+.rt-legend { position: static; margin-top: .4rem; }
+.rt-legend .up::before { border-color: var(--green); }
+.rt-legend .warn::before { border-color: var(--amber); }
+.rt-legend .down::before { border-color: var(--red); }
+.rt-legend .fleet::before { width: 12px; height: 10px; border: 1.5px dashed rgb(var(--accent-rgb)); border-radius: 3px; }
+.rtgraph .dim { margin: .3rem 0 0; font-size: .75rem; }
+table.rt td.err { color: var(--red); max-width: 22rem; }
+table.rt td.num { font-variant-numeric: tabular-nums; }
+.rt-note { margin: .2rem 0 .8rem; font-size: .8rem; }
+.netsect > .rtview { flex: 1; min-height: 0; overflow-y: auto; }
+
+/* A host's BIRD: its protocols' tabs, and their forms. */
+nav.bird-sub { margin: .2rem 0 .8rem; }
+form.bf fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: .4rem .7rem .6rem; margin: .6rem 0; }
+form.bf fieldset legend { padding: 0 .3rem; }
+form.bf .checks { display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; margin: .4rem 0; }
+form.bf label.check { display: inline-flex; flex-direction: row; align-items: center; gap: .45rem; width: auto; flex: none; }
+form.bf label.check input { width: auto; margin: 0; flex: none; }
+table.bf-rows { width: 100%; border-collapse: collapse; margin: .5rem 0 .2rem; }
+table.bf-rows th { text-align: left; font-size: .7rem; color: var(--dim); font-weight: 500; padding: 0 .3rem .2rem 0; }
+table.bf-rows td { padding: .15rem .3rem .15rem 0; }
+table.bf-rows input:not([type=checkbox]), table.bf-rows select { width: 100%; min-width: 4rem; }
+@media (max-width: 640px) {
+	table.bf-rows { display: block; overflow-x: auto; }
+}
+form.bf .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 .8rem; }
+@media (max-width: 640px) {
+	form.bf .three { grid-template-columns: 1fr; }
+}
+form.bf .two, form.bf .three { align-items: start; }
+
+/*
+ * A row of controls (a toolbar): a label is a phrase, its words beside
+ * its field and not above or under it; every control one height, the
+ * same gaps between them, a file's "button" as a button is.
+ */
+.toolbar label:not(.button) {
+	display: inline-flex;
+	flex-direction: row;
+	align-items: center;
+	gap: .45rem;
+	margin: 0;
+	white-space: nowrap;
+}
+.toolbar label.toggle input { margin-top: 0; }
+.toolbar label:not(.button) :is(select, input:not([type=checkbox]):not([type=radio])) {
+	width: auto;
+	min-width: 9rem;
+}
+.transport .toolbar { flex-wrap: wrap; gap: .6rem .9rem; margin-bottom: .8rem; }
+.transport .toolbar > span { white-space: nowrap; }
+html:not(.neon) .toolbar :is(select, input:not([type=checkbox]):not([type=radio])) {
+	height: 32px;
+	padding-top: 0;
+	padding-bottom: 0;
+	box-sizing: border-box;
+}
+html:not(.neon) .toolbar :is(button, button.small) { min-height: 32px; }
+html:not(.neon) label.button {
+	min-height: 32px;
+	padding: 0 .85rem;
+	border-radius: var(--radius);
+	background: var(--panel-2);
+	color: var(--fg);
+	font-size: .84rem;
+	letter-spacing: normal;
+	text-transform: none;
+	box-sizing: border-box;
+}
+
+/* The top bar's ?: this page in the book. */
+.who a.help {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 32px;
+	padding: 0 .6rem;
+	text-decoration: none;
+	font-weight: 600;
+	min-height: 32px;
+	box-sizing: border-box;
+	border: 1px solid var(--line-2);
+	border-radius: var(--radius);
+	color: var(--fg-2);
+}
+.who a.help:hover { color: var(--fg); border-color: var(--cyan); }
+.rt-legend .arc::before { width: 12px; height: 12px; border: 2px solid var(--slate); border-right: none; border-radius: 12px 0 0 12px; }

@@ -7,8 +7,10 @@
 /*
  * Invidia: the connections and sockets of a network stack, read from
  * the kernel itself, as netstat(1) and sockstat(1) read them: the
- * protocol control blocks (net.inet.tcp.pcblist, net.inet.udp.pcblist)
- * and, for whose a socket is, the open files (kern.file).  A row is
+ * protocol control blocks (net.inet.tcp.pcblist, net.inet.udp.pcblist),
+ * SCTP's endpoints and associations (net.inet.sctp.assoclist, as
+ * sockstat(1) and netstat(1) read it) and, for whose a socket is, the
+ * open files (kern.file).  A row is
  * written as it is read, a JSON object a line, in the shape those
  * programs give with --libxo json; the last line is "#total n".  It
  * runs in the helper, which attaches to a jail first when the stack is
@@ -32,6 +34,8 @@
 #include <net/route.h>
 #include <netinet/in.h>
 #include <netinet/in_pcb.h>
+#include <netinet/sctp.h>
+#include <netinet/sctp_constants.h>
 #include <netinet/tcp_fsm.h>
 #include <netinet/tcp_var.h>
 #include <arpa/inet.h>
@@ -196,51 +200,22 @@ addr_of(const struct xinpcb *xi, bool local, bool six, char *buf, size_t len)
 }
 
 /*
- * One control block as a row, or none: conns leaves out what listens
- * and what is connected to nothing, as netstat -n does.
+ * A socket's row in sockstat's shape, one for each who holds it: name
+ * the protocol as written (tcp4, sctp46), la and fa its addresses.
  */
 static void
-row(struct pc *c, const struct xinpcb *xi, const char *proto, int state,
-    bool socks, int fam)
+sock_rows(struct pc *c, kvaddr_t so, const char *name, const char *la,
+    unsigned int lport, const char *fa, unsigned int fport)
 {
-	const struct in_endpoints	*ie = &xi->inp_inc.inc_ie;
 	struct owner			 key, *o;
 	struct passwd			 pwd, *pw;
 	char				 pwbuf[1024];
 	const char			*ch;
-	char				 la[INET6_ADDRSTRLEN], fa[INET6_ADDRSTRLEN],
-					 name[16];
 	size_t				 i;
-	bool				 v4, v6, six;
 
-	v4 = (xi->inp_vflag & INP_IPV4) != 0;
-	v6 = (xi->inp_vflag & INP_IPV6) != 0;
-	if ((fam == 4 && !v4) || (fam == 6 && !v6))
-		return;
-	six = v6 && !(v4 && fam == 4);
-	snprintf(name, sizeof(name), "%s%s", proto, v4 && v6 ? "46" : v6 ?
-	    "6" : "4");
-	addr_of(xi, true, six, la, sizeof(la));
-	addr_of(xi, false, six, fa, sizeof(fa));
-	if (!socks) {
-		if (state == TCPS_LISTEN || (state < 0 && strcmp(fa, "*") ==
-		    0))
-			return;
-		c->total++;
-		fprintf(c->out, "{\"protocol\":\"%s\",\"receive-bytes-waiting\":%u,"
-		    "\"send-bytes-waiting\":%u,\"local\":{\"address\":\"%s\","
-		    "\"port\":\"%u\"},\"remote\":{\"address\":\"%s\","
-		    "\"port\":\"%u\"}", name, xi->xi_socket.so_rcv.sb_cc,
-		    xi->xi_socket.so_snd.sb_cc, la, ntohs(ie->ie_lport), fa,
-		    ntohs(ie->ie_fport));
-		if (state >= 0 && state < TCP_NSTATES)
-			fprintf(c->out, ",\"tcp-state\":\"%s\"", tcp_states[state]);
-		fprintf(c->out, "}\n");
-		return;
-	}
 	/* A socket nobody holds any more (closing) is "?", as sockstat
 	 * has it "??". */
-	key.so = xi->xi_socket.xso_so;
+	key.so = so;
 	o = c->owners != NULL ? bsearch(&key, c->owners, c->nowners,
 	    sizeof(*c->owners), owner_cmp) : NULL;
 	if (o == NULL) {
@@ -248,7 +223,7 @@ row(struct pc *c, const struct xinpcb *xi, const char *proto, int state,
 		fprintf(c->out, "{\"user\":\"?\",\"command\":\"?\",\"proto\":"
 		    "\"%s\",\"local\":{\"address\":\"%s\",\"port\":%u},"
 		    "\"foreign\":{\"address\":\"%s\",\"port\":%u}}\n", name,
-		    la, ntohs(ie->ie_lport), fa, ntohs(ie->ie_fport));
+		    la, lport, fa, fport);
 		return;
 	}
 	while (o > c->owners && o[-1].so == key.so)
@@ -270,9 +245,198 @@ row(struct pc *c, const struct xinpcb *xi, const char *proto, int state,
 		fprintf(c->out, "\",\"pid\":%d,\"fd\":%d,\"proto\":\"%s\",\"local\":"
 		    "{\"address\":\"%s\",\"port\":%u},\"foreign\":{\"address\":"
 		    "\"%s\",\"port\":%u}}\n", (int)c->owners[i].pid,
-		    c->owners[i].fd, name, la, ntohs(ie->ie_lport), fa,
-		    ntohs(ie->ie_fport));
+		    c->owners[i].fd, name, la, lport, fa, fport);
 	}
+}
+
+/* A connection's row in netstat's shape. */
+static void
+conn_row(struct pc *c, const char *name, unsigned int rq, unsigned int sq,
+    const char *la, unsigned int lport, const char *fa, unsigned int fport,
+    const char *state)
+{
+
+	c->total++;
+	fprintf(c->out, "{\"protocol\":\"%s\",\"receive-bytes-waiting\":%u,"
+	    "\"send-bytes-waiting\":%u,\"local\":{\"address\":\"%s\","
+	    "\"port\":\"%u\"},\"remote\":{\"address\":\"%s\","
+	    "\"port\":\"%u\"}", name, rq, sq, la, lport, fa, fport);
+	if (state != NULL)
+		fprintf(c->out, ",\"tcp-state\":\"%s\"", state);
+	fprintf(c->out, "}\n");
+}
+
+/*
+ * One control block as a row, or none: conns leaves out what listens
+ * and what is connected to nothing, as netstat -n does.
+ */
+static void
+row(struct pc *c, const struct xinpcb *xi, const char *proto, int state,
+    bool socks, int fam)
+{
+	const struct in_endpoints	*ie = &xi->inp_inc.inc_ie;
+	char				 la[INET6_ADDRSTRLEN], fa[INET6_ADDRSTRLEN],
+					 name[16];
+	bool				 v4, v6, six;
+
+	v4 = (xi->inp_vflag & INP_IPV4) != 0;
+	v6 = (xi->inp_vflag & INP_IPV6) != 0;
+	if ((fam == 4 && !v4) || (fam == 6 && !v6))
+		return;
+	six = v6 && !(v4 && fam == 4);
+	snprintf(name, sizeof(name), "%s%s", proto, v4 && v6 ? "46" : v6 ?
+	    "6" : "4");
+	addr_of(xi, true, six, la, sizeof(la));
+	addr_of(xi, false, six, fa, sizeof(fa));
+	if (!socks) {
+		if (state == TCPS_LISTEN || (state < 0 && strcmp(fa, "*") ==
+		    0))
+			return;
+		conn_row(c, name, xi->xi_socket.so_rcv.sb_cc,
+		    xi->xi_socket.so_snd.sb_cc, la, ntohs(ie->ie_lport), fa,
+		    ntohs(ie->ie_fport), state >= 0 && state < TCP_NSTATES ?
+		    tcp_states[state] : NULL);
+		return;
+	}
+	sock_rows(c, xi->xi_socket.xso_so, name, la, ntohs(ie->ie_lport), fa,
+	    ntohs(ie->ie_fport));
+}
+
+/* An SCTP address as the programs write it: "*" for none. */
+static void
+sctp_addr(const union sctp_sockstore *a, char *buf, size_t len)
+{
+
+	if (a->sa.sa_family == AF_INET && a->sin.sin_addr.s_addr !=
+	    INADDR_ANY)
+		inet_ntop(AF_INET, &a->sin.sin_addr, buf, (socklen_t)len);
+	else if (a->sa.sa_family == AF_INET6 &&
+	    !IN6_IS_ADDR_UNSPECIFIED(&a->sin6.sin6_addr))
+		inet_ntop(AF_INET6, &a->sin6.sin6_addr, buf, (socklen_t)len);
+	else
+		strlcpy(buf, "*", len);
+}
+
+static const char *
+sctp_state(uint32_t st)
+{
+
+	switch (st & SCTP_STATE_MASK) {
+	case SCTP_STATE_COOKIE_WAIT:
+		return ("COOKIE_WAIT");
+	case SCTP_STATE_COOKIE_ECHOED:
+		return ("COOKIE_ECHOED");
+	case SCTP_STATE_OPEN:
+		return ("ESTABLISHED");
+	case SCTP_STATE_SHUTDOWN_SENT:
+		return ("SHUTDOWN_SENT");
+	case SCTP_STATE_SHUTDOWN_RECEIVED:
+		return ("SHUTDOWN_RECEIVED");
+	case SCTP_STATE_SHUTDOWN_ACK_SENT:
+		return ("SHUTDOWN_ACK_SENT");
+	case SCTP_STATE_SHUTDOWN_PENDING:
+		return ("SHUTDOWN_PENDING");
+	case SCTP_STATE_EMPTY:
+		return ("CLOSED");
+	default:
+		return ("UNKNOWN");
+	}
+}
+
+/*
+ * SCTP's endpoints, each with its local addresses (none: bound to all),
+ * then its associations, each with its local and its remote addresses;
+ * every list ends with a record whose last is 1.  A socket is a row for
+ * each address it listens on, and one for each association, by the
+ * first address of either end (the primary is the first the kernel
+ * lists); a connection, an association's.
+ */
+static void
+sctp(struct pc *c, bool socks, int fam)
+{
+	const struct xsctp_inpcb	*xi;
+	const struct xsctp_tcb		*xt;
+	const struct xsctp_laddr	*xl;
+	const struct xsctp_raddr	*xr;
+	char				*buf, name[16], la[INET6_ADDRSTRLEN],
+					 fa[INET6_ADDRSTRLEN];
+	size_t				 len, off;
+	bool				 six, listens, any, first;
+
+	if ((buf = whole("net.inet.sctp.assoclist", &len)) == NULL)
+		return;
+	off = 0;
+	while (off + sizeof(*xi) <= len) {
+		xi = (const void *)(buf + off);
+		off += sizeof(*xi);
+		if (xi->last)
+			break;
+		/* Bound to IPv6, it takes IPv4 too: sockstat says so. */
+		six = (xi->flags & SCTP_PCB_FLAGS_BOUND_V6) != 0;
+		snprintf(name, sizeof(name), "sctp%s", six ? "46" : "4");
+		listens = xi->maxqlen > 0 || (xi->flags &
+		    SCTP_PCB_FLAGS_UDPTYPE) != 0;
+		/* Its local addresses. */
+		any = false;
+		while (off + sizeof(*xl) <= len) {
+			xl = (const void *)(buf + off);
+			off += sizeof(*xl);
+			if (xl->last)
+				break;
+			if (fam == 6 && !six)
+				continue;
+			any = true;
+			if (socks && listens) {
+				sctp_addr(&xl->address, la, sizeof(la));
+				sock_rows(c, xi->socket, name, la,
+				    xi->local_port, "*", 0);
+			}
+		}
+		if (!any && socks && listens && !(fam == 6 && !six))
+			sock_rows(c, xi->socket, name, "*", xi->local_port, "*",
+			    0);
+		/* Its associations. */
+		while (off + sizeof(*xt) <= len) {
+			xt = (const void *)(buf + off);
+			off += sizeof(*xt);
+			if (xt->last)
+				break;
+			la[0] = fa[0] = '\0';
+			for (first = true; off + sizeof(*xl) <= len; first =
+			    false) {
+				xl = (const void *)(buf + off);
+				off += sizeof(*xl);
+				if (xl->last)
+					break;
+				if (first)
+					sctp_addr(&xl->address, la, sizeof(la));
+			}
+			for (first = true; off + sizeof(*xr) <= len; first =
+			    false) {
+				xr = (const void *)(buf + off);
+				off += sizeof(*xr);
+				if (xr->last)
+					break;
+				if (first)
+					sctp_addr(&xr->address, fa, sizeof(fa));
+			}
+			/* The remote address in use: the primary. */
+			if (xt->primary_addr.sa.sa_family == AF_INET ||
+			    xt->primary_addr.sa.sa_family == AF_INET6)
+				sctp_addr(&xt->primary_addr, fa, sizeof(fa));
+			if (fam == 6 && !six)
+				continue;
+			if (socks)
+				sock_rows(c, xi->socket, name, la[0] != '\0' ? la :
+				    "*", xt->local_port, fa[0] != '\0' ? fa : "*",
+				    xt->remote_port);
+			else
+				conn_row(c, name, 0, 0, la[0] != '\0' ? la : "*",
+				    xt->local_port, fa[0] != '\0' ? fa : "*",
+				    xt->remote_port, sctp_state(xt->state));
+		}
+	}
+	free(buf);
 }
 
 /* The control blocks of one protocol, each its row. */
@@ -320,6 +484,7 @@ pcb_list(FILE *out, bool socks, int fam)
 		owners_read(&c);
 	pcbs(&c, "tcp", socks, fam);
 	pcbs(&c, "udp", socks, fam);
+	sctp(&c, socks, fam);
 	fprintf(out, "#total %ju\n", (uintmax_t)c.total);
 	free(c.owners);
 	free(c.procs);

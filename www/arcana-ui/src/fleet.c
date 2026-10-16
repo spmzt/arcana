@@ -21,12 +21,18 @@
 #define	T_GAP_X		56
 #define	T_GAP_Y		8
 #define	T_PAD		10
-#define	T_MAX_JAILS	24	/* per host; the rest is one "+N" node */
+#define	T_MAX_JAILS	64	/* per host; the rest is one "+N" node */
+#define	T_COLS		4	/* a host's jails in at most so many columns */
+#define	T_PER_COL	10	/* a column more for each so many */
+#define	T_CELL_X	12	/* between a host's columns of jails */
+#define	T_RAIL		14	/* the rail the jails hang on, before them */
 
 static void	tile(struct html *, const char *, const char *, const char *);
 static void	bar(struct html *, const char *, float);
 static int	topology(struct html *, struct server *, int, int, int, bool);
 static int	jail_rows(const struct server *, bool);
+static int	jail_cols(int);
+static int	jails_width(const struct server *, bool);
 
 /* A figure with its caption, for the summary. */
 static void
@@ -89,11 +95,35 @@ static int
 jail_rows(const struct server *s, bool live)
 {
 	unsigned int	n;
+	int		cells;
 
 	n = jail_count(s, live);
 	if (n == 0)
 		return (1);
-	return (n > T_MAX_JAILS ? T_MAX_JAILS + 1 : (int)n);
+	cells = n > T_MAX_JAILS ? T_MAX_JAILS + 1 : (int)n;
+	return ((cells + jail_cols(cells) - 1) / jail_cols(cells));
+}
+
+/* The width a host's grid of jails takes. */
+static int
+jails_width(const struct server *s, bool live)
+{
+	unsigned int	n;
+	int		cols;
+
+	n = jail_count(s, live);
+	cols = jail_cols(n > T_MAX_JAILS ? T_MAX_JAILS + 1 : (int)n);
+	return (cols * T_NODE_W + (cols - 1) * T_CELL_X);
+}
+
+/* The columns a host's cells of jails take: one for ten, at most four. */
+static int
+jail_cols(int cells)
+{
+	int	c;
+
+	c = (cells + T_PER_COL - 1) / T_PER_COL;
+	return (c < 1 ? 1 : c > T_COLS ? T_COLS : c);
 }
 
 /*
@@ -109,7 +139,8 @@ topology(struct html *h, struct server *s, int col, int row, int parent_y,
 	const ucl_object_t	*j;
 	ucl_object_iter_t	 it;
 	const char		*name, *st;
-	int			 x, y, jx, jy, n, rows, shown;
+	int			 x, y, jx, jy, n, rows, shown, cols, cells, rx,
+				 last;
 	unsigned int		 total;
 
 	rows = jail_rows(s, live);
@@ -128,20 +159,39 @@ topology(struct html *h, struct server *s, int col, int row, int parent_y,
 	h_raw(h, "><i class=\"led\"></i>");
 	h_txt(h, s->name);
 	h_raw(h, "</div>");
-	jx = x + T_NODE_W + T_GAP_X;
-	n = shown = 0;
 	total = jail_count(s, live);
+	if (total == 0)
+		return (rows);
+	/*
+	 * The jails in a grid, a column for each ten of them: one line
+	 * from the host to a rail beside the grid, a tick from the rail to
+	 * each row; a hundred jails are a block, not a fan of a hundred
+	 * curves down the page.
+	 */
+	cells = total > T_MAX_JAILS ? T_MAX_JAILS + 1 : (int)total;
+	cols = jail_cols(cells);
+	rx = x + T_NODE_W + T_GAP_X - T_RAIL;
+	last = T_PAD + (row + rows - 1) * (T_NODE_H + T_GAP_Y) + T_NODE_H / 2;
+	h_fmt(h, "<svg class=\"edges\" style=\"left:0;top:0\" "
+	    "aria-hidden=\"true\"><path class=\"e-ok\" d=\"M%d %d C%d %d %d %d "
+	    "%d %d", x + T_NODE_W, y + T_NODE_H / 2, rx - 10, y + T_NODE_H / 2,
+	    rx - 10, y + T_NODE_H / 2, rx, y + T_NODE_H / 2);
+	if (rows > 1)
+		h_fmt(h, " M%d %d L%d %d", rx, y + T_NODE_H / 2, rx, last);
+	for (n = 0; n < rows; n++) {
+		jy = T_PAD + (row + n) * (T_NODE_H + T_GAP_Y) + T_NODE_H / 2;
+		h_fmt(h, " M%d %d L%d %d", rx, jy, rx + T_RAIL, jy);
+	}
+	h_raw(h, "\"/></svg>");
+	n = shown = 0;
 	it = NULL;
 	while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
 	    "jails"), &it, true)) != NULL) {
 		if ((name = jstr(j, "name")) == NULL || (live && stopped(j)))
 			continue;
-		jy = T_PAD + (row + n) * (T_NODE_H + T_GAP_Y);
-		h_fmt(h, "<svg class=\"edges\" style=\"left:0;top:0\" "
-		    "aria-hidden=\"true\"><path class=\"e-ok\" d=\"M%d %d C%d %d "
-		    "%d %d %d %d\"/></svg>", x + T_NODE_W, y + T_NODE_H / 2,
-		    x + T_NODE_W + T_GAP_X / 2, y + T_NODE_H / 2,
-		    jx - T_GAP_X / 2, jy + T_NODE_H / 2, jx, jy + T_NODE_H / 2);
+		/* Row by row, so a row reads from left to right. */
+		jx = x + T_NODE_W + T_GAP_X + (n % cols) * (T_NODE_W + T_CELL_X);
+		jy = T_PAD + (row + n / cols) * (T_NODE_H + T_GAP_Y);
 		if (shown == T_MAX_JAILS) {
 			h_fmt(h, "<div class=\"tnode more\" style=\"left:%dpx;"
 			    "top:%dpx\" data-act=\"select-server\"", jx, jy);
@@ -231,7 +281,13 @@ view_fleet(struct html *h)
 			bar(h, "CPU", s->hist[0][s->nhist - 1]);
 			bar(h, "RAM", s->hist[1][s->nhist - 1]);
 			bar(h, "ZFS", s->hist[2][s->nhist - 1]);
-		} else
+		} else if (s->loading && arc_now() - s->loading_since > 15000)
+			/* Its agent took the connection and says nothing. */
+			h_fmt(h, "<p class=\"warn\" title=\"Asked, and no "
+			    "answer yet: the connection is up and the agent "
+			    "says nothing, or a proxy holds it\">no answer for "
+			    "%.0f s</p>", (arc_now() - s->loading_since) / 1000);
+		else
 			h_raw(h, "<p class=\"dim\">waiting for the host…</p>");
 		if (s->list != NULL) {
 			int r = 0, a = 0;
@@ -251,10 +307,17 @@ view_fleet(struct html *h)
 		h_raw(h, "</article>");
 	}
 	h_raw(h, "</div><h4>Topology</h4>");
-	h_fmt(h, "<div class=\"graph-scroll\"><div class=\"topo\" "
-	    "style=\"width:%dpx;height:%dpx\">", T_PAD * 2 + 3 * T_NODE_W +
-	    2 * T_GAP_X, T_PAD * 2 + (rows > 0 ? rows : 1) * (T_NODE_H +
-	    T_GAP_Y));
+	{
+		int	w, wmax;
+
+		for (wmax = T_NODE_W, i = 0; i < app.nservers; i++)
+			if ((w = jails_width(&app.servers[i], true)) > wmax)
+				wmax = w;
+		h_fmt(h, "<div class=\"graph-scroll\"><div class=\"topo\" "
+		    "style=\"width:%dpx;height:%dpx\">", T_PAD * 2 + 2 *
+		    (T_NODE_W + T_GAP_X) + wmax, T_PAD * 2 + (rows > 0 ? rows :
+		    1) * (T_NODE_H + T_GAP_Y));
+	}
 	h_fmt(h, "<div class=\"tnode root\" style=\"left:%dpx;top:%dpx\" "
 	    "data-act=\"select-fleet\">console</div>", T_PAD, T_PAD);
 	row = 0;
@@ -338,8 +401,9 @@ view_summary(struct html *h, struct server *s)
 	}
 	h_raw(h, "<h4>Jails</h4>");
 	h_fmt(h, "<div class=\"graph-scroll\"><div class=\"topo\" "
-	    "style=\"width:%dpx;height:%dpx\">", T_PAD * 2 + 2 * T_NODE_W +
-	    T_GAP_X, T_PAD * 2 + jail_rows(s, false) * (T_NODE_H + T_GAP_Y));
+	    "style=\"width:%dpx;height:%dpx\">", T_PAD * 2 + T_NODE_W +
+	    T_GAP_X + jails_width(s, false), T_PAD * 2 + jail_rows(s, false) *
+	    (T_NODE_H + T_GAP_Y));
 	topology(h, s, 0, 0, -1, false);
 	h_raw(h, "</div></div>");
 }

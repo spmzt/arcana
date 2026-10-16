@@ -267,6 +267,7 @@ struct server {
 	ucl_object_t	*list;		/* last good list reply */
 	double		 fetched;	/* when it arrived, ms */
 	bool		 loading;
+	double		 loading_since;	/* ms: when the read on its way was asked */
 	bool		 failed;	/* the last refresh failed */
 	char		 error[256];
 	struct jailui	*jui;
@@ -389,6 +390,7 @@ enum modal {
 	MODAL_BIRD_BLOCK,
 	MODAL_BIRD_RPKI,
 	MODAL_BIRD_FILE,
+	MODAL_BIRD_FORM,	/* a BGP, OSPF or BFD protocol as a form */
 	MODAL_IPSEC_CONN,
 	MODAL_IPSEC_CHILD,
 	MODAL_SD_UCS,
@@ -702,6 +704,19 @@ bool		 bird_action(const char *, const char *, const char *);
 bool		 bird_form(const char *, const ucl_object_t *);
 bool		 bird_modal(struct html *);
 void		 bird_tick(double);
+void		 bird_show(const char *);
+/* birdform.c: BGP, OSPF and BFD protocols as forms. */
+struct bfconf;
+struct bfconf	*bf_new(const char *);
+struct bfconf	*bf_parse(const char *, const char *);
+struct bfconf	*bf_read(const char *, const ucl_object_t *,
+		    const char *const *, const char *const *, char *, size_t);
+void		 bf_fields(struct html *, const struct bfconf *,
+		    const char *const *, const char *const *, bool);
+char		*bf_text(const struct bfconf *);
+const char	*bf_name(const struct bfconf *);
+void		 bf_summary(char *, size_t, const struct bfconf *);
+void		 bf_free(struct bfconf *);
 /* tbl.c: every table sorts by its columns and is filtered. */
 struct tcol {
 	const char	*title;
@@ -712,6 +727,8 @@ void		 tbl_head(struct html *, const char *, const struct tcol *, int,
 		    int);
 const ucl_object_t **tbl_rows(const char *, const ucl_object_t *,
 		    const struct tcol *, int, const char *);
+const ucl_object_t **tbl_rows2(const char *, const ucl_object_t *,
+		    const struct tcol *, const char *const *, int, const char *);
 bool		 tbl_sorted(const char *);
 void		 tbl_set(const char *, int, bool);
 int		 tbl_col(const char *, bool *);
@@ -765,6 +782,18 @@ int		 usage_step(const char *);
 int		 topo_addr_owner(const char *, char *, size_t, char *, size_t);
 void		 topo_poll_all(void);
 void		 topo_addr_list(struct html *, const char *);
+int		 topo_bird_next(int, const char **, const char **,
+		    const ucl_object_t **);
+int		 topo_bird_hosts(int *);
+const char	*topo_addr_node(const char *);
+void		 topo_bird_now(void);
+bool		 topo_bird_open(const char *);
+/* routing.c: BGP, OSPF and BFD across every BIRD of the fleet. */
+void		 view_routing(struct html *);
+/* help.c: the page shown, in the book. */
+const char	*help_path(void);
+void		 help_button(struct html *);
+bool		 routing_action(const char *, const char *, const char *);
 int		 topo_gw_owner(const char *, int, const char *, char *, size_t,
 		    char *, size_t);
 bool		 ecmp_shown(void);
@@ -775,7 +804,8 @@ void		 view_ecmp(struct html *);
 void		 nhop_modal(struct html *);
 bool		 nhop_action(const char *, const char *, const char *);
 void		 ecmp_head(struct html *);
-enum { NETSECT_MAP, NETSECT_GROUPS, NETSECT_TRACE };
+enum { NETSECT_MAP, NETSECT_GROUPS, NETSECT_TRACE, NETSECT_BGP, NETSECT_OSPF,
+    NETSECT_BFD };
 void		 view_traceroute(struct html *);
 bool		 mtr_action(const char *, const char *, const char *);
 void		 mtr_tick(double);

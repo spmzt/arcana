@@ -7,7 +7,8 @@
 /*
  * Faults (Mplify 119 §11.3): each with the time it was seen or
  * cleared, a type (Table 4: interface-down, bfd, bgp-neighbor, cpu,
- * memory, storage; and ours: tunnel, bird-instance, tca), a severity
+ * memory, storage; and ours: tunnel, bird-instance, ospf-neighbor,
+ * tca; luxuria/birdwatch.c's for the host's BIRD), a severity
  * (Warning, Minor, Major, Critical; Cleared when it is), what it is
  * of, who saw it and a line of description (Table 5).  One open fault
  * of a type and object at a time; set and cleared are events

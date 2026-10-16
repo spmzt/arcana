@@ -1379,6 +1379,20 @@ part_nettab(void)
 	    "length > 0 && window.netw.some(t => t.includes('\"what\":"
 	    "\"sockets\"'))", 20);
 	run("WebSocket.prototype.send = window.ws1;");
+	/* Found by a port: sshd's, alone or as address:port. */
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = '22'; i.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("[...document.querySelectorAll('.stage table.net tbody tr')]"
+	    ".some(r => r.textContent.includes('sshd'))", 10);
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = '*:22'; i.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("[...document.querySelectorAll('.stage table.net tbody tr')]"
+	    ".some(r => r.textContent.includes('sshd'))", 10);
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true "
+	    "}));");
 	/* The neighbours, ARP's and NDP's, asked of the kernel. */
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=neighbours]').click()");
@@ -2591,6 +2605,140 @@ part_plugins(void)
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('BIRD keeps its new configuration'))", 30);
 	ATF_CHECK(system("grep -q '^configure confirm$' birdc.log") == 0);
+	/*
+	 * BGP, OSPF and BFD each a tab of the host's BIRD, with a form: a
+	 * protocol made, one changed, and one the form cannot show left
+	 * to be changed as text.  Out of safe mode, to save one after the
+	 * other.
+	 */
+	run("document.querySelector('button[data-act=bird-safe]').click()");
+	wait_js("document.querySelector('button[data-act=bird-safe]')."
+	    "textContent.includes('off')", 5);
+	run("document.querySelector('button[data-act=bird-sub][data-arg=\"1\"]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('table.bird-bgp tbody tr').length === "
+	    "2 && [...document.querySelectorAll('table.bird-bgp tbody tr')]"
+	    ".some(r => r.textContent.includes('bgp_edge') && r.textContent."
+	    "includes('as text')) && [...document.querySelectorAll("
+	    "'table.bird-bgp tbody tr')].some(r => r.textContent.includes("
+	    "'192.0.2.1 AS65001'))", 10);
+	run("document.querySelector('button[data-act=bird-pnew][data-arg=bgp]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=bird-pform] "
+	    "input[name=nbr]')", 5);
+	run("const f = document.querySelector('form[data-form=bird-pform]'); "
+	    "f.elements.name.value = 'transit1'; f.nbr.value = '203.0.113.9'; "
+	    "f.nas.value = '70000000000'; f.las.value = '65000'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal .err') && document."
+	    "querySelector('.modal .err').textContent.includes('AS is a number')", 5);
+	run("const f = document.querySelector('form[data-form=bird-pform]'); "
+	    "f.nas.value = '64500'; f.bfd.value = 'on'; f.imp0.value = "
+	    "'filter bgp_in'; f.ch1.checked = true; f.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('table.bird-bgp tbody tr')].some(r => r."
+	    "textContent.includes('transit1'))", 20);
+	ATF_CHECK(system("grep -q '^protocol bgp transit1 {$' bird/bird.conf "
+	    "&& grep -q '^\tneighbor 203.0.113.9 as 64500;$' bird/bird.conf && "
+	    "grep -q '^\tbfd on;$' bird/bird.conf && grep -q '^\t\timport "
+	    "filter bgp_in;$' bird/bird.conf && grep -q '^\tipv6 {$' "
+	    "bird/bird.conf") == 0);
+	/* One from a template: what it leaves empty, the template says. */
+	run("document.querySelector('button[data-act=bird-pnew][data-arg=bgp]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=bird-pform] "
+	    "select[name=tmpl] option[value=ibgp_t]')", 5);
+	run("const f = document.querySelector('form[data-form=bird-pform]'); "
+	    "f.elements.name.value = 'core2'; f.tmpl.value = 'ibgp_t'; "
+	    "f.nbr.value = '2001:db8::7'; f.ch0.checked = false; "
+	    "f.efa.value = 'on'; f.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('table.bird-bgp tbody tr')].some(r => r."
+	    "textContent.includes('ibgp_t · '))", 20);
+	ATF_CHECK(system("grep -q '^protocol bgp core2 from ibgp_t {$' "
+	    "bird/bird.conf && grep -q '^\tneighbor 2001:db8::7;$' bird/bird.conf "
+	    "&& grep -q '^\tenforce first as on;$' bird/bird.conf && ! grep -A4 "
+	    "'^protocol bgp core2' bird/bird.conf | grep -q 'local as'") == 0);
+	shot("7g-bird-bgp-tab");
+	/* One there already, read into the form and changed. */
+	run("[...document.querySelectorAll('table.bird-bgp tbody tr')].find(r "
+	    "=> r.dataset.arg === 'bgp_core').click()");
+	wait_js("document.querySelector('form[data-form=bird-pform] "
+	    "input[name=nbr]') && document.querySelector('form[data-form="
+	    "bird-pform]').nbr.value === '192.0.2.1' && document.querySelector("
+	    "'form[data-form=bird-pform]').las.value === 'MY_AS' && document."
+	    "querySelector('form[data-form=bird-pform]').desc.value === 'Core "
+	    "uplink, east' && document.querySelector('form[data-form=bird-pform]')"
+	    ".imp0.value === 'filter bgp_out' && document.querySelector("
+	    "'form[data-form=bird-pform]').notes.value.includes('the old "
+	    "uplink: 192.0.2.9')", 5);
+	shot("7g-bird-bgp-form");
+	run("const f = document.querySelector('form[data-form=bird-pform]'); "
+	    "f.nas.value = '65011'; f.requestSubmit();");
+	wait_js("!document.querySelector('.modal')", 20);
+	ATF_CHECK(system("grep -q '^\tneighbor 192.0.2.1 as 65011;$' "
+	    "bird/bird.conf && grep -q '^\tlocal as MY_AS;$' bird/bird.conf && "
+	    "grep -q '^\t# the old uplink: 192.0.2.9$' bird/bird.conf && "
+	    "grep -q '^\tdescription \"Core uplink, east\";$' bird/bird.conf") == 0);
+	/* What the form cannot show is changed as text. */
+	run("[...document.querySelectorAll('table.bird-bgp tbody tr')].find(r "
+	    "=> r.dataset.arg === 'bgp_edge').click()");
+	wait_js("document.querySelector('.modal button[data-act=bird-astext]')",
+	    5);
+	run("document.querySelector('.modal button[data-act=bird-astext]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=bird-block] textarea')"
+	    " && document.querySelector('form[data-form=bird-block] textarea')"
+	    ".value.includes('198.51.100.7')", 5);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('.modal')", 5);
+	/* OSPF: an instance on an interface; its neighbour as BIRD has it. */
+	run("document.querySelector('button[data-act=bird-sub][data-arg=\"2\"]')"
+	    ".click()");
+	wait_js("document.querySelector('table.bird-ospfn tbody tr') && "
+	    "document.querySelector('table.bird-ospfn').textContent.includes("
+	    "'Full/PtP')", 10);
+	run("document.querySelector('button[data-act=bird-pnew][data-arg=ospf]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=bird-pform] "
+	    "input[name=if0]')", 5);
+	run("const f = document.querySelector('form[data-form=bird-pform]'); "
+	    "f.elements.name.value = 'ospf1'; f.if0.value = 'gif0'; f.cost0.value "
+	    "= '10'; f.if1.value = '-gif9, gif*'; f.type0.value = 'ptp'; f.bfd0.checked = true; "
+	    "f.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('table.bird-ospf tbody tr')].some(r => r."
+	    "textContent.includes('area 0'))", 20);
+	ATF_CHECK(system("grep -q '^protocol ospf v2 ospf1 {$' bird/bird.conf "
+	    "&& grep -q '^\t\tinterface \"gif0\" {$' bird/bird.conf && grep -q "
+	    "'^\t\t\ttype ptp;$' bird/bird.conf && grep -q '^\t\t\tbfd on;$' "
+	    "bird/bird.conf && grep -q '^\t\tinterface -\"gif9\", \"gif\\*\";$' "
+	    "bird/bird.conf") == 0);
+	shot("7g-bird-ospf-tab");
+	/* BFD: the interface's times and a neighbour of its own. */
+	run("document.querySelector('button[data-act=bird-sub][data-arg=\"3\"]')"
+	    ".click()");
+	wait_js("document.querySelector('table.bird-bfdn tbody tr') && "
+	    "document.querySelector('table.bird-bfdn').textContent.includes("
+	    "'fe80::2')", 10);
+	run("document.querySelector('button[data-act=bird-pnew][data-arg=bfd]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=bird-pform] "
+	    "input[name=rx0]')", 5);
+	run("const f = document.querySelector('form[data-form=bird-pform]'); "
+	    "f.elements.name.value = 'bfd1'; f.if0.value = 'gif0'; f.rx0.value = "
+	    "'200'; f.tx0.value = '200'; f.mult0.value = '5'; f.nb0.value = "
+	    "'10.255.0.2'; f.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && document.querySelector("
+	    "'table.bird-bfd tbody tr')", 20);
+	ATF_CHECK(system("grep -q '^protocol bfd bfd1 {$' bird/bird.conf && "
+	    "grep -q '^\t\tinterval 200 ms;$' bird/bird.conf && grep -q "
+	    "'^\tneighbor 10.255.0.2;$' bird/bird.conf") == 0);
+	run("document.querySelector('button[data-act=bird-sub][data-arg=\"0\"]')"
+	    ".click()");
+	wait_js("document.querySelector('table.bird')", 5);
+	run("document.querySelector('button[data-act=bird-safe]').click()");
+	wait_js("document.querySelector('button[data-act=bird-safe]')."
+	    "textContent.includes('on')", 5);
 	/* Routes a neighbour sent, from its box. */
 	run("[...document.querySelectorAll('table.bird tbody tr')].find(r => "
 	    "r.textContent.includes('bgp_edge')).click()");
@@ -3581,6 +3729,20 @@ part_firewall(void)
 	    "fw-onoff]') && document.querySelector('.fw-count').textContent."
 	    "includes('7 rules now') && !document.querySelector('.tree "
 	    "[data-act=select-devices]')"));
+	/* The chain drawn: rule 20's call into 9100 an arrow across, rule
+	 * 5's skipto 500 a dashed one down the chain. */
+	ATF_CHECK(js_true("document.querySelectorAll('svg.fwchain path.call:"
+	    "not(.skip)').length === 1 && document.querySelectorAll('svg."
+	    "fwchain path.call.skip').length === 1"));
+	/* What the rules take: the busiest as bars, 9100 never matched
+	 * (check-state at 200 and the returns pass, they are left out). */
+	ATF_CHECK_MSG(js_true("document.querySelectorAll('ol.fwbusy li')."
+	    "length >= 1 && !document.querySelector('ol.fwbusy').textContent."
+	    "includes('call 9100') && getComputedStyle(document.querySelector("
+	    "'ol.fwbusy .track i')).backgroundColor !== 'rgba(0, 0, 0, 0)' && "
+	    "document.querySelector('ul.fwnever').textContent."
+	    "includes('09100') && !document.querySelector('ul.fwnever')."
+	    "textContent.includes('00200')"), "%s", "the rule load");
 	shot("7o-firewall-layout");
 	run("document.querySelector('.fwrail .titem.fw[data-arg=\"10\"]')."
 	    "click()");
@@ -4404,7 +4566,12 @@ part_flows(void)
 	    "f.p_svc.value = 'sshd'; f.requestSubmit();");
 	wait_js("document.querySelectorAll('.wfgraph button.wfstep.done')."
 	    "length === 2", 30);
-	/* The jump drawn under the row, not taken: the first did not fail. */
+	/* The jump drawn under the row, from the first step to the next,
+	 * not beside them; not taken: the first did not fail. */
+	ATF_CHECK(js_true("(() => { const j = document.querySelector('.wfgraph "
+	    ".wfjump').getBoundingClientRect(), a = document.querySelector("
+	    "'.wfgraph button.wfstep').getBoundingClientRect(); return j.top "
+	    ">= a.bottom - 4 && j.left < a.right; })()"));
 	ATF_CHECK(js_true("document.querySelector('.wfgraph .wfjump') && "
 	    "!document.querySelector('.wfgraph .wfjump.taken') && document."
 	    "querySelector('.wfgraph .wfjump').textContent.includes("
@@ -4413,14 +4580,25 @@ part_flows(void)
 	wait_js("document.querySelector('.dock').textContent.includes("
 	    "'workflow restart a service') && document.querySelector('.dock')"
 	    ".textContent.includes('done')", 15);
-	run("document.querySelector('.wfgraph button.wfstep').click()");
+	/* On its clock: a lane for the host, a bar a step, done; what it
+	 * came to above.  A bar pressed shows the step as a box does. */
+	ATF_CHECK(js_true("document.querySelectorAll('svg.wftl .bar.done')."
+	    "length === 2 && document.querySelector('.wfsum').textContent."
+	    "includes('1/1 hosts done') && document.querySelector('.wfsum')."
+	    "textContent.includes('2/2 steps done')"));
+	run("document.querySelector('svg.wftl .bar.done').dispatchEvent(new "
+	    "MouseEvent('click', {bubbles: true}))");
 	wait_js("document.querySelector('section.wftrace') && document."
-	    "querySelector('section.wftrace').textContent.includes('sshd')",
-	    10);
+	    "querySelector('section.wftrace').textContent.includes('sshd') "
+	    "&& document.querySelector('svg.wftl .bar.on')", 10);
 	shot("9b-workflow-run");
 	/* What waits in the queue, kept as one. */
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	ATF_CHECK(js_true("document.querySelector('ul.wfruns li.done')"));
+	/* The workflow's last runs beside it, the last in words. */
+	ATF_CHECK(js_true("document.querySelector('ul.wflist .wfrecent i."
+	    "done') && document.querySelector('ul.wflist .wfrecent small')."
+	    "textContent.includes('last done')"));
 	/* Opened again from the list of runs: drawn, not a loader. */
 	run("document.querySelector('ul.wfruns li.done').click()");
 	wait_js("document.querySelector('.wfgraph button.wfstep') && "
@@ -5366,6 +5544,77 @@ part_netsect(void)
 	shot("8-network-traceroute");
 	run("document.querySelector('button[data-act=mtr-stop]').click()");
 	wait_js("document.querySelector('button[data-act=mtr-start]')", 5);
+	/*
+	 * BGP, OSPF and BFD across the fleet: both agents' BIRD, a row a
+	 * session, a line each in the colour of its state.
+	 */
+	run("document.querySelector('.netsect button.tab[data-arg=bgp]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('table.rt-bgp tbody tr').length === 4 "
+	    "&& document.querySelectorAll('svg.rtg.bgp .edge.up').length === 2 "
+	    "&& document.querySelectorAll('svg.rtg.bgp .edge.warn').length === "
+	    "2", 30);
+	ATF_CHECK(js_true("[...document.querySelectorAll('.rt-tiles .tile')]"
+	    ".some(t => t.textContent.includes('2 of 4') && t.textContent."
+	    "includes('BGP sessions')) && [...document.querySelectorAll("
+	    "'.rt-tiles .tile')].some(t => t.textContent.includes('2 of 2') && "
+	    "t.textContent.includes('BFD sessions'))"));
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.rt-bgp tbody "
+	    "tr')].some(r => r.textContent.includes('Established') && r."
+	    "textContent.includes('845233') && r.textContent.includes('65001'))"
+	    " && [...document.querySelectorAll('table.rt-bgp tbody tr')].some("
+	    "r => r.textContent.includes('Active') && r.querySelector("
+	    "'.chip.warn'))"));
+	/* Sorted by what came in, most first; filtered by a state. */
+	run("document.querySelector('table.rt-bgp th[data-value=\"7\"]')"
+	    ".click()");
+	run("document.querySelector('table.rt-bgp th[data-value=\"7\"]')"
+	    ".click()");
+	wait_js("document.querySelector('table.rt-bgp th.desc') && document."
+	    "querySelector('table.rt-bgp tbody tr').textContent.includes("
+	    "'845233')", 5);
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = 'Active'; i.dispatchEvent(new Event('input', { "
+	    "bubbles: true }));");
+	wait_js("document.querySelectorAll('table.rt-bgp tbody tr').length === 2 "
+	    "&& document.querySelectorAll('svg.rtg .edge').length === 2", 5);
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true "
+	    "}));");
+	wait_js("document.querySelectorAll('table.rt-bgp tbody tr').length === 4",
+	    5);
+	shot("8-network-bgp");
+	/* The top bar's ? opens this page in the book. */
+	ATF_CHECK(js_true("document.querySelector('.who a.help').href.endsWith("
+	    "'sections/map.html#bgp-ospf-and-bfd')"));
+	run("document.querySelector('.netsect button.tab[data-arg=ospf]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('table.rt-ospf tbody tr').length === "
+	    "2 && document.querySelectorAll('svg.rtg.ospf .edge.up').length === "
+	    "2 && document.querySelector('table.rt-ospf').textContent.includes("
+	    "'Full/PtP')", 10);
+	shot("8-network-ospf");
+	run("document.querySelector('.netsect button.tab[data-arg=bfd]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('table.rt-bfd tbody tr').length === "
+	    "2 && document.querySelectorAll('svg.rtg.bfd .edge.up').length === "
+	    "2 && document.querySelector('table.rt-bfd').textContent.includes("
+	    "'fe80::2')", 10);
+	/* A row opens its protocol in its host's BIRD. */
+	run("document.querySelector('.netsect button.tab[data-arg=bgp]')"
+	    ".click()");
+	wait_js("document.querySelector('table.rt-bgp tbody tr')", 10);
+	run("[...document.querySelectorAll('table.rt-bgp tbody tr')].find(r => "
+	    "r.dataset.value === 'bgp_core').click()");
+	wait_js("document.querySelector('button.tab.plugin[data-arg=bird].on') "
+	    "&& document.querySelector('form[data-form=bird-block] h2') && "
+	    "document.querySelector('form[data-form=bird-block] h2')"
+	    ".textContent.includes('bgp_core')", 20);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('.modal')", 5);
+	run("document.querySelector('li[data-act=select-network]').click()");
+	wait_js("document.querySelector('.netsect button.tab[data-arg=map]')",
+	    10);
 	run("window.fetch = window.fetchL;");
 	run("document.querySelector('.netsect button.tab[data-arg=map]')"
 	    ".click()");
@@ -5471,8 +5720,19 @@ part_routes(void)
 	run("document.querySelector('section.dock:not(.open) header[data-act="
 	    "dock]')?.click()");
 	wait_js("document.querySelector('section.dock.open')", 5);
-	ATF_CHECK(js_true("![...document.querySelectorAll('.dock [data-act="
-	    "trace]')].some(t => t.textContent.includes('list jails'))"));
+	if (!js_true("![...document.querySelectorAll('.dock [data-act="
+	    "trace]')].some(t => t.textContent.includes('list jails'))")) {
+		/* What made it, to know next time: each task, and where
+		 * the page was. */
+		ucl_object_t	*why = js("return location.hash + ' | ' + [...document"
+		    ".querySelectorAll('.dock [data-act=trace]')].map(t => t."
+		    "textContent).join(' / ');");
+
+		ATF_CHECK_MSG(false, "a list jails task on opening Settings: %s",
+		    why != NULL ? ucl_object_tostring_forced(why) : "?");
+		if (why != NULL)
+			ucl_object_unref(why);
+	}
 	/* Opening a host does ask for its jails: a task, even with a
 	 * periodic read of them on its way. */
 	run("document.querySelector('.tree [data-act=select-devices]')"
@@ -5669,6 +5929,9 @@ part_trouble(void)
 	click_when("li.tsnode[data-act=select-trouble]", 10);
 	wait_js("document.querySelector('form[data-form=ts-path]') && "
 	    "location.hash === '#/troubleshoot'", 10);
+	/* A box opened by hand stays open when the page draws again: the
+	 * answer below redraws the whole page. */
+	run("document.querySelector('details.tsplaces').open = true");
 	run("const f = document.querySelector('form[data-form=ts-path]'); "
 	    "f.src.value = '10.1.0.2'; f.dst.value = '10.3.0.2'; f.proto.value "
 	    "= 'tcp'; f.port.value = '22'; f.requestSubmit();");
@@ -5699,6 +5962,7 @@ part_trouble(void)
 			ucl_object_unref(g);
 	}
 	ATF_CHECK(js_true("document.querySelector('datalist#ts-addrs')"));
+	ATF_CHECK(js_true("document.querySelector('details.tsplaces').open"));
 	shot("9t-troubleshoot");
 	/* Swapped: the other way round, asked at once. */
 	run("document.querySelector('button[data-act=ts-swap]').click()");

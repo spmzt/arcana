@@ -39,7 +39,7 @@ struct fwtable {
 
 struct fwrule {
 	long		 num;
-	char		 text[1024];
+	char		*text;		/* as long as ipfw wrote it */
 };
 
 struct fwset {

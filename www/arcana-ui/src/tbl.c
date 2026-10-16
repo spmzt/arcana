@@ -106,6 +106,30 @@ cmp(const void *a, const void *b)
 }
 
 /*
+ * Does the row have filter in the column: in its value, in its second
+ * (a port), or in both as they are shown, "address:port"?
+ */
+static bool
+col_has(const ucl_object_t *o, const struct tcol *c, const char *key2,
+    const char *filter)
+{
+	const ucl_object_t	*f, *f2;
+	char			 both[300];
+
+	f = c->key != NULL ? jget(o, c->key) : NULL;
+	f2 = key2 != NULL ? jget(o, key2) : NULL;
+	if (f != NULL && strstr(ucl_object_tostring_forced(f), filter) != NULL)
+		return (true);
+	if (f2 == NULL)
+		return (false);
+	if (strstr(ucl_object_tostring_forced(f2), filter) != NULL)
+		return (true);
+	snprintf(both, sizeof(both), "%s:%s", f != NULL ?
+	    ucl_object_tostring_forced(f) : "", ucl_object_tostring_forced(f2));
+	return (strstr(both, filter) != NULL);
+}
+
+/*
  * The rows of arr to show, in the order asked for: those that have
  * filter in a column, or all with filter NULL or empty.  To be freed;
  * NULL ends them.
@@ -114,7 +138,17 @@ const ucl_object_t **
 tbl_rows(const char *id, const ucl_object_t *arr, const struct tcol *cols,
     int n, const char *filter)
 {
-	const ucl_object_t	**v, *o, *f;
+
+	return (tbl_rows2(id, arr, cols, NULL, n, filter));
+}
+
+/* The same, with a column's second value (key2[i], or NULL) filtered
+ * too: an address's port, alone or as "address:port". */
+const ucl_object_t **
+tbl_rows2(const char *id, const ucl_object_t *arr, const struct tcol *cols,
+    const char *const *key2, int n, const char *filter)
+{
+	const ucl_object_t	**v, *o;
 	ucl_object_iter_t	  it;
 	size_t			  cnt;
 	int			  i, s;
@@ -127,10 +161,8 @@ tbl_rows(const char *id, const ucl_object_t *arr, const struct tcol *cols,
 	while ((o = ucl_object_iterate(arr, &it, true)) != NULL) {
 		hit = filter == NULL || filter[0] == '\0';
 		for (i = 0; !hit && i < n; i++)
-			if (cols[i].key != NULL && (f = jget(o,
-			    cols[i].key)) != NULL && strstr(
-			    ucl_object_tostring_forced(f), filter) != NULL)
-				hit = true;
+			hit = col_has(o, &cols[i], key2 != NULL ? key2[i] :
+			    NULL, filter);
 		if (hit)
 			v[cnt++] = o;
 	}

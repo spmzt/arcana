@@ -246,6 +246,8 @@ static bool		 addr_same(const char *, const char *);
 static bool		 labels_quiet(int);
 static int		 owner(const char *, char *, size_t);
 static void		 node_poll(int);
+static void		 bird_poll(int);
+static void		 node_open(int, int);
 static const char	*primary_addr(struct thost *, int);
 static void		 links_build(void);
 static void		 trace_next(int, const char *);
@@ -760,6 +762,79 @@ topo_addr_owner(const char *addr, char *ifname, size_t len, char *jail,
 		return (-1);
 	snprintf(jail, jlen, "%s", tn[n].jail);
 	return (tn[n].srv);
+}
+
+/*
+ * The next node from i on whose BIRD has answered: its index, with its
+ * key, how a list names it and what BIRD said; -1 past the last.
+ */
+int
+topo_bird_next(int i, const char **key, const char **label,
+    const ucl_object_t **bird)
+{
+	struct thost	*t;
+
+	for (i = i < 0 ? 0 : i; i < ntn; i++)
+		if ((t = thost(tn[i].key, false)) != NULL && t->bird != NULL) {
+			*key = tn[i].key;
+			*label = tn[i].label;
+			*bird = t->bird;
+			return (i);
+		}
+	return (-1);
+}
+
+/* How many nodes have BIRD, and of them how many are still asked. */
+int
+topo_bird_hosts(int *asking)
+{
+	struct thost	*t;
+	int		 i, n;
+
+	nodes_build();
+	n = *asking = 0;
+	for (i = 0; i < ntn; i++) {
+		if (!plugin_at(&app.servers[tn[i].srv], tn[i].jail, "bird"))
+			continue;
+		n++;
+		if ((t = thost(tn[i].key, false)) == NULL || (t->bird == NULL &&
+		    t->bird_loading))
+			(*asking)++;
+	}
+	return (n);
+}
+
+/* How a list names the node that has addr, or NULL. */
+const char *
+topo_addr_node(const char *addr)
+{
+	int	n;
+
+	return (addr == NULL || (n = owner(addr, NULL, 0)) == -1 ? NULL :
+	    tn[n].label);
+}
+
+/* Every BIRD read again now: a routing tab was opened. */
+void
+topo_bird_now(void)
+{
+	int	i;
+
+	nodes_build();
+	for (i = 0; i < ntn; i++)
+		bird_poll(i);
+}
+
+/* A node's BIRD in its host's network tab. */
+bool
+topo_bird_open(const char *key)
+{
+	int	n;
+
+	if ((n = node_index(key)) == -1)
+		return (false);
+	node_open(n, NET_BIRD);
+	return (true);
 }
 
 /* Is the address one of a link only (fe80::/10, 169.254/16)? */
@@ -1281,10 +1356,11 @@ topo_tick(double now)
 		nodes_build();
 		for (i = 0; i < ntn; i++) {
 			node_poll(i);
-			if (wg_turn == 0) {
+			if (wg_turn == 0)
 				wg_poll(i);
+			/* The routing tabs show BIRD itself: read each time. */
+			if (wg_turn == 0 || app.netsect >= NETSECT_BGP)
 				bird_poll(i);
-			}
 		}
 		render();
 	} else if (app.node == NODE_HOST && app.tab == TAB_NETWORK &&
