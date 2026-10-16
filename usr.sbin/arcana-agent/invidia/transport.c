@@ -17,6 +17,12 @@
  * The connections open now are kept here too, as cblink says they come
  * and go, for who wants to see them.
  *
+ * An SCTP listener is bound to more addresses than its URI's where it
+ * is told to (--sctp-also, sctp_bindx(3)), and the console's end,
+ * unbound, offers all of its: the association has a path from each of
+ * the console's addresses to each of the agent's, and goes on over
+ * another when one fails.  The paths are told with the sessions.
+ *
  * A listener is added or closed while the agent runs, when the console
  * moves the host to another address: the new one listened on beside
  * the old, tried, and only then the old one closed (and the change kept
@@ -29,6 +35,7 @@
 #include <sys/un.h>
 
 #include <netinet/in.h>
+#include <netinet/sctp.h>
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -52,6 +59,7 @@ struct tlisten {
 	bool		 up;
 	bool		 sctp;		/* one of ours, beside a TCP one */
 	char		 error[160];
+	char		 also_error[160];	/* --sctp-also's not bound */
 };
 
 struct tsession {
@@ -73,6 +81,8 @@ static cbl_ctx		*t_ctx;
 static cbl_loop		*t_loop;
 static cbl_tls		*t_tls;
 static bool		 t_busy;
+
+static void	loop_done(void);
 
 static const char *
 transport_name(enum cbl_transport t)
@@ -145,6 +155,157 @@ transport_watch(cbl_ctx *ctx)
 	return (cbl_ctx_set_conn_cbs(ctx, &cbs, NULL));
 }
 
+/*
+ * --sctp-also's addresses added to an SCTP listener (or taken off,
+ * add false), at its port: an IPv4 listener takes IPv4 ones, an IPv6
+ * one both.  What could not be is said in also_error.
+ */
+static void
+sctp_also_bind(struct tlisten *t, const char *list, bool add)
+{
+	struct sockaddr_storage	 me, ss;
+	struct addrinfo		 hints, *ai;
+	socklen_t		 len;
+	char			*copy, *rest, *word;
+	in_port_t		 port;
+	int			 fd;
+
+	if (add)
+		t->also_error[0] = '\0';
+	if (list == NULL || list[0] == '\0' || t->l == NULL || !t->up ||
+	    strncmp(t->uri, "sctp://", 7) != 0 ||
+	    (fd = cbl_listener_fd(t->l)) == -1)
+		return;
+	len = sizeof(me);
+	if (getsockname(fd, (struct sockaddr *)&me, &len) != 0)
+		return;
+	port = me.ss_family == AF_INET6 ? ((struct sockaddr_in6 *)&me)->
+	    sin6_port : ((struct sockaddr_in *)&me)->sin_port;
+	if ((copy = strdup(list)) == NULL)
+		return;
+	for (rest = copy; (word = strsep(&rest, " \t,")) != NULL; ) {
+		if (word[0] == '\0')
+			continue;
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_flags = AI_NUMERICHOST;
+		hints.ai_family = me.ss_family == AF_INET ? AF_INET : AF_UNSPEC;
+		if (getaddrinfo(word, NULL, &hints, &ai) != 0) {
+			if (add)
+				snprintf(t->also_error + strlen(t->also_error),
+				    sizeof(t->also_error) - strlen(t->also_error),
+				    "%s%s: not an address %s", t->also_error[0] !=
+				    '\0' ? "; " : "", word, me.ss_family ==
+				    AF_INET ? "of IPv4" : "");
+			continue;
+		}
+		memset(&ss, 0, sizeof(ss));
+		memcpy(&ss, ai->ai_addr, ai->ai_addrlen);
+		freeaddrinfo(ai);
+		if (ss.ss_family == AF_INET6)
+			((struct sockaddr_in6 *)&ss)->sin6_port = port;
+		else
+			((struct sockaddr_in *)&ss)->sin_port = port;
+		if (sctp_bindx(fd, (struct sockaddr *)&ss, 1, add ?
+		    SCTP_BINDX_ADD_ADDR : SCTP_BINDX_REM_ADDR) != 0 && add)
+			snprintf(t->also_error + strlen(t->also_error),
+			    sizeof(t->also_error) - strlen(t->also_error),
+			    "%s%s: %s", t->also_error[0] != '\0' ? "; " : "",
+			    word, strerror(errno));
+	}
+	free(copy);
+}
+
+/* The addresses a socket of SCTP has at its end, or its peer's. */
+static ucl_object_t *
+sctp_addrs(int fd, bool peer, ucl_object_t **paths)
+{
+	struct sockaddr		*addrs, *sa;
+	struct sctp_paddrinfo	 pi;
+	struct sctp_setprim	 prim;
+	ucl_object_t		*arr, *o;
+	socklen_t		 len;
+	char			 host[64];
+	int			 n, i;
+	bool			 have_prim;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	if (paths != NULL)
+		*paths = ucl_object_typed_new(UCL_ARRAY);
+	n = peer ? sctp_getpaddrs(fd, 0, &addrs) : sctp_getladdrs(fd, 0,
+	    &addrs);
+	if (n <= 0)
+		return (arr);
+	have_prim = false;
+	if (paths != NULL) {
+		memset(&prim, 0, sizeof(prim));
+		len = sizeof(prim);
+		have_prim = getsockopt(fd, IPPROTO_SCTP, SCTP_PRIMARY_ADDR,
+		    &prim, &len) == 0;
+	}
+	sa = addrs;
+	for (i = 0; i < n; i++) {
+		if (getnameinfo(sa, sa->sa_len, host, sizeof(host), NULL, 0,
+		    NI_NUMERICHOST) == 0) {
+			ucl_array_append(arr, ucl_object_fromstring(host));
+			if (paths != NULL) {
+				o = ucl_object_typed_new(UCL_OBJECT);
+				ucl_object_insert_key(o, ucl_object_fromstring(
+				    host), "address", 0, false);
+				memset(&pi, 0, sizeof(pi));
+				memcpy(&pi.spinfo_address, sa, sa->sa_len);
+				len = sizeof(pi);
+				if (getsockopt(fd, IPPROTO_SCTP,
+				    SCTP_GET_PEER_ADDR_INFO, &pi, &len) == 0) {
+					ucl_object_insert_key(o,
+					    ucl_object_fromstring(pi.spinfo_state ==
+					    SCTP_ACTIVE ? "active" : pi.spinfo_state ==
+					    SCTP_INACTIVE ? "inactive" :
+					    pi.spinfo_state == SCTP_UNCONFIRMED ?
+					    "unconfirmed" : "other"), "state", 0,
+					    false);
+					ucl_object_insert_key(o,
+					    ucl_object_fromint(pi.spinfo_srtt),
+					    "srtt_ms", 0, false);
+					ucl_object_insert_key(o,
+					    ucl_object_fromint(pi.spinfo_rto),
+					    "rto_ms", 0, false);
+				}
+				ucl_object_insert_key(o, ucl_object_frombool(
+				    have_prim && sa->sa_len <= sizeof(
+				    prim.ssp_addr) && memcmp(&prim.ssp_addr, sa,
+				    sa->sa_len) == 0), "primary", 0, false);
+				ucl_array_append(*paths, o);
+			}
+		}
+		sa = (struct sockaddr *)((char *)sa + sa->sa_len);
+	}
+	if (peer)
+		sctp_freepaddrs(addrs);
+	else
+		sctp_freeladdrs(addrs);
+	return (arr);
+}
+
+/* In the loop's thread: --sctp-also's addresses on every SCTP listener
+ * that is up, those before taken off first. */
+struct talso {
+	const char	*was;
+	const char	*now;
+};
+
+static void
+also_change(void *arg)
+{
+	struct talso	*ta = arg;
+	int		 i;
+
+	for (i = 0; i < nlst; i++) {
+		sctp_also_bind(&lst[i], ta->was, false);
+		sctp_also_bind(&lst[i], ta->now, true);
+	}
+	loop_done();
+}
+
 /* What the loop was given to do is done: the next may begin. */
 static void
 loop_done(void)
@@ -203,6 +364,7 @@ sctp_start(void *arg __unused)
 			continue;
 		}
 		t->up = true;
+		sctp_also_bind(t, opts.sctp_also, true);
 		logmsg(LOG_INFO, "listening on %s", t->uri);
 	}
 	loop_done();
@@ -256,6 +418,9 @@ transport_init(cbl_ctx *ctx, cbl_loop *loop, cbl_tls *tls)
 		lst[nlst].sctp = true;
 		nlst++;
 	}
+	/* Those asked for as sctp:// themselves: their other addresses. */
+	for (i = 0; i < n; i++)
+		sctp_also_bind(&lst[i], opts.sctp_also, true);
 	have = kernel_has_sctp();
 	for (i = n; i < nlst; i++)
 		if (!have)
@@ -370,6 +535,7 @@ listen_change(void *arg)
 		lst[nlst].l = l;
 		lst[nlst].up = true;
 		nlst++;
+		sctp_also_bind(&lst[nlst - 1], opts.sctp_also, true);
 		pthread_mutex_unlock(&t_lock);
 		logmsg(LOG_INFO, "listening on %s", tc->uri);
 		if (sib[0] == '\0')
@@ -393,6 +559,8 @@ listen_change(void *arg)
 				pthread_mutex_lock(&t_lock);
 				lst[nlst - 1].l = l;
 				lst[nlst - 1].up = true;
+				sctp_also_bind(&lst[nlst - 1], opts.sctp_also,
+				    true);
 				pthread_mutex_unlock(&t_lock);
 				logmsg(LOG_INFO, "listening on %s", sib);
 			}
@@ -549,10 +717,64 @@ put(ucl_object_t *o, const char *key, const char *v)
 	ucl_object_insert_key(o, ucl_object_fromstring(v), key, 0, false);
 }
 
+/*
+ * --sctp-also changed now: the addresses given, every SCTP listener
+ * bound to them and not to those before, and kept in rc.conf
+ * (arcana_agent_sctp_also) for the next start; "" for none.
+ */
+static const char *
+also_set(struct work *w, const char *now)
+{
+	struct talso	 ta;
+	struct addrinfo	 hints, *ai;
+	const char	*e;
+	char		*copy, *rest, *word;
+	int		 step;
+
+	if (strlen(now) > 512)
+		return ("a list of addresses, 512 characters at most");
+	copy = wstrdup(w, now);
+	for (rest = copy; (word = strsep(&rest, " \t,")) != NULL; ) {
+		if (word[0] == '\0')
+			continue;
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_flags = AI_NUMERICHOST;
+		if (getaddrinfo(word, NULL, &hints, &ai) != 0)
+			return (wfmt(w, "%s is not an address", word));
+		freeaddrinfo(ai);
+	}
+	ta.was = opts.sctp_also;
+	/* Kept for as long as the agent runs: listeners read it. */
+	if (now[0] == '\0')
+		ta.now = NULL;
+	else if ((ta.now = strdup(now)) == NULL)
+		return ("out of memory");
+	step = step_begin(w, ARC_STEP_KIND_LIB, "sctp_bindx(3)", "the SCTP "
+	    "listeners bound to %s too", now[0] != '\0' ? now : "nothing "
+	    "more");
+	e = in_loop(also_change, &ta);
+	step_end(w, step, e == NULL, e != NULL ? "%s" : NULL, e);
+	if (e != NULL)
+		return (e);
+	/* Read by the listeners started from now on too; the one before
+	 * is let be (the loop may have read it). */
+	opts.sctp_also = ta.now;
+	step = step_begin(w, ARC_STEP_KIND_FILE, "/etc/rc.conf",
+	    "arcana_agent_sctp_also, for the next start");
+	e = NULL;
+	if (now[0] == '\0')
+		rc_unset(w, "arcana_agent_sctp_also");
+	else
+		(void)rc_set(w, "arcana_agent_sctp_also", "=", now, &e);
+	step_end(w, step, e == NULL, e != NULL ? "%s" : NULL, e);
+	return (e);
+}
+
 /* {"listeners":[...],"sctp":bool,"sessions":[...],"seen":n} */
 int
 do_transport(struct work *w, bool retry, const char *listen,
-    const char *unlisten, bool keep, struct arc_transport_rsp *rsp)
+    const char *unlisten, bool keep, const char *sctp_also,
+    struct arc_transport_rsp *rsp)
 {
 	ucl_object_t	*top, *arr, *o;
 	unsigned char	*json;
@@ -577,6 +799,10 @@ do_transport(struct work *w, bool retry, const char *listen,
 		rsp->error = e;
 		return (0);
 	}
+	if (sctp_also != NULL && (e = also_set(w, sctp_also)) != NULL) {
+		rsp->error = e;
+		return (0);
+	}
 	top = ucl_object_typed_new(UCL_OBJECT);
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	/* The loop's thread changes them, under t_lock when it adds or
@@ -592,10 +818,18 @@ do_transport(struct work *w, bool retry, const char *listen,
 		    0, false);
 		if (!lst[i].up && lst[i].error[0] != '\0')
 			put(o, "error", lst[i].error);
+		/* SCTP's: every address it is bound to. */
+		if (lst[i].up && lst[i].l != NULL && strncmp(lst[i].uri,
+		    "sctp:", 5) == 0)
+			ucl_object_insert_key(o, sctp_addrs(cbl_listener_fd(
+			    lst[i].l), false, NULL), "addresses", 0, false);
+		if (lst[i].also_error[0] != '\0')
+			put(o, "also_error", lst[i].also_error);
 		ucl_array_append(arr, o);
 	}
 	pthread_mutex_unlock(&t_lock);
 	ucl_object_insert_key(top, arr, "listeners", 0, false);
+	put(top, "sctp_also", opts.sctp_also != NULL ? opts.sctp_also : "");
 	ucl_object_insert_key(top, ucl_object_frombool(kernel_has_sctp()),
 	    "sctp", 0, false);
 	arr = ucl_object_typed_new(UCL_ARRAY);
@@ -607,6 +841,18 @@ do_transport(struct work *w, bool retry, const char *listen,
 		put(o, "subject", ses[i].subject);
 		ucl_object_insert_key(o, ucl_object_fromint(ses[i].since),
 		    "since", 0, false);
+		/* An association: its addresses here, and each path to the
+		 * other end's, as the kernel sees it now. */
+		if (strcmp(ses[i].transport, "sctp") == 0 && ses[i].conn !=
+		    NULL && cbl_conn_fd(ses[i].conn) != -1) {
+			ucl_object_t	*paths;
+			int		 fd = cbl_conn_fd(ses[i].conn);
+
+			ucl_object_insert_key(o, sctp_addrs(fd, false, NULL),
+			    "local", 0, false);
+			ucl_object_unref(sctp_addrs(fd, true, &paths));
+			ucl_object_insert_key(o, paths, "paths", 0, false);
+		}
 		ucl_array_append(arr, o);
 	}
 	ucl_object_insert_key(top, ucl_object_fromint((int64_t)ses_seen),

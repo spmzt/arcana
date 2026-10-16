@@ -1092,6 +1092,16 @@ attribute-sets:
           For transport, with listen and unlisten: kept for the next
           start too, listen taking unlisten's place in rc.conf
           (arcana_agent_listen, or -l in arcana_agent_flags).
+      - name: sctp-also
+        type: text
+        doc: |
+          For transport: the other addresses every SCTP listener is
+          bound to (sctp_bindx(3)), separated by spaces, in place of
+          those before ("" for none), and kept in rc.conf
+          (arcana_agent_sctp_also): the association with the console
+          has a path by each.
+        checks:
+          max-len: 512
 
 
   - name: host
@@ -2333,6 +2343,7 @@ operations:
           - listen
           - unlisten
           - listen-keep
+          - sctp-also
       reply:
         attributes:
           - ok

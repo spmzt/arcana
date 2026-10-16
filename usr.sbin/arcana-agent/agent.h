@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.133.0"
+#define	ARCANA_AGENT_VERSION	"0.134.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -131,6 +131,7 @@ struct opts {
 	const char	*setkey_bin;	/* setkey(8): manual SAs */
 	const char	*bird_conf;	/* its main file */
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
+	const char	*sctp_also;	/* more addresses for SCTP listeners */
 	const char	*git_bin;
 	const char	*traceroute_bin;	/* and the same with 6 */
 	const char	*keyscan_bin;	/* ssh-keyscan(1) */
@@ -586,7 +587,7 @@ void		 do_tls(struct work *, const char *, const char *,
 		    const char *, const char *, const uint8_t *,
 		    struct arc_tls_rsp *);
 int		 do_transport(struct work *, bool, const char *, const char *,
-		    bool, struct arc_transport_rsp *);
+		    bool, const char *, struct arc_transport_rsp *);
 bool		 tls_file_is(const char *);
 /* superbia/bundle.c: the host as a bundle, a bundle made the host. */
 int		 do_config_export(struct work *, bool,

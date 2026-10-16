@@ -4028,6 +4028,16 @@ ATF_TC_BODY(mtls, tc)
 		    != NULL && strstr(jstr(&r, "trace.2.detail"), "shared") !=
 		    NULL, "%s", jstr(&r, "trace.2.detail"));
 		resp_free(&r);
+		/* The association's paths, as the agent's kernel sees
+		 * them: to the console's address, active, the primary. */
+		snprintf(path, sizeof(path), "/api/servers/%s/transport", sid);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strstr(r.body, "\"paths\":[{\"address\":"
+		    "\"127.0.0.1\",\"state\":\"active\"") != NULL && strstr(
+		    r.body, "\"primary\":true") != NULL && strstr(r.body,
+		    "\"local\":[\"127.0.0.1\"]") != NULL, "%s", r.body);
+		resp_free(&r);
 		/*
 		 * Requests at once go over that one association, each
 		 * waiting for its own answer: the agent sees one SCTP
@@ -4110,6 +4120,33 @@ ATF_TC_BODY(mtls, tc)
 	http("POST", sw, "{\"transport\":\"udp\"}", &r);
 	EXPECT(&r, 400);
 	resp_free(&r);
+
+	/*
+	 * SCTP over several paths: the agent's other addresses, checked,
+	 * bound where they can be (192.0.2.99 is no address of this host:
+	 * said with the listener), kept in rc.conf, and let go.
+	 */
+	snprintf(path, sizeof(path), "/api/servers/%s/transport", sid);
+	http("POST", path, "{\"sctp_also\":\"no-such\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "no-such is not an address") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("POST", path, "{\"sctp_also\":\"192.0.2.99\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("192.0.2.99", jstr(&r, "data.sctp_also"));
+	if (modfind("sctp") != -1)
+		ATF_CHECK_MSG(strstr(r.body, "\"also_error\":\"192.0.2.99: ")
+		    != NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^arcana_agent_sctp_also=\"192.0.2.99\"$' "
+	    "rc.conf") == 0);
+	http("POST", path, "{\"sctp_also\":\"\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "also_error") == NULL);
+	resp_free(&r);
+	ATF_CHECK(system("! grep -q 'arcana_agent_sctp_also' rc.conf") == 0);
 
 	/*
 	 * Moved to another address: listened on there too, tried, and

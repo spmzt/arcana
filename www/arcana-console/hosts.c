@@ -133,6 +133,8 @@ struct call {
 	char			*listen;	/* transport: listen there too */
 	char			*unlisten;	/* and close this one */
 	bool			 listen_keep;	/* kept in rc.conf */
+	char			*sctp_also;	/* transport: SCTP's other
+						 * addresses, "" none */
 	char			 logname[129];	/* log: the file */
 	uint64_t		 pos;		/* log: from where; history: after when */
 	bool			 has_pos;
@@ -2400,6 +2402,7 @@ connected:
 		tpq.listen = c->listen;
 		tpq.unlisten = c->unlisten;
 		tpq.listen_keep = c->listen_keep;
+		tpq.sctp_also = c->sctp_also;
 		if ((error = arc_transport(&cl, &tpq, &tpr)) != 0)
 			goto rpcfail;
 		ok = tpr->ok;
@@ -3146,7 +3149,8 @@ call_release(struct call *c)
 	c->text = NULL;
 	kore_free(c->listen);
 	kore_free(c->unlisten);
-	c->listen = c->unlisten = NULL;
+	kore_free(c->sctp_also);
+	c->listen = c->unlisten = c->sctp_also = NULL;
 	kore_free(c->from_uri);
 	kore_free(c->from_peer);
 	c->from_uri = c->from_peer = NULL;
@@ -3772,7 +3776,8 @@ api_fstab(struct http_request *req)
 /*
  * GET /api/servers/<id>/transport: the agent's listeners and the
  * connections open to it.  POST {"retry": true}: it starts the SCTP
- * listeners that are not up.
+ * listeners that are not up; {"sctp_also": "address ..."}: the other
+ * addresses its SCTP listeners are bound to ("" none).
  */
 int
 api_transport(struct http_request *req)
@@ -3788,6 +3793,8 @@ api_transport(struct http_request *req)
 		return (KORE_RESULT_OK);
 	if ((body = read_json(req)) != NULL) {
 		c->retry = ucl_flag(body, "retry");
+		if (ucl_str(body, "sctp_also") != NULL)
+			c->sctp_also = kore_strdup(ucl_str(body, "sctp_also"));
 		ucl_object_unref(body);
 	}
 	return (call_start(req, c));

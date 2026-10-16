@@ -1347,10 +1347,16 @@ paths:
           description: ok and data, or error
     post:
       tags: [servers]
-      summary: Have the agent start its SCTP listeners
+      summary: Have the agent start its SCTP listeners, or bind them more
       description: With retry true. An agent that listens on TCP listens
         on SCTP at the same address and port once the kernel has SCTP; it
-        does not load the module and does not try again by itself.
+        does not load the module and does not try again by itself. With
+        sctp_also, the other addresses (separated by spaces, "" none)
+        every SCTP listener is bound to (sctp_bindx), kept in the host's
+        rc.conf; data's listeners then say each SCTP one's addresses and
+        what could not be bound (also_error), and its sessions each
+        association's local addresses and paths (address, state,
+        srtt_ms, rto_ms, primary).
       parameters:
         - $ref: "#/components/parameters/server"
       responses:
