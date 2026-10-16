@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.134.0"
+#define	ARCANA_AGENT_VERSION	"0.135.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -132,6 +132,7 @@ struct opts {
 	const char	*bird_conf;	/* its main file */
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
 	const char	*sctp_also;	/* more addresses for SCTP listeners */
+	const char	*telegram_api;	/* the Bot API's base, for notify */
 	const char	*git_bin;
 	const char	*traceroute_bin;	/* and the same with 6 */
 	const char	*keyscan_bin;	/* ssh-keyscan(1) */
@@ -523,6 +524,8 @@ void		 sdwan_proxy_start(void);
 void		 sdwan_proxy_json(struct work *, struct ucl_object_s *);
 void		 security_specs(const char *, struct ucl_object_s *, const char *);
 int		 do_sdwan_ids(struct work *, const char *, const char **);
+int		 do_notify(struct work *, const char *, const char *,
+		    const char *, const char **);
 void		 sdwan_ids_start(void);
 void		 sdwan_ids_json(struct work *, struct ucl_object_s *);
 int		 do_rtadvd(struct work *, const char *, const char *const *,

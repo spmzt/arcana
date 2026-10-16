@@ -2503,6 +2503,157 @@ ATF_TC_BODY(mail_smtp, tc)
 	(void)waitpid(sink, NULL, 0);
 }
 
+/*
+ * Telegram's Bot API, a sink of the test's: each request's first line
+ * and body written to tg.out, answered as sent.  Its port is returned;
+ * it runs in a child.
+ */
+static int
+tg_sink(pid_t *pidp)
+{
+	struct sockaddr_in	 sin;
+	socklen_t		 sl;
+	char			 line[1024], *body;
+	FILE			*io, *out;
+	long			 len;
+	int			 ls, fd;
+
+	ATF_REQUIRE((ls = socket(AF_INET, SOCK_STREAM, 0)) != -1);
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_len = sizeof(sin);
+	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	ATF_REQUIRE(bind(ls, (struct sockaddr *)&sin, sizeof(sin)) == 0);
+	ATF_REQUIRE(listen(ls, 8) == 0);
+	sl = sizeof(sin);
+	ATF_REQUIRE(getsockname(ls, (struct sockaddr *)&sin, &sl) == 0);
+	if ((*pidp = fork()) != 0) {
+		close(ls);
+		return (ntohs(sin.sin_port));
+	}
+	for (;;) {
+		if ((fd = accept(ls, NULL, NULL)) == -1)
+			_exit(1);
+		io = fdopen(fd, "r+");
+		out = fopen("tg.out", "a");
+		len = 0;
+		if (fgets(line, sizeof(line), io) != NULL)
+			fprintf(out, "REQ %s", line);
+		while (fgets(line, sizeof(line), io) != NULL && strcmp(line,
+		    "\r\n") != 0)
+			if (strncasecmp(line, "Content-Length:", 15) == 0)
+				len = strtol(line + 15, NULL, 10);
+		if (len > 0 && len < 65536 && (body = calloc(1, (size_t)len +
+		    1)) != NULL) {
+			if (fread(body, 1, (size_t)len, io) == (size_t)len)
+				fprintf(out, "%s\n", body);
+			free(body);
+		}
+		fclose(out);
+		fputs("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+		    "Content-Length: 11\r\nConnection: close\r\n\r\n"
+		    "{\"ok\":true}", io);
+		fclose(io);
+	}
+}
+
+CONSOLE_TC(telegram, "Alerts and a workflow's message to Telegram chats, "
+    "by a bot, sent by an agent; its token never read back")
+ATF_TC_BODY(telegram, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[MAXPATHLEN], path[160], sid[16];
+	char		run[32];
+	pid_t		sink;
+	int		port, i;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	port = tg_sink(&sink);
+	snprintf(harness_telegram_api, sizeof(harness_telegram_api),
+	    "http://127.0.0.1:%d", port);
+	snprintf(harness_webconf, sizeof(harness_webconf), "mail_tick = 1;\n");
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	/* Not a token, not a chat: refused. */
+	http("POST", "/api/settings", "{\"set\":{\"telegram_token\":"
+	    "\"x y\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"telegram_chats\":"
+	    "\"-100 x;y\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"telegram_token\":"
+	    "\"123:abc_DEF\",\"telegram_chats\":\"-100 42\","
+	    "\"telegram_via\":\"here\",\"telegram_jobs\":\"failed\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/settings", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "abc_DEF") == NULL);
+	resp_free(&r);
+	/* The test: to each chat, by the host's agent. */
+	http("POST", "/api/settings/telegram-test", "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("-100 42", jstr(&r, "to"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -c '^REQ POST /bot123:abc_DEF/sendMessage' "
+	    "tg.out | grep -qx 2 && grep -q '\"chat_id\":-100,' tg.out && "
+	    "grep -q '\"chat_id\":42,' tg.out && grep -q '\"text\":\"Arcana: "
+	    "a test.' tg.out") == 0);
+	/* A job that failed, told within a tick or two. */
+	sleep(2);
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", sid);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"cert\",\"verb\":"
+	    "\"trust\",\"path\":\"nosuch.0\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 150 && system("grep -q 'failed: certificate trust "
+	    "nosuch.0' tg.out") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(system("grep -q '\"text\":\"Arcana: [0-9:]* here: job "
+	    "[0-9]* failed: certificate trust nosuch.0' tg.out") == 0,
+	    "no message of the job");
+	/* A workflow's notify step: its text made for the host. */
+	http("POST", "/api/workflows", "{\"name\":\"bad\",\"steps\":[{\"id\":"
+	    "\"t\",\"notify\":{\"via\":\"pigeon\",\"text\":\"x\"}}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"tell\",\"hosts\":[\"%s\"],"
+	    "\"steps\":[{\"id\":\"t\",\"notify\":{\"via\":\"telegram\","
+	    "\"text\":\"${host.name} said hi\"}},{\"id\":\"m\",\"notify\":{"
+	    "\"via\":\"mail\",\"text\":\"x\"}}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	snprintf(path, sizeof(path), "/api/workflows/%s/run", jstr(&r, "id"));
+	resp_free(&r);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	run_wait(run, &r);
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.0.state"));
+	ATF_CHECK_STREQ("here said hi", jstr(&r, "hosts.0.steps.0.trace.text"));
+	/* Mail is not set up: the step says so. */
+	ATF_CHECK_STREQ("failed", jstr(&r, "hosts.0.steps.1.state"));
+	ATF_CHECK_MSG(jstr(&r, "hosts.0.steps.1.error") != NULL && strstr(
+	    jstr(&r, "hosts.0.steps.1.error"), "mail is not set up") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q 'workflow tell on here.n.nhere said hi' "
+	    "tg.out") == 0);
+	ATF_CHECK(system("! grep -q abc_DEF arcana-agent.out") == 0);
+	(void)kill(sink, SIGTERM);
+	(void)waitpid(sink, NULL, 0);
+}
+
 CONSOLE_TC(mail, "Faults, jobs and runs mailed by sendmail(8), as the "
     "settings say")
 ATF_TC_BODY(mail, tc)
@@ -5983,6 +6134,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, settings);
 	ATF_TP_ADD_TC(tp, mail);
 	ATF_TP_ADD_TC(tp, mail_smtp);
+	ATF_TP_ADD_TC(tp, telegram);
 	ATF_TP_ADD_TC(tp, local_agent);
 	ATF_TP_ADD_TC(tp, local_same);
 	ATF_TP_ADD_TC(tp, local_absent);

@@ -94,6 +94,7 @@ static int	cmd_transport(struct arc_client *, int, char **);
 static int	cmd_config_export(struct arc_client *, int, char **);
 static int	cmd_config_apply(struct arc_client *, int, char **);
 static int	cmd_path_check(struct arc_client *, int, char **);
+static int	cmd_notify(struct arc_client *, int, char **);
 static int	cmd_storage(struct arc_client *, int, char **);
 static int	cmd_storage_job(struct arc_client *, int, char **);
 static int	cmd_fstab(struct arc_client *, int, char **);
@@ -212,6 +213,7 @@ usage(void)
 	    "    config-export [-s]\n"
 	    "    config-apply [-an] [-H hostname] bundle.json\n"
 	    "    path-check [-r] [-F fib] [-i interface] [-p proto] [-P port] src dst\n"
+	    "    notify chat text   (the bot's token in ARCANA_TELEGRAM_TOKEN)\n"
 	    "    ps [pid]\n"
 	    "    signal pid [name | number]\n"
 	    "    renice pid nice\n"
@@ -2929,6 +2931,39 @@ cmd_path_check(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
+ * notify chat text: a Telegram message, sent by the agent through the
+ * bot whose token ARCANA_TELEGRAM_TOKEN holds (not an argument: ps(1)
+ * would show it).
+ */
+static int
+cmd_notify(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_notify_req	 req;
+	struct arc_notify_rsp	*rsp;
+	const char		*token;
+	int			 error;
+
+	if (argc != 3)
+		usage();
+	if ((token = getenv("ARCANA_TELEGRAM_TOKEN")) == NULL ||
+	    token[0] == '\0')
+		xo_errx(2, "notify: the bot's token is in ARCANA_TELEGRAM_TOKEN");
+	memset(&req, 0, sizeof(req));
+	req.notify_token = token;
+	req.notify_chat = argv[1];
+	req.notify_text = argv[2];
+	if ((error = arc_notify(cl, &req, &rsp)) != 0)
+		fail(cl, error, "notify");
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("notify: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_notify_rsp_free(rsp);
+	return (error);
+}
+
+/*
  * transport: the agent's listeners and the connections open to it.
  * transport retry: start the SCTP listeners that are not up.
  * transport listen uri: listen there too.  transport unlisten uri
@@ -4031,6 +4066,8 @@ main(int argc, char *argv[])
 		rc = cmd_config_apply(&cl, argc, argv);
 	else if (strcmp(argv[0], "path-check") == 0)
 		rc = cmd_path_check(&cl, argc, argv);
+	else if (strcmp(argv[0], "notify") == 0)
+		rc = cmd_notify(&cl, argc, argv);
 	else if (strcmp(argv[0], "storage") == 0)
 		rc = cmd_storage(&cl, argc, argv);
 	else if (strcmp(argv[0], "zfs") == 0 || strcmp(argv[0], "zpool") == 0 ||

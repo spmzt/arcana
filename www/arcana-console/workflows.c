@@ -629,12 +629,29 @@ wf_check(const ucl_object_t *in, const char **whyp)
 		job = ucl_object_lookup(st, "job");
 		of = ucl_str(st, "read");
 		if ((job != NULL) + (of != NULL) + (ucl_object_lookup(st,
-		    "arcana") != NULL) != 1) {
+		    "arcana") != NULL) + (ucl_object_lookup(st, "notify") !=
+		    NULL) != 1) {
 			ucl_object_unref(s);
-			REFUSE("step %s is a job, a read or Arcana's own",
-			    ids[n]);
+			REFUSE("step %s is a job, a read, a notify or Arcana's "
+			    "own", ids[n]);
 		}
-		if (ucl_object_lookup(st, "arcana") != NULL) {
+		if (ucl_object_lookup(st, "notify") != NULL) {
+			const ucl_object_t	*nt = ucl_object_lookup(st,
+			    "notify");
+			const char		*via = ucl_str(nt, "via");
+			const char		*text = ucl_str(nt, "text");
+
+			if (via == NULL || (strcmp(via, "mail") != 0 &&
+			    strcmp(via, "telegram") != 0 && strcmp(via, "all") !=
+			    0) || text == NULL || text[0] == '\0' ||
+			    strlen(text) > 2000) {
+				ucl_object_unref(s);
+				REFUSE("step %s: a notify says via (mail, telegram "
+				    "or all) and its text, 2000 characters at "
+				    "most", ids[n]);
+			}
+			put(s, "notify", ucl_object_copy(nt));
+		} else if (ucl_object_lookup(st, "arcana") != NULL) {
 			if (!in_list(ucl_str(st, "arcana"), arcana_steps,
 			    nitems(arcana_steps))) {
 				ucl_object_unref(s);
@@ -1253,6 +1270,39 @@ arcana_call(const struct hostref *h, const char *what, char *why,
 	return (ans);
 }
 
+/*
+ * A notify step: its text, ${...} made what it says for the host, sent
+ * by mail, by Telegram or both (alert_send), as Settings have them set
+ * up; said as the workflow's, on the host.
+ */
+static bool
+run_notify(struct hostrun *hr, int k, const ucl_object_t *step)
+{
+	const ucl_object_t	*nt;
+	ucl_object_t		*ans;
+	char			*text, subject[300], err[600];
+
+	nt = ucl_object_lookup(step, "notify");
+	text = expand(ucl_str(nt, "text"), hr->run->params, &hr->h,
+	    hr->answers, hr->run->event);
+	snprintf(subject, sizeof(subject), "Arcana: workflow %s on %s",
+	    ucl_str(hr->run->wf, "name") != NULL ? ucl_str(hr->run->wf,
+	    "name") : "?", hr->h.name);
+	if (alert_send(ucl_str(nt, "via"), subject, text, err,
+	    sizeof(err)) != 0) {
+		free(text);
+		step_set(hr, k, "failed", "%s", err);
+		return (false);
+	}
+	ans = ucl_object_typed_new(UCL_OBJECT);
+	put(ans, "via", ucl_object_fromstring(ucl_str(nt, "via")));
+	put(ans, "text", ucl_object_fromstring(text));
+	free(text);
+	step_answer(hr, k, step, ans);
+	step_set(hr, k, "done", NULL);
+	return (true);
+}
+
 static bool
 run_arcana(struct hostrun *hr, int k, const ucl_object_t *step)
 {
@@ -1424,7 +1474,9 @@ host_run(void *arg)
 		step_set(hr, k, "running", NULL);
 		ok = ucl_object_lookup(step, "job") != NULL ? run_job(hr, k,
 		    step) : ucl_object_lookup(step, "arcana") != NULL ?
-		    run_arcana(hr, k, step) : run_read(hr, k, step);
+		    run_arcana(hr, k, step) : ucl_object_lookup(step,
+		    "notify") != NULL ? run_notify(hr, k, step) : run_read(hr,
+		    k, step);
 		if (ok)
 			continue;
 		of = ucl_str(step, "on_fail");

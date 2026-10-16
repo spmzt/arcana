@@ -1500,6 +1500,8 @@ view_step(struct html *h, const ucl_object_t *st, int i, int n)
 		    arcana_steps[r].what, jstr(st, "arcana") != NULL &&
 		    strcmp(jstr(st, "arcana"), arcana_steps[r].what) == 0 ?
 		    " selected" : "", arcana_steps[r].title);
+	h_fmt(h, "<option value=\"notify\"%s>a message, by mail or "
+	    "Telegram</option>", jget(st, "notify") != NULL ? " selected" : "");
 	h_fmt(h, "</select><span class=\"acts\"><button class=\"icon\" "
 	    "data-act=\"wf-step-del\" data-arg=\"%d\" title=\"Take the step "
 	    "away\">×</button></span></div>", i);
@@ -1510,6 +1512,35 @@ view_step(struct html *h, const ucl_object_t *st, int i, int n)
 			h_raw(h, arcana_steps[r].hint);
 			h_raw(h, "</p>");
 		}
+	/* A message: how it goes and what it says, once for each host. */
+	if (jget(st, "notify") != NULL) {
+		static const char *const vias[] = { "all", "mail",
+		    "telegram" };
+		static const char *const says[] = {
+		    "by mail and Telegram, each set up", "by mail",
+		    "by Telegram" };
+		const char	*via = jstr(st, "notify.via");
+
+		h_raw(h, "<div class=\"wffields\"><div class=\"wffield\"><label>"
+		    "Sent<select data-input=\"wf\"");
+		snprintf(path, sizeof(path), "text:steps.%d.notify.via", i);
+		h_attr(h, "data-arg", path);
+		h_raw(h, ">");
+		for (r = 0; r < nitems(vias); r++)
+			h_fmt(h, "<option value=\"%s\"%s>%s</option>", vias[r],
+			    via != NULL && strcmp(via, vias[r]) == 0 ? " selected" :
+			    "", says[r]);
+		h_raw(h, "</select></label><small class=\"help\">As Settings, "
+		    "Notifications have them set up: who it goes to, and the "
+		    "bot.</small></div><div class=\"wffield\"><label>Message");
+		snprintf(path, sizeof(path), "steps.%d.notify.text", i);
+		input(h, "text", path, jstr(st, "notify.text"), "${host.name} "
+		    "is done");
+		h_raw(h, "</label><small class=\"help\">Sent once for each host "
+		    "the workflow runs on: <code>${host.name}</code> its name, "
+		    "<code>${param.x}</code> a parameter, <code>${step.id.path}"
+		    "</code> what an earlier step answered.</small></div></div>");
+	}
 	if (job != NULL) {
 		h_fmt(h, "<label>Kind<select data-input=\"wf-kind\" data-arg="
 		    "\"%d\"><option value=\"\">—</option>", i);
@@ -1816,6 +1847,12 @@ step_title(char *buf, size_t len, const ucl_object_t *st)
 			snprintf(buf, len, "Arcana: %s", arcana_steps[r].title);
 			return;
 		}
+	if (jget(st, "notify") != NULL) {
+		snprintf(buf, len, "tell: %.48s", jstr(st, "notify.text") !=
+		    NULL && jstr(st, "notify.text")[0] != '\0' ? jstr(st,
+		    "notify.text") : "a message");
+		return;
+	}
 	k = kind_of(jstr(jget(st, "job"), "kind"));
 	snprintf(buf, len, "%s", k != NULL && jstr(k, "title") != NULL ?
 	    jstr(k, "title") : jstr(jget(st, "job"), "kind") != NULL ? jstr(
@@ -1961,10 +1998,11 @@ view_graph(struct html *h)
 		    "width=\"%d\" height=\"%d\" rx=\"6\"/><text class=\"k\" x=\"%d\" "
 		    "y=\"%.0f\">%d · %s</text><text class=\"t\" x=\"%d\" y=\"%.0f\">",
 		    wf.sel == i ? " sel" : "", jget(st, "job") != NULL ? " job" :
-		    jstr(st, "read") != NULL ? " read" : " arcana", i, i, G_X, y,
-		    G_W, G_H, G_X + 12, y + 16, i + 1, jget(st, "job") != NULL ?
-		    "JOB" : jstr(st, "read") != NULL ? "READ" : "ARCANA", G_X + 12,
-		    y + 34);
+		    jstr(st, "read") != NULL ? " read" : jget(st, "notify") !=
+		    NULL ? " notify" : " arcana", i, i, G_X, y, G_W, G_H, G_X +
+		    12, y + 16, i + 1, jget(st, "job") != NULL ? "JOB" : jstr(st,
+		    "read") != NULL ? "READ" : jget(st, "notify") != NULL ?
+		    "TELL" : "ARCANA", G_X + 12, y + 34);
 		h_fit(h, title, 38);
 		h_raw(h, "</text>");
 		if (jget(st, "when") != NULL) {
@@ -2070,7 +2108,13 @@ view_palette(struct html *h)
 		h_txt(h, arcana_steps[r].title);
 		h_raw(h, "</li>");
 	}
-	h_raw(h, "</ul></aside>");
+	h_raw(h, "</ul>");
+	if (wf.pal_filter[0] == '\0' || ci_has("a message, by mail or "
+	    "Telegram", wf.pal_filter))
+		h_raw(h, "<h5>Tell</h5><ul><li draggable=\"true\" data-palette="
+		    "\"wf\" data-act=\"wf-pal-add\" class=\"notify\" data-arg="
+		    "\"notify\">a message, by mail or Telegram</li></ul>");
+	h_raw(h, "</aside>");
 }
 
 /* What starts it, as forms in words: the panel of the top node. */
@@ -2525,7 +2569,14 @@ step_new(const char *what, int k)
 	else if (strncmp(what, "arcana:", 7) == 0)
 		ucl_object_insert_key(st, ucl_object_fromstring(what + 7),
 		    "arcana", 0, true);
-	else {
+	else if (strcmp(what, "notify") == 0) {
+		a = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(a, ucl_object_fromstring("all"), "via", 0,
+		    true);
+		ucl_object_insert_key(a, ucl_object_fromstring("${host.name}: "),
+		    "text", 0, true);
+		ucl_object_insert_key(st, a, "notify", 0, true);
+	} else {
 		a = ucl_object_typed_new(UCL_OBJECT);
 		if (strncmp(what, "job:", 4) == 0 && what[4] != '\0')
 			ucl_object_insert_key(a, ucl_object_fromstring(what + 4),
@@ -2819,7 +2870,17 @@ workflows_action(const char *act, const char *arg, const char *value)
 			(void)ucl_object_delete_key(st, "job");
 			(void)ucl_object_delete_key(st, "read");
 			(void)ucl_object_delete_key(st, "arcana");
-			if (strncmp(value, "read:", 5) == 0)
+			(void)ucl_object_delete_key(st, "notify");
+			if (strcmp(value, "notify") == 0) {
+				ucl_object_t	*nt = ucl_object_typed_new(
+				    UCL_OBJECT);
+
+				ucl_object_insert_key(nt, ucl_object_fromstring(
+				    "all"), "via", 0, true);
+				ucl_object_insert_key(nt, ucl_object_fromstring(
+				    "${host.name}: "), "text", 0, true);
+				ucl_object_insert_key(st, nt, "notify", 0, true);
+			} else if (strncmp(value, "read:", 5) == 0)
 				ucl_object_insert_key(st, ucl_object_fromstring(
 				    value + 5), "read", 0, true);
 			else if (strncmp(value, "arcana:", 7) == 0)

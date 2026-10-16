@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.199.0"
+#define	ARCW_VERSION		"0.200.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -90,6 +90,10 @@ int		 smtp_send(const char *, int, const char *, const char *,
 int		 mail_send(const char *, const char *, char *, size_t);
 void		 mail_run(const char *, unsigned int, const char *);
 void		 mail_flush(void);
+int		 alert_send(const char *, const char *, const char *, char *,
+		    size_t);
+int		 api_telegram_test(struct http_request *);
+void		 api_telegram_test_free(struct http_request *);
 int		 api_mail_test(struct http_request *);
 
 /* push.c: notifications to the devices that asked, by Web Push. */
@@ -216,6 +220,8 @@ int		 api_sdwan_state(struct http_request *);
 int		 api_security(struct http_request *);
 char		*hosts_listen(const char *, const char *, const char *,
 		    const char *, const char *, bool, int *);
+char		*hosts_notify(const char *, const char *, const char *,
+		    const char *, const char *, const char *, int *);
 int		 api_server_move(struct http_request *);
 void		 api_server_move_free(struct http_request *);
 char		*security_build(const char *, const ucl_object_t *, const char *,

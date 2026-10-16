@@ -547,6 +547,18 @@ of the jail's own firewall.
 The host needs
 .Xr dtrace 4
 loaded.
+.It Cm notify Ar chat text
+A message sent to a Telegram chat by a bot: the agent posts it to the
+Bot API over HTTPS
+.Pq Xr fetch 3 ,
+the server's certificate checked against the host's CAs.
+The bot's token is read from
+.Ev ARCANA_TELEGRAM_TOKEN ,
+not given as an argument, where
+.Xr ps 1
+would show it; the agent neither keeps nor logs it.
+.Ar chat
+is a number (negative for a group) or @ and a channel's name.
 .It Cm transport Oo Cm retry | Cm listen Ar uri | Cm unlisten Ar uri Oo Cm for Ar new Op Cm keep Oc Oc
 How the agent is reached: its listeners, each up or not and why not,
 whether the kernel has SCTP, and the connections open to the agent now.

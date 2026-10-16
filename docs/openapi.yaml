@@ -1035,6 +1035,22 @@ paths:
             them; clamav, where /var/db/clamav is, its databases (name,
             file, version, signatures, built) and whether freshclam
             runs.
+  /api/settings/telegram-test:
+    post:
+      tags: [settings]
+      summary: A Telegram message to say the alerts reach the chats
+      description: >-
+        Sent by the agent of the host telegram_via names (or the one
+        beside the console) to every chat of telegram_chats, by the bot
+        whose token telegram_token holds, over the Bot API's HTTPS. The
+        same way go the alerts Settings, Notifications choose, and a
+        workflow's notify step ({"notify": {"via": "mail", "telegram"
+        or "all", "text": "... ${host.name} ..."}}).
+      responses:
+        "200":
+          description: ok, and to, the chats.
+        "502":
+          description: Not sent, and why.
   /api/servers/{server}/move:
     post:
       tags: [servers]

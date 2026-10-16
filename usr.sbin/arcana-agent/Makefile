@@ -12,7 +12,7 @@ SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c fwm
 # needs no libyang; "make regen-yang" refreshes them.
 SRCS+=		ymodel_schema.c
 # Luxuria: what is not FreeBSD's own, the plugins.
-SRCS+=		bird.c birdwatch.c ybird.c ywg.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c wireguard.c
+SRCS+=		bird.c birdwatch.c ybird.c ywg.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c telegram.c wireguard.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c packages.c \
 		services.c update.c yjails.c yjf.c yjobs.c ypackages.c yservices.c
@@ -37,7 +37,7 @@ LDADD+=		${.OBJDIR}/../../lib/libvarconf/libvarconf_pie.a
 DPADD+=		${.OBJDIR}/../../lib/libvarconf/libvarconf_pie.a
 CFLAGS+=	-I${.CURDIR}/../../lib/libvarconf
 DPADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
-LDADD+=		-ljail -lgeom -lmemstat -lprocstat -ldevstat -lnv -lutil -lpthread -lcrypto ${UCL_LIBS}
+LDADD+=		-lfetch -ljail -lgeom -lmemstat -lprocstat -ldevstat -lnv -lutil -lpthread -lcrypto ${UCL_LIBS}
 # Every symbol bound when the agent starts (ld(1) -z now): with a
 # libcblink older than the agent, it stops there, rtld(1) saying what
 # is missing, not at the first call to it, detached, its stderr closed.

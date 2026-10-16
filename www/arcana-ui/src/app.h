@@ -608,8 +608,12 @@ void		 load_push(void);
 void		 load_tokens(void);
 void		 token_new(void);
 void		 token_del(const char *);
-void		 save_settings(const ucl_object_t *, bool);
+/* The forms settings are in. */
+enum { SETG_CONSOLE, SETG_MAIL, SETG_TELEGRAM };
+int		 setting_group(const char *);
+void		 save_settings(const ucl_object_t *, int);
 void		 mail_test(void);
+void		 telegram_test(void);
 void		 load_schema(void);
 const char	*schema_op(const ucl_object_t *);
 void		 view_schema(struct html *, const char *);

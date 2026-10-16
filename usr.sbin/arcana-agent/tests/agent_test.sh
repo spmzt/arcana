@@ -2233,6 +2233,52 @@ vnet_cleanup()
 	stop_daemon
 }
 
+atf_test_case notify cleanup
+notify_head()
+{
+	atf_set "descr" "A Telegram message by a bot: posted as JSON to the Bot API, the token in no trace nor log"
+	atf_set "timeout" "60"
+}
+notify_body()
+{
+	local port pid
+
+	port=$((30000 + $$ % 20000))
+	DAEMON_ARGS="--telegram-api http://127.0.0.1:$port"
+	start_daemon
+	# The Bot API as nc(1), with what it answers.
+	printf 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{"ok":true}' > reply
+	nc -N -l 127.0.0.1 "$port" < reply > req.txt &
+	pid=$!
+	sleep 0.5
+	atf_check -o match:'Telegram sendMessage to chat -100' -o not-match:'abc_DEF' \
+	    env ARCANA_TELEGRAM_TOKEN=123:abc_DEF "$JGC" -t -c "$SOCK" notify -100 'disk full on web'
+	wait "$pid"
+	atf_check -o match:'^POST /bot123:abc_DEF/sendMessage HTTP/1' \
+	    -o match:'"chat_id":-100' -o match:'"text":"disk full on web"' cat req.txt
+	# Refused by the Bot API: said, with what it most likely means.
+	printf 'HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: 59\r\nConnection: close\r\n\r\n{"ok":false,"error_code":400,"description":"chat not found"}' > reply
+	nc -N -l 127.0.0.1 "$port" < reply > req.txt &
+	pid=$!
+	sleep 0.5
+	atf_check -s exit:1 -e match:'no such chat, or the bot is not in it' -o ignore \
+	    env ARCANA_TELEGRAM_TOKEN=123:abc_DEF "$JGC" -c "$SOCK" notify @no_such_chan hi
+	wait "$pid"
+	# Neither a token nor a chat that is not one is sent.
+	atf_check -s exit:1 -e match:'as BotFather gives it' -o ignore \
+	    env ARCANA_TELEGRAM_TOKEN='x y' "$JGC" -c "$SOCK" notify 5 hi
+	atf_check -s exit:1 -e match:'a chat is a number' -o ignore \
+	    env ARCANA_TELEGRAM_TOKEN=123:abc_DEF "$JGC" -c "$SOCK" notify 'x;y' hi
+	atf_check -s exit:2 -e match:'ARCANA_TELEGRAM_TOKEN' "$JGC" -c "$SOCK" notify 5 hi
+	if grep -q abc_DEF daemon.out; then
+		atf_fail "the token is in the agent's log"
+	fi
+}
+notify_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case safe_mode cleanup
 safe_mode_head()
 {
@@ -7541,6 +7587,7 @@ atf_init_test_cases()
 	atf_add_test_case firewall
 	atf_add_test_case observe
 	atf_add_test_case storage
+	atf_add_test_case notify
 	atf_add_test_case safe_mode
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart
