@@ -1970,6 +1970,7 @@ modal(struct html *h)
 	case MODAL_SSH_SET:
 	case MODAL_SSH_SIGN:
 	case MODAL_SSH_KEY:
+	case MODAL_SSH_OPTS:
 		if (!ssh_modal(h))
 			return;
 		break;
@@ -2354,6 +2355,10 @@ modal(struct html *h)
 			break;
 		case MODAL_SSH_KEY:
 			h_raw(h, "<button class=\"primary\">Add the key</button>");
+			break;
+		case MODAL_SSH_OPTS:
+			h_raw(h, "<button class=\"primary\">Save its options"
+			    "</button>");
 			break;
 		case MODAL_FW_QOS:
 			h_raw(h, "<button class=\"primary\">Configure</button>");

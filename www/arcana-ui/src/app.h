@@ -385,6 +385,7 @@ enum modal {
 	MODAL_SSH_SET,
 	MODAL_SSH_SIGN,
 	MODAL_SSH_KEY,
+	MODAL_SSH_OPTS,		/* a user's key's options */
 	MODAL_FW_QOS,
 	MODAL_BIRD_PROTO,
 	MODAL_BIRD_BLOCK,

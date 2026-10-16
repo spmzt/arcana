@@ -2918,6 +2918,29 @@ part_ssh(void)
 	wait_js("[...document.querySelectorAll('table.ssh-keys tbody tr')]"
 	    ".some(r => r.textContent.includes('alice@lab'))", 20);
 	run("document.querySelector('.dock > header').click()");
+	/* Its options in a form: principals and no-pty set, read back
+	 * into the form when opened again. */
+	run("document.querySelector('button[data-act=ssh-key-opts]').click()");
+	wait_js("document.querySelector('form[data-form=ssh-opts] "
+	    "input[name=o_principals]')", 5);
+	run("const f = document.querySelector('form[data-form=ssh-opts]'); "
+	    "f.o_principals.value = 'alice,admin'; f['o_no-pty'].checked = "
+	    "true; f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('table.ssh-keys td.opts')]"
+	    ".some(t => t.textContent === 'principals=\"alice,admin\",no-pty')",
+	    20);
+	ATF_CHECK(system("grep -q '^principals=\"alice,admin\",no-pty "
+	    "ssh-ed25519 ' tools/sshroot/home/alice/.ssh/authorized_keys") ==
+	    0);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('button[data-act=ssh-key-opts]').click()");
+	wait_js("document.querySelector('form[data-form=ssh-opts]').o_principals"
+	    ".value === 'alice,admin' && document.querySelector('form"
+	    "[data-form=ssh-opts]')['o_no-pty'].checked", 5);
+	shot("7e-ssh-key-options");
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('.modal')", 5);
 	run("document.querySelector('button[data-act=ssh-key-del]').click()");
 	click_when(".modal button.danger", 5);
 	click_when("button[data-act=queue-run]", 5);

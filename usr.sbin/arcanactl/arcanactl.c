@@ -201,6 +201,7 @@ usage(void)
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
 	    "    sshd [list] | banner file | set Setting [value ...] |\n"
 	    "        authorize user keyfile | unauthorize user fingerprint |\n"
+	    "        options user fingerprint [options] |\n"
 	    "        sign ca-key-file [principal ...] | user-cas file\n"
 	    "    ntp server ... | remove\n"
 	    "    rtadvd interface prefix [dns ...] | interface remove\n"
@@ -2283,7 +2284,8 @@ cmd_capture(struct arc_client *cl, int argc, char **argv)
 
 /*
  * sshd [list] | banner file | set Setting [value ...] | authorize user
- * keyfile | unauthorize user fingerprint | sign ca-key-file [principal
+ * keyfile | unauthorize user fingerprint | options user fingerprint
+ * [options] | sign ca-key-file [principal
  * ...] | user-cas file: the base system's sshd, of the host or of -j's jail; a change is
  * a job, and with -s undone unless confirmed.
  */
@@ -2329,6 +2331,14 @@ cmd_sshd(struct arc_client *cl, int argc, char **argv)
 	} else if (argc == 4 && strcmp(argv[1], "unauthorize") == 0) {
 		sp.user = argv[2];
 		sp.text = argv[3];
+	} else if ((argc == 4 || argc == 5) && strcmp(argv[1], "options") ==
+	    0) {
+		/* A key's options, its fingerprint naming it: none when
+		 * left out. */
+		sp.user = argv[2];
+		sp.names.v = (const char **)(uintptr_t)&argv[3];
+		sp.names.n = 1;
+		sp.text = argc == 5 ? argv[4] : "";
 	} else if (argc >= 3 && strcmp(argv[1], "sign") == 0) {
 		sp.text = slurp(argv[2]);
 		sp.names.v = (const char **)(uintptr_t)&argv[3];

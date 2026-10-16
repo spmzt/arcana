@@ -778,6 +778,23 @@ ssh_check(const struct arc_job_spec *sp)
 				    "number" : "ssh: a value it takes");
 		return (NULL);
 	}
+	if (strcmp(sp->verb, "options") == 0) {
+		/* A key's options changed: its fingerprint, and the
+		 * options as authorized_keys has them (none: empty). */
+		if (!word_ok(sp->user, "._-"))
+			return ("ssh: a user's name");
+		if (sp->safe)
+			return ("ssh: a key is not taken back by itself: not in "
+			    "safe mode");
+		if (sp->names.n != 1 || strncmp(sp->names.v[0], "SHA256:", 7) !=
+		    0)
+			return ("ssh: the key's fingerprint, SHA256:...");
+		if (sp->text != NULL && (strpbrk(sp->text, "\r\n") != NULL ||
+		    strlen(sp->text) > 8192))
+			return ("ssh: options are one line, as authorized_keys "
+			    "has them: principals=\"a,b\",from=\"10.0.0.0/8\"");
+		return (NULL);
+	}
 	if (strcmp(sp->verb, "authorize") == 0 || strcmp(sp->verb,
 	    "unauthorize") == 0) {
 		if (!word_ok(sp->user, "._-"))
@@ -984,14 +1001,44 @@ put_at(int dfd, const char *name, const char *text, size_t len, uid_t uid,
 }
 
 /*
- * A user's authorized_keys changed: the key added, or each line with
- * the fingerprint taken away.  Its directory is opened beneath the
- * user's home, never through a link, and must be theirs or root's.
+ * Where a line of authorized_keys has its key: after its options, if it
+ * has any (words up to a blank outside quotes, the first not a key's
+ * type).  sshd(8)'s AUTHORIZED_KEYS FILE FORMAT.
+ */
+static const char *
+key_start(const char *l)
+{
+	const char	*p;
+	bool		 q;
+
+	l += strspn(l, " \t");
+	if (strncmp(l, "ssh-", 4) == 0 || strncmp(l, "ecdsa-", 6) == 0 ||
+	    strncmp(l, "sk-", 3) == 0)
+		return (l);
+	for (p = l, q = false; *p != '\0'; p++) {
+		if (*p == '\\' && p[1] != '\0')
+			p++;
+		else if (*p == '"')
+			q = !q;
+		else if (!q && (*p == ' ' || *p == '\t'))
+			break;
+	}
+	return (p + strspn(p, " \t"));
+}
+
+enum { AK_REMOVE, AK_ADD, AK_OPTIONS };
+
+/*
+ * A user's authorized_keys changed: the key added, each line with the
+ * fingerprint taken away, or that line's options changed, the key and
+ * its comment as they are.  Its directory is opened beneath the user's
+ * home, never through a link, and must be theirs or root's.
  */
 static int
-authorize(struct work *w, const struct arc_job_spec *sp, bool add,
+authorize(struct work *w, const struct arc_job_spec *sp, int how,
     const char **errp)
 {
+	bool		 add = how == AK_ADD;
 	struct stat	 sb;
 	struct pwent	*pw;
 	ucl_object_t	*set, *k;
@@ -1117,6 +1164,59 @@ authorize(struct work *w, const struct arc_job_spec *sp, bool add,
 					return (-1);
 				}
 			}
+		}
+	} else if (how == AK_OPTIONS) {
+		/* The line of the key, rewritten in place. */
+		cut = 0;
+		out = wstrdup(w, "");
+		for (l = text; *l != '\0'; l = e) {
+			const char	*line;
+			size_t		 ll;
+			bool		 nlf;
+
+			ll = strcspn(l, "\n");
+			nlf = l[ll] == '\n';
+			e = l + ll + (nlf ? 1 : 0);
+			line = wstrndup(w, l, ll);
+			if ((k = key_obj(w, line)) != NULL) {
+				if (strcmp(ucl_object_tostring(ucl_object_lookup(
+				    k, "fingerprint")), sp->names.v[0]) == 0) {
+					const char	*nl;
+					ucl_object_t	*k2;
+
+					nl = wfmt(w, "%s%s%s", sp->text != NULL ?
+					    sp->text : "", sp->text != NULL &&
+					    sp->text[0] != '\0' ? " " : "",
+					    key_start(line));
+					/* Read back as the same key, or not
+					 * written: options sshd would not
+					 * take are refused here. */
+					k2 = key_obj(w, nl);
+					if (k2 == NULL || strcmp(
+					    ucl_object_tostring(ucl_object_lookup(
+					    k2, "fingerprint")), sp->names.v[0]) !=
+					    0) {
+						if (k2 != NULL)
+							ucl_object_unref(k2);
+						ucl_object_unref(k);
+						close(dfd);
+						*errp = "ssh: with those options the "
+						    "line is no key OpenSSH reads";
+						return (-1);
+					}
+					ucl_object_unref(k2);
+					line = nl;
+					cut++;
+				}
+				ucl_object_unref(k);
+			}
+			out = wfmt(w, "%s%s%s", out, line, nlf ? "\n" : "");
+		}
+		if (cut == 0) {
+			close(dfd);
+			*errp = wfmt(w, "ssh: %s has no key %s", sp->user,
+			    sp->names.v[0]);
+			return (-1);
 		}
 	} else {
 		out = wmalloc(w, len + 1);
@@ -1512,9 +1612,11 @@ do_ssh_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	if ((*errp = ssh_check(sp)) != NULL)
 		return (-1);
 	if (strcmp(sp->verb, "authorize") == 0)
-		return (authorize(w, sp, true, errp));
+		return (authorize(w, sp, AK_ADD, errp));
 	if (strcmp(sp->verb, "unauthorize") == 0)
-		return (authorize(w, sp, false, errp));
+		return (authorize(w, sp, AK_REMOVE, errp));
+	if (strcmp(sp->verb, "options") == 0)
+		return (authorize(w, sp, AK_OPTIONS, errp));
 	if (strcmp(sp->verb, "sign") == 0) {
 		int	rc;
 

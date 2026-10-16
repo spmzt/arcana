@@ -4983,3 +4983,5 @@ html:not(.neon) label.button {
 
 /* An error copies its text when clicked (bridge.js). */
 .toast.bad, .notice.bad, .notice.warn, p.error, .err, td.err { cursor: copy; }
+.modal form .checks { display: flex; flex-wrap: wrap; gap: .35rem 1.2rem; margin: .5rem 0; }
+.modal form .checks label.toggle { flex: none; align-items: center; }

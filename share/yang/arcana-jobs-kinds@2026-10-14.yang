@@ -1524,6 +1524,7 @@ submodule arcana-jobs-kinds {
               enum set;
               enum authorize;
               enum unauthorize;
+              enum options;
               enum sign;
               enum user-cas;
             }
