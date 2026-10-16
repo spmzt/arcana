@@ -62,6 +62,7 @@
 .Op Fl Z Ar zpool
 .Op Fl P Ar pkg
 .Op Fl -bird-watch Ar seconds
+.Op Fl -sctp-also Ar addresses
 .Nm
 .Fl V
 .Sh DESCRIPTION
@@ -276,6 +277,16 @@ Print the version and exit.
 .It Fl w Ar seconds
 How long a change made in safe mode waits to be confirmed.
 Default 60.
+.It Fl -sctp-also Ar addresses
+More addresses, separated by spaces, that every SCTP listener is bound
+to beside its own
+.Pq Xr sctp_bindx 3 :
+an association with the console has a path to each, and goes on over
+another when one fails.
+An IPv4 listener takes IPv4 addresses, an IPv6 one either.
+What cannot be bound is said with the listener in the transport
+operation, and the addresses are changed there while the agent runs
+.Pq kept in rc.conf as arcana_agent_sctp_also .
 .It Fl -bird-watch Ar seconds
 How often the BIRD of the host, and that of each running jail with a
 network of its own where

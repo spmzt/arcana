@@ -100,13 +100,17 @@ struct opts opts = {
 
 static bool	foreground;
 
-enum { OPT_ROOT = 1000, OPT_BIRD_WATCH };
+enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
 	{ "root", required_argument, NULL, OPT_ROOT },
 	/* How often BIRD's sessions are looked at for faults; 0, never. */
 	{ "bird-watch", required_argument, NULL, OPT_BIRD_WATCH },
+	/* More addresses each SCTP listener is bound to (sctp_bindx(3)),
+	 * separated by spaces: an association with the console over
+	 * several paths. */
+	{ "sctp-also", required_argument, NULL, OPT_SCTP_ALSO },
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -140,7 +144,7 @@ usage(void)
 	    "[-5 swanctl-directory]\n"
 	    "                 [-N netstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n"
-	    "                 [-X traceroute]\n");
+	    "                 [-X traceroute] [--sctp-also addresses]\n");
 	exit(2);
 }
 
@@ -339,6 +343,9 @@ main(int argc, char *argv[])
 		switch (ch) {
 		case OPT_ROOT:
 			opts.root = optarg;
+			break;
+		case OPT_SCTP_ALSO:
+			opts.sctp_also = optarg;
 			break;
 		case OPT_BIRD_WATCH:
 			opts.bird_watch_s = (int)strtonum(optarg, 0, 3600, &errstr);

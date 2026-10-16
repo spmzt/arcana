@@ -23,6 +23,10 @@
 # arcana_agent_cert (str):	certificate and its key, used with network
 # arcana_agent_key (str):	listeners.  Default: ca.pem, host.pem and
 #				host.key in %%PREFIX%%/etc/arcana
+# arcana_agent_sctp_also (str): More addresses each SCTP listener is bound
+#				to, separated by spaces: the association
+#				with the console has a path by each.
+#				Default: none.
 # arcana_agent_flags (str):	More flags, added to those above.
 
 . /etc/rc.subr
@@ -58,6 +62,9 @@ if [ -n "${arcana_agent_listen}" ]; then
 	command_args="${command_args} -A ${arcana_agent_ca}"
 	command_args="${command_args} -C ${arcana_agent_cert}"
 	command_args="${command_args} -K ${arcana_agent_key}"
+fi
+if [ -n "${arcana_agent_sctp_also}" ]; then
+	command_args="${command_args} --sctp-also '${arcana_agent_sctp_also}'"
 fi
 
 run_rc_command "$1"

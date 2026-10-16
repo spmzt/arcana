@@ -425,6 +425,7 @@ view_sysctl(struct html *h, struct server *s)
 }
 
 static void	safe_cb(int, const ucl_object_t *, const char *, void *);
+static void	transport_cb(int, const ucl_object_t *, const char *, void *);
 
 bool
 sysctl_form(const char *form, const ucl_object_t *f)
@@ -434,10 +435,26 @@ sysctl_form(const char *form, const ucl_object_t *f)
 	char		*qn, *qv, *json, title[300];
 
 	if (strcmp(form, "sy-set") != 0 && strcmp(form, "sy-from") != 0 &&
-	    strcmp(form, "tr-safe") != 0 && strcmp(form, "tr-move") != 0)
+	    strcmp(form, "tr-safe") != 0 && strcmp(form, "tr-move") != 0 &&
+	    strcmp(form, "tr-also") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
+	if (strcmp(form, "tr-also") == 0) {
+		char	url[96], *q, *body;
+
+		q = json_quote(jstr(f, "also") != NULL ? jstr(f, "also") : "");
+		if (asprintf(&body, "{\"sctp_also\":%s}", q) == -1)
+			abort();
+		free(q);
+		snprintf(url, sizeof(url), "/api/servers/%s/transport", s->id);
+		tr.busy = true;
+		snprintf(tr.sid, sizeof(tr.sid), "%s", s->id);
+		tr.loading = true;
+		api("POST", url, body, transport_cb, strdup(s->id));
+		free(body);
+		return (true);
+	}
 	if (strcmp(form, "tr-move") == 0) {
 		char	text[600];
 
@@ -836,7 +853,7 @@ view_transport(struct html *h, struct server *s)
 	static const struct tcol	cols[] = {
 		{ "Over", "transport", false }, { "From", "address", false },
 		{ "Certificate", "subject", false },
-		{ "Since", "since", true },
+		{ "Since", "since", true }, { "Paths", NULL, false },
 	};
 	const ucl_object_t		**rows, *o, *d;
 	ucl_object_iter_t		  it;
@@ -926,6 +943,28 @@ view_transport(struct html *h, struct server *s)
 			h_txt(h, e);
 			h_raw(h, "</span>");
 		}
+		/* SCTP's: each address it is bound to, a path's end. */
+		if (ucl_array_size(jget(o, "addresses")) > 1) {
+			const ucl_object_t	*a;
+			ucl_object_iter_t	 ait;
+			bool			 first = true;
+
+			h_raw(h, "<span class=\"dim\">bound to ");
+			ait = NULL;
+			while ((a = ucl_object_iterate(jget(o, "addresses"),
+			    &ait, true)) != NULL) {
+				h_raw(h, first ? "<code>" : ", <code>");
+				h_txt(h, ucl_object_tostring_forced(a));
+				h_raw(h, "</code>");
+				first = false;
+			}
+			h_raw(h, "</span>");
+		}
+		if ((e = jstr(o, "also_error")) != NULL) {
+			h_raw(h, "<span class=\"warn\">");
+			h_txt(h, e);
+			h_raw(h, "</span>");
+		}
 		h_raw(h, "</li>");
 	}
 	h_raw(h, "</ul><div class=\"toolbar\">");
@@ -965,6 +1004,30 @@ view_transport(struct html *h, struct server *s)
 		    "name the console checks.</p></details>", tr.busy ?
 		    " disabled" : "");
 	}
+	/* SCTP over several paths: the agent's other addresses. */
+	if (has_sctp) {
+		h_raw(h, "<details class=\"wfmore trmove\"");
+		if (jstr(d, "sctp_also") != NULL && jstr(d, "sctp_also")[0] !=
+		    '\0')
+			h_raw(h, " open");
+		h_raw(h, "><summary>SCTP over several paths</summary><form "
+		    "class=\"toolbar\" data-form=\"tr-also\"><label>The agent's "
+		    "other addresses <input name=\"also\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" size=\"36\" placeholder=\"192.0.2.2 "
+		    "2001:db8::2\"");
+		h_attr(h, "value", jstr(d, "sctp_also") != NULL ? jstr(d,
+		    "sctp_also") : "");
+		h_fmt(h, "></label><button class=\"ghost small\"%s>Save</button>"
+		    "</form><p class=\"dim\">An SCTP association has a path "
+		    "from each of the console's addresses to each of the "
+		    "agent's, and goes on over another when one fails. The "
+		    "console offers all of its own; the agent, those its "
+		    "listener is bound to: its address, and these too "
+		    "(<code>sctp_bindx(3)</code>, kept in rc.conf as "
+		    "<code>arcana_agent_sctp_also</code>). A listener on "
+		    "<code>0.0.0.0</code> or <code>[::]</code> has every address "
+		    "already.</p></details>", tr.busy ? " disabled" : "");
+	}
 	if (tr.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, tr.error);
@@ -973,9 +1036,9 @@ view_transport(struct html *h, struct server *s)
 	h_fmt(h, "<h4 class=\"family\">Connected now <small class=\"dim\">%lld "
 	    "since the agent started</small></h4><table class=\"net sessions\">",
 	    (long long)jint(d, "seen", 0));
-	tbl_head(h, "sessions", cols, 4, 0);
+	tbl_head(h, "sessions", cols, 5, 0);
 	h_raw(h, "<tbody>");
-	rows = tbl_rows("sessions", jget(d, "sessions"), cols, 4, NULL);
+	rows = tbl_rows("sessions", jget(d, "sessions"), cols, 5, NULL);
 	for (r = 0; (o = rows[r]) != NULL; r++) {
 		h_raw(h, "<tr><td><span class=\"chip\">");
 		h_txt(h, jstr(o, "transport"));
@@ -992,6 +1055,43 @@ view_transport(struct html *h, struct server *s)
 		    "%lld min" : "%lld h", (long long)(t < 120 ? t : t < 7200 ?
 		    t / 60 : t / 3600));
 		h_txt(h, buf);
+		h_raw(h, "</td><td class=\"paths\">");
+		/* An association's paths: to each of the console's
+		 * addresses, from the agent's, as the kernel sees them. */
+		{
+			const ucl_object_t	*pa;
+			ucl_object_iter_t	 pit;
+
+			pit = NULL;
+			while ((pa = ucl_object_iterate(jget(o, "paths"), &pit,
+			    true)) != NULL) {
+				h_fmt(h, "<span class=\"path %s\" title=\"",
+				    jstr(pa, "state") != NULL ? jstr(pa,
+				    "state") : "other");
+				h_txt(h, jstr(pa, "state"));
+				h_fmt(h, ", smoothed round trip %lld ms%s\">",
+				    (long long)jint(pa, "srtt_ms", 0), jbool(pa,
+				    "primary") ? ", the primary path" : "");
+				h_txt(h, jstr(pa, "address"));
+				if (jbool(pa, "primary"))
+					h_raw(h, " <b>primary</b>");
+				h_raw(h, "</span>");
+			}
+			if (jget(o, "local") != NULL) {
+				const ucl_object_t	*la;
+				bool			 first = true;
+
+				h_raw(h, "<small class=\"dim\">from ");
+				pit = NULL;
+				while ((la = ucl_object_iterate(jget(o, "local"),
+				    &pit, true)) != NULL) {
+					h_raw(h, first ? "" : ", ");
+					h_txt(h, ucl_object_tostring_forced(la));
+					first = false;
+				}
+				h_raw(h, "</small>");
+			}
+		}
 		h_raw(h, "</td></tr>");
 	}
 	free(rows);
