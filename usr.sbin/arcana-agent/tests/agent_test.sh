@@ -5154,6 +5154,22 @@ EOT
 	    atf_fail "alice's key"
 	atf_check -s exit:1 -o match:'has that key already' \
 	    "$JGC" -c "$SOCK" sshd authorize alice alice_key.pub
+	# Its options changed in place, the key and its comment as they
+	# were; options that make no key sshd reads are refused.
+	atf_check -o match:'done +sshd options of alice$' \
+	    "$JGC" -c "$SOCK" sshd options alice "$alicefp" \
+	    'principals="alice,admin",no-pty'
+	atf_check -o inline:"principals=\"alice,admin\",no-pty $(cut -d' ' -f1-2 alice_key.pub) alice@lab\n" \
+	    cat $R/home/alice/.ssh/authorized_keys
+	atf_check -o save:list "$JGC" -c "$SOCK" sshd
+	grep -qF '"options":"principals=\"alice,admin\",no-pty"' list ||
+	    atf_fail "the options listed"
+	atf_check -s exit:1 -o match:'no key OpenSSH reads' \
+	    "$JGC" -c "$SOCK" sshd options alice "$alicefp" 'from="10.0.0.0/8'
+	atf_check -o match:'done +sshd options of alice$' \
+	    "$JGC" -c "$SOCK" sshd options alice "$alicefp"
+	atf_check -o inline:"$(cut -d' ' -f1-2 alice_key.pub) alice@lab\n" \
+	    cat $R/home/alice/.ssh/authorized_keys
 	atf_check -s exit:1 -o match:'daemon is no user who signs in here' \
 	    "$JGC" -c "$SOCK" sshd authorize daemon alice_key.pub
 	atf_check -o match:'done +sshd unauthorize of alice$' \
@@ -5193,7 +5209,7 @@ EOT
 		sleep 0.1
 	done
 	atf_check -o match:'not confirmed within 2 s: undone' -s exit:1 \
-	    "$JGC" -c "$SOCK" job 13
+	    "$JGC" -c "$SOCK" job 16
 	atf_check -o file:before cat $R/etc/ssh/sshd_config
 	# What passwd and sshd say is the host's or a jail's, not the
 	# agent's to trust: a long home in a keys file of %h four times

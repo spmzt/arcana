@@ -56,7 +56,8 @@ static const char *const cert_verb[] = {
 	"add", "remove", "trust", "untrust", "rehash",
 };
 static const char *const ssh_verb[] = {
-	"banner", "set", "authorize", "unauthorize", "sign", "user-cas",
+	"banner", "set", "authorize", "unauthorize", "options", "sign",
+	"user-cas",
 };
 
 /*
