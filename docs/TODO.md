@@ -694,21 +694,32 @@
     addressing unless its form says DHCP or SLAAC (checked 2026-10-16);
     said plainly in the form and the book now, and the link the console
     reaches the host through refused DHCP, SLAAC or a VRF unless agreed.
+    Done 2026-10-16.
   - Kernel: beside each module, keep it in rc.conf's kld_list or take
-    it out, without loading or unloading it.
+    it out, without loading or unloading it.  Done 2026-10-16.
   - SSH: a user's key changed in place (its options, principals= among
-    them).
+    them).  Done 2026-10-16.
   - Mail by SMTP: a relay (host, port, STARTTLS or TLS, a user and
     password) for the console's mail, not only the host's sendmail(8).
+    Done 2026-10-16 (STARTTLS and TLS not yet tried against a relay).
   - Workflows: the steps' forms remade (a value's field as what it is,
     pkg's IPv4 or IPv6 a choice, not "a value, or ${param.x}"; the
     parameters apart), after a look at how others do it; a template
-    that upgrades the packages of every jail.
+    that upgrades the packages of every jail.  Done 2026-10-16.
   - Legends for every graph whose lines differ by colour or dash (the
-    firewall's first).
+    firewall's first).  Done 2026-10-16: the firewall's chains,
+    Troubleshoot's path, a workflow's drawing, SD-WAN's topology, the
+    nexthop groups' weights.
   - A Security section in the side bar: the luxuria plugins SD-WAN
     uses (Squid with its URL filter, c-icap with ClamAV and freshclam,
-    Suricata) each a tab, usable without SD-WAN.
+    Suricata) each a tab, usable without SD-WAN.  Done 2026-10-16: a
+    host at a time; URL filters (Squid as an explicit proxy, sni or
+    inspect), Malware (c-icap with ClamAV per filter), Signatures
+    (freshclam's databases read from their heads, freshclam started or
+    restarted as a service), IDS/IPS (Suricata on interfaces, or on a
+    divert port to prevent); kept apart from SD-WAN's instances by the
+    agent (group security, named sec-, a file of their own).  Not tried
+    with the real plugins yet: stand-ins in the tests.
   - The activity bar's tasks, kept over a reload of the page (the
     hosts keep their jobs and traces: read back from them).
   - A rollback timer for every agent at once, in the console's
