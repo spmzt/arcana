@@ -3,7 +3,7 @@
 SHLIB_NAME=	arcana-console.so
 SRCS=		api.c auth.c config.c hosts.c pki.c push.c servers.c settings.c troubleshoot.c \
 		stream.c follow.c tokens.c transfers.c workflows.c sdwan.c sdwan_edge.c \
-		store.c update.c webpush.c audit.c mail.c
+		store.c update.c webpush.c audit.c mail.c smtp.c
 LIBDIR?=	${PREFIX}/lib/arcana
 MAN=		arcana-console.8
 

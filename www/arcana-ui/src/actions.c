@@ -3005,7 +3005,8 @@ save_settings(const ucl_object_t *f, bool mail)
 	while ((e = ucl_object_iterate(jget(app.settings, "settings"), &it,
 	    true)) != NULL) {
 		if (!jbool(e, "editable") || (key = jstr(e, "key")) == NULL ||
-		    (strncmp(key, "mail_", 5) == 0) != mail)
+		    (strncmp(key, "mail_", 5) == 0 || strncmp(key, "smtp_",
+		    5) == 0) != mail)
 			continue;
 		q = json_quote(key);
 		h_raw(&b, first ? "" : ",");
