@@ -279,7 +279,7 @@ usage(void)
 	    "    cam rescan\n"
 	    "    fstab [-w new-text [-n]]\n"
 	    "    packages [-i] [-r] [-4 | -6] [jail]\n"
-	    "    pkg-upgrade [-n] [-O] [-4 | -6] [-j jail] [package ...]\n"
+	    "    pkg-upgrade [-n] [-O] [-4 | -6] [-j jail | -J] [package ...]\n"
 	    "    pkg-clean [-a] [-j jail | -J]\n"
 	    "    pkg-install [-O] [-4 | -6] [-j jail] package ...\n"
 	    "    jobs\n"
@@ -3612,7 +3612,8 @@ cmd_ipsec(struct arc_client *cl, int argc, char **argv)
 	return (submit(cl, &sp));
 }
 
-/* pkg-upgrade [-n] [-O] [-4 | -6] [-j jail] [package ...] */
+/* pkg-upgrade [-n] [-O] [-4 | -6] [-j jail | -J] [package ...]: -J, of
+ * every running jail, by the agent, one after the other. */
 static int
 cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 {
@@ -3622,7 +3623,7 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 
 	memset(&req, 0, sizeof(req));
 	optind = 1;
-	while ((ch = getopt(argc, argv, "46Oj:n")) != -1) {
+	while ((ch = getopt(argc, argv, "46OJj:n")) != -1) {
 		switch (ch) {
 		case '4':
 		case '6':
@@ -3636,6 +3637,9 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 			break;
 		case 'j':
 			req.jail = optarg;
+			break;
+		case 'J':
+			req.jail = "*";
 			break;
 		case 'n':
 			req.dry_run = true;

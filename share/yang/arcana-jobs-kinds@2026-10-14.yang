@@ -298,7 +298,7 @@ submodule arcana-jobs-kinds {
           leaf pkg-ip {
             type uint32;
             description
-              "pkg over IPv4 (4) or IPv6 (6)";
+              "pkg's network";
           }
         }
       }
@@ -1305,7 +1305,7 @@ submodule arcana-jobs-kinds {
           leaf pkg-ip {
             type uint32;
             description
-              "pkg over IPv4 (4) or IPv6 (6)";
+              "pkg's network";
           }
         }
       }

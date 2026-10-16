@@ -59,6 +59,9 @@ static struct {
 	}		 watched[16];
 	int		 nwatched;
 	double		 watched_at;
+	/* The fields set to a ${...} expression rather than a value. */
+	char		 expr[32][96];
+	int		 nexpr;
 } wf = { .sel = -2, .dragging = -1 };
 
 static void	runs_watch(void);
@@ -262,6 +265,30 @@ walk(ucl_object_t *o, const char *path, bool make, char *leaf, size_t len)
 	}
 	snprintf(leaf, len, "%s", tok != NULL ? tok : "");
 	return (o);
+}
+
+/* What the field at path has, as text; "" for nothing. */
+static const char *
+value_at(const char *path)
+{
+	ucl_object_t		*o;
+	const ucl_object_t	*v;
+	char			 leaf[64];
+
+	if (wf.draft == NULL || (o = walk(wf.draft, path, false, leaf,
+	    sizeof(leaf))) == NULL || (v = ucl_object_lookup(o, leaf)) ==
+	    NULL || ucl_object_type(v) == UCL_ARRAY || ucl_object_type(v) ==
+	    UCL_OBJECT)
+		return ("");
+	return (ucl_object_tostring_forced(v));
+}
+
+/* Is what the field at path has an expression? */
+static bool
+expr_of(const char *path)
+{
+
+	return (strstr(value_at(path), "${") != NULL);
 }
 
 /* A value set at path, or taken away when v is NULL. */
@@ -491,6 +518,13 @@ static const struct {
 	    "[\"${LOCAL}\"], \"steps\": [{\"id\": \"upgrade\", \"name\": "
 	    "\"Upgrade the host's packages\", \"job\": {\"kind\": "
 	    "\"pkg-upgrade\"}}]}" },
+	{ "pkg-every-jail", "Every jail's packages upgraded every week",
+	    "{\"name\": \"Weekly upgrade of every jail\", \"every\": 604800, "
+	    "\"hosts\": [\"${LOCAL}\"], \"steps\": [{\"id\": \"host\", "
+	    "\"name\": \"The host's packages\", \"job\": {\"kind\": "
+	    "\"pkg-upgrade\"}}, {\"id\": \"jails\", \"name\": \"Every running "
+	    "jail's, one after the other\", \"job\": {\"kind\": "
+	    "\"pkg-upgrade\", \"jail\": \"*\"}}]}" },
 	{ "plugin-install", "A plugin's package installed",
 	    "{\"name\": \"Plugin installed\", \"hosts\": [\"${LOCAL}\"], "
 	    "\"params\": [{\"name\": \"package\", \"default\": \"bird3\"}], "
@@ -1161,55 +1195,198 @@ input(struct html *h, const char *type, const char *path, const char *value,
 	h_raw(h, ">");
 }
 
-/* A field of a job, as jobs.json has its type and its values. */
+/* Is the field at path an expression (${...}), as asked or as it is? */
+static bool
+expr_on(const char *path, const char *cur)
+{
+	int	i;
+
+	if (cur != NULL && strstr(cur, "${") != NULL)
+		return (true);
+	for (i = 0; i < wf.nexpr; i++)
+		if (strcmp(wf.expr[i], path) == 0)
+			return (true);
+	return (false);
+}
+
+/* The jails of the fleet's hosts, by name, each once: a picker's. */
+static void
+jail_options(struct html *h, const char *cur, bool every)
+{
+	const ucl_object_t	*j;
+	ucl_object_iter_t	 it;
+	char			 seen[4096];
+	int			 i;
+
+	seen[0] = '\0';
+	h_raw(h, "<option value=\"\">the host itself</option>");
+	/* A package upgrade can be of every running jail, one after the
+	 * other, by the agent. */
+	if (every)
+		h_fmt(h, "<option value=\"*\"%s>every running jail</option>",
+		    cur != NULL && strcmp(cur, "*") == 0 ? " selected" : "");
+	for (i = 0; i < app.nservers; i++) {
+		it = NULL;
+		while ((j = ucl_object_iterate(jget(app.servers[i].list,
+		    "jails"), &it, true)) != NULL) {
+			char	key[80];
+
+			if (jstr(j, "name") == NULL)
+				continue;
+			snprintf(key, sizeof(key), "|%s|", jstr(j, "name"));
+			if (strstr(seen, key) != NULL)
+				continue;
+			if (strlen(seen) + strlen(key) < sizeof(seen))
+				strlcat(seen, key, sizeof(seen));
+			h_raw(h, "<option");
+			h_attr(h, "value", jstr(j, "name"));
+			h_fmt(h, "%s>", cur != NULL && strcmp(cur, jstr(j,
+			    "name")) == 0 ? " selected" : "");
+			h_txt(h, jstr(j, "name"));
+			h_raw(h, "</option>");
+		}
+	}
+	/* One the fleet does not list now, kept. */
+	if (cur != NULL && cur[0] != '\0' && strcmp(cur, "*") != 0) {
+		char	key[80];
+
+		snprintf(key, sizeof(key), "|%s|", cur);
+		if (strstr(seen, key) == NULL) {
+			h_raw(h, "<option selected");
+			h_attr(h, "value", cur);
+			h_raw(h, ">");
+			h_txt(h, cur);
+			h_raw(h, "</option>");
+		}
+	}
+}
+
+/*
+ * A field of a job, as jobs.json has it: its control as its type and
+ * values say (a choice, a box, a number, a jail of the fleet), its help
+ * under it; or, its {x} pressed, an expression, ${param.x} and the like,
+ * with what can be put in it to pick from.
+ */
 static void
 job_field(struct html *h, const ucl_object_t *kind, const char *field,
     const char *path, const ucl_object_t *job, bool need)
 {
-	const ucl_object_t	*f, *vals, *v, *cur;
+	const ucl_object_t	*f, *vals, *v, *cur, *ch;
 	ucl_object_iter_t	 it;
-	const char		*type;
+	const char		*type, *curs;
 	char			 p[256], buf[1024];
 	size_t			 n;
+	bool			 ex;
 
 	f = field_of(field);
 	type = f != NULL && jstr(f, "type") != NULL ? jstr(f, "type") : "text";
 	snprintf(p, sizeof(p), "%s.%s", path, field);
 	cur = jget(job, field);
-	h_raw(h, "<label>");
+	curs = cur != NULL && ucl_object_type(cur) != UCL_ARRAY &&
+	    ucl_object_type(cur) != UCL_OBJECT ? ucl_object_tostring_forced(
+	    cur) : NULL;
+	vals = jget(jget(kind, "values"), field);
+	ch = jget(f, "choices");
+	/* Lists and maps have their own words for many; a box no ${}. */
+	ex = strcmp(type, "list") != 0 && strcmp(type, "map") != 0 &&
+	    strcmp(type, "bool") != 0;
+	h_raw(h, "<div class=\"wffield\"><div class=\"wflabel\"><span>");
 	h_txt(h, f != NULL ? jstr(f, "label") : field);
+	h_raw(h, "</span>");
 	if (need)
 		h_raw(h, " <em>needed</em>");
-	vals = jget(jget(kind, "values"), field);
-	if (vals != NULL) {
-		h_raw(h, "<select data-input=\"wf\"");
-		snprintf(buf, sizeof(buf), "text:%s", p);
-		h_attr(h, "data-arg", buf);
-		h_raw(h, "><option value=\"\">—</option>");
+	if (ex) {
+		h_fmt(h, "<button type=\"button\" class=\"wfexpr%s\" data-act="
+		    "\"wf-expr\" title=\"%s\"", expr_on(p, curs) ? " on" : "",
+		    expr_on(p, curs) ? "From a parameter, the host or an earlier "
+		    "step; press for a value of its own" : "A value of its own; "
+		    "press to take it from a parameter, the host or an earlier "
+		    "step");
+		h_attr(h, "data-arg", p);
+		h_raw(h, ">{x}</button>");
+	}
+	h_raw(h, "</div>");
+	if (ex && expr_on(p, curs)) {
+		const ucl_object_t	*pa;
+
+		/* Stored as text: the console makes it a number when it
+		 * comes out one. */
+		input(h, "text", p, curs, "${param.name}");
+		h_raw(h, "<select class=\"wfvar\" data-input=\"wf-var\"");
+		h_attr(h, "data-arg", p);
+		h_raw(h, "><option value=\"\">Put in…</option>");
 		it = NULL;
-		while ((v = ucl_object_iterate(vals, &it, true)) != NULL) {
+		while ((pa = ucl_object_iterate(jget(wf.draft, "params"), &it,
+		    true)) != NULL)
+			if (jstr(pa, "name") != NULL && jstr(pa, "name")[0] !=
+			    '\0') {
+				snprintf(buf, sizeof(buf), "${param.%s}", jstr(pa,
+				    "name"));
+				h_raw(h, "<option");
+				h_attr(h, "value", buf);
+				h_raw(h, ">parameter ");
+				h_txt(h, jstr(pa, "name"));
+				h_raw(h, "</option>");
+			}
+		h_raw(h, "<option value=\"${host.name}\">the host's name</option>"
+		    "<option value=\"${host.id}\">the host's id</option>");
+		it = NULL;
+		while ((pa = ucl_object_iterate(jget(wf.draft, "steps"), &it,
+		    true)) != NULL)
+			if (jstr(pa, "id") != NULL && jstr(pa, "id")[0] != '\0') {
+				snprintf(buf, sizeof(buf), "${step.%s.", jstr(pa,
+				    "id"));
+				h_raw(h, "<option");
+				h_attr(h, "value", buf);
+				h_raw(h, ">what step ");
+				h_txt(h, jstr(pa, "id"));
+				h_raw(h, " answered: …</option>");
+			}
+		h_raw(h, "</select>");
+	} else if (vals != NULL || ch != NULL) {
+		/* A choice: the kind's values, or the field's own with
+		 * their words. */
+		h_raw(h, "<select data-input=\"wf\"");
+		snprintf(buf, sizeof(buf), "%s:%s", vals == NULL && strcmp(type,
+		    "number") == 0 ? "num" : "text", p);
+		h_attr(h, "data-arg", buf);
+		h_raw(h, "><option value=\"\">");
+		h_raw(h, need ? "choose…" : "not set");
+		h_raw(h, "</option>");
+		it = NULL;
+		while ((v = ucl_object_iterate(vals != NULL ? vals : ch, &it,
+		    true)) != NULL) {
+			const char *val = vals != NULL ?
+			    ucl_object_tostring_forced(v) : jstr(v, "value");
+			const char *say = vals != NULL ? val : jstr(v, "label");
+
 			h_raw(h, "<option");
-			h_attr(h, "value", ucl_object_tostring_forced(v));
-			if (cur != NULL && strcmp(ucl_object_tostring_forced(cur),
-			    ucl_object_tostring_forced(v)) == 0)
+			h_attr(h, "value", val);
+			if (curs != NULL && strcmp(curs, val) == 0)
 				h_raw(h, " selected");
 			h_raw(h, ">");
-			h_txt(h, ucl_object_tostring_forced(v));
+			h_txt(h, say);
 			h_raw(h, "</option>");
 		}
-		h_raw(h, "</select></label>");
-		return;
-	}
-	if (strcmp(type, "bool") == 0) {
-		h_raw(h, "<input type=\"checkbox\" data-input=\"wf\"");
+		h_raw(h, "</select>");
+	} else if (strcmp(type, "bool") == 0) {
+		h_raw(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+		    "data-input=\"wf\"");
 		snprintf(buf, sizeof(buf), "bool:%s", p);
 		h_attr(h, "data-arg", buf);
 		h_raw(h, cur != NULL && ucl_object_toboolean(cur) ? " checked>" :
 		    ">");
-		h_raw(h, "</label>");
-		return;
-	}
-	if (strcmp(type, "list") == 0 || strcmp(type, "map") == 0) {
+		h_raw(h, " yes</label>");
+	} else if (jstr(f, "picker") != NULL && strcmp(jstr(f, "picker"),
+	    "jail") == 0) {
+		h_raw(h, "<select data-input=\"wf\"");
+		snprintf(buf, sizeof(buf), "text:%s", p);
+		h_attr(h, "data-arg", buf);
+		h_raw(h, ">");
+		jail_options(h, curs, jstr(kind, "kind") != NULL &&
+		    strcmp(jstr(kind, "kind"), "pkg-upgrade") == 0);
+		h_raw(h, "</select>");
+	} else if (strcmp(type, "list") == 0 || strcmp(type, "map") == 0) {
 		buf[0] = '\0';
 		n = 0;
 		it = NULL;
@@ -1230,23 +1407,27 @@ job_field(struct html *h, const ucl_object_t *kind, const char *field,
 			char	arg[300];
 
 			h_raw(h, "<textarea data-input=\"wf\" rows=\"3\" "
-			    "spellcheck=\"false\" placeholder=\"key=value, a "
-			    "line each\"");
+			    "spellcheck=\"false\" placeholder=\"NAME=value\"");
 			snprintf(arg, sizeof(arg), "map:%s", p);
 			h_attr(h, "data-arg", arg);
 			h_raw(h, ">");
 			h_txt(h, buf);
-			h_raw(h, "</textarea></label>");
-			return;
+			h_raw(h, "</textarea>");
+		} else
+			input(h, "list", p, buf, NULL);
+	} else {
+		input(h, strcmp(type, "number") == 0 ? "num" : "text", p, curs,
+		    NULL);
+		if (strcmp(type, "number") == 0) {
+			/* As a number is typed: the page's own check. */
 		}
-		input(h, "list", p, buf, "with spaces between them");
-		h_raw(h, "</label>");
-		return;
 	}
-	input(h, strcmp(type, "number") == 0 ? "num" : "text", p, cur != NULL ?
-	    ucl_object_tostring_forced(cur) : NULL, "a value, or ${param.x}, "
-	    "${host.name}, ${step.id.path}");
-	h_raw(h, "</label>");
+	if (jstr(f, "help") != NULL) {
+		h_raw(h, "<small class=\"help\">");
+		h_txt(h, jstr(f, "help"));
+		h_raw(h, "</small>");
+	}
+	h_raw(h, "</div>");
 }
 
 /* The words of a list, "a b c", each a field of the job. */
@@ -1351,8 +1532,27 @@ view_step(struct html *h, const ucl_object_t *st, int i, int n)
 			snprintf(path, sizeof(path), "steps.%d.job", i);
 			h_raw(h, "<div class=\"wffields\">");
 			job_fields(h, kind, "needs", path, job, true);
-			job_fields(h, kind, "uses", path, job, false);
 			h_raw(h, "</div>");
+			/* What it may be given besides: folded, unless set. */
+			if (ucl_array_size(jget(kind, "uses")) > 0) {
+				const ucl_object_t	*u;
+				ucl_object_iter_t	 uit;
+				bool			 any = false;
+
+				uit = NULL;
+				while ((u = ucl_object_iterate(jget(kind, "uses"),
+				    &uit, true)) != NULL)
+					if (jget(job, ucl_object_tostring_forced(
+					    u)) != NULL)
+						any = true;
+				h_fmt(h, "<details class=\"wfmore\"%s><summary>"
+				    "More options <small class=\"dim\">%u"
+				    "</small></summary><div class=\"wffields\">",
+				    any ? " open" : "", (unsigned)ucl_array_size(
+				    jget(kind, "uses")));
+				job_fields(h, kind, "uses", path, job, false);
+				h_raw(h, "</div></details>");
+			}
 			if (jstr(kind, "destroys") != NULL && jstr(kind,
 			    "destroys")[0] != '\0')
 				h_raw(h, "<p class=\"dim\">A job of this kind can "
@@ -2570,6 +2770,33 @@ workflows_action(const char *act, const char *arg, const char *value)
 		return (true);
 	if (strcmp(act, "input:wf") == 0)
 		draft_input(arg, value);
+	else if (strcmp(act, "wf-expr") == 0) {
+		/* A field to an expression and back: back, what it had
+		 * goes, for an expression is no value of its own. */
+		int	k;
+
+		for (k = 0; k < wf.nexpr && strcmp(wf.expr[k], arg) != 0; k++)
+			;
+		if (k < wf.nexpr || expr_of(arg)) {
+			if (k < wf.nexpr)
+				memmove(wf.expr[k], wf.expr[k + 1], sizeof(wf.expr[0]) *
+				    (size_t)(wf.nexpr - k - 1));
+			if (k < wf.nexpr)
+				wf.nexpr--;
+			snprintf(buf, sizeof(buf), "text:%s", arg);
+			draft_input(buf, "");
+		} else if (wf.nexpr < (int)nitems(wf.expr))
+			snprintf(wf.expr[wf.nexpr++], sizeof(wf.expr[0]), "%s",
+			    arg);
+	} else if (strcmp(act, "input:wf-var") == 0 && value[0] != '\0') {
+		/* Put in at the end of what the field has. */
+		char	have[512];
+
+		snprintf(have, sizeof(have), "%s", value_at(arg));
+		strlcat(have, value, sizeof(have));
+		snprintf(buf, sizeof(buf), "text:%s", arg);
+		draft_input(buf, have);
+	}
 	else if (strcmp(act, "input:wf-kind") == 0) {
 		/* Another kind: what the job was goes. */
 		snprintf(buf, sizeof(buf), "steps.%d.job", i);
