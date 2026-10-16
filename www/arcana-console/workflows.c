@@ -1252,6 +1252,7 @@ run_arcana(struct hostrun *hr, int k, const ucl_object_t *step)
 	ucl_object_t	*ans, *st, *list, *one;
 	const char	*what, *head, *updated, *agents;
 	char		 why[400];
+	char		 who[sizeof(((struct hoststep *)0)->error)];
 	int		 i, n, failed;
 	bool		 na, nc;
 
@@ -1318,6 +1319,7 @@ run_arcana(struct hostrun *hr, int k, const ucl_object_t *step)
 	pthread_mutex_unlock(&ref_lock);
 	list = ucl_object_typed_new(UCL_ARRAY);
 	failed = 0;
+	who[0] = '\0';
 	for (i = 0; i < n && !cancelled(hr->run); i++) {
 		one = ucl_object_typed_new(UCL_OBJECT);
 		put(one, "host", ucl_object_fromstring(all[i].name));
@@ -1326,6 +1328,9 @@ run_arcana(struct hostrun *hr, int k, const ucl_object_t *step)
 			failed++;
 			put(one, "ok", ucl_object_frombool(false));
 			put(one, "error", ucl_object_fromstring(why));
+			/* Who did not, and why, said in the step's error. */
+			snprintf(who + strlen(who), sizeof(who) - strlen(who),
+			    "%s%s", who[0] != '\0' ? "; " : "", why);
 		} else {
 			put(one, "ok", ucl_object_frombool(true));
 			if (ucl_str(ans, "version") != NULL)
@@ -1340,8 +1345,8 @@ run_arcana(struct hostrun *hr, int k, const ucl_object_t *step)
 	put(ans, "failed", ucl_object_fromint(failed));
 	step_answer(hr, k, step, ans);
 	if (failed > 0) {
-		step_set(hr, k, "failed", "%d of %d hosts did not take it",
-		    failed, n);
+		step_set(hr, k, "failed", "%d of %d hosts did not take it "
+		    "(%s)", failed, n, who);
 		return (false);
 	}
 	/* What they run now: what was built last. */

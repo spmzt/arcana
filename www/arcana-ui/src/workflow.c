@@ -32,6 +32,7 @@ enum { WM_LIST, WM_EDIT, WM_RUN };
 static struct {
 	int		 mode;
 	ucl_object_t	*list;		/* /api/workflows */
+	bool		 all_runs;	/* every run listed, not the latest */
 	ucl_object_t	*runs;		/* /api/runs */
 	ucl_object_t	*run;		/* /api/runs/<n>, the one shown */
 	ucl_object_t	*jobs;		/* /jobs.json */
@@ -645,6 +646,7 @@ recent(struct html *h, const char *id)
 	h_raw(h, "</small></span>");
 }
 
+#define	RUNS_SHOWN	15
 static void
 view_list(struct html *h)
 {
@@ -710,7 +712,9 @@ view_list(struct html *h)
 		h_attr(h, "data-arg", jstr(w, "id"));
 		h_raw(h, ">×</button></div></li>");
 	}
-	if (n == 0)
+	if (n == 0 && wf.list == NULL)
+		h_raw(h, "<li class=\"dim\">Reading the workflows…</li>");
+	else if (n == 0)
 		h_raw(h, "<li class=\"dim\">No workflow yet: <b>+ workflow</b> "
 		    "makes one, and what waits in the queue can be kept as "
 		    "one.</li>");
@@ -728,6 +732,13 @@ view_list(struct html *h)
 			v[nv++] = r;
 		for (k = nv - 1; k >= 0; k--) {
 			r = v[k];
+			/* The latest, unless all are asked for. */
+			if (!wf.all_runs && n == RUNS_SHOWN) {
+				h_fmt(h, "<li class=\"more\"><button class=\"ghost "
+				    "small\" data-act=\"wf-runs-all\">All %d runs"
+				    "</button></li>", nv);
+				break;
+			}
 			n++;
 			h_fmt(h, "<li class=\"pick %s\" data-act=\"wf-run-open\"",
 			    jstr(r, "state") != NULL ? jstr(r, "state") : "");
@@ -751,6 +762,32 @@ view_list(struct html *h)
 				    "");
 				h_txt(h, jstr(x, "name"));
 				h_raw(h, "</span>");
+			}
+			/* Why it failed: the first step that did, its words. */
+			{
+				const ucl_object_t	*st;
+				ucl_object_iter_t	 sit;
+				const char		*why = NULL;
+
+				xit = NULL;
+				while (why == NULL && (x = ucl_object_iterate(
+				    jget(r, "hosts"), &xit, true)) != NULL) {
+					sit = NULL;
+					while (why == NULL && (st =
+					    ucl_object_iterate(jget(x, "steps"),
+					    &sit, true)) != NULL)
+						if (jstr(st, "state") != NULL &&
+						    strcmp(jstr(st, "state"),
+						    "failed") == 0)
+							why = jstr(st, "error");
+				}
+				if (why != NULL) {
+					h_raw(h, "<span class=\"why\"");
+					h_attr(h, "title", why);
+					h_raw(h, ">");
+					h_txt(h, why);
+					h_raw(h, "</span>");
+				}
 			}
 			h_raw(h, "</span><span class=\"state\">");
 			h_txt(h, jstr(r, "state"));
@@ -2515,6 +2552,10 @@ workflows_action(const char *act, const char *arg, const char *value)
 	char			 url[80], id[16], buf[64];
 	int			 i, k;
 
+	if (strcmp(act, "wf-runs-all") == 0) {
+		wf.all_runs = true;
+		return (true);
+	}
 	if (strcmp(act, "select-workflows") == 0) {
 		workflows_open();
 		return (true);

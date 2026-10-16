@@ -4868,3 +4868,4 @@ ol.fwbusy code { grid-column: 2 / 4; font-size: .72rem; color: var(--dim); white
 ul.fwnever li { padding: .2rem .3rem; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 ul.fwnever li b { color: var(--fg-2); font-family: var(--mono); font-weight: 400; margin-right: .4rem; }
 ul.fwnever code { font-size: .74rem; color: var(--fg-2); }
+ul.wfruns .why { flex: 1 1 12rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .74rem; color: var(--red); }
