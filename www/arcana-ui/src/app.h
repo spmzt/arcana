@@ -267,6 +267,7 @@ struct server {
 	ucl_object_t	*list;		/* last good list reply */
 	double		 fetched;	/* when it arrived, ms */
 	bool		 loading;
+	double		 loading_since;	/* ms: when the read on its way was asked */
 	bool		 failed;	/* the last refresh failed */
 	char		 error[256];
 	struct jailui	*jui;

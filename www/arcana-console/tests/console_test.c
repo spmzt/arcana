@@ -1612,6 +1612,22 @@ ATF_TC_BODY(troubleshoot, tc)
 	ATF_CHECK_STREQ("r2", jstr(&r, "findings.0.jail"));
 	resp_free(&r);
 
+	/* r3's agent call hangs: the survey waits for it no longer than
+	 * its deadline, and the way is still followed by r1 and r2. */
+	ATF_REQUIRE(system("touch hang-13") == 0);
+	{
+		time_t	t0 = time(NULL);
+
+		ASK("tcp", 22);
+		ATF_CHECK_MSG(time(NULL) - t0 < 40, "%lld s", (long long)(
+		    time(NULL) - t0));
+		ATF_CHECK_STREQ("here, jail r2", jstr(&r, "end.place"));
+		ATF_CHECK_MSG(strstr(r.body, "no answer in 20 seconds") != NULL,
+		    "%.400s", r.body);
+		resp_free(&r);
+	}
+	ATF_REQUIRE(unlink("hang-13") == 0);
+
 	/* One host asked alone, for its firewall tab: the walk, rule by
 	 * rule, as the kernel would make it. */
 	snprintf(body, sizeof(body), "/api/servers/%s/ipfw/path?src=10.1.0.2&"

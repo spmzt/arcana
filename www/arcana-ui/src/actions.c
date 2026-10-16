@@ -1109,6 +1109,8 @@ refresh_jails(struct server *s, bool user)
 
 	if (!app.online || (s->loading && !user))
 		return;
+	if (!s->loading)
+		s->loading_since = arc_now();
 	s->loading = true;
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);

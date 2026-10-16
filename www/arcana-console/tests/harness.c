@@ -1478,6 +1478,8 @@ ts_net(const char *cwd, const char *r2routes, const char *r2fw)
 	/* jexec: ipfw's list and tables, the jail's own. */
 	ATF_REQUIRE((fp = fopen("fake-jexec", "w")) != NULL);
 	fputs("#!/bin/sh\necho \"jexec $*\" >> jexec.log\nj=$1; shift\n"
+	    /* A jail whose answers hang, while hang-<jid> is there. */
+	    "[ -f hang-$j ] && sleep 45\n"
 	    "case \"$1 $2\" in\n*fake-ipfw\\ list) cat fw-$j.list 2>/dev/null; "
 	    "exit 0 ;;\n*fake-ipfw\\ table) cat fw-$j.tables 2>/dev/null; "
 	    "exit 0 ;;\nesac\nexec \"$@\"\n", fp);

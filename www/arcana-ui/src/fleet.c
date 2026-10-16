@@ -231,7 +231,13 @@ view_fleet(struct html *h)
 			bar(h, "CPU", s->hist[0][s->nhist - 1]);
 			bar(h, "RAM", s->hist[1][s->nhist - 1]);
 			bar(h, "ZFS", s->hist[2][s->nhist - 1]);
-		} else
+		} else if (s->loading && arc_now() - s->loading_since > 15000)
+			/* Its agent took the connection and says nothing. */
+			h_fmt(h, "<p class=\"warn\" title=\"Asked, and no "
+			    "answer yet: the connection is up and the agent "
+			    "says nothing, or a proxy holds it\">no answer for "
+			    "%.0f s</p>", (arc_now() - s->loading_since) / 1000);
+		else
 			h_raw(h, "<p class=\"dim\">waiting for the host…</p>");
 		if (s->list != NULL) {
 			int r = 0, a = 0;

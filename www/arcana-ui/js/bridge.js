@@ -67,9 +67,31 @@ addToLibrary({
 			 * isEqualNode() on every node costs more than the
 			 * walk, in Firefox several times.
 			 */
+			/*
+			 * A box somebody opened or shut stays so: the page
+			 * draws a <details> as it last chose, and what was
+			 * pressed since is kept until the page itself
+			 * draws it otherwise.
+			 */
+			onNodeAdded: function (node) {
+				if (node.tagName === "DETAILS")
+					node._arcOpen = node.hasAttribute("open");
+				return (node);
+			},
 			onBeforeElUpdated: function (from, to) {
 				var tag = from.tagName, i, was, now;
 
+				if (tag === "DETAILS") {
+					now = to.hasAttribute("open");
+					if (from._arcOpen === now) {
+						if (from.open)
+							to.setAttribute("open", "");
+						else
+							to.removeAttribute("open");
+					}
+					from._arcOpen = now;
+					return (true);
+				}
 				if (tag !== "INPUT" && tag !== "TEXTAREA" &&
 				    tag !== "SELECT")
 					return (true);

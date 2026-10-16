@@ -2754,11 +2754,24 @@ chain_graph(struct html *h, const ucl_object_t *live,
 			continue;
 		if ((r = rate_of(jint(o, "num", 0), jint(o, "pkts", 0))) > 0)
 			rate[i] += r;
+		/* The action is the rule's first word, after a prob or a
+		 * set (ipfw -S show writes "call 9000 ip6 from ..."). */
 		t = jstr(o, "text") != NULL ? jstr(o, "text") : "";
-		if ((p = strstr(t, " call ")) == NULL && (p = strstr(t,
-		    " skipto ")) == NULL)
+		if (strncmp(t, "set ", 4) == 0) {
+			t += 4 + strspn(t + 4, "0123456789");
+			t += strspn(t, " ");
+		}
+		if (strncmp(t, "prob ", 5) == 0) {
+			t += 5;
+			t += strcspn(t, " ");
+			t += strspn(t, " ");
+		}
+		if (strncmp(t, "call ", 5) == 0)
+			p = t + 5;
+		else if (strncmp(t, "skipto ", 7) == 0)
+			p = t + 7;
+		else
 			continue;
-		p += p[1] == 'c' ? 6 : 8;
 		if ((to = sect_of(atoi(p))) < 0 || to == i || ne == 64)
 			continue;
 		dup = false;

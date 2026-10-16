@@ -6143,6 +6143,36 @@ EOT
 	atf_check -o inline:'deny 999\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state: no state of it yet, on\n  300 call 9200\n  9299 return, after 300\n  999 decides\n' \
 	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
 	    proto=tcp sport=4000 dport=80 syn rpf reach walk
+	# As edge-a's ruleset writes them: a return of no addresses
+	# (return next-rulenum proto ip) returns; tcpflags and ipoptions
+	# are judged of the packet modelled (a SYN, no IP option); a long
+	# { a or b } list is read whole.
+	{
+		echo '00020 call 9100 ip from any to any in'
+		echo '00030 call 9200 ip from any to any in'
+		echo '00099 allow tcp from any to any 443 in'
+		echo '09100 deny udp from any to any 1900 in'
+		echo '09199 return next-rulenum proto ip'
+		echo '09251 deny log logamount 500 tcp from any to any tcpflags fin,psh,urg in'
+		echo '09252 deny log logamount 500 tcp from any to any tcpflags !syn,!fin,!ack,!psh,!rst,!urg in'
+		echo '09253 deny log logamount 500 tcp from any to any tcpflags syn,fin in'
+		echo '09255 deny log logamount 500 ip from any to any ipoptions ssrr,lsrr,rr,ts in'
+		printf '09301 deny ip4 from { '
+		n=0; while [ $n -lt 60 ]; do printf '198.18.%d.0/24 or ' $n; n=$((n + 1)); done
+		echo '198.19.0.1 } to any in'
+		echo '09999 return next-rulenum proto ip'
+		echo '65535 deny ip from any to any'
+	} > edge-a
+	atf_check -o inline:'allow 99\n  20 call 9100\n  9199 return, after 20\n  30 call 9200\n  9999 return, after 30\n  99 decides\n' \
+	    "$f" edge-a tables $l in rcv=em0 src=203.0.113.9 dst=10.0.0.10 \
+	    proto=tcp sport=40000 dport=443 syn rpf reach walk
+	atf_check -o inline:'deny 9301\n  20 call 9100\n  9199 return, after 20\n  30 call 9200\n  9301 decides\n' \
+	    "$f" edge-a tables $l in rcv=em0 src=198.18.59.7 dst=10.0.0.10 \
+	    proto=tcp sport=40000 dport=443 syn rpf reach walk
+	# A segment of no flags at all: 9252 drops it.
+	atf_check -o inline:'deny 9252\n  20 call 9100\n  9199 return, after 20\n  30 call 9200\n  9252 decides\n' \
+	    "$f" edge-a tables $l in rcv=em0 src=203.0.113.9 dst=10.0.0.10 \
+	    proto=tcp sport=40000 dport=443 rpf reach walk
 	# A reply with its state: check-state decides.
 	atf_check -o inline:'allow 200 by-state\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 decides: its state lets it by\n' \
 	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \

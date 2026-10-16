@@ -3874,6 +3874,9 @@ form.fw-add input[name=name], form.fw-add input[name=value] { flex: 0 1 12rem; w
 form.fw-trace input[name=src], form.fw-trace input[name=dst] { flex: 1 1 11rem; min-width: 0; width: auto; }
 form.fw-trace input[name=port] { flex: 0 0 5.5rem; width: 5.5rem; }
 form.fw-trace input[name=iface] { flex: 0 0 7rem; width: 7rem; }
+form.fw-trace input[name=address] { flex: 1 1 14rem; min-width: 0; width: auto; }
+form.fw-trace input[name=seconds] { flex: 0 0 4rem; width: 4rem; }
+form.fw-trace > span.dim { margin-left: -.3rem; }
 ol.fw-steps { list-style: none; margin: .8rem 0; padding: 0; border-left: 2px solid var(--line-2); }
 ol.fw-steps li { padding: .35rem .7rem; cursor: pointer; }
 ol.fw-steps li:hover { background: rgba(var(--accent-rgb), .05); }
@@ -4795,7 +4798,8 @@ svg.tsgraph .tsnode circle.fw.bad { fill: var(--red); }
 svg.tsgraph .tsnode circle.fw.warn { fill: var(--amber); }
 svg.tsgraph .tsend rect { fill: rgba(var(--accent-rgb), .12); stroke: var(--accent); stroke-width: 1.2; }
 svg.tsgraph .tsend text { font-size: 10.5px; fill: var(--fg); }
-.trouble label .swap { float: right; font-size: .7rem; padding: 0 .3rem; }
+.trouble label .lblrow { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.trouble label .swap { font-size: .7rem; padding: 0 .4rem; line-height: 1.4; }
 /* The firewall's chain drawn, on the Overview. */
 .fwchain-wrap { overflow-x: auto; margin: .3rem 0 1rem; }
 svg.fwchain { width: 100%; min-width: 40rem; max-width: 60rem; height: auto; display: block; font-family: var(--mono); }
@@ -4822,3 +4826,4 @@ details.fw-unsure { font-size: .8rem; margin: .4rem 0; }
 details.fw-unsure li { margin: .2rem 0; }
 /* A kept rule written with aliases: its own words, ipfw's on hover. */
 .fw-rules .aliased { border-bottom: 1px dotted var(--cyan); cursor: help; }
+.hostcard p.warn { color: var(--amber); font-size: .78rem; margin: .5rem 0 0; }
