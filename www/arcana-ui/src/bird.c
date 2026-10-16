@@ -52,6 +52,7 @@ static struct {
 	/* What the open box edits. */
 	int		 edit;		/* its block, or -1 for a new one */
 	char		 proto[64];	/* the protocol the box is about */
+	char		 want[64];	/* to be opened once the file is read */
 	char		*draft;		/* what was typed, kept over a refusal */
 	char		 newkind[16];	/* of a new part: filter, set, ... */
 	bool		 saving;
@@ -84,6 +85,7 @@ static struct {
 static void	conf_load(struct server *, bool);
 static bool	name_ok(const char *);
 static const char *past(const char *);
+static void	want_open(void);
 
 /* The end of what starts at p and is not to be read: blanks, comments. */
 static const char *
@@ -391,6 +393,7 @@ conf_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		snprintf(bd.sha, sizeof(bd.sha), "%s", jstr(o, "sha256") !=
 		    NULL ? jstr(o, "sha256") : "");
 		blocks();
+		want_open();
 	}
 	if (jget(o, "files") != NULL) {
 		if (bd.files != NULL)
@@ -473,6 +476,35 @@ bird_tick(double now)
 }
 
 /* Past what is at p: a comment or a string whole, else one character. */
+/*
+ * The protocol asked for from elsewhere, once its host's file is here:
+ * its box, as if picked in the table, so that what it edits is known.
+ */
+static void
+want_open(void)
+{
+
+	if (bd.want[0] == '\0' || app.node != NODE_HOST || app.tab !=
+	    TAB_NETWORK || app.net.kind != NET_BIRD || app.modal != MODAL_NONE)
+		return;
+	snprintf(bd.proto, sizeof(bd.proto), "%s", bd.want);
+	bd.want[0] = '\0';
+	bd.edit = block_find("protocol", bd.proto);
+	app.modal = MODAL_BIRD_PROTO;
+}
+
+/* A protocol's box, from the Network section's routing tabs. */
+void
+bird_show(const char *proto)
+{
+	struct server	*s;
+
+	snprintf(bd.want, sizeof(bd.want), "%s", proto);
+	if ((s = cur_server()) != NULL && bd.text != NULL && !bd.loading &&
+	    strcmp(bd.sid, s->id) == 0 && strcmp(bd.jail, net_scope()) == 0)
+		want_open();
+}
+
 static const char *
 past(const char *p)
 {

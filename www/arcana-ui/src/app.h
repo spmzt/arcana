@@ -703,6 +703,7 @@ bool		 bird_action(const char *, const char *, const char *);
 bool		 bird_form(const char *, const ucl_object_t *);
 bool		 bird_modal(struct html *);
 void		 bird_tick(double);
+void		 bird_show(const char *);
 /* tbl.c: every table sorts by its columns and is filtered. */
 struct tcol {
 	const char	*title;
@@ -766,6 +767,15 @@ int		 usage_step(const char *);
 int		 topo_addr_owner(const char *, char *, size_t, char *, size_t);
 void		 topo_poll_all(void);
 void		 topo_addr_list(struct html *, const char *);
+int		 topo_bird_next(int, const char **, const char **,
+		    const ucl_object_t **);
+int		 topo_bird_hosts(int *);
+const char	*topo_addr_node(const char *);
+void		 topo_bird_now(void);
+bool		 topo_bird_open(const char *);
+/* routing.c: BGP, OSPF and BFD across every BIRD of the fleet. */
+void		 view_routing(struct html *);
+bool		 routing_action(const char *, const char *, const char *);
 int		 topo_gw_owner(const char *, int, const char *, char *, size_t,
 		    char *, size_t);
 bool		 ecmp_shown(void);
@@ -776,7 +786,8 @@ void		 view_ecmp(struct html *);
 void		 nhop_modal(struct html *);
 bool		 nhop_action(const char *, const char *, const char *);
 void		 ecmp_head(struct html *);
-enum { NETSECT_MAP, NETSECT_GROUPS, NETSECT_TRACE };
+enum { NETSECT_MAP, NETSECT_GROUPS, NETSECT_TRACE, NETSECT_BGP, NETSECT_OSPF,
+    NETSECT_BFD };
 void		 view_traceroute(struct html *);
 bool		 mtr_action(const char *, const char *, const char *);
 void		 mtr_tick(double);
