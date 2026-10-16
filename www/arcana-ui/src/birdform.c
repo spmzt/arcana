@@ -27,7 +27,9 @@
 
 #include "app.h"
 
-#define	BF_IFS		6	/* interfaces, or neighbours, of a form */
+#define	BF_IFS		16	/* interfaces, or neighbours, of a form */
+/* The rows a form shows: those there are and two more, four at least. */
+#define	ROWS(n)		((n) + 2 < 4 ? 4 : (n) + 2 > BF_IFS ? BF_IFS : (n) + 2)
 #define	BF_TOKS		768
 #define	BF_TOKLEN	136
 
@@ -48,6 +50,7 @@ struct bfnbr {
 struct bfconf {
 	char		kind[8];	/* bgp, ospf or bfd */
 	char		name[64];
+	char		notes[1024];	/* its comments, a line each */
 	/* BGP */
 	char		desc[128];
 	char		las[12], nbr[80], nas[12], src[64], pass[128];
@@ -71,10 +74,12 @@ struct bfconf {
 	int		nnbrs;
 };
 
+static bool	ifname_ok(const char *);
 static bool	ospf_chan;	/* the OSPF text read had its channel */
 static bool	md5;		/* the BGP text read said authentication md5 */
 
 struct toks {
+	char	notes[1024];		/* its # comments, a line each */
 	char	t[BF_TOKS][BF_TOKLEN];
 	int	n;
 	int	i;			/* the one read next */
@@ -87,13 +92,26 @@ tokenize(const char *p, struct toks *k)
 	size_t	n;
 
 	k->n = k->i = 0;
+	k->notes[0] = '\0';
 	for (;;) {
 		while (isspace((unsigned char)*p))
 			p++;
 		if (*p == '\0')
 			return (true);
-		if (*p == '#' || (p[0] == '/' && p[1] == '*') || k->n ==
-		    BF_TOKS)
+		/* A # comment is kept, to be written back at the top. */
+		if (*p == '#') {
+			p++;
+			while (*p == ' ' || *p == '\t')
+				p++;
+			n = strcspn(p, "\r\n");
+			if (strlen(k->notes) + n + 2 > sizeof(k->notes))
+				return (false);
+			snprintf(k->notes + strlen(k->notes), sizeof(k->notes) -
+			    strlen(k->notes), "%.*s\n", (int)n, p);
+			p += n;
+			continue;
+		}
+		if ((p[0] == '/' && p[1] == '*') || k->n == BF_TOKS)
 			return (false);
 		n = 0;
 		if (*p == '"') {
@@ -163,6 +181,77 @@ take_str(struct toks *k, char *buf, size_t len)
 	snprintf(buf, len, "%.*s", (int)(n - 2), w + 1);
 	k->i++;
 	return (true);
+}
+
+/*
+ * An interface's patterns, as BIRD lists them: "gre3", "gre4", or
+ * -"bge1", "*" (the first left out); into buf as gre3, gre4 or
+ * -bge1, *.
+ */
+static bool
+take_ifs(struct toks *k, char *buf, size_t len)
+{
+	char	one[64];
+	bool	out;
+
+	buf[0] = '\0';
+	do {
+		out = eat(k, "-");
+		if (!take_str(k, one, sizeof(one)) || strlen(buf) +
+		    strlen(one) + 4 > len)
+			return (false);
+		snprintf(buf + strlen(buf), len - strlen(buf), "%s%s%s",
+		    buf[0] != '\0' ? ", " : "", out ? "-" : "", one);
+	} while (eat(k, ","));
+	return (true);
+}
+
+/* The patterns written back as BIRD has them. */
+static void
+put_ifs(struct html *h, const char *list)
+{
+	const char	*p, *e, *t;
+	bool		 first, out;
+
+	first = true;
+	for (p = list; *p != '\0'; p = *e != '\0' ? e + 1 : e) {
+		while (*p == ' ')
+			p++;
+		e = p + strcspn(p, ",");
+		for (t = e; t > p && t[-1] == ' '; t--)
+			;
+		if ((out = *p == '-'))
+			p++;
+		if (t <= p)
+			continue;
+		h_fmt(h, "%s%s\"%.*s\"", first ? "" : ", ", out ? "-" : "",
+		    (int)(t - p), p);
+		first = false;
+	}
+}
+
+/* Each pattern of a list a name, or one with * and ?, - before it to
+ * leave it out. */
+static bool
+ifs_ok(const char *list)
+{
+	char	one[64];
+	const char *p, *e;
+	int	n;
+
+	n = 0;
+	for (p = list; *p != '\0'; p = *e != '\0' ? e + 1 : e) {
+		while (*p == ' ')
+			p++;
+		e = p + strcspn(p, ",");
+		snprintf(one, sizeof(one), "%.*s", (int)(e - p), p);
+		while (one[0] != '\0' && one[strlen(one) - 1] == ' ')
+			one[strlen(one) - 1] = '\0';
+		if (one[0] == '\0' || !ifname_ok(one[0] == '-' ? one + 1 : one))
+			return (false);
+		n++;
+	}
+	return (n > 0);
 }
 
 /* on, yes, off, no, or nothing (on); then the ';'. */
@@ -387,7 +476,7 @@ parse_ospf(struct toks *k, struct bfconf *c)
 				if (!eat(k, "interface") || c->nifs == BF_IFS)
 					return (false);
 				f = &c->ifs[c->nifs++];
-				if (!take_str(k, f->name, sizeof(f->name)))
+				if (!take_ifs(k, f->name, sizeof(f->name)))
 					return (false);
 				if (eat(k, ";"))
 					continue;
@@ -446,7 +535,7 @@ parse_bfd(struct toks *k, struct bfconf *c)
 			if (c->nifs == BF_IFS)
 				return (false);
 			f = &c->ifs[c->nifs++];
-			if (!take_str(k, f->name, sizeof(f->name)))
+			if (!take_ifs(k, f->name, sizeof(f->name)))
 				return (false);
 			if (eat(k, ";"))
 				continue;
@@ -573,6 +662,8 @@ bf_parse(const char *kind, const char *text)
 		if (c->exp[0][0] == '\0')
 			snprintf(c->exp[0], sizeof(c->exp[0]), "none");
 	}
+	if (ok)
+		snprintf(c->notes, sizeof(c->notes), "%s", k.notes);
 	if (!ok || k.i != k.n) {
 		free(c);
 		return (NULL);
@@ -662,6 +753,13 @@ bf_fields(struct html *h, const struct bfconf *c, const char *const *filters,
 	char	 n[16];
 	int	 i;
 
+	if (c->notes[0] != '\0') {
+		h_raw(h, "<label>Comments<textarea name=\"notes\" class=\"code\" "
+		    "rows=\"2\" spellcheck=\"false\">");
+		h_txt(h, c->notes);
+		h_raw(h, "</textarea><small>Kept, a # line each, at the top of "
+		    "the protocol.</small></label>");
+	}
 	text_in(h, "Name", "name", c->name, strcmp(c->kind, "bgp") == 0 ?
 	    "upstream1" : strcmp(c->kind, "ospf") == 0 ? "ospf1" : "bfd1",
 	    edit ? " readonly" : " autofocus");
@@ -749,7 +847,7 @@ bf_fields(struct html *h, const struct bfconf *c, const char *const *filters,
 		    "</th><th>Cost</th><th>Type</th><th>Hello (s)</th><th>"
 		    "Dead (s)</th><th>BFD</th><th>Stub</th></tr></thead>"
 		    "<tbody>");
-		for (i = 0; i < BF_IFS; i++) {
+		for (i = 0; i < ROWS(c->nifs); i++) {
 			const struct bfif *f = &c->ifs[i];
 
 			h_fmt(h, "<tr><td><input name=\"if%d\" spellcheck="
@@ -779,7 +877,8 @@ bf_fields(struct html *h, const struct bfconf *c, const char *const *filters,
 			    f->stub ? " checked" : "");
 		}
 		h_raw(h, "</tbody></table><small>An interface is a name or a "
-		    "pattern; a row left empty is none. Stub: the network is "
+		    "pattern, or several with commas; - before one leaves it "
+		    "out (-bge1, *). A row left empty is none. Stub: the network is "
 		    "announced, but no neighbour is looked for on it.</small>");
 		return;
 	}
@@ -801,7 +900,7 @@ bf_fields(struct html *h, const struct bfconf *c, const char *const *filters,
 	h_raw(h, "<table class=\"bf-rows\"><thead><tr><th>Interface</th><th>"
 	    "Min rx (ms)</th><th>Min tx (ms)</th><th>Multiplier</th></tr>"
 	    "</thead><tbody>");
-	for (i = 0; i < BF_IFS; i++) {
+	for (i = 0; i < ROWS(c->nifs); i++) {
 		const struct bfif *f = &c->ifs[i];
 
 		h_fmt(h, "<tr><td><input name=\"if%d\" spellcheck=\"false\" "
@@ -823,7 +922,7 @@ bf_fields(struct html *h, const struct bfconf *c, const char *const *filters,
 	    "Empty times are BIRD's own.</small><table class=\"bf-rows\">"
 	    "<thead><tr><th>Neighbour of its own</th><th>Interface</th><th>"
 	    "Local address</th><th>Multihop</th></tr></thead><tbody>");
-	for (i = 0; i < BF_IFS; i++) {
+	for (i = 0; i < ROWS(c->nnbrs); i++) {
 		const struct bfnbr *b = &c->nbrs[i];
 
 		h_fmt(h, "<tr><td><input name=\"nb%d\" spellcheck=\"false\" "
@@ -974,6 +1073,7 @@ bf_read(const char *kind, const ucl_object_t *f, const char *const *filters,
 
 	c = bf_new(kind);
 	copy(c->name, sizeof(c->name), field(f, "name"));
+	snprintf(c->notes, sizeof(c->notes), "%s", field(f, "notes"));
 	if (c->name[0] == '\0' || isdigit((unsigned char)c->name[0]) ||
 	    c->name[strspn(c->name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"
 	    "OPQRSTUVWXYZ0123456789_")] != '\0')
@@ -1066,9 +1166,10 @@ bf_read(const char *kind, const ucl_object_t *f, const char *const *filters,
 			copy(x->name, sizeof(x->name), field(f, k));
 			if (x->name[0] == '\0')
 				continue;
-			if (!ifname_ok(x->name))
+			if (!ifs_ok(x->name))
 				FAIL("An interface is a name, or a pattern with "
-				    "* and ?.");
+				    "* and ?; several with commas, - before one to "
+				    "leave it out.");
 			snprintf(k, sizeof(k), "cost%d", i);
 			copy(x->cost, sizeof(x->cost), field(f, k));
 			snprintf(k, sizeof(k), "type%d", i);
@@ -1102,7 +1203,7 @@ bf_read(const char *kind, const ucl_object_t *f, const char *const *filters,
 		copy(x->name, sizeof(x->name), field(f, k));
 		if (x->name[0] == '\0')
 			continue;
-		if (!ifname_ok(x->name))
+		if (!ifs_ok(x->name))
 			FAIL("An interface is a name, or a pattern with * "
 			    "and ?.");
 		snprintf(k, sizeof(k), "rx%d", i);
@@ -1216,10 +1317,14 @@ bf_text(const struct bfconf *c)
 			if (x->cost[0] == '\0' && x->type[0] == '\0' &&
 			    x->hello[0] == '\0' && x->dead[0] == '\0' &&
 			    !x->bfd && !x->stub) {
-				h_fmt(&h, "\t\tinterface \"%s\";\n", x->name);
+				h_raw(&h, "\t\tinterface ");
+				put_ifs(&h, x->name);
+				h_raw(&h, ";\n");
 				continue;
 			}
-			h_fmt(&h, "\t\tinterface \"%s\" {\n", x->name);
+			h_raw(&h, "\t\tinterface ");
+			put_ifs(&h, x->name);
+			h_raw(&h, " {\n");
 			if (x->cost[0] != '\0')
 				h_fmt(&h, "\t\t\tcost %s;\n", x->cost);
 			if (x->type[0] != '\0')
@@ -1243,10 +1348,14 @@ bf_text(const struct bfconf *c)
 			x = &c->ifs[i];
 			if (x->rx[0] == '\0' && x->tx[0] == '\0' &&
 			    x->mult[0] == '\0') {
-				h_fmt(&h, "\tinterface \"%s\";\n", x->name);
+				h_raw(&h, "\tinterface ");
+				put_ifs(&h, x->name);
+				h_raw(&h, ";\n");
 				continue;
 			}
-			h_fmt(&h, "\tinterface \"%s\" {\n", x->name);
+			h_raw(&h, "\tinterface ");
+			put_ifs(&h, x->name);
+			h_raw(&h, " {\n");
 			/* One interval for both, as it is often said. */
 			if (x->rx[0] != '\0' && strcmp(x->rx, x->tx) == 0)
 				h_fmt(&h, "\t\tinterval %s ms;\n", x->rx);
@@ -1273,6 +1382,24 @@ bf_text(const struct bfconf *c)
 		}
 	}
 	h_raw(&h, "}");
+	if (c->notes[0] != '\0') {
+		struct html	 o;
+		const char	*p, *nl;
+		size_t		 first;
+
+		/* The comments under the opening line, a # line each. */
+		memset(&o, 0, sizeof(o));
+		first = strcspn(h.s, "\n") + 1;
+		h_fmt(&o, "%.*s", (int)first, h.s);
+		for (p = c->notes; *p != '\0'; p = *nl != '\0' ? nl + 1 : nl) {
+			nl = p + strcspn(p, "\r\n");
+			if (nl > p)
+				h_fmt(&o, "\t# %.*s\n", (int)(nl - p), p);
+		}
+		h_raw(&o, h.s + first);
+		free(h.s);
+		return (o.s);
+	}
 	return (h.s);
 }
 

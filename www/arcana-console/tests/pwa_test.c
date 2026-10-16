@@ -2654,13 +2654,16 @@ part_plugins(void)
 	    "'form[data-form=bird-pform]').las.value === 'MY_AS' && document."
 	    "querySelector('form[data-form=bird-pform]').desc.value === 'Core "
 	    "uplink, east' && document.querySelector('form[data-form=bird-pform]')"
-	    ".imp0.value === 'filter bgp_out'", 5);
+	    ".imp0.value === 'filter bgp_out' && document.querySelector("
+	    "'form[data-form=bird-pform]').notes.value.includes('the old "
+	    "uplink: 192.0.2.9')", 5);
 	shot("7g-bird-bgp-form");
 	run("const f = document.querySelector('form[data-form=bird-pform]'); "
 	    "f.nas.value = '65011'; f.requestSubmit();");
 	wait_js("!document.querySelector('.modal')", 20);
 	ATF_CHECK(system("grep -q '^\tneighbor 192.0.2.1 as 65011;$' "
 	    "bird/bird.conf && grep -q '^\tlocal as MY_AS;$' bird/bird.conf && "
+	    "grep -q '^\t# the old uplink: 192.0.2.9$' bird/bird.conf && "
 	    "grep -q '^\tdescription \"Core uplink, east\";$' bird/bird.conf") == 0);
 	/* What the form cannot show is changed as text. */
 	run("[...document.querySelectorAll('table.bird-bgp tbody tr')].find(r "
@@ -2686,7 +2689,7 @@ part_plugins(void)
 	    "input[name=if0]')", 5);
 	run("const f = document.querySelector('form[data-form=bird-pform]'); "
 	    "f.elements.name.value = 'ospf1'; f.if0.value = 'gif0'; f.cost0.value "
-	    "= '10'; f.type0.value = 'ptp'; f.bfd0.checked = true; "
+	    "= '10'; f.if1.value = '-gif9, gif*'; f.type0.value = 'ptp'; f.bfd0.checked = true; "
 	    "f.requestSubmit();");
 	wait_js("!document.querySelector('.modal') && [...document."
 	    "querySelectorAll('table.bird-ospf tbody tr')].some(r => r."
@@ -2694,6 +2697,7 @@ part_plugins(void)
 	ATF_CHECK(system("grep -q '^protocol ospf v2 ospf1 {$' bird/bird.conf "
 	    "&& grep -q '^\t\tinterface \"gif0\" {$' bird/bird.conf && grep -q "
 	    "'^\t\t\ttype ptp;$' bird/bird.conf && grep -q '^\t\t\tbfd on;$' "
+	    "bird/bird.conf && grep -q '^\t\tinterface -\"gif9\", \"gif\\*\";$' "
 	    "bird/bird.conf") == 0);
 	shot("7g-bird-ospf-tab");
 	/* BFD: the interface's times and a neighbour of its own. */
