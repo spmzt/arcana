@@ -768,6 +768,12 @@
     Verified in a vnet jail with devfs's bpf unhidden.)
   - Labels on interfaces, for the UCS they carry.
   - BIRD's OSPF, BFD and BGP each a tab of its own, with forms.
+    (Done 2026-10-16: a host's BIRD has All, BGP, OSPF and BFD tabs;
+    each kind made and changed by a form, read back from the text only
+    when the form shows all of it, else changed as text.  And the
+    Network section's BGP, OSPF and BFD tabs: every session of the
+    fleet, a graph and a table.  Tested with the birdc stand-in only;
+    not yet against a real BIRD.)
   - IGMP and MLD configured.
   - NDP and ARP entries added and deleted by hand, temporary or
     permanent. (Done 2026-10-12: the neighbour job, kept as rc.conf's

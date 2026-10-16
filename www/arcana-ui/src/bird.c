@@ -29,6 +29,10 @@
 #include "app.h"
 
 #define	BLOCKS_MAX	512
+#define	FILTERS_MAX	64
+
+enum { SUB_ALL, SUB_BGP, SUB_OSPF, SUB_BFD };
+static const char *const sub_kind[] = { "", "bgp", "ospf", "bfd" };
 
 /* A part of the configuration: where it is in the text, and what. */
 struct block {
@@ -53,6 +57,9 @@ static struct {
 	int		 edit;		/* its block, or -1 for a new one */
 	char		 proto[64];	/* the protocol the box is about */
 	char		 want[64];	/* to be opened once the file is read */
+	int		 sub;		/* the tab: SUB_* */
+	char		 fkind[8];	/* the form's protocol: bgp, ospf, bfd */
+	bool		 form_ok;	/* the form could show the protocol */
 	char		*draft;		/* what was typed, kept over a refusal */
 	char		 newkind[16];	/* of a new part: filter, set, ... */
 	bool		 saving;
@@ -86,6 +93,12 @@ static void	conf_load(struct server *, bool);
 static bool	name_ok(const char *);
 static const char *past(const char *);
 static void	want_open(void);
+static void	proto_view(struct html *, const ucl_object_t *, int);
+static int	filter_names(const char **, int);
+static const ucl_object_t *proto_find(const ucl_object_t *, const char *);
+static const char *state_of(const ucl_object_t *);
+static void	count(char *, size_t, int64_t);
+static char	*block_text(int);
 
 /* The end of what starts at p and is not to be read: blanks, comments. */
 static const char *
@@ -177,7 +190,11 @@ blocks_parse(void)
 		b->end = (size_t)(q - t);
 		q = word(p, b->kind, sizeof(b->kind));
 		q = word(q, w2, sizeof(w2));
-		(void)word(q, w3, sizeof(w3));
+		q = word(q, w3, sizeof(w3));
+		/* "protocol ospf v2 NAME": the version is not the name. */
+		if (strcmp(w2, "ospf") == 0 && (strcmp(w3, "v2") == 0 ||
+		    strcmp(w3, "v3") == 0))
+			(void)word(q, w3, sizeof(w3));
 		if (strcmp(b->kind, "protocol") == 0 || strcmp(b->kind,
 		    "template") == 0) {
 			snprintf(b->type, sizeof(b->type), "%s", w2);
@@ -491,6 +508,209 @@ want_open(void)
 	bd.want[0] = '\0';
 	bd.edit = block_find("protocol", bd.proto);
 	app.modal = MODAL_BIRD_PROTO;
+}
+
+/* The names of the file's filters, at most max. */
+static int
+filter_names(const char **v, int max)
+{
+	int	i, n;
+
+	for (i = n = 0; i < bd.nb && n < max; i++)
+		if (strcmp(bd.b[i].kind, "filter") == 0 && bd.b[i].name[0] !=
+		    '\0')
+			v[n++] = bd.b[i].name;
+	return (n);
+}
+
+/*
+ * A protocol's own tab: its protocols in the file, each with what the
+ * form says of it and how BIRD says it is; under them, for OSPF and
+ * BFD, the neighbours and sessions BIRD has.
+ */
+static void
+proto_view(struct html *h, const ucl_object_t *data, int sub)
+{
+	static const struct tcol pcols[] = {
+		{ "Protocol", "name", false }, { "What", "sum", false },
+		{ "State", "state", false }, { "Since", "since", false },
+		{ "Routes in / out", "routes", false }, { "Last error", "err",
+		false },
+	};
+	static const struct tcol ocols[] = {
+		{ "Router ID", "router-id", false }, { "Priority", "pri", true },
+		{ "State", "state", false }, { "Dead in", "dtime", false },
+		{ "Interface", "interface", false }, { "Address", "address",
+		false }, { "Protocol", "proto", false },
+	};
+	static const struct tcol bcols[] = {
+		{ "Address", "address", false }, { "Interface", "interface",
+		false }, { "State", "state", false }, { "Since", "since", false },
+		{ "Interval (s)", "interval", true }, { "Timeout (s)", "timeout",
+		true }, { "Protocol", "proto", false },
+	};
+	static const char *const title[] = { "", "BGP sessions",
+	    "OSPF instances", "BFD" };
+	static const char *const add[] = { "", "+ BGP neighbour", "+ OSPF",
+	    "+ BFD" };
+	const ucl_object_t	**rows, *o, *r, *c;
+	ucl_object_iter_t	  it;
+	ucl_object_t		 *arr, *row;
+	struct bfconf		 *bf;
+	const char		 *kind, *st, *cls;
+	char			 *text, sum[200], in[24], out[24], rt[64];
+	int64_t			  imp, exp;
+	int			  i, n;
+
+	kind = sub_kind[sub];
+	h_fmt(h, "<h4 class=\"family\"><span>%s</span> <button class=\"ghost "
+	    "small\" data-act=\"bird-pnew\" data-arg=\"%s\">%s</button></h4>",
+	    title[sub], kind, add[sub]);
+	if (bd.text == NULL) {
+		h_raw(h, bd.loading ? "<div class=\"empty small\"><div class=\""
+		    "loader\"></div></div>" : "");
+		return;
+	}
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < bd.nb; i++) {
+		if (strcmp(bd.b[i].kind, "protocol") != 0 || strcmp(bd.b[i].type,
+		    kind) != 0)
+			continue;
+		row = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(row, ucl_object_fromstring(bd.b[i].name),
+		    "name", 0, true);
+		text = block_text(i);
+		if ((bf = bf_parse(kind, text)) != NULL) {
+			bf_summary(sum, sizeof(sum), bf);
+			bf_free(bf);
+		} else
+			snprintf(sum, sizeof(sum), "as text: more than the form "
+			    "shows");
+		free(text);
+		ucl_object_insert_key(row, ucl_object_fromstring(sum), "sum", 0,
+		    true);
+		o = proto_find(data, bd.b[i].name);
+		st = o == NULL ? "not running" : sub == SUB_BGP && jstr(o,
+		    "bgp-state") != NULL ? jstr(o, "bgp-state") : jstr(o,
+		    "state") != NULL ? jstr(o, "state") : "";
+		ucl_object_insert_key(row, ucl_object_fromstring(st), "state", 0,
+		    true);
+		ucl_object_insert_key(row, ucl_object_fromstring(o == NULL ?
+		    "down" : state_of(o)), "cls", 0, true);
+		ucl_object_insert_key(row, ucl_object_fromstring(o != NULL &&
+		    jstr(o, "since") != NULL ? jstr(o, "since") : ""), "since", 0,
+		    true);
+		imp = exp = 0;
+		n = 0;
+		it = NULL;
+		while (o != NULL && (c = ucl_object_iterate(jget(o, "channels"),
+		    &it, true)) != NULL) {
+			imp += jint(c, "imported", 0);
+			exp += jint(c, "exported", 0);
+			n++;
+		}
+		rt[0] = '\0';
+		if (n > 0) {
+			count(in, sizeof(in), imp);
+			count(out, sizeof(out), exp);
+			snprintf(rt, sizeof(rt), "%s / %s", in, out);
+		}
+		ucl_object_insert_key(row, ucl_object_fromstring(rt), "routes", 0,
+		    true);
+		ucl_object_insert_key(row, ucl_object_fromstring(o != NULL &&
+		    jstr(o, "last-error") != NULL ? jstr(o, "last-error") : ""),
+		    "err", 0, true);
+		ucl_array_append(arr, row);
+	}
+	if (ucl_array_size(arr) == 0)
+		h_fmt(h, "<div class=\"empty small\"><p>No %s in %s.</p><p "
+		    "class=\"dim\">%s</p></div>", sub == SUB_BGP ? "BGP session" :
+		    sub == SUB_OSPF ? "OSPF instance" : "BFD protocol",
+		    bd.path[0] != '\0' ? "this file" : "BIRD's configuration",
+		    sub == SUB_BGP ? "A neighbour is added with its AS and "
+		    "address, and the routes it takes and gives through the "
+		    "filters of the file." : sub == SUB_OSPF ? "An instance is "
+		    "an area and the interfaces it runs on." : "BFD watches "
+		    "the neighbours BGP and OSPF ask it to, on the interfaces "
+		    "given here.");
+	else {
+		h_fmt(h, "<table class=\"net bird-%s\">", kind);
+		tbl_head(h, sub == SUB_BGP ? "bird-pbgp" : sub == SUB_OSPF ?
+		    "bird-pospf" : "bird-pbfd", pcols, 6, 0);
+		h_raw(h, "<tbody>");
+		rows = tbl_rows(sub == SUB_BGP ? "bird-pbgp" : sub == SUB_OSPF ?
+		    "bird-pospf" : "bird-pbfd", arr, pcols, 6, app.filter);
+		for (n = 0; (r = rows[n]) != NULL; n++) {
+			cls = jstr(r, "cls");
+			h_fmt(h, "<tr class=\"%s pick\" data-act=\"bird-pedit\"",
+			    cls);
+			h_attr(h, "data-arg", jstr(r, "name"));
+			h_raw(h, "><td><i class=\"led\"></i><b>");
+			h_txt(h, jstr(r, "name"));
+			h_raw(h, "</b></td><td class=\"mono\">");
+			h_txt(h, jstr(r, "sum"));
+			h_fmt(h, "</td><td><span class=\"chip %s\">", strcmp(cls,
+			    "up") == 0 ? "ok" : strcmp(cls, "down") == 0 ? "bad" :
+			    "warn");
+			h_txt(h, jstr(r, "state"));
+			h_raw(h, "</span></td><td>");
+			h_txt(h, jstr(r, "since"));
+			h_raw(h, "</td><td class=\"num\">");
+			h_txt(h, jstr(r, "routes"));
+			h_raw(h, "</td><td class=\"err\">");
+			h_txt(h, jstr(r, "err"));
+			h_raw(h, "</td></tr>");
+		}
+		free(rows);
+		h_raw(h, "</tbody></table>");
+	}
+	ucl_object_unref(arr);
+	if (sub == SUB_BGP)
+		return;
+	/* What BIRD has of them: OSPF's neighbours, BFD's sessions. */
+	h_fmt(h, "<h4 class=\"family\">%s</h4>", sub == SUB_OSPF ?
+	    "Neighbours" : "Sessions");
+	if (ucl_array_size(jget(data, sub == SUB_OSPF ? "ospf" : "bfd")) ==
+	    0) {
+		h_fmt(h, "<p class=\"dim\">%s</p>", sub == SUB_OSPF ? "No "
+		    "neighbour yet: none answers on the interfaces OSPF runs "
+		    "on." : "No session: no protocol asked for one, and none "
+		    "of its own answers.");
+		return;
+	}
+	h_fmt(h, "<table class=\"net bird-%sn\">", kind);
+	tbl_head(h, sub == SUB_OSPF ? "bird-ospfn" : "bird-bfds", sub ==
+	    SUB_OSPF ? ocols : bcols, 7, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows(sub == SUB_OSPF ? "bird-ospfn" : "bird-bfds", jget(data,
+	    sub == SUB_OSPF ? "ospf" : "bfd"), sub == SUB_OSPF ? ocols : bcols,
+	    7, app.filter);
+	for (n = 0; (r = rows[n]) != NULL; n++) {
+		st = jstr(r, "state") != NULL ? jstr(r, "state") : "";
+		cls = sub == SUB_OSPF ? (strncmp(st, "Full", 4) == 0 ||
+		    strncmp(st, "2-Way", 5) == 0 ? "ok" : strncmp(st, "Down",
+		    4) == 0 ? "bad" : "warn") : strcmp(st, "Up") == 0 ? "ok" :
+		    strcmp(st, "Init") == 0 ? "warn" : "bad";
+		h_fmt(h, "<tr class=\"pick\" data-act=\"bird-pedit\"");
+		h_attr(h, "data-arg", jstr(r, "proto"));
+		h_raw(h, "><td class=\"mono\"><b>");
+		h_txt(h, jstr(r, sub == SUB_OSPF ? "router-id" : "address"));
+		h_raw(h, "</b></td><td>");
+		h_txt(h, jstr(r, sub == SUB_OSPF ? "pri" : "interface"));
+		h_fmt(h, "</td><td><span class=\"chip %s\">", cls);
+		h_txt(h, st);
+		h_raw(h, "</span></td><td>");
+		h_txt(h, jstr(r, sub == SUB_OSPF ? "dtime" : "since"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(r, sub == SUB_OSPF ? "interface" : "interval"));
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(r, sub == SUB_OSPF ? "address" : "timeout"));
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(r, "proto"));
+		h_raw(h, "</td></tr>");
+	}
+	free(rows);
+	h_raw(h, "</tbody></table>");
 }
 
 /* A protocol's box, from the Network section's routing tabs. */
@@ -1114,6 +1334,19 @@ view_bird(struct html *h, struct server *s, const ucl_object_t *data)
 		h_raw(h, "<br>");
 	}
 	h_raw(h, "</p></section>");
+	/* Each protocol a tab of its own, with its form. */
+	h_fmt(h, "<nav class=\"tabs bird-sub\"><button class=\"tab%s\" "
+	    "data-act=\"bird-sub\" data-arg=\"0\">All</button><button "
+	    "class=\"tab%s\" data-act=\"bird-sub\" data-arg=\"1\">BGP"
+	    "</button><button class=\"tab%s\" data-act=\"bird-sub\" "
+	    "data-arg=\"2\">OSPF</button><button class=\"tab%s\" data-act="
+	    "\"bird-sub\" data-arg=\"3\">BFD</button></nav>", bd.sub ==
+	    SUB_ALL ? " on" : "", bd.sub == SUB_BGP ? " on" : "", bd.sub ==
+	    SUB_OSPF ? " on" : "", bd.sub == SUB_BFD ? " on" : "");
+	if (bd.sub != SUB_ALL) {
+		proto_view(h, data, bd.sub);
+		return;
+	}
 	graph(h, data);
 
 	h_raw(h, "<h4 class=\"family\">Protocols</h4><table class=\"net bird\">");
@@ -1384,9 +1617,11 @@ view_bird(struct html *h, struct server *s, const ucl_object_t *data)
 		h_raw(h, "<li class=\"dim none\">No cache, no ROA table.</li>");
 	h_raw(h, "</ul></section><section class=\"pane\"><h4><span>Protocols "
 	    "and the rest</span><span class=\"pane-actions\"><button class=\""
-	    "ghost small\" data-act=\"bird-new\" data-arg=\"bgp\">+ BGP "
+	    "ghost small\" data-act=\"bird-pnew\" data-arg=\"bgp\">+ BGP "
 	    "neighbour</button><button class=\"ghost small\" data-act=\""
-	    "bird-new\" data-arg=\"ospf\">+ OSPF</button></span></h4><ul "
+	    "bird-pnew\" data-arg=\"ospf\">+ OSPF</button><button class="
+	    "\"ghost small\" data-act=\"bird-pnew\" data-arg=\"bfd\">+ BFD"
+	    "</button></span></h4><ul "
 	    "class=\"blocks\">");
 	for (i = 0; i < bd.nb; i++) {
 		if (strcmp(bd.b[i].kind, "filter") == 0 || strcmp(bd.b[i].kind,
@@ -1682,6 +1917,46 @@ bird_modal(struct html *h)
 		    "</label><label>IPv6 ROA table<input name=\"r6\" "
 		    "spellcheck=\"false\" value=\"r6\"></label></div>");
 		return (true);
+	case MODAL_BIRD_FORM: {
+		const char	*filters[FILTERS_MAX + 1];
+		struct bfconf	*c;
+		static const char *const what[] = { "BGP neighbour",
+		    "OSPF instance", "BFD" };
+		int		 w;
+
+		w = strcmp(bd.fkind, "bgp") == 0 ? 0 : strcmp(bd.fkind,
+		    "ospf") == 0 ? 1 : 2;
+		i = bd.edit;
+		text = i >= 0 && i < bd.nb ? block_text(i) : NULL;
+		c = text != NULL ? bf_parse(bd.fkind, text) : bf_new(bd.fkind);
+		free(text);
+		bd.form_ok = c != NULL;
+		h_raw(h, "<form data-form=\"bird-pform\" class=\"wide bf\"><h2>");
+		if (i >= 0 && i < bd.nb) {
+			h_txt(h, bd.b[i].name);
+			h_fmt(h, " <small>%s</small>", what[w]);
+		} else
+			h_fmt(h, "New %s", what[w]);
+		h_raw(h, "</h2>");
+		if (c == NULL) {
+			h_raw(h, "<p>This protocol says more than the form "
+			    "shows: comments, filters written in it, or "
+			    "options the form has no field for. It is changed "
+			    "as text, so that nothing of it is lost.</p><p>"
+			    "<button type=\"button\" class=\"primary\" "
+			    "data-act=\"bird-astext\">Change it as text"
+			    "</button></p>");
+			return (true);
+		}
+		filters[filter_names(filters, FILTERS_MAX)] = NULL;
+		bf_fields(h, c, filters, i >= 0);
+		bf_free(c);
+		h_raw(h, "<p class=\"dim\">Written into BIRD's configuration as "
+		    "a protocol of its own; bird parses the whole file before "
+		    "it is taken, and in safe mode takes it back unless this "
+		    "page still reaches the host.</p>");
+		return (true);
+	}
 	case MODAL_BIRD_FILE:
 		text = bd.draft != NULL ? strdup(bd.draft) : strdup(bd.text !=
 		    NULL ? bd.text : "");
@@ -1706,12 +1981,12 @@ void
 bird_modal_buttons(struct html *h)
 {
 
-	if ((app.modal == MODAL_BIRD_BLOCK || app.modal == MODAL_BIRD_PROTO) &&
-	    bd.edit >= 0)
+	if ((app.modal == MODAL_BIRD_BLOCK || app.modal == MODAL_BIRD_PROTO ||
+	    app.modal == MODAL_BIRD_FORM) && bd.edit >= 0)
 		h_raw(h, "<button type=\"button\" class=\"danger\" data-act=\""
 		    "bird-delete\">Remove</button>");
-	if (app.modal == MODAL_BIRD_PROTO && block_find("protocol",
-	    bd.proto) < 0)
+	if ((app.modal == MODAL_BIRD_PROTO && block_find("protocol",
+	    bd.proto) < 0) || (app.modal == MODAL_BIRD_FORM && !bd.form_ok))
 		return;
 	h_fmt(h, "<button class=\"primary\"%s>%s</button>", bd.saving ?
 	    " disabled" : "", bd.saving ? "Asking bird…" : app.modal ==
@@ -1744,6 +2019,38 @@ bird_form(const char *form, const ucl_object_t *f)
 
 	if (strncmp(form, "bird-", 5) != 0)
 		return (false);
+	if (strcmp(form, "bird-pform") == 0) {
+		const char	*filters[FILTERS_MAX + 1];
+		struct bfconf	*c;
+
+		if ((s = cur_server()) == NULL || bd.text == NULL)
+			return (true);
+		filters[filter_names(filters, FILTERS_MAX)] = NULL;
+		if ((c = bf_read(bd.fkind, f, filters, app.modal_error,
+		    sizeof(app.modal_error))) == NULL)
+			return (true);
+		if (bd.edit < 0 && block_find("protocol", bf_name(c)) >= 0) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "A protocol named %s is in the file already.",
+			    bf_name(c));
+			bf_free(c);
+			return (true);
+		}
+		if (bd.edit >= 0 && (bd.edit >= bd.nb || strcmp(bd.b[bd.edit].name,
+		    bf_name(c)) != 0)) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "The file changed meanwhile: open it again.");
+			bf_free(c);
+			return (true);
+		}
+		mine = bf_text(c);
+		bf_free(c);
+		all = spliced(bd.edit, mine);
+		free(mine);
+		conf_save(s, all, false);
+		free(all);
+		return (true);
+	}
 	if (strcmp(form, "bird-routes") == 0) {
 		char	words[200], q[80];
 
@@ -1986,6 +2293,30 @@ bird_action(const char *act, const char *arg, const char *value)
 			routes_ask(s, body);
 			app.modal = MODAL_NONE;
 		}
+	} else if (strcmp(act, "bird-sub") == 0) {
+		bd.sub = atoi(arg) >= SUB_ALL && atoi(arg) <= SUB_BFD ? atoi(arg) :
+		    SUB_ALL;
+	} else if (strcmp(act, "bird-pnew") == 0) {
+		snprintf(bd.fkind, sizeof(bd.fkind), "%s", strcmp(arg, "ospf") ==
+		    0 ? "ospf" : strcmp(arg, "bfd") == 0 ? "bfd" : "bgp");
+		bd.edit = -1;
+		app.modal = MODAL_BIRD_FORM;
+	} else if (strcmp(act, "bird-pedit") == 0) {
+		snprintf(bd.proto, sizeof(bd.proto), "%s", arg);
+		bd.edit = block_find("protocol", arg);
+		if (bd.edit >= 0 && (strcmp(bd.b[bd.edit].type, "bgp") == 0 ||
+		    strcmp(bd.b[bd.edit].type, "ospf") == 0 ||
+		    strcmp(bd.b[bd.edit].type, "bfd") == 0)) {
+			snprintf(bd.fkind, sizeof(bd.fkind), "%s",
+			    bd.b[bd.edit].type);
+			app.modal = MODAL_BIRD_FORM;
+		} else
+			app.modal = MODAL_BIRD_PROTO;
+	} else if (strcmp(act, "bird-astext") == 0) {
+		if (bd.edit >= 0 && bd.edit < bd.nb)
+			snprintf(bd.proto, sizeof(bd.proto), "%s",
+			    bd.b[bd.edit].name);
+		app.modal = MODAL_BIRD_PROTO;
 	} else if (strcmp(act, "bird-delete") == 0) {
 		if (bd.edit < 0 || bd.edit >= bd.nb)
 			return (true);
