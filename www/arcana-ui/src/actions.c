@@ -1039,9 +1039,15 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		app.sel = 0;
 	/* Every host read once the page has them: in the background, as
 	 * nobody asked for it, whatever page is shown. */
-	for (i = 0; i < app.nservers; i++)
+	for (i = 0; i < app.nservers; i++) {
 		if (app.servers[i].list == NULL)
 			refresh_jails(&app.servers[i], false);
+		/* The fleet's cards and Devices show each host's use: read
+		 * now, not at the next tick, ten seconds on. */
+		if ((app.node == NODE_FLEET || app.node == NODE_DEVICES) &&
+		    app.servers[i].stats == NULL)
+			refresh_stats(&app.servers[i]);
+	}
 	/* What the page's address named, now that its host can be found. */
 	loc_pending();
 }
