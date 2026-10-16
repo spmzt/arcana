@@ -727,6 +727,8 @@ void		 tbl_head(struct html *, const char *, const struct tcol *, int,
 		    int);
 const ucl_object_t **tbl_rows(const char *, const ucl_object_t *,
 		    const struct tcol *, int, const char *);
+const ucl_object_t **tbl_rows2(const char *, const ucl_object_t *,
+		    const struct tcol *, const char *const *, int, const char *);
 bool		 tbl_sorted(const char *);
 void		 tbl_set(const char *, int, bool);
 int		 tbl_col(const char *, bool *);
