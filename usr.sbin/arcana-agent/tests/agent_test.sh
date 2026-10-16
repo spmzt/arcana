@@ -227,6 +227,8 @@ clean)	echo "$*" >> clean.log ;;
 install) echo "$*" >> install.log ;;
 version)
 	[ -s pending ] || exit 1
+	# pkg 2 says how each repository is first.
+	printf 'FreeBSD-ports repository is up to date.\nFreeBSD-ports-kmods repository is up to date.\nFreeBSD-base repository is up to date.\nAll repositories are up to date.\n'
 	while read nv remote; do
 		printf '%-30s <   needs updating (remote has %s)
 ' "$nv" "$remote"
@@ -717,6 +719,8 @@ packages_body()
 	atf_check -o save:pk.out "$JGC" -t -c "$SOCK" packages -r
 	atf_check -o match:'^aria2 +1\.37\.0_1 +1\.37\.0_2' cat pk.out
 	atf_check -o match:'^pimd +3\.1\.0 +3\.2\.0' cat pk.out
+	# A repository's line is no package.
+	atf_check -o not-match:'^FreeBSD' -o not-match:'^All ' cat pk.out
 	atf_check -o match:'fake-pkg update -q' cat pk.out
 	atf_check -o match:"fake-pkg version -vRl <" cat pk.out
 	# No refresh: no pkg update.
@@ -5086,6 +5090,8 @@ exit 1
 EOT
 	chmod +x tools/sshd
 	ln -s "$(which ssh-keygen)" tools/ssh-keygen
+	ln -s "$(which ssh-agent)" tools/ssh-agent
+	ln -s "$(which ssh-add)" tools/ssh-add
 	printf 'PermitRootLogin no\nPasswordAuthentication yes\nMatch User nobody\n\tPasswordAuthentication no\n' \
 	    > $R/etc/ssh/sshd_config
 	printf 'root:*:0:0:Charlie &:/root:/bin/sh\nalice:*:%d:%d:Alice:/home/alice:/bin/sh\ndaemon:*:1:1::/root:/usr/sbin/nologin\n' \

@@ -790,6 +790,9 @@ void		 topo_bird_now(void);
 bool		 topo_bird_open(const char *);
 /* routing.c: BGP, OSPF and BFD across every BIRD of the fleet. */
 void		 view_routing(struct html *);
+/* help.c: the page shown, in the book. */
+const char	*help_path(void);
+void		 help_button(struct html *);
 bool		 routing_action(const char *, const char *, const char *);
 int		 topo_gw_owner(const char *, int, const char *, char *, size_t,
 		    char *, size_t);

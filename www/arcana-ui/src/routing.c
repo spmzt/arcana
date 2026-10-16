@@ -274,6 +274,7 @@ slot(char v[][96], int *n, const char *s)
 /* A line from a router to what it speaks to: its sessions, together. */
 struct redge {
 	int	a, b;
+	bool	in;			/* between two routers of the fleet */
 	int	n, worst;		/* 0 up, 1 warn, 2 down */
 	char	title[600];
 };
@@ -297,12 +298,18 @@ worst_of(const char *cls)
 }
 
 /*
- * The routers on the left, what they speak to on the right: a host of
- * the fleet, else BGP's neighbour AS, OSPF's router ID, BFD's address.
- * A line a router and a peer, in the colour of the worst of its
- * sessions, their number on it when more than one; OSPF dashed, BFD
- * dotted.  Each session is in the table under it.
+ * The fleet's routers in a column; a session between two of them an
+ * arc beside it, the two ends' sessions one arc; what they speak to
+ * outside the fleet on the right: by BGP's neighbour AS, OSPF's router
+ * ID or BFD's address, or a host of the fleet without BIRD by its name.
+ * A line or an arc is in the colour of the worst of its sessions, their
+ * number on it when more than one; OSPF dashed, BFD dotted.  Each
+ * session is in the table under it.
  */
+#define	RG_X	170		/* the routers' boxes, from */
+#define	RG_W	220
+#define	RG_PX	750		/* the peers' */
+
 static void
 graph(struct html *h, int kind, const ucl_object_t **rows)
 {
@@ -314,56 +321,84 @@ graph(struct html *h, int kind, const ucl_object_t **rows)
 	struct rpeer		*p;
 	struct redge		*e;
 	char			 key[96], sub[160], line[160];
-	int			 nl, nr, ne, a, b, i, j, rows_n, more;
-	double			 yl, yr, height;
+	int			 nl, nr, ne, a, b, i, j, k, rows_n, more, nin;
+	double			 ya, yb, height, d;
 	size_t			 len;
+	bool			 in;
 
-	nl = nr = ne = more = 0;
-	for (i = 0; (r = rows[i]) != NULL; i++) {
-		a = slot(left, &nl, val(r, "key"));
-		if (a != -1)
+	/* The routers first: every place whose BIRD has a session. */
+	nl = 0;
+	for (i = 0; (r = rows[i]) != NULL; i++)
+		if ((a = slot(left, &nl, val(r, "key"))) != -1)
 			lr[a] = r;
-		if (val(r, "peerhost")[0] != '\0')
-			snprintf(key, sizeof(key), "h:%s", val(r, "peerhost"));
-		else if (kind == RT_BGP && val(r, "as")[0] != '\0')
-			snprintf(key, sizeof(key), "as:%s", val(r, "as"));
-		else if (kind == RT_OSPF && val(r, "rid")[0] != '\0')
-			snprintf(key, sizeof(key), "id:%s", val(r, "rid"));
-		else
-			snprintf(key, sizeof(key), "ad:%s", val(r, "peer"));
-		for (b = 0; b < nr && strcmp(pr[b].key, key) != 0; b++)
+	nr = ne = more = nin = 0;
+	for (i = 0; (r = rows[i]) != NULL; i++) {
+		for (a = 0; a < nl && strcmp(left[a], val(r, "key")) != 0; a++)
 			;
-		if (b == nr && nr < RT_SIDE) {
-			p = &pr[nr++];
-			memset(p, 0, sizeof(*p));
-			snprintf(p->key, sizeof(p->key), "%s", key);
-			p->fleet = key[0] == 'h';
-			if (p->fleet)
-				snprintf(p->label, sizeof(p->label), "%s", val(r,
+		/* A peer that is one of the routers: an arc between them. */
+		in = false;
+		b = -1;
+		if (val(r, "peerhost")[0] != '\0')
+			for (k = 0; k < nl; k++)
+				if (k != a && strcmp(val(lr[k], "where"), val(r,
+				    "peerhost")) == 0) {
+					in = true;
+					b = k;
+				}
+		if (!in) {
+			if (val(r, "peerhost")[0] != '\0')
+				snprintf(key, sizeof(key), "h:%s", val(r,
 				    "peerhost"));
-			else if (key[0] == 'a' && key[1] == 's')
-				snprintf(p->label, sizeof(p->label), "AS%s%s",
-				    val(r, "as"), strcmp(val(r, "as"), val(r,
-				    "las")) == 0 ? " · iBGP" : "");
+			else if (kind == RT_BGP && val(r, "as")[0] != '\0')
+				snprintf(key, sizeof(key), "as:%s", val(r, "as"));
+			else if (kind == RT_OSPF && val(r, "rid")[0] != '\0')
+				snprintf(key, sizeof(key), "id:%s", val(r, "rid"));
 			else
-				snprintf(p->label, sizeof(p->label), "%s",
-				    key + 3);
-			snprintf(p->one, sizeof(p->one), "%s · %s", val(r,
-			    "proto"), kind == RT_OSPF ? val(r, "if") : val(r,
-			    "peer"));
-		}
-		if (a == -1 || b == nr) {
+				snprintf(key, sizeof(key), "ad:%s", val(r, "peer"));
+			for (b = 0; b < nr && strcmp(pr[b].key, key) != 0; b++)
+				;
+			if (b == nr && nr < RT_SIDE) {
+				p = &pr[nr++];
+				memset(p, 0, sizeof(*p));
+				snprintf(p->key, sizeof(p->key), "%s", key);
+				p->fleet = key[0] == 'h';
+				if (p->fleet)
+					snprintf(p->label, sizeof(p->label), "%s",
+					    val(r, "peerhost"));
+				else if (key[0] == 'a' && key[1] == 's')
+					snprintf(p->label, sizeof(p->label),
+					    "AS%s%s", val(r, "as"), strcmp(val(r,
+					    "as"), val(r, "las")) == 0 ? " · iBGP" :
+					    "");
+				else
+					snprintf(p->label, sizeof(p->label), "%s",
+					    key + 3);
+				snprintf(p->one, sizeof(p->one), "%s · %s", val(r,
+				    "proto"), kind == RT_OSPF ? val(r, "if") :
+				    val(r, "peer"));
+			}
+			if (a == nl || b == nr) {
+				more++;
+				continue;
+			}
+			p = &pr[b];
+			p->n++;
+			len = strlen(p->names);
+			if (strstr(p->names, val(r, "proto")) == NULL && len + 2 <
+			    sizeof(p->names))
+				snprintf(p->names + len, sizeof(p->names) - len,
+				    "%s%s", len > 0 ? ", " : "", val(r, "proto"));
+		} else if (a == nl) {
 			more++;
 			continue;
+		} else if (a > b) {
+			/* One arc for a pair, whichever end tells it. */
+			k = a;
+			a = b;
+			b = k;
 		}
-		p = &pr[b];
-		p->n++;
-		len = strlen(p->names);
-		if (strstr(p->names, val(r, "proto")) == NULL && len + 2 <
-		    sizeof(p->names))
-			snprintf(p->names + len, sizeof(p->names) - len, "%s%s",
-			    len > 0 ? ", " : "", val(r, "proto"));
-		for (j = 0; j < ne && (ed[j].a != a || ed[j].b != b); j++)
+		for (j = 0; j < ne && (ed[j].a != a || ed[j].b != b ||
+		    ed[j].in != in); j++)
 			;
 		if (j == ne) {
 			if (ne == RT_EDGES) {
@@ -374,13 +409,16 @@ graph(struct html *h, int kind, const ucl_object_t **rows)
 			memset(e, 0, sizeof(*e));
 			e->a = a;
 			e->b = b;
+			e->in = in;
+			nin += in;
 		}
 		e = &ed[j];
 		e->n++;
 		if (worst_of(val(r, "cls")) > e->worst)
 			e->worst = worst_of(val(r, "cls"));
-		snprintf(line, sizeof(line), "%s%s %s: %s", e->n > 1 ? "\n" :
-		    "", val(r, "proto"), val(r, "peer"), val(r, "state"));
+		snprintf(line, sizeof(line), "%s%s, %s %s: %s", e->n > 1 ? "\n" :
+		    "", val(r, "where"), val(r, "proto"), val(r, "peer"),
+		    val(r, "state"));
 		len = strlen(e->title);
 		if (len + strlen(line) + 1 < sizeof(e->title))
 			snprintf(e->title + len, sizeof(e->title) - len, "%s",
@@ -394,68 +432,90 @@ graph(struct html *h, int kind, const ucl_object_t **rows)
 	    "viewBox=\"0 0 1000 %.0f\" role=\"img\" aria-label=\"Sessions "
 	    "between the fleet's routers and their neighbours\">",
 	    kind == RT_BGP ? "bgp" : kind == RT_OSPF ? "ospf" : "bfd", height);
-	/* The lines first, under the boxes. */
+	/* The lines and arcs first, under the boxes. */
 	for (i = 0; i < ne; i++) {
 		e = &ed[i];
-		yl = 12 + (e->a + 0.5) * (height - 24) / nl;
-		yr = 12 + (e->b + 0.5) * (height - 24) / nr;
-		h_fmt(h, "<g class=\"edge %s\"><path d=\"M250 %.1f C500 %.1f "
-		    "500 %.1f 750 %.1f\"/>", wcls[e->worst], yl, yl, yr, yr);
-		if (e->n > 1)
-			h_fmt(h, "<text class=\"cnt\" x=\"720\" y=\"%.1f\">%d"
-			    "</text>", yr - 5, e->n);
-		h_raw(h, "<title>");
-		h_txt(h, val(lr[e->a], "where"));
-		h_raw(h, " → ");
-		h_txt(h, pr[e->b].label);
+		ya = 12 + (e->a + 0.5) * (height - 24) / nl;
+		if (e->in) {
+			yb = 12 + (e->b + 0.5) * (height - 24) / nl;
+			d = 40 + 22 * (e->b - e->a);
+			if (d > RG_X - 14)
+				d = RG_X - 14;
+			h_fmt(h, "<g class=\"edge in %s\"><path d=\"M%d %.1f C%.1f "
+			    "%.1f %.1f %.1f %d %.1f\"/>", wcls[e->worst], RG_X,
+			    ya, RG_X - d, ya, RG_X - d, yb, RG_X, yb);
+			if (e->n > 1)
+				h_fmt(h, "<text class=\"cnt\" x=\"%.1f\" y=\""
+				    "%.1f\">%d</text>", RG_X - d * 0.75 + 4,
+				    (ya + yb) / 2 + 4, e->n);
+			h_raw(h, "<title>");
+			h_txt(h, val(lr[e->a], "where"));
+			h_raw(h, " ⇄ ");
+			h_txt(h, val(lr[e->b], "where"));
+		} else {
+			yb = 12 + (e->b + 0.5) * (height - 24) / nr;
+			h_fmt(h, "<g class=\"edge %s\"><path d=\"M%d %.1f C%.1f "
+			    "%.1f %.1f %.1f %d %.1f\"/>", wcls[e->worst], RG_X +
+			    RG_W, ya, (RG_X + RG_W + RG_PX) / 2.0, ya,
+			    (RG_X + RG_W + RG_PX) / 2.0, yb, RG_PX, yb);
+			if (e->n > 1)
+				h_fmt(h, "<text class=\"cnt\" x=\"%d\" y=\"%.1f\">"
+				    "%d</text>", RG_PX - 30, yb - 5, e->n);
+			h_raw(h, "<title>");
+			h_txt(h, val(lr[e->a], "where"));
+			h_raw(h, " → ");
+			h_txt(h, pr[e->b].label);
+		}
 		h_raw(h, "\n");
 		h_txt(h, e->title);
 		h_raw(h, "</title></g>");
 	}
 	for (a = 0; a < nl; a++) {
 		r = lr[a];
-		yl = 12 + (a + 0.5) * (height - 24) / nl;
-		h_fmt(h, "<g class=\"rnode mine\" transform=\"translate(20,%.1f)"
-		    "\" data-act=\"rt-open\"", yl);
+		ya = 12 + (a + 0.5) * (height - 24) / nl;
+		h_fmt(h, "<g class=\"rnode mine\" transform=\"translate(%d,%.1f)"
+		    "\" data-act=\"rt-open\"", RG_X, ya);
 		h_attr(h, "data-arg", val(r, "key"));
-		h_raw(h, "><rect x=\"0\" y=\"-20\" width=\"230\" height=\"40\" "
-		    "rx=\"8\"/><text class=\"name\" x=\"12\" y=\"5\">");
-		h_fit(h, val(r, "where"), 28);
+		h_fmt(h, "><rect x=\"0\" y=\"-20\" width=\"%d\" height=\"40\" "
+		    "rx=\"8\"/><text class=\"name\" x=\"12\" y=\"5\">", RG_W);
+		h_fit(h, val(r, "where"), 26);
 		h_raw(h, "</text><title>");
 		h_txt(h, val(r, "where"));
 		h_raw(h, ": its BIRD</title></g>");
 	}
 	for (b = 0; b < nr; b++) {
 		p = &pr[b];
-		yr = 12 + (b + 0.5) * (height - 24) / nr;
+		yb = 12 + (b + 0.5) * (height - 24) / nr;
 		if (p->n > 1)
 			snprintf(sub, sizeof(sub), "%d sessions: %s", p->n,
 			    p->names);
 		else
 			snprintf(sub, sizeof(sub), "%s", p->one);
-		h_fmt(h, "<g class=\"rnode %s\" transform=\"translate(750,%.1f)"
+		h_fmt(h, "<g class=\"rnode %s\" transform=\"translate(%d,%.1f)"
 		    "\"><rect x=\"0\" y=\"-20\" width=\"230\" height=\"40\" "
 		    "rx=\"8\"/><text class=\"name\" x=\"12\" y=\"-2\">",
-		    p->fleet ? "fleet" : "outside", yr);
+		    p->fleet ? "fleet" : "outside", RG_PX, yb);
 		h_fit(h, p->label, 28);
 		h_raw(h, "</text><text class=\"sub\" x=\"12\" y=\"13\">");
 		h_fit(h, sub, 34);
 		h_raw(h, "</text><title>");
 		h_txt(h, p->label);
-		h_raw(h, p->fleet ? " · a host of the fleet\n" : " · outside "
-		    "the fleet\n");
+		h_raw(h, p->fleet ? " · a host of the fleet, without BIRD\n" :
+		    " · outside the fleet\n");
 		h_txt(h, sub);
 		h_raw(h, "</title></g>");
 	}
 	h_fmt(h, "</svg><ul class=\"map-legend rt-legend\"><li class=\"up\">"
 	    "%s</li><li class=\"warn\">%s</li><li class=\"down\">%s</li>"
-	    "<li class=\"fleet\">a host of the fleet</li><li class=\"cnt\">"
+	    "<li class=\"arc\">an arc: between two of the fleet's routers"
+	    "</li><li class=\"fleet\">a host of the fleet</li><li class=\"cnt\">"
 	    "<b>3</b> sessions on a line: its colour the worst</li></ul>",
 	    kind == RT_BGP ? "Established" : kind == RT_OSPF ?
 	    "Full, or 2-Way" : "Up", kind == RT_BGP ? "Connecting (Active, "
 	    "Connect, OpenSent…)" : kind == RT_OSPF ? "Forming (Init, "
 	    "ExStart, Loading…)" : "Init", kind == RT_BGP ? "Down, or turned off" :
 	    "Down");
+	(void)nin;
 	if (more > 0)
 		h_fmt(h, "<p class=\"dim\">And %d more, in the table.</p>", more);
 	h_raw(h, "</div>");

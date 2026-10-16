@@ -253,6 +253,7 @@ topbar(struct html *h)
 	    "title=\"Notifications, log out\" aria-label=\"Menu\"><svg class=\"ti\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5h.01M12 12h.01M12 19h.01\"/></svg></button>"
 	    "<div class=\"who%s\">", app.who_open ? " on" : "", app.who_open ?
 	    " open" : "");
+	help_button(h);
 	if (app.notify != 3)
 		h_fmt(h, "<button class=\"ghost%s\" data-act=\"notify\" title=\""
 		    "Notify when a task that took more than ten seconds "

@@ -104,7 +104,13 @@ read_json(struct http_request *req)
 	if (ucl_parser_add_chunk(p, (unsigned char *)buf, len))
 		o = ucl_parser_get_object(p);
 	ucl_parser_free(p);
+	/* A body may carry a key (a CA's, a preshared one): not left in
+	 * memory given back. */
+	explicit_bzero(buf, len);
 	free(buf);
+	/* And Kore's own copy (in memory: http_body_disk_offload is 0). */
+	if (req->http_body != NULL && req->http_body->data != NULL)
+		explicit_bzero(req->http_body->data, req->http_body->length);
 	if (o != NULL && ucl_object_type(o) != UCL_OBJECT) {
 		ucl_object_unref(o);
 		o = NULL;

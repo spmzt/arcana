@@ -2592,7 +2592,7 @@ html.fx .edges path { animation: flow 1.2s linear infinite; }
 		padding-right: .75rem;
 	}
 
-	.crumbs, .who button:first-child {
+	.crumbs, .who button[data-act=notify] {
 		display: none;
 	}
 
@@ -4962,3 +4962,21 @@ html:not(.neon) label.button {
 	text-transform: none;
 	box-sizing: border-box;
 }
+
+/* The top bar's ?: this page in the book. */
+.who a.help {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 32px;
+	padding: 0 .6rem;
+	text-decoration: none;
+	font-weight: 600;
+	min-height: 32px;
+	box-sizing: border-box;
+	border: 1px solid var(--line-2);
+	border-radius: var(--radius);
+	color: var(--fg-2);
+}
+.who a.help:hover { color: var(--fg); border-color: var(--cyan); }
+.rt-legend .arc::before { width: 12px; height: 12px; border: 2px solid var(--slate); border-right: none; border-radius: 12px 0 0 12px; }

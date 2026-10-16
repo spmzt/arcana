@@ -113,6 +113,17 @@ exec_set_home(struct work *w, const char *dir)
 	exec_home = dir != NULL ? wfmt(w, "HOME=%s", dir) : NULL;
 }
 
+/* One more NAME=value in the environment of what this thread runs
+ * (SSH_AUTH_SOCK for ssh-add and ssh-keygen -U), or none with NULL. */
+static _Thread_local char	*exec_extra;
+
+void
+exec_set_env(struct work *w, const char *name, const char *value)
+{
+
+	exec_extra = name != NULL ? wfmt(w, "%s=%s", name, value) : NULL;
+}
+
 /*
  * As run_exec(), keeping up to max bytes of standard output for the
  * caller; the trace step still carries at most ARC_MAX_OUTPUT of them.
@@ -133,11 +144,21 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	static char			 gitglobal[] =
 	    "GIT_CONFIG_GLOBAL=/dev/null";
 	static char			 gitsystem[] = "GIT_CONFIG_NOSYSTEM=1";
-	char				*env[] = { pathenv, gitglobal, gitsystem,
-					    exec_home, NULL };
+	char				*env[6];
 	const char			*cmdline;
 	size_t				 i;
 	time_t				 deadline;
+	int				 ne;
+
+	ne = 0;
+	env[ne++] = pathenv;
+	env[ne++] = gitglobal;
+	env[ne++] = gitsystem;
+	if (exec_home != NULL)
+		env[ne++] = exec_home;
+	if (exec_extra != NULL)
+		env[ne++] = exec_extra;
+	env[ne] = NULL;
 	pid_t				 pid;
 	int				 op[2], ep[2], ip[2], status, rc, step,
 					 n;
