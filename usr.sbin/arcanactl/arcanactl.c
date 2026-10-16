@@ -208,7 +208,7 @@ usage(void)
 	    "    sysctl [name | start of a name]\n"
 	    "    sysctl parts [name | start of a name]\n"
 	    "    sysctl name=value\n"
-	    "    transport [retry]\n"
+	    "    transport [retry | listen uri | unlisten uri [for uri [keep]]]\n"
 	    "    config-export [-s]\n"
 	    "    config-apply [-an] [-H hostname] bundle.json\n"
 	    "    path-check [-r] [-F fib] [-i interface] [-p proto] [-P port] src dst\n"
@@ -2931,6 +2931,9 @@ cmd_path_check(struct arc_client *cl, int argc, char **argv)
 /*
  * transport: the agent's listeners and the connections open to it.
  * transport retry: start the SCTP listeners that are not up.
+ * transport listen uri: listen there too.  transport unlisten uri
+ * [for new [keep]]: close that one; with keep, new takes its place in
+ * rc.conf.
  */
 static int
 cmd_transport(struct arc_client *cl, int argc, char **argv)
@@ -2939,9 +2942,17 @@ cmd_transport(struct arc_client *cl, int argc, char **argv)
 	struct arc_transport_rsp	*rsp;
 	int				 error;
 
-	if (argc > 2 || (argc == 2 && strcmp(argv[1], "retry") != 0))
-		usage();
 	memset(&req, 0, sizeof(req));
+	if (argc == 3 && strcmp(argv[1], "listen") == 0)
+		req.listen = argv[2];
+	else if ((argc == 3 || argc == 5 || argc == 6) && strcmp(argv[1],
+	    "unlisten") == 0 && (argc == 3 || strcmp(argv[3], "for") == 0) &&
+	    (argc != 6 || strcmp(argv[5], "keep") == 0)) {
+		req.unlisten = argv[2];
+		req.listen = argc >= 5 ? argv[4] : NULL;
+		req.listen_keep = argc == 6;
+	} else if (argc > 2 || (argc == 2 && strcmp(argv[1], "retry") != 0))
+		usage();
 	req.retry = argc == 2;
 	if ((error = arc_transport(cl, &req, &rsp)) != 0)
 		fail(cl, error, "transport");

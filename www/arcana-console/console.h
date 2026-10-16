@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.197.0"
+#define	ARCW_VERSION		"0.198.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -214,6 +214,10 @@ char		*hosts_sdwan_set(const char *, const char *, const char *,
 		    const char *, const char *, int *);
 int		 api_sdwan_state(struct http_request *);
 int		 api_security(struct http_request *);
+char		*hosts_listen(const char *, const char *, const char *,
+		    const char *, const char *, bool, int *);
+int		 api_server_move(struct http_request *);
+void		 api_server_move_free(struct http_request *);
 char		*security_build(const char *, const ucl_object_t *, const char *,
 		    char *, size_t);
 bool		 host_ref(const char *, char *, size_t, char *, size_t, char *,

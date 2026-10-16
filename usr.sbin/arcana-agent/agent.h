@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.132.0"
+#define	ARCANA_AGENT_VERSION	"0.133.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -585,7 +585,8 @@ void		 tls_files_init(cbl_tls *, const char *, const char *,
 void		 do_tls(struct work *, const char *, const char *,
 		    const char *, const char *, const uint8_t *,
 		    struct arc_tls_rsp *);
-int		 do_transport(struct work *, bool, struct arc_transport_rsp *);
+int		 do_transport(struct work *, bool, const char *, const char *,
+		    bool, struct arc_transport_rsp *);
 bool		 tls_file_is(const char *);
 /* superbia/bundle.c: the host as a bundle, a bundle made the host. */
 int		 do_config_export(struct work *, bool,

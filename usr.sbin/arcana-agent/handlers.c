@@ -67,6 +67,9 @@ struct job {
 	uint32_t		 pport;
 	bool			 has_fib;
 	bool			 preply;
+	char			*listen;	/* transport */
+	char			*unlisten;
+	bool			 listen_keep;
 };
 
 #define	STOPPING	"not done: arcana-agent is stopping"
@@ -551,11 +554,13 @@ worker(void *arg)
 		rc = arc_config_apply_reply(j->req, &car);
 		break;
 	case ARC_CMD_TRANSPORT:
-		what = j->refresh ? "transport retry" : "transport";
+		what = j->refresh ? "transport retry" : j->listen != NULL ||
+		    j->unlisten != NULL ? "transport listeners" : "transport";
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "%s", what);
 		memset(&tpr, 0, sizeof(tpr));
-		do_transport(&w, j->refresh, &tpr);
+		do_transport(&w, j->refresh, j->listen, j->unlisten,
+		    j->listen_keep, &tpr);
 		ok = tpr.ok;
 		error = tpr.error;
 		step_end(&w, root, ok, NULL);
@@ -1281,6 +1286,8 @@ job_free(struct job *j)
 	free(j->binary);
 	free(j->sha256);
 	free(j->source);
+	free(j->listen);
+	free(j->unlisten);
 	free(j->ref);
 	free(j->host_keys);
 	free(j->ssh_key);
@@ -1902,6 +1909,11 @@ arc_transport_doit(cbl_req *req, const struct arc_transport_req *rq,
 	j->req = req;
 	j->cmd = ARC_CMD_TRANSPORT;
 	j->refresh = rq->retry;
+	j->listen = rq->listen != NULL && rq->listen[0] != '\0' ?
+	    xstrdup(rq->listen) : NULL;
+	j->unlisten = rq->unlisten != NULL && rq->unlisten[0] != '\0' ?
+	    xstrdup(rq->unlisten) : NULL;
+	j->listen_keep = rq->listen_keep;
 	return (start(j));
 }
 

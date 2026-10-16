@@ -3840,7 +3840,7 @@ ATF_TC_BODY(mtls, tc)
 	struct authn	 a;
 	struct resp	 r;
 	char		 cwd[MAXPATHLEN], uri[64], body[256], path[128];
-	char		 jgd[MAXPATHLEN], listen[64], *argv[16];
+	char		 jgd[MAXPATHLEN], listen[64], *argv[20];
 	char		 sid[16], sw[128];
 	FILE		*fp;
 	pid_t		 pid;
@@ -3878,6 +3878,9 @@ ATF_TC_BODY(mtls, tc)
 	argv[i++] = (char *)(uintptr_t)"etc/jail.conf";
 	argv[i++] = (char *)(uintptr_t)"-D";
 	argv[i++] = (char *)(uintptr_t)"etc/jail.conf.d";
+	/* rc.conf: the test's own, never the host's. */
+	argv[i++] = (char *)(uintptr_t)"-y";
+	argv[i++] = (char *)(uintptr_t)"./fake-sysrc";
 	argv[i] = NULL;
 	pid = spawn_server(argv, "arcana-agent2.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent2.pid", "w")) != NULL);
@@ -4106,6 +4109,63 @@ ATF_TC_BODY(mtls, tc)
 	resp_free(&r);
 	http("POST", sw, "{\"transport\":\"udp\"}", &r);
 	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/*
+	 * Moved to another address: listened on there too, tried, and
+	 * only then the old listener closed and the new kept in rc.conf;
+	 * where the agent cannot listen, nothing changes.
+	 */
+	snprintf(path, sizeof(path), "/api/servers/%s/move", sid);
+	http("POST", path, "{\"uri\":\"udp://127.0.0.1:1\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", path, "{\"uri\":\"tcp://192.0.2.77:4430\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "false") == 0 && strstr(jstr(&r,
+	    "error"), "did not listen on tcp://192.0.2.77:4430") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	ATF_REQUIRE(system("echo 'arcana_agent_listen=\"tcp://127.0.0.1:1 "
+	    "keep\"' >> rc.conf") == 0);
+	{
+		char	moved[64], b2[160], was[64];
+
+		snprintf(was, sizeof(was), "tcp://127.0.0.1:%d", port);
+		snprintf(moved, sizeof(moved), "tcp://127.0.0.1:%d", port + 1);
+		snprintf(b2, sizeof(b2), "{\"uri\":\"%s\"}", moved);
+		http("POST", path, b2, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "true") == 0 && strcmp(jstr(
+		    &r, "uri"), moved) == 0 && jstr(&r, "note") == NULL, "%s",
+		    r.body);
+		resp_free(&r);
+		http("GET", "/api/servers", NULL, &r);
+		ATF_CHECK_STREQ(moved, jstr(&r, "servers.0.uri"));
+		resp_free(&r);
+		snprintf(b2, sizeof(b2), "/api/servers/%s/transport", sid);
+		http("GET", b2, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strstr(r.body, moved) != NULL && strstr(r.body,
+		    was) == NULL, "%s", r.body);
+		resp_free(&r);
+		/* Not in arcana_agent_listen: added to it. */
+		snprintf(b2, sizeof(b2), "grep -q '^arcana_agent_listen=\"tcp://"
+		    "127.0.0.1:1 keep %s\"$' rc.conf", moved);
+		ATF_CHECK_MSG(system(b2) == 0, "%s", b2);
+		/* And back, its word put in place of the other. */
+		snprintf(b2, sizeof(b2), "{\"uri\":\"%s\"}", was);
+		http("POST", path, b2, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "true") == 0, "%s", r.body);
+		resp_free(&r);
+		snprintf(b2, sizeof(b2), "grep -q '^arcana_agent_listen=\"tcp://"
+		    "127.0.0.1:1 keep %s\"$' rc.conf", was);
+		ATF_CHECK_MSG(system(b2) == 0, "%s", b2);
+	}
+	snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
 	resp_free(&r);
 }
 
