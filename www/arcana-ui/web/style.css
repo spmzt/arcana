@@ -4900,3 +4900,18 @@ table.rt td.err { color: var(--red); max-width: 22rem; }
 table.rt td.num { font-variant-numeric: tabular-nums; }
 .rt-note { margin: .2rem 0 .8rem; font-size: .8rem; }
 .netsect > .rtview { flex: 1; min-height: 0; overflow-y: auto; }
+
+/* A host's BIRD: its protocols' tabs, and their forms. */
+nav.bird-sub { margin: .2rem 0 .8rem; }
+form.bf fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: .4rem .7rem .6rem; margin: .6rem 0; }
+form.bf fieldset legend { padding: 0 .3rem; }
+form.bf .checks { display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; margin: .4rem 0; }
+form.bf label.check { display: inline-flex; flex-direction: row; align-items: center; gap: .45rem; width: auto; flex: none; }
+form.bf label.check input { width: auto; margin: 0; flex: none; }
+table.bf-rows { width: 100%; border-collapse: collapse; margin: .5rem 0 .2rem; }
+table.bf-rows th { text-align: left; font-size: .7rem; color: var(--dim); font-weight: 500; padding: 0 .3rem .2rem 0; }
+table.bf-rows td { padding: .15rem .3rem .15rem 0; }
+table.bf-rows input:not([type=checkbox]), table.bf-rows select { width: 100%; min-width: 4rem; }
+@media (max-width: 640px) {
+	table.bf-rows { display: block; overflow-x: auto; }
+}

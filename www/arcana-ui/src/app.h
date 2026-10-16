@@ -390,6 +390,7 @@ enum modal {
 	MODAL_BIRD_BLOCK,
 	MODAL_BIRD_RPKI,
 	MODAL_BIRD_FILE,
+	MODAL_BIRD_FORM,	/* a BGP, OSPF or BFD protocol as a form */
 	MODAL_IPSEC_CONN,
 	MODAL_IPSEC_CHILD,
 	MODAL_SD_UCS,
@@ -704,6 +705,18 @@ bool		 bird_form(const char *, const ucl_object_t *);
 bool		 bird_modal(struct html *);
 void		 bird_tick(double);
 void		 bird_show(const char *);
+/* birdform.c: BGP, OSPF and BFD protocols as forms. */
+struct bfconf;
+struct bfconf	*bf_new(const char *);
+struct bfconf	*bf_parse(const char *, const char *);
+struct bfconf	*bf_read(const char *, const ucl_object_t *,
+		    const char *const *, char *, size_t);
+void		 bf_fields(struct html *, const struct bfconf *,
+		    const char *const *, bool);
+char		*bf_text(const struct bfconf *);
+const char	*bf_name(const struct bfconf *);
+void		 bf_summary(char *, size_t, const struct bfconf *);
+void		 bf_free(struct bfconf *);
 /* tbl.c: every table sorts by its columns and is filtered. */
 struct tcol {
 	const char	*title;

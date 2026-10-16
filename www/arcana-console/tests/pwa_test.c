@@ -2591,6 +2591,120 @@ part_plugins(void)
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('BIRD keeps its new configuration'))", 30);
 	ATF_CHECK(system("grep -q '^configure confirm$' birdc.log") == 0);
+	/*
+	 * BGP, OSPF and BFD each a tab of the host's BIRD, with a form: a
+	 * protocol made, one changed, and one the form cannot show left
+	 * to be changed as text.  Out of safe mode, to save one after the
+	 * other.
+	 */
+	run("document.querySelector('button[data-act=bird-safe]').click()");
+	wait_js("document.querySelector('button[data-act=bird-safe]')."
+	    "textContent.includes('off')", 5);
+	run("document.querySelector('button[data-act=bird-sub][data-arg=\"1\"]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('table.bird-bgp tbody tr').length === "
+	    "2 && [...document.querySelectorAll('table.bird-bgp tbody tr')]"
+	    ".some(r => r.textContent.includes('bgp_edge') && r.textContent."
+	    "includes('as text')) && [...document.querySelectorAll("
+	    "'table.bird-bgp tbody tr')].some(r => r.textContent.includes("
+	    "'192.0.2.1 AS65001'))", 10);
+	run("document.querySelector('button[data-act=bird-pnew][data-arg=bgp]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=bird-pform] "
+	    "input[name=nbr]')", 5);
+	run("const f = document.querySelector('form[data-form=bird-pform]'); "
+	    "f.elements.name.value = 'transit1'; f.nbr.value = '203.0.113.9'; "
+	    "f.nas.value = '70000000000'; f.las.value = '65000'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal .err') && document."
+	    "querySelector('.modal .err').textContent.includes('An AS is')", 5);
+	run("const f = document.querySelector('form[data-form=bird-pform]'); "
+	    "f.nas.value = '64500'; f.bfd.checked = true; f.imp0.value = "
+	    "'filter bgp_in'; f.ch1.checked = true; f.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('table.bird-bgp tbody tr')].some(r => r."
+	    "textContent.includes('transit1'))", 20);
+	ATF_CHECK(system("grep -q '^protocol bgp transit1 {$' bird/bird.conf "
+	    "&& grep -q '^\tneighbor 203.0.113.9 as 64500;$' bird/bird.conf && "
+	    "grep -q '^\tbfd on;$' bird/bird.conf && grep -q '^\t\timport "
+	    "filter bgp_in;$' bird/bird.conf && grep -q '^\tipv6 {$' "
+	    "bird/bird.conf") == 0);
+	shot("7g-bird-bgp-tab");
+	/* One there already, read into the form and changed. */
+	run("[...document.querySelectorAll('table.bird-bgp tbody tr')].find(r "
+	    "=> r.dataset.arg === 'bgp_core').click()");
+	wait_js("document.querySelector('form[data-form=bird-pform] "
+	    "input[name=nbr]') && document.querySelector('form[data-form="
+	    "bird-pform]').nbr.value === '192.0.2.1' && document.querySelector("
+	    "'form[data-form=bird-pform]').las.value === 'MY_AS' && document."
+	    "querySelector('form[data-form=bird-pform]').desc.value === 'Core "
+	    "uplink, east' && document.querySelector('form[data-form=bird-pform]')"
+	    ".imp0.value === 'filter bgp_out'", 5);
+	shot("7g-bird-bgp-form");
+	run("const f = document.querySelector('form[data-form=bird-pform]'); "
+	    "f.nas.value = '65011'; f.requestSubmit();");
+	wait_js("!document.querySelector('.modal')", 20);
+	ATF_CHECK(system("grep -q '^\tneighbor 192.0.2.1 as 65011;$' "
+	    "bird/bird.conf && grep -q '^\tlocal as MY_AS;$' bird/bird.conf && "
+	    "grep -q '^\tdescription \"Core uplink, east\";$' bird/bird.conf") == 0);
+	/* What the form cannot show is changed as text. */
+	run("[...document.querySelectorAll('table.bird-bgp tbody tr')].find(r "
+	    "=> r.dataset.arg === 'bgp_edge').click()");
+	wait_js("document.querySelector('.modal button[data-act=bird-astext]')",
+	    5);
+	run("document.querySelector('.modal button[data-act=bird-astext]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=bird-block] textarea')"
+	    " && document.querySelector('form[data-form=bird-block] textarea')"
+	    ".value.includes('198.51.100.7')", 5);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('.modal')", 5);
+	/* OSPF: an instance on an interface; its neighbour as BIRD has it. */
+	run("document.querySelector('button[data-act=bird-sub][data-arg=\"2\"]')"
+	    ".click()");
+	wait_js("document.querySelector('table.bird-ospfn tbody tr') && "
+	    "document.querySelector('table.bird-ospfn').textContent.includes("
+	    "'Full/PtP')", 10);
+	run("document.querySelector('button[data-act=bird-pnew][data-arg=ospf]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=bird-pform] "
+	    "input[name=if0]')", 5);
+	run("const f = document.querySelector('form[data-form=bird-pform]'); "
+	    "f.elements.name.value = 'ospf1'; f.if0.value = 'gif0'; f.cost0.value "
+	    "= '10'; f.type0.value = 'ptp'; f.bfd0.checked = true; "
+	    "f.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('table.bird-ospf tbody tr')].some(r => r."
+	    "textContent.includes('area 0'))", 20);
+	ATF_CHECK(system("grep -q '^protocol ospf v2 ospf1 {$' bird/bird.conf "
+	    "&& grep -q '^\t\tinterface \"gif0\" {$' bird/bird.conf && grep -q "
+	    "'^\t\t\ttype ptp;$' bird/bird.conf && grep -q '^\t\t\tbfd on;$' "
+	    "bird/bird.conf") == 0);
+	shot("7g-bird-ospf-tab");
+	/* BFD: the interface's times and a neighbour of its own. */
+	run("document.querySelector('button[data-act=bird-sub][data-arg=\"3\"]')"
+	    ".click()");
+	wait_js("document.querySelector('table.bird-bfdn tbody tr') && "
+	    "document.querySelector('table.bird-bfdn').textContent.includes("
+	    "'fe80::2')", 10);
+	run("document.querySelector('button[data-act=bird-pnew][data-arg=bfd]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=bird-pform] "
+	    "input[name=rx0]')", 5);
+	run("const f = document.querySelector('form[data-form=bird-pform]'); "
+	    "f.elements.name.value = 'bfd1'; f.if0.value = 'gif0'; f.rx0.value = "
+	    "'200'; f.tx0.value = '200'; f.mult0.value = '5'; f.nb0.value = "
+	    "'10.255.0.2'; f.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && document.querySelector("
+	    "'table.bird-bfd tbody tr')", 20);
+	ATF_CHECK(system("grep -q '^protocol bfd bfd1 {$' bird/bird.conf && "
+	    "grep -q '^\t\tmin rx interval 200 ms;$' bird/bird.conf && grep -q "
+	    "'^\tneighbor 10.255.0.2;$' bird/bird.conf") == 0);
+	run("document.querySelector('button[data-act=bird-sub][data-arg=\"0\"]')"
+	    ".click()");
+	wait_js("document.querySelector('table.bird')", 5);
+	run("document.querySelector('button[data-act=bird-safe]').click()");
+	wait_js("document.querySelector('button[data-act=bird-safe]')."
+	    "textContent.includes('on')", 5);
 	/* Routes a neighbour sent, from its box. */
 	run("[...document.querySelectorAll('table.bird tbody tr')].find(r => "
 	    "r.textContent.includes('bgp_edge')).click()");

@@ -2003,6 +2003,7 @@ modal(struct html *h)
 	case MODAL_BIRD_BLOCK:
 	case MODAL_BIRD_RPKI:
 	case MODAL_BIRD_FILE:
+	case MODAL_BIRD_FORM:
 		if (!bird_modal(h))
 			return;
 		break;
@@ -2375,6 +2376,7 @@ modal(struct html *h)
 		case MODAL_BIRD_BLOCK:
 		case MODAL_BIRD_RPKI:
 		case MODAL_BIRD_FILE:
+		case MODAL_BIRD_FORM:
 			bird_modal_buttons(h);
 			break;
 		case MODAL_NG_CONNECT:
