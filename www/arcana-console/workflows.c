@@ -67,6 +67,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -781,7 +782,7 @@ struct hoststep {
 	char		 title[160];
 	char		 error[300];
 	char		*trace;		/* the job's, JSON */
-	time_t		 started, ended;
+	double		 started, ended;	/* s, to the millisecond */
 };
 
 struct hostrun {
@@ -803,6 +804,7 @@ struct run {
 	char		 trigger[64];
 	char		 state[12];
 	time_t		 started, ended;
+	double		 began;		/* started, to the millisecond */
 	int		 nhosts;
 	struct hostrun	 hosts[RUN_HOSTS_MAX];
 	int		 nsteps;
@@ -826,7 +828,9 @@ run_object(struct run *r, bool traces)
 	put(o, "name", ucl_object_fromstring(ucl_str(r->wf, "name")));
 	put(o, "trigger", ucl_object_fromstring(r->trigger));
 	put(o, "state", ucl_object_fromstring(r->state));
-	put(o, "started", ucl_object_fromint(r->started));
+	/* To the millisecond, as its steps' are, when it is known. */
+	put(o, "started", r->began > 0 ? ucl_object_fromdouble(floor(r->began *
+	    1000) / 1000) : ucl_object_fromint(r->started));
 	if (r->ended != 0)
 		put(o, "ended", ucl_object_fromint(r->ended));
 	put(o, "params", ucl_object_copy(r->params));
@@ -856,10 +860,14 @@ run_object(struct run *r, bool traces)
 				put(s, "title", ucl_object_fromstring(x->title));
 			if (x->error[0] != '\0')
 				put(s, "error", ucl_object_fromstring(x->error));
+			/* Seconds, to the millisecond: a step of a fraction
+			 * of one is drawn as long as it was. */
 			if (x->started != 0)
-				put(s, "started", ucl_object_fromint(x->started));
+				put(s, "started", ucl_object_fromdouble(
+				    floor(x->started * 1000) / 1000));
 			if (x->ended != 0)
-				put(s, "ended", ucl_object_fromint(x->ended));
+				put(s, "ended", ucl_object_fromdouble(
+				    floor(x->ended * 1000) / 1000));
 			if (traces && x->trace != NULL) {
 				p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
 				if (ucl_parser_add_string(p, x->trace, 0) &&
@@ -949,6 +957,7 @@ static void
 step_set(struct hostrun *hr, int k, const char *state, const char *fmt, ...)
 {
 	struct hoststep	*x = &hr->steps[k];
+	struct timespec	 ts;
 	va_list		 ap;
 
 	pthread_mutex_lock(&hr->run->lock);
@@ -958,10 +967,11 @@ step_set(struct hostrun *hr, int k, const char *state, const char *fmt, ...)
 		vsnprintf(x->error, sizeof(x->error), fmt, ap);
 		va_end(ap);
 	}
+	clock_gettime(CLOCK_REALTIME, &ts);
 	if (strcmp(state, "running") == 0)
-		x->started = time(NULL);
+		x->started = ts.tv_sec + ts.tv_nsec / 1e9;
 	else if (strcmp(state, "pending") != 0)
-		x->ended = time(NULL);
+		x->ended = ts.tv_sec + ts.tv_nsec / 1e9;
 	run_save(hr->run);
 	pthread_mutex_unlock(&hr->run->lock);
 }
@@ -1541,6 +1551,12 @@ run_start(const ucl_object_t *wf, const ucl_object_t *hosts,
 	snprintf(r->trigger, sizeof(r->trigger), "%s", trigger);
 	snprintf(r->state, sizeof(r->state), "running");
 	r->started = time(NULL);
+	{
+		struct timespec	ts;
+
+		clock_gettime(CLOCK_REALTIME, &ts);
+		r->began = ts.tv_sec + ts.tv_nsec / 1e9;
+	}
 	arc4random_buf(&r->id, sizeof(r->id));
 	r->id &= 0x7fffffff;
 	it = NULL;

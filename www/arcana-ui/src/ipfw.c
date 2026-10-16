@@ -2855,6 +2855,133 @@ chain_graph(struct html *h, const ucl_object_t *live,
 	h_raw(h, "</svg></div>");
 }
 
+/* A count in a few characters: 950, 12.4k, 3.1M, 2.0G. */
+static void
+count_text(char *buf, size_t len, int64_t n)
+{
+
+	if (n < 1000)
+		snprintf(buf, len, "%lld", (long long)n);
+	else if (n < 1000000)
+		snprintf(buf, len, "%.1fk", n / 1e3);
+	else if (n < 1000000000)
+		snprintf(buf, len, "%.1fM", n / 1e6);
+	else
+		snprintf(buf, len, "%.1fG", n / 1e9);
+}
+
+static int
+pkts_desc(const void *a, const void *b)
+{
+	int64_t	x, y;
+
+	x = jint(*(const ucl_object_t *const *)a, "pkts", 0);
+	y = jint(*(const ucl_object_t *const *)b, "pkts", 0);
+	return (x > y ? -1 : x < y);
+}
+
+/*
+ * What the rules take, beside the chain: the busiest, a bar each long as
+ * its packets, its rate while Live reads; and those that never matched
+ * since their counters were cleared: a rule that never takes a packet
+ * is dead, or shadowed by one before it.  The kernel's own last rule,
+ * count rules and those of a disabled set are left out of the second.
+ * A row pressed opens its rule.
+ */
+#define	BUSIEST	8
+#define	NEVER	12
+static void
+rule_load(struct html *h, const ucl_object_t *live)
+{
+	const ucl_object_t	**v, *o;
+	ucl_object_iter_t	  it;
+	char			  buf[32];
+	int64_t			  max;
+	int			  n, k, never;
+	double			  rate;
+
+	n = (int)ucl_array_size(live);
+	if (n == 0)
+		return;
+	if ((v = calloc((size_t)n + 1, sizeof(*v))) == NULL)
+		abort();
+	n = 0;
+	it = NULL;
+	while ((o = ucl_object_iterate(live, &it, true)) != NULL)
+		if (jint(o, "num", 0) != 65535 && !jbool(o, "disabled"))
+			v[n++] = o;
+	qsort(v, (size_t)n, sizeof(*v), pkts_desc);
+	max = n > 0 ? jint(v[0], "pkts", 0) : 0;
+	h_raw(h, "<div class=\"fwload\"><section><h4 class=\"family\">The "
+	    "busiest rules <small class=\"dim\">packets since the counters "
+	    "were cleared</small></h4>");
+	if (max == 0)
+		h_raw(h, "<p class=\"dim\">No rule has taken a packet yet.</p>");
+	else {
+		h_raw(h, "<ol class=\"fwbusy\">");
+		for (k = 0; k < n && k < BUSIEST && jint(v[k], "pkts", 0) > 0;
+		    k++) {
+			count_text(buf, sizeof(buf), jint(v[k], "pkts", 0));
+			h_fmt(h, "<li class=\"pick\" data-act=\"fw-goto\" data-arg="
+			    "\"%lld\"", (long long)jint(v[k], "num", 0));
+			h_attr(h, "title", jstr(v[k], "text"));
+			h_fmt(h, "><b>%05lld</b><span class=\"track\"><i style="
+			    "\"width:%.1f%%\"></i></span><span class=\"val\">%s",
+			    (long long)jint(v[k], "num", 0), 100.0 * (double)jint(
+			    v[k], "pkts", 0) / (double)max, buf);
+			rate = rate_of(jint(v[k], "num", 0), jint(v[k], "pkts",
+			    0));
+			if (rate >= 0.05)
+				h_fmt(h, " <small class=\"rate\">+%.1f/s</small>",
+				    rate);
+			h_raw(h, "</span><code>");
+			h_txt(h, jstr(v[k], "text"));
+			h_raw(h, "</code></li>");
+		}
+		h_raw(h, "</ol>");
+	}
+	h_raw(h, "</section><section><h4 class=\"family\">Never matched "
+	    "<small class=\"dim\">dead, or shadowed by a rule before</small>"
+	    "</h4>");
+	never = 0;
+	for (k = n - 1; k >= 0 && jint(v[k], "pkts", 0) == 0; k--) {
+		const char	*t = jstr(v[k], "text") != NULL ? jstr(v[k],
+		    "text") : "";
+
+		/* A count rule counts; a return or check-state passes. */
+		if (strncmp(t, "count", 5) == 0 || strncmp(t, "check-state", 11) ==
+		    0 || strncmp(t, "return", 6) == 0)
+			continue;
+		never++;
+	}
+	if (never == 0)
+		h_raw(h, "<p class=\"dim\">Every rule has taken a packet.</p>");
+	else {
+		h_fmt(h, "<p class=\"dim\"><b>%d</b> of %d rules.</p><ul class=\""
+		    "fwnever\">", never, n);
+		/* In the order of the chain. */
+		qsort(v, (size_t)n, sizeof(*v), num_cmp);
+		for (k = 0, never = 0; k < n && never < NEVER; k++) {
+			const char	*t = jstr(v[k], "text") != NULL ? jstr(
+			    v[k], "text") : "";
+
+			if (jint(v[k], "pkts", 0) != 0 || strncmp(t, "count",
+			    5) == 0 || strncmp(t, "check-state", 11) == 0 ||
+			    strncmp(t, "return", 6) == 0)
+				continue;
+			never++;
+			h_fmt(h, "<li class=\"pick\" data-act=\"fw-goto\" data-arg="
+			    "\"%lld\"><b>%05lld</b> <code>", (long long)jint(v[k],
+			    "num", 0), (long long)jint(v[k], "num", 0));
+			h_txt(h, t);
+			h_raw(h, "</code></li>");
+		}
+		h_raw(h, "</ul>");
+	}
+	h_raw(h, "</section></div>");
+	free(v);
+}
+
 void
 view_firewall(struct html *h, struct server *s)
 {
@@ -3005,6 +3132,7 @@ view_firewall(struct html *h, struct server *s)
 	}
 	if (fw.sect < 0 || fw.sect >= (int)nitems(sects)) {
 		chain_graph(h, live, kept);
+		rule_load(h, live);
 		h_raw(h, "<table class=\"net fw-layout\"><thead><tr><th>Numbers"
 		    "</th><th>Part</th><th>Now</th><th>Kept</th><th></th></tr>"
 		    "</thead><tbody>");
