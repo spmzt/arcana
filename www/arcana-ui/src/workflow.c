@@ -1519,7 +1519,8 @@ static const struct evk {
 	{ "job", "a job ends", "job", NULL, NULL, NULL, NULL },
 	{ "sdwan-tunnel", "an SD-WAN tunnel goes up or down", "sdwan-tunnel",
 	    NULL, NULL, NULL, NULL },
-	{ "sdwan-fault", "an SD-WAN fault is raised or cleared",
+	{ "sdwan-fault", "a fault is raised or cleared: SD-WAN's, or a "
+	    "BIRD session's",
 	    "sdwan-fault", NULL, NULL, NULL, NULL },
 	{ "custom", "something else, by its kind", NULL, NULL, NULL, NULL,
 	    NULL },

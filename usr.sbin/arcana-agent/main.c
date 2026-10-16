@@ -80,6 +80,7 @@ struct opts opts = {
 	.suricata_bin = PATH_SURICATA_BIN,
 	.swanctl_dir = PATH_SWANCTL_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
+	.bird_watch_s = 15,
 	.bird_bin = PATH_BIRD_BIN,
 	.bird_conf = PATH_BIRD_CONF,
 	.setfib_bin = PATH_SETFIB_BIN,
@@ -99,11 +100,13 @@ struct opts opts = {
 
 static bool	foreground;
 
-enum { OPT_ROOT = 1000 };
+enum { OPT_ROOT = 1000, OPT_BIRD_WATCH };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
 	{ "root", required_argument, NULL, OPT_ROOT },
+	/* How often BIRD's sessions are looked at for faults; 0, never. */
+	{ "bird-watch", required_argument, NULL, OPT_BIRD_WATCH },
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -336,6 +339,11 @@ main(int argc, char *argv[])
 		switch (ch) {
 		case OPT_ROOT:
 			opts.root = optarg;
+			break;
+		case OPT_BIRD_WATCH:
+			opts.bird_watch_s = (int)strtonum(optarg, 0, 3600, &errstr);
+			if (errstr != NULL)
+				errx(1, "--bird-watch %s: %s", optarg, errstr);
 			break;
 		case 'A':
 			cafile = optarg;
@@ -654,6 +662,7 @@ main(int argc, char *argv[])
 	route_watch_start();
 	jail_watch_start();
 	host_watch_start();
+	bird_watch_start();
 	logmsg(LOG_INFO, "version %s ready", ARCANA_AGENT_VERSION);
 	stop_loop = loop;
 	stop_pfh = pfh;

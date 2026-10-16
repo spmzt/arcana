@@ -187,7 +187,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[106];
+	char	*argv[108];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -1029,7 +1029,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	 * reads them, and nothing reads the host's own. */
 	argv[102] = (char *)(uintptr_t)"--root";
 	argv[103] = rootdir;
-	argv[104] = NULL;
+	/* BIRD's sessions are not watched for faults by the tests'
+	 * agents: a fault would come among those a test looks for. */
+	argv[104] = (char *)(uintptr_t)"--bird-watch";
+	argv[105] = (char *)(uintptr_t)"0";
+	argv[106] = NULL;
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
 	(void)mkdir(rootdir, 0755);
 	{
