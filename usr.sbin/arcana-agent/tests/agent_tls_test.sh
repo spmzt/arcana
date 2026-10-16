@@ -52,15 +52,29 @@ start_daemon()
 	mkdir -p etc/jail.conf.d
 	printf 'web {\n\tpath = /;\n\tip4.addr = 10.0.0.10;\n}\n' > \
 	    etc/jail.conf
-	PORT=$(( 20000 + $$ % 20000 ))
-	"$JGD" -F -l "tcp://127.0.0.1:$PORT" -A ca.pem -C server.pem \
-	    -K server.key -f "$(pwd)/etc/jail.conf" \
-	    -D "$(pwd)/etc/jail.conf.d" -I /usr/bin/false \
-	    > daemon.out 2>&1 &
-	echo $! > daemon.pid
-	for i in $(seq 1 100); do
-		grep -q ready daemon.out 2>/dev/null && return
-		sleep 0.05
+	# A port of its own: one another test holds (make check runs them
+	# side by side) is given up for another, the port checked to be
+	# this agent's by sockstat(1), not only that it said ready.
+	local try pid
+	for try in $(seq 1 20); do
+		PORT=$(jot -r 1 20000 59999)
+		"$JGD" -F -l "tcp://127.0.0.1:$PORT" -A ca.pem -C server.pem \
+		    -K server.key -f "$(pwd)/etc/jail.conf" \
+		    -D "$(pwd)/etc/jail.conf.d" -I /usr/bin/false \
+		    > daemon.out 2>&1 &
+		pid=$!
+		echo $pid > daemon.pid
+		for i in $(seq 1 100); do
+			grep -q ready daemon.out 2>/dev/null && break
+			sleep 0.05
+		done
+		if grep -q ready daemon.out 2>/dev/null && sockstat -4l -P tcp \
+		    -p "$PORT" | awk -v p="$pid" '$3 == p { f = 1 } END { exit !f }'
+		then
+			return
+		fi
+		kill "$pid" 2>/dev/null
+		wait "$pid" 2>/dev/null
 	done
 	atf_fail "arcana-agent did not start: $(cat daemon.out)"
 }
