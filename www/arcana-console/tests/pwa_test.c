@@ -3779,6 +3779,10 @@ part_firewall(void)
 	ATF_CHECK(js_true("document.querySelectorAll('svg.fwchain path.call:"
 	    "not(.skip)').length === 1 && document.querySelectorAll('svg."
 	    "fwchain path.call.skip').length === 1"));
+	/* Each line said what it is, beside the graph. */
+	ATF_CHECK(js_true("document.querySelector('svg.fwchain + ul.glegend "
+	    "li.fw-call') && document.querySelector('svg.fwchain + ul.glegend "
+	    "li.fw-skip')"));
 	/* What the rules take: the busiest as bars, 9100 never matched
 	 * (check-state at 200 and the returns pass, they are left out). */
 	ATF_CHECK_MSG(js_true("document.querySelectorAll('ol.fwbusy li')."
@@ -4512,6 +4516,8 @@ part_flows(void)
 	    "{ bubbles: true }));");
 	wait_js("document.querySelectorAll('svg.wfdraw g.wfnode.job').length === "
 	    "2", 10);
+	ATF_CHECK(js_true("document.querySelector('ul.glegend li.wf-fail') && "
+	    "document.querySelector('ul.glegend li.wf-then')"));
 	run("document.querySelectorAll('svg.wfdraw g.wfnode.job')[1]."
 	    "dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, "
 	    "pointerId: 6, button: 0 })); document.dispatchEvent(new "
@@ -6040,7 +6046,9 @@ part_trouble(void)
 		    "li.tshop').length && document.querySelector('svg.tsgraph "
 		    "g.tsnode .name').textContent === document.querySelector("
 		    "'ol.tsway li.tshop b').textContent && document."
-		    "querySelector('svg.tsgraph .way.leaves') && location.hash "
+		    "querySelector('svg.tsgraph .way.leaves') && document."
+		    "querySelector('svg.tsgraph + ul.glegend li.ts-leaves') && "
+		    "location.hash "
 		    "=== '#/troubleshoot?src=10.1.0.2&dst=10.3.0.2&proto=tcp&"
 		    "port=22'"), "%s", g != NULL ? ucl_object_tostring_forced(g)
 		    : "?");

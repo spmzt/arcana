@@ -268,6 +268,20 @@ dot(struct html *h, double x, double y, const char *where,
 #define	TS_COL	190		/* a column's pitch */
 #define	TS_X0	170		/* the first column, after the source */
 
+/* What the path's lines, boxes and dots mean. */
+static void
+ts_legend(struct html *h, bool reply)
+{
+
+	h_fmt(h, "<ul class=\"glegend\"><li class=\"ts-way\">the way there"
+	    "</li>%s<li class=\"ts-bad\">stopped</li><li class=\"ts-leaves\">"
+	    "leaves the places asked</li><li class=\"box dashed\">did not "
+	    "answer</li><li class=\"ts-fw good\">its firewall lets it by</li>"
+	    "<li class=\"ts-fw warn\">may</li><li class=\"ts-fw bad\">drops "
+	    "it</li></ul>", reply ? "<li class=\"ts-reply\">the reply</li>" :
+	    "");
+}
+
 /* One place's box. */
 static void
 place_node(struct html *h, double x, double y, const ucl_object_t *hop,
@@ -398,7 +412,9 @@ path_graph(struct html *h, const ucl_object_t *r)
 	else
 		arrow(h, xp, xp + 24, y1 + TS_BH / 2, false, NULL, "bad");
 	if (nr == 0) {
-		h_raw(h, "</svg></div>");
+		h_raw(h, "</svg>");
+		ts_legend(h, false);
+		h_raw(h, "</div>");
 		return;
 	}
 	/* The reply: from the destination's side, right to left, a slot
@@ -421,7 +437,9 @@ path_graph(struct html *h, const ucl_object_t *r)
 		    ret, (unsigned)nr - 1), "next_hop"), "leaves");
 	else
 		arrow(h, xp, xp - 24, y2 + TS_BH / 2, true, NULL, "bad");
-	h_raw(h, "</svg></div>");
+	h_raw(h, "</svg>");
+	ts_legend(h, true);
+	h_raw(h, "</div>");
 }
 
 static void

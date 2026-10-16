@@ -1043,8 +1043,7 @@ view_dashboard(struct html *h)
 	if (nedges > 0) {
 		h_raw(h, "<div class=\"sd-block\"><h3>Topology <small class=\""
 		    "dim\">the edges and the tunnels between them, each as its "
-		    "probes see it: green up, red down, dashed a backup, a lock "
-		    "encrypted</small></h3><div class=\"sd-topo-wrap\"><svg "
+		    "probes see it</small></h3><div class=\"sd-topo-wrap\"><svg "
 		    "class=\"sd-topo\" viewBox=\"0 0 640 300\" role=\"img\">");
 		cx = 320;
 		cy = 150;
@@ -1225,7 +1224,11 @@ view_dashboard(struct html *h)
 			    " · breakout" : "");
 			i++;
 		}
-		h_raw(h, "</svg></div></div>");
+		h_raw(h, "</svg><ul class=\"glegend\"><li class=\"sd-t up\">up"
+		    "</li><li class=\"sd-t half\">up at one end</li><li class="
+		    "\"sd-t down\">down</li><li class=\"sd-t backup\">a backup "
+		    "tunnel</li><li class=\"text\"><b>🔒</b>encrypted</li></ul>"
+		    "</div></div>");
 	}
 	view_overview(h);
 }

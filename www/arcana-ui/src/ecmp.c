@@ -416,7 +416,8 @@ side(struct html *h, const struct server *s, const ucl_object_t *g,
 		h_txt(h, rate);
 		h_raw(h, "</small></li>");
 	}
-	h_raw(h, "</ul></div>");
+	h_raw(h, "</ul><ul class=\"glegend\"><li class=\"ecmp-w\">where the "
+	    "shares would meet, by the next hops' weights</li></ul></div>");
 }
 
 /* A group's two sides, as its host's page and the section draw it. */
