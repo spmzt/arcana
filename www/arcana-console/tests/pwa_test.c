@@ -3589,7 +3589,10 @@ part_firewall(void)
 	/* What the rules take: the busiest as bars, 9100 never matched
 	 * (check-state at 200 and the returns pass, they are left out). */
 	ATF_CHECK_MSG(js_true("document.querySelectorAll('ol.fwbusy li')."
-	    "length >= 4 && document.querySelector('ul.fwnever').textContent."
+	    "length >= 1 && !document.querySelector('ol.fwbusy').textContent."
+	    "includes('call 9100') && getComputedStyle(document.querySelector("
+	    "'ol.fwbusy .track i')).backgroundColor !== 'rgba(0, 0, 0, 0)' && "
+	    "document.querySelector('ul.fwnever').textContent."
 	    "includes('09100') && !document.querySelector('ul.fwnever')."
 	    "textContent.includes('00200')"), "%s", "the rule load");
 	shot("7o-firewall-layout");

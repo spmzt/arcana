@@ -2880,13 +2880,38 @@ pkts_desc(const void *a, const void *b)
 	return (x > y ? -1 : x < y);
 }
 
+/* Does a rule decide where a packet goes, rather than pass it on? */
+static bool
+decides(const char *t)
+{
+	static const char *const passes[] = { "call", "return", "skipto",
+	    "count", "reass", "check-state", "tag", "untag", "setdscp",
+	    "setmark", "tcp-setmss", "setfib" };
+	size_t	i, n;
+
+	if (t == NULL)
+		return (false);
+	if (strncmp(t, "prob ", 5) == 0) {
+		t += 5 + strcspn(t + 5, " ");
+		t += strspn(t, " ");
+	}
+	for (i = 0; i < nitems(passes); i++) {
+		n = strlen(passes[i]);
+		if (strncmp(t, passes[i], n) == 0 && (t[n] == ' ' || t[n] ==
+		    '\0'))
+			return (false);
+	}
+	return (true);
+}
+
 /*
- * What the rules take, beside the chain: the busiest, a bar each long as
- * its packets, its rate while Live reads; and those that never matched
- * since their counters were cleared: a rule that never takes a packet
- * is dead, or shadowed by one before it.  The kernel's own last rule,
- * count rules and those of a disabled set are left out of the second.
- * A row pressed opens its rule.
+ * What the rules take, beside the chain: the rules that decide most, a
+ * bar each long as its packets, its rate while Live reads (a call, a
+ * return, a skipto pass every packet on and are left out); and those
+ * that never matched since their counters were cleared: a rule that
+ * never takes a packet is dead, or shadowed by one before it (count,
+ * check-state and return left out).  The kernel's own last rule and
+ * those of a disabled set are left out of both.  A row opens its rule.
  */
 #define	BUSIEST	8
 #define	NEVER	12
@@ -2896,12 +2921,12 @@ rule_load(struct html *h, const ucl_object_t *live)
 	const ucl_object_t	**v, *o;
 	ucl_object_iter_t	  it;
 	char			  buf[32];
+	const char		 *t;
 	int64_t			  max;
-	int			  n, k, never;
+	int			  n, k, shown, never;
 	double			  rate;
 
-	n = (int)ucl_array_size(live);
-	if (n == 0)
+	if ((n = (int)ucl_array_size(live)) == 0)
 		return;
 	if ((v = calloc((size_t)n + 1, sizeof(*v))) == NULL)
 		abort();
@@ -2911,16 +2936,23 @@ rule_load(struct html *h, const ucl_object_t *live)
 		if (jint(o, "num", 0) != 65535 && !jbool(o, "disabled"))
 			v[n++] = o;
 	qsort(v, (size_t)n, sizeof(*v), pkts_desc);
-	max = n > 0 ? jint(v[0], "pkts", 0) : 0;
 	h_raw(h, "<div class=\"fwload\"><section><h4 class=\"family\">The "
-	    "busiest rules <small class=\"dim\">packets since the counters "
-	    "were cleared</small></h4>");
+	    "rules that decide most <small class=\"dim\">packets since the "
+	    "counters were cleared</small></h4>");
+	max = 0;
+	for (k = 0; k < n && max == 0; k++)
+		if (decides(jstr(v[k], "text")))
+			max = jint(v[k], "pkts", 0);
 	if (max == 0)
-		h_raw(h, "<p class=\"dim\">No rule has taken a packet yet.</p>");
+		h_raw(h, "<p class=\"dim\">No rule has decided a packet yet."
+		    "</p>");
 	else {
 		h_raw(h, "<ol class=\"fwbusy\">");
-		for (k = 0; k < n && k < BUSIEST && jint(v[k], "pkts", 0) > 0;
-		    k++) {
+		for (k = 0, shown = 0; k < n && shown < BUSIEST && jint(v[k],
+		    "pkts", 0) > 0; k++) {
+			if (!decides(jstr(v[k], "text")))
+				continue;
+			shown++;
 			count_text(buf, sizeof(buf), jint(v[k], "pkts", 0));
 			h_fmt(h, "<li class=\"pick\" data-act=\"fw-goto\" data-arg="
 			    "\"%lld\"", (long long)jint(v[k], "num", 0));
@@ -2943,39 +2975,37 @@ rule_load(struct html *h, const ucl_object_t *live)
 	h_raw(h, "</section><section><h4 class=\"family\">Never matched "
 	    "<small class=\"dim\">dead, or shadowed by a rule before</small>"
 	    "</h4>");
+	/* In the order of the chain. */
+	qsort(v, (size_t)n, sizeof(*v), num_cmp);
 	never = 0;
-	for (k = n - 1; k >= 0 && jint(v[k], "pkts", 0) == 0; k--) {
-		const char	*t = jstr(v[k], "text") != NULL ? jstr(v[k],
-		    "text") : "";
-
-		/* A count rule counts; a return or check-state passes. */
-		if (strncmp(t, "count", 5) == 0 || strncmp(t, "check-state", 11) ==
-		    0 || strncmp(t, "return", 6) == 0)
-			continue;
-		never++;
+	for (k = 0; k < n; k++) {
+		t = jstr(v[k], "text") != NULL ? jstr(v[k], "text") : "";
+		if (jint(v[k], "pkts", 0) == 0 && strncmp(t, "count", 5) != 0 &&
+		    strncmp(t, "check-state", 11) != 0 && strncmp(t, "return",
+		    6) != 0)
+			never++;
 	}
 	if (never == 0)
 		h_raw(h, "<p class=\"dim\">Every rule has taken a packet.</p>");
 	else {
 		h_fmt(h, "<p class=\"dim\"><b>%d</b> of %d rules.</p><ul class=\""
 		    "fwnever\">", never, n);
-		/* In the order of the chain. */
-		qsort(v, (size_t)n, sizeof(*v), num_cmp);
-		for (k = 0, never = 0; k < n && never < NEVER; k++) {
-			const char	*t = jstr(v[k], "text") != NULL ? jstr(
-			    v[k], "text") : "";
-
+		for (k = 0, shown = 0; k < n && shown < NEVER; k++) {
+			t = jstr(v[k], "text") != NULL ? jstr(v[k], "text") : "";
 			if (jint(v[k], "pkts", 0) != 0 || strncmp(t, "count",
 			    5) == 0 || strncmp(t, "check-state", 11) == 0 ||
 			    strncmp(t, "return", 6) == 0)
 				continue;
-			never++;
+			shown++;
 			h_fmt(h, "<li class=\"pick\" data-act=\"fw-goto\" data-arg="
 			    "\"%lld\"><b>%05lld</b> <code>", (long long)jint(v[k],
 			    "num", 0), (long long)jint(v[k], "num", 0));
 			h_txt(h, t);
 			h_raw(h, "</code></li>");
 		}
+		if (never > NEVER)
+			h_fmt(h, "<li class=\"dim\">and %d more, in the parts "
+			    "above</li>", never - NEVER);
 		h_raw(h, "</ul>");
 	}
 	h_raw(h, "</section></div>");

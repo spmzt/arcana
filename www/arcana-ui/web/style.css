@@ -4660,7 +4660,7 @@ table.ipsec td .child small { color: var(--dim); }
 /* SD-WAN dashboard: the topology of edges and tunnels. */
 .sd-topo-wrap { max-width: 760px; }
 svg.sd-topo { width: 100%; height: auto; display: block; font-family: var(--font); }
-svg.sd-topo .node circle { fill: rgba(var(--surface-rgb), .9); stroke: var(--accent); stroke-width: 2; }
+svg.sd-topo .node circle { fill: rgba(var(--surface-rgb), .9); stroke: rgb(var(--accent-rgb)); stroke-width: 2; }
 svg.sd-topo .node text { text-anchor: middle; fill: var(--fg); font-size: 12px; }
 svg.sd-topo .node text.sub { fill: var(--dim); font-size: 10px; }
 svg.sd-topo .tun path { fill: none; stroke: var(--line-2); stroke-width: 3; }
@@ -4787,7 +4787,7 @@ svg.tsgraph .way.leaves { stroke: var(--amber); stroke-dasharray: 2 4; }
 svg.tsgraph .lbl { font-size: 9.5px; fill: var(--dim); }
 svg.tsgraph .tsnode rect { fill: rgba(var(--surface-rgb), .95); stroke: var(--line-2); stroke-width: 1.2; }
 svg.tsgraph .tsnode { cursor: pointer; }
-svg.tsgraph .tsnode:hover rect { stroke: var(--accent); }
+svg.tsgraph .tsnode:hover rect { stroke: rgb(var(--accent-rgb)); }
 svg.tsgraph .tsnode.blocked rect { stroke: var(--red); stroke-width: 2; }
 svg.tsgraph .tsnode.dead rect { stroke-dasharray: 3 3; }
 svg.tsgraph .tsnode.ghost rect { stroke-dasharray: 3 3; opacity: .6; }
@@ -4797,7 +4797,7 @@ svg.tsgraph .tsnode .asym { font-size: 8.5px; fill: var(--amber); }
 svg.tsgraph .tsnode circle.fw.good { fill: var(--green); }
 svg.tsgraph .tsnode circle.fw.bad { fill: var(--red); }
 svg.tsgraph .tsnode circle.fw.warn { fill: var(--amber); }
-svg.tsgraph .tsend rect { fill: rgba(var(--accent-rgb), .12); stroke: var(--accent); stroke-width: 1.2; }
+svg.tsgraph .tsend rect { fill: rgba(var(--accent-rgb), .12); stroke: rgb(var(--accent-rgb)); stroke-width: 1.2; }
 svg.tsgraph .tsend text { font-size: 10.5px; fill: var(--fg); }
 .trouble label .lblrow { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .trouble label .swap { font-size: .7rem; padding: 0 .4rem; line-height: 1.4; }
@@ -4808,8 +4808,8 @@ svg.fwchain marker path { fill: var(--fg-2); }
 svg.fwchain .head { font-size: 9px; fill: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
 svg.fwchain .part { cursor: pointer; }
 svg.fwchain .part rect { fill: rgba(var(--surface-rgb), .95); stroke: var(--line-2); stroke-width: 1.2; }
-svg.fwchain .part:hover rect { stroke: var(--accent); }
-svg.fwchain .part.on rect { stroke: var(--accent); stroke-width: 2; }
+svg.fwchain .part:hover rect { stroke: rgb(var(--accent-rgb)); }
+svg.fwchain .part.on rect { stroke: rgb(var(--accent-rgb)); stroke-width: 2; }
 svg.fwchain .part.none rect { stroke-dasharray: 3 3; opacity: .55; }
 svg.fwchain .part.none text { opacity: .6; }
 svg.fwchain .part .num { font-size: 9px; fill: var(--dim); }
@@ -4822,7 +4822,7 @@ svg.fwchain .call:hover { stroke-width: 2.4; opacity: 1; }
 svg.fwchain .down { stroke: var(--fg-2); stroke-width: 1.2; }
 /* Follow a packet: where it is at the host, and the walk. */
 .fw-tctx { display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: center; margin: .6rem 0 .2rem; }
-ol.fw-steps li.decides { border-left: 2px solid var(--accent); margin-left: -2px; }
+ol.fw-steps li.decides { border-left: 2px solid rgb(var(--accent-rgb)); margin-left: -2px; }
 details.fw-unsure { font-size: .8rem; margin: .4rem 0; }
 details.fw-unsure li { margin: .2rem 0; }
 /* A kept rule written with aliases: its own words, ipfw's on hover. */
@@ -4861,7 +4861,7 @@ ol.fwbusy li { display: grid; grid-template-columns: 3.4rem 1fr 6rem; grid-templ
 ol.fwbusy li:hover, ul.fwnever li:hover { background: rgba(var(--accent-rgb), .07); }
 ol.fwbusy li b { color: var(--fg-2); font-family: var(--mono); font-weight: 400; }
 ol.fwbusy .track { height: 8px; background: transparent; }
-ol.fwbusy .track i { display: block; height: 8px; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--accent); }
+ol.fwbusy .track i { display: block; height: 8px; min-width: 2px; border-radius: 0 4px 4px 0; background: rgb(var(--accent-rgb)); }
 ol.fwbusy .val { font-family: var(--mono); color: var(--fg); text-align: right; }
 ol.fwbusy .val .rate { color: var(--green); }
 ol.fwbusy code { grid-column: 2 / 4; font-size: .72rem; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
