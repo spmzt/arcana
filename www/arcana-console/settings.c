@@ -35,7 +35,8 @@
 
 #define	SETTINGS_FILE	"settings.json"
 
-enum kind { K_TEXT, K_BOOL };
+/* K_SECRET: text kept, and never sent back: only whether it is set. */
+enum kind { K_TEXT, K_BOOL, K_SECRET };
 
 static const char	*v_name(const char *);
 static const char	*v_url(const char *);
@@ -50,6 +51,12 @@ static const char	*v_mails(const char *);
 static const char	*v_mail(const char *);
 static const char	*v_severity(const char *);
 static const char	*v_which(const char *);
+static const char	*v_via(const char *);
+static const char	*v_host(const char *);
+static const char	*v_port(const char *);
+static const char	*v_security(const char *);
+static const char	*v_user(const char *);
+static const char	*v_secret(const char *);
 
 static struct setting {
 	const char	*key;
@@ -107,6 +114,26 @@ static struct setting {
 	{ "mail_limits", K_BOOL, "Limits crossed mailed",
 	    "A figure of history (CPU, memory, a disk, a jail's) over its "
 	    "limit, and back under.", NULL, NULL, NULL },
+	{ "mail_via", K_TEXT, "Mail sent by",
+	    "sendmail: the console's host's own, dma(8) as FreeBSD comes; "
+	    "smtp: the relay below, by SMTP from the console itself.", v_via,
+	    NULL, NULL },
+	{ "smtp_host", K_TEXT, "SMTP relay",
+	    "Its name, as its certificate says: smtp.example.org.", v_host,
+	    NULL, NULL },
+	{ "smtp_port", K_TEXT, "SMTP port",
+	    "587 for STARTTLS, 465 for TLS, 25 in the clear.", v_port, NULL,
+	    NULL },
+	{ "smtp_security", K_TEXT, "SMTP security",
+	    "starttls, tls or none; a password goes over TLS only, and the "
+	    "relay's certificate is checked against the system's CAs and its "
+	    "name.", v_security, NULL, NULL },
+	{ "smtp_user", K_TEXT, "SMTP user",
+	    "Empty for a relay that takes mail without signing in.", v_user,
+	    NULL, NULL },
+	{ "smtp_password", K_SECRET, "SMTP password",
+	    "Kept in the data directory, readable by the console alone; never "
+	    "shown again: typed again to change it.", v_secret, NULL, NULL },
 };
 
 static struct timespec	loaded;		/* settings.json's mtime when read */
@@ -192,6 +219,59 @@ v_which(const char *s)
 
 	return (strcmp(s, "failed") == 0 || strcmp(s, "all") == 0 ||
 	    strcmp(s, "none") == 0 ? NULL : "failed, all or none");
+}
+
+static const char *
+v_via(const char *s)
+{
+
+	return (strcmp(s, "sendmail") == 0 || strcmp(s, "smtp") == 0 ? NULL :
+	    "sendmail or smtp");
+}
+
+static const char *
+v_host(const char *s)
+{
+
+	if (s[0] == '\0' || strlen(s) > 253 || s[strspn(s,
+	    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:"
+	    "[]")] != '\0')
+		return ("a host's name or address");
+	return (NULL);
+}
+
+static const char *
+v_port(const char *s)
+{
+
+	return (v_count(s, 1, 65535));
+}
+
+static const char *
+v_security(const char *s)
+{
+
+	return (strcmp(s, "starttls") == 0 || strcmp(s, "tls") == 0 ||
+	    strcmp(s, "none") == 0 ? NULL : "starttls, tls or none");
+}
+
+static const char *
+v_user(const char *s)
+{
+
+	if (strlen(s) > 256)
+		return ("256 characters at most");
+	for (; *s != '\0'; s++)
+		if ((unsigned char)*s < 0x20 || *s == 0x7f)
+			return ("no control characters");
+	return (NULL);
+}
+
+static const char *
+v_secret(const char *s)
+{
+
+	return (strlen(s) > 1024 ? "1024 characters at most" : NULL);
 }
 
 static const char *
@@ -446,6 +526,9 @@ settings_init(const char *update_check, const char *update_url)
 	find("mail_runs")->base = cfg.mail_runs;
 	find("mail_limits")->base = kore_strdup(cfg.mail_limits ? "true" :
 	    "false");
+	find("mail_via")->base = kore_strdup("sendmail");
+	find("smtp_port")->base = kore_strdup("587");
+	find("smtp_security")->base = kore_strdup("starttls");
 	load();
 }
 
@@ -502,8 +585,16 @@ reply(struct http_request *req)
 		put(e, "label", ucl_object_fromstring(settings[i].label));
 		put(e, "help", ucl_object_fromstring(settings[i].help));
 		put(e, "type", ucl_object_fromstring(settings[i].kind ==
-		    K_BOOL ? "bool" : "text"));
-		put(e, "value", ucl_object_fromstring(value(settings[i].key)));
+		    K_BOOL ? "bool" : settings[i].kind == K_SECRET ? "secret" :
+		    "text"));
+		/* A secret's value is never sent: whether it is set. */
+		if (settings[i].kind == K_SECRET) {
+			put(e, "value", ucl_object_fromstring(""));
+			put(e, "set", ucl_object_frombool(value(
+			    settings[i].key)[0] != '\0'));
+		} else
+			put(e, "value", ucl_object_fromstring(value(
+			    settings[i].key)));
 		put(e, "base", ucl_object_fromstring(settings[i].base != NULL ?
 		    settings[i].base : ""));
 		put(e, "overridden", ucl_object_frombool(settings[i].over !=
@@ -573,9 +664,13 @@ api_settings(struct http_request *req)
 		}
 		val = s->kind == K_BOOL ? (ucl_object_toboolean(v) ? "true" :
 		    "false") : ucl_object_tostring_forced(v);
+		/* A secret left empty is left as it is; null clears it. */
+		if (s->kind == K_SECRET && val[0] == '\0')
+			continue;
 		/* Empty means none, where there can be none. */
 		why = s->valid != NULL && !(val[0] == '\0' && (s->valid ==
-		    v_source || s->valid == v_ref || s->valid == v_keypath)) ?
+		    v_source || s->valid == v_ref || s->valid == v_keypath ||
+		    s->valid == v_host)) ?
 		    s->valid(val) : NULL;
 		if (why != NULL) {
 			reply_error(req, 400, "invalid", "%s: not %s", s->label,
