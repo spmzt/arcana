@@ -260,23 +260,7 @@ dot(struct html *h, double x, double y, const char *where,
 #define	TS_BW	150		/* a place's box */
 #define	TS_BH	50
 #define	TS_COL	190		/* a column's pitch */
-#define	TS_X0	110		/* the first column, after the source */
-
-/* The column a place stands in: the request's, in its order. */
-static int
-column(const ucl_object_t *hops, const char *key, int *extra)
-{
-	const ucl_object_t	*hop;
-	ucl_object_iter_t	 it;
-	int			 i;
-
-	it = NULL;
-	for (i = 0; (hop = ucl_object_iterate(hops, &it, true)) != NULL; i++)
-		if (jstr(hop, "key") != NULL && key != NULL && strcmp(jstr(hop,
-		    "key"), key) == 0)
-			return (i);
-	return ((*extra)++);
-}
+#define	TS_X0	170		/* the first column, after the source */
 
 /* One place's box. */
 static void
@@ -339,10 +323,11 @@ arrow(struct html *h, double x1, double x2, double y, bool reply,
 
 /*
  * The way drawn: the source at the left, the destination at the right,
- * the places passed as boxes between, the request's way above the
- * boxes, left to right, the reply's below, right to left; where either
- * is stopped, a bar.  A place the reply passes that the request did not
- * gets a column of its own.
+ * the request's places as boxes left to right above, the reply's as
+ * boxes right to left below, each row in the order its packet goes,
+ * so that a reply that takes another way reads as it is.  Where either
+ * is stopped, a bar; where it leaves the hosts asked, a dotted arrow
+ * on, with the next hop.
  */
 static void
 path_graph(struct html *h, const ucl_object_t *r)
@@ -352,25 +337,20 @@ path_graph(struct html *h, const ucl_object_t *r)
 	    "return_end");
 	ucl_object_iter_t	 it;
 	const char		*how;
-	int			 nf, nr, extra, ncol, i, col, prev;
-	double			 w, y1, y2, x, xp, xdst;
-	bool			 two;
+	int			 nf, nr, ncol, i;
+	double			 w, y1, y2, ym, x, xp, xdst, xsrc;
 
 	nf = (int)ucl_array_size(hops);
 	nr = (int)ucl_array_size(ret);
 	if (nf == 0)
 		return;
-	/* The columns: the request's places, then the reply's others. */
-	extra = nf;
-	it = NULL;
-	while ((hop = ucl_object_iterate(ret, &it, true)) != NULL)
-		(void)column(hops, jstr(hop, "key"), &extra);
-	ncol = extra;
-	two = nr > 0;
-	w = TS_X0 + ncol * TS_COL + 110;
-	y1 = 24;			/* the request's row */
-	y2 = two ? y1 + TS_BH + 44 : y1;	/* the reply's */
-	xdst = TS_X0 + ncol * TS_COL;
+	ncol = nf > nr ? nf : nr;
+	w = TS_X0 + ncol * TS_COL + 170;
+	y1 = 24;
+	y2 = nr > 0 ? y1 + TS_BH + 50 : y1;
+	ym = y1 + (y2 - y1) / 2;
+	xsrc = 102;
+	xdst = TS_X0 + ncol * TS_COL + 50;
 	h_fmt(h, "<div class=\"tsgraph-wrap\"><svg class=\"tsgraph\" viewBox=\""
 	    "0 0 %.0f %.0f\" role=\"img\" aria-label=\"The packet's way, and "
 	    "its reply's\"><defs><marker id=\"tsarrow\" viewBox=\"0 0 8 8\" "
@@ -379,22 +359,20 @@ path_graph(struct html *h, const ucl_object_t *r)
 	    "tsarrowbad\" viewBox=\"0 0 8 8\" refX=\"4\" refY=\"4\" markerWidth="
 	    "\"8\" markerHeight=\"8\" orient=\"auto\"><path d=\"M3 0h2v8h-2z\"/>"
 	    "</marker></defs>", w, y2 + TS_BH + 24);
-	/* The ends: where it comes from, where it goes. */
+	/* The ends, between the two rows. */
 	h_fmt(h, "<g class=\"tsend src\" transform=\"translate(8,%.0f)\"><rect "
 	    "width=\"94\" height=\"%d\" rx=\"%d\"/><text x=\"47\" y=\"%d\" "
-	    "text-anchor=\"middle\">", y1 + (two ? (y2 - y1) / 2 : 0), TS_BH,
-	    TS_BH / 2, TS_BH / 2 + 4);
+	    "text-anchor=\"middle\">", ym, TS_BH, TS_BH / 2, TS_BH / 2 + 4);
 	h_txt(h, ts.src);
 	h_raw(h, "</text></g>");
 	h_fmt(h, "<g class=\"tsend dst\" transform=\"translate(%.0f,%.0f)\">"
 	    "<rect width=\"94\" height=\"%d\" rx=\"%d\"/><text x=\"47\" y=\"%d\" "
-	    "text-anchor=\"middle\">", xdst + 8, y1 + (two ? (y2 - y1) / 2 :
-	    0), TS_BH, TS_BH / 2, TS_BH / 2 + 4);
+	    "text-anchor=\"middle\">", xdst, ym, TS_BH, TS_BH / 2, TS_BH / 2 + 4);
 	h_txt(h, ts.dst);
 	h_raw(h, "</text></g>");
 	/* The request: left to right. */
 	how = jstr(end, "how") != NULL ? jstr(end, "how") : "";
-	xp = 102;
+	xp = xsrc;
 	it = NULL;
 	for (i = 0; (hop = ucl_object_iterate(hops, &it, true)) != NULL; i++) {
 		x = TS_X0 + i * TS_COL;
@@ -406,48 +384,34 @@ path_graph(struct html *h, const ucl_object_t *r)
 		xp = x + TS_BW;
 	}
 	if (strcmp(how, "delivered") == 0)
-		arrow(h, xp, xdst + 8, y1 + TS_BH / 2, false, NULL, "");
+		arrow(h, xp, xdst, y1 + TS_BH / 2, false, NULL, "");
 	else if (strcmp(how, "leaves") == 0)
-		arrow(h, xp, xdst + 8, y1 + TS_BH / 2, false, jstr(
+		arrow(h, xp, xdst, y1 + TS_BH / 2, false, jstr(
 		    ucl_array_find_index(hops, (unsigned)nf - 1), "next_hop"),
 		    "leaves");
 	else
 		arrow(h, xp, xp + 24, y1 + TS_BH / 2, false, NULL, "bad");
-	/* The reply: right to left, under. */
-	if (!two) {
+	if (nr == 0) {
 		h_raw(h, "</svg></div>");
 		return;
 	}
+	/* The reply: from the destination's side, right to left, a slot
+	 * each in the order it goes. */
 	how = jstr(rend, "how") != NULL ? jstr(rend, "how") : "";
-	xp = xdst + 8;
-	prev = -1;
-	extra = nf;
+	xp = xdst;
 	it = NULL;
 	for (i = 0; (hop = ucl_object_iterate(ret, &it, true)) != NULL; i++) {
-		col = column(hops, jstr(hop, "key"), &extra);
-		x = TS_X0 + col * TS_COL;
+		x = TS_X0 + (ncol - 1 - i) * TS_COL;
 		arrow(h, xp, x + TS_BW, y2 + TS_BH / 2, true, i == 0 ? jstr(hop,
 		    "ingress") : NULL, "");
-		/* A place of the request's is drawn there already: its
-		 * reply row is a faint copy; a new one is drawn whole. */
-		if (col >= nf)
-			place_node(h, x, y2, hop, i == nr - 1 && strcmp(how,
-			    "delivered") != 0);
-		else
-			h_fmt(h, "<g class=\"tsnode ghost%s\" transform=\""
-			    "translate(%.0f,%.0f)\"><rect width=\"%d\" height=\""
-			    "%d\" rx=\"8\"/><text class=\"sub\" x=\"8\" y=\"30\">"
-			    "the same, back</text></g>", i == nr - 1 && strcmp(
-			    how, "delivered") != 0 ? " blocked" : "", x, y2,
-			    TS_BW, TS_BH);
+		place_node(h, x, y2, hop, i == nr - 1 && strcmp(how,
+		    "delivered") != 0 && strcmp(how, "leaves") != 0);
 		xp = x;
-		prev = col;
 	}
-	(void)prev;
 	if (strcmp(how, "delivered") == 0)
-		arrow(h, xp, 102, y2 + TS_BH / 2, true, NULL, "");
+		arrow(h, xp, xsrc, y2 + TS_BH / 2, true, NULL, "");
 	else if (strcmp(how, "leaves") == 0)
-		arrow(h, xp, 102, y2 + TS_BH / 2, true, jstr(ucl_array_find_index(
+		arrow(h, xp, xsrc, y2 + TS_BH / 2, true, jstr(ucl_array_find_index(
 		    ret, (unsigned)nr - 1), "next_hop"), "leaves");
 	else
 		arrow(h, xp, xp - 24, y2 + TS_BH / 2, true, NULL, "bad");

@@ -5476,8 +5476,19 @@ part_routes(void)
 	run("document.querySelector('section.dock:not(.open) header[data-act="
 	    "dock]')?.click()");
 	wait_js("document.querySelector('section.dock.open')", 5);
-	ATF_CHECK(js_true("![...document.querySelectorAll('.dock [data-act="
-	    "trace]')].some(t => t.textContent.includes('list jails'))"));
+	if (!js_true("![...document.querySelectorAll('.dock [data-act="
+	    "trace]')].some(t => t.textContent.includes('list jails'))")) {
+		/* What made it, to know next time: each task, and where
+		 * the page was. */
+		ucl_object_t	*why = js("return location.hash + ' | ' + [...document"
+		    ".querySelectorAll('.dock [data-act=trace]')].map(t => t."
+		    "textContent).join(' / ');");
+
+		ATF_CHECK_MSG(false, "a list jails task on opening Settings: %s",
+		    why != NULL ? ucl_object_tostring_forced(why) : "?");
+		if (why != NULL)
+			ucl_object_unref(why);
+	}
 	/* Opening a host does ask for its jails: a task, even with a
 	 * periodic read of them on its way. */
 	run("document.querySelector('.tree [data-act=select-devices]')"
