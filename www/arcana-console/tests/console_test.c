@@ -2654,6 +2654,119 @@ ATF_TC_BODY(telegram, tc)
 	(void)waitpid(sink, NULL, 0);
 }
 
+static void	pki(const char *, const char *, const char *);
+
+/*
+ * A relay over TLS from the first byte: openssl s_server with the
+ * certificate pki/<name>, its answers scripted in the order the console
+ * waits for them, what it is told written to out; one connection, then
+ * it ends.  Its port is returned.
+ */
+static int
+tls_sink(const char *name, const char *out, pid_t *pidp)
+{
+	struct sockaddr_in	 sin;
+	socklen_t		 sl;
+	char			 cmd[1024];
+	int			 fd, port;
+
+	ATF_REQUIRE((fd = socket(AF_INET, SOCK_STREAM, 0)) != -1);
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_len = sizeof(sin);
+	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	ATF_REQUIRE(bind(fd, (struct sockaddr *)&sin, sizeof(sin)) == 0);
+	sl = sizeof(sin);
+	ATF_REQUIRE(getsockname(fd, (struct sockaddr *)&sin, &sl) == 0);
+	port = ntohs(sin.sin_port);
+	close(fd);
+	snprintf(cmd, sizeof(cmd), "(printf '220 sink ESMTP\\r\\n250-sink\\r\\n"
+	    "250 AUTH PLAIN\\r\\n235 ok\\r\\n250 ok\\r\\n250 ok\\r\\n354 go"
+	    "\\r\\n250 queued\\r\\n221 bye\\r\\n'; sleep 30) | /usr/bin/openssl "
+	    "s_server -quiet -naccept 1 -accept 127.0.0.1:%d -cert pki/%s.pem "
+	    "-key pki/%s.key > %s 2>&1", port, name, name, out);
+	if ((*pidp = fork()) == 0) {
+		(void)setpgid(0, 0);
+		execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+		_exit(127);
+	}
+	usleep(500000);
+	return (port);
+}
+
+CONSOLE_TC(mail_tls, "Mail to an SMTP relay over TLS: its certificate "
+    "checked against the CAs and its name or address, the password sent "
+    "only then")
+ATF_TC_BODY(mail_tls, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[512];
+	pid_t		sink;
+	int		port;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	ATF_REQUIRE(mkdir("pki", 0700) == 0);
+	pki("ca", NULL, NULL);
+	pki("relay", "ca", "IP:127.0.0.1,DNS:localhost");
+	pki("rogue", NULL, NULL);
+	/* The console's CAs: the test's, in place of the system's. */
+	snprintf(body, sizeof(body), "%s/pki/ca.pem", cwd);
+	ATF_REQUIRE(setenv("SSL_CERT_FILE", body, 1) == 0);
+	start(tc, 0, NULL);
+	enrol(&a);
+	/* By its name, signing in over TLS. */
+	port = tls_sink("relay", "tls1.out", &sink);
+	snprintf(body, sizeof(body), "{\"set\":{\"mail_to\":\"ops@example.org\","
+	    "\"mail_via\":\"smtp\",\"smtp_host\":\"localhost\",\"smtp_port\":"
+	    "\"%d\",\"smtp_security\":\"tls\",\"smtp_user\":\"arcana\","
+	    "\"smtp_password\":\"hunter2\"}}", port);
+	http("POST", "/api/settings", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/settings/mail-test", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	(void)kill(-sink, SIGTERM);
+	(void)waitpid(sink, NULL, 0);
+	/* "\0arcana\0hunter2", base64. */
+	ATF_CHECK(system("grep -q '^EHLO ' tls1.out && grep -q '^AUTH PLAIN "
+	    "AGFyY2FuYQBodW50ZXIy' tls1.out && grep -q '^RCPT TO:<ops@example."
+	    "org>' tls1.out && grep -q '^Subject: Arcana: a test' tls1.out")
+	    == 0);
+	/* By its address: the certificate's IP address is what is
+	 * checked. */
+	port = tls_sink("relay", "tls2.out", &sink);
+	snprintf(body, sizeof(body), "{\"set\":{\"smtp_host\":\"127.0.0.1\","
+	    "\"smtp_port\":\"%d\"}}", port);
+	http("POST", "/api/settings", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/settings/mail-test", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	(void)kill(-sink, SIGTERM);
+	(void)waitpid(sink, NULL, 0);
+	ATF_CHECK(system("grep -q '^RCPT TO:<ops@example.org>' tls2.out") ==
+	    0);
+	/* A certificate no CA of the console's signed: nothing is said
+	 * to it, the password least of all. */
+	port = tls_sink("rogue", "tls3.out", &sink);
+	snprintf(body, sizeof(body), "{\"set\":{\"smtp_host\":\"localhost\","
+	    "\"smtp_port\":\"%d\"}}", port);
+	http("POST", "/api/settings", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/settings/mail-test", "{}", &r);
+	EXPECT(&r, 502);
+	ATF_CHECK_MSG(strstr(jstr(&r, "error.message"), "TLS with localhost: "
+	    "self-signed certificate") != NULL, "%s", r.body);
+	resp_free(&r);
+	(void)kill(-sink, SIGTERM);
+	(void)waitpid(sink, NULL, 0);
+	ATF_CHECK(system("! grep -q 'AUTH\\|EHLO' tls3.out") == 0);
+}
+
 CONSOLE_TC(mail, "Faults, jobs and runs mailed by sendmail(8), as the "
     "settings say")
 ATF_TC_BODY(mail, tc)
@@ -6134,6 +6247,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, settings);
 	ATF_TP_ADD_TC(tp, mail);
 	ATF_TP_ADD_TC(tp, mail_smtp);
+	ATF_TP_ADD_TC(tp, mail_tls);
 	ATF_TP_ADD_TC(tp, telegram);
 	ATF_TP_ADD_TC(tp, local_agent);
 	ATF_TP_ADD_TC(tp, local_same);

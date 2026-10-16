@@ -18,6 +18,9 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
 #include <errno.h>
 #include <netdb.h>
 #include <stdarg.h>
@@ -163,6 +166,7 @@ static int
 tls_start(struct conv *c, const char *host)
 {
 	X509_VERIFY_PARAM	*vp;
+	unsigned char		 ip[16];
 	char			 why[256];
 
 	if ((c->ctx = SSL_CTX_new(TLS_client_method())) == NULL)
@@ -172,15 +176,26 @@ tls_start(struct conv *c, const char *host)
 	if (SSL_CTX_set_default_verify_paths(c->ctx) != 1 || (c->ssl =
 	    SSL_new(c->ctx)) == NULL)
 		return (-1);
-	/* The name for SNI: SSL_set_tlsext_host_name()'s macro casts
-	 * the const away. */
-	(void)SSL_ctrl(c->ssl, SSL_CTRL_SET_TLSEXT_HOSTNAME,
-	    TLSEXT_NAMETYPE_host_name, (void *)(uintptr_t)host);
 	vp = SSL_get0_param(c->ssl);
-	X509_VERIFY_PARAM_set_hostflags(vp,
-	    X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
-	if (X509_VERIFY_PARAM_set1_host(vp, host, 0) != 1 ||
-	    SSL_set_fd(c->ssl, c->fd) != 1)
+	/*
+	 * An address is checked against the certificate's IP addresses,
+	 * and named in no SNI (RFC 6066); a name against its DNS names,
+	 * and sent as SNI (SSL_set_tlsext_host_name()'s macro casts the
+	 * const away).
+	 */
+	if (inet_pton(AF_INET, host, ip) == 1 || inet_pton(AF_INET6, host,
+	    ip) == 1) {
+		if (X509_VERIFY_PARAM_set1_ip_asc(vp, host) != 1)
+			return (-1);
+	} else {
+		(void)SSL_ctrl(c->ssl, SSL_CTRL_SET_TLSEXT_HOSTNAME,
+		    TLSEXT_NAMETYPE_host_name, (void *)(uintptr_t)host);
+		X509_VERIFY_PARAM_set_hostflags(vp,
+		    X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+		if (X509_VERIFY_PARAM_set1_host(vp, host, 0) != 1)
+			return (-1);
+	}
+	if (SSL_set_fd(c->ssl, c->fd) != 1)
 		return (-1);
 	if (SSL_connect(c->ssl) != 1) {
 		ERR_error_string_n(ERR_get_error(), why, sizeof(why));

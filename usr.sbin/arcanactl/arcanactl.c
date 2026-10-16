@@ -189,7 +189,8 @@ usage(void)
 	    "    jailconf make jail file [dataset snapshot clone|send path] "
 	    "[start]\n"
 	    "    jailconf edit jail file | remove jail [dataset] |\n"
-	    "        defaults file | files\n"
+	    "        defaults file | template name file | untemplate name |\n"
+	    "        files\n"
 	    "    jailconf template name file | untemplate name\n"
 	    "    neigh add address lladdr [temp] | delete address\n"
 	    "    carp add interface address vhid=n [word=value ...] [key] |\n"
@@ -2287,9 +2288,9 @@ cmd_capture(struct arc_client *cl, int argc, char **argv)
 /*
  * sshd [list] | banner file | set Setting [value ...] | authorize user
  * keyfile | unauthorize user fingerprint | options user fingerprint
- * [options] | sign ca-key-file [principal
- * ...] | user-cas file: the base system's sshd, of the host or of -j's jail; a change is
- * a job, and with -s undone unless confirmed.
+ * [options] | sign ca-key-file [principal ...] | user-cas file: the base
+ * system's sshd, of the host or of -j's jail; a change is a job, and
+ * with -s undone unless confirmed.
  */
 static int
 cmd_sshd(struct arc_client *cl, int argc, char **argv)
@@ -2402,7 +2403,9 @@ cmd_cert(struct arc_client *cl, int argc, char **argv)
  * jailconf remove jail [dataset]
  * jailconf defaults file
  * jailconf template name file | untemplate name
- * A jail made or taken away, the jails' defaults, a template: a job.
+ * jailconf files
+ * A jail made or taken away, the jails' defaults, a template: a job;
+ * files reads what there is.
  */
 static int
 cmd_jailconf(struct arc_client *cl, int argc, char **argv)
