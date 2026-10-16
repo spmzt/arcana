@@ -688,6 +688,16 @@
   never made nor taken away.  The IPFW tab's Load the current file
   verified in a jail with its own rc.conf and script (the lab's
   arcswan1 root).
+- Alert management (asked 2026-10-16): who is told of what, and how.
+  Alerts from the events the console already reads (faults, BIRD's
+  sessions among them, limits crossed, jobs, workflow runs), each rule
+  with a severity and what it matches, sent by mail (Settings has
+  sendmail(8) mail now) or as a Telegram message through a bot.
+  Telegram reaches the world outside: it is a plugin, under luxuria
+  (the bot's token and chat ids kept by the console, the message sent
+  over the Bot API's HTTPS).  A workflow step sends one too: the
+  workflow menu has "notify" by mail or Telegram among its steps.
+  Not started.
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
     sees and changes which hosts and services.

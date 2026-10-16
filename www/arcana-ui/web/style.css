@@ -4923,3 +4923,42 @@ form.bf .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 .8
 	form.bf .three { grid-template-columns: 1fr; }
 }
 form.bf .two, form.bf .three { align-items: start; }
+
+/*
+ * A row of controls (a toolbar): a label is a phrase, its words beside
+ * its field and not above or under it; every control one height, the
+ * same gaps between them, a file's "button" as a button is.
+ */
+.toolbar label:not(.button) {
+	display: inline-flex;
+	flex-direction: row;
+	align-items: center;
+	gap: .45rem;
+	margin: 0;
+	white-space: nowrap;
+}
+.toolbar label.toggle input { margin-top: 0; }
+.toolbar label:not(.button) :is(select, input:not([type=checkbox]):not([type=radio])) {
+	width: auto;
+	min-width: 9rem;
+}
+.transport .toolbar { flex-wrap: wrap; gap: .6rem .9rem; margin-bottom: .8rem; }
+.transport .toolbar > span { white-space: nowrap; }
+html:not(.neon) .toolbar :is(select, input:not([type=checkbox]):not([type=radio])) {
+	height: 32px;
+	padding-top: 0;
+	padding-bottom: 0;
+	box-sizing: border-box;
+}
+html:not(.neon) .toolbar :is(button, button.small) { min-height: 32px; }
+html:not(.neon) label.button {
+	min-height: 32px;
+	padding: 0 .85rem;
+	border-radius: var(--radius);
+	background: var(--panel-2);
+	color: var(--fg);
+	font-size: .84rem;
+	letter-spacing: normal;
+	text-transform: none;
+	box-sizing: border-box;
+}

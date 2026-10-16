@@ -124,6 +124,7 @@ table(struct html *h, const ucl_object_t *arr, const struct column *cols,
     size_t ncols, const char *family)
 {
 	struct tcol		 tc[16];
+	const char		*k2[16];
 	const ucl_object_t	**rows;
 	char			 id[48];
 	size_t			 i, c;
@@ -132,13 +133,14 @@ table(struct html *h, const ucl_object_t *arr, const struct column *cols,
 		tc[c].title = cols[c].title;
 		tc[c].key = cols[c].path;
 		tc[c].num = false;
+		k2[c] = cols[c].path2;
 	}
 	snprintf(id, sizeof(id), "net-%d-%s", (int)app.net.kind, family !=
 	    NULL ? family : "");
 	h_raw(h, "<table class=\"net\">");
 	tbl_head(h, id, tc, (int)c, family != NULL ? 1 : 0);
 	h_raw(h, "<tbody>");
-	rows = tbl_rows(id, arr, tc, (int)c, app.filter);
+	rows = tbl_rows2(id, arr, tc, k2, (int)c, app.filter);
 	for (i = 0; rows[i] != NULL; i++) {
 		h_raw(h, "<tr>");
 		for (c = 0; c < ncols; c++)

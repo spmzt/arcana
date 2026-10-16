@@ -1379,6 +1379,20 @@ part_nettab(void)
 	    "length > 0 && window.netw.some(t => t.includes('\"what\":"
 	    "\"sockets\"'))", 20);
 	run("WebSocket.prototype.send = window.ws1;");
+	/* Found by a port: sshd's, alone or as address:port. */
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = '22'; i.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("[...document.querySelectorAll('.stage table.net tbody tr')]"
+	    ".some(r => r.textContent.includes('sshd'))", 10);
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = '*:22'; i.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("[...document.querySelectorAll('.stage table.net tbody tr')]"
+	    ".some(r => r.textContent.includes('sshd'))", 10);
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true "
+	    "}));");
 	/* The neighbours, ARP's and NDP's, asked of the kernel. */
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=neighbours]').click()");
