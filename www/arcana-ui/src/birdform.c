@@ -52,7 +52,8 @@ struct bfconf {
 	char		desc[128];
 	char		las[12], nbr[80], nas[12], src[64], pass[128];
 	char		multihop[8];	/* "" none, "0" BIRD's default */
-	bool		bfd, passive;
+	char		tmpl[64];	/* from a template, or "" */
+	int		bfd, passive, efa;	/* -1 unsaid, 0 off, 1 on */
 	bool		ch[2];		/* ipv4, ipv6 */
 	char		imp[2][72], exp[2][72];	/* all, none, filter X */
 	bool		nhself[2];
@@ -60,6 +61,9 @@ struct bfconf {
 	char		ver[4];		/* v2 or v3 */
 	int		chan;		/* 0 ipv4, 1 ipv6 */
 	char		area[40];
+	int		ecmp;		/* -1 unsaid, 0 off, 1 on */
+	/* BFD */
+	char		accept[24];	/* ipv4, ipv6, direct, multihop */
 	/* OSPF's and BFD's interfaces; BFD's neighbours */
 	struct bfif	ifs[BF_IFS];
 	int		nifs;
@@ -174,6 +178,18 @@ take_bool(struct toks *k, bool *v)
 	return (eat(k, ";"));
 }
 
+/* As take_bool, with what was said kept: 0 off, 1 on. */
+static bool
+take_tri(struct toks *k, int *v)
+{
+	bool	b;
+
+	if (!take_bool(k, &b))
+		return (false);
+	*v = b ? 1 : 0;
+	return (true);
+}
+
 /* import or export: all, none, or filter NAME. */
 static bool
 take_filter(struct toks *k, char *buf, size_t len)
@@ -221,8 +237,15 @@ parse_bgp(struct toks *k, struct bfconf *c)
 			if (!take(k, c->las, sizeof(c->las)) || !eat(k, ";"))
 				return (false);
 		} else if (eat(k, "neighbor")) {
-			if (!take(k, c->nbr, sizeof(c->nbr)) || !eat(k, "as") ||
-			    !take(k, c->nas, sizeof(c->nas)) || !eat(k, ";"))
+			if (!take(k, c->nbr, sizeof(c->nbr)))
+				return (false);
+			if (eat(k, "as") && !take(k, c->nas, sizeof(c->nas)))
+				return (false);
+			if (!eat(k, ";"))
+				return (false);
+		} else if (eat(k, "enforce")) {
+			if (!eat(k, "first") || !eat(k, "as") || !take_tri(k,
+			    &c->efa))
 				return (false);
 		} else if (eat(k, "source")) {
 			if (!eat(k, "address") || !take(k, c->src,
@@ -245,10 +268,10 @@ parse_bgp(struct toks *k, struct bfconf *c)
 			    !eat(k, ";"))
 				return (false);
 		} else if (eat(k, "bfd")) {
-			if (!take_bool(k, &c->bfd))
+			if (!take_tri(k, &c->bfd))
 				return (false);
 		} else if (eat(k, "passive")) {
-			if (!take_bool(k, &c->passive))
+			if (!take_tri(k, &c->passive))
 				return (false);
 		} else if ((ch = eat(k, "ipv4") ? 0 : eat(k, "ipv6") ? 1 :
 		    -1) != -1) {
@@ -334,6 +357,9 @@ parse_ospf(struct toks *k, struct bfconf *c)
 				return (false);
 			chan = ospf_chan = true;
 			c->chan = eat(k, "ipv4") ? 0 : (eat(k, "ipv6"), 1);
+			/* "ipv6;": the channel with its defaults. */
+			if (eat(k, ";"))
+				continue;
 			if (!eat(k, "{"))
 				return (false);
 			while (!eat(k, "}")) {
@@ -349,6 +375,9 @@ parse_ospf(struct toks *k, struct bfconf *c)
 					return (false);
 			}
 			block_end(k);
+		} else if (eat(k, "ecmp")) {
+			if (!take_tri(k, &c->ecmp))
+				return (false);
 		} else if (eat(k, "area")) {
 			if (area || !take(k, c->area, sizeof(c->area)) ||
 			    !eat(k, "{"))
@@ -396,7 +425,24 @@ parse_bfd(struct toks *k, struct bfconf *c)
 	struct bfnbr	*b;
 
 	while (!eat(k, "}")) {
-		if (eat(k, "interface")) {
+		if (eat(k, "accept")) {
+			char	w[16];
+
+			c->accept[0] = '\0';
+			while (!eat(k, ";")) {
+				if (!take(k, w, sizeof(w)) || (strcmp(w, "ipv4") !=
+				    0 && strcmp(w, "ipv6") != 0 && strcmp(w,
+				    "direct") != 0 && strcmp(w, "multihop") != 0) ||
+				    strlen(c->accept) + strlen(w) + 2 >
+				    sizeof(c->accept))
+					return (false);
+				snprintf(c->accept + strlen(c->accept),
+				    sizeof(c->accept) - strlen(c->accept), "%s%s",
+				    c->accept[0] != '\0' ? " " : "", w);
+			}
+			if (c->accept[0] == '\0')
+				return (false);
+		} else if (eat(k, "interface")) {
 			if (c->nifs == BF_IFS)
 				return (false);
 			f = &c->ifs[c->nifs++];
@@ -476,6 +522,7 @@ bf_new(const char *kind)
 	snprintf(c->exp[1], sizeof(c->exp[1]), "none");
 	snprintf(c->ver, sizeof(c->ver), "v2");
 	snprintf(c->area, sizeof(c->area), "0");
+	c->bfd = c->passive = c->efa = c->ecmp = -1;
 	return (c);
 }
 
@@ -494,7 +541,10 @@ bf_parse(const char *kind, const char *text)
 	if (ok && strcmp(kind, "ospf") == 0 && (strcmp(peek(&k), "v2") == 0 ||
 	    strcmp(peek(&k), "v3") == 0))
 		ok = take(&k, c->ver, sizeof(c->ver));
-	ok = ok && take(&k, c->name, sizeof(c->name)) && eat(&k, "{");
+	ok = ok && take(&k, c->name, sizeof(c->name));
+	if (ok && strcmp(kind, "bgp") == 0 && eat(&k, "from"))
+		ok = take(&k, c->tmpl, sizeof(c->tmpl));
+	ok = ok && eat(&k, "{");
 	if (ok)
 		ok = strcmp(kind, "bgp") == 0 ? parse_bgp(&k, c) : strcmp(kind,
 		    "ospf") == 0 ? parse_ospf(&k, c) : strcmp(kind, "bfd") ==
@@ -507,8 +557,8 @@ bf_parse(const char *kind, const char *text)
 	 * the form would have to say one, so such a text is left as text.
 	 * OSPF's defaults are import all and export none.
 	 */
-	if (ok && strcmp(kind, "bgp") == 0 && ((!c->ch[0] && !c->ch[1]) ||
-	    (md5 && c->pass[0] == '\0')))
+	if (ok && strcmp(kind, "bgp") == 0 && ((!c->ch[0] && !c->ch[1] &&
+	    c->tmpl[0] == '\0') || (md5 && c->pass[0] == '\0')))
 		ok = false;
 	if (ok && strcmp(kind, "bgp") == 0)
 		for (int ch = 0; ch < 2; ch++)
@@ -569,6 +619,18 @@ check_in(struct html *h, const char *label, const char *name, bool on)
 	    "%s> %s</label>", name, on ? " checked" : "", label);
 }
 
+/* Said on, said off, or left to BIRD or the template. */
+static void
+tri_in(struct html *h, const char *label, const char *name, int v,
+    const char *unsaid)
+{
+
+	h_fmt(h, "<label>%s<select name=\"%s\"><option value=\"\"%s>%s</option>"
+	    "<option value=\"on\"%s>on</option><option value=\"off\"%s>off"
+	    "</option></select></label>", label, name, v < 0 ? " selected" : "",
+	    unsaid, v == 1 ? " selected" : "", v == 0 ? " selected" : "");
+}
+
 static void
 filter_in(struct html *h, const char *label, const char *name,
     const char *v, const char *const *filters)
@@ -593,8 +655,9 @@ filter_in(struct html *h, const char *label, const char *name,
 
 void
 bf_fields(struct html *h, const struct bfconf *c, const char *const *filters,
-    bool edit)
+    const char *const *templates, bool edit)
 {
+	const char	*unsaid;
 	static const char *const chn[] = { "IPv4", "IPv6" };
 	char	 n[16];
 	int	 i;
@@ -603,8 +666,23 @@ bf_fields(struct html *h, const struct bfconf *c, const char *const *filters,
 	    "upstream1" : strcmp(c->kind, "ospf") == 0 ? "ospf1" : "bfd1",
 	    edit ? " readonly" : " autofocus");
 	if (strcmp(c->kind, "bgp") == 0) {
+		unsaid = c->tmpl[0] != '\0' ? "as the template says" :
+		    "BIRD's default";
+		h_raw(h, "<div class=\"two\"><label>From the template<select "
+		    "name=\"tmpl\"><option value=\"\">none</option>");
+		for (i = 0; templates != NULL && templates[i] != NULL; i++) {
+			h_raw(h, "<option");
+			h_attr(h, "value", templates[i]);
+			h_fmt(h, "%s>", strcmp(c->tmpl, templates[i]) == 0 ?
+			    " selected" : "");
+			h_txt(h, templates[i]);
+			h_raw(h, "</option>");
+		}
+		h_raw(h, "</select><small>What it leaves empty, the template "
+		    "says.</small></label>");
 		text_in(h, "Description", "desc", c->desc, "Transit, via "
 		    "the exchange", NULL);
+		h_raw(h, "</div>");
 		h_raw(h, "<div class=\"two\">");
 		text_in(h, "Neighbour address", "nbr", c->nbr, "192.0.2.1, or "
 		    "fe80::1%em0", NULL);
@@ -624,15 +702,18 @@ bf_fields(struct html *h, const struct bfconf *c, const char *const *filters,
 		h_raw(h, "><small>On FreeBSD the kernel signs the segments: "
 		    "the key goes into an SA of setkey(8) as well, for "
 		    "tcp(4)'s TCP_MD5SIG.</small></label></div><div class=\""
-		    "checks\">");
-		check_in(h, "BFD for this session", "bfd", c->bfd);
-		check_in(h, "Passive: wait to be called", "passive",
-		    c->passive);
+		    "three\">");
+		tri_in(h, "BFD", "bfd", c->bfd, unsaid);
+		tri_in(h, "Passive: waits to be called", "passive", c->passive,
+		    unsaid);
+		tri_in(h, "Enforce first AS", "efa", c->efa, unsaid);
 		h_raw(h, "</div>");
 		for (i = 0; i < 2; i++) {
 			h_fmt(h, "<fieldset><legend>");
 			snprintf(n, sizeof(n), "ch%d", i);
-			check_in(h, chn[i], n, c->ch[i]);
+			check_in(h, c->tmpl[0] != '\0' ? (i == 0 ? "IPv4 of its "
+			    "own, not the template's" : "IPv6 of its own, not the "
+			    "template's") : chn[i], n, c->ch[i]);
 			h_raw(h, "</legend><div class=\"two\">");
 			snprintf(n, sizeof(n), "imp%d", i);
 			filter_in(h, "Import", n, c->imp[i], filters);
@@ -659,7 +740,11 @@ bf_fields(struct html *h, const struct bfconf *c, const char *const *filters,
 		filter_in(h, "Import", "imp0", c->imp[0], filters);
 		filter_in(h, "Export", "exp0", c->exp[0], filters);
 		h_raw(h, "</div>");
+		h_raw(h, "<div class=\"two\">");
 		text_in(h, "Area", "area", c->area, "0, or 0.0.0.1", NULL);
+		tri_in(h, "ECMP: routes over several next hops", "ecmp",
+		    c->ecmp, "BIRD's default");
+		h_raw(h, "</div>");
 		h_raw(h, "<table class=\"bf-rows\"><thead><tr><th>Interface"
 		    "</th><th>Cost</th><th>Type</th><th>Hello (s)</th><th>"
 		    "Dead (s)</th><th>BFD</th><th>Stub</th></tr></thead>"
@@ -697,6 +782,21 @@ bf_fields(struct html *h, const struct bfconf *c, const char *const *filters,
 		    "pattern; a row left empty is none. Stub: the network is "
 		    "announced, but no neighbour is looked for on it.</small>");
 		return;
+	}
+	{
+		static const char *const acc[] = { "", "ipv4", "ipv6",
+		    "direct", "multihop", "ipv4 direct", "ipv4 multihop",
+		    "ipv6 direct", "ipv6 multihop" };
+
+		h_raw(h, "<label>Sessions it accepts<select name=\"accept\">");
+		for (i = 0; i < 9; i++) {
+			h_raw(h, "<option");
+			h_attr(h, "value", acc[i]);
+			h_fmt(h, "%s>%s</option>", strcmp(c->accept, acc[i]) ==
+			    0 ? " selected" : "", i == 0 ? "any (BIRD's default)" :
+			    acc[i]);
+		}
+		h_raw(h, "</select></label>");
 	}
 	h_raw(h, "<table class=\"bf-rows\"><thead><tr><th>Interface</th><th>"
 	    "Min rx (ms)</th><th>Min tx (ms)</th><th>Multiplier</th></tr>"
@@ -846,9 +946,27 @@ copy(char *dst, size_t len, const char *src)
 } while (0)
 
 /* The form as filled, checked; NULL with err said when it is not. */
+static int
+tri(const ucl_object_t *f, const char *key)
+{
+
+	return (strcmp(field(f, key), "on") == 0 ? 1 : strcmp(field(f, key),
+	    "off") == 0 ? 0 : -1);
+}
+
+static bool
+listed(const char *s, const char *const *v)
+{
+
+	for (; v != NULL && *v != NULL; v++)
+		if (strcmp(s, *v) == 0)
+			return (true);
+	return (false);
+}
+
 struct bfconf *
 bf_read(const char *kind, const ucl_object_t *f, const char *const *filters,
-    char *err, size_t len)
+    const char *const *templates, char *err, size_t len)
 {
 	struct bfconf	*c;
 	char		 k[16];
@@ -869,8 +987,12 @@ bf_read(const char *kind, const ucl_object_t *f, const char *const *filters,
 		copy(c->src, sizeof(c->src), field(f, "src"));
 		copy(c->multihop, sizeof(c->multihop), field(f, "mh"));
 		snprintf(c->pass, sizeof(c->pass), "%s", field(f, "pass"));
-		c->bfd = jbool(f, "bfd");
-		c->passive = jbool(f, "passive");
+		snprintf(c->tmpl, sizeof(c->tmpl), "%s", field(f, "tmpl"));
+		if (c->tmpl[0] != '\0' && !listed(c->tmpl, templates))
+			FAIL("The template is one of the file's BGP templates.");
+		c->bfd = tri(f, "bfd");
+		c->passive = tri(f, "passive");
+		c->efa = tri(f, "efa");
 		if (!words_ok(c->desc) || !words_ok(c->pass))
 			FAIL("The description and the password take no \" "
 			    "or \\.");
@@ -878,9 +1000,13 @@ bf_read(const char *kind, const ucl_object_t *f, const char *const *filters,
 			FAIL("The neighbour's address is an IPv4 or IPv6 "
 			    "address; a link-local one with its interface, "
 			    "fe80::1%%em0.");
-		if (!as_ok(c->nas) || !as_ok(c->las))
-			FAIL("An AS is a number from 1 to 4294967295, or a "
-			    "name the file defines.");
+		if ((c->nas[0] != '\0' || c->tmpl[0] == '\0') && !as_ok(c->nas))
+			FAIL("The neighbour's AS is a number from 1 to "
+			    "4294967295, or a name the file defines.");
+		if ((c->las[0] != '\0' || c->tmpl[0] == '\0') && !as_ok(c->las))
+			FAIL("The local AS is a number from 1 to 4294967295, or "
+			    "a name the file defines%s.", c->tmpl[0] == '\0' ?
+			    "; without a template it is to be said" : "");
 		if (c->src[0] != '\0' && !addr_ok(c->src, false))
 			FAIL("The source address is an address of this "
 			    "host's.");
@@ -907,7 +1033,7 @@ bf_read(const char *kind, const ucl_object_t *f, const char *const *filters,
 				FAIL("Import and export are all, none, or a "
 				    "filter of the file.");
 		}
-		if (!c->ch[0] && !c->ch[1])
+		if (!c->ch[0] && !c->ch[1] && c->tmpl[0] == '\0')
 			FAIL("A session carries IPv4 routes, IPv6 routes or "
 			    "both.");
 		return (c);
@@ -925,6 +1051,7 @@ bf_read(const char *kind, const ucl_object_t *f, const char *const *filters,
 			FAIL("Import and export are all, none, or a filter "
 			    "of the file.");
 		copy(c->area, sizeof(c->area), field(f, "area"));
+		c->ecmp = tri(f, "ecmp");
 		if (!num_ok(c->area, 0, 4294967295LL, false)) {
 			unsigned char raw[4];
 
@@ -1014,6 +1141,14 @@ bf_read(const char *kind, const ucl_object_t *f, const char *const *filters,
 			    "local address, to be given.");
 		c->nnbrs++;
 	}
+	snprintf(c->accept, sizeof(c->accept), "%s", field(f, "accept"));
+	if (c->accept[0] != '\0' && strcmp(c->accept, "ipv4") != 0 &&
+	    strcmp(c->accept, "ipv6") != 0 && strcmp(c->accept, "direct") != 0 &&
+	    strcmp(c->accept, "multihop") != 0 && strcmp(c->accept,
+	    "ipv4 direct") != 0 && strcmp(c->accept, "ipv4 multihop") != 0 &&
+	    strcmp(c->accept, "ipv6 direct") != 0 && strcmp(c->accept,
+	    "ipv6 multihop") != 0)
+		FAIL("What BFD accepts is IPv4 or IPv6, direct or multihop.");
 	if (c->nifs == 0 && c->nnbrs == 0)
 		FAIL("BFD needs an interface or a neighbour.");
 	return (c);
@@ -1030,11 +1165,14 @@ bf_text(const struct bfconf *c)
 
 	memset(&h, 0, sizeof(h));
 	if (strcmp(c->kind, "bgp") == 0) {
-		h_fmt(&h, "protocol bgp %s {\n", c->name);
+		h_fmt(&h, "protocol bgp %s%s%s {\n", c->name, c->tmpl[0] != '\0' ?
+		    " from " : "", c->tmpl);
 		if (c->desc[0] != '\0')
 			h_fmt(&h, "\tdescription \"%s\";\n", c->desc);
-		h_fmt(&h, "\tlocal as %s;\n\tneighbor %s as %s;\n", c->las,
-		    c->nbr, c->nas);
+		if (c->las[0] != '\0')
+			h_fmt(&h, "\tlocal as %s;\n", c->las);
+		h_fmt(&h, "\tneighbor %s%s%s;\n", c->nbr, c->nas[0] != '\0' ?
+		    " as " : "", c->nas);
 		if (c->src[0] != '\0')
 			h_fmt(&h, "\tsource address %s;\n", c->src);
 		if (strcmp(c->multihop, "0") == 0)
@@ -1044,10 +1182,13 @@ bf_text(const struct bfconf *c)
 		if (c->pass[0] != '\0')
 			h_fmt(&h, "\tauthentication md5;\n\tpassword \"%s\";\n",
 			    c->pass);
-		if (c->bfd)
-			h_raw(&h, "\tbfd on;\n");
-		if (c->passive)
-			h_raw(&h, "\tpassive on;\n");
+		if (c->bfd >= 0)
+			h_fmt(&h, "\tbfd %s;\n", c->bfd ? "on" : "off");
+		if (c->passive >= 0)
+			h_fmt(&h, "\tpassive %s;\n", c->passive ? "on" : "off");
+		if (c->efa >= 0)
+			h_fmt(&h, "\tenforce first as %s;\n", c->efa ? "on" :
+			    "off");
 		for (i = 0; i < 2; i++) {
 			if (!c->ch[i])
 				continue;
@@ -1061,8 +1202,10 @@ bf_text(const struct bfconf *c)
 			h_raw(&h, "\t};\n");
 		}
 	} else if (strcmp(c->kind, "ospf") == 0) {
-		h_fmt(&h, "protocol ospf %s %s {\n\t%s {\n", c->ver, c->name,
-		    chn[c->chan]);
+		h_fmt(&h, "protocol ospf %s %s {\n", c->ver, c->name);
+		if (c->ecmp >= 0)
+			h_fmt(&h, "\tecmp %s;\n", c->ecmp ? "yes" : "no");
+		h_fmt(&h, "\t%s {\n", chn[c->chan]);
 		if (c->imp[0][0] != '\0')
 			h_fmt(&h, "\t\timport %s;\n", c->imp[0]);
 		if (c->exp[0][0] != '\0')
@@ -1094,6 +1237,8 @@ bf_text(const struct bfconf *c)
 		h_raw(&h, "\t};\n");
 	} else {
 		h_fmt(&h, "protocol bfd %s {\n", c->name);
+		if (c->accept[0] != '\0')
+			h_fmt(&h, "\taccept %s;\n", c->accept);
 		for (i = 0; i < c->nifs; i++) {
 			x = &c->ifs[i];
 			if (x->rx[0] == '\0' && x->tx[0] == '\0' &&
@@ -1102,10 +1247,17 @@ bf_text(const struct bfconf *c)
 				continue;
 			}
 			h_fmt(&h, "\tinterface \"%s\" {\n", x->name);
-			if (x->rx[0] != '\0')
-				h_fmt(&h, "\t\tmin rx interval %s ms;\n", x->rx);
-			if (x->tx[0] != '\0')
-				h_fmt(&h, "\t\tmin tx interval %s ms;\n", x->tx);
+			/* One interval for both, as it is often said. */
+			if (x->rx[0] != '\0' && strcmp(x->rx, x->tx) == 0)
+				h_fmt(&h, "\t\tinterval %s ms;\n", x->rx);
+			else {
+				if (x->rx[0] != '\0')
+					h_fmt(&h, "\t\tmin rx interval %s ms;\n",
+					    x->rx);
+				if (x->tx[0] != '\0')
+					h_fmt(&h, "\t\tmin tx interval %s ms;\n",
+					    x->tx);
+			}
 			if (x->mult[0] != '\0')
 				h_fmt(&h, "\t\tmultiplier %s;\n", x->mult);
 			h_raw(&h, "\t};\n");
@@ -1136,10 +1288,14 @@ bf_summary(char *buf, size_t len, const struct bfconf *c)
 		snprintf(ifs + strlen(ifs), sizeof(ifs) - strlen(ifs), "%s%s",
 		    i > 0 ? ", " : "", c->ifs[i].name);
 	if (strcmp(c->kind, "bgp") == 0)
-		snprintf(buf, len, "%s%s → %s %s%s%s%s", isdigit((unsigned
-		    char)c->las[0]) ? "AS" : "", c->las, c->nbr,
-		    isdigit((unsigned char)c->nas[0]) ? "AS" : "", c->nas, c->bfd ? " · BFD" : "", c->ch[0] && c->ch[1] ?
-		    " · IPv4, IPv6" : c->ch[1] ? " · IPv6" : " · IPv4");
+		snprintf(buf, len, "%s%s%s%s%s%s → %s%s%s%s%s", c->tmpl,
+		    c->tmpl[0] != '\0' ? " · " : "", isdigit((unsigned
+		    char)c->las[0]) ? "AS" : "", c->las, c->las[0] != '\0' ?
+		    " " : "", "", c->nbr, c->nas[0] != '\0' ? (isdigit(
+		    (unsigned char)c->nas[0]) ? " AS" : " ") : "", c->nas,
+		    c->bfd == 1 ? " · BFD" : "", c->ch[0] && c->ch[1] ?
+		    " · IPv4, IPv6" : c->ch[1] ? " · IPv6" : c->ch[0] ?
+		    " · IPv4" : "");
 	else if (strcmp(c->kind, "ospf") == 0)
 		snprintf(buf, len, "OSPF%s area %s · %s", c->ver, c->area, ifs);
 	else

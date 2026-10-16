@@ -4918,3 +4918,8 @@ table.bf-rows input:not([type=checkbox]), table.bf-rows select { width: 100%; mi
 @media (max-width: 640px) {
 	table.bf-rows { display: block; overflow-x: auto; }
 }
+form.bf .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 .8rem; }
+@media (max-width: 640px) {
+	form.bf .three { grid-template-columns: 1fr; }
+}
+form.bf .two, form.bf .three { align-items: start; }
