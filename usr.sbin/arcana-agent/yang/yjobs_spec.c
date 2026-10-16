@@ -23,7 +23,7 @@ static const char *const bird_verb[] = {
 	"enable", "disable", "restart", "reload", "configure",
 };
 static const char *const kmod_verb[] = {
-	"load", "unload",
+	"load", "unload", "keep", "forget",
 };
 static const char *const ipsec_sa_verb[] = {
 	"key", "set", "derive", "commit", "clear",

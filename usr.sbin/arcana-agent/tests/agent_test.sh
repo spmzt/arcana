@@ -3246,6 +3246,15 @@ EOS
 	atf_check -o match:'done +kldunload sctp \(kept\)' \
 	    -o match:'fake-kldunload sctp' "$JGC" -p -c "$SOCK" kmod unload sctp
 	atf_check -o match:'^kld_list="if_bridge"$' cat rc.conf
+	# Kept at boot, and taken out, the kernel as it is: no kldload.
+	: > kld.log
+	atf_check -o match:'done +sctp into kld_list$' \
+	    "$JGC" -c "$SOCK" kmod keep sctp
+	atf_check -o match:'^kld_list="if_bridge sctp"$' cat rc.conf
+	atf_check -o match:'done +sctp out of kld_list$' \
+	    "$JGC" -c "$SOCK" kmod forget sctp
+	atf_check -o match:'^kld_list="if_bridge"$' cat rc.conf
+	atf_check -o empty cat kld.log
 	atf_check -s exit:1 -o match:'Device busy' \
 	    "$JGC" -c "$SOCK" kmod unload zfs
 	atf_check -s exit:1 -o match:'No such file' \

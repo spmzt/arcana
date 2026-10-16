@@ -2441,8 +2441,10 @@ check_spec(const struct arc_job_spec *sp)
 		if (sp->jail != NULL && sp->jail[0] != '\0')
 			return ("a jail has no kernel of its own");
 		if (sp->verb == NULL || (strcmp(sp->verb, "load") != 0 &&
-		    strcmp(sp->verb, "unload") != 0))
-			return ("a module is loaded or unloaded: load, unload");
+		    strcmp(sp->verb, "unload") != 0 && strcmp(sp->verb,
+		    "keep") != 0 && strcmp(sp->verb, "forget") != 0))
+			return ("a module is loaded, unloaded, kept or "
+			    "forgotten: load, unload, keep, forget");
 		if (sp->names.n != 1 || !kmod_name_ok(sp->names.v[0]))
 			return ("name one module, as kldload(8) finds it, "
 			    "without a path: letters, digits and . _ -");

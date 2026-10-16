@@ -215,7 +215,10 @@ title_of(const struct arc_job_spec *sp)
 		    " " : "", sp->names.n > 0 ? sp->names.v[0] : "");
 		break;
 	case ARC_JOB_KIND_KMOD:
-		rc = asprintf(&t, "kld%s %s%s", sp->verb, sp->names.v[0],
+		rc = strcmp(sp->verb, "keep") == 0 || strcmp(sp->verb,
+		    "forget") == 0 ? asprintf(&t, "%s %s kld_list",
+		    sp->names.v[0], sp->verb[0] == 'k' ? "into" : "out of") :
+		    asprintf(&t, "kld%s %s%s", sp->verb, sp->names.v[0],
 		    sp->persist ? " (kept)" : "");
 		break;
 	case ARC_JOB_KIND_RTADVD:
@@ -539,8 +542,15 @@ undo_prepare(struct qjob *j)
 			j->undo_none = true;
 		break;
 	case ARC_JOB_KIND_KMOD:
-		/* One that was in already, or out, is left so. */
-		if (kmod_loaded(sp->names.v[0]) == (strcmp(sp->verb,
+		/* One that was in already, or out, is left so: in the
+		 * kernel for load and unload, in kld_list for keep and
+		 * forget. */
+		if (strcmp(sp->verb, "keep") == 0 || strcmp(sp->verb,
+		    "forget") == 0) {
+			if (kld_listed(&j->w, sp->names.v[0]) == (sp->verb[0] ==
+			    'k'))
+				j->undo_none = true;
+		} else if (kmod_loaded(sp->names.v[0]) == (strcmp(sp->verb,
 		    "load") == 0))
 			j->undo_none = true;
 		break;
@@ -724,8 +734,12 @@ undo(struct qjob *j)
 		    sp->persist, &e);
 		break;
 	case ARC_JOB_KIND_KMOD:
+		/* Each verb's opposite: load and unload, keep and
+		 * forget. */
 		rc = do_kmod(&j->w, strcmp(sp->verb, "load") == 0 ? "unload" :
-		    "load", sp->names.v[0], sp->persist, &e);
+		    strcmp(sp->verb, "unload") == 0 ? "load" : strcmp(sp->verb,
+		    "keep") == 0 ? "forget" : "keep", sp->names.v[0],
+		    sp->persist, &e);
 		break;
 	case ARC_JOB_KIND_NTP:
 		rc = do_ntp(&j->w, NULL, 0, true, sp->persist, &e);

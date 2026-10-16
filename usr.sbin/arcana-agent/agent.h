@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.126.1"
+#define	ARCANA_AGENT_VERSION	"0.127.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -441,6 +441,7 @@ int		 do_bird_routes(struct work *, const char *,
 		    struct arc_network_rsp *);
 /* superbia/kernel.c: the kernel's modules and memory. */
 int		 do_kernel(struct work *, struct arc_kernel_rsp *);
+bool		 kld_listed(struct work *, const char *);
 int		 do_kmod(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 kmod_name_ok(const char *);

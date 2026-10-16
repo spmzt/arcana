@@ -184,7 +184,7 @@ usage(void)
 	    "    bird routes [prefix | for address] [protocol | export name]\n"
 	    "        [table name] [all]\n"
 	    "    stats\n"
-	    "    kmod [load | unload module]\n"
+	    "    kmod [load | unload | keep | forget module]\n"
 	    "    jailconf make jail file [dataset snapshot clone|send path] "
 	    "[start]\n"
 	    "    jailconf edit jail file | remove jail [dataset] |\n"
@@ -1938,6 +1938,7 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 /*
  * kmod: the kernel's modules and its memory, as the host says them.
  * kmod load | unload module: a job; with -p also in rc.conf's kld_list.
+ * kmod keep | forget module: rc.conf's kld_list alone, the kernel as is.
  */
 /* ntp server...; ntp remove: the NTP servers of the host. */
 static int
@@ -2461,7 +2462,8 @@ cmd_kmod(struct arc_client *cl, int argc, char **argv)
 	int			 error;
 
 	if (argc == 3 && (strcmp(argv[1], "load") == 0 || strcmp(argv[1],
-	    "unload") == 0)) {
+	    "unload") == 0 || strcmp(argv[1], "keep") == 0 || strcmp(argv[1],
+	    "forget") == 0)) {
 		memset(&sp, 0, sizeof(sp));
 		sp.has_kind = true;
 		sp.kind = ARC_JOB_KIND_KMOD;

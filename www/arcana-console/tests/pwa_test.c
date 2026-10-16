@@ -3339,6 +3339,28 @@ part_storage(void)
 	wait_js("document.querySelector('.notice.info') && document."
 	    "querySelector('.notice.info').textContent.includes('if_disc')", 20);
 	run("document.querySelector('.dock > header').click()");
+	/* Out of kld_list from the notice, the kernel as it is; and one
+	 * loaded kept at boot by its row's button, not loaded again. */
+	run("document.querySelector('.notice.info button[data-act=kmod-forget]"
+	    "[data-arg=if_disc]').click()");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('if_disc out of kld_list'))", 20);
+	ATF_CHECK(system("! grep -q 'if_disc' rc.conf") == 0);
+	run("document.querySelector('.dock > header').click()");
+	wait_js("document.querySelector('table.kmods button[data-act="
+	    "kmod-keep]')", 20);
+	run("window.kept = document.querySelector('table.kmods button[data-act="
+	    "kmod-keep]').dataset.arg; document.querySelector('table.kmods "
+	    "button[data-act=kmod-keep]').click()");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes(window.kept + ' into kld_list')) && "
+	    "document.querySelector('table.kmods button.on[data-act="
+	    "kmod-forget][data-arg=\"' + window.kept + '\"]')", 20);
+	ATF_CHECK(system("grep -q '^kld_list=' rc.conf && test \"$(grep -c "
+	    "'^kldload' kld.log)\" = 1") == 0);
+	run("document.querySelector('.dock > header').click()");
 	/* One that is in is unloaded once its name is typed. */
 	run("window.kld = [...document.querySelectorAll('table.kmods button"
 	    "[data-act=kmod-unload]')][0].dataset.arg; document.querySelector("
