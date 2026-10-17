@@ -994,12 +994,10 @@
 
 Written and tested with stand-ins, never run for real:
 
-- On a host itself, as root: what of an interface is kept in rc.conf
-  (done for real only in a vnet jail, below), and a static route kept
-  there. A route in another routing table: the one tried was refused
-  by the kernel, its gateway not being reached in that table, which
-  came through as route(8) says it. Whether the address named to send
-  from is the one a route then uses: route(8) took it.
+- A route in another routing table: the one tried was refused by the
+  kernel, its gateway not being reached in that table, which came
+  through as route(8) says it. Whether the address named to send from
+  is the one a route then uses: route(8) took it.
 - Nodes of the map that move away from the pointer, as was reported
   from a browser that is not the one the tests run: not reproduced. A
   real mouse in headless Chromium keeps a host under it for every
@@ -1008,8 +1006,6 @@ Written and tested with stand-ins, never run for real:
   about when a host is moved, and the drawing is as large as its room.
 - The network map with real tunnels between real hosts: the test has two
   names for one agent, so its links are the networks they share.
-- wg-quick(8): the tests use stand-ins (wg(8) and birdc(8) were run
-  for real, below).
 - A vnet jail's network. Run for real, against the jail `gateway` of
   one host: its interfaces, routes, route lookup and BIRD read; an
   address added and removed; an interface brought up; a new epair
@@ -1047,6 +1043,20 @@ Written and tested with stand-ins, never run for real:
 
 What was once in the list above, and when it was run:
 
+- Kept in rc.conf on a host itself, and wg-quick(8) for real
+  (2026-10-17, the lab VM as root, its /etc/rc.conf kept first and put
+  back byte for byte): an interface's address and a static route kept
+  by -p (ifconfig_<if>_alias0, static_routes and its route_), taken
+  off by hand and put back by the base system's own rc.d netif and
+  routing; a WireGuard interface made, keyed, addressed and peered
+  with -p, a ping through it to a vnet jail's end, rc.conf with
+  wireguard_enable and wireguard_interfaces and no ifconfig_ of its
+  own, and the file written for wg-quick with its Address, MTU, port,
+  key and peer.  The interface destroyed as at a boot, the real
+  wg-quick (wireguard-tools 1.0.20260223, fetched, not installed)
+  made it again from that file, its route to the peer too, and the
+  ping went through.  wg-quick on FreeBSD leaves a route monitor
+  running in the background, as it should.
 - BIRD's forms against the real BIRD (2026-10-17): every
   configuration the console's BIRD forms and SD-WAN write is taken or
   refused by BIRD 3.3.2's own parser (bird -p) in the tests where the
