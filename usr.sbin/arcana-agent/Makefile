@@ -12,7 +12,7 @@ SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c fwm
 # needs no libyang; "make regen-yang" refreshes them.
 SRCS+=		ymodel_schema.c
 # Luxuria: what is not FreeBSD's own, the plugins.
-SRCS+=		bird.c birdwatch.c ybird.c ywg.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c telegram.c wireguard.c poudriere.c ybuilder.c
+SRCS+=		bird.c birdwatch.c ybird.c ywg.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c telegram.c wireguard.c poudriere.c ybuilder.c snort.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c packages.c \
 		services.c update.c yjails.c yjf.c yjobs.c ypackages.c yservices.c
@@ -43,14 +43,18 @@ LDADD+=		-lfetch -ljail -lgeom -lmemstat -lprocstat -ldevstat -lnv -lutil -lpthr
 # is missing, not at the first call to it, detached, its stderr closed.
 LDFLAGS+=	-Wl,-z,now
 
-# The rc.d(8) script.
+# The rc.d(8) scripts: the agent's, and Snort's, which its package has
+# none of.
 FILESGROUPS+=	RC
-RC=		arcana_agent.sh
+RC=		arcana_agent.sh arcana_snort.sh
 RCDIR=		${PREFIX}/etc/rc.d
-RCNAME=		arcana_agent
+RCNAME_arcana_agent.sh=	arcana_agent
+RCNAME_arcana_snort.sh=	arcana_snort
 RCMODE=		0555
-CLEANFILES+=	arcana_agent.sh
+CLEANFILES+=	arcana_agent.sh arcana_snort.sh
 arcana_agent.sh: arcana_agent.in
+	sed -e 's|%%PREFIX%%|${PREFIX}|g' ${.ALLSRC} > ${.TARGET}
+arcana_snort.sh: arcana_snort.in
 	sed -e 's|%%PREFIX%%|${PREFIX}|g' ${.ALLSRC} > ${.TARGET}
 
 # The modules, their features, their .sid files: what ymodel.h and

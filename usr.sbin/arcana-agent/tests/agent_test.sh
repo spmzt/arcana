@@ -5256,6 +5256,162 @@ carp_cleanup()
 	stop_daemon
 }
 
+atf_test_case snort cleanup
+snort_head()
+{
+	atf_set "descr" "Snort, a plugin: read as it is; its rules fetched" \
+	    "and taken in, turned on and off across updates, local.rules and" \
+	    "snort.lua written, each checked by snort -T first; its rc.conf" \
+	    "settings and HOME_NET; its alerts; a running one reloaded"
+}
+snort_body()
+{
+	local d="$(pwd)" sleeper
+
+	mkdir -p se sl src/snort3-community-rules
+	printf "HOME_NET = 'any'\nEXTERNAL_NET = 'any'\ninclude 'snort_defaults.lua'\n" \
+	    > se/snort.lua
+	# Rules as Talos ships them: one on, one off as shipped, a msg
+	# with a ; in it, and a file that is not rules.
+	cat > src/snort3-community-rules/snort3-community.rules <<'EOR'
+# Copyright 2001-2026 Cisco Systems, Inc. and/or its affiliates
+alert tcp $HOME_NET 2589 -> $EXTERNAL_NET any ( msg:"MALWARE-BACKDOOR - Dagger_1.4.0"; flow:to_client,established; classtype:misc-activity; sid:105; rev:14; )
+# alert icmp any any -> any any ( msg:"PROTOCOL-ICMP lab; with a semicolon"; itype:8; classtype:misc-activity; sid:106; rev:3; )
+alert udp any any -> any 53 ( msg:"lab dns"; gid:1; sid:107; rev:1; )
+EOR
+	printf 'just a license\n' > src/snort3-community-rules/LICENSE
+	tar -czf rules.tar.gz -C src snort3-community-rules
+	# snort: -V; -T refuses snort.lua with "broken" in it and a rule
+	# with an option it does not know, as the real one says it.
+	cat > fake-snort <<EOS
+#!/bin/sh
+echo "snort \$*" >> $d/snort.log
+[ "\$1" = -V ] && { printf '\n   ,,_     -*> Snort++ <*-\n  o"  )~   Version 3.12.2.0\n'; exit 0; }
+lua=; top=
+while [ \$# -gt 0 ]; do case \$1 in -c) lua=\$2; shift ;; -R) top=\$2; shift ;; esac; shift; done
+grep -q broken "\$lua" && { echo "ERROR: \$lua:4 broken: not Lua"; echo "FATAL: see prior 1 errors (0 warnings)"; exit 1; }
+if [ -n "\$top" ]; then
+	for f in \$(sed -n 's/^include //p' "\$top"); do
+		if grep -q '^[^#].*nosuchopt' "\$f"; then
+			echo "ERROR: \$f:1 unknown rule keyword: nosuchopt."
+			echo "FATAL: see prior 1 errors (0 warnings)"
+			exit 1
+		fi
+	done
+fi
+echo "Snort successfully validated the configuration (with 0 warnings)."
+EOS
+	chmod +x fake-snort
+	DAEMON_ARGS="--snort $d/no-snort --snort-etc $d/se --snort-log $d/sl"
+	start_daemon
+	# Not installed: said, and nothing done.
+	atf_check -o match:'"installed":false' "$JGC" -c "$SOCK" snort
+	atf_check -s exit:1 -o match:'failed +snort update: .*pkg install snort3' \
+	    -e ignore "$JGC" -c "$SOCK" snort update
+	stop_daemon
+	DAEMON_ARGS="--snort $d/fake-snort --snort-etc $d/se --snort-log $d/sl"
+	start_daemon
+	atf_check -o match:'"installed":true' -o match:'"version":"3.12.2.0"' \
+	    -o match:'"running":false' -o match:'"home_net":"any"' \
+	    -o match:'"rc":\{"enable":false,"mode":"ids","interfaces":"","divert_port":"8000"\}' \
+	    -o match:'no rules taken in yet' \
+	    -o match:'"default_url":"https://www.snort.org/downloads/community/snort3-community-rules.tar.gz"' \
+	    "$JGC" -c "$SOCK" snort
+	# Words it does not take, and a jail's: refused before they run.
+	atf_check -s exit:1 -e match:'each gid:sid' -o ignore \
+	    "$JGC" -c "$SOCK" snort rule off=105
+	atf_check -s exit:1 -e match:'mode is ids or ips' -o ignore \
+	    "$JGC" -c "$SOCK" snort set mode=both
+	atf_check -s exit:1 -e match:"Snort is the host's" -o ignore \
+	    "$JGC" -c "$SOCK" -j web snort update
+	atf_check -s exit:1 -e match:'http, https or file' -o ignore \
+	    "$JGC" -c "$SOCK" snort update url=ftp://example.org/x.tar.gz
+	# Fetched, taken in: the rules file of the archive, not its license.
+	atf_check -o match:'done +snort update url=file://' \
+	    "$JGC" -c "$SOCK" snort update "url=file://$d/rules.tar.gz"
+	atf_check -o match:"\"url\":\"file://$d/rules.tar.gz\"" \
+	    -o match:"\"sha256\":\"$(sha256 -q rules.tar.gz)\"" \
+	    -o match:'"files":\[\{"name":"snort3-community.rules","rules":3,"on":2\}\],"rules":3,"on":2' \
+	    -o not-match:'no rules taken in yet' "$JGC" -c "$SOCK" snort
+	atf_check -o match:"^include $d/se/arcana/active/snort3-community.rules\$" \
+	    cat se/arcana/arcana.rules
+	atf_check -o match:"-R $d/se/arcana/arcana.rules.check -T" cat snort.log
+	# Every rule, with what a ; inside quotes does not cut.
+	atf_check -o match:'"gid":1,"sid":106,"rev":3,"msg":"PROTOCOL-ICMP lab; with a semicolon","action":"alert","class":"misc-activity","file":"snort3-community.rules","on":false,"default":false' \
+	    -o match:'"sid":105,"rev":14,.*"on":true,"default":true' \
+	    "$JGC" -c "$SOCK" snort rules
+	# A Snort running: told to reload by each change (a sleep, here,
+	# which SIGHUP ends).
+	sleep 60 &
+	sleeper=$!
+	echo $sleeper > sl/snort.pid
+	atf_check -o match:'"running":true' -o match:"\"pid\":$sleeper" \
+	    "$JGC" -c "$SOCK" snort
+	# 105 off, 106 on: the active file says so, the downloaded one not.
+	atf_check -o match:'done +snort rule off=1:105' \
+	    "$JGC" -c "$SOCK" snort rule off=1:105 on=1:106
+	atf_check -o match:'^# alert tcp .*sid:105;' \
+	    -o match:'^alert icmp any .*sid:106;' \
+	    cat se/arcana/active/snort3-community.rules
+	atf_check -o match:'^alert tcp .*sid:105;' \
+	    cat se/arcana/rules/snort3-community.rules
+	atf_check -o inline:'1:105 off\n1:106 on\n' cat se/arcana/rule-state
+	for i in $(seq 1 50); do kill -0 $sleeper 2>/dev/null || break; sleep 0.1; done
+	atf_check -s not-exit:0 -e ignore kill -0 $sleeper
+	# Updated again, from where it last came: the choices hold.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort update
+	atf_check -o match:'"sid":105,[^}]*"on":false,"default":true' \
+	    -o match:'"sid":106,[^}]*"on":true,"default":false' \
+	    "$JGC" -c "$SOCK" snort rules
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort rule default=1:106
+	atf_check -o inline:'1:105 off\n' cat se/arcana/rule-state
+	# local.rules: one Snort refuses is not written; one it takes is,
+	# and included.
+	printf 'alert icmp any any -> any any (msg:"bad"; nosuchopt:1; sid:1000009;)\n' > bad.rules
+	atf_check -s exit:1 -o match:'snort does not take it: ERROR: .*unknown rule keyword: nosuchopt' \
+	    -e ignore "$JGC" -c "$SOCK" snort conf local.rules bad.rules
+	atf_check -s exit:1 test -e se/local.rules
+	printf 'alert icmp any any -> any any (msg:"lab probe seen"; sid:1000001; rev:2;)\n' > good.rules
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort conf local.rules good.rules
+	atf_check -o match:"^include $d/se/local.rules\$" cat se/arcana/arcana.rules
+	# Once included, a bad one is still checked, and refused.
+	atf_check -s exit:1 -o match:'unknown rule keyword: nosuchopt' -e ignore \
+	    "$JGC" -c "$SOCK" snort conf local.rules bad.rules
+	atf_check -o match:'lab probe seen' -o not-match:nosuchopt cat se/local.rules
+	atf_check -o match:'"sid":1000001,"rev":2,"msg":"lab probe seen",[^}]*"file":"local.rules","on":true' \
+	    -o match:'"local_rules":"alert icmp' "$JGC" -c "$SOCK" snort rules
+	# snort.lua: refused as Snort refuses it, kept as it was.
+	printf "HOME_NET = 'any'\nbroken = \n" > bad.lua
+	atf_check -s exit:1 -o match:'ERROR: .*broken: not Lua' -e ignore \
+	    "$JGC" -c "$SOCK" snort conf snort.lua bad.lua
+	atf_check -o match:"^include 'snort_defaults.lua'" cat se/snort.lua
+	# Its settings: rc.conf's, and HOME_NET in snort.lua.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort set enable=yes \
+	    mode=ids interface=lo0 interface=nosuch0 \
+	    'home_net=[192.0.2.0/24,2001:db8::/32]'
+	atf_check -o match:'^arcana_snort_enable="YES"$' \
+	    -o match:'^arcana_snort_mode="ids"$' \
+	    -o match:'^arcana_snort_interfaces="lo0 nosuch0"$' cat rc.conf
+	atf_check -o match:"^HOME_NET = '\[192.0.2.0/24,2001:db8::/32\]'\$" \
+	    -o match:"^EXTERNAL_NET = 'any'" cat se/snort.lua
+	atf_check -o match:'"home_net":"\[192.0.2.0/24,2001:db8::/32\]"' \
+	    -o match:'no interface nosuch0 here' \
+	    -o match:'enabled, not running' "$JGC" -c "$SOCK" snort
+	atf_check -s exit:1 -e match:'home_net is any' -o ignore \
+	    "$JGC" -c "$SOCK" snort set "home_net=10.0.0.0/8'; os.exit()"
+	# Its alerts, the newest first.
+	printf '%s\n%s\n' \
+	    '{ "timestamp" : "10/17-12:00:01.000000", "proto" : "ICMP", "src_addr" : "192.0.2.1", "dst_addr" : "198.51.100.7", "gid" : 1, "sid" : 1000001, "rev" : 2, "msg" : "lab probe seen", "action" : "allow", "class" : "Misc activity", "priority" : 3 }' \
+	    '{ "timestamp" : "10/17-12:00:02.000000", "proto" : "TCP", "src_addr" : "192.0.2.9", "src_port" : 40000, "dst_addr" : "198.51.100.7", "dst_port" : 23, "gid" : 1, "sid" : 105, "rev" : 14, "msg" : "second", "action" : "allow", "class" : "Misc activity", "priority" : 3 }' \
+	    > sl/alert_json.txt
+	atf_check -o match:'"alerts":\[\{"timestamp":"10/17-12:00:02.000000",.*"msg":"second".*\},\{"timestamp":"10/17-12:00:01.000000",.*"msg":"lab probe seen"' \
+	    "$JGC" -c "$SOCK" snort
+}
+snort_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case multicast cleanup
 multicast_head()
 {
@@ -8191,6 +8347,7 @@ atf_init_test_cases()
 	atf_add_test_case carp
 	atf_add_test_case neighbours
 	atf_add_test_case multicast
+	atf_add_test_case snort
 	atf_add_test_case certs
 	atf_add_test_case sshd
 	atf_add_test_case capture

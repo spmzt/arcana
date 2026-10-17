@@ -1153,6 +1153,40 @@ paths:
       responses:
         "200":
           description: The read, under data, with the agent's trace.
+  /api/servers/{server}/snort:
+    get:
+      tags: [servers]
+      summary: Snort 3, the host's IDS/IPS, a plugin
+      description: >-
+        Snort under data: installed, program and version; running and
+        pid; rc, what rc.conf says to arcana_snort, Arcana's rc.d script
+        that runs it (enable, mode ids or ips, interfaces, divert_port);
+        home_net, snort.lua's HOME_NET; conf_file, snort_lua and
+        local_rules, the files' text; source, where the rules came from
+        (url, updated, sha256, or default_url before the first update)
+        with files, each rules file taken in (name, rules, on), and
+        rules and on, their counts; warnings; and alerts, the newest of
+        alert_json.txt first (timestamp, proto, src_addr, src_port,
+        dst_addr, dst_port, gid, sid, rev, msg, action, class,
+        priority). With rules=1, rules too: each of the files taken in
+        and of local.rules (gid, sid, rev, msg, action, class, file, on,
+        default). A change is a job of kind snort, a verb and args
+        key=value: set (enable=yes|no, mode=ids|ips, interface= each,
+        divert_port, home_net), conf (file=snort.lua|local.rules, and
+        text), update (url, else the last one or Snort's community
+        rules), rule (on=, off= or default= gid:sid). Each is checked by
+        snort -T before it replaces what was there; a running Snort is
+        told to reload.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: rules
+          in: query
+          description: 1 for every rule too.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
   /api/servers/{server}/builder/options:
     get:
       tags: [servers]
@@ -1669,7 +1703,7 @@ paths:
                           zpool, mount, gpart, cam, sysctl, ipfw,
                           bridge, geneve, process, pkg-clean, ipsec,
                           pkg-install, ntp, rtadvd, ipsec-sa, jail-conf,
-                          neighbour, cert, ssh, carp, poudriere]
+                          neighbour, cert, ssh, carp, poudriere, snort]
                       jail: { type: string, description: The jail acted on.
                           For a job that changes a network, the vnet jail
                           whose network it is; for if-vnet, the jail the

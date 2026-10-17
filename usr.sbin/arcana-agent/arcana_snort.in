@@ -1,0 +1,96 @@
+#!/bin/sh
+#
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# PROVIDE: arcana_snort
+# REQUIRE: LOGIN ipfw
+# KEYWORD: shutdown
+#
+# Snort 3, an IDS/IPS: the snort3 package has no rc.d script, this is
+# Arcana's, set from its Security page (or by hand).
+#
+# arcana_snort_enable (bool):	Set to "YES" to run Snort.
+# arcana_snort_mode (str):	ids: watching arcana_snort_interfaces, a
+#				copy of what passes; ips: inline, given what
+#				an ipfw divert rule hands its port, passed
+#				back unless a rule drops it.  Default: ids.
+# arcana_snort_interfaces (str): The interfaces watched (ids), separated by
+#				spaces, a packet thread each.
+# arcana_snort_divert_port (int): The divert(4) port taken (ips).
+#				Default: 8000.
+# arcana_snort_conf (str):	Default: %%PREFIX%%/etc/snort/snort.lua
+# arcana_snort_rules (str):	The rules Arcana keeps, given by -R when
+#				there.  Default:
+#				%%PREFIX%%/etc/snort/arcana/arcana.rules
+# arcana_snort_logdir (str):	Its pid file and alert_json.txt.
+#				Default: /var/log/snort
+# arcana_snort_flags (str):	More flags, added to those above.
+
+. /etc/rc.subr
+
+name="arcana_snort"
+rcvar="arcana_snort_enable"
+desc="Snort 3 intrusion detection and prevention"
+
+load_rc_config $name
+
+: ${arcana_snort_enable:="NO"}
+: ${arcana_snort_mode:="ids"}
+: ${arcana_snort_interfaces:=""}
+: ${arcana_snort_divert_port:="8000"}
+: ${arcana_snort_conf:="%%PREFIX%%/etc/snort/snort.lua"}
+: ${arcana_snort_rules:="%%PREFIX%%/etc/snort/arcana/arcana.rules"}
+: ${arcana_snort_logdir:="/var/log/snort"}
+
+command="%%PREFIX%%/bin/snort"
+pidfile="${arcana_snort_logdir}/snort.pid"
+extra_commands="reload"
+sig_reload="HUP"
+start_precmd="arcana_snort_precmd"
+
+# What arcana-agent reads back: the fields of each alert, a line of
+# JSON, rolled over at 10 MB.
+_alerts="alert_json = { file = true, limit = 10, fields = 'timestamp proto src_addr src_port dst_addr dst_port gid sid rev msg action class priority' }"
+
+# The checksum of a packet a NIC offloads is not there yet: -k none.
+command_args="-c ${arcana_snort_conf} -D --create-pidfile -l ${arcana_snort_logdir} -k none -A alert_json --lua \"${_alerts}\""
+if [ -r "${arcana_snort_rules}" ]; then
+	command_args="${command_args} -R ${arcana_snort_rules}"
+fi
+case "${arcana_snort_mode}" in
+ips)
+	required_modules="ipdivert"
+	command_args="${command_args} -Q --daq divert --daq-var port=${arcana_snort_divert_port}"
+	;;
+*)
+	# A packet thread for each; $1 is rc's command, not set here.
+	_n=0
+	for _i in ${arcana_snort_interfaces}; do
+		_n=$((_n + 1))
+	done
+	if [ ${_n} -gt 0 ]; then
+		command_args="${command_args} -i \"${arcana_snort_interfaces}\" -z ${_n}"
+	fi
+	;;
+esac
+
+arcana_snort_precmd()
+{
+	case "${arcana_snort_mode}" in
+	ids)
+		if [ -z "${arcana_snort_interfaces}" ]; then
+			warn "arcana_snort_interfaces is empty: nothing to watch"
+			return 1
+		fi
+		;;
+	ips)
+		;;
+	*)
+		warn "arcana_snort_mode is ids or ips, not ${arcana_snort_mode}"
+		return 1
+		;;
+	esac
+	install -d -m 0750 "${arcana_snort_logdir}"
+}
+
+run_rc_command "$1"

@@ -839,7 +839,16 @@
     public keys kept as /etc/ssh/trusted_user_ca_keys, in the verified
     list.)
   - IDS/IPS by Snort, a plugin (luxuria) as before: Snort and its
-    rules updated and configured from the panel.
+    rules updated and configured from the panel.  (Done 2026-10-18:
+    the Security page's Snort tab; Snort 3 run by Arcana's rc.d
+    script arcana_snort (the package has none), on interfaces or
+    inline behind an ipfw divert rule; its rules fetched by libfetch,
+    Snort's community rules by default, each turned on or off across
+    updates; local.rules, snort.lua, HOME_NET and rc.conf's settings;
+    its alerts; each change checked by snort -T, a running one
+    reloaded.  Against the real Snort 3.12 in the verified list
+    (agent_root_test:snort_live).  Not done: registered rules by an
+    oinkcode, a secret wanted kept as one; ask.)
   - The console clustered; disaster recovery across console clusters.
   - Agents in an HA pair on identical hardware and ports (CARP, the
     state shared), with CARP on its own for a host.  (CARP for a host

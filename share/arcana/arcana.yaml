@@ -380,6 +380,20 @@ definitions:
           made, when none is), each option checked against the port's
           COMPLETE_OPTIONS_LIST; reset takes the file away, the port's
           defaults again.  The host's only; never in safe mode.
+      - name: snort
+        doc: |
+          Snort 3, an IDS/IPS, a plugin run by Arcana's rc.d script
+          arcana_snort: verb and words key=value (names).  set takes
+          enable (yes, no), mode (ids, watching each interface= word;
+          ips, taking what an ipfw divert rule hands divert_port) and
+          home_net (snort.lua's HOME_NET), kept in rc.conf and
+          snort.lua.  conf writes file (snort.lua or local.rules) from
+          text.  update fetches the rules from url (the last one, or
+          Snort's community rules) and takes in each *.rules of the
+          archive.  rule turns rules on= or off= (gid:sid), or back to
+          their own default=, across updates.  Each is checked by snort
+          -T before it replaces what was there, and a running Snort is
+          told to reload.  The host's only; never in safe mode.
   - name: job-state
     type: enum
     entries:
@@ -1471,7 +1485,7 @@ attribute-sets:
           max-len: 15
       - name: verb
         type: text
-        doc: For netgraph, wireguard and bird, what to do.
+        doc: For netgraph, wireguard, bird, poudriere and snort, what to do.
         checks:
           max-len: 16
       - name: peer
@@ -3500,6 +3514,34 @@ operations:
       the port's own options first, then each group, single, radio or
       multi as the port says it ("title"), each option with "name",
       "on" and "description".
+    do:
+      request:
+        attributes:
+          - names
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: snort
+    attribute-set: arcana
+    auth: true
+    doc: |
+      Snort on this host, a plugin, as a JSON object: "installed",
+      "program" and "version"; "running" and "pid"; "rc", what
+      arcana_snort's rc.conf variables say (enable, mode, interfaces,
+      divert_port); "home_net"; "snort_lua" and "local_rules", the
+      files' text; "source", where the rules came from ("url",
+      "updated", "sha256") with each file taken in ("name", "rules",
+      "on"); "warnings", what keeps Snort from doing what it was told;
+      and "alerts", the newest of alert_json.txt first, each with
+      timestamp, proto, src_addr, src_port, dst_addr, dst_port, gid,
+      sid, rev, msg, action, class and priority.  With names "rules",
+      "rules" too: every rule taken in and of local.rules, with gid,
+      sid, rev, msg, action, class, file, "on" and "default" (on as
+      shipped).
     do:
       request:
         attributes:

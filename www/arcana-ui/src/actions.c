@@ -578,6 +578,9 @@ job_finished(struct op *op, bool ok, const char *err)
 	case JOB_BUILDER:
 		builder_refresh();
 		break;
+	case JOB_SNORT:
+		snort_refresh();
+		break;
 	case JOB_PROCESS:
 		refresh_procs(s, true);
 		break;

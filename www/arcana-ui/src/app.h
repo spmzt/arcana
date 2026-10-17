@@ -344,6 +344,7 @@ enum {
 	JOB_CERTS,
 	JOB_SSH,
 	JOB_BUILDER,
+	JOB_SNORT,
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -891,6 +892,14 @@ bool		 secpage_action(const char *, const char *, const char *);
 void		 secpage_loc(char *, size_t);
 void		 secpage_open(const char *);
 void		 secpage_tick(double);
+
+/* snort.c: the Security page's Snort tab. */
+void		 view_snort(struct html *, const char *);
+bool		 snort_form(const char *, const ucl_object_t *);
+bool		 snort_action(const char *, const char *, const char *);
+void		 snort_refresh(void);
+void		 snort_tick(double);
+void		 snort_loc(char *, size_t);
 /* builder.c: the Builder page, poudriere's. */
 void		 view_builder(struct html *);
 bool		 builder_form(const char *, const ucl_object_t *);

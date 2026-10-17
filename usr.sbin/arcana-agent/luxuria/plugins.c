@@ -63,6 +63,7 @@ static const struct {
 	{ "c-icap", &opts.cicap_bin, NULL, NULL },
 	{ "suricata", &opts.suricata_bin, NULL, NULL },
 	{ "poudriere", &opts.poudriere_bin, NULL, NULL },
+	{ "snort", &opts.snort_bin, NULL, NULL },
 };
 
 /*

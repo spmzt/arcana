@@ -248,6 +248,43 @@ variables
 a port's
 .Pq jail= ports= set= origin= and an on= or off= for each, or reset=yes .
 Each is a job.
+.It Cm snort Oo Cm list | Cm rules | Cm conf Cm snort.lua Ns | Ns Cm local.rules Ar file | Ar verb Oo Ar key Ns = Ns Ar value ... Oc Oc
+Snort 3, the host's IDS/IPS, a plugin run by Arcana's
+.Xr rc 8
+script
+.Pa arcana_snort :
+.Cm list
+shows whether it is installed and running, what
+.Xr rc.conf 5
+says of it, its configuration, where its rules came from and its
+newest alerts;
+.Cm rules
+every rule as well, on or off.
+.Cm conf
+writes
+.Pa snort.lua
+or
+.Pa local.rules
+from
+.Ar file .
+The verbs are
+.Cm set
+.Pf ( Cm enable Ns = Ns Cm yes Ns | Ns Cm no ,
+.Cm mode Ns = Ns Cm ids Ns | Ns Cm ips ,
+an
+.Cm interface Ns = Ns Ar name
+for each interface watched,
+.Cm divert_port Ns = Ns Ar port ,
+.Cm home_net Ns = Ns Ar networks ) ,
+.Cm update
+.Pq Cm url Ns = Ns Ar address ,
+Snort's community rules unless given
+and
+.Cm rule
+.Pf ( Cm on Ns = , Cm off Ns = or Cm default Ns = Ns Ar gid : Ns Ar sid ) .
+Each change is checked by
+.Nm snort Fl T
+before it replaces what was there, and a running Snort reloads.
 .It Cm cert Oo Cm list | Cm add Ar name file | Cm remove Ar name | Cm trust Ar file | Cm untrust Ar file | Cm rehash Oc
 The certificates OpenSSL trusts, of the host or of
 .Fl j Ns 's
