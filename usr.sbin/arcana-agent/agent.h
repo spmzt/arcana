@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.137.0"
+#define	ARCANA_AGENT_VERSION	"0.138.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -335,6 +335,9 @@ int		 do_poudriere_job(struct work *, const struct arc_job_spec *,
 char		*poudriere_title(const struct arc_job_spec *);
 struct arc_builder_rsp;
 void		 do_builder(struct work *, struct arc_builder_rsp *);
+struct arc_builder_options_rsp;
+void		 do_builder_options(struct work *, const struct arc_job_spec *,
+		    struct arc_builder_options_rsp *);
 int		 do_ssh_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 int		 ssh_undo(struct work *, const struct arc_job_spec *,

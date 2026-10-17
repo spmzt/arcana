@@ -702,12 +702,12 @@
     SIGINT to its group), writes a make.conf and sets poudriere.conf;
     Debug symbols writes the set's WITH_DEBUG_PORTS before its build.
     Tested with a stand-in poudriere (agent_test:poudriere,
-    pwa_test:pwa_flows), not yet against a real one: Edge-a has one
-    once its agent is 0.137.0.  Still to do: the builder
-    operation as YANG (an arcana-builder module, as notify has none
-    either); a build's failed ports and their logs read in the page;
-    poudriere options (each port's OPTIONS, which poudriere asks by
-    dialog(1)) as a form.
+    pwa_test:pwa_flows), not yet against a real one.  A build's failed ports
+    (phase, reason, the end of their log) and those skipped for them,
+    beneath it; a port's OPTIONS read by make showconfig and set in the
+    options directory the build copies, as a form (both 2026-10-17,
+    agent 0.138.0).  Still to do: the builder operations as YANG (an
+    arcana-builder module, as notify has none either).
 - Asked for on 2026-10-16, in the order they are being done (done ones
   move to their own notes):
   - SD-WAN, adding an edge: a WAN link is not moved from its static

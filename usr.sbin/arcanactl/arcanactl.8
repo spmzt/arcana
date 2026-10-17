@@ -179,12 +179,20 @@ it is added to
 to be loaded at boot, and with
 .Cm forget
 taken out of it: neither loads nor unloads it now.
-.It Cm poudriere Oo Cm list | Cm make-conf Ar name Ns | Ns Cm - Ar file Ns | Ns Cm - | Ar verb Oo Ar key Ns = Ns Ar value ... Oc Oc
+.It Cm poudriere Oo Cm list | Cm show-options Ar key Ns = Ns Ar value ... | Cm make-conf Ar name Ns | Ns Cm - Ar file Ns | Ns Cm - | Ar verb Oo Ar key Ns = Ns Ar value ... Oc Oc
 .Xr poudriere 8 ,
 the host's package builder, a plugin:
 .Cm list
 reads its build jails, ports trees, make.conf files, package
 repositories, the latest builds and the runs the agent started.
+.Cm show-options
+reads a port's options as a build of
+.Cm jail= ,
+.Cm ports=
+and
+.Cm set=
+takes them
+.Pq Cm origin= Ns Ar category/port .
 .Cm make-conf
 writes
 .Pa poudriere.d/ Ns Ar name Ns Pa -make.conf
@@ -224,7 +232,10 @@ remove,
 sets
 .Pa poudriere.conf Ns 's
 variables
-.Pq ZPOOL=zroot ; an empty value unsets one .
+.Pq ZPOOL=zroot ; an empty value unsets one ,
+.Cm options
+a port's
+.Pq jail= ports= set= origin= and an on= or off= for each, or reset=yes .
 Each is a job.
 .It Cm cert Oo Cm list | Cm add Ar name file | Cm remove Ar name | Cm trust Ar file | Cm untrust Ar file | Cm rehash Oc
 The certificates OpenSSL trusts, of the host or of

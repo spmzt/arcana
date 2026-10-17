@@ -19,6 +19,7 @@
  * the build, the two jobs one batch.
  */
 
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,6 +41,11 @@ static struct {
 	char		 makeconf[80];	/* the make.conf the editor has */
 	bool		 newmc;		/* a new one, named in the form */
 	bool		 busy;
+	/* A port's options, as builder/options read them. */
+	ucl_object_t	*opts;
+	char		 optq[512];	/* their query, to read them again */
+	bool		 optloading;
+	char		 opterr[256];
 } bld;
 
 static const char *const tabs[] = { "jails", "ports", "bulk" };
@@ -86,13 +92,48 @@ bld_load(void)
 	api("GET", url, NULL, bld_cb, sid);
 }
 
-/* After a job of the page's: read again. */
+static void
+opts_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	bld.optloading = false;
+	if (bld.opts != NULL)
+		ucl_object_unref(bld.opts);
+	bld.opts = NULL;
+	if (status != 200 || jget(o, "data") == NULL)
+		snprintf(bld.opterr, sizeof(bld.opterr), "%s", err != NULL ? err :
+		    jstr(o, "error") != NULL ? jstr(o, "error") :
+		    "the host did not answer");
+	else {
+		bld.opterr[0] = '\0';
+		bld.opts = ucl_object_copy(jget(o, "data"));
+	}
+	render();
+}
+
+static void
+opts_load(void)
+{
+	char	url[640];
+
+	if (bld.sid[0] == '\0' || bld.optq[0] == '\0')
+		return;
+	snprintf(url, sizeof(url), "/api/servers/%s/builder/options?%s",
+	    bld.sid, bld.optq);
+	bld.optloading = true;
+	api("GET", url, NULL, opts_cb, NULL);
+}
+
+/* After a job of the page's: read again, a port's options too. */
 void
 builder_refresh(void)
 {
 
 	bld.busy = false;
 	bld_load();
+	if (bld.opts != NULL)
+		opts_load();
 }
 
 static struct server *
@@ -676,6 +717,178 @@ makeconf_view(struct html *h)
 	h_raw(h, ">Save</button></div></form>");
 }
 
+/* Beneath a build with ports that failed or were skipped: each, and
+ * the end of each failed one's log. */
+static void
+build_failures(struct html *h, const ucl_object_t *b)
+{
+	const ucl_object_t	*f;
+	ucl_object_iter_t	 it;
+	size_t			 nf, ns;
+
+	nf = ucl_array_size(jget(b, "failed_ports"));
+	ns = ucl_array_size(jget(b, "skipped_ports"));
+	if (nf == 0 && ns == 0)
+		return;
+	h_fmt(h, "<tr class=\"bldfail\"><td colspan=\"10\"><details><summary>"
+	    "%zu failed%s", nf, ns > 0 ? ", " : "");
+	if (ns > 0)
+		h_fmt(h, "%zu skipped for them", ns);
+	h_raw(h, "</summary><ul class=\"bldfailed\">");
+	it = NULL;
+	while ((f = ucl_object_iterate(jget(b, "failed_ports"), &it, true)) !=
+	    NULL) {
+		h_raw(h, "<li><details><summary><b class=\"mono\">");
+		h_txt(h, jstr(f, "origin"));
+		h_raw(h, "</b> <span class=\"mono dim\">");
+		h_txt(h, jstr(f, "package"));
+		h_raw(h, "</span> <span class=\"chip st-down\">");
+		h_txt(h, jstr(f, "phase"));
+		h_raw(h, "</span>");
+		if (jstr(f, "reason") != NULL) {
+			h_raw(h, " <span class=\"chip warn\">");
+			h_txt(h, jstr(f, "reason"));
+			h_raw(h, "</span>");
+		}
+		if (jget(f, "elapsed") != NULL)
+			h_fmt(h, " <span class=\"dim\">after %llds</span>",
+			    (long long)jint(f, "elapsed", 0));
+		h_raw(h, "</summary><pre class=\"bldlog\"");
+		h_attr(h, "title", jstr(f, "log_file"));
+		h_raw(h, ">");
+		h_txt(h, jstr(f, "log") != NULL ? jstr(f, "log") :
+		    "(no log: it failed before it was built)");
+		h_raw(h, "</pre></details></li>");
+	}
+	it = NULL;
+	while ((f = ucl_object_iterate(jget(b, "skipped_ports"), &it, true)) !=
+	    NULL) {
+		h_raw(h, "<li class=\"dim\"><span class=\"mono\">");
+		h_txt(h, jstr(f, "origin"));
+		h_raw(h, "</span> skipped");
+		if (jstr(f, "because") != NULL) {
+			h_raw(h, ": it needs <span class=\"mono\">");
+			h_txt(h, jstr(f, "because"));
+			h_raw(h, "</span>");
+		}
+		h_raw(h, "</li>");
+	}
+	h_raw(h, "</ul></details></td></tr>");
+}
+
+/* A port's options: which, then each, as the build takes them; and
+ * what each options directory sets. */
+static void
+options_view(struct html *h)
+{
+	const ucl_object_t	*sec, *o, *d, *p, *v;
+	ucl_object_iter_t	 it, it2, it3;
+
+	h_raw(h, "<h3 class=\"bldh\">Port options <small class=\"dim\">each "
+	    "port's OPTIONS, as make config sets them; a build copies the "
+	    "first options directory there is of its jail, tree and set"
+	    "</small></h3><form class=\"secform\" data-form=\"bld-optshow\">"
+	    "<label>Jail ");
+	name_select(h, "jail", "jails", false);
+	h_raw(h, "</label><label>Ports tree ");
+	name_select(h, "ports", "ports", true);
+	h_raw(h, "</label><label>Set <input name=\"set\" spellcheck=\"false\" "
+	    "pattern=\"[A-Za-z0-9_:+]{0,64}\" placeholder=\"none\"></label>"
+	    "<label>Port <input name=\"origin\" required spellcheck=\"false\" "
+	    "placeholder=\"net/bird3\"></label><div class=\"actions\"><button "
+	    "type=\"submit\" class=\"ghost\">Show its options</button></div>"
+	    "</form>");
+	if (bld.optloading)
+		h_raw(h, "<div class=\"loader\"></div>");
+	if (bld.opterr[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, bld.opterr);
+		h_raw(h, "</div>");
+	}
+	if (bld.opts != NULL) {
+		h_raw(h, "<form class=\"secform bldopts\" data-form=\"bld-options\">"
+		    "<h4>");
+		h_txt(h, jstr(bld.opts, "pkgname"));
+		h_raw(h, jbool(bld.opts, "configured") ? " <span class=\"chip "
+		    "st-up\">set</span>" : " <span class=\"chip\">the port's "
+		    "defaults</span>");
+		h_raw(h, "</h4><p class=\"help wide\">In <span class=\"mono\">");
+		h_txt(h, jstr(bld.opts, "options_dir"));
+		h_raw(h, "</span>");
+		if (!jbool(bld.opts, "options_dir_exists"))
+			h_raw(h, ": made when saved, and from then the "
+			    "directory this jail, tree and set's builds copy, "
+			    "instead of a wider one");
+		h_raw(h, ".</p>");
+		it = NULL;
+		while ((sec = ucl_object_iterate(jget(bld.opts, "sections"), &it,
+		    true)) != NULL) {
+			h_raw(h, "<fieldset class=\"wide\"><legend>");
+			h_txt(h, jstr(sec, "title") != NULL && jstr(sec,
+			    "title")[0] != '\0' ? jstr(sec, "title") : "Options");
+			h_raw(h, "</legend>");
+			it2 = NULL;
+			while ((o = ucl_object_iterate(jget(sec, "options"), &it2,
+			    true)) != NULL) {
+				h_raw(h, "<label class=\"check\"><input "
+				    "type=\"checkbox\"");
+				h_attr(h, "name", jstr(o, "name"));
+				if (jbool(o, "on"))
+					h_raw(h, " checked");
+				h_raw(h, "> <b class=\"mono\">");
+				h_txt(h, jstr(o, "name"));
+				h_raw(h, "</b> <small class=\"help\">");
+				h_txt(h, jstr(o, "description"));
+				h_raw(h, "</small></label>");
+			}
+			h_raw(h, "</fieldset>");
+		}
+		h_raw(h, "<div class=\"actions\">");
+		if (jbool(bld.opts, "configured"))
+			h_raw(h, "<button type=\"button\" class=\"ghost\" "
+			    "data-act=\"bld-opt-reset\">The port's defaults"
+			    "</button>");
+		h_raw(h, "<button type=\"button\" class=\"ghost\" "
+		    "data-act=\"bld-opt-close\">Close</button><button "
+		    "type=\"submit\" class=\"primary\"");
+		if (bld.busy)
+			h_raw(h, " disabled");
+		h_raw(h, ">Save</button></div></form>");
+	}
+	/* What the options directories set already. */
+	it = NULL;
+	while ((d = ucl_object_iterate(jget(bld.state, "options"), &it,
+	    true)) != NULL) {
+		h_raw(h, "<div class=\"bldoptdir\"><span class=\"mono dim\">");
+		h_txt(h, jstr(d, "dir"));
+		h_raw(h, "</span><ul>");
+		it2 = NULL;
+		while ((p = ucl_object_iterate(jget(d, "ports"), &it2, true)) !=
+		    NULL) {
+			h_raw(h, "<li><b class=\"mono\">");
+			h_txt(h, jstr(p, "pkgname") != NULL ? jstr(p, "pkgname") :
+			    jstr(p, "name"));
+			h_raw(h, "</b>");
+			it3 = NULL;
+			while ((v = ucl_object_iterate(jget(p, "set"), &it3,
+			    true)) != NULL) {
+				h_raw(h, " <span class=\"chip st-up\">+");
+				h_txt(h, ucl_object_tostring(v));
+				h_raw(h, "</span>");
+			}
+			it3 = NULL;
+			while ((v = ucl_object_iterate(jget(p, "unset"), &it3,
+			    true)) != NULL) {
+				h_raw(h, " <span class=\"chip\">−");
+				h_txt(h, ucl_object_tostring(v));
+				h_raw(h, "</span>");
+			}
+			h_raw(h, "</li>");
+		}
+		h_raw(h, "</ul></div>");
+	}
+}
+
 static void
 view_bulk(struct html *h)
 {
@@ -688,6 +901,7 @@ view_bulk(struct html *h)
 	bulk_form(h);
 	runs(h, "bulk", "a build");
 	makeconf_view(h);
+	options_view(h);
 	h_raw(h, "<h3 class=\"bldh\">Builds <small class=\"dim\">the latest of "
 	    "each jail, tree and set, as poudriere status says</small></h3>");
 	if (jstr(bld.state, "builds_error") != NULL) {
@@ -723,6 +937,7 @@ view_bulk(struct html *h)
 			    "skipped", 0), (long long)jint(e, "remaining", 0));
 			h_txt(h, jstr(e, "time"));
 			h_raw(h, "</td></tr>");
+			build_failures(h, e);
 		}
 		free(rows);
 		h_raw(h, "</tbody></table>");
@@ -1025,6 +1240,55 @@ builder_form(const char *form, const ucl_object_t *f)
 		bulk_submit(f);
 		return (true);
 	}
+	if (strcmp(form, "bld-optshow") == 0) {
+		static const char *const k[] = { "jail", "ports", "set",
+		    "origin" };
+		size_t	 len;
+
+		len = 0;
+		bld.optq[0] = '\0';
+		for (i = 0; i < nitems(k); i++) {
+			v = jstr(f, k[i]);
+			if (v == NULL || v[0] == '\0')
+				continue;
+			len += (size_t)snprintf(bld.optq + len,
+			    sizeof(bld.optq) - len, "%s%s=", len > 0 ? "&" : "",
+			    k[i]);
+			for (; *v != '\0' && len + 4 < sizeof(bld.optq); v++)
+				len += (size_t)snprintf(bld.optq + len,
+				    sizeof(bld.optq) - len, isalnum((unsigned
+				    char)*v) || strchr("-_.:+", *v) != NULL ?
+				    "%c" : "%%%02X", (unsigned char)*v);
+		}
+		bld.opterr[0] = '\0';
+		opts_load();
+		return (true);
+	}
+	if (strcmp(form, "bld-options") == 0) {
+		const ucl_object_t	*sec, *o;
+		ucl_object_iter_t	 it, it2;
+
+		if (bld.opts == NULL)
+			return (true);
+		args = ucl_object_typed_new(UCL_ARRAY);
+		kv(args, "jail", jstr(bld.opts, "jail"));
+		kv(args, "ports", jstr(bld.opts, "ports"));
+		kv(args, "set", jstr(bld.opts, "set"));
+		kv(args, "origin", jstr(bld.opts, "origin"));
+		it = NULL;
+		while ((sec = ucl_object_iterate(jget(bld.opts, "sections"),
+		    &it, true)) != NULL) {
+			it2 = NULL;
+			while ((o = ucl_object_iterate(jget(sec, "options"),
+			    &it2, true)) != NULL)
+				kv(args, jbool(f, jstr(o, "name")) ? "on" : "off",
+				    jstr(o, "name"));
+		}
+		snprintf(title, sizeof(title), "poudriere options of %s",
+		    jstr(bld.opts, "origin"));
+		bld_send("options", args, NULL, title);
+		return (true);
+	}
 	return (false);
 }
 
@@ -1093,6 +1357,10 @@ builder_action(const char *act, const char *arg, const char *value)
 		if (bld.state != NULL)
 			ucl_object_unref(bld.state);
 		bld.state = NULL;
+		if (bld.opts != NULL)
+			ucl_object_unref(bld.opts);
+		bld.opts = NULL;
+		bld.optq[0] = '\0';
 		bld.loading = false;
 		bld.form = BF_NONE;
 		bld_load();
@@ -1161,6 +1429,25 @@ builder_action(const char *act, const char *arg, const char *value)
 		kv(args, "run", arg);
 		snprintf(title, sizeof(title), "poudriere run %s stopped", arg);
 		bld_send("stop", args, NULL, title);
+		return (true);
+	}
+	if (strcmp(act, "bld-opt-close") == 0) {
+		if (bld.opts != NULL)
+			ucl_object_unref(bld.opts);
+		bld.opts = NULL;
+		bld.optq[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "bld-opt-reset") == 0 && bld.opts != NULL) {
+		args = ucl_object_typed_new(UCL_ARRAY);
+		kv(args, "jail", jstr(bld.opts, "jail"));
+		kv(args, "ports", jstr(bld.opts, "ports"));
+		kv(args, "set", jstr(bld.opts, "set"));
+		kv(args, "origin", jstr(bld.opts, "origin"));
+		kv(args, "reset", "yes");
+		snprintf(title, sizeof(title), "poudriere options of %s: the "
+		    "port's defaults", jstr(bld.opts, "origin"));
+		bld_send("options", args, NULL, title);
 		return (true);
 	}
 	if (strcmp(act, "bld-install") == 0) {

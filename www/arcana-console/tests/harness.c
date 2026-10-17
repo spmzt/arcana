@@ -175,6 +175,26 @@ locate(const atf_tc_t *tc, const char *rel, const char *var, const char *def)
 }
 
 /*
+ * The servers of an earlier test that never ran its cleanup (its kyua
+ * killed, or the program run by hand) stay, each in its process group,
+ * init's now, and load every test after: an arcana-agent on a test's
+ * jgd.sock, kore with -c kore.conf, chromedriver and its browsers.  A
+ * test's own servers are its children, so those of tests running now
+ * are left be.  Only the user's own processes are looked at.
+ */
+static void
+sweep_orphans(void)
+{
+
+	/* kore names its parent "kore: [parent]" once it runs. */
+	(void)system("ps -ax -o pid=,ppid=,pgid=,command= -U \"$(id -u)\" | "
+	    "awk '$2 == 1 && ($0 ~ /arcana-agent -F -l unix:.*jgd[0-9]*\\.sock/ "
+	    "|| $4 == \"kore:\" && $5 == \"[parent]\" || $4 ~ /chromedriver$/ "
+	    "&& $5 ~ /^--port=/) { print $3 }' | sort -u | "
+	    "while read g; do kill -TERM -\"$g\" 2>/dev/null; done");
+}
+
+/*
  * arcana-agent on ./jgd.sock with a lab configuration and a stand-in for
  * jail(8), and kore on ./k.sock.  Their pids go to files for cleanup.
  */
@@ -192,6 +212,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	FILE	*fp;
 	pid_t	 pid;
 
+	sweep_orphans();
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 	kore = atf_tc_get_config_var_wd(tc, "kore", "/usr/local/bin/kore");
 	dh = atf_tc_get_config_var_wd(tc, "dhparam",
@@ -409,6 +430,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "shift 2\nexec \"$@\"\n");
 	ATF_REQUIRE(chmod("fake-setfib", 0755) == 0);
 	snprintf(buf, sizeof(buf), "#!/bin/sh\ndir=$2\ncase \" $* \" in\n"
+	    "*\" showconfig \"*|*\" -V OPTIONS_FILE \"*) exec /usr/bin/make "
+	    "\"$@\" ;;\n"
 	    "*\" -V .OBJDIR \"*) echo \"$dir/obj\" ;;\n"
 	    "*/usr.sbin/arcana-agent*) mkdir -p \"$dir/obj\" && "
 	    "cp '%s' \"$dir/obj/arcana-agent\" ;;\nesac\n", jgd);
@@ -734,6 +757,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "v) v=$OPTARG;; m) m=$OPTARG;; esac; done\n"
 	    "\tk=jails; [ $cmd = ports ] && k=ports\n"
 	    "\tcase $verb in\n\t-c) mkdir -p $e/$k/$n; echo $m > $e/$k/$n/method; "
+	    "[ $k = ports ] && echo $(pwd)/ptree > $e/$k/$n/mnt; "
 	    "[ -n \"$v\" ] && echo $v > $e/$k/$n/version; echo amd64 > "
 	    "$e/$k/$n/arch; echo 1792200000 > $e/$k/$n/timestamp; "
 	    "echo \"[00:00:01] Created $n\" ;;\n"
@@ -741,12 +765,34 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\tesac ;;\nbulk) echo \"[00:00:00] Building: $*\"; sleep 1; "
 	    "echo '[00:00:01] Built 1 packages' ;;\n"
 	    "status) [ -f $e/debug-make.conf ] && printf 'debug\\tdefault\\t"
-	    "150amd64\\t2026-10-17_09h00m00s\\tdone:\\t1\\t0\\t0\\t1\\t0\\t0"
-	    "\\t0\\t0\\t00:03:10\\t/poudriere/data/logs/bulk/x\\n' ;;\n"
+	    "150amd64\\t2026-10-17_09h00m00s\\tdone:\\t2\\t0\\t0\\t1\\t1\\t0"
+	    "\\t0\\t0\\t00:03:10\\t%s\\n' \"$(pwd)/bl\" ;;\n"
 	    "esac\nexit 0\n");
 	ATF_REQUIRE(chmod("fake-poudriere", 0755) == 0);
 	ATF_REQUIRE(mkdir("pe", 0755) == 0 || errno == EEXIST);
 	put("pe/poudriere.conf", "ZPOOL=tank\nBASEFS=/poudriere\n");
+	/* A port of the trees it makes, as the ports framework says it. */
+	ATF_REQUIRE(mkdir("ptree", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("ptree/net", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("ptree/net/bird3", 0755) == 0 || errno == EEXIST);
+	put("ptree/net/bird3/Makefile", "PKGNAME=\tbird3-3.4.0\n"
+	    "COMPLETE_OPTIONS_LIST=\tBFD BGP MRT\n"
+	    "OPTIONS_FILE=\t${PORT_DBDIR}/net_bird3/options\nshowconfig:\n"
+	    "\t@echo \"===> The following configuration options are "
+	    "available for ${PKGNAME}:\"\n"
+	    "\t@echo \"     BFD=on: Bidirectional Forwarding Detection\"\n"
+	    "\t@echo \"====> Routing Protocols\"\n"
+	    "\t@echo \"     BGP=on: Border Gateway Protocol\"\n"
+	    "\t@echo \"     MRT=off: Dumping Routing Information in MRT "
+	    "Format\"\n");
+	/* The build's log directory: a port that failed, with its log. */
+	ATF_REQUIRE(mkdir("bl", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("bl/logs", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("bl/logs/errors", 0755) == 0 || errno == EEXIST);
+	put("bl/.poudriere.ports.failed", "devel/broken broken-1.0 build "
+	    "compiler_error 42\n");
+	put("bl/logs/errors/broken-1.0.log", "===> Building for broken-1.0\n"
+	    "cc: error: no such file\n");
 	/* tcpdump(1): its sources, a capture written, and read back;
 	 * timeout(1) leaves it be. */
 	ATF_REQUIRE(mkdir("tools/tmp", 0755) == 0 || errno == EEXIST);

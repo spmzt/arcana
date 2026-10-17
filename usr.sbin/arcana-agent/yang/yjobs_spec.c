@@ -62,6 +62,7 @@ static const char *const ssh_verb[] = {
 static const char *const poudriere_verb[] = {
 	"jail-create", "jail-update", "jail-delete", "ports-create",
 	"ports-update", "ports-delete", "bulk", "stop", "make-conf", "conf",
+	"options",
 };
 
 /*

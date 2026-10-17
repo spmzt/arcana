@@ -301,9 +301,15 @@ the package builder, a plugin of the host's.
 Default
 .Pa /usr/local/bin/poudriere .
 The builder operation reads its build jails, ports trees, make.conf
-files, package repositories and latest builds where poudriere keeps
-them, and the poudriere job makes, updates and deletes jails and
-trees and builds ports.
+files, options directories, package repositories and latest builds
+(each with its failed ports and the end of their logs) where poudriere
+keeps them; builder-options reads a port's options with
+.Ql make showconfig ,
+run as
+.Fl M Ns 's
+.Xr make 1 ;
+the poudriere job makes, updates and deletes jails and trees, sets a
+port's options and builds ports.
 A jail or tree made or updated, and a build, take longer than a job
 should hold the queue: the job starts poudriere under a waiter of its
 own and ends, the run going on after it

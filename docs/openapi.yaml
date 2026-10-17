@@ -1145,6 +1145,28 @@ paths:
       responses:
         "200":
           description: The read, under data, with the agent's trace.
+  /api/servers/{server}/builder/options:
+    get:
+      tags: [servers]
+      summary: A port's options, as a poudriere build takes them
+      description: >-
+        make showconfig in the port's directory of the tree, with the
+        options directory a build of that jail, tree and set copies (the
+        first there is, as poudriere bulk looks; the build's own when
+        none is): pkgname, options_dir, options_dir_exists,
+        options_file, configured, and sections (the port's own options,
+        then each group), each option with name, on and description.
+        They are set by a poudriere job, verb options, an on= or off=
+        for each.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - { name: jail, in: query, required: true, schema: { type: string } }
+        - { name: ports, in: query, schema: { type: string, default: default } }
+        - { name: set, in: query, schema: { type: string } }
+        - { name: origin, in: query, required: true, schema: { type: string, example: net/bird3 } }
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
   /api/servers/{server}/history:
     get:
       tags: [servers]

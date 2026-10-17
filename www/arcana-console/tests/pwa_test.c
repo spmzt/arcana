@@ -6281,10 +6281,42 @@ part_builder(void)
 	    "'table.bldbuilds').textContent.includes('debug')", 40);
 	ATF_CHECK(system("grep -qx 'WITH_DEBUG_PORTS+= net/bird3' "
 	    "pe/poudriere.d/debug-make.conf") == 0);
+	/* The build's failed port, beneath it: phase, reason, its log. */
+	run("document.querySelector('table.bldbuilds tr.bldfail details')"
+	    ".open = true; document.querySelector('ul.bldfailed details')"
+	    ".open = true");
+	wait_js("document.querySelector('ul.bldfailed').textContent.includes("
+	    "'devel/broken') && document.querySelector('ul.bldfailed')."
+	    "textContent.includes('compiler_error') && document.querySelector("
+	    "'ul.bldfailed pre.bldlog').textContent.includes('cc: error: no "
+	    "such file')", 10);
 	ATF_CHECK(system("grep -q '^poudriere bulk -j 150amd64 -p default -z "
 	    "debug net/bird3$' poudriere.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 	shot("9x-builder-bulk");
+	/* BIRD's options for that build: MRT on, BGP off. */
+	run("const f = document.querySelector('form[data-form=bld-optshow]'); "
+	    "f.jail.value = '150amd64'; f.ports.value = 'default'; "
+	    "f.set.value = 'debug'; f.origin.value = 'net/bird3'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=bld-options] "
+	    "input[name=MRT]') && document.querySelector('form.bldopts')."
+	    "textContent.includes('Routing Protocols') && document."
+	    "querySelector('form.bldopts').textContent.includes("
+	    "'150amd64-default-debug-options')", 20);
+	run("const f = document.querySelector('form[data-form=bld-options]'); "
+	    "f.MRT.checked = true; f.BGP.checked = false; f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('.bldoptdir') && document."
+	    "querySelector('.bldoptdir').textContent.includes('+MRT') && "
+	    "document.querySelector('.bldoptdir').textContent.includes("
+	    "'−BGP') && document.querySelector('form.bldopts h4 .chip."
+	    "st-up')", 30);
+	ATF_CHECK(system("grep -qx 'OPTIONS_FILE_SET+=MRT' pe/poudriere.d/"
+	    "150amd64-default-debug-options/net_bird3/options && grep -qx "
+	    "'OPTIONS_FILE_UNSET+=BGP' pe/poudriere.d/150amd64-default-debug-"
+	    "options/net_bird3/options") == 0);
+	run("document.querySelector('.dock > header').click()");
 	/* Asked again: the line is there, not written twice. */
 	click_when("ul.bldmc button[data-arg=debug]", 10);
 	wait_js("document.querySelector('form[data-form=bld-makeconf]') && "

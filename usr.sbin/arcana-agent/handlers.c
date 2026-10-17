@@ -345,6 +345,8 @@ worker(void *arg)
 	struct arc_kernel_rsp	 kr;
 	struct arc_jail_files_rsp jfr;
 	struct arc_builder_rsp	 bur;
+	struct arc_builder_options_rsp bor;
+	struct arc_job_spec	 bsp;
 	struct arc_certs_rsp	 cer;
 	struct arc_ssh_rsp	 sshr;
 	struct arc_capture_req	 capq;
@@ -866,6 +868,23 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &bur.trace.v, &bur.trace.n);
 		rc = arc_builder_reply(j->req, &bur);
+		break;
+	case ARC_CMD_BUILDER_OPTIONS:
+		what = "a port's options";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "a port's options for poudriere");
+		memset(&bor, 0, sizeof(bor));
+		memset(&bsp, 0, sizeof(bsp));
+		bor.has_ok = true;
+		/* Its words, kept where a pkg-upgrade's names are. */
+		bsp.names.v = j->pkg.names.v;
+		bsp.names.n = j->pkg.names.n;
+		do_builder_options(&w, &bsp, &bor);
+		ok = bor.ok;
+		error = bor.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &bor.trace.v, &bor.trace.n);
+		rc = arc_builder_options_reply(j->req, &bor);
 		break;
 	case ARC_CMD_KERNEL:
 		what = "kernel";
@@ -2325,6 +2344,37 @@ arc_builder_doit(cbl_req *req, void *arg __unused)
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_BUILDER;
+	return (start(j));
+}
+
+int
+arc_builder_options_doit(cbl_req *req, const struct arc_builder_options_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+	const char	**v;
+	size_t		 i;
+
+	if (rq->names.n > 16)
+		return (reject(req, "a port's options are asked with jail, "
+		    "ports, set and origin"));
+	for (i = 0; i < rq->names.n; i++)
+		if (rq->names.v[i] == NULL)
+			return (reject(req, "a word is missing"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_BUILDER_OPTIONS;
+	if (rq->names.n > 0) {
+		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL) {
+			free(j);
+			return (ENOMEM);
+		}
+		for (i = 0; i < rq->names.n; i++)
+			v[i] = xstrdup(rq->names.v[i]);
+		j->pkg.names.v = v;
+		j->pkg.names.n = rq->names.n;
+	}
 	return (start(j));
 }
 
