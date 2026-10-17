@@ -68,6 +68,7 @@ enum op {
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
 	OP_JAIL_FILES,
+	OP_BUILDER,
 	OP_CERTS,
 	OP_SSH,
 	OP_CAPTURE,
@@ -1211,7 +1212,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1558,6 +1559,7 @@ call_run(struct kore_task *t)
 	struct arc_stats_rsp	*str;
 	struct arc_kernel_rsp	*kr;
 	struct arc_jail_files_rsp *jfiles;
+	struct arc_builder_rsp	*bur;
 	struct arc_certs_req	 ceq;
 	struct arc_certs_rsp	*cer;
 	struct arc_ssh_req	 sshq;
@@ -1683,6 +1685,7 @@ call_run(struct kore_task *t)
 	str = NULL;
 	kr = NULL;
 	jfiles = NULL;
+	bur = NULL;
 	cer = NULL;
 	sshr = NULL;
 	capr = NULL;
@@ -2578,6 +2581,26 @@ connected:
 		steps = jfiles->trace.v;
 		nsteps = jfiles->trace.n;
 		break;
+	case OP_BUILDER:
+		if ((error = arc_builder(&cl, &bur)) != 0)
+			goto rpcfail;
+		ok = bur->ok;
+		put_str(top, "error", bur->error);
+		e = NULL;
+		if (bur->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, bur->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = bur->trace.v;
+		nsteps = bur->trace.n;
+		break;
 	case OP_CERTS:
 		memset(&ceq, 0, sizeof(ceq));
 		ceq.jail = c->scope[0] != '\0' ? c->scope : NULL;
@@ -2941,6 +2964,8 @@ done:
 		arc_kernel_rsp_free(kr);
 	if (jfiles != NULL)
 		arc_jail_files_rsp_free(jfiles);
+	if (bur != NULL)
+		arc_builder_rsp_free(bur);
 	if (cer != NULL)
 		arc_certs_rsp_free(cer);
 	if (sshr != NULL)
@@ -4218,6 +4243,15 @@ api_jail_files(struct http_request *req)
 	return (read_route(req, OP_JAIL_FILES, NULL));
 }
 
+/* GET /api/servers/<id>/builder: poudriere's jails, ports trees,
+ * make.conf files, repositories, builds and runs. */
+int
+api_builder(struct http_request *req)
+{
+
+	return (read_route(req, OP_BUILDER, NULL));
+}
+
 /* GET /api/servers/<id>/certs[?jail=]: the certificates OpenSSL trusts
  * there. */
 /* ?jail=name: the jail it is read in. */
@@ -4530,6 +4564,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_CERT] = "cert",
 	[ARC_JOB_KIND_SSH] = "ssh",
 	[ARC_JOB_KIND_CARP] = "carp",
+	[ARC_JOB_KIND_POUDRIERE] = "poudriere",
 };
 
 static const char *job_state_names[] = {
@@ -4839,6 +4874,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_JAIL_CONF:
 	case ARC_JOB_KIND_SSH:
 	case ARC_JOB_KIND_CARP:
+	case ARC_JOB_KIND_POUDRIERE:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
@@ -5265,6 +5301,7 @@ static const struct hread {
 	{ "hello", OP_HELLO, NULL },
 	{ "jails", OP_LIST, setup_jails },
 	{ "jails/files", OP_JAIL_FILES, NULL },
+	{ "builder", OP_BUILDER, NULL },
 	{ "services", OP_SERVICES, NULL },
 	{ "packages", OP_PACKAGES, setup_packages },
 	{ "net/", OP_NETWORK, setup_network },

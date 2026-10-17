@@ -354,6 +354,24 @@ definitions:
           line with the vhid's words, its key too, and carp in kld_list.
           Only add is taken back in safe mode.  In jail's network when
           jail names one.
+      - name: poudriere
+        doc: |
+          poudriere(8), the host's package builder, a plugin: verb and
+          words key=value (names).  jail-create (name, version, arch,
+          method), jail-update and ports-update (name), ports-create
+          (name, method, branch, url, path) and bulk (jail, ports, set,
+          jobs, clean=yes for -C, test=yes for -t, an origin= for each
+          port, net/bird3) start a run and end: poudriere goes on by
+          itself, its output in the run's log, the builder operation
+          telling how it is.  stop (run) sends a run's process group
+          SIGINT, as a terminal would.  jail-delete and ports-delete
+          (name) run to their end, -y.  make-conf (name: none for
+          make.conf, a jail's, a ports tree's, a set's or those joined
+          by -) writes poudriere.d/<name>-make.conf from text, or takes
+          it away when text is empty: WITH_DEBUG_PORTS+= net/bird3 in a
+          set's builds it unstripped, with debug symbols.  conf sets
+          poudriere.conf's variables by sysrc -f, an empty value
+          unsetting one.  The host's only; never in safe mode.
   - name: job-state
     type: enum
     entries:
@@ -3367,6 +3385,38 @@ operations:
         attributes:
           - ok
           - error
+          - trace
+
+  - name: builder
+    attribute-set: arcana
+    auth: true
+    doc: |
+      poudriere(8) on this host, as a JSON object: "installed" and
+      "program"; "conf_file", "configured" (it is there) and "conf",
+      poudriere.conf's assignments (poudriere.d's own after it);
+      "basefs" and "data", the data directory; "jails" and "ports",
+      each with its "name" and what poudriere keeps of it, a file a
+      key (version, arch, method, mnt, fs, timestamp, the seconds);
+      "makeconf", each make.conf of poudriere.d with its "name" (empty
+      for make.conf itself, the part before -make.conf otherwise),
+      "file" and "text"; "repos", each package repository under the
+      data directory with its "path" and how many "packages" its All
+      has; "builds", the latest build of each as poudriere status -f
+      -H -l tells it ("set", "ports", "jail", "build", "status",
+      "queued", "inspected", "ignored", "built", "failed", "skipped",
+      "fetched", "remaining", "time", "logs"), and "builds_error" when
+      it could not tell; "runs", what the poudriere job started, the
+      newest first, each with "id", "title", "argv", "started",
+      "state" (running, done, failed or lost: no exit and no process,
+      as after a reboot), "pid" while it runs, "exit" once it has
+      ended, "log_file" and, for the newest ten and those running,
+      "log", the end of its output.
+    do:
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
           - trace
 
 mcast-groups:

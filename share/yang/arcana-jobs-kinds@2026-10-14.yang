@@ -134,6 +134,9 @@ submodule arcana-jobs-kinds {
       enum carp {
         value 36;
       }
+      enum poudriere {
+        value 37;
+      }
     }
     description
       "A kind of job, by its number in arcana.yaml's job-kind.";
@@ -1562,6 +1565,42 @@ submodule arcana-jobs-kinds {
             type boolean;
             description
               "Safe, undone unless confirmed";
+          }
+        }
+      }
+      case poudriere {
+        container poudriere {
+          presence
+            "This kind of job.";
+          description
+            "poudriere's build jails, ports trees and builds (destroys: verb=jail-delete|ports-delete)";
+          leaf verb {
+            type enumeration {
+              enum jail-create;
+              enum jail-update;
+              enum jail-delete;
+              enum ports-create;
+              enum ports-update;
+              enum ports-delete;
+              enum bulk;
+              enum stop;
+              enum make-conf;
+              enum conf;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
           }
         }
       }

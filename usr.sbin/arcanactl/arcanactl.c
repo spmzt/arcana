@@ -198,6 +198,7 @@ usage(void)
 	    "        remove interface address vhid=n\n"
 	    "    cert [list] | add name file | remove name | trust file |\n"
 	    "        untrust file | rehash\n"
+	    "    poudriere [list] | make-conf name|- file|- | verb [key=value ...]\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
@@ -2354,6 +2355,55 @@ cmd_sshd(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
+ * poudriere [list] | make-conf name|- file|- | verb [key=value ...]:
+ * poudriere(8), the host's package builder; a verb is a job, which for
+ * a build, a jail or a ports tree made or updated starts a run and
+ * ends (see list's runs).
+ */
+static int
+cmd_poudriere(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	struct arc_builder_rsp	*rs;
+	char			*nm;
+	int			 error;
+
+	if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
+		if ((error = arc_builder(cl, &rs)) != 0)
+			fail(cl, error, "builder");
+		if (rs->json != NULL)
+			xo_emit("{:json/%s}\n", rs->json);
+		else if (rs->error != NULL)
+			warnx("%s", rs->error);
+		emit_trace(rs->trace.v, rs->trace.n);
+		error = rs->ok ? 0 : 1;
+		arc_builder_rsp_free(rs);
+		return (error);
+	}
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_POUDRIERE;
+	sp.verb = argv[1];
+	if (strcmp(argv[1], "make-conf") == 0) {
+		/* name - for make.conf itself, file - to take it away. */
+		if (argc != 4)
+			usage();
+		if (asprintf(&nm, "name=%s", strcmp(argv[2], "-") == 0 ? "" :
+		    argv[2]) == -1)
+			err(1, "asprintf");
+		sp.names.v = (const char **)(uintptr_t)&nm;
+		sp.names.n = 1;
+		sp.text = strcmp(argv[3], "-") == 0 ? "" : slurp(argv[3]);
+	} else {
+		sp.names.v = (const char **)(uintptr_t)&argv[2];
+		sp.names.n = (size_t)argc - 2;
+	}
+	/* The host's alone: -j is passed on to be refused, not dropped. */
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/*
  * cert [list] | add name file | remove name | trust file | untrust file |
  * rehash: the certificates OpenSSL trusts, of the host or of -j's jail;
  * a change is a job.
@@ -4047,6 +4097,8 @@ main(int argc, char *argv[])
 		rc = cmd_carp(&cl, argc, argv);
 	else if (strcmp(argv[0], "cert") == 0)
 		rc = cmd_cert(&cl, argc, argv);
+	else if (strcmp(argv[0], "poudriere") == 0)
+		rc = cmd_poudriere(&cl, argc, argv);
 	else if (strcmp(argv[0], "sshd") == 0)
 		rc = cmd_sshd(&cl, argc, argv);
 	else if (strcmp(argv[0], "capture") == 0)

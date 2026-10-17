@@ -8,7 +8,8 @@
  * Luxuria: what is not FreeBSD's own.  A plugin works through a program
  * that has to be installed, and is there only where its program is:
  * BIRD through birdc(8), strongSwan's IPsec through swanctl(8),
- * Squid and dnsmasq for SD-WAN's proxy and DHCP,
+ * Squid and dnsmasq for SD-WAN's proxy and DHCP, poudriere(8) to
+ * build packages,
  * WireGuard's keys and peers through wg(8) (the
  * interface itself, if_wg(4) made by ifconfig(8), is the base system's
  * and Invidia's).  A host says which it has, and so does a jail with a
@@ -60,6 +61,7 @@ static const struct {
 	{ "dnsmasq", &opts.dnsmasq_bin, NULL, NULL },
 	{ "c-icap", &opts.cicap_bin, NULL, NULL },
 	{ "suricata", &opts.suricata_bin, NULL, NULL },
+	{ "poudriere", &opts.poudriere_bin, NULL, NULL },
 };
 
 /*
