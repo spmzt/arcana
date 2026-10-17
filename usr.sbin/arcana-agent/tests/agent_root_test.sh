@@ -925,6 +925,107 @@ bird_live_cleanup()
 	true
 }
 
+atf_test_case sctp_loopback cleanup
+sctp_loopback_head()
+{
+	atf_set "descr" "an SCTP listener on a router's loopback address alone" \
+	    "(an address on lo0): FreeBSD's SCTP answers no peer elsewhere" \
+	    "from it, which the transport read says; with --sctp-also an" \
+	    "address of a real interface, SCTP by that one is answered"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+	atf_set "timeout" "120"
+}
+sctp_loopback_body()
+{
+	local d="$(pwd)" port=24611 e a
+
+	kldstat -q -m sctp || atf_skip "the kernel has no SCTP"
+	command -v openssl >/dev/null || atf_skip "no openssl"
+	programs
+	for j in arcw_la arcw_lb; do
+		jls -j $j >/dev/null 2>&1 && atf_skip "a jail $j is there already"
+	done
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+	    -keyout ca.key -out ca.pem -days 2 -subj /CN=lab-ca \
+	    -addext basicConstraints=critical,CA:true \
+	    -addext keyUsage=critical,keyCertSign >/dev/null 2>&1
+	for n in server client; do
+		openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+		    -keyout $n.key -out $n.csr -subj /CN=$n >/dev/null 2>&1
+		if [ $n = server ]; then
+			printf 'subjectAltName=IP:2001:db8:12::1,IP:2001:db8:99::1\nextendedKeyUsage=serverAuth\n' > $n.ext
+		else
+			printf 'subjectAltName=DNS:console\nextendedKeyUsage=clientAuth\n' > $n.ext
+		fi
+		openssl x509 -req -in $n.csr -CA ca.pem -CAkey ca.key \
+		    -CAcreateserial -out $n.pem -days 2 -extfile $n.ext \
+		    >/dev/null 2>&1 || atf_fail "no $n certificate"
+	done
+	atf_check -o ignore jail -c name=arcw_la vnet persist path=/
+	atf_check -o ignore jail -c name=arcw_lb vnet persist path=/
+	e=$(ifconfig epair create)
+	echo "${e%a}" > epair.name
+	atf_check ifconfig $e vnet arcw_la
+	atf_check ifconfig ${e%a}b vnet arcw_lb
+	# The router's loopback, 2001:db8:12::1 on lo0; its link to the
+	# client, 2001:db8:99::1.
+	atf_check jexec arcw_la ifconfig lo0 inet6 ::1/128 up
+	atf_check jexec arcw_la ifconfig lo0 inet6 2001:db8:12::1/128 alias
+	atf_check jexec arcw_la ifconfig $e inet6 2001:db8:99::1/64 up
+	atf_check jexec arcw_lb ifconfig lo0 inet6 ::1/128 up
+	atf_check jexec arcw_lb ifconfig ${e%a}b inet6 2001:db8:99::2/64 up
+	atf_check jexec arcw_lb route -q -6 add 2001:db8:12::1 2001:db8:99::1
+	sleep 2	# duplicate address detection
+	mkdir -p etc/jail.conf.d
+	: > etc/jail.conf
+	a="-A $d/ca.pem -C $d/client.pem -K $d/client.key"
+	for also in "" 2001:db8:99::1; do
+		jexec arcw_la "$JGD" -F -l "tcp://[2001:db8:12::1]:$port" \
+		    -l "unix:$d/s.sock" ${also:+--sctp-also $also} \
+		    -A "$d/ca.pem" -C "$d/server.pem" -K "$d/server.key" \
+		    -f "$d/etc/jail.conf" -D "$d/etc/jail.conf.d" \
+		    -1 "$d/history.conf" > daemon.out 2>&1 &
+		echo $! > daemon.pid
+		for i in $(seq 1 50); do [ -S s.sock ] && break; sleep 0.1; done
+		sleep 0.5
+		atf_check -o save:t.json "$JGC" -c "unix:$d/s.sock" transport
+		if [ -z "$also" ]; then
+			# On lo0 alone: said, and why.
+			atf_check -o match:'"transport":"sctp","up":true,[^}]*"warning":"its addresses are all on a loopback interface' \
+			    cat t.json
+			atf_check -o ignore jexec arcw_lb "$JGC" \
+			    -c "tcp://[2001:db8:12::1]:$port" $a hello
+		else
+			# An address of a real interface too: no warning, and
+			# SCTP by that address answered.
+			atf_check -o not-match:'"warning"' cat t.json
+			atf_check -o ignore jexec arcw_lb "$JGC" \
+			    -c "sctp://[2001:db8:99::1]:$port" $a hello
+		fi
+		kill "$(cat daemon.pid)"
+		for i in $(seq 1 50); do
+			kill -0 "$(cat daemon.pid)" 2>/dev/null || break
+			sleep 0.1
+		done
+		rm -f s.sock daemon.pid
+	done
+}
+sctp_loopback_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	sleep 0.5
+	if [ -f epair.name ]; then
+		e=$(cat epair.name)
+		ifconfig ${e}a -vnet arcw_la 2>/dev/null
+		ifconfig ${e}b -vnet arcw_lb 2>/dev/null
+		ifconfig ${e}a destroy 2>/dev/null
+	fi
+	jail -r arcw_la 2>/dev/null
+	jail -r arcw_lb 2>/dev/null
+	true
+}
+
 atf_test_case sdwan_record cleanup
 sdwan_record_head()
 {
@@ -2222,6 +2323,7 @@ atf_init_test_cases()
 	atf_add_test_case sdwan_links
 	atf_add_test_case bird_live
 	atf_add_test_case sctp_multihome
+	atf_add_test_case sctp_loopback
 	atf_add_test_case sdwan_record
 	atf_add_test_case jail_make
 	atf_add_test_case zfs_key
