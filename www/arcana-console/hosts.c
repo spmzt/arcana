@@ -119,6 +119,7 @@ struct call {
 	bool			 renew;		/* tls: a new certificate */
 	bool			 installed;	/* packages: those installed */
 	uint8_t			 pkg_ip;	/* packages: pkg -4, -6, or 0 */
+	char			 pkg_repo[65];	/* pkg-upgrade: pkg -r, or "" */
 	char			**names;	/* pkg-upgrade: packages */
 	size_t			 nnames;
 	struct arc_job_spec	*specs;		/* job-submit: the batch */
@@ -1916,6 +1917,8 @@ connected:
 			ucl_array_append(a, e);
 		}
 		put(top, "packages", a);
+		/* pkg's repositories there, any of which -r may name. */
+		put(top, "repos", strs(pr->pkg_repos.v, pr->pkg_repos.n));
 		steps = pr->trace.v;
 		nsteps = pr->trace.n;
 		break;
@@ -1927,6 +1930,7 @@ connected:
 		uq.ignore_osversion = c->anyos;
 		uq.has_pkg_ip = c->pkg_ip != 0;
 		uq.pkg_ip = c->pkg_ip;
+		uq.pkg_repo = c->pkg_repo[0] != '\0' ? c->pkg_repo : NULL;
 		uq.names.v = (const char *const *)c->names;
 		uq.names.n = c->nnames;
 		if ((error = arc_pkg_upgrade(&cl, &uq, &ur)) != 0)
@@ -4607,6 +4611,10 @@ api_pkg_upgrade(struct http_request *req)
 	c->pkg_ip = (uint8_t)(ucl_object_toint(ucl_object_lookup(body,
 	    "pkg_ip")) == 4 ? 4 : ucl_object_toint(ucl_object_lookup(body,
 	    "pkg_ip")) == 6 ? 6 : 0);
+	/* From one repository: the agent checks it is one of pkg's. */
+	if (ucl_str(body, "pkg_repo") != NULL)
+		snprintf(c->pkg_repo, sizeof(c->pkg_repo), "%s", ucl_str(body,
+		    "pkg_repo"));
 	a = ucl_object_lookup(body, "packages");
 	if ((n = ucl_array_size(a)) > 0) {
 		c->names = kore_calloc(n, sizeof(*c->names));
@@ -4744,6 +4752,7 @@ spec_free(struct arc_job_spec *sp)
 	kore_free((char *)(uintptr_t)sp->preshared_key);
 	kore_free((char *)(uintptr_t)sp->lladdr);
 	kore_free((char *)(uintptr_t)sp->user);
+	kore_free((char *)(uintptr_t)sp->pkg_repo);
 	for (i = 0; i < sp->variables.n; i++) {
 		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
 		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
@@ -4865,6 +4874,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->lladdr = jdup(o, "lladdr");
 	sp->temporary = ucl_flag(o, "temporary");
 	sp->user = jdup(o, "user");
+	sp->pkg_repo = jdup(o, "pkg_repo");
 	if ((v = ucl_object_lookup(o, "metric")) != NULL && ucl_object_toint(
 	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
 		sp->has_metric = true;

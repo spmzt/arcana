@@ -303,6 +303,11 @@ submodule arcana-jobs-kinds {
             description
               "pkg's network";
           }
+          leaf pkg-repo {
+            type string;
+            description
+              "Repository";
+          }
         }
       }
       case if-address {
@@ -1309,6 +1314,11 @@ submodule arcana-jobs-kinds {
             type uint32;
             description
               "pkg's network";
+          }
+          leaf pkg-repo {
+            type string;
+            description
+              "Repository";
           }
         }
       }

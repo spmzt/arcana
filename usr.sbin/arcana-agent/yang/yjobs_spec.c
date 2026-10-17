@@ -156,6 +156,7 @@ yjobs_spec(const struct arcana_jobs_submit_input_change *in,
 		sp->force = c->has_force && c->force;
 		if ((sp->has_pkg_ip = c->has_pkg_ip))
 			sp->pkg_ip = c->pkg_ip;
+		sp->pkg_repo = c->pkg_repo;
 		return (0);
 	}
 	case ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_IF_ADDRESS: {
@@ -582,6 +583,7 @@ yjobs_spec(const struct arcana_jobs_submit_input_change *in,
 		sp->force = c->has_force && c->force;
 		if ((sp->has_pkg_ip = c->has_pkg_ip))
 			sp->pkg_ip = c->pkg_ip;
+		sp->pkg_repo = c->pkg_repo;
 		return (0);
 	}
 	case ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_JAIL_CONF: {

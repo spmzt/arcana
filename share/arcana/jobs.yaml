@@ -149,6 +149,10 @@ fields:
     label: pkg's network
     help: Which way pkg reaches its repository.
     choices: 4=IPv4 only (pkg -4)|6=IPv6 only (pkg -6)
+  - field: pkg_repo
+    type: text
+    label: Repository
+    help: Only from this one of pkg's repositories (pkg -r); empty, from where pkg's configuration has each package.
   - field: conn
     type: text
     label: Connection
@@ -237,7 +241,7 @@ kinds:
     uses: set unset
   - kind: pkg-upgrade
     title: Packages upgraded
-    uses: jail packages force pkg_ip
+    uses: jail packages force pkg_ip pkg_repo
   - kind: if-address
     title: An interface's address added or taken off
     needs: interface address
@@ -360,7 +364,7 @@ kinds:
   - kind: pkg-install
     title: Packages installed
     needs: packages
-    uses: jail force pkg_ip
+    uses: jail force pkg_ip pkg_repo
   - kind: jail-conf
     title: A jail made, removed; the jails' defaults or a template
     needs: verb

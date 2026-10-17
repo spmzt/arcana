@@ -10,6 +10,21 @@
 #include <sys/types.h>
 
 #include <atf-c.h>
+#include <string.h>
+
+/*
+ * ATF's own compares with strcmp(3), which a NULL (a field a slow reply
+ * did not have) makes crash, losing the rest of the case: said instead.
+ */
+#undef	ATF_CHECK_STREQ
+#define	ATF_CHECK_STREQ(want, got) do {					\
+	const char *want_ = (want), *got_ = (got);			\
+									\
+	ATF_CHECK_MSG(want_ != NULL && got_ != NULL &&			\
+	    strcmp(want_, got_) == 0, "%s != %s (%s != %s)", #want, #got,	\
+	    want_ != NULL ? want_ : "(null)", got_ != NULL ? got_ :	\
+	    "(null)");							\
+} while (0)
 #include <stdbool.h>
 #include <ucl.h>
 

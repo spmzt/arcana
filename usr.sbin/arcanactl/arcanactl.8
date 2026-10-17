@@ -940,7 +940,7 @@ automatically as what another needs, its size and what it is.
 or
 .Fl 6
 has pkg reach the repository over IPv4 or IPv6 only.
-.It Cm pkg-upgrade Oo Fl n Oc Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl j Ar jail | Fl J Oc Op Ar package ...
+.It Cm pkg-upgrade Oo Fl n Oc Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl r Ar repo Oc Oo Fl j Ar jail | Fl J Oc Op Ar package ...
 .Nm pkg upgrade Fl y
 of the named packages, or of all of them, on the host or in the running
 .Ar jail ;
@@ -955,7 +955,13 @@ only shows what would be done;
 .Fl O
 also installs packages built for a newer FreeBSD than the host's
 .Pq Ev IGNORE_OSVERSION ,
-which pkg refuses otherwise.
+which pkg refuses otherwise;
+.Fl r
+takes them from that repository alone
+.Pq Nm pkg upgrade Fl r ,
+one of those
+.Cm packages
+lists, enabled or not.
 What is still pending follows.
 .It Cm pkg-clean Oo Fl a Oc Oo Fl j Ar jail | Fl J Oc
 .Nm pkg clean Fl y ,
@@ -969,13 +975,15 @@ With
 .Fl J ,
 in every running jail instead, one batch of a job each, so that a jail
 whose pkg refuses fails alone.
-.It Cm pkg-install Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl j Ar jail Oc Ar package ...
+.It Cm pkg-install Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl r Ar repo Oc Oo Fl j Ar jail Oc Ar package ...
 .Nm pkg install Fl y ,
 a job, on the host or in the running
 .Ar jail ;
 with
 .Fl O ,
-also packages built for a newer FreeBSD.
+also packages built for a newer FreeBSD; with
+.Fl r ,
+from that repository alone.
 .It Cm jobs
 The host's queued, running and recently finished jobs.
 .It Cm job Oo Fl w Oc Ar id

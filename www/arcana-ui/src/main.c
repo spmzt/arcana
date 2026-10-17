@@ -670,12 +670,24 @@ submit_form(const char *form, const ucl_object_t *f)
 			return;
 		}
 		qj = json_quote(app.pkg.jail);
-		if (asprintf(&q, "{\"kind\":\"pkg-install\",\"packages\":[%s]"
-		    "%s%s%s%s%s}", b.s, app.pkg.jail[0] != '\0' ? ",\"jail\":" :
-		    "", app.pkg.jail[0] != '\0' ? qj : "", app.pkg.ip != 0 ?
-		    (app.pkg.ip == 4 ? ",\"pkg_ip\":4" : ",\"pkg_ip\":6") : "",
-		    jbool(f, "anyos") ? ",\"force\":true" : "", "") == -1)
-			abort();
+		{
+			char	*qr, rp[96];
+
+			/* From one repository: pkg install -r. */
+			rp[0] = '\0';
+			if (jstr(f, "repo") != NULL && jstr(f, "repo")[0] != '\0') {
+				qr = json_quote(jstr(f, "repo"));
+				snprintf(rp, sizeof(rp), ",\"pkg_repo\":%s", qr);
+				free(qr);
+			}
+			if (asprintf(&q, "{\"kind\":\"pkg-install\",\"packages\":"
+			    "[%s]%s%s%s%s%s}", b.s, app.pkg.jail[0] != '\0' ?
+			    ",\"jail\":" : "", app.pkg.jail[0] != '\0' ? qj : "",
+			    app.pkg.ip != 0 ? (app.pkg.ip == 4 ? ",\"pkg_ip\":4" :
+			    ",\"pkg_ip\":6") : "", jbool(f, "anyos") ?
+			    ",\"force\":true" : "", rp) == -1)
+				abort();
+		}
 		free(qj);
 		snprintf(title, sizeof(title), "pkg install %.200s%s%s",
 		    jstr(f, "names"), app.pkg.jail[0] != '\0' ? " in " : "",
@@ -750,12 +762,22 @@ submit_form(const char *form, const ucl_object_t *f)
 		ucl_object_unref(arr);
 		dry = jstr(f, "__submit") != NULL &&
 		    strcmp(jstr(f, "__submit"), "dry") == 0;
+		/* From one repository, or any. */
+		snprintf(app.pkg.repo, sizeof(app.pkg.repo), "%s",
+		    jstr(f, "repo") != NULL ? jstr(f, "repo") : "");
 		if (dry)
 			pkg_upgrade(s2, any ? names : NULL, true, false);
 		else if (any)
-			confirm("Upgrade packages", "pkg upgrade -y of the "
-			    "selected packages; services may restart.",
-			    "Upgrade", true, "", "do-pkg-upgrade", "", names);
+		{
+			char	cb[300];
+
+			snprintf(cb, sizeof(cb), "pkg upgrade -y of the selected "
+			    "packages%s%s; services may restart.",
+			    app.pkg.repo[0] != '\0' ? ", from the repository " :
+			    "", app.pkg.repo);
+			confirm("Upgrade packages", cb, "Upgrade", true, "",
+			    "do-pkg-upgrade", "", names);
+		}
 		else
 			dispatch("pkg-upgrade-all", "", "");
 		free(names);
@@ -1031,6 +1053,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_packages(s, false);
 	} else if (strcmp(act, "pkg-target") == 0 && s != NULL) {
 		snprintf(app.pkg.jail, sizeof(app.pkg.jail), "%s", arg);
+		/* Another's repositories: none chosen there yet. */
+		app.pkg.repo[0] = '\0';
 		if (app.pkg.data != NULL)
 			ucl_object_unref(app.pkg.data);
 		app.pkg.data = NULL;
@@ -1144,9 +1168,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		    6 ? "6" : "");
 	} else if (strcmp(act, "pkg-upgrade-all") == 0 && s != NULL) {
 		snprintf(body, sizeof(body), "pkg upgrade -y %s%s: every "
-		    "package with a newer version in the repository is "
-		    "replaced; services may restart.", app.pkg.jail[0] != '\0' ?
-		    "in jail " : "on the host", app.pkg.jail);
+		    "package with a newer version in %s%s is replaced; services "
+		    "may restart.", app.pkg.jail[0] != '\0' ? "in jail " :
+		    "on the host", app.pkg.jail, app.pkg.repo[0] != '\0' ?
+		    "the repository " : "the repository", app.pkg.repo);
 		confirm("Upgrade all packages", body, "Upgrade", true, "",
 		    "do-pkg-upgrade", "", "");
 	} else if (strcmp(act, "do-pkg-upgrade") == 0 && s != NULL) {

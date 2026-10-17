@@ -5047,6 +5047,7 @@ struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input {
 	bool		 ignore_osversion;
 	bool			 has_ip_version;
 	enum arcana_jails_jails_jail_arcpkg_packages_upgrade_input_ip_version	 ip_version;
+	const char	*repository;
 };
 
 /* list entry */
@@ -5078,6 +5079,10 @@ struct arcana_jails_jails_jail_arcpkg_packages {
 		size_t		 n;
 		const struct arcana_jails_jails_jail_arcpkg_packages_package	*v;
 	}			 package;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 repository;
 };
 
 /* list entry */
@@ -5504,6 +5509,7 @@ struct arcana_packages_packages_upgrade_input {
 	bool		 ignore_osversion;
 	bool			 has_ip_version;
 	enum arcana_packages_packages_upgrade_input_ip_version	 ip_version;
+	const char	*repository;
 };
 
 /* list entry */
@@ -5535,6 +5541,10 @@ struct arcana_packages_packages {
 		size_t		 n;
 		const struct arcana_packages_packages_package	*v;
 	}			 package;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 repository;
 };
 
 /* data */
@@ -5688,6 +5698,7 @@ struct arcana_jobs_submit_input_change_pkg_upgrade {
 	bool		 force;
 	bool			 has_pkg_ip;
 	uint32_t	 pkg_ip;
+	const char	*pkg_repo;
 };
 
 /* container, presence */
@@ -6047,6 +6058,7 @@ struct arcana_jobs_submit_input_change_pkg_install {
 	bool		 force;
 	bool			 has_pkg_ip;
 	uint32_t	 pkg_ip;
+	const char	*pkg_repo;
 };
 
 /* container, presence */

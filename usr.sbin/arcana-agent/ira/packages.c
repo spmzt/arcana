@@ -62,6 +62,72 @@ pkg_run(struct work *w, const char *jail, bool anyos, uint8_t ip,
 	return (run_exec(w, argv, res));
 }
 
+/*
+ * The repositories pkg is configured with there (pkg -vv), enabled or
+ * not, by name: "  NAME: {" under "Repositories:".  *np 0 when pkg did
+ * not say.
+ */
+static void
+pkg_repos(struct work *w, const char *jail, const char ***vp, size_t *np)
+{
+	static const char *const vv[] = { "-vv" };
+	struct execres	 res;
+	const char	**v;
+	char		*copy, *it, *line, *end;
+	bool		 in;
+	size_t		 n;
+
+	*vp = NULL;
+	*np = 0;
+	if (pkg_run(w, jail, false, 0, vv, 1, &res) != 0 || res.out == NULL)
+		return;
+	v = wcalloc(w, 65, sizeof(*v));
+	n = 0;
+	in = false;
+	copy = wstrndup(w, res.out, res.outlen);
+	for (it = copy; (line = strsep(&it, "\n")) != NULL && n < 64; ) {
+		if (strcmp(line, "Repositories:") == 0) {
+			in = true;
+			continue;
+		}
+		if (!in)
+			continue;
+		if (line[0] != ' ') {
+			in = false;
+			continue;
+		}
+		/* Two spaces, the name, ": {"; its settings deeper. */
+		if (line[1] != ' ' || line[2] == ' ' || line[2] == '\0' ||
+		    (end = strstr(line + 2, ": {")) == NULL)
+			continue;
+		*end = '\0';
+		v[n++] = line + 2;
+	}
+	*vp = v;
+	*np = n;
+}
+
+/* Is repo one of pkg's repositories there?  NULL, or why not. */
+static const char *
+repo_check(struct work *w, const char *jail, const char *repo)
+{
+	const char	**v;
+	const char	*p;
+	size_t		 n, i;
+
+	if (repo == NULL || repo[0] == '\0')
+		return (NULL);
+	for (p = repo; *p != '\0'; p++)
+		if (!isalnum((unsigned char)*p) && strchr("-_.", *p) == NULL)
+			return (wfmt(w, "'%s' is not a repository's name", repo));
+	pkg_repos(w, jail, &v, &n);
+	for (i = 0; i < n; i++)
+		if (strcmp(v[i], repo) == 0)
+			return (NULL);
+	return (wfmt(w, "pkg has no repository %s%s%s", repo, jail != NULL &&
+	    jail[0] != '\0' ? " in jail " : "", jail != NULL ? jail : ""));
+}
+
 /* The lines of "pkg version -vRl '<'" as packages. */
 static void
 parse_versions(struct work *w, const struct execres *res,
@@ -194,6 +260,13 @@ do_packages(struct work *w, const char *jail, bool refresh, bool inst,
 		rsp->error = e;
 		return (0);
 	}
+	/* The repositories an upgrade or an install may be held to. */
+	{
+		const char	**rv;
+
+		pkg_repos(w, jail, &rv, &rsp->pkg_repos.n);
+		rsp->pkg_repos.v = rv;
+	}
 	if (inst)
 		return (installed(w, jail, rsp));
 	if (refresh && pkg_run(w, jail, false, ip, update, 2, &res) != 0) {
@@ -281,19 +354,31 @@ int
 do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
     struct arc_pkg_upgrade_rsp *rsp)
 {
-	static const char *const version[] = { "version", "-vRl", "<" };
+	const char		*version[] = { "version", "-vRl", "<", NULL,
+				    NULL, NULL };
 	struct arc_package	*v;
 	struct execres		 res;
 	const char		**args, *e, *p;
-	size_t			 n, i;
+	size_t			 n, i, nv;
 
 	if (rq->jail != NULL && strcmp(rq->jail, "*") == 0)
 		return (upgrade_every_jail(w, rq, rsp));
 	rsp->has_ok = true;
 	rsp->ok = false;
-	if ((e = check_jail(w, rq->jail)) != NULL) {
+	if ((e = check_jail(w, rq->jail)) != NULL ||
+	    (e = repo_check(w, rq->jail, rq->pkg_repo)) != NULL) {
 		rsp->error = e;
 		return (0);
+	}
+	nv = 3;
+	if (rq->pkg_repo != NULL && rq->pkg_repo[0] != '\0') {
+		/* What that repository has newer: pkg version -R -r. */
+		version[1] = "-vR";
+		version[2] = "-r";
+		version[3] = rq->pkg_repo;
+		version[4] = "-l";
+		version[5] = "<";
+		nv = 6;
 	}
 	for (i = 0; i < rq->names.n; i++)
 		if (rq->names.v[i] == NULL || !valid_pkg(rq->names.v[i])) {
@@ -301,9 +386,14 @@ do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
 			    rq->names.v[i] != NULL ? rq->names.v[i] : "");
 			return (0);
 		}
-	args = wcalloc(w, rq->names.n + 4, sizeof(*args));
+	args = wcalloc(w, rq->names.n + 6, sizeof(*args));
 	n = 0;
 	args[n++] = "upgrade";
+	/* From that repository alone. */
+	if (rq->pkg_repo != NULL && rq->pkg_repo[0] != '\0') {
+		args[n++] = "-r";
+		args[n++] = rq->pkg_repo;
+	}
 	args[n++] = rq->dry_run ? "-n" : "-y";
 	for (i = 0; i < rq->names.n; i++)
 		args[n++] = rq->names.v[i];
@@ -320,7 +410,7 @@ do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
 			rsp->upgraded++;
 	}
 	/* What is still pending, for the reply. */
-	if (pkg_run(w, rq->jail, false, rq->pkg_ip, version, 3, &res) == 0 ||
+	if (pkg_run(w, rq->jail, false, rq->pkg_ip, version, nv, &res) == 0 ||
 	    res.status == 1) {
 		parse_versions(w, &res, &v, &n);
 		rsp->packages.v = v;
@@ -342,13 +432,18 @@ do_pkg_install(struct work *w, const struct arc_job_spec *sp,
 	const char	**args, *e;
 	size_t		 i, n;
 
-	if ((e = check_jail(w, sp->jail)) != NULL) {
+	if ((e = check_jail(w, sp->jail)) != NULL ||
+	    (e = repo_check(w, sp->jail, sp->pkg_repo)) != NULL) {
 		*errp = e;
 		return (-1);
 	}
-	args = wcalloc(w, sp->names.n + 3, sizeof(*args));
+	args = wcalloc(w, sp->names.n + 5, sizeof(*args));
 	n = 0;
 	args[n++] = "install";
+	if (sp->pkg_repo != NULL && sp->pkg_repo[0] != '\0') {
+		args[n++] = "-r";
+		args[n++] = sp->pkg_repo;
+	}
 	args[n++] = "-y";
 	for (i = 0; i < sp->names.n; i++) {
 		if (sp->names.v[i] == NULL || !valid_pkg(sp->names.v[i])) {
@@ -429,6 +524,7 @@ ypackages_upgrade(struct work *w, const char *jail,
 	/* ip-version's values are pkg-ip's: 0, 4, 6. */
 	if ((rq.has_pkg_ip = in->has_ip_version))
 		rq.pkg_ip = (uint8_t)in->ip_version;
+	rq.pkg_repo = in->repository;
 	do_pkg_upgrade(w, &rq, &rsp);
 	if (!rsp.ok) {
 		*errp = rsp.error != NULL ? rsp.error : "pkg upgrade failed";

@@ -222,6 +222,7 @@ case "$1" in -4|-6) shift ;; esac
 [ "$1" = -o ] && shift 2
 [ "$1" = -j ] && shift 2
 case "$1" in
+-vv)	printf 'Version                 : 2.3.1\nRepositories:\n  FreeBSD-ports: { \n    url             : "pkg+https://pkg.FreeBSD.org/FreeBSD:16:amd64/latest",\n    enabled         : yes,\n  }\n  builder: { \n    url             : "file:///usr/local/poudriere/data/packages/lab",\n    enabled         : no,\n  }\n' ;;
 update)	exit 0 ;;
 query)	printf 'aria2\t1.37.0_1\t0\t5242880\twww/aria2\tDownload utility\npimd\t3.1.0\t1\t102400\tnet/pimd\tPIM-SM daemon\n' ;;
 clean)	echo "$*" >> clean.log ;;
@@ -235,7 +236,9 @@ version)
 ' "$nv" "$remote"
 	done < pending ;;
 upgrade)
-	shift; dry=no; [ "$1" = -n ] && dry=yes; shift
+	shift
+	[ "$1" = -r ] && { echo "upgrade from $2" >> repo.log; shift 2; }
+	dry=no; [ "$1" = -n ] && dry=yes; shift
 	[ -s pending ] || { echo "Your packages are up to date."; exit $([ $dry = yes ] && echo 1 || echo 0); }
 	while read nv remote; do
 		name=${nv%-*}
@@ -292,7 +295,17 @@ start_daemon()
 
 stop_daemon()
 {
-	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	local pid i
+
+	[ -f daemon.pid ] || return 0
+	pid=$(cat daemon.pid)
+	kill "$pid" 2>/dev/null
+	# Gone before anything follows: one that left later would take
+	# away the socket the next one had made.
+	for i in $(seq 1 100); do
+		kill -0 "$pid" 2>/dev/null || break
+		sleep 0.05
+	done
 	true
 }
 
@@ -761,6 +774,22 @@ packages_body()
 	atf_check -o match:'fake-pkg -6 version -vRl <' "$JGC" -t -c "$SOCK" packages -6
 	atf_check -o match:'fake-pkg -4 -o IGNORE_OSVERSION=yes upgrade -n' \
 	    "$JGC" -t -c "$SOCK" pkg-upgrade -n -O -4
+	# pkg's repositories, enabled or not (pkg -vv); an upgrade held to
+	# one of them (pkg upgrade -r, what it has newer by pkg version -R
+	# -r), a name pkg has not refused; an install from one too.
+	atf_check -o match:'Repositories: +FreeBSD-ports +builder' \
+	    "$JGC" -c "$SOCK" packages
+	atf_check -o match:'fake-pkg upgrade -r builder -n' \
+	    -o match:'fake-pkg version -vR -r builder -l <' \
+	    "$JGC" -t -c "$SOCK" pkg-upgrade -n -r builder
+	atf_check -o inline:'upgrade from builder\n' cat repo.log
+	atf_check -s exit:1 -o ignore -e match:'pkg has no repository nosuch' \
+	    "$JGC" -c "$SOCK" pkg-upgrade -n -r nosuch
+	atf_check -s exit:1 -o ignore -e match:"'a b' is not a repository's name" \
+	    "$JGC" -c "$SOCK" pkg-upgrade -n -r 'a b'
+	atf_check -o match:'done +pkg install aria2 from builder$' \
+	    "$JGC" -c "$SOCK" pkg-install -r builder aria2
+	atf_check -o match:'^install -r builder -y aria2$' cat install.log
 	# The cache cleaned, as a job; all of it with -a.
 	atf_check -o match:'done +pkg clean$' "$JGC" -c "$SOCK" pkg-clean
 	atf_check -o match:'done +pkg clean -a$' "$JGC" -c "$SOCK" pkg-clean -a
@@ -3370,7 +3399,7 @@ stop_body()
 	"$JGC" -c "$SOCK" service sshd restart > change.out 2>&1 &
 	change=$!
 	# Once the change is under way, not at a guess of when.
-	for i in $(seq 1 50); do
+	for i in $(seq 1 150); do
 		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Under way' && break
 		sleep 0.1
 	done
@@ -3403,10 +3432,12 @@ stop_body()
 	pid=$(cat daemon.pid)
 	touch slow
 	"$JGC" -c "$SOCK" service sshd restart > /dev/null 2>&1 &
-	for i in $(seq 1 50); do
+	# Under way before the signals, however loaded the machine is.
+	for i in $(seq 1 150); do
 		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Under way' && break
 		sleep 0.1
 	done
+	atf_check -o match:'Under way' "$JGC" -c "$SOCK" jobs
 	kill "$pid"
 	sleep 0.3
 	kill "$pid"
@@ -6893,12 +6924,14 @@ host bash installed=5.3.3 available=- automatic=no size=yes origin=shells/bash c
 host curl installed=8.16.0 available=8.17.0 automatic=yes size=yes origin=ftp/curl comment=Command line tool and library for transferring data with URLs
 host git installed=2.51.0 available=- automatic=no size=- origin=devel/git comment=-
 host vim installed=9.1.1 available=9.1.2 automatic=- size=- origin=- comment=-
-host yang-cbor 225 bytes, the same back
+host yang-cbor 250 bytes, the same back
 back bash installed=5.3.3 available=- automatic=no size=yes origin=shells/bash comment=GNU Project's Bourne Again SHell
 back curl installed=8.16.0 available=8.17.0 automatic=yes size=yes origin=ftp/curl comment=Command line tool and library for transferring data with URLs
 back git installed=2.51.0 available=- automatic=no size=- origin=devel/git comment=-
 back vim installed=9.1.1 available=9.1.2 automatic=- size=- origin=- comment=-
-jail yang-cbor 236 bytes, the same back
+back repository FreeBSD-ports
+back repository builder
+jail yang-cbor 261 bytes, the same back
 web bash installed=5.3.3 available=- automatic=no size=yes origin=shells/bash comment=GNU Project's Bourne Again SHell
 web curl installed=8.16.0 available=8.17.0 automatic=yes size=yes origin=ftp/curl comment=Command line tool and library for transferring data with URLs
 web git installed=2.51.0 available=- automatic=no size=- origin=devel/git comment=-

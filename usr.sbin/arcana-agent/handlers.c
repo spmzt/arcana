@@ -1337,6 +1337,7 @@ job_free(struct job *j)
 		free((char *)(uintptr_t)j->svc.variables.v[i].value);
 	}
 	free((void *)(uintptr_t)j->svc.variables.v);
+	free((char *)(uintptr_t)j->pkg.pkg_repo);
 	for (i = 0; i < j->pkg.names.n; i++)
 		free((char *)(uintptr_t)j->pkg.names.v[i]);
 	free((void *)(uintptr_t)j->pkg.names.v);
@@ -2456,6 +2457,8 @@ arc_pkg_upgrade_doit(cbl_req *req, const struct arc_pkg_upgrade_req *rq,
 	j->pkg.ignore_osversion = rq->ignore_osversion;
 	j->pkg.has_pkg_ip = rq->has_pkg_ip;
 	j->pkg.pkg_ip = rq->pkg_ip;
+	j->pkg.pkg_repo = rq->pkg_repo != NULL && rq->pkg_repo[0] != '\0' ?
+	    xstrdup(rq->pkg_repo) : NULL;
 	if (rq->names.n > 0) {
 		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL)
 			err(1, "calloc");

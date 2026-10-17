@@ -284,9 +284,10 @@ usage(void)
 	    "    cam rescan\n"
 	    "    fstab [-w new-text [-n]]\n"
 	    "    packages [-i] [-r] [-4 | -6] [jail]\n"
-	    "    pkg-upgrade [-n] [-O] [-4 | -6] [-j jail | -J] [package ...]\n"
+	    "    pkg-upgrade [-n] [-O] [-4 | -6] [-r repo] [-j jail | -J] "
+	    "[package ...]\n"
 	    "    pkg-clean [-a] [-j jail | -J]\n"
-	    "    pkg-install [-O] [-4 | -6] [-j jail] package ...\n"
+	    "    pkg-install [-O] [-4 | -6] [-r repo] [-j jail] package ...\n"
 	    "    jobs\n"
 	    "    job [-w] id\n"
 	    "    job-cancel id\n"
@@ -3521,6 +3522,17 @@ cmd_packages(struct arc_client *cl, int argc, char **argv)
 		emit_installed(rsp->packages.v, rsp->packages.n);
 	else if (rsp->ok)
 		emit_packages(rsp->packages.v, rsp->packages.n);
+	/* pkg's repositories there: what -r of pkg-upgrade may name. */
+	if (rsp->ok && rsp->pkg_repos.n > 0) {
+		size_t	i;
+
+		xo_open_list("repository");
+		xo_emit("{Lwc:Repositories}");
+		for (i = 0; i < rsp->pkg_repos.n; i++)
+			xo_emit("{P: }{l:repository/%s}", rsp->pkg_repos.v[i]);
+		xo_close_list("repository");
+		xo_emit("\n");
+	}
 	emit_trace(rsp->trace.v, rsp->trace.n);
 	error = rsp->ok ? 0 : 1;
 	if (!rsp->ok)
@@ -3611,7 +3623,7 @@ cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
-/* pkg-install [-O] [-4 | -6] [-j jail] package ...: a job. */
+/* pkg-install [-O] [-4 | -6] [-r repo] [-j jail] package ...: a job. */
 static int
 cmd_pkg_install(struct arc_client *cl, int argc, char **argv)
 {
@@ -3622,7 +3634,7 @@ cmd_pkg_install(struct arc_client *cl, int argc, char **argv)
 	sp.has_kind = true;
 	sp.kind = ARC_JOB_KIND_PKG_INSTALL;
 	optind = 1;
-	while ((ch = getopt(argc, argv, "46Oj:")) != -1) {
+	while ((ch = getopt(argc, argv, "46Oj:r:")) != -1) {
 		switch (ch) {
 		case '4':
 		case '6':
@@ -3631,6 +3643,9 @@ cmd_pkg_install(struct arc_client *cl, int argc, char **argv)
 			break;
 		case 'O':
 			sp.force = true;
+			break;
+		case 'r':
+			sp.pkg_repo = optarg;
 			break;
 		case 'j':
 			sp.jail = optarg;
@@ -3741,8 +3756,9 @@ cmd_ipsec(struct arc_client *cl, int argc, char **argv)
 	return (submit(cl, &sp));
 }
 
-/* pkg-upgrade [-n] [-O] [-4 | -6] [-j jail | -J] [package ...]: -J, of
- * every running jail, by the agent, one after the other. */
+/* pkg-upgrade [-n] [-O] [-4 | -6] [-r repo] [-j jail | -J] [package ...]:
+ * -J, of every running jail, by the agent, one after the other; -r, from
+ * that repository alone. */
 static int
 cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 {
@@ -3752,7 +3768,7 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 
 	memset(&req, 0, sizeof(req));
 	optind = 1;
-	while ((ch = getopt(argc, argv, "46OJj:n")) != -1) {
+	while ((ch = getopt(argc, argv, "46OJj:nr:")) != -1) {
 		switch (ch) {
 		case '4':
 		case '6':
@@ -3773,6 +3789,9 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 		case 'n':
 			req.dry_run = true;
 			break;
+		case 'r':
+			req.pkg_repo = optarg;
+			break;
 		default:
 			usage();
 		}
@@ -3789,6 +3808,7 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 		sp.force = req.ignore_osversion;
 		sp.has_pkg_ip = req.has_pkg_ip;
 		sp.pkg_ip = req.pkg_ip;
+		sp.pkg_repo = req.pkg_repo;
 		sp.names.v = req.names.v;
 		sp.names.n = req.names.n;
 		return (submit(cl, &sp));

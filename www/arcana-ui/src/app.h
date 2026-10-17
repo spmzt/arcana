@@ -198,6 +198,7 @@ struct pkgview {
 	char		*names;		/* what it was asked of: JSON, or NULL */
 	int		 mode;		/* 0 the installed, 1 the upgrades */
 	int		 ip;		/* pkg -4 or -6, or 0 either */
+	char		 repo[65];	/* pkg -r: one repository, or "" */
 };
 
 enum netkind {
