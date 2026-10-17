@@ -2605,9 +2605,15 @@ operations:
       jid, when a jail is made or removed, the host's or one made in a
       jail (its name parent.child), as kqueue(2)'s EVFILT_JAIL tells
       it.  crash, with pid, process (its name), jid, jail (its name,
-      empty for the host's), uid, signal and core (whether it dumped
-      one), when the kernel says a process died of a signal that
-      dumps core (kern.logsigexit).
+      empty for the host's), uid, signal, core (whether it dumped
+      one) and, when it did not and the kernel said why, reason, its
+      words ("sugid process denied by kern.sugid_coredump", a daemon
+      that set its group, as bird -g does; "bad address"), when the
+      kernel says a process died of a signal that dumps core
+      (kern.logsigexit).  Such a death is a fault too, crash, Major,
+      of host:bird or jail:web/nginx, by kernel: the signal by name,
+      how many times in 24 hours and the reason, said anew at each
+      crash and cleared after an hour without one.
     do:
       request:
         attributes:

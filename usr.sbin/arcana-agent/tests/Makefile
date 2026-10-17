@@ -27,6 +27,12 @@ CFLAGS.ysystem_test.c+=	-I${.OBJDIR}/..
 CFLAGS.ysystem.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 LDADD.ysystem+=	${CBLINK_LIBS} ${UCL_LIBS} \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
+# kmsg: the kernel's line for a crash, as the event and fault of it.
+PROGS+=		kmsg
+SRCS.kmsg=	kmsg_test.c kmsg.c
+CFLAGS.kmsg_test.c+=	-I${.CURDIR}/.. -I${.OBJDIR}/.. -I${.CURDIR}/../../../lib/libvarconf ${UCL_CFLAGS}
+CFLAGS.kmsg.c+=	-I${.CURDIR}/.. -I${.OBJDIR}/.. -I${.CURDIR}/../../../lib/libvarconf ${UCL_CFLAGS}
+LDADD.kmsg+=	${CBLINK_LIBS} -ljail -lpthread
 # fwmatch: a packet walked through an ipfw ruleset.
 PROGS+=		fwmatch
 SRCS.fwmatch=	fwmatch_test.c fwmatch.c

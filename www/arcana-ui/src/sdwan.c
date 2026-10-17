@@ -1025,7 +1025,8 @@ view_dashboard(struct html *h)
 	    tdown > 0 ? "warn" : nt > 0 && tup == nt ? "ok" : "", nt, nt == 1 ?
 	    "" : "s", tup, tdown);
 	h_fmt(h, "<div class=\"tile %s\"><b>%d</b><span>open fault%s · tunnels, "
-	    "BFD, BGP, thresholds, the hosts' resources</span></div>", nfaults >
+	    "BFD, BGP, thresholds, crashes, the hosts' resources</span></div>",
+	    nfaults >
 	    0 ? "warn" : "", nfaults, nfaults == 1 ? "" : "s");
 	if (ap != NULL && jstr(ap, "state") != NULL) {
 		fmt_age(age, sizeof(age), (double)jint(ap, "started", 0) * 1000);

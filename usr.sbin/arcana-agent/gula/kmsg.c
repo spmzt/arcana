@@ -17,7 +17,15 @@
  * the kernel writes for a process ended by a signal that dumps core,
  * SIGSEGV, SIGABRT, SIGBUS and their kin (kern.logsigexit, on unless
  * set off), "pid 812 (nginx), jid 0, uid 80: exited on signal 11 (core
- * dumped)", taken apart: the process's name, its jail, the signal.
+ * dumped)", taken apart: the process's name, its jail, the signal, and
+ * why there is no core when there is none ("no core dump - sugid
+ * process denied by kern.sugid_coredump": a daemon that set its group,
+ * as bird -g does).  It is a fault too (crash, Major, of host:bird or
+ * jail:web/nginx), since events come by the hundred and a program that
+ * dies three times a night is what a page of faults and a mail are
+ * for: the fault says the signal by name, how many times in the day,
+ * and the kernel's reason; said anew at each crash, and cleared after
+ * an hour without one.
  *
  * A line not finished yet is left for the next read.  When the end of
  * the last read is no longer there (more was written in a second than
@@ -29,6 +37,7 @@
 
 #include <ctype.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +53,19 @@
 #define	KMSG_TAIL	256		/* bytes of the last read, to find it */
 #define	KMSG_EVENTS	20		/* events a read makes at most */
 #define	KMSG_LINE	1024
+#define	CRASH_MAX	64		/* programs whose crashes are counted */
+#define	CRASH_TIMES	64		/* of each, the last ones' times */
+#define	CRASH_DAY	(24 * 3600)	/* how long a crash counts */
+#define	CRASH_QUIET	3600		/* without one, the fault is cleared */
+
+/* A program's crashes of the day, by what the fault is of. */
+struct crashes {
+	char	object[128];		/* host:bird, jail:web/nginx */
+	char	comm[MAXCOMLEN + 2];
+	time_t	times[CRASH_TIMES];	/* oldest first */
+	int	ntimes;
+	bool	beyond;			/* more in the day than kept */
+};
 
 struct kline {
 	uint64_t	 n;
@@ -59,6 +81,8 @@ static char		km_tail[KMSG_TAIL];
 static size_t		km_taillen;
 static bool		km_running;
 static bool		km_readable;	/* the last read was let */
+static struct crashes	cr[CRASH_MAX];	/* under km_lock */
+static int		ncr;
 
 /* The buffer, without the priorities "<6>" that dmesg(8) leaves out. */
 static char *
@@ -105,34 +129,148 @@ find_tail(const char *buf, size_t len)
 	return (found);
 }
 
-/* A process's crash, as the kernel says it: an event of its own. */
-static void
-crash(const char *text)
+/* A signal's name, SIGBUS; or its number, when it has none. */
+static const char *
+signame(int sig, char *buf, size_t len)
 {
-	char	 comm[MAXCOMLEN + 2], *jname;
-	int	 pid, jid, uid, sig, n;
-	bool	 core;
+	size_t	i;
+
+	if (sig <= 0 || sig >= sys_nsig || sys_signame[sig] == NULL) {
+		snprintf(buf, len, "signal %d", sig);
+		return (buf);
+	}
+	snprintf(buf, len, "SIG%s", sys_signame[sig]);
+	for (i = 3; buf[i] != '\0'; i++)
+		buf[i] = (char)toupper((unsigned char)buf[i]);
+	return (buf);
+}
+
+/*
+ * The program's crashes of the day, one more at now: those of a day
+ * ago dropped, the newest kept at the end.  Its record, made when it
+ * has none; NULL when there is no room for another program's.
+ */
+static struct crashes *
+crash_note(const char *object, const char *comm, time_t now)
+{
+	struct crashes	*c;
+	int		 i, old;
+
+	for (i = 0; i < ncr && strcmp(cr[i].object, object) != 0; i++)
+		;
+	if (i == ncr) {
+		if (ncr == CRASH_MAX)
+			return (NULL);
+		c = &cr[ncr++];
+		memset(c, 0, sizeof(*c));
+		snprintf(c->object, sizeof(c->object), "%s", object);
+		snprintf(c->comm, sizeof(c->comm), "%s", comm);
+	}
+	c = &cr[i];
+	for (old = 0; old < c->ntimes && c->times[old] <= now - CRASH_DAY;
+	    old++)
+		;
+	if (old > 0) {
+		memmove(c->times, c->times + old, sizeof(c->times[0]) *
+		    (size_t)(c->ntimes - old));
+		c->ntimes -= old;
+		c->beyond = false;
+	}
+	if (c->ntimes == CRASH_TIMES) {
+		memmove(c->times, c->times + 1, sizeof(c->times[0]) *
+		    (CRASH_TIMES - 1));
+		c->ntimes--;
+		c->beyond = true;
+	}
+	c->times[c->ntimes++] = now;
+	return (c);
+}
+
+/*
+ * A process's crash, as the kernel says it, at now: an event of its
+ * own, and the fault of its program set, or said anew.  false for a
+ * line that is not one.  Under km_lock.
+ */
+bool
+kmsg_crash_line(const char *text, time_t now)
+{
+	struct crashes	*c;
+	const char	*p, *reason;
+	char		 comm[MAXCOMLEN + 2], *jname, object[128], sig_s[24],
+			 reason_s[160], descr[200];
+	int		 pid, jid, uid, sig, n;
+	bool		 core;
 
 	n = 0;
 	if (sscanf(text, "pid %d (%" __XSTRING(MAXCOMLEN) "[^)]), jid %d, "
 	    "uid %d: exited on signal %d%n", &pid, comm, &jid, &uid, &sig,
 	    &n) != 5 || n == 0)
-		return;
-	core = strncmp(text + n, " (core dumped)", 14) == 0;
+		return (false);
+	p = text + n;
+	core = strncmp(p, " (core dumped)", 14) == 0;
+	/* "(no core dump - bad address)": the kernel's reason, as far as
+	 * its closing parenthesis. */
+	reason = NULL;
+	if (strncmp(p, " (no core dump - ", 17) == 0) {
+		p += 17;
+		snprintf(reason_s, sizeof(reason_s), "%.*s", (int)strcspn(p,
+		    ")"), p);
+		reason = reason_s;
+	}
 	/* A name of the jail's, when it still has one. */
 	jname = jid > 0 ? jail_getname(jid) : NULL;
 	/* A process's name is the kernel's: no quote or backslash in it
-	 * is taken. */
+	 * is taken; nor in the reason, which is the kernel's too. */
 	if (strpbrk(comm, "\"\\") != NULL || (jname != NULL &&
-	    strpbrk(jname, "\"\\") != NULL)) {
+	    strpbrk(jname, "\"\\") != NULL) || (reason != NULL &&
+	    strpbrk(reason, "\"\\") != NULL)) {
 		free(jname);
-		return;
+		return (true);
 	}
 	event_add("crash", "{\"pid\":%d,\"process\":\"%s\",\"jid\":%d,"
-	    "\"jail\":\"%s\",\"uid\":%d,\"signal\":%d,\"core\":%s}", pid,
+	    "\"jail\":\"%s\",\"uid\":%d,\"signal\":%d,\"core\":%s%s%s%s}", pid,
 	    comm, jid, jname != NULL ? jname : "", uid, sig, core ? "true" :
-	    "false");
+	    "false", reason != NULL ? ",\"reason\":\"" : "", reason != NULL ?
+	    reason : "", reason != NULL ? "\"" : "");
+	if (jid > 0 && jname != NULL)
+		snprintf(object, sizeof(object), "jail:%s/%s", jname, comm);
+	else if (jid > 0)
+		snprintf(object, sizeof(object), "jail:%d/%s", jid, comm);
+	else
+		snprintf(object, sizeof(object), "host:%s", comm);
 	free(jname);
+	if ((c = crash_note(object, comm, now)) == NULL)
+		return (true);
+	snprintf(descr, sizeof(descr), "%s died of %s (pid %d), %s%d time%s "
+	    "in 24 h; %s%s%s", comm, signame(sig, sig_s, sizeof(sig_s)), pid,
+	    c->beyond ? "at least " : "", c->ntimes, c->ntimes == 1 ? "" :
+	    "s", core ? "a core was dumped" : "no core", reason != NULL ?
+	    ": " : "", reason != NULL ? reason : "");
+	if (!fault_update("crash", object, "%s", descr))
+		fault_set("crash", "Major", object, "kernel", "%s", descr);
+	return (true);
+}
+
+/*
+ * The faults of the programs that ran an hour without crashing
+ * cleared, their records dropped.  Under km_lock.
+ */
+void
+kmsg_crash_sweep(time_t now)
+{
+	int	i;
+
+	for (i = 0; i < ncr; ) {
+		if (cr[i].times[cr[i].ntimes - 1] > now - CRASH_QUIET) {
+			i++;
+			continue;
+		}
+		fault_clear("crash", cr[i].object, "%s ran an hour without "
+		    "crashing", cr[i].comm);
+		memmove(&cr[i], &cr[i + 1], sizeof(cr[0]) * (size_t)(ncr - i -
+		    1));
+		ncr--;
+	}
 }
 
 /* One line more: kept, numbered, and an event if events are wanted. */
@@ -163,7 +301,7 @@ add_line(const char *s, size_t n, time_t t, int *events, int *more)
 	km_count++;
 	if (events == NULL)
 		return;
-	crash(text);
+	(void)kmsg_crash_line(text, t);
 	if (*events >= KMSG_EVENTS) {
 		(*more)++;
 		return;
@@ -248,6 +386,9 @@ reader(void *arg __unused)
 	for (;;) {
 		sleep(1);
 		kmsg_read(false);
+		pthread_mutex_lock(&km_lock);
+		kmsg_crash_sweep(time(NULL));
+		pthread_mutex_unlock(&km_lock);
 	}
 	return (NULL);
 }

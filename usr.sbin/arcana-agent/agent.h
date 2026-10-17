@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.135.2"
+#define	ARCANA_AGENT_VERSION	"0.136.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -490,6 +490,8 @@ void		 kmsg_start(void);
 void		 host_watch_start(void);
 bool		 kmsg_lines(struct work *, uint64_t, const char *, uint32_t,
 		    struct kmsg_line **, size_t *, uint64_t *);
+bool		 kmsg_crash_line(const char *, time_t);
+void		 kmsg_crash_sweep(time_t);
 void		 history_save(void);
 /* gula/probe.c: the tunnels measured, ICMP echo again and again. */
 enum { PROBE_NONE = -1, PROBE_UNKNOWN, PROBE_UP, PROBE_DOWN, PROBE_ENDED,
@@ -544,6 +546,8 @@ const char	*sdwan_tunnel_by_via(const char *);
 void		 fault_set(const char *, const char *, const char *, const char *,
 		    const char *, ...) __printflike(5, 6);
 void		 fault_clear(const char *, const char *, const char *, ...)
+		    __printflike(3, 4);
+bool		 fault_update(const char *, const char *, const char *, ...)
 		    __printflike(3, 4);
 void		 faults_json(struct ucl_object_s *);
 void		 faults_start(void);

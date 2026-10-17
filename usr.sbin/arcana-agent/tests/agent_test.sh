@@ -5884,7 +5884,7 @@ yang_events_body()
 	local y="$(atf_get_srcdir)/yev"
 
 	cat > ev.json <<'EOT'
-{"last":12,"first":3,"kept":512,"events":[{"n":3,"t":1791995110,"kind":"route-add","data":{"destination":"10.9.0.0","gateway":"10.0.0.1","flags":"UGS","nhop":5,"metric":0,"weight":1,"fib":0,"prefixlen":16,"interface":"em0","source":"static"}},{"n":4,"t":1791995111,"kind":"routes","data":{"changed":40}},{"n":5,"t":1791995112,"kind":"link","jail":"r1","data":{"interface":"epair0b","up":true,"carrier":true,"mtu":1500}},{"n":6,"t":1791995113,"kind":"address-add","data":{"interface":"em0","address":"2001:db8::7","prefixlen":64}},{"n":7,"t":1791995114,"kind":"neigh","data":{"family":"inet","interface":"em0","address":"10.0.0.9","lladdr":"02:00:00:00:00:09","state":"reachable","router":false}},{"n":8,"t":1791995115,"kind":"threshold","data":{"what":"jail-cpu","name":"web","value":55,"limit":50,"over":true}},{"n":9,"t":1791995116,"kind":"kmsg","data":{"seq":41,"text":"em0: link state changed to UP"}},{"n":10,"t":1791995117,"kind":"sdwan-tunnel","data":{"id":"tvc-1","address":"10.202.0.2","state":"down","misses":3}},{"n":11,"t":1791995118,"kind":"sdwan-fault","data":{"type":"tunnel","severity":"Major","object":"tvc-1","by":"probe","description":"no reply","state":"set"}},{"n":12,"t":1791995119,"kind":"sdwan-security","data":{"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"em0","comment":"deny-ssh"}},{"n":13,"t":1791995120,"kind":"job","data":{"id":77,"title":"ipfw table T46 add","ok":false,"error":"ipfw: bad"}},{"n":14,"t":1791995121,"kind":"jail-state","data":{"jail":"web","state":"running","jid":5}},{"n":15,"t":1791995122,"kind":"crash","data":{"pid":812,"process":"nginx","jid":5,"jail":"web","uid":80,"signal":11,"core":true}}]}
+{"last":12,"first":3,"kept":512,"events":[{"n":3,"t":1791995110,"kind":"route-add","data":{"destination":"10.9.0.0","gateway":"10.0.0.1","flags":"UGS","nhop":5,"metric":0,"weight":1,"fib":0,"prefixlen":16,"interface":"em0","source":"static"}},{"n":4,"t":1791995111,"kind":"routes","data":{"changed":40}},{"n":5,"t":1791995112,"kind":"link","jail":"r1","data":{"interface":"epair0b","up":true,"carrier":true,"mtu":1500}},{"n":6,"t":1791995113,"kind":"address-add","data":{"interface":"em0","address":"2001:db8::7","prefixlen":64}},{"n":7,"t":1791995114,"kind":"neigh","data":{"family":"inet","interface":"em0","address":"10.0.0.9","lladdr":"02:00:00:00:00:09","state":"reachable","router":false}},{"n":8,"t":1791995115,"kind":"threshold","data":{"what":"jail-cpu","name":"web","value":55,"limit":50,"over":true}},{"n":9,"t":1791995116,"kind":"kmsg","data":{"seq":41,"text":"em0: link state changed to UP"}},{"n":10,"t":1791995117,"kind":"sdwan-tunnel","data":{"id":"tvc-1","address":"10.202.0.2","state":"down","misses":3}},{"n":11,"t":1791995118,"kind":"sdwan-fault","data":{"type":"tunnel","severity":"Major","object":"tvc-1","by":"probe","description":"no reply","state":"set"}},{"n":12,"t":1791995119,"kind":"sdwan-security","data":{"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"em0","comment":"deny-ssh"}},{"n":13,"t":1791995120,"kind":"job","data":{"id":77,"title":"ipfw table T46 add","ok":false,"error":"ipfw: bad"}},{"n":14,"t":1791995121,"kind":"jail-state","data":{"jail":"web","state":"running","jid":5}},{"n":15,"t":1791995122,"kind":"crash","data":{"pid":812,"process":"nginx","jid":5,"jail":"web","uid":80,"signal":11,"core":false,"reason":"sugid process denied by kern.sugid_coredump"}}]}
 EOT
 	cat > want <<'EOT'
 events last=12 first=3 kept=512
@@ -5900,8 +5900,8 @@ events last=12 first=3 kept=512
 12 2026-10-14T16:25:19Z sdwan-security: security seq=7 rule=30010 Deny 10.1.0.2:4000 -> 10.3.0.2:22 on em0 (deny-ssh)
 13 2026-10-14T16:25:20Z job: job 77 ipfw table T46 add ok=no error=ipfw: bad
 14 2026-10-14T16:25:21Z jail-state: jail-state web running jid=5
-15 2026-10-14T16:25:22Z crash: crash pid=812 nginx jid=5 jail=web uid=80 signal=11 core=yes
-yang-cbor 868 bytes, the same back
+15 2026-10-14T16:25:22Z crash: crash pid=812 nginx jid=5 jail=web uid=80 signal=11 core=no reason=sugid process denied by kern.sugid_coredump
+yang-cbor 915 bytes, the same back
 EOT
 	atf_check -o file:want "$y" list ev.json
 	cat > one.json <<'EOT'
@@ -6212,6 +6212,56 @@ fault 2026-10-14T16:25:18Z tunnel Major was=- tvc-2 by=probe cleared=no at=-: no
 yang-cbor 756 bytes, the same back
 EOT
 	atf_check -o file:want "$y" state state.json
+}
+
+atf_test_case crash_fault
+crash_fault_head()
+{
+	atf_set "descr" "the kernel's line for a program that died of a" \
+	    "signal (kmsg.c): the crash event with the kernel's reason for" \
+	    "no core, the crash fault of the program with the signal's name" \
+	    "and the day's count, said anew at each crash, cleared after an" \
+	    "hour without one"
+}
+crash_fault_body()
+{
+	local f="$(atf_get_srcdir)/kmsg"
+
+	cat > lines <<'EOF'
+100 pid 13939 (bird), jid 0, uid 0: exited on signal 10 (no core dump - sugid process denied by kern.sugid_coredump)
+200 pid 14000 (bird), jid 0, uid 0: exited on signal 10 (no core dump - sugid process denied by kern.sugid_coredump)
+250 pid 812 (nginx), jid 7, uid 80: exited on signal 11 (core dumped)
+300 em0: link state changed to UP
+86500 pid 14100 (bird), jid 0, uid 0: exited on signal 6 (no core dump - bad address)
+sweep 90000
+sweep 90101
+sweep 90151
+EOF
+	atf_check -o save:out "$f" < lines
+	# The event, with the reason; the fault, by the kernel.
+	atf_check -o match:'^event crash \{"pid":13939,"process":"bird","jid":0,"jail":"","uid":0,"signal":10,"core":false,"reason":"sugid process denied by kern.sugid_coredump"\}$' \
+	    cat out
+	atf_check -o match:'^set crash Major host:bird kernel: bird died of SIGBUS \(pid 13939\), 1 time in 24 h; no core: sugid process denied by kern.sugid_coredump$' \
+	    cat out
+	# The second crash: the same fault, its line said anew.
+	atf_check -o match:'^update crash host:bird: bird died of SIGBUS \(pid 14000\), 2 times in 24 h; no core: sugid' \
+	    cat out
+	atf_check -o not-match:'set again' cat out
+	# A jail's, by its id when it has no name any more; a core dumped.
+	atf_check -o match:'^event crash \{"pid":812,"process":"nginx","jid":7,"jail":"","uid":80,"signal":11,"core":true\}$' \
+	    cat out
+	atf_check -o match:'^set crash Major jail:7/nginx kernel: nginx died of SIGSEGV \(pid 812\), 1 time in 24 h; a core was dumped$' \
+	    cat out
+	atf_check -o match:'^not a crash: em0: link state changed to UP$' cat out
+	# A day on: the crash of a day ago no longer counts.
+	atf_check -o match:'^update crash host:bird: bird died of SIGABRT \(pid 14100\), 2 times in 24 h; no core: bad address$' \
+	    cat out
+	# An hour without one, each: nginx's at the first sweep, its last
+	# crash a day before it; bird's at the second, an hour and a
+	# second after its last; the third clears none.
+	atf_check -o inline:'clear crash jail:7/nginx: nginx ran an hour without crashing\nclear crash host:bird: bird ran an hour without crashing\n' \
+	    grep '^clear' out
+	atf_check -o inline:'2\n' sh -c "grep -c '^set' out"
 }
 
 atf_test_case fw_walk
@@ -7564,6 +7614,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_host_agent
 	atf_add_test_case yang_sdwan
 	atf_add_test_case fw_walk
+	atf_add_test_case crash_fault
 	atf_add_test_case firewall_aliases
 	atf_add_test_case config_bundle
 	atf_add_test_case yang_storage

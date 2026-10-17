@@ -7984,6 +7984,7 @@ struct arcana_events_events_event_crash {
 	uint8_t		 signal;
 	bool			 has_core;
 	bool		 core;
+	const char	*reason;
 };
 
 /* list entry */
@@ -8164,6 +8165,7 @@ struct arcana_events_events_read_output_event_crash {
 	uint8_t		 signal;
 	bool			 has_core;
 	bool		 core;
+	const char	*reason;
 };
 
 /* list entry */
@@ -8369,6 +8371,7 @@ struct arcana_events_event_crash {
 	uint8_t		 signal;
 	bool			 has_core;
 	bool		 core;
+	const char	*reason;
 };
 
 /* notification */
