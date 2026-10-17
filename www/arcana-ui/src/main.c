@@ -1703,7 +1703,9 @@ dispatch(const char *act, const char *arg, const char *value)
 			app.settab = SET_LOOK;
 			load_settings();
 			load_tokens();
-			load_keys();
+			/* Not to a session an API token opened: refused. */
+			if (!app.by_token)
+				load_keys();
 		}
 		if (strcmp(act, "keys") == 0)
 			app.settab = SET_KEYS;
