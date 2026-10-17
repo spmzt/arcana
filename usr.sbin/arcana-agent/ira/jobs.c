@@ -42,6 +42,8 @@ struct qjob {
 	int			 undo_fib;
 	int			 undo_tunnelfib;
 	const char		*undo_descr;
+	struct addr_state	 undo_addr;	/* if-set addressing: as it was */
+	const char		*undo_addr_rec;	/* its record for was, or NULL */
 	const char		*made;		/* if-create: the name it got */
 	struct arc_variable	*undo_vars;	/* service-config: as they were */
 	size_t			 undo_nvars;
@@ -178,6 +180,9 @@ title_of(const struct arc_job_spec *sp)
 		    strcmp(sp->verb, "set") == 0 && sp->path != NULL ? sp->path :
 		    "", sp->user != NULL ? " of " : "", sp->user != NULL ?
 		    sp->user : "");
+		break;
+	case ARC_JOB_KIND_POUDRIERE:
+		rc = (t = poudriere_title(sp)) != NULL ? 0 : -1;
 		break;
 	case ARC_JOB_KIND_CARP:
 		rc = asprintf(&t, "%s: carp %s vhid %s%s%s", sp->interface,
@@ -581,6 +586,11 @@ undo_prepare(struct qjob *j)
 		if_current(&j->w, sp->interface, &j->undo_mtu, &j->undo_fib,
 		    &j->undo_tunnelfib, descr, sizeof(descr));
 		j->undo_descr = wstrdup(&j->w, descr);
+		if (sp->addressing != NULL) {
+			if_addr_state(&j->w, sp->interface, &j->undo_addr);
+			j->undo_addr_rec = if_addr_record_get(&j->w,
+			    sp->interface);
+		}
 		break;
 	case ARC_JOB_KIND_SERVICE_CONFIG:
 		j->undo_vars = wcalloc(&j->w, sp->variables.n + 1,
@@ -796,9 +806,21 @@ undo(struct qjob *j)
 			ch.fib = sp->has_fib ? j->undo_fib : -1;
 			ch.tunnelfib = sp->has_tunnelfib ? j->undo_tunnelfib :
 			    -1;
-			ch.addressing = sp->addressing != NULL ? "static" : NULL;
+			ch.addressing = NULL;
 			rc = do_if_set(&j->w, sp->interface, &ch, sp->persist,
 			    &e);
+			/* Its addressing as it was before the job, not
+			 * static: a host on SLAAC or DHCP stays so. */
+			if (rc == 0 && sp->addressing != NULL) {
+				rc = if_addr_restore(&j->w, sp->interface,
+				    &j->undo_addr, sp->persist, &e);
+				/* And was's record as it was: kept again
+				 * when the job let it go, let go when the
+				 * job made it. */
+				if (rc == 0)
+					if_addr_record_set(&j->w, sp->interface,
+					    j->undo_addr_rec);
+			}
 		}
 		break;
 	case ARC_JOB_KIND_IF_CREATE:
@@ -973,6 +995,10 @@ run(struct qjob *j)
 		error = NULL;
 		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
 		    do_ssh_job(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_POUDRIERE:
+		error = NULL;
+		ok = do_poudriere_job(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_CERT:
 		/* Any jail's: its files, not its network. */

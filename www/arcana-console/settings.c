@@ -58,6 +58,9 @@ static const char	*v_security(const char *);
 static const char	*v_user(const char *);
 static const char	*v_secret(const char *);
 static const char	*v_safe(const char *);
+static const char	*v_tgtoken(const char *);
+static const char	*v_chats(const char *);
+static const char	*v_sender(const char *);
 
 static struct setting {
 	const char	*key;
@@ -135,6 +138,29 @@ static struct setting {
 	{ "smtp_password", K_SECRET, "SMTP password",
 	    "Kept in the data directory, readable by the console alone; never "
 	    "shown again: typed again to change it.", v_secret, NULL, NULL },
+	{ "telegram_chats", K_TEXT, "Telegram chats",
+	    "Where the bot writes: chat ids (a number; a group's is negative) "
+	    "or @channel names, a space between them; empty for none. Ask "
+	    "@userinfobot for yours, and write to the bot once first.",
+	    v_chats, NULL, NULL },
+	{ "telegram_token", K_SECRET, "Telegram bot token",
+	    "As BotFather gave it. Kept in the data directory, readable by "
+	    "the console alone; never shown again.", v_tgtoken, NULL, NULL },
+	{ "telegram_via", K_TEXT, "Telegram sent from",
+	    "The host whose agent sends the messages to api.telegram.org "
+	    "over HTTPS (its name or id): one that reaches the world "
+	    "outside. Empty for the agent beside the console.", v_sender,
+	    NULL, NULL },
+	{ "telegram_faults", K_TEXT, "Faults to Telegram",
+	    "The least severity sent, and their clearing: Critical, Major, "
+	    "Minor or Warning; none for none.", v_severity, NULL, NULL },
+	{ "telegram_jobs", K_TEXT, "Jobs to Telegram",
+	    "failed, all or none.", v_which, NULL, NULL },
+	{ "telegram_runs", K_TEXT, "Workflow runs to Telegram",
+	    "failed, all or none.", v_which, NULL, NULL },
+	{ "telegram_limits", K_BOOL, "Limits crossed to Telegram",
+	    "A figure of history over its limit, and back under.", NULL, NULL,
+	    NULL },
 	{ "safe_wait", K_TEXT, "Rollback timer, every host, in seconds",
 	    "How long a change made in safe mode waits for the console to be "
 	    "heard from again before the host undoes it, for every host "
@@ -240,9 +266,11 @@ static const char *
 v_host(const char *s)
 {
 
+	/* An IPv6 address as it is, without brackets: getaddrinfo(3) and
+	 * the certificate's check take it so. */
 	if (s[0] == '\0' || strlen(s) > 253 || s[strspn(s,
-	    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:"
-	    "[]")] != '\0')
+	    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:")]
+	    != '\0')
 		return ("a host's name or address");
 	return (NULL);
 }
@@ -251,7 +279,10 @@ static const char *
 v_port(const char *s)
 {
 
-	return (v_count(s, 1, 65535));
+	/* Empty: the relay's usual port for its security. */
+	if (s[0] == '\0')
+		return (NULL);
+	return (v_count(s, 1, 65535) != NULL ? "a port, 1 to 65535" : NULL);
 }
 
 static const char *
@@ -279,6 +310,58 @@ v_secret(const char *s)
 {
 
 	return (strlen(s) > 1024 ? "1024 characters at most" : NULL);
+}
+
+/* A bot's token: digits, a colon, then letters, digits, _ and -. */
+static const char *
+v_tgtoken(const char *s)
+{
+	size_t	n;
+
+	if (s[0] == '\0')
+		return (NULL);
+	n = strspn(s, "0123456789");
+	if (n == 0 || s[n] != ':' || s[n + 1] == '\0' || strlen(s) > 128 ||
+	    strspn(s + n + 1, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST"
+	    "UVWXYZ0123456789_-") != strlen(s + n + 1))
+		return ("digits, a colon and letters, digits, _ and -, as "
+		    "BotFather gives it");
+	return (NULL);
+}
+
+/* Chats: numbers (negative for a group) or @names, 8 at most. */
+static const char *
+v_chats(const char *s)
+{
+	const char	*e;
+	size_t		 n, k;
+
+	for (n = 0; *s != '\0'; s = e, n++) {
+		s += strspn(s, " ,");
+		if (*s == '\0')
+			break;
+		e = s + strcspn(s, " ,");
+		k = (size_t)(e - s);
+		if (n == 8)
+			return ("8 chats at most");
+		if (s[0] == '@' ? k < 6 || k > 33 || strspn(s + 1,
+		    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+		    "_") < k - 1 : k > 20 || k == (s[0] == '-' ? 1u : 0u) ||
+		    strspn(s + (s[0] == '-'), "0123456789") < k - (s[0] == '-'))
+			return ("a chat is a number (negative for a group) or "
+			    "@ and a channel's name");
+	}
+	return (NULL);
+}
+
+/* A host by its name or id: letters, digits, . _ and -. */
+static const char *
+v_sender(const char *s)
+{
+
+	return (strlen(s) > 64 || strspn(s, "abcdefghijklmnopqrstuvwxyzABCD"
+	    "EFGHIJKLMNOPQRSTUVWXYZ0123456789._-") != strlen(s) ? "a host's "
+	    "name or id" : NULL);
 }
 
 static const char *
@@ -537,6 +620,10 @@ settings_init(const char *update_check, const char *update_url)
 	find("agent_ssh_key")->base = cfg.agent_ssh_key;
 	find("session_idle")->base = kore_strdup("30");
 	find("session_max")->base = kore_strdup("12");
+	find("telegram_faults")->base = kore_strdup("Major");
+	find("telegram_jobs")->base = kore_strdup("failed");
+	find("telegram_runs")->base = kore_strdup("failed");
+	find("telegram_limits")->base = kore_strdup("false");
 	find("mail_to")->base = cfg.mail_to;
 	find("mail_from")->base = cfg.mail_from;
 	find("mail_faults")->base = cfg.mail_faults;

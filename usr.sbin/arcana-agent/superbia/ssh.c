@@ -1029,6 +1029,67 @@ key_start(const char *l)
 enum { AK_REMOVE, AK_ADD, AK_OPTIONS };
 
 /*
+ * A key's options as sshd(8) takes them (AUTHORIZED_KEYS FILE FORMAT):
+ * each a name it knows, a value ("...") for those that take one and
+ * none for the others, a comma between them.  NULL, or why not.
+ */
+static const char *
+key_opts_ok(const char *o)
+{
+	static const char *const flags[] = { "agent-forwarding",
+	    "cert-authority", "no-agent-forwarding", "no-port-forwarding",
+	    "no-pty", "no-user-rc", "no-X11-forwarding", "port-forwarding",
+	    "pty", "no-touch-required", "verify-required", "restrict",
+	    "user-rc", "X11-forwarding" };
+	static const char *const valued[] = { "command", "environment",
+	    "expiry-time", "from", "permitlisten", "permitopen",
+	    "principals", "tunnel" };
+	char		 name[32];
+	size_t		 n, i;
+	bool		 known;
+
+	if (o == NULL)
+		return (NULL);
+	while (*o != '\0') {
+		n = strcspn(o, "=,");
+		if (n == 0 || n >= sizeof(name))
+			return ("an option is a name, or name=\"value\"");
+		snprintf(name, sizeof(name), "%.*s", (int)n, o);
+		known = false;
+		for (i = 0; i < nitems(flags); i++)
+			if (strcasecmp(name, flags[i]) == 0)
+				known = true;
+		for (i = 0; !known && i < nitems(valued); i++)
+			if (strcasecmp(name, valued[i]) == 0) {
+				if (o[n] != '=' || o[n + 1] != '"')
+					return ("a value is quoted: name=\"value\"");
+				known = true;
+			}
+		if (!known)
+			return ("not an option sshd knows: see sshd(8), "
+			    "AUTHORIZED_KEYS FILE FORMAT");
+		o += n;
+		if (*o == '=') {
+			for (i = 0; i < nitems(flags); i++)
+				if (strcasecmp(name, flags[i]) == 0)
+					return ("that option takes no value");
+			/* The quoted value: \" within it is one. */
+			for (o += 2; *o != '\0' && *o != '"'; o++)
+				if (*o == '\\' && o[1] != '\0')
+					o++;
+			if (*o != '"')
+				return ("a value's quote is not closed");
+			o++;
+		}
+		if (*o == ',')
+			o++;
+		else if (*o != '\0')
+			return ("options are separated by commas");
+	}
+	return (NULL);
+}
+
+/*
  * A user's authorized_keys changed: the key added, each line with the
  * fingerprint taken away, or that line's options changed, the key and
  * its comment as they are.  Its directory is opened beneath the user's
@@ -1166,6 +1227,13 @@ authorize(struct work *w, const struct arc_job_spec *sp, int how,
 			}
 		}
 	} else if (how == AK_OPTIONS) {
+		const char	*bad;
+
+		if ((bad = key_opts_ok(sp->text)) != NULL) {
+			close(dfd);
+			*errp = wfmt(w, "ssh: %s", bad);
+			return (-1);
+		}
 		/* The line of the key, rewritten in place. */
 		cut = 0;
 		out = wstrdup(w, "");

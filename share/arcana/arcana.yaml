@@ -101,7 +101,9 @@ definitions:
           Load a kernel module, or unload one: verb is load or unload,
           and names the one module, as kldload(8) finds it, without a
           path.  With persist, also into or out of rc.conf's kld_list,
-          which is what is loaded when the host starts.
+          which is what is loaded when the host starts.  keep and
+          forget put it in kld_list or take it out (foo or foo.ko,
+          however it is spelt there) without loading or unloading it.
       - name: zfs
         doc: |
           zfs(8).  verb and names: snapshot and dataset@name; destroy
@@ -332,7 +334,11 @@ definitions:
           (sshd_config.arcana-before) and put back in safe mode, and sshd
           reloaded.  authorize adds the key line text to user's
           authorized_keys, unauthorize takes away the key whose
-          fingerprint text is.  In jail's when jail names one.
+          fingerprint text is, options sets the options of user's key
+          whose fingerprint names says to text (as sshd(8) reads them:
+          principals="...", from="...", restrict and the rest; empty for
+          none), the key itself left as it is.  In jail's when jail
+          names one.
       - name: carp
         doc: |
           An address that hosts on one network share with carp(4), held
@@ -348,6 +354,32 @@ definitions:
           line with the vhid's words, its key too, and carp in kld_list.
           Only add is taken back in safe mode.  In jail's network when
           jail names one.
+      - name: poudriere
+        doc: |
+          poudriere(8), the host's package builder, a plugin: verb and
+          words key=value (names).  jail-create (name, version, arch,
+          method), jail-update and ports-update (name), ports-create
+          (name, method, branch, url, path) and bulk (jail, ports, set,
+          jobs, clean=yes for -C, test=yes for -t, an origin= for each
+          port, net/bird3) start a run and end: poudriere goes on by
+          itself, its output in the run's log, the builder operation
+          telling how it is.  stop (run) sends a run's process group
+          SIGINT, as a terminal would.  jail-delete and ports-delete
+          (name) run to their end, -y.  make-conf (name: none for
+          make.conf, a jail's, a ports tree's, a set's or those joined
+          by -) writes poudriere.d/<name>-make.conf from text, or takes
+          it away when text is empty: WITH_DEBUG_PORTS+= net/bird3 in a
+          set's builds it unstripped, with debug symbols.  conf sets
+          poudriere.conf's variables by sysrc -f, an empty value
+          unsetting one.  options (jail, ports, set, origin, an on= or
+          off= for each option, or reset=yes) writes the port's options
+          file as make config writes it, in the options directory a
+          build of that jail, tree and set copies (the first there is
+          of jail-tree-set, jail-set, jail-tree, tree-set, set, tree,
+          jail and options, as poudriere bulk looks; jail-tree-set's,
+          made, when none is), each option checked against the port's
+          COMPLETE_OPTIONS_LIST; reset takes the file away, the port's
+          defaults again.  The host's only; never in safe mode.
   - name: job-state
     type: enum
     entries:
@@ -1071,6 +1103,56 @@ attribute-sets:
           path-port to an ephemeral port of path-dst, a TCP segment of
           a connection (ACK, no SYN), an ICMP echo reply; met where no
           state of its request may be.
+      - name: listen
+        type: text
+        doc: |
+          For transport: a listener the agent has now as well, tcp://
+          or sctp:// and an address and port (and an SCTP one beside a
+          TCP one, once the kernel has SCTP); none when it has it.
+        checks:
+          max-len: 255
+      - name: unlisten
+        type: text
+        doc: |
+          For transport: a listener the agent closes (with the SCTP one
+          beside it); the local socket is not one.
+        checks:
+          max-len: 255
+      - name: listen-keep
+        type: flag
+        doc: |
+          For transport, with listen and unlisten: kept for the next
+          start too, listen taking unlisten's place in rc.conf
+          (arcana_agent_listen, or -l in arcana_agent_flags).
+      - name: sctp-also
+        type: text
+        doc: |
+          For transport: the other addresses every SCTP listener is
+          bound to (sctp_bindx(3)), separated by spaces, in place of
+          those before ("" for none), and kept in rc.conf
+          (arcana_agent_sctp_also): the association with the console
+          has a path by each.
+        checks:
+          max-len: 512
+      - name: notify-token
+        type: text
+        doc: |
+          For notify, the Telegram bot's token, as BotFather gave it:
+          used for this message, neither kept nor logged nor traced.
+        checks:
+          max-len: 128
+      - name: notify-chat
+        type: text
+        doc: |
+          For notify, the chat the message goes to: a number (a user,
+          a group, negative), or @ and a channel's name.
+        checks:
+          max-len: 64
+      - name: notify-text
+        type: text
+        doc: For notify, the message.
+        checks:
+          max-len: 4096
 
 
   - name: host
@@ -1507,9 +1589,12 @@ attribute-sets:
         doc: |
           For if-set, how the interface gets its address: dhcp
           (dhclient, by rc.conf's DHCP word, so with persist), slaac
-          (inet6 accept_rtadv and rtsol, kept in ifconfig_<if>_ipv6)
-          or static, which takes both off (Mplify 119 §12.2.3.2,
-          §12.2.3.3).
+          (inet6 accept_rtadv and rtsol, kept in ifconfig_<if>_ipv6),
+          static, which takes both off, or was: as it was before
+          Arcana first set dhcp or slaac on it (rc.conf's two lines,
+          DHCP and SLAAC, kept by the agent then), nothing when that
+          was not kept (Mplify 119 §12.2.3.2, §12.2.3.3).  A safe
+          change undone puts back what the interface had before it.
         checks:
           max-len: 8
       - name: safe-wait
@@ -1571,7 +1656,7 @@ attribute-sets:
         doc: For neighbour add, one that ages out as the others do.
       - name: user
         type: text
-        doc: For ssh authorize and unauthorize, the user whose keys.
+        doc: For ssh authorize, unauthorize and options, the user whose keys.
         checks:
           max-len: 32
 
@@ -2298,11 +2383,18 @@ operations:
       the other end, and since when.  An agent that listens on TCP
       listens on SCTP at the same address and port as well, once the
       kernel has SCTP: it does not load it, and does not try by itself
-      again.  With retry it tries now.
+      again.  With retry it tries now.  With listen it listens there
+      too, with unlisten it closes that one: an address changed from
+      the console, the new one listened on and tried before the old
+      one is closed.
     do:
       request:
         attributes:
           - retry
+          - listen
+          - unlisten
+          - listen-keep
+          - sctp-also
       reply:
         attributes:
           - ok
@@ -2539,9 +2631,15 @@ operations:
       jid, when a jail is made or removed, the host's or one made in a
       jail (its name parent.child), as kqueue(2)'s EVFILT_JAIL tells
       it.  crash, with pid, process (its name), jid, jail (its name,
-      empty for the host's), uid, signal and core (whether it dumped
-      one), when the kernel says a process died of a signal that
-      dumps core (kern.logsigexit).
+      empty for the host's), uid, signal, core (whether it dumped
+      one) and, when it did not and the kernel said why, reason, its
+      words ("sugid process denied by kern.sugid_coredump", a daemon
+      that set its group, as bird -g does; "bad address"), when the
+      kernel says a process died of a signal that dumps core
+      (kern.logsigexit).  Such a death is a fault too, crash, Major,
+      of host:bird or jail:web/nginx, by kernel: the signal by name,
+      how many times in 24 hours and the reason, said anew at each
+      crash and cleared after an hour without one.
     do:
       request:
         attributes:
@@ -3265,6 +3363,95 @@ operations:
         required:
           - path-src
           - path-dst
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: notify
+    attribute-set: arcana
+    auth: true
+    doc: |
+      A message sent to a Telegram chat by a bot, over the Bot API's
+      HTTPS (sendMessage, by fetch(3), the server's certificate checked
+      against the host's CAs): the console's alerts and a workflow's
+      notify step, sent from a host that reaches the world outside.
+      The token is not kept; the trace names the chat, not the token.
+    do:
+      request:
+        attributes:
+          - notify-token
+          - notify-chat
+          - notify-text
+        required:
+          - notify-token
+          - notify-chat
+          - notify-text
+      reply:
+        attributes:
+          - ok
+          - error
+          - trace
+
+  - name: builder
+    attribute-set: arcana
+    auth: true
+    doc: |
+      poudriere(8) on this host, as a JSON object: "installed" and
+      "program"; "conf_file", "configured" (it is there) and "conf",
+      poudriere.conf's assignments (poudriere.d's own after it);
+      "basefs" and "data", the data directory; "jails" and "ports",
+      each with its "name" and what poudriere keeps of it, a file a
+      key (version, arch, method, mnt, fs, timestamp, the seconds);
+      "makeconf", each make.conf of poudriere.d with its "name" (empty
+      for make.conf itself, the part before -make.conf otherwise),
+      "file" and "text"; "repos", each package repository under the
+      data directory with its "path" and how many "packages" its All
+      has; "builds", the latest build of each as poudriere status -f
+      -H -l tells it ("set", "ports", "jail", "build", "status",
+      "queued", "inspected", "ignored", "built", "failed", "skipped",
+      "fetched", "remaining", "time", "logs", and from the build's log
+      directory "failed_ports", each with "origin", "package", "phase",
+      "reason" when poudriere found one, "elapsed", "log_file" and
+      "log", the end of its build log, and "skipped_ports", each with
+      "origin", "package" and "because", the package that failed
+      before it), and "builds_error" when it could not tell; "runs", what the poudriere job started, the
+      newest first, each with "id", "title", "argv", "started",
+      "state" (running, done, failed or lost: no exit and no process,
+      as after a reboot), "pid" while it runs, "exit" once it has
+      ended, "log_file" and, for the newest ten and those running,
+      "log", the end of its output; "options", each options directory
+      of poudriere.d ("name": its prefix, empty for options itself;
+      "dir"), each with the "ports" it sets: "name" (category_port),
+      "pkgname", "set" and "unset".
+    do:
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: builder-options
+    attribute-set: arcana
+    auth: true
+    doc: |
+      A port's options as a poudriere build takes them, names its
+      words: jail, ports (default), set and origin (net/bird3,
+      @flavor).  make showconfig in the port's directory of the tree,
+      with the options directory that build copies, as a JSON object:
+      "pkgname", "options_dir" and "options_dir_exists" (the build's
+      own, made at the first options set, when none is there yet),
+      "options_file" and "configured" (it is there), and "sections",
+      the port's own options first, then each group, single, radio or
+      multi as the port says it ("title"), each option with "name",
+      "on" and "description".
+    do:
+      request:
+        attributes:
+          - names
       reply:
         attributes:
           - ok

@@ -189,6 +189,9 @@ loc_of(char *buf, size_t len)
 	case NODE_SECURITY:
 		secpage_loc(buf, len);
 		break;
+	case NODE_BUILDER:
+		builder_loc(buf, len);
+		break;
 	case NODE_DEVICES:
 		snprintf(buf, len, "#/devices");
 		break;
@@ -273,6 +276,13 @@ loc_go(const char *r)
 		snprintf(rest, sizeof(rest), "%s%s%s", np > 1 ? f[1] : "",
 		    np > 2 ? "/" : "", np > 2 ? f[2] : "");
 		secpage_open(rest);
+	} else if (IS(0, "builder")) {
+		char	rest[64];
+
+		dispatch("select-builder", "", "");
+		snprintf(rest, sizeof(rest), "%s%s%s", np > 1 ? f[1] : "",
+		    np > 2 ? "/" : "", np > 2 ? f[2] : "");
+		builder_open(rest);
 	} else if (IS(0, "troubleshoot")) {
 		dispatch("select-trouble", "", "");
 		if (query != NULL)
@@ -476,6 +486,7 @@ tick(void *arg)
 			workflows_tick(now);
 			sdwan_tick(now);
 			secpage_tick(now);
+			builder_tick(now);
 			live_tick(now);
 		}
 		app.quiet = false;
@@ -606,6 +617,7 @@ submit(const char *form, const ucl_object_t *f)
 	    ca_form(form, f) || certs_form(form, f) || ssh_form(form, f) || span_form(form, f) ||
 	    ipsec_form(form, f) || workflows_form(form, f) || sdwan_form(form, f) ||
 	    trouble_form(form, f) || secpage_form(form, f) ||
+	    builder_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
 	    firewall_form(form, f) || l2_form(form, f))
@@ -841,9 +853,11 @@ submit_form(const char *form, const ucl_object_t *f)
 				agent_build(&app.servers[i], jstr(app.build_reply,
 				    "host_keys"), app.build_console);
 	} else if (strcmp(form, "settings") == 0) {
-		save_settings(f, false);
+		save_settings(f, SETG_CONSOLE);
 	} else if (strcmp(form, "settings-mail") == 0) {
-		save_settings(f, true);
+		save_settings(f, SETG_MAIL);
+	} else if (strcmp(form, "settings-telegram") == 0) {
+		save_settings(f, SETG_TELEGRAM);
 	} else if (strcmp(form, "agent-update") == 0) {
 		app.modal = MODAL_NONE;
 		for (i = 0; i < app.nservers; i++) {
@@ -883,7 +897,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	    span_action(act, arg, value) ||
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
 	    sdwan_action(act, arg, value) || trouble_action(act, arg, value) ||
-	    secpage_action(act, arg, value) ||
+	    secpage_action(act, arg, value) || builder_action(act, arg, value) ||
 	    routing_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
 	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||
@@ -1701,6 +1715,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			notes_load("console", app.version, NULL, false);
 	} else if (strcmp(act, "mail-test") == 0) {
 		mail_test();
+	} else if (strcmp(act, "telegram-test") == 0) {
+		telegram_test();
 	} else if (strcmp(act, "notes-reload") == 0) {
 		notes_load("console", app.version, NULL, true);
 		app.modal_error[0] = '\0';

@@ -94,6 +94,7 @@ static int	cmd_transport(struct arc_client *, int, char **);
 static int	cmd_config_export(struct arc_client *, int, char **);
 static int	cmd_config_apply(struct arc_client *, int, char **);
 static int	cmd_path_check(struct arc_client *, int, char **);
+static int	cmd_notify(struct arc_client *, int, char **);
 static int	cmd_storage(struct arc_client *, int, char **);
 static int	cmd_storage_job(struct arc_client *, int, char **);
 static int	cmd_fstab(struct arc_client *, int, char **);
@@ -142,7 +143,7 @@ usage(void)
 	    "    interface name mtu number\n"
 	    "    interface name description text\n"
 	    "    interface name fib | tunnelfib number\n"
-	    "    interface name addressing dhcp | slaac | static\n"
+	    "    interface name addressing dhcp | slaac | static | was\n"
 	    "    interface name create [tunnel local remote] [address "
 	    "address [peer address]]\n        [mtu number] [description "
 	    "text] [id number] [parent interface] [reqid number]\n"
@@ -188,7 +189,8 @@ usage(void)
 	    "    jailconf make jail file [dataset snapshot clone|send path] "
 	    "[start]\n"
 	    "    jailconf edit jail file | remove jail [dataset] |\n"
-	    "        defaults file | files\n"
+	    "        defaults file | template name file | untemplate name |\n"
+	    "        files\n"
 	    "    jailconf template name file | untemplate name\n"
 	    "    neigh add address lladdr [temp] | delete address\n"
 	    "    carp add interface address vhid=n [word=value ...] [key] |\n"
@@ -196,6 +198,8 @@ usage(void)
 	    "        remove interface address vhid=n\n"
 	    "    cert [list] | add name file | remove name | trust file |\n"
 	    "        untrust file | rehash\n"
+	    "    poudriere [list] | show-options key=value ... |\n"
+	    "        make-conf name|- file|- | verb [key=value ...]\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
@@ -208,10 +212,11 @@ usage(void)
 	    "    sysctl [name | start of a name]\n"
 	    "    sysctl parts [name | start of a name]\n"
 	    "    sysctl name=value\n"
-	    "    transport [retry]\n"
+	    "    transport [retry | listen uri | unlisten uri [for uri [keep]]]\n"
 	    "    config-export [-s]\n"
 	    "    config-apply [-an] [-H hostname] bundle.json\n"
 	    "    path-check [-r] [-F fib] [-i interface] [-p proto] [-P port] src dst\n"
+	    "    notify chat text   (the bot's token in ARCANA_TELEGRAM_TOKEN)\n"
 	    "    ps [pid]\n"
 	    "    signal pid [name | number]\n"
 	    "    renice pid nice\n"
@@ -2285,9 +2290,9 @@ cmd_capture(struct arc_client *cl, int argc, char **argv)
 /*
  * sshd [list] | banner file | set Setting [value ...] | authorize user
  * keyfile | unauthorize user fingerprint | options user fingerprint
- * [options] | sign ca-key-file [principal
- * ...] | user-cas file: the base system's sshd, of the host or of -j's jail; a change is
- * a job, and with -s undone unless confirmed.
+ * [options] | sign ca-key-file [principal ...] | user-cas file: the base
+ * system's sshd, of the host or of -j's jail; a change is a job, and
+ * with -s undone unless confirmed.
  */
 static int
 cmd_sshd(struct arc_client *cl, int argc, char **argv)
@@ -2351,6 +2356,73 @@ cmd_sshd(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
+ * poudriere [list] | show-options key=value ... | make-conf name|- file|- |
+ * verb [key=value ...]: poudriere(8), the host's package builder;
+ * show-options reads a port's (jail= ports= set= origin=); a verb is a
+ * job, which for a build, a jail or a ports tree made or updated starts
+ * a run and ends (see list's runs).
+ */
+static int
+cmd_poudriere(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec		 sp;
+	struct arc_builder_rsp		*rs;
+	struct arc_builder_options_req	 oq;
+	struct arc_builder_options_rsp	*ors;
+	char				*nm;
+	int				 error;
+
+	if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
+		if ((error = arc_builder(cl, &rs)) != 0)
+			fail(cl, error, "builder");
+		if (rs->json != NULL)
+			xo_emit("{:json/%s}\n", rs->json);
+		else if (rs->error != NULL)
+			warnx("%s", rs->error);
+		emit_trace(rs->trace.v, rs->trace.n);
+		error = rs->ok ? 0 : 1;
+		arc_builder_rsp_free(rs);
+		return (error);
+	}
+	if (strcmp(argv[1], "show-options") == 0) {
+		memset(&oq, 0, sizeof(oq));
+		oq.names.v = (const char **)(uintptr_t)&argv[2];
+		oq.names.n = (size_t)argc - 2;
+		if ((error = arc_builder_options(cl, &oq, &ors)) != 0)
+			fail(cl, error, "builder-options");
+		if (ors->json != NULL)
+			xo_emit("{:json/%s}\n", ors->json);
+		else if (ors->error != NULL)
+			warnx("%s", ors->error);
+		emit_trace(ors->trace.v, ors->trace.n);
+		error = ors->ok ? 0 : 1;
+		arc_builder_options_rsp_free(ors);
+		return (error);
+	}
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_POUDRIERE;
+	sp.verb = argv[1];
+	if (strcmp(argv[1], "make-conf") == 0) {
+		/* name - for make.conf itself, file - to take it away. */
+		if (argc != 4)
+			usage();
+		if (asprintf(&nm, "name=%s", strcmp(argv[2], "-") == 0 ? "" :
+		    argv[2]) == -1)
+			err(1, "asprintf");
+		sp.names.v = (const char **)(uintptr_t)&nm;
+		sp.names.n = 1;
+		sp.text = strcmp(argv[3], "-") == 0 ? "" : slurp(argv[3]);
+	} else {
+		sp.names.v = (const char **)(uintptr_t)&argv[2];
+		sp.names.n = (size_t)argc - 2;
+	}
+	/* The host's alone: -j is passed on to be refused, not dropped. */
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/*
  * cert [list] | add name file | remove name | trust file | untrust file |
  * rehash: the certificates OpenSSL trusts, of the host or of -j's jail;
  * a change is a job.
@@ -2400,7 +2472,9 @@ cmd_cert(struct arc_client *cl, int argc, char **argv)
  * jailconf remove jail [dataset]
  * jailconf defaults file
  * jailconf template name file | untemplate name
- * A jail made or taken away, the jails' defaults, a template: a job.
+ * jailconf files
+ * A jail made or taken away, the jails' defaults, a template: a job;
+ * files reads what there is.
  */
 static int
 cmd_jailconf(struct arc_client *cl, int argc, char **argv)
@@ -2929,8 +3003,44 @@ cmd_path_check(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
+ * notify chat text: a Telegram message, sent by the agent through the
+ * bot whose token ARCANA_TELEGRAM_TOKEN holds (not an argument: ps(1)
+ * would show it).
+ */
+static int
+cmd_notify(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_notify_req	 req;
+	struct arc_notify_rsp	*rsp;
+	const char		*token;
+	int			 error;
+
+	if (argc != 3)
+		usage();
+	if ((token = getenv("ARCANA_TELEGRAM_TOKEN")) == NULL ||
+	    token[0] == '\0')
+		xo_errx(2, "notify: the bot's token is in ARCANA_TELEGRAM_TOKEN");
+	memset(&req, 0, sizeof(req));
+	req.notify_token = token;
+	req.notify_chat = argv[1];
+	req.notify_text = argv[2];
+	if ((error = arc_notify(cl, &req, &rsp)) != 0)
+		fail(cl, error, "notify");
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("notify: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_notify_rsp_free(rsp);
+	return (error);
+}
+
+/*
  * transport: the agent's listeners and the connections open to it.
  * transport retry: start the SCTP listeners that are not up.
+ * transport listen uri: listen there too.  transport unlisten uri
+ * [for new [keep]]: close that one; with keep, new takes its place in
+ * rc.conf.
  */
 static int
 cmd_transport(struct arc_client *cl, int argc, char **argv)
@@ -2939,9 +3049,17 @@ cmd_transport(struct arc_client *cl, int argc, char **argv)
 	struct arc_transport_rsp	*rsp;
 	int				 error;
 
-	if (argc > 2 || (argc == 2 && strcmp(argv[1], "retry") != 0))
-		usage();
 	memset(&req, 0, sizeof(req));
+	if (argc == 3 && strcmp(argv[1], "listen") == 0)
+		req.listen = argv[2];
+	else if ((argc == 3 || argc == 5 || argc == 6) && strcmp(argv[1],
+	    "unlisten") == 0 && (argc == 3 || strcmp(argv[3], "for") == 0) &&
+	    (argc != 6 || strcmp(argv[5], "keep") == 0)) {
+		req.unlisten = argv[2];
+		req.listen = argc >= 5 ? argv[4] : NULL;
+		req.listen_keep = argc == 6;
+	} else if (argc > 2 || (argc == 2 && strcmp(argv[1], "retry") != 0))
+		usage();
 	req.retry = argc == 2;
 	if ((error = arc_transport(cl, &req, &rsp)) != 0)
 		fail(cl, error, "transport");
@@ -3998,6 +4116,8 @@ main(int argc, char *argv[])
 		rc = cmd_carp(&cl, argc, argv);
 	else if (strcmp(argv[0], "cert") == 0)
 		rc = cmd_cert(&cl, argc, argv);
+	else if (strcmp(argv[0], "poudriere") == 0)
+		rc = cmd_poudriere(&cl, argc, argv);
 	else if (strcmp(argv[0], "sshd") == 0)
 		rc = cmd_sshd(&cl, argc, argv);
 	else if (strcmp(argv[0], "capture") == 0)
@@ -4020,6 +4140,8 @@ main(int argc, char *argv[])
 		rc = cmd_config_apply(&cl, argc, argv);
 	else if (strcmp(argv[0], "path-check") == 0)
 		rc = cmd_path_check(&cl, argc, argv);
+	else if (strcmp(argv[0], "notify") == 0)
+		rc = cmd_notify(&cl, argc, argv);
 	else if (strcmp(argv[0], "storage") == 0)
 		rc = cmd_storage(&cl, argc, argv);
 	else if (strcmp(argv[0], "zfs") == 0 || strcmp(argv[0], "zpool") == 0 ||

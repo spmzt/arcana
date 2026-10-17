@@ -62,6 +62,10 @@
 .Op Fl Z Ar zpool
 .Op Fl P Ar pkg
 .Op Fl -bird-watch Ar seconds
+.Op Fl -sctp-also Ar addresses
+.Op Fl -telegram-api Ar url
+.Op Fl -poudriere Ar poudriere
+.Op Fl -poudriere-etc Ar directory
 .Nm
 .Fl V
 .Sh DESCRIPTION
@@ -276,6 +280,56 @@ Print the version and exit.
 .It Fl w Ar seconds
 How long a change made in safe mode waits to be confirmed.
 Default 60.
+.It Fl -sctp-also Ar addresses
+More addresses, separated by spaces, that every SCTP listener is bound
+to beside its own
+.Pq Xr sctp_bindx 3 :
+an association with the console has a path to each, and goes on over
+another when one fails.
+An IPv4 listener takes IPv4 addresses, an IPv6 one either.
+What cannot be bound is said with the listener in the transport
+operation, and the addresses are changed there while the agent runs
+.Pq kept in rc.conf as arcana_agent_sctp_also .
+.It Fl -telegram-api Ar url
+Where the Telegram Bot API is, for the notify operation.
+Default
+.Pa https://api.telegram.org ;
+a test's own server otherwise.
+.It Fl -poudriere Ar poudriere
+.Xr poudriere 8 ,
+the package builder, a plugin of the host's.
+Default
+.Pa /usr/local/bin/poudriere .
+The builder operation reads its build jails, ports trees, make.conf
+files, options directories, package repositories and latest builds
+(each with its failed ports and the end of their logs) where poudriere
+keeps them; builder-options reads a port's options with
+.Ql make showconfig ,
+run as
+.Fl M Ns 's
+.Xr make 1 ;
+the poudriere job makes, updates and deletes jails and trees, sets a
+port's options and builds ports.
+A jail or tree made or updated, and a build, take longer than a job
+should hold the queue: the job starts poudriere under a waiter of its
+own and ends, the run going on after it
+.Pq and after the agent's restart ;
+its output, pid and exit status are kept as
+.Pa builder/ Ns Ar n Ns Pa .log ,
+.Pa .pid
+and
+.Pa .exit
+beside the history configuration, the last 20 runs.
+A run is stopped as a terminal would stop it, SIGINT to its process
+group.
+.It Fl -poudriere-etc Ar directory
+Where
+.Pa poudriere.conf
+and
+.Pa poudriere.d
+are.
+Default
+.Pa /usr/local/etc .
 .It Fl -bird-watch Ar seconds
 How often the BIRD of the host, and that of each running jail with a
 network of its own where
@@ -292,6 +346,23 @@ Each is cleared when it is well again, and is an
 .Ql sdwan-fault
 event too.
 Default 15; 0 reads them never.
+A program the kernel saw die of a signal that dumps core
+.Pq Va kern.logsigexit
+is a fault whatever the value,
+.Ql crash ,
+Major, of
+.Ql host:bird
+or
+.Ql jail:web/nginx :
+the signal by name, how many times in 24 hours, and why there is no
+core when there is none
+.Po a daemon that set its group, as
+.Nm bird Fl g
+does, dumps none while
+.Va kern.sugid_coredump
+is 0
+.Pc ;
+said anew at each crash, cleared after an hour without one.
 .It Fl I Ar ifconfig , Fl n Ar ngctl , Fl k Ar wg , Fl b Ar birdc
 The
 .Xr ifconfig 8 ,

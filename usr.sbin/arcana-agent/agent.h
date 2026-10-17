@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.131.0"
+#define	ARCANA_AGENT_VERSION	"0.138.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -53,6 +53,8 @@
 #define	PATH_SQUID_BIN		"/usr/local/sbin/squid"
 #define	PATH_CICAP_BIN		"/usr/local/bin/c-icap"
 #define	PATH_SURICATA_BIN	"/usr/local/bin/suricata"
+#define	PATH_POUDRIERE_BIN	"/usr/local/bin/poudriere"
+#define	PATH_POUDRIERE_ETC	"/usr/local/etc"
 #define	PATH_CICAP_MODULES	"/usr/local/lib/c_icap"
 #define	PATH_CLAMAV_DB		"/var/db/clamav"
 #define	PATH_SWANCTL_DIR	"/usr/local/etc/swanctl"
@@ -119,6 +121,8 @@ struct opts {
 	const char	*squid_bin;	/* squid(8): the proxies, a plugin */
 	const char	*cicap_bin;	/* c-icap: malware scanning, a plugin */
 	const char	*suricata_bin;	/* suricata: intrusion detection, a plugin */
+	const char	*poudriere_bin;	/* poudriere(8): the package builder, a plugin */
+	const char	*poudriere_etc;	/* where poudriere.conf and poudriere.d are */
 	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;
 	const char	*bird_bin;	/* bird(8), to parse a configuration */
@@ -131,6 +135,8 @@ struct opts {
 	const char	*setkey_bin;	/* setkey(8): manual SAs */
 	const char	*bird_conf;	/* its main file */
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
+	const char	*sctp_also;	/* more addresses for SCTP listeners */
+	const char	*telegram_api;	/* the Bot API's base, for notify */
 	const char	*git_bin;
 	const char	*traceroute_bin;	/* and the same with 6 */
 	const char	*keyscan_bin;	/* ssh-keyscan(1) */
@@ -322,6 +328,16 @@ void		 do_capture(struct work *, const struct arc_capture_req *,
 /* superbia/ssh.c: the base system's sshd */
 void		 do_ssh(struct work *, struct arc_ssh_rsp *);
 const char	*ssh_check(const struct arc_job_spec *);
+/* luxuria/poudriere.c: the package builder, its runs left to go on. */
+const char	*poudriere_check(const struct arc_job_spec *);
+int		 do_poudriere_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+char		*poudriere_title(const struct arc_job_spec *);
+struct arc_builder_rsp;
+void		 do_builder(struct work *, struct arc_builder_rsp *);
+struct arc_builder_options_rsp;
+void		 do_builder_options(struct work *, const struct arc_job_spec *,
+		    struct arc_builder_options_rsp *);
 int		 do_ssh_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 int		 ssh_undo(struct work *, const struct arc_job_spec *,
@@ -369,8 +385,23 @@ struct if_change {
 	const char	*descr;		/* "" takes it off */
 	int		 fib;
 	int		 tunnelfib;
-	const char	*addressing;	/* dhcp, slaac or static; NULL as is */
+	const char	*addressing;	/* dhcp, slaac, static or was; NULL as
+					 * is */
 };
+/* An interface's addressing by rc.conf: its two lines (NULL unset). */
+struct addr_state {
+	const char	*rc;		/* ifconfig_<if> */
+	const char	*rc6;		/* ifconfig_<if>_ipv6 */
+	bool		 dhcp;
+	bool		 slaac;
+};
+void		 if_addr_state(struct work *, const char *,
+		    struct addr_state *);
+int		 if_addr_restore(struct work *, const char *,
+		    const struct addr_state *, bool, const char **);
+void		 if_addr_forget(struct work *, const char *);
+const char	*if_addr_record_get(struct work *, const char *);
+void		 if_addr_record_set(struct work *, const char *, const char *);
 int		 do_if_set(struct work *, const char *,
 		    const struct if_change *, bool, const char **);
 int		 do_if_create(struct work *, const struct arc_job_spec *,
@@ -473,6 +504,8 @@ void		 kmsg_start(void);
 void		 host_watch_start(void);
 bool		 kmsg_lines(struct work *, uint64_t, const char *, uint32_t,
 		    struct kmsg_line **, size_t *, uint64_t *);
+bool		 kmsg_crash_line(const char *, time_t);
+void		 kmsg_crash_sweep(time_t);
 void		 history_save(void);
 /* gula/probe.c: the tunnels measured, ICMP echo again and again. */
 enum { PROBE_NONE = -1, PROBE_UNKNOWN, PROBE_UP, PROBE_DOWN, PROBE_ENDED,
@@ -508,6 +541,8 @@ void		 sdwan_proxy_start(void);
 void		 sdwan_proxy_json(struct work *, struct ucl_object_s *);
 void		 security_specs(const char *, struct ucl_object_s *, const char *);
 int		 do_sdwan_ids(struct work *, const char *, const char **);
+int		 do_notify(struct work *, const char *, const char *,
+		    const char *, const char **);
 void		 sdwan_ids_start(void);
 void		 sdwan_ids_json(struct work *, struct ucl_object_s *);
 int		 do_rtadvd(struct work *, const char *, const char *const *,
@@ -525,6 +560,8 @@ const char	*sdwan_tunnel_by_via(const char *);
 void		 fault_set(const char *, const char *, const char *, const char *,
 		    const char *, ...) __printflike(5, 6);
 void		 fault_clear(const char *, const char *, const char *, ...)
+		    __printflike(3, 4);
+bool		 fault_update(const char *, const char *, const char *, ...)
 		    __printflike(3, 4);
 void		 faults_json(struct ucl_object_s *);
 void		 faults_start(void);
@@ -571,7 +608,9 @@ void		 tls_files_init(cbl_tls *, const char *, const char *,
 void		 do_tls(struct work *, const char *, const char *,
 		    const char *, const char *, const uint8_t *,
 		    struct arc_tls_rsp *);
-int		 do_transport(struct work *, bool, struct arc_transport_rsp *);
+void		 transport_fini(void);
+int		 do_transport(struct work *, bool, const char *, const char *,
+		    bool, const char *, struct arc_transport_rsp *);
 bool		 tls_file_is(const char *);
 /* superbia/bundle.c: the host as a bundle, a bundle made the host. */
 int		 do_config_export(struct work *, bool,

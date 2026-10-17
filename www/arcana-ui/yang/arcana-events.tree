@@ -99,6 +99,7 @@ module: arcana-events
      |           +--ro uid?       uint32
      |           +--ro signal?    uint8
      |           +--ro core?      boolean
+     |           +--ro reason?    string
      +---x read
         +---w input
         |  +---w after?   uint64
@@ -201,6 +202,7 @@ module: arcana-events
                        +--ro uid?       uint32
                        +--ro signal?    uint8
                        +--ro core?      boolean
+                       +--ro reason?    string
 
   notifications:
     +---n event
@@ -299,3 +301,4 @@ module: arcana-events
                 +---- uid?       uint32
                 +---- signal?    uint8
                 +---- core?      boolean
+                +---- reason?    string

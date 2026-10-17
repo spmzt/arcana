@@ -45,6 +45,9 @@ static const char *icon_sdwan = TREE_ICON("M5 7a2 2 0 1 0 0-.01M19 7a2 2 0 "
 /* A shield: the Security page. */
 static const char *icon_shield = TREE_ICON("M12 3l7 3v5c0 4.5-3 8.2-7 "
     "10-4-1.8-7-5.5-7-10V6l7-3zM9 12l2 2 4-4");
+/* A box with a wrench across it: packages built. */
+static const char *icon_builder = TREE_ICON("M3 8l9-5 9 5v8l-9 5-9-5V8zM3 8l9 "
+    "5 9-5M12 13v8");
 /* A magnifier on a path: a packet looked for along its way. */
 static const char *icon_trouble = TREE_ICON("M3 18h5l3-6h4M11 11a4 4 0 1 0 "
     "8 0 4 4 0 1 0-8 0M18 14l3 3");
@@ -223,14 +226,14 @@ topbar(struct html *h)
 	    NODE_API || app.node == NODE_USAGE || app.node == NODE_WORKFLOWS ||
 	    app.node == NODE_SDWAN || app.node == NODE_SETTINGS || app.node ==
 	    NODE_DEVICES || app.node == NODE_TROUBLE || app.node ==
-	    NODE_SECURITY)
+	    NODE_SECURITY || app.node == NODE_BUILDER)
 		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
 		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
 		    app.node == NODE_USAGE ? "Utilization" : app.node ==
 		    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ?
 		    "SD-WAN" : app.node == NODE_TROUBLE ? "Troubleshoot" : app.node ==
-		    NODE_SECURITY ? "Security" : app.node == NODE_SETTINGS ?
-		    "Settings" : app.node ==
+		    NODE_SECURITY ? "Security" : app.node == NODE_BUILDER ?
+		    "Builder" : app.node == NODE_SETTINGS ? "Settings" : app.node ==
 		    NODE_DEVICES ? "Devices" :
 		    "All hosts");
 	else if (s != NULL) {
@@ -367,6 +370,7 @@ rail(struct html *h)
 	    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ? "SD-WAN" :
 	    app.node == NODE_TROUBLE ? "Troubleshoot" :
 	    app.node == NODE_SECURITY ? "Security" :
+	    app.node == NODE_BUILDER ? "Builder" :
 	    app.node == NODE_SETTINGS ? "Settings" : app.node == NODE_DEVICES ?
 	    "Devices" : app.node == NODE_FLEET || s == NULL ? "All hosts" :
 	    s->name);
@@ -399,7 +403,9 @@ rail(struct html *h)
 	    "</span><span class=\"name\">SD-WAN</span></li><li class=\"titem "
 	    "fleet secnode%s\" data-act=\"select-security\"><span class=\""
 	    "twig\">%s</span><span class=\"name\">Security</span></li>"
-	    "<li class=\"titem "
+	    "<li class=\"titem fleet bldnode%s\" data-act=\"select-builder\">"
+	    "<span class=\"twig\">%s</span><span class=\"name\">Builder</span>"
+	    "</li><li class=\"titem "
 	    "fleet tsnode%s\" data-act=\"select-trouble\"><span class=\"twig\">"
 	    "%s</span><span class=\"name\">Troubleshoot</span></li>", app.node ==
 	    NODE_FLEET ? " selected" : "", icon_hosts, app.nservers,
@@ -409,6 +415,7 @@ rail(struct html *h)
 	    app.node == NODE_WORKFLOWS ? " selected" : "", icon_flows,
 	    app.node == NODE_SDWAN ? " selected" : "", icon_sdwan,
 	    app.node == NODE_SECURITY ? " selected" : "", icon_shield,
+	    app.node == NODE_BUILDER ? " selected" : "", icon_builder,
 	    app.node == NODE_TROUBLE ? " selected" : "", icon_trouble);
 	/* At the foot of the side bar: the console's own settings. */
 	h_fmt(h, "</ul><ul class=\"tree rail-foot\"><li class=\"titem fleet "
@@ -816,6 +823,11 @@ stage(struct html *h)
 	}
 	if (app.node == NODE_SECURITY) {
 		view_secpage(h);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.node == NODE_BUILDER) {
+		view_builder(h);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -1380,7 +1392,7 @@ set_look(struct html *h)
 	    "in this browser</em></span></label>", app.fx ? " checked" : "");
 }
 
-static void	settings_fields(struct html *, bool);
+static void	settings_fields(struct html *, int);
 
 static void
 set_notify(struct html *h)
@@ -1434,10 +1446,24 @@ set_notify(struct html *h)
 	    "workflow runs, mailed whether or not a page is open: the console "
 	    "reads each host's events, and its host's <code>sendmail(8)</code> "
 	    "sends them, twenty mails an hour at most.</p>");
-	settings_fields(h, true);
+	settings_fields(h, SETG_MAIL);
 	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
 	    "</button> <button type=\"button\" class=\"ghost\" data-act=\""
 	    "mail-test\"%s>Send a test mail</button></div></form>",
+	    app.modal_busy ? " disabled" : "", app.modal_busy ? " disabled" :
+	    "");
+	/* By Telegram: the same, to chats, by a bot, from a host. */
+	h_raw(h, "<h3>By Telegram</h3><form data-form=\"settings-telegram\" "
+	    "class=\"settings set-form mail\"><p class=\"dim\">The same, as "
+	    "messages a bot of yours writes to your chats: make one with "
+	    "@BotFather, give its token here, and write to it once (or add "
+	    "it to the group) so that it may write back. A host's agent "
+	    "sends them to <code>api.telegram.org</code> over HTTPS, one that "
+	    "reaches the world outside; twenty an hour at most.</p>");
+	settings_fields(h, SETG_TELEGRAM);
+	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
+	    "</button> <button type=\"button\" class=\"ghost\" data-act=\""
+	    "telegram-test\"%s>Send a test message</button></div></form>",
 	    app.modal_busy ? " disabled" : "", app.modal_busy ? " disabled" :
 	    "");
 }
@@ -1665,15 +1691,53 @@ set_console(struct html *h)
 	h_raw(h, "</code> and takes the place of <code>web.conf</code>'s "
 	    "value; a field put back to that value follows <code>web.conf"
 	    "</code> again.</p>");
-	settings_fields(h, false);
+	settings_fields(h, SETG_CONSOLE);
 	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
 	    "</button></div></form>", app.modal_busy ? " disabled" : "");
 	safe_hosts(h);
 }
 
 /* The editable settings, the mail's or the others, as fields. */
+/* A choice of a setting's, as a select of the values it takes. */
 static void
-settings_fields(struct html *h, bool mail)
+settings_select(struct html *h, const ucl_object_t *k,
+    const char *const *vals, const char *const *titles)
+{
+	const char	*cur;
+	int		 i;
+	bool		 shown;
+
+	cur = jstr(k, "value") != NULL ? jstr(k, "value") : "";
+	h_raw(h, "<label>");
+	h_txt(h, jstr(k, "label"));
+	h_raw(h, "<select");
+	h_attr(h, "name", jstr(k, "key"));
+	h_raw(h, ">");
+	shown = false;
+	for (i = 0; vals[i] != NULL; i++) {
+		h_raw(h, "<option");
+		h_attr(h, "value", vals[i]);
+		h_fmt(h, "%s>", strcmp(cur, vals[i]) == 0 ? " selected" : "");
+		h_txt(h, titles != NULL ? titles[i] : vals[i]);
+		h_raw(h, "</option>");
+		shown = shown || strcmp(cur, vals[i]) == 0;
+	}
+	/* What it is set to, though none of these (a host by its id, or
+	 * one gone): kept as it is unless another is chosen. */
+	if (!shown) {
+		h_raw(h, "<option selected");
+		h_attr(h, "value", cur);
+		h_raw(h, ">");
+		h_txt(h, cur);
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select><small>");
+	h_txt(h, jstr(k, "help"));
+	h_raw(h, "</small></label>");
+}
+
+static void
+settings_fields(struct html *h, int group)
 {
 	const ucl_object_t	*k;
 	ucl_object_iter_t	 it;
@@ -1682,9 +1746,44 @@ settings_fields(struct html *h, bool mail)
 	while ((k = ucl_object_iterate(jget(app.settings, "settings"), &it,
 	    true)) != NULL) {
 		if (!jbool(k, "editable") || jstr(k, "key") == NULL ||
-		    (strncmp(jstr(k, "key"), "mail_", 5) == 0 || strncmp(jstr(k,
-		    "key"), "smtp_", 5) == 0) != mail)
+		    setting_group(jstr(k, "key")) != group)
 			continue;
+		/* What is told, chosen: a severity, which jobs and runs. */
+		{
+			static const char *const sev[] = { "Critical", "Major",
+			    "Minor", "Warning", "none", NULL }, *const which[] = {
+			    "failed", "all", "none", NULL };
+			const char	*key = jstr(k, "key");
+			size_t		 kl = strlen(key);
+
+			if (kl > 7 && strcmp(key + kl - 7, "_faults") == 0) {
+				settings_select(h, k, sev, NULL);
+				continue;
+			}
+			if (kl > 5 && (strcmp(key + kl - 5, "_jobs") == 0 ||
+			    strcmp(key + kl - 5, "_runs") == 0)) {
+				settings_select(h, k, which, NULL);
+				continue;
+			}
+			/* The host that sends: one of the console's. */
+			if (strcmp(key, "telegram_via") == 0) {
+				const char	*vals[MAX_SERVERS + 2],
+						*titles[MAX_SERVERS + 2];
+				int		 i, n;
+
+				n = 0;
+				vals[n] = "";
+				titles[n++] = "the agent beside the console";
+				for (i = 0; i < app.nservers && n <
+				    MAX_SERVERS + 1; i++) {
+					vals[n] = app.servers[i].name;
+					titles[n++] = app.servers[i].name;
+				}
+				vals[n] = titles[n] = NULL;
+				settings_select(h, k, vals, titles);
+				continue;
+			}
+		}
 		/* The ways mail goes, and the relay's security: chosen. */
 		if (strcmp(jstr(k, "key"), "mail_via") == 0 || strcmp(jstr(k,
 		    "key"), "smtp_security") == 0) {

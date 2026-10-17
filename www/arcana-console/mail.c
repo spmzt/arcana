@@ -4,21 +4,25 @@
  */
 
 /*
- * Mail: what happened on the hosts, told to who asked for it whether or
- * not a page is open.  Faults (of a severity and above), a figure of
- * history over its limit and back, jobs (those that failed, or all) and
- * workflow runs (the same), as the settings say, to the addresses in
- * mail_to.
+ * Alerts: what happened on the hosts, told to who asked for it whether
+ * or not a page is open, by mail and by Telegram, each as its own
+ * settings say: faults (of a severity and above), a figure of history
+ * over its limit and back, jobs (those that failed, or all) and
+ * workflow runs (the same); by mail to the addresses in mail_to, by
+ * Telegram to telegram_chats, through a bot.
  *
  * The console's host sends it: sendmail(8) -t, as FreeBSD comes, is
  * mailwrapper(8) and dma(8), which relays as /etc/dma/dma.conf says;
  * web.conf's sendmail names another.  Or, with Settings' mail_via
  * smtp, the console hands it to the relay they name itself (smtp.c).
- * Arcana sets up no mail server.
+ * Arcana sets up no mail server.  A Telegram message is sent by an
+ * agent (luxuria/telegram.c), the one of the host telegram_via names
+ * or the one beside the console: the host that reaches the world
+ * outside, not the console.
  *
  * One worker reads each host's events, from the newest it has seen, a
- * tick at a time: those that are mailed go out in one mail a tick, and
- * twenty an hour at most; the rest wait for the next.  A host first
+ * tick at a time: those told go out in one message a tick on each way,
+ * and twenty an hour at most; the rest wait for the next.  A host first
  * read is read from its newest: what happened before is not mailed.
  */
 
@@ -56,9 +60,14 @@
 extern char	**environ;
 
 static pthread_mutex_t	 lock = PTHREAD_MUTEX_INITIALIZER;
-static time_t		 sent_at[MAIL_HOUR_MAX];	/* the last hour's */
-static char		*held;		/* lines not yet mailed */
-static size_t		 nheld, held_lines;
+
+/* Each way alerts go: what waits for its next message, the hour's. */
+enum { CH_MAIL, CH_TELEGRAM, CH_N };
+static struct chan {
+	time_t	 sent_at[MAIL_HOUR_MAX];	/* the last hour's */
+	char	*held;		/* lines not yet sent */
+	size_t	 nheld, held_lines;
+} chans[CH_N];
 
 struct cursor {
 	char		id[9];
@@ -75,6 +84,8 @@ struct mailconf {
 	char	*to, *from, *faults, *jobs, *runs;
 	bool	 limits;
 	char	*via, *host, *port, *security, *user, *pass;
+	char	*tg_chats, *tg_token, *tg_via, *tg_faults, *tg_jobs, *tg_runs;
+	bool	 tg_limits;
 };
 
 static void
@@ -96,6 +107,15 @@ mc_load(struct mailconf *mc)
 	mc->security = settings_peek("smtp_security");
 	mc->user = settings_peek("smtp_user");
 	mc->pass = settings_peek("smtp_password");
+	mc->tg_chats = settings_peek("telegram_chats");
+	mc->tg_token = settings_peek("telegram_token");
+	mc->tg_via = settings_peek("telegram_via");
+	mc->tg_faults = settings_peek("telegram_faults");
+	mc->tg_jobs = settings_peek("telegram_jobs");
+	mc->tg_runs = settings_peek("telegram_runs");
+	l = settings_peek("telegram_limits");
+	mc->tg_limits = strcmp(l, "true") == 0;
+	free(l);
 }
 
 static void
@@ -114,6 +134,22 @@ mc_free(struct mailconf *mc)
 	free(mc->user);
 	explicit_bzero(mc->pass, strlen(mc->pass));
 	free(mc->pass);
+	free(mc->tg_chats);
+	explicit_bzero(mc->tg_token, strlen(mc->tg_token));
+	free(mc->tg_token);
+	free(mc->tg_via);
+	free(mc->tg_faults);
+	free(mc->tg_jobs);
+	free(mc->tg_runs);
+}
+
+/* Is the way on: somewhere to tell, and for Telegram a bot. */
+static bool
+chan_on(const struct mailconf *mc, int ch)
+{
+
+	return (ch == CH_MAIL ? mc->to[0] != '\0' : mc->tg_chats[0] != '\0' &&
+	    mc->tg_token[0] != '\0');
 }
 
 static const char *
@@ -127,6 +163,20 @@ from_address(const struct mailconf *mc, char *buf, size_t len)
 		strlcpy(host, "localhost", sizeof(host));
 	snprintf(buf, len, "arcana@%s", host);
 	return (buf);
+}
+
+/* At most max bytes of s, not cutting a UTF-8 character in two. */
+static size_t
+utf8_cut(const char *s, size_t max)
+{
+	size_t	n;
+
+	if ((n = strlen(s)) <= max)
+		return (n);
+	n = max;
+	while (n > 0 && ((unsigned char)s[n] & 0xc0) == 0x80)
+		n--;
+	return (n);
 }
 
 /* A header's words, =?UTF-8?B?...?= where they are not ASCII. */
@@ -144,9 +194,7 @@ header_text(char *out, size_t len, const char *s)
 		snprintf(out, len, "%s", s);
 		return;
 	}
-	n = strlen(s);
-	if (n > 300)
-		n = 300;
+	n = utf8_cut(s, 300);
 	if ((b = malloc(4 * ((n + 2) / 3) + 1)) == NULL)
 		abort();
 	EVP_EncodeBlock(b, (const unsigned char *)s, (int)n);
@@ -300,13 +348,14 @@ mail_send(const char *subject, const char *body, char *err, size_t errlen)
 	return (rc);
 }
 
-/* A line for the next mail. */
+/* A line for the next message on a way. */
 static void
-hold(const char *fmt, ...)
+hold(int ch, const char *fmt, ...)
 {
-	va_list	 ap;
-	char	 line[1024];
-	int	 n;
+	struct chan	*c = &chans[ch];
+	va_list		 ap;
+	char		 line[1024];
+	int		 n;
 
 	va_start(ap, fmt);
 	n = vsnprintf(line, sizeof(line), fmt, ap);
@@ -314,15 +363,194 @@ hold(const char *fmt, ...)
 	if (n < 0)
 		return;
 	pthread_mutex_lock(&lock);
-	if (held == NULL)
-		if ((held = calloc(1, MAIL_HELD)) == NULL)
+	if (c->held == NULL)
+		if ((c->held = calloc(1, MAIL_HELD)) == NULL)
 			abort();
-	if (nheld + strlen(line) + 2 < MAIL_HELD) {
-		nheld += (size_t)snprintf(held + nheld, MAIL_HELD - nheld,
-		    "%s\n", line);
-		held_lines++;
+	if (c->nheld + strlen(line) + 2 < MAIL_HELD) {
+		c->nheld += (size_t)snprintf(c->held + c->nheld, MAIL_HELD -
+		    c->nheld, "%s\n", line);
+		c->held_lines++;
 	}
 	pthread_mutex_unlock(&lock);
+}
+
+/*
+ * The host whose agent sends a Telegram message: telegram_via's, by its
+ * id or name, or the agent beside the console.  To be freed.
+ */
+static int
+tg_sender(const struct mailconf *mc, char **uri, char **peer, char **name,
+    char *err, size_t errlen)
+{
+	struct hostref	*all;
+	int		 i, n;
+
+	*uri = *peer = *name = NULL;
+	if (mc->tg_via[0] == '\0') {
+		if (cfg.local_agent == NULL) {
+			snprintf(err, errlen, "no host to send it from: name one "
+			    "in Settings (Telegram sent from), or run an agent "
+			    "beside the console");
+			return (-1);
+		}
+		if ((*uri = strdup(cfg.local_agent)) == NULL || (*name = strdup(
+		    "the console's host")) == NULL)
+			abort();
+		return (0);
+	}
+	/* The table is the worker's: its copy, here. */
+	if ((all = calloc(MAIL_HOSTS * 4, sizeof(*all))) == NULL)
+		abort();
+	n = host_refs_get(all, MAIL_HOSTS * 4);
+	for (i = 0; i < n; i++)
+		if (strcmp(all[i].id, mc->tg_via) == 0 || strcmp(all[i].name,
+		    mc->tg_via) == 0) {
+			if ((*uri = strdup(all[i].uri)) == NULL || (*name =
+			    strdup(all[i].name)) == NULL || (all[i].peer[0] !=
+			    '\0' && (*peer = strdup(all[i].peer)) == NULL))
+				abort();
+			free(all);
+			return (0);
+		}
+	free(all);
+	snprintf(err, errlen, "no host %s to send it from", mc->tg_via);
+	return (-1);
+}
+
+/*
+ * text to every chat of telegram_chats, by the sender's agent: 0, or -1
+ * with why in err (the last chat's that failed).
+ */
+static int
+tg_send(const struct mailconf *mc, const char *text, char *err,
+    size_t errlen)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o;
+	const ucl_object_t	*e;
+	char			*uri, *peer, *name, *list, *rest, *chat, *ans;
+	char			 msg[4097];
+	int			 rc, st;
+
+	if (mc->tg_token[0] == '\0' || mc->tg_chats[0] == '\0') {
+		snprintf(err, errlen, "no bot's token, or no chat, in Settings");
+		return (-1);
+	}
+	if (tg_sender(mc, &uri, &peer, &name, err, errlen) != 0)
+		return (-1);
+	/* What does not fit one message is cut, and says so: between two
+	 * characters, the Bot API refusing what is not UTF-8. */
+	if (strlen(text) > 4000)
+		snprintf(msg, sizeof(msg), "%.*s\n…", (int)utf8_cut(text, 4000),
+		    text);
+	else
+		snprintf(msg, sizeof(msg), "%s", text);
+	rc = 0;
+	if ((list = strdup(mc->tg_chats)) == NULL)
+		abort();
+	for (rest = list; (chat = strsep(&rest, " ,")) != NULL; ) {
+		if (chat[0] == '\0')
+			continue;
+		ans = hosts_notify(uri, peer, name, mc->tg_token, chat, msg, &st);
+		o = NULL;
+		if (ans != NULL) {
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, ans, 0))
+				o = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (st != 200 || o == NULL || !ucl_object_toboolean(
+		    ucl_object_lookup(o, "ok"))) {
+			e = o != NULL ? ucl_object_lookup(o, "error") : NULL;
+			if (e != NULL && ucl_object_type(e) == UCL_OBJECT)
+				e = ucl_object_lookup(e, "message");
+			snprintf(err, errlen, "chat %s, by %s: %s", chat, name,
+			    e != NULL && ucl_object_type(e) == UCL_STRING ?
+			    ucl_object_tostring(e) : "no answer");
+			rc = -1;
+		}
+		if (o != NULL)
+			ucl_object_unref(o);
+		free(ans);
+	}
+	free(list);
+	free(uri);
+	free(peer);
+	free(name);
+	return (rc);
+}
+
+/* A message of the hour's on a way taken: false when they are gone. */
+static bool
+hour_slot(int ch)
+{
+	struct chan	*c = &chans[ch];
+	time_t		 now;
+	size_t		 i;
+
+	now = time(NULL);
+	pthread_mutex_lock(&lock);
+	for (i = 0; i < MAIL_HOUR_MAX; i++)
+		if (now - c->sent_at[i] >= 3600) {
+			c->sent_at[i] = now;
+			pthread_mutex_unlock(&lock);
+			return (true);
+		}
+	pthread_mutex_unlock(&lock);
+	return (false);
+}
+
+/*
+ * A message sent now, not held: by mail, by Telegram, or both (how is
+ * "mail", "telegram" or "all"), each that is set up, within its hour's
+ * twenty; for a workflow's notify step.  0 when every way it was to go
+ * took it; 1 when some did, what did not in err; -1 when none did.
+ */
+int
+alert_send(const char *how, const char *subject, const char *text, char *err,
+    size_t errlen)
+{
+	struct mailconf	 mc;
+	char		 one[300], *msg;
+	int		 ch, sent, failed;
+	bool		 want;
+
+	mc_load(&mc);
+	sent = failed = 0;
+	err[0] = '\0';
+	for (ch = 0; ch < CH_N; ch++) {
+		want = strcmp(how, "all") == 0 || strcmp(how, ch == CH_MAIL ?
+		    "mail" : "telegram") == 0;
+		if (!want || !chan_on(&mc, ch))
+			continue;
+		one[0] = '\0';
+		if (!hour_slot(ch))
+			snprintf(one, sizeof(one), "its twenty of the hour went "
+			    "out already");
+		else if (ch == CH_MAIL)
+			(void)send_with(&mc, subject, text, one, sizeof(one));
+		else {
+			if (asprintf(&msg, "%s\n\n%s", subject, text) == -1)
+				abort();
+			(void)tg_send(&mc, msg, one, sizeof(one));
+			free(msg);
+		}
+		if (one[0] != '\0') {
+			snprintf(err + strlen(err), errlen - strlen(err), "%s%s: "
+			    "%s", err[0] != '\0' ? "; " : "", ch == CH_MAIL ?
+			    "mail" : "Telegram", one);
+			failed++;
+		} else
+			sent++;
+	}
+	if (sent == 0 && failed == 0)
+		snprintf(err, errlen, "%s is not set up in Settings, "
+		    "Notifications", strcmp(how, "mail") == 0 ? "mail" :
+		    strcmp(how, "telegram") == 0 ? "Telegram" : "neither mail "
+		    "nor Telegram");
+	mc_free(&mc);
+	return (sent == 0 ? -1 : failed > 0 ? 1 : 0);
 }
 
 static int
@@ -357,7 +585,7 @@ event(const struct mailconf *mc, const char *host, const ucl_object_t *e)
 	char			 when[32];
 	struct tm		 tm;
 	time_t			 t;
-	int			 min;
+	int			 min, ch;
 
 	kind = str(e, "kind");
 	d = ucl_object_lookup(e, "data");
@@ -366,101 +594,144 @@ event(const struct mailconf *mc, const char *host, const ucl_object_t *e)
 	t = (time_t)ucl_object_toint(ucl_object_lookup(e, "t"));
 	localtime_r(&t, &tm);
 	strftime(when, sizeof(when), "%H:%M:%S", &tm);
-	if (strcmp(kind, "sdwan-fault") == 0) {
-		min = severity_rank(mc->faults);
-		if (min < 0)
-			return;
-		if (strcmp(str(d, "state") != NULL ? str(d, "state") : "",
-		    "cleared") == 0 || strcmp(str(d, "severity") != NULL ?
-		    str(d, "severity") : "", "Cleared") == 0)
-			hold("%s %s: cleared: %s of %s", when, host, str(d,
-			    "type"), str(d, "object"));
-		else if (severity_rank(str(d, "severity")) >= min)
-			hold("%s %s: fault, %s: %s of %s: %s", when, host,
-			    str(d, "severity"), str(d, "type"), str(d, "object"),
-			    str(d, "description") != NULL ? str(d,
-			    "description") : "");
-	} else if (strcmp(kind, "threshold") == 0 && mc->limits) {
-		hold("%s %s: %s%s%s %s its limit: %s, the limit %s", when, host,
-		    str(d, "what"), str(d, "name") != NULL ? " " : "",
-		    str(d, "name") != NULL ? str(d, "name") : "",
-		    ucl_object_toboolean(ucl_object_lookup(d, "over")) ?
-		    "over" : "back under", str(d, "value"), str(d, "limit"));
-	} else if (strcmp(kind, "job") == 0 && strcmp(mc->jobs, "none") != 0) {
-		if (ucl_object_toboolean(ucl_object_lookup(d, "ok"))) {
-			if (strcmp(mc->jobs, "all") == 0)
-				hold("%s %s: job %s done: %s", when, host,
-				    str(d, "id"), str(d, "title"));
-		} else
-			hold("%s %s: job %s failed: %s: %s", when, host,
-			    str(d, "id"), str(d, "title"), str(d, "error") !=
-			    NULL ? str(d, "error") : "failed");
+	/* Each way, as its own settings say. */
+	for (ch = 0; ch < CH_N; ch++) {
+		const char	*faults, *jobs;
+		bool		 limits;
+
+		if (!chan_on(mc, ch))
+			continue;
+		faults = ch == CH_MAIL ? mc->faults : mc->tg_faults;
+		jobs = ch == CH_MAIL ? mc->jobs : mc->tg_jobs;
+		limits = ch == CH_MAIL ? mc->limits : mc->tg_limits;
+		if (strcmp(kind, "sdwan-fault") == 0) {
+			min = severity_rank(faults);
+			if (min < 0)
+				continue;
+			if (strcmp(str(d, "state") != NULL ? str(d, "state") :
+			    "", "cleared") == 0 || strcmp(str(d, "severity") !=
+			    NULL ? str(d, "severity") : "", "Cleared") == 0)
+				hold(ch, "%s %s: cleared: %s of %s", when, host,
+				    str(d, "type"), str(d, "object"));
+			else if (severity_rank(str(d, "severity")) >= min)
+				hold(ch, "%s %s: fault, %s: %s of %s: %s", when,
+				    host, str(d, "severity"), str(d, "type"),
+				    str(d, "object"), str(d, "description") !=
+				    NULL ? str(d, "description") : "");
+		} else if (strcmp(kind, "threshold") == 0 && limits) {
+			hold(ch, "%s %s: %s%s%s %s its limit: %s, the limit %s",
+			    when, host, str(d, "what"), str(d, "name") != NULL ?
+			    " " : "", str(d, "name") != NULL ? str(d, "name") :
+			    "", ucl_object_toboolean(ucl_object_lookup(d,
+			    "over")) ? "over" : "back under", str(d, "value"),
+			    str(d, "limit"));
+		} else if (strcmp(kind, "job") == 0 && strcmp(jobs, "none") !=
+		    0) {
+			if (ucl_object_toboolean(ucl_object_lookup(d, "ok"))) {
+				if (strcmp(jobs, "all") == 0)
+					hold(ch, "%s %s: job %s done: %s", when,
+					    host, str(d, "id"), str(d, "title"));
+			} else
+				hold(ch, "%s %s: job %s failed: %s: %s", when,
+				    host, str(d, "id"), str(d, "title"), str(d,
+				    "error") != NULL ? str(d, "error") :
+				    "failed");
+		}
 	}
 }
 
-/* A workflow's run, as it ends: held, when runs are mailed. */
+/* A workflow's run, as it ends: held on each way that tells runs. */
 void
 mail_run(const char *workflow, unsigned int run, const char *state)
 {
-	struct mailconf	mc;
-	bool		ok, no;
+	struct mailconf	 mc;
+	const char	*runs;
+	bool		 ok, any;
+	int		 ch;
 
 	ok = strcmp(state, "done") == 0;
 	mc_load(&mc);
-	no = mc.to[0] == '\0' || strcmp(mc.runs, "none") == 0 || (ok &&
-	    strcmp(mc.runs, "all") != 0);
+	any = false;
+	for (ch = 0; ch < CH_N; ch++) {
+		runs = ch == CH_MAIL ? mc.runs : mc.tg_runs;
+		if (!chan_on(&mc, ch) || strcmp(runs, "none") == 0 || (ok &&
+		    strcmp(runs, "all") != 0))
+			continue;
+		hold(ch, "workflow %s, run %u: %s", workflow, run, state);
+		any = true;
+	}
 	mc_free(&mc);
-	if (no)
-		return;
-	hold("workflow %s, run %u: %s", workflow, run, state);
-	/* A run ends in a thread of its own: its mail goes out from here
-	 * when the worker that runs workflows reads no events. */
-	mail_flush();
+	/* A run ends in a thread of its own: its message goes out from
+	 * here when the worker that runs workflows reads no events. */
+	if (any)
+		mail_flush();
 }
 
-/* What is held, mailed: one mail, within the hour's. */
+/* What is held, sent: one message on each way, within its hour's. */
 void
 mail_flush(void)
 {
-	char		*body, subject[200], err[300];
+	struct chan	*c;
+	struct mailconf	 mc;
+	char		*body, *msg, subject[200], err[300];
 	const char	*nl;
 	time_t		 now;
 	size_t		 i, lines, free_slot;
+	int		 ch;
 
-	pthread_mutex_lock(&lock);
-	if (nheld == 0) {
-		pthread_mutex_unlock(&lock);
-		return;
-	}
-	now = time(NULL);
-	free_slot = MAIL_HOUR_MAX;
-	for (i = 0; i < MAIL_HOUR_MAX; i++)
-		if (now - sent_at[i] >= 3600) {
-			free_slot = i;
-			break;
+	for (ch = 0; ch < CH_N; ch++) {
+		c = &chans[ch];
+		pthread_mutex_lock(&lock);
+		if (c->nheld == 0) {
+			pthread_mutex_unlock(&lock);
+			continue;
 		}
-	if (free_slot == MAIL_HOUR_MAX) {
+		now = time(NULL);
+		free_slot = MAIL_HOUR_MAX;
+		for (i = 0; i < MAIL_HOUR_MAX; i++)
+			if (now - c->sent_at[i] >= 3600) {
+				free_slot = i;
+				break;
+			}
+		if (free_slot == MAIL_HOUR_MAX) {
+			pthread_mutex_unlock(&lock);
+			continue;		/* the next hour's */
+		}
+		c->sent_at[free_slot] = now;
+		if ((body = strdup(c->held)) == NULL)
+			abort();
+		lines = c->held_lines;
+		c->nheld = 0;
+		c->held_lines = 0;
+		c->held[0] = '\0';
 		pthread_mutex_unlock(&lock);
-		return;			/* the next hour's */
+		if (lines == 1) {
+			nl = strchr(body, '\n');
+			snprintf(subject, sizeof(subject), "Arcana: %.*s",
+			    (int)(nl != NULL ? nl - body : (ptrdiff_t)strlen(
+			    body)), body);
+		} else
+			snprintf(subject, sizeof(subject), "Arcana: %zu things "
+			    "happened", lines);
+		if (ch == CH_MAIL) {
+			if (mail_send(subject, body, err, sizeof(err)) != 0)
+				thread_log(LOG_WARNING, "mail: not sent: %s",
+				    err);
+		} else {
+			mc_load(&mc);
+			/* One thing: its line; more: what the mail's subject
+			 * says, then each. */
+			if ((lines == 1 ? asprintf(&msg, "Arcana: %s", body) :
+			    asprintf(&msg, "%s\n%s", subject, body)) == -1)
+				abort();
+			if (tg_send(&mc, msg, err, sizeof(err)) != 0)
+				thread_log(LOG_WARNING, "telegram: not sent: %s",
+				    err);
+			free(msg);
+			mc_free(&mc);
+		}
+		free(body);
 	}
-	sent_at[free_slot] = now;
-	if ((body = strdup(held)) == NULL)
-		abort();
-	lines = held_lines;
-	nheld = 0;
-	held_lines = 0;
-	held[0] = '\0';
-	pthread_mutex_unlock(&lock);
-	if (lines == 1) {
-		nl = strchr(body, '\n');
-		snprintf(subject, sizeof(subject), "Arcana: %.*s", (int)(nl !=
-		    NULL ? nl - body : (ptrdiff_t)strlen(body)), body);
-	} else
-		snprintf(subject, sizeof(subject), "Arcana: %zu things happened",
-		    lines);
-	if (mail_send(subject, body, err, sizeof(err)) != 0)
-		thread_log(LOG_WARNING, "mail: not sent: %s", err);
-	free(body);
 }
 
 static struct cursor *
@@ -483,35 +754,35 @@ cursor_of(const char *id, bool *fresh)
 static void
 tick(void)
 {
-	const struct server	*s;
+	struct hostref		*all;
 	struct cursor		*c;
 	struct ucl_parser	*p;
 	ucl_object_t		*top;
 	const ucl_object_t	*data, *e;
 	ucl_object_iter_t	 it;
-	char			 id[9], *name, *uri, *peer, *ans;
+	char			*name, *uri, *peer, *ans;
 	struct mailconf		 mc;
-	int			 i, st;
+	int			 i, n, st;
 	bool			 fresh;
 
 	mc_load(&mc);
-	if (mc.to[0] == '\0') {
+	if (!chan_on(&mc, CH_MAIL) && !chan_on(&mc, CH_TELEGRAM)) {
 		ncursors = 0;		/* when it is set, from then on */
 		mc_free(&mc);
 		return;
 	}
-	for (i = 0; (s = server_at(i)) != NULL; i++) {
-		strlcpy(id, s->id, sizeof(id));
-		if ((name = strdup(s->name)) == NULL || (uri = strdup(s->uri)) ==
-		    NULL || (s->peer_name != NULL && (peer = strdup(
-		    s->peer_name)) == NULL))
-			abort();
-		if (s->peer_name == NULL)
-			peer = NULL;
-		if ((c = cursor_of(id, &fresh)) == NULL)
-			goto next;
+	/* The servers as the worker copied them: the table is its own. */
+	if ((all = calloc(MAIL_HOSTS, sizeof(*all))) == NULL)
+		abort();
+	n = host_refs_get(all, MAIL_HOSTS);
+	for (i = 0; i < n; i++) {
+		name = all[i].name;
+		uri = all[i].uri;
+		peer = all[i].peer[0] != '\0' ? all[i].peer : NULL;
+		if ((c = cursor_of(all[i].id, &fresh)) == NULL)
+			continue;
 		ans = hosts_events(uri, peer, name, c->last, &st);
-			if (ans == NULL || st != 200)
+		if (ans == NULL || st != 200)
 			goto done;
 		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
 		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
@@ -533,11 +804,8 @@ tick(void)
 			ucl_object_unref(top);
 done:
 		free(ans);		/* hosts_events() mallocs it */
-next:
-		free(name);
-		free(uri);
-		free(peer);
 	}
+	free(all);
 	mail_flush();
 }
 
@@ -577,20 +845,96 @@ api_mail_test(struct http_request *req)
 {
 	struct mailconf	 mc;
 	ucl_object_t	*o;
-	char		 err[300], to[1024];
+	char		 err[300], to[1024], body[600];
 
 	if (!guard(req, true))
 		return (KORE_RESULT_OK);
 	mc_load(&mc);
 	recipients(&mc, to, sizeof(to));
+	snprintf(body, sizeof(body), "This mail says the console's mail "
+	    "reaches you.\n\nIt was sent %s; faults, limits crossed, jobs and "
+	    "workflow runs come the same way, as Settings, Notifications "
+	    "says.\n", strcmp(mc.via, "smtp") == 0 ? "by the console to the "
+	    "SMTP relay Settings name" : "by sendmail(8) on the console's "
+	    "host");
 	mc_free(&mc);
-	if (mail_send("Arcana: a test", "This mail says the console's mail "
-	    "reaches you.\n\nIt was sent by sendmail(8) on the console's host; "
-	    "faults, limits crossed, jobs and workflow runs come the same "
-	    "way, as Settings, Notifications says.\n", err, sizeof(err)) != 0)
+	err[0] = '\0';
+	if (mail_send("Arcana: a test", body, err, sizeof(err)) != 0)
 		return (reply_error(req, 502, "not-sent", "%s", err));
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, ucl_object_frombool(true), "ok", 0, false);
 	ucl_object_insert_key(o, ucl_object_fromstring(to), "to", 0, false);
 	return (reply_json(req, 200, o));
+}
+
+/*
+ * POST /api/settings/telegram-test: a message to say Telegram reaches
+ * the chats, sent by the host Settings name (a task: an agent is asked).
+ */
+struct tgtest {
+	struct kore_task task;		/* first */
+	int		 rc;
+	char		 err[400];
+	char		 chats[512];
+};
+
+static int
+tgtest_run(struct kore_task *t)
+{
+	struct tgtest	*tt = (struct tgtest *)t;
+	struct mailconf	 mc;
+
+	mc_load(&mc);
+	snprintf(tt->chats, sizeof(tt->chats), "%s", mc.tg_chats);
+	tt->rc = tg_send(&mc, "Arcana: a test.\n\nThis message says the "
+	    "console's alerts reach this chat: faults, limits crossed, jobs "
+	    "and workflow runs come the same way, as Settings, Notifications "
+	    "says.", tt->err, sizeof(tt->err));
+	mc_free(&mc);
+	return (KORE_RESULT_OK);
+}
+
+int
+api_telegram_test(struct http_request *req)
+{
+	struct tgtest	*tt;
+	ucl_object_t	*o;
+
+	if ((tt = req->hdlr_extra) != NULL) {
+		if (kore_task_state(&tt->task) != KORE_TASK_STATE_FINISHED) {
+			http_request_sleep(req);
+			return (KORE_RESULT_RETRY);
+		}
+		if (tt->rc != 0)
+			return (reply_error(req, 502, "not-sent", "%s", tt->err));
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_frombool(true), "ok", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(tt->chats), "to",
+		    0, false);
+		return (reply_json(req, 200, o));
+	}
+	if (!guard(req, true))
+		return (KORE_RESULT_OK);
+	/* The servers as they are now, for the task: one just added. */
+	host_refs();
+	tt = kore_calloc(1, sizeof(*tt));
+	req->hdlr_extra = tt;
+	kore_task_create(&tt->task, tgtest_run);
+	kore_task_bind_request(&tt->task, req);
+	kore_task_run(&tt->task);
+	return (KORE_RESULT_RETRY);
+}
+
+void
+api_telegram_test_free(struct http_request *req)
+{
+	struct tgtest	*tt = req->hdlr_extra;
+
+	/* Asked while the task runs too: only once it is done. */
+	if (tt == NULL || !kore_task_finished(&tt->task))
+		return;
+	kore_task_destroy(&tt->task);
+	kore_free(tt);
+	req->hdlr_extra = NULL;
 }

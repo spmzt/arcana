@@ -59,6 +59,11 @@ static const char *const ssh_verb[] = {
 	"banner", "set", "authorize", "unauthorize", "options", "sign",
 	"user-cas",
 };
+static const char *const poudriere_verb[] = {
+	"jail-create", "jail-update", "jail-delete", "ports-create",
+	"ports-update", "ports-delete", "bulk", "stop", "make-conf", "conf",
+	"options",
+};
 
 /*
  * Change c made job-spec sp, its arrays a's.  0, or EINVAL: no kind,
@@ -666,6 +671,20 @@ yjobs_spec(const struct arcana_jobs_submit_input_change *in,
 		sp->text = c->text;
 		sp->user = c->user;
 		sp->safe = c->has_safe && c->safe;
+		return (0);
+	}
+	case ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_POUDRIERE: {
+		const struct arcana_jobs_submit_input_change_poudriere *c =
+		    in->poudriere;
+
+		if (c == NULL)
+			return (EINVAL);
+		sp->kind = ARC_JOB_KIND_POUDRIERE;
+		if (c->has_verb)
+			sp->verb = poudriere_verb[c->verb];
+		sp->names.n = c->args.n;
+		sp->names.v = c->args.v;
+		sp->text = c->text;
 		return (0);
 	}
 	default:

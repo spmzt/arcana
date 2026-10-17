@@ -625,7 +625,11 @@ bf_parse(const char *kind, const char *text)
 
 	c = bf_new(kind);
 	c->ch[0] = false;
+	/* Both channels' as the text says, nothing taken from the new
+	 * form's defaults: an IPv6 channel without import must not read
+	 * as import all. */
 	c->imp[0][0] = c->exp[0][0] = '\0';
+	c->imp[1][0] = c->exp[1][0] = '\0';
 	ok = tokenize(text, &k) && eat(&k, "protocol") && eat(&k, kind);
 	if (ok && strcmp(kind, "ospf") == 0 && (strcmp(peek(&k), "v2") == 0 ||
 	    strcmp(peek(&k), "v3") == 0))
@@ -728,11 +732,14 @@ filter_in(struct html *h, const char *label, const char *name,
 {
 	char	opt[72];
 	int	i;
+	bool	shown;
 
 	h_fmt(h, "<label>%s<select name=\"%s\">", label, name);
 	h_fmt(h, "<option value=\"all\"%s>all</option><option value=\"none\""
 	    "%s>none</option>", strcmp(v, "all") == 0 ? " selected" : "",
 	    strcmp(v, "none") == 0 ? " selected" : "");
+	shown = v[0] == '\0' || strcmp(v, "all") == 0 || strcmp(v, "none") ==
+	    0;
 	for (i = 0; filters != NULL && filters[i] != NULL; i++) {
 		snprintf(opt, sizeof(opt), "filter %s", filters[i]);
 		h_raw(h, "<option");
@@ -740,6 +747,16 @@ filter_in(struct html *h, const char *label, const char *name,
 		h_fmt(h, "%s>filter ", strcmp(v, opt) == 0 ? " selected" : "");
 		h_txt(h, filters[i]);
 		h_raw(h, "</option>");
+		shown = shown || strcmp(v, opt) == 0;
+	}
+	/* One of another file (an include): offered as it is, else the
+	 * form would put all in its place unseen. */
+	if (!shown) {
+		h_raw(h, "<option selected");
+		h_attr(h, "value", v);
+		h_raw(h, ">");
+		h_txt(h, v);
+		h_raw(h, " (not in this file)</option>");
 	}
 	h_raw(h, "</select></label>");
 }
@@ -768,13 +785,27 @@ bf_fields(struct html *h, const struct bfconf *c, const char *const *filters,
 		    "BIRD's default";
 		h_raw(h, "<div class=\"two\"><label>From the template<select "
 		    "name=\"tmpl\"><option value=\"\">none</option>");
-		for (i = 0; templates != NULL && templates[i] != NULL; i++) {
-			h_raw(h, "<option");
-			h_attr(h, "value", templates[i]);
-			h_fmt(h, "%s>", strcmp(c->tmpl, templates[i]) == 0 ?
-			    " selected" : "");
-			h_txt(h, templates[i]);
-			h_raw(h, "</option>");
+		{
+			bool	shown = c->tmpl[0] == '\0';
+
+			for (i = 0; templates != NULL && templates[i] != NULL;
+			    i++) {
+				h_raw(h, "<option");
+				h_attr(h, "value", templates[i]);
+				h_fmt(h, "%s>", strcmp(c->tmpl, templates[i]) ==
+				    0 ? " selected" : "");
+				h_txt(h, templates[i]);
+				h_raw(h, "</option>");
+				shown = shown || strcmp(c->tmpl, templates[i]) ==
+				    0;
+			}
+			if (!shown) {
+				h_raw(h, "<option selected");
+				h_attr(h, "value", c->tmpl);
+				h_raw(h, ">");
+				h_txt(h, c->tmpl);
+				h_raw(h, " (not in this file)</option>");
+			}
 		}
 		h_raw(h, "</select><small>What it leaves empty, the template "
 		    "says.</small></label>");
@@ -1002,19 +1033,18 @@ words_ok(const char *s)
 	return (strpbrk(s, "\"\\\n\r") == NULL);
 }
 
+static bool	symbol_ok(const char *);
+
 static bool
 filter_ok(const char *s, const char *const *filters)
 {
-	int	i;
 
+	(void)filters;
 	if (strcmp(s, "all") == 0 || strcmp(s, "none") == 0)
 		return (true);
-	if (strncmp(s, "filter ", 7) != 0)
-		return (false);
-	for (i = 0; filters != NULL && filters[i] != NULL; i++)
-		if (strcmp(s + 7, filters[i]) == 0)
-			return (true);
-	return (false);
+	/* The file's own, or one of another it includes: a name BIRD
+	 * reads, which bird -p checks is there before it is kept. */
+	return (strncmp(s, "filter ", 7) == 0 && symbol_ok(s + 7));
 }
 
 static const char *
@@ -1053,14 +1083,18 @@ tri(const ucl_object_t *f, const char *key)
 	    "off") == 0 ? 0 : -1);
 }
 
+/* A name as BIRD writes a symbol: a letter or _, then those and digits. */
 static bool
-listed(const char *s, const char *const *v)
+symbol_ok(const char *s)
 {
+	size_t	i;
 
-	for (; v != NULL && *v != NULL; v++)
-		if (strcmp(s, *v) == 0)
-			return (true);
-	return (false);
+	if (s[0] == '\0' || strlen(s) > 63 || isdigit((unsigned char)s[0]))
+		return (false);
+	for (i = 0; s[i] != '\0'; i++)
+		if (!isalnum((unsigned char)s[i]) && s[i] != '_')
+			return (false);
+	return (true);
 }
 
 struct bfconf *
@@ -1088,8 +1122,12 @@ bf_read(const char *kind, const ucl_object_t *f, const char *const *filters,
 		copy(c->multihop, sizeof(c->multihop), field(f, "mh"));
 		snprintf(c->pass, sizeof(c->pass), "%s", field(f, "pass"));
 		snprintf(c->tmpl, sizeof(c->tmpl), "%s", field(f, "tmpl"));
-		if (c->tmpl[0] != '\0' && !listed(c->tmpl, templates))
-			FAIL("The template is one of the file's BGP templates.");
+		/* The file's, or one of a file it includes: bird -p says
+		 * whether it is there. */
+		(void)templates;
+		if (c->tmpl[0] != '\0' && !symbol_ok(c->tmpl))
+			FAIL("A template is named as BIRD names one: letters, "
+			    "digits and _.");
 		c->bfd = tri(f, "bfd");
 		c->passive = tri(f, "passive");
 		c->efa = tri(f, "efa");

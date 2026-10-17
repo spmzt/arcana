@@ -269,6 +269,7 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		YJ_NUM(d, "uid", c, uid);
 		YJ_NUM(d, "signal", c, signal);
 		c->core = yj_yes(d, "core", &c->has_core);
+		c->reason = yj_str(a, d, "reason");
 		y->crash = c;
 		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_CRASH;
 	}

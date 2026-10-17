@@ -57,6 +57,7 @@ static struct {
 	int		 edit;		/* its block, or -1 for a new one */
 	char		 proto[64];	/* the protocol the box is about */
 	char		 want[64];	/* to be opened once the file is read */
+	char		 want_sid[16];	/* the host it was asked for on */
 	int		 sub;		/* the tab: SUB_* */
 	char		 fkind[8];	/* the form's protocol: bgp, ospf, bfd */
 	bool		 form_ok;	/* the form could show the protocol */
@@ -390,6 +391,9 @@ conf_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	bd.loading = false;
 	bd.saving = false;
 	if (status != 200 || !jbool(o, "ok")) {
+		/* The file is not here: no protocol of it to open. */
+		if (!save)
+			bd.want[0] = '\0';
 		snprintf(save ? app.modal_error : bd.error, save ?
 		    sizeof(app.modal_error) : sizeof(bd.error), "%s",
 		    status == 200 && jstr(o, "error") != NULL ? jstr(o,
@@ -502,6 +506,12 @@ static void
 want_open(void)
 {
 
+	struct server	*s;
+
+	/* Asked for on another host: not this one's. */
+	if (bd.want[0] != '\0' && ((s = cur_server()) == NULL || strcmp(
+	    s->id, bd.want_sid) != 0))
+		bd.want[0] = '\0';
 	if (bd.want[0] == '\0' || app.node != NODE_HOST || app.tab !=
 	    TAB_NETWORK || app.net.kind != NET_BIRD || app.modal != MODAL_NONE)
 		return;
@@ -671,7 +681,10 @@ proto_view(struct html *h, const ucl_object_t *data, int sub)
 			h_txt(h, jstr(r, "since"));
 			h_raw(h, "</td><td class=\"num\">");
 			h_txt(h, jstr(r, "routes"));
-			h_raw(h, "</td><td class=\"err\">");
+			/* An error, to copy by a click; none, the row's
+			 * click opens it. */
+			h_raw(h, jstr(r, "err") != NULL && jstr(r, "err")[0] !=
+			    '\0' ? "</td><td class=\"err\">" : "</td><td>");
 			h_txt(h, jstr(r, "err"));
 			h_raw(h, "</td></tr>");
 		}
@@ -734,6 +747,8 @@ bird_show(const char *proto)
 	struct server	*s;
 
 	snprintf(bd.want, sizeof(bd.want), "%s", proto);
+	snprintf(bd.want_sid, sizeof(bd.want_sid), "%s", (s = cur_server()) !=
+	    NULL ? s->id : "");
 	if ((s = cur_server()) != NULL && bd.text != NULL && !bd.loading &&
 	    strcmp(bd.sid, s->id) == 0 && strcmp(bd.jail, net_scope()) == 0)
 		want_open();

@@ -119,6 +119,8 @@ help_path(void)
 		return ("sdwan/index.html");
 	case NODE_SECURITY:
 		return ("sections/security.html");
+	case NODE_BUILDER:
+		return ("sections/builder.html");
 	case NODE_TROUBLE:
 		return ("sections/troubleshoot.html");
 	case NODE_SETTINGS:

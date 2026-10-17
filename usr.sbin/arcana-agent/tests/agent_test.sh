@@ -85,6 +85,7 @@ conf=$(pwd)/rc.conf
 echo "\$*" >> $(pwd)/sysrc.log
 # -R dir: the rc.conf of what is rooted there, a jail's.
 [ "\$1" = -R ] && { conf=\$2/etc/rc.conf; shift 2; }
+[ "\$1" = -f ] && { conf=\$2; touch "\$conf"; shift 2; }
 ign=no
 [ "\$1" = -i ] && { ign=yes; shift; }
 put()
@@ -1019,6 +1020,20 @@ EOS
 	test ! -f running.dhclient || atf_fail "dhclient was not stopped"
 	atf_check -o match:'fake-ifconfig lo0 inet6 -accept_rtadv' "$JGC" -p -c "$SOCK" interface lo0 addressing static
 	atf_check -o not-match:'ifconfig_lo0_ipv6' -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up"$' cat rc.conf
+	# was: what it had before Arcana's first DHCP or SLAAC, put back
+	# (a host on SLAAC by rc.conf stays so), and let go; then nothing
+	# kept, nothing changes.
+	echo 'ifconfig_lo0_ipv6="inet6 accept_rtadv"' >> rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 addressing dhcp
+	atf_check -o match:'^ifconfig_lo0="DHCP inet 127.0.0.1/8 mtu 1300 up"$' -o not-match:'ifconfig_lo0_ipv6' cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 addressing dhcp
+	atf_check -o match:'addressed as before: static, SLAAC' -o match:'inet6 accept_rtadv -ifdisabled' \
+	    -o match:'inet 127.0.0.1/8 mtu 1300 up' "$JGC" -t -p -c "$SOCK" interface lo0 addressing was
+	atf_check -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up"$' -o match:'^ifconfig_lo0_ipv6="inet6 accept_rtadv"$' cat rc.conf
+	test ! -f running.dhclient || atf_fail "dhclient was not stopped"
+	atf_check -o match:'not kept: left as it is' "$JGC" -t -p -c "$SOCK" interface lo0 addressing was
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 addressing static
+	atf_check -o not-match:'ifconfig_lo0_ipv6' cat rc.conf
 
 	# Addresses kept as aliases: numbered from 0, and without gaps
 	# when one in the middle goes.
@@ -2219,6 +2234,52 @@ vnet_cleanup()
 	stop_daemon
 }
 
+atf_test_case notify cleanup
+notify_head()
+{
+	atf_set "descr" "A Telegram message by a bot: posted as JSON to the Bot API, the token in no trace nor log"
+	atf_set "timeout" "60"
+}
+notify_body()
+{
+	local port pid
+
+	port=$((30000 + $$ % 20000))
+	DAEMON_ARGS="--telegram-api http://127.0.0.1:$port"
+	start_daemon
+	# The Bot API as nc(1), with what it answers.
+	printf 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{"ok":true}' > reply
+	nc -N -l 127.0.0.1 "$port" < reply > req.txt &
+	pid=$!
+	sleep 0.5
+	atf_check -o match:'Telegram sendMessage to chat -100' -o not-match:'abc_DEF' \
+	    env ARCANA_TELEGRAM_TOKEN=123:abc_DEF "$JGC" -t -c "$SOCK" notify -100 'disk full on web'
+	wait "$pid"
+	atf_check -o match:'^POST /bot123:abc_DEF/sendMessage HTTP/1' \
+	    -o match:'"chat_id":-100' -o match:'"text":"disk full on web"' cat req.txt
+	# Refused by the Bot API: said, with what it most likely means.
+	printf 'HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: 59\r\nConnection: close\r\n\r\n{"ok":false,"error_code":400,"description":"chat not found"}' > reply
+	nc -N -l 127.0.0.1 "$port" < reply > req.txt &
+	pid=$!
+	sleep 0.5
+	atf_check -s exit:1 -e match:'no such chat, or the bot is not in it' -o ignore \
+	    env ARCANA_TELEGRAM_TOKEN=123:abc_DEF "$JGC" -c "$SOCK" notify @no_such_chan hi
+	wait "$pid"
+	# Neither a token nor a chat that is not one is sent.
+	atf_check -s exit:1 -e match:'as BotFather gives it' -o ignore \
+	    env ARCANA_TELEGRAM_TOKEN='x y' "$JGC" -c "$SOCK" notify 5 hi
+	atf_check -s exit:1 -e match:'a chat is a number' -o ignore \
+	    env ARCANA_TELEGRAM_TOKEN=123:abc_DEF "$JGC" -c "$SOCK" notify 'x;y' hi
+	atf_check -s exit:2 -e match:'ARCANA_TELEGRAM_TOKEN' "$JGC" -c "$SOCK" notify 5 hi
+	if grep -q abc_DEF daemon.out; then
+		atf_fail "the token is in the agent's log"
+	fi
+}
+notify_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case safe_mode cleanup
 safe_mode_head()
 {
@@ -2316,6 +2377,19 @@ safe_mode_body()
 	atf_check test -f running.sshd
 	atf_check -o match:'it was so before, and is left so' \
 	    "$JGC" -c "$SOCK" jobs
+	# Addressing undone: as it was before the change (SLAAC by
+	# rc.conf), not static.
+	echo 'ifconfig_lo0_ipv6="inet6 accept_rtadv"' >> rc.conf
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" interface lo0 \
+	    addressing dhcp
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'^ifconfig_lo0_ipv6="inet6 accept_rtadv"$' \
+	    -o not-match:'DHCP' cat rc.conf
+	atf_check -o match:'^lo0 inet6 accept_rtadv -ifdisabled$' cat ifconfig.log
 	# And stays when confirmed.
 	atf_check -o match:'confirmed: it stays' \
 	    "$JGC" -s -c "$SOCK" service sshd config sshd_flags=-6
@@ -5199,8 +5273,14 @@ EOT
 	atf_check -o save:list "$JGC" -c "$SOCK" sshd
 	grep -qF '"options":"principals=\"alice,admin\",no-pty"' list ||
 	    atf_fail "the options listed"
-	atf_check -s exit:1 -o match:'no key OpenSSH reads' \
+	atf_check -s exit:1 -o match:"a value's quote is not closed" \
 	    "$JGC" -c "$SOCK" sshd options alice "$alicefp" 'from="10.0.0.0/8'
+	# Options sshd does not know, or a flag given a value: refused,
+	# the key line as it was.
+	atf_check -s exit:1 -o match:'not an option sshd knows' \
+	    "$JGC" -c "$SOCK" sshd options alice "$alicefp" 'frm="10.0.0.0/8"'
+	atf_check -s exit:1 -o match:'that option takes no value' \
+	    "$JGC" -c "$SOCK" sshd options alice "$alicefp" 'no-pty="x"'
 	atf_check -o match:'done +sshd options of alice$' \
 	    "$JGC" -c "$SOCK" sshd options alice "$alicefp"
 	atf_check -o inline:"$(cut -d' ' -f1-2 alice_key.pub) alice@lab\n" \
@@ -5243,8 +5323,11 @@ EOT
 		    break
 		sleep 0.1
 	done
+	# The newest job, whatever its number.
+	jid=$("$JGC" -c "$SOCK" jobs | awk '$1 ~ /^[0-9]+$/ {print $1}' |
+	    sort -n | tail -1)
 	atf_check -o match:'not confirmed within 2 s: undone' -s exit:1 \
-	    "$JGC" -c "$SOCK" job 16
+	    "$JGC" -c "$SOCK" job "$jid"
 	atf_check -o file:before cat $R/etc/ssh/sshd_config
 	# What passwd and sshd say is the host's or a jail's, not the
 	# agent's to trust: a long home in a keys file of %h four times
@@ -5802,7 +5885,7 @@ yang_events_body()
 	local y="$(atf_get_srcdir)/yev"
 
 	cat > ev.json <<'EOT'
-{"last":12,"first":3,"kept":512,"events":[{"n":3,"t":1791995110,"kind":"route-add","data":{"destination":"10.9.0.0","gateway":"10.0.0.1","flags":"UGS","nhop":5,"metric":0,"weight":1,"fib":0,"prefixlen":16,"interface":"em0","source":"static"}},{"n":4,"t":1791995111,"kind":"routes","data":{"changed":40}},{"n":5,"t":1791995112,"kind":"link","jail":"r1","data":{"interface":"epair0b","up":true,"carrier":true,"mtu":1500}},{"n":6,"t":1791995113,"kind":"address-add","data":{"interface":"em0","address":"2001:db8::7","prefixlen":64}},{"n":7,"t":1791995114,"kind":"neigh","data":{"family":"inet","interface":"em0","address":"10.0.0.9","lladdr":"02:00:00:00:00:09","state":"reachable","router":false}},{"n":8,"t":1791995115,"kind":"threshold","data":{"what":"jail-cpu","name":"web","value":55,"limit":50,"over":true}},{"n":9,"t":1791995116,"kind":"kmsg","data":{"seq":41,"text":"em0: link state changed to UP"}},{"n":10,"t":1791995117,"kind":"sdwan-tunnel","data":{"id":"tvc-1","address":"10.202.0.2","state":"down","misses":3}},{"n":11,"t":1791995118,"kind":"sdwan-fault","data":{"type":"tunnel","severity":"Major","object":"tvc-1","by":"probe","description":"no reply","state":"set"}},{"n":12,"t":1791995119,"kind":"sdwan-security","data":{"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"em0","comment":"deny-ssh"}},{"n":13,"t":1791995120,"kind":"job","data":{"id":77,"title":"ipfw table T46 add","ok":false,"error":"ipfw: bad"}},{"n":14,"t":1791995121,"kind":"jail-state","data":{"jail":"web","state":"running","jid":5}},{"n":15,"t":1791995122,"kind":"crash","data":{"pid":812,"process":"nginx","jid":5,"jail":"web","uid":80,"signal":11,"core":true}}]}
+{"last":12,"first":3,"kept":512,"events":[{"n":3,"t":1791995110,"kind":"route-add","data":{"destination":"10.9.0.0","gateway":"10.0.0.1","flags":"UGS","nhop":5,"metric":0,"weight":1,"fib":0,"prefixlen":16,"interface":"em0","source":"static"}},{"n":4,"t":1791995111,"kind":"routes","data":{"changed":40}},{"n":5,"t":1791995112,"kind":"link","jail":"r1","data":{"interface":"epair0b","up":true,"carrier":true,"mtu":1500}},{"n":6,"t":1791995113,"kind":"address-add","data":{"interface":"em0","address":"2001:db8::7","prefixlen":64}},{"n":7,"t":1791995114,"kind":"neigh","data":{"family":"inet","interface":"em0","address":"10.0.0.9","lladdr":"02:00:00:00:00:09","state":"reachable","router":false}},{"n":8,"t":1791995115,"kind":"threshold","data":{"what":"jail-cpu","name":"web","value":55,"limit":50,"over":true}},{"n":9,"t":1791995116,"kind":"kmsg","data":{"seq":41,"text":"em0: link state changed to UP"}},{"n":10,"t":1791995117,"kind":"sdwan-tunnel","data":{"id":"tvc-1","address":"10.202.0.2","state":"down","misses":3}},{"n":11,"t":1791995118,"kind":"sdwan-fault","data":{"type":"tunnel","severity":"Major","object":"tvc-1","by":"probe","description":"no reply","state":"set"}},{"n":12,"t":1791995119,"kind":"sdwan-security","data":{"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"em0","comment":"deny-ssh"}},{"n":13,"t":1791995120,"kind":"job","data":{"id":77,"title":"ipfw table T46 add","ok":false,"error":"ipfw: bad"}},{"n":14,"t":1791995121,"kind":"jail-state","data":{"jail":"web","state":"running","jid":5}},{"n":15,"t":1791995122,"kind":"crash","data":{"pid":812,"process":"nginx","jid":5,"jail":"web","uid":80,"signal":11,"core":false,"reason":"sugid process denied by kern.sugid_coredump"}}]}
 EOT
 	cat > want <<'EOT'
 events last=12 first=3 kept=512
@@ -5818,8 +5901,8 @@ events last=12 first=3 kept=512
 12 2026-10-14T16:25:19Z sdwan-security: security seq=7 rule=30010 Deny 10.1.0.2:4000 -> 10.3.0.2:22 on em0 (deny-ssh)
 13 2026-10-14T16:25:20Z job: job 77 ipfw table T46 add ok=no error=ipfw: bad
 14 2026-10-14T16:25:21Z jail-state: jail-state web running jid=5
-15 2026-10-14T16:25:22Z crash: crash pid=812 nginx jid=5 jail=web uid=80 signal=11 core=yes
-yang-cbor 868 bytes, the same back
+15 2026-10-14T16:25:22Z crash: crash pid=812 nginx jid=5 jail=web uid=80 signal=11 core=no reason=sugid process denied by kern.sugid_coredump
+yang-cbor 915 bytes, the same back
 EOT
 	atf_check -o file:want "$y" list ev.json
 	cat > one.json <<'EOT'
@@ -6130,6 +6213,56 @@ fault 2026-10-14T16:25:18Z tunnel Major was=- tvc-2 by=probe cleared=no at=-: no
 yang-cbor 756 bytes, the same back
 EOT
 	atf_check -o file:want "$y" state state.json
+}
+
+atf_test_case crash_fault
+crash_fault_head()
+{
+	atf_set "descr" "the kernel's line for a program that died of a" \
+	    "signal (kmsg.c): the crash event with the kernel's reason for" \
+	    "no core, the crash fault of the program with the signal's name" \
+	    "and the day's count, said anew at each crash, cleared after an" \
+	    "hour without one"
+}
+crash_fault_body()
+{
+	local f="$(atf_get_srcdir)/kmsg"
+
+	cat > lines <<'EOF'
+100 pid 13939 (bird), jid 0, uid 0: exited on signal 10 (no core dump - sugid process denied by kern.sugid_coredump)
+200 pid 14000 (bird), jid 0, uid 0: exited on signal 10 (no core dump - sugid process denied by kern.sugid_coredump)
+250 pid 812 (nginx), jid 7, uid 80: exited on signal 11 (core dumped)
+300 em0: link state changed to UP
+86500 pid 14100 (bird), jid 0, uid 0: exited on signal 6 (no core dump - bad address)
+sweep 90000
+sweep 90101
+sweep 90151
+EOF
+	atf_check -o save:out "$f" < lines
+	# The event, with the reason; the fault, by the kernel.
+	atf_check -o match:'^event crash \{"pid":13939,"process":"bird","jid":0,"jail":"","uid":0,"signal":10,"core":false,"reason":"sugid process denied by kern.sugid_coredump"\}$' \
+	    cat out
+	atf_check -o match:'^set crash Major host:bird kernel: bird died of SIGBUS \(pid 13939\), 1 time in 24 h; no core: sugid process denied by kern.sugid_coredump$' \
+	    cat out
+	# The second crash: the same fault, its line said anew.
+	atf_check -o match:'^update crash host:bird: bird died of SIGBUS \(pid 14000\), 2 times in 24 h; no core: sugid' \
+	    cat out
+	atf_check -o not-match:'set again' cat out
+	# A jail's, by its id when it has no name any more; a core dumped.
+	atf_check -o match:'^event crash \{"pid":812,"process":"nginx","jid":7,"jail":"","uid":80,"signal":11,"core":true\}$' \
+	    cat out
+	atf_check -o match:'^set crash Major jail:7/nginx kernel: nginx died of SIGSEGV \(pid 812\), 1 time in 24 h; a core was dumped$' \
+	    cat out
+	atf_check -o match:'^not a crash: em0: link state changed to UP$' cat out
+	# A day on: the crash of a day ago no longer counts.
+	atf_check -o match:'^update crash host:bird: bird died of SIGABRT \(pid 14100\), 2 times in 24 h; no core: bad address$' \
+	    cat out
+	# An hour without one, each: nginx's at the first sweep, its last
+	# crash a day before it; bird's at the second, an hour and a
+	# second after its last; the third clears none.
+	atf_check -o inline:'clear crash jail:7/nginx: nginx ran an hour without crashing\nclear crash host:bird: bird ran an hour without crashing\n' \
+	    grep '^clear' out
+	atf_check -o inline:'2\n' sh -c "grep -c '^set' out"
 }
 
 atf_test_case fw_walk
@@ -7399,6 +7532,269 @@ EOF
 	done
 }
 
+atf_test_case poudriere cleanup
+poudriere_head()
+{
+	atf_set "descr" "poudriere(8) as a plugin: its jails, ports trees," \
+	    "make.conf files, repositories and builds read; a jail, a" \
+	    "tree and a build started as runs that go on after the job," \
+	    "one stopped; a make.conf for debug symbols; poudriere.conf's" \
+	    "variables; what is refused"
+}
+poudriere_body()
+{
+	local d="$(pwd)" n
+
+	mkdir -p pe/poudriere.d data/packages/FreeBSD:16:amd64-default-debug/All \
+	    bl/logs/errors
+	# The build's log directory: a port failed in build, without a
+	# reason found, and one skipped for it.
+	printf 'devel/broken broken-1.0 build  42\n' > bl/.poudriere.ports.failed
+	printf 'net/needs needs-2.0 broken-1.0\n' > bl/.poudriere.ports.skipped
+	printf '===> Building for broken-1.0\ncc: error: no such file\n*** Error code 1\n' \
+	    > bl/logs/errors/broken-1.0.log
+	touch data/packages/FreeBSD:16:amd64-default-debug/All/bird3-3.4.0.pkg
+	# poudriere(8): jset and pset as it keeps them, a bulk that says
+	# what it builds; test/sleepy builds until it is interrupted,
+	# test/broken fails.
+	cat > fake-poudriere <<EOS
+#!/bin/sh
+echo "poudriere \$*" >> $d/poudriere.log
+e=$d/pe/poudriere.d
+v=; a=amd64; m=http; n=; br=
+cmd=\$1; shift
+case "\$cmd" in
+jail|ports)
+	verb=\$1; shift
+	while getopts yj:p:v:a:m:B:U:M: o; do
+		case \$o in j|p) n=\$OPTARG;; v) v=\$OPTARG;; a) a=\$OPTARG;; m) m=\$OPTARG;; B) br=\$OPTARG;; esac
+	done
+	k=jails; [ \$cmd = ports ] && k=ports
+	case "\$verb" in
+	-c)	echo "[00:00:01] Creating \$n fs"
+		mkdir -p \$e/\$k/\$n
+		[ \$cmd = jail ] && { echo \$v > \$e/\$k/\$n/version; echo \$a > \$e/\$k/\$n/arch; }
+		echo \$m > \$e/\$k/\$n/method
+		echo /poudriere/\$k/\$n > \$e/\$k/\$n/mnt
+		echo 1792200000 > \$e/\$k/\$n/timestamp
+		echo "[00:00:02] Done" ;;
+	-u)	echo "[00:00:01] Updating \$n"; echo 1792209999 > \$e/\$k/\$n/timestamp ;;
+	-d)	[ -d \$e/\$k/\$n ] || { echo "Error: No such \$k \$n" >&2; exit 1; }
+		rm -rf \$e/\$k/\$n ;;
+	esac ;;
+bulk)
+	echo "[00:00:00] Building: \$*"
+	case " \$* " in *" test/broken "*) echo "Error: test/broken failed" >&2; exit 1 ;; esac
+	case " \$* " in *" test/sleepy "*) sleep 60 ;; esac
+	echo "[00:00:03] Built 1 packages" ;;
+status)
+	printf 'debug\tdefault\tFreeBSD:16:amd64\t2026-10-17_09h00m00s\tdone:\t3\t0\t0\t1\t1\t1\t0\t0\t00:03:10\t$d/bl\n' ;;
+esac
+EOS
+	chmod +x fake-poudriere
+	# A ports tree, opt, whose one port answers as the ports framework
+	# would: showconfig, and its variables; make(1) is the real one.
+	mkdir -p tree/net/bird3 pe/poudriere.d/ports/opt
+	echo "$d/tree" > pe/poudriere.d/ports/opt/mnt
+	cat > tree/net/bird3/Makefile <<'EOF'
+PKGNAME=	bird3-3.4.0
+COMPLETE_OPTIONS_LIST=	BFD BGP MRT
+OPTIONS_FILE=	${PORT_DBDIR}/net_bird3/options
+showconfig:
+	@echo "===> The following configuration options are available for ${PKGNAME}:"
+	@echo "     BFD=on: Bidirectional Forwarding Detection"
+	@echo "====> Routing Protocols"
+	@echo "     BGP=on: Border Gateway Protocol"
+	@echo "     MRT=off: Dumping Routing Information in MRT Format"
+	@echo "===> Use 'make config' to modify these settings"
+EOF
+	printf '#!/bin/sh\nexec /usr/bin/make "$@"\n' > fake-make
+	chmod +x fake-make
+	DAEMON_ARGS="--poudriere $d/fake-poudriere --poudriere-etc $d/pe"
+	start_daemon
+
+	# Nothing yet: installed, without poudriere.conf.
+	atf_check -o match:'"installed":true' -o match:'"configured":false' \
+	    -o match:'"jails":\[\]' -o match:'"runs":\[\]' \
+	    "$JGC" -c "$SOCK" poudriere
+
+	# poudriere.conf: ZPOOL and BASEFS, by sysrc -f; the data directory
+	# under BASEFS unless said, ${BASEFS} put in.
+	atf_check -o match:'done +poudriere.conf: ZPOOL=tank and more$' \
+	    "$JGC" -c "$SOCK" poudriere conf ZPOOL=tank BASEFS=/poudriere
+	echo 'POUDRIERE_DATA=${BASEFS}/../'"$d"'/data' >> pe/poudriere.conf
+	atf_check -o match:"-f $d/pe/poudriere.conf ZPOOL=tank" cat sysrc.log
+	atf_check -o match:'"configured":true' \
+	    -o match:'"conf":\{"ZPOOL":"tank","BASEFS":"/poudriere","POUDRIERE_DATA":"/poudriere/../' \
+	    "$JGC" -c "$SOCK" poudriere
+	atf_check -s exit:1 -e match:"variables set from here" -o ignore \
+	    "$JGC" -c "$SOCK" poudriere conf PATH=/tmp
+	atf_check -o match:'done' "$JGC" -c "$SOCK" poudriere conf BASEFS=
+	atf_check -o not-match:'^BASEFS=' cat pe/poudriere.conf
+
+	# A jail, named as an ABI, and a ports tree: runs; the job ends at
+	# once, the run when poudriere does.
+	atf_check -o match:'done +poudriere jail-create FreeBSD:16:amd64$' \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=FreeBSD:16:amd64 \
+	    version=16.0-CURRENT method=pkgbase
+	atf_check -o match:'done +poudriere ports-create default$' \
+	    "$JGC" -c "$SOCK" poudriere ports-create name=default \
+	    method=git+https branch=main
+	for i in $(seq 1 50); do
+		[ $("$JGC" -c "$SOCK" poudriere | grep -o '"state":"done"' |
+		    wc -l) -ge 2 ] && break
+		sleep 0.1
+	done
+	atf_check -o match:'"jails":\[\{"name":"FreeBSD:16:amd64",[^]]*"version":"16.0-CURRENT"' \
+	    -o match:'"method":"pkgbase"' -o match:'"timestamp":1792200000' \
+	    -o match:'"ports":\[[^]]*\{"name":"default",' \
+	    -o match:'"id":1,"title":"poudriere jail-create FreeBSD:16:amd64","started":[0-9]+,"argv":\["[^"]*fake-poudriere","jail","-c","-j","FreeBSD:16:amd64","-v","16.0-CURRENT","-m","pkgbase"\],"state":"done","exit":0' \
+	    -o match:'"log":"\[00:00:01\] Creating FreeBSD:16:amd64 fs\\n\[00:00:02\] Done\\n"' \
+	    "$JGC" -c "$SOCK" poudriere
+	atf_check -o match:'^poudriere ports -c -p default -m git\+https -B main$' \
+	    cat poudriere.log
+
+	# Debug symbols for BIRD: a set's make.conf, then its build.
+	printf 'WITH_DEBUG_PORTS+= net/bird3\n' > debug.conf
+	atf_check -o match:'done +poudriere debug-make.conf written$' \
+	    "$JGC" -c "$SOCK" poudriere make-conf debug debug.conf
+	atf_check -o inline:'WITH_DEBUG_PORTS+= net/bird3\n' \
+	    cat pe/poudriere.d/debug-make.conf
+	atf_check -o match:'done +poudriere bulk net/bird3 in FreeBSD:16:amd64 with default, set debug$' \
+	    "$JGC" -c "$SOCK" poudriere bulk jail=FreeBSD:16:amd64 \
+	    ports=default set=debug jobs=4 origin=net/bird3
+	for i in $(seq 1 50); do
+		[ $("$JGC" -c "$SOCK" poudriere | grep -o '"state":"done"' |
+		    wc -l) -ge 3 ] && break
+		sleep 0.1
+	done
+	atf_check -o match:'^poudriere bulk -j FreeBSD:16:amd64 -p default -z debug -J 4 net/bird3$' \
+	    cat poudriere.log
+	atf_check -o match:'"makeconf":\[\{"name":"debug","file":"[^"]*/debug-make.conf","text":"WITH_DEBUG_PORTS\+= net/bird3\\n"\}\]' \
+	    -o match:'"repos":\[\{"name":"FreeBSD:16:amd64-default-debug","path":"[^"]*","packages":1\}\]' \
+	    -o match:'"builds":\[\{"set":"debug","ports":"default","jail":"FreeBSD:16:amd64","build":"2026-10-17_09h00m00s","status":"done:","queued":3,"inspected":0,"ignored":0,"built":1,"failed":1,"skipped":1,"fetched":0,"remaining":0,"time":"00:03:10","logs":"[^"]*/bl"' \
+	    -o match:'"failed_ports":\[\{"origin":"devel/broken","package":"broken-1.0","phase":"build","elapsed":42,"log_file":"[^"]*/bl/logs/errors/broken-1.0.log","log":"===> Building for broken-1.0\\ncc: error: no such file\\n\*\*\* Error code 1\\n"\}\]' \
+	    -o match:'"skipped_ports":\[\{"origin":"net/needs","package":"needs-2.0","because":"broken-1.0"\}\]' \
+	    -o match:'"id":3,"title":"poudriere bulk net/bird3 in FreeBSD:16:amd64 with default, set debug"' \
+	    "$JGC" -c "$SOCK" poudriere
+	# make.conf itself, and taken away.
+	atf_check -o match:'done +poudriere make.conf written$' \
+	    "$JGC" -c "$SOCK" poudriere make-conf - debug.conf
+	atf_check -o match:'done +poudriere make.conf taken away$' \
+	    "$JGC" -c "$SOCK" poudriere make-conf - -
+	atf_check -s exit:1 -e ignore cat pe/poudriere.d/make.conf
+
+	# A port's options, as a build of the jail, opt and debug takes
+	# them: no options directory yet, the build's own would be made.
+	atf_check -o match:'"pkgname":"bird3-3.4.0","options_dir":"[^"]*/pe/poudriere.d/FreeBSD:16:amd64-opt-debug-options","options_dir_exists":false,"options_file":"[^"]*/FreeBSD:16:amd64-opt-debug-options/net_bird3/options","configured":false' \
+	    -o match:'"sections":\[\{"title":"","options":\[\{"name":"BFD","on":true,"description":"Bidirectional Forwarding Detection"\}\]\},\{"title":"Routing Protocols","options":\[\{"name":"BGP","on":true,"description":"Border Gateway Protocol"\},\{"name":"MRT","on":false,' \
+	    "$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
+	    ports=opt set=debug origin=net/bird3
+	# With the tree's directory there, it is the one the build copies,
+	# as poudriere bulk looks: written there.
+	mkdir pe/poudriere.d/opt-options
+	atf_check -o match:'done +poudriere options of net/bird3$' \
+	    "$JGC" -c "$SOCK" poudriere options jail=FreeBSD:16:amd64 \
+	    ports=opt set=debug origin=net/bird3 on=BFD on=MRT off=BGP
+	atf_check -o inline:"# This file is auto-generated by 'make config'.\n# Options for bird3-3.4.0, set by Arcana\n_OPTIONS_READ=bird3-3.4.0\n_FILE_COMPLETE_OPTIONS_LIST=BFD BGP MRT\nOPTIONS_FILE_SET+=BFD\nOPTIONS_FILE_SET+=MRT\nOPTIONS_FILE_UNSET+=BGP\n" \
+	    cat pe/poudriere.d/opt-options/net_bird3/options
+	atf_check -o match:'"options":\[\{"name":"opt","dir":"[^"]*/opt-options","ports":\[\{"name":"net_bird3","pkgname":"bird3-3.4.0","set":\["BFD","MRT"\],"unset":\["BGP"\]\}\]\}\]' \
+	    "$JGC" -c "$SOCK" poudriere
+	atf_check -o match:'"options_dir_exists":true,[^}]*"configured":true' \
+	    "$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
+	    ports=opt set=debug origin=net/bird3
+	# One the port has not, refused; one that is no option's name, too.
+	atf_check -s exit:1 -o match:'bird3-3.4.0 has no option NOPE' -e ignore \
+	    "$JGC" -c "$SOCK" poudriere options jail=FreeBSD:16:amd64 \
+	    ports=opt origin=net/bird3 on=NOPE
+	atf_check -s exit:1 -e match:'capitals, digits and _' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere options jail=FreeBSD:16:amd64 \
+	    ports=opt origin=net/bird3 'on=a b'
+	atf_check -s exit:1 -e match:'no port net/nosuch' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
+	    ports=opt origin=net/nosuch
+	# Back to the port's defaults.
+	atf_check -o match:"done +poudriere options of net/bird3: the port's defaults$" \
+	    "$JGC" -c "$SOCK" poudriere options jail=FreeBSD:16:amd64 \
+	    ports=opt set=debug origin=net/bird3 reset=yes
+	atf_check -s exit:1 test -e pe/poudriere.d/opt-options/net_bird3
+
+	# A build that fails is a run that failed: the job itself was
+	# done, starting it.
+	atf_check -o match:done "$JGC" -c "$SOCK" poudriere bulk \
+	    jail=FreeBSD:16:amd64 origin=test/broken
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" poudriere | grep -q '"state":"failed","exit":1' &&
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'"id":4,[^}]*"state":"failed","exit":1,[^}]*"log":"\[00:00:00\] Building: -j FreeBSD:16:amd64 test/broken\\nError: test/broken failed\\n"' \
+	    "$JGC" -c "$SOCK" poudriere
+
+	# One that goes on until it is stopped: SIGINT, as a terminal's.
+	atf_check -o match:done "$JGC" -c "$SOCK" poudriere bulk \
+	    jail=FreeBSD:16:amd64 origin=test/sleepy
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" poudriere | grep -q '"id":5,[^}]*"state":"running","pid":[0-9]*' &&
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'"id":5,[^}]*"state":"running","pid":[0-9]+' \
+	    "$JGC" -c "$SOCK" poudriere
+	# Its waiter, not the agent's child, holds none of the agent's
+	# descriptors: only poudriere's standard input, output and error.
+	n=$(ps -o ppid= -p "$(cat builder/5.pid)" | tr -d ' ')
+	atf_check test "$(ps -o ppid= -p "$n" | tr -d ' ')" != "$(cat daemon.pid)"
+	# procstat(1) sees another's descriptors as root, or when the host
+	# lets anyone debug their own (security.bsd.unprivileged_proc_debug).
+	if [ "$(id -u)" = 0 ] || [ "$(sysctl -n \
+	    security.bsd.unprivileged_proc_debug 2>/dev/null)" = 1 ]; then
+		atf_check -o inline:'0\n1\n2\n' sh -c "procstat -f $n | awk 'NR > 1 && \$3 ~ /^[0-9]+\$/ { print \$3 }'"
+	fi
+	atf_check -o match:'done +poudriere run 5 stopped$' \
+	    "$JGC" -c "$SOCK" poudriere stop run=5
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" poudriere | grep -q '"id":5,[^}]*"state":"failed","exit":130' &&
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'"id":5,[^}]*"state":"failed","exit":130' \
+	    "$JGC" -c "$SOCK" poudriere
+	atf_check -s exit:1 -o match:'failed +poudriere run 5 stopped: run 5 has ended already \(exit 130\)' \
+	    -e ignore "$JGC" -c "$SOCK" poudriere stop run=5
+	atf_check -s exit:1 -o match:'run 99 is not running' -e ignore \
+	    "$JGC" -c "$SOCK" poudriere stop run=99
+
+	# Refused: a port's path out of the tree, a set with a -, a jail's
+	# name with a dot, a word that is no key=value, a jail scope.
+	atf_check -s exit:1 -e match:'category and name' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere bulk jail=j origin=../etc
+	atf_check -s exit:1 -e match:"a set's name" -o ignore \
+	    "$JGC" -c "$SOCK" poudriere bulk jail=j set=a-b origin=net/bird3
+	atf_check -s exit:1 -e match:"a jail's name" -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=a.b version=15.0-RELEASE
+	atf_check -s exit:1 -e match:'key=value' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere bulk net/bird3
+	atf_check -s exit:1 -e match:"the host's" -o ignore \
+	    "$JGC" -c "$SOCK" -j web poudriere jail-update name=x
+	atf_check -s exit:1 -e match:'URL is one word' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere ports-create name=p 'url=http://x/ y'
+
+	# Deleted: poudriere -y, to its end in the job.
+	atf_check -o match:'done +poudriere jail-delete FreeBSD:16:amd64$' \
+	    "$JGC" -c "$SOCK" poudriere jail-delete name=FreeBSD:16:amd64
+	atf_check -o match:'^poudriere jail -d -y -j FreeBSD:16:amd64$' \
+	    cat poudriere.log
+	atf_check -o match:'"jails":\[\]' "$JGC" -c "$SOCK" poudriere
+	atf_check -s exit:1 -o match:'failed +poudriere ports-delete nosuch: .*No such ports nosuch' \
+	    -e ignore "$JGC" -c "$SOCK" poudriere ports-delete name=nosuch
+}
+poudriere_cleanup()
+{
+	[ -f builder/5.pid ] && kill -INT -"$(cat builder/5.pid)" 2>/dev/null
+	stop_daemon
+}
+
 atf_test_case bird_watch cleanup
 bird_watch_head()
 {
@@ -7439,9 +7835,9 @@ EOS
 		[ $("$JGC" -c "$SOCK" events | grep -o '"state":"set"' | wc -l) -ge 3 ] && break
 		sleep 0.2
 	done
-	atf_check -o match:'"type":"bgp-neighbor","severity":"Major","object":"bgp1","by":"bird","description":"BGP bgp1 to 192.0.2.7 is Active: Socket: Connection refused","state":"set"' \
-	    -o match:'"type":"ospf-neighbor","severity":"Major","object":"ospf1/10.0.0.2@gif0","by":"bird","description":"OSPF neighbour ospf1/10.0.0.2@gif0 is gone from BIRD.s list","state":"set"' \
-	    -o match:'"type":"bfd","severity":"Major","object":"bfd1/fe80::2@gif0","by":"bird","description":"BFD to fe80::2 on gif0 is Down","state":"set"' \
+	atf_check -o match:'"type":"bgp-neighbor","severity":"Major","object":"host:bgp1","by":"bird","description":"BGP bgp1 to 192.0.2.7 is Active: Socket: Connection refused","state":"set"' \
+	    -o match:'"type":"ospf-neighbor","severity":"Major","object":"host:ospf1/10.0.0.2@gif0","by":"bird","description":"OSPF neighbour ospf1/10.0.0.2@gif0 is gone from BIRD.s list","state":"set"' \
+	    -o match:'"type":"bfd","severity":"Major","object":"host:bfd1/fe80::2@gif0","by":"bird","description":"BFD to fe80::2 on gif0 is Down","state":"set"' \
 	    -o not-match:'"object":"off1"' \
 	    "$JGC" -c "$SOCK" events
 	# Well again: each cleared.
@@ -7450,9 +7846,9 @@ EOS
 		[ $("$JGC" -c "$SOCK" events | grep -o '"state":"cleared"' | wc -l) -ge 3 ] && break
 		sleep 0.2
 	done
-	atf_check -o match:'"type":"bgp-neighbor","severity":"Cleared","object":"bgp1","description":"BGP bgp1 is established","state":"cleared"' \
-	    -o match:'"type":"ospf-neighbor","severity":"Cleared","object":"ospf1/10.0.0.2@gif0"' \
-	    -o match:'"type":"bfd","severity":"Cleared","object":"bfd1/fe80::2@gif0"' \
+	atf_check -o match:'"type":"bgp-neighbor","severity":"Cleared","object":"host:bgp1","description":"BGP bgp1 is established","state":"cleared"' \
+	    -o match:'"type":"ospf-neighbor","severity":"Cleared","object":"host:ospf1/10.0.0.2@gif0"' \
+	    -o match:'"type":"bfd","severity":"Cleared","object":"host:bfd1/fe80::2@gif0"' \
 	    "$JGC" -c "$SOCK" events
 }
 bird_watch_cleanup()
@@ -7463,6 +7859,7 @@ bird_watch_cleanup()
 atf_init_test_cases()
 {
 	atf_add_test_case bird_watch
+	atf_add_test_case poudriere
 	atf_add_test_case yang_interfaces
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_origins
@@ -7482,6 +7879,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_host_agent
 	atf_add_test_case yang_sdwan
 	atf_add_test_case fw_walk
+	atf_add_test_case crash_fault
 	atf_add_test_case firewall_aliases
 	atf_add_test_case config_bundle
 	atf_add_test_case yang_storage
@@ -7514,6 +7912,7 @@ atf_init_test_cases()
 	atf_add_test_case firewall
 	atf_add_test_case observe
 	atf_add_test_case storage
+	atf_add_test_case notify
 	atf_add_test_case safe_mode
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart

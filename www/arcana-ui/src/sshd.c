@@ -18,6 +18,20 @@
 
 #include "app.h"
 
+/* v as a key option's quoted value has it: \" and \\ for " and \. */
+static void
+quoted_in(struct html *o, const char *v)
+{
+	char	c[2];
+
+	for (c[1] = '\0'; *v != '\0'; v++) {
+		if (*v == '"' || *v == '\\')
+			h_raw(o, "\\");
+		c[0] = *v;
+		h_raw(o, c);
+	}
+}
+
 static const struct {
 	const char	*name;		/* as sshd_config has it */
 	const char	*key;		/* as sshd -T says it */
@@ -665,11 +679,24 @@ ssh_modal(struct html *h)
 			    '\0' && !q)) {
 				on[k] = true;
 				snprintf(vals[k], sizeof(vals[k]), "%s", val);
-			} else
-				snprintf(other + strlen(other), sizeof(other) -
-				    strlen(other), "%s%s%s%s%s%s", other[0] !=
-				    '\0' ? "," : "", name, val[0] != '\0' || q ?
-				    "=" : "", q ? "\"" : "", val, q ? "\"" : "");
+			} else {
+				/* As written: a quote or \ within its value
+				 * escaped again, as sshd reads it. */
+				struct html	 e;
+
+				memset(&e, 0, sizeof(e));
+				h_fmt(&e, "%s%s%s%s", other[0] != '\0' ? "," : "",
+				    name, val[0] != '\0' || q ? "=" : "", q ?
+				    "\"" : "");
+				if (q)
+					quoted_in(&e, val);
+				else
+					h_raw(&e, val);
+				h_raw(&e, q ? "\"" : "");
+				strlcat(other, e.s != NULL ? e.s : "",
+				    sizeof(other));
+				free(e.s);
+			}
 		}
 		h_raw(h, "<form data-form=\"ssh-opts\" class=\"wide\"><h2>");
 		h_txt(h, sh.user);
@@ -803,14 +830,16 @@ ssh_form(const char *form, const ucl_object_t *f)
 			v += strspn(v, " ");
 			if (v[0] == '\0')
 				continue;
-			if (strpbrk(v, "\"\\\r\n") != NULL) {
+			if (strpbrk(v, "\r\n") != NULL) {
 				free(o.s);
 				snprintf(app.modal_error, sizeof(app.modal_error),
-				    "%s takes no \" or \\", kopt[k].say);
+				    "%s is one line", kopt[k].say);
 				return (true);
 			}
-			h_fmt(&o, "%s%s=\"%s\"", o.s != NULL ? "," : "",
-			    kopt[k].name, v);
+			h_fmt(&o, "%s%s=\"", o.s != NULL ? "," : "",
+			    kopt[k].name);
+			quoted_in(&o, v);
+			h_raw(&o, "\"");
 		}
 		v = jstr(f, "other") != NULL ? jstr(f, "other") : "";
 		v += strspn(v, " ,");

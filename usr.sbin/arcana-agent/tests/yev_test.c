@@ -109,10 +109,11 @@ event(const struct arcana_events_events_event *e)
 		    "running" : "stopped") : "-", e->jail_state->jid);
 		break;
 	case ARCANA_EVENTS_EVENTS_EVENT_DATA_CRASH:
-		printf("crash pid=%u %s jid=%u jail=%s uid=%u signal=%u core=%s",
-		    e->crash->pid, str(e->crash->process), e->crash->jid, str(
-		    e->crash->jail), e->crash->uid, e->crash->signal,
-		    e->crash->core ? "yes" : "no");
+		printf("crash pid=%u %s jid=%u jail=%s uid=%u signal=%u core=%s "
+		    "reason=%s", e->crash->pid, str(e->crash->process),
+		    e->crash->jid, str(e->crash->jail), e->crash->uid,
+		    e->crash->signal, e->crash->core ? "yes" : "no", str(
+		    e->crash->reason));
 		break;
 	default:
 		printf("no data");

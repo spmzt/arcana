@@ -414,8 +414,10 @@ paths:
       description: |
         How long a change made in safe mode on the host waits to be
         confirmed before the agent undoes it: 10 to 3600 seconds, or 0
-        for the agent's own (arcana-agent -w, 60 s unless set). Sent
-        with every safe job and BIRD configuration from then on.
+        for none of its own: then Settings' safe_wait, for every host,
+        and without it the agent's own (arcana-agent -w, 60 s unless
+        set, which hello's host.safe_wait says). Sent with every safe
+        job and BIRD configuration from then on.
       parameters:
         - $ref: "#/components/parameters/server"
       requestBody:
@@ -1035,6 +1037,52 @@ paths:
             them; clamav, where /var/db/clamav is, its databases (name,
             file, version, signatures, built) and whether freshclam
             runs.
+  /api/settings/telegram-test:
+    post:
+      tags: [settings]
+      summary: A Telegram message to say the alerts reach the chats
+      description: >-
+        Sent by the agent of the host telegram_via names (or the one
+        beside the console) to every chat of telegram_chats, by the bot
+        whose token telegram_token holds, over the Bot API's HTTPS. The
+        same way go the alerts Settings, Notifications choose, and a
+        workflow's notify step ({"notify": {"via": "mail", "telegram"
+        or "all", "text": "... ${host.name} ..."}}).
+      responses:
+        "200":
+          description: ok, and to, the chats.
+        "502":
+          description: Not sent, and why.
+  /api/servers/{server}/move:
+    post:
+      tags: [servers]
+      summary: The host reached at another address, safely
+      description: >-
+        The agent, asked where it is reached now, listens on uri too;
+        the console tries uri on a connection of its own; only when the
+        agent answers there is the server moved, the old listener
+        closed by the new way and uri kept in the host's rc.conf in the
+        old one's place. Otherwise the agent stops listening on uri and
+        nothing else changes. ok says which; uri is where the host is
+        reached after; error why not; note what was left undone (an old
+        listener still open, the change not kept).
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uri]
+              properties:
+                uri: { type: string, example: "tcp://192.0.2.10:4430" }
+      responses:
+        "200":
+          description: ok, uri, error, note.
+        "400":
+          description: Not a tcp:// or sctp:// address, the same one,
+            or a host reached by its local socket.
   /api/servers/{server}/security:
     post:
       tags: [servers]
@@ -1071,6 +1119,54 @@ paths:
           description: ok, error and the agent's trace.
         "400":
           description: A form not right, and why.
+  /api/servers/{server}/builder:
+    get:
+      tags: [servers]
+      summary: poudriere, the host's package builder
+      description: >-
+        poudriere(8), a plugin, under data: installed and program;
+        conf_file, configured and conf (poudriere.conf's assignments);
+        basefs and data; jails and ports, each with its name and what
+        poudriere keeps of it (version, arch, method, mnt, fs,
+        timestamp); makeconf, each make.conf of poudriere.d (name, file,
+        text); repos, each package repository with its path and how many
+        packages; builds, the latest of each jail, tree and set as
+        poudriere status tells it; runs, what the poudriere job started
+        (id, title, argv, started, state running, done, failed or lost,
+        pid, exit, log_file, and log, its output's end). A change is a
+        job of kind poudriere, verb and args key=value: jail-create,
+        jail-update, jail-delete, ports-create, ports-update,
+        ports-delete, bulk (jail, ports, set, jobs, clean, test, an
+        origin= each port), stop (run), make-conf (name, text), conf
+        (poudriere.conf's variables). A jail or tree made or updated
+        and a build are runs, which go on after their job.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
+  /api/servers/{server}/builder/options:
+    get:
+      tags: [servers]
+      summary: A port's options, as a poudriere build takes them
+      description: >-
+        make showconfig in the port's directory of the tree, with the
+        options directory a build of that jail, tree and set copies (the
+        first there is, as poudriere bulk looks; the build's own when
+        none is): pkgname, options_dir, options_dir_exists,
+        options_file, configured, and sections (the port's own options,
+        then each group), each option with name, on and description.
+        They are set by a poudriere job, verb options, an on= or off=
+        for each.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - { name: jail, in: query, required: true, schema: { type: string } }
+        - { name: ports, in: query, schema: { type: string, default: default } }
+        - { name: set, in: query, schema: { type: string } }
+        - { name: origin, in: query, required: true, schema: { type: string, example: net/bird3 } }
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
   /api/servers/{server}/history:
     get:
       tags: [servers]
@@ -1317,10 +1413,16 @@ paths:
           description: ok and data, or error
     post:
       tags: [servers]
-      summary: Have the agent start its SCTP listeners
+      summary: Have the agent start its SCTP listeners, or bind them more
       description: With retry true. An agent that listens on TCP listens
         on SCTP at the same address and port once the kernel has SCTP; it
-        does not load the module and does not try again by itself.
+        does not load the module and does not try again by itself. With
+        sctp_also, the other addresses (separated by spaces, "" none)
+        every SCTP listener is bound to (sctp_bindx), kept in the host's
+        rc.conf; data's listeners then say each SCTP one's addresses and
+        what could not be bound (also_error), and its sessions each
+        association's local addresses and paths (address, state,
+        srtt_ms, rto_ms, primary).
       parameters:
         - $ref: "#/components/parameters/server"
       responses:
@@ -1499,7 +1601,8 @@ paths:
                           netgraph, wireguard, bird, if-vnet, kmod, zfs,
                           zpool, mount, gpart, cam, sysctl, ipfw,
                           bridge, geneve, process, pkg-clean, ipsec,
-                          pkg-install]
+                          pkg-install, ntp, rtadvd, ipsec-sa, jail-conf,
+                          neighbour, cert, ssh, carp, poudriere]
                       jail: { type: string, description: The jail acted on.
                           For a job that changes a network, the vnet jail
                           whose network it is; for if-vnet, the jail the
@@ -2810,8 +2913,14 @@ components:
               key: { type: string }
               label: { type: string }
               help: { type: string }
-              type: { type: string, enum: [text, bool] }
-              value: { type: string }
+              type: { type: string, enum: [text, bool, secret] }
+              value:
+                type: string
+                description: Not of a secret, which is never sent back.
+              set:
+                type: boolean
+                description: Of a secret, whether one is kept. Sent
+                  empty in a POST, a secret is left as it is.
               base: { type: string, description: What web.conf says. }
               overridden: { type: boolean }
               editable: { type: boolean }
@@ -2936,8 +3045,8 @@ components:
           type: string
           enum: [running, done, failed, cancelled, interrupted]
           description: interrupted when the console stopped while it ran.
-        started: { type: integer, description: Unix time. }
-        ended: { type: integer, description: Unix time. }
+        started: { type: number, description: Unix time, to the millisecond. }
+        ended: { type: number, description: Unix time, to the millisecond. }
         params: { type: object, additionalProperties: { type: string } }
         event: { type: object, description: The event that began it. }
         cancel: { type: boolean, description: A stop was asked for. }
@@ -2963,8 +3072,8 @@ components:
                     job: { type: integer, description: The host's job number. }
                     title: { type: string }
                     error: { type: string }
-                    started: { type: integer }
-                    ended: { type: integer }
+                    started: { type: number, description: Unix time, to the millisecond. }
+                    ended: { type: number, description: Unix time, to the millisecond. }
                     trace:
                       type: object
                       description: >-

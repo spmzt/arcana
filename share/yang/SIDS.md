@@ -84,7 +84,7 @@ bytes on the wire, where it was 9.
 | 62 100 | 100 | `arcana-jails` | `share/yang/arcana-jails@2026-10-14.sid` (51 used) |
 | 62 200 | 100 | `arcana-services` | `share/yang/arcana-services@2026-10-14.sid` (39 used) |
 | 62 300 | 100 | `arcana-packages` | `share/yang/arcana-packages@2026-10-14.sid` (59 used) |
-| 62 400 | 1 000 | `arcana-jobs`, its submodule `arcana-jobs-kinds` | `share/yang/arcana-jobs@2026-10-14.sid` (273 used; room for the kinds to come) |
+| 62 400 | 1 000 | `arcana-jobs`, its submodule `arcana-jobs-kinds` | `share/yang/arcana-jobs@2026-10-14.sid` (277 used; room for the kinds to come) |
 | 63 400 | 200 | `arcana-storage` | `share/yang/arcana-storage@2026-10-14.sid` (144 used) |
 | 63 600 | 100 | `arcana-sysctl` | `share/yang/arcana-sysctl@2026-10-14.sid` (12 used) |
 | 63 700 | 100 | `arcana-kernel` | `share/yang/arcana-kernel@2026-10-14.sid` (37 used) |
@@ -112,7 +112,7 @@ bytes on the wire, where it was 9.
 | 70 200 | 300 | `arcana-firewall` | `share/yang/arcana-firewall@2026-10-15.sid` (223 used) |
 | 70 500 | 200 | `arcana-troubleshoot` | `share/yang/arcana-troubleshoot@2026-10-15.sid` (148 used) |
 | 70 700 | 100 | `arcana-history` | `share/yang/arcana-history@2026-10-15.sid` (71 used) |
-| 70 800 | 400 | `arcana-events` | `share/yang/arcana-events@2026-10-15.sid` (275 used) |
+| 70 800 | 400 | `arcana-events` | `share/yang/arcana-events@2026-10-15.sid` (278 used) |
 | 71 200 | 200 | `arcana-bird` | `share/yang/arcana-bird@2026-10-15.sid` (165 used) |
 | 71 400 | 100 | `arcana-wireguard` | `share/yang/arcana-wireguard@2026-10-15.sid` (33 used) |
 | 71 500 | 100 | `arcana-netgraph` | `share/yang/arcana-netgraph@2026-10-15.sid` (23 used) |

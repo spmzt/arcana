@@ -575,6 +575,9 @@ job_finished(struct op *op, bool ok, const char *err)
 	case JOB_SSH:
 		refresh_ssh(s, true);
 		break;
+	case JOB_BUILDER:
+		builder_refresh();
+		break;
 	case JOB_PROCESS:
 		refresh_procs(s, true);
 		break;
@@ -3079,6 +3082,39 @@ mail_test(void)
 	api("POST", "/api/settings/mail-test", "{}", mail_test_cb, NULL);
 }
 
+static void
+telegram_test_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+
+	(void)arg;
+	app.modal_busy = false;
+	if (status == 200 && jbool(o, "ok"))
+		toast(false, "A test message went to %s", jstr(o, "to") != NULL ?
+		    jstr(o, "to") : "the chats");
+	else
+		toast(true, "No message sent: %s", err != NULL ? err : "failed");
+}
+
+void
+telegram_test(void)
+{
+
+	app.modal_busy = true;
+	api("POST", "/api/settings/telegram-test", "{}", telegram_test_cb,
+	    NULL);
+}
+
+/* Which form a setting is in: the console's, mail's or Telegram's. */
+int
+setting_group(const char *key)
+{
+
+	return (strncmp(key, "mail_", 5) == 0 || strncmp(key, "smtp_", 5) == 0 ?
+	    SETG_MAIL : strncmp(key, "telegram_", 9) == 0 ? SETG_TELEGRAM :
+	    SETG_CONSOLE);
+}
+
 void
 load_settings(void)
 {
@@ -3092,7 +3128,7 @@ load_settings(void)
  * sends its own.
  */
 void
-save_settings(const ucl_object_t *f, bool mail)
+save_settings(const ucl_object_t *f, int group)
 {
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
@@ -3108,8 +3144,7 @@ save_settings(const ucl_object_t *f, bool mail)
 	while ((e = ucl_object_iterate(jget(app.settings, "settings"), &it,
 	    true)) != NULL) {
 		if (!jbool(e, "editable") || (key = jstr(e, "key")) == NULL ||
-		    (strncmp(key, "mail_", 5) == 0 || strncmp(key, "smtp_",
-		    5) == 0) != mail)
+		    setting_group(key) != group)
 			continue;
 		q = json_quote(key);
 		h_raw(&b, first ? "" : ",");

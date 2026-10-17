@@ -8,7 +8,8 @@
  * Faults (Mplify 119 §11.3): each with the time it was seen or
  * cleared, a type (Table 4: interface-down, bfd, bgp-neighbor, cpu,
  * memory, storage; and ours: tunnel, bird-instance, ospf-neighbor,
- * tca; luxuria/birdwatch.c's for the host's BIRD), a severity
+ * tca; luxuria/birdwatch.c's for the host's BIRD; crash, kmsg.c's,
+ * a program the kernel saw die of a signal), a severity
  * (Warning, Minor, Major, Critical; Cleared when it is), what it is
  * of, who saw it and a line of description (Table 5).  One open fault
  * of a type and object at a time; set and cleared are events
@@ -208,6 +209,30 @@ fault_clear(const char *type, const char *object, const char *fmt, ...)
 	    "\"object\":\"%s\",\"description\":\"%s\",\"state\":\"cleared\"}", type,
 	    jq(object, qo, sizeof(qo)), jq(descr, qd, sizeof(qd)));
 	logmsg(LOG_NOTICE, "fault %s %s cleared: %s", type, object, descr);
+}
+
+/*
+ * An open fault's line said anew, as what it is of goes on (a program
+ * that crashes again): no event, the fault being the same one.  false
+ * when none of the type and object is open.
+ */
+bool
+fault_update(const char *type, const char *object, const char *fmt, ...)
+{
+	va_list	ap;
+	int	i;
+
+	pthread_mutex_lock(&lock);
+	if ((i = fault_find(type, object)) < 0) {
+		pthread_mutex_unlock(&lock);
+		return (false);
+	}
+	va_start(ap, fmt);
+	vsnprintf(faults[i].descr, sizeof(faults[i].descr), fmt, ap);
+	va_end(ap);
+	faults_keep();
+	pthread_mutex_unlock(&lock);
+	return (true);
 }
 
 /* The day's faults into the sdwan reply. */

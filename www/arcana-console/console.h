@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.196.0"
+#define	ARCW_VERSION		"0.202.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -90,6 +90,18 @@ int		 smtp_send(const char *, int, const char *, const char *,
 int		 mail_send(const char *, const char *, char *, size_t);
 void		 mail_run(const char *, unsigned int, const char *);
 void		 mail_flush(void);
+/* Where a server is reached, as a thread may keep it (workflows.c). */
+struct hostref {
+	char	id[9];
+	char	name[128];
+	char	uri[256];
+	char	peer[256];
+};
+int		 host_refs_get(struct hostref *, int);
+int		 alert_send(const char *, const char *, const char *, char *,
+		    size_t);
+int		 api_telegram_test(struct http_request *);
+void		 api_telegram_test_free(struct http_request *);
 int		 api_mail_test(struct http_request *);
 
 /* push.c: notifications to the devices that asked, by Web Push. */
@@ -214,6 +226,12 @@ char		*hosts_sdwan_set(const char *, const char *, const char *,
 		    const char *, const char *, int *);
 int		 api_sdwan_state(struct http_request *);
 int		 api_security(struct http_request *);
+char		*hosts_listen(const char *, const char *, const char *,
+		    const char *, const char *, bool, int *);
+char		*hosts_notify(const char *, const char *, const char *,
+		    const char *, const char *, const char *, int *);
+int		 api_server_move(struct http_request *);
+void		 api_server_move_free(struct http_request *);
 char		*security_build(const char *, const ucl_object_t *, const char *,
 		    char *, size_t);
 bool		 host_ref(const char *, char *, size_t, char *, size_t, char *,
@@ -256,6 +274,8 @@ int		 api_network(struct http_request *);
 int		 api_stats(struct http_request *);
 int		 api_kernel(struct http_request *);
 int		 api_jail_files(struct http_request *);
+int		 api_builder(struct http_request *);
+int		 api_builder_options(struct http_request *);
 int		 api_certs(struct http_request *);
 int		 api_ssh(struct http_request *);
 int		 api_capture(struct http_request *);

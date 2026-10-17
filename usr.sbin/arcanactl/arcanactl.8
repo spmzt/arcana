@@ -153,7 +153,7 @@ or open sockets
 as the program printed them with
 .Fl -libxo Cm json ,
 for one address family or both.
-.It Cm kmod
+.It Cm kmod Op Cm load | unload | keep | forget Ar module
 The kernel's modules and its memory: every file linked into the kernel
 with its size, the references to it and the modules it holds; the
 modules that could be loaded; what
@@ -164,6 +164,216 @@ loads at boot; and the largest of the kernel's
 types and
 .Xr uma 9
 zones.
+With
+.Cm load
+or
+.Cm unload
+a module is loaded with
+.Xr kldload 8
+or unloaded with
+.Xr kldunload 8 ;
+with
+.Cm keep
+it is added to
+.Va kld_list ,
+to be loaded at boot, and with
+.Cm forget
+taken out of it: neither loads nor unloads it now.
+.It Cm poudriere Oo Cm list | Cm show-options Ar key Ns = Ns Ar value ... | Cm make-conf Ar name Ns | Ns Cm - Ar file Ns | Ns Cm - | Ar verb Oo Ar key Ns = Ns Ar value ... Oc Oc
+.Xr poudriere 8 ,
+the host's package builder, a plugin:
+.Cm list
+reads its build jails, ports trees, make.conf files, package
+repositories, the latest builds and the runs the agent started.
+.Cm show-options
+reads a port's options as a build of
+.Cm jail= ,
+.Cm ports=
+and
+.Cm set=
+takes them
+.Pq Cm origin= Ns Ar category/port .
+.Cm make-conf
+writes
+.Pa poudriere.d/ Ns Ar name Ns Pa -make.conf
+from
+.Ar file
+.Po
+.Cm -
+for
+.Ar name
+is
+.Pa make.conf
+itself,
+.Cm -
+for
+.Ar file
+takes it away
+.Pc .
+The verbs
+.Cm jail-create
+.Pq name= version= arch= method= ,
+.Cm jail-update ,
+.Cm ports-create
+.Pq name= method= branch= url= path= ,
+.Cm ports-update
+and
+.Cm bulk
+.Pq jail= ports= set= jobs= clean=yes test=yes origin= Ns Ar category/port ...
+start a run that goes on after the job,
+.Cm stop Cm run= Ns Ar n
+interrupts one,
+.Cm jail-delete
+and
+.Cm ports-delete
+.Pq name=
+remove,
+.Cm conf
+sets
+.Pa poudriere.conf Ns 's
+variables
+.Pq ZPOOL=zroot ; an empty value unsets one ,
+.Cm options
+a port's
+.Pq jail= ports= set= origin= and an on= or off= for each, or reset=yes .
+Each is a job.
+.It Cm cert Oo Cm list | Cm add Ar name file | Cm remove Ar name | Cm trust Ar file | Cm untrust Ar file | Cm rehash Oc
+The certificates OpenSSL trusts, of the host or of
+.Fl j Ns 's
+jail, read with OpenSSL: trusted and untrusted.
+.Cm add
+gives a CA under a name,
+.Cm remove
+takes it away,
+.Cm untrust
+and
+.Cm trust
+move one to the untrusted list and back, and
+.Cm rehash
+runs
+.Xr certctl 8
+again; each a job.
+.It Cm capture Op Ar source packets seconds Op Ar filter ...
+Packets taken with
+.Xr tcpdump 1
+off an interface or a tap, of the host or of
+.Fl j Ns 's
+jail, at most
+.Ar packets
+or for
+.Ar seconds ;
+with nothing, the sources there are.
+.It Cm zfskey Oo Fl n Oc Ar dataset
+The key of an encrypted dataset whose keylocation is prompt, typed and
+loaded; with
+.Fl n
+changed: the key it has first (when it is not loaded), then the new
+one.
+At a terminal each is asked for; otherwise each is a line of the
+input.
+The key is never an argument, nor kept in a job.
+.It Cm tls Oo Cm status | Cm csr | Cm install Ar certfile Ns | Ns - Oo Ar cafile Oc Oc
+The agent's own TLS files:
+.Cm status
+says what they are,
+.Cm csr
+makes a new key there (which stays there) and prints a request for it,
+and
+.Cm install
+gives the certificate for that key with the CAs to trust, or the CAs
+alone.
+Over TLS,
+.Fl C
+is the certificate the agent checks it still trusts afterwards.
+.It Cm sshd Oo Cm list | Cm banner Ar file | Cm set Ar Setting Oo Ar value ... Oc | Cm authorize Ar user keyfile | Cm unauthorize Ar user fingerprint | Cm options Ar user fingerprint Oo Ar options Oc | Cm sign Ar ca-key-file Oo Ar principal ... Oc | Cm user-cas Ar file Oc
+The base system's
+.Xr sshd 8 ,
+of the host or of
+.Fl j Ns 's
+jail, as
+.Nm sshd Fl T
+says it is:
+.Cm banner
+sets its banner,
+.Cm set
+a setting of
+.Xr sshd_config 5
+(checked with
+.Nm sshd Fl t
+first),
+.Cm authorize
+and
+.Cm unauthorize
+add and take away a user's authorized key,
+.Cm options
+changes a key's options in place (principals= among them),
+.Cm sign
+signs the host's keys with a CA key (given to an
+.Xr ssh-agent 1
+of the agent's own, never written down), and
+.Cm user-cas
+sets the CA keys whose user certificates it trusts.
+Each change is a job; with
+.Fl s
+it is undone unless confirmed.
+.It Cm neigh Cm add Ar address lladdr Oo Cm temp Oc | Cm delete Ar address
+An ARP or NDP neighbour set by hand, now; with
+.Fl p
+kept for a boot too.
+.It Cm carp Cm add Ar interface address Cm vhid= Ns Ar n Oo Ar word Ns = Ns Ar value ... Oc Oo Cm key Oc | Cm set Ar interface Cm vhid= Ns Ar n Oo Ar word Ns = Ns Ar value ... Oc Oo Cm key Oc | Cm remove Ar interface address Cm vhid= Ns Ar n
+An address
+.Xr carp 4
+shares, and its vhid.
+.Cm key
+asks for the vhid's key, which is never an argument.
+With
+.Fl p
+kept for a boot too.
+.It Cm jailconf Cm make Ar jail file Oo Ar dataset snapshot Cm clone | send Ar path Oc Oo Cm start Oc | Cm edit Ar jail file | Cm remove Ar jail Oo Ar dataset Oc | Cm defaults Ar file | Cm template Ar name file | Cm untemplate Ar name | Cm files
+A jail made from a file of its own, its dataset cloned or sent from a
+snapshot, and started; changed; taken away, with its dataset; the
+jails' defaults; a template included by the jails; each a job.
+.Cm files
+reads the jails' files there are.
+.It Cm config-export Op Fl s
+The host as a bundle, JSON on stdout: the files Arcana manages; with
+.Fl s
+their secrets too.
+.It Cm config-apply Oo Fl an Oc Oo Fl H Ar hostname Oc Ar bundle.json
+A bundle made this host's configuration;
+.Fl n
+the report only,
+.Fl a
+though the hardware differs,
+.Fl H
+another host name in
+.Xr rc.conf 5 .
+The report, JSON, on stdout.
+.It Cm path-check Oo Fl r Oc Oo Fl F Ar fib Oc Oo Fl i Ar interface Oc Oo Fl p Ar proto Oc Oo Fl P Ar port Oc Ar src dst
+What this host does with a packet from
+.Ar src
+to
+.Ar dst
+(and with its reply, or, with
+.Fl r ,
+the packet is the reply), without one being sent: its addresses,
+routes, neighbours and its
+.Xr ipfw 8
+ruleset walked.
+.Fl i
+is the interface it comes in on,
+.Fl F
+the FIB,
+.Fl p
+tcp, udp, sctp, icmp or ip, and
+.Fl P
+the port.
+JSON on stdout.
+.It Cm source-log Oo Fl i Ar key Oc Oo Fl n Ar count Oc Ar repository Op Ar ref
+The latest commits of the repository's branch, newest first, and its
+tags: what is new;
+.Fl i
+the SSH key git uses.
 .It Cm ntp Ar server ...
 The NTP servers the host keeps time by: written into
 .Pa /etc/ntp.conf
@@ -176,7 +386,7 @@ enabled in
 too.
 .It Cm ntp remove
 The marks and what is between them taken out, and ntpd restarted.
-.It Cm interface Ar name Cm addressing dhcp | slaac | static
+.It Cm interface Ar name Cm addressing dhcp | slaac | static | was
 How the interface gets its address: by
 .Xr dhclient 8
 (the DHCP word of ifconfig_<name> in
@@ -186,6 +396,13 @@ which its rc script reads, so with
 by router advertisements (inet6 accept_rtadv, and
 .Xr rtsol 8
 once; kept in ifconfig_<name>_ipv6), or neither, dhclient stopped.
+.Cm was
+puts back what the interface had before dhcp or slaac was first set
+on it by Arcana: its two
+.Xr rc.conf 5
+lines, DHCP and SLAAC as they were, and a static line's address; the
+agent keeps that in addressing-was.json beside its other state, and
+does nothing when it has none.
 .It Cm ipsec-sa set Ar interface reqid local remote Ar words ...
 Manually keyed security associations for an
 .Xr ipsec 4
@@ -540,13 +757,43 @@ of the jail's own firewall.
 The host needs
 .Xr dtrace 4
 loaded.
-.It Cm transport Op Cm retry
+.It Cm notify Ar chat text
+A message sent to a Telegram chat by a bot: the agent posts it to the
+Bot API over HTTPS
+.Pq Xr fetch 3 ,
+the server's certificate checked against the host's CAs.
+The bot's token is read from
+.Ev ARCANA_TELEGRAM_TOKEN ,
+not given as an argument, where
+.Xr ps 1
+would show it; the agent neither keeps nor logs it.
+.Ar chat
+is a number (negative for a group) or @ and a channel's name.
+.It Cm transport Oo Cm retry | Cm listen Ar uri | Cm unlisten Ar uri Oo Cm for Ar new Oo Cm keep Oc Oc Oc
 How the agent is reached: its listeners, each up or not and why not,
 whether the kernel has SCTP, and the connections open to the agent now.
 With
 .Cm retry
 the agent starts the SCTP listeners that are not up, which it does not
 do by itself once the kernel had no SCTP when it started.
+With
+.Cm listen
+it listens on
+.Ar uri
+too
+.Pq tcp:// or sctp:// , an address and a port; an SCTP listener beside a TCP one ;
+with
+.Cm unlisten
+it closes that listener and the SCTP one beside it, but not the local
+socket, nor the last one it is reached by;
+.Cm for Ar new Cm keep
+puts
+.Ar new
+in its place in
+.Xr rc.conf 5
+.Pq arcana_agent_listen , or Fl l No in arcana_agent_flags .
+The console moves a host this way: listened on, tried, and only then
+the old one closed.
 .It Cm storage health
 How each disk says it is: asked with
 .Xr nvmecontrol 8

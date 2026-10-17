@@ -1025,7 +1025,8 @@ view_dashboard(struct html *h)
 	    tdown > 0 ? "warn" : nt > 0 && tup == nt ? "ok" : "", nt, nt == 1 ?
 	    "" : "s", tup, tdown);
 	h_fmt(h, "<div class=\"tile %s\"><b>%d</b><span>open fault%s · tunnels, "
-	    "BFD, BGP, thresholds, the hosts' resources</span></div>", nfaults >
+	    "BFD, BGP, thresholds, crashes, the hosts' resources</span></div>",
+	    nfaults >
 	    0 ? "warn" : "", nfaults, nfaults == 1 ? "" : "s");
 	if (ap != NULL && jstr(ap, "state") != NULL) {
 		fmt_age(age, sizeof(age), (double)jint(ap, "started", 0) * 1000);
@@ -4464,9 +4465,12 @@ sdwan_modal(struct html *h)
 		{
 			const char	*wi = way_in_if(sd.link_host);
 
-			if (wi != NULL && ifn != NULL && strcmp(wi, ifn) == 0)
-				h_fmt(h, "<div class=\"notice warn\"><b>The console "
-				    "reaches this host through %s.</b> Static "
+			if (wi != NULL && ifn != NULL && strcmp(wi, ifn) == 0) {
+				/* The host's name for it, escaped. */
+				h_raw(h, "<div class=\"notice warn\"><b>The "
+				    "console reaches this host through ");
+				h_txt(h, wi);
+				h_raw(h, ".</b> Static "
 				    "addressing and no table of its own leave it "
 				    "as it is. DHCP or SLAAC may give it another "
 				    "address, and a table of its own (VRF) moves "
@@ -4477,8 +4481,8 @@ sdwan_modal(struct html *h)
 				    "stay</label> <a href=\"https://spmzt.github.io/"
 				    "arcana-docs/sdwan/apply.html#what-an-edge-"
 				    "changes-on-its-host\" target=\"_blank\" rel="
-				    "\"noopener\">What an edge changes</a></div>",
-				    wi);
+				    "\"noopener\">What an edge changes</a></div>");
+			}
 		}
 		h_raw(h, "<div class=\"two\"><label>Address<input name=\""
 		    "address\" spellcheck=\"false\" autocomplete=\"off\" "

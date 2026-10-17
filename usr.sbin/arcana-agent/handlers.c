@@ -67,6 +67,11 @@ struct job {
 	uint32_t		 pport;
 	bool			 has_fib;
 	bool			 preply;
+	char			*listen;	/* transport */
+	char			*unlisten;
+	bool			 listen_keep;
+	char			*sctp_also;	/* transport: "" none */
+	char			*token;		/* notify: zeroed when used */
 };
 
 #define	STOPPING	"not done: arcana-agent is stopping"
@@ -339,6 +344,9 @@ worker(void *arg)
 	struct arc_stats_rsp	 str;
 	struct arc_kernel_rsp	 kr;
 	struct arc_jail_files_rsp jfr;
+	struct arc_builder_rsp	 bur;
+	struct arc_builder_options_rsp bor;
+	struct arc_job_spec	 bsp;
 	struct arc_certs_rsp	 cer;
 	struct arc_ssh_rsp	 sshr;
 	struct arc_capture_req	 capq;
@@ -349,6 +357,7 @@ worker(void *arg)
 	struct arc_config_export_rsp cxr;
 	struct arc_config_apply_rsp car;
 	struct arc_path_check_rsp pcr;
+	struct arc_notify_rsp	 ntr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
 	struct arc_sysctl_rsp	 scr2;
@@ -509,6 +518,23 @@ worker(void *arg)
 		trace_steps(&w, &irr.trace.v, &irr.trace.n);
 		rc = arc_ipfw_rules_reply(j->req, &irr);
 		break;
+	case ARC_CMD_NOTIFY:
+		what = "notify";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "notify chat %s", j->psrc);
+		memset(&ntr, 0, sizeof(ntr));
+		ntr.has_ok = true;
+		error = NULL;
+		ntr.ok = do_notify(&w, j->token, j->psrc, j->pdst, &error) ==
+		    0;
+		ntr.error = error;
+		/* The token goes as soon as it is used. */
+		explicit_bzero(j->token, strlen(j->token));
+		ok = ntr.ok;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &ntr.trace.v, &ntr.trace.n);
+		rc = arc_notify_reply(j->req, &ntr);
+		break;
 	case ARC_CMD_PATH_CHECK:
 		what = "path-check";
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
@@ -551,11 +577,14 @@ worker(void *arg)
 		rc = arc_config_apply_reply(j->req, &car);
 		break;
 	case ARC_CMD_TRANSPORT:
-		what = j->refresh ? "transport retry" : "transport";
+		what = j->refresh ? "transport retry" : j->listen != NULL ||
+		    j->unlisten != NULL || j->sctp_also != NULL ?
+		    "transport listeners" : "transport";
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "%s", what);
 		memset(&tpr, 0, sizeof(tpr));
-		do_transport(&w, j->refresh, &tpr);
+		do_transport(&w, j->refresh, j->listen, j->unlisten,
+		    j->listen_keep, j->sctp_also, &tpr);
 		ok = tpr.ok;
 		error = tpr.error;
 		step_end(&w, root, ok, NULL);
@@ -826,6 +855,36 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &jfr.trace.v, &jfr.trace.n);
 		rc = arc_jail_files_reply(j->req, &jfr);
+		break;
+	case ARC_CMD_BUILDER:
+		what = "poudriere";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "poudriere");
+		memset(&bur, 0, sizeof(bur));
+		bur.has_ok = true;
+		do_builder(&w, &bur);
+		ok = bur.ok;
+		error = bur.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &bur.trace.v, &bur.trace.n);
+		rc = arc_builder_reply(j->req, &bur);
+		break;
+	case ARC_CMD_BUILDER_OPTIONS:
+		what = "a port's options";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "a port's options for poudriere");
+		memset(&bor, 0, sizeof(bor));
+		memset(&bsp, 0, sizeof(bsp));
+		bor.has_ok = true;
+		/* Its words, kept where a pkg-upgrade's names are. */
+		bsp.names.v = j->pkg.names.v;
+		bsp.names.n = j->pkg.names.n;
+		do_builder_options(&w, &bsp, &bor);
+		ok = bor.ok;
+		error = bor.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &bor.trace.v, &bor.trace.n);
+		rc = arc_builder_options_reply(j->req, &bor);
 		break;
 	case ARC_CMD_KERNEL:
 		what = "kernel";
@@ -1281,6 +1340,9 @@ job_free(struct job *j)
 	free(j->binary);
 	free(j->sha256);
 	free(j->source);
+	free(j->listen);
+	free(j->unlisten);
+	free(j->sctp_also);
 	free(j->ref);
 	free(j->host_keys);
 	free(j->ssh_key);
@@ -1288,6 +1350,9 @@ job_free(struct job *j)
 	free((char *)(uintptr_t)j->addr.address);
 	free((char *)(uintptr_t)j->addr.interface);
 	free(j->peer);
+	if (j->token != NULL)
+		explicit_bzero(j->token, strlen(j->token));
+	free(j->token);
 	free(j->bundle);
 	free(j->new_host);
 	free(j->psrc);
@@ -1859,6 +1924,23 @@ arc_path_check_doit(cbl_req *req, const struct arc_path_check_req *rq,
 	return (start(j));
 }
 
+/* notify: the token, the chat and the text, the job's own copies. */
+int
+arc_notify_doit(cbl_req *req, const struct arc_notify_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_NOTIFY;
+	j->token = xstrdup(rq->notify_token);
+	j->psrc = xstrdup(rq->notify_chat);
+	j->pdst = xstrdup(rq->notify_text);
+	return (start(j));
+}
+
 int
 arc_config_export_doit(cbl_req *req, const struct arc_config_export_req *rq,
     void *arg __unused)
@@ -1902,6 +1984,12 @@ arc_transport_doit(cbl_req *req, const struct arc_transport_req *rq,
 	j->req = req;
 	j->cmd = ARC_CMD_TRANSPORT;
 	j->refresh = rq->retry;
+	j->listen = rq->listen != NULL && rq->listen[0] != '\0' ?
+	    xstrdup(rq->listen) : NULL;
+	j->unlisten = rq->unlisten != NULL && rq->unlisten[0] != '\0' ?
+	    xstrdup(rq->unlisten) : NULL;
+	j->listen_keep = rq->listen_keep;
+	j->sctp_also = rq->sctp_also != NULL ? xstrdup(rq->sctp_also) : NULL;
 	return (start(j));
 }
 
@@ -2248,6 +2336,49 @@ arc_jail_files_doit(cbl_req *req, void *arg __unused)
 }
 
 int
+arc_builder_doit(cbl_req *req, void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_BUILDER;
+	return (start(j));
+}
+
+int
+arc_builder_options_doit(cbl_req *req, const struct arc_builder_options_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+	const char	**v;
+	size_t		 i;
+
+	if (rq->names.n > 16)
+		return (reject(req, "a port's options are asked with jail, "
+		    "ports, set and origin"));
+	for (i = 0; i < rq->names.n; i++)
+		if (rq->names.v[i] == NULL)
+			return (reject(req, "a word is missing"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_BUILDER_OPTIONS;
+	if (rq->names.n > 0) {
+		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL) {
+			free(j);
+			return (ENOMEM);
+		}
+		for (i = 0; i < rq->names.n; i++)
+			v[i] = xstrdup(rq->names.v[i]);
+		j->pkg.names.v = v;
+		j->pkg.names.n = rq->names.n;
+	}
+	return (start(j));
+}
+
+int
 arc_stats_doit(cbl_req *req, void *arg __unused)
 {
 	struct job	*j;
@@ -2322,7 +2453,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_CARP)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_POUDRIERE)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2370,8 +2501,9 @@ check_spec(const struct arc_job_spec *sp)
 			    "tunnelfib, addressing, or several");
 		if (sp->addressing != NULL && strcmp(sp->addressing, "dhcp") != 0
 		    && strcmp(sp->addressing, "slaac") != 0 && strcmp(
-		    sp->addressing, "static") != 0)
-			return ("addressing is dhcp, slaac or static");
+		    sp->addressing, "static") != 0 && strcmp(sp->addressing,
+		    "was") != 0)
+			return ("addressing is dhcp, slaac, static or was");
 		if ((sp->has_fib && sp->fib > 65535) || (sp->has_tunnelfib &&
 		    sp->tunnelfib > 65535))
 			return ("a routing table is a number of one");
@@ -2514,6 +2646,8 @@ check_spec(const struct arc_job_spec *sp)
 		return (cert_check(sp));
 	case ARC_JOB_KIND_SSH:
 		return (ssh_check(sp));
+	case ARC_JOB_KIND_POUDRIERE:
+		return (poudriere_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->safe)
 			return ("wireguard changes are not undone: not in "

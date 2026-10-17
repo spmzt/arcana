@@ -623,6 +623,25 @@ part_shell(void)
 	    10);
 	ATF_CHECK(system("grep -qx 'To: ops@example.org' mail.out") == 0);
 	shot("0b-mail");
+	/* By Telegram: its own form, its choices chosen, its token kept
+	 * and never shown; the test says why it cannot be sent here. */
+	run("const f = document.querySelector('form[data-form="
+	    "settings-telegram]'); f.telegram_chats.value = '-100'; "
+	    "f.telegram_token.value = '123:abc_DEF'; f.telegram_faults.value "
+	    "= 'Critical'; f.requestSubmit();");
+	for (i = 0; i < 100 && system("grep -q '\"telegram_chats\": *\"-100\"'"
+	    " data/settings.json") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q '\"telegram_faults\": *\"Critical\"' "
+	    "data/settings.json") == 0);
+	wait_js("document.querySelector('form[data-form=settings-telegram]') "
+	    "&& document.querySelector('form[data-form=settings-telegram] "
+	    "select[name=telegram_via]') && !document.body.innerHTML.includes("
+	    "'abc_DEF')", 10);
+	run("document.querySelector('button[data-act=telegram-test]')."
+	    "click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('No message sent'))", 20);
 	/*
 	 * What is typed in a field stays there when the page is drawn
 	 * again under it: the key's path typed first is still there when
@@ -3052,8 +3071,9 @@ part_storage(void)
 	wait_js("document.querySelector('button[data-act=st-pool-import]')", 20);
 	run("document.querySelector('button[data-act=st-pool-import]')."
 	    "click()");
+	/* Read once the jobs before it are through: as long as they take. */
 	wait_js("document.querySelector('.modal li[data-act=st-import]"
-	    "[data-arg=spare]')", 10);
+	    "[data-arg=spare]')", 30);
 	shot("7j-storage-import");
 	run("document.querySelector('.modal li[data-act=st-import]').click()");
 	click_when("button[data-act=queue-run]", 5);
@@ -4657,6 +4677,22 @@ part_flows(void)
 	wait_js("document.querySelectorAll('svg.wfdraw g.wfnode.read').length "
 	    "=== 1 && document.querySelector('.wfpanel select[data-input="
 	    "wf-type][data-arg=\"1\"]')?.value === 'read:hello'", 5);
+	/* The read made a message instead: how it goes, and its text,
+	 * said on the drawing; and back. */
+	run("setf('.wfpanel select[data-input=wf-type][data-arg=\"1\"]', "
+	    "'notify')");
+	wait_js("document.querySelector('.wfpanel select[data-arg=\"text:"
+	    "steps.1.notify.via\"]') && document.querySelector('svg.wfdraw "
+	    "g.wfnode.notify')", 5);
+	run("setf('input[data-arg=\"text:steps.1.notify.text\"]', "
+	    "'${host.name} is ready')");
+	wait_js("document.querySelector('svg.wfdraw g.wfnode.notify')."
+	    "textContent.includes('tell: ${host.name} is ready')", 5);
+	run("setf('.wfpanel select[data-input=wf-type][data-arg=\"1\"]', "
+	    "'read:hello')");
+	wait_js("document.querySelectorAll('svg.wfdraw g.wfnode.read').length "
+	    "=== 1 && !document.querySelector('svg.wfdraw g.wfnode.notify')",
+	    5);
 	/*
 	 * Steps dragged to another place in the drawing: the read put
 	 * first, and back again.
@@ -6034,8 +6070,8 @@ ATF_TC_WITH_CLEANUP(pwa_flows);
 ATF_TC_HEAD(pwa_flows, tc)
 {
 
-	atf_tc_set_md_var(tc, "descr", "Workflows, the API, and SD-WAN");
-	atf_tc_set_md_var(tc, "timeout", "240");
+	atf_tc_set_md_var(tc, "descr", "Workflows, the API, SD-WAN, Security and the Builder");
+	atf_tc_set_md_var(tc, "timeout", "360");
 }
 /*
  * Troubleshoot, in the side bar: a packet followed, the host itself a
@@ -6186,6 +6222,110 @@ part_security(void)
 	wait_js("!document.querySelector('table.secproxy')", 30);
 }
 
+/*
+ * The Builder: poudriere's jail and ports tree made, then BIRD built
+ * with debug symbols, the set's make.conf written first, one batch.
+ */
+static void
+part_builder(void)
+{
+
+	click_when("li.bldnode[data-act=select-builder]", 10);
+	wait_js("location.hash.startsWith('#/builder/jails') && document."
+	    "querySelector('select[data-input=bld-host]')", 10);
+	run("const s = document.querySelector('select[data-input=bld-host]'); "
+	    "s.value = s.options[s.options.length - 1].value; s.dispatchEvent("
+	    "new Event('input', { bubbles: true }))");
+	wait_js("document.querySelector('.bldpage details.bldconf') && "
+	    "document.querySelector('table.bldconfkv').textContent.includes("
+	    "'tank') && document.querySelector('.bldpage .empty')", 20);
+	click_when("button[data-act=bld-new][data-arg=jail]", 10);
+	wait_js("document.querySelector('form[data-form=bld-jail]')", 10);
+	run("const f = document.querySelector('form[data-form=bld-jail]'); "
+	    "f.name.value = '150amd64'; f.version.value = '15.0-RELEASE'; "
+	    "f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('table.bldjails tr[data-jail="
+	    "\"150amd64\"]') && document.querySelector('table.bldjails')."
+	    "textContent.includes('15.0-RELEASE') && [...document."
+	    "querySelectorAll('li.bldrun')].some(l => l.textContent.includes("
+	    "'jail -c -j 150amd64 -v 15.0-RELEASE') && l.textContent."
+	    "includes('done'))", 30);
+	run("document.querySelector('.dock > header').click()");
+	shot("9w-builder-jails");
+	click_when("button[data-act=bld-tab][data-arg=ports]", 10);
+	click_when("button[data-act=bld-new][data-arg=ports]", 10);
+	wait_js("document.querySelector('form[data-form=bld-ports]')", 10);
+	run("const f = document.querySelector('form[data-form=bld-ports]'); "
+	    "f.name.value = 'default'; f.branch.value = 'main'; "
+	    "f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('table.bldports tr[data-ports="
+	    "\"default\"]')", 30);
+	run("document.querySelector('.dock > header').click()");
+	/* BIRD, with debug symbols: the set debug's make.conf, then its
+	 * build. */
+	click_when("button[data-act=bld-tab][data-arg=bulk]", 10);
+	wait_js("location.hash.startsWith('#/builder/bulk/') && document."
+	    "querySelector('form[data-form=bld-bulk]')", 10);
+	run("const f = document.querySelector('form[data-form=bld-bulk]'); "
+	    "f.jail.value = '150amd64'; f.ports.value = 'default'; "
+	    "f.origins.value = 'net/bird3'; f.debug.checked = true; "
+	    "f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('li.bldrun')].some(l => l."
+	    "textContent.includes('bulk -j 150amd64 -p default -z debug "
+	    "net/bird3') && l.textContent.includes('done')) && document."
+	    "querySelector('ul.bldmc button[data-arg=debug]') && document."
+	    "querySelector('table.bldbuilds') && document.querySelector("
+	    "'table.bldbuilds').textContent.includes('debug')", 40);
+	ATF_CHECK(system("grep -qx 'WITH_DEBUG_PORTS+= net/bird3' "
+	    "pe/poudriere.d/debug-make.conf") == 0);
+	/* The build's failed port, beneath it: phase, reason, its log. */
+	run("document.querySelector('table.bldbuilds tr.bldfail details')"
+	    ".open = true; document.querySelector('ul.bldfailed details')"
+	    ".open = true");
+	wait_js("document.querySelector('ul.bldfailed').textContent.includes("
+	    "'devel/broken') && document.querySelector('ul.bldfailed')."
+	    "textContent.includes('compiler_error') && document.querySelector("
+	    "'ul.bldfailed pre.bldlog').textContent.includes('cc: error: no "
+	    "such file')", 10);
+	ATF_CHECK(system("grep -q '^poudriere bulk -j 150amd64 -p default -z "
+	    "debug net/bird3$' poudriere.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	shot("9x-builder-bulk");
+	/* BIRD's options for that build: MRT on, BGP off. */
+	run("const f = document.querySelector('form[data-form=bld-optshow]'); "
+	    "f.jail.value = '150amd64'; f.ports.value = 'default'; "
+	    "f.set.value = 'debug'; f.origin.value = 'net/bird3'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=bld-options] "
+	    "input[name=MRT]') && document.querySelector('form.bldopts')."
+	    "textContent.includes('Routing Protocols') && document."
+	    "querySelector('form.bldopts').textContent.includes("
+	    "'150amd64-default-debug-options')", 20);
+	run("const f = document.querySelector('form[data-form=bld-options]'); "
+	    "f.MRT.checked = true; f.BGP.checked = false; f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('.bldoptdir') && document."
+	    "querySelector('.bldoptdir').textContent.includes('+MRT') && "
+	    "document.querySelector('.bldoptdir').textContent.includes("
+	    "'−BGP') && document.querySelector('form.bldopts h4 .chip."
+	    "st-up')", 30);
+	ATF_CHECK(system("grep -qx 'OPTIONS_FILE_SET+=MRT' pe/poudriere.d/"
+	    "150amd64-default-debug-options/net_bird3/options && grep -qx "
+	    "'OPTIONS_FILE_UNSET+=BGP' pe/poudriere.d/150amd64-default-debug-"
+	    "options/net_bird3/options") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* Asked again: the line is there, not written twice. */
+	click_when("ul.bldmc button[data-arg=debug]", 10);
+	wait_js("document.querySelector('form[data-form=bld-makeconf]') && "
+	    "document.querySelector('form[data-form=bld-makeconf]').text.value "
+	    "=== 'WITH_DEBUG_PORTS+= net/bird3\\n'", 10);
+	click_when("form[data-form=bld-makeconf] button[data-act=bld-cancel]",
+	    10);
+}
+
 ATF_TC_BODY(pwa_flows, tc)
 {
 
@@ -6193,6 +6333,7 @@ ATF_TC_BODY(pwa_flows, tc)
 	part_flows();
 	part_trouble();
 	part_security();
+	part_builder();
 }
 ATF_TC_CLEANUP(pwa_flows, tc)
 {

@@ -68,6 +68,8 @@ enum op {
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
 	OP_JAIL_FILES,
+	OP_BUILDER,
+	OP_BUILDER_OPTIONS,
 	OP_CERTS,
 	OP_SSH,
 	OP_CAPTURE,
@@ -86,6 +88,7 @@ enum op {
 	OP_HISTORY,
 	OP_EVENTS,
 	OP_FW_TRACE,
+	OP_NOTIFY,
 };
 
 struct call {
@@ -130,6 +133,12 @@ struct call {
 	size_t			 nvars;
 	bool			 reads;		/* changes nothing: may be asked twice */
 	bool			 retry;		/* transport: try SCTP again */
+	char			*listen;	/* transport: listen there too */
+	char			*unlisten;	/* and close this one */
+	bool			 listen_keep;	/* kept in rc.conf */
+	char			*sctp_also;	/* transport: SCTP's other
+						 * addresses, "" none */
+	char			*chat;		/* notify: where to */
 	char			 logname[129];	/* log: the file */
 	uint64_t		 pos;		/* log: from where; history: after when */
 	bool			 has_pos;
@@ -1204,11 +1213,12 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
 	    OP_EVENTS ? "arc_events" : c->op == OP_FW_TRACE ? "arc_fw_trace" :
+	    c->op == OP_NOTIFY ? "arc_notify" :
 	    c->op == OP_SYSCTL ? "arc_sysctl" : c->op == OP_STATS ? "arc_stats" : c->op == OP_PACKAGES ? "arc_packages" :
 	    c->op == OP_PKG_UPGRADE ? "arc_pkg_upgrade" :
 	    c->op == OP_JOB_SUBMIT ? "arc_job_submit" : c->op == OP_JOBS ?
@@ -1550,6 +1560,9 @@ call_run(struct kore_task *t)
 	struct arc_stats_rsp	*str;
 	struct arc_kernel_rsp	*kr;
 	struct arc_jail_files_rsp *jfiles;
+	struct arc_builder_rsp	*bur;
+	struct arc_builder_options_req boq;
+	struct arc_builder_options_rsp *bor;
 	struct arc_certs_req	 ceq;
 	struct arc_certs_rsp	*cer;
 	struct arc_ssh_req	 sshq;
@@ -1568,6 +1581,8 @@ call_run(struct kore_task *t)
 	struct arc_config_apply_rsp *car;
 	struct arc_path_check_req pcq;
 	struct arc_path_check_rsp *pcr;
+	struct arc_notify_req	 ntq;
+	struct arc_notify_rsp	*ntr;
 	char			*bundle;
 	struct arc_sysctl_req	 syq;
 	struct arc_sysctl_rsp	*syr;
@@ -1673,6 +1688,8 @@ call_run(struct kore_task *t)
 	str = NULL;
 	kr = NULL;
 	jfiles = NULL;
+	bur = NULL;
+	bor = NULL;
 	cer = NULL;
 	sshr = NULL;
 	capr = NULL;
@@ -1682,6 +1699,7 @@ call_run(struct kore_task *t)
 	cxr = NULL;
 	car = NULL;
 	pcr = NULL;
+	ntr = NULL;
 	bundle = NULL;
 	syr = NULL;
 	prr = NULL;
@@ -2354,6 +2372,19 @@ connected:
 		steps = pcr->trace.v;
 		nsteps = pcr->trace.n;
 		break;
+	case OP_NOTIFY:
+		/* The token is the call's key: zeroed as the call goes. */
+		memset(&ntq, 0, sizeof(ntq));
+		ntq.notify_token = c->key;
+		ntq.notify_chat = c->chat;
+		ntq.notify_text = c->text;
+		if ((error = arc_notify(&cl, &ntq, &ntr)) != 0)
+			goto rpcfail;
+		ok = ntr->ok;
+		put_str(top, "error", ntr->error);
+		steps = ntr->trace.v;
+		nsteps = ntr->trace.n;
+		break;
 	case OP_CONFIG_EXPORT:
 		memset(&cxq, 0, sizeof(cxq));
 		cxq.secrets = c->refresh;
@@ -2394,6 +2425,10 @@ connected:
 	case OP_TRANSPORT:
 		memset(&tpq, 0, sizeof(tpq));
 		tpq.retry = c->retry;
+		tpq.listen = c->listen;
+		tpq.unlisten = c->unlisten;
+		tpq.listen_keep = c->listen_keep;
+		tpq.sctp_also = c->sctp_also;
 		if ((error = arc_transport(&cl, &tpq, &tpr)) != 0)
 			goto rpcfail;
 		ok = tpr->ok;
@@ -2549,6 +2584,68 @@ connected:
 			put(top, "data", e);
 		steps = jfiles->trace.v;
 		nsteps = jfiles->trace.n;
+		break;
+	case OP_BUILDER:
+		if ((error = arc_builder(&cl, &bur)) != 0)
+			goto rpcfail;
+		ok = bur->ok;
+		put_str(top, "error", bur->error);
+		e = NULL;
+		if (bur->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, bur->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = bur->trace.v;
+		nsteps = bur->trace.n;
+		break;
+	case OP_BUILDER_OPTIONS:
+		/* The words, a line each, as setup_builder_options made them. */
+		memset(&boq, 0, sizeof(boq));
+		{
+			const char	**nv;
+			char		 *p, *line, *copy;
+			size_t		  n;
+
+			/* A copy: the call's own may be sent again. */
+			copy = kore_strdup(c->text != NULL ? c->text : "");
+			nv = kore_calloc(4, sizeof(*nv));
+			n = 0;
+			for (p = copy; p != NULL && n < 4; ) {
+				line = strsep(&p, "\n");
+				if (line[0] != '\0')
+					nv[n++] = line;
+			}
+			boq.names.v = nv;
+			boq.names.n = n;
+			error = arc_builder_options(&cl, &boq, &bor);
+			kore_free(nv);
+			kore_free(copy);
+		}
+		if (error != 0)
+			goto rpcfail;
+		ok = bor->ok;
+		put_str(top, "error", bor->error);
+		e = NULL;
+		if (bor->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, bor->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = bor->trace.v;
+		nsteps = bor->trace.n;
 		break;
 	case OP_CERTS:
 		memset(&ceq, 0, sizeof(ceq));
@@ -2913,6 +3010,10 @@ done:
 		arc_kernel_rsp_free(kr);
 	if (jfiles != NULL)
 		arc_jail_files_rsp_free(jfiles);
+	if (bur != NULL)
+		arc_builder_rsp_free(bur);
+	if (bor != NULL)
+		arc_builder_options_rsp_free(bor);
 	if (cer != NULL)
 		arc_certs_rsp_free(cer);
 	if (sshr != NULL)
@@ -2931,6 +3032,8 @@ done:
 		arc_config_apply_rsp_free(car);
 	if (pcr != NULL)
 		arc_path_check_rsp_free(pcr);
+	if (ntr != NULL)
+		arc_notify_rsp_free(ntr);
 	free(bundle);
 	if (syr != NULL)
 		arc_sysctl_rsp_free(syr);
@@ -3138,6 +3241,11 @@ call_release(struct call *c)
 	c->host_keys = NULL;
 	kore_free(c->text);
 	c->text = NULL;
+	kore_free(c->listen);
+	kore_free(c->unlisten);
+	kore_free(c->sctp_also);
+	kore_free(c->chat);
+	c->listen = c->unlisten = c->sctp_also = c->chat = NULL;
 	kore_free(c->from_uri);
 	kore_free(c->from_peer);
 	c->from_uri = c->from_peer = NULL;
@@ -3763,7 +3871,8 @@ api_fstab(struct http_request *req)
 /*
  * GET /api/servers/<id>/transport: the agent's listeners and the
  * connections open to it.  POST {"retry": true}: it starts the SCTP
- * listeners that are not up.
+ * listeners that are not up; {"sctp_also": "address ..."}: the other
+ * addresses its SCTP listeners are bound to ("" none).
  */
 int
 api_transport(struct http_request *req)
@@ -3779,6 +3888,8 @@ api_transport(struct http_request *req)
 		return (KORE_RESULT_OK);
 	if ((body = read_json(req)) != NULL) {
 		c->retry = ucl_flag(body, "retry");
+		if (ucl_str(body, "sctp_also") != NULL)
+			c->sctp_also = kore_strdup(ucl_str(body, "sctp_also"));
 		ucl_object_unref(body);
 	}
 	return (call_start(req, c));
@@ -4180,6 +4291,49 @@ api_jail_files(struct http_request *req)
 	return (read_route(req, OP_JAIL_FILES, NULL));
 }
 
+/* GET /api/servers/<id>/builder: poudriere's jails, ports trees,
+ * make.conf files, repositories, builds and runs. */
+int
+api_builder(struct http_request *req)
+{
+
+	return (read_route(req, OP_BUILDER, NULL));
+}
+
+/*
+ * GET /api/servers/<id>/builder/options?jail=&ports=&set=&origin=: a
+ * port's options as that build takes them.  The words go to the host
+ * as they are: it checks each.
+ */
+static const char *
+setup_builder_options(struct call *c, const struct rq *q)
+{
+	static const char *const keys[] = { "jail", "ports", "set", "origin" };
+	char	 v[160], buf[4 * 176];
+	size_t	 i, len;
+
+	len = 0;
+	buf[0] = '\0';
+	for (i = 0; i < nitems(keys); i++) {
+		if (!rq_param(q, keys[i], v, sizeof(v)) || v[0] == '\0')
+			continue;
+		if (!http_argument_urldecode(v, 1) || strpbrk(v, "\n=") != NULL)
+			return ("jail, ports, set and origin are words, escaped "
+			    "as a URL has them");
+		len += (size_t)snprintf(buf + len, sizeof(buf) - len, "%s=%s\n",
+		    keys[i], v);
+	}
+	c->text = kore_strdup(buf);
+	return (NULL);
+}
+
+int
+api_builder_options(struct http_request *req)
+{
+
+	return (read_route(req, OP_BUILDER_OPTIONS, setup_builder_options));
+}
+
 /* GET /api/servers/<id>/certs[?jail=]: the certificates OpenSSL trusts
  * there. */
 /* ?jail=name: the jail it is read in. */
@@ -4492,6 +4646,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_CERT] = "cert",
 	[ARC_JOB_KIND_SSH] = "ssh",
 	[ARC_JOB_KIND_CARP] = "carp",
+	[ARC_JOB_KIND_POUDRIERE] = "poudriere",
 };
 
 static const char *job_state_names[] = {
@@ -4801,6 +4956,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_JAIL_CONF:
 	case ARC_JOB_KIND_SSH:
 	case ARC_JOB_KIND_CARP:
+	case ARC_JOB_KIND_POUDRIERE:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
@@ -5038,6 +5194,48 @@ self_call(struct call *c, const char *uri, const char *peer,
 }
 
 /*
+ * A Telegram message sent by the host's agent (notify), for the alerts'
+ * thread or a task: the bot's token, the chat, the text.
+ */
+char *
+hosts_notify(const char *uri, const char *peer, const char *name,
+    const char *token, const char *chat, const char *text, int *status)
+{
+	struct call	*c;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_NOTIFY;
+	c->key = kore_strdup(token);
+	c->chat = kore_strdup(chat);
+	c->text = kore_strdup(text);
+	snprintf(c->route, sizeof(c->route), "notify %s", chat);
+	return (self_call(c, uri, peer, name, "notify", status));
+}
+
+/*
+ * The host's listeners changed, for the move's task: listen there too,
+ * unlisten that one, keep the change in rc.conf; on a connection of its
+ * own.
+ */
+char *
+hosts_listen(const char *uri, const char *peer, const char *name,
+    const char *listen, const char *unlisten, bool keep, int *status)
+{
+	struct call	*c;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_TRANSPORT;
+	c->fresh = true;
+	c->listen = listen != NULL ? kore_strdup(listen) : NULL;
+	c->unlisten = unlisten != NULL ? kore_strdup(unlisten) : NULL;
+	c->listen_keep = keep;
+	snprintf(c->route, sizeof(c->route), "move %s%s%s", listen != NULL ?
+	    "listen " : "", listen != NULL ? listen : "", unlisten != NULL ?
+	    " unlisten" : "");
+	return (self_call(c, uri, peer, name, "transport", status));
+}
+
+/*
  * What a host, or a vnet jail of it, does with a packet and its reply
  * (path-check), for the troubleshooter's task; iface: where it comes in,
  * or NULL: by the route back.
@@ -5185,6 +5383,8 @@ static const struct hread {
 	{ "hello", OP_HELLO, NULL },
 	{ "jails", OP_LIST, setup_jails },
 	{ "jails/files", OP_JAIL_FILES, NULL },
+	{ "builder", OP_BUILDER, NULL },
+	{ "builder/options", OP_BUILDER_OPTIONS, setup_builder_options },
 	{ "services", OP_SERVICES, NULL },
 	{ "packages", OP_PACKAGES, setup_packages },
 	{ "net/", OP_NETWORK, setup_network },

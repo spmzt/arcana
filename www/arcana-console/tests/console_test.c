@@ -2503,6 +2503,282 @@ ATF_TC_BODY(mail_smtp, tc)
 	(void)waitpid(sink, NULL, 0);
 }
 
+/*
+ * Telegram's Bot API, a sink of the test's: each request's first line
+ * and body written to tg.out, answered as sent.  Its port is returned;
+ * it runs in a child.
+ */
+static int
+tg_sink(pid_t *pidp)
+{
+	struct sockaddr_in	 sin;
+	socklen_t		 sl;
+	char			 line[1024], *body;
+	FILE			*io, *out;
+	long			 len;
+	int			 ls, fd;
+
+	ATF_REQUIRE((ls = socket(AF_INET, SOCK_STREAM, 0)) != -1);
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_len = sizeof(sin);
+	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	ATF_REQUIRE(bind(ls, (struct sockaddr *)&sin, sizeof(sin)) == 0);
+	ATF_REQUIRE(listen(ls, 8) == 0);
+	sl = sizeof(sin);
+	ATF_REQUIRE(getsockname(ls, (struct sockaddr *)&sin, &sl) == 0);
+	if ((*pidp = fork()) != 0) {
+		close(ls);
+		return (ntohs(sin.sin_port));
+	}
+	for (;;) {
+		if ((fd = accept(ls, NULL, NULL)) == -1)
+			_exit(1);
+		io = fdopen(fd, "r+");
+		out = fopen("tg.out", "a");
+		len = 0;
+		if (fgets(line, sizeof(line), io) != NULL)
+			fprintf(out, "REQ %s", line);
+		while (fgets(line, sizeof(line), io) != NULL && strcmp(line,
+		    "\r\n") != 0)
+			if (strncasecmp(line, "Content-Length:", 15) == 0)
+				len = strtol(line + 15, NULL, 10);
+		if (len > 0 && len < 65536 && (body = calloc(1, (size_t)len +
+		    1)) != NULL) {
+			if (fread(body, 1, (size_t)len, io) == (size_t)len)
+				fprintf(out, "%s\n", body);
+			free(body);
+		}
+		fclose(out);
+		fputs("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+		    "Content-Length: 11\r\nConnection: close\r\n\r\n"
+		    "{\"ok\":true}", io);
+		fclose(io);
+	}
+}
+
+CONSOLE_TC(telegram, "Alerts and a workflow's message to Telegram chats, "
+    "by a bot, sent by an agent; its token never read back")
+ATF_TC_BODY(telegram, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[MAXPATHLEN], path[160], sid[16];
+	char		run[32];
+	pid_t		sink;
+	int		port, i;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	port = tg_sink(&sink);
+	snprintf(harness_telegram_api, sizeof(harness_telegram_api),
+	    "http://127.0.0.1:%d", port);
+	snprintf(harness_webconf, sizeof(harness_webconf), "mail_tick = 1;\n");
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	/* Not a token, not a chat: refused. */
+	http("POST", "/api/settings", "{\"set\":{\"telegram_token\":"
+	    "\"x y\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"telegram_chats\":"
+	    "\"-100 x;y\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"telegram_token\":"
+	    "\"123:abc_DEF\",\"telegram_chats\":\"-100 42\","
+	    "\"telegram_via\":\"here\",\"telegram_jobs\":\"failed\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/settings", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "abc_DEF") == NULL);
+	resp_free(&r);
+	/* The test: to each chat, by the host's agent. */
+	http("POST", "/api/settings/telegram-test", "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("-100 42", jstr(&r, "to"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -c '^REQ POST /bot123:abc_DEF/sendMessage' "
+	    "tg.out | grep -qx 2 && grep -q '\"chat_id\":-100,' tg.out && "
+	    "grep -q '\"chat_id\":42,' tg.out && grep -q '\"text\":\"Arcana: "
+	    "a test.' tg.out") == 0);
+	/* A job that failed, told within a tick or two. */
+	sleep(2);
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", sid);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"cert\",\"verb\":"
+	    "\"trust\",\"path\":\"nosuch.0\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 150 && system("grep -q 'failed: certificate trust "
+	    "nosuch.0' tg.out") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(system("grep -q '\"text\":\"Arcana: [0-9:]* here: job "
+	    "[0-9]* failed: certificate trust nosuch.0' tg.out") == 0,
+	    "no message of the job");
+	/* A workflow's notify step: its text made for the host. */
+	http("POST", "/api/workflows", "{\"name\":\"bad\",\"steps\":[{\"id\":"
+	    "\"t\",\"notify\":{\"via\":\"pigeon\",\"text\":\"x\"}}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"tell\",\"hosts\":[\"%s\"],"
+	    "\"steps\":[{\"id\":\"t\",\"notify\":{\"via\":\"telegram\","
+	    "\"text\":\"${host.name} said hi\"}},{\"id\":\"m\",\"notify\":{"
+	    "\"via\":\"mail\",\"text\":\"x\"}}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	snprintf(path, sizeof(path), "/api/workflows/%s/run", jstr(&r, "id"));
+	resp_free(&r);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	run_wait(run, &r);
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.0.state"));
+	ATF_CHECK_STREQ("here said hi", jstr(&r, "hosts.0.steps.0.trace.text"));
+	/* Mail is not set up: the step says so. */
+	ATF_CHECK_STREQ("failed", jstr(&r, "hosts.0.steps.1.state"));
+	ATF_CHECK_MSG(jstr(&r, "hosts.0.steps.1.error") != NULL && strstr(
+	    jstr(&r, "hosts.0.steps.1.error"), "mail is not set up") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q 'workflow tell on here.n.nhere said hi' "
+	    "tg.out") == 0);
+	ATF_CHECK(system("! grep -q abc_DEF arcana-agent.out") == 0);
+	(void)kill(sink, SIGTERM);
+	(void)waitpid(sink, NULL, 0);
+}
+
+static void	pki(const char *, const char *, const char *);
+
+/*
+ * A relay over TLS from the first byte: openssl s_server with the
+ * certificate pki/<name>, its answers scripted in the order the console
+ * waits for them, what it is told written to out; one connection, then
+ * it ends.  Its port is returned.
+ */
+static int
+tls_sink(const char *name, const char *out, pid_t *pidp)
+{
+	struct sockaddr_in	 sin;
+	socklen_t		 sl;
+	char			 cmd[1024];
+	int			 fd, port;
+
+	ATF_REQUIRE((fd = socket(AF_INET, SOCK_STREAM, 0)) != -1);
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_len = sizeof(sin);
+	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	ATF_REQUIRE(bind(fd, (struct sockaddr *)&sin, sizeof(sin)) == 0);
+	sl = sizeof(sin);
+	ATF_REQUIRE(getsockname(fd, (struct sockaddr *)&sin, &sl) == 0);
+	port = ntohs(sin.sin_port);
+	close(fd);
+	snprintf(cmd, sizeof(cmd), "(printf '220 sink ESMTP\\r\\n250-sink\\r\\n"
+	    "250 AUTH PLAIN\\r\\n235 ok\\r\\n250 ok\\r\\n250 ok\\r\\n354 go"
+	    "\\r\\n250 queued\\r\\n221 bye\\r\\n'; sleep 30) | /usr/bin/openssl "
+	    "s_server -quiet -naccept 1 -accept 127.0.0.1:%d -cert pki/%s.pem "
+	    "-key pki/%s.key > %s 2>&1", port, name, name, out);
+	if ((*pidp = fork()) == 0) {
+		(void)setpgid(0, 0);
+		execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+		_exit(127);
+	}
+	usleep(500000);
+	return (port);
+}
+
+/* The relay given time to write what it was told (to QUIT), then ended. */
+static void
+tls_sink_end(pid_t pid, const char *out)
+{
+	char	cmd[128];
+	int	i;
+
+	snprintf(cmd, sizeof(cmd), "grep -q '^QUIT' %s", out);
+	for (i = 0; i < 50 && system(cmd) != 0; i++)
+		usleep(100000);
+	(void)kill(-pid, SIGTERM);
+	(void)waitpid(pid, NULL, 0);
+}
+
+CONSOLE_TC(mail_tls, "Mail to an SMTP relay over TLS: its certificate "
+    "checked against the CAs and its name or address, the password sent "
+    "only then")
+ATF_TC_BODY(mail_tls, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[512];
+	pid_t		sink;
+	int		port;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	ATF_REQUIRE(mkdir("pki", 0700) == 0);
+	pki("ca", NULL, NULL);
+	pki("relay", "ca", "IP:127.0.0.1,DNS:localhost");
+	pki("rogue", NULL, NULL);
+	/* The console's CAs: the test's, in place of the system's. */
+	snprintf(body, sizeof(body), "%s/pki/ca.pem", cwd);
+	ATF_REQUIRE(setenv("SSL_CERT_FILE", body, 1) == 0);
+	start(tc, 0, NULL);
+	enrol(&a);
+	/* By its name, signing in over TLS. */
+	port = tls_sink("relay", "tls1.out", &sink);
+	snprintf(body, sizeof(body), "{\"set\":{\"mail_to\":\"ops@example.org\","
+	    "\"mail_via\":\"smtp\",\"smtp_host\":\"localhost\",\"smtp_port\":"
+	    "\"%d\",\"smtp_security\":\"tls\",\"smtp_user\":\"arcana\","
+	    "\"smtp_password\":\"hunter2\"}}", port);
+	http("POST", "/api/settings", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/settings/mail-test", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	tls_sink_end(sink, "tls1.out");
+	/* "\0arcana\0hunter2", base64. */
+	ATF_CHECK(system("grep -q '^EHLO ' tls1.out && grep -q '^AUTH PLAIN "
+	    "AGFyY2FuYQBodW50ZXIy' tls1.out && grep -q '^RCPT TO:<ops@example."
+	    "org>' tls1.out && grep -q '^Subject: Arcana: a test' tls1.out")
+	    == 0);
+	/* By its address: the certificate's IP address is what is
+	 * checked. */
+	port = tls_sink("relay", "tls2.out", &sink);
+	snprintf(body, sizeof(body), "{\"set\":{\"smtp_host\":\"127.0.0.1\","
+	    "\"smtp_port\":\"%d\"}}", port);
+	http("POST", "/api/settings", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/settings/mail-test", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	tls_sink_end(sink, "tls2.out");
+	ATF_CHECK(system("grep -q '^RCPT TO:<ops@example.org>' tls2.out") ==
+	    0);
+	/* A certificate no CA of the console's signed: nothing is said
+	 * to it, the password least of all. */
+	port = tls_sink("rogue", "tls3.out", &sink);
+	snprintf(body, sizeof(body), "{\"set\":{\"smtp_host\":\"localhost\","
+	    "\"smtp_port\":\"%d\"}}", port);
+	http("POST", "/api/settings", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/settings/mail-test", "{}", &r);
+	EXPECT(&r, 502);
+	ATF_CHECK_MSG(strstr(jstr(&r, "error.message"), "TLS with localhost: "
+	    "self-signed certificate") != NULL, "%s", r.body);
+	resp_free(&r);
+	(void)kill(-sink, SIGTERM);
+	(void)waitpid(sink, NULL, 0);
+	ATF_CHECK(system("! grep -q 'AUTH\\|EHLO' tls3.out") == 0);
+}
+
 CONSOLE_TC(mail, "Faults, jobs and runs mailed by sendmail(8), as the "
     "settings say")
 ATF_TC_BODY(mail, tc)
@@ -3840,7 +4116,7 @@ ATF_TC_BODY(mtls, tc)
 	struct authn	 a;
 	struct resp	 r;
 	char		 cwd[MAXPATHLEN], uri[64], body[256], path[128];
-	char		 jgd[MAXPATHLEN], listen[64], *argv[16];
+	char		 jgd[MAXPATHLEN], listen[64], *argv[20];
 	char		 sid[16], sw[128];
 	FILE		*fp;
 	pid_t		 pid;
@@ -3878,6 +4154,9 @@ ATF_TC_BODY(mtls, tc)
 	argv[i++] = (char *)(uintptr_t)"etc/jail.conf";
 	argv[i++] = (char *)(uintptr_t)"-D";
 	argv[i++] = (char *)(uintptr_t)"etc/jail.conf.d";
+	/* rc.conf: the test's own, never the host's. */
+	argv[i++] = (char *)(uintptr_t)"-y";
+	argv[i++] = (char *)(uintptr_t)"./fake-sysrc";
 	argv[i] = NULL;
 	pid = spawn_server(argv, "arcana-agent2.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent2.pid", "w")) != NULL);
@@ -4025,6 +4304,16 @@ ATF_TC_BODY(mtls, tc)
 		    != NULL && strstr(jstr(&r, "trace.2.detail"), "shared") !=
 		    NULL, "%s", jstr(&r, "trace.2.detail"));
 		resp_free(&r);
+		/* The association's paths, as the agent's kernel sees
+		 * them: to the console's address, active, the primary. */
+		snprintf(path, sizeof(path), "/api/servers/%s/transport", sid);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strstr(r.body, "\"paths\":[{\"address\":"
+		    "\"127.0.0.1\",\"state\":\"active\"") != NULL && strstr(
+		    r.body, "\"primary\":true") != NULL && strstr(r.body,
+		    "\"local\":[\"127.0.0.1\"]") != NULL, "%s", r.body);
+		resp_free(&r);
 		/*
 		 * Requests at once go over that one association, each
 		 * waiting for its own answer: the agent sees one SCTP
@@ -4106,6 +4395,90 @@ ATF_TC_BODY(mtls, tc)
 	resp_free(&r);
 	http("POST", sw, "{\"transport\":\"udp\"}", &r);
 	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/*
+	 * SCTP over several paths: the agent's other addresses, checked,
+	 * bound where they can be (192.0.2.99 is no address of this host:
+	 * said with the listener), kept in rc.conf, and let go.
+	 */
+	snprintf(path, sizeof(path), "/api/servers/%s/transport", sid);
+	http("POST", path, "{\"sctp_also\":\"no-such\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "no-such is not an address") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("POST", path, "{\"sctp_also\":\"192.0.2.99\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("192.0.2.99", jstr(&r, "data.sctp_also"));
+	if (modfind("sctp") != -1)
+		ATF_CHECK_MSG(strstr(r.body, "\"also_error\":\"192.0.2.99: ")
+		    != NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^arcana_agent_sctp_also=\"192.0.2.99\"$' "
+	    "rc.conf") == 0);
+	http("POST", path, "{\"sctp_also\":\"\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "also_error") == NULL);
+	resp_free(&r);
+	ATF_CHECK(system("! grep -q 'arcana_agent_sctp_also' rc.conf") == 0);
+
+	/*
+	 * Moved to another address: listened on there too, tried, and
+	 * only then the old listener closed and the new kept in rc.conf;
+	 * where the agent cannot listen, nothing changes.
+	 */
+	snprintf(path, sizeof(path), "/api/servers/%s/move", sid);
+	http("POST", path, "{\"uri\":\"udp://127.0.0.1:1\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", path, "{\"uri\":\"tcp://192.0.2.77:4430\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "false") == 0 && strstr(jstr(&r,
+	    "error"), "did not listen on tcp://192.0.2.77:4430") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	ATF_REQUIRE(system("echo 'arcana_agent_listen=\"tcp://127.0.0.1:1 "
+	    "keep\"' >> rc.conf") == 0);
+	{
+		char	moved[64], b2[160], was[64];
+
+		snprintf(was, sizeof(was), "tcp://127.0.0.1:%d", port);
+		snprintf(moved, sizeof(moved), "tcp://127.0.0.1:%d", port + 1);
+		snprintf(b2, sizeof(b2), "{\"uri\":\"%s\"}", moved);
+		http("POST", path, b2, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "true") == 0 && strcmp(jstr(
+		    &r, "uri"), moved) == 0 && jstr(&r, "note") == NULL, "%s",
+		    r.body);
+		resp_free(&r);
+		http("GET", "/api/servers", NULL, &r);
+		ATF_CHECK_STREQ(moved, jstr(&r, "servers.0.uri"));
+		resp_free(&r);
+		snprintf(b2, sizeof(b2), "/api/servers/%s/transport", sid);
+		http("GET", b2, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strstr(r.body, moved) != NULL && strstr(r.body,
+		    was) == NULL, "%s", r.body);
+		resp_free(&r);
+		/* Not in arcana_agent_listen: added to it. */
+		snprintf(b2, sizeof(b2), "grep -q '^arcana_agent_listen=\"tcp://"
+		    "127.0.0.1:1 keep %s\"$' rc.conf", moved);
+		ATF_CHECK_MSG(system(b2) == 0, "%s", b2);
+		/* And back, its word put in place of the other. */
+		snprintf(b2, sizeof(b2), "{\"uri\":\"%s\"}", was);
+		http("POST", path, b2, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "true") == 0, "%s", r.body);
+		resp_free(&r);
+		snprintf(b2, sizeof(b2), "grep -q '^arcana_agent_listen=\"tcp://"
+		    "127.0.0.1:1 keep %s\"$' rc.conf", was);
+		ATF_CHECK_MSG(system(b2) == 0, "%s", b2);
+	}
+	snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
 	resp_free(&r);
 }
 
@@ -5313,6 +5686,10 @@ ATF_TC_BODY(sdwan_apply, tc)
 		    "\"persist\":true,\"addressing\":\"dhcp\"", lifn);
 		ATF_CHECK_MSG(strstr(r.body, "\"key\":\"ucs:b-mpls\"") != NULL &&
 		    strstr(r.body, t2) != NULL, "%s", r.body);
+		/* Undone, addressed as before, not static. */
+		snprintf(t2, sizeof(t2), "\"kind\":\"if-set\",\"interface\":"
+		    "\"%s\",\"persist\":true,\"addressing\":\"was\"", lifn);
+		ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
 	}
 	snprintf(t2, sizeof(t2), "\"tunnel_remote\":\"%s\"", laddr);
 	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
@@ -5882,6 +6259,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, settings);
 	ATF_TP_ADD_TC(tp, mail);
 	ATF_TP_ADD_TC(tp, mail_smtp);
+	ATF_TP_ADD_TC(tp, mail_tls);
+	ATF_TP_ADD_TC(tp, telegram);
 	ATF_TP_ADD_TC(tp, local_agent);
 	ATF_TP_ADD_TC(tp, local_same);
 	ATF_TP_ADD_TC(tp, local_absent);

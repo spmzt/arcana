@@ -78,6 +78,8 @@ struct opts opts = {
 	.squid_bin = PATH_SQUID_BIN,
 	.cicap_bin = PATH_CICAP_BIN,
 	.suricata_bin = PATH_SURICATA_BIN,
+	.poudriere_bin = PATH_POUDRIERE_BIN,
+	.poudriere_etc = PATH_POUDRIERE_ETC,
 	.swanctl_dir = PATH_SWANCTL_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
 	.bird_watch_s = 15,
@@ -91,6 +93,7 @@ struct opts opts = {
 	.rtsol_bin = PATH_RTSOL_BIN,
 	.setkey_bin = PATH_SETKEY_BIN,
 	.safe_wait = 60,
+	.telegram_api = "https://api.telegram.org",
 	.make_bin = PATH_MAKE_BIN,
 	.keyscan_bin = PATH_KEYSCAN_BIN,
 	.keygen_bin = PATH_KEYGEN_BIN,
@@ -100,13 +103,24 @@ struct opts opts = {
 
 static bool	foreground;
 
-enum { OPT_ROOT = 1000, OPT_BIRD_WATCH };
+enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API,
+    OPT_POUDRIERE, OPT_POUDRIERE_ETC };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
 	{ "root", required_argument, NULL, OPT_ROOT },
 	/* How often BIRD's sessions are looked at for faults; 0, never. */
 	{ "bird-watch", required_argument, NULL, OPT_BIRD_WATCH },
+	/* More addresses each SCTP listener is bound to (sctp_bindx(3)),
+	 * separated by spaces: an association with the console over
+	 * several paths. */
+	{ "sctp-also", required_argument, NULL, OPT_SCTP_ALSO },
+	/* Where the Telegram Bot API is, for notify: a test's own. */
+	{ "telegram-api", required_argument, NULL, OPT_TELEGRAM_API },
+	/* poudriere(8), and where its poudriere.conf and poudriere.d are:
+	 * a test's own. */
+	{ "poudriere", required_argument, NULL, OPT_POUDRIERE },
+	{ "poudriere-etc", required_argument, NULL, OPT_POUDRIERE_ETC },
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -140,7 +154,9 @@ usage(void)
 	    "[-5 swanctl-directory]\n"
 	    "                 [-N netstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n"
-	    "                 [-X traceroute]\n");
+	    "                 [-X traceroute] [--bird-watch seconds]\n"
+	    "                 [--sctp-also addresses] [--telegram-api url]\n"
+	    "                 [--poudriere poudriere] [--poudriere-etc directory]\n");
 	exit(2);
 }
 
@@ -339,6 +355,18 @@ main(int argc, char *argv[])
 		switch (ch) {
 		case OPT_ROOT:
 			opts.root = optarg;
+			break;
+		case OPT_SCTP_ALSO:
+			opts.sctp_also = optarg;
+			break;
+		case OPT_TELEGRAM_API:
+			opts.telegram_api = optarg;
+			break;
+		case OPT_POUDRIERE:
+			opts.poudriere_bin = optarg;
+			break;
+		case OPT_POUDRIERE_ETC:
+			opts.poudriere_etc = optarg;
 			break;
 		case OPT_BIRD_WATCH:
 			opts.bird_watch_s = (int)strtonum(optarg, 0, 3600, &errstr);
@@ -679,8 +707,9 @@ main(int argc, char *argv[])
 	else
 		logmsg(LOG_NOTICE, "stopped");
 
-	for (i = 0; i < nl; i++)
-		cbl_listener_free(ls[i]);
+	/* The listeners are transport.c's now: some closed, some added
+	 * while it ran. */
+	transport_fini();
 	event_family(NULL);
 	(void)cbl_family_unregister(fam);
 	cbl_loop_free(loop);

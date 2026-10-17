@@ -745,7 +745,8 @@ api_troubleshoot_free(struct http_request *req)
 {
 	struct tsh	*t = req->hdlr_extra;
 
-	if (t == NULL)
+	/* Asked while the task runs too: only once it is done. */
+	if (t == NULL || !kore_task_finished(&t->task))
 		return;
 	kore_task_destroy(&t->task);
 	free(t->json);

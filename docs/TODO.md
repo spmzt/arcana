@@ -688,6 +688,26 @@
   never made nor taken away.  The IPFW tab's Load the current file
   verified in a jail with its own rc.conf and script (the lab's
   arcswan1 root).
+- Asked for on 2026-10-17:
+  - A program the kernel sees die of a signal is a fault now (crash,
+    with the kernel's reason for no core).  Done 2026-10-17, agent
+    0.136.0.
+  - poudriere as a plugin, a Builder page in the side bar with Jails,
+    Ports and Bulk tabs, BIRD built WITH_DEBUG from the console.  Done
+    2026-10-17, agent 0.137.0, console 0.201.0: the builder operation
+    reads what poudriere keeps (jails, trees, make.conf files,
+    repositories, the latest builds, the runs), the poudriere job
+    makes, updates and deletes jails and trees, builds (a jail, a tree
+    or a build made is a run the job starts and leaves, stopped by
+    SIGINT to its group), writes a make.conf and sets poudriere.conf;
+    Debug symbols writes the set's WITH_DEBUG_PORTS before its build.
+    Tested with a stand-in poudriere (agent_test:poudriere,
+    pwa_test:pwa_flows), not yet against a real one.  A build's failed ports
+    (phase, reason, the end of their log) and those skipped for them,
+    beneath it; a port's OPTIONS read by make showconfig and set in the
+    options directory the build copies, as a form (both 2026-10-17,
+    agent 0.138.0).  Still to do: the builder operations as YANG (an
+    arcana-builder module, as notify has none either).
 - Asked for on 2026-10-16, in the order they are being done (done ones
   move to their own notes):
   - SD-WAN, adding an edge: a WAN link is not moved from its static
@@ -731,12 +751,21 @@
     first; the agent says its -w in hello; Settings › Console tells
     each host's timer and why.
   - Undoing an SD-WAN link's DHCP or SLAAC sets it static: it should go
-    back to what it was (a host on SLAAC by rc.conf before).
+    back to what it was (a host on SLAAC by rc.conf before).  Done
+    2026-10-16: if-set's addressing was (kept by the agent at its first
+    DHCP or SLAAC), sent by SD-WAN's undo; a safe change undone puts
+    back what was just before it.
   - SCTP multi-homed between console and agent (several addresses each
     end, the association's paths shown), and an agent's address
     changed from the panel: the agent listens on the new one beside the
     old, the console moves to it, and only then is the old one closed;
-    else all goes back.
+    else all goes back.  The move done 2026-10-16 (transport listen,
+    unlisten and listen-keep; POST /api/servers/<id>/move; the host's
+    How it is reached › Move to another address).  Multi-homing done
+    the same day: --sctp-also and the transport operation's sctp-also
+    (sctp_bindx), the listeners' addresses and each association's
+    paths in the transport read and on the page.  Not tried yet
+    between two hosts with several addresses each.
 - Alert management (asked 2026-10-16): who is told of what, and how.
   Alerts from the events the console already reads (faults, BIRD's
   sessions among them, limits crossed, jobs, workflow runs), each rule
@@ -747,6 +776,15 @@
   over the Bot API's HTTPS).  A workflow step sends one too: the
   workflow menu has "notify" by mail or Telegram among its steps.
   Not started.
+  Done 2026-10-16: mail and Telegram each a way with its own filters
+  (faults by severity, limits, jobs, runs), mail.c's watcher holding
+  and sending on both, twenty an hour each; Telegram by an agent's
+  luxuria/telegram.c (the notify operation, fetch(3) to the Bot API,
+  the token in no trace or log), the host Settings name or the one
+  beside the console; Settings, Notifications, By Telegram with a test;
+  a workflow's notify step (via mail, telegram or all, ${...} in its
+  text).  Not tried against the real Bot API: a sink in the tests.
+
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
     sees and changes which hosts and services.
