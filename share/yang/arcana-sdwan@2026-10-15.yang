@@ -46,6 +46,130 @@ module arcana-sdwan {
       "Arcana docs/PLAN-SDN-YANG.md step 3.1.12.";
   }
 
+  grouping edge-state {
+    description
+      "An edge's rules as the kernel has them, and its steering.";
+    container rules {
+      description
+        "The rules as the kernel has them.";
+      leaf set {
+        type uint8;
+        description
+          "Their set.";
+      }
+      leaf rules {
+        type uint32;
+        description
+          "How many.";
+      }
+      leaf objects {
+        type uint32;
+        description
+          "How many objects.";
+      }
+      list table {
+        key "name";
+        description
+          "The tables, and what each holds.";
+        leaf name {
+          type string;
+          description
+            "The table.";
+        }
+        leaf count {
+          type uint32;
+          description
+            "Its entries.";
+        }
+      }
+      list counter {
+        key "rule";
+        description
+          "Each rule's counters.";
+        leaf rule {
+          type arcfw:rule-number;
+          description
+            "The rule.";
+        }
+        leaf packets {
+          type uint64;
+          description
+            "Packets it matched.";
+        }
+        leaf octets {
+          type uint64;
+          description
+            "Their bytes.";
+        }
+        leaf text {
+          type string;
+          description
+            "Its words.";
+        }
+      }
+    }
+    leaf steered {
+      type boolean;
+      description
+        "The policy tables are filled as the steer says.";
+    }
+    list steer {
+      key "table prefix";
+      description
+        "What the policy tables hold now.";
+      leaf table {
+        type string;
+        description
+          "The table.";
+      }
+      leaf prefix {
+        type string;
+        description
+          "The prefix.";
+      }
+      leaf chosen {
+        type int32;
+        description
+          "Which candidate is in the table, by its place; -1
+           none.";
+      }
+      list candidate {
+        key "id";
+        ordered-by user;
+        description
+          "The candidates, with what the probes say of each.";
+        leaf id {
+          type string;
+          description
+            "The tunnel.";
+        }
+        leaf via {
+          type inet:ip-address-no-zone;
+          description
+            "Its address.";
+        }
+        leaf state {
+          type enumeration {
+            enum up {
+              description
+                "Up.";
+            }
+            enum down {
+              description
+                "Down.";
+            }
+            enum unknown {
+              description
+                "Not probed, or not yet known.";
+            }
+          }
+          description
+            "As the probes see it.";
+        }
+      }
+    }
+  }
+
   grouping instance {
     description
       "A service's instance of a program, in its FIB.";
@@ -172,6 +296,12 @@ module arcana-sdwan {
             "Its words.";
         }
       }
+      leaf jail {
+        type string;
+        description
+          "The edge that is this vnet jail, whose ipfw they are;
+           none, the host itself.";
+      }
     }
     container steer {
       description
@@ -206,6 +336,11 @@ module arcana-sdwan {
               "The address it goes by.";
           }
         }
+      }
+      leaf jail {
+        type string;
+        description
+          "The edge that is this vnet jail; none, the host itself.";
       }
     }
     list bird-instance {
@@ -285,124 +420,18 @@ module arcana-sdwan {
       config false;
       description
         "What the edge is doing.";
-      container rules {
+      uses edge-state;
+      list edge {
+        key "jail";
         description
-          "The rules as the kernel has them.";
-        leaf set {
-          type uint8;
-          description
-            "Their set.";
-        }
-        leaf rules {
-          type uint32;
-          description
-            "How many.";
-        }
-        leaf objects {
-          type uint32;
-          description
-            "How many objects.";
-        }
-        list table {
-          key "name";
-          description
-            "The tables, and what each holds.";
-          leaf name {
-            type string;
-            description
-              "The table.";
-          }
-          leaf count {
-            type uint32;
-            description
-              "Its entries.";
-          }
-        }
-        list counter {
-          key "rule";
-          description
-            "Each rule's counters.";
-          leaf rule {
-            type arcfw:rule-number;
-            description
-              "The rule.";
-          }
-          leaf packets {
-            type uint64;
-            description
-              "Packets it matched.";
-          }
-          leaf octets {
-            type uint64;
-            description
-              "Their bytes.";
-          }
-          leaf text {
-            type string;
-            description
-              "Its words.";
-          }
-        }
-      }
-      leaf steered {
-        type boolean;
-        description
-          "The policy tables are filled as the steer says.";
-      }
-      list steer {
-        key "table prefix";
-        description
-          "What the policy tables hold now.";
-        leaf table {
+          "Each edge that is a vnet jail on this host: its rules and
+           steering, its own ipfw's.";
+        leaf jail {
           type string;
           description
-            "The table.";
+            "The jail.";
         }
-        leaf prefix {
-          type string;
-          description
-            "The prefix.";
-        }
-        leaf chosen {
-          type int32;
-          description
-            "Which candidate is in the table, by its place; -1
-             none.";
-        }
-        list candidate {
-          key "id";
-          ordered-by user;
-          description
-            "The candidates, with what the probes say of each.";
-          leaf id {
-            type string;
-            description
-              "The tunnel.";
-          }
-          leaf via {
-            type inet:ip-address-no-zone;
-            description
-              "Its address.";
-          }
-          leaf state {
-            type enumeration {
-              enum up {
-                description
-                  "Up.";
-              }
-              enum down {
-                description
-                  "Down.";
-              }
-              enum unknown {
-                description
-                  "Not probed, or not yet known.";
-              }
-            }
-            description
-              "As the probes see it.";
-          }
-        }
+        uses edge-state;
       }
       list bird {
         key "name";

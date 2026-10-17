@@ -95,6 +95,10 @@ static bool		rekeying;	/* a uswe tunnel's keys being turned */
 #define	USWE_LIFETIME_S	86400	/* a uswe tunnel's keys, unless the UCS says */
 
 static const char	*server_name_of(const char *);
+static bool		 edge_ref(const char *, char *, size_t, char *, size_t,
+			    char *, size_t, char *, size_t);
+static ucl_object_t	*sdwan_read(const char *, char *, size_t, int *);
+static bool		 jail_kind_ok(const char *, char *, size_t);
 struct plan;
 static const char *uni_ifname(struct plan *, const ucl_object_t *,
 		    const ucl_object_t *, char *, size_t);
@@ -439,8 +443,8 @@ ucs_address(struct plan *pl, const char *sid, const ucl_object_t *uep)
 	const ucl_object_t	*ifc, *a, *v;
 	ucl_object_iter_t	 it, ait;
 	ucl_object_t		*ans;
-	char			 key[100], uri[256], peer[256], name[128];
-	char			*json;
+	char			 key[160], uri[256], peer[256], name[128];
+	char			*json, jail[64];
 	const char		*s, *found;
 	int			 status;
 
@@ -454,9 +458,10 @@ ucs_address(struct plan *pl, const char *sid, const ucl_object_t *uep)
 		return (ucl_object_type(v) == UCL_STRING ? ucl_object_tostring(v) :
 		    NULL);
 	found = NULL;
-	if (host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
-	    sizeof(name))) {
-		json = hosts_net(uri, peer, name, "interfaces", &status);
+	if (edge_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
+	    sizeof(name), jail, sizeof(jail))) {
+		json = hosts_net_in(uri, peer, name, jail[0] != '\0' ? jail :
+		    NULL, "interfaces", &status);
 		ans = parse(json);
 		free(json);
 		it = NULL;
@@ -5114,6 +5119,67 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 			ucl_array_append(targets, tg);
 		}
 	}
+	/*
+	 * Each edge's links watched (Mplify 119's interface faults): its
+	 * UCS end points' interfaces and its UNIs', beside the targets.
+	 */
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		ucl_object_t		*links, *lk, *j;
+		const ucl_object_t	*u;
+		ucl_object_iter_t	 uit;
+
+		links = ucl_object_typed_new(UCL_ARRAY);
+		uit = NULL;
+		while ((u = ucl_object_iterate(ucl_object_lookup(e,
+		    "ucs_end_points"), &uit, true)) != NULL) {
+			if (str(u, "interface") == NULL || str(u, "id") == NULL)
+				continue;
+			lk = ucl_object_typed_new(UCL_OBJECT);
+			put(lk, "interface", S(str(u, "interface")));
+			put(lk, "id", S(str(u, "id")));
+			put(lk, "role", S("ucs"));
+			ucl_array_append(links, lk);
+		}
+		it2 = NULL;
+		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
+		    &it2, true)) != NULL) {
+			it3 = NULL;
+			while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+			    "end_points"), &it3, true)) != NULL) {
+				u = ucl_object_lookup(ep, "uni");
+				if (str(ep, "edge") == NULL || str(e, "server") ==
+				    NULL || strcmp(str(ep, "edge"), str(e,
+				    "server")) != 0 || str(u, "interface") == NULL)
+					continue;
+				lk = ucl_object_typed_new(UCL_OBJECT);
+				put(lk, "interface", S(str(u, "interface")));
+				put(lk, "id", S(str(u, "id") != NULL ? str(u,
+				    "id") : str(ep, "id")));
+				put(lk, "role", S("uni"));
+				ucl_array_append(links, lk);
+			}
+		}
+		if (ucl_array_size(links) == 0) {
+			ucl_object_unref(links);
+			continue;
+		}
+		o = (ucl_object_t *)(uintptr_t)by(ucl_object_lookup(pl->edges,
+		    str(e, "server")), "key", "probes");
+		if (o == NULL) {
+			o = object(pl, str(e, "server"), "probes", PH_PROBE,
+			    "the tunnels measured: ICMP echo through the "
+			    "service's table");
+			make(o, job("sdwan-probes", "targets",
+			    ucl_object_typed_new(UCL_ARRAY), NULL));
+			unmake(o, job("sdwan-probes", "targets",
+			    ucl_object_typed_new(UCL_ARRAY), NULL));
+		}
+		j = (ucl_object_t *)(uintptr_t)ucl_array_find_index(
+		    ucl_object_lookup(o, "make"), 0);
+		put(j, "links", links);
+	}
 	/* Routes: a far end point's prefixes by a tunnel to its edge; a
 	 * UNI's static routes by their next hop. */
 	it = NULL;
@@ -5485,8 +5551,8 @@ at_path(const ucl_object_t *o, const char *a, const char *b)
 static char *
 resolve(struct run *r, const char *ref, char *why, size_t wlen)
 {
-	char		 sid[16], ifn[32], uri[256], peer[256], name[128];
-	char		*json, *out;
+	char		 sid[96], ifn[32], uri[256], peer[256], name[128];
+	char		*json, *out, jail[64];
 	const ucl_object_t *v, *i;
 	ucl_object_iter_t it;
 	ucl_object_t	*ans;
@@ -5498,21 +5564,25 @@ resolve(struct run *r, const char *ref, char *why, size_t wlen)
 	wg = strncmp(ref, "${wg:", 5) == 0;
 	uswe = strncmp(ref, "${uswe:", 7) == 0;
 	ifn[0] = '\0';
-	if (wg ? sscanf(ref, "${wg:%15[^:]:%31[^}]}", sid, ifn) != 2 : uswe ?
-	    sscanf(ref, "${uswe:%15[^:]:%31[^}]}", sid, ifn) != 2 :
-	    sscanf(ref, "${ipsec:%15[^}]}", sid) != 1) {
+	if (wg ? sscanf(ref, "${wg:%95[^:]:%31[^}]}", sid, ifn) != 2 : uswe ?
+	    sscanf(ref, "${uswe:%95[^:]:%31[^}]}", sid, ifn) != 2 :
+	    sscanf(ref, "${ipsec:%95[^}]}", sid) != 1) {
 		snprintf(why, wlen, "%s is not a reference", ref);
 		return (NULL);
 	}
-	if (!host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
-	    sizeof(name))) {
+	if (!edge_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
+	    sizeof(name), jail, sizeof(jail))) {
 		snprintf(why, wlen, "no server %s", sid);
 		return (NULL);
 	}
-	json = uswe ? hosts_read(uri, peer, name, "sdwan", &status) : hosts_net(
-	    uri, peer, name, wg ? "wireguard" : "ipsec", &status);
-	ans = parse(json);
-	free(json);
+	if (uswe)
+		ans = sdwan_read(sid, NULL, 0, &status);
+	else {
+		json = hosts_net_in(uri, peer, name, jail[0] != '\0' ? jail :
+		    NULL, wg ? "wireguard" : "ipsec", &status);
+		ans = parse(json);
+		free(json);
+	}
 	out = NULL;
 	if (uswe) {
 		/* The public half of that end's pair, as its agent tells it. */
@@ -5599,18 +5669,21 @@ job_ready(struct run *r, const ucl_object_t *j, char *why, size_t wlen)
 static bool
 job_run(const char *sid, const ucl_object_t *j, char *why, size_t wlen)
 {
-	char		 uri[256], peer[256], name[128], *json;
+	char		 uri[256], peer[256], name[128], *json, jail[64];
 	const char	*e, *st;
-	ucl_object_t	*ans, *jr;
+	ucl_object_t	*ans, *jr, *jj;
 	uint64_t	 id;
 	time_t		 until;
 	int		 status;
 
-	if (!host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
-	    sizeof(name))) {
+	if (!edge_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
+	    sizeof(name), jail, sizeof(jail))) {
 		snprintf(why, wlen, "no server %s", sid);
 		return (false);
 	}
+	/* An edge that is a vnet jail: what its agent does, done there. */
+	if (jail[0] != '\0' && !jail_kind_ok(str(j, "kind"), why, wlen))
+		return (false);
 	/* The probes, rules and steering are the console's own asks, not
 	 * jobs of the host. */
 	if (strncmp(str(j, "kind"), "sdwan-", 6) == 0) {
@@ -5618,17 +5691,30 @@ job_run(const char *sid, const ucl_object_t *j, char *why, size_t wlen)
 		char		*text;
 		bool		 ok;
 
-		if (strcmp(str(j, "kind"), "sdwan-probes") == 0)
-			text = emit(ucl_object_lookup(j, "targets"));
-		else {
+		if (strcmp(str(j, "kind"), "sdwan-probes") == 0) {
+			/* The edge's targets and links; a jail's apart from
+			 * the host's. */
+			body = ucl_object_typed_new(UCL_OBJECT);
+			if (jail[0] != '\0')
+				put(body, "jail", S(jail));
+			put(body, "targets", ucl_object_lookup(j, "targets") !=
+			    NULL ? ucl_object_copy(ucl_object_lookup(j,
+			    "targets")) : ucl_object_typed_new(UCL_ARRAY));
+			put(body, "links", ucl_object_lookup(j, "links") != NULL ?
+			    ucl_object_copy(ucl_object_lookup(j, "links")) :
+			    ucl_object_typed_new(UCL_ARRAY));
+			text = emit(body);
+			ucl_object_unref(body);
+		} else {
 			body = ucl_object_copy(j);
 			(void)ucl_object_delete_key(body, "kind");
+			if (jail[0] != '\0')
+				put(body, "jail", S(jail));
 			text = emit(body);
 			ucl_object_unref(body);
 		}
 		json = hosts_sdwan_set(uri, peer, name, str(j, "kind") + 6,
-		    text != NULL ? text : strcmp(str(j, "kind"),
-		    "sdwan-probes") == 0 ? "[]" : "{}", &status);
+		    text != NULL ? text : "{}", &status);
 		free(text);
 		ans = parse(json);
 		free(json);
@@ -5641,7 +5727,12 @@ job_run(const char *sid, const ucl_object_t *j, char *why, size_t wlen)
 			ucl_object_unref(ans);
 		return (ok);
 	}
-	if ((json = hosts_submit(uri, peer, name, j, &status, &e)) == NULL) {
+	jj = ucl_object_copy(j);
+	if (jail[0] != '\0')
+		put(jj, "jail", S(jail));
+	json = hosts_submit(uri, peer, name, jj, &status, &e);
+	ucl_object_unref(jj);
+	if (json == NULL) {
 		snprintf(why, wlen, "%s", e != NULL ? e : "not sent");
 		return (false);
 	}
@@ -5710,17 +5801,19 @@ fibs_now(const char *sid)
 static int64_t
 sysctl_of(const char *sid, const char *oid)
 {
-	char		 uri[256], peer[256], name[128], *json;
+	char		 uri[256], peer[256], name[128], *json, jail[64];
 	const ucl_object_t *v;
 	ucl_object_iter_t it;
 	ucl_object_t	*ans;
 	int64_t		 n;
 	int		 status;
 
-	if (!host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
-	    sizeof(name)))
+	/* A vnet jail's: its network's own (net.fibs is per vnet). */
+	if (!edge_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
+	    sizeof(name), jail, sizeof(jail)))
 		return (-1);
-	json = hosts_sysctl(uri, peer, name, oid, &status);
+	json = hosts_sysctl_in(uri, peer, name, jail[0] != '\0' ? jail : NULL,
+	    oid, &status);
 	ans = parse(json);
 	free(json);
 	n = -1;
@@ -6536,14 +6629,15 @@ identity_session(ucl_object_t *reads, const char *sid, const char *ifn,
 	const ucl_object_t	*ans, *i, *p;
 	ucl_object_iter_t	 it, pit;
 	ucl_object_t		*s, *got;
-	char			 uri[256], peer[256], name[128], *json;
+	char			 uri[256], peer[256], name[128], *json, jail[64];
 	int			 status;
 
 	if ((ans = ucl_object_lookup(reads, sid)) == NULL) {
 		got = NULL;
-		if (host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
-		    sizeof(name))) {
-			json = hosts_net(uri, peer, name, "wireguard", &status);
+		if (edge_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
+		    sizeof(name), jail, sizeof(jail))) {
+			json = hosts_net_in(uri, peer, name, jail[0] != '\0' ?
+			    jail : NULL, "wireguard", &status);
 			got = parse(json);
 			free(json);
 		}
@@ -6659,7 +6753,7 @@ identity_config(struct plan *pl, const ucl_object_t *doc,
 	struct kore_buf		*b;
 	struct net		 n;
 	char			 addr[80], own[80], uri[256], peer[256], hname[128];
-	char			*json, *text;
+	char			*json, *text, jail[64];
 	const char		*endpoint, *key;
 	int			 status, k;
 	bool			 proto;
@@ -6672,9 +6766,10 @@ identity_config(struct plan *pl, const ucl_object_t *doc,
 	/* The edge's key, as its agent tells it; none before the apply. */
 	key = NULL;
 	ans = NULL;
-	if (host_ref(str(ep, "edge"), uri, sizeof(uri), peer, sizeof(peer),
-	    hname, sizeof(hname))) {
-		json = hosts_net(uri, peer, hname, "wireguard", &status);
+	if (edge_ref(str(ep, "edge"), uri, sizeof(uri), peer, sizeof(peer),
+	    hname, sizeof(hname), jail, sizeof(jail))) {
+		json = hosts_net_in(uri, peer, hname, jail[0] != '\0' ? jail :
+		    NULL, "wireguard", &status);
 		ans = parse(json);
 		free(json);
 		it = NULL;
@@ -7013,7 +7108,7 @@ api_sdwan_record(struct http_request *req)
 	ucl_object_t		*doc, *out, *all, *e2;
 	const ucl_object_t	*edge, *e, *swvc, *policy, *since, *only;
 	ucl_object_iter_t	 it, eit;
-	char			 uri[256], peer[256], name[128], *json, *v;
+	char			 name[128], *v;
 	char			 want[130];
 	ucl_object_t		*ans;
 	struct kore_buf		*b;
@@ -7045,12 +7140,9 @@ api_sdwan_record(struct http_request *req)
 	    true)) != NULL) {
 		if (v != NULL && strcmp(v, str(edge, "server")) != 0)
 			continue;
-		if (!host_ref(str(edge, "server"), uri, sizeof(uri), peer,
-		    sizeof(peer), name, sizeof(name)))
+		if ((ans = sdwan_read(str(edge, "server"), name, sizeof(name),
+		    &status)) == NULL)
 			continue;
-		json = hosts_read(uri, peer, name, "sdwan", &status);
-		ans = parse(json);
-		free(json);
 		eit = NULL;
 		while (ans != NULL && (e = ucl_object_iterate(at_path(at_path(ans,
 		    "data", "record"), "last", NULL), &eit, true)) != NULL) {
@@ -7305,20 +7397,16 @@ rekey_end(const ucl_object_t *ap, const char *id, const char *skip,
 static ucl_object_t *
 rekey_keys_of(const char *sid, const char *ifn, char *why, size_t wlen)
 {
-	char			 uri[256], peer[256], name[128], *json;
+	char			 name[128];
 	ucl_object_t		*ans, *out;
 	const ucl_object_t	*i;
 	ucl_object_iter_t	 it;
 	int			 status;
 
-	if (!host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
-	    sizeof(name))) {
+	if ((ans = sdwan_read(sid, name, sizeof(name), &status)) == NULL) {
 		snprintf(why, wlen, "no server %s", sid);
 		return (NULL);
 	}
-	json = hosts_read(uri, peer, name, "sdwan", &status);
-	ans = parse(json);
-	free(json);
 	out = NULL;
 	it = NULL;
 	while (ans != NULL && (i = ucl_object_iterate(at_path(ans, "data",
@@ -7573,6 +7661,7 @@ manager_tick(void)
 	const ucl_object_t	*ap, *s, *spec, *sw, *pol, *perf, *was, *w;
 	ucl_object_iter_t	 it, eit;
 	char			 uri[256], peer[256], name[128], *json, *text;
+	char			 jail[64];
 	const char		*sid, *current;
 	int			 status;
 	bool			 changed, busy;
@@ -7605,15 +7694,13 @@ manager_tick(void)
 		    ucl_array_find_index(ucl_object_lookup(spec, "make"), 0),
 		    "entries");
 		if (entries == NULL || ucl_array_size(entries) == 0 ||
-		    !host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
-		    sizeof(name))) {
+		    !edge_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
+		    sizeof(name), jail, sizeof(jail))) {
 			ucl_object_unref((ucl_object_t *)(uintptr_t)spec);
 			continue;
 		}
-		/* What its probes see now. */
-		json = hosts_read(uri, peer, name, "sdwan", &status);
-		sd = parse(json);
-		free(json);
+		/* What its probes see now, its own. */
+		sd = sdwan_read(sid, NULL, 0, &status);
 		if (sd == NULL || ucl_object_lookup(sd, "data") == NULL) {
 			if (sd != NULL)
 				ucl_object_unref(sd);
@@ -7665,6 +7752,8 @@ manager_tick(void)
 
 			body = ucl_object_typed_new(UCL_OBJECT);
 			put(body, "entries", ucl_object_copy(entries));
+			if (jail[0] != '\0')
+				put(body, "jail", S(jail));
 			text = emit(body);
 			ucl_object_unref(body);
 			json = hosts_sdwan_set(uri, peer, name, "steer", text,
@@ -7828,9 +7917,147 @@ sdwan_init(void)
 static const char *
 server_name_of(const char *sid)
 {
+	static __thread char	 buf[4][160];
+	static __thread int	 k;
 	const struct server	*s;
+	char			 srv[64], jail[64];
 
-	return ((s = server_find(sid)) != NULL ? s->name : sid);
+	if (!sdwan_edge_split(sid, srv, sizeof(srv), jail, sizeof(jail)))
+		return (sid);
+	if (jail[0] == '\0')
+		return ((s = server_find(sid)) != NULL ? s->name : sid);
+	/* A jail's edge: its server's name and the jail, name/jail. */
+	k = (k + 1) % 4;
+	snprintf(buf[k], sizeof(buf[k]), "%s/%s", (s = server_find(srv)) !=
+	    NULL ? s->name : srv, jail);
+	return (buf[k]);
+}
+
+/*
+ * Where an edge's agent is reached, as host_ref() has it, and the vnet
+ * jail it is ("" for the server itself).
+ */
+static bool
+edge_ref(const char *edge, char *uri, size_t ulen, char *peer, size_t plen,
+    char *name, size_t nlen, char *jail, size_t jlen)
+{
+	char	sid[64];
+
+	if (!sdwan_edge_split(edge, sid, sizeof(sid), jail, jlen))
+		return (false);
+	return (host_ref(sid, uri, ulen, peer, plen, name, nlen));
+}
+
+/* A fault's or target's edge, by the jail its object names (id@jail,
+ * id@jail/metric): "" the host's. */
+static bool
+of_jail(const char *object, const char *jail)
+{
+	const char	*at;
+	size_t		 n;
+
+	if (object == NULL || (at = strchr(object, '@')) == NULL)
+		return (jail[0] == '\0');
+	n = strcspn(at + 1, "/");
+	return (strlen(jail) == n && strncmp(at + 1, jail, n) == 0);
+}
+
+/*
+ * An edge's sdwan read, parsed, as if the edge were the whole host: of
+ * the targets and faults, its own; a jail's rules, steer and steered
+ * its edge's, in the host's places, and none of the host's services,
+ * keys or record.  NULL when its server is unknown; the host's name in
+ * name when asked.
+ */
+static ucl_object_t *
+sdwan_read(const char *edge, char *name, size_t nlen, int *status)
+{
+	char			 uri[256], peer[256], hname[128], jail[64], *json;
+	const ucl_object_t	*t, *e;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*ans, *data, *keep;
+	static const char *const none[] = { "keys", "bird", "dhcp", "dns",
+	    "proxy", "ids" };
+	size_t			 i;
+
+	if (!edge_ref(edge, uri, sizeof(uri), peer, sizeof(peer), hname,
+	    sizeof(hname), jail, sizeof(jail)))
+		return (NULL);
+	if (name != NULL)
+		snprintf(name, nlen, "%s", hname);
+	json = hosts_read(uri, peer, hname, "sdwan", status);
+	ans = parse(json);
+	free(json);
+	if (ans == NULL || (data = (ucl_object_t *)(uintptr_t)
+	    ucl_object_lookup(ans, "data")) == NULL)
+		return (ans);
+	keep = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((t = ucl_object_iterate(ucl_object_lookup(data, "targets"), &it,
+	    true)) != NULL)
+		if (strcmp(str(t, "jail") != NULL ? str(t, "jail") : "", jail) ==
+		    0)
+			ucl_array_append(keep, ucl_object_copy(t));
+	ucl_object_replace_key(data, keep, "targets", 0, false);
+	keep = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((t = ucl_object_iterate(ucl_object_lookup(data, "faults"), &it,
+	    true)) != NULL)
+		if (of_jail(str(t, "object"), jail))
+			ucl_array_append(keep, ucl_object_copy(t));
+	ucl_object_replace_key(data, keep, "faults", 0, false);
+	if (jail[0] != '\0') {
+		e = NULL;
+		it = NULL;
+		while ((t = ucl_object_iterate(ucl_object_lookup(data, "edges"),
+		    &it, true)) != NULL)
+			if (str(t, "jail") != NULL && strcmp(str(t, "jail"), jail)
+			    == 0)
+				e = t;
+		ucl_object_replace_key(data, e != NULL && ucl_object_lookup(e,
+		    "rules") != NULL ? ucl_object_copy(ucl_object_lookup(e,
+		    "rules")) : ucl_object_typed_new(UCL_OBJECT), "rules", 0,
+		    false);
+		ucl_object_replace_key(data, e != NULL && ucl_object_lookup(e,
+		    "steer") != NULL ? ucl_object_copy(ucl_object_lookup(e,
+		    "steer")) : ucl_object_typed_new(UCL_ARRAY), "steer", 0,
+		    false);
+		ucl_object_replace_key(data, ucl_object_frombool(e != NULL &&
+		    ucl_object_toboolean(ucl_object_lookup(e, "steered"))),
+		    "steered", 0, false);
+		for (i = 0; i < nitems(none); i++)
+			ucl_object_replace_key(data, ucl_object_typed_new(
+			    UCL_ARRAY), none[i], 0, false);
+		ucl_object_replace_key(data, ucl_object_typed_new(UCL_OBJECT),
+		    "record", 0, false);
+	}
+	(void)ucl_object_delete_key(data, "edges");
+	return (ans);
+}
+
+/*
+ * What an edge that is a vnet jail is not given yet, said: the jail's
+ * own network takes its interfaces, routes, tunnels (gre, gif, GENEVE,
+ * WireGuard, IKEv2), BIRD, ipfw rules and steering, probes and net.*
+ * sysctls; the services the host runs for an SD-WAN service (dnsmasq,
+ * unbound, Squid, Suricata, its BIRD), NTP, rtadvd and manual SAs (a
+ * uswe tunnel) are the host's only.
+ */
+static bool
+jail_kind_ok(const char *kind, char *why, size_t wlen)
+{
+	static const char *const not[] = { "sdwan-dns", "sdwan-dhcp",
+	    "sdwan-proxy", "sdwan-ids", "sdwan-bird", "ntp", "rtadvd",
+	    "ipsec-sa" };
+	size_t	i;
+
+	for (i = 0; kind != NULL && i < nitems(not); i++)
+		if (strcmp(kind, not[i]) == 0) {
+			snprintf(why, wlen, "an edge that is a vnet jail has no "
+			    "%s yet: the host's own edge has", kind);
+			return (false);
+		}
+	return (true);
 }
 
 /*
@@ -7875,7 +8102,7 @@ plan_needs(const struct plan *pl)
 	const ucl_object_t	*objs, *o, *j, *pl_list, *p;
 	ucl_object_iter_t	 it, oit, jit, pit;
 	ucl_object_t		*out, *e, *ans;
-	char			 uri[256], peer[256], name[128], *json;
+	char			 uri[256], peer[256], name[128], *json, jail[64];
 	bool			 want[nitems(sdwan_needs)], there;
 	size_t			 i;
 	int			 status;
@@ -7918,15 +8145,31 @@ plan_needs(const struct plan *pl)
 		for (i = 0; i < nitems(sdwan_needs); i++)
 			if (want[i])
 				break;
-		if (i < nitems(sdwan_needs) && host_ref(ucl_object_key(objs),
-		    uri, sizeof(uri), peer, sizeof(peer), name, sizeof(name))) {
-			json = hosts_read(uri, peer, name, "hello", &status);
+		pl_list = NULL;
+		if (i < nitems(sdwan_needs) && edge_ref(ucl_object_key(objs),
+		    uri, sizeof(uri), peer, sizeof(peer), name, sizeof(name),
+		    jail, sizeof(jail))) {
+			/* A jail's edge: what is in the jail, as it sees its
+			 * files, not the host's. */
+			json = hosts_read(uri, peer, name, jail[0] != '\0' ?
+			    "jails" : "hello", &status);
 			ans = status == 200 ? parse(json) : NULL;
 			free(json);
 		}
-		pl_list = ans != NULL ? ucl_object_lookup(ans, "host") : NULL;
-		pl_list = pl_list != NULL ? ucl_object_lookup(pl_list,
-		    "plugins") : NULL;
+		if (ans != NULL && jail[0] != '\0') {
+			const ucl_object_t	*jl;
+			ucl_object_iter_t	 jit2 = NULL;
+
+			while ((jl = ucl_object_iterate(ucl_object_lookup(ans,
+			    "jails"), &jit2, true)) != NULL)
+				if (str(jl, "name") != NULL && strcmp(str(jl,
+				    "name"), jail) == 0)
+					pl_list = ucl_object_lookup(jl, "plugins");
+		} else if (ans != NULL) {
+			pl_list = ucl_object_lookup(ans, "host");
+			pl_list = pl_list != NULL ? ucl_object_lookup(pl_list,
+			    "plugins") : NULL;
+		}
 		for (i = 0; i < nitems(sdwan_needs); i++) {
 			if (!want[i])
 				continue;

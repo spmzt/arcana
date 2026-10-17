@@ -43,7 +43,7 @@ struct job {
 	uint32_t		 offset;		/* network: rows to leave out */
 	uint64_t		 pos;		/* log: where to read on; history: since */
 	bool			 has_pos;
-	uint32_t		 lim[3];	/* history: the limits */
+	uint32_t		 lim[4];	/* history: the limits */
 	struct arc_pkg_upgrade_req pkg;
 	bool			 refresh;
 	bool			 installed;	/* packages: pkg query */
@@ -121,7 +121,6 @@ static const char *service_action_names[] = {
 	[ARC_SERVICE_ACTION_DISABLE] = "disable",
 };
 
-static bool	valid_ifname(const char *);
 static bool	valid_service(const char *);
 static char	*peer_name(cbl_req *);
 static void	*worker(void *);
@@ -154,7 +153,7 @@ valid_jail(const char *s)
 	return (!digits);
 }
 
-static bool
+bool
 valid_ifname(const char *s)
 {
 
@@ -596,7 +595,12 @@ worker(void *arg)
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "sysctl");
 		memset(&scr2, 0, sizeof(scr2));
-		do_sysctl(&w, j->source, &scr2);
+		if (j->jail == NULL)
+			do_sysctl(&w, j->source, &scr2);
+		else if (scope_enter(&w, j->jail, &scr2.error) == 0)
+			do_sysctl_jail(&w, j->source, &scr2);
+		else
+			scr2.has_ok = true;
 		ok = scr2.ok;
 		error = scr2.error;
 		step_end(&w, root, ok, NULL);
@@ -1688,7 +1692,8 @@ arc_sdwan_probes_doit(cbl_req *req, const struct arc_sdwan_probes_req *rq,
 {
 	struct job	*j;
 
-	if (rq->json == NULL || rq->json[0] != '[')
+	/* An array, the host's; {"jail", "targets"}, a jail's. */
+	if (rq->json == NULL || (rq->json[0] != '[' && rq->json[0] != '{'))
 		return (reject(req, "the targets are a JSON array"));
 	if ((j = calloc(1, sizeof(*j))) == NULL)
 		return (ENOMEM);
@@ -2005,6 +2010,21 @@ arc_sysctl_doit(cbl_req *req, const struct arc_sysctl_req *rq,
 	j->cmd = ARC_CMD_SYSCTL;
 	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
 	    xstrdup(rq->net_filter) : NULL;
+	/* A vnet jail's network's, as its sysctl reads them. */
+	if (rq->jail != NULL && rq->jail[0] != '\0') {
+		if (!valid_jail(rq->jail)) {
+			free(j->source);
+			free(j);
+			return (reject(req, "invalid jail name"));
+		}
+		if (j->source == NULL || strncmp(j->source, "net.", 4) != 0) {
+			free(j->source);
+			free(j);
+			return (reject(req, "a jail's sysctls are read under its "
+			    "network's, net."));
+		}
+		j->jail = xstrdup(rq->jail);
+	}
 	return (start(j));
 }
 
@@ -2098,6 +2118,8 @@ arc_history_doit(cbl_req *req, const struct arc_history_req *rq,
 	j->lim[0] = rq->limit_cpu;
 	j->lim[1] = rq->limit_mem;
 	j->lim[2] = rq->limit_swap;
+	/* Not said: as it was. */
+	j->lim[3] = rq->has_limit_storage ? rq->limit_storage : UINT32_MAX;
 	/* The rules ride in source; empty takes them all away. */
 	j->source = j->refresh && rq->limit_rules != NULL ?
 	    xstrdup(rq->limit_rules) : NULL;
@@ -2560,8 +2582,12 @@ check_spec(const struct arc_job_spec *sp)
 			    "whole");
 		break;
 	case ARC_JOB_KIND_SYSCTL:
-		if (sp->jail != NULL && sp->jail[0] != '\0')
-			return ("a jail's sysctls are not set from here");
+		/* A vnet jail's own network's: net.*, its vnet's; the rest
+		 * are the host's kernel's. */
+		if (sp->jail != NULL && sp->jail[0] != '\0' && (sp->names.n < 1 ||
+		    strncmp(sp->names.v[0], "net.", 4) != 0))
+			return ("a jail's sysctls are not set from here, but its "
+			    "network's (net.*), which are its own");
 		if (sp->safe)
 			return ("a sysctl is not taken back by itself");
 		if (sp->names.n != 2 || !sysctl_name_ok(sp->names.v[0]))

@@ -36,6 +36,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
@@ -159,6 +160,50 @@ found_beneath(const char *root)
 	return (m);
 }
 
+/* found_here(), for the helper in a jail to answer (ifq_text()). */
+unsigned int
+plugins_here(void)
+{
+
+	return (found_here());
+}
+
+/*
+ * In the jail itself, by the helper (-Q jid plugins), which attaches:
+ * a kernel that refuses jail_attach(2) to a process that has had
+ * threads lets an exec'd one.  FOUND_NONE when it could not tell.
+ */
+static unsigned int
+found_by_helper(int jid)
+{
+	struct execres	 res;
+	struct work	 w;
+	char		*argv[7], *end;
+	unsigned long	 m;
+
+	if (opts.helper_bin == NULL)
+		return (FOUND_NONE);
+	work_init(&w);
+	argv[0] = (char *)(uintptr_t)opts.helper_bin;
+	argv[1] = (char *)(uintptr_t)"-Q";
+	argv[2] = wfmt(&w, "%d", jid);
+	argv[3] = (char *)(uintptr_t)"plugins";
+	argv[4] = (char *)(uintptr_t)"-";
+	argv[5] = (char *)(uintptr_t)"-";
+	argv[6] = NULL;
+	m = FOUND_NONE;
+	if (run_exec(&w, argv, &res) == 0 && res.status == 0 && res.out !=
+	    NULL && res.out[0] >= '0' && res.out[0] <= '9') {
+		errno = 0;
+		m = strtoul(res.out, &end, 10);
+		if (errno != 0 || (*end != '\0' && *end != '\n') || m >=
+		    FOUND_NONE)
+			m = FOUND_NONE;
+	}
+	work_free(&w);
+	return ((unsigned int)m);
+}
+
 /*
  * In the jail itself: a child attaches and writes what it found through
  * a pipe; FOUND_NONE when it could not.  The child only makes system
@@ -221,7 +266,8 @@ found_in(int jid, const char *root)
 			slot = i;
 	}
 	pthread_mutex_unlock(&kept_lock);
-	if ((m = found_attached(jid)) == FOUND_NONE)
+	if ((m = found_by_helper(jid)) == FOUND_NONE &&
+	    (m = found_attached(jid)) == FOUND_NONE)
 		m = found_beneath(root);
 	pthread_mutex_lock(&kept_lock);
 	kept[slot].jid = jid;

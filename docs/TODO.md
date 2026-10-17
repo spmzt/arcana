@@ -18,8 +18,14 @@
   Internet access with NAT or remote by a tunnel, each flow let to
   its own UNIs' hosts and the Internet by its policy and nothing
   else; bandwidth and importance by dummynet pipes and weighted
-  queues; egress blocks. The probes and the rules run where the agent
-  runs: an edge that is a vnet jail is not measured or steered yet.
+  queues; egress blocks. An edge may be a vnet jail on a server
+  (server/jail): its interfaces, routes, tunnels, ipfw rules and
+  steering, probes and net.* sysctls are its own, done in it (jexec,
+  ifconfig -j, an ICMP socket the helper makes there); the services
+  the host runs for an SD-WAN service (dnsmasq, unbound, Squid,
+  Suricata, its BIRD), NTP, rtadvd, a uswe tunnel's manual SAs and
+  the security record (logdst rtsock) are the host's own edge's only,
+  and are refused at a jail's.
   The bandwidth commit is a weight among the flows of one limiter's
   pipe, not a guarantee against other traffic on the UCS; the pipes
   and nat are verified with ipfw on the lab VM, not under load; BGP
@@ -35,8 +41,9 @@
   edges' iBGP and NTP as a step (tasks 1.4, 1.5); the faults kept a
   day with Mplify's types and severities, from the probes, BFD, BIRD
   and the sampler, and threshold crossing alerts from the probes
-  (1.6, 1.7; storage as a resource fault and interface-down are not
-  raised yet); the lab run of 119-1 (1.8, in the verified list); the
+  (1.6, 1.7; storage, a ZFS pool or another local file system over
+  the sampler's storage limit, and interface, a UCS end point's or a
+  UNI's link lost as netlink tells it, raised too); the lab run of 119-1 (1.8, in the verified list); the
   monitor charts of each tunnel on Paths (UX-5); SLAAC at a UNI by
   rtadvd and DHCP by dnsmasq in the service's table, with the kernel's
   forwarding turned on by the apply (0.1, 0.2, in the verified list);

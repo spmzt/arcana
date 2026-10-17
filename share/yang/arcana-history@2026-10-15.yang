@@ -217,6 +217,15 @@ module arcana-history {
         description
           "Swap in use, of the whole.";
       }
+      leaf storage {
+        type uint8 {
+          range "0..100";
+        }
+        description
+          "A file system full (a ZFS pool's allocated share, another
+           local one's as df has it), looked at each minute; over it
+           also a storage fault.";
+      }
     }
     list rule {
       key "kind name";

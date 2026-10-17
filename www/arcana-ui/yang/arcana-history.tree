@@ -4,9 +4,10 @@ module: arcana-history
      |  +--rw step?   uint16
      |  +--rw keep?   uint32
      +--rw limits
-     |  +--rw cpu?      uint8
-     |  +--rw memory?   uint8
-     |  +--rw swap?     uint8
+     |  +--rw cpu?       uint8
+     |  +--rw memory?    uint8
+     |  +--rw swap?      uint8
+     |  +--rw storage?   uint8
      +--rw rule* [kind name]
      |  +--rw kind     enumeration
      |  +--rw name     string

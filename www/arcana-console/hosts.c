@@ -2496,6 +2496,11 @@ connected:
 			hsq.limit_mem = (uint32_t)atoi(c->names[1]);
 			hsq.limit_swap = (uint32_t)atoi(c->names[2]);
 		}
+		/* Storage's, when the body said it. */
+		if (c->retry && c->names != NULL && c->nnames == 4) {
+			hsq.has_limit_storage = true;
+			hsq.limit_storage = (uint32_t)atoi(c->names[3]);
+		}
 		/* The limits of devices and jails, as the agent takes them. */
 		if (c->retry && c->text != NULL)
 			hsq.limit_rules = c->text;
@@ -2540,6 +2545,7 @@ connected:
 		/* Where to begin rides where a jail's name does. */
 		memset(&syq, 0, sizeof(syq));
 		syq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
+		syq.jail = c->scope[0] != '\0' ? c->scope : NULL;
 		if ((error = arc_sysctl(&cl, &syq, &syr)) != 0)
 			goto rpcfail;
 		ok = syr->ok;
@@ -4135,20 +4141,24 @@ api_history(struct http_request *req)
 	    "step")) : 0;
 	keep = body != NULL && ucl_object_lookup(body, "keep") != NULL ?
 	    ucl_object_toint(ucl_object_lookup(body, "keep")) : -1;
-	/* The limits, all three or none, as percentages. */
+	/* The limits, all three or none, as percentages; storage's too
+	 * when said. */
 	if (body != NULL && ucl_object_lookup(body, "cpu") != NULL) {
-		int64_t	l[3];
-		size_t	k;
+		int64_t	l[4];
+		size_t	k, nl;
 
 		l[0] = ucl_object_toint(ucl_object_lookup(body, "cpu"));
 		l[1] = ucl_object_toint(ucl_object_lookup(body, "mem"));
 		l[2] = ucl_object_toint(ucl_object_lookup(body, "swap"));
-		for (k = 0; k < 3; k++)
+		nl = ucl_object_lookup(body, "storage") != NULL ? 4 : 3;
+		l[3] = nl == 4 ? ucl_object_toint(ucl_object_lookup(body,
+		    "storage")) : 0;
+		for (k = 0; k < nl; k++)
 			if (l[k] < 0 || l[k] > 100)
 				step = 0;
-		c->names = kore_calloc(3, sizeof(*c->names));
-		c->nnames = 3;
-		for (k = 0; k < 3; k++) {
+		c->names = kore_calloc(nl, sizeof(*c->names));
+		c->nnames = nl;
+		for (k = 0; k < nl; k++) {
 			c->names[k] = kore_malloc(8);
 			snprintf(c->names[k], 8, "%lld", (long long)l[k]);
 		}
@@ -4272,6 +4282,9 @@ setup_sysctl(struct call *c, const struct rq *q)
 		if (!isalnum((unsigned char)*p) && strchr("._-%", *p) == NULL)
 			return ("a sysctl is named with letters, digits and "
 			    ". _ - %");
+	/* A vnet jail's network's, under net. */
+	if (!pick_scope(q, c))
+		return ("jail is a jail's name");
 	return (NULL);
 }
 
@@ -5497,6 +5510,15 @@ char *
 hosts_net(const char *uri, const char *peer, const char *name,
     const char *kind, int *status)
 {
+
+	return (hosts_net_in(uri, peer, name, NULL, kind, status));
+}
+
+/* A vnet jail's network's (jail NULL: the host's). */
+char *
+hosts_net_in(const char *uri, const char *peer, const char *name,
+    const char *jail, const char *kind, int *status)
+{
 	struct call	*c;
 	size_t		 i;
 
@@ -5511,6 +5533,8 @@ hosts_net(const char *uri, const char *peer, const char *name,
 	c->action = (uint8_t)i;
 	c->family = ARC_NET_FAMILY_ALL;
 	c->reads = true;
+	if (jail != NULL)
+		snprintf(c->scope, sizeof(c->scope), "%s", jail);
 	return (self_call(c, uri, peer, name, kind, status));
 }
 
@@ -5597,12 +5621,23 @@ char *
 hosts_sysctl(const char *uri, const char *peer, const char *name,
     const char *prefix, int *status)
 {
+
+	return (hosts_sysctl_in(uri, peer, name, NULL, prefix, status));
+}
+
+/* Those of a vnet jail's network (jail NULL: the host's). */
+char *
+hosts_sysctl_in(const char *uri, const char *peer, const char *name,
+    const char *jail, const char *prefix, int *status)
+{
 	struct call	*c;
 
 	c = kore_calloc(1, sizeof(*c));
 	c->op = OP_SYSCTL;
 	c->reads = true;
 	snprintf(c->jail, sizeof(c->jail), "%s", prefix);
+	if (jail != NULL)
+		snprintf(c->scope, sizeof(c->scope), "%s", jail);
 	return (self_call(c, uri, peer, name, "sysctl", status));
 }
 

@@ -107,7 +107,10 @@ scoped(const struct arc_job_spec *sp)
 	    ARC_JOB_KIND_BIRD) || sp->kind == ARC_JOB_KIND_IPFW || sp->kind ==
 	    ARC_JOB_KIND_BRIDGE || sp->kind == ARC_JOB_KIND_GENEVE ||
 	    sp->kind == ARC_JOB_KIND_IPSEC || sp->kind == ARC_JOB_KIND_NEIGHBOUR ||
-	    sp->kind == ARC_JOB_KIND_CARP);
+	    sp->kind == ARC_JOB_KIND_CARP ||
+	    /* A vnet jail's own network's numbers, net.*: its own. */
+	    (sp->kind == ARC_JOB_KIND_SYSCTL && sp->jail != NULL &&
+	    sp->jail[0] != '\0'));
 }
 
 /* What the job does, in words: the activity log's line for it. */

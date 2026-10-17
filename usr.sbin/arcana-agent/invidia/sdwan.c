@@ -24,6 +24,14 @@
  * when a probe's state changes the choice is made again here, at
  * once, without the console: the local failover.  A table is filled
  * beside the one in use and swapped in.
+ *
+ * An edge is the host, or a jail with a network of its own (vnet) on
+ * it: the payloads say which ("jail"), and each edge has rules,
+ * tables and steering of its own, kept in files of its own
+ * (sdwan-rules@<jail>.json).  A jail's ipfw(8) is its own, run there
+ * by jexec(8) (scope.c), and so is the file of rules it loads, written
+ * beneath the jail's root; the sysctls that are its network's are set
+ * there too.
  */
 
 #include <sys/param.h>
@@ -35,6 +43,7 @@
 #include <arpa/inet.h>
 
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -82,16 +91,84 @@ struct steer {
 	int		chosen;		/* -1: none */
 };
 
+/* An edge: the host ("" its jail), or a vnet jail of it. */
+struct edge {
+	char		 jail[64];
+	int		 set;		/* the set the rules are in, 0: none */
+	struct table	 tables[TABLES_MAX];
+	int		 ntables;
+	struct object	 objects[OBJECTS_MAX];
+	int		 nobjects;
+	int		 nrules;
+	struct steer	*steers;
+	int		 nsteers;
+	bool		 steered;	/* the tables hold the choices */
+};
+
+#define	EDGES_MAX	32
+
 static pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
-static int		set;		/* the set the rules are in, 0: none */
-static struct table	tables[TABLES_MAX];
-static int		ntables;
-static struct object	objects[OBJECTS_MAX];
-static int		nobjects;
-static int		nrules;
-static struct steer	*steers;
-static int		nsteers;
-static bool		steered;	/* the tables hold the choices */
+static struct edge	*edges[EDGES_MAX];	/* [0] the host's, when made */
+static int		 nedges;
+
+/* The edge of jail ("" or NULL the host), made when asked to.  Under
+ * the lock. */
+static struct edge *
+edge_of(const char *jail, bool make)
+{
+	struct edge	*e;
+	int		 i;
+
+	if (jail == NULL)
+		jail = "";
+	for (i = 0; i < nedges; i++)
+		if (strcmp(edges[i]->jail, jail) == 0)
+			return (edges[i]);
+	if (!make || nedges == EDGES_MAX || (e = calloc(1, sizeof(*e))) ==
+	    NULL)
+		return (NULL);
+	snprintf(e->jail, sizeof(e->jail), "%s", jail);
+	edges[nedges++] = e;
+	return (e);
+}
+
+/* The file of an edge's: base for the host's, base@jail for a jail's
+ * ("sdwan-rules.json", "sdwan-rules@gw.json"). */
+static const char *
+edge_file(struct work *w, const struct edge *e, const char *base)
+{
+
+	if (e->jail[0] == '\0')
+		return (base);
+	return (wfmt(w, "%.*s@%s.json", (int)(strlen(base) - 5), base,
+	    e->jail));
+}
+
+/* w working in the edge's jail, for ipfw and what else it runs. */
+static int
+edge_enter(struct work *w, const struct edge *e, const char **errp)
+{
+
+	return (e->jail[0] == '\0' ? 0 : scope_enter(w, e->jail, errp));
+}
+
+/* A payload's edge: its "jail", checked; "" for the host. */
+static const char *
+payload_jail(const ucl_object_t *top, const char **errp)
+{
+	const ucl_object_t	*j;
+
+	if ((j = ucl_object_lookup(top, "jail")) == NULL ||
+	    ucl_object_type(j) != UCL_STRING || ucl_object_tostring(j)[0] ==
+	    '\0')
+		return ("");
+	if (!valid_jail(ucl_object_tostring(j)) || strlen(
+	    ucl_object_tostring(j)) >= sizeof(((struct edge *)0)->jail)) {
+		*errp = "invalid jail name";
+		return (NULL);
+	}
+	return (ucl_object_tostring(j));
+}
 
 const char *
 sdwan_conf_path(const char *file, char *buf, size_t len)
@@ -104,6 +181,26 @@ sdwan_conf_path(const char *file, char *buf, size_t len)
 	else
 		snprintf(buf, len, "%s", file);
 	return (buf);
+}
+
+/*
+ * An edge's rules or steering kept, in file; a jail's that are none go
+ * instead, so that a start makes no edge of a jail that is none now.
+ */
+static int
+edge_keep(const char *jail, const char *file, const char *json, bool empty,
+    const char **errp)
+{
+	char	path[MAXPATHLEN];
+
+	if (jail[0] == '\0' || !empty)
+		return (sdwan_conf_write(file, json, errp));
+	if (unlink(sdwan_conf_path(file, path, sizeof(path))) == -1 && errno !=
+	    ENOENT) {
+		*errp = strerror(errno);
+		return (-1);
+	}
+	return (0);
 }
 
 int
@@ -254,15 +351,16 @@ entries_same(const ucl_object_t *a, const ucl_object_t *b)
  * rules left as they are.
  */
 static bool
-tables_only(const ucl_object_t *top, const ucl_object_t *kept)
+tables_only(const struct edge *e, const ucl_object_t *top,
+    const ucl_object_t *kept)
 {
 	const ucl_object_t	*a, *b;
 	ucl_object_iter_t	 ia, ib;
 	unsigned char		*ja, *jb;
 	bool			 same;
 
-	if (kept == NULL || set == 0 || ucl_object_toint(ucl_object_lookup(top,
-	    "set")) != set)
+	if (kept == NULL || e->set == 0 || ucl_object_toint(ucl_object_lookup(
+	    top, "set")) != e->set)
 		return (false);
 	ja = ucl_object_emit(ucl_object_lookup(top, "rules"),
 	    UCL_EMIT_JSON_COMPACT);
@@ -366,13 +464,13 @@ sval(const ucl_object_t *o, const char *key)
 /* ---- The steering ---------------------------------------------------- */
 
 static const struct table *
-table_find(const char *name)
+table_find(const struct edge *e, const char *name)
 {
 	int	i;
 
-	for (i = 0; i < ntables; i++)
-		if (strcmp(tables[i].name, name) == 0)
-			return (&tables[i]);
+	for (i = 0; i < e->ntables; i++)
+		if (strcmp(e->tables[i].name, name) == 0)
+			return (&e->tables[i]);
 	return (NULL);
 }
 
@@ -381,7 +479,8 @@ table_find(const char *name)
  * in where they changed; all of them with force.  Under the lock.
  */
 static int
-steer_apply(struct work *w, bool force, const char **errp)
+steer_apply(struct work *w, struct edge *e, bool force,
+    const char **errp)
 {
 	const struct table	*t;
 	const char		*words[ADD_CHUNK * 2 + 4];
@@ -389,36 +488,36 @@ steer_apply(struct work *w, bool force, const char **errp)
 	int			 i, k, c, n, changed, st;
 	bool			 any;
 
-	for (i = 0; i < nsteers; i++) {
-		if (table_find(steers[i].table) == NULL) {
+	for (i = 0; i < e->nsteers; i++) {
+		if (table_find(e, e->steers[i].table) == NULL) {
 			*errp = wfmt(w, "table %s is not one of the rules'",
-			    steers[i].table);
+			    e->steers[i].table);
 			return (-1);
 		}
 	}
 	/* The choice of each: the first whose far end is not down. */
 	changed = 0;
-	for (i = 0; i < nsteers; i++) {
+	for (i = 0; i < e->nsteers; i++) {
 		c = -1;
-		for (k = 0; k < steers[i].ncand && c == -1; k++) {
+		for (k = 0; k < e->steers[i].ncand && c == -1; k++) {
 			/* BFD's word where there is a session, else the probe's. */
-			st = sdwan_bfd_state(steers[i].cand[k].via);
+			st = sdwan_bfd_state(e->steers[i].cand[k].via);
 			if (st == PROBE_NONE)
-				st = probe_state_of(steers[i].cand[k].id);
+				st = probe_state_of(e->jail, e->steers[i].cand[k].id);
 			if (st != PROBE_DOWN)
 				c = k;
 		}
-		if (c != steers[i].chosen)
+		if (c != e->steers[i].chosen)
 			changed++;
-		steers[i].chosen = c;
+		e->steers[i].chosen = c;
 	}
-	if (!force && changed == 0 && steered)
+	if (!force && changed == 0 && e->steered)
 		return (0);
 	/* Table by table: the other one filled, then swapped in. */
-	for (i = 0; i < nsteers; i++) {
-		if (i > 0 && strcmp(steers[i].table, steers[i - 1].table) == 0)
+	for (i = 0; i < e->nsteers; i++) {
+		if (i > 0 && strcmp(e->steers[i].table, e->steers[i - 1].table) == 0)
 			continue;
-		t = table_find(steers[i].table);
+		t = table_find(e, e->steers[i].table);
 		snprintf(alt, sizeof(alt), "%s_alt", t->name);
 		if (strcmp(t->valtype, "legacy") == 0)
 			(void)ipfw_words(w, NULL, 1, "table", alt, "create", "type",
@@ -430,9 +529,9 @@ steer_apply(struct work *w, bool force, const char **errp)
 			return (-1);
 		any = false;
 		n = 0;
-		for (k = i; k < nsteers; k++) {
-			if (strcmp(steers[k].table, t->name) != 0 ||
-			    steers[k].chosen < 0)
+		for (k = i; k < e->nsteers; k++) {
+			if (strcmp(e->steers[k].table, t->name) != 0 ||
+			    e->steers[k].chosen < 0)
 				continue;
 			if (n == 0) {
 				words[n++] = "table";
@@ -440,8 +539,8 @@ steer_apply(struct work *w, bool force, const char **errp)
 				words[n++] = "atomic";
 				words[n++] = "add";
 			}
-			words[n++] = steers[k].prefix;
-			words[n++] = steers[k].cand[steers[k].chosen].via;
+			words[n++] = e->steers[k].prefix;
+			words[n++] = e->steers[k].cand[e->steers[k].chosen].via;
 			any = true;
 			if (n >= ADD_CHUNK * 2 + 4 - 2) {
 				if (ipfw_run(w, errp, 1, words, n) != 0)
@@ -457,24 +556,33 @@ steer_apply(struct work *w, bool force, const char **errp)
 		(void)ipfw_words(w, NULL, 1, "table", alt, "flush", NULL);
 		(void)any;
 	}
-	steered = true;
+	e->steered = true;
 	return (0);
 }
 
-/* A probe's state changed: the choices made again, here. */
+/* A probe's state changed: the choices made again, here, at each edge
+ * that steers. */
 void
 sdwan_probe_changed(void)
 {
 	struct work	 w;
-	const char	*e;
+	const char	*err;
+	int		 i;
 
-	work_init(&w);
 	pthread_mutex_lock(&lock);
-	e = NULL;
-	if (nsteers > 0 && steer_apply(&w, false, &e) != 0)
-		logmsg(LOG_WARNING, "sdwan: steering not changed: %s", e);
+	for (i = 0; i < nedges; i++) {
+		if (edges[i]->nsteers == 0)
+			continue;
+		work_init(&w);
+		err = NULL;
+		if (edge_enter(&w, edges[i], &err) != 0 || steer_apply(&w,
+		    edges[i], false, &err) != 0)
+			logmsg(LOG_WARNING, "sdwan%s%s: steering not changed: %s",
+			    edges[i]->jail[0] != '\0' ? " of " : "",
+			    edges[i]->jail, err);
+		work_free(&w);
+	}
 	pthread_mutex_unlock(&lock);
-	work_free(&w);
 }
 
 static int
@@ -555,32 +663,56 @@ int
 do_sdwan_steer(struct work *w, const char *json, const char **errp)
 {
 	struct steer	*v;
+	struct edge	*ed;
+	ucl_object_t	*top;
+	const char	*e, *jail, *file;
 	int		 n, step, rc;
-	const char	*e;
 
+	if ((top = parse(json)) == NULL) {
+		*errp = "the steering is an object with entries, an array";
+		return (-1);
+	}
+	jail = payload_jail(top, errp);
+	jail = jail != NULL ? wstrdup(w, jail) : NULL;
+	ucl_object_unref(top);
+	if (jail == NULL)
+		return (-1);
 	if ((n = steers_parse(w, json, &v, errp)) < 0)
 		return (-1);
 	pthread_mutex_lock(&lock);
-	if (set == 0 && n > 0) {
+	if ((ed = edge_of(jail, true)) == NULL) {
+		pthread_mutex_unlock(&lock);
+		free(v);
+		*errp = wfmt(w, "%d edges at most on a host", EDGES_MAX);
+		return (-1);
+	}
+	if (ed->set == 0 && n > 0) {
 		pthread_mutex_unlock(&lock);
 		free(v);
 		*errp = "no rules are applied: the steering fills their tables";
 		return (-1);
 	}
-	free(steers);
-	steers = v;
-	nsteers = n;
-	steered = false;
-	step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "steer: "
-	    "%d prefix%s", n, n == 1 ? "" : "es");
-	rc = n > 0 ? steer_apply(w, true, errp) : 0;
+	if (edge_enter(w, ed, errp) != 0) {
+		pthread_mutex_unlock(&lock);
+		free(v);
+		return (-1);
+	}
+	free(ed->steers);
+	ed->steers = v;
+	ed->nsteers = n;
+	ed->steered = false;
+	step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "steer%s%s: "
+	    "%d prefix%s", jail[0] != '\0' ? " of " : "", jail, n, n == 1 ?
+	    "" : "es");
+	rc = n > 0 ? steer_apply(w, ed, true, errp) : 0;
 	step_end(w, step, rc == 0, rc == 0 ? NULL : "%s", *errp);
+	file = edge_file(w, ed, STEER_FILE);
 	pthread_mutex_unlock(&lock);
 	if (rc != 0)
 		return (-1);
 	e = NULL;
-	if (sdwan_conf_write(STEER_FILE, json, &e) != 0) {
-		*errp = wfmt(w, "%s: %s", STEER_FILE, e);
+	if (edge_keep(jail, file, json, n == 0, &e) != 0) {
+		*errp = wfmt(w, "%s: %s", file, e);
 		return (-1);
 	}
 	return (0);
@@ -591,7 +723,7 @@ do_sdwan_steer(struct work *w, const char *json, const char **errp)
 /* Every table of the set gone, and its rules: before new ones, and
  * when there are to be none. */
 static void
-rules_clear(struct work *w, int s)
+rules_clear(struct work *w, const struct edge *e, int s)
 {
 	char	num[16], alt[72];
 	int	i;
@@ -599,16 +731,42 @@ rules_clear(struct work *w, int s)
 	snprintf(num, sizeof(num), "%d", s);
 	(void)ipfw_words(w, NULL, 1, "set", "disable", num, NULL);
 	(void)ipfw_words(w, NULL, 1, "-f", "delete", "set", num, NULL);
-	for (i = 0; i < ntables; i++) {
-		(void)ipfw_words(w, NULL, 1, "table", tables[i].name,
+	for (i = 0; i < e->ntables; i++) {
+		(void)ipfw_words(w, NULL, 1, "table", e->tables[i].name,
 		    "destroy", NULL);
-		snprintf(alt, sizeof(alt), "%s_alt", tables[i].name);
+		snprintf(alt, sizeof(alt), "%s_alt", e->tables[i].name);
 		(void)ipfw_words(w, NULL, 1, "table", alt, "destroy", NULL);
 	}
 	/* The queues before the pipes they are in. */
-	for (i = nobjects - 1; i >= 0; i--)
-		(void)ipfw_words(w, NULL, 1, objects[i].kind, objects[i].num,
-		    "delete", NULL);
+	for (i = e->nobjects - 1; i >= 0; i--)
+		(void)ipfw_words(w, NULL, 1, e->objects[i].kind,
+		    e->objects[i].num, "delete", NULL);
+}
+
+/*
+ * A number of the network's set to want when it is less: the host's
+ * by sysctlbyname(3), a jail's (its own vnet's) by its sysctl(8),
+ * through jexec.  As much as can be: what is refused is left.
+ */
+static void
+net_raise(struct work *w, const struct edge *e, const char *name, int want)
+{
+	struct execres	 res;
+	char		*argv[3];
+	int		 have;
+	size_t		 len;
+
+	if (e->jail[0] == '\0') {
+		len = sizeof(have);
+		if (sysctlbyname(name, &have, &len, NULL, 0) == 0 && have >= want)
+			return;
+		(void)sysctlbyname(name, NULL, NULL, &want, sizeof(want));
+		return;
+	}
+	argv[0] = (char *)(uintptr_t)opts.sysctl_bin;
+	argv[1] = wfmt(w, "%s=%d", name, want);
+	argv[2] = NULL;
+	(void)run_exec(w, scope_jexec(w, argv), &res);
 }
 
 /*
@@ -676,13 +834,15 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	ucl_object_t		*kept;
 	struct table		*nt;
 	struct object		*no;
+	struct edge		*ed;
 	char			 path[MAXPATHLEN], tmp[MAXPATHLEN], num[16];
-	char			*text, alt[72];
+	char			*text, alt[72], *buf;
 	FILE			*fp;
+	size_t			 blen;
 	int64_t			 s;
 	int			 n, nr, step, fd, nob, kk;
-	const char		*line, *err;
-	bool			 ok, dn, natm;
+	const char		*line, *err, *jail, *rfile, *load;
+	bool			 ok, dn, natm, empty;
 
 	if ((top = parse(json)) == NULL || ucl_object_type(top) != UCL_OBJECT) {
 		if (top != NULL)
@@ -694,6 +854,18 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	if (s < 2 || s > 31) {
 		ucl_object_unref(top);
 		*errp = "the set is 2 to 31: 0 and 1 are the kept rules'";
+		return (-1);
+	}
+	/* Whose: the host's, or a jail's, whose ipfw is its own. */
+	if ((jail = payload_jail(top, errp)) == NULL) {
+		ucl_object_unref(top);
+		return (-1);
+	}
+	jail = wstrdup(w, jail);
+	rfile = jail[0] == '\0' ? RULES_FILE : wfmt(w, "sdwan-rules@%s.json",
+	    jail);
+	if (jail[0] != '\0' && scope_enter(w, jail, errp) != 0) {
+		ucl_object_unref(top);
 		return (-1);
 	}
 	if ((nt = calloc(TABLES_MAX, sizeof(*nt))) == NULL) {
@@ -782,11 +954,18 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	 * anew): each table whose entries differ from the kept ones is
 	 * filled afresh beside itself and swapped in, in one call; the
 	 * rules are not reloaded and the steering stays. */
-	text = sdwan_kept_read(RULES_FILE);
+	text = sdwan_kept_read(rfile);
 	kept = text != NULL ? parse(text) : NULL;
 	free(text);
 	pthread_mutex_lock(&lock);
-	if (kept != NULL && tables_only(top, kept)) {
+	if ((ed = edge_of(jail, true)) == NULL) {
+		pthread_mutex_unlock(&lock);
+		if (kept != NULL)
+			ucl_object_unref(kept);
+		*errp = wfmt(w, "%d edges at most on a host", EDGES_MAX);
+		goto bad;
+	}
+	if (kept != NULL && tables_only(ed, top, kept)) {
 		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "set %jd: "
 		    "the tables' entries swapped in, the rules as they are",
 		    (intmax_t)s);
@@ -826,8 +1005,8 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 			*errp = err;
 			return (-1);
 		}
-		if (sdwan_conf_write(RULES_FILE, json, &err) != 0) {
-			*errp = wfmt(w, "%s: %s", RULES_FILE, err);
+		if (sdwan_conf_write(rfile, json, &err) != 0) {
+			*errp = wfmt(w, "%s: %s", rfile, err);
 			return (-1);
 		}
 		return (0);
@@ -835,48 +1014,25 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	pthread_mutex_unlock(&lock);
 	if (kept != NULL)
 		ucl_object_unref(kept);
-	/* Room for the tables: ipfw's limit raised when they would not fit. */
-	{
-		int	have = 0, want;
-		size_t	len = sizeof(have);
-
-		want = n * 2 > 128 ? (n * 2 > 4096 ? n * 2 : 4096) : 0;
-		if (want > 0 && (sysctlbyname("net.inet.ip.fw.tables_max", &have,
-		    &len, NULL, 0) != 0 || have < want))
-			(void)sysctlbyname("net.inet.ip.fw.tables_max", NULL, NULL,
-			    &want, sizeof(want));
-	}
+	/* Room for the tables: ipfw's limit raised when they would not fit
+	 * (the edge's vnet's). */
+	if (n * 2 > 128)
+		net_raise(w, ed, "net.inet.ip.fw.tables_max", n * 2 > 4096 ?
+		    n * 2 : 4096);
 	/* What IPsec decrypted goes past the firewall on its way in unless
 	 * net.inet.ipsec.filtertunnel says otherwise, and a tunnel's
 	 * payload with it: the rules would never see what comes in by an
-	 * IPsec-carried tunnel.  Both families' set, in this vnet. */
-	{
-		int	one = 1, have = 0;
-		size_t	len = sizeof(have);
-
-		if (sysctlbyname("net.inet.ipsec.filtertunnel", &have, &len, NULL,
-		    0) == 0 && have == 0)
-			(void)sysctlbyname("net.inet.ipsec.filtertunnel", NULL, NULL,
-			    &one, sizeof(one));
-		len = sizeof(have);
-		if (sysctlbyname("net.inet6.ipsec6.filtertunnel", &have, &len,
-		    NULL, 0) == 0 && have == 0)
-			(void)sysctlbyname("net.inet6.ipsec6.filtertunnel", NULL,
-			    NULL, &one, sizeof(one));
-	}
-	/* The file ipfw reads: the tables, their entries, the rules. */
-	sdwan_conf_path(RULES_FILE, path, sizeof(path));
-	if (strrchr(path, '/') != NULL) {
-		snprintf(tmp, sizeof(tmp), "%.*s", (int)(strrchr(path, '/') -
-		    path), path);
-		(void)mkdir(tmp, 0755);
-	}
-	snprintf(tmp, sizeof(tmp), "%s.load", path);
-	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC |
-	    O_NOFOLLOW, 0600)) == -1 || (fp = fdopen(fd, "w")) == NULL) {
-		*errp = wfmt(w, "%s: %s", tmp, strerror(errno));
-		if (fd != -1)
-			close(fd);
+	 * IPsec-carried tunnel.  Both families' set, in the edge's vnet. */
+	net_raise(w, ed, "net.inet.ipsec.filtertunnel", 1);
+	net_raise(w, ed, "net.inet6.ipsec6.filtertunnel", 1);
+	/* The file ipfw reads: the tables, their entries, the rules; made
+	 * in memory, then put where the edge's ipfw reads it. */
+	sdwan_conf_path(rfile, path, sizeof(path));
+	buf = NULL;
+	blen = 0;
+	fd = -1;
+	if ((fp = open_memstream(&buf, &blen)) == NULL) {
+		*errp = wfmt(w, "open_memstream: %s", strerror(errno));
 		goto bad;
 	}
 	snprintf(num, sizeof(num), "%jd", (intmax_t)s);
@@ -922,17 +1078,45 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		    "0123456789"), line, num, line + strspn(line, "0123456789 "));
 	}
 	if (fclose(fp) != 0) {
-		*errp = wfmt(w, "%s: %s", tmp, strerror(errno));
+		free(buf);
+		*errp = wfmt(w, "the rules: %s", strerror(errno));
 		goto bad;
+	}
+	wadopt(w, buf);
+	/* The host's beside the kept rules; a jail's beneath its root, as
+	 * its ipfw sees it (its own /var/run). */
+	if (jail[0] == '\0') {
+		if (strrchr(path, '/') != NULL) {
+			snprintf(tmp, sizeof(tmp), "%.*s", (int)(strrchr(path,
+			    '/') - path), path);
+			(void)mkdir(tmp, 0755);
+		}
+		load = wfmt(w, "%s.load", path);
+		if ((fd = open(load, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC |
+		    O_NOFOLLOW, 0600)) == -1 || write(fd, buf, blen) !=
+		    (ssize_t)blen) {
+			*errp = wfmt(w, "%s: %s", load, strerror(errno));
+			if (fd != -1)
+				close(fd);
+			goto bad;
+		}
+		close(fd);
+	} else {
+		load = "/var/run/arcana-sdwan-rules.load";
+		if (scope_replace(w, load, buf, blen, 0600, NULL) != 0) {
+			*errp = wfmt(w, "%s of %s: %s", load, jail,
+			    strerror(errno));
+			goto bad;
+		}
 	}
 	pthread_mutex_lock(&lock);
 	/* The old set and tables go, the new ones come, while disabled. */
 	step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "set %s: %d "
 	    "table%s, %d rule%s, %d object%s", num, n, n == 1 ? "" : "s", nr,
 	    nr == 1 ? "" : "s", nob, nob == 1 ? "" : "s");
-	if (set != 0)
-		rules_clear(w, set);
-	rules_clear(w, (int)s);
+	if (ed->set != 0)
+		rules_clear(w, ed, ed->set);
+	rules_clear(w, ed, (int)s);
 	/* And the new tables' names, should an earlier agent have left
 	 * them in the kernel: a table is made anew, never reused. */
 	for (int ti = 0; ti < n; ti++) {
@@ -941,52 +1125,54 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		snprintf(tmp, sizeof(tmp), "%s_alt", nt[ti].name);
 		(void)ipfw_words(w, NULL, 1, "table", tmp, "destroy", NULL);
 	}
-	snprintf(tmp, sizeof(tmp), "%s.load", path);
-	memcpy(tables, nt, sizeof(*nt) * (size_t)n);
-	ntables = n;
-	memcpy(objects, no, sizeof(*no) * (size_t)nob);
-	nobjects = nob;
-	nrules = nr;
-	set = (int)s;
+	memcpy(ed->tables, nt, sizeof(*nt) * (size_t)n);
+	ed->ntables = n;
+	memcpy(ed->objects, no, sizeof(*no) * (size_t)nob);
+	ed->nobjects = nob;
+	ed->nrules = nr;
+	ed->set = (int)s;
 	ok = true;
 	err = NULL;
 	if (dn)
 		object_module(w, "pipe");
 	if (natm)
 		object_module(w, "nat");
-	if (nr > 0 && ipfw_words(w, &err, 1, tmp, NULL) != 0) {
+	if (nr > 0 && ipfw_words(w, &err, 1, load, NULL) != 0) {
 		ok = false;
-		rules_clear(w, (int)s);
-		ntables = 0;
-		nobjects = 0;
-		nrules = 0;
-		set = 0;
+		rules_clear(w, ed, (int)s);
+		ed->ntables = 0;
+		ed->nobjects = 0;
+		ed->nrules = 0;
+		ed->set = 0;
 	} else if (nr > 0 && ipfw_words(w, &err, 1, "set", "enable", num,
 	    NULL) != 0)
 		ok = false;
 	else if (nr == 0)
-		set = 0;
+		ed->set = 0;
 	step_end(w, step, ok, ok ? NULL : "%s", err);
-	(void)unlink(tmp);
+	if (jail[0] == '\0')
+		(void)unlink(load);
+	else
+		(void)scope_rename(w, load, strrchr(load, '/') + 1, NULL);
 	if (!ok) {
 		pthread_mutex_unlock(&lock);
 		*errp = err;
 		goto bad;
 	}
 	/* The tables are new and empty: the steering fills them again. */
-	steered = false;
-	if (nsteers > 0 && set != 0 && steer_apply(w, true, &err) != 0)
+	ed->steered = false;
+	if (ed->nsteers > 0 && ed->set != 0 && steer_apply(w, ed, true, &err) !=
+	    0)
 		logmsg(LOG_WARNING, "sdwan: steering not applied: %s", err);
+	empty = ed->nrules == 0 && ed->ntables == 0 && ed->nobjects == 0;
 	pthread_mutex_unlock(&lock);
 	free(nt);
 	free(no);
 	ucl_object_unref(top);
-	text = NULL;
-	if (sdwan_conf_write(RULES_FILE, json, &err) != 0) {
-		*errp = wfmt(w, "%s: %s", RULES_FILE, err);
+	if (edge_keep(jail, rfile, json, empty, &err) != 0) {
+		*errp = wfmt(w, "%s: %s", rfile, err);
 		return (-1);
 	}
-	(void)text;
 	return (0);
 bad:
 	free(nt);
@@ -1002,40 +1188,81 @@ sdwan_tunnel_by_via(const char *via)
 	static _Thread_local char	id[128];
 	int				i, k;
 
+	int				e;
+
 	pthread_mutex_lock(&lock);
-	for (i = 0; via != NULL && i < nsteers; i++)
-		for (k = 0; k < steers[i].ncand; k++)
-			if (strcmp(steers[i].cand[k].via, via) == 0) {
-				snprintf(id, sizeof(id), "%s", steers[i].cand[k].id);
-				pthread_mutex_unlock(&lock);
-				return (id);
-			}
+	for (e = 0; e < nedges; e++)
+		for (i = 0; via != NULL && i < edges[e]->nsteers; i++)
+			for (k = 0; k < edges[e]->steers[i].ncand; k++)
+				if (strcmp(edges[e]->steers[i].cand[k].via, via) ==
+				    0) {
+					snprintf(id, sizeof(id), "%s",
+					    edges[e]->steers[i].cand[k].id);
+					pthread_mutex_unlock(&lock);
+					return (id);
+				}
 	pthread_mutex_unlock(&lock);
 	return (NULL);
 }
 
-/* At the start: the rules and the steering kept, applied again. */
-void
-sdwan_start(void)
+/* One edge's kept rules and steering, applied again. */
+static void
+start_edge(const char *rfile, const char *sfile)
 {
 	struct work	 w;
 	char		*json;
 	const char	*e;
 
 	work_init(&w);
-	if ((json = sdwan_kept_read(RULES_FILE)) != NULL) {
+	if ((json = sdwan_kept_read(rfile)) != NULL) {
 		e = NULL;
 		if (do_sdwan_rules(&w, json, &e) != 0)
-			logmsg(LOG_WARNING, "sdwan rules: %s", e);
-		free(json);
-	}
-	if ((json = sdwan_kept_read(STEER_FILE)) != NULL) {
-		e = NULL;
-		if (do_sdwan_steer(&w, json, &e) != 0)
-			logmsg(LOG_WARNING, "sdwan steer: %s", e);
+			logmsg(LOG_WARNING, "%s: %s", rfile, e);
 		free(json);
 	}
 	work_free(&w);
+	work_init(&w);
+	if ((json = sdwan_kept_read(sfile)) != NULL) {
+		e = NULL;
+		if (do_sdwan_steer(&w, json, &e) != 0)
+			logmsg(LOG_WARNING, "%s: %s", sfile, e);
+		free(json);
+	}
+	work_free(&w);
+}
+
+/*
+ * At the start: the rules and the steering kept, applied again, the
+ * host's and each jail's (sdwan-rules@<jail>.json beside them).  A
+ * jail not running yet is said so, and is applied at the next change.
+ */
+void
+sdwan_start(void)
+{
+	struct dirent	*de;
+	DIR		*d;
+	char		 dir[MAXPATHLEN], rf[MAXPATHLEN], sf[MAXPATHLEN], *slash;
+	size_t		 n;
+
+	start_edge(RULES_FILE, STEER_FILE);
+	sdwan_conf_path(RULES_FILE, dir, sizeof(dir));
+	if ((slash = strrchr(dir, '/')) == NULL)
+		snprintf(dir, sizeof(dir), ".");
+	else
+		*slash = '\0';
+	if ((d = opendir(dir)) == NULL)
+		return;
+	while ((de = readdir(d)) != NULL) {
+		n = strlen(de->d_name);
+		if (strncmp(de->d_name, "sdwan-rules@", 12) != 0 || n <= 17 ||
+		    strcmp(de->d_name + n - 5, ".json") != 0)
+			continue;
+		snprintf(rf, sizeof(rf), "%s", de->d_name);
+		snprintf(sf, sizeof(sf), "sdwan-steer@%.*s.json", (int)(n - 17),
+		    de->d_name + 12);
+		start_edge(rf, sf);
+	}
+	closedir(d);
 }
 
 /*
@@ -1084,14 +1311,24 @@ counters_json(struct work *w, int inset)
 	return (arr);
 }
 
-/* The rules and the steering, as they are, into the sdwan reply. */
-void
-sdwan_json(struct work *w, ucl_object_t *top)
+/* An edge's rules and steering, as they are, into top. */
+static void
+edge_json(struct work *w, const struct edge *ed, ucl_object_t *top)
 {
 	ucl_object_t	*o, *arr, *e, *c, *cs;
-	int		 i, k, st;
+	int		 i, k, st, set, nrules, ntables, nobjects, nsteers;
+	const struct table	*tables;
+	const struct steer	*steers;
+	bool		 steered;
 
-	pthread_mutex_lock(&lock);
+	set = ed->set;
+	nrules = ed->nrules;
+	ntables = ed->ntables;
+	tables = ed->tables;
+	nobjects = ed->nobjects;
+	nsteers = ed->nsteers;
+	steers = ed->steers;
+	steered = ed->steered;
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, ucl_object_fromint(set), "set", 0, false);
 	ucl_object_insert_key(o, ucl_object_fromint(nrules), "rules", 0, false);
@@ -1119,7 +1356,7 @@ sdwan_json(struct work *w, ucl_object_t *top)
 			    steers[i].cand[k].id), "id", 0, false);
 			ucl_object_insert_key(c, ucl_object_fromstring(
 			    steers[i].cand[k].via), "via", 0, false);
-			st = probe_state_of(steers[i].cand[k].id);
+			st = probe_state_of(ed->jail, steers[i].cand[k].id);
 			ucl_object_insert_key(c, ucl_object_fromstring(st ==
 			    PROBE_DOWN ? "down" : st == PROBE_UP ? "up" : st ==
 			    PROBE_NONE ? "not probed" : "unknown"), "state", 0,
@@ -1137,5 +1374,44 @@ sdwan_json(struct work *w, ucl_object_t *top)
 	ucl_object_insert_key(top, arr, "steer", 0, false);
 	ucl_object_insert_key(top, ucl_object_frombool(steered), "steered", 0,
 	    false);
+}
+
+/*
+ * The rules and the steering, as they are, into the sdwan reply: the
+ * host's as rules, steer and steered; each jail's the same, under
+ * edges, with its jail.
+ */
+void
+sdwan_json(struct work *w, ucl_object_t *top)
+{
+	struct edge	 none;
+	struct work	 jw;
+	ucl_object_t	*arr, *o;
+	const char	*err;
+	int		 i;
+
+	pthread_mutex_lock(&lock);
+	memset(&none, 0, sizeof(none));
+	edge_json(w, edge_of("", false) != NULL ? edge_of("", false) : &none,
+	    top);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < nedges; i++) {
+		if (edges[i]->jail[0] == '\0')
+			continue;
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(edges[i]->jail),
+		    "jail", 0, false);
+		/* Its counters are its own ipfw's. */
+		work_init(&jw);
+		err = NULL;
+		if (edge_enter(&jw, edges[i], &err) == 0)
+			edge_json(&jw, edges[i], o);
+		else
+			ucl_object_insert_key(o, ucl_object_fromstring(err),
+			    "error", 0, false);
+		work_free(&jw);
+		ucl_array_append(arr, o);
+	}
+	ucl_object_insert_key(top, arr, "edges", 0, false);
 	pthread_mutex_unlock(&lock);
 }

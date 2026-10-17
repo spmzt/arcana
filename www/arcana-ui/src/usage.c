@@ -38,7 +38,7 @@ struct uhost {
 	int	 n, stride;
 	double	 mem_total, swap_total, bytes;
 	int	 ncpu, step, keep;
-	int	 lim[3];	/* cpu, mem, swap, in percent; 0 none */
+	int	 lim[4];	/* cpu, mem, swap, storage, in percent; 0 none */
 	char	 nets[DEVS][DEVNAME], disks[DEVS][DEVNAME];
 	char	 jails[DEVS][DEVNAME];	/* told apart when racct is on */
 	int	 nn, nd, nj;
@@ -151,6 +151,7 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	u->lim[0] = (int)jint(jget(d, "limits"), "cpu", 0);
 	u->lim[1] = (int)jint(jget(d, "limits"), "mem", 0);
 	u->lim[2] = (int)jint(jget(d, "limits"), "swap", 0);
+	u->lim[3] = (int)jint(jget(d, "limits"), "storage", 0);
 	keep = (int)jint(d, "keep", 720);
 	other = devs(jget(d, "nets"), u->nets, &u->nn);
 	other = devs(jget(d, "disks"), u->disks, &u->nd) || other;
@@ -639,8 +640,12 @@ sampling(struct html *h, const struct uhost *u)
 	    "value=\"%d\">%%</label><label>memory over<input name=\"mem\" "
 	    "type=\"number\" min=\"0\" max=\"100\" value=\"%d\">%%</label>"
 	    "<label>swap over<input name=\"swap\" type=\"number\" min=\"0\" "
-	    "max=\"100\" value=\"%d\">%%</label>", u->step, u->keep,
-	    u->lim[0], u->lim[1], u->lim[2]);
+	    "max=\"100\" value=\"%d\">%%</label><label title=\"Each ZFS "
+	    "pool, and each other local file system, looked at each minute: "
+	    "over it also a storage fault\">a file system over<input name="
+	    "\"storage\" type=\"number\" min=\"0\" max=\"100\" value=\"%d\">"
+	    "%% full</label>", u->step, u->keep, u->lim[0], u->lim[1],
+	    u->lim[2], u->lim[3]);
 	/* The limits of one interface, disk or jail each. */
 	h_raw(h, "<label class=\"rules\">Limits of an interface, a disk or a "
 	    "jail<textarea name=\"rules\" rows=\"3\" spellcheck=\"false\" "
@@ -836,7 +841,7 @@ usage_form(const char *form, const ucl_object_t *f)
 	struct uhost	*u;
 	const char	*sid;
 	char		 url[96], body[1300];
-	int		 step, keep, lim[3], k;
+	int		 step, keep, lim[4], k;
 
 	if (strcmp(form, "usage-set") != 0)
 		return (false);
@@ -850,9 +855,9 @@ usage_form(const char *form, const ucl_object_t *f)
 		toast(true, "Every 1 to 3600 seconds, and 0 to 5000 kept");
 		return (true);
 	}
-	for (k = 0; k < 3; k++) {
+	for (k = 0; k < 4; k++) {
 		const char	*v = jstr(f, k == 0 ? "cpu" : k == 1 ? "mem" :
-		    "swap");
+		    k == 2 ? "swap" : "storage");
 
 		lim[k] = v != NULL && v[0] != '\0' ? atoi(v) : 0;
 		if (lim[k] < 0 || lim[k] > 100) {
@@ -879,8 +884,9 @@ usage_form(const char *form, const ucl_object_t *f)
 		q = json_quote(list);
 		snprintf(url, sizeof(url), "/api/servers/%s/history", u->sid);
 		snprintf(body, sizeof(body), "{\"step\":%d,\"keep\":%d,"
-		    "\"cpu\":%d,\"mem\":%d,\"swap\":%d,\"rules\":%s}", step,
-		    keep, lim[0], lim[1], lim[2], q);
+		    "\"cpu\":%d,\"mem\":%d,\"swap\":%d,\"storage\":%d,"
+		    "\"rules\":%s}", step, keep, lim[0], lim[1], lim[2], lim[3],
+		    q);
 		free(q);
 	}
 	u->loading = true;

@@ -2628,6 +2628,7 @@ cmd_sysctl(struct arc_client *cl, int argc, char **argv)
 		usage();
 	memset(&req, 0, sizeof(req));
 	req.net_filter = argc == 2 ? argv[1] : NULL;
+	req.jail = netjail;
 	if ((error = arc_sysctl(cl, &req, &rsp)) != 0)
 		fail(cl, error, "sysctl");
 	if (rsp->json != NULL)
@@ -2790,8 +2791,18 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 			hq.limit_rules = argv[argc - 1];
 			argc -= 2;
 		}
-		if ((argc == 4 || argc == 7) && strcmp(argv[1], "set") == 0) {
-			if (argc == 7) {
+		if ((argc == 4 || argc == 7 || argc == 8) && strcmp(argv[1],
+		    "set") == 0) {
+			/* ... cpu mem swap [storage] */
+			if (argc == 8) {
+				hq.has_limit_storage = true;
+				hq.limit_storage = (uint32_t)strtonum(argv[7],
+				    0, 100, &e);
+				if (e != NULL)
+					xo_errx(1, "history: a limit is 0 to "
+					    "100");
+			}
+			if (argc >= 7) {
 				hq.has_limit_cpu = hq.has_limit_mem =
 				    hq.has_limit_swap = true;
 				hq.limit_cpu = (uint32_t)strtonum(argv[4], 0,

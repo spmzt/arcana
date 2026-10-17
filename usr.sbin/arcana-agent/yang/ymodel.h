@@ -634,6 +634,12 @@ struct arcana_sdwan_sdwan_state_rules_counter;
 struct arcana_sdwan_sdwan_state_rules;
 struct arcana_sdwan_sdwan_state_steer_candidate;
 struct arcana_sdwan_sdwan_state_steer;
+struct arcana_sdwan_sdwan_state_edge_rules_table;
+struct arcana_sdwan_sdwan_state_edge_rules_counter;
+struct arcana_sdwan_sdwan_state_edge_rules;
+struct arcana_sdwan_sdwan_state_edge_steer_candidate;
+struct arcana_sdwan_sdwan_state_edge_steer;
+struct arcana_sdwan_sdwan_state_edge;
 struct arcana_sdwan_sdwan_state_bird_protocol;
 struct arcana_sdwan_sdwan_state_bird_bfd;
 struct arcana_sdwan_sdwan_state_bird;
@@ -2028,6 +2034,12 @@ enum arcana_sdwan_sdwan_state_steer_candidate_state {
 	ARCANA_SDWAN_SDWAN_STATE_STEER_CANDIDATE_STATE_UNKNOWN = 2,
 };
 
+enum arcana_sdwan_sdwan_state_edge_steer_candidate_state {
+	ARCANA_SDWAN_SDWAN_STATE_EDGE_STEER_CANDIDATE_STATE_UP = 0,
+	ARCANA_SDWAN_SDWAN_STATE_EDGE_STEER_CANDIDATE_STATE_DOWN = 1,
+	ARCANA_SDWAN_SDWAN_STATE_EDGE_STEER_CANDIDATE_STATE_UNKNOWN = 2,
+};
+
 enum arcana_sdwan_sdwan_state_bird_bfd_state {
 	ARCANA_SDWAN_SDWAN_STATE_BIRD_BFD_STATE_UP = 0,
 	ARCANA_SDWAN_SDWAN_STATE_BIRD_BFD_STATE_DOWN = 1,
@@ -2401,6 +2413,14 @@ struct arcana_sdwan_sdwan_steer_entry_candidate_via {
 };
 
 struct arcana_sdwan_sdwan_state_steer_candidate_via {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_sdwan_sdwan_state_edge_steer_candidate_via {
 	unsigned	 which;	/* the member set, from 0 */
 	union {
 		const char	*m0;
@@ -7699,6 +7719,8 @@ struct arcana_history_history_limits {
 	uint8_t		 memory;
 	bool			 has_swap;
 	uint8_t		 swap;
+	bool			 has_storage;
+	uint8_t		 storage;
 };
 
 /* list entry */
@@ -9294,6 +9316,7 @@ struct arcana_probe_probes_target {
 	bool			 has_report;
 	uint32_t	 report;
 	const struct arcana_probe_probes_target_tca	*tca;
+	const char	*jail;
 };
 
 /* container */
@@ -9367,6 +9390,7 @@ struct arcana_probe_probes_state_target {
 		size_t		 n;
 		const struct arcana_probe_probes_state_target_sample	*v;
 	}			 sample;
+	const char	*jail;
 };
 
 /* container */
@@ -9411,6 +9435,7 @@ struct arcana_probe_probes_read_output_target {
 		size_t		 n;
 		const struct arcana_probe_probes_read_output_target_sample	*v;
 	}			 sample;
+	const char	*jail;
 };
 
 /* output */
@@ -9474,6 +9499,7 @@ struct arcana_sdwan_sdwan_rules {
 		size_t		 n;
 		const struct arcana_sdwan_sdwan_rules_rule	*v;
 	}			 rule;
+	const char	*jail;
 };
 
 /* list entry */
@@ -9499,6 +9525,7 @@ struct arcana_sdwan_sdwan_steer {
 		size_t		 n;
 		const struct arcana_sdwan_sdwan_steer_entry	*v;
 	}			 entry;
+	const char	*jail;
 };
 
 /* list entry */
@@ -9603,6 +9630,74 @@ struct arcana_sdwan_sdwan_state_steer {
 		size_t		 n;
 		const struct arcana_sdwan_sdwan_state_steer_candidate	*v;
 	}			 candidate;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_edge_rules_table {
+	const char	*name;
+	bool			 has_count;
+	uint32_t	 count;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_edge_rules_counter {
+	uint32_t	 rule;
+	bool			 has_packets;
+	uint64_t	 packets;
+	bool			 has_octets;
+	uint64_t	 octets;
+	const char	*text;
+};
+
+/* container */
+struct arcana_sdwan_sdwan_state_edge_rules {
+	bool			 has_set;
+	uint8_t		 set;
+	bool			 has_rules;
+	uint32_t	 rules;
+	bool			 has_objects;
+	uint32_t	 objects;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_edge_rules_table	*v;
+	}			 table;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_edge_rules_counter	*v;
+	}			 counter;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_edge_steer_candidate {
+	const char	*id;
+	bool			 has_via;
+	struct arcana_sdwan_sdwan_state_edge_steer_candidate_via	 via;
+	bool			 has_state;
+	enum arcana_sdwan_sdwan_state_edge_steer_candidate_state	 state;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_edge_steer {
+	const char	*table;
+	const char	*prefix;
+	bool			 has_chosen;
+	int32_t		 chosen;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_edge_steer_candidate	*v;
+	}			 candidate;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_edge {
+	const char	*jail;
+	const struct arcana_sdwan_sdwan_state_edge_rules	*rules;
+	bool			 has_steered;
+	bool		 steered;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_edge_steer	*v;
+	}			 steer;
 };
 
 /* list entry */
@@ -9784,6 +9879,10 @@ struct arcana_sdwan_sdwan_state {
 		size_t		 n;
 		const struct arcana_sdwan_sdwan_state_steer	*v;
 	}			 steer;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_edge	*v;
+	}			 edge;
 	struct {
 		size_t		 n;
 		const struct arcana_sdwan_sdwan_state_bird	*v;
@@ -12542,6 +12641,30 @@ int	arcana_sdwan_sdwan_state_steer_candidate_decode(const void *, size_t, struct
 int	arcana_sdwan_sdwan_state_steer_encode(const struct arcana_sdwan_sdwan_state_steer *,
 	    struct cbl_ybuf *);
 int	arcana_sdwan_sdwan_state_steer_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_steer *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_edge_rules_table_encode(const struct arcana_sdwan_sdwan_state_edge_rules_table *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_edge_rules_table_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_edge_rules_table *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_edge_rules_counter_encode(const struct arcana_sdwan_sdwan_state_edge_rules_counter *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_edge_rules_counter_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_edge_rules_counter *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_edge_rules_encode(const struct arcana_sdwan_sdwan_state_edge_rules *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_edge_rules_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_edge_rules *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_edge_steer_candidate_encode(const struct arcana_sdwan_sdwan_state_edge_steer_candidate *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_edge_steer_candidate_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_edge_steer_candidate *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_edge_steer_encode(const struct arcana_sdwan_sdwan_state_edge_steer *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_edge_steer_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_edge_steer *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_edge_encode(const struct arcana_sdwan_sdwan_state_edge *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_edge_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_edge *,
 	    cbl_yarena *, int, char *, size_t);
 int	arcana_sdwan_sdwan_state_bird_protocol_encode(const struct arcana_sdwan_sdwan_state_bird_protocol *,
 	    struct cbl_ybuf *);
