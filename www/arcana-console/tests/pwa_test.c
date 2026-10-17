@@ -729,6 +729,32 @@ part_shell(void)
 	    " && l.textContent.includes('write'))", 10);
 	shot("0b2-token-write");
 	/*
+	 * Signed in with that write token: the Sign-in keys tab says why it
+	 * shows no keys, and offers none to add; signed in with the key
+	 * again, they are there.
+	 */
+	run("sessionStorage.setItem('wtok', document.querySelector("
+	    "'pre.out.token').textContent.trim())");
+	run("document.querySelector('button[data-act=logout]').click()");
+	wait_js("document.querySelector('form[data-form=login-token]')", 10);
+	run("document.querySelector('details.login-token').open = true; "
+	    "const f = document.querySelector('form[data-form=login-token]'); "
+	    "f.token.value = sessionStorage.getItem('wtok'); "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('.shell')", 20);
+	go("/#/settings/keys");
+	wait_js("document.querySelector('.set-body .keys-token')?.textContent"
+	    ".includes('opened with an API token') && !document.querySelector("
+	    "'form[data-form=add-key]') && !document.querySelector("
+	    "'.set-body .notice.bad')", 20);
+	shot("0b3-keys-token");
+	run("document.querySelector('button[data-act=logout]').click()");
+	click_when("button[data-act=login]", 10);
+	wait_js("document.querySelector('.shell')", 20);
+	go("/#/settings/keys");
+	wait_js("document.querySelector('form[data-form=add-key] ul.keys li "
+	    ".name')", 20);
+	/*
 	 * The console's CA changed for another: made, rolled out (no host
 	 * over TLS here to give it to), finished; the new one alone is
 	 * trusted after.

@@ -1544,6 +1544,15 @@ set_keys(struct html *h)
 	const ucl_object_t	*k;
 	ucl_object_iter_t	 it;
 
+	/* The keys are not shown to a session an API token opened, nor
+	 * added from one: it says so, rather than show none. */
+	if (app.by_token) {
+		h_raw(h, "<p class=\"notice keys-token\">This session was opened "
+		    "with an API token, so the keys that sign in are neither "
+		    "listed nor added here. Sign out, and sign in with a "
+		    "security key or a passkey to see and manage them.</p>");
+		return;
+	}
 	h_raw(h, "<form data-form=\"add-key\" class=\"set-form\"><ul class=\""
 	    "keys\">");
 	it = NULL;
@@ -2076,8 +2085,9 @@ view_settings(struct html *h)
 	h_raw(h, "</nav><div class=\"set-body\">");
 	if (app.by_token)
 		h_raw(h, "<div class=\"notice warn\">Signed in with an API "
-		    "token: the console's settings, its keys, tokens and CA "
-		    "are changed by one signed in with a security key.</div>");
+		    "token: the console's settings, its sign-in keys, tokens "
+		    "and CA are shown and changed only to one signed in with "
+		    "a security key or a passkey.</div>");
 	if (app.modal_error[0] != '\0' && app.modal == MODAL_NONE) {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, app.modal_error);
