@@ -598,7 +598,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup, traceroute, neighbours, ipsec]
+            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup, traceroute, neighbours, ipsec, multicast]
           description: traceroute?to=ADDRESS is one round of traceroute(8)
             or traceroute6(8) from the host, a probe a hop, as
             {"address","family","hops":[{"ttl","address","rtt","note"} or
@@ -619,7 +619,12 @@ paths:
             between them (a prefix, an address, `protocol,name`,
             `export,name`, `table,name`, `all`), refused with their count
             when there are more than 2000; lookup is the route to the
-            address in `to`, with `best` and `candidates` under `data`.
+            address in `to`, with `best` and `candidates` under `data`;
+            multicast is ifmcstat(8) as {"interfaces":[{"name","igmp",
+            "mld","groups":[{"family","group","mode","lladdr",
+            "sources"}]}],"settings":[{"name","value"}]}, igmp and mld
+            each {"version","rv","qi","qri","uri"} and mld's "flags",
+            settings the kernel's net.inet.igmp.* and net.inet6.mld.*.
         - name: to
           in: query
           description: For lookup, an IPv4 or IPv6 address.

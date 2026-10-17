@@ -858,7 +858,7 @@
     SD-WAN tunnels by ipfw tcp-setmss, an interface's, or the agent's
     links?), labels on interfaces (a console-side tag, or the
     interface's description?), prefix lists (used by what: ipfw
-    tables, BIRD filters, SD-WAN zones?), IGMP and MLD (what to set).
+    tables, BIRD filters, SD-WAN zones?).
   - A certificates tab per host, by certctl and OpenSSL. (Done
     2026-10-12: trusted and untrusted, read with OpenSSL; a CA given,
     one distrusted and trusted again, kept where certctl rehash finds
@@ -885,7 +885,12 @@
     Network section's BGP, OSPF and BFD tabs: every session of the
     fleet, a graph and a table.  Against a real BIRD, in the verified
     list.)
-  - IGMP and MLD configured.
+  - IGMP and MLD configured.  (Done 2026-10-17, read as a host's own
+    IGMP and MLD: Network, Multicast shows ifmcstat(8)'s groups per
+    interface with their mode and sources, each interface's version
+    and timers, and sets net.inet.igmp.* and net.inet6.mld.* by sysctl
+    jobs, kept in sysctl.conf when asked; a vnet jail's its own.  A
+    querier or a multicast router (pimd, mrouted) is not done: ask.)
   - NDP and ARP entries added and deleted by hand, temporary or
     permanent. (Done 2026-10-12: the neighbour job, kept as rc.conf's
     static pairs; verified in a vnet jail with arp(8) and ndp(8).)

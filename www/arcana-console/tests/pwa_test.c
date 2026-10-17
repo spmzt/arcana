@@ -1493,6 +1493,43 @@ part_nettab(void)
 		usleep(100000);
 	ATF_CHECK(system("grep -qx 'arp -d 10.0.0.2' neigh.log") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/* IGMP and MLD: each interface's version, the groups joined with
+	 * their sources; a setting changed, a sysctl job kept at boot. */
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=multicast]').click()");
+	wait_js("[...document.querySelectorAll('table.mcast tbody tr')].some(r "
+	    "=> r.textContent.includes('232.1.1.1') && r.textContent.includes("
+	    "'include') && r.textContent.includes('10.9.9.9')) && document."
+	    "querySelector('table.mcast-ifs').textContent.includes('IGMPv3') "
+	    "&& document.querySelector('table.mcast-ifs').textContent."
+	    "includes('MLDv2')", 20);
+	shot("7o2-multicast");
+	/* inet6's groups alone, then all again. */
+	run("document.querySelector('button[data-act=net-family][data-arg=\"6\"]')"
+	    ".click()");
+	wait_js("(() => { const t = document.querySelector('table.mcast'); "
+	    "return t && t.textContent.includes('ff02::1') && !t.textContent."
+	    "includes('232.1.1.1'); })()", 20);
+	run("document.querySelector('button[data-act=net-family][data-arg=\"0\"]')"
+	    ".click()");
+	wait_js("(() => { const t = document.querySelector('table.mcast'); "
+	    "return t && t.textContent.includes('232.1.1.1'); })()", 20);
+	run("const f = document.querySelector('form[data-form=mcast-set]'); "
+	    "f.elements['net.inet.igmp.default_version'].value = '2'; f."
+	    "elements['net.inet.igmp.sendra'].checked = false; f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 100 && system("grep -q 'sysctl net.inet.igmp.sendra=0' "
+	    "kld.log && grep -q 'sysctl net.inet.igmp.default_version=2' "
+	    "kld.log") != 0; i++)
+		usleep(100000);
+	if (system("grep -q 'sysctl net.inet.igmp.sendra=0' kld.log && "
+	    "grep -q 'sysctl net.inet.igmp.default_version=2' kld.log && ! "
+	    "grep -q 'net.inet6.mld.v1enable=' kld.log && grep -q "
+	    "'net.inet.igmp.sendra=0' sysctl.conf") != 0) {
+		(void)system("grep -h igmp kld.log sysctl.conf >&2");
+		ATF_CHECK_MSG(false, "the IGMP settings were not set and kept");
+	}
+	run("document.querySelector('.dock > header').click()");
 	/* CARP: an address shared under a vhid, its key never on a line. */
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=carp]').click()");

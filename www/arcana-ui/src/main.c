@@ -785,6 +785,8 @@ submit_form(const char *form, const ucl_object_t *f)
 		else
 			dispatch("pkg-upgrade-all", "", "");
 		free(names);
+	} else if (strcmp(form, "mcast-set") == 0) {
+		(void)mcast_form(f);
 	} else if (strcmp(form, "add-key") == 0) {
 		add_key(jstr(f, "name") != NULL ? jstr(f, "name") : "");
 	} else if (strcmp(form, "address") == 0) {
@@ -1268,7 +1270,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "bird") == 0 ? NET_BIRD :
 		    strcmp(arg, "ipsec") == 0 ? NET_IPSEC :
 		    strcmp(arg, "span") == 0 ? NET_SPAN :
-		    strcmp(arg, "carp") == 0 ? NET_CARP : NET_ROUTES;
+		    strcmp(arg, "carp") == 0 ? NET_CARP :
+		    strcmp(arg, "multicast") == 0 ? NET_MULTICAST : NET_ROUTES;
 		if (app.net.kind == NET_INTERFACES)
 			topo_poll(s);
 		app.net.loading = false;

@@ -5256,6 +5256,42 @@ carp_cleanup()
 	stop_daemon
 }
 
+atf_test_case multicast cleanup
+multicast_head()
+{
+	atf_set "descr" "IGMP's and MLD's state as ifmcstat(8) prints it:" \
+	    "each interface's version and timers, the groups joined with" \
+	    "their mode, link-level address and sources; and the kernel's" \
+	    "settings by sysctl(8)"
+}
+multicast_body()
+{
+	# ifmcstat(8) as FreeBSD prints it (tabs, a source under a group).
+	printf '#!/bin/sh\nprintf "%s"\n' 'vtnet0:\n\tinet 192.0.2.5\n\tigmpv3 rv 2 qi 125 qri 100 uri 3\n\t\tgroup 224.0.0.1 mode exclude\n\t\t\tmcast-macaddr 01:00:5e:00:00:01\n\t\tgroup 232.1.1.1 mode include\n\t\t\tsource 192.0.2.9\n\t\t\tmcast-macaddr 01:00:5e:01:01:01\n\tinet6 fe80::1%%vtnet0 scopeid 0x1\n\tmldv2 flags=2<USEALLOW> rv 2 qi 125 qri 10000 uri 3\n\t\tgroup ff02::1%%vtnet0 scopeid 0x1 mode exclude\n\t\t\tmcast-macaddr 33:33:00:00:00:01\nlo0:\n\tinet 127.0.0.1\n\tigmpv2 rv 2 qi 125 qri 10 uri 3\n\t\tgroup 224.0.0.1 mode exclude\n' > fake-ifmcstat
+	chmod +x fake-ifmcstat
+	DAEMON_ARGS="--ifmcstat $(pwd)/fake-ifmcstat"
+	start_daemon
+	atf_check -o save:m.json "$JGC" -c "$SOCK" net multicast
+	atf_check -o match:'"name":"vtnet0","groups":\[\{"family":"inet","group":"224.0.0.1","mode":"exclude","sources":\[\],"lladdr":"01:00:5e:00:00:01"\},\{"family":"inet","group":"232.1.1.1","mode":"include","sources":\["192.0.2.9"\],"lladdr":"01:00:5e:01:01:01"\},\{"family":"inet6","group":"ff02::1","mode":"exclude"' \
+	    -o match:'"igmp":\{"version":3,"rv":2,"qi":125,"qri":100,"uri":3\}' \
+	    -o match:'"mld":\{"version":2,"flags":"USEALLOW","rv":2,"qi":125,"qri":10000,"uri":3\}' \
+	    -o match:'"name":"lo0",.*"igmp":\{"version":2,' \
+	    -o match:'"settings":\[\{"name":"net.inet.igmp.default_version","value":"[123]"\}' \
+	    cat m.json
+	# And the host's own, as its ifmcstat says it.
+	stop_daemon
+	if [ -x /usr/sbin/ifmcstat ]; then
+		DAEMON_ARGS=""
+		start_daemon
+		atf_check -o match:'"interfaces":\[\{"name":"[a-z]+[0-9]*",' \
+		    -o match:'"group":"224.0.0.1"' "$JGC" -c "$SOCK" net multicast
+	fi
+}
+multicast_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case neighbours cleanup
 neighbours_head()
 {
@@ -8154,6 +8190,7 @@ atf_init_test_cases()
 	atf_add_test_case jail_conf
 	atf_add_test_case carp
 	atf_add_test_case neighbours
+	atf_add_test_case multicast
 	atf_add_test_case certs
 	atf_add_test_case sshd
 	atf_add_test_case capture

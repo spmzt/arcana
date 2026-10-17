@@ -639,6 +639,11 @@ sdwan_jail_edge_body()
 	atf_check -o match:'"kind":"sdwan-tunnel","data":\{"id":"jlo","address":"127.0.0.1","state":"up","misses":0,"jail":"arcw_sdj"\}' \
 	    "$JGC" -c "$SOCK" events
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '{"jail":"arcw_sdj","targets":[]}'
+	# Its network's multicast state, its own: lo0 alone, in 224.0.0.1.
+	atf_check -o match:'"interfaces":\[\{"name":"lo0",.*"group":"224.0.0.1"' \
+	    -o not-match:'"name":"(vtnet|em|igb|ix)[0-9]' \
+	    -o match:'"settings":\[\{"name":"net.inet.igmp.default_version"' \
+	    "$JGC" -c "$SOCK" -j arcw_sdj net multicast
 }
 sdwan_jail_edge_cleanup()
 {

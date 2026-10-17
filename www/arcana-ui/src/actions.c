@@ -2134,7 +2134,7 @@ refresh_network(struct server *s, bool user)
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
 	    "bridges", "geneve", "nhgroups", "neighbours", "ipsec",
-	    "bridges", "interfaces" };
+	    "bridges", "interfaces", "multicast" };
 	struct ctx	*c;
 	struct op	*op;
 	char		 url[640], title[160], fib[24], c0jail[270];

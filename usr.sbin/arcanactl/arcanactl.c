@@ -1840,7 +1840,7 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
 	    "bird-routes", "bridges", "geneve", "ipfw", "nhgroups",
-	    "neighbours", "ipsec" };
+	    "neighbours", "ipsec", "multicast" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;

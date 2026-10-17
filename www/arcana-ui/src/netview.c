@@ -21,6 +21,7 @@ struct column {
 	const char	*path2;		/* appended after ':', or NULL */
 };
 
+static void	view_multicast(struct html *, const ucl_object_t *);
 static const struct column routes_cols[] = {
 	{ "Destination", "destination", NULL },
 	{ "Gateway", "gateway", NULL },
@@ -641,6 +642,7 @@ view_network(struct html *h, struct server *s)
 		{ "bridges", "Bridges" }, { "geneve", "Geneve" },
 		{ "nhgroups", "Nexthop groups" }, { "neighbours", "Neighbours" },
 		{ "ipsec", "IPsec" }, { "span", "Span" }, { "carp", "CARP" },
+		{ "multicast", "Multicast" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
@@ -862,6 +864,9 @@ view_network(struct html *h, struct server *s)
 	case NET_NEIGHBOURS:
 		shown = neigh_table(h, jget(app.net.data, "data.neighbours"));
 		break;
+	case NET_MULTICAST:
+		view_multicast(h, jget(app.net.data, "data"));
+		return;
 	default:
 		shown = table(h, jget(app.net.data, "data.sockstat.socket"),
 		    sock_cols, 7, NULL);
@@ -869,6 +874,236 @@ view_network(struct html *h, struct server *s)
 	}
 	if (shown == 0)
 		h_raw(h, "<div class=\"empty\"><p>Nothing to show.</p></div>");
+}
+
+/* A setting of the kernel's IGMP or MLD, as the read says it. */
+static const char *
+mcast_setting(const ucl_object_t *d, const char *name)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+
+	while ((e = ucl_object_iterate(jget(d, "settings"), &it, true)) !=
+	    NULL)
+		if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"), name) == 0)
+			return (jstr(e, "value"));
+	return (NULL);
+}
+
+/*
+ * An interface's IGMP or MLD as the kernel keeps it, "IGMPv3 · rv 2 ·
+ * qi 125 · qri 10 · uri 3": not turned into seconds, for qri is in
+ * seconds until a router queries, then that query's Max Response Code.
+ */
+static void
+mcast_proto(struct html *h, const ucl_object_t *p, const char *what)
+{
+
+	if (p == NULL) {
+		h_raw(h, "—");
+		return;
+	}
+	h_fmt(h, "<span title=\"Robustness variable; query interval (s); query "
+	    "response interval: seconds, or after a router's query its Max "
+	    "Response Code (%s); unsolicited report interval (s)\">%sv%lld "
+	    "<span class=\"dim\">· rv %lld · qi %lld · qri %lld · uri %lld%s%s"
+	    "</span></span>", strcmp(what, "IGMP") == 0 ? "tenths of a second" :
+	    "milliseconds", what, (long long)jint(p, "version", 0),
+	    (long long)jint(p, "rv", 0), (long long)jint(p, "qi", 0),
+	    (long long)jint(p, "qri", 0), (long long)jint(p, "uri", 0),
+	    jstr(p, "flags") != NULL ? " · " : "", jstr(p, "flags") != NULL ?
+	    jstr(p, "flags") : "");
+}
+
+/*
+ * IGMP and MLD, the Multicast view: the kernel's settings (a form, a
+ * sysctl job each, kept at boot when asked); each interface's version
+ * and timers; the groups joined, sorted and filtered.
+ */
+static void
+view_multicast(struct html *h, const ucl_object_t *d)
+{
+	static const struct tcol	cols[] = {
+		{ "Interface", "if", false }, { "Family", "family", false },
+		{ "Group", "group", false }, { "Mode", "mode", false },
+		{ "Sources", "src", false }, { "Link address", "lladdr", false },
+	};
+	static const struct {
+		const char	*name, *label, *title;
+	} toggles[] = {
+		{ "net.inet.igmp.v1enable", "IGMPv1 heard", "Reports and "
+		    "queries of IGMP version 1 are taken" },
+		{ "net.inet.igmp.v2enable", "IGMPv2 heard", "Reports and "
+		    "queries of IGMP version 2 are taken" },
+		{ "net.inet.igmp.legacysupp", "Old routers' way", "An interface "
+		    "falls back to the version an older router queries in" },
+		{ "net.inet.igmp.sendlocal", "Local groups reported", "Groups "
+		    "of 224.0.0.0/24 are reported too" },
+		{ "net.inet.igmp.sendra", "Router Alert", "Reports carry the "
+		    "IP Router Alert option" },
+		{ "net.inet6.mld.v1enable", "MLDv1 heard", "Reports and queries "
+		    "of MLD version 1 are taken" },
+		{ "net.inet6.mld.v2enable", "MLDv2 heard", "Reports and queries "
+		    "of MLD version 2 are taken" },
+		{ "net.inet6.mld.use_allow", "MLDv2 ALLOW records", "Joins are "
+		    "reported as ALLOW records, not changes of mode" },
+	};
+	const ucl_object_t	*ifo, *g, *src, **rows, *r;
+	ucl_object_iter_t	 it, git, sit;
+	ucl_object_t		*arr, *o;
+	const char		*v;
+	char			 sources[400];
+	size_t			 i;
+	int			 k;
+
+	/* The kernel's settings, the jail's own in a vnet jail. */
+	v = mcast_setting(d, "net.inet.igmp.default_version");
+	h_raw(h, "<form data-form=\"mcast-set\" class=\"mcast-set\"><div "
+	    "class=\"toolbar\"><label title=\"The IGMP version an interface "
+	    "starts with (net.inet.igmp.default_version)\">IGMP version "
+	    "<select name=\"net.inet.igmp.default_version\">");
+	for (k = 1; k <= 3; k++)
+		h_fmt(h, "<option value=\"%d\"%s>%d</option>", k, v != NULL &&
+		    atoi(v) == k ? " selected" : "", k);
+	h_raw(h, "</select></label>");
+	for (i = 0; i < nitems(toggles); i++) {
+		v = mcast_setting(d, toggles[i].name);
+		if (v == NULL)
+			continue;
+		h_raw(h, "<label class=\"toggle\"");
+		h_attr(h, "title", toggles[i].title);
+		h_raw(h, "><input type=\"checkbox\"");
+		h_attr(h, "name", toggles[i].name);
+		h_fmt(h, "%s><span>", atoi(v) != 0 ? " checked" : "");
+		h_txt(h, toggles[i].label);
+		h_raw(h, "</span></label>");
+	}
+	h_raw(h, "<label class=\"toggle\" title=\"Written in sysctl.conf too, "
+	    "for the next boot\"><input type=\"checkbox\" name=\"keep\" "
+	    "checked><span>Kept at boot</span></label><button class=\"small\">"
+	    "Set</button></div></form>");
+	/* Each interface's version and timers. */
+	h_raw(h, "<table class=\"net mcast-ifs\"><thead><tr><th>Interface</th>"
+	    "<th>IGMP</th><th>MLD</th><th>Groups</th></tr></thead><tbody>");
+	it = NULL;
+	while ((ifo = ucl_object_iterate(jget(d, "interfaces"), &it, true)) !=
+	    NULL) {
+		h_raw(h, "<tr><td><b>");
+		h_txt(h, jstr(ifo, "name"));
+		h_raw(h, "</b></td><td>");
+		mcast_proto(h, jget(ifo, "igmp"), "IGMP");
+		h_raw(h, "</td><td>");
+		mcast_proto(h, jget(ifo, "mld"), "MLD");
+		h_fmt(h, "</td><td>%u</td></tr>", ucl_array_size(jget(ifo,
+		    "groups")));
+	}
+	h_raw(h, "</tbody></table>");
+	/* The groups joined, a row each. */
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((ifo = ucl_object_iterate(jget(d, "interfaces"), &it, true)) !=
+	    NULL) {
+		git = NULL;
+		while ((g = ucl_object_iterate(jget(ifo, "groups"), &git,
+		    true)) != NULL) {
+			/* inet or inet6 alone, as the family picked says. */
+			if (app.net.family != 0 && jstr(g, "family") != NULL &&
+			    strcmp(jstr(g, "family"), app.net.family == 4 ?
+			    "inet" : "inet6") != 0)
+				continue;
+			o = ucl_object_copy(g);
+			ucl_object_insert_key(o, ucl_object_fromstring(jstr(ifo,
+			    "name")), "if", 0, true);
+			sources[0] = '\0';
+			sit = NULL;
+			while ((src = ucl_object_iterate(jget(g, "sources"), &sit,
+			    true)) != NULL)
+				snprintf(sources + strlen(sources), sizeof(sources) -
+				    strlen(sources), "%s%s", sources[0] != '\0' ?
+				    ", " : "", ucl_object_tostring_forced(src));
+			ucl_object_insert_key(o, ucl_object_fromstring(sources),
+			    "src", 0, true);
+			ucl_array_append(arr, o);
+		}
+	}
+	h_raw(h, "<table class=\"net mcast\">");
+	tbl_head(h, "net-mcast", cols, 6, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("net-mcast", arr, cols, 6, app.filter);
+	for (k = 0; (r = rows[k]) != NULL; k++) {
+		h_raw(h, "<tr><td>");
+		h_txt(h, jstr(r, "if"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(r, "family"));
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(r, "group"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(r, "mode"));
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(r, "src")[0] != '\0' ? jstr(r, "src") : "any");
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(r, "lladdr") != NULL ? jstr(r, "lladdr") : "—");
+		h_raw(h, "</td></tr>");
+	}
+	if (k == 0)
+		h_raw(h, "<tr class=\"empty-row\"><td colspan=\"6\">No group "
+		    "is joined.</td></tr>");
+	free(rows);
+	h_raw(h, "</tbody></table>");
+	ucl_object_unref(arr);
+}
+
+/*
+ * The Multicast view's settings set: a sysctl job each that differs
+ * from what the host said, in the network shown.
+ */
+bool
+mcast_form(const ucl_object_t *f)
+{
+	static const char *const names[] = {
+		"net.inet.igmp.default_version", "net.inet.igmp.v1enable",
+		"net.inet.igmp.v2enable", "net.inet.igmp.legacysupp",
+		"net.inet.igmp.sendlocal", "net.inet.igmp.sendra",
+		"net.inet6.mld.v1enable", "net.inet6.mld.v2enable",
+		"net.inet6.mld.use_allow",
+	};
+	struct server	*s;
+	const ucl_object_t *d = jget(app.net.data, "data");
+	const ucl_object_t *fv;
+	const char	*was;
+	char		 want[8], *json, title[200];
+	size_t		 i;
+	int		 n = 0;
+	bool		 keep = jbool(f, "keep");
+
+	if ((s = cur_server()) == NULL || d == NULL)
+		return (true);
+	for (i = 0; i < nitems(names); i++) {
+		if ((was = mcast_setting(d, names[i])) == NULL)
+			continue;
+		/* The fields by their own names: dots are no path here. */
+		fv = ucl_object_lookup(f, names[i]);
+		if (i == 0)
+			snprintf(want, sizeof(want), "%s", fv != NULL &&
+			    ucl_object_type(fv) == UCL_STRING ?
+			    ucl_object_tostring(fv) : was);
+		else
+			snprintf(want, sizeof(want), "%d", fv != NULL &&
+			    ucl_object_toboolean(fv) ? 1 : 0);
+		if (strcmp(want, was) == 0)
+			continue;
+		if (asprintf(&json, "{\"kind\":\"sysctl\",\"args\":[\"%s\","
+		    "\"%s\"],\"persist\":%s}", names[i], want, keep ? "true" :
+		    "false") == -1)
+			abort();
+		snprintf(title, sizeof(title), "sysctl %s=%s", names[i], want);
+		/* Taken over by job_send(); in a jail's network, the jail's. */
+		job_send(s, json, title, JOB_IFACE, "multicast");
+		n++;
+	}
+	if (n == 0)
+		toast(false, "Nothing to change: the host has these already");
+	return (true);
 }
 
 /*

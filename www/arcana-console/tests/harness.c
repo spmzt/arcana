@@ -208,7 +208,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[114];
+	char	*argv[116];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -873,7 +873,20 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* sysctl(8), to set one, and the file that keeps them. */
 	put("fake-sysctl", "#!/bin/sh\necho \"sysctl $*\" >> kld.log\n"
 	    "[ \"$1\" = kern.nosuch=1 ] && { echo \"sysctl: unknown oid "
-	    "'kern.nosuch'\" >&2; exit 1; }\nexit 0\n");
+	    "'kern.nosuch'\" >&2; exit 1; }\n"
+	    /* IGMP's and MLD's, as -e asks them: name=value. */
+	    "[ \"$1\" = -e ] && { shift; for n; do case $n in "
+	    "*default_version) echo \"$n=3\" ;; *legacysupp) echo \"$n=0\" ;; "
+	    "net.inet*) echo \"$n=1\" ;; esac; done; }\nexit 0\n");
+	/* ifmcstat(8): an interface in two groups, one with a source. */
+	put("fake-ifmcstat", "#!/bin/sh\nprintf 'em0:\\n\\tinet 10.0.0.1"
+	    "\\n\\tigmpv3 rv 2 qi 125 qri 100 uri 3\\n\\t\\tgroup 224.0.0.1 "
+	    "mode exclude\\n\\t\\t\\tmcast-macaddr 01:00:5e:00:00:01\\n\\t\\t"
+	    "group 232.1.1.1 mode include\\n\\t\\t\\tsource 10.9.9.9\\n"
+	    "\\tinet6 fe80::1%%em0 scopeid 0x1\\n\\tmldv2 flags=2<USEALLOW> rv 2 "
+	    "qi 125 qri 10000 uri 3\\n\\t\\tgroup ff02::1%%em0 scopeid 0x1 mode "
+	    "exclude\\n'\n");
+	ATF_REQUIRE(chmod("fake-ifmcstat", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-sysctl", 0755) == 0);
 	put("sysctl.conf", "# kept\nkern.ipc.somaxconn=1024\n");
 	/* What syslogd(8) wrote, in both of its forms. */
@@ -1134,7 +1147,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[109] = (char *)(uintptr_t)"./fake-poudriere";
 	argv[110] = (char *)(uintptr_t)"--poudriere-etc";
 	argv[111] = pdetc;
-	argv[112] = NULL;
+	argv[112] = (char *)(uintptr_t)"--ifmcstat";
+	argv[113] = (char *)(uintptr_t)"./fake-ifmcstat";
+	argv[114] = NULL;
 	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
 	(void)mkdir(rootdir, 0755);

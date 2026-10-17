@@ -110,6 +110,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_NHGROUPS] = "nhgroups",
 	[ARC_NET_KIND_NEIGHBOURS] = "neighbours",
 	[ARC_NET_KIND_IPSEC] = "ipsec",
+	[ARC_NET_KIND_MULTICAST] = "multicast",
 };
 
 static const char *service_action_names[] = {
