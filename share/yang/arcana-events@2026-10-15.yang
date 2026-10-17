@@ -590,6 +590,13 @@ module arcana-events {
           description
             "It dumped core.";
         }
+        leaf reason {
+          type string;
+          description
+            "Why there is no core, in the kernel's words (sugid process
+             denied by kern.sugid_coredump, bad address); absent when
+             there is one, or the kernel gave none.";
+        }
       }
     }
   }

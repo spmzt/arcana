@@ -309,6 +309,23 @@ Each is cleared when it is well again, and is an
 .Ql sdwan-fault
 event too.
 Default 15; 0 reads them never.
+A program the kernel saw die of a signal that dumps core
+.Pq Va kern.logsigexit
+is a fault whatever the value,
+.Ql crash ,
+Major, of
+.Ql host:bird
+or
+.Ql jail:web/nginx :
+the signal by name, how many times in 24 hours, and why there is no
+core when there is none
+.Po a daemon that set its group, as
+.Nm bird Fl g
+does, dumps none while
+.Va kern.sugid_coredump
+is 0
+.Pc ;
+said anew at each crash, cleared after an hour without one.
 .It Fl I Ar ifconfig , Fl n Ar ngctl , Fl k Ar wg , Fl b Ar birdc
 The
 .Xr ifconfig 8 ,
