@@ -4473,6 +4473,60 @@ part_firewall(void)
 	ATF_CHECK(system("! grep -q 192.0.2.7 root/etc/hosts") == 0);
 
 	/*
+	 * Kept as a template: the host's files without secrets, its name
+	 * {{hostname}}; opened on the Devices page's Templates, a default
+	 * given and saved; applied to the host with another name, checked
+	 * first: rc.conf's hostname the value given.
+	 */
+	run("const i = document.querySelector('input[data-input=hc-tname]'); "
+	    "i.value = 'lab-edge'; i.dispatchEvent(new Event('input', { "
+	    "bubbles: true }));");
+	click_when("button[data-act=hc-template]:not([disabled])", 10);
+	wait_js("location.hash === '#/devices/templates' && document."
+	    "querySelector('section.template h3')?.textContent === 'lab-edge' "
+	    "&& [...document.querySelectorAll('table.tpvars code')].some(c => "
+	    "c.textContent === '{{hostname}}') && [...document.querySelectorAll("
+	    "'details.tpfile textarea')].some(t => t.value.includes("
+	    "'hostname=\"{{hostname}}\"'))", 20);
+	ATF_CHECK(system("grep -q '\"lab-edge\"' data/templates.json && ! "
+	    "grep -q 'PrivateKey' data/templates.json") == 0);
+	run("const i = document.querySelector('input[data-input=tp-desc]'); "
+	    "i.value = 'the lab, as an edge'; i.dispatchEvent(new Event('input',"
+	    " { bubbles: true }));");
+	click_when("button[data-act=tp-save]:not([disabled])", 5);
+	wait_js("[...document.querySelectorAll('.toast')].some(t => t."
+	    "textContent.includes('Template lab-edge kept'))", 10);
+	ATF_CHECK(system("grep -q 'the lab, as an edge' data/templates.json")
+	    == 0);
+	shot("1g-template");
+	/* Applied to the host, as lab2: checked, nothing written. */
+	run("const s = document.querySelector('select[data-input=tp-target]');"
+	    " s.value = s.options[1].value; s.dispatchEvent(new Event('input', "
+	    "{ bubbles: true })); const v = document.querySelector('input["
+	    "data-input=tp-val][data-arg=hostname]'); v.value = 'lab2'; v."
+	    "dispatchEvent(new Event('input', { bubbles: true }));");
+	click_when("button[data-act=tp-check]:not([disabled])", 10);
+	wait_js("document.querySelector('section.template .hcreport')?."
+	    "textContent.includes('what it would do') && [...document."
+	    "querySelectorAll('section.template pre.diff')].some(p => p."
+	    "textContent.includes('+hostname=\"lab2\"'))", 20);
+	ATF_CHECK(system("grep -q 'hostname=\"lab\"' root/etc/rc.conf") == 0);
+	/* The list, and the template forgotten. */
+	click_when("button[data-act=tp-close]", 5);
+	wait_js("[...document.querySelectorAll('table.templates tbody tr')]."
+	    "some(r => r.textContent.includes('lab-edge') && r.textContent."
+	    "includes('the lab, as an edge') && r.textContent.includes("
+	    "'hostname'))", 10);
+	run("document.querySelector('table.templates tbody tr').click()");
+	click_when("button[data-act=tp-delete]", 10);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit();");
+	wait_js("document.querySelector('section.hostbar') && document."
+	    "querySelector('.empty h2')?.textContent === 'No template yet'", 10);
+	host_open(NULL);
+	click_when("button.tab[data-arg=summary]", 10);
+
+	/*
 	 * Connections are read again by themselves while they are shown,
 	 * until paused.
 	 */

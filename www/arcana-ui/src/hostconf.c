@@ -39,6 +39,7 @@ static struct {
 	char		 rsid[9];
 	bool		 rdry;
 	char		 error[512];
+	char		 tname[65];	/* Save as a template: its name */
 } hc;
 
 static void
@@ -97,6 +98,106 @@ export_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	    "in it: keep it as one keeps a key" : "");
 }
 
+/* Is c of a host's name (letters, digits, - _), as one written beside
+ * it would make it another word? */
+static bool
+name_char(char c)
+{
+
+	return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0'
+	    && c <= '9') || c == '-' || c == '_');
+}
+
+/*
+ * The host's bundle, without secrets, kept as a template: its secret
+ * files left out (a host's keys are its own), its hostname everywhere
+ * {{hostname}}, which each host it is applied to gives.
+ */
+static void
+template_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	const ucl_object_t	*b, *f;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*t, *files, *nf, *vars, *v;
+	struct server		*s;
+	const char		*text, *p, *q;
+	char			 hn[256];
+	char			*name = arg;
+
+	hc.busy = false;
+	if (status != 200 || !jbool(o, "ok") || (b = jget(o, "data")) ==
+	    NULL) {
+		snprintf(hc.error, sizeof(hc.error), "No template made: %s",
+		    why(status, o, err));
+		free(name);
+		return;
+	}
+	/* Its hostname, as rc.conf says it. */
+	hn[0] = '\0';
+	it = NULL;
+	while ((f = ucl_object_iterate(jget(b, "files"), &it, true)) != NULL)
+		if (jstr(f, "path") != NULL && strcmp(jstr(f, "path"),
+		    "/etc/rc.conf") == 0 && (text = jstr(f, "text")) != NULL &&
+		    (p = strstr(text, "hostname=\"")) != NULL &&
+		    (p == text || p[-1] == '\n') && (q = strchr(p + 10, '"')) !=
+		    NULL && q - (p + 10) < (long)sizeof(hn))
+			snprintf(hn, sizeof(hn), "%.*s", (int)(q - (p + 10)),
+			    p + 10);
+	t = ucl_object_typed_new(UCL_OBJECT);
+	s = server_of(hc.sid);
+	ucl_object_insert_key(t, ucl_object_fromstring(s != NULL ? s->name :
+	    "a host"), "from", 0, true);
+	files = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((f = ucl_object_iterate(jget(b, "files"), &it, true)) != NULL) {
+		struct html	 out;
+
+		if (jbool(f, "secret") || (text = jstr(f, "text")) == NULL)
+			continue;
+		nf = ucl_object_copy(f);
+		/* The hostname, wherever it is written as a name of its own
+		 * (not inside a longer word: lab in label), a value. */
+		memset(&out, 0, sizeof(out));
+		p = text;
+		for (q = text; hn[0] != '\0' && (q = strstr(q, hn)) != NULL; ) {
+			const char	*e = q + strlen(hn);
+
+			if ((q > text && name_char(q[-1])) || name_char(*e)) {
+				q = e;
+				continue;
+			}
+			h_fmt(&out, "%.*s{{hostname}}", (int)(q - p), p);
+			p = q = e;
+		}
+		h_raw(&out, p);
+		ucl_object_replace_key(nf, ucl_object_fromstring(out.s != NULL ?
+		    out.s : ""), "text", 0, true);
+		free(out.s);
+		ucl_array_append(files, nf);
+	}
+	ucl_object_insert_key(t, files, "files", 0, true);
+	if (jget(b, "packages") != NULL)
+		ucl_object_insert_key(t, ucl_object_copy(jget(b, "packages")),
+		    "packages", 0, true);
+	if (jget(b, "facts") != NULL)
+		ucl_object_insert_key(t, ucl_object_copy(jget(b, "facts")),
+		    "facts", 0, true);
+	if (hn[0] != '\0') {
+		vars = ucl_object_typed_new(UCL_OBJECT);
+		v = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(v, ucl_object_fromstring("the host's "
+		    "name"), "description", 0, true);
+		ucl_object_insert_key(vars, v, "hostname", 0, true);
+		ucl_object_insert_key(t, vars, "variables", 0, true);
+	}
+	/* Opened there once kept (template_put's). */
+	template_put(name, t);
+	ucl_object_unref(t);
+	app.node = NODE_DEVICES;
+	app.devtab = 1;
+	free(name);
+}
+
 static void
 apply_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -151,12 +252,19 @@ send(bool dry)
 	free(json);
 }
 
-static void
-report(struct html *h)
+/*
+ * What a host would do with a bundle, or did (config-apply's report):
+ * the hardware it lacks, each file changed or new with its diff, the
+ * packages it lacks; Apply after a check.  pfx names the actions
+ * (<pfx>-apply, <pfx>-pkgs, input <pfx>-anyway): the host's box's, or
+ * a template's.
+ */
+void
+config_report(struct html *h, const ucl_object_t *r, const char *host,
+    bool dry, bool busy, bool anyway, const char *pfx)
 {
-	const ucl_object_t	*r = hc.report, *e;
+	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
-	struct server		*t = server_of(hc.rsid);
 	const char		*st;
 	int			 nch = 0;
 	bool			 done = jbool(r, "applied");
@@ -164,8 +272,8 @@ report(struct html *h)
 	if (r == NULL)
 		return;
 	h_raw(h, "<div class=\"hcreport\"><h4>");
-	h_txt(h, t != NULL ? t->name : "the host");
-	h_raw(h, done ? ": done" : hc.rdry ? ": what it would do" :
+	h_txt(h, host != NULL ? host : "the host");
+	h_raw(h, done ? ": done" : dry ? ": what it would do" :
 	    ": nothing done");
 	h_raw(h, "</h4>");
 	if (ucl_array_size(jget(r, "mismatches")) > 0) {
@@ -225,19 +333,46 @@ report(struct html *h)
 			h_txt(h, jstr(e, "name"));
 			h_raw(h, "</code>");
 		}
-		h_raw(h, ". Arcana installs none by itself.</p>"
-		    "<button class=\"ghost small\" data-act=\"hc-pkgs\">Install "
-		    "them</button>");
+		h_fmt(h, ". Arcana installs none by itself.</p>"
+		    "<button class=\"ghost small\" data-act=\"%s-pkgs\">Install "
+		    "them</button>", pfx);
 	}
-	if (hc.rdry && !done)
-		h_fmt(h, "<div class=\"actions\">%s<button class=\"primary\" "
-		    "data-act=\"hc-apply\"%s>Apply</button></div>",
-		    ucl_array_size(jget(r, "mismatches")) > 0 ? "<label "
-		    "class=\"toggle\"><input type=\"checkbox\" data-input=\""
-		    "hc-anyway\"> Though the hardware differs</label>" : "",
-		    hc.busy || (ucl_array_size(jget(r, "mismatches")) > 0 &&
-		    !hc.anyway) ? " disabled" : "");
+	if (dry && !done) {
+		h_raw(h, "<div class=\"actions\">");
+		if (ucl_array_size(jget(r, "mismatches")) > 0)
+			h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox"
+			    "\" data-input=\"%s-anyway\"> Though the hardware "
+			    "differs</label>", pfx);
+		h_fmt(h, "<button class=\"primary\" data-act=\"%s-apply\"%s>"
+		    "Apply</button></div>", pfx, busy || (ucl_array_size(jget(r,
+		    "mismatches")) > 0 && !anyway) ? " disabled" : "");
+	}
 	h_raw(h, "</div>");
+}
+
+/* The packages a report says the host lacks, installed: a job. */
+void
+config_pkgs(struct server *t, const ucl_object_t *r, const char *why)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it = NULL;
+	char			*json, *q, *list, title[300];
+	size_t			 len = 0;
+
+	list = calloc(1, 65536);
+	while ((e = ucl_object_iterate(jget(r, "packages"), &it, true)) !=
+	    NULL && len < 65000) {
+		q = json_quote(jstr(e, "name"));
+		len += (size_t)snprintf(list + len, 65536 - len, "%s%s", len > 0 ?
+		    "," : "", q);
+		free(q);
+	}
+	if (asprintf(&json, "{\"kind\":\"pkg-install\",\"packages\":[%s]}",
+	    list) == -1)
+		abort();
+	free(list);
+	snprintf(title, sizeof(title), "pkg install on %s: %s", t->name, why);
+	job_send(t, json, title, JOB_PACKAGES, "");
 }
 
 void
@@ -273,6 +408,16 @@ view_hostconf(struct html *h, struct server *s)
 	    "(WireGuard's and strongSwan's keys)</label></div>", hc.busy ?
 	    " disabled" : "", hc.busy ? " disabled" : "", hc.secrets ?
 	    " checked" : "");
+	/* Kept by the console as a template, for other hosts. */
+	h_raw(h, "<div class=\"toolbar\"><label title=\"Its files without "
+	    "secrets, its hostname {{hostname}}: the Devices page's Templates "
+	    "apply it to other hosts\">Save as a template named <input "
+	    "data-input=\"hc-tname\" maxlength=\"64\" placeholder=\""
+	    "edge-router\"");
+	h_attr(h, "value", hc.tname);
+	h_fmt(h, "></label><button class=\"ghost small\" data-act=\""
+	    "hc-template\"%s>Save</button></div>", hc.busy || hc.tname[0] ==
+	    '\0' ? " disabled" : "");
 	/* Another host made this one. */
 	h_raw(h, "<div class=\"toolbar\"><label>Make <select data-input=\""
 	    "hc-target\"><option value=\"\">another host…</option>");
@@ -311,7 +456,10 @@ view_hostconf(struct html *h, struct server *s)
 	h_raw(h, "</div>");
 	if (hc.busy)
 		h_raw(h, "<div class=\"loader\"></div>");
-	report(h);
+	if (hc.report != NULL)
+		config_report(h, hc.report, server_of(hc.rsid) != NULL ?
+		    server_of(hc.rsid)->name : NULL, hc.rdry, hc.busy, hc.anyway,
+		    "hc");
 	h_raw(h, "</section>");
 }
 
@@ -331,7 +479,21 @@ hostconf_action(const char *act, const char *arg, const char *value)
 		hc.secrets = strcmp(value, "true") == 0;
 	else if (strcmp(act, "input:hc-anyway") == 0)
 		hc.anyway = strcmp(value, "true") == 0;
-	else if (strcmp(act, "input:hc-hostname") == 0)
+	else if (strcmp(act, "input:hc-tname") == 0)
+		snprintf(hc.tname, sizeof(hc.tname), "%s", value);
+	else if (strcmp(act, "hc-template") == 0 && hc.tname[0] != '\0') {
+		if (strspn(hc.tname, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"
+		    "OPQRSTUVWXYZ0123456789._-") != strlen(hc.tname) ||
+		    hc.tname[0] == '.' || hc.tname[0] == '-') {
+			snprintf(hc.error, sizeof(hc.error), "A template is "
+			    "named with letters, digits, . _ and -");
+			return (true);
+		}
+		snprintf(url, sizeof(url), "/api/servers/%s/config/export",
+		    s->id);
+		hc.busy = true;
+		api("POST", url, "{}", template_cb, strdup(hc.tname));
+	} else if (strcmp(act, "input:hc-hostname") == 0)
 		snprintf(hc.hostname, sizeof(hc.hostname), "%s", value);
 	else if (strcmp(act, "input:hc-target") == 0) {
 		snprintf(hc.target, sizeof(hc.target), "%s", value);
@@ -371,27 +533,7 @@ hostconf_action(const char *act, const char *arg, const char *value)
 		hc.anyway = false;
 		send(true);
 	} else if (strcmp(act, "hc-pkgs") == 0 && hc.report != NULL &&
-	    (t = server_of(hc.rsid)) != NULL) {
-		const ucl_object_t	*e;
-		ucl_object_iter_t	 it = NULL;
-		char			*json, *q, *list;
-		size_t			 len = 0;
-
-		list = calloc(1, 65536);
-		while ((e = ucl_object_iterate(jget(hc.report, "packages"),
-		    &it, true)) != NULL && len < 65000) {
-			q = json_quote(jstr(e, "name"));
-			len += (size_t)snprintf(list + len, 65536 - len, "%s%s",
-			    len > 0 ? "," : "", q);
-			free(q);
-		}
-		if (asprintf(&json, "{\"kind\":\"pkg-install\",\"packages\":"
-		    "[%s]}", list) == -1)
-			abort();
-		free(list);
-		snprintf(why2, sizeof(why2), "pkg install on %s: the bundle's "
-		    "packages", t->name);
-		job_send(t, json, why2, JOB_PACKAGES, "");
-	}
+	    (t = server_of(hc.rsid)) != NULL)
+		config_pkgs(t, hc.report, "the bundle's packages");
 	return (true);
 }

@@ -1498,7 +1498,10 @@ paths:
       tags: [servers]
       summary: Make the host what a bundle says
       description: With bundle, a host's bundle, or from, another host's
-        id, whose bundle the console reads there with its secrets; and
+        id, whose bundle the console reads there with its secrets, or
+        template, a template's name, and values, the value of each of
+        its {{placeholders}} (one without a value or a default refuses
+        the whole); and
         dry_run, anyway (though the hardware differs), hostname (another
         name in rc.conf). Under data, mismatches (the hardware not the
         bundle's: nothing is done unless anyway), files (each path and
@@ -1513,6 +1516,51 @@ paths:
         "200":
           description: ok and data, or error
         "400": { $ref: "#/components/responses/Error" }
+  /api/templates:
+    get:
+      tags: [settings]
+      summary: The configuration templates
+      description: Under templates, each its name, description, files
+        and packages (how many), placeholders (the {{name}}s its files
+        have), from (the host it was made from) and updated. A template
+        is a host's bundle without secrets whose text has {{name}}
+        where each host has a value of its own; it is applied by
+        POST /api/servers/{server}/config with template and values.
+      responses:
+        "200":
+          description: templates
+  /api/templates/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: { type: string, pattern: "^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$" }
+    get:
+      tags: [settings]
+      summary: A template, its files' text and placeholders
+      responses:
+        "200":
+          description: the template, with its name and placeholders
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [settings]
+      summary: Keep a template
+      description: description, files (each path, absolute and without
+        .., mode, owner, group and text; no secret), packages (each its
+        name, as config-export's), facts (the hardware it needs, as
+        config-export's) and variables (each placeholder's description
+        and default). 200 templates at most.
+      responses:
+        "200":
+          description: ok
+        "400": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [settings]
+      summary: Forget a template
+      responses:
+        "200":
+          description: ok
+        "404": { $ref: "#/components/responses/Error" }
   /api/servers/{server}/config/export:
     post:
       tags: [servers]

@@ -3943,7 +3943,7 @@ api_config_apply(struct http_request *req)
 	struct call		*c;
 	ucl_object_t		*body;
 	const ucl_object_t	*b;
-	const char		*fid, *hn;
+	const char		*fid, *hn, *tn;
 	unsigned char		*text;
 
 	if (req->method == HTTP_METHOD_GET)
@@ -3964,7 +3964,22 @@ api_config_apply(struct http_request *req)
 		snprintf(c->hostname, sizeof(c->hostname), "%s", hn);
 	fid = ucl_str(body, "from");
 	b = ucl_object_lookup(body, "bundle");
-	if (fid != NULL && (from = server_find(fid)) != NULL) {
+	/* A template, made this host's by its values: as a bundle. */
+	if ((tn = ucl_str(body, "template")) != NULL) {
+		char	why[300], *json;
+
+		if (!template_name_ok(tn) || (json = template_render(tn,
+		    ucl_object_lookup(body, "values"), why, sizeof(why))) ==
+		    NULL) {
+			ucl_object_unref(body);
+			call_release(c);
+			kore_free(c);
+			return (reply_error(req, 400, "invalid", "%s",
+			    template_name_ok(tn) ? why : "a template's name"));
+		}
+		c->text = kore_strdup(json);
+		free(json);
+	} else if (fid != NULL && (from = server_find(fid)) != NULL) {
 		c->from_uri = kore_strdup(from->uri);
 		c->from_peer = from->peer_name != NULL ?
 		    kore_strdup(from->peer_name) : NULL;

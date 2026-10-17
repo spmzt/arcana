@@ -589,6 +589,18 @@ view_devices(struct html *h)
 	h_raw(h, "<button class=\"ghost small\" data-act=\"enrol\">Enrol a "
 	    "host</button><button class=\"ghost small\" data-act=\""
 	    "add-server\">Add a server</button></div></section>");
+	/* The hosts, or the templates they may be made from. */
+	h_fmt(h, "<nav class=\"tabs\"><button class=\"tab%s\" data-act=\""
+	    "dev-tab\" data-arg=\"0\">Hosts</button><button class=\"tab%s\" "
+	    "data-act=\"dev-tab\" data-arg=\"1\" title=\"A host's setup kept "
+	    "by name, for other hosts to be made the same\">Templates</button>"
+	    "</nav>", app.devtab == 0 ? " on" : "", app.devtab == 1 ? " on" :
+	    "");
+	if (app.devtab == 1) {
+		view_templates(h);
+		ucl_object_unref(arr);
+		return;
+	}
 	h_raw(h, "<div class=\"toolbar\"><input class=\"filter\" id=\"filter\" "
 	    "data-input=\"filter\" placeholder=\"Filter hosts\" "
 	    "autocomplete=\"off\" spellcheck=\"false\"");
