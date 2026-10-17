@@ -4362,10 +4362,14 @@ sw_routes(const ucl_object_t *sw)
 
 /* BIRD's channel of a family, with what comes in and goes out. */
 static void
-bird_channel(struct kore_buf *b, const char *fam, const char *export)
+bird_channel(struct kore_buf *b, const char *fam, int64_t pref,
+    const char *export)
 {
 
-	kore_buf_appendf(b, "\t%s {\n\t\timport all;\n\t\texport %s;\n\t};\n", fam, export);
+	/* BIRD 3 has a route's preference in the channel, not the
+	 * protocol. */
+	kore_buf_appendf(b, "\t%s {\n\t\tpreference %jd;\n\t\timport all;\n"
+	    "\t\texport %s;\n\t};\n", fam, (intmax_t)pref, export);
 }
 
 /*
@@ -4530,7 +4534,8 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    "\tbfd on;\n" : "");
 	/* TCP MD5 on the sessions (Mplify 119 R11, R12). */
 	if (str(sw, "md5") != NULL)
-		kore_buf_appendf(b, "\tpassword \"%s\";\n", str(sw, "md5"));
+		kore_buf_appendf(b, "\tauthentication md5;\n\tpassword \"%s\";\n",
+		    str(sw, "md5"));
 	kore_buf_appendf(b, "\tipv4 {\n\t\timport all;\n\t\texport filter "
 	    "to_edges;\n\t\tnext hop self;\n\t};\n\tipv6 {\n\t\timport all;\n\t\t"
 	    "export filter to_edges;\n\t\tnext hop self;\n\t};\n}\n\n");
@@ -4648,26 +4653,25 @@ bird_routing(struct kore_buf *b, const ucl_object_t *u, const char *what,
 				}
 				kore_buf_appendf(b, "# %s %s, the neighbour's %s\nprotocol "
 				    "bgp %s_%s_%d {\n\tlocal as %jd;\n\tneighbor "
-				    "%s as %jd;\n\tinterface \"%s\";\n"
-				    "\tpreference %jd;\n", what, id,
+				    "%s as %jd;\n\tinterface \"%s\";\n", what, id,
 				    ucl_object_tostring_forced(m),
 				    pfx, sym, n++, (intmax_t)as,
 				    ucl_object_tostring_forced(m), (intmax_t)
 				    ucl_object_toint(ucl_object_lookup(r, "as")),
-				    ifn, (intmax_t)(256 - dist));
+				    ifn);
 				if (str(r, "password") != NULL)
-					kore_buf_appendf(b, "\tpassword \"%s\";\n", str(r,
-					    "password"));
+					kore_buf_appendf(b, "\tauthentication md5;\n"
+					    "\tpassword \"%s\";\n", str(r, "password"));
 				if (ucl_object_lookup(r, "hold_time") != NULL)
 					kore_buf_appendf(b, "\thold time %jd;\n", (intmax_t)
 					    ucl_object_toint(ucl_object_lookup(r,
 					    "hold_time")));
 				if (strcmp(fam, "ipv6") != 0 && family(
 				    ucl_object_tostring_forced(m)) == AF_INET)
-					bird_channel(b, "ipv4", exp);
+					bird_channel(b, "ipv4", 256 - dist, exp);
 				if (strcmp(fam, "ipv4") != 0 && family(
 				    ucl_object_tostring_forced(m)) == AF_INET6)
-					bird_channel(b, "ipv6", exp);
+					bird_channel(b, "ipv6", 256 - dist, exp);
 				kore_buf_appendf(b, "}\n\n");
 			}
 		}
@@ -4685,11 +4689,10 @@ bird_routing(struct kore_buf *b, const ucl_object_t *u, const char *what,
 				    1 && strcmp(fam, "ipv4") == 0))
 					continue;
 				kore_buf_appendf(b, "# %s %s, OSPF%s with the neighbour\n"
-				    "protocol ospf %s %s_%s_%s {\n\tpreference "
-				    "%jd;\n", what, id, vi == 0 ? "v2" : "v3",
-				    vers[vi], pfx, sym, vers[vi],
-				    (intmax_t)(256 - dist));
-				bird_channel(b, vi == 0 ? "ipv4" : "ipv6", "all");
+				    "protocol ospf %s %s_%s_%s {\n", what, id, vi ==
+				    0 ? "v2" : "v3", vers[vi], pfx, sym, vers[vi]);
+				bird_channel(b, vi == 0 ? "ipv4" : "ipv6", 256 - dist,
+				    "all");
 				kore_buf_appendf(b, "\tarea %jd {\n\t\tinterface \"%s\" {\n",
 				    (intmax_t)(ucl_object_lookup(r, "area") != NULL
 				    ? ucl_object_toint(ucl_object_lookup(r, "area"))

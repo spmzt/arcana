@@ -2261,7 +2261,7 @@ bird_form(const char *form, const ucl_object_t *f)
 			    "keep 172800;\n}\n", pn, r4, r6, host, port);
 		}
 		if (block_find("function", "rpki_invalid") < 0)
-			h_fmt(&b, "\nfunction rpki_invalid() {\n\treturn "
+			h_fmt(&b, "\nfunction rpki_invalid() -> bool {\n\treturn "
 			    "(net.type = NET_IP4 && roa_check(%s, net, "
 			    "bgp_path.last) = ROA_INVALID) ||\n\t    (net.type "
 			    "= NET_IP6 && roa_check(%s, net, bgp_path.last) = "
