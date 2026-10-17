@@ -2638,11 +2638,11 @@ part_plugins(void)
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=bird-rpki]')", 5);
 	run("const f = document.querySelector('form[data-form=bird-rpki]'); "
-	    "f.host.value = 'rtr.example.org'; f.requestSubmit();");
+	    "f.host.value = '192.0.2.81'; f.requestSubmit();");
 	wait_js("!document.querySelector('.modal') && [...document."
 	    "querySelectorAll('.conf-grid ul.blocks li b')].some(b => "
 	    "b.textContent === 'rpki_invalid')", 20);
-	ATF_CHECK(system("grep -q 'remote \"rtr.example.org\" port 3323;' "
+	ATF_CHECK(system("grep -q 'remote \"192.0.2.81\" port 3323;' "
 	    "bird/bird.conf && grep -q '^roa6 table r6;$' bird/bird.conf && "
 	    "test \"$(grep -c '^roa4 table r4;$' bird/bird.conf)\" = 1 && "
 	    "grep -q 'protocol rpki rpki2' bird/bird.conf && grep -q "
@@ -2722,13 +2722,13 @@ part_plugins(void)
 	run("const f = document.querySelector('form[data-form=bird-pform]'); "
 	    "f.elements.name.value = 'core2'; f.tmpl.value = 'ibgp_t'; "
 	    "f.nbr.value = '2001:db8::7'; f.ch0.checked = false; "
-	    "f.efa.value = 'on'; f.requestSubmit();");
+	    "f.efa.value = 'off'; f.requestSubmit();");
 	wait_js("!document.querySelector('.modal') && [...document."
 	    "querySelectorAll('table.bird-bgp tbody tr')].some(r => r."
 	    "textContent.includes('ibgp_t · '))", 20);
 	ATF_CHECK(system("grep -q '^protocol bgp core2 from ibgp_t {$' "
 	    "bird/bird.conf && grep -q '^\tneighbor 2001:db8::7;$' bird/bird.conf "
-	    "&& grep -q '^\tenforce first as on;$' bird/bird.conf && ! grep -A4 "
+	    "&& grep -q '^\tenforce first as off;$' bird/bird.conf && ! grep -A4 "
 	    "'^protocol bgp core2' bird/bird.conf | grep -q 'local as'") == 0);
 	shot("7g-bird-bgp-tab");
 	/* One there already, read into the form and changed. */
@@ -2822,7 +2822,12 @@ part_plugins(void)
 	    "'table.broutes tbody tr.best')", 20);
 	ATF_CHECK(system("grep -q '^-r show route protocol bgp_edge$' birdc.log")
 	    == 0);
-
+	/* Where the host has BIRD, what the forms wrote was BIRD's own
+	 * parser's to take (bird -p), and it took it. */
+	ATF_CHECK_MSG(system("test ! -x /usr/local/sbin/bird || test \"$(wc -l "
+	    "< bird-real.log)\" -gt 5") == 0, "BIRD's parser was not asked");
+	ATF_CHECK(system("test ! -x /usr/local/sbin/bird || "
+	    "/usr/local/sbin/bird -p -c bird/bird.conf") == 0);
 }
 
 /*

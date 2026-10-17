@@ -773,8 +773,8 @@
     How it is reached › Move to another address).  Multi-homing done
     the same day: --sctp-also and the transport operation's sctp-also
     (sctp_bindx), the listeners' addresses and each association's
-    paths in the transport read and on the page.  Not tried yet
-    between two hosts with several addresses each.
+    paths in the transport read and on the page.  Between two network
+    stacks with two addresses each, in the verified list.
 - Alert management (asked 2026-10-16): who is told of what, and how.
   Alerts from the events the console already reads (faults, BIRD's
   sessions among them, limits crossed, jobs, workflow runs), each rule
@@ -878,8 +878,8 @@
     each kind made and changed by a form, read back from the text only
     when the form shows all of it, else changed as text.  And the
     Network section's BGP, OSPF and BFD tabs: every session of the
-    fleet, a graph and a table.  Tested with the birdc stand-in only;
-    not yet against a real BIRD.)
+    fleet, a graph and a table.  Against a real BIRD, in the verified
+    list.)
   - IGMP and MLD configured.
   - NDP and ARP entries added and deleted by hand, temporary or
     permanent. (Done 2026-10-12: the neighbour job, kept as rc.conf's
@@ -1047,6 +1047,27 @@ Written and tested with stand-ins, never run for real:
 
 What was once in the list above, and when it was run:
 
+- BIRD's forms against the real BIRD (2026-10-17): every
+  configuration the console's BIRD forms and SD-WAN write is taken or
+  refused by BIRD 3.3.2's own parser (bird -p) in the tests where the
+  host has BIRD; it found that SD-WAN put a route's preference on the
+  protocol, which BIRD 3 has on the channel only, a BGP password without
+  its authentication, the RPKI function without its return type, and a
+  session from a template that names no peer type refused as it should
+  be.  And live (the root test bird_live): two vnet jails, BIRD in each,
+  eBGP over an epair as the BGP form writes a session; Established, a
+  route of each learned by the other, and the agent read the session's
+  state and the routes through the real birdc.
+- SCTP multi-homed between two network stacks (2026-10-17, the root
+  test sctp_multihome): the agent in one vnet jail bound to two
+  addresses (--sctp-also), arcanactl in another with two of its own,
+  an epair for each pair; the association had a path to each of the
+  client's addresses, both active.  One epair end taken down: the
+  client took its address out of the association (ASCONF, FreeBSD's
+  auto_asconf), the other path became primary, and events kept coming
+  on the same association; back up, the address was added again and
+  its path active.  SCTP's timers shortened in each jail's own stack
+  (net.inet.sctp is per vnet) to find a failure in a second.
 - SCTP between two network stacks (2026-10-13): the agent in one vnet
   jail and arcanactl in another (both rooted at /, nothing installed
   in either), an epair between them; over sctp://, mutual TLS, the

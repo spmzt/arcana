@@ -3419,7 +3419,8 @@ ATF_TC_BODY(services, tc)
 	ATF_REQUIRE(jstr(&r, "sha256") != NULL && jstr(&r, "text") != NULL);
 	ATF_CHECK(strstr(jstr(&r, "text"), "filter bgp_in") != NULL);
 	ATF_CHECK(strstr(jstr(&r, "files.0"), "/bird/bird.conf") != NULL);
-	snprintf(body, sizeof(body), "{\"text\":\"router id 192.0.2.9;\\n\","
+	snprintf(body, sizeof(body), "{\"text\":\"router id 192.0.2.9;\\n"
+	    "protocol device {\\n}\\n\","
 	    "\"sha256\":\"%s\"}", jstr(&r, "sha256"));
 	resp_free(&r);
 	(void)old;
@@ -3460,7 +3461,8 @@ ATF_TC_BODY(services, tc)
 	 * the reply says by when, and a confirmation makes it stay.
 	 */
 	http("GET", path, NULL, &r);
-	snprintf(body, sizeof(body), "{\"text\":\"router id 192.0.2.10;\\n\","
+	snprintf(body, sizeof(body), "{\"text\":\"router id 192.0.2.10;\\n"
+	    "protocol device {\\n}\\n\","
 	    "\"safe\":true,\"sha256\":\"%s\"}", jstr(&r, "sha256"));
 	resp_free(&r);
 	http("POST", path, body, &r);
@@ -5950,7 +5952,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\\\"gif102\\\", \\\"gre104\\\" {\\n\\t\\tinterval 200 ms;\\n\\t\\tmultiplier "
 	    "3;\\n\\t};\\n}") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "hold time 30;\\n\\terror wait time 10, 60;\\n\\tbfd "
-	    "on;\\n\\tpassword \\\"edges-secret\\\";\\n") != NULL);
+	    "on;\\n\\tauthentication md5;\\n\\tpassword \\\"edges-secret\\\";\\n")
+	    != NULL);
 	/* NTP at a, with the FIBs, by the ntp job; taken away by it too. */
 	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"ntp\",\"phase\":1,\"title\":\"NTP: "
 	    "ntpd by 2 servers, for the time faults and keys go by\",\"make\":[{"
@@ -5958,8 +5961,9 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"persist\":true}]") != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "protocol bgp uni_hq_0 {\\n\\tlocal as "
 	    "64600;\\n\\tneighbor 10.1.0.2 as 65010;\\n\\tinterface \\\"lo0\\\";"
-	    "\\n\\tpreference 106;\\n\\tpassword \\\"s3cret\\\";\\n\\thold time "
-	    "90;\\n\\tipv4 {\\n\\t\\timport all;\\n\\t\\texport filter {\\n\\t\\t"
+	    "\\n\\tauthentication md5;\\n\\tpassword \\\"s3cret\\\";\\n\\thold time "
+	    "90;\\n\\tipv4 {\\n\\t\\tpreference 106;\\n\\t\\timport all;\\n\\t\\t"
+	    "export filter {\\n\\t\\t"
 	    "\\tbgp_community.add((64600, 100));\\n\\t\\t\\taccept;\\n\\t\\t};"
 	    "\\n\\t};\\n}") != NULL, "%s", r.body);
 	/* b has no routing at its UNI, but the service's instance all the

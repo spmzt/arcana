@@ -653,9 +653,17 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("fake-setkey", "#!/bin/sh\necho \"setkey $*\" >> setkey.log\n[ \"$1\" "
 	    "= -f ] && cat \"$2\" >> setkey.conf\nexit 0\n");
 	ATF_REQUIRE(chmod("fake-setkey", 0755) == 0);
+	/*
+	 * bird(8)'s check of a configuration (-p): where the host has
+	 * BIRD, its own parser says, so that what the forms write is
+	 * BIRD's language for real; each so checked is logged.
+	 */
 	put("fake-bird", "#!/bin/sh\necho \"fake-bird $*\" >&2\n"
 	    "grep -q BROKEN \"$3\" && { echo \"bird: $3:2:1 syntax error\" >&2; "
-	    "exit 1; }\nexit 0\n");
+	    "exit 1; }\n"
+	    "if [ \"$1\" = -p ] && [ -x /usr/local/sbin/bird ]; then\n"
+	    "\t/usr/local/sbin/bird -p -c \"$3\" || exit 1\n"
+	    "\techo \"$3\" >> bird-real.log\nfi\nexit 0\n");
 	ATF_REQUIRE(chmod("fake-bird", 0755) == 0);
 	/*
 	 * Storage: zfs(8) and zpool(8) with a pool of their own to list,
@@ -892,7 +900,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "roa4 table r4;\n\nfilter bgp_in {\n\tif bgp_community ~ CUSTOMERS "
 	    "then accept;\n\treject;\n}\n\nfilter bgp_out {\n\taccept;\n}\n\n"
 	    "protocol device device1 {\n}\n\ntemplate bgp ibgp_t {\n\tlocal as "
-	    "MY_AS;\n\tipv6 {\n\t\timport all;\n\t\texport all;\n\t};\n}\n\n"
+	    "MY_AS;\n\tneighbor internal;\n\tipv6 {\n\t\timport all;\n\t\texport all;\n\t};\n}\n\n"
 	    "protocol bgp bgp_core {\n"
 	    "\tdescription \"Core uplink\";\n\t# the old uplink: 192.0.2.9\n"
 	    "\tlocal as MY_AS;\n\tneighbor "
@@ -900,7 +908,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\t\texport filter bgp_out;\n\t};\n}\n\nprotocol bgp bgp_edge {\n"
 	    "\tlocal as MY_AS;\n\tneighbor 198.51.100.7 as 65002;\n}\n\n"
 	    "protocol rpki rpki1 {\n\troa4 { table r4; };\n\tremote "
-	    "\"rpki.example.net\" port 3323;\n}\n");
+	    "192.0.2.80 port 3323;\n}\n");
 	snprintf(birdconf, sizeof(birdconf), "%s/bird/bird.conf", cwd);
 	/*
 	 * swanctl(8): strongSwan running, its connections those written in
