@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.140.1"
+#define	ARCANA_AGENT_VERSION	"0.141.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -54,6 +54,7 @@
 #define	PATH_CICAP_BIN		"/usr/local/bin/c-icap"
 #define	PATH_SURICATA_BIN	"/usr/local/bin/suricata"
 #define	PATH_POUDRIERE_BIN	"/usr/local/bin/poudriere"
+#define	PATH_IFMCSTAT_BIN	"/usr/sbin/ifmcstat"
 #define	PATH_POUDRIERE_ETC	"/usr/local/etc"
 #define	PATH_CICAP_MODULES	"/usr/local/lib/c_icap"
 #define	PATH_CLAMAV_DB		"/var/db/clamav"
@@ -122,6 +123,7 @@ struct opts {
 	const char	*cicap_bin;	/* c-icap: malware scanning, a plugin */
 	const char	*suricata_bin;	/* suricata: intrusion detection, a plugin */
 	const char	*poudriere_bin;	/* poudriere(8): the package builder, a plugin */
+	const char	*ifmcstat_bin;	/* ifmcstat(8): IGMP's and MLD's state */
 	const char	*poudriere_etc;	/* where poudriere.conf and poudriere.d are */
 	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;

@@ -154,9 +154,10 @@ scope_argv(struct work *w, char *const argv[])
 	} else if (argv[0] == opts.birdc_bin || argv[0] == opts.bird_bin ||
 	    argv[0] == opts.wg_bin || argv[0] == wg_base_bin ||
 	    argv[0] == opts.ipfw_bin ||
-	    argv[0] == opts.swanctl_bin || argv[0] == opts.sysctl_bin) {
-		/* The jail's own: ipfw(8) and sysctl(8) have no way to name
-		 * a jail, and what they set is its vnet's. */
+	    argv[0] == opts.swanctl_bin || argv[0] == opts.sysctl_bin ||
+	    argv[0] == opts.ifmcstat_bin) {
+		/* The jail's own: ipfw(8), sysctl(8) and ifmcstat(8) have no
+		 * way to name a jail, and what they tell is its vnet's. */
 		v[k++] = (char *)(uintptr_t)opts.jexec_bin;
 		v[k++] = wfmt(w, "%d", w->jid);
 		i = 0;

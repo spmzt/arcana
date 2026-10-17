@@ -503,6 +503,16 @@ definitions:
           and traffic selectors; and "sas", the security associations,
           IKE and their children, with state, algorithms and counters.
           Never a private key.
+      - name: multicast
+        doc: |
+          IGMP's and MLD's state, from ifmcstat(8): a JSON object with
+          "interfaces", each with its name, "igmp" and "mld" (the version
+          the interface speaks, its robustness, query and query response
+          intervals, unsolicited report interval, and MLD's flags) and
+          "groups", the groups joined there, each with its family,
+          address, filter mode, link-level address and sources; and
+          "settings", the kernel's (net.inet.igmp.* and net.inet6.mld.*,
+          name and value), which a job of kind sysctl sets.
   - name: storage-kind
     type: enum
     entries:

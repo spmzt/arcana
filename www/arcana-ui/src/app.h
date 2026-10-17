@@ -217,6 +217,7 @@ enum netkind {
 	NET_IPSEC,
 	NET_SPAN,		/* bridges' span ports, taps, capture */
 	NET_CARP,		/* carp(4)'s vhids, from the interfaces */
+	NET_MULTICAST,		/* IGMP's and MLD's state, ifmcstat(8) */
 };
 /* A plugin's view: a tab of its own on a host that has it. */
 #define	NET_PLUGIN(k)	((k) == NET_WIREGUARD || (k) == NET_BIRD ||	\
@@ -670,6 +671,7 @@ void		 templates_load(void);
 void		 templates_open(const char *);
 void		 template_put(const char *, const ucl_object_t *);
 bool		 hostconf_action(const char *, const char *, const char *);
+bool		 mcast_form(const ucl_object_t *);
 void		 view_jobs(struct html *, struct server *);
 
 /* topo.c: the fleet's network as a map, traffic, routes, netgraph. */
