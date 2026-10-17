@@ -8,6 +8,7 @@ module: arcana-packages
      |  +--ro comment?     string
      |  +--ro size?        uint64
      |  +--ro origin?      string
+     +--ro repository*   string
      +---x refresh
      |  +---w input
      |     +---w ip-version?   ip-version
@@ -17,6 +18,7 @@ module: arcana-packages
         |  +---w dry-run?            boolean
         |  +---w ignore-osversion?   boolean
         |  +---w ip-version?         ip-version
+        |  +---w repository?         string
         +--ro output
            +--ro upgraded?   uint32
            +--ro package* [name]

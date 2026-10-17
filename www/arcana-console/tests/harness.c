@@ -208,7 +208,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[114];
+	char	*argv[122];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -292,6 +292,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(chmod("fake-helper", 0755) == 0);
 	ATF_REQUIRE(mkdir("jroot", 0755) == 0 || errno == EEXIST);
 	ATF_REQUIRE(mkdir("jroot/etc", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("jroot/var", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("jroot/var/run", 0755) == 0 || errno == EEXIST);
 	put("jroot/etc/rc.conf", "hostname=\"gw\"\n");
 	put("fake-jail", "#!/bin/sh\nfor a; do [ \"$a\" = -e ] && "
 	    "exec /usr/sbin/jail \"$@\"; done\necho \"fake-jail: $*\"\n");
@@ -375,6 +377,12 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "1600010\\n- running kernel: 1600004\\nTo ignore this error set "
 	    "IGNORE_OSVERSION=yes\\n' >&2; exit 1; }\n"
 	    "case \"$1\" in\n"
+	    /* Its repositories, as pkg -vv says them. */
+	    "-vv) printf 'Repositories:\\n  FreeBSD-ports: { \\n    url : "
+	    "\\\"pkg+https://pkg.FreeBSD.org/latest\\\",\\n    enabled : yes,"
+	    "\\n  }\\n  builder: { \\n    url : \\\"file:///usr/local/"
+	    "poudriere/data/packages/lab\\\",\\n    enabled : no,\\n  }"
+	    "\\n' ;;\n"
 	    "update) exit 0 ;;\n"
 	    "query) printf 'aria2\\t1.37.0_1\\t0\\t5242880\\twww/aria2\\t"
 	    "Download utility\\npimd\\t3.1.0\\t1\\t102400\\tnet/pimd\\t"
@@ -382,7 +390,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "version) [ -s pending ] || exit 1; while read nv r; do "
 	    "printf '%s < needs updating (remote has %s)\\n' \"$nv\" \"$r\"; "
 	    "done < pending ;;\n"
-	    "upgrade) shift; d=no; [ \"$1\" = -n ] && d=yes; shift; "
+	    "upgrade) shift; [ \"$1\" = -r ] && shift 2; d=no; "
+	    "[ \"$1\" = -n ] && d=yes; shift; "
 	    "while read nv r; do n=${nv%-*}; if [ $# -eq 0 ] || echo \" $* \" | "
 	    "grep -q \" $n \"; then echo \"Upgrading $n to $r\"; [ $d = yes ] || "
 	    "{ grep -v \"^$nv \" pending > p.new; mv p.new pending; }; fi; "
@@ -644,9 +653,17 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("fake-setkey", "#!/bin/sh\necho \"setkey $*\" >> setkey.log\n[ \"$1\" "
 	    "= -f ] && cat \"$2\" >> setkey.conf\nexit 0\n");
 	ATF_REQUIRE(chmod("fake-setkey", 0755) == 0);
+	/*
+	 * bird(8)'s check of a configuration (-p): where the host has
+	 * BIRD, its own parser says, so that what the forms write is
+	 * BIRD's language for real; each so checked is logged.
+	 */
 	put("fake-bird", "#!/bin/sh\necho \"fake-bird $*\" >&2\n"
 	    "grep -q BROKEN \"$3\" && { echo \"bird: $3:2:1 syntax error\" >&2; "
-	    "exit 1; }\nexit 0\n");
+	    "exit 1; }\n"
+	    "if [ \"$1\" = -p ] && [ -x /usr/local/sbin/bird ]; then\n"
+	    "\t/usr/local/sbin/bird -p -c \"$3\" || exit 1\n"
+	    "\techo \"$3\" >> bird-real.log\nfi\nexit 0\n");
 	ATF_REQUIRE(chmod("fake-bird", 0755) == 0);
 	/*
 	 * Storage: zfs(8) and zpool(8) with a pool of their own to list,
@@ -717,6 +734,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	snprintf(fstab, sizeof(fstab), "%s/fstab", cwd);
 	/* What the daemon has no option for: how the disks are, newfs. */
 	ATF_REQUIRE(mkdir("tools", 0755) == 0 || errno == EEXIST);
+	/* The system's own, for what Snort's rules come in. */
+	put("tools/tar", "#!/bin/sh\nexec /usr/bin/tar \"$@\"\n");
+	put("tools/rm", "#!/bin/sh\nexec /bin/rm \"$@\"\n");
 	put("tools/nvmecontrol", "#!/bin/sh\nprintf 'Critical Warning State: "
 	    "0x00\\nTemperature: 312 K\\nAvailable spare: 100\\nPercentage "
 	    "used: 3\\nPower cycles: 120\\nPower on hours: 4567\\nUnsafe "
@@ -856,7 +876,44 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* sysctl(8), to set one, and the file that keeps them. */
 	put("fake-sysctl", "#!/bin/sh\necho \"sysctl $*\" >> kld.log\n"
 	    "[ \"$1\" = kern.nosuch=1 ] && { echo \"sysctl: unknown oid "
-	    "'kern.nosuch'\" >&2; exit 1; }\nexit 0\n");
+	    "'kern.nosuch'\" >&2; exit 1; }\n"
+	    /* IGMP's and MLD's, as -e asks them: name=value. */
+	    "[ \"$1\" = -e ] && { shift; for n; do case $n in "
+	    "*default_version) echo \"$n=3\" ;; *legacysupp) echo \"$n=0\" ;; "
+	    "net.inet*) echo \"$n=1\" ;; esac; done; }\nexit 0\n");
+	/* ifmcstat(8): an interface in two groups, one with a source. */
+	put("fake-ifmcstat", "#!/bin/sh\nprintf 'em0:\\n\\tinet 10.0.0.1"
+	    "\\n\\tigmpv3 rv 2 qi 125 qri 100 uri 3\\n\\t\\tgroup 224.0.0.1 "
+	    "mode exclude\\n\\t\\t\\tmcast-macaddr 01:00:5e:00:00:01\\n\\t\\t"
+	    "group 232.1.1.1 mode include\\n\\t\\t\\tsource 10.9.9.9\\n"
+	    "\\tinet6 fe80::1%%em0 scopeid 0x1\\n\\tmldv2 flags=2<USEALLOW> rv 2 "
+	    "qi 125 qri 10000 uri 3\\n\\t\\tgroup ff02::1%%em0 scopeid 0x1 mode "
+	    "exclude\\n'\n");
+	ATF_REQUIRE(chmod("fake-ifmcstat", 0755) == 0);
+	/* Snort: its version, and whatever -T is given taken; its
+	 * snort.lua, an alert, and rules to fetch by file://. */
+	put("fake-snort", "#!/bin/sh\necho \"snort $*\" >> snort.log\n"
+	    "[ \"$1\" = -V ] && { echo '  o\"  )~   Version 3.12.2.0'; "
+	    "exit 0; }\necho 'Snort successfully validated the "
+	    "configuration (with 0 warnings).'\n");
+	ATF_REQUIRE(chmod("fake-snort", 0755) == 0);
+	ATF_REQUIRE(mkdir("snort-etc", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("snort-log", 0755) == 0 || errno == EEXIST);
+	put("snort-etc/snort.lua", "HOME_NET = 'any'\nEXTERNAL_NET = 'any'\n"
+	    "include 'snort_defaults.lua'\n");
+	put("snort-log/alert_json.txt", "{ \"timestamp\" : \"10/17-12:00:01."
+	    "000000\", \"proto\" : \"ICMP\", \"src_addr\" : \"192.0.2.1\", "
+	    "\"dst_addr\" : \"198.51.100.7\", \"gid\" : 1, \"sid\" : 1000001, "
+	    "\"rev\" : 2, \"msg\" : \"lab probe seen\", \"action\" : "
+	    "\"allow\", \"class\" : \"Misc activity\", \"priority\" : 3 }\n");
+	ATF_REQUIRE(mkdir("snort-src", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("snort-src/lab", 0755) == 0 || errno == EEXIST);
+	put("snort-src/lab/lab.rules", "alert tcp any any -> any 23 ( msg:"
+	    "\"PROTOCOL-TELNET lab login\"; classtype:attempted-user; "
+	    "sid:105; rev:3; )\n# alert icmp any any -> any any ( msg:"
+	    "\"PROTOCOL-ICMP lab echo\"; itype:8; sid:106; rev:1; )\n");
+	ATF_REQUIRE(system("tar -czf snort-rules.tar.gz -C snort-src lab") ==
+	    0);
 	ATF_REQUIRE(chmod("fake-sysctl", 0755) == 0);
 	put("sysctl.conf", "# kept\nkern.ipc.somaxconn=1024\n");
 	/* What syslogd(8) wrote, in both of its forms. */
@@ -883,7 +940,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "roa4 table r4;\n\nfilter bgp_in {\n\tif bgp_community ~ CUSTOMERS "
 	    "then accept;\n\treject;\n}\n\nfilter bgp_out {\n\taccept;\n}\n\n"
 	    "protocol device device1 {\n}\n\ntemplate bgp ibgp_t {\n\tlocal as "
-	    "MY_AS;\n\tipv6 {\n\t\timport all;\n\t\texport all;\n\t};\n}\n\n"
+	    "MY_AS;\n\tneighbor internal;\n\tipv6 {\n\t\timport all;\n\t\texport all;\n\t};\n}\n\n"
 	    "protocol bgp bgp_core {\n"
 	    "\tdescription \"Core uplink\";\n\t# the old uplink: 192.0.2.9\n"
 	    "\tlocal as MY_AS;\n\tneighbor "
@@ -891,7 +948,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\t\texport filter bgp_out;\n\t};\n}\n\nprotocol bgp bgp_edge {\n"
 	    "\tlocal as MY_AS;\n\tneighbor 198.51.100.7 as 65002;\n}\n\n"
 	    "protocol rpki rpki1 {\n\troa4 { table r4; };\n\tremote "
-	    "\"rpki.example.net\" port 3323;\n}\n");
+	    "192.0.2.80 port 3323;\n}\n");
 	snprintf(birdconf, sizeof(birdconf), "%s/bird/bird.conf", cwd);
 	/*
 	 * swanctl(8): strongSwan running, its connections those written in
@@ -1117,7 +1174,15 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[109] = (char *)(uintptr_t)"./fake-poudriere";
 	argv[110] = (char *)(uintptr_t)"--poudriere-etc";
 	argv[111] = pdetc;
-	argv[112] = NULL;
+	argv[112] = (char *)(uintptr_t)"--ifmcstat";
+	argv[113] = (char *)(uintptr_t)"./fake-ifmcstat";
+	argv[114] = (char *)(uintptr_t)"--snort";
+	argv[115] = (char *)(uintptr_t)"./fake-snort";
+	argv[116] = (char *)(uintptr_t)"--snort-etc";
+	argv[117] = (char *)(uintptr_t)"./snort-etc";
+	argv[118] = (char *)(uintptr_t)"--snort-log";
+	argv[119] = (char *)(uintptr_t)"./snort-log";
+	argv[120] = NULL;
 	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
 	(void)mkdir(rootdir, 0755);

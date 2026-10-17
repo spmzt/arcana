@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-sdwan",
     "module-revision": "2026-10-15",
-    "sid-file-version": 1,
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -764,6 +764,131 @@
         "namespace": "data",
         "identifier": "/arcana-sdwan:sdwan/steer/entry/table",
         "sid": "72247"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/rules/jail",
+        "sid": "72248"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge",
+        "sid": "72249"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/jail",
+        "sid": "72250"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/rules",
+        "sid": "72251"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/rules/counter",
+        "sid": "72252"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/rules/counter/octets",
+        "sid": "72253"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/rules/counter/packets",
+        "sid": "72254"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/rules/counter/rule",
+        "sid": "72255"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/rules/counter/text",
+        "sid": "72256"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/rules/objects",
+        "sid": "72257"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/rules/rules",
+        "sid": "72258"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/rules/set",
+        "sid": "72259"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/rules/table",
+        "sid": "72260"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/rules/table/count",
+        "sid": "72261"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/rules/table/name",
+        "sid": "72262"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/steer",
+        "sid": "72263"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/steer/candidate",
+        "sid": "72264"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/steer/candidate/id",
+        "sid": "72265"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/steer/candidate/state",
+        "sid": "72266"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/steer/candidate/via",
+        "sid": "72267"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/steer/chosen",
+        "sid": "72268"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/steer/prefix",
+        "sid": "72269"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/steer/table",
+        "sid": "72270"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/state/edge/steered",
+        "sid": "72271"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sdwan:sdwan/steer/jail",
+        "sid": "72272"
       }
     ]
   }

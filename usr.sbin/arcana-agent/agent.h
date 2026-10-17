@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.138.0"
+#define	ARCANA_AGENT_VERSION	"0.142.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -54,6 +54,10 @@
 #define	PATH_CICAP_BIN		"/usr/local/bin/c-icap"
 #define	PATH_SURICATA_BIN	"/usr/local/bin/suricata"
 #define	PATH_POUDRIERE_BIN	"/usr/local/bin/poudriere"
+#define	PATH_IFMCSTAT_BIN	"/usr/sbin/ifmcstat"
+#define	PATH_SNORT_BIN		"/usr/local/bin/snort"
+#define	PATH_SNORT_ETC		"/usr/local/etc/snort"
+#define	PATH_SNORT_LOG		"/var/log/snort"
 #define	PATH_POUDRIERE_ETC	"/usr/local/etc"
 #define	PATH_CICAP_MODULES	"/usr/local/lib/c_icap"
 #define	PATH_CLAMAV_DB		"/var/db/clamav"
@@ -122,6 +126,10 @@ struct opts {
 	const char	*cicap_bin;	/* c-icap: malware scanning, a plugin */
 	const char	*suricata_bin;	/* suricata: intrusion detection, a plugin */
 	const char	*poudriere_bin;	/* poudriere(8): the package builder, a plugin */
+	const char	*ifmcstat_bin;	/* ifmcstat(8): IGMP's and MLD's state */
+	const char	*snort_bin;	/* snort: IDS/IPS, a plugin */
+	const char	*snort_etc;	/* where snort.lua and its rules are */
+	const char	*snort_log;	/* its pid file and alert_json.txt */
 	const char	*poudriere_etc;	/* where poudriere.conf and poudriere.d are */
 	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;
@@ -333,6 +341,15 @@ const char	*poudriere_check(const struct arc_job_spec *);
 int		 do_poudriere_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 char		*poudriere_title(const struct arc_job_spec *);
+
+/* luxuria/snort.c: Snort 3, run by arcana_snort, its rules kept. */
+struct arc_snort_rsp;
+const char	*snort_check(const struct arc_job_spec *);
+int		 do_snort_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+char		*snort_title(const struct arc_job_spec *);
+void		 do_snort(struct work *, const char *const *, size_t,
+		    struct arc_snort_rsp *);
 struct arc_builder_rsp;
 void		 do_builder(struct work *, struct arc_builder_rsp *);
 struct arc_builder_options_rsp;
@@ -410,6 +427,7 @@ int		 do_if_destroy(struct work *, const char *, bool, const char **);
 void		 if_current(struct work *, const char *, unsigned int *, int *,
 		    int *, char *, size_t);
 bool		 if_is_up(struct work *, const char *, bool *);
+bool		 if_link(struct work *, const char *, bool *);
 bool		 if_exists(struct work *, const char *);
 const char	*if_json(struct work *);
 bool		 if_owning(const struct sockaddr *, char *, size_t);
@@ -513,7 +531,8 @@ enum { PROBE_NONE = -1, PROBE_UNKNOWN, PROBE_UP, PROBE_DOWN, PROBE_ENDED,
 void		 probe_start(void);
 int		 do_probes_set(struct work *, const char *, const char **);
 int		 do_sdwan(struct work *, uint64_t, struct arc_sdwan_rsp *);
-int		 probe_state_of(const char *);
+int		 probe_state_of(const char *, const char *);
+void		 probe_link(const char *, const char *, bool);
 /* invidia/sdwan.c: the rules that steer, and the steering. */
 void		 sdwan_start(void);
 int		 do_sdwan_rules(struct work *, const char *, const char **);
@@ -572,10 +591,13 @@ int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
 int		 do_sysctl(struct work *, const char *,
 		    struct arc_sysctl_rsp *);
+int		 do_sysctl_jail(struct work *, const char *,
+		    struct arc_sysctl_rsp *);
 int		 do_sysctl_set(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 sysctl_name_ok(const char *);
 bool		 valid_jail(const char *);
+bool		 valid_ifname(const char *);
 bool		 sysctl_part(struct cbl_dump_state *, const char *, char **,
 		    uint64_t *);
 bool		 sysctl_value_ok(const char *);
@@ -665,6 +687,8 @@ int		 neigh_list(FILE *, int, const char *);
 int		 addr_lines(FILE *);
 int		 route_socket(void);
 int		 helper_netlink(int);
+int		 helper_icmp_socket(int, int);
+unsigned int	 plugins_here(void);
 int		 jail_jid_name(int, char *, size_t, char *, size_t);
 int		 jail_next(int);
 /* ira/jailwatch.c: jail-state events, from EVFILT_JAIL */

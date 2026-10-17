@@ -18,6 +18,9 @@
  *					source-log's commits and tags
  *	ymisc jail-files reply.json	the jail-files operation's JSON
  *	ymisc sshd reply.json		the ssh operation's JSON
+ *	ymisc builder reply.json	the builder operation's JSON
+ *	ymisc builder-options reply.json	a port's options
+ *	ymisc notify token chat text	the notify request
  *
  * Through YANG-CBOR and back, the same bytes.
  */
@@ -308,8 +311,87 @@ main(int argc, char **argv)
 			printf("user-ca %s\n", d.user_ca.v[i]);
 		same((void *)arcana_sshd_sshd_encode, (void *)
 		    arcana_sshd_sshd_decode, &d, &back, a);
+	} else if (strcmp(argv[1], "builder") == 0) {
+		struct arcana_builder_builder d, back;
+
+		if ((error = ybuilder_from_json(slurp(argv[2]), a, &d)) != 0)
+			errc(1, error, "ybuilder_from_json");
+		printf("installed=%s configured=%s conf=%zu basefs=%s\n",
+		    d.installed ? "yes" : "no", d.configured ? "yes" : "no",
+		    d.conf.n, str(d.basefs));
+		for (size_t i = 0; i < d.jail.n; i++)
+			printf("jail %s version=%s method=%s updated=%s\n",
+			    d.jail.v[i].name, str(d.jail.v[i].version), str(
+			    d.jail.v[i].method), str(d.jail.v[i].timestamp));
+		for (size_t i = 0; i < d.ports.n; i++)
+			printf("ports %s\n", d.ports.v[i].name);
+		for (size_t i = 0; i < d.options.n; i++)
+			for (size_t k = 0; k < d.options.v[i].port.n; k++)
+				printf("options %s %s set=%zu unset=%zu\n",
+				    d.options.v[i].name, d.options.v[i].port.v[k].name,
+				    d.options.v[i].port.v[k].set.n,
+				    d.options.v[i].port.v[k].unset.n);
+		for (size_t i = 0; i < d.build.n; i++) {
+			const struct arcana_builder_builder_build *b =
+			    &d.build.v[i];
+
+			printf("build %s/%s/%s %s built=%u failed=%u\n", b->jail,
+			    b->ports, b->set, str(b->status), b->built,
+			    b->failed);
+			for (size_t k = 0; k < b->failed_port.n; k++)
+				printf("  failed %s %s %s after=%u\n",
+				    b->failed_port.v[k].package, str(
+				    b->failed_port.v[k].origin), str(
+				    b->failed_port.v[k].phase),
+				    b->failed_port.v[k].elapsed);
+			for (size_t k = 0; k < b->skipped_port.n; k++)
+				printf("  skipped %s because=%s\n",
+				    b->skipped_port.v[k].package, str(
+				    b->skipped_port.v[k].because));
+		}
+		for (size_t i = 0; i < d.run.n; i++)
+			printf("run %u state=%d exit=%s%u argv=%zu\n",
+			    d.run.v[i].id, d.run.v[i].has_state ?
+			    (int)d.run.v[i].state : -1, d.run.v[i].has_exit ? "" :
+			    "-", d.run.v[i].exit, d.run.v[i].argv.n);
+		same((void *)arcana_builder_builder_encode, (void *)
+		    arcana_builder_builder_decode, &d, &back, a);
+	} else if (strcmp(argv[1], "builder-options") == 0) {
+		struct arcana_builder_builder_port_options_output d, back;
+
+		if ((error = ybuilder_options_from_json(slurp(argv[2]), a,
+		    &d)) != 0)
+			errc(1, error, "ybuilder_options_from_json");
+		printf("%s dir-exists=%s configured=%s\n", str(d.pkgname),
+		    d.options_dir_exists ? "yes" : "no", d.configured ? "yes" :
+		    "no");
+		for (size_t i = 0; i < d.section.n; i++) {
+			printf("section %u %s:", d.section.v[i].index, str(
+			    d.section.v[i].title));
+			for (size_t k = 0; k < d.section.v[i].option.n; k++)
+				printf(" %s=%s", d.section.v[i].option.v[k].name,
+				    d.section.v[i].option.v[k].on ? "on" : "off");
+			printf("\n");
+		}
+		same((void *)arcana_builder_builder_port_options_output_encode,
+		    (void *)arcana_builder_builder_port_options_output_decode,
+		    &d, &back, a);
+	} else if (strcmp(argv[1], "notify") == 0) {
+		/* The request, as arcanactl or the console gives it. */
+		struct arcana_notify_notify_input d, back;
+
+		if (argc != 5)
+			errx(2, "notify token chat text");
+		memset(&d, 0, sizeof(d));
+		d.token = argv[2];
+		d.chat = argv[3];
+		d.text = argv[4];
+		printf("notify chat=%s text=%zu\n", d.chat, strlen(d.text));
+		same((void *)arcana_notify_notify_input_encode, (void *)
+		    arcana_notify_notify_input_decode, &d, &back, a);
 	} else
 		errx(2, "%s: host, transport, tls, bundle, apply, log, "
-		    "jail-files or sshd", argv[1]);
+		    "jail-files, sshd, builder, builder-options or notify",
+		    argv[1]);
 	return (0);
 }

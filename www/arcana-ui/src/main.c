@@ -193,7 +193,8 @@ loc_of(char *buf, size_t len)
 		builder_loc(buf, len);
 		break;
 	case NODE_DEVICES:
-		snprintf(buf, len, "#/devices");
+		snprintf(buf, len, "#/devices%s", app.devtab == 1 ?
+		    "/templates" : "");
 		break;
 	case NODE_SETTINGS:
 		snprintf(buf, len, "#/settings/%s", settab_arg(app.settab));
@@ -288,8 +289,11 @@ loc_go(const char *r)
 		if (query != NULL)
 			trouble_open(query + 1);
 	}
-	else if (IS(0, "devices"))
+	else if (IS(0, "devices")) {
 		dispatch("select-devices", "", "");
+		if (IS(1, "templates"))
+			dispatch("dev-tab", "1", "");
+	}
 	else if (IS(0, "settings")) {
 		loc_dec(arg, sizeof(arg), np > 1 ? f[1] : "");
 		dispatch("set-tab", arg, "");
@@ -670,12 +674,24 @@ submit_form(const char *form, const ucl_object_t *f)
 			return;
 		}
 		qj = json_quote(app.pkg.jail);
-		if (asprintf(&q, "{\"kind\":\"pkg-install\",\"packages\":[%s]"
-		    "%s%s%s%s%s}", b.s, app.pkg.jail[0] != '\0' ? ",\"jail\":" :
-		    "", app.pkg.jail[0] != '\0' ? qj : "", app.pkg.ip != 0 ?
-		    (app.pkg.ip == 4 ? ",\"pkg_ip\":4" : ",\"pkg_ip\":6") : "",
-		    jbool(f, "anyos") ? ",\"force\":true" : "", "") == -1)
-			abort();
+		{
+			char	*qr, rp[96];
+
+			/* From one repository: pkg install -r. */
+			rp[0] = '\0';
+			if (jstr(f, "repo") != NULL && jstr(f, "repo")[0] != '\0') {
+				qr = json_quote(jstr(f, "repo"));
+				snprintf(rp, sizeof(rp), ",\"pkg_repo\":%s", qr);
+				free(qr);
+			}
+			if (asprintf(&q, "{\"kind\":\"pkg-install\",\"packages\":"
+			    "[%s]%s%s%s%s%s}", b.s, app.pkg.jail[0] != '\0' ?
+			    ",\"jail\":" : "", app.pkg.jail[0] != '\0' ? qj : "",
+			    app.pkg.ip != 0 ? (app.pkg.ip == 4 ? ",\"pkg_ip\":4" :
+			    ",\"pkg_ip\":6") : "", jbool(f, "anyos") ?
+			    ",\"force\":true" : "", rp) == -1)
+				abort();
+		}
 		free(qj);
 		snprintf(title, sizeof(title), "pkg install %.200s%s%s",
 		    jstr(f, "names"), app.pkg.jail[0] != '\0' ? " in " : "",
@@ -750,15 +766,27 @@ submit_form(const char *form, const ucl_object_t *f)
 		ucl_object_unref(arr);
 		dry = jstr(f, "__submit") != NULL &&
 		    strcmp(jstr(f, "__submit"), "dry") == 0;
+		/* From one repository, or any. */
+		snprintf(app.pkg.repo, sizeof(app.pkg.repo), "%s",
+		    jstr(f, "repo") != NULL ? jstr(f, "repo") : "");
 		if (dry)
 			pkg_upgrade(s2, any ? names : NULL, true, false);
 		else if (any)
-			confirm("Upgrade packages", "pkg upgrade -y of the "
-			    "selected packages; services may restart.",
-			    "Upgrade", true, "", "do-pkg-upgrade", "", names);
+		{
+			char	cb[300];
+
+			snprintf(cb, sizeof(cb), "pkg upgrade -y of the selected "
+			    "packages%s%s; services may restart.",
+			    app.pkg.repo[0] != '\0' ? ", from the repository " :
+			    "", app.pkg.repo);
+			confirm("Upgrade packages", cb, "Upgrade", true, "",
+			    "do-pkg-upgrade", "", names);
+		}
 		else
 			dispatch("pkg-upgrade-all", "", "");
 		free(names);
+	} else if (strcmp(form, "mcast-set") == 0) {
+		(void)mcast_form(f);
 	} else if (strcmp(form, "add-key") == 0) {
 		add_key(jstr(f, "name") != NULL ? jstr(f, "name") : "");
 	} else if (strcmp(form, "address") == 0) {
@@ -889,6 +917,7 @@ dispatch(const char *act, const char *arg, const char *value)
 
 	s = cur_server();
 	if (export_action(act, arg, value) || hostconf_action(act, arg, value) ||
+	    templates_action(act, arg, value) ||
 	    topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
 	    jailmk_action(act, arg, value) || neigh_action(act, arg, value) ||
@@ -1031,6 +1060,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_packages(s, false);
 	} else if (strcmp(act, "pkg-target") == 0 && s != NULL) {
 		snprintf(app.pkg.jail, sizeof(app.pkg.jail), "%s", arg);
+		/* Another's repositories: none chosen there yet. */
+		app.pkg.repo[0] = '\0';
 		if (app.pkg.data != NULL)
 			ucl_object_unref(app.pkg.data);
 		app.pkg.data = NULL;
@@ -1144,9 +1175,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		    6 ? "6" : "");
 	} else if (strcmp(act, "pkg-upgrade-all") == 0 && s != NULL) {
 		snprintf(body, sizeof(body), "pkg upgrade -y %s%s: every "
-		    "package with a newer version in the repository is "
-		    "replaced; services may restart.", app.pkg.jail[0] != '\0' ?
-		    "in jail " : "on the host", app.pkg.jail);
+		    "package with a newer version in %s%s is replaced; services "
+		    "may restart.", app.pkg.jail[0] != '\0' ? "in jail " :
+		    "on the host", app.pkg.jail, app.pkg.repo[0] != '\0' ?
+		    "the repository " : "the repository", app.pkg.repo);
 		confirm("Upgrade all packages", body, "Upgrade", true, "",
 		    "do-pkg-upgrade", "", "");
 	} else if (strcmp(act, "do-pkg-upgrade") == 0 && s != NULL) {
@@ -1238,7 +1270,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "bird") == 0 ? NET_BIRD :
 		    strcmp(arg, "ipsec") == 0 ? NET_IPSEC :
 		    strcmp(arg, "span") == 0 ? NET_SPAN :
-		    strcmp(arg, "carp") == 0 ? NET_CARP : NET_ROUTES;
+		    strcmp(arg, "carp") == 0 ? NET_CARP :
+		    strcmp(arg, "multicast") == 0 ? NET_MULTICAST : NET_ROUTES;
 		if (app.net.kind == NET_INTERFACES)
 			topo_poll(s);
 		app.net.loading = false;
@@ -1419,9 +1452,14 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.net.family = atoi(arg);
 		app.net.loading = false;
 		refresh_network(s, true);
+	} else if (strcmp(act, "dev-tab") == 0) {
+		app.devtab = atoi(arg) == 1 ? 1 : 0;
+		if (app.devtab == 1)
+			templates_load();
 	} else if (strcmp(act, "select-devices") == 0) {
 		app.rail_open = false;
 		app.node = NODE_DEVICES;
+		app.devtab = 0;
 		app.jail[0] = '\0';
 		close_service();
 		for (i = 0; i < app.nservers; i++) {
@@ -1703,7 +1741,9 @@ dispatch(const char *act, const char *arg, const char *value)
 			app.settab = SET_LOOK;
 			load_settings();
 			load_tokens();
-			load_keys();
+			/* Not to a session an API token opened: refused. */
+			if (!app.by_token)
+				load_keys();
 		}
 		if (strcmp(act, "keys") == 0)
 			app.settab = SET_KEYS;

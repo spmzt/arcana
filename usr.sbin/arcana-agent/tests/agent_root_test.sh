@@ -43,8 +43,11 @@ $JAIL {
 }
 EOF2
 	SOCK="unix:$(pwd)/s.sock"
+	# What it keeps (probes, rules, faults) in the work directory, not
+	# the host's /usr/local/etc/arcana, where the next case would find it.
 	"$JGD" -F -l "$SOCK" -f "$(pwd)/etc/jail.conf" \
-	    -D "$(pwd)/etc/jail.conf.d" ${DAEMON_ARGS:-} > daemon.out 2>&1 &
+	    -D "$(pwd)/etc/jail.conf.d" -1 "$(pwd)/history.conf" \
+	    ${DAEMON_ARGS:-} > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
 		grep -q 'ready' daemon.out 2>/dev/null && return
@@ -587,6 +590,555 @@ sdwan_probe_body()
 sdwan_probe_cleanup()
 {
 	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	# Its rule and tables, which outlive the agent, gone from the
+	# host's ipfw: only they, by their names.
+	ipfw -S show 12 2>/dev/null | grep -q 'table(swt_p_4)' && \
+	    ipfw -q delete 12
+	ipfw -q table swt_p_4 destroy 2>/dev/null
+	ipfw -q table swt_p_4_alt destroy 2>/dev/null
+	true
+}
+
+atf_test_case sdwan_jail_edge cleanup
+sdwan_jail_edge_head()
+{
+	atf_set "descr" "an SD-WAN edge that is a vnet jail, for real: its" \
+	    "loopback probed from its own network (an ICMP socket the" \
+	    "helper makes there), up, and a host's address the jail has no" \
+	    "route to, down; its own ipfw given a set and steered"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+sdwan_jail_edge_body()
+{
+	atf_check -o ignore jail -c name=arcw_sdj vnet persist path=/
+	atf_check jexec arcw_sdj ifconfig lo0 inet 127.0.0.1/8 up
+	start_daemon
+	# 127.0.0.1 in the jail's network; 192.0.2.66 is on no route of it.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '{"jail":"arcw_sdj","targets":[{"id":"jlo","address":"127.0.0.1","interval":50,"eval":300,"down":2,"up":2,"timeout":200},{"id":"jvoid","address":"192.0.2.66","interval":50,"eval":300,"down":2,"timeout":100}]}'
+	sleep 2
+	atf_check -o match:'"id":"jlo","address":"127.0.0.1","family":"inet","jail":"arcw_sdj","fib":0,"state":"up"' \
+	    -o match:'"id":"jvoid","address":"192.0.2.66","family":"inet","jail":"arcw_sdj","fib":0,"state":"(down|error)"' \
+	    "$JGC" -c "$SOCK" sdwan
+	# Its own ipfw, where the kernel has one.
+	if jexec arcw_sdj ipfw show >/dev/null 2>&1; then
+		atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+		    '{"jail":"arcw_sdj","set":30,"tables":[{"name":"sj_p4","valtype":"ipv4","entries":[]}],"rules":["00500 count ip from any to table(sj_p4)"]}'
+		atf_check -o match:'^00500 .*count ip from any to table\(sj_p4\)' \
+		    jexec arcw_sdj ipfw show 500
+		atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
+		    '{"jail":"arcw_sdj","entries":[{"table":"sj_p4","prefix":"10.20.0.0/24","candidates":[{"id":"jvoid","via":"100.64.0.9"},{"id":"jlo","via":"100.64.0.1"}]}]}'
+		atf_check -o match:'10.20.0.0/24 100.64.0.1' \
+		    jexec arcw_sdj ipfw table sj_p4 list
+		# The host's ipfw has none of it.
+		atf_check -s not-exit:0 -e ignore -o ignore ipfw table sj_p4 list
+		atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+		    '{"jail":"arcw_sdj","set":30,"tables":[],"rules":[]}'
+	fi
+	atf_check -o match:'"kind":"sdwan-tunnel","data":\{"id":"jlo","address":"127.0.0.1","state":"up","misses":0,"jail":"arcw_sdj"\}' \
+	    "$JGC" -c "$SOCK" events
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '{"jail":"arcw_sdj","targets":[]}'
+	# Its network's multicast state, its own: lo0 alone, in 224.0.0.1.
+	atf_check -o match:'"interfaces":\[\{"name":"lo0",.*"group":"224.0.0.1"' \
+	    -o not-match:'"name":"(vtnet|em|igb|ix)[0-9]' \
+	    -o match:'"settings":\[\{"name":"net.inet.igmp.default_version"' \
+	    "$JGC" -c "$SOCK" -j arcw_sdj net multicast
+}
+sdwan_jail_edge_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	sleep 0.5
+	jail -r arcw_sdj 2>/dev/null
+	true
+}
+
+atf_test_case sdwan_links cleanup
+sdwan_links_head()
+{
+	atf_set "descr" "an SD-WAN edge's links watched for real: an epair's" \
+	    "end down is an interface fault, up again cleared, as netlink" \
+	    "tells the agent"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+sdwan_links_body()
+{
+	ep=$(ifconfig epair create) || atf_skip "no epair(4)"
+	echo "$ep" > epair.name
+	start_daemon
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    "{\"targets\":[],\"links\":[{\"interface\":\"$ep\",\"id\":\"uni-lab\",\"role\":\"uni\"}]}"
+	# Made down: a fault at once.
+	atf_check -o match:'"type":"interface","severity":"Major","was":"Major","object":"uni-lab","by":"link",[^}]*"cleared":false' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check ifconfig "$ep" up
+	atf_check ifconfig "${ep%a}b" up
+	sleep 1
+	atf_check -o match:'"object":"uni-lab","by":"link","description":"the UNI uni-lab has its link on '"$ep"' again","cleared":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check ifconfig "$ep" down
+	sleep 1
+	atf_check -o match:'"object":"uni-lab","by":"link","description":"the UNI uni-lab has no link on '"$ep"'","cleared":false' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '{"targets":[],"links":[]}'
+}
+sdwan_links_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	[ -f epair.name ] && ifconfig "$(cat epair.name)" destroy 2>/dev/null
+	true
+}
+
+atf_test_case sctp_multihome cleanup
+sctp_multihome_head()
+{
+	atf_set "descr" "an SCTP association multi-homed between two network" \
+	    "stacks: the agent in one vnet jail bound to two addresses" \
+	    "(--sctp-also), arcanactl in another with two of its own, two" \
+	    "epairs between them; the association has a path over each," \
+	    "one cut goes on over the other, and the cut one comes back"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+	atf_set "timeout" "180"
+}
+sctp_multihome_body()
+{
+	local d="$(pwd)" port=24607 e0 e1 a b
+
+	kldstat -q -m sctp || atf_skip "the kernel has no SCTP"
+	command -v openssl >/dev/null || atf_skip "no openssl"
+	programs
+	for j in arcw_ma arcw_mb; do
+		jls -j $j >/dev/null 2>&1 && atf_skip "a jail $j is there already"
+	done
+	# A CA, the agent's certificate for both its addresses, a client's.
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+	    -keyout ca.key -out ca.pem -days 2 -subj /CN=lab-ca \
+	    -addext basicConstraints=critical,CA:true \
+	    -addext keyUsage=critical,keyCertSign >/dev/null 2>&1
+	for n in server client; do
+		openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+		    -keyout $n.key -out $n.csr -subj /CN=$n >/dev/null 2>&1
+		if [ $n = server ]; then
+			printf 'subjectAltName=IP:10.91.0.1,IP:10.92.0.1\nextendedKeyUsage=serverAuth\n' > $n.ext
+		else
+			printf 'subjectAltName=DNS:console\nextendedKeyUsage=clientAuth\n' > $n.ext
+		fi
+		openssl x509 -req -in $n.csr -CA ca.pem -CAkey ca.key \
+		    -CAcreateserial -out $n.pem -days 2 -extfile $n.ext \
+		    >/dev/null 2>&1 || atf_fail "no $n certificate"
+	done
+	atf_check -o ignore jail -c name=arcw_ma vnet persist path=/
+	atf_check -o ignore jail -c name=arcw_mb vnet persist path=/
+	e0=$(ifconfig epair create); e1=$(ifconfig epair create)
+	echo "${e0%a} ${e1%a}" > epairs
+	atf_check ifconfig $e0 vnet arcw_ma
+	atf_check ifconfig ${e0%a}b vnet arcw_mb
+	atf_check ifconfig $e1 vnet arcw_ma
+	atf_check ifconfig ${e1%a}b vnet arcw_mb
+	atf_check jexec arcw_ma ifconfig $e0 inet 10.91.0.1/24 up
+	atf_check jexec arcw_ma ifconfig $e1 inet 10.92.0.1/24 up
+	atf_check jexec arcw_mb ifconfig ${e0%a}b inet 10.91.0.2/24 up
+	atf_check jexec arcw_mb ifconfig ${e1%a}b inet 10.92.0.2/24 up
+	for j in arcw_ma arcw_mb; do
+		atf_check jexec $j ifconfig lo0 inet 127.0.0.1/8 up
+		# A failed path found in about a second, not half a minute:
+		# each stack's own (net.inet.sctp is per vnet).
+		atf_check -o ignore jexec $j sysctl net.inet.sctp.rto_min=100 \
+		    net.inet.sctp.rto_initial=300 net.inet.sctp.rto_max=500 \
+		    net.inet.sctp.path_rtx_max=1 net.inet.sctp.heartbeat_interval=200
+	done
+	mkdir -p etc/jail.conf.d
+	: > etc/jail.conf
+	# The agent in arcw_ma: TCP and SCTP on 10.91.0.1, SCTP on
+	# 10.92.0.1 too.
+	jexec arcw_ma "$JGD" -F -l "tcp://10.91.0.1:$port" \
+	    --sctp-also 10.92.0.1 -A "$d/ca.pem" -C "$d/server.pem" \
+	    -K "$d/server.key" -f "$d/etc/jail.conf" -D "$d/etc/jail.conf.d" \
+	    -1 "$d/history.conf" > daemon.out 2>&1 &
+	echo $! > daemon.pid
+	a="-A $d/ca.pem -C $d/client.pem -K $d/client.key"
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		jexec arcw_mb "$JGC" -c "sctp://10.91.0.1:$port" $a hello \
+		    >/dev/null 2>&1 && break
+		sleep 0.5
+	done
+	# One association kept open: what happens, as it happens.
+	jexec arcw_mb "$JGC" -c "sctp://10.91.0.1:$port" $a events -f \
+	    > follow.out 2>&1 &
+	echo $! > follow.pid
+	sleep 1
+	# From the agent's end: the follower's association has a path to
+	# each of the client's addresses, both taken up.
+	atf_check -o save:t1.json jexec arcw_mb "$JGC" \
+	    -c "sctp://10.92.0.1:$port" $a transport
+	atf_check -o match:'"transport":"sctp","up":true,"addresses":\[("10.91.0.1","10.92.0.1"|"10.92.0.1","10.91.0.1")\]' cat t1.json
+	atf_check -o match:'"paths":\[[^]]*"address":"10.91.0.2","state":"active"' \
+	    -o match:'"paths":\[[^]]*"address":"10.92.0.2","state":"active"' cat t1.json
+	# The first path cut, at the client's end: what happens after goes
+	# on over the other, on the same association.
+	atf_check jexec arcw_mb ifconfig ${e0%a}b down
+	atf_check jexec arcw_ma ifconfig lo7 create
+	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+		grep -q '"interface":"lo7"' follow.out && break
+		sleep 0.5
+	done
+	atf_check -o match:'"kind":"link","data":\{"interface":"lo7"' cat follow.out
+	kill -0 "$(cat follow.pid)" || atf_fail "the follower's association ended"
+	atf_check -o save:t2.json jexec arcw_mb "$JGC" \
+	    -c "sctp://10.92.0.1:$port" $a transport
+	# The cut address no longer carries it: inactive, or taken out of
+	# the association by the client itself (ASCONF, auto_asconf).
+	atf_check -o match:'"address":"10.92.0.2","state":"active","srtt_ms":[0-9]+,"rto_ms":[0-9]+,"primary":true' \
+	    -o not-match:'"address":"10.91.0.2","state":"active"' cat t2.json
+	# The cut one back: added again (ASCONF) and taken up.
+	atf_check jexec arcw_mb ifconfig ${e0%a}b up
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		jexec arcw_mb "$JGC" -c "sctp://10.92.0.1:$port" $a transport \
+		    > t3.json 2>/dev/null
+		grep -q '"address":"10.91.0.2","state":"active"' t3.json && break
+		sleep 0.5
+	done
+	atf_check -o match:'"address":"10.91.0.2","state":"active"' cat t3.json
+	atf_check jexec arcw_ma ifconfig lo7 destroy
+}
+sctp_multihome_cleanup()
+{
+	[ -f follow.pid ] && kill "$(cat follow.pid)" 2>/dev/null
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	sleep 0.5
+	# Each interface out of its jail before the jail goes: a vnet torn
+	# down with them in it can panic.
+	if [ -f epairs ]; then
+		for e in $(cat epairs); do
+			ifconfig ${e}a -vnet arcw_ma 2>/dev/null
+			ifconfig ${e}b -vnet arcw_mb 2>/dev/null
+			ifconfig ${e}a destroy 2>/dev/null
+		done
+	fi
+	jexec arcw_ma ifconfig lo7 destroy 2>/dev/null
+	jail -r arcw_ma 2>/dev/null
+	jail -r arcw_mb 2>/dev/null
+	true
+}
+
+atf_test_case snort_live cleanup
+snort_live_head()
+{
+	atf_set "descr" "Snort for real: rules taken in and turned off, and" \
+	    "local.rules, checked by the real snort -T (one it refuses kept" \
+	    "out); arcana_snort starts it on an epair, a vnet jail's ping" \
+	    "is an alert the agent reads, and with the rule turned off a" \
+	    "reload makes the next ping none"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+	atf_set "timeout" "240"
+}
+snort_live_body()
+{
+	local d="$(pwd)" e sn env flags etc rc n0 n1 i
+
+	# The program and where its own files are: the package's, or a
+	# tree the configuration names (snort, snort_env, snort_flags,
+	# snort_etc), its libraries and DAQ modules elsewhere.
+	sn=$(atf_config_get snort /usr/local/bin/snort)
+	env=$(atf_config_get snort_env "")
+	flags=$(atf_config_get snort_flags "")
+	etc=$(atf_config_get snort_etc /usr/local/etc/snort)
+	[ -x "$sn" ] || atf_skip "no snort (security/snort3)"
+	rc="$(atf_get_srcdir)/../arcana_snort.sh"
+	[ -r "$rc" ] || rc=/usr/local/etc/rc.d/arcana_snort
+	jls -j arcw_sn >/dev/null 2>&1 && atf_skip "a jail arcw_sn is there already"
+	mkdir se sl
+	cp "$etc"/*.lua "$etc"/*.rules se/
+	printf '#!/bin/sh\nexec env %s %s %s "$@"\n' "$env" "$sn" "$flags" > snort-run
+	chmod +x snort-run
+	# rc.conf in the work directory, not the host's.
+	cat > fake-sysrc <<EOS
+#!/bin/sh
+c=$d/rc.conf; touch \$c
+[ "\$1" = -i ] && shift
+case "\$1" in
+-n) sed -n "s/^\$2=\"\(.*\)\"\\\$/\1/p" \$c | grep . ;;
+-x) grep -v "^\$2=" \$c > \$c.n; mv \$c.n \$c ;;
+*=*) grep -v "^\${1%%=*}=" \$c > \$c.n; printf '%s="%s"\n' "\${1%%=*}" "\${1#*=}" >> \$c.n; mv \$c.n \$c ;;
+esac
+EOS
+	chmod +x fake-sysrc
+	# Rules as an archive gives them, one to be seen and one to turn off.
+	mkdir -p src/lab-rules
+	cat > src/lab-rules/lab.rules <<'EOR'
+alert icmp any any -> any any ( msg:"lab ping seen"; itype:8; classtype:misc-activity; sid:1000002; rev:1; )
+alert tcp any any -> any 23 ( msg:"lab telnet"; flow:to_server; sid:1000003; rev:1; )
+EOR
+	tar -czf rules.tar.gz -C src lab-rules
+	atf_check -o ignore jail -c name=arcw_sn vnet persist path=/
+	e=$(ifconfig epair create)
+	echo "$e" > epair.name
+	atf_check ifconfig ${e%a}b vnet arcw_sn
+	atf_check ifconfig $e inet 10.94.0.1/24 up
+	atf_check jexec arcw_sn ifconfig ${e%a}b inet 10.94.0.2/24 up
+	DAEMON_ARGS="--snort $d/snort-run --snort-etc $d/se --snort-log $d/sl -y $d/fake-sysrc"
+	start_daemon
+	atf_check -o match:'"installed":true' -o match:'"version":"3\.' \
+	    "$JGC" -c "$SOCK" snort
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort update \
+	    "url=file://$d/rules.tar.gz"
+	atf_check -o match:'"files":\[\{"name":"lab.rules","rules":2,"on":2\}\]' \
+	    "$JGC" -c "$SOCK" snort
+	# What the real snort refuses, kept out; its words in the error.
+	printf 'alert icmp any any -> any any (msg:"bad"; nosuchopt:1; sid:1000009;)\n' > bad.rules
+	atf_check -s exit:1 -o match:'snort does not take it: ERROR: .*unknown rule keyword: nosuchopt' \
+	    -e ignore "$JGC" -c "$SOCK" snort conf local.rules bad.rules
+	printf 'alert udp any any -> any 9 (msg:"lab discard"; sid:1000004; rev:1;)\n' > good.rules
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort conf local.rules good.rules
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort set enable=yes mode=ids \
+	    interface=$e home_net=10.94.0.0/24
+	atf_check -o match:"^arcana_snort_interfaces=\"$e\"\$" cat rc.conf
+	# Started by arcana_snort, as rc(8) would, its settings given.
+	atf_check -o ignore -e ignore env arcana_snort_enable=YES \
+	    arcana_snort_interfaces=$e arcana_snort_conf=$d/se/snort.lua \
+	    arcana_snort_rules=$d/se/arcana/arcana.rules arcana_snort_logdir=$d/sl \
+	    arcana_snort_program="$sn" arcana_snort_env="$env" \
+	    arcana_snort_flags="$flags" sh "$rc" onestart
+	for i in $(seq 1 60); do
+		[ -s sl/snort.pid ] && kill -0 $(cat sl/snort.pid) 2>/dev/null && break
+		sleep 1
+	done
+	atf_check -o match:'"running":true' "$JGC" -c "$SOCK" snort
+	sleep 3
+	for i in $(seq 1 20); do
+		jexec arcw_sn ping -c 1 -t 1 10.94.0.1 >/dev/null 2>&1
+		grep -q 'lab ping seen' sl/alert_json.txt 2>/dev/null && break
+		sleep 1
+	done
+	atf_check -o match:'"alerts":\[\{[^}]*"proto":"ICMP","src_addr":"10.94.0.2","dst_addr":"10.94.0.1","gid":1,"sid":1000002,"rev":1,"msg":"lab ping seen"' \
+	    "$JGC" -c "$SOCK" snort
+	# Turned off: the running Snort reloads, and pings are no alerts.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort rule off=1:1000002
+	sleep 8
+	n0=$(grep -c 'lab ping seen' sl/alert_json.txt)
+	for i in 1 2 3; do jexec arcw_sn ping -c 1 -t 1 10.94.0.1 >/dev/null 2>&1; done
+	sleep 3
+	n1=$(grep -c 'lab ping seen' sl/alert_json.txt)
+	[ "$n0" = "$n1" ] || atf_fail "alerts after the rule was turned off: $n0, then $n1"
+	atf_check -o ignore -e ignore env arcana_snort_logdir=$d/sl \
+	    arcana_snort_program="$sn" arcana_snort_interfaces=$e sh "$rc" onestop
+}
+snort_live_cleanup()
+{
+	[ -s sl/snort.pid ] && kill "$(cat sl/snort.pid)" 2>/dev/null
+	[ -f epair.name ] && ifconfig "$(cat epair.name)" destroy 2>/dev/null
+	jail -r arcw_sn >/dev/null 2>&1
+	cleanup
+}
+
+atf_test_case bird_live cleanup
+bird_live_head()
+{
+	atf_set "descr" "BIRD for real between two vnet jails: eBGP over an" \
+	    "epair, written as the console's BGP form writes a session," \
+	    "Established, a route of each learned by the other; the agent" \
+	    "reads the session's state and the routes through the real birdc"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+	atf_set "timeout" "180"
+}
+bird_live_body()
+{
+	local d="$(pwd)" e j n
+
+	[ -x /usr/local/sbin/bird ] || atf_skip "no BIRD (net/bird3)"
+	for j in arcw_ba arcw_bb; do
+		jls -j $j >/dev/null 2>&1 && atf_skip "a jail $j is there already"
+	done
+	atf_check -o ignore jail -c name=arcw_ba vnet persist path=/
+	atf_check -o ignore jail -c name=arcw_bb vnet persist path=/
+	e=$(ifconfig epair create)
+	echo "${e%a}" > epair.name
+	atf_check ifconfig $e vnet arcw_ba
+	atf_check ifconfig ${e%a}b vnet arcw_bb
+	atf_check jexec arcw_ba ifconfig $e inet 10.93.0.1/24 up
+	atf_check jexec arcw_bb ifconfig ${e%a}b inet 10.93.0.2/24 up
+	# Each as the BGP form writes a session (name, local AS, the
+	# neighbour and its AS, a channel), and a route of its own to give.
+	for n in a b; do
+		if [ $n = a ]; then
+			me=10.93.0.1 peer=10.93.0.2 las=65001 nas=65002 net=192.0.2.0/24
+		else
+			me=10.93.0.2 peer=10.93.0.1 las=65002 nas=65001 net=198.51.100.0/24
+		fi
+		cat > bird-$n.conf <<EOF
+router id $me;
+
+protocol device device1 {
+}
+
+protocol static own {
+	ipv4;
+	route $net blackhole;
+}
+
+protocol bgp peer_$n {
+	description "the lab's other end";
+	local as $las;
+	neighbor $peer as $nas;
+	ipv4 {
+		import all;
+		export where proto = "own";
+	};
+}
+EOF
+		atf_check /usr/local/sbin/bird -p -c bird-$n.conf
+		jexec arcw_b$n /usr/local/sbin/bird -c "$d/bird-$n.conf" \
+		    -s "$d/b$n.ctl" -P "$d/b$n.pid" || atf_fail "bird $n did not start"
+	done
+	# The agent's birdc: the real one, told jail a's socket.
+	printf '#!/bin/sh\nexec /usr/local/sbin/birdc -s %s/ba.ctl "$@"\n' "$d" \
+	    > birdc-a
+	chmod +x birdc-a
+	DAEMON_ARGS="-b $d/birdc-a"
+	start_daemon
+	for i in $(seq 1 60); do
+		/usr/local/sbin/birdc -s ba.ctl show protocols peer_a 2>/dev/null |
+		    grep -q Established && break
+		sleep 1
+	done
+	atf_check -o match:'peer_a +BGP +--- +up .*Established' \
+	    /usr/local/sbin/birdc -s ba.ctl show protocols peer_a
+	# The agent's read of it, from the jail: up and Established.
+	atf_check -o save:bird.json "$JGC" -c "$SOCK" -j arcw_ba net bird
+	atf_check -o match:'"name":"peer_a","proto":"BGP"[^}]*"state":"up"[^}]*"info":"Established"' \
+	    cat bird.json
+	# The route b gave, learned by a, as the agent reads BIRD's table.
+	for i in $(seq 1 20); do
+		/usr/local/sbin/birdc -s ba.ctl show route 198.51.100.0/24 \
+		    2>/dev/null | grep -q peer_a && break
+		sleep 0.5
+	done
+	atf_check -o match:'198\.51\.100\.0/24' -o match:'peer_a' \
+	    "$JGC" -c "$SOCK" -j arcw_ba bird routes
+}
+bird_live_cleanup()
+{
+	local d="$(pwd)"
+
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	for n in a b; do
+		[ -f b$n.pid ] && kill "$(cat b$n.pid)" 2>/dev/null
+	done
+	sleep 0.5
+	# Its interfaces out of each jail before the jail goes.
+	if [ -f epair.name ]; then
+		e=$(cat epair.name)
+		ifconfig ${e}a -vnet arcw_ba 2>/dev/null
+		ifconfig ${e}b -vnet arcw_bb 2>/dev/null
+		ifconfig ${e}a destroy 2>/dev/null
+	fi
+	jail -r arcw_ba 2>/dev/null
+	jail -r arcw_bb 2>/dev/null
+	true
+}
+
+atf_test_case sctp_loopback cleanup
+sctp_loopback_head()
+{
+	atf_set "descr" "an SCTP listener on a router's loopback address alone" \
+	    "(an address on lo0): FreeBSD's SCTP answers no peer elsewhere" \
+	    "from it, which the transport read says; with --sctp-also an" \
+	    "address of a real interface, SCTP by that one is answered"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+	atf_set "timeout" "120"
+}
+sctp_loopback_body()
+{
+	local d="$(pwd)" port=24611 e a
+
+	kldstat -q -m sctp || atf_skip "the kernel has no SCTP"
+	command -v openssl >/dev/null || atf_skip "no openssl"
+	programs
+	for j in arcw_la arcw_lb; do
+		jls -j $j >/dev/null 2>&1 && atf_skip "a jail $j is there already"
+	done
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+	    -keyout ca.key -out ca.pem -days 2 -subj /CN=lab-ca \
+	    -addext basicConstraints=critical,CA:true \
+	    -addext keyUsage=critical,keyCertSign >/dev/null 2>&1
+	for n in server client; do
+		openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+		    -keyout $n.key -out $n.csr -subj /CN=$n >/dev/null 2>&1
+		if [ $n = server ]; then
+			printf 'subjectAltName=IP:2001:db8:12::1,IP:2001:db8:99::1\nextendedKeyUsage=serverAuth\n' > $n.ext
+		else
+			printf 'subjectAltName=DNS:console\nextendedKeyUsage=clientAuth\n' > $n.ext
+		fi
+		openssl x509 -req -in $n.csr -CA ca.pem -CAkey ca.key \
+		    -CAcreateserial -out $n.pem -days 2 -extfile $n.ext \
+		    >/dev/null 2>&1 || atf_fail "no $n certificate"
+	done
+	atf_check -o ignore jail -c name=arcw_la vnet persist path=/
+	atf_check -o ignore jail -c name=arcw_lb vnet persist path=/
+	e=$(ifconfig epair create)
+	echo "${e%a}" > epair.name
+	atf_check ifconfig $e vnet arcw_la
+	atf_check ifconfig ${e%a}b vnet arcw_lb
+	# The router's loopback, 2001:db8:12::1 on lo0; its link to the
+	# client, 2001:db8:99::1.
+	atf_check jexec arcw_la ifconfig lo0 inet6 ::1/128 up
+	atf_check jexec arcw_la ifconfig lo0 inet6 2001:db8:12::1/128 alias
+	atf_check jexec arcw_la ifconfig $e inet6 2001:db8:99::1/64 up
+	atf_check jexec arcw_lb ifconfig lo0 inet6 ::1/128 up
+	atf_check jexec arcw_lb ifconfig ${e%a}b inet6 2001:db8:99::2/64 up
+	atf_check jexec arcw_lb route -q -6 add 2001:db8:12::1 2001:db8:99::1
+	sleep 2	# duplicate address detection
+	mkdir -p etc/jail.conf.d
+	: > etc/jail.conf
+	a="-A $d/ca.pem -C $d/client.pem -K $d/client.key"
+	for also in "" 2001:db8:99::1; do
+		jexec arcw_la "$JGD" -F -l "tcp://[2001:db8:12::1]:$port" \
+		    -l "unix:$d/s.sock" ${also:+--sctp-also $also} \
+		    -A "$d/ca.pem" -C "$d/server.pem" -K "$d/server.key" \
+		    -f "$d/etc/jail.conf" -D "$d/etc/jail.conf.d" \
+		    -1 "$d/history.conf" > daemon.out 2>&1 &
+		echo $! > daemon.pid
+		for i in $(seq 1 50); do [ -S s.sock ] && break; sleep 0.1; done
+		sleep 0.5
+		atf_check -o save:t.json "$JGC" -c "unix:$d/s.sock" transport
+		if [ -z "$also" ]; then
+			# On lo0 alone: said, and why.
+			atf_check -o match:'"transport":"sctp","up":true,[^}]*"warning":"its addresses are all on a loopback interface' \
+			    cat t.json
+			atf_check -o ignore jexec arcw_lb "$JGC" \
+			    -c "tcp://[2001:db8:12::1]:$port" $a hello
+		else
+			# An address of a real interface too: no warning, and
+			# SCTP by that address answered.
+			atf_check -o not-match:'"warning"' cat t.json
+			atf_check -o ignore jexec arcw_lb "$JGC" \
+			    -c "sctp://[2001:db8:99::1]:$port" $a hello
+		fi
+		kill "$(cat daemon.pid)"
+		for i in $(seq 1 50); do
+			kill -0 "$(cat daemon.pid)" 2>/dev/null || break
+			sleep 0.1
+		done
+		rm -f s.sock daemon.pid
+	done
+}
+sctp_loopback_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	sleep 0.5
+	if [ -f epair.name ]; then
+		e=$(cat epair.name)
+		ifconfig ${e}a -vnet arcw_la 2>/dev/null
+		ifconfig ${e}b -vnet arcw_lb 2>/dev/null
+		ifconfig ${e}a destroy 2>/dev/null
+	fi
+	jail -r arcw_la 2>/dev/null
+	jail -r arcw_lb 2>/dev/null
 	true
 }
 
@@ -1883,6 +2435,12 @@ atf_init_test_cases()
 	atf_add_test_case path_check
 	atf_add_test_case crash_event
 	atf_add_test_case sdwan_probe
+	atf_add_test_case sdwan_jail_edge
+	atf_add_test_case sdwan_links
+	atf_add_test_case bird_live
+	atf_add_test_case snort_live
+	atf_add_test_case sctp_multihome
+	atf_add_test_case sctp_loopback
 	atf_add_test_case sdwan_record
 	atf_add_test_case jail_make
 	atf_add_test_case zfs_key

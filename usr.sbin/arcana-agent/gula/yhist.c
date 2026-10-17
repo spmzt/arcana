@@ -171,6 +171,7 @@ yhist_from_json(const char *json, cbl_yarena *a,
 		YJ_NUM(o, "cpu", li, cpu);
 		YJ_NUM(o, "mem", li, memory);
 		YJ_NUM(o, "swap", li, swap);
+		YJ_NUM(o, "storage", li, storage);
 	}
 	if ((ru = cbl_yarena_alloc(a, (yj_count(ucl_object_lookup(top,
 	    "rules")) + 1) * sizeof(*ru))) == NULL)

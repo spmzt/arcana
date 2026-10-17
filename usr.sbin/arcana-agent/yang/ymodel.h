@@ -334,6 +334,7 @@ struct arcana_jobs_submit_input_change_neighbour;
 struct arcana_jobs_submit_input_change_cert;
 struct arcana_jobs_submit_input_change_ssh;
 struct arcana_jobs_submit_input_change_poudriere;
+struct arcana_jobs_submit_input_change_snort;
 struct arcana_jobs_submit_input_change;
 struct arcana_jobs_submit_input;
 struct arcana_jobs_submit_output;
@@ -634,6 +635,12 @@ struct arcana_sdwan_sdwan_state_rules_counter;
 struct arcana_sdwan_sdwan_state_rules;
 struct arcana_sdwan_sdwan_state_steer_candidate;
 struct arcana_sdwan_sdwan_state_steer;
+struct arcana_sdwan_sdwan_state_edge_rules_table;
+struct arcana_sdwan_sdwan_state_edge_rules_counter;
+struct arcana_sdwan_sdwan_state_edge_rules;
+struct arcana_sdwan_sdwan_state_edge_steer_candidate;
+struct arcana_sdwan_sdwan_state_edge_steer;
+struct arcana_sdwan_sdwan_state_edge;
 struct arcana_sdwan_sdwan_state_bird_protocol;
 struct arcana_sdwan_sdwan_state_bird_bfd;
 struct arcana_sdwan_sdwan_state_bird;
@@ -657,6 +664,25 @@ struct arcana_sshd_sshd_user_key;
 struct arcana_sshd_sshd_user;
 struct arcana_sshd_sshd;
 struct arcana_sshd;
+struct arcana_builder_builder_conf;
+struct arcana_builder_builder_jail;
+struct arcana_builder_builder_ports;
+struct arcana_builder_builder_make_conf;
+struct arcana_builder_builder_options_port;
+struct arcana_builder_builder_options;
+struct arcana_builder_builder_repo;
+struct arcana_builder_builder_build_failed_port;
+struct arcana_builder_builder_build_skipped_port;
+struct arcana_builder_builder_build;
+struct arcana_builder_builder_run;
+struct arcana_builder_builder_port_options_input;
+struct arcana_builder_builder_port_options_output_section_option;
+struct arcana_builder_builder_port_options_output_section;
+struct arcana_builder_builder_port_options_output;
+struct arcana_builder_builder;
+struct arcana_builder;
+struct arcana_notify_notify_input;
+struct arcana_notify_notify_output;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -1423,6 +1449,7 @@ enum arcana_jobs_jobs_job_kind {
 	ARCANA_JOBS_JOBS_JOB_KIND_SSH = 35,
 	ARCANA_JOBS_JOBS_JOB_KIND_CARP = 36,
 	ARCANA_JOBS_JOBS_JOB_KIND_POUDRIERE = 37,
+	ARCANA_JOBS_JOBS_JOB_KIND_SNORT = 38,
 };
 
 enum arcana_jobs_jobs_job_state {
@@ -1503,6 +1530,7 @@ enum arcana_jobs_submit_input_change_kind {
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_CERT,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SSH,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_POUDRIERE,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SNORT,
 };
 
 enum arcana_jobs_submit_input_change_jail_action_action {
@@ -1640,6 +1668,13 @@ enum arcana_jobs_submit_input_change_poudriere_verb {
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_POUDRIERE_VERB_MAKE_CONF = 8,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_POUDRIERE_VERB_CONF = 9,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_POUDRIERE_VERB_OPTIONS = 10,
+};
+
+enum arcana_jobs_submit_input_change_snort_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SNORT_VERB_SET = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SNORT_VERB_CONF = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SNORT_VERB_UPDATE = 2,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SNORT_VERB_RULE = 3,
 };
 
 enum arcana_storage_storage_dataset_type {
@@ -2009,6 +2044,12 @@ enum arcana_sdwan_sdwan_state_steer_candidate_state {
 	ARCANA_SDWAN_SDWAN_STATE_STEER_CANDIDATE_STATE_UNKNOWN = 2,
 };
 
+enum arcana_sdwan_sdwan_state_edge_steer_candidate_state {
+	ARCANA_SDWAN_SDWAN_STATE_EDGE_STEER_CANDIDATE_STATE_UP = 0,
+	ARCANA_SDWAN_SDWAN_STATE_EDGE_STEER_CANDIDATE_STATE_DOWN = 1,
+	ARCANA_SDWAN_SDWAN_STATE_EDGE_STEER_CANDIDATE_STATE_UNKNOWN = 2,
+};
+
 enum arcana_sdwan_sdwan_state_bird_bfd_state {
 	ARCANA_SDWAN_SDWAN_STATE_BIRD_BFD_STATE_UP = 0,
 	ARCANA_SDWAN_SDWAN_STATE_BIRD_BFD_STATE_DOWN = 1,
@@ -2018,6 +2059,13 @@ enum arcana_sdwan_sdwan_state_bird_bfd_state {
 enum arcana_sdwan_sdwan_state_ids_mode {
 	ARCANA_SDWAN_SDWAN_STATE_IDS_MODE_DETECT = 0,
 	ARCANA_SDWAN_SDWAN_STATE_IDS_MODE_PREVENT = 1,
+};
+
+enum arcana_builder_builder_run_state {
+	ARCANA_BUILDER_BUILDER_RUN_STATE_RUNNING = 0,
+	ARCANA_BUILDER_BUILDER_RUN_STATE_DONE = 1,
+	ARCANA_BUILDER_BUILDER_RUN_STATE_FAILED = 2,
+	ARCANA_BUILDER_BUILDER_RUN_STATE_LOST = 3,
 };
 
 struct ieee802_dot1q_bridge_bridges_bridge_component_rstp_bridge_rstp_root_port {
@@ -2375,6 +2423,14 @@ struct arcana_sdwan_sdwan_steer_entry_candidate_via {
 };
 
 struct arcana_sdwan_sdwan_state_steer_candidate_via {
+	unsigned	 which;	/* the member set, from 0 */
+	union {
+		const char	*m0;
+		const char	*m1;
+	} v;
+};
+
+struct arcana_sdwan_sdwan_state_edge_steer_candidate_via {
 	unsigned	 which;	/* the member set, from 0 */
 	union {
 		const char	*m0;
@@ -5001,6 +5057,7 @@ struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input {
 	bool		 ignore_osversion;
 	bool			 has_ip_version;
 	enum arcana_jails_jails_jail_arcpkg_packages_upgrade_input_ip_version	 ip_version;
+	const char	*repository;
 };
 
 /* list entry */
@@ -5032,6 +5089,10 @@ struct arcana_jails_jails_jail_arcpkg_packages {
 		size_t		 n;
 		const struct arcana_jails_jails_jail_arcpkg_packages_package	*v;
 	}			 package;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 repository;
 };
 
 /* list entry */
@@ -5458,6 +5519,7 @@ struct arcana_packages_packages_upgrade_input {
 	bool		 ignore_osversion;
 	bool			 has_ip_version;
 	enum arcana_packages_packages_upgrade_input_ip_version	 ip_version;
+	const char	*repository;
 };
 
 /* list entry */
@@ -5489,6 +5551,10 @@ struct arcana_packages_packages {
 		size_t		 n;
 		const struct arcana_packages_packages_package	*v;
 	}			 package;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 repository;
 };
 
 /* data */
@@ -5642,6 +5708,7 @@ struct arcana_jobs_submit_input_change_pkg_upgrade {
 	bool		 force;
 	bool			 has_pkg_ip;
 	uint32_t	 pkg_ip;
+	const char	*pkg_repo;
 };
 
 /* container, presence */
@@ -6001,6 +6068,7 @@ struct arcana_jobs_submit_input_change_pkg_install {
 	bool		 force;
 	bool			 has_pkg_ip;
 	uint32_t	 pkg_ip;
+	const char	*pkg_repo;
 };
 
 /* container, presence */
@@ -6091,6 +6159,17 @@ struct arcana_jobs_submit_input_change_poudriere {
 	const char	*text;
 };
 
+/* container, presence */
+struct arcana_jobs_submit_input_change_snort {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_snort_verb	 verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	const char	*text;
+};
+
 /* list entry */
 struct arcana_jobs_submit_input_change {
 	enum arcana_jobs_submit_input_change_kind	 kind;	/* the case given */
@@ -6132,6 +6211,7 @@ struct arcana_jobs_submit_input_change {
 	const struct arcana_jobs_submit_input_change_cert	*cert;
 	const struct arcana_jobs_submit_input_change_ssh	*ssh;
 	const struct arcana_jobs_submit_input_change_poudriere	*poudriere;
+	const struct arcana_jobs_submit_input_change_snort	*snort;
 };
 
 /* input */
@@ -7673,6 +7753,8 @@ struct arcana_history_history_limits {
 	uint8_t		 memory;
 	bool			 has_swap;
 	uint8_t		 swap;
+	bool			 has_storage;
+	uint8_t		 storage;
 };
 
 /* list entry */
@@ -9268,6 +9350,7 @@ struct arcana_probe_probes_target {
 	bool			 has_report;
 	uint32_t	 report;
 	const struct arcana_probe_probes_target_tca	*tca;
+	const char	*jail;
 };
 
 /* container */
@@ -9341,6 +9424,7 @@ struct arcana_probe_probes_state_target {
 		size_t		 n;
 		const struct arcana_probe_probes_state_target_sample	*v;
 	}			 sample;
+	const char	*jail;
 };
 
 /* container */
@@ -9385,6 +9469,7 @@ struct arcana_probe_probes_read_output_target {
 		size_t		 n;
 		const struct arcana_probe_probes_read_output_target_sample	*v;
 	}			 sample;
+	const char	*jail;
 };
 
 /* output */
@@ -9448,6 +9533,7 @@ struct arcana_sdwan_sdwan_rules {
 		size_t		 n;
 		const struct arcana_sdwan_sdwan_rules_rule	*v;
 	}			 rule;
+	const char	*jail;
 };
 
 /* list entry */
@@ -9473,6 +9559,7 @@ struct arcana_sdwan_sdwan_steer {
 		size_t		 n;
 		const struct arcana_sdwan_sdwan_steer_entry	*v;
 	}			 entry;
+	const char	*jail;
 };
 
 /* list entry */
@@ -9577,6 +9664,74 @@ struct arcana_sdwan_sdwan_state_steer {
 		size_t		 n;
 		const struct arcana_sdwan_sdwan_state_steer_candidate	*v;
 	}			 candidate;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_edge_rules_table {
+	const char	*name;
+	bool			 has_count;
+	uint32_t	 count;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_edge_rules_counter {
+	uint32_t	 rule;
+	bool			 has_packets;
+	uint64_t	 packets;
+	bool			 has_octets;
+	uint64_t	 octets;
+	const char	*text;
+};
+
+/* container */
+struct arcana_sdwan_sdwan_state_edge_rules {
+	bool			 has_set;
+	uint8_t		 set;
+	bool			 has_rules;
+	uint32_t	 rules;
+	bool			 has_objects;
+	uint32_t	 objects;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_edge_rules_table	*v;
+	}			 table;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_edge_rules_counter	*v;
+	}			 counter;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_edge_steer_candidate {
+	const char	*id;
+	bool			 has_via;
+	struct arcana_sdwan_sdwan_state_edge_steer_candidate_via	 via;
+	bool			 has_state;
+	enum arcana_sdwan_sdwan_state_edge_steer_candidate_state	 state;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_edge_steer {
+	const char	*table;
+	const char	*prefix;
+	bool			 has_chosen;
+	int32_t		 chosen;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_edge_steer_candidate	*v;
+	}			 candidate;
+};
+
+/* list entry */
+struct arcana_sdwan_sdwan_state_edge {
+	const char	*jail;
+	const struct arcana_sdwan_sdwan_state_edge_rules	*rules;
+	bool			 has_steered;
+	bool		 steered;
+	struct {
+		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_edge_steer	*v;
+	}			 steer;
 };
 
 /* list entry */
@@ -9760,6 +9915,10 @@ struct arcana_sdwan_sdwan_state {
 	}			 steer;
 	struct {
 		size_t		 n;
+		const struct arcana_sdwan_sdwan_state_edge	*v;
+	}			 edge;
+	struct {
+		size_t		 n;
 		const struct arcana_sdwan_sdwan_state_bird	*v;
 	}			 bird;
 	struct {
@@ -9907,6 +10066,246 @@ struct arcana_sshd_sshd {
 /* data */
 struct arcana_sshd {
 	const struct arcana_sshd_sshd	*sshd;
+};
+
+/* list entry */
+struct arcana_builder_builder_conf {
+	const char	*name;
+	const char	*value;
+};
+
+/* list entry */
+struct arcana_builder_builder_jail {
+	const char	*name;
+	const char	*version;
+	const char	*arch;
+	const char	*method;
+	const char	*mnt;
+	const char	*fs;
+	const char	*timestamp;
+};
+
+/* list entry */
+struct arcana_builder_builder_ports {
+	const char	*name;
+	const char	*method;
+	const char	*mnt;
+	const char	*timestamp;
+};
+
+/* list entry */
+struct arcana_builder_builder_make_conf {
+	const char	*name;
+	const char	*file;
+	const char	*text;
+};
+
+/* list entry */
+struct arcana_builder_builder_options_port {
+	const char	*name;
+	const char	*pkgname;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 set;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 unset;
+};
+
+/* list entry */
+struct arcana_builder_builder_options {
+	const char	*name;
+	const char	*dir;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_options_port	*v;
+	}			 port;
+};
+
+/* list entry */
+struct arcana_builder_builder_repo {
+	const char	*name;
+	const char	*path;
+	bool			 has_packages;
+	uint32_t	 packages;
+};
+
+/* list entry */
+struct arcana_builder_builder_build_failed_port {
+	const char	*package;
+	const char	*origin;
+	const char	*phase;
+	const char	*reason;
+	bool			 has_elapsed;
+	uint32_t	 elapsed;
+	const char	*log_file;
+	const char	*log;
+};
+
+/* list entry */
+struct arcana_builder_builder_build_skipped_port {
+	const char	*package;
+	const char	*origin;
+	const char	*because;
+};
+
+/* list entry */
+struct arcana_builder_builder_build {
+	const char	*jail;
+	const char	*ports;
+	const char	*set;
+	const char	*build;
+	const char	*status;
+	bool			 has_queued;
+	uint32_t	 queued;
+	bool			 has_inspected;
+	uint32_t	 inspected;
+	bool			 has_ignored;
+	uint32_t	 ignored;
+	bool			 has_built;
+	uint32_t	 built;
+	bool			 has_failed;
+	uint32_t	 failed;
+	bool			 has_skipped;
+	uint32_t	 skipped;
+	bool			 has_fetched;
+	uint32_t	 fetched;
+	bool			 has_remaining;
+	uint32_t	 remaining;
+	const char	*time;
+	const char	*logs;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_build_failed_port	*v;
+	}			 failed_port;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_build_skipped_port	*v;
+	}			 skipped_port;
+};
+
+/* list entry */
+struct arcana_builder_builder_run {
+	uint32_t	 id;
+	const char	*title;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 argv;
+	const char	*started;
+	bool			 has_state;
+	enum arcana_builder_builder_run_state	 state;
+	bool			 has_pid;
+	uint32_t	 pid;
+	bool			 has_exit;
+	uint8_t		 exit;
+	const char	*log_file;
+	const char	*log;
+};
+
+/* input */
+struct arcana_builder_builder_port_options_input {
+	const char	*jail;
+	const char	*ports;
+	const char	*set;
+	const char	*origin;
+};
+
+/* list entry */
+struct arcana_builder_builder_port_options_output_section_option {
+	const char	*name;
+	bool			 has_on;
+	bool		 on;
+	const char	*description;
+};
+
+/* list entry */
+struct arcana_builder_builder_port_options_output_section {
+	uint8_t		 index;
+	const char	*title;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_port_options_output_section_option	*v;
+	}			 option;
+};
+
+/* output */
+struct arcana_builder_builder_port_options_output {
+	const char	*pkgname;
+	const char	*options_dir;
+	bool			 has_options_dir_exists;
+	bool		 options_dir_exists;
+	const char	*options_file;
+	bool			 has_configured;
+	bool		 configured;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_port_options_output_section	*v;
+	}			 section;
+};
+
+/* container */
+struct arcana_builder_builder {
+	bool			 has_installed;
+	bool		 installed;
+	const char	*program;
+	const char	*conf_file;
+	bool			 has_configured;
+	bool		 configured;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_conf	*v;
+	}			 conf;
+	const char	*basefs;
+	const char	*data;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_jail	*v;
+	}			 jail;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_ports	*v;
+	}			 ports;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_make_conf	*v;
+	}			 make_conf;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_options	*v;
+	}			 options;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_repo	*v;
+	}			 repo;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_build	*v;
+	}			 build;
+	const char	*builds_error;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_run	*v;
+	}			 run;
+};
+
+/* data */
+struct arcana_builder {
+	const struct arcana_builder_builder	*builder;
+};
+
+/* input */
+struct arcana_notify_notify_input {
+	const char	*token;
+	const char	*chat;
+	const char	*text;
+};
+
+/* output */
+struct arcana_notify_notify_output {
+	char			 _empty;	/* nothing in it */
 };
 
 /*
@@ -11141,6 +11540,10 @@ int	arcana_jobs_submit_input_change_poudriere_encode(const struct arcana_jobs_su
 	    struct cbl_ybuf *);
 int	arcana_jobs_submit_input_change_poudriere_decode(const void *, size_t, struct arcana_jobs_submit_input_change_poudriere *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_snort_encode(const struct arcana_jobs_submit_input_change_snort *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_snort_decode(const void *, size_t, struct arcana_jobs_submit_input_change_snort *,
+	    cbl_yarena *, int, char *, size_t);
 int	arcana_jobs_submit_input_change_encode(const struct arcana_jobs_submit_input_change *,
 	    struct cbl_ybuf *);
 int	arcana_jobs_submit_input_change_decode(const void *, size_t, struct arcana_jobs_submit_input_change *,
@@ -12277,6 +12680,30 @@ int	arcana_sdwan_sdwan_state_steer_encode(const struct arcana_sdwan_sdwan_state_
 	    struct cbl_ybuf *);
 int	arcana_sdwan_sdwan_state_steer_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_steer *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_edge_rules_table_encode(const struct arcana_sdwan_sdwan_state_edge_rules_table *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_edge_rules_table_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_edge_rules_table *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_edge_rules_counter_encode(const struct arcana_sdwan_sdwan_state_edge_rules_counter *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_edge_rules_counter_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_edge_rules_counter *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_edge_rules_encode(const struct arcana_sdwan_sdwan_state_edge_rules *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_edge_rules_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_edge_rules *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_edge_steer_candidate_encode(const struct arcana_sdwan_sdwan_state_edge_steer_candidate *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_edge_steer_candidate_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_edge_steer_candidate *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_edge_steer_encode(const struct arcana_sdwan_sdwan_state_edge_steer *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_edge_steer_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_edge_steer *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sdwan_sdwan_state_edge_encode(const struct arcana_sdwan_sdwan_state_edge *,
+	    struct cbl_ybuf *);
+int	arcana_sdwan_sdwan_state_edge_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_edge *,
+	    cbl_yarena *, int, char *, size_t);
 int	arcana_sdwan_sdwan_state_bird_protocol_encode(const struct arcana_sdwan_sdwan_state_bird_protocol *,
 	    struct cbl_ybuf *);
 int	arcana_sdwan_sdwan_state_bird_protocol_decode(const void *, size_t, struct arcana_sdwan_sdwan_state_bird_protocol *,
@@ -12360,6 +12787,78 @@ int	arcana_sshd_sshd_user_decode(const void *, size_t, struct arcana_sshd_sshd_u
 int	arcana_sshd_sshd_encode(const struct arcana_sshd_sshd *,
 	    struct cbl_ybuf *);
 int	arcana_sshd_sshd_decode(const void *, size_t, struct arcana_sshd_sshd *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_conf_encode(const struct arcana_builder_builder_conf *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_conf_decode(const void *, size_t, struct arcana_builder_builder_conf *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_jail_encode(const struct arcana_builder_builder_jail *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_jail_decode(const void *, size_t, struct arcana_builder_builder_jail *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_ports_encode(const struct arcana_builder_builder_ports *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_ports_decode(const void *, size_t, struct arcana_builder_builder_ports *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_make_conf_encode(const struct arcana_builder_builder_make_conf *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_make_conf_decode(const void *, size_t, struct arcana_builder_builder_make_conf *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_options_port_encode(const struct arcana_builder_builder_options_port *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_options_port_decode(const void *, size_t, struct arcana_builder_builder_options_port *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_options_encode(const struct arcana_builder_builder_options *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_options_decode(const void *, size_t, struct arcana_builder_builder_options *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_repo_encode(const struct arcana_builder_builder_repo *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_repo_decode(const void *, size_t, struct arcana_builder_builder_repo *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_build_failed_port_encode(const struct arcana_builder_builder_build_failed_port *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_build_failed_port_decode(const void *, size_t, struct arcana_builder_builder_build_failed_port *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_build_skipped_port_encode(const struct arcana_builder_builder_build_skipped_port *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_build_skipped_port_decode(const void *, size_t, struct arcana_builder_builder_build_skipped_port *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_build_encode(const struct arcana_builder_builder_build *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_build_decode(const void *, size_t, struct arcana_builder_builder_build *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_run_encode(const struct arcana_builder_builder_run *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_run_decode(const void *, size_t, struct arcana_builder_builder_run *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_port_options_input_encode(const struct arcana_builder_builder_port_options_input *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_port_options_input_decode(const void *, size_t, struct arcana_builder_builder_port_options_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_port_options_output_section_option_encode(const struct arcana_builder_builder_port_options_output_section_option *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_port_options_output_section_option_decode(const void *, size_t, struct arcana_builder_builder_port_options_output_section_option *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_port_options_output_section_encode(const struct arcana_builder_builder_port_options_output_section *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_port_options_output_section_decode(const void *, size_t, struct arcana_builder_builder_port_options_output_section *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_port_options_output_encode(const struct arcana_builder_builder_port_options_output *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_port_options_output_decode(const void *, size_t, struct arcana_builder_builder_port_options_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_encode(const struct arcana_builder_builder *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_decode(const void *, size_t, struct arcana_builder_builder *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_notify_notify_input_encode(const struct arcana_notify_notify_input *,
+	    struct cbl_ybuf *);
+int	arcana_notify_notify_input_decode(const void *, size_t, struct arcana_notify_notify_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_notify_notify_output_encode(const struct arcana_notify_notify_output *,
+	    struct cbl_ybuf *);
+int	arcana_notify_notify_output_decode(const void *, size_t, struct arcana_notify_notify_output *,
 	    cbl_yarena *, int, char *, size_t);
 
 /*
@@ -12582,5 +13081,11 @@ int	arcana_sdwan_sdwan_get(cbl_req *, struct arcana_sdwan *, cbl_yarena *);
 int	arcana_sdwan_sdwan_edit(cbl_req *, const struct arcana_sdwan *,
 	    const struct arcana_sdwan *);
 int	arcana_sshd_sshd_get(cbl_req *, struct arcana_sshd *, cbl_yarena *);
+int	arcana_builder_builder_get(cbl_req *, struct arcana_builder *, cbl_yarena *);
+int	arcana_builder_builder_port_options_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_builder_builder_port_options_input *,
+	    struct arcana_builder_builder_port_options_output *, cbl_yarena *);
+int	arcana_notify_notify_rpc(cbl_req *, const struct arcana_notify_notify_input *,
+	    struct arcana_notify_notify_output *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */

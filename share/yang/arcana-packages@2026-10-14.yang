@@ -104,6 +104,12 @@ module arcana-packages {
           "An installed package.";
         uses package;
       }
+      leaf-list repository {
+        type string;
+        description
+          "The repositories pkg is configured with there (pkg -vv),
+           enabled or not: an upgrade may be held to any of them.";
+      }
       action refresh {
         description
           "pkg update: the repository's catalogue read again, and what
@@ -144,6 +150,12 @@ module arcana-packages {
             default "any";
             description
               "How the repository is reached.";
+          }
+          leaf repository {
+            type string;
+            description
+              "From this one of pkg's repositories alone (pkg upgrade
+               -r); none, from where pkg's configuration has each.";
           }
         }
         output {

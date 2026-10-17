@@ -107,7 +107,10 @@ scoped(const struct arc_job_spec *sp)
 	    ARC_JOB_KIND_BIRD) || sp->kind == ARC_JOB_KIND_IPFW || sp->kind ==
 	    ARC_JOB_KIND_BRIDGE || sp->kind == ARC_JOB_KIND_GENEVE ||
 	    sp->kind == ARC_JOB_KIND_IPSEC || sp->kind == ARC_JOB_KIND_NEIGHBOUR ||
-	    sp->kind == ARC_JOB_KIND_CARP);
+	    sp->kind == ARC_JOB_KIND_CARP ||
+	    /* A vnet jail's own network's numbers, net.*: its own. */
+	    (sp->kind == ARC_JOB_KIND_SYSCTL && sp->jail != NULL &&
+	    sp->jail[0] != '\0'));
 }
 
 /* What the job does, in words: the activity log's line for it. */
@@ -183,6 +186,9 @@ title_of(const struct arc_job_spec *sp)
 		break;
 	case ARC_JOB_KIND_POUDRIERE:
 		rc = (t = poudriere_title(sp)) != NULL ? 0 : -1;
+		break;
+	case ARC_JOB_KIND_SNORT:
+		rc = (t = snort_title(sp)) != NULL ? 0 : -1;
 		break;
 	case ARC_JOB_KIND_CARP:
 		rc = asprintf(&t, "%s: carp %s vhid %s%s%s", sp->interface,
@@ -261,11 +267,12 @@ title_of(const struct arc_job_spec *sp)
 		    sp->reqid);
 		break;
 	case ARC_JOB_KIND_PKG_INSTALL:
-		rc = asprintf(&t, "pkg install %s%s%s%s%s", sp->names.n > 0 ?
+		rc = asprintf(&t, "pkg install %s%s%s%s%s%s%s", sp->names.n > 0 ?
 		    sp->names.v[0] : "", sp->names.n > 1 ? " and more" : "",
 		    sp->jail != NULL && sp->jail[0] != '\0' ? " in " : "",
-		    sp->jail != NULL ? sp->jail : "", sp->force ?
-		    " (any OSVERSION)" : "");
+		    sp->jail != NULL ? sp->jail : "", sp->pkg_repo != NULL ?
+		    " from " : "", sp->pkg_repo != NULL ? sp->pkg_repo : "",
+		    sp->force ? " (any OSVERSION)" : "");
 		break;
 	case ARC_JOB_KIND_PKG_CLEAN:
 		rc = asprintf(&t, "pkg clean%s%s%s", sp->force ? " -a" : "",
@@ -1000,6 +1007,10 @@ run(struct qjob *j)
 		error = NULL;
 		ok = do_poudriere_job(&j->w, sp, &error) == 0;
 		break;
+	case ARC_JOB_KIND_SNORT:
+		error = NULL;
+		ok = do_snort_job(&j->w, sp, &error) == 0;
+		break;
 	case ARC_JOB_KIND_CERT:
 		/* Any jail's: its files, not its network. */
 		error = NULL;
@@ -1112,6 +1123,7 @@ run(struct qjob *j)
 		uq.ignore_osversion = sp->force;
 		uq.has_pkg_ip = sp->has_pkg_ip;
 		uq.pkg_ip = sp->pkg_ip;
+		uq.pkg_repo = sp->pkg_repo;
 		do_pkg_upgrade(&j->w, &uq, &ur);
 		ok = ur.ok;
 		error = ur.error;

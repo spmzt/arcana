@@ -79,6 +79,10 @@ struct opts opts = {
 	.cicap_bin = PATH_CICAP_BIN,
 	.suricata_bin = PATH_SURICATA_BIN,
 	.poudriere_bin = PATH_POUDRIERE_BIN,
+	.ifmcstat_bin = PATH_IFMCSTAT_BIN,
+	.snort_bin = PATH_SNORT_BIN,
+	.snort_etc = PATH_SNORT_ETC,
+	.snort_log = PATH_SNORT_LOG,
 	.poudriere_etc = PATH_POUDRIERE_ETC,
 	.swanctl_dir = PATH_SWANCTL_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
@@ -104,7 +108,8 @@ struct opts opts = {
 static bool	foreground;
 
 enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API,
-    OPT_POUDRIERE, OPT_POUDRIERE_ETC };
+    OPT_POUDRIERE, OPT_POUDRIERE_ETC, OPT_IFMCSTAT, OPT_SNORT, OPT_SNORT_ETC,
+    OPT_SNORT_LOG };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
@@ -121,6 +126,10 @@ static const struct option longopts[] = {
 	 * a test's own. */
 	{ "poudriere", required_argument, NULL, OPT_POUDRIERE },
 	{ "poudriere-etc", required_argument, NULL, OPT_POUDRIERE_ETC },
+	{ "ifmcstat", required_argument, NULL, OPT_IFMCSTAT },
+	{ "snort", required_argument, NULL, OPT_SNORT },
+	{ "snort-etc", required_argument, NULL, OPT_SNORT_ETC },
+	{ "snort-log", required_argument, NULL, OPT_SNORT_LOG },
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -156,7 +165,9 @@ usage(void)
 	    "[-Z zpool] [-P pkg]\n"
 	    "                 [-X traceroute] [--bird-watch seconds]\n"
 	    "                 [--sctp-also addresses] [--telegram-api url]\n"
-	    "                 [--poudriere poudriere] [--poudriere-etc directory]\n");
+	    "                 [--poudriere poudriere] [--poudriere-etc directory]\n"
+	    "                 [--ifmcstat ifmcstat] [--snort snort]\n"
+	    "                 [--snort-etc directory] [--snort-log directory]\n");
 	exit(2);
 }
 
@@ -367,6 +378,18 @@ main(int argc, char *argv[])
 			break;
 		case OPT_POUDRIERE_ETC:
 			opts.poudriere_etc = optarg;
+			break;
+		case OPT_IFMCSTAT:
+			opts.ifmcstat_bin = optarg;
+			break;
+		case OPT_SNORT:
+			opts.snort_bin = optarg;
+			break;
+		case OPT_SNORT_ETC:
+			opts.snort_etc = optarg;
+			break;
+		case OPT_SNORT_LOG:
+			opts.snort_log = optarg;
 			break;
 		case OPT_BIRD_WATCH:
 			opts.bird_watch_s = (int)strtonum(optarg, 0, 3600, &errstr);

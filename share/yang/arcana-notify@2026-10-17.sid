@@ -1,0 +1,51 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-notify",
+    "module-revision": "2026-10-17",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "assignment-range": [
+      {
+        "entry-point": "72600",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-notify",
+        "sid": "72600"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-notify:notify",
+        "sid": "72601"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-notify:notify/input",
+        "sid": "72602"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-notify:notify/input/chat",
+        "sid": "72603"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-notify:notify/input/text",
+        "sid": "72604"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-notify:notify/input/token",
+        "sid": "72605"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-notify:notify/output",
+        "sid": "72606"
+      }
+    ]
+  }
+}

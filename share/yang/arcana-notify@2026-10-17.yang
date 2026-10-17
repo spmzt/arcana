@@ -1,0 +1,59 @@
+module arcana-notify {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-notify";
+  prefix arcntf;
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "A message sent to a Telegram chat by a bot, from a host that
+     reaches the world outside: the console's alerts and a workflow's
+     notify step.  The Bot API's sendMessage, POSTed over HTTPS by the
+     base system's fetch(3), which checks api.telegram.org's
+     certificate against the host's CAs.  The bot's token is used for
+     the request and forgotten: it is in no trace nor log.  The notify
+     operation of arcana.yaml converted (Y-3).";
+
+  revision 2026-10-17 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md, step 3.1.";
+  }
+
+  rpc notify {
+    description
+      "Send a message to a Telegram chat.";
+    input {
+      leaf token {
+        type string {
+          length "1..128";
+          pattern '[0-9]+:[A-Za-z0-9_-]+';
+        }
+        mandatory true;
+        description
+          "The bot's token, as BotFather gives it.  Used for this
+           message and forgotten.";
+      }
+      leaf chat {
+        type string {
+          pattern '-?[0-9]{1,20}|@[A-Za-z0-9_]{5,32}';
+        }
+        mandatory true;
+        description
+          "The chat: its number (negative for a group), or @ and a
+           channel's name.";
+      }
+      leaf text {
+        type string {
+          length "1..4096";
+        }
+        mandatory true;
+        description
+          "The message.";
+      }
+    }
+  }
+}

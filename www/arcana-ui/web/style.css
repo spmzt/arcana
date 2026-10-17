@@ -1384,8 +1384,22 @@ html.fx .gauge .spark .line {
 .server .ver.warn { color: var(--amber); }
 .sub { display: flex; gap: .25rem; flex-wrap: wrap; }
 .pkgs .buttons { display: flex; align-items: center; gap: .6rem; margin-top: .8rem; }
+/* A choice beside the buttons, on their line: pkg -r's repository. */
+.buttons label.pkg-repo {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+	margin: 0;
+}
+.buttons label.pkg-repo select {
+	width: auto;
+	margin: 0;
+}
 .pkgs .buttons .dim { flex: 1; }
 table.net td.c-run { color: var(--cyan); }
+table.net.mcast-ifs { margin-bottom: 14px; }
+form.mcast-set .toolbar { flex-wrap: wrap; }
 .sub button.on { color: var(--cyan); border-color: var(--cyan); }
 button.small { font-size: .72rem; padding: .25rem .6rem; }
 .family { margin: 1rem 0 .4rem; color: var(--dim); font-weight: 500; }
@@ -5059,6 +5073,13 @@ details.wfmore[open] > summary { margin-bottom: .45rem; }
 .secform label { display: flex; flex-direction: column; gap: .3rem; min-width: 0; font-size: .8rem; color: var(--fg-2); }
 .secform label.check { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .secform label.check small.help { flex-basis: 100%; }
+.secform .wide { grid-column: 1 / -1; margin: 0; }
+.sn-head .grow { flex: 1; }
+.sn-update label.grow { flex: 1; display: flex; align-items: center; gap: .6rem; }
+.sn-update label.grow input { flex: 1; min-width: 0; }
+.sn-src { margin: -.4rem 0 .8rem; font-size: .85rem; }
+.sn-conf textarea { width: 100%; box-sizing: border-box; }
+.sn-conf .buttons { display: flex; gap: .6rem; justify-content: flex-end; }
 .secform small.help { color: var(--dim); font-size: .7rem; line-height: 1.35; }
 .secform textarea { font-family: var(--mono); font-size: .78rem; }
 .secform details label { margin-top: .4rem; }

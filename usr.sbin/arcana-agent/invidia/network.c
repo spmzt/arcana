@@ -286,6 +286,183 @@ pcb_scan(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 	return (0);
 }
 
+/*
+ * IGMP's and MLD's state, as ifmcstat(8) prints it: an interface's name
+ * at the start of a line; under it, tab-indented, its "inet" and
+ * "inet6" addresses, an "igmpv3 rv 2 qi 125 qri 100 uri 3" or "mldv2
+ * flags=2<USEALLOW> rv 2 qi 125 qri 10000 uri 3" line of the version it
+ * speaks, and each "group 224.0.0.1 mode exclude" with, deeper, its
+ * "mcast-macaddr" and its "source"s.  And the kernel's settings of
+ * both, by sysctl(8): the jail's own in a vnet jail.
+ */
+static const char *const mcast_settings[] = {
+	"net.inet.igmp.default_version", "net.inet.igmp.v1enable",
+	"net.inet.igmp.v2enable", "net.inet.igmp.legacysupp",
+	"net.inet.igmp.sendlocal", "net.inet.igmp.sendra",
+	"net.inet6.mld.v1enable", "net.inet6.mld.v2enable",
+	"net.inet6.mld.use_allow",
+};
+
+/* "igmpv3 rv 2 qi 125 qri 100 uri 3" (or mldv2 with flags) into o. */
+static void
+mcast_proto(ucl_object_t *o, const char *line, int skip)
+{
+	char	*copy, *it, *word, *key;
+	char	 buf[256];
+
+	snprintf(buf, sizeof(buf), "%s", line);
+	copy = buf;
+	ucl_object_insert_key(o, ucl_object_fromint(atoi(line + skip)),
+	    "version", 0, false);
+	key = NULL;
+	for (it = copy; (word = strsep(&it, " \t")) != NULL; ) {
+		if (word[0] == '\0')
+			continue;
+		if (strncmp(word, "flags=", 6) == 0) {
+			char	*lt = strchr(word, '<'), *gt;
+
+			if (lt != NULL && (gt = strchr(lt, '>')) != NULL) {
+				*gt = '\0';
+				ucl_object_insert_key(o, ucl_object_fromstring(
+				    lt + 1), "flags", 0, true);
+			}
+			continue;
+		}
+		if (key != NULL) {
+			ucl_object_insert_key(o, ucl_object_fromint(atoi(word)),
+			    key, 0, true);
+			key = NULL;
+		} else if (strcmp(word, "rv") == 0 || strcmp(word, "qi") == 0 ||
+		    strcmp(word, "qri") == 0 || strcmp(word, "uri") == 0)
+			key = word;
+	}
+}
+
+static int
+do_multicast(struct work *w, struct arc_network_rsp *rsp)
+{
+	struct execres	 res;
+	ucl_object_t	*top, *ifs, *ifo, *groups, *g, *settings;
+	unsigned char	*json;
+	char		*argv[3], *copy, *it, *line, *p, *q;
+	const char	*family;
+	size_t		 i, n;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	argv[0] = (char *)(uintptr_t)opts.ifmcstat_bin;
+	argv[1] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		rsp->error = wtext(w, exec_error(w, &res, "ifmcstat"));
+		return (0);
+	}
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ifs = ucl_object_typed_new(UCL_ARRAY);
+	ifo = groups = g = NULL;
+	family = "inet";
+	copy = wstrndup(w, res.out != NULL ? res.out : "", res.outlen);
+	for (it = copy; (line = strsep(&it, "\n")) != NULL; ) {
+		if (line[0] == '\0')
+			continue;
+		if (line[0] != '\t') {
+			/* "vtnet0:": an interface. */
+			if ((p = strchr(line, ':')) == NULL)
+				continue;
+			*p = '\0';
+			ifo = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(ifo, ucl_object_fromstring(line),
+			    "name", 0, true);
+			groups = ucl_object_typed_new(UCL_ARRAY);
+			ucl_object_insert_key(ifo, groups, "groups", 0, false);
+			ucl_array_append(ifs, ifo);
+			g = NULL;
+			continue;
+		}
+		if (ifo == NULL)
+			continue;
+		p = line + strspn(line, "\t");
+		if (strncmp(p, "inet6 ", 6) == 0)
+			family = "inet6";
+		else if (strncmp(p, "inet ", 5) == 0)
+			family = "inet";
+		else if (strncmp(p, "igmpv", 5) == 0) {
+			ucl_object_t	*o = ucl_object_typed_new(UCL_OBJECT);
+
+			mcast_proto(o, p, 5);
+			ucl_object_replace_key(ifo, o, "igmp", 0, true);
+		} else if (strncmp(p, "mldv", 4) == 0) {
+			ucl_object_t	*o = ucl_object_typed_new(UCL_OBJECT);
+
+			mcast_proto(o, p, 4);
+			ucl_object_replace_key(ifo, o, "mld", 0, true);
+		} else if (strncmp(p, "group ", 6) == 0) {
+			/* "group ff02::1%vtnet0 scopeid 0x1 mode exclude" */
+			g = ucl_object_typed_new(UCL_OBJECT);
+			q = p + 6;
+			n = strcspn(q, " %");
+			ucl_object_insert_key(g, ucl_object_fromstring(family),
+			    "family", 0, false);
+			ucl_object_insert_key(g, ucl_object_fromlstring(q, n),
+			    "group", 0, true);
+			if ((q = strstr(p, " mode ")) != NULL)
+				ucl_object_insert_key(g, ucl_object_fromstring(q +
+				    6), "mode", 0, true);
+			ucl_object_insert_key(g, ucl_object_typed_new(UCL_ARRAY),
+			    "sources", 0, false);
+			ucl_array_append(groups, g);
+		} else if (g != NULL && strncmp(p, "mcast-macaddr ", 14) == 0)
+			ucl_object_replace_key(g, ucl_object_fromstring(p + 14),
+			    "lladdr", 0, true);
+		else if (g != NULL && strncmp(p, "source ", 7) == 0) {
+			q = p + 7;
+			n = strcspn(q, " %");
+			ucl_array_append((ucl_object_t *)(uintptr_t)
+			    ucl_object_lookup(g, "sources"),
+			    ucl_object_fromlstring(q, n));
+		}
+	}
+	ucl_object_insert_key(top, ifs, "interfaces", 0, false);
+	/* The kernel's settings, as its own sysctl(8) says them there. */
+	settings = ucl_object_typed_new(UCL_ARRAY);
+	{
+		char	*sv[nitems(mcast_settings) + 3];
+
+		sv[0] = (char *)(uintptr_t)opts.sysctl_bin;
+		sv[1] = (char *)(uintptr_t)"-e";
+		for (i = 0; i < nitems(mcast_settings); i++)
+			sv[i + 2] = (char *)(uintptr_t)mcast_settings[i];
+		sv[i + 2] = NULL;
+		if (run_exec(w, sv, &res) == 0 && res.out != NULL) {
+			copy = wstrndup(w, res.out, res.outlen);
+			for (it = copy; (line = strsep(&it, "\n")) != NULL; ) {
+				ucl_object_t	*s;
+
+				if ((p = strchr(line, '=')) == NULL)
+					continue;
+				*p = '\0';
+				s = ucl_object_typed_new(UCL_OBJECT);
+				ucl_object_insert_key(s, ucl_object_fromstring(
+				    line), "name", 0, true);
+				ucl_object_insert_key(s, ucl_object_fromstring(
+				    p + 1), "value", 0, true);
+				ucl_array_append(settings, s);
+			}
+		}
+	}
+	ucl_object_insert_key(top, settings, "settings", 0, false);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	if (json == NULL || strlen((char *)json) > ARC_MAX_JSON) {
+		free(json);
+		rsp->error = "more multicast state than a reply carries";
+		return (0);
+	}
+	rsp->json = wstrdup(w, (char *)json);
+	free(json);
+	rsp->ok = true;
+	return (0);
+}
+
 int
 do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
     uint32_t fib, uint32_t offset, struct arc_network_rsp *rsp)
@@ -308,6 +485,8 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 		return (do_bird(w, rsp));
 	if (kind == ARC_NET_KIND_IPSEC)
 		return (do_ipsec(w, rsp));
+	if (kind == ARC_NET_KIND_MULTICAST)
+		return (do_multicast(w, rsp));
 	if (kind == ARC_NET_KIND_BIRD_ROUTES)
 		return (do_bird_routes(w, filter, rsp));
 	if (kind == ARC_NET_KIND_BRIDGES || kind == ARC_NET_KIND_GENEVE)

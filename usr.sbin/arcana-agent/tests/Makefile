@@ -79,8 +79,10 @@ CFLAGS.yng.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 LDADD.yplug+=	${CBLINK_LIBS} ${UCL_LIBS}
 # ymisc: the host, the agent and the jails' files as their modules have them.
 PROGS+=		ymisc
-SRCS.ymisc=	ymisc_test.c yhost.c yagent.c yjf.c ysshd.c yjson.c ymodel_schema.c
+SRCS.ymisc=	ymisc_test.c yhost.c yagent.c yjf.c ysshd.c ybuilder.c yjson.c \
+		ymodel_schema.c
 CFLAGS.ysshd.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+CFLAGS.ybuilder.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 CFLAGS.ymisc_test.c+=	-I${.OBJDIR}/..
 CFLAGS.yhost.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 CFLAGS.yagent.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}

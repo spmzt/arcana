@@ -137,6 +137,9 @@ submodule arcana-jobs-kinds {
       enum poudriere {
         value 37;
       }
+      enum snort {
+        value 38;
+      }
     }
     description
       "A kind of job, by its number in arcana.yaml's job-kind.";
@@ -302,6 +305,11 @@ submodule arcana-jobs-kinds {
             type uint32;
             description
               "pkg's network";
+          }
+          leaf pkg-repo {
+            type string;
+            description
+              "Repository";
           }
         }
       }
@@ -1310,6 +1318,11 @@ submodule arcana-jobs-kinds {
             description
               "pkg's network";
           }
+          leaf pkg-repo {
+            type string;
+            description
+              "Repository";
+          }
         }
       }
       case jail-conf {
@@ -1587,6 +1600,36 @@ submodule arcana-jobs-kinds {
               enum make-conf;
               enum conf;
               enum options;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
+        }
+      }
+      case snort {
+        container snort {
+          presence
+            "This kind of job.";
+          description
+            "Snort's settings, configuration and rules";
+          leaf verb {
+            type enumeration {
+              enum set;
+              enum conf;
+              enum update;
+              enum rule;
             }
             mandatory true;
             description

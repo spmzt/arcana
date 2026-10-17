@@ -64,6 +64,9 @@ static const char *const poudriere_verb[] = {
 	"ports-update", "ports-delete", "bulk", "stop", "make-conf", "conf",
 	"options",
 };
+static const char *const snort_verb[] = {
+	"set", "conf", "update", "rule",
+};
 
 /*
  * Change c made job-spec sp, its arrays a's.  0, or EINVAL: no kind,
@@ -156,6 +159,7 @@ yjobs_spec(const struct arcana_jobs_submit_input_change *in,
 		sp->force = c->has_force && c->force;
 		if ((sp->has_pkg_ip = c->has_pkg_ip))
 			sp->pkg_ip = c->pkg_ip;
+		sp->pkg_repo = c->pkg_repo;
 		return (0);
 	}
 	case ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_IF_ADDRESS: {
@@ -582,6 +586,7 @@ yjobs_spec(const struct arcana_jobs_submit_input_change *in,
 		sp->force = c->has_force && c->force;
 		if ((sp->has_pkg_ip = c->has_pkg_ip))
 			sp->pkg_ip = c->pkg_ip;
+		sp->pkg_repo = c->pkg_repo;
 		return (0);
 	}
 	case ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_JAIL_CONF: {
@@ -682,6 +687,20 @@ yjobs_spec(const struct arcana_jobs_submit_input_change *in,
 		sp->kind = ARC_JOB_KIND_POUDRIERE;
 		if (c->has_verb)
 			sp->verb = poudriere_verb[c->verb];
+		sp->names.n = c->args.n;
+		sp->names.v = c->args.v;
+		sp->text = c->text;
+		return (0);
+	}
+	case ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SNORT: {
+		const struct arcana_jobs_submit_input_change_snort *c =
+		    in->snort;
+
+		if (c == NULL)
+			return (EINVAL);
+		sp->kind = ARC_JOB_KIND_SNORT;
+		if (c->has_verb)
+			sp->verb = snort_verb[c->verb];
 		sp->names.n = c->args.n;
 		sp->names.v = c->args.v;
 		sp->text = c->text;

@@ -56,6 +56,8 @@ main(int argc, char **argv)
 				printf(" tca delay=%jd ipdv=%jd loss=%jd damping=%u",
 				    (intmax_t)t->tca->delay, (intmax_t)t->tca->ipdv,
 				    (intmax_t)t->tca->loss, t->tca->damping);
+			if (t->jail != NULL)
+				printf(" jail=%s", t->jail);
 			printf("\n");
 		}
 		same((void *)arcana_probe_probes_encode, (void *)
@@ -80,6 +82,8 @@ main(int argc, char **argv)
 			    str(t->since), t->interval, t->size, t->eval, t->dscp,
 			    (uintmax_t)t->sent, (uintmax_t)t->received, t->misses,
 			    (intmax_t)t->last_rtt, t->kept);
+			if (t->jail != NULL)
+				printf("  jail %s\n", t->jail);
 			if (t->now != NULL)
 				printf("  now sent=%u received=%u delay=%jd ipdv=%jd "
 				    "loss=%jd age=%jd\n", t->now->sent,
@@ -105,7 +109,8 @@ main(int argc, char **argv)
 
 		if ((error = ysd_rules_from_json(slurp(argv[2]), a, &r)) != 0)
 			errc(1, error, "ysd_rules_from_json");
-		printf("rules set=%u\n", r.set);
+		printf("rules set=%u%s%s\n", r.set, r.jail != NULL ? " jail=" :
+		    "", r.jail != NULL ? r.jail : "");
 		for (size_t i = 0; i < r.table.n; i++) {
 			printf("table %s %s", r.table.v[i].name,
 			    r.table.v[i].has_valtype ? vt[r.table.v[i].valtype] :
@@ -136,6 +141,8 @@ main(int argc, char **argv)
 				    s.entry.v[i].candidate.v[k].via.v.m0 : "-");
 			printf("\n");
 		}
+		if (s.jail != NULL)
+			printf("jail %s\n", s.jail);
 		same((void *)arcana_sdwan_sdwan_steer_encode, (void *)
 		    arcana_sdwan_sdwan_steer_decode, &s, &back, a);
 	} else if (strcmp(argv[1], "bird") == 0 || strcmp(argv[1], "dhcp") == 0
@@ -228,6 +235,21 @@ main(int argc, char **argv)
 				    s.steer.v[i].candidate.v[k].via.v.m0 : "-",
 				    s.steer.v[i].candidate.v[k].has_state ? cstates[
 				    s.steer.v[i].candidate.v[k].state] : "-");
+			printf("\n");
+		}
+		/* Each jail's edge, as briefly. */
+		for (size_t i = 0; i < s.edge.n; i++) {
+			const struct arcana_sdwan_sdwan_state_edge *e =
+			    &s.edge.v[i];
+
+			printf("edge %s", e->jail);
+			if (e->rules != NULL)
+				printf(" set=%u rules=%u tables=%zu", e->rules->set,
+				    e->rules->rules, e->rules->table.n);
+			printf(" steered=%s", e->steered ? "yes" : "no");
+			for (size_t k = 0; k < e->steer.n; k++)
+				printf(" %s/%s:%zu", e->steer.v[k].table,
+				    e->steer.v[k].prefix, e->steer.v[k].candidate.n);
 			printf("\n");
 		}
 		for (size_t i = 0; i < s.bird.n; i++) {

@@ -15,6 +15,7 @@
 
 #define	_GNU_SOURCE		/* strcasestr(3) */
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -735,6 +736,66 @@ rekey_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	paths_load();
 }
 
+/* Does a fault's object (id, id@jail, id@jail/metric) or a target's
+ * jail belong to the edge whose jail is jail ("" the host)? */
+static bool
+of_jail(const char *object, const char *jail)
+{
+	const char	*at;
+	size_t		 n;
+
+	if (object == NULL || (at = strchr(object, '@')) == NULL)
+		return (jail[0] == '\0');
+	n = strcspn(at + 1, "/");
+	return (strlen(jail) == n && strncmp(at + 1, jail, n) == 0);
+}
+
+/*
+ * The server's sdwan read made the edge's own: a jail's (server/jail)
+ * targets, faults, rules and steering, the host's without its jails'.
+ */
+static void
+edge_view(ucl_object_t *data, const char *edge)
+{
+	const ucl_object_t	*t, *e;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*keep;
+	const char		*jail;
+
+	jail = strchr(edge, '/') != NULL ? strchr(edge, '/') + 1 : "";
+	keep = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((t = ucl_object_iterate(jget(data, "targets"), &it, true)) !=
+	    NULL)
+		if (strcmp(jstr(t, "jail") != NULL ? jstr(t, "jail") : "",
+		    jail) == 0)
+			ucl_array_append(keep, ucl_object_copy(t));
+	ucl_object_replace_key(data, keep, "targets", 0, false);
+	keep = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((t = ucl_object_iterate(jget(data, "faults"), &it, true)) !=
+	    NULL)
+		if (of_jail(jstr(t, "object"), jail))
+			ucl_array_append(keep, ucl_object_copy(t));
+	ucl_object_replace_key(data, keep, "faults", 0, false);
+	if (jail[0] != '\0') {
+		e = NULL;
+		it = NULL;
+		while ((t = ucl_object_iterate(jget(data, "edges"), &it, true)) !=
+		    NULL)
+			if (jstr(t, "jail") != NULL && strcmp(jstr(t, "jail"),
+			    jail) == 0)
+				e = t;
+		ucl_object_replace_key(data, e != NULL && jget(e, "rules") !=
+		    NULL ? ucl_object_copy(jget(e, "rules")) :
+		    ucl_object_typed_new(UCL_OBJECT), "rules", 0, false);
+		ucl_object_replace_key(data, e != NULL && jget(e, "steer") !=
+		    NULL ? ucl_object_copy(jget(e, "steer")) :
+		    ucl_object_typed_new(UCL_ARRAY), "steer", 0, false);
+	}
+	(void)ucl_object_delete_key(data, "edges");
+}
+
 static void
 paths_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -746,6 +807,7 @@ paths_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		if (sd.paths == NULL)
 			sd.paths = ucl_object_typed_new(UCL_OBJECT);
 		data = ucl_object_copy(jget(o, "data"));
+		edge_view(data, sid);
 		if (jget(sd.paths, sid) != NULL)
 			samples_merge(data, jget(sd.paths, sid));
 		(void)ucl_object_delete_key(sd.paths, sid);
@@ -754,9 +816,9 @@ paths_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		if (sd.faults == NULL)
 			sd.faults = ucl_object_typed_new(UCL_OBJECT);
 		(void)ucl_object_delete_key(sd.faults, sid);
-		ucl_object_insert_key(sd.faults, jget(jget(o, "data"), "faults")
-		    != NULL ? ucl_object_copy(jget(jget(o, "data"), "faults")) :
-		    ucl_object_typed_new(UCL_ARRAY), sid, 0, true);
+		ucl_object_insert_key(sd.faults, jget(jget(sd.paths, sid),
+		    "faults") != NULL ? ucl_object_copy(jget(jget(sd.paths, sid),
+		    "faults")) : ucl_object_typed_new(UCL_ARRAY), sid, 0, true);
 	}
 	free(sid);
 }
@@ -787,8 +849,9 @@ paths_load(void)
 				continue;
 			ucl_object_insert_key(asked, ucl_object_frombool(true),
 			    jstr(e, "edge"), 0, true);
-			snprintf(url, sizeof(url), "/api/servers/%s/sdwan",
-			    jstr(e, "edge"));
+			/* A jail's edge: its server's read, its part kept. */
+			snprintf(url, sizeof(url), "/api/servers/%.*s/sdwan",
+			    (int)strcspn(jstr(e, "edge"), "/"), jstr(e, "edge"));
 			if (paths_after(jstr(e, "edge")) > 0)
 				snprintf(url + strlen(url), sizeof(url) - strlen(url),
 				    "?after=%lld", (long long)paths_after(jstr(e,
@@ -807,8 +870,23 @@ paths_load(void)
 static const char *
 host_name(const char *id)
 {
-	int	i;
+	static char	 buf[4][160];
+	static int	 k;
+	const char	*slash;
+	int		 i;
 
+	/* An edge that is a vnet jail, server/jail: name/jail. */
+	if (id != NULL && (slash = strchr(id, '/')) != NULL) {
+		for (i = 0; i < app.nservers; i++)
+			if (strlen(app.servers[i].id) == (size_t)(slash - id) &&
+			    strncmp(app.servers[i].id, id, slash - id) == 0)
+				break;
+		k = (k + 1) % 4;
+		snprintf(buf[k], sizeof(buf[k]), "%.*s/%s", i < app.nservers ?
+		    (int)strlen(app.servers[i].name) : (int)(slash - id), i <
+		    app.nservers ? app.servers[i].name : id, slash + 1);
+		return (buf[k]);
+	}
 	for (i = 0; id != NULL && i < app.nservers; i++)
 		if (strcmp(app.servers[i].id, id) == 0)
 			return (app.servers[i].name);
@@ -4321,6 +4399,7 @@ sdwan_modal(struct html *h)
 	}
 	if (app.modal == MODAL_SD_EDGE) {
 		char	ntp[600];
+		size_t	elen;
 
 		e = edge_by(sd.edit);
 		h_fmt(h, "<form data-form=\"sd-edge\"><h2>%s</h2><p>A host "
@@ -4331,27 +4410,35 @@ sdwan_modal(struct html *h)
 		    "An edge");
 		h_attr(h, "value", sd.edit);
 		h_raw(h, ">");
+		/* A host, or a vnet jail on it (server/jail): any host, as
+		 * each may have its jails as edges beside itself. */
+		elen = strcspn(sd.edit, "/");
 		for (i = n = 0; i < app.nservers; i++)
-			if ((e == NULL && edge_by(app.servers[i].id) == NULL) ||
-			    (e != NULL && strcmp(app.servers[i].id, sd.edit) == 0))
+			if (e == NULL || (strlen(app.servers[i].id) == elen &&
+			    strncmp(app.servers[i].id, sd.edit, elen) == 0))
 				n++;
 		if (n == 0) {
 			sd.blocked = true;
-			h_raw(h, "<div class=\"notice\">Every host the console has "
-			    "is an edge already. A host joins the console from "
-			    "<b>Devices</b>, + host, with arcana-agent on it.</div>");
+			h_raw(h, "<div class=\"notice\">The console has no host "
+			    "yet. A host joins the console from <b>Devices</b>, + "
+			    "host, with arcana-agent on it.</div>");
 		} else {
 			h_raw(h, "<label>Host<select name=\"host\" autofocus>");
 			for (i = 0; i < app.nservers; i++) {
-				if (e == NULL && edge_by(app.servers[i].id) != NULL)
-					continue;
-				if (e != NULL && strcmp(app.servers[i].id, sd.edit) !=
-				    0)
+				if (e != NULL && (strlen(app.servers[i].id) != elen ||
+				    strncmp(app.servers[i].id, sd.edit, elen) != 0))
 					continue;
 				option(h, app.servers[i].id, app.servers[i].name,
 				    NULL);
 			}
 			h_raw(h, "</select></label>");
+			text_field(h, "Jail", "jail", e != NULL && sd.edit[elen] ==
+			    '/' ? sd.edit + elen + 1 : "", "none: the host itself",
+			    e != NULL ? "Fixed once the edge is made." : "A vnet "
+			    "jail on the host to be the edge instead: its own "
+			    "network (interfaces, routes, ipfw), its tunnels "
+			    "measured and steered there (jexec, ifconfig -j). "
+			    "Empty: the host itself.");
 		}
 		/* Rarely set: folded, open only when it is. */
 		h_raw(h, "<details class=\"sd-more\"");
@@ -5963,6 +6050,8 @@ sd_forms(const char *form, const ucl_object_t *f)
 		}
 	} else if (strcmp(form, "sd-edge") == 0) {
 		ucl_object_t	*ed;
+		char		 eid[160];
+		const char	*jl, *q;
 
 		id = jstr(f, "host");
 		was = jstr(f, "was") != NULL ? jstr(f, "was") : "";
@@ -5972,6 +6061,30 @@ sd_forms(const char *form, const ucl_object_t *f)
 			ucl_object_unref(doc);
 			return (true);
 		}
+		/* A jail's edge is server/jail; once made, it stays. */
+		jl = jstr(f, "jail") != NULL ? jstr(f, "jail") : "";
+		for (q = jl; *q != '\0'; q++)
+			if (!isalnum((unsigned char)*q) && strchr("-_.", *q) ==
+			    NULL) {
+				snprintf(app.modal_error, sizeof(app.modal_error),
+				    "A jail's name is letters, digits, - _ and .");
+				ucl_object_unref(doc);
+				return (true);
+			}
+		if (was[0] != '\0')
+			snprintf(eid, sizeof(eid), "%s", was);
+		else if (jl[0] != '\0')
+			snprintf(eid, sizeof(eid), "%s/%s", id, jl);
+		else
+			snprintf(eid, sizeof(eid), "%s", id);
+		if (was[0] == '\0' && jfind(jget(doc, "edges"), "server", eid) !=
+		    NULL) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "%s is "
+			    "an edge already", host_name(eid));
+			ucl_object_unref(doc);
+			return (true);
+		}
+		id = eid;
 		if ((arr = (ucl_object_t *)(uintptr_t)jget(doc, "edges")) ==
 		    NULL) {
 			arr = ucl_object_typed_new(UCL_ARRAY);

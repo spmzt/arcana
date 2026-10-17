@@ -200,6 +200,8 @@ usage(void)
 	    "        untrust file | rehash\n"
 	    "    poudriere [list] | show-options key=value ... |\n"
 	    "        make-conf name|- file|- | verb [key=value ...]\n"
+	    "    snort [list | rules] | conf snort.lua|local.rules file |\n"
+	    "        verb [key=value ...]\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
@@ -284,9 +286,10 @@ usage(void)
 	    "    cam rescan\n"
 	    "    fstab [-w new-text [-n]]\n"
 	    "    packages [-i] [-r] [-4 | -6] [jail]\n"
-	    "    pkg-upgrade [-n] [-O] [-4 | -6] [-j jail | -J] [package ...]\n"
+	    "    pkg-upgrade [-n] [-O] [-4 | -6] [-r repo] [-j jail | -J] "
+	    "[package ...]\n"
 	    "    pkg-clean [-a] [-j jail | -J]\n"
-	    "    pkg-install [-O] [-4 | -6] [-j jail] package ...\n"
+	    "    pkg-install [-O] [-4 | -6] [-r repo] [-j jail] package ...\n"
 	    "    jobs\n"
 	    "    job [-w] id\n"
 	    "    job-cancel id\n"
@@ -1839,7 +1842,7 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
 	    "bird-routes", "bridges", "geneve", "ipfw", "nhgroups",
-	    "neighbours", "ipsec" };
+	    "neighbours", "ipsec", "multicast" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;
@@ -2423,6 +2426,58 @@ cmd_poudriere(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
+ * snort [list | rules] | conf snort.lua|local.rules file |
+ * verb [key=value ...]: Snort, a plugin; a change is a job.
+ */
+static int
+cmd_snort(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	struct arc_snort_req	 rq;
+	struct arc_snort_rsp	*rs;
+	char			*nm;
+	int			 error;
+
+	if (argc == 1 || (argc == 2 && (strcmp(argv[1], "list") == 0 ||
+	    strcmp(argv[1], "rules") == 0))) {
+		memset(&rq, 0, sizeof(rq));
+		if (argc == 2 && strcmp(argv[1], "rules") == 0) {
+			rq.names.v = (const char **)(uintptr_t)&argv[1];
+			rq.names.n = 1;
+		}
+		if ((error = arc_snort(cl, &rq, &rs)) != 0)
+			fail(cl, error, "snort");
+		if (rs->json != NULL)
+			xo_emit("{:json/%s}\n", rs->json);
+		else if (rs->error != NULL)
+			warnx("%s", rs->error);
+		emit_trace(rs->trace.v, rs->trace.n);
+		error = rs->ok ? 0 : 1;
+		arc_snort_rsp_free(rs);
+		return (error);
+	}
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_SNORT;
+	sp.verb = argv[1];
+	if (strcmp(argv[1], "conf") == 0) {
+		if (argc != 4)
+			usage();
+		if (asprintf(&nm, "file=%s", argv[2]) == -1)
+			err(1, "asprintf");
+		sp.names.v = (const char **)(uintptr_t)&nm;
+		sp.names.n = 1;
+		sp.text = slurp(argv[3]);
+	} else {
+		sp.names.v = (const char **)(uintptr_t)&argv[2];
+		sp.names.n = (size_t)argc - 2;
+	}
+	/* The host's alone: -j is passed on to be refused, not dropped. */
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/*
  * cert [list] | add name file | remove name | trust file | untrust file |
  * rehash: the certificates OpenSSL trusts, of the host or of -j's jail;
  * a change is a job.
@@ -2628,6 +2683,7 @@ cmd_sysctl(struct arc_client *cl, int argc, char **argv)
 		usage();
 	memset(&req, 0, sizeof(req));
 	req.net_filter = argc == 2 ? argv[1] : NULL;
+	req.jail = netjail;
 	if ((error = arc_sysctl(cl, &req, &rsp)) != 0)
 		fail(cl, error, "sysctl");
 	if (rsp->json != NULL)
@@ -2790,8 +2846,18 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 			hq.limit_rules = argv[argc - 1];
 			argc -= 2;
 		}
-		if ((argc == 4 || argc == 7) && strcmp(argv[1], "set") == 0) {
-			if (argc == 7) {
+		if ((argc == 4 || argc == 7 || argc == 8) && strcmp(argv[1],
+		    "set") == 0) {
+			/* ... cpu mem swap [storage] */
+			if (argc == 8) {
+				hq.has_limit_storage = true;
+				hq.limit_storage = (uint32_t)strtonum(argv[7],
+				    0, 100, &e);
+				if (e != NULL)
+					xo_errx(1, "history: a limit is 0 to "
+					    "100");
+			}
+			if (argc >= 7) {
 				hq.has_limit_cpu = hq.has_limit_mem =
 				    hq.has_limit_swap = true;
 				hq.limit_cpu = (uint32_t)strtonum(argv[4], 0,
@@ -3510,6 +3576,17 @@ cmd_packages(struct arc_client *cl, int argc, char **argv)
 		emit_installed(rsp->packages.v, rsp->packages.n);
 	else if (rsp->ok)
 		emit_packages(rsp->packages.v, rsp->packages.n);
+	/* pkg's repositories there: what -r of pkg-upgrade may name. */
+	if (rsp->ok && rsp->pkg_repos.n > 0) {
+		size_t	i;
+
+		xo_open_list("repository");
+		xo_emit("{Lwc:Repositories}");
+		for (i = 0; i < rsp->pkg_repos.n; i++)
+			xo_emit("{P: }{l:repository/%s}", rsp->pkg_repos.v[i]);
+		xo_close_list("repository");
+		xo_emit("\n");
+	}
 	emit_trace(rsp->trace.v, rsp->trace.n);
 	error = rsp->ok ? 0 : 1;
 	if (!rsp->ok)
@@ -3600,7 +3677,7 @@ cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
-/* pkg-install [-O] [-4 | -6] [-j jail] package ...: a job. */
+/* pkg-install [-O] [-4 | -6] [-r repo] [-j jail] package ...: a job. */
 static int
 cmd_pkg_install(struct arc_client *cl, int argc, char **argv)
 {
@@ -3611,7 +3688,7 @@ cmd_pkg_install(struct arc_client *cl, int argc, char **argv)
 	sp.has_kind = true;
 	sp.kind = ARC_JOB_KIND_PKG_INSTALL;
 	optind = 1;
-	while ((ch = getopt(argc, argv, "46Oj:")) != -1) {
+	while ((ch = getopt(argc, argv, "46Oj:r:")) != -1) {
 		switch (ch) {
 		case '4':
 		case '6':
@@ -3620,6 +3697,9 @@ cmd_pkg_install(struct arc_client *cl, int argc, char **argv)
 			break;
 		case 'O':
 			sp.force = true;
+			break;
+		case 'r':
+			sp.pkg_repo = optarg;
 			break;
 		case 'j':
 			sp.jail = optarg;
@@ -3730,8 +3810,9 @@ cmd_ipsec(struct arc_client *cl, int argc, char **argv)
 	return (submit(cl, &sp));
 }
 
-/* pkg-upgrade [-n] [-O] [-4 | -6] [-j jail | -J] [package ...]: -J, of
- * every running jail, by the agent, one after the other. */
+/* pkg-upgrade [-n] [-O] [-4 | -6] [-r repo] [-j jail | -J] [package ...]:
+ * -J, of every running jail, by the agent, one after the other; -r, from
+ * that repository alone. */
 static int
 cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 {
@@ -3741,7 +3822,7 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 
 	memset(&req, 0, sizeof(req));
 	optind = 1;
-	while ((ch = getopt(argc, argv, "46OJj:n")) != -1) {
+	while ((ch = getopt(argc, argv, "46OJj:nr:")) != -1) {
 		switch (ch) {
 		case '4':
 		case '6':
@@ -3762,6 +3843,9 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 		case 'n':
 			req.dry_run = true;
 			break;
+		case 'r':
+			req.pkg_repo = optarg;
+			break;
 		default:
 			usage();
 		}
@@ -3778,6 +3862,7 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 		sp.force = req.ignore_osversion;
 		sp.has_pkg_ip = req.has_pkg_ip;
 		sp.pkg_ip = req.pkg_ip;
+		sp.pkg_repo = req.pkg_repo;
 		sp.names.v = req.names.v;
 		sp.names.n = req.names.n;
 		return (submit(cl, &sp));
@@ -4116,6 +4201,8 @@ main(int argc, char *argv[])
 		rc = cmd_carp(&cl, argc, argv);
 	else if (strcmp(argv[0], "cert") == 0)
 		rc = cmd_cert(&cl, argc, argv);
+	else if (strcmp(argv[0], "snort") == 0)
+		rc = cmd_snort(&cl, argc, argv);
 	else if (strcmp(argv[0], "poudriere") == 0)
 		rc = cmd_poudriere(&cl, argc, argv);
 	else if (strcmp(argv[0], "sshd") == 0)

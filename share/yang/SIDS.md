@@ -83,8 +83,8 @@ bytes on the wire, where it was 9.
 | 62 000 | 100 | `ietf-logical-network-element@2019-01-25` (no IETF range) | `share/yang/ietf-logical-network-element@2019-01-25.sid` (12 used) |
 | 62 100 | 100 | `arcana-jails` | `share/yang/arcana-jails@2026-10-14.sid` (51 used) |
 | 62 200 | 100 | `arcana-services` | `share/yang/arcana-services@2026-10-14.sid` (39 used) |
-| 62 300 | 100 | `arcana-packages` | `share/yang/arcana-packages@2026-10-14.sid` (59 used) |
-| 62 400 | 1 000 | `arcana-jobs`, its submodule `arcana-jobs-kinds` | `share/yang/arcana-jobs@2026-10-14.sid` (277 used; room for the kinds to come) |
+| 62 300 | 100 | `arcana-packages` | `share/yang/arcana-packages@2026-10-14.sid` (63 used) |
+| 62 400 | 1 000 | `arcana-jobs`, its submodule `arcana-jobs-kinds` | `share/yang/arcana-jobs@2026-10-14.sid` (283 used; room for the kinds to come) |
 | 63 400 | 200 | `arcana-storage` | `share/yang/arcana-storage@2026-10-14.sid` (144 used) |
 | 63 600 | 100 | `arcana-sysctl` | `share/yang/arcana-sysctl@2026-10-14.sid` (12 used) |
 | 63 700 | 100 | `arcana-kernel` | `share/yang/arcana-kernel@2026-10-14.sid` (37 used) |
@@ -111,7 +111,7 @@ bytes on the wire, where it was 9.
 | 70 000 | 200 | `ietf-syslog@2025-04-30`, RFC 9742 (no IETF range) | `share/yang/ietf-syslog@2025-04-30.sid` (109 used) |
 | 70 200 | 300 | `arcana-firewall` | `share/yang/arcana-firewall@2026-10-15.sid` (223 used) |
 | 70 500 | 200 | `arcana-troubleshoot` | `share/yang/arcana-troubleshoot@2026-10-15.sid` (148 used) |
-| 70 700 | 100 | `arcana-history` | `share/yang/arcana-history@2026-10-15.sid` (71 used) |
+| 70 700 | 100 | `arcana-history` | `share/yang/arcana-history@2026-10-15.sid` (72 used) |
 | 70 800 | 400 | `arcana-events` | `share/yang/arcana-events@2026-10-15.sid` (278 used) |
 | 71 200 | 200 | `arcana-bird` | `share/yang/arcana-bird@2026-10-15.sid` (165 used) |
 | 71 400 | 100 | `arcana-wireguard` | `share/yang/arcana-wireguard@2026-10-15.sid` (33 used) |
@@ -119,9 +119,11 @@ bytes on the wire, where it was 9.
 | 71 600 | 100 | `arcana-host` | `share/yang/arcana-host@2026-10-15.sid` (77 used) |
 | 71 700 | 200 | `arcana-agent` | `share/yang/arcana-agent@2026-10-15.sid` (179 used) |
 | 71 900 | 100 | `arcana-jail-files` | `share/yang/arcana-jail-files@2026-10-15.sid` (12 used) |
-| 72 000 | 100 | `arcana-probe` | `share/yang/arcana-probe@2026-10-15.sid` (72 used) |
-| 72 100 | 200 | `arcana-sdwan` | `share/yang/arcana-sdwan@2026-10-15.sid` (148 used) |
+| 72 000 | 100 | `arcana-probe` | `share/yang/arcana-probe@2026-10-15.sid` (75 used) |
+| 72 100 | 200 | `arcana-sdwan` | `share/yang/arcana-sdwan@2026-10-15.sid` (173 used) |
 | 72 300 | 100 | `arcana-sshd` | `share/yang/arcana-sshd@2026-10-15.sid` (69 used) |
+| 72 400 | 200 | `arcana-builder` | `share/yang/arcana-builder@2026-10-17.sid` (98 used) |
+| 72 600 | 100 | `arcana-notify` | `share/yang/arcana-notify@2026-10-17.sid` (7 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

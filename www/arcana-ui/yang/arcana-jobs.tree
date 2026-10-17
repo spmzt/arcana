@@ -68,6 +68,7 @@ module: arcana-jobs
        |        |     +---w packages*   string
        |        |     +---w force?      boolean
        |        |     +---w pkg-ip?     uint32
+       |        |     +---w pkg-repo?   string
        |        +--:(if-address)
        |        |  +---w if-address!
        |        |     +---w interface    string
@@ -262,6 +263,7 @@ module: arcana-jobs
        |        |     +---w jail?       string
        |        |     +---w force?      boolean
        |        |     +---w pkg-ip?     uint32
+       |        |     +---w pkg-repo?   string
        |        +--:(jail-conf)
        |        |  +---w jail-conf!
        |        |     +---w verb        enumeration
@@ -308,7 +310,12 @@ module: arcana-jobs
        |        |     +---w user?   string
        |        |     +---w safe?   boolean
        |        +--:(poudriere)
-       |           +---w poudriere!
+       |        |  +---w poudriere!
+       |        |     +---w verb    enumeration
+       |        |     +---w args*   string
+       |        |     +---w text?   string
+       |        +--:(snort)
+       |           +---w snort!
        |              +---w verb    enumeration
        |              +---w args*   string
        |              +---w text?   string

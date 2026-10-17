@@ -38,6 +38,8 @@
 #include <sys/sysctl.h>
 #include <sys/wait.h>
 
+#include <netinet/in.h>
+
 #include <errno.h>
 #include <fcntl.h>
 #include <jail.h>
@@ -152,8 +154,10 @@ scope_argv(struct work *w, char *const argv[])
 	} else if (argv[0] == opts.birdc_bin || argv[0] == opts.bird_bin ||
 	    argv[0] == opts.wg_bin || argv[0] == wg_base_bin ||
 	    argv[0] == opts.ipfw_bin ||
-	    argv[0] == opts.swanctl_bin) {
-		/* The jail's own: ipfw(8) has no way to name a jail. */
+	    argv[0] == opts.swanctl_bin || argv[0] == opts.sysctl_bin ||
+	    argv[0] == opts.ifmcstat_bin) {
+		/* The jail's own: ipfw(8), sysctl(8) and ifmcstat(8) have no
+		 * way to name a jail, and what they tell is its vnet's. */
 		v[k++] = (char *)(uintptr_t)opts.jexec_bin;
 		v[k++] = wfmt(w, "%d", w->jid);
 		i = 0;
@@ -243,12 +247,12 @@ jail_next(int jid)
 }
 
 /*
- * A netlink(4) socket in a jail's own network, told of what is
- * watched: the helper makes it there and hands it over on a socket
+ * A socket in a jail's own network: the helper attaches to the jail,
+ * makes it there with verb (and word), and hands it over on a socket
  * that is its standard output.  -1 when it could not.
  */
-int
-helper_netlink(int jid)
+static int
+helper_socket(int jid, const char *verb, const char *word)
 {
 	static char *const		 noenv[] = { NULL };
 	posix_spawn_file_actions_t	 fa;
@@ -260,7 +264,7 @@ helper_netlink(int jid)
 		struct cmsghdr	hdr;
 		char		buf[CMSG_SPACE(sizeof(int))];
 	}				 cbuf;
-	char				 js[16], one, *argv[5];
+	char				 js[16], one, *argv[6];
 	pid_t				 pid;
 	int				 sp[2], fd, rc, status;
 
@@ -270,8 +274,9 @@ helper_netlink(int jid)
 	argv[0] = (char *)(uintptr_t)opts.helper_bin;
 	argv[1] = (char *)(uintptr_t)"-Q";
 	argv[2] = js;
-	argv[3] = (char *)(uintptr_t)"route-socket";
-	argv[4] = NULL;
+	argv[3] = (char *)(uintptr_t)verb;
+	argv[4] = (char *)(uintptr_t)word;
+	argv[5] = NULL;
 	posix_spawn_file_actions_init(&fa);
 	posix_spawn_file_actions_addopen(&fa, STDIN_FILENO, "/dev/null",
 	    O_RDONLY, 0);
@@ -306,6 +311,54 @@ helper_netlink(int jid)
 	while (waitpid(pid, &status, 0) == -1 && errno == EINTR)
 		;
 	return (fd);
+}
+
+/* A netlink(4) socket in a jail's own network, told of what is
+ * watched. */
+int
+helper_netlink(int jid)
+{
+
+	return (helper_socket(jid, "route-socket", NULL));
+}
+
+/* A raw ICMP or ICMPv6 socket in a jail's own network: probes sent
+ * from there, as the jail's routing tables have them. */
+int
+helper_icmp_socket(int jid, int af)
+{
+
+	return (helper_socket(jid, "icmp-socket", af == AF_INET ? "inet" :
+	    "inet6"));
+}
+
+/* The helper's side: fd handed over on its standard output. */
+static int
+fd_send(int fd)
+{
+	struct msghdr	 msg;
+	struct cmsghdr	*cm;
+	struct iovec	 iov;
+	union {
+		struct cmsghdr	hdr;
+		char		buf[CMSG_SPACE(sizeof(int))];
+	}		 cbuf;
+	char		 one = '1';
+
+	memset(&msg, 0, sizeof(msg));
+	memset(&cbuf, 0, sizeof(cbuf));
+	iov.iov_base = &one;
+	iov.iov_len = 1;
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_control = cbuf.buf;
+	msg.msg_controllen = sizeof(cbuf.buf);
+	cm = CMSG_FIRSTHDR(&msg);
+	cm->cmsg_level = SOL_SOCKET;
+	cm->cmsg_type = SCM_RIGHTS;
+	cm->cmsg_len = CMSG_LEN(sizeof(int));
+	memcpy(CMSG_DATA(cm), &fd, sizeof(int));
+	return (sendmsg(STDOUT_FILENO, &msg, 0) == 1 ? 0 : 1);
 }
 
 /* Lines written into a stream of the daemon's, each given on. */
@@ -579,6 +632,18 @@ scope_helper(int argc, char **argv)
 		return (carp_helper(argc - 1, argv + 1));
 	if (strcmp(argv[1], "zfs-pipe") == 0)
 		return (zfs_pipe(argc - 1, argv + 1));
+	/* A raw ICMP socket of the jail's network, for the probes. */
+	if (strcmp(argv[1], "icmp-socket") == 0 && argc == 3) {
+		int	af, fd;
+
+		af = strcmp(argv[2], "inet6") == 0 ? AF_INET6 : AF_INET;
+		if ((fd = socket(af, SOCK_RAW, af == AF_INET ? IPPROTO_ICMP :
+		    IPPROTO_ICMPV6)) == -1) {
+			fprintf(stderr, "socket: %s\n", strerror(errno));
+			return (1);
+		}
+		return (fd_send(fd));
+	}
 	/* A number of the network's, as the jail's own network has it. */
 	if (strcmp(argv[1], "sysctl-int") == 0 && argc == 3 &&
 	    strncmp(argv[2], "net.", 4) == 0) {

@@ -340,6 +340,34 @@ parse_addr(struct work *w, const char *s, int *afp, const char **addrp,
 	return (true);
 }
 
+/*
+ * Has the interface its link, here: up, and its link not down (one
+ * whose link state is unknown, as a loopback's, has it)?  False when it
+ * could not be told.
+ */
+static bool
+host_link(const char *ifname, bool *okp)
+{
+	struct ifaddrs	*ifap, *ifa;
+	const struct if_data *ifd;
+	bool		 found;
+
+	if (getifaddrs(&ifap) == -1)
+		return (false);
+	found = false;
+	for (ifa = ifap; ifa != NULL && !found; ifa = ifa->ifa_next) {
+		if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family !=
+		    AF_LINK || strcmp(ifa->ifa_name, ifname) != 0 ||
+		    (ifd = ifa->ifa_data) == NULL)
+			continue;
+		found = true;
+		*okp = (ifa->ifa_flags & IFF_UP) != 0 && ifd->ifi_link_state !=
+		    LINK_STATE_DOWN;
+	}
+	freeifaddrs(ifap);
+	return (found);
+}
+
 /* Is the interface up, here?  False when it could not be told. */
 static bool
 host_is_up(const char *ifname, bool *upp)
@@ -1489,6 +1517,10 @@ ifq_text(const char *what, const char *ifname, const char *arg)
 		    ARC_NET_FAMILY_ALL, &rsp);
 		if (rsp.ok && rsp.json != NULL)
 			out = strdup(rsp.json);
+	} else if (strcmp(what, "plugins") == 0) {
+		/* The plugins' programs, as this jail sees its files. */
+		if (asprintf(&out, "%u", plugins_here()) == -1)
+			out = NULL;
 	} else if (ifname == NULL && strcmp(what, "prefix") != 0) {
 		;
 	} else if (strcmp(what, "exists") == 0) {
@@ -1500,6 +1532,8 @@ ifq_text(const char *what, const char *ifname, const char *arg)
 			out = NULL;
 	} else if (strcmp(what, "up") == 0) {
 		out = strdup(!host_is_up(ifname, &up) ? "?" : up ? "1" : "0");
+	} else if (strcmp(what, "link") == 0) {
+		out = strdup(!host_link(ifname, &up) ? "?" : up ? "1" : "0");
 	} else if (strcmp(what, "prefix") == 0 && arg != NULL) {
 		s = host_prefix(&w, ifname, arg);
 		out = strdup(s != NULL ? s : "");
@@ -1539,6 +1573,20 @@ if_exists(struct work *w, const char *ifname)
 }
 
 /* Is the interface up?  False when it could not be told. */
+/* Has it its link, where w works?  False when it could not be told
+ * (none of the name, say). */
+bool
+if_link(struct work *w, const char *ifname, bool *okp)
+{
+	const char	*a;
+
+	if ((a = ifq(w, "link", ifname, NULL)) == NULL || (a[0] != '0' &&
+	    a[0] != '1'))
+		return (false);
+	*okp = a[0] == '1';
+	return (true);
+}
+
 bool
 if_is_up(struct work *w, const char *ifname, bool *upp)
 {

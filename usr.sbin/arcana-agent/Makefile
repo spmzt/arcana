@@ -12,7 +12,7 @@ SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c fwm
 # needs no libyang; "make regen-yang" refreshes them.
 SRCS+=		ymodel_schema.c
 # Luxuria: what is not FreeBSD's own, the plugins.
-SRCS+=		bird.c birdwatch.c ybird.c ywg.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c telegram.c wireguard.c poudriere.c
+SRCS+=		bird.c birdwatch.c ybird.c ywg.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c telegram.c wireguard.c poudriere.c ybuilder.c snort.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c packages.c \
 		services.c update.c yjails.c yjf.c yjobs.c ypackages.c yservices.c
@@ -43,14 +43,18 @@ LDADD+=		-lfetch -ljail -lgeom -lmemstat -lprocstat -ldevstat -lnv -lutil -lpthr
 # is missing, not at the first call to it, detached, its stderr closed.
 LDFLAGS+=	-Wl,-z,now
 
-# The rc.d(8) script.
+# The rc.d(8) scripts: the agent's, and Snort's, which its package has
+# none of.
 FILESGROUPS+=	RC
-RC=		arcana_agent.sh
+RC=		arcana_agent.sh arcana_snort.sh
 RCDIR=		${PREFIX}/etc/rc.d
-RCNAME=		arcana_agent
+RCNAME_arcana_agent.sh=	arcana_agent
+RCNAME_arcana_snort.sh=	arcana_snort
 RCMODE=		0555
-CLEANFILES+=	arcana_agent.sh
+CLEANFILES+=	arcana_agent.sh arcana_snort.sh
 arcana_agent.sh: arcana_agent.in
+	sed -e 's|%%PREFIX%%|${PREFIX}|g' ${.ALLSRC} > ${.TARGET}
+arcana_snort.sh: arcana_snort.in
 	sed -e 's|%%PREFIX%%|${PREFIX}|g' ${.ALLSRC} > ${.TARGET}
 
 # The modules, their features, their .sid files: what ymodel.h and
@@ -81,7 +85,8 @@ YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		arcana-wireguard@2026-10-15 arcana-netgraph@2026-10-15 \
 		arcana-host@2026-10-15 arcana-agent@2026-10-15 \
 		arcana-jail-files@2026-10-15 arcana-probe@2026-10-15 \
-		arcana-sdwan@2026-10-15 arcana-sshd@2026-10-15
+		arcana-sdwan@2026-10-15 arcana-sshd@2026-10-15 \
+		arcana-builder@2026-10-17 arcana-notify@2026-10-17
 # Modules only imported whose identities are used, their .sid files'
 # alone: the routing protocols', whose identities name a route's origin;
 # IEEE 802.1Q's types, a VLAN tag's; IEEE 802.3's PHY and PMD types;
@@ -111,7 +116,7 @@ YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F arcana-events: -F arcana-bird: -F arcana-wireguard: \
 		-F arcana-netgraph: -F arcana-host: -F arcana-agent: \
 		-F arcana-jail-files: -F arcana-probe: -F arcana-sdwan: \
-		-F arcana-sshd:
+		-F arcana-sshd: -F arcana-builder: -F arcana-notify:
 YANG_OUT?=	${.CURDIR}/yang
 # The kinds of job, made from share/arcana/jobs.yaml as the console's
 # forms are: arcana-jobs's submodule, and yjobs_spec(), a change of it

@@ -578,6 +578,9 @@ job_finished(struct op *op, bool ok, const char *err)
 	case JOB_BUILDER:
 		builder_refresh();
 		break;
+	case JOB_SNORT:
+		snort_refresh();
+		break;
 	case JOB_PROCESS:
 		refresh_procs(s, true);
 		break;
@@ -1666,9 +1669,18 @@ packages_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		app.pkg.loading = false;
 		app.pkg.busy = false;
 		if (ok) {
+			ucl_object_t	*nd;
+
+			/* An upgrade's reply says no repositories: those the
+			 * read before said are kept, the choice with them. */
+			nd = ucl_object_copy(o);
+			if (jget(nd, "repos") == NULL && app.pkg.data != NULL &&
+			    jget(app.pkg.data, "repos") != NULL)
+				ucl_object_insert_key(nd, ucl_object_copy(jget(
+				    app.pkg.data, "repos")), "repos", 0, false);
 			if (app.pkg.data != NULL)
 				ucl_object_unref(app.pkg.data);
-			app.pkg.data = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+			app.pkg.data = nd;
 			app.pkg.fetched = arc_now();
 			app.pkg.error[0] = '\0';
 			if (jget(o, "upgraded") != NULL && c->user)
@@ -1744,7 +1756,7 @@ pkg_upgrade(struct server *s, const char *names, bool dry_run, bool anyos)
 {
 	struct ctx	*c;
 	struct op	*op;
-	char		 url[160], title[160], *qj, *body;
+	char		 url[160], title[200], *qj, *qr, *body;
 
 	if (!app.online || app.pkg.busy)
 		return;
@@ -1755,18 +1767,23 @@ pkg_upgrade(struct server *s, const char *names, bool dry_run, bool anyos)
 		char *json;
 
 		qj = json_quote(app.pkg.jail);
-		snprintf(title, sizeof(title), "pkg upgrade%s%s%s%s",
+		qr = json_quote(app.pkg.repo);
+		snprintf(title, sizeof(title), "pkg upgrade%s%s%s%s%s%s",
 		    app.pkg.jail[0] != '\0' ? " in " : "", app.pkg.jail,
-		    names != NULL ? " of some" : "", anyos ? ", ignoring "
+		    names != NULL ? " of some" : "", app.pkg.repo[0] != '\0' ?
+		    " from " : "", app.pkg.repo, anyos ? ", ignoring "
 		    "OSVERSION" : "");
 		if (asprintf(&json, "{\"kind\":\"pkg-upgrade\"%s%s,"
-		    "\"packages\":%s%s%s}", app.pkg.jail[0] != '\0' ?
+		    "\"packages\":%s%s%s%s%s}", app.pkg.jail[0] != '\0' ?
 		    ",\"jail\":" : "", app.pkg.jail[0] != '\0' ? qj : "",
 		    names != NULL ? names : "[]", anyos ? ",\"force\":true" :
 		    "", app.pkg.ip == 4 ? ",\"pkg_ip\":4" : app.pkg.ip == 6 ?
-		    ",\"pkg_ip\":6" : "") == -1)
+		    ",\"pkg_ip\":6" : "", app.pkg.repo[0] != '\0' ?
+		    ",\"pkg_repo\":" : "", app.pkg.repo[0] != '\0' ? qr : "") ==
+		    -1)
 			abort();
 		free(qj);
+		free(qr);
 		if (!app.queue_on) {
 			app.pkg.busy = true;
 			app.pkg.result[0] = '\0';
@@ -1789,11 +1806,13 @@ pkg_upgrade(struct server *s, const char *names, bool dry_run, bool anyos)
 	app.trace_op = op->id;
 	app.trace_step = -1;
 	qj = json_quote(app.pkg.jail);
+	qr = json_quote(app.pkg.repo);
 	if (asprintf(&body, "{\"jail\":%s,\"packages\":%s,\"dry_run\":%s,"
-	    "\"ignore_osversion\":%s,\"pkg_ip\":%d}", qj, names != NULL ?
-	    names : "[]", dry_run ? "true" : "false", anyos ? "true" : "false",
-	    app.pkg.ip) == -1)
+	    "\"ignore_osversion\":%s,\"pkg_ip\":%d,\"pkg_repo\":%s}", qj,
+	    names != NULL ? names : "[]", dry_run ? "true" : "false", anyos ?
+	    "true" : "false", app.pkg.ip, qr) == -1)
 		abort();
+	free(qr);
 	snprintf(url, sizeof(url), "/api/servers/%s/packages/upgrade", s->id);
 	api("POST", url, body, packages_cb, c);
 	free(qj);
@@ -2118,7 +2137,7 @@ refresh_network(struct server *s, bool user)
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
 	    "bridges", "geneve", "nhgroups", "neighbours", "ipsec",
-	    "bridges", "interfaces" };
+	    "bridges", "interfaces", "multicast" };
 	struct ctx	*c;
 	struct op	*op;
 	char		 url[640], title[160], fib[24], c0jail[270];

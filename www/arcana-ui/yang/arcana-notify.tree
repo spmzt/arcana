@@ -1,0 +1,8 @@
+module: arcana-notify
+
+  rpcs:
+    +---x notify
+       +---w input
+          +---w token    string
+          +---w chat     string
+          +---w text     string

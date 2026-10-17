@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.202.0"
+#define	ARCW_VERSION		"0.207.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -222,6 +222,10 @@ char		*hosts_net(const char *, const char *, const char *,
 		    const char *, int *);
 char		*hosts_sysctl(const char *, const char *, const char *,
 		    const char *, int *);
+char		*hosts_sysctl_in(const char *, const char *, const char *,
+		    const char *, const char *, int *);
+char		*hosts_net_in(const char *, const char *, const char *,
+		    const char *, const char *, int *);
 char		*hosts_sdwan_set(const char *, const char *, const char *,
 		    const char *, const char *, int *);
 int		 api_sdwan_state(struct http_request *);
@@ -234,6 +238,8 @@ int		 api_server_move(struct http_request *);
 void		 api_server_move_free(struct http_request *);
 char		*security_build(const char *, const ucl_object_t *, const char *,
 		    char *, size_t);
+bool		 sdwan_edge_split(const char *, char *, size_t, char *,
+		    size_t);
 bool		 host_ref(const char *, char *, size_t, char *, size_t, char *,
 		    size_t);
 void		 host_refs(void);
@@ -276,6 +282,7 @@ int		 api_kernel(struct http_request *);
 int		 api_jail_files(struct http_request *);
 int		 api_builder(struct http_request *);
 int		 api_builder_options(struct http_request *);
+int		 api_snort(struct http_request *);
 int		 api_certs(struct http_request *);
 int		 api_ssh(struct http_request *);
 int		 api_capture(struct http_request *);
@@ -290,6 +297,13 @@ char		*hosts_path_check(const char *, const char *, const char *,
 int		 api_troubleshoot_path(struct http_request *);
 void		 api_troubleshoot_free(struct http_request *);
 int		 api_config_apply(struct http_request *);
+/* templates.c: configuration templates, a host's setup by name. */
+int		 api_templates(struct http_request *);
+int		 api_template(struct http_request *);
+bool		 template_name_ok(const char *);
+ucl_object_t	*template_get(const char *);
+char		*template_render(const char *, const ucl_object_t *, char *,
+		    size_t);
 int		 api_transport_switch(struct http_request *);
 int		 api_sysctl(struct http_request *);
 int		 api_processes(struct http_request *);

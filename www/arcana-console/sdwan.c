@@ -1995,10 +1995,43 @@ security_policy(struct ck *c, const ucl_object_t *v)
 static const char *const tunnel_kinds[] = { "gre", "gif", "geneve", "wg",
     "uswe", NULL };
 
+/*
+ * An edge's id: its server's, or server/jail when a vnet jail on that
+ * server is the edge (its own network: interfaces, routes, ipfw).  Into
+ * sid and jail ("" for the server itself); false when it is neither.
+ */
+bool
+sdwan_edge_split(const char *edge, char *sid, size_t slen, char *jail,
+    size_t jlen)
+{
+	const char	*slash, *p;
+
+	if (edge == NULL)
+		return (false);
+	if ((slash = strchr(edge, '/')) == NULL) {
+		if (strlen(edge) >= slen)
+			return (false);
+		snprintf(sid, slen, "%s", edge);
+		jail[0] = '\0';
+		return (true);
+	}
+	if ((size_t)(slash - edge) >= slen || slash == edge || slash[1] ==
+	    '\0' || strlen(slash + 1) >= jlen)
+		return (false);
+	/* A jail's name as jail(8) has it: letters, digits, - _ . */
+	for (p = slash + 1; *p != '\0'; p++)
+		if (!isalnum((unsigned char)*p) && strchr("-_.", *p) == NULL)
+			return (false);
+	snprintf(sid, slen, "%.*s", (int)(slash - edge), edge);
+	snprintf(jail, jlen, "%s", slash + 1);
+	return (true);
+}
+
 /* The whole document, checked; false and why when it is not one. */
 static bool
 check(const ucl_object_t *doc, struct ck *c)
 {
+	char			 esid[64], ejail[64];
 	const ucl_object_t	*v, *e, *sw, *t;
 	ucl_object_iter_t	 it, it2, it3;
 	ucl_object_t		*seen_ep, *seen_uni, *seen_ucsep, *fibs;
@@ -2067,8 +2100,11 @@ check(const ucl_object_t *doc, struct ck *c)
 	while (ok && (v = ucl_object_iterate(ucl_object_lookup(doc, "edges"),
 	    &it, true)) != NULL) {
 		at(c, 0, "edge %s", str(v, "server"));
-		if (server_find(str(v, "server")) == NULL) {
-			ok = fail(c, "no such server");
+		/* A server, or server/jail: a vnet jail on it is the edge. */
+		if (!sdwan_edge_split(str(v, "server"), esid, sizeof(esid),
+		    ejail, sizeof(ejail)) || server_find(esid) == NULL) {
+			ok = fail(c, "no such server (an edge is a server, or "
+			    "server/jail for a vnet jail on it)");
 			break;
 		}
 		/* NTP (Mplify 119 §12.2.2): the servers the edge keeps time by. */

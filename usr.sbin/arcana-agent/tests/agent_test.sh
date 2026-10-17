@@ -222,6 +222,7 @@ case "$1" in -4|-6) shift ;; esac
 [ "$1" = -o ] && shift 2
 [ "$1" = -j ] && shift 2
 case "$1" in
+-vv)	printf 'Version                 : 2.3.1\nRepositories:\n  FreeBSD-ports: { \n    url             : "pkg+https://pkg.FreeBSD.org/FreeBSD:16:amd64/latest",\n    enabled         : yes,\n  }\n  builder: { \n    url             : "file:///usr/local/poudriere/data/packages/lab",\n    enabled         : no,\n  }\n' ;;
 update)	exit 0 ;;
 query)	printf 'aria2\t1.37.0_1\t0\t5242880\twww/aria2\tDownload utility\npimd\t3.1.0\t1\t102400\tnet/pimd\tPIM-SM daemon\n' ;;
 clean)	echo "$*" >> clean.log ;;
@@ -235,7 +236,9 @@ version)
 ' "$nv" "$remote"
 	done < pending ;;
 upgrade)
-	shift; dry=no; [ "$1" = -n ] && dry=yes; shift
+	shift
+	[ "$1" = -r ] && { echo "upgrade from $2" >> repo.log; shift 2; }
+	dry=no; [ "$1" = -n ] && dry=yes; shift
 	[ -s pending ] || { echo "Your packages are up to date."; exit $([ $dry = yes ] && echo 1 || echo 0); }
 	while read nv remote; do
 		name=${nv%-*}
@@ -292,7 +295,17 @@ start_daemon()
 
 stop_daemon()
 {
-	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	local pid i
+
+	[ -f daemon.pid ] || return 0
+	pid=$(cat daemon.pid)
+	kill "$pid" 2>/dev/null
+	# Gone before anything follows: one that left later would take
+	# away the socket the next one had made.
+	for i in $(seq 1 100); do
+		kill -0 "$pid" 2>/dev/null || break
+		sleep 0.05
+	done
 	true
 }
 
@@ -761,6 +774,22 @@ packages_body()
 	atf_check -o match:'fake-pkg -6 version -vRl <' "$JGC" -t -c "$SOCK" packages -6
 	atf_check -o match:'fake-pkg -4 -o IGNORE_OSVERSION=yes upgrade -n' \
 	    "$JGC" -t -c "$SOCK" pkg-upgrade -n -O -4
+	# pkg's repositories, enabled or not (pkg -vv); an upgrade held to
+	# one of them (pkg upgrade -r, what it has newer by pkg version -R
+	# -r), a name pkg has not refused; an install from one too.
+	atf_check -o match:'Repositories: +FreeBSD-ports +builder' \
+	    "$JGC" -c "$SOCK" packages
+	atf_check -o match:'fake-pkg upgrade -r builder -n' \
+	    -o match:'fake-pkg version -vR -r builder -l <' \
+	    "$JGC" -t -c "$SOCK" pkg-upgrade -n -r builder
+	atf_check -o inline:'upgrade from builder\n' cat repo.log
+	atf_check -s exit:1 -o ignore -e match:'pkg has no repository nosuch' \
+	    "$JGC" -c "$SOCK" pkg-upgrade -n -r nosuch
+	atf_check -s exit:1 -o ignore -e match:"'a b' is not a repository's name" \
+	    "$JGC" -c "$SOCK" pkg-upgrade -n -r 'a b'
+	atf_check -o match:'done +pkg install aria2 from builder$' \
+	    "$JGC" -c "$SOCK" pkg-install -r builder aria2
+	atf_check -o match:'^install -r builder -y aria2$' cat install.log
 	# The cache cleaned, as a job; all of it with -a.
 	atf_check -o match:'done +pkg clean$' "$JGC" -c "$SOCK" pkg-clean
 	atf_check -o match:'done +pkg clean -a$' "$JGC" -c "$SOCK" pkg-clean -a
@@ -1939,6 +1968,165 @@ vpn_cleanup()
 	stop_daemon
 }
 
+atf_test_case sdwan_jail cleanup
+sdwan_jail_head()
+{
+	atf_set "descr" "SD-WAN at an edge that is a vnet jail: its rules," \
+	    "tables and steering its own, run by its own ipfw (jexec), the" \
+	    "file of rules beneath its root, its network's sysctls set" \
+	    "there, kept in files of its own and applied again at a start," \
+	    "the host's beside them"
+}
+sdwan_jail_body()
+{
+	local d="$(pwd)"
+
+	R=$d/jroot
+	mkdir -p "$R/var/run"
+	cat > fake-jls <<EOS
+#!/bin/sh
+case "\$2" in
+gateway) echo "4 new $R" ;;
+*) echo "jls: jail \"\$2\" not found" >&2; exit 1 ;;
+esac
+EOS
+	# jexec: logged; the rule file the jail's ipfw would read, read
+	# where the jail has it; a sysctl never run on the host.
+	cat > fake-jexec <<EOS
+#!/bin/sh
+echo "jexec \$*" >> $d/jexec.log
+shift
+for a; do last=\$a; done
+case "\$last" in /var/run/arcana-sdwan-*) cat "$R\$last" >> $d/jail-rules.log ;; esac
+case "\$1 \$2" in */sysctl\ -e) echo "net.fibs=4"; exit 0 ;; esac
+case "\$1" in */sysctl) exit 0 ;; esac
+exec "\$@"
+EOS
+	cat > fake-ipfw <<EOS
+#!/bin/sh
+echo "ipfw \$*" >> $d/ipfw.log
+exit 0
+EOS
+	chmod +x fake-jls fake-jexec fake-ipfw
+	printf '#!/bin/sh\nexit 0\n' > fake-kldload
+	chmod +x fake-kldload
+	DAEMON_ARGS="-h $d/fake-ipfw -2 $d/tools"
+	mkdir -p tools
+	start_daemon
+
+	# The jail's rules: run by its ipfw, from a file beneath its root.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"jail":"gateway","set":30,"tables":[{"name":"sw1_p0","valtype":"ipv4","entries":[]}],"rules":["00500 fwd tablearg ip from any to table(sw1_p0)"]}'
+	atf_check -o match:"^jexec 4 $d/fake-ipfw -q /var/run/arcana-sdwan-rules.load$" \
+	    -o match:"^jexec 4 [^ ]*sysctl net.inet.ipsec.filtertunnel=1$" \
+	    cat jexec.log
+	atf_check -o match:'^table sw1_p0 create type addr valtype ipv4$' \
+	    -o match:'^add 00500 set 30 fwd tablearg ip from any to table\(sw1_p0\)$' \
+	    cat jail-rules.log
+	test -e "$R/var/run/arcana-sdwan-rules.load" && \
+	    atf_fail "the file of rules stayed in the jail"
+	# Its steering, by its own ipfw too.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
+	    '{"jail":"gateway","entries":[{"table":"sw1_p0","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"}]}]}'
+	atf_check -o match:'^jexec 4 [^ ]*fake-ipfw -q table sw1_p0_alt atomic add 10.20.0.0/24 100.64.0.1$' \
+	    -o match:'^jexec 4 [^ ]*fake-ipfw -q table sw1_p0 swap sw1_p0_alt$' \
+	    cat jexec.log
+	# The host's own: none, and not the jail's.
+	atf_check -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],' \
+	    -o match:'"edges":\[\{"jail":"gateway","rules":\{"set":30,"rules":1,"tables":\["sw1_p0"\],"objects":0,"counters":\[\]\},"steer":\[\{"table":"sw1_p0","prefix":"10.20.0.0/24","chosen":0,' \
+	    -o match:'"steered":true\}\]' "$JGC" -c "$SOCK" sdwan
+	# The host's beside it, its ipfw not jexec'd.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":31,"tables":[],"rules":["00600 count ip from any to any"]}'
+	atf_check -o match:"^ipfw -q $d/[^ ]*sdwan-rules.json.load$" cat ipfw.log
+	atf_check -o match:'"rules":\{"set":31,"rules":1,' \
+	    -o match:'"edges":\[\{"jail":"gateway","rules":\{"set":30,' \
+	    "$JGC" -c "$SOCK" sdwan
+	# Each kept in its own file; the jail's applied again at a start.
+	test -f "$(dirname "$d/history.conf")/sdwan-rules@gateway.json" || \
+	    atf_fail "the jail's rules are not kept"
+	test -f "$(dirname "$d/history.conf")/sdwan-steer@gateway.json" || \
+	    atf_fail "the jail's steering is not kept"
+	stop_daemon
+	: > jexec.log
+	start_daemon
+	atf_check -o match:"^jexec 4 $d/fake-ipfw -q /var/run/arcana-sdwan-rules.load$" \
+	    -o match:'^jexec 4 [^ ]*fake-ipfw -q table sw1_p0 swap sw1_p0_alt$' \
+	    cat jexec.log
+	atf_check -o match:'"edges":\[\{"jail":"gateway","rules":\{"set":30,' \
+	    "$JGC" -c "$SOCK" sdwan
+	# Its network's sysctls are its own: set by its sysctl, kept in its
+	# own sysctl.conf; the kernel's are not set from here.
+	mkdir -p "$R/etc"
+	atf_check -o match:'done +gateway: sysctl net.fibs=4 \(kept\)$' \
+	    "$JGC" -c "$SOCK" -p -j gateway sysctl net.fibs=4
+	atf_check -o match:"^jexec 4 [^ ]*sysctl net.fibs=4$" cat jexec.log
+	atf_check -o inline:'net.fibs=4\n' cat "$R/etc/sysctl.conf"
+	# Read as its own sysctl reads them; only its network's.
+	atf_check -o match:'^\{"values":\[\{"name":"net.fibs","value":"4"\}\],"kept":\[\]\}$' \
+	    "$JGC" -c "$SOCK" -j gateway sysctl net.fibs
+	atf_check -o match:"^jexec 4 [^ ]*sysctl -e -- net.fibs$" cat jexec.log
+	atf_check -s exit:1 -e match:"under its network's, net." -o ignore \
+	    "$JGC" -c "$SOCK" -j gateway sysctl kern.ostype
+	atf_check -s exit:1 -e match:"its network's \\(net\\.\\*\\)" -o ignore \
+	    "$JGC" -c "$SOCK" -j gateway sysctl kern.maxproc=100
+	# Its probes a list of its own: the host's set after it stay its,
+	# each kept in its own file; at a start, both again.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '{"jail":"gateway","targets":[{"id":"t1","address":"100.64.0.1"}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '[{"id":"t1","address":"100.64.0.2"}]'
+	atf_check -o match:'"targets":\[\{"id":"t1","address":"100.64.0.2","family":"inet","fib":0,.*\{"id":"t1","address":"100.64.0.1","family":"inet","jail":"gateway",.*"edges":\[\{"jail":"gateway",.*"candidates":\[\{"id":"t1","via":"100.64.0.1","state":"unknown"\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	test -f sdwan-probes@gateway.json || atf_fail "the jail's probes are not kept"
+	stop_daemon
+	start_daemon
+	atf_check -o match:'"address":"100.64.0.2"' \
+	    -o match:'"address":"100.64.0.1","family":"inet","jail":"gateway"' \
+	    "$JGC" -c "$SOCK" sdwan
+	# Its list emptied: the host's stays, the jail's file goes.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '{"jail":"gateway","targets":[]}'
+	atf_check -o match:'"targets":\[\{"id":"t1","address":"100.64.0.2","family":"inet","fib":0,' \
+	    -o not-match:'"jail":"gateway","fib"' "$JGC" -c "$SOCK" sdwan
+	test -f sdwan-probes@gateway.json && atf_fail "the jail's probe file stayed"
+	atf_check -s exit:1 -e match:'invalid jail name' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '{"jail":"a/b","targets":[]}'
+	# The links an edge watches (Mplify 119's interface faults): lo0
+	# has its link; one with none is a fault, cleared once it is not
+	# watched.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '{"targets":[{"id":"t1","address":"100.64.0.2"}],"links":[{"interface":"lo0","id":"uni-hq","role":"uni"},{"interface":"nosuch0","id":"a-inet","role":"ucs"}]}'
+	atf_check -o match:'"type":"interface","severity":"Major","was":"Major","object":"a-inet","by":"link","description":"the UCS end point a-inet has no link on nosuch0","cleared":false' \
+	    -o not-match:'"object":"uni-hq"' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '{"targets":[{"id":"t1","address":"100.64.0.2"}],"links":[]}'
+	atf_check -o match:'"object":"a-inet","by":"link",[^}]*"cleared":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -s exit:1 -e match:'each link has an interface and an id' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '{"targets":[],"links":[{"interface":"a b","id":"x"}]}'
+	atf_check -s exit:1 -e match:'JSON array, or an object' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '{"links":[]}'
+	# Its steering and rules emptied: their files go, and a start makes
+	# no edge of it.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer '{"jail":"gateway","entries":[]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"jail":"gateway","set":30,"tables":[],"rules":[]}'
+	test -f sdwan-rules@gateway.json -o -f sdwan-steer@gateway.json && \
+	    atf_fail "the emptied jail's files stayed"
+	stop_daemon
+	start_daemon
+	atf_check -o match:'"edges":\[\]' "$JGC" -c "$SOCK" sdwan
+	# Refused: a jail that is no jail's name, or does not run.
+	atf_check -s exit:1 -e match:'invalid jail name' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan rules '{"jail":"a b","set":30,"tables":[],"rules":[]}'
+	atf_check -s exit:1 -e match:'nosuch' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan rules '{"jail":"nosuch","set":30,"tables":[],"rules":["00500 count ip from any to any"]}'
+}
+sdwan_jail_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case vnet cleanup
 vnet_head()
 {
@@ -2811,7 +2999,7 @@ EOS
 	    -o match:'"kind":"sdwan-fault","data":\{"type":"bfd","severity":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is down","state":"set"\}' \
 	    "$JGC" -c "$SOCK" events
 	# A fault of the day, open; cleared when BFD is up again.
-	atf_check -o match:'"faults":\[\{"t":[0-9]+,"type":"bfd","severity":"Major","was":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is down","cleared":false\}' \
+	atf_check -o match:'"faults":\[[^]]*\{"t":[0-9]+,"type":"bfd","severity":"Major","was":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is down","cleared":false\}' \
 	    "$JGC" -c "$SOCK" sdwan
 	test -f sdwan-faults.json || atf_fail "the faults are not kept"
 	rm -f bfd.down
@@ -3211,7 +3399,7 @@ stop_body()
 	"$JGC" -c "$SOCK" service sshd restart > change.out 2>&1 &
 	change=$!
 	# Once the change is under way, not at a guess of when.
-	for i in $(seq 1 50); do
+	for i in $(seq 1 150); do
 		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Under way' && break
 		sleep 0.1
 	done
@@ -3244,10 +3432,12 @@ stop_body()
 	pid=$(cat daemon.pid)
 	touch slow
 	"$JGC" -c "$SOCK" service sshd restart > /dev/null 2>&1 &
-	for i in $(seq 1 50); do
+	# Under way before the signals, however loaded the machine is.
+	for i in $(seq 1 150); do
 		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Under way' && break
 		sleep 0.1
 	done
+	atf_check -o match:'Under way' "$JGC" -c "$SOCK" jobs
 	kill "$pid"
 	sleep 0.3
 	kill "$pid"
@@ -3693,7 +3883,16 @@ observe_body()
 	printf 'who\0was\0here\n' > log/utx.log
 	printf 'not\0a\0text\n' > log/blob
 	ln -s /etc/master.passwd log/linked
-	DAEMON_ARGS="-v $(pwd)/log"
+	# zpool(8): a pool 95% full, as the storage limit sees it.
+	cat > fake-zpool <<'EOS'
+#!/bin/sh
+case "$*" in
+*name,size,alloc,free,health*) printf 'tank\t1000\t950\t50\tONLINE\n' ;;
+*name,size,alloc*) printf 'tank\t1000\t950\n' ;;
+esac
+EOS
+	chmod +x fake-zpool
+	DAEMON_ARGS="-v $(pwd)/log -Z $(pwd)/fake-zpool"
 	start_daemon
 
 	# What runs: this test's own sleep among it, with what top shows.
@@ -3846,7 +4045,7 @@ observe_body()
 	"$JGC" -c "$SOCK" events -f > follow.out 2>&1 &
 	echo $! > follow.pid
 	sleep 0.5
-	atf_check -o match:'"limits":\{"cpu":1,"mem":1,"swap":0\}' \
+	atf_check -o match:'"limits":\{"cpu":1,"mem":1,"swap":0,"storage":90\}' \
 	    "$JGC" -c "$SOCK" history set 1 20 1 1 0
 	sleep 3
 	kill "$(cat follow.pid)"
@@ -3856,7 +4055,23 @@ observe_body()
 	    "$JGC" -c "$SOCK" events
 	atf_check -o inline:'1\n' sh -c "$JGC -c $SOCK events | grep -o '\"what\":\"mem\"' | wc -l | tr -d ' '"
 	atf_check -o match:'^cpu=1$' -o match:'^mem=1$' cat history.conf
-	atf_check -o match:'"limits":\{"cpu":90,"mem":90,"swap":50\}' \
+	# A pool over the storage limit: an event and a storage fault
+	# (Mplify 119's resource faults); none as the limit, cleared.
+	atf_check -o match:'"kind":"threshold","data":\{"what":"storage","name":"tank","value":95,"limit":90,"over":true\}' \
+	    "$JGC" -c "$SOCK" events
+	atf_check -o match:'"type":"storage","severity":"Major","was":"Major","object":"tank","by":"sampler","description":"tank 95% full, over 90%","cleared":false' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"limits":\{"cpu":90,"mem":90,"swap":50,"storage":0\}' \
+	    "$JGC" -c "$SOCK" history set 1 20 90 90 50 0
+	sleep 2
+	atf_check -o match:'"what":"storage","name":"tank","limit":0,"over":false' \
+	    "$JGC" -c "$SOCK" events
+	atf_check -o match:'"object":"tank","by":"sampler",[^}]*"cleared":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'^storage=0$' cat history.conf
+	atf_check -s exit:1 -e match:'a limit is 0 to 100' -o ignore \
+	    "$JGC" -c "$SOCK" history set 1 20 90 90 50 101
+	atf_check -o match:'"limits":\{"cpu":90,"mem":90,"swap":50,"storage":0\}' \
 	    "$JGC" -c "$SOCK" history set 1 20 90 90 50
 	atf_check -o match:'"step":1,"keep":2,"bytes":[1-9][0-9]*,' \
 	    "$JGC" -c "$SOCK" history set 1 2
@@ -5041,6 +5256,198 @@ carp_cleanup()
 	stop_daemon
 }
 
+atf_test_case snort cleanup
+snort_head()
+{
+	atf_set "descr" "Snort, a plugin: read as it is; its rules fetched" \
+	    "and taken in, turned on and off across updates, local.rules and" \
+	    "snort.lua written, each checked by snort -T first; its rc.conf" \
+	    "settings and HOME_NET; its alerts; a running one reloaded"
+}
+snort_body()
+{
+	local d="$(pwd)" sleeper
+
+	mkdir -p se sl src/snort3-community-rules
+	printf "HOME_NET = 'any'\nEXTERNAL_NET = 'any'\ninclude 'snort_defaults.lua'\n" \
+	    > se/snort.lua
+	# Rules as Talos ships them: one on, one off as shipped, a msg
+	# with a ; in it, and a file that is not rules.
+	cat > src/snort3-community-rules/snort3-community.rules <<'EOR'
+# Copyright 2001-2026 Cisco Systems, Inc. and/or its affiliates
+alert tcp $HOME_NET 2589 -> $EXTERNAL_NET any ( msg:"MALWARE-BACKDOOR - Dagger_1.4.0"; flow:to_client,established; classtype:misc-activity; sid:105; rev:14; )
+# alert icmp any any -> any any ( msg:"PROTOCOL-ICMP lab; with a semicolon"; itype:8; classtype:misc-activity; sid:106; rev:3; )
+alert udp any any -> any 53 ( msg:"lab dns"; gid:1; sid:107; rev:1; )
+EOR
+	printf 'just a license\n' > src/snort3-community-rules/LICENSE
+	tar -czf rules.tar.gz -C src snort3-community-rules
+	# snort: -V; -T refuses snort.lua with "broken" in it and a rule
+	# with an option it does not know, as the real one says it.
+	cat > fake-snort <<EOS
+#!/bin/sh
+echo "snort \$*" >> $d/snort.log
+[ "\$1" = -V ] && { printf '\n   ,,_     -*> Snort++ <*-\n  o"  )~   Version 3.12.2.0\n'; exit 0; }
+lua=; top=
+while [ \$# -gt 0 ]; do case \$1 in -c) lua=\$2; shift ;; -R) top=\$2; shift ;; esac; shift; done
+grep -q broken "\$lua" && { echo "ERROR: \$lua:4 broken: not Lua"; echo "FATAL: see prior 1 errors (0 warnings)"; exit 1; }
+if [ -n "\$top" ]; then
+	for f in \$(sed -n 's/^include //p' "\$top"); do
+		if grep -q '^[^#].*nosuchopt' "\$f"; then
+			echo "ERROR: \$f:1 unknown rule keyword: nosuchopt."
+			echo "FATAL: see prior 1 errors (0 warnings)"
+			exit 1
+		fi
+	done
+fi
+echo "Snort successfully validated the configuration (with 0 warnings)."
+EOS
+	chmod +x fake-snort
+	DAEMON_ARGS="--snort $d/no-snort --snort-etc $d/se --snort-log $d/sl"
+	start_daemon
+	# Not installed: said, and nothing done.
+	atf_check -o match:'"installed":false' "$JGC" -c "$SOCK" snort
+	atf_check -s exit:1 -o match:'failed +snort update: .*pkg install snort3' \
+	    -e ignore "$JGC" -c "$SOCK" snort update
+	stop_daemon
+	DAEMON_ARGS="--snort $d/fake-snort --snort-etc $d/se --snort-log $d/sl"
+	start_daemon
+	atf_check -o match:'"installed":true' -o match:'"version":"3.12.2.0"' \
+	    -o match:'"running":false' -o match:'"home_net":"any"' \
+	    -o match:'"rc":\{"enable":false,"mode":"ids","interfaces":"","divert_port":"8000"\}' \
+	    -o match:'no rules taken in yet' \
+	    -o match:'"default_url":"https://www.snort.org/downloads/community/snort3-community-rules.tar.gz"' \
+	    "$JGC" -c "$SOCK" snort
+	# Words it does not take, and a jail's: refused before they run.
+	atf_check -s exit:1 -e match:'each gid:sid' -o ignore \
+	    "$JGC" -c "$SOCK" snort rule off=105
+	atf_check -s exit:1 -e match:'mode is ids or ips' -o ignore \
+	    "$JGC" -c "$SOCK" snort set mode=both
+	atf_check -s exit:1 -e match:"Snort is the host's" -o ignore \
+	    "$JGC" -c "$SOCK" -j web snort update
+	atf_check -s exit:1 -e match:'http, https or file' -o ignore \
+	    "$JGC" -c "$SOCK" snort update url=ftp://example.org/x.tar.gz
+	# Fetched, taken in: the rules file of the archive, not its license.
+	atf_check -o match:'done +snort update url=file://' \
+	    "$JGC" -c "$SOCK" snort update "url=file://$d/rules.tar.gz"
+	atf_check -o match:"\"url\":\"file://$d/rules.tar.gz\"" \
+	    -o match:"\"sha256\":\"$(sha256 -q rules.tar.gz)\"" \
+	    -o match:'"files":\[\{"name":"snort3-community.rules","rules":3,"on":2\}\],"rules":3,"on":2' \
+	    -o not-match:'no rules taken in yet' "$JGC" -c "$SOCK" snort
+	atf_check -o match:"^include $d/se/arcana/active/snort3-community.rules\$" \
+	    cat se/arcana/arcana.rules
+	atf_check -o match:"-R $d/se/arcana/arcana.rules.check -T" cat snort.log
+	# Every rule, with what a ; inside quotes does not cut.
+	atf_check -o match:'"gid":1,"sid":106,"rev":3,"msg":"PROTOCOL-ICMP lab; with a semicolon","action":"alert","class":"misc-activity","file":"snort3-community.rules","on":false,"default":false' \
+	    -o match:'"sid":105,"rev":14,.*"on":true,"default":true' \
+	    "$JGC" -c "$SOCK" snort rules
+	# A Snort running: told to reload by each change (a sleep, here,
+	# which SIGHUP ends).
+	sleep 60 &
+	sleeper=$!
+	echo $sleeper > sl/snort.pid
+	atf_check -o match:'"running":true' -o match:"\"pid\":$sleeper" \
+	    "$JGC" -c "$SOCK" snort
+	# 105 off, 106 on: the active file says so, the downloaded one not.
+	atf_check -o match:'done +snort rule off=1:105' \
+	    "$JGC" -c "$SOCK" snort rule off=1:105 on=1:106
+	atf_check -o match:'^# alert tcp .*sid:105;' \
+	    -o match:'^alert icmp any .*sid:106;' \
+	    cat se/arcana/active/snort3-community.rules
+	atf_check -o match:'^alert tcp .*sid:105;' \
+	    cat se/arcana/rules/snort3-community.rules
+	atf_check -o inline:'1:105 off\n1:106 on\n' cat se/arcana/rule-state
+	for i in $(seq 1 50); do kill -0 $sleeper 2>/dev/null || break; sleep 0.1; done
+	atf_check -s not-exit:0 -e ignore kill -0 $sleeper
+	# Updated again, from where it last came: the choices hold.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort update
+	atf_check -o match:'"sid":105,[^}]*"on":false,"default":true' \
+	    -o match:'"sid":106,[^}]*"on":true,"default":false' \
+	    "$JGC" -c "$SOCK" snort rules
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort rule default=1:106
+	atf_check -o inline:'1:105 off\n' cat se/arcana/rule-state
+	# local.rules: one Snort refuses is not written; one it takes is,
+	# and included.
+	printf 'alert icmp any any -> any any (msg:"bad"; nosuchopt:1; sid:1000009;)\n' > bad.rules
+	atf_check -s exit:1 -o match:'snort does not take it: ERROR: .*unknown rule keyword: nosuchopt' \
+	    -e ignore "$JGC" -c "$SOCK" snort conf local.rules bad.rules
+	atf_check -s exit:1 test -e se/local.rules
+	printf 'alert icmp any any -> any any (msg:"lab probe seen"; sid:1000001; rev:2;)\n' > good.rules
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort conf local.rules good.rules
+	atf_check -o match:"^include $d/se/local.rules\$" cat se/arcana/arcana.rules
+	# Once included, a bad one is still checked, and refused.
+	atf_check -s exit:1 -o match:'unknown rule keyword: nosuchopt' -e ignore \
+	    "$JGC" -c "$SOCK" snort conf local.rules bad.rules
+	atf_check -o match:'lab probe seen' -o not-match:nosuchopt cat se/local.rules
+	atf_check -o match:'"sid":1000001,"rev":2,"msg":"lab probe seen",[^}]*"file":"local.rules","on":true' \
+	    -o match:'"local_rules":"alert icmp' "$JGC" -c "$SOCK" snort rules
+	# snort.lua: refused as Snort refuses it, kept as it was.
+	printf "HOME_NET = 'any'\nbroken = \n" > bad.lua
+	atf_check -s exit:1 -o match:'ERROR: .*broken: not Lua' -e ignore \
+	    "$JGC" -c "$SOCK" snort conf snort.lua bad.lua
+	atf_check -o match:"^include 'snort_defaults.lua'" cat se/snort.lua
+	# Its settings: rc.conf's, and HOME_NET in snort.lua.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort set enable=yes \
+	    mode=ids interface=lo0 interface=nosuch0 \
+	    'home_net=[192.0.2.0/24,2001:db8::/32]'
+	atf_check -o match:'^arcana_snort_enable="YES"$' \
+	    -o match:'^arcana_snort_mode="ids"$' \
+	    -o match:'^arcana_snort_interfaces="lo0 nosuch0"$' cat rc.conf
+	atf_check -o match:"^HOME_NET = '\[192.0.2.0/24,2001:db8::/32\]'\$" \
+	    -o match:"^EXTERNAL_NET = 'any'" cat se/snort.lua
+	atf_check -o match:'"home_net":"\[192.0.2.0/24,2001:db8::/32\]"' \
+	    -o match:'no interface nosuch0 here' \
+	    -o match:'enabled, not running' "$JGC" -c "$SOCK" snort
+	atf_check -s exit:1 -e match:'home_net is any' -o ignore \
+	    "$JGC" -c "$SOCK" snort set "home_net=10.0.0.0/8'; os.exit()"
+	# Its alerts, the newest first.
+	printf '%s\n%s\n' \
+	    '{ "timestamp" : "10/17-12:00:01.000000", "proto" : "ICMP", "src_addr" : "192.0.2.1", "dst_addr" : "198.51.100.7", "gid" : 1, "sid" : 1000001, "rev" : 2, "msg" : "lab probe seen", "action" : "allow", "class" : "Misc activity", "priority" : 3 }' \
+	    '{ "timestamp" : "10/17-12:00:02.000000", "proto" : "TCP", "src_addr" : "192.0.2.9", "src_port" : 40000, "dst_addr" : "198.51.100.7", "dst_port" : 23, "gid" : 1, "sid" : 105, "rev" : 14, "msg" : "second", "action" : "allow", "class" : "Misc activity", "priority" : 3 }' \
+	    > sl/alert_json.txt
+	atf_check -o match:'"alerts":\[\{"timestamp":"10/17-12:00:02.000000",.*"msg":"second".*\},\{"timestamp":"10/17-12:00:01.000000",.*"msg":"lab probe seen"' \
+	    "$JGC" -c "$SOCK" snort
+}
+snort_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case multicast cleanup
+multicast_head()
+{
+	atf_set "descr" "IGMP's and MLD's state as ifmcstat(8) prints it:" \
+	    "each interface's version and timers, the groups joined with" \
+	    "their mode, link-level address and sources; and the kernel's" \
+	    "settings by sysctl(8)"
+}
+multicast_body()
+{
+	# ifmcstat(8) as FreeBSD prints it (tabs, a source under a group).
+	printf '#!/bin/sh\nprintf "%s"\n' 'vtnet0:\n\tinet 192.0.2.5\n\tigmpv3 rv 2 qi 125 qri 100 uri 3\n\t\tgroup 224.0.0.1 mode exclude\n\t\t\tmcast-macaddr 01:00:5e:00:00:01\n\t\tgroup 232.1.1.1 mode include\n\t\t\tsource 192.0.2.9\n\t\t\tmcast-macaddr 01:00:5e:01:01:01\n\tinet6 fe80::1%%vtnet0 scopeid 0x1\n\tmldv2 flags=2<USEALLOW> rv 2 qi 125 qri 10000 uri 3\n\t\tgroup ff02::1%%vtnet0 scopeid 0x1 mode exclude\n\t\t\tmcast-macaddr 33:33:00:00:00:01\nlo0:\n\tinet 127.0.0.1\n\tigmpv2 rv 2 qi 125 qri 10 uri 3\n\t\tgroup 224.0.0.1 mode exclude\n' > fake-ifmcstat
+	chmod +x fake-ifmcstat
+	DAEMON_ARGS="--ifmcstat $(pwd)/fake-ifmcstat"
+	start_daemon
+	atf_check -o save:m.json "$JGC" -c "$SOCK" net multicast
+	atf_check -o match:'"name":"vtnet0","groups":\[\{"family":"inet","group":"224.0.0.1","mode":"exclude","sources":\[\],"lladdr":"01:00:5e:00:00:01"\},\{"family":"inet","group":"232.1.1.1","mode":"include","sources":\["192.0.2.9"\],"lladdr":"01:00:5e:01:01:01"\},\{"family":"inet6","group":"ff02::1","mode":"exclude"' \
+	    -o match:'"igmp":\{"version":3,"rv":2,"qi":125,"qri":100,"uri":3\}' \
+	    -o match:'"mld":\{"version":2,"flags":"USEALLOW","rv":2,"qi":125,"qri":10000,"uri":3\}' \
+	    -o match:'"name":"lo0",.*"igmp":\{"version":2,' \
+	    -o match:'"settings":\[\{"name":"net.inet.igmp.default_version","value":"[123]"\}' \
+	    cat m.json
+	# And the host's own, as its ifmcstat says it.
+	stop_daemon
+	if [ -x /usr/sbin/ifmcstat ]; then
+		DAEMON_ARGS=""
+		start_daemon
+		atf_check -o match:'"interfaces":\[\{"name":"[a-z]+[0-9]*",' \
+		    -o match:'"group":"224.0.0.1"' "$JGC" -c "$SOCK" net multicast
+	fi
+}
+multicast_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case neighbours cleanup
 neighbours_head()
 {
@@ -6173,6 +6580,20 @@ EOT
 EOT
 	atf_check -o inline:'entry sw1_p1 10.3.0.0/24: tvc-1 via 10.202.0.2 tvc-2 via 10.203.0.2\nyang-cbor 67 bytes, the same back\n' \
 	    "$y" steer steer.json
+	# An edge that is a vnet jail: its jail in each, the state's edges.
+	printf '%s\n' '{"jail":"gateway","targets":[{"id":"tvc-1","address":"10.202.0.2"}]}' > jt.json
+	atf_check -o match:'^target tvc-1 10.202.0.2 .* jail=gateway$' \
+	    -o match:'the same back' "$y" targets jt.json
+	printf '%s\n' '{"jail":"gateway","set":30,"tables":[],"rules":["00500 count ip from any to any"]}' > jr.json
+	atf_check -o match:'^rules set=30 jail=gateway$' -o match:'the same back' \
+	    "$y" rules jr.json
+	printf '%s\n' '{"jail":"gateway","entries":[{"table":"sw1_p1","prefix":"10.3.0.0/24","candidates":[{"id":"tvc-1","via":"10.202.0.2"}]}]}' > js.json
+	atf_check -o match:'^jail gateway$' -o match:'the same back' "$y" steer js.json
+	printf '%s\n' '{"targets":[{"id":"tvc-1","address":"10.202.0.2","family":"inet","jail":"gateway","fib":0,"state":"up","since":1791995000,"samples":[],"kept":0}],"time":1791995110,"probing":true}' > jp.json
+	atf_check -o match:'^  jail gateway$' -o match:'the same back' "$y" probes jp.json
+	printf '%s\n' '{"rules":{"set":0,"rules":0,"tables":[],"objects":0,"counters":[]},"steer":[],"steered":false,"edges":[{"jail":"gateway","rules":{"set":30,"rules":1,"tables":["sw1_p1"],"objects":0,"counters":[]},"steer":[{"table":"sw1_p1","prefix":"10.3.0.0/24","chosen":0,"candidates":[{"id":"tvc-1","via":"10.202.0.2","state":"up"}]}],"steered":true}]}' > je.json
+	atf_check -o match:'^edge gateway set=30 rules=1 tables=1 steered=yes sw1_p1/10.3.0.0/24:1$' \
+	    -o match:'the same back' "$y" state je.json
 	cat > inst.json <<'EOT'
 {"instances":[{"name":"svc1","fib":1,"conf":"router id 10.0.0.1;\n"}]}
 EOT
@@ -6695,12 +7116,14 @@ host bash installed=5.3.3 available=- automatic=no size=yes origin=shells/bash c
 host curl installed=8.16.0 available=8.17.0 automatic=yes size=yes origin=ftp/curl comment=Command line tool and library for transferring data with URLs
 host git installed=2.51.0 available=- automatic=no size=- origin=devel/git comment=-
 host vim installed=9.1.1 available=9.1.2 automatic=- size=- origin=- comment=-
-host yang-cbor 225 bytes, the same back
+host yang-cbor 250 bytes, the same back
 back bash installed=5.3.3 available=- automatic=no size=yes origin=shells/bash comment=GNU Project's Bourne Again SHell
 back curl installed=8.16.0 available=8.17.0 automatic=yes size=yes origin=ftp/curl comment=Command line tool and library for transferring data with URLs
 back git installed=2.51.0 available=- automatic=no size=- origin=devel/git comment=-
 back vim installed=9.1.1 available=9.1.2 automatic=- size=- origin=- comment=-
-jail yang-cbor 236 bytes, the same back
+back repository FreeBSD-ports
+back repository builder
+jail yang-cbor 261 bytes, the same back
 web bash installed=5.3.3 available=- automatic=no size=yes origin=shells/bash comment=GNU Project's Bourne Again SHell
 web curl installed=8.16.0 available=8.17.0 automatic=yes size=yes origin=ftp/curl comment=Command line tool and library for transferring data with URLs
 web git installed=2.51.0 available=- automatic=no size=- origin=devel/git comment=-
@@ -7703,6 +8126,28 @@ EOF
 	atf_check -o match:'"options_dir_exists":true,[^}]*"configured":true' \
 	    "$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
 	    ports=opt set=debug origin=net/bird3
+	# The read and a port's options as arcana-builder has them, and
+	# notify's request as arcana-notify: through YANG-CBOR and back.
+	"$JGC" -c "$SOCK" poudriere > builder.json
+	"$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
+	    ports=opt set=debug origin=net/bird3 > options.json
+	atf_check -o save:yb "$(atf_get_srcdir)/ymisc" builder builder.json
+	atf_check -o match:'^installed=yes configured=yes conf=[0-9]+ basefs=' \
+	    -o match:'^jail FreeBSD:16:amd64 version=16.0-CURRENT method=pkgbase updated=2026-[0-9-]+T' \
+	    -o match:'^options opt net_bird3 set=2 unset=1$' \
+	    -o match:'^build FreeBSD:16:amd64/default/debug done: built=1 failed=1$' \
+	    -o match:'^  failed broken-1.0 devel/broken build after=42$' \
+	    -o match:'^  skipped needs-2.0 because=broken-1.0$' \
+	    -o match:'^run 3 state=1 exit=0 argv=11$' \
+	    -o match:'^yang-cbor [0-9]+ bytes, the same back$' cat yb
+	atf_check -o match:'^bird3-3.4.0 dir-exists=yes configured=yes$' \
+	    -o match:'^section 0 : BFD=on$' \
+	    -o match:'^section 1 Routing Protocols: BGP=on MRT=off$' \
+	    -o match:'^yang-cbor [0-9]+ bytes, the same back$' \
+	    "$(atf_get_srcdir)/ymisc" builder-options options.json
+	atf_check -o match:'^notify chat=-100123 text=5$' \
+	    -o match:'^yang-cbor [0-9]+ bytes, the same back$' \
+	    "$(atf_get_srcdir)/ymisc" notify 123456:ABCdef_- -100123 hello
 	# One the port has not, refused; one that is no option's name, too.
 	atf_check -s exit:1 -o match:'bird3-3.4.0 has no option NOPE' -e ignore \
 	    "$JGC" -c "$SOCK" poudriere options jail=FreeBSD:16:amd64 \
@@ -7897,9 +8342,12 @@ atf_init_test_cases()
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
 	atf_add_test_case sdwan
+	atf_add_test_case sdwan_jail
 	atf_add_test_case jail_conf
 	atf_add_test_case carp
 	atf_add_test_case neighbours
+	atf_add_test_case multicast
+	atf_add_test_case snort
 	atf_add_test_case certs
 	atf_add_test_case sshd
 	atf_add_test_case capture

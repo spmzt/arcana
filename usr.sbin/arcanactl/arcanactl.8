@@ -141,7 +141,7 @@ variables, with what the script says of itself and its extra commands.
 sets one first,
 .Fl x
 unsets one; only the service's own variables are accepted.
-.It Cm net routes | nexthops | connections | sockets | interfaces | netgraph | wireguard | bird | ipsec Op Fl 4 | Fl 6
+.It Cm net routes | nexthops | connections | sockets | interfaces | netgraph | wireguard | bird | ipsec | multicast Op Fl 4 | Fl 6
 The host's routing table
 .Pq Nm netstat Fl rnW ,
 nexthop table
@@ -153,6 +153,17 @@ or open sockets
 as the program printed them with
 .Fl -libxo Cm json ,
 for one address family or both.
+.Cm multicast
+is IGMP's and MLD's state as
+.Xr ifmcstat 8
+prints it, each interface's version and timers and the groups joined
+there, with the kernel's
+.Va net.inet.igmp
+and
+.Va net.inet6.mld
+settings, which
+.Cm sysctl
+sets.
 .It Cm kmod Op Cm load | unload | keep | forget Ar module
 The kernel's modules and its memory: every file linked into the kernel
 with its size, the references to it and the modules it holds; the
@@ -237,6 +248,43 @@ variables
 a port's
 .Pq jail= ports= set= origin= and an on= or off= for each, or reset=yes .
 Each is a job.
+.It Cm snort Oo Cm list | Cm rules | Cm conf Cm snort.lua Ns | Ns Cm local.rules Ar file | Ar verb Oo Ar key Ns = Ns Ar value ... Oc Oc
+Snort 3, the host's IDS/IPS, a plugin run by Arcana's
+.Xr rc 8
+script
+.Pa arcana_snort :
+.Cm list
+shows whether it is installed and running, what
+.Xr rc.conf 5
+says of it, its configuration, where its rules came from and its
+newest alerts;
+.Cm rules
+every rule as well, on or off.
+.Cm conf
+writes
+.Pa snort.lua
+or
+.Pa local.rules
+from
+.Ar file .
+The verbs are
+.Cm set
+.Pf ( Cm enable Ns = Ns Cm yes Ns | Ns Cm no ,
+.Cm mode Ns = Ns Cm ids Ns | Ns Cm ips ,
+an
+.Cm interface Ns = Ns Ar name
+for each interface watched,
+.Cm divert_port Ns = Ns Ar port ,
+.Cm home_net Ns = Ns Ar networks ) ,
+.Cm update
+.Pq Cm url Ns = Ns Ar address ,
+Snort's community rules unless given
+and
+.Cm rule
+.Pf ( Cm on Ns = , Cm off Ns = or Cm default Ns = Ns Ar gid : Ns Ar sid ) .
+Each change is checked by
+.Nm snort Fl T
+before it replaces what was there, and a running Snort reloads.
 .It Cm cert Oo Cm list | Cm add Ar name file | Cm remove Ar name | Cm trust Ar file | Cm untrust Ar file | Cm rehash Oc
 The certificates OpenSSL trusts, of the host or of
 .Fl j Ns 's
@@ -516,6 +564,13 @@ sets at boot.
 Without
 .Ar name
 the whole tree, of which only the beginning is sent.
+With
+.Fl j Ar jail ,
+those of that vnet jail's network as its own
+.Xr sysctl 8
+reads them, under
+.Ar name
+in net.: each its name and value.
 .It Cm sysctl parts Op Ar name
 The same values as a dump: in parts, each printed as an array of its
 own when it comes, with none left out for size.
@@ -528,6 +583,12 @@ With
 it is also written to
 .Xr sysctl.conf 5 ,
 in place of the line that set it before.
+With
+.Fl j Ar jail ,
+one of that vnet jail's network (net.), set by its own
+.Xr sysctl 8
+and kept in its own
+.Pa /etc/sysctl.conf .
 .It Cm ps Op Ar pid
 What runs on the host, or with
 .Fl j
@@ -616,7 +677,7 @@ kernel's resource accounting has them
 With
 .Ar after ,
 only the samples after that time, in seconds since the epoch.
-.It Cm history set Ar seconds Ar samples Oo Ar cpu mem swap Oc Op Cm rules Ar list
+.It Cm history set Ar seconds Ar samples Oo Ar cpu mem swap Oo Ar storage Oc Oc Op Cm rules Ar list
 Have the agent sample every
 .Ar seconds ,
 1 to 3600, and keep that many
@@ -630,7 +691,10 @@ With
 .Ar mem
 and
 .Ar swap ,
-the percentages over which an event is made, 0 for none; with
+the percentages over which an event is made, 0 for none;
+.Ar storage
+that of a file system full (each ZFS pool, and each other local one),
+looked at each minute, over which a storage fault is raised too; with
 .Cm rules ,
 the limits of an interface, a disk or a jail, with commas:
 .Ql net: Ns Ar if Ns = Ns Ar bytes/s ,
@@ -924,7 +988,7 @@ automatically as what another needs, its size and what it is.
 or
 .Fl 6
 has pkg reach the repository over IPv4 or IPv6 only.
-.It Cm pkg-upgrade Oo Fl n Oc Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl j Ar jail | Fl J Oc Op Ar package ...
+.It Cm pkg-upgrade Oo Fl n Oc Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl r Ar repo Oc Oo Fl j Ar jail | Fl J Oc Op Ar package ...
 .Nm pkg upgrade Fl y
 of the named packages, or of all of them, on the host or in the running
 .Ar jail ;
@@ -939,7 +1003,13 @@ only shows what would be done;
 .Fl O
 also installs packages built for a newer FreeBSD than the host's
 .Pq Ev IGNORE_OSVERSION ,
-which pkg refuses otherwise.
+which pkg refuses otherwise;
+.Fl r
+takes them from that repository alone
+.Pq Nm pkg upgrade Fl r ,
+one of those
+.Cm packages
+lists, enabled or not.
 What is still pending follows.
 .It Cm pkg-clean Oo Fl a Oc Oo Fl j Ar jail | Fl J Oc
 .Nm pkg clean Fl y ,
@@ -953,13 +1023,15 @@ With
 .Fl J ,
 in every running jail instead, one batch of a job each, so that a jail
 whose pkg refuses fails alone.
-.It Cm pkg-install Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl j Ar jail Oc Ar package ...
+.It Cm pkg-install Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl r Ar repo Oc Oo Fl j Ar jail Oc Ar package ...
 .Nm pkg install Fl y ,
 a job, on the host or in the running
 .Ar jail ;
 with
 .Fl O ,
-also packages built for a newer FreeBSD.
+also packages built for a newer FreeBSD; with
+.Fl r ,
+from that repository alone.
 .It Cm jobs
 The host's queued, running and recently finished jobs.
 .It Cm job Oo Fl w Oc Ar id
@@ -1018,6 +1090,10 @@ sdwan-probes operation takes it: each an id and an address, and maybe
 fib, interval, size, count, dscp, down, up, timeout, eval, history and
 report.
 An empty array stops them all.
+An object
+.Brq Qq jail : Qq Ar name , Qq targets : Bq ...
+sets those of an SD-WAN edge that is that vnet jail instead, probed
+from its network, apart from the host's and each other jail's.
 .It Cm sdwan rules Ar json
 A
 .Ar json
@@ -1026,11 +1102,14 @@ of any of these may be
 the file's contents (a large list of prefixes, say).
 The rules that classify what comes in at the SD-WAN UNIs and steer
 it, as the sdwan-rules operation takes them: an object with the set,
-the tables and the rules.
+the tables and the rules, and with jail those of an edge that is that
+vnet jail, run by its own
+.Xr ipfw 8 .
 .It Cm sdwan steer Ar json
 What the policy tables hold, as the sdwan-steer operation takes it:
 each prefix's candidate tunnels in order; the first not down is
 chosen, and chosen again when a probe's state changes.
+With jail, a jail's edge's.
 .It Cm sdwan bird Ar json
 The BIRD instances of the services at this edge, as the sdwan-bird
 operation takes them: each a name, the fib it runs in and its

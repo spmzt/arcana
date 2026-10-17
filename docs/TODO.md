@@ -18,8 +18,14 @@
   Internet access with NAT or remote by a tunnel, each flow let to
   its own UNIs' hosts and the Internet by its policy and nothing
   else; bandwidth and importance by dummynet pipes and weighted
-  queues; egress blocks. The probes and the rules run where the agent
-  runs: an edge that is a vnet jail is not measured or steered yet.
+  queues; egress blocks. An edge may be a vnet jail on a server
+  (server/jail): its interfaces, routes, tunnels, ipfw rules and
+  steering, probes and net.* sysctls are its own, done in it (jexec,
+  ifconfig -j, an ICMP socket the helper makes there); the services
+  the host runs for an SD-WAN service (dnsmasq, unbound, Squid,
+  Suricata, its BIRD), NTP, rtadvd, a uswe tunnel's manual SAs and
+  the security record (logdst rtsock) are the host's own edge's only,
+  and are refused at a jail's.
   The bandwidth commit is a weight among the flows of one limiter's
   pipe, not a guarantee against other traffic on the UCS; the pipes
   and nat are verified with ipfw on the lab VM, not under load; BGP
@@ -35,8 +41,9 @@
   edges' iBGP and NTP as a step (tasks 1.4, 1.5); the faults kept a
   day with Mplify's types and severities, from the probes, BFD, BIRD
   and the sampler, and threshold crossing alerts from the probes
-  (1.6, 1.7; storage as a resource fault and interface-down are not
-  raised yet); the lab run of 119-1 (1.8, in the verified list); the
+  (1.6, 1.7; storage, a ZFS pool or another local file system over
+  the sampler's storage limit, and interface, a UCS end point's or a
+  UNI's link lost as netlink tells it, raised too); the lab run of 119-1 (1.8, in the verified list); the
   monitor charts of each tunnel on Paths (UX-5); SLAAC at a UNI by
   rtadvd and DHCP by dnsmasq in the service's table, with the kernel's
   forwarding turned on by the apply (0.1, 0.2, in the verified list);
@@ -706,8 +713,10 @@
     (phase, reason, the end of their log) and those skipped for them,
     beneath it; a port's OPTIONS read by make showconfig and set in the
     options directory the build copies, as a form (both 2026-10-17,
-    agent 0.138.0).  Still to do: the builder operations as YANG (an
-    arcana-builder module, as notify has none either).
+    agent 0.138.0).  The builder and builder-options operations as
+    YANG, arcana-builder (SIDs from 72 400), and notify as
+    arcana-notify (from 72 600), each in its task's Schema panel (agent
+    0.138.1).
 - Asked for on 2026-10-16, in the order they are being done (done ones
   move to their own notes):
   - SD-WAN, adding an edge: a WAN link is not moved from its static
@@ -764,8 +773,8 @@
     How it is reached › Move to another address).  Multi-homing done
     the same day: --sctp-also and the transport operation's sctp-also
     (sctp_bindx), the listeners' addresses and each association's
-    paths in the transport read and on the page.  Not tried yet
-    between two hosts with several addresses each.
+    paths in the transport read and on the page.  Between two network
+    stacks with two addresses each, in the verified list.
 - Alert management (asked 2026-10-16): who is told of what, and how.
   Alerts from the events the console already reads (faults, BIRD's
   sessions among them, limits crossed, jobs, workflow runs), each rule
@@ -830,7 +839,16 @@
     public keys kept as /etc/ssh/trusted_user_ca_keys, in the verified
     list.)
   - IDS/IPS by Snort, a plugin (luxuria) as before: Snort and its
-    rules updated and configured from the panel.
+    rules updated and configured from the panel.  (Done 2026-10-18:
+    the Security page's Snort tab; Snort 3 run by Arcana's rc.d
+    script arcana_snort (the package has none), on interfaces or
+    inline behind an ipfw divert rule; its rules fetched by libfetch,
+    Snort's community rules by default, each turned on or off across
+    updates; local.rules, snort.lua, HOME_NET and rc.conf's settings;
+    its alerts; each change checked by snort -T, a running one
+    reloaded.  Against the real Snort 3.12 in the verified list
+    (agent_root_test:snort_live).  Not done: registered rules by an
+    oinkcode, a secret wanted kept as one; ask.)
   - The console clustered; disaster recovery across console clusters.
   - Agents in an HA pair on identical hardware and ports (CARP, the
     state shared), with CARP on its own for a host.  (CARP for a host
@@ -849,14 +867,19 @@
     SD-WAN tunnels by ipfw tcp-setmss, an interface's, or the agent's
     links?), labels on interfaces (a console-side tag, or the
     interface's description?), prefix lists (used by what: ipfw
-    tables, BIRD filters, SD-WAN zones?), IGMP and MLD (what to set).
+    tables, BIRD filters, SD-WAN zones?).
   - A certificates tab per host, by certctl and OpenSSL. (Done
     2026-10-12: trusted and untrusted, read with OpenSSL; a CA given,
     one distrusted and trusted again, kept where certctl rehash finds
     them; a jail's too.  Verified with the real certctl in a lab jail.)
   - Configuration templates: a host's setup exported to one and a
     template applied to a host; YAML where the standard allows,
-    UCL otherwise.
+    UCL otherwise.  (Done 2026-10-17: kept by the console, a host's
+    bundle without secrets with {{name}} where each host has its own
+    value, its hostname made one when it is saved from a host; the
+    Devices page's Templates to list, change, save as YAML or JSON,
+    take in from a file and apply to a host with its values, checked
+    first as a bundle is.)
   - A span tab: traffic mirrored by a BPF interface, or by ipfw rules
     with BPF.
     (Done 2026-10-12: Network, Span: a bridge's span ports; rules with
@@ -869,9 +892,14 @@
     each kind made and changed by a form, read back from the text only
     when the form shows all of it, else changed as text.  And the
     Network section's BGP, OSPF and BFD tabs: every session of the
-    fleet, a graph and a table.  Tested with the birdc stand-in only;
-    not yet against a real BIRD.)
-  - IGMP and MLD configured.
+    fleet, a graph and a table.  Against a real BIRD, in the verified
+    list.)
+  - IGMP and MLD configured.  (Done 2026-10-17, read as a host's own
+    IGMP and MLD: Network, Multicast shows ifmcstat(8)'s groups per
+    interface with their mode and sources, each interface's version
+    and timers, and sets net.inet.igmp.* and net.inet6.mld.* by sysctl
+    jobs, kept in sysctl.conf when asked; a vnet jail's its own.  A
+    querier or a multicast router (pimd, mrouted) is not done: ask.)
   - NDP and ARP entries added and deleted by hand, temporary or
     permanent. (Done 2026-10-12: the neighbour job, kept as rc.conf's
     static pairs; verified in a vnet jail with arp(8) and ndp(8).)
@@ -985,12 +1013,10 @@
 
 Written and tested with stand-ins, never run for real:
 
-- On a host itself, as root: what of an interface is kept in rc.conf
-  (done for real only in a vnet jail, below), and a static route kept
-  there. A route in another routing table: the one tried was refused
-  by the kernel, its gateway not being reached in that table, which
-  came through as route(8) says it. Whether the address named to send
-  from is the one a route then uses: route(8) took it.
+- A route in another routing table: the one tried was refused by the
+  kernel, its gateway not being reached in that table, which came
+  through as route(8) says it. Whether the address named to send from
+  is the one a route then uses: route(8) took it.
 - Nodes of the map that move away from the pointer, as was reported
   from a browser that is not the one the tests run: not reproduced. A
   real mouse in headless Chromium keeps a host under it for every
@@ -999,8 +1025,6 @@ Written and tested with stand-ins, never run for real:
   about when a host is moved, and the drawing is as large as its room.
 - The network map with real tunnels between real hosts: the test has two
   names for one agent, so its links are the networks they share.
-- wg-quick(8): the tests use stand-ins (wg(8) and birdc(8) were run
-  for real, below).
 - A vnet jail's network. Run for real, against the jail `gateway` of
   one host: its interfaces, routes, route lookup and BIRD read; an
   address added and removed; an interface brought up; a new epair
@@ -1038,6 +1062,49 @@ Written and tested with stand-ins, never run for real:
 
 What was once in the list above, and when it was run:
 
+- Kept in rc.conf on a host itself, and wg-quick(8) for real
+  (2026-10-17, the lab VM as root, its /etc/rc.conf kept first and put
+  back byte for byte): an interface's address and a static route kept
+  by -p (ifconfig_<if>_alias0, static_routes and its route_), taken
+  off by hand and put back by the base system's own rc.d netif and
+  routing; a WireGuard interface made, keyed, addressed and peered
+  with -p, a ping through it to a vnet jail's end, rc.conf with
+  wireguard_enable and wireguard_interfaces and no ifconfig_ of its
+  own, and the file written for wg-quick with its Address, MTU, port,
+  key and peer.  The interface destroyed as at a boot, the real
+  wg-quick (wireguard-tools 1.0.20260223, fetched, not installed)
+  made it again from that file, its route to the peer too, and the
+  ping went through.  wg-quick on FreeBSD leaves a route monitor
+  running in the background, as it should.
+- SCTP to an agent listening on a router's loopback address
+  (2026-10-17): it times out while TCP to the same address works.
+  FreeBSD's SCTP counts an address on a loopback interface out of a
+  non-loopback peer's scope (sctp_is_address_in_scope()), so no
+  INIT-ACK is sent: reproduced between two vnet jails (the root test
+  sctp_loopback), and SCTP to an address of a real interface, bound
+  too with --sctp-also, answered.  The transport read and the host
+  page now say so of such a listener.
+- BIRD's forms against the real BIRD (2026-10-17): every
+  configuration the console's BIRD forms and SD-WAN write is taken or
+  refused by BIRD 3.3.2's own parser (bird -p) in the tests where the
+  host has BIRD; it found that SD-WAN put a route's preference on the
+  protocol, which BIRD 3 has on the channel only, a BGP password without
+  its authentication, the RPKI function without its return type, and a
+  session from a template that names no peer type refused as it should
+  be.  And live (the root test bird_live): two vnet jails, BIRD in each,
+  eBGP over an epair as the BGP form writes a session; Established, a
+  route of each learned by the other, and the agent read the session's
+  state and the routes through the real birdc.
+- SCTP multi-homed between two network stacks (2026-10-17, the root
+  test sctp_multihome): the agent in one vnet jail bound to two
+  addresses (--sctp-also), arcanactl in another with two of its own,
+  an epair for each pair; the association had a path to each of the
+  client's addresses, both active.  One epair end taken down: the
+  client took its address out of the association (ASCONF, FreeBSD's
+  auto_asconf), the other path became primary, and events kept coming
+  on the same association; back up, the address was added again and
+  its path active.  SCTP's timers shortened in each jail's own stack
+  (net.inet.sctp is per vnet) to find a failure in a second.
 - SCTP between two network stacks (2026-10-13): the agent in one vnet
   jail and arcanactl in another (both rooted at /, nothing installed
   in either), an epair between them; over sctp://, mutual TLS, the

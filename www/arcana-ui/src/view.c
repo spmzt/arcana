@@ -19,6 +19,7 @@
 #include "app.h"
 #include "qrcodegen.h"
 
+static void	pkg_repo_select(struct html *);
 static const char *icon_grid =
     "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 3h7v7H3z"
     "M14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z\"/></svg>";
@@ -1544,6 +1545,15 @@ set_keys(struct html *h)
 	const ucl_object_t	*k;
 	ucl_object_iter_t	 it;
 
+	/* The keys are not shown to a session an API token opened, nor
+	 * added from one: it says so, rather than show none. */
+	if (app.by_token) {
+		h_raw(h, "<p class=\"notice keys-token\">This session was opened "
+		    "with an API token, so the keys that sign in are neither "
+		    "listed nor added here. Sign out, and sign in with a "
+		    "security key or a passkey to see and manage them.</p>");
+		return;
+	}
 	h_raw(h, "<form data-form=\"add-key\" class=\"set-form\"><ul class=\""
 	    "keys\">");
 	it = NULL;
@@ -2076,8 +2086,9 @@ view_settings(struct html *h)
 	h_raw(h, "</nav><div class=\"set-body\">");
 	if (app.by_token)
 		h_raw(h, "<div class=\"notice warn\">Signed in with an API "
-		    "token: the console's settings, its keys, tokens and CA "
-		    "are changed by one signed in with a security key.</div>");
+		    "token: the console's settings, its sign-in keys, tokens "
+		    "and CA are shown and changed only to one signed in with "
+		    "a security key or a passkey.</div>");
 	if (app.modal_error[0] != '\0' && app.modal == MODAL_NONE) {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, app.modal_error);
@@ -2113,6 +2124,38 @@ view_settings(struct html *h)
 		break;
 	}
 	h_raw(h, "</div></section>");
+}
+
+/*
+ * Which of pkg's repositories there to take packages from (pkg -r),
+ * the packages read's: any (as pkg is configured), or one alone,
+ * enabled or not.  Nothing when the read named none.
+ */
+static void
+pkg_repo_select(struct html *h)
+{
+	const ucl_object_t	*r;
+	ucl_object_iter_t	 it;
+
+	if (app.pkg.data == NULL || ucl_array_size(jget(app.pkg.data,
+	    "repos")) == 0)
+		return;
+	h_raw(h, "<label class=\"pkg-repo\" title=\"Only from this one of "
+	    "pkg's repositories (pkg -r), enabled or not; or from where "
+	    "pkg's own configuration has each package\">From<select name=\""
+	    "repo\"><option value=\"\">any repository</option>");
+	it = NULL;
+	while ((r = ucl_object_iterate(jget(app.pkg.data, "repos"), &it,
+	    true)) != NULL) {
+		h_raw(h, "<option");
+		h_attr(h, "value", ucl_object_tostring_forced(r));
+		if (strcmp(app.pkg.repo, ucl_object_tostring_forced(r)) == 0)
+			h_raw(h, " selected");
+		h_raw(h, ">");
+		h_txt(h, ucl_object_tostring_forced(r));
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select></label>");
 }
 
 static void
@@ -2337,6 +2380,7 @@ modal(struct html *h)
 		    "for a newer FreeBSD <em>IGNORE_OSVERSION</em></span></label>",
 		    app.pkg.ip == 4 ? ", over IPv4" : app.pkg.ip == 6 ?
 		    ", over IPv6" : "");
+		pkg_repo_select(h);
 		break;
 	case MODAL_LOOKUP:
 		if (cur_server() == NULL)
@@ -3509,13 +3553,16 @@ view_packages(struct html *h, struct server *s)
 	if (n == 0)
 		h_raw(h, "<div class=\"empty\"><p>Everything is up to date."
 		    "</p></div>");
-	else
+	else {
 		h_fmt(h, "<div class=\"buttons\"><span class=\"dim\">%d pending; "
-		    "none selected means all</span><button class=\"ghost\" "
-		    "value=\"dry\"%s>Dry run</button><button class=\"danger\" "
-		    "value=\"go\"%s>Upgrade</button></div>", n,
-		    packages_busy(s) ? " disabled" : "", packages_busy(s) ?
-		    " disabled" : "");
+		    "none selected means all</span>", n);
+		/* From one of pkg's repositories, or any. */
+		pkg_repo_select(h);
+		h_fmt(h, "<button class=\"ghost\" value=\"dry\"%s>Dry run"
+		    "</button><button class=\"danger\" value=\"go\"%s>Upgrade"
+		    "</button></div>", packages_busy(s) ? " disabled" : "",
+		    packages_busy(s) ? " disabled" : "");
+	}
 	h_raw(h, "</form>");
 	if (packages_busy(s))
 		h_raw(h, "<div class=\"notice\"><div class=\"loader\"></div>"

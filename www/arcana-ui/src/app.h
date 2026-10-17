@@ -198,6 +198,7 @@ struct pkgview {
 	char		*names;		/* what it was asked of: JSON, or NULL */
 	int		 mode;		/* 0 the installed, 1 the upgrades */
 	int		 ip;		/* pkg -4 or -6, or 0 either */
+	char		 repo[65];	/* pkg -r: one repository, or "" */
 };
 
 enum netkind {
@@ -216,6 +217,7 @@ enum netkind {
 	NET_IPSEC,
 	NET_SPAN,		/* bridges' span ports, taps, capture */
 	NET_CARP,		/* carp(4)'s vhids, from the interfaces */
+	NET_MULTICAST,		/* IGMP's and MLD's state, ifmcstat(8) */
 };
 /* A plugin's view: a tab of its own on a host that has it. */
 #define	NET_PLUGIN(k)	((k) == NET_WIREGUARD || (k) == NET_BIRD ||	\
@@ -342,6 +344,7 @@ enum {
 	JOB_CERTS,
 	JOB_SSH,
 	JOB_BUILDER,
+	JOB_SNORT,
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -473,6 +476,7 @@ struct app {
 	int		 settab;	/* the Settings section's tab: SET_* */
 	char		 ipsec_auth[8];	/* the connection form: how the peer is known */
 	char		 filter[64];
+	int		 devtab;	/* Devices: 0 the hosts, 1 templates */
 	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */
 	bool		 quiet;		/* the reads asked now are the page's own
@@ -657,7 +661,18 @@ void		 view_devices(struct html *);
 int		 count_state(const struct server *, const char *);
 void		 view_summary(struct html *, struct server *);
 void		 view_hostconf(struct html *, struct server *);
+void		 config_report(struct html *, const ucl_object_t *,
+		    const char *, bool, bool, bool, const char *);
+void		 config_pkgs(struct server *, const ucl_object_t *,
+		    const char *);
+/* templates.c: configuration templates, the Devices page's tab. */
+void		 view_templates(struct html *);
+bool		 templates_action(const char *, const char *, const char *);
+void		 templates_load(void);
+void		 templates_open(const char *);
+void		 template_put(const char *, const ucl_object_t *);
 bool		 hostconf_action(const char *, const char *, const char *);
+bool		 mcast_form(const ucl_object_t *);
 void		 view_jobs(struct html *, struct server *);
 
 /* topo.c: the fleet's network as a map, traffic, routes, netgraph. */
@@ -877,6 +892,14 @@ bool		 secpage_action(const char *, const char *, const char *);
 void		 secpage_loc(char *, size_t);
 void		 secpage_open(const char *);
 void		 secpage_tick(double);
+
+/* snort.c: the Security page's Snort tab. */
+void		 view_snort(struct html *, const char *);
+bool		 snort_form(const char *, const ucl_object_t *);
+bool		 snort_action(const char *, const char *, const char *);
+void		 snort_refresh(void);
+void		 snort_tick(double);
+void		 snort_loc(char *, size_t);
 /* builder.c: the Builder page, poudriere's. */
 void		 view_builder(struct html *);
 bool		 builder_form(const char *, const ucl_object_t *);

@@ -15,15 +15,16 @@ module: arcana-probe
      |  +--rw history?    uint32
      |  +--rw report?     uint32
      |  +--rw tca
-     |     +--rw delay?     ms
-     |     +--rw ipdv?      ms
-     |     +--rw loss?      decimal64
-     |     +--rw damping?   uint8
+     |  |  +--rw delay?     ms
+     |  |  +--rw ipdv?      ms
+     |  |  +--rw loss?      decimal64
+     |  |  +--rw damping?   uint8
+     |  +--rw jail?       string
      +--ro state
      |  +--ro probing?   boolean
      |  +--ro time?      yang:date-and-time
-     |  +--ro target* [id]
-     |     +--ro id          string
+     |  +--ro target*
+     |     +--ro id?         string
      |     +--ro address?    inet:ip-address-no-zone
      |     +--ro family?     enumeration
      |     +--ro fib?        uint16
@@ -47,26 +48,28 @@ module: arcana-probe
      |     |  +--ro age?        ms
      |     +--ro kept?       uint32
      |     +--ro sample* [time]
-     |        +--ro time        yang:date-and-time
-     |        +--ro delay?      ms
-     |        +--ro ipdv?       ms
-     |        +--ro loss?       decimal64
-     |        +--ro min?        ms
-     |        +--ro max?        ms
-     |        +--ro sent?       uint32
-     |        +--ro received?   uint32
+     |     |  +--ro time        yang:date-and-time
+     |     |  +--ro delay?      ms
+     |     |  +--ro ipdv?       ms
+     |     |  +--ro loss?       decimal64
+     |     |  +--ro min?        ms
+     |     |  +--ro max?        ms
+     |     |  +--ro sent?       uint32
+     |     |  +--ro received?   uint32
+     |     +--ro jail?       string
      +---x read
         +---w input
         |  +---w after?   yang:date-and-time
         +--ro output
-           +--ro target* [id]
-              +--ro id    string
+           +--ro target*
+              +--ro id?     string
               +--ro sample* [time]
-                 +--ro time        yang:date-and-time
-                 +--ro delay?      ms
-                 +--ro ipdv?       ms
-                 +--ro loss?       decimal64
-                 +--ro min?        ms
-                 +--ro max?        ms
-                 +--ro sent?       uint32
-                 +--ro received?   uint32
+              |  +--ro time        yang:date-and-time
+              |  +--ro delay?      ms
+              |  +--ro ipdv?       ms
+              |  +--ro loss?       decimal64
+              |  +--ro min?        ms
+              |  +--ro max?        ms
+              |  +--ro sent?       uint32
+              |  +--ro received?   uint32
+              +--ro jail?   string

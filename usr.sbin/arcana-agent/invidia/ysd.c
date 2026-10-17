@@ -74,6 +74,7 @@ ysd_rules_from_json(const char *json, cbl_yarena *a,
 	if ((top = yj_parse(json)) == NULL)
 		return (EINVAL);
 	YJ_NUM(top, "set", out, set);
+	out->jail = yj_str(a, top, "jail");
 	if (!ALLOC_N(a, t, yj_count(ucl_object_lookup(top, "tables"))) ||
 	    !ALLOC_N(a, r, yj_count(ucl_object_lookup(top, "rules"))) ||
 	    yj_strs(a, ucl_object_lookup(top, "objects"), &out->object.n,
@@ -198,6 +199,7 @@ ysd_steer_from_json(const char *json, cbl_yarena *a,
 	memset(out, 0, sizeof(*out));
 	if ((top = yj_parse(json)) == NULL)
 		return (EINVAL);
+	out->jail = yj_str(a, top, "jail");
 	if (!ALLOC_N(a, en, yj_count(ucl_object_lookup(top, "entries")))) {
 		ucl_object_unref(top);
 		return (ENOMEM);
@@ -330,8 +332,26 @@ state_enum(const char *s)
 	    == 0 ? 1 : 2);
 }
 
-int
-ysd_state_from_json(const char *json, cbl_yarena *a,
+/*
+ * An edge's rules, as the kernel has them, and its steering, from o
+ * (the sdwan read, or one of its edges) into out's rules, steered and
+ * steer.  A jail's edge has them in types of their own, of the same
+ * shape (the grouping edge-state): filled here and given over.
+ */
+_Static_assert(sizeof(struct arcana_sdwan_sdwan_state_rules) ==
+    sizeof(struct arcana_sdwan_sdwan_state_edge_rules), "edge-state");
+_Static_assert(sizeof(struct arcana_sdwan_sdwan_state_rules_table) ==
+    sizeof(struct arcana_sdwan_sdwan_state_edge_rules_table), "edge-state");
+_Static_assert(sizeof(struct arcana_sdwan_sdwan_state_rules_counter) ==
+    sizeof(struct arcana_sdwan_sdwan_state_edge_rules_counter), "edge-state");
+_Static_assert(sizeof(struct arcana_sdwan_sdwan_state_steer) ==
+    sizeof(struct arcana_sdwan_sdwan_state_edge_steer), "edge-state");
+_Static_assert(sizeof(struct arcana_sdwan_sdwan_state_steer_candidate) ==
+    sizeof(struct arcana_sdwan_sdwan_state_edge_steer_candidate),
+    "edge-state");
+
+static int
+edge_state(cbl_yarena *a, const ucl_object_t *top,
     struct arcana_sdwan_sdwan_state *out)
 {
 	struct arcana_sdwan_sdwan_state_rules		*ru;
@@ -339,29 +359,12 @@ ysd_state_from_json(const char *json, cbl_yarena *a,
 	struct arcana_sdwan_sdwan_state_rules_counter	*rc;
 	struct arcana_sdwan_sdwan_state_steer		*st;
 	struct arcana_sdwan_sdwan_state_steer_candidate	*sc;
-	struct arcana_sdwan_sdwan_state_bird		*bi;
-	struct arcana_sdwan_sdwan_state_bird_protocol	*bp;
-	struct arcana_sdwan_sdwan_state_bird_bfd	*bb;
-	struct arcana_sdwan_sdwan_state_dhcp		*dh;
-	struct arcana_sdwan_sdwan_state_dhcp_lease	*dl;
-	struct arcana_sdwan_sdwan_state_dns		*dn;
-	struct arcana_sdwan_sdwan_state_proxy		*px;
-	struct arcana_sdwan_sdwan_state_ids		*id;
-	struct arcana_sdwan_sdwan_state_ids_alert	*al;
-	struct arcana_sdwan_sdwan_state_record		*re;
-	struct arcana_sdwan_sdwan_state_record_last	*rl;
-	struct arcana_sdwan_sdwan_state_key		*ky;
-	struct arcana_sdwan_sdwan_state_fault		*fa;
 	const ucl_object_t				*e, *o, *ee;
 	ucl_object_iter_t				 it, eit;
-	ucl_object_t					*top;
 	const char					*v;
 	int64_t						 n;
 	size_t						 k, m;
 
-	memset(out, 0, sizeof(*out));
-	if ((top = yj_parse(json)) == NULL)
-		return (EINVAL);
 	/* The rules, as the kernel has them. */
 	if ((o = ucl_object_lookup(top, "rules")) != NULL && ucl_object_type(o)
 	    == UCL_OBJECT) {
@@ -442,6 +445,63 @@ ysd_state_from_json(const char *json, cbl_yarena *a,
 	}
 	out->steer.n = k;
 	out->steer.v = st;
+	return (0);
+nomem:
+	return (ENOMEM);
+}
+
+int
+ysd_state_from_json(const char *json, cbl_yarena *a,
+    struct arcana_sdwan_sdwan_state *out)
+{
+	struct arcana_sdwan_sdwan_state_edge		*ed;
+	struct arcana_sdwan_sdwan_state_bird		*bi;
+	struct arcana_sdwan_sdwan_state_bird_protocol	*bp;
+	struct arcana_sdwan_sdwan_state_bird_bfd	*bb;
+	struct arcana_sdwan_sdwan_state_dhcp		*dh;
+	struct arcana_sdwan_sdwan_state_dhcp_lease	*dl;
+	struct arcana_sdwan_sdwan_state_dns		*dn;
+	struct arcana_sdwan_sdwan_state_proxy		*px;
+	struct arcana_sdwan_sdwan_state_ids		*id;
+	struct arcana_sdwan_sdwan_state_ids_alert	*al;
+	struct arcana_sdwan_sdwan_state_record		*re;
+	struct arcana_sdwan_sdwan_state_record_last	*rl;
+	struct arcana_sdwan_sdwan_state_key		*ky;
+	struct arcana_sdwan_sdwan_state_fault		*fa;
+	const ucl_object_t				*e, *o, *ee;
+	ucl_object_iter_t				 it, eit;
+	ucl_object_t					*top;
+	const char					*v;
+	int64_t						 n;
+	size_t						 k, m;
+
+	memset(out, 0, sizeof(*out));
+	if ((top = yj_parse(json)) == NULL)
+		return (EINVAL);
+	if (edge_state(a, top, out) != 0)
+		goto nomem;
+	/* Each edge that is a vnet jail: the same, its own ipfw's. */
+	if (!ALLOC_N(a, ed, yj_count(ucl_object_lookup(top, "edges"))))
+		goto nomem;
+	k = 0;
+	YJ_EACH(ucl_object_lookup(top, "edges"), it, e) {
+		struct arcana_sdwan_sdwan_state	one;
+
+		memset(&ed[k], 0, sizeof(ed[k]));
+		if ((ed[k].jail = yj_str(a, e, "jail")) == NULL)
+			continue;
+		memset(&one, 0, sizeof(one));
+		if (edge_state(a, e, &one) != 0)
+			goto nomem;
+		ed[k].rules = (const void *)one.rules;
+		ed[k].has_steered = one.has_steered;
+		ed[k].steered = one.steered;
+		ed[k].steer.n = one.steer.n;
+		ed[k].steer.v = (const void *)one.steer.v;
+		k++;
+	}
+	out->edge.n = k;
+	out->edge.v = ed;
 	/* BIRD. */
 	if (!ALLOC_N(a, bi, yj_count(ucl_object_lookup(top, "bird"))))
 		goto nomem;

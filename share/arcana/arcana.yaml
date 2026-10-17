@@ -380,6 +380,20 @@ definitions:
           made, when none is), each option checked against the port's
           COMPLETE_OPTIONS_LIST; reset takes the file away, the port's
           defaults again.  The host's only; never in safe mode.
+      - name: snort
+        doc: |
+          Snort 3, an IDS/IPS, a plugin run by Arcana's rc.d script
+          arcana_snort: verb and words key=value (names).  set takes
+          enable (yes, no), mode (ids, watching each interface= word;
+          ips, taking what an ipfw divert rule hands divert_port) and
+          home_net (snort.lua's HOME_NET), kept in rc.conf and
+          snort.lua.  conf writes file (snort.lua or local.rules) from
+          text.  update fetches the rules from url (the last one, or
+          Snort's community rules) and takes in each *.rules of the
+          archive.  rule turns rules on= or off= (gid:sid), or back to
+          their own default=, across updates.  Each is checked by snort
+          -T before it replaces what was there, and a running Snort is
+          told to reload.  The host's only; never in safe mode.
   - name: job-state
     type: enum
     entries:
@@ -503,6 +517,16 @@ definitions:
           and traffic selectors; and "sas", the security associations,
           IKE and their children, with state, algorithms and counters.
           Never a private key.
+      - name: multicast
+        doc: |
+          IGMP's and MLD's state, from ifmcstat(8): a JSON object with
+          "interfaces", each with its name, "igmp" and "mld" (the version
+          the interface speaks, its robustness, query and query response
+          intervals, unsolicited report interval, and MLD's flags) and
+          "groups", the groups joined there, each with its family,
+          address, filter mode, link-level address and sources; and
+          "settings", the kernel's (net.inet.igmp.* and net.inet6.mld.*,
+          name and value), which a job of kind sysctl sets.
   - name: storage-kind
     type: enum
     entries:
@@ -1153,6 +1177,31 @@ attribute-sets:
         doc: For notify, the message.
         checks:
           max-len: 4096
+      - name: limit-storage
+        type: u32
+        doc: |
+          For history, the same for how full a file system of the host's
+          is (a ZFS pool's allocated share of its size, another local
+          one's as df(1) has it): over it, a storage fault; 0 for none.
+          Without it, as it was.
+      - name: pkg-repo
+        type: text
+        doc: |
+          For pkg-upgrade, the repository to upgrade from only (pkg
+          upgrade -r), one of those the packages operation lists in
+          pkg-repos; without it, each package from where pkg's own
+          configuration has it.
+        checks:
+          max-len: 64
+      - name: pkg-repos
+        type: text
+        multi-attr: true
+        doc: |
+          For packages, the repositories pkg is configured with there
+          (pkg -vv), enabled or not: any of them may be named in
+          pkg-repo, which pkg then takes from alone.
+        checks:
+          max-count: 64
 
 
   - name: host
@@ -1436,7 +1485,7 @@ attribute-sets:
           max-len: 15
       - name: verb
         type: text
-        doc: For netgraph, wireguard and bird, what to do.
+        doc: For netgraph, wireguard, bird, poudriere and snort, what to do.
         checks:
           max-len: 16
       - name: peer
@@ -1659,6 +1708,13 @@ attribute-sets:
         doc: For ssh authorize, unauthorize and options, the user whose keys.
         checks:
           max-len: 32
+      - name: pkg-repo
+        type: text
+        doc: |
+          For pkg-upgrade and pkg-install, the repository only (pkg -r),
+          one of those pkg is configured with there.
+        checks:
+          max-len: 64
 
   - name: job
     attributes:
@@ -2047,6 +2103,7 @@ operations:
           - error
           - packages
           - trace
+          - pkg-repos
 
   - name: pkg-upgrade
     attribute-set: arcana
@@ -2055,7 +2112,8 @@ operations:
       pkg upgrade -y on the host or in a running jail, of the named
       packages or of all; dry-run only shows what pkg would do;
       ignore-osversion upgrades to packages built for a newer FreeBSD
-      too, as a job of kind pkg-upgrade does with force.
+      too, as a job of kind pkg-upgrade does with force; pkg-repo
+      takes them from that repository alone (pkg upgrade -r).
     do:
       request:
         attributes:
@@ -2064,6 +2122,7 @@ operations:
           - dry-run
           - ignore-osversion
           - pkg-ip
+          - pkg-repo
       reply:
         attributes:
           - ok
@@ -2414,11 +2473,15 @@ operations:
       a reply carries comes as the first, with total and truncated.
       As a dump the values come in parts, as the tree is walked and
       as fast as they are taken: each item has json, an array of the
-      next of them, and nothing is left out for size.
+      next of them, and nothing is left out for size.  With jail,
+      those of that vnet jail's network as its own sysctl(8) reads
+      them (net-filter then names where, under net.), name and value
+      each.
     do:
       request:
         attributes:
           - net-filter
+          - jail
       reply:
         attributes:
           - ok
@@ -2560,8 +2623,10 @@ operations:
       way from now on, and keeps it for its next start: an hour every
       five seconds until it is told otherwise; limit-cpu, limit-mem
       and limit-swap with them are the percentages above which an
-      event (kind threshold) is made, and limit-rules the limits of an
-      interface, a disk or a jail.  The reply has "limits", and
+      event (kind threshold) is made, limit-storage that of a file
+      system, looked at each minute, also a storage fault (Mplify 119's
+      resource faults), and limit-rules the limits of an interface, a
+      disk or a jail.  The reply has "limits", and
       "rules", each with its kind, name, limit and whether it is over.
       Each running jail is told apart as well, at most 16, in "jails":
       its share of one CPU in percent and its memory in bytes, as the
@@ -2580,6 +2645,7 @@ operations:
           - limit-mem
           - limit-swap
           - limit-rules
+          - limit-storage
       reply:
         attributes:
           - ok
@@ -3448,6 +3514,34 @@ operations:
       the port's own options first, then each group, single, radio or
       multi as the port says it ("title"), each option with "name",
       "on" and "description".
+    do:
+      request:
+        attributes:
+          - names
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: snort
+    attribute-set: arcana
+    auth: true
+    doc: |
+      Snort on this host, a plugin, as a JSON object: "installed",
+      "program" and "version"; "running" and "pid"; "rc", what
+      arcana_snort's rc.conf variables say (enable, mode, interfaces,
+      divert_port); "home_net"; "snort_lua" and "local_rules", the
+      files' text; "source", where the rules came from ("url",
+      "updated", "sha256") with each file taken in ("name", "rules",
+      "on"); "warnings", what keeps Snort from doing what it was told;
+      and "alerts", the newest of alert_json.txt first, each with
+      timestamp, proto, src_addr, src_port, dst_addr, dst_port, gid,
+      sid, rev, msg, action, class and priority.  With names "rules",
+      "rules" too: every rule taken in and of local.rules, with gid,
+      sid, rev, msg, action, class, file, "on" and "default" (on as
+      shipped).
     do:
       request:
         attributes:

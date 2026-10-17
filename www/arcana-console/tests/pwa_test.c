@@ -729,6 +729,32 @@ part_shell(void)
 	    " && l.textContent.includes('write'))", 10);
 	shot("0b2-token-write");
 	/*
+	 * Signed in with that write token: the Sign-in keys tab says why it
+	 * shows no keys, and offers none to add; signed in with the key
+	 * again, they are there.
+	 */
+	run("sessionStorage.setItem('wtok', document.querySelector("
+	    "'pre.out.token').textContent.trim())");
+	run("document.querySelector('button[data-act=logout]').click()");
+	wait_js("document.querySelector('form[data-form=login-token]')", 10);
+	run("document.querySelector('details.login-token').open = true; "
+	    "const f = document.querySelector('form[data-form=login-token]'); "
+	    "f.token.value = sessionStorage.getItem('wtok'); "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('.shell')", 20);
+	go("/#/settings/keys");
+	wait_js("document.querySelector('.set-body .keys-token')?.textContent"
+	    ".includes('opened with an API token') && !document.querySelector("
+	    "'form[data-form=add-key]') && !document.querySelector("
+	    "'.set-body .notice.bad')", 20);
+	shot("0b3-keys-token");
+	run("document.querySelector('button[data-act=logout]').click()");
+	click_when("button[data-act=login]", 10);
+	wait_js("document.querySelector('.shell')", 20);
+	go("/#/settings/keys");
+	wait_js("document.querySelector('form[data-form=add-key] ul.keys li "
+	    ".name')", 20);
+	/*
 	 * The console's CA changed for another: made, rolled out (no host
 	 * over TLS here to give it to), finished; the new one alone is
 	 * trusted after.
@@ -1251,6 +1277,22 @@ part_hosts(void)
 	ATF_REQUIRE(system("rm newer-os && mv pending.keep pending") == 0);
 	run("document.querySelector('button[data-act=pkg-ip][data-arg=\"0\"]')"
 	    ".click()");
+	/* From one of pkg's repositories alone: pkg upgrade -r. */
+	run("document.querySelector('button[data-act=pkg-check]').click()");
+	wait_js("[...document.querySelectorAll('select[name=repo] option')]"
+	    ".some(o => o.value === 'builder') && document.querySelector("
+	    "'button[value=dry]:not([disabled])')", 20);
+	run("document.querySelector('select[name=repo]').value = 'builder'; "
+	    "document.querySelector('button[value=dry]').click();");
+	for (i = 0; i < 100 && system("grep -q '^upgrade -r builder -n$' "
+	    "pkg.log") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q '^upgrade -r builder -n$' pkg.log") == 0);
+	/* The choice stays after it, for the upgrade to follow. */
+	wait_js("document.querySelector('select[name=repo]')?.value === "
+	    "'builder' && document.querySelector('button[value=go]:not("
+	    "[disabled])')", 20);
+	shot("6c-pkg-repo");
 
 	/* The page opened again: what ended is still along the bottom. */
 	go("/");
@@ -1450,6 +1492,43 @@ part_nettab(void)
 	    0; i++)
 		usleep(100000);
 	ATF_CHECK(system("grep -qx 'arp -d 10.0.0.2' neigh.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* IGMP and MLD: each interface's version, the groups joined with
+	 * their sources; a setting changed, a sysctl job kept at boot. */
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=multicast]').click()");
+	wait_js("[...document.querySelectorAll('table.mcast tbody tr')].some(r "
+	    "=> r.textContent.includes('232.1.1.1') && r.textContent.includes("
+	    "'include') && r.textContent.includes('10.9.9.9')) && document."
+	    "querySelector('table.mcast-ifs').textContent.includes('IGMPv3') "
+	    "&& document.querySelector('table.mcast-ifs').textContent."
+	    "includes('MLDv2')", 20);
+	shot("7o2-multicast");
+	/* inet6's groups alone, then all again. */
+	run("document.querySelector('button[data-act=net-family][data-arg=\"6\"]')"
+	    ".click()");
+	wait_js("(() => { const t = document.querySelector('table.mcast'); "
+	    "return t && t.textContent.includes('ff02::1') && !t.textContent."
+	    "includes('232.1.1.1'); })()", 20);
+	run("document.querySelector('button[data-act=net-family][data-arg=\"0\"]')"
+	    ".click()");
+	wait_js("(() => { const t = document.querySelector('table.mcast'); "
+	    "return t && t.textContent.includes('232.1.1.1'); })()", 20);
+	run("const f = document.querySelector('form[data-form=mcast-set]'); "
+	    "f.elements['net.inet.igmp.default_version'].value = '2'; f."
+	    "elements['net.inet.igmp.sendra'].checked = false; f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 100 && system("grep -q 'sysctl net.inet.igmp.sendra=0' "
+	    "kld.log && grep -q 'sysctl net.inet.igmp.default_version=2' "
+	    "kld.log") != 0; i++)
+		usleep(100000);
+	if (system("grep -q 'sysctl net.inet.igmp.sendra=0' kld.log && "
+	    "grep -q 'sysctl net.inet.igmp.default_version=2' kld.log && ! "
+	    "grep -q 'net.inet6.mld.v1enable=' kld.log && grep -q "
+	    "'net.inet.igmp.sendra=0' sysctl.conf") != 0) {
+		(void)system("grep -h igmp kld.log sysctl.conf >&2");
+		ATF_CHECK_MSG(false, "the IGMP settings were not set and kept");
+	}
 	run("document.querySelector('.dock > header').click()");
 	/* CARP: an address shared under a vhid, its key never on a line. */
 	run("document.querySelector('button[data-act=net-kind]"
@@ -2596,11 +2675,11 @@ part_plugins(void)
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=bird-rpki]')", 5);
 	run("const f = document.querySelector('form[data-form=bird-rpki]'); "
-	    "f.host.value = 'rtr.example.org'; f.requestSubmit();");
+	    "f.host.value = '192.0.2.81'; f.requestSubmit();");
 	wait_js("!document.querySelector('.modal') && [...document."
 	    "querySelectorAll('.conf-grid ul.blocks li b')].some(b => "
 	    "b.textContent === 'rpki_invalid')", 20);
-	ATF_CHECK(system("grep -q 'remote \"rtr.example.org\" port 3323;' "
+	ATF_CHECK(system("grep -q 'remote \"192.0.2.81\" port 3323;' "
 	    "bird/bird.conf && grep -q '^roa6 table r6;$' bird/bird.conf && "
 	    "test \"$(grep -c '^roa4 table r4;$' bird/bird.conf)\" = 1 && "
 	    "grep -q 'protocol rpki rpki2' bird/bird.conf && grep -q "
@@ -2680,13 +2759,13 @@ part_plugins(void)
 	run("const f = document.querySelector('form[data-form=bird-pform]'); "
 	    "f.elements.name.value = 'core2'; f.tmpl.value = 'ibgp_t'; "
 	    "f.nbr.value = '2001:db8::7'; f.ch0.checked = false; "
-	    "f.efa.value = 'on'; f.requestSubmit();");
+	    "f.efa.value = 'off'; f.requestSubmit();");
 	wait_js("!document.querySelector('.modal') && [...document."
 	    "querySelectorAll('table.bird-bgp tbody tr')].some(r => r."
 	    "textContent.includes('ibgp_t · '))", 20);
 	ATF_CHECK(system("grep -q '^protocol bgp core2 from ibgp_t {$' "
 	    "bird/bird.conf && grep -q '^\tneighbor 2001:db8::7;$' bird/bird.conf "
-	    "&& grep -q '^\tenforce first as on;$' bird/bird.conf && ! grep -A4 "
+	    "&& grep -q '^\tenforce first as off;$' bird/bird.conf && ! grep -A4 "
 	    "'^protocol bgp core2' bird/bird.conf | grep -q 'local as'") == 0);
 	shot("7g-bird-bgp-tab");
 	/* One there already, read into the form and changed. */
@@ -2780,7 +2859,12 @@ part_plugins(void)
 	    "'table.broutes tbody tr.best')", 20);
 	ATF_CHECK(system("grep -q '^-r show route protocol bgp_edge$' birdc.log")
 	    == 0);
-
+	/* Where the host has BIRD, what the forms wrote was BIRD's own
+	 * parser's to take (bird -p), and it took it. */
+	ATF_CHECK_MSG(system("test ! -x /usr/local/sbin/bird || test \"$(wc -l "
+	    "< bird-real.log)\" -gt 5") == 0, "BIRD's parser was not asked");
+	ATF_CHECK(system("test ! -x /usr/local/sbin/bird || "
+	    "/usr/local/sbin/bird -p -c bird/bird.conf") == 0);
 }
 
 /*
@@ -4426,6 +4510,60 @@ part_firewall(void)
 	ATF_CHECK(system("! grep -q 192.0.2.7 root/etc/hosts") == 0);
 
 	/*
+	 * Kept as a template: the host's files without secrets, its name
+	 * {{hostname}}; opened on the Devices page's Templates, a default
+	 * given and saved; applied to the host with another name, checked
+	 * first: rc.conf's hostname the value given.
+	 */
+	run("const i = document.querySelector('input[data-input=hc-tname]'); "
+	    "i.value = 'lab-edge'; i.dispatchEvent(new Event('input', { "
+	    "bubbles: true }));");
+	click_when("button[data-act=hc-template]:not([disabled])", 10);
+	wait_js("location.hash === '#/devices/templates' && document."
+	    "querySelector('section.template h3')?.textContent === 'lab-edge' "
+	    "&& [...document.querySelectorAll('table.tpvars code')].some(c => "
+	    "c.textContent === '{{hostname}}') && [...document.querySelectorAll("
+	    "'details.tpfile textarea')].some(t => t.value.includes("
+	    "'hostname=\"{{hostname}}\"'))", 20);
+	ATF_CHECK(system("grep -q '\"lab-edge\"' data/templates.json && ! "
+	    "grep -q 'PrivateKey' data/templates.json") == 0);
+	run("const i = document.querySelector('input[data-input=tp-desc]'); "
+	    "i.value = 'the lab, as an edge'; i.dispatchEvent(new Event('input',"
+	    " { bubbles: true }));");
+	click_when("button[data-act=tp-save]:not([disabled])", 5);
+	wait_js("[...document.querySelectorAll('.toast')].some(t => t."
+	    "textContent.includes('Template lab-edge kept'))", 10);
+	ATF_CHECK(system("grep -q 'the lab, as an edge' data/templates.json")
+	    == 0);
+	shot("1g-template");
+	/* Applied to the host, as lab2: checked, nothing written. */
+	run("const s = document.querySelector('select[data-input=tp-target]');"
+	    " s.value = s.options[1].value; s.dispatchEvent(new Event('input', "
+	    "{ bubbles: true })); const v = document.querySelector('input["
+	    "data-input=tp-val][data-arg=hostname]'); v.value = 'lab2'; v."
+	    "dispatchEvent(new Event('input', { bubbles: true }));");
+	click_when("button[data-act=tp-check]:not([disabled])", 10);
+	wait_js("document.querySelector('section.template .hcreport')?."
+	    "textContent.includes('what it would do') && [...document."
+	    "querySelectorAll('section.template pre.diff')].some(p => p."
+	    "textContent.includes('+hostname=\"lab2\"'))", 20);
+	ATF_CHECK(system("grep -q 'hostname=\"lab\"' root/etc/rc.conf") == 0);
+	/* The list, and the template forgotten. */
+	click_when("button[data-act=tp-close]", 5);
+	wait_js("[...document.querySelectorAll('table.templates tbody tr')]."
+	    "some(r => r.textContent.includes('lab-edge') && r.textContent."
+	    "includes('the lab, as an edge') && r.textContent.includes("
+	    "'hostname'))", 10);
+	run("document.querySelector('table.templates tbody tr').click()");
+	click_when("button[data-act=tp-delete]", 10);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit();");
+	wait_js("document.querySelector('section.hostbar') && document."
+	    "querySelector('.empty h2')?.textContent === 'No template yet'", 10);
+	host_open(NULL);
+	click_when("button.tab[data-arg=summary]", 10);
+
+	/*
 	 * Connections are read again by themselves while they are shown,
 	 * until paused.
 	 */
@@ -4882,6 +5020,9 @@ part_flows(void)
 	    "sd-effects[open]')?.textContent.includes('net.inet.ip."
 	    "forwarding')", 5);
 	shot("9-sdwan-guide-edge");
+	/* A vnet jail on the host may be the edge instead: its name. */
+	ATF_CHECK(js_true("document.querySelector('form[data-form=sd-edge] "
+	    "input[name=jail]')?.value === ''"));
 	run("document.querySelector('form[data-form=sd-edge]')."
 	    "requestSubmit();");
 	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
@@ -5871,10 +6012,16 @@ part_routes(void)
 	wait_js("window.before === undefined && document.querySelector("
 	    "'.jail-page h1') && document.querySelector('.jail-page h1')"
 	    ".textContent === 'cache'", 30);
-	/* Opened on Settings: the hosts are read in the background, and
-	 * no task says so (it was one for the first host, not asked). */
+	/*
+	 * Opened on Settings: the hosts are read in the background, and
+	 * no task says so (it was one for the first host, not asked).  The
+	 * tasks kept in the browser are emptied in the same breath as the
+	 * reload, so the jail page's own, landing late on a loaded machine,
+	 * are not taken for Settings's.
+	 */
 	go("/#/settings/update");
-	run("window.before = 1; location.reload();");
+	run("window.before = 1; localStorage.setItem('arc_tasks', '[]'); "
+	    "location.reload();");
 	wait_js("window.before === undefined && document.querySelector("
 	    "'button[data-act=set-tab][data-arg=update].on') && document."
 	    "querySelector('.upd')", 30);
@@ -6151,6 +6298,104 @@ part_trouble(void)
  * opened; scanning for malware listed on its tab; Suricata made the
  * same way; each removed after asking.
  */
+/* The task dock folded away, as it opens on a change run. */
+static void
+dock_closed(void)
+{
+
+	run("const d = document.querySelector('.dock'); if (d && d.classList."
+	    "contains('open')) d.querySelector('header').click();");
+	usleep(300000);
+}
+
+/* A change sent: run at once, or from the queue when it is on. */
+static void
+sent(void)
+{
+
+	usleep(400000);
+	run("const b = document.querySelector('button[data-act=queue-run]'); "
+	    "if (b) b.click();");
+}
+
+/*
+ * Snort on the Security page: its alert; its rules fetched from an
+ * archive and one turned off; rc.conf's settings; local.rules written.
+ */
+static void
+part_snort(void)
+{
+	char	here[MAXPATHLEN], js_[MAXPATHLEN + 200];
+	int	i;
+
+	ATF_REQUIRE(getcwd(here, sizeof(here)) != NULL);
+	click_when("button[data-act=sec-tab][data-arg=snort]", 10);
+	wait_js("location.hash.startsWith('#/security/snort/') && document."
+	    "querySelector('table.snort-alerts') && document.querySelector("
+	    "'table.snort-alerts').textContent.includes('lab probe seen') && "
+	    "document.querySelector('.sn-head').textContent.includes('3.12.2.0')"
+	    " && [...document.querySelectorAll('.notice.warn')].some(n => n."
+	    "textContent.includes('no rules taken in yet'))", 20);
+	shot("9w-snort-alerts");
+	/* The rules, fetched from the archive by file://. */
+	click_when("button[data-act=sn-view][data-arg=rules]", 10);
+	wait_js("document.querySelector('form[data-form=sn-update]')", 10);
+	snprintf(js_, sizeof(js_), "const f = document.querySelector("
+	    "'form[data-form=sn-update]'); f.url.value = 'file://%s/"
+	    "snort-rules.tar.gz'; f.requestSubmit();", here);
+	run(js_);
+	sent();
+	wait_js("document.querySelector('table.snort-rules') && document."
+	    "querySelector('table.snort-rules').textContent.includes("
+	    "'PROTOCOL-TELNET lab login') && document.querySelector('.sn-src')"
+	    ".textContent.includes('2 rules, 1 on')", 30);
+	dock_closed();
+	shot("9x-snort-rules");
+	/* 105 off, from its chip; kept by gid:sid. */
+	run("document.querySelector('table.snort-rules button[data-act=sn-rule]"
+	    "[data-arg=\"1:105\"]').click()");
+	sent();
+	for (i = 0; i < 100 && system("grep -qx '1:105 off' snort-etc/arcana/"
+	    "rule-state") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -qx '1:105 off' snort-etc/arcana/rule-state") ==
+	    0);
+	wait_js("document.querySelector('table.snort-rules button[data-act="
+	    "sn-rule][data-arg=\"1:105\"][data-value=default]')", 20);
+	/* Its settings: kept in rc.conf. */
+	click_when("button[data-act=sn-view][data-arg=settings]", 10);
+	wait_js("document.querySelector('form[data-form=sn-set]')", 10);
+	dock_closed();
+	shot("9y-snort-settings");
+	run("const f = document.querySelector('form[data-form=sn-set]'); "
+	    "f.enable.checked = true; f.interfaces.value = 'lo0 em0'; "
+	    "f.home_net.value = '[192.0.2.0/24]'; f.requestSubmit();");
+	sent();
+	for (i = 0; i < 100 && system("grep -q '^arcana_snort_interfaces=\"lo0 "
+	    "em0\"' rc.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q '^arcana_snort_interfaces=\"lo0 em0\"' "
+	    "rc.conf && grep -q '^arcana_snort_enable=\"YES\"' rc.conf && "
+	    "grep -q \"^HOME_NET = '\\[192.0.2.0/24\\]'\" snort-etc/snort.lua") ==
+	    0);
+	/* local.rules, written as typed. */
+	click_when("button[data-act=sn-view][data-arg=local]", 10);
+	wait_js("document.querySelector('form[data-form=sn-conf] textarea')",
+	    10);
+	run("const t = document.querySelector('form[data-form=sn-conf] "
+	    "textarea'); t.value = 'alert icmp any any -> any any (msg:\"mine\";"
+	    " sid:1000007; rev:1;)\\n'; t.dispatchEvent(new Event('input', { "
+	    "bubbles: true })); t.form.requestSubmit();");
+	sent();
+	for (i = 0; i < 100 && system("grep -q 'sid:1000007' snort-etc/"
+	    "local.rules") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q 'msg:\"mine\"; sid:1000007' snort-etc/"
+	    "local.rules && grep -q 'include ./snort-etc/local.rules' "
+	    "snort-etc/arcana/arcana.rules") == 0);
+	dock_closed();
+}
+
 static void
 part_security(void)
 {
@@ -6220,6 +6465,7 @@ part_security(void)
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
 	wait_js("!document.querySelector('table.secproxy')", 30);
+	part_snort();
 }
 
 /*

@@ -70,6 +70,7 @@ enum op {
 	OP_JAIL_FILES,
 	OP_BUILDER,
 	OP_BUILDER_OPTIONS,
+	OP_SNORT,
 	OP_CERTS,
 	OP_SSH,
 	OP_CAPTURE,
@@ -119,6 +120,7 @@ struct call {
 	bool			 renew;		/* tls: a new certificate */
 	bool			 installed;	/* packages: those installed */
 	uint8_t			 pkg_ip;	/* packages: pkg -4, -6, or 0 */
+	char			 pkg_repo[65];	/* pkg-upgrade: pkg -r, or "" */
 	char			**names;	/* pkg-upgrade: packages */
 	size_t			 nnames;
 	struct arc_job_spec	*specs;		/* job-submit: the batch */
@@ -337,6 +339,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_NHGROUPS] = "nhgroups",
 	[ARC_NET_KIND_NEIGHBOURS] = "neighbours",
 	[ARC_NET_KIND_IPSEC] = "ipsec",
+	[ARC_NET_KIND_MULTICAST] = "multicast",
 };
 
 static const char *service_action_names[] = {
@@ -1213,7 +1216,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_SNORT ? "arc_snort" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1563,6 +1566,8 @@ call_run(struct kore_task *t)
 	struct arc_builder_rsp	*bur;
 	struct arc_builder_options_req boq;
 	struct arc_builder_options_rsp *bor;
+	struct arc_snort_req	 snq;
+	struct arc_snort_rsp	*snr;
 	struct arc_certs_req	 ceq;
 	struct arc_certs_rsp	*cer;
 	struct arc_ssh_req	 sshq;
@@ -1690,6 +1695,7 @@ call_run(struct kore_task *t)
 	jfiles = NULL;
 	bur = NULL;
 	bor = NULL;
+	snr = NULL;
 	cer = NULL;
 	sshr = NULL;
 	capr = NULL;
@@ -1916,6 +1922,8 @@ connected:
 			ucl_array_append(a, e);
 		}
 		put(top, "packages", a);
+		/* pkg's repositories there, any of which -r may name. */
+		put(top, "repos", strs(pr->pkg_repos.v, pr->pkg_repos.n));
 		steps = pr->trace.v;
 		nsteps = pr->trace.n;
 		break;
@@ -1927,6 +1935,7 @@ connected:
 		uq.ignore_osversion = c->anyos;
 		uq.has_pkg_ip = c->pkg_ip != 0;
 		uq.pkg_ip = c->pkg_ip;
+		uq.pkg_repo = c->pkg_repo[0] != '\0' ? c->pkg_repo : NULL;
 		uq.names.v = (const char *const *)c->names;
 		uq.names.n = c->nnames;
 		if ((error = arc_pkg_upgrade(&cl, &uq, &ur)) != 0)
@@ -2496,6 +2505,11 @@ connected:
 			hsq.limit_mem = (uint32_t)atoi(c->names[1]);
 			hsq.limit_swap = (uint32_t)atoi(c->names[2]);
 		}
+		/* Storage's, when the body said it. */
+		if (c->retry && c->names != NULL && c->nnames == 4) {
+			hsq.has_limit_storage = true;
+			hsq.limit_storage = (uint32_t)atoi(c->names[3]);
+		}
 		/* The limits of devices and jails, as the agent takes them. */
 		if (c->retry && c->text != NULL)
 			hsq.limit_rules = c->text;
@@ -2540,6 +2554,7 @@ connected:
 		/* Where to begin rides where a jail's name does. */
 		memset(&syq, 0, sizeof(syq));
 		syq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
+		syq.jail = c->scope[0] != '\0' ? c->scope : NULL;
 		if ((error = arc_sysctl(&cl, &syq, &syr)) != 0)
 			goto rpcfail;
 		ok = syr->ok;
@@ -2584,6 +2599,36 @@ connected:
 			put(top, "data", e);
 		steps = jfiles->trace.v;
 		nsteps = jfiles->trace.n;
+		break;
+	case OP_SNORT:
+		/* rules, when setup_snort says the page wants them. */
+		memset(&snq, 0, sizeof(snq));
+		{
+			static const char *rules[] = { "rules" };
+
+			if (c->text != NULL && strcmp(c->text, "rules") == 0) {
+				snq.names.v = rules;
+				snq.names.n = 1;
+			}
+		}
+		if ((error = arc_snort(&cl, &snq, &snr)) != 0)
+			goto rpcfail;
+		ok = snr->ok;
+		put_str(top, "error", snr->error);
+		e = NULL;
+		if (snr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, snr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = snr->trace.v;
+		nsteps = snr->trace.n;
 		break;
 	case OP_BUILDER:
 		if ((error = arc_builder(&cl, &bur)) != 0)
@@ -3014,6 +3059,8 @@ done:
 		arc_builder_rsp_free(bur);
 	if (bor != NULL)
 		arc_builder_options_rsp_free(bor);
+	if (snr != NULL)
+		arc_snort_rsp_free(snr);
 	if (cer != NULL)
 		arc_certs_rsp_free(cer);
 	if (sshr != NULL)
@@ -3933,7 +3980,7 @@ api_config_apply(struct http_request *req)
 	struct call		*c;
 	ucl_object_t		*body;
 	const ucl_object_t	*b;
-	const char		*fid, *hn;
+	const char		*fid, *hn, *tn;
 	unsigned char		*text;
 
 	if (req->method == HTTP_METHOD_GET)
@@ -3954,7 +4001,22 @@ api_config_apply(struct http_request *req)
 		snprintf(c->hostname, sizeof(c->hostname), "%s", hn);
 	fid = ucl_str(body, "from");
 	b = ucl_object_lookup(body, "bundle");
-	if (fid != NULL && (from = server_find(fid)) != NULL) {
+	/* A template, made this host's by its values: as a bundle. */
+	if ((tn = ucl_str(body, "template")) != NULL) {
+		char	why[300], *json;
+
+		if (!template_name_ok(tn) || (json = template_render(tn,
+		    ucl_object_lookup(body, "values"), why, sizeof(why))) ==
+		    NULL) {
+			ucl_object_unref(body);
+			call_release(c);
+			kore_free(c);
+			return (reply_error(req, 400, "invalid", "%s",
+			    template_name_ok(tn) ? why : "a template's name"));
+		}
+		c->text = kore_strdup(json);
+		free(json);
+	} else if (fid != NULL && (from = server_find(fid)) != NULL) {
 		c->from_uri = kore_strdup(from->uri);
 		c->from_peer = from->peer_name != NULL ?
 		    kore_strdup(from->peer_name) : NULL;
@@ -4135,20 +4197,24 @@ api_history(struct http_request *req)
 	    "step")) : 0;
 	keep = body != NULL && ucl_object_lookup(body, "keep") != NULL ?
 	    ucl_object_toint(ucl_object_lookup(body, "keep")) : -1;
-	/* The limits, all three or none, as percentages. */
+	/* The limits, all three or none, as percentages; storage's too
+	 * when said. */
 	if (body != NULL && ucl_object_lookup(body, "cpu") != NULL) {
-		int64_t	l[3];
-		size_t	k;
+		int64_t	l[4];
+		size_t	k, nl;
 
 		l[0] = ucl_object_toint(ucl_object_lookup(body, "cpu"));
 		l[1] = ucl_object_toint(ucl_object_lookup(body, "mem"));
 		l[2] = ucl_object_toint(ucl_object_lookup(body, "swap"));
-		for (k = 0; k < 3; k++)
+		nl = ucl_object_lookup(body, "storage") != NULL ? 4 : 3;
+		l[3] = nl == 4 ? ucl_object_toint(ucl_object_lookup(body,
+		    "storage")) : 0;
+		for (k = 0; k < nl; k++)
 			if (l[k] < 0 || l[k] > 100)
 				step = 0;
-		c->names = kore_calloc(3, sizeof(*c->names));
-		c->nnames = 3;
-		for (k = 0; k < 3; k++) {
+		c->names = kore_calloc(nl, sizeof(*c->names));
+		c->nnames = nl;
+		for (k = 0; k < nl; k++) {
 			c->names[k] = kore_malloc(8);
 			snprintf(c->names[k], 8, "%lld", (long long)l[k]);
 		}
@@ -4272,6 +4338,9 @@ setup_sysctl(struct call *c, const struct rq *q)
 		if (!isalnum((unsigned char)*p) && strchr("._-%", *p) == NULL)
 			return ("a sysctl is named with letters, digits and "
 			    ". _ - %");
+	/* A vnet jail's network's, under net. */
+	if (!pick_scope(q, c))
+		return ("jail is a jail's name");
 	return (NULL);
 }
 
@@ -4332,6 +4401,26 @@ api_builder_options(struct http_request *req)
 {
 
 	return (read_route(req, OP_BUILDER_OPTIONS, setup_builder_options));
+}
+
+/* GET /api/servers/<id>/snort[?rules=1]: Snort on the host, a plugin;
+ * every rule too when rules is given. */
+static const char *
+setup_snort(struct call *c, const struct rq *q)
+{
+	char	v[8];
+
+	if (rq_param(q, "rules", v, sizeof(v)) && v[0] != '\0' &&
+	    strcmp(v, "0") != 0)
+		c->text = kore_strdup("rules");
+	return (NULL);
+}
+
+int
+api_snort(struct http_request *req)
+{
+
+	return (read_route(req, OP_SNORT, setup_snort));
 }
 
 /* GET /api/servers/<id>/certs[?jail=]: the certificates OpenSSL trusts
@@ -4594,6 +4683,10 @@ api_pkg_upgrade(struct http_request *req)
 	c->pkg_ip = (uint8_t)(ucl_object_toint(ucl_object_lookup(body,
 	    "pkg_ip")) == 4 ? 4 : ucl_object_toint(ucl_object_lookup(body,
 	    "pkg_ip")) == 6 ? 6 : 0);
+	/* From one repository: the agent checks it is one of pkg's. */
+	if (ucl_str(body, "pkg_repo") != NULL)
+		snprintf(c->pkg_repo, sizeof(c->pkg_repo), "%s", ucl_str(body,
+		    "pkg_repo"));
 	a = ucl_object_lookup(body, "packages");
 	if ((n = ucl_array_size(a)) > 0) {
 		c->names = kore_calloc(n, sizeof(*c->names));
@@ -4647,6 +4740,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_SSH] = "ssh",
 	[ARC_JOB_KIND_CARP] = "carp",
 	[ARC_JOB_KIND_POUDRIERE] = "poudriere",
+	[ARC_JOB_KIND_SNORT] = "snort",
 };
 
 static const char *job_state_names[] = {
@@ -4731,6 +4825,7 @@ spec_free(struct arc_job_spec *sp)
 	kore_free((char *)(uintptr_t)sp->preshared_key);
 	kore_free((char *)(uintptr_t)sp->lladdr);
 	kore_free((char *)(uintptr_t)sp->user);
+	kore_free((char *)(uintptr_t)sp->pkg_repo);
 	for (i = 0; i < sp->variables.n; i++) {
 		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
 		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
@@ -4852,6 +4947,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->lladdr = jdup(o, "lladdr");
 	sp->temporary = ucl_flag(o, "temporary");
 	sp->user = jdup(o, "user");
+	sp->pkg_repo = jdup(o, "pkg_repo");
 	if ((v = ucl_object_lookup(o, "metric")) != NULL && ucl_object_toint(
 	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
 		sp->has_metric = true;
@@ -4957,6 +5053,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_SSH:
 	case ARC_JOB_KIND_CARP:
 	case ARC_JOB_KIND_POUDRIERE:
+	case ARC_JOB_KIND_SNORT:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
@@ -5385,6 +5482,7 @@ static const struct hread {
 	{ "jails/files", OP_JAIL_FILES, NULL },
 	{ "builder", OP_BUILDER, NULL },
 	{ "builder/options", OP_BUILDER_OPTIONS, setup_builder_options },
+	{ "snort", OP_SNORT, setup_snort },
 	{ "services", OP_SERVICES, NULL },
 	{ "packages", OP_PACKAGES, setup_packages },
 	{ "net/", OP_NETWORK, setup_network },
@@ -5497,6 +5595,15 @@ char *
 hosts_net(const char *uri, const char *peer, const char *name,
     const char *kind, int *status)
 {
+
+	return (hosts_net_in(uri, peer, name, NULL, kind, status));
+}
+
+/* A vnet jail's network's (jail NULL: the host's). */
+char *
+hosts_net_in(const char *uri, const char *peer, const char *name,
+    const char *jail, const char *kind, int *status)
+{
 	struct call	*c;
 	size_t		 i;
 
@@ -5511,6 +5618,8 @@ hosts_net(const char *uri, const char *peer, const char *name,
 	c->action = (uint8_t)i;
 	c->family = ARC_NET_FAMILY_ALL;
 	c->reads = true;
+	if (jail != NULL)
+		snprintf(c->scope, sizeof(c->scope), "%s", jail);
 	return (self_call(c, uri, peer, name, kind, status));
 }
 
@@ -5597,12 +5706,23 @@ char *
 hosts_sysctl(const char *uri, const char *peer, const char *name,
     const char *prefix, int *status)
 {
+
+	return (hosts_sysctl_in(uri, peer, name, NULL, prefix, status));
+}
+
+/* Those of a vnet jail's network (jail NULL: the host's). */
+char *
+hosts_sysctl_in(const char *uri, const char *peer, const char *name,
+    const char *jail, const char *prefix, int *status)
+{
 	struct call	*c;
 
 	c = kore_calloc(1, sizeof(*c));
 	c->op = OP_SYSCTL;
 	c->reads = true;
 	snprintf(c->jail, sizeof(c->jail), "%s", prefix);
+	if (jail != NULL)
+		snprintf(c->scope, sizeof(c->scope), "%s", jail);
 	return (self_call(c, uri, peer, name, "sysctl", status));
 }
 
