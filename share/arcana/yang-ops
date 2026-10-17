@@ -62,3 +62,6 @@ route-lookup	ietf-routing@2018-03-13
 step	arcana-jobs@2026-10-14
 steps	arcana-jobs@2026-10-14
 ssh	arcana-sshd@2026-10-15
+builder	arcana-builder@2026-10-17
+builder-options	arcana-builder@2026-10-17
+notify	arcana-notify@2026-10-17

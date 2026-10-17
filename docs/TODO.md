@@ -706,8 +706,10 @@
     (phase, reason, the end of their log) and those skipped for them,
     beneath it; a port's OPTIONS read by make showconfig and set in the
     options directory the build copies, as a form (both 2026-10-17,
-    agent 0.138.0).  Still to do: the builder operations as YANG (an
-    arcana-builder module, as notify has none either).
+    agent 0.138.0).  The builder and builder-options operations as
+    YANG, arcana-builder (SIDs from 72 400), and notify as
+    arcana-notify (from 72 600), each in its task's Schema panel (agent
+    0.138.1).
 - Asked for on 2026-10-16, in the order they are being done (done ones
   move to their own notes):
   - SD-WAN, adding an edge: a WAN link is not moved from its static

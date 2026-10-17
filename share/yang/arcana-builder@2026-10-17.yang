@@ -1,0 +1,553 @@
+module arcana-builder {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-builder";
+  prefix arcbld;
+
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "poudriere(8), the ports' package builder on a FreeBSD host, as
+     the agent reads it where poudriere keeps it: poudriere.conf, the
+     build jails and ports trees of poudriere.d, its make.conf files
+     and options directories, the package repositories, the latest
+     build of each jail, tree and set with the ports that failed, and
+     the runs the agent started (a jail or tree made or updated, a
+     build), which go on after their job.  Changes are jobs of kind
+     poudriere.  The builder and builder-options operations of
+     arcana.yaml converted (Y-3).";
+
+  revision 2026-10-17 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md, step 3.1.";
+  }
+
+  typedef port-origin {
+    type string {
+      pattern '[A-Za-z0-9_.+-]+/[A-Za-z0-9_.+@-]+';
+    }
+    description
+      "A port, its category and name, and @flavor where it has
+       flavors: net/bird3.";
+  }
+
+  container builder {
+    config false;
+    description
+      "poudriere on this host.";
+    leaf installed {
+      type boolean;
+      description
+        "poudriere is there.";
+    }
+    leaf program {
+      type string;
+      description
+        "Its path.";
+    }
+    leaf conf-file {
+      type string;
+      description
+        "Where poudriere.conf is.";
+    }
+    leaf configured {
+      type boolean;
+      description
+        "poudriere.conf is there.";
+    }
+    list conf {
+      key "name";
+      description
+        "poudriere.conf's assignments, poudriere.d's own after them,
+         ${VAR} put in.";
+      leaf name {
+        type string;
+        description
+          "The variable: ZPOOL, BASEFS ...";
+      }
+      leaf value {
+        type string;
+        description
+          "Its value.";
+      }
+    }
+    leaf basefs {
+      type string;
+      description
+        "Where its jails, trees and data are (BASEFS).";
+    }
+    leaf data {
+      type string;
+      description
+        "Its data directory: logs and packages.";
+    }
+    list jail {
+      key "name";
+      description
+        "A build jail, as jset wrote it.";
+      leaf name {
+        type string;
+        description
+          "Its name.";
+      }
+      leaf version {
+        type string;
+        description
+          "The FreeBSD it has.";
+      }
+      leaf arch {
+        type string;
+        description
+          "Its TARGET_ARCH.";
+      }
+      leaf method {
+        type string;
+        description
+          "How poudriere got it.";
+      }
+      leaf mnt {
+        type string;
+        description
+          "Where it is.";
+      }
+      leaf fs {
+        type string;
+        description
+          "Its dataset.";
+      }
+      leaf timestamp {
+        type yang:date-and-time;
+        description
+          "When it was made or updated last.";
+      }
+    }
+    list ports {
+      key "name";
+      description
+        "A ports tree, as pset wrote it.";
+      leaf name {
+        type string;
+        description
+          "Its name.";
+      }
+      leaf method {
+        type string;
+        description
+          "How poudriere got it.";
+      }
+      leaf mnt {
+        type string;
+        description
+          "Where it is.";
+      }
+      leaf timestamp {
+        type yang:date-and-time;
+        description
+          "When it was made or updated last.";
+      }
+    }
+    list make-conf {
+      key "name";
+      description
+        "A make.conf of poudriere.d.";
+      leaf name {
+        type string;
+        description
+          "What it is for, the part before -make.conf: a jail, a tree,
+           a set or those joined by -; empty for make.conf itself.";
+      }
+      leaf file {
+        type string;
+        description
+          "Its path.";
+      }
+      leaf text {
+        type string;
+        description
+          "What it says.";
+      }
+    }
+    list options {
+      key "name";
+      description
+        "An options directory of poudriere.d, which a build copies
+         whole as its /var/db/ports.";
+      leaf name {
+        type string;
+        description
+          "The part before -options; empty for options itself.";
+      }
+      leaf dir {
+        type string;
+        description
+          "Its path.";
+      }
+      list port {
+        key "name";
+        description
+          "A port it sets the options of.";
+        leaf name {
+          type string;
+          description
+            "Its directory: category_port.";
+        }
+        leaf pkgname {
+          type string;
+          description
+            "The package the options were set for.";
+        }
+        leaf-list set {
+          type string;
+          description
+            "The options on.";
+        }
+        leaf-list unset {
+          type string;
+          description
+            "The options off.";
+        }
+      }
+    }
+    list repo {
+      key "name";
+      description
+        "A package repository the builds filled.";
+      leaf name {
+        type string;
+        description
+          "Its name: jail-tree, with -set.";
+      }
+      leaf path {
+        type string;
+        description
+          "Where it is.";
+      }
+      leaf packages {
+        type uint32;
+        description
+          "How many packages its All has.";
+      }
+    }
+    list build {
+      key "jail ports set";
+      description
+        "The latest build of a jail, tree and set, as poudriere status
+         tells it.";
+      leaf jail {
+        type string;
+        description
+          "The jail.";
+      }
+      leaf ports {
+        type string;
+        description
+          "The ports tree.";
+      }
+      leaf set {
+        type string;
+        description
+          "The set; empty for none.";
+      }
+      leaf build {
+        type string;
+        description
+          "The build's name.";
+      }
+      leaf status {
+        type string;
+        description
+          "What it is doing, or how it ended.";
+      }
+      leaf queued {
+        type uint32;
+        description
+          "Ports queued.";
+      }
+      leaf inspected {
+        type uint32;
+        description
+          "Ports inspected.";
+      }
+      leaf ignored {
+        type uint32;
+        description
+          "Ports ignored.";
+      }
+      leaf built {
+        type uint32;
+        description
+          "Ports built.";
+      }
+      leaf failed {
+        type uint32;
+        description
+          "Ports that failed.";
+      }
+      leaf skipped {
+        type uint32;
+        description
+          "Ports skipped.";
+      }
+      leaf fetched {
+        type uint32;
+        description
+          "Packages fetched.";
+      }
+      leaf remaining {
+        type uint32;
+        description
+          "Ports left.";
+      }
+      leaf time {
+        type string;
+        description
+          "How long it has taken.";
+      }
+      leaf logs {
+        type string;
+        description
+          "Its log directory.";
+      }
+      list failed-port {
+        key "package";
+        description
+          "A port that failed.";
+        leaf origin {
+          type port-origin;
+          description
+            "The port.";
+        }
+        leaf package {
+          type string;
+          description
+            "Its package.";
+        }
+        leaf phase {
+          type string;
+          description
+            "The phase it failed in.";
+        }
+        leaf reason {
+          type string;
+          description
+            "Why, when poudriere found it.";
+        }
+        leaf elapsed {
+          type uint32;
+          units "seconds";
+          description
+            "How long it took.";
+        }
+        leaf log-file {
+          type string;
+          description
+            "Its build log.";
+        }
+        leaf log {
+          type string;
+          description
+            "The end of its build log.";
+        }
+      }
+      list skipped-port {
+        key "package";
+        description
+          "A port skipped for one that failed.";
+        leaf origin {
+          type port-origin;
+          description
+            "The port.";
+        }
+        leaf package {
+          type string;
+          description
+            "Its package.";
+        }
+        leaf because {
+          type string;
+          description
+            "The package that failed before it.";
+        }
+      }
+    }
+    leaf builds-error {
+      type string;
+      description
+        "Why poudriere status could not tell the builds.";
+    }
+    list run {
+      key "id";
+      description
+        "What the poudriere job started, the newest first.";
+      leaf id {
+        type uint32;
+        description
+          "Its number.";
+      }
+      leaf title {
+        type string;
+        description
+          "What it does.";
+      }
+      leaf-list argv {
+        type string;
+        ordered-by user;
+        description
+          "poudriere's command line.";
+      }
+      leaf started {
+        type yang:date-and-time;
+        description
+          "When it was started.";
+      }
+      leaf state {
+        type enumeration {
+          enum running {
+            description
+              "poudriere runs.";
+          }
+          enum done {
+            description
+              "It ended well.";
+          }
+          enum failed {
+            description
+              "It ended otherwise.";
+          }
+          enum lost {
+            description
+              "No exit and no process, as after a reboot.";
+          }
+        }
+        description
+          "How it is.";
+      }
+      leaf pid {
+        type uint32;
+        description
+          "poudriere's process, while it runs.";
+      }
+      leaf exit {
+        type uint8;
+        description
+          "Its exit status, 128 and the signal when one ended it.";
+      }
+      leaf log-file {
+        type string;
+        description
+          "Its output.";
+      }
+      leaf log {
+        type string;
+        description
+          "The end of its output.";
+      }
+    }
+    action port-options {
+      description
+        "A port's options as a build of jail, tree and set takes them:
+         make showconfig with the options directory that build
+         copies.";
+      input {
+        leaf jail {
+          type string;
+          mandatory true;
+          description
+            "The build's jail.";
+        }
+        leaf ports {
+          type string;
+          default "default";
+          description
+            "The build's ports tree.";
+        }
+        leaf set {
+          type string;
+          description
+            "The build's set.";
+        }
+        leaf origin {
+          type port-origin;
+          mandatory true;
+          description
+            "The port.";
+        }
+      }
+      output {
+        leaf pkgname {
+          type string;
+          description
+            "Its package's name.";
+        }
+        leaf options-dir {
+          type string;
+          description
+            "The options directory the build copies.";
+        }
+        leaf options-dir-exists {
+          type boolean;
+          description
+            "It is there; the build's own, made at the first options
+             set, otherwise.";
+        }
+        leaf options-file {
+          type string;
+          description
+            "The port's options file.";
+        }
+        leaf configured {
+          type boolean;
+          description
+            "The options file is there.";
+        }
+        list section {
+          key "index";
+          description
+            "The port's own options, then each group as the port names
+             it.";
+          leaf index {
+            type uint8;
+            description
+              "Its place.";
+          }
+          leaf title {
+            type string;
+            description
+              "The group's words; empty for the port's own.";
+          }
+          list option {
+            key "name";
+            description
+              "An option.";
+            leaf name {
+              type string {
+                pattern '[A-Z0-9_]+';
+              }
+              description
+                "Its name.";
+            }
+            leaf on {
+              type boolean;
+              description
+                "It is on.";
+            }
+            leaf description {
+              type string;
+              description
+                "What it is.";
+            }
+          }
+        }
+      }
+    }
+  }
+}

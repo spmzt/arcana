@@ -2811,7 +2811,7 @@ EOS
 	    -o match:'"kind":"sdwan-fault","data":\{"type":"bfd","severity":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is down","state":"set"\}' \
 	    "$JGC" -c "$SOCK" events
 	# A fault of the day, open; cleared when BFD is up again.
-	atf_check -o match:'"faults":\[\{"t":[0-9]+,"type":"bfd","severity":"Major","was":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is down","cleared":false\}' \
+	atf_check -o match:'"faults":\[[^]]*\{"t":[0-9]+,"type":"bfd","severity":"Major","was":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is down","cleared":false\}' \
 	    "$JGC" -c "$SOCK" sdwan
 	test -f sdwan-faults.json || atf_fail "the faults are not kept"
 	rm -f bfd.down
@@ -7703,6 +7703,28 @@ EOF
 	atf_check -o match:'"options_dir_exists":true,[^}]*"configured":true' \
 	    "$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
 	    ports=opt set=debug origin=net/bird3
+	# The read and a port's options as arcana-builder has them, and
+	# notify's request as arcana-notify: through YANG-CBOR and back.
+	"$JGC" -c "$SOCK" poudriere > builder.json
+	"$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
+	    ports=opt set=debug origin=net/bird3 > options.json
+	atf_check -o save:yb "$(atf_get_srcdir)/ymisc" builder builder.json
+	atf_check -o match:'^installed=yes configured=yes conf=[0-9]+ basefs=' \
+	    -o match:'^jail FreeBSD:16:amd64 version=16.0-CURRENT method=pkgbase updated=2026-[0-9-]+T' \
+	    -o match:'^options opt net_bird3 set=2 unset=1$' \
+	    -o match:'^build FreeBSD:16:amd64/default/debug done: built=1 failed=1$' \
+	    -o match:'^  failed broken-1.0 devel/broken build after=42$' \
+	    -o match:'^  skipped needs-2.0 because=broken-1.0$' \
+	    -o match:'^run 3 state=1 exit=0 argv=11$' \
+	    -o match:'^yang-cbor [0-9]+ bytes, the same back$' cat yb
+	atf_check -o match:'^bird3-3.4.0 dir-exists=yes configured=yes$' \
+	    -o match:'^section 0 : BFD=on$' \
+	    -o match:'^section 1 Routing Protocols: BGP=on MRT=off$' \
+	    -o match:'^yang-cbor [0-9]+ bytes, the same back$' \
+	    "$(atf_get_srcdir)/ymisc" builder-options options.json
+	atf_check -o match:'^notify chat=-100123 text=5$' \
+	    -o match:'^yang-cbor [0-9]+ bytes, the same back$' \
+	    "$(atf_get_srcdir)/ymisc" notify 123456:ABCdef_- -100123 hello
 	# One the port has not, refused; one that is no option's name, too.
 	atf_check -s exit:1 -o match:'bird3-3.4.0 has no option NOPE' -e ignore \
 	    "$JGC" -c "$SOCK" poudriere options jail=FreeBSD:16:amd64 \

@@ -404,4 +404,11 @@ int	ysd_state_from_json(const char *json, cbl_yarena *a,
 int	ysshd_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_sshd_sshd *out);
 
+/* arcana-builder (luxuria/ybuilder.c): the builder and builder-options
+ * operations' JSON. */
+int	ybuilder_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_builder_builder *out);
+int	ybuilder_options_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_builder_builder_port_options_output *out);
+
 #endif /* !_ARCANA_COLLECT_H_ */
