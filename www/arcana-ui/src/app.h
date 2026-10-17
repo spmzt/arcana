@@ -345,6 +345,7 @@ enum {
 	JOB_SSH,
 	JOB_BUILDER,
 	JOB_SNORT,
+	JOB_SECURITY,		/* a Security tab's plugin installed */
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -892,6 +893,7 @@ bool		 secpage_action(const char *, const char *, const char *);
 void		 secpage_loc(char *, size_t);
 void		 secpage_open(const char *);
 void		 secpage_tick(double);
+void		 secpage_refresh(void);
 
 /* snort.c: the Security page's Snort tab. */
 void		 view_snort(struct html *, const char *);

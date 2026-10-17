@@ -5075,6 +5075,7 @@ details.wfmore[open] > summary { margin-bottom: .45rem; }
 .secform label.check small.help { flex-basis: 100%; }
 .secform .wide { grid-column: 1 / -1; margin: 0; }
 .sn-head .grow { flex: 1; }
+.notice.sec-missing { display: flex; align-items: center; gap: 1rem; justify-content: space-between; }
 .sn-update label.grow { flex: 1; display: flex; align-items: center; gap: .6rem; }
 .sn-update label.grow input { flex: 1; min-width: 0; }
 .sn-src { margin: -.4rem 0 .8rem; font-size: .85rem; }

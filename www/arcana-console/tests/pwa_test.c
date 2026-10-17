@@ -6437,6 +6437,19 @@ part_security(void)
 	click_when("button[data-act=sec-tab][data-arg=signatures]", 10);
 	wait_js("document.querySelector('.secpage .empty') || document."
 	    "querySelector('table.secsigs')", 10);
+	/* No ClamAV here: installed by the button, when it is pressed. */
+	click_when(".sec-missing button[data-act=sec-install][data-arg=clamav]",
+	    10);
+	sent();
+	{
+		int	i;
+
+		for (i = 0; i < 100 && system("grep -q 'install.* clamav' "
+		    "pkg.log") != 0; i++)
+			usleep(100000);
+		ATF_CHECK(system("grep -q 'install.* clamav' pkg.log") == 0);
+	}
+	dock_closed();
 	/* Suricata: refused with neither rules nor the ruleset; made. */
 	click_when("button[data-act=sec-tab][data-arg=ids]", 10);
 	click_when("button[data-act=sec-new]", 10);

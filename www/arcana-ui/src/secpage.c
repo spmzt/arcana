@@ -181,6 +181,48 @@ host_pick(struct html *h)
 	h_raw(h, "</select></label>");
 }
 
+/* The server the page shows. */
+static struct server *
+sec_server(void)
+{
+	int	i;
+
+	for (i = 0; i < app.nservers; i++)
+		if (strcmp(app.servers[i].id, sec.sid) == 0)
+			return (&app.servers[i]);
+	return (NULL);
+}
+
+/*
+ * What a tab needs and the host has not: said, with a button that
+ * installs it (pkg install), pressed by whoever reads it; Arcana
+ * installs nothing by itself.  pkgs: the packages, a space between.
+ */
+static void
+missing(struct html *h, const char *what, const char *pkgs)
+{
+
+	h_raw(h, "<div class=\"notice warn sec-missing\"><span>");
+	h_txt(h, what);
+	h_raw(h, "</span><button class=\"primary small\" data-act=\""
+	    "sec-install\"");
+	h_attr(h, "data-arg", pkgs);
+	h_raw(h, ">Install ");
+	h_txt(h, pkgs);
+	h_raw(h, "</button></div>");
+}
+
+/* Has the host the plugin? Unknown, while its list is not read, is yes. */
+static bool
+sec_has(const char *plugin)
+{
+	struct server	*s;
+
+	if ((s = sec_server()) == NULL || s->list == NULL)
+		return (true);
+	return (has_plugin(s, plugin));
+}
+
 /* ---- URL filter ------------------------------------------------------- */
 
 static void
@@ -254,6 +296,9 @@ view_url(struct html *h, bool malware_only)
 	const ucl_object_t	**rows, *f, *l;
 	int			  r, n;
 
+	if (!malware_only && !sec_has("squid"))
+		missing(h, "Squid is not installed on this host: a URL filter "
+		    "is Squid.", "squid");
 	h_raw(h, "<div class=\"toolbar\"><input class=\"filter\" id=\"filter\" "
 	    "data-input=\"filter\" placeholder=\"Filter\" autocomplete=\"off\" "
 	    "spellcheck=\"false\"");
@@ -338,6 +383,10 @@ view_malware(struct html *h)
 	ucl_object_iter_t	 it;
 	int			 n;
 
+	if (!sec_has("c-icap") || jget(sec.state, "clamav") == NULL)
+		missing(h, "Scanning needs c-icap, its modules and ClamAV, not "
+		    "all installed on this host.", "c-icap c-icap-modules "
+		    "clamav");
 	h_raw(h, "<p class=\"lead\">c-icap with ClamAV's module scans what a "
 	    "URL filter fetches, before the client has it: one that holds "
 	    "malware is refused. Each URL filter that scans has its own "
@@ -378,10 +427,11 @@ view_sigs(struct html *h)
 	    "scanning knows what they know. freshclam runs as the service "
 	    "clamav_freshclam.</p>");
 	if (cl == NULL) {
+		missing(h, "ClamAV is not installed on this host.", "clamav");
 		h_raw(h, "<div class=\"empty\"><p>No ClamAV here.</p><p class=\""
-		    "dim\">It is a plugin: install clamav (pkg install clamav), "
-		    "then enable and start clamav_freshclam on the Services "
-		    "tab.</p></div>");
+		    "dim\">Once it is installed, start freshclam here, and "
+		    "enable clamav_freshclam on the Services tab to have it at "
+		    "boot.</p></div>");
 		return;
 	}
 	h_fmt(h, "<div class=\"toolbar\">%s<button class=\"ghost\" "
@@ -488,6 +538,9 @@ view_ids(struct html *h)
 	ucl_object_iter_t	  it;
 	int			  r, n;
 
+	if (!sec_has("suricata"))
+		missing(h, "Suricata is not installed on this host: intrusion "
+		    "detection here is Suricata.", "suricata");
 	h_raw(h, "<div class=\"toolbar\"><input class=\"filter\" id=\"filter\" "
 	    "data-input=\"filter\" placeholder=\"Filter\" autocomplete=\"off\" "
 	    "spellcheck=\"false\"");
@@ -502,7 +555,7 @@ view_ids(struct html *h)
 		h_raw(h, "<div class=\"empty\"><p>No intrusion detection on this "
 		    "host.</p><p class=\"dim\">Suricata watching interfaces, "
 		    "its alerts here; or, where it prevents, dropping what its "
-		    "rules say. It is a plugin: pkg install suricata.</p></div>");
+		    "rules say.</p></div>");
 		return;
 	}
 	h_raw(h, "<table class=\"net secids\">");
@@ -868,6 +921,42 @@ secpage_action(const char *act, const char *arg, const char *value)
 		save(false, list);
 		return (true);
 	}
+	if (strcmp(act, "sec-install") == 0) {
+		struct server	*s;
+		char		*json, *it2, *w, *copy, *q, *t;
+		bool		 first;
+
+		/* Only the packages the tabs name: nothing else is sent. */
+		if ((s = sec_server()) == NULL || (strcmp(arg, "squid") != 0 &&
+		    strcmp(arg, "clamav") != 0 && strcmp(arg, "suricata") != 0 &&
+		    strcmp(arg, "c-icap c-icap-modules clamav") != 0))
+			return (true);
+		if ((json = strdup("{\"kind\":\"pkg-install\",\"packages\":["))
+		    == NULL || (copy = strdup(arg)) == NULL)
+			abort();
+		first = true;
+		for (it2 = copy; (w = strsep(&it2, " ")) != NULL; ) {
+			q = json_quote(w);
+			if (asprintf(&t, "%s%s%s", json, first ? "" : ",", q) ==
+			    -1)
+				abort();
+			free(json);
+			free(q);
+			json = t;
+			first = false;
+		}
+		free(copy);
+		if (asprintf(&t, "%s]}", json) == -1)
+			abort();
+		free(json);
+		{
+			char	title[96];
+
+			snprintf(title, sizeof(title), "pkg install %s", arg);
+			job_send_host(s, t, title, JOB_SECURITY, "");
+		}
+		return (true);
+	}
 	if (strcmp(act, "sec-freshclam") == 0) {
 		struct server	*s;
 		char		*json, title[64];
@@ -888,6 +977,14 @@ secpage_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	return (false);
+}
+
+/* After a plugin was installed: the host read again. */
+void
+secpage_refresh(void)
+{
+
+	sec_load();
 }
 
 /* Each tick: the page's host read again, every 10 s while it is shown
