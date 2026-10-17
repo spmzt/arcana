@@ -1384,6 +1384,18 @@ html.fx .gauge .spark .line {
 .server .ver.warn { color: var(--amber); }
 .sub { display: flex; gap: .25rem; flex-wrap: wrap; }
 .pkgs .buttons { display: flex; align-items: center; gap: .6rem; margin-top: .8rem; }
+/* A choice beside the buttons, on their line: pkg -r's repository. */
+.buttons label.pkg-repo {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+	margin: 0;
+}
+.buttons label.pkg-repo select {
+	width: auto;
+	margin: 0;
+}
 .pkgs .buttons .dim { flex: 1; }
 table.net td.c-run { color: var(--cyan); }
 .sub button.on { color: var(--cyan); border-color: var(--cyan); }

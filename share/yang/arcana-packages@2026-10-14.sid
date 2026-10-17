@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-packages",
     "module-revision": "2026-10-14",
-    "sid-file-version": 1,
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 300, 100.",
     "dependency-revision": [
       {
@@ -311,6 +311,26 @@
         "namespace": "data",
         "identifier": "/arcana-packages:packages/upgrade/output/upgraded",
         "sid": "62358"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/repository",
+        "sid": "62359"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/arcana-packages:packages/upgrade/input/repository",
+        "sid": "62360"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/repository",
+        "sid": "62361"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-packages:packages/upgrade/input/repository",
+        "sid": "62362"
       }
     ]
   }

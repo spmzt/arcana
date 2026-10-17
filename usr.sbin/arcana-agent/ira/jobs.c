@@ -264,11 +264,12 @@ title_of(const struct arc_job_spec *sp)
 		    sp->reqid);
 		break;
 	case ARC_JOB_KIND_PKG_INSTALL:
-		rc = asprintf(&t, "pkg install %s%s%s%s%s", sp->names.n > 0 ?
+		rc = asprintf(&t, "pkg install %s%s%s%s%s%s%s", sp->names.n > 0 ?
 		    sp->names.v[0] : "", sp->names.n > 1 ? " and more" : "",
 		    sp->jail != NULL && sp->jail[0] != '\0' ? " in " : "",
-		    sp->jail != NULL ? sp->jail : "", sp->force ?
-		    " (any OSVERSION)" : "");
+		    sp->jail != NULL ? sp->jail : "", sp->pkg_repo != NULL ?
+		    " from " : "", sp->pkg_repo != NULL ? sp->pkg_repo : "",
+		    sp->force ? " (any OSVERSION)" : "");
 		break;
 	case ARC_JOB_KIND_PKG_CLEAN:
 		rc = asprintf(&t, "pkg clean%s%s%s", sp->force ? " -a" : "",
@@ -1115,6 +1116,7 @@ run(struct qjob *j)
 		uq.ignore_osversion = sp->force;
 		uq.has_pkg_ip = sp->has_pkg_ip;
 		uq.pkg_ip = sp->pkg_ip;
+		uq.pkg_repo = sp->pkg_repo;
 		do_pkg_upgrade(&j->w, &uq, &ur);
 		ok = ur.ok;
 		error = ur.error;

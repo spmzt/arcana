@@ -86,9 +86,13 @@ main(void)
 	char why[256];
 	int error;
 
+	static const char *const repos[] = { "FreeBSD-ports", "builder" };
+
 	memset(&ri, 0, sizeof(ri));
 	ri.packages.n = 3;
 	ri.packages.v = inst;
+	ri.pkg_repos.n = 2;
+	ri.pkg_repos.v = repos;
 	memset(&ro, 0, sizeof(ro));
 	ro.packages.n = 2;
 	ro.packages.v = outd;
@@ -106,6 +110,8 @@ main(void)
 		errx(1, "encode again");
 	same("host", &b1, &b2);
 	show("back", hback.package.n, hback.package.v);
+	for (size_t i = 0; i < hback.repository.n; i++)
+		printf("back repository %s\n", hback.repository.v[i]);
 	cbl_ybuf_free(&b1);
 	cbl_ybuf_free(&b2);
 

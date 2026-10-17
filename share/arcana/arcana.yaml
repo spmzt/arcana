@@ -1160,6 +1160,24 @@ attribute-sets:
           is (a ZFS pool's allocated share of its size, another local
           one's as df(1) has it): over it, a storage fault; 0 for none.
           Without it, as it was.
+      - name: pkg-repo
+        type: text
+        doc: |
+          For pkg-upgrade, the repository to upgrade from only (pkg
+          upgrade -r), one of those the packages operation lists in
+          pkg-repos; without it, each package from where pkg's own
+          configuration has it.
+        checks:
+          max-len: 64
+      - name: pkg-repos
+        type: text
+        multi-attr: true
+        doc: |
+          For packages, the repositories pkg is configured with there
+          (pkg -vv), enabled or not: any of them may be named in
+          pkg-repo, which pkg then takes from alone.
+        checks:
+          max-count: 64
 
 
   - name: host
@@ -1666,6 +1684,13 @@ attribute-sets:
         doc: For ssh authorize, unauthorize and options, the user whose keys.
         checks:
           max-len: 32
+      - name: pkg-repo
+        type: text
+        doc: |
+          For pkg-upgrade and pkg-install, the repository only (pkg -r),
+          one of those pkg is configured with there.
+        checks:
+          max-len: 64
 
   - name: job
     attributes:
@@ -2054,6 +2079,7 @@ operations:
           - error
           - packages
           - trace
+          - pkg-repos
 
   - name: pkg-upgrade
     attribute-set: arcana
@@ -2062,7 +2088,8 @@ operations:
       pkg upgrade -y on the host or in a running jail, of the named
       packages or of all; dry-run only shows what pkg would do;
       ignore-osversion upgrades to packages built for a newer FreeBSD
-      too, as a job of kind pkg-upgrade does with force.
+      too, as a job of kind pkg-upgrade does with force; pkg-repo
+      takes them from that repository alone (pkg upgrade -r).
     do:
       request:
         attributes:
@@ -2071,6 +2098,7 @@ operations:
           - dry-run
           - ignore-osversion
           - pkg-ip
+          - pkg-repo
       reply:
         attributes:
           - ok

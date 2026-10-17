@@ -2997,6 +2997,21 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK_STREQ("pimd", jstr(&r, "packages.1.name"));
 	resp_free(&r);
+	/* From one of pkg's repositories (pkg upgrade -r); one it has not,
+	 * refused by the agent. */
+	http("POST", path, "{\"packages\":[\"pimd\"],\"dry_run\":true,"
+	    "\"pkg_repo\":\"builder\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^upgrade -r builder -n pimd$' pkg.log") ==
+	    0);
+	http("POST", path, "{\"dry_run\":true,\"pkg_repo\":\"nosuch\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK_MSG(jstr(&r, "error") != NULL && strstr(jstr(&r, "error"),
+	    "pkg has no repository nosuch") != NULL, "%s", r.body);
+	resp_free(&r);
 	http("POST", path, "{\"packages\":[\"pimd\"]}", &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));

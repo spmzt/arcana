@@ -1277,6 +1277,22 @@ part_hosts(void)
 	ATF_REQUIRE(system("rm newer-os && mv pending.keep pending") == 0);
 	run("document.querySelector('button[data-act=pkg-ip][data-arg=\"0\"]')"
 	    ".click()");
+	/* From one of pkg's repositories alone: pkg upgrade -r. */
+	run("document.querySelector('button[data-act=pkg-check]').click()");
+	wait_js("[...document.querySelectorAll('select[name=repo] option')]"
+	    ".some(o => o.value === 'builder') && document.querySelector("
+	    "'button[value=dry]:not([disabled])')", 20);
+	run("document.querySelector('select[name=repo]').value = 'builder'; "
+	    "document.querySelector('button[value=dry]').click();");
+	for (i = 0; i < 100 && system("grep -q '^upgrade -r builder -n$' "
+	    "pkg.log") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q '^upgrade -r builder -n$' pkg.log") == 0);
+	/* The choice stays after it, for the upgrade to follow. */
+	wait_js("document.querySelector('select[name=repo]')?.value === "
+	    "'builder' && document.querySelector('button[value=go]:not("
+	    "[disabled])')", 20);
+	shot("6c-pkg-repo");
 
 	/* The page opened again: what ended is still along the bottom. */
 	go("/");
@@ -5900,10 +5916,16 @@ part_routes(void)
 	wait_js("window.before === undefined && document.querySelector("
 	    "'.jail-page h1') && document.querySelector('.jail-page h1')"
 	    ".textContent === 'cache'", 30);
-	/* Opened on Settings: the hosts are read in the background, and
-	 * no task says so (it was one for the first host, not asked). */
+	/*
+	 * Opened on Settings: the hosts are read in the background, and
+	 * no task says so (it was one for the first host, not asked).  The
+	 * tasks kept in the browser are emptied in the same breath as the
+	 * reload, so the jail page's own, landing late on a loaded machine,
+	 * are not taken for Settings's.
+	 */
 	go("/#/settings/update");
-	run("window.before = 1; location.reload();");
+	run("window.before = 1; localStorage.setItem('arc_tasks', '[]'); "
+	    "location.reload();");
 	wait_js("window.before === undefined && document.querySelector("
 	    "'button[data-act=set-tab][data-arg=update].on') && document."
 	    "querySelector('.upd')", 30);

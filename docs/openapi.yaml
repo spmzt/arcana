@@ -2591,6 +2591,12 @@ paths:
                   packages:
                     type: array
                     items: { $ref: "#/components/schemas/Package" }
+                  repos:
+                    type: array
+                    items: { type: string }
+                    description: The repositories pkg is configured with
+                      there (pkg -vv), enabled or not; an upgrade or an
+                      install may be held to one (pkg_repo).
                   trace: { type: array }
 
   /api/servers/{server}/packages/upgrade:
@@ -2616,6 +2622,11 @@ paths:
                 ignore_osversion: { type: boolean, description: Also
                     packages built for a newer FreeBSD than the host's,
                     which pkg refuses otherwise (IGNORE_OSVERSION). }
+                pkg_repo: { type: string, description: "From this one
+                    of pkg's repositories alone (pkg upgrade -r), one
+                    of those the packages read lists in repos; a job of
+                    kind pkg-upgrade or pkg-install takes pkg_repo too.
+                    Empty: from where pkg's configuration has each." }
       responses:
         "200":
           description: What pkg did, and what is still pending.

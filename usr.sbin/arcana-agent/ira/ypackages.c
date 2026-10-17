@@ -59,6 +59,9 @@ ypackages_from(const struct arc_packages_rsp *installed,
 	ypkg *v;
 
 	memset(out, 0, sizeof(*out));
+	/* pkg's repositories there, as the reply has them. */
+	out->repository.n = installed->pkg_repos.n;
+	out->repository.v = installed->pkg_repos.v;
 	max = n + (outdated != NULL ? outdated->packages.n : 0);
 	if (max == 0)
 		return (0);
