@@ -1057,6 +1057,14 @@ What was once in the list above, and when it was run:
   made it again from that file, its route to the peer too, and the
   ping went through.  wg-quick on FreeBSD leaves a route monitor
   running in the background, as it should.
+- SCTP to an agent listening on a router's loopback address
+  (2026-10-17): it times out while TCP to the same address works.
+  FreeBSD's SCTP counts an address on a loopback interface out of a
+  non-loopback peer's scope (sctp_is_address_in_scope()), so no
+  INIT-ACK is sent: reproduced between two vnet jails (the root test
+  sctp_loopback), and SCTP to an address of a real interface, bound
+  too with --sctp-also, answered.  The transport read and the host
+  page now say so of such a listener.
 - BIRD's forms against the real BIRD (2026-10-17): every
   configuration the console's BIRD forms and SD-WAN write is taken or
   refused by BIRD 3.3.2's own parser (bird -p) in the tests where the

@@ -965,6 +965,12 @@ view_transport(struct html *h, struct server *s)
 			h_txt(h, e);
 			h_raw(h, "</span>");
 		}
+		/* What the agent sees will not be answered: why. */
+		if ((e = jstr(o, "warning")) != NULL) {
+			h_raw(h, "<span class=\"warn\">");
+			h_txt(h, e);
+			h_raw(h, "</span>");
+		}
 		h_raw(h, "</li>");
 	}
 	h_raw(h, "</ul><div class=\"toolbar\">");
