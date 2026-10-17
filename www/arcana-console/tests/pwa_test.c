@@ -6298,6 +6298,104 @@ part_trouble(void)
  * opened; scanning for malware listed on its tab; Suricata made the
  * same way; each removed after asking.
  */
+/* The task dock folded away, as it opens on a change run. */
+static void
+dock_closed(void)
+{
+
+	run("const d = document.querySelector('.dock'); if (d && d.classList."
+	    "contains('open')) d.querySelector('header').click();");
+	usleep(300000);
+}
+
+/* A change sent: run at once, or from the queue when it is on. */
+static void
+sent(void)
+{
+
+	usleep(400000);
+	run("const b = document.querySelector('button[data-act=queue-run]'); "
+	    "if (b) b.click();");
+}
+
+/*
+ * Snort on the Security page: its alert; its rules fetched from an
+ * archive and one turned off; rc.conf's settings; local.rules written.
+ */
+static void
+part_snort(void)
+{
+	char	here[MAXPATHLEN], js_[MAXPATHLEN + 200];
+	int	i;
+
+	ATF_REQUIRE(getcwd(here, sizeof(here)) != NULL);
+	click_when("button[data-act=sec-tab][data-arg=snort]", 10);
+	wait_js("location.hash.startsWith('#/security/snort/') && document."
+	    "querySelector('table.snort-alerts') && document.querySelector("
+	    "'table.snort-alerts').textContent.includes('lab probe seen') && "
+	    "document.querySelector('.sn-head').textContent.includes('3.12.2.0')"
+	    " && [...document.querySelectorAll('.notice.warn')].some(n => n."
+	    "textContent.includes('no rules taken in yet'))", 20);
+	shot("9w-snort-alerts");
+	/* The rules, fetched from the archive by file://. */
+	click_when("button[data-act=sn-view][data-arg=rules]", 10);
+	wait_js("document.querySelector('form[data-form=sn-update]')", 10);
+	snprintf(js_, sizeof(js_), "const f = document.querySelector("
+	    "'form[data-form=sn-update]'); f.url.value = 'file://%s/"
+	    "snort-rules.tar.gz'; f.requestSubmit();", here);
+	run(js_);
+	sent();
+	wait_js("document.querySelector('table.snort-rules') && document."
+	    "querySelector('table.snort-rules').textContent.includes("
+	    "'PROTOCOL-TELNET lab login') && document.querySelector('.sn-src')"
+	    ".textContent.includes('2 rules, 1 on')", 30);
+	dock_closed();
+	shot("9x-snort-rules");
+	/* 105 off, from its chip; kept by gid:sid. */
+	run("document.querySelector('table.snort-rules button[data-act=sn-rule]"
+	    "[data-arg=\"1:105\"]').click()");
+	sent();
+	for (i = 0; i < 100 && system("grep -qx '1:105 off' snort-etc/arcana/"
+	    "rule-state") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -qx '1:105 off' snort-etc/arcana/rule-state") ==
+	    0);
+	wait_js("document.querySelector('table.snort-rules button[data-act="
+	    "sn-rule][data-arg=\"1:105\"][data-value=default]')", 20);
+	/* Its settings: kept in rc.conf. */
+	click_when("button[data-act=sn-view][data-arg=settings]", 10);
+	wait_js("document.querySelector('form[data-form=sn-set]')", 10);
+	dock_closed();
+	shot("9y-snort-settings");
+	run("const f = document.querySelector('form[data-form=sn-set]'); "
+	    "f.enable.checked = true; f.interfaces.value = 'lo0 em0'; "
+	    "f.home_net.value = '[192.0.2.0/24]'; f.requestSubmit();");
+	sent();
+	for (i = 0; i < 100 && system("grep -q '^arcana_snort_interfaces=\"lo0 "
+	    "em0\"' rc.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q '^arcana_snort_interfaces=\"lo0 em0\"' "
+	    "rc.conf && grep -q '^arcana_snort_enable=\"YES\"' rc.conf && "
+	    "grep -q \"^HOME_NET = '\\[192.0.2.0/24\\]'\" snort-etc/snort.lua") ==
+	    0);
+	/* local.rules, written as typed. */
+	click_when("button[data-act=sn-view][data-arg=local]", 10);
+	wait_js("document.querySelector('form[data-form=sn-conf] textarea')",
+	    10);
+	run("const t = document.querySelector('form[data-form=sn-conf] "
+	    "textarea'); t.value = 'alert icmp any any -> any any (msg:\"mine\";"
+	    " sid:1000007; rev:1;)\\n'; t.dispatchEvent(new Event('input', { "
+	    "bubbles: true })); t.form.requestSubmit();");
+	sent();
+	for (i = 0; i < 100 && system("grep -q 'sid:1000007' snort-etc/"
+	    "local.rules") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q 'msg:\"mine\"; sid:1000007' snort-etc/"
+	    "local.rules && grep -q 'include ./snort-etc/local.rules' "
+	    "snort-etc/arcana/arcana.rules") == 0);
+	dock_closed();
+}
+
 static void
 part_security(void)
 {
@@ -6367,6 +6465,7 @@ part_security(void)
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
 	wait_js("!document.querySelector('table.secproxy')", 30);
+	part_snort();
 }
 
 /*

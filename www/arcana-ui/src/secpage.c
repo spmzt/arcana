@@ -9,7 +9,8 @@
  * proxy the clients are told of.  Malware: c-icap with ClamAV's module
  * scanning what a URL filter fetches.  Signatures: ClamAV's databases as
  * freshclam keeps them.  IDS/IPS: Suricata, watching interfaces or
- * taking what an ipfw divert rule hands it.  A host at a time: its
+ * taking what an ipfw divert rule hands it.  Snort: Snort 3, the same
+ * by Arcana's rc.d script, its rules kept (snort.c).  A host at a time: its
  * sdwan read tells what runs and the forms it was given; a save sends
  * the kind's whole list (POST /api/servers/<id>/security).
  */
@@ -21,7 +22,7 @@
 
 #include "app.h"
 
-enum sectab { SEC_URL, SEC_MALWARE, SEC_SIGS, SEC_IDS };
+enum sectab { SEC_URL, SEC_MALWARE, SEC_SIGS, SEC_IDS, SEC_SNORT };
 
 static struct {
 	enum sectab	 tab;
@@ -34,7 +35,8 @@ static struct {
 	bool		 busy;
 } sec = { .edit = -1 };
 
-static const char *const tabs[] = { "url", "malware", "signatures", "ids" };
+static const char *const tabs[] = { "url", "malware", "signatures", "ids",
+    "snort" };
 
 static void
 sec_cb(int status, const ucl_object_t *o, const char *err, void *arg)
@@ -556,12 +558,13 @@ void
 view_secpage(struct html *h)
 {
 	static const char *const names[] = { "URL filter", "Malware",
-	    "Signatures", "IDS/IPS" };
+	    "Signatures", "IDS/IPS", "Snort" };
 	static const char *const titles[] = {
 	    "Squid: what the clients ask for, by name",
 	    "c-icap with ClamAV: what a URL filter fetches, scanned",
 	    "freshclam: ClamAV's signatures",
-	    "Suricata: intrusion detection, and prevention" };
+	    "Suricata: intrusion detection, and prevention",
+	    "Snort 3: intrusion detection and prevention, its rules here" };
 	size_t	i;
 
 	h_raw(h, "<section class=\"secpage\"><div class=\"sechead\">");
@@ -578,6 +581,12 @@ view_secpage(struct html *h)
 		    "dim\">Each guards itself: its own URL filters, malware "
 		    "scanning and intrusion detection, by plugins it has "
 		    "installed (Arcana installs nothing).</p></div></section>");
+		return;
+	}
+	/* Snort's tab reads its own, not the host's sdwan read. */
+	if (sec.tab == SEC_SNORT) {
+		view_snort(h, sec.sid);
+		h_raw(h, "</section>");
 		return;
 	}
 	if (sec.error[0] != '\0') {
@@ -603,6 +612,8 @@ view_secpage(struct html *h)
 		break;
 	case SEC_IDS:
 		view_ids(h);
+		break;
+	case SEC_SNORT:
 		break;
 	}
 	h_raw(h, "</section>");
@@ -697,6 +708,8 @@ secpage_form(const char *form, const ucl_object_t *f)
 	ucl_object_t	*list, *o;
 	bool		 ids;
 
+	if (strncmp(form, "sn-", 3) == 0)
+		return (snort_form(form, f));
 	if (strcmp(form, "sec-proxy") != 0 && strcmp(form, "sec-ids") != 0)
 		return (false);
 	ids = strcmp(form, "sec-ids") == 0;
@@ -784,6 +797,8 @@ secpage_action(const char *act, const char *arg, const char *value)
 		sec_load();
 		return (true);
 	}
+	if (strncmp(act, "sn-", 3) == 0 || strcmp(act, "input:sn-text") == 0)
+		return (snort_action(act, arg, value));
 	if (strncmp(act, "sec-", 4) != 0 && strcmp(act, "input:sec-host") != 0)
 		return (false);
 	ids = sec.tab == SEC_IDS;
@@ -882,6 +897,10 @@ secpage_tick(double now)
 {
 	static double	last;
 
+	if (app.node == NODE_SECURITY && sec.tab == SEC_SNORT) {
+		snort_tick(now);
+		return;
+	}
 	if (app.node != NODE_SECURITY || !app.visible || sec.loading ||
 	    sec.busy || sec.edit >= 0 || now - last < 10000)
 		return;

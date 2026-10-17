@@ -5073,6 +5073,13 @@ details.wfmore[open] > summary { margin-bottom: .45rem; }
 .secform label { display: flex; flex-direction: column; gap: .3rem; min-width: 0; font-size: .8rem; color: var(--fg-2); }
 .secform label.check { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .secform label.check small.help { flex-basis: 100%; }
+.secform .wide { grid-column: 1 / -1; margin: 0; }
+.sn-head .grow { flex: 1; }
+.sn-update label.grow { flex: 1; display: flex; align-items: center; gap: .6rem; }
+.sn-update label.grow input { flex: 1; min-width: 0; }
+.sn-src { margin: -.4rem 0 .8rem; font-size: .85rem; }
+.sn-conf textarea { width: 100%; box-sizing: border-box; }
+.sn-conf .buttons { display: flex; gap: .6rem; justify-content: flex-end; }
 .secform small.help { color: var(--dim); font-size: .7rem; line-height: 1.35; }
 .secform textarea { font-family: var(--mono); font-size: .78rem; }
 .secform details label { margin-top: .4rem; }

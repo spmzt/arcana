@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.141.0"
+#define	ARCANA_AGENT_VERSION	"0.142.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -55,6 +55,9 @@
 #define	PATH_SURICATA_BIN	"/usr/local/bin/suricata"
 #define	PATH_POUDRIERE_BIN	"/usr/local/bin/poudriere"
 #define	PATH_IFMCSTAT_BIN	"/usr/sbin/ifmcstat"
+#define	PATH_SNORT_BIN		"/usr/local/bin/snort"
+#define	PATH_SNORT_ETC		"/usr/local/etc/snort"
+#define	PATH_SNORT_LOG		"/var/log/snort"
 #define	PATH_POUDRIERE_ETC	"/usr/local/etc"
 #define	PATH_CICAP_MODULES	"/usr/local/lib/c_icap"
 #define	PATH_CLAMAV_DB		"/var/db/clamav"
@@ -124,6 +127,9 @@ struct opts {
 	const char	*suricata_bin;	/* suricata: intrusion detection, a plugin */
 	const char	*poudriere_bin;	/* poudriere(8): the package builder, a plugin */
 	const char	*ifmcstat_bin;	/* ifmcstat(8): IGMP's and MLD's state */
+	const char	*snort_bin;	/* snort: IDS/IPS, a plugin */
+	const char	*snort_etc;	/* where snort.lua and its rules are */
+	const char	*snort_log;	/* its pid file and alert_json.txt */
 	const char	*poudriere_etc;	/* where poudriere.conf and poudriere.d are */
 	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;
@@ -335,6 +341,15 @@ const char	*poudriere_check(const struct arc_job_spec *);
 int		 do_poudriere_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 char		*poudriere_title(const struct arc_job_spec *);
+
+/* luxuria/snort.c: Snort 3, run by arcana_snort, its rules kept. */
+struct arc_snort_rsp;
+const char	*snort_check(const struct arc_job_spec *);
+int		 do_snort_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+char		*snort_title(const struct arc_job_spec *);
+void		 do_snort(struct work *, const char *const *, size_t,
+		    struct arc_snort_rsp *);
 struct arc_builder_rsp;
 void		 do_builder(struct work *, struct arc_builder_rsp *);
 struct arc_builder_options_rsp;

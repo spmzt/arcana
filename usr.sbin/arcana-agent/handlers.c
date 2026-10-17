@@ -346,6 +346,7 @@ worker(void *arg)
 	struct arc_jail_files_rsp jfr;
 	struct arc_builder_rsp	 bur;
 	struct arc_builder_options_rsp bor;
+	struct arc_snort_rsp	 snr;
 	struct arc_job_spec	 bsp;
 	struct arc_certs_rsp	 cer;
 	struct arc_ssh_rsp	 sshr;
@@ -890,6 +891,19 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &bor.trace.v, &bor.trace.n);
 		rc = arc_builder_options_reply(j->req, &bor);
+		break;
+	case ARC_CMD_SNORT:
+		what = "snort";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "snort");
+		memset(&snr, 0, sizeof(snr));
+		snr.has_ok = true;
+		do_snort(&w, j->pkg.names.v, j->pkg.names.n, &snr);
+		ok = snr.ok;
+		error = snr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &snr.trace.v, &snr.trace.n);
+		rc = arc_snort_reply(j->req, &snr);
 		break;
 	case ARC_CMD_KERNEL:
 		what = "kernel";
@@ -2403,6 +2417,36 @@ arc_builder_options_doit(cbl_req *req, const struct arc_builder_options_req *rq,
 }
 
 int
+arc_snort_doit(cbl_req *req, const struct arc_snort_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+	const char	**v;
+	size_t		 i;
+
+	if (rq->names.n > 4)
+		return (reject(req, "Snort is read with rules, or without"));
+	for (i = 0; i < rq->names.n; i++)
+		if (rq->names.v[i] == NULL)
+			return (reject(req, "a word is missing"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SNORT;
+	if (rq->names.n > 0) {
+		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL) {
+			free(j);
+			return (ENOMEM);
+		}
+		for (i = 0; i < rq->names.n; i++)
+			v[i] = xstrdup(rq->names.v[i]);
+		j->pkg.names.v = v;
+		j->pkg.names.n = rq->names.n;
+	}
+	return (start(j));
+}
+
+int
 arc_stats_doit(cbl_req *req, void *arg __unused)
 {
 	struct job	*j;
@@ -2479,7 +2523,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_POUDRIERE)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_SNORT)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2678,6 +2722,8 @@ check_spec(const struct arc_job_spec *sp)
 		return (ssh_check(sp));
 	case ARC_JOB_KIND_POUDRIERE:
 		return (poudriere_check(sp));
+	case ARC_JOB_KIND_SNORT:
+		return (snort_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->safe)
 			return ("wireguard changes are not undone: not in "
