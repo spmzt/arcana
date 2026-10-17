@@ -657,6 +657,25 @@ struct arcana_sshd_sshd_user_key;
 struct arcana_sshd_sshd_user;
 struct arcana_sshd_sshd;
 struct arcana_sshd;
+struct arcana_builder_builder_conf;
+struct arcana_builder_builder_jail;
+struct arcana_builder_builder_ports;
+struct arcana_builder_builder_make_conf;
+struct arcana_builder_builder_options_port;
+struct arcana_builder_builder_options;
+struct arcana_builder_builder_repo;
+struct arcana_builder_builder_build_failed_port;
+struct arcana_builder_builder_build_skipped_port;
+struct arcana_builder_builder_build;
+struct arcana_builder_builder_run;
+struct arcana_builder_builder_port_options_input;
+struct arcana_builder_builder_port_options_output_section_option;
+struct arcana_builder_builder_port_options_output_section;
+struct arcana_builder_builder_port_options_output;
+struct arcana_builder_builder;
+struct arcana_builder;
+struct arcana_notify_notify_input;
+struct arcana_notify_notify_output;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -2018,6 +2037,13 @@ enum arcana_sdwan_sdwan_state_bird_bfd_state {
 enum arcana_sdwan_sdwan_state_ids_mode {
 	ARCANA_SDWAN_SDWAN_STATE_IDS_MODE_DETECT = 0,
 	ARCANA_SDWAN_SDWAN_STATE_IDS_MODE_PREVENT = 1,
+};
+
+enum arcana_builder_builder_run_state {
+	ARCANA_BUILDER_BUILDER_RUN_STATE_RUNNING = 0,
+	ARCANA_BUILDER_BUILDER_RUN_STATE_DONE = 1,
+	ARCANA_BUILDER_BUILDER_RUN_STATE_FAILED = 2,
+	ARCANA_BUILDER_BUILDER_RUN_STATE_LOST = 3,
 };
 
 struct ieee802_dot1q_bridge_bridges_bridge_component_rstp_bridge_rstp_root_port {
@@ -9909,6 +9935,246 @@ struct arcana_sshd {
 	const struct arcana_sshd_sshd	*sshd;
 };
 
+/* list entry */
+struct arcana_builder_builder_conf {
+	const char	*name;
+	const char	*value;
+};
+
+/* list entry */
+struct arcana_builder_builder_jail {
+	const char	*name;
+	const char	*version;
+	const char	*arch;
+	const char	*method;
+	const char	*mnt;
+	const char	*fs;
+	const char	*timestamp;
+};
+
+/* list entry */
+struct arcana_builder_builder_ports {
+	const char	*name;
+	const char	*method;
+	const char	*mnt;
+	const char	*timestamp;
+};
+
+/* list entry */
+struct arcana_builder_builder_make_conf {
+	const char	*name;
+	const char	*file;
+	const char	*text;
+};
+
+/* list entry */
+struct arcana_builder_builder_options_port {
+	const char	*name;
+	const char	*pkgname;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 set;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 unset;
+};
+
+/* list entry */
+struct arcana_builder_builder_options {
+	const char	*name;
+	const char	*dir;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_options_port	*v;
+	}			 port;
+};
+
+/* list entry */
+struct arcana_builder_builder_repo {
+	const char	*name;
+	const char	*path;
+	bool			 has_packages;
+	uint32_t	 packages;
+};
+
+/* list entry */
+struct arcana_builder_builder_build_failed_port {
+	const char	*package;
+	const char	*origin;
+	const char	*phase;
+	const char	*reason;
+	bool			 has_elapsed;
+	uint32_t	 elapsed;
+	const char	*log_file;
+	const char	*log;
+};
+
+/* list entry */
+struct arcana_builder_builder_build_skipped_port {
+	const char	*package;
+	const char	*origin;
+	const char	*because;
+};
+
+/* list entry */
+struct arcana_builder_builder_build {
+	const char	*jail;
+	const char	*ports;
+	const char	*set;
+	const char	*build;
+	const char	*status;
+	bool			 has_queued;
+	uint32_t	 queued;
+	bool			 has_inspected;
+	uint32_t	 inspected;
+	bool			 has_ignored;
+	uint32_t	 ignored;
+	bool			 has_built;
+	uint32_t	 built;
+	bool			 has_failed;
+	uint32_t	 failed;
+	bool			 has_skipped;
+	uint32_t	 skipped;
+	bool			 has_fetched;
+	uint32_t	 fetched;
+	bool			 has_remaining;
+	uint32_t	 remaining;
+	const char	*time;
+	const char	*logs;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_build_failed_port	*v;
+	}			 failed_port;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_build_skipped_port	*v;
+	}			 skipped_port;
+};
+
+/* list entry */
+struct arcana_builder_builder_run {
+	uint32_t	 id;
+	const char	*title;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 argv;
+	const char	*started;
+	bool			 has_state;
+	enum arcana_builder_builder_run_state	 state;
+	bool			 has_pid;
+	uint32_t	 pid;
+	bool			 has_exit;
+	uint8_t		 exit;
+	const char	*log_file;
+	const char	*log;
+};
+
+/* input */
+struct arcana_builder_builder_port_options_input {
+	const char	*jail;
+	const char	*ports;
+	const char	*set;
+	const char	*origin;
+};
+
+/* list entry */
+struct arcana_builder_builder_port_options_output_section_option {
+	const char	*name;
+	bool			 has_on;
+	bool		 on;
+	const char	*description;
+};
+
+/* list entry */
+struct arcana_builder_builder_port_options_output_section {
+	uint8_t		 index;
+	const char	*title;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_port_options_output_section_option	*v;
+	}			 option;
+};
+
+/* output */
+struct arcana_builder_builder_port_options_output {
+	const char	*pkgname;
+	const char	*options_dir;
+	bool			 has_options_dir_exists;
+	bool		 options_dir_exists;
+	const char	*options_file;
+	bool			 has_configured;
+	bool		 configured;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_port_options_output_section	*v;
+	}			 section;
+};
+
+/* container */
+struct arcana_builder_builder {
+	bool			 has_installed;
+	bool		 installed;
+	const char	*program;
+	const char	*conf_file;
+	bool			 has_configured;
+	bool		 configured;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_conf	*v;
+	}			 conf;
+	const char	*basefs;
+	const char	*data;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_jail	*v;
+	}			 jail;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_ports	*v;
+	}			 ports;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_make_conf	*v;
+	}			 make_conf;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_options	*v;
+	}			 options;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_repo	*v;
+	}			 repo;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_build	*v;
+	}			 build;
+	const char	*builds_error;
+	struct {
+		size_t		 n;
+		const struct arcana_builder_builder_run	*v;
+	}			 run;
+};
+
+/* data */
+struct arcana_builder {
+	const struct arcana_builder_builder	*builder;
+};
+
+/* input */
+struct arcana_notify_notify_input {
+	const char	*token;
+	const char	*chat;
+	const char	*text;
+};
+
+/* output */
+struct arcana_notify_notify_output {
+	char			 _empty;	/* nothing in it */
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -12361,6 +12627,78 @@ int	arcana_sshd_sshd_encode(const struct arcana_sshd_sshd *,
 	    struct cbl_ybuf *);
 int	arcana_sshd_sshd_decode(const void *, size_t, struct arcana_sshd_sshd *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_conf_encode(const struct arcana_builder_builder_conf *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_conf_decode(const void *, size_t, struct arcana_builder_builder_conf *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_jail_encode(const struct arcana_builder_builder_jail *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_jail_decode(const void *, size_t, struct arcana_builder_builder_jail *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_ports_encode(const struct arcana_builder_builder_ports *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_ports_decode(const void *, size_t, struct arcana_builder_builder_ports *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_make_conf_encode(const struct arcana_builder_builder_make_conf *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_make_conf_decode(const void *, size_t, struct arcana_builder_builder_make_conf *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_options_port_encode(const struct arcana_builder_builder_options_port *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_options_port_decode(const void *, size_t, struct arcana_builder_builder_options_port *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_options_encode(const struct arcana_builder_builder_options *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_options_decode(const void *, size_t, struct arcana_builder_builder_options *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_repo_encode(const struct arcana_builder_builder_repo *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_repo_decode(const void *, size_t, struct arcana_builder_builder_repo *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_build_failed_port_encode(const struct arcana_builder_builder_build_failed_port *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_build_failed_port_decode(const void *, size_t, struct arcana_builder_builder_build_failed_port *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_build_skipped_port_encode(const struct arcana_builder_builder_build_skipped_port *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_build_skipped_port_decode(const void *, size_t, struct arcana_builder_builder_build_skipped_port *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_build_encode(const struct arcana_builder_builder_build *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_build_decode(const void *, size_t, struct arcana_builder_builder_build *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_run_encode(const struct arcana_builder_builder_run *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_run_decode(const void *, size_t, struct arcana_builder_builder_run *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_port_options_input_encode(const struct arcana_builder_builder_port_options_input *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_port_options_input_decode(const void *, size_t, struct arcana_builder_builder_port_options_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_port_options_output_section_option_encode(const struct arcana_builder_builder_port_options_output_section_option *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_port_options_output_section_option_decode(const void *, size_t, struct arcana_builder_builder_port_options_output_section_option *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_port_options_output_section_encode(const struct arcana_builder_builder_port_options_output_section *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_port_options_output_section_decode(const void *, size_t, struct arcana_builder_builder_port_options_output_section *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_port_options_output_encode(const struct arcana_builder_builder_port_options_output *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_port_options_output_decode(const void *, size_t, struct arcana_builder_builder_port_options_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_builder_builder_encode(const struct arcana_builder_builder *,
+	    struct cbl_ybuf *);
+int	arcana_builder_builder_decode(const void *, size_t, struct arcana_builder_builder *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_notify_notify_input_encode(const struct arcana_notify_notify_input *,
+	    struct cbl_ybuf *);
+int	arcana_notify_notify_input_decode(const void *, size_t, struct arcana_notify_notify_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_notify_notify_output_encode(const struct arcana_notify_notify_output *,
+	    struct cbl_ybuf *);
+int	arcana_notify_notify_output_decode(const void *, size_t, struct arcana_notify_notify_output *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -12582,5 +12920,11 @@ int	arcana_sdwan_sdwan_get(cbl_req *, struct arcana_sdwan *, cbl_yarena *);
 int	arcana_sdwan_sdwan_edit(cbl_req *, const struct arcana_sdwan *,
 	    const struct arcana_sdwan *);
 int	arcana_sshd_sshd_get(cbl_req *, struct arcana_sshd *, cbl_yarena *);
+int	arcana_builder_builder_get(cbl_req *, struct arcana_builder *, cbl_yarena *);
+int	arcana_builder_builder_port_options_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_builder_builder_port_options_input *,
+	    struct arcana_builder_builder_port_options_output *, cbl_yarena *);
+int	arcana_notify_notify_rpc(cbl_req *, const struct arcana_notify_notify_input *,
+	    struct arcana_notify_notify_output *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */

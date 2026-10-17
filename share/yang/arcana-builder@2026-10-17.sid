@@ -1,0 +1,512 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-builder",
+    "module-revision": "2026-10-17",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "72400",
+        "size": "200"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-builder",
+        "sid": "72400"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder",
+        "sid": "72401"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/basefs",
+        "sid": "72402"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build",
+        "sid": "72403"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/build",
+        "sid": "72404"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/built",
+        "sid": "72405"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/failed",
+        "sid": "72406"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/failed-port",
+        "sid": "72407"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/failed-port/elapsed",
+        "sid": "72408"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/failed-port/log",
+        "sid": "72409"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/failed-port/log-file",
+        "sid": "72410"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/failed-port/origin",
+        "sid": "72411"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/failed-port/package",
+        "sid": "72412"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/failed-port/phase",
+        "sid": "72413"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/failed-port/reason",
+        "sid": "72414"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/fetched",
+        "sid": "72415"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/ignored",
+        "sid": "72416"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/inspected",
+        "sid": "72417"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/jail",
+        "sid": "72418"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/logs",
+        "sid": "72419"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/ports",
+        "sid": "72420"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/queued",
+        "sid": "72421"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/remaining",
+        "sid": "72422"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/set",
+        "sid": "72423"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/skipped",
+        "sid": "72424"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/skipped-port",
+        "sid": "72425"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/skipped-port/because",
+        "sid": "72426"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/skipped-port/origin",
+        "sid": "72427"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/skipped-port/package",
+        "sid": "72428"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/status",
+        "sid": "72429"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/build/time",
+        "sid": "72430"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/builds-error",
+        "sid": "72431"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/conf",
+        "sid": "72432"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/conf-file",
+        "sid": "72433"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/conf/name",
+        "sid": "72434"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/conf/value",
+        "sid": "72435"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/configured",
+        "sid": "72436"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/data",
+        "sid": "72437"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/installed",
+        "sid": "72438"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/jail",
+        "sid": "72439"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/jail/arch",
+        "sid": "72440"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/jail/fs",
+        "sid": "72441"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/jail/method",
+        "sid": "72442"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/jail/mnt",
+        "sid": "72443"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/jail/name",
+        "sid": "72444"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/jail/timestamp",
+        "sid": "72445"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/jail/version",
+        "sid": "72446"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/make-conf",
+        "sid": "72447"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/make-conf/file",
+        "sid": "72448"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/make-conf/name",
+        "sid": "72449"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/make-conf/text",
+        "sid": "72450"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/options",
+        "sid": "72451"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/options/dir",
+        "sid": "72452"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/options/name",
+        "sid": "72453"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/options/port",
+        "sid": "72454"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/options/port/name",
+        "sid": "72455"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/options/port/pkgname",
+        "sid": "72456"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/options/port/set",
+        "sid": "72457"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/options/port/unset",
+        "sid": "72458"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options",
+        "sid": "72459"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/input",
+        "sid": "72460"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/input/jail",
+        "sid": "72461"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/input/origin",
+        "sid": "72462"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/input/ports",
+        "sid": "72463"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/input/set",
+        "sid": "72464"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/output",
+        "sid": "72465"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/output/configured",
+        "sid": "72466"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/output/options-dir",
+        "sid": "72467"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/output/options-dir-exists",
+        "sid": "72468"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/output/options-file",
+        "sid": "72469"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/output/pkgname",
+        "sid": "72470"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/output/section",
+        "sid": "72471"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/output/section/index",
+        "sid": "72472"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/output/section/option",
+        "sid": "72473"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/output/section/option/description",
+        "sid": "72474"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/output/section/option/name",
+        "sid": "72475"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/output/section/option/on",
+        "sid": "72476"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/port-options/output/section/title",
+        "sid": "72477"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/ports",
+        "sid": "72478"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/ports/method",
+        "sid": "72479"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/ports/mnt",
+        "sid": "72480"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/ports/name",
+        "sid": "72481"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/ports/timestamp",
+        "sid": "72482"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/program",
+        "sid": "72483"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/repo",
+        "sid": "72484"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/repo/name",
+        "sid": "72485"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/repo/packages",
+        "sid": "72486"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/repo/path",
+        "sid": "72487"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/run",
+        "sid": "72488"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/run/argv",
+        "sid": "72489"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/run/exit",
+        "sid": "72490"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/run/id",
+        "sid": "72491"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/run/log",
+        "sid": "72492"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/run/log-file",
+        "sid": "72493"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/run/pid",
+        "sid": "72494"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/run/started",
+        "sid": "72495"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/run/state",
+        "sid": "72496"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-builder:builder/run/title",
+        "sid": "72497"
+      }
+    ]
+  }
+}

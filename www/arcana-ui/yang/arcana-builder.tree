@@ -1,0 +1,98 @@
+module: arcana-builder
+  +--ro builder
+     +--ro installed?      boolean
+     +--ro program?        string
+     +--ro conf-file?      string
+     +--ro configured?     boolean
+     +--ro conf* [name]
+     |  +--ro name     string
+     |  +--ro value?   string
+     +--ro basefs?         string
+     +--ro data?           string
+     +--ro jail* [name]
+     |  +--ro name         string
+     |  +--ro version?     string
+     |  +--ro arch?        string
+     |  +--ro method?      string
+     |  +--ro mnt?         string
+     |  +--ro fs?          string
+     |  +--ro timestamp?   yang:date-and-time
+     +--ro ports* [name]
+     |  +--ro name         string
+     |  +--ro method?      string
+     |  +--ro mnt?         string
+     |  +--ro timestamp?   yang:date-and-time
+     +--ro make-conf* [name]
+     |  +--ro name    string
+     |  +--ro file?   string
+     |  +--ro text?   string
+     +--ro options* [name]
+     |  +--ro name    string
+     |  +--ro dir?    string
+     |  +--ro port* [name]
+     |     +--ro name       string
+     |     +--ro pkgname?   string
+     |     +--ro set*       string
+     |     +--ro unset*     string
+     +--ro repo* [name]
+     |  +--ro name        string
+     |  +--ro path?       string
+     |  +--ro packages?   uint32
+     +--ro build* [jail ports set]
+     |  +--ro jail         string
+     |  +--ro ports        string
+     |  +--ro set          string
+     |  +--ro build?       string
+     |  +--ro status?      string
+     |  +--ro queued?      uint32
+     |  +--ro inspected?   uint32
+     |  +--ro ignored?     uint32
+     |  +--ro built?       uint32
+     |  +--ro failed?      uint32
+     |  +--ro skipped?     uint32
+     |  +--ro fetched?     uint32
+     |  +--ro remaining?   uint32
+     |  +--ro time?        string
+     |  +--ro logs?        string
+     |  +--ro failed-port* [package]
+     |  |  +--ro package     string
+     |  |  +--ro origin?     port-origin
+     |  |  +--ro phase?      string
+     |  |  +--ro reason?     string
+     |  |  +--ro elapsed?    uint32
+     |  |  +--ro log-file?   string
+     |  |  +--ro log?        string
+     |  +--ro skipped-port* [package]
+     |     +--ro package    string
+     |     +--ro origin?    port-origin
+     |     +--ro because?   string
+     +--ro builds-error?   string
+     +--ro run* [id]
+     |  +--ro id          uint32
+     |  +--ro title?      string
+     |  +--ro argv*       string
+     |  +--ro started?    yang:date-and-time
+     |  +--ro state?      enumeration
+     |  +--ro pid?        uint32
+     |  +--ro exit?       uint8
+     |  +--ro log-file?   string
+     |  +--ro log?        string
+     +---x port-options
+        +---w input
+        |  +---w jail      string
+        |  +---w ports?    string
+        |  +---w set?      string
+        |  +---w origin    port-origin
+        +--ro output
+           +--ro pkgname?              string
+           +--ro options-dir?          string
+           +--ro options-dir-exists?   boolean
+           +--ro options-file?         string
+           +--ro configured?           boolean
+           +--ro section* [index]
+              +--ro index    uint8
+              +--ro title?   string
+              +--ro option* [name]
+                 +--ro name           string
+                 +--ro on?            boolean
+                 +--ro description?   string

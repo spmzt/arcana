@@ -1422,7 +1422,12 @@ finish_run(void *arg)
 	return (NULL);
 }
 
-/* What there is: the CA now, the next one, the rollout's state. */
+/*
+ * What there is: the CA now, the next one, the rollout's state.  Whether
+ * a change runs is asked first: its thread writes all it changed before
+ * it says it no longer runs, so once that is said, what is read after
+ * is the end, never what was there before it.
+ */
 static ucl_object_t *
 ca_view(void)
 {
@@ -1430,7 +1435,11 @@ ca_view(void)
 	X509		*v[CERTS_MAX];
 	char		 path[MAXPATHLEN], *csr;
 	int		 n, i;
+	bool		 running;
 
+	pthread_mutex_lock(&ca_lock);
+	running = ca_running;
+	pthread_mutex_unlock(&ca_lock);
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, ucl_object_frombool(cfg.tls_own), "own", 0,
 	    false);
@@ -1462,10 +1471,8 @@ ca_view(void)
 		free(csr);
 	}
 	st = state_read();
-	pthread_mutex_lock(&ca_lock);
-	ucl_object_replace_key(st, ucl_object_frombool(ca_running), "running",
-	    0, true);
-	pthread_mutex_unlock(&ca_lock);
+	ucl_object_replace_key(st, ucl_object_frombool(running), "running", 0,
+	    true);
 	ucl_object_delete_key(st, "old_roots");
 	ucl_object_insert_key(o, st, "state", 0, false);
 	return (o);
