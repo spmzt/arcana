@@ -78,6 +78,8 @@ struct opts opts = {
 	.squid_bin = PATH_SQUID_BIN,
 	.cicap_bin = PATH_CICAP_BIN,
 	.suricata_bin = PATH_SURICATA_BIN,
+	.poudriere_bin = PATH_POUDRIERE_BIN,
+	.poudriere_etc = PATH_POUDRIERE_ETC,
 	.swanctl_dir = PATH_SWANCTL_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
 	.bird_watch_s = 15,
@@ -101,7 +103,8 @@ struct opts opts = {
 
 static bool	foreground;
 
-enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API };
+enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API,
+    OPT_POUDRIERE, OPT_POUDRIERE_ETC };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
@@ -114,6 +117,10 @@ static const struct option longopts[] = {
 	{ "sctp-also", required_argument, NULL, OPT_SCTP_ALSO },
 	/* Where the Telegram Bot API is, for notify: a test's own. */
 	{ "telegram-api", required_argument, NULL, OPT_TELEGRAM_API },
+	/* poudriere(8), and where its poudriere.conf and poudriere.d are:
+	 * a test's own. */
+	{ "poudriere", required_argument, NULL, OPT_POUDRIERE },
+	{ "poudriere-etc", required_argument, NULL, OPT_POUDRIERE_ETC },
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -148,7 +155,8 @@ usage(void)
 	    "                 [-N netstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n"
 	    "                 [-X traceroute] [--bird-watch seconds]\n"
-	    "                 [--sctp-also addresses] [--telegram-api url]\n");
+	    "                 [--sctp-also addresses] [--telegram-api url]\n"
+	    "                 [--poudriere poudriere] [--poudriere-etc directory]\n");
 	exit(2);
 }
 
@@ -353,6 +361,12 @@ main(int argc, char *argv[])
 			break;
 		case OPT_TELEGRAM_API:
 			opts.telegram_api = optarg;
+			break;
+		case OPT_POUDRIERE:
+			opts.poudriere_bin = optarg;
+			break;
+		case OPT_POUDRIERE_ETC:
+			opts.poudriere_etc = optarg;
 			break;
 		case OPT_BIRD_WATCH:
 			opts.bird_watch_s = (int)strtonum(optarg, 0, 3600, &errstr);

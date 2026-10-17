@@ -333,6 +333,7 @@ struct arcana_jobs_submit_input_change_carp;
 struct arcana_jobs_submit_input_change_neighbour;
 struct arcana_jobs_submit_input_change_cert;
 struct arcana_jobs_submit_input_change_ssh;
+struct arcana_jobs_submit_input_change_poudriere;
 struct arcana_jobs_submit_input_change;
 struct arcana_jobs_submit_input;
 struct arcana_jobs_submit_output;
@@ -1421,6 +1422,7 @@ enum arcana_jobs_jobs_job_kind {
 	ARCANA_JOBS_JOBS_JOB_KIND_CERT = 34,
 	ARCANA_JOBS_JOBS_JOB_KIND_SSH = 35,
 	ARCANA_JOBS_JOBS_JOB_KIND_CARP = 36,
+	ARCANA_JOBS_JOBS_JOB_KIND_POUDRIERE = 37,
 };
 
 enum arcana_jobs_jobs_job_state {
@@ -1500,6 +1502,7 @@ enum arcana_jobs_submit_input_change_kind {
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_NEIGHBOUR,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_CERT,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SSH,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_POUDRIERE,
 };
 
 enum arcana_jobs_submit_input_change_jail_action_action {
@@ -1623,6 +1626,19 @@ enum arcana_jobs_submit_input_change_ssh_verb {
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SSH_VERB_OPTIONS = 4,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SSH_VERB_SIGN = 5,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SSH_VERB_USER_CAS = 6,
+};
+
+enum arcana_jobs_submit_input_change_poudriere_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_POUDRIERE_VERB_JAIL_CREATE = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_POUDRIERE_VERB_JAIL_UPDATE = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_POUDRIERE_VERB_JAIL_DELETE = 2,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_POUDRIERE_VERB_PORTS_CREATE = 3,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_POUDRIERE_VERB_PORTS_UPDATE = 4,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_POUDRIERE_VERB_PORTS_DELETE = 5,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_POUDRIERE_VERB_BULK = 6,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_POUDRIERE_VERB_STOP = 7,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_POUDRIERE_VERB_MAKE_CONF = 8,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_POUDRIERE_VERB_CONF = 9,
 };
 
 enum arcana_storage_storage_dataset_type {
@@ -6063,6 +6079,17 @@ struct arcana_jobs_submit_input_change_ssh {
 	bool		 safe;
 };
 
+/* container, presence */
+struct arcana_jobs_submit_input_change_poudriere {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_poudriere_verb	 verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	const char	*text;
+};
+
 /* list entry */
 struct arcana_jobs_submit_input_change {
 	enum arcana_jobs_submit_input_change_kind	 kind;	/* the case given */
@@ -6103,6 +6130,7 @@ struct arcana_jobs_submit_input_change {
 	const struct arcana_jobs_submit_input_change_neighbour	*neighbour;
 	const struct arcana_jobs_submit_input_change_cert	*cert;
 	const struct arcana_jobs_submit_input_change_ssh	*ssh;
+	const struct arcana_jobs_submit_input_change_poudriere	*poudriere;
 };
 
 /* input */
@@ -11107,6 +11135,10 @@ int	arcana_jobs_submit_input_change_cert_decode(const void *, size_t, struct arc
 int	arcana_jobs_submit_input_change_ssh_encode(const struct arcana_jobs_submit_input_change_ssh *,
 	    struct cbl_ybuf *);
 int	arcana_jobs_submit_input_change_ssh_decode(const void *, size_t, struct arcana_jobs_submit_input_change_ssh *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_poudriere_encode(const struct arcana_jobs_submit_input_change_poudriere *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_poudriere_decode(const void *, size_t, struct arcana_jobs_submit_input_change_poudriere *,
 	    cbl_yarena *, int, char *, size_t);
 int	arcana_jobs_submit_input_change_encode(const struct arcana_jobs_submit_input_change *,
 	    struct cbl_ybuf *);

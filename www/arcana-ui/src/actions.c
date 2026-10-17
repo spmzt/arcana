@@ -575,6 +575,9 @@ job_finished(struct op *op, bool ok, const char *err)
 	case JOB_SSH:
 		refresh_ssh(s, true);
 		break;
+	case JOB_BUILDER:
+		builder_refresh();
+		break;
 	case JOB_PROCESS:
 		refresh_procs(s, true);
 		break;

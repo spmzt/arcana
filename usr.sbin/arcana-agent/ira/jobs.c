@@ -181,6 +181,9 @@ title_of(const struct arc_job_spec *sp)
 		    "", sp->user != NULL ? " of " : "", sp->user != NULL ?
 		    sp->user : "");
 		break;
+	case ARC_JOB_KIND_POUDRIERE:
+		rc = (t = poudriere_title(sp)) != NULL ? 0 : -1;
+		break;
 	case ARC_JOB_KIND_CARP:
 		rc = asprintf(&t, "%s: carp %s vhid %s%s%s", sp->interface,
 		    sp->verb, carp_vhid_of(sp), sp->address != NULL &&
@@ -992,6 +995,10 @@ run(struct qjob *j)
 		error = NULL;
 		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
 		    do_ssh_job(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_POUDRIERE:
+		error = NULL;
+		ok = do_poudriere_job(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_CERT:
 		/* Any jail's: its files, not its network. */

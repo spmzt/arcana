@@ -186,9 +186,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
-	char	 fstab[MAXPATHLEN];
+	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[110];
+	char	*argv[114];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -724,6 +724,29 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("tools/suricata", "#!/bin/sh\necho \"suricata $*\" >> squid.log\n"
 	    "[ \"$1\" = -T ] && exit 0\n"
 	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$4\"\nexit 0\n");
+	/* poudriere(8), a plugin: a jail or a tree made where it keeps
+	 * them (jset, pset), a build that says what it builds and takes a
+	 * second, the latest build of a set whose make.conf is there. */
+	put("fake-poudriere", "#!/bin/sh\necho \"poudriere $*\" >> poudriere.log\n"
+	    "e=$(pwd)/pe/poudriere.d\ncmd=$1; shift\ncase $cmd in\n"
+	    "jail|ports) verb=$1; shift; n=; v=; m=http\n"
+	    "\twhile getopts yj:p:v:a:m:B:U:M: o; do case $o in j|p) n=$OPTARG;; "
+	    "v) v=$OPTARG;; m) m=$OPTARG;; esac; done\n"
+	    "\tk=jails; [ $cmd = ports ] && k=ports\n"
+	    "\tcase $verb in\n\t-c) mkdir -p $e/$k/$n; echo $m > $e/$k/$n/method; "
+	    "[ -n \"$v\" ] && echo $v > $e/$k/$n/version; echo amd64 > "
+	    "$e/$k/$n/arch; echo 1792200000 > $e/$k/$n/timestamp; "
+	    "echo \"[00:00:01] Created $n\" ;;\n"
+	    "\t-u) echo \"[00:00:01] Updated $n\" ;;\n\t-d) rm -rf $e/$k/$n ;;\n"
+	    "\tesac ;;\nbulk) echo \"[00:00:00] Building: $*\"; sleep 1; "
+	    "echo '[00:00:01] Built 1 packages' ;;\n"
+	    "status) [ -f $e/debug-make.conf ] && printf 'debug\\tdefault\\t"
+	    "150amd64\\t2026-10-17_09h00m00s\\tdone:\\t1\\t0\\t0\\t1\\t0\\t0"
+	    "\\t0\\t0\\t00:03:10\\t/poudriere/data/logs/bulk/x\\n' ;;\n"
+	    "esac\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-poudriere", 0755) == 0);
+	ATF_REQUIRE(mkdir("pe", 0755) == 0 || errno == EEXIST);
+	put("pe/poudriere.conf", "ZPOOL=tank\nBASEFS=/poudriere\n");
 	/* tcpdump(1): its sources, a capture written, and read back;
 	 * timeout(1) leaves it be. */
 	ATF_REQUIRE(mkdir("tools/tmp", 0755) == 0 || errno == EEXIST);
@@ -1043,7 +1066,13 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[106] = (char *)(uintptr_t)"--telegram-api";
 	argv[107] = harness_telegram_api[0] != '\0' ? harness_telegram_api :
 	    (char *)(uintptr_t)"http://127.0.0.1:9";
-	argv[108] = NULL;
+	/* poudriere(8), a plugin: a stand-in, its poudriere.d the test's. */
+	argv[108] = (char *)(uintptr_t)"--poudriere";
+	argv[109] = (char *)(uintptr_t)"./fake-poudriere";
+	argv[110] = (char *)(uintptr_t)"--poudriere-etc";
+	argv[111] = pdetc;
+	argv[112] = NULL;
+	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
 	(void)mkdir(rootdir, 0755);
 	{

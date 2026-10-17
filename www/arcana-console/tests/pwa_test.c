@@ -6070,8 +6070,8 @@ ATF_TC_WITH_CLEANUP(pwa_flows);
 ATF_TC_HEAD(pwa_flows, tc)
 {
 
-	atf_tc_set_md_var(tc, "descr", "Workflows, the API, and SD-WAN");
-	atf_tc_set_md_var(tc, "timeout", "240");
+	atf_tc_set_md_var(tc, "descr", "Workflows, the API, SD-WAN, Security and the Builder");
+	atf_tc_set_md_var(tc, "timeout", "360");
 }
 /*
  * Troubleshoot, in the side bar: a packet followed, the host itself a
@@ -6222,6 +6222,78 @@ part_security(void)
 	wait_js("!document.querySelector('table.secproxy')", 30);
 }
 
+/*
+ * The Builder: poudriere's jail and ports tree made, then BIRD built
+ * with debug symbols, the set's make.conf written first, one batch.
+ */
+static void
+part_builder(void)
+{
+
+	click_when("li.bldnode[data-act=select-builder]", 10);
+	wait_js("location.hash.startsWith('#/builder/jails') && document."
+	    "querySelector('select[data-input=bld-host]')", 10);
+	run("const s = document.querySelector('select[data-input=bld-host]'); "
+	    "s.value = s.options[s.options.length - 1].value; s.dispatchEvent("
+	    "new Event('input', { bubbles: true }))");
+	wait_js("document.querySelector('.bldpage details.bldconf') && "
+	    "document.querySelector('table.bldconfkv').textContent.includes("
+	    "'tank') && document.querySelector('.bldpage .empty')", 20);
+	click_when("button[data-act=bld-new][data-arg=jail]", 10);
+	wait_js("document.querySelector('form[data-form=bld-jail]')", 10);
+	run("const f = document.querySelector('form[data-form=bld-jail]'); "
+	    "f.name.value = '150amd64'; f.version.value = '15.0-RELEASE'; "
+	    "f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('table.bldjails tr[data-jail="
+	    "\"150amd64\"]') && document.querySelector('table.bldjails')."
+	    "textContent.includes('15.0-RELEASE') && [...document."
+	    "querySelectorAll('li.bldrun')].some(l => l.textContent.includes("
+	    "'jail -c -j 150amd64 -v 15.0-RELEASE') && l.textContent."
+	    "includes('done'))", 30);
+	run("document.querySelector('.dock > header').click()");
+	shot("9w-builder-jails");
+	click_when("button[data-act=bld-tab][data-arg=ports]", 10);
+	click_when("button[data-act=bld-new][data-arg=ports]", 10);
+	wait_js("document.querySelector('form[data-form=bld-ports]')", 10);
+	run("const f = document.querySelector('form[data-form=bld-ports]'); "
+	    "f.name.value = 'default'; f.branch.value = 'main'; "
+	    "f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('table.bldports tr[data-ports="
+	    "\"default\"]')", 30);
+	run("document.querySelector('.dock > header').click()");
+	/* BIRD, with debug symbols: the set debug's make.conf, then its
+	 * build. */
+	click_when("button[data-act=bld-tab][data-arg=bulk]", 10);
+	wait_js("location.hash.startsWith('#/builder/bulk/') && document."
+	    "querySelector('form[data-form=bld-bulk]')", 10);
+	run("const f = document.querySelector('form[data-form=bld-bulk]'); "
+	    "f.jail.value = '150amd64'; f.ports.value = 'default'; "
+	    "f.origins.value = 'net/bird3'; f.debug.checked = true; "
+	    "f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('li.bldrun')].some(l => l."
+	    "textContent.includes('bulk -j 150amd64 -p default -z debug "
+	    "net/bird3') && l.textContent.includes('done')) && document."
+	    "querySelector('ul.bldmc button[data-arg=debug]') && document."
+	    "querySelector('table.bldbuilds') && document.querySelector("
+	    "'table.bldbuilds').textContent.includes('debug')", 40);
+	ATF_CHECK(system("grep -qx 'WITH_DEBUG_PORTS+= net/bird3' "
+	    "pe/poudriere.d/debug-make.conf") == 0);
+	ATF_CHECK(system("grep -q '^poudriere bulk -j 150amd64 -p default -z "
+	    "debug net/bird3$' poudriere.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	shot("9x-builder-bulk");
+	/* Asked again: the line is there, not written twice. */
+	click_when("ul.bldmc button[data-arg=debug]", 10);
+	wait_js("document.querySelector('form[data-form=bld-makeconf]') && "
+	    "document.querySelector('form[data-form=bld-makeconf]').text.value "
+	    "=== 'WITH_DEBUG_PORTS+= net/bird3\\n'", 10);
+	click_when("form[data-form=bld-makeconf] button[data-act=bld-cancel]",
+	    10);
+}
+
 ATF_TC_BODY(pwa_flows, tc)
 {
 
@@ -6229,6 +6301,7 @@ ATF_TC_BODY(pwa_flows, tc)
 	part_flows();
 	part_trouble();
 	part_security();
+	part_builder();
 }
 ATF_TC_CLEANUP(pwa_flows, tc)
 {

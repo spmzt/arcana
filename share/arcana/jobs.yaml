@@ -391,3 +391,9 @@ kinds:
     uses: jail path args text user safe
     values: verb=banner|set|authorize|unauthorize|options|sign|user-cas
     destroys: verb=unauthorize
+  - kind: poudriere
+    title: poudriere's build jails, ports trees and builds
+    needs: verb
+    uses: args text
+    values: verb=jail-create|jail-update|jail-delete|ports-create|ports-update|ports-delete|bulk|stop|make-conf|conf
+    destroys: verb=jail-delete|ports-delete

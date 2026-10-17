@@ -688,6 +688,26 @@
   never made nor taken away.  The IPFW tab's Load the current file
   verified in a jail with its own rc.conf and script (the lab's
   arcswan1 root).
+- Asked for on 2026-10-17:
+  - edge-b's BIRD dying of SIGBUS: a program the kernel sees die of a
+    signal is a fault now (crash, with the kernel's reason for no
+    core).  Done 2026-10-17, agent 0.136.0.
+  - poudriere as a plugin, a Builder page in the side bar with Jails,
+    Ports and Bulk tabs, BIRD built WITH_DEBUG from the console.  Done
+    2026-10-17, agent 0.137.0, console 0.201.0: the builder operation
+    reads what poudriere keeps (jails, trees, make.conf files,
+    repositories, the latest builds, the runs), the poudriere job
+    makes, updates and deletes jails and trees, builds (a jail, a tree
+    or a build made is a run the job starts and leaves, stopped by
+    SIGINT to its group), writes a make.conf and sets poudriere.conf;
+    Debug symbols writes the set's WITH_DEBUG_PORTS before its build.
+    Tested with a stand-in poudriere (agent_test:poudriere,
+    pwa_test:pwa_flows), not yet against a real one: Edge-a has one
+    once its agent is 0.137.0.  Still to do: the builder
+    operation as YANG (an arcana-builder module, as notify has none
+    either); a build's failed ports and their logs read in the page;
+    poudriere options (each port's OPTIONS, which poudriere asks by
+    dialog(1)) as a form.
 - Asked for on 2026-10-16, in the order they are being done (done ones
   move to their own notes):
   - SD-WAN, adding an edge: a WAN link is not moved from its static

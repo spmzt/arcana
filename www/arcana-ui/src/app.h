@@ -163,6 +163,7 @@ enum node {
 	NODE_SDWAN,		/* SD-WAN services, as MEF 70.2 says them */
 	NODE_TROUBLE,		/* a packet followed, and what stops it */
 	NODE_SECURITY,		/* the luxuria plugins that guard a host */
+	NODE_BUILDER,		/* poudriere: packages built */
 	NODE_SETTINGS,		/* the console's settings, a tab each */
 	NODE_DEVICES,		/* the hosts as a table */
 };
@@ -340,6 +341,7 @@ enum {
 	JOB_PROCESS,
 	JOB_CERTS,
 	JOB_SSH,
+	JOB_BUILDER,
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -875,6 +877,14 @@ bool		 secpage_action(const char *, const char *, const char *);
 void		 secpage_loc(char *, size_t);
 void		 secpage_open(const char *);
 void		 secpage_tick(double);
+/* builder.c: the Builder page, poudriere's. */
+void		 view_builder(struct html *);
+bool		 builder_form(const char *, const ucl_object_t *);
+bool		 builder_action(const char *, const char *, const char *);
+void		 builder_loc(char *, size_t);
+void		 builder_open(const char *);
+void		 builder_tick(double);
+void		 builder_refresh(void);
 
 /* trouble.c: the Troubleshoot page. */
 void		 view_trouble(struct html *);

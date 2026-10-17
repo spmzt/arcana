@@ -1119,6 +1119,32 @@ paths:
           description: ok, error and the agent's trace.
         "400":
           description: A form not right, and why.
+  /api/servers/{server}/builder:
+    get:
+      tags: [servers]
+      summary: poudriere, the host's package builder
+      description: >-
+        poudriere(8), a plugin, under data: installed and program;
+        conf_file, configured and conf (poudriere.conf's assignments);
+        basefs and data; jails and ports, each with its name and what
+        poudriere keeps of it (version, arch, method, mnt, fs,
+        timestamp); makeconf, each make.conf of poudriere.d (name, file,
+        text); repos, each package repository with its path and how many
+        packages; builds, the latest of each jail, tree and set as
+        poudriere status tells it; runs, what the poudriere job started
+        (id, title, argv, started, state running, done, failed or lost,
+        pid, exit, log_file, and log, its output's end). A change is a
+        job of kind poudriere, verb and args key=value: jail-create,
+        jail-update, jail-delete, ports-create, ports-update,
+        ports-delete, bulk (jail, ports, set, jobs, clean, test, an
+        origin= each port), stop (run), make-conf (name, text), conf
+        (poudriere.conf's variables). A jail or tree made or updated
+        and a build are runs, which go on after their job.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
   /api/servers/{server}/history:
     get:
       tags: [servers]
@@ -1553,7 +1579,8 @@ paths:
                           netgraph, wireguard, bird, if-vnet, kmod, zfs,
                           zpool, mount, gpart, cam, sysctl, ipfw,
                           bridge, geneve, process, pkg-clean, ipsec,
-                          pkg-install]
+                          pkg-install, ntp, rtadvd, ipsec-sa, jail-conf,
+                          neighbour, cert, ssh, carp, poudriere]
                       jail: { type: string, description: The jail acted on.
                           For a job that changes a network, the vnet jail
                           whose network it is; for if-vnet, the jail the

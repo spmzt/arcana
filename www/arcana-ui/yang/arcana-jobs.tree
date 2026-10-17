@@ -299,13 +299,18 @@ module: arcana-jobs
        |        |     +---w path?   string
        |        |     +---w text?   string
        |        +--:(ssh)
-       |           +---w ssh!
+       |        |  +---w ssh!
+       |        |     +---w verb    enumeration
+       |        |     +---w jail?   string
+       |        |     +---w path?   string
+       |        |     +---w args*   string
+       |        |     +---w text?   string
+       |        |     +---w user?   string
+       |        |     +---w safe?   boolean
+       |        +--:(poudriere)
+       |           +---w poudriere!
        |              +---w verb    enumeration
-       |              +---w jail?   string
-       |              +---w path?   string
        |              +---w args*   string
        |              +---w text?   string
-       |              +---w user?   string
-       |              +---w safe?   boolean
        +--ro output
           +--ro id*   uint64

@@ -85,6 +85,7 @@ conf=$(pwd)/rc.conf
 echo "\$*" >> $(pwd)/sysrc.log
 # -R dir: the rc.conf of what is rooted there, a jail's.
 [ "\$1" = -R ] && { conf=\$2/etc/rc.conf; shift 2; }
+[ "\$1" = -f ] && { conf=\$2; touch "\$conf"; shift 2; }
 ign=no
 [ "\$1" = -i ] && { ign=yes; shift; }
 put()
@@ -7531,6 +7532,207 @@ EOF
 	done
 }
 
+atf_test_case poudriere cleanup
+poudriere_head()
+{
+	atf_set "descr" "poudriere(8) as a plugin: its jails, ports trees," \
+	    "make.conf files, repositories and builds read; a jail, a" \
+	    "tree and a build started as runs that go on after the job," \
+	    "one stopped; a make.conf for debug symbols; poudriere.conf's" \
+	    "variables; what is refused"
+}
+poudriere_body()
+{
+	local d="$(pwd)" n
+
+	mkdir -p pe/poudriere.d data/packages/FreeBSD:16:amd64-default-debug/All
+	touch data/packages/FreeBSD:16:amd64-default-debug/All/bird3-3.4.0.pkg
+	# poudriere(8): jset and pset as it keeps them, a bulk that says
+	# what it builds; test/sleepy builds until it is interrupted,
+	# test/broken fails.
+	cat > fake-poudriere <<EOS
+#!/bin/sh
+echo "poudriere \$*" >> $d/poudriere.log
+e=$d/pe/poudriere.d
+v=; a=amd64; m=http; n=; br=
+cmd=\$1; shift
+case "\$cmd" in
+jail|ports)
+	verb=\$1; shift
+	while getopts yj:p:v:a:m:B:U:M: o; do
+		case \$o in j|p) n=\$OPTARG;; v) v=\$OPTARG;; a) a=\$OPTARG;; m) m=\$OPTARG;; B) br=\$OPTARG;; esac
+	done
+	k=jails; [ \$cmd = ports ] && k=ports
+	case "\$verb" in
+	-c)	echo "[00:00:01] Creating \$n fs"
+		mkdir -p \$e/\$k/\$n
+		[ \$cmd = jail ] && { echo \$v > \$e/\$k/\$n/version; echo \$a > \$e/\$k/\$n/arch; }
+		echo \$m > \$e/\$k/\$n/method
+		echo /poudriere/\$k/\$n > \$e/\$k/\$n/mnt
+		echo 1792200000 > \$e/\$k/\$n/timestamp
+		echo "[00:00:02] Done" ;;
+	-u)	echo "[00:00:01] Updating \$n"; echo 1792209999 > \$e/\$k/\$n/timestamp ;;
+	-d)	[ -d \$e/\$k/\$n ] || { echo "Error: No such \$k \$n" >&2; exit 1; }
+		rm -rf \$e/\$k/\$n ;;
+	esac ;;
+bulk)
+	echo "[00:00:00] Building: \$*"
+	case " \$* " in *" test/broken "*) echo "Error: test/broken failed" >&2; exit 1 ;; esac
+	case " \$* " in *" test/sleepy "*) sleep 60 ;; esac
+	echo "[00:00:03] Built 1 packages" ;;
+status)
+	printf 'debug\tdefault\tFreeBSD:16:amd64\t2026-10-17_09h00m00s\tdone:\t1\t0\t0\t1\t0\t0\t0\t0\t00:03:10\t/poudriere/data/logs/bulk/FreeBSD:16:amd64-default-debug/2026-10-17_09h00m00s\n' ;;
+esac
+EOS
+	chmod +x fake-poudriere
+	DAEMON_ARGS="--poudriere $d/fake-poudriere --poudriere-etc $d/pe"
+	start_daemon
+
+	# Nothing yet: installed, without poudriere.conf.
+	atf_check -o match:'"installed":true' -o match:'"configured":false' \
+	    -o match:'"jails":\[\]' -o match:'"runs":\[\]' \
+	    "$JGC" -c "$SOCK" poudriere
+
+	# poudriere.conf: ZPOOL and BASEFS, by sysrc -f; the data directory
+	# under BASEFS unless said, ${BASEFS} put in.
+	atf_check -o match:'done +poudriere.conf: ZPOOL=tank and more$' \
+	    "$JGC" -c "$SOCK" poudriere conf ZPOOL=tank BASEFS=/poudriere
+	echo 'POUDRIERE_DATA=${BASEFS}/../'"$d"'/data' >> pe/poudriere.conf
+	atf_check -o match:"-f $d/pe/poudriere.conf ZPOOL=tank" cat sysrc.log
+	atf_check -o match:'"configured":true' \
+	    -o match:'"conf":\{"ZPOOL":"tank","BASEFS":"/poudriere","POUDRIERE_DATA":"/poudriere/../' \
+	    "$JGC" -c "$SOCK" poudriere
+	atf_check -s exit:1 -e match:"variables set from here" -o ignore \
+	    "$JGC" -c "$SOCK" poudriere conf PATH=/tmp
+	atf_check -o match:'done' "$JGC" -c "$SOCK" poudriere conf BASEFS=
+	atf_check -o not-match:'^BASEFS=' cat pe/poudriere.conf
+
+	# A jail, named as an ABI, and a ports tree: runs; the job ends at
+	# once, the run when poudriere does.
+	atf_check -o match:'done +poudriere jail-create FreeBSD:16:amd64$' \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=FreeBSD:16:amd64 \
+	    version=16.0-CURRENT method=pkgbase
+	atf_check -o match:'done +poudriere ports-create default$' \
+	    "$JGC" -c "$SOCK" poudriere ports-create name=default \
+	    method=git+https branch=main
+	for i in $(seq 1 50); do
+		[ $("$JGC" -c "$SOCK" poudriere | grep -o '"state":"done"' |
+		    wc -l) -ge 2 ] && break
+		sleep 0.1
+	done
+	atf_check -o match:'"jails":\[\{"name":"FreeBSD:16:amd64",[^]]*"version":"16.0-CURRENT"' \
+	    -o match:'"method":"pkgbase"' -o match:'"timestamp":1792200000' \
+	    -o match:'"ports":\[\{"name":"default",' \
+	    -o match:'"id":1,"title":"poudriere jail-create FreeBSD:16:amd64","started":[0-9]+,"argv":\["[^"]*fake-poudriere","jail","-c","-j","FreeBSD:16:amd64","-v","16.0-CURRENT","-m","pkgbase"\],"state":"done","exit":0' \
+	    -o match:'"log":"\[00:00:01\] Creating FreeBSD:16:amd64 fs\\n\[00:00:02\] Done\\n"' \
+	    "$JGC" -c "$SOCK" poudriere
+	atf_check -o match:'^poudriere ports -c -p default -m git\+https -B main$' \
+	    cat poudriere.log
+
+	# Debug symbols for BIRD: a set's make.conf, then its build.
+	printf 'WITH_DEBUG_PORTS+= net/bird3\n' > debug.conf
+	atf_check -o match:'done +poudriere debug-make.conf written$' \
+	    "$JGC" -c "$SOCK" poudriere make-conf debug debug.conf
+	atf_check -o inline:'WITH_DEBUG_PORTS+= net/bird3\n' \
+	    cat pe/poudriere.d/debug-make.conf
+	atf_check -o match:'done +poudriere bulk net/bird3 in FreeBSD:16:amd64 with default, set debug$' \
+	    "$JGC" -c "$SOCK" poudriere bulk jail=FreeBSD:16:amd64 \
+	    ports=default set=debug jobs=4 origin=net/bird3
+	for i in $(seq 1 50); do
+		[ $("$JGC" -c "$SOCK" poudriere | grep -o '"state":"done"' |
+		    wc -l) -ge 3 ] && break
+		sleep 0.1
+	done
+	atf_check -o match:'^poudriere bulk -j FreeBSD:16:amd64 -p default -z debug -J 4 net/bird3$' \
+	    cat poudriere.log
+	atf_check -o match:'"makeconf":\[\{"name":"debug","file":"[^"]*/debug-make.conf","text":"WITH_DEBUG_PORTS\+= net/bird3\\n"\}\]' \
+	    -o match:'"repos":\[\{"name":"FreeBSD:16:amd64-default-debug","path":"[^"]*","packages":1\}\]' \
+	    -o match:'"builds":\[\{"set":"debug","ports":"default","jail":"FreeBSD:16:amd64","build":"2026-10-17_09h00m00s","status":"done:","queued":1,"inspected":0,"ignored":0,"built":1,"failed":0,"skipped":0,"fetched":0,"remaining":0,"time":"00:03:10","logs":"/poudriere/data/logs/bulk/' \
+	    -o match:'"id":3,"title":"poudriere bulk net/bird3 in FreeBSD:16:amd64 with default, set debug"' \
+	    "$JGC" -c "$SOCK" poudriere
+	# make.conf itself, and taken away.
+	atf_check -o match:'done +poudriere make.conf written$' \
+	    "$JGC" -c "$SOCK" poudriere make-conf - debug.conf
+	atf_check -o match:'done +poudriere make.conf taken away$' \
+	    "$JGC" -c "$SOCK" poudriere make-conf - -
+	atf_check -s exit:1 -e ignore cat pe/poudriere.d/make.conf
+
+	# A build that fails is a run that failed: the job itself was
+	# done, starting it.
+	atf_check -o match:done "$JGC" -c "$SOCK" poudriere bulk \
+	    jail=FreeBSD:16:amd64 origin=test/broken
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" poudriere | grep -q '"state":"failed","exit":1' &&
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'"id":4,[^}]*"state":"failed","exit":1,[^}]*"log":"\[00:00:00\] Building: -j FreeBSD:16:amd64 test/broken\\nError: test/broken failed\\n"' \
+	    "$JGC" -c "$SOCK" poudriere
+
+	# One that goes on until it is stopped: SIGINT, as a terminal's.
+	atf_check -o match:done "$JGC" -c "$SOCK" poudriere bulk \
+	    jail=FreeBSD:16:amd64 origin=test/sleepy
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" poudriere | grep -q '"id":5,[^}]*"state":"running","pid":[0-9]*' &&
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'"id":5,[^}]*"state":"running","pid":[0-9]+' \
+	    "$JGC" -c "$SOCK" poudriere
+	# Its waiter, not the agent's child, holds none of the agent's
+	# descriptors: only poudriere's standard input, output and error.
+	n=$(ps -o ppid= -p "$(cat builder/5.pid)" | tr -d ' ')
+	atf_check test "$(ps -o ppid= -p "$n" | tr -d ' ')" != "$(cat daemon.pid)"
+	# procstat(1) sees another's descriptors as root, or when the host
+	# lets anyone debug their own (security.bsd.unprivileged_proc_debug).
+	if [ "$(id -u)" = 0 ] || [ "$(sysctl -n \
+	    security.bsd.unprivileged_proc_debug 2>/dev/null)" = 1 ]; then
+		atf_check -o inline:'0\n1\n2\n' sh -c "procstat -f $n | awk 'NR > 1 && \$3 ~ /^[0-9]+\$/ { print \$3 }'"
+	fi
+	atf_check -o match:'done +poudriere run 5 stopped$' \
+	    "$JGC" -c "$SOCK" poudriere stop run=5
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" poudriere | grep -q '"id":5,[^}]*"state":"failed","exit":130' &&
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'"id":5,[^}]*"state":"failed","exit":130' \
+	    "$JGC" -c "$SOCK" poudriere
+	atf_check -s exit:1 -o match:'failed +poudriere run 5 stopped: run 5 has ended already \(exit 130\)' \
+	    -e ignore "$JGC" -c "$SOCK" poudriere stop run=5
+	atf_check -s exit:1 -o match:'run 99 is not running' -e ignore \
+	    "$JGC" -c "$SOCK" poudriere stop run=99
+
+	# Refused: a port's path out of the tree, a set with a -, a jail's
+	# name with a dot, a word that is no key=value, a jail scope.
+	atf_check -s exit:1 -e match:'category and name' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere bulk jail=j origin=../etc
+	atf_check -s exit:1 -e match:"a set's name" -o ignore \
+	    "$JGC" -c "$SOCK" poudriere bulk jail=j set=a-b origin=net/bird3
+	atf_check -s exit:1 -e match:"a jail's name" -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=a.b version=15.0-RELEASE
+	atf_check -s exit:1 -e match:'key=value' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere bulk net/bird3
+	atf_check -s exit:1 -e match:"the host's" -o ignore \
+	    "$JGC" -c "$SOCK" -j web poudriere jail-update name=x
+	atf_check -s exit:1 -e match:'URL is one word' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere ports-create name=p 'url=http://x/ y'
+
+	# Deleted: poudriere -y, to its end in the job.
+	atf_check -o match:'done +poudriere jail-delete FreeBSD:16:amd64$' \
+	    "$JGC" -c "$SOCK" poudriere jail-delete name=FreeBSD:16:amd64
+	atf_check -o match:'^poudriere jail -d -y -j FreeBSD:16:amd64$' \
+	    cat poudriere.log
+	atf_check -o match:'"jails":\[\]' "$JGC" -c "$SOCK" poudriere
+	atf_check -s exit:1 -o match:'failed +poudriere ports-delete nosuch: .*No such ports nosuch' \
+	    -e ignore "$JGC" -c "$SOCK" poudriere ports-delete name=nosuch
+}
+poudriere_cleanup()
+{
+	[ -f builder/5.pid ] && kill -INT -"$(cat builder/5.pid)" 2>/dev/null
+	stop_daemon
+}
+
 atf_test_case bird_watch cleanup
 bird_watch_head()
 {
@@ -7595,6 +7797,7 @@ bird_watch_cleanup()
 atf_init_test_cases()
 {
 	atf_add_test_case bird_watch
+	atf_add_test_case poudriere
 	atf_add_test_case yang_interfaces
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_origins

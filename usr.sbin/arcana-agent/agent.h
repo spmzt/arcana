@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.136.0"
+#define	ARCANA_AGENT_VERSION	"0.137.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -53,6 +53,8 @@
 #define	PATH_SQUID_BIN		"/usr/local/sbin/squid"
 #define	PATH_CICAP_BIN		"/usr/local/bin/c-icap"
 #define	PATH_SURICATA_BIN	"/usr/local/bin/suricata"
+#define	PATH_POUDRIERE_BIN	"/usr/local/bin/poudriere"
+#define	PATH_POUDRIERE_ETC	"/usr/local/etc"
 #define	PATH_CICAP_MODULES	"/usr/local/lib/c_icap"
 #define	PATH_CLAMAV_DB		"/var/db/clamav"
 #define	PATH_SWANCTL_DIR	"/usr/local/etc/swanctl"
@@ -119,6 +121,8 @@ struct opts {
 	const char	*squid_bin;	/* squid(8): the proxies, a plugin */
 	const char	*cicap_bin;	/* c-icap: malware scanning, a plugin */
 	const char	*suricata_bin;	/* suricata: intrusion detection, a plugin */
+	const char	*poudriere_bin;	/* poudriere(8): the package builder, a plugin */
+	const char	*poudriere_etc;	/* where poudriere.conf and poudriere.d are */
 	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;
 	const char	*bird_bin;	/* bird(8), to parse a configuration */
@@ -324,6 +328,13 @@ void		 do_capture(struct work *, const struct arc_capture_req *,
 /* superbia/ssh.c: the base system's sshd */
 void		 do_ssh(struct work *, struct arc_ssh_rsp *);
 const char	*ssh_check(const struct arc_job_spec *);
+/* luxuria/poudriere.c: the package builder, its runs left to go on. */
+const char	*poudriere_check(const struct arc_job_spec *);
+int		 do_poudriere_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+char		*poudriere_title(const struct arc_job_spec *);
+struct arc_builder_rsp;
+void		 do_builder(struct work *, struct arc_builder_rsp *);
 int		 do_ssh_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 int		 ssh_undo(struct work *, const struct arc_job_spec *,

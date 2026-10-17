@@ -344,6 +344,7 @@ worker(void *arg)
 	struct arc_stats_rsp	 str;
 	struct arc_kernel_rsp	 kr;
 	struct arc_jail_files_rsp jfr;
+	struct arc_builder_rsp	 bur;
 	struct arc_certs_rsp	 cer;
 	struct arc_ssh_rsp	 sshr;
 	struct arc_capture_req	 capq;
@@ -852,6 +853,19 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &jfr.trace.v, &jfr.trace.n);
 		rc = arc_jail_files_reply(j->req, &jfr);
+		break;
+	case ARC_CMD_BUILDER:
+		what = "poudriere";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "poudriere");
+		memset(&bur, 0, sizeof(bur));
+		bur.has_ok = true;
+		do_builder(&w, &bur);
+		ok = bur.ok;
+		error = bur.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &bur.trace.v, &bur.trace.n);
+		rc = arc_builder_reply(j->req, &bur);
 		break;
 	case ARC_CMD_KERNEL:
 		what = "kernel";
@@ -2303,6 +2317,18 @@ arc_jail_files_doit(cbl_req *req, void *arg __unused)
 }
 
 int
+arc_builder_doit(cbl_req *req, void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_BUILDER;
+	return (start(j));
+}
+
+int
 arc_stats_doit(cbl_req *req, void *arg __unused)
 {
 	struct job	*j;
@@ -2377,7 +2403,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_CARP)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_POUDRIERE)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2570,6 +2596,8 @@ check_spec(const struct arc_job_spec *sp)
 		return (cert_check(sp));
 	case ARC_JOB_KIND_SSH:
 		return (ssh_check(sp));
+	case ARC_JOB_KIND_POUDRIERE:
+		return (poudriere_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->safe)
 			return ("wireguard changes are not undone: not in "
