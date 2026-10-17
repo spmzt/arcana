@@ -1476,6 +1476,105 @@ ATF_TC_BODY(workflows, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(templates, "Configuration templates: a host's setup kept by "
+    "name, its values {{placeholders}}, checked; applied to a host with its "
+    "own values, checked first, then written; one without a value refused")
+ATF_TC_BODY(templates, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[MAXPATHLEN], base[128], sid[16];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(base, sizeof(base), "/api/servers/%s/config", sid);
+
+	http("GET", "/api/templates", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strcmp(r.body, "{\"templates\":[]}") == 0);
+	resp_free(&r);
+	/* Not kept: a secret, a path that climbs, no mode. */
+	http("PUT", "/api/templates/edge", "{\"files\":[{\"path\":"
+	    "\"/usr/local/etc/wireguard/wg0.conf\",\"mode\":\"0600\",\"owner\":"
+	    "\"root\",\"group\":\"wheel\",\"secret\":true}]}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "carries no secrets")
+	    != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/templates/edge", "{\"files\":[{\"path\":\"/etc/../"
+	    "root/x\",\"mode\":\"0644\",\"owner\":\"root\",\"group\":\"wheel\","
+	    "\"text\":\"\"}]}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "without ..") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/templates/bad%20name", "{}", &r);
+	ATF_CHECK(r.status == 400 || r.status == 404);
+	resp_free(&r);
+	/* Kept: rc.conf with the host's name and address its values, the
+	 * address with a default. */
+	http("PUT", "/api/templates/edge", "{\"description\":\"an edge\","
+	    "\"files\":[{\"path\":\"/etc/rc.conf\",\"mode\":\"0644\",\"owner\":"
+	    "\"root\",\"group\":\"wheel\",\"text\":\"hostname=\\\"{{hostname}}"
+	    "\\\"\\nifconfig_lo1=\\\"inet {{address}}/32\\\"\\n# a ${shell} "
+	    "word, as it is\\n\"}],\"packages\":[{\"name\":\"bird3\"}],\"variables\":{"
+	    "\"address\":{\"description\":\"its loopback\",\"default\":"
+	    "\"192.0.2.10\"}}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/templates", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("edge", jstr(&r, "templates.0.name"));
+	ATF_CHECK_STREQ("an edge", jstr(&r, "templates.0.description"));
+	ATF_CHECK_STREQ("1", jstr(&r, "templates.0.files"));
+	ATF_CHECK_STREQ("hostname", jstr(&r, "templates.0.placeholders.0"));
+	ATF_CHECK_STREQ("address", jstr(&r, "templates.0.placeholders.1"));
+	resp_free(&r);
+	/* Applied without a hostname: refused, nothing asked of the host. */
+	http("POST", base, "{\"template\":\"edge\",\"dry_run\":true}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "{{hostname}} has no "
+	    "value") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", base, "{\"template\":\"nosuch\",\"dry_run\":true}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "no template nosuch")
+	    != NULL, "%s", r.body);
+	resp_free(&r);
+	/* Checked: what rc.conf would become, the default address in it,
+	 * the shell's own ${} left alone, the package told. */
+	http("POST", base, "{\"template\":\"edge\",\"values\":{\"hostname\":"
+	    "\"edge7\"},\"dry_run\":true}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_MSG(strstr(r.body, "\"path\":\"/etc/rc.conf\",\"state\":"
+	    "\"changed\"") != NULL && strstr(r.body, "+hostname=\\\"edge7\\\"")
+	    != NULL && strstr(r.body, "+ifconfig_lo1=\\\"inet 192.0.2.10/32"
+	    "\\\"") != NULL && strstr(r.body, "${shell}") != NULL, "%.600s",
+	    r.body);
+	ATF_CHECK(strstr(r.body, "bird3") != NULL);
+	resp_free(&r);
+	ATF_CHECK(system("! grep -q edge7 root/etc/rc.conf") == 0);
+	/* Applied: written, the file before kept. */
+	http("POST", base, "{\"template\":\"edge\",\"values\":{\"hostname\":"
+	    "\"edge7\",\"address\":\"192.0.2.77\"}}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "data.applied"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q 'hostname=\"edge7\"' root/etc/rc.conf && "
+	    "grep -q 'inet 192.0.2.77/32' root/etc/rc.conf") == 0);
+	/* Forgotten. */
+	http("DELETE", "/api/templates/edge", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/templates/edge", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+}
+
 CONSOLE_TC(config_bundle, "A host as a bundle, its secrets only when "
     "asked; another host's bundle applied here by the console, checked "
     "first, the files before kept")
@@ -6455,6 +6554,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, tokens);
 	ATF_TP_ADD_TC(tp, transfers);
 	ATF_TP_ADD_TC(tp, config_bundle);
+	ATF_TP_ADD_TC(tp, templates);
 	ATF_TP_ADD_TC(tp, troubleshoot);
 	ATF_TP_ADD_TC(tp, workflows);
 	ATF_TP_ADD_TC(tp, sdwan);

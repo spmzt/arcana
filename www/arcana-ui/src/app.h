@@ -474,6 +474,7 @@ struct app {
 	int		 settab;	/* the Settings section's tab: SET_* */
 	char		 ipsec_auth[8];	/* the connection form: how the peer is known */
 	char		 filter[64];
+	int		 devtab;	/* Devices: 0 the hosts, 1 templates */
 	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */
 	bool		 quiet;		/* the reads asked now are the page's own
@@ -658,6 +659,16 @@ void		 view_devices(struct html *);
 int		 count_state(const struct server *, const char *);
 void		 view_summary(struct html *, struct server *);
 void		 view_hostconf(struct html *, struct server *);
+void		 config_report(struct html *, const ucl_object_t *,
+		    const char *, bool, bool, bool, const char *);
+void		 config_pkgs(struct server *, const ucl_object_t *,
+		    const char *);
+/* templates.c: configuration templates, the Devices page's tab. */
+void		 view_templates(struct html *);
+bool		 templates_action(const char *, const char *, const char *);
+void		 templates_load(void);
+void		 templates_open(const char *);
+void		 template_put(const char *, const ucl_object_t *);
 bool		 hostconf_action(const char *, const char *, const char *);
 void		 view_jobs(struct html *, struct server *);
 

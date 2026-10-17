@@ -193,7 +193,8 @@ loc_of(char *buf, size_t len)
 		builder_loc(buf, len);
 		break;
 	case NODE_DEVICES:
-		snprintf(buf, len, "#/devices");
+		snprintf(buf, len, "#/devices%s", app.devtab == 1 ?
+		    "/templates" : "");
 		break;
 	case NODE_SETTINGS:
 		snprintf(buf, len, "#/settings/%s", settab_arg(app.settab));
@@ -288,8 +289,11 @@ loc_go(const char *r)
 		if (query != NULL)
 			trouble_open(query + 1);
 	}
-	else if (IS(0, "devices"))
+	else if (IS(0, "devices")) {
 		dispatch("select-devices", "", "");
+		if (IS(1, "templates"))
+			dispatch("dev-tab", "1", "");
+	}
 	else if (IS(0, "settings")) {
 		loc_dec(arg, sizeof(arg), np > 1 ? f[1] : "");
 		dispatch("set-tab", arg, "");
@@ -911,6 +915,7 @@ dispatch(const char *act, const char *arg, const char *value)
 
 	s = cur_server();
 	if (export_action(act, arg, value) || hostconf_action(act, arg, value) ||
+	    templates_action(act, arg, value) ||
 	    topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
 	    jailmk_action(act, arg, value) || neigh_action(act, arg, value) ||
@@ -1444,9 +1449,14 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.net.family = atoi(arg);
 		app.net.loading = false;
 		refresh_network(s, true);
+	} else if (strcmp(act, "dev-tab") == 0) {
+		app.devtab = atoi(arg) == 1 ? 1 : 0;
+		if (app.devtab == 1)
+			templates_load();
 	} else if (strcmp(act, "select-devices") == 0) {
 		app.rail_open = false;
 		app.node = NODE_DEVICES;
+		app.devtab = 0;
 		app.jail[0] = '\0';
 		close_service();
 		for (i = 0; i < app.nservers; i++) {

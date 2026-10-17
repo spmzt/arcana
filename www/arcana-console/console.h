@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.204.2"
+#define	ARCW_VERSION		"0.205.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -296,6 +296,13 @@ char		*hosts_path_check(const char *, const char *, const char *,
 int		 api_troubleshoot_path(struct http_request *);
 void		 api_troubleshoot_free(struct http_request *);
 int		 api_config_apply(struct http_request *);
+/* templates.c: configuration templates, a host's setup by name. */
+int		 api_templates(struct http_request *);
+int		 api_template(struct http_request *);
+bool		 template_name_ok(const char *);
+ucl_object_t	*template_get(const char *);
+char		*template_render(const char *, const ucl_object_t *, char *,
+		    size_t);
 int		 api_transport_switch(struct http_request *);
 int		 api_sysctl(struct http_request *);
 int		 api_processes(struct http_request *);

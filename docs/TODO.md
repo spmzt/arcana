@@ -865,7 +865,12 @@
     them; a jail's too.  Verified with the real certctl in a lab jail.)
   - Configuration templates: a host's setup exported to one and a
     template applied to a host; YAML where the standard allows,
-    UCL otherwise.
+    UCL otherwise.  (Done 2026-10-17: kept by the console, a host's
+    bundle without secrets with {{name}} where each host has its own
+    value, its hostname made one when it is saved from a host; the
+    Devices page's Templates to list, change, save as YAML or JSON,
+    take in from a file and apply to a host with its values, checked
+    first as a bundle is.)
   - A span tab: traffic mirrored by a BPF interface, or by ipfw rules
     with BPF.
     (Done 2026-10-12: Network, Span: a bridge's span ports; rules with
