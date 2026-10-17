@@ -516,6 +516,13 @@ sets at boot.
 Without
 .Ar name
 the whole tree, of which only the beginning is sent.
+With
+.Fl j Ar jail ,
+those of that vnet jail's network as its own
+.Xr sysctl 8
+reads them, under
+.Ar name
+in net.: each its name and value.
 .It Cm sysctl parts Op Ar name
 The same values as a dump: in parts, each printed as an array of its
 own when it comes, with none left out for size.
@@ -528,6 +535,12 @@ With
 it is also written to
 .Xr sysctl.conf 5 ,
 in place of the line that set it before.
+With
+.Fl j Ar jail ,
+one of that vnet jail's network (net.), set by its own
+.Xr sysctl 8
+and kept in its own
+.Pa /etc/sysctl.conf .
 .It Cm ps Op Ar pid
 What runs on the host, or with
 .Fl j
@@ -616,7 +629,7 @@ kernel's resource accounting has them
 With
 .Ar after ,
 only the samples after that time, in seconds since the epoch.
-.It Cm history set Ar seconds Ar samples Oo Ar cpu mem swap Oc Op Cm rules Ar list
+.It Cm history set Ar seconds Ar samples Oo Ar cpu mem swap Oo Ar storage Oc Oc Op Cm rules Ar list
 Have the agent sample every
 .Ar seconds ,
 1 to 3600, and keep that many
@@ -630,7 +643,10 @@ With
 .Ar mem
 and
 .Ar swap ,
-the percentages over which an event is made, 0 for none; with
+the percentages over which an event is made, 0 for none;
+.Ar storage
+that of a file system full (each ZFS pool, and each other local one),
+looked at each minute, over which a storage fault is raised too; with
 .Cm rules ,
 the limits of an interface, a disk or a jail, with commas:
 .Ql net: Ns Ar if Ns = Ns Ar bytes/s ,
@@ -1018,6 +1034,10 @@ sdwan-probes operation takes it: each an id and an address, and maybe
 fib, interval, size, count, dscp, down, up, timeout, eval, history and
 report.
 An empty array stops them all.
+An object
+.Brq Qq jail : Qq Ar name , Qq targets : Bq ...
+sets those of an SD-WAN edge that is that vnet jail instead, probed
+from its network, apart from the host's and each other jail's.
 .It Cm sdwan rules Ar json
 A
 .Ar json
@@ -1026,11 +1046,14 @@ of any of these may be
 the file's contents (a large list of prefixes, say).
 The rules that classify what comes in at the SD-WAN UNIs and steer
 it, as the sdwan-rules operation takes them: an object with the set,
-the tables and the rules.
+the tables and the rules, and with jail those of an edge that is that
+vnet jail, run by its own
+.Xr ipfw 8 .
 .It Cm sdwan steer Ar json
 What the policy tables hold, as the sdwan-steer operation takes it:
 each prefix's candidate tunnels in order; the first not down is
 chosen, and chosen again when a probe's state changes.
+With jail, a jail's edge's.
 .It Cm sdwan bird Ar json
 The BIRD instances of the services at this edge, as the sdwan-bird
 operation takes them: each a name, the fib it runs in and its

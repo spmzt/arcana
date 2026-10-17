@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.138.1"
+#define	ARCANA_AGENT_VERSION	"0.139.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -410,6 +410,7 @@ int		 do_if_destroy(struct work *, const char *, bool, const char **);
 void		 if_current(struct work *, const char *, unsigned int *, int *,
 		    int *, char *, size_t);
 bool		 if_is_up(struct work *, const char *, bool *);
+bool		 if_link(struct work *, const char *, bool *);
 bool		 if_exists(struct work *, const char *);
 const char	*if_json(struct work *);
 bool		 if_owning(const struct sockaddr *, char *, size_t);
@@ -513,7 +514,8 @@ enum { PROBE_NONE = -1, PROBE_UNKNOWN, PROBE_UP, PROBE_DOWN, PROBE_ENDED,
 void		 probe_start(void);
 int		 do_probes_set(struct work *, const char *, const char **);
 int		 do_sdwan(struct work *, uint64_t, struct arc_sdwan_rsp *);
-int		 probe_state_of(const char *);
+int		 probe_state_of(const char *, const char *);
+void		 probe_link(const char *, const char *, bool);
 /* invidia/sdwan.c: the rules that steer, and the steering. */
 void		 sdwan_start(void);
 int		 do_sdwan_rules(struct work *, const char *, const char **);
@@ -572,10 +574,13 @@ int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
 int		 do_sysctl(struct work *, const char *,
 		    struct arc_sysctl_rsp *);
+int		 do_sysctl_jail(struct work *, const char *,
+		    struct arc_sysctl_rsp *);
 int		 do_sysctl_set(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 sysctl_name_ok(const char *);
 bool		 valid_jail(const char *);
+bool		 valid_ifname(const char *);
 bool		 sysctl_part(struct cbl_dump_state *, const char *, char **,
 		    uint64_t *);
 bool		 sysctl_value_ok(const char *);
@@ -665,6 +670,8 @@ int		 neigh_list(FILE *, int, const char *);
 int		 addr_lines(FILE *);
 int		 route_socket(void);
 int		 helper_netlink(int);
+int		 helper_icmp_socket(int, int);
+unsigned int	 plugins_here(void);
 int		 jail_jid_name(int, char *, size_t, char *, size_t);
 int		 jail_next(int);
 /* ira/jailwatch.c: jail-state events, from EVFILT_JAIL */

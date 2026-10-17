@@ -28,9 +28,11 @@ main(int argc, char **argv)
 		err(1, "cbl_yarena_new");
 	if ((error = yhist_from_json(slurp(argv[1]), a, &h)) != 0)
 		errc(1, error, "yhist_from_json");
-	printf("sampling step=%u keep=%u limits cpu=%u mem=%u swap=%u\n",
+	printf("sampling step=%u keep=%u limits cpu=%u mem=%u swap=%u%s",
 	    h.sampling->step, h.sampling->keep, h.limits->cpu, h.limits->memory,
-	    h.limits->swap);
+	    h.limits->swap, h.limits->has_storage ? "" : "\n");
+	if (h.limits->has_storage)
+		printf(" storage=%u\n", h.limits->storage);
 	for (size_t i = 0; i < h.rule.n; i++)
 		printf("rule %s %s limit=%ju over=%s\n", kinds[h.rule.v[i].kind],
 		    h.rule.v[i].name, (uintmax_t)h.rule.v[i].limit,

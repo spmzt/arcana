@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-history",
     "module-revision": "2026-10-15",
-    "sid-file-version": 1,
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -371,6 +371,11 @@
         "namespace": "data",
         "identifier": "/arcana-history:history/state/swap-total",
         "sid": "70770"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/limits/storage",
+        "sid": "70771"
       }
     ]
   }

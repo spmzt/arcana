@@ -1939,6 +1939,165 @@ vpn_cleanup()
 	stop_daemon
 }
 
+atf_test_case sdwan_jail cleanup
+sdwan_jail_head()
+{
+	atf_set "descr" "SD-WAN at an edge that is a vnet jail: its rules," \
+	    "tables and steering its own, run by its own ipfw (jexec), the" \
+	    "file of rules beneath its root, its network's sysctls set" \
+	    "there, kept in files of its own and applied again at a start," \
+	    "the host's beside them"
+}
+sdwan_jail_body()
+{
+	local d="$(pwd)"
+
+	R=$d/jroot
+	mkdir -p "$R/var/run"
+	cat > fake-jls <<EOS
+#!/bin/sh
+case "\$2" in
+gateway) echo "4 new $R" ;;
+*) echo "jls: jail \"\$2\" not found" >&2; exit 1 ;;
+esac
+EOS
+	# jexec: logged; the rule file the jail's ipfw would read, read
+	# where the jail has it; a sysctl never run on the host.
+	cat > fake-jexec <<EOS
+#!/bin/sh
+echo "jexec \$*" >> $d/jexec.log
+shift
+for a; do last=\$a; done
+case "\$last" in /var/run/arcana-sdwan-*) cat "$R\$last" >> $d/jail-rules.log ;; esac
+case "\$1 \$2" in */sysctl\ -e) echo "net.fibs=4"; exit 0 ;; esac
+case "\$1" in */sysctl) exit 0 ;; esac
+exec "\$@"
+EOS
+	cat > fake-ipfw <<EOS
+#!/bin/sh
+echo "ipfw \$*" >> $d/ipfw.log
+exit 0
+EOS
+	chmod +x fake-jls fake-jexec fake-ipfw
+	printf '#!/bin/sh\nexit 0\n' > fake-kldload
+	chmod +x fake-kldload
+	DAEMON_ARGS="-h $d/fake-ipfw -2 $d/tools"
+	mkdir -p tools
+	start_daemon
+
+	# The jail's rules: run by its ipfw, from a file beneath its root.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"jail":"gateway","set":30,"tables":[{"name":"sw1_p0","valtype":"ipv4","entries":[]}],"rules":["00500 fwd tablearg ip from any to table(sw1_p0)"]}'
+	atf_check -o match:"^jexec 4 $d/fake-ipfw -q /var/run/arcana-sdwan-rules.load$" \
+	    -o match:"^jexec 4 [^ ]*sysctl net.inet.ipsec.filtertunnel=1$" \
+	    cat jexec.log
+	atf_check -o match:'^table sw1_p0 create type addr valtype ipv4$' \
+	    -o match:'^add 00500 set 30 fwd tablearg ip from any to table\(sw1_p0\)$' \
+	    cat jail-rules.log
+	test -e "$R/var/run/arcana-sdwan-rules.load" && \
+	    atf_fail "the file of rules stayed in the jail"
+	# Its steering, by its own ipfw too.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
+	    '{"jail":"gateway","entries":[{"table":"sw1_p0","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"}]}]}'
+	atf_check -o match:'^jexec 4 [^ ]*fake-ipfw -q table sw1_p0_alt atomic add 10.20.0.0/24 100.64.0.1$' \
+	    -o match:'^jexec 4 [^ ]*fake-ipfw -q table sw1_p0 swap sw1_p0_alt$' \
+	    cat jexec.log
+	# The host's own: none, and not the jail's.
+	atf_check -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],' \
+	    -o match:'"edges":\[\{"jail":"gateway","rules":\{"set":30,"rules":1,"tables":\["sw1_p0"\],"objects":0,"counters":\[\]\},"steer":\[\{"table":"sw1_p0","prefix":"10.20.0.0/24","chosen":0,' \
+	    -o match:'"steered":true\}\]' "$JGC" -c "$SOCK" sdwan
+	# The host's beside it, its ipfw not jexec'd.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":31,"tables":[],"rules":["00600 count ip from any to any"]}'
+	atf_check -o match:"^ipfw -q $d/[^ ]*sdwan-rules.json.load$" cat ipfw.log
+	atf_check -o match:'"rules":\{"set":31,"rules":1,' \
+	    -o match:'"edges":\[\{"jail":"gateway","rules":\{"set":30,' \
+	    "$JGC" -c "$SOCK" sdwan
+	# Each kept in its own file; the jail's applied again at a start.
+	test -f "$(dirname "$d/history.conf")/sdwan-rules@gateway.json" || \
+	    atf_fail "the jail's rules are not kept"
+	test -f "$(dirname "$d/history.conf")/sdwan-steer@gateway.json" || \
+	    atf_fail "the jail's steering is not kept"
+	stop_daemon
+	: > jexec.log
+	start_daemon
+	atf_check -o match:"^jexec 4 $d/fake-ipfw -q /var/run/arcana-sdwan-rules.load$" \
+	    -o match:'^jexec 4 [^ ]*fake-ipfw -q table sw1_p0 swap sw1_p0_alt$' \
+	    cat jexec.log
+	atf_check -o match:'"edges":\[\{"jail":"gateway","rules":\{"set":30,' \
+	    "$JGC" -c "$SOCK" sdwan
+	# Its network's sysctls are its own: set by its sysctl, kept in its
+	# own sysctl.conf; the kernel's are not set from here.
+	mkdir -p "$R/etc"
+	atf_check -o match:'done +gateway: sysctl net.fibs=4 \(kept\)$' \
+	    "$JGC" -c "$SOCK" -p -j gateway sysctl net.fibs=4
+	atf_check -o match:"^jexec 4 [^ ]*sysctl net.fibs=4$" cat jexec.log
+	atf_check -o inline:'net.fibs=4\n' cat "$R/etc/sysctl.conf"
+	# Read as its own sysctl reads them; only its network's.
+	atf_check -o match:'^\{"values":\[\{"name":"net.fibs","value":"4"\}\],"kept":\[\]\}$' \
+	    "$JGC" -c "$SOCK" -j gateway sysctl net.fibs
+	atf_check -o match:"^jexec 4 [^ ]*sysctl -e -- net.fibs$" cat jexec.log
+	atf_check -s exit:1 -e match:"under its network's, net." -o ignore \
+	    "$JGC" -c "$SOCK" -j gateway sysctl kern.ostype
+	atf_check -s exit:1 -e match:"its network's \\(net\\.\\*\\)" -o ignore \
+	    "$JGC" -c "$SOCK" -j gateway sysctl kern.maxproc=100
+	# Its probes a list of its own: the host's set after it stay its,
+	# each kept in its own file; at a start, both again.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '{"jail":"gateway","targets":[{"id":"t1","address":"100.64.0.1"}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '[{"id":"t1","address":"100.64.0.2"}]'
+	atf_check -o match:'"targets":\[\{"id":"t1","address":"100.64.0.2","family":"inet","fib":0,.*\{"id":"t1","address":"100.64.0.1","family":"inet","jail":"gateway",.*"edges":\[\{"jail":"gateway",.*"candidates":\[\{"id":"t1","via":"100.64.0.1","state":"unknown"\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	test -f sdwan-probes@gateway.json || atf_fail "the jail's probes are not kept"
+	stop_daemon
+	start_daemon
+	atf_check -o match:'"address":"100.64.0.2"' \
+	    -o match:'"address":"100.64.0.1","family":"inet","jail":"gateway"' \
+	    "$JGC" -c "$SOCK" sdwan
+	# Its list emptied: the host's stays, the jail's file goes.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '{"jail":"gateway","targets":[]}'
+	atf_check -o match:'"targets":\[\{"id":"t1","address":"100.64.0.2","family":"inet","fib":0,' \
+	    -o not-match:'"jail":"gateway","fib"' "$JGC" -c "$SOCK" sdwan
+	test -f sdwan-probes@gateway.json && atf_fail "the jail's probe file stayed"
+	atf_check -s exit:1 -e match:'invalid jail name' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '{"jail":"a/b","targets":[]}'
+	# The links an edge watches (Mplify 119's interface faults): lo0
+	# has its link; one with none is a fault, cleared once it is not
+	# watched.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '{"targets":[{"id":"t1","address":"100.64.0.2"}],"links":[{"interface":"lo0","id":"uni-hq","role":"uni"},{"interface":"nosuch0","id":"a-inet","role":"ucs"}]}'
+	atf_check -o match:'"type":"interface","severity":"Major","was":"Major","object":"a-inet","by":"link","description":"the UCS end point a-inet has no link on nosuch0","cleared":false' \
+	    -o not-match:'"object":"uni-hq"' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '{"targets":[{"id":"t1","address":"100.64.0.2"}],"links":[]}'
+	atf_check -o match:'"object":"a-inet","by":"link",[^}]*"cleared":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -s exit:1 -e match:'each link has an interface and an id' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '{"targets":[],"links":[{"interface":"a b","id":"x"}]}'
+	atf_check -s exit:1 -e match:'JSON array, or an object' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '{"links":[]}'
+	# Its steering and rules emptied: their files go, and a start makes
+	# no edge of it.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer '{"jail":"gateway","entries":[]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"jail":"gateway","set":30,"tables":[],"rules":[]}'
+	test -f sdwan-rules@gateway.json -o -f sdwan-steer@gateway.json && \
+	    atf_fail "the emptied jail's files stayed"
+	stop_daemon
+	start_daemon
+	atf_check -o match:'"edges":\[\]' "$JGC" -c "$SOCK" sdwan
+	# Refused: a jail that is no jail's name, or does not run.
+	atf_check -s exit:1 -e match:'invalid jail name' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan rules '{"jail":"a b","set":30,"tables":[],"rules":[]}'
+	atf_check -s exit:1 -e match:'nosuch' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan rules '{"jail":"nosuch","set":30,"tables":[],"rules":["00500 count ip from any to any"]}'
+}
+sdwan_jail_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case vnet cleanup
 vnet_head()
 {
@@ -3693,7 +3852,16 @@ observe_body()
 	printf 'who\0was\0here\n' > log/utx.log
 	printf 'not\0a\0text\n' > log/blob
 	ln -s /etc/master.passwd log/linked
-	DAEMON_ARGS="-v $(pwd)/log"
+	# zpool(8): a pool 95% full, as the storage limit sees it.
+	cat > fake-zpool <<'EOS'
+#!/bin/sh
+case "$*" in
+*name,size,alloc,free,health*) printf 'tank\t1000\t950\t50\tONLINE\n' ;;
+*name,size,alloc*) printf 'tank\t1000\t950\n' ;;
+esac
+EOS
+	chmod +x fake-zpool
+	DAEMON_ARGS="-v $(pwd)/log -Z $(pwd)/fake-zpool"
 	start_daemon
 
 	# What runs: this test's own sleep among it, with what top shows.
@@ -3846,7 +4014,7 @@ observe_body()
 	"$JGC" -c "$SOCK" events -f > follow.out 2>&1 &
 	echo $! > follow.pid
 	sleep 0.5
-	atf_check -o match:'"limits":\{"cpu":1,"mem":1,"swap":0\}' \
+	atf_check -o match:'"limits":\{"cpu":1,"mem":1,"swap":0,"storage":90\}' \
 	    "$JGC" -c "$SOCK" history set 1 20 1 1 0
 	sleep 3
 	kill "$(cat follow.pid)"
@@ -3856,7 +4024,23 @@ observe_body()
 	    "$JGC" -c "$SOCK" events
 	atf_check -o inline:'1\n' sh -c "$JGC -c $SOCK events | grep -o '\"what\":\"mem\"' | wc -l | tr -d ' '"
 	atf_check -o match:'^cpu=1$' -o match:'^mem=1$' cat history.conf
-	atf_check -o match:'"limits":\{"cpu":90,"mem":90,"swap":50\}' \
+	# A pool over the storage limit: an event and a storage fault
+	# (Mplify 119's resource faults); none as the limit, cleared.
+	atf_check -o match:'"kind":"threshold","data":\{"what":"storage","name":"tank","value":95,"limit":90,"over":true\}' \
+	    "$JGC" -c "$SOCK" events
+	atf_check -o match:'"type":"storage","severity":"Major","was":"Major","object":"tank","by":"sampler","description":"tank 95% full, over 90%","cleared":false' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"limits":\{"cpu":90,"mem":90,"swap":50,"storage":0\}' \
+	    "$JGC" -c "$SOCK" history set 1 20 90 90 50 0
+	sleep 2
+	atf_check -o match:'"what":"storage","name":"tank","limit":0,"over":false' \
+	    "$JGC" -c "$SOCK" events
+	atf_check -o match:'"object":"tank","by":"sampler",[^}]*"cleared":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'^storage=0$' cat history.conf
+	atf_check -s exit:1 -e match:'a limit is 0 to 100' -o ignore \
+	    "$JGC" -c "$SOCK" history set 1 20 90 90 50 101
+	atf_check -o match:'"limits":\{"cpu":90,"mem":90,"swap":50,"storage":0\}' \
 	    "$JGC" -c "$SOCK" history set 1 20 90 90 50
 	atf_check -o match:'"step":1,"keep":2,"bytes":[1-9][0-9]*,' \
 	    "$JGC" -c "$SOCK" history set 1 2
@@ -6173,6 +6357,20 @@ EOT
 EOT
 	atf_check -o inline:'entry sw1_p1 10.3.0.0/24: tvc-1 via 10.202.0.2 tvc-2 via 10.203.0.2\nyang-cbor 67 bytes, the same back\n' \
 	    "$y" steer steer.json
+	# An edge that is a vnet jail: its jail in each, the state's edges.
+	printf '%s\n' '{"jail":"gateway","targets":[{"id":"tvc-1","address":"10.202.0.2"}]}' > jt.json
+	atf_check -o match:'^target tvc-1 10.202.0.2 .* jail=gateway$' \
+	    -o match:'the same back' "$y" targets jt.json
+	printf '%s\n' '{"jail":"gateway","set":30,"tables":[],"rules":["00500 count ip from any to any"]}' > jr.json
+	atf_check -o match:'^rules set=30 jail=gateway$' -o match:'the same back' \
+	    "$y" rules jr.json
+	printf '%s\n' '{"jail":"gateway","entries":[{"table":"sw1_p1","prefix":"10.3.0.0/24","candidates":[{"id":"tvc-1","via":"10.202.0.2"}]}]}' > js.json
+	atf_check -o match:'^jail gateway$' -o match:'the same back' "$y" steer js.json
+	printf '%s\n' '{"targets":[{"id":"tvc-1","address":"10.202.0.2","family":"inet","jail":"gateway","fib":0,"state":"up","since":1791995000,"samples":[],"kept":0}],"time":1791995110,"probing":true}' > jp.json
+	atf_check -o match:'^  jail gateway$' -o match:'the same back' "$y" probes jp.json
+	printf '%s\n' '{"rules":{"set":0,"rules":0,"tables":[],"objects":0,"counters":[]},"steer":[],"steered":false,"edges":[{"jail":"gateway","rules":{"set":30,"rules":1,"tables":["sw1_p1"],"objects":0,"counters":[]},"steer":[{"table":"sw1_p1","prefix":"10.3.0.0/24","chosen":0,"candidates":[{"id":"tvc-1","via":"10.202.0.2","state":"up"}]}],"steered":true}]}' > je.json
+	atf_check -o match:'^edge gateway set=30 rules=1 tables=1 steered=yes sw1_p1/10.3.0.0/24:1$' \
+	    -o match:'the same back' "$y" state je.json
 	cat > inst.json <<'EOT'
 {"instances":[{"name":"svc1","fib":1,"conf":"router id 10.0.0.1;\n"}]}
 EOT
@@ -7919,6 +8117,7 @@ atf_init_test_cases()
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
 	atf_add_test_case sdwan
+	atf_add_test_case sdwan_jail
 	atf_add_test_case jail_conf
 	atf_add_test_case carp
 	atf_add_test_case neighbours

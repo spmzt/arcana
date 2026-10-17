@@ -3625,6 +3625,21 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK(system("grep -q '^step=3$' history.conf && grep -q "
 	    "'^keep=100$' history.conf") == 0);
 	resp_free(&r);
+	/* A file system's limit too, when said; without it, as it was. */
+	http("POST", path, "{\"step\":3,\"keep\":100,\"cpu\":95,\"mem\":80,"
+	    "\"swap\":10,\"storage\":85}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("85", jstr(&r, "data.limits.storage"));
+	resp_free(&r);
+	http("POST", path, "{\"step\":3,\"keep\":100,\"cpu\":95,\"mem\":80,"
+	    "\"swap\":10}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("85", jstr(&r, "data.limits.storage"));
+	resp_free(&r);
+	http("POST", path, "{\"step\":3,\"keep\":100,\"cpu\":95,\"mem\":80,"
+	    "\"swap\":10,\"storage\":101}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
 	http("POST", path, "{\"step\":0,\"keep\":100}", &r);
 	EXPECT(&r, 400);
 	resp_free(&r);
@@ -5395,6 +5410,159 @@ ATF_TC_BODY(sdwan_uswe, tc)
 	    "sdwan-key-ipsec101.pem") == 0);
 }
 
+/* Two edges on one agent: the host, and its vnet jail gw (@A/gw). */
+static const char sdwan_jail_doc[] =
+    "{\"version\":0,"
+    "\"ucs\":[{\"id\":\"inet\",\"type\":\"public\",\"billing\":\"flat-rate\","
+    "\"tunnel\":{\"kind\":\"gre\"}}],"
+    "\"edges\":[{\"server\":\"@A\",\"ucs_end_points\":[{\"id\":\"a-inet\","
+    "\"ucs\":\"inet\",\"interface\":\"vtnet0\",\"address\":\"192.0.2.1\"}]},"
+    "{\"server\":\"@J\",\"ucs_end_points\":[{\"id\":\"g-inet\",\"ucs\":"
+    "\"inet\",\"interface\":\"vtnet0\",\"address\":\"192.0.2.2\"}]}],"
+    "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"ucs\":[\"inet\"],"
+    "\"reserved_prefixes\":[\"100.64.0.0/24\"],"
+    "\"zones\":[{\"name\":\"rest\",\"prefixes\":\"Default\"}],"
+    "\"intervals\":{\"eval\":1000,\"arrival\":100,\"ir\":500},"
+    "\"flows\":[{\"name\":\"all\",\"criteria\":{\"any\":true}}],"
+    "\"policies\":[{\"name\":\"open\",\"direction\":\"ingress\","
+    "\"criteria\":{}}],"
+    "\"end_points\":[{\"id\":\"hq\",\"edge\":\"@A\",\"uni\":{\"id\":"
+    "\"uni-hq\",\"interface\":\"lo0\",\"ipv4\":{\"mode\":\"static\","
+    "\"prefix\":\"10.1.0.0/24\",\"provider\":[\"10.1.0.1\"]}},\"policy_map\":[{\"zone\":\"rest\","
+    "\"app\":\"all\",\"ingress\":\"open\"}]},{\"id\":\"branch\",\"edge\":"
+    "\"@J\",\"uni\":{\"id\":\"uni-br\",\"interface\":\"epair1b\",\"ipv4\":{"
+    "\"mode\":\"static\",\"prefix\":\"10.2.0.0/24\",\"provider\":["
+    "\"10.2.0.1\"]}},"
+    "\"policy_map\":[{\"zone\":\"rest\",\"app\":\"all\",\"ingress\":"
+    "\"open\"}]}]}]}";
+
+CONSOLE_TC(sdwan_jail, "SD-WAN at an edge that is a vnet jail: checked, "
+    "planned and applied there, its probes and steering its own")
+ATF_TC_BODY(sdwan_jail, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sj[40];
+	char		doc[4096], t1[4096];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(sj, sizeof(sj), "%s/gw", sa);
+	snprintf(doc, sizeof(doc), "%s", sdwan_jail_doc);
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* Not a jail's name, or no server: refused. */
+	ATF_REQUIRE(swap_in(doc, "@J", "@A/a b", t1, sizeof(t1)));
+	ATF_REQUIRE(swap_in(t1, "@A", sa, body, sizeof(body)) || true);
+	{
+		char	bad[4096], bad2[4096];
+
+		snprintf(bad, sizeof(bad), "%s", doc);
+		while (swap_in(bad, "@J", "nosuch/gw", bad2, sizeof(bad2)))
+			snprintf(bad, sizeof(bad), "%s", bad2);
+		http("PUT", "/api/sdwan", bad, &r);
+		ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "no such server "
+		    "(an edge is a server, or server/jail") != NULL, "%s", r.body);
+		resp_free(&r);
+		snprintf(bad, sizeof(bad), "%s", doc);
+		snprintf(t1, sizeof(t1), "%s/a b", sa);
+		while (swap_in(bad, "@J", t1, bad2, sizeof(bad2)))
+			snprintf(bad, sizeof(bad), "%s", bad2);
+		http("PUT", "/api/sdwan", bad, &r);
+		ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "no such server")
+		    != NULL, "%s", r.body);
+		resp_free(&r);
+	}
+	while (swap_in(doc, "@J", sj, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* The plan: a tunnel between the host and its jail, each end its
+	 * own edge, the jail's named a/gw. */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE_EQ_MSG(1, (int)ucl_array_size(ucl_object_lookup(r.json,
+	    "tunnels")), "%s", r.body);
+	ATF_CHECK_STREQ(sa, jstr(&r, "tunnels.0.ends.0.edge"));
+	ATF_CHECK_STREQ(sj, jstr(&r, "tunnels.0.ends.1.edge"));
+	/* Each edge watches its links: its UCS end points' and UNIs'. */
+	ATF_CHECK_MSG(strstr(r.body, "\"links\":[{\"interface\":\"vtnet0\","
+	    "\"id\":\"a-inet\",\"role\":\"ucs\"},{\"interface\":\"lo0\","
+	    "\"id\":\"uni-hq\",\"role\":\"uni\"}]") != NULL && strstr(r.body,
+	    "\"links\":[{\"interface\":\"vtnet0\",\"id\":\"g-inet\",\"role\":"
+	    "\"ucs\"},{\"interface\":\"epair1b\",\"id\":\"uni-br\",\"role\":"
+	    "\"uni\"}]") != NULL, "%s", r.body);
+	resp_free(&r);
+	/* Applied: the jail's jobs run in it, its probes, rules and
+	 * steering are the jail's on the agent, the host's its own. */
+	/* What the jail's edge needs is looked for in the jail, as it
+	 * sees its files: strongSwan, for the public UCS's IPsec, is not
+	 * there, though the host has it. */
+	http("POST", "/api/sdwan/apply", "{}", &r);
+	EXPECT(&r, 409);
+	ATF_CHECK_MSG(strstr(r.body, "a/gw: pkg install strongswan") != NULL &&
+	    strstr(r.body, "a: pkg install") == NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_REQUIRE(swap_in(doc, "\"tunnel\":{\"kind\":\"gre\"}",
+	    "\"tunnel\":{\"kind\":\"gre\",\"ipsec\":false}", t1, sizeof(t1)));
+	ATF_REQUIRE(swap_in(t1, "\"version\":0", "\"version\":1", doc,
+	    sizeof(doc)));
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	(void)unlink("jexec.log");
+	http("POST", "/api/sdwan/apply", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "done") == 0, "%s",
+	    r.body);
+	resp_free(&r);
+	/* Its tunnel made in it (ifconfig -j), the host's on the host. */
+	ATF_CHECK_MSG(system("grep -q '^-j 4 gre101 create' ifconfig.log && "
+	    "grep -q '^gre100 create' ifconfig.log && ! grep -q '^-j 4 gre100' "
+	    "ifconfig.log") == 0, "the jail's tunnel was not made in it");
+	ATF_CHECK_MSG(system("grep -q '^jexec 4 .*ipfw -q /var/run/arcana-sdwan-"
+	    "rules.load' jexec.log") == 0, "the jail's rules were not loaded "
+	    "by its ipfw");
+	ATF_CHECK_MSG(system("test -f sdwan-probes@gw.json && test -f "
+	    "sdwan-rules@gw.json && test -f sdwan-probes.json") == 0,
+	    "the jail's probes and rules are not its own");
+	snprintf(t1, sizeof(t1), "/api/servers/%s/sdwan", sa);
+	http("GET", t1, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"edges\":[{\"jail\":\"gw\",\"rules\":{"
+	    "\"set\":") != NULL && strstr(r.body, "\"jail\":\"gw\",\"fib\":1")
+	    != NULL, "%s", r.body);
+	resp_free(&r);
+	/* What only the host's own edge has yet (its NTP, say) is refused
+	 * at the jail's, said so. */
+	ATF_REQUIRE(swap_in(doc, "\"ucs_end_points\":[{\"id\":\"g-inet\"",
+	    "\"ntp\":[\"10.0.0.1\"],\"ucs_end_points\":[{\"id\":\"g-inet\"",
+	    t1, sizeof(t1)));
+	ATF_REQUIRE(swap_in(t1, "\"version\":1", "\"version\":2", doc,
+	    sizeof(doc)));
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/sdwan/apply", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "failed") == 0 &&
+	    strstr(r.body, "an edge that is a vnet jail has no ntp yet") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(sdwan_apply, "SD-WAN made on the edges: planned, applied, kept")
 ATF_TC_BODY(sdwan_apply, tc)
 {
@@ -6273,6 +6441,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan);
 	ATF_TP_ADD_TC(tp, sdwan_apply);
 	ATF_TP_ADD_TC(tp, sdwan_uswe);
+	ATF_TP_ADD_TC(tp, sdwan_jail);
 	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);

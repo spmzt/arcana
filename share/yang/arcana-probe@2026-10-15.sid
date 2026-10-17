@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-probe",
     "module-revision": "2026-10-15",
-    "sid-file-version": 1,
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -380,6 +380,21 @@
         "namespace": "data",
         "identifier": "/arcana-probe:probes/target/up",
         "sid": "72071"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/read/output/target/jail",
+        "sid": "72072"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/state/target/jail",
+        "sid": "72073"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-probe:probes/target/jail",
+        "sid": "72074"
       }
     ]
   }

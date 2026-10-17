@@ -405,7 +405,22 @@ conf_set(struct work *w, const char *name, const char *value,
 	pthread_mutex_lock(&conf_lock);
 	text = wcalloc(w, SYSCTL_CONF_MAX + 1, 1);
 	n = 0;
-	if ((fp = fopen(opts.sysctl_conf, "re")) != NULL) {
+	/* A jail's own sysctl.conf, beneath its root: its rc reads it as
+	 * it starts. */
+	if (w->jail != NULL) {
+		char	*j;
+		size_t	 jl;
+
+		if ((j = scope_slurp(w, "/etc/sysctl.conf", &jl)) != NULL) {
+			if (jl > SYSCTL_CONF_MAX) {
+				*errp = wfmt(w, "%s's /etc/sysctl.conf is larger "
+				    "than is edited from here", w->jail);
+				goto out;
+			}
+			memcpy(text, j, jl);
+			n = jl;
+		}
+	} else if ((fp = fopen(opts.sysctl_conf, "re")) != NULL) {
 		n = fread(text, 1, SYSCTL_CONF_MAX, fp);
 		if (!feof(fp)) {
 			fclose(fp);
@@ -445,6 +460,16 @@ conf_set(struct work *w, const char *name, const char *value,
 	if (!done)
 		len += (size_t)snprintf(out + len, cap - len, "%s=%s%s%s\n",
 		    name, quote ? "\"" : "", value, quote ? "\"" : "");
+	if (w->jail != NULL) {
+		if (scope_replace(w, "/etc/sysctl.conf", out, len, 0644, NULL) !=
+		    0) {
+			*errp = wfmt(w, "%s's /etc/sysctl.conf: %s", w->jail,
+			    strerror(errno));
+			goto out;
+		}
+		rc = 0;
+		goto out;
+	}
 	tmp = wfmt(w, "%s.arcana-new", opts.sysctl_conf);
 	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644)) ==
 	    -1 || write(fd, out, len) != (ssize_t)len || fsync(fd) == -1) {
@@ -465,6 +490,69 @@ conf_set(struct work *w, const char *name, const char *value,
 out:
 	pthread_mutex_unlock(&conf_lock);
 	return (rc);
+}
+
+/*
+ * {"values":[{"name","value"}...],"kept":[]}: a vnet jail's, under
+ * prefix, as its own sysctl(8) prints them (w is in the jail's scope,
+ * so that sysctl runs there): what its network has is its own.
+ */
+int
+do_sysctl_jail(struct work *w, const char *prefix, struct arc_sysctl_rsp *rsp)
+{
+	struct execres	 res;
+	ucl_object_t	*top, *vals, *o;
+	unsigned char	*json;
+	char		*argv[5], *text, *line, *eq;
+	size_t		 n;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	if (!sysctl_name_ok(prefix)) {
+		rsp->error = "a sysctl is named with letters, digits and "
+		    ". _ - %";
+		return (0);
+	}
+	argv[0] = (char *)(uintptr_t)opts.sysctl_bin;
+	argv[1] = (char *)(uintptr_t)"-e";
+	argv[2] = (char *)(uintptr_t)"--";
+	argv[3] = (char *)(uintptr_t)prefix;
+	argv[4] = NULL;
+	/* One it lacks is none: an empty list, as the host's has it. */
+	(void)run_exec(w, argv, &res);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	vals = ucl_object_typed_new(UCL_ARRAY);
+	text = wcalloc(w, res.outlen + 1, 1);
+	if (res.out != NULL)
+		memcpy(text, res.out, res.outlen);
+	n = 0;
+	while ((line = strsep(&text, "\n")) != NULL && n < SYSCTL_MAX) {
+		if ((eq = strchr(line, '=')) == NULL || eq == line)
+			continue;
+		*eq = '\0';
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(line), "name", 0,
+		    true);
+		ucl_object_insert_key(o, ucl_object_fromstring(eq + 1), "value",
+		    0, true);
+		ucl_array_append(vals, o);
+		n++;
+	}
+	ucl_object_insert_key(top, vals, "values", 0, false);
+	ucl_object_insert_key(top, ucl_object_typed_new(UCL_ARRAY), "kept", 0,
+	    false);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	if (json == NULL || strlen((char *)json) > ARC_MAX_JSON) {
+		free(json);
+		rsp->error = "more of the jail's state than a reply carries: "
+		    "name where in it to begin";
+		return (0);
+	}
+	rsp->json = wstrdup(w, (char *)json);
+	free(json);
+	rsp->ok = true;
+	return (0);
 }
 
 /* Set one, and with persist keep it for the next boot. */
@@ -493,8 +581,9 @@ do_sysctl_set(struct work *w, const char *name, const char *value,
 	}
 	if (!persist)
 		return (0);
-	step = step_begin(w, ARC_STEP_KIND_FILE, opts.sysctl_conf, "%s=%s",
-	    name, value);
+	step = step_begin(w, ARC_STEP_KIND_FILE, w->jail != NULL ? wfmt(w,
+	    "%s's /etc/sysctl.conf", w->jail) : opts.sysctl_conf, "%s=%s", name,
+	    value);
 	if (conf_set(w, name, value, errp) != 0) {
 		step_end(w, step, false, "%s", *errp);
 		return (-1);

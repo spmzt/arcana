@@ -76,24 +76,33 @@ yprobe_targets_from_json(const char *json, cbl_yarena *a, size_t *np,
 {
 	struct arcana_probe_probes_target	*v;
 	struct arcana_probe_probes_target_tca	*t;
-	const ucl_object_t			*e, *o;
+	const ucl_object_t			*e, *o, *list;
 	ucl_object_iter_t			 it;
 	ucl_object_t				*top;
+	const char				*jail;
 	size_t					 n = 0;
 
 	*np = 0;
 	*vp = NULL;
 	if ((top = yj_parse(json)) == NULL)
 		return (EINVAL);
-	if ((v = cbl_yarena_alloc(a, (yj_count(top) + 1) * sizeof(*v))) ==
+	/* A jail's edge's: {"jail", "targets"}, each target its. */
+	list = top;
+	jail = NULL;
+	if (ucl_object_type(top) == UCL_OBJECT) {
+		jail = yj_str(a, top, "jail");
+		list = ucl_object_lookup(top, "targets");
+	}
+	if ((v = cbl_yarena_alloc(a, (yj_count(list) + 1) * sizeof(*v))) ==
 	    NULL) {
 		ucl_object_unref(top);
 		return (ENOMEM);
 	}
-	YJ_EACH(top, it, e) {
+	YJ_EACH(list, it, e) {
 		memset(&v[n], 0, sizeof(v[n]));
 		if ((v[n].id = yj_str(a, e, "id")) == NULL)
 			continue;
+		v[n].jail = jail;
 		v[n].has_address = addr_union(a, e, "address", &v[n].address);
 		YJ_NUM(e, "fib", &v[n], fib);
 		YJ_NUM(e, "interval", &v[n], interval);
@@ -211,6 +220,7 @@ yprobe_state_from_json(const char *json, cbl_yarena *a,
 		memset(&v[k], 0, sizeof(v[k]));
 		if ((v[k].id = yj_str(a, e, "id")) == NULL)
 			continue;
+		v[k].jail = yj_str(a, e, "jail");
 		v[k].has_address = addr_union(a, e, "address", &v[k].address);
 		if ((s = yj_str(a, e, "family")) != NULL) {
 			v[k].has_family = true;

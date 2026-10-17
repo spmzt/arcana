@@ -1036,7 +1036,10 @@ paths:
             and security_ids are the Security page's forms as it saved
             them; clamav, where /var/db/clamav is, its databases (name,
             file, version, signatures, built) and whether freshclam
-            runs.
+            runs. edges, each SD-WAN edge that is a vnet jail on the
+            host: its jail, rules, steer and steered as its own ipfw has
+            them; a target of a jail's edge says its jail, and a fault
+            of one names its object id@jail.
   /api/settings/telegram-test:
     post:
       tags: [settings]
@@ -1226,6 +1229,12 @@ paths:
                 cpu: { type: integer, minimum: 0, maximum: 100 }
                 mem: { type: integer, minimum: 0, maximum: 100 }
                 swap: { type: integer, minimum: 0, maximum: 100 }
+                storage: { type: integer, minimum: 0, maximum: 100,
+                    description: "How full a file system may be, in
+                    percent: each ZFS pool (allocated of its size) and
+                    each other local one (as df has it), looked at each
+                    minute; over it an event and a storage fault.
+                    Without it, as it was." }
                 rules: { type: string, description: "The limits of one
                     interface, disk or jail each, with commas:
                     net:igb0=125000000, disk:ada0=50000000,
@@ -1371,11 +1380,16 @@ paths:
         whole tree, of which only the first values come, with total and
         truncated. One is set by a job of kind sysctl, with the name and
         the value as its two args; with persist also in sysctl.conf.
+        With jail, a vnet jail's network's as its own sysctl reads them
+        (filter then under net., each value its name and value only);
+        a job of kind sysctl with jail sets one of them there, kept in
+        the jail's own sysctl.conf.
       parameters:
         - $ref: "#/components/parameters/server"
         - name: filter
           in: query
           schema: { type: string, pattern: "^[A-Za-z0-9._%-]*$" }
+        - $ref: "#/components/parameters/jail"
       responses:
         "200":
           description: ok, data, total and truncated, or error
@@ -3164,6 +3178,7 @@ components:
             cpu: { type: integer }
             mem: { type: integer }
             swap: { type: integer }
+            storage: { type: integer }
         rules:
           type: array
           description: the limits of one interface, disk or jail each.

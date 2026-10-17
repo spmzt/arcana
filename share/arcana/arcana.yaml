@@ -1153,6 +1153,13 @@ attribute-sets:
         doc: For notify, the message.
         checks:
           max-len: 4096
+      - name: limit-storage
+        type: u32
+        doc: |
+          For history, the same for how full a file system of the host's
+          is (a ZFS pool's allocated share of its size, another local
+          one's as df(1) has it): over it, a storage fault; 0 for none.
+          Without it, as it was.
 
 
   - name: host
@@ -2414,11 +2421,15 @@ operations:
       a reply carries comes as the first, with total and truncated.
       As a dump the values come in parts, as the tree is walked and
       as fast as they are taken: each item has json, an array of the
-      next of them, and nothing is left out for size.
+      next of them, and nothing is left out for size.  With jail,
+      those of that vnet jail's network as its own sysctl(8) reads
+      them (net-filter then names where, under net.), name and value
+      each.
     do:
       request:
         attributes:
           - net-filter
+          - jail
       reply:
         attributes:
           - ok
@@ -2560,8 +2571,10 @@ operations:
       way from now on, and keeps it for its next start: an hour every
       five seconds until it is told otherwise; limit-cpu, limit-mem
       and limit-swap with them are the percentages above which an
-      event (kind threshold) is made, and limit-rules the limits of an
-      interface, a disk or a jail.  The reply has "limits", and
+      event (kind threshold) is made, limit-storage that of a file
+      system, looked at each minute, also a storage fault (Mplify 119's
+      resource faults), and limit-rules the limits of an interface, a
+      disk or a jail.  The reply has "limits", and
       "rules", each with its kind, name, limit and whether it is over.
       Each running jail is told apart as well, at most 16, in "jails":
       its share of one CPU in percent and its memory in bytes, as the
@@ -2580,6 +2593,7 @@ operations:
           - limit-mem
           - limit-swap
           - limit-rules
+          - limit-storage
       reply:
         attributes:
           - ok

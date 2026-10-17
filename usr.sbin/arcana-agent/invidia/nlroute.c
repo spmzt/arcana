@@ -878,6 +878,9 @@ watch_link(struct watched *wd, struct nlmsghdr *hdr, bool gone)
 	if (json != NULL)
 		told(wd, gone ? "link-del" : "link", json);
 	free(json);
+	/* A watched link of an SD-WAN edge: up, its link not down. */
+	probe_link(wd->jid != 0 ? wd->name : "", l.ifla_ifname, !gone &&
+	    (l.ifi_flags & IFF_UP) != 0 && l.ifla_operstate != IF_OPER_DOWN);
 }
 
 static void

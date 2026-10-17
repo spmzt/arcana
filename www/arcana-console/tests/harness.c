@@ -292,6 +292,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(chmod("fake-helper", 0755) == 0);
 	ATF_REQUIRE(mkdir("jroot", 0755) == 0 || errno == EEXIST);
 	ATF_REQUIRE(mkdir("jroot/etc", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("jroot/var", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("jroot/var/run", 0755) == 0 || errno == EEXIST);
 	put("jroot/etc/rc.conf", "hostname=\"gw\"\n");
 	put("fake-jail", "#!/bin/sh\nfor a; do [ \"$a\" = -e ] && "
 	    "exec /usr/sbin/jail \"$@\"; done\necho \"fake-jail: $*\"\n");

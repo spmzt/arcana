@@ -43,8 +43,11 @@ $JAIL {
 }
 EOF2
 	SOCK="unix:$(pwd)/s.sock"
+	# What it keeps (probes, rules, faults) in the work directory, not
+	# the host's /usr/local/etc/arcana, where the next case would find it.
 	"$JGD" -F -l "$SOCK" -f "$(pwd)/etc/jail.conf" \
-	    -D "$(pwd)/etc/jail.conf.d" ${DAEMON_ARGS:-} > daemon.out 2>&1 &
+	    -D "$(pwd)/etc/jail.conf.d" -1 "$(pwd)/history.conf" \
+	    ${DAEMON_ARGS:-} > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
 		grep -q 'ready' daemon.out 2>/dev/null && return
@@ -587,6 +590,98 @@ sdwan_probe_body()
 sdwan_probe_cleanup()
 {
 	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	# Its rule and tables, which outlive the agent, gone from the
+	# host's ipfw: only they, by their names.
+	ipfw -S show 12 2>/dev/null | grep -q 'table(swt_p_4)' && \
+	    ipfw -q delete 12
+	ipfw -q table swt_p_4 destroy 2>/dev/null
+	ipfw -q table swt_p_4_alt destroy 2>/dev/null
+	true
+}
+
+atf_test_case sdwan_jail_edge cleanup
+sdwan_jail_edge_head()
+{
+	atf_set "descr" "an SD-WAN edge that is a vnet jail, for real: its" \
+	    "loopback probed from its own network (an ICMP socket the" \
+	    "helper makes there), up, and a host's address the jail has no" \
+	    "route to, down; its own ipfw given a set and steered"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+sdwan_jail_edge_body()
+{
+	atf_check -o ignore jail -c name=arcw_sdj vnet persist path=/
+	atf_check jexec arcw_sdj ifconfig lo0 inet 127.0.0.1/8 up
+	start_daemon
+	# 127.0.0.1 in the jail's network; 192.0.2.66 is on no route of it.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '{"jail":"arcw_sdj","targets":[{"id":"jlo","address":"127.0.0.1","interval":50,"eval":300,"down":2,"up":2,"timeout":200},{"id":"jvoid","address":"192.0.2.66","interval":50,"eval":300,"down":2,"timeout":100}]}'
+	sleep 2
+	atf_check -o match:'"id":"jlo","address":"127.0.0.1","family":"inet","jail":"arcw_sdj","fib":0,"state":"up"' \
+	    -o match:'"id":"jvoid","address":"192.0.2.66","family":"inet","jail":"arcw_sdj","fib":0,"state":"(down|error)"' \
+	    "$JGC" -c "$SOCK" sdwan
+	# Its own ipfw, where the kernel has one.
+	if jexec arcw_sdj ipfw show >/dev/null 2>&1; then
+		atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+		    '{"jail":"arcw_sdj","set":30,"tables":[{"name":"sj_p4","valtype":"ipv4","entries":[]}],"rules":["00500 count ip from any to table(sj_p4)"]}'
+		atf_check -o match:'^00500 .*count ip from any to table\(sj_p4\)' \
+		    jexec arcw_sdj ipfw show 500
+		atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
+		    '{"jail":"arcw_sdj","entries":[{"table":"sj_p4","prefix":"10.20.0.0/24","candidates":[{"id":"jvoid","via":"100.64.0.9"},{"id":"jlo","via":"100.64.0.1"}]}]}'
+		atf_check -o match:'10.20.0.0/24 100.64.0.1' \
+		    jexec arcw_sdj ipfw table sj_p4 list
+		# The host's ipfw has none of it.
+		atf_check -s not-exit:0 -e ignore -o ignore ipfw table sj_p4 list
+		atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+		    '{"jail":"arcw_sdj","set":30,"tables":[],"rules":[]}'
+	fi
+	atf_check -o match:'"kind":"sdwan-tunnel","data":\{"id":"jlo","address":"127.0.0.1","state":"up","misses":0,"jail":"arcw_sdj"\}' \
+	    "$JGC" -c "$SOCK" events
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '{"jail":"arcw_sdj","targets":[]}'
+}
+sdwan_jail_edge_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	sleep 0.5
+	jail -r arcw_sdj 2>/dev/null
+	true
+}
+
+atf_test_case sdwan_links cleanup
+sdwan_links_head()
+{
+	atf_set "descr" "an SD-WAN edge's links watched for real: an epair's" \
+	    "end down is an interface fault, up again cleared, as netlink" \
+	    "tells the agent"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+sdwan_links_body()
+{
+	ep=$(ifconfig epair create) || atf_skip "no epair(4)"
+	echo "$ep" > epair.name
+	start_daemon
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    "{\"targets\":[],\"links\":[{\"interface\":\"$ep\",\"id\":\"uni-lab\",\"role\":\"uni\"}]}"
+	# Made down: a fault at once.
+	atf_check -o match:'"type":"interface","severity":"Major","was":"Major","object":"uni-lab","by":"link",[^}]*"cleared":false' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check ifconfig "$ep" up
+	atf_check ifconfig "${ep%a}b" up
+	sleep 1
+	atf_check -o match:'"object":"uni-lab","by":"link","description":"the UNI uni-lab has its link on '"$ep"' again","cleared":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check ifconfig "$ep" down
+	sleep 1
+	atf_check -o match:'"object":"uni-lab","by":"link","description":"the UNI uni-lab has no link on '"$ep"'","cleared":false' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '{"targets":[],"links":[]}'
+}
+sdwan_links_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	[ -f epair.name ] && ifconfig "$(cat epair.name)" destroy 2>/dev/null
 	true
 }
 
@@ -1883,6 +1978,8 @@ atf_init_test_cases()
 	atf_add_test_case path_check
 	atf_add_test_case crash_event
 	atf_add_test_case sdwan_probe
+	atf_add_test_case sdwan_jail_edge
+	atf_add_test_case sdwan_links
 	atf_add_test_case sdwan_record
 	atf_add_test_case jail_make
 	atf_add_test_case zfs_key

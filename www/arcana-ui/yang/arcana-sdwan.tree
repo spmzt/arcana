@@ -10,15 +10,17 @@ module: arcana-sdwan
      |  |     +--rw value?    string
      |  +--rw object*   string
      |  +--rw rule* [number]
-     |     +--rw number    arcfw:rule-number
-     |     +--rw text?     string
+     |  |  +--rw number    arcfw:rule-number
+     |  |  +--rw text?     string
+     |  +--rw jail?     string
      +--rw steer
      |  +--rw entry* [table prefix]
-     |     +--rw table     string
-     |     +--rw prefix    string
-     |     +--rw candidate* [id]
-     |        +--rw id     string
-     |        +--rw via?   inet:ip-address-no-zone
+     |  |  +--rw table     string
+     |  |  +--rw prefix    string
+     |  |  +--rw candidate* [id]
+     |  |     +--rw id     string
+     |  |     +--rw via?   inet:ip-address-no-zone
+     |  +--rw jail?   string
      +--rw bird-instance* [name]
      |  +--rw name    string
      |  +--rw fib?    uint16
@@ -65,6 +67,29 @@ module: arcana-sdwan
         |     +--ro id       string
         |     +--ro via?     inet:ip-address-no-zone
         |     +--ro state?   enumeration
+        +--ro edge* [jail]
+        |  +--ro jail       string
+        |  +--ro rules
+        |  |  +--ro set?       uint8
+        |  |  +--ro rules?     uint32
+        |  |  +--ro objects?   uint32
+        |  |  +--ro table* [name]
+        |  |  |  +--ro name     string
+        |  |  |  +--ro count?   uint32
+        |  |  +--ro counter* [rule]
+        |  |     +--ro rule       arcfw:rule-number
+        |  |     +--ro packets?   uint64
+        |  |     +--ro octets?    uint64
+        |  |     +--ro text?      string
+        |  +--ro steered?   boolean
+        |  +--ro steer* [table prefix]
+        |     +--ro table     string
+        |     +--ro prefix    string
+        |     +--ro chosen?   int32
+        |     +--ro candidate* [id]
+        |        +--ro id       string
+        |        +--ro via?     inet:ip-address-no-zone
+        |        +--ro state?   enumeration
         +--ro bird* [name]
         |  +--ro name       string
         |  +--ro fib?       uint16

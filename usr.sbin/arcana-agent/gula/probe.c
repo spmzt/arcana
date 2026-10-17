@@ -14,8 +14,12 @@
  * least and the most.  So many misses in a row and the target is down,
  * so many answers and it is up again, each an event (sdwan-tunnel).
  *
- * The targets come from the console (sdwan-probes, a JSON array), and
- * are kept in a file beside history.conf for the next start.  Each
+ * The targets come from the console (sdwan-probes): a JSON array, the
+ * host's own, or {"jail": "j", "targets": [...]}, those of an edge that
+ * is the vnet jail j, probed from its network.  Each edge's list
+ * replaces its own only, and is kept in a file of its own beside
+ * history.conf (sdwan-probes.json, sdwan-probes@j.json) for the next
+ * start.  Each
  * says its id and address, and may say its fib, interval (ms), size
  * (bytes), count (0: without end), dscp, down and up (misses and
  * answers), timeout (ms), eval (ms), history (samples kept) and report.
@@ -27,13 +31,17 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
 #include <netinet/icmp6.h>
 #include <arpa/inet.h>
 
+#include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <jail.h>
 #include <poll.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -66,6 +74,7 @@ struct sample {
 struct target {
 	char			 id[128];
 	char			 address[64];
+	char			 jail[64];	/* its network's; "" the host's */
 	int			 af;
 	struct sockaddr_storage	 sa;
 	int			 fib, interval, size, count, dscp, down, up;
@@ -100,6 +109,27 @@ struct target {
 static pthread_mutex_t	 lock = PTHREAD_MUTEX_INITIALIZER;
 static struct target	*targets;
 static int		 ntargets;
+
+/*
+ * The links an edge watches (Mplify 119's interface faults): its UCS
+ * end points' and UNIs' interfaces, each a fault while it has no link
+ * (down, or its carrier gone), told by the console beside the targets
+ * ("links": [{"interface", "id", "role"}]).
+ */
+#define	LINKS_MAX	128
+struct link {
+	char	jail[64];	/* the edge's; "" the host's */
+	char	ifname[IFNAMSIZ];
+	char	id[96];		/* the UNI's or UCS end point's */
+	char	role[8];	/* uni, ucs */
+	int	state;		/* -1 not known, 0 down, 1 up */
+};
+static struct link	 links[LINKS_MAX];
+static int		 nlinks;
+
+static int	links_set(struct work *, const char *, const char *,
+		    const char **);
+static bool	has_links(const char *);
 static bool		 started;
 static bool		 changed;	/* a state did, since the steering looked */
 
@@ -112,16 +142,22 @@ now_s(void)
 	return ((double)ts.tv_sec + (double)ts.tv_nsec / 1e9);
 }
 
+/* The file of an edge's targets: the host's, or jail's. */
 static const char *
-conf_path(char *buf, size_t len)
+conf_path(char *buf, size_t len, const char *jail)
 {
 	const char	*slash;
+	char		 base[128];
 
+	if (jail != NULL && jail[0] != '\0')
+		snprintf(base, sizeof(base), "sdwan-probes@%s.json", jail);
+	else
+		snprintf(base, sizeof(base), "%s", PROBE_FILE);
 	if ((slash = strrchr(opts.history_conf, '/')) != NULL)
 		snprintf(buf, len, "%.*s/%s", (int)(slash - opts.history_conf),
-		    opts.history_conf, PROBE_FILE);
+		    opts.history_conf, base);
 	else
-		snprintf(buf, len, "%s", PROBE_FILE);
+		snprintf(buf, len, "%s", base);
 	return (buf);
 }
 
@@ -166,11 +202,26 @@ cksum(const void *p, size_t len)
 static bool
 target_open(struct target *t)
 {
-	int	v;
+	int	v, jid;
 
-	t->sock = socket(t->af, SOCK_RAW | SOCK_CLOEXEC | SOCK_NONBLOCK,
-	    t->af == AF_INET ? IPPROTO_ICMP : IPPROTO_ICMPV6);
-	if (t->sock == -1) {
+	if (t->jail[0] != '\0') {
+		/* A jail's: its socket made in its network by the helper,
+		 * so that its routing tables carry the probes. */
+		if ((jid = jail_getid(t->jail)) < 0) {
+			snprintf(t->error, sizeof(t->error), "jail %s is not "
+			    "running", t->jail);
+			return (false);
+		}
+		if ((t->sock = helper_icmp_socket(jid, t->af)) == -1) {
+			snprintf(t->error, sizeof(t->error), "no socket in jail "
+			    "%s (probing needs root)", t->jail);
+			return (false);
+		}
+		(void)fcntl(t->sock, F_SETFL, fcntl(t->sock, F_GETFL) |
+		    O_NONBLOCK);
+	} else if ((t->sock = socket(t->af, SOCK_RAW | SOCK_CLOEXEC |
+	    SOCK_NONBLOCK, t->af == AF_INET ? IPPROTO_ICMP :
+	    IPPROTO_ICMPV6)) == -1) {
 		snprintf(t->error, sizeof(t->error), "socket: %s%s",
 		    strerror(errno), errno == EPERM || errno == EACCES ?
 		    " (probing needs root)" : "");
@@ -202,6 +253,19 @@ target_open(struct target *t)
 	return (true);
 }
 
+/* Its name in faults and the log: its id, and id@jail at a jail's
+ * edge, so that both ends of a tunnel on one host are told apart. */
+static const char *
+target_name(const struct target *t, char *buf, size_t len)
+{
+
+	if (t->jail[0] != '\0')
+		snprintf(buf, len, "%s@%s", t->id, t->jail);
+	else
+		snprintf(buf, len, "%s", t->id);
+	return (buf);
+}
+
 static void
 state_set(struct target *t, int state)
 {
@@ -222,16 +286,19 @@ state_set(struct target *t, int state)
 		*p++ = t->id[i];
 	}
 	*p = '\0';
+	/* A jail's: said, its name a jail's (letters, digits, - _ .). */
 	event_add("sdwan-tunnel", "{\"id\":\"%s\",\"address\":\"%s\",\"state\":"
-	    "\"%s\",\"misses\":%d}", id, t->address, state_names[state],
-	    t->misses);
+	    "\"%s\",\"misses\":%d%s%s%s}", id, t->address, state_names[state],
+	    t->misses, t->jail[0] != '\0' ? ",\"jail\":\"" : "", t->jail,
+	    t->jail[0] != '\0' ? "\"" : "");
 	logmsg(state == ST_UP ? LOG_NOTICE : LOG_WARNING, "sdwan: %s (%s) is "
-	    "%s", t->id, t->address, state_names[state]);
+	    "%s", target_name(t, id, sizeof(id)), t->address,
+	    state_names[state]);
 	if (state == ST_DOWN)
-		fault_set("tunnel", "Major", t->id, "probe", "no answer from %s "
+		fault_set("tunnel", "Major", id, "probe", "no answer from %s "
 		    "after %d probes", t->address, t->misses);
 	else
-		fault_clear("tunnel", t->id, "%s answers again", t->address);
+		fault_clear("tunnel", id, "%s answers again", t->address);
 }
 
 /* The sample against the thresholds: an alert set or cleared. */
@@ -241,7 +308,7 @@ tca_check(struct target *t, const struct sample *s)
 	static const char *const names[] = { "delay", "ipdv", "loss" };
 	static const char *const units[] = { " ms", " ms", "" };
 	double		v[3];
-	char		obj[160];
+	char		obj[260], name[200];
 	int		i;
 
 	v[0] = s->delay;
@@ -250,7 +317,8 @@ tca_check(struct target *t, const struct sample *s)
 	for (i = 0; i < 3; i++) {
 		if (t->tca[i] <= 0)
 			continue;
-		snprintf(obj, sizeof(obj), "%s/%s", t->id, names[i]);
+		snprintf(obj, sizeof(obj), "%s/%s", target_name(t, name,
+		    sizeof(name)), names[i]);
 		if (v[i] > t->tca[i]) {
 			t->tca_under[i] = 0;
 			if (!t->tca_on[i] && ++t->tca_over[i] >= t->damping) {
@@ -561,7 +629,7 @@ num(const ucl_object_t *o, const char *key, int64_t dflt, int64_t lo,
  */
 static int
 targets_parse(struct work *w, const char *json, struct target *new,
-    const char **errp)
+    char *jail, size_t jlen, const char **errp)
 {
 	struct ucl_parser	*p;
 	ucl_object_t		*top;
@@ -570,6 +638,7 @@ targets_parse(struct work *w, const char *json, struct target *new,
 	struct target		*t;
 	struct sockaddr_in	*s4;
 	struct sockaddr_in6	*s6;
+	const ucl_object_t	*list;
 	const char		*id, *addr, *bad;
 	int			 n, k;
 
@@ -578,15 +647,32 @@ targets_parse(struct work *w, const char *json, struct target *new,
 	top = ucl_parser_add_string(p, json, 0) ? ucl_parser_get_object(p) :
 	    NULL;
 	ucl_parser_free(p);
-	if (top == NULL || ucl_object_type(top) != UCL_ARRAY) {
+	/* An edge that is a vnet jail: {"jail", "targets"}. */
+	jail[0] = '\0';
+	list = top;
+	if (top != NULL && ucl_object_type(top) == UCL_OBJECT) {
+		/* {"targets", "links"}, a jail's with "jail". */
+		if ((v = ucl_object_lookup(top, "jail")) != NULL && (ucl_object_type(
+		    v) != UCL_STRING || !valid_jail(ucl_object_tostring(v)) ||
+		    strlen(ucl_object_tostring(v)) >= jlen)) {
+			ucl_object_unref(top);
+			*errp = "invalid jail name";
+			return (-1);
+		}
+		if (v != NULL)
+			snprintf(jail, jlen, "%s", ucl_object_tostring(v));
+		list = ucl_object_lookup(top, "targets");
+	}
+	if (list == NULL || ucl_object_type(list) != UCL_ARRAY) {
 		if (top != NULL)
 			ucl_object_unref(top);
-		*errp = "the targets are a JSON array";
+		*errp = "the targets are a JSON array, or an object with them "
+		    "as targets (and links, jail)";
 		return (-1);
 	}
 	n = 0;
 	it = NULL;
-	while ((o = ucl_object_iterate(top, &it, true)) != NULL) {
+	while ((o = ucl_object_iterate(list, &it, true)) != NULL) {
 		if (n == TARGETS_MAX) {
 			*errp = wfmt(w, "%d targets at most", TARGETS_MAX);
 			goto bad;
@@ -611,6 +697,8 @@ targets_parse(struct work *w, const char *json, struct target *new,
 			}
 		snprintf(t->id, sizeof(t->id), "%s", id);
 		snprintf(t->address, sizeof(t->address), "%s", addr);
+		/* At an edge that is a vnet jail: probed from its network. */
+		snprintf(t->jail, sizeof(t->jail), "%s", jail);
 		s4 = (struct sockaddr_in *)&t->sa;
 		s6 = (struct sockaddr_in6 *)&t->sa;
 		if (inet_pton(AF_INET, addr, &s4->sin_addr) == 1) {
@@ -672,25 +760,37 @@ bad:
 }
 
 /*
- * The new targets in the old ones' place: one that is the same target
- * (address, fib, dscp, size) keeps its socket, state and samples.
+ * The new targets in the place of the old ones of their edge (jail, ""
+ * the host): one that is the same target (address, fib, dscp, size)
+ * keeps its socket, state and samples; the other edges' stay as they
+ * are, after them.  False, with nothing changed, when all of them are
+ * more than TARGETS_MAX (new has room for that many).
  */
-static void
-targets_swap(struct target *new, int n)
+static bool
+targets_swap(struct target *new, int n, const char *jail)
 {
 	struct target	*old, *t, *o;
-	int		 nold, i, k;
+	int		 nold, i, k, total;
 	double		 now;
 
 	pthread_mutex_lock(&lock);
 	old = targets;
 	nold = ntargets;
+	total = n;
+	for (k = 0; k < nold; k++)
+		if (strcmp(old[k].jail, jail) != 0)
+			total++;
+	if (total > TARGETS_MAX) {
+		pthread_mutex_unlock(&lock);
+		return (false);
+	}
 	now = now_s();
 	for (i = 0; i < n; i++) {
 		t = &new[i];
 		for (k = 0; k < nold; k++) {
 			o = &old[k];
-			if (o->id[0] != '\0' && strcmp(o->id, t->id) == 0 &&
+			if (o->id[0] != '\0' && strcmp(o->jail, jail) == 0 &&
+			    strcmp(o->id, t->id) == 0 &&
 			    strcmp(o->address, t->address) == 0 && o->fib ==
 			    t->fib && o->dscp == t->dscp && o->size == t->size)
 				break;
@@ -732,21 +832,29 @@ targets_swap(struct target *new, int n)
 		t->next_send = now;
 		t->state = target_open(t) ? ST_UNKNOWN : ST_ERROR;
 	}
+	/* The other edges', moved over as they are. */
+	for (k = 0; k < nold; k++)
+		if (strcmp(old[k].jail, jail) != 0) {
+			new[n++] = old[k];
+			memset(&old[k], 0, sizeof(old[k]));
+			old[k].sock = -1;
+		}
 	targets = new;
 	ntargets = n;
 	for (k = 0; k < nold; k++)
 		target_free(&old[k]);
 	free(old);
 	pthread_mutex_unlock(&lock);
+	return (true);
 }
 
 static int
-conf_write(const char *json, const char **errp)
+conf_write(const char *json, const char *jail, const char **errp)
 {
 	char	path[MAXPATHLEN], tmp[MAXPATHLEN];
 	FILE	*fp;
 
-	conf_path(path, sizeof(path));
+	conf_path(path, sizeof(path), jail);
 	/* Its directory, where the host has none yet. */
 	if (strrchr(path, '/') != NULL) {
 		snprintf(tmp, sizeof(tmp), "%.*s", (int)(strrchr(path, '/') -
@@ -772,66 +880,282 @@ do_probes_set(struct work *w, const char *json, const char **errp)
 	struct target	*new;
 	int		 n, step;
 	const char	*e;
-	char		 path[MAXPATHLEN];
+	char		 path[MAXPATHLEN], jail[64];
 
 	if ((new = calloc(TARGETS_MAX, sizeof(*new))) == NULL) {
 		*errp = strerror(errno);
 		return (-1);
 	}
-	if ((n = targets_parse(w, json, new, errp)) < 0) {
+	if ((n = targets_parse(w, json, new, jail, sizeof(jail), errp)) < 0) {
 		free(new);
 		return (-1);
 	}
+	if (!targets_swap(new, n, jail)) {
+		*errp = wfmt(w, "%d targets at most, all edges' together",
+		    TARGETS_MAX);
+		for (n--; n >= 0; n--)
+			target_free(&new[n]);
+		free(new);
+		return (-1);
+	}
+	if (links_set(w, json, jail, errp) != 0)
+		return (-1);
 	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", conf_path(path,
-	    sizeof(path)));
+	    sizeof(path), jail));
 	e = NULL;
-	if (conf_write(json, &e) != 0) {
+	/* None left: no file, so that a start makes no edge of it. */
+	if (n == 0 && jail[0] != '\0' && !has_links(json) ? unlink(path) ==
+	    -1 && errno != ENOENT &&
+	    (e = strerror(errno)) != NULL : conf_write(json, jail, &e) != 0) {
 		step_end(w, step, false, "%s", e);
 		*errp = wfmt(w, "%s: %s", path, e);
-		free(new);
 		return (-1);
 	}
 	step_end(w, step, true, "%d target%s", n, n == 1 ? "" : "s");
-	targets_swap(new, n);
 	return (0);
+}
+
+/* Does the payload watch any link? */
+static bool
+has_links(const char *json)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*top;
+	bool			 yes;
+
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	top = ucl_parser_add_string(p, json, 0) ? ucl_parser_get_object(p) :
+	    NULL;
+	ucl_parser_free(p);
+	yes = top != NULL && ucl_object_type(top) == UCL_OBJECT &&
+	    ucl_array_size(ucl_object_lookup(top, "links")) > 0;
+	if (top != NULL)
+		ucl_object_unref(top);
+	return (yes);
+}
+
+/* An edge's kept targets, probed again. */
+static void
+start_file(const char *path)
+{
+	struct work	 w;
+	struct target	*new;
+	const char	*e;
+	char		*json, jail[64];
+	FILE		*fp;
+	long		 len;
+	int		 n;
+
+	if ((fp = fopen(path, "re")) == NULL)
+		return;
+	if (fseek(fp, 0, SEEK_END) == 0 && (len = ftell(fp)) > 0 &&
+	    len < 4 * 1024 * 1024 && (json = malloc((size_t)len + 1)) != NULL) {
+		rewind(fp);
+		json[fread(json, 1, (size_t)len, fp)] = '\0';
+		work_init(&w);
+		new = calloc(TARGETS_MAX, sizeof(*new));
+		e = NULL;
+		if (new != NULL && (n = targets_parse(&w, json, new, jail,
+		    sizeof(jail), &e)) >= 0) {
+			if (!targets_swap(new, n, jail)) {
+				logmsg(LOG_WARNING, "%s: more than %d targets",
+				    path, TARGETS_MAX);
+				free(new);
+			} else if (links_set(&w, json, jail, &e) != 0)
+				logmsg(LOG_WARNING, "%s: %s", path, e);
+		} else {
+			logmsg(LOG_WARNING, "%s: %s", path, e != NULL ? e :
+			    "not read");
+			free(new);
+		}
+		work_free(&w);
+		free(json);
+	}
+	fclose(fp);
+}
+
+/* A link's fault object: its id, id@jail at a jail's edge. */
+static const char *
+link_name(const struct link *l, char *buf, size_t len)
+{
+
+	if (l->jail[0] != '\0')
+		snprintf(buf, len, "%s@%s", l->id, l->jail);
+	else
+		snprintf(buf, len, "%s", l->id);
+	return (buf);
+}
+
+/* A link's state as now seen: a fault when it goes, cleared when back. */
+static void
+link_state(struct link *l, int up)
+{
+	char	obj[200];
+
+	if (l->state == up)
+		return;
+	l->state = up;
+	if (up == 0)
+		fault_set("interface", "Major", link_name(l, obj, sizeof(obj)),
+		    "link", "the %s %s has no link on %s", strcmp(l->role,
+		    "uni") == 0 ? "UNI" : "UCS end point", l->id, l->ifname);
+	else
+		fault_clear("interface", link_name(l, obj, sizeof(obj)),
+		    "the %s %s has its link on %s again", strcmp(l->role, "uni")
+		    == 0 ? "UNI" : "UCS end point", l->id, l->ifname);
+}
+
+/*
+ * An edge's links from its payload, in place of those it had; each
+ * looked at now (later the interface's own changes tell).  A link no
+ * longer watched has its fault cleared.  -1 and why when bad.
+ */
+static int
+links_set(struct work *w, const char *json, const char *jail,
+    const char **errp)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*top;
+	const ucl_object_t	*o, *v;
+	ucl_object_iter_t	 it;
+	struct link		 nl[LINKS_MAX], *l;
+	struct work		 jw;
+	char			 obj[200];
+	const char		*s, *e;
+	int			 n, k, i;
+	bool			 ok;
+
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	top = ucl_parser_add_string(p, json, 0) ? ucl_parser_get_object(p) :
+	    NULL;
+	ucl_parser_free(p);
+	n = 0;
+	it = NULL;
+	while (top != NULL && ucl_object_type(top) == UCL_OBJECT && (o =
+	    ucl_object_iterate(ucl_object_lookup(top, "links"), &it, true)) !=
+	    NULL) {
+		if (n == LINKS_MAX) {
+			*errp = wfmt(w, "%d links at most", LINKS_MAX);
+			ucl_object_unref(top);
+			return (-1);
+		}
+		l = &nl[n];
+		memset(l, 0, sizeof(*l));
+		l->state = -1;
+		snprintf(l->jail, sizeof(l->jail), "%s", jail);
+		if ((v = ucl_object_lookup(o, "interface")) == NULL ||
+		    ucl_object_type(v) != UCL_STRING || (s =
+		    ucl_object_tostring(v))[0] == '\0' || strlen(s) >=
+		    sizeof(l->ifname) || !valid_ifname(s) || (v =
+		    ucl_object_lookup(o, "id")) == NULL || ucl_object_type(v) !=
+		    UCL_STRING || ucl_object_tostring(v)[0] == '\0' ||
+		    strlen(ucl_object_tostring(v)) >= sizeof(l->id)) {
+			*errp = "each link has an interface and an id";
+			ucl_object_unref(top);
+			return (-1);
+		}
+		snprintf(l->ifname, sizeof(l->ifname), "%s", s);
+		snprintf(l->id, sizeof(l->id), "%s", ucl_object_tostring(v));
+		v = ucl_object_lookup(o, "role");
+		snprintf(l->role, sizeof(l->role), "%s", v != NULL &&
+		    ucl_object_type(v) == UCL_STRING && strcmp(
+		    ucl_object_tostring(v), "uni") == 0 ? "uni" : "ucs");
+		n++;
+	}
+	if (top != NULL)
+		ucl_object_unref(top);
+	/* Each as it is now, where the edge is. */
+	work_init(&jw);
+	e = NULL;
+	if (jail[0] != '\0' && scope_enter(&jw, jail, &e) != 0)
+		jw.jail = NULL;
+	for (i = 0; i < n; i++)
+		if (jail[0] == '\0' || jw.jail != NULL)
+			nl[i].state = if_link(&jw, nl[i].ifname, &ok) ? ok :
+			    0;
+	work_free(&jw);
+	pthread_mutex_lock(&lock);
+	/* Those of the edge no longer watched: their faults cleared. */
+	for (k = 0; k < nlinks; k++) {
+		if (strcmp(links[k].jail, jail) != 0)
+			continue;
+		for (i = 0; i < n; i++)
+			if (strcmp(nl[i].id, links[k].id) == 0 && strcmp(
+			    nl[i].ifname, links[k].ifname) == 0)
+				break;
+		if (i == n && links[k].state == 0)
+			fault_clear("interface", link_name(&links[k], obj,
+			    sizeof(obj)), "%s is watched no more",
+			    links[k].ifname);
+	}
+	/* The others' kept, the edge's new after them. */
+	for (i = k = 0; k < nlinks; k++)
+		if (strcmp(links[k].jail, jail) != 0)
+			links[i++] = links[k];
+	if (i + n > LINKS_MAX) {
+		pthread_mutex_unlock(&lock);
+		*errp = wfmt(w, "%d links at most, all edges' together",
+		    LINKS_MAX);
+		return (-1);
+	}
+	for (k = 0; k < n; k++) {
+		int	st = nl[k].state;
+
+		links[i] = nl[k];
+		links[i].state = -1;
+		/* Not known (no such interface yet): down until it is. */
+		link_state(&links[i], st == 1 ? 1 : 0);
+		i++;
+	}
+	nlinks = i;
+	pthread_mutex_unlock(&lock);
+	return (0);
+}
+
+/*
+ * An interface's link as the kernel tells it changed (netlink, on the
+ * host's or a jail's network): a watched link's fault set or cleared.
+ */
+void
+probe_link(const char *jail, const char *ifname, bool ok)
+{
+	int	k;
+
+	pthread_mutex_lock(&lock);
+	for (k = 0; k < nlinks; k++)
+		if (strcmp(links[k].jail, jail != NULL ? jail : "") == 0 &&
+		    strcmp(links[k].ifname, ifname) == 0)
+			link_state(&links[k], ok ? 1 : 0);
+	pthread_mutex_unlock(&lock);
 }
 
 /* At the start: the targets kept, probed; the thread. */
 void
 probe_start(void)
 {
-	struct work	 w;
-	struct target	*new;
+	struct dirent	*de;
+	DIR		*d;
 	pthread_t	 tid;
-	const char	*e;
-	char		 path[MAXPATHLEN], *json;
-	FILE		*fp;
-	long		 len;
-	int		 n;
+	char		 path[MAXPATHLEN], *slash;
 
 	started = true;
-	conf_path(path, sizeof(path));
-	if ((fp = fopen(path, "re")) != NULL) {
-		if (fseek(fp, 0, SEEK_END) == 0 && (len = ftell(fp)) > 0 &&
-		    len < 4 * 1024 * 1024 && (json = malloc((size_t)len + 1)) !=
-		    NULL) {
-			rewind(fp);
-			json[fread(json, 1, (size_t)len, fp)] = '\0';
-			work_init(&w);
-			new = calloc(TARGETS_MAX, sizeof(*new));
-			e = NULL;
-			if (new != NULL && (n = targets_parse(&w, json, new,
-			    &e)) >= 0)
-				targets_swap(new, n);
-			else {
-				logmsg(LOG_WARNING, "%s: %s", path, e != NULL ?
-				    e : "not read");
-				free(new);
+	/* The host's, and each jail's beside it. */
+	start_file(conf_path(path, sizeof(path), NULL));
+	if ((slash = strrchr(path, '/')) != NULL)
+		*slash = '\0';
+	else
+		snprintf(path, sizeof(path), ".");
+	if ((d = opendir(path)) != NULL) {
+		char	f[MAXPATHLEN];
+
+		while ((de = readdir(d)) != NULL)
+			if (strncmp(de->d_name, "sdwan-probes@", 13) == 0) {
+				snprintf(f, sizeof(f), "%s/%s", path, de->d_name);
+				start_file(f);
 			}
-			work_free(&w);
-			free(json);
-		}
-		fclose(fp);
+		closedir(d);
 	}
 	if (pthread_create(&tid, NULL, prober, NULL) == 0)
 		(void)pthread_detach(tid);
@@ -839,16 +1163,18 @@ probe_start(void)
 		logmsg(LOG_ERR, "sdwan probes: no thread: %s", strerror(errno));
 }
 
-/* A target's state by its id; PROBE_NONE when it is none. */
+/* A target's state by its edge (jail, "" the host) and id; PROBE_NONE
+ * when it is none. */
 int
-probe_state_of(const char *id)
+probe_state_of(const char *jail, const char *id)
 {
 	int	i, st;
 
 	st = PROBE_NONE;
 	pthread_mutex_lock(&lock);
 	for (i = 0; i < ntargets; i++)
-		if (strcmp(targets[i].id, id) == 0) {
+		if (strcmp(targets[i].jail, jail) == 0 && strcmp(targets[i].id,
+		    id) == 0) {
 			st = targets[i].state;
 			break;
 		}
@@ -881,6 +1207,9 @@ do_sdwan(struct work *w, uint64_t after, struct arc_sdwan_rsp *rsp)
 		    "address", 0, false);
 		ucl_object_insert_key(o, ucl_object_fromstring(t->af == AF_INET ?
 		    "inet" : "inet6"), "family", 0, false);
+		if (t->jail[0] != '\0')
+			ucl_object_insert_key(o, ucl_object_fromstring(t->jail),
+			    "jail", 0, false);
 		ucl_object_insert_key(o, ucl_object_fromint(t->fib), "fib", 0,
 		    false);
 		ucl_object_insert_key(o, ucl_object_fromstring(state_names[

@@ -223,6 +223,13 @@ module arcana-probe {
             "Intervals in a row over it before the fault.";
         }
       }
+      leaf jail {
+        type string;
+        description
+          "The edge that is this vnet jail probes it, from its network;
+           none, the host itself.  The targets of an edge are set
+           together, a jail's apart from the host's and each other's.";
+      }
     }
     container state {
       config false;
@@ -239,9 +246,9 @@ module arcana-probe {
           "When read.";
       }
       list target {
-        key "id";
         description
-          "Each target as it is.";
+          "Each target as it is: the host's, and each jail's edge's,
+           whose ids may be the same (both ends of a tunnel).";
         leaf id {
           type string;
           description
@@ -397,6 +404,11 @@ module arcana-probe {
             "The samples kept, oldest first.";
           uses sample;
         }
+        leaf jail {
+          type string;
+          description
+            "The jail whose edge probes it; none, the host.";
+        }
       }
     }
     action read {
@@ -412,9 +424,9 @@ module arcana-probe {
       }
       output {
         list target {
-          key "id";
           description
-            "Each target's samples after the time.";
+            "Each target's samples after the time; a jail's edge's may
+             have the same id as the host's.";
           leaf id {
             type string;
             description
@@ -425,6 +437,11 @@ module arcana-probe {
             description
               "The samples, oldest first.";
             uses sample;
+          }
+          leaf jail {
+            type string;
+            description
+              "The jail whose edge probes it; none, the host.";
           }
         }
       }

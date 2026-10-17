@@ -4882,6 +4882,9 @@ part_flows(void)
 	    "sd-effects[open]')?.textContent.includes('net.inet.ip."
 	    "forwarding')", 5);
 	shot("9-sdwan-guide-edge");
+	/* A vnet jail on the host may be the edge instead: its name. */
+	ATF_CHECK(js_true("document.querySelector('form[data-form=sd-edge] "
+	    "input[name=jail]')?.value === ''"));
 	run("document.querySelector('form[data-form=sd-edge]')."
 	    "requestSubmit();");
 	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."

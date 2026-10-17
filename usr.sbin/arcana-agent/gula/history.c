@@ -30,6 +30,7 @@
 
 #include <sys/param.h>
 #include <sys/jail.h>
+#include <sys/mount.h>
 #include <sys/rctl.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
@@ -74,6 +75,7 @@ struct dev {
 };
 
 static void	thresholds(const float *);
+static void	storage_fullness(void);
 static void	thin(void);
 static void	rules_check(const float *);
 
@@ -95,8 +97,21 @@ static pthread_cond_t	hist_wake = PTHREAD_COND_INITIALIZER;
 static unsigned int	hist_step = HIST_STEP;
 static unsigned int	hist_keep = HIST_KEEP;
 /* Above which an event is made: cpu, mem, swap in percent; 0 none. */
-static unsigned int	limits[3] = { 90, 90, 50 };
+static unsigned int	limits[4] = { 90, 90, 50, 90 };	/* + storage */
 static bool		over[3];
+
+/*
+ * The file systems over the storage limit: a ZFS pool by its name, any
+ * other local one by where it is mounted.  Looked at each minute.
+ */
+#define	STORAGE_EVERY	60
+#define	STORAGE_MAX	64
+static struct {
+	char	name[MNAMELEN];
+	bool	seen;
+}			storage_over[STORAGE_MAX];
+static int		nstorage_over;
+static time_t		storage_at;
 static time_t		saved;		/* when the samples were last written */
 #define	HIST_SAVE_EVERY	300
 static double		*times;		/* hist_keep of them, when any */
@@ -445,6 +460,9 @@ look(void)
 	pthread_mutex_unlock(&hist_lock);
 	if (ifa0 != NULL)
 		freeifaddrs(ifa0);
+	/* Out of the lock: it may run zpool(8). */
+	if (!first)
+		storage_fullness();
 }
 
 /*
@@ -670,6 +688,122 @@ thresholds(const float *row)
 	rules_check(row);
 }
 
+/* A file system's share in use against the limit: a fault either way. */
+static void
+storage_one(const char *name, double pct, unsigned int limit)
+{
+	int	i;
+
+	for (i = 0; i < nstorage_over; i++)
+		if (strcmp(storage_over[i].name, name) == 0)
+			break;
+	if (i < nstorage_over) {
+		storage_over[i].seen = true;
+		if (pct >= (double)limit - 5 && limit != 0)
+			return;
+		storage_over[i] = storage_over[--nstorage_over];
+		event_add("threshold", "{\"what\":\"storage\",\"name\":\"%s\","
+		    "\"value\":%.0f,\"limit\":%u,\"over\":false}", name, pct,
+		    limit);
+		fault_clear("storage", name, "%s at %.0f%%, under %u%% again",
+		    name, pct, limit);
+		return;
+	}
+	if (limit == 0 || pct <= (double)limit || nstorage_over == STORAGE_MAX)
+		return;
+	snprintf(storage_over[nstorage_over].name, sizeof(
+	    storage_over[nstorage_over].name), "%s", name);
+	storage_over[nstorage_over++].seen = true;
+	event_add("threshold", "{\"what\":\"storage\",\"name\":\"%s\","
+	    "\"value\":%.0f,\"limit\":%u,\"over\":true}", name, pct, limit);
+	fault_set("storage", "Major", name, "sampler", "%s %.0f%% full, over "
+	    "%u%%", name, pct, limit);
+}
+
+/*
+ * The host's storage against its limit (Mplify 119, Table 4): each ZFS
+ * pool, its allocated share of its size (zpool list), and each other
+ * local file system that holds data, its share as df(1) has it.  One
+ * gone or under the limit again is cleared.
+ */
+static void
+storage_fullness(void)
+{
+	static const char *const skip[] = { "zfs", "devfs", "fdescfs",
+	    "procfs", "linprocfs", "linsysfs", "tmpfs", "nullfs", "autofs",
+	    "mqueuefs", "fusefs" };
+	struct statfs	*mnt;
+	struct execres	 res;
+	struct work	 w;
+	unsigned int	 limit;
+	char		*argv[6], *copy, *line, *it, *f[3];
+	double		 used, pct, size;
+	size_t		 k;
+	time_t		 now;
+	int		 i, n;
+
+	now = time(NULL);
+	pthread_mutex_lock(&hist_lock);
+	limit = limits[3];
+	if (storage_at != 0 && now - storage_at < STORAGE_EVERY) {
+		pthread_mutex_unlock(&hist_lock);
+		return;
+	}
+	storage_at = now;
+	pthread_mutex_unlock(&hist_lock);
+	for (i = 0; i < nstorage_over; i++)
+		storage_over[i].seen = false;
+	if (limit != 0) {
+		work_init(&w);
+		argv[0] = (char *)(uintptr_t)opts.zpool_bin;
+		argv[1] = (char *)(uintptr_t)"list";
+		argv[2] = (char *)(uintptr_t)"-Hp";
+		argv[3] = (char *)(uintptr_t)"-o";
+		argv[4] = (char *)(uintptr_t)"name,size,alloc";
+		argv[5] = NULL;
+		if (access(opts.zpool_bin, X_OK) == 0 && run_exec(&w, argv,
+		    &res) == 0 && res.out != NULL) {
+			copy = wstrndup(&w, res.out, res.outlen);
+			for (it = copy; (line = strsep(&it, "\n")) != NULL; ) {
+				for (k = 0; k < 3; k++)
+					if ((f[k] = strsep(&line, "\t")) == NULL)
+						break;
+				if (k < 3 || (size = strtod(f[1], NULL)) <= 0)
+					continue;
+				storage_one(f[0], 100.0 * strtod(f[2], NULL) /
+				    size, limit);
+			}
+		}
+		work_free(&w);
+		n = getmntinfo(&mnt, MNT_NOWAIT);
+		for (i = 0; i < n; i++) {
+			for (k = 0; k < nitems(skip); k++)
+				if (strcmp(mnt[i].f_fstypename, skip[k]) == 0)
+					break;
+			if (k < nitems(skip) || (mnt[i].f_flags & MNT_LOCAL) ==
+			    0 || (mnt[i].f_flags & MNT_RDONLY) != 0 ||
+			    mnt[i].f_blocks == 0)
+				continue;
+			/* As df(1): used of used and what users may have. */
+			used = (double)(mnt[i].f_blocks - mnt[i].f_bfree);
+			if (used + (double)mnt[i].f_bavail <= 0)
+				continue;
+			pct = 100.0 * used / (used + (double)mnt[i].f_bavail);
+			storage_one(mnt[i].f_mntonname, pct, limit);
+		}
+	}
+	/* Over before, and not seen now (or no limit): cleared. */
+	for (i = nstorage_over - 1; i >= 0; i--) {
+		if (storage_over[i].seen)
+			continue;
+		event_add("threshold", "{\"what\":\"storage\",\"name\":\"%s\","
+		    "\"limit\":%u,\"over\":false}", storage_over[i].name, limit);
+		fault_clear("storage", storage_over[i].name, limit == 0 ?
+		    "%s: no storage limit now" : "%s is gone", storage_over[i].name);
+		storage_over[i] = storage_over[--nstorage_over];
+	}
+}
+
 /*
  * The samples written down, to be read again at the next start: a
  * header of what a row holds, then a row a line.  Beside the file
@@ -846,11 +980,12 @@ hconf_read(void)
 			    &rules[nrules]))
 				nrules++;
 		} else if (strncmp(line, "cpu=", 4) == 0 || strncmp(line,
-		    "mem=", 4) == 0 || strncmp(line, "swap=", 5) == 0) {
+		    "mem=", 4) == 0 || strncmp(line, "swap=", 5) == 0 ||
+		    strncmp(line, "storage=", 8) == 0) {
 			v = strtonum(strchr(line, '=') + 1, 0, 100, &e);
 			if (e == NULL)
 				limits[line[0] == 'c' ? 0 : line[0] == 'm' ? 1 :
-				    2] = (unsigned int)v;
+				    line[1] == 'w' ? 2 : 3] = (unsigned int)v;
 		}
 	}
 	fclose(fp);
@@ -867,8 +1002,9 @@ hconf_write(unsigned int step, unsigned int keep)
 	if ((fp = fopen(tmp, "we")) == NULL)
 		return (-1);
 	fprintf(fp, "# How arcana-agent samples the host: set from the "
-	    "console.\nstep=%u\nkeep=%u\ncpu=%u\nmem=%u\nswap=%u\n", step,
-	    keep, limits[0], limits[1], limits[2]);
+	    "console.\nstep=%u\nkeep=%u\ncpu=%u\nmem=%u\nswap=%u\n"
+	    "storage=%u\n", step, keep, limits[0], limits[1], limits[2],
+	    limits[3]);
 	for (i = 0; i < nrules; i++)
 		fprintf(fp, "rule=%s:%s=%.0f\n", rule_kinds[rules[i].kind],
 		    rules[i].name, rules[i].limit);
@@ -918,7 +1054,7 @@ names(FILE *fp, const char *key, const struct dev *v, size_t n)
  */
 int
 do_history(struct work *w, uint64_t after, bool set, uint32_t step,
-    uint32_t keep, const uint32_t lim[3], const char *rlist,
+    uint32_t keep, const uint32_t lim[4], const char *rlist,
     struct arc_history_rsp *rsp)
 {
 	struct rule	 was[HIST_RULES];
@@ -935,7 +1071,7 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 	if (set) {
 		if (step < 1 || step > HIST_STEP_MAX || keep > HIST_KEEP_MAX ||
 		    (lim != NULL && (lim[0] > 100 || lim[1] > 100 || lim[2] >
-		    100))) {
+		    100 || (lim[3] > 100 && lim[3] != UINT32_MAX)))) {
 			rsp->error = wfmt(w, "sampled every 1 to %d seconds, "
 			    "0 to %d samples kept, and limits of 0 to 100",
 			    HIST_STEP_MAX, HIST_KEEP_MAX);
@@ -952,7 +1088,11 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 		}
 		if (lim != NULL) {
 			pthread_mutex_lock(&hist_lock);
-			memcpy(limits, lim, sizeof(limits));
+			memcpy(limits, lim, 3 * sizeof(limits[0]));
+			if (lim[3] != UINT32_MAX) {
+				limits[3] = lim[3];
+				storage_at = 0;	/* looked at again now */
+			}
 			pthread_mutex_unlock(&hist_lock);
 		}
 		st = step_begin(w, ARC_STEP_KIND_DAEMON, "history",
@@ -986,8 +1126,8 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 	}
 	ncpu = (int)sysconf(_SC_NPROCESSORS_ONLN);
 	pthread_mutex_lock(&hist_lock);
-	fprintf(fp, "{\"limits\":{\"cpu\":%u,\"mem\":%u,\"swap\":%u},", limits[0],
-	    limits[1], limits[2]);
+	fprintf(fp, "{\"limits\":{\"cpu\":%u,\"mem\":%u,\"swap\":%u,"
+	    "\"storage\":%u},", limits[0], limits[1], limits[2], limits[3]);
 	fprintf(fp, "\"rules\":[");
 	for (i = 0; i < nrules; i++)
 		fprintf(fp, "%s{\"kind\":\"%s\",\"name\":\"%s\",\"limit\":%.0f,"
