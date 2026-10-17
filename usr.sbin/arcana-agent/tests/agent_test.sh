@@ -7545,7 +7545,14 @@ poudriere_body()
 {
 	local d="$(pwd)" n
 
-	mkdir -p pe/poudriere.d data/packages/FreeBSD:16:amd64-default-debug/All
+	mkdir -p pe/poudriere.d data/packages/FreeBSD:16:amd64-default-debug/All \
+	    bl/logs/errors
+	# The build's log directory: a port failed in build, without a
+	# reason found, and one skipped for it.
+	printf 'devel/broken broken-1.0 build  42\n' > bl/.poudriere.ports.failed
+	printf 'net/needs needs-2.0 broken-1.0\n' > bl/.poudriere.ports.skipped
+	printf '===> Building for broken-1.0\ncc: error: no such file\n*** Error code 1\n' \
+	    > bl/logs/errors/broken-1.0.log
 	touch data/packages/FreeBSD:16:amd64-default-debug/All/bird3-3.4.0.pkg
 	# poudriere(8): jset and pset as it keeps them, a bulk that says
 	# what it builds; test/sleepy builds until it is interrupted,
@@ -7581,10 +7588,28 @@ bulk)
 	case " \$* " in *" test/sleepy "*) sleep 60 ;; esac
 	echo "[00:00:03] Built 1 packages" ;;
 status)
-	printf 'debug\tdefault\tFreeBSD:16:amd64\t2026-10-17_09h00m00s\tdone:\t1\t0\t0\t1\t0\t0\t0\t0\t00:03:10\t/poudriere/data/logs/bulk/FreeBSD:16:amd64-default-debug/2026-10-17_09h00m00s\n' ;;
+	printf 'debug\tdefault\tFreeBSD:16:amd64\t2026-10-17_09h00m00s\tdone:\t3\t0\t0\t1\t1\t1\t0\t0\t00:03:10\t$d/bl\n' ;;
 esac
 EOS
 	chmod +x fake-poudriere
+	# A ports tree, opt, whose one port answers as the ports framework
+	# would: showconfig, and its variables; make(1) is the real one.
+	mkdir -p tree/net/bird3 pe/poudriere.d/ports/opt
+	echo "$d/tree" > pe/poudriere.d/ports/opt/mnt
+	cat > tree/net/bird3/Makefile <<'EOF'
+PKGNAME=	bird3-3.4.0
+COMPLETE_OPTIONS_LIST=	BFD BGP MRT
+OPTIONS_FILE=	${PORT_DBDIR}/net_bird3/options
+showconfig:
+	@echo "===> The following configuration options are available for ${PKGNAME}:"
+	@echo "     BFD=on: Bidirectional Forwarding Detection"
+	@echo "====> Routing Protocols"
+	@echo "     BGP=on: Border Gateway Protocol"
+	@echo "     MRT=off: Dumping Routing Information in MRT Format"
+	@echo "===> Use 'make config' to modify these settings"
+EOF
+	printf '#!/bin/sh\nexec /usr/bin/make "$@"\n' > fake-make
+	chmod +x fake-make
 	DAEMON_ARGS="--poudriere $d/fake-poudriere --poudriere-etc $d/pe"
 	start_daemon
 
@@ -7622,7 +7647,7 @@ EOS
 	done
 	atf_check -o match:'"jails":\[\{"name":"FreeBSD:16:amd64",[^]]*"version":"16.0-CURRENT"' \
 	    -o match:'"method":"pkgbase"' -o match:'"timestamp":1792200000' \
-	    -o match:'"ports":\[\{"name":"default",' \
+	    -o match:'"ports":\[[^]]*\{"name":"default",' \
 	    -o match:'"id":1,"title":"poudriere jail-create FreeBSD:16:amd64","started":[0-9]+,"argv":\["[^"]*fake-poudriere","jail","-c","-j","FreeBSD:16:amd64","-v","16.0-CURRENT","-m","pkgbase"\],"state":"done","exit":0' \
 	    -o match:'"log":"\[00:00:01\] Creating FreeBSD:16:amd64 fs\\n\[00:00:02\] Done\\n"' \
 	    "$JGC" -c "$SOCK" poudriere
@@ -7647,7 +7672,9 @@ EOS
 	    cat poudriere.log
 	atf_check -o match:'"makeconf":\[\{"name":"debug","file":"[^"]*/debug-make.conf","text":"WITH_DEBUG_PORTS\+= net/bird3\\n"\}\]' \
 	    -o match:'"repos":\[\{"name":"FreeBSD:16:amd64-default-debug","path":"[^"]*","packages":1\}\]' \
-	    -o match:'"builds":\[\{"set":"debug","ports":"default","jail":"FreeBSD:16:amd64","build":"2026-10-17_09h00m00s","status":"done:","queued":1,"inspected":0,"ignored":0,"built":1,"failed":0,"skipped":0,"fetched":0,"remaining":0,"time":"00:03:10","logs":"/poudriere/data/logs/bulk/' \
+	    -o match:'"builds":\[\{"set":"debug","ports":"default","jail":"FreeBSD:16:amd64","build":"2026-10-17_09h00m00s","status":"done:","queued":3,"inspected":0,"ignored":0,"built":1,"failed":1,"skipped":1,"fetched":0,"remaining":0,"time":"00:03:10","logs":"[^"]*/bl"' \
+	    -o match:'"failed_ports":\[\{"origin":"devel/broken","package":"broken-1.0","phase":"build","elapsed":42,"log_file":"[^"]*/bl/logs/errors/broken-1.0.log","log":"===> Building for broken-1.0\\ncc: error: no such file\\n\*\*\* Error code 1\\n"\}\]' \
+	    -o match:'"skipped_ports":\[\{"origin":"net/needs","package":"needs-2.0","because":"broken-1.0"\}\]' \
 	    -o match:'"id":3,"title":"poudriere bulk net/bird3 in FreeBSD:16:amd64 with default, set debug"' \
 	    "$JGC" -c "$SOCK" poudriere
 	# make.conf itself, and taken away.
@@ -7656,6 +7683,41 @@ EOS
 	atf_check -o match:'done +poudriere make.conf taken away$' \
 	    "$JGC" -c "$SOCK" poudriere make-conf - -
 	atf_check -s exit:1 -e ignore cat pe/poudriere.d/make.conf
+
+	# A port's options, as a build of the jail, opt and debug takes
+	# them: no options directory yet, the build's own would be made.
+	atf_check -o match:'"pkgname":"bird3-3.4.0","options_dir":"[^"]*/pe/poudriere.d/FreeBSD:16:amd64-opt-debug-options","options_dir_exists":false,"options_file":"[^"]*/FreeBSD:16:amd64-opt-debug-options/net_bird3/options","configured":false' \
+	    -o match:'"sections":\[\{"title":"","options":\[\{"name":"BFD","on":true,"description":"Bidirectional Forwarding Detection"\}\]\},\{"title":"Routing Protocols","options":\[\{"name":"BGP","on":true,"description":"Border Gateway Protocol"\},\{"name":"MRT","on":false,' \
+	    "$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
+	    ports=opt set=debug origin=net/bird3
+	# With the tree's directory there, it is the one the build copies,
+	# as poudriere bulk looks: written there.
+	mkdir pe/poudriere.d/opt-options
+	atf_check -o match:'done +poudriere options of net/bird3$' \
+	    "$JGC" -c "$SOCK" poudriere options jail=FreeBSD:16:amd64 \
+	    ports=opt set=debug origin=net/bird3 on=BFD on=MRT off=BGP
+	atf_check -o inline:"# This file is auto-generated by 'make config'.\n# Options for bird3-3.4.0, set by Arcana\n_OPTIONS_READ=bird3-3.4.0\n_FILE_COMPLETE_OPTIONS_LIST=BFD BGP MRT\nOPTIONS_FILE_SET+=BFD\nOPTIONS_FILE_SET+=MRT\nOPTIONS_FILE_UNSET+=BGP\n" \
+	    cat pe/poudriere.d/opt-options/net_bird3/options
+	atf_check -o match:'"options":\[\{"name":"opt","dir":"[^"]*/opt-options","ports":\[\{"name":"net_bird3","pkgname":"bird3-3.4.0","set":\["BFD","MRT"\],"unset":\["BGP"\]\}\]\}\]' \
+	    "$JGC" -c "$SOCK" poudriere
+	atf_check -o match:'"options_dir_exists":true,[^}]*"configured":true' \
+	    "$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
+	    ports=opt set=debug origin=net/bird3
+	# One the port has not, refused; one that is no option's name, too.
+	atf_check -s exit:1 -o match:'bird3-3.4.0 has no option NOPE' -e ignore \
+	    "$JGC" -c "$SOCK" poudriere options jail=FreeBSD:16:amd64 \
+	    ports=opt origin=net/bird3 on=NOPE
+	atf_check -s exit:1 -e match:'capitals, digits and _' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere options jail=FreeBSD:16:amd64 \
+	    ports=opt origin=net/bird3 'on=a b'
+	atf_check -s exit:1 -e match:'no port net/nosuch' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
+	    ports=opt origin=net/nosuch
+	# Back to the port's defaults.
+	atf_check -o match:"done +poudriere options of net/bird3: the port's defaults$" \
+	    "$JGC" -c "$SOCK" poudriere options jail=FreeBSD:16:amd64 \
+	    ports=opt set=debug origin=net/bird3 reset=yes
+	atf_check -s exit:1 test -e pe/poudriere.d/opt-options/net_bird3
 
 	# A build that fails is a run that failed: the job itself was
 	# done, starting it.

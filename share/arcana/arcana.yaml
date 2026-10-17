@@ -371,7 +371,15 @@ definitions:
           it away when text is empty: WITH_DEBUG_PORTS+= net/bird3 in a
           set's builds it unstripped, with debug symbols.  conf sets
           poudriere.conf's variables by sysrc -f, an empty value
-          unsetting one.  The host's only; never in safe mode.
+          unsetting one.  options (jail, ports, set, origin, an on= or
+          off= for each option, or reset=yes) writes the port's options
+          file as make config writes it, in the options directory a
+          build of that jail, tree and set copies (the first there is
+          of jail-tree-set, jail-set, jail-tree, tree-set, set, tree,
+          jail and options, as poudriere bulk looks; jail-tree-set's,
+          made, when none is), each option checked against the port's
+          COMPLETE_OPTIONS_LIST; reset takes the file away, the port's
+          defaults again.  The host's only; never in safe mode.
   - name: job-state
     type: enum
     entries:
@@ -3404,14 +3412,46 @@ operations:
       has; "builds", the latest build of each as poudriere status -f
       -H -l tells it ("set", "ports", "jail", "build", "status",
       "queued", "inspected", "ignored", "built", "failed", "skipped",
-      "fetched", "remaining", "time", "logs"), and "builds_error" when
-      it could not tell; "runs", what the poudriere job started, the
+      "fetched", "remaining", "time", "logs", and from the build's log
+      directory "failed_ports", each with "origin", "package", "phase",
+      "reason" when poudriere found one, "elapsed", "log_file" and
+      "log", the end of its build log, and "skipped_ports", each with
+      "origin", "package" and "because", the package that failed
+      before it), and "builds_error" when it could not tell; "runs", what the poudriere job started, the
       newest first, each with "id", "title", "argv", "started",
       "state" (running, done, failed or lost: no exit and no process,
       as after a reboot), "pid" while it runs, "exit" once it has
       ended, "log_file" and, for the newest ten and those running,
-      "log", the end of its output.
+      "log", the end of its output; "options", each options directory
+      of poudriere.d ("name": its prefix, empty for options itself;
+      "dir"), each with the "ports" it sets: "name" (category_port),
+      "pkgname", "set" and "unset".
     do:
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: builder-options
+    attribute-set: arcana
+    auth: true
+    doc: |
+      A port's options as a poudriere build takes them, names its
+      words: jail, ports (default), set and origin (net/bird3,
+      @flavor).  make showconfig in the port's directory of the tree,
+      with the options directory that build copies, as a JSON object:
+      "pkgname", "options_dir" and "options_dir_exists" (the build's
+      own, made at the first options set, when none is there yet),
+      "options_file" and "configured" (it is there), and "sections",
+      the port's own options first, then each group, single, radio or
+      multi as the port says it ("title"), each option with "name",
+      "on" and "description".
+    do:
+      request:
+        attributes:
+          - names
       reply:
         attributes:
           - ok

@@ -198,7 +198,8 @@ usage(void)
 	    "        remove interface address vhid=n\n"
 	    "    cert [list] | add name file | remove name | trust file |\n"
 	    "        untrust file | rehash\n"
-	    "    poudriere [list] | make-conf name|- file|- | verb [key=value ...]\n"
+	    "    poudriere [list] | show-options key=value ... |\n"
+	    "        make-conf name|- file|- | verb [key=value ...]\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
@@ -2355,18 +2356,21 @@ cmd_sshd(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
- * poudriere [list] | make-conf name|- file|- | verb [key=value ...]:
- * poudriere(8), the host's package builder; a verb is a job, which for
- * a build, a jail or a ports tree made or updated starts a run and
- * ends (see list's runs).
+ * poudriere [list] | show-options key=value ... | make-conf name|- file|- |
+ * verb [key=value ...]: poudriere(8), the host's package builder;
+ * show-options reads a port's (jail= ports= set= origin=); a verb is a
+ * job, which for a build, a jail or a ports tree made or updated starts
+ * a run and ends (see list's runs).
  */
 static int
 cmd_poudriere(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_job_spec	 sp;
-	struct arc_builder_rsp	*rs;
-	char			*nm;
-	int			 error;
+	struct arc_job_spec		 sp;
+	struct arc_builder_rsp		*rs;
+	struct arc_builder_options_req	 oq;
+	struct arc_builder_options_rsp	*ors;
+	char				*nm;
+	int				 error;
 
 	if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
 		if ((error = arc_builder(cl, &rs)) != 0)
@@ -2378,6 +2382,21 @@ cmd_poudriere(struct arc_client *cl, int argc, char **argv)
 		emit_trace(rs->trace.v, rs->trace.n);
 		error = rs->ok ? 0 : 1;
 		arc_builder_rsp_free(rs);
+		return (error);
+	}
+	if (strcmp(argv[1], "show-options") == 0) {
+		memset(&oq, 0, sizeof(oq));
+		oq.names.v = (const char **)(uintptr_t)&argv[2];
+		oq.names.n = (size_t)argc - 2;
+		if ((error = arc_builder_options(cl, &oq, &ors)) != 0)
+			fail(cl, error, "builder-options");
+		if (ors->json != NULL)
+			xo_emit("{:json/%s}\n", ors->json);
+		else if (ors->error != NULL)
+			warnx("%s", ors->error);
+		emit_trace(ors->trace.v, ors->trace.n);
+		error = ors->ok ? 0 : 1;
+		arc_builder_options_rsp_free(ors);
 		return (error);
 	}
 	memset(&sp, 0, sizeof(sp));

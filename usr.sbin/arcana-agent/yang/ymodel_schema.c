@@ -27,7 +27,7 @@
  * arcana-jails: 345 nodes, 20 types, 59474 bytes
  * arcana-services: 38 nodes, 2 types, 6632 bytes
  * arcana-packages: 29 nodes, 0 types, 4786 bytes
- * arcana-jobs: 276 nodes, 25 types, 52169 bytes
+ * arcana-jobs: 276 nodes, 25 types, 52193 bytes
  * arcana-storage: 143 nodes, 2 types, 23626 bytes
  * arcana-sysctl: 11 nodes, 1 types, 2038 bytes
  * arcana-kernel: 36 nodes, 0 types, 5852 bytes
@@ -48,7 +48,7 @@
  * arcana-sdwan: 147 nodes, 5 types, 24792 bytes
  * arcana-sshd: 34 nodes, 0 types, 5622 bytes
  * in all, 2966 nodes (children found 439 dense, 115 by a table, 74 by a search),
- * 212 types, 55 expressions, 677 identities, 611045 bytes
+ * 212 types, 55 expressions, 677 identities, 611069 bytes
  */
 
 #include <stdbool.h>
@@ -5009,12 +5009,13 @@ static const struct cbl_yitem t163_i[] = {
 	{ "stop", INT64_C(7) },
 	{ "make-conf", INT64_C(8) },
 	{ "conf", INT64_C(9) },
+	{ "options", INT64_C(10) },
 };
 static const struct cbl_ytype t163 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jobs_submit_input_change_poudriere_verb),
 	.path = -1,
-	.nitems = 10,
+	.nitems = 11,
 	.items = t163_i,
 };
 

@@ -62,8 +62,14 @@
 #define	VALUE_MAX	4096		/* a jset/pset file, read */
 #define	MAKECONF_MAX	(64 * 1024)
 #define	LIST_MAX	256		/* jails, trees, repositories */
+#define	FAILED_MAX	32		/* a build's failed ports, with their log */
 
 extern char	**environ;
+
+static int		 options_set(struct work *, const struct arc_job_spec *,
+			    const char **);
+static ucl_object_t	*options_dirs(struct work *);
+static bool		 option_ok(const char *);
 
 /* poudriere.conf's variables a job may set. */
 static const char *const conf_keys[] = {
@@ -203,7 +209,7 @@ poudriere_check(const struct arc_job_spec *sp)
 	if ((verb = sp->verb) == NULL)
 		return ("say what poudriere does: jail-create, jail-update, "
 		    "jail-delete, ports-create, ports-update, ports-delete, "
-		    "bulk, stop, make-conf or conf");
+		    "bulk, stop, make-conf, conf or options");
 	for (i = 0; i < sp->names.n; i++)
 		if (strchr(sp->names.v[i], '=') == NULL)
 			return ("poudriere's words are key=value");
@@ -267,6 +273,25 @@ poudriere_check(const struct arc_job_spec *sp)
 	if (strcmp(verb, "stop") == 0)
 		return (run_id_ok(arg(sp, "run", 0)) ? NULL : "say which run "
 		    "is stopped: run=, its number");
+	if (strcmp(verb, "options") == 0) {
+		if (!pd_name_ok(arg(sp, "jail", 0)) || ((v = arg(sp, "ports",
+		    0)) != NULL && !pd_name_ok(v)) || ((v = arg(sp, "set", 0)) !=
+		    NULL && v[0] != '\0' && (!pd_name_ok(v) || strchr(v, '-') !=
+		    NULL)))
+			return ("name the jail, the ports tree and the set the "
+			    "options are for");
+		if (!origin_ok(arg(sp, "origin", 0)))
+			return ("a port is its category and name: net/bird3");
+		for (i = 0; (v = arg(sp, "on", i)) != NULL; i++)
+			if (!option_ok(v))
+				return ("an option is capitals, digits and _: "
+				    "DEBUG, BGP");
+		for (i = 0; (v = arg(sp, "off", i)) != NULL; i++)
+			if (!option_ok(v))
+				return ("an option is capitals, digits and _: "
+				    "DEBUG, BGP");
+		return (NULL);
+	}
 	if (strcmp(verb, "make-conf") == 0) {
 		/* make.conf itself, or <name>-make.conf: a jail's, a
 		 * tree's, a set's, or their names joined by -. */
@@ -298,8 +323,8 @@ poudriere_check(const struct arc_job_spec *sp)
 		return (NULL);
 	}
 	return ("poudriere does jail-create, jail-update, jail-delete, "
-	    "ports-create, ports-update, ports-delete, bulk, stop, make-conf "
-	    "or conf");
+	    "ports-create, ports-update, ports-delete, bulk, stop, make-conf, "
+	    "conf or options");
 }
 
 /* ---- Runs ------------------------------------------------------------ */
@@ -732,6 +757,8 @@ do_poudriere_job(struct work *w, const struct arc_job_spec *sp,
 		return (conf_set(w, sp, errp));
 	if (strcmp(verb, "stop") == 0)
 		return (run_stop(w, arg(sp, "run", 0), errp));
+	if (strcmp(verb, "options") == 0)
+		return (options_set(w, sp, errp));
 	if (access(pd_bin(w), X_OK) != 0) {
 		*errp = wfmt(w, "%s: not installed: poudriere is a plugin, "
 		    "installed by hand (pkg install poudriere)", pd_bin(w));
@@ -848,6 +875,10 @@ poudriere_title(const struct arc_job_spec *sp)
 		    name : "", name != NULL && name[0] != '\0' ? "-" : "",
 		    sp->text == NULL || sp->text[0] == '\0' ? "taken away" :
 		    "written");
+	else if (strcmp(verb, "options") == 0)
+		rc = asprintf(&t, "poudriere options of %s%s", arg(sp, "origin",
+		    0) != NULL ? arg(sp, "origin", 0) : "", arg(sp, "reset", 0) !=
+		    NULL ? ": the port's defaults" : "");
 	else if (strcmp(verb, "conf") == 0)
 		rc = asprintf(&t, "poudriere.conf: %s%s", sp->names.n > 0 ?
 		    sp->names.v[0] : "", sp->names.n > 1 ? " and more" : "");
@@ -1069,6 +1100,89 @@ repos(struct work *w, const char *data)
 	return (arr);
 }
 
+/*
+ * A build's ports that failed and were skipped, from its log
+ * directory: .poudriere.ports.failed's lines are "origin pkgname phase
+ * errortype elapsed" (errortype empty unless poudriere was told to
+ * find one), each with the end of its log in logs/errors; skipped's
+ * "origin pkgname" and the package that failed before them.
+ */
+static void
+build_ports(struct work *w, ucl_object_t *o, const char *logs)
+{
+	ucl_object_t	*arr, *e;
+	char		*text, *line, *f[6], *tail;
+	size_t		 len;
+	int		 n, k;
+
+	if (logs == NULL || logs[0] != '/')
+		return;
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	if ((text = scope_slurp(w, wfmt(w, "%s/.poudriere.ports.failed",
+	    logs), &len)) != NULL) {
+		n = 0;
+		while ((line = strsep(&text, "\n")) != NULL && n < FAILED_MAX) {
+			for (k = 0; k < 6 && (f[k] = strsep(&line, " ")) != NULL;
+			    k++)
+				if (f[k][0] == '\0')
+					k--;	/* an empty errortype's space */
+			if (k < 3)
+				continue;
+			e = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(e, ucl_object_fromstring(f[0]),
+			    "origin", 0, false);
+			ucl_object_insert_key(e, ucl_object_fromstring(f[1]),
+			    "package", 0, false);
+			ucl_object_insert_key(e, ucl_object_fromstring(f[2]),
+			    "phase", 0, false);
+			/* The last word a number: the seconds it took. */
+			if (k >= 4 && strspn(f[k - 1], "0123456789") ==
+			    strlen(f[k - 1])) {
+				ucl_object_insert_key(e, ucl_object_fromint(
+				    strtoll(f[k - 1], NULL, 10)), "elapsed", 0,
+				    false);
+				k--;
+			}
+			if (k >= 4)
+				ucl_object_insert_key(e, ucl_object_fromstring(
+				    f[3]), "reason", 0, false);
+			ucl_object_insert_key(e, ucl_object_fromstring(wfmt(w,
+			    "%s/logs/errors/%s.log", logs, f[1])), "log_file", 0,
+			    false);
+			if ((tail = log_tail(w, wfmt(w, "%s/logs/errors/%s.log",
+			    logs, f[1]))) != NULL)
+				ucl_object_insert_key(e, ucl_object_fromstring(
+				    tail), "log", 0, false);
+			ucl_array_append(arr, e);
+			n++;
+		}
+	}
+	ucl_object_insert_key(o, arr, "failed_ports", 0, false);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	if ((text = scope_slurp(w, wfmt(w, "%s/.poudriere.ports.skipped",
+	    logs), &len)) != NULL) {
+		n = 0;
+		while ((line = strsep(&text, "\n")) != NULL && n < LIST_MAX) {
+			for (k = 0; k < 3 && (f[k] = strsep(&line, " ")) != NULL;
+			    k++)
+				;
+			if (k < 2 || f[0][0] == '\0')
+				continue;
+			e = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(e, ucl_object_fromstring(f[0]),
+			    "origin", 0, false);
+			ucl_object_insert_key(e, ucl_object_fromstring(f[1]),
+			    "package", 0, false);
+			if (k == 3)
+				ucl_object_insert_key(e, ucl_object_fromstring(
+				    f[2]), "because", 0, false);
+			ucl_array_append(arr, e);
+			n++;
+		}
+	}
+	ucl_object_insert_key(o, arr, "skipped_ports", 0, false);
+}
+
 /* poudriere status -f -H -l: the latest build of each, a tab between
  * the fields. */
 static ucl_object_t *
@@ -1114,6 +1228,8 @@ builds(struct work *w, const char **errp)
 				    strcmp(f, "-") == 0 ? "" : f), keys[k], 0,
 				    false);
 		}
+		build_ports(w, o, ucl_object_tostring(ucl_object_lookup(o,
+		    "logs")));
 		ucl_array_append(arr, o);
 	}
 	return (arr);
@@ -1203,6 +1319,7 @@ do_builder(struct work *w, struct arc_builder_rsp *rsp)
 	ucl_object_insert_key(top, entries(w, "jails"), "jails", 0, false);
 	ucl_object_insert_key(top, entries(w, "ports"), "ports", 0, false);
 	ucl_object_insert_key(top, makeconfs(w), "makeconf", 0, false);
+	ucl_object_insert_key(top, options_dirs(w), "options", 0, false);
 	ucl_object_insert_key(top, repos(w, data), "repos", 0, false);
 	berr = NULL;
 	ucl_object_insert_key(top, have ? builds(w, &berr) :
@@ -1218,4 +1335,425 @@ do_builder(struct work *w, struct arc_builder_rsp *rsp)
 	rsp->ok = rsp->json != NULL;
 	if (!rsp->ok)
 		rsp->error = "out of memory";
+}
+
+/* ---- A port's options ------------------------------------------------ */
+
+/*
+ * A port's options as a build of jail, tree and set takes them: the
+ * first options directory there is of those poudriere's bulk looks for
+ * (the build's own name, jail-tree-set, then jail-set, jail-tree,
+ * tree-set, set, tree, jail and options), the whole of it copied as the
+ * build's /var/db/ports; the build's own when none is there yet, as
+ * poudriere options -j -p -z makes it.  *existsp says which.
+ */
+static const char *
+options_dir(struct work *w, const char *jail, const char *tree,
+    const char *set, bool *existsp)
+{
+	const char	*cand[9], *master, *p;
+	struct stat	 st;
+	int		 n, i;
+
+	master = set != NULL && set[0] != '\0' ? wfmt(w, "%s-%s-%s", jail,
+	    tree, set) : wfmt(w, "%s-%s", jail, tree);
+	n = 0;
+	cand[n++] = master;
+	if (set != NULL && set[0] != '\0')
+		cand[n++] = wfmt(w, "%s-%s", jail, set);
+	cand[n++] = wfmt(w, "%s-%s", jail, tree);
+	if (set != NULL && set[0] != '\0') {
+		cand[n++] = wfmt(w, "%s-%s", tree, set);
+		cand[n++] = set;
+	}
+	cand[n++] = tree;
+	cand[n++] = jail;
+	for (i = 0; i <= n; i++) {
+		p = i == n ? wfmt(w, "%s/options", pd_dir(w)) :
+		    wfmt(w, "%s/%s-options", pd_dir(w), cand[i]);
+		if (stat(p, &st) == 0 && S_ISDIR(st.st_mode)) {
+			*existsp = true;
+			return (p);
+		}
+	}
+	*existsp = false;
+	return (wfmt(w, "%s/%s-options", pd_dir(w), master));
+}
+
+/* Where a tree's ports are: its mnt, or the ports beneath it. */
+static const char *
+tree_dir(struct work *w, const char *tree)
+{
+	struct stat	 st;
+	const char	*mnt;
+
+	if ((mnt = first_line(w, wfmt(w, "%s/ports/%s/mnt", pd_dir(w),
+	    tree))) == NULL || mnt[0] != '/')
+		return (NULL);
+	if (stat(wfmt(w, "%s/ports", mnt), &st) == 0 && S_ISDIR(st.st_mode))
+		return (wfmt(w, "%s/ports", mnt));
+	return (mnt);
+}
+
+/* An option's name, as the ports framework has them. */
+static bool
+option_ok(const char *s)
+{
+
+	return (s != NULL && s[0] != '\0' && strlen(s) <= 64 &&
+	    strspn(s, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == strlen(s));
+}
+
+/*
+ * The port's words, checked: jail, ports (default), set, origin; the
+ * tree's port directory and the options directory with them.
+ */
+static int
+port_where(struct work *w, const struct arc_job_spec *sp, const char **jail,
+    const char **tree, const char **set, const char **origin,
+    const char **portdir, const char **treedir, const char **optdir,
+    bool *exists, const char **errp)
+{
+	char	*o;
+
+	*jail = arg(sp, "jail", 0);
+	*tree = arg(sp, "ports", 0) != NULL ? arg(sp, "ports", 0) :
+	    "default";
+	*set = arg(sp, "set", 0);
+	*origin = arg(sp, "origin", 0);
+	if (!pd_name_ok(*jail) || !pd_name_ok(*tree) || (*set != NULL &&
+	    (*set)[0] != '\0' && (!pd_name_ok(*set) || strchr(*set, '-') !=
+	    NULL))) {
+		*errp = "name the jail, the ports tree and the set the options "
+		    "are for";
+		return (-1);
+	}
+	if (!origin_ok(*origin)) {
+		*errp = "a port is its category and name: net/bird3";
+		return (-1);
+	}
+	if ((*treedir = tree_dir(w, *tree)) == NULL) {
+		*errp = wfmt(w, "no ports tree %s", *tree);
+		return (-1);
+	}
+	o = wstrdup(w, *origin);
+	o[strcspn(o, "@")] = '\0';
+	*portdir = wfmt(w, "%s/%s", *treedir, o);
+	if (access(*portdir, F_OK) != 0) {
+		*errp = wfmt(w, "%s has no port %s", *tree, o);
+		return (-1);
+	}
+	*optdir = options_dir(w, *jail, *tree, *set, exists);
+	return (0);
+}
+
+/* make in the port's directory, as poudriere options runs it: the
+ * options directory, the tree, the flavor; no make.conf of the host's. */
+static int
+port_make(struct work *w, const char *portdir, const char *treedir,
+    const char *optdir, const char *origin, const char *const *what,
+    struct execres *res)
+{
+	char		*argv[16];
+	const char	*fl;
+	int		 n, i;
+
+	n = 0;
+	argv[n++] = (char *)(uintptr_t)opts.make_bin;
+	argv[n++] = (char *)(uintptr_t)"-C";
+	argv[n++] = (char *)(uintptr_t)portdir;
+	argv[n++] = wfmt(w, "PORT_DBDIR=%s", optdir);
+	argv[n++] = wfmt(w, "PORTSDIR=%s", treedir);
+	argv[n++] = (char *)(uintptr_t)"__MAKE_CONF=/dev/null";
+	if ((fl = strchr(origin, '@')) != NULL)
+		argv[n++] = wfmt(w, "FLAVOR=%s", fl + 1);
+	for (i = 0; what[i] != NULL && n < 15; i++)
+		argv[n++] = (char *)(uintptr_t)what[i];
+	argv[n] = NULL;
+	return (run_exec(w, argv, res));
+}
+
+/* PKGNAME, OPTIONS_FILE and COMPLETE_OPTIONS_LIST, a line each. */
+static int
+port_vars(struct work *w, const char *portdir, const char *treedir,
+    const char *optdir, const char *origin, char **pkgname, char **file,
+    char **list, const char **errp)
+{
+	static const char *const what[] = { "-V", "PKGNAME", "-V",
+	    "OPTIONS_FILE", "-V", "COMPLETE_OPTIONS_LIST", NULL };
+	struct execres	 res;
+	char		*text;
+
+	if (port_make(w, portdir, treedir, optdir, origin, what, &res) != 0) {
+		*errp = exec_error(w, &res, "make");
+		return (-1);
+	}
+	text = wstrdup(w, res.out != NULL ? res.out : "");
+	*pkgname = strsep(&text, "\n");
+	*file = text != NULL ? strsep(&text, "\n") : NULL;
+	*list = text != NULL ? strsep(&text, "\n") : NULL;
+	if (*pkgname == NULL || *file == NULL || (*file)[0] != '/' ||
+	    *list == NULL) {
+		*errp = "make did not say the port's options file";
+		return (-1);
+	}
+	return (0);
+}
+
+/* Whether name is one of list's words. */
+static bool
+in_list(const char *list, const char *name)
+{
+	const char	*p;
+	size_t		 n;
+
+	n = strlen(name);
+	for (p = list; (p = strstr(p, name)) != NULL; p += n)
+		if ((p == list || p[-1] == ' ') && (p[n] == '\0' || p[n] == ' '))
+			return (true);
+	return (false);
+}
+
+void
+do_builder_options(struct work *w, const struct arc_job_spec *sp,
+    struct arc_builder_options_rsp *rsp)
+{
+	static const char *const what[] = { "showconfig", NULL };
+	struct execres	 res;
+	ucl_object_t	*top, *secs, *sec, *opt, *list;
+	const char	*jail, *tree, *set, *origin, *portdir, *treedir, *optdir;
+	char		*pkgname, *file, *all, *text, *line, *p, *eq, *colon;
+	char		*json;
+	bool		 exists;
+
+	rsp->ok = false;
+	if (port_where(w, sp, &jail, &tree, &set, &origin, &portdir, &treedir,
+	    &optdir, &exists, &rsp->error) != 0 || port_vars(w, portdir,
+	    treedir, optdir, origin, &pkgname, &file, &all, &rsp->error) != 0)
+		return;
+	if (port_make(w, portdir, treedir, optdir, origin, what, &res) != 0) {
+		rsp->error = exec_error(w, &res, "make showconfig");
+		return;
+	}
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, ucl_object_fromstring(jail), "jail", 0,
+	    false);
+	ucl_object_insert_key(top, ucl_object_fromstring(tree), "ports", 0,
+	    false);
+	ucl_object_insert_key(top, ucl_object_fromstring(set != NULL ? set :
+	    ""), "set", 0, false);
+	ucl_object_insert_key(top, ucl_object_fromstring(origin), "origin", 0,
+	    false);
+	ucl_object_insert_key(top, ucl_object_fromstring(pkgname), "pkgname",
+	    0, false);
+	ucl_object_insert_key(top, ucl_object_fromstring(optdir),
+	    "options_dir", 0, false);
+	ucl_object_insert_key(top, ucl_object_frombool(exists),
+	    "options_dir_exists", 0, false);
+	ucl_object_insert_key(top, ucl_object_fromstring(file), "options_file",
+	    0, false);
+	ucl_object_insert_key(top, ucl_object_frombool(access(file, F_OK) ==
+	    0), "configured", 0, false);
+	/*
+	 * showconfig: "====> A group's or a single's words" begins a part,
+	 * "     NAME=on: what it is" is an option; those before any part
+	 * are the port's own.
+	 */
+	secs = ucl_object_typed_new(UCL_ARRAY);
+	sec = NULL;
+	list = NULL;
+	text = wstrdup(w, res.out != NULL ? res.out : "");
+	while ((line = strsep(&text, "\n")) != NULL) {
+		if (strncmp(line, "====> ", 6) == 0 || sec == NULL) {
+			sec = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(sec, ucl_object_fromstring(
+			    strncmp(line, "====> ", 6) == 0 ? line + 6 : ""),
+			    "title", 0, false);
+			list = ucl_object_typed_new(UCL_ARRAY);
+			ucl_object_insert_key(sec, list, "options", 0, false);
+			ucl_array_append(secs, sec);
+			if (strncmp(line, "====> ", 6) == 0)
+				continue;
+		}
+		p = line + strspn(line, " \t");
+		if (p == line || (eq = strchr(p, '=')) == NULL ||
+		    (colon = strchr(eq, ':')) == NULL)
+			continue;
+		*eq = '\0';
+		*colon = '\0';
+		if (!option_ok(p) || (strcmp(eq + 1, "on") != 0 &&
+		    strcmp(eq + 1, "off") != 0))
+			continue;
+		opt = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(opt, ucl_object_fromstring(p), "name", 0,
+		    false);
+		ucl_object_insert_key(opt, ucl_object_frombool(strcmp(eq + 1,
+		    "on") == 0), "on", 0, false);
+		ucl_object_insert_key(opt, ucl_object_fromstring(colon + 1 +
+		    strspn(colon + 1, " ")), "description", 0, false);
+		ucl_array_append(list, opt);
+	}
+	/* Parts without options (the first, when the port has only
+	 * groups) are left out. */
+	{
+		ucl_object_t	*kept;
+		ucl_object_iter_t it;
+		const ucl_object_t *e;
+
+		kept = ucl_object_typed_new(UCL_ARRAY);
+		it = NULL;
+		while ((e = ucl_object_iterate(secs, &it, true)) != NULL)
+			if (ucl_array_size(ucl_object_lookup(e, "options")) > 0)
+				ucl_array_append(kept, ucl_object_ref(e));
+		ucl_object_unref(secs);
+		secs = kept;
+	}
+	ucl_object_insert_key(top, secs, "sections", 0, false);
+	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	rsp->json = json != NULL ? wtext(w, wstrdup(w, json)) : NULL;
+	free(json);
+	rsp->ok = rsp->json != NULL;
+	if (!rsp->ok)
+		rsp->error = "out of memory";
+}
+
+/* The options verb: the port's options file written as make config
+ * writes it, or taken away (reset=yes). */
+static int
+options_set(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	const char	*jail, *tree, *set, *origin, *portdir, *treedir, *optdir;
+	const char	*v, *tmp;
+	char		*pkgname, *file, *all, *dir;
+	FILE		*fp;
+	size_t		 i;
+	int		 step;
+	bool		 exists, ok;
+
+	if (port_where(w, sp, &jail, &tree, &set, &origin, &portdir, &treedir,
+	    &optdir, &exists, errp) != 0 || port_vars(w, portdir, treedir,
+	    optdir, origin, &pkgname, &file, &all, errp) != 0)
+		return (-1);
+	if ((v = arg(sp, "reset", 0)) != NULL && strcmp(v, "yes") == 0) {
+		step = step_begin(w, ARC_STEP_KIND_FILE, file, "taken away: "
+		    "the port's defaults");
+		ok = unlink(file) == 0 || errno == ENOENT;
+		if (!ok)
+			*errp = wfmt(w, "%s: %s", file, strerror(errno));
+		else if ((dir = wstrdup(w, file)) != NULL &&
+		    strrchr(dir, '/') != NULL) {
+			*strrchr(dir, '/') = '\0';
+			(void)rmdir(dir);
+		}
+		step_end(w, step, ok, ok ? NULL : "%s", *errp);
+		return (ok ? 0 : -1);
+	}
+	for (i = 0; (v = arg(sp, "on", i)) != NULL; i++)
+		if (!in_list(all, v)) {
+			*errp = wfmt(w, "%s has no option %s", pkgname, v);
+			return (-1);
+		}
+	for (i = 0; (v = arg(sp, "off", i)) != NULL; i++)
+		if (!in_list(all, v)) {
+			*errp = wfmt(w, "%s has no option %s", pkgname, v);
+			return (-1);
+		}
+	step = step_begin(w, ARC_STEP_KIND_FILE, file, "%s's options%s",
+	    pkgname, exists ? "" : wfmt(w, ", in %s, made", optdir));
+	dir = wstrdup(w, file);
+	*strrchr(dir, '/') = '\0';
+	(void)mkdir(optdir, 0755);
+	(void)mkdir(dir, 0755);
+	tmp = wfmt(w, "%s.arcana-new", file);
+	ok = (fp = fopen(tmp, "w")) != NULL;
+	if (ok) {
+		fprintf(fp, "# This file is auto-generated by 'make config'.\n"
+		    "# Options for %s, set by Arcana\n_OPTIONS_READ=%s\n"
+		    "_FILE_COMPLETE_OPTIONS_LIST=%s\n", pkgname, pkgname, all);
+		for (i = 0; (v = arg(sp, "on", i)) != NULL; i++)
+			fprintf(fp, "OPTIONS_FILE_SET+=%s\n", v);
+		for (i = 0; (v = arg(sp, "off", i)) != NULL; i++)
+			fprintf(fp, "OPTIONS_FILE_UNSET+=%s\n", v);
+		ok = fclose(fp) == 0;
+	}
+	ok = ok && chmod(tmp, 0644) == 0 && rename(tmp, file) == 0;
+	if (!ok) {
+		*errp = wfmt(w, "%s: %s", file, strerror(errno));
+		(void)unlink(tmp);
+	}
+	step_end(w, step, ok, ok ? NULL : "%s", *errp);
+	return (ok ? 0 : -1);
+}
+
+/*
+ * The options directories of poudriere.d, each with the ports it sets,
+ * read from their files: what _OPTIONS_READ names, those set and those
+ * unset.
+ */
+static ucl_object_t *
+options_dirs(struct work *w)
+{
+	ucl_object_t	*arr, *o, *ports, *p, *on, *off;
+	struct dirent	*de, *pe;
+	DIR		*d, *pd;
+	const char	*dir;
+	char		*text, *line;
+	size_t		 nl, len;
+	int		 n;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	if ((d = opendir(pd_dir(w))) == NULL)
+		return (arr);
+	n = 0;
+	while ((de = readdir(d)) != NULL && n < LIST_MAX) {
+		nl = strlen(de->d_name);
+		if (strcmp(de->d_name, "options") != 0 && (nl <= 8 ||
+		    strcmp(de->d_name + nl - 8, "-options") != 0))
+			continue;
+		dir = wfmt(w, "%s/%s", pd_dir(w), de->d_name);
+		if ((pd = opendir(dir)) == NULL)
+			continue;
+		ports = ucl_object_typed_new(UCL_ARRAY);
+		while ((pe = readdir(pd)) != NULL) {
+			if (pe->d_name[0] == '.' || (text = scope_slurp(w,
+			    wfmt(w, "%s/%s/options", dir, pe->d_name), &len)) ==
+			    NULL)
+				continue;
+			p = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(p, ucl_object_fromstring(
+			    pe->d_name), "name", 0, false);
+			on = ucl_object_typed_new(UCL_ARRAY);
+			off = ucl_object_typed_new(UCL_ARRAY);
+			while ((line = strsep(&text, "\n")) != NULL) {
+				if (strncmp(line, "_OPTIONS_READ=", 14) == 0)
+					ucl_object_insert_key(p,
+					    ucl_object_fromstring(line + 14),
+					    "pkgname", 0, true);
+				else if (strncmp(line, "OPTIONS_FILE_SET+=", 18) ==
+				    0)
+					ucl_array_append(on,
+					    ucl_object_fromstring(line + 18));
+				else if (strncmp(line, "OPTIONS_FILE_UNSET+=",
+				    20) == 0)
+					ucl_array_append(off,
+					    ucl_object_fromstring(line + 20));
+			}
+			ucl_object_insert_key(p, on, "set", 0, false);
+			ucl_object_insert_key(p, off, "unset", 0, false);
+			ucl_array_append(ports, p);
+		}
+		closedir(pd);
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(strcmp(
+		    de->d_name, "options") == 0 ? "" : wfmt(w, "%.*s",
+		    (int)(nl - 8), de->d_name)), "name", 0, false);
+		ucl_object_insert_key(o, ucl_object_fromstring(dir), "dir", 0,
+		    false);
+		ucl_object_insert_key(o, ports, "ports", 0, false);
+		ucl_array_append(arr, o);
+		n++;
+	}
+	closedir(d);
+	return (arr);
 }
