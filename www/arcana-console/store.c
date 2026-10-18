@@ -50,12 +50,18 @@ store_load(const char *name)
 int
 store_write(const char *name, const void *body, size_t len)
 {
-	char		 path[MAXPATHLEN], tmp[MAXPATHLEN];
+	char		 path[MAXPATHLEN], tmp[MAXPATHLEN], *p;
 	ssize_t		 w;
 	int		 fd;
 
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, name);
 	snprintf(tmp, sizeof(tmp), "%s.XXXXXX", path);
+	/* runs/7.json, sessions/<hash>.json: their directory first. */
+	if ((p = strrchr(path, '/')) != NULL && strchr(name, '/') != NULL) {
+		*p = '\0';
+		(void)mkdir(path, 0700);
+		*p = '/';
+	}
 	if ((fd = mkstemp(tmp)) == -1) {
 		kore_log(LOG_ERR, "mkstemp %s: %s", tmp, strerror(errno));
 		return (-1);
@@ -68,6 +74,18 @@ store_write(const char *name, const void *body, size_t len)
 		return (-1);
 	}
 	return (0);
+}
+
+/* A document taken away: here, or through the cluster from every node. */
+int
+store_remove(const char *name)
+{
+	char	path[MAXPATHLEN];
+
+	if (cluster_on())
+		return (cluster_save(name, NULL, 0, true));
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, name);
+	return (unlink(path) == -1 && errno != ENOENT ? -1 : 0);
 }
 
 /* A document saved: here, or through the cluster to every node. */
@@ -143,5 +161,7 @@ store_sweep(void)
 
 	sweep_dir(cfg.datadir);
 	snprintf(path, sizeof(path), "%s/runs", cfg.datadir);
+	sweep_dir(path);
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, SESSIONS_DIR);
 	sweep_dir(path);
 }

@@ -400,7 +400,7 @@ reload_one(const char *name)
 {
 
 	if (name == NULL || strcmp(name, "credentials.json") == 0 ||
-	    strcmp(name, "sessions.json") == 0)
+	    strncmp(name, SESSIONS_DIR "/", sizeof(SESSIONS_DIR)) == 0)
 		auth_reload(name);
 	if (name == NULL || strcmp(name, "users.json") == 0)
 		users_reload();

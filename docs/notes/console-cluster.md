@@ -190,14 +190,18 @@ refuses changes, saying the cluster has no majority here.
 - Every node's origin is taken by the WebAuthn, CSRF and stream checks.
 - Settings › Cluster, `GET /api/cluster`; console_test:cluster runs
   three consoles over unix sockets.
+- The read-change-write stores (labels, templates, prefix lists) take
+  the leader's lock besides their flock(2), and wait to have written
+  every write the leader had committed when it gave the lock before
+  they read (console 0.216.2): two nodes labelling at once lose
+  nothing, where without it half the labels were written over.
+- Each session is a document of its own, `sessions/<hash>.json`
+  (console 0.216.2): a sign-in, an end, a time of use each its own
+  write, so sign-ins on two nodes at once are both kept and an end is
+  not undone by another node.
 
 ## Not yet
 
-- Locks of the cluster for the read-change-write stores (labels,
-  templates, prefix lists): the leader's lock table and its operations
-  are there (`lock`, `unlock`), the callers still take flock(2) alone.
-- Sessions a document each: today sessions.json is written whole by
-  each node, so two sign-ins on two nodes at once may lose one.
 - Files written besides `store_save()`: `vapid.pem` (push), the audit
   chain, `arcana-source.json`, the CA's next state.  The audit chain
   wants appends through the log.

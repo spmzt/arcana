@@ -218,8 +218,10 @@ operations:
     auth: true
     doc: |
       A lock of the cluster's, held by holder for ttl-ms at most: what is
-      read, changed and written again by one node at a time.  Waits for
-      it, up to ttl-ms.
+      read, changed and written again by one node at a time.  Taken or
+      not at once (the asker tries again); taken, the reply says the
+      newest write committed, which the asker waits to have written
+      before it reads what it changes.
     do:
       request:
         attributes:
@@ -235,6 +237,7 @@ operations:
         attributes:
           - ok
           - error
+          - commit-seq
 
   - name: unlock
     attribute-set: cluster

@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.216.1"
+#define	ARCW_VERSION		"0.216.2"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -36,7 +36,7 @@
 #define	SESSION_IDLE		(30 * 60)
 #define	SESSION_MAX		(12 * 60 * 60)
 #define	SESSIONS		8
-#define	SESSIONS_FILE		"sessions.json"
+#define	SESSIONS_DIR		"sessions"	/* a document a session */
 #define	SESSION_SAVE		60	/* s, between writes of the time of use */
 #define	CHALLENGE_TTL		120
 #define	CBLINK_MAX_FRAME	(8 * 1024 * 1024)
@@ -122,6 +122,7 @@ int		 api_settings(struct http_request *);
 ucl_object_t	*store_load(const char *);
 int		 store_save(const char *, const ucl_object_t *);
 int		 store_write(const char *, const void *, size_t);
+int		 store_remove(const char *);
 void		 store_sweep(void);
 
 /* nodes.c: the consoles of a cluster. */
@@ -131,6 +132,8 @@ void		 cluster_started(void);
 bool		 cluster_on(void);
 bool		 cluster_leads(void);
 bool		 cluster_origin(const char *);
+bool		 cluster_lock(const char *);
+void		 cluster_unlock(const char *);
 uint64_t	 cluster_gen(void);
 int		 cluster_save(const char *, const void *, size_t, bool);
 void		 cluster_status(ucl_object_t *);

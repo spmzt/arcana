@@ -60,6 +60,8 @@ lock_take(void)
 	if ((fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600)) == -1)
 		return (-1);
 	(void)flock(fd, LOCK_EX);
+	/* And of the cluster's other nodes, when it is one. */
+	(void)cluster_lock(LABELS_LOCK);
 	return (fd);
 }
 
@@ -67,8 +69,10 @@ static void
 lock_give(int fd)
 {
 
-	if (fd != -1)
+	if (fd != -1) {
+		cluster_unlock(LABELS_LOCK);
 		close(fd);
+	}
 }
 
 /* {"labels": {...}}, an empty one when there is none. */

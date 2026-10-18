@@ -440,7 +440,8 @@ doc_name_ok(const char *n)
 	return (true);
 }
 
-/* One the cluster keeps: a JSON document, at the top or in runs/. */
+/* One the cluster keeps: a JSON document, at the top, in runs/ or in
+ * sessions/. */
 static bool
 replicated(const char *n)
 {
@@ -449,7 +450,9 @@ replicated(const char *n)
 	len = strlen(n);
 	return (doc_name_ok(n) && len > 5 && strcmp(n + len - 5, ".json") ==
 	    0 && (strchr(n, '/') == NULL || (strncmp(n, "runs/", 5) == 0 &&
-	    strchr(n + 5, '/') == NULL)));
+	    strchr(n + 5, '/') == NULL) || (strncmp(n, SESSIONS_DIR "/",
+	    sizeof(SESSIONS_DIR)) == 0 && strchr(n + sizeof(SESSIONS_DIR),
+	    '/') == NULL)));
 }
 
 /* A document the worker reads again: what it keeps of it is stale. */
@@ -818,6 +821,7 @@ send_snapshot(struct peer *p, uint64_t *seqp)
 	pthread_mutex_lock(&cl.mu);
 	snap_read_dir("", &v, &n, &cap);
 	snap_read_dir("runs", &v, &n, &cap);
+	snap_read_dir(SESSIONS_DIR, &v, &n, &cap);
 	term = cl.c.term;
 	last_seq = cl.c.applied;
 	last_term = applied_term();
@@ -1127,14 +1131,14 @@ acl_snapshot_doit(cbl_req *req, const struct acl_snapshot_req *rq,
 	struct dirent	*e;
 	size_t		 i;
 	int		 n, k;
-	const char	*subs[] = { "", "runs" };
+	const char	*subs[] = { "", "runs", SESSIONS_DIR };
 
 	if (!peer_ok(req, rq->node, &n))
 		return (EACCES);
 	snprintf(stage, sizeof(stage), "%s/snap", cl.dir);
 	if (rq->first) {
 		/* Whatever was staged before is not this one. */
-		for (k = 1; k >= 0; k--) {
+		for (k = (int)nitems(subs) - 1; k >= 0; k--) {
 			snprintf(path, sizeof(path), "%s%s%s", stage,
 			    subs[k][0] != '\0' ? "/" : "", subs[k]);
 			if ((d = opendir(path)) == NULL)
@@ -1172,7 +1176,7 @@ acl_snapshot_doit(cbl_req *req, const struct acl_snapshot_req *rq,
 		return (snap_reply(req, false, "an old leader's"));
 	}
 	/* What is here and not there goes; what is there is put here. */
-	for (k = 0; k < 2; k++) {
+	for (k = 0; k < (int)nitems(subs); k++) {
 		snprintf(path, sizeof(path), "%s%s%s", cfg.datadir,
 		    subs[k][0] != '\0' ? "/" : "", subs[k]);
 		if ((d = opendir(path)) == NULL)
@@ -1191,7 +1195,7 @@ acl_snapshot_doit(cbl_req *req, const struct acl_snapshot_req *rq,
 		}
 		closedir(d);
 	}
-	for (k = 0; k < 2; k++) {
+	for (k = 0; k < (int)nitems(subs); k++) {
 		snprintf(path, sizeof(path), "%s%s%s", stage, subs[k][0] !=
 		    '\0' ? "/" : "", subs[k]);
 		if ((d = opendir(path)) == NULL)
@@ -1266,63 +1270,85 @@ acl_write_doit(cbl_req *req, const struct acl_write_req *rq,
 	return (0);
 }
 
-/* The leader's locks: held by one holder until given back or expired. */
-static int
-lock_reply(cbl_req *req, bool ok, const char *why)
+/*
+ * The leader's lock name taken by holder for ttl ms, or held already by
+ * it: true; the newest committed write into commitp.  With the lock.
+ */
+static bool
+lock_try(const char *name, const char *holder, uint64_t ttl,
+    uint64_t *commitp, const char **why)
 {
-	struct acl_lock_rsp	rsp;
+	uint64_t	now;
+	int		i, free_i;
 
-	memset(&rsp, 0, sizeof(rsp));
-	rsp.has_ok = true;
-	rsp.ok = ok;
-	rsp.error = why;
-	return (acl_lock_reply(req, &rsp));
-}
-
-int
-acl_lock_doit(cbl_req *req, const struct acl_lock_req *rq, void *arg __unused)
-{
-	uint64_t	now, ttl;
-	int		n, i, free_i;
-	bool		ok;
-
-	if (!peer_ok(req, rq->node, &n))
-		return (EACCES);
-	ttl = rq->has_ttl_ms && rq->ttl_ms > 0 && rq->ttl_ms <= 60000 ?
-	    rq->ttl_ms : 10000;
-	now = now_ms();
-	pthread_mutex_lock(&cl.mu);
+	*why = NULL;
 	if (cl.c.role != CRAFT_LEADER) {
-		pthread_mutex_unlock(&cl.mu);
-		return (lock_reply(req, false, "not the leader"));
+		*why = "not the leader";
+		return (false);
 	}
+	now = now_ms();
+	*commitp = cl.c.commit;
 	free_i = -1;
-	ok = false;
 	for (i = 0; i < CL_LOCKS; i++) {
 		if (cl.locks[i].name[0] == '\0' || cl.locks[i].until <= now) {
 			if (free_i == -1)
 				free_i = i;
 			continue;
 		}
-		if (strcmp(cl.locks[i].name, rq->lock) == 0) {
-			if (strcmp(cl.locks[i].holder, rq->holder) == 0) {
-				cl.locks[i].until = now + ttl;
-				ok = true;
+		if (strcmp(cl.locks[i].name, name) == 0) {
+			if (strcmp(cl.locks[i].holder, holder) != 0) {
+				*why = "held";
+				return (false);
 			}
-			pthread_mutex_unlock(&cl.mu);
-			return (lock_reply(req, ok, ok ? NULL : "held"));
+			cl.locks[i].until = now + ttl;
+			return (true);
 		}
 	}
-	if (free_i != -1) {
-		strlcpy(cl.locks[free_i].name, rq->lock,
-		    sizeof(cl.locks[free_i].name));
-		strlcpy(cl.locks[free_i].holder, rq->holder,
-		    sizeof(cl.locks[free_i].holder));
-		cl.locks[free_i].until = now + ttl;
-		ok = true;
+	if (free_i == -1) {
+		*why = "too many locks held";
+		return (false);
 	}
+	strlcpy(cl.locks[free_i].name, name, sizeof(cl.locks[free_i].name));
+	strlcpy(cl.locks[free_i].holder, holder,
+	    sizeof(cl.locks[free_i].holder));
+	cl.locks[free_i].until = now + ttl;
+	return (true);
+}
+
+static void
+lock_drop(const char *name, const char *holder)
+{
+	int	i;
+
+	for (i = 0; i < CL_LOCKS; i++)
+		if (strcmp(cl.locks[i].name, name) == 0 &&
+		    strcmp(cl.locks[i].holder, holder) == 0)
+			cl.locks[i].name[0] = '\0';
+}
+
+int
+acl_lock_doit(cbl_req *req, const struct acl_lock_req *rq, void *arg __unused)
+{
+	struct acl_lock_rsp	 rsp;
+	const char		*why;
+	uint64_t		 ttl, commit;
+	int			 n;
+	bool			 ok;
+
+	if (!peer_ok(req, rq->node, &n))
+		return (EACCES);
+	ttl = rq->has_ttl_ms && rq->ttl_ms > 0 && rq->ttl_ms <= 60000 ?
+	    rq->ttl_ms : 10000;
+	pthread_mutex_lock(&cl.mu);
+	ok = lock_try(rq->lock, rq->holder, ttl, &commit, &why);
 	pthread_mutex_unlock(&cl.mu);
-	return (lock_reply(req, ok, ok ? NULL : "too many locks held"));
+	memset(&rsp, 0, sizeof(rsp));
+	rsp.has_ok = true;
+	rsp.ok = ok;
+	rsp.error = why;
+	rsp.has_commit_seq = ok;
+	rsp.commit_seq = commit;
+	return (acl_lock_reply(req, &rsp));
 }
 
 int
@@ -1330,15 +1356,12 @@ acl_unlock_doit(cbl_req *req, const struct acl_unlock_req *rq,
     void *arg __unused)
 {
 	struct acl_unlock_rsp	rsp;
-	int			n, i;
+	int			n;
 
 	if (!peer_ok(req, rq->node, &n))
 		return (EACCES);
 	pthread_mutex_lock(&cl.mu);
-	for (i = 0; i < CL_LOCKS; i++)
-		if (strcmp(cl.locks[i].name, rq->lock) == 0 &&
-		    strcmp(cl.locks[i].holder, rq->holder) == 0)
-			cl.locks[i].name[0] = '\0';
+	lock_drop(rq->lock, rq->holder);
 	pthread_mutex_unlock(&cl.mu);
 	memset(&rsp, 0, sizeof(rsp));
 	rsp.has_ok = true;
@@ -1396,6 +1419,42 @@ wait_applied(uint64_t seq, uint64_t deadline) __no_lock_analysis
 	return (true);
 }
 
+/* The connection of this node's own asks to the leader; with wmu. */
+static bool
+leader_client(int leader, char *err, size_t errlen)
+{
+
+	if (cl.wconn != NULL && cl.wnode != leader) {
+		acl_client_fini(&cl.wcl);
+		cbl_conn_free(cl.wconn);
+		cbl_tls_free(cl.wtls);
+		cl.wconn = NULL;
+		cl.wtls = NULL;
+	}
+	if (cl.wconn == NULL) {
+		if (dial(leader, &cl.wconn, &cl.wtls, &cl.wcl) != 0) {
+			snprintf(err, errlen, "the leader, %s, does not answer",
+			    cl.nodes[leader].name);
+			return (false);
+		}
+		cl.wnode = leader;
+	}
+	return (true);
+}
+
+static void
+leader_drop(void)
+{
+
+	if (cl.wconn == NULL)
+		return;
+	acl_client_fini(&cl.wcl);
+	cbl_conn_free(cl.wconn);
+	cbl_tls_free(cl.wtls);
+	cl.wconn = NULL;
+	cl.wtls = NULL;
+}
+
 /* A follower's write, sent to the leader; its sequence, or 0. */
 static uint64_t
 write_to(int leader, const char *name, const void *body, size_t len,
@@ -1407,21 +1466,9 @@ write_to(int leader, const char *name, const void *body, size_t len,
 	uint64_t		 seq = 0;
 
 	pthread_mutex_lock(&cl.wmu);
-	if (cl.wconn != NULL && cl.wnode != leader) {
-		acl_client_fini(&cl.wcl);
-		cbl_conn_free(cl.wconn);
-		cbl_tls_free(cl.wtls);
-		cl.wconn = NULL;
-		cl.wtls = NULL;
-	}
-	if (cl.wconn == NULL) {
-		if (dial(leader, &cl.wconn, &cl.wtls, &cl.wcl) != 0) {
-			pthread_mutex_unlock(&cl.wmu);
-			snprintf(err, errlen, "the leader, %s, does not answer",
-			    cl.nodes[leader].name);
-			return (0);
-		}
-		cl.wnode = leader;
+	if (!leader_client(leader, err, errlen)) {
+		pthread_mutex_unlock(&cl.wmu);
+		return (0);
 	}
 	memset(&d, 0, sizeof(d));
 	d.name = name;
@@ -1433,11 +1480,7 @@ write_to(int leader, const char *name, const void *body, size_t len,
 	rq.doc.n = 1;
 	rq.doc.v = &d;
 	if (acl_write(&cl.wcl, &rq, &rsp) != 0 || rsp == NULL) {
-		acl_client_fini(&cl.wcl);
-		cbl_conn_free(cl.wconn);
-		cbl_tls_free(cl.wtls);
-		cl.wconn = NULL;
-		cl.wtls = NULL;
+		leader_drop();
 		snprintf(err, errlen, "the leader, %s, did not answer",
 		    cl.nodes[leader].name);
 	} else if (!rsp->ok || rsp->doc.n != 1 || !rsp->doc.v[0].has_seq)
@@ -1521,6 +1564,128 @@ cluster_save(const char *name, const void *body, size_t len, bool gone)
 	pthread_mutex_unlock(&cl.mu);
 	kore_log(LOG_ERR, "cluster: %s not written: %s", name, err);
 	return (-1);
+}
+
+/* ---- Locks of the cluster ------------------------------------------------ */
+
+#define	CL_LOCK_TTL_MS	30000
+#define	CL_LOCK_WAIT_MS	10000
+
+static void
+holder_of(char *buf, size_t len)
+{
+
+	snprintf(buf, len, "%s/%lx", cl.nodes[cl.self].name, (unsigned long)
+	    (uintptr_t)pthread_self());
+}
+
+/*
+ * What is read, changed and written again by one node of the cluster at
+ * a time (labels, templates, prefix lists): the leader's lock name,
+ * besides the caller's flock(2) of its own node; and, taken, every write
+ * the leader had committed written here first, so that what is read is
+ * the newest.  False when no leader gave it within CL_LOCK_WAIT_MS: the
+ * write that follows then fails for want of a majority anyway.
+ */
+bool
+cluster_lock(const char *name)
+{
+	struct acl_lock_req	 rq;
+	struct acl_lock_rsp	*rsp;
+	char			 holder[128], err[256];
+	const char		*why;
+	uint64_t		 deadline, commit;
+	int			 leader;
+	bool			 ok;
+
+	if (!cl.on || !cl.started)
+		return (true);
+	holder_of(holder, sizeof(holder));
+	deadline = now_ms() + CL_LOCK_WAIT_MS;
+	while (now_ms() < deadline) {
+		pthread_mutex_lock(&cl.mu);
+		if (cl.c.role == CRAFT_LEADER) {
+			ok = lock_try(name, holder, CL_LOCK_TTL_MS, &commit,
+			    &why);
+			if (ok)
+				(void)wait_applied(commit, deadline);
+			pthread_mutex_unlock(&cl.mu);
+			if (ok)
+				return (true);
+			usleep(50000);
+			continue;
+		}
+		leader = node_of(cl.c.leader);
+		pthread_mutex_unlock(&cl.mu);
+		if (leader < 0 || leader == cl.self) {
+			usleep(100000);
+			continue;
+		}
+		pthread_mutex_lock(&cl.wmu);
+		ok = false;
+		commit = 0;
+		if (leader_client(leader, err, sizeof(err))) {
+			memset(&rq, 0, sizeof(rq));
+			rq.node = cl.nodes[cl.self].name;
+			rq.lock = name;
+			rq.holder = holder;
+			rq.has_ttl_ms = true;
+			rq.ttl_ms = CL_LOCK_TTL_MS;
+			rsp = NULL;
+			if (acl_lock(&cl.wcl, &rq, &rsp) != 0 || rsp == NULL)
+				leader_drop();
+			else if (rsp->ok) {
+				ok = true;
+				commit = rsp->commit_seq;
+			}
+			acl_lock_rsp_free(rsp);
+		}
+		pthread_mutex_unlock(&cl.wmu);
+		if (ok) {
+			pthread_mutex_lock(&cl.mu);
+			(void)wait_applied(commit, deadline);
+			pthread_mutex_unlock(&cl.mu);
+			return (true);
+		}
+		usleep(50000);
+	}
+	kore_log(LOG_ERR, "cluster: the lock %s not had in time", name);
+	return (false);
+}
+
+void
+cluster_unlock(const char *name)
+{
+	struct acl_unlock_req	 rq;
+	struct acl_unlock_rsp	*rsp;
+	char			 holder[128], err[256];
+	int			 leader;
+
+	if (!cl.on || !cl.started)
+		return;
+	holder_of(holder, sizeof(holder));
+	pthread_mutex_lock(&cl.mu);
+	if (cl.c.role == CRAFT_LEADER) {
+		lock_drop(name, holder);
+		pthread_mutex_unlock(&cl.mu);
+		return;
+	}
+	leader = node_of(cl.c.leader);
+	pthread_mutex_unlock(&cl.mu);
+	if (leader < 0 || leader == cl.self)
+		return;		/* it runs out by itself */
+	pthread_mutex_lock(&cl.wmu);
+	if (leader_client(leader, err, sizeof(err))) {
+		memset(&rq, 0, sizeof(rq));
+		rq.node = cl.nodes[cl.self].name;
+		rq.lock = name;
+		rq.holder = holder;
+		rsp = NULL;
+		if (acl_unlock(&cl.wcl, &rq, &rsp) != 0)
+			leader_drop();
+		acl_unlock_rsp_free(rsp);
+	}
+	pthread_mutex_unlock(&cl.wmu);
 }
 
 /* ---- Start ---------------------------------------------------------------- */

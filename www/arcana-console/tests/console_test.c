@@ -1245,13 +1245,16 @@ ATF_TC_BODY(session_restart, tc)
 	http("GET", "/api/servers", NULL, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	/* What is kept is the cookie's hash, for its user alone. */
-	ATF_REQUIRE((fp = fopen("data/sessions.json", "r")) != NULL);
+	/* What is kept is the cookie's hash, for its user alone: a
+	 * document a session. */
+	ATF_CHECK(system("test \"$(ls data/sessions | wc -l)\" -eq 1") == 0);
+	ATF_REQUIRE((fp = popen("cat data/sessions/*.json", "r")) != NULL);
+	memset(buf, 0, sizeof(buf));
 	ATF_REQUIRE(fread(buf, 1, sizeof(buf) - 1, fp) > 0);
-	fclose(fp);
+	pclose(fp);
 	ATF_CHECK(strstr(buf, "\"hash\"") != NULL);
 	ATF_CHECK(strstr(buf, cookie + 12) == NULL);
-	ATF_CHECK(system("test \"$(stat -f %Lp data/sessions.json)\" = 600")
+	ATF_CHECK(system("test \"$(stat -f %Lp data/sessions/*.json)\" = 600")
 	    == 0);
 
 	restart_console();
@@ -1266,6 +1269,7 @@ ATF_TC_BODY(session_restart, tc)
 	EXPECT(&r, 200);
 	resp_free(&r);
 	strlcpy(cookie, buf, sizeof(cookie));
+	ATF_CHECK(system("test -z \"$(ls data/sessions)\"") == 0);
 	restart_console();
 	http("GET", "/api/servers", NULL, &r);
 	EXPECT(&r, 401);
@@ -7508,8 +7512,10 @@ ATF_TC_BODY(cluster, tc)
 {
 	struct authn	a;
 	struct resp	r;
-	char		cwd[MAXPATHLEN], nodes[1024];
-	int		i, n;
+	char		cwd[MAXPATHLEN], nodes[1024], key[64], far[16] = "";
+	char		path[128], body[128];
+	pid_t		pid;
+	int		i, n, k, st;
 
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 	n = snprintf(nodes, sizeof(nodes), "nodes {");
@@ -7542,11 +7548,52 @@ ATF_TC_BODY(cluster, tc)
 	http("POST", "/api/servers", "{\"name\":\"far\",\"uri\":\"tcp://"
 	    "192.0.2.9:4310\"}", &r);
 	EXPECT(&r, 200);
+	for (i = 0; jstr(&r, (snprintf(key, sizeof(key), "servers.%d.name",
+	    i), key)) != NULL; i++)
+		if (strcmp(jstr(&r, key), "far") == 0) {
+			snprintf(key, sizeof(key), "servers.%d.id", i);
+			snprintf(far, sizeof(far), "%s", jstr(&r, key));
+			break;
+		}
+	ATF_REQUIRE(far[0] != '\0');
 	resp_free(&r);
 	ATF_REQUIRE(chdir(cwd) == 0);
 	for (i = 0; i < 3; i++)
 		ATF_CHECK_MSG(cl_until(cwd, i, "/api/servers", "\"far\""),
 		    "%s", cl_nodes[i]);
+	/* A store read, changed and written again on two nodes at the same
+	 * time, ten times over: each reads what the other wrote before it
+	 * (the cluster's lock, and the writes committed before it waited
+	 * for), so no label is written over. */
+	for (k = 0; k < 10; k++) {
+		if ((pid = fork()) == 0) {
+			ATF_REQUIRE(chdir(cl_nodes[2]) == 0);
+			snprintf(path, sizeof(path), "/api/labels/%s/em%d", far,
+			    10 + k);
+			http("PUT", path, "{\"label\":\"by nc\"}", &r);
+			_exit(r.status == 200 ? 0 : 1);
+		}
+		ATF_REQUIRE(pid > 0);
+		ATF_REQUIRE(chdir(cl_nodes[1]) == 0);
+		snprintf(path, sizeof(path), "/api/labels/%s/em%d", far, k);
+		http("PUT", path, "{\"label\":\"by nb\"}", &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		ATF_REQUIRE(chdir(cwd) == 0);
+		ATF_REQUIRE(waitpid(pid, &st, 0) == pid);
+		ATF_CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0);
+	}
+	snprintf(body, sizeof(body), "%s/em19", far);
+	ATF_CHECK(cl_until(cwd, 0, "/api/labels", body));
+	ATF_REQUIRE(chdir(cl_nodes[0]) == 0);
+	http("GET", "/api/labels", NULL, &r);
+	for (k = 0; k < 20; k++) {
+		snprintf(key, sizeof(key), "labels.%s/em%d", far, k);
+		ATF_CHECK_MSG(jstr(&r, key) != NULL, "em%d's label written "
+		    "over: %.400s", k, r.body);
+	}
+	resp_free(&r);
+	ATF_REQUIRE(chdir(cwd) == 0);
 	/* One stopped misses a change two make; started, it has it. */
 	ATF_REQUIRE(chdir(cl_nodes[2]) == 0);
 	console_stop();
@@ -7561,6 +7608,26 @@ ATF_TC_BODY(cluster, tc)
 	console_start();
 	ATF_REQUIRE(chdir(cwd) == 0);
 	ATF_CHECK(cl_until(cwd, 2, "/api/servers", "\"later\""));
+	/* Signed out on one, signed out on every one: the session's own
+	 * document taken away. */
+	strlcpy(body, cookie, sizeof(body));
+	ATF_REQUIRE(chdir(cl_nodes[1]) == 0);
+	http("POST", "/api/auth/logout", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE(chdir(cwd) == 0);
+	strlcpy(cookie, body, sizeof(cookie));
+	ATF_REQUIRE(chdir(cl_nodes[2]) == 0);
+	for (k = 0; k < 100; k++) {
+		http("GET", "/api/servers", NULL, &r);
+		n = r.status;
+		resp_free(&r);
+		if (n == 401)
+			break;
+		usleep(100000);
+	}
+	ATF_CHECK_EQ(401, n);
+	ATF_REQUIRE(chdir(cwd) == 0);
 }
 
 ATF_TP_ADD_TCS(tp)
