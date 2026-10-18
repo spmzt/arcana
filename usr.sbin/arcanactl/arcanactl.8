@@ -223,7 +223,7 @@ takes it away
 .Pc .
 The verbs
 .Cm jail-create
-.Pq name= version= arch= method= ,
+.Pq name= version= arch= method= kernel= build=yes pkgbase-set=yes ,
 .Cm jail-update ,
 .Cm ports-create
 .Pq name= method= branch= url= path= ,
@@ -247,6 +247,34 @@ variables
 .Cm options
 a port's
 .Pq jail= ports= set= origin= and an on= or off= for each, or reset=yes .
+A jail's words are
+.Xr poudriere-jail 8 Ns 's
+options:
+.Cm method=
+is
+.Fl m
+.Po http, ftp, ftp-archive, freebsdci, pkgbase or
+.Li pkgbase= Ns Ar path ,
+.Li src= Ns Ar path ,
+.Li tar= Ns Ar path ,
+git or svn with a scheme
+.Pc ,
+.Cm kernel=
+is
+.Fl K
+.Pq empty for GENERIC ,
+.Cm build=yes
+is
+.Fl b ,
+for a
+.Li src=
+tree alone, and
+.Cm pkgbase-set=yes
+is
+.Fl B ,
+for a
+.Li src=
+tree built here or a git or svn checkout.
 Each is a job.
 .It Cm crashes Op Cm backtrace Ar core Op Ar program
 The cores the kernel dumped where

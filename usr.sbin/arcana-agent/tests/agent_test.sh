@@ -8113,7 +8113,8 @@ cmd=\$1; shift
 case "\$cmd" in
 jail|ports)
 	verb=\$1; shift
-	while getopts yj:p:v:a:m:B:U:M: o; do
+	opts=yj:p:v:a:m:B:U:M:; [ \$cmd = jail ] && opts=yj:v:a:m:K:bB
+	while getopts \$opts o; do
 		case \$o in j|p) n=\$OPTARG;; v) v=\$OPTARG;; a) a=\$OPTARG;; m) m=\$OPTARG;; B) br=\$OPTARG;; esac
 	done
 	k=jails; [ \$cmd = ports ] && k=ports
@@ -8342,6 +8343,29 @@ EOF
 	    "$JGC" -c "$SOCK" poudriere bulk jail=j set=a-b origin=net/bird3
 	atf_check -s exit:1 -e match:"a jail's name" -o ignore \
 	    "$JGC" -c "$SOCK" poudriere jail-create name=a.b version=15.0-RELEASE
+	# -K, -b, -B and -m as poudriere-jail(8) has them: -b for a src=
+	# tree, -B for what is built here, a method's path absolute.
+	atf_check -s exit:1 -e match:'build is for method src=' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=j version=15.0-RELEASE build=yes
+	atf_check -s exit:1 -e match:'pkgbase-set is built from source' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=j version=15.0-RELEASE \
+	    method=src=/usr/src pkgbase-set=yes
+	atf_check -s exit:1 -e match:'a method is http' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=j version=15.0-RELEASE method=src=usr/src
+	atf_check -s exit:1 -e match:'a method is http' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=j version=15.0-RELEASE method=rsync
+	atf_check -s exit:1 -e match:"a kernel's name" -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=j version=15.0-RELEASE kernel=a/b
+	atf_check -o match:'done +poudriere jail-create src15' \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=src15 version=15.0-STABLE \
+	    method=src=/usr/src kernel=GENERIC build=yes pkgbase-set=yes
+	atf_check -o match:'"argv":\["[^"]*fake-poudriere","jail","-c","-j","src15","-v","15.0-STABLE","-m","src=/usr/src","-K","GENERIC","-b","-B"\]' \
+	    "$JGC" -c "$SOCK" poudriere
+	atf_check -o match:'done +poudriere jail-create git15' \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=git15 version=15.0-STABLE \
+	    method=git+https kernel= pkgbase-set=yes
+	atf_check -o match:'"argv":\["[^"]*fake-poudriere","jail","-c","-j","git15","-v","15.0-STABLE","-m","git\+https","-K","","-B"\]' \
+	    "$JGC" -c "$SOCK" poudriere
 	atf_check -s exit:1 -e match:'key=value' -o ignore \
 	    "$JGC" -c "$SOCK" poudriere bulk net/bird3
 	atf_check -s exit:1 -e match:"the host's" -o ignore \
@@ -8354,6 +8378,10 @@ EOF
 	    "$JGC" -c "$SOCK" poudriere jail-delete name=FreeBSD:16:amd64
 	atf_check -o match:'^poudriere jail -d -y -j FreeBSD:16:amd64$' \
 	    cat poudriere.log
+	for j in src15 git15; do
+		atf_check -o match:"done +poudriere jail-delete $j\$" \
+		    "$JGC" -c "$SOCK" poudriere jail-delete name=$j
+	done
 	atf_check -o match:'"jails":\[\]' "$JGC" -c "$SOCK" poudriere
 	atf_check -s exit:1 -o match:'failed +poudriere ports-delete nosuch: .*No such ports nosuch' \
 	    -e ignore "$JGC" -c "$SOCK" poudriere ports-delete name=nosuch

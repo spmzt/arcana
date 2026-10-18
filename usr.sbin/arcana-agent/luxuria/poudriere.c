@@ -159,6 +159,44 @@ word_ok(const char *s)
 	return (true);
 }
 
+/* A method of poudriere jail -m: the release's sets fetched (http,
+ * ftp, ftp-archive, freebsdci), pkgbase (the official repository, or
+ * one at a path), a source tree or a tarball at a path, or a checkout
+ * (git, svn, each with a scheme: git+https). */
+static bool
+from_vcs(const char *m)
+{
+
+	return (strcmp(m, "git") == 0 || strcmp(m, "svn") == 0 ||
+	    strncmp(m, "git+", 4) == 0 || strncmp(m, "svn+", 4) == 0);
+}
+
+static bool
+method_ok(const char *m)
+{
+	const char	*p;
+
+	if (!word_ok(m))
+		return (false);
+	if (strcmp(m, "http") == 0 || strcmp(m, "ftp") == 0 || strcmp(m,
+	    "ftp-archive") == 0 || strcmp(m, "freebsdci") == 0 || strcmp(m,
+	    "pkgbase") == 0)
+		return (true);
+	if (strcmp(m, "git") == 0 || strcmp(m, "svn") == 0)
+		return (true);
+	if (from_vcs(m))
+		return (m[4] != '\0' && strspn(m + 4,
+		    "abcdefghijklmnopqrstuvwxyz") == strlen(m + 4));
+	if (strncmp(m, "pkgbase=", 8) == 0)
+		p = m + 8;
+	else if (strncmp(m, "src=", 4) == 0 || strncmp(m, "tar=", 4) == 0)
+		p = m + 4;
+	else
+		return (false);
+	return (p[0] == '/' && strstr(p, "/../") == NULL && (strlen(p) < 3 ||
+	    strcmp(p + strlen(p) - 3, "/..") != 0));
+}
+
 /* The value of key= among the job's words, or NULL; the n-th of it
  * when there are several. */
 static const char *
@@ -172,6 +210,15 @@ arg(const struct arc_job_spec *sp, const char *key, size_t nth)
 		    sp->names.v[i][k] == '=' && nth-- == 0)
 			return (sp->names.v[i] + k + 1);
 	return (NULL);
+}
+
+/* Is key=yes among the job's words? */
+static bool
+yes(const struct arc_job_spec *sp, const char *key)
+{
+	const char	*v;
+
+	return ((v = arg(sp, key, 0)) != NULL && strcmp(v, "yes") == 0);
 }
 
 static bool
@@ -222,9 +269,34 @@ poudriere_check(const struct arc_job_spec *sp)
 			    "15.0-RELEASE, 14.3-RELEASE");
 		if ((v = arg(sp, "arch", 0)) != NULL && !word_ok(v))
 			return ("an arch is one word: amd64, arm64.aarch64");
-		if ((v = arg(sp, "method", 0)) != NULL && !word_ok(v))
-			return ("a method is one word: http, ftp, git+https, "
-			    "pkgbase");
+		if ((v = arg(sp, "method", 0)) != NULL && !method_ok(v))
+			return ("a method is http, ftp, ftp-archive, freebsdci, "
+			    "pkgbase or pkgbase=/path, src=/path, tar=/path, "
+			    "git or svn (git+https, svn+ssh ...)");
+		/* -K: a kernel installed, GENERIC when it is empty. */
+		if ((v = arg(sp, "kernel", 0)) != NULL && v[0] != '\0' &&
+		    !pd_name_ok(v))
+			return ("a kernel's name is its configuration's: "
+			    "GENERIC, letters, digits and _ - ; empty for "
+			    "GENERIC");
+		if ((v = arg(sp, "build", 0)) != NULL && strcmp(v, "yes") !=
+		    0 && strcmp(v, "no") != 0)
+			return ("build is yes or no");
+		if ((v = arg(sp, "pkgbase-set", 0)) != NULL && strcmp(v,
+		    "yes") != 0 && strcmp(v, "no") != 0)
+			return ("pkgbase-set is yes or no");
+		/* -b builds a src= tree, which is otherwise installed as
+		 * it was built; git and svn always build. */
+		v = arg(sp, "method", 0);
+		if (yes(sp, "build") && (v == NULL || strncmp(v, "src=", 4) !=
+		    0))
+			return ("build is for method src=/path (git and svn "
+			    "always build; the others install what is built)");
+		/* -B: the pkgbase set, of what is built here. */
+		if (yes(sp, "pkgbase-set") && (v == NULL || !((strncmp(v,
+		    "src=", 4) == 0 && yes(sp, "build")) || from_vcs(v))))
+			return ("pkgbase-set is built from source: method "
+			    "src=/path with build=yes, or git or svn");
 		return (NULL);
 	}
 	if (strcmp(verb, "ports-create") == 0) {
@@ -786,6 +858,14 @@ do_poudriere_job(struct work *w, const struct arc_job_spec *sp,
 				ADD("-m");
 				ADD(v);
 			}
+			if ((v = arg(sp, "kernel", 0)) != NULL) {
+				ADD("-K");
+				ADD(v);
+			}
+			if (yes(sp, "build"))
+				ADD("-b");
+			if (yes(sp, "pkgbase-set"))
+				ADD("-B");
 		}
 	} else if (strncmp(verb, "ports-", 6) == 0) {
 		ADD("ports");
