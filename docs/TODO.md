@@ -810,6 +810,11 @@
     same day, as the user asked: a user has roles, a role says what; a
     Settings AAA tab holds users, roles, keys, the directory and
     tokens.  Not done: groups of users, LDAP groups mapped to roles.)
+  - A sysctl task cannot be cancelled from the task list (the user,
+    2026-10-18): the dock's × on a running sysctl read/job does nothing
+    or the console refuses; find which (op-cancel in the UI, DELETE
+    /api/servers/<id>/jobs/<n> → OP_JOB_CANCEL, or a read with no job
+    to cancel) and make cancel work or say why it cannot.
   - Mail notifications of faults, jobs and runs. (Done 2026-10-12:
     Settings, Notifications, By mail; one worker reads each host's
     events, the agent's job ends among them now, and the console's
