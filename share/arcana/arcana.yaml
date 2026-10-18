@@ -394,6 +394,15 @@ definitions:
           their own default=, across updates.  Each is checked by snort
           -T before it replaces what was there, and a running Snort is
           told to reload.  The host's only; never in safe mode.
+      - name: clamav
+        doc: |
+          ClamAV's freshclam, which fetches the signatures: verb and
+          words key=value (names).  mirrors writes freshclam.conf's
+          DatabaseMirror lines, each mirror= in the order given, in
+          place of those there were; a freshclam.conf not there yet is
+          made from the port's sample, its Example line taken out.  A
+          running freshclam takes them when it is restarted.  The
+          host's only; never in safe mode.
   - name: job-state
     type: enum
     entries:
@@ -1485,7 +1494,7 @@ attribute-sets:
           max-len: 15
       - name: verb
         type: text
-        doc: For netgraph, wireguard, bird, poudriere and snort, what to do.
+        doc: For netgraph, wireguard, bird, poudriere, snort and clamav, what to do.
         checks:
           max-len: 16
       - name: peer

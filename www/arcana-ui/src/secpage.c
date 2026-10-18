@@ -418,6 +418,103 @@ static const struct tcol dcols[] = {
 	{ "File", "file", false },
 };
 
+/* The mirrors a freshclam.conf Arcana writes names: ClamAV's own, and
+ * Microsoft's, which carries the same databases. */
+static const char *const default_mirrors[] = { "database.clamav.net",
+    "https://packages.microsoft.com/clam" };
+
+/* A clamav job of mirrors, n of them, as the API takes it. */
+static char *
+mirrors_job(const char *const *m, size_t n)
+{
+	char	*json, *q, *t;
+	size_t	 i;
+
+	if ((json = strdup("{\"kind\":\"clamav\",\"verb\":\"mirrors\","
+	    "\"args\":[")) == NULL)
+		abort();
+	for (i = 0; i < n; i++) {
+		char	*w;
+
+		if (asprintf(&w, "mirror=%s", m[i]) == -1)
+			abort();
+		q = json_quote(w);
+		free(w);
+		if (asprintf(&t, "%s%s%s", json, i > 0 ? "," : "", q) == -1)
+			abort();
+		free(json);
+		free(q);
+		json = t;
+	}
+	if (asprintf(&t, "%s]}", json) == -1)
+		abort();
+	free(json);
+	return (t);
+}
+
+/* Jobs one after the other on the page's host, and the page read again
+ * when they end. */
+static void
+sec_jobs(char **json, const char **title, int n)
+{
+	struct server	*s;
+	struct queued	 q[4];
+	int		 i;
+
+	if ((s = sec_server()) == NULL || n > 4) {
+		for (i = 0; i < n; i++)
+			free(json[i]);
+		return;
+	}
+	memset(q, 0, sizeof(q));
+	for (i = 0; i < n; i++) {
+		q[i].json = json[i];
+		snprintf(q[i].title, sizeof(q[i].title), "%s", title[i]);
+		snprintf(q[i].sid, sizeof(q[i].sid), "%s", s->id);
+		snprintf(q[i].host, sizeof(q[i].host), "%s", s->name);
+		q[i].what = JOB_SECURITY;
+	}
+	job_send_many(s, q, n, JOB_SECURITY);
+}
+
+/*
+ * freshclam's mirrors, as freshclam.conf says them, a line each, with
+ * Microsoft's offered after them when it is not there.
+ */
+static void
+mirrors_form(struct html *h, const ucl_object_t *cl)
+{
+	const ucl_object_t	*m;
+	ucl_object_iter_t	 it;
+	bool			 ms;
+
+	h_raw(h, "<form data-form=\"sec-mirrors\" class=\"secform\"><label>"
+	    "Mirrors <small class=\"dim\">freshclam.conf's DatabaseMirror "
+	    "lines, a line each, tried in order: a host name, or an http or "
+	    "https URL</small><textarea name=\"mirrors\" rows=\"4\" class=\""
+	    "mono\" spellcheck=\"false\" autocomplete=\"off\">");
+	ms = false;
+	it = NULL;
+	while ((m = ucl_object_iterate(jget(cl, "mirrors"), &it, true)) !=
+	    NULL) {
+		h_txt(h, ucl_object_tostring_forced(m));
+		h_raw(h, "\n");
+		if (strcmp(ucl_object_tostring_forced(m), default_mirrors[1]) == 0)
+			ms = true;
+	}
+	if (ucl_array_size(jget(cl, "mirrors")) == 0) {
+		h_txt(h, default_mirrors[0]);
+		h_raw(h, "\n");
+	}
+	if (!ms) {
+		h_txt(h, default_mirrors[1]);
+		h_raw(h, "\n");
+	}
+	h_fmt(h, "</textarea></label><div class=\"actions\"><button class=\""
+	    "primary\">Save the mirrors%s</button></div></form>", jbool(cl,
+	    "freshclam") ? " and restart freshclam" : "");
+}
+
 static void
 view_sigs(struct html *h)
 {
@@ -451,9 +548,10 @@ view_sigs(struct html *h)
 		h_raw(h, "<div class=\"notice warn\">freshclam has no "
 		    "configuration: <code>/usr/local/etc/freshclam.conf</code> is "
 		    "missing, or still the port's sample with its <code>Example"
-		    "</code> line, which freshclam refuses to run with. Copy "
-		    "<code>freshclam.conf.sample</code> to it and take that line "
-		    "out (Files, or the shell), then start freshclam here.</div>");
+		    "</code> line, which freshclam refuses to run with. Saving "
+		    "the mirrors below writes it, from the port's sample, and "
+		    "Start freshclam does too.</div>");
+	mirrors_form(h, cl);
 	if (ucl_array_size(jget(cl, "log")) > 0) {
 		const ucl_object_t	*ln;
 		ucl_object_iter_t	 lit = NULL;
@@ -517,7 +615,7 @@ ids_form(struct html *h, const ucl_object_t *f)
 	    "spellcheck=\"false\" placeholder=\"10.0.0.0/8, 172.16.0.0/12, "
 	    "192.168.0.0/16\"");
 	joined_attr(h, "value", jget(f, "home"), ", ");
-	h_raw(h, "><small class=\"help\">HOME_NET of the rules; empty: the "
+	h_raw(h, "><small class=\"help\">HOME_NET of the rules; any for every address; empty: the "
 	    "private ranges</small></label>");
 	pfxlist_select(h, "And the networks of a list", "home_pfx", "A prefix "
 	    "list of the console's, added to HOME_NET when kept.");
@@ -808,6 +906,44 @@ secpage_form(const char *form, const ucl_object_t *f)
 
 	if (strncmp(form, "sn-", 3) == 0)
 		return (snort_form(form, f));
+	if (strcmp(form, "sec-mirrors") == 0) {
+		const ucl_object_t	*cl = jget(sec.state, "clamav");
+		char			*copy, *it, *line, *json[2];
+		const char		*m[16], *title[2];
+		size_t			 n;
+		int			 nj;
+
+		copy = strdup(jstr(f, "mirrors") != NULL ? jstr(f, "mirrors") :
+		    "");
+		if (copy == NULL)
+			abort();
+		n = 0;
+		for (it = copy; (line = strsep(&it, "\n")) != NULL && n < 16; ) {
+			line += strspn(line, " \t\r");
+			line[strcspn(line, " \t\r")] = '\0';
+			if (line[0] != '\0')
+				m[n++] = line;
+		}
+		if (n == 0) {
+			toast(true, "freshclam needs a mirror at least");
+			free(copy);
+			return (true);
+		}
+		nj = 0;
+		json[nj] = mirrors_job(m, n);
+		title[nj++] = "freshclam's mirrors written";
+		/* A running freshclam reads them as it starts again. */
+		if (jbool(cl, "freshclam")) {
+			if (asprintf(&json[nj], "{\"kind\":\"service-action\","
+			    "\"service\":\"clamav_freshclam\",\"action\":"
+			    "\"restart\"}") == -1)
+				abort();
+			title[nj++] = "service clamav_freshclam restart";
+		}
+		sec_jobs(json, title, nj);
+		free(copy);
+		return (true);
+	}
 	if (strcmp(form, "sec-proxy") != 0 && strcmp(form, "sec-ids") != 0)
 		return (false);
 	if (strcmp(form, "sec-proxy") == 0 && (jstr(f, "allow") == NULL || jstr(
@@ -1018,41 +1154,30 @@ secpage_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	if (strcmp(act, "sec-freshclam") == 0) {
-		struct server	*s;
-		char		*json, title[64];
+		const ucl_object_t	*cl = jget(sec.state, "clamav");
+		char			*json[3];
+		const char		*title[3];
+		int			 n = 0;
 
-		for (i = 0; i < (size_t)app.nservers; i++)
-			if (strcmp(app.servers[i].id, sec.sid) == 0)
-				break;
-		if (i == (size_t)app.nservers)
-			return (true);
-		s = &app.servers[i];
-		/* Enabled first, so that rc starts it, then (re)started:
-		 * two jobs the host runs in order; the page looks again
-		 * when they end. */
-		{
-			struct queued	q[2];
-
-			memset(q, 0, sizeof(q));
-			if (asprintf(&q[0].json, "{\"kind\":\"service-action\","
-			    "\"service\":\"clamav_freshclam\",\"action\":\"enable\"}")
-			    == -1 || asprintf(&q[1].json, "{\"kind\":\"service-action"
-			    "\",\"service\":\"clamav_freshclam\",\"action\":\"restart"
-			    "\"}") == -1)
-				abort();
-			snprintf(q[0].title, sizeof(q[0].title), "clamav_freshclam "
-			    "enabled at boot");
-			snprintf(q[1].title, sizeof(q[1].title), "service "
-			    "clamav_freshclam restart");
-			for (i = 0; i < 2; i++) {
-				snprintf(q[i].sid, sizeof(q[i].sid), "%s", s->id);
-				snprintf(q[i].host, sizeof(q[i].host), "%s", s->name);
-				q[i].what = JOB_SECURITY;
-			}
-			job_send_many(s, q, 2, JOB_SECURITY);
+		/* A configuration it can run with first, the default
+		 * mirrors in it; then enabled, so that rc starts it, and
+		 * (re)started: jobs the host runs in order. */
+		if (jget(cl, "conf") != NULL && !jbool(cl, "conf")) {
+			json[n] = mirrors_job(default_mirrors,
+			    nitems(default_mirrors));
+			title[n++] = "freshclam.conf written, its mirrors the "
+			    "defaults";
 		}
-		(void)json;
-		(void)title;
+		if (asprintf(&json[n], "{\"kind\":\"service-action\",\"service"
+		    "\":\"clamav_freshclam\",\"action\":\"enable\"}") == -1)
+			abort();
+		title[n++] = "clamav_freshclam enabled at boot";
+		if (asprintf(&json[n], "{\"kind\":\"service-action\",\"service"
+		    "\":\"clamav_freshclam\",\"action\":\"restart\"}") == -1)
+			abort();
+		title[n++] = "service clamav_freshclam restart";
+		sec_jobs(json, title, n);
+		(void)arg;
 		return (true);
 	}
 	return (false);

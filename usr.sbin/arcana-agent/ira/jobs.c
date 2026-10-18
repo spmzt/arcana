@@ -192,6 +192,9 @@ title_of(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_SNORT:
 		rc = (t = snort_title(sp)) != NULL ? 0 : -1;
 		break;
+	case ARC_JOB_KIND_CLAMAV:
+		rc = (t = clamav_title(sp)) != NULL ? 0 : -1;
+		break;
 	case ARC_JOB_KIND_CARP:
 		rc = asprintf(&t, "%s: carp %s vhid %s%s%s", sp->interface,
 		    sp->verb, carp_vhid_of(sp), sp->address != NULL &&
@@ -1018,6 +1021,10 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_SNORT:
 		error = NULL;
 		ok = do_snort_job(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_CLAMAV:
+		error = NULL;
+		ok = do_clamav_job(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_CERT:
 		/* Any jail's: its files, not its network. */

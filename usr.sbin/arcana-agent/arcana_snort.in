@@ -15,7 +15,9 @@
 #				an ipfw divert rule hands its port, passed
 #				back unless a rule drops it.  Default: ids.
 # arcana_snort_interfaces (str): The interfaces watched (ids), separated by
-#				spaces, a packet thread each.
+#				spaces, a packet thread each; "any": every
+#				interface up when Snort starts, but the
+#				loopback, pflog, pfsync and enc.
 # arcana_snort_divert_port (int): The divert(4) port taken (ips).
 #				Default: 8000.
 # arcana_snort_conf (str):	Default: %%PREFIX%%/etc/snort/snort.lua
@@ -57,6 +59,18 @@ command_args="-c ${arcana_snort_conf} -D --create-pidfile -l ${arcana_snort_logd
 if [ -r "${arcana_snort_rules}" ]; then
 	command_args="${command_args} -R ${arcana_snort_rules}"
 fi
+# "any": what is up now, as libpcap on FreeBSD has no "any" device.
+if [ "${arcana_snort_interfaces}" = "any" ]; then
+	_all=""
+	for _i in $(/sbin/ifconfig -lu); do
+		case "${_i}" in
+		lo*|pflog*|pfsync*|enc*)	;;
+		*)	_all="${_all}${_all:+ }${_i}" ;;
+		esac
+	done
+	arcana_snort_interfaces="${_all}"
+fi
+
 case "${arcana_snort_mode}" in
 ips)
 	required_modules="ipdivert"

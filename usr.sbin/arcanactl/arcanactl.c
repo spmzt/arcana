@@ -203,6 +203,7 @@ usage(void)
 	    "    crashes [backtrace core [program]]\n"
 	    "    snort [list | rules] | conf snort.lua|local.rules file |\n"
 	    "        verb [key=value ...]\n"
+	    "    clamav mirrors mirror ...\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
@@ -2507,6 +2508,36 @@ cmd_snort(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
+ * clamav mirrors mirror ...: freshclam.conf's DatabaseMirror lines, in
+ * place of those there were; a job.
+ */
+static int
+cmd_clamav(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	const char		**w;
+	int			 i;
+
+	if (argc < 3 || strcmp(argv[1], "mirrors") != 0)
+		usage();
+	if ((w = calloc((size_t)argc - 2, sizeof(*w))) == NULL)
+		err(1, "calloc");
+	for (i = 2; i < argc; i++)
+		if (asprintf((char **)(uintptr_t)&w[i - 2], "mirror=%s",
+		    argv[i]) == -1)
+			err(1, "asprintf");
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_CLAMAV;
+	sp.verb = argv[1];
+	sp.names.v = w;
+	sp.names.n = (size_t)argc - 2;
+	/* The host's alone: -j is passed on to be refused, not dropped. */
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/*
  * cert [list] | add name file | remove name | trust file | untrust file |
  * rehash: the certificates OpenSSL trusts, of the host or of -j's jail;
  * a change is a job.
@@ -4234,6 +4265,8 @@ main(int argc, char *argv[])
 		rc = cmd_crashes(&cl, argc, argv);
 	else if (strcmp(argv[0], "snort") == 0)
 		rc = cmd_snort(&cl, argc, argv);
+	else if (strcmp(argv[0], "clamav") == 0)
+		rc = cmd_clamav(&cl, argc, argv);
 	else if (strcmp(argv[0], "poudriere") == 0)
 		rc = cmd_poudriere(&cl, argc, argv);
 	else if (strcmp(argv[0], "sshd") == 0)

@@ -421,7 +421,14 @@ do_service_config(struct work *w, const struct arc_service_config_req *rq,
 	rsp->has_ok = true;
 	rsp->ok = false;
 	scan_scripts(w, &all, &n);
-	if ((sc = script_find(all, n, name)) == NULL) {
+	/* Snort's script comes with the agent, as for an action. */
+	if ((sc = script_find(all, n, name)) == NULL && strcmp(name,
+	    "arcana_snort") == 0) {
+		snort_rc_install(w);
+		scan_scripts(w, &all, &n);
+		sc = script_find(all, n, name);
+	}
+	if (sc == NULL) {
 		rsp->error = wfmt(w, "no rc.d script '%s' in %s", name,
 		    opts.rc_dirs);
 		return (0);

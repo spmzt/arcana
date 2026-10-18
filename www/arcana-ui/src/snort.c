@@ -347,8 +347,8 @@ view_settings(struct html *h)
 	    "inline, by ipfw divert</option>", ips ? "" : " selected", ips ?
 	    " selected" : "");
 	h_raw(h, "</select></label><label title=\"Detects: each watched, a "
-	    "packet thread each\">Interfaces<input name=\"interfaces\" "
-	    "placeholder=\"em0 em1\" spellcheck=\"false\" autocomplete=\"off\"");
+	    "packet thread each; any: every interface up when Snort starts\">Interfaces<input name=\"interfaces\" "
+	    "placeholder=\"em0 em1, or any\" spellcheck=\"false\" autocomplete=\"off\"");
 	h_attr(h, "value", jstr(rc, "interfaces"));
 	h_raw(h, "></label>");
 	/* The divert port is prevent mode's alone. */

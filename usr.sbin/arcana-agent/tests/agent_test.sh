@@ -5326,8 +5326,9 @@ EOS
 	chmod +x fake-snort
 	DAEMON_ARGS="--snort $d/no-snort --snort-etc $d/se --snort-log $d/sl"
 	start_daemon
-	# Not installed: said, and nothing done.
+	# Not installed: said, and nothing done; no rc.d script written.
 	atf_check -o match:'"installed":false' "$JGC" -c "$SOCK" snort
+	[ ! -e local/rc.d/arcana_snort ] || atf_fail "a script without Snort"
 	atf_check -s exit:1 -o match:'failed +snort update: .*pkg install snort3' \
 	    -e ignore "$JGC" -c "$SOCK" snort update
 	stop_daemon
@@ -5339,6 +5340,14 @@ EOS
 	    -o match:'no rules taken in yet' \
 	    -o match:'"default_url":"https://www.snort.org/downloads/community/snort3-community-rules.tar.gz"' \
 	    "$JGC" -c "$SOCK" snort
+	# Snort there and read, the agent's own rc.d script is there too,
+	# as its build has it, without a job.
+	atf_check -o match:'^name="arcana_snort"' cat local/rc.d/arcana_snort
+	[ -x local/rc.d/arcana_snort ] || atf_fail "arcana_snort not executable"
+	# Taken away, the next read puts it back.
+	rm local/rc.d/arcana_snort
+	atf_check -o ignore "$JGC" -c "$SOCK" snort
+	atf_check -o match:'^name="arcana_snort"' cat local/rc.d/arcana_snort
 	# Words it does not take, and a jail's: refused before they run.
 	atf_check -s exit:1 -e match:'each gid:sid' -o ignore \
 	    "$JGC" -c "$SOCK" snort rule off=105
@@ -5419,6 +5428,13 @@ EOS
 	atf_check -o match:'"home_net":"\[192.0.2.0/24,2001:db8::/32\]"' \
 	    -o match:'no interface nosuch0 here' \
 	    -o match:'enabled, not running' "$JGC" -c "$SOCK" snort
+	# Every interface: any, alone, kept as it is, said of no interface
+	# missing (the rc.d script takes what is up when Snort starts).
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort set interface=any
+	atf_check -o match:'^arcana_snort_interfaces="any"$' cat rc.conf
+	atf_check -o not-match:'no interface' "$JGC" -c "$SOCK" snort
+	atf_check -s exit:1 -e match:'any stands alone' -o ignore \
+	    "$JGC" -c "$SOCK" snort set interface=any interface=lo0
 	atf_check -s exit:1 -e match:'home_net is any' -o ignore \
 	    "$JGC" -c "$SOCK" snort set "home_net=10.0.0.0/8'; os.exit()"
 	# The oinkcode in a registered rules' address (the console's secret)
@@ -5437,6 +5453,47 @@ EOS
 	    "$JGC" -c "$SOCK" snort
 }
 snort_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case clamav cleanup
+clamav_head()
+{
+	atf_set "descr" "freshclam's mirrors written into freshclam.conf, made from the port's sample when there is none"
+}
+clamav_body()
+{
+	d=$(pwd)
+	mkdir fc
+	printf '# Comment\nExample\nDatabaseOwner clamav\nDatabaseMirror database.clamav.net\nNotifyClamd /usr/local/etc/clamd.conf\n' \
+	    > fc/freshclam.conf.sample
+	DAEMON_ARGS="--freshclam-conf $d/fc/freshclam.conf"
+	start_daemon
+	# None there: made from the sample, without its Example line, the
+	# mirrors in the order given where the sample's was.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" clamav mirrors \
+	    database.clamav.net https://packages.microsoft.com/clam
+	atf_check -o inline:'# Comment\nDatabaseOwner clamav\nDatabaseMirror database.clamav.net\nDatabaseMirror https://packages.microsoft.com/clam\nNotifyClamd /usr/local/etc/clamd.conf\n' \
+	    cat fc/freshclam.conf
+	# There: its mirrors replaced, the rest as it was.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" clamav mirrors \
+	    https://mirror.example.org/clamav
+	atf_check -o inline:'# Comment\nDatabaseOwner clamav\nDatabaseMirror https://mirror.example.org/clamav\nNotifyClamd /usr/local/etc/clamd.conf\n' \
+	    cat fc/freshclam.conf
+	# What is not a mirror, none, a jail's: refused.
+	atf_check -s exit:1 -e match:'host name, or an http or https' \
+	    -o ignore "$JGC" -c "$SOCK" clamav mirrors 'ftp://x/y'
+	atf_check -s exit:1 -e match:'host name, or an http or https' \
+	    -o ignore "$JGC" -c "$SOCK" clamav mirrors 'a b'
+	atf_check -s exit:1 -e match:"freshclam is the host's" -o ignore \
+	    "$JGC" -c "$SOCK" -j web clamav mirrors database.clamav.net
+	# Neither the file nor its sample: ClamAV is not there.
+	rm fc/freshclam.conf fc/freshclam.conf.sample
+	atf_check -s exit:1 -o match:'pkg install clamav' -e ignore \
+	    "$JGC" -c "$SOCK" clamav mirrors database.clamav.net
+}
+clamav_cleanup()
 {
 	stop_daemon
 }
@@ -8377,6 +8434,7 @@ atf_init_test_cases()
 	atf_add_test_case neighbours
 	atf_add_test_case multicast
 	atf_add_test_case snort
+	atf_add_test_case clamav
 	atf_add_test_case certs
 	atf_add_test_case sshd
 	atf_add_test_case capture

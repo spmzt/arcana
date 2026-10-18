@@ -879,7 +879,7 @@ clamav_json(ucl_object_t *top)
 		int	 nl, j;
 		bool	 conf, example;
 
-		conf = (pf = fopen("/usr/local/etc/freshclam.conf", "re")) != NULL;
+		conf = (pf = fopen(opts.freshclam_conf, "re")) != NULL;
 		example = false;
 		while (pf != NULL && fgets(line, sizeof(line), pf) != NULL)
 			if (strncmp(line, "Example", 7) == 0 && (line[7] == '\n' ||
@@ -889,6 +889,7 @@ clamav_json(ucl_object_t *top)
 			fclose(pf);
 		ucl_object_insert_key(o, ucl_object_frombool(conf && !example),
 		    "conf", 0, false);
+		clamav_mirrors_json(o);
 		nl = 0;
 		if ((pf = fopen("/var/log/clamav/freshclam.log", "re")) != NULL) {
 			while (fgets(line, sizeof(line), pf) != NULL) {

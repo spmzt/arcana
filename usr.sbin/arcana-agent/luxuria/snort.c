@@ -209,7 +209,8 @@ const char *
 snort_check(const struct arc_job_spec *sp)
 {
 	const char	*v, *eq;
-	size_t		 i;
+	size_t		 i, nif;
+	bool		 anyif;
 
 	if (sp->jail != NULL && sp->jail[0] != '\0')
 		return ("Snort is the host's: arcana_snort runs it there");
@@ -222,6 +223,8 @@ snort_check(const struct arc_job_spec *sp)
 		if ((eq = strchr(sp->names.v[i], '=')) == NULL ||
 		    eq == sp->names.v[i])
 			return ("the words of a snort job are key=value");
+	nif = 0;
+	anyif = false;
 	if (strcmp(sp->verb, "set") == 0) {
 		for (i = 0; i < sp->names.n; i++) {
 			v = sp->names.v[i];
@@ -236,7 +239,10 @@ snort_check(const struct arc_job_spec *sp)
 			} else if (strncmp(v, "interface=", 10) == 0) {
 				if (v[10] != '\0' && !valid_ifname(v + 10))
 					return ("an interface= is an "
-					    "interface's name");
+					    "interface's name, or any");
+				if (strcmp(v + 10, "any") == 0)
+					anyif = true;
+				nif++;
 			} else if (strncmp(v, "divert_port=", 12) == 0) {
 				if (strspn(v + 12, "0123456789") !=
 				    strlen(v + 12) || atoi(v + 12) < 1 ||
@@ -255,6 +261,9 @@ snort_check(const struct arc_job_spec *sp)
 		if (sp->names.n == 0)
 			return ("set changes something: enable, mode, "
 			    "interface, divert_port or home_net");
+		if (anyif && nif > 1)
+			return ("interface=any stands alone: every interface "
+			    "up when Snort starts");
 		return (NULL);
 	}
 	if (strcmp(sp->verb, "conf") == 0) {
@@ -1351,7 +1360,8 @@ warnings(struct work *w, ucl_object_t *top, const char *mode,
 			    "no interface: pick one"));
 		copy = wstrdup(w, ifs);
 		for (it = copy; (ifn = strsep(&it, " ")) != NULL; )
-			if (ifn[0] != '\0' && !if_exists(w, ifn))
+			if (ifn[0] != '\0' && strcmp(ifn, "any") != 0 &&
+			    !if_exists(w, ifn))
 				ucl_array_append(arr, ucl_object_fromstring(
 				    wfmt(w, "no interface %s here", ifn)));
 	}
@@ -1373,6 +1383,12 @@ do_snort(struct work *w, const char *const *names, size_t nnames,
 	long		 pid;
 	size_t		 i;
 	bool		 with_rules, installed;
+
+	/* The rc.d script, there once Snort is looked at here: an agent
+	 * that came by agent-update brings it in its binary
+	 * (snort_rc_install). */
+	if (access(opts.snort_bin, X_OK) == 0)
+		snort_rc_install(w);
 
 	with_rules = false;
 	for (i = 0; i < nnames; i++)

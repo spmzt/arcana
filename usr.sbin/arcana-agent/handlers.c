@@ -2568,7 +2568,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_SNORT)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_CLAMAV)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2769,6 +2769,8 @@ check_spec(const struct arc_job_spec *sp)
 		return (poudriere_check(sp));
 	case ARC_JOB_KIND_SNORT:
 		return (snort_check(sp));
+	case ARC_JOB_KIND_CLAMAV:
+		return (clamav_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->safe)
 			return ("wireguard changes are not undone: not in "

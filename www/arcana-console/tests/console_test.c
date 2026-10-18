@@ -7357,6 +7357,27 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "&& grep -q 'HOME_NET: \"\\[10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'"
 	    " sdwan-ids-sec-lan.yaml && grep -q 'sid:1000009' "
 	    "sdwan-ids-sec-lan.rules") == 0);
+	/* Every address its home: any, alone, and so outside too. */
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\",\"10.0.0.0/8\"],"
+	    "\"rules\":\"alert tcp any any -> any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "any stands alone") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"nonsense\"],"
+	    "\"rules\":\"alert tcp any any -> any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "nonsense is not one") != NULL && strstr(
+	    r.body, "or any") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"rules\":\"alert tcp any any -> any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q 'HOME_NET: \"any\"$' sdwan-ids-sec-lan.yaml && "
+	    "grep -q 'EXTERNAL_NET: \"any\"$' sdwan-ids-sec-lan.yaml") == 0);
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[]}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);

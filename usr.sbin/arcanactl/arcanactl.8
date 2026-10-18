@@ -305,6 +305,23 @@ and
 Each change is checked by
 .Nm snort Fl T
 before it replaces what was there, and a running Snort reloads.
+.It Cm clamav Cm mirrors Ar mirror ...
+ClamAV's
+.Xr freshclam 1 :
+writes the
+.Li DatabaseMirror
+lines of
+.Pa freshclam.conf ,
+one for each
+.Ar mirror
+in the order given (a host name, or an http or https URL), in place of
+the ones there were; a
+.Pa freshclam.conf
+not there yet is made from the port's sample, without its
+.Li Example
+line.
+A running freshclam takes them when it is restarted.
+A job.
 .It Cm cert Oo Cm list | Cm add Ar name file | Cm remove Ar name | Cm trust Ar file | Cm untrust Ar file | Cm rehash Oc
 The certificates OpenSSL trusts, of the host or of
 .Fl j Ns 's
