@@ -5476,6 +5476,15 @@ EOS
 	# missing (the rc.d script takes what is up when Snort starts).
 	atf_check -o match:'done' "$JGC" -c "$SOCK" snort set interface=any
 	atf_check -o match:'^arcana_snort_interfaces="any"$' cat rc.conf
+	# The rc.d script's: Snort 3 takes one -i an interface, a packet
+	# thread each (-i "a b" is one interface of that name); any is what
+	# is up but the loopback and the like.
+	sed -e 's|^\. /etc/rc.subr$|load_rc_config() { :; }; run_rc_command() { echo "$command_args"; }|' \
+	    local/rc.d/arcana_snort > snort-rc.sh
+	atf_check -o match:' -i lo0 -i nosuch0 -z 2$' \
+	    env arcana_snort_interfaces="lo0 nosuch0" sh snort-rc.sh start
+	atf_check -o not-match:' -i lo[0-9]' -o match:' -i [a-z]+[0-9]+.* -z [0-9]+$' \
+	    env arcana_snort_interfaces=any sh snort-rc.sh start
 	atf_check -o not-match:'no interface' "$JGC" -c "$SOCK" snort
 	atf_check -s exit:1 -e match:'any stands alone' -o ignore \
 	    "$JGC" -c "$SOCK" snort set interface=any interface=lo0
