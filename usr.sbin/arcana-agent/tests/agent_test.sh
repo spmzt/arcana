@@ -135,6 +135,8 @@ status)		[ -f "running.\$name" ] && { echo "\$name is running as pid 4242."; exi
 start|onestart)	touch "running.\$name"; echo "Starting \$name." ;;
 stop)		rm -f "running.\$name"; echo "Stopping \$name." ;;
 restart)	[ -f slow ] && sleep 2
+		# Held while the test wants it under way, a minute at most.
+		i=0; while [ -f hold ] && [ \$i -lt 600 ]; do sleep 0.1; i=\$((i + 1)); done
 		touch "running.\$name"; echo "Restarting \$name." ;;
 reload|onereload)	echo "Reloading \$name." ;;
 describe)	echo "The \$name daemon." ;;
@@ -3461,7 +3463,8 @@ stop_body()
 	# first, and the log says what it is and what will not run.
 	start_daemon
 	pid=$(cat daemon.pid)
-	touch slow
+	# Under way until the test lets it end, however loaded the machine.
+	touch slow hold
 	"$JGC" -c "$SOCK" service sshd restart > change.out 2>&1 &
 	change=$!
 	# Once the change is under way, not at a guess of when.
@@ -3474,7 +3477,10 @@ stop_body()
 	    -o not-match:'Stopping' "$JGC" -c "$SOCK" jobs
 	atf_check -o ignore "$JGC" -q -c "$SOCK" start web
 	kill "$pid"
-	sleep 0.5
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Stopping' && break
+		sleep 0.1
+	done
 	atf_check -s exit:0 kill -0 "$pid"
 	atf_check -o match:'Under way: +service sshd restart' \
 	    -o match:'Stopping: +when what is under way ends' \
@@ -3482,6 +3488,7 @@ stop_body()
 	atf_check -o match:'a change is under way' \
 	    -o match:'under way: service sshd restart' \
 	    -o match:'queued, will not run: job 1: start web' cat daemon.out
+	rm hold
 	wait $change
 	atf_check -o match:'sshd' cat change.out
 	for i in $(seq 1 60); do
@@ -3496,7 +3503,7 @@ stop_body()
 	# Signalled twice, it does not wait.
 	start_daemon
 	pid=$(cat daemon.pid)
-	touch slow
+	touch slow hold
 	"$JGC" -c "$SOCK" service sshd restart > /dev/null 2>&1 &
 	# Under way before the signals, however loaded the machine is.
 	for i in $(seq 1 150); do
@@ -3513,6 +3520,7 @@ stop_body()
 	done
 	atf_check -s exit:1 -e ignore kill -0 "$pid"
 	atf_check -o match:'signalled again' cat daemon.out
+	rm hold
 	wait
 }
 stop_cleanup()

@@ -775,6 +775,51 @@ ATF_TC_BODY(users, tc)
 	http("DELETE", "/api/users/admin", NULL, &r);
 	EXPECT(&r, 409);
 	resp_free(&r);
+	/* Groups: users given roles together; a user may do what its own
+	 * roles and its groups' allow. */
+	http("PUT", "/api/groups/ops", "{\"roles\":[\"operator\"],"
+	    "\"members\":[\"bob\"]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("ops", jstr(&r, "groups.0.name"));
+	ATF_CHECK_STREQ("bob", jstr(&r, "groups.0.members.0"));
+	ATF_CHECK_STREQ("operator", jstr(&r, "users.1.console"));
+	ATF_CHECK_STREQ("ops", jstr(&r, "users.1.groups.0"));
+	resp_free(&r);
+	http("PUT", "/api/groups/bad", "{\"roles\":[\"nosuch\"]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("PUT", "/api/groups/bad", "{\"roles\":[],\"members\":"
+	    "[\"nobody\"]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* A role a group gives stays while it does. */
+	http("DELETE", "/api/roles/operator", NULL, &r);
+	EXPECT(&r, 409);
+	ATF_CHECK(strstr(r.body, "group") != NULL);
+	resp_free(&r);
+	/* A user of a group alone; a user of neither is not one. */
+	http("PUT", "/api/users/carl", "{\"groups\":[\"ops\"]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("operator", jstr(&r, "users.2.console"));
+	resp_free(&r);
+	http("PUT", "/api/users/dave", "{}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("PUT", "/api/users/dave", "{\"groups\":[\"nosuch\"]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* Gone, its members out of it: what they may do is their own
+	 * roles' again. */
+	http("DELETE", "/api/groups/ops", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "groups.0.name") == NULL);
+	ATF_CHECK_STREQ("member", jstr(&r, "users.1.console"));
+	ATF_CHECK(jstr(&r, "users.1.groups.0") == NULL);
+	ATF_CHECK_STREQ("none", jstr(&r, "users.2.console"));
+	resp_free(&r);
+	http("DELETE", "/api/users/carl", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
 	http("DELETE", "/api/users/bob", NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK(jstr(&r, "users.1.name") == NULL);

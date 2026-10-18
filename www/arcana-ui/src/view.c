@@ -2375,6 +2375,7 @@ modal(struct html *h)
 		break;
 	case MODAL_USER:
 	case MODAL_ROLE:
+	case MODAL_UGROUP:
 		if (!user_modal(h))
 			return;
 		h_raw(h, "<div class=\"actions\"><button class=\"primary\">Keep"

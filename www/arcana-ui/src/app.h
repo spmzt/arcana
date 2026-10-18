@@ -421,6 +421,7 @@ enum modal {
 	MODAL_SD_GROUP,		/* a group of a remote end point's identities */
 	MODAL_USER,		/* a console user and their roles */
 	MODAL_ROLE,		/* a role: what it allows */
+	MODAL_UGROUP,		/* a group of users: its roles, its members */
 	MODAL_PKG_INSTALL,
 	MODAL_WF_RUN,
 	MODAL_IF_VNET,
@@ -893,7 +894,7 @@ enum { SET_LOOK, SET_NOTIFY, SET_TOKENS, SET_KEYS, SET_CONSOLE,
     SET_CLUSTER };
 /* The AAA tab's own: who signs in (users, roles, keys, the directory),
  * and what programs use (tokens). */
-enum { AAA_USERS, AAA_ROLES, AAA_KEYS, AAA_LDAP, AAA_TOKENS };
+enum { AAA_USERS, AAA_ROLES, AAA_KEYS, AAA_LDAP, AAA_TOKENS, AAA_GROUPS };
 const char	*aaatab_arg(int);
 int		 aaatab_of(const char *);
 void		 set_keys(struct html *);

@@ -695,6 +695,19 @@
   never made nor taken away.  The IPFW tab's Load the current file
   verified in a jail with its own rc.conf and script (the lab's
   arcswan1 root).
+- Asked for on 2026-10-18:
+  - Consoles clustered, active/active, over cblink: done, console
+    0.215.0 (docs/notes/console-cluster.md has what is not yet).
+  - RBAC, groups of users: a group's roles are its members', a user
+    in groups or with roles of its own.  Done, console 0.216.0.
+  - Suricata: the ruleset fetched from the console (a suricata job,
+    suricata-update), left out until it is; its errors read where it
+    writes them (stderr, its own log); interface any made the
+    interfaces up; the ruleset's rules that negate a HOME_NET of any
+    left out as Suricata does running.  Done, agent 0.146.2 to 0.146.4.
+  - Snort on several interfaces: an -i each.  Done, agent 0.146.5.
+  - poudriere jail's -K, -b, -B and every -m method.  Done, agent
+    0.146.3.
 - Asked for on 2026-10-17:
   - A program the kernel sees die of a signal is a fault now (crash,
     with the kernel's reason for no core).  Done 2026-10-17, agent
