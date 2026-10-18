@@ -908,7 +908,10 @@
     SD-WAN tunnels by ipfw tcp-setmss, an interface's, or the agent's
     links?), labels on interfaces (a console-side tag, or the
     interface's description?), prefix lists (used by what: ipfw
-    tables, BIRD filters, SD-WAN zones?).
+    tables, BIRD filters, SD-WAN zones?).  (Answered 2026-10-18 and
+    done: MSS by ipfw tcp-setmss on SD-WAN tunnels, labels a
+    console-side tag, prefix lists kept by the console and picked in
+    ipfw, BIRD, SD-WAN, Snort, Suricata, the proxy and IPsec forms.)
   - A certificates tab per host, by certctl and OpenSSL. (Done
     2026-10-12: trusted and untrusted, read with OpenSSL; a CA given,
     one distrusted and trusted again, kept where certctl rehash finds
