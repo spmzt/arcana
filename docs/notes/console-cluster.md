@@ -116,6 +116,49 @@ removing it:
 If the user prefers B, step 1 is still the right first move: it makes
 one writer, and the database then only replaces the leader's disk.
 
+## Decided 2026-10-18: C, and its shape
+
+The user chose C. One change to the two steps above: a leader that
+alone holds the stores gives no availability, since nothing can take
+over when it stops. Every store is a whole document (`store_save` writes
+the file whole), so the stores replicate without a log of operations:
+
+- **Membership.** Each node is named in `cluster { node … }` of web.conf
+  with its cblink URI; three nodes at least, or two and a witness. Nodes
+  talk over a family of their own, `arcana-cluster` (its own IDL,
+  `share/arcana/cluster.yaml`), on a listener of each console's, with
+  mutual TLS by certificates of the console's CA that say
+  `URI:urn:arcana:role:console` and serve as well as dial.
+- **Terms and votes.** A node that hears no leader for an election
+  timeout asks the others for their votes for the next term; a node
+  votes once a term, and only for a candidate whose stores are as new
+  as its own (the highest version it holds). A majority makes a leader,
+  which says so to the others every heartbeat.
+- **Versioned documents.** The leader numbers every write
+  `(term, seq)`. A follower's `store_save` is sent to the leader, which
+  numbers it, writes it, sends it to every follower and answers once a
+  majority holds it. Every node reads its own copy: reads stay local,
+  active/active. A node behind (restarted, cut off) is sent what is
+  newer than its versions when the leader next hears it.
+- **Locks.** The read-change-write stores (labels, templates, prefix
+  lists, users' sign-ins) take their lock from the leader, so that two
+  nodes do not each write their own change over the other's.
+- **Caches.** What a subsystem keeps in memory (keys, sessions, users,
+  servers, push subscriptions) is read again when a replicated write of
+  its store lands.
+- **What runs once.** The workflow scheduler, the SD-WAN manager loop
+  and the mail watcher run on the leader alone, started when a node
+  becomes one and stopped when it is not.
+- **Sessions** become a document each (`sessions/<hash>`), so that two
+  nodes signing people in never write over each other's.
+- **The browser.** Each node keeps its own origin; the WebAuthn RP ID
+  is a name the nodes share (`console.example` for
+  `a.console.example`, `b.console.example`), and the origin check takes
+  the list of the nodes' origins.
+
+A write needs a majority; a node cut off from it still reads, and
+refuses changes, saying the cluster has no majority here.
+
 ## What the user decides
 
 - A, B or C (C recommended).

@@ -3164,7 +3164,11 @@ call_new(struct http_request *req, enum op op)
 	bool			 mutate;
 
 	t0 = now_us();
-	mutate = op == OP_ACTION || op == OP_ADDRESS ||
+	/* A change: whatever is not a GET, as well as what the list says;
+	 * a route reads only by its method, so none can slip through as
+	 * a read (a viewer's, without the CSRF checks). */
+	mutate = req->method != HTTP_METHOD_GET || op == OP_ACTION ||
+	    op == OP_ADDRESS ||
 	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
 	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL || op == OP_CAPTURE ||
 	    op == OP_ZFS_KEY || op == OP_SDWAN_PROXY || op == OP_SDWAN_IDS ||

@@ -668,6 +668,16 @@ ATF_TC_BODY(users, tc)
 	http("DELETE", path, NULL, &r);
 	EXPECT(&r, 403);
 	resp_free(&r);
+	/* What changes a host or the console by POST is a change, whatever
+	 * the route reads: refused to a viewer. */
+	snprintf(path, sizeof(path), "/api/servers/%s/transport/switch", ha);
+	http("POST", path, "{\"to\":\"sctp\"}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/bird/config", ha);
+	http("POST", path, "{\"text\":\"router id 10.0.0.1;\"}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
 	/* The console's own, and the fleet's tools, not a member's; the
 	 * prefix lists read. */
 	http("GET", "/api/settings", NULL, &r);

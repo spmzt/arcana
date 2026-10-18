@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.146.0"
+#define	ARCANA_AGENT_VERSION	"0.146.1"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -53,6 +53,7 @@
 #define	PATH_SQUID_BIN		"/usr/local/sbin/squid"
 #define	PATH_CICAP_BIN		"/usr/local/bin/c-icap"
 #define	PATH_SURICATA_BIN	"/usr/local/bin/suricata"
+#define	SURICATA_ETC		"/usr/local/etc/suricata"
 #define	PATH_POUDRIERE_BIN	"/usr/local/bin/poudriere"
 #define	PATH_IFMCSTAT_BIN	"/usr/sbin/ifmcstat"
 #define	PATH_SNORT_BIN		"/usr/local/bin/snort"

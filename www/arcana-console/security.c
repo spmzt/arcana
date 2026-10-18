@@ -409,9 +409,10 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 	kore_buf_appendf(b, "\nrule-files:\n  - @RULES@\n");
 	if (ruleset)
 		kore_buf_appendf(b, "  - %s\n", SEC_RULESET);
-	kore_buf_appendf(b, "classification-file: "
-	    "/usr/local/etc/suricata/classification.config\n"
-	    "reference-config-file: /usr/local/etc/suricata/reference.config\n"
+	/* Suricata's own files, which a fresh install has as samples: the
+	 * agent names the one there is. */
+	kore_buf_appendf(b, "classification-file: @CLASSIFICATION@\n"
+	    "reference-config-file: @REFERENCE@\n"
 	    "run-as:\n  user: root\n");
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, ucl_object_fromstring(name), "name", 0,

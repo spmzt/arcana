@@ -177,21 +177,72 @@ inst_stop(struct work *w, const char *name)
 	(void)unlink(inst_path(w, name, "pid"));
 }
 
+/*
+ * One of Suricata's own files in its etc directory: as it is named, or
+ * the port's sample of it, which is all a fresh install has.
+ */
+static const char *
+suricata_etc(struct work *w, const char *file)
+{
+	const char	*p;
+
+	p = wfmt(w, "%s/%s", SURICATA_ETC, file);
+	if (access(p, R_OK) == 0)
+		return (p);
+	if (access(wfmt(w, "%s.sample", p), R_OK) == 0)
+		return (wfmt(w, "%s.sample", p));
+	return (p);
+}
+
+/*
+ * Why suricata -T refused, from what it said: its error lines (E:), or
+ * the end of what it wrote, or that it said nothing.
+ */
+static const char *
+suricata_errors(struct work *w, const struct execres *res)
+{
+	const char	*t, *p, *nl;
+	char		*out;
+	size_t		 n;
+
+	t = res->outlen > 0 ? wstrndup(w, res->out, res->outlen) : res->errlen >
+	    0 ? wstrndup(w, res->err, res->errlen) : NULL;
+	if (t == NULL || t[0] == '\0')
+		return ("no reason given");
+	out = wcalloc(w, 1, 1024);
+	n = 0;
+	for (p = t; *p != '\0' && n < 1000; p = nl) {
+		nl = strchr(p, '\n');
+		nl = nl != NULL ? nl + 1 : p + strlen(p);
+		if (strncmp(p, "E: ", 3) == 0 || strstr(p, "Error:") != NULL ||
+		    strstr(p, "could not open") != NULL)
+			n += (size_t)snprintf(out + n, 1024 - n, "%s%.*s", n > 0 ?
+			    "; " : "", (int)(nl - p - (nl[-1] == '\n' ? 1 : 0)), p);
+	}
+	if (n > 0)
+		return (out);
+	n = strlen(t);
+	return (n > 600 ? t + n - 600 : t);
+}
+
 /* An instance's configuration: the console's text, the places filled. */
 static char *
 inst_conf(struct work *w, const char *name, const char *conf)
 {
-	const char	*from[] = { "@LOGDIR@", "@RULES@", "@PID@" }, *to[3];
+	const char	*from[] = { "@LOGDIR@", "@RULES@", "@PID@",
+			    "@CLASSIFICATION@", "@REFERENCE@" }, *to[5];
 	char		*out, *p, *q;
 	size_t		 i, n, len;
 
 	to[0] = inst_path(w, name, "d");
 	to[1] = inst_path(w, name, "rules");
 	to[2] = inst_path(w, name, "pid");
+	to[3] = suricata_etc(w, "classification.config");
+	to[4] = suricata_etc(w, "reference.config");
 	len = strlen(conf) + 8 * MAXPATHLEN + 1;
 	out = wcalloc(w, 1, len);
 	for (p = (char *)(uintptr_t)conf, q = out; *p != '\0';) {
-		for (i = 0; i < 3; i++) {
+		for (i = 0; i < nitems(from); i++) {
 			n = strlen(from[i]);
 			if (strncmp(p, from[i], n) == 0 && (size_t)(q - out) +
 			    strlen(to[i]) < len - 1) {
@@ -200,7 +251,7 @@ inst_conf(struct work *w, const char *name, const char *conf)
 				break;
 			}
 		}
-		if (i == 3 && (size_t)(q - out) < len - 1)
+		if (i == nitems(from) && (size_t)(q - out) < len - 1)
 			*q++ = *p++;
 	}
 	*q = '\0';
@@ -489,7 +540,7 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 	ucl_object_iter_t	 it, fit;
 	struct instance		 ni[INSTANCES_MAX];
 	struct execres		 res;
-	char			*argv[6], *conf, *was;
+	char			*argv[8], *conf, *was;
 	const char		*rules, *e;
 	int			 n, i, k, step, nkeep;
 	bool			 ok, same, sec;
@@ -653,12 +704,16 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		argv[1] = (char *)(uintptr_t)"-T";
 		argv[2] = (char *)(uintptr_t)"-c";
 		argv[3] = (char *)(uintptr_t)inst_path(w, ni[k].name, "yaml");
-		argv[4] = NULL;
+		/* What it refuses said where it can be read: the file it
+		 * logs to otherwise is the instance's, not the answer. */
+		argv[4] = (char *)(uintptr_t)"--set";
+		argv[5] = (char *)(uintptr_t)
+		    "logging.outputs.0.console.enabled=yes";
+		argv[6] = NULL;
 		if (run_exec(w, argv, &res) != 0) {
 			step_end(w, step, false, "suricata does not take it");
 			*errp = wfmt(w, "%s: suricata does not take it: %s",
-			    ni[k].name, res.errlen > 0 ? res.err : res.out !=
-			    NULL ? res.out : "no reason given");
+			    ni[k].name, suricata_errors(w, &res));
 			ok = false;
 			break;
 		}

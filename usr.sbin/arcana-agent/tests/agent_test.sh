@@ -2976,7 +2976,7 @@ EOS
 	cat > tools/suricata <<EOS
 #!/bin/sh
 echo "suricata \$*" >> $(pwd)/suricata.log
-[ "\$1" = -T ] && { grep -q BROKEN "\$3" && { echo "Error: rule BROKEN at line 1" >&2; exit 1; }; exit 0; }
+[ "\$1" = -T ] && { grep -q BROKEN "\$3" && { [ "\$5" = logging.outputs.0.console.enabled=yes ] && echo "E: detect: rule BROKEN at line 1"; exit 1; }; exit 0; }
 d=\$(sed -n 's/^default-log-dir: //p' "\$2")
 printf '%s\\n' '{"timestamp":"2026-10-12T18:00:00.000000+0000","event_type":"flow","src_ip":"10.30.0.2"}' \\
     '{"timestamp":"2026-10-12T18:00:01.000000+0000","in_iface":"wg5","event_type":"alert","src_ip":"10.30.0.2","src_port":40000,"dest_ip":"10.20.0.1","dest_port":80,"proto":"TCP","alert":{"action":"allowed","signature_id":1000001,"rev":1,"signature":"ARCANA test \\"quoted\\"","category":"","severity":2}}' >> "\$d/eve.json"
@@ -3147,13 +3147,17 @@ EOS
 	    '{"instances":[{"name":"sw1","interfaces":[],"conf":"x"}]}'
 	atf_check -s exit:1 -e match:'its interfaces are names' -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    '{"instances":[{"name":"sw1","interfaces":["wg5; rm"],"conf":"x"}]}'
-	atf_check -s exit:1 -e match:'suricata does not take it: Error: rule BROKEN' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	# Its reason, which Suricata says only where it logs: on the console
+	# for the check.
+	atf_check -s exit:1 -e match:'suricata does not take it: E: detect: rule BROKEN at line 1' -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    '{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"BROKEN"}]}'
-	ids='{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"default-log-dir: @LOGDIR@\nrule-files:\n  - @RULES@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
+	ids='{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"default-log-dir: @LOGDIR@\nrule-files:\n  - @RULES@\nclassification-file: @CLASSIFICATION@\nreference-config-file: @REFERENCE@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$ids"
-	atf_check -o match:'^suricata -T -c .*sdwan-ids-sw1.yaml$' \
+	atf_check -o match:'^suricata -T -c .*sdwan-ids-sw1.yaml --set logging.outputs.0.console.enabled=yes$' \
 	    -o match:'^suricata -c .*sdwan-ids-sw1.yaml --pidfile .*sdwan-ids-sw1.pid --pcap -D$' cat suricata.log
 	atf_check -o match:'^default-log-dir: .*sdwan-ids-sw1.d$' -o match:'^  - .*sdwan-ids-sw1.rules$' \
+	    -o match:'^classification-file: /usr/local/etc/suricata/classification.config' \
+	    -o match:'^reference-config-file: /usr/local/etc/suricata/reference.config' \
 	    cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	atf_check -o match:'sid:1000001' cat "$(dirname "$f")/sdwan-ids-sw1.rules"
 	sleep 2
