@@ -184,7 +184,7 @@ guard(struct http_request *req, bool mutate)
 		return (false);
 	}
 	if (http_request_header(req, "origin", &v) &&
-	    strcmp(v, cfg.origin) != 0) {
+	    strcmp(v, cfg.origin) != 0 && !cluster_origin(v)) {
 		reply_error(req, 403, "csrf", "origin %s not allowed", v);
 		return (false);
 	}
@@ -393,6 +393,31 @@ tlog_tick(void *arg, u_int64_t now)
 	}
 }
 
+/* A store another node of the cluster wrote, read again by what keeps
+ * it; NULL: every one. */
+static void
+reload_one(const char *name)
+{
+
+	if (name == NULL || strcmp(name, "credentials.json") == 0 ||
+	    strcmp(name, "sessions.json") == 0)
+		auth_reload(name);
+	if (name == NULL || strcmp(name, "users.json") == 0)
+		users_reload();
+	if (name == NULL || strcmp(name, "servers.json") == 0)
+		servers_reload();
+	if (name == NULL || strcmp(name, "push.json") == 0)
+		push_reload();
+}
+
+/* On the worker, which those stores are of. */
+static void
+cluster_tick(void *arg __unused, uint64_t now __unused)
+{
+
+	cluster_changes(reload_one);
+}
+
 /* Called by Kore in every worker when the module is loaded. */
 int
 arcw_onload(int action)
@@ -410,15 +435,19 @@ arcw_onload(int action)
 	/* Kore goes on serving after a failed onload: stop it here. */
 	if (config_load(path) == -1 || pki_init() == -1 ||
 	    config_check_certs() == -1 || hosts_init() == -1 ||
-	    workflows_kinds_check() == -1 || push_init() == -1)
+	    workflows_kinds_check() == -1 || cluster_init() == -1 ||
+	    push_init() == -1)
 		fatalx("arcana: not starting, see above");
 	store_sweep();
 	auth_init();
 	users_init();
+	if (cluster_on())
+		(void)kore_timer_add(cluster_tick, 500, NULL, 0);
 	servers_init();
 	transfers_init();
 	workflows_init();
 	sdwan_init();
 	mail_init();
+	cluster_started();
 	return (KORE_RESULT_OK);
 }

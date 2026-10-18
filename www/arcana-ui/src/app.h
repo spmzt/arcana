@@ -889,7 +889,8 @@ void		 view_workflows(struct html *);
 bool		 workflows_action(const char *, const char *, const char *);
 /* view.c: the settings' tabs. */
 enum { SET_LOOK, SET_NOTIFY, SET_TOKENS, SET_KEYS, SET_CONSOLE,
-    SET_WEBCONF, SET_NEWS, SET_CA, SET_UPDATE, SET_USERS, SET_AAA };
+    SET_WEBCONF, SET_NEWS, SET_CA, SET_UPDATE, SET_USERS, SET_AAA,
+    SET_CLUSTER };
 /* The AAA tab's own: who signs in (users, roles, keys, the directory),
  * and what programs use (tokens). */
 enum { AAA_USERS, AAA_ROLES, AAA_KEYS, AAA_LDAP, AAA_TOKENS };
@@ -906,6 +907,8 @@ bool		 user_form(const char *, const ucl_object_t *);
 bool		 user_action(const char *, const char *);
 /* ca.c: Settings, Certificate authority. */
 void		 ca_load(void);
+void		 cluster_tick(double);
+void		 set_cluster(struct html *);
 void		 ca_tick(double);
 void		 set_ca(struct html *);
 bool		 ca_form(const char *, const ucl_object_t *);

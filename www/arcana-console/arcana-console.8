@@ -154,6 +154,44 @@ Without the block,
 is not found and only
 .Va origin
 is taken.
+.It Ic cluster Brq Va self Va listen Va nodes
+Consoles that are one, active on every node: each serves its browsers
+and reads its own copy of the data directory's documents, and every
+change is the cluster's.
+The nodes elect a leader (Raft) over the arcana-cluster family on
+.Va listen ,
+a cblink URI
+.Pq Li tcp://[::]:4311 ;
+the leader numbers each change and answers once a majority of the
+nodes holds it, and every node writes it in turn.
+.Va nodes
+names each node with its
+.Va uri
+and its
+.Va origin ;
+.Va self
+is this one's name.
+The first node named is the seed: its documents are the cluster's when
+it starts, sent whole to a node that has none; the others' are replaced.
+Three nodes, or five, keep a majority when one, or two, stop; a node
+cut off from the majority reads, and refuses changes.
+The workflow scheduler, the SD-WAN manager and mail run on the leader
+alone.
+Each node needs the CA of the first:
+.Pa ca.pem
+and
+.Pa ca.key
+copied to its
+.Va datadir
+before it starts; it makes its own certificate of that CA,
+.Pa cluster/node.pem ,
+which says
+.Li urn:arcana:role:console
+and its host's name, and the nodes take each other by it.
+.Va rp_id
+is a name every node's origin is under
+.Pq Li console.example No for Li https://a.console.example ,
+so that a security key registered on one signs in on every one.
 .El
 .Pp
 The settings

@@ -374,6 +374,11 @@ run(int nodes_n, uint32_t s, int steps, bool snapshots)
 		snprintf(nodes[i].name, sizeof(nodes[i].name), "n%d", i);
 		part[i] = 0;
 	}
+	/* The seed: its documents (none) are the base the others are sent;
+	 * it alone may lead first. */
+	nodes[0].d.term = 1;
+	nodes[0].d.base_term = 1;
+	nodes[0].d.base_seq = 1;
 	for (i = 0; i < nn; i++)
 		start(i);
 	for (step = 0; step < steps; step++) {
@@ -534,9 +539,13 @@ ATF_TC_BODY(one, tc)
 	const struct craft_entry *e;
 	uint64_t	 term, seq;
 
-	/* Alone, it leads at its first deadline and commits at once. */
+	/* Alone, it leads at its first deadline and commits at once; but
+	 * not while it holds nothing, and is not the seed. */
 	craft_init(&c, "solo", NULL, 0, 0, 7);
 	craft_tick(&c, 10000);
+	ATF_REQUIRE_EQ(CRAFT_FOLLOWER, c.role);
+	craft_restore(&c, 1, "", 1, 1);
+	craft_tick(&c, 20000);
 	ATF_REQUIRE_EQ(CRAFT_LEADER, c.role);
 	ATF_REQUIRE(craft_propose(&c, "a", (const uint8_t *)"x", 1, false,
 	    &term, &seq) == 0);

@@ -169,3 +169,37 @@ refuses changes, saying the cluster has no majority here.
   node its own certificate name) or through CARP's one address, which
   makes the cluster active/passive at the door and active/active
   behind it.
+
+## Built (console 0.215.0)
+
+- `craft.c`: Raft as a state machine without I/O, with a simulation test
+  (`tests/raft_test.c`) of three and five nodes through drops, delays,
+  duplicates, partitions, crashes and compaction; two of Raft's rules
+  broken by hand are caught by it.  A node with an empty log never
+  stands: the seed alone leads first.
+- `nodes.c`: the I/O.  web.conf's `cluster` block; the arcana-cluster
+  family (`share/arcana/cluster.yaml`) on a listener of the node's own;
+  a thread a peer; the term, the vote and the log in `cluster/`,
+  fsync'ed before anything is said; committed writes applied with
+  `store_write()`; the documents sent whole (snapshot) to a node too far
+  behind.  `store_save()` goes through `cluster_save()`; a follower's
+  write is forwarded to the leader, which answers once it is committed.
+- The scheduler, the SD-WAN manager and mail run on the leader alone.
+- What the worker keeps of credentials, sessions, users, servers and
+  push subscriptions is read again when another node's write lands.
+- Every node's origin is taken by the WebAuthn, CSRF and stream checks.
+- Settings › Cluster, `GET /api/cluster`; console_test:cluster runs
+  three consoles over unix sockets.
+
+## Not yet
+
+- Locks of the cluster for the read-change-write stores (labels,
+  templates, prefix lists): the leader's lock table and its operations
+  are there (`lock`, `unlock`), the callers still take flock(2) alone.
+- Sessions a document each: today sessions.json is written whole by
+  each node, so two sign-ins on two nodes at once may lose one.
+- Files written besides `store_save()`: `vapid.pem` (push), the audit
+  chain, `arcana-source.json`, the CA's next state.  The audit chain
+  wants appends through the log.
+- Membership changes: the nodes are web.conf's; adding one is a restart
+  of each with the new block.

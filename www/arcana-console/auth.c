@@ -249,7 +249,7 @@ origin_ours(const char *origin)
 	bool			 ok;
 	int			 i;
 
-	if (strcmp(origin, cfg.origin) == 0)
+	if (strcmp(origin, cfg.origin) == 0 || cluster_origin(origin))
 		return (true);
 	if (strncmp(origin, pfx, sizeof(pfx) - 1) != 0)
 		return (false);
@@ -442,6 +442,20 @@ setup_token_init(void)
 	}
 	kore_log(LOG_NOTICE, "no security key registered yet: the setup "
 	    "token is in %s", path);
+}
+
+/* A store of the cluster's written by another node: read again. */
+void
+auth_reload(const char *name)
+{
+
+	if (name == NULL || strcmp(name, CREDENTIALS) == 0) {
+		ucl_object_unref(creds);
+		if ((creds = store_load(CREDENTIALS)) == NULL)
+			creds = ucl_object_typed_new(UCL_OBJECT);
+	}
+	if (name == NULL || strcmp(name, SESSIONS_FILE) == 0)
+		sessions_load();
 }
 
 void

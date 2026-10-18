@@ -1,0 +1,256 @@
+# SPDX-License-Identifier: BSD-2-Clause
+---
+name: arcana-cluster
+version: 1
+c-prefix: acl
+doc: |
+  The consoles of one cluster, to each other: who leads (terms and
+  votes, a heartbeat from the leader), the console's stores replicated
+  (each a whole document, numbered by the leader's term and sequence,
+  committed once a majority holds it), a follower's write sent to the
+  leader, and the locks of what is read, changed and written.  Served by
+  arcana-console(8) on its cluster listener, to peers whose certificate,
+  of the console's CA, says urn:arcana:role:console.
+
+definitions:
+  - name: max-doc
+    type: const
+    value: 16777216
+  - name: max-docs
+    type: const
+    value: 4096
+
+attribute-sets:
+  - name: doc
+    attributes:
+      - name: name
+        type: text
+        doc: |
+          The store's name in the data directory (servers.json,
+          runs/7.json); empty in the write a leader makes at the start of
+          its term, which writes nothing.
+        checks:
+          max-len: 255
+      - name: term
+        type: u64
+        doc: The term of the leader that wrote it.
+      - name: seq
+        type: u64
+        doc: Its number among the leader's writes, over every term.
+      - name: body
+        type: bytes
+        doc: The document, whole.
+        checks:
+          max-len: max-doc
+      - name: gone
+        type: flag
+        doc: The document was taken away.
+  - name: cluster
+    attributes:
+      - name: node
+        type: text
+        doc: The node's name, as web.conf's cluster block has it.
+        checks:
+          min-len: 1
+          max-len: 64
+      - name: term
+        type: u64
+      - name: last-term
+        type: u64
+        doc: The term of the newest write the node holds.
+      - name: last-seq
+        type: u64
+        doc: The sequence of the newest write the node holds.
+      - name: commit-seq
+        type: u64
+        doc: The newest write a majority holds.
+      - name: prev-term
+        type: u64
+        doc: The term of the write before those sent.
+      - name: prev-seq
+        type: u64
+        doc: The sequence of the write before those sent.
+      - name: first
+        type: flag
+        doc: The first part of a snapshot.
+      - name: last
+        type: flag
+        doc: The last part of a snapshot.
+      - name: granted
+        type: bool
+      - name: ok
+        type: bool
+      - name: error
+        type: text
+        checks:
+          max-len: 1024
+      - name: leader
+        type: text
+        doc: Who leads, as the node knows it.
+        checks:
+          max-len: 64
+      - name: origin
+        type: text
+        doc: The node's web origin, for the browser's to be told.
+        checks:
+          max-len: 255
+      - name: doc
+        type: nest
+        nested-attributes: doc
+        multi-attr: true
+      - name: lock
+        type: text
+        doc: A lock's name.
+        checks:
+          max-len: 255
+      - name: holder
+        type: text
+        doc: Who holds it, the node and a token of its own.
+        checks:
+          max-len: 128
+      - name: ttl-ms
+        type: u32
+        doc: How long the lock is held unless given back.
+
+operations:
+  - name: vote
+    attribute-set: cluster
+    auth: true
+    doc: |
+      A candidate asks for the node's vote in term.  Granted once a term,
+      to a candidate whose newest write is as new as the node's own.
+    do:
+      request:
+        attributes:
+          - node
+          - term
+          - last-term
+          - last-seq
+        required:
+          - node
+          - term
+      reply:
+        attributes:
+          - term
+          - granted
+
+  - name: append
+    attribute-set: cluster
+    auth: true
+    doc: |
+      The leader of term, to a follower: the writes after prev-seq (none,
+      as a heartbeat), each a document with its version, taken only when
+      the follower holds prev-seq of prev-term; and the newest write a
+      majority holds, which the follower may now make its own.  Its
+      origin, for the browser's.  The reply says how far the follower's
+      writes agree with the leader's.
+    do:
+      request:
+        attributes:
+          - node
+          - term
+          - prev-term
+          - prev-seq
+          - commit-seq
+          - origin
+          - doc
+        required:
+          - node
+          - term
+      reply:
+        attributes:
+          - term
+          - ok
+          - last-term
+          - last-seq
+
+  - name: snapshot
+    attribute-set: cluster
+    auth: true
+    doc: |
+      The leader of term, to a follower too far behind for the writes it
+      keeps: every document as it is up to last-seq of last-term, in
+      parts, first to last; the follower's own taken away for them.
+    do:
+      request:
+        attributes:
+          - node
+          - term
+          - last-term
+          - last-seq
+          - first
+          - last
+          - doc
+        required:
+          - node
+          - term
+          - last-term
+          - last-seq
+      reply:
+        attributes:
+          - term
+          - ok
+          - error
+
+  - name: write
+    attribute-set: cluster
+    auth: true
+    doc: |
+      A follower, to the leader: a document as it is now to be, written
+      by the leader once a majority holds it; the version it took.
+    do:
+      request:
+        attributes:
+          - node
+          - doc
+        required:
+          - node
+          - doc
+      reply:
+        attributes:
+          - ok
+          - error
+          - term
+          - doc
+
+  - name: lock
+    attribute-set: cluster
+    auth: true
+    doc: |
+      A lock of the cluster's, held by holder for ttl-ms at most: what is
+      read, changed and written again by one node at a time.  Waits for
+      it, up to ttl-ms.
+    do:
+      request:
+        attributes:
+          - node
+          - lock
+          - holder
+          - ttl-ms
+        required:
+          - node
+          - lock
+          - holder
+      reply:
+        attributes:
+          - ok
+          - error
+
+  - name: unlock
+    attribute-set: cluster
+    auth: true
+    doc: The lock given back.
+    do:
+      request:
+        attributes:
+          - node
+          - lock
+          - holder
+        required:
+          - node
+          - lock
+          - holder
+      reply:
+        attributes:
+          - ok
+          - error

@@ -7408,8 +7408,119 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(access("sdwan-proxy-sw1.conf", F_OK) == 0);
 }
 
+/*
+ * Three consoles of a cluster, each in its own directory, joined by unix
+ * sockets: the seed leads, a change made on any is every one's, a
+ * sign-in too, and one stopped catches up when it starts again.
+ */
+static const char *const cl_nodes[] = { "na", "nb", "nc" };
+
+ATF_TC_WITH_CLEANUP(cluster);
+ATF_TC_HEAD(cluster, tc)
+{
+	atf_tc_set_md_var(tc, "descr", "Three consoles of a cluster: the seed "
+	    "leads, a change on any is every one's, a sign-in too, and one "
+	    "stopped catches up");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_CLEANUP(cluster, tc)
+{
+	char	cwd[MAXPATHLEN];
+	int	i;
+
+	if (getcwd(cwd, sizeof(cwd)) == NULL)
+		return;
+	for (i = 0; i < 3; i++)
+		if (chdir(cl_nodes[i]) == 0) {
+			stop();
+			(void)chdir(cwd);
+		}
+}
+
+/* GET path of node i until its answer says want: 15 s at most. */
+static bool
+cl_until(const char *cwd, int i, const char *path, const char *want)
+{
+	struct resp	r;
+	int		k;
+	bool		ok;
+
+	ATF_REQUIRE(chdir(cl_nodes[i]) == 0);
+	ok = false;
+	for (k = 0; k < 150 && !ok; k++) {
+		http("GET", path, NULL, &r);
+		ok = r.status == 200 && r.body != NULL && strstr(r.body,
+		    want) != NULL;
+		resp_free(&r);
+		if (!ok)
+			usleep(100000);
+	}
+	ATF_REQUIRE(chdir(cwd) == 0);
+	return (ok);
+}
+
+ATF_TC_BODY(cluster, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], nodes[1024];
+	int		i, n;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	n = snprintf(nodes, sizeof(nodes), "nodes {");
+	for (i = 0; i < 3; i++)
+		n += snprintf(nodes + n, sizeof(nodes) - (size_t)n, " %s { uri "
+		    "= \"unix:%s/%s/cl.sock\"; }", cl_nodes[i], cwd,
+		    cl_nodes[i]);
+	snprintf(nodes + n, sizeof(nodes) - (size_t)n, " }");
+	for (i = 0; i < 3; i++) {
+		ATF_REQUIRE(mkdir(cl_nodes[i], 0755) == 0);
+		ATF_REQUIRE(chdir(cl_nodes[i]) == 0);
+		snprintf(harness_webconf, sizeof(harness_webconf), "cluster { "
+		    "self = \"%s\"; listen = \"unix:%s/%s/cl.sock\"; %s }\n",
+		    cl_nodes[i], cwd, cl_nodes[i], nodes);
+		start(tc, 0, NULL);
+		ATF_REQUIRE(chdir(cwd) == 0);
+	}
+	harness_webconf[0] = '\0';
+	/* The seed's first key, once it leads; the others follow it. */
+	ATF_REQUIRE(chdir(cl_nodes[0]) == 0);
+	enrol(&a);
+	ATF_REQUIRE(chdir(cwd) == 0);
+	ATF_CHECK(cl_until(cwd, 0, "/api/cluster", "\"role\":\"leader\""));
+	ATF_CHECK(cl_until(cwd, 1, "/api/cluster", "\"leader\":\"na\""));
+	ATF_CHECK(cl_until(cwd, 2, "/api/cluster", "\"leader\":\"na\""));
+	/* Signed in on one, signed in on every one. */
+	ATF_CHECK(cl_until(cwd, 2, "/api/servers", "\"servers\""));
+	/* A host added on a follower: written by the leader, every one's. */
+	ATF_REQUIRE(chdir(cl_nodes[1]) == 0);
+	http("POST", "/api/servers", "{\"name\":\"far\",\"uri\":\"tcp://"
+	    "192.0.2.9:4310\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE(chdir(cwd) == 0);
+	for (i = 0; i < 3; i++)
+		ATF_CHECK_MSG(cl_until(cwd, i, "/api/servers", "\"far\""),
+		    "%s", cl_nodes[i]);
+	/* One stopped misses a change two make; started, it has it. */
+	ATF_REQUIRE(chdir(cl_nodes[2]) == 0);
+	console_stop();
+	ATF_REQUIRE(chdir(cwd) == 0);
+	ATF_REQUIRE(chdir(cl_nodes[0]) == 0);
+	http("POST", "/api/servers", "{\"name\":\"later\",\"uri\":\"tcp://"
+	    "192.0.2.10:4310\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE(chdir(cwd) == 0);
+	ATF_REQUIRE(chdir(cl_nodes[2]) == 0);
+	console_start();
+	ATF_REQUIRE(chdir(cwd) == 0);
+	ATF_CHECK(cl_until(cwd, 2, "/api/servers", "\"later\""));
+}
+
 ATF_TP_ADD_TCS(tp)
 {
+	ATF_TP_ADD_TC(tp, cluster);
 
 	ATF_TP_ADD_TC(tp, unauthenticated);
 	ATF_TP_ADD_TC(tp, setup_token);

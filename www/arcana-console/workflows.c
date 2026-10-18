@@ -2124,6 +2124,9 @@ scheduler(void *arg __unused)
 	ndue = 0;
 	for (;;) {
 		sleep(TICK_S);
+		/* Of a cluster, the leader's alone. */
+		if (!cluster_leads())
+			continue;
 		pthread_mutex_lock(&wf_lock);
 		top = wf_load();
 		pthread_mutex_unlock(&wf_lock);
@@ -2283,8 +2286,9 @@ workflows_init(void)
 		lockfd = -1;
 		return;
 	}
-	/* This worker is the one: what a restart cut was cut. */
-	if ((top = store_load(RUNS_FILE)) != NULL) {
+	/* This worker is the one: what a restart cut was cut.  Not of a
+	 * cluster's node, whose runs may be another node's, running. */
+	if (!cluster_on() && (top = store_load(RUNS_FILE)) != NULL) {
 		changed = false;
 		it = NULL;
 		while ((o = (ucl_object_t *)(uintptr_t)ucl_object_iterate(

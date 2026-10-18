@@ -113,11 +113,23 @@ push_init(void)
 		return (-1);
 	vapid_pub = wp_b64url(pub, publen);
 	OPENSSL_free(pub);
+	push_reload();
+	return (vapid_pub != NULL ? 0 : -1);
+}
+
+/* push.json: at start, and when another node of the cluster wrote it. */
+void
+push_reload(void)
+{
+
+	if (subs != NULL)
+		ucl_object_unref(subs);
 	if ((subs = store_load(PUSH_FILE)) == NULL || sub_list() == NULL) {
+		if (subs != NULL)
+			ucl_object_unref(subs);
 		subs = ucl_object_typed_new(UCL_OBJECT);
 		put(subs, "subscriptions", ucl_object_typed_new(UCL_ARRAY));
 	}
-	return (vapid_pub != NULL ? 0 : -1);
 }
 
 /* The host of an "https://host[:443]/path" address, and its path. */

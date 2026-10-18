@@ -53,6 +53,26 @@ cookie_secure = true;
 #	fingerprints = [ "AB:CD:...:EF" ];
 #}
 
+# Consoles that are one cluster, active on each node: the leader of
+# their election (Raft over cblink) orders every change, each node keeps
+# its copy, a majority must hold a change before it is made.  The first
+# node named is the seed, whose documents the others are sent.  Copy
+# the seed's ca.pem and ca.key into each node's datadir first; rp_id is
+# then a name every origin is under (console.example).  See
+# arcana-console(8).
+#cluster {
+#	self = "a";
+#	listen = "tcp://[::]:4311";
+#	nodes {
+#		a { uri = "tcp://a.console.example:4311";
+#		    origin = "https://a.console.example"; }
+#		b { uri = "tcp://b.console.example:4311";
+#		    origin = "https://b.console.example"; }
+#		c { uri = "tcp://c.console.example:4311";
+#		    origin = "https://c.console.example"; }
+#	}
+#}
+
 # The agent of the host the console runs on is added to the list of
 # servers by itself, once it answers on its local socket: start it with
 # "service arcana_agent enable" and "service arcana_agent start", and

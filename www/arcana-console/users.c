@@ -419,6 +419,16 @@ role_new(const char *name, const char *console, const char *all)
 	return (r);
 }
 
+/* users.json, written by another node of the cluster: read again. */
+void
+users_reload(void)
+{
+
+	ucl_object_unref(udoc);
+	udoc = NULL;
+	users_init();
+}
+
 void
 users_init(void)
 {

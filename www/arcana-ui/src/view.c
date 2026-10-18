@@ -1378,6 +1378,7 @@ static const struct {
 	{ SET_CONSOLE, "console", "Console" },
 	{ SET_UPDATE, "update", "Update" },
 	{ SET_CA, "ca", "Certificate authority" },
+	{ SET_CLUSTER, "cluster", "Cluster" },
 	{ SET_WEBCONF, "webconf", "web.conf" },
 	{ SET_NEWS, "news", "What's new" },
 };
@@ -2179,6 +2180,9 @@ view_settings(struct html *h)
 		break;
 	case SET_CA:
 		set_ca(h);
+		break;
+	case SET_CLUSTER:
+		set_cluster(h);
 		break;
 	default:
 		set_look(h);

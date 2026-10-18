@@ -8356,7 +8356,9 @@ manager(void *arg __unused)
 
 	for (;;) {
 		sleep(MGR_TICK_S);
-		manager_tick();
+		/* Of a cluster, the leader's alone. */
+		if (cluster_leads())
+			manager_tick();
 	}
 	return (NULL);
 }

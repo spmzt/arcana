@@ -382,6 +382,13 @@ craft_tick(struct craft *c, uint64_t now_ms)
 		c->heartbeat_at = now_ms + CRAFT_HEARTBEAT_MS;
 		return;
 	}
+	/* A node that holds nothing yet waits to be sent it: the first
+	 * leader is the seed, whose base is the documents it had, so two
+	 * empty nodes never elect each other over them. */
+	if (craft_last_seq(c) == 0) {
+		election_reset(c);
+		return;
+	}
 	if (now_ms >= c->election_at)
 		start_election(c);
 }
@@ -499,12 +506,21 @@ craft_recv(struct craft *c, const struct craft_msg *m)
 			return;
 		p->inflight = false;
 		if (m->ok) {
+			uint64_t	was = c->commit;
+
 			if (m->last_seq > p->match)
 				p->match = m->last_seq;
 			p->next = p->match + 1;
 			advance_commit(c);
 			if (p->next <= craft_last_seq(c))
 				send_append(c, p);
+			/* Committed now: the others told at once, not at the
+			 * next beat, so that they apply it too. */
+			if (c->commit > was)
+				for (i = 0; i < c->npeers; i++)
+					if (&c->peers[i] != p &&
+					    !c->peers[i].inflight)
+						send_append(c, &c->peers[i]);
 		} else {
 			/* Back to where it may agree, and again. */
 			if (m->last_seq + 1 < p->next)

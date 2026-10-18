@@ -496,6 +496,7 @@ tick(void *arg)
 		if (app.online) {
 			transport_tick(now);
 			ca_tick(now);
+			cluster_tick(now);
 			net_live_tick(now);
 			firewall_tick(now);
 			procs_tick(now);

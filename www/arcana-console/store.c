@@ -46,27 +46,21 @@ store_load(const char *name)
 	return (o);
 }
 
+/* A document as it is to be, written here: to a temporary, renamed. */
 int
-store_save(const char *name, const ucl_object_t *o)
+store_write(const char *name, const void *body, size_t len)
 {
-	unsigned char	*json;
 	char		 path[MAXPATHLEN], tmp[MAXPATHLEN];
-	size_t		 len;
 	ssize_t		 w;
 	int		 fd;
 
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, name);
 	snprintf(tmp, sizeof(tmp), "%s.XXXXXX", path);
-	if ((json = ucl_object_emit(o, UCL_EMIT_JSON)) == NULL)
-		return (-1);
-	len = strlen((char *)json);
 	if ((fd = mkstemp(tmp)) == -1) {
 		kore_log(LOG_ERR, "mkstemp %s: %s", tmp, strerror(errno));
-		free(json);
 		return (-1);
 	}
-	w = write(fd, json, len);
-	free(json);
+	w = len > 0 ? write(fd, body, len) : 0;
 	if (w != (ssize_t)len || fchmod(fd, 0600) == -1 || fsync(fd) == -1 ||
 	    close(fd) == -1 || rename(tmp, path) == -1) {
 		kore_log(LOG_ERR, "writing %s: %s", path, strerror(errno));
@@ -74,6 +68,21 @@ store_save(const char *name, const ucl_object_t *o)
 		return (-1);
 	}
 	return (0);
+}
+
+/* A document saved: here, or through the cluster to every node. */
+int
+store_save(const char *name, const ucl_object_t *o)
+{
+	unsigned char	*json;
+	int		 rc;
+
+	if ((json = ucl_object_emit(o, UCL_EMIT_JSON)) == NULL)
+		return (-1);
+	rc = cluster_on() ? cluster_save(name, json, strlen((char *)json),
+	    false) : store_write(name, json, strlen((char *)json));
+	free(json);
+	return (rc);
 }
 
 /*

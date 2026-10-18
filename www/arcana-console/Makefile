@@ -3,7 +3,8 @@
 SHLIB_NAME=	arcana-console.so
 SRCS=		api.c auth.c config.c hosts.c pki.c push.c servers.c settings.c security.c troubleshoot.c \
 		stream.c follow.c tokens.c transfers.c workflows.c sdwan.c sdwan_edge.c \
-		store.c update.c webpush.c audit.c mail.c smtp.c templates.c ldap.c labels.c prefixlists.c users.c
+		store.c update.c webpush.c audit.c mail.c smtp.c templates.c ldap.c labels.c prefixlists.c users.c \
+		craft.c nodes.c
 LIBDIR?=	${PREFIX}/lib/arcana
 MAN=		arcana-console.8
 
@@ -11,6 +12,15 @@ MAN=		arcana-console.8
 
 CBLINK_SPECS=	${ARC_SPEC}
 CBLINK_PARTS=	h,c,client
+
+# The consoles of a cluster to each other: a family served and asked
+# both, apart from arcana.yaml's, of which the console is a client.
+CLUSTER_SPEC=	${ARC_TOP}/share/arcana/cluster.yaml
+SRCS+=		cluster.h cluster.c cluster_client.c cluster_server.c
+CLEANFILES+=	cluster.h cluster.c cluster_client.c cluster_server.c
+cluster.c cluster_client.c cluster_server.c: cluster.h
+cluster.h: ${CLUSTER_SPEC} ${CBLINK_GEN}
+	${CBLINK_GEN} -m h,c,client,server -o ${.OBJDIR} ${CLUSTER_SPEC}
 
 .if empty(KORE_FEATURES:M-DKORE_USE_TASKS)
 .error Kore must be built with tasks (TASKS=1): KORE_FEATURES is "${KORE_FEATURES}"
