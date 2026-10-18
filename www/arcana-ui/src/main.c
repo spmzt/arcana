@@ -701,6 +701,11 @@ submit_form(const char *form, const ucl_object_t *f)
 		job_send(cur_server(), q, title, JOB_PACKAGES, app.pkg.jail);
 	} else if (strcmp(form, "login-token") == 0) {
 		login_token(jstr(f, "token") != NULL ? jstr(f, "token") : "");
+	} else if (iflabel_form(form, f)) {
+		;
+	} else if (strcmp(form, "login-ldap") == 0) {
+		login_ldap(jstr(f, "user") != NULL ? jstr(f, "user") : "",
+		    jstr(f, "password") != NULL ? jstr(f, "password") : "");
 	} else if (strcmp(form, "enrol") == 0) {
 		enrol(jstr(f, "token") != NULL ? jstr(f, "token") : "",
 		    jstr(f, "name") != NULL ? jstr(f, "name") : "");
@@ -886,6 +891,8 @@ submit_form(const char *form, const ucl_object_t *f)
 		save_settings(f, SETG_MAIL);
 	} else if (strcmp(form, "settings-telegram") == 0) {
 		save_settings(f, SETG_TELEGRAM);
+	} else if (strcmp(form, "settings-ldap") == 0) {
+		save_settings(f, SETG_LDAP);
 	} else if (strcmp(form, "agent-update") == 0) {
 		app.modal = MODAL_NONE;
 		for (i = 0; i < app.nservers; i++) {
@@ -927,6 +934,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
 	    sdwan_action(act, arg, value) || trouble_action(act, arg, value) ||
 	    secpage_action(act, arg, value) || builder_action(act, arg, value) ||
+	    iflabel_action(act, arg) ||
 	    routing_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
 	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||

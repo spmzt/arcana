@@ -379,7 +379,9 @@ interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 			continue;
 		match = app.filter[0] == '\0' || strstr(name, app.filter) !=
 		    NULL || (jstr(o, "description") != NULL && strstr(jstr(o,
-		    "description"), app.filter) != NULL);
+		    "description"), app.filter) != NULL) || (label_of(s->id,
+		    name) != NULL && strstr(label_of(s->id, name), app.filter) !=
+		    NULL);
 		ait = NULL;
 		while (!match && (a = ucl_object_iterate(jget(o, "addresses"),
 		    &ait, true)) != NULL)
@@ -399,6 +401,8 @@ interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 			h_txt(h, jstr(o, "description"));
 			h_raw(h, "</small>");
 		}
+		/* The console's own label, beside the host's description. */
+		label_cell(h, s->id, name);
 		if (jstr(o, "tunnel.local") != NULL) {
 			h_raw(h, "<small>tunnel ");
 			h_txt(h, jstr(o, "tunnel.local"));

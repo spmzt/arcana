@@ -245,7 +245,11 @@ view_rules(struct html *h)
 	    "name=\"url\" spellcheck=\"false\" autocomplete=\"off\"");
 	h_attr(h, "placeholder", url != NULL ? url : jstr(src, "default_url"));
 	h_attr(h, "value", sn.url);
-	h_raw(h, "></label><button class=\"primary\">Update</button></form>");
+	h_raw(h, "></label><label class=\"toggle\" title=\"Snort's registered "
+	    "rules, fetched with the oinkcode kept in Settings, Console: the "
+	    "code never reaches the host's records\"><input type=\"checkbox\" "
+	    "name=\"registered\"><span>registered rules</span></label><button "
+	    "class=\"primary\">Update</button></form>");
 	if (url != NULL) {
 		char	age[32];
 
@@ -521,6 +525,13 @@ snort_form(const char *form, const ucl_object_t *f)
 	if (strcmp(form, "sn-update") == 0) {
 		v = jstr(f, "url") != NULL ? jstr(f, "url") : "";
 		snprintf(sn.url, sizeof(sn.url), "%s", v);
+		/* The registered rules: the console adds the oinkcode. */
+		if (jbool(f, "registered")) {
+			args[0] = "registered=yes";
+			sn_job("update", args, 1, NULL, "snort update: the "
+			    "registered rules fetched and checked");
+			return (true);
+		}
 		snprintf(buf, sizeof(buf), "url=%s", v);
 		args[0] = buf;
 		sn_job("update", args, v[0] != '\0' ? 1 : 0, NULL,

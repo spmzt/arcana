@@ -1465,6 +1465,30 @@ part_nettab(void)
 	run("const i = document.querySelector('input[data-input=filter]'); "
 	    "i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true "
 	    "}));");
+	/* A label of the console's on an interface: typed in place, kept,
+	 * shown under the name, found by the filter. */
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=interfaces]').click()");
+	wait_js("document.querySelector('tr.iface[data-if=lo0] button[data-act="
+	    "if-label-edit]')", 20);
+	run("document.querySelector('tr.iface[data-if=lo0] button[data-act="
+	    "if-label-edit]').click()");
+	wait_js("document.querySelector('tr.iface[data-if=lo0] form[data-form="
+	    "if-label] input[name=label]')", 5);
+	run("const f = document.querySelector('tr.iface[data-if=lo0] form["
+	    "data-form=if-label]'); f.label.value = 'the loopback labelled'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('tr.iface[data-if=lo0] .chip.tag') && "
+	    "document.querySelector('tr.iface[data-if=lo0] .chip.tag')."
+	    "textContent === 'the loopback labelled'", 20);
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = 'labelled'; i.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("document.querySelectorAll('tr.iface').length === 1 && document."
+	    "querySelector('tr.iface[data-if=lo0]')", 10);
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true "
+	    "}));");
 	/* The neighbours, ARP's and NDP's, asked of the kernel. */
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=neighbours]').click()");
@@ -1727,12 +1751,14 @@ part_nettab(void)
 	run("document.querySelector('.dock > header').click()");
 	/* Every table can be had as CSV: its columns by their names, its
 	 * rows as shown, without the buttons. */
-	run("document.querySelector('tr[data-if=lo0]').closest('table')"
-	    ".querySelector('thead button.csv-btn').click()");
+	/* The button hands the table to window.arcCsvSave(); called on the
+	 * table here, so that the moment of the click does not count. */
+	run("window.arcCsvSave(document.querySelector('tr[data-if=lo0]')"
+	    ".closest('table'));");
 	wait_js("typeof window.arcCsvLast === 'string'", 5);
 	ATF_CHECK(js_true("(() => { const l = window.arcCsvLast.split('\\n');"
 	    " return l.length > 2 && !l[0].startsWith(',') && l.some(x => "
-	    "x.startsWith('lo0,')) && !window.arcCsvLast.includes('+ "
+	    "x.startsWith('lo0')) && !window.arcCsvLast.includes('+ "
 	    "address'); })()"));
 	/* An address changed: the form with what it is now; the new one
 	 * added, then the old one taken off. */
@@ -4946,7 +4972,7 @@ part_flows(void)
 	    20);
 	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
 	    ".click()");
-	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 13",
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 14",
 	    5);
 	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
 	    ".click()");
@@ -5045,7 +5071,7 @@ part_flows(void)
 	 * so, with its button, and the next step is the end points. */
 	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
 	    "includes('End points') && document.querySelectorAll('section."
-	    "sdwan tr.empty-row').length === 6", 20);
+	    "sdwan tr.empty-row').length === 7", 20);
 	ATF_CHECK(js_true("!document.querySelector('select[data-input="
 	    "sd-swvc]')"));
 	shot("9-sdwan-guide-service");
@@ -5188,6 +5214,30 @@ part_flows(void)
 	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
 	    ".some(r => r.textContent.includes('web') && r.textContent."
 	    "includes('http'))", 20);
+	/* A named list of prefixes, and a flow from it: after the flow's
+	 * save is answered, the version it made the next one's. */
+	usleep(1500000);
+	run("document.querySelector('button[data-act=sd-nlist-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-nlist] textarea["
+	    "name=items]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-nlist]'); "
+	    "f.name.value = 'branches'; f.kind.value = 'prefixes'; f.items."
+	    "value = '10.1.8.0/22\\n2001:db8:9::/48\\n'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-nlist]') && "
+	    "document.querySelector('.sd-nlists') && document.querySelector("
+	    "'.sd-nlists').textContent.includes('branches') && document."
+	    "querySelector('.sd-nlists').textContent.includes('2001:db8:9::/48')",
+	    20);
+	run("document.querySelector('button[data-act=sd-flow-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-flow] select[name="
+	    "src_list] option[value=branches]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-flow]'); "
+	    "f.name.value = 'branchweb'; f.src_list.value = 'branches'; "
+	    "f.dport.value = '8443'; f.proto.value = 'tcp'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-flow]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('branchweb'))", 20);
+	shot("9-sdwan-lists");
 	run("document.querySelector('button[data-act=sd-policy-add]').click()");
 	wait_js("document.querySelector('form[data-form=sd-policy] select[name="
 	    "metric]')", 5);

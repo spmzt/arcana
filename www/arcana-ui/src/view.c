@@ -1548,10 +1548,11 @@ set_keys(struct html *h)
 	/* The keys are not shown to a session an API token opened, nor
 	 * added from one: it says so, rather than show none. */
 	if (app.by_token) {
-		h_raw(h, "<p class=\"notice keys-token\">This session was opened "
-		    "with an API token, so the keys that sign in are neither "
-		    "listed nor added here. Sign out, and sign in with a "
-		    "security key or a passkey to see and manage them.</p>");
+		h_fmt(h, "<p class=\"notice keys-token\">This session was opened "
+		    "%s, so the keys that sign in are neither listed nor added "
+		    "here. Sign out, and sign in with a security key or a "
+		    "passkey to see and manage them.</p>", app.by_ldap ? "by a "
+		    "directory's user" : "with an API token");
 		return;
 	}
 	h_raw(h, "<form data-form=\"add-key\" class=\"set-form\"><ul class=\""
@@ -1581,6 +1582,23 @@ set_keys(struct html *h)
 	    "from there.</p><label>Add a spare key<input name=\"name\" "
 	    "placeholder=\"Spare YubiKey, or Pixel\" maxlength=\"64\"></label>"
 	    "<div class=\"actions\"><button class=\"primary\"%s>Register key"
+	    "</button></div></form>", app.modal_busy ? " disabled" : "");
+	/* Sign-in by a directory, beside the keys: its users are let in
+	 * as a token is, never to this tab. */
+	h_raw(h, "<h3>By LDAP</h3>");
+	if (app.settings == NULL) {
+		h_raw(h, "<div class=\"loader\"></div>");
+		return;
+	}
+	h_raw(h, "<form data-form=\"settings-ldap\" class=\"settings set-form "
+	    "mail\"><p class=\"dim\">A directory's users sign in with their "
+	    "user name and password: the console looks the user up under the "
+	    "base, binds as the entry with the password, and, when a group is "
+	    "named, admits its members alone. Always over TLS. Such a "
+	    "session does what a token's may: not the console's settings, "
+	    "keys, tokens or CA.</p>");
+	settings_fields(h, SETG_LDAP);
+	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
 	    "</button></div></form>", app.modal_busy ? " disabled" : "");
 }
 
@@ -2085,10 +2103,11 @@ view_settings(struct html *h)
 		    settabs[i].title);
 	h_raw(h, "</nav><div class=\"set-body\">");
 	if (app.by_token)
-		h_raw(h, "<div class=\"notice warn\">Signed in with an API "
-		    "token: the console's settings, its sign-in keys, tokens "
-		    "and CA are shown and changed only to one signed in with "
-		    "a security key or a passkey.</div>");
+		h_fmt(h, "<div class=\"notice warn\">Signed in %s: the console's "
+		    "settings, its sign-in keys, tokens and CA are shown and "
+		    "changed only to one signed in with a security key or a "
+		    "passkey.</div>", app.by_ldap ? "by a directory's user" :
+		    "with an API token");
 	if (app.modal_error[0] != '\0' && app.modal == MODAL_NONE) {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, app.modal_error);
@@ -2299,6 +2318,7 @@ modal(struct html *h)
 	case MODAL_SD_MAP:
 	case MODAL_SD_LIMITER:
 	case MODAL_SD_TOPO:
+	case MODAL_SD_NLIST:
 	case MODAL_SD_SECPOL:
 	case MODAL_SD_LIST:
 	case MODAL_SD_IDENTITY:
@@ -2618,6 +2638,7 @@ modal(struct html *h)
 		case MODAL_SD_MAP:
 		case MODAL_SD_LIMITER:
 		case MODAL_SD_TOPO:
+		case MODAL_SD_NLIST:
 			if (!sdwan_blocked())
 				h_raw(h, "<button class=\"primary\">Keep</button>");
 			break;
@@ -2841,6 +2862,19 @@ auth_screen(struct html *h)
 		h_fmt(h, "<button class=\"ghost\" data-act=\"login-passkey\"%s "
 		    "title=\"A passkey on this device, or on a phone nearby\">"
 		    "Use a passkey</button>", app.auth_busy ? " disabled" : "");
+		/* A directory's user, where the console asks one. */
+		if (app.ldap_on)
+			h_fmt(h, "<form data-form=\"login-ldap\" class=\"login-ldap"
+			    "\"><label>User<input name=\"user\" required "
+			    "autocomplete=\"username\" spellcheck=\"false\" "
+			    "maxlength=\"64\"></label><label>Password<input type=\""
+			    "password\" name=\"password\" required autocomplete=\""
+			    "current-password\"></label><button class=\"ghost\"%s>"
+			    "Sign in with the directory</button><p class=\"dim\">"
+			    "Your LDAP user and password. Signed in so, the "
+			    "console's own settings, sign-in keys, tokens and CA "
+			    "stay with a security key.</p></form>", app.auth_busy ?
+			    " disabled" : "");
 		/* No key at hand: an API token that writes. */
 		h_fmt(h, "<details class=\"login-token\"><summary>Sign in with "
 		    "an API token</summary><form data-form=\"login-token\">"

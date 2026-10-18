@@ -248,6 +248,23 @@ variables
 a port's
 .Pq jail= ports= set= origin= and an on= or off= for each, or reset=yes .
 Each is a job.
+.It Cm crashes Op Cm backtrace Ar core Op Ar program
+The cores the kernel dumped where
+.Va kern.corefile
+says
+.Pq Xr core 5 ,
+each with its program, pid, size and time; with
+.Cm backtrace ,
+every thread's backtrace of one and its signal's information, as
+.Xr lldb 1
+reads the core with its program (named, or found by the core's name),
+or
+.Xr gdb 1
+when lldb cannot.
+A SIGBUS whose code is
+.Dv BUS_OOMERR
+was a page fault the kernel found no memory for.
+Nothing is changed.
 .It Cm snort Oo Cm list | Cm rules | Cm conf Cm snort.lua Ns | Ns Cm local.rules Ar file | Ar verb Oo Ar key Ns = Ns Ar value ... Oc Oc
 Snort 3, the host's IDS/IPS, a plugin run by Arcana's
 .Xr rc 8

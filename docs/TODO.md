@@ -828,7 +828,13 @@
     renews it, and finishing waits for it.)
   - A session's lifetime set in Settings. (Done 2026-10-12: idle
     minutes and the longest, in hours.)
-  - LDAP for the console's sign-in.
+  - LDAP for the console's sign-in.  (Done 2026-10-18: Settings, Sign-in
+    keys, By LDAP: a directory by ldaps:// or ldap:// with StartTLS,
+    the user looked up under a base by an attribute as a reader or
+    anonymously and bound as with the password, a group's members
+    alone when one is named; LDAPv3 written in the console itself,
+    no library; such a session limited as a token's; five failures a
+    minute throttled.  Against a real slapd in console_test:ldap.)
   - The base system's ssh, further: the banner, the users let in,
     authorized keys, host keys and their fingerprints, host keys
     signed by a CA key.
@@ -847,8 +853,10 @@
     updates; local.rules, snort.lua, HOME_NET and rc.conf's settings;
     its alerts; each change checked by snort -T, a running one
     reloaded.  Against the real Snort 3.12 in the verified list
-    (agent_root_test:snort_live).  Not done: registered rules by an
-    oinkcode, a secret wanted kept as one; ask.)
+    (agent_root_test:snort_live).  Registered rules done 2026-10-18:
+    the oinkcode a secret of the console's (Settings, Console, with
+    the rules' address), put into the job's address by the console and
+    scrubbed by the agent from the title, the trace and source.json.)
   - The console clustered; disaster recovery across console clusters.
   - Agents in an HA pair on identical hardware and ports (CARP, the
     state shared), with CARP on its own for a host.  (CARP for a host
@@ -886,7 +894,11 @@
     log logdst bpf, each a tap ipfw<n> (FreeBSD 16), made and listed;
     capture by tcpdump from any of them, the lines and the pcap.
     Verified in a vnet jail with devfs's bpf unhidden.)
-  - Labels on interfaces, for the UCS they carry.
+  - Labels on interfaces, for the UCS they carry.  (Done 2026-10-18 as
+    the console's own tags, as the user chose: labels.json by
+    server/interface, GET /api/labels and PUT /api/labels/<server>/
+    <interface>; typed in place in the Interfaces table, under the
+    name beside the host's own description, found by the filter.)
   - BIRD's OSPF, BFD and BGP each a tab of its own, with forms.
     (Done 2026-10-16: a host's BIRD has All, BGP, OSPF and BFD tabs;
     each kind made and changed by a form, read back from the text only
@@ -903,7 +915,11 @@
   - NDP and ARP entries added and deleted by hand, temporary or
     permanent. (Done 2026-10-12: the neighbour job, kept as rc.conf's
     static pairs; verified in a vnet jail with arp(8) and ndp(8).)
-  - MSS clamping on transports.
+  - MSS clamping on transports.  (Done 2026-10-18, by ipfw as the user
+    chose: a UCS's tunnel takes mss, auto or a number; the plan adds
+    tcp-setmss rules for the tunnels over it on each edge, IPv4 and
+    IPv6 each, with ipfw_pmod loaded and kept; auto is 1500 less the
+    tunnel's overhead, IPsec's and an IPv6 underlay's.)
   - QoS on ipfw by forms: pipes, schedulers, queues, their masks and
     the rules that use them, beyond what SD-WAN makes.
     (Done 2026-10-12: the Firewall tab's QoS; dummynet read as
@@ -924,7 +940,12 @@
     kind and a preference) and of services, kept once and called by
     an AFS match or a policy's criteria; and the policy made in
     three steps: the lists, then the flows (the AFS) and the policy
-    they get, then the policy map at each SWVC End Point.
+    they get, then the policy map at each SWVC End Point.  (Done 2026-10-18: the document's lists, of
+    prefixes, services, UCSs, edges and UCS End Points with a
+    preference; named by a flow's src-list, dst-list, sdst-list and
+    service-list, a zone's prefix-list, a policy's ucs-list,
+    edge-list and ucs-end-point-list; a prefix list an ipfw table on
+    each edge; the Services tab's Lists and the forms' pickers.)
 - WireGuard, done 2026-10-12: a client made from the page (its
   configuration and QR code, the key pair made by the console and kept
   nowhere), with a preshared key (a job's preshared-key, given to wg in

@@ -2403,7 +2403,9 @@ status_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	}
 	app.setup_required = jbool(o, "setup_required");
-	app.by_token = jbool(o, "by_token");
+	app.by_ldap = jbool(o, "by_ldap");
+	app.by_token = jbool(o, "by_token") || app.by_ldap;
+	app.ldap_on = jbool(o, "ldap");
 	origin_check(jstr(o, "origin"), jstr(o, "rp_id"));
 	if (jbool(o, "authenticated")) {
 		app.screen = SCREEN_CONSOLE;
@@ -2428,7 +2430,8 @@ auth_done_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	app.auth_busy = false;
 	if (status == 200 && jbool(o, "authenticated")) {
-		app.by_token = jbool(o, "by_token");
+		app.by_ldap = jbool(o, "by_ldap");
+		app.by_token = jbool(o, "by_token") || app.by_ldap;
 		app.screen = SCREEN_CONSOLE;
 		app.auth_error[0] = '\0';
 		app.setup_required = false;
@@ -2489,6 +2492,28 @@ login_token(const char *token)
 		abort();
 	free(q);
 	api("POST", "/api/auth/login/token", body, auth_done_cb, NULL);
+	explicit_bzero(body, strlen(body));
+	free(body);
+}
+
+/* A directory's user and password: the console asks the directory. */
+void
+login_ldap(const char *user, const char *password)
+{
+	char	*qu, *qp, *body;
+
+	if (app.auth_busy)
+		return;
+	app.auth_busy = true;
+	app.auth_error[0] = '\0';
+	qu = json_quote(user);
+	qp = json_quote(password);
+	if (asprintf(&body, "{\"user\":%s,\"password\":%s}", qu, qp) == -1)
+		abort();
+	explicit_bzero(qp, strlen(qp));
+	free(qu);
+	free(qp);
+	api("POST", "/api/auth/login/ldap", body, auth_done_cb, NULL);
 	explicit_bzero(body, strlen(body));
 	free(body);
 }
@@ -3136,7 +3161,7 @@ setting_group(const char *key)
 
 	return (strncmp(key, "mail_", 5) == 0 || strncmp(key, "smtp_", 5) == 0 ?
 	    SETG_MAIL : strncmp(key, "telegram_", 9) == 0 ? SETG_TELEGRAM :
-	    SETG_CONSOLE);
+	    strncmp(key, "ldap_", 5) == 0 ? SETG_LDAP : SETG_CONSOLE);
 }
 
 void

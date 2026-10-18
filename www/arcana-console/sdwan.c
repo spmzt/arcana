@@ -454,6 +454,247 @@ values(struct ck *c, const char *crit, const ucl_object_t *v, int64_t lo,
 	return (true);
 }
 
+/* ---- Named lists ------------------------------------------------- */
+
+/*
+ * Arcana's own, beside MEF 70.2's attributes: lists kept once in the
+ * document, each of one kind, and named where a value would be.  An
+ * AFS's src-list, dst-list and sdst-list (prefixes) and service-list
+ * (protocols and ports, which combine as PROTV4 and DPORT do in one
+ * AFS); a zone's prefix-list; a policy's ucs-list, edge-list and
+ * ucs-end-point-list, the ways it may take.  One list a criterion: a
+ * union is a list of its own.
+ */
+#define	NLIST_MAX	4096
+
+static const char *const list_kinds[] = { "prefixes", "services", "ucs",
+    "edges", "ucs-end-points", NULL };
+
+/* The document's lists, while it is checked (a thread's own). */
+static __thread const ucl_object_t *g_lists;
+
+static bool
+list_name_ok(const char *s)
+{
+	size_t	n;
+
+	n = strlen(s);
+	return (n > 0 && n <= 32 && strspn(s, "abcdefghijklmnopqrstuvwxyz"
+	    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") == n);
+}
+
+/* The list named, of kind; NULL when there is none such. */
+static const ucl_object_t *
+named_list(const ucl_object_t *lists, const char *name, const char *kind)
+{
+	const ucl_object_t	*l;
+
+	l = by(lists, "name", name);
+	return (l != NULL && kind != NULL && str(l, "kind") != NULL &&
+	    strcmp(str(l, "kind"), kind) == 0 ? l : NULL);
+}
+
+static bool
+list_ref(struct ck *c, const char *crit, const ucl_object_t *v,
+    const char *kind)
+{
+
+	if (ucl_object_type(v) != UCL_STRING)
+		return (fail(c, "%s names one list, of %s", crit, kind));
+	if (named_list(g_lists, ucl_object_tostring(v), kind) == NULL)
+		return (fail(c, "%s: there is no list %s of %s", crit,
+		    ucl_object_tostring(v), kind));
+	return (true);
+}
+
+/* A UCS End Point of any edge, by its id. */
+static bool
+ucsep_exists(const ucl_object_t *doc, const char *id)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL)
+		if (by(ucl_object_lookup(e, "ucs_end_points"), "id", id) != NULL)
+			return (true);
+	return (false);
+}
+
+static bool
+lists_check(struct ck *c, const ucl_object_t *doc)
+{
+	const ucl_object_t	*lists, *l, *items, *e;
+	ucl_object_iter_t	 it, eit;
+	const char		*name, *kind, *s;
+	struct pfx		 p;
+	size_t			 n;
+
+	if ((lists = ucl_object_lookup(doc, "lists")) == NULL)
+		return (true);
+	if (!objects(c, lists, "lists", "name", true, NULL, "lists"))
+		return (false);
+	it = NULL;
+	while ((l = ucl_object_iterate(lists, &it, true)) != NULL) {
+		name = str(l, "name");
+		at(c, 0, "list %s", name);
+		if (!list_name_ok(name))
+			return (fail(c, "a list's name is letters, digits, _ "
+			    "and -, 32 at most"));
+		kind = str(l, "kind");
+		if (!one_of(kind, list_kinds))
+			return (fail(c, "a list is of prefixes, services, ucs, "
+			    "edges or ucs-end-points"));
+		if (strcmp(kind, "services") == 0) {
+			if (ucl_object_lookup(l, "items") != NULL)
+				return (fail(c, "a list of services has "
+				    "protocols and ports, not items"));
+			if (!values(c, "protocols", ucl_object_lookup(l,
+			    "protocols"), 0, 255, proto_names, false, 0))
+				return (false);
+			if (ucl_object_lookup(l, "ports") != NULL &&
+			    !values(c, "ports", ucl_object_lookup(l, "ports"), 0,
+			    65535, NULL, true, 0))
+				return (false);
+			continue;
+		}
+		items = ucl_object_lookup(l, "items");
+		n = ucl_object_type(items) == UCL_ARRAY ? ucl_array_size(items) :
+		    0;
+		if (n == 0 || n > NLIST_MAX)
+			return (fail(c, "its items are a list, 1 to %d of them",
+			    NLIST_MAX));
+		eit = NULL;
+		while ((e = ucl_object_iterate(items, &eit, true)) != NULL) {
+			s = ucl_object_type(e) == UCL_STRING ?
+			    ucl_object_tostring(e) : NULL;
+			if (strcmp(kind, "ucs-end-points") == 0 &&
+			    ucl_object_type(e) == UCL_OBJECT) {
+				const ucl_object_t *pr;
+
+				s = str(e, "id");
+				pr = ucl_object_lookup(e, "preference");
+				if (pr != NULL && !is_int(pr, 0, 65535, NULL))
+					return (fail(c, "a preference is 0 to "
+					    "65535, the higher taken first"));
+			}
+			if (s == NULL)
+				return (fail(c, "an item is %s", strcmp(kind,
+				    "ucs-end-points") == 0 ? "a UCS End Point's "
+				    "id, or {id, preference}" : "a string"));
+			if (strcmp(kind, "prefixes") == 0) {
+				if (!prefix(s, &p, false))
+					return (fail(c, "%s is not a prefix, as "
+					    "a.b.c.d/n or x::/n with no host "
+					    "bits", s));
+			} else if (strcmp(kind, "ucs") == 0) {
+				if (by(ucl_object_lookup(doc, "ucs"), "id", s) ==
+				    NULL)
+					return (fail(c, "there is no UCS %s",
+					    s));
+			} else if (strcmp(kind, "edges") == 0) {
+				if (by(ucl_object_lookup(doc, "edges"),
+				    "server", s) == NULL)
+					return (fail(c, "there is no edge %s",
+					    s));
+			} else if (!ucsep_exists(doc, s))
+				return (fail(c, "there is no UCS End Point %s",
+				    s));
+		}
+	}
+	return (true);
+}
+
+/*
+ * The document with what a list stands for written where it is named,
+ * as the checks and the plan read it: a zone's prefix-list as its
+ * prefixes, an AFS's service-list as its protv4 and dport.  The other
+ * references stay: the plan makes tables of prefix lists, and reads
+ * the policies' ways from the lists.  NULL, and why in c, when a
+ * reference is wrong.
+ */
+static ucl_object_t *
+lists_expand(const ucl_object_t *doc, struct ck *c)
+{
+	ucl_object_t		*x, *sw, *z, *f, *cr, *arr;
+	const ucl_object_t	*lists, *l, *v, *e;
+	ucl_object_iter_t	 it, zit, eit;
+
+	x = ucl_object_copy(doc);
+	lists = ucl_object_lookup(x, "lists");
+	it = NULL;
+	while ((sw = (ucl_object_t *)(uintptr_t)ucl_object_iterate(
+	    ucl_object_lookup(x, "swvcs"), &it, true)) != NULL) {
+		zit = NULL;
+		while ((z = (ucl_object_t *)(uintptr_t)ucl_object_iterate(
+		    ucl_object_lookup(sw, "zones"), &zit, true)) != NULL) {
+			if ((v = ucl_object_lookup(z, "prefix-list")) == NULL)
+				continue;
+			at(c, 0, "swvc %s, zone %s", str(sw, "id"), str(z,
+			    "name"));
+			g_lists = lists;
+			if (!list_ref(c, "prefix-list", v, "prefixes"))
+				goto bad;
+			l = named_list(lists, ucl_object_tostring(v),
+			    "prefixes");
+			if (ucl_object_type(ucl_object_lookup(z, "prefixes")) ==
+			    UCL_STRING) {
+				fail(c, "a Default zone has no prefix list");
+				goto bad;
+			}
+			arr = ucl_object_lookup(z, "prefixes") != NULL ?
+			    ucl_object_copy(ucl_object_lookup(z, "prefixes")) :
+			    ucl_object_typed_new(UCL_ARRAY);
+			eit = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(l,
+			    "items"), &eit, true)) != NULL)
+				if (!in_names(arr, ucl_object_tostring(e)))
+					ucl_array_append(arr, ucl_object_copy(e));
+			(void)ucl_object_delete_key(z, "prefixes");
+			(void)ucl_object_delete_key(z, "prefix-list");
+			ucl_object_insert_key(z, arr, "prefixes", 0, false);
+		}
+		zit = NULL;
+		while ((f = (ucl_object_t *)(uintptr_t)ucl_object_iterate(
+		    ucl_object_lookup(sw, "flows"), &zit, true)) != NULL) {
+			cr = (ucl_object_t *)(uintptr_t)ucl_object_lookup(f,
+			    "criteria");
+			if ((v = ucl_object_lookup(cr, "service-list")) == NULL)
+				continue;
+			at(c, 0, "swvc %s, application flow %s", str(sw, "id"),
+			    str(f, "name"));
+			g_lists = lists;
+			if (!list_ref(c, "service-list", v, "services"))
+				goto bad;
+			if (ucl_object_lookup(cr, "protv4") != NULL ||
+			    ucl_object_lookup(cr, "nextheadv6") != NULL ||
+			    ucl_object_lookup(cr, "dport") != NULL ||
+			    ucl_object_lookup(cr, "appid") != NULL) {
+				fail(c, "a service list stands for the "
+				    "protocols and ports: not with protv4, "
+				    "nextheadv6, dport or appid");
+				goto bad;
+			}
+			l = named_list(lists, ucl_object_tostring(v), "services");
+			ucl_object_insert_key(cr, ucl_object_copy(
+			    ucl_object_lookup(l, "protocols")), "protv4", 0,
+			    false);
+			if (ucl_object_lookup(l, "ports") != NULL)
+				ucl_object_insert_key(cr, ucl_object_copy(
+				    ucl_object_lookup(l, "ports")), "dport", 0,
+				    false);
+			(void)ucl_object_delete_key(cr, "service-list");
+		}
+	}
+	g_lists = NULL;
+	return (x);
+bad:
+	g_lists = NULL;
+	ucl_object_unref(x);
+	return (NULL);
+}
+
 static bool
 flow_criteria(struct ck *c, const ucl_object_t *cr)
 {
@@ -497,9 +738,27 @@ flow_criteria(struct ck *c, const ucl_object_t *cr)
 		} else if (strcmp(k, "appid") == 0) {
 			if (!values(c, k, v, 0, -1, appids, false, 0))
 				return (false);
+		} else if (strcmp(k, "src-list") == 0 || strcmp(k,
+		    "dst-list") == 0 || strcmp(k, "sdst-list") == 0) {
+			static const char *const alone[][3] = {
+				{ "src-list", "sav4", "sav6" },
+				{ "dst-list", "dav4", "dav6" },
+				{ "sdst-list", "sdav4", "sdav6" },
+			};
+			size_t	i;
+
+			if (!list_ref(c, k, v, "prefixes"))
+				return (false);
+			for (i = 0; i < nitems(alone); i++)
+				if (strcmp(k, alone[i][0]) == 0 &&
+				    (ucl_object_lookup(cr, alone[i][1]) != NULL ||
+				    ucl_object_lookup(cr, alone[i][2]) != NULL))
+					return (fail(c, "%s is the %s and %s "
+					    "of a list: not with them", k,
+					    alone[i][1], alone[i][2]));
 		} else
 			return (fail(c, "%s is not a criterion of an application "
-			    "flow (Table 8, Table 9)", k));
+			    "flow (Table 8, Table 9), nor a list's", k));
 	}
 	return (true);
 }
@@ -647,7 +906,16 @@ policy(struct ck *c, const ucl_object_t *sw, const ucl_object_t *p)
 				    "egress policy (§9.12.3)", k));
 			continue;
 		}
-		if (strcmp(k, "encryption") == 0) {
+		if (strcmp(k, "ucs-list") == 0) {
+			if (!list_ref(c, k, v, "ucs"))
+				return (false);
+		} else if (strcmp(k, "edge-list") == 0) {
+			if (!list_ref(c, k, v, "edges"))
+				return (false);
+		} else if (strcmp(k, "ucs-end-point-list") == 0) {
+			if (!list_ref(c, k, v, "ucs-end-points"))
+				return (false);
+		} else if (strcmp(k, "encryption") == 0) {
 			if (!one_of(s, enc_values))
 				return (fail(c, "encryption is required-always, "
 				    "required-public-only or optional"));
@@ -2028,8 +2296,29 @@ sdwan_edge_split(const char *edge, char *sid, size_t slen, char *jail,
 }
 
 /* The whole document, checked; false and why when it is not one. */
+static bool	check_doc(const ucl_object_t *, struct ck *);
+
+/* The lists first, then the document with what they stand for. */
 static bool
 check(const ucl_object_t *doc, struct ck *c)
+{
+	ucl_object_t	*x;
+	bool		 ok;
+
+	memset(c, 0, sizeof(*c));
+	if (ucl_object_type(doc) != UCL_OBJECT)
+		return (fail(c, "it is an object"));
+	if (!lists_check(c, doc) || (x = lists_expand(doc, c)) == NULL)
+		return (false);
+	g_lists = ucl_object_lookup(x, "lists");
+	ok = check_doc(x, c);
+	g_lists = NULL;
+	ucl_object_unref(x);
+	return (ok);
+}
+
+static bool
+check_doc(const ucl_object_t *doc, struct ck *c)
 {
 	char			 esid[64], ejail[64];
 	const ucl_object_t	*v, *e, *sw, *t;
@@ -2068,6 +2357,13 @@ check(const ucl_object_t *doc, struct ck *c)
 			    "kind"), "uswe") == 0) && ucl_flag(t, "ipsec"))
 				return (fail(c, "%s encrypts by itself: no IPsec "
 				    "IKEv2 under it", str(t, "kind")));
+			/* TCP's MSS clamped on the tunnels: auto, or bytes. */
+			if (ucl_object_lookup(t, "mss") != NULL && !(str(t,
+			    "mss") != NULL && strcmp(str(t, "mss"), "auto") == 0)
+			    && !is_int(ucl_object_lookup(t, "mss"), 536, 1460,
+			    NULL))
+				return (fail(c, "mss is auto, or 536 to 1460 "
+				    "bytes"));
 			/* The USWE tunnel (Mplify 119 §10): IPsec keyed by the
 			 * edges themselves, its algorithms and flags here. */
 			if (str(t, "algorithms") != NULL && !one_of(str(t,
@@ -2372,7 +2668,14 @@ sdwan_ready(const ucl_object_t *doc, ucl_object_t *notes)
 	char			 note[300];
 	size_t			 i;
 
-	out = ucl_object_copy(doc);
+	/* What the lists stand for, written where they are named. */
+	{
+		struct ck	c;
+
+		if ((out = lists_expand(doc, &c)) == NULL)
+			out = ucl_object_copy(doc);
+		doc = out;
+	}
 	keep = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
 	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,

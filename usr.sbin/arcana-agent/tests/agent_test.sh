@@ -5399,6 +5399,13 @@ EOS
 	    -o match:'enabled, not running' "$JGC" -c "$SOCK" snort
 	atf_check -s exit:1 -e match:'home_net is any' -o ignore \
 	    "$JGC" -c "$SOCK" snort set "home_net=10.0.0.0/8'; os.exit()"
+	# The oinkcode in a registered rules' address (the console's secret)
+	# is written nowhere the host keeps: not the title, not the error.
+	atf_check -s exit:1 -o save:oink.out -e ignore "$JGC" -c "$SOCK" \
+	    snort update 'url=https://127.0.0.1:9/snortrules-snapshot-31200.tar.gz?oinkcode=SECRET123abc'
+	atf_check -o not-match:'SECRET123abc' -o match:'oinkcode=\.\.\.' cat oink.out
+	atf_check -o not-match:'SECRET123abc' -o match:'snort update url=https://127.0.0.1:9/snortrules-snapshot-31200.tar.gz\?oinkcode=\.\.\.' \
+	    "$JGC" -c "$SOCK" jobs
 	# Its alerts, the newest first.
 	printf '%s\n%s\n' \
 	    '{ "timestamp" : "10/17-12:00:01.000000", "proto" : "ICMP", "src_addr" : "192.0.2.1", "dst_addr" : "198.51.100.7", "gid" : 1, "sid" : 1000001, "rev" : 2, "msg" : "lab probe seen", "action" : "allow", "class" : "Misc activity", "priority" : 3 }' \

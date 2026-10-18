@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.207.1"
+#define	ARCW_VERSION		"0.208.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -134,7 +134,18 @@ int		 token_kind(struct http_request *);
 const char	*token_login(const char *, char *, size_t);
 bool		 token_alive(const char *);
 bool		 session_by_token(struct http_request *);
+
+/* ldap.c: sign-in by a directory, when Settings name one. */
+bool		 ldap_enabled(void);
+bool		 ldap_login(const char *, const char *, char *, size_t, char *,
+		    size_t);
 int		 api_login_token(struct http_request *);
+int		 api_login_ldap(struct http_request *);
+
+/* labels.c: the console's own tags on hosts' interfaces. */
+int		 api_labels(struct http_request *);
+int		 api_label(struct http_request *);
+const char	*label_of(const char *, const char *, char *, size_t);
 const char	*token_who(struct http_request *);
 bool		 token_readable(const char *);
 bool		 token_writable(const char *);

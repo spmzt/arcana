@@ -5108,6 +5108,29 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			if (ucl_object_type(v) == UCL_STRING)
 				nv[sp->names.n++] =
 				    kore_strdup(ucl_object_tostring(v));
+		/* Snort's registered rules: the console's oinkcode, kept in
+		 * its settings, goes into the address here and nowhere the
+		 * host writes (it scrubs the word in its records). */
+		if (sp->kind == ARC_JOB_KIND_SNORT && sp->verb != NULL &&
+		    strcmp(sp->verb, "update") == 0 && sp->names.n == 1 &&
+		    strcmp(sp->names.v[0], "registered=yes") == 0) {
+			const char	*code = settings_peek("snort_oinkcode");
+			const char	*base = settings_peek("snort_rules_url");
+			char		*word;
+
+			if (code == NULL || code[0] == '\0' || base == NULL ||
+			    base[0] == '\0')
+				return ("the registered rules need the oinkcode "
+				    "and the rules' address, in Settings, "
+				    "Console");
+			if (asprintf(&word, "url=%s%coinkcode=%s", base,
+			    strchr(base, '?') != NULL ? '&' : '?', code) == -1)
+				return ("out of memory");
+			kore_free((void *)(uintptr_t)nv[0]);
+			nv[0] = kore_strdup(word);
+			explicit_bzero(word, strlen(word));
+			free(word);
+		}
 		break;
 	case ARC_JOB_KIND_IF_STATE:
 		if (sp->interface == NULL || (v = ucl_object_lookup(o,

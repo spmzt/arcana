@@ -58,6 +58,11 @@ static const char	*v_security(const char *);
 static const char	*v_user(const char *);
 static const char	*v_secret(const char *);
 static const char	*v_safe(const char *);
+static const char	*v_ldapurl(const char *);
+static const char	*v_url_opt(const char *);
+static const char	*v_capath(const char *);
+static const char	*v_dn(const char *);
+static const char	*v_attr(const char *);
 static const char	*v_tgtoken(const char *);
 static const char	*v_chats(const char *);
 static const char	*v_sender(const char *);
@@ -161,6 +166,43 @@ static struct setting {
 	{ "telegram_limits", K_BOOL, "Limits crossed to Telegram",
 	    "A figure of history over its limit, and back under.", NULL, NULL,
 	    NULL },
+	{ "snort_rules_url", K_TEXT, "Snort registered rules",
+	    "The archive's address at snort.org for the Snort the hosts run, "
+	    "without the oinkcode: https://www.snort.org/rules/"
+	    "snortrules-snapshot-31200.tar.gz for Snort 3.12. The Snort tab's "
+	    "Update with “registered rules” fetches it with the oinkcode; "
+	    "empty until then.", v_url_opt, NULL, NULL },
+	{ "snort_oinkcode", K_SECRET, "Snort oinkcode",
+	    "Your snort.org account's code, which the registered rules are "
+	    "fetched with. Kept in the data directory, readable by the "
+	    "console alone; never shown again, and scrubbed from the hosts' "
+	    "job records.", v_secret, NULL, NULL },
+	{ "ldap_url", K_TEXT, "LDAP directory",
+	    "ldaps://ldap.example.org or ldap://ldap.example.org (StartTLS is "
+	    "then required); empty for no sign-in by LDAP. The server's "
+	    "certificate is checked against the system's CAs and its name.",
+	    v_ldapurl, NULL, NULL },
+	{ "ldap_ca", K_TEXT, "LDAP CA file",
+	    "A PEM file on the console's host that holds the directory's CA, "
+	    "when it is not among the system's; empty for the system's.",
+	    v_capath, NULL, NULL },
+	{ "ldap_base", K_TEXT, "LDAP search base",
+	    "Where the users are looked up, the subtree under it: "
+	    "ou=people,dc=example,dc=org.", v_dn, NULL, NULL },
+	{ "ldap_user_attr", K_TEXT, "LDAP user attribute",
+	    "The attribute that is the user name: uid (the default), "
+	    "sAMAccountName, mail.", v_attr, NULL, NULL },
+	{ "ldap_group", K_TEXT, "LDAP group",
+	    "A group whose members alone may sign in (member, uniqueMember or "
+	    "memberUid): cn=arcana,ou=groups,dc=example,dc=org; empty for "
+	    "anyone the base holds.", v_dn, NULL, NULL },
+	{ "ldap_bind_dn", K_TEXT, "LDAP reader",
+	    "The DN the console binds as to look users up; empty to look "
+	    "them up anonymously. Their own bind is what checks a password.",
+	    v_dn, NULL, NULL },
+	{ "ldap_bind_password", K_SECRET, "LDAP reader's password",
+	    "Kept in the data directory, readable by the console alone; "
+	    "never shown again.", v_secret, NULL, NULL },
 	{ "safe_wait", K_TEXT, "Rollback timer, every host, in seconds",
 	    "How long a change made in safe mode waits for the console to be "
 	    "heard from again before the host undoes it, for every host "
@@ -362,6 +404,82 @@ v_sender(const char *s)
 	return (strlen(s) > 64 || strspn(s, "abcdefghijklmnopqrstuvwxyzABCD"
 	    "EFGHIJKLMNOPQRSTUVWXYZ0123456789._-") != strlen(s) ? "a host's "
 	    "name or id" : NULL);
+}
+
+/* ldap:// or ldaps://, a host, maybe a port, nothing after. */
+static const char *
+v_ldapurl(const char *s)
+{
+	const char	*p;
+
+	if (s[0] == '\0')
+		return (NULL);
+	if (strncmp(s, "ldaps://", 8) == 0)
+		p = s + 8;
+	else if (strncmp(s, "ldap://", 7) == 0)
+		p = s + 7;
+	else
+		return ("ldap://host[:port] or ldaps://host[:port]");
+	if (*p == '\0' || strlen(s) > 253 || strpbrk(p, " \t\r\n\"'\\?#@") !=
+	    NULL)
+		return ("ldap://host[:port] or ldaps://host[:port]");
+	if (*p == '[')
+		p = strchr(p, ']') != NULL ? strchr(p, ']') + 1 : p;
+	p += strcspn(p, ":/");
+	if (*p == ':') {
+		p++;
+		if (*p == '\0' || strspn(p, "0123456789") == 0 ||
+		    atoi(p) < 1 || atoi(p) > 65535)
+			return ("a port is 1 to 65535");
+		p += strspn(p, "0123456789");
+	}
+	return (*p == '\0' || strcmp(p, "/") == 0 ? NULL :
+	    "nothing after the host and port");
+}
+
+/* An https:// URL, or none. */
+static const char *
+v_url_opt(const char *s)
+{
+
+	return (s[0] == '\0' ? NULL : v_url(s));
+}
+
+/* A CA file's path, or none. */
+static const char *
+v_capath(const char *s)
+{
+
+	return (s[0] == '\0' ? NULL : v_path(s));
+}
+
+/* A distinguished name: attribute=value pairs, printable. */
+static const char *
+v_dn(const char *s)
+{
+
+	if (s[0] == '\0')
+		return (NULL);
+	if (strlen(s) > 512 || strchr(s, '=') == NULL)
+		return ("a DN, as cn=x,dc=example,dc=org");
+	for (; *s != '\0'; s++)
+		if ((unsigned char)*s < 0x20 || *s == 0x7f)
+			return ("no control characters");
+	return (NULL);
+}
+
+/* An attribute's name: letters, digits and -, a letter first. */
+static const char *
+v_attr(const char *s)
+{
+
+	if (s[0] == '\0')
+		return (NULL);
+	if (!isalpha((unsigned char)s[0]) || strlen(s) > 64 || strspn(s,
+	    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-;")
+	    != strlen(s))
+		return ("an attribute's name: uid, sAMAccountName, mail");
+	return (NULL);
 }
 
 static const char *

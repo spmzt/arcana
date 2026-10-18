@@ -61,6 +61,7 @@ struct session {
 	bool		used;
 	char		who[64];	/* the key it was opened with */
 	char		tok[17];	/* the API token it was, its id; "" a key */
+	bool		ldap;		/* opened by a directory's user */
 };
 
 static ucl_object_t	*creds;		/* the credentials document */
@@ -486,6 +487,8 @@ sessions_save(void)
 		put(e, "who", ucl_object_fromstring(sessions[i].who));
 		if (sessions[i].tok[0] != '\0')
 			put(e, "token", ucl_object_fromstring(sessions[i].tok));
+		if (sessions[i].ldap)
+			put(e, "ldap", ucl_object_frombool(true));
 		ucl_array_append(a, e);
 	}
 	put(o, "sessions", a);
@@ -532,6 +535,7 @@ sessions_load(void)
 		snprintf(s->tok, sizeof(s->tok), "%s", ucl_object_lookup(e,
 		    "token") != NULL ? ucl_object_tostring_forced(
 		    ucl_object_lookup(e, "token")) : "");
+		s->ldap = ucl_object_toboolean(ucl_object_lookup(e, "ldap"));
 		if (k < 32 || s->created > now || now - s->last > cfg.session_idle ||
 		    now - s->created > cfg.session_max) {
 			memset(s, 0, sizeof(*s));
@@ -572,7 +576,19 @@ session_by_token(struct http_request *req)
 {
 	struct session	*s;
 
-	return ((s = session_of(req)) != NULL && s->tok[0] != '\0');
+	/* A directory's user is limited as a token is: what changes the
+	 * console's own sign-in, tokens, CA and settings takes a key. */
+	return ((s = session_of(req)) != NULL && (s->tok[0] != '\0' ||
+	    s->ldap));
+}
+
+/* Was the session opened by a directory's user? */
+static bool
+session_by_ldap(struct http_request *req)
+{
+	struct session	*s;
+
+	return ((s = session_of(req)) != NULL && s->ldap);
 }
 
 bool
@@ -655,6 +671,7 @@ session_start(struct http_request *req, const char *who, const char *tok)
 	s->used = true;
 	snprintf(s->who, sizeof(s->who), "%s", who != NULL ? who : "");
 	snprintf(s->tok, sizeof(s->tok), "%s", tok != NULL ? tok : "");
+	s->ldap = false;
 	snprintf(cookie, sizeof(cookie), "%s=%s; Path=/; HttpOnly; "
 	    "SameSite=Strict; Max-Age=%d%s", SESSION_COOKIE, token,
 	    cfg.session_max, cfg.cookie_secure ? "; Secure" : "");
@@ -664,16 +681,21 @@ session_start(struct http_request *req, const char *who, const char *tok)
 }
 
 static int
-status_reply_as(struct http_request *req, bool authenticated, bool by_token)
+status_reply_as(struct http_request *req, bool authenticated, bool by_token,
+    bool by_ldap)
 {
 	ucl_object_t	*o;
 
 	o = ucl_object_typed_new(UCL_OBJECT);
 	put(o, "authenticated", ucl_object_frombool(authenticated));
-	/* Opened with an API token: the page does not offer what it may
-	 * not do. */
+	/* Opened with an API token, or by a directory's user: the page
+	 * does not offer what it may not do. */
 	if (authenticated && by_token)
 		put(o, "by_token", ucl_object_frombool(true));
+	if (authenticated && by_ldap)
+		put(o, "by_ldap", ucl_object_frombool(true));
+	/* The page offers a user and password when a directory is set. */
+	put(o, "ldap", ucl_object_frombool(ldap_enabled()));
 	put(o, "setup_required", ucl_object_frombool(
 	    ucl_array_size(cred_list()) == 0));
 	put(o, "rp_id", ucl_object_fromstring(cfg.rp_id));
@@ -688,7 +710,7 @@ status_reply(struct http_request *req, bool authenticated)
 {
 
 	return (status_reply_as(req, authenticated, authenticated &&
-	    session_by_token(req)));
+	    session_by_token(req), authenticated && session_by_ldap(req)));
 }
 
 int
@@ -1036,7 +1058,62 @@ api_login_token(struct http_request *req)
 	kore_log(LOG_NOTICE, "login with %s", who);
 	ucl_object_unref(body);
 	/* Its cookie is only on its way: said so here. */
-	return (status_reply_as(req, true, true));
+	return (status_reply_as(req, true, true, false));
+}
+
+/*
+ * POST {"user", "password"}: a sign-in by the directory Settings name,
+ * limited as a token's is.  The password is kept nowhere: it goes to
+ * the directory and is wiped.
+ */
+int
+api_login_ldap(struct http_request *req)
+{
+	ucl_object_t	*body;
+	const char	*user, *password;
+	char		 who[96], err[300];
+	bool		 ok;
+
+	if (req->method != HTTP_METHOD_POST)
+		return (reply_error(req, 405, "method", "POST"));
+	config_refresh();
+	if (!ldap_enabled())
+		return (reply_error(req, 404, "ldap", "sign-in by LDAP is not "
+		    "set up on this console"));
+	if ((body = read_json(req)) == NULL)
+		return (reply_error(req, 400, "bad_request", "expected a JSON "
+		    "object"));
+	user = ucl_str(body, "user");
+	password = ucl_str(body, "password");
+	ok = ldap_login(user, password, who, sizeof(who), err, sizeof(err));
+	if (password != NULL)
+		explicit_bzero((char *)(uintptr_t)password, strlen(password));
+	ucl_object_unref(body);
+	if (!ok)
+		return (reply_error(req, strstr(err, "too many") != NULL ? 429 :
+		    strstr(err, "not set") != NULL || strstr(err, "characters")
+		    != NULL ? 400 : 401, "login", "%s", err));
+	session_start(req, who, "");
+	{
+		struct session	*s = session_of(req);
+
+		/* The cookie is only on its way: the slot just made is the
+		 * newest; marked by its who, which session_start set. */
+		if (s == NULL) {
+			int	i, best = -1;
+
+			for (i = 0; i < SESSIONS; i++)
+				if (sessions[i].used && strcmp(sessions[i].who,
+				    who) == 0 && (best < 0 || sessions[i].created
+				    >= sessions[best].created))
+					best = i;
+			if (best >= 0)
+				sessions[best].ldap = true;
+		} else
+			s->ldap = true;
+		sessions_save();
+	}
+	return (status_reply_as(req, true, true, true));
 }
 
 int

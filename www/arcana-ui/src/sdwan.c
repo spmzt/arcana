@@ -63,6 +63,9 @@ static const ucl_object_t *jfind(const ucl_object_t *, const char *,
 		    const char *);
 static void	 put_str(ucl_object_t *, const char *, const char *);
 static void	 put_int(ucl_object_t *, const char *, const char *);
+static void	 put_list(ucl_object_t *, const char *, const char *);
+static void	 list_put(ucl_object_t *, const char *, const char *,
+		    const char *, ucl_object_t *);
 
 static struct {
 	int		 tab;
@@ -1721,6 +1724,114 @@ addressing(struct html *h, const ucl_object_t *v)
 	h_raw(h, "</span></span>");
 }
 
+/* The names of the document's lists of kind, as a select's options. */
+static void
+nlist_select(struct html *h, const char *label, const char *field,
+    const char *kind, const char *cur, const char *hint)
+{
+	const ucl_object_t	*l;
+	ucl_object_iter_t	 it;
+
+	h_raw(h, "<label>");
+	h_txt(h, label);
+	h_raw(h, "<select");
+	h_attr(h, "name", field);
+	h_raw(h, "><option value=\"\">none</option>");
+	it = NULL;
+	while ((l = ucl_object_iterate(jget(sd.doc, "lists"), &it, true)) !=
+	    NULL) {
+		if (jstr(l, "kind") == NULL || strcmp(jstr(l, "kind"), kind) != 0)
+			continue;
+		h_raw(h, "<option");
+		h_attr(h, "value", jstr(l, "name"));
+		if (cur != NULL && strcmp(cur, jstr(l, "name")) == 0)
+			h_raw(h, " selected");
+		h_raw(h, ">");
+		h_txt(h, jstr(l, "name"));
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select>");
+	if (hint != NULL) {
+		h_raw(h, "<small class=\"help\">");
+		h_txt(h, hint);
+		h_raw(h, "</small>");
+	}
+	h_raw(h, "</label>");
+}
+
+/* A list's items, shortly: the first few and how many. */
+static void
+nlist_items(struct html *h, const ucl_object_t *l)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	if (jstr(l, "kind") != NULL && strcmp(jstr(l, "kind"), "services") ==
+	    0) {
+		joined(h, jget(l, "protocols"), "—");
+		h_raw(h, " <span class=\"dim\">ports</span> ");
+		joined(h, jget(l, "ports"), "any");
+		return;
+	}
+	n = 0;
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(l, "items"), &it, true)) != NULL) {
+		if (n++ == 6)
+			continue;
+		if (n > 1)
+			h_raw(h, ", ");
+		if (ucl_object_type(e) == UCL_OBJECT) {
+			h_txt(h, jstr(e, "id"));
+			if (jint(e, "preference", 0) != 0)
+				h_fmt(h, " <span class=\"dim\">%lld</span>",
+				    (long long)jint(e, "preference", 0));
+		} else
+			h_txt(h, ucl_object_tostring_forced(e));
+	}
+	if (n > 6)
+		h_fmt(h, " <span class=\"dim\">and %d more</span>", n - 6);
+}
+
+/* The document's named lists: kept once, named where a value would be. */
+static void
+view_nlists(struct html *h)
+{
+	const ucl_object_t	*l;
+	ucl_object_iter_t	 it;
+
+	h_raw(h, "<div class=\"sd-block sd-nlists\"><h3>Lists <small class=\""
+	    "dim\">of the whole document: prefixes, services, UCSs, edges and "
+	    "UCS End Points, kept once and named by flows, zones and policies"
+	    "</small><span class=\"pane-actions\"><button class=\"ghost "
+	    "small\" data-act=\"sd-nlist-add\">+ list</button></span></h3>"
+	    "<table class=\"net sd\"><thead><tr><th>Name</th><th>Of</th><th>"
+	    "Items</th><th></th></tr></thead><tbody>");
+	it = NULL;
+	while ((l = ucl_object_iterate(jget(sd.doc, "lists"), &it, true)) !=
+	    NULL) {
+		h_raw(h, "<tr><td class=\"mono\">");
+		h_txt(h, jstr(l, "name"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(l, "kind"));
+		h_raw(h, "</td><td class=\"mono\">");
+		nlist_items(h, l);
+		h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" "
+		    "data-act=\"sd-nlist-edit\" title=\"Change it\"");
+		h_attr(h, "data-arg", jstr(l, "name"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "sd-nlist-del\" title=\"Take the list away\"");
+		h_attr(h, "data-arg", jstr(l, "name"));
+		h_raw(h, ">×</button></td></tr>");
+	}
+	if (ucl_array_size(jget(sd.doc, "lists")) == 0)
+		h_raw(h, "<tr class=\"empty-row\"><td colspan=\"4\">No list yet: "
+		    "branch prefixes, a set of ports, the UCS End Points a "
+		    "policy prefers… each kept once, and named where it is "
+		    "used.</td></tr>");
+	h_raw(h, "</tbody></table></div>");
+}
+
 static void
 view_service(struct html *h)
 {
@@ -1891,6 +2002,7 @@ map:
 	h_raw(h, "</tbody></table></div>");
 
 	/* Zones. */
+	view_nlists(h);
 	h_raw(h, "<div class=\"sd-block\"><h3>Zones <small class=\"dim\">"
 	    "by source address, §9.5; a zone's rules hold at every end point "
 	    "whose map says nothing</small><span class=\"pane-actions\"><button "
@@ -1903,7 +2015,13 @@ map:
 		h_raw(h, "<tr><td class=\"mono\">");
 		h_txt(h, jstr(v, "name"));
 		h_raw(h, "</td><td class=\"mono\">");
-		joined(h, jget(v, "prefixes"), "—");
+		joined(h, jget(v, "prefixes"), jstr(v, "prefix-list") != NULL ? "" :
+		    "—");
+		if (jstr(v, "prefix-list") != NULL) {
+			h_raw(h, " <span class=\"chip\">list ");
+			h_txt(h, jstr(v, "prefix-list"));
+			h_raw(h, "</span>");
+		}
 		h_raw(h, "</td><td>");
 		n = 0;
 		mit = NULL;
@@ -4394,6 +4512,17 @@ sdwan_modal(struct html *h)
 			    "seconds to a year; both ends turn them at the half "
 			    "of it.");
 		}
+		{
+			char	ms[32];
+
+			snprintf(ms, sizeof(ms), "%lld", (long long)jint(t, "mss",
+			    0));
+			text_field(h, "TCP MSS clamped to", "mss", jstr(t, "mss") !=
+			    NULL ? jstr(t, "mss") : jint(t, "mss", 0) > 0 ? ms : "",
+			    "auto", "On the tunnels over it, by ipfw tcp-setmss: "
+			    "auto for the tunnel's kind (and IPsec under it), a "
+			    "number of bytes, or empty for none.");
+		}
 		h_raw(h, "</fieldset>");
 		return (true);
 	}
@@ -4776,6 +4905,64 @@ sdwan_modal_service(struct html *h)
 	char			 lb[600], lb2[300];
 
 	sw = swvc_shown();
+	if (app.modal == MODAL_SD_NLIST) {
+		static const char *const kinds[] = { "prefixes", "services",
+		    "ucs", "edges", "ucs-end-points" };
+		static const char *const kwords[] = { "prefixes",
+		    "services: protocols, ports", "UCSs", "edges",
+		    "UCS End Points" };
+		const char	*kind;
+		size_t		 k, bo;
+
+		o = sd.edit[0] != '\0' ? jfind(jget(sd.doc, "lists"), "name",
+		    sd.edit) : NULL;
+		kind = jstr(o, "kind") != NULL ? jstr(o, "kind") : "prefixes";
+		h_fmt(h, "<form data-form=\"sd-nlist\"><h2>%s</h2><p>Kept once in "
+		    "the document, and named where its values would be: a "
+		    "flow's addresses or services, a zone's prefixes, the ways "
+		    "a policy may take.</p><input type=\"hidden\" name=\"was\"",
+		    o != NULL ? "A list, changed" : "A list");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, "><div class=\"two\">");
+		text_field(h, "Name", "name", jstr(o, "name"), "branches",
+		    "Letters, digits, _ and -.");
+		h_raw(h, "<label>Of<select name=\"kind\">");
+		for (k = 0; k < nitems(kinds); k++)
+			h_fmt(h, "<option value=\"%s\"%s>%s</option>", kinds[k],
+			    strcmp(kind, kinds[k]) == 0 ? " selected" : "",
+			    kwords[k]);
+		h_raw(h, "</select></label></div>");
+		/* Items a line each; a UCS End Point with its preference. */
+		buf[0] = '\0';
+		bo = 0;
+		it = NULL;
+		while ((e = ucl_object_iterate(jget(o, "items"), &it, true)) !=
+		    NULL && bo < sizeof(buf) - 80) {
+			if (ucl_object_type(e) == UCL_OBJECT)
+				bo += (size_t)snprintf(buf + bo, sizeof(buf) - bo,
+				    "%s %lld\n", jstr(e, "id"), (long long)jint(e,
+				    "preference", 0));
+			else
+				bo += (size_t)snprintf(buf + bo, sizeof(buf) - bo,
+				    "%s\n", ucl_object_tostring_forced(e));
+		}
+		h_raw(h, "<label>Items<textarea name=\"items\" rows=\"6\" "
+		    "class=\"mono\" spellcheck=\"false\" placeholder=\""
+		    "10.1.8.0/22&#10;2001:db8:9::/48\">");
+		h_txt(h, buf);
+		h_raw(h, "</textarea><small class=\"help\">A line each: a prefix, a "
+		    "UCS's id, an edge (its server), or a UCS End Point's id and "
+		    "its preference (the higher taken first). Not for services."
+		    "</small></label><div class=\"two\">");
+		text_field(h, "Protocols", "protocols", csv(jget(o, "protocols"),
+		    lb, sizeof(lb)), "tcp, udp", "Services only: as an AFS's "
+		    "PROTV4.");
+		text_field(h, "Ports", "ports", csv(jget(o, "ports"), lb2,
+		    sizeof(lb2)), "443, 8443", "Services only: as DPORT; empty "
+		    "for any.");
+		h_raw(h, "</div>");
+		return (true);
+	}
 	if (app.modal == MODAL_SD_SWVC) {
 		o = sd.edit[0] != '\0' ? jfind(jget(sd.doc, "swvcs"), "id",
 		    sd.edit) : NULL;
@@ -5106,6 +5293,8 @@ sdwan_modal_service(struct html *h)
 		    v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "", "10.1.0.0/16, "
 		    "2001:db8:1::/48", "Empty: the Default zone, every host no "
 		    "other zone names (one service has one).");
+		nlist_select(h, "And the prefixes of the list", "prefix_list",
+		    "prefixes", jstr(o, "prefix-list"), "Kept once, under Lists.");
 		return (true);
 	}
 	if (app.modal == MODAL_SD_CONFIG) {
@@ -5407,6 +5596,17 @@ sdwan_modal_service(struct html *h)
 		text_field(h, "To prefixes", "dst", crit_text(cr, jget(cr, "dav6")
 		    != NULL ? "dav6" : "dav4", buf, sizeof(buf)), "10.2.0.0/24",
 		    NULL);
+		h_raw(h, "</div><div class=\"two\">");
+		nlist_select(h, "Or from a list", "src_list", "prefixes",
+		    jstr(cr, "src-list"), "Instead of the prefixes above.");
+		nlist_select(h, "Or to a list", "dst_list", "prefixes", jstr(cr,
+		    "dst-list"), NULL);
+		h_raw(h, "</div><div class=\"two\">");
+		nlist_select(h, "Services of a list", "service_list", "services",
+		    jstr(cr, "service-list"), "Its protocols and ports, instead "
+		    "of those above.");
+		nlist_select(h, "From or to a list", "sdst_list", "prefixes",
+		    jstr(cr, "sdst-list"), NULL);
 		h_raw(h, "</div><details class=\"sd-more\"");
 		if (jget(cr, "sdav4") != NULL || jget(cr, "sdav6") != NULL ||
 		    jget(cr, "sdport") != NULL || jget(cr, "ethertype") != NULL)
@@ -5608,6 +5808,17 @@ sdwan_modal_service(struct html *h)
 			text_field(h, "Also at most", "secondary", sec, "loss 0.01, "
 			    "ipdv 10", "Other metrics a tunnel is to meet, each a "
 			    "metric and its threshold, by commas (§9.12.2.9).");
+			h_raw(h, "<div class=\"two\">");
+			nlist_select(h, "Over the UCSs of a list", "ucs_list", "ucs",
+			    jstr(cr, "ucs-list"), NULL);
+			nlist_select(h, "To the edges of a list", "edge_list",
+			    "edges", jstr(cr, "edge-list"), NULL);
+			h_raw(h, "</div>");
+			nlist_select(h, "From the UCS End Points of a list",
+			    "ucs_end_point_list", "ucs-end-points", jstr(cr,
+			    "ucs-end-point-list"), "Only tunnels from these, the "
+			    "higher preference first while it meets the "
+			    "performance.");
 		}
 		return (true);
 	}
@@ -5954,11 +6165,63 @@ sd_forms(const char *form, const ucl_object_t *f)
 	unsigned int		 i, n;
 
 	if (strcmp(form, "sd-ucs") != 0 && strcmp(form, "sd-edge") != 0 &&
-	    strcmp(form, "sd-link") != 0)
+	    strcmp(form, "sd-link") != 0 && strcmp(form, "sd-nlist") != 0)
 		return (false);
 	if (sd.doc == NULL)
 		return (true);
 	doc = ucl_object_copy(sd.doc);
+	if (strcmp(form, "sd-nlist") == 0) {
+		ucl_object_t	*items, *one;
+		char		*copy, *it2, *line, idb[80];
+		long		 pref;
+
+		id = jstr(f, "name") != NULL ? jstr(f, "name") : "";
+		was = jstr(f, "was") != NULL ? jstr(f, "was") : "";
+		v = jstr(f, "kind") != NULL ? jstr(f, "kind") : "prefixes";
+		if (id[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A list "
+			    "has a name");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put_str(o, "name", id);
+		put_str(o, "kind", v);
+		if (strcmp(v, "services") == 0) {
+			put_list(o, "protocols", jstr(f, "protocols"));
+			put_list(o, "ports", jstr(f, "ports"));
+		} else {
+			items = ucl_object_typed_new(UCL_ARRAY);
+			copy = strdup(jstr(f, "items") != NULL ? jstr(f, "items") :
+			    "");
+			if (copy == NULL)
+				abort();
+			for (it2 = copy; (line = strsep(&it2, "\n")) != NULL; ) {
+				line += strspn(line, " \t,");
+				line[strcspn(line, "\r")] = '\0';
+				if (line[0] == '\0')
+					continue;
+				if (strcmp(v, "ucs-end-points") == 0 && sscanf(line,
+				    "%79s %ld", idb, &pref) == 2) {
+					one = ucl_object_typed_new(UCL_OBJECT);
+					put_str(one, "id", idb);
+					ucl_object_insert_key(one, ucl_object_fromint(
+					    pref), "preference", 0, false);
+					ucl_array_append(items, one);
+				} else {
+					line[strcspn(line, " \t,")] = '\0';
+					ucl_array_append(items,
+					    ucl_object_fromstring(line));
+				}
+			}
+			free(copy);
+			ucl_object_insert_key(o, items, "items", 0, false);
+		}
+		list_put(doc, "lists", "name", was, o);
+		app.modal = MODAL_NONE;
+		doc_send(doc);
+		return (true);
+	}
 	if (strcmp(form, "sd-ucs") == 0) {
 		id = jstr(f, "id") != NULL ? jstr(f, "id") : "";
 		was = jstr(f, "was") != NULL ? jstr(f, "was") : "";
@@ -5997,6 +6260,10 @@ sd_forms(const char *form, const ucl_object_t *f)
 		    strcmp(jstr(f, "kind"), "wg") != 0))
 			ucl_object_insert_key(t, ucl_object_frombool(true), "ipsec",
 			    0, false);
+		if (jstr(f, "mss") != NULL && strcmp(jstr(f, "mss"), "auto") == 0)
+			put_str(t, "mss", "auto");
+		else
+			put_int(t, "mss", jstr(f, "mss"));
 		ucl_object_insert_key(o, t, "tunnel", 0, false);
 		/* In the place of the one changed, else at the end. */
 		n = ucl_array_size(arr);
@@ -6736,10 +7003,12 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		    UCL_OBJECT);
 		(void)ucl_object_delete_key(o, "name");
 		(void)ucl_object_delete_key(o, "prefixes");
+		(void)ucl_object_delete_key(o, "prefix-list");
 		put_str(o, "name", jstr(f, "name"));
+		put_str(o, "prefix-list", jstr(f, "prefix_list"));
 		if (jstr(f, "prefixes") != NULL && jstr(f, "prefixes")[0] != '\0')
 			put_list(o, "prefixes", jstr(f, "prefixes"));
-		else
+		else if (jget(o, "prefix-list") == NULL)
 			ucl_object_insert_key(o, ucl_object_fromstring("Default"),
 			    "prefixes", 0, false);
 		if (jget(o, "policies") == NULL)
@@ -6880,13 +7149,20 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			    "both"));
 			put_list(cr, "sdport", jstr(f, "sdport"));
 			put_list(cr, "ethertype", jstr(f, "ethertype"));
+			put_str(cr, "src-list", jstr(f, "src_list"));
+			put_str(cr, "dst-list", jstr(f, "dst_list"));
+			put_str(cr, "sdst-list", jstr(f, "sdst_list"));
+			put_str(cr, "service-list", jstr(f, "service_list"));
 			if (ucl_object_lookup(cr, "appid") == NULL && jget(cr, "dscp")
 			    == NULL && jget(cr, v6 ? "nextheadv6" : "protv4") == NULL
 			    && jget(cr, "dport") == NULL && jget(cr, "sport") == NULL
 			    && jget(cr, v6 ? "sav6" : "sav4") == NULL && jget(cr, v6 ?
 			    "dav6" : "dav4") == NULL && jget(cr, "sdav4") == NULL &&
 			    jget(cr, "sdav6") == NULL && jget(cr, "sdport") ==
-			    NULL && jget(cr, "ethertype") == NULL) {
+			    NULL && jget(cr, "ethertype") == NULL && jget(cr,
+			    "src-list") == NULL && jget(cr, "dst-list") == NULL &&
+			    jget(cr, "sdst-list") == NULL && jget(cr,
+			    "service-list") == NULL) {
 				snprintf(app.modal_error, sizeof(app.modal_error),
 				    "A flow matches something: an application, a "
 				    "DSCP, a protocol, ports or prefixes, or "
@@ -6987,6 +7263,10 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			put_str(cr, "virtual-topology", jstr(f, "topology"));
 			put_str(cr, "af-security-ingress", jstr(f,
 			    "af-security-ingress"));
+			put_str(cr, "ucs-list", jstr(f, "ucs_list"));
+			put_str(cr, "edge-list", jstr(f, "edge_list"));
+			put_str(cr, "ucs-end-point-list", jstr(f,
+			    "ucs_end_point_list"));
 		}
 		ucl_object_insert_key(o, cr, "criteria", 0, false);
 		list_put(sw, "policies", "name", was, o);
@@ -7573,6 +7853,49 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		app.modal = strncmp(act, "sd-lim", 6) == 0 ? MODAL_SD_LIMITER :
 		    MODAL_SD_TOPO;
 		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "sd-nlist-add") == 0 || strcmp(act, "sd-nlist-edit") ==
+	    0) {
+		snprintf(sd.edit, sizeof(sd.edit), "%s", strstr(act, "-edit") !=
+		    NULL ? arg : "");
+		app.modal = MODAL_SD_NLIST;
+		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "sd-nlist-del") == 0) {
+		char	body[300];
+
+		snprintf(body, sizeof(body), "The list %s goes out of the "
+		    "document; a flow, zone or policy that names it will not pass "
+		    "the check until it is changed.", arg);
+		confirm("Take the list away", body, "Take away", true, "",
+		    "do-sd-nlist-del", arg, "");
+		return (true);
+	}
+	if (strcmp(act, "do-sd-nlist-del") == 0) {
+		ucl_object_t	*doc;
+
+		if (sd.doc == NULL)
+			return (true);
+		doc = ucl_object_copy(sd.doc);
+		{
+			ucl_object_t		*arr = (ucl_object_t *)(uintptr_t)
+			    jget(doc, "lists");
+			const ucl_object_t	*e;
+			unsigned int		 i;
+
+			for (i = 0; i < ucl_array_size(arr); i++) {
+				e = ucl_array_find_index(arr, i);
+				if (jstr(e, "name") != NULL && strcmp(jstr(e,
+				    "name"), arg) == 0) {
+					ucl_object_unref(ucl_array_delete(arr,
+					    (ucl_object_t *)(uintptr_t)e));
+					break;
+				}
+			}
+		}
+		doc_send(doc);
 		return (true);
 	}
 	if (strcmp(act, "sd-lim-del") == 0 || strcmp(act, "sd-topo-del") == 0) {

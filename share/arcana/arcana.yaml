@@ -3525,6 +3525,28 @@ operations:
           - json
           - trace
 
+  - name: crashes
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The cores the kernel dumped where kern.corefile says, as a JSON
+      object: "corefile", "directory" and "cores", each with name,
+      program, pid, size and time.  With names "backtrace", a core's
+      name and its program (found by the core's name when not given),
+      "backtrace" too: lldb's thread list, every thread's backtrace and
+      the signal's information, read from the core.  Nothing is
+      changed.
+    do:
+      request:
+        attributes:
+          - names
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
   - name: snort
     attribute-set: arcana
     auth: true

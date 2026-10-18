@@ -176,6 +176,35 @@ url_ok(const char *s)
 	    7) == 0 || strncmp(s, "file:///", 8) == 0);
 }
 
+/*
+ * A rules address with its oinkcode (the console's secret, put in the
+ * query) hidden: what is written anywhere, the title, the trace,
+ * source.json, has it as oinkcode=... and no more.
+ */
+static const char *
+url_shown(struct work *w, const char *url)
+{
+	const char	*p, *e;
+
+	if (url == NULL || (p = strstr(url, "oinkcode=")) == NULL)
+		return (url);
+	e = p + 9 + strcspn(p + 9, "&");
+	return (wfmt(w, "%.*s...%s", (int)(p + 9 - url), url, e));
+}
+
+/* The same, into a buffer of the caller's. */
+static const char *
+url_shown_buf(const char *url, char *buf, size_t len)
+{
+	const char	*p, *e;
+
+	if (url == NULL || (p = strstr(url, "oinkcode=")) == NULL)
+		return (url);
+	e = p + 9 + strcspn(p + 9, "&");
+	snprintf(buf, len, "%.*s...%s", (int)(p + 9 - url), url, e);
+	return (buf);
+}
+
 const char *
 snort_check(const struct arc_job_spec *sp)
 {
@@ -270,11 +299,11 @@ snort_check(const struct arc_job_spec *sp)
 char *
 snort_title(const struct arc_job_spec *sp)
 {
-	char	*t;
+	char	*t, shown[1200];
 
 	if (asprintf(&t, "snort %s%s%s", sp->verb != NULL ? sp->verb : "",
-	    sp->names.n > 0 ? " " : "", sp->names.n > 0 ? sp->names.v[0] :
-	    "") == -1)
+	    sp->names.n > 0 ? " " : "", sp->names.n > 0 ? url_shown_buf(
+	    sp->names.v[0], shown, sizeof(shown)) : "") == -1)
 		return (NULL);
 	return (t);
 }
@@ -874,12 +903,12 @@ sn_fetch(struct work *w, const char *url, const char *path, char *hex,
 	bool		 ok;
 
 	step = step_begin(w, ARC_STEP_KIND_LIB, "libfetch fetchGetURL()",
-	    "%s", url);
+	    "%s", url_shown(w, url));
 	pthread_mutex_lock(&sn_fetch_lock);
 	fetchTimeout = FETCH_WAIT_S;
 	f = fetchGetURL(url, "");
 	if (f == NULL) {
-		*errp = wfmt(w, "%s: %s", url, fetchLastErrString);
+		*errp = wfmt(w, "%s: %s", url_shown(w, url), fetchLastErrString);
 		pthread_mutex_unlock(&sn_fetch_lock);
 		step_end(w, step, false, "%s", *errp);
 		return (-1);
@@ -907,9 +936,9 @@ sn_fetch(struct work *w, const char *url, const char *path, char *hex,
 	ok = close(fd) == 0 && ok;
 	if (!ok) {
 		*errp = total > ARCHIVE_MAX ? wfmt(w, "%s: more than %d MB",
-		    url, ARCHIVE_MAX >> 20) : total == 0 ? wfmt(w, "%s: "
-		    "nothing came", url) : wfmt(w, "%s: %s", url,
-		    strerror(errno));
+		    url_shown(w, url), ARCHIVE_MAX >> 20) : total == 0 ? wfmt(w,
+		    "%s: nothing came", url_shown(w, url)) : wfmt(w, "%s: %s",
+		    url_shown(w, url), strerror(errno));
 		step_end(w, step, false, "%s", *errp);
 		return (-1);
 	}
@@ -976,7 +1005,7 @@ sn_update(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		argv[6] = NULL;
 		if (run_exec(w, argv, &res) != 0) {
 			*errp = wfmt(w, "%s is not an archive tar takes: %s",
-			    url, exec_error(w, &res, "tar"));
+			    url_shown(w, url), exec_error(w, &res, "tar"));
 			goto out;
 		}
 	}
@@ -990,7 +1019,7 @@ sn_update(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	if (gather(w, wfmt(w, "%s/x", tmp), dnew, 4, &n, errp) != 0)
 		goto out;
 	if (n == 0) {
-		*errp = wfmt(w, "%s has no *.rules file", url);
+		*errp = wfmt(w, "%s has no *.rules file", url_shown(w, url));
 		goto out;
 	}
 	/* Checked with these, then they are the downloaded ones. */
@@ -1008,8 +1037,8 @@ sn_update(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	if (rebuild(w, dl, state_load(w), errp) != 0)
 		goto out;
 	src = ucl_object_typed_new(UCL_OBJECT);
-	ucl_object_insert_key(src, ucl_object_fromstring(url), "url", 0,
-	    false);
+	ucl_object_insert_key(src, ucl_object_fromstring(url_shown(w, url)),
+	    "url", 0, false);
 	ucl_object_insert_key(src, ucl_object_fromint((int64_t)time(NULL)),
 	    "updated", 0, false);
 	ucl_object_insert_key(src, ucl_object_fromstring(hex), "sha256", 0,

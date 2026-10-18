@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.142.0"
+#define	ARCANA_AGENT_VERSION	"0.143.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -341,6 +341,11 @@ const char	*poudriere_check(const struct arc_job_spec *);
 int		 do_poudriere_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 char		*poudriere_title(const struct arc_job_spec *);
+
+/* gula/crashes.c: the cores dumped, and a backtrace of one. */
+struct arc_crashes_rsp;
+void		 do_crashes(struct work *, const char *const *, size_t,
+		    struct arc_crashes_rsp *);
 
 /* luxuria/snort.c: Snort 3, run by arcana_snort, its rules kept. */
 struct arc_snort_rsp;

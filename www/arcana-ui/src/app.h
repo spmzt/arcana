@@ -416,6 +416,7 @@ enum modal {
 	MODAL_SD_MAP,
 	MODAL_SD_LIMITER,
 	MODAL_SD_TOPO,
+	MODAL_SD_NLIST,		/* a named list of the SD-WAN document */
 	MODAL_PKG_INSTALL,
 	MODAL_WF_RUN,
 	MODAL_IF_VNET,
@@ -466,7 +467,9 @@ struct app {
 	char		 origin_error[400];	/* opened at the wrong address */
 	char		 console_origin[256];	/* web.conf's origin, as told */
 	bool		 auth_busy;
-	bool		 by_token;	/* signed in with an API token */
+	bool		 by_token;	/* signed in with an API token, or by LDAP: limited */
+	bool		 by_ldap;	/* ... by a directory's user */
+	bool		 ldap_on;	/* the console takes a user and password */
 
 	struct server	 servers[MAX_SERVERS];
 	int		 nservers;
@@ -616,7 +619,7 @@ void		 load_tokens(void);
 void		 token_new(void);
 void		 token_del(const char *);
 /* The forms settings are in. */
-enum { SETG_CONSOLE, SETG_MAIL, SETG_TELEGRAM };
+enum { SETG_CONSOLE, SETG_MAIL, SETG_TELEGRAM, SETG_LDAP };
 int		 setting_group(const char *);
 void		 save_settings(const ucl_object_t *, int);
 void		 mail_test(void);
@@ -635,6 +638,7 @@ void		 check_update(void);
 void		 auth_status(void);
 void		 login(bool);
 void		 login_token(const char *);
+void		 login_ldap(const char *, const char *);
 void		 enrol(const char *, const char *);
 void		 add_key(const char *);
 void		 logout(void);
@@ -894,6 +898,13 @@ void		 secpage_loc(char *, size_t);
 void		 secpage_open(const char *);
 void		 secpage_tick(double);
 void		 secpage_refresh(void);
+
+/* iflabels.c: the console's own labels on interfaces. */
+void		 labels_load(void);
+const char	*label_of(const char *, const char *);
+void		 label_cell(struct html *, const char *, const char *);
+bool		 iflabel_form(const char *, const ucl_object_t *);
+bool		 iflabel_action(const char *, const char *);
 
 /* snort.c: the Security page's Snort tab. */
 void		 view_snort(struct html *, const char *);

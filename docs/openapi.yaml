@@ -231,6 +231,43 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
 
+  /api/auth/login/ldap:
+    post:
+      tags: [auth]
+      summary: Log in as a directory's user
+      description: |
+        When Settings name an LDAP directory (ldap_url): the user is
+        looked up under the base by the user attribute, as the reader
+        Settings name or anonymously, and the console binds as the
+        entry found with the password, over TLS always (ldaps://, or
+        StartTLS on ldap://; the certificate checked).  With a group
+        set, its members alone (member, uniqueMember or memberUid).
+        The session is limited as a token's: not the console's
+        settings, sign-in, push, enrolment, tokens or CA.  The status
+        says by_ldap, and ldap whether a directory is set.  An empty
+        password is refused (400), a wrong one or an unknown user 401
+        without saying which, an outsider 401; after five failures in
+        a minute, 429 for the rest of it.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user, password]
+              properties:
+                user: { type: string, maxLength: 64 }
+                password: { type: string, maxLength: 256 }
+      responses:
+        "200":
+          description: Signed in; the session cookie is set.
+        "401":
+          description: Refused.
+        "404":
+          description: No directory is set up.
+        "429":
+          description: Too many failures this minute.
   /api/auth/login/token:
     post:
       tags: [auth]
@@ -1174,7 +1211,10 @@ paths:
         key=value: set (enable=yes|no, mode=ids|ips, interface= each,
         divert_port, home_net), conf (file=snort.lua|local.rules, and
         text), update (url, else the last one or Snort's community
-        rules), rule (on=, off= or default= gid:sid). Each is checked by
+        rules; or registered=yes, the registered rules from the address
+        Settings name, with the console's oinkcode put into it here and
+        scrubbed from everything the host writes), rule (on=, off= or
+        default= gid:sid). Each is checked by
         snort -T before it replaces what was there; a running Snort is
         told to reload.
       parameters:
@@ -1555,6 +1595,35 @@ paths:
         "200":
           description: ok and data, or error
         "400": { $ref: "#/components/responses/Error" }
+  /api/labels:
+    get:
+      tags: [servers]
+      summary: The console's labels on interfaces
+      description: >-
+        A tag of the console's own on an interface of a host, kept by
+        the console (not on the host), under labels as
+        "server/interface": "text".
+      responses:
+        "200":
+          description: Every label.
+  /api/labels/{server}/{interface}:
+    put:
+      tags: [servers]
+      summary: Label an interface
+      description: >-
+        {"label": "text"}, 64 characters at most; empty takes the label
+        away. The reply is every label, as GET gives them.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: interface
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Kept.
+        "400":
+          description: Not a label.
   /api/templates:
     get:
       tags: [settings]

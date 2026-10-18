@@ -1028,6 +1028,7 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					    strcmp(kind, "wg") == 0 || strcmp(kind,
 					    "uswe") == 0));
 					put(t, "public", B(public));
+					put(t, "ucs", S(str(x, "ucs")));
 					put(t, "backup", B(ucl_flag(x,
 					    "backup") || ucl_flag(y, "backup")));
 					put(t, "billing", S(str(ux, "billing") !=
@@ -2633,6 +2634,10 @@ static const struct {
 	{ "dhcp", "udp", "67,68" }, { "icmp", "icmp", NULL },
 };
 
+/* An ipfw table of a document's named list of prefixes: the prefix,
+ * then the list's name. */
+#define	NLIST_TABLE	"arcl_"
+
 /* A list's values joined by commas, into buf. */
 static const char *
 join(const ucl_object_t *arr, char *buf, size_t len)
@@ -2674,6 +2679,24 @@ afs_words(const ucl_object_t *cr, const char *to_table, const char *appid,
 	proto = "ip";
 	if (ucl_object_lookup(cr, "ethertype") != NULL)
 		return (false);
+	/* A named list of prefixes: its table, of both families. */
+	if ((v = ucl_object_lookup(cr, "src-list")) != NULL)
+		snprintf(src, sizeof(src), "table(%s%s)", NLIST_TABLE,
+		    ucl_object_tostring_forced(v));
+	if ((v = ucl_object_lookup(cr, "dst-list")) != NULL) {
+		if (to_table != NULL)
+			snprintf(opt + strlen(opt), sizeof(opt) - strlen(opt),
+			    " dst-ip table(%s%s)", NLIST_TABLE,
+			    ucl_object_tostring_forced(v));
+		else
+			snprintf(dst, sizeof(dst), "table(%s%s)", NLIST_TABLE,
+			    ucl_object_tostring_forced(v));
+	}
+	if ((v = ucl_object_lookup(cr, "sdst-list")) != NULL)
+		snprintf(opt + strlen(opt), sizeof(opt) - strlen(opt),
+		    " { src-ip table(%s%s) or dst-ip table(%s%s) }", NLIST_TABLE,
+		    ucl_object_tostring_forced(v), NLIST_TABLE,
+		    ucl_object_tostring_forced(v));
 	if ((v = ucl_object_lookup(cr, "sav4")) != NULL) {
 		fam = 4;
 		snprintf(src, sizeof(src), "%s", join(v, l, sizeof(l)));
@@ -2914,6 +2937,92 @@ tunnel_fits(const ucl_object_t *t, const ucl_object_t *pol, bool backup_ok)
 	return (true);
 }
 
+static ucl_object_t	*table(ucl_object_t *, const char *, const char *);
+static void		 entry(ucl_object_t *, const char *, const char *);
+
+/* The tables of the named prefix lists an AFS's criteria use, each
+ * with the list's prefixes, of both families. */
+static void
+nlist_tables(struct plan *pl, ucl_object_t *tables, const ucl_object_t *cr)
+{
+	static const char *const keys[] = { "src-list", "dst-list",
+	    "sdst-list" };
+	const ucl_object_t	*l, *e;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*t;
+	char			 name[64];
+	size_t			 i;
+
+	for (i = 0; i < nitems(keys); i++) {
+		if (str(cr, keys[i]) == NULL || (l = by(ucl_object_lookup(
+		    pl->doc, "lists"), "name", str(cr, keys[i]))) == NULL)
+			continue;
+		snprintf(name, sizeof(name), "%s%s", NLIST_TABLE, str(l,
+		    "name"));
+		if (by(tables, "name", name) != NULL)
+			continue;
+		t = table(tables, name, "legacy");
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(l, "items"),
+		    &it, true)) != NULL)
+			entry(t, ucl_object_tostring_forced(e), "0");
+	}
+}
+
+/* The document's list named in a policy's criterion, or NULL. */
+static const ucl_object_t *
+pol_list(struct plan *pl, const ucl_object_t *pol, const char *crit)
+{
+	const char	*name;
+
+	name = str(ucl_object_lookup(pol, "criteria"), crit);
+	return (name != NULL ? by(ucl_object_lookup(pl->doc, "lists"), "name",
+	    name) : NULL);
+}
+
+/* An item of a list, by the string it is or the id it has; NULL else. */
+static const ucl_object_t *
+list_item(const ucl_object_t *l, const char *s)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while (s != NULL && (e = ucl_object_iterate(ucl_object_lookup(l,
+	    "items"), &it, true)) != NULL)
+		if ((ucl_object_type(e) == UCL_STRING && strcmp(
+		    ucl_object_tostring(e), s) == 0) || (ucl_object_type(e) ==
+		    UCL_OBJECT && str(e, "id") != NULL && strcmp(str(e, "id"),
+		    s) == 0))
+			return (e);
+	return (NULL);
+}
+
+/*
+ * Does a tunnel, from the local end mine, take a way a policy's lists
+ * allow: its UCS in ucs-list, its local UCS End Point in
+ * ucs-end-point-list?  *prefp: that end point's preference there.
+ */
+static bool
+tunnel_listed(struct plan *pl, const ucl_object_t *t, const ucl_object_t *mine,
+    const ucl_object_t *pol, int64_t *prefp)
+{
+	const ucl_object_t	*l, *e;
+
+	*prefp = 0;
+	if ((l = pol_list(pl, pol, "ucs-list")) != NULL && list_item(l, str(t,
+	    "ucs")) == NULL)
+		return (false);
+	if ((l = pol_list(pl, pol, "ucs-end-point-list")) != NULL) {
+		if ((e = list_item(l, str(mine, "ucs_ep"))) == NULL)
+			return (false);
+		if (ucl_object_type(e) == UCL_OBJECT)
+			*prefp = ucl_object_toint(ucl_object_lookup(e,
+			    "preference"));
+	}
+	return (true);
+}
+
 /* The interface an end point's UNI is: its own, or the VLAN made on it. */
 static const char *
 uni_ifname(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
@@ -2989,6 +3098,38 @@ entry(ucl_object_t *t, const char *key, const char *value)
 }
 
 /*
+ * Candidates with a preference (a UCS End Point list's) first, the
+ * higher first; the order otherwise kept.  Takes cands.
+ */
+static ucl_object_t *
+by_preference(ucl_object_t *cands)
+{
+	const ucl_object_t	*v[256], *t;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*out;
+	int			 n, i, k;
+
+	n = 0;
+	it = NULL;
+	while ((v[n] = ucl_object_iterate(cands, &it, true)) != NULL && n <
+	    255)
+		n++;
+	for (i = 1; i < n; i++)
+		for (k = i; k > 0 && ucl_object_toint(ucl_object_lookup(v[k],
+		    "preference")) > ucl_object_toint(ucl_object_lookup(v[k -
+		    1], "preference")); k--) {
+			t = v[k];
+			v[k] = v[k - 1];
+			v[k - 1] = t;
+		}
+	out = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < n; i++)
+		ucl_array_append(out, ucl_object_copy(v[i]));
+	ucl_object_unref(cands);
+	return (out);
+}
+
+/*
  * The steering of one table: for each far prefix the tunnels that may
  * carry it, in order: no backup first, a private one before a public
  * one; the console's manager reorders them by the performance.
@@ -3001,6 +3142,7 @@ steer_table(struct plan *pl, ucl_object_t *entries, const ucl_object_t *sw,
 	const ucl_object_t	*ep2, *p, *t, *e0, *e1, *far, *dz;
 	ucl_object_iter_t	 it, pit, tit;
 	ucl_object_t		*pfx, *en, *cands, *c;
+	int64_t			 pref;
 	int			 af, pass;
 
 	af = fam == 4 ? AF_INET : AF_INET6;
@@ -3009,6 +3151,10 @@ steer_table(struct plan *pl, ucl_object_t *entries, const ucl_object_t *sw,
 	    &it, true)) != NULL) {
 		if (strcmp(str(ep2, "edge"), str(ep, "edge")) == 0 ||
 		    !vt_allows(sw, pol, str(ep, "id"), str(ep2, "id")))
+			continue;
+		/* The destinations a policy's edge list lets it reach. */
+		if (pol_list(pl, pol, "edge-list") != NULL && list_item(
+		    pol_list(pl, pol, "edge-list"), str(ep2, "edge")) == NULL)
 			continue;
 		pfx = ucl_object_typed_new(UCL_ARRAY);
 		uni_prefixes(ep2, pfx);
@@ -3050,8 +3196,13 @@ steer_table(struct plan *pl, ucl_object_t *entries, const ucl_object_t *sw,
 					if (str(far, fam == 4 ? "inner4" :
 					    "inner6") == NULL)
 						continue;
+					if (!tunnel_listed(pl, t, far == e1 ? e0 :
+					    e1, pol, &pref))
+						continue;
 					c = ucl_object_typed_new(UCL_OBJECT);
 					put(c, "id", S(str(t, "id")));
+					if (pref != 0)
+						put(c, "preference", I(pref));
 					put(c, "via", S(str(far, fam == 4 ?
 					    "inner4" : "inner6")));
 					put(c, "public", B(ucl_flag(t,
@@ -3063,6 +3214,7 @@ steer_table(struct plan *pl, ucl_object_t *entries, const ucl_object_t *sw,
 				ucl_object_unref(cands);
 				continue;
 			}
+			cands = by_preference(cands);
 			/* A private one before a public one. */
 			en = ucl_object_typed_new(UCL_OBJECT);
 			put(en, "table", S(tname));
@@ -3505,6 +3657,83 @@ app_has(const ucl_object_t *afs, const char *app)
 	    afs, "group"), app) == 0)));
 }
 
+/*
+ * The MSS to clamp TCP to on a tunnel of a UCS, for a family: what
+ * its tunnel entry says, or for auto 1500 less the tunnel's overhead
+ * (gre 24, gif 20, geneve 50, wg 60, uswe 73), IPsec's 64 under gre,
+ * gif and geneve, and 20 more over an IPv6 underlay, less the inner
+ * headers (40 for IPv4, 60 for IPv6); 0 when none is to be clamped.
+ */
+static int
+tunnel_mss(const ucl_object_t *doc, const ucl_object_t *t,
+    const ucl_object_t *end, int fam)
+{
+	const ucl_object_t	*u, *tt, *v;
+	const char		*kind;
+	int			 mtu, over;
+
+	if ((u = by(ucl_object_lookup(doc, "ucs"), "id", str(t, "ucs"))) ==
+	    NULL || (tt = ucl_object_lookup(u, "tunnel")) == NULL ||
+	    (v = ucl_object_lookup(tt, "mss")) == NULL)
+		return (0);
+	if (ucl_object_type(v) == UCL_INT)
+		return ((int)ucl_object_toint(v));
+	kind = str(t, "kind") != NULL ? str(t, "kind") : "gre";
+	over = strcmp(kind, "gif") == 0 ? 20 : strcmp(kind, "geneve") == 0 ?
+	    50 : strcmp(kind, "wg") == 0 ? 60 : strcmp(kind, "uswe") == 0 ? 73 :
+	    24;
+	if (ucl_flag(t, "ipsec"))
+		over += 64;
+	if (str(end, "underlay") != NULL && strchr(str(end, "underlay"), ':')
+	    != NULL)
+		over += 20;
+	mtu = 1500 - over;
+	return (mtu - (fam == 6 ? 60 : 40));
+}
+
+/*
+ * tcp-setmss rules for the service's tunnels at the edge, each family
+ * its own (ipfw_pmod: the search goes on after them); true when any,
+ * so that the module is loaded.
+ */
+static bool
+mss_rules(struct plan *pl, const ucl_object_t *sw, const char *sid,
+    ucl_object_t *rules)
+{
+	const ucl_object_t	*t, *e;
+	ucl_object_iter_t	 it, eit;
+	int			 m;
+	bool			 any;
+
+	any = false;
+	it = NULL;
+	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
+		if (strcmp(str(t, "swvc"), str(sw, "id")) != 0 || ucl_flag(t,
+		    "control"))
+			continue;
+		eit = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(t, "ends"),
+		    &eit, true)) != NULL) {
+			if (strcmp(str(e, "edge"), sid) != 0 || str(e, "ifname")
+			    == NULL)
+				continue;
+			if ((m = tunnel_mss(pl->doc, t, e, 4)) > 0) {
+				rule(rules, RULE_FROM, "tcp-setmss %d tcp from any "
+				    "to any via %s tcpflags syn ip4", m, str(e,
+				    "ifname"));
+				any = true;
+			}
+			if ((m = tunnel_mss(pl->doc, t, e, 6)) > 0) {
+				rule(rules, RULE_FROM, "tcp-setmss %d tcp from any "
+				    "to any via %s tcpflags syn ip6", m, str(e,
+				    "ifname"));
+				any = true;
+			}
+		}
+	}
+	return (any);
+}
+
 /* The tunnel interfaces of the service at the edge, as xmit words: the
  * data tunnels', not the control plane's own. */
 static const char *
@@ -3603,6 +3832,7 @@ rules_build(struct plan *pl, const char *sid)
 	const char		*uni, *pname, *bo_sid, *bif;
 	int			 next, zi, pi, fam, nuni, k, lim, q, nat, si, rp;
 	bool			 any, multi, local, breaks;
+	bool			 mss_done = false;
 
 	tables = ucl_object_typed_new(UCL_ARRAY);
 	rules = ucl_object_typed_new(UCL_ARRAY);
@@ -3630,6 +3860,30 @@ rules_build(struct plan *pl, const char *sid)
 			/* [D1]: source routing dropped. */
 			rule(rules, RULE_FROM, "deny ip from any to any ipoptions "
 			    "lsrr,ssrr,rr in recv %s", uni);
+			/* TCP's MSS clamped on the tunnels, once an edge. */
+			if (!mss_done && mss_rules(pl, sw, sid, rules)) {
+				ucl_object_t	*ko, *ka;
+
+				ko = (ucl_object_t *)(uintptr_t)by(
+				    ucl_object_lookup(pl->edges, sid), "key",
+				    "pmod");
+				if (ko == NULL) {
+					ko = object(pl, sid, "pmod", PH_FIBS,
+					    "ipfw_pmod loaded and kept, for "
+					    "tcp-setmss");
+					put(ko, "make", ucl_object_typed_new(
+					    UCL_ARRAY));
+					ka = ucl_object_typed_new(UCL_ARRAY);
+					ucl_array_append(ka, S("ipfw_pmod"));
+					make(ko, job("kmod", "verb", S("load"),
+					    "args", ka, NULL));
+					ka = ucl_object_typed_new(UCL_ARRAY);
+					ucl_array_append(ka, S("ipfw_pmod"));
+					make(ko, job("kmod", "verb", S("keep"),
+					    "args", ka, NULL));
+				}
+				mss_done = true;
+			}
 			/*
 			 * Intrusion prevented (ids, prevent): IPv4 that
 			 * comes in at the UNI, and that comes in elsewhere for
@@ -3889,6 +4143,7 @@ rules_build(struct plan *pl, const char *sid)
 							pi++;
 					}
 					cr = ucl_object_lookup(afs, "criteria");
+					nlist_tables(pl, tables, cr);
 					ap = ucl_object_lookup(cr, "appid");
 					nap = ap != NULL ? (int)ucl_array_size(
 					    ap) : 1;
@@ -7304,8 +7559,16 @@ reorder(const ucl_object_t *perf, const ucl_object_t *sd, ucl_object_t *cands,
 			int	a = (v[k].ok ? 0 : v[k].has ? 1 : 2);
 			int	b = (v[k - 1].ok ? 0 : v[k - 1].has ? 1 : 2);
 
-			if (a < b || (a == b && a < 2 && v[k].m[idx] < v[k -
-			    1].m[idx])) {
+			int64_t	pa = ucl_object_toint(ucl_object_lookup(
+				    v[k].c, "preference"));
+			int64_t	pb = ucl_object_toint(ucl_object_lookup(
+				    v[k - 1].c, "preference"));
+
+			/* Of those that meet the thresholds, a UCS End
+			 * Point list's preference first, then the metric. */
+			if (a < b || (a == b && a == 0 && pa > pb) || (a == b &&
+			    a < 2 && (a != 0 || pa == pb) && v[k].m[idx] <
+			    v[k - 1].m[idx])) {
 				__typeof__(v[0]) t = v[k];
 
 				v[k] = v[k - 1];

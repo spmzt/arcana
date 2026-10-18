@@ -1476,6 +1476,322 @@ ATF_TC_BODY(workflows, tc)
 	resp_free(&r);
 }
 
+/*
+ * A directory for the LDAP case: the slapd of a tree the configuration
+ * names (slapd, slapd_lib for its libraries, slapd_etc for its schema),
+ * on two ports of this test's own, with a CA and a certificate for
+ * 127.0.0.1 made here; two users, one in the group.  Skipped without
+ * it.  Its pid in slapd.pid, for the end of the case.
+ */
+static bool
+slapd_start(const atf_tc_t *tc, int *portp, int *tlsportp)
+{
+	const char	*slapd, *lib, *etc;
+	char		 cwd[MAXPATHLEN], cmd[8192];
+	FILE		*fp;
+	int		 port;
+
+	if (!atf_tc_has_config_var(tc, "slapd"))
+		return (false);
+	slapd = atf_tc_get_config_var(tc, "slapd");
+	lib = atf_tc_has_config_var(tc, "slapd_lib") ? atf_tc_get_config_var(tc,
+	    "slapd_lib") : "/usr/local/lib";
+	etc = atf_tc_has_config_var(tc, "slapd_etc") ? atf_tc_get_config_var(tc,
+	    "slapd_etc") : "/usr/local/etc/openldap";
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	port = 20000 + (int)(getpid() % 20000);
+	*portp = port;
+	*tlsportp = port + 1;
+	ATF_REQUIRE(system("openssl req -x509 -newkey ec -pkeyopt "
+	    "ec_paramgen_curve:P-256 -nodes -keyout lca.key -out lca.pem -subj "
+	    "'/CN=Arcana test LDAP CA' -days 2 >/dev/null 2>&1 && openssl req "
+	    "-newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout lsrv.key "
+	    "-out lsrv.csr -subj '/CN=ldap.test' >/dev/null 2>&1 && printf "
+	    "'subjectAltName=DNS:ldap.test,IP:127.0.0.1\\n' > lext && openssl "
+	    "x509 -req -in lsrv.csr -CA lca.pem -CAkey lca.key -CAcreateserial "
+	    "-out lsrv.pem -days 2 -extfile lext >/dev/null 2>&1") == 0);
+	ATF_REQUIRE(mkdir("ldb", 0700) == 0);
+	ATF_REQUIRE((fp = fopen("slapd.conf", "w")) != NULL);
+	fprintf(fp, "include %s/schema/core.schema.sample\n"
+	    "include %s/schema/cosine.schema.sample\n"
+	    "include %s/schema/inetorgperson.schema.sample\n"
+	    "include %s/schema/nis.schema.sample\n"
+	    "pidfile %s/slapd.pid\nargsfile %s/slapd.args\n"
+	    "modulepath %s/../libexec/openldap\nmoduleload back_mdb\n"
+	    "TLSCACertificateFile %s/lca.pem\nTLSCertificateFile %s/lsrv.pem\n"
+	    "TLSCertificateKeyFile %s/lsrv.key\n"
+	    "database mdb\nmaxsize 67108864\nsuffix \"dc=lab,dc=test\"\n"
+	    "rootdn \"cn=admin,dc=lab,dc=test\"\nrootpw labadmin\n"
+	    "directory %s/ldb\nindex objectClass eq\n"
+	    "access to attrs=userPassword by self write by anonymous auth by * "
+	    "none\naccess to * by dn.exact=\"cn=reader,dc=lab,dc=test\" read by "
+	    "users read by anonymous read\n", etc, etc, etc, etc, cwd, cwd, lib,
+	    cwd, cwd, cwd, cwd);
+	fclose(fp);
+	ATF_REQUIRE((fp = fopen("base.ldif", "w")) != NULL);
+	fputs("dn: dc=lab,dc=test\nobjectClass: dcObject\nobjectClass: "
+	    "organization\ndc: lab\no: Lab\n\n"
+	    "dn: cn=reader,dc=lab,dc=test\nobjectClass: organizationalRole\n"
+	    "objectClass: simpleSecurityObject\ncn: reader\nuserPassword: "
+	    "readerpw\n\n"
+	    "dn: ou=people,dc=lab,dc=test\nobjectClass: organizationalUnit\n"
+	    "ou: people\n\n"
+	    "dn: uid=alice,ou=people,dc=lab,dc=test\nobjectClass: "
+	    "inetOrgPerson\nuid: alice\ncn: Alice Lab\nsn: Lab\nuserPassword: "
+	    "alicepw\n\n"
+	    "dn: uid=bob,ou=people,dc=lab,dc=test\nobjectClass: inetOrgPerson\n"
+	    "uid: bob\ncn: Bob Lab\nsn: Lab\nuserPassword: bobpw\n\n"
+	    "dn: ou=groups,dc=lab,dc=test\nobjectClass: organizationalUnit\n"
+	    "ou: groups\n\n"
+	    "dn: cn=arcana,ou=groups,dc=lab,dc=test\nobjectClass: groupOfNames\n"
+	    "cn: arcana\nmember: uid=alice,ou=people,dc=lab,dc=test\n", fp);
+	fclose(fp);
+	snprintf(cmd, sizeof(cmd), "LD_LIBRARY_PATH=%s %s/../sbin/slapadd -f "
+	    "slapd.conf -l base.ldif >slapadd.out 2>&1 && LD_LIBRARY_PATH=%s %s "
+	    "-f slapd.conf -h 'ldap://127.0.0.1:%d/ ldaps://127.0.0.1:%d/' "
+	    ">slapd.out 2>&1", lib, lib, lib, slapd, port, port + 1);
+	ATF_REQUIRE_MSG(system(cmd) == 0, "slapd did not start: %s", cmd);
+	usleep(500000);
+	return (true);
+}
+
+static void
+slapd_stop(void)
+{
+
+	(void)system("[ -f slapd.pid ] && kill $(cat slapd.pid) 2>/dev/null; "
+	    "true");
+}
+
+CONSOLE_TC(ldap, "Sign-in by LDAP over TLS: the user looked up and bound "
+    "as, a group's members alone, a session limited as a token's; a wrong "
+    "password, an unknown user, an empty password and an outsider refused; "
+    "too many failures throttled; StartTLS on ldap://, ldaps:// too")
+ATF_TC_BODY(ldap, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[2048], keycookie[160];
+	int		port, tlsport, i;
+
+	start(tc, 0, NULL);
+	if (!slapd_start(tc, &port, &tlsport))
+		atf_tc_skip("no slapd: give slapd, slapd_lib and slapd_etc");
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	/* Not set up: said so, and the status offers no directory. */
+	http("GET", "/api/auth/status", NULL, &r);
+	ATF_CHECK_STREQ("false", jstr(&r, "ldap"));
+	resp_free(&r);
+	http("POST", "/api/auth/login/ldap", "{\"user\":\"alice\",\"password\":"
+	    "\"alicepw\"}", &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	/* A URL that is not one, refused; then the directory, by StartTLS,
+	 * its CA from the file here, the reader and the group. */
+	http("POST", "/api/settings", "{\"set\":{\"ldap_url\":\"http://x\"}}", &r);
+	ATF_CHECK_MSG(r.status == 400, "%s", r.body);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"set\":{\"ldap_url\":\"ldap://127.0.0.1:"
+	    "%d\",\"ldap_ca\":\"%s/lca.pem\",\"ldap_base\":\"ou=people,dc=lab,"
+	    "dc=test\",\"ldap_user_attr\":\"uid\",\"ldap_group\":\"cn=arcana,"
+	    "ou=groups,dc=lab,dc=test\",\"ldap_bind_dn\":\"cn=reader,dc=lab,"
+	    "dc=test\",\"ldap_bind_password\":\"readerpw\"}}", port, cwd);
+	http("POST", "/api/settings", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/auth/status", NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "ldap"));
+	resp_free(&r);
+	/* The key's session kept aside: the sign-ins open their own. */
+	snprintf(keycookie, sizeof(keycookie), "%s", cookie);
+	cookie[0] = '\0';
+	http("POST", "/api/auth/login/ldap", "{\"user\":\"alice\",\"password\":"
+	    "\"\"}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "anonymous") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("POST", "/api/auth/login/ldap", "{\"user\":\"alice\",\"password\":"
+	    "\"wrong\"}", &r);
+	ATF_CHECK_MSG(r.status == 401 && strstr(r.body, "wrong password") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", "/api/auth/login/ldap", "{\"user\":\"nobody\",\"password\":"
+	    "\"x\"}", &r);
+	ATF_CHECK_MSG(r.status == 401 && strstr(r.body, "no such user") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	/* Bob is a user, but not of the group. */
+	http("POST", "/api/auth/login/ldap", "{\"user\":\"bob\",\"password\":"
+	    "\"bobpw\"}", &r);
+	ATF_CHECK_MSG(r.status == 401 && strstr(r.body, "not a member") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(cookie[0] == '\0');
+	/* Alice: in, limited, and said to be by LDAP. */
+	http("POST", "/api/auth/login/ldap", "{\"user\":\"alice\",\"password\":"
+	    "\"alicepw\"}", &r);
+	ATF_CHECK_MSG(r.status == 200, "%s", r.body);
+	ATF_CHECK_STREQ("true", jstr(&r, "authenticated"));
+	ATF_CHECK_STREQ("true", jstr(&r, "by_ldap"));
+	resp_free(&r);
+	ATF_CHECK(cookie[0] != '\0');
+	http("GET", "/api/auth/status", NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "authenticated"));
+	ATF_CHECK_STREQ("true", jstr(&r, "by_ldap"));
+	resp_free(&r);
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/settings", NULL, &r);
+	ATF_CHECK_MSG(r.status == 403, "%s", r.body);
+	resp_free(&r);
+	http("GET", "/api/auth/credentials", NULL, &r);
+	ATF_CHECK_MSG(r.status == 403, "%s", r.body);
+	resp_free(&r);
+	http("POST", "/api/auth/logout", "{}", &r);
+	resp_free(&r);
+	cookie[0] = '\0';
+	/* Throttled: after the failures above and two more, a minute's
+	 * wait, even for the right password. */
+	for (i = 0; i < 3; i++) {
+		http("POST", "/api/auth/login/ldap", "{\"user\":\"alice\","
+		    "\"password\":\"wrong\"}", &r);
+		resp_free(&r);
+	}
+	http("POST", "/api/auth/login/ldap", "{\"user\":\"alice\",\"password\":"
+	    "\"alicepw\"}", &r);
+	ATF_CHECK_MSG(r.status == 429, "%d %s", r.status, r.body);
+	resp_free(&r);
+	/* ldaps://, no group, anonymous lookup: bob is in. The throttle
+	 * is the worker's minute: the console restarted for it. */
+	snprintf(cookie, sizeof(cookie), "%s", keycookie);
+	snprintf(body, sizeof(body), "{\"set\":{\"ldap_url\":\"ldaps://127.0.0.1:"
+	    "%d\",\"ldap_group\":\"\",\"ldap_bind_dn\":\"\",\"ldap_bind_password\":"
+	    "\"\"}}", tlsport);
+	http("POST", "/api/settings", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	restart_console();
+	cookie[0] = '\0';
+	http("POST", "/api/auth/login/ldap", "{\"user\":\"bob\",\"password\":"
+	    "\"bobpw\"}", &r);
+	ATF_CHECK_MSG(r.status == 200, "%d %s", r.status, r.body);
+	resp_free(&r);
+	/* A directory whose certificate is not trusted: refused. */
+	snprintf(cookie, sizeof(cookie), "%s", keycookie);
+	http("POST", "/api/settings", "{\"set\":{\"ldap_ca\":\"\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	cookie[0] = '\0';
+	http("POST", "/api/auth/login/ldap", "{\"user\":\"bob\",\"password\":"
+	    "\"bobpw\"}", &r);
+	ATF_CHECK_MSG(r.status == 401 && strstr(r.body, "TLS") != NULL, "%d %s",
+	    r.status, r.body);
+	resp_free(&r);
+	slapd_stop();
+}
+
+CONSOLE_TC(labels, "Labels on interfaces: the console's own tags, kept by "
+    "server and interface; set, changed, taken away; a bad one refused; "
+    "read by a token, not written by a read one")
+ATF_TC_BODY(labels, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[400], sid[16], url[96];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	http("GET", "/api/labels", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strcmp(r.body, "{\"labels\":{}}") == 0);
+	resp_free(&r);
+	snprintf(url, sizeof(url), "/api/labels/%s/vtnet0", sid);
+	http("PUT", url, "{\"label\":\"uplink A, to the IXP\"}", &r);
+	EXPECT(&r, 200);
+	snprintf(body, sizeof(body), "labels.%s/vtnet0", sid);
+	ATF_CHECK_STREQ("uplink A, to the IXP", jstr(&r, body));
+	resp_free(&r);
+	http("PUT", url, "{\"label\":\"a\\tb\"}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "no control") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/labels/zz/../x", "{\"label\":\"x\"}", &r);
+	ATF_CHECK(r.status == 400 || r.status == 404);
+	resp_free(&r);
+	http("PUT", url, "{\"label\":\"uplink B\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("uplink B", jstr(&r, body));
+	resp_free(&r);
+	http("PUT", url, "{\"label\":\"\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, body) == NULL);
+	resp_free(&r);
+}
+
+CONSOLE_TC(oinkcode, "Snort's registered rules: the oinkcode a secret of "
+    "the console's, put into the job's address by the console, refused "
+    "without it; never in the host's job title")
+ATF_TC_BODY(oinkcode, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[400], sid[16], path[96];
+	int		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", sid);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"snort\",\"verb\":\"update\","
+	    "\"args\":[\"registered=yes\"]}]}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "oinkcode") != NULL,
+	    "%d %s", r.status, r.body);
+	resp_free(&r);
+	/* The address and the code set: the job goes with both; the host
+	 * cannot fetch from port 9, and says so without the code. */
+	http("POST", "/api/settings", "{\"set\":{\"snort_rules_url\":\"https://"
+	    "127.0.0.1:9/snortrules-snapshot-31200.tar.gz\",\"snort_oinkcode\":"
+	    "\"SECRET123abc\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/settings", NULL, &r);
+	ATF_CHECK(strstr(r.body, "SECRET123abc") == NULL);
+	resp_free(&r);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"snort\",\"verb\":\"update\","
+	    "\"args\":[\"registered=yes\"]}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 100; i++) {
+		http("GET", path, NULL, &r);
+		if (r.body != NULL && (strstr(r.body, "\"state\":\"failed\"") !=
+		    NULL || strstr(r.body, "\"state\":\"done\"") != NULL))
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	if (i == 100)
+		http("GET", path, NULL, &r);
+	ATF_CHECK_MSG(r.body != NULL && strstr(r.body, "SECRET123abc") == NULL
+	    && strstr(r.body, "oinkcode=...") != NULL, "%s", r.body != NULL ?
+	    r.body : "no answer");
+	resp_free(&r);
+}
+
 CONSOLE_TC(templates, "Configuration templates: a host's setup kept by "
     "name, its values {{placeholders}}, checked; applied to a host with its "
     "own values, checked first, then written; one without a value refused")
@@ -5679,6 +5995,160 @@ ATF_TC_BODY(sdwan_jail, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(sdwan_lists, "SD-WAN's named lists: prefixes, services, UCS, "
+    "edges and UCS End Points kept once, each named where a value would "
+    "be, checked; a prefix list an ipfw table, a service list the AFS's "
+    "protocols and ports, a zone's its prefixes, a policy's the ways it "
+    "takes in order of preference")
+ATF_TC_BODY(sdwan_lists, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288], bad[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+		{ "\"kind\":\"geneve\"", "\"kind\":\"gif\"" },
+		/* TCP's MSS clamped on the Internet's tunnels: auto. */
+		{ "\"tunnel\":{\"kind\":\"gre\",\"ipsec\":true}", "\"tunnel\":{"
+		    "\"kind\":\"gre\",\"ipsec\":true,\"mss\":\"auto\"}" },
+		/* The lists, and where each is named. */
+		{ "\"swvcs\":[", "\"lists\":[{\"name\":\"branches\",\"kind\":"
+		    "\"prefixes\",\"items\":[\"10.1.8.0/22\",\"2001:db8:9::/48\"]},"
+		    "{\"name\":\"webports\",\"kind\":\"services\",\"protocols\":"
+		    "[\"tcp\"],\"ports\":[8443,\"https\"]},{\"name\":\"dc\","
+		    "\"kind\":\"prefixes\",\"items\":[\"10.7.0.0/16\"]},{\"name\":"
+		    "\"prefer-mpls\",\"kind\":\"ucs-end-points\",\"items\":[{\"id\":"
+		    "\"b-inet\",\"preference\":200},\"a-inet\",\"a-mpls\","
+		    "\"b-mpls\"]},{\"name\":\"wan\",\"kind\":\"ucs\",\"items\":"
+		    "[\"inet\",\"mpls\"]},{\"name\":\"sites\",\"kind\":\"edges\","
+		    "\"items\":[\"@A\",\"@B\"]}],\"swvcs\":[" },
+		{ "\"flows\":[", "\"flows\":[{\"name\":\"branchweb\",\"criteria\":"
+		    "{\"src-list\":\"branches\",\"service-list\":\"webports\"}}," },
+		{ "\"prefixes\":[\"10.1.0.0/16\"]", "\"prefixes\":[\"10.1.0.0/16\"],"
+		    "\"prefix-list\":\"dc\"" },
+		{ "\"af-security-ingress\":\"guard\"", "\"af-security-ingress\":"
+		    "\"guard\",\"ucs-list\":\"wan\",\"edge-list\":\"sites\","
+		    "\"ucs-end-point-list\":\"prefer-mpls\"" },
+		{ "{\"app\":\"web\",\"policy\":\"fast\"}", "{\"app\":\"web\","
+		    "\"policy\":\"fast\"},{\"app\":\"branchweb\",\"policy\":"
+		    "\"fast\"}" },
+	};
+	/* Each wrong reference, and what it is told. */
+	static const char *const breaks[][3] = {
+		{ "\"src-list\":\"branches\"", "\"src-list\":\"nolist\"",
+		    "there is no list nolist of prefixes" },
+		{ "\"src-list\":\"branches\"", "\"src-list\":\"webports\"",
+		    "there is no list webports of prefixes" },
+		{ "\"src-list\":\"branches\"", "\"src-list\":\"branches\","
+		    "\"sav4\":[\"10.1.0.0/16\"]", "the sav4 and sav6 of a list" },
+		{ "\"service-list\":\"webports\"", "\"service-list\":\"webports\","
+		    "\"dport\":[80]", "not with protv4, nextheadv6, dport" },
+		{ "\"10.7.0.0/16\"", "\"10.7.0.1/16\"", "is not a prefix" },
+		{ "\"b-mpls\"]}", "\"x-mpls\"]}", "there is no UCS End Point "
+		    "x-mpls" },
+		{ "\"preference\":200", "\"preference\":70000", "a preference is "
+		    "0 to 65535" },
+		{ "\"kind\":\"ucs\"", "\"kind\":\"vrfs\"", "a list is of "
+		    "prefixes" },
+		{ "\"ucs-list\":\"wan\"", "\"ucs-list\":\"sites\"", "there is no "
+		    "list sites of ucs" },
+		{ "\"prefixes\":\"Default\"", "\"prefixes\":\"Default\","
+		    "\"prefix-list\":\"dc\"", "a Default zone has no prefix list" },
+		{ "\"name\":\"dc\"", "\"name\":\"d c\"", "letters, digits" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	for (i = 0; i < nitems(breaks); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, breaks[i][0], breaks[i][1], bad,
+		    sizeof(bad)), "%s is not in the document", breaks[i][0]);
+		http("POST", "/api/sdwan/check", bad, &r);
+		ATF_CHECK_MSG(r.status == 400 && strstr(r.body, breaks[i][2]) !=
+		    NULL, "%s: HTTP %d, %s", breaks[i][1], r.status, r.body);
+		resp_free(&r);
+	}
+	/* Kept as written: the lists named, not what they stand for. */
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan", NULL, &r);
+	ATF_CHECK(strstr(r.body, "\"prefix-list\":\"dc\"") != NULL &&
+	    strstr(r.body, "\"service-list\":\"webports\"") != NULL);
+	resp_free(&r);
+	/* The plan: branches an ipfw table of both families; webports the
+	 * flow's protocol and ports; dc among office's prefixes; fast's
+	 * ways from b-inet with its preference. */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"name\":\"arcl_branches\",\"valtype\":"
+	    "\"legacy\",\"entries\":[[\"10.1.8.0/22\",\"0\"],"
+	    "[\"2001:db8:9::/48\",\"0\"]]") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "from table(arcl_branches)") != NULL &&
+	    strstr(r.body, "tcp from table(arcl_branches) to") != NULL &&
+	    strstr(r.body, "dst-port 8443,https") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "[\"10.7.0.0/16\",") != NULL, "%s",
+	    r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"preference\":200") != NULL, "%s",
+	    r.body);
+	/* The MSS clamped on gre100 and gre101 (gre 24 and IPsec 64 under
+	 * 1500: 1412, less 40 or 60), ipfw_pmod loaded and kept first. */
+	ATF_CHECK_MSG(strstr(r.body, "tcp-setmss 1372 tcp from any to any via "
+	    "gre100 tcpflags syn ip4") != NULL && strstr(r.body, "tcp-setmss "
+	    "1352 tcp from any to any via gre100 tcpflags syn ip6") != NULL &&
+	    strstr(r.body, "\"kind\":\"kmod\",\"verb\":\"load\",\"args\":["
+	    "\"ipfw_pmod\"]") != NULL && strstr(r.body, "\"verb\":\"keep\","
+	    "\"args\":[\"ipfw_pmod\"]") != NULL, "%s", r.body);
+	resp_free(&r);
+	/* Not auto nor bytes: refused. */
+	ATF_REQUIRE(swap_in(doc, "\"mss\":\"auto\"", "\"mss\":\"big\"", bad,
+	    sizeof(bad)));
+	http("POST", "/api/sdwan/check", bad, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "mss is auto") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(sdwan_apply, "SD-WAN made on the edges: planned, applied, kept")
 ATF_TC_BODY(sdwan_apply, tc)
 {
@@ -6555,10 +7025,14 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, transfers);
 	ATF_TP_ADD_TC(tp, config_bundle);
 	ATF_TP_ADD_TC(tp, templates);
+	ATF_TP_ADD_TC(tp, oinkcode);
+	ATF_TP_ADD_TC(tp, labels);
+	ATF_TP_ADD_TC(tp, ldap);
 	ATF_TP_ADD_TC(tp, troubleshoot);
 	ATF_TP_ADD_TC(tp, workflows);
 	ATF_TP_ADD_TC(tp, sdwan);
 	ATF_TP_ADD_TC(tp, sdwan_apply);
+	ATF_TP_ADD_TC(tp, sdwan_lists);
 	ATF_TP_ADD_TC(tp, sdwan_uswe);
 	ATF_TP_ADD_TC(tp, sdwan_jail);
 	ATF_TP_ADD_TC(tp, load);
