@@ -148,7 +148,7 @@ core_backtrace(struct work *w, const char *dir, const char *core,
 {
 	struct execres	 res;
 	const char	*lldb, *gdb, *path;
-	char		*argv[16], *text;
+	char		*argv[20], *text;
 	int		 n, step;
 
 	if (!core_name_ok(core)) {
@@ -172,6 +172,11 @@ core_backtrace(struct work *w, const char *dir, const char *core,
 	argv[n++] = (char *)(uintptr_t)lldb;
 	argv[n++] = (char *)(uintptr_t)"--batch";
 	argv[n++] = (char *)(uintptr_t)"--no-lldbinit";
+	/* The symbols a port keeps apart (WITH_DEBUG): beside the base
+	 * system's. */
+	argv[n++] = (char *)(uintptr_t)"-O";
+	argv[n++] = (char *)(uintptr_t)"settings set target.debug-file-search-"
+	    "paths /usr/local/lib/debug /usr/lib/debug";
 	argv[n++] = (char *)(uintptr_t)"-c";
 	argv[n++] = (char *)(uintptr_t)path;
 	argv[n++] = (char *)(uintptr_t)"-o";
@@ -189,12 +194,18 @@ core_backtrace(struct work *w, const char *dir, const char *core,
 	text = wfmt(w, "%.*s%.*s", (int)res.outlen, res.out != NULL ? res.out :
 	    "", (int)res.errlen, res.err != NULL ? res.err : "");
 	step_end(w, step, strstr(text, "error:") == NULL, NULL);
-	/* What lldb cannot read, gdb may, when it is installed. */
-	if (strstr(text, "error:") != NULL && (gdb = tool(w, "gdb")) != NULL) {
+	/* gdb too, when it is installed: it reads the signal's code from a
+	 * FreeBSD core (si_code 100, BUS_OOMERR, is a page fault the kernel
+	 * found no memory for), which lldb does not; and what lldb could
+	 * not read. */
+	if ((gdb = tool(w, "gdb")) != NULL) {
 		n = 0;
 		argv[n++] = (char *)(uintptr_t)gdb;
 		argv[n++] = (char *)(uintptr_t)"-batch";
 		argv[n++] = (char *)(uintptr_t)"-nx";
+		argv[n++] = (char *)(uintptr_t)"-ex";
+		argv[n++] = (char *)(uintptr_t)"set debug-file-directory "
+		    "/usr/local/lib/debug:/usr/lib/debug";
 		argv[n++] = (char *)(uintptr_t)"-ex";
 		argv[n++] = (char *)(uintptr_t)"info threads";
 		argv[n++] = (char *)(uintptr_t)"-ex";
