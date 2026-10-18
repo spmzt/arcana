@@ -869,6 +869,11 @@
     the rules' address), put into the job's address by the console and
     scrubbed by the agent from the title, the trace and source.json.)
   - The console clustered; disaster recovery across console clusters.
+    (Decided 2026-10-18: active/active, a database only where
+    required.  The design to choose from is docs/notes/console-cluster.md:
+    shared NFS, PostgreSQL, or the console's own replication over
+    cblink, the last recommended in two steps, leader election with
+    forwarding first, the stores replicated after.  Not started.)
   - Agents in an HA pair on identical hardware and ports (CARP, the
     state shared), with CARP on its own for a host.  (CARP for a host
     done 2026-10-13: Network, CARP; vhids read and set through carp's
