@@ -417,6 +417,7 @@ enum modal {
 	MODAL_SD_LIMITER,
 	MODAL_SD_TOPO,
 	MODAL_SD_NLIST,		/* a named list of the SD-WAN document */
+	MODAL_SD_GROUP,		/* a group of a remote end point's identities */
 	MODAL_PKG_INSTALL,
 	MODAL_WF_RUN,
 	MODAL_IF_VNET,

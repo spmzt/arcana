@@ -5454,6 +5454,23 @@ part_flows(void)
 	ATF_CHECK(js_true("document.querySelector('button[data-act="
 	    "sd-ident-add]') !== null && document.querySelector('button[data-act="
 	    "sd-ident-revoke]') !== null"));
+	/* Groups of the remote's identities: the example's staff with its
+	 * pool and carol in it, the form with the end point, a zone, the
+	 * pool and the groups reached; the identity form offers a group. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('.sd-groups tbody tr')]"
+	    ".some(tr => tr.textContent.includes('staff') && tr.textContent"
+	    ".includes('10.30.0.64/26') && tr.textContent.includes('1'))"));
+	run("document.querySelector('button[data-act=sd-group-add]').click()");
+	wait_js("document.querySelector('.modal form[data-form=sd-group] "
+	    "select[name=at]') !== null && document.querySelector('.modal "
+	    "input[name=pool]') !== null && document.querySelector('.modal "
+	    "input[name=reach]') !== null", 5);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	run("document.querySelector('button[data-act=sd-ident-add]').click()");
+	wait_js("document.querySelector('.modal form[data-form=sd-identity] "
+	    "input[name=group]') !== null && document.querySelector('#sd-groups "
+	    "option[value=staff]') !== null", 5);
+	run("document.querySelector('.modal button[data-act=close]').click()");
 	shot("9-sdwan-identities");
 	phone(true);
 	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1",

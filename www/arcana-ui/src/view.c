@@ -2325,6 +2325,7 @@ modal(struct html *h)
 	case MODAL_SD_LIMITER:
 	case MODAL_SD_TOPO:
 	case MODAL_SD_NLIST:
+	case MODAL_SD_GROUP:
 	case MODAL_SD_SECPOL:
 	case MODAL_SD_LIST:
 	case MODAL_SD_IDENTITY:
@@ -2645,6 +2646,7 @@ modal(struct html *h)
 		case MODAL_SD_LIMITER:
 		case MODAL_SD_TOPO:
 		case MODAL_SD_NLIST:
+		case MODAL_SD_GROUP:
 			if (!sdwan_blocked())
 				h_raw(h, "<button class=\"primary\">Keep</button>");
 			break;

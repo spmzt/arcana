@@ -868,7 +868,11 @@
     two vnet jails, agent_root_test:carp.  Not done: the pair's state
     shared; ipfw has no pfsync, which is pf's: the user's to decide.)
   - VPN groups and road warrior setups of several clients, policies
-    and pools.
+    and pools.  (Done 2026-10-18: a remote end point's `groups`, each
+    a zone, a pool and the groups reached; an identity issued into
+    one; the plan keeps groups that do not reach each other apart on
+    the edge.  Policies mean both, as the user said: the zone's rules
+    the members get, and which group reaches which.)
   - A Devices page of its own, a table of the hosts (sorted and
     filtered), the rail's host list moved there. (The page done
     2026-10-12.  The side bar's hosts and jails taken away 2026-10-13,

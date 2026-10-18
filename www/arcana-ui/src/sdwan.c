@@ -112,6 +112,103 @@ static struct {
  * end points, each with the address the plan gave it and whether it is
  * still authorised; issued here, revoked here.
  */
+/*
+ * Groups of a remote end point's identities: each a zone (the
+ * policies its members get), a pool their addresses come from and the
+ * groups its members reach; members of one group reach each other,
+ * and two groups neither of which reaches the other are kept apart on
+ * the edge.
+ */
+static void
+view_groups(struct html *h)
+{
+	const ucl_object_t	*s2, *e2, *g, *id, *e;
+	ucl_object_iter_t	 sit, eit, git, iit, rit;
+	char			 key[300];
+	int			 n, members;
+	bool			 any_remote;
+
+	h_raw(h, "<div class=\"sd-block sd-groups\"><h3>Groups <small class=\""
+	    "dim\">of a remote end point's identities: the zone whose "
+	    "policies the members get, the pool their addresses come from, "
+	    "and which groups they reach</small><span class=\"pane-actions\">"
+	    "<button class=\"ghost small\" data-act=\"sd-group-add\">+ group"
+	    "</button></span></h3><table class=\"net sd\"><thead><tr><th>"
+	    "Group</th><th>Service</th><th>End point</th><th>Zone</th><th>Pool"
+	    "</th><th>Reaches</th><th>Members</th><th></th></tr></thead>"
+	    "<tbody>");
+	n = 0;
+	any_remote = false;
+	sit = NULL;
+	while ((s2 = ucl_object_iterate(jget(sd.doc, "swvcs"), &sit, true)) !=
+	    NULL) {
+		eit = NULL;
+		while ((e2 = ucl_object_iterate(jget(s2, "end_points"), &eit, true))
+		    != NULL) {
+			if (jget(e2, "remote") == NULL)
+				continue;
+			any_remote = true;
+			git = NULL;
+			while ((g = ucl_object_iterate(jget(jget(e2, "remote"),
+			    "groups"), &git, true)) != NULL) {
+				n++;
+				members = 0;
+				iit = NULL;
+				while ((id = ucl_object_iterate(jget(jget(e2, "remote"),
+				    "identities"), &iit, true)) != NULL)
+					if (jstr(id, "group") != NULL && strcmp(jstr(id,
+					    "group"), jstr(g, "name")) == 0)
+						members++;
+				snprintf(key, sizeof(key), "%s|%s|%s", jstr(s2, "id"),
+				    jstr(e2, "id"), jstr(g, "name"));
+				h_raw(h, "<tr><td><b>");
+				h_txt(h, jstr(g, "name"));
+				h_raw(h, "</b></td><td>");
+				h_txt(h, jstr(s2, "id"));
+				h_raw(h, "</td><td class=\"mono\">");
+				h_txt(h, jstr(e2, "id"));
+				h_raw(h, "</td><td>");
+				h_txt(h, jstr(g, "zone"));
+				h_raw(h, "</td><td class=\"mono\">");
+				if (jstr(g, "pool") != NULL)
+					h_txt(h, jstr(g, "pool"));
+				else
+					h_raw(h, "<span class=\"dim\">the remote's "
+					    "prefix</span>");
+				h_raw(h, "</td><td>");
+				rit = NULL;
+				while ((e = ucl_object_iterate(jget(g, "reach"), &rit,
+				    true)) != NULL) {
+					h_raw(h, "<span class=\"chip\">");
+					h_txt(h, ucl_object_tostring_forced(e));
+					h_raw(h, "</span> ");
+				}
+				if (jget(g, "reach") == NULL || ucl_array_size(jget(g,
+				    "reach")) == 0)
+					h_raw(h, "<span class=\"dim\">its own members"
+					    "</span>");
+				h_raw(h, "</td><td class=\"num\">");
+				h_fmt(h, "%d", members);
+				h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" "
+				    "data-act=\"sd-group-edit\" title=\"Change it\"");
+				h_attr(h, "data-arg", key);
+				h_raw(h, ">&#9998;</button><button class=\"icon\" "
+				    "data-act=\"sd-group-del\" title=\"Take the group "
+				    "away\"");
+				h_attr(h, "data-arg", key);
+				h_raw(h, ">×</button></td></tr>");
+			}
+		}
+	}
+	if (n == 0)
+		h_fmt(h, "<tr class=\"empty-row\"><td colspan=\"8\">%s</td></tr>",
+		    any_remote ? "No group yet: without one, every identity has "
+		    "a zone of its own and reaches every other." : "No group "
+		    "yet: a service with a remote end point takes groups of its "
+		    "identities.");
+	h_raw(h, "</tbody></table></div>");
+}
+
 static void
 view_identities(struct html *h)
 {
@@ -147,6 +244,11 @@ view_identities(struct html *h)
 		h_txt(h, host_name(jstr(i, "edge")));
 		h_raw(h, "</td><td>");
 		h_txt(h, jstr(i, "zone"));
+		if (jstr(i, "group") != NULL) {
+			h_raw(h, " <span class=\"dim\">· ");
+			h_txt(h, jstr(i, "group"));
+			h_raw(h, "</span>");
+		}
 		h_raw(h, "</td><td class=\"mono\">");
 		h_txt(h, jstr(i, "address") != NULL ? jstr(i, "address") : "");
 		h_raw(h, "</td><td class=\"dim\">");
@@ -4334,8 +4436,10 @@ view_sdwan(struct html *h)
 		view_edges(h);
 	else if (sd.tab == SD_PATHS)
 		view_paths(h);
-	else if (sd.tab == SD_IDENTITIES)
+	else if (sd.tab == SD_IDENTITIES) {
+		view_groups(h);
 		view_identities(h);
+	}
 	else if (sd.tab == SD_SECURITY)
 		view_security(h);
 	else if (sd.tab == SD_DOCUMENT)
@@ -5316,9 +5420,87 @@ sdwan_modal_service(struct html *h)
 		    "I have it</button></div></form>");
 		return (true);
 	}
+	if (app.modal == MODAL_SD_GROUP) {
+		const ucl_object_t	*s2, *e2, *z, *g = NULL;
+		ucl_object_iter_t	 sit, eit, zit;
+		char			 at[200], atv[200], *p, *q, reach[600];
+
+		/* sd.edit: swvc|end_point|name of the one changed, or "". */
+		snprintf(at, sizeof(at), "%s", sd.edit);
+		p = strchr(at, '|');
+		q = p != NULL ? strchr(p + 1, '|') : NULL;
+		if (p != NULL && q != NULL) {
+			*p++ = '\0';
+			*q++ = '\0';
+			s2 = jfind(jget(sd.doc, "swvcs"), "id", at);
+			e2 = jfind(jget(s2, "end_points"), "id", p);
+			g = jfind(jget(jget(e2, "remote"), "groups"), "name", q);
+			snprintf(atv, sizeof(atv), "%s|%s", at, p);
+		} else
+			atv[0] = '\0';
+		h_fmt(h, "<form data-form=\"sd-group\"><h2>%s</h2><p>Of a remote "
+		    "end point's identities: its members' flows get the "
+		    "policies of its zone, their addresses come from its pool, "
+		    "and they reach each other and the members of the groups "
+		    "named; two groups neither of which names the other are "
+		    "kept apart on the edge.</p><input type=\"hidden\" name=\"was\"",
+		    g != NULL ? "A group, changed" : "A group");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, "><label>At<select name=\"at\">");
+		sit = NULL;
+		while ((s2 = ucl_object_iterate(jget(sd.doc, "swvcs"), &sit, true))
+		    != NULL) {
+			eit = NULL;
+			while ((e2 = ucl_object_iterate(jget(s2, "end_points"), &eit,
+			    true)) != NULL) {
+				if (jget(e2, "remote") == NULL)
+					continue;
+				snprintf(at, sizeof(at), "%s|%s", jstr(s2, "id"), jstr(
+				    e2, "id"));
+				h_raw(h, "<option");
+				h_attr(h, "value", at);
+				if (strcmp(at, atv) == 0)
+					h_raw(h, " selected");
+				h_raw(h, ">");
+				h_txt(h, jstr(s2, "id"));
+				h_raw(h, " · ");
+				h_txt(h, jstr(e2, "id"));
+				h_raw(h, " on ");
+				h_txt(h, host_name(jstr(e2, "edge")));
+				h_raw(h, "</option>");
+			}
+		}
+		h_raw(h, "</select></label><div class=\"two\">");
+		text_field(h, "Name", "name", jstr(g, "name"), "staff", NULL);
+		h_raw(h, "<label>Zone<input name=\"zone\" list=\"sd-zones\" "
+		    "required spellcheck=\"false\" placeholder=\"office\"");
+		h_attr(h, "value", jstr(g, "zone") != NULL ? jstr(g, "zone") : "");
+		h_raw(h, "></label><datalist id=\"sd-zones\">");
+		sit = NULL;
+		while ((s2 = ucl_object_iterate(jget(sd.doc, "swvcs"), &sit, true))
+		    != NULL) {
+			zit = NULL;
+			while ((z = ucl_object_iterate(jget(s2, "zones"), &zit, true))
+			    != NULL) {
+				h_raw(h, "<option");
+				h_attr(h, "value", jstr(z, "name"));
+				h_raw(h, ">");
+			}
+		}
+		h_raw(h, "</datalist></div><div class=\"two\">");
+		text_field(h, "Pool", "pool", jstr(g, "pool"), "100.65.0.64/26",
+		    "Inside the remote's prefix, not holding the edge's own "
+		    "address, the first. Empty: anywhere in the prefix outside "
+		    "the pools.");
+		text_field(h, "Reaches", "reach", csv(jget(g, "reach"), reach,
+		    sizeof(reach)), "contractors", "Groups of this end point, "
+		    "comma-separated; its own members always.");
+		h_raw(h, "</div>");
+		return (true);
+	}
 	if (app.modal == MODAL_SD_IDENTITY) {
-		const ucl_object_t	*s2, *e2, *z, *k;
-		ucl_object_iter_t	 sit, eit, zit, kit;
+		const ucl_object_t	*s2, *e2, *z, *k, *g;
+		ucl_object_iter_t	 sit, eit, zit, kit, git;
 
 		h_raw(h, "<form data-form=\"sd-identity\"><h2>An identity</h2><p>"
 		    "Someone reaching a service from afar, by WireGuard, at one of "
@@ -5380,8 +5562,28 @@ sdwan_modal_service(struct html *h)
 		    "toggle\"><input type=\"checkbox\" name=\"user\"><span>A "
 		    "console user <em>the name is one of the sign-in keys'</em>"
 		    "</span></label></fieldset>");
-		h_raw(h, "<label>Zone<input name=\"zone\" list=\"sd-zones\" "
-		    "required spellcheck=\"false\" placeholder=\"staff\"></label>"
+		h_raw(h, "<div class=\"two\"><label>Group <small class=\"dim\">"
+		    "of the end point's</small><input name=\"group\" list=\""
+		    "sd-groups\" spellcheck=\"false\" placeholder=\"staff\"></label>"
+		    "<datalist id=\"sd-groups\">");
+		sit = NULL;
+		while ((s2 = ucl_object_iterate(jget(sd.doc, "swvcs"), &sit, true))
+		    != NULL) {
+			eit = NULL;
+			while ((e2 = ucl_object_iterate(jget(s2, "end_points"), &eit,
+			    true)) != NULL) {
+				git = NULL;
+				while ((g = ucl_object_iterate(jget(jget(e2, "remote"),
+				    "groups"), &git, true)) != NULL) {
+					h_raw(h, "<option");
+					h_attr(h, "value", jstr(g, "name"));
+					h_raw(h, ">");
+				}
+			}
+		}
+		h_raw(h, "</datalist><label>Zone <small class=\"dim\">when in no "
+		    "group</small><input name=\"zone\" list=\"sd-zones\" "
+		    "spellcheck=\"false\" placeholder=\"staff\"></label>"
 		    "<datalist id=\"sd-zones\">");
 		sit = NULL;
 		while ((s2 = ucl_object_iterate(jget(sd.doc, "swvcs"), &sit, true))
@@ -5394,7 +5596,7 @@ sdwan_modal_service(struct html *h)
 				h_raw(h, ">");
 			}
 		}
-		h_raw(h, "</datalist>");
+		h_raw(h, "</datalist></div>");
 		return (true);
 	}
 	if (app.modal == MODAL_SD_LIST) {
@@ -6170,11 +6372,49 @@ sd_forms(const char *form, const ucl_object_t *f)
 	unsigned int		 i, n;
 
 	if (strcmp(form, "sd-ucs") != 0 && strcmp(form, "sd-edge") != 0 &&
-	    strcmp(form, "sd-link") != 0 && strcmp(form, "sd-nlist") != 0)
+	    strcmp(form, "sd-link") != 0 && strcmp(form, "sd-nlist") != 0 &&
+	    strcmp(form, "sd-group") != 0)
 		return (false);
 	if (sd.doc == NULL)
 		return (true);
 	doc = ucl_object_copy(sd.doc);
+	if (strcmp(form, "sd-group") == 0) {
+		ucl_object_t	*r;
+		char		 at[200], *p, *q;
+
+		id = jstr(f, "name") != NULL ? jstr(f, "name") : "";
+		was = jstr(f, "was") != NULL ? jstr(f, "was") : "";
+		snprintf(at, sizeof(at), "%s", jstr(f, "at") != NULL ? jstr(f,
+		    "at") : "");
+		p = strchr(at, '|');
+		if (id[0] == '\0' || p == NULL || jstr(f, "zone") == NULL || jstr(f,
+		    "zone")[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A group "
+			    "has a name, an end point and a zone");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		*p++ = '\0';
+		r = (ucl_object_t *)(uintptr_t)jget(jfind(jget(jfind(jget(doc,
+		    "swvcs"), "id", at), "end_points"), "id", p), "remote");
+		if (r == NULL) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "No such "
+			    "remote end point");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		/* was: swvc|end_point|name; the name is what is replaced. */
+		q = strrchr(was, '|');
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put_str(o, "name", id);
+		put_str(o, "zone", jstr(f, "zone"));
+		put_str(o, "pool", jstr(f, "pool"));
+		put_list(o, "reach", jstr(f, "reach"));
+		list_put(r, "groups", "name", q != NULL ? q + 1 : "", o);
+		app.modal = MODAL_NONE;
+		doc_send(doc);
+		return (true);
+	}
 	if (strcmp(form, "sd-nlist") == 0) {
 		ucl_object_t	*items, *one;
 		char		*copy, *it2, *line, idb[80];
@@ -6761,10 +7001,12 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		char		 at[200], *p;
 
 		if (jstr(f, "name") == NULL || jstr(f, "name")[0] == '\0' ||
-		    jstr(f, "at") == NULL || jstr(f, "zone") == NULL || jstr(f,
-		    "zone")[0] == '\0') {
+		    jstr(f, "at") == NULL || ((jstr(f, "zone") == NULL || jstr(f,
+		    "zone")[0] == '\0') && (jstr(f, "group") == NULL || jstr(f,
+		    "group")[0] == '\0'))) {
 			snprintf(app.modal_error, sizeof(app.modal_error), "An "
-			    "identity has a name, an end point and a zone");
+			    "identity has a name, an end point and a zone or a "
+			    "group");
 			return (true);
 		}
 		snprintf(at, sizeof(at), "%s", jstr(f, "at"));
@@ -6775,7 +7017,10 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		put_str(b, "swvc", at);
 		put_str(b, "end_point", p);
 		put_str(b, "name", jstr(f, "name"));
-		put_str(b, "zone", jstr(f, "zone"));
+		if (jstr(f, "group") != NULL && jstr(f, "group")[0] != '\0')
+			put_str(b, "group", jstr(f, "group"));
+		else
+			put_str(b, "zone", jstr(f, "zone"));
 		ucl_object_insert_key(b, ucl_object_frombool(checked(f, "user")),
 		    "user", 0, false);
 		json = ucl_object_emit(b, UCL_EMIT_JSON_COMPACT);
@@ -7717,9 +7962,15 @@ example(void)
 	    "\"10.20.0.0/24\", \"provider\": [\"10.20.0.1\"]}}},\n"
 	    "\t\t\t{\"id\": \"road\", \"edge\": \"%s\", \"remote\": {"
 	    "\"interface\": \"wg5\", \"prefix\": \"10.30.0.0/24\",\n"
-	    "\t\t\t\t\"port\": 51820, \"identities\": [{\"name\": \"alice\", "
+	    "\t\t\t\t\"port\": 51820,\n"
+	    "\t\t\t\t\"groups\": [{\"name\": \"staff\", \"zone\": \"staff\", "
+	    "\"pool\": \"10.30.0.64/26\"},\n"
+	    "\t\t\t\t\t{\"name\": \"guests\", \"zone\": \"staff\"}],\n"
+	    "\t\t\t\t\"identities\": [{\"name\": \"alice\", "
 	    "\"zone\": \"staff\",\n\t\t\t\t\t\"public_key\": "
-	    "\"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=\"}]}}\n"
+	    "\"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=\"},\n"
+	    "\t\t\t\t\t{\"name\": \"carol\", \"group\": \"staff\", "
+	    "\"public_key\": \"HIgo9xNzJMWLKASShiTqIYNW7HVnKq0pjaZxmvZ6rKA=\"}]}}\n"
 	    "\t\t]\n"
 	    "\t}]\n"
 	    "}\n", a, z, a, z, a);
@@ -7888,6 +8139,51 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		    NULL ? arg : "");
 		app.modal = MODAL_SD_NLIST;
 		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "sd-group-add") == 0 || strcmp(act, "sd-group-edit") ==
+	    0) {
+		snprintf(sd.edit, sizeof(sd.edit), "%s", strstr(act, "-edit") !=
+		    NULL ? arg : "");
+		app.modal = MODAL_SD_GROUP;
+		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "sd-group-del") == 0) {
+		confirm("Take the group away", "Its members keep their addresses "
+		    "but have no zone until they are issued again into a group "
+		    "or with a zone; the document will not pass the check "
+		    "until then.", "Take away", true, "", "do-sd-group-del", arg,
+		    "");
+		return (true);
+	}
+	if (strcmp(act, "do-sd-group-del") == 0) {
+		ucl_object_t	*doc, *arr;
+		char		 a[300], *p, *q;
+		unsigned int	 i;
+
+		if (sd.doc == NULL)
+			return (true);
+		snprintf(a, sizeof(a), "%s", arg);
+		p = strchr(a, '|');
+		q = p != NULL ? strchr(p + 1, '|') : NULL;
+		if (p == NULL || q == NULL)
+			return (true);
+		*p++ = '\0';
+		*q++ = '\0';
+		doc = ucl_object_copy(sd.doc);
+		arr = (ucl_object_t *)(uintptr_t)jget(jget(jfind(jget(jfind(jget(
+		    doc, "swvcs"), "id", a), "end_points"), "id", p), "remote"),
+		    "groups");
+		for (i = 0; arr != NULL && i < ucl_array_size(arr); i++)
+			if (jstr(ucl_array_find_index(arr, i), "name") != NULL &&
+			    strcmp(jstr(ucl_array_find_index(arr, i), "name"), q) ==
+			    0) {
+				ucl_object_unref(ucl_array_delete(arr, (ucl_object_t *)
+				    (uintptr_t)ucl_array_find_index(arr, i)));
+				break;
+			}
+		doc_send(doc);
 		return (true);
 	}
 	if (strcmp(act, "sd-nlist-del") == 0) {

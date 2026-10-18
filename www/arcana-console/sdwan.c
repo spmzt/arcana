@@ -1341,6 +1341,79 @@ uni(struct ck *c, const ucl_object_t *u, struct pfx *nets, int *nnets)
  * a zone of the service and a WireGuard public key.
  */
 #define	IDENTITIES_MAX	4096
+#define	GROUPS_MAX	64
+
+/*
+ * The groups of a remote end point (SASE-3): each a zone its members'
+ * flows get the policies of, a pool their addresses come from (inside
+ * the remote's prefix, not holding the edge's own) and the groups
+ * whose members they reach; members of one group reach each other.
+ */
+static bool
+groups(struct ck *c, const ucl_object_t *sw, const ucl_object_t *r,
+    const struct pfx *p)
+{
+	const ucl_object_t	*gs, *g, *o, *e;
+	ucl_object_iter_t	 it, it2;
+	struct pfx		 pool, pool2, own;
+
+	gs = ucl_object_lookup(r, "groups");
+	if (gs == NULL)
+		return (true);
+	if (ucl_object_type(gs) != UCL_ARRAY)
+		return (fail(c, "groups is a list"));
+	if (count(gs) > GROUPS_MAX)
+		return (fail(c, "groups: %d at most", GROUPS_MAX));
+	/* The edge's own address: the prefix's first host. */
+	own = *p;
+	own.len = own.af == AF_INET ? 32 : 128;
+	own.a[own.len / 8 - 1] |= 1;
+	it = NULL;
+	while ((g = ucl_object_iterate(gs, &it, true)) != NULL) {
+		if (!ident(str(g, "name")))
+			return (fail(c, "a group has a name, printable ASCII "
+			    "(R12)"));
+		if (str(g, "zone") == NULL || by(ucl_object_lookup(sw, "zones"),
+		    "name", str(g, "zone")) == NULL)
+			return (fail(c, "group %s: its zone is one of the zones",
+			    str(g, "name")));
+		if (str(g, "pool") != NULL) {
+			if (!prefix(str(g, "pool"), &pool, false) || !holds(p,
+			    &pool) || holds(&pool, &own))
+				return (fail(c, "group %s: its pool is a prefix "
+				    "inside the remote's, not holding the edge's "
+				    "own address, the first", str(g, "name")));
+			it2 = NULL;
+			while ((o = ucl_object_iterate(gs, &it2, true)) != NULL &&
+			    o != g)
+				if (str(o, "pool") != NULL && prefix(str(o, "pool"),
+				    &pool2, false) && overlap(&pool, &pool2))
+					return (fail(c, "groups %s and %s: their "
+					    "pools overlap", str(o, "name"), str(g,
+					    "name")));
+		}
+		o = ucl_object_lookup(g, "reach");
+		if (o != NULL && ucl_object_type(o) != UCL_ARRAY)
+			return (fail(c, "group %s: reach is a list of groups",
+			    str(g, "name")));
+		it2 = NULL;
+		while ((e = ucl_object_iterate(o, &it2, true)) != NULL) {
+			if (ucl_object_type(e) != UCL_STRING || by(gs, "name",
+			    ucl_object_tostring(e)) == NULL)
+				return (fail(c, "group %s: it reaches groups of "
+				    "this remote", str(g, "name")));
+			if (strcmp(ucl_object_tostring(e), str(g, "name")) == 0)
+				return (fail(c, "group %s: its members reach each "
+				    "other already", str(g, "name")));
+		}
+		it2 = NULL;
+		while ((o = ucl_object_iterate(gs, &it2, true)) != NULL && o != g)
+			if (strcmp(str(o, "name"), str(g, "name")) == 0)
+				return (fail(c, "group %s is there twice", str(g,
+				    "name")));
+	}
+	return (true);
+}
 
 static bool
 remote(struct ck *c, const ucl_object_t *sw, const ucl_object_t *r,
@@ -1370,6 +1443,8 @@ remote(struct ck *c, const ucl_object_t *sw, const ucl_object_t *r,
 	    r, "reauth"), 3600, 366 * 86400, NULL))
 		return (fail(c, "its remote's reauth, the seconds an identity is "
 		    "authorised for, is an hour to a year"));
+	if (!groups(c, sw, r, &p))
+		return (false);
 	ids = ucl_object_lookup(r, "identities");
 	if (ids != NULL && ucl_object_type(ids) != UCL_ARRAY)
 		return (fail(c, "identities is a list"));
@@ -1380,10 +1455,16 @@ remote(struct ck *c, const ucl_object_t *sw, const ucl_object_t *r,
 		if (!ident(str(id, "name")))
 			return (fail(c, "an identity has a name, printable ASCII "
 			    "(R12)"));
-		if (str(id, "zone") == NULL || by(ucl_object_lookup(sw, "zones"),
-		    "name", str(id, "zone")) == NULL)
+		/* In a group, its zone is the group's. */
+		if (str(id, "group") != NULL) {
+			if (by(ucl_object_lookup(r, "groups"), "name", str(id,
+			    "group")) == NULL)
+				return (fail(c, "identity %s: its group is one of "
+				    "the remote's", str(id, "name")));
+		} else if (str(id, "zone") == NULL || by(ucl_object_lookup(sw,
+		    "zones"), "name", str(id, "zone")) == NULL)
 			return (fail(c, "identity %s: its zone is one of the "
-			    "zones", str(id, "name")));
+			    "zones, or it is in a group", str(id, "name")));
 		k = str(id, "public_key");
 		n = k != NULL ? strlen(k) : 0;
 		for (i = 0; k != NULL && i < n; i++)

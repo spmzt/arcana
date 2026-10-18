@@ -2020,7 +2020,7 @@ paths:
       tags: [sdwan]
       summary: The remote end points' identities, each with its address and whether it is authorised
       responses:
-        "200": { description: "identities, each swvc, end_point, edge, interface, name, zone, public_key, user, issued, expires, live, address" }
+        "200": { description: "identities, each swvc, end_point, edge, interface, name, zone, group (when in one), public_key, user, issued, expires, live, address" }
     post:
       tags: [sdwan]
       summary: Issue an identity, its key pair made here, the WireGuard configuration answered once
@@ -2033,7 +2033,8 @@ paths:
                 swvc: { type: string }
                 end_point: { type: string }
                 name: { type: string }
-                zone: { type: string }
+                zone: { type: string, description: when in no group }
+                group: { type: string, description: one of the remote end point's groups; the zone is then the group's }
                 user: { type: boolean, description: the name is a sign-in key's }
       responses:
         "200": { description: "name, public_key, config (wg-quick text, shown once), applied, why" }

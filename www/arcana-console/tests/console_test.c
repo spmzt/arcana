@@ -5442,9 +5442,13 @@ static const char sdwan_good[] =
     "\"ipv6\":{\"mode\":\"slaac\",\"prefix\":\"2001:db8:1::/64\","
     "\"provider\":[\"2001:db8:1::1\"],\"dns\":[\"2001:db8:1::1\"]}}},"
     "{\"id\":\"road\",\"edge\":\"@A\",\"remote\":{\"interface\":\"wg5\","
-    "\"prefix\":\"10.30.0.0/24\",\"port\":51820,\"identities\":[{\"name\":"
+    "\"prefix\":\"10.30.0.0/24\",\"port\":51820,\"groups\":[{\"name\":"
+    "\"staff\",\"zone\":\"office\",\"pool\":\"10.30.0.64/26\"},{\"name\":"
+    "\"guests\",\"zone\":\"office\"}],\"identities\":[{\"name\":"
     "\"alice\",\"zone\":\"office\",\"public_key\":"
-    "\"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=\"}]}}]}]}";
+    "\"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=\"},{\"name\":\"carol\","
+    "\"group\":\"staff\",\"public_key\":"
+    "\"HIgo9xNzJMWLKASShiTqIYNW7HVnKq0pjaZxmvZ6rKA=\"}]}}]}]}";
 
 /* s with its first from made to, into out; false when from is not there. */
 /* An interface of this host with an IPv4 address that is not the
@@ -5618,6 +5622,26 @@ ATF_TC_BODY(sdwan, tc)
 		    "one" },
 		{ "\"remote\":{", "\"uni\":{\"id\":\"x\"},\"remote\":{", "not "
 		    "both" },
+		/* Its groups: a zone of the service, a pool inside the prefix
+		 * and not the edge's own address, reaching groups of its own,
+		 * and an identity's group one of them. */
+		{ "\"name\":\"guests\",\"zone\":\"office\"", "\"name\":\"guests\","
+		    "\"zone\":\"nowhere\"", "group guests: its zone" },
+		{ "\"pool\":\"10.30.0.64/26\"", "\"pool\":\"10.31.0.64/26\"",
+		    "inside the remote's" },
+		{ "\"pool\":\"10.30.0.64/26\"", "\"pool\":\"10.30.0.0/25\"",
+		    "the edge's own address" },
+		{ "\"name\":\"guests\",\"zone\":\"office\"", "\"name\":\"guests\","
+		    "\"zone\":\"office\",\"pool\":\"10.30.0.96/27\"", "pools "
+		    "overlap" },
+		{ "\"name\":\"guests\",\"zone\":\"office\"", "\"name\":\"guests\","
+		    "\"zone\":\"office\",\"reach\":[\"nobody\"]", "it reaches groups "
+		    "of this remote" },
+		{ "\"name\":\"guests\",\"zone\":\"office\"", "\"name\":\"guests\","
+		    "\"zone\":\"office\",\"reach\":[\"guests\"]", "reach each other "
+		    "already" },
+		{ "\"group\":\"staff\"", "\"group\":\"board\"", "its group is one "
+		    "of the remote's" },
 		/* The UCS end points' addressing and routing (Mplify 119). */
 		{ "\"interface\":\"vtnet1\",\"backup\":true", "\"interface\":"
 		    "\"vtnet1\",\"backup\":true,\"addressing\":\"ppp\"",
@@ -6618,6 +6642,22 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    r.body);
 	ATF_CHECK(strstr(r.body, "\"10 skipto tablearg ip from table(sw1_zone) "
 	    "to any in recv wg5\"") != NULL);
+	/* Its groups: carol of staff takes the first address of the
+	 * group's pool and her group's zone; a table each of the members;
+	 * staff and guests, neither reaching the other, kept apart both
+	 * ways before the zone table. */
+	ATF_CHECK_MSG(strstr(r.body, "\"peer\":"
+	    "\"HIgo9xNzJMWLKASShiTqIYNW7HVnKq0pjaZxmvZ6rKA=\",\"allowed_ips\":"
+	    "\"10.30.0.64/32\"") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "[\"10.30.0.64/32\",\"12\"]") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"name\":\"sw1_g0\",\"valtype\":\"legacy\","
+	    "\"entries\":[[\"10.30.0.64/32\",\"0\"]]") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"name\":\"sw1_g1\",\"valtype\":\"legacy\","
+	    "\"entries\":[]") != NULL);
+	ATF_CHECK(strstr(r.body, "\"10 deny ip from table(sw1_g0) to "
+	    "table(sw1_g1) in recv wg5\",\"10 deny ip from table(sw1_g1) to "
+	    "table(sw1_g0) in recv wg5\",\"10 skipto tablearg ip from "
+	    "table(sw1_zone) to any in recv wg5\"") != NULL);
 	/* The URL filter (SASE-4): HTTP and TLS from the end points forwarded
 	 * to Squid on the edge's own addresses, its instance in the plan
 	 * with the TLS names looked at and the domain denied. */
@@ -6751,14 +6791,44 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_STREQ("alice", jstr(&r, "identities.0.name"));
 	ATF_CHECK_STREQ("10.30.0.2", jstr(&r, "identities.0.address"));
 	ATF_CHECK_STREQ("true", jstr(&r, "identities.0.live"));
-	ATF_CHECK_STREQ("bob", jstr(&r, "identities.1.name"));
-	ATF_CHECK_STREQ("10.30.0.3", jstr(&r, "identities.1.address"));
-	ATF_CHECK_STREQ("false", jstr(&r, "identities.1.user"));
+	ATF_CHECK_STREQ("carol", jstr(&r, "identities.1.name"));
+	ATF_CHECK_STREQ("staff", jstr(&r, "identities.1.group"));
+	ATF_CHECK_STREQ("office", jstr(&r, "identities.1.zone"));
+	ATF_CHECK_STREQ("10.30.0.64", jstr(&r, "identities.1.address"));
+	ATF_CHECK_STREQ("bob", jstr(&r, "identities.2.name"));
+	ATF_CHECK_STREQ("10.30.0.3", jstr(&r, "identities.2.address"));
+	ATF_CHECK_STREQ("false", jstr(&r, "identities.2.user"));
 	/* Its session, as the edge's wg tells its peer (S3.4): the stand-in
 	 * keeps the last peer set on an interface. */
-	ATF_CHECK_MSG(jstr(&r, "identities.1.session.endpoint") != NULL &&
-	    strcmp(jstr(&r, "identities.1.session.endpoint"), "192.0.2.9:51820")
-	    == 0 && jstr(&r, "identities.1.session.rx") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(jstr(&r, "identities.2.session.endpoint") != NULL &&
+	    strcmp(jstr(&r, "identities.2.session.endpoint"), "192.0.2.9:51820")
+	    == 0 && jstr(&r, "identities.2.session.rx") != NULL, "%s", r.body);
+	resp_free(&r);
+	/* One issued into a group: the group's zone, an address outside
+	 * every pool; a group the remote has not, refused. */
+	http("POST", "/api/sdwan/identities", "{\"swvc\":\"acme\",\"end_point\":"
+	    "\"road\",\"name\":\"dave\",\"group\":\"guests\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "config") != NULL && strstr(jstr(&r, "config"),
+	    "\nAddress = 10.30.0.4/24\n") != NULL, "%s", r.body);
+	resp_free(&r);
+	sdwan_wait(&r);
+	resp_free(&r);
+	http("GET", "/api/sdwan/identities", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("dave", jstr(&r, "identities.3.name"));
+	ATF_CHECK_STREQ("guests", jstr(&r, "identities.3.group"));
+	ATF_CHECK_STREQ("office", jstr(&r, "identities.3.zone"));
+	resp_free(&r);
+	http("DELETE", "/api/sdwan/identities?swvc=acme&end_point=road&name=dave",
+	    NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	resp_free(&r);
+	http("POST", "/api/sdwan/identities", "{\"swvc\":\"acme\",\"end_point\":"
+	    "\"road\",\"name\":\"erin\",\"group\":\"board\"}", &r);
+	EXPECT(&r, 400);
 	resp_free(&r);
 	/* A console user: a sign-in key of the name, or none. */
 	http("POST", "/api/sdwan/identities", "{\"swvc\":\"acme\",\"end_point\":"
@@ -6776,7 +6846,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(system("grep -q '^set wg5 peer .* remove' wg.log") == 0);
 	http("GET", "/api/sdwan/identities", NULL, &r);
 	EXPECT(&r, 200);
-	ATF_CHECK(jstr(&r, "identities.1.name") == NULL);
+	ATF_CHECK_STREQ("carol", jstr(&r, "identities.1.name"));
+	ATF_CHECK(jstr(&r, "identities.2.name") == NULL);
 	resp_free(&r);
 	http("DELETE", "/api/sdwan/identities?swvc=acme&end_point=road&name=bob",
 	    NULL, &r);
@@ -6886,14 +6957,14 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_REQUIRE(swap_in(doc, "\"ucs\":[\"inet\",\"mpls\"]",
 	    "\"ucs\":[\"inet\"]", t1, sizeof(t1)));
 	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":3", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":5", t1,
 	    sizeof(t1)));
 	http("PUT", "/api/sdwan", t1, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
-	ATF_CHECK_EQ(2, changes_of(&r, "unmake"));
+	ATF_CHECK_EQ_MSG(2, changes_of(&r, "unmake"), "%s", r.body);
 	ATF_CHECK_EQ(2, (int)ucl_array_size(ucl_object_lookup(r.json,
 	    "tunnels")));
 	resp_free(&r);
@@ -6914,7 +6985,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_REQUIRE(swap_in(doc, "\"encryption\":\"required-public-only\"",
 	    "\"encryption\":\"required-always\"", t1, sizeof(t1)));
 	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":4", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":6", t1,
 	    sizeof(t1)));
 	ATF_REQUIRE(swap_in(t1, "\"ucs\":[\"inet\"]",
 	    "\"ucs\":[\"inet\",\"mpls\"]", doc, sizeof(doc)));
@@ -6928,7 +6999,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"",
 	    "\"kind\":\"gif\",\"ipsec\":false", t1, sizeof(t1)));
-	ATF_REQUIRE(swap_in(t1, "\"version\":4", "\"version\":5", doc,
+	ATF_REQUIRE(swap_in(t1, "\"version\":6", "\"version\":7", doc,
 	    sizeof(doc)));
 	http("PUT", "/api/sdwan", doc, &r);
 	EXPECT(&r, 200);
@@ -6941,7 +7012,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"kind\":\"gif\"", t1, sizeof(t1)));
 	ATF_REQUIRE(swap_in(t1, "\"encryption\":\"required-always\"",
 	    "\"encryption\":\"required-public-only\"", doc, sizeof(doc)));
-	ATF_REQUIRE(swap_in(doc, "\"version\":5", "\"version\":6", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":7", "\"version\":8", t1,
 	    sizeof(t1)));
 	http("PUT", "/api/sdwan", t1, &r);
 	EXPECT(&r, 200);
@@ -6956,7 +7027,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"", "\"kind\":\"geneve\"",
 	    t1, sizeof(t1)));
 	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"version\":5", "\"version\":7", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":7", "\"version\":9", t1,
 	    sizeof(t1)));
 	http("PUT", "/api/sdwan", t1, &r);
 	EXPECT(&r, 200);

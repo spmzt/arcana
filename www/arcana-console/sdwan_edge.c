@@ -1259,16 +1259,72 @@ breakout_uni_routes(struct plan *pl, const char *sid, const ucl_object_t *sw,
  * others come and go, a new one taking the lowest free from the
  * second.
  */
+/* An identity's zone: its group's when it is in one, else its own. */
+static const char *
+ident_zone(const ucl_object_t *r, const ucl_object_t *id)
+{
+	const ucl_object_t	*g;
+
+	if (str(id, "group") != NULL && (g = by(ucl_object_lookup(r, "groups"),
+	    "name", str(id, "group"))) != NULL && str(g, "zone") != NULL)
+		return (str(g, "zone"));
+	return (str(id, "zone"));
+}
+
+/*
+ * The hosts of the remote's prefix a pool covers, as the indexes
+ * remote_addr counts by (the last eight bytes count; a remote prefix
+ * hands out 65534 at most).
+ */
+static bool
+pool_range(const struct net *n, const char *pool, uint64_t *lo, uint64_t *hi)
+{
+	struct net	pn;
+	uint64_t	base, from;
+	int		i, w;
+
+	if (pool == NULL || !net_parse(pool, &pn) || pn.af != n->af)
+		return (false);
+	w = n->af == AF_INET ? 4 : 16;
+	base = from = 0;
+	for (i = (w > 8 ? w - 8 : 0); i < w; i++) {
+		base = (base << 8) | n->a[i];
+		from = (from << 8) | pn.a[i];
+	}
+	*lo = from - base;
+	*hi = *lo + ((pn.len >= (w * 8 - 1)) ? (uint64_t)((w * 8) - pn.len == 1 ?
+	    1 : 0) : (1ULL << ((w * 8) - pn.len)) - 1);
+	return (true);
+}
+
+/* Is a host of the remote's prefix inside some group's pool? */
+static bool
+host_pooled(const ucl_object_t *r, const struct net *n, uint64_t host)
+{
+	const ucl_object_t	*g;
+	ucl_object_iter_t	 it;
+	uint64_t		 lo, hi;
+
+	it = NULL;
+	while ((g = ucl_object_iterate(ucl_object_lookup(r, "groups"), &it,
+	    true)) != NULL)
+		if (pool_range(n, str(g, "pool"), &lo, &hi) && host >= lo &&
+		    host <= hi)
+			return (true);
+	return (false);
+}
+
 static bool
 remote_addr(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
     const char *name, char *buf, size_t len)
 {
-	const ucl_object_t	*r, *al, *v;
+	const ucl_object_t	*r, *al, *v, *id, *g;
 	ucl_object_iter_t	 it;
 	ucl_object_t		*nal;
 	struct net		 n;
+	const char		*pool;
 	char			 key[200], pre[200];
-	uint64_t		 host, max;
+	uint64_t		 host, max, lo, hi;
 	bool			 taken;
 
 	r = ucl_object_lookup(ep, "remote");
@@ -1282,7 +1338,22 @@ remote_addr(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
 	snprintf(key, sizeof(key), "%s%s", pre, name);
 	if ((al = ucl_object_lookup(pl->alloc, key)) == NULL) {
 		max = n.af == AF_INET ? (1ULL << (32 - n.len)) - 2 : 65534;
-		for (host = 2; host <= max; host++) {
+		/* From its group's pool, when it has one; else from the
+		 * second host, outside every pool. */
+		lo = 2;
+		hi = max;
+		pool = NULL;
+		id = by(ucl_object_lookup(r, "identities"), "name", name);
+		g = id != NULL && str(id, "group") != NULL ? by(ucl_object_lookup(
+		    r, "groups"), "name", str(id, "group")) : NULL;
+		if (g != NULL && pool_range(&n, str(g, "pool"), &lo, &hi)) {
+			pool = str(g, "pool");
+			lo = lo < 2 ? 2 : lo;
+			hi = hi > max ? max : hi;
+		}
+		for (host = lo; host <= hi; host++) {
+			if (pool == NULL && host_pooled(r, &n, host))
+				continue;
 			taken = false;
 			it = NULL;
 			while (!taken && (v = ucl_object_iterate(pl->alloc, &it,
@@ -1293,7 +1364,7 @@ remote_addr(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
 			if (!taken)
 				break;
 		}
-		if (host > max)
+		if (host > hi)
 			return (false);
 		nal = ucl_object_typed_new(UCL_OBJECT);
 		put(nal, "host", I((int64_t)host));
@@ -1384,7 +1455,7 @@ remote_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 		    "name"));
 		o = object(pl, str(ep, "edge"), key, PH_PEER, "identity %s: a peer "
 		    "of %s, %s, zone %s", str(id, "name"), str(r, "interface"),
-		    addr, str(id, "zone"));
+		    addr, ident_zone(r, id));
 		if (o == NULL)
 			continue;
 		snprintf(own, sizeof(own), "%s/%d", addr, n.af == AF_INET ? 32 :
@@ -3812,6 +3883,80 @@ own_words(struct plan *pl, const ucl_object_t *sw, const char *sid,
 }
 
 /*
+ * The groups of a remote end point (SASE-3): a table each of its live
+ * members' addresses, and the members of two groups neither of which
+ * reaches the other kept apart, both ways, before the zone table
+ * sends anyone on.
+ */
+static void
+group_rules(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
+    ucl_object_t *tables, ucl_object_t *rules, const char *uni)
+{
+	const ucl_object_t	*r, *gs, *g, *h, *id, *e;
+	ucl_object_iter_t	 it, it2, iit;
+	ucl_object_t		*t;
+	char			 name[64], other[64], ia[80];
+	int64_t			 fib;
+	int			 i, j;
+	bool			 meet;
+
+	r = ucl_object_lookup(ep, "remote");
+	if ((gs = ucl_object_lookup(r, "groups")) == NULL)
+		return;
+	fib = ucl_object_toint(ucl_object_lookup(sw, "fib"));
+	i = 0;
+	it = NULL;
+	while ((g = ucl_object_iterate(gs, &it, true)) != NULL) {
+		snprintf(name, sizeof(name), "sw%jd_g%d", (intmax_t)fib, i++);
+		t = table(tables, name, "legacy");
+		iit = NULL;
+		while ((id = ucl_object_iterate(ucl_object_lookup(r, "identities"),
+		    &iit, true)) != NULL) {
+			if (str(id, "group") == NULL || strcmp(str(id, "group"),
+			    str(g, "name")) != 0 || !identity_live(r, id, time(NULL))
+			    || !remote_addr(pl, sw, ep, str(id, "name"), ia,
+			    sizeof(ia)))
+				continue;
+			snprintf(ia + strlen(ia), sizeof(ia) - strlen(ia), "/%d",
+			    family(ia) == AF_INET ? 32 : 128);
+			entry(t, ia, "0");
+		}
+	}
+	i = 0;
+	it = NULL;
+	while ((g = ucl_object_iterate(gs, &it, true)) != NULL) {
+		j = 0;
+		it2 = NULL;
+		while ((h = ucl_object_iterate(gs, &it2, true)) != NULL) {
+			if (j++ <= i)
+				continue;
+			/* Either reaching the other: they meet. */
+			meet = false;
+			iit = NULL;
+			while (!meet && (e = ucl_object_iterate(ucl_object_lookup(g,
+			    "reach"), &iit, true)) != NULL)
+				meet = strcmp(ucl_object_tostring(e), str(h, "name"))
+				    == 0;
+			iit = NULL;
+			while (!meet && (e = ucl_object_iterate(ucl_object_lookup(h,
+			    "reach"), &iit, true)) != NULL)
+				meet = strcmp(ucl_object_tostring(e), str(g, "name"))
+				    == 0;
+			if (meet)
+				continue;
+			snprintf(name, sizeof(name), "sw%jd_g%d", (intmax_t)fib, i);
+			snprintf(other, sizeof(other), "sw%jd_g%d", (intmax_t)fib,
+			    j - 1);
+			rule(rules, RULE_FROM, "deny ip from table(%s) to table(%s) "
+			    "in recv %s", name, other, uni);
+			rule(rules, RULE_FROM, "deny ip from table(%s) to table(%s) "
+			    "in recv %s", other, name, uni);
+		}
+		i++;
+	}
+}
+
+/*
  * The rules of one edge, and its steering: for each service with an
  * end point here, the zone table and each zone's block, each flow
  * with the policy it gets, each policy's tables; what a flow may do beyond the tunnels
@@ -3974,6 +4119,8 @@ rules_build(struct plan *pl, const char *sid)
 					    "to any dst-port 443 in recv %s", at, uni);
 				}
 			}
+			if (ucl_object_lookup(ep, "remote") != NULL)
+				group_rules(pl, sw, ep, tables, rules, uni);
 			rule(rules, RULE_FROM, "skipto tablearg ip from table(%s) "
 			    "to any in recv %s", zname, uni);
 			/* No zone: dropped (R23). */
@@ -4087,8 +4234,10 @@ rules_build(struct plan *pl, const char *sid)
 					while ((id = ucl_object_iterate(ucl_object_lookup(
 					    ucl_object_lookup(rep, "remote"),
 					    "identities"), &iit, true)) != NULL) {
-						if (str(id, "zone") == NULL || strcmp(str(
-						    id, "zone"), str(zone, "name")) != 0 ||
+						if (ident_zone(ucl_object_lookup(rep,
+						    "remote"), id) == NULL || strcmp(
+						    ident_zone(ucl_object_lookup(rep,
+						    "remote"), id), str(zone, "name")) != 0 ||
 						    !identity_live(ucl_object_lookup(rep,
 						    "remote"), id, time(NULL)) ||
 						    !remote_addr(pl, sw, rep, str(id,
@@ -6967,7 +7116,9 @@ identities_list(const ucl_object_t *doc, ucl_object_t *st)
 				put(o, "edge", S(str(ep, "edge")));
 				put(o, "interface", S(str(r, "interface")));
 				put(o, "name", S(str(id, "name")));
-				put(o, "zone", S(str(id, "zone")));
+				put(o, "zone", S(ident_zone(r, id)));
+				if (str(id, "group") != NULL)
+					put(o, "group", S(str(id, "group")));
 				put(o, "public_key", S(str(id, "public_key")));
 				put(o, "user", B(ucl_flag(id, "user")));
 				put(o, "issued", I(ucl_object_lookup(id, "issued") !=
@@ -7099,13 +7250,13 @@ int
 api_sdwan_identities(struct http_request *req)
 {
 	ucl_object_t		*doc, *st, *body, *out, *ids, *id, *o;
-	const ucl_object_t	*sw, *ep, *r, *e;
+	const ucl_object_t	*sw, *ep, *r, *e, *g;
 	ucl_object_iter_t	 it;
 	struct plan		 pl;
 	char			 where[300], rzone[64];
 	char			 why[300], priv[64], pub[64], *v, *swvc, *epid;
 	char			*name, *conf;
-	const char		*zone;
+	const char		*zone, *group;
 	bool			 user, applied;
 	int			 i;
 
@@ -7150,8 +7301,8 @@ api_sdwan_identities(struct http_request *req)
 			return (reply_error(req, 404, "identity", "no identity %s",
 			    name != NULL ? name : "?"));
 		}
-		snprintf(rzone, sizeof(rzone), "%s", str(e, "zone") != NULL ?
-		    str(e, "zone") : "");
+		snprintf(rzone, sizeof(rzone), "%s", ident_zone(r, e) != NULL ?
+		    ident_zone(r, e) : "");
 		ucl_object_unref(ucl_array_delete(ids, (ucl_object_t *)(uintptr_t)
 		    e));
 		if (sdwan_store(doc, why, sizeof(why)) != 0) {
@@ -7180,7 +7331,7 @@ api_sdwan_identities(struct http_request *req)
 	}
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "a JSON body: swvc, "
-		    "end_point, name, zone, user"));
+		    "end_point, name, zone or group, user"));
 	swvc = (char *)(uintptr_t)str(body, "swvc");
 	epid = (char *)(uintptr_t)str(body, "end_point");
 	name = (char *)(uintptr_t)str(body, "name");
@@ -7207,8 +7358,21 @@ api_sdwan_identities(struct http_request *req)
 		    "%s in service %s", epid != NULL ? epid : "?", swvc != NULL ?
 		    swvc : "?"));
 	}
-	if (zone == NULL || by(ucl_object_lookup(sw, "zones"), "name", zone) ==
-	    NULL) {
+	/* In a group of the remote's, the zone is the group's. */
+	group = str(body, "group");
+	if (group != NULL && group[0] == '\0')
+		group = NULL;
+	if (group != NULL) {
+		if ((g = by(ucl_object_lookup(r, "groups"), "name", group)) ==
+		    NULL) {
+			ucl_object_unref(doc);
+			ucl_object_unref(body);
+			return (reply_error(req, 400, "group", "the group is one "
+			    "of end point %s's", epid));
+		}
+		zone = str(g, "zone");
+	} else if (zone == NULL || by(ucl_object_lookup(sw, "zones"), "name",
+	    zone) == NULL) {
 		ucl_object_unref(doc);
 		ucl_object_unref(body);
 		return (reply_error(req, 400, "zone", "the zone is one of service "
@@ -7235,7 +7399,10 @@ api_sdwan_identities(struct http_request *req)
 		}
 	id = ucl_object_typed_new(UCL_OBJECT);
 	put(id, "name", S(name));
-	put(id, "zone", S(zone));
+	if (group != NULL)
+		put(id, "group", S(group));
+	else
+		put(id, "zone", S(zone));
 	put(id, "public_key", S(pub));
 	put(id, "issued", I(time(NULL)));
 	if (user)
@@ -7333,7 +7500,7 @@ identities_tick(const ucl_object_t *doc, time_t now)
 					    ? server_name_of(str(ep, "edge")) : "?",
 					    str(ep, "id"), str(sw, "id"));
 					audit_add("reauthorisation-due", "Block",
-					    str(id, "zone") != NULL ? str(id, "zone")
+					    ident_zone(r, id) != NULL ? ident_zone(r, id)
 					    : "", "its peer taken away by the apply",
 					    where, "Continuous Monitoring, by time",
 					    "identity %s: its re-authorisation "
