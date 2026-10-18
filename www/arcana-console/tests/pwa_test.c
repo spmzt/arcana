@@ -1694,6 +1694,24 @@ part_nettab(void)
 	    "&& g.textContent.includes('75%of weight 67%'))", 30);
 	ATF_CHECK(js_true("!document.querySelector('.netsect svg.topo')"));
 	shot("7n-network-nhgroups");
+	/* Prefix lists of the console's: one made on its tab, listed; the
+	 * groups tab again after. */
+	run("document.querySelector('.netsect button.tab[data-arg=lists]')"
+	    ".click()");
+	wait_js("document.querySelector('button[data-act=px-add]')", 10);
+	run("document.querySelector('button[data-act=px-add]').click()");
+	wait_js("document.querySelector('form[data-form=px-list] textarea')", 5);
+	run("const f = document.querySelector('form[data-form=px-list]'); "
+	    "f.name.value = 'branches'; f.description.value = 'the branches'; "
+	    "f.prefixes.value = '10.1.8.0/22\\n2001:db8:9::/48'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=px-list]') && [..."
+	    "document.querySelectorAll('table.pfxlists tbody tr')].some(r => r."
+	    "textContent.includes('branches') && r.textContent.includes("
+	    "'2001:db8:9::/48'))", 20);
+	shot("7o-prefix-lists");
+	run("document.querySelector('.netsect button.tab[data-arg=groups]')"
+	    ".click()");
+	wait_js("document.querySelector('.ecmp-page .ecmp')", 20);
 	phone(true);
 	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1 "
 	    "&& document.querySelector('.ecmp-page .ecmp')", 10);

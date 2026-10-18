@@ -936,7 +936,11 @@
     the last is checked to be only newer.)
   - Every table exported as CSV. (Done 2026-10-12: ⤓ in every
     table's head, the rows as shown.)
-  - Prefix lists kept by the console and used on any host.
+  - Prefix lists kept by the console and used on any host.  (Done
+    2026-10-18: Network, Prefix lists; GET/PUT/DELETE
+    /api/prefix-lists; picked in an ipfw table's entry form (an entry
+    a prefix), a BIRD set's form, an SD-WAN zone's and list's, their
+    prefixes taken in when kept, as the user chose.)
   - SD-WAN policies by named lists (MEF 70.2, no vendor's model):
     lists of UCS, of prefixes (as the zones hold them), of edges, of
     UCS End Points (the edge's underlay address, the UCS, the tunnel

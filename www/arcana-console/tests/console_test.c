@@ -1792,6 +1792,48 @@ ATF_TC_BODY(oinkcode, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(pfxlists, "The console's prefix lists: kept by name, each a "
+    "description and prefixes checked as such; changed, taken away; a bad "
+    "prefix or name refused")
+ATF_TC_BODY(pfxlists, tc)
+{
+	struct authn	a;
+	struct resp	r;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("GET", "/api/prefix-lists", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strcmp(r.body, "{\"lists\":{}}") == 0);
+	resp_free(&r);
+	http("PUT", "/api/prefix-lists/branches", "{\"description\":\"the "
+	    "branches' networks\",\"prefixes\":[\"10.1.8.0/22\",\"2001:db8:9::/48\"]}",
+	    &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("the branches' networks", jstr(&r,
+	    "lists.branches.description"));
+	ATF_CHECK_STREQ("2001:db8:9::/48", jstr(&r, "lists.branches.prefixes.1"));
+	resp_free(&r);
+	http("PUT", "/api/prefix-lists/branches", "{\"prefixes\":[\"10.1.8.1/22\"]}",
+	    &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "no host bits") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/prefix-lists/bad%20name", "{\"prefixes\":[]}", &r);
+	ATF_CHECK(r.status == 400 || r.status == 404);
+	resp_free(&r);
+	http("PUT", "/api/prefix-lists/branches", "{\"prefixes\":[\"10.1.8.0/22\"]}",
+	    &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "lists.branches.prefixes.1") == NULL);
+	ATF_CHECK(jstr(&r, "lists.branches.description") == NULL);
+	resp_free(&r);
+	http("DELETE", "/api/prefix-lists/branches", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strcmp(r.body, "{\"lists\":{}}") == 0);
+	resp_free(&r);
+}
+
 CONSOLE_TC(templates, "Configuration templates: a host's setup kept by "
     "name, its values {{placeholders}}, checked; applied to a host with its "
     "own values, checked first, then written; one without a value refused")
@@ -7025,6 +7067,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, transfers);
 	ATF_TP_ADD_TC(tp, config_bundle);
 	ATF_TP_ADD_TC(tp, templates);
+	ATF_TP_ADD_TC(tp, pfxlists);
 	ATF_TP_ADD_TC(tp, oinkcode);
 	ATF_TP_ADD_TC(tp, labels);
 	ATF_TP_ADD_TC(tp, ldap);

@@ -1595,6 +1595,48 @@ paths:
         "200":
           description: ok and data, or error
         "400": { $ref: "#/components/responses/Error" }
+  /api/prefix-lists:
+    get:
+      tags: [servers]
+      summary: The console's prefix lists
+      description: >-
+        Named lists of IPv4 and IPv6 prefixes kept by the console and
+        used on any host, under lists as name: {description, prefixes}.
+        The forms that take prefixes (an ipfw table's entries, a BIRD
+        set, an SD-WAN zone or list) take a list's in; a change here
+        changes nothing on a host by itself.
+      responses:
+        "200":
+          description: Every list.
+  /api/prefix-lists/{name}:
+    put:
+      tags: [servers]
+      summary: Keep a prefix list
+      description: >-
+        {"description", "prefixes": [...]}: each a.b.c.d/n or x::/n with
+        no host bits, 8192 at most; the name letters, digits, _ and -,
+        32 at most.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Kept; every list, as GET gives them.
+        "400":
+          description: Not a list.
+    delete:
+      tags: [servers]
+      summary: Take a prefix list away
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Gone; every list left.
   /api/labels:
     get:
       tags: [servers]
