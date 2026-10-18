@@ -496,6 +496,7 @@ tick(void *arg)
 		if (app.online) {
 			transport_tick(now);
 			ca_tick(now);
+			cluster_tick(now);
 			net_live_tick(now);
 			firewall_tick(now);
 			procs_tick(now);
@@ -1788,7 +1789,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		} else if (strcmp(act, "aaa-tab") == 0) {
 			app.settab = SET_AAA;
 			app.aaatab = aaatab_of(arg);
-			if (app.aaatab == AAA_USERS || app.aaatab == AAA_ROLES)
+			if (app.aaatab == AAA_USERS || app.aaatab == AAA_ROLES ||
+			    app.aaatab == AAA_GROUPS)
 				users_load();
 		}
 		if ((app.settab == SET_NEWS || app.settab == SET_UPDATE) &&

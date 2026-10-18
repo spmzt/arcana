@@ -411,3 +411,7 @@ kinds:
     needs: verb
     uses: args text
     values: verb=mirrors
+  - kind: suricata
+    title: Suricata's ruleset fetched by suricata-update
+    needs: verb
+    values: verb=update

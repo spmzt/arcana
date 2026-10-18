@@ -2124,6 +2124,9 @@ scheduler(void *arg __unused)
 	ndue = 0;
 	for (;;) {
 		sleep(TICK_S);
+		/* Of a cluster, the leader's alone. */
+		if (!cluster_leads())
+			continue;
 		pthread_mutex_lock(&wf_lock);
 		top = wf_load();
 		pthread_mutex_unlock(&wf_lock);
@@ -2242,6 +2245,25 @@ run_cut(ucl_object_t *run)
 	}
 }
 
+/*
+ * Every kind jobs.yaml has, one hosts.c can send: a kind added to the
+ * one and not the other would be refused as unknown when it is used.
+ */
+int
+workflows_kinds_check(void)
+{
+	size_t	i;
+	int	rc = 0;
+
+	for (i = 0; i < nitems(jobkinds); i++)
+		if (!hosts_job_kind_known(jobkinds[i].kind)) {
+			kore_log(LOG_ERR, "the job kind %s of jobs.yaml is not "
+			    "in hosts.c's job_kind_names", jobkinds[i].kind);
+			rc = -1;
+		}
+	return (rc);
+}
+
 void
 workflows_init(void)
 {
@@ -2264,8 +2286,9 @@ workflows_init(void)
 		lockfd = -1;
 		return;
 	}
-	/* This worker is the one: what a restart cut was cut. */
-	if ((top = store_load(RUNS_FILE)) != NULL) {
+	/* This worker is the one: what a restart cut was cut.  Not of a
+	 * cluster's node, whose runs may be another node's, running. */
+	if (!cluster_on() && (top = store_load(RUNS_FILE)) != NULL) {
 		changed = false;
 		it = NULL;
 		while ((o = (ucl_object_t *)(uintptr_t)ucl_object_iterate(

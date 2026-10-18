@@ -388,11 +388,25 @@ jail_form(struct html *h)
 	    "pkgbase</small></label><label>Arch <input name=\"arch\" "
 	    "spellcheck=\"false\" placeholder=\"amd64\"><small class=\"help\">"
 	    "TARGET_ARCH, arm64.aarch64; the host's when empty</small>"
-	    "</label><label>Method <select name=\"method\"><option value=\"\">"
-	    "the default (http: the release's sets)</option><option>http"
-	    "</option><option>ftp</option><option>pkgbase</option><option>"
-	    "git+https</option><option>freebsdci</option></select><small "
-	    "class=\"help\">how poudriere gets the base system</small></label>"
+	    "</label><label>Method <input name=\"method\" list=\"bld-methods\" "
+	    "spellcheck=\"false\" placeholder=\"http\"><datalist id=\""
+	    "bld-methods\"><option value=\"http\"><option value=\"ftp\">"
+	    "<option value=\"ftp-archive\"><option value=\"freebsdci\">"
+	    "<option value=\"pkgbase\"><option value=\"git+https\"><option "
+	    "value=\"src=/usr/src\"><option value=\"tar=/\"></datalist>"
+	    "<small class=\"help\">how poudriere gets the base system (-m): "
+	    "the release's sets by http when empty; pkgbase or pkgbase=/path, "
+	    "src=/path of a built tree, tar=/path, git+https</small></label>"
+	    "<label>Kernel <input name=\"kernel\" spellcheck=\"false\" "
+	    "pattern=\"[A-Za-z0-9_:+-]{0,64}\" placeholder=\"none\"><small "
+	    "class=\"help\">-K: a kernel installed in the jail, by its "
+	    "configuration's name (GENERIC); none when empty</small></label>"
+	    "<label class=\"check\"><input type=\"checkbox\" name=\"build\">"
+	    " Build the source <small class=\"help\">-b, for src=: built "
+	    "first, not installed as it was built; git always builds</small>"
+	    "</label><label class=\"check\"><input type=\"checkbox\" name=\""
+	    "pkgbase_set\"> Build the pkgbase set <small class=\"help\">-B, "
+	    "with src= built here, or git</small></label>"
 	    "<div class=\"actions\"><button type=\"button\" class=\"ghost\" "
 	    "data-act=\"bld-cancel\">Cancel</button><button type=\"submit\" "
 	    "class=\"primary\"");
@@ -1200,6 +1214,11 @@ builder_form(const char *form, const ucl_object_t *f)
 		kv(args, "version", jstr(f, "version"));
 		kv(args, "arch", jstr(f, "arch"));
 		kv(args, "method", jstr(f, "method"));
+		kv(args, "kernel", jstr(f, "kernel"));
+		if (jbool(f, "build"))
+			kv(args, "build", "yes");
+		if (jbool(f, "pkgbase_set"))
+			kv(args, "pkgbase-set", "yes");
 		snprintf(title, sizeof(title), "poudriere jail-create %s",
 		    jstr(f, "name") != NULL ? jstr(f, "name") : "");
 		bld_send("jail-create", args, NULL, title);

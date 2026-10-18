@@ -17,10 +17,13 @@
  * any.  Sign-in keys belong to a user; a key with none is the built-in
  * admin's, an owner, so a console with keys from before has its owner.
  * A user is invited: a one-time token with which they register their
- * first key.  users.json in the data directory, {"users": [...],
- * "roles": [...], "invites": [...]}; GET and POST /api/users, PUT and
- * DELETE /api/users/<name>, POST /api/users/<name>/invite; POST
- * /api/roles, PUT and DELETE /api/roles/<name>.
+ * first key.  A group is users given roles together: a user may do
+ * what its own roles allow and what its groups' do.  users.json in the
+ * data directory, {"users": [...], "roles": [...], "groups": [...],
+ * "invites": [...]}; GET and POST /api/users, PUT and DELETE
+ * /api/users/<name>, POST /api/users/<name>/invite; POST /api/roles,
+ * PUT and DELETE /api/roles/<name>; POST /api/groups, PUT and DELETE
+ * /api/groups/<name>.
  */
 
 #include <sys/param.h>
@@ -39,6 +42,7 @@
 #define	USERS_FILE	"users.json"
 #define	USERS_MAX	256
 #define	ROLES_MAX	64
+#define	GROUPS_MAX	64
 #define	INVITE_LIFE	(24 * 3600)
 #define	INVITE_BYTES	24
 
@@ -181,24 +185,58 @@ role_host(const ucl_object_t *role, const char *sid)
  * the console has no record of), is an operator's: what a write token
  * may.
  */
+/*
+ * A user's roles: its own, and its groups'; into v, max at most, each
+ * once.  How many.
+ */
+static int
+roles_of(const ucl_object_t *u, const ucl_object_t **v, int max)
+{
+	const ucl_object_t	*e, *g, *r;
+	ucl_object_iter_t	 it, git;
+	int			 n, i;
+
+	n = 0;
+	it = NULL;
+	while (n < max && (e = ucl_object_iterate(ucl_object_lookup(u,
+	    "roles"), &it, true)) != NULL)
+		if ((r = by_name("roles", ucl_object_tostring(e))) != NULL)
+			v[n++] = r;
+	it = NULL;
+	while ((g = ucl_object_iterate(ucl_object_lookup(u, "groups"), &it,
+	    true)) != NULL) {
+		if ((g = by_name("groups", ucl_object_tostring(g))) == NULL)
+			continue;
+		git = NULL;
+		while (n < max && (e = ucl_object_iterate(ucl_object_lookup(g,
+		    "roles"), &git, true)) != NULL) {
+			if ((r = by_name("roles", ucl_object_tostring(e))) ==
+			    NULL)
+				continue;
+			for (i = 0; i < n && v[i] != r; i++)
+				;
+			if (i == n)
+				v[n++] = r;
+		}
+	}
+	return (n);
+}
+
 enum crole
 user_console(const char *name)
 {
-	const ucl_object_t	*u, *r, *e;
-	ucl_object_iter_t	 it;
+	const ucl_object_t	*u, *v[ROLES_MAX];
 	enum crole		 best, c;
+	int			 i, n;
 
 	if (name == NULL || name[0] == '\0')
 		return (CROLE_OPERATOR);
 	if ((u = by_name("users", name)) == NULL)
 		return (CROLE_NONE);
 	best = CROLE_NONE;
-	it = NULL;
-	while ((e = ucl_object_iterate(ucl_object_lookup(u, "roles"), &it,
-	    true)) != NULL) {
-		if ((r = by_name("roles", ucl_object_tostring(e))) == NULL)
-			continue;
-		c = crole_of(ucl_str(r, "console"));
+	n = roles_of(u, v, ROLES_MAX);
+	for (i = 0; i < n; i++) {
+		c = crole_of(ucl_str(v[i], "console"));
 		if (c > best)
 			best = c;
 	}
@@ -224,11 +262,11 @@ user_tenant(const char *name)
 enum role
 user_host(const char *name, const char *sid)
 {
-	const ucl_object_t	*u, *r, *e;
+	const ucl_object_t	*u, *v[ROLES_MAX];
 	const struct server	*s;
-	ucl_object_iter_t	 it;
 	const char		*t;
 	enum role		 best, h;
+	int			 i, n;
 
 	if (name == NULL || name[0] == '\0')
 		return (ROLE_ADMIN);
@@ -241,12 +279,9 @@ user_host(const char *name, const char *sid)
 			return (ROLE_NONE);
 	}
 	best = ROLE_NONE;
-	it = NULL;
-	while ((e = ucl_object_iterate(ucl_object_lookup(u, "roles"), &it,
-	    true)) != NULL) {
-		if ((r = by_name("roles", ucl_object_tostring(e))) == NULL)
-			continue;
-		h = role_host(r, sid);
+	n = roles_of(u, v, ROLES_MAX);
+	for (i = 0; i < n; i++) {
+		h = role_host(v[i], sid);
 		if (h > best)
 			best = h;
 	}
@@ -266,6 +301,7 @@ user_path_ok(enum crole r, const char *path, bool mutate)
 {
 	static const char	*owner_only[] = { "/api/settings", "/api/tokens",
 				    "/api/ca", "/api/users", "/api/roles",
+				    "/api/groups",
 				    "/api/enrol", "/api/update", "/api/push/send" };
 	static const char	*operator_up[] = { "/api/sdwan", "/api/workflows",
 				    "/api/runs", "/api/templates",
@@ -419,6 +455,16 @@ role_new(const char *name, const char *console, const char *all)
 	return (r);
 }
 
+/* users.json, written by another node of the cluster: read again. */
+void
+users_reload(void)
+{
+
+	ucl_object_unref(udoc);
+	udoc = NULL;
+	users_init();
+}
+
 void
 users_init(void)
 {
@@ -438,6 +484,8 @@ users_init(void)
 		put(udoc, "users", ucl_object_typed_new(UCL_ARRAY));
 	if (ucl_object_lookup(udoc, "invites") == NULL)
 		put(udoc, "invites", ucl_object_typed_new(UCL_ARRAY));
+	if (ucl_object_lookup(udoc, "groups") == NULL)
+		put(udoc, "groups", ucl_object_typed_new(UCL_ARRAY));
 	if (ucl_object_lookup(udoc, "roles") == NULL) {
 		put(udoc, "roles", ucl_object_typed_new(UCL_ARRAY));
 		changed = true;
@@ -528,6 +576,60 @@ role_users(const char *role)
 	return (n);
 }
 
+/* How many groups give the role. */
+static int
+role_groups(const char *role)
+{
+	const ucl_object_t	*g, *e;
+	ucl_object_iter_t	 it, rit;
+	int			 n;
+
+	n = 0;
+	it = NULL;
+	while ((g = ucl_object_iterate(list_of("groups"), &it, true)) != NULL) {
+		rit = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(g, "roles"), &rit,
+		    true)) != NULL)
+			if (strcmp(ucl_object_tostring_forced(e), role) == 0) {
+				n++;
+				break;
+			}
+	}
+	return (n);
+}
+
+/* Is the user in the group? */
+static bool
+in_group(const ucl_object_t *u, const char *group)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(u, "groups"), &it,
+	    true)) != NULL)
+		if (strcmp(ucl_object_tostring_forced(e), group) == 0)
+			return (true);
+	return (false);
+}
+
+/* Its members' names, as a list. */
+static ucl_object_t *
+group_members(const char *group)
+{
+	const ucl_object_t	*u;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*a;
+
+	a = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((u = ucl_object_iterate(list_of("users"), &it, true)) != NULL)
+		if (in_group(u, group))
+			ucl_array_append(a, ucl_object_fromstring(ucl_str(u,
+			    "name")));
+	return (a);
+}
+
 /* How many users are owners, as their roles stand. */
 static int
 owners(void)
@@ -549,7 +651,7 @@ owners(void)
 static int
 reply_all(struct http_request *req)
 {
-	ucl_object_t		*o, *a, *e, *rs;
+	ucl_object_t		*o, *a, *e, *rs, *gs;
 	const ucl_object_t	*u, *inv, *r;
 	ucl_object_iter_t	 it, iit;
 	int			 n;
@@ -578,11 +680,21 @@ reply_all(struct http_request *req)
 		e = ucl_object_copy(r);
 		put(e, "users", ucl_object_fromint(role_users(ucl_str(r,
 		    "name"))));
+		put(e, "groups", ucl_object_fromint(role_groups(ucl_str(r,
+		    "name"))));
 		ucl_array_append(rs, e);
+	}
+	gs = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((r = ucl_object_iterate(list_of("groups"), &it, true)) != NULL) {
+		e = ucl_object_copy(r);
+		put(e, "members", group_members(ucl_str(r, "name")));
+		ucl_array_append(gs, e);
 	}
 	o = ucl_object_typed_new(UCL_OBJECT);
 	put(o, "users", a);
 	put(o, "roles", rs);
+	put(o, "groups", gs);
 	return (reply_json(req, 200, o));
 }
 
@@ -689,7 +801,7 @@ role_check(const ucl_object_t *body)
 static const char *
 user_check(const ucl_object_t *body)
 {
-	const ucl_object_t	*v, *e;
+	const ucl_object_t	*v, *g, *e;
 	ucl_object_iter_t	 it;
 	const char		*s;
 
@@ -697,14 +809,25 @@ user_check(const ucl_object_t *body)
 	    !user_name_ok(s))
 		return ("a tenant is named by letters, digits, _ . @ and -, 64 "
 		    "at most");
-	if ((v = ucl_object_lookup(body, "roles")) == NULL || ucl_object_type(v)
-	    != UCL_ARRAY || ucl_array_size(v) == 0)
-		return ("roles is a list of the roles, one at least");
+	if ((v = ucl_object_lookup(body, "roles")) != NULL && ucl_object_type(v)
+	    != UCL_ARRAY)
+		return ("roles is a list of the roles");
 	it = NULL;
 	while ((e = ucl_object_iterate(v, &it, true)) != NULL)
 		if (ucl_object_type(e) != UCL_STRING || by_name("roles",
 		    ucl_object_tostring(e)) == NULL)
 			return ("a role named is one there is");
+	if ((g = ucl_object_lookup(body, "groups")) != NULL && ucl_object_type(g)
+	    != UCL_ARRAY)
+		return ("groups is a list of the groups");
+	it = NULL;
+	while ((e = ucl_object_iterate(g, &it, true)) != NULL)
+		if (ucl_object_type(e) != UCL_STRING || by_name("groups",
+		    ucl_object_tostring(e)) == NULL)
+			return ("a group named is one there is");
+	if ((v == NULL || ucl_array_size(v) == 0) && (g == NULL ||
+	    ucl_array_size(g) == 0))
+		return ("a user has a role, or is in a group, one at least");
 	return (NULL);
 }
 
@@ -797,7 +920,13 @@ user_keep(struct http_request *req, ucl_object_t *body)
 	put(u, "name", ucl_object_fromstring(name));
 	if (ucl_str(body, "tenant") != NULL && ucl_str(body, "tenant")[0] != '\0')
 		put(u, "tenant", ucl_object_fromstring(ucl_str(body, "tenant")));
-	put(u, "roles", ucl_object_copy(ucl_object_lookup(body, "roles")));
+	put(u, "roles", ucl_object_lookup(body, "roles") != NULL ?
+	    ucl_object_copy(ucl_object_lookup(body, "roles")) :
+	    ucl_object_typed_new(UCL_ARRAY));
+	if (ucl_object_lookup(body, "groups") != NULL &&
+	    ucl_array_size(ucl_object_lookup(body, "groups")) > 0)
+		put(u, "groups", ucl_object_copy(ucl_object_lookup(body,
+		    "groups")));
 	put(u, "created", ucl_object_fromint(old != NULL && ucl_object_lookup(
 	    old, "created") != NULL ? ucl_object_toint(ucl_object_lookup(old,
 	    "created")) : time(NULL)));
@@ -953,12 +1082,212 @@ api_role(struct http_request *req)
 		return (reply_error(req, 409, "in_use", "%d user%s ha%s the role: "
 		    "give them another first", role_users(name), role_users(name)
 		    == 1 ? "" : "s", role_users(name) == 1 ? "s" : "ve"));
+	if (role_groups(name) > 0)
+		return (reply_error(req, 409, "in_use", "%d group%s give%s the "
+		    "role: take it from them first", role_groups(name),
+		    role_groups(name) == 1 ? "" : "s", role_groups(name) == 1 ?
+		    "s" : ""));
 	ucl_object_unref(ucl_array_delete(list_of("roles"), (ucl_object_t *)
 	    (uintptr_t)r));
 	if (store_save(USERS_FILE, udoc) != 0)
 		return (reply_error(req, 500, "store", "the roles could not be "
 		    "written"));
 	kore_log(LOG_NOTICE, "role %s removed by %s", name, session_who(req) !=
+	    NULL ? session_who(req) : "?");
+	return (reply_all(req));
+}
+
+/* Is body a group that may be kept?  NULL, or what is wrong with it. */
+static const char *
+group_check(const ucl_object_t *body)
+{
+	const ucl_object_t	*v, *e;
+	ucl_object_iter_t	 it;
+
+	if ((v = ucl_object_lookup(body, "roles")) == NULL || ucl_object_type(v)
+	    != UCL_ARRAY)
+		return ("roles is a list of the roles the group gives");
+	it = NULL;
+	while ((e = ucl_object_iterate(v, &it, true)) != NULL)
+		if (ucl_object_type(e) != UCL_STRING || by_name("roles",
+		    ucl_object_tostring(e)) == NULL)
+			return ("a role named is one there is");
+	if ((v = ucl_object_lookup(body, "members")) != NULL) {
+		if (ucl_object_type(v) != UCL_ARRAY)
+			return ("members is a list of the users in it");
+		it = NULL;
+		while ((e = ucl_object_iterate(v, &it, true)) != NULL)
+			if (ucl_object_type(e) != UCL_STRING || by_name("users",
+			    ucl_object_tostring(e)) == NULL)
+				return ("a member named is a user there is");
+	}
+	if ((e = ucl_object_lookup(body, "description")) != NULL &&
+	    (ucl_object_type(e) != UCL_STRING || strlen(ucl_object_tostring(e))
+	    > 200))
+		return ("a description is 200 characters at most");
+	return (NULL);
+}
+
+/* The user in the group, or not. */
+static void
+membership(const char *user, const char *group, bool in)
+{
+	ucl_object_t		*u, *gs, *e;
+	ucl_object_iter_t	 it;
+
+	if ((u = (ucl_object_t *)(uintptr_t)by_name("users", user)) == NULL)
+		return;
+	if ((gs = (ucl_object_t *)(uintptr_t)ucl_object_lookup(u, "groups")) ==
+	    NULL) {
+		if (!in)
+			return;
+		gs = ucl_object_typed_new(UCL_ARRAY);
+		put(u, "groups", gs);
+	}
+	it = NULL;
+	while ((e = (ucl_object_t *)(uintptr_t)ucl_object_iterate(gs, &it,
+	    true)) != NULL)
+		if (strcmp(ucl_object_tostring_forced(e), group) == 0) {
+			if (in)
+				return;
+			ucl_object_unref(ucl_array_delete(gs, e));
+			break;
+		}
+	if (in)
+		ucl_array_append(gs, ucl_object_fromstring(group));
+}
+
+/* Undone, as users.json still has it, with why: the last owner stays. */
+static int
+undo_owner(struct http_request *req)
+{
+
+	ucl_object_unref(udoc);
+	udoc = NULL;
+	users_init();
+	return (reply_error(req, 409, "last_owner", "the console keeps an "
+	    "owner: make another one first"));
+}
+
+/*
+ * A group kept, added or in place of the one of the name; its members,
+ * when they are named, made those; body is taken.
+ */
+static int
+group_keep(struct http_request *req, ucl_object_t *body)
+{
+	ucl_object_t		*g;
+	const ucl_object_t	*old, *m, *u, *e;
+	ucl_object_iter_t	 it, mit;
+	const char		*err, *name;
+	bool			 named;
+
+	name = ucl_str(body, "name");
+	if (!user_name_ok(name)) {
+		ucl_object_unref(body);
+		return (reply_error(req, 400, "invalid", "a group is named by "
+		    "letters, digits, _ . @ and -, 64 at most"));
+	}
+	if ((err = group_check(body)) != NULL) {
+		ucl_object_unref(body);
+		return (reply_error(req, 400, "invalid", "%s", err));
+	}
+	old = by_name("groups", name);
+	if (old == NULL && ucl_array_size(list_of("groups")) >= GROUPS_MAX) {
+		ucl_object_unref(body);
+		return (reply_error(req, 400, "invalid", "%d groups at most",
+		    GROUPS_MAX));
+	}
+	g = ucl_object_typed_new(UCL_OBJECT);
+	put(g, "name", ucl_object_fromstring(name));
+	put(g, "roles", ucl_object_copy(ucl_object_lookup(body, "roles")));
+	if (ucl_str(body, "description") != NULL && ucl_str(body,
+	    "description")[0] != '\0')
+		put(g, "description", ucl_object_fromstring(ucl_str(body,
+		    "description")));
+	if (old != NULL)
+		ucl_object_unref(ucl_array_delete(list_of("groups"),
+		    (ucl_object_t *)(uintptr_t)old));
+	ucl_array_append(list_of("groups"), g);
+	if ((m = ucl_object_lookup(body, "members")) != NULL) {
+		it = NULL;
+		while ((u = ucl_object_iterate(list_of("users"), &it, true)) !=
+		    NULL) {
+			named = false;
+			mit = NULL;
+			while ((e = ucl_object_iterate(m, &mit, true)) != NULL)
+				if (strcmp(ucl_object_tostring(e), ucl_str(u,
+				    "name")) == 0)
+					named = true;
+			membership(ucl_str(u, "name"), name, named);
+		}
+	}
+	ucl_object_unref(body);
+	/* The last owner stays one, whatever a group's roles became. */
+	if (owners() == 0)
+		return (undo_owner(req));
+	if (store_save(USERS_FILE, udoc) != 0)
+		return (reply_error(req, 500, "store", "the groups could not be "
+		    "written"));
+	kore_log(LOG_NOTICE, "group %s %s by %s", name, old != NULL ? "changed" :
+	    "added", session_who(req) != NULL ? session_who(req) : "?");
+	return (reply_all(req));
+}
+
+/* POST /api/groups: a group added or replaced, by its name. */
+int
+api_groups(struct http_request *req)
+{
+	ucl_object_t	*body;
+
+	if (req->method != HTTP_METHOD_POST)
+		return (reply_error(req, 405, "method", "POST; the groups come "
+		    "with GET /api/users"));
+	if (!guard(req, true))
+		return (KORE_RESULT_OK);
+	if ((body = read_json(req)) == NULL)
+		return (reply_error(req, 400, "invalid", "a group: {\"name\", "
+		    "\"roles\": [...], \"members\": [...]}"));
+	return (group_keep(req, body));
+}
+
+/* PUT /api/groups/<name>: as POST with the name; DELETE: gone, its users
+ * out of it. */
+int
+api_group(struct http_request *req)
+{
+	ucl_object_t		*body;
+	const ucl_object_t	*g, *u;
+	ucl_object_iter_t	 it;
+	char			 name[72];
+
+	if (!capture(req, 3, name, sizeof(name)) || !user_name_ok(name))
+		return (reply_error(req, 400, "invalid", "a group's name"));
+	if (req->method == HTTP_METHOD_PUT) {
+		if (!guard(req, true))
+			return (KORE_RESULT_OK);
+		if ((body = read_json(req)) == NULL)
+			return (reply_error(req, 400, "invalid", "a group"));
+		put(body, "name", ucl_object_fromstring(name));
+		return (group_keep(req, body));
+	}
+	if (req->method != HTTP_METHOD_DELETE)
+		return (reply_error(req, 405, "method", "PUT or DELETE"));
+	if (!guard(req, true))
+		return (KORE_RESULT_OK);
+	if ((g = by_name("groups", name)) == NULL)
+		return (reply_error(req, 404, "not_found", "no group %s", name));
+	it = NULL;
+	while ((u = ucl_object_iterate(list_of("users"), &it, true)) != NULL)
+		membership(ucl_str(u, "name"), name, false);
+	ucl_object_unref(ucl_array_delete(list_of("groups"), (ucl_object_t *)
+	    (uintptr_t)g));
+	if (owners() == 0)
+		return (undo_owner(req));
+	if (store_save(USERS_FILE, udoc) != 0)
+		return (reply_error(req, 500, "store", "the groups could not be "
+		    "written"));
+	kore_log(LOG_NOTICE, "group %s removed by %s", name, session_who(req) !=
 	    NULL ? session_who(req) : "?");
 	return (reply_all(req));
 }

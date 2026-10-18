@@ -61,6 +61,8 @@ static const char *ssl_err(void);
 static EVP_PKEY	*key_new(void);
 static X509	*cert_new(EVP_PKEY *, const char *, X509 *, EVP_PKEY *,
 		    const char *, int);
+static X509	*cert_make(EVP_PKEY *, const char *, X509 *, EVP_PKEY *,
+		    const char *, const char *, int);
 static int	 add_ext(X509 *, X509 *, int, const char *);
 static int	 write_pem(const char *, X509 *, EVP_PKEY *, mode_t);
 static EVP_PKEY	*read_key(const char *);
@@ -109,6 +111,19 @@ static X509 *
 cert_new(EVP_PKEY *key, const char *cn, X509 *issuer, EVP_PKEY *ikey,
     const char *san, int days)
 {
+
+	return (cert_make(key, cn, issuer, ikey, san, san != NULL ? "agent" :
+	    "console", days));
+}
+
+/*
+ * A certificate: the CA's own when there is no issuer; else a leaf of
+ * role (agent, or console), for a server too when it names a host (san).
+ */
+static X509 *
+cert_make(EVP_PKEY *key, const char *cn, X509 *issuer, EVP_PKEY *ikey,
+    const char *san, const char *role, int days)
+{
 	X509		*x;
 	X509_NAME	*name;
 	BIGNUM		*bn;
@@ -155,8 +170,8 @@ cert_new(EVP_PKEY *key, const char *cn, X509 *issuer, EVP_PKEY *ikey,
 		if (san != NULL) {
 			char	sanr[400];
 
-			snprintf(sanr, sizeof(sanr), "%s,URI:urn:arcana:role:agent",
-			    san);
+			snprintf(sanr, sizeof(sanr), "%s,URI:urn:arcana:role:%s",
+			    san, role);
 			ok = ok && add_ext(x, issuer, NID_subject_alt_name,
 			    sanr) == 0;
 		} else
@@ -1605,4 +1620,58 @@ api_ca(struct http_request *req)
 	o = ca_view();
 	free(csr);
 	return (reply_json(req, 200, o));
+}
+
+/*
+ * A node of a cluster's certificate (cluster.c), signed by the CA: the
+ * console's role, as a client of the agents and of the other nodes and
+ * as their server, under the node's host name.  Made once, kept in
+ * certpath and keypath.
+ */
+int
+pki_node_cert(const char *host, const char *certpath, const char *keypath,
+    char *err, size_t errlen)
+{
+	X509		*all[CERTS_MAX], *cert;
+	EVP_PKEY	*key, *cakey;
+	unsigned char	 a[16];
+	char		 san[300], cn[300];
+	int		 n, rc;
+
+	if (access(certpath, F_OK) == 0 && access(keypath, F_OK) == 0)
+		return (0);
+	rc = -1;
+	key = cakey = NULL;
+	cert = NULL;
+	n = 0;
+	if (cfg.tls_ca_key == NULL) {
+		snprintf(err, errlen, "no CA key to sign the node's certificate "
+		    "with: copy the first node's ca.pem and ca.key here");
+		return (-1);
+	}
+	if ((n = certs_read(cfg.tls_ca, all, CERTS_MAX)) == 0 || (cakey =
+	    read_key(cfg.tls_ca_key)) == NULL) {
+		snprintf(err, errlen, "cannot read the CA");
+		goto out;
+	}
+	snprintf(san, sizeof(san), "%s:%s", inet_pton(AF_INET, host, a) == 1 ||
+	    inet_pton(AF_INET6, host, a) == 1 ? "IP" : "DNS", host);
+	snprintf(cn, sizeof(cn), "arcana console %s", host);
+	if ((key = key_new()) == NULL || (cert = cert_make(key, cn, all[0],
+	    cakey, san, "console", CERT_DAYS)) == NULL) {
+		snprintf(err, errlen, "cannot sign: %s", ssl_err());
+		goto out;
+	}
+	if (write_pem(keypath, NULL, key, 0600) == -1 || write_pem(certpath,
+	    cert, NULL, 0644) == -1) {
+		snprintf(err, errlen, "cannot write %s", certpath);
+		goto out;
+	}
+	rc = 0;
+out:
+	X509_free(cert);
+	certs_free(all, n);
+	EVP_PKEY_free(cakey);
+	EVP_PKEY_free(key);
+	return (rc);
 }

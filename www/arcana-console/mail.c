@@ -815,7 +815,10 @@ watcher(void *arg __unused)
 
 	for (;;) {
 		sleep((unsigned int)cfg.mail_tick);
-		tick();
+		/* Of a cluster, the leader's alone: one mail, not one a
+		 * node. */
+		if (cluster_leads())
+			tick();
 	}
 	return (NULL);
 }

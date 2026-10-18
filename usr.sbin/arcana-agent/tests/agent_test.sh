@@ -135,6 +135,8 @@ status)		[ -f "running.\$name" ] && { echo "\$name is running as pid 4242."; exi
 start|onestart)	touch "running.\$name"; echo "Starting \$name." ;;
 stop)		rm -f "running.\$name"; echo "Stopping \$name." ;;
 restart)	[ -f slow ] && sleep 2
+		# Held while the test wants it under way, a minute at most.
+		i=0; while [ -f hold ] && [ \$i -lt 600 ]; do sleep 0.1; i=\$((i + 1)); done
 		touch "running.\$name"; echo "Restarting \$name." ;;
 reload|onereload)	echo "Reloading \$name." ;;
 describe)	echo "The \$name daemon." ;;
@@ -2788,7 +2790,7 @@ EOS
 	chmod +x fake-ipfw
 	printf '#!/bin/sh\necho "kldload $*" >> %s/kldload.log\nexit 0\n' "$(pwd)" > fake-kldload
 	chmod +x fake-kldload
-	DAEMON_ARGS="-h $(pwd)/fake-ipfw -3 $(pwd)/fake-setfib -2 $(pwd)/tools"
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -3 $(pwd)/fake-setfib -2 $(pwd)/tools --suricata-rules $(pwd)/rules"
 	start_daemon
 	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
 	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],"objects":0,"counters":\[\]\}' \
@@ -2971,19 +2973,29 @@ echo "certgen \$*" >> $(pwd)/squid.log
 mkdir -p "\$3"
 EOS
 	printf '#!/bin/sh\nexit 0\n' > tools/c-icap
-	# suricata: -T checks, and refuses BROKEN; run, it writes an alert
-	# and a flow to eve.json in its log directory, and says its pid.
+	# suricata: -T checks, and refuses BROKEN, and a ruleset whose rule
+	# negates any as Suricata does; run, it writes an alert and a flow
+	# to eve.json in its log directory, says its pid, and notes a USR2.
 	cat > tools/suricata <<EOS
 #!/bin/sh
 echo "suricata \$*" >> $(pwd)/suricata.log
-[ "\$1" = -T ] && { grep -q BROKEN "\$3" && { echo "Error: rule BROKEN at line 1" >&2; exit 1; }; exit 0; }
+[ "\$1" = -T ] && { grep -q BROKEN "\$3" && { [ "\$5" = logging.outputs.0.console.enabled=yes ] && echo "E: detect: rule BROKEN at line 1" >&2; exit 1; }
+r=\$(sed -n 's/^  - \(.*\/suricata.rules\)\$/\\1/p' "\$3")
+[ -n "\$r" ] && grep -q NEGATED "\$r" && { echo "i: suricata: This is Suricata"; { echo "E: detect: Complete IP space negated. Rule address range is NIL."; echo "E: detect: error parsing signature \\"alert\\" from file \$r at line 1"; echo "E: suricata: Loading signatures failed."; } >&2; exit 1; }
+exit 0; }
 d=\$(sed -n 's/^default-log-dir: //p' "\$2")
 printf '%s\\n' '{"timestamp":"2026-10-12T18:00:00.000000+0000","event_type":"flow","src_ip":"10.30.0.2"}' \\
     '{"timestamp":"2026-10-12T18:00:01.000000+0000","in_iface":"wg5","event_type":"alert","src_ip":"10.30.0.2","src_port":40000,"dest_ip":"10.20.0.1","dest_port":80,"proto":"TCP","alert":{"action":"allowed","signature_id":1000001,"rev":1,"signature":"ARCANA test \\"quoted\\"","category":"","severity":2}}' >> "\$d/eve.json"
-sleep 300 & echo \$! > "\$4"
+sh -c 'trap "echo usr2 >> $(pwd)/suricata.log" USR2; while :; do sleep 1; done' & echo \$! > "\$4"
 exit 0
 EOS
-	chmod +x tools/squid tools/security_file_certgen tools/c-icap tools/suricata
+	# suricata-update: the ruleset written where -o says.
+	cat > tools/suricata-update <<EOS
+#!/bin/sh
+echo "suricata-update \$*" >> $(pwd)/suricata-update.log
+mkdir -p "\$6" && echo 'alert tcp any any -> any 22 (msg:"ET"; sid:2000001;)' > "\$6/suricata.rules"
+EOS
+	chmod +x tools/squid tools/security_file_certgen tools/c-icap tools/suricata tools/suricata-update
 	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"../x","fib":1,"conf":"router id 1.1.1.1;"}]}'
@@ -3147,13 +3159,17 @@ EOS
 	    '{"instances":[{"name":"sw1","interfaces":[],"conf":"x"}]}'
 	atf_check -s exit:1 -e match:'its interfaces are names' -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    '{"instances":[{"name":"sw1","interfaces":["wg5; rm"],"conf":"x"}]}'
-	atf_check -s exit:1 -e match:'suricata does not take it: Error: rule BROKEN' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	# Its reason, which Suricata says only where it logs: on the console
+	# for the check.
+	atf_check -s exit:1 -e match:'suricata does not take it: E: detect: rule BROKEN at line 1' -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    '{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"BROKEN"}]}'
-	ids='{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"default-log-dir: @LOGDIR@\nrule-files:\n  - @RULES@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
+	ids='{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"default-log-dir: @LOGDIR@\nrule-files:\n  - @RULES@\nclassification-file: @CLASSIFICATION@\nreference-config-file: @REFERENCE@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$ids"
-	atf_check -o match:'^suricata -T -c .*sdwan-ids-sw1.yaml$' \
+	atf_check -o match:'^suricata -T -c .*sdwan-ids-sw1.yaml --set logging.outputs.0.console.enabled=yes$' \
 	    -o match:'^suricata -c .*sdwan-ids-sw1.yaml --pidfile .*sdwan-ids-sw1.pid --pcap -D$' cat suricata.log
 	atf_check -o match:'^default-log-dir: .*sdwan-ids-sw1.d$' -o match:'^  - .*sdwan-ids-sw1.rules$' \
+	    -o match:'^classification-file: /usr/local/etc/suricata/classification.config' \
+	    -o match:'^reference-config-file: /usr/local/etc/suricata/reference.config' \
 	    cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	atf_check -o match:'sid:1000001' cat "$(dirname "$f")/sdwan-ids-sw1.rules"
 	sleep 2
@@ -3203,6 +3219,36 @@ EOS
 	atf_check -o match:'"ids":\[\{"name":"sec-lan"' "$JGC" -c "$SOCK" sdwan
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"group":"security","instances":[]}'
 	atf_check -o match:'"ids":\[\]' "$JGC" -c "$SOCK" sdwan
+	# The ruleset suricata-update keeps: not fetched yet, its line is
+	# left out and the instance runs on its own rules, saying so.
+	rs='{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"default-log-dir: @LOGDIR@\nrule-files:\n  - @RULES@\n  - @RULESET@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
+	atf_check -o match:'suricata sw1 on 1 interface, detects: started.*the ruleset is not fetched yet' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs"
+	atf_check -o not-match:'suricata.rules' cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+	atf_check -o not-match:'ids_ruleset' "$JGC" -c "$SOCK" sdwan
+	# Fetched by the suricata job: the instance applied again takes it,
+	# and is told to read its rules again; the read says when.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata update
+	atf_check -o match:"^suricata-update --no-test --no-reload --suricata .*/tools/suricata -o $(pwd)/rules\$" \
+	    cat suricata-update.log
+	atf_check -o match:"^  - $(pwd)/rules/suricata.rules\$" cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+	atf_check -o match:'"ids_ruleset":\{"path":"[^"]*/rules/suricata.rules","at":[0-9]+,"size":[0-9]+\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	sleep 2
+	atf_check -o match:'^usr2$' cat suricata.log
+	# A rule of the ruleset that negates a HOME_NET of any is left out,
+	# as Suricata does running; one of the instance's own is refused.
+	echo 'alert tcp !$HOME_NET any -> any 25 (msg:"NEGATED"; sid:2000002;)' > rules/suricata.rules
+	rs2=$(echo "$rs" | sed 's/sid:1000001;/sid:1000002;/')
+	atf_check -o match:'1 rule of the ruleset left out, as Suricata does when it runs: detect: Complete IP space negated' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs2"
+	# Interface any: FreeBSD's libpcap has none, so each interface up
+	# but the loopback, pflog, pfsync and enc.
+	rs3='{"instances":[{"name":"sw1","interfaces":["any"],"conf":"default-log-dir: @LOGDIR@\npcap:\n  - interface: any\nrule-files:\n  - @RULES@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$rs3"
+	atf_check -o not-match:'interface: any' -o not-match:'interface: lo[0-9]' \
+	    -o match:'^  - interface: [a-z]+[0-9]+$' cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
 }
 sdwan_cleanup()
 {
@@ -3417,7 +3463,8 @@ stop_body()
 	# first, and the log says what it is and what will not run.
 	start_daemon
 	pid=$(cat daemon.pid)
-	touch slow
+	# Under way until the test lets it end, however loaded the machine.
+	touch slow hold
 	"$JGC" -c "$SOCK" service sshd restart > change.out 2>&1 &
 	change=$!
 	# Once the change is under way, not at a guess of when.
@@ -3430,7 +3477,10 @@ stop_body()
 	    -o not-match:'Stopping' "$JGC" -c "$SOCK" jobs
 	atf_check -o ignore "$JGC" -q -c "$SOCK" start web
 	kill "$pid"
-	sleep 0.5
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Stopping' && break
+		sleep 0.1
+	done
 	atf_check -s exit:0 kill -0 "$pid"
 	atf_check -o match:'Under way: +service sshd restart' \
 	    -o match:'Stopping: +when what is under way ends' \
@@ -3438,6 +3488,7 @@ stop_body()
 	atf_check -o match:'a change is under way' \
 	    -o match:'under way: service sshd restart' \
 	    -o match:'queued, will not run: job 1: start web' cat daemon.out
+	rm hold
 	wait $change
 	atf_check -o match:'sshd' cat change.out
 	for i in $(seq 1 60); do
@@ -3452,7 +3503,7 @@ stop_body()
 	# Signalled twice, it does not wait.
 	start_daemon
 	pid=$(cat daemon.pid)
-	touch slow
+	touch slow hold
 	"$JGC" -c "$SOCK" service sshd restart > /dev/null 2>&1 &
 	# Under way before the signals, however loaded the machine is.
 	for i in $(seq 1 150); do
@@ -3469,6 +3520,7 @@ stop_body()
 	done
 	atf_check -s exit:1 -e ignore kill -0 "$pid"
 	atf_check -o match:'signalled again' cat daemon.out
+	rm hold
 	wait
 }
 stop_cleanup()
@@ -5432,6 +5484,15 @@ EOS
 	# missing (the rc.d script takes what is up when Snort starts).
 	atf_check -o match:'done' "$JGC" -c "$SOCK" snort set interface=any
 	atf_check -o match:'^arcana_snort_interfaces="any"$' cat rc.conf
+	# The rc.d script's: Snort 3 takes one -i an interface, a packet
+	# thread each (-i "a b" is one interface of that name); any is what
+	# is up but the loopback and the like.
+	sed -e 's|^\. /etc/rc.subr$|load_rc_config() { :; }; run_rc_command() { echo "$command_args"; }|' \
+	    local/rc.d/arcana_snort > snort-rc.sh
+	atf_check -o match:' -i lo0 -i nosuch0 -z 2$' \
+	    env arcana_snort_interfaces="lo0 nosuch0" sh snort-rc.sh start
+	atf_check -o not-match:' -i lo[0-9]' -o match:' -i [a-z]+[0-9]+.* -z [0-9]+$' \
+	    env arcana_snort_interfaces=any sh snort-rc.sh start
 	atf_check -o not-match:'no interface' "$JGC" -c "$SOCK" snort
 	atf_check -s exit:1 -e match:'any stands alone' -o ignore \
 	    "$JGC" -c "$SOCK" snort set interface=any interface=lo0
@@ -8075,7 +8136,8 @@ cmd=\$1; shift
 case "\$cmd" in
 jail|ports)
 	verb=\$1; shift
-	while getopts yj:p:v:a:m:B:U:M: o; do
+	opts=yj:p:v:a:m:B:U:M:; [ \$cmd = jail ] && opts=yj:v:a:m:K:bB
+	while getopts \$opts o; do
 		case \$o in j|p) n=\$OPTARG;; v) v=\$OPTARG;; a) a=\$OPTARG;; m) m=\$OPTARG;; B) br=\$OPTARG;; esac
 	done
 	k=jails; [ \$cmd = ports ] && k=ports
@@ -8304,6 +8366,29 @@ EOF
 	    "$JGC" -c "$SOCK" poudriere bulk jail=j set=a-b origin=net/bird3
 	atf_check -s exit:1 -e match:"a jail's name" -o ignore \
 	    "$JGC" -c "$SOCK" poudriere jail-create name=a.b version=15.0-RELEASE
+	# -K, -b, -B and -m as poudriere-jail(8) has them: -b for a src=
+	# tree, -B for what is built here, a method's path absolute.
+	atf_check -s exit:1 -e match:'build is for method src=' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=j version=15.0-RELEASE build=yes
+	atf_check -s exit:1 -e match:'pkgbase-set is built from source' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=j version=15.0-RELEASE \
+	    method=src=/usr/src pkgbase-set=yes
+	atf_check -s exit:1 -e match:'a method is http' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=j version=15.0-RELEASE method=src=usr/src
+	atf_check -s exit:1 -e match:'a method is http' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=j version=15.0-RELEASE method=rsync
+	atf_check -s exit:1 -e match:"a kernel's name" -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=j version=15.0-RELEASE kernel=a/b
+	atf_check -o match:'done +poudriere jail-create src15' \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=src15 version=15.0-STABLE \
+	    method=src=/usr/src kernel=GENERIC build=yes pkgbase-set=yes
+	atf_check -o match:'"argv":\["[^"]*fake-poudriere","jail","-c","-j","src15","-v","15.0-STABLE","-m","src=/usr/src","-K","GENERIC","-b","-B"\]' \
+	    "$JGC" -c "$SOCK" poudriere
+	atf_check -o match:'done +poudriere jail-create git15' \
+	    "$JGC" -c "$SOCK" poudriere jail-create name=git15 version=15.0-STABLE \
+	    method=git+https kernel= pkgbase-set=yes
+	atf_check -o match:'"argv":\["[^"]*fake-poudriere","jail","-c","-j","git15","-v","15.0-STABLE","-m","git\+https","-K","","-B"\]' \
+	    "$JGC" -c "$SOCK" poudriere
 	atf_check -s exit:1 -e match:'key=value' -o ignore \
 	    "$JGC" -c "$SOCK" poudriere bulk net/bird3
 	atf_check -s exit:1 -e match:"the host's" -o ignore \
@@ -8316,6 +8401,10 @@ EOF
 	    "$JGC" -c "$SOCK" poudriere jail-delete name=FreeBSD:16:amd64
 	atf_check -o match:'^poudriere jail -d -y -j FreeBSD:16:amd64$' \
 	    cat poudriere.log
+	for j in src15 git15; do
+		atf_check -o match:"done +poudriere jail-delete $j\$" \
+		    "$JGC" -c "$SOCK" poudriere jail-delete name=$j
+	done
 	atf_check -o match:'"jails":\[\]' "$JGC" -c "$SOCK" poudriere
 	atf_check -s exit:1 -o match:'failed +poudriere ports-delete nosuch: .*No such ports nosuch' \
 	    -e ignore "$JGC" -c "$SOCK" poudriere ports-delete name=nosuch

@@ -109,6 +109,24 @@ add(const char *id, const char *name, const char *uri, const char *peer,
 	pthread_mutex_unlock(&table_lock);
 }
 
+/* servers.json, written by another node of the cluster: read again. */
+void
+servers_reload(void)
+{
+	int	i;
+
+	pthread_mutex_lock(&table_lock);
+	for (i = 0; i < nservers; i++) {
+		kore_free(servers[i].name);
+		kore_free(servers[i].uri);
+		kore_free(servers[i].peer_name);
+		kore_free(servers[i].tenant);
+	}
+	nservers = 0;
+	pthread_mutex_unlock(&table_lock);
+	servers_init();
+}
+
 void
 servers_init(void)
 {

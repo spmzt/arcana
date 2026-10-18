@@ -70,6 +70,9 @@ static const char *const snort_verb[] = {
 static const char *const clamav_verb[] = {
 	"mirrors",
 };
+static const char *const suricata_verb[] = {
+	"update",
+};
 
 /*
  * Change c made job-spec sp, its arrays a's.  0, or EINVAL: no kind,
@@ -721,6 +724,17 @@ yjobs_spec(const struct arcana_jobs_submit_input_change *in,
 		sp->names.n = c->args.n;
 		sp->names.v = c->args.v;
 		sp->text = c->text;
+		return (0);
+	}
+	case ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SURICATA: {
+		const struct arcana_jobs_submit_input_change_suricata *c =
+		    in->suricata;
+
+		if (c == NULL)
+			return (EINVAL);
+		sp->kind = ARC_JOB_KIND_SURICATA;
+		if (c->has_verb)
+			sp->verb = suricata_verb[c->verb];
 		return (0);
 	}
 	default:

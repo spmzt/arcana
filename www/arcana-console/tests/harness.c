@@ -1233,12 +1233,28 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 void
 restart_console(void)
 {
+
+	console_stop();
+	console_start();
+}
+
+/* The console alone stopped, the rest left as it is. */
+void
+console_stop(void)
+{
+
+	terminate("kore.pid");
+	(void)unlink("k.sock");
+}
+
+/* And started again, on ./k.sock. */
+void
+console_start(void)
+{
 	char	*argv[7];
 	FILE	*fp;
 	pid_t	 pid;
 
-	terminate("kore.pid");
-	(void)unlink("k.sock");
 	argv[0] = kore_path;
 	argv[1] = (char *)(uintptr_t)"-f";
 	argv[2] = (char *)(uintptr_t)"-n";

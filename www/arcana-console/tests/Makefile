@@ -3,12 +3,14 @@
 TESTSDIR=	${TESTSBASE}/arcana/console
 ATF_TESTS_C=	console_test \
 		pwa_test \
+		raft_test \
 		webpush_test \
 		yaml_test
 
 SRCS.console_test=	console_test.c harness.c
 SRCS.pwa_test=		pwa_test.c harness.c
 SRCS.webpush_test=	webpush_test.c webpush.c
+SRCS.raft_test=		raft_test.c craft.c
 # The panel's YAML, natively: base's libucl and libyaml.
 SRCS.yaml_test=		yaml_test.c yaml.c
 CFLAGS.yaml_test.c+=	-DDISTDIR='"${.OBJDIR}/../../arcana-ui/dist"'

@@ -710,6 +710,32 @@ part_shell(void)
 	    "select[name=console]') !== null && document.querySelector('.modal "
 	    "select[name=all]') !== null", 5);
 	run("document.querySelector('.modal button[data-act=close]').click()");
+	/* Groups: none yet, then one made with the form, a role and a
+	 * member ticked; the member's row says the group. */
+	run("document.querySelector('button[data-act=aaa-tab][data-arg=groups]')"
+	    ".click()");
+	wait_js("document.querySelector('.empty button[data-act=group-add]')",
+	    5);
+	run("document.querySelector('button[data-act=group-add]').click()");
+	wait_js("document.querySelector('.modal form[data-form=ugroup] "
+	    "input[name=r_operator]') !== null && document.querySelector("
+	    "'.modal input[name=m_admin]') !== null", 5);
+	run("const f = document.querySelector('.modal form[data-form=ugroup]'); "
+	    "f.querySelector('input[name=name]').value = 'noc'; "
+	    "f.querySelector('input[name=description]').value = 'the night "
+	    "shift'; f.querySelector('input[name=r_operator]').checked = true; "
+	    "f.querySelector('input[name=m_admin]').checked = true; "
+	    "f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('table.ugroups tbody tr')].some("
+	    "tr => tr.textContent.includes('noc') && tr.textContent.includes("
+	    "'operator') && tr.textContent.includes('admin') && tr.textContent."
+	    "includes('the night shift'))", 10);
+	shot("0b4-groups");
+	run("document.querySelector('button[data-act=aaa-tab][data-arg=users]')"
+	    ".click()");
+	wait_js("[...document.querySelectorAll('table.users tbody tr')].some("
+	    "tr => tr.textContent.includes('admin') && tr.querySelector("
+	    "'.chip.grp')?.textContent === 'noc group')", 10);
 	shot("0b4-users");
 	/* A read API token: made with a name in the settings, its value
 	 * shown once, listed, and deleted once confirmed. */
@@ -775,6 +801,13 @@ part_shell(void)
 	    "'form[data-form=add-key]') && !document.querySelector("
 	    "'.set-body .notice.bad')", 20);
 	shot("0b3-keys-token");
+	/* Settings' other tabs: the token's limit said once, no refusal of
+	 * what was not asked for; Cluster says this console is not one. */
+	run("document.querySelector('button[data-act=set-tab][data-arg="
+	    "cluster]').click()");
+	wait_js("document.querySelector('.set-body')?.textContent.includes("
+	    "'not one of a cluster') && !document.querySelector("
+	    "'.set-body .notice.bad')", 20);
 	run("document.querySelector('button[data-act=logout]').click()");
 	click_when("button[data-act=login]", 10);
 	wait_js("document.querySelector('.shell')", 20);

@@ -77,13 +77,16 @@ ips)
 	command_args="${command_args} -Q --daq divert --daq-var port=${arcana_snort_divert_port}"
 	;;
 *)
-	# A packet thread for each; $1 is rc's command, not set here.
+	# A packet thread for each, an -i each: Snort 3 takes one -i
+	# "a b" as one interface of that name.  $1 is rc's command, not
+	# set here.
 	_n=0
 	for _i in ${arcana_snort_interfaces}; do
 		_n=$((_n + 1))
+		command_args="${command_args} -i ${_i}"
 	done
 	if [ ${_n} -gt 0 ]; then
-		command_args="${command_args} -i \"${arcana_snort_interfaces}\" -z ${_n}"
+		command_args="${command_args} -z ${_n}"
 	fi
 	;;
 esac

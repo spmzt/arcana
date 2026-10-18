@@ -693,8 +693,8 @@ api_stream(struct http_request *req)
 
 	if (!guard(req, false))
 		return (KORE_RESULT_OK);
-	if (!http_request_header(req, "origin", &v) || strcmp(v, cfg.origin) !=
-	    0)
+	if (!http_request_header(req, "origin", &v) || (strcmp(v,
+	    cfg.origin) != 0 && !cluster_origin(v)))
 		return (reply_error(req, 403, "csrf", "not from the console's "
 		    "own page"));
 	/* Whose socket: the user's name stays with the connection. */

@@ -116,6 +116,49 @@ removing it:
 If the user prefers B, step 1 is still the right first move: it makes
 one writer, and the database then only replaces the leader's disk.
 
+## Decided 2026-10-18: C, and its shape
+
+The user chose C. One change to the two steps above: a leader that
+alone holds the stores gives no availability, since nothing can take
+over when it stops. Every store is a whole document (`store_save` writes
+the file whole), so the stores replicate without a log of operations:
+
+- **Membership.** Each node is named in `cluster { node … }` of web.conf
+  with its cblink URI; three nodes at least, or two and a witness. Nodes
+  talk over a family of their own, `arcana-cluster` (its own IDL,
+  `share/arcana/cluster.yaml`), on a listener of each console's, with
+  mutual TLS by certificates of the console's CA that say
+  `URI:urn:arcana:role:console` and serve as well as dial.
+- **Terms and votes.** A node that hears no leader for an election
+  timeout asks the others for their votes for the next term; a node
+  votes once a term, and only for a candidate whose stores are as new
+  as its own (the highest version it holds). A majority makes a leader,
+  which says so to the others every heartbeat.
+- **Versioned documents.** The leader numbers every write
+  `(term, seq)`. A follower's `store_save` is sent to the leader, which
+  numbers it, writes it, sends it to every follower and answers once a
+  majority holds it. Every node reads its own copy: reads stay local,
+  active/active. A node behind (restarted, cut off) is sent what is
+  newer than its versions when the leader next hears it.
+- **Locks.** The read-change-write stores (labels, templates, prefix
+  lists, users' sign-ins) take their lock from the leader, so that two
+  nodes do not each write their own change over the other's.
+- **Caches.** What a subsystem keeps in memory (keys, sessions, users,
+  servers, push subscriptions) is read again when a replicated write of
+  its store lands.
+- **What runs once.** The workflow scheduler, the SD-WAN manager loop
+  and the mail watcher run on the leader alone, started when a node
+  becomes one and stopped when it is not.
+- **Sessions** become a document each (`sessions/<hash>`), so that two
+  nodes signing people in never write over each other's.
+- **The browser.** Each node keeps its own origin; the WebAuthn RP ID
+  is a name the nodes share (`console.example` for
+  `a.console.example`, `b.console.example`), and the origin check takes
+  the list of the nodes' origins.
+
+A write needs a majority; a node cut off from it still reads, and
+refuses changes, saying the cluster has no majority here.
+
 ## What the user decides
 
 - A, B or C (C recommended).
@@ -126,3 +169,41 @@ one writer, and the database then only replaces the leader's disk.
   node its own certificate name) or through CARP's one address, which
   makes the cluster active/passive at the door and active/active
   behind it.
+
+## Built (console 0.215.0)
+
+- `craft.c`: Raft as a state machine without I/O, with a simulation test
+  (`tests/raft_test.c`) of three and five nodes through drops, delays,
+  duplicates, partitions, crashes and compaction; two of Raft's rules
+  broken by hand are caught by it.  A node with an empty log never
+  stands: the seed alone leads first.
+- `nodes.c`: the I/O.  web.conf's `cluster` block; the arcana-cluster
+  family (`share/arcana/cluster.yaml`) on a listener of the node's own;
+  a thread a peer; the term, the vote and the log in `cluster/`,
+  fsync'ed before anything is said; committed writes applied with
+  `store_write()`; the documents sent whole (snapshot) to a node too far
+  behind.  `store_save()` goes through `cluster_save()`; a follower's
+  write is forwarded to the leader, which answers once it is committed.
+- The scheduler, the SD-WAN manager and mail run on the leader alone.
+- What the worker keeps of credentials, sessions, users, servers and
+  push subscriptions is read again when another node's write lands.
+- Every node's origin is taken by the WebAuthn, CSRF and stream checks.
+- Settings › Cluster, `GET /api/cluster`; console_test:cluster runs
+  three consoles over unix sockets.
+- The read-change-write stores (labels, templates, prefix lists) take
+  the leader's lock besides their flock(2), and wait to have written
+  every write the leader had committed when it gave the lock before
+  they read (console 0.216.2): two nodes labelling at once lose
+  nothing, where without it half the labels were written over.
+- Each session is a document of its own, `sessions/<hash>.json`
+  (console 0.216.2): a sign-in, an end, a time of use each its own
+  write, so sign-ins on two nodes at once are both kept and an end is
+  not undone by another node.
+
+## Not yet
+
+- Files written besides `store_save()`: `vapid.pem` (push), the audit
+  chain, `arcana-source.json`, the CA's next state.  The audit chain
+  wants appends through the log.
+- Membership changes: the nodes are web.conf's; adding one is a restart
+  of each with the new block.

@@ -113,7 +113,7 @@ config_load(const char *path)
 	cfg.local_agent = get(top, "local_agent", ARCW_LOCAL_AGENT);
 	if (cfg.local_agent != NULL && cfg.local_agent[0] == '\0')
 		cfg.local_agent = NULL;
-	if (android_load(top, path) == -1) {
+	if (cluster_config(top, path) == -1 || android_load(top, path) == -1) {
 		ucl_object_unref(top);
 		return (-1);
 	}

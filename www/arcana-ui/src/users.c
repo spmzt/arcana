@@ -22,7 +22,7 @@
 #include "app.h"
 
 static struct {
-	ucl_object_t	*all;		/* {"users": [...], "roles": [...]} */
+	ucl_object_t	*all;		/* {"users", "roles", "groups"} */
 	bool		 loading;
 	char		 edit[72];	/* the user or role edited, "" a new one */
 	char		 invite_user[72];
@@ -35,6 +35,7 @@ static const struct {
 } aaatabs[] = {
 	{ AAA_USERS, "users", "Users" },
 	{ AAA_ROLES, "roles", "Roles" },
+	{ AAA_GROUPS, "groups", "Groups" },
 	{ AAA_KEYS, "keys", "Sign-in keys" },
 	{ AAA_LDAP, "ldap", "Directory (LDAP)" },
 	{ AAA_TOKENS, "tokens", "API tokens" },
@@ -164,8 +165,9 @@ set_users(struct html *h)
 	int			 n;
 
 	h_raw(h, "<p class=\"dim\">Who signs in. Each user has roles (the next "
-	    "sub-tab), which together say what they may do on the console and "
-	    "on which hosts, and may belong to a <b>tenant</b>, a fleet of its "
+	    "sub-tab), their own and those of the groups they are in, which "
+	    "together say what they may do on the console and on which hosts, "
+	    "and may belong to a <b>tenant</b>, a fleet of its "
 	    "own: they then see that fleet's hosts alone. A user's first key is "
 	    "registered with an invitation, a one-time link.</p>");
 	if (us.invite[0] != '\0') {
@@ -179,8 +181,8 @@ set_users(struct html *h)
 		h_raw(h, "</pre><button type=\"button\" class=\"small ghost\" "
 		    "data-act=\"user-invite-done\">Done, I have it</button></div>");
 	}
-	h_raw(h, "<table class=\"net users\"><thead><tr><th>User</th><th>Roles"
-	    "</th><th>On the console</th><th>Tenant</th><th>Keys</th><th></th>"
+	h_raw(h, "<table class=\"net users\"><thead><tr><th>User</th><th>Roles "
+	    "and groups</th><th>On the console</th><th>Tenant</th><th>Keys</th><th></th>"
 	    "</tr></thead><tbody>");
 	n = 0;
 	it = NULL;
@@ -206,6 +208,14 @@ set_users(struct html *h)
 			h_raw(h, "<span class=\"chip\">");
 			h_txt(h, ucl_object_tostring_forced(r));
 			h_raw(h, "</span> ");
+		}
+		rit = NULL;
+		while ((r = ucl_object_iterate(jget(u, "groups"), &rit, true)) !=
+		    NULL) {
+			h_raw(h, "<span class=\"chip grp\" title=\"A group: its "
+			    "roles are theirs\">");
+			h_txt(h, ucl_object_tostring_forced(r));
+			h_raw(h, " <em class=\"dim\">group</em></span> ");
 		}
 		h_raw(h, "</td><td>");
 		h_txt(h, jstr(u, "console") != NULL ? jstr(u, "console") : "none");
@@ -308,6 +318,119 @@ set_roles(struct html *h)
 	    "the roles you gave it.</p>");
 }
 
+static const struct tcol gcols[] = {
+	{ "Group", "name", false }, { "Roles", NULL, false },
+	{ "Members", NULL, false }, { "Description", "description", false },
+	{ "", NULL, false },
+};
+
+/* The groups: users given roles together. */
+static void
+set_groups(struct html *h)
+{
+	const ucl_object_t	**rows, *g, *e;
+	ucl_object_iter_t	  it;
+	int			  r, n;
+
+	h_raw(h, "<p class=\"dim\">Users given roles together: a user may do "
+	    "what their own roles allow and what their groups' do. A group's "
+	    "roles changed are its members' at once; a user taken out of it, "
+	    "or the group taken away, has their own roles alone again. The "
+	    "console keeps an owner: a change that would leave none is "
+	    "refused.</p>");
+	n = us.all != NULL ? (int)ucl_array_size(jget(us.all, "groups")) : 0;
+	if (n == 0) {
+		h_raw(h, "<div class=\"empty\"><p>No group yet.</p><p class=\""
+		    "dim\">A group of the NOC's operators, say: the roles they "
+		    "share, given once, and the users in it.</p><button type=\""
+		    "button\" class=\"primary\" data-act=\"group-add\">Add a "
+		    "group</button></div>");
+		return;
+	}
+	h_raw(h, "<div class=\"toolbar\"><input class=\"filter\" id=\"filter\" "
+	    "data-input=\"filter\" placeholder=\"Filter\" autocomplete=\"off\" "
+	    "spellcheck=\"false\"");
+	h_attr(h, "value", app.filter);
+	h_raw(h, "><button type=\"button\" class=\"primary\" data-act=\""
+	    "group-add\">Add a group</button></div><table class=\"net "
+	    "ugroups\">");
+	tbl_head(h, "ugroups", gcols, 5, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("ugroups", jget(us.all, "groups"), gcols, 5, app.filter);
+	for (r = 0; (g = rows[r]) != NULL; r++) {
+		h_raw(h, "<tr><td><b>");
+		h_txt(h, jstr(g, "name"));
+		h_raw(h, "</b></td><td>");
+		it = NULL;
+		while ((e = ucl_object_iterate(jget(g, "roles"), &it, true)) !=
+		    NULL) {
+			h_raw(h, "<span class=\"chip\">");
+			h_txt(h, ucl_object_tostring_forced(e));
+			h_raw(h, "</span> ");
+		}
+		h_raw(h, "</td><td>");
+		it = NULL;
+		while ((e = ucl_object_iterate(jget(g, "members"), &it, true)) !=
+		    NULL) {
+			h_txt(h, ucl_object_tostring_forced(e));
+			h_raw(h, " ");
+		}
+		if (ucl_array_size(jget(g, "members")) == 0)
+			h_raw(h, "<span class=\"dim\">nobody yet</span>");
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(g, "description") != NULL ? jstr(g, "description") :
+		    "");
+		h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" "
+		    "data-act=\"group-edit\" title=\"Change its roles or members\"");
+		h_attr(h, "data-arg", jstr(g, "name"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "group-del\" title=\"Take the group away: its members keep "
+		    "their own roles\"");
+		h_attr(h, "data-arg", jstr(g, "name"));
+		h_raw(h, ">×</button></td></tr>");
+	}
+	free(rows);
+	h_raw(h, "</tbody></table>");
+}
+
+/* Checkboxes of a list (roles or users), name=<pfx><item>, those in have
+ * ticked. */
+static void
+checks(struct html *h, const char *legend, const char *list,
+    const char *pfx, const ucl_object_t *have, const char *em)
+{
+	const ucl_object_t	*r, *e;
+	ucl_object_iter_t	 it, rit;
+	bool			 on;
+
+	h_raw(h, "<fieldset class=\"toggles roles\"><legend>");
+	h_txt(h, legend);
+	h_raw(h, "</legend>");
+	it = NULL;
+	while (us.all != NULL && (r = ucl_object_iterate(jget(us.all, list),
+	    &it, true)) != NULL) {
+		on = false;
+		rit = NULL;
+		while (!on && (e = ucl_object_iterate(have, &rit, true)) != NULL)
+			on = strcmp(ucl_object_tostring_forced(e), jstr(r,
+			    "name")) == 0;
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+		    "name=\"%s", pfx);
+		h_txt(h, jstr(r, "name"));
+		h_fmt(h, "\"%s><span>", on ? " checked" : "");
+		h_txt(h, jstr(r, "name"));
+		if (em != NULL) {
+			h_raw(h, " <em>");
+			h_txt(h, jstr(r, em) != NULL ? jstr(r, em) : "member");
+			h_raw(h, "</em>");
+		}
+		h_raw(h, "</span></label>");
+	}
+	if (us.all == NULL || ucl_array_size(jget(us.all, list)) == 0)
+		h_raw(h, "<p class=\"dim\">None yet.</p>");
+	h_raw(h, "</fieldset>");
+}
+
 /* Settings, AAA: the sub-tabs. */
 void
 set_aaa(struct html *h)
@@ -315,7 +438,7 @@ set_aaa(struct html *h)
 	size_t	i;
 
 	if (us.all == NULL && !us.loading && (app.aaatab == AAA_USERS ||
-	    app.aaatab == AAA_ROLES))
+	    app.aaatab == AAA_ROLES || app.aaatab == AAA_GROUPS))
 		users_load();
 	h_raw(h, "<nav class=\"tabs sub\">");
 	for (i = 0; i < sizeof(aaatabs) / sizeof(aaatabs[0]); i++)
@@ -326,6 +449,9 @@ set_aaa(struct html *h)
 	switch (app.aaatab) {
 	case AAA_ROLES:
 		set_roles(h);
+		break;
+	case AAA_GROUPS:
+		set_groups(h);
 		break;
 	case AAA_KEYS:
 		set_keys(h);
@@ -394,6 +520,36 @@ user_modal(struct html *h)
 			h_raw(h, "</em></span></label>");
 		}
 		h_raw(h, "</fieldset>");
+		if (us.all != NULL && ucl_array_size(jget(us.all, "groups")) > 0)
+			checks(h, "Groups", "groups", "g_", jget(u, "groups"),
+			    NULL);
+		return (true);
+	}
+	if (app.modal == MODAL_UGROUP) {
+		const ucl_object_t	*g;
+		ucl_object_t		*members;
+
+		g = us.edit[0] != '\0' ? find_in("groups", us.edit) : NULL;
+		h_fmt(h, "<form data-form=\"ugroup\"><h2>%s</h2><p>The roles it "
+		    "gives, and the users in it.</p><input type=\"hidden\" "
+		    "name=\"was\"", g != NULL ? "A group, changed" : "A group");
+		h_attr(h, "value", us.edit);
+		h_raw(h, "><div class=\"two\"><label>Name<input name=\"name\" "
+		    "required maxlength=\"64\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"noc\"");
+		h_attr(h, "value", jstr(g, "name") != NULL ? jstr(g, "name") :
+		    "");
+		if (g != NULL)
+			h_raw(h, " readonly");
+		h_raw(h, "></label><label>Description<input name=\"description\" "
+		    "maxlength=\"200\" placeholder=\"the night shift\"");
+		h_attr(h, "value", jstr(g, "description") != NULL ? jstr(g,
+		    "description") : "");
+		h_raw(h, "></label></div>");
+		checks(h, "Roles it gives", "roles", "r_", jget(g, "roles"),
+		    "console");
+		members = (ucl_object_t *)(uintptr_t)jget(g, "members");
+		checks(h, "Members", "users", "m_", members, NULL);
 		return (true);
 	}
 	if (app.modal != MODAL_ROLE)
@@ -465,19 +621,21 @@ user_modal(struct html *h)
 bool
 user_form(const char *form, const ucl_object_t *f)
 {
-	ucl_object_t		*b, *hosts, *roles;
+	ucl_object_t		*b, *hosts, *roles, *groups;
 	const ucl_object_t	*v;
 	ucl_object_iter_t	 it;
 	unsigned char		*json;
 	char			 url[200];
 	const char		*name;
 
-	if (strcmp(form, "user") != 0 && strcmp(form, "role") != 0)
+	if (strcmp(form, "user") != 0 && strcmp(form, "role") != 0 &&
+	    strcmp(form, "ugroup") != 0)
 		return (false);
 	name = jstr(f, "name") != NULL ? jstr(f, "name") : "";
 	if (name[0] == '\0') {
 		snprintf(app.modal_error, sizeof(app.modal_error), "%s has a "
-		    "name", strcmp(form, "user") == 0 ? "A user" : "A role");
+		    "name", strcmp(form, "user") == 0 ? "A user" : strcmp(form,
+		    "role") == 0 ? "A role" : "A group");
 		return (true);
 	}
 	b = ucl_object_typed_new(UCL_OBJECT);
@@ -491,15 +649,44 @@ user_form(const char *form, const ucl_object_t *f)
 			    ucl_object_key(v)))
 				ucl_array_append(roles, ucl_object_fromstring(
 				    ucl_object_key(v) + 2));
-		if (ucl_array_size(roles) == 0) {
+		groups = ucl_object_typed_new(UCL_ARRAY);
+		it = NULL;
+		while ((v = ucl_object_iterate(f, &it, true)) != NULL)
+			if (strncmp(ucl_object_key(v), "g_", 2) == 0 && jbool(f,
+			    ucl_object_key(v)))
+				ucl_array_append(groups, ucl_object_fromstring(
+				    ucl_object_key(v) + 2));
+		if (ucl_array_size(roles) == 0 && ucl_array_size(groups) == 0) {
 			ucl_object_unref(roles);
+			ucl_object_unref(groups);
 			ucl_object_unref(b);
 			snprintf(app.modal_error, sizeof(app.modal_error), "A user "
-			    "has a role, one at least");
+			    "has a role, or is in a group, one at least");
 			return (true);
 		}
 		ucl_object_insert_key(b, roles, "roles", 0, false);
+		ucl_object_insert_key(b, groups, "groups", 0, false);
 		snprintf(url, sizeof(url), "/api/users/%s", name);
+	} else if (strcmp(form, "ugroup") == 0) {
+		roles = ucl_object_typed_new(UCL_ARRAY);
+		groups = ucl_object_typed_new(UCL_ARRAY);
+		it = NULL;
+		while ((v = ucl_object_iterate(f, &it, true)) != NULL) {
+			if (!jbool(f, ucl_object_key(v)))
+				continue;
+			if (strncmp(ucl_object_key(v), "r_", 2) == 0)
+				ucl_array_append(roles, ucl_object_fromstring(
+				    ucl_object_key(v) + 2));
+			else if (strncmp(ucl_object_key(v), "m_", 2) == 0)
+				ucl_array_append(groups, ucl_object_fromstring(
+				    ucl_object_key(v) + 2));
+		}
+		ucl_object_insert_key(b, roles, "roles", 0, false);
+		ucl_object_insert_key(b, groups, "members", 0, false);
+		ucl_object_insert_key(b, ucl_object_fromstring(jstr(f,
+		    "description") != NULL ? jstr(f, "description") : ""),
+		    "description", 0, false);
+		snprintf(url, sizeof(url), "/api/groups/%s", name);
 	} else {
 		ucl_object_insert_key(b, ucl_object_fromstring(jstr(f, "console")
 		    != NULL ? jstr(f, "console") : "member"), "console", 0, false);
@@ -535,11 +722,12 @@ user_action(const char *act, const char *arg)
 	char	url[200], body[300];
 
 	if (strcmp(act, "user-add") == 0 || strcmp(act, "user-edit") == 0 ||
-	    strcmp(act, "role-add") == 0 || strcmp(act, "role-edit") == 0) {
+	    strcmp(act, "role-add") == 0 || strcmp(act, "role-edit") == 0 ||
+	    strcmp(act, "group-add") == 0 || strcmp(act, "group-edit") == 0) {
 		snprintf(us.edit, sizeof(us.edit), "%s", strstr(act, "-edit") !=
 		    NULL && arg != NULL ? arg : "");
 		app.modal = strncmp(act, "user-", 5) == 0 ? MODAL_USER :
-		    MODAL_ROLE;
+		    strncmp(act, "role-", 5) == 0 ? MODAL_ROLE : MODAL_UGROUP;
 		app.modal_error[0] = '\0';
 		return (true);
 	}
@@ -553,6 +741,22 @@ user_action(const char *act, const char *arg)
 	if (strcmp(act, "user-invite-done") == 0) {
 		us.invite[0] = '\0';
 		us.invite_user[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "group-del") == 0) {
+		if (arg == NULL)
+			return (true);
+		snprintf(body, sizeof(body), "The group %s goes; its members keep "
+		    "their own roles and their other groups'.", arg);
+		confirm("Take the group away", body, "Take away", true, "",
+		    "do-group-del", arg, "");
+		return (true);
+	}
+	if (strcmp(act, "do-group-del") == 0) {
+		if (arg == NULL)
+			return (true);
+		snprintf(url, sizeof(url), "/api/groups/%s", arg);
+		api("DELETE", url, NULL, saved_cb, NULL);
 		return (true);
 	}
 	if (strcmp(act, "user-del") == 0 || strcmp(act, "role-del") == 0) {

@@ -253,7 +253,17 @@ ATF_TC_BODY(unauthenticated, tc)
 {
 	struct resp	r;
 
+	/* A write cut short by a stop, its temporary left: taken away at
+	 * start, and what only looks like one kept. */
+	ATF_REQUIRE(mkdir("data", 0700) == 0);
+	put("data/sdwan-state.json", "{}");
+	put("data/sdwan-state.json.AbC123", "{}");
+	put("data/sdwan-state.json.backup", "{}");
+	put("data/gone.json.Xy12zz", "{}");
 	start(tc, 0, NULL);
+	ATF_CHECK(access("data/sdwan-state.json.AbC123", F_OK) == -1);
+	ATF_CHECK(access("data/sdwan-state.json.backup", F_OK) == 0);
+	ATF_CHECK(access("data/gone.json.Xy12zz", F_OK) == 0);
 	http("GET", "/api/health", NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
@@ -668,6 +678,16 @@ ATF_TC_BODY(users, tc)
 	http("DELETE", path, NULL, &r);
 	EXPECT(&r, 403);
 	resp_free(&r);
+	/* What changes a host or the console by POST is a change, whatever
+	 * the route reads: refused to a viewer. */
+	snprintf(path, sizeof(path), "/api/servers/%s/transport/switch", ha);
+	http("POST", path, "{\"to\":\"sctp\"}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/bird/config", ha);
+	http("POST", path, "{\"text\":\"router id 10.0.0.1;\"}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
 	/* The console's own, and the fleet's tools, not a member's; the
 	 * prefix lists read. */
 	http("GET", "/api/settings", NULL, &r);
@@ -754,6 +774,51 @@ ATF_TC_BODY(users, tc)
 	resp_free(&r);
 	http("DELETE", "/api/users/admin", NULL, &r);
 	EXPECT(&r, 409);
+	resp_free(&r);
+	/* Groups: users given roles together; a user may do what its own
+	 * roles and its groups' allow. */
+	http("PUT", "/api/groups/ops", "{\"roles\":[\"operator\"],"
+	    "\"members\":[\"bob\"]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("ops", jstr(&r, "groups.0.name"));
+	ATF_CHECK_STREQ("bob", jstr(&r, "groups.0.members.0"));
+	ATF_CHECK_STREQ("operator", jstr(&r, "users.1.console"));
+	ATF_CHECK_STREQ("ops", jstr(&r, "users.1.groups.0"));
+	resp_free(&r);
+	http("PUT", "/api/groups/bad", "{\"roles\":[\"nosuch\"]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("PUT", "/api/groups/bad", "{\"roles\":[],\"members\":"
+	    "[\"nobody\"]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* A role a group gives stays while it does. */
+	http("DELETE", "/api/roles/operator", NULL, &r);
+	EXPECT(&r, 409);
+	ATF_CHECK(strstr(r.body, "group") != NULL);
+	resp_free(&r);
+	/* A user of a group alone; a user of neither is not one. */
+	http("PUT", "/api/users/carl", "{\"groups\":[\"ops\"]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("operator", jstr(&r, "users.2.console"));
+	resp_free(&r);
+	http("PUT", "/api/users/dave", "{}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("PUT", "/api/users/dave", "{\"groups\":[\"nosuch\"]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* Gone, its members out of it: what they may do is their own
+	 * roles' again. */
+	http("DELETE", "/api/groups/ops", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "groups.0.name") == NULL);
+	ATF_CHECK_STREQ("member", jstr(&r, "users.1.console"));
+	ATF_CHECK(jstr(&r, "users.1.groups.0") == NULL);
+	ATF_CHECK_STREQ("none", jstr(&r, "users.2.console"));
+	resp_free(&r);
+	http("DELETE", "/api/users/carl", NULL, &r);
+	EXPECT(&r, 200);
 	resp_free(&r);
 	http("DELETE", "/api/users/bob", NULL, &r);
 	EXPECT(&r, 200);
@@ -1180,13 +1245,16 @@ ATF_TC_BODY(session_restart, tc)
 	http("GET", "/api/servers", NULL, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	/* What is kept is the cookie's hash, for its user alone. */
-	ATF_REQUIRE((fp = fopen("data/sessions.json", "r")) != NULL);
+	/* What is kept is the cookie's hash, for its user alone: a
+	 * document a session. */
+	ATF_CHECK(system("test \"$(ls data/sessions | wc -l)\" -eq 1") == 0);
+	ATF_REQUIRE((fp = popen("cat data/sessions/*.json", "r")) != NULL);
+	memset(buf, 0, sizeof(buf));
 	ATF_REQUIRE(fread(buf, 1, sizeof(buf) - 1, fp) > 0);
-	fclose(fp);
+	pclose(fp);
 	ATF_CHECK(strstr(buf, "\"hash\"") != NULL);
 	ATF_CHECK(strstr(buf, cookie + 12) == NULL);
-	ATF_CHECK(system("test \"$(stat -f %Lp data/sessions.json)\" = 600")
+	ATF_CHECK(system("test \"$(stat -f %Lp data/sessions/*.json)\" = 600")
 	    == 0);
 
 	restart_console();
@@ -1201,6 +1269,7 @@ ATF_TC_BODY(session_restart, tc)
 	EXPECT(&r, 200);
 	resp_free(&r);
 	strlcpy(cookie, buf, sizeof(cookie));
+	ATF_CHECK(system("test -z \"$(ls data/sessions)\"") == 0);
 	restart_console();
 	http("GET", "/api/servers", NULL, &r);
 	EXPECT(&r, 401);
@@ -6959,7 +7028,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"name\":\"sw1\",\"interfaces\":[\"") != NULL && strstr(r.body,
 	    "default-log-dir: @LOGDIR@") != NULL && strstr(r.body,
 	    "HOME_NET: \\\"[10.1.0.0/24") != NULL && strstr(r.body,
-	    "  - @RULES@\\n  - /var/lib/suricata/rules/suricata.rules") != NULL &&
+	    "  - @RULES@\\n  - @RULESET@\\n") != NULL &&
 	    strstr(r.body, "\"rules\":\"alert http any any -> $HOME_NET any "
 	    "(msg:\\\"x\\\"; sid:1000001; rev:1;)\\n\"") != NULL && strstr(
 	    r.body, "\"plugin\":\"suricata\",\"package\":\"suricata\"") != NULL,
@@ -7388,8 +7457,182 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(access("sdwan-proxy-sw1.conf", F_OK) == 0);
 }
 
+/*
+ * Three consoles of a cluster, each in its own directory, joined by unix
+ * sockets: the seed leads, a change made on any is every one's, a
+ * sign-in too, and one stopped catches up when it starts again.
+ */
+static const char *const cl_nodes[] = { "na", "nb", "nc" };
+
+ATF_TC_WITH_CLEANUP(cluster);
+ATF_TC_HEAD(cluster, tc)
+{
+	atf_tc_set_md_var(tc, "descr", "Three consoles of a cluster: the seed "
+	    "leads, a change on any is every one's, a sign-in too, and one "
+	    "stopped catches up");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_CLEANUP(cluster, tc)
+{
+	char	cwd[MAXPATHLEN];
+	int	i;
+
+	if (getcwd(cwd, sizeof(cwd)) == NULL)
+		return;
+	for (i = 0; i < 3; i++)
+		if (chdir(cl_nodes[i]) == 0) {
+			stop();
+			(void)chdir(cwd);
+		}
+}
+
+/* GET path of node i until its answer says want: 15 s at most. */
+static bool
+cl_until(const char *cwd, int i, const char *path, const char *want)
+{
+	struct resp	r;
+	int		k;
+	bool		ok;
+
+	ATF_REQUIRE(chdir(cl_nodes[i]) == 0);
+	ok = false;
+	for (k = 0; k < 150 && !ok; k++) {
+		http("GET", path, NULL, &r);
+		ok = r.status == 200 && r.body != NULL && strstr(r.body,
+		    want) != NULL;
+		resp_free(&r);
+		if (!ok)
+			usleep(100000);
+	}
+	ATF_REQUIRE(chdir(cwd) == 0);
+	return (ok);
+}
+
+ATF_TC_BODY(cluster, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], nodes[1024], key[64], far[16] = "";
+	char		path[128], body[128];
+	pid_t		pid;
+	int		i, n, k, st;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	n = snprintf(nodes, sizeof(nodes), "nodes {");
+	for (i = 0; i < 3; i++)
+		n += snprintf(nodes + n, sizeof(nodes) - (size_t)n, " %s { uri "
+		    "= \"unix:%s/%s/cl.sock\"; }", cl_nodes[i], cwd,
+		    cl_nodes[i]);
+	snprintf(nodes + n, sizeof(nodes) - (size_t)n, " }");
+	for (i = 0; i < 3; i++) {
+		ATF_REQUIRE(mkdir(cl_nodes[i], 0755) == 0);
+		ATF_REQUIRE(chdir(cl_nodes[i]) == 0);
+		snprintf(harness_webconf, sizeof(harness_webconf), "cluster { "
+		    "self = \"%s\"; listen = \"unix:%s/%s/cl.sock\"; %s }\n",
+		    cl_nodes[i], cwd, cl_nodes[i], nodes);
+		start(tc, 0, NULL);
+		ATF_REQUIRE(chdir(cwd) == 0);
+	}
+	harness_webconf[0] = '\0';
+	/* The seed's first key, once it leads; the others follow it. */
+	ATF_REQUIRE(chdir(cl_nodes[0]) == 0);
+	enrol(&a);
+	ATF_REQUIRE(chdir(cwd) == 0);
+	ATF_CHECK(cl_until(cwd, 0, "/api/cluster", "\"role\":\"leader\""));
+	ATF_CHECK(cl_until(cwd, 1, "/api/cluster", "\"leader\":\"na\""));
+	ATF_CHECK(cl_until(cwd, 2, "/api/cluster", "\"leader\":\"na\""));
+	/* Signed in on one, signed in on every one. */
+	ATF_CHECK(cl_until(cwd, 2, "/api/servers", "\"servers\""));
+	/* A host added on a follower: written by the leader, every one's. */
+	ATF_REQUIRE(chdir(cl_nodes[1]) == 0);
+	http("POST", "/api/servers", "{\"name\":\"far\",\"uri\":\"tcp://"
+	    "192.0.2.9:4310\"}", &r);
+	EXPECT(&r, 200);
+	for (i = 0; jstr(&r, (snprintf(key, sizeof(key), "servers.%d.name",
+	    i), key)) != NULL; i++)
+		if (strcmp(jstr(&r, key), "far") == 0) {
+			snprintf(key, sizeof(key), "servers.%d.id", i);
+			snprintf(far, sizeof(far), "%s", jstr(&r, key));
+			break;
+		}
+	ATF_REQUIRE(far[0] != '\0');
+	resp_free(&r);
+	ATF_REQUIRE(chdir(cwd) == 0);
+	for (i = 0; i < 3; i++)
+		ATF_CHECK_MSG(cl_until(cwd, i, "/api/servers", "\"far\""),
+		    "%s", cl_nodes[i]);
+	/* A store read, changed and written again on two nodes at the same
+	 * time, ten times over: each reads what the other wrote before it
+	 * (the cluster's lock, and the writes committed before it waited
+	 * for), so no label is written over. */
+	for (k = 0; k < 10; k++) {
+		if ((pid = fork()) == 0) {
+			ATF_REQUIRE(chdir(cl_nodes[2]) == 0);
+			snprintf(path, sizeof(path), "/api/labels/%s/em%d", far,
+			    10 + k);
+			http("PUT", path, "{\"label\":\"by nc\"}", &r);
+			_exit(r.status == 200 ? 0 : 1);
+		}
+		ATF_REQUIRE(pid > 0);
+		ATF_REQUIRE(chdir(cl_nodes[1]) == 0);
+		snprintf(path, sizeof(path), "/api/labels/%s/em%d", far, k);
+		http("PUT", path, "{\"label\":\"by nb\"}", &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		ATF_REQUIRE(chdir(cwd) == 0);
+		ATF_REQUIRE(waitpid(pid, &st, 0) == pid);
+		ATF_CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0);
+	}
+	snprintf(body, sizeof(body), "%s/em19", far);
+	ATF_CHECK(cl_until(cwd, 0, "/api/labels", body));
+	ATF_REQUIRE(chdir(cl_nodes[0]) == 0);
+	http("GET", "/api/labels", NULL, &r);
+	for (k = 0; k < 20; k++) {
+		snprintf(key, sizeof(key), "labels.%s/em%d", far, k);
+		ATF_CHECK_MSG(jstr(&r, key) != NULL, "em%d's label written "
+		    "over: %.400s", k, r.body);
+	}
+	resp_free(&r);
+	ATF_REQUIRE(chdir(cwd) == 0);
+	/* One stopped misses a change two make; started, it has it. */
+	ATF_REQUIRE(chdir(cl_nodes[2]) == 0);
+	console_stop();
+	ATF_REQUIRE(chdir(cwd) == 0);
+	ATF_REQUIRE(chdir(cl_nodes[0]) == 0);
+	http("POST", "/api/servers", "{\"name\":\"later\",\"uri\":\"tcp://"
+	    "192.0.2.10:4310\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE(chdir(cwd) == 0);
+	ATF_REQUIRE(chdir(cl_nodes[2]) == 0);
+	console_start();
+	ATF_REQUIRE(chdir(cwd) == 0);
+	ATF_CHECK(cl_until(cwd, 2, "/api/servers", "\"later\""));
+	/* Signed out on one, signed out on every one: the session's own
+	 * document taken away. */
+	strlcpy(body, cookie, sizeof(body));
+	ATF_REQUIRE(chdir(cl_nodes[1]) == 0);
+	http("POST", "/api/auth/logout", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE(chdir(cwd) == 0);
+	strlcpy(cookie, body, sizeof(cookie));
+	ATF_REQUIRE(chdir(cl_nodes[2]) == 0);
+	for (k = 0; k < 100; k++) {
+		http("GET", "/api/servers", NULL, &r);
+		n = r.status;
+		resp_free(&r);
+		if (n == 401)
+			break;
+		usleep(100000);
+	}
+	ATF_CHECK_EQ(401, n);
+	ATF_REQUIRE(chdir(cwd) == 0);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
+	ATF_TP_ADD_TC(tp, cluster);
 
 	ATF_TP_ADD_TC(tp, unauthenticated);
 	ATF_TP_ADD_TC(tp, setup_token);

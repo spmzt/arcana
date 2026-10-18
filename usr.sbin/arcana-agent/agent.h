@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.146.0"
+#define	ARCANA_AGENT_VERSION	"0.146.5"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -53,11 +53,13 @@
 #define	PATH_SQUID_BIN		"/usr/local/sbin/squid"
 #define	PATH_CICAP_BIN		"/usr/local/bin/c-icap"
 #define	PATH_SURICATA_BIN	"/usr/local/bin/suricata"
+#define	SURICATA_ETC		"/usr/local/etc/suricata"
 #define	PATH_POUDRIERE_BIN	"/usr/local/bin/poudriere"
 #define	PATH_IFMCSTAT_BIN	"/usr/sbin/ifmcstat"
 #define	PATH_SNORT_BIN		"/usr/local/bin/snort"
 #define	PATH_SNORT_ETC		"/usr/local/etc/snort"
 #define	PATH_FRESHCLAM_CONF	"/usr/local/etc/freshclam.conf"
+#define	PATH_SURICATA_RULES	"/var/lib/suricata/rules"
 #define	PATH_SNORT_LOG		"/var/log/snort"
 #define	PATH_POUDRIERE_ETC	"/usr/local/etc"
 #define	PATH_CICAP_MODULES	"/usr/local/lib/c_icap"
@@ -132,6 +134,7 @@ struct opts {
 	const char	*snort_etc;	/* where snort.lua and its rules are */
 	const char	*snort_log;	/* its pid file and alert_json.txt */
 	const char	*freshclam_conf; /* ClamAV's freshclam.conf, its mirrors */
+	const char	*suricata_rules; /* where suricata-update writes the ruleset */
 	const char	*poudriere_etc;	/* where poudriere.conf and poudriere.d are */
 	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;
@@ -578,6 +581,10 @@ int		 do_sdwan_ids(struct work *, const char *, const char **);
 int		 do_notify(struct work *, const char *, const char *,
 		    const char *, const char **);
 void		 sdwan_ids_start(void);
+const char	*suricata_check(const struct arc_job_spec *);
+char		*suricata_title(const struct arc_job_spec *);
+int		 do_suricata_job(struct work *, const struct arc_job_spec *,
+		    const char **);
 void		 sdwan_ids_json(struct work *, struct ucl_object_s *);
 int		 do_rtadvd(struct work *, const char *, const char *const *,
 		    size_t, bool, bool, const char **);

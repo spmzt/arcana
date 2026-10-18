@@ -3164,7 +3164,11 @@ call_new(struct http_request *req, enum op op)
 	bool			 mutate;
 
 	t0 = now_us();
-	mutate = op == OP_ACTION || op == OP_ADDRESS ||
+	/* A change: whatever is not a GET, as well as what the list says;
+	 * a route reads only by its method, so none can slip through as
+	 * a read (a viewer's, without the CSRF checks). */
+	mutate = req->method != HTTP_METHOD_GET || op == OP_ACTION ||
+	    op == OP_ADDRESS ||
 	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
 	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL || op == OP_CAPTURE ||
 	    op == OP_ZFS_KEY || op == OP_SDWAN_PROXY || op == OP_SDWAN_IDS ||
@@ -4749,7 +4753,22 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_CARP] = "carp",
 	[ARC_JOB_KIND_POUDRIERE] = "poudriere",
 	[ARC_JOB_KIND_SNORT] = "snort",
+	[ARC_JOB_KIND_CLAMAV] = "clamav",
+	[ARC_JOB_KIND_SURICATA] = "suricata",
 };
+
+/* Is kind one the console sends (workflows.c checks jobs.yaml's)? */
+bool
+hosts_job_kind_known(const char *kind)
+{
+	size_t	i;
+
+	for (i = 0; i < nitems(job_kind_names); i++)
+		if (job_kind_names[i] != NULL && strcmp(kind,
+		    job_kind_names[i]) == 0)
+			return (true);
+	return (false);
+}
 
 static const char *job_state_names[] = {
 	[ARC_JOB_STATE_QUEUED] = "queued",

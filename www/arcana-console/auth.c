@@ -27,6 +27,7 @@
 #include <openssl/hmac.h>
 #include <openssl/x509.h>
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -63,6 +64,7 @@ struct session {
 	char		tok[17];	/* the API token it was, its id; "" a key */
 	bool		ldap;		/* opened by a directory's user */
 	char		user[64];	/* the console user (users.c); "" none */
+	time_t		written;	/* last as its document has it */
 };
 
 static ucl_object_t	*creds;		/* the credentials document */
@@ -105,6 +107,8 @@ static void	 session_start(struct http_request *, const char *,
 		    const char *, const char *);
 static void	 sessions_save(void);
 static void	 sessions_load(void);
+static void	 session_put(struct session *);
+static void	 session_end(struct session *);
 static void	 setup_token_init(void);
 static void	 put(ucl_object_t *, const char *, ucl_object_t *);
 static int	 status_reply(struct http_request *, bool);
@@ -249,7 +253,7 @@ origin_ours(const char *origin)
 	bool			 ok;
 	int			 i;
 
-	if (strcmp(origin, cfg.origin) == 0)
+	if (strcmp(origin, cfg.origin) == 0 || cluster_origin(origin))
 		return (true);
 	if (strncmp(origin, pfx, sizeof(pfx) - 1) != 0)
 		return (false);
@@ -444,6 +448,21 @@ setup_token_init(void)
 	    "token is in %s", path);
 }
 
+/* A store of the cluster's written by another node: read again. */
+void
+auth_reload(const char *name)
+{
+
+	if (name == NULL || strcmp(name, CREDENTIALS) == 0) {
+		ucl_object_unref(creds);
+		if ((creds = store_load(CREDENTIALS)) == NULL)
+			creds = ucl_object_typed_new(UCL_OBJECT);
+	}
+	if (name == NULL || strncmp(name, SESSIONS_DIR "/",
+	    sizeof(SESSIONS_DIR)) == 0)
+		sessions_load();
+}
+
 void
 auth_init(void)
 {
@@ -465,77 +484,115 @@ auth_init(void)
 }
 
 /*
- * The sessions outlive the console's process: it can be restarted from
- * its own page, and that should not log everyone out.  They are kept
- * in the data directory, readable by the console's user alone, as the
- * hash of each cookie with its times: what is on disk does not log
- * anyone in.
+ * Each session a document of its own, sessions/<hash>.json, the hash of
+ * its cookie with its times: what is on disk does not log anyone in.
+ * One document a session, so that two sign-ins at once on two nodes of
+ * a cluster write different documents, and an end is the end of its
+ * own alone.
  */
+static void
+session_doc(const struct session *s, char *buf, size_t len)
+{
+	char	hex[65];
+	int	k;
+
+	for (k = 0; k < 32; k++)
+		snprintf(hex + 2 * k, 3, "%02x", s->hash[k]);
+	snprintf(buf, len, "%s/%s.json", SESSIONS_DIR, hex);
+}
+
+static void
+session_put(struct session *s)
+{
+	ucl_object_t	*e;
+	char		 name[128], hex[65];
+	int		 k;
+
+	for (k = 0; k < 32; k++)
+		snprintf(hex + 2 * k, 3, "%02x", s->hash[k]);
+	e = ucl_object_typed_new(UCL_OBJECT);
+	put(e, "hash", ucl_object_fromstring(hex));
+	put(e, "created", ucl_object_fromint(s->created));
+	put(e, "last", ucl_object_fromint(s->last));
+	put(e, "who", ucl_object_fromstring(s->who));
+	if (s->tok[0] != '\0')
+		put(e, "token", ucl_object_fromstring(s->tok));
+	if (s->ldap)
+		put(e, "ldap", ucl_object_frombool(true));
+	if (s->user[0] != '\0')
+		put(e, "user", ucl_object_fromstring(s->user));
+	session_doc(s, name, sizeof(name));
+	(void)store_save(name, e);
+	ucl_object_unref(e);
+	s->written = s->last;
+}
+
+/* A session ended: its document taken away, its slot free. */
+static void
+session_end(struct session *s)
+{
+	char	name[128];
+
+	if (s->used) {
+		session_doc(s, name, sizeof(name));
+		(void)store_remove(name);
+	}
+	memset(s, 0, sizeof(*s));
+}
+
+/* The times of use not written yet, now and then. */
 static void
 sessions_save(void)
 {
-	ucl_object_t	*o, *a, *e;
-	char		 hex[65];
-	int		 i, k;
+	int	i;
 
-	o = ucl_object_typed_new(UCL_OBJECT);
-	a = ucl_object_typed_new(UCL_ARRAY);
-	for (i = 0; i < SESSIONS; i++) {
-		if (!sessions[i].used)
-			continue;
-		for (k = 0; k < 32; k++)
-			snprintf(hex + 2 * k, 3, "%02x", sessions[i].hash[k]);
-		e = ucl_object_typed_new(UCL_OBJECT);
-		put(e, "hash", ucl_object_fromstring(hex));
-		put(e, "created", ucl_object_fromint(sessions[i].created));
-		put(e, "last", ucl_object_fromint(sessions[i].last));
-		put(e, "who", ucl_object_fromstring(sessions[i].who));
-		if (sessions[i].tok[0] != '\0')
-			put(e, "token", ucl_object_fromstring(sessions[i].tok));
-		if (sessions[i].ldap)
-			put(e, "ldap", ucl_object_frombool(true));
-		if (sessions[i].user[0] != '\0')
-			put(e, "user", ucl_object_fromstring(sessions[i].user));
-		ucl_array_append(a, e);
-	}
-	put(o, "sessions", a);
-	(void)store_save(SESSIONS_FILE, o);
-	ucl_object_unref(o);
+	for (i = 0; i < SESSIONS; i++)
+		if (sessions[i].used && sessions[i].last != sessions[i].written)
+			session_put(&sessions[i]);
 	sessions_saved = time(NULL);
 }
 
-/* Those of the file that have not run out. */
+/* Those of the documents that have not run out; those that have, gone. */
 static void
 sessions_load(void)
 {
-	ucl_object_t		*o;
-	const ucl_object_t	*e, *h;
-	ucl_object_iter_t	 it;
+	ucl_object_t		*e;
+	DIR			*d;
+	struct dirent		*de;
 	const char		*hex;
 	struct session		*s;
+	char			 path[MAXPATHLEN], name[300];
 	unsigned int		 b;
 	time_t			 now;
+	size_t			 len;
 	int			 n, k;
 
 	memset(sessions, 0, sizeof(sessions));
-	if ((o = store_load(SESSIONS_FILE)) == NULL)
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, SESSIONS_DIR);
+	if ((d = opendir(path)) == NULL)
 		return;
 	now = time(NULL);
 	n = 0;
-	it = NULL;
-	while ((e = ucl_object_iterate(ucl_object_lookup(o, "sessions"), &it,
-	    true)) != NULL && n < SESSIONS) {
-		if ((h = ucl_object_lookup(e, "hash")) == NULL ||
-		    (hex = ucl_object_tostring(h)) == NULL || strlen(hex) != 64)
+	while (n < SESSIONS && (de = readdir(d)) != NULL) {
+		len = strlen(de->d_name);
+		if (de->d_type != DT_REG || len != 69 || strcmp(de->d_name +
+		    64, ".json") != 0)
+			continue;
+		snprintf(name, sizeof(name), "%s/%s", SESSIONS_DIR, de->d_name);
+		if ((e = store_load(name)) == NULL)
 			continue;
 		s = &sessions[n];
-		for (k = 0; k < 32; k++) {
+		hex = ucl_object_lookup(e, "hash") != NULL ?
+		    ucl_object_tostring_forced(ucl_object_lookup(e, "hash")) :
+		    "";
+		for (k = 0; k < 32 && strlen(hex) == 64; k++) {
 			if (sscanf(hex + 2 * k, "%2x", &b) != 1)
 				break;
 			s->hash[k] = (uint8_t)b;
 		}
 		s->created = ucl_object_toint(ucl_object_lookup(e, "created"));
-		s->last = ucl_object_toint(ucl_object_lookup(e, "last"));
+		s->last = s->written = ucl_object_toint(ucl_object_lookup(e,
+		    "last"));
 		snprintf(s->who, sizeof(s->who), "%s", ucl_object_lookup(e, "who")
 		    != NULL ? ucl_object_tostring_forced(ucl_object_lookup(e,
 		    "who")) : "");
@@ -546,15 +603,17 @@ sessions_load(void)
 		snprintf(s->user, sizeof(s->user), "%s", ucl_object_lookup(e,
 		    "user") != NULL ? ucl_object_tostring_forced(
 		    ucl_object_lookup(e, "user")) : "");
-		if (k < 32 || s->created > now || now - s->last > cfg.session_idle ||
-		    now - s->created > cfg.session_max) {
+		ucl_object_unref(e);
+		if (k < 32 || s->created > now || now - s->last >
+		    cfg.session_idle || now - s->created > cfg.session_max) {
 			memset(s, 0, sizeof(*s));
+			(void)store_remove(name);
 			continue;
 		}
 		s->used = true;
 		n++;
 	}
-	ucl_object_unref(o);
+	closedir(d);
 }
 
 /* The request's session, valid or not; NULL: none. */
@@ -613,8 +672,7 @@ session_valid(struct http_request *req)
 		if (now - s->last > cfg.session_idle ||
 		    now - s->created > cfg.session_max || (s->tok[0] != '\0' &&
 		    !token_alive(s->tok))) {
-			memset(s, 0, sizeof(*s));
-			sessions_save();
+			session_end(s);
 			return (false);
 		}
 		s->last = now;
@@ -713,8 +771,7 @@ sessions_end_user(const char *user)
 
 	for (i = 0; i < SESSIONS; i++)
 		if (sessions[i].used && strcmp(sessions[i].user, user) == 0)
-			memset(&sessions[i], 0, sizeof(sessions[i]));
-	sessions_save();
+			session_end(&sessions[i]);
 }
 
 /* The user a key belongs to: the built-in owner's when it says none. */
@@ -789,6 +846,8 @@ session_start(struct http_request *req, const char *who, const char *tok,
 			old = &sessions[i];
 	}
 	s = old;
+	if (s->used)
+		session_end(s);
 	sha256(token, 64, s->hash);
 	s->created = s->last = time(NULL);
 	s->used = true;
@@ -802,7 +861,7 @@ session_start(struct http_request *req, const char *who, const char *tok,
 	    cfg.session_max, cfg.cookie_secure ? "; Secure" : "");
 	http_response_header(req, "set-cookie", cookie);
 	explicit_bzero(token, sizeof(token));
-	sessions_save();
+	session_put(s);
 }
 
 static int
@@ -1307,11 +1366,14 @@ api_login_ldap(struct http_request *req)
 				    who) == 0 && (best < 0 || sessions[i].created
 				    >= sessions[best].created))
 					best = i;
-			if (best >= 0)
+			if (best >= 0) {
 				sessions[best].ldap = true;
-		} else
+				session_put(&sessions[best]);
+			}
+		} else {
 			s->ldap = true;
-		sessions_save();
+			session_put(s);
+		}
 	}
 	return (status_reply_as(req, true, true, true));
 }
@@ -1327,9 +1389,9 @@ api_logout(struct http_request *req)
 	if (http_request_cookie(req, SESSION_COOKIE, &cookie)) {
 		sha256(cookie, strlen(cookie), h);
 		for (i = 0; i < SESSIONS; i++)
-			if (memcmp(sessions[i].hash, h, sizeof(h)) == 0)
-				memset(&sessions[i], 0, sizeof(sessions[i]));
-		sessions_save();
+			if (sessions[i].used && memcmp(sessions[i].hash, h,
+			    sizeof(h)) == 0)
+				session_end(&sessions[i]);
 	}
 	snprintf(clear, sizeof(clear), "%s=; Path=/; HttpOnly; "
 	    "SameSite=Strict; Max-Age=0", SESSION_COOKIE);

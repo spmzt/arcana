@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.214.0"
+#define	ARCW_VERSION		"0.216.2"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -36,7 +36,7 @@
 #define	SESSION_IDLE		(30 * 60)
 #define	SESSION_MAX		(12 * 60 * 60)
 #define	SESSIONS		8
-#define	SESSIONS_FILE		"sessions.json"
+#define	SESSIONS_DIR		"sessions"	/* a document a session */
 #define	SESSION_SAVE		60	/* s, between writes of the time of use */
 #define	CHALLENGE_TTL		120
 #define	CBLINK_MAX_FRAME	(8 * 1024 * 1024)
@@ -121,6 +121,30 @@ int		 api_settings(struct http_request *);
 /* store.c: small JSON documents in the data directory. */
 ucl_object_t	*store_load(const char *);
 int		 store_save(const char *, const ucl_object_t *);
+int		 store_write(const char *, const void *, size_t);
+int		 store_remove(const char *);
+void		 store_sweep(void);
+
+/* nodes.c: the consoles of a cluster. */
+int		 cluster_config(const ucl_object_t *, const char *);
+int		 cluster_init(void);
+void		 cluster_started(void);
+bool		 cluster_on(void);
+bool		 cluster_leads(void);
+bool		 cluster_origin(const char *);
+bool		 cluster_lock(const char *);
+void		 cluster_unlock(const char *);
+uint64_t	 cluster_gen(void);
+int		 cluster_save(const char *, const void *, size_t, bool);
+void		 cluster_status(ucl_object_t *);
+void		 cluster_changes(void (*)(const char *));
+int		 api_cluster(struct http_request *);
+void		 auth_reload(const char *);
+void		 users_reload(void);
+void		 servers_reload(void);
+void		 push_reload(void);
+int		 pki_node_cert(const char *, const char *, const char *, char *,
+		    size_t);
 
 /* api.c: HTTP plumbing shared by the handlers. */
 int		 reply_json(struct http_request *, int, ucl_object_t *);
@@ -208,6 +232,8 @@ bool		 invite_take(const char *, char *, size_t);
 int		 api_users(struct http_request *);
 int		 api_user(struct http_request *);
 int		 api_user_invite(struct http_request *);
+int		 api_groups(struct http_request *);
+int		 api_group(struct http_request *);
 int		 api_roles(struct http_request *);
 #define	ROLES_LDAP_MAX	32
 int		 roles_ldap_groups(const char **, const char **, int);
@@ -246,6 +272,8 @@ int		 api_ca(struct http_request *);
 
 /* hosts.c: requests to arcana-agent over cblink, in Kore task threads. */
 int		 hosts_init(void);
+bool		 hosts_job_kind_known(const char *);
+int		 workflows_kinds_check(void);
 void		 hosts_forget(const char *);
 const char	*hosts_shared(const char *, const char *, cbl_conn **,
 		    struct arc_client *);
