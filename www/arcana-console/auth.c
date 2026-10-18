@@ -1261,8 +1261,9 @@ int
 api_login_ldap(struct http_request *req)
 {
 	ucl_object_t	*body;
-	const char	*user, *password;
+	const char	*user, *password, *roles[ROLES_LDAP_MAX];
 	char		 who[96], err[300];
+	int		 nroles;
 	bool		 ok;
 
 	if (req->method != HTTP_METHOD_POST)
@@ -1276,7 +1277,13 @@ api_login_ldap(struct http_request *req)
 		    "object"));
 	user = ucl_str(body, "user");
 	password = ucl_str(body, "password");
-	ok = ldap_login(user, password, who, sizeof(who), err, sizeof(err));
+	nroles = 0;
+	ok = ldap_login(user, password, who, sizeof(who), err, sizeof(err),
+	    roles, &nroles, ROLES_LDAP_MAX);
+	/* The directory's groups give the user's roles (users.c): the user
+	 * kept, or made, as the groups say, unless the owner made it. */
+	if (ok)
+		users_ldap_sync(user, roles, nroles);
 	if (password != NULL)
 		explicit_bzero((char *)(uintptr_t)password, strlen(password));
 	ucl_object_unref(body);

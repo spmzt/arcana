@@ -193,6 +193,12 @@ set_users(struct html *h)
 		if (app.user[0] != '\0' && jstr(u, "name") != NULL && strcmp(
 		    app.user, jstr(u, "name")) == 0)
 			h_raw(h, " <span class=\"dim\">you</span>");
+		if (jstr(u, "source") != NULL && strcmp(jstr(u, "source"),
+		    "ldap") == 0)
+			h_raw(h, " <span class=\"chip\" title=\"Made at their "
+			    "directory sign-in, its roles those of their groups, "
+			    "brought up to date each time; changed here, it is "
+			    "yours to keep\">directory</span>");
 		h_raw(h, "</td><td>");
 		rit = NULL;
 		while ((r = ucl_object_iterate(jget(u, "roles"), &rit, true)) !=
@@ -250,8 +256,8 @@ set_roles(struct html *h)
 	    "removes it: on every host, or host by host. A user with several "
 	    "roles may what any of them allows. Three come built in: owner, "
 	    "operator and viewer.</p><table class=\"net roles\"><thead><tr><th>"
-	    "Role</th><th>On the console</th><th>On the hosts</th><th>Users"
-	    "</th><th></th></tr></thead><tbody>");
+	    "Role</th><th>On the console</th><th>On the hosts</th><th>"
+	    "Directory group</th><th>Users</th><th></th></tr></thead><tbody>");
 	n = 0;
 	it = NULL;
 	while (us.all != NULL && (r = ucl_object_iterate(jget(us.all, "roles"),
@@ -276,6 +282,9 @@ set_roles(struct html *h)
 		if (jget(r, "hosts") == NULL || ucl_array_size(jget(r, "hosts"))
 		    == 0)
 			h_raw(h, "<span class=\"dim\">none</span>");
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(r, "ldap_group") != NULL ? jstr(r, "ldap_group") :
+		    "");
 		h_raw(h, "</td><td class=\"num\">");
 		h_fmt(h, "%lld", (long long)jint(r, "users", 0));
 		h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" "
@@ -287,11 +296,16 @@ set_roles(struct html *h)
 		h_raw(h, ">×</button></td></tr>");
 	}
 	if (n == 0)
-		h_raw(h, "<tr class=\"empty-row\"><td colspan=\"5\">Asking the "
+		h_raw(h, "<tr class=\"empty-row\"><td colspan=\"6\">Asking the "
 		    "console…</td></tr>");
 	h_raw(h, "</tbody></table><div class=\"token-new\"><button type=\""
 	    "button\" class=\"small\" data-act=\"role-add\">Add a role</button>"
-	    "</div>");
+	    "</div><p class=\"dim\">A role with a <b>directory group</b> is "
+	    "given to the members of that LDAP group as they sign in by the "
+	    "directory: the console makes a user of their name, marked "
+	    "<i>directory</i>, with the roles of all their groups, brought up "
+	    "to date at each sign-in. A user you made or changed here keeps "
+	    "the roles you gave it.</p>");
 }
 
 /* Settings, AAA: the sub-tabs. */
@@ -406,8 +420,14 @@ user_modal(struct html *h)
 	    strcmp(cr, "member") == 0 ? " selected" : "", strcmp(cr, "operator")
 	    == 0 ? " selected" : "", strcmp(cr, "owner") == 0 ? " selected" :
 	    "");
-	h_raw(h, "</select></label></div><label>On every host<select name=\""
-	    "all\">");
+	h_raw(h, "</select></label></div><label>Directory group <small "
+	    "class=\"dim\">its LDAP members get this role as they sign in; "
+	    "empty: none</small><input name=\"ldap_group\" maxlength=\"500\" "
+	    "spellcheck=\"false\" autocomplete=\"off\" placeholder=\"cn=noc,"
+	    "ou=groups,dc=example,dc=org\"");
+	h_attr(h, "value", jstr(r, "ldap_group") != NULL ? jstr(r, "ldap_group")
+	    : "");
+	h_raw(h, "></label><label>On every host<select name=\"all\">");
 	h_fmt(h, "<option value=\"\"%s>No role: host by host below</option>"
 	    "<option value=\"viewer\"%s>Viewer: reads</option><option value=\""
 	    "operator\"%s>Operator: changes</option><option value=\"admin\"%s>"
@@ -496,6 +516,9 @@ user_form(const char *form, const ucl_object_t *f)
 				    ucl_object_tostring(v)), ucl_object_key(v) + 2, 0,
 				    false);
 		ucl_object_insert_key(b, hosts, "hosts", 0, false);
+		ucl_object_insert_key(b, ucl_object_fromstring(jstr(f,
+		    "ldap_group") != NULL ? jstr(f, "ldap_group") : ""),
+		    "ldap_group", 0, false);
 		snprintf(url, sizeof(url), "/api/roles/%s", name);
 	}
 	json = ucl_object_emit(b, UCL_EMIT_JSON_COMPACT);

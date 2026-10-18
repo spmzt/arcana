@@ -2525,6 +2525,28 @@ safe_mode_body()
 	atf_check -s exit:1 -e match:'name its gateway' -o ignore \
 	    "$JGC" -q -s -c "$SOCK" route delete 10.79.0.0/16
 
+	# One cancelled while it waits to be confirmed is undone then, not
+	# when its timer of a minute runs out.
+	atf_check -o save:q.out "$JGC" -q -s -W 60 -c "$SOCK" interface lo0 \
+	    add 10.9.0.9/24
+	id=$(awk '/queued/ {print $1; exit}' q.out)
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q "^ *$id unconfirmed" && break
+		sleep 0.1
+	done
+	atf_check -o ignore "$JGC" -c "$SOCK" job-cancel "$id"
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q "^ *$id \(unconfirmed\|running\)" ||
+		    break
+		sleep 0.1
+	done
+	[ $i -lt 100 ] || atf_fail "the cancelled change was not undone at once"
+	atf_check -s exit:1 -o match:'cancelled by the client while it waited: undone now' \
+	    "$JGC" -c "$SOCK" job "$id"
+	atf_check -o match:'^lo0 inet 10.9.0.9 -alias$' cat ifconfig.log
+	# One at work, or done, is not taken back, and says which.
+	atf_check -s exit:1 -e match:'has finished' "$JGC" -c "$SOCK" job-cancel "$id"
+
 	# The same for what else can be taken back: an interface made, a
 	# service stopped, its variables, each put back as it was; and
 	# what was kept in rc.conf with the change is forgotten with it.

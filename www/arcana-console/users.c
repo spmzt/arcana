@@ -586,6 +586,66 @@ reply_all(struct http_request *req)
 	return (reply_json(req, 200, o));
 }
 
+/*
+ * The roles given by a directory group, and the groups: into names and
+ * groups, max at most; how many.  Good while the users are not changed.
+ */
+int
+roles_ldap_groups(const char **names, const char **groups, int max)
+{
+	const ucl_object_t	*r;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	n = 0;
+	it = NULL;
+	while (n < max && (r = ucl_object_iterate(list_of("roles"), &it, true))
+	    != NULL)
+		if (ucl_str(r, "ldap_group") != NULL && ucl_str(r,
+		    "ldap_group")[0] != '\0') {
+			names[n] = ucl_str(r, "name");
+			groups[n++] = ucl_str(r, "ldap_group");
+		}
+	return (n);
+}
+
+/*
+ * A directory's user signed in, with the roles its groups gave: a user
+ * of the console the directory keeps (source ldap) is made, or its
+ * roles brought up to date, or, given none, taken away, so that the
+ * sign-in is limited as before; one the owner made is left as it is.
+ */
+void
+users_ldap_sync(const char *name, const char **roles, int nroles)
+{
+	const ucl_object_t	*old;
+	ucl_object_t		*u, *ra;
+	int			 i;
+
+	if (!user_name_ok(name))
+		return;
+	old = by_name("users", name);
+	if (old != NULL && (ucl_str(old, "source") == NULL || strcmp(ucl_str(
+	    old, "source"), "ldap") != 0))
+		return;
+	if (old != NULL)
+		ucl_object_unref(ucl_array_delete(list_of("users"), (ucl_object_t *)
+		    (uintptr_t)old));
+	if (nroles > 0) {
+		u = ucl_object_typed_new(UCL_OBJECT);
+		put(u, "name", ucl_object_fromstring(name));
+		put(u, "source", ucl_object_fromstring("ldap"));
+		ra = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < nroles; i++)
+			ucl_array_append(ra, ucl_object_fromstring(roles[i]));
+		put(u, "roles", ra);
+		put(u, "created", ucl_object_fromint(time(NULL)));
+		ucl_array_append(list_of("users"), u);
+	}
+	if (old != NULL || nroles > 0)
+		(void)store_save(USERS_FILE, udoc);
+}
+
 /* Is body a role that may be kept?  NULL, or what is wrong with it. */
 static const char *
 role_check(const ucl_object_t *body)
@@ -593,6 +653,17 @@ role_check(const ucl_object_t *body)
 	const ucl_object_t	*h, *v;
 	ucl_object_iter_t	 it;
 	const char		*s;
+	size_t			 i;
+
+	/* A directory group's DN: printable, an attribute=value in it. */
+	if ((s = ucl_str(body, "ldap_group")) != NULL && s[0] != '\0') {
+		if (strlen(s) > 500 || strchr(s, '=') == NULL)
+			return ("ldap_group is a group's DN, cn=noc,ou=groups,"
+			    "dc=example,dc=org");
+		for (i = 0; s[i] != '\0'; i++)
+			if ((unsigned char)s[i] < 0x20 || s[i] == 0x7f)
+				return ("ldap_group has no control characters");
+	}
 
 	if ((s = ucl_str(body, "console")) != NULL && strcmp(s, "owner") != 0 &&
 	    strcmp(s, "operator") != 0 && strcmp(s, "member") != 0)
@@ -666,6 +737,10 @@ role_keep(struct http_request *req, ucl_object_t *body)
 	    "console") : "member", NULL);
 	if (ucl_object_lookup(body, "hosts") != NULL)
 		put(r, "hosts", ucl_object_copy(ucl_object_lookup(body, "hosts")));
+	if (ucl_str(body, "ldap_group") != NULL && ucl_str(body,
+	    "ldap_group")[0] != '\0')
+		put(r, "ldap_group", ucl_object_fromstring(ucl_str(body,
+		    "ldap_group")));
 	if (old != NULL && ucl_object_lookup(old, "created") != NULL)
 		put(r, "created", ucl_object_fromint(ucl_object_toint(
 		    ucl_object_lookup(old, "created"))));

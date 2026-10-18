@@ -763,8 +763,10 @@ ldap_enabled(void)
  */
 bool
 ldap_login(const char *user, const char *password, char *who, size_t wholen,
-    char *err, size_t errlen)
+    char *err, size_t errlen, const char **roles, int *nroles, int maxroles)
 {
+	const char	*rnames[ROLES_LDAP_MAX], *rgroups[ROLES_LDAP_MAX];
+	int		 nr, ri;
 	struct lconn	 c;
 	struct ber	 f;
 	const char	*url, *base, *attr, *group, *bind_dn, *bind_pw, *cafile;
@@ -884,8 +886,24 @@ ldap_login(const char *user, const char *password, char *who, size_t wholen,
 			goto out;
 		}
 	}
+	/* The roles whose directory group has the user (users.c), by the
+	 * same ways a group names a member. */
+	*nroles = 0;
+	nr = roles_ldap_groups(rnames, rgroups, ROLES_LDAP_MAX);
+	for (ri = 0; ri < nr && *nroles < maxroles; ri++) {
+		memset(&f, 0, sizeof(f));
+		fmark = 0;
+		filter_eq(&f, "member", dn);
+		filter_eq(&f, "uniqueMember", dn);
+		filter_eq(&f, "memberUid", user);
+		ber_wrap(&f, T_CTXC(1), (size_t)fmark);	/* or */
+		if (search(&c, rgroups[ri], 0, &f, gdn, sizeof(gdn), &n) == 0 &&
+		    n > 0)
+			roles[(*nroles)++] = rnames[ri];
+	}
 	snprintf(who, wholen, "LDAP user %s", user);
-	kore_log(LOG_NOTICE, "LDAP sign-in of %s (%s)", user, dn);
+	kore_log(LOG_NOTICE, "LDAP sign-in of %s (%s), %d role%s by its groups",
+	    user, dn, *nroles, *nroles == 1 ? "" : "s");
 	ok = true;
 out:
 	if (!ok && err[0] == '\0')

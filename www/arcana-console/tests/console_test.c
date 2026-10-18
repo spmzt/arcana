@@ -1772,7 +1772,9 @@ slapd_start(const atf_tc_t *tc, int *portp, int *tlsportp)
 	    "dn: ou=groups,dc=lab,dc=test\nobjectClass: organizationalUnit\n"
 	    "ou: groups\n\n"
 	    "dn: cn=arcana,ou=groups,dc=lab,dc=test\nobjectClass: groupOfNames\n"
-	    "cn: arcana\nmember: uid=alice,ou=people,dc=lab,dc=test\n", fp);
+	    "cn: arcana\nmember: uid=alice,ou=people,dc=lab,dc=test\n\n"
+	    "dn: cn=noc,ou=groups,dc=lab,dc=test\nobjectClass: groupOfNames\n"
+	    "cn: noc\nmember: uid=alice,ou=people,dc=lab,dc=test\n", fp);
 	fclose(fp);
 	snprintf(cmd, sizeof(cmd), "LD_LIBRARY_PATH=%s %s/../sbin/slapadd -f "
 	    "slapd.conf -l base.ldif >slapadd.out 2>&1 && LD_LIBRARY_PATH=%s %s "
@@ -1792,7 +1794,8 @@ slapd_stop(void)
 }
 
 CONSOLE_TC(ldap, "Sign-in by LDAP over TLS: the user looked up and bound "
-    "as, a group's members alone, a session limited as a token's; a wrong "
+    "as, a group's members alone, a role by a directory group, a session "
+    "limited as a token's without one; a wrong "
     "password, an unknown user, an empty password and an outsider refused; "
     "too many failures throttled; StartTLS on ldap://, ldaps:// too")
 ATF_TC_BODY(ldap, tc)
@@ -1831,6 +1834,17 @@ ATF_TC_BODY(ldap, tc)
 	http("GET", "/api/auth/status", NULL, &r);
 	ATF_CHECK_STREQ("true", jstr(&r, "ldap"));
 	resp_free(&r);
+	/* A role given by a directory group: noc, alice's. */
+	http("PUT", "/api/roles/noc", "{\"console\":\"member\",\"hosts\":"
+	    "{\"*\":\"viewer\"},\"ldap_group\":\"cn=noc,ou=groups,dc=lab,dc=test\"}",
+	    &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("cn=noc,ou=groups,dc=lab,dc=test", jstr(&r,
+	    "roles.3.ldap_group"));
+	resp_free(&r);
+	http("PUT", "/api/roles/bad", "{\"ldap_group\":\"no dn here\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
 	/* The key's session kept aside: the sign-ins open their own. */
 	snprintf(keycookie, sizeof(keycookie), "%s", cookie);
 	cookie[0] = '\0';
@@ -1856,12 +1870,16 @@ ATF_TC_BODY(ldap, tc)
 	    "%s", r.body);
 	resp_free(&r);
 	ATF_CHECK(cookie[0] == '\0');
-	/* Alice: in, limited, and said to be by LDAP. */
+	/* Alice: in, said to be by LDAP, and the user alice the console
+	 * made for her, with the role of her group noc: a member of the
+	 * console, a viewer of the hosts. */
 	http("POST", "/api/auth/login/ldap", "{\"user\":\"alice\",\"password\":"
 	    "\"alicepw\"}", &r);
 	ATF_CHECK_MSG(r.status == 200, "%s", r.body);
 	ATF_CHECK_STREQ("true", jstr(&r, "authenticated"));
 	ATF_CHECK_STREQ("true", jstr(&r, "by_ldap"));
+	ATF_CHECK_STREQ("alice", jstr(&r, "user"));
+	ATF_CHECK_STREQ("member", jstr(&r, "console"));
 	resp_free(&r);
 	ATF_CHECK(cookie[0] != '\0');
 	http("GET", "/api/auth/status", NULL, &r);
@@ -1905,7 +1923,19 @@ ATF_TC_BODY(ldap, tc)
 	http("POST", "/api/auth/login/ldap", "{\"user\":\"bob\",\"password\":"
 	    "\"bobpw\"}", &r);
 	ATF_CHECK_MSG(r.status == 200, "%d %s", r.status, r.body);
+	/* No group of his gives a role: no user is made for him, and the
+	 * session is limited as before. */
+	ATF_CHECK(jstr(&r, "user") == NULL);
 	resp_free(&r);
+	/* Alice's user is the directory's; bob has none. */
+	snprintf(cookie, sizeof(cookie), "%s", keycookie);
+	http("GET", "/api/users", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"name\":\"alice\",\"source\":\"ldap\","
+	    "\"roles\":[\"noc\"]") != NULL && strstr(r.body, "\"bob\"") == NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	cookie[0] = '\0';
 	/* A directory whose certificate is not trusted: refused. */
 	snprintf(cookie, sizeof(cookie), "%s", keycookie);
 	http("POST", "/api/settings", "{\"set\":{\"ldap_ca\":\"\"}}", &r);

@@ -338,6 +338,7 @@ paths:
                 name: { type: string }
                 console: { type: string, enum: [owner, operator, member] }
                 hosts: { type: object, additionalProperties: { type: string, enum: [viewer, operator, admin] }, description: a role by host id, or "*" for all }
+                ldap_group: { type: string, description: "a directory group's DN: its members get the role as they sign in by LDAP; empty for none" }
       responses:
         "200": { description: "the users and roles" }
         "409": { description: "the change would leave no owner" }
