@@ -92,7 +92,7 @@ core_program(struct work *w, const char *core)
  */
 static bool
 cores_list(struct work *w, const char *dir, ucl_object_t *arr, int *othersp,
-    const char **errp)
+    ucl_object_t *others, const char **errp)
 {
 	ucl_object_t	*o;
 	DIR		*d;
@@ -112,7 +112,10 @@ cores_list(struct work *w, const char *dir, ucl_object_t *arr, int *othersp,
 		    || !S_ISREG(st.st_mode))
 			continue;
 		if (!core_name_ok(de->d_name)) {
-			(*othersp)++;
+			if ((*othersp)++ < 20 && others != NULL)
+				ucl_array_append(others, ucl_object_fromstring(wfmt(
+				    w, "%s/%s (%jd bytes)", strcmp(dir, "/") == 0 ? "" :
+				    dir, de->d_name, (intmax_t)st.st_size)));
 			continue;
 		}
 		o = ucl_object_typed_new(UCL_OBJECT);
@@ -233,9 +236,12 @@ void
 do_crashes(struct work *w, const char *const *names, size_t n,
     struct arc_crashes_rsp *rsp)
 {
-	ucl_object_t	*top, *cores, *notes;
+	static const char *const elsewhere[] = { "/", "/root", "/tmp",
+	    "/var/tmp", "/var/db/bird", "/usr/local/etc/bird" };
+	ucl_object_t	*top, *cores, *notes, *onames;
 	char		 pattern[MAXPATHLEN], *json;
 	const char	*dir, *err;
+	size_t		 i;
 	int		 others;
 
 	top = ucl_object_typed_new(UCL_OBJECT);
@@ -252,20 +258,42 @@ do_crashes(struct work *w, const char *const *names, size_t n,
 	else {
 		ucl_object_insert_key(top, ucl_object_fromstring(dir),
 		    "directory", 0, false);
+		onames = ucl_object_typed_new(UCL_ARRAY);
 		err = NULL;
-		if (!cores_list(w, dir, cores, &others, &err))
+		if (!cores_list(w, dir, cores, &others, onames, &err))
 			ucl_array_append(notes, ucl_object_fromstring(err));
 		else if (others > 0)
 			ucl_array_append(notes, ucl_object_fromstring(wfmt(w,
 			    "%s holds %d other file%s", dir, others, others == 1 ?
 			    "" : "s")));
+		ucl_object_insert_key(top, onames, "others", 0, false);
 	}
-	/* A daemon's working directory is /: where a %N.core of an earlier
-	 * setting went, and a core of a process that ran there. */
-	if (dir == NULL || strcmp(dir, "/") != 0) {
+	/* Where else a core may lie: a daemon's working directory, /,
+	 * where a %N.core of an earlier setting went; and where a hand
+	 * puts one aside. */
+	for (i = 0; i < nitems(elsewhere); i++) {
+		if (dir != NULL && strcmp(dir, elsewhere[i]) == 0)
+			continue;
 		err = NULL;
 		others = 0;
-		(void)cores_list(w, "/", cores, &others, &err);
+		(void)cores_list(w, elsewhere[i], cores, &others, NULL, &err);
+	}
+	/* And each home directory. */
+	{
+		DIR		*d;
+		struct dirent	*de;
+
+		if ((d = opendir("/home")) != NULL) {
+			while ((de = readdir(d)) != NULL) {
+				if (de->d_name[0] == '.' || de->d_type != DT_DIR)
+					continue;
+				err = NULL;
+				others = 0;
+				(void)cores_list(w, wfmt(w, "/home/%s", de->d_name),
+				    cores, &others, NULL, &err);
+			}
+			closedir(d);
+		}
 	}
 	ucl_object_insert_key(top, cores, "cores", 0, false);
 	ucl_object_insert_key(top, notes, "notes", 0, false);

@@ -698,7 +698,10 @@
 - Asked for on 2026-10-17:
   - A program the kernel sees die of a signal is a fault now (crash,
     with the kernel's reason for no core).  Done 2026-10-17, agent
-    0.136.0.
+    0.136.0.  2026-10-18: BIRD is read one at a time and its tables'
+    routes counted every five minutes at most, "show route table X
+    count" walking the table; the crashes read (arcanactl crashes)
+    lists the cores and gives lldb's backtrace of one.
   - poudriere as a plugin, a Builder page in the side bar with Jails,
     Ports and Bulk tabs, BIRD built WITH_DEBUG from the console.  Done
     2026-10-17, agent 0.137.0, console 0.201.0: the builder operation

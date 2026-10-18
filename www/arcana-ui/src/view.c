@@ -777,16 +777,22 @@ stage(struct html *h)
 		    "title=\"Every OSPF neighbour of every BIRD in the fleet\">"
 		    "OSPF</button><button class=\"tab%s\" data-act=\"netsect-tab\" "
 		    "data-arg=\"bfd\" title=\"Every BFD session of every BIRD in "
-		    "the fleet\">BFD</button></nav>",
+		    "the fleet\">BFD</button><button class=\"tab%s\" data-act=\""
+		    "netsect-tab\" data-arg=\"lists\" title=\"Prefix lists kept by the "
+		    "console, for ipfw tables, BIRD sets and SD-WAN zones on any "
+		    "host\">Prefix lists</button></nav>",
 		    app.netsect == NETSECT_MAP ? " on" : "", app.netsect ==
 		    NETSECT_GROUPS ? " on" : "", app.netsect == NETSECT_TRACE ?
 		    " on" : "", app.netsect == NETSECT_BGP ? " on" : "",
 		    app.netsect == NETSECT_OSPF ? " on" : "", app.netsect ==
-		    NETSECT_BFD ? " on" : "");
+		    NETSECT_BFD ? " on" : "", app.netsect == NETSECT_PREFIXES ?
+		    " on" : "");
 		if (app.netsect == NETSECT_GROUPS)
 			view_ecmp(h);
 		else if (app.netsect == NETSECT_TRACE)
 			view_traceroute(h);
+		else if (app.netsect == NETSECT_PREFIXES)
+			view_pfxlists(h);
 		else if (app.netsect >= NETSECT_BGP) {
 			h_raw(h, "<div class=\"rtview\">");
 			view_routing(h);

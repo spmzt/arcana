@@ -834,7 +834,7 @@ void		 nhop_modal(struct html *);
 bool		 nhop_action(const char *, const char *, const char *);
 void		 ecmp_head(struct html *);
 enum { NETSECT_MAP, NETSECT_GROUPS, NETSECT_TRACE, NETSECT_BGP, NETSECT_OSPF,
-    NETSECT_BFD };
+    NETSECT_BFD, NETSECT_PREFIXES };
 void		 view_traceroute(struct html *);
 bool		 mtr_action(const char *, const char *, const char *);
 void		 mtr_tick(double);
@@ -898,6 +898,16 @@ void		 secpage_loc(char *, size_t);
 void		 secpage_open(const char *);
 void		 secpage_tick(double);
 void		 secpage_refresh(void);
+
+/* pfxlists.c: the console's prefix lists, used on any host. */
+void		 pfxlists_load(void);
+const ucl_object_t *pfxlist_get(const char *);
+char		*pfxlist_joined(const char *, const char *);
+void		 pfxlist_select(struct html *, const char *, const char *,
+		    const char *);
+void		 view_pfxlists(struct html *);
+bool		 pfxlists_form(const char *, const ucl_object_t *);
+bool		 pfxlists_action(const char *, const char *, const char *);
 
 /* iflabels.c: the console's own labels on interfaces. */
 void		 labels_load(void);

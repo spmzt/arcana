@@ -142,6 +142,11 @@ bool		 ldap_login(const char *, const char *, char *, size_t, char *,
 int		 api_login_token(struct http_request *);
 int		 api_login_ldap(struct http_request *);
 
+/* prefixlists.c: the console's prefix lists, used on any host. */
+int		 api_prefix_lists(struct http_request *);
+int		 api_prefix_list(struct http_request *);
+ucl_object_t	*prefix_list_get(const char *);
+
 /* labels.c: the console's own tags on hosts' interfaces. */
 int		 api_labels(struct http_request *);
 int		 api_label(struct http_request *);

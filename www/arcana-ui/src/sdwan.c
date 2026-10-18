@@ -4953,7 +4953,10 @@ sdwan_modal_service(struct html *h)
 		h_raw(h, "</textarea><small class=\"help\">A line each: a prefix, a "
 		    "UCS's id, an edge (its server), or a UCS End Point's id and "
 		    "its preference (the higher taken first). Not for services."
-		    "</small></label><div class=\"two\">");
+		    "</small></label>");
+		pfxlist_select(h, "Prefixes from the console's list", "pfx_console",
+		    "Added to the items when kept (Network, Prefix lists).");
+		h_raw(h, "<div class=\"two\">");
 		text_field(h, "Protocols", "protocols", csv(jget(o, "protocols"),
 		    lb, sizeof(lb)), "tcp, udp", "Services only: as an AFS's "
 		    "PROTV4.");
@@ -5295,6 +5298,8 @@ sdwan_modal_service(struct html *h)
 		    "other zone names (one service has one).");
 		nlist_select(h, "And the prefixes of the list", "prefix_list",
 		    "prefixes", jstr(o, "prefix-list"), "Kept once, under Lists.");
+		pfxlist_select(h, "Prefixes from the console's list", "pfx_console",
+		    "Added to the zone's when kept (Network, Prefix lists).");
 		return (true);
 	}
 	if (app.modal == MODAL_SD_CONFIG) {
@@ -6192,10 +6197,16 @@ sd_forms(const char *form, const ucl_object_t *f)
 			put_list(o, "ports", jstr(f, "ports"));
 		} else {
 			items = ucl_object_typed_new(UCL_ARRAY);
-			copy = strdup(jstr(f, "items") != NULL ? jstr(f, "items") :
-			    "");
-			if (copy == NULL)
-				abort();
+			{
+				char	*more = pfxlist_joined(jstr(f, "pfx_console"),
+				    "\n");
+
+				if (asprintf(&copy, "%s\n%s", jstr(f, "items") != NULL ?
+				    jstr(f, "items") : "", more != NULL ? more : "") ==
+				    -1)
+					abort();
+				free(more);
+			}
 			for (it2 = copy; (line = strsep(&it2, "\n")) != NULL; ) {
 				line += strspn(line, " \t,");
 				line[strcspn(line, "\r")] = '\0';
@@ -7006,11 +7017,27 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		(void)ucl_object_delete_key(o, "prefix-list");
 		put_str(o, "name", jstr(f, "name"));
 		put_str(o, "prefix-list", jstr(f, "prefix_list"));
-		if (jstr(f, "prefixes") != NULL && jstr(f, "prefixes")[0] != '\0')
-			put_list(o, "prefixes", jstr(f, "prefixes"));
-		else if (jget(o, "prefix-list") == NULL)
-			ucl_object_insert_key(o, ucl_object_fromstring("Default"),
-			    "prefixes", 0, false);
+		/* The console's list's prefixes, added to those typed. */
+		{
+			char	*more = pfxlist_joined(jstr(f, "pfx_console"), ", ");
+			char	*both = NULL;
+
+			if (more != NULL && more[0] != '\0' && asprintf(&both,
+			    "%s%s%s", jstr(f, "prefixes") != NULL ? jstr(f,
+			    "prefixes") : "", jstr(f, "prefixes") != NULL && jstr(f,
+			    "prefixes")[0] != '\0' ? ", " : "", more) == -1)
+				abort();
+			free(more);
+			if (both != NULL)
+				put_list(o, "prefixes", both);
+			else if (jstr(f, "prefixes") != NULL && jstr(f,
+			    "prefixes")[0] != '\0')
+				put_list(o, "prefixes", jstr(f, "prefixes"));
+			else if (jget(o, "prefix-list") == NULL)
+				ucl_object_insert_key(o, ucl_object_fromstring(
+				    "Default"), "prefixes", 0, false);
+			free(both);
+		}
 		if (jget(o, "policies") == NULL)
 			ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
 			    "policies", 0, false);

@@ -1903,6 +1903,11 @@ bird_modal(struct html *h)
 			h_raw(h, "<label>Name<input name=\"name\" spellcheck="
 			    "\"false\" autocomplete=\"off\"");
 			h_attr(h, "value", i >= 0 ? bd.b[i].name : "");
+			h_raw(h, "></label>");
+			pfxlist_select(h, "Prefixes from the console's list", "pfx",
+			    "Added to the entries below when kept (Network, Prefix "
+			    "lists).");
+			h_raw(h, "<label");
 			h_fmt(h, "%s></label><label>Entries, one a line"
 			    "<textarea name=\"text\" class=\"code\" "
 			    "spellcheck=\"false\" rows=\"10\" placeholder=\"%s"
@@ -2116,6 +2121,21 @@ bird_form(const char *form, const ucl_object_t *f)
 	if ((s = cur_server()) == NULL || bd.text == NULL || bd.saving)
 		return (true);
 	text = jstr(f, "text") != NULL ? jstr(f, "text") : "";
+	/* The console's prefix list's entries, after those typed. */
+	{
+		static char	*joined;
+		char		*more = pfxlist_joined(jstr(f, "pfx"), "\n");
+
+		free(joined);
+		joined = NULL;
+		if (more != NULL && more[0] != '\0') {
+			if (asprintf(&joined, "%s%s%s", text, text[0] != '\0' ?
+			    "\n" : "", more) == -1)
+				abort();
+			text = joined;
+		}
+		free(more);
+	}
 	free(bd.draft);
 	bd.draft = strdup(text);
 	if (strcmp(form, "bird-file") == 0) {

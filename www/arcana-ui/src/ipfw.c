@@ -960,7 +960,10 @@ view_tables(struct html *h)
 		    "autocomplete=\"off\" placeholder=\"10.0.0.0/8, 2001:db8::/32"
 		    ", em0\"><input name=\"value\" spellcheck=\"false\" "
 		    "autocomplete=\"off\" placeholder=\"a value, or nothing\" "
-		    "size=\"14\"><label class=\"toggle\"><input type=\"checkbox\""
+		    "size=\"14\">");
+		if (jstr(t, "type") == NULL || strcmp(jstr(t, "type"), "addr") == 0)
+			pfxlist_select(h, "or every prefix of", "pfx", NULL);
+		h_raw(h, "<label class=\"toggle\"><input type=\"checkbox\""
 		    " name=\"persist\"><span>keep</span></label><button class="
 		    "\"small\">Add</button></form><table class=\"net fwentries\">");
 		tbl_head(h, key, cols, 2, 1);
@@ -2527,6 +2530,27 @@ more_form(const char *form, const ucl_object_t *f)
 	} else if (strcmp(form, "fw-entry") == 0) {
 		a = jstr(f, "key") != NULL ? jstr(f, "key") : "";
 		b = jstr(f, "value") != NULL ? jstr(f, "value") : "";
+		/* A console prefix list: an entry a prefix, a job each. */
+		if (jstr(f, "pfx") != NULL && jstr(f, "pfx")[0] != '\0') {
+			const ucl_object_t	*l = pfxlist_get(jstr(f, "pfx")), *e;
+			ucl_object_iter_t	 it = NULL;
+			int			 n = 0;
+
+			while ((e = ucl_object_iterate(jget(l, "prefixes"), &it,
+			    true)) != NULL && n < 512) {
+				snprintf(words, sizeof(words), "%s add %s%s%s",
+				    jstr(f, "table") != NULL ? jstr(f, "table") : "",
+				    ucl_object_tostring_forced(e), b[0] != '\0' ? " " :
+				    "", b);
+				object_job(s, "table", words, jbool(f, "persist"));
+				n++;
+			}
+			if (n == 0)
+				toast(true, "The list %s is empty, or unknown", jstr(f,
+				    "pfx"));
+			if (a[0] == '\0')
+				return (true);
+		}
 		if (!words_ok(a) || strchr(a, ' ') != NULL || (b[0] != '\0' &&
 		    (!words_ok(b) || strchr(b, ' ') != NULL))) {
 			toast(true, "A key is an address, a network, an "

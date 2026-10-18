@@ -275,8 +275,37 @@ table(struct work *w, const char *what, const char *which, const char *head,
  * "interval", "timeout"}],
  * "tables": [{"name", "routes", "networks"}]}.
  */
+/*
+ * One read of BIRD at a time, and the tables' route counts at most
+ * every TABLES_EVERY seconds: "show route table X count" walks the
+ * whole table (an export feed in BIRD 3), and several at once, the
+ * watcher's and the pages', cost BIRD memory it does not give back;
+ * on a router with millions of routes, enough to be the end of it.
+ */
+#define	TABLES_EVERY	300
+
+static pthread_mutex_t	read_lock = PTHREAD_MUTEX_INITIALIZER;
+static struct {
+	char		 place[64];	/* the jail, "" the host */
+	time_t		 at;
+	ucl_object_t	*tabs;
+} tcache[8];
+
+static int	do_bird_locked(struct work *, struct arc_network_rsp *);
+
 int
 do_bird(struct work *w, struct arc_network_rsp *rsp)
+{
+	int	rc;
+
+	pthread_mutex_lock(&read_lock);
+	rc = do_bird_locked(w, rsp);
+	pthread_mutex_unlock(&read_lock);
+	return (rc);
+}
+
+static int
+do_bird_locked(struct work *w, struct arc_network_rsp *rsp)
 {
 	struct execres	 res;
 	ucl_object_t	*top, *st, *arr, *o, *chan, *tabs;
@@ -284,6 +313,7 @@ do_bird(struct work *w, struct arc_network_rsp *rsp)
 	char		*text, *line, *f[6], *p, *copy, *names[16];
 	long long	 routes, total, nets;
 	int		 n, i, ntab, pass;
+	size_t		 cslot = 0;
 
 	rsp->has_ok = true;
 	rsp->ok = false;
@@ -352,7 +382,28 @@ do_bird(struct work *w, struct arc_network_rsp *rsp)
 	ucl_object_insert_key(top, table(w, "bfd", "sessions", "IP",
 	    bfd_cols), "bfd", 0, false);
 
-	/* The tables, and how much each holds: ROA tables among them. */
+	/* The tables, and how much each holds: ROA tables among them; as
+	 * counted the last time, within TABLES_EVERY. */
+	{
+		const char	*place = w->jail != NULL ? w->jail : "";
+		time_t		 now = time(NULL);
+		size_t		 k, slot = 0;
+
+		for (k = 0; k < nitems(tcache); k++) {
+			if (tcache[k].tabs != NULL && strcmp(tcache[k].place,
+			    place) == 0)
+				break;
+			if (tcache[k].tabs == NULL || tcache[k].at <
+			    tcache[slot].at)
+				slot = k;
+		}
+		if (k < nitems(tcache) && now - tcache[k].at < TABLES_EVERY) {
+			ucl_object_insert_key(top, ucl_object_copy(tcache[k].tabs),
+			    "tables", 0, false);
+			goto counted;
+		}
+		cslot = k < nitems(tcache) ? k : slot;
+	}
 	tabs = ucl_object_typed_new(UCL_ARRAY);
 	ntab = 0;
 	if (birdc(w, true, "show", "symbols", "table", &res) == 0) {
@@ -398,7 +449,14 @@ do_bird(struct work *w, struct arc_network_rsp *rsp)
 				break;
 			}
 	}
+	if (tcache[cslot].tabs != NULL)
+		ucl_object_unref(tcache[cslot].tabs);
+	tcache[cslot].tabs = ucl_object_ref(tabs);
+	tcache[cslot].at = time(NULL);
+	snprintf(tcache[cslot].place, sizeof(tcache[cslot].place), "%s",
+	    w->jail != NULL ? w->jail : "");
 	ucl_object_insert_key(top, tabs, "tables", 0, false);
+counted:
 
 	/* Too much to carry: again, without the lines kept as they are. */
 	json = NULL;
