@@ -2788,7 +2788,7 @@ EOS
 	chmod +x fake-ipfw
 	printf '#!/bin/sh\necho "kldload $*" >> %s/kldload.log\nexit 0\n' "$(pwd)" > fake-kldload
 	chmod +x fake-kldload
-	DAEMON_ARGS="-h $(pwd)/fake-ipfw -3 $(pwd)/fake-setfib -2 $(pwd)/tools"
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -3 $(pwd)/fake-setfib -2 $(pwd)/tools --suricata-rules $(pwd)/rules"
 	start_daemon
 	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
 	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],"objects":0,"counters":\[\]\}' \
@@ -2971,19 +2971,29 @@ echo "certgen \$*" >> $(pwd)/squid.log
 mkdir -p "\$3"
 EOS
 	printf '#!/bin/sh\nexit 0\n' > tools/c-icap
-	# suricata: -T checks, and refuses BROKEN; run, it writes an alert
-	# and a flow to eve.json in its log directory, and says its pid.
+	# suricata: -T checks, and refuses BROKEN, and a ruleset whose rule
+	# negates any as Suricata does; run, it writes an alert and a flow
+	# to eve.json in its log directory, says its pid, and notes a USR2.
 	cat > tools/suricata <<EOS
 #!/bin/sh
 echo "suricata \$*" >> $(pwd)/suricata.log
-[ "\$1" = -T ] && { grep -q BROKEN "\$3" && { [ "\$5" = logging.outputs.0.console.enabled=yes ] && echo "E: detect: rule BROKEN at line 1"; exit 1; }; exit 0; }
+[ "\$1" = -T ] && { grep -q BROKEN "\$3" && { [ "\$5" = logging.outputs.0.console.enabled=yes ] && echo "E: detect: rule BROKEN at line 1" >&2; exit 1; }
+r=\$(sed -n 's/^  - \(.*\/suricata.rules\)\$/\\1/p' "\$3")
+[ -n "\$r" ] && grep -q NEGATED "\$r" && { echo "i: suricata: This is Suricata"; { echo "E: detect: Complete IP space negated. Rule address range is NIL."; echo "E: detect: error parsing signature \\"alert\\" from file \$r at line 1"; echo "E: suricata: Loading signatures failed."; } >&2; exit 1; }
+exit 0; }
 d=\$(sed -n 's/^default-log-dir: //p' "\$2")
 printf '%s\\n' '{"timestamp":"2026-10-12T18:00:00.000000+0000","event_type":"flow","src_ip":"10.30.0.2"}' \\
     '{"timestamp":"2026-10-12T18:00:01.000000+0000","in_iface":"wg5","event_type":"alert","src_ip":"10.30.0.2","src_port":40000,"dest_ip":"10.20.0.1","dest_port":80,"proto":"TCP","alert":{"action":"allowed","signature_id":1000001,"rev":1,"signature":"ARCANA test \\"quoted\\"","category":"","severity":2}}' >> "\$d/eve.json"
-sleep 300 & echo \$! > "\$4"
+sh -c 'trap "echo usr2 >> $(pwd)/suricata.log" USR2; while :; do sleep 1; done' & echo \$! > "\$4"
 exit 0
 EOS
-	chmod +x tools/squid tools/security_file_certgen tools/c-icap tools/suricata
+	# suricata-update: the ruleset written where -o says.
+	cat > tools/suricata-update <<EOS
+#!/bin/sh
+echo "suricata-update \$*" >> $(pwd)/suricata-update.log
+mkdir -p "\$6" && echo 'alert tcp any any -> any 22 (msg:"ET"; sid:2000001;)' > "\$6/suricata.rules"
+EOS
+	chmod +x tools/squid tools/security_file_certgen tools/c-icap tools/suricata tools/suricata-update
 	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"../x","fib":1,"conf":"router id 1.1.1.1;"}]}'
@@ -3207,6 +3217,30 @@ EOS
 	atf_check -o match:'"ids":\[\{"name":"sec-lan"' "$JGC" -c "$SOCK" sdwan
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"group":"security","instances":[]}'
 	atf_check -o match:'"ids":\[\]' "$JGC" -c "$SOCK" sdwan
+	# The ruleset suricata-update keeps: not fetched yet, its line is
+	# left out and the instance runs on its own rules, saying so.
+	rs='{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"default-log-dir: @LOGDIR@\nrule-files:\n  - @RULES@\n  - @RULESET@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
+	atf_check -o match:'suricata sw1 on 1 interface, detects: started.*the ruleset is not fetched yet' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs"
+	atf_check -o not-match:'suricata.rules' cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+	atf_check -o not-match:'ids_ruleset' "$JGC" -c "$SOCK" sdwan
+	# Fetched by the suricata job: the instance applied again takes it,
+	# and is told to read its rules again; the read says when.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata update
+	atf_check -o match:"^suricata-update --no-test --no-reload --suricata .*/tools/suricata -o $(pwd)/rules\$" \
+	    cat suricata-update.log
+	atf_check -o match:"^  - $(pwd)/rules/suricata.rules\$" cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+	atf_check -o match:'"ids_ruleset":\{"path":"[^"]*/rules/suricata.rules","at":[0-9]+,"size":[0-9]+\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	sleep 2
+	atf_check -o match:'^usr2$' cat suricata.log
+	# A rule of the ruleset that negates a HOME_NET of any is left out,
+	# as Suricata does running; one of the instance's own is refused.
+	echo 'alert tcp !$HOME_NET any -> any 25 (msg:"NEGATED"; sid:2000002;)' > rules/suricata.rules
+	rs2=$(echo "$rs" | sed 's/sid:1000001;/sid:1000002;/')
+	atf_check -o match:'1 rule of the ruleset left out, as Suricata does when it runs: detect: Complete IP space negated' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs2"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
 }
 sdwan_cleanup()
 {

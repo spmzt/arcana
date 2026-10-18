@@ -36,7 +36,6 @@
 /* c-icap of the i-th proxy, on the loopback: apart from SD-WAN's
  * (1344 + 10 * its table). */
 #define	SEC_ICAP_PORT(i)	(1345 + 10 * (int)(i))
-#define	SEC_RULESET	"/var/lib/suricata/rules/suricata.rules"
 
 static const char *
 sstr(const ucl_object_t *o, const char *k)
@@ -407,8 +406,9 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 	    "\n", name, "interfaces", err, errlen))
 		goto bad;
 	kore_buf_appendf(b, "\nrule-files:\n  - @RULES@\n");
+	/* The agent's, where it is fetched; left out until it is. */
 	if (ruleset)
-		kore_buf_appendf(b, "  - %s\n", SEC_RULESET);
+		kore_buf_appendf(b, "  - @RULESET@\n");
 	/* Suricata's own files, which a fresh install has as samples: the
 	 * agent names the one there is. */
 	kore_buf_appendf(b, "classification-file: @CLASSIFICATION@\n"

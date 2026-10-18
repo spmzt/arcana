@@ -336,6 +336,7 @@ struct arcana_jobs_submit_input_change_ssh;
 struct arcana_jobs_submit_input_change_poudriere;
 struct arcana_jobs_submit_input_change_snort;
 struct arcana_jobs_submit_input_change_clamav;
+struct arcana_jobs_submit_input_change_suricata;
 struct arcana_jobs_submit_input_change;
 struct arcana_jobs_submit_input;
 struct arcana_jobs_submit_output;
@@ -1452,6 +1453,7 @@ enum arcana_jobs_jobs_job_kind {
 	ARCANA_JOBS_JOBS_JOB_KIND_POUDRIERE = 37,
 	ARCANA_JOBS_JOBS_JOB_KIND_SNORT = 38,
 	ARCANA_JOBS_JOBS_JOB_KIND_CLAMAV = 39,
+	ARCANA_JOBS_JOBS_JOB_KIND_SURICATA = 40,
 };
 
 enum arcana_jobs_jobs_job_state {
@@ -1534,6 +1536,7 @@ enum arcana_jobs_submit_input_change_kind {
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_POUDRIERE,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SNORT,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_CLAMAV,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SURICATA,
 };
 
 enum arcana_jobs_submit_input_change_jail_action_action {
@@ -1682,6 +1685,10 @@ enum arcana_jobs_submit_input_change_snort_verb {
 
 enum arcana_jobs_submit_input_change_clamav_verb {
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_CLAMAV_VERB_MIRRORS = 0,
+};
+
+enum arcana_jobs_submit_input_change_suricata_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SURICATA_VERB_UPDATE = 0,
 };
 
 enum arcana_storage_storage_dataset_type {
@@ -6188,6 +6195,12 @@ struct arcana_jobs_submit_input_change_clamav {
 	const char	*text;
 };
 
+/* container, presence */
+struct arcana_jobs_submit_input_change_suricata {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_suricata_verb	 verb;
+};
+
 /* list entry */
 struct arcana_jobs_submit_input_change {
 	enum arcana_jobs_submit_input_change_kind	 kind;	/* the case given */
@@ -6231,6 +6244,7 @@ struct arcana_jobs_submit_input_change {
 	const struct arcana_jobs_submit_input_change_poudriere	*poudriere;
 	const struct arcana_jobs_submit_input_change_snort	*snort;
 	const struct arcana_jobs_submit_input_change_clamav	*clamav;
+	const struct arcana_jobs_submit_input_change_suricata	*suricata;
 };
 
 /* input */
@@ -11566,6 +11580,10 @@ int	arcana_jobs_submit_input_change_snort_decode(const void *, size_t, struct ar
 int	arcana_jobs_submit_input_change_clamav_encode(const struct arcana_jobs_submit_input_change_clamav *,
 	    struct cbl_ybuf *);
 int	arcana_jobs_submit_input_change_clamav_decode(const void *, size_t, struct arcana_jobs_submit_input_change_clamav *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_suricata_encode(const struct arcana_jobs_submit_input_change_suricata *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_suricata_decode(const void *, size_t, struct arcana_jobs_submit_input_change_suricata *,
 	    cbl_yarena *, int, char *, size_t);
 int	arcana_jobs_submit_input_change_encode(const struct arcana_jobs_submit_input_change *,
 	    struct cbl_ybuf *);

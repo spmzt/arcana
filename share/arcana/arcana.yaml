@@ -403,6 +403,15 @@ definitions:
           made from the port's sample, its Example line taken out.  A
           running freshclam takes them when it is restarted.  The
           host's only; never in safe mode.
+      - name: suricata
+        doc: |
+          Suricata's ruleset: verb update runs suricata-update, which
+          fetches it (Emerging Threats Open unless told of other
+          sources) to /var/lib/suricata/rules/suricata.rules; then the
+          instances are applied again from what the agent kept of them,
+          so that one started without it takes it, and those reading it
+          already read their rules again.  The host's only; never in
+          safe mode.
   - name: job-state
     type: enum
     entries:
@@ -1494,7 +1503,7 @@ attribute-sets:
           max-len: 15
       - name: verb
         type: text
-        doc: For netgraph, wireguard, bird, poudriere, snort and clamav, what to do.
+        doc: For netgraph, wireguard, bird, poudriere, snort, clamav and suricata, what to do.
         checks:
           max-len: 16
       - name: peer

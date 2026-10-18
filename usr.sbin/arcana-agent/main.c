@@ -83,6 +83,7 @@ struct opts opts = {
 	.snort_bin = PATH_SNORT_BIN,
 	.snort_etc = PATH_SNORT_ETC,
 	.freshclam_conf = PATH_FRESHCLAM_CONF,
+	.suricata_rules = PATH_SURICATA_RULES,
 	.snort_log = PATH_SNORT_LOG,
 	.poudriere_etc = PATH_POUDRIERE_ETC,
 	.swanctl_dir = PATH_SWANCTL_DIR,
@@ -110,7 +111,7 @@ static bool	foreground;
 
 enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API,
     OPT_POUDRIERE, OPT_POUDRIERE_ETC, OPT_IFMCSTAT, OPT_SNORT, OPT_SNORT_ETC,
-    OPT_SNORT_LOG, OPT_FRESHCLAM_CONF };
+    OPT_SNORT_LOG, OPT_FRESHCLAM_CONF, OPT_SURICATA_RULES };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
@@ -132,6 +133,7 @@ static const struct option longopts[] = {
 	{ "snort-etc", required_argument, NULL, OPT_SNORT_ETC },
 	{ "snort-log", required_argument, NULL, OPT_SNORT_LOG },
 	{ "freshclam-conf", required_argument, NULL, OPT_FRESHCLAM_CONF },
+	{ "suricata-rules", required_argument, NULL, OPT_SURICATA_RULES },
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -170,7 +172,8 @@ usage(void)
 	    "                 [--poudriere poudriere] [--poudriere-etc directory]\n"
 	    "                 [--ifmcstat ifmcstat] [--snort snort]\n"
 	    "                 [--snort-etc directory] [--snort-log directory]\n"
-	    "                 [--freshclam-conf file]\n");
+	    "                 [--freshclam-conf file]\n"
+	    "                 [--suricata-rules directory]\n");
 	exit(2);
 }
 
@@ -390,6 +393,9 @@ main(int argc, char *argv[])
 			break;
 		case OPT_FRESHCLAM_CONF:
 			opts.freshclam_conf = optarg;
+			break;
+		case OPT_SURICATA_RULES:
+			opts.suricata_rules = optarg;
 			break;
 		case OPT_SNORT_ETC:
 			opts.snort_etc = optarg;

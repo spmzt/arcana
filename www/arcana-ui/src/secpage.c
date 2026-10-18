@@ -624,8 +624,8 @@ ids_form(struct html *h, const ucl_object_t *f)
 	if (f == NULL || jbool(f, "ruleset"))
 		h_raw(h, " checked");
 	h_raw(h, "> The ruleset suricata-update keeps <small class=\"help\">"
-	    "/var/lib/suricata/rules/suricata.rules: run suricata-update to "
-	    "fetch it</small></label><label>Rules of its own <textarea "
+	    "Emerging Threats Open, fetched by Fetch the ruleset above; left "
+	    "out until it is</small></label><label>Rules of its own <textarea "
 	    "name=\"rules\" rows=\"4\" spellcheck=\"false\" placeholder=\""
 	    "alert tcp any any -> $HOME_NET 23 (msg:&quot;telnet&quot;; "
 	    "sid:1000001;)\">");
@@ -658,6 +658,27 @@ static const struct tcol icols[] = {
 	{ "State", NULL, false },
 };
 
+/* The ruleset suricata-update keeps on the host: when it was fetched,
+ * or that it was not. */
+static void
+ruleset_line(struct html *h)
+{
+	const ucl_object_t	*rs = jget(sec.state, "ids_ruleset");
+	char			 age[32], size[32];
+
+	if (rs == NULL) {
+		h_raw(h, "<p class=\"dim\">The ruleset is not fetched on this "
+		    "host yet: an instance that adds it runs on its own rules "
+		    "until it is.</p>");
+		return;
+	}
+	fmt_age(age, sizeof(age), (double)jint(rs, "at", 0) * 1000);
+	fmt_bytes(size, sizeof(size), jint(rs, "size", 0));
+	h_raw(h, "<p class=\"dim\">The ruleset, ");
+	h_txt(h, jstr(rs, "path"));
+	h_fmt(h, ", fetched %s (%s).</p>", age, size);
+}
+
 static void
 view_ids(struct html *h)
 {
@@ -672,8 +693,14 @@ view_ids(struct html *h)
 	    "data-input=\"filter\" placeholder=\"Filter\" autocomplete=\"off\" "
 	    "spellcheck=\"false\"");
 	h_attr(h, "value", app.filter);
-	h_raw(h, "><button class=\"primary\" data-act=\"sec-new\">New "
+	h_raw(h, "><button class=\"ghost\" data-act=\"sec-ruleset\" title=\""
+	    "suricata-update fetches Emerging Threats Open; each instance that "
+	    "adds the ruleset takes it\">");
+	h_raw(h, jget(sec.state, "ids_ruleset") != NULL ? "Fetch the ruleset "
+	    "again" : "Fetch the ruleset");
+	h_raw(h, "</button><button class=\"primary\" data-act=\"sec-new\">New "
 	    "intrusion detection</button></div>");
+	ruleset_line(h);
 	n = (int)ucl_array_size(specs(true));
 	if (sec.edit >= 0)
 		ids_form(h, sec.edit < n ? ucl_array_find_index(specs(true),
@@ -1177,6 +1204,18 @@ secpage_action(const char *act, const char *arg, const char *value)
 			abort();
 		title[n++] = "service clamav_freshclam restart";
 		sec_jobs(json, title, n);
+		(void)arg;
+		return (true);
+	}
+	if (strcmp(act, "sec-ruleset") == 0) {
+		char		*json[1];
+		const char	*title[1];
+
+		if ((json[0] = strdup("{\"kind\":\"suricata\",\"verb\":"
+		    "\"update\"}")) == NULL)
+			abort();
+		title[0] = "suricata-update: the ruleset fetched";
+		sec_jobs(json, title, 1);
 		(void)arg;
 		return (true);
 	}

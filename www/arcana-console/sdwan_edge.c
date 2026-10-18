@@ -2325,7 +2325,6 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 }
 
 /* The rules suricata-update keeps, where its defaults put them. */
-#define	IDS_RULESET	"/var/lib/suricata/rules/suricata.rules"
 /* The divert port of a service's Suricata, where it prevents. */
 #define	IDS_PORT(fib)	(8000 + (int)(fib))
 
@@ -2453,7 +2452,7 @@ ids_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *ifs,
 		    ucl_object_tostring(f));
 	kore_buf_appendf(b, "rule-files:\n  - @RULES@\n");
 	if (ruleset)
-		kore_buf_appendf(b, "  - %s\n", IDS_RULESET);
+		kore_buf_appendf(b, "  - @RULESET@\n");
 	kore_buf_appendf(b, "classification-file: "
 	    "/usr/local/etc/suricata/classification.config\n"
 	    "reference-config-file: /usr/local/etc/suricata/reference.config\n"

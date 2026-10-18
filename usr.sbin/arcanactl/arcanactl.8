@@ -322,6 +322,16 @@ not there yet is made from the port's sample, without its
 line.
 A running freshclam takes them when it is restarted.
 A job.
+.It Cm suricata Cm update
+Runs
+.Xr suricata-update 8 ,
+which fetches Suricata's ruleset (Emerging Threats Open unless it is
+told of other sources) to the agent's
+.Pa suricata.rules ;
+then the intrusion detection instances are applied again, so that one
+started before the ruleset was there takes it, and those that read it
+already read their rules again.
+A job.
 .It Cm cert Oo Cm list | Cm add Ar name file | Cm remove Ar name | Cm trust Ar file | Cm untrust Ar file | Cm rehash Oc
 The certificates OpenSSL trusts, of the host or of
 .Fl j Ns 's

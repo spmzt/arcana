@@ -204,6 +204,7 @@ usage(void)
 	    "    snort [list | rules] | conf snort.lua|local.rules file |\n"
 	    "        verb [key=value ...]\n"
 	    "    clamav mirrors mirror ...\n"
+	    "    suricata update\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
@@ -2538,6 +2539,25 @@ cmd_clamav(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
+ * suricata update: suricata-update fetches the ruleset, and the
+ * instances take it; a job.
+ */
+static int
+cmd_suricata(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+
+	if (argc != 2 || strcmp(argv[1], "update") != 0)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_SURICATA;
+	sp.verb = argv[1];
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/*
  * cert [list] | add name file | remove name | trust file | untrust file |
  * rehash: the certificates OpenSSL trusts, of the host or of -j's jail;
  * a change is a job.
@@ -4267,6 +4287,8 @@ main(int argc, char *argv[])
 		rc = cmd_snort(&cl, argc, argv);
 	else if (strcmp(argv[0], "clamav") == 0)
 		rc = cmd_clamav(&cl, argc, argv);
+	else if (strcmp(argv[0], "suricata") == 0)
+		rc = cmd_suricata(&cl, argc, argv);
 	else if (strcmp(argv[0], "poudriere") == 0)
 		rc = cmd_poudriere(&cl, argc, argv);
 	else if (strcmp(argv[0], "sshd") == 0)

@@ -320,9 +320,12 @@ module: arcana-jobs
        |        |     +---w args*   string
        |        |     +---w text?   string
        |        +--:(clamav)
-       |           +---w clamav!
+       |        |  +---w clamav!
+       |        |     +---w verb    enumeration
+       |        |     +---w args*   string
+       |        |     +---w text?   string
+       |        +--:(suricata)
+       |           +---w suricata!
        |              +---w verb    enumeration
-       |              +---w args*   string
-       |              +---w text?   string
        +--ro output
           +--ro id*   uint64

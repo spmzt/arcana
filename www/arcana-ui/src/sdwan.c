@@ -5757,9 +5757,9 @@ sdwan_modal_service(struct html *h)
 			    "name=\"idsruleset\" value=\"1\"%s> Add the ruleset "
 			    "suricata-update keeps on the edge<small>%s</small>"
 			    "</label>", jbool(ids, "ruleset") ? " checked" : "",
-			    "/var/lib/suricata/rules/suricata.rules, fetched by "
-			    "the admin with suricata-update (Emerging Threats Open "
-			    "by default).");
+			    "Emerging Threats Open, fetched on the edge by its "
+			    "Security page's Fetch the ruleset (suricata-update); "
+			    "left out until it is.");
 		}
 		return (true);
 	}

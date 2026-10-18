@@ -143,6 +143,9 @@ submodule arcana-jobs-kinds {
       enum clamav {
         value 39;
       }
+      enum suricata {
+        value 40;
+      }
     }
     description
       "A kind of job, by its number in arcana.yaml's job-kind.";
@@ -1675,6 +1678,22 @@ submodule arcana-jobs-kinds {
             type string;
             description
               "The file";
+          }
+        }
+      }
+      case suricata {
+        container suricata {
+          presence
+            "This kind of job.";
+          description
+            "Suricata's ruleset fetched by suricata-update";
+          leaf verb {
+            type enumeration {
+              enum update;
+            }
+            mandatory true;
+            description
+              "Verb";
           }
         }
       }

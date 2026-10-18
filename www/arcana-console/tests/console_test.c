@@ -6969,7 +6969,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"name\":\"sw1\",\"interfaces\":[\"") != NULL && strstr(r.body,
 	    "default-log-dir: @LOGDIR@") != NULL && strstr(r.body,
 	    "HOME_NET: \\\"[10.1.0.0/24") != NULL && strstr(r.body,
-	    "  - @RULES@\\n  - /var/lib/suricata/rules/suricata.rules") != NULL &&
+	    "  - @RULES@\\n  - @RULESET@\\n") != NULL &&
 	    strstr(r.body, "\"rules\":\"alert http any any -> $HOME_NET any "
 	    "(msg:\\\"x\\\"; sid:1000001; rev:1;)\\n\"") != NULL && strstr(
 	    r.body, "\"plugin\":\"suricata\",\"package\":\"suricata\"") != NULL,
