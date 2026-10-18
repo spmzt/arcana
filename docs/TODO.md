@@ -799,7 +799,15 @@
 
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
-    sees and changes which hosts and services.
+    sees and changes which hosts and services.  (Done 2026-10-18 as
+    the user decided: per host with roles, tenants separate fleets.
+    users.c: a user's role
+    on the console (owner, operator, member), on each host or all
+    (viewer, operator, admin), a tenant whose hosts alone it sees;
+    keys belong to users, a user is invited for their first key; the
+    hosts' routes gated in call_new, the stream, transfers, the path
+    finder, labels; Settings, Users.  Not done: groups of users, LDAP
+    groups mapped to roles.)
   - Mail notifications of faults, jobs and runs. (Done 2026-10-12:
     Settings, Notifications, By mail; one worker reads each host's
     events, the agent's job ends among them now, and the console's

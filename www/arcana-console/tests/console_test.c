@@ -121,7 +121,8 @@ client_data(const char *type, const char *challenge, const char *origin)
 	return (strdup(cd));
 }
 
-/* navigator.credentials.create(), as a browser and a key would do it. */
+/* navigator.credentials.create(), as a browser and a key would do it;
+ * token the setup token, or an invitation (inv_...) of a user's. */
 static void
 do_register(struct authn *a, const char *token, struct resp *r)
 {
@@ -131,8 +132,9 @@ do_register(struct authn *a, const char *token, struct resp *r)
 	size_t		 adlen;
 	int		 spkilen;
 
-	snprintf(body, sizeof(body), "{\"setup_token\":\"%s\"}",
-	    token != NULL ? token : "");
+	snprintf(body, sizeof(body), "{\"%s\":\"%s\"}", token != NULL &&
+	    strncmp(token, "inv_", 4) == 0 ? "invite" : "setup_token", token !=
+	    NULL ? token : "");
 	http("POST", "/api/auth/register/begin", body, &b);
 	EXPECT(&b, 200);
 	cd = client_data("webauthn.create", jstr(&b, "publicKey.challenge"),
@@ -537,6 +539,193 @@ ATF_TC_BODY(second_key, tc)
 	resp_free(&r);
 	http("DELETE", path, NULL, &r);
 	EXPECT(&r, 409);
+	resp_free(&r);
+}
+
+CONSOLE_TC(users, "Users with roles: a member sees the hosts they have a "
+    "role on, a viewer reads them, an admin alone updates one; a tenant is "
+    "a fleet of its own; the owner keeps the console")
+ATF_TC_BODY(users, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+	char		ha[12], hb[12], path[256], body[600], invite[80];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	/* The keys from before users are the built-in owner's. */
+	http("GET", "/api/auth/status", NULL, &r);
+	ATF_CHECK_STREQ("admin", jstr(&r, "user"));
+	ATF_CHECK_STREQ("owner", jstr(&r, "console"));
+	resp_free(&r);
+	http("GET", "/api/users", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("admin", jstr(&r, "users.0.name"));
+	ATF_CHECK_STREQ("1", jstr(&r, "users.0.keys"));
+	resp_free(&r);
+	http("POST", "/api/servers", "{\"name\":\"a\",\"uri\":\"tcp://"
+	    "192.0.2.1:4310\"}", &r);
+	EXPECT(&r, 200);
+	snprintf(ha, sizeof(ha), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	http("POST", "/api/servers", "{\"name\":\"b\",\"uri\":\"tcp://"
+	    "192.0.2.2:4310\",\"tenant\":\"acme\"}", &r);
+	EXPECT(&r, 200);
+	snprintf(hb, sizeof(hb), "%s", jstr(&r, "servers.1.id"));
+	ATF_CHECK_STREQ("acme", jstr(&r, "servers.1.tenant"));
+	resp_free(&r);
+	/* bob, a member, a viewer of a: kept, and what is refused. */
+	snprintf(body, sizeof(body), "{\"console\":\"member\",\"hosts\":{\"%s\":"
+	    "\"viewer\"}}", ha);
+	http("PUT", "/api/users/bob", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bob", jstr(&r, "users.1.name"));
+	ATF_CHECK_STREQ("member", jstr(&r, "users.1.console"));
+	resp_free(&r);
+	http("PUT", "/api/users/bad", "{\"console\":\"king\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("PUT", "/api/users/bad", "{\"hosts\":{\"zz\":\"viewer\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("PUT", "/api/users/admin", "{\"console\":\"member\"}", &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+	/* Invited: a token said once, with which bob registers a key and
+	 * is signed in as bob. */
+	http("POST", "/api/users/bob/invite", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "token") != NULL);
+	snprintf(invite, sizeof(invite), "%s", jstr(&r, "token"));
+	resp_free(&r);
+	http("GET", "/api/users", NULL, &r);
+	ATF_CHECK_STREQ("1", jstr(&r, "users.1.invites"));
+	resp_free(&r);
+	cookie[0] = '\0';
+	authn_new(&b, -8);
+	do_register(&b, invite, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bob", jstr(&r, "user"));
+	ATF_CHECK_STREQ("member", jstr(&r, "console"));
+	resp_free(&r);
+	/* Used once. */
+	cookie[0] = '\0';
+	snprintf(body, sizeof(body), "{\"invite\":\"%s\"}", invite);
+	http("POST", "/api/auth/register/begin", body, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	do_login(&b, 1, ORIGIN, RP_ID, NULL, false, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bob", jstr(&r, "user"));
+	resp_free(&r);
+	/* The hosts: a alone, as a viewer; b not there, and not reached. */
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(ha, jstr(&r, "servers.0.id"));
+	ATF_CHECK_STREQ("viewer", jstr(&r, "servers.0.role"));
+	ATF_CHECK(jstr(&r, "servers.1.id") == NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", hb);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", ha);
+	http("POST", path, "{\"kind\":\"sysctl\",\"args\":[\"kern.hostname\"]}",
+	    &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s", ha);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	/* The console's own, and the fleet's tools, not a member's; the
+	 * prefix lists read. */
+	http("GET", "/api/settings", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("GET", "/api/users", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("GET", "/api/sdwan", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("GET", "/api/workflows", NULL, &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	http("GET", "/api/prefix-lists", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("PUT", "/api/prefix-lists/x", "{\"prefixes\":[]}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	/* Their own keys alone. */
+	http("GET", "/api/auth/credentials", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bob", jstr(&r, "credentials.0.user"));
+	ATF_CHECK(jstr(&r, "credentials.1.id") == NULL);
+	resp_free(&r);
+	/* The owner again: bob an operator of every host of tenant acme;
+	 * a is not in it, b is. */
+	cookie[0] = '\0';
+	do_login(&a, 1, ORIGIN, RP_ID, NULL, false, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/auth/credentials", NULL, &r);
+	ATF_CHECK(jstr(&r, "credentials.1.user") != NULL);
+	resp_free(&r);
+	http("PUT", "/api/users/bob", "{\"console\":\"member\",\"tenant\":"
+	    "\"acme\",\"hosts\":{\"*\":\"operator\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	cookie[0] = '\0';
+	do_login(&b, 2, ORIGIN, RP_ID, NULL, false, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("acme", jstr(&r, "tenant"));
+	resp_free(&r);
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(hb, jstr(&r, "servers.0.id"));
+	ATF_CHECK_STREQ("operator", jstr(&r, "servers.0.role"));
+	ATF_CHECK(jstr(&r, "servers.1.id") == NULL);
+	resp_free(&r);
+	/* An operator changes (the host is not reached here: not 403), an
+	 * admin alone updates or removes. */
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", hb);
+	http("POST", path, "{\"kind\":\"sysctl\",\"args\":[\"kern.hostname\"]}",
+	    &r);
+	ATF_CHECK_MSG(r.status != 403 && r.status != 404, "%d %s", r.status,
+	    r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/agent-update", hb);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/labels/%s/vtnet0", hb);
+	http("PUT", path, "{\"label\":\"uplink\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/labels/%s/vtnet0", ha);
+	http("PUT", path, "{\"label\":\"uplink\"}", &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	/* Removed by the owner: bob's keys and session go with him. */
+	cookie[0] = '\0';
+	do_login(&a, 2, ORIGIN, RP_ID, NULL, false, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("DELETE", "/api/users/admin", NULL, &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+	http("DELETE", "/api/users/bob", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "users.1.name") == NULL);
+	resp_free(&r);
+	http("GET", "/api/auth/credentials", NULL, &r);
+	ATF_CHECK(jstr(&r, "credentials.1.id") == NULL);
+	resp_free(&r);
+	cookie[0] = '\0';
+	do_login(&b, 3, ORIGIN, RP_ID, NULL, false, &r);
+	EXPECT(&r, 401);
 	resp_free(&r);
 }
 
@@ -7119,6 +7308,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, android);
 	ATF_TP_ADD_TC(tp, android_none);
 	ATF_TP_ADD_TC(tp, second_key);
+	ATF_TP_ADD_TC(tp, users);
 	ATF_TP_ADD_TC(tp, csrf);
 	ATF_TP_ADD_TC(tp, jails);
 	ATF_TP_ADD_TC(tp, services);

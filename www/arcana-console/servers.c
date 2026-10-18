@@ -41,7 +41,8 @@ static bool	valid_name(const char *);
 static bool	valid_uri(const char *);
 static int	save(void);
 static ucl_object_t *server_object(const struct server *);
-static void	add(const char *, const char *, const char *, const char *);
+static void	 add(const char *, const char *, const char *, const char *,
+		    const char *);
 static void	new_id(char *, size_t);
 static void	local_enrol(void);
 static const char *socket_path(const char *);
@@ -90,7 +91,8 @@ valid_uri(const char *s)
 }
 
 static void
-add(const char *id, const char *name, const char *uri, const char *peer)
+add(const char *id, const char *name, const char *uri, const char *peer,
+    const char *tenant)
 {
 	struct server	*s;
 
@@ -100,6 +102,8 @@ add(const char *id, const char *name, const char *uri, const char *peer)
 	s->name = kore_strdup(name);
 	s->uri = kore_strdup(uri);
 	s->peer_name = peer != NULL && *peer != '\0' ? kore_strdup(peer) :
+	    NULL;
+	s->tenant = tenant != NULL && *tenant != '\0' ? kore_strdup(tenant) :
 	    NULL;
 	s->safe_wait = 0;
 	pthread_mutex_unlock(&table_lock);
@@ -126,7 +130,7 @@ servers_init(void)
 		if (id == NULL || strlen(id) != 8 || name == NULL ||
 		    uri == NULL || !valid_uri(uri))
 			continue;
-		add(id, name, uri, ucl_str(o, "peer_name"));
+		add(id, name, uri, ucl_str(o, "peer_name"), ucl_str(o, "tenant"));
 		k = ucl_object_toint(ucl_object_lookup(o, "safe_wait"));
 		servers[nservers - 1].safe_wait = k >= SAFE_WAIT_MIN &&
 		    k <= SAFE_WAIT_MAX ? (int)k : 0;
@@ -215,7 +219,7 @@ local_enrol(void)
 	if (!valid_name(host))
 		strlcpy(host, "this host", sizeof(host));
 	new_id(id, sizeof(id));
-	add(id, host, cfg.local_agent, NULL);
+	add(id, host, cfg.local_agent, NULL, NULL);
 	local_done = true;
 	local_state = "added";
 	if (save() == -1)
@@ -254,7 +258,7 @@ servers_add(const char *name, const char *uri, const char *peer)
 		if (strcmp(servers[i].uri, uri) == 0)
 			return (-1);
 	new_id(id, sizeof(id));
-	add(id, name, uri, peer);
+	add(id, name, uri, peer, NULL);
 	if (save() == -1)
 		return (-1);
 	kore_log(LOG_NOTICE, "server %s added: %s", id, uri);
@@ -360,6 +364,9 @@ server_object(const struct server *s)
 	if (s->peer_name != NULL)
 		ucl_object_insert_key(o, ucl_object_fromstring(s->peer_name),
 		    "peer_name", 0, false);
+	if (s->tenant != NULL)
+		ucl_object_insert_key(o, ucl_object_fromstring(s->tenant),
+		    "tenant", 0, false);
 	ucl_object_insert_key(o, ucl_object_frombool(strncmp(s->uri,
 	    "unix:", 5) == 0), "local", 0, false);
 	if (s->safe_wait > 0)
@@ -386,12 +393,13 @@ save(void)
 	return (rc);
 }
 
-/* GET: the list.  POST {name, uri, peer_name?}: add one. */
+/* GET: the list, the hosts the user has a role on, with it.  POST
+ * {name, uri, peer_name?, tenant?}: add one. */
 int
 api_servers(struct http_request *req)
 {
-	ucl_object_t	*o, *a, *body;
-	const char	*name, *uri, *peer;
+	ucl_object_t	*o, *a, *body, *so;
+	const char	*name, *uri, *peer, *tenant, *u;
 	char		 id[9];
 	int		 i;
 
@@ -404,6 +412,7 @@ api_servers(struct http_request *req)
 		name = ucl_str(body, "name");
 		uri = ucl_str(body, "uri");
 		peer = ucl_str(body, "peer_name");
+		tenant = ucl_str(body, "tenant");
 		if (name == NULL || !valid_name(name) || uri == NULL ||
 		    !valid_uri(uri) || (peer != NULL && (!valid_name(peer) ||
 		    strchr(peer, ' ') != NULL))) {
@@ -411,6 +420,11 @@ api_servers(struct http_request *req)
 			return (reply_error(req, 400, "invalid", "a name and a "
 			    "URI such as tcp://host:4310 or "
 			    "unix:/var/run/arcana-agent.sock are needed"));
+		}
+		if (tenant != NULL && tenant[0] != '\0' && !user_name_ok(tenant)) {
+			ucl_object_unref(body);
+			return (reply_error(req, 400, "invalid", "a tenant is "
+			    "named by letters, digits, _ . @ and -, 64 at most"));
 		}
 		if (nservers == MAX_SERVERS) {
 			ucl_object_unref(body);
@@ -425,7 +439,7 @@ api_servers(struct http_request *req)
 			}
 		}
 		new_id(id, sizeof(id));
-		add(id, name, uri, peer);
+		add(id, name, uri, peer, tenant);
 		ucl_object_unref(body);
 		if (save() == -1)
 			return (reply_error(req, 500, "store", "cannot save"));
@@ -434,9 +448,17 @@ api_servers(struct http_request *req)
 	}
 	/* The agent beside the console may have come up since. */
 	local_enrol();
+	u = session_user(req);
 	a = ucl_object_typed_new(UCL_ARRAY);
-	for (i = 0; i < nservers; i++)
-		ucl_array_append(a, server_object(&servers[i]));
+	for (i = 0; i < nservers; i++) {
+		if (u != NULL && user_host(u, servers[i].id) == ROLE_NONE)
+			continue;
+		so = server_object(&servers[i]);
+		if (u != NULL)
+			ucl_object_insert_key(so, ucl_object_fromstring(role_name(
+			    user_host(u, servers[i].id))), "role", 0, false);
+		ucl_array_append(a, so);
+	}
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, a, "servers", 0, false);
 	/* added, removed, absent (not running), denied (not reachable). */
@@ -471,10 +493,37 @@ api_server(struct http_request *req)
 			break;
 	if (i == nservers)
 		return (reply_error(req, 404, "not_found", "no such server"));
+	if (!host_allowed(req, id, true, true))
+		return (KORE_RESULT_OK);
 	if (req->method == HTTP_METHOD_POST) {
 		if ((body = read_json(req)) == NULL)
 			return (reply_error(req, 400, "bad_request",
 			    "expected a JSON object"));
+		/* {tenant}: the fleet it is in, "" for none. */
+		if ((v = ucl_object_lookup(body, "tenant")) != NULL) {
+			const char	*t = ucl_object_tostring(v);
+
+			if (t == NULL || (t[0] != '\0' && !user_name_ok(t))) {
+				ucl_object_unref(body);
+				return (reply_error(req, 400, "invalid", "a tenant "
+				    "is named by letters, digits, _ . @ and -, 64 "
+				    "at most"));
+			}
+			pthread_mutex_lock(&table_lock);
+			kore_free(servers[i].tenant);
+			servers[i].tenant = t[0] != '\0' ? kore_strdup(t) : NULL;
+			pthread_mutex_unlock(&table_lock);
+			if (ucl_object_lookup(body, "safe_wait") == NULL) {
+				ucl_object_unref(body);
+				if (save() == -1)
+					return (reply_error(req, 500, "store",
+					    "cannot save"));
+				kore_log(LOG_NOTICE, "server %s: tenant %s", id,
+				    t[0] != '\0' ? t : "none");
+				req->method = HTTP_METHOD_GET;
+				return (api_servers(req));
+			}
+		}
 		v = ucl_object_lookup(body, "safe_wait");
 		k = v != NULL && ucl_object_type(v) == UCL_INT ?
 		    ucl_object_toint(v) : -1;
@@ -504,6 +553,7 @@ api_server(struct http_request *req)
 	kore_free(servers[i].name);
 	kore_free(servers[i].uri);
 	kore_free(servers[i].peer_name);
+	kore_free(servers[i].tenant);
 	memmove(&servers[i], &servers[i + 1],
 	    (size_t)(nservers - i - 1) * sizeof(servers[0]));
 	nservers--;
@@ -685,6 +735,8 @@ api_server_move(struct http_request *req)
 		return (KORE_RESULT_OK);
 	if (!capture(req, 3, id, sizeof(id)) || (s = server_find(id)) == NULL)
 		return (reply_error(req, 404, "not_found", "no such server"));
+	if (!host_allowed(req, id, true, true))
+		return (KORE_RESULT_OK);
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "a JSON object: uri"));
 	to = ucl_str(body, "uri");

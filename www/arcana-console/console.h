@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.210.0"
+#define	ARCW_VERSION		"0.211.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -183,6 +183,31 @@ bool		 ucl_flag(const ucl_object_t *, const char *);
 void		 auth_init(void);
 bool		 session_valid(struct http_request *);
 const char	*session_who(struct http_request *);
+const char	*session_user(struct http_request *);
+bool		 host_allowed(struct http_request *, const char *, bool, bool);
+bool		 host_role_ok(struct http_request *, const char *, bool, bool);
+int		 cred_count_of(const char *);
+void		 creds_forget_user(const char *);
+void		 sessions_end_user(const char *);
+
+/* users.c: the console's users and their roles (RBAC). */
+#define	ADMIN_USER	"admin"
+enum role { ROLE_NONE, ROLE_VIEWER, ROLE_OPERATOR, ROLE_ADMIN };
+enum crole { CROLE_NONE, CROLE_MEMBER, CROLE_OPERATOR, CROLE_OWNER };
+void		 users_init(void);
+bool		 user_name_ok(const char *);
+bool		 user_exists(const char *);
+enum crole	 user_console(const char *);
+enum role	 user_host(const char *, const char *);
+const char	*user_tenant(const char *);
+const char	*role_name(enum role);
+const char	*crole_name(enum crole);
+bool		 user_path_ok(enum crole, const char *, bool);
+void		 user_handle(const char *, char *, size_t);
+bool		 invite_take(const char *, char *, size_t);
+int		 api_users(struct http_request *);
+int		 api_user(struct http_request *);
+int		 api_user_invite(struct http_request *);
 /* audit.c: the audit trail of Policy Actions (MEF 118.1 §13.1). */
 void		 audit_add(const char *, const char *, const char *,
 		    const char *, const char *, const char *, const char *, ...)
@@ -196,6 +221,7 @@ struct server {
 	char	*name;
 	char	*uri;
 	char	*peer_name;
+	char	*tenant;	/* the fleet it is in, or NULL */
 	int	 safe_wait;	/* s a safe change waits; 0 the agent's own */
 };
 

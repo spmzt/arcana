@@ -684,6 +684,23 @@ part_shell(void)
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=add-key] ul.keys li "
 	    ".name')", 10);
+	/* Users and their roles (RBAC): the built-in owner listed, the
+	 * form with the console role, the tenant and a role on every
+	 * host and host by host. */
+	run("document.querySelector('button[data-act=set-tab][data-arg=users]')"
+	    ".click()");
+	wait_js("[...document.querySelectorAll('table.users tbody tr')].some("
+	    "tr => tr.textContent.includes('admin') && tr.textContent.includes("
+	    "'owner'))", 10);
+	ATF_CHECK(js_true("document.querySelector('header .who-user')?."
+	    "textContent.includes('admin')"));
+	run("document.querySelector('button[data-act=user-add]').click()");
+	wait_js("document.querySelector('.modal form[data-form=user] "
+	    "select[name=console]') !== null && document.querySelector('.modal "
+	    "input[name=tenant]') !== null && document.querySelector('.modal "
+	    "select[name=all]') !== null", 5);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	shot("0b4-users");
 	/* A read API token: made with a name in the settings, its value
 	 * shown once, listed, and deleted once confirmed. */
 	run("document.querySelector('button[data-act=set-tab][data-arg="
@@ -4990,7 +5007,7 @@ part_flows(void)
 	    20);
 	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
 	    ".click()");
-	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 14",
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 19",
 	    5);
 	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
 	    ".click()");

@@ -273,6 +273,15 @@ topbar(struct html *h)
 		    app.notify_off ? "off, press to turn on" : "on, press to "
 		    "turn off" : app.notify == 2 ? "blocked in the browser's "
 		    "settings" : "off, press to allow");
+	if (app.user[0] != '\0') {
+		h_raw(h, "<span class=\"dim who-user\" title=\"Signed in as\">");
+		h_txt(h, app.user);
+		if (app.console_role[0] != '\0') {
+			h_raw(h, " · ");
+			h_txt(h, app.console_role);
+		}
+		h_raw(h, "</span>");
+	}
 	h_raw(h, "<button class=\"ghost\" data-act=\"logout\">Log out</button>"
 	    "</div></header>");
 }
@@ -1349,6 +1358,7 @@ static const struct {
 	{ SET_NOTIFY, "notify", "Notifications" },
 	{ SET_TOKENS, "tokens", "API tokens" },
 	{ SET_KEYS, "keys", "Sign-in keys" },
+	{ SET_USERS, "users", "Users" },
 	{ SET_CONSOLE, "console", "Console" },
 	{ SET_UPDATE, "update", "Update" },
 	{ SET_CA, "ca", "Certificate authority" },
@@ -2114,6 +2124,14 @@ view_settings(struct html *h)
 		    "changed only to one signed in with a security key or a "
 		    "passkey.</div>", app.by_ldap ? "by a directory's user" :
 		    "with an API token");
+	else if (app.user[0] != '\0' && strcmp(app.console_role, "owner") != 0) {
+		h_raw(h, "<div class=\"notice warn\">Signed in as <b>");
+		h_txt(h, app.user);
+		h_fmt(h, "</b>, %s of this console: its settings, sign-in keys, "
+		    "tokens, CA and users are the owner's; your own keys are "
+		    "yours.</div>", strcmp(app.console_role, "operator") == 0 ?
+		    "an operator" : "a member");
+	}
 	if (app.modal_error[0] != '\0' && app.modal == MODAL_NONE) {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, app.modal_error);
@@ -2128,6 +2146,9 @@ view_settings(struct html *h)
 		break;
 	case SET_KEYS:
 		set_keys(h);
+		break;
+	case SET_USERS:
+		set_users(h);
 		break;
 	case SET_CONSOLE:
 		set_console(h);
@@ -2332,6 +2353,12 @@ modal(struct html *h)
 	case MODAL_SD_CONFIG:
 		if (!sdwan_modal(h))
 			return;
+		break;
+	case MODAL_USER:
+		if (!user_modal(h))
+			return;
+		h_raw(h, "<div class=\"actions\"><button class=\"primary\">Keep"
+		    "</button></div>");
 		break;
 	case MODAL_BIRD_PROTO:
 	case MODAL_BIRD_BLOCK:
@@ -2847,6 +2874,18 @@ auth_screen(struct html *h)
 		    "the console, live. It reconnects by itself.</p>"
 		    "<button class=\"ghost\" data-act=\"retry\">Try "
 		    "again</button></div>");
+	} else if (app.screen == SCREEN_ENROL && app.invite_token[0] != '\0') {
+		/* Invited (Settings, Users): the first key of a user's. */
+		h_raw(h, "<form data-form=\"enrol\" class=\"enrol\">"
+		    "<p>You were invited to this console. Name your security "
+		    "key or passkey, then touch it: it signs you in from now "
+		    "on.</p><input type=\"hidden\" name=\"token\"");
+		h_attr(h, "value", app.invite_token);
+		h_raw(h, "><label>Key name<input name=\"name\" placeholder=\""
+		    "YubiKey 5C\" maxlength=\"64\" autofocus></label>");
+		h_fmt(h, "<button class=\"primary\"%s>%s</button></form>",
+		    app.auth_busy ? " disabled" : "", app.auth_busy ?
+		    "Touch your key…" : "Register security key");
 	} else if (app.screen == SCREEN_ENROL) {
 		h_raw(h, "<form data-form=\"enrol\" class=\"enrol\">"
 		    "<p>No security key is registered yet. The console wrote a "

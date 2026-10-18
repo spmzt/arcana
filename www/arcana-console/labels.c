@@ -157,7 +157,7 @@ api_label(struct http_request *req)
 		    "/api/labels/<server>/<interface>"));
 	snprintf(sid, sizeof(sid), "%.*s", (int)n, p);
 	snprintf(ifname, sizeof(ifname), "%s", p + n + 1);
-	if (!guard(req, true))
+	if (!guard(req, true) || !host_allowed(req, sid, true, false))
 		return (KORE_RESULT_OK);
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "{\"label\": \"text\"}; "

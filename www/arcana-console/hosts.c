@@ -3161,9 +3161,10 @@ call_new(struct http_request *req, enum op op)
 	struct call		*c;
 	uint64_t		 t0, t1;
 	char			 sid[16];
+	bool			 mutate;
 
 	t0 = now_us();
-	if (!guard(req, op == OP_ACTION || op == OP_ADDRESS ||
+	mutate = op == OP_ACTION || op == OP_ADDRESS ||
 	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
 	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL || op == OP_CAPTURE ||
 	    op == OP_ZFS_KEY || op == OP_SDWAN_PROXY || op == OP_SDWAN_IDS ||
@@ -3176,7 +3177,8 @@ call_new(struct http_request *req, enum op op)
 	    ((op == OP_SERVICE_CONFIG || op == OP_TRANSPORT || op ==
 	    OP_IPFW_RULES || op == OP_FSTAB || op == OP_HISTORY) &&
 	    req->method ==
-	    HTTP_METHOD_POST)))
+	    HTTP_METHOD_POST);
+	if (!guard(req, mutate))
 		return (NULL);
 	t1 = now_us();
 	if (!capture(req, 3, sid, sizeof(sid)) || (s = server_find(sid)) ==
@@ -3184,6 +3186,11 @@ call_new(struct http_request *req, enum op op)
 		reply_error(req, 404, "not_found", "no such server");
 		return (NULL);
 	}
+	/* The user's role on this host (users.c): updating the agent or
+	 * the console from it, and building, are the host's admin's. */
+	if (!host_allowed(req, sid, mutate, op == OP_AGENT_UPDATE || op ==
+	    OP_AGENT_BUILD || op == OP_CONSOLE_UPDATE))
+		return (NULL);
 	c = kore_calloc(1, sizeof(*c));
 	c->op = op;
 	c->reads = req->method == HTTP_METHOD_GET;
@@ -4016,7 +4023,8 @@ api_config_apply(struct http_request *req)
 		}
 		c->text = kore_strdup(json);
 		free(json);
-	} else if (fid != NULL && (from = server_find(fid)) != NULL) {
+	} else if (fid != NULL && (from = server_find(fid)) != NULL &&
+	    host_role_ok(req, fid, false, false)) {
 		c->from_uri = kore_strdup(from->uri);
 		c->from_peer = from->peer_name != NULL ?
 		    kore_strdup(from->peer_name) : NULL;

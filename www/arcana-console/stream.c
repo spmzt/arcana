@@ -506,6 +506,18 @@ stream_connect(struct connection *c)
 	(void)c;
 }
 
+/*
+ * The console user the socket was opened by (users.c), kept on the
+ * connection by api_stream(); NULL for a session with none.  Each
+ * host asked for is theirs to read, or refused as if it were not.
+ */
+static bool
+stream_host_ok(struct connection *c, const char *sid)
+{
+
+	return (user_host(c->hdlr_extra, sid) != ROLE_NONE);
+}
+
 /* The socket went: its requests stop, and end with nobody to tell. */
 void
 stream_disconnect(struct connection *c)
@@ -518,6 +530,8 @@ stream_disconnect(struct connection *c)
 			atomic_store(&s->stop, true);
 		}
 	(void)follow_stop(c, 0, true);
+	kore_free(c->hdlr_extra);
+	c->hdlr_extra = NULL;
 }
 
 static void
@@ -566,7 +580,7 @@ stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
 	if (sid != NULL && what != NULL && strcmp(what, "events") == 0) {
 		const char	*why;
 
-		if ((sv = server_find(sid)) == NULL)
+		if ((sv = server_find(sid)) == NULL || !stream_host_ok(c, sid))
 			refuse(c, id, "no such server");
 		else if ((why = follow_start(c, id, sv)) != NULL)
 			refuse(c, id, why);
@@ -580,7 +594,8 @@ stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
 		    !hosts_read_known(rd))
 			refuse(c, id, "read is the path of a read of a host's, "
 			    "after /api/servers/<id>/");
-		else if ((sv = server_find(sid)) == NULL)
+		else if ((sv = server_find(sid)) == NULL || !stream_host_ok(c,
+		    sid))
 			refuse(c, id, "no such server");
 		else if (nstreams >= STREAMS_MAX)
 			refuse(c, id, "too much is being read at once: try "
@@ -633,7 +648,7 @@ stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
 		refuse(c, id, "what is sysctl, routes, connections or sockets, "
 		    "of a server, with a filter of letters, digits and "
 		    ". _ - % : /");
-	else if ((sv = server_find(sid)) == NULL)
+	else if ((sv = server_find(sid)) == NULL || !stream_host_ok(c, sid))
 		refuse(c, id, "no such server");
 	else if (nstreams >= STREAMS_MAX)
 		refuse(c, id, "too much is being read at once: try again");
@@ -682,6 +697,10 @@ api_stream(struct http_request *req)
 	    0)
 		return (reply_error(req, 403, "csrf", "not from the console's "
 		    "own page"));
+	/* Whose socket: the user's name stays with the connection. */
+	kore_free(req->owner->hdlr_extra);
+	req->owner->hdlr_extra = session_user(req) != NULL ? kore_strdup(
+	    session_user(req)) : NULL;
 	kore_websocket_handshake(req, "stream_connect", "stream_message",
 	    "stream_disconnect");
 	return (KORE_RESULT_OK);

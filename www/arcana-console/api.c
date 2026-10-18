@@ -128,7 +128,7 @@ read_json(struct http_request *req)
 bool
 guard(struct http_request *req, bool mutate)
 {
-	const char	*v;
+	const char	*v, *u;
 
 	config_refresh();
 	if (!session_valid(req)) {
@@ -164,6 +164,16 @@ guard(struct http_request *req, bool mutate)
 		reply_error(req, 403, "token", "a session opened with an API "
 		    "token may not %s this: sign in with a security key",
 		    mutate ? "change" : "read");
+		return (false);
+	}
+	/* A console user: what their role on the console allows
+	 * (users.c); the hosts' routes look at their role on the host. */
+	if ((u = session_user(req)) != NULL && !user_path_ok(user_console(u),
+	    req->path, mutate)) {
+		reply_error(req, 403, "role", "%s of this console may not %s "
+		    "this", user_console(u) == CROLE_OPERATOR ? "an operator" :
+		    user_console(u) == CROLE_MEMBER ? "a member" : "a user no "
+		    "longer", mutate ? "change" : "read");
 		return (false);
 	}
 	if (!mutate)
@@ -403,6 +413,7 @@ arcw_onload(int action)
 	    push_init() == -1)
 		fatalx("arcana: not starting, see above");
 	auth_init();
+	users_init();
 	servers_init();
 	transfers_init();
 	workflows_init();

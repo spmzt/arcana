@@ -62,11 +62,16 @@ struct session {
 	char		who[64];	/* the key it was opened with */
 	char		tok[17];	/* the API token it was, its id; "" a key */
 	bool		ldap;		/* opened by a directory's user */
+	char		user[64];	/* the console user (users.c); "" none */
 };
 
 static ucl_object_t	*creds;		/* the credentials document */
 static char		 setup_token[65];
 static struct challenge	 reg_chal;
+static char		 reg_user[64];	/* whose key is being registered */
+static bool		 reg_invited;	/* ... by an invitation: no session */
+static char		 last_user[64];	/* of the session just started: its
+					 * cookie is not on the request yet */
 
 /*
  * Login challenges are not kept.  Anyone may ask for one, and one kept
@@ -97,7 +102,7 @@ static bool	 key_matches(int, const uint8_t *, size_t);
 static ucl_object_t *cred_list(void);
 static const ucl_object_t *cred_find(const char *);
 static void	 session_start(struct http_request *, const char *,
-		    const char *);
+		    const char *, const char *);
 static void	 sessions_save(void);
 static void	 sessions_load(void);
 static void	 setup_token_init(void);
@@ -489,6 +494,8 @@ sessions_save(void)
 			put(e, "token", ucl_object_fromstring(sessions[i].tok));
 		if (sessions[i].ldap)
 			put(e, "ldap", ucl_object_frombool(true));
+		if (sessions[i].user[0] != '\0')
+			put(e, "user", ucl_object_fromstring(sessions[i].user));
 		ucl_array_append(a, e);
 	}
 	put(o, "sessions", a);
@@ -536,6 +543,9 @@ sessions_load(void)
 		    "token") != NULL ? ucl_object_tostring_forced(
 		    ucl_object_lookup(e, "token")) : "");
 		s->ldap = ucl_object_toboolean(ucl_object_lookup(e, "ldap"));
+		snprintf(s->user, sizeof(s->user), "%s", ucl_object_lookup(e,
+		    "user") != NULL ? ucl_object_tostring_forced(
+		    ucl_object_lookup(e, "user")) : "");
 		if (k < 32 || s->created > now || now - s->last > cfg.session_idle ||
 		    now - s->created > cfg.session_max) {
 			memset(s, 0, sizeof(*s));
@@ -642,10 +652,123 @@ session_who(struct http_request *req)
 	return (token_who(req));
 }
 
+/*
+ * The console user a request's session is of (users.c): NULL for one
+ * that carries none, an API token's or a directory's user the console
+ * has no record of, which may what a write token may, on every host.
+ */
+const char *
+session_user(struct http_request *req)
+{
+	struct session	*s;
+
+	if ((s = session_of(req)) == NULL || s->user[0] == '\0')
+		return (NULL);
+	return (s->user);
+}
+
+/*
+ * May the request's user do this on the host: a viewer reads, an
+ * operator changes, an admin also what admin says (updating, moving,
+ * removing it).  Without a reply; host_allowed() sends one.
+ */
+bool
+host_role_ok(struct http_request *req, const char *sid, bool mutate,
+    bool admin)
+{
+	enum role	r;
+
+	r = user_host(session_user(req), sid);
+	if (r == ROLE_NONE)
+		return (false);
+	if (mutate && r == ROLE_VIEWER)
+		return (false);
+	if (admin && r != ROLE_ADMIN)
+		return (false);
+	return (true);
+}
+
+bool
+host_allowed(struct http_request *req, const char *sid, bool mutate,
+    bool admin)
+{
+	enum role	r;
+
+	if (host_role_ok(req, sid, mutate, admin))
+		return (true);
+	r = user_host(session_user(req), sid);
+	if (r == ROLE_NONE)
+		reply_error(req, 404, "not_found", "no such server");
+	else
+		reply_error(req, 403, "role", "a %s of this host may not %s "
+		    "it", role_name(r), admin ? "administer" : "change");
+	return (false);
+}
+
+/* The sessions of a user, ended: when the user is removed. */
+void
+sessions_end_user(const char *user)
+{
+	int	i;
+
+	for (i = 0; i < SESSIONS; i++)
+		if (sessions[i].used && strcmp(sessions[i].user, user) == 0)
+			memset(&sessions[i], 0, sizeof(sessions[i]));
+	sessions_save();
+}
+
+/* The user a key belongs to: the built-in owner's when it says none. */
+static const char *
+cred_user(const ucl_object_t *c)
+{
+
+	return (ucl_str(c, "user") != NULL ? ucl_str(c, "user") : ADMIN_USER);
+}
+
+/* How many keys a user has. */
+int
+cred_count_of(const char *user)
+{
+	const ucl_object_t	*c;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	n = 0;
+	it = NULL;
+	while ((c = ucl_object_iterate(cred_list(), &it, true)) != NULL)
+		if (strcmp(cred_user(c), user) == 0)
+			n++;
+	return (n);
+}
+
+/* A user's keys, gone with the user. */
+void
+creds_forget_user(const char *user)
+{
+	const ucl_object_t	*c;
+	ucl_object_iter_t	 it;
+	bool			 again;
+
+	do {
+		again = false;
+		it = NULL;
+		while ((c = ucl_object_iterate(cred_list(), &it, true)) != NULL)
+			if (strcmp(cred_user(c), user) == 0) {
+				ucl_object_unref(ucl_array_delete(cred_list(),
+				    (ucl_object_t *)(uintptr_t)c));
+				again = true;
+				break;
+			}
+	} while (again);
+	(void)store_save(CREDENTIALS, creds);
+}
+
 /* A new session in a cookie only the console can read, opened by the
- * key named who, or by the API token of id tok. */
+ * key named who, or by the API token of id tok, for the console user
+ * (NULL or "": none). */
 static void
-session_start(struct http_request *req, const char *who, const char *tok)
+session_start(struct http_request *req, const char *who, const char *tok,
+    const char *user)
 {
 	struct session	*s, *old;
 	uint8_t		 raw[32];
@@ -672,6 +795,8 @@ session_start(struct http_request *req, const char *who, const char *tok)
 	snprintf(s->who, sizeof(s->who), "%s", who != NULL ? who : "");
 	snprintf(s->tok, sizeof(s->tok), "%s", tok != NULL ? tok : "");
 	s->ldap = false;
+	snprintf(s->user, sizeof(s->user), "%s", user != NULL ? user : "");
+	snprintf(last_user, sizeof(last_user), "%s", s->user);
 	snprintf(cookie, sizeof(cookie), "%s=%s; Path=/; HttpOnly; "
 	    "SameSite=Strict; Max-Age=%d%s", SESSION_COOKIE, token,
 	    cfg.session_max, cfg.cookie_secure ? "; Secure" : "");
@@ -694,6 +819,27 @@ status_reply_as(struct http_request *req, bool authenticated, bool by_token,
 		put(o, "by_token", ucl_object_frombool(true));
 	if (authenticated && by_ldap)
 		put(o, "by_ldap", ucl_object_frombool(true));
+	/* Who, and what they may (users.c): the page offers no more. */
+	if (authenticated) {
+		const char	*u = session_user(req);
+		char		 just[64];
+
+		/* Just signed in: the session's cookie is on its way. */
+		if (u == NULL && session_of(req) == NULL && last_user[0] != '\0') {
+			snprintf(just, sizeof(just), "%s", last_user);
+			u = just;
+		}
+		last_user[0] = '\0';
+		if (u != NULL) {
+			put(o, "user", ucl_object_fromstring(u));
+			put(o, "console", ucl_object_fromstring(crole_name(
+			    user_console(u))));
+			if (user_tenant(u)[0] != '\0')
+				put(o, "tenant", ucl_object_fromstring(
+				    user_tenant(u)));
+		} else
+			put(o, "console", ucl_object_fromstring("operator"));
+	}
 	/* The page offers a user and password when a directory is set. */
 	put(o, "ldap", ucl_object_frombool(ldap_enabled()));
 	put(o, "setup_required", ucl_object_frombool(
@@ -737,7 +883,19 @@ api_register_begin(struct http_request *req)
 	size_t			 i;
 
 	body = read_json(req);
-	if (ucl_array_size(cred_list()) == 0) {
+	/* Whose key: an invited user's, by their invitation (users.c);
+	 * the first key the built-in owner's, by the setup token; else
+	 * the signed-in user's own, or, for the owner, the one named. */
+	reg_invited = false;
+	if (body != NULL && ucl_str(body, "invite") != NULL) {
+		if (!invite_take(ucl_str(body, "invite"), reg_user,
+		    sizeof(reg_user))) {
+			ucl_object_unref(body);
+			return (reply_error(req, 403, "invite", "not an "
+			    "invitation of this console's, or one that ran out"));
+		}
+		reg_invited = true;
+	} else if (ucl_array_size(cred_list()) == 0) {
 		token = body != NULL ? ucl_str(body, "setup_token") : NULL;
 		if (token == NULL || setup_token[0] == '\0' ||
 		    strlen(token) != strlen(setup_token) ||
@@ -748,9 +906,29 @@ api_register_begin(struct http_request *req)
 			    "the first key needs the setup token from %s/%s",
 			    cfg.datadir, SETUP_TOKEN));
 		}
-	} else if (!guard(req, true)) {
-		ucl_object_unref(body);
-		return (KORE_RESULT_OK);
+		snprintf(reg_user, sizeof(reg_user), "%s", ADMIN_USER);
+	} else {
+		const char	*u, *forname;
+
+		if (!guard(req, true)) {
+			ucl_object_unref(body);
+			return (KORE_RESULT_OK);
+		}
+		u = session_user(req);
+		forname = body != NULL ? ucl_str(body, "user") : NULL;
+		if (forname != NULL && forname[0] != '\0' && (u == NULL ||
+		    strcmp(forname, u) != 0)) {
+			if (user_console(u) != CROLE_OWNER || !user_exists(
+			    forname)) {
+				ucl_object_unref(body);
+				return (reply_error(req, 403, "role", "a key for "
+				    "another user is registered by the owner, for "
+				    "a user there is"));
+			}
+			snprintf(reg_user, sizeof(reg_user), "%s", forname);
+		} else
+			snprintf(reg_user, sizeof(reg_user), "%s", u != NULL ? u :
+			    ADMIN_USER);
 	}
 	ucl_object_unref(body);
 
@@ -762,9 +940,16 @@ api_register_begin(struct http_request *req)
 	put(rp, "name", ucl_object_fromstring(cfg.rp_name));
 	put(pk, "rp", rp);
 	user = ucl_object_typed_new(UCL_OBJECT);
-	put(user, "id", ucl_object_fromstring(ucl_str(creds, "user_id")));
-	put(user, "name", ucl_object_fromstring("admin"));
-	put(user, "displayName", ucl_object_fromstring("Arcana admin"));
+	if (strcmp(reg_user, ADMIN_USER) == 0)
+		put(user, "id", ucl_object_fromstring(ucl_str(creds, "user_id")));
+	else {
+		char	handle[40];
+
+		user_handle(reg_user, handle, sizeof(handle));
+		put(user, "id", ucl_object_fromstring(handle));
+	}
+	put(user, "name", ucl_object_fromstring(reg_user));
+	put(user, "displayName", ucl_object_fromstring(reg_user));
 	put(pk, "user", user);
 	params = ucl_object_typed_new(UCL_ARRAY);
 	for (i = 0; i < nitems(algs); i++) {
@@ -816,7 +1001,10 @@ api_register_finish(struct http_request *req)
 	cd = ad = spki = credid = NULL;
 	status = 400;
 	err = NULL;
-	if (ucl_array_size(cred_list()) > 0 && !guard(req, true))
+	/* An invited user's first key needs no session: the invitation,
+	 * taken at the start, was it; the challenge ties the two. */
+	if (ucl_array_size(cred_list()) > 0 && !reg_invited && !guard(req,
+	    true))
 		return (KORE_RESULT_OK);
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "bad_request",
@@ -879,6 +1067,8 @@ api_register_finish(struct http_request *req)
 			if (ucl_object_type(t) == UCL_STRING)
 				ucl_array_append(tr, ucl_object_copy(t));
 	put(c, "transports", tr);
+	if (reg_user[0] != '\0' && strcmp(reg_user, ADMIN_USER) != 0)
+		put(c, "user", ucl_object_fromstring(reg_user));
 	ucl_array_append(cred_list(), c);
 	if (store_save(CREDENTIALS, creds) == -1) {
 		/* A key that would be gone after a restart is not one. */
@@ -887,10 +1077,10 @@ api_register_finish(struct http_request *req)
 		err = "cannot save the credential";
 		goto out;
 	}
-	kore_log(LOG_NOTICE, "registered security key \"%s\"",
-	    ucl_str(c, "name"));
+	kore_log(LOG_NOTICE, "registered security key \"%s\" of %s",
+	    ucl_str(c, "name"), cred_user(c));
 	setup_token_init();
-	session_start(req, ucl_str(c, "name"), NULL);
+	session_start(req, ucl_str(c, "name"), NULL, cred_user(c));
 	status = 200;
 out:
 	kore_free(cd);
@@ -1009,8 +1199,9 @@ api_login_finish(struct http_request *req)
 	ucl_object_replace_key((ucl_object_t *)(uintptr_t)c,
 	    ucl_object_fromint(time(NULL)), "last_used", 0, true);
 	(void)store_save(CREDENTIALS, creds);
-	session_start(req, ucl_str(c, "name"), NULL);
-	kore_log(LOG_NOTICE, "login with \"%s\"", ucl_str(c, "name"));
+	session_start(req, ucl_str(c, "name"), NULL, cred_user(c));
+	kore_log(LOG_NOTICE, "login with \"%s\" of %s", ucl_str(c, "name"),
+	    cred_user(c));
 out:
 	kore_free(cd);
 	kore_free(ad);
@@ -1054,7 +1245,7 @@ api_login_token(struct http_request *req)
 		    "deleted one opens nothing"));
 	}
 	snprintf(who, sizeof(who), "API token %s", name);
-	session_start(req, who, id);
+	session_start(req, who, id, NULL);
 	kore_log(LOG_NOTICE, "login with %s", who);
 	ucl_object_unref(body);
 	/* Its cookie is only on its way: said so here. */
@@ -1093,7 +1284,9 @@ api_login_ldap(struct http_request *req)
 		return (reply_error(req, strstr(err, "too many") != NULL ? 429 :
 		    strstr(err, "not set") != NULL || strstr(err, "characters")
 		    != NULL ? 400 : 401, "login", "%s", err));
-	session_start(req, who, "");
+	/* A user the console knows by that name has its roles; one it
+	 * does not is limited as a write token is. */
+	session_start(req, who, "", user_exists(user) ? user : NULL);
 	{
 		struct session	*s = session_of(req);
 
@@ -1146,17 +1339,24 @@ api_credentials(struct http_request *req)
 	ucl_object_iter_t	 it;
 	static const char	*keys[] = { "id", "name", "alg", "created",
 				    "last_used", "sign_count", "transports" };
+	const char		*u;
 	size_t			 i;
 
 	if (!guard(req, false))
 		return (KORE_RESULT_OK);
+	/* The owner sees them all, with whose each is; others their own. */
+	u = session_user(req);
 	a = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
 	while ((c = ucl_object_iterate(cred_list(), &it, true)) != NULL) {
+		if (u != NULL && user_console(u) != CROLE_OWNER && strcmp(
+		    cred_user(c), u) != 0)
+			continue;
 		e = ucl_object_typed_new(UCL_OBJECT);
 		for (i = 0; i < nitems(keys); i++)
 			if ((v = ucl_object_lookup(c, keys[i])) != NULL)
 				put(e, keys[i], ucl_object_copy(v));
+		put(e, "user", ucl_object_fromstring(cred_user(c)));
 		ucl_array_append(a, e);
 	}
 	e = ucl_object_typed_new(UCL_OBJECT);
@@ -1195,6 +1395,10 @@ api_credential(struct http_request *req)
 		return (reply_error(req, 400, "bad_request", "bad request"));
 	if ((c = cred_find(id)) == NULL)
 		return (reply_error(req, 404, "not_found", "no such key"));
+	if (session_user(req) != NULL && user_console(session_user(req)) !=
+	    CROLE_OWNER && strcmp(cred_user(c), session_user(req)) != 0)
+		return (reply_error(req, 403, "role", "another user's key is "
+		    "removed by the owner"));
 	if (ucl_array_size(cred_list()) == 1)
 		return (reply_error(req, 409, "last_key",
 		    "register another key before removing the last one"));

@@ -342,7 +342,18 @@ loc_pending(void)
 EMSCRIPTEN_KEEPALIVE void
 arc_on_loc(char *r)
 {
+	const char	*inv;
 
+	/* #/invite/<token>: a user's first key, before any sign-in. */
+	if ((inv = strstr(r, "invite/")) != NULL && app.screen != SCREEN_CONSOLE) {
+		snprintf(app.invite_token, sizeof(app.invite_token), "%s", inv +
+		    7);
+		app.invite_token[strcspn(app.invite_token, "?/")] = '\0';
+		if (app.screen == SCREEN_LOGIN)
+			app.screen = SCREEN_ENROL;
+		render();
+		return;
+	}
 	if (app.screen == SCREEN_CONSOLE && app.servers_loaded) {
 		loc_go(r);
 		/* What it named, as it is said: a host gone is the fleet. */
@@ -701,7 +712,8 @@ submit_form(const char *form, const ucl_object_t *f)
 		job_send(cur_server(), q, title, JOB_PACKAGES, app.pkg.jail);
 	} else if (strcmp(form, "login-token") == 0) {
 		login_token(jstr(f, "token") != NULL ? jstr(f, "token") : "");
-	} else if (iflabel_form(form, f) || pfxlists_form(form, f)) {
+	} else if (iflabel_form(form, f) || pfxlists_form(form, f) ||
+	    user_form(form, f)) {
 		;
 	} else if (strcmp(form, "login-ldap") == 0) {
 		login_ldap(jstr(f, "user") != NULL ? jstr(f, "user") : "",
@@ -935,6 +947,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	    sdwan_action(act, arg, value) || trouble_action(act, arg, value) ||
 	    secpage_action(act, arg, value) || builder_action(act, arg, value) ||
 	    iflabel_action(act, arg) || pfxlists_action(act, arg, value) ||
+	    user_action(act, arg) ||
 	    routing_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
 	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||

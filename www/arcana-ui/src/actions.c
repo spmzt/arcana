@@ -32,6 +32,7 @@ struct ctx {
 };
 
 static void	osversion_ask(const char *, bool);
+static void	 who_set(const ucl_object_t *);
 static struct ctx *ctx_new(void);
 static struct op *op_new(const char *, const char *);
 static void	op_done(struct op *, bool, const ucl_object_t *, const char *);
@@ -2406,15 +2407,18 @@ status_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	app.by_ldap = jbool(o, "by_ldap");
 	app.by_token = jbool(o, "by_token") || app.by_ldap;
 	app.ldap_on = jbool(o, "ldap");
+	who_set(o);
 	origin_check(jstr(o, "origin"), jstr(o, "rp_id"));
 	if (jbool(o, "authenticated")) {
 		app.screen = SCREEN_CONSOLE;
 		app.auth_error[0] = '\0';
+		app.invite_token[0] = '\0';
 		refresh_servers();
 		/* Where notifications are allowed, this browser is told. */
 		arc_push_sync();
 	} else
-		app.screen = app.setup_required ? SCREEN_ENROL : SCREEN_LOGIN;
+		app.screen = app.setup_required || app.invite_token[0] != '\0' ?
+		    SCREEN_ENROL : SCREEN_LOGIN;
 }
 
 void
@@ -2432,6 +2436,8 @@ auth_done_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (status == 200 && jbool(o, "authenticated")) {
 		app.by_ldap = jbool(o, "by_ldap");
 		app.by_token = jbool(o, "by_token") || app.by_ldap;
+		who_set(o);
+		app.invite_token[0] = '\0';
 		app.screen = SCREEN_CONSOLE;
 		app.auth_error[0] = '\0';
 		app.setup_required = false;
@@ -2585,7 +2591,21 @@ register_begin_cb(int status, const ucl_object_t *o, const char *err,
 	free(opts);
 }
 
-/* The first key, with the setup token from the console's data dir. */
+/* Who is signed in, and what they may, from a status reply. */
+static void
+who_set(const ucl_object_t *o)
+{
+
+	snprintf(app.user, sizeof(app.user), "%s", jstr(o, "user") != NULL ?
+	    jstr(o, "user") : "");
+	snprintf(app.console_role, sizeof(app.console_role), "%s", jstr(o,
+	    "console") != NULL ? jstr(o, "console") : "");
+	snprintf(app.tenant, sizeof(app.tenant), "%s", jstr(o, "tenant") != NULL
+	    ? jstr(o, "tenant") : "");
+}
+
+/* The first key, with the setup token from the console's data dir, or
+ * a user's first with their invitation (inv_...). */
 void
 enrol(const char *token, const char *name)
 {
@@ -2600,7 +2620,8 @@ enrol(const char *token, const char *name)
 	snprintf(c->name, sizeof(c->name), "%s", *name != '\0' ? name :
 	    "Security key");
 	qt = json_quote(token);
-	if (asprintf(&body, "{\"setup_token\":%s}", qt) == -1)
+	if (asprintf(&body, "{\"%s\":%s}", strncmp(token, "inv_", 4) == 0 ?
+	    "invite" : "setup_token", qt) == -1)
 		abort();
 	api("POST", "/api/auth/register/begin", body, register_begin_cb, c);
 	free(qt);

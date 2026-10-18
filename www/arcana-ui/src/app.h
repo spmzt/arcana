@@ -418,6 +418,7 @@ enum modal {
 	MODAL_SD_TOPO,
 	MODAL_SD_NLIST,		/* a named list of the SD-WAN document */
 	MODAL_SD_GROUP,		/* a group of a remote end point's identities */
+	MODAL_USER,		/* a console user and their roles */
 	MODAL_PKG_INSTALL,
 	MODAL_WF_RUN,
 	MODAL_IF_VNET,
@@ -471,6 +472,10 @@ struct app {
 	bool		 by_token;	/* signed in with an API token, or by LDAP: limited */
 	bool		 by_ldap;	/* ... by a directory's user */
 	bool		 ldap_on;	/* the console takes a user and password */
+	char		 user[64];	/* the console user signed in, or "" */
+	char		 console_role[16];	/* owner, operator, member */
+	char		 tenant[64];	/* the user's fleet, or "" */
+	char		 invite_token[120];	/* #/invite/<token>: a first key */
 
 	struct server	 servers[MAX_SERVERS];
 	int		 nservers;
@@ -877,7 +882,13 @@ void		 view_workflows(struct html *);
 bool		 workflows_action(const char *, const char *, const char *);
 /* view.c: the settings' tabs. */
 enum { SET_LOOK, SET_NOTIFY, SET_TOKENS, SET_KEYS, SET_CONSOLE,
-    SET_WEBCONF, SET_NEWS, SET_CA, SET_UPDATE };
+    SET_WEBCONF, SET_NEWS, SET_CA, SET_UPDATE, SET_USERS };
+/* users.c: Settings, Users: who signs in and what each may (RBAC). */
+void		 users_load(void);
+void		 set_users(struct html *);
+bool		 user_modal(struct html *);
+bool		 user_form(const char *, const ucl_object_t *);
+bool		 user_action(const char *, const char *);
 /* ca.c: Settings, Certificate authority. */
 void		 ca_load(void);
 void		 ca_tick(double);
