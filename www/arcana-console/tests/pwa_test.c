@@ -801,6 +801,13 @@ part_shell(void)
 	    "'form[data-form=add-key]') && !document.querySelector("
 	    "'.set-body .notice.bad')", 20);
 	shot("0b3-keys-token");
+	/* Settings' other tabs: the token's limit said once, no refusal of
+	 * what was not asked for; Cluster says this console is not one. */
+	run("document.querySelector('button[data-act=set-tab][data-arg="
+	    "cluster]').click()");
+	wait_js("document.querySelector('.set-body')?.textContent.includes("
+	    "'not one of a cluster') && !document.querySelector("
+	    "'.set-body .notice.bad')", 20);
 	run("document.querySelector('button[data-act=logout]').click()");
 	click_when("button[data-act=login]", 10);
 	wait_js("document.querySelector('.shell')", 20);

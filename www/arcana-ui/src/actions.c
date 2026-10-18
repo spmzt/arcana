@@ -3163,7 +3163,10 @@ settings_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	saved = arg != NULL;
 	app.modal_busy = false;
 	if (status != 200 || jget(o, "settings") == NULL) {
-		if (status != 401)
+		/* Refused to a session an API token opened: the page says
+		 * so already, as soon as it knows the session is one. */
+		if (status != 401 && !(status == 403 && jstr(o, "error.code") !=
+		    NULL && strcmp(jstr(o, "error.code"), "token") == 0))
 			snprintf(app.modal_error, sizeof(app.modal_error), "%s",
 			    err != NULL ? err : "cannot load the settings");
 		return;
@@ -3241,6 +3244,10 @@ void
 load_settings(void)
 {
 
+	/* Not to a session an API token opened: refused, and the page
+	 * says so already. */
+	if (app.by_token)
+		return;
 	api("GET", "/api/settings", NULL, settings_cb, NULL);
 }
 
