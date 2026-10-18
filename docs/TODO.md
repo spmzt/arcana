@@ -806,8 +806,10 @@
     (viewer, operator, admin), a tenant whose hosts alone it sees;
     keys belong to users, a user is invited for their first key; the
     hosts' routes gated in call_new, the stream, transfers, the path
-    finder, labels; Settings, Users.  Not done: groups of users, LDAP
-    groups mapped to roles.)
+    finder, labels; Settings, Users.  Roles made their own objects the
+    same day, as the user asked: a user has roles, a role says what; a
+    Settings AAA tab holds users, roles, keys, the directory and
+    tokens.  Not done: groups of users, LDAP groups mapped to roles.)
   - Mail notifications of faults, jobs and runs. (Done 2026-10-12:
     Settings, Notifications, By mail; one worker reads each host's
     events, the agent's job ends among them now, and the console's

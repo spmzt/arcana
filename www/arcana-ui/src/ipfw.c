@@ -3269,8 +3269,14 @@ view_firewall(struct html *h, struct server *s)
 	    "<span>now</span></label><label class=\"toggle\" title=\"Written "
 	    "into the kept rules, which the host loads when it starts and "
 	    "Apply loads\"><input type=\"checkbox\" name=\"persist\" checked>"
-	    "<span>keep</span></label><button class=\"small\">Add</button>"
-	    "</form>", next, sc->lo, sc->hi, loaded ? " checked" : "");
+	    "<span>keep</span></label>", next, sc->lo, sc->hi, loaded ?
+	    " checked" : "");
+	/* A console prefix list beside the rule: kept as a table, the
+	 * list's name after pl_, which the rule names as table(pl_name). */
+	pfxlist_select(h, "A prefix list as a table", "pfx", "Made as table "
+	    "pl_<name> from the list when the rule is added; write table(pl_"
+	    "<name>) in the rule for it.");
+	h_raw(h, "<button class=\"small\">Add</button></form>");
 	rule_words(h);
 	h_raw(h, "<table class=\"net fw-rules\">");
 	tbl_head(h, "fwrules", cols, 5, 0);
@@ -3536,6 +3542,24 @@ firewall_form(const char *form, const ucl_object_t *f)
 			fw.edit = 0;
 			fw.move = 0;
 			return (true);
+		}
+	}
+	/* The prefix list picked: its table made, or filled again, and
+	 * its entries added, before the rule that names it. */
+	if (jstr(f, "pfx") != NULL && jstr(f, "pfx")[0] != '\0') {
+		const ucl_object_t	*l = pfxlist_get(jstr(f, "pfx")), *e;
+		ucl_object_iter_t	 it = NULL;
+		char			 words[400];
+		int			 n = 0;
+
+		snprintf(words, sizeof(words), "pl_%s create or-flush type addr",
+		    jstr(f, "pfx"));
+		object_job(s, "table", words, jbool(f, "persist"));
+		while ((e = ucl_object_iterate(jget(l, "prefixes"), &it, true)) !=
+		    NULL && n++ < 512) {
+			snprintf(words, sizeof(words), "pl_%s add %s", jstr(f,
+			    "pfx"), ucl_object_tostring_forced(e));
+			object_job(s, "table", words, jbool(f, "persist"));
 		}
 	}
 	h_fmt(&b, "{\"kind\":\"ipfw\",\"verb\":\"add\",\"args\":[\"%d\"", num);

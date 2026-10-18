@@ -50,7 +50,7 @@
 #define	TEMPLATES_FILE	"templates.json"
 #define	TEMPLATES_LOCK	"templates.lock"
 #define	TEMPLATES_MAX	200
-#define	FILES_MAX	256
+#define	FILES_MAX	512		/* as the agent's bundle */
 #define	TEXT_MAX	(1024 * 1024)	/* a file's */
 #define	VARS_MAX	64
 

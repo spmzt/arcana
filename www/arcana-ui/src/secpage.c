@@ -251,11 +251,14 @@ proxy_form(struct html *h, const ucl_object_t *f)
 	    "max=\"65535\"");
 	h_fmt(h, " value=\"%lld\"", (long long)jint(f, "port", 3128));
 	h_raw(h, "></label><label>Who may use it <input name=\"allow\" "
-	    "required spellcheck=\"false\" placeholder=\"10.0.0.0/8, "
+	    "spellcheck=\"false\" placeholder=\"10.0.0.0/8, "
 	    "192.168.0.0/16\"");
 	joined_attr(h, "value", jget(f, "allow"), ", ");
 	h_raw(h, "><small class=\"help\">networks, the rest refused</small>"
-	    "</label><label>TLS <select name=\"mode\">");
+	    "</label>");
+	pfxlist_select(h, "And the networks of a list", "allow_pfx", "A prefix "
+	    "list of the console's, added to the networks when kept.");
+	h_raw(h, "<label>TLS <select name=\"mode\">");
 	h_fmt(h, "<option value=\"sni\"%s>its name looked at (sni): denied "
 	    "ones ended, the rest left unopened</option><option value=\""
 	    "inspect\"%s>opened (inspect): the clients trust this filter's "
@@ -442,9 +445,32 @@ view_sigs(struct html *h)
 	    "running: the signatures age</span>", jbool(cl, "freshclam") ?
 	    "restart" : "start", jbool(cl, "freshclam") ? "Look now (restart)" :
 	    "Start freshclam");
+	/* Why signatures may not come: no freshclam.conf but the port's
+	 * sample, which freshclam refuses; and its log's last lines. */
+	if (jget(cl, "conf") != NULL && !jbool(cl, "conf"))
+		h_raw(h, "<div class=\"notice warn\">freshclam has no "
+		    "configuration: <code>/usr/local/etc/freshclam.conf</code> is "
+		    "missing, or still the port's sample with its <code>Example"
+		    "</code> line, which freshclam refuses to run with. Copy "
+		    "<code>freshclam.conf.sample</code> to it and take that line "
+		    "out (Files, or the shell), then start freshclam here.</div>");
+	if (ucl_array_size(jget(cl, "log")) > 0) {
+		const ucl_object_t	*ln;
+		ucl_object_iter_t	 lit = NULL;
+
+		h_raw(h, "<pre class=\"out dim seclog\" title=\"/var/log/clamav/"
+		    "freshclam.log, its last lines\">");
+		while ((ln = ucl_object_iterate(jget(cl, "log"), &lit, true)) !=
+		    NULL) {
+			h_txt(h, ucl_object_tostring_forced(ln));
+			h_raw(h, "\n");
+		}
+		h_raw(h, "</pre>");
+	}
 	if (ucl_array_size(jget(cl, "databases")) == 0) {
 		h_raw(h, "<div class=\"empty\"><p>No signatures yet.</p><p class="
-		    "\"dim\">freshclam has not fetched them: start it.</p>"
+		    "\"dim\">freshclam has not fetched them: start it; the first "
+		    "fetch takes minutes, the page looks again by itself.</p>"
 		    "</div>");
 		return;
 	}
@@ -492,8 +518,11 @@ ids_form(struct html *h, const ucl_object_t *f)
 	    "192.168.0.0/16\"");
 	joined_attr(h, "value", jget(f, "home"), ", ");
 	h_raw(h, "><small class=\"help\">HOME_NET of the rules; empty: the "
-	    "private ranges</small></label><label class=\"check\"><input "
-	    "type=\"checkbox\" name=\"ruleset\"");
+	    "private ranges</small></label>");
+	pfxlist_select(h, "And the networks of a list", "home_pfx", "A prefix "
+	    "list of the console's, added to HOME_NET when kept.");
+	h_raw(h, "<label class=\"check\"><input type=\"checkbox\" name=\""
+	    "ruleset\"");
 	if (f == NULL || jbool(f, "ruleset"))
 		h_raw(h, " checked");
 	h_raw(h, "> The ruleset suricata-update keeps <small class=\"help\">"
@@ -755,6 +784,22 @@ put_num(ucl_object_t *o, const char *k, const char *v)
 		    10)), k, 0, true);
 }
 
+/* The text typed, and the prefixes of a console list after it. */
+char *
+with_list(const char *text, const char *list)
+{
+	char	*more, *out;
+
+	more = list != NULL && list[0] != '\0' ? pfxlist_joined(list, ", ") :
+	    NULL;
+	if (asprintf(&out, "%s%s%s", text != NULL ? text : "", more != NULL &&
+	    text != NULL && text[0] != '\0' ? ", " : "", more != NULL ? more :
+	    "") == -1)
+		abort();
+	free(more);
+	return (out);
+}
+
 bool
 secpage_form(const char *form, const ucl_object_t *f)
 {
@@ -765,6 +810,12 @@ secpage_form(const char *form, const ucl_object_t *f)
 		return (snort_form(form, f));
 	if (strcmp(form, "sec-proxy") != 0 && strcmp(form, "sec-ids") != 0)
 		return (false);
+	if (strcmp(form, "sec-proxy") == 0 && (jstr(f, "allow") == NULL || jstr(
+	    f, "allow")[0] == '\0') && (jstr(f, "allow_pfx") == NULL || jstr(f,
+	    "allow_pfx")[0] == '\0')) {
+		toast(true, "Who may use it: networks, or a prefix list");
+		return (true);
+	}
 	ids = strcmp(form, "sec-ids") == 0;
 	list = specs_but(ids, jstr(f, "orig") != NULL && jstr(f,
 	    "orig")[0] != '\0' ? jstr(f, "orig") : NULL);
@@ -775,8 +826,13 @@ secpage_form(const char *form, const ucl_object_t *f)
 		ucl_object_insert_key(o, words(jstr(f, "listen")), "listen", 0,
 		    false);
 		put_num(o, "port", jstr(f, "port"));
-		ucl_object_insert_key(o, words(jstr(f, "allow")), "allow", 0,
-		    false);
+		{
+			char	*all = with_list(jstr(f, "allow"), jstr(f,
+			    "allow_pfx"));
+
+			ucl_object_insert_key(o, words(all), "allow", 0, false);
+			free(all);
+		}
 		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f, "mode") !=
 		    NULL ? jstr(f, "mode") : "sni"), "mode", 0, false);
 		ucl_object_insert_key(o, words(jstr(f, "deny")), "deny", 0,
@@ -787,8 +843,12 @@ secpage_form(const char *form, const ucl_object_t *f)
 	} else {
 		ucl_object_insert_key(o, words(jstr(f, "interfaces")),
 		    "interfaces", 0, false);
-		ucl_object_insert_key(o, words(jstr(f, "home")), "home", 0,
-		    false);
+		{
+			char	*hm = with_list(jstr(f, "home"), jstr(f, "home_pfx"));
+
+			ucl_object_insert_key(o, words(hm), "home", 0, false);
+			free(hm);
+		}
 		ucl_object_insert_key(o, ucl_object_frombool(jbool(f,
 		    "ruleset")), "ruleset", 0, false);
 		if (jstr(f, "rules") != NULL && jstr(f, "rules")[0] != '\0')
@@ -967,13 +1027,32 @@ secpage_action(const char *act, const char *arg, const char *value)
 		if (i == (size_t)app.nservers)
 			return (true);
 		s = &app.servers[i];
-		snprintf(title, sizeof(title), "service clamav_freshclam %s",
-		    strcmp(arg, "restart") == 0 ? "restart" : "start");
-		if (asprintf(&json, "{\"kind\":\"service-action\",\"service\":"
-		    "\"clamav_freshclam\",\"action\":\"%s\"}", strcmp(arg,
-		    "restart") == 0 ? "restart" : "start") == -1)
-			abort();
-		job_send(s, json, title, JOB_SERVICE, "clamav_freshclam");
+		/* Enabled first, so that rc starts it, then (re)started:
+		 * two jobs the host runs in order; the page looks again
+		 * when they end. */
+		{
+			struct queued	q[2];
+
+			memset(q, 0, sizeof(q));
+			if (asprintf(&q[0].json, "{\"kind\":\"service-action\","
+			    "\"service\":\"clamav_freshclam\",\"action\":\"enable\"}")
+			    == -1 || asprintf(&q[1].json, "{\"kind\":\"service-action"
+			    "\",\"service\":\"clamav_freshclam\",\"action\":\"restart"
+			    "\"}") == -1)
+				abort();
+			snprintf(q[0].title, sizeof(q[0].title), "clamav_freshclam "
+			    "enabled at boot");
+			snprintf(q[1].title, sizeof(q[1].title), "service "
+			    "clamav_freshclam restart");
+			for (i = 0; i < 2; i++) {
+				snprintf(q[i].sid, sizeof(q[i].sid), "%s", s->id);
+				snprintf(q[i].host, sizeof(q[i].host), "%s", s->name);
+				q[i].what = JOB_SECURITY;
+			}
+			job_send_many(s, q, 2, JOB_SECURITY);
+		}
+		(void)json;
+		(void)title;
 		return (true);
 	}
 	return (false);

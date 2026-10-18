@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.211.0"
+#define	ARCW_VERSION		"0.212.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -208,6 +208,8 @@ bool		 invite_take(const char *, char *, size_t);
 int		 api_users(struct http_request *);
 int		 api_user(struct http_request *);
 int		 api_user_invite(struct http_request *);
+int		 api_roles(struct http_request *);
+int		 api_role(struct http_request *);
 /* audit.c: the audit trail of Policy Actions (MEF 118.1 §13.1). */
 void		 audit_add(const char *, const char *, const char *,
 		    const char *, const char *, const char *, const char *, ...)

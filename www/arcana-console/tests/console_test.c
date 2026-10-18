@@ -561,7 +561,15 @@ ATF_TC_BODY(users, tc)
 	http("GET", "/api/users", NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("admin", jstr(&r, "users.0.name"));
+	ATF_CHECK_STREQ("owner", jstr(&r, "users.0.roles.0"));
+	ATF_CHECK_STREQ("owner", jstr(&r, "users.0.console"));
 	ATF_CHECK_STREQ("1", jstr(&r, "users.0.keys"));
+	/* The roles that come built in. */
+	ATF_CHECK_STREQ("owner", jstr(&r, "roles.0.name"));
+	ATF_CHECK_STREQ("admin", jstr(&r, "roles.0.hosts.*"));
+	ATF_CHECK_STREQ("operator", jstr(&r, "roles.1.name"));
+	ATF_CHECK_STREQ("viewer", jstr(&r, "roles.2.name"));
+	ATF_CHECK_STREQ("member", jstr(&r, "roles.2.console"));
 	resp_free(&r);
 	http("POST", "/api/servers", "{\"name\":\"a\",\"uri\":\"tcp://"
 	    "192.0.2.1:4310\"}", &r);
@@ -574,21 +582,43 @@ ATF_TC_BODY(users, tc)
 	snprintf(hb, sizeof(hb), "%s", jstr(&r, "servers.1.id"));
 	ATF_CHECK_STREQ("acme", jstr(&r, "servers.1.tenant"));
 	resp_free(&r);
-	/* bob, a member, a viewer of a: kept, and what is refused. */
+	/* A role, a-viewer: a member of the console, a viewer of a; bob
+	 * with it.  What is refused: a console role that is not one, a
+	 * host that is not an id, a user without a role, the last owner
+	 * made less. */
 	snprintf(body, sizeof(body), "{\"console\":\"member\",\"hosts\":{\"%s\":"
 	    "\"viewer\"}}", ha);
-	http("PUT", "/api/users/bob", body, &r);
+	http("PUT", "/api/roles/a-viewer", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("a-viewer", jstr(&r, "roles.3.name"));
+	ATF_CHECK_STREQ("0", jstr(&r, "roles.3.users"));
+	resp_free(&r);
+	http("PUT", "/api/roles/bad", "{\"console\":\"king\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("PUT", "/api/roles/bad", "{\"hosts\":{\"zz\":\"viewer\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("PUT", "/api/users/bob", "{\"roles\":[\"a-viewer\"]}", &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("bob", jstr(&r, "users.1.name"));
 	ATF_CHECK_STREQ("member", jstr(&r, "users.1.console"));
+	ATF_CHECK_STREQ("1", jstr(&r, "roles.3.users"));
 	resp_free(&r);
-	http("PUT", "/api/users/bad", "{\"console\":\"king\"}", &r);
+	http("PUT", "/api/users/bad", "{\"tenant\":\"x\"}", &r);
 	EXPECT(&r, 400);
 	resp_free(&r);
-	http("PUT", "/api/users/bad", "{\"hosts\":{\"zz\":\"viewer\"}}", &r);
+	http("PUT", "/api/users/bad", "{\"roles\":[\"nosuch\"]}", &r);
 	EXPECT(&r, 400);
 	resp_free(&r);
-	http("PUT", "/api/users/admin", "{\"console\":\"member\"}", &r);
+	http("PUT", "/api/users/admin", "{\"roles\":[\"viewer\"]}", &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+	http("PUT", "/api/roles/owner", "{\"console\":\"member\",\"hosts\":{\"*\":"
+	    "\"admin\"}}", &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+	http("DELETE", "/api/roles/a-viewer", NULL, &r);
 	EXPECT(&r, 409);
 	resp_free(&r);
 	/* Invited: a token said once, with which bob registers a key and
@@ -673,9 +703,18 @@ ATF_TC_BODY(users, tc)
 	http("GET", "/api/auth/credentials", NULL, &r);
 	ATF_CHECK(jstr(&r, "credentials.1.user") != NULL);
 	resp_free(&r);
-	http("PUT", "/api/users/bob", "{\"console\":\"member\",\"tenant\":"
-	    "\"acme\",\"hosts\":{\"*\":\"operator\"}}", &r);
+	http("PUT", "/api/roles/acme-ops", "{\"console\":\"member\",\"hosts\":"
+	    "{\"*\":\"operator\"}}", &r);
 	EXPECT(&r, 200);
+	resp_free(&r);
+	http("PUT", "/api/users/bob", "{\"tenant\":\"acme\",\"roles\":"
+	    "[\"acme-ops\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* a-viewer has no user now: it may go. */
+	http("DELETE", "/api/roles/a-viewer", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "roles.4.name") == NULL);
 	resp_free(&r);
 	cookie[0] = '\0';
 	do_login(&b, 2, ORIGIN, RP_ID, NULL, false, &r);

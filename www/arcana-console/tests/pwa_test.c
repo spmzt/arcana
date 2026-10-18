@@ -680,14 +680,16 @@ part_shell(void)
 	ATF_CHECK(js_true("document.querySelector('form[data-form=settings]')"
 	    ".safe_wait && document.querySelector('.safehosts-none')"));
 	/* The keys that sign in, a tab of their own. */
-	run("document.querySelector('button[data-act=set-tab][data-arg=keys]')"
+	run("document.querySelector('button[data-act=set-tab][data-arg=aaa]')"
+	    ".click()");
+	run("document.querySelector('button[data-act=aaa-tab][data-arg=keys]')"
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=add-key] ul.keys li "
 	    ".name')", 10);
-	/* Users and their roles (RBAC): the built-in owner listed, the
-	 * form with the console role, the tenant and a role on every
-	 * host and host by host. */
-	run("document.querySelector('button[data-act=set-tab][data-arg=users]')"
+	/* AAA: users with roles (RBAC): the built-in owner listed with the
+	 * owner role; the user form with the tenant and the roles; the
+	 * roles sub-tab with the three built in and the role form. */
+	run("document.querySelector('button[data-act=aaa-tab][data-arg=users]')"
 	    ".click()");
 	wait_js("[...document.querySelectorAll('table.users tbody tr')].some("
 	    "tr => tr.textContent.includes('admin') && tr.textContent.includes("
@@ -696,14 +698,22 @@ part_shell(void)
 	    "textContent.includes('admin')"));
 	run("document.querySelector('button[data-act=user-add]').click()");
 	wait_js("document.querySelector('.modal form[data-form=user] "
-	    "select[name=console]') !== null && document.querySelector('.modal "
 	    "input[name=tenant]') !== null && document.querySelector('.modal "
+	    "input[name=r_owner]') !== null", 5);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	run("document.querySelector('button[data-act=aaa-tab][data-arg=roles]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('table.roles tbody tr').length >= 3",
+	    5);
+	run("document.querySelector('button[data-act=role-add]').click()");
+	wait_js("document.querySelector('.modal form[data-form=role] "
+	    "select[name=console]') !== null && document.querySelector('.modal "
 	    "select[name=all]') !== null", 5);
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	shot("0b4-users");
 	/* A read API token: made with a name in the settings, its value
 	 * shown once, listed, and deleted once confirmed. */
-	run("document.querySelector('button[data-act=set-tab][data-arg="
+	run("document.querySelector('button[data-act=aaa-tab][data-arg="
 	    "tokens]').click()");
 	wait_js("document.querySelector('input[data-input=token-name]')", 10);
 	run("const i = document.querySelector('input[data-input=token-name]'); "
@@ -759,7 +769,7 @@ part_shell(void)
 	    "f.token.value = sessionStorage.getItem('wtok'); "
 	    "f.requestSubmit();");
 	wait_js("document.querySelector('.shell')", 20);
-	go("/#/settings/keys");
+	go("/#/settings/aaa/keys");
 	wait_js("document.querySelector('.set-body .keys-token')?.textContent"
 	    ".includes('opened with an API token') && !document.querySelector("
 	    "'form[data-form=add-key]') && !document.querySelector("
@@ -768,7 +778,7 @@ part_shell(void)
 	run("document.querySelector('button[data-act=logout]').click()");
 	click_when("button[data-act=login]", 10);
 	wait_js("document.querySelector('.shell')", 20);
-	go("/#/settings/keys");
+	go("/#/settings/aaa/keys");
 	wait_js("document.querySelector('form[data-form=add-key] ul.keys li "
 	    ".name')", 20);
 	/*
@@ -5007,7 +5017,7 @@ part_flows(void)
 	    20);
 	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
 	    ".click()");
-	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 19",
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 22",
 	    5);
 	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
 	    ".click()");
@@ -6099,9 +6109,9 @@ part_routes(void)
 	    "&& document.querySelector('button[data-act=tab]"
 	    "[data-arg=processes].on')", id);
 	wait_js(expr, 20);
-	go("/#/settings/tokens");
-	wait_js("location.hash === '#/settings/tokens' && document."
-	    "querySelector('button[data-act=set-tab][data-arg=tokens].on')", 20);
+	go("/#/settings/aaa/tokens");
+	wait_js("location.hash === '#/settings/aaa/tokens' && document."
+	    "querySelector('button[data-act=aaa-tab][data-arg=tokens].on')", 20);
 	/* A host that is not there: the fleet, and the address says so. */
 	go("/#/hosts/ffffffff/log");
 	wait_js("location.hash === '#/' && document.querySelector("

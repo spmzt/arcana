@@ -2301,6 +2301,10 @@ bird_action(const char *act, const char *arg, const char *value)
 	char		*all, body[300];
 	int		 i;
 
+	if (strcmp(act, "input:bird-ver") == 0) {
+		bf_set_ver(value);
+		return (true);
+	}
 	if (strcmp(act, "input:bird-path") != 0 && (strncmp(act, "bird-", 5) !=
 	    0 || strcmp(act, "bird-verb") == 0) && strcmp(act,
 	    "do-bird-delete") != 0)
@@ -2316,6 +2320,7 @@ bird_action(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "bird-open") == 0) {
 		snprintf(bd.proto, sizeof(bd.proto), "%s", arg);
 		bd.edit = block_find("protocol", arg);
+		bf_set_ver("");
 		app.modal = MODAL_BIRD_PROTO;
 	} else if (strcmp(act, "bird-edit") == 0) {
 		i = atoi(arg);
@@ -2323,6 +2328,7 @@ bird_action(const char *act, const char *arg, const char *value)
 			return (true);
 		bd.edit = i;
 		bd.newkind[0] = '\0';
+		bf_set_ver("");
 		if (strcmp(bd.b[i].kind, "protocol") == 0 && bd.b[i].name[0] !=
 		    '\0') {
 			snprintf(bd.proto, sizeof(bd.proto), "%s", bd.b[i].name);

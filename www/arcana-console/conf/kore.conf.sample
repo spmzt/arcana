@@ -34,7 +34,7 @@ task_threads		32
 # browser's next request on it gets that answer.  The page sends such a
 # request again, and a longer wait makes it rare.
 http_header_timeout	60
-http_body_max		1048576
+http_body_max		8388608
 http_media_type		application/wasm wasm
 http_media_type		application/manifest+json webmanifest
 http_media_type		image/svg+xml svg

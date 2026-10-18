@@ -30,6 +30,7 @@ static struct {
 	bool		 loading;
 	char		 error[256];
 	enum snview	 view;
+	char		 mode_pick[8];	/* the mode chosen in the form, "" rc's */
 	char		*text;		/* local.rules or snort.lua, edited */
 	enum snview	 text_of;
 	char		 url[1100];
@@ -332,14 +333,15 @@ view_settings(struct html *h)
 	bool			 ips;
 
 	rc = jget(sn.st, "rc");
-	ips = jstr(rc, "mode") != NULL && strcmp(jstr(rc, "mode"), "ips") == 0;
+	ips = sn.mode_pick[0] != '\0' ? strcmp(sn.mode_pick, "ips") == 0 :
+	    jstr(rc, "mode") != NULL && strcmp(jstr(rc, "mode"), "ips") == 0;
 	h_raw(h, "<form data-form=\"sn-set\" class=\"secform sn-set\">"
 	    "<label class=\"check\" title=\"arcana_snort_enable: started at "
 	    "boot\"><input type=\"checkbox\" name=\"enable\"");
 	if (jbool(rc, "enable"))
 		h_raw(h, " checked");
 	h_raw(h, "><span>Started at boot</span></label><label>Mode<select "
-	    "name=\"mode\">");
+	    "name=\"mode\" data-input=\"sn-mode\">");
 	h_fmt(h, "<option value=\"ids\"%s>Detects (ids): watches "
 	    "interfaces</option><option value=\"ips\"%s>Prevents (ips): "
 	    "inline, by ipfw divert</option>", ips ? "" : " selected", ips ?
@@ -348,16 +350,25 @@ view_settings(struct html *h)
 	    "packet thread each\">Interfaces<input name=\"interfaces\" "
 	    "placeholder=\"em0 em1\" spellcheck=\"false\" autocomplete=\"off\"");
 	h_attr(h, "value", jstr(rc, "interfaces"));
-	h_raw(h, "></label><label title=\"Prevents: the divert(4) port an ipfw "
-	    "rule sends packets to\">Divert port<input name=\"divert_port\" "
-	    "inputmode=\"numeric\"");
-	h_attr(h, "value", jstr(rc, "divert_port"));
-	h_raw(h, "></label><label title=\"snort.lua's HOME_NET: the networks "
+	h_raw(h, "></label>");
+	/* The divert port is prevent mode's alone. */
+	if (ips) {
+		h_raw(h, "<label title=\"Prevents: the divert(4) port an ipfw "
+		    "rule sends packets to\">Divert port<input name=\"divert_port\" "
+		    "inputmode=\"numeric\" required");
+		h_attr(h, "value", jstr(rc, "divert_port") != NULL ? jstr(rc,
+		    "divert_port") : "8000");
+		h_raw(h, "></label>");
+	}
+	h_raw(h, "<label title=\"snort.lua's HOME_NET: the networks "
 	    "the rules call home\">HOME_NET<input name=\"home_net\" "
 	    "spellcheck=\"false\" autocomplete=\"off\" placeholder=\""
 	    "[192.0.2.0/24,2001:db8::/32]\"");
 	h_attr(h, "value", jstr(sn.st, "home_net"));
-	h_raw(h, "></label><p class=\"dim wide\">Snort takes rc.conf's settings when "
+	h_raw(h, "></label>");
+	pfxlist_select(h, "And the networks of a list", "home_pfx", "A prefix "
+	    "list of the console's, put into HOME_NET when saved.");
+	h_raw(h, "<p class=\"dim wide\">Snort takes rc.conf's settings when "
 	    "it starts: restart it after a change. HOME_NET is read again at "
 	    "once. In prevent mode, an ipfw rule sends it packets: divert "
 	    "<i>port</i> ip from any to any via <i>interface</i>, in "
@@ -519,6 +530,7 @@ bool
 snort_form(const char *form, const ucl_object_t *f)
 {
 	const char	*args[40], *v, *rules, *mode, *ifs, *port, *hn;
+	char		 hnbuf[1300];
 	char		*copy, *it, *w, buf[1200];
 	int		 n;
 
@@ -556,6 +568,18 @@ snort_form(const char *form, const ucl_object_t *f)
 	ifs = jstr(f, "interfaces") != NULL ? jstr(f, "interfaces") : "";
 	port = jstr(f, "divert_port") != NULL ? jstr(f, "divert_port") : "";
 	hn = jstr(f, "home_net") != NULL ? jstr(f, "home_net") : "";
+	/* A console prefix list into HOME_NET: [what was, the list]. */
+	if (jstr(f, "home_pfx") != NULL && jstr(f, "home_pfx")[0] != '\0') {
+		char	*more = pfxlist_joined(jstr(f, "home_pfx"), ","), inner[1200];
+
+		snprintf(inner, sizeof(inner), "%s", hn);
+		inner[strcspn(inner, "]")] = '\0';
+		snprintf(hnbuf, sizeof(hnbuf), "[%s%s%s]", inner[0] == '[' ?
+		    inner + 1 : inner, inner[0] != '\0' && strcmp(inner, "[") != 0
+		    ? "," : "", more != NULL ? more : "");
+		free(more);
+		hn = hnbuf;
+	}
 	n = 0;
 	args[n++] = jbool(f, "enable") ? "enable=yes" : "enable=no";
 	args[n++] = strcmp(mode, "ips") == 0 ? "mode=ips" : "mode=ids";
@@ -572,7 +596,7 @@ snort_form(const char *form, const ucl_object_t *f)
 	}
 	if (n == 2)
 		args[n++] = "interface=";
-	if (port[0] != '\0') {
+	if (strcmp(mode, "ips") == 0 && port[0] != '\0') {
 		snprintf(buf, sizeof(buf), "divert_port=%s", port);
 		args[n++] = buf;
 	}
@@ -599,6 +623,11 @@ snort_action(const char *act, const char *arg, const char *value)
 		free(sn.text);
 		if ((sn.text = strdup(value != NULL ? value : "")) == NULL)
 			abort();
+		return (true);
+	}
+	if (strcmp(act, "input:sn-mode") == 0) {
+		snprintf(sn.mode_pick, sizeof(sn.mode_pick), "%s", value != NULL ?
+		    value : "");
 		return (true);
 	}
 	if (strncmp(act, "sn-", 3) != 0)

@@ -1107,6 +1107,59 @@ sn_rule(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	return (0);
 }
 
+/*
+ * The rc.d script arcana_snort, as the agent's build has it (the
+ * Makefile puts arcana_snort.sh into snort_rc.c): written into the
+ * last of the rc directories when it is not there or differs, so that
+ * a host whose agent came by agent-update, the binary alone, has it
+ * too.  Quiet when it cannot be written: the service start then says
+ * what is missing.
+ */
+void
+snort_rc_install(struct work *w)
+{
+	const char	*dirs, *p;
+	char		 dir[PATH_MAX], path[PATH_MAX], tmp[PATH_MAX];
+	char		*have;
+	struct stat	 sb;
+	size_t		 n;
+	ssize_t		 got;
+	int		 fd;
+
+	(void)w;
+	dirs = opts.rc_dirs;
+	p = strrchr(dirs, ':');
+	snprintf(dir, sizeof(dir), "%s", p != NULL ? p + 1 : dirs);
+	if (dir[0] == '\0')
+		return;
+	snprintf(path, sizeof(path), "%s/arcana_snort", dir);
+	n = strlen(snort_rc_text);
+	/* As it is, nothing to do. */
+	if ((fd = open(path, O_RDONLY | O_CLOEXEC)) != -1) {
+		if (fstat(fd, &sb) == 0 && (size_t)sb.st_size == n && (have =
+		    malloc(n + 1)) != NULL) {
+			got = read(fd, have, n);
+			have[got > 0 ? got : 0] = '\0';
+			if (got == (ssize_t)n && memcmp(have, snort_rc_text, n) == 0) {
+				free(have);
+				close(fd);
+				return;
+			}
+			free(have);
+		}
+		close(fd);
+	}
+	snprintf(tmp, sizeof(tmp), "%s.new", path);
+	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0555)) ==
+	    -1)
+		return;
+	if (write(fd, snort_rc_text, n) != (ssize_t)n || fchmod(fd, 0555) != 0 ||
+	    close(fd) != 0 || rename(tmp, path) != 0) {
+		(void)unlink(tmp);
+		return;
+	}
+}
+
 int
 do_snort_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
@@ -1119,6 +1172,7 @@ do_snort_job(struct work *w, const struct arc_job_spec *sp,
 		    "pkg install snort3", opts.snort_bin);
 		return (-1);
 	}
+	snort_rc_install(w);
 	if (strcmp(sp->verb, "set") == 0)
 		return (sn_set(w, sp, errp));
 	if (strcmp(sp->verb, "conf") == 0)

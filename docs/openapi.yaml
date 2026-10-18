@@ -306,9 +306,9 @@ paths:
   /api/users:
     get:
       tags: [auth]
-      summary: The console's users and their roles (owner only)
+      summary: The console's users and roles (owner only)
       responses:
-        "200": { description: "users, each name, console (owner, operator, member), tenant, hosts ({id or \"*\": viewer, operator, admin}), created, keys, invites" }
+        "200": { description: "users, each name, tenant, roles (names), console (what the roles come to), created, keys, invites; roles, each name, console (owner, operator, member), hosts ({id or \"*\": viewer, operator, admin}), users (how many have it)" }
     post:
       tags: [auth]
       summary: Add a user, or replace the one of the name
@@ -319,17 +319,50 @@ paths:
               type: object
               properties:
                 name: { type: string }
-                console: { type: string, enum: [owner, operator, member] }
                 tenant: { type: string, description: the fleet whose hosts alone the user sees; empty for every fleet }
+                roles: { type: array, items: { type: string }, description: names of roles, one at least }
+      responses:
+        "200": { description: "the users and roles" }
+        "409": { description: "the last owner stays one" }
+
+  /api/roles:
+    post:
+      tags: [auth]
+      summary: Add a role, or replace the one of the name
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                console: { type: string, enum: [owner, operator, member] }
                 hosts: { type: object, additionalProperties: { type: string, enum: [viewer, operator, admin] }, description: a role by host id, or "*" for all }
       responses:
-        "200": { description: "the users" }
-        "409": { description: "the last owner stays one" }
+        "200": { description: "the users and roles" }
+        "409": { description: "the change would leave no owner" }
+
+  /api/roles/{name}:
+    put:
+      tags: [auth]
+      summary: Keep the role of the name (as POST /api/roles with it)
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "the users and roles" }
+    delete:
+      tags: [auth]
+      summary: Remove the role; refused while a user has it
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "the users and roles" }
+        "409": { description: "a user has it" }
 
   /api/users/{name}:
     put:
       tags: [auth]
-      summary: Keep the user of the name (as POST /api/users with it)
+      summary: Keep the user of the name (as POST /api/users with it: tenant, roles)
       parameters:
         - { name: name, in: path, required: true, schema: { type: string } }
       responses:

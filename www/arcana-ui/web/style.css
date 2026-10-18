@@ -2031,6 +2031,10 @@ table.nhgroups td.num { text-align: right; }
 }
 html.fx .node.st-incomplete { animation: breathe 1.2s ease-in-out infinite; }
 .op.o-queued { --c: var(--slate); opacity: .75; }
+.op.o-quiet { opacity: .55; font-size: .85em; }
+.dock .recent .quiet { opacity: .7; }
+nav.tabs.sub { margin: 0 0 .8rem; }
+nav.tabs.sub .tab { font-size: .85em; }
 .dock header button.small { margin-left: .4rem; }
 .dock header button.on { color: var(--cyan); border-color: var(--cyan); }
 

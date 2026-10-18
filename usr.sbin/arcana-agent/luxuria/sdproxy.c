@@ -245,8 +245,8 @@ icap_missing(struct work *w)
 	}
 	if (!sigs)
 		return ("ClamAV has no signatures in " PATH_CLAMAV_DB ": pkg "
-		    "install clamav, then freshclam (and freshclam_enable in "
-		    "rc.conf to keep them fresh)");
+		    "install clamav, then freshclam (Security, Signatures: "
+		    "Start freshclam enables clamav_freshclam and starts it)");
 	return (NULL);
 }
 
@@ -871,6 +871,44 @@ clamav_json(ucl_object_t *top)
 	}
 	ucl_object_insert_key(o, ucl_object_frombool(pid > 0 && kill((pid_t)pid,
 	    0) == 0), "freshclam", 0, false);
+	/* freshclam's configuration: there, and not the port's sample
+	 * still saying Example, which makes freshclam refuse to run; and
+	 * the last of its log, which says why signatures do not come. */
+	{
+		char	 line[512], last[3][512];
+		int	 nl, j;
+		bool	 conf, example;
+
+		conf = (pf = fopen("/usr/local/etc/freshclam.conf", "re")) != NULL;
+		example = false;
+		while (pf != NULL && fgets(line, sizeof(line), pf) != NULL)
+			if (strncmp(line, "Example", 7) == 0 && (line[7] == '\n' ||
+			    line[7] == '\r' || line[7] == '\0'))
+				example = true;
+		if (pf != NULL)
+			fclose(pf);
+		ucl_object_insert_key(o, ucl_object_frombool(conf && !example),
+		    "conf", 0, false);
+		nl = 0;
+		if ((pf = fopen("/var/log/clamav/freshclam.log", "re")) != NULL) {
+			while (fgets(line, sizeof(line), pf) != NULL) {
+				if (line[0] == '\n' || strncmp(line, "---", 3) == 0)
+					continue;
+				snprintf(last[nl % 3], sizeof(last[0]), "%s", line);
+				nl++;
+			}
+			fclose(pf);
+		}
+		if (nl > 0) {
+			ucl_object_t	*lg = ucl_object_typed_new(UCL_ARRAY);
+
+			for (j = nl > 3 ? nl - 3 : 0; j < nl; j++) {
+				last[j % 3][strcspn(last[j % 3], "\r\n")] = '\0';
+				ucl_array_append(lg, ucl_object_fromstring(last[j % 3]));
+			}
+			ucl_object_insert_key(o, lg, "log", 0, false);
+		}
+	}
 	ucl_object_insert_key(top, o, "clamav", 0, false);
 }
 

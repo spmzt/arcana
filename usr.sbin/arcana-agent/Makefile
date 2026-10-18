@@ -51,11 +51,18 @@ RCDIR=		${PREFIX}/etc/rc.d
 RCNAME_arcana_agent.sh=	arcana_agent
 RCNAME_arcana_snort.sh=	arcana_snort
 RCMODE=		0555
-CLEANFILES+=	arcana_agent.sh arcana_snort.sh
+CLEANFILES+=	arcana_agent.sh arcana_snort.sh snort_rc.c
 arcana_agent.sh: arcana_agent.in
 	sed -e 's|%%PREFIX%%|${PREFIX}|g' ${.ALLSRC} > ${.TARGET}
 arcana_snort.sh: arcana_snort.in
 	sed -e 's|%%PREFIX%%|${PREFIX}|g' ${.ALLSRC} > ${.TARGET}
+# Snort's rc script inside the agent too: a host whose agent came by
+# agent-update, the binary alone, gets the script written by the agent
+# (snort.c, snort_rc_install).
+SRCS+=		snort_rc.c
+snort_rc.c: arcana_snort.sh
+	(echo '#include "agent.h"'; file2c 'const char snort_rc_text[] = {' \
+	    ',0};' < ${.ALLSRC}) > ${.TARGET}
 
 # The modules, their features, their .sid files: what ymodel.h and
 # ymodel_schema.c are made of.

@@ -4840,9 +4840,13 @@ sdwan_modal(struct html *h)
 			    NULL, *bg = jget(rt, "bgp"), *os = jget(rt, "ospf");
 			char			 nb[32], lb3[300];
 
-			h_raw(h, "<fieldset><legend>Addressed and routed <small "
-			    "class=\"dim\">Mplify 119 §12.2.3; all optional</small>"
-			    "</legend><div class=\"two\"><label>The interface's "
+			h_raw(h, "<details class=\"sd-more\"");
+			if (rt != NULL || (lk != NULL && (jstr(lk, "addressing") !=
+			    NULL || jget(lk, "vrf") != NULL)))
+				h_raw(h, " open");
+			h_raw(h, "><summary>Addressed and routed <small class=\"dim"
+			    "\">Mplify 119 §12.2.3; all optional</small></summary>"
+			    "<fieldset><div class=\"two\"><label>The interface's "
 			    "address<select name=\"addressing\">");
 			option(h, "static", "Static: as given above", lk != NULL ?
 			    jstr(lk, "addressing") : NULL);
@@ -4908,7 +4912,7 @@ sdwan_modal(struct html *h)
 			    0));
 			text_field(h, "OSPF dead, seconds", "ospf_dead", jint(os,
 			    "dead", 0) > 0 ? nb : "", "40", NULL);
-			h_raw(h, "</div></fieldset>");
+			h_raw(h, "</div></fieldset></details>");
 		}
 		return (true);
 	}
@@ -5702,6 +5706,12 @@ sdwan_modal_service(struct html *h)
 			text_field(h, "URL domain lists", "urllists", v != NULL &&
 			    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf))
 			    : "", "blocked", "Lists by name, their domains refused.");
+			v = jget(jget(cr, "url-filter"), "allow");
+			text_field(h, "URL domains allowed", "urlallow", v != NULL &&
+			    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf))
+			    : "", "ok.bad.example", "Let through whatever the denied "
+			    "domains and lists say: a site under a denied one, a "
+			    "list's mistake.");
 		}
 		/* Malware, by c-icap and ClamAV behind the same Squid. */
 		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
@@ -5925,7 +5935,16 @@ sdwan_modal_service(struct html *h)
 		    ucl_object_type(v) == UCL_STRING ? ucl_object_tostring(v) :
 		    csv(v, buf, sizeof(buf)), "Self", "All, or zones with commas; "
 		    "Self alone if empty (R62).");
-		h_raw(h, "</div><fieldset><legend>Performance: the tunnel is "
+		/* The optional parts folded until wanted: performance and
+		 * bandwidth, open when the policy has either. */
+		h_raw(h, "</div><details class=\"sd-more\"");
+		if (pr != NULL || jget(cr, "bandwidth") != NULL || jget(cr,
+		    "rate-limiter") != NULL || jget(cr, "business-importance") !=
+		    NULL)
+			h_raw(h, " open");
+		h_raw(h, "><summary>Performance and bandwidth <small class=\"dim\">"
+		    "optional</small></summary>");
+		h_raw(h, "<fieldset><legend>Performance: the tunnel is "
 		    "chosen by it (§9.12.2.9)</legend><div class=\"two\"><label>"
 		    "Metric<select name=\"metric\">");
 		for (i = 0; i < 4; i++)
@@ -5979,7 +5998,7 @@ sdwan_modal_service(struct html *h)
 		    ucl_object_type(v) == UCL_OBJECT && jget(v, "limit") != NULL &&
 		    ucl_object_type(jget(v, "limit")) == UCL_INT ? buf : "", "",
 		    "At most; empty for none.");
-		h_raw(h, "</div></fieldset><div class=\"two\">");
+		h_raw(h, "</div></fieldset></details><div class=\"two\">");
 		h_raw(h, "<label>Keeps to the topology<select name=\"topology\">");
 		option(h, "", "Swvc: every end point", jstr(cr,
 		    "virtual-topology"));
@@ -6121,8 +6140,15 @@ sdwan_modal_service(struct html *h)
 		snprintf(buf, sizeof(buf), "%lld", (long long)jint(u, "vlan", 0));
 		text_field(h, "VLAN tag", "vlan", jint(u, "vlan", 0) > 0 ? buf : "",
 		    "none", NULL);
-		h_raw(h, "</div><div class=\"two\">");
+		h_raw(h, "</div>");
+		/* Each address family folded away until it is wanted: one of
+		 * the two is enough (R100); the mode's Off keeps it out. */
 		v = jget(u, "ipv4");
+		h_raw(h, "<details class=\"sd-more\"");
+		if (jstr(v, "prefix") != NULL)
+			h_raw(h, " open");
+		h_raw(h, "><summary>IPv4 at the UNI <small class=\"dim\">empty, or "
+		    "Off: none</small></summary><div class=\"two\">");
 		text_field(h, "IPv4 subnet", "p4", jstr(v, "prefix"), "10.1.0.0/24",
 		    "The hosts' subnet (§11.4).");
 		text_field(h, "The edge's IPv4 address", "a4", jget(v, "provider") !=
@@ -6135,6 +6161,7 @@ sdwan_modal_service(struct html *h)
 		    "mode"));
 		option(h, "dhcp", "DHCP: given by the edge (dnsmasq)", jstr(v,
 		    "mode"));
+		option(h, "none", "Off: no IPv4 at this UNI", jstr(v, "mode"));
 		h_raw(h, "</select><small>With DHCP the edge runs dnsmasq in the "
 		    "service's table, giving the subnet less what is reserved."
 		    "</small></label>");
@@ -6144,8 +6171,14 @@ sdwan_modal_service(struct html *h)
 		text_field(h, "DNS servers told", "d4", csv(jget(v, "dns"), lb2, sizeof(lb2)),
 		    "10.1.0.1", "IPv4 addresses, by commas.");
 		text_field(h, "Lease", "l4", jstr(v, "lease"), "12h", "m, h or d.");
-		h_raw(h, "</div><div class=\"two\">");
+		h_raw(h, "</div></details>");
 		v = jget(u, "ipv6");
+		h_raw(h, "<details class=\"sd-more\"");
+		if (jstr(v, "prefix") != NULL || (jstr(v, "mode") != NULL && strcmp(
+		    jstr(v, "mode"), "ll-only") == 0))
+			h_raw(h, " open");
+		h_raw(h, "><summary>IPv6 at the UNI <small class=\"dim\">empty, or "
+		    "Off: none</small></summary><div class=\"two\">");
 		text_field(h, "IPv6 subnet", "p6", jstr(v, "prefix"), "2001:db8:1::/"
 		    "64", NULL);
 		text_field(h, "The edge's IPv6 address", "a6", jget(v, "provider") !=
@@ -6161,6 +6194,7 @@ sdwan_modal_service(struct html *h)
 		    "mode"));
 		option(h, "ll-only", "Link-local only: no subnet", jstr(v,
 		    "mode"));
+		option(h, "none", "Off: no IPv6 at this UNI", jstr(v, "mode"));
 		h_raw(h, "</select><small>SLAAC by the base system's rtadvd, a "
 		    "/64; DHCPv6 by dnsmasq, the hosts told to ask by its "
 		    "advertisements.</small></label>");
@@ -6170,7 +6204,7 @@ sdwan_modal_service(struct html *h)
 		text_field(h, "DNS servers told", "d6", csv(jget(v, "dns"), lb2, sizeof(lb2)),
 		    "2001:db8:1::1", "IPv6 addresses, by commas (RDNSS with SLAAC).");
 		text_field(h, "Lease", "l6", jstr(v, "lease"), "12h", "DHCPv6 only.");
-		h_raw(h, "</div>");
+		h_raw(h, "</div></details>");
 		v = jget(o, "nat");
 		text_field(h, "NAT public prefix", "nat", v != NULL && ucl_object_type(
 		    v) == UCL_OBJECT ? jstr(v, "public_prefix") : "", "198.51.100.0/"
@@ -7338,6 +7372,9 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			if (jstr(f, "urllists") != NULL && jstr(f, "urllists")[0] !=
 			    '\0')
 				put_list(b, "lists", jstr(f, "urllists"));
+			if (jstr(f, "urlallow") != NULL && jstr(f, "urlallow")[0] !=
+			    '\0')
+				put_list(b, "allow", jstr(f, "urlallow"));
 			ucl_object_insert_key(cr, b, "url-filter", 0, false);
 		}
 		if (checked(f, "malware"))
@@ -7543,11 +7580,20 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		ucl_object_insert_key(o, cr, "criteria", 0, false);
 		list_put(sw, "policies", "name", was, o);
 	} else if (strcmp(form, "sd-ep") == 0) {
+		bool	rem = jstr(f, "kind") != NULL && strcmp(jstr(f, "kind"),
+		    "remote") == 0;
+
+		/* A UNI has an interface; a remote its wg interface and the
+		 * prefix (rif, rprefix). */
 		if (jstr(f, "id") == NULL || jstr(f, "id")[0] == '\0' || jstr(f,
-		    "edge") == NULL || jstr(f, "interface") == NULL || jstr(f,
-		    "interface")[0] == '\0') {
-			snprintf(app.modal_error, sizeof(app.modal_error), "An end "
-			    "point has an id, an edge and an interface");
+		    "edge") == NULL || (!rem && (jstr(f, "interface") == NULL ||
+		    jstr(f, "interface")[0] == '\0')) || (rem && (jstr(f, "rif")
+		    == NULL || jstr(f, "rif")[0] == '\0' || jstr(f, "rprefix") ==
+		    NULL || jstr(f, "rprefix")[0] == '\0'))) {
+			snprintf(app.modal_error, sizeof(app.modal_error), rem ? "A "
+			    "remote end point has an id, an edge, a wg interface "
+			    "and the prefix its identities' addresses come from" :
+			    "An end point has an id, an edge and an interface");
 			ucl_object_unref(doc);
 			return (true);
 		}
@@ -7638,7 +7684,9 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			    "l6";
 
 			t = ucl_object_typed_new(UCL_OBJECT);
-			if (i == 1 && jstr(f, mk) != NULL && strcmp(jstr(f, mk),
+			if (jstr(f, mk) != NULL && strcmp(jstr(f, mk), "none") == 0)
+				put_str(t, "mode", "none");
+			else if (i == 1 && jstr(f, mk) != NULL && strcmp(jstr(f, mk),
 			    "ll-only") == 0)
 				put_str(t, "mode", "ll-only");
 			else if (jstr(f, pk) != NULL && jstr(f, pk)[0] != '\0') {
@@ -8043,11 +8091,11 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		sd.tab = SD_SERVICES;
 		if (strcmp(arg, "service") == 0)
 			return (sdwan_action("sd-swvc-add", "", ""));
+		/* The end point's own form, always: a service without
+		 * underlays yet is the check's to say, not a detour into
+		 * the service form that leaves no end point behind. */
 		if (strcmp(arg, "ep") == 0)
-			return (sdwan_action(ucl_array_size(jget(swvc_shown(),
-			    "ucs")) == 0 ? "sd-swvc-edit" : "sd-ep-add",
-			    jstr(swvc_shown(), "id") != NULL ? jstr(swvc_shown(),
-			    "id") : "", ""));
+			return (sdwan_action("sd-ep-add", "", ""));
 		if (strcmp(arg, "zone") == 0)
 			return (sdwan_action("sd-zone-add", "", ""));
 		if (strcmp(arg, "flow") == 0)

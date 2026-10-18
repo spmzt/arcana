@@ -1206,7 +1206,7 @@ dock(struct html *h)
 {
 	const struct op	*o;
 	char		 dur[32];
-	int		 i;
+	int		 i, n;
 
 	h_fmt(h, "<section class=\"dock%s\">%s<header data-act=\"dock\">"
 	    "<span class=\"label\">%s</span><div class=\"recent\">",
@@ -1218,8 +1218,11 @@ dock(struct html *h)
 	 * One picked opens below.  Open, the list below has them all, so
 	 * the strip goes.
 	 */
-	for (i = 0; !app.dock_open && i < app.nops && i < 6; i++) {
+	for (i = 0, n = 0; !app.dock_open && i < app.nops && n < 6; i++) {
 		o = &app.ops[i];
+		if (o->quiet)
+			continue;
+		n++;
 		h_fmt(h, "<span class=\"last o-%s%s\" data-act=\"trace\" "
 		    "data-arg=\"%d\"", op_class(o), app.dock_open &&
 		    o->id == app.trace_op ? " selected" : "", o->id);
@@ -1240,6 +1243,18 @@ dock(struct html *h)
 		}
 		h_raw(h, "</small></span>");
 	}
+	/* The page's own polls, counted apart; shown in the open list on
+	 * request, dimmed. */
+	for (i = 0, n = 0; i < app.nops; i++)
+		if (app.ops[i].quiet)
+			n++;
+	if (n > 0)
+		h_fmt(h, "<button class=\"ghost small quiet%s\" data-act=\""
+		    "quiet-toggle\" title=\"Reads the page made by itself, "
+		    "timers and refreshes after a job: %s\">%d in the "
+		    "background</button>", app.show_quiet ? " on" : "",
+		    app.show_quiet ? "listed below, dimmed; press to hide" :
+		    "press to list them below", n);
 	h_raw(h, "</div>");
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"queue\" title=\""
 	    "Changes are held in a queue until you press Run, and sent "
@@ -1271,10 +1286,12 @@ dock(struct html *h)
 		}
 		for (i = 0; i < app.nops; i++) {
 			o = &app.ops[i];
-			h_fmt(h, "<li class=\"op o-%s%s\" data-act=\"trace\" "
+			if (o->quiet && !app.show_quiet)
+				continue;
+			h_fmt(h, "<li class=\"op o-%s%s%s\" data-act=\"trace\" "
 			    "data-arg=\"%d\"><i class=\"led\"></i>",
 			    op_class(o), o->id == app.trace_op ? " selected" :
-			    "", o->id);
+			    "", o->quiet ? " o-quiet" : "", o->id);
 			{
 				time_t		when = (time_t)(o->started / 1000);
 				struct tm	tm;
@@ -1356,9 +1373,7 @@ static const struct {
 } settabs[] = {
 	{ SET_LOOK, "look", "Look" },
 	{ SET_NOTIFY, "notify", "Notifications" },
-	{ SET_TOKENS, "tokens", "API tokens" },
-	{ SET_KEYS, "keys", "Sign-in keys" },
-	{ SET_USERS, "users", "Users" },
+	{ SET_AAA, "aaa", "AAA" },
 	{ SET_CONSOLE, "console", "Console" },
 	{ SET_UPDATE, "update", "Update" },
 	{ SET_CA, "ca", "Certificate authority" },
@@ -1485,7 +1500,7 @@ set_notify(struct html *h)
 	    "");
 }
 
-static void
+void
 set_tokens(struct html *h)
 {
 	const ucl_object_t	*k;
@@ -1555,7 +1570,7 @@ set_tokens(struct html *h)
 	    "token-new\">Make a token</button></div>");
 }
 
-static void
+void
 set_keys(struct html *h)
 {
 	const ucl_object_t	*k;
@@ -1599,9 +1614,14 @@ set_keys(struct html *h)
 	    "placeholder=\"Spare YubiKey, or Pixel\" maxlength=\"64\"></label>"
 	    "<div class=\"actions\"><button class=\"primary\"%s>Register key"
 	    "</button></div></form>", app.modal_busy ? " disabled" : "");
-	/* Sign-in by a directory, beside the keys: its users are let in
-	 * as a token is, never to this tab. */
-	h_raw(h, "<h3>By LDAP</h3>");
+}
+
+/* Sign-in by a directory: its users are let in with the roles of the
+ * user of their name here, or as a token's session is. */
+void
+set_ldap(struct html *h)
+{
+
 	if (app.settings == NULL) {
 		h_raw(h, "<div class=\"loader\"></div>");
 		return;
@@ -2141,14 +2161,8 @@ view_settings(struct html *h)
 	case SET_NOTIFY:
 		set_notify(h);
 		break;
-	case SET_TOKENS:
-		set_tokens(h);
-		break;
-	case SET_KEYS:
-		set_keys(h);
-		break;
-	case SET_USERS:
-		set_users(h);
+	case SET_AAA:
+		set_aaa(h);
 		break;
 	case SET_CONSOLE:
 		set_console(h);
@@ -2355,6 +2369,7 @@ modal(struct html *h)
 			return;
 		break;
 	case MODAL_USER:
+	case MODAL_ROLE:
 		if (!user_modal(h))
 			return;
 		h_raw(h, "<div class=\"actions\"><button class=\"primary\">Keep"

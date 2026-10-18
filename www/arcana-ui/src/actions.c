@@ -293,6 +293,55 @@ op_new(const char *title, const char *server)
 }
 
 /*
+ * A poll of the page's own (app.quiet), as a task shown apart: its
+ * title the host's read, its server by the id in the path.
+ */
+int
+op_quiet_begin(const char *method, const char *url)
+{
+	struct op	*o;
+	const char	*p, *q;
+	char		 title[160], sid[16], server[64];
+	int		 i;
+
+	server[0] = '\0';
+	snprintf(title, sizeof(title), "%s", url);
+	if ((p = strstr(url, "/api/servers/")) != NULL) {
+		p += strlen("/api/servers/");
+		q = strchr(p, '/');
+		snprintf(sid, sizeof(sid), "%.*s", (int)(q != NULL ? q - p :
+		    (ptrdiff_t)strlen(p)), p);
+		for (i = 0; i < app.nservers; i++)
+			if (strcmp(app.servers[i].id, sid) == 0)
+				snprintf(server, sizeof(server), "%s",
+				    app.servers[i].name);
+		snprintf(title, sizeof(title), "poll %s", q != NULL ? q + 1 :
+		    "the host");
+	} else if (strncmp(url, "/api/", 5) == 0)
+		snprintf(title, sizeof(title), "poll %s", url + 5);
+	title[strcspn(title, "?")] = '\0';
+	o = op_new(title, server);
+	o->quiet = true;
+	o->await = false;
+	snprintf(o->method, sizeof(o->method), "%s", method);
+	snprintf(o->url, sizeof(o->url), "%s", url);
+	return (o->id);
+}
+
+void
+op_quiet_end(int id, int status)
+{
+	struct op	*o;
+
+	if ((o = op_find(id)) == NULL)
+		return;
+	o->state = status >= 200 && status < 300 ? OP_OK : OP_FAILED;
+	o->finished = arc_now();
+	if (o->state == OP_FAILED)
+		snprintf(o->error, sizeof(o->error), "HTTP %d", status);
+}
+
+/*
  * The finished tasks kept in the browser, so that a reload has them with
  * what was seen of them: each its title, host, times and outcome, its
  * job on the host (whose trace is read from there again when it is
@@ -321,6 +370,8 @@ ops_save(void)
 	last = sig;
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	for (i = 0, n = 0; i < app.nops && n < OPS_KEPT; i++) {
+		if (app.ops[i].quiet)
+			continue;
 		struct op	*o = &app.ops[i];
 
 		if (o->state == OP_RUNNING)

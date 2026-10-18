@@ -2159,11 +2159,47 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 		    "icap://%s:%d/avscan\nadaptation_access sdwan_av allow "
 		    "all", own, ICAP_PORT(ucl_object_toint(ucl_object_lookup(sw,
 		    "fib"))));
-	kore_buf_appendf(b, "\nacl denied_site ssl::server_name \"@DENY@\"\n"
-	    "acl denied_url dstdomain \"@DENY@\"\nacl step1 at_step SslBump1\n"
-	    "ssl_bump peek step1\nssl_bump terminate denied_site\nssl_bump %s all"
-	    "\nhttp_access deny denied_url\nhttp_access allow localnet\n"
-	    "http_access deny all\n", inspect ? "bump" : "splice");
+	/* Domains let through whatever is denied (url-filter.allow): a
+	 * site under a denied one, a list's mistake; inline, few. */
+	{
+		struct kore_buf	*al = kore_buf_alloc(512);
+
+		pit = NULL;
+		while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+		    &pit, true)) != NULL)
+			for (i = 0; i < 2; i++) {
+				sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
+				    "af-security-egress", &si);
+				if (sec == NULL || (uf = ucl_object_lookup(
+				    ucl_object_lookup(sec, "criteria"), "url-filter"))
+				    == NULL)
+					continue;
+				dit = NULL;
+				while ((e = ucl_object_iterate(ucl_object_lookup(uf,
+				    "allow"), &dit, true)) != NULL)
+					kore_buf_appendf(al, " .%s",
+					    ucl_object_tostring_forced(e));
+			}
+		if (al->offset > 0) {
+			kore_buf_appendf(b, "\nacl allowed_site ssl::server_name%s"
+			    "\nacl allowed_url dstdomain%s\n", kore_buf_stringify(
+			    al, NULL), kore_buf_stringify(al, NULL));
+			kore_buf_appendf(b, "acl denied_site ssl::server_name "
+			    "\"@DENY@\"\nacl denied_url dstdomain \"@DENY@\"\nacl "
+			    "step1 at_step SslBump1\nssl_bump peek step1\nssl_bump "
+			    "splice allowed_site\nssl_bump terminate denied_site\n"
+			    "ssl_bump %s all\nhttp_access allow allowed_url\n"
+			    "http_access deny denied_url\nhttp_access allow localnet"
+			    "\nhttp_access deny all\n", inspect ? "bump" : "splice");
+		} else
+			kore_buf_appendf(b, "\nacl denied_site ssl::server_name "
+			    "\"@DENY@\"\nacl denied_url dstdomain \"@DENY@\"\nacl "
+			    "step1 at_step SslBump1\nssl_bump peek step1\nssl_bump "
+			    "terminate denied_site\nssl_bump %s all\nhttp_access deny "
+			    "denied_url\nhttp_access allow localnet\nhttp_access deny "
+			    "all\n", inspect ? "bump" : "splice");
+		kore_buf_free(al);
+	}
 	/* The domains denied, each with the names beneath it. */
 	pit = NULL;
 	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),

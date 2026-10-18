@@ -113,7 +113,7 @@ tls_dhparam	/usr/local/share/kore/ffdhe4096.pem
 
 workers			1
 task_threads		8
-http_body_max		1048576
+http_body_max		8388608
 http_media_type		application/wasm wasm
 http_media_type		application/manifest+json webmanifest
 http_media_type		image/svg+xml svg

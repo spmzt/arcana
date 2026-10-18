@@ -898,6 +898,27 @@ view_bulk(struct html *h)
 	h_raw(h, "<p class=\"lead\">Ports built into packages in a jail, with "
 	    "a tree and a set, into a repository of their own that pkg(8) "
 	    "installs from.</p>");
+	/* A build under way: said first, with the way to stop it. */
+	{
+		const ucl_object_t	*r;
+		ucl_object_iter_t	 it;
+
+		it = NULL;
+		while ((r = ucl_object_iterate(jget(bld.state, "runs"), &it,
+		    true)) != NULL)
+			if (strcmp(run_kind(r), "bulk") == 0 && jstr(r, "state") !=
+			    NULL && strcmp(jstr(r, "state"), "running") == 0) {
+				h_fmt(h, "<div class=\"notice info bld-running\">"
+				    "Build <b>#%lld</b> is running: <span class=\"mono"
+				    "\">", (long long)jint(r, "id", 0));
+				argv_words(h, jget(r, "argv"));
+				h_fmt(h, "</span> <button class=\"ghost small danger\" "
+				    "data-act=\"bld-stop\" data-arg=\"%lld\" title=\""
+				    "SIGINT to its process group, as Ctrl-C: poudriere "
+				    "tears its jails down\">Cancel the build</button>"
+				    "</div>", (long long)jint(r, "id", 0));
+			}
+	}
 	bulk_form(h);
 	runs(h, "bulk", "a build");
 	makeconf_view(h);

@@ -2291,6 +2291,20 @@ security_policy(struct ck *c, const ucl_object_t *v)
 				    ucl_object_tostring(e)))
 					return (fail(c, "url-filter.deny: %s is not a "
 					    "domain name", ucl_object_tostring_forced(e)));
+			/* Domains let through whatever the deny and lists say:
+			 * a site under a denied one, or one a list has wrong. */
+			if ((e = ucl_object_lookup(k, "allow")) != NULL && (
+			    ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e) >
+			    LIST_MAX))
+				return (fail(c, "url-filter.allow is a list of "
+				    "domains, %d at most", LIST_MAX));
+			eit = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(k, "allow"),
+			    &eit, true)) != NULL)
+				if (ucl_object_type(e) != UCL_STRING || !domain_ok(
+				    ucl_object_tostring(e)))
+					return (fail(c, "url-filter.allow: %s is not a "
+					    "domain name", ucl_object_tostring_forced(e)));
 			eit = NULL;
 			while ((e = ucl_object_iterate(ucl_object_lookup(k, "lists"),
 			    &eit, true)) != NULL)

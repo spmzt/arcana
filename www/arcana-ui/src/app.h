@@ -300,6 +300,7 @@ enum opstate {
 
 /* One thing done to a host, for the activity log and the trace view. */
 struct op {
+	bool		 quiet;		/* a poll of the page's own: shown apart */
 	int		 id;
 	char		 title[160];
 	char		 server[65];
@@ -419,6 +420,7 @@ enum modal {
 	MODAL_SD_NLIST,		/* a named list of the SD-WAN document */
 	MODAL_SD_GROUP,		/* a group of a remote end point's identities */
 	MODAL_USER,		/* a console user and their roles */
+	MODAL_ROLE,		/* a role: what it allows */
 	MODAL_PKG_INSTALL,
 	MODAL_WF_RUN,
 	MODAL_IF_VNET,
@@ -489,6 +491,8 @@ struct app {
 	int		 devtab;	/* Devices: 0 the hosts, 1 templates */
 	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */
+	bool		 show_quiet;	/* the dock lists the page's own polls too */
+	int		 aaatab;	/* AAA_*: the AAA tab's sub-tab */
 	bool		 quiet;		/* the reads asked now are the page's own
 					 * (a timer, an event): no task */
 	char		 service[65];	/* open in the drawer, or "" */
@@ -577,6 +581,8 @@ void		 confirm(const char *, const char *, const char *, bool,
 
 /* actions.c: what the buttons do. */
 void		 refresh_servers(void);
+int		 op_quiet_begin(const char *, const char *);
+void		 op_quiet_end(int, int);
 void		 ops_save(void);
 void		 op_retry(int);
 bool		 box_shut(const char *);
@@ -752,6 +758,7 @@ char		*bf_text(const struct bfconf *);
 const char	*bf_name(const struct bfconf *);
 void		 bf_summary(char *, size_t, const struct bfconf *);
 void		 bf_free(struct bfconf *);
+void		 bf_set_ver(const char *);
 /* tbl.c: every table sorts by its columns and is filtered. */
 struct tcol {
 	const char	*title;
@@ -882,10 +889,18 @@ void		 view_workflows(struct html *);
 bool		 workflows_action(const char *, const char *, const char *);
 /* view.c: the settings' tabs. */
 enum { SET_LOOK, SET_NOTIFY, SET_TOKENS, SET_KEYS, SET_CONSOLE,
-    SET_WEBCONF, SET_NEWS, SET_CA, SET_UPDATE, SET_USERS };
-/* users.c: Settings, Users: who signs in and what each may (RBAC). */
+    SET_WEBCONF, SET_NEWS, SET_CA, SET_UPDATE, SET_USERS, SET_AAA };
+/* The AAA tab's own: who signs in (users, roles, keys, the directory),
+ * and what programs use (tokens). */
+enum { AAA_USERS, AAA_ROLES, AAA_KEYS, AAA_LDAP, AAA_TOKENS };
+const char	*aaatab_arg(int);
+int		 aaatab_of(const char *);
+void		 set_keys(struct html *);
+void		 set_ldap(struct html *);
+void		 set_tokens(struct html *);
+/* users.c: Settings, AAA: who signs in and what each may (RBAC). */
 void		 users_load(void);
-void		 set_users(struct html *);
+void		 set_aaa(struct html *);
 bool		 user_modal(struct html *);
 bool		 user_form(const char *, const ucl_object_t *);
 bool		 user_action(const char *, const char *);
@@ -914,6 +929,7 @@ void		 secpage_refresh(void);
 /* pfxlists.c: the console's prefix lists, used on any host. */
 void		 pfxlists_load(void);
 const ucl_object_t *pfxlist_get(const char *);
+char		*with_list(const char *, const char *);
 char		*pfxlist_joined(const char *, const char *);
 void		 pfxlist_select(struct html *, const char *, const char *,
 		    const char *);

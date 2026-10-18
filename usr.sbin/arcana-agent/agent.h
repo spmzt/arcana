@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.144.2"
+#define	ARCANA_AGENT_VERSION	"0.145.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -350,6 +350,8 @@ void		 do_crashes(struct work *, const char *const *, size_t,
 /* luxuria/snort.c: Snort 3, run by arcana_snort, its rules kept. */
 struct arc_snort_rsp;
 const char	*snort_check(const struct arc_job_spec *);
+extern const char snort_rc_text[];	/* snort_rc.c, made by the Makefile */
+void		 snort_rc_install(struct work *);
 int		 do_snort_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 char		*snort_title(const struct arc_job_spec *);

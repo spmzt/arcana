@@ -1043,7 +1043,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	snprintf(www, sizeof(www), "%s/www", cwd);
 	snprintf(buf, sizeof(buf), "server t {\n\t%s\n\ttls no\n}\n"
 	    "load %s arcw_onload\ntls_dhparam %s\nworkers 1\ntask_threads 4\n"
-	    "http_body_max 1048576\nfilemap_index index.html\n"
+	    "http_body_max 8388608\nfilemap_index index.html\n"
 	    "http_media_type application/wasm wasm\n"
 	    "http_media_type application/manifest+json webmanifest\n"
 	    "http_media_type image/svg+xml svg\n"
