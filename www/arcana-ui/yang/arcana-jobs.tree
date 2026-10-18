@@ -315,7 +315,12 @@ module: arcana-jobs
        |        |     +---w args*   string
        |        |     +---w text?   string
        |        +--:(snort)
-       |           +---w snort!
+       |        |  +---w snort!
+       |        |     +---w verb    enumeration
+       |        |     +---w args*   string
+       |        |     +---w text?   string
+       |        +--:(clamav)
+       |           +---w clamav!
        |              +---w verb    enumeration
        |              +---w args*   string
        |              +---w text?   string

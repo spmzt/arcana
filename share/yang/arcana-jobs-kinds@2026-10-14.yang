@@ -140,6 +140,9 @@ submodule arcana-jobs-kinds {
       enum snort {
         value 38;
       }
+      enum clamav {
+        value 39;
+      }
     }
     description
       "A kind of job, by its number in arcana.yaml's job-kind.";
@@ -1630,6 +1633,33 @@ submodule arcana-jobs-kinds {
               enum conf;
               enum update;
               enum rule;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
+        }
+      }
+      case clamav {
+        container clamav {
+          presence
+            "This kind of job.";
+          description
+            "freshclam's mirrors of ClamAV's signatures";
+          leaf verb {
+            type enumeration {
+              enum mirrors;
             }
             mandatory true;
             description

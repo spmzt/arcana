@@ -347,6 +347,7 @@ worker(void *arg)
 	struct arc_builder_rsp	 bur;
 	struct arc_builder_options_rsp bor;
 	struct arc_snort_rsp	 snr;
+	struct arc_crashes_rsp	 crr;
 	struct arc_job_spec	 bsp;
 	struct arc_certs_rsp	 cer;
 	struct arc_ssh_rsp	 sshr;
@@ -891,6 +892,19 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &bor.trace.v, &bor.trace.n);
 		rc = arc_builder_options_reply(j->req, &bor);
+		break;
+	case ARC_CMD_CRASHES:
+		what = "crashes";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "the cores dumped");
+		memset(&crr, 0, sizeof(crr));
+		crr.has_ok = true;
+		do_crashes(&w, j->pkg.names.v, j->pkg.names.n, &crr);
+		ok = crr.ok;
+		error = crr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &crr.trace.v, &crr.trace.n);
+		rc = arc_crashes_reply(j->req, &crr);
 		break;
 	case ARC_CMD_SNORT:
 		what = "snort";
@@ -2417,6 +2431,37 @@ arc_builder_options_doit(cbl_req *req, const struct arc_builder_options_req *rq,
 }
 
 int
+arc_crashes_doit(cbl_req *req, const struct arc_crashes_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+	const char	**v;
+	size_t		 i;
+
+	if (rq->names.n > 3)
+		return (reject(req, "crashes are read, or one's backtrace: "
+		    "backtrace core [program]"));
+	for (i = 0; i < rq->names.n; i++)
+		if (rq->names.v[i] == NULL)
+			return (reject(req, "a word is missing"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_CRASHES;
+	if (rq->names.n > 0) {
+		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL) {
+			free(j);
+			return (ENOMEM);
+		}
+		for (i = 0; i < rq->names.n; i++)
+			v[i] = xstrdup(rq->names.v[i]);
+		j->pkg.names.v = v;
+		j->pkg.names.n = rq->names.n;
+	}
+	return (start(j));
+}
+
+int
 arc_snort_doit(cbl_req *req, const struct arc_snort_req *rq,
     void *arg __unused)
 {
@@ -2523,7 +2568,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_SNORT)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_CLAMAV)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2724,6 +2769,8 @@ check_spec(const struct arc_job_spec *sp)
 		return (poudriere_check(sp));
 	case ARC_JOB_KIND_SNORT:
 		return (snort_check(sp));
+	case ARC_JOB_KIND_CLAMAV:
+		return (clamav_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->safe)
 			return ("wireguard changes are not undone: not in "

@@ -406,3 +406,8 @@ kinds:
     needs: verb
     uses: args text
     values: verb=set|conf|update|rule
+  - kind: clamav
+    title: freshclam's mirrors of ClamAV's signatures
+    needs: verb
+    uses: args text
+    values: verb=mirrors

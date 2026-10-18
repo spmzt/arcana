@@ -680,13 +680,40 @@ part_shell(void)
 	ATF_CHECK(js_true("document.querySelector('form[data-form=settings]')"
 	    ".safe_wait && document.querySelector('.safehosts-none')"));
 	/* The keys that sign in, a tab of their own. */
-	run("document.querySelector('button[data-act=set-tab][data-arg=keys]')"
+	run("document.querySelector('button[data-act=set-tab][data-arg=aaa]')"
+	    ".click()");
+	run("document.querySelector('button[data-act=aaa-tab][data-arg=keys]')"
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=add-key] ul.keys li "
 	    ".name')", 10);
+	/* AAA: users with roles (RBAC): the built-in owner listed with the
+	 * owner role; the user form with the tenant and the roles; the
+	 * roles sub-tab with the three built in and the role form. */
+	run("document.querySelector('button[data-act=aaa-tab][data-arg=users]')"
+	    ".click()");
+	wait_js("[...document.querySelectorAll('table.users tbody tr')].some("
+	    "tr => tr.textContent.includes('admin') && tr.textContent.includes("
+	    "'owner'))", 10);
+	ATF_CHECK(js_true("document.querySelector('header .who-user')?."
+	    "textContent.includes('admin')"));
+	run("document.querySelector('button[data-act=user-add]').click()");
+	wait_js("document.querySelector('.modal form[data-form=user] "
+	    "input[name=tenant]') !== null && document.querySelector('.modal "
+	    "input[name=r_owner]') !== null", 5);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	run("document.querySelector('button[data-act=aaa-tab][data-arg=roles]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('table.roles tbody tr').length >= 3",
+	    5);
+	run("document.querySelector('button[data-act=role-add]').click()");
+	wait_js("document.querySelector('.modal form[data-form=role] "
+	    "select[name=console]') !== null && document.querySelector('.modal "
+	    "select[name=all]') !== null", 5);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	shot("0b4-users");
 	/* A read API token: made with a name in the settings, its value
 	 * shown once, listed, and deleted once confirmed. */
-	run("document.querySelector('button[data-act=set-tab][data-arg="
+	run("document.querySelector('button[data-act=aaa-tab][data-arg="
 	    "tokens]').click()");
 	wait_js("document.querySelector('input[data-input=token-name]')", 10);
 	run("const i = document.querySelector('input[data-input=token-name]'); "
@@ -742,7 +769,7 @@ part_shell(void)
 	    "f.token.value = sessionStorage.getItem('wtok'); "
 	    "f.requestSubmit();");
 	wait_js("document.querySelector('.shell')", 20);
-	go("/#/settings/keys");
+	go("/#/settings/aaa/keys");
 	wait_js("document.querySelector('.set-body .keys-token')?.textContent"
 	    ".includes('opened with an API token') && !document.querySelector("
 	    "'form[data-form=add-key]') && !document.querySelector("
@@ -751,7 +778,7 @@ part_shell(void)
 	run("document.querySelector('button[data-act=logout]').click()");
 	click_when("button[data-act=login]", 10);
 	wait_js("document.querySelector('.shell')", 20);
-	go("/#/settings/keys");
+	go("/#/settings/aaa/keys");
 	wait_js("document.querySelector('form[data-form=add-key] ul.keys li "
 	    ".name')", 20);
 	/*
@@ -1465,6 +1492,30 @@ part_nettab(void)
 	run("const i = document.querySelector('input[data-input=filter]'); "
 	    "i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true "
 	    "}));");
+	/* A label of the console's on an interface: typed in place, kept,
+	 * shown under the name, found by the filter. */
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=interfaces]').click()");
+	wait_js("document.querySelector('tr.iface[data-if=lo0] button[data-act="
+	    "if-label-edit]')", 20);
+	run("document.querySelector('tr.iface[data-if=lo0] button[data-act="
+	    "if-label-edit]').click()");
+	wait_js("document.querySelector('tr.iface[data-if=lo0] form[data-form="
+	    "if-label] input[name=label]')", 5);
+	run("const f = document.querySelector('tr.iface[data-if=lo0] form["
+	    "data-form=if-label]'); f.label.value = 'the loopback labelled'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('tr.iface[data-if=lo0] .chip.tag') && "
+	    "document.querySelector('tr.iface[data-if=lo0] .chip.tag')."
+	    "textContent === 'the loopback labelled'", 20);
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = 'labelled'; i.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("document.querySelectorAll('tr.iface').length === 1 && document."
+	    "querySelector('tr.iface[data-if=lo0]')", 10);
+	run("const i = document.querySelector('input[data-input=filter]'); "
+	    "i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true "
+	    "}));");
 	/* The neighbours, ARP's and NDP's, asked of the kernel. */
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=neighbours]').click()");
@@ -1670,6 +1721,24 @@ part_nettab(void)
 	    "&& g.textContent.includes('75%of weight 67%'))", 30);
 	ATF_CHECK(js_true("!document.querySelector('.netsect svg.topo')"));
 	shot("7n-network-nhgroups");
+	/* Prefix lists of the console's: one made on its tab, listed; the
+	 * groups tab again after. */
+	run("document.querySelector('.netsect button.tab[data-arg=lists]')"
+	    ".click()");
+	wait_js("document.querySelector('button[data-act=px-add]')", 10);
+	run("document.querySelector('button[data-act=px-add]').click()");
+	wait_js("document.querySelector('form[data-form=px-list] textarea')", 5);
+	run("const f = document.querySelector('form[data-form=px-list]'); "
+	    "f.name.value = 'branches'; f.description.value = 'the branches'; "
+	    "f.prefixes.value = '10.1.8.0/22\\n2001:db8:9::/48'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=px-list]') && [..."
+	    "document.querySelectorAll('table.pfxlists tbody tr')].some(r => r."
+	    "textContent.includes('branches') && r.textContent.includes("
+	    "'2001:db8:9::/48'))", 20);
+	shot("7o-prefix-lists");
+	run("document.querySelector('.netsect button.tab[data-arg=groups]')"
+	    ".click()");
+	wait_js("document.querySelector('.ecmp-page .ecmp')", 20);
 	phone(true);
 	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1 "
 	    "&& document.querySelector('.ecmp-page .ecmp')", 10);
@@ -1727,12 +1796,14 @@ part_nettab(void)
 	run("document.querySelector('.dock > header').click()");
 	/* Every table can be had as CSV: its columns by their names, its
 	 * rows as shown, without the buttons. */
-	run("document.querySelector('tr[data-if=lo0]').closest('table')"
-	    ".querySelector('thead button.csv-btn').click()");
+	/* The button hands the table to window.arcCsvSave(); called on the
+	 * table here, so that the moment of the click does not count. */
+	run("window.arcCsvSave(document.querySelector('tr[data-if=lo0]')"
+	    ".closest('table'));");
 	wait_js("typeof window.arcCsvLast === 'string'", 5);
 	ATF_CHECK(js_true("(() => { const l = window.arcCsvLast.split('\\n');"
 	    " return l.length > 2 && !l[0].startsWith(',') && l.some(x => "
-	    "x.startsWith('lo0,')) && !window.arcCsvLast.includes('+ "
+	    "x.startsWith('lo0')) && !window.arcCsvLast.includes('+ "
 	    "address'); })()"));
 	/* An address changed: the form with what it is now; the new one
 	 * added, then the old one taken off. */
@@ -4946,7 +5017,7 @@ part_flows(void)
 	    20);
 	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
 	    ".click()");
-	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 13",
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 22",
 	    5);
 	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
 	    ".click()");
@@ -5045,7 +5116,7 @@ part_flows(void)
 	 * so, with its button, and the next step is the end points. */
 	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
 	    "includes('End points') && document.querySelectorAll('section."
-	    "sdwan tr.empty-row').length === 6", 20);
+	    "sdwan tr.empty-row').length === 7", 20);
 	ATF_CHECK(js_true("!document.querySelector('select[data-input="
 	    "sd-swvc]')"));
 	shot("9-sdwan-guide-service");
@@ -5188,6 +5259,30 @@ part_flows(void)
 	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
 	    ".some(r => r.textContent.includes('web') && r.textContent."
 	    "includes('http'))", 20);
+	/* A named list of prefixes, and a flow from it: after the flow's
+	 * save is answered, the version it made the next one's. */
+	usleep(1500000);
+	run("document.querySelector('button[data-act=sd-nlist-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-nlist] textarea["
+	    "name=items]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-nlist]'); "
+	    "f.name.value = 'branches'; f.kind.value = 'prefixes'; f.items."
+	    "value = '10.1.8.0/22\\n2001:db8:9::/48\\n'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-nlist]') && "
+	    "document.querySelector('.sd-nlists') && document.querySelector("
+	    "'.sd-nlists').textContent.includes('branches') && document."
+	    "querySelector('.sd-nlists').textContent.includes('2001:db8:9::/48')",
+	    20);
+	run("document.querySelector('button[data-act=sd-flow-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-flow] select[name="
+	    "src_list] option[value=branches]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-flow]'); "
+	    "f.name.value = 'branchweb'; f.src_list.value = 'branches'; "
+	    "f.dport.value = '8443'; f.proto.value = 'tcp'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-flow]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('branchweb'))", 20);
+	shot("9-sdwan-lists");
 	run("document.querySelector('button[data-act=sd-policy-add]').click()");
 	wait_js("document.querySelector('form[data-form=sd-policy] select[name="
 	    "metric]')", 5);
@@ -5386,6 +5481,23 @@ part_flows(void)
 	ATF_CHECK(js_true("document.querySelector('button[data-act="
 	    "sd-ident-add]') !== null && document.querySelector('button[data-act="
 	    "sd-ident-revoke]') !== null"));
+	/* Groups of the remote's identities: the example's staff with its
+	 * pool and carol in it, the form with the end point, a zone, the
+	 * pool and the groups reached; the identity form offers a group. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('.sd-groups tbody tr')]"
+	    ".some(tr => tr.textContent.includes('staff') && tr.textContent"
+	    ".includes('10.30.0.64/26') && tr.textContent.includes('1'))"));
+	run("document.querySelector('button[data-act=sd-group-add]').click()");
+	wait_js("document.querySelector('.modal form[data-form=sd-group] "
+	    "select[name=at]') !== null && document.querySelector('.modal "
+	    "input[name=pool]') !== null && document.querySelector('.modal "
+	    "input[name=reach]') !== null", 5);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	run("document.querySelector('button[data-act=sd-ident-add]').click()");
+	wait_js("document.querySelector('.modal form[data-form=sd-identity] "
+	    "input[name=group]') !== null && document.querySelector('#sd-groups "
+	    "option[value=staff]') !== null", 5);
+	run("document.querySelector('.modal button[data-act=close]').click()");
 	shot("9-sdwan-identities");
 	phone(true);
 	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1",
@@ -5997,9 +6109,9 @@ part_routes(void)
 	    "&& document.querySelector('button[data-act=tab]"
 	    "[data-arg=processes].on')", id);
 	wait_js(expr, 20);
-	go("/#/settings/tokens");
-	wait_js("location.hash === '#/settings/tokens' && document."
-	    "querySelector('button[data-act=set-tab][data-arg=tokens].on')", 20);
+	go("/#/settings/aaa/tokens");
+	wait_js("location.hash === '#/settings/aaa/tokens' && document."
+	    "querySelector('button[data-act=aaa-tab][data-arg=tokens].on')", 20);
 	/* A host that is not there: the fleet, and the address says so. */
 	go("/#/hosts/ffffffff/log");
 	wait_js("location.hash === '#/' && document.querySelector("
@@ -6437,6 +6549,19 @@ part_security(void)
 	click_when("button[data-act=sec-tab][data-arg=signatures]", 10);
 	wait_js("document.querySelector('.secpage .empty') || document."
 	    "querySelector('table.secsigs')", 10);
+	/* No ClamAV here: installed by the button, when it is pressed. */
+	click_when(".sec-missing button[data-act=sec-install][data-arg=clamav]",
+	    10);
+	sent();
+	{
+		int	i;
+
+		for (i = 0; i < 100 && system("grep -q 'install.* clamav' "
+		    "pkg.log") != 0; i++)
+			usleep(100000);
+		ATF_CHECK(system("grep -q 'install.* clamav' pkg.log") == 0);
+	}
+	dock_closed();
 	/* Suricata: refused with neither rules nor the ruleset; made. */
 	click_when("button[data-act=sec-tab][data-arg=ids]", 10);
 	click_when("button[data-act=sec-new]", 10);

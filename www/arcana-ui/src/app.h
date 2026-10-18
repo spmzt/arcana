@@ -300,6 +300,7 @@ enum opstate {
 
 /* One thing done to a host, for the activity log and the trace view. */
 struct op {
+	bool		 quiet;		/* a poll of the page's own: shown apart */
 	int		 id;
 	char		 title[160];
 	char		 server[65];
@@ -345,6 +346,7 @@ enum {
 	JOB_SSH,
 	JOB_BUILDER,
 	JOB_SNORT,
+	JOB_SECURITY,		/* a Security tab's plugin installed */
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -415,6 +417,10 @@ enum modal {
 	MODAL_SD_MAP,
 	MODAL_SD_LIMITER,
 	MODAL_SD_TOPO,
+	MODAL_SD_NLIST,		/* a named list of the SD-WAN document */
+	MODAL_SD_GROUP,		/* a group of a remote end point's identities */
+	MODAL_USER,		/* a console user and their roles */
+	MODAL_ROLE,		/* a role: what it allows */
 	MODAL_PKG_INSTALL,
 	MODAL_WF_RUN,
 	MODAL_IF_VNET,
@@ -465,7 +471,13 @@ struct app {
 	char		 origin_error[400];	/* opened at the wrong address */
 	char		 console_origin[256];	/* web.conf's origin, as told */
 	bool		 auth_busy;
-	bool		 by_token;	/* signed in with an API token */
+	bool		 by_token;	/* signed in with an API token, or by LDAP: limited */
+	bool		 by_ldap;	/* ... by a directory's user */
+	bool		 ldap_on;	/* the console takes a user and password */
+	char		 user[64];	/* the console user signed in, or "" */
+	char		 console_role[16];	/* owner, operator, member */
+	char		 tenant[64];	/* the user's fleet, or "" */
+	char		 invite_token[120];	/* #/invite/<token>: a first key */
 
 	struct server	 servers[MAX_SERVERS];
 	int		 nservers;
@@ -479,6 +491,8 @@ struct app {
 	int		 devtab;	/* Devices: 0 the hosts, 1 templates */
 	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */
+	bool		 show_quiet;	/* the dock lists the page's own polls too */
+	int		 aaatab;	/* AAA_*: the AAA tab's sub-tab */
 	bool		 quiet;		/* the reads asked now are the page's own
 					 * (a timer, an event): no task */
 	char		 service[65];	/* open in the drawer, or "" */
@@ -567,6 +581,8 @@ void		 confirm(const char *, const char *, const char *, bool,
 
 /* actions.c: what the buttons do. */
 void		 refresh_servers(void);
+int		 op_quiet_begin(const char *, const char *);
+void		 op_quiet_end(int, int);
 void		 ops_save(void);
 void		 op_retry(int);
 bool		 box_shut(const char *);
@@ -615,7 +631,7 @@ void		 load_tokens(void);
 void		 token_new(void);
 void		 token_del(const char *);
 /* The forms settings are in. */
-enum { SETG_CONSOLE, SETG_MAIL, SETG_TELEGRAM };
+enum { SETG_CONSOLE, SETG_MAIL, SETG_TELEGRAM, SETG_LDAP };
 int		 setting_group(const char *);
 void		 save_settings(const ucl_object_t *, int);
 void		 mail_test(void);
@@ -634,6 +650,7 @@ void		 check_update(void);
 void		 auth_status(void);
 void		 login(bool);
 void		 login_token(const char *);
+void		 login_ldap(const char *, const char *);
 void		 enrol(const char *, const char *);
 void		 add_key(const char *);
 void		 logout(void);
@@ -741,6 +758,7 @@ char		*bf_text(const struct bfconf *);
 const char	*bf_name(const struct bfconf *);
 void		 bf_summary(char *, size_t, const struct bfconf *);
 void		 bf_free(struct bfconf *);
+void		 bf_set_ver(const char *);
 /* tbl.c: every table sorts by its columns and is filtered. */
 struct tcol {
 	const char	*title;
@@ -829,7 +847,7 @@ void		 nhop_modal(struct html *);
 bool		 nhop_action(const char *, const char *, const char *);
 void		 ecmp_head(struct html *);
 enum { NETSECT_MAP, NETSECT_GROUPS, NETSECT_TRACE, NETSECT_BGP, NETSECT_OSPF,
-    NETSECT_BFD };
+    NETSECT_BFD, NETSECT_PREFIXES };
 void		 view_traceroute(struct html *);
 bool		 mtr_action(const char *, const char *, const char *);
 void		 mtr_tick(double);
@@ -871,7 +889,21 @@ void		 view_workflows(struct html *);
 bool		 workflows_action(const char *, const char *, const char *);
 /* view.c: the settings' tabs. */
 enum { SET_LOOK, SET_NOTIFY, SET_TOKENS, SET_KEYS, SET_CONSOLE,
-    SET_WEBCONF, SET_NEWS, SET_CA, SET_UPDATE };
+    SET_WEBCONF, SET_NEWS, SET_CA, SET_UPDATE, SET_USERS, SET_AAA };
+/* The AAA tab's own: who signs in (users, roles, keys, the directory),
+ * and what programs use (tokens). */
+enum { AAA_USERS, AAA_ROLES, AAA_KEYS, AAA_LDAP, AAA_TOKENS };
+const char	*aaatab_arg(int);
+int		 aaatab_of(const char *);
+void		 set_keys(struct html *);
+void		 set_ldap(struct html *);
+void		 set_tokens(struct html *);
+/* users.c: Settings, AAA: who signs in and what each may (RBAC). */
+void		 users_load(void);
+void		 set_aaa(struct html *);
+bool		 user_modal(struct html *);
+bool		 user_form(const char *, const ucl_object_t *);
+bool		 user_action(const char *, const char *);
 /* ca.c: Settings, Certificate authority. */
 void		 ca_load(void);
 void		 ca_tick(double);
@@ -892,6 +924,25 @@ bool		 secpage_action(const char *, const char *, const char *);
 void		 secpage_loc(char *, size_t);
 void		 secpage_open(const char *);
 void		 secpage_tick(double);
+void		 secpage_refresh(void);
+
+/* pfxlists.c: the console's prefix lists, used on any host. */
+void		 pfxlists_load(void);
+const ucl_object_t *pfxlist_get(const char *);
+char		*with_list(const char *, const char *);
+char		*pfxlist_joined(const char *, const char *);
+void		 pfxlist_select(struct html *, const char *, const char *,
+		    const char *);
+void		 view_pfxlists(struct html *);
+bool		 pfxlists_form(const char *, const ucl_object_t *);
+bool		 pfxlists_action(const char *, const char *, const char *);
+
+/* iflabels.c: the console's own labels on interfaces. */
+void		 labels_load(void);
+const char	*label_of(const char *, const char *);
+void		 label_cell(struct html *, const char *, const char *);
+bool		 iflabel_form(const char *, const ucl_object_t *);
+bool		 iflabel_action(const char *, const char *);
 
 /* snort.c: the Security page's Snort tab. */
 void		 view_snort(struct html *, const char *);

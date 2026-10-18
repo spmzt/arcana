@@ -154,11 +154,15 @@ list_of(const ucl_object_t *in, const char *k, bool (*ok)(const char *),
 	it = NULL;
 	while ((e = ucl_object_iterate(ucl_object_lookup(in, k), &it, true)) !=
 	    NULL) {
-		if (ucl_object_type(e) != UCL_STRING || !ok(ucl_object_tostring(
-		    e)) || n == SEC_LIST_MAX) {
-			snprintf(err, errlen, "%s: %s: %.64s is not one, or more "
-			    "than %d", name, what, ucl_object_tostring_forced(e),
+		if (n == SEC_LIST_MAX) {
+			snprintf(err, errlen, "%s: %s: %d at most", name, what,
 			    SEC_LIST_MAX);
+			return (false);
+		}
+		if (ucl_object_type(e) != UCL_STRING || !ok(ucl_object_tostring(
+		    e))) {
+			snprintf(err, errlen, "%s: %s: %.64s is not one", name,
+			    what, ucl_object_tostring_forced(e));
 			return (false);
 		}
 		/* ".example.org" as typed is example.org's, not a dot more. */
@@ -324,9 +328,11 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 {
 	struct kore_buf		*b;
 	ucl_object_t		*o;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
 	const char		*name, *rules;
 	int64_t			 divert;
-	bool			 ruleset;
+	bool			 ruleset, home_any;
 
 	name = sstr(in, "name");
 	if (!name_ok(name)) {
@@ -350,15 +356,36 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 	b = kore_buf_alloc(4096);
 	kore_buf_appendf(b, "%%YAML 1.1\n---\n# Written by the Arcana console: "
 	    "the Security section's intrusion detection %s at %s,\n# by "
-	    "Suricata, %s.\nvars:\n  address-groups:\n    HOME_NET: \"[", name,
+	    "Suricata, %s.\nvars:\n  address-groups:\n    HOME_NET: \"", name,
 	    host, divert > 0 ? "preventing: what ipfw diverts to it" :
 	    "detecting: what its interfaces see");
-	if (ucl_array_size(ucl_object_lookup(in, "home")) == 0)
+	/* "any", alone: every address is home, and so outside too, as
+	 * Suricata does not take the whole address space negated. */
+	home_any = false;
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(in, "home"), &it, true))
+	    != NULL)
+		if (ucl_object_type(e) == UCL_STRING && strcasecmp(
+		    ucl_object_tostring(e), "any") == 0)
+			home_any = true;
+	if (home_any && ucl_array_size(ucl_object_lookup(in, "home")) != 1) {
+		snprintf(err, errlen, "%s: home (the networks it guards): any "
+		    "stands alone, every address", name);
+		goto bad;
+	}
+	if (!home_any)
+		kore_buf_appendf(b, "[");
+	if (home_any)
+		kore_buf_appendf(b, "any");
+	else if (ucl_array_size(ucl_object_lookup(in, "home")) == 0)
 		kore_buf_appendf(b, "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16");
 	else if (!list_of(in, "home", prefix_ok, false, b, "", ",", name,
-	    "home (the networks it guards)", err, errlen))
+	    "home (the networks it guards, as a.b.c.d/n, x::/n or any)", err,
+	    errlen))
 		goto bad;
-	kore_buf_appendf(b, "]\"\n    EXTERNAL_NET: \"!$HOME_NET\"\n"
+	kore_buf_appendf(b, "%s\"\n    EXTERNAL_NET: \"%s\"\n", home_any ? "" :
+	    "]", home_any ? "any" : "!$HOME_NET");
+	kore_buf_appendf(b, ""
 	    "    HTTP_SERVERS: \"$HOME_NET\"\n    SMTP_SERVERS: \"$HOME_NET\"\n"
 	    "    SQL_SERVERS: \"$HOME_NET\"\n    DNS_SERVERS: \"$HOME_NET\"\n"
 	    "    TELNET_SERVERS: \"$HOME_NET\"\n    AIM_SERVERS: "

@@ -1903,6 +1903,11 @@ bird_modal(struct html *h)
 			h_raw(h, "<label>Name<input name=\"name\" spellcheck="
 			    "\"false\" autocomplete=\"off\"");
 			h_attr(h, "value", i >= 0 ? bd.b[i].name : "");
+			h_raw(h, "></label>");
+			pfxlist_select(h, "Prefixes from the console's list", "pfx",
+			    "Added to the entries below when kept (Network, Prefix "
+			    "lists).");
+			h_raw(h, "<label");
 			h_fmt(h, "%s></label><label>Entries, one a line"
 			    "<textarea name=\"text\" class=\"code\" "
 			    "spellcheck=\"false\" rows=\"10\" placeholder=\"%s"
@@ -2116,6 +2121,21 @@ bird_form(const char *form, const ucl_object_t *f)
 	if ((s = cur_server()) == NULL || bd.text == NULL || bd.saving)
 		return (true);
 	text = jstr(f, "text") != NULL ? jstr(f, "text") : "";
+	/* The console's prefix list's entries, after those typed. */
+	{
+		static char	*joined;
+		char		*more = pfxlist_joined(jstr(f, "pfx"), "\n");
+
+		free(joined);
+		joined = NULL;
+		if (more != NULL && more[0] != '\0') {
+			if (asprintf(&joined, "%s%s%s", text, text[0] != '\0' ?
+			    "\n" : "", more) == -1)
+				abort();
+			text = joined;
+		}
+		free(more);
+	}
 	free(bd.draft);
 	bd.draft = strdup(text);
 	if (strcmp(form, "bird-file") == 0) {
@@ -2281,6 +2301,10 @@ bird_action(const char *act, const char *arg, const char *value)
 	char		*all, body[300];
 	int		 i;
 
+	if (strcmp(act, "input:bird-ver") == 0) {
+		bf_set_ver(value);
+		return (true);
+	}
 	if (strcmp(act, "input:bird-path") != 0 && (strncmp(act, "bird-", 5) !=
 	    0 || strcmp(act, "bird-verb") == 0) && strcmp(act,
 	    "do-bird-delete") != 0)
@@ -2296,6 +2320,7 @@ bird_action(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "bird-open") == 0) {
 		snprintf(bd.proto, sizeof(bd.proto), "%s", arg);
 		bd.edit = block_find("protocol", arg);
+		bf_set_ver("");
 		app.modal = MODAL_BIRD_PROTO;
 	} else if (strcmp(act, "bird-edit") == 0) {
 		i = atoi(arg);
@@ -2303,6 +2328,7 @@ bird_action(const char *act, const char *arg, const char *value)
 			return (true);
 		bd.edit = i;
 		bd.newkind[0] = '\0';
+		bf_set_ver("");
 		if (strcmp(bd.b[i].kind, "protocol") == 0 && bd.b[i].name[0] !=
 		    '\0') {
 			snprintf(bd.proto, sizeof(bd.proto), "%s", bd.b[i].name);

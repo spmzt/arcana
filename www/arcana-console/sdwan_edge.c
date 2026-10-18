@@ -1028,6 +1028,7 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					    strcmp(kind, "wg") == 0 || strcmp(kind,
 					    "uswe") == 0));
 					put(t, "public", B(public));
+					put(t, "ucs", S(str(x, "ucs")));
 					put(t, "backup", B(ucl_flag(x,
 					    "backup") || ucl_flag(y, "backup")));
 					put(t, "billing", S(str(ux, "billing") !=
@@ -1258,16 +1259,72 @@ breakout_uni_routes(struct plan *pl, const char *sid, const ucl_object_t *sw,
  * others come and go, a new one taking the lowest free from the
  * second.
  */
+/* An identity's zone: its group's when it is in one, else its own. */
+static const char *
+ident_zone(const ucl_object_t *r, const ucl_object_t *id)
+{
+	const ucl_object_t	*g;
+
+	if (str(id, "group") != NULL && (g = by(ucl_object_lookup(r, "groups"),
+	    "name", str(id, "group"))) != NULL && str(g, "zone") != NULL)
+		return (str(g, "zone"));
+	return (str(id, "zone"));
+}
+
+/*
+ * The hosts of the remote's prefix a pool covers, as the indexes
+ * remote_addr counts by (the last eight bytes count; a remote prefix
+ * hands out 65534 at most).
+ */
+static bool
+pool_range(const struct net *n, const char *pool, uint64_t *lo, uint64_t *hi)
+{
+	struct net	pn;
+	uint64_t	base, from;
+	int		i, w;
+
+	if (pool == NULL || !net_parse(pool, &pn) || pn.af != n->af)
+		return (false);
+	w = n->af == AF_INET ? 4 : 16;
+	base = from = 0;
+	for (i = (w > 8 ? w - 8 : 0); i < w; i++) {
+		base = (base << 8) | n->a[i];
+		from = (from << 8) | pn.a[i];
+	}
+	*lo = from - base;
+	*hi = *lo + ((pn.len >= (w * 8 - 1)) ? (uint64_t)((w * 8) - pn.len == 1 ?
+	    1 : 0) : (1ULL << ((w * 8) - pn.len)) - 1);
+	return (true);
+}
+
+/* Is a host of the remote's prefix inside some group's pool? */
+static bool
+host_pooled(const ucl_object_t *r, const struct net *n, uint64_t host)
+{
+	const ucl_object_t	*g;
+	ucl_object_iter_t	 it;
+	uint64_t		 lo, hi;
+
+	it = NULL;
+	while ((g = ucl_object_iterate(ucl_object_lookup(r, "groups"), &it,
+	    true)) != NULL)
+		if (pool_range(n, str(g, "pool"), &lo, &hi) && host >= lo &&
+		    host <= hi)
+			return (true);
+	return (false);
+}
+
 static bool
 remote_addr(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
     const char *name, char *buf, size_t len)
 {
-	const ucl_object_t	*r, *al, *v;
+	const ucl_object_t	*r, *al, *v, *id, *g;
 	ucl_object_iter_t	 it;
 	ucl_object_t		*nal;
 	struct net		 n;
+	const char		*pool;
 	char			 key[200], pre[200];
-	uint64_t		 host, max;
+	uint64_t		 host, max, lo, hi;
 	bool			 taken;
 
 	r = ucl_object_lookup(ep, "remote");
@@ -1281,7 +1338,22 @@ remote_addr(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
 	snprintf(key, sizeof(key), "%s%s", pre, name);
 	if ((al = ucl_object_lookup(pl->alloc, key)) == NULL) {
 		max = n.af == AF_INET ? (1ULL << (32 - n.len)) - 2 : 65534;
-		for (host = 2; host <= max; host++) {
+		/* From its group's pool, when it has one; else from the
+		 * second host, outside every pool. */
+		lo = 2;
+		hi = max;
+		pool = NULL;
+		id = by(ucl_object_lookup(r, "identities"), "name", name);
+		g = id != NULL && str(id, "group") != NULL ? by(ucl_object_lookup(
+		    r, "groups"), "name", str(id, "group")) : NULL;
+		if (g != NULL && pool_range(&n, str(g, "pool"), &lo, &hi)) {
+			pool = str(g, "pool");
+			lo = lo < 2 ? 2 : lo;
+			hi = hi > max ? max : hi;
+		}
+		for (host = lo; host <= hi; host++) {
+			if (pool == NULL && host_pooled(r, &n, host))
+				continue;
 			taken = false;
 			it = NULL;
 			while (!taken && (v = ucl_object_iterate(pl->alloc, &it,
@@ -1292,7 +1364,7 @@ remote_addr(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
 			if (!taken)
 				break;
 		}
-		if (host > max)
+		if (host > hi)
 			return (false);
 		nal = ucl_object_typed_new(UCL_OBJECT);
 		put(nal, "host", I((int64_t)host));
@@ -1383,7 +1455,7 @@ remote_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 		    "name"));
 		o = object(pl, str(ep, "edge"), key, PH_PEER, "identity %s: a peer "
 		    "of %s, %s, zone %s", str(id, "name"), str(r, "interface"),
-		    addr, str(id, "zone"));
+		    addr, ident_zone(r, id));
 		if (o == NULL)
 			continue;
 		snprintf(own, sizeof(own), "%s/%d", addr, n.af == AF_INET ? 32 :
@@ -2087,11 +2159,47 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 		    "icap://%s:%d/avscan\nadaptation_access sdwan_av allow "
 		    "all", own, ICAP_PORT(ucl_object_toint(ucl_object_lookup(sw,
 		    "fib"))));
-	kore_buf_appendf(b, "\nacl denied_site ssl::server_name \"@DENY@\"\n"
-	    "acl denied_url dstdomain \"@DENY@\"\nacl step1 at_step SslBump1\n"
-	    "ssl_bump peek step1\nssl_bump terminate denied_site\nssl_bump %s all"
-	    "\nhttp_access deny denied_url\nhttp_access allow localnet\n"
-	    "http_access deny all\n", inspect ? "bump" : "splice");
+	/* Domains let through whatever is denied (url-filter.allow): a
+	 * site under a denied one, a list's mistake; inline, few. */
+	{
+		struct kore_buf	*al = kore_buf_alloc(512);
+
+		pit = NULL;
+		while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+		    &pit, true)) != NULL)
+			for (i = 0; i < 2; i++) {
+				sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
+				    "af-security-egress", &si);
+				if (sec == NULL || (uf = ucl_object_lookup(
+				    ucl_object_lookup(sec, "criteria"), "url-filter"))
+				    == NULL)
+					continue;
+				dit = NULL;
+				while ((e = ucl_object_iterate(ucl_object_lookup(uf,
+				    "allow"), &dit, true)) != NULL)
+					kore_buf_appendf(al, " .%s",
+					    ucl_object_tostring_forced(e));
+			}
+		if (al->offset > 0) {
+			kore_buf_appendf(b, "\nacl allowed_site ssl::server_name%s"
+			    "\nacl allowed_url dstdomain%s\n", kore_buf_stringify(
+			    al, NULL), kore_buf_stringify(al, NULL));
+			kore_buf_appendf(b, "acl denied_site ssl::server_name "
+			    "\"@DENY@\"\nacl denied_url dstdomain \"@DENY@\"\nacl "
+			    "step1 at_step SslBump1\nssl_bump peek step1\nssl_bump "
+			    "splice allowed_site\nssl_bump terminate denied_site\n"
+			    "ssl_bump %s all\nhttp_access allow allowed_url\n"
+			    "http_access deny denied_url\nhttp_access allow localnet"
+			    "\nhttp_access deny all\n", inspect ? "bump" : "splice");
+		} else
+			kore_buf_appendf(b, "\nacl denied_site ssl::server_name "
+			    "\"@DENY@\"\nacl denied_url dstdomain \"@DENY@\"\nacl "
+			    "step1 at_step SslBump1\nssl_bump peek step1\nssl_bump "
+			    "terminate denied_site\nssl_bump %s all\nhttp_access deny "
+			    "denied_url\nhttp_access allow localnet\nhttp_access deny "
+			    "all\n", inspect ? "bump" : "splice");
+		kore_buf_free(al);
+	}
 	/* The domains denied, each with the names beneath it. */
 	pit = NULL;
 	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
@@ -2633,6 +2741,10 @@ static const struct {
 	{ "dhcp", "udp", "67,68" }, { "icmp", "icmp", NULL },
 };
 
+/* An ipfw table of a document's named list of prefixes: the prefix,
+ * then the list's name. */
+#define	NLIST_TABLE	"arcl_"
+
 /* A list's values joined by commas, into buf. */
 static const char *
 join(const ucl_object_t *arr, char *buf, size_t len)
@@ -2674,6 +2786,24 @@ afs_words(const ucl_object_t *cr, const char *to_table, const char *appid,
 	proto = "ip";
 	if (ucl_object_lookup(cr, "ethertype") != NULL)
 		return (false);
+	/* A named list of prefixes: its table, of both families. */
+	if ((v = ucl_object_lookup(cr, "src-list")) != NULL)
+		snprintf(src, sizeof(src), "table(%s%s)", NLIST_TABLE,
+		    ucl_object_tostring_forced(v));
+	if ((v = ucl_object_lookup(cr, "dst-list")) != NULL) {
+		if (to_table != NULL)
+			snprintf(opt + strlen(opt), sizeof(opt) - strlen(opt),
+			    " dst-ip table(%s%s)", NLIST_TABLE,
+			    ucl_object_tostring_forced(v));
+		else
+			snprintf(dst, sizeof(dst), "table(%s%s)", NLIST_TABLE,
+			    ucl_object_tostring_forced(v));
+	}
+	if ((v = ucl_object_lookup(cr, "sdst-list")) != NULL)
+		snprintf(opt + strlen(opt), sizeof(opt) - strlen(opt),
+		    " { src-ip table(%s%s) or dst-ip table(%s%s) }", NLIST_TABLE,
+		    ucl_object_tostring_forced(v), NLIST_TABLE,
+		    ucl_object_tostring_forced(v));
 	if ((v = ucl_object_lookup(cr, "sav4")) != NULL) {
 		fam = 4;
 		snprintf(src, sizeof(src), "%s", join(v, l, sizeof(l)));
@@ -2914,6 +3044,92 @@ tunnel_fits(const ucl_object_t *t, const ucl_object_t *pol, bool backup_ok)
 	return (true);
 }
 
+static ucl_object_t	*table(ucl_object_t *, const char *, const char *);
+static void		 entry(ucl_object_t *, const char *, const char *);
+
+/* The tables of the named prefix lists an AFS's criteria use, each
+ * with the list's prefixes, of both families. */
+static void
+nlist_tables(struct plan *pl, ucl_object_t *tables, const ucl_object_t *cr)
+{
+	static const char *const keys[] = { "src-list", "dst-list",
+	    "sdst-list" };
+	const ucl_object_t	*l, *e;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*t;
+	char			 name[64];
+	size_t			 i;
+
+	for (i = 0; i < nitems(keys); i++) {
+		if (str(cr, keys[i]) == NULL || (l = by(ucl_object_lookup(
+		    pl->doc, "lists"), "name", str(cr, keys[i]))) == NULL)
+			continue;
+		snprintf(name, sizeof(name), "%s%s", NLIST_TABLE, str(l,
+		    "name"));
+		if (by(tables, "name", name) != NULL)
+			continue;
+		t = table(tables, name, "legacy");
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(l, "items"),
+		    &it, true)) != NULL)
+			entry(t, ucl_object_tostring_forced(e), "0");
+	}
+}
+
+/* The document's list named in a policy's criterion, or NULL. */
+static const ucl_object_t *
+pol_list(struct plan *pl, const ucl_object_t *pol, const char *crit)
+{
+	const char	*name;
+
+	name = str(ucl_object_lookup(pol, "criteria"), crit);
+	return (name != NULL ? by(ucl_object_lookup(pl->doc, "lists"), "name",
+	    name) : NULL);
+}
+
+/* An item of a list, by the string it is or the id it has; NULL else. */
+static const ucl_object_t *
+list_item(const ucl_object_t *l, const char *s)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while (s != NULL && (e = ucl_object_iterate(ucl_object_lookup(l,
+	    "items"), &it, true)) != NULL)
+		if ((ucl_object_type(e) == UCL_STRING && strcmp(
+		    ucl_object_tostring(e), s) == 0) || (ucl_object_type(e) ==
+		    UCL_OBJECT && str(e, "id") != NULL && strcmp(str(e, "id"),
+		    s) == 0))
+			return (e);
+	return (NULL);
+}
+
+/*
+ * Does a tunnel, from the local end mine, take a way a policy's lists
+ * allow: its UCS in ucs-list, its local UCS End Point in
+ * ucs-end-point-list?  *prefp: that end point's preference there.
+ */
+static bool
+tunnel_listed(struct plan *pl, const ucl_object_t *t, const ucl_object_t *mine,
+    const ucl_object_t *pol, int64_t *prefp)
+{
+	const ucl_object_t	*l, *e;
+
+	*prefp = 0;
+	if ((l = pol_list(pl, pol, "ucs-list")) != NULL && list_item(l, str(t,
+	    "ucs")) == NULL)
+		return (false);
+	if ((l = pol_list(pl, pol, "ucs-end-point-list")) != NULL) {
+		if ((e = list_item(l, str(mine, "ucs_ep"))) == NULL)
+			return (false);
+		if (ucl_object_type(e) == UCL_OBJECT)
+			*prefp = ucl_object_toint(ucl_object_lookup(e,
+			    "preference"));
+	}
+	return (true);
+}
+
 /* The interface an end point's UNI is: its own, or the VLAN made on it. */
 static const char *
 uni_ifname(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
@@ -2989,6 +3205,38 @@ entry(ucl_object_t *t, const char *key, const char *value)
 }
 
 /*
+ * Candidates with a preference (a UCS End Point list's) first, the
+ * higher first; the order otherwise kept.  Takes cands.
+ */
+static ucl_object_t *
+by_preference(ucl_object_t *cands)
+{
+	const ucl_object_t	*v[256], *t;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*out;
+	int			 n, i, k;
+
+	n = 0;
+	it = NULL;
+	while ((v[n] = ucl_object_iterate(cands, &it, true)) != NULL && n <
+	    255)
+		n++;
+	for (i = 1; i < n; i++)
+		for (k = i; k > 0 && ucl_object_toint(ucl_object_lookup(v[k],
+		    "preference")) > ucl_object_toint(ucl_object_lookup(v[k -
+		    1], "preference")); k--) {
+			t = v[k];
+			v[k] = v[k - 1];
+			v[k - 1] = t;
+		}
+	out = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < n; i++)
+		ucl_array_append(out, ucl_object_copy(v[i]));
+	ucl_object_unref(cands);
+	return (out);
+}
+
+/*
  * The steering of one table: for each far prefix the tunnels that may
  * carry it, in order: no backup first, a private one before a public
  * one; the console's manager reorders them by the performance.
@@ -3001,6 +3249,7 @@ steer_table(struct plan *pl, ucl_object_t *entries, const ucl_object_t *sw,
 	const ucl_object_t	*ep2, *p, *t, *e0, *e1, *far, *dz;
 	ucl_object_iter_t	 it, pit, tit;
 	ucl_object_t		*pfx, *en, *cands, *c;
+	int64_t			 pref;
 	int			 af, pass;
 
 	af = fam == 4 ? AF_INET : AF_INET6;
@@ -3009,6 +3258,10 @@ steer_table(struct plan *pl, ucl_object_t *entries, const ucl_object_t *sw,
 	    &it, true)) != NULL) {
 		if (strcmp(str(ep2, "edge"), str(ep, "edge")) == 0 ||
 		    !vt_allows(sw, pol, str(ep, "id"), str(ep2, "id")))
+			continue;
+		/* The destinations a policy's edge list lets it reach. */
+		if (pol_list(pl, pol, "edge-list") != NULL && list_item(
+		    pol_list(pl, pol, "edge-list"), str(ep2, "edge")) == NULL)
 			continue;
 		pfx = ucl_object_typed_new(UCL_ARRAY);
 		uni_prefixes(ep2, pfx);
@@ -3050,8 +3303,13 @@ steer_table(struct plan *pl, ucl_object_t *entries, const ucl_object_t *sw,
 					if (str(far, fam == 4 ? "inner4" :
 					    "inner6") == NULL)
 						continue;
+					if (!tunnel_listed(pl, t, far == e1 ? e0 :
+					    e1, pol, &pref))
+						continue;
 					c = ucl_object_typed_new(UCL_OBJECT);
 					put(c, "id", S(str(t, "id")));
+					if (pref != 0)
+						put(c, "preference", I(pref));
 					put(c, "via", S(str(far, fam == 4 ?
 					    "inner4" : "inner6")));
 					put(c, "public", B(ucl_flag(t,
@@ -3063,6 +3321,7 @@ steer_table(struct plan *pl, ucl_object_t *entries, const ucl_object_t *sw,
 				ucl_object_unref(cands);
 				continue;
 			}
+			cands = by_preference(cands);
 			/* A private one before a public one. */
 			en = ucl_object_typed_new(UCL_OBJECT);
 			put(en, "table", S(tname));
@@ -3505,6 +3764,83 @@ app_has(const ucl_object_t *afs, const char *app)
 	    afs, "group"), app) == 0)));
 }
 
+/*
+ * The MSS to clamp TCP to on a tunnel of a UCS, for a family: what
+ * its tunnel entry says, or for auto 1500 less the tunnel's overhead
+ * (gre 24, gif 20, geneve 50, wg 60, uswe 73), IPsec's 64 under gre,
+ * gif and geneve, and 20 more over an IPv6 underlay, less the inner
+ * headers (40 for IPv4, 60 for IPv6); 0 when none is to be clamped.
+ */
+static int
+tunnel_mss(const ucl_object_t *doc, const ucl_object_t *t,
+    const ucl_object_t *end, int fam)
+{
+	const ucl_object_t	*u, *tt, *v;
+	const char		*kind;
+	int			 mtu, over;
+
+	if ((u = by(ucl_object_lookup(doc, "ucs"), "id", str(t, "ucs"))) ==
+	    NULL || (tt = ucl_object_lookup(u, "tunnel")) == NULL ||
+	    (v = ucl_object_lookup(tt, "mss")) == NULL)
+		return (0);
+	if (ucl_object_type(v) == UCL_INT)
+		return ((int)ucl_object_toint(v));
+	kind = str(t, "kind") != NULL ? str(t, "kind") : "gre";
+	over = strcmp(kind, "gif") == 0 ? 20 : strcmp(kind, "geneve") == 0 ?
+	    50 : strcmp(kind, "wg") == 0 ? 60 : strcmp(kind, "uswe") == 0 ? 73 :
+	    24;
+	if (ucl_flag(t, "ipsec"))
+		over += 64;
+	if (str(end, "underlay") != NULL && strchr(str(end, "underlay"), ':')
+	    != NULL)
+		over += 20;
+	mtu = 1500 - over;
+	return (mtu - (fam == 6 ? 60 : 40));
+}
+
+/*
+ * tcp-setmss rules for the service's tunnels at the edge, each family
+ * its own (ipfw_pmod: the search goes on after them); true when any,
+ * so that the module is loaded.
+ */
+static bool
+mss_rules(struct plan *pl, const ucl_object_t *sw, const char *sid,
+    ucl_object_t *rules)
+{
+	const ucl_object_t	*t, *e;
+	ucl_object_iter_t	 it, eit;
+	int			 m;
+	bool			 any;
+
+	any = false;
+	it = NULL;
+	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
+		if (strcmp(str(t, "swvc"), str(sw, "id")) != 0 || ucl_flag(t,
+		    "control"))
+			continue;
+		eit = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(t, "ends"),
+		    &eit, true)) != NULL) {
+			if (strcmp(str(e, "edge"), sid) != 0 || str(e, "ifname")
+			    == NULL)
+				continue;
+			if ((m = tunnel_mss(pl->doc, t, e, 4)) > 0) {
+				rule(rules, RULE_FROM, "tcp-setmss %d tcp from any "
+				    "to any via %s tcpflags syn ip4", m, str(e,
+				    "ifname"));
+				any = true;
+			}
+			if ((m = tunnel_mss(pl->doc, t, e, 6)) > 0) {
+				rule(rules, RULE_FROM, "tcp-setmss %d tcp from any "
+				    "to any via %s tcpflags syn ip6", m, str(e,
+				    "ifname"));
+				any = true;
+			}
+		}
+	}
+	return (any);
+}
+
 /* The tunnel interfaces of the service at the edge, as xmit words: the
  * data tunnels', not the control plane's own. */
 static const char *
@@ -3583,6 +3919,80 @@ own_words(struct plan *pl, const ucl_object_t *sw, const char *sid,
 }
 
 /*
+ * The groups of a remote end point (SASE-3): a table each of its live
+ * members' addresses, and the members of two groups neither of which
+ * reaches the other kept apart, both ways, before the zone table
+ * sends anyone on.
+ */
+static void
+group_rules(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
+    ucl_object_t *tables, ucl_object_t *rules, const char *uni)
+{
+	const ucl_object_t	*r, *gs, *g, *h, *id, *e;
+	ucl_object_iter_t	 it, it2, iit;
+	ucl_object_t		*t;
+	char			 name[64], other[64], ia[80];
+	int64_t			 fib;
+	int			 i, j;
+	bool			 meet;
+
+	r = ucl_object_lookup(ep, "remote");
+	if ((gs = ucl_object_lookup(r, "groups")) == NULL)
+		return;
+	fib = ucl_object_toint(ucl_object_lookup(sw, "fib"));
+	i = 0;
+	it = NULL;
+	while ((g = ucl_object_iterate(gs, &it, true)) != NULL) {
+		snprintf(name, sizeof(name), "sw%jd_g%d", (intmax_t)fib, i++);
+		t = table(tables, name, "legacy");
+		iit = NULL;
+		while ((id = ucl_object_iterate(ucl_object_lookup(r, "identities"),
+		    &iit, true)) != NULL) {
+			if (str(id, "group") == NULL || strcmp(str(id, "group"),
+			    str(g, "name")) != 0 || !identity_live(r, id, time(NULL))
+			    || !remote_addr(pl, sw, ep, str(id, "name"), ia,
+			    sizeof(ia)))
+				continue;
+			snprintf(ia + strlen(ia), sizeof(ia) - strlen(ia), "/%d",
+			    family(ia) == AF_INET ? 32 : 128);
+			entry(t, ia, "0");
+		}
+	}
+	i = 0;
+	it = NULL;
+	while ((g = ucl_object_iterate(gs, &it, true)) != NULL) {
+		j = 0;
+		it2 = NULL;
+		while ((h = ucl_object_iterate(gs, &it2, true)) != NULL) {
+			if (j++ <= i)
+				continue;
+			/* Either reaching the other: they meet. */
+			meet = false;
+			iit = NULL;
+			while (!meet && (e = ucl_object_iterate(ucl_object_lookup(g,
+			    "reach"), &iit, true)) != NULL)
+				meet = strcmp(ucl_object_tostring(e), str(h, "name"))
+				    == 0;
+			iit = NULL;
+			while (!meet && (e = ucl_object_iterate(ucl_object_lookup(h,
+			    "reach"), &iit, true)) != NULL)
+				meet = strcmp(ucl_object_tostring(e), str(g, "name"))
+				    == 0;
+			if (meet)
+				continue;
+			snprintf(name, sizeof(name), "sw%jd_g%d", (intmax_t)fib, i);
+			snprintf(other, sizeof(other), "sw%jd_g%d", (intmax_t)fib,
+			    j - 1);
+			rule(rules, RULE_FROM, "deny ip from table(%s) to table(%s) "
+			    "in recv %s", name, other, uni);
+			rule(rules, RULE_FROM, "deny ip from table(%s) to table(%s) "
+			    "in recv %s", other, name, uni);
+		}
+		i++;
+	}
+}
+
+/*
  * The rules of one edge, and its steering: for each service with an
  * end point here, the zone table and each zone's block, each flow
  * with the policy it gets, each policy's tables; what a flow may do beyond the tunnels
@@ -3603,6 +4013,7 @@ rules_build(struct plan *pl, const char *sid)
 	const char		*uni, *pname, *bo_sid, *bif;
 	int			 next, zi, pi, fam, nuni, k, lim, q, nat, si, rp;
 	bool			 any, multi, local, breaks;
+	bool			 mss_done = false;
 
 	tables = ucl_object_typed_new(UCL_ARRAY);
 	rules = ucl_object_typed_new(UCL_ARRAY);
@@ -3630,6 +4041,30 @@ rules_build(struct plan *pl, const char *sid)
 			/* [D1]: source routing dropped. */
 			rule(rules, RULE_FROM, "deny ip from any to any ipoptions "
 			    "lsrr,ssrr,rr in recv %s", uni);
+			/* TCP's MSS clamped on the tunnels, once an edge. */
+			if (!mss_done && mss_rules(pl, sw, sid, rules)) {
+				ucl_object_t	*ko, *ka;
+
+				ko = (ucl_object_t *)(uintptr_t)by(
+				    ucl_object_lookup(pl->edges, sid), "key",
+				    "pmod");
+				if (ko == NULL) {
+					ko = object(pl, sid, "pmod", PH_FIBS,
+					    "ipfw_pmod loaded and kept, for "
+					    "tcp-setmss");
+					put(ko, "make", ucl_object_typed_new(
+					    UCL_ARRAY));
+					ka = ucl_object_typed_new(UCL_ARRAY);
+					ucl_array_append(ka, S("ipfw_pmod"));
+					make(ko, job("kmod", "verb", S("load"),
+					    "args", ka, NULL));
+					ka = ucl_object_typed_new(UCL_ARRAY);
+					ucl_array_append(ka, S("ipfw_pmod"));
+					make(ko, job("kmod", "verb", S("keep"),
+					    "args", ka, NULL));
+				}
+				mss_done = true;
+			}
 			/*
 			 * Intrusion prevented (ids, prevent): IPv4 that
 			 * comes in at the UNI, and that comes in elsewhere for
@@ -3720,6 +4155,8 @@ rules_build(struct plan *pl, const char *sid)
 					    "to any dst-port 443 in recv %s", at, uni);
 				}
 			}
+			if (ucl_object_lookup(ep, "remote") != NULL)
+				group_rules(pl, sw, ep, tables, rules, uni);
 			rule(rules, RULE_FROM, "skipto tablearg ip from table(%s) "
 			    "to any in recv %s", zname, uni);
 			/* No zone: dropped (R23). */
@@ -3833,8 +4270,10 @@ rules_build(struct plan *pl, const char *sid)
 					while ((id = ucl_object_iterate(ucl_object_lookup(
 					    ucl_object_lookup(rep, "remote"),
 					    "identities"), &iit, true)) != NULL) {
-						if (str(id, "zone") == NULL || strcmp(str(
-						    id, "zone"), str(zone, "name")) != 0 ||
+						if (ident_zone(ucl_object_lookup(rep,
+						    "remote"), id) == NULL || strcmp(
+						    ident_zone(ucl_object_lookup(rep,
+						    "remote"), id), str(zone, "name")) != 0 ||
 						    !identity_live(ucl_object_lookup(rep,
 						    "remote"), id, time(NULL)) ||
 						    !remote_addr(pl, sw, rep, str(id,
@@ -3889,6 +4328,7 @@ rules_build(struct plan *pl, const char *sid)
 							pi++;
 					}
 					cr = ucl_object_lookup(afs, "criteria");
+					nlist_tables(pl, tables, cr);
 					ap = ucl_object_lookup(cr, "appid");
 					nap = ap != NULL ? (int)ucl_array_size(
 					    ap) : 1;
@@ -6712,7 +7152,9 @@ identities_list(const ucl_object_t *doc, ucl_object_t *st)
 				put(o, "edge", S(str(ep, "edge")));
 				put(o, "interface", S(str(r, "interface")));
 				put(o, "name", S(str(id, "name")));
-				put(o, "zone", S(str(id, "zone")));
+				put(o, "zone", S(ident_zone(r, id)));
+				if (str(id, "group") != NULL)
+					put(o, "group", S(str(id, "group")));
 				put(o, "public_key", S(str(id, "public_key")));
 				put(o, "user", B(ucl_flag(id, "user")));
 				put(o, "issued", I(ucl_object_lookup(id, "issued") !=
@@ -6844,13 +7286,13 @@ int
 api_sdwan_identities(struct http_request *req)
 {
 	ucl_object_t		*doc, *st, *body, *out, *ids, *id, *o;
-	const ucl_object_t	*sw, *ep, *r, *e;
+	const ucl_object_t	*sw, *ep, *r, *e, *g;
 	ucl_object_iter_t	 it;
 	struct plan		 pl;
 	char			 where[300], rzone[64];
 	char			 why[300], priv[64], pub[64], *v, *swvc, *epid;
 	char			*name, *conf;
-	const char		*zone;
+	const char		*zone, *group;
 	bool			 user, applied;
 	int			 i;
 
@@ -6895,8 +7337,8 @@ api_sdwan_identities(struct http_request *req)
 			return (reply_error(req, 404, "identity", "no identity %s",
 			    name != NULL ? name : "?"));
 		}
-		snprintf(rzone, sizeof(rzone), "%s", str(e, "zone") != NULL ?
-		    str(e, "zone") : "");
+		snprintf(rzone, sizeof(rzone), "%s", ident_zone(r, e) != NULL ?
+		    ident_zone(r, e) : "");
 		ucl_object_unref(ucl_array_delete(ids, (ucl_object_t *)(uintptr_t)
 		    e));
 		if (sdwan_store(doc, why, sizeof(why)) != 0) {
@@ -6925,7 +7367,7 @@ api_sdwan_identities(struct http_request *req)
 	}
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "a JSON body: swvc, "
-		    "end_point, name, zone, user"));
+		    "end_point, name, zone or group, user"));
 	swvc = (char *)(uintptr_t)str(body, "swvc");
 	epid = (char *)(uintptr_t)str(body, "end_point");
 	name = (char *)(uintptr_t)str(body, "name");
@@ -6952,8 +7394,21 @@ api_sdwan_identities(struct http_request *req)
 		    "%s in service %s", epid != NULL ? epid : "?", swvc != NULL ?
 		    swvc : "?"));
 	}
-	if (zone == NULL || by(ucl_object_lookup(sw, "zones"), "name", zone) ==
-	    NULL) {
+	/* In a group of the remote's, the zone is the group's. */
+	group = str(body, "group");
+	if (group != NULL && group[0] == '\0')
+		group = NULL;
+	if (group != NULL) {
+		if ((g = by(ucl_object_lookup(r, "groups"), "name", group)) ==
+		    NULL) {
+			ucl_object_unref(doc);
+			ucl_object_unref(body);
+			return (reply_error(req, 400, "group", "the group is one "
+			    "of end point %s's", epid));
+		}
+		zone = str(g, "zone");
+	} else if (zone == NULL || by(ucl_object_lookup(sw, "zones"), "name",
+	    zone) == NULL) {
 		ucl_object_unref(doc);
 		ucl_object_unref(body);
 		return (reply_error(req, 400, "zone", "the zone is one of service "
@@ -6980,7 +7435,10 @@ api_sdwan_identities(struct http_request *req)
 		}
 	id = ucl_object_typed_new(UCL_OBJECT);
 	put(id, "name", S(name));
-	put(id, "zone", S(zone));
+	if (group != NULL)
+		put(id, "group", S(group));
+	else
+		put(id, "zone", S(zone));
 	put(id, "public_key", S(pub));
 	put(id, "issued", I(time(NULL)));
 	if (user)
@@ -7078,7 +7536,7 @@ identities_tick(const ucl_object_t *doc, time_t now)
 					    ? server_name_of(str(ep, "edge")) : "?",
 					    str(ep, "id"), str(sw, "id"));
 					audit_add("reauthorisation-due", "Block",
-					    str(id, "zone") != NULL ? str(id, "zone")
+					    ident_zone(r, id) != NULL ? ident_zone(r, id)
 					    : "", "its peer taken away by the apply",
 					    where, "Continuous Monitoring, by time",
 					    "identity %s: its re-authorisation "
@@ -7304,8 +7762,16 @@ reorder(const ucl_object_t *perf, const ucl_object_t *sd, ucl_object_t *cands,
 			int	a = (v[k].ok ? 0 : v[k].has ? 1 : 2);
 			int	b = (v[k - 1].ok ? 0 : v[k - 1].has ? 1 : 2);
 
-			if (a < b || (a == b && a < 2 && v[k].m[idx] < v[k -
-			    1].m[idx])) {
+			int64_t	pa = ucl_object_toint(ucl_object_lookup(
+				    v[k].c, "preference"));
+			int64_t	pb = ucl_object_toint(ucl_object_lookup(
+				    v[k - 1].c, "preference"));
+
+			/* Of those that meet the thresholds, a UCS End
+			 * Point list's preference first, then the metric. */
+			if (a < b || (a == b && a == 0 && pa > pb) || (a == b &&
+			    a < 2 && (a != 0 || pa == pb) && v[k].m[idx] <
+			    v[k - 1].m[idx])) {
 				__typeof__(v[0]) t = v[k];
 
 				v[k] = v[k - 1];

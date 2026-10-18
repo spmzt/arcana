@@ -197,7 +197,11 @@ loc_of(char *buf, size_t len)
 		    "/templates" : "");
 		break;
 	case NODE_SETTINGS:
-		snprintf(buf, len, "#/settings/%s", settab_arg(app.settab));
+		if (app.settab == SET_AAA)
+			snprintf(buf, len, "#/settings/aaa/%s", aaatab_arg(
+			    app.aaatab));
+		else
+			snprintf(buf, len, "#/settings/%s", settab_arg(app.settab));
 		break;
 	case NODE_JAIL:
 		if (s != NULL && app.jail[0] != '\0') {
@@ -297,6 +301,8 @@ loc_go(const char *r)
 	else if (IS(0, "settings")) {
 		loc_dec(arg, sizeof(arg), np > 1 ? f[1] : "");
 		dispatch("set-tab", arg, "");
+		if (IS(1, "aaa") && np > 2)
+			dispatch("aaa-tab", f[2], "");
 	} else if (IS(0, "hosts") && np > 1) {
 		loc_dec(id, sizeof(id), f[1]);
 		for (i = 0; i < app.nservers; i++)
@@ -342,7 +348,18 @@ loc_pending(void)
 EMSCRIPTEN_KEEPALIVE void
 arc_on_loc(char *r)
 {
+	const char	*inv;
 
+	/* #/invite/<token>: a user's first key, before any sign-in. */
+	if ((inv = strstr(r, "invite/")) != NULL && app.screen != SCREEN_CONSOLE) {
+		snprintf(app.invite_token, sizeof(app.invite_token), "%s", inv +
+		    7);
+		app.invite_token[strcspn(app.invite_token, "?/")] = '\0';
+		if (app.screen == SCREEN_LOGIN)
+			app.screen = SCREEN_ENROL;
+		render();
+		return;
+	}
 	if (app.screen == SCREEN_CONSOLE && app.servers_loaded) {
 		loc_go(r);
 		/* What it named, as it is said: a host gone is the fleet. */
@@ -701,6 +718,12 @@ submit_form(const char *form, const ucl_object_t *f)
 		job_send(cur_server(), q, title, JOB_PACKAGES, app.pkg.jail);
 	} else if (strcmp(form, "login-token") == 0) {
 		login_token(jstr(f, "token") != NULL ? jstr(f, "token") : "");
+	} else if (iflabel_form(form, f) || pfxlists_form(form, f) ||
+	    user_form(form, f)) {
+		;
+	} else if (strcmp(form, "login-ldap") == 0) {
+		login_ldap(jstr(f, "user") != NULL ? jstr(f, "user") : "",
+		    jstr(f, "password") != NULL ? jstr(f, "password") : "");
 	} else if (strcmp(form, "enrol") == 0) {
 		enrol(jstr(f, "token") != NULL ? jstr(f, "token") : "",
 		    jstr(f, "name") != NULL ? jstr(f, "name") : "");
@@ -886,6 +909,8 @@ submit_form(const char *form, const ucl_object_t *f)
 		save_settings(f, SETG_MAIL);
 	} else if (strcmp(form, "settings-telegram") == 0) {
 		save_settings(f, SETG_TELEGRAM);
+	} else if (strcmp(form, "settings-ldap") == 0) {
+		save_settings(f, SETG_LDAP);
 	} else if (strcmp(form, "agent-update") == 0) {
 		app.modal = MODAL_NONE;
 		for (i = 0; i < app.nservers; i++) {
@@ -927,6 +952,8 @@ dispatch(const char *act, const char *arg, const char *value)
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
 	    sdwan_action(act, arg, value) || trouble_action(act, arg, value) ||
 	    secpage_action(act, arg, value) || builder_action(act, arg, value) ||
+	    iflabel_action(act, arg) || pfxlists_action(act, arg, value) ||
+	    user_action(act, arg) ||
 	    routing_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
 	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||
@@ -1730,8 +1757,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.rail_open = !app.rail_open;
 	} else if (strcmp(act, "who-toggle") == 0) {
 		app.who_open = !app.who_open;
+	} else if (strcmp(act, "quiet-toggle") == 0) {
+		app.show_quiet = !app.show_quiet;
 	} else if (strcmp(act, "settings") == 0 || strcmp(act, "keys") == 0 ||
-	    strcmp(act, "set-tab") == 0) {
+	    strcmp(act, "set-tab") == 0 || strcmp(act, "aaa-tab") == 0) {
 		/* Settings, a section: opened at its first tab, or one named. */
 		if (app.node != NODE_SETTINGS) {
 			app.node = NODE_SETTINGS;
@@ -1745,10 +1774,23 @@ dispatch(const char *act, const char *arg, const char *value)
 			if (!app.by_token)
 				load_keys();
 		}
-		if (strcmp(act, "keys") == 0)
-			app.settab = SET_KEYS;
-		else if (strcmp(act, "set-tab") == 0)
-			app.settab = settab_of(arg);
+		if (strcmp(act, "keys") == 0) {
+			app.settab = SET_AAA;
+			app.aaatab = AAA_KEYS;
+		} else if (strcmp(act, "set-tab") == 0) {
+			/* The tabs AAA took in, by their old names too. */
+			if (strcmp(arg, "keys") == 0 || strcmp(arg, "tokens") == 0 ||
+			    strcmp(arg, "users") == 0) {
+				app.settab = SET_AAA;
+				app.aaatab = aaatab_of(arg);
+			} else
+				app.settab = settab_of(arg);
+		} else if (strcmp(act, "aaa-tab") == 0) {
+			app.settab = SET_AAA;
+			app.aaatab = aaatab_of(arg);
+			if (app.aaatab == AAA_USERS || app.aaatab == AAA_ROLES)
+				users_load();
+		}
 		if ((app.settab == SET_NEWS || app.settab == SET_UPDATE) &&
 		    !app.notes_busy && (app.notes == NULL ||
 		    strcmp(app.notes_for, "console") != 0))

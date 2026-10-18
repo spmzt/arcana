@@ -698,7 +698,8 @@ api_troubleshoot_path(struct http_request *req)
 		while ((e = ucl_object_iterate(ucl_object_lookup(body,
 		    "places"), &it, true)) != NULL && t->n < TS_PLACES) {
 			if ((sid = ucl_str(e, "server")) == NULL ||
-			    (s = server_find(sid)) == NULL)
+			    (s = server_find(sid)) == NULL || !host_role_ok(req,
+			    sid, false, false))
 				continue;
 			snprintf(t->p[t->n].jail, sizeof(t->p[0].jail), "%s",
 			    ucl_str(e, "jail") != NULL ? ucl_str(e, "jail") :

@@ -2031,6 +2031,10 @@ table.nhgroups td.num { text-align: right; }
 }
 html.fx .node.st-incomplete { animation: breathe 1.2s ease-in-out infinite; }
 .op.o-queued { --c: var(--slate); opacity: .75; }
+.op.o-quiet { opacity: .55; font-size: .85em; }
+.dock .recent .quiet { opacity: .7; }
+nav.tabs.sub { margin: 0 0 .8rem; }
+nav.tabs.sub .tab { font-size: .85em; }
 .dock header button.small { margin-left: .4rem; }
 .dock header button.on { color: var(--cyan); border-color: var(--cyan); }
 
@@ -5075,6 +5079,7 @@ details.wfmore[open] > summary { margin-bottom: .45rem; }
 .secform label.check small.help { flex-basis: 100%; }
 .secform .wide { grid-column: 1 / -1; margin: 0; }
 .sn-head .grow { flex: 1; }
+.notice.sec-missing { display: flex; align-items: center; gap: 1rem; justify-content: space-between; }
 .sn-update label.grow { flex: 1; display: flex; align-items: center; gap: .6rem; }
 .sn-update label.grow input { flex: 1; min-width: 0; }
 .sn-src { margin: -.4rem 0 .8rem; font-size: .85rem; }

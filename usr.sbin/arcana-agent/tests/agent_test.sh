@@ -2525,6 +2525,28 @@ safe_mode_body()
 	atf_check -s exit:1 -e match:'name its gateway' -o ignore \
 	    "$JGC" -q -s -c "$SOCK" route delete 10.79.0.0/16
 
+	# One cancelled while it waits to be confirmed is undone then, not
+	# when its timer of a minute runs out.
+	atf_check -o save:q.out "$JGC" -q -s -W 60 -c "$SOCK" interface lo0 \
+	    add 10.9.0.9/24
+	id=$(awk '/queued/ {print $1; exit}' q.out)
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q "^ *$id unconfirmed" && break
+		sleep 0.1
+	done
+	atf_check -o ignore "$JGC" -c "$SOCK" job-cancel "$id"
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q "^ *$id \(unconfirmed\|running\)" ||
+		    break
+		sleep 0.1
+	done
+	[ $i -lt 100 ] || atf_fail "the cancelled change was not undone at once"
+	atf_check -s exit:1 -o match:'cancelled by the client while it waited: undone now' \
+	    "$JGC" -c "$SOCK" job "$id"
+	atf_check -o match:'^lo0 inet 10.9.0.9 -alias$' cat ifconfig.log
+	# One at work, or done, is not taken back, and says which.
+	atf_check -s exit:1 -e match:'has finished' "$JGC" -c "$SOCK" job-cancel "$id"
+
 	# The same for what else can be taken back: an interface made, a
 	# service stopped, its variables, each put back as it was; and
 	# what was kept in rc.conf with the change is forgotten with it.
@@ -5304,8 +5326,9 @@ EOS
 	chmod +x fake-snort
 	DAEMON_ARGS="--snort $d/no-snort --snort-etc $d/se --snort-log $d/sl"
 	start_daemon
-	# Not installed: said, and nothing done.
+	# Not installed: said, and nothing done; no rc.d script written.
 	atf_check -o match:'"installed":false' "$JGC" -c "$SOCK" snort
+	[ ! -e local/rc.d/arcana_snort ] || atf_fail "a script without Snort"
 	atf_check -s exit:1 -o match:'failed +snort update: .*pkg install snort3' \
 	    -e ignore "$JGC" -c "$SOCK" snort update
 	stop_daemon
@@ -5317,6 +5340,14 @@ EOS
 	    -o match:'no rules taken in yet' \
 	    -o match:'"default_url":"https://www.snort.org/downloads/community/snort3-community-rules.tar.gz"' \
 	    "$JGC" -c "$SOCK" snort
+	# Snort there and read, the agent's own rc.d script is there too,
+	# as its build has it, without a job.
+	atf_check -o match:'^name="arcana_snort"' cat local/rc.d/arcana_snort
+	[ -x local/rc.d/arcana_snort ] || atf_fail "arcana_snort not executable"
+	# Taken away, the next read puts it back.
+	rm local/rc.d/arcana_snort
+	atf_check -o ignore "$JGC" -c "$SOCK" snort
+	atf_check -o match:'^name="arcana_snort"' cat local/rc.d/arcana_snort
 	# Words it does not take, and a jail's: refused before they run.
 	atf_check -s exit:1 -e match:'each gid:sid' -o ignore \
 	    "$JGC" -c "$SOCK" snort rule off=105
@@ -5397,8 +5428,22 @@ EOS
 	atf_check -o match:'"home_net":"\[192.0.2.0/24,2001:db8::/32\]"' \
 	    -o match:'no interface nosuch0 here' \
 	    -o match:'enabled, not running' "$JGC" -c "$SOCK" snort
+	# Every interface: any, alone, kept as it is, said of no interface
+	# missing (the rc.d script takes what is up when Snort starts).
+	atf_check -o match:'done' "$JGC" -c "$SOCK" snort set interface=any
+	atf_check -o match:'^arcana_snort_interfaces="any"$' cat rc.conf
+	atf_check -o not-match:'no interface' "$JGC" -c "$SOCK" snort
+	atf_check -s exit:1 -e match:'any stands alone' -o ignore \
+	    "$JGC" -c "$SOCK" snort set interface=any interface=lo0
 	atf_check -s exit:1 -e match:'home_net is any' -o ignore \
 	    "$JGC" -c "$SOCK" snort set "home_net=10.0.0.0/8'; os.exit()"
+	# The oinkcode in a registered rules' address (the console's secret)
+	# is written nowhere the host keeps: not the title, not the error.
+	atf_check -s exit:1 -o save:oink.out -e ignore "$JGC" -c "$SOCK" \
+	    snort update 'url=https://127.0.0.1:9/snortrules-snapshot-31200.tar.gz?oinkcode=SECRET123abc'
+	atf_check -o not-match:'SECRET123abc' -o match:'oinkcode=\.\.\.' cat oink.out
+	atf_check -o not-match:'SECRET123abc' -o match:'snort update url=https://127.0.0.1:9/snortrules-snapshot-31200.tar.gz\?oinkcode=\.\.\.' \
+	    "$JGC" -c "$SOCK" jobs
 	# Its alerts, the newest first.
 	printf '%s\n%s\n' \
 	    '{ "timestamp" : "10/17-12:00:01.000000", "proto" : "ICMP", "src_addr" : "192.0.2.1", "dst_addr" : "198.51.100.7", "gid" : 1, "sid" : 1000001, "rev" : 2, "msg" : "lab probe seen", "action" : "allow", "class" : "Misc activity", "priority" : 3 }' \
@@ -5408,6 +5453,47 @@ EOS
 	    "$JGC" -c "$SOCK" snort
 }
 snort_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case clamav cleanup
+clamav_head()
+{
+	atf_set "descr" "freshclam's mirrors written into freshclam.conf, made from the port's sample when there is none"
+}
+clamav_body()
+{
+	d=$(pwd)
+	mkdir fc
+	printf '# Comment\nExample\nDatabaseOwner clamav\nDatabaseMirror database.clamav.net\nNotifyClamd /usr/local/etc/clamd.conf\n' \
+	    > fc/freshclam.conf.sample
+	DAEMON_ARGS="--freshclam-conf $d/fc/freshclam.conf"
+	start_daemon
+	# None there: made from the sample, without its Example line, the
+	# mirrors in the order given where the sample's was.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" clamav mirrors \
+	    database.clamav.net https://packages.microsoft.com/clam
+	atf_check -o inline:'# Comment\nDatabaseOwner clamav\nDatabaseMirror database.clamav.net\nDatabaseMirror https://packages.microsoft.com/clam\nNotifyClamd /usr/local/etc/clamd.conf\n' \
+	    cat fc/freshclam.conf
+	# There: its mirrors replaced, the rest as it was.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" clamav mirrors \
+	    https://mirror.example.org/clamav
+	atf_check -o inline:'# Comment\nDatabaseOwner clamav\nDatabaseMirror https://mirror.example.org/clamav\nNotifyClamd /usr/local/etc/clamd.conf\n' \
+	    cat fc/freshclam.conf
+	# What is not a mirror, none, a jail's: refused.
+	atf_check -s exit:1 -e match:'host name, or an http or https' \
+	    -o ignore "$JGC" -c "$SOCK" clamav mirrors 'ftp://x/y'
+	atf_check -s exit:1 -e match:'host name, or an http or https' \
+	    -o ignore "$JGC" -c "$SOCK" clamav mirrors 'a b'
+	atf_check -s exit:1 -e match:"freshclam is the host's" -o ignore \
+	    "$JGC" -c "$SOCK" -j web clamav mirrors database.clamav.net
+	# Neither the file nor its sample: ClamAV is not there.
+	rm fc/freshclam.conf fc/freshclam.conf.sample
+	atf_check -s exit:1 -o match:'pkg install clamav' -e ignore \
+	    "$JGC" -c "$SOCK" clamav mirrors database.clamav.net
+}
+clamav_cleanup()
 {
 	stop_daemon
 }
@@ -8348,6 +8434,7 @@ atf_init_test_cases()
 	atf_add_test_case neighbours
 	atf_add_test_case multicast
 	atf_add_test_case snort
+	atf_add_test_case clamav
 	atf_add_test_case certs
 	atf_add_test_case sshd
 	atf_add_test_case capture

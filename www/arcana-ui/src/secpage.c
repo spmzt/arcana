@@ -181,6 +181,48 @@ host_pick(struct html *h)
 	h_raw(h, "</select></label>");
 }
 
+/* The server the page shows. */
+static struct server *
+sec_server(void)
+{
+	int	i;
+
+	for (i = 0; i < app.nservers; i++)
+		if (strcmp(app.servers[i].id, sec.sid) == 0)
+			return (&app.servers[i]);
+	return (NULL);
+}
+
+/*
+ * What a tab needs and the host has not: said, with a button that
+ * installs it (pkg install), pressed by whoever reads it; Arcana
+ * installs nothing by itself.  pkgs: the packages, a space between.
+ */
+static void
+missing(struct html *h, const char *what, const char *pkgs)
+{
+
+	h_raw(h, "<div class=\"notice warn sec-missing\"><span>");
+	h_txt(h, what);
+	h_raw(h, "</span><button class=\"primary small\" data-act=\""
+	    "sec-install\"");
+	h_attr(h, "data-arg", pkgs);
+	h_raw(h, ">Install ");
+	h_txt(h, pkgs);
+	h_raw(h, "</button></div>");
+}
+
+/* Has the host the plugin? Unknown, while its list is not read, is yes. */
+static bool
+sec_has(const char *plugin)
+{
+	struct server	*s;
+
+	if ((s = sec_server()) == NULL || s->list == NULL)
+		return (true);
+	return (has_plugin(s, plugin));
+}
+
 /* ---- URL filter ------------------------------------------------------- */
 
 static void
@@ -209,11 +251,14 @@ proxy_form(struct html *h, const ucl_object_t *f)
 	    "max=\"65535\"");
 	h_fmt(h, " value=\"%lld\"", (long long)jint(f, "port", 3128));
 	h_raw(h, "></label><label>Who may use it <input name=\"allow\" "
-	    "required spellcheck=\"false\" placeholder=\"10.0.0.0/8, "
+	    "spellcheck=\"false\" placeholder=\"10.0.0.0/8, "
 	    "192.168.0.0/16\"");
 	joined_attr(h, "value", jget(f, "allow"), ", ");
 	h_raw(h, "><small class=\"help\">networks, the rest refused</small>"
-	    "</label><label>TLS <select name=\"mode\">");
+	    "</label>");
+	pfxlist_select(h, "And the networks of a list", "allow_pfx", "A prefix "
+	    "list of the console's, added to the networks when kept.");
+	h_raw(h, "<label>TLS <select name=\"mode\">");
 	h_fmt(h, "<option value=\"sni\"%s>its name looked at (sni): denied "
 	    "ones ended, the rest left unopened</option><option value=\""
 	    "inspect\"%s>opened (inspect): the clients trust this filter's "
@@ -254,6 +299,9 @@ view_url(struct html *h, bool malware_only)
 	const ucl_object_t	**rows, *f, *l;
 	int			  r, n;
 
+	if (!malware_only && !sec_has("squid"))
+		missing(h, "Squid is not installed on this host: a URL filter "
+		    "is Squid.", "squid");
 	h_raw(h, "<div class=\"toolbar\"><input class=\"filter\" id=\"filter\" "
 	    "data-input=\"filter\" placeholder=\"Filter\" autocomplete=\"off\" "
 	    "spellcheck=\"false\"");
@@ -338,6 +386,10 @@ view_malware(struct html *h)
 	ucl_object_iter_t	 it;
 	int			 n;
 
+	if (!sec_has("c-icap") || jget(sec.state, "clamav") == NULL)
+		missing(h, "Scanning needs c-icap, its modules and ClamAV, not "
+		    "all installed on this host.", "c-icap c-icap-modules "
+		    "clamav");
 	h_raw(h, "<p class=\"lead\">c-icap with ClamAV's module scans what a "
 	    "URL filter fetches, before the client has it: one that holds "
 	    "malware is refused. Each URL filter that scans has its own "
@@ -366,6 +418,103 @@ static const struct tcol dcols[] = {
 	{ "File", "file", false },
 };
 
+/* The mirrors a freshclam.conf Arcana writes names: ClamAV's own, and
+ * Microsoft's, which carries the same databases. */
+static const char *const default_mirrors[] = { "database.clamav.net",
+    "https://packages.microsoft.com/clam" };
+
+/* A clamav job of mirrors, n of them, as the API takes it. */
+static char *
+mirrors_job(const char *const *m, size_t n)
+{
+	char	*json, *q, *t;
+	size_t	 i;
+
+	if ((json = strdup("{\"kind\":\"clamav\",\"verb\":\"mirrors\","
+	    "\"args\":[")) == NULL)
+		abort();
+	for (i = 0; i < n; i++) {
+		char	*w;
+
+		if (asprintf(&w, "mirror=%s", m[i]) == -1)
+			abort();
+		q = json_quote(w);
+		free(w);
+		if (asprintf(&t, "%s%s%s", json, i > 0 ? "," : "", q) == -1)
+			abort();
+		free(json);
+		free(q);
+		json = t;
+	}
+	if (asprintf(&t, "%s]}", json) == -1)
+		abort();
+	free(json);
+	return (t);
+}
+
+/* Jobs one after the other on the page's host, and the page read again
+ * when they end. */
+static void
+sec_jobs(char **json, const char **title, int n)
+{
+	struct server	*s;
+	struct queued	 q[4];
+	int		 i;
+
+	if ((s = sec_server()) == NULL || n > 4) {
+		for (i = 0; i < n; i++)
+			free(json[i]);
+		return;
+	}
+	memset(q, 0, sizeof(q));
+	for (i = 0; i < n; i++) {
+		q[i].json = json[i];
+		snprintf(q[i].title, sizeof(q[i].title), "%s", title[i]);
+		snprintf(q[i].sid, sizeof(q[i].sid), "%s", s->id);
+		snprintf(q[i].host, sizeof(q[i].host), "%s", s->name);
+		q[i].what = JOB_SECURITY;
+	}
+	job_send_many(s, q, n, JOB_SECURITY);
+}
+
+/*
+ * freshclam's mirrors, as freshclam.conf says them, a line each, with
+ * Microsoft's offered after them when it is not there.
+ */
+static void
+mirrors_form(struct html *h, const ucl_object_t *cl)
+{
+	const ucl_object_t	*m;
+	ucl_object_iter_t	 it;
+	bool			 ms;
+
+	h_raw(h, "<form data-form=\"sec-mirrors\" class=\"secform\"><label>"
+	    "Mirrors <small class=\"dim\">freshclam.conf's DatabaseMirror "
+	    "lines, a line each, tried in order: a host name, or an http or "
+	    "https URL</small><textarea name=\"mirrors\" rows=\"4\" class=\""
+	    "mono\" spellcheck=\"false\" autocomplete=\"off\">");
+	ms = false;
+	it = NULL;
+	while ((m = ucl_object_iterate(jget(cl, "mirrors"), &it, true)) !=
+	    NULL) {
+		h_txt(h, ucl_object_tostring_forced(m));
+		h_raw(h, "\n");
+		if (strcmp(ucl_object_tostring_forced(m), default_mirrors[1]) == 0)
+			ms = true;
+	}
+	if (ucl_array_size(jget(cl, "mirrors")) == 0) {
+		h_txt(h, default_mirrors[0]);
+		h_raw(h, "\n");
+	}
+	if (!ms) {
+		h_txt(h, default_mirrors[1]);
+		h_raw(h, "\n");
+	}
+	h_fmt(h, "</textarea></label><div class=\"actions\"><button class=\""
+	    "primary\">Save the mirrors%s</button></div></form>", jbool(cl,
+	    "freshclam") ? " and restart freshclam" : "");
+}
+
 static void
 view_sigs(struct html *h)
 {
@@ -378,10 +527,11 @@ view_sigs(struct html *h)
 	    "scanning knows what they know. freshclam runs as the service "
 	    "clamav_freshclam.</p>");
 	if (cl == NULL) {
+		missing(h, "ClamAV is not installed on this host.", "clamav");
 		h_raw(h, "<div class=\"empty\"><p>No ClamAV here.</p><p class=\""
-		    "dim\">It is a plugin: install clamav (pkg install clamav), "
-		    "then enable and start clamav_freshclam on the Services "
-		    "tab.</p></div>");
+		    "dim\">Once it is installed, start freshclam here, and "
+		    "enable clamav_freshclam on the Services tab to have it at "
+		    "boot.</p></div>");
 		return;
 	}
 	h_fmt(h, "<div class=\"toolbar\">%s<button class=\"ghost\" "
@@ -392,9 +542,33 @@ view_sigs(struct html *h)
 	    "running: the signatures age</span>", jbool(cl, "freshclam") ?
 	    "restart" : "start", jbool(cl, "freshclam") ? "Look now (restart)" :
 	    "Start freshclam");
+	/* Why signatures may not come: no freshclam.conf but the port's
+	 * sample, which freshclam refuses; and its log's last lines. */
+	if (jget(cl, "conf") != NULL && !jbool(cl, "conf"))
+		h_raw(h, "<div class=\"notice warn\">freshclam has no "
+		    "configuration: <code>/usr/local/etc/freshclam.conf</code> is "
+		    "missing, or still the port's sample with its <code>Example"
+		    "</code> line, which freshclam refuses to run with. Saving "
+		    "the mirrors below writes it, from the port's sample, and "
+		    "Start freshclam does too.</div>");
+	mirrors_form(h, cl);
+	if (ucl_array_size(jget(cl, "log")) > 0) {
+		const ucl_object_t	*ln;
+		ucl_object_iter_t	 lit = NULL;
+
+		h_raw(h, "<pre class=\"out dim seclog\" title=\"/var/log/clamav/"
+		    "freshclam.log, its last lines\">");
+		while ((ln = ucl_object_iterate(jget(cl, "log"), &lit, true)) !=
+		    NULL) {
+			h_txt(h, ucl_object_tostring_forced(ln));
+			h_raw(h, "\n");
+		}
+		h_raw(h, "</pre>");
+	}
 	if (ucl_array_size(jget(cl, "databases")) == 0) {
 		h_raw(h, "<div class=\"empty\"><p>No signatures yet.</p><p class="
-		    "\"dim\">freshclam has not fetched them: start it.</p>"
+		    "\"dim\">freshclam has not fetched them: start it; the first "
+		    "fetch takes minutes, the page looks again by itself.</p>"
 		    "</div>");
 		return;
 	}
@@ -441,9 +615,12 @@ ids_form(struct html *h, const ucl_object_t *f)
 	    "spellcheck=\"false\" placeholder=\"10.0.0.0/8, 172.16.0.0/12, "
 	    "192.168.0.0/16\"");
 	joined_attr(h, "value", jget(f, "home"), ", ");
-	h_raw(h, "><small class=\"help\">HOME_NET of the rules; empty: the "
-	    "private ranges</small></label><label class=\"check\"><input "
-	    "type=\"checkbox\" name=\"ruleset\"");
+	h_raw(h, "><small class=\"help\">HOME_NET of the rules; any for every address; empty: the "
+	    "private ranges</small></label>");
+	pfxlist_select(h, "And the networks of a list", "home_pfx", "A prefix "
+	    "list of the console's, added to HOME_NET when kept.");
+	h_raw(h, "<label class=\"check\"><input type=\"checkbox\" name=\""
+	    "ruleset\"");
 	if (f == NULL || jbool(f, "ruleset"))
 		h_raw(h, " checked");
 	h_raw(h, "> The ruleset suricata-update keeps <small class=\"help\">"
@@ -488,6 +665,9 @@ view_ids(struct html *h)
 	ucl_object_iter_t	  it;
 	int			  r, n;
 
+	if (!sec_has("suricata"))
+		missing(h, "Suricata is not installed on this host: intrusion "
+		    "detection here is Suricata.", "suricata");
 	h_raw(h, "<div class=\"toolbar\"><input class=\"filter\" id=\"filter\" "
 	    "data-input=\"filter\" placeholder=\"Filter\" autocomplete=\"off\" "
 	    "spellcheck=\"false\"");
@@ -502,7 +682,7 @@ view_ids(struct html *h)
 		h_raw(h, "<div class=\"empty\"><p>No intrusion detection on this "
 		    "host.</p><p class=\"dim\">Suricata watching interfaces, "
 		    "its alerts here; or, where it prevents, dropping what its "
-		    "rules say. It is a plugin: pkg install suricata.</p></div>");
+		    "rules say.</p></div>");
 		return;
 	}
 	h_raw(h, "<table class=\"net secids\">");
@@ -702,6 +882,22 @@ put_num(ucl_object_t *o, const char *k, const char *v)
 		    10)), k, 0, true);
 }
 
+/* The text typed, and the prefixes of a console list after it. */
+char *
+with_list(const char *text, const char *list)
+{
+	char	*more, *out;
+
+	more = list != NULL && list[0] != '\0' ? pfxlist_joined(list, ", ") :
+	    NULL;
+	if (asprintf(&out, "%s%s%s", text != NULL ? text : "", more != NULL &&
+	    text != NULL && text[0] != '\0' ? ", " : "", more != NULL ? more :
+	    "") == -1)
+		abort();
+	free(more);
+	return (out);
+}
+
 bool
 secpage_form(const char *form, const ucl_object_t *f)
 {
@@ -710,8 +906,52 @@ secpage_form(const char *form, const ucl_object_t *f)
 
 	if (strncmp(form, "sn-", 3) == 0)
 		return (snort_form(form, f));
+	if (strcmp(form, "sec-mirrors") == 0) {
+		const ucl_object_t	*cl = jget(sec.state, "clamav");
+		char			*copy, *it, *line, *json[2];
+		const char		*m[16], *title[2];
+		size_t			 n;
+		int			 nj;
+
+		copy = strdup(jstr(f, "mirrors") != NULL ? jstr(f, "mirrors") :
+		    "");
+		if (copy == NULL)
+			abort();
+		n = 0;
+		for (it = copy; (line = strsep(&it, "\n")) != NULL && n < 16; ) {
+			line += strspn(line, " \t\r");
+			line[strcspn(line, " \t\r")] = '\0';
+			if (line[0] != '\0')
+				m[n++] = line;
+		}
+		if (n == 0) {
+			toast(true, "freshclam needs a mirror at least");
+			free(copy);
+			return (true);
+		}
+		nj = 0;
+		json[nj] = mirrors_job(m, n);
+		title[nj++] = "freshclam's mirrors written";
+		/* A running freshclam reads them as it starts again. */
+		if (jbool(cl, "freshclam")) {
+			if (asprintf(&json[nj], "{\"kind\":\"service-action\","
+			    "\"service\":\"clamav_freshclam\",\"action\":"
+			    "\"restart\"}") == -1)
+				abort();
+			title[nj++] = "service clamav_freshclam restart";
+		}
+		sec_jobs(json, title, nj);
+		free(copy);
+		return (true);
+	}
 	if (strcmp(form, "sec-proxy") != 0 && strcmp(form, "sec-ids") != 0)
 		return (false);
+	if (strcmp(form, "sec-proxy") == 0 && (jstr(f, "allow") == NULL || jstr(
+	    f, "allow")[0] == '\0') && (jstr(f, "allow_pfx") == NULL || jstr(f,
+	    "allow_pfx")[0] == '\0')) {
+		toast(true, "Who may use it: networks, or a prefix list");
+		return (true);
+	}
 	ids = strcmp(form, "sec-ids") == 0;
 	list = specs_but(ids, jstr(f, "orig") != NULL && jstr(f,
 	    "orig")[0] != '\0' ? jstr(f, "orig") : NULL);
@@ -722,8 +962,13 @@ secpage_form(const char *form, const ucl_object_t *f)
 		ucl_object_insert_key(o, words(jstr(f, "listen")), "listen", 0,
 		    false);
 		put_num(o, "port", jstr(f, "port"));
-		ucl_object_insert_key(o, words(jstr(f, "allow")), "allow", 0,
-		    false);
+		{
+			char	*all = with_list(jstr(f, "allow"), jstr(f,
+			    "allow_pfx"));
+
+			ucl_object_insert_key(o, words(all), "allow", 0, false);
+			free(all);
+		}
 		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f, "mode") !=
 		    NULL ? jstr(f, "mode") : "sni"), "mode", 0, false);
 		ucl_object_insert_key(o, words(jstr(f, "deny")), "deny", 0,
@@ -734,8 +979,12 @@ secpage_form(const char *form, const ucl_object_t *f)
 	} else {
 		ucl_object_insert_key(o, words(jstr(f, "interfaces")),
 		    "interfaces", 0, false);
-		ucl_object_insert_key(o, words(jstr(f, "home")), "home", 0,
-		    false);
+		{
+			char	*hm = with_list(jstr(f, "home"), jstr(f, "home_pfx"));
+
+			ucl_object_insert_key(o, words(hm), "home", 0, false);
+			free(hm);
+		}
 		ucl_object_insert_key(o, ucl_object_frombool(jbool(f,
 		    "ruleset")), "ruleset", 0, false);
 		if (jstr(f, "rules") != NULL && jstr(f, "rules")[0] != '\0')
@@ -868,26 +1117,78 @@ secpage_action(const char *act, const char *arg, const char *value)
 		save(false, list);
 		return (true);
 	}
-	if (strcmp(act, "sec-freshclam") == 0) {
+	if (strcmp(act, "sec-install") == 0) {
 		struct server	*s;
-		char		*json, title[64];
+		char		*json, *it2, *w, *copy, *q, *t;
+		bool		 first;
 
-		for (i = 0; i < (size_t)app.nservers; i++)
-			if (strcmp(app.servers[i].id, sec.sid) == 0)
-				break;
-		if (i == (size_t)app.nservers)
+		/* Only the packages the tabs name: nothing else is sent. */
+		if ((s = sec_server()) == NULL || (strcmp(arg, "squid") != 0 &&
+		    strcmp(arg, "clamav") != 0 && strcmp(arg, "suricata") != 0 &&
+		    strcmp(arg, "c-icap c-icap-modules clamav") != 0))
 			return (true);
-		s = &app.servers[i];
-		snprintf(title, sizeof(title), "service clamav_freshclam %s",
-		    strcmp(arg, "restart") == 0 ? "restart" : "start");
-		if (asprintf(&json, "{\"kind\":\"service-action\",\"service\":"
-		    "\"clamav_freshclam\",\"action\":\"%s\"}", strcmp(arg,
-		    "restart") == 0 ? "restart" : "start") == -1)
+		if ((json = strdup("{\"kind\":\"pkg-install\",\"packages\":["))
+		    == NULL || (copy = strdup(arg)) == NULL)
 			abort();
-		job_send(s, json, title, JOB_SERVICE, "clamav_freshclam");
+		first = true;
+		for (it2 = copy; (w = strsep(&it2, " ")) != NULL; ) {
+			q = json_quote(w);
+			if (asprintf(&t, "%s%s%s", json, first ? "" : ",", q) ==
+			    -1)
+				abort();
+			free(json);
+			free(q);
+			json = t;
+			first = false;
+		}
+		free(copy);
+		if (asprintf(&t, "%s]}", json) == -1)
+			abort();
+		free(json);
+		{
+			char	title[96];
+
+			snprintf(title, sizeof(title), "pkg install %s", arg);
+			job_send_host(s, t, title, JOB_SECURITY, "");
+		}
+		return (true);
+	}
+	if (strcmp(act, "sec-freshclam") == 0) {
+		const ucl_object_t	*cl = jget(sec.state, "clamav");
+		char			*json[3];
+		const char		*title[3];
+		int			 n = 0;
+
+		/* A configuration it can run with first, the default
+		 * mirrors in it; then enabled, so that rc starts it, and
+		 * (re)started: jobs the host runs in order. */
+		if (jget(cl, "conf") != NULL && !jbool(cl, "conf")) {
+			json[n] = mirrors_job(default_mirrors,
+			    nitems(default_mirrors));
+			title[n++] = "freshclam.conf written, its mirrors the "
+			    "defaults";
+		}
+		if (asprintf(&json[n], "{\"kind\":\"service-action\",\"service"
+		    "\":\"clamav_freshclam\",\"action\":\"enable\"}") == -1)
+			abort();
+		title[n++] = "clamav_freshclam enabled at boot";
+		if (asprintf(&json[n], "{\"kind\":\"service-action\",\"service"
+		    "\":\"clamav_freshclam\",\"action\":\"restart\"}") == -1)
+			abort();
+		title[n++] = "service clamav_freshclam restart";
+		sec_jobs(json, title, n);
+		(void)arg;
 		return (true);
 	}
 	return (false);
+}
+
+/* After a plugin was installed: the host read again. */
+void
+secpage_refresh(void)
+{
+
+	sec_load();
 }
 
 /* Each tick: the page's host read again, every 10 s while it is shown

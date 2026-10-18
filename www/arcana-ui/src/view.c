@@ -273,6 +273,15 @@ topbar(struct html *h)
 		    app.notify_off ? "off, press to turn on" : "on, press to "
 		    "turn off" : app.notify == 2 ? "blocked in the browser's "
 		    "settings" : "off, press to allow");
+	if (app.user[0] != '\0') {
+		h_raw(h, "<span class=\"dim who-user\" title=\"Signed in as\">");
+		h_txt(h, app.user);
+		if (app.console_role[0] != '\0') {
+			h_raw(h, " · ");
+			h_txt(h, app.console_role);
+		}
+		h_raw(h, "</span>");
+	}
 	h_raw(h, "<button class=\"ghost\" data-act=\"logout\">Log out</button>"
 	    "</div></header>");
 }
@@ -777,16 +786,22 @@ stage(struct html *h)
 		    "title=\"Every OSPF neighbour of every BIRD in the fleet\">"
 		    "OSPF</button><button class=\"tab%s\" data-act=\"netsect-tab\" "
 		    "data-arg=\"bfd\" title=\"Every BFD session of every BIRD in "
-		    "the fleet\">BFD</button></nav>",
+		    "the fleet\">BFD</button><button class=\"tab%s\" data-act=\""
+		    "netsect-tab\" data-arg=\"lists\" title=\"Prefix lists kept by the "
+		    "console, for ipfw tables, BIRD sets and SD-WAN zones on any "
+		    "host\">Prefix lists</button></nav>",
 		    app.netsect == NETSECT_MAP ? " on" : "", app.netsect ==
 		    NETSECT_GROUPS ? " on" : "", app.netsect == NETSECT_TRACE ?
 		    " on" : "", app.netsect == NETSECT_BGP ? " on" : "",
 		    app.netsect == NETSECT_OSPF ? " on" : "", app.netsect ==
-		    NETSECT_BFD ? " on" : "");
+		    NETSECT_BFD ? " on" : "", app.netsect == NETSECT_PREFIXES ?
+		    " on" : "");
 		if (app.netsect == NETSECT_GROUPS)
 			view_ecmp(h);
 		else if (app.netsect == NETSECT_TRACE)
 			view_traceroute(h);
+		else if (app.netsect == NETSECT_PREFIXES)
+			view_pfxlists(h);
 		else if (app.netsect >= NETSECT_BGP) {
 			h_raw(h, "<div class=\"rtview\">");
 			view_routing(h);
@@ -1191,7 +1206,7 @@ dock(struct html *h)
 {
 	const struct op	*o;
 	char		 dur[32];
-	int		 i;
+	int		 i, n;
 
 	h_fmt(h, "<section class=\"dock%s\">%s<header data-act=\"dock\">"
 	    "<span class=\"label\">%s</span><div class=\"recent\">",
@@ -1203,8 +1218,11 @@ dock(struct html *h)
 	 * One picked opens below.  Open, the list below has them all, so
 	 * the strip goes.
 	 */
-	for (i = 0; !app.dock_open && i < app.nops && i < 6; i++) {
+	for (i = 0, n = 0; !app.dock_open && i < app.nops && n < 6; i++) {
 		o = &app.ops[i];
+		if (o->quiet)
+			continue;
+		n++;
 		h_fmt(h, "<span class=\"last o-%s%s\" data-act=\"trace\" "
 		    "data-arg=\"%d\"", op_class(o), app.dock_open &&
 		    o->id == app.trace_op ? " selected" : "", o->id);
@@ -1225,6 +1243,18 @@ dock(struct html *h)
 		}
 		h_raw(h, "</small></span>");
 	}
+	/* The page's own polls, counted apart; shown in the open list on
+	 * request, dimmed. */
+	for (i = 0, n = 0; i < app.nops; i++)
+		if (app.ops[i].quiet)
+			n++;
+	if (n > 0)
+		h_fmt(h, "<button class=\"ghost small quiet%s\" data-act=\""
+		    "quiet-toggle\" title=\"Reads the page made by itself, "
+		    "timers and refreshes after a job: %s\">%d in the "
+		    "background</button>", app.show_quiet ? " on" : "",
+		    app.show_quiet ? "listed below, dimmed; press to hide" :
+		    "press to list them below", n);
 	h_raw(h, "</div>");
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"queue\" title=\""
 	    "Changes are held in a queue until you press Run, and sent "
@@ -1256,10 +1286,12 @@ dock(struct html *h)
 		}
 		for (i = 0; i < app.nops; i++) {
 			o = &app.ops[i];
-			h_fmt(h, "<li class=\"op o-%s%s\" data-act=\"trace\" "
+			if (o->quiet && !app.show_quiet)
+				continue;
+			h_fmt(h, "<li class=\"op o-%s%s%s\" data-act=\"trace\" "
 			    "data-arg=\"%d\"><i class=\"led\"></i>",
 			    op_class(o), o->id == app.trace_op ? " selected" :
-			    "", o->id);
+			    "", o->quiet ? " o-quiet" : "", o->id);
 			{
 				time_t		when = (time_t)(o->started / 1000);
 				struct tm	tm;
@@ -1298,9 +1330,10 @@ dock(struct html *h)
 				h_fmt(h, "<button class=\"icon\" "
 				    "data-act=\"op-cancel\" data-arg=\"%d\" "
 				    "title=\"%s\">×</button>", o->id, o->job > 0 ?
-				    "Take the job out of the host's queue, if it "
-				    "has not started" : "Stop waiting for this; "
-				    "the host may still finish it");
+				    "Take the job back: out of the host's queue "
+				    "if it has not started; a safe change waiting "
+				    "to be confirmed is undone now" : "Stop waiting "
+				    "for this; the host may still finish it");
 			h_raw(h, "</li>");
 		}
 		if (app.nops == 0)
@@ -1341,8 +1374,7 @@ static const struct {
 } settabs[] = {
 	{ SET_LOOK, "look", "Look" },
 	{ SET_NOTIFY, "notify", "Notifications" },
-	{ SET_TOKENS, "tokens", "API tokens" },
-	{ SET_KEYS, "keys", "Sign-in keys" },
+	{ SET_AAA, "aaa", "AAA" },
 	{ SET_CONSOLE, "console", "Console" },
 	{ SET_UPDATE, "update", "Update" },
 	{ SET_CA, "ca", "Certificate authority" },
@@ -1469,7 +1501,7 @@ set_notify(struct html *h)
 	    "");
 }
 
-static void
+void
 set_tokens(struct html *h)
 {
 	const ucl_object_t	*k;
@@ -1539,7 +1571,7 @@ set_tokens(struct html *h)
 	    "token-new\">Make a token</button></div>");
 }
 
-static void
+void
 set_keys(struct html *h)
 {
 	const ucl_object_t	*k;
@@ -1548,10 +1580,11 @@ set_keys(struct html *h)
 	/* The keys are not shown to a session an API token opened, nor
 	 * added from one: it says so, rather than show none. */
 	if (app.by_token) {
-		h_raw(h, "<p class=\"notice keys-token\">This session was opened "
-		    "with an API token, so the keys that sign in are neither "
-		    "listed nor added here. Sign out, and sign in with a "
-		    "security key or a passkey to see and manage them.</p>");
+		h_fmt(h, "<p class=\"notice keys-token\">This session was opened "
+		    "%s, so the keys that sign in are neither listed nor added "
+		    "here. Sign out, and sign in with a security key or a "
+		    "passkey to see and manage them.</p>", app.by_ldap ? "by a "
+		    "directory's user" : "with an API token");
 		return;
 	}
 	h_raw(h, "<form data-form=\"add-key\" class=\"set-form\"><ul class=\""
@@ -1581,6 +1614,28 @@ set_keys(struct html *h)
 	    "from there.</p><label>Add a spare key<input name=\"name\" "
 	    "placeholder=\"Spare YubiKey, or Pixel\" maxlength=\"64\"></label>"
 	    "<div class=\"actions\"><button class=\"primary\"%s>Register key"
+	    "</button></div></form>", app.modal_busy ? " disabled" : "");
+}
+
+/* Sign-in by a directory: its users are let in with the roles of the
+ * user of their name here, or as a token's session is. */
+void
+set_ldap(struct html *h)
+{
+
+	if (app.settings == NULL) {
+		h_raw(h, "<div class=\"loader\"></div>");
+		return;
+	}
+	h_raw(h, "<form data-form=\"settings-ldap\" class=\"settings set-form "
+	    "mail\"><p class=\"dim\">A directory's users sign in with their "
+	    "user name and password: the console looks the user up under the "
+	    "base, binds as the entry with the password, and, when a group is "
+	    "named, admits its members alone. Always over TLS. Such a "
+	    "session does what a token's may: not the console's settings, "
+	    "keys, tokens or CA.</p>");
+	settings_fields(h, SETG_LDAP);
+	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
 	    "</button></div></form>", app.modal_busy ? " disabled" : "");
 }
 
@@ -2085,10 +2140,19 @@ view_settings(struct html *h)
 		    settabs[i].title);
 	h_raw(h, "</nav><div class=\"set-body\">");
 	if (app.by_token)
-		h_raw(h, "<div class=\"notice warn\">Signed in with an API "
-		    "token: the console's settings, its sign-in keys, tokens "
-		    "and CA are shown and changed only to one signed in with "
-		    "a security key or a passkey.</div>");
+		h_fmt(h, "<div class=\"notice warn\">Signed in %s: the console's "
+		    "settings, its sign-in keys, tokens and CA are shown and "
+		    "changed only to one signed in with a security key or a "
+		    "passkey.</div>", app.by_ldap ? "by a directory's user" :
+		    "with an API token");
+	else if (app.user[0] != '\0' && strcmp(app.console_role, "owner") != 0) {
+		h_raw(h, "<div class=\"notice warn\">Signed in as <b>");
+		h_txt(h, app.user);
+		h_fmt(h, "</b>, %s of this console: its settings, sign-in keys, "
+		    "tokens, CA and users are the owner's; your own keys are "
+		    "yours.</div>", strcmp(app.console_role, "operator") == 0 ?
+		    "an operator" : "a member");
+	}
 	if (app.modal_error[0] != '\0' && app.modal == MODAL_NONE) {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, app.modal_error);
@@ -2098,11 +2162,8 @@ view_settings(struct html *h)
 	case SET_NOTIFY:
 		set_notify(h);
 		break;
-	case SET_TOKENS:
-		set_tokens(h);
-		break;
-	case SET_KEYS:
-		set_keys(h);
+	case SET_AAA:
+		set_aaa(h);
 		break;
 	case SET_CONSOLE:
 		set_console(h);
@@ -2299,12 +2360,21 @@ modal(struct html *h)
 	case MODAL_SD_MAP:
 	case MODAL_SD_LIMITER:
 	case MODAL_SD_TOPO:
+	case MODAL_SD_NLIST:
+	case MODAL_SD_GROUP:
 	case MODAL_SD_SECPOL:
 	case MODAL_SD_LIST:
 	case MODAL_SD_IDENTITY:
 	case MODAL_SD_CONFIG:
 		if (!sdwan_modal(h))
 			return;
+		break;
+	case MODAL_USER:
+	case MODAL_ROLE:
+		if (!user_modal(h))
+			return;
+		h_raw(h, "<div class=\"actions\"><button class=\"primary\">Keep"
+		    "</button></div>");
 		break;
 	case MODAL_BIRD_PROTO:
 	case MODAL_BIRD_BLOCK:
@@ -2618,6 +2688,8 @@ modal(struct html *h)
 		case MODAL_SD_MAP:
 		case MODAL_SD_LIMITER:
 		case MODAL_SD_TOPO:
+		case MODAL_SD_NLIST:
+		case MODAL_SD_GROUP:
 			if (!sdwan_blocked())
 				h_raw(h, "<button class=\"primary\">Keep</button>");
 			break;
@@ -2818,6 +2890,18 @@ auth_screen(struct html *h)
 		    "the console, live. It reconnects by itself.</p>"
 		    "<button class=\"ghost\" data-act=\"retry\">Try "
 		    "again</button></div>");
+	} else if (app.screen == SCREEN_ENROL && app.invite_token[0] != '\0') {
+		/* Invited (Settings, Users): the first key of a user's. */
+		h_raw(h, "<form data-form=\"enrol\" class=\"enrol\">"
+		    "<p>You were invited to this console. Name your security "
+		    "key or passkey, then touch it: it signs you in from now "
+		    "on.</p><input type=\"hidden\" name=\"token\"");
+		h_attr(h, "value", app.invite_token);
+		h_raw(h, "><label>Key name<input name=\"name\" placeholder=\""
+		    "YubiKey 5C\" maxlength=\"64\" autofocus></label>");
+		h_fmt(h, "<button class=\"primary\"%s>%s</button></form>",
+		    app.auth_busy ? " disabled" : "", app.auth_busy ?
+		    "Touch your key…" : "Register security key");
 	} else if (app.screen == SCREEN_ENROL) {
 		h_raw(h, "<form data-form=\"enrol\" class=\"enrol\">"
 		    "<p>No security key is registered yet. The console wrote a "
@@ -2841,6 +2925,19 @@ auth_screen(struct html *h)
 		h_fmt(h, "<button class=\"ghost\" data-act=\"login-passkey\"%s "
 		    "title=\"A passkey on this device, or on a phone nearby\">"
 		    "Use a passkey</button>", app.auth_busy ? " disabled" : "");
+		/* A directory's user, where the console asks one. */
+		if (app.ldap_on)
+			h_fmt(h, "<form data-form=\"login-ldap\" class=\"login-ldap"
+			    "\"><label>User<input name=\"user\" required "
+			    "autocomplete=\"username\" spellcheck=\"false\" "
+			    "maxlength=\"64\"></label><label>Password<input type=\""
+			    "password\" name=\"password\" required autocomplete=\""
+			    "current-password\"></label><button class=\"ghost\"%s>"
+			    "Sign in with the directory</button><p class=\"dim\">"
+			    "Your LDAP user and password. Signed in so, the "
+			    "console's own settings, sign-in keys, tokens and CA "
+			    "stay with a security key.</p></form>", app.auth_busy ?
+			    " disabled" : "");
 		/* No key at hand: an API token that writes. */
 		h_fmt(h, "<details class=\"login-token\"><summary>Sign in with "
 		    "an API token</summary><form data-form=\"login-token\">"

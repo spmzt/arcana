@@ -231,6 +231,43 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
 
+  /api/auth/login/ldap:
+    post:
+      tags: [auth]
+      summary: Log in as a directory's user
+      description: |
+        When Settings name an LDAP directory (ldap_url): the user is
+        looked up under the base by the user attribute, as the reader
+        Settings name or anonymously, and the console binds as the
+        entry found with the password, over TLS always (ldaps://, or
+        StartTLS on ldap://; the certificate checked).  With a group
+        set, its members alone (member, uniqueMember or memberUid).
+        The session is limited as a token's: not the console's
+        settings, sign-in, push, enrolment, tokens or CA.  The status
+        says by_ldap, and ldap whether a directory is set.  An empty
+        password is refused (400), a wrong one or an unknown user 401
+        without saying which, an outsider 401; after five failures in
+        a minute, 429 for the rest of it.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user, password]
+              properties:
+                user: { type: string, maxLength: 64 }
+                password: { type: string, maxLength: 256 }
+      responses:
+        "200":
+          description: Signed in; the session cookie is set.
+        "401":
+          description: Refused.
+        "404":
+          description: No directory is set up.
+        "429":
+          description: Too many failures this minute.
   /api/auth/login/token:
     post:
       tags: [auth]
@@ -266,10 +303,93 @@ paths:
         "200":
           $ref: "#/components/responses/AuthStatus"
 
+  /api/users:
+    get:
+      tags: [auth]
+      summary: The console's users and roles (owner only)
+      responses:
+        "200": { description: "users, each name, tenant, roles (names), console (what the roles come to), created, keys, invites; roles, each name, console (owner, operator, member), hosts ({id or \"*\": viewer, operator, admin}), users (how many have it)" }
+    post:
+      tags: [auth]
+      summary: Add a user, or replace the one of the name
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                tenant: { type: string, description: the fleet whose hosts alone the user sees; empty for every fleet }
+                roles: { type: array, items: { type: string }, description: names of roles, one at least }
+      responses:
+        "200": { description: "the users and roles" }
+        "409": { description: "the last owner stays one" }
+
+  /api/roles:
+    post:
+      tags: [auth]
+      summary: Add a role, or replace the one of the name
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                console: { type: string, enum: [owner, operator, member] }
+                hosts: { type: object, additionalProperties: { type: string, enum: [viewer, operator, admin] }, description: a role by host id, or "*" for all }
+                ldap_group: { type: string, description: "a directory group's DN: its members get the role as they sign in by LDAP; empty for none" }
+      responses:
+        "200": { description: "the users and roles" }
+        "409": { description: "the change would leave no owner" }
+
+  /api/roles/{name}:
+    put:
+      tags: [auth]
+      summary: Keep the role of the name (as POST /api/roles with it)
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "the users and roles" }
+    delete:
+      tags: [auth]
+      summary: Remove the role; refused while a user has it
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "the users and roles" }
+        "409": { description: "a user has it" }
+
+  /api/users/{name}:
+    put:
+      tags: [auth]
+      summary: Keep the user of the name (as POST /api/users with it: tenant, roles)
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "the users" }
+    delete:
+      tags: [auth]
+      summary: Remove the user, their keys, invitations and sessions
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "the users" }
+        "409": { description: "the last owner stays" }
+
+  /api/users/{name}/invite:
+    post:
+      tags: [auth]
+      summary: Invite the user, a one-time token for their first key, said once, good for a day
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "user, token (inv_...), expires" }
+
   /api/auth/credentials:
     get:
       tags: [auth]
-      summary: The registered keys
+      summary: The registered keys, each with its user; one's own unless the owner
       responses:
         "200": { $ref: "#/components/responses/Credentials" }
         "401": { $ref: "#/components/responses/Error" }
@@ -1174,7 +1294,10 @@ paths:
         key=value: set (enable=yes|no, mode=ids|ips, interface= each,
         divert_port, home_net), conf (file=snort.lua|local.rules, and
         text), update (url, else the last one or Snort's community
-        rules), rule (on=, off= or default= gid:sid). Each is checked by
+        rules; or registered=yes, the registered rules from the address
+        Settings name, with the console's oinkcode put into it here and
+        scrubbed from everything the host writes), rule (on=, off= or
+        default= gid:sid). Each is checked by
         snort -T before it replaces what was there; a running Snort is
         told to reload.
       parameters:
@@ -1555,6 +1678,77 @@ paths:
         "200":
           description: ok and data, or error
         "400": { $ref: "#/components/responses/Error" }
+  /api/prefix-lists:
+    get:
+      tags: [servers]
+      summary: The console's prefix lists
+      description: >-
+        Named lists of IPv4 and IPv6 prefixes kept by the console and
+        used on any host, under lists as name: {description, prefixes}.
+        The forms that take prefixes (an ipfw table's entries, a BIRD
+        set, an SD-WAN zone or list) take a list's in; a change here
+        changes nothing on a host by itself.
+      responses:
+        "200":
+          description: Every list.
+  /api/prefix-lists/{name}:
+    put:
+      tags: [servers]
+      summary: Keep a prefix list
+      description: >-
+        {"description", "prefixes": [...]}: each a.b.c.d/n or x::/n with
+        no host bits, 8192 at most; the name letters, digits, _ and -,
+        32 at most.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Kept; every list, as GET gives them.
+        "400":
+          description: Not a list.
+    delete:
+      tags: [servers]
+      summary: Take a prefix list away
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Gone; every list left.
+  /api/labels:
+    get:
+      tags: [servers]
+      summary: The console's labels on interfaces
+      description: >-
+        A tag of the console's own on an interface of a host, kept by
+        the console (not on the host), under labels as
+        "server/interface": "text".
+      responses:
+        "200":
+          description: Every label.
+  /api/labels/{server}/{interface}:
+    put:
+      tags: [servers]
+      summary: Label an interface
+      description: >-
+        {"label": "text"}, 64 characters at most; empty takes the label
+        away. The reply is every label, as GET gives them.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: interface
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Kept.
+        "400":
+          description: Not a label.
   /api/templates:
     get:
       tags: [settings]
@@ -1909,7 +2103,7 @@ paths:
       tags: [sdwan]
       summary: The remote end points' identities, each with its address and whether it is authorised
       responses:
-        "200": { description: "identities, each swvc, end_point, edge, interface, name, zone, public_key, user, issued, expires, live, address" }
+        "200": { description: "identities, each swvc, end_point, edge, interface, name, zone, group (when in one), public_key, user, issued, expires, live, address" }
     post:
       tags: [sdwan]
       summary: Issue an identity, its key pair made here, the WireGuard configuration answered once
@@ -1922,7 +2116,8 @@ paths:
                 swvc: { type: string }
                 end_point: { type: string }
                 name: { type: string }
-                zone: { type: string }
+                zone: { type: string, description: when in no group }
+                group: { type: string, description: one of the remote end point's groups; the zone is then the group's }
                 user: { type: boolean, description: the name is a sign-in key's }
       responses:
         "200": { description: "name, public_key, config (wg-quick text, shown once), applied, why" }

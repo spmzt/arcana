@@ -698,7 +698,10 @@
 - Asked for on 2026-10-17:
   - A program the kernel sees die of a signal is a fault now (crash,
     with the kernel's reason for no core).  Done 2026-10-17, agent
-    0.136.0.
+    0.136.0.  2026-10-18: BIRD is read one at a time and its tables'
+    routes counted every five minutes at most, "show route table X
+    count" walking the table; the crashes read (arcanactl crashes)
+    lists the cores and gives lldb's backtrace of one.
   - poudriere as a plugin, a Builder page in the side bar with Jails,
     Ports and Bulk tabs, BIRD built WITH_DEBUG from the console.  Done
     2026-10-17, agent 0.137.0, console 0.201.0: the builder operation
@@ -796,7 +799,28 @@
 
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
-    sees and changes which hosts and services.
+    sees and changes which hosts and services.  (Done 2026-10-18 as
+    the user decided: per host with roles, tenants separate fleets.
+    users.c: a user's role
+    on the console (owner, operator, member), on each host or all
+    (viewer, operator, admin), a tenant whose hosts alone it sees;
+    keys belong to users, a user is invited for their first key; the
+    hosts' routes gated in call_new, the stream, transfers, the path
+    finder, labels; Settings, Users.  Roles made their own objects the
+    same day, as the user asked: a user has roles, a role says what; a
+    Settings AAA tab holds users, roles, keys, the directory and
+    tokens.  LDAP groups mapped to roles the same day: a role's
+    directory group gives it to the group's members at sign-in, the
+    console keeping a user of theirs (source ldap) in step.  Not done:
+    groups of users.)
+  - A sysctl task cannot be cancelled from the task list (the user,
+    2026-10-18): the dock's × on a running sysctl read/job does nothing
+    or the console refuses; find which (op-cancel in the UI, DELETE
+    /api/servers/<id>/jobs/<n> → OP_JOB_CANCEL, or a read with no job
+    to cancel) and make cancel work or say why it cannot.  (Done
+    2026-10-18, agent 0.145.1: a sysctl change in safe mode waits to
+    be confirmed, its job "unconfirmed", and cancel answered "the job
+    has finished"; it now undoes the change at once.)
   - Mail notifications of faults, jobs and runs. (Done 2026-10-12:
     Settings, Notifications, By mail; one worker reads each host's
     events, the agent's job ends among them now, and the console's
@@ -828,7 +852,13 @@
     renews it, and finishing waits for it.)
   - A session's lifetime set in Settings. (Done 2026-10-12: idle
     minutes and the longest, in hours.)
-  - LDAP for the console's sign-in.
+  - LDAP for the console's sign-in.  (Done 2026-10-18: Settings, Sign-in
+    keys, By LDAP: a directory by ldaps:// or ldap:// with StartTLS,
+    the user looked up under a base by an attribute as a reader or
+    anonymously and bound as with the password, a group's members
+    alone when one is named; LDAPv3 written in the console itself,
+    no library; such a session limited as a token's; five failures a
+    minute throttled.  Against a real slapd in console_test:ldap.)
   - The base system's ssh, further: the banner, the users let in,
     authorized keys, host keys and their fingerprints, host keys
     signed by a CA key.
@@ -847,9 +877,16 @@
     updates; local.rules, snort.lua, HOME_NET and rc.conf's settings;
     its alerts; each change checked by snort -T, a running one
     reloaded.  Against the real Snort 3.12 in the verified list
-    (agent_root_test:snort_live).  Not done: registered rules by an
-    oinkcode, a secret wanted kept as one; ask.)
+    (agent_root_test:snort_live).  Registered rules done 2026-10-18:
+    the oinkcode a secret of the console's (Settings, Console, with
+    the rules' address), put into the job's address by the console and
+    scrubbed by the agent from the title, the trace and source.json.)
   - The console clustered; disaster recovery across console clusters.
+    (Decided 2026-10-18: active/active, a database only where
+    required.  The design to choose from is docs/notes/console-cluster.md:
+    shared NFS, PostgreSQL, or the console's own replication over
+    cblink, the last recommended in two steps, leader election with
+    forwarding first, the stores replicated after.  Not started.)
   - Agents in an HA pair on identical hardware and ports (CARP, the
     state shared), with CARP on its own for a host.  (CARP for a host
     done 2026-10-13: Network, CARP; vhids read and set through carp's
@@ -857,7 +894,11 @@
     two vnet jails, agent_root_test:carp.  Not done: the pair's state
     shared; ipfw has no pfsync, which is pf's: the user's to decide.)
   - VPN groups and road warrior setups of several clients, policies
-    and pools.
+    and pools.  (Done 2026-10-18: a remote end point's `groups`, each
+    a zone, a pool and the groups reached; an identity issued into
+    one; the plan keeps groups that do not reach each other apart on
+    the edge.  Policies mean both, as the user said: the zone's rules
+    the members get, and which group reaches which.)
   - A Devices page of its own, a table of the hosts (sorted and
     filtered), the rail's host list moved there. (The page done
     2026-10-12.  The side bar's hosts and jails taken away 2026-10-13,
@@ -867,7 +908,10 @@
     SD-WAN tunnels by ipfw tcp-setmss, an interface's, or the agent's
     links?), labels on interfaces (a console-side tag, or the
     interface's description?), prefix lists (used by what: ipfw
-    tables, BIRD filters, SD-WAN zones?).
+    tables, BIRD filters, SD-WAN zones?).  (Answered 2026-10-18 and
+    done: MSS by ipfw tcp-setmss on SD-WAN tunnels, labels a
+    console-side tag, prefix lists kept by the console and picked in
+    ipfw, BIRD, SD-WAN, Snort, Suricata, the proxy and IPsec forms.)
   - A certificates tab per host, by certctl and OpenSSL. (Done
     2026-10-12: trusted and untrusted, read with OpenSSL; a CA given,
     one distrusted and trusted again, kept where certctl rehash finds
@@ -886,7 +930,11 @@
     log logdst bpf, each a tap ipfw<n> (FreeBSD 16), made and listed;
     capture by tcpdump from any of them, the lines and the pcap.
     Verified in a vnet jail with devfs's bpf unhidden.)
-  - Labels on interfaces, for the UCS they carry.
+  - Labels on interfaces, for the UCS they carry.  (Done 2026-10-18 as
+    the console's own tags, as the user chose: labels.json by
+    server/interface, GET /api/labels and PUT /api/labels/<server>/
+    <interface>; typed in place in the Interfaces table, under the
+    name beside the host's own description, found by the filter.)
   - BIRD's OSPF, BFD and BGP each a tab of its own, with forms.
     (Done 2026-10-16: a host's BIRD has All, BGP, OSPF and BFD tabs;
     each kind made and changed by a form, read back from the text only
@@ -903,7 +951,11 @@
   - NDP and ARP entries added and deleted by hand, temporary or
     permanent. (Done 2026-10-12: the neighbour job, kept as rc.conf's
     static pairs; verified in a vnet jail with arp(8) and ndp(8).)
-  - MSS clamping on transports.
+  - MSS clamping on transports.  (Done 2026-10-18, by ipfw as the user
+    chose: a UCS's tunnel takes mss, auto or a number; the plan adds
+    tcp-setmss rules for the tunnels over it on each edge, IPv4 and
+    IPv6 each, with ipfw_pmod loaded and kept; auto is 1500 less the
+    tunnel's overhead, IPsec's and an IPv6 underlay's.)
   - QoS on ipfw by forms: pipes, schedulers, queues, their masks and
     the rules that use them, beyond what SD-WAN makes.
     (Done 2026-10-12: the Firewall tab's QoS; dummynet read as
@@ -917,14 +969,23 @@
     the last is checked to be only newer.)
   - Every table exported as CSV. (Done 2026-10-12: ⤓ in every
     table's head, the rows as shown.)
-  - Prefix lists kept by the console and used on any host.
+  - Prefix lists kept by the console and used on any host.  (Done
+    2026-10-18: Network, Prefix lists; GET/PUT/DELETE
+    /api/prefix-lists; picked in an ipfw table's entry form (an entry
+    a prefix), a BIRD set's form, an SD-WAN zone's and list's, their
+    prefixes taken in when kept, as the user chose.)
   - SD-WAN policies by named lists (MEF 70.2, no vendor's model):
     lists of UCS, of prefixes (as the zones hold them), of edges, of
     UCS End Points (the edge's underlay address, the UCS, the tunnel
     kind and a preference) and of services, kept once and called by
     an AFS match or a policy's criteria; and the policy made in
     three steps: the lists, then the flows (the AFS) and the policy
-    they get, then the policy map at each SWVC End Point.
+    they get, then the policy map at each SWVC End Point.  (Done 2026-10-18: the document's lists, of
+    prefixes, services, UCSs, edges and UCS End Points with a
+    preference; named by a flow's src-list, dst-list, sdst-list and
+    service-list, a zone's prefix-list, a policy's ucs-list,
+    edge-list and ucs-end-point-list; a prefix list an ipfw table on
+    each edge; the Services tab's Lists and the forms' pickers.)
 - WireGuard, done 2026-10-12: a client made from the page (its
   configuration and QR code, the key pair made by the console and kept
   nowhere), with a preshared key (a job's preshared-key, given to wg in

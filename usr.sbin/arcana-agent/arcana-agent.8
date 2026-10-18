@@ -554,7 +554,9 @@ for the client to confirm it; reaching the daemon again is the point.
 Without that within the wait
 .Pq Fl w , 60 seconds
 the daemon undoes the change, as it also does when it is stopped while
-waiting: an address is put back with the prefix length it had, an
+waiting, or when the job is cancelled while it waits
+.Pq job-cancel :
+an address is put back with the prefix length it had, an
 interface brought back up or down, a route deleted or added again.
 .Sh BUILDS
 A client may ask for

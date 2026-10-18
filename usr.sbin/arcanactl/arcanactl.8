@@ -248,6 +248,26 @@ variables
 a port's
 .Pq jail= ports= set= origin= and an on= or off= for each, or reset=yes .
 Each is a job.
+.It Cm crashes Op Cm backtrace Ar core Op Ar program
+The cores the kernel dumped where
+.Va kern.corefile
+says
+.Pq Xr core 5 ,
+and in
+.Pa / ,
+a daemon's working directory, each with its program, pid, size and
+time, and what kept a directory from being read; with
+.Cm backtrace ,
+every thread's backtrace of one and its signal's information, as
+.Xr lldb 1
+reads the core with its program (named, or found by the core's name),
+or
+.Xr gdb 1
+when lldb cannot.
+A SIGBUS whose code is
+.Dv BUS_OOMERR
+was a page fault the kernel found no memory for.
+Nothing is changed.
 .It Cm snort Oo Cm list | Cm rules | Cm conf Cm snort.lua Ns | Ns Cm local.rules Ar file | Ar verb Oo Ar key Ns = Ns Ar value ... Oc Oc
 Snort 3, the host's IDS/IPS, a plugin run by Arcana's
 .Xr rc 8
@@ -285,6 +305,23 @@ and
 Each change is checked by
 .Nm snort Fl T
 before it replaces what was there, and a running Snort reloads.
+.It Cm clamav Cm mirrors Ar mirror ...
+ClamAV's
+.Xr freshclam 1 :
+writes the
+.Li DatabaseMirror
+lines of
+.Pa freshclam.conf ,
+one for each
+.Ar mirror
+in the order given (a host name, or an http or https URL), in place of
+the ones there were; a
+.Pa freshclam.conf
+not there yet is made from the port's sample, without its
+.Li Example
+line.
+A running freshclam takes them when it is restarted.
+A job.
 .It Cm cert Oo Cm list | Cm add Ar name file | Cm remove Ar name | Cm trust Ar file | Cm untrust Ar file | Cm rehash Oc
 The certificates OpenSSL trusts, of the host or of
 .Fl j Ns 's

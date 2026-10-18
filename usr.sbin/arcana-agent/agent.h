@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.142.0"
+#define	ARCANA_AGENT_VERSION	"0.146.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -57,6 +57,7 @@
 #define	PATH_IFMCSTAT_BIN	"/usr/sbin/ifmcstat"
 #define	PATH_SNORT_BIN		"/usr/local/bin/snort"
 #define	PATH_SNORT_ETC		"/usr/local/etc/snort"
+#define	PATH_FRESHCLAM_CONF	"/usr/local/etc/freshclam.conf"
 #define	PATH_SNORT_LOG		"/var/log/snort"
 #define	PATH_POUDRIERE_ETC	"/usr/local/etc"
 #define	PATH_CICAP_MODULES	"/usr/local/lib/c_icap"
@@ -130,6 +131,7 @@ struct opts {
 	const char	*snort_bin;	/* snort: IDS/IPS, a plugin */
 	const char	*snort_etc;	/* where snort.lua and its rules are */
 	const char	*snort_log;	/* its pid file and alert_json.txt */
+	const char	*freshclam_conf; /* ClamAV's freshclam.conf, its mirrors */
 	const char	*poudriere_etc;	/* where poudriere.conf and poudriere.d are */
 	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;
@@ -342,9 +344,21 @@ int		 do_poudriere_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 char		*poudriere_title(const struct arc_job_spec *);
 
+/* gula/crashes.c: the cores dumped, and a backtrace of one. */
+struct arc_crashes_rsp;
+void		 do_crashes(struct work *, const char *const *, size_t,
+		    struct arc_crashes_rsp *);
+
 /* luxuria/snort.c: Snort 3, run by arcana_snort, its rules kept. */
 struct arc_snort_rsp;
 const char	*snort_check(const struct arc_job_spec *);
+extern const char snort_rc_text[];	/* snort_rc.c, made by the Makefile */
+void		 snort_rc_install(struct work *);
+/* luxuria/clamav.c: freshclam's mirrors. */
+const char	*clamav_check(const struct arc_job_spec *);
+char		*clamav_title(const struct arc_job_spec *);
+int		 do_clamav_job(struct work *, const struct arc_job_spec *,
+		    const char **);
 int		 do_snort_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 char		*snort_title(const struct arc_job_spec *);
@@ -558,6 +572,7 @@ void		 sdwan_dns_json(struct work *, struct ucl_object_s *);
 int		 do_sdwan_proxy(struct work *, const char *, const char **);
 void		 sdwan_proxy_start(void);
 void		 sdwan_proxy_json(struct work *, struct ucl_object_s *);
+void		 clamav_mirrors_json(struct ucl_object_s *);
 void		 security_specs(const char *, struct ucl_object_s *, const char *);
 int		 do_sdwan_ids(struct work *, const char *, const char **);
 int		 do_notify(struct work *, const char *, const char *,

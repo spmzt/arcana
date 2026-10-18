@@ -598,6 +598,12 @@ api_transfers(struct http_request *req)
 		ucl_object_unref(body);
 		return (reply_error(req, 404, "not_found", "no such server"));
 	}
+	/* Both hosts the user's to change (users.c). */
+	if (!host_allowed(req, from, true, false) || !host_allowed(req, to,
+	    true, false)) {
+		ucl_object_unref(body);
+		return (KORE_RESULT_OK);
+	}
 	if (strcmp(from, to) == 0) {
 		ucl_object_unref(body);
 		return (reply_error(req, 400, "invalid", "two hosts: on one, "

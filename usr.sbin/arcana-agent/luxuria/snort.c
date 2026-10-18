@@ -176,11 +176,41 @@ url_ok(const char *s)
 	    7) == 0 || strncmp(s, "file:///", 8) == 0);
 }
 
+/*
+ * A rules address with its oinkcode (the console's secret, put in the
+ * query) hidden: what is written anywhere, the title, the trace,
+ * source.json, has it as oinkcode=... and no more.
+ */
+static const char *
+url_shown(struct work *w, const char *url)
+{
+	const char	*p, *e;
+
+	if (url == NULL || (p = strstr(url, "oinkcode=")) == NULL)
+		return (url);
+	e = p + 9 + strcspn(p + 9, "&");
+	return (wfmt(w, "%.*s...%s", (int)(p + 9 - url), url, e));
+}
+
+/* The same, into a buffer of the caller's. */
+static const char *
+url_shown_buf(const char *url, char *buf, size_t len)
+{
+	const char	*p, *e;
+
+	if (url == NULL || (p = strstr(url, "oinkcode=")) == NULL)
+		return (url);
+	e = p + 9 + strcspn(p + 9, "&");
+	snprintf(buf, len, "%.*s...%s", (int)(p + 9 - url), url, e);
+	return (buf);
+}
+
 const char *
 snort_check(const struct arc_job_spec *sp)
 {
 	const char	*v, *eq;
-	size_t		 i;
+	size_t		 i, nif;
+	bool		 anyif;
 
 	if (sp->jail != NULL && sp->jail[0] != '\0')
 		return ("Snort is the host's: arcana_snort runs it there");
@@ -193,6 +223,8 @@ snort_check(const struct arc_job_spec *sp)
 		if ((eq = strchr(sp->names.v[i], '=')) == NULL ||
 		    eq == sp->names.v[i])
 			return ("the words of a snort job are key=value");
+	nif = 0;
+	anyif = false;
 	if (strcmp(sp->verb, "set") == 0) {
 		for (i = 0; i < sp->names.n; i++) {
 			v = sp->names.v[i];
@@ -207,7 +239,10 @@ snort_check(const struct arc_job_spec *sp)
 			} else if (strncmp(v, "interface=", 10) == 0) {
 				if (v[10] != '\0' && !valid_ifname(v + 10))
 					return ("an interface= is an "
-					    "interface's name");
+					    "interface's name, or any");
+				if (strcmp(v + 10, "any") == 0)
+					anyif = true;
+				nif++;
 			} else if (strncmp(v, "divert_port=", 12) == 0) {
 				if (strspn(v + 12, "0123456789") !=
 				    strlen(v + 12) || atoi(v + 12) < 1 ||
@@ -226,6 +261,9 @@ snort_check(const struct arc_job_spec *sp)
 		if (sp->names.n == 0)
 			return ("set changes something: enable, mode, "
 			    "interface, divert_port or home_net");
+		if (anyif && nif > 1)
+			return ("interface=any stands alone: every interface "
+			    "up when Snort starts");
 		return (NULL);
 	}
 	if (strcmp(sp->verb, "conf") == 0) {
@@ -270,11 +308,11 @@ snort_check(const struct arc_job_spec *sp)
 char *
 snort_title(const struct arc_job_spec *sp)
 {
-	char	*t;
+	char	*t, shown[1200];
 
 	if (asprintf(&t, "snort %s%s%s", sp->verb != NULL ? sp->verb : "",
-	    sp->names.n > 0 ? " " : "", sp->names.n > 0 ? sp->names.v[0] :
-	    "") == -1)
+	    sp->names.n > 0 ? " " : "", sp->names.n > 0 ? url_shown_buf(
+	    sp->names.v[0], shown, sizeof(shown)) : "") == -1)
 		return (NULL);
 	return (t);
 }
@@ -874,12 +912,12 @@ sn_fetch(struct work *w, const char *url, const char *path, char *hex,
 	bool		 ok;
 
 	step = step_begin(w, ARC_STEP_KIND_LIB, "libfetch fetchGetURL()",
-	    "%s", url);
+	    "%s", url_shown(w, url));
 	pthread_mutex_lock(&sn_fetch_lock);
 	fetchTimeout = FETCH_WAIT_S;
 	f = fetchGetURL(url, "");
 	if (f == NULL) {
-		*errp = wfmt(w, "%s: %s", url, fetchLastErrString);
+		*errp = wfmt(w, "%s: %s", url_shown(w, url), fetchLastErrString);
 		pthread_mutex_unlock(&sn_fetch_lock);
 		step_end(w, step, false, "%s", *errp);
 		return (-1);
@@ -907,9 +945,9 @@ sn_fetch(struct work *w, const char *url, const char *path, char *hex,
 	ok = close(fd) == 0 && ok;
 	if (!ok) {
 		*errp = total > ARCHIVE_MAX ? wfmt(w, "%s: more than %d MB",
-		    url, ARCHIVE_MAX >> 20) : total == 0 ? wfmt(w, "%s: "
-		    "nothing came", url) : wfmt(w, "%s: %s", url,
-		    strerror(errno));
+		    url_shown(w, url), ARCHIVE_MAX >> 20) : total == 0 ? wfmt(w,
+		    "%s: nothing came", url_shown(w, url)) : wfmt(w, "%s: %s",
+		    url_shown(w, url), strerror(errno));
 		step_end(w, step, false, "%s", *errp);
 		return (-1);
 	}
@@ -976,7 +1014,7 @@ sn_update(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		argv[6] = NULL;
 		if (run_exec(w, argv, &res) != 0) {
 			*errp = wfmt(w, "%s is not an archive tar takes: %s",
-			    url, exec_error(w, &res, "tar"));
+			    url_shown(w, url), exec_error(w, &res, "tar"));
 			goto out;
 		}
 	}
@@ -990,7 +1028,7 @@ sn_update(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	if (gather(w, wfmt(w, "%s/x", tmp), dnew, 4, &n, errp) != 0)
 		goto out;
 	if (n == 0) {
-		*errp = wfmt(w, "%s has no *.rules file", url);
+		*errp = wfmt(w, "%s has no *.rules file", url_shown(w, url));
 		goto out;
 	}
 	/* Checked with these, then they are the downloaded ones. */
@@ -1008,8 +1046,8 @@ sn_update(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	if (rebuild(w, dl, state_load(w), errp) != 0)
 		goto out;
 	src = ucl_object_typed_new(UCL_OBJECT);
-	ucl_object_insert_key(src, ucl_object_fromstring(url), "url", 0,
-	    false);
+	ucl_object_insert_key(src, ucl_object_fromstring(url_shown(w, url)),
+	    "url", 0, false);
 	ucl_object_insert_key(src, ucl_object_fromint((int64_t)time(NULL)),
 	    "updated", 0, false);
 	ucl_object_insert_key(src, ucl_object_fromstring(hex), "sha256", 0,
@@ -1078,6 +1116,59 @@ sn_rule(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	return (0);
 }
 
+/*
+ * The rc.d script arcana_snort, as the agent's build has it (the
+ * Makefile puts arcana_snort.sh into snort_rc.c): written into the
+ * last of the rc directories when it is not there or differs, so that
+ * a host whose agent came by agent-update, the binary alone, has it
+ * too.  Quiet when it cannot be written: the service start then says
+ * what is missing.
+ */
+void
+snort_rc_install(struct work *w)
+{
+	const char	*dirs, *p;
+	char		 dir[PATH_MAX], path[PATH_MAX], tmp[PATH_MAX];
+	char		*have;
+	struct stat	 sb;
+	size_t		 n;
+	ssize_t		 got;
+	int		 fd;
+
+	(void)w;
+	dirs = opts.rc_dirs;
+	p = strrchr(dirs, ':');
+	snprintf(dir, sizeof(dir), "%s", p != NULL ? p + 1 : dirs);
+	if (dir[0] == '\0')
+		return;
+	snprintf(path, sizeof(path), "%s/arcana_snort", dir);
+	n = strlen(snort_rc_text);
+	/* As it is, nothing to do. */
+	if ((fd = open(path, O_RDONLY | O_CLOEXEC)) != -1) {
+		if (fstat(fd, &sb) == 0 && (size_t)sb.st_size == n && (have =
+		    malloc(n + 1)) != NULL) {
+			got = read(fd, have, n);
+			have[got > 0 ? got : 0] = '\0';
+			if (got == (ssize_t)n && memcmp(have, snort_rc_text, n) == 0) {
+				free(have);
+				close(fd);
+				return;
+			}
+			free(have);
+		}
+		close(fd);
+	}
+	snprintf(tmp, sizeof(tmp), "%s.new", path);
+	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0555)) ==
+	    -1)
+		return;
+	if (write(fd, snort_rc_text, n) != (ssize_t)n || fchmod(fd, 0555) != 0 ||
+	    close(fd) != 0 || rename(tmp, path) != 0) {
+		(void)unlink(tmp);
+		return;
+	}
+}
+
 int
 do_snort_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
@@ -1090,6 +1181,7 @@ do_snort_job(struct work *w, const struct arc_job_spec *sp,
 		    "pkg install snort3", opts.snort_bin);
 		return (-1);
 	}
+	snort_rc_install(w);
 	if (strcmp(sp->verb, "set") == 0)
 		return (sn_set(w, sp, errp));
 	if (strcmp(sp->verb, "conf") == 0)
@@ -1268,7 +1360,8 @@ warnings(struct work *w, ucl_object_t *top, const char *mode,
 			    "no interface: pick one"));
 		copy = wstrdup(w, ifs);
 		for (it = copy; (ifn = strsep(&it, " ")) != NULL; )
-			if (ifn[0] != '\0' && !if_exists(w, ifn))
+			if (ifn[0] != '\0' && strcmp(ifn, "any") != 0 &&
+			    !if_exists(w, ifn))
 				ucl_array_append(arr, ucl_object_fromstring(
 				    wfmt(w, "no interface %s here", ifn)));
 	}
@@ -1290,6 +1383,12 @@ do_snort(struct work *w, const char *const *names, size_t nnames,
 	long		 pid;
 	size_t		 i;
 	bool		 with_rules, installed;
+
+	/* The rc.d script, there once Snort is looked at here: an agent
+	 * that came by agent-update brings it in its binary
+	 * (snort_rc_install). */
+	if (access(opts.snort_bin, X_OK) == 0)
+		snort_rc_install(w);
 
 	with_rules = false;
 	for (i = 0; i < nnames; i++)

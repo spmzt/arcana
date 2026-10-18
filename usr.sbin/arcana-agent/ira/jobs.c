@@ -36,6 +36,8 @@ struct qjob {
 	bool			 ok;
 	bool			 begun;		/* has the lock, is at work */
 	bool			 confirmed;	/* a safe change may stay */
+	bool			 rejected;	/* cancelled while unconfirmed:
+						 * undone now, not at the timer */
 	time_t			 confirm_by;	/* or is undone at this time */
 	const char		*undo_address;	/* in w's pool, or NULL */
 	unsigned int		 undo_mtu;	/* if-set: what it was */
@@ -189,6 +191,9 @@ title_of(const struct arc_job_spec *sp)
 		break;
 	case ARC_JOB_KIND_SNORT:
 		rc = (t = snort_title(sp)) != NULL ? 0 : -1;
+		break;
+	case ARC_JOB_KIND_CLAMAV:
+		rc = (t = clamav_title(sp)) != NULL ? 0 : -1;
 		break;
 	case ARC_JOB_KIND_CARP:
 		rc = asprintf(&t, "%s: carp %s vhid %s%s%s", sp->interface,
@@ -489,7 +494,7 @@ static bool
 await_confirm(struct qjob *j)
 {
 	struct timespec	ts;
-	bool		confirmed;
+	bool		confirmed, rejected;
 	int		step;
 
 	step = step_begin(&j->w, ARC_STEP_KIND_DAEMON, "safe mode",
@@ -500,17 +505,23 @@ await_confirm(struct qjob *j)
 	pthread_mutex_lock(&jobs_lock);
 	j->state = ARC_JOB_STATE_UNCONFIRMED;
 	j->confirm_by = ts.tv_sec;
-	while (!j->confirmed && !changes_stopping())
+	while (!j->confirmed && !j->rejected && !changes_stopping())
 		if (pthread_cond_timedwait(&confirm_cv, &jobs_lock, &ts) != 0)
 			break;
 	confirmed = j->confirmed;
+	rejected = j->rejected;
 	j->state = ARC_JOB_STATE_RUNNING;
 	pthread_mutex_unlock(&jobs_lock);
-	step_end(&j->w, step, confirmed, confirmed ? "confirmed: it stays "
-	    "(the timer was %d s)" : "not confirmed within %d s",
-	    safe_wait(&j->spec));
+	if (rejected)
+		step_end(&j->w, step, false, "cancelled by the client while it "
+		    "waited: undone now");
+	else
+		step_end(&j->w, step, confirmed, confirmed ? "confirmed: it "
+		    "stays (the timer was %d s)" : "not confirmed within %d s",
+		    safe_wait(&j->spec));
 	logmsg(confirmed ? LOG_INFO : LOG_WARNING, "job %ju: %s: %s",
-	    (uintmax_t)j->id, j->title, confirmed ? "confirmed" :
+	    (uintmax_t)j->id, j->title, confirmed ? "confirmed" : rejected ?
+	    "cancelled while unconfirmed: undoing it" :
 	    "not confirmed in time: undoing it");
 	return (confirmed);
 }
@@ -1011,6 +1022,10 @@ run(struct qjob *j)
 		error = NULL;
 		ok = do_snort_job(&j->w, sp, &error) == 0;
 		break;
+	case ARC_JOB_KIND_CLAMAV:
+		error = NULL;
+		ok = do_clamav_job(&j->w, sp, &error) == 0;
+		break;
 	case ARC_JOB_KIND_CERT:
 		/* Any jail's: its files, not its network. */
 		error = NULL;
@@ -1343,7 +1358,12 @@ jobs_get(struct work *w, uint64_t id)
 	return (o);
 }
 
-/* Take a queued job out of the queue; NULL and *errp if that cannot be. */
+/*
+ * Take a queued job out of the queue; a safe change waiting to be
+ * confirmed is undone now, as it would be when its timer runs out.
+ * NULL and *errp if neither can be: a job at work is left to finish,
+ * a change stopped half way being what would not be safe.
+ */
 const struct arc_job *
 jobs_cancel(struct work *w, uint64_t id, const char **errp)
 {
@@ -1356,6 +1376,13 @@ jobs_cancel(struct work *w, uint64_t id, const char **errp)
 	TAILQ_FOREACH(j, &jobs, link) {
 		if (j->id != id)
 			continue;
+		if (j->state == ARC_JOB_STATE_UNCONFIRMED) {
+			j->rejected = true;
+			pthread_cond_broadcast(&confirm_cv);
+			o = wcalloc(w, 1, sizeof(*o));
+			fill(w, o, j, false);
+			break;
+		}
 		if (j->state != ARC_JOB_STATE_QUEUED) {
 			*errp = j->state == ARC_JOB_STATE_RUNNING ?
 			    "the job is running; it cannot be taken back" :

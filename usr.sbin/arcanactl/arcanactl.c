@@ -200,8 +200,10 @@ usage(void)
 	    "        untrust file | rehash\n"
 	    "    poudriere [list] | show-options key=value ... |\n"
 	    "        make-conf name|- file|- | verb [key=value ...]\n"
+	    "    crashes [backtrace core [program]]\n"
 	    "    snort [list | rules] | conf snort.lua|local.rules file |\n"
 	    "        verb [key=value ...]\n"
+	    "    clamav mirrors mirror ...\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
@@ -2425,6 +2427,34 @@ cmd_poudriere(struct arc_client *cl, int argc, char **argv)
 	return (submit(cl, &sp));
 }
 
+/* crashes [backtrace core [program]]: the cores dumped, and one's
+ * backtrace. */
+static int
+cmd_crashes(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_crashes_req	 rq;
+	struct arc_crashes_rsp	*rs;
+	int			 error;
+
+	memset(&rq, 0, sizeof(rq));
+	if (argc > 1) {
+		if (strcmp(argv[1], "backtrace") != 0 || argc < 3 || argc > 4)
+			usage();
+		rq.names.v = (const char **)(uintptr_t)&argv[1];
+		rq.names.n = (size_t)argc - 1;
+	}
+	if ((error = arc_crashes(cl, &rq, &rs)) != 0)
+		fail(cl, error, "crashes");
+	if (rs->json != NULL)
+		xo_emit("{:json/%s}\n", rs->json);
+	else if (rs->error != NULL)
+		warnx("%s", rs->error);
+	emit_trace(rs->trace.v, rs->trace.n);
+	error = rs->ok ? 0 : 1;
+	arc_crashes_rsp_free(rs);
+	return (error);
+}
+
 /*
  * snort [list | rules] | conf snort.lua|local.rules file |
  * verb [key=value ...]: Snort, a plugin; a change is a job.
@@ -2472,6 +2502,36 @@ cmd_snort(struct arc_client *cl, int argc, char **argv)
 		sp.names.v = (const char **)(uintptr_t)&argv[2];
 		sp.names.n = (size_t)argc - 2;
 	}
+	/* The host's alone: -j is passed on to be refused, not dropped. */
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/*
+ * clamav mirrors mirror ...: freshclam.conf's DatabaseMirror lines, in
+ * place of those there were; a job.
+ */
+static int
+cmd_clamav(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	const char		**w;
+	int			 i;
+
+	if (argc < 3 || strcmp(argv[1], "mirrors") != 0)
+		usage();
+	if ((w = calloc((size_t)argc - 2, sizeof(*w))) == NULL)
+		err(1, "calloc");
+	for (i = 2; i < argc; i++)
+		if (asprintf((char **)(uintptr_t)&w[i - 2], "mirror=%s",
+		    argv[i]) == -1)
+			err(1, "asprintf");
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_CLAMAV;
+	sp.verb = argv[1];
+	sp.names.v = w;
+	sp.names.n = (size_t)argc - 2;
 	/* The host's alone: -j is passed on to be refused, not dropped. */
 	sp.jail = netjail;
 	return (submit(cl, &sp));
@@ -4201,8 +4261,12 @@ main(int argc, char *argv[])
 		rc = cmd_carp(&cl, argc, argv);
 	else if (strcmp(argv[0], "cert") == 0)
 		rc = cmd_cert(&cl, argc, argv);
+	else if (strcmp(argv[0], "crashes") == 0)
+		rc = cmd_crashes(&cl, argc, argv);
 	else if (strcmp(argv[0], "snort") == 0)
 		rc = cmd_snort(&cl, argc, argv);
+	else if (strcmp(argv[0], "clamav") == 0)
+		rc = cmd_clamav(&cl, argc, argv);
 	else if (strcmp(argv[0], "poudriere") == 0)
 		rc = cmd_poudriere(&cl, argc, argv);
 	else if (strcmp(argv[0], "sshd") == 0)

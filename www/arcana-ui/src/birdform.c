@@ -761,6 +761,17 @@ filter_in(struct html *h, const char *label, const char *name,
 	h_raw(h, "</select></label>");
 }
 
+/* The OSPF version picked in the open form: "" for the block's own. */
+static char	ver_pick[4];
+
+void
+bf_set_ver(const char *v)
+{
+
+	snprintf(ver_pick, sizeof(ver_pick), "%s", v != NULL && strcmp(v, "v3")
+	    == 0 ? "v3" : v != NULL && strcmp(v, "v2") == 0 ? "v2" : "");
+}
+
 void
 bf_fields(struct html *h, const struct bfconf *c, const char *const *filters,
     const char *const *templates, bool edit)
@@ -856,15 +867,23 @@ bf_fields(struct html *h, const struct bfconf *c, const char *const *filters,
 		return;
 	}
 	if (strcmp(c->kind, "ospf") == 0) {
-		h_fmt(h, "<div class=\"two\"><label>Version<select name=\"ver\">"
-		    "<option value=\"v2\"%s>OSPFv2 (IPv4)</option><option "
-		    "value=\"v3\"%s>OSPFv3</option></select></label><label>"
-		    "Addresses<select name=\"chan\"><option value=\"0\"%s>IPv4"
-		    "</option><option value=\"1\"%s>IPv6</option></select>"
-		    "</label></div>", strcmp(c->ver, "v2") == 0 ? " selected" :
-		    "", strcmp(c->ver, "v3") == 0 ? " selected" : "",
-		    c->chan == 0 ? " selected" : "", c->chan == 1 ?
-		    " selected" : "");
+		/* The version picked in the form, before it is kept, says
+		 * which addresses may be: OSPFv2 carries IPv4 alone. */
+		const char	*ver = ver_pick[0] != '\0' ? ver_pick : c->ver;
+		int		 chan = strcmp(ver, "v2") == 0 ? 0 : ver_pick[0] !=
+		    '\0' && strcmp(ver, c->ver) != 0 ? 1 : c->chan;
+
+		h_fmt(h, "<div class=\"two\"><label>Version<select name=\"ver\" "
+		    "data-input=\"bird-ver\"><option value=\"v2\"%s>OSPFv2 (IPv4)"
+		    "</option><option value=\"v3\"%s>OSPFv3</option></select>"
+		    "</label><label>Addresses<select name=\"chan\"><option "
+		    "value=\"0\"%s>IPv4</option>", strcmp(ver, "v2") == 0 ?
+		    " selected" : "", strcmp(ver, "v3") == 0 ? " selected" : "",
+		    chan == 0 ? " selected" : "");
+		if (strcmp(ver, "v3") == 0)
+			h_fmt(h, "<option value=\"1\"%s>IPv6</option>", chan == 1 ?
+			    " selected" : "");
+		h_raw(h, "</select></label></div>");
 		h_raw(h, "<div class=\"two\">");
 		filter_in(h, "Import", "imp0", c->imp[0], filters);
 		filter_in(h, "Export", "exp0", c->exp[0], filters);
@@ -1180,8 +1199,8 @@ bf_read(const char *kind, const ucl_object_t *f, const char *const *filters,
 		snprintf(c->ver, sizeof(c->ver), "%s", strcmp(field(f, "ver"),
 		    "v3") == 0 ? "v3" : "v2");
 		c->chan = strcmp(field(f, "chan"), "1") == 0 ? 1 : 0;
-		if (strcmp(c->ver, "v2") == 0 && c->chan == 1)
-			FAIL("OSPFv2 carries IPv4 only; IPv6 is OSPFv3's.");
+		if (strcmp(c->ver, "v2") == 0)
+			c->chan = 0;	/* OSPFv2 carries IPv4 alone */
 		snprintf(c->imp[0], sizeof(c->imp[0]), "%s", field(f, "imp0"));
 		snprintf(c->exp[0], sizeof(c->exp[0]), "%s", field(f, "exp0"));
 		if (!filter_ok(c->imp[0], filters) || !filter_ok(c->exp[0],

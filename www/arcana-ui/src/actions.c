@@ -32,6 +32,7 @@ struct ctx {
 };
 
 static void	osversion_ask(const char *, bool);
+static void	 who_set(const ucl_object_t *);
 static struct ctx *ctx_new(void);
 static struct op *op_new(const char *, const char *);
 static void	op_done(struct op *, bool, const ucl_object_t *, const char *);
@@ -292,6 +293,55 @@ op_new(const char *title, const char *server)
 }
 
 /*
+ * A poll of the page's own (app.quiet), as a task shown apart: its
+ * title the host's read, its server by the id in the path.
+ */
+int
+op_quiet_begin(const char *method, const char *url)
+{
+	struct op	*o;
+	const char	*p, *q;
+	char		 title[160], sid[16], server[64];
+	int		 i;
+
+	server[0] = '\0';
+	snprintf(title, sizeof(title), "%s", url);
+	if ((p = strstr(url, "/api/servers/")) != NULL) {
+		p += strlen("/api/servers/");
+		q = strchr(p, '/');
+		snprintf(sid, sizeof(sid), "%.*s", (int)(q != NULL ? q - p :
+		    (ptrdiff_t)strlen(p)), p);
+		for (i = 0; i < app.nservers; i++)
+			if (strcmp(app.servers[i].id, sid) == 0)
+				snprintf(server, sizeof(server), "%s",
+				    app.servers[i].name);
+		snprintf(title, sizeof(title), "poll %s", q != NULL ? q + 1 :
+		    "the host");
+	} else if (strncmp(url, "/api/", 5) == 0)
+		snprintf(title, sizeof(title), "poll %s", url + 5);
+	title[strcspn(title, "?")] = '\0';
+	o = op_new(title, server);
+	o->quiet = true;
+	o->await = false;
+	snprintf(o->method, sizeof(o->method), "%s", method);
+	snprintf(o->url, sizeof(o->url), "%s", url);
+	return (o->id);
+}
+
+void
+op_quiet_end(int id, int status)
+{
+	struct op	*o;
+
+	if ((o = op_find(id)) == NULL)
+		return;
+	o->state = status >= 200 && status < 300 ? OP_OK : OP_FAILED;
+	o->finished = arc_now();
+	if (o->state == OP_FAILED)
+		snprintf(o->error, sizeof(o->error), "HTTP %d", status);
+}
+
+/*
  * The finished tasks kept in the browser, so that a reload has them with
  * what was seen of them: each its title, host, times and outcome, its
  * job on the host (whose trace is read from there again when it is
@@ -320,6 +370,8 @@ ops_save(void)
 	last = sig;
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	for (i = 0, n = 0; i < app.nops && n < OPS_KEPT; i++) {
+		if (app.ops[i].quiet)
+			continue;
 		struct op	*o = &app.ops[i];
 
 		if (o->state == OP_RUNNING)
@@ -580,6 +632,11 @@ job_finished(struct op *op, bool ok, const char *err)
 		break;
 	case JOB_SNORT:
 		snort_refresh();
+		break;
+	case JOB_SECURITY:
+		/* The host's plugins, and the page's read of them. */
+		refresh_jails(s, false);
+		secpage_refresh();
 		break;
 	case JOB_PROCESS:
 		refresh_procs(s, true);
@@ -2398,16 +2455,21 @@ status_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	}
 	app.setup_required = jbool(o, "setup_required");
-	app.by_token = jbool(o, "by_token");
+	app.by_ldap = jbool(o, "by_ldap");
+	app.by_token = jbool(o, "by_token") || app.by_ldap;
+	app.ldap_on = jbool(o, "ldap");
+	who_set(o);
 	origin_check(jstr(o, "origin"), jstr(o, "rp_id"));
 	if (jbool(o, "authenticated")) {
 		app.screen = SCREEN_CONSOLE;
 		app.auth_error[0] = '\0';
+		app.invite_token[0] = '\0';
 		refresh_servers();
 		/* Where notifications are allowed, this browser is told. */
 		arc_push_sync();
 	} else
-		app.screen = app.setup_required ? SCREEN_ENROL : SCREEN_LOGIN;
+		app.screen = app.setup_required || app.invite_token[0] != '\0' ?
+		    SCREEN_ENROL : SCREEN_LOGIN;
 }
 
 void
@@ -2423,7 +2485,10 @@ auth_done_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	app.auth_busy = false;
 	if (status == 200 && jbool(o, "authenticated")) {
-		app.by_token = jbool(o, "by_token");
+		app.by_ldap = jbool(o, "by_ldap");
+		app.by_token = jbool(o, "by_token") || app.by_ldap;
+		who_set(o);
+		app.invite_token[0] = '\0';
 		app.screen = SCREEN_CONSOLE;
 		app.auth_error[0] = '\0';
 		app.setup_required = false;
@@ -2484,6 +2549,28 @@ login_token(const char *token)
 		abort();
 	free(q);
 	api("POST", "/api/auth/login/token", body, auth_done_cb, NULL);
+	explicit_bzero(body, strlen(body));
+	free(body);
+}
+
+/* A directory's user and password: the console asks the directory. */
+void
+login_ldap(const char *user, const char *password)
+{
+	char	*qu, *qp, *body;
+
+	if (app.auth_busy)
+		return;
+	app.auth_busy = true;
+	app.auth_error[0] = '\0';
+	qu = json_quote(user);
+	qp = json_quote(password);
+	if (asprintf(&body, "{\"user\":%s,\"password\":%s}", qu, qp) == -1)
+		abort();
+	explicit_bzero(qp, strlen(qp));
+	free(qu);
+	free(qp);
+	api("POST", "/api/auth/login/ldap", body, auth_done_cb, NULL);
 	explicit_bzero(body, strlen(body));
 	free(body);
 }
@@ -2555,7 +2642,21 @@ register_begin_cb(int status, const ucl_object_t *o, const char *err,
 	free(opts);
 }
 
-/* The first key, with the setup token from the console's data dir. */
+/* Who is signed in, and what they may, from a status reply. */
+static void
+who_set(const ucl_object_t *o)
+{
+
+	snprintf(app.user, sizeof(app.user), "%s", jstr(o, "user") != NULL ?
+	    jstr(o, "user") : "");
+	snprintf(app.console_role, sizeof(app.console_role), "%s", jstr(o,
+	    "console") != NULL ? jstr(o, "console") : "");
+	snprintf(app.tenant, sizeof(app.tenant), "%s", jstr(o, "tenant") != NULL
+	    ? jstr(o, "tenant") : "");
+}
+
+/* The first key, with the setup token from the console's data dir, or
+ * a user's first with their invitation (inv_...). */
 void
 enrol(const char *token, const char *name)
 {
@@ -2570,7 +2671,8 @@ enrol(const char *token, const char *name)
 	snprintf(c->name, sizeof(c->name), "%s", *name != '\0' ? name :
 	    "Security key");
 	qt = json_quote(token);
-	if (asprintf(&body, "{\"setup_token\":%s}", qt) == -1)
+	if (asprintf(&body, "{\"%s\":%s}", strncmp(token, "inv_", 4) == 0 ?
+	    "invite" : "setup_token", qt) == -1)
 		abort();
 	api("POST", "/api/auth/register/begin", body, register_begin_cb, c);
 	free(qt);
@@ -2765,8 +2867,9 @@ job_cancel_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 /*
  * Give up what an entry of the activity list waits for, where that is
  * safe.  A job that has not started is taken out of the host's queue;
- * one that runs is left to finish, as stopping a change half way is
- * what would not be safe.  A reading still on its way is no longer
+ * a safe change waiting to be confirmed is undone at once; one at work
+ * is left to finish, as stopping a change half way is what would not
+ * be safe.  A reading still on its way is no longer
  * waited for: the host may finish it, and nothing was to change.
  */
 void
@@ -3131,7 +3234,7 @@ setting_group(const char *key)
 
 	return (strncmp(key, "mail_", 5) == 0 || strncmp(key, "smtp_", 5) == 0 ?
 	    SETG_MAIL : strncmp(key, "telegram_", 9) == 0 ? SETG_TELEGRAM :
-	    SETG_CONSOLE);
+	    strncmp(key, "ldap_", 5) == 0 ? SETG_LDAP : SETG_CONSOLE);
 }
 
 void

@@ -467,7 +467,12 @@ ipsec_child_modal(struct html *h)
 	    "local_ts\" spellcheck=\"false\" autocomplete=\"off\" placeholder="
 	    "\"10.1.0.0/24\"></label><label>The peer's traffic<input name=\""
 	    "remote_ts\" spellcheck=\"false\" autocomplete=\"off\" "
-	    "placeholder=\"10.2.0.0/24\"></label></div>"
+	    "placeholder=\"10.2.0.0/24\"></label></div>");
+	h_raw(h, "<div class=\"two\">");
+	pfxlist_select(h, "This side's, from a list", "lts_pfx", "A prefix list "
+	    "of the console's, added to the traffic selectors.");
+	pfxlist_select(h, "The peer's, from a list", "rts_pfx", NULL);
+	h_raw(h, "</div>"
 	    "<div class=\"two\"><label>reqid<input name=\"reqid\" inputmode="
 	    "\"numeric\" placeholder=\"none\"></label><label>Started<select "
 	    "name=\"start\"><option value=\"trap\">with the first packet"
@@ -486,6 +491,27 @@ opt(const ucl_object_t *f, const char *field, const char *key)
 	if (jstr(f, field) == NULL || jstr(f, field)[0] == '\0')
 		return (strdup(""));
 	q = json_quote(jstr(f, field));
+	if (asprintf(&out, ",\"%s\":%s", key, q) == -1)
+		abort();
+	free(q);
+	return (out);
+}
+
+/* As opt(), the prefixes of a console list (field list) after the
+ * text, by commas, as strongSwan takes traffic selectors. */
+static char *
+opt_list(const ucl_object_t *f, const char *field, const char *list,
+    const char *key)
+{
+	char	*all, *q, *out;
+
+	all = with_list(jstr(f, field), jstr(f, list));
+	if (all[0] == '\0') {
+		free(all);
+		return (strdup(""));
+	}
+	q = json_quote(all);
+	free(all);
 	if (asprintf(&out, ",\"%s\":%s", key, q) == -1)
 		abort();
 	free(q);
@@ -527,8 +553,8 @@ ipsec_form(const char *form, const ucl_object_t *f)
 		    "tunnel");
 		qs = json_quote(jstr(f, "start") != NULL ? jstr(f, "start") :
 		    "trap");
-		lts = opt(f, "local_ts", "local_ts");
-		rts = opt(f, "remote_ts", "remote_ts");
+		lts = opt_list(f, "local_ts", "lts_pfx", "local_ts");
+		rts = opt_list(f, "remote_ts", "rts_pfx", "remote_ts");
 		snprintf(title, sizeof(title), "ipsec child %s %s", jstr(f,
 		    "conn"), jstr(f, "child"));
 		ipsec_job(s, title, "{\"kind\":\"ipsec\",\"verb\":\"child\","
