@@ -147,6 +147,20 @@ joined_attr(struct html *h, const char *attr, const ucl_object_t *arr,
 	free(buf);
 }
 
+/* Start, for one that is not running or not applied: the list applied
+ * again, which starts what is not running and leaves the rest be. */
+static void
+start_button(struct html *h, const ucl_object_t *l, bool ids)
+{
+
+	if (l != NULL && jbool(l, "running"))
+		return;
+	h_fmt(h, "<button class=\"ghost small\" data-act=\"sec-start\" "
+	    "data-value=\"%s\" title=\"Apply the list again: the host starts "
+	    "what is not running, and says why when it cannot\">Start</button>",
+	    ids ? "ids" : "proxy");
+}
+
 static void
 chip_run(struct html *h, const ucl_object_t *l, const char *key)
 {
@@ -350,6 +364,7 @@ view_url(struct html *h, bool malware_only)
 		h_raw(h, "</td><td>");
 		chip_run(h, l, "running");
 		h_raw(h, "</td><td class=\"acts\">");
+		start_button(h, l, false);
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"%s\"",
 		    malware_only ? "sec-unscan" : "sec-edit");
 		h_attr(h, "data-arg", jstr(f, "name"));
@@ -730,8 +745,9 @@ view_ids(struct html *h)
 		h_fmt(h, "<td>%lld</td><td>", (long long)jint(l, "alerts_seen",
 		    0));
 		chip_run(h, l, "running");
-		h_raw(h, "</td><td class=\"acts\"><button class=\"ghost small\" "
-		    "data-act=\"sec-edit\"");
+		h_raw(h, "</td><td class=\"acts\">");
+		start_button(h, l, true);
+		h_raw(h, "<button class=\"ghost small\" data-act=\"sec-edit\"");
 		h_attr(h, "data-arg", jstr(f, "name"));
 		h_raw(h, ">Change</button><button class=\"ghost small danger\" "
 		    "data-act=\"sec-remove\" data-value=\"ids\"");
@@ -1123,6 +1139,11 @@ secpage_action(const char *act, const char *arg, const char *value)
 		    "files taken away.", arg);
 		confirm("Remove it?", body, "Remove", true, NULL,
 		    "sec-remove-yes", arg, value != NULL ? value : "proxy");
+		return (true);
+	}
+	if (strcmp(act, "sec-start") == 0) {
+		ids = value != NULL && strcmp(value, "ids") == 0;
+		save(ids, specs_but(ids, NULL));
 		return (true);
 	}
 	if (strcmp(act, "sec-remove-yes") == 0) {

@@ -12,6 +12,8 @@
 #include <sys/param.h>
 #include <sys/stat.h>
 
+#include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -72,4 +74,65 @@ store_save(const char *name, const ucl_object_t *o)
 		return (-1);
 	}
 	return (0);
+}
+
+/*
+ * One of store_save's temporaries: <name>.json.XXXXXX, the six of
+ * mkstemp(3) letters and digits, not all small letters (as an admin's
+ * x.json.backup is), beside the store it was to replace.
+ */
+static bool
+is_temp(const char *dir, const char *n)
+{
+	char	path[MAXPATHLEN];
+	size_t	len, i;
+	bool	mixed;
+
+	len = strlen(n);
+	if (len < 12 || n[len - 7] != '.' || strncmp(n + len - 12, ".json",
+	    5) != 0)
+		return (false);
+	mixed = false;
+	for (i = len - 6; i < len; i++) {
+		if (!isalnum((unsigned char)n[i]))
+			return (false);
+		if (!islower((unsigned char)n[i]))
+			mixed = true;
+	}
+	snprintf(path, sizeof(path), "%s/%.*s", dir, (int)(len - 7), n);
+	return (mixed && access(path, F_OK) == 0);
+}
+
+static void
+sweep_dir(const char *dir)
+{
+	DIR		*d;
+	struct dirent	*e;
+	char		 path[MAXPATHLEN];
+
+	if ((d = opendir(dir)) == NULL)
+		return;
+	while ((e = readdir(d)) != NULL) {
+		if (e->d_type != DT_REG || !is_temp(dir, e->d_name))
+			continue;
+		snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
+		if (unlink(path) == 0)
+			kore_log(LOG_NOTICE, "%s: a write cut short, taken away",
+			    path);
+	}
+	closedir(d);
+}
+
+/*
+ * The temporaries of writes a stop cut short, between the write and the
+ * rename: at start, when nothing else writes.
+ */
+void
+store_sweep(void)
+{
+	char	path[MAXPATHLEN];
+
+	sweep_dir(cfg.datadir);
+	snprintf(path, sizeof(path), "%s/runs", cfg.datadir);
+	sweep_dir(path);
 }

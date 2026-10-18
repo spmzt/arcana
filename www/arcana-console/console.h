@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.214.5"
+#define	ARCW_VERSION		"0.214.6"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -121,6 +121,7 @@ int		 api_settings(struct http_request *);
 /* store.c: small JSON documents in the data directory. */
 ucl_object_t	*store_load(const char *);
 int		 store_save(const char *, const ucl_object_t *);
+void		 store_sweep(void);
 
 /* api.c: HTTP plumbing shared by the handlers. */
 int		 reply_json(struct http_request *, int, ucl_object_t *);

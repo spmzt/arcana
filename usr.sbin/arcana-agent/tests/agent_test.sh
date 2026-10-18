@@ -3240,6 +3240,12 @@ EOS
 	rs2=$(echo "$rs" | sed 's/sid:1000001;/sid:1000002;/')
 	atf_check -o match:'1 rule of the ruleset left out, as Suricata does when it runs: detect: Complete IP space negated' \
 	    "$JGC" -t -c "$SOCK" sdwan ids "$rs2"
+	# Interface any: FreeBSD's libpcap has none, so each interface up
+	# but the loopback, pflog, pfsync and enc.
+	rs3='{"instances":[{"name":"sw1","interfaces":["any"],"conf":"default-log-dir: @LOGDIR@\npcap:\n  - interface: any\nrule-files:\n  - @RULES@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$rs3"
+	atf_check -o not-match:'interface: any' -o not-match:'interface: lo[0-9]' \
+	    -o match:'^  - interface: [a-z]+[0-9]+$' cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
 }
 sdwan_cleanup()

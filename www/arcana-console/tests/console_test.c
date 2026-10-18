@@ -253,7 +253,17 @@ ATF_TC_BODY(unauthenticated, tc)
 {
 	struct resp	r;
 
+	/* A write cut short by a stop, its temporary left: taken away at
+	 * start, and what only looks like one kept. */
+	ATF_REQUIRE(mkdir("data", 0700) == 0);
+	put("data/sdwan-state.json", "{}");
+	put("data/sdwan-state.json.AbC123", "{}");
+	put("data/sdwan-state.json.backup", "{}");
+	put("data/gone.json.Xy12zz", "{}");
 	start(tc, 0, NULL);
+	ATF_CHECK(access("data/sdwan-state.json.AbC123", F_OK) == -1);
+	ATF_CHECK(access("data/sdwan-state.json.backup", F_OK) == 0);
+	ATF_CHECK(access("data/gone.json.Xy12zz", F_OK) == 0);
 	http("GET", "/api/health", NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));

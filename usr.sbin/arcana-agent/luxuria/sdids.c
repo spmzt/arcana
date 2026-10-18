@@ -29,6 +29,7 @@
 #include <net/if.h>
 
 #include <ctype.h>
+#include <ifaddrs.h>
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
@@ -380,6 +381,90 @@ file_text(struct work *w, const char *path)
  * libpcap (detect), or on its divert port, where ipfw's divert rules
  * hand it the UNIs' packets (prevent).
  */
+/*
+ * Interface any, alone, in the pcap list: FreeBSD's libpcap has no any
+ * device, so it is every interface that is up, but the loopback, pflog,
+ * pfsync and enc, as arcana_snort makes it for Snort.  NULL, with errp,
+ * when there is none.
+ */
+static char *
+expand_any(struct work *w, char *conf, const char **errp)
+{
+	static const char *const skip[] = { "lo", "pflog", "pfsync", "enc" };
+	struct ifaddrs	*ifa, *i;
+	char		*at, *out, *list;
+	size_t		 k, n;
+	const char	*line = "  - interface: any\n";
+
+	if ((at = strstr(conf, line)) == NULL || (at != conf && at[-1] !=
+	    '\n'))
+		return (conf);
+	if (getifaddrs(&ifa) == -1) {
+		*errp = wfmt(w, "getifaddrs: %s", strerror(errno));
+		return (NULL);
+	}
+	list = wstrdup(w, "");
+	n = 0;
+	for (i = ifa; i != NULL; i = i->ifa_next) {
+		if (i->ifa_addr == NULL || i->ifa_addr->sa_family != AF_LINK ||
+		    (i->ifa_flags & IFF_UP) == 0)
+			continue;
+		for (k = 0; k < nitems(skip); k++)
+			if (strncmp(i->ifa_name, skip[k], strlen(skip[k])) == 0 &&
+			    isdigit((unsigned char)i->ifa_name[strlen(skip[k])]))
+				break;
+		if (k < nitems(skip))
+			continue;
+		list = wfmt(w, "%s  - interface: %s\n", list, i->ifa_name);
+		n++;
+	}
+	freeifaddrs(ifa);
+	if (n == 0) {
+		*errp = "interface any: no interface is up here but the "
+		    "loopback";
+		return (NULL);
+	}
+	out = wfmt(w, "%.*s%s%s", (int)(at - conf), conf, list, at +
+	    strlen(line));
+	return (out);
+}
+
+/* Why an instance did not start, as its suricata.log says: its last
+ * errors, or NULL. */
+static const char *
+log_errors(struct work *w, const char *name)
+{
+	FILE		*fp;
+	char		 buf[512], *last[2];
+	const char	*p;
+	long		 size;
+	int		 n;
+
+	if ((fp = fopen(wfmt(w, "%s/suricata.log", inst_path(w, name, "d")),
+	    "r")) == NULL)
+		return (NULL);
+	if (fseek(fp, 0, SEEK_END) == 0 && (size = ftell(fp)) > 65536)
+		(void)fseek(fp, size - 65536, SEEK_SET);
+	else
+		rewind(fp);
+	last[0] = last[1] = NULL;
+	n = 0;
+	while (fgets(buf, sizeof(buf), fp) != NULL) {
+		buf[strcspn(buf, "\n")] = '\0';
+		if ((p = strstr(buf, "Error: ")) == NULL && (p = strstr(buf,
+		    "<Error>")) == NULL && strncmp(p = buf, "E: ", 3) != 0)
+			continue;
+		last[0] = last[1];
+		last[1] = wstrdup(w, p);
+		n++;
+	}
+	fclose(fp);
+	if (n == 0)
+		return (NULL);
+	return (last[0] != NULL ? wfmt(w, "%s; %s", last[0], last[1]) :
+	    last[1]);
+}
+
 static int
 inst_start(struct work *w, const char *name, int divert, const char **errp)
 {
@@ -402,15 +487,20 @@ inst_start(struct work *w, const char *name, int divert, const char **errp)
 	argv[n++] = (char *)(uintptr_t)"-D";
 	argv[n] = NULL;
 	if (run_exec(w, argv, &res) != 0) {
-		*errp = wtext(w, exec_error(w, &res, "suricata"));
+		/* Daemonized, it says why in its own log, not here. */
+		if ((*errp = log_errors(w, name)) != NULL)
+			*errp = wfmt(w, "suricata did not start: %s", *errp);
+		else
+			*errp = wtext(w, exec_error(w, &res, "suricata"));
 		return (-1);
 	}
 	/* It forks, and loads its rules first: up once its pid file is. */
 	for (i = 0; i < 300 && inst_pid(w, name) == 0; i++)
 		usleep(100000);
 	if (inst_pid(w, name) == 0) {
-		*errp = wfmt(w, "suricata did not start: see %s",
-		    inst_path(w, name, "d"));
+		*errp = (*errp = log_errors(w, name)) != NULL ? wfmt(w,
+		    "suricata did not start: %s", *errp) : wfmt(w, "suricata "
+		    "did not start: see %s", inst_path(w, name, "d"));
 		return (-1);
 	}
 	return (0);
@@ -765,6 +855,12 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		    true);
 		conf = inst_conf(w, ni[k].name, ucl_object_tostring(
 		    ucl_object_lookup(in, "conf")));
+		e = NULL;
+		if ((conf = expand_any(w, conf, &e)) == NULL) {
+			*errp = wfmt(w, "%s: %s", ni[k].name, e);
+			ok = false;
+			break;
+		}
 		rules = ucl_object_lookup(in, "rules") != NULL ?
 		    ucl_object_tostring(ucl_object_lookup(in, "rules")) : "";
 		/* Running with the same files: left as it is. */

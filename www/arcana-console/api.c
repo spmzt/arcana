@@ -412,6 +412,7 @@ arcw_onload(int action)
 	    config_check_certs() == -1 || hosts_init() == -1 ||
 	    workflows_kinds_check() == -1 || push_init() == -1)
 		fatalx("arcana: not starting, see above");
+	store_sweep();
 	auth_init();
 	users_init();
 	servers_init();
