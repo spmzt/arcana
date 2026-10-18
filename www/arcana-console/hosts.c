@@ -4753,7 +4753,22 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_CARP] = "carp",
 	[ARC_JOB_KIND_POUDRIERE] = "poudriere",
 	[ARC_JOB_KIND_SNORT] = "snort",
+	[ARC_JOB_KIND_CLAMAV] = "clamav",
+	[ARC_JOB_KIND_SURICATA] = "suricata",
 };
+
+/* Is kind one the console sends (workflows.c checks jobs.yaml's)? */
+bool
+hosts_job_kind_known(const char *kind)
+{
+	size_t	i;
+
+	for (i = 0; i < nitems(job_kind_names); i++)
+		if (job_kind_names[i] != NULL && strcmp(kind,
+		    job_kind_names[i]) == 0)
+			return (true);
+	return (false);
+}
 
 static const char *job_state_names[] = {
 	[ARC_JOB_STATE_QUEUED] = "queued",

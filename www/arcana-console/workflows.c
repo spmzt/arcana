@@ -2242,6 +2242,25 @@ run_cut(ucl_object_t *run)
 	}
 }
 
+/*
+ * Every kind jobs.yaml has, one hosts.c can send: a kind added to the
+ * one and not the other would be refused as unknown when it is used.
+ */
+int
+workflows_kinds_check(void)
+{
+	size_t	i;
+	int	rc = 0;
+
+	for (i = 0; i < nitems(jobkinds); i++)
+		if (!hosts_job_kind_known(jobkinds[i].kind)) {
+			kore_log(LOG_ERR, "the job kind %s of jobs.yaml is not "
+			    "in hosts.c's job_kind_names", jobkinds[i].kind);
+			rc = -1;
+		}
+	return (rc);
+}
+
 void
 workflows_init(void)
 {
