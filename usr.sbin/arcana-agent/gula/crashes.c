@@ -85,10 +85,16 @@ core_program(struct work *w, const char *core)
 	return (NULL);
 }
 
-static ucl_object_t *
-cores_list(struct work *w __unused, const char *dir)
+/*
+ * The cores of dir into arr, each with where it is; *othersp counts
+ * the directory's other files; false, with why in *errp, when the
+ * directory cannot be read.
+ */
+static bool
+cores_list(struct work *w, const char *dir, ucl_object_t *arr, int *othersp,
+    const char **errp)
 {
-	ucl_object_t	*arr, *o;
+	ucl_object_t	*o;
 	DIR		*d;
 	struct dirent	*de;
 	struct stat	 st;
@@ -96,17 +102,24 @@ cores_list(struct work *w __unused, const char *dir)
 	const char	*p;
 	int		 n;
 
-	arr = ucl_object_typed_new(UCL_ARRAY);
-	if ((d = opendir(dir)) == NULL)
-		return (arr);
+	if ((d = opendir(dir)) == NULL) {
+		*errp = wfmt(w, "%s: %s", dir, strerror(errno));
+		return (false);
+	}
 	n = 0;
 	while ((de = readdir(d)) != NULL && n < CORES_MAX) {
-		if (!core_name_ok(de->d_name) || fstatat(dirfd(d), de->d_name,
-		    &st, AT_SYMLINK_NOFOLLOW) != 0 || !S_ISREG(st.st_mode))
+		if (fstatat(dirfd(d), de->d_name, &st, AT_SYMLINK_NOFOLLOW) != 0
+		    || !S_ISREG(st.st_mode))
 			continue;
+		if (!core_name_ok(de->d_name)) {
+			(*othersp)++;
+			continue;
+		}
 		o = ucl_object_typed_new(UCL_OBJECT);
 		ucl_object_insert_key(o, ucl_object_fromstring(de->d_name),
 		    "name", 0, true);
+		ucl_object_insert_key(o, ucl_object_fromstring(dir), "directory",
+		    0, true);
 		ucl_object_insert_key(o, ucl_object_fromlstring(de->d_name,
 		    strcspn(de->d_name, ".")), "program", 0, false);
 		/* %N.%P.core: its pid, when the name has one. */
@@ -122,7 +135,7 @@ cores_list(struct work *w __unused, const char *dir)
 		n++;
 	}
 	closedir(d);
-	return (arr);
+	return (true);
 }
 
 /* lldb's backtrace of every thread of a core, and the signal's code. */
@@ -139,7 +152,7 @@ core_backtrace(struct work *w, const char *dir, const char *core,
 		*errp = "a core is named as the list has it";
 		return (-1);
 	}
-	path = wfmt(w, "%s/%s", dir, core);
+	path = wfmt(w, "%s/%s", strcmp(dir, "/") == 0 ? "" : dir, core);
 	if (program == NULL || program[0] == '\0')
 		program = core_program(w, core);
 	if (program == NULL || program[0] != '/' || access(program, X_OK) !=
@@ -220,29 +233,56 @@ void
 do_crashes(struct work *w, const char *const *names, size_t n,
     struct arc_crashes_rsp *rsp)
 {
-	ucl_object_t	*top;
+	ucl_object_t	*top, *cores, *notes;
 	char		 pattern[MAXPATHLEN], *json;
 	const char	*dir, *err;
+	int		 others;
 
 	top = ucl_object_typed_new(UCL_OBJECT);
+	notes = ucl_object_typed_new(UCL_ARRAY);
 	dir = core_dir(w, pattern, sizeof(pattern));
 	ucl_object_insert_key(top, ucl_object_fromstring(pattern),
 	    "corefile", 0, false);
-	if (dir == NULL) {
-		ucl_object_insert_key(top, ucl_object_fromstring("kern.corefile "
+	cores = ucl_object_typed_new(UCL_ARRAY);
+	others = 0;
+	if (dir == NULL)
+		ucl_array_append(notes, ucl_object_fromstring("kern.corefile "
 		    "names no directory of its own: each core is where its "
-		    "process ran"), "note", 0, false);
-		ucl_object_insert_key(top, ucl_object_typed_new(UCL_ARRAY),
-		    "cores", 0, false);
-	} else {
+		    "process ran"));
+	else {
 		ucl_object_insert_key(top, ucl_object_fromstring(dir),
 		    "directory", 0, false);
-		ucl_object_insert_key(top, cores_list(w, dir), "cores", 0,
-		    false);
-	}
-	if (n >= 2 && strcmp(names[0], "backtrace") == 0) {
 		err = NULL;
-		if (dir == NULL || core_backtrace(w, dir, names[1], n >= 3 ?
+		if (!cores_list(w, dir, cores, &others, &err))
+			ucl_array_append(notes, ucl_object_fromstring(err));
+		else if (others > 0)
+			ucl_array_append(notes, ucl_object_fromstring(wfmt(w,
+			    "%s holds %d other file%s", dir, others, others == 1 ?
+			    "" : "s")));
+	}
+	/* A daemon's working directory is /: where a %N.core of an earlier
+	 * setting went, and a core of a process that ran there. */
+	if (dir == NULL || strcmp(dir, "/") != 0) {
+		err = NULL;
+		others = 0;
+		(void)cores_list(w, "/", cores, &others, &err);
+	}
+	ucl_object_insert_key(top, cores, "cores", 0, false);
+	ucl_object_insert_key(top, notes, "notes", 0, false);
+	if (n >= 2 && strcmp(names[0], "backtrace") == 0) {
+		const ucl_object_t	*c;
+		ucl_object_iter_t	 it = NULL;
+		const char		*where = dir;
+
+		/* The core named, where the list found it. */
+		while ((c = ucl_object_iterate(cores, &it, true)) != NULL)
+			if (ucl_object_tostring(ucl_object_lookup(c, "name")) !=
+			    NULL && strcmp(ucl_object_tostring(ucl_object_lookup(
+			    c, "name")), names[1]) == 0)
+				where = ucl_object_tostring(ucl_object_lookup(c,
+				    "directory"));
+		err = NULL;
+		if (where == NULL || core_backtrace(w, where, names[1], n >= 3 ?
 		    names[2] : NULL, top, &err) != 0) {
 			ucl_object_unref(top);
 			rsp->ok = false;

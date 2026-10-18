@@ -253,7 +253,10 @@ The cores the kernel dumped where
 .Va kern.corefile
 says
 .Pq Xr core 5 ,
-each with its program, pid, size and time; with
+and in
+.Pa / ,
+a daemon's working directory, each with its program, pid, size and
+time, and what kept a directory from being read; with
 .Cm backtrace ,
 every thread's backtrace of one and its signal's information, as
 .Xr lldb 1
