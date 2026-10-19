@@ -410,4 +410,4 @@ kinds:
     title: Suricata's ruleset fetched by suricata-update, its rules and sources set
     needs: verb
     uses: args
-    values: verb=update|rule|sources|source-enable|source-disable|source-remove|source-add
+    values: verb=update|rule|sources|source-enable|source-disable|source-remove|source-add|pcap

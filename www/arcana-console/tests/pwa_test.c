@@ -6599,8 +6599,42 @@ part_security(void)
 	    "querySelector('.secpage').textContent.includes('3 k packets') && "
 	    "document.querySelector('.secpage').textContent.includes('200 /s')",
 	    40);
+	/* Suricata itself, by its socket; the advice; profiling, which
+	 * this build has not. */
+	if (access("/usr/local/bin/python3", X_OK) == 0) {
+		click_when("button[data-act=ist-ask]", 10);
+		wait_js("document.querySelector('.secpage').textContent.includes("
+		    "'Memcaps') && document.querySelector('.secpage').textContent"
+		    ".includes('rules_loaded') && document.querySelector("
+		    "'.secpage').textContent.includes('invalid-checksums')", 20);
+	}
+	wait_js("document.querySelector('.secpage').textContent.includes("
+	    "'built without rule profiling') && document.querySelector("
+	    "'ul.advice')", 10);
 	dock_closed();
 	shot("9v-security-ids-stats");
+	/* A capture replayed through it: a job, its alerts shown. */
+	ATF_CHECK(system("printf PCAP > lab.pcap") == 0);
+	{
+		char	script[MAXPATHLEN + 200], here[MAXPATHLEN];
+
+		ATF_REQUIRE(getcwd(here, sizeof(here)) != NULL);
+		snprintf(script, sizeof(script), "const f = document.querySelector("
+		    "'form[data-form=ist-replay]'); f.file.value = '%s/lab.pcap'; "
+		    "f.requestSubmit();", here);
+		run(script);
+	}
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('.secpage').textContent.includes("
+	    "'lab.pcap, replayed') && document.querySelector('.secpage')."
+	    "textContent.includes('ET REPLAYED')", 40);
+	run("document.querySelector('ul.advice').scrollIntoView()");
+	shot("9v-security-ids-engine");
+	ATF_CHECK(js_true("document.scrollingElement.scrollWidth <= "
+	    "document.scrollingElement.clientWidth + 1 && document.querySelector("
+	    "'.secpage').scrollWidth <= document.querySelector('.secpage')."
+	    "clientWidth + 1"));
 	click_when("button[data-act=ist-back]", 10);
 	/* Applied and read again before the next change. */
 	wait_js("document.querySelector('table.secids') && !document."
@@ -6792,6 +6826,24 @@ part_security(void)
 	wait_js("document.querySelectorAll('table.thresholds tbody tr').length "
 	    "== 1", 30);
 	ATF_CHECK(system("grep -q 'suppress' sdwan-ids-sec-lan.threshold") != 0);
+	/* A Lua script, kept with it and written by the host; deleted. */
+	click_when("button[data-act=lua-new]", 10);
+	wait_js("document.querySelector('form[data-form=lua-add]')", 5);
+	run("const f = document.querySelector('form[data-form=lua-add]'); "
+	    "f.name.value = 'ua.lua'; f.text.value = '-- the user agent\\n'; "
+	    "f.requestSubmit();");
+	for (i = 0; i < 300 && system("grep -q 'the user agent' "
+	    "sdwan-ids-sec-lan.lua/ua.lua") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the Lua script is not written");
+	wait_js("document.querySelector('table.luas') && document."
+	    "querySelector('table.luas').textContent.includes('ua.lua')", 20);
+	shot("9x-security-ids-lua");
+	click_when("table.luas button[data-act=lua-del]", 10);
+	for (i = 0; i < 300 && access("sdwan-ids-sec-lan.lua/ua.lua", F_OK) ==
+	    0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the Lua script stayed");
 	shot("9x-security-ids-own-rules");
 	click_when("button[data-act=own-back]", 10);
 	wait_js("document.querySelector('table.secids') && document."

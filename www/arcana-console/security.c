@@ -441,6 +441,7 @@ ids_settings(const ucl_object_t *in, const char *name, struct kore_buf *b,
 	ucl_object_iter_t	 it;
 	const char		*v, *rm, *mpm, *prof, *inl, *pol, *mg, *wk, *extra;
 	const char		*preset;
+	int64_t			 k64;
 	int			 k;
 	const char		*sz[nitems(memcaps)];
 	int64_t			 stats, pending;
@@ -541,10 +542,72 @@ ids_settings(const ucl_object_t *in, const char *name, struct kore_buf *b,
 		kore_buf_appendf(b, "        - %s\n", ucl_object_tostring(e));
 	if (stats > 0)
 		kore_buf_appendf(b, "        - stats:\n            totals: yes\n"
-		    "            threads: no\n            deltas: no\n"
-		    "stats:\n  enabled: yes\n  interval: %jd\n", (intmax_t)stats);
+		    "            threads: no\n            deltas: no\n");
+	/* Its Lua scripts as outputs, run on what they ask for. */
+	if (ucl_array_size(ucl_object_lookup(in, "lua_outputs")) > 0) {
+		kore_buf_appendf(b, "  - lua:\n      enabled: yes\n"
+		    "      scripts-dir: @LUADIR@\n      scripts:\n");
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(in,
+		    "lua_outputs"), &it, true)) != NULL) {
+			if (ucl_object_type(e) != UCL_STRING || ucl_object_lookup(
+			    ucl_object_lookup(in, "lua"), ucl_object_tostring(e)) ==
+			    NULL) {
+				snprintf(err, errlen, "%s: a Lua output is one of "
+				    "its scripts", name);
+				return (false);
+			}
+			kore_buf_appendf(b, "        - %s\n",
+			    ucl_object_tostring(e));
+		}
+	}
+	/* The packets of its alerts kept, a ring of files. */
+	if (ucl_object_toboolean(ucl_object_lookup(in, "pcap_log"))) {
+		v = sstr(in, "pcap_log_limit");
+		if (!num_of(in, "pcap_log_files", 1, 1000, 10, &k64) || (v !=
+		    NULL && v[0] != '\0' && !size_ok(v))) {
+			snprintf(err, errlen, "%s: pcap-log's limit is a size, its "
+			    "files 1 to 1000", name);
+			return (false);
+		}
+		kore_buf_appendf(b, "  - pcap-log:\n      enabled: yes\n"
+		    "      filename: log.pcap\n      limit: %s\n"
+		    "      max-files: %jd\n      compression: none\n"
+		    "      mode: normal\n      conditional: alerts\n", v != NULL &&
+		    v[0] != '\0' ? v : "100mb", (intmax_t)k64);
+	}
+	if (stats > 0)
+		kore_buf_appendf(b, "stats:\n  enabled: yes\n  interval: %jd\n",
+		    (intmax_t)stats);
 	else
 		kore_buf_appendf(b, "stats:\n  enabled: no\n");
+	/* Lua rules where it has scripts, its directory theirs. */
+	it = NULL;
+	if (ucl_object_type(ucl_object_lookup(in, "lua")) == UCL_OBJECT &&
+	    ucl_object_iterate(ucl_object_lookup(in, "lua"), &it, true) !=
+	    NULL)
+		kore_buf_appendf(b, "default-rule-path: @LUADIR@\nsecurity:\n"
+		    "  lua:\n    allow-rules: yes\n");
+	/* Its plugins, shared objects the agent checks are root's. */
+	if (ucl_array_size(ucl_object_lookup(in, "plugins")) > 0) {
+		kore_buf_appendf(b, "plugins:\n");
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(in, "plugins"),
+		    &it, true)) != NULL) {
+			v = ucl_object_type(e) == UCL_STRING ?
+			    ucl_object_tostring(e) : "";
+			if (strncmp(v, "/usr/local/lib/", 15) != 0 || strlen(v) >
+			    200 || strspn(v, "abcdefghijklmnopqrstuvwxyz"
+			    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._-") !=
+			    strlen(v) || strstr(v, "..") != NULL || strlen(v) < 19 ||
+			    strcmp(v + strlen(v) - 3, ".so") != 0) {
+				snprintf(err, errlen, "%s: a plugin is a .so under "
+				    "/usr/local/lib", name);
+				return (false);
+			}
+			kore_buf_appendf(b, "  - %s\n", v);
+		}
+	}
 	if (rm != NULL && rm[0] != '\0')
 		kore_buf_appendf(b, "runmode: %s\n", rm);
 	if (pending > 0)
@@ -834,6 +897,8 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 	kore_buf_appendf(b, "classification-file: @CLASSIFICATION@\n"
 	    "reference-config-file: @REFERENCE@\n"
 	    "threshold-file: @THRESHOLD@\n"
+	    /* Its own socket: the agent asks it what it runs. */
+	    "unix-command:\n  enabled: yes\n  filename: @SOCKET@\n"
 	    "run-as:\n  user: root\n");
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, ucl_object_fromstring(name), "name", 0,
@@ -847,6 +912,13 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 	if (ucl_object_toboolean(ucl_object_lookup(in, "offload_off")))
 		ucl_object_insert_key(o, ucl_object_frombool(false), "offload",
 		    0, false);
+	/* Its Lua scripts and plugins: the agent writes and checks them. */
+	if (ucl_object_lookup(in, "lua") != NULL)
+		ucl_object_insert_key(o, ucl_object_copy(ucl_object_lookup(in,
+		    "lua")), "lua", 0, false);
+	if (ucl_object_lookup(in, "plugins") != NULL)
+		ucl_object_insert_key(o, ucl_object_copy(ucl_object_lookup(in,
+		    "plugins")), "plugins", 0, false);
 	if (divert > 0)
 		ucl_object_insert_key(o, ucl_object_fromint(divert), "divert", 0,
 		    false);

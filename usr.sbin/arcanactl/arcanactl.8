@@ -314,7 +314,7 @@ not there yet is made from the port's sample, without its
 line.
 A running freshclam takes them when it is restarted.
 A job.
-.It Cm suricata Cm update | Cm rules Oo Ar key Ns = Ns Ar value ... Oc | Cm rule Ar state Ns = Ns Ar sid Ns Oo , Ns Ar sid ... Oc ... | Cm sources | Cm source- Ns Ar verb Cm name Ns = Ns Ar source Oo Ar key Ns = Ns Ar value ... Oc
+.It Cm suricata Cm update | Cm rules Oo Ar key Ns = Ns Ar value ... Oc | Cm rule Ar state Ns = Ns Ar sid Ns Oo , Ns Ar sid ... Oc ... | Cm sources | Cm source- Ns Ar verb Cm name Ns = Ns Ar source Oo Ar key Ns = Ns Ar value ... Oc | Cm pcap Cm instance Ns = Ns Ar name Cm file Ns = Ns Ar path
 .Cm update
 runs
 .Xr suricata-update 8 ,
@@ -355,6 +355,26 @@ and
 so that it holds across updates; the ruleset is made again from what
 was fetched, and the instances read it again.
 A job.
+.Cm rules Cm instance Ns = Ns Ar name Cm command Ns = Ns Ar command
+.Op Cm iface Ns = Ns Ar interface
+asks the instance's Suricata itself by its unix command socket, one of
+the commands that read alone:
+.Cm uptime ,
+.Cm version ,
+.Cm running-mode ,
+.Cm capture-mode ,
+.Cm memcap-list ,
+.Cm ruleset-stats ,
+.Cm ruleset-failed-rules ,
+.Cm ruleset-profile
+(where it is built with rule profiling),
+.Cm iface-list ,
+.Cm iface-stat
+(with
+.Cm iface )
+or
+.Cm dump-counters ,
+and prints its answer as JSON.
 .Cm rules Cm sources Ns =1
 shows the rule sources instead: those of the index
 .Cm sources
@@ -376,6 +396,19 @@ takes it away;
 adds one by its address.
 Each is a job; the ruleset is fetched with them by
 .Cm update .
+.Cm pcap Cm instance Ns = Ns Ar name Cm file Ns = Ns Ar path
+runs a capture the host has (a
+.Pa .pcap ,
+.Pa .pcapng
+or
+.Pa .cap ,
+by its whole path, not a link) through the instance's configuration
+and rules, offline
+.Pq Nm suricata Fl r ,
+into a directory of its own; the alerts it raised are kept, told in
+the sdwan read as the instance's
+.Dq replay .
+A job.
 .It Cm cert Oo Cm list | Cm add Ar name file | Cm remove Ar name | Cm trust Ar file | Cm untrust Ar file | Cm rehash Oc
 The certificates OpenSSL trusts, of the host or of
 .Fl j Ns 's

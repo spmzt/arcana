@@ -5095,7 +5095,8 @@ table.net.applying { opacity: .55; transition: opacity .2s; }
 .secpage .uplots { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: .8rem; margin-bottom: 1rem; }
 .secpage .ukeys { display: flex; flex-wrap: wrap; gap: .2rem .9rem; margin-top: .3rem; font-size: .72rem; }
 .idstops { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .8rem; }
-.idstop { border: 1px solid var(--line); border-radius: 8px; padding: .5rem .7rem; }
+.idstop { border: 1px solid var(--line); border-radius: 8px; padding: .5rem .7rem; min-width: 0; overflow-x: auto; }
+.idstop table.net { font-size: .72rem; }
 .idstop h4 { margin: 0 0 .4rem; font-size: .8rem; }
 .idstop ol { margin: 0; padding-left: 1.2rem; font-size: .78rem; display: grid; gap: .15rem; }
 .idstop ol li b { float: right; }
@@ -5103,6 +5104,8 @@ ul.idsbars { list-style: none; margin: 0; padding: 0; display: grid; gap: .25rem
 ul.idsbars li { display: grid; grid-template-columns: 6rem 1fr 4rem; align-items: center; gap: .4rem; }
 ul.idsbars li i { display: block; height: .5rem; border-radius: 2px; background: var(--cyan); }
 ul.idsbars li b { text-align: right; font-variant-numeric: tabular-nums; }
+ul.advice { margin: .3rem 0 1rem; padding-left: 1.2rem; display: grid; gap: .3rem; font-size: .82rem; }
+ul.advice li.warn::marker { color: var(--amber); }
 .secform textarea { font-family: var(--mono); font-size: .78rem; }
 .secform details label { margin-top: .4rem; }
 .secform .actions { display: flex; justify-content: flex-end; gap: .5rem; }

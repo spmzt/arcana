@@ -203,11 +203,13 @@ usage(void)
 	    "    crashes [backtrace core [program]]\n"
 	    "    clamav mirrors mirror ...\n"
 	    "    suricata update | rules [q=text sid=N only=enabled|disabled|changed\n"
-	    "        classtype=name offset=N limit=N] |\n"
+	    "        classtype=name offset=N limit=N | sources=1 |\n"
+	    "        instance=name command=command [iface=interface]] |\n"
 	    "        rule on=|off=|drop=|default=sid,... ... | sources |\n"
 	    "        source-enable name=source [param=value ...] |\n"
 	    "        source-disable|source-remove name=source |\n"
-	    "        source-add name=source url=address\n"
+	    "        source-add name=source url=address |\n"
+	    "        pcap instance=name file=path\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
@@ -2523,7 +2525,8 @@ cmd_suricata(struct arc_client *cl, int argc, char **argv)
 	if (argc < 2 || ((strcmp(argv[1], "update") == 0 || strcmp(argv[1],
 	    "sources") == 0) && argc != 2) || (strcmp(argv[1], "update") != 0 &&
 	    strcmp(argv[1], "rule") != 0 && strcmp(argv[1], "sources") != 0 &&
-	    strncmp(argv[1], "source-", 7) != 0))
+	    strcmp(argv[1], "pcap") != 0 && strncmp(argv[1], "source-", 7) !=
+	    0))
 		usage();
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;

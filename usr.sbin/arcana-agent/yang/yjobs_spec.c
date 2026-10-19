@@ -69,7 +69,7 @@ static const char *const clamav_verb[] = {
 };
 static const char *const suricata_verb[] = {
 	"update", "rule", "sources", "source-enable", "source-disable",
-	"source-remove", "source-add",
+	"source-remove", "source-add", "pcap",
 };
 
 /*

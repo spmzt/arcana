@@ -2995,9 +2995,44 @@ EOS
 	# suricata: -T checks, and refuses BROKEN, and a ruleset whose rule
 	# negates any as Suricata does; run, it writes an alert and a flow
 	# to eve.json in its log directory, says its pid, and notes a USR2.
+	# Suricata's command socket, as it answers: a version, then a
+	# command a line; gone by itself after two minutes.
+	cat > tools/scsrv.py <<'EOS'
+import json, os, signal, socket, sys
+signal.alarm(120)
+p = sys.argv[1]
+try:
+    os.unlink(p)
+except OSError:
+    pass
+s = socket.socket(socket.AF_UNIX)
+s.bind(p)
+s.listen(4)
+r = {"uptime": {"message": 42, "return": "OK"},
+     "memcap-list": {"message": [{"name": "flow", "value": "32mb"}], "return": "OK"},
+     "ruleset-stats": {"message": [{"id": 0, "rules_loaded": 2, "rules_failed": 1, "rules_skipped": 0}], "return": "OK"},
+     "ruleset-profile": {"message": "Unknown command", "return": "NOK"},
+     "iface-stat": {"message": {"pkts": 7, "invalid-checksums": 0, "drop": 1, "bypassed": 0}, "return": "OK"}}
+while True:
+    c, _ = s.accept()
+    f = c.makefile("rwb")
+    for line in f:
+        o = json.loads(line)
+        a = {"return": "OK"} if "version" in o else dict(r.get(o.get("command"), {"message": "Unknown command", "return": "NOK"}))
+        if o.get("command") == "iface-stat":
+            a["message"] = dict(a["message"], iface=o["arguments"]["iface"])
+        f.write((json.dumps(a) + "\n").encode())
+        f.flush()
+    c.close()
+EOS
 	cat > tools/suricata <<EOS
 #!/bin/sh
 echo "suricata \$*" >> $(pwd)/suricata.log
+# A capture replayed (-r, -l its directory): an alert of it.
+[ "\$3" = -r ] && { printf '%s\\n' '{"timestamp":"2026-10-19T11:00:00.000000+0000","event_type":"alert","src_ip":"10.1.1.1","src_port":1,"dest_ip":"10.2.2.2","dest_port":2,"proto":"TCP","alert":{"action":"allowed","signature_id":2000009,"rev":1,"signature":"ET REPLAYED","category":"","severity":1}}' >> "\$6/eve.json"; exit 0; }
+[ "\$1" = --build-info ] && { printf 'This is Suricata version 8.0.7 RELEASE\nFeatures: IPFW NETMAP HAVE_LUA RUST\n  IPFW support:                            yes\n  Netmap support:                          yes v14+\n  Hyperscan support:                       no\n  Profiling enabled:                       no\n  Profiling rules enabled:                 no\n  Plugin support (experimental):           yes\n'; exit 0; }
+k=\$(sed -n 's/^  filename: \(.*\.sock\)\$/\1/p' "\$2" 2>/dev/null)
+[ -n "\$k" ] && [ "\$1" != -T ] && /usr/local/bin/python3 $(pwd)/tools/scsrv.py "\$k" > /dev/null 2>&1 &
 [ "\$1" = -T ] && { grep -q BROKEN "\$3" && { [ "\$5" = logging.outputs.0.console.enabled=yes ] && echo "E: detect: rule BROKEN at line 1" >&2; exit 1; }
 r=\$(sed -n 's/^  - \(.*\/suricata.rules\)\$/\\1/p' "\$3")
 [ -n "\$r" ] && grep -q NEGATED "\$r" && { echo "i: suricata: This is Suricata"; { echo "E: detect: Complete IP space negated. Rule address range is NIL."; echo "E: detect: error parsing signature \\"alert\\" from file \$r at line 1"; echo "E: suricata: Loading signatures failed."; } >&2; exit 1; }
@@ -3426,6 +3461,61 @@ EOS
 	    "$(echo "$rs4" | sed 's/"interfaces":\["any"\]/"interfaces":["wg5^"]/')"
 	atf_check -s exit:1 -e match:'capture is pcap or netmap' -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    "$(echo "$rs4" | sed 's/"interfaces":/"capture":"bpf","interfaces":/')"
+	# What its Suricata is built with; and Suricata's own answers, by
+	# the instance's command socket, those that read alone.
+	atf_check -o match:'"ids_build":\{"version":"8.0.7","lua":true,"ipfw":true,"netmap":true,"hyperscan":false,"profiling":false,"profiling_rules":false,"plugins":true\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	if [ -x /usr/local/bin/python3 ]; then
+		rs9=$(echo "$rs4" | sed 's|rule-files:|unix-command:\\n  enabled: yes\\n  filename: @SOCKET@\\nrule-files:|; s/sid:1000004;/sid:1000009;/')
+		atf_check -o match:'detects: started' "$JGC" -t -c "$SOCK" sdwan ids "$rs9"
+		atf_check -o match:"^  filename: /.*/sdwan-ids-sw1.sock\$" cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+		for i in $(seq 1 50); do [ -S sdwan-ids-sw1.sock ] && break; sleep 0.1; done
+		atf_check -o inline:'{"message":[{"name": "flow", "value": "32mb"}],"return":"OK"}\n' \
+		    sh -c "\"$JGC\" -c \"$SOCK\" suricata rules instance=sw1 command=memcap-list | sed 's/\"message\": /\"message\":/; s/, \"return\": /,\"return\":/'"
+		atf_check -o match:'"iface": "wg5"' "$JGC" -c "$SOCK" suricata rules instance=sw1 command=iface-stat iface=wg5
+		atf_check -o match:'"rules_failed": 1' "$JGC" -c "$SOCK" suricata rules instance=sw1 command=ruleset-stats
+		atf_check -s exit:1 -e match:'a command is one that reads' "$JGC" -c "$SOCK" suricata rules instance=sw1 command=shutdown
+		atf_check -s exit:1 -e match:'it alone, names an iface' "$JGC" -c "$SOCK" suricata rules instance=sw1 command=iface-stat
+		atf_check -s exit:1 -e match:'does not answer' "$JGC" -c "$SOCK" suricata rules instance=nosuch command=uptime
+	fi
+	# Its Lua scripts: written to its own directory, which its
+	# configuration names; the same, left running; changed, started
+	# again; gone, taken away.  A name not NAME.lua refused.
+	rs10=$(echo "$rs4" | sed 's|rule-files:|default-rule-path: @LUADIR@\\nrule-files:|; s|"rules":|"lua":{"ua.lua":"-- one\\n"},"rules":|')
+	atf_check -o match:'detects: started' "$JGC" -t -c "$SOCK" sdwan ids "$rs10"
+	atf_check -o inline:'-- one\n' cat sdwan-ids-sw1.lua/ua.lua
+	atf_check -o match:"^default-rule-path: /.*/sdwan-ids-sw1.lua\$" cat sdwan-ids-sw1.yaml
+	atf_check -o match:'detects: as it was' "$JGC" -t -c "$SOCK" sdwan ids "$rs10"
+	atf_check -o match:'detects: started' "$JGC" -t -c "$SOCK" sdwan ids "$(echo "$rs10" | sed 's/-- one/-- two/')"
+	atf_check -o inline:'-- two\n' cat sdwan-ids-sw1.lua/ua.lua
+	atf_check -o match:'detects: started' "$JGC" -t -c "$SOCK" sdwan ids "$rs4"
+	test ! -f sdwan-ids-sw1.lua/ua.lua || atf_fail "a script not named stayed"
+	atf_check -s exit:1 -e match:'NAME.lua of letters' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    "$(echo "$rs4" | sed 's|"rules":|"lua":{"../x.lua":"x"},"rules":|')"
+	# Its plugins: under /usr/local/lib, there and root's alone.
+	atf_check -s exit:1 -e match:'is not there, or not root' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    "$(echo "$rs4" | sed 's|"rules":|"plugins":["/usr/local/lib/nosuch.so"],"rules":|')"
+	atf_check -s exit:1 -e match:'a .so under /usr/local/lib' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    "$(echo "$rs4" | sed 's|"rules":|"plugins":["/tmp/x.so"],"rules":|')"
+	if [ -f /usr/local/lib/libucl.so ] && [ "$(stat -f %u /usr/local/lib/libucl.so)" = 0 ]; then
+		atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids \
+		    "$(echo "$rs4" | sed 's|"rules":|"plugins":["/usr/local/lib/libucl.so"],"rules":|')"
+	fi
+	# A capture replayed through it, offline: its alerts kept for the
+	# read; a link, a path not whole, an instance not here, refused.
+	printf 'PCAP' > lab.pcap
+	ln -sf lab.pcap link.pcap
+	atf_check -o match:'done +suricata replays .*/lab.pcap through sw1' \
+	    "$JGC" -c "$SOCK" suricata pcap instance=sw1 file="$(pwd)/lab.pcap"
+	atf_check -o match:'"replay":\{"file":"[^"]*/lab.pcap","at":[0-9]+,"seconds":[0-9]+,"status":0,"alerts_total":1,"alerts":\[\{"name":"sw1",[^}]*"sid":2000009,' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -s exit:1 -o match:'not a file the host has' "$JGC" -c "$SOCK" suricata pcap instance=sw1 file="$(pwd)/link.pcap"
+	atf_check -s exit:1 -e match:'by its whole path' "$JGC" -c "$SOCK" suricata pcap instance=sw1 file=lab.pcap
+	atf_check -s exit:1 -o match:'no instance nosuch here' "$JGC" -c "$SOCK" suricata pcap instance=nosuch file="$(pwd)/lab.pcap"
+	# The packets of its alerts it keeps (pcap-log), listed.
+	printf 'PCAPLOG' > sdwan-ids-sw1.d/log.pcap.1792400000
+	atf_check -o match:'"pcaps":\[\{"path":"[^"]*/sdwan-ids-sw1.d/log.pcap.1792400000","size":7,' \
+	    "$JGC" -c "$SOCK" sdwan
 	# Stopped by the admin: not run, its files and its place kept;
 	# started again as it was.
 	atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs4"

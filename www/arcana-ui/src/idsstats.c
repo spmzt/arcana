@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "app.h"
 
@@ -25,6 +26,80 @@
 #define	STATS_POINTS	400	/* the agent keeps 360 */
 
 static char	open_name[40];
+
+static void	view_engine(struct html *, const ucl_object_t *,
+		    const ucl_object_t *);
+static void	view_replay(struct html *, const ucl_object_t *);
+
+/* Suricata's answers by its socket, a command each, of open_name. */
+static const char *const asks[] = { "memcap-list", "ruleset-stats",
+    "ruleset-failed-rules", "uptime" };
+static struct {
+	ucl_object_t	*ans[8];	/* asks', then ruleset-profile */
+	ucl_object_t	*ifs;		/* iface-stat of each, an object */
+	char		 error[256];
+	unsigned	 gen;
+} eng;
+
+static void
+eng_clear(void)
+{
+	size_t	i;
+
+	for (i = 0; i < nitems(eng.ans); i++) {
+		if (eng.ans[i] != NULL)
+			ucl_object_unref(eng.ans[i]);
+		eng.ans[i] = NULL;
+	}
+	if (eng.ifs != NULL)
+		ucl_object_unref(eng.ifs);
+	eng.ifs = NULL;
+	eng.error[0] = '\0';
+	eng.gen++;
+}
+
+/* arg: the slot (0.. of asks, 7 the profile, 100+ an interface's). */
+static void
+eng_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	uintptr_t		 a = (uintptr_t)arg;
+	unsigned		 gen = (unsigned)(a >> 16), slot = a & 0xffff;
+	const ucl_object_t	*d;
+
+	if (gen != (eng.gen & 0xffff))
+		return;
+	if (status != 200 || !jbool(o, "ok")) {
+		snprintf(eng.error, sizeof(eng.error), "%s", jstr(o, "error") !=
+		    NULL ? jstr(o, "error") : err != NULL ? err :
+		    "the host did not answer");
+		render();
+		return;
+	}
+	d = jget(o, "data");
+	if (slot >= 100) {
+		if (eng.ifs == NULL)
+			eng.ifs = ucl_object_typed_new(UCL_ARRAY);
+		if (d != NULL)
+			ucl_array_append(eng.ifs, ucl_object_copy(d));
+	} else if (slot < nitems(eng.ans) && d != NULL) {
+		if (eng.ans[slot] != NULL)
+			ucl_object_unref(eng.ans[slot]);
+		eng.ans[slot] = ucl_object_copy(d);
+	}
+	render();
+}
+
+static void
+eng_ask(const char *cmd, const char *ifn, unsigned slot)
+{
+	char	url[256];
+
+	snprintf(url, sizeof(url), "/api/servers/%s/suricata/rules?instance="
+	    "%s&command=%s%s%s", sec_host_id(), open_name, cmd, ifn != NULL ?
+	    "&iface=" : "", ifn != NULL ? ifn : "");
+	api("GET", url, NULL, eng_cb, (void *)(uintptr_t)(((uintptr_t)(
+	    eng.gen & 0xffff) << 16) | slot));
+}
 
 bool
 idsstats_active(void)
@@ -367,21 +442,361 @@ view_idsstats(struct html *h)
 	tops(h, jget(l, "alerts"), "src", "Sources");
 	tops(h, jget(l, "alerts"), "dst", "Destinations");
 	h_raw(h, "</div>");
+	view_engine(h, l, st);
+	view_replay(h, l);
 }
 
 bool
 idsstats_action(const char *act, const char *arg)
 {
+	const ucl_object_t	*l, *e;
+	ucl_object_iter_t	 it;
+	size_t			 i;
+	unsigned		 k;
 
 	if (strcmp(act, "ist-open") == 0) {
 		snprintf(open_name, sizeof(open_name), "%s", arg);
+		eng_clear();
 		render();
 		return (true);
 	}
 	if (strcmp(act, "ist-back") == 0) {
 		open_name[0] = '\0';
+		eng_clear();
 		render();
 		return (true);
 	}
+	if (strcmp(act, "ist-ask") == 0) {
+		eng_clear();
+		for (i = 0; i < nitems(asks); i++)
+			eng_ask(asks[i], NULL, (unsigned)i);
+		k = 100;
+		if ((l = sec_ids_live(open_name)) != NULL) {
+			it = NULL;
+			while ((e = ucl_object_iterate(jget(l, "interfaces"),
+			    &it, true)) != NULL)
+				eng_ask("iface-stat", ucl_object_tostring(e), k++);
+		}
+		render();
+		return (true);
+	}
+	if (strcmp(act, "ist-profile") == 0) {
+		eng_ask("ruleset-profile", NULL, 7);
+		return (true);
+	}
 	return (false);
+}
+
+/* A size Suricata says (64mb, 1gb, unlimited) in bytes; 0 none. */
+static double
+size_of(const char *v)
+{
+	double	n;
+	char	*end;
+
+	if (v == NULL || (n = strtod(v, &end)) <= 0)
+		return (0);
+	if (strcasecmp(end, "kb") == 0)
+		n *= 1024;
+	else if (strcasecmp(end, "mb") == 0)
+		n *= 1024 * 1024;
+	else if (strcasecmp(end, "gb") == 0)
+		n *= 1024.0 * 1024 * 1024;
+	return (n);
+}
+
+/* A list of objects as a table, the first's keys its columns. */
+static void
+obj_table(struct html *h, const ucl_object_t *arr, int max)
+{
+	const ucl_object_t	*first, *e, *v;
+	ucl_object_iter_t	 it, kit;
+	int			 n;
+
+	if ((first = ucl_array_find_index(arr, 0)) == NULL ||
+	    ucl_object_type(first) != UCL_OBJECT) {
+		h_raw(h, "<pre class=\"mono surule\">");
+		if (arr != NULL) {
+			char	*t = (char *)ucl_object_emit(arr,
+			    UCL_EMIT_JSON_COMPACT);
+
+			h_txt(h, t);
+			free(t);
+		}
+		h_raw(h, "</pre>");
+		return;
+	}
+	h_raw(h, "<table class=\"net\"><thead><tr>");
+	kit = NULL;
+	while ((v = ucl_object_iterate(first, &kit, true)) != NULL) {
+		h_raw(h, "<th>");
+		h_txt(h, ucl_object_key(v));
+		h_raw(h, "</th>");
+	}
+	h_raw(h, "</tr></thead><tbody>");
+	n = 0;
+	it = NULL;
+	while ((e = ucl_object_iterate(arr, &it, true)) != NULL && n++ < max) {
+		h_raw(h, "<tr>");
+		kit = NULL;
+		while ((v = ucl_object_iterate(first, &kit, true)) != NULL) {
+			h_raw(h, "<td class=\"mono\">");
+			h_txt(h, ucl_object_tostring_forced(ucl_object_lookup(e,
+			    ucl_object_key(v))));
+			h_raw(h, "</td>");
+		}
+		h_raw(h, "</tr>");
+	}
+	h_raw(h, "</tbody></table>");
+}
+
+/*
+ * Suricata itself, asked by its socket, and what to make of it all: the
+ * advice of its drops, invalid packets, memory, rules that failed and
+ * the alerts most told; and its rules' profile where it is built with
+ * it.
+ */
+static void
+view_engine(struct html *h, const ucl_object_t *l, const ucl_object_t *st)
+{
+	const ucl_object_t	*b, *m, *e, *last, *first;
+	ucl_object_iter_t	 it;
+	double			 pk, dr, inv, caps, mem, secs, al;
+	int			 n, advice;
+	bool			 asked;
+
+	b = jget(sec_state(), "ids_build");
+	asked = eng.ans[0] != NULL || eng.ans[1] != NULL;
+	h_raw(h, "<div class=\"toolbar\"><strong>Suricata itself</strong>"
+	    "<span class=\"grow\"></span><button class=\"ghost\" data-act="
+	    "\"ist-ask\" title=\"By its unix command socket: its memcaps, "
+	    "its rules loaded and failed, its interfaces' counters\">");
+	h_raw(h, asked ? "Ask again" : "Ask Suricata");
+	h_raw(h, "</button></div>");
+	if (b != NULL) {
+		h_raw(h, "<p class=\"dim\">Suricata ");
+		h_txt(h, jstr(b, "version"));
+		h_fmt(h, ": netmap %s, ipfw %s, Hyperscan %s, Lua %s, plugins "
+		    "%s, rule profiling %s.</p>", jbool(b, "netmap") ? "yes" :
+		    "no", jbool(b, "ipfw") ? "yes" : "no", jbool(b,
+		    "hyperscan") ? "yes" : "no", jbool(b, "lua") ? "yes" : "no",
+		    jbool(b, "plugins") ? "yes" : "no", jbool(b,
+		    "profiling_rules") ? "yes" : "no");
+	}
+	if (eng.error[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, eng.error);
+		h_raw(h, "</div>");
+	}
+	if (asked) {
+		h_raw(h, "<div class=\"idstops\">");
+		if ((m = jget(eng.ans[0], "message")) != NULL) {
+			h_raw(h, "<div class=\"idstop\"><h4>Memcaps</h4>");
+			obj_table(h, m, 40);
+			h_raw(h, "</div>");
+		}
+		if ((m = jget(eng.ans[1], "message")) != NULL) {
+			h_raw(h, "<div class=\"idstop\"><h4>Rules loaded</h4>");
+			obj_table(h, m, 10);
+			h_raw(h, "</div>");
+		}
+		if (eng.ifs != NULL) {
+			ucl_object_t	*rows = ucl_object_typed_new(UCL_ARRAY);
+
+			it = NULL;
+			while ((e = ucl_object_iterate(eng.ifs, &it, true)) !=
+			    NULL)
+				if (jget(e, "message") != NULL)
+					ucl_array_append(rows, ucl_object_copy(
+					    jget(e, "message")));
+			h_raw(h, "<div class=\"idstop\"><h4>Interfaces</h4>");
+			obj_table(h, rows, 16);
+			h_raw(h, "</div>");
+			ucl_object_unref(rows);
+		}
+		h_raw(h, "</div>");
+		if ((m = jget(eng.ans[2], "message")) != NULL &&
+		    ucl_array_size(m) > 0) {
+			h_raw(h, "<h4>Rules that failed to load</h4>");
+			obj_table(h, m, 50);
+		}
+	}
+
+	/* Advice, of the last hour. */
+	h_raw(h, "<h4>What to look at</h4><ul class=\"advice\">");
+	advice = 0;
+	n = (int)ucl_array_size(jget(st, "series"));
+	first = ucl_array_find_index(jget(st, "series"), 0);
+	last = ucl_array_find_index(jget(st, "series"), (unsigned)n - 1);
+	pk = pt(last, field_at(st, "packets")) - pt(first, field_at(st,
+	    "packets"));
+	dr = pt(last, field_at(st, "drops")) - pt(first, field_at(st,
+	    "drops"));
+	inv = pt(last, field_at(st, "invalid")) - pt(first, field_at(st,
+	    "invalid"));
+	al = pt(last, field_at(st, "alerts")) - pt(first, field_at(st,
+	    "alerts"));
+	secs = pt(last, field_at(st, "t")) - pt(first, field_at(st, "t"));
+	if (n > 1 && pk > 0 && dr > 0 && dr / (pk + dr) > 0.01) {
+		h_fmt(h, "<li class=\"warn\">The kernel dropped %.1f%% of the "
+		    "packets before Suricata saw them. Give it more: the "
+		    "workers runmode and more worker CPUs (Performance), "
+		    "netmap(4) instead of pcap(3) (Capture), more pending "
+		    "packets; with pcap, a larger BPF buffer "
+		    "(net.bpf.maxbufsize) or net.bpf.zerocopy_enable.</li>",
+		    100 * dr / (pk + dr));
+		advice++;
+	}
+	if (n > 1 && pk > 0 && inv / pk > 0.01) {
+		h_fmt(h, "<li class=\"warn\">%.1f%% of the packets are "
+		    "invalid as Suricata decodes them: checksums not yet "
+		    "made or segments merged by the NIC. Turn its "
+		    "interfaces' offloading off (Capture).</li>", 100 * inv /
+		    pk);
+		advice++;
+	}
+	caps = 0;
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(eng.ans[0], "message"), &it,
+	    true)) != NULL)
+		if (jstr(e, "name") != NULL && (strcmp(jstr(e, "name"),
+		    "flow") == 0 || strcmp(jstr(e, "name"), "stream") == 0 ||
+		    strcmp(jstr(e, "name"), "stream-reassembly") == 0))
+			caps += size_of(jstr(e, "value"));
+	mem = pt(last, field_at(st, "memuse"));
+	if (caps > 0 && mem > 0.8 * caps) {
+		h_fmt(h, "<li class=\"warn\">It uses %.0f%% of its flow, "
+		    "stream and reassembly memcaps: past them it drops or "
+		    "passes (its exception policy). Raise them (Memory).</li>",
+		    100 * mem / caps);
+		advice++;
+	}
+	if ((m = jget(eng.ans[1], "message")) != NULL && (e =
+	    ucl_array_find_index(m, 0)) != NULL && jint(e, "rules_failed", 0) >
+	    0) {
+		h_fmt(h, "<li class=\"warn\">%lld of its rules failed to "
+		    "load: see them above.</li>", (long long)jint(e,
+		    "rules_failed", 0));
+		advice++;
+	}
+	if (n > 1 && secs > 0 && al / secs > 1) {
+		h_fmt(h, "<li>%.1f alerts a second: the signatures told most, "
+		    "below, may want a threshold or a suppression (Own "
+		    "rules).</li>", al / secs);
+		advice++;
+	}
+	if (advice == 0)
+		h_raw(h, "<li class=\"dim\">Nothing: it keeps up, in memory, "
+		    "with every rule loaded as far as it was asked.</li>");
+	h_raw(h, "</ul>");
+
+	/* Its rules' profile: where the time goes, rule by rule. */
+	h_raw(h, "<h4>Rule profiling</h4>");
+	if (b != NULL && !jbool(b, "profiling_rules")) {
+		h_raw(h, "<p class=\"dim\">This Suricata is built without rule "
+		    "profiling, as the port builds it. poudriere (Builder) "
+		    "builds it with profiling given, in the build's "
+		    "make.conf:</p><pre class=\"mono surule\">.if ${.CURDIR:M"
+		    "*/security/suricata}\nCONFIGURE_ARGS+=--enable-profiling-"
+		    "rules\n.endif</pre><p class=\"dim\">and installed in its "
+		    "place; <code>--enable-profiling</code> profiles packets "
+		    "too, at a cost.</p>");
+		return;
+	}
+	h_raw(h, "<div class=\"toolbar\"><button class=\"ghost\" data-act="
+	    "\"ist-profile\">Profile its rules</button></div>");
+	if ((m = jget(eng.ans[7], "message")) != NULL) {
+		if (ucl_object_type(m) == UCL_STRING)
+			h_txt(h, ucl_object_tostring(m));
+		else
+			obj_table(h, jget(m, "rules") != NULL ? jget(m, "rules") :
+			    m, 50);
+	}
+	(void)l;
+}
+
+/*
+ * A capture run through it, offline (a suricata job, verb pcap): the
+ * last one's alerts; and the packets of its alerts it keeps (pcap-log).
+ */
+static void
+view_replay(struct html *h, const ucl_object_t *l)
+{
+	const ucl_object_t	*r, *a, *p;
+	ucl_object_iter_t	 it;
+	char			 sz[32], age[32];
+	int			 n;
+
+	h_raw(h, "<h4>Replay a capture</h4><form class=\"secform\" "
+	    "data-form=\"ist-replay\"><div class=\"rowform\"><label>A "
+	    "capture the host has <input name=\"file\" required spellcheck="
+	    "\"false\" placeholder=\"/var/tmp/suspect.pcap\"><small class=\""
+	    "help\">a .pcap, .pcapng or .cap, by its whole path: run through "
+	    "this instance's configuration and rules (suricata -r), offline"
+	    "</small></label></div><div class=\"actions\"><button type=\""
+	    "submit\" class=\"primary\">Replay</button></div></form>");
+	if ((r = jget(l, "replay")) != NULL) {
+		fmt_age(age, sizeof(age), (double)jint(r, "at", 0) * 1000);
+		h_raw(h, "<p class=\"dim\">");
+		h_txt(h, jstr(r, "file"));
+		h_fmt(h, ", replayed %s in %lld s: %lld alert%s%s.</p>", age,
+		    (long long)jint(r, "seconds", 0), (long long)jint(r,
+		    "alerts_total", 0), jint(r, "alerts_total", 0) == 1 ? "" :
+		    "s", jint(r, "status", 0) != 0 ? " (Suricata failed)" : "");
+		n = 0;
+		h_raw(h, "<ul class=\"secalerts\">");
+		it = NULL;
+		while ((a = ucl_object_iterate(jget(r, "alerts"), &it, true)) !=
+		    NULL && n++ < 50) {
+			h_raw(h, "<li><b>");
+			h_txt(h, jstr(a, "signature"));
+			h_fmt(h, "</b> <small class=\"dim\">sid %lld</small> "
+			    "<span class=\"mono\">", (long long)jint(a, "sid", 0));
+			h_txt(h, jstr(a, "src"));
+			h_raw(h, " → ");
+			h_txt(h, jstr(a, "dst"));
+			h_raw(h, "</span></li>");
+		}
+		h_raw(h, "</ul>");
+	}
+	if (ucl_array_size(jget(l, "pcaps")) > 0) {
+		h_raw(h, "<h4>The packets of its alerts</h4><ul class=\""
+		    "secalerts\">");
+		it = NULL;
+		while ((p = ucl_object_iterate(jget(l, "pcaps"), &it, true)) !=
+		    NULL) {
+			fmt_bytes(sz, sizeof(sz), jint(p, "size", 0));
+			h_raw(h, "<li class=\"mono\">");
+			h_txt(h, jstr(p, "path"));
+			h_fmt(h, " <small class=\"dim\">%s</small></li>", sz);
+		}
+		h_raw(h, "</ul>");
+	}
+}
+
+bool
+idsstats_form(const char *form, const ucl_object_t *f)
+{
+	char	*json, *a, *b, title[300];
+
+	if (strcmp(form, "ist-replay") != 0 || jstr(f, "file") == NULL)
+		return (false);
+	if (asprintf(&a, "instance=%s", open_name) == -1 || asprintf(&b,
+	    "file=%s", jstr(f, "file")) == -1)
+		abort();
+	{
+		char	*qa = json_quote(a), *qb = json_quote(b);
+
+		if (asprintf(&json, "{\"kind\":\"suricata\",\"verb\":\"pcap\","
+		    "\"args\":[%s,%s]}", qa, qb) == -1)
+			abort();
+		free(qa);
+		free(qb);
+	}
+	snprintf(title, sizeof(title), "suricata replays %s through %s",
+	    jstr(f, "file"), open_name);
+	sec_job(json, title);
+	free(a);
+	free(b);
+	return (true);
 }

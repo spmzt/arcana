@@ -15,7 +15,10 @@
 
 #include <sys/param.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/un.h>
 
 #include <ctype.h>
 #include <dirent.h>
@@ -38,6 +41,8 @@
 #define	LIMIT_MAX	500
 
 static void	sources_json(struct work *, ucl_object_t *);
+static bool	sc_read(struct work *, const char *const *, size_t,
+		    struct arc_suricata_rules_rsp *);
 
 /* A rule the admin set: 'e' on, 'd' off, 'p' drop. */
 struct rstate {
@@ -383,7 +388,7 @@ do_suricata_rules(struct work *w, const char *const *names, size_t nn,
     struct arc_suricata_rules_rsp *rsp)
 {
 	static const char *const keys[] = { "q", "sid", "only", "classtype",
-	    "offset", "limit", "sources" };
+	    "offset", "limit", "sources", "instance", "command", "iface" };
 	struct rstate	*v;
 	struct stat	 sb;
 	ucl_object_t	*top, *arr, *o;
@@ -411,6 +416,9 @@ do_suricata_rules(struct work *w, const char *const *names, size_t nn,
 			return;
 		}
 	}
+	/* instance= command=: Suricata's own answer. */
+	if (sc_read(w, names, nn, rsp))
+		return;
 	/* sources=1: the rule sources, not the rules. */
 	if (word_value(names, nn, "sources") != NULL) {
 		top = ucl_object_typed_new(UCL_OBJECT);
@@ -942,4 +950,131 @@ sources_json(struct work *w, ucl_object_t *top)
 	/* None enabled: suricata-update fetches Emerging Threats Open. */
 	ucl_object_insert_key(top, ucl_object_frombool(!any), "default_et_open",
 	    0, false);
+}
+
+/*
+ * Suricata's own answers, by its unix command socket (unix-command, the
+ * instance's .sock): a version line, then a command, each JSON on a
+ * line, each answered on one.  Those that read alone: what it runs,
+ * its memcaps, its rules loaded and failed, its interfaces' counters,
+ * its rules' profile where it is built with it.
+ */
+static const char *const sc_commands[] = { "uptime", "version",
+    "running-mode", "capture-mode", "memcap-list", "ruleset-stats",
+    "ruleset-failed-rules", "ruleset-profile", "iface-list", "iface-stat",
+    "dump-counters" };
+
+static char *
+sc_line(struct work *w, int s)
+{
+	char	*buf;
+	size_t	 len, cap;
+	ssize_t	 n;
+
+	cap = 4 * 1024 * 1024;
+	buf = wcalloc(w, cap + 1, 1);
+	len = 0;
+	while (len < cap && (len == 0 || buf[len - 1] != '\n')) {
+		if ((n = read(s, buf + len, cap - len)) <= 0)
+			return (NULL);
+		len += (size_t)n;
+	}
+	/* The line without its end. */
+	while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r'))
+		len--;
+	buf[len] = '\0';
+	return (buf);
+}
+
+static const char *
+sc_ask(struct work *w, const char *path, const char *cmd, const char *iface,
+    const char **errp)
+{
+	struct sockaddr_un	 sun;
+	struct timeval		 tv = { 5, 0 };
+	const char		*line;
+	char			*r;
+	int			 s;
+
+	memset(&sun, 0, sizeof(sun));
+	sun.sun_family = AF_UNIX;
+	if (strlcpy(sun.sun_path, path, sizeof(sun.sun_path)) >=
+	    sizeof(sun.sun_path)) {
+		*errp = "its socket's path is too long";
+		return (NULL);
+	}
+	if ((s = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0)) == -1 ||
+	    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == -1 ||
+	    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) == -1 ||
+	    connect(s, (struct sockaddr *)&sun, sizeof(sun)) == -1) {
+		*errp = wfmt(w, "Suricata does not answer on %s: %s (is it "
+		    "running?)", path, strerror(errno));
+		if (s != -1)
+			close(s);
+		return (NULL);
+	}
+	line = "{\"version\":\"0.2\"}\n";
+	if (write(s, line, strlen(line)) != (ssize_t)strlen(line) ||
+	    (r = sc_line(w, s)) == NULL || strstr(r, "\"OK\"") == NULL) {
+		*errp = "Suricata did not take the socket's version";
+		close(s);
+		return (NULL);
+	}
+	line = iface != NULL ? wfmt(w, "{\"command\":\"%s\",\"arguments\":"
+	    "{\"iface\":\"%s\"}}\n", cmd, iface) : wfmt(w, "{\"command\":"
+	    "\"%s\"}\n", cmd);
+	if (write(s, line, strlen(line)) != (ssize_t)strlen(line) ||
+	    (r = sc_line(w, s)) == NULL) {
+		*errp = wfmt(w, "Suricata did not answer %s", cmd);
+		close(s);
+		return (NULL);
+	}
+	close(s);
+	return (r);
+}
+
+/* instance=NAME command=CMD [iface=IF]: Suricata's answer, as it is. */
+static bool
+sc_read(struct work *w, const char *const *names, size_t nn,
+    struct arc_suricata_rules_rsp *rsp)
+{
+	const char	*inst, *cmd, *ifn, *e, *r;
+	size_t		 i;
+
+	inst = word_value(names, nn, "instance");
+	cmd = word_value(names, nn, "command");
+	ifn = word_value(names, nn, "iface");
+	if (inst == NULL && cmd == NULL)
+		return (false);
+	rsp->has_ok = true;
+	rsp->ok = false;
+	if (inst == NULL || cmd == NULL || !suricata_name_ok(inst)) {
+		rsp->error = "Suricata is asked by instance= and command=";
+		return (true);
+	}
+	for (i = 0; i < nitems(sc_commands); i++)
+		if (strcmp(cmd, sc_commands[i]) == 0)
+			break;
+	if (i == nitems(sc_commands)) {
+		rsp->error = "a command is one that reads: uptime, version, "
+		    "running-mode, capture-mode, memcap-list, ruleset-stats, "
+		    "ruleset-failed-rules, ruleset-profile, iface-list, "
+		    "iface-stat or dump-counters";
+		return (true);
+	}
+	if ((ifn != NULL) != (strcmp(cmd, "iface-stat") == 0) || (ifn !=
+	    NULL && (strlen(ifn) >= 17 || strspn(ifn,
+	    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._^")
+	    != strlen(ifn)))) {
+		rsp->error = "iface-stat, and it alone, names an iface=";
+		return (true);
+	}
+	e = NULL;
+	if ((r = sc_ask(w, suricata_socket(w, inst), cmd, ifn, &e)) == NULL) {
+		rsp->error = e;
+		return (true);
+	}
+	rsp->json = wtext(w, r);
+	rsp->ok = true;
+	return (true);
 }

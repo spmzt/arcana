@@ -34,6 +34,7 @@
 #include <net/if.h>
 
 #include <ctype.h>
+#include <dirent.h>
 #include <ifaddrs.h>
 #include <errno.h>
 #include <pthread.h>
@@ -94,6 +95,15 @@ struct instance {
 };
 
 static ucl_object_t	*parse(const char *);
+static const char	*suricata_replay_check(const struct arc_job_spec *);
+static int		 suricata_replay(struct work *,
+			    const struct arc_job_spec *, const char **);
+static bool		 lua_ok(struct work *, const char *,
+			    const ucl_object_t *, const char **);
+static bool		 lua_sync(struct work *, const char *,
+			    const ucl_object_t *);
+static bool		 plugins_ok(struct work *, const char *,
+			    const ucl_object_t *, const char **);
 
 static pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
 static struct instance	instances[INSTANCES_MAX];
@@ -163,10 +173,16 @@ offload_off(struct work *w, const struct instance *in)
 static void
 ids_pathbuf(const char *name, const char *ext, char *buf, size_t len)
 {
-	char	f[96];
+	char	f[96], rel[MAXPATHLEN], cwd[MAXPATHLEN];
 
 	snprintf(f, sizeof(f), "sdwan-ids-%s.%s", name, ext);
-	sdwan_conf_path(f, buf, len);
+	sdwan_conf_path(f, rel, sizeof(rel));
+	/* Whole: Suricata reads a relative rule file as of its
+	 * default-rule-path, not of where it runs. */
+	if (rel[0] != '/' && getcwd(cwd, sizeof(cwd)) != NULL)
+		snprintf(buf, len, "%s/%s", cwd, rel);
+	else
+		snprintf(buf, len, "%s", rel);
 }
 
 static const char *
@@ -318,6 +334,21 @@ ruleset_path(void)
 	return (ruleset_buf);
 }
 
+/* For surules.c: an instance's name, and its command socket. */
+bool
+suricata_name_ok(const char *s)
+{
+
+	return (name_ok(s));
+}
+
+const char *
+suricata_socket(struct work *w, const char *name)
+{
+
+	return (inst_path(w, name, "sock"));
+}
+
 /* Where suricata-update writes the ruleset, for surules.c. */
 const char *
 suricata_ruleset(void)
@@ -375,8 +406,8 @@ inst_conf(struct work *w, const char *name, const char *conf)
 {
 	const char	*from[] = { "@LOGDIR@", "@RULES@", "@PID@",
 			    "@CLASSIFICATION@", "@REFERENCE@", "@RULESET@",
-			    "@THRESHOLD@" },
-			*to[7];
+			    "@THRESHOLD@", "@SOCKET@", "@LUADIR@" },
+			*to[9];
 	char		*out, *p, *q, *l, *e;
 	size_t		 i, n, len;
 
@@ -400,6 +431,8 @@ inst_conf(struct work *w, const char *name, const char *conf)
 	to[4] = suricata_etc(w, "reference.config");
 	to[5] = SURICATA_RULESET;
 	to[6] = inst_path(w, name, "threshold");
+	to[7] = inst_path(w, name, "sock");
+	to[8] = inst_path(w, name, "lua");
 	len = strlen(conf) + 8 * MAXPATHLEN + 1;
 	out = wcalloc(w, 1, len);
 	for (p = (char *)(uintptr_t)conf, q = out; *p != '\0';) {
@@ -871,6 +904,138 @@ divert_was(const char *name)
 	return (-1);
 }
 
+/* A file of the instance's, written whole: a new one moved over it. */
+static int
+put_text(const char *path, const char *text, const char **errp)
+{
+	char	tmp[MAXPATHLEN];
+	FILE	*fp;
+
+	snprintf(tmp, sizeof(tmp), "%s.new", path);
+	if ((fp = fopen(tmp, "we")) == NULL || fputs(text, fp) == EOF ||
+	    fclose(fp) != 0 || rename(tmp, path) != 0) {
+		*errp = strerror(errno);
+		(void)unlink(tmp);
+		return (-1);
+	}
+	return (0);
+}
+
+/* Its Lua scripts: 16 at most, each NAME.lua of 64 KB at most. */
+static bool
+lua_ok(struct work *w, const char *name, const ucl_object_t *lua,
+    const char **errp)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*k;
+	size_t			 n, len;
+
+	if (lua == NULL)
+		return (true);
+	if (ucl_object_type(lua) != UCL_OBJECT) {
+		*errp = wfmt(w, "%s: its lua is scripts by name", name);
+		return (false);
+	}
+	n = 0;
+	it = NULL;
+	while ((e = ucl_object_iterate(lua, &it, true)) != NULL) {
+		k = ucl_object_key(e);
+		len = strlen(k);
+		if (++n > 16 || len < 5 || len > 36 || strcmp(k + len - 4,
+		    ".lua") != 0 || strspn(k, "abcdefghijklmnopqrstuvwxyz"
+		    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != len - 4 ||
+		    ucl_object_type(e) != UCL_STRING ||
+		    strlen(ucl_object_tostring(e)) > 64 * 1024) {
+			*errp = wfmt(w, "%s: its Lua scripts are NAME.lua of "
+			    "letters, digits, _ and -, 64 KB each, 16 at most",
+			    name);
+			return (false);
+		}
+	}
+	return (true);
+}
+
+/*
+ * Its Lua scripts into its own directory, those not named any more
+ * taken away (lua NULL: all of them).  True when one changed.
+ */
+static bool
+lua_sync(struct work *w, const char *name, const ucl_object_t *lua)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	struct dirent		*de;
+	DIR			*d;
+	const char		*dir, *path, *was, *e2;
+	bool			 changed;
+
+	changed = false;
+	dir = inst_path(w, name, "lua");
+	if ((d = opendir(dir)) != NULL) {
+		while ((de = readdir(d)) != NULL) {
+			if (de->d_name[0] == '.')
+				continue;
+			if (lua != NULL && ucl_object_lookup(lua, de->d_name) !=
+			    NULL)
+				continue;
+			(void)unlink(wfmt(w, "%s/%s", dir, de->d_name));
+			changed = true;
+		}
+		closedir(d);
+	}
+	if (lua == NULL || ucl_object_type(lua) != UCL_OBJECT)
+		return (changed);
+	(void)mkdir(dir, 0750);
+	it = NULL;
+	while ((e = ucl_object_iterate(lua, &it, true)) != NULL) {
+		path = wfmt(w, "%s/%s", dir, ucl_object_key(e));
+		was = file_text(w, path);
+		if (was != NULL && strcmp(was, ucl_object_tostring(e)) == 0)
+			continue;
+		e2 = NULL;
+		if (put_text(path, ucl_object_tostring(e), &e2) == 0)
+			changed = true;
+	}
+	return (changed);
+}
+
+/*
+ * Its plugins: shared objects under /usr/local/lib, root's alone and
+ * written by none but root, else none is loaded.
+ */
+static bool
+plugins_ok(struct work *w, const char *name, const ucl_object_t *pl,
+    const char **errp)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	struct stat		 sb;
+	const char		*p;
+
+	if (pl == NULL)
+		return (true);
+	it = NULL;
+	while ((e = ucl_object_iterate(pl, &it, true)) != NULL) {
+		p = ucl_object_type(e) == UCL_STRING ? ucl_object_tostring(e) :
+		    "";
+		if (strncmp(p, "/usr/local/lib/", 15) != 0 || strstr(p,
+		    "/../") != NULL || strlen(p) < 19 || strcmp(p + strlen(p) -
+		    3, ".so") != 0) {
+			*errp = wfmt(w, "%s: a plugin is a .so under "
+			    "/usr/local/lib", name);
+			return (false);
+		}
+		if (lstat(p, &sb) != 0 || !S_ISREG(sb.st_mode) ||
+		    sb.st_uid != 0 || (sb.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
+			*errp = wfmt(w, "%s: the plugin %s is not there, or not "
+			    "root's alone", name, p);
+			return (false);
+		}
+	}
+	return (true);
+}
+
 /*
  * The instances applied: {"instances": [{"name", "interfaces", "conf",
  * "rules", "thresholds", "stopped"}, ...]}.  Suricata must be there (a plugin); each instance's
@@ -889,7 +1054,7 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 	char			*argv[8], *conf, *was;
 	const char		*rules, *thr, *e, *note, *what;
 	int			 n, i, k, step, nkeep;
-	bool			 ok, same, sec;
+	bool			 ok, same, sec, luach;
 
 	if ((top = parse(json)) == NULL || ucl_object_type(top) != UCL_OBJECT) {
 		if (top != NULL)
@@ -956,6 +1121,12 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			}
 			ni[n].netmap = strcmp(ucl_object_tostring(f), "netmap") ==
 			    0;
+		}
+		if (!lua_ok(w, ni[n].name, ucl_object_lookup(in, "lua"), errp) ||
+		    !plugins_ok(w, ni[n].name, ucl_object_lookup(in, "plugins"),
+		    errp)) {
+			ucl_object_unref(top);
+			return (-1);
 		}
 		if ((f = ucl_object_lookup(in, "offload")) != NULL)
 			ni[n].nooffload = ucl_object_type(f) == UCL_BOOLEAN &&
@@ -1038,6 +1209,9 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			(void)unlink(inst_path(w, instances[i].name, "rules"));
 			(void)unlink(inst_path(w, instances[i].name,
 			    "threshold"));
+			(void)unlink(inst_path(w, instances[i].name, "sock"));
+			(void)lua_sync(w, instances[i].name, NULL);
+			(void)rmdir(inst_path(w, instances[i].name, "lua"));
 			step_end(w, step, true, NULL);
 		}
 	}
@@ -1073,6 +1247,8 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		thr = ucl_object_lookup(in, "thresholds") != NULL ?
 		    ucl_object_tostring(ucl_object_lookup(in, "thresholds")) :
 		    "";
+		/* Its Lua scripts written first: suricata -T loads them. */
+		luach = lua_sync(w, ni[k].name, ucl_object_lookup(in, "lua"));
 		/* Running with the same files: left as it is. */
 		was = file_text(w, inst_path(w, ni[k].name, "yaml"));
 		same = was != NULL && strcmp(was, conf) == 0 && (was = file_text(w,
@@ -1080,7 +1256,7 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		    rules) == 0 && strcmp((was = file_text(w, inst_path(w,
 		    ni[k].name, "threshold"))) != NULL ? was : "", thr) == 0 &&
 		    inst_pid(w, ni[k].name) != 0 && divert_was(ni[k].name) ==
-		    ni[k].divert;
+		    ni[k].divert && !luach;
 		what = wfmt(w, "suricata %s on %d interface%s, %s: %s",
 		    ni[k].name, ni[k].nifs, ni[k].nifs == 1 ? "" : "s",
 		    ni[k].divert > 0 ? wfmt(w, "prevents by divert %d",
@@ -1228,6 +1404,73 @@ sdwan_ids_start(void)
 	work_free(&w);
 }
 
+/*
+ * What this Suricata is built with (suricata --build-info), kept while
+ * its program is the same: its version, and whether it profiles
+ * packets and rules, has Hyperscan, netmap, ipfw, Lua and plugins.
+ */
+static ucl_object_t *
+build_json(struct work *w)
+{
+	static char	*kept;
+	static time_t	 kept_mtime;
+	static const struct {
+		const char	*line, *key;
+	} yes[] = {
+		{ "Profiling enabled:", "profiling" },
+		{ "Profiling rules enabled:", "profiling_rules" },
+		{ "Hyperscan support:", "hyperscan" },
+		{ "Netmap support:", "netmap" },
+		{ "IPFW support:", "ipfw" },
+		{ "Plugin support (experimental):", "plugins" },
+	};
+	struct execres	 res;
+	struct stat	 sb;
+	ucl_object_t	*o;
+	char		*argv[3], *copy, *it, *line, *v;
+	size_t		 i;
+
+	if (stat(suricata_bin(w), &sb) != 0)
+		return (NULL);
+	if (kept == NULL || sb.st_mtime != kept_mtime) {
+		argv[0] = (char *)(uintptr_t)suricata_bin(w);
+		argv[1] = (char *)(uintptr_t)"--build-info";
+		argv[2] = NULL;
+		if (run_exec(w, argv, &res) != 0)
+			return (NULL);
+		free(kept);
+		kept = strdup(res.out);
+		kept_mtime = sb.st_mtime;
+	}
+	if (kept == NULL)
+		return (NULL);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	copy = wstrdup(w, kept);
+	for (it = copy; (line = strsep(&it, "\n")) != NULL;) {
+		line += strspn(line, " \t");
+		if ((v = strstr(line, "Suricata version ")) != NULL) {
+			v += 17;
+			v[strcspn(v, " ")] = '\0';
+			ucl_object_insert_key(o, ucl_object_fromstring(v),
+			    "version", 0, true);
+			continue;
+		}
+		if (strncmp(line, "Features:", 9) == 0)
+			ucl_object_insert_key(o, ucl_object_frombool(strstr(line,
+			    "HAVE_LUA") != NULL), "lua", 0, true);
+		for (i = 0; i < nitems(yes); i++)
+			if (strncmp(line, yes[i].line, strlen(yes[i].line)) ==
+			    0) {
+				v = line + strlen(yes[i].line);
+				v += strspn(v, " ");
+				ucl_object_insert_key(o, ucl_object_frombool(
+				    strncmp(v, "yes", 3) == 0), yes[i].key, 0,
+				    true);
+			}
+	}
+	return (o);
+}
+
 /* The offloading an interface has on: what Suricata would rather it
  * had not (SIOCGIFCAP). */
 static ucl_object_t *
@@ -1261,6 +1504,39 @@ caps_json(const char *name)
 	for (i = 0; i < nitems(caps); i++)
 		if (ifr.ifr_curcap & caps[i].bit)
 			ucl_array_append(arr, ucl_object_fromstring(caps[i].word));
+	return (arr);
+}
+
+/* The packets it logged for its alerts (pcap-log), in its directory. */
+static ucl_object_t *
+pcaps_json(struct work *w, const char *name)
+{
+	ucl_object_t	*arr, *o;
+	struct dirent	*de;
+	struct stat	 sb;
+	const char	*dir, *p;
+	DIR		*d;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	dir = inst_path(w, name, "d");
+	if ((d = opendir(dir)) == NULL)
+		return (arr);
+	while ((de = readdir(d)) != NULL) {
+		if (strncmp(de->d_name, "log.pcap", 8) != 0)
+			continue;
+		p = wfmt(w, "%s/%s", dir, de->d_name);
+		if (stat(p, &sb) != 0 || !S_ISREG(sb.st_mode))
+			continue;
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(p), "path", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromint((int64_t)
+		    sb.st_size), "size", 0, false);
+		ucl_object_insert_key(o, ucl_object_fromint((int64_t)
+		    sb.st_mtime), "at", 0, false);
+		ucl_array_append(arr, o);
+	}
+	closedir(d);
 	return (arr);
 }
 
@@ -1341,6 +1617,17 @@ sdwan_ids_json(struct work *w, ucl_object_t *top)
 		ucl_object_insert_key(o, ucl_object_fromstring(
 		    instances[i].netmap ? "netmap" : instances[i].divert > 0 ?
 		    "divert" : "pcap"), "capture", 0, false);
+		ucl_object_insert_key(o, pcaps_json(w, instances[i].name),
+		    "pcaps", 0, false);
+		/* The last capture replayed through it. */
+		{
+			const char	*t;
+			ucl_object_t	*r;
+
+			if ((t = file_text(w, inst_path(w, instances[i].name,
+			    "replay.json"))) != NULL && (r = parse(t)) != NULL)
+				ucl_object_insert_key(o, r, "replay", 0, false);
+		}
 		/* Each interface's offloading still on. */
 		{
 			ucl_object_t	*off, *c;
@@ -1359,6 +1646,9 @@ sdwan_ids_json(struct work *w, ucl_object_t *top)
 	}
 	pthread_mutex_unlock(&lock);
 	ucl_object_insert_key(top, arr, "ids", 0, false);
+	/* What its Suricata is built with. */
+	if ((o = build_json(w)) != NULL)
+		ucl_object_insert_key(top, o, "ids_build", 0, false);
 	/* The host's CPUs and memory domains, for its threads' sets. */
 	{
 		int	ncpu, ndom;
@@ -1413,9 +1703,12 @@ suricata_check(const struct arc_job_spec *sp)
 	if (sp->verb != NULL && (strcmp(sp->verb, "sources") == 0 ||
 	    strncmp(sp->verb, "source-", 7) == 0))
 		return (suricata_source_check(sp));
+	if (sp->verb != NULL && strcmp(sp->verb, "pcap") == 0)
+		return (suricata_replay_check(sp));
 	if (sp->verb == NULL || strcmp(sp->verb, "update") != 0)
 		return ("a suricata job's verb is update, rule, sources, "
-		    "source-enable, source-disable, source-remove or source-add");
+		    "source-enable, source-disable, source-remove, source-add "
+		    "or pcap");
 	if (sp->names.n > 0)
 		return ("update takes no words");
 	return (NULL);
@@ -1429,6 +1722,19 @@ suricata_title(const struct arc_job_spec *sp)
 	if (strcmp(sp->verb, "sources") == 0 || strncmp(sp->verb, "source-",
 	    7) == 0)
 		return (suricata_source_title(sp));
+	if (strcmp(sp->verb, "pcap") == 0) {
+		const char	*f = "", *in = "";
+		size_t		 i;
+
+		for (i = 0; i < sp->names.n; i++)
+			if (strncmp(sp->names.v[i], "file=", 5) == 0)
+				f = sp->names.v[i] + 5;
+			else if (strncmp(sp->names.v[i], "instance=", 9) == 0)
+				in = sp->names.v[i] + 9;
+		if (asprintf(&t, "suricata replays %s through %s", f, in) == -1)
+			return (NULL);
+		return (t);
+	}
 	if (sp->verb != NULL && strcmp(sp->verb, "rule") == 0) {
 		if (asprintf(&t, "suricata rules set: %s%s", sp->names.v[0],
 		    sp->names.n > 1 ? " ..." : "") == -1)
@@ -1456,6 +1762,9 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
 	if (strcmp(sp->verb, "sources") == 0 || strncmp(sp->verb, "source-",
 	    7) == 0)
 		return (suricata_source_job(w, sp, errp));
+	/* A capture run through an instance, offline. */
+	if (strcmp(sp->verb, "pcap") == 0)
+		return (suricata_replay(w, sp, errp));
 	rule = strcmp(sp->verb, "rule") == 0;
 	/* The rules set are made into the ruleset already fetched. */
 	if (rule && access(SURICATA_RULESET, R_OK) != 0) {
@@ -1543,5 +1852,153 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
 		step_end(w, step, kill(pid, SIGUSR2) == 0, NULL);
 	}
 	pthread_mutex_unlock(&lock);
+	return (0);
+}
+
+/*
+ * The suricata job's verb pcap: a capture file (instance=NAME
+ * file=PATH, a .pcap, .pcapng or .cap the host has) run through an
+ * instance's configuration and rules by suricata -r, offline, into a
+ * directory of its own; the alerts it raised kept for the read.
+ */
+static const char *
+suricata_replay_check(const struct arc_job_spec *sp)
+{
+	const char	*inst, *file, *v;
+	size_t		 i, len;
+
+	inst = file = NULL;
+	for (i = 0; i < sp->names.n; i++) {
+		v = sp->names.v[i];
+		if (v != NULL && strncmp(v, "instance=", 9) == 0)
+			inst = v + 9;
+		else if (v != NULL && strncmp(v, "file=", 5) == 0)
+			file = v + 5;
+		else
+			return ("pcap takes instance= and file=");
+	}
+	if (inst == NULL || !name_ok(inst))
+		return ("pcap names its instance=");
+	if (file == NULL || file[0] != '/' || strstr(file, "/../") != NULL ||
+	    (len = strlen(file)) < 6 || len > 512 || (strcmp(file + len - 5,
+	    ".pcap") != 0 && strcmp(file + len - 7, ".pcapng") != 0 &&
+	    strcmp(file + len - 4, ".cap") != 0))
+		return ("pcap's file= is a .pcap, .pcapng or .cap the host "
+		    "has, by its whole path");
+	return (NULL);
+}
+
+static int
+suricata_replay(struct work *w, const struct arc_job_spec *sp,
+    const char **errp)
+{
+	struct execres	 res;
+	struct stat	 sb;
+	ucl_object_t	*top, *arr;
+	const char	*inst, *file, *dir, *a;
+	char		*argv[16], *line, *json;
+	struct dirent	*de;
+	size_t		 i, cap;
+	ssize_t		 n;
+	int64_t		 total;
+	FILE		*fp;
+	DIR		*d;
+	int		 step, rc;
+	time_t		 t0;
+
+	if ((*errp = suricata_replay_check(sp)) != NULL)
+		return (-1);
+	inst = file = NULL;
+	for (i = 0; i < sp->names.n; i++)
+		if (strncmp(sp->names.v[i], "instance=", 9) == 0)
+			inst = sp->names.v[i] + 9;
+		else
+			file = sp->names.v[i] + 5;
+	if (access(inst_path(w, inst, "yaml"), R_OK) != 0) {
+		*errp = wfmt(w, "there is no instance %s here", inst);
+		return (-1);
+	}
+	if (lstat(file, &sb) != 0 || !S_ISREG(sb.st_mode)) {
+		*errp = wfmt(w, "%s is not a file the host has (a link is not "
+		    "followed)", file);
+		return (-1);
+	}
+	/* Its own directory, emptied: what this run writes alone. */
+	dir = inst_path(w, inst, "replay.d");
+	if ((d = opendir(dir)) != NULL) {
+		while ((de = readdir(d)) != NULL)
+			if (de->d_name[0] != '.')
+				(void)unlink(wfmt(w, "%s/%s", dir, de->d_name));
+		closedir(d);
+	}
+	(void)mkdir(dir, 0750);
+	step = step_begin(w, ARC_STEP_KIND_EXEC, "suricata", "%s through %s, "
+	    "offline", file, inst);
+	argv[0] = (char *)(uintptr_t)suricata_bin(w);
+	argv[1] = (char *)(uintptr_t)"-c";
+	argv[2] = (char *)(uintptr_t)inst_path(w, inst, "yaml");
+	argv[3] = (char *)(uintptr_t)"-r";
+	argv[4] = (char *)(uintptr_t)file;
+	argv[5] = (char *)(uintptr_t)"-l";
+	argv[6] = (char *)(uintptr_t)dir;
+	argv[7] = (char *)(uintptr_t)"-k";
+	argv[8] = (char *)(uintptr_t)"none";
+	/* Not the running one's socket, nor its log directory. */
+	argv[9] = (char *)(uintptr_t)"--set";
+	argv[10] = (char *)(uintptr_t)"unix-command.enabled=no";
+	argv[11] = (char *)(uintptr_t)"--set";
+	argv[12] = wfmt(w, "default-log-dir=%s", dir);
+	argv[13] = NULL;
+	t0 = time(NULL);
+	rc = run_exec(w, argv, &res);
+	/* Its alerts: told how many, the first 200 kept. */
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	total = 0;
+	if ((fp = fopen(wfmt(w, "%s/eve.json", dir), "re")) != NULL) {
+		line = NULL;
+		cap = 0;
+		while ((n = getline(&line, &cap, fp)) > 0) {
+			if (n > LINE_MAX_EVE || (json = alert_json(inst, line)) ==
+			    NULL)
+				continue;
+			total++;
+			if (ucl_array_size(arr) < 200) {
+				ucl_object_t	*o;
+
+				if ((o = parse(json)) != NULL)
+					ucl_array_append(arr, o);
+			}
+			free(json);
+		}
+		free(line);
+		fclose(fp);
+	}
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, ucl_object_fromstring(file), "file", 0,
+	    false);
+	ucl_object_insert_key(top, ucl_object_fromint((int64_t)t0), "at", 0,
+	    false);
+	ucl_object_insert_key(top, ucl_object_fromint((int64_t)(time(NULL) -
+	    t0)), "seconds", 0, false);
+	ucl_object_insert_key(top, ucl_object_fromint(rc), "status", 0, false);
+	ucl_object_insert_key(top, ucl_object_fromint(total), "alerts_total", 0,
+	    false);
+	ucl_object_insert_key(top, arr, "alerts", 0, false);
+	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	a = NULL;
+	if (json != NULL) {
+		(void)put_text(inst_path(w, inst, "replay.json"), json, &a);
+		free(json);
+	}
+	if (rc != 0) {
+		*errp = wfmt(w, "suricata did not read %s: %s", file, (a =
+		    log_errors(w, inst, 0)) != NULL ? a : wtext(w, exec_error(w,
+		    &res, "suricata")));
+		step_end(w, step, false, "%s", *errp);
+		return (-1);
+	}
+	step_end(w, step, true, "%jd alert%s", (intmax_t)total, total == 1 ?
+	    "" : "s");
 	return (0);
 }

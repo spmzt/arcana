@@ -7498,6 +7498,45 @@ ATF_TC_BODY(sdwan_apply, tc)
 		ATF_CHECK_MSG(system("/usr/local/bin/suricata -T -c "
 		    "sdwan-ids-sec-lan.yaml > suricata-T.out 2>&1") == 0,
 		    "Suricata refuses netmap's: see suricata-T.out");
+	/* Lua: its scripts to the agent, allowed for rules, one an
+	 * output; the packets of its alerts kept; its plugins.  Suricata
+	 * itself checks the first two where the host has it. */
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"lua_outputs\":[\"nosuch.lua\"],\"rules\":\"alert tcp any any "
+	    "-> any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "a Lua output is one of its scripts") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"lua\":{\"pkts.lua\":\"function init (args)\\n  local needs = "
+	    "{}\\n  needs[\\\"type\\\"] = \\\"packet\\\"\\n  return needs\\n"
+	    "end\\nfunction setup (args)\\nend\\nfunction log (args)\\nend\\n"
+	    "function deinit (args)\\nend\\n\"},\"lua_outputs\":[\"pkts.lua\"],"
+	    "\"pcap_log\":true,\"pcap_log_limit\":\"10mb\",\"pcap_log_files\":"
+	    "3,\"rules\":\"alert tcp any any -> any 23 (sid:1000009;)\"}]}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("f=sdwan-ids-sec-lan.yaml; grep -q '^  - lua:$' $f && "
+	    "grep -q '^      scripts-dir: .*sdwan-ids-sec-lan.lua$' $f && "
+	    "grep -q '^        - pkts.lua$' $f && grep -q '^    allow-rules: "
+	    "yes$' $f && grep -q '^  - pcap-log:$' $f && grep -q '^      "
+	    "max-files: 3$' $f && grep -q '^      conditional: alerts$' $f && "
+	    "grep -q 'needs' sdwan-ids-sec-lan.lua/pkts.lua") == 0);
+	if (access("/usr/local/bin/suricata", X_OK) == 0)
+		ATF_CHECK_MSG(system("/usr/local/bin/suricata -T -c "
+		    "sdwan-ids-sec-lan.yaml > suricata-T.out 2>&1") == 0,
+		    "Suricata refuses Lua or pcap-log: see suricata-T.out");
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"plugins\":[\"/tmp/x.so\"],"
+	    "\"rules\":\"alert tcp any any -> any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "a .so under /usr/local/lib") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
 	/* Stopped by the admin: kept in the list, told to the agent. */
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"

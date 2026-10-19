@@ -1663,6 +1663,7 @@ submodule arcana-jobs-kinds {
               enum source-disable;
               enum source-remove;
               enum source-add;
+              enum pcap;
             }
             mandatory true;
             description

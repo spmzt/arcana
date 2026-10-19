@@ -933,10 +933,16 @@ const ucl_object_t *sec_ids_spec(const char *);
 void		 sec_ids_set(const char *, const char *, const char *);
 bool		 sec_ids_busy(void);
 const ucl_object_t *sec_ids_live(const char *);
+void		 sec_ids_set_objs(const char *, const char *const *,
+		    ucl_object_t **, int);
+void		 sec_job(char *, const char *);
+const char	*sec_host_id(void);
+const ucl_object_t *sec_state(void);
 /* idsstats.c: an intrusion detection's statistics, as graphs. */
 void		 view_idsstats(struct html *);
 bool		 idsstats_active(void);
 bool		 idsstats_action(const char *, const char *);
+bool		 idsstats_form(const char *, const ucl_object_t *);
 /* idsown.c: an intrusion detection's rules of its own, as a table. */
 void		 view_idsown(struct html *);
 bool		 idsown_active(void);

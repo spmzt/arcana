@@ -2438,7 +2438,7 @@ arc_suricata_rules_doit(cbl_req *req, const struct arc_suricata_rules_req *rq,
 	const char	**v;
 	size_t		 i;
 
-	if (rq->names.n > 7)
+	if (rq->names.n > 10)
 		return (reject(req, "the rules are searched by q=, sid=, only=, "
 		    "classtype=, offset= and limit=; sources=1 says the rule "
 		    "sources"));

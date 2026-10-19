@@ -762,6 +762,21 @@ ids_settings_form(struct html *h, const ucl_object_t *f)
 	    "type=\"number\" min=\"0\" max=\"3600\"");
 	h_attr(h, "value", num);
 	h_raw(h, "><small class=\"help\">seconds; 0 none</small></label>");
+	h_raw(h, "<label class=\"check\"><input type=\"checkbox\" name=\""
+	    "pcap_log\"");
+	if (jbool(f, "pcap_log"))
+		h_raw(h, " checked");
+	h_raw(h, "> The packets of its alerts kept <small class=\"help\">"
+	    "pcap-log, conditional on alerts: files in its log directory, "
+	    "for Wireshark or a replay</small></label><div class=\"rowform\">");
+	set_input(h, "Each file up to", "pcap_log_limit", jstr(f,
+	    "pcap_log_limit"), "100mb", NULL);
+	snprintf(num, sizeof(num), "%lld", (long long)jint(f, "pcap_log_files",
+	    10));
+	h_raw(h, "<label>Files at most <input name=\"pcap_log_files\" "
+	    "type=\"number\" min=\"1\" max=\"1000\"");
+	h_attr(h, "value", num);
+	h_raw(h, "></label></div>");
 	h_raw(h, "</details><details class=\"wfmore\"><summary>Capture"
 	    "</summary><div class=\"rowform\"><label>By <select name=\""
 	    "capture\"><option value=\"pcap\">pcap(3): it watches</option>"
@@ -857,6 +872,15 @@ ids_settings_form(struct html *h, const ucl_object_t *f)
 	set_select(h, "Past a limit", "exception_policy", jstr(f,
 	    "exception_policy"), policies, nitems(policies), "what is done "
 	    "with traffic when a memcap or the like is reached");
+	h_raw(h, "</details><details class=\"wfmore\"><summary>Plugins"
+	    "</summary><label>Plugins <input name=\"plugins\" spellcheck=\""
+	    "false\" placeholder=\"/usr/local/lib/suricata/plugins/"
+	    "eve-filetype.so\"");
+	joined_attr(h, "value", jget(f, "plugins"), ", ");
+	h_raw(h, "><small class=\"help\">Suricata's plugins (capture or eve "
+	    "output), shared objects under /usr/local/lib the admin "
+	    "installed; the host loads none that is not root's alone"
+	    "</small></label>");
 	h_raw(h, "</details><details class=\"wfmore\"><summary>Its own YAML"
 	    "</summary><label>Besides the above <textarea name=\"yaml\" "
 	    "rows=\"5\" spellcheck=\"false\" placeholder=\"vlan:\n"
@@ -1239,12 +1263,63 @@ sec_ids_set(const char *name, const char *key, const char *text)
 	save(true, list);
 }
 
+/* For idsstats.c: the host the page is of, and its sdwan read. */
+const char *
+sec_host_id(void)
+{
+
+	return (sec.sid);
+}
+
+const ucl_object_t *
+sec_state(void)
+{
+
+	return (sec.state);
+}
+
 /* For idsstats.c: what runs of an intrusion detection, by name. */
 const ucl_object_t *
 sec_ids_live(const char *name)
 {
 
 	return (live(true, name));
+}
+
+/* Keys of a form set to objects of the caller's (taken), the list
+ * applied once. */
+void
+sec_ids_set_objs(const char *name, const char *const *keys,
+    ucl_object_t **vals, int n)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*list;
+	int			 i;
+
+	list = specs_but(true, NULL);
+	it = NULL;
+	while ((e = ucl_object_iterate(list, &it, true)) != NULL)
+		if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"), name) ==
+		    0)
+			for (i = 0; i < n; i++)
+				ucl_object_replace_key((ucl_object_t *)(uintptr_t)
+				    e, ucl_object_ref(vals[i]), keys[i], 0, true);
+	for (i = 0; i < n; i++)
+		ucl_object_unref(vals[i]);
+	save(true, list);
+}
+
+/* A job on the page's host, for idsstats.c. */
+void
+sec_job(char *json, const char *title)
+{
+	char		*j[1];
+	const char	*t[1];
+
+	j[0] = json;
+	t[0] = title;
+	sec_jobs(j, t, 1);
 }
 
 bool
@@ -1305,7 +1380,8 @@ secpage_form(const char *form, const ucl_object_t *f)
 	ucl_object_t	*list, *o;
 	bool		 ids;
 
-	if (surules_form(form, f) || idsown_form(form, f))
+	if (surules_form(form, f) || idsown_form(form, f) || idsstats_form(
+	    form, f))
 		return (true);
 	{
 		char		*json[1], title[96];
@@ -1413,7 +1489,7 @@ secpage_form(const char *form, const ucl_object_t *f)
 			    "defrag_memcap", "host_memcap", "http_memcap",
 			    "stream_inline", "reassembly_depth",
 			    "http_request_body", "http_response_body",
-			    "exception_policy", "yaml" };
+			    "exception_policy", "yaml", "pcap_log_limit" };
 			ucl_object_t	*ev;
 			char		 k[32];
 			size_t		 i;
@@ -1440,6 +1516,16 @@ secpage_form(const char *form, const ucl_object_t *f)
 			if (jbool(f, "midstream"))
 				ucl_object_insert_key(o, ucl_object_frombool(true),
 				    "midstream", 0, false);
+			if (jbool(f, "pcap_log")) {
+				ucl_object_insert_key(o, ucl_object_frombool(true),
+				    "pcap_log", 0, false);
+				put_num(o, "pcap_log_files", jstr(f,
+				    "pcap_log_files"));
+			}
+			if (jstr(f, "plugins") != NULL && jstr(f, "plugins")[0] !=
+			    '\0')
+				ucl_object_insert_key(o, words(jstr(f,
+				    "plugins")), "plugins", 0, false);
 			if (jbool(f, "offload_off"))
 				ucl_object_insert_key(o, ucl_object_frombool(true),
 				    "offload_off", 0, false);
@@ -1470,6 +1556,14 @@ secpage_form(const char *form, const ucl_object_t *f)
 					    ucl_object_fromstring(jstr(e,
 					    "thresholds")), "thresholds", 0,
 					    false);
+				/* Its Lua scripts too, kept in Own rules. */
+				if (jget(e, "lua") != NULL)
+					ucl_object_insert_key(o, ucl_object_copy(
+					    jget(e, "lua")), "lua", 0, false);
+				if (jget(e, "lua_outputs") != NULL)
+					ucl_object_insert_key(o, ucl_object_copy(
+					    jget(e, "lua_outputs")), "lua_outputs",
+					    0, false);
 			}
 		}
 	}
