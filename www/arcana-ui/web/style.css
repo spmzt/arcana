@@ -5083,14 +5083,12 @@ details.wfmore[open] > summary { margin-bottom: .45rem; }
 .secform label.check { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .secform label.check small.help { flex-basis: 100%; }
 .secform .wide { grid-column: 1 / -1; margin: 0; }
-.sn-head .grow { flex: 1; }
 .notice.sec-missing { display: flex; align-items: center; gap: 1rem; justify-content: space-between; }
-.sn-update label.grow { flex: 1; display: flex; align-items: center; gap: .6rem; }
-.sn-update label.grow input { flex: 1; min-width: 0; }
-.sn-src { margin: -.4rem 0 .8rem; font-size: .85rem; }
-.sn-conf textarea { width: 100%; box-sizing: border-box; }
-.sn-conf .buttons { display: flex; gap: .6rem; justify-content: flex-end; }
 .secform small.help { color: var(--dim); font-size: .7rem; line-height: 1.35; }
+/* An intrusion detection's own rules: a rule's parts side by side. */
+.secform .rowform { display: flex; flex-wrap: wrap; gap: .6rem; }
+.secform .rowform > label { flex: 1 1 7rem; }
+.toolbar .grow { flex: 1; }
 .secform textarea { font-family: var(--mono); font-size: .78rem; }
 .secform details label { margin-top: .4rem; }
 .secform .actions { display: flex; justify-content: flex-end; gap: .5rem; }

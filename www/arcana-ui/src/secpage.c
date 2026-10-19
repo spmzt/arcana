@@ -765,6 +765,11 @@ view_ids(struct html *h)
 			h_attr(h, "data-arg", jstr(f, "name"));
 			h_raw(h, ">Stop</button>");
 		}
+		h_raw(h, "<button class=\"ghost small\" data-act=\"own-open\" "
+		    "title=\"Its rules besides the ruleset's\"");
+		h_attr(h, "data-arg", jstr(f, "name"));
+		h_fmt(h, ">Own rules (%d)</button>", idsown_count(jstr(f,
+		    "rules")));
 		h_raw(h, "<button class=\"ghost small\" data-act=\"sec-edit\"");
 		h_attr(h, "data-arg", jstr(f, "name"));
 		h_raw(h, ">Change</button><button class=\"ghost small danger\" "
@@ -854,6 +859,8 @@ view_secpage(struct html *h)
 		    sec.rules ? "" : " on", sec.rules ? " on" : "");
 		if (sec.rules)
 			view_surules(h, sec.sid);
+		else if (idsown_active())
+			view_idsown(h);
 		else
 			view_ids(h);
 		break;
@@ -915,6 +922,48 @@ specs_but(bool ids, const char *skip)
 	return (out);
 }
 
+/* For idsown.c: an intrusion detection's form, by name. */
+const ucl_object_t *
+sec_ids_spec(const char *name)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((e = ucl_object_iterate(specs(true), &it, true)) != NULL)
+		if (jstr(e, "name") != NULL && name != NULL && strcmp(jstr(e,
+		    "name"), name) == 0)
+			return (e);
+	return (NULL);
+}
+
+/* One key of a form set to text, and the whole list applied again. */
+void
+sec_ids_set(const char *name, const char *key, const char *text)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*list;
+
+	if (sec.busy)
+		return;
+	list = specs_but(true, NULL);
+	it = NULL;
+	while ((e = ucl_object_iterate(list, &it, true)) != NULL)
+		if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"), name) ==
+		    0)
+			ucl_object_replace_key((ucl_object_t *)(uintptr_t)e,
+			    ucl_object_fromstring(text), key, 0, true);
+	save(true, list);
+}
+
+bool
+sec_ids_busy(void)
+{
+
+	return (sec.busy);
+}
+
 /* A field's words, split at commas, spaces and lines, as a list. */
 static ucl_object_t *
 words(const char *s)
@@ -966,7 +1015,7 @@ secpage_form(const char *form, const ucl_object_t *f)
 	ucl_object_t	*list, *o;
 	bool		 ids;
 
-	if (surules_form(form, f))
+	if (surules_form(form, f) || idsown_form(form, f))
 		return (true);
 	if (strcmp(form, "sec-mirrors") == 0) {
 		const ucl_object_t	*cl = jget(sec.state, "clamav");
@@ -1128,6 +1177,8 @@ secpage_action(const char *act, const char *arg, const char *value)
 		sec_load();
 		return (true);
 	}
+	if (idsown_action(act, arg, value))
+		return (true);
 	if (strncmp(act, "sur-", 4) == 0) {
 		char	*json[1], title[96];
 		const char *t[1];

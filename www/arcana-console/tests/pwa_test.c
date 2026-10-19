@@ -6625,6 +6625,54 @@ part_security(void)
 	dock_closed();
 	shot("9w-security-ids-rules");
 	click_when("button[data-act=sec-idsview][data-arg=instances]", 10);
+	/* Its rules of its own as a table: one added as its parts, one
+	 * disabled (kept, commented out), one changed, one deleted after
+	 * asking; each written to the instance's rules file. */
+	click_when("table.secids button[data-act=own-open]", 10);
+	wait_js("document.querySelector('table.ownrules') && document."
+	    "querySelector('table.ownrules').textContent.includes('1000009')",
+	    10);
+	click_when("button[data-act=own-new]", 10);
+	wait_js("document.querySelector('form[data-form=own-rule]')", 5);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=own-rule]')"
+	    ".sid.value === '1000010'"));
+	run("const f = document.querySelector('form[data-form=own-rule]'); "
+	    "f.dport.value = '23'; f.msg.value = 'LOCAL telnet \\\"in\\\"'; "
+	    "f.opts.value = 'flow:to_server;'; f.requestSubmit();");
+	wait_js("document.querySelectorAll('table.ownrules tbody tr').length "
+	    "== 2 && document.querySelector('table.ownrules').textContent."
+	    "includes('LOCAL telnet \"in\"')", 30);
+	ATF_CHECK_MSG(system("grep -qF 'alert tcp any any -> $HOME_NET 23 "
+	    "(msg:\"LOCAL telnet \\\"in\\\"\"; flow:to_server; "
+	    "sid:1000010; rev:1;)' sdwan-ids-sec-lan.rules") == 0,
+	    "the rule added is not written");
+	click_when("table.ownrules button[data-act=own-toggle][data-arg='0']",
+	    10);
+	wait_js("document.querySelector('table.ownrules .chip.st-down')", 30);
+	ATF_CHECK(system("grep -q '^# alert tcp any any -> any 23 "
+	    "(sid:1000009;)' sdwan-ids-sec-lan.rules") == 0);
+	click_when("table.ownrules button[data-act=own-edit][data-arg='1']", 10);
+	wait_js("document.querySelector('form[data-form=own-rule]') && "
+	    "document.querySelector('form[data-form=own-rule]').msg.value === "
+	    "'LOCAL telnet \"in\"' && document.querySelector('form[data-form="
+	    "own-rule]').opts.value === 'flow:to_server;'", 5);
+	run("const f = document.querySelector('form[data-form=own-rule]'); "
+	    "f.rev.value = '2'; f.action.value = 'drop'; f.requestSubmit();");
+	wait_js("document.querySelector('table.ownrules') && document."
+	    "querySelector('table.ownrules').textContent.includes('drop')", 30);
+	ATF_CHECK(system("grep -q '^drop tcp .*sid:1000010; rev:2;)' "
+	    "sdwan-ids-sec-lan.rules") == 0);
+	click_when("table.ownrules button[data-act=own-del][data-arg='0']", 10);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("document.querySelectorAll('table.ownrules tbody tr').length "
+	    "== 1", 30);
+	ATF_CHECK(system("grep -q 'sid:1000009' sdwan-ids-sec-lan.rules") != 0);
+	shot("9x-security-ids-own-rules");
+	click_when("button[data-act=own-back]", 10);
+	wait_js("document.querySelector('table.secids') && document."
+	    "querySelector('table.secids').textContent.includes('Own rules "
+	    "(1)')", 10);
 	/* Removed, after asking. */
 	click_when("table.secids button[data-act=sec-remove]", 10);
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);

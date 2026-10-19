@@ -927,6 +927,17 @@ void		 secpage_loc(char *, size_t);
 void		 secpage_open(const char *);
 void		 secpage_tick(double);
 void		 secpage_refresh(void);
+/* secpage.c, for idsown.c: an intrusion detection's form, and a key of
+ * it set, the list applied. */
+const ucl_object_t *sec_ids_spec(const char *);
+void		 sec_ids_set(const char *, const char *, const char *);
+bool		 sec_ids_busy(void);
+/* idsown.c: an intrusion detection's rules of its own, as a table. */
+void		 view_idsown(struct html *);
+bool		 idsown_active(void);
+int		 idsown_count(const char *);
+bool		 idsown_form(const char *, const ucl_object_t *);
+bool		 idsown_action(const char *, const char *, const char *);
 /* surules.c: Suricata's ruleset, rule by rule, in IDS/IPS. */
 void		 view_surules(struct html *, const char *);
 void		 surules_load(const char *);
