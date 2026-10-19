@@ -6589,6 +6589,19 @@ part_security(void)
 	    0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the alert is not suppressed");
+	/* Its statistics: Suricata's stats records as graphs, its flows
+	 * by protocol, the most seen of its alerts. */
+	click_when("table.secids button[data-act=ist-open]", 10);
+	wait_js("document.querySelectorAll('.secpage figure.uplot').length == 5 "
+	    "&& document.querySelector('.idstops') && document.querySelector("
+	    "'.idstops').textContent.includes('tls') && document.querySelector("
+	    "'.idstops').textContent.includes('LOCAL telnet') && document."
+	    "querySelector('.secpage').textContent.includes('3 k packets') && "
+	    "document.querySelector('.secpage').textContent.includes('200 /s')",
+	    40);
+	dock_closed();
+	shot("9v-security-ids-stats");
+	click_when("button[data-act=ist-back]", 10);
 	/* Applied and read again before the next change. */
 	wait_js("document.querySelector('table.secids') && !document."
 	    "querySelector('table.secids.applying')", 20);
@@ -6609,8 +6622,14 @@ part_security(void)
 	click_when("table.secids button[data-act=sec-edit]", 10);
 	wait_js("document.querySelector('form[data-form=sec-ids]') && "
 	    "document.querySelector('form[data-form=sec-ids]').runmode", 5);
+	/* lo0 checksums by offloading: said, until it is turned off. */
+	if (system("ifconfig lo0 | grep -q RXCSUM") == 0)
+		wait_js("document.querySelector('table.secids .chip.warn') && "
+		    "document.querySelector('table.secids .chip.warn')."
+		    "textContent === 'offload'", 20);
 	run("const f = document.querySelector('form[data-form=sec-ids]'); "
 	    "f.querySelectorAll('details').forEach(d => d.open = true); "
+	    "f.offload_off.checked = true; f.preset.value = 'small'; "
 	    "f.eve_http.checked = true; f.eve_dns.checked = true; "
 	    "f.runmode.value = 'workers'; f.worker_cpus.value = '0'; "
 	    "f.http_response_body.value = '1mb'; f.stream_inline.value = "
@@ -6622,6 +6641,10 @@ part_security(void)
 	    "'^  interval: 10$' $f") != 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the settings are not written");
+	wait_js("document.querySelector('table.secids') && !document."
+	    "querySelector('table.secids .chip.warn')", 20);
+	ATF_CHECK(system("grep -q '\"offload_off\":true' security-ids.json") ==
+	    0);
 	ATF_CHECK(system("grep -q 'suppress gen_id 1, sig_id 1000009' "
 	    "sdwan-ids-sec-lan.threshold") == 0);
 	wait_js("document.querySelector('table.secids') && !document."

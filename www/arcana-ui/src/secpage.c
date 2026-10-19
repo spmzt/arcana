@@ -761,9 +761,49 @@ ids_settings_form(struct html *h, const ucl_object_t *f)
 	h_raw(h, "<label>Statistics every <input name=\"stats_interval\" "
 	    "type=\"number\" min=\"0\" max=\"3600\"");
 	h_attr(h, "value", num);
-	h_raw(h, "><small class=\"help\">seconds; 0 none</small></label>"
-	    "</details><details class=\"wfmore\"><summary>Performance"
-	    "</summary><div class=\"rowform\">");
+	h_raw(h, "><small class=\"help\">seconds; 0 none</small></label>");
+	h_raw(h, "</details><details class=\"wfmore\"><summary>Capture"
+	    "</summary><div class=\"rowform\"><label>By <select name=\""
+	    "capture\"><option value=\"pcap\">pcap(3): it watches</option>"
+	    "<option value=\"netmap\"");
+	if (jstr(f, "capture") != NULL && strcmp(jstr(f, "capture"),
+	    "netmap") == 0)
+		h_raw(h, " selected");
+	h_raw(h, ">netmap(4): it takes the NIC's rings</option></select>"
+	    "<small class=\"help\">netmap is faster, a thread a ring the "
+	    "NIC's RSS fills, and prevents at L2</small></label>");
+	h_raw(h, "<label>L2 pairs <input name=\"pairs\" spellcheck=\"false\" "
+	    "placeholder=\"em0:em1, em2:em2^\"");
+	joined_attr(h, "value", jget(f, "pairs"), ", ");
+	h_raw(h, "><small class=\"help\">netmap: what one gets Suricata "
+	    "passes to the other, dropping what its rules say (a bump in "
+	    "the wire); em0^ is em0's host stack</small></label></div>"
+	    "<label class=\"check\"><input type=\"checkbox\" name=\""
+	    "offload_off\"");
+	if (jbool(f, "offload_off"))
+		h_raw(h, " checked");
+	h_raw(h, "> Its interfaces' offloading off <small class=\"help\">"
+	    "checksums, TSO and LRO, by ifconfig(8) as it starts: Suricata "
+	    "sees packets as they are on the wire</small></label></details>"
+	    "<details class=\"wfmore\"><summary>Performance</summary>");
+	{
+		const ucl_object_t	*hc = jget(sec.state, "ids_host");
+		static const char *const presets[] = { "small", "medium",
+		    "large" };
+
+		if (hc != NULL && jint(hc, "ncpu", 0) > 0)
+			h_fmt(h, "<p class=\"help\">This host has %lld CPUs (0 "
+			    "to %lld), in %lld memory domain%s.</p>",
+			    (long long)jint(hc, "ncpu", 0), (long long)jint(hc,
+			    "ncpu", 0) - 1, (long long)jint(hc, "ndomains", 1),
+			    jint(hc, "ndomains", 1) == 1 ? "" : "s");
+		h_raw(h, "<div class=\"rowform\">");
+		set_select(h, "Preset", "preset", jstr(f, "preset"), presets,
+		    nitems(presets), "for a host of its size: what the fields "
+		    "below do not say");
+		h_raw(h, "</div>");
+	}
+	h_raw(h, "<div class=\"rowform\">");
 	set_select(h, "Runmode", "runmode", jstr(f, "runmode"), runmodes,
 	    nitems(runmodes), "workers: a thread does all of a packet");
 	set_select(h, "Pattern matcher", "mpm", jstr(f, "mpm"), mpms,
@@ -900,9 +940,44 @@ view_ids(struct html *h)
 		joined(h, jget(f, "interfaces"), ", ");
 		if (jint(f, "divert", 0) > 0)
 			h_fmt(h, "</td><td>prevents <small class=\"dim\">divert "
-			    "%lld</small></td>", (long long)jint(f, "divert", 0));
-		else
-			h_raw(h, "</td><td>detects</td>");
+			    "%lld</small>", (long long)jint(f, "divert", 0));
+		else if (ucl_array_size(jget(f, "pairs")) > 0) {
+			h_raw(h, "</td><td>prevents <small class=\"dim\">at L2, ");
+			joined(h, jget(f, "pairs"), ", ");
+			h_raw(h, "</small>");
+		} else
+			h_raw(h, "</td><td>detects");
+		if (jstr(f, "capture") != NULL && strcmp(jstr(f, "capture"),
+		    "netmap") == 0)
+			h_raw(h, " <small class=\"chip\">netmap</small>");
+		/* Offloading its interfaces still have on. */
+		if (!jbool(f, "offload_off") && l != NULL) {
+			const ucl_object_t	*oe;
+			ucl_object_iter_t	 oit;
+			bool			 any = false;
+
+			oit = NULL;
+			while ((oe = ucl_object_iterate(jget(l, "offload"), &oit,
+			    true)) != NULL)
+				if (ucl_array_size(oe) > 0)
+					any = true;
+			if (any) {
+				h_raw(h, " <span class=\"chip warn\" title=\""
+				    "Offloading on: ");
+				oit = NULL;
+				while ((oe = ucl_object_iterate(jget(l,
+				    "offload"), &oit, true)) != NULL) {
+					h_txt(h, ucl_object_key(oe));
+					h_raw(h, " ");
+					joined(h, oe, ",");
+					h_raw(h, "; ");
+				}
+				h_raw(h, "Suricata may see packets merged or "
+				    "with checksums not yet made: Capture, "
+				    "offloading off\">offload</span>");
+			}
+		}
+		h_raw(h, "</td>");
 		h_fmt(h, "<td>%lld</td><td>", (long long)jint(l, "alerts_seen",
 		    0));
 		if (jbool(f, "stopped"))
@@ -927,6 +1002,11 @@ view_ids(struct html *h)
 			h_attr(h, "data-arg", jstr(f, "name"));
 			h_raw(h, ">Stop</button>");
 		}
+		h_raw(h, "<button class=\"ghost small\" data-act=\"ist-open\" "
+		    "title=\"Packets, drops, alerts, memory and flows over "
+		    "time\"");
+		h_attr(h, "data-arg", jstr(f, "name"));
+		h_raw(h, ">Statistics</button>");
 		h_raw(h, "<button class=\"ghost small\" data-act=\"own-open\" "
 		    "title=\"Its rules besides the ruleset's\"");
 		h_attr(h, "data-arg", jstr(f, "name"));
@@ -1052,6 +1132,8 @@ view_secpage(struct html *h)
 			view_surules(h, sec.sid);
 		else if (idsown_active())
 			view_idsown(h);
+		else if (idsstats_active())
+			view_idsstats(h);
 		else
 			view_ids(h);
 		break;
@@ -1155,6 +1237,14 @@ sec_ids_set(const char *name, const char *key, const char *text)
 			ucl_object_replace_key((ucl_object_t *)(uintptr_t)e,
 			    ucl_object_fromstring(text), key, 0, true);
 	save(true, list);
+}
+
+/* For idsstats.c: what runs of an intrusion detection, by name. */
+const ucl_object_t *
+sec_ids_live(const char *name)
+{
+
+	return (live(true, name));
 }
 
 bool
@@ -1316,7 +1406,8 @@ secpage_form(const char *form, const ucl_object_t *f)
 		put_num(o, "divert", jstr(f, "divert"));
 		/* Its settings: each only when given. */
 		{
-			static const char *const strs[] = { "runmode", "mpm",
+			static const char *const strs[] = { "capture",
+			    "preset", "runmode", "mpm",
 			    "profile", "management_cpus", "worker_cpus",
 			    "flow_memcap", "stream_memcap", "reassembly_memcap",
 			    "defrag_memcap", "host_memcap", "http_memcap",
@@ -1349,6 +1440,13 @@ secpage_form(const char *form, const ucl_object_t *f)
 			if (jbool(f, "midstream"))
 				ucl_object_insert_key(o, ucl_object_frombool(true),
 				    "midstream", 0, false);
+			if (jbool(f, "offload_off"))
+				ucl_object_insert_key(o, ucl_object_frombool(true),
+				    "offload_off", 0, false);
+			if (jstr(f, "pairs") != NULL && jstr(f, "pairs")[0] !=
+			    '\0')
+				ucl_object_insert_key(o, words(jstr(f, "pairs")),
+				    "pairs", 0, false);
 		}
 		/* One stopped stays stopped, changed; its thresholds,
 		 * not in this form, stay. */
@@ -1434,7 +1532,7 @@ secpage_action(const char *act, const char *arg, const char *value)
 		sec_load();
 		return (true);
 	}
-	if (idsown_action(act, arg, value))
+	if (idsown_action(act, arg, value) || idsstats_action(act, arg))
 		return (true);
 	if (strncmp(act, "sur-", 4) == 0 || strncmp(act, "sus-", 4) == 0) {
 		char	*json[1], title[96];

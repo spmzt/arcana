@@ -7459,6 +7459,45 @@ ATF_TC_BODY(sdwan_apply, tc)
 		ATF_CHECK_MSG(system("/usr/local/bin/suricata -T -c "
 		    "sdwan-ids-sec-lan.yaml > suricata-T.out 2>&1") == 0,
 		    "Suricata refuses the settings: see suricata-T.out");
+	/* By netmap(4): a pair at L2, copy-mode ips both ways, a worker's
+	 * to the end; pairs are netmap's; not with divert.  A preset's
+	 * values where a field says none. */
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"pairs\":[\"em0:em1\"],"
+	    "\"rules\":\"alert tcp any any -> any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "pairs of interfaces are netmap's") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"capture\":\"netmap\",\"divert\":8600,"
+	    "\"pairs\":[\"em0:em1\"],\"rules\":\"alert tcp any any -> any "
+	    "23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "not both") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"capture\":\"netmap\",\"pairs\":[\"lo0:lo0^\"],"
+	    "\"home\":[\"any\"],\"preset\":\"large\",\"flow_memcap\":"
+	    "\"64mb\",\"offload_off\":true,\"rules\":\"alert tcp any any -> "
+	    "any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("f=sdwan-ids-sec-lan.yaml; grep -q '^netmap:$' $f && "
+	    "grep -A3 -x '  - interface: lo0' $f | grep -qx '    copy-iface: "
+	    "lo0^' && grep -A3 -x '  - interface: lo0^' $f | grep -qx '    "
+	    "copy-iface: lo0' && grep -q '^runmode: workers$' $f && ! grep -q "
+	    "'^pcap:' $f && grep -A1 -x 'flow:' $f | grep -qx '  memcap: 64mb' "
+	    "&& grep -A3 -x 'stream:' $f | grep -qx '    memcap: 2gb' && "
+	    "grep -q '^  profile: high$' $f") == 0);
+	ATF_CHECK(system("grep -q '\"capture\":\"netmap\"' security-ids.json "
+	    "&& grep -q '\"interfaces\":\\[\"lo0\",\"lo0^\"\\]' "
+	    "security-ids.json && grep -q '\"offload\":false' security-ids.json")
+	    == 0);
+	if (access("/usr/local/bin/suricata", X_OK) == 0)
+		ATF_CHECK_MSG(system("/usr/local/bin/suricata -T -c "
+		    "sdwan-ids-sec-lan.yaml > suricata-T.out 2>&1") == 0,
+		    "Suricata refuses netmap's: see suricata-T.out");
 	/* Stopped by the admin: kept in the list, told to the agent. */
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"

@@ -3268,6 +3268,17 @@ EOS
 	sleep 2
 	atf_check -o match:'"alerts_seen":1,' "$JGC" -c "$SOCK" sdwan
 	atf_check -o inline:'4\n' sh -c "grep -c '\"event_type\":\"alert\"' '$(dirname "$f")/sdwan-ids-sw1.d/eve.json'"
+	# Its statistics: each stats record of eve.json a point, Suricata's
+	# totals, its flows by protocol the latest's; a stats record is no
+	# alert.
+	for st in '"timestamp":"2026-10-19T10:00:00.000000+0000","event_type":"stats","stats":{"uptime":10,"capture":{"kernel_packets":1000,"kernel_drops":5},"decoder":{"pkts":995,"bytes":600000,"invalid":2},"detect":{"alert":3},"tcp":{"sessions":40,"memuse":1000,"reassembly_memuse":2000},"flow":{"total":60,"memuse":4000},"app_layer":{"flow":{"http":7,"tls":11}}}' \
+	    '"timestamp":"2026-10-19T10:00:10.000000+0000","event_type":"stats","stats":{"uptime":20,"capture":{"kernel_packets":3000,"kernel_drops":5},"decoder":{"pkts":2995,"bytes":1800000,"invalid":2},"detect":{"alert":4},"tcp":{"sessions":90,"memuse":1000,"reassembly_memuse":2000},"flow":{"total":130,"memuse":4000},"app_layer":{"flow":{"http":9,"tls":20,"dns_udp":4}}}'; do
+		echo "{$st}" >> "$(dirname "$f")/sdwan-ids-sw1.d/eve.json"
+	done
+	sleep 2
+	atf_check -o match:'"alerts_seen":1,' \
+	    -o match:'"stats":\{"fields":\["t","uptime","packets","drops","bytes","alerts","invalid","sessions","flows","memuse"\],"series":\[\[1792404000,10,1000,5,600000,3,2,40,60,7000\],\[1792404010,20,3000,5,1800000,4,2,90,130,7000\]\],"flows":\{"http":9,"tls":20,"dns_udp":4\}\}' \
+	    "$JGC" -c "$SOCK" sdwan
 	# The Security section's Suricata beside SD-WAN's: each list its
 	# own, what was read of the other's kept.
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids \
@@ -3397,6 +3408,24 @@ EOS
 	    "$(echo "$rs7" | sed 's/ip 10.0.0.9/ip 10.0.0.8/')"
 	atf_check -s exit:1 -e match:'an instance is a name' -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    "$(echo "$rs4" | sed 's|"rules":|"thresholds":5,"rules":|')"
+	# By netmap(4), not pcap(3); its interfaces' offloading turned off
+	# as it starts, em0^ (a host stack, netmap's alone) being em0's.
+	printf '#!/bin/sh\necho "ifconfig $*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	chmod +x fake-ifconfig
+	rs8=$(echo "$rs4" | sed 's/"interfaces":\["any"\]/"interfaces":["wg5","wg5^"],"capture":"netmap","offload":false/')
+	atf_check -o match:'suricata sw1 on 2 interfaces, detects: started' \
+	    -o match:'wg5: checksum, TSO and LRO offloading off' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs8"
+	atf_check -o match:'suricata -c .*sdwan-ids-sw1.yaml --pidfile .* --netmap -D$' tail -1 suricata.log
+	atf_check -o inline:'ifconfig wg5 -rxcsum -txcsum -rxcsum6 -txcsum6 -tso -lro -vlanhwtso\nifconfig wg5 -rxcsum -txcsum -rxcsum6 -txcsum6 -tso -lro -vlanhwtso\n' \
+	    cat ifconfig.log
+	atf_check -o match:'"name":"sw1",[^]]*\],"mode":"detect",.*"capture":"netmap"' \
+	    -o match:'"ids_host":\{"ncpu":[1-9][0-9]*,"ndomains":[1-9]' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -s exit:1 -e match:"netmap's alone" -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    "$(echo "$rs4" | sed 's/"interfaces":\["any"\]/"interfaces":["wg5^"]/')"
+	atf_check -s exit:1 -e match:'capture is pcap or netmap' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    "$(echo "$rs4" | sed 's/"interfaces":/"capture":"bpf","interfaces":/')"
 	# Stopped by the admin: not run, its files and its place kept;
 	# started again as it was.
 	atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs4"

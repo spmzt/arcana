@@ -421,6 +421,8 @@ ids_settings(const ucl_object_t *in, const char *name, struct kore_buf *b,
 	    NULL };
 	static const char *const mpms[] = { "auto", "ac", "ac-ks", "hs", NULL };
 	static const char *const profiles[] = { "low", "medium", "high", NULL };
+	static const char *const presets[] = { "small", "medium", "large",
+	    NULL };
 	static const char *const inlines[] = { "auto", "yes", "no", NULL };
 	static const char *const policies[] = { "auto", "drop-packet",
 	    "drop-flow", "pass-packet", "pass-flow", "bypass", "reject",
@@ -438,6 +440,8 @@ ids_settings(const ucl_object_t *in, const char *name, struct kore_buf *b,
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
 	const char		*v, *rm, *mpm, *prof, *inl, *pol, *mg, *wk, *extra;
+	const char		*preset;
+	int			 k;
 	const char		*sz[nitems(memcaps)];
 	int64_t			 stats, pending;
 	size_t			 i;
@@ -463,6 +467,12 @@ ids_settings(const ucl_object_t *in, const char *name, struct kore_buf *b,
 	rm = sstr(in, "runmode");
 	mpm = sstr(in, "mpm");
 	prof = sstr(in, "profile");
+	preset = sstr(in, "preset");
+	if (preset != NULL && preset[0] != '\0' && !one_of(preset, presets)) {
+		snprintf(err, errlen, "%s: a preset is small, medium or large",
+		    name);
+		return (false);
+	}
 	inl = sstr(in, "stream_inline");
 	pol = sstr(in, "exception_policy");
 	if ((rm != NULL && rm[0] != '\0' && !one_of(rm, runmodes)) ||
@@ -485,6 +495,23 @@ ids_settings(const ucl_object_t *in, const char *name, struct kore_buf *b,
 			    name, memcaps[i].key);
 			return (false);
 		}
+	}
+	/* A preset: what a field does not say, for a host of its size. */
+	if (preset != NULL && preset[0] != '\0') {
+		k = strcmp(preset, "small") == 0 ? 0 : strcmp(preset, "medium") ==
+		    0 ? 1 : 2;
+		if (rm == NULL || rm[0] == '\0')
+			rm = k == 0 ? "autofp" : "workers";
+		if (prof == NULL || prof[0] == '\0')
+			prof = profiles[k];
+		if (pending == 0)
+			pending = k == 0 ? 1024 : k == 1 ? 2048 : 4096;
+		if (sz[0] == NULL)
+			sz[0] = k == 0 ? "64mb" : k == 1 ? "256mb" : "1gb";
+		if (sz[1] == NULL)
+			sz[1] = k == 0 ? "64mb" : k == 1 ? "256mb" : "1gb";
+		if (sz[2] == NULL)
+			sz[2] = k == 0 ? "256mb" : k == 1 ? "512mb" : "2gb";
 	}
 	mg = sstr(in, "management_cpus");
 	wk = sstr(in, "worker_cpus");
@@ -592,11 +619,130 @@ ids_settings(const ucl_object_t *in, const char *name, struct kore_buf *b,
 	return (true);
 }
 
+/* An interface netmap(4) opens: a name, or em0^, its host stack. */
+static bool
+nm_ifname_ok(const char *s)
+{
+	char	buf[24];
+	size_t	n;
+
+	if (s == NULL || (n = strlen(s)) < 2 || n > 16)
+		return (false);
+	snprintf(buf, sizeof(buf), "%.*s", (int)(s[n - 1] == '^' ? n - 1 :
+	    n), s);
+	return (ifname_ok(buf));
+}
+
+static void
+add_if(ucl_object_t *ifs, const char *name)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((e = ucl_object_iterate(ifs, &it, true)) != NULL)
+		if (strcmp(ucl_object_tostring(e), name) == 0)
+			return;
+	ucl_array_append(ifs, ucl_object_fromstring(name));
+}
+
+/*
+ * How it takes packets: by pcap(3) from its interfaces (the default);
+ * or by netmap(4), from its interfaces, and where it prevents at L2,
+ * between the two of each pair (em0:em1), copy-mode ips both ways, as
+ * a bump in the wire; or em0:em0^, between em0 and its host stack.
+ * The interfaces the agent watches into ifs.
+ */
+static bool
+ids_capture(const ucl_object_t *in, const char *name, int64_t divert,
+    struct kore_buf *b, ucl_object_t *ifs, char *err, size_t errlen)
+{
+	const ucl_object_t	*e, *pairs;
+	ucl_object_iter_t	 it;
+	const char		*cap;
+	char			 a[24], c[24], *colon;
+
+	cap = sstr(in, "capture");
+	pairs = ucl_object_lookup(in, "pairs");
+	if (cap == NULL || cap[0] == '\0' || strcmp(cap, "pcap") == 0) {
+		if (ucl_array_size(pairs) > 0) {
+			snprintf(err, errlen, "%s: pairs of interfaces are "
+			    "netmap's (capture netmap)", name);
+			return (false);
+		}
+		kore_buf_appendf(b, "pcap:\n");
+		if (!list_of(in, "interfaces", ifname_ok, true, b,
+		    "  - interface: ", "\n", name, "interfaces", err, errlen))
+			return (false);
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(in,
+		    "interfaces"), &it, true)) != NULL)
+			add_if(ifs, ucl_object_tostring(e));
+		return (true);
+	}
+	if (strcmp(cap, "netmap") != 0) {
+		snprintf(err, errlen, "%s: capture is pcap or netmap", name);
+		return (false);
+	}
+	if (divert > 0) {
+		snprintf(err, errlen, "%s: it prevents by divert or by netmap's "
+		    "pairs, not both", name);
+		return (false);
+	}
+	kore_buf_appendf(b, "netmap:\n");
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(in, "interfaces"),
+	    &it, true)) != NULL) {
+		if (ucl_object_type(e) != UCL_STRING ||
+		    !nm_ifname_ok(ucl_object_tostring(e))) {
+			snprintf(err, errlen, "%s: its interfaces are names, or "
+			    "em0^ (a host stack)", name);
+			return (false);
+		}
+		kore_buf_appendf(b, "  - interface: %s\n    threads: auto\n",
+		    ucl_object_tostring(e));
+		add_if(ifs, ucl_object_tostring(e));
+	}
+	it = NULL;
+	while ((e = ucl_object_iterate(pairs, &it, true)) != NULL) {
+		if (ucl_object_type(e) != UCL_STRING || (colon = strchr(
+		    ucl_object_tostring(e), ':')) == NULL) {
+			snprintf(err, errlen, "%s: a pair is two interfaces, "
+			    "em0:em1 or em0:em0^", name);
+			return (false);
+		}
+		snprintf(a, sizeof(a), "%.*s", (int)(colon -
+		    ucl_object_tostring(e)), ucl_object_tostring(e));
+		snprintf(c, sizeof(c), "%s", colon + 1);
+		if (!nm_ifname_ok(a) || !nm_ifname_ok(c) || strcmp(a, c) == 0) {
+			snprintf(err, errlen, "%s: a pair is two interfaces, "
+			    "em0:em1 or em0:em0^", name);
+			return (false);
+		}
+		kore_buf_appendf(b, "  - interface: %s\n    threads: auto\n"
+		    "    copy-mode: ips\n    copy-iface: %s\n  - interface: %s\n"
+		    "    threads: auto\n    copy-mode: ips\n    copy-iface: %s\n",
+		    a, c, c, a);
+		add_if(ifs, a);
+		add_if(ifs, c);
+	}
+	if (ucl_array_size(ifs) == 0) {
+		snprintf(err, errlen, "%s: netmap needs interfaces, or pairs of "
+		    "them", name);
+		return (false);
+	}
+	/* netmap's IPS is a worker's to the end. */
+	if (ucl_array_size(pairs) > 0 && (sstr(in, "runmode") == NULL ||
+	    sstr(in, "runmode")[0] == '\0'))
+		kore_buf_appendf(b, "runmode: workers\n");
+	return (true);
+}
+
 static ucl_object_t *
 ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 {
 	struct kore_buf		*b;
-	ucl_object_t		*o;
+	ucl_object_t		*o, *ifs;
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
 	const char		*name, *rules;
@@ -673,10 +819,12 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 		goto bad;
 	kore_buf_appendf(b, "logging:\n  default-log-level: notice\n  outputs:\n"
 	    "    - console:\n        enabled: no\n    - file:\n        enabled: "
-	    "yes\n        level: info\n        filename: suricata.log\npcap:\n");
-	if (!list_of(in, "interfaces", ifname_ok, true, b, "  - interface: ",
-	    "\n", name, "interfaces", err, errlen))
+	    "yes\n        level: info\n        filename: suricata.log\n");
+	ifs = ucl_object_typed_new(UCL_ARRAY);
+	if (!ids_capture(in, name, divert, b, ifs, err, errlen)) {
+		ucl_object_unref(ifs);
 		goto bad;
+	}
 	kore_buf_appendf(b, "\nrule-files:\n  - @RULES@\n");
 	/* The agent's, where it is fetched; left out until it is. */
 	if (ruleset)
@@ -690,8 +838,15 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, ucl_object_fromstring(name), "name", 0,
 	    false);
-	ucl_object_insert_key(o, ucl_object_copy(ucl_object_lookup(in,
-	    "interfaces")), "interfaces", 0, false);
+	ucl_object_insert_key(o, ifs, "interfaces", 0, false);
+	if (sstr(in, "capture") != NULL && strcmp(sstr(in, "capture"),
+	    "netmap") == 0)
+		ucl_object_insert_key(o, ucl_object_fromstring("netmap"),
+		    "capture", 0, false);
+	/* Its interfaces' offloading turned off as it starts. */
+	if (ucl_object_toboolean(ucl_object_lookup(in, "offload_off")))
+		ucl_object_insert_key(o, ucl_object_frombool(false), "offload",
+		    0, false);
 	if (divert > 0)
 		ucl_object_insert_key(o, ucl_object_fromint(divert), "divert", 0,
 		    false);

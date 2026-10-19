@@ -773,7 +773,23 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\"10.0.0.1\",\"dest_port\":23,\"proto\":\"TCP\",\"in_iface\":"
 	    "\"lo0\",\"alert\":{\"action\":\"allowed\",\"signature_id\":"
 	    "1000009,\"rev\":1,\"signature\":\"LOCAL telnet\",\"category\":"
-	    "\"\",\"severity\":2}}' >> \"$d/eve.json\") > /dev/null 2>&1 &\n"
+	    "\"\",\"severity\":2}}' >> \"$d/eve.json\"; "
+	    /* and two stats records, ten seconds apart. */
+	    "echo '{\"timestamp\":\"2026-10-19T10:00:00.000000+0000\","
+	    "\"event_type\":\"stats\",\"stats\":{\"uptime\":10,\"capture\":"
+	    "{\"kernel_packets\":1000,\"kernel_drops\":5},\"decoder\":{"
+	    "\"pkts\":995,\"bytes\":600000,\"invalid\":2},\"detect\":{"
+	    "\"alert\":1},\"tcp\":{\"sessions\":40,\"memuse\":1000},"
+	    "\"flow\":{\"total\":60,\"memuse\":4000},\"app_layer\":{\"flow\":"
+	    "{\"http\":7,\"tls\":11}}}}' >> \"$d/eve.json\"; "
+	    "echo '{\"timestamp\":\"2026-10-19T10:00:10.000000+0000\","
+	    "\"event_type\":\"stats\",\"stats\":{\"uptime\":20,\"capture\":"
+	    "{\"kernel_packets\":3000,\"kernel_drops\":5},\"decoder\":{"
+	    "\"pkts\":2995,\"bytes\":1800000,\"invalid\":2},\"detect\":{"
+	    "\"alert\":2},\"tcp\":{\"sessions\":90,\"memuse\":1000},"
+	    "\"flow\":{\"total\":130,\"memuse\":4000},\"app_layer\":{\"flow\":"
+	    "{\"http\":9,\"tls\":20,\"dns_udp\":4}}}}' >> \"$d/eve.json\") "
+	    "> /dev/null 2>&1 &\n"
 	    "exit 0\n");
 	/* suricata-update: a ruleset of three rules where -o says, one
 	 * disabled as it ships; the sids of --disable-conf commented out

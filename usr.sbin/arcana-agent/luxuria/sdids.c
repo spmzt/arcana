@@ -25,8 +25,11 @@
  */
 
 #include <sys/param.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/sockio.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 
 #include <net/if.h>
 
@@ -39,6 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <ucl.h>
@@ -61,6 +65,16 @@
 #define	ALERTS_SECOND	50	/* events a second, at most, per instance */
 #define	LINE_MAX_EVE	(64 * 1024)
 
+/* Its statistics, each eve.json stats record a point (totals), the
+ * latest STATS_KEPT of them: an hour at the 10 s Suricata is told. */
+#define	STATS_KEPT	360
+static const char *const stat_fields[] = { "t", "uptime", "packets",
+    "drops", "bytes", "alerts", "invalid", "sessions", "flows", "memuse" };
+#define	STATS_N		nitems(stat_fields)
+struct spoint {
+	int64_t	v[10];
+};
+
 struct instance {
 	char	 name[40];
 	char	 ifs[IFS_MAX][IFNAMSIZ];
@@ -68,11 +82,18 @@ struct instance {
 	int	 divert;		/* its divert port, prevent; 0 detect */
 	bool	 down;			/* one that prevents, told not running */
 	bool	 stopped;		/* stopped by the admin, kept */
+	bool	 netmap;		/* by netmap(4), not pcap(3) */
+	bool	 nooffload;		/* its interfaces' offloading off */
 	off_t	 off;			/* how far its eve.json is read */
 	char	*alerts[ALERTS_KEPT];	/* a ring, newest at head - 1 */
 	int	 head, nalerts;
 	uint64_t seen;			/* alerts read since it started */
+	struct spoint *stats;		/* a ring, STATS_KEPT, or NULL */
+	int	 shead, nstats;
+	char	*app;			/* app_layer.flow of the latest, JSON */
 };
+
+static ucl_object_t	*parse(const char *);
 
 static pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
 static struct instance	instances[INSTANCES_MAX];
@@ -100,9 +121,42 @@ ifname_ok(const char *s)
 	if (s == NULL || s[0] == '\0' || strlen(s) >= IFNAMSIZ)
 		return (false);
 	for (i = 0; s[i] != '\0'; i++)
-		if (!isalnum((unsigned char)s[i]) && s[i] != '.' && s[i] != '_')
+		if (!isalnum((unsigned char)s[i]) && s[i] != '.' && s[i] != '_' &&
+		    !(s[i] == '^' && s[i + 1] == '\0' && i > 0))
 			return (false);
 	return (true);
+}
+
+/*
+ * Its interfaces' checksum, segmentation and receive offloading off,
+ * as Suricata needs to see packets as they are on the wire (netmap(4)
+ * the more so); ifconfig(8), each at its start.  em0^, netmap's name
+ * of em0's host stack, is em0.
+ */
+static void
+offload_off(struct work *w, const struct instance *in)
+{
+	struct execres	 res;
+	char		*argv[12], ifn[IFNAMSIZ];
+	int		 i, step;
+
+	for (i = 0; i < in->nifs; i++) {
+		snprintf(ifn, sizeof(ifn), "%.*s", (int)strcspn(in->ifs[i], "^"),
+		    in->ifs[i]);
+		step = step_begin(w, ARC_STEP_KIND_EXEC, "ifconfig",
+		    "%s: checksum, TSO and LRO offloading off", ifn);
+		argv[0] = (char *)(uintptr_t)opts.ifconfig_bin;
+		argv[1] = ifn;
+		argv[2] = (char *)(uintptr_t)"-rxcsum";
+		argv[3] = (char *)(uintptr_t)"-txcsum";
+		argv[4] = (char *)(uintptr_t)"-rxcsum6";
+		argv[5] = (char *)(uintptr_t)"-txcsum6";
+		argv[6] = (char *)(uintptr_t)"-tso";
+		argv[7] = (char *)(uintptr_t)"-lro";
+		argv[8] = (char *)(uintptr_t)"-vlanhwtso";
+		argv[9] = NULL;
+		step_end(w, step, run_exec(w, argv, &res) == 0, NULL);
+	}
 }
 
 /* Where an instance's files are: beside the agent's kept files. */
@@ -491,7 +545,8 @@ log_errors(struct work *w, const char *name, long from)
 }
 
 static int
-inst_start(struct work *w, const char *name, int divert, const char **errp)
+inst_start(struct work *w, const char *name, int divert, bool netmap,
+    const char **errp)
 {
 	struct execres	 res;
 	char		*argv[10];
@@ -514,7 +569,7 @@ inst_start(struct work *w, const char *name, int divert, const char **errp)
 		argv[n++] = (char *)(uintptr_t)"-d";
 		argv[n++] = wfmt(w, "%d", divert);
 	} else
-		argv[n++] = (char *)(uintptr_t)"--pcap";
+		argv[n++] = (char *)(uintptr_t)(netmap ? "--netmap" : "--pcap");
 	argv[n++] = (char *)(uintptr_t)"-D";
 	argv[n] = NULL;
 	if (run_exec(w, argv, &res) != 0) {
@@ -547,6 +602,83 @@ alerts_free(struct instance *in)
 		in->alerts[i] = NULL;
 	}
 	in->head = in->nalerts = 0;
+	free(in->stats);
+	in->stats = NULL;
+	in->shead = in->nstats = 0;
+	free(in->app);
+	in->app = NULL;
+}
+
+static int64_t
+stat_num(const ucl_object_t *o, const char *path)
+{
+	const ucl_object_t	*v;
+
+	v = ucl_object_lookup_path(o, path);
+	return (v != NULL && (ucl_object_type(v) == UCL_INT ||
+	    ucl_object_type(v) == UCL_FLOAT) ? ucl_object_toint(v) : -1);
+}
+
+/*
+ * A stats record of eve.json into the instance's ring: what it
+ * captured (or decoded, where it takes packets by divert), dropped,
+ * alerted on and holds, Suricata's totals since it started.
+ */
+static bool
+stats_take(struct instance *in, const char *line)
+{
+	ucl_object_t		*o;
+	const ucl_object_t	*st, *app;
+	struct spoint		*p;
+	struct tm		 tm;
+	const char		*ts;
+	int64_t			 v;
+
+	if (strstr(line, "\"event_type\":\"stats\"") == NULL ||
+	    (o = parse(line)) == NULL)
+		return (false);
+	if ((st = ucl_object_lookup(o, "stats")) == NULL) {
+		ucl_object_unref(o);
+		return (false);
+	}
+	if (in->stats == NULL && (in->stats = calloc(STATS_KEPT,
+	    sizeof(*in->stats))) == NULL) {
+		ucl_object_unref(o);
+		return (true);
+	}
+	p = &in->stats[in->shead];
+	memset(&tm, 0, sizeof(tm));
+	ts = ucl_object_tostring_forced(ucl_object_lookup(o, "timestamp"));
+	p->v[0] = ts != NULL && strptime(ts, "%Y-%m-%dT%H:%M:%S", &tm) !=
+	    NULL ? (int64_t)timegm(&tm) : (int64_t)time(NULL);
+	p->v[1] = stat_num(st, "uptime");
+	p->v[2] = (v = stat_num(st, "capture.kernel_packets")) >= 0 ? v :
+	    stat_num(st, "decoder.pkts");
+	p->v[3] = stat_num(st, "capture.kernel_drops");
+	p->v[4] = stat_num(st, "decoder.bytes");
+	p->v[5] = stat_num(st, "detect.alert");
+	p->v[6] = stat_num(st, "decoder.invalid");
+	p->v[7] = stat_num(st, "tcp.sessions");
+	p->v[8] = stat_num(st, "flow.total");
+	p->v[9] = 0;
+	if ((v = stat_num(st, "flow.memuse")) > 0)
+		p->v[9] += v;
+	if ((v = stat_num(st, "tcp.memuse")) > 0)
+		p->v[9] += v;
+	if ((v = stat_num(st, "tcp.reassembly_memuse")) > 0)
+		p->v[9] += v;
+	if ((v = stat_num(st, "http.memuse")) > 0)
+		p->v[9] += v;
+	in->shead = (in->shead + 1) % STATS_KEPT;
+	if (in->nstats < STATS_KEPT)
+		in->nstats++;
+	/* Its flows by protocol, as the latest says. */
+	if ((app = ucl_object_lookup_path(st, "app_layer.flow")) != NULL) {
+		free(in->app);
+		in->app = (char *)ucl_object_emit(app, UCL_EMIT_JSON_COMPACT);
+	}
+	ucl_object_unref(o);
+	return (true);
 }
 
 static ucl_object_t *
@@ -671,8 +803,8 @@ read_eve(struct instance *in)
 		if (line[n - 1] != '\n')	/* half written: next time */
 			break;
 		in->off += n;
-		if (n > LINE_MAX_EVE || (a = alert_json(in->name, line)) ==
-		    NULL)
+		if (n > LINE_MAX_EVE || stats_take(in, line) ||
+		    (a = alert_json(in->name, line)) == NULL)
 			continue;
 		in->seen++;
 		if (told++ < ALERTS_SECOND)
@@ -811,6 +943,23 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			}
 			ni[n].divert = (int)ucl_object_toint(f);
 		}
+		/* netmap(4): its interfaces, or em0^ host stacks; one that
+		 * prevents at L2 by copy-mode ips, as its YAML says. */
+		if ((f = ucl_object_lookup(in, "capture")) != NULL) {
+			if (ucl_object_type(f) != UCL_STRING || (strcmp(
+			    ucl_object_tostring(f), "pcap") != 0 && strcmp(
+			    ucl_object_tostring(f), "netmap") != 0)) {
+				ucl_object_unref(top);
+				*errp = wfmt(w, "%s: capture is pcap or netmap",
+				    ni[n].name);
+				return (-1);
+			}
+			ni[n].netmap = strcmp(ucl_object_tostring(f), "netmap") ==
+			    0;
+		}
+		if ((f = ucl_object_lookup(in, "offload")) != NULL)
+			ni[n].nooffload = ucl_object_type(f) == UCL_BOOLEAN &&
+			    !ucl_object_toboolean(f);
 		if ((f = ucl_object_lookup(in, "stopped")) != NULL) {
 			if (ucl_object_type(f) != UCL_BOOLEAN) {
 				ucl_object_unref(top);
@@ -824,10 +973,13 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		while ((f = ucl_object_iterate(ucl_object_lookup(in,
 		    "interfaces"), &fit, true)) != NULL) {
 			if (ni[n].nifs == IFS_MAX || ucl_object_type(f) !=
-			    UCL_STRING || !ifname_ok(ucl_object_tostring(f))) {
+			    UCL_STRING || !ifname_ok(ucl_object_tostring(f)) ||
+			    (strchr(ucl_object_tostring(f), '^') != NULL &&
+			    !ni[n].netmap)) {
 				ucl_object_unref(top);
 				*errp = wfmt(w, "%s: its interfaces are names, %d "
-				    "at most", ni[n].name, IFS_MAX);
+				    "at most (em0^, a host stack, netmap's alone)",
+				    ni[n].name, IFS_MAX);
 				return (-1);
 			}
 			snprintf(ni[n].ifs[ni[n].nifs++], IFNAMSIZ, "%s",
@@ -977,7 +1129,10 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			note = "the ruleset is not fetched yet (suricata-update): "
 			    "its own rules alone until it is";
 		inst_stop(w, ni[k].name);
-		if (inst_start(w, ni[k].name, ni[k].divert, &e) != 0) {
+		if (ni[k].nooffload)
+			offload_off(w, &ni[k]);
+		if (inst_start(w, ni[k].name, ni[k].divert, ni[k].netmap, &e) !=
+		    0) {
 			step_end(w, step, false, "%s", e);
 			*errp = wfmt(w, "%s: %s", ni[k].name, e);
 			ok = false;
@@ -999,6 +1154,14 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 					    sizeof(instances[i].alerts));
 					ni[k].head = instances[i].head;
 					ni[k].nalerts = instances[i].nalerts;
+					/* Its statistics too, moved. */
+					ni[k].stats = instances[i].stats;
+					ni[k].shead = instances[i].shead;
+					ni[k].nstats = instances[i].nstats;
+					ni[k].app = instances[i].app;
+					instances[i].stats = NULL;
+					instances[i].app = NULL;
+					instances[i].nstats = 0;
 					ni[k].off = instances[i].off;
 					ni[k].seen = instances[i].seen;
 					ni[k].down = instances[i].down &&
@@ -1065,6 +1228,72 @@ sdwan_ids_start(void)
 	work_free(&w);
 }
 
+/* The offloading an interface has on: what Suricata would rather it
+ * had not (SIOCGIFCAP). */
+static ucl_object_t *
+caps_json(const char *name)
+{
+	static const struct {
+		int		 bit;
+		const char	*word;
+	} caps[] = {
+		{ IFCAP_RXCSUM, "rxcsum" }, { IFCAP_TXCSUM, "txcsum" },
+		{ IFCAP_RXCSUM_IPV6, "rxcsum6" }, { IFCAP_TXCSUM_IPV6, "txcsum6" },
+		{ IFCAP_TSO4, "tso4" }, { IFCAP_TSO6, "tso6" },
+		{ IFCAP_LRO, "lro" }, { IFCAP_VLAN_HWTSO, "vlanhwtso" },
+	};
+	struct ifreq	 ifr;
+	ucl_object_t	*arr;
+	size_t		 i;
+	int		 s;
+
+	if ((s = socket(AF_LOCAL, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1)
+		return (NULL);
+	memset(&ifr, 0, sizeof(ifr));
+	snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%.*s", (int)strcspn(
+	    name, "^"), name);
+	if (ioctl(s, SIOCGIFCAP, &ifr) == -1) {
+		close(s);
+		return (NULL);
+	}
+	close(s);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < nitems(caps); i++)
+		if (ifr.ifr_curcap & caps[i].bit)
+			ucl_array_append(arr, ucl_object_fromstring(caps[i].word));
+	return (arr);
+}
+
+/* An instance's statistics: the fields, the points oldest first (each
+ * the fields' values, -1 where Suricata had none), its flows by
+ * protocol. */
+static ucl_object_t *
+stats_json(const struct instance *in)
+{
+	ucl_object_t	*o, *f, *ser, *pt, *app;
+	size_t		 k;
+	int		 i, j;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	f = ucl_object_typed_new(UCL_ARRAY);
+	for (k = 0; k < STATS_N; k++)
+		ucl_array_append(f, ucl_object_fromstring(stat_fields[k]));
+	ucl_object_insert_key(o, f, "fields", 0, false);
+	ser = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < in->nstats; i++) {
+		j = (in->shead - in->nstats + i + STATS_KEPT) % STATS_KEPT;
+		pt = ucl_object_typed_new(UCL_ARRAY);
+		for (k = 0; k < STATS_N; k++)
+			ucl_array_append(pt, ucl_object_fromint(
+			    in->stats[j].v[k]));
+		ucl_array_append(ser, pt);
+	}
+	ucl_object_insert_key(o, ser, "series", 0, false);
+	if (in->app != NULL && (app = parse(in->app)) != NULL)
+		ucl_object_insert_key(o, app, "flows", 0, false);
+	return (o);
+}
+
 /* The instances as they are, into the sdwan reply: each its name, its
  * interfaces, whether it runs, how many alerts were read, the latest. */
 void
@@ -1106,6 +1335,23 @@ sdwan_ids_json(struct work *w, ucl_object_t *top)
 				ucl_array_append(al, a);
 		}
 		ucl_object_insert_key(o, al, "alerts", 0, false);
+		if (instances[i].nstats > 0)
+			ucl_object_insert_key(o, stats_json(&instances[i]),
+			    "stats", 0, false);
+		ucl_object_insert_key(o, ucl_object_fromstring(
+		    instances[i].netmap ? "netmap" : instances[i].divert > 0 ?
+		    "divert" : "pcap"), "capture", 0, false);
+		/* Each interface's offloading still on. */
+		{
+			ucl_object_t	*off, *c;
+
+			off = ucl_object_typed_new(UCL_OBJECT);
+			for (k = 0; k < instances[i].nifs; k++)
+				if ((c = caps_json(instances[i].ifs[k])) != NULL)
+					ucl_object_insert_key(off, c,
+					    instances[i].ifs[k], 0, true);
+			ucl_object_insert_key(o, off, "offload", 0, false);
+		}
 		ucl_object_insert_key(o, ucl_object_fromstring(IS_SEC(
 		    instances[i].name) ? "security" : "sdwan"), "group", 0,
 		    false);
@@ -1113,6 +1359,24 @@ sdwan_ids_json(struct work *w, ucl_object_t *top)
 	}
 	pthread_mutex_unlock(&lock);
 	ucl_object_insert_key(top, arr, "ids", 0, false);
+	/* The host's CPUs and memory domains, for its threads' sets. */
+	{
+		int	ncpu, ndom;
+		size_t	len;
+
+		len = sizeof(ncpu);
+		if (sysctlbyname("hw.ncpu", &ncpu, &len, NULL, 0) != 0)
+			ncpu = 0;
+		len = sizeof(ndom);
+		if (sysctlbyname("vm.ndomains", &ndom, &len, NULL, 0) != 0)
+			ndom = 1;
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromint(ncpu), "ncpu", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromint(ndom), "ndomains", 0,
+		    false);
+		ucl_object_insert_key(top, o, "ids_host", 0, false);
+	}
 	/* The ruleset, when suricata-update has fetched it: when, and its
 	 * size. */
 	if (stat(SURICATA_RULESET, &sb) == 0) {
