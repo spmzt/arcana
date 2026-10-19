@@ -320,8 +320,9 @@ static char *
 inst_conf(struct work *w, const char *name, const char *conf)
 {
 	const char	*from[] = { "@LOGDIR@", "@RULES@", "@PID@",
-			    "@CLASSIFICATION@", "@REFERENCE@", "@RULESET@" },
-			*to[6];
+			    "@CLASSIFICATION@", "@REFERENCE@", "@RULESET@",
+			    "@THRESHOLD@" },
+			*to[7];
 	char		*out, *p, *q, *l, *e;
 	size_t		 i, n, len;
 
@@ -344,6 +345,7 @@ inst_conf(struct work *w, const char *name, const char *conf)
 	to[3] = suricata_etc(w, "classification.config");
 	to[4] = suricata_etc(w, "reference.config");
 	to[5] = SURICATA_RULESET;
+	to[6] = inst_path(w, name, "threshold");
 	len = strlen(conf) + 8 * MAXPATHLEN + 1;
 	out = wcalloc(w, 1, len);
 	for (p = (char *)(uintptr_t)conf, q = out; *p != '\0';) {
@@ -739,7 +741,7 @@ divert_was(const char *name)
 
 /*
  * The instances applied: {"instances": [{"name", "interfaces", "conf",
- * "rules", "stopped"}, ...]}.  Suricata must be there (a plugin); each instance's
+ * "rules", "thresholds", "stopped"}, ...]}.  Suricata must be there (a plugin); each instance's
  * files are written, checked by suricata -T, and it is started, again
  * when they changed; those not named any more are stopped.  Kept for
  * the next start.
@@ -753,7 +755,7 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 	struct instance		 ni[INSTANCES_MAX];
 	struct execres		 res;
 	char			*argv[8], *conf, *was;
-	const char		*rules, *e, *note, *what;
+	const char		*rules, *thr, *e, *note, *what;
 	int			 n, i, k, step, nkeep;
 	bool			 ok, same, sec;
 
@@ -780,7 +782,11 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		    CONF_MAX || (ucl_object_lookup(in, "rules") != NULL &&
 		    (ucl_object_type(ucl_object_lookup(in, "rules")) !=
 		    UCL_STRING || strlen(ucl_object_tostring(ucl_object_lookup(
-		    in, "rules"))) > RULES_MAX))) {
+		    in, "rules"))) > RULES_MAX)) ||
+		    (ucl_object_lookup(in, "thresholds") != NULL &&
+		    (ucl_object_type(ucl_object_lookup(in, "thresholds")) !=
+		    UCL_STRING || strlen(ucl_object_tostring(ucl_object_lookup(
+		    in, "thresholds"))) > CONF_MAX))) {
 			ucl_object_unref(top);
 			*errp = wfmt(w, "an instance is a name of letters, digits, "
 			    "_ and -, 32 at most, its interfaces, its conf and its "
@@ -878,6 +884,8 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			    "away", instances[i].name);
 			(void)unlink(inst_path(w, instances[i].name, "yaml"));
 			(void)unlink(inst_path(w, instances[i].name, "rules"));
+			(void)unlink(inst_path(w, instances[i].name,
+			    "threshold"));
 			step_end(w, step, true, NULL);
 		}
 	}
@@ -909,12 +917,18 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		}
 		rules = ucl_object_lookup(in, "rules") != NULL ?
 		    ucl_object_tostring(ucl_object_lookup(in, "rules")) : "";
+		/* Its thresholds and suppressions, threshold.config's lines. */
+		thr = ucl_object_lookup(in, "thresholds") != NULL ?
+		    ucl_object_tostring(ucl_object_lookup(in, "thresholds")) :
+		    "";
 		/* Running with the same files: left as it is. */
 		was = file_text(w, inst_path(w, ni[k].name, "yaml"));
 		same = was != NULL && strcmp(was, conf) == 0 && (was = file_text(w,
 		    inst_path(w, ni[k].name, "rules"))) != NULL && strcmp(was,
-		    rules) == 0 && inst_pid(w, ni[k].name) != 0 && divert_was(
-		    ni[k].name) == ni[k].divert;
+		    rules) == 0 && strcmp((was = file_text(w, inst_path(w,
+		    ni[k].name, "threshold"))) != NULL ? was : "", thr) == 0 &&
+		    inst_pid(w, ni[k].name) != 0 && divert_was(ni[k].name) ==
+		    ni[k].divert;
 		what = wfmt(w, "suricata %s on %d interface%s, %s: %s",
 		    ni[k].name, ni[k].nifs, ni[k].nifs == 1 ? "" : "s",
 		    ni[k].divert > 0 ? wfmt(w, "prevents by divert %d",
@@ -928,6 +942,8 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		e = NULL;
 		if (sdwan_conf_write(wfmt(w, "sdwan-ids-%s.rules", ni[k].name),
 		    rules, &e) != 0 || sdwan_conf_write(wfmt(w,
+		    "sdwan-ids-%s.threshold", ni[k].name), thr, &e) != 0 ||
+		    sdwan_conf_write(wfmt(w,
 		    "sdwan-ids-%s.yaml", ni[k].name), conf, &e) != 0) {
 			step_end(w, step, false, "%s", e);
 			*errp = wfmt(w, "%s: %s", ni[k].name, e);

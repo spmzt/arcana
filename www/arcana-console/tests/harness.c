@@ -764,7 +764,17 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	 * with its pid file where it is told. */
 	put("tools/suricata", "#!/bin/sh\necho \"suricata $*\" >> squid.log\n"
 	    "[ \"$1\" = -T ] && exit 0\n"
-	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$4\"\nexit 0\n");
+	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$4\"\n"
+	    /* An alert in its eve.json, a second after it starts. */
+	    "d=$(sed -n 's/^default-log-dir: //p' \"$2\")\n"
+	    "[ -n \"$d\" ] && (sleep 1; mkdir -p \"$d\"; echo '{\"timestamp\":"
+	    "\"2026-10-19T10:00:00.000000+0000\",\"event_type\":\"alert\","
+	    "\"src_ip\":\"10.0.0.9\",\"src_port\":4444,\"dest_ip\":"
+	    "\"10.0.0.1\",\"dest_port\":23,\"proto\":\"TCP\",\"in_iface\":"
+	    "\"lo0\",\"alert\":{\"action\":\"allowed\",\"signature_id\":"
+	    "1000009,\"rev\":1,\"signature\":\"LOCAL telnet\",\"category\":"
+	    "\"\",\"severity\":2}}' >> \"$d/eve.json\") > /dev/null 2>&1 &\n"
+	    "exit 0\n");
 	/* suricata-update: a ruleset of three rules where -o says, one
 	 * disabled as it ships; the sids of --disable-conf commented out
 	 * and those of --enable-conf not, as it does. */

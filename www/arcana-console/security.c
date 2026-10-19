@@ -323,6 +323,50 @@ bad:
 	return (NULL);
 }
 
+/*
+ * An intrusion detection's thresholds and suppressions, as Suricata's
+ * threshold.config has them: a line each, suppress, threshold,
+ * event_filter or rate_filter with its gen_id and sig_id; # a comment.
+ */
+static bool
+thresholds_ok(const char *text, const char *name, char *err, size_t errlen)
+{
+	static const char *const kinds[] = { "suppress ", "threshold ",
+	    "event_filter ", "rate_filter " };
+	const char	*p, *e;
+	size_t		 i, len, n;
+
+	if (text == NULL)
+		return (true);
+	if (strlen(text) > 64 * 1024) {
+		snprintf(err, errlen, "%s: its thresholds are 64 KB at most",
+		    name);
+		return (false);
+	}
+	for (p = text, n = 1; *p != '\0'; p = *e != '\0' ? e + 1 : e, n++) {
+		e = p + strcspn(p, "\n");
+		len = (size_t)(e - p);
+		while (len > 0 && (p[len - 1] == ' ' || p[len - 1] == '\r'))
+			len--;
+		if (len == 0 || *p == '#')
+			continue;
+		for (i = 0; i < nitems(kinds); i++)
+			if (strncmp(p, kinds[i], strlen(kinds[i])) == 0)
+				break;
+		if (i == nitems(kinds) || strnstr(p, "gen_id ", len) == NULL ||
+		    strnstr(p, "sig_id ", len) == NULL || strspn(p,
+		    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		    "0123456789 ,._:/$![]-") < len) {
+			snprintf(err, errlen, "%s: threshold line %zu is "
+			    "suppress, threshold, event_filter or rate_filter "
+			    "with its gen_id and sig_id, as threshold.config "
+			    "has them", name, n);
+			return (false);
+		}
+	}
+	return (true);
+}
+
 static ucl_object_t *
 ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 {
@@ -346,6 +390,8 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 		return (NULL);
 	}
 	rules = sstr(in, "rules");
+	if (!thresholds_ok(sstr(in, "thresholds"), name, err, errlen))
+		return (NULL);
 	ruleset = ucl_object_toboolean(ucl_object_lookup(in, "ruleset"));
 	if ((rules == NULL || rules[strspn(rules, " \t\r\n")] == '\0') &&
 	    !ruleset) {
@@ -414,6 +460,7 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 	 * agent names the one there is. */
 	kore_buf_appendf(b, "classification-file: @CLASSIFICATION@\n"
 	    "reference-config-file: @REFERENCE@\n"
+	    "threshold-file: @THRESHOLD@\n"
 	    "run-as:\n  user: root\n");
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, ucl_object_fromstring(name), "name", 0,
@@ -432,6 +479,9 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 	if (rules != NULL)
 		ucl_object_insert_key(o, ucl_object_fromstring(rules), "rules", 0,
 		    false);
+	if (sstr(in, "thresholds") != NULL)
+		ucl_object_insert_key(o, ucl_object_fromstring(sstr(in,
+		    "thresholds")), "thresholds", 0, false);
 	ucl_object_insert_key(o, ucl_object_copy(in), "spec", 0, false);
 	kore_buf_free(b);
 	return (o);

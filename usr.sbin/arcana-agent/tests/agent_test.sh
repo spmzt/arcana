@@ -3342,6 +3342,21 @@ EOS
 	atf_check -s exit:0 kill -0 "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
 	echo "[1 - Main] 2026-10-18 Error: an old one" >> "$(dirname "$f")/sdwan-ids-sw1.d/suricata.log"
 	rs5=$(echo "$rs3" | sed 's/rule-files:/# FAILSTART\\nrule-files:/')
+	# Its thresholds and suppressions: its own file, where the
+	# configuration says; changed, it starts again; not a string,
+	# refused.
+	rs7=$(echo "$rs4" | sed 's|rule-files:|threshold-file: @THRESHOLD@\\nrule-files:|; s|"rules":|"thresholds":"suppress gen_id 1, sig_id 1000004, track by_src, ip 10.0.0.9\\n","rules":|')
+	atf_check -o match:'suricata sw1 on [0-9]+ interfaces?, detects: started' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs7"
+	atf_check -o inline:'suppress gen_id 1, sig_id 1000004, track by_src, ip 10.0.0.9\n' \
+	    cat "$(dirname "$f")/sdwan-ids-sw1.threshold"
+	atf_check -o match:"^threshold-file: /.*/sdwan-ids-sw1.threshold\$" \
+	    cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+	atf_check -o match:'detects: as it was' "$JGC" -t -c "$SOCK" sdwan ids "$rs7"
+	atf_check -o match:'detects: started' "$JGC" -t -c "$SOCK" sdwan ids \
+	    "$(echo "$rs7" | sed 's/ip 10.0.0.9/ip 10.0.0.8/')"
+	atf_check -s exit:1 -e match:'an instance is a name' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    "$(echo "$rs4" | sed 's|"rules":|"thresholds":5,"rules":|')"
 	# Stopped by the admin: not run, its files and its place kept;
 	# started again as it was.
 	atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs4"

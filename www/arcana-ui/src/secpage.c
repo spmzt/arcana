@@ -42,6 +42,8 @@ sec_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	char	*sid = arg;
 
+	/* Read again, a save is done with. */
+	sec.busy = false;
 	/* Another host's, asked before this one was chosen: not its. */
 	if (strcmp(sid, sec.sid) != 0) {
 		free(sid);
@@ -726,7 +728,8 @@ view_ids(struct html *h)
 		    "rules say.</p></div>");
 		return;
 	}
-	h_raw(h, "<table class=\"net secids\">");
+	h_fmt(h, "<table class=\"net secids%s\">", sec.busy ? " applying" :
+	    "");
 	tbl_head(h, "secids", icols, 5, 1);
 	h_raw(h, "<tbody>");
 	rows = tbl_rows("secids", specs(true), icols, 5, app.filter);
@@ -783,16 +786,39 @@ view_ids(struct html *h)
 		it = NULL;
 		while ((a = ucl_object_iterate(jget(l, "alerts"), &it, true)) !=
 		    NULL) {
+			/* As the agent tells it: time, src, dst, sid. */
 			h_raw(h, "<li><span class=\"dim mono\">");
-			h_txt(h, jstr(a, "timestamp"));
+			h_txt(h, jstr(a, "time"));
 			h_raw(h, "</span> <b>");
-			h_txt(h, jstr(a, "signature") != NULL ? jstr(a,
-			    "signature") : jstr(a, "alert.signature"));
-			h_raw(h, "</b> <span class=\"mono\">");
-			h_txt(h, jstr(a, "src_ip"));
+			h_txt(h, jstr(a, "signature"));
+			h_fmt(h, "</b> <small class=\"dim\">sid %lld",
+			    (long long)jint(a, "sid", 0));
+			if (jstr(a, "action") != NULL && strcmp(jstr(a,
+			    "action"), "blocked") == 0)
+				h_raw(h, ", dropped");
+			h_raw(h, "</small> <span class=\"mono\">");
+			h_txt(h, jstr(a, "src"));
+			if (jint(a, "sport", 0) > 0)
+				h_fmt(h, ":%lld", (long long)jint(a, "sport", 0));
 			h_raw(h, " → ");
-			h_txt(h, jstr(a, "dest_ip"));
-			h_raw(h, "</span></li>");
+			h_txt(h, jstr(a, "dst"));
+			if (jint(a, "dport", 0) > 0)
+				h_fmt(h, ":%lld", (long long)jint(a, "dport", 0));
+			h_raw(h, "</span>");
+			if (jint(a, "sid", 0) > 0 && jstr(a, "src") != NULL) {
+				char	arg[96];
+
+				snprintf(arg, sizeof(arg), "%lld|%s",
+				    (long long)jint(a, "sid", 0), jstr(a, "src"));
+				h_raw(h, " <button class=\"ghost small\" "
+				    "data-act=\"own-suppress\" title=\"Not told "
+				    "again from this address (suppress, track "
+				    "by_src)\"");
+				h_attr(h, "data-arg", arg);
+				h_attr(h, "data-value", jstr(f, "name"));
+				h_raw(h, ">Suppress</button>");
+			}
+			h_raw(h, "</li>");
 		}
 		h_raw(h, "</ul></td></tr>");
 	}
@@ -875,13 +901,16 @@ save_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
 	(void)arg;
-	sec.busy = false;
+	/* Applied, busy until the host is read again (sec_cb ends it);
+	 * refused, nothing changed there and nothing to wait for. */
 	if (status == 200 && jbool(o, "ok")) {
 		toast(false, "Applied");
 		sec.edit = -1;
-	} else
+	} else {
+		sec.busy = false;
 		toast(true, "%s", err != NULL ? err : jstr(o, "error") != NULL ?
 		    jstr(o, "error") : "not applied");
+	}
 	sec_load();
 	render();
 }
@@ -893,6 +922,14 @@ save(bool ids, ucl_object_t *list)
 	ucl_object_t	*body;
 	char		 url[96], *json;
 
+	/* One change at a time, each on the host's list as it was read
+	 * after the last: what is made meanwhile would undo that one. */
+	if (sec.busy) {
+		ucl_object_unref(list);
+		toast(true, "The last change is being applied: again in a "
+		    "moment");
+		return;
+	}
 	body = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(body, ucl_object_fromstring(ids ? "ids" :
 	    "proxy"), "what", 0, false);
@@ -945,8 +982,6 @@ sec_ids_set(const char *name, const char *key, const char *text)
 	ucl_object_iter_t	 it;
 	ucl_object_t		*list;
 
-	if (sec.busy)
-		return;
 	list = specs_but(true, NULL);
 	it = NULL;
 	while ((e = ucl_object_iterate(list, &it, true)) != NULL)
@@ -1102,20 +1137,29 @@ secpage_form(const char *form, const ucl_object_t *f)
 			ucl_object_insert_key(o, ucl_object_fromstring(jstr(f,
 			    "rules")), "rules", 0, false);
 		put_num(o, "divert", jstr(f, "divert"));
-		/* One stopped stays stopped, changed. */
+		/* One stopped stays stopped, changed; its thresholds,
+		 * not in this form, stay. */
 		{
 			const ucl_object_t	*e;
 			ucl_object_iter_t	 it;
 
 			it = NULL;
 			while ((e = ucl_object_iterate(specs(true), &it, true)) !=
-			    NULL)
-				if (jstr(f, "orig") != NULL && jstr(e, "name") !=
-				    NULL && strcmp(jstr(e, "name"), jstr(f,
-				    "orig")) == 0 && jbool(e, "stopped"))
+			    NULL) {
+				if (jstr(f, "orig") == NULL || jstr(e, "name") ==
+				    NULL || strcmp(jstr(e, "name"), jstr(f,
+				    "orig")) != 0)
+					continue;
+				if (jbool(e, "stopped"))
 					ucl_object_insert_key(o,
 					    ucl_object_frombool(true), "stopped",
 					    0, false);
+				if (jstr(e, "thresholds") != NULL)
+					ucl_object_insert_key(o,
+					    ucl_object_fromstring(jstr(e,
+					    "thresholds")), "thresholds", 0,
+					    false);
+			}
 		}
 	}
 	ucl_array_append(list, o);

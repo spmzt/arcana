@@ -28,7 +28,9 @@ static struct {
 	int	edit;		/* the rule in the form; OWN_MAX a new one,
 				 * -1 none */
 	bool	text;		/* the whole as text */
-} own = { .edit = -1 };
+	bool	thr;		/* the threshold form open */
+	char	thr_kind[16];	/* its kind, which says its fields */
+} own = { .edit = -1, .thr_kind = "suppress" };
 
 /* A line of the rules: a rule, on or off, or a comment kept. */
 struct oline {
@@ -374,6 +376,110 @@ static const struct tcol cols[] = {
 	{ "Message", NULL, false },
 };
 
+/* An instance's thresholds and suppressions, as threshold.config's
+ * lines: a table, and a form for one more. */
+static void
+view_thresholds(struct html *h, const char *text)
+{
+	static const char *const kinds[] = { "suppress", "threshold",
+	    "event_filter", "rate_filter" };
+	static const char *const kind_names[] = { "Suppress",
+	    "Threshold", "Event filter", "Rate filter" };
+	struct oline	*v;
+	char		 key[24];
+	int		 n, i, shown;
+	size_t		 k;
+	bool		 sup, rate;
+
+	h_raw(h, "<div class=\"toolbar\"><strong>Thresholds and "
+	    "suppression</strong><span class=\"grow\"></span><button "
+	    "class=\"ghost\" data-act=\"thr-new\">Add</button></div><p "
+	    "class=\"dim\">Its threshold.config (threshold-file): an alert "
+	    "suppressed, for every address or one; one told at most so many "
+	    "times in so long (threshold, event_filter); a rate_filter's "
+	    "action changed past a rate, a drop for one that prevents.</p>");
+	if (own.thr) {
+		sup = strcmp(own.thr_kind, "suppress") == 0;
+		rate = strcmp(own.thr_kind, "rate_filter") == 0;
+		h_raw(h, "<form class=\"secform\" data-form=\"thr-add\"><div "
+		    "class=\"rowform\"><label>Kind <select name=\"kind\" "
+		    "data-input=\"thr-kind\">");
+		for (k = 0; k < nitems(kinds); k++)
+			h_fmt(h, "<option value=\"%s\"%s>%s</option>", kinds[k],
+			    strcmp(own.thr_kind, kinds[k]) == 0 ? " selected" :
+			    "", kind_names[k]);
+		h_raw(h, "</select></label><label>Sid <input name=\"sid\" "
+		    "type=\"number\" min=\"0\" required><small class=\"help\">"
+		    "0 with gen 0: every rule</small></label><label>Gen <input "
+		    "name=\"gid\" type=\"number\" min=\"0\" value=\"1\">"
+		    "</label><label>Track <select name=\"track\">");
+		if (sup)
+			h_raw(h, "<option value=\"\">every address</option>"
+			    "<option>by_src</option><option>by_dst</option>"
+			    "<option>by_either</option>");
+		else
+			h_raw(h, "<option>by_src</option><option>by_dst</option>"
+			    "<option>by_both</option><option>by_rule</option>");
+		h_raw(h, "</select></label></div><div class=\"rowform\">");
+		if (sup)
+			h_raw(h, "<label>Address <input name=\"ip\" "
+			    "spellcheck=\"false\" placeholder=\"10.0.0.5, "
+			    "10.0.0.0/24, $HOME_NET\"><small class=\"help\">with "
+			    "a track: of those alone</small></label>");
+		else {
+			if (!rate)
+				h_raw(h, "<label>Type <select name=\"type\">"
+				    "<option>limit</option><option>threshold"
+				    "</option><option>both</option></select>"
+				    "</label>");
+			h_raw(h, "<label>Count <input name=\"count\" type=\""
+			    "number\" min=\"1\" required value=\"1\"></label>"
+			    "<label>Seconds <input name=\"seconds\" type=\""
+			    "number\" min=\"1\" required value=\"60\"></label>");
+			if (rate)
+				h_raw(h, "<label>Then <select name=\"new_action\">"
+				    "<option>drop</option><option>alert</option>"
+				    "<option>reject</option><option>pass</option>"
+				    "</select></label><label>For seconds <input "
+				    "name=\"timeout\" type=\"number\" min=\"1\" "
+				    "required value=\"60\"></label>");
+		}
+		h_raw(h, "</div><div class=\"actions\"><button type=\"button\" "
+		    "class=\"ghost\" data-act=\"thr-cancel\">Cancel</button>"
+		    "<button type=\"submit\" class=\"primary\"");
+		if (sec_ids_busy())
+			h_raw(h, " disabled");
+		h_raw(h, ">Add</button></div></form>");
+	}
+	v = lines_of(text, &n);
+	for (i = shown = 0; i < n; i++)
+		if (v[i].text[0] != '#')
+			shown++;
+	if (shown == 0) {
+		h_raw(h, "<p class=\"dim\">None: every alert is told.</p>");
+		lines_free(v, n);
+		return;
+	}
+	h_raw(h, "<table class=\"net thresholds\"><thead><tr><th>Kind</th>"
+	    "<th>What</th><th></th></tr></thead><tbody>");
+	for (i = 0; i < n; i++) {
+		if (v[i].text[0] == '#')
+			continue;
+		snprintf(key, sizeof(key), "%.*s", (int)strcspn(v[i].text,
+		    " "), v[i].text);
+		h_raw(h, "<tr><td>");
+		h_txt(h, key);
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, v[i].text + strlen(key) + strspn(v[i].text +
+		    strlen(key), " "));
+		h_fmt(h, "</td><td class=\"acts\"><button class=\"ghost small "
+		    "danger\" data-act=\"thr-del\" data-arg=\"%d\">Delete"
+		    "</button></td></tr>", i);
+	}
+	h_raw(h, "</tbody></table>");
+	lines_free(v, n);
+}
+
 void
 view_idsown(struct html *h)
 {
@@ -442,6 +548,7 @@ view_idsown(struct html *h)
 		    "class=\"dim\">Add a rule: what Suricata alerts on or, where "
 		    "it prevents, drops, beside the ruleset's.</p></div>");
 		lines_free(v, n);
+		view_thresholds(h, jstr(f, "thresholds"));
 		return;
 	}
 	h_raw(h, "<table class=\"net ownrules\">");
@@ -486,6 +593,42 @@ view_idsown(struct html *h)
 	}
 	h_raw(h, "</tbody></table>");
 	lines_free(v, n);
+	view_thresholds(h, jstr(f, "thresholds"));
+}
+
+/* A line added to an instance's thresholds, the list applied. */
+static void
+thr_append(const char *name, const char *line)
+{
+	const ucl_object_t	*spec;
+	const char		*was;
+	char			*t;
+	size_t			 len;
+
+	if ((spec = sec_ids_spec(name)) == NULL)
+		return;
+	was = jstr(spec, "thresholds") != NULL ? jstr(spec, "thresholds") : "";
+	len = strlen(was);
+	if (asprintf(&t, "%s%s%s\n", was, len > 0 && was[len - 1] != '\n' ?
+	    "\n" : "", line) == -1)
+		abort();
+	sec_ids_set(name, "thresholds", t);
+	free(t);
+}
+
+/* A field the line takes: digits only, or an address of the words
+ * threshold.config allows. */
+static const char *
+thr_val(const ucl_object_t *f, const char *k, bool num)
+{
+	const char	*v = jstr(f, k);
+
+	if (v == NULL || v[0] == '\0')
+		return (NULL);
+	if (strspn(v, num ? "0123456789" : "abcdefghijklmnopqrstuvwxyz"
+	    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:/$![],_-") != strlen(v))
+		return (NULL);
+	return (v);
 }
 
 /* The lines, one replaced (or added at OWN_MAX, or dropped with NULL),
@@ -526,6 +669,52 @@ idsown_form(const char *form, const ucl_object_t *f)
 		sec_ids_set(own.name, "rules", jstr(f, "rules") != NULL ? jstr(f,
 		    "rules") : "");
 		own.text = false;
+		return (true);
+	}
+	if (strcmp(form, "thr-add") == 0) {
+		const char	*kind, *sid, *gid, *track, *ip, *type, *cnt,
+				*sec, *na, *to;
+		char		 line[400];
+
+		kind = jstr(f, "kind") != NULL ? jstr(f, "kind") : "suppress";
+		sid = thr_val(f, "sid", true);
+		gid = thr_val(f, "gid", true);
+		track = thr_val(f, "track", false);
+		ip = thr_val(f, "ip", false);
+		type = thr_val(f, "type", false);
+		cnt = thr_val(f, "count", true);
+		sec = thr_val(f, "seconds", true);
+		na = thr_val(f, "new_action", false);
+		to = thr_val(f, "timeout", true);
+		if (sid == NULL || (strcmp(kind, "suppress") != 0 && (track ==
+		    NULL || cnt == NULL || sec == NULL)) || (strcmp(kind,
+		    "rate_filter") == 0 && (na == NULL || to == NULL)) ||
+		    (jstr(f, "ip") != NULL && jstr(f, "ip")[0] != '\0' &&
+		    ip == NULL)) {
+			toast(true, "A sid, and what its kind needs: a track, a "
+			    "count and seconds; an address of letters, digits "
+			    "and . : / $ ! [ ] , - alone");
+			return (true);
+		}
+		if (strcmp(kind, "suppress") == 0)
+			snprintf(line, sizeof(line), "suppress gen_id %s, sig_id "
+			    "%s%s%s%s%s", gid != NULL ? gid : "1", sid, track !=
+			    NULL ? ", track " : "", track != NULL ? track : "",
+			    track != NULL && ip != NULL ? ", ip " : "", track !=
+			    NULL && ip != NULL ? ip : "");
+		else if (strcmp(kind, "rate_filter") == 0)
+			snprintf(line, sizeof(line), "rate_filter gen_id %s, "
+			    "sig_id %s, track %s, count %s, seconds %s, "
+			    "new_action %s, timeout %s", gid != NULL ? gid : "1",
+			    sid, track, cnt, sec, na, to);
+		else
+			snprintf(line, sizeof(line), "%s gen_id %s, sig_id %s, "
+			    "type %s, track %s, count %s, seconds %s",
+			    strcmp(kind, "threshold") == 0 ? "threshold" :
+			    "event_filter", gid != NULL ? gid : "1", sid, type !=
+			    NULL ? type : "limit", track, cnt, sec);
+		thr_append(own.name, line);
+		own.thr = false;
 		return (true);
 	}
 	if (strcmp(form, "own-rule") != 0 || (spec = sec_ids_spec(own.name)) ==
@@ -587,6 +776,66 @@ idsown_action(const char *act, const char *arg, const char *value)
 		own.edit = -1;
 		own.text = false;
 		render();
+		return (true);
+	}
+	/* An alert suppressed from its source: arg sid|address, value the
+	 * instance. */
+	if (strcmp(act, "own-suppress") == 0) {
+		char	line[200], ip[64];
+		long	sid;
+
+		sid = strtol(arg, NULL, 10);
+		snprintf(ip, sizeof(ip), "%s", strchr(arg, '|') != NULL ?
+		    strchr(arg, '|') + 1 : "");
+		if (sid <= 0 || value == NULL || ip[strspn(ip,
+		    "0123456789abcdefABCDEF.:")] != '\0')
+			return (true);
+		if (ip[0] != '\0')
+			snprintf(line, sizeof(line), "suppress gen_id 1, sig_id "
+			    "%ld, track by_src, ip %s", sid, ip);
+		else
+			snprintf(line, sizeof(line), "suppress gen_id 1, sig_id "
+			    "%ld", sid);
+		thr_append(value, line);
+		return (true);
+	}
+	if (strcmp(act, "thr-new") == 0) {
+		own.thr = true;
+		render();
+		return (true);
+	}
+	if (strcmp(act, "thr-cancel") == 0) {
+		own.thr = false;
+		render();
+		return (true);
+	}
+	if (strcmp(act, "input:thr-kind") == 0) {
+		if (value != NULL)
+			snprintf(own.thr_kind, sizeof(own.thr_kind), "%s", value);
+		render();
+		return (true);
+	}
+	if (strcmp(act, "thr-del") == 0) {
+		const ucl_object_t	*sp;
+		struct oline		*tv;
+		char			*t;
+		int			 tn, ti;
+
+		if ((sp = sec_ids_spec(own.name)) == NULL)
+			return (true);
+		tv = lines_of(jstr(sp, "thresholds"), &tn);
+		ti = (int)strtol(arg, NULL, 10);
+		if (ti >= 0 && ti < tn) {
+			free(tv[ti].text);
+			tv[ti].text = NULL;
+		}
+		/* Comments kept as written: no "# " is added. */
+		for (ti = 0; ti < tn; ti++)
+			tv[ti].rule = false;
+		t = text_of(tv, tn);
+		sec_ids_set(own.name, "thresholds", t);
+		free(t);
+		lines_free(tv, tn);
 		return (true);
 	}
 	if (strncmp(act, "own-", 4) != 0)

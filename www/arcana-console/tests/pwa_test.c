@@ -6503,6 +6503,7 @@ sent(void)
 static void
 part_security(void)
 {
+	int	i;
 
 	click_when("li.secnode[data-act=select-security]", 10);
 	wait_js("location.hash.startsWith('#/security/url') && document."
@@ -6550,8 +6551,6 @@ part_security(void)
 	    10);
 	sent();
 	{
-		int	i;
-
 		for (i = 0; i < 100 && system("grep -q 'install.* clamav' "
 		    "pkg.log") != 0; i++)
 			usleep(100000);
@@ -6575,6 +6574,24 @@ part_security(void)
 	    "document.querySelector('table.secids').textContent.includes("
 	    "'detects')", 30);
 	shot("9v-security-ids");
+	/* Its alert as the host tells it: when, the rule, from and to;
+	 * suppressed from its source, a line of its thresholds. */
+	wait_js("document.querySelector('ul.secalerts') && document."
+	    "querySelector('ul.secalerts').textContent.includes('LOCAL telnet') "
+	    "&& document.querySelector('ul.secalerts').textContent.includes("
+	    "'sid 1000009') && document.querySelector('ul.secalerts')."
+	    "textContent.includes('10.0.0.9:4444 → 10.0.0.1:23') && document."
+	    "querySelector('ul.secalerts').textContent.includes('2026-10-19')",
+	    40);
+	click_when("ul.secalerts button[data-act=own-suppress]", 10);
+	for (i = 0; i < 300 && system("grep -qx 'suppress gen_id 1, sig_id "
+	    "1000009, track by_src, ip 10.0.0.9' sdwan-ids-sec-lan.threshold") !=
+	    0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the alert is not suppressed");
+	/* Applied and read again before the next change. */
+	wait_js("document.querySelector('table.secids') && !document."
+	    "querySelector('table.secids.applying')", 20);
 	/* Stopped, after asking, its form kept; started again. */
 	click_when("table.secids button[data-act=sec-ids-stop]", 30);
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
@@ -6668,6 +6685,32 @@ part_security(void)
 	wait_js("document.querySelectorAll('table.ownrules tbody tr').length "
 	    "== 1", 30);
 	ATF_CHECK(system("grep -q 'sid:1000009' sdwan-ids-sec-lan.rules") != 0);
+	/* A threshold added by its kind's fields, the suppression deleted. */
+	wait_js("document.querySelector('table.thresholds') && document."
+	    "querySelector('table.thresholds').textContent.includes('track "
+	    "by_src, ip 10.0.0.9')", 10);
+	click_when("button[data-act=thr-new]", 10);
+	wait_js("document.querySelector('form[data-form=thr-add]')", 5);
+	run("const k = document.querySelector('form[data-form=thr-add]').kind; "
+	    "k.value = 'rate_filter'; k.dispatchEvent(new Event('input', "
+	    "{bubbles: true})); k.dispatchEvent(new Event('change', {bubbles: "
+	    "true}));");
+	wait_js("document.querySelector('form[data-form=thr-add]') && document."
+	    "querySelector('form[data-form=thr-add]').new_action", 5);
+	run("const f = document.querySelector('form[data-form=thr-add]'); "
+	    "f.sid.value = '1000010'; f.count.value = '10'; f.seconds.value = "
+	    "'5'; f.timeout.value = '300'; f.requestSubmit();");
+	for (i = 0; i < 300 && system("grep -qx 'rate_filter gen_id 1, sig_id "
+	    "1000010, track by_src, count 10, seconds 5, new_action drop, "
+	    "timeout 300' sdwan-ids-sec-lan.threshold") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the rate filter is not written");
+	wait_js("document.querySelectorAll('table.thresholds tbody tr').length "
+	    "== 2", 30);
+	click_when("table.thresholds button[data-act=thr-del]", 10);
+	wait_js("document.querySelectorAll('table.thresholds tbody tr').length "
+	    "== 1", 30);
+	ATF_CHECK(system("grep -q 'suppress' sdwan-ids-sec-lan.threshold") != 0);
 	shot("9x-security-ids-own-rules");
 	click_when("button[data-act=own-back]", 10);
 	wait_js("document.querySelector('table.secids') && document."

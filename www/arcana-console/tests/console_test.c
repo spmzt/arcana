@@ -7393,6 +7393,27 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	ATF_CHECK(system("grep -q 'HOME_NET: \"any\"$' sdwan-ids-sec-lan.yaml && "
 	    "grep -q 'EXTERNAL_NET: \"any\"$' sdwan-ids-sec-lan.yaml") == 0);
+	/* Its thresholds: threshold.config's lines, checked; written to a
+	 * file of its own, which its configuration names. */
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"thresholds\":\"suppress sig_id 5; rm -rf /\",\"rules\":"
+	    "\"alert tcp any any -> any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "threshold line 1 is suppress") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"thresholds\":\"# quiet\\nsuppress gen_id 1, sig_id 1000009, "
+	    "track by_src, ip 10.0.0.9\\n\",\"rules\":\"alert tcp any any -> "
+	    "any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^threshold-file: .*sdwan-ids-sec-lan."
+	    "threshold$' sdwan-ids-sec-lan.yaml && grep -qx 'suppress gen_id "
+	    "1, sig_id 1000009, track by_src, ip 10.0.0.9' "
+	    "sdwan-ids-sec-lan.threshold") == 0);
 	/* Stopped by the admin: kept in the list, told to the agent. */
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"

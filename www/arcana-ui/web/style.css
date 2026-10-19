@@ -5089,6 +5089,8 @@ details.wfmore[open] > summary { margin-bottom: .45rem; }
 .secform .rowform { display: flex; flex-wrap: wrap; gap: .6rem; }
 .secform .rowform > label { flex: 1 1 7rem; }
 .toolbar .grow { flex: 1; }
+/* A change being applied: the list as it was, until it is read again. */
+table.net.applying { opacity: .55; transition: opacity .2s; }
 .secform textarea { font-family: var(--mono); font-size: .78rem; }
 .secform details label { margin-top: .4rem; }
 .secform .actions { display: flex; justify-content: flex-end; gap: .5rem; }
