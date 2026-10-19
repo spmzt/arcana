@@ -2005,7 +2005,9 @@ table.nhgroups td.num { text-align: right; }
 	stroke: rgba(var(--amber-rgb), .7);
 }
 
-.node {
+/* A workflow's step: div.node, not an SVG's node, whose place is its
+ * transform attribute, which rise's transform would override. */
+div.node {
 	--k: var(--cyan);
 	position: absolute;
 	width: 232px;
@@ -2882,7 +2884,9 @@ svg.topo.linking .tnode.target:hover .box {
 }
 .tlink.tunnel .wire { stroke: var(--violet); }
 .tlink.vnet .wire { stroke: var(--dim); stroke-dasharray: 2 5; }
-.tnode.jail .box { rx: 22px; stroke-dasharray: 7 3; }
+/* Not .jail: the jails' cards move by a CSS transform, which would put
+ * a node of the map where its transform attribute does not. */
+.tnode.vjail .box { rx: 22px; stroke-dasharray: 7 3; }
 .tlink.p2p .wire { stroke: var(--teal); }
 .tlink.lan .wire { stroke: var(--blue); }
 .tlink.down .wire { stroke-dasharray: 3 6; opacity: .5; }
@@ -5072,26 +5076,33 @@ details.wfmore[open] > summary { margin-bottom: .45rem; }
 .secpage .sechead { display: flex; align-items: center; gap: .8rem; margin-bottom: .6rem; }
 .secpage .secpick { display: inline-flex; align-items: center; gap: .5rem; font-size: .85rem; color: var(--fg-2); }
 .secpage p.lead { color: var(--fg-2); font-size: .85rem; max-width: 60rem; margin: .6rem 0; }
+.secpage h3.secsub { margin: 1.6rem 0 .2rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: .95rem; }
 .secform { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: .6rem .9rem; align-items: start; border: 1px solid var(--line); border-radius: 8px; padding: .8rem 1rem; margin: .6rem 0 1rem; background: var(--panel); }
 .secform h4, .secform details, .secform .actions { grid-column: 1 / -1; margin: 0; }
 .secform label { display: flex; flex-direction: column; gap: .3rem; min-width: 0; font-size: .8rem; color: var(--fg-2); }
 .secform label.check { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .secform label.check small.help { flex-basis: 100%; }
 .secform .wide { grid-column: 1 / -1; margin: 0; }
-.sn-head .grow { flex: 1; }
 .notice.sec-missing { display: flex; align-items: center; gap: 1rem; justify-content: space-between; }
-.sn-update label.grow { flex: 1; display: flex; align-items: center; gap: .6rem; }
-.sn-update label.grow input { flex: 1; min-width: 0; }
-.sn-src { margin: -.4rem 0 .8rem; font-size: .85rem; }
-.sn-conf textarea { width: 100%; box-sizing: border-box; }
-.sn-conf .buttons { display: flex; gap: .6rem; justify-content: flex-end; }
 .secform small.help { color: var(--dim); font-size: .7rem; line-height: 1.35; }
+/* An intrusion detection's own rules: a rule's parts side by side. */
+.secform .rowform { display: flex; flex-wrap: wrap; gap: .6rem; }
+.secform .rowform > label { flex: 1 1 7rem; }
+.toolbar .grow { flex: 1; }
+/* A change being applied: the list as it was, until it is read again. */
+table.net.applying { opacity: .55; transition: opacity .2s; }
 .secform textarea { font-family: var(--mono); font-size: .78rem; }
 .secform details label { margin-top: .4rem; }
 .secform .actions { display: flex; justify-content: flex-end; gap: .5rem; }
 table.net td.acts { white-space: nowrap; text-align: right; }
 table.net td.acts button + button { margin-left: .3rem; }
 ul.secalerts { list-style: none; margin: 0; padding: 0; font-size: .78rem; display: grid; gap: .2rem; }
+form.surq { flex-wrap: wrap; gap: .6rem; }
+form.surq input[name=q] { flex: 1 1 18rem; max-width: none; }
+form.surq input[name=classtype] { flex: 0 1 12rem; width: auto; }
+form.surq select { flex: 0 0 auto; width: auto; }
+pre.surule { margin: .4rem 0 0; white-space: pre-wrap; word-break: break-word; font-size: .74rem; color: var(--fg-2); }
+table.surules td:nth-child(2) { max-width: 36rem; white-space: normal; }
 pre.cert { font-size: .7rem; max-height: 14rem; overflow: auto; user-select: all; }
 .secform label.check input { width: auto; flex: none; margin: 0; }
 /* The Builder page: poudriere's jails, trees, builds and runs. */

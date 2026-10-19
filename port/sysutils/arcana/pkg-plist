@@ -3,7 +3,6 @@
 %%CONSOLE%%@sample %%ETCDIR%%/web.conf.sample
 %%CONSOLE%%etc/rc.d/arcana_console
 etc/rc.d/arcana_agent
-etc/rc.d/arcana_snort
 %%CONSOLE%%lib/arcana/arcana-console.so
 sbin/jailconf
 sbin/arcana-enrol

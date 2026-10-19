@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.146.5"
+#define	ARCANA_AGENT_VERSION	"0.150.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -46,8 +46,7 @@
 #define	PATH_MOUNT_BIN		"/sbin/mount"
 #define	PATH_UMOUNT_BIN		"/sbin/umount"
 #define	PATH_FSTAB		"/etc/fstab"
-#define	PATH_WG_BIN		"/usr/local/bin/wg"
-#define	PATH_WG_BASE_BIN	"/usr/bin/wg"	/* FreeBSD 15 and later */
+#define	PATH_WG_BIN		"/usr/bin/wg"
 #define	PATH_WG_DIR		"/usr/local/etc/wireguard"
 #define	PATH_SWANCTL_BIN	"/usr/local/sbin/swanctl"
 #define	PATH_SQUID_BIN		"/usr/local/sbin/squid"
@@ -56,11 +55,8 @@
 #define	SURICATA_ETC		"/usr/local/etc/suricata"
 #define	PATH_POUDRIERE_BIN	"/usr/local/bin/poudriere"
 #define	PATH_IFMCSTAT_BIN	"/usr/sbin/ifmcstat"
-#define	PATH_SNORT_BIN		"/usr/local/bin/snort"
-#define	PATH_SNORT_ETC		"/usr/local/etc/snort"
 #define	PATH_FRESHCLAM_CONF	"/usr/local/etc/freshclam.conf"
 #define	PATH_SURICATA_RULES	"/var/lib/suricata/rules"
-#define	PATH_SNORT_LOG		"/var/log/snort"
 #define	PATH_POUDRIERE_ETC	"/usr/local/etc"
 #define	PATH_CICAP_MODULES	"/usr/local/lib/c_icap"
 #define	PATH_CLAMAV_DB		"/var/db/clamav"
@@ -130,9 +126,6 @@ struct opts {
 	const char	*suricata_bin;	/* suricata: intrusion detection, a plugin */
 	const char	*poudriere_bin;	/* poudriere(8): the package builder, a plugin */
 	const char	*ifmcstat_bin;	/* ifmcstat(8): IGMP's and MLD's state */
-	const char	*snort_bin;	/* snort: IDS/IPS, a plugin */
-	const char	*snort_etc;	/* where snort.lua and its rules are */
-	const char	*snort_log;	/* its pid file and alert_json.txt */
 	const char	*freshclam_conf; /* ClamAV's freshclam.conf, its mirrors */
 	const char	*suricata_rules; /* where suricata-update writes the ruleset */
 	const char	*poudriere_etc;	/* where poudriere.conf and poudriere.d are */
@@ -352,21 +345,11 @@ struct arc_crashes_rsp;
 void		 do_crashes(struct work *, const char *const *, size_t,
 		    struct arc_crashes_rsp *);
 
-/* luxuria/snort.c: Snort 3, run by arcana_snort, its rules kept. */
-struct arc_snort_rsp;
-const char	*snort_check(const struct arc_job_spec *);
-extern const char snort_rc_text[];	/* snort_rc.c, made by the Makefile */
-void		 snort_rc_install(struct work *);
 /* luxuria/clamav.c: freshclam's mirrors. */
 const char	*clamav_check(const struct arc_job_spec *);
 char		*clamav_title(const struct arc_job_spec *);
 int		 do_clamav_job(struct work *, const struct arc_job_spec *,
 		    const char **);
-int		 do_snort_job(struct work *, const struct arc_job_spec *,
-		    const char **);
-char		*snort_title(const struct arc_job_spec *);
-void		 do_snort(struct work *, const char *const *, size_t,
-		    struct arc_snort_rsp *);
 struct arc_builder_rsp;
 void		 do_builder(struct work *, struct arc_builder_rsp *);
 struct arc_builder_options_rsp;
@@ -475,7 +458,7 @@ int		 rc_word(struct work *, const char *, const char *,
 		    const char *, const char **);
 void		 rc_forget_if(struct work *, const char *);
 
-/* luxuria/wireguard.c: a plugin, through wg(8). */
+/* invidia/wireguard.c: WireGuard, through the base system's wg(8). */
 int		 do_wireguard(struct work *, struct arc_network_rsp *);
 const char	*wg_check(struct work *, const struct arc_job_spec *);
 int		 do_wg(struct work *, const struct arc_job_spec *,
@@ -581,6 +564,16 @@ int		 do_sdwan_ids(struct work *, const char *, const char **);
 int		 do_notify(struct work *, const char *, const char *,
 		    const char *, const char **);
 void		 sdwan_ids_start(void);
+const char	*suricata_ruleset(void);
+/* luxuria/surules.c: the ruleset's rules, and those the admin set. */
+struct arc_suricata_rules_rsp;
+void		 do_suricata_rules(struct work *, const char *const *, size_t,
+		    struct arc_suricata_rules_rsp *);
+const char	*suricata_rule_check(const struct arc_job_spec *);
+int		 suricata_rule_set(struct work *, const struct arc_job_spec *,
+		    const char **);
+int		 suricata_rule_args(struct work *, char **, int *,
+		    const char **);
 const char	*suricata_check(const struct arc_job_spec *);
 char		*suricata_title(const struct arc_job_spec *);
 int		 do_suricata_job(struct work *, const struct arc_job_spec *,
@@ -682,9 +675,7 @@ int		 do_storage_job(struct work *, const struct arc_job_spec *,
 /* luxuria/plugins.c */
 void		 plugins_there(struct work *, int, const char *,
 		    const char *const **, size_t *);
-const char	*plugin_bin(struct work *, const char *);
 void		 plugins_forget(void);
-extern const char wg_base_bin[];
 int		 do_if_vnet(struct work *, const char *, const char *, bool,
 		    bool, const char **);
 char *const	*scope_argv(struct work *, char *const []);

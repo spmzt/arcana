@@ -314,11 +314,6 @@ module: arcana-jobs
        |        |     +---w verb    enumeration
        |        |     +---w args*   string
        |        |     +---w text?   string
-       |        +--:(snort)
-       |        |  +---w snort!
-       |        |     +---w verb    enumeration
-       |        |     +---w args*   string
-       |        |     +---w text?   string
        |        +--:(clamav)
        |        |  +---w clamav!
        |        |     +---w verb    enumeration
@@ -327,5 +322,6 @@ module: arcana-jobs
        |        +--:(suricata)
        |           +---w suricata!
        |              +---w verb    enumeration
+       |              +---w args*   string
        +--ro output
           +--ro id*   uint64

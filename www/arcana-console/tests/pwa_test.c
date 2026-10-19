@@ -2374,21 +2374,24 @@ part_plugins(void)
 	wait_js("!document.querySelector('button.tab.plugin.missing') && "
 	    "!document.querySelector('.plugin-missing')", 20);
 
-	/* They are plugins, installed on the host: each a tab of its own,
-	 * not among what the Network tab has of the base system. */
+	/* BIRD and IPsec are plugins, installed on the host: each a tab
+	 * of its own, not among what the Network tab has of the base
+	 * system.  WireGuard is the base system's: a view of Network,
+	 * after Netgraph, and no tab of its own. */
 	run("document.querySelector('button.tab[data-arg=network]').click()");
 	wait_js("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=interfaces]')", 10);
-	ATF_CHECK(js_true("!document.querySelector('button[data-act=net-kind]"
+	ATF_CHECK(js_true("!document.querySelector('button.tab.plugin"
 	    "[data-arg=wireguard]') && !document.querySelector('button"
 	    "[data-act=net-kind][data-arg=bird]') && document.querySelector("
-	    "'button.tab.plugin[data-arg=bird]')"));
-	run("document.querySelector('button.tab.plugin[data-arg=wireguard]')"
-	    ".click()");
-	wait_js("document.querySelector('button.tab.plugin[data-arg=wireguard]"
-	    ".on') && !document.querySelector('button.tab[data-arg=network]"
-	    ".on') && !document.querySelector('button[data-act=net-kind]')",
-	    10);
+	    "'button.tab.plugin[data-arg=bird]') && document.querySelector("
+	    "'button[data-act=net-kind][data-arg=netgraph] + button[data-act="
+	    "net-kind][data-arg=wireguard]')"));
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=wireguard]').click()");
+	wait_js("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=wireguard].on') && document.querySelector("
+	    "'button.tab[data-arg=network].on')", 10);
 	wait_js("document.querySelector('.pane.wg button[data-act=wg-init]')",
 	    20);
 	ATF_CHECK(js_true("document.querySelector('.pane.wg').textContent."
@@ -5898,16 +5901,50 @@ part_netsect(void)
 	    "document.querySelector('.hosts .hostcard')", 5);
 	shot("2a-fleet-running");
 	run("document.querySelector('li[data-act=select-network]').click()");
-	wait_js("document.querySelector('svg.topo .tnode.jail.up') && "
+	wait_js("document.querySelector('svg.topo .tnode.vjail.up') && "
 	    "document.querySelector('svg.topo .tlink.vnet')", 30);
-	ATF_CHECK(js_true("[...document.querySelectorAll('svg.topo .tnode.jail "
+	ATF_CHECK(js_true("[...document.querySelectorAll('svg.topo .tnode.vjail "
 	    ".name')].some(n => n.textContent === 'gw')"));
-	run("const n = document.querySelector('svg.topo .tnode.jail .box'); "
+	run("const n = document.querySelector('svg.topo .tnode.vjail .box'); "
 	    "ptr(n, 'pointerdown'); ptr(n, 'pointerup');");
-	wait_js("document.querySelector('svg.topo .tnode.jail.sel') && "
+	wait_js("document.querySelector('svg.topo .tnode.vjail.sel') && "
 	    "document.querySelector('.map-panel .iflist').textContent."
 	    "includes('epair1b')", 10);
 	shot("8d-vnet-jail-node");
+	/*
+	 * A real mouse over the jail's node, and then dragging it: it stays
+	 * where its transform attribute puts it, under the pointer.  A CSS
+	 * transform of a rule meant for something else (the jails' cards'
+	 * hover) once moved it off to the drawing's corner.
+	 */
+	{
+		double	jx, jy, mx, my;
+
+		jx = js_num("(r => r.x + r.width / 2)(document.querySelector("
+		    "'svg.topo .tnode.vjail .box').getBoundingClientRect())");
+		jy = js_num("(r => r.y + r.height / 2)(document.querySelector("
+		    "'svg.topo .tnode.vjail .box').getBoundingClientRect())");
+		mouse("pointerMove", jx, jy);
+		usleep(400000);
+		ATF_CHECK(js_true("(n => getComputedStyle(n).transform === "
+		    "'none' || (m => Math.abs(m.e - n.transform.baseVal."
+		    "consolidate().matrix.e) < 0.5 && Math.abs(m.f - n."
+		    "transform.baseVal.consolidate().matrix.f) < 0.5)(new "
+		    "DOMMatrix(getComputedStyle(n).transform)))(document."
+		    "querySelector('svg.topo .tnode.vjail'))"));
+		mouse("pointerDown", 0, 0);
+		mouse("pointerMove", jx + 40, jy + 30);
+		mouse("pointerMove", jx + 80, jy + 60);
+		usleep(300000);
+		mx = js_num("(r => r.x + r.width / 2)(document.querySelector("
+		    "'svg.topo .tnode.vjail .box').getBoundingClientRect())");
+		my = js_num("(r => r.y + r.height / 2)(document.querySelector("
+		    "'svg.topo .tnode.vjail .box').getBoundingClientRect())");
+		mouse("pointerUp", 0, 0);
+		ATF_CHECK_MSG(mx - jx > 70 && mx - jx < 90 && my - jy > 50 &&
+		    my - jy < 70, "the jail moved by %.0f,%.0f, not 80,60",
+		    mx - jx, my - jy);
+	}
 	/* Its network is its host's Network tab, the jail picked there. */
 	run("document.querySelector('.map-panel button[data-act="
 	    "topo-open-host]').click()");
@@ -6463,87 +6500,10 @@ sent(void)
 	    "if (b) b.click();");
 }
 
-/*
- * Snort on the Security page: its alert; its rules fetched from an
- * archive and one turned off; rc.conf's settings; local.rules written.
- */
-static void
-part_snort(void)
-{
-	char	here[MAXPATHLEN], js_[MAXPATHLEN + 200];
-	int	i;
-
-	ATF_REQUIRE(getcwd(here, sizeof(here)) != NULL);
-	click_when("button[data-act=sec-tab][data-arg=snort]", 10);
-	wait_js("location.hash.startsWith('#/security/snort/') && document."
-	    "querySelector('table.snort-alerts') && document.querySelector("
-	    "'table.snort-alerts').textContent.includes('lab probe seen') && "
-	    "document.querySelector('.sn-head').textContent.includes('3.12.2.0')"
-	    " && [...document.querySelectorAll('.notice.warn')].some(n => n."
-	    "textContent.includes('no rules taken in yet'))", 20);
-	shot("9w-snort-alerts");
-	/* The rules, fetched from the archive by file://. */
-	click_when("button[data-act=sn-view][data-arg=rules]", 10);
-	wait_js("document.querySelector('form[data-form=sn-update]')", 10);
-	snprintf(js_, sizeof(js_), "const f = document.querySelector("
-	    "'form[data-form=sn-update]'); f.url.value = 'file://%s/"
-	    "snort-rules.tar.gz'; f.requestSubmit();", here);
-	run(js_);
-	sent();
-	wait_js("document.querySelector('table.snort-rules') && document."
-	    "querySelector('table.snort-rules').textContent.includes("
-	    "'PROTOCOL-TELNET lab login') && document.querySelector('.sn-src')"
-	    ".textContent.includes('2 rules, 1 on')", 30);
-	dock_closed();
-	shot("9x-snort-rules");
-	/* 105 off, from its chip; kept by gid:sid. */
-	run("document.querySelector('table.snort-rules button[data-act=sn-rule]"
-	    "[data-arg=\"1:105\"]').click()");
-	sent();
-	for (i = 0; i < 100 && system("grep -qx '1:105 off' snort-etc/arcana/"
-	    "rule-state") != 0; i++)
-		usleep(100000);
-	ATF_CHECK(system("grep -qx '1:105 off' snort-etc/arcana/rule-state") ==
-	    0);
-	wait_js("document.querySelector('table.snort-rules button[data-act="
-	    "sn-rule][data-arg=\"1:105\"][data-value=default]')", 20);
-	/* Its settings: kept in rc.conf. */
-	click_when("button[data-act=sn-view][data-arg=settings]", 10);
-	wait_js("document.querySelector('form[data-form=sn-set]')", 10);
-	dock_closed();
-	shot("9y-snort-settings");
-	run("const f = document.querySelector('form[data-form=sn-set]'); "
-	    "f.enable.checked = true; f.interfaces.value = 'lo0 em0'; "
-	    "f.home_net.value = '[192.0.2.0/24]'; f.requestSubmit();");
-	sent();
-	for (i = 0; i < 100 && system("grep -q '^arcana_snort_interfaces=\"lo0 "
-	    "em0\"' rc.conf") != 0; i++)
-		usleep(100000);
-	ATF_CHECK(system("grep -q '^arcana_snort_interfaces=\"lo0 em0\"' "
-	    "rc.conf && grep -q '^arcana_snort_enable=\"YES\"' rc.conf && "
-	    "grep -q \"^HOME_NET = '\\[192.0.2.0/24\\]'\" snort-etc/snort.lua") ==
-	    0);
-	/* local.rules, written as typed. */
-	click_when("button[data-act=sn-view][data-arg=local]", 10);
-	wait_js("document.querySelector('form[data-form=sn-conf] textarea')",
-	    10);
-	run("const t = document.querySelector('form[data-form=sn-conf] "
-	    "textarea'); t.value = 'alert icmp any any -> any any (msg:\"mine\";"
-	    " sid:1000007; rev:1;)\\n'; t.dispatchEvent(new Event('input', { "
-	    "bubbles: true })); t.form.requestSubmit();");
-	sent();
-	for (i = 0; i < 100 && system("grep -q 'sid:1000007' snort-etc/"
-	    "local.rules") != 0; i++)
-		usleep(100000);
-	ATF_CHECK(system("grep -q 'msg:\"mine\"; sid:1000007' snort-etc/"
-	    "local.rules && grep -q 'include ./snort-etc/local.rules' "
-	    "snort-etc/arcana/arcana.rules") == 0);
-	dock_closed();
-}
-
 static void
 part_security(void)
 {
+	int	i;
 
 	click_when("li.secnode[data-act=select-security]", 10);
 	wait_js("location.hash.startsWith('#/security/url') && document."
@@ -6576,19 +6536,21 @@ part_security(void)
 	    "'form[data-form=sec-proxy]').allow.value === '10.0.0.0/8, "
 	    "192.168.0.0/16'", 10);
 	click_when("form[data-form=sec-proxy] button[data-act=sec-cancel]", 10);
-	click_when("button[data-act=sec-tab][data-arg=malware]", 10);
-	wait_js("location.hash.startsWith('#/security/malware/') && document."
-	    "querySelector('table.secproxy button[data-act=sec-unscan]')", 10);
-	click_when("button[data-act=sec-tab][data-arg=signatures]", 10);
-	wait_js("document.querySelector('.secpage .empty') || document."
-	    "querySelector('table.secsigs')", 10);
+	/* Antivirus: ClamAV's scanning and its signatures, one tab. */
+	click_when("button[data-act=sec-tab][data-arg=antivirus]", 10);
+	wait_js("location.hash.startsWith('#/security/antivirus/') && document."
+	    "querySelector('table.secproxy button[data-act=sec-unscan]') && "
+	    "document.querySelector('.secpage h3.secsub') && (document."
+	    "querySelector('.secpage .empty') || document.querySelector("
+	    "'table.secsigs'))", 10);
+	ATF_CHECK(js_true("!document.querySelector('button[data-act=sec-tab]"
+	    "[data-arg=malware]') && !document.querySelector('button[data-act="
+	    "sec-tab][data-arg=signatures]')"));
 	/* No ClamAV here: installed by the button, when it is pressed. */
 	click_when(".sec-missing button[data-act=sec-install][data-arg=clamav]",
 	    10);
 	sent();
 	{
-		int	i;
-
 		for (i = 0; i < 100 && system("grep -q 'install.* clamav' "
 		    "pkg.log") != 0; i++)
 			usleep(100000);
@@ -6612,6 +6574,148 @@ part_security(void)
 	    "document.querySelector('table.secids').textContent.includes("
 	    "'detects')", 30);
 	shot("9v-security-ids");
+	/* Its alert as the host tells it: when, the rule, from and to;
+	 * suppressed from its source, a line of its thresholds. */
+	wait_js("document.querySelector('ul.secalerts') && document."
+	    "querySelector('ul.secalerts').textContent.includes('LOCAL telnet') "
+	    "&& document.querySelector('ul.secalerts').textContent.includes("
+	    "'sid 1000009') && document.querySelector('ul.secalerts')."
+	    "textContent.includes('10.0.0.9:4444 → 10.0.0.1:23') && document."
+	    "querySelector('ul.secalerts').textContent.includes('2026-10-19')",
+	    40);
+	click_when("ul.secalerts button[data-act=own-suppress]", 10);
+	for (i = 0; i < 300 && system("grep -qx 'suppress gen_id 1, sig_id "
+	    "1000009, track by_src, ip 10.0.0.9' sdwan-ids-sec-lan.threshold") !=
+	    0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the alert is not suppressed");
+	/* Applied and read again before the next change. */
+	wait_js("document.querySelector('table.secids') && !document."
+	    "querySelector('table.secids.applying')", 20);
+	/* Stopped, after asking, its form kept; started again. */
+	click_when("table.secids button[data-act=sec-ids-stop]", 30);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("document.querySelector('table.secids button[data-act="
+	    "sec-ids-run][data-value=start]') && document.querySelector("
+	    "'table.secids').textContent.includes('stopped') && document."
+	    "querySelector('table.secids').textContent.includes('lo0')", 30);
+	click_when("table.secids button[data-act=sec-ids-run][data-value=start]",
+	    10);
+	wait_js("document.querySelector('table.secids button[data-act="
+	    "sec-ids-stop]')", 30);
+	/* The ruleset's rules: fetched, then searched and one enabled by
+	 * sid, a job; the choice shown as set here. */
+	click_when("button[data-act=sec-idsview][data-arg=rules]", 10);
+	wait_js("document.querySelector('.secpage .empty') && document."
+	    "querySelector('.secpage .empty').textContent.includes('not "
+	    "fetched')", 20);
+	click_when("button[data-act=sec-idsview][data-arg=instances]", 10);
+	click_when("button[data-act=sec-ruleset]", 10);
+	/* The queue left on before: what it holds run. */
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('.secpage') && document."
+	    "querySelector('.secpage').textContent.includes('suricata.rules, "
+	    "fetched')", 30);
+	click_when("button[data-act=sec-idsview][data-arg=rules]", 10);
+	wait_js("document.querySelector('table.surules') && document."
+	    "querySelector('.secpage').textContent.includes('3 rules, 2 "
+	    "enabled') && document.querySelector('table.surules').textContent."
+	    "includes('ET SCAN ssh')", 20);
+	run("const f = document.querySelector('form[data-form=sur-search]'); "
+	    "f.q.value = 'CURL'; f.requestSubmit();");
+	wait_js("document.querySelectorAll('table.surules tbody tr').length == 1 "
+	    "&& document.querySelector('table.surules').textContent.includes("
+	    "'ET INFO curl') && document.querySelector('table.surules')."
+	    "textContent.includes('as it ships')", 20);
+	click_when("table.surules button[data-act=sur-open]", 10);
+	wait_js("document.querySelector('pre.surule') && document."
+	    "querySelector('pre.surule').textContent.includes('sid:2000005;')",
+	    10);
+	click_when("table.surules button[data-act=sur-set][data-value=on]", 10);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('table.surules') && document."
+	    "querySelector('table.surules').textContent.includes('set on') && "
+	    "document.querySelector('table.surules .chip.st-up')", 30);
+	dock_closed();
+	shot("9w-security-ids-rules");
+	click_when("button[data-act=sec-idsview][data-arg=instances]", 10);
+	/* Its rules of its own as a table: one added as its parts, one
+	 * disabled (kept, commented out), one changed, one deleted after
+	 * asking; each written to the instance's rules file. */
+	click_when("table.secids button[data-act=own-open]", 10);
+	wait_js("document.querySelector('table.ownrules') && document."
+	    "querySelector('table.ownrules').textContent.includes('1000009')",
+	    10);
+	click_when("button[data-act=own-new]", 10);
+	wait_js("document.querySelector('form[data-form=own-rule]')", 5);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=own-rule]')"
+	    ".sid.value === '1000010'"));
+	run("const f = document.querySelector('form[data-form=own-rule]'); "
+	    "f.dport.value = '23'; f.msg.value = 'LOCAL telnet \\\"in\\\"'; "
+	    "f.opts.value = 'flow:to_server;'; f.requestSubmit();");
+	wait_js("document.querySelectorAll('table.ownrules tbody tr').length "
+	    "== 2 && document.querySelector('table.ownrules').textContent."
+	    "includes('LOCAL telnet \"in\"')", 30);
+	ATF_CHECK_MSG(system("grep -qF 'alert tcp any any -> $HOME_NET 23 "
+	    "(msg:\"LOCAL telnet \\\"in\\\"\"; flow:to_server; "
+	    "sid:1000010; rev:1;)' sdwan-ids-sec-lan.rules") == 0,
+	    "the rule added is not written");
+	click_when("table.ownrules button[data-act=own-toggle][data-arg='0']",
+	    10);
+	wait_js("document.querySelector('table.ownrules .chip.st-down')", 30);
+	ATF_CHECK(system("grep -q '^# alert tcp any any -> any 23 "
+	    "(sid:1000009;)' sdwan-ids-sec-lan.rules") == 0);
+	click_when("table.ownrules button[data-act=own-edit][data-arg='1']", 10);
+	wait_js("document.querySelector('form[data-form=own-rule]') && "
+	    "document.querySelector('form[data-form=own-rule]').msg.value === "
+	    "'LOCAL telnet \"in\"' && document.querySelector('form[data-form="
+	    "own-rule]').opts.value === 'flow:to_server;'", 5);
+	run("const f = document.querySelector('form[data-form=own-rule]'); "
+	    "f.rev.value = '2'; f.action.value = 'drop'; f.requestSubmit();");
+	wait_js("document.querySelector('table.ownrules') && document."
+	    "querySelector('table.ownrules').textContent.includes('drop')", 30);
+	ATF_CHECK(system("grep -q '^drop tcp .*sid:1000010; rev:2;)' "
+	    "sdwan-ids-sec-lan.rules") == 0);
+	click_when("table.ownrules button[data-act=own-del][data-arg='0']", 10);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("document.querySelectorAll('table.ownrules tbody tr').length "
+	    "== 1", 30);
+	ATF_CHECK(system("grep -q 'sid:1000009' sdwan-ids-sec-lan.rules") != 0);
+	/* A threshold added by its kind's fields, the suppression deleted. */
+	wait_js("document.querySelector('table.thresholds') && document."
+	    "querySelector('table.thresholds').textContent.includes('track "
+	    "by_src, ip 10.0.0.9')", 10);
+	click_when("button[data-act=thr-new]", 10);
+	wait_js("document.querySelector('form[data-form=thr-add]')", 5);
+	run("const k = document.querySelector('form[data-form=thr-add]').kind; "
+	    "k.value = 'rate_filter'; k.dispatchEvent(new Event('input', "
+	    "{bubbles: true})); k.dispatchEvent(new Event('change', {bubbles: "
+	    "true}));");
+	wait_js("document.querySelector('form[data-form=thr-add]') && document."
+	    "querySelector('form[data-form=thr-add]').new_action", 5);
+	run("const f = document.querySelector('form[data-form=thr-add]'); "
+	    "f.sid.value = '1000010'; f.count.value = '10'; f.seconds.value = "
+	    "'5'; f.timeout.value = '300'; f.requestSubmit();");
+	for (i = 0; i < 300 && system("grep -qx 'rate_filter gen_id 1, sig_id "
+	    "1000010, track by_src, count 10, seconds 5, new_action drop, "
+	    "timeout 300' sdwan-ids-sec-lan.threshold") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the rate filter is not written");
+	wait_js("document.querySelectorAll('table.thresholds tbody tr').length "
+	    "== 2", 30);
+	click_when("table.thresholds button[data-act=thr-del]", 10);
+	wait_js("document.querySelectorAll('table.thresholds tbody tr').length "
+	    "== 1", 30);
+	ATF_CHECK(system("grep -q 'suppress' sdwan-ids-sec-lan.threshold") != 0);
+	shot("9x-security-ids-own-rules");
+	click_when("button[data-act=own-back]", 10);
+	wait_js("document.querySelector('table.secids') && document."
+	    "querySelector('table.secids').textContent.includes('Own rules "
+	    "(1)')", 10);
 	/* Removed, after asking. */
 	click_when("table.secids button[data-act=sec-remove]", 10);
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
@@ -6623,7 +6727,6 @@ part_security(void)
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
 	wait_js("!document.querySelector('table.secproxy')", 30);
-	part_snort();
 }
 
 /*
@@ -6657,6 +6760,21 @@ part_builder(void)
 	    "includes('done'))", 30);
 	run("document.querySelector('.dock > header').click()");
 	shot("9w-builder-jails");
+	/* Updated by a form: to a version (-t), with a kernel (-K); no
+	 * Build the source for a jail made from the release's sets. */
+	click_when("table.bldjails tr[data-jail='150amd64'] "
+	    "button[data-act=bld-jail-update]", 10);
+	wait_js("document.querySelector('form[data-form=bld-jail-update]') && "
+	    "!document.querySelector('form[data-form=bld-jail-update] "
+	    "input[name=build]')", 10);
+	run("const f = document.querySelector('form[data-form=bld-jail-update]'); "
+	    "f.version.value = '15.1-RELEASE'; f.kernel.value = 'GENERIC'; "
+	    "f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('li.bldrun')].some(l => l."
+	    "textContent.includes('jail -u -j 150amd64 -t 15.1-RELEASE -K "
+	    "GENERIC'))", 30);
+	run("document.querySelector('.dock > header').click()");
 	click_when("button[data-act=bld-tab][data-arg=ports]", 10);
 	click_when("button[data-act=bld-new][data-arg=ports]", 10);
 	wait_js("document.querySelector('form[data-form=bld-ports]')", 10);

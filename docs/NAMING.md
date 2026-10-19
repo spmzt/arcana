@@ -281,12 +281,12 @@ The agent's sources are laid out by Archive, in
 |---|---|---|
 | (top) | the Agent | `main.c` (start, listeners, stopping), `handlers.c` (the family's requests, one thread each), `work.c` (a request's memory) |
 | `superbia/` | Superbia | `host.c` (what the host is), `confread.c` (the jails as configured, as jail(8) resolves them), `confedit.c` (changing a jail's configuration, with a backup and a read-back), `kernel.c` (the kernel's modules, loaded and unloaded, and its memory), `sysctl.c` (the kernel's state, read, set and kept) |
-| `invidia/` | Invidia | `network.c` (routes, nexthops, connections, sockets), `interfaces.c` (the interfaces, read and changed live), `routes.c` (static routes), `netdump.c` (a network table in parts, from a thread of its own), `pcb.c` (the connections and sockets, from the kernel's lists), `nlroute.c` (the routing tables through netlink: read, changed, and watched for what changes), `address.c` (a jail's addresses, live and persistent), `transport.c` (the agent's own listeners, SCTP beside TCP, and the connections open to it), `l2.c` (bridges with their spanning tree and VLANs, geneve tunnels), `ipfw.c` (the firewall: its rules, the kept ones, and applying them through set 1) |
+| `invidia/` | Invidia | `network.c` (routes, nexthops, connections, sockets), `wireguard.c` and `ywg.c` (WireGuard's keys and peers, through the base system's wg(8)), `interfaces.c` (the interfaces, read and changed live), `routes.c` (static routes), `netdump.c` (a network table in parts, from a thread of its own), `pcb.c` (the connections and sockets, from the kernel's lists), `nlroute.c` (the routing tables through netlink: read, changed, and watched for what changes), `address.c` (a jail's addresses, live and persistent), `transport.c` (the agent's own listeners, SCTP beside TCP, and the connections open to it), `l2.c` (bridges with their spanning tree and VLANs, geneve tunnels), `ipfw.c` (the firewall: its rules, the kept ones, and applying them through set 1) |
 | `ira/` | Ira | `lifecycle.c` (list, start, stop, restart, kill), `jails.c`, `jail.c` (running jails), `services.c`, `packages.c`, `jobs.c` (the queue), `exec.c` (running a program), `update.c`, `build.c` (the agent's own program) |
 | `acedia/` | Acedia | `pools.c` (ZFS pools, for the host's figures), `storage.c` (disks and partitions from GEOM, pools, datasets, snapshots, mounts and fstab; the zfs, zpool, mount, gpart and camcontrol jobs) |
 | `avaritia/` | Avaritia | `resources.c` (CPU, memory, swap) |
 | `gula/` | Gula | `trace.c` (the steps of every request), `stats.c` (the host's figures, gathered), `procs.c` (what runs, and a signal or a nice value for one), `log.c` (what syslogd wrote, read from its end and followed), `events.c` (what happened, numbered and kept, to be asked for from a number), `history.c` (an hour of how busy the host was, sampled by a thread of its own) |
-| `luxuria/` | Luxuria | the plugins, what works through a program that is installed and not the base system's: `plugins.c` (which a host or a vnet jail has), `bird.c` (BIRD, through birdc(8) and bird(8)), `wireguard.c` (WireGuard's keys and peers, through wg(8); the interface is Invidia's) |
+| `luxuria/` | Luxuria | the plugins, what works through a program that is installed and not the base system's: `plugins.c` (which a host or a vnet jail has), `bird.c` (BIRD, through birdc(8) and bird(8)) |
 
 One feature can touch several: changing a jail's address is Invidia's
 operation, done live through the kernel and persistently through
@@ -305,4 +305,5 @@ fall under the Archives:
 | `stats`: ZFS pools | Acedia |
 | the trace of every call, the activity log, job traces | Gula |
 | update check, browser notifications (in the console) | Luxuria |
-| `network` for bird, bird-routes and wireguard, `bird-config`, the wireguard and bird jobs: the plugins | Luxuria |
+| `network` for bird and bird-routes, `bird-config`, the bird job: the plugins | Luxuria |
+| `network` for wireguard, the wireguard job: WireGuard, through the base system's wg(8) | Invidia |

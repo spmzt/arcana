@@ -1011,11 +1011,12 @@ dispatch(const char *act, const char *arg, const char *value)
 				refresh_packages(s, false);
 		}
 	} else if (strcmp(act, "tab") == 0 && s != NULL) {
-		/* A plugin's tab is its view of the host's network. */
+		/* A plugin's tab is its view of the host's network; so is
+		 * WireGuard, under Network (the base system's), where an
+		 * address of before still leads. */
 		if (strcmp(arg, "wireguard") == 0 || strcmp(arg, "bird") == 0 ||
 		    strcmp(arg, "ipsec") == 0 ||
-		    (strcmp(arg, "network") == 0 && app.net.kind >=
-		    NET_WIREGUARD)) {
+		    (strcmp(arg, "network") == 0 && NET_PLUGIN(app.net.kind))) {
 			app.net.kind = arg[0] == 'w' ? NET_WIREGUARD : arg[0] ==
 			    'b' ? NET_BIRD : arg[0] == 'i' ? NET_IPSEC :
 			    NET_INTERFACES;

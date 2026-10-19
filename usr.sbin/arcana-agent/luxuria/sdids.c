@@ -16,7 +16,9 @@
  * (a divert port given) takes the UNIs' packets from ipfw's divert rules
  * instead and gives back those its rules let by: while it is not
  * running they pass nothing, so the thread says it, a fault, until it
- * runs again.  Like the proxies
+ * runs again.  One the admin stopped (stopped: true) stays in the list,
+ * kept for the next start, but is not run until it is started again.
+ * Like the proxies
  * of sdproxy.c: those named are started (again when their files
  * changed), those not named any more are stopped, and the list is kept
  * for the next start.
@@ -65,6 +67,7 @@ struct instance {
 	int	 nifs;
 	int	 divert;		/* its divert port, prevent; 0 detect */
 	bool	 down;			/* one that prevents, told not running */
+	bool	 stopped;		/* stopped by the admin, kept */
 	off_t	 off;			/* how far its eve.json is read */
 	char	*alerts[ALERTS_KEPT];	/* a ring, newest at head - 1 */
 	int	 head, nalerts;
@@ -261,6 +264,14 @@ ruleset_path(void)
 	return (ruleset_buf);
 }
 
+/* Where suricata-update writes the ruleset, for surules.c. */
+const char *
+suricata_ruleset(void)
+{
+
+	return (ruleset_path());
+}
+
 /*
  * Did suricata -T refuse only rules of the ruleset it cannot parse here
  * (those that negate a HOME_NET of any: !any is nothing)?  Running, it
@@ -309,8 +320,9 @@ static char *
 inst_conf(struct work *w, const char *name, const char *conf)
 {
 	const char	*from[] = { "@LOGDIR@", "@RULES@", "@PID@",
-			    "@CLASSIFICATION@", "@REFERENCE@", "@RULESET@" },
-			*to[6];
+			    "@CLASSIFICATION@", "@REFERENCE@", "@RULESET@",
+			    "@THRESHOLD@" },
+			*to[7];
 	char		*out, *p, *q, *l, *e;
 	size_t		 i, n, len;
 
@@ -333,6 +345,7 @@ inst_conf(struct work *w, const char *name, const char *conf)
 	to[3] = suricata_etc(w, "classification.config");
 	to[4] = suricata_etc(w, "reference.config");
 	to[5] = SURICATA_RULESET;
+	to[6] = inst_path(w, name, "threshold");
 	len = strlen(conf) + 8 * MAXPATHLEN + 1;
 	out = wcalloc(w, 1, len);
 	for (p = (char *)(uintptr_t)conf, q = out; *p != '\0';) {
@@ -384,7 +397,7 @@ file_text(struct work *w, const char *path)
 /*
  * Interface any, alone, in the pcap list: FreeBSD's libpcap has no any
  * device, so it is every interface that is up, but the loopback, pflog,
- * pfsync and enc, as arcana_snort makes it for Snort.  NULL, with errp,
+ * pfsync and enc.  NULL, with errp,
  * when there is none.
  */
 static char *
@@ -429,10 +442,23 @@ expand_any(struct work *w, char *conf, const char **errp)
 	return (out);
 }
 
-/* Why an instance did not start, as its suricata.log says: its last
- * errors, or NULL. */
+/* How long the instance's suricata.log is: where a start's lines begin. */
+static long
+log_size(struct work *w, const char *name)
+{
+	struct stat	sb;
+
+	return (stat(wfmt(w, "%s/suricata.log", inst_path(w, name, "d")),
+	    &sb) == 0 ? (long)sb.st_size : 0);
+}
+
+/*
+ * Why an instance did not start, as its suricata.log says: the last
+ * errors written from from on, by this start (not -T's before it, which
+ * logs there too, nor an earlier start's), or NULL.
+ */
 static const char *
-log_errors(struct work *w, const char *name)
+log_errors(struct work *w, const char *name, long from)
 {
 	FILE		*fp;
 	char		 buf[512], *last[2];
@@ -443,10 +469,9 @@ log_errors(struct work *w, const char *name)
 	if ((fp = fopen(wfmt(w, "%s/suricata.log", inst_path(w, name, "d")),
 	    "r")) == NULL)
 		return (NULL);
-	if (fseek(fp, 0, SEEK_END) == 0 && (size = ftell(fp)) > 65536)
-		(void)fseek(fp, size - 65536, SEEK_SET);
-	else
-		rewind(fp);
+	if (fseek(fp, 0, SEEK_END) == 0 && (size = ftell(fp)) > from + 65536)
+		from = size - 65536;
+	(void)fseek(fp, from, SEEK_SET);
 	last[0] = last[1] = NULL;
 	n = 0;
 	while (fgets(buf, sizeof(buf), fp) != NULL) {
@@ -470,9 +495,15 @@ inst_start(struct work *w, const char *name, int divert, const char **errp)
 {
 	struct execres	 res;
 	char		*argv[10];
+	long		 from;
 	int		 n, i;
 
 	(void)mkdir(inst_path(w, name, "d"), 0750);
+	/* A pid file of one that is not running (a start that failed, a
+	 * crash) keeps Suricata from starting: it is not ours to keep. */
+	if (inst_pid(w, name) == 0)
+		(void)unlink(inst_path(w, name, "pid"));
+	from = log_size(w, name);
 	n = 0;
 	argv[n++] = (char *)(uintptr_t)suricata_bin(w);
 	argv[n++] = (char *)(uintptr_t)"-c";
@@ -488,7 +519,7 @@ inst_start(struct work *w, const char *name, int divert, const char **errp)
 	argv[n] = NULL;
 	if (run_exec(w, argv, &res) != 0) {
 		/* Daemonized, it says why in its own log, not here. */
-		if ((*errp = log_errors(w, name)) != NULL)
+		if ((*errp = log_errors(w, name, from)) != NULL)
 			*errp = wfmt(w, "suricata did not start: %s", *errp);
 		else
 			*errp = wtext(w, exec_error(w, &res, "suricata"));
@@ -498,7 +529,7 @@ inst_start(struct work *w, const char *name, int divert, const char **errp)
 	for (i = 0; i < 300 && inst_pid(w, name) == 0; i++)
 		usleep(100000);
 	if (inst_pid(w, name) == 0) {
-		*errp = (*errp = log_errors(w, name)) != NULL ? wfmt(w,
+		*errp = (*errp = log_errors(w, name, from)) != NULL ? wfmt(w,
 		    "suricata did not start: %s", *errp) : wfmt(w, "suricata "
 		    "did not start: see %s", inst_path(w, name, "d"));
 		return (-1);
@@ -710,7 +741,7 @@ divert_was(const char *name)
 
 /*
  * The instances applied: {"instances": [{"name", "interfaces", "conf",
- * "rules"}, ...]}.  Suricata must be there (a plugin); each instance's
+ * "rules", "thresholds", "stopped"}, ...]}.  Suricata must be there (a plugin); each instance's
  * files are written, checked by suricata -T, and it is started, again
  * when they changed; those not named any more are stopped.  Kept for
  * the next start.
@@ -724,7 +755,7 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 	struct instance		 ni[INSTANCES_MAX];
 	struct execres		 res;
 	char			*argv[8], *conf, *was;
-	const char		*rules, *e, *note, *what;
+	const char		*rules, *thr, *e, *note, *what;
 	int			 n, i, k, step, nkeep;
 	bool			 ok, same, sec;
 
@@ -751,7 +782,11 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		    CONF_MAX || (ucl_object_lookup(in, "rules") != NULL &&
 		    (ucl_object_type(ucl_object_lookup(in, "rules")) !=
 		    UCL_STRING || strlen(ucl_object_tostring(ucl_object_lookup(
-		    in, "rules"))) > RULES_MAX))) {
+		    in, "rules"))) > RULES_MAX)) ||
+		    (ucl_object_lookup(in, "thresholds") != NULL &&
+		    (ucl_object_type(ucl_object_lookup(in, "thresholds")) !=
+		    UCL_STRING || strlen(ucl_object_tostring(ucl_object_lookup(
+		    in, "thresholds"))) > CONF_MAX))) {
 			ucl_object_unref(top);
 			*errp = wfmt(w, "an instance is a name of letters, digits, "
 			    "_ and -, 32 at most, its interfaces, its conf and its "
@@ -775,6 +810,15 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 				return (-1);
 			}
 			ni[n].divert = (int)ucl_object_toint(f);
+		}
+		if ((f = ucl_object_lookup(in, "stopped")) != NULL) {
+			if (ucl_object_type(f) != UCL_BOOLEAN) {
+				ucl_object_unref(top);
+				*errp = wfmt(w, "%s: stopped is true or false",
+				    ni[n].name);
+				return (-1);
+			}
+			ni[n].stopped = ucl_object_toboolean(f);
 		}
 		fit = NULL;
 		while ((f = ucl_object_iterate(ucl_object_lookup(in,
@@ -840,6 +884,8 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			    "away", instances[i].name);
 			(void)unlink(inst_path(w, instances[i].name, "yaml"));
 			(void)unlink(inst_path(w, instances[i].name, "rules"));
+			(void)unlink(inst_path(w, instances[i].name,
+			    "threshold"));
 			step_end(w, step, true, NULL);
 		}
 	}
@@ -853,6 +899,14 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 	for (k = 0; k < n; k++) {
 		in = ucl_object_iterate(ucl_object_lookup(top, "instances"), &it,
 		    true);
+		/* Stopped by the admin: not run, its place kept. */
+		if (ni[k].stopped) {
+			step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+			    "suricata %s stopped, kept", ni[k].name);
+			inst_stop(w, ni[k].name);
+			step_end(w, step, true, NULL);
+			continue;
+		}
 		conf = inst_conf(w, ni[k].name, ucl_object_tostring(
 		    ucl_object_lookup(in, "conf")));
 		e = NULL;
@@ -863,12 +917,18 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		}
 		rules = ucl_object_lookup(in, "rules") != NULL ?
 		    ucl_object_tostring(ucl_object_lookup(in, "rules")) : "";
+		/* Its thresholds and suppressions, threshold.config's lines. */
+		thr = ucl_object_lookup(in, "thresholds") != NULL ?
+		    ucl_object_tostring(ucl_object_lookup(in, "thresholds")) :
+		    "";
 		/* Running with the same files: left as it is. */
 		was = file_text(w, inst_path(w, ni[k].name, "yaml"));
 		same = was != NULL && strcmp(was, conf) == 0 && (was = file_text(w,
 		    inst_path(w, ni[k].name, "rules"))) != NULL && strcmp(was,
-		    rules) == 0 && inst_pid(w, ni[k].name) != 0 && divert_was(
-		    ni[k].name) == ni[k].divert;
+		    rules) == 0 && strcmp((was = file_text(w, inst_path(w,
+		    ni[k].name, "threshold"))) != NULL ? was : "", thr) == 0 &&
+		    inst_pid(w, ni[k].name) != 0 && divert_was(ni[k].name) ==
+		    ni[k].divert;
 		what = wfmt(w, "suricata %s on %d interface%s, %s: %s",
 		    ni[k].name, ni[k].nifs, ni[k].nifs == 1 ? "" : "s",
 		    ni[k].divert > 0 ? wfmt(w, "prevents by divert %d",
@@ -882,6 +942,8 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		e = NULL;
 		if (sdwan_conf_write(wfmt(w, "sdwan-ids-%s.rules", ni[k].name),
 		    rules, &e) != 0 || sdwan_conf_write(wfmt(w,
+		    "sdwan-ids-%s.threshold", ni[k].name), thr, &e) != 0 ||
+		    sdwan_conf_write(wfmt(w,
 		    "sdwan-ids-%s.yaml", ni[k].name), conf, &e) != 0) {
 			step_end(w, step, false, "%s", e);
 			*errp = wfmt(w, "%s: %s", ni[k].name, e);
@@ -1030,6 +1092,9 @@ sdwan_ids_json(struct work *w, ucl_object_t *top)
 			    instances[i].divert), "divert", 0, false);
 		ucl_object_insert_key(o, ucl_object_frombool(inst_pid(w,
 		    instances[i].name) != 0), "running", 0, false);
+		if (instances[i].stopped)
+			ucl_object_insert_key(o, ucl_object_frombool(true),
+			    "stopped", 0, false);
 		ucl_object_insert_key(o, ucl_object_fromint((int64_t)
 		    instances[i].seen), "alerts_seen", 0, false);
 		al = ucl_object_typed_new(UCL_ARRAY);
@@ -1079,17 +1144,26 @@ suricata_check(const struct arc_job_spec *sp)
 		return ("Suricata's ruleset is the host's");
 	if (sp->safe)
 		return ("a fetched ruleset is not undone: not in safe mode");
+	if (sp->verb != NULL && strcmp(sp->verb, "rule") == 0)
+		return (suricata_rule_check(sp));
 	if (sp->verb == NULL || strcmp(sp->verb, "update") != 0)
-		return ("a suricata job's verb is update");
+		return ("a suricata job's verb is update or rule");
 	if (sp->names.n > 0)
 		return ("update takes no words");
 	return (NULL);
 }
 
 char *
-suricata_title(const struct arc_job_spec *sp __unused)
+suricata_title(const struct arc_job_spec *sp)
 {
+	char	*t;
 
+	if (sp->verb != NULL && strcmp(sp->verb, "rule") == 0) {
+		if (asprintf(&t, "suricata rules set: %s%s", sp->names.v[0],
+		    sp->names.n > 1 ? " ..." : "") == -1)
+			return (NULL);
+		return (t);
+	}
 	return (strdup("suricata-update: the ruleset fetched"));
 }
 
@@ -1098,14 +1172,22 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
 {
 	struct execres	 res;
-	char		*argv[8], *json;
+	char		*argv[16], *json;
 	const char	*bin, *e, *t;
 	pid_t		 pid;
 	size_t		 n;
-	int		 step, i;
+	int		 step, i, na;
+	bool		 rule;
 
 	if ((*errp = suricata_check(sp)) != NULL)
 		return (-1);
+	rule = strcmp(sp->verb, "rule") == 0;
+	/* The rules set are made into the ruleset already fetched. */
+	if (rule && access(SURICATA_RULESET, R_OK) != 0) {
+		*errp = "the ruleset is not fetched yet: fetch it first "
+		    "(suricata update)";
+		return (-1);
+	}
 	if ((bin = tool(w, "suricata-update")) == NULL)
 		bin = "/usr/local/bin/suricata-update";
 	if (access(bin, X_OK) != 0) {
@@ -1113,7 +1195,17 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
 		    "suricata)", bin);
 		return (-1);
 	}
+	if (rule) {
+		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "the rules set kept");
+		if (suricata_rule_set(w, sp, errp) != 0) {
+			step_end(w, step, false, "%s", *errp);
+			return (-1);
+		}
+		step_end(w, step, true, NULL);
+	}
 	step = step_begin(w, ARC_STEP_KIND_EXEC, "suricata-update",
+	    rule ? "the ruleset made again, from what was fetched, to %s" :
 	    "the ruleset fetched to %s", SURICATA_RULESET);
 	/* Each instance is checked by suricata -T as it is applied: the
 	 * ruleset's own test would read a suricata.yaml of the port's,
@@ -1125,7 +1217,15 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
 	argv[4] = (char *)(uintptr_t)suricata_bin(w);
 	argv[5] = (char *)(uintptr_t)"-o";
 	argv[6] = (char *)(uintptr_t)opts.suricata_rules;
-	argv[7] = NULL;
+	na = 7;
+	/* The admin's rules by sid, every time: they hold across updates. */
+	if (suricata_rule_args(w, argv, &na, errp) != 0) {
+		step_end(w, step, false, "%s", *errp);
+		return (-1);
+	}
+	if (rule)
+		argv[na++] = (char *)(uintptr_t)"--offline";
+	argv[na] = NULL;
 	if (run_exec(w, argv, &res) != 0) {
 		t = res.outlen > 0 ? wstrndup(w, res.out, res.outlen) :
 		    res.errlen > 0 ? wstrndup(w, res.err, res.errlen) : "";

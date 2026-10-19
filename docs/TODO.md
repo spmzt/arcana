@@ -481,7 +481,7 @@
   sessions and tables as state, the routes of a table as an action),
   arcana-wireguard (71 400: wg show dump, keys only said to be there)
   and arcana-netgraph (71 500: ngctl list -l), each the host's and a
-  vnet jail's by an augment of arcana-jails (luxuria/ybird.c, ywg.c,
+  vnet jail's by an augment of arcana-jails (luxuria/ybird.c, invidia/ywg.c,
   invidia/yng.c, yang_plugins).  The changes stay jobs (bird-config,
   wireguard, netgraph).  3.1.9: share/yang/arcana-host (71 600: the
   host's facts, the plugins as identities, a jail's too, the stats, the
@@ -695,6 +695,14 @@
   never made nor taken away.  The IPFW tab's Load the current file
   verified in a jail with its own rc.conf and script (the lab's
   arcswan1 root).
+- Nodes of the map that ran from the pointer (narrowed by the user to
+  vnet jails, 2026-10-19): a vnet jail's node had the class jail, which
+  the jails' cards' rule .jail also matched; its hover's CSS transform
+  (and rise's) overrode the node's transform attribute, so held it was
+  drawn off at the drawing's corner.  The class is vjail now, and
+  div.node the workflow steps' (rise would move SD-WAN's SVG nodes as
+  well).  Fixed, console 0.217.2; pwa_plugins drags one with a real
+  mouse.
 - Asked for on 2026-10-18:
   - Consoles clustered, active/active, over cblink: done, console
     0.215.0 (docs/notes/console-cluster.md has what is not yet).
@@ -893,7 +901,9 @@
     (agent_root_test:snort_live).  Registered rules done 2026-10-18:
     the oinkcode a secret of the console's (Settings, Console, with
     the rules' address), put into the job's address by the console and
-    scrubbed by the agent from the title, the trace and source.json.)
+    scrubbed by the agent from the title, the trace and source.json.
+    Removed 2026-10-19: Suricata alone is the IDS/IPS, as SD-WAN's
+    security policies already had it.)
   - The console clustered; disaster recovery across console clusters.
     (Decided 2026-10-18: active/active, a database only where
     required.  The design to choose from is docs/notes/console-cluster.md:
@@ -924,7 +934,7 @@
     tables, BIRD filters, SD-WAN zones?).  (Answered 2026-10-18 and
     done: MSS by ipfw tcp-setmss on SD-WAN tunnels, labels a
     console-side tag, prefix lists kept by the console and picked in
-    ipfw, BIRD, SD-WAN, Snort, Suricata, the proxy and IPsec forms.)
+    ipfw, BIRD, SD-WAN, Suricata, the proxy and IPsec forms.)
   - A certificates tab per host, by certctl and OpenSSL. (Done
     2026-10-12: trusted and untrusted, read with OpenSSL; a CA given,
     one distrusted and trusted again, kept where certctl rehash finds
@@ -1091,12 +1101,6 @@ Written and tested with stand-ins, never run for real:
   kernel, its gateway not being reached in that table, which came
   through as route(8) says it. Whether the address named to send from
   is the one a route then uses: route(8) took it.
-- Nodes of the map that move away from the pointer, as was reported
-  from a browser that is not the one the tests run: not reproduced. A
-  real mouse in headless Chromium keeps a host under it for every
-  step. What could cause it was changed: the pointer is the drawing's
-  while something is dragged, the neighbours outside no longer swing
-  about when a host is moved, and the drawing is as large as its room.
 - The network map with real tunnels between real hosts: the test has two
   names for one agent, so its links are the networks they share.
 - A vnet jail's network. Run for real, against the jail `gateway` of
@@ -1512,7 +1516,8 @@ it found and could be fixed was, and this is what stays:
   signs with RSA only, so `console.pem` must be RSA until Kore (or a
   patch like the one in `port/www/kore/files`) handles ECDSA.
 - A web terminal in the console: it could not be built.
-- Luxuria in the agent is the plugins, BIRD and WireGuard's `wg`; what
+- Luxuria in the agent is the plugins, BIRD among them (WireGuard's
+  `wg` is the base system's and Invidia's since 2026-10-19); what
   reaches outside (the release check, notifications) is the console's.
   A plugin is still built into the agent and the page: what makes it
   one is that it is there only where its program is installed.

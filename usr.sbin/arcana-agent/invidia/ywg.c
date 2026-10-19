@@ -5,7 +5,7 @@
  */
 
 /*
- * Luxuria: WireGuard as YANG, arcana-wireguard (PLAN-SDN-YANG 3.1.8):
+ * Invidia: WireGuard as YANG, arcana-wireguard (PLAN-SDN-YANG 3.1.8):
  * the wireguard kind of the network operation (wireguard.c,
  * do_wireguard(), wg show dump) read back as the module has it.
  */

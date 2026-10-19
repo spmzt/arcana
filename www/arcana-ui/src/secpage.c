@@ -9,8 +9,7 @@
  * proxy the clients are told of.  Malware: c-icap with ClamAV's module
  * scanning what a URL filter fetches.  Signatures: ClamAV's databases as
  * freshclam keeps them.  IDS/IPS: Suricata, watching interfaces or
- * taking what an ipfw divert rule hands it.  Snort: Snort 3, the same
- * by Arcana's rc.d script, its rules kept (snort.c).  A host at a time: its
+ * taking what an ipfw divert rule hands it.  A host at a time: its
  * sdwan read tells what runs and the forms it was given; a save sends
  * the kind's whole list (POST /api/servers/<id>/security).
  */
@@ -22,7 +21,7 @@
 
 #include "app.h"
 
-enum sectab { SEC_URL, SEC_MALWARE, SEC_SIGS, SEC_IDS, SEC_SNORT };
+enum sectab { SEC_URL, SEC_AV, SEC_IDS };
 
 static struct {
 	enum sectab	 tab;
@@ -33,16 +32,18 @@ static struct {
 	int		 edit;		/* the form open: an index, n for a new
 					 * one, -1 none */
 	bool		 busy;
+	bool		 rules;		/* IDS/IPS: the ruleset's rules shown */
 } sec = { .edit = -1 };
 
-static const char *const tabs[] = { "url", "malware", "signatures", "ids",
-    "snort" };
+static const char *const tabs[] = { "url", "antivirus", "ids" };
 
 static void
 sec_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	char	*sid = arg;
 
+	/* Read again, a save is done with. */
+	sec.busy = false;
 	/* Another host's, asked before this one was chosen: not its. */
 	if (strcmp(sid, sec.sid) != 0) {
 		free(sid);
@@ -287,7 +288,7 @@ proxy_form(struct html *h, const ucl_object_t *f)
 	if (jbool(f, "malware"))
 		h_raw(h, " checked");
 	h_raw(h, "> Scan what it fetches for malware <small class=\"help\">"
-	    "c-icap with ClamAV, on the loopback (the Malware tab)</small>"
+	    "c-icap with ClamAV, on the loopback (the Antivirus tab)</small>"
 	    "</label><details class=\"wfmore\"><summary>More options</summary>"
 	    "<label>Routing table <input name=\"fib\" type=\"number\" min=\"0\" "
 	    "max=\"65535\"");
@@ -409,7 +410,7 @@ view_malware(struct html *h)
 	    "URL filter fetches, before the client has it: one that holds "
 	    "malware is refused. Each URL filter that scans has its own "
 	    "c-icap on the loopback; turn it on in the filter's form. "
-	    "ClamAV's signatures are freshclam's (the Signatures tab).</p>");
+	    "ClamAV's signatures are freshclam's, below.</p>");
 	n = 0;
 	it = NULL;
 	while ((f = ucl_object_iterate(specs(false), &it, true)) != NULL)
@@ -727,7 +728,8 @@ view_ids(struct html *h)
 		    "rules say.</p></div>");
 		return;
 	}
-	h_raw(h, "<table class=\"net secids\">");
+	h_fmt(h, "<table class=\"net secids%s\">", sec.busy ? " applying" :
+	    "");
 	tbl_head(h, "secids", icols, 5, 1);
 	h_raw(h, "<tbody>");
 	rows = tbl_rows("secids", specs(true), icols, 5, app.filter);
@@ -744,9 +746,33 @@ view_ids(struct html *h)
 			h_raw(h, "</td><td>detects</td>");
 		h_fmt(h, "<td>%lld</td><td>", (long long)jint(l, "alerts_seen",
 		    0));
-		chip_run(h, l, "running");
+		if (jbool(f, "stopped"))
+			h_raw(h, "<span class=\"chip st-down\" title=\"Stopped "
+			    "here: kept, not run until it is started\">stopped"
+			    "</span>");
+		else
+			chip_run(h, l, "running");
 		h_raw(h, "</td><td class=\"acts\">");
-		start_button(h, l, true);
+		/* Stopped by the admin, or not running: Start; else Stop.
+		 * Either keeps its form. */
+		if (jbool(f, "stopped") || l == NULL || !jbool(l, "running")) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "sec-ids-run\" data-value=\"start\" title=\"Started "
+			    "on the host, its configuration as it is\"");
+			h_attr(h, "data-arg", jstr(f, "name"));
+			h_raw(h, ">Start</button>");
+		} else {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "sec-ids-stop\" title=\"Stopped on the host, its "
+			    "configuration kept for Start\"");
+			h_attr(h, "data-arg", jstr(f, "name"));
+			h_raw(h, ">Stop</button>");
+		}
+		h_raw(h, "<button class=\"ghost small\" data-act=\"own-open\" "
+		    "title=\"Its rules besides the ruleset's\"");
+		h_attr(h, "data-arg", jstr(f, "name"));
+		h_fmt(h, ">Own rules (%d)</button>", idsown_count(jstr(f,
+		    "rules")));
 		h_raw(h, "<button class=\"ghost small\" data-act=\"sec-edit\"");
 		h_attr(h, "data-arg", jstr(f, "name"));
 		h_raw(h, ">Change</button><button class=\"ghost small danger\" "
@@ -760,16 +786,39 @@ view_ids(struct html *h)
 		it = NULL;
 		while ((a = ucl_object_iterate(jget(l, "alerts"), &it, true)) !=
 		    NULL) {
+			/* As the agent tells it: time, src, dst, sid. */
 			h_raw(h, "<li><span class=\"dim mono\">");
-			h_txt(h, jstr(a, "timestamp"));
+			h_txt(h, jstr(a, "time"));
 			h_raw(h, "</span> <b>");
-			h_txt(h, jstr(a, "signature") != NULL ? jstr(a,
-			    "signature") : jstr(a, "alert.signature"));
-			h_raw(h, "</b> <span class=\"mono\">");
-			h_txt(h, jstr(a, "src_ip"));
+			h_txt(h, jstr(a, "signature"));
+			h_fmt(h, "</b> <small class=\"dim\">sid %lld",
+			    (long long)jint(a, "sid", 0));
+			if (jstr(a, "action") != NULL && strcmp(jstr(a,
+			    "action"), "blocked") == 0)
+				h_raw(h, ", dropped");
+			h_raw(h, "</small> <span class=\"mono\">");
+			h_txt(h, jstr(a, "src"));
+			if (jint(a, "sport", 0) > 0)
+				h_fmt(h, ":%lld", (long long)jint(a, "sport", 0));
 			h_raw(h, " → ");
-			h_txt(h, jstr(a, "dest_ip"));
-			h_raw(h, "</span></li>");
+			h_txt(h, jstr(a, "dst"));
+			if (jint(a, "dport", 0) > 0)
+				h_fmt(h, ":%lld", (long long)jint(a, "dport", 0));
+			h_raw(h, "</span>");
+			if (jint(a, "sid", 0) > 0 && jstr(a, "src") != NULL) {
+				char	arg[96];
+
+				snprintf(arg, sizeof(arg), "%lld|%s",
+				    (long long)jint(a, "sid", 0), jstr(a, "src"));
+				h_raw(h, " <button class=\"ghost small\" "
+				    "data-act=\"own-suppress\" title=\"Not told "
+				    "again from this address (suppress, track "
+				    "by_src)\"");
+				h_attr(h, "data-arg", arg);
+				h_attr(h, "data-value", jstr(f, "name"));
+				h_raw(h, ">Suppress</button>");
+			}
+			h_raw(h, "</li>");
 		}
 		h_raw(h, "</ul></td></tr>");
 	}
@@ -780,14 +829,13 @@ view_ids(struct html *h)
 void
 view_secpage(struct html *h)
 {
-	static const char *const names[] = { "URL filter", "Malware",
-	    "Signatures", "IDS/IPS", "Snort" };
+	static const char *const names[] = { "URL filter", "Antivirus",
+	    "IDS/IPS" };
 	static const char *const titles[] = {
 	    "Squid: what the clients ask for, by name",
-	    "c-icap with ClamAV: what a URL filter fetches, scanned",
-	    "freshclam: ClamAV's signatures",
-	    "Suricata: intrusion detection, and prevention",
-	    "Snort 3: intrusion detection and prevention, its rules here" };
+	    ("ClamAV: what a URL filter fetches, scanned by c-icap; its "
+	    "signatures, by freshclam"),
+	    "Suricata: intrusion detection, and prevention" };
 	size_t	i;
 
 	h_raw(h, "<section class=\"secpage\"><div class=\"sechead\">");
@@ -806,12 +854,6 @@ view_secpage(struct html *h)
 		    "installed (Arcana installs nothing).</p></div></section>");
 		return;
 	}
-	/* Snort's tab reads its own, not the host's sdwan read. */
-	if (sec.tab == SEC_SNORT) {
-		view_snort(h, sec.sid);
-		h_raw(h, "</section>");
-		return;
-	}
 	if (sec.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, sec.error);
@@ -827,16 +869,26 @@ view_secpage(struct html *h)
 	case SEC_URL:
 		view_url(h, false);
 		break;
-	case SEC_MALWARE:
+	case SEC_AV:
+		/* ClamAV: what it scans, then what it knows. */
 		view_malware(h);
-		break;
-	case SEC_SIGS:
+		h_raw(h, "<h3 class=\"secsub\">Signatures</h3>");
 		view_sigs(h);
 		break;
 	case SEC_IDS:
-		view_ids(h);
-		break;
-	case SEC_SNORT:
+		/* Its instances, or the ruleset's rules. */
+		h_fmt(h, "<nav class=\"tabs sub\"><button class=\"tab%s\" "
+		    "data-act=\"sec-idsview\" data-arg=\"instances\">Instances"
+		    "</button><button class=\"tab%s\" data-act=\"sec-idsview\" "
+		    "data-arg=\"rules\" title=\"The ruleset suricata-update "
+		    "keeps, each rule on, off or a drop\">Rules</button></nav>",
+		    sec.rules ? "" : " on", sec.rules ? " on" : "");
+		if (sec.rules)
+			view_surules(h, sec.sid);
+		else if (idsown_active())
+			view_idsown(h);
+		else
+			view_ids(h);
 		break;
 	}
 	h_raw(h, "</section>");
@@ -849,13 +901,16 @@ save_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
 	(void)arg;
-	sec.busy = false;
+	/* Applied, busy until the host is read again (sec_cb ends it);
+	 * refused, nothing changed there and nothing to wait for. */
 	if (status == 200 && jbool(o, "ok")) {
 		toast(false, "Applied");
 		sec.edit = -1;
-	} else
+	} else {
+		sec.busy = false;
 		toast(true, "%s", err != NULL ? err : jstr(o, "error") != NULL ?
 		    jstr(o, "error") : "not applied");
+	}
 	sec_load();
 	render();
 }
@@ -867,6 +922,14 @@ save(bool ids, ucl_object_t *list)
 	ucl_object_t	*body;
 	char		 url[96], *json;
 
+	/* One change at a time, each on the host's list as it was read
+	 * after the last: what is made meanwhile would undo that one. */
+	if (sec.busy) {
+		ucl_object_unref(list);
+		toast(true, "The last change is being applied: again in a "
+		    "moment");
+		return;
+	}
 	body = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(body, ucl_object_fromstring(ids ? "ids" :
 	    "proxy"), "what", 0, false);
@@ -894,6 +957,46 @@ specs_but(bool ids, const char *skip)
 		    "name"), skip) != 0)
 			ucl_array_append(out, ucl_object_copy(e));
 	return (out);
+}
+
+/* For idsown.c: an intrusion detection's form, by name. */
+const ucl_object_t *
+sec_ids_spec(const char *name)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((e = ucl_object_iterate(specs(true), &it, true)) != NULL)
+		if (jstr(e, "name") != NULL && name != NULL && strcmp(jstr(e,
+		    "name"), name) == 0)
+			return (e);
+	return (NULL);
+}
+
+/* One key of a form set to text, and the whole list applied again. */
+void
+sec_ids_set(const char *name, const char *key, const char *text)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*list;
+
+	list = specs_but(true, NULL);
+	it = NULL;
+	while ((e = ucl_object_iterate(list, &it, true)) != NULL)
+		if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"), name) ==
+		    0)
+			ucl_object_replace_key((ucl_object_t *)(uintptr_t)e,
+			    ucl_object_fromstring(text), key, 0, true);
+	save(true, list);
+}
+
+bool
+sec_ids_busy(void)
+{
+
+	return (sec.busy);
 }
 
 /* A field's words, split at commas, spaces and lines, as a list. */
@@ -947,8 +1050,8 @@ secpage_form(const char *form, const ucl_object_t *f)
 	ucl_object_t	*list, *o;
 	bool		 ids;
 
-	if (strncmp(form, "sn-", 3) == 0)
-		return (snort_form(form, f));
+	if (surules_form(form, f) || idsown_form(form, f))
+		return (true);
 	if (strcmp(form, "sec-mirrors") == 0) {
 		const ucl_object_t	*cl = jget(sec.state, "clamav");
 		char			*copy, *it, *line, *json[2];
@@ -1034,6 +1137,30 @@ secpage_form(const char *form, const ucl_object_t *f)
 			ucl_object_insert_key(o, ucl_object_fromstring(jstr(f,
 			    "rules")), "rules", 0, false);
 		put_num(o, "divert", jstr(f, "divert"));
+		/* One stopped stays stopped, changed; its thresholds,
+		 * not in this form, stay. */
+		{
+			const ucl_object_t	*e;
+			ucl_object_iter_t	 it;
+
+			it = NULL;
+			while ((e = ucl_object_iterate(specs(true), &it, true)) !=
+			    NULL) {
+				if (jstr(f, "orig") == NULL || jstr(e, "name") ==
+				    NULL || strcmp(jstr(e, "name"), jstr(f,
+				    "orig")) != 0)
+					continue;
+				if (jbool(e, "stopped"))
+					ucl_object_insert_key(o,
+					    ucl_object_frombool(true), "stopped",
+					    0, false);
+				if (jstr(e, "thresholds") != NULL)
+					ucl_object_insert_key(o,
+					    ucl_object_fromstring(jstr(e,
+					    "thresholds")), "thresholds", 0,
+					    false);
+			}
+		}
 	}
 	ucl_array_append(list, o);
 	save(ids, list);
@@ -1059,6 +1186,11 @@ secpage_open(const char *rest)
 	for (i = 0; i < nitems(tabs); i++)
 		if (strcmp(tab, tabs[i]) == 0)
 			sec.tab = (enum sectab)i;
+	/* The two tabs Antivirus was before; Snort's, gone. */
+	if (strcmp(tab, "malware") == 0 || strcmp(tab, "signatures") == 0)
+		sec.tab = SEC_AV;
+	else if (strcmp(tab, "snort") == 0)
+		sec.tab = SEC_IDS;
 	rest += strcspn(rest, "/");
 	if (*rest == '/' && strcmp(rest + 1, sec.sid) != 0) {
 		snprintf(sec.sid, sizeof(sec.sid), "%.15s", rest + 1);
@@ -1089,15 +1221,38 @@ secpage_action(const char *act, const char *arg, const char *value)
 		sec_load();
 		return (true);
 	}
-	if (strncmp(act, "sn-", 3) == 0 || strcmp(act, "input:sn-text") == 0)
-		return (snort_action(act, arg, value));
+	if (idsown_action(act, arg, value))
+		return (true);
+	if (strncmp(act, "sur-", 4) == 0) {
+		char	*json[1], title[96];
+		const char *t[1];
+
+		if (!surules_action(act, arg, value, &json[0], title,
+		    sizeof(title)))
+			return (false);
+		if (json[0] != NULL) {
+			t[0] = title;
+			sec_jobs(json, t, 1);
+		}
+		return (true);
+	}
 	if (strncmp(act, "sec-", 4) != 0 && strcmp(act, "input:sec-host") != 0)
 		return (false);
 	ids = sec.tab == SEC_IDS;
+	if (strcmp(act, "sec-idsview") == 0) {
+		sec.rules = strcmp(arg, "rules") == 0;
+		if (sec.rules)
+			surules_load(sec.sid);
+		render();
+		return (true);
+	}
 	if (strcmp(act, "sec-tab") == 0) {
 		for (i = 0; i < nitems(tabs); i++)
 			if (strcmp(arg, tabs[i]) == 0)
 				sec.tab = (enum sectab)i;
+		if (strcmp(arg, "malware") == 0 || strcmp(arg, "signatures") ==
+		    0)
+			sec.tab = SEC_AV;
 		sec.edit = -1;
 		app.filter[0] = '\0';
 		return (true);
@@ -1139,6 +1294,40 @@ secpage_action(const char *act, const char *arg, const char *value)
 		    "files taken away.", arg);
 		confirm("Remove it?", body, "Remove", true, NULL,
 		    "sec-remove-yes", arg, value != NULL ? value : "proxy");
+		return (true);
+	}
+	if (strcmp(act, "sec-ids-stop") == 0) {
+		char	body[300];
+		int64_t	divert;
+
+		divert = 0;
+		it = NULL;
+		while ((e = ucl_object_iterate(specs(true), &it, true)) != NULL)
+			if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"),
+			    arg) == 0)
+				divert = jint(e, "divert", 0);
+		snprintf(body, sizeof(body), "Suricata %s is stopped on the host; "
+		    "its configuration is kept, to start it again.%s", arg,
+		    divert > 0 ? " It prevents: while it is stopped, what ipfw "
+		    "diverts to it passes nothing." : "");
+		confirm("Stop it?", body, "Stop", divert > 0, NULL,
+		    "sec-ids-run", arg, "stop");
+		return (true);
+	}
+	/* One's stopped set or cleared, the whole list applied again. */
+	if (strcmp(act, "sec-ids-run") == 0) {
+		ucl_object_t	*list;
+
+		list = specs_but(true, NULL);
+		it = NULL;
+		while ((e = ucl_object_iterate(list, &it, true)) != NULL)
+			if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"),
+			    arg) == 0)
+				ucl_object_replace_key((ucl_object_t *)(uintptr_t)
+				    e, ucl_object_frombool(value != NULL &&
+				    strcmp(value, "stop") == 0), "stopped", 0,
+				    false);
+		save(true, list);
 		return (true);
 	}
 	if (strcmp(act, "sec-start") == 0) {
@@ -1249,6 +1438,8 @@ secpage_refresh(void)
 {
 
 	sec_load();
+	if (sec.tab == SEC_IDS && sec.rules)
+		surules_load(sec.sid);
 }
 
 /* Each tick: the page's host read again, every 10 s while it is shown
@@ -1258,10 +1449,6 @@ secpage_tick(double now)
 {
 	static double	last;
 
-	if (app.node == NODE_SECURITY && sec.tab == SEC_SNORT) {
-		snort_tick(now);
-		return;
-	}
 	if (app.node != NODE_SECURITY || !app.visible || sec.loading ||
 	    sec.busy || sec.edit >= 0 || now - last < 10000)
 		return;

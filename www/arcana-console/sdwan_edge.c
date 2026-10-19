@@ -8546,9 +8546,6 @@ static const struct sdwan_need {
 	    "strongSwan, for the tunnels under IPsec IKEv2" },
 	{ "sdwan-bird", "bird", "bird3",
 	    "BIRD, for routing at the UNIs, BGP between the edges and BFD" },
-	{ "wireguard", "wireguard", "wireguard-tools",
-	    "wg(8), for WireGuard tunnels and remote end points (in the base "
-	    "system from FreeBSD 15)" },
 	{ "sdwan-dhcp", "dnsmasq", "dnsmasq",
 	    "dnsmasq, the DHCP server at the UNIs" },
 	{ "sdwan-proxy", "squid", "squid",

@@ -668,7 +668,8 @@ view_network(struct html *h, struct server *s)
 	h_raw(h, "<nav class=\"sub\">");
 	/* The nexthop groups are of the Nexthops, not a tab of their own. */
 	nh = app.net.kind == NET_NEXTHOPS || app.net.kind == NET_NHGROUPS;
-	for (i = 0; i < 6 && !plug; i++)
+	/* Routes to WireGuard, the base system's. */
+	for (i = 0; i <= NET_WIREGUARD && !plug; i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ||
 		    (i == NET_NEXTHOPS && nh) ? " on" : "", kinds[i].arg,

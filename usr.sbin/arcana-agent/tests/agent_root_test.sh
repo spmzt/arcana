@@ -823,117 +823,6 @@ sctp_multihome_cleanup()
 	true
 }
 
-atf_test_case snort_live cleanup
-snort_live_head()
-{
-	atf_set "descr" "Snort for real: rules taken in and turned off, and" \
-	    "local.rules, checked by the real snort -T (one it refuses kept" \
-	    "out); arcana_snort starts it on an epair, a vnet jail's ping" \
-	    "is an alert the agent reads, and with the rule turned off a" \
-	    "reload makes the next ping none"
-	atf_set "require.user" "root"
-	atf_set "is.exclusive" "true"
-	atf_set "timeout" "240"
-}
-snort_live_body()
-{
-	local d="$(pwd)" e sn env flags etc rc n0 n1 i
-
-	# The program and where its own files are: the package's, or a
-	# tree the configuration names (snort, snort_env, snort_flags,
-	# snort_etc), its libraries and DAQ modules elsewhere.
-	sn=$(atf_config_get snort /usr/local/bin/snort)
-	env=$(atf_config_get snort_env "")
-	flags=$(atf_config_get snort_flags "")
-	etc=$(atf_config_get snort_etc /usr/local/etc/snort)
-	[ -x "$sn" ] || atf_skip "no snort (security/snort3)"
-	rc="$(atf_get_srcdir)/../arcana_snort.sh"
-	[ -r "$rc" ] || rc=/usr/local/etc/rc.d/arcana_snort
-	jls -j arcw_sn >/dev/null 2>&1 && atf_skip "a jail arcw_sn is there already"
-	mkdir se sl
-	cp "$etc"/*.lua "$etc"/*.rules se/
-	printf '#!/bin/sh\nexec env %s %s %s "$@"\n' "$env" "$sn" "$flags" > snort-run
-	chmod +x snort-run
-	# rc.conf in the work directory, not the host's.
-	cat > fake-sysrc <<EOS
-#!/bin/sh
-c=$d/rc.conf; touch \$c
-[ "\$1" = -i ] && shift
-case "\$1" in
--n) sed -n "s/^\$2=\"\(.*\)\"\\\$/\1/p" \$c | grep . ;;
--x) grep -v "^\$2=" \$c > \$c.n; mv \$c.n \$c ;;
-*=*) grep -v "^\${1%%=*}=" \$c > \$c.n; printf '%s="%s"\n' "\${1%%=*}" "\${1#*=}" >> \$c.n; mv \$c.n \$c ;;
-esac
-EOS
-	chmod +x fake-sysrc
-	# Rules as an archive gives them, one to be seen and one to turn off.
-	mkdir -p src/lab-rules
-	cat > src/lab-rules/lab.rules <<'EOR'
-alert icmp any any -> any any ( msg:"lab ping seen"; itype:8; classtype:misc-activity; sid:1000002; rev:1; )
-alert tcp any any -> any 23 ( msg:"lab telnet"; flow:to_server; sid:1000003; rev:1; )
-EOR
-	tar -czf rules.tar.gz -C src lab-rules
-	atf_check -o ignore jail -c name=arcw_sn vnet persist path=/
-	e=$(ifconfig epair create)
-	echo "$e" > epair.name
-	atf_check ifconfig ${e%a}b vnet arcw_sn
-	atf_check ifconfig $e inet 10.94.0.1/24 up
-	atf_check jexec arcw_sn ifconfig ${e%a}b inet 10.94.0.2/24 up
-	DAEMON_ARGS="--snort $d/snort-run --snort-etc $d/se --snort-log $d/sl -y $d/fake-sysrc"
-	start_daemon
-	atf_check -o match:'"installed":true' -o match:'"version":"3\.' \
-	    "$JGC" -c "$SOCK" snort
-	atf_check -o match:'done' "$JGC" -c "$SOCK" snort update \
-	    "url=file://$d/rules.tar.gz"
-	atf_check -o match:'"files":\[\{"name":"lab.rules","rules":2,"on":2\}\]' \
-	    "$JGC" -c "$SOCK" snort
-	# What the real snort refuses, kept out; its words in the error.
-	printf 'alert icmp any any -> any any (msg:"bad"; nosuchopt:1; sid:1000009;)\n' > bad.rules
-	atf_check -s exit:1 -o match:'snort does not take it: ERROR: .*unknown rule keyword: nosuchopt' \
-	    -e ignore "$JGC" -c "$SOCK" snort conf local.rules bad.rules
-	printf 'alert udp any any -> any 9 (msg:"lab discard"; sid:1000004; rev:1;)\n' > good.rules
-	atf_check -o match:'done' "$JGC" -c "$SOCK" snort conf local.rules good.rules
-	atf_check -o match:'done' "$JGC" -c "$SOCK" snort set enable=yes mode=ids \
-	    interface=$e home_net=10.94.0.0/24
-	atf_check -o match:"^arcana_snort_interfaces=\"$e\"\$" cat rc.conf
-	# Started by arcana_snort, as rc(8) would, its settings given.
-	atf_check -o ignore -e ignore env arcana_snort_enable=YES \
-	    arcana_snort_interfaces=$e arcana_snort_conf=$d/se/snort.lua \
-	    arcana_snort_rules=$d/se/arcana/arcana.rules arcana_snort_logdir=$d/sl \
-	    arcana_snort_program="$sn" arcana_snort_env="$env" \
-	    arcana_snort_flags="$flags" sh "$rc" onestart
-	for i in $(seq 1 60); do
-		[ -s sl/snort.pid ] && kill -0 $(cat sl/snort.pid) 2>/dev/null && break
-		sleep 1
-	done
-	atf_check -o match:'"running":true' "$JGC" -c "$SOCK" snort
-	sleep 3
-	for i in $(seq 1 20); do
-		jexec arcw_sn ping -c 1 -t 1 10.94.0.1 >/dev/null 2>&1
-		grep -q 'lab ping seen' sl/alert_json.txt 2>/dev/null && break
-		sleep 1
-	done
-	atf_check -o match:'"alerts":\[\{[^}]*"proto":"ICMP","src_addr":"10.94.0.2","dst_addr":"10.94.0.1","gid":1,"sid":1000002,"rev":1,"msg":"lab ping seen"' \
-	    "$JGC" -c "$SOCK" snort
-	# Turned off: the running Snort reloads, and pings are no alerts.
-	atf_check -o match:'done' "$JGC" -c "$SOCK" snort rule off=1:1000002
-	sleep 8
-	n0=$(grep -c 'lab ping seen' sl/alert_json.txt)
-	for i in 1 2 3; do jexec arcw_sn ping -c 1 -t 1 10.94.0.1 >/dev/null 2>&1; done
-	sleep 3
-	n1=$(grep -c 'lab ping seen' sl/alert_json.txt)
-	[ "$n0" = "$n1" ] || atf_fail "alerts after the rule was turned off: $n0, then $n1"
-	atf_check -o ignore -e ignore env arcana_snort_logdir=$d/sl \
-	    arcana_snort_program="$sn" arcana_snort_interfaces=$e sh "$rc" onestop
-}
-snort_live_cleanup()
-{
-	[ -s sl/snort.pid ] && kill "$(cat sl/snort.pid)" 2>/dev/null
-	[ -f epair.name ] && ifconfig "$(cat epair.name)" destroy 2>/dev/null
-	jail -r arcw_sn >/dev/null 2>&1
-	cleanup
-}
-
 atf_test_case bird_live cleanup
 bird_live_head()
 {
@@ -2438,7 +2327,6 @@ atf_init_test_cases()
 	atf_add_test_case sdwan_jail_edge
 	atf_add_test_case sdwan_links
 	atf_add_test_case bird_live
-	atf_add_test_case snort_live
 	atf_add_test_case sctp_multihome
 	atf_add_test_case sctp_loopback
 	atf_add_test_case sdwan_record

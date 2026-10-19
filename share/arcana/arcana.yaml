@@ -380,20 +380,6 @@ definitions:
           made, when none is), each option checked against the port's
           COMPLETE_OPTIONS_LIST; reset takes the file away, the port's
           defaults again.  The host's only; never in safe mode.
-      - name: snort
-        doc: |
-          Snort 3, an IDS/IPS, a plugin run by Arcana's rc.d script
-          arcana_snort: verb and words key=value (names).  set takes
-          enable (yes, no), mode (ids, watching each interface= word;
-          ips, taking what an ipfw divert rule hands divert_port) and
-          home_net (snort.lua's HOME_NET), kept in rc.conf and
-          snort.lua.  conf writes file (snort.lua or local.rules) from
-          text.  update fetches the rules from url (the last one, or
-          Snort's community rules) and takes in each *.rules of the
-          archive.  rule turns rules on= or off= (gid:sid), or back to
-          their own default=, across updates.  Each is checked by snort
-          -T before it replaces what was there, and a running Snort is
-          told to reload.  The host's only; never in safe mode.
       - name: clamav
         doc: |
           ClamAV's freshclam, which fetches the signatures: verb and
@@ -410,8 +396,13 @@ definitions:
           sources) to /var/lib/suricata/rules/suricata.rules; then the
           instances are applied again from what the agent kept of them,
           so that one started without it takes it, and those reading it
-          already read their rules again.  The host's only; never in
-          safe mode.
+          already read their rules again.  Verb rule sets rules by sid
+          (names on=, off=, drop= or default=, each sids joined by
+          commas): kept by the agent and given to suricata-update as its
+          enable.conf, disable.conf and drop.conf, so that they hold
+          across updates; the ruleset is made again from what was
+          fetched (--offline) and applied as by update.  The host's
+          only; never in safe mode.
   - name: job-state
     type: enum
     entries:
@@ -1503,7 +1494,7 @@ attribute-sets:
           max-len: 15
       - name: verb
         type: text
-        doc: For netgraph, wireguard, bird, poudriere, snort, clamav and suricata, what to do.
+        doc: For netgraph, wireguard, bird, poudriere, clamav and suricata, what to do.
         checks:
           max-len: 16
       - name: peer
@@ -3163,8 +3154,11 @@ operations:
       port, for one that prevents: it is run on that port (-d), where
       the console's ipfw divert rules hand it the UNIs' packets, rather
       than by libpcap; while it is not running they pass nothing, a
-      Critical fault (ids) until it runs again.  Each is checked by
-      suricata -T before it runs; one whose files changed is started
+      Critical fault (ids) until it runs again; "thresholds", its
+      threshold.config lines, written to a file of its own that @THRESHOLD@
+      names; and "stopped", true for
+      one the admin stopped, which is not run but kept in the list until
+      it is started again.  Each is checked by suricata -T before it runs; one whose files changed is started
       again; those not named any more are stopped.  The alerts each
       writes (eve.json) are read every second into events, sdwan-ids,
       and kept, the latest in the sdwan read.  Kept for the next start.
@@ -3564,24 +3558,21 @@ operations:
           - error
           - json
           - trace
-
-  - name: snort
+  - name: suricata-rules
     attribute-set: arcana
     auth: true
     doc: |
-      Snort on this host, a plugin, as a JSON object: "installed",
-      "program" and "version"; "running" and "pid"; "rc", what
-      arcana_snort's rc.conf variables say (enable, mode, interfaces,
-      divert_port); "home_net"; "snort_lua" and "local_rules", the
-      files' text; "source", where the rules came from ("url",
-      "updated", "sha256") with each file taken in ("name", "rules",
-      "on"); "warnings", what keeps Snort from doing what it was told;
-      and "alerts", the newest of alert_json.txt first, each with
-      timestamp, proto, src_addr, src_port, dst_addr, dst_port, gid,
-      sid, rev, msg, action, class and priority.  With names "rules",
-      "rules" too: every rule taken in and of local.rules, with gid,
-      sid, rev, msg, action, class, file, "on" and "default" (on as
-      shipped).
+      The rules of Suricata's ruleset, suricata.rules as suricata-update
+      wrote it (a rule it disabled is a line commented out), as a JSON
+      object: "ruleset" (its path, when and its size), "total",
+      "enabled", "matched" (of the words), "changed" (how many rules
+      the admin set by sid: on, off or drop, kept across updates),
+      "offset", "limit" and "rules", each with
+      sid, gid, rev, action, msg, classtype, severity, enabled, state
+      and the rule's text.  Words: q=text (in the rule, any case),
+      sid=N, only=enabled, disabled or changed (those the admin set),
+      classtype=name, offset=N and limit=N (100 unless given, 500 at
+      most).  The host's only; nothing is changed.
     do:
       request:
         attributes:

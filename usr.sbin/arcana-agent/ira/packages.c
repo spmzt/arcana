@@ -13,7 +13,7 @@
  * upgrade's output reaches the console.
  */
 
-#include <sys/types.h>
+#include <sys/param.h>
 
 #include <ctype.h>
 #include <err.h>
@@ -30,6 +30,8 @@ static void	parse_versions(struct work *, const struct execres *,
 		    struct arc_package **, size_t *);
 static bool	valid_pkg(const char *);
 static const char *check_jail(struct work *, const char *);
+static const char *repo_error(struct work *, const struct execres *,
+		    const char *);
 
 /*
  * "pkg [-4 | -6] [-o IGNORE_OSVERSION=yes] [-j jail] args...": with
@@ -60,6 +62,48 @@ pkg_run(struct work *w, const char *jail, bool anyos, uint8_t ip,
 		argv[k++] = (char *)(uintptr_t)args[i];
 	argv[k] = NULL;
 	return (run_exec(w, argv, res));
+}
+
+/*
+ * What pkg said of repositories it could not update or open, its lines
+ * of "pkg:" joined, or NULL when it said none: pkg upgrade and install
+ * exit 0 then, with nothing to do, as if every package were up to date.
+ * A repository of packages for a newer FreeBSD (pkg's "wrong OS
+ * version") is said to need IGNORE_OSVERSION, for the console to ask
+ * whether to go on past it.
+ */
+static const char *
+repo_error(struct work *w, const struct execres *res, const char *prog)
+{
+	const char	*text[] = { res->err, res->out };
+	char		*copy, *it, *line, *why;
+	bool		 failed;
+	size_t		 i;
+
+	failed = false;
+	why = NULL;
+	for (i = 0; i < nitems(text); i++) {
+		if (text[i] == NULL)
+			continue;
+		if (strstr(text[i], "Error updating repositories") != NULL ||
+		    strstr(text[i], "cannot be opened") != NULL)
+			failed = true;
+		copy = wstrdup(w, text[i]);
+		for (it = copy; (line = strsep(&it, "\n")) != NULL;) {
+			if (strncmp(line, "pkg: ", 5) != 0)
+				continue;
+			why = why == NULL ? wstrdup(w, line + 5) :
+			    wfmt(w, "%s; %s", why, line + 5);
+		}
+	}
+	if (!failed)
+		return (NULL);
+	if (why != NULL && strstr(why, "wrong OS version") != NULL)
+		return (wtext(w, wfmt(w, "%s: a repository has packages for a "
+		    "newer FreeBSD than this one, refused unless "
+		    "IGNORE_OSVERSION=yes: %s", prog, why)));
+	return (wtext(w, wfmt(w, "%s: the repositories could not be read%s%s",
+	    prog, why != NULL ? ": " : "", why != NULL ? why : "")));
 }
 
 /*
@@ -402,6 +446,8 @@ do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
 	    &res) != 0 &&
 	    !(rq->dry_run && res.status == 1)) {
 		rsp->error = wtext(w, exec_error(w, &res, "pkg upgrade"));
+	} else if ((e = repo_error(w, &res, "pkg upgrade")) != NULL) {
+		rsp->error = e;
 	} else {
 		rsp->ok = true;
 		rsp->has_upgraded = true;
@@ -456,6 +502,10 @@ do_pkg_install(struct work *w, const struct arc_job_spec *sp,
 	if (pkg_run(w, sp->jail, sp->force, sp->has_pkg_ip ? sp->pkg_ip : 0,
 	    args, n, &res) != 0) {
 		*errp = wtext(w, exec_error(w, &res, "pkg install"));
+		return (-1);
+	}
+	if ((e = repo_error(w, &res, "pkg install")) != NULL) {
+		*errp = e;
 		return (-1);
 	}
 	return (0);

@@ -14,7 +14,8 @@ it, with pictures:
 | Pools, datasets, snapshots, disks, mounts, health | [Storage](https://spmzt.github.io/arcana-docs/sections/storage.html) |
 | Kernel modules, sysctl, processes | [Kernel, sysctl and processes](https://spmzt.github.io/arcana-docs/sections/kernel.html) |
 | The log, dmesg and events | [Log and events](https://spmzt.github.io/arcana-docs/sections/log.html) |
-| WireGuard, IPsec, BIRD | [The plugins](https://spmzt.github.io/arcana-docs/sections/plugins.html) |
+| WireGuard | [Network › WireGuard](https://spmzt.github.io/arcana-docs/sections/network.html#wireguard) |
+| IPsec, BIRD | [The plugins](https://spmzt.github.io/arcana-docs/sections/plugins.html) |
 | The fleet's map, route lookup, traceroute | [The network map](https://spmzt.github.io/arcana-docs/sections/map.html) |
 | Usage over time, sampling, limits | [Utilization](https://spmzt.github.io/arcana-docs/sections/utilization.html) |
 | Workflows, their steps, triggers and runs | [Workflows](https://spmzt.github.io/arcana-docs/sections/workflows.html) |

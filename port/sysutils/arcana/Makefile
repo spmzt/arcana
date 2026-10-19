@@ -53,4 +53,11 @@ do-test:
 	cd ${WRKSRC} && ${SETENV} ${MAKE_ENV:NWITHOUT_TESTS=*} ${MAKE_CMD} \
 	    ${MAKE_ARGS} check
 
-.include <bsd.port.mk>
+.include <bsd.port.pre.mk>
+
+# FreeBSD 15.1 and later alone (15-STABLE, 16-CURRENT among them).
+.if ${OSVERSION} < 1501000
+IGNORE=		needs FreeBSD 15.1 or later
+.endif
+
+.include <bsd.port.post.mk>

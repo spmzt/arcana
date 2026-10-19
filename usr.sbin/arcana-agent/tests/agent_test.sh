@@ -221,14 +221,13 @@ pimd-3.1.0 3.2.0
 #!/bin/sh
 echo "fake-pkg $*" >&2
 case "$1" in -4|-6) shift ;; esac
-[ "$1" = -o ] && shift 2
+anyos=no; [ "$1" = -o ] && { anyos=yes; shift 2; }
 [ "$1" = -j ] && shift 2
 case "$1" in
 -vv)	printf 'Version                 : 2.3.1\nRepositories:\n  FreeBSD-ports: { \n    url             : "pkg+https://pkg.FreeBSD.org/FreeBSD:16:amd64/latest",\n    enabled         : yes,\n  }\n  builder: { \n    url             : "file:///usr/local/poudriere/data/packages/lab",\n    enabled         : no,\n  }\n' ;;
 update)	exit 0 ;;
 query)	printf 'aria2\t1.37.0_1\t0\t5242880\twww/aria2\tDownload utility\npimd\t3.1.0\t1\t102400\tnet/pimd\tPIM-SM daemon\n' ;;
 clean)	echo "$*" >> clean.log ;;
-install) echo "$*" >> install.log ;;
 version)
 	[ -s pending ] || exit 1
 	# pkg 2 says how each repository is first.
@@ -237,7 +236,17 @@ version)
 		printf '%-30s <   needs updating (remote has %s)
 ' "$nv" "$remote"
 	done < pending ;;
-upgrade)
+upgrade|install)
+	# A repository for a newer FreeBSD: refused but past OSVERSION,
+	# and pkg exits 0 still.
+	if [ -e newer -a $anyos = no ]; then
+		echo 'Error updating repositories!'
+		echo 'pkg: repository FreeBSD-base contains packages for wrong OS version: FreeBSD:16:amd64' >&2
+		echo "pkg: Repository FreeBSD-ports cannot be opened. 'pkg update' required" >&2
+		echo 'Your packages are up to date.'
+		exit 0
+	fi
+	[ "$1" = install ] && { echo "$*" >> install.log; exit 0; }
 	shift
 	[ "$1" = -r ] && { echo "upgrade from $2" >> repo.log; shift 2; }
 	dry=no; [ "$1" = -n ] && dry=yes; shift
@@ -792,6 +801,15 @@ packages_body()
 	atf_check -o match:'done +pkg install aria2 from builder$' \
 	    "$JGC" -c "$SOCK" pkg-install -r builder aria2
 	atf_check -o match:'^install -r builder -y aria2$' cat install.log
+	# A repository for a newer FreeBSD: no success, though pkg exits 0,
+	# and IGNORE_OSVERSION named for the console to ask; past it, done.
+	touch newer
+	atf_check -s exit:1 -o ignore -e match:'pkg upgrade: a repository has packages for a newer FreeBSD than this one, refused unless IGNORE_OSVERSION=yes: repository FreeBSD-base contains packages for wrong OS version: FreeBSD:16:amd64; Repository FreeBSD-ports cannot be opened' \
+	    "$JGC" -c "$SOCK" pkg-upgrade -n
+	atf_check -s exit:1 -o match:'failed +pkg install aria2' \
+	    "$JGC" -c "$SOCK" pkg-install aria2
+	atf_check -o match:'Upgraded: 0' "$JGC" -c "$SOCK" pkg-upgrade -O
+	rm newer
 	# The cache cleaned, as a job; all of it with -a.
 	atf_check -o match:'done +pkg clean$' "$JGC" -c "$SOCK" pkg-clean
 	atf_check -o match:'done +pkg clean -a$' "$JGC" -c "$SOCK" pkg-clean -a
@@ -1771,7 +1789,8 @@ EOS
 	atf_check -o match:'fake-birdc disable bgp_edge' \
 	    "$JGC" -c "$SOCK" bird disable bgp_edge
 	# The host says which plugins it has: those whose program is there.
-	atf_check -o match:'Plugins: bird wireguard' "$JGC" -c "$SOCK" hello
+	# wg(8) is the base system's, not a plugin.
+	atf_check -o match:'Plugins: bird( |$)' -o not-match:'Plugins:.*wireguard' "$JGC" -c "$SOCK" hello
 	atf_check -o match:'fake-birdc configure' -o match:'Reconfigured' \
 	    "$JGC" -c "$SOCK" bird configure
 	# birdc ends well whatever was answered: what it said counts.
@@ -2986,15 +3005,47 @@ exit 0; }
 d=\$(sed -n 's/^default-log-dir: //p' "\$2")
 printf '%s\\n' '{"timestamp":"2026-10-12T18:00:00.000000+0000","event_type":"flow","src_ip":"10.30.0.2"}' \\
     '{"timestamp":"2026-10-12T18:00:01.000000+0000","in_iface":"wg5","event_type":"alert","src_ip":"10.30.0.2","src_port":40000,"dest_ip":"10.20.0.1","dest_port":80,"proto":"TCP","alert":{"action":"allowed","signature_id":1000001,"rev":1,"signature":"ARCANA test \\"quoted\\"","category":"","severity":2}}' >> "\$d/eve.json"
+# As Suricata does: a pid file there refuses the start, said in its log;
+# FAILSTART in the configuration fails it.
+[ -f "\$4" ] && { echo "[1 - Main] 2026-10-19 Error: pidfile: pid file '\$4' exists but appears stale" >> "\$d/suricata.log"; exit 1; }
+grep -q FAILSTART "\$2" && { echo "[1 - Main] 2026-10-19 Error: suricata: this start fails" >> "\$d/suricata.log"; exit 1; }
 sh -c 'trap "echo usr2 >> $(pwd)/suricata.log" USR2; while :; do sleep 1; done' & echo \$! > "\$4"
 exit 0
 EOS
-	# suricata-update: the ruleset written where -o says.
-	cat > tools/suricata-update <<EOS
+	# suricata-update: the ruleset written where -o says, a rule
+	# disabled as it ships; the sids of --enable-conf, --disable-conf
+	# and --drop-conf turned on, off and to drop, as it does.
+	cat > tools/suricata-update <<'EOS'
 #!/bin/sh
-echo "suricata-update \$*" >> $(pwd)/suricata-update.log
-mkdir -p "\$6" && echo 'alert tcp any any -> any 22 (msg:"ET"; sid:2000001;)' > "\$6/suricata.rules"
+echo "suricata-update $*" >> @LOG@
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-o) out=$2; shift ;;
+	--enable-conf) en=$2; shift ;;
+	--disable-conf) dis=$2; shift ;;
+	--drop-conf) drop=$2; shift ;;
+	esac
+	shift
+done
+mkdir -p "$out"
+f=$out/suricata.rules
+{
+	echo '# Emerging Threats Open'
+	echo 'alert tcp any any -> any 22 (msg:"ET"; sid:2000001;)'
+	echo '# alert http any any -> any any (msg:"ET INFO curl \"UA\""; flow:established; classtype:policy-violation; sid:2000005; rev:2; metadata:signature_severity Minor, created_at 2020_01_01;)'
+	echo 'alert dns any any -> any any (msg:"ET DNS query of a bad name"; classtype:bad-unknown; sid:2000006; rev:4;)'
+} > "$f"
+for s in $(grep -v '^#' "${en:-/dev/null}"); do
+	sed -i '' "/sid:$s;/s/^# //" "$f"
+done
+for s in $(grep -v '^#' "${dis:-/dev/null}"); do
+	sed -i '' "/sid:$s;/s/^alert/# alert/" "$f"
+done
+for s in $(grep -v '^#' "${drop:-/dev/null}"); do
+	sed -i '' "/sid:$s;/s/alert /drop /" "$f"
+done
 EOS
+	sed -i '' "s|@LOG@|$(pwd)/suricata-update.log|" tools/suricata-update
 	chmod +x tools/squid tools/security_file_certgen tools/c-icap tools/suricata tools/suricata-update
 	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
@@ -3229,8 +3280,39 @@ EOS
 	# Fetched by the suricata job: the instance applied again takes it,
 	# and is told to read its rules again; the read says when.
 	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata update
-	atf_check -o match:"^suricata-update --no-test --no-reload --suricata .*/tools/suricata -o $(pwd)/rules\$" \
+	atf_check -o match:"^suricata-update --no-test --no-reload --suricata .*/tools/suricata -o $(pwd)/rules --enable-conf .*/suricata-enable.conf --disable-conf .*/suricata-disable.conf --drop-conf .*/suricata-drop.conf\$" \
 	    cat suricata-update.log
+	# The ruleset's rules, a page at a time: one disabled as it ships
+	# is a line commented out; a comment is no rule.
+	atf_check -o match:'"total":3,"enabled":2,"matched":3' \
+	    -o match:'\{"sid":2000005,"gid":1,"rev":2,"action":"alert","msg":"ET INFO curl \\"UA\\"","classtype":"policy-violation","severity":"Minor","enabled":false,"rule":"alert http' \
+	    "$JGC" -c "$SOCK" suricata rules
+	atf_check -o match:'"matched":1,.*"sid":2000006,' -o not-match:'"sid":2000001,' \
+	    "$JGC" -c "$SOCK" suricata rules q=bad\ NAME
+	atf_check -o match:'"matched":1,.*"sid":2000005,' "$JGC" -c "$SOCK" suricata rules only=disabled
+	atf_check -o match:'"matched":1,.*"sid":2000005,' "$JGC" -c "$SOCK" suricata rules classtype=policy-violation
+	atf_check -o match:'"matched":3,"offset":1,"limit":1,"rules":\[\{"sid":2000005,[^]]*\]\}' \
+	    "$JGC" -c "$SOCK" suricata rules offset=1 limit=1
+	atf_check -s exit:1 -e match:'only is enabled, disabled or changed' "$JGC" -c "$SOCK" suricata rules only=x
+	atf_check -s exit:1 -e match:'searched by q=' "$JGC" -c "$SOCK" suricata rules color=red
+	# Set by sid, as jobs: kept, given to suricata-update from what was
+	# fetched (--offline), and holding when the ruleset is fetched again.
+	atf_check -s exit:1 -e match:'sid is a number' "$JGC" -c "$SOCK" suricata rule on=abc
+	atf_check -s exit:1 -e match:'on=, off=, drop= or default=' "$JGC" -c "$SOCK" suricata rule up=1
+	atf_check -o match:'done +suricata rules set: on=2000005 \.\.\.' \
+	    "$JGC" -c "$SOCK" suricata rule on=2000005 off=2000001 drop=2000006
+	atf_check -o match:' --offline$' tail -1 suricata-update.log
+	atf_check -o match:'"total":3,"enabled":2,"matched":3' \
+	    -o match:'"sid":2000001,[^}]*"enabled":false,"state":"off"' \
+	    -o match:'"sid":2000005,[^}]*"enabled":true,"state":"on"' \
+	    -o match:'"sid":2000006,[^}]*"action":"drop",[^}]*"enabled":true,"state":"drop"' \
+	    "$JGC" -c "$SOCK" suricata rules
+	atf_check -o match:'"changed":3,.*"matched":3' "$JGC" -c "$SOCK" suricata rules only=changed
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata update
+	atf_check -o not-match:'offline' tail -1 suricata-update.log
+	atf_check -o match:'"sid":2000001,[^}]*"enabled":false,"state":"off"' "$JGC" -c "$SOCK" suricata rules sid=2000001
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata rule default=2000001,2000005,2000006
+	atf_check -o match:'"changed":0,.*"total":3,"enabled":2' "$JGC" -c "$SOCK" suricata rules
 	atf_check -o match:"^  - $(pwd)/rules/suricata.rules\$" cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	atf_check -o match:'"ids_ruleset":\{"path":"[^"]*/rules/suricata.rules","at":[0-9]+,"size":[0-9]+\}' \
 	    "$JGC" -c "$SOCK" sdwan
@@ -3248,6 +3330,52 @@ EOS
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$rs3"
 	atf_check -o not-match:'interface: any' -o not-match:'interface: lo[0-9]' \
 	    -o match:'^  - interface: [a-z]+[0-9]+$' cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+	# A pid file left by a start that failed or a crash: taken away, the
+	# instance started; and why a start fails is what that start
+	# logged, not an older error of the log.
+	kill "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
+	sleep 1
+	echo 99999 > "$(dirname "$f")/sdwan-ids-sw1.pid"
+	rs4=$(echo "$rs3" | sed 's/sid:1000001;/sid:1000004;/')
+	atf_check -o match:'suricata sw1 on [0-9]+ interfaces?, detects: started' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs4"
+	atf_check -s exit:0 kill -0 "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
+	echo "[1 - Main] 2026-10-18 Error: an old one" >> "$(dirname "$f")/sdwan-ids-sw1.d/suricata.log"
+	rs5=$(echo "$rs3" | sed 's/rule-files:/# FAILSTART\\nrule-files:/')
+	# Its thresholds and suppressions: its own file, where the
+	# configuration says; changed, it starts again; not a string,
+	# refused.
+	rs7=$(echo "$rs4" | sed 's|rule-files:|threshold-file: @THRESHOLD@\\nrule-files:|; s|"rules":|"thresholds":"suppress gen_id 1, sig_id 1000004, track by_src, ip 10.0.0.9\\n","rules":|')
+	atf_check -o match:'suricata sw1 on [0-9]+ interfaces?, detects: started' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs7"
+	atf_check -o inline:'suppress gen_id 1, sig_id 1000004, track by_src, ip 10.0.0.9\n' \
+	    cat "$(dirname "$f")/sdwan-ids-sw1.threshold"
+	atf_check -o match:"^threshold-file: /.*/sdwan-ids-sw1.threshold\$" \
+	    cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+	atf_check -o match:'detects: as it was' "$JGC" -t -c "$SOCK" sdwan ids "$rs7"
+	atf_check -o match:'detects: started' "$JGC" -t -c "$SOCK" sdwan ids \
+	    "$(echo "$rs7" | sed 's/ip 10.0.0.9/ip 10.0.0.8/')"
+	atf_check -s exit:1 -e match:'an instance is a name' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    "$(echo "$rs4" | sed 's|"rules":|"thresholds":5,"rules":|')"
+	# Stopped by the admin: not run, its files and its place kept;
+	# started again as it was.
+	atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs4"
+	pid=$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")
+	rs6=$(echo "$rs4" | sed 's/"name":"sw1",/"name":"sw1","stopped":true,/')
+	atf_check -o match:'suricata sw1 stopped, kept' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs6"
+	kill -0 "$pid" 2>/dev/null && atf_fail "a stopped suricata still runs"
+	test -f "$(dirname "$f")/sdwan-ids-sw1.yaml" || atf_fail "a stopped suricata lost its file"
+	atf_check -o match:'"name":"sw1","interfaces":\[[^]]*\],"mode":"detect","running":false,"stopped":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"stopped":true' cat "$(dirname "$f")/sdwan-ids.json"
+	atf_check -o match:'suricata sw1 on [0-9]+ interfaces?, detects: started' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs4"
+	atf_check -s exit:0 kill -0 "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
+	atf_check -s exit:1 -e match:'stopped is true or false' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan ids "$(echo "$rs4" | sed 's/"name":"sw1",/"name":"sw1","stopped":1,/')"
+	atf_check -s exit:1 -e match:'did not start: Error: suricata: this start fails$' \
+	    -e not-match:'an old one' -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs5"
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
 }
 sdwan_cleanup()
@@ -5326,194 +5454,6 @@ EOS
 	    "$JGC" -c "$SOCK" carp set lo0 vhid=3 state=init
 }
 carp_cleanup()
-{
-	stop_daemon
-}
-
-atf_test_case snort cleanup
-snort_head()
-{
-	atf_set "descr" "Snort, a plugin: read as it is; its rules fetched" \
-	    "and taken in, turned on and off across updates, local.rules and" \
-	    "snort.lua written, each checked by snort -T first; its rc.conf" \
-	    "settings and HOME_NET; its alerts; a running one reloaded"
-}
-snort_body()
-{
-	local d="$(pwd)" sleeper
-
-	mkdir -p se sl src/snort3-community-rules
-	printf "HOME_NET = 'any'\nEXTERNAL_NET = 'any'\ninclude 'snort_defaults.lua'\n" \
-	    > se/snort.lua
-	# Rules as Talos ships them: one on, one off as shipped, a msg
-	# with a ; in it, and a file that is not rules.
-	cat > src/snort3-community-rules/snort3-community.rules <<'EOR'
-# Copyright 2001-2026 Cisco Systems, Inc. and/or its affiliates
-alert tcp $HOME_NET 2589 -> $EXTERNAL_NET any ( msg:"MALWARE-BACKDOOR - Dagger_1.4.0"; flow:to_client,established; classtype:misc-activity; sid:105; rev:14; )
-# alert icmp any any -> any any ( msg:"PROTOCOL-ICMP lab; with a semicolon"; itype:8; classtype:misc-activity; sid:106; rev:3; )
-alert udp any any -> any 53 ( msg:"lab dns"; gid:1; sid:107; rev:1; )
-EOR
-	printf 'just a license\n' > src/snort3-community-rules/LICENSE
-	tar -czf rules.tar.gz -C src snort3-community-rules
-	# snort: -V; -T refuses snort.lua with "broken" in it and a rule
-	# with an option it does not know, as the real one says it.
-	cat > fake-snort <<EOS
-#!/bin/sh
-echo "snort \$*" >> $d/snort.log
-[ "\$1" = -V ] && { printf '\n   ,,_     -*> Snort++ <*-\n  o"  )~   Version 3.12.2.0\n'; exit 0; }
-lua=; top=
-while [ \$# -gt 0 ]; do case \$1 in -c) lua=\$2; shift ;; -R) top=\$2; shift ;; esac; shift; done
-grep -q broken "\$lua" && { echo "ERROR: \$lua:4 broken: not Lua"; echo "FATAL: see prior 1 errors (0 warnings)"; exit 1; }
-if [ -n "\$top" ]; then
-	for f in \$(sed -n 's/^include //p' "\$top"); do
-		if grep -q '^[^#].*nosuchopt' "\$f"; then
-			echo "ERROR: \$f:1 unknown rule keyword: nosuchopt."
-			echo "FATAL: see prior 1 errors (0 warnings)"
-			exit 1
-		fi
-	done
-fi
-echo "Snort successfully validated the configuration (with 0 warnings)."
-EOS
-	chmod +x fake-snort
-	DAEMON_ARGS="--snort $d/no-snort --snort-etc $d/se --snort-log $d/sl"
-	start_daemon
-	# Not installed: said, and nothing done; no rc.d script written.
-	atf_check -o match:'"installed":false' "$JGC" -c "$SOCK" snort
-	[ ! -e local/rc.d/arcana_snort ] || atf_fail "a script without Snort"
-	atf_check -s exit:1 -o match:'failed +snort update: .*pkg install snort3' \
-	    -e ignore "$JGC" -c "$SOCK" snort update
-	stop_daemon
-	DAEMON_ARGS="--snort $d/fake-snort --snort-etc $d/se --snort-log $d/sl"
-	start_daemon
-	atf_check -o match:'"installed":true' -o match:'"version":"3.12.2.0"' \
-	    -o match:'"running":false' -o match:'"home_net":"any"' \
-	    -o match:'"rc":\{"enable":false,"mode":"ids","interfaces":"","divert_port":"8000"\}' \
-	    -o match:'no rules taken in yet' \
-	    -o match:'"default_url":"https://www.snort.org/downloads/community/snort3-community-rules.tar.gz"' \
-	    "$JGC" -c "$SOCK" snort
-	# Snort there and read, the agent's own rc.d script is there too,
-	# as its build has it, without a job.
-	atf_check -o match:'^name="arcana_snort"' cat local/rc.d/arcana_snort
-	[ -x local/rc.d/arcana_snort ] || atf_fail "arcana_snort not executable"
-	# Taken away, the next read puts it back.
-	rm local/rc.d/arcana_snort
-	atf_check -o ignore "$JGC" -c "$SOCK" snort
-	atf_check -o match:'^name="arcana_snort"' cat local/rc.d/arcana_snort
-	# Words it does not take, and a jail's: refused before they run.
-	atf_check -s exit:1 -e match:'each gid:sid' -o ignore \
-	    "$JGC" -c "$SOCK" snort rule off=105
-	atf_check -s exit:1 -e match:'mode is ids or ips' -o ignore \
-	    "$JGC" -c "$SOCK" snort set mode=both
-	atf_check -s exit:1 -e match:"Snort is the host's" -o ignore \
-	    "$JGC" -c "$SOCK" -j web snort update
-	atf_check -s exit:1 -e match:'http, https or file' -o ignore \
-	    "$JGC" -c "$SOCK" snort update url=ftp://example.org/x.tar.gz
-	# Fetched, taken in: the rules file of the archive, not its license.
-	atf_check -o match:'done +snort update url=file://' \
-	    "$JGC" -c "$SOCK" snort update "url=file://$d/rules.tar.gz"
-	atf_check -o match:"\"url\":\"file://$d/rules.tar.gz\"" \
-	    -o match:"\"sha256\":\"$(sha256 -q rules.tar.gz)\"" \
-	    -o match:'"files":\[\{"name":"snort3-community.rules","rules":3,"on":2\}\],"rules":3,"on":2' \
-	    -o not-match:'no rules taken in yet' "$JGC" -c "$SOCK" snort
-	atf_check -o match:"^include $d/se/arcana/active/snort3-community.rules\$" \
-	    cat se/arcana/arcana.rules
-	atf_check -o match:"-R $d/se/arcana/arcana.rules.check -T" cat snort.log
-	# Every rule, with what a ; inside quotes does not cut.
-	atf_check -o match:'"gid":1,"sid":106,"rev":3,"msg":"PROTOCOL-ICMP lab; with a semicolon","action":"alert","class":"misc-activity","file":"snort3-community.rules","on":false,"default":false' \
-	    -o match:'"sid":105,"rev":14,.*"on":true,"default":true' \
-	    "$JGC" -c "$SOCK" snort rules
-	# A Snort running: told to reload by each change (a sleep, here,
-	# which SIGHUP ends).
-	sleep 60 &
-	sleeper=$!
-	echo $sleeper > sl/snort.pid
-	atf_check -o match:'"running":true' -o match:"\"pid\":$sleeper" \
-	    "$JGC" -c "$SOCK" snort
-	# 105 off, 106 on: the active file says so, the downloaded one not.
-	atf_check -o match:'done +snort rule off=1:105' \
-	    "$JGC" -c "$SOCK" snort rule off=1:105 on=1:106
-	atf_check -o match:'^# alert tcp .*sid:105;' \
-	    -o match:'^alert icmp any .*sid:106;' \
-	    cat se/arcana/active/snort3-community.rules
-	atf_check -o match:'^alert tcp .*sid:105;' \
-	    cat se/arcana/rules/snort3-community.rules
-	atf_check -o inline:'1:105 off\n1:106 on\n' cat se/arcana/rule-state
-	for i in $(seq 1 50); do kill -0 $sleeper 2>/dev/null || break; sleep 0.1; done
-	atf_check -s not-exit:0 -e ignore kill -0 $sleeper
-	# Updated again, from where it last came: the choices hold.
-	atf_check -o match:'done' "$JGC" -c "$SOCK" snort update
-	atf_check -o match:'"sid":105,[^}]*"on":false,"default":true' \
-	    -o match:'"sid":106,[^}]*"on":true,"default":false' \
-	    "$JGC" -c "$SOCK" snort rules
-	atf_check -o match:'done' "$JGC" -c "$SOCK" snort rule default=1:106
-	atf_check -o inline:'1:105 off\n' cat se/arcana/rule-state
-	# local.rules: one Snort refuses is not written; one it takes is,
-	# and included.
-	printf 'alert icmp any any -> any any (msg:"bad"; nosuchopt:1; sid:1000009;)\n' > bad.rules
-	atf_check -s exit:1 -o match:'snort does not take it: ERROR: .*unknown rule keyword: nosuchopt' \
-	    -e ignore "$JGC" -c "$SOCK" snort conf local.rules bad.rules
-	atf_check -s exit:1 test -e se/local.rules
-	printf 'alert icmp any any -> any any (msg:"lab probe seen"; sid:1000001; rev:2;)\n' > good.rules
-	atf_check -o match:'done' "$JGC" -c "$SOCK" snort conf local.rules good.rules
-	atf_check -o match:"^include $d/se/local.rules\$" cat se/arcana/arcana.rules
-	# Once included, a bad one is still checked, and refused.
-	atf_check -s exit:1 -o match:'unknown rule keyword: nosuchopt' -e ignore \
-	    "$JGC" -c "$SOCK" snort conf local.rules bad.rules
-	atf_check -o match:'lab probe seen' -o not-match:nosuchopt cat se/local.rules
-	atf_check -o match:'"sid":1000001,"rev":2,"msg":"lab probe seen",[^}]*"file":"local.rules","on":true' \
-	    -o match:'"local_rules":"alert icmp' "$JGC" -c "$SOCK" snort rules
-	# snort.lua: refused as Snort refuses it, kept as it was.
-	printf "HOME_NET = 'any'\nbroken = \n" > bad.lua
-	atf_check -s exit:1 -o match:'ERROR: .*broken: not Lua' -e ignore \
-	    "$JGC" -c "$SOCK" snort conf snort.lua bad.lua
-	atf_check -o match:"^include 'snort_defaults.lua'" cat se/snort.lua
-	# Its settings: rc.conf's, and HOME_NET in snort.lua.
-	atf_check -o match:'done' "$JGC" -c "$SOCK" snort set enable=yes \
-	    mode=ids interface=lo0 interface=nosuch0 \
-	    'home_net=[192.0.2.0/24,2001:db8::/32]'
-	atf_check -o match:'^arcana_snort_enable="YES"$' \
-	    -o match:'^arcana_snort_mode="ids"$' \
-	    -o match:'^arcana_snort_interfaces="lo0 nosuch0"$' cat rc.conf
-	atf_check -o match:"^HOME_NET = '\[192.0.2.0/24,2001:db8::/32\]'\$" \
-	    -o match:"^EXTERNAL_NET = 'any'" cat se/snort.lua
-	atf_check -o match:'"home_net":"\[192.0.2.0/24,2001:db8::/32\]"' \
-	    -o match:'no interface nosuch0 here' \
-	    -o match:'enabled, not running' "$JGC" -c "$SOCK" snort
-	# Every interface: any, alone, kept as it is, said of no interface
-	# missing (the rc.d script takes what is up when Snort starts).
-	atf_check -o match:'done' "$JGC" -c "$SOCK" snort set interface=any
-	atf_check -o match:'^arcana_snort_interfaces="any"$' cat rc.conf
-	# The rc.d script's: Snort 3 takes one -i an interface, a packet
-	# thread each (-i "a b" is one interface of that name); any is what
-	# is up but the loopback and the like.
-	sed -e 's|^\. /etc/rc.subr$|load_rc_config() { :; }; run_rc_command() { echo "$command_args"; }|' \
-	    local/rc.d/arcana_snort > snort-rc.sh
-	atf_check -o match:' -i lo0 -i nosuch0 -z 2$' \
-	    env arcana_snort_interfaces="lo0 nosuch0" sh snort-rc.sh start
-	atf_check -o not-match:' -i lo[0-9]' -o match:' -i [a-z]+[0-9]+.* -z [0-9]+$' \
-	    env arcana_snort_interfaces=any sh snort-rc.sh start
-	atf_check -o not-match:'no interface' "$JGC" -c "$SOCK" snort
-	atf_check -s exit:1 -e match:'any stands alone' -o ignore \
-	    "$JGC" -c "$SOCK" snort set interface=any interface=lo0
-	atf_check -s exit:1 -e match:'home_net is any' -o ignore \
-	    "$JGC" -c "$SOCK" snort set "home_net=10.0.0.0/8'; os.exit()"
-	# The oinkcode in a registered rules' address (the console's secret)
-	# is written nowhere the host keeps: not the title, not the error.
-	atf_check -s exit:1 -o save:oink.out -e ignore "$JGC" -c "$SOCK" \
-	    snort update 'url=https://127.0.0.1:9/snortrules-snapshot-31200.tar.gz?oinkcode=SECRET123abc'
-	atf_check -o not-match:'SECRET123abc' -o match:'oinkcode=\.\.\.' cat oink.out
-	atf_check -o not-match:'SECRET123abc' -o match:'snort update url=https://127.0.0.1:9/snortrules-snapshot-31200.tar.gz\?oinkcode=\.\.\.' \
-	    "$JGC" -c "$SOCK" jobs
-	# Its alerts, the newest first.
-	printf '%s\n%s\n' \
-	    '{ "timestamp" : "10/17-12:00:01.000000", "proto" : "ICMP", "src_addr" : "192.0.2.1", "dst_addr" : "198.51.100.7", "gid" : 1, "sid" : 1000001, "rev" : 2, "msg" : "lab probe seen", "action" : "allow", "class" : "Misc activity", "priority" : 3 }' \
-	    '{ "timestamp" : "10/17-12:00:02.000000", "proto" : "TCP", "src_addr" : "192.0.2.9", "src_port" : 40000, "dst_addr" : "198.51.100.7", "dst_port" : 23, "gid" : 1, "sid" : 105, "rev" : 14, "msg" : "second", "action" : "allow", "class" : "Misc activity", "priority" : 3 }' \
-	    > sl/alert_json.txt
-	atf_check -o match:'"alerts":\[\{"timestamp":"10/17-12:00:02.000000",.*"msg":"second".*\},\{"timestamp":"10/17-12:00:01.000000",.*"msg":"lab probe seen"' \
-	    "$JGC" -c "$SOCK" snort
-}
-snort_cleanup()
 {
 	stop_daemon
 }
@@ -8136,7 +8076,7 @@ cmd=\$1; shift
 case "\$cmd" in
 jail|ports)
 	verb=\$1; shift
-	opts=yj:p:v:a:m:B:U:M:; [ \$cmd = jail ] && opts=yj:v:a:m:K:bB
+	opts=yj:p:v:a:m:B:U:M:; [ \$cmd = jail ] && opts=yj:v:a:m:K:bBt:
 	while getopts \$opts o; do
 		case \$o in j|p) n=\$OPTARG;; v) v=\$OPTARG;; a) a=\$OPTARG;; m) m=\$OPTARG;; B) br=\$OPTARG;; esac
 	done
@@ -8389,6 +8329,22 @@ EOF
 	    method=git+https kernel= pkgbase-set=yes
 	atf_check -o match:'"argv":\["[^"]*fake-poudriere","jail","-c","-j","git15","-v","15.0-STABLE","-m","git\+https","-K","","-B"\]' \
 	    "$JGC" -c "$SOCK" poudriere
+	# Updated: to a version (-t), with a kernel (-K), its source built
+	# (-b) where it was made from src= or a checkout; its method is the
+	# one it was made with.
+	for i in $(seq 1 50); do
+		[ -f pe/poudriere.d/jails/src15/method ] && break
+		sleep 0.1
+	done
+	atf_check -o match:'done +poudriere jail-update src15' \
+	    "$JGC" -c "$SOCK" poudriere jail-update name=src15 version=15-STABLE \
+	    kernel=GENERIC build=yes
+	atf_check -o match:'"argv":\["[^"]*fake-poudriere","jail","-u","-j","src15","-t","15-STABLE","-K","GENERIC","-b"\]' \
+	    "$JGC" -c "$SOCK" poudriere
+	atf_check -s exit:1 -o match:'made by pkgbase: build is for one made from src=' \
+	    -e ignore "$JGC" -c "$SOCK" poudriere jail-update name=FreeBSD:16:amd64 build=yes
+	atf_check -s exit:1 -e match:'updated by the method it was made with' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-update name=src15 method=http
 	atf_check -s exit:1 -e match:'key=value' -o ignore \
 	    "$JGC" -c "$SOCK" poudriere bulk net/bird3
 	atf_check -s exit:1 -e match:"the host's" -o ignore \
@@ -8522,7 +8478,6 @@ atf_init_test_cases()
 	atf_add_test_case carp
 	atf_add_test_case neighbours
 	atf_add_test_case multicast
-	atf_add_test_case snort
 	atf_add_test_case clamav
 	atf_add_test_case certs
 	atf_add_test_case sshd

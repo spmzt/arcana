@@ -7,7 +7,7 @@
 /*
  * Gula: the record of what the security rules logged (SASE-2, MEF 88).
  * A rule with "log logdst rtsock" tells each packet it sees on the
- * routing socket (RTM_IPFWLOG, FreeBSD 15 and later): the rule's
+ * routing socket (RTM_IPFWLOG): the rule's
  * number, its action, the packet's addresses, the interface and the
  * rule's comment, which the console makes name the service and the
  * policy.  A thread of its own reads them: each is an entry of the
@@ -199,7 +199,6 @@ action_word(uint8_t opcode)
 	}
 }
 
-#ifdef RTM_IPFWLOG
 /* The rule's log reset, so it keeps telling; once a second a rule. */
 static void
 reset_log(uint32_t rule)
@@ -343,7 +342,6 @@ reader(void *arg __unused)
 	close(fd);
 	return (NULL);
 }
-#endif
 
 /* At the start: the day's record read back, and the reader started. */
 void
@@ -390,12 +388,8 @@ record_start(void)
 			ucl_object_unref(top);
 		dirty = false;
 	}
-#ifdef RTM_IPFWLOG
 	if (pthread_create(&tid, NULL, reader, NULL) == 0)
 		(void)pthread_detach(tid);
-#else
-	(void)tid;
-#endif
 }
 
 /* The day's count, the last sequence number and the latest entries. */

@@ -2492,8 +2492,6 @@ view_needs(struct html *h, bool brief)
 		    "(an underlay with ipsec, or a policy that says encryption)" },
 		{ "bird3", "BIRD", "routing at a UNI (static, BGP, OSPF), BFD, "
 		    "a control plane, a WAN link routed on its underlay" },
-		{ "wireguard-tools", "wg(8)", "a WireGuard tunnel or a remote "
-		    "end point; FreeBSD 15 and later have wg in the base system" },
 		{ "dnsmasq", "dnsmasq", "DHCP at a UNI" },
 		{ "squid", "Squid", "a security policy with url-filter or malware" },
 		{ "c-icap c-icap-modules clamav", "c-icap and ClamAV", "a security "

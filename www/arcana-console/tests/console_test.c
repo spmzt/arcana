@@ -2064,61 +2064,6 @@ ATF_TC_BODY(labels, tc)
 	resp_free(&r);
 }
 
-CONSOLE_TC(oinkcode, "Snort's registered rules: the oinkcode a secret of "
-    "the console's, put into the job's address by the console, refused "
-    "without it; never in the host's job title")
-ATF_TC_BODY(oinkcode, tc)
-{
-	struct authn	a;
-	struct resp	r;
-	char		cwd[MAXPATHLEN], body[400], sid[16], path[96];
-	int		i;
-
-	start(tc, 0, NULL);
-	enrol(&a);
-	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
-	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
-	    "jgd.sock\"}", cwd);
-	http("POST", "/api/servers", body, &r);
-	EXPECT(&r, 200);
-	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
-	resp_free(&r);
-	snprintf(path, sizeof(path), "/api/servers/%s/jobs", sid);
-	http("POST", path, "{\"jobs\":[{\"kind\":\"snort\",\"verb\":\"update\","
-	    "\"args\":[\"registered=yes\"]}]}", &r);
-	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "oinkcode") != NULL,
-	    "%d %s", r.status, r.body);
-	resp_free(&r);
-	/* The address and the code set: the job goes with both; the host
-	 * cannot fetch from port 9, and says so without the code. */
-	http("POST", "/api/settings", "{\"set\":{\"snort_rules_url\":\"https://"
-	    "127.0.0.1:9/snortrules-snapshot-31200.tar.gz\",\"snort_oinkcode\":"
-	    "\"SECRET123abc\"}}", &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	http("GET", "/api/settings", NULL, &r);
-	ATF_CHECK(strstr(r.body, "SECRET123abc") == NULL);
-	resp_free(&r);
-	http("POST", path, "{\"jobs\":[{\"kind\":\"snort\",\"verb\":\"update\","
-	    "\"args\":[\"registered=yes\"]}]}", &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	for (i = 0; i < 100; i++) {
-		http("GET", path, NULL, &r);
-		if (r.body != NULL && (strstr(r.body, "\"state\":\"failed\"") !=
-		    NULL || strstr(r.body, "\"state\":\"done\"") != NULL))
-			break;
-		resp_free(&r);
-		usleep(100000);
-	}
-	if (i == 100)
-		http("GET", path, NULL, &r);
-	ATF_CHECK_MSG(r.body != NULL && strstr(r.body, "SECRET123abc") == NULL
-	    && strstr(r.body, "oinkcode=...") != NULL, "%s", r.body != NULL ?
-	    r.body : "no answer");
-	resp_free(&r);
-}
-
 CONSOLE_TC(pfxlists, "The console's prefix lists: kept by name, each a "
     "description and prefixes checked as such; changed, taken away; a bad "
     "prefix or name refused")
@@ -4795,8 +4740,9 @@ ATF_TC_BODY(services, tc)
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("bird", jstr(&r, "host.plugins.0"));
-	ATF_CHECK_STREQ("wireguard", jstr(&r, "host.plugins.1"));
-	ATF_CHECK_STREQ("strongswan", jstr(&r, "host.plugins.2"));
+	ATF_CHECK_STREQ("strongswan", jstr(&r, "host.plugins.1"));
+	/* WireGuard is no plugin: wg(8) is the base system's. */
+	ATF_CHECK(strstr(r.body, "\"wireguard\"") == NULL);
 	resp_free(&r);
 
 	/* BIRD's routes, asked for in birdc's words with , between. */
@@ -7447,6 +7393,52 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	ATF_CHECK(system("grep -q 'HOME_NET: \"any\"$' sdwan-ids-sec-lan.yaml && "
 	    "grep -q 'EXTERNAL_NET: \"any\"$' sdwan-ids-sec-lan.yaml") == 0);
+	/* Its thresholds: threshold.config's lines, checked; written to a
+	 * file of its own, which its configuration names. */
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"thresholds\":\"suppress sig_id 5; rm -rf /\",\"rules\":"
+	    "\"alert tcp any any -> any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "threshold line 1 is suppress") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"thresholds\":\"# quiet\\nsuppress gen_id 1, sig_id 1000009, "
+	    "track by_src, ip 10.0.0.9\\n\",\"rules\":\"alert tcp any any -> "
+	    "any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^threshold-file: .*sdwan-ids-sec-lan."
+	    "threshold$' sdwan-ids-sec-lan.yaml && grep -qx 'suppress gen_id "
+	    "1, sig_id 1000009, track by_src, ip 10.0.0.9' "
+	    "sdwan-ids-sec-lan.threshold") == 0);
+	/* Stopped by the admin: kept in the list, told to the agent. */
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"stopped\":true,\"rules\":\"alert tcp any any -> any 23 "
+	    "(sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '\"name\":\"sec-lan\",\"interfaces\":"
+	    "\\[\"lo0\"\\],\"stopped\":true' security-ids.json") == 0);
+	/* A job's words, its args, carried to the host for ClamAV and
+	 * Suricata alike. */
+	snprintf(t2, sizeof(t2), "/api/servers/%s/jobs", sa);
+	http("POST", t2, "{\"jobs\":[{\"kind\":\"clamav\",\"verb\":"
+	    "\"mirrors\",\"args\":[\"mirror=db.example.net\"]},{\"kind\":"
+	    "\"suricata\",\"verb\":\"rule\",\"args\":[\"off=2000001\"]}]}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", t2, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "freshclam mirrors db.example.net") !=
+	    NULL && strstr(r.body, "suricata rules set: off=2000001") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	snprintf(t2, sizeof(t2), "/api/servers/%s/security", sa);
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[]}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
@@ -7662,7 +7654,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, config_bundle);
 	ATF_TP_ADD_TC(tp, templates);
 	ATF_TP_ADD_TC(tp, pfxlists);
-	ATF_TP_ADD_TC(tp, oinkcode);
 	ATF_TP_ADD_TC(tp, labels);
 	ATF_TP_ADD_TC(tp, ldap);
 	ATF_TP_ADD_TC(tp, troubleshoot);

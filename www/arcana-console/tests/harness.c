@@ -206,9 +206,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
-	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN];
+	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN], surules[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[122];
+	char	*argv[118];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -734,8 +734,6 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	snprintf(fstab, sizeof(fstab), "%s/fstab", cwd);
 	/* What the daemon has no option for: how the disks are, newfs. */
 	ATF_REQUIRE(mkdir("tools", 0755) == 0 || errno == EEXIST);
-	/* The system's own, for what Snort's rules come in. */
-	put("tools/tar", "#!/bin/sh\nexec /usr/bin/tar \"$@\"\n");
 	put("tools/rm", "#!/bin/sh\nexec /bin/rm \"$@\"\n");
 	put("tools/nvmecontrol", "#!/bin/sh\nprintf 'Critical Warning State: "
 	    "0x00\\nTemperature: 312 K\\nAvailable spare: 100\\nPercentage "
@@ -766,7 +764,35 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	 * with its pid file where it is told. */
 	put("tools/suricata", "#!/bin/sh\necho \"suricata $*\" >> squid.log\n"
 	    "[ \"$1\" = -T ] && exit 0\n"
-	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$4\"\nexit 0\n");
+	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$4\"\n"
+	    /* An alert in its eve.json, a second after it starts. */
+	    "d=$(sed -n 's/^default-log-dir: //p' \"$2\")\n"
+	    "[ -n \"$d\" ] && (sleep 1; mkdir -p \"$d\"; echo '{\"timestamp\":"
+	    "\"2026-10-19T10:00:00.000000+0000\",\"event_type\":\"alert\","
+	    "\"src_ip\":\"10.0.0.9\",\"src_port\":4444,\"dest_ip\":"
+	    "\"10.0.0.1\",\"dest_port\":23,\"proto\":\"TCP\",\"in_iface\":"
+	    "\"lo0\",\"alert\":{\"action\":\"allowed\",\"signature_id\":"
+	    "1000009,\"rev\":1,\"signature\":\"LOCAL telnet\",\"category\":"
+	    "\"\",\"severity\":2}}' >> \"$d/eve.json\") > /dev/null 2>&1 &\n"
+	    "exit 0\n");
+	/* suricata-update: a ruleset of three rules where -o says, one
+	 * disabled as it ships; the sids of --disable-conf commented out
+	 * and those of --enable-conf not, as it does. */
+	put("tools/suricata-update", "#!/bin/sh\n"
+	    "echo \"suricata-update $*\" >> suricata-update.log\n"
+	    "while [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift ;; "
+	    "--enable-conf) en=$2; shift ;; --disable-conf) dis=$2; shift ;; "
+	    "esac; shift; done\nmkdir -p \"$out\"; f=$out/suricata.rules\n"
+	    "{ echo 'alert tcp any any -> any 22 (msg:\"ET SCAN ssh\"; "
+	    "classtype:attempted-recon; sid:2000001; rev:1;)'\n"
+	    "echo '# alert http any any -> any any (msg:\"ET INFO curl\"; "
+	    "classtype:policy-violation; sid:2000005; rev:2;)'\n"
+	    "echo 'alert dns any any -> any any (msg:\"ET DNS bad name\"; "
+	    "classtype:bad-unknown; sid:2000006; rev:4;)'; } > \"$f\"\n"
+	    "for s in $(grep -v '^#' \"${en:-/dev/null}\"); do sed -i '' "
+	    "\"/sid:$s;/s/^# //\" \"$f\"; done\n"
+	    "for s in $(grep -v '^#' \"${dis:-/dev/null}\"); do sed -i '' "
+	    "\"/sid:$s;/s/^alert/# alert/\" \"$f\"; done\nexit 0\n");
 	/* poudriere(8), a plugin: a jail or a tree made where it keeps
 	 * them (jset, pset), a build that says what it builds and takes a
 	 * second, the latest build of a set whose make.conf is there. */
@@ -890,30 +916,6 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "qi 125 qri 10000 uri 3\\n\\t\\tgroup ff02::1%%em0 scopeid 0x1 mode "
 	    "exclude\\n'\n");
 	ATF_REQUIRE(chmod("fake-ifmcstat", 0755) == 0);
-	/* Snort: its version, and whatever -T is given taken; its
-	 * snort.lua, an alert, and rules to fetch by file://. */
-	put("fake-snort", "#!/bin/sh\necho \"snort $*\" >> snort.log\n"
-	    "[ \"$1\" = -V ] && { echo '  o\"  )~   Version 3.12.2.0'; "
-	    "exit 0; }\necho 'Snort successfully validated the "
-	    "configuration (with 0 warnings).'\n");
-	ATF_REQUIRE(chmod("fake-snort", 0755) == 0);
-	ATF_REQUIRE(mkdir("snort-etc", 0755) == 0 || errno == EEXIST);
-	ATF_REQUIRE(mkdir("snort-log", 0755) == 0 || errno == EEXIST);
-	put("snort-etc/snort.lua", "HOME_NET = 'any'\nEXTERNAL_NET = 'any'\n"
-	    "include 'snort_defaults.lua'\n");
-	put("snort-log/alert_json.txt", "{ \"timestamp\" : \"10/17-12:00:01."
-	    "000000\", \"proto\" : \"ICMP\", \"src_addr\" : \"192.0.2.1\", "
-	    "\"dst_addr\" : \"198.51.100.7\", \"gid\" : 1, \"sid\" : 1000001, "
-	    "\"rev\" : 2, \"msg\" : \"lab probe seen\", \"action\" : "
-	    "\"allow\", \"class\" : \"Misc activity\", \"priority\" : 3 }\n");
-	ATF_REQUIRE(mkdir("snort-src", 0755) == 0 || errno == EEXIST);
-	ATF_REQUIRE(mkdir("snort-src/lab", 0755) == 0 || errno == EEXIST);
-	put("snort-src/lab/lab.rules", "alert tcp any any -> any 23 ( msg:"
-	    "\"PROTOCOL-TELNET lab login\"; classtype:attempted-user; "
-	    "sid:105; rev:3; )\n# alert icmp any any -> any any ( msg:"
-	    "\"PROTOCOL-ICMP lab echo\"; itype:8; sid:106; rev:1; )\n");
-	ATF_REQUIRE(system("tar -czf snort-rules.tar.gz -C snort-src lab") ==
-	    0);
 	ATF_REQUIRE(chmod("fake-sysctl", 0755) == 0);
 	put("sysctl.conf", "# kept\nkern.ipc.somaxconn=1024\n");
 	/* What syslogd(8) wrote, in both of its forms. */
@@ -1176,14 +1178,12 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[111] = pdetc;
 	argv[112] = (char *)(uintptr_t)"--ifmcstat";
 	argv[113] = (char *)(uintptr_t)"./fake-ifmcstat";
-	argv[114] = (char *)(uintptr_t)"--snort";
-	argv[115] = (char *)(uintptr_t)"./fake-snort";
-	argv[116] = (char *)(uintptr_t)"--snort-etc";
-	argv[117] = (char *)(uintptr_t)"./snort-etc";
-	argv[118] = (char *)(uintptr_t)"--snort-log";
-	argv[119] = (char *)(uintptr_t)"./snort-log";
-	argv[120] = NULL;
+	/* Suricata's ruleset the test's, never the host's. */
+	argv[114] = (char *)(uintptr_t)"--suricata-rules";
+	argv[115] = surules;
+	argv[116] = NULL;
 	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
+	snprintf(surules, sizeof(surules), "%s/rules", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
 	(void)mkdir(rootdir, 0755);
 	{

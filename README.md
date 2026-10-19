@@ -38,7 +38,8 @@ for the console.
 
 ## Building
 
-Base `make(1)` and `bsd.*.mk`, on FreeBSD 14 or later.
+Base `make(1)` and `bsd.*.mk`, on FreeBSD 15.1 or later (15-STABLE and
+16-CURRENT among them).
 
 For the host's programs (arcana-agent, arcanactl, arcana-enrol,
 jailconf):

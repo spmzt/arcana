@@ -201,10 +201,10 @@ usage(void)
 	    "    poudriere [list] | show-options key=value ... |\n"
 	    "        make-conf name|- file|- | verb [key=value ...]\n"
 	    "    crashes [backtrace core [program]]\n"
-	    "    snort [list | rules] | conf snort.lua|local.rules file |\n"
-	    "        verb [key=value ...]\n"
 	    "    clamav mirrors mirror ...\n"
-	    "    suricata update\n"
+	    "    suricata update | rules [q=text sid=N only=enabled|disabled|changed\n"
+	    "        classtype=name offset=N limit=N] |\n"
+	    "        rule on=|off=|drop=|default=sid,... ...\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
@@ -2457,58 +2457,6 @@ cmd_crashes(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
- * snort [list | rules] | conf snort.lua|local.rules file |
- * verb [key=value ...]: Snort, a plugin; a change is a job.
- */
-static int
-cmd_snort(struct arc_client *cl, int argc, char **argv)
-{
-	struct arc_job_spec	 sp;
-	struct arc_snort_req	 rq;
-	struct arc_snort_rsp	*rs;
-	char			*nm;
-	int			 error;
-
-	if (argc == 1 || (argc == 2 && (strcmp(argv[1], "list") == 0 ||
-	    strcmp(argv[1], "rules") == 0))) {
-		memset(&rq, 0, sizeof(rq));
-		if (argc == 2 && strcmp(argv[1], "rules") == 0) {
-			rq.names.v = (const char **)(uintptr_t)&argv[1];
-			rq.names.n = 1;
-		}
-		if ((error = arc_snort(cl, &rq, &rs)) != 0)
-			fail(cl, error, "snort");
-		if (rs->json != NULL)
-			xo_emit("{:json/%s}\n", rs->json);
-		else if (rs->error != NULL)
-			warnx("%s", rs->error);
-		emit_trace(rs->trace.v, rs->trace.n);
-		error = rs->ok ? 0 : 1;
-		arc_snort_rsp_free(rs);
-		return (error);
-	}
-	memset(&sp, 0, sizeof(sp));
-	sp.has_kind = true;
-	sp.kind = ARC_JOB_KIND_SNORT;
-	sp.verb = argv[1];
-	if (strcmp(argv[1], "conf") == 0) {
-		if (argc != 4)
-			usage();
-		if (asprintf(&nm, "file=%s", argv[2]) == -1)
-			err(1, "asprintf");
-		sp.names.v = (const char **)(uintptr_t)&nm;
-		sp.names.n = 1;
-		sp.text = slurp(argv[3]);
-	} else {
-		sp.names.v = (const char **)(uintptr_t)&argv[2];
-		sp.names.n = (size_t)argc - 2;
-	}
-	/* The host's alone: -j is passed on to be refused, not dropped. */
-	sp.jail = netjail;
-	return (submit(cl, &sp));
-}
-
-/*
  * clamav mirrors mirror ...: freshclam.conf's DatabaseMirror lines, in
  * place of those there were; a job.
  */
@@ -2539,20 +2487,43 @@ cmd_clamav(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
- * suricata update: suricata-update fetches the ruleset, and the
- * instances take it; a job.
+ * suricata update | rules [key=value ...] | rule state=sids ...:
+ * suricata-update fetches the ruleset, and the instances take it; the
+ * ruleset's rules, a page of them; rules set by sid.  update and rule
+ * are jobs.
  */
 static int
 cmd_suricata(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_job_spec	 sp;
+	struct arc_job_spec		 sp;
+	struct arc_suricata_rules_req	 rq;
+	struct arc_suricata_rules_rsp	*rs;
+	int				 error;
 
-	if (argc != 2 || strcmp(argv[1], "update") != 0)
+	if (argc >= 2 && strcmp(argv[1], "rules") == 0) {
+		memset(&rq, 0, sizeof(rq));
+		rq.names.v = (const char **)(uintptr_t)&argv[2];
+		rq.names.n = (size_t)argc - 2;
+		if ((error = arc_suricata_rules(cl, &rq, &rs)) != 0)
+			fail(cl, error, "suricata rules");
+		if (rs->json != NULL)
+			xo_emit("{:json/%s}\n", rs->json);
+		else if (rs->error != NULL)
+			warnx("%s", rs->error);
+		emit_trace(rs->trace.v, rs->trace.n);
+		error = rs->ok ? 0 : 1;
+		arc_suricata_rules_rsp_free(rs);
+		return (error);
+	}
+	if (argc < 2 || (strcmp(argv[1], "update") == 0 && argc != 2) ||
+	    (strcmp(argv[1], "update") != 0 && strcmp(argv[1], "rule") != 0))
 		usage();
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
 	sp.kind = ARC_JOB_KIND_SURICATA;
 	sp.verb = argv[1];
+	sp.names.v = (const char **)(uintptr_t)&argv[2];
+	sp.names.n = (size_t)argc - 2;
 	sp.jail = netjail;
 	return (submit(cl, &sp));
 }
@@ -4283,8 +4254,6 @@ main(int argc, char *argv[])
 		rc = cmd_cert(&cl, argc, argv);
 	else if (strcmp(argv[0], "crashes") == 0)
 		rc = cmd_crashes(&cl, argc, argv);
-	else if (strcmp(argv[0], "snort") == 0)
-		rc = cmd_snort(&cl, argc, argv);
 	else if (strcmp(argv[0], "clamav") == 0)
 		rc = cmd_clamav(&cl, argc, argv);
 	else if (strcmp(argv[0], "suricata") == 0)

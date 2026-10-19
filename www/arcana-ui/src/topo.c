@@ -185,7 +185,7 @@ static struct {
 	bool	nopeers;		/* routing neighbours outside are hidden */
 	char	sel[80];		/* the node picked, or "" */
 	char	sel_if[16];		/* and its interface charted */
-	char	sel_link[80];		/* or the link picked */
+	char	sel_link[160];		/* or the link picked: its key */
 	bool	linking;		/* a link is being drawn */
 	char	link_from[80];
 	double	link_x, link_y;
@@ -1329,8 +1329,8 @@ wg_poll(int i)
 	struct thost	*t;
 	char		 url[240];
 
-	if (!app.online || !plugin_at(&app.servers[tn[i].srv], tn[i].jail,
-	    "wireguard") || (t = thost(tn[i].key, true)) == NULL ||
+	/* wg(8) is the base system's: every host and vnet jail has it. */
+	if (!app.online || (t = thost(tn[i].key, true)) == NULL ||
 	    t->wg_loading)
 		return;
 	t->wg_loading = true;
@@ -1381,6 +1381,26 @@ if_joins(const ucl_object_t *o)
 	name = jstr(o, "name");
 	return (name != NULL && strncmp(name, "lo", 2) != 0 &&
 	    strncmp(name, "pflog", 5) != 0 && strncmp(name, "enc", 3) != 0);
+}
+
+/*
+ * Is name a WireGuard interface of t: one its wg(8) read names, or wg<n>
+ * before that is read.  Its peers are tunnels, not a network shared.
+ */
+static bool
+if_wg(const struct thost *t, const char *name)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while (t != NULL && (o = ucl_object_iterate(jget(t->wg, "interfaces"),
+	    &it, true)) != NULL)
+		if (jstr(o, "name") != NULL && strcmp(jstr(o, "name"), name) ==
+		    0)
+			return (true);
+	return (strncmp(name, "wg", 2) == 0 && name[2] >= '0' && name[2] <=
+	    '9');
 }
 
 /*
@@ -1510,8 +1530,11 @@ links_build(void)
 					}
 					continue;
 				}
-				/* A network shared: gathered, joined below. */
-				if (!net_of(jstr(a, "address"), (int)jint(a,
+				/* A network shared: gathered, joined below;
+				 * not WireGuard's, whose peers are drawn as
+				 * the tunnels they are. */
+				if (if_wg(t, jstr(o, "name")) || !net_of(jstr(a,
+				    "address"), (int)jint(a,
 				    "prefixlen", 0), net, sizeof(net)))
 					continue;
 				for (k = 0; k < nsegs; k++)
@@ -2294,7 +2317,7 @@ map_nodes(struct html *h)
 		    "down" : t->ifs != NULL ? "up" : "unknown",
 		    strcmp(tp.sel, key) == 0 ? " sel" : "", tp.linking &&
 		    strcmp(tp.link_from, key) != 0 ? " target" : "",
-		    tn[i].jail[0] != '\0' ? " jail" : "", t->x, t->y);
+		    tn[i].jail[0] != '\0' ? " vjail" : "", t->x, t->y);
 		h_attr(h, "data-arg", key);
 		h_attr(h, "data-drop", key);
 		h_fmt(h, "><rect class=\"box\" x=\"%d\" y=\"%d\" width=\"%d\" "

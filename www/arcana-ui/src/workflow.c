@@ -529,7 +529,7 @@ static const struct {
 	    "{\"name\": \"Plugin installed\", \"hosts\": [\"${LOCAL}\"], "
 	    "\"params\": [{\"name\": \"package\", \"default\": \"bird3\"}], "
 	    "\"steps\": [{\"id\": \"install\", \"name\": \"Install the "
-	    "plugin's package (bird3, wireguard-tools, strongswan, squid)\", "
+	    "plugin's package (bird3, strongswan, dnsmasq, squid)\", "
 	    "\"job\": {\"kind\": \"pkg-install\", \"packages\": "
 	    "[\"${param.package}\"]}}]}" },
 	/*
