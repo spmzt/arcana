@@ -23,6 +23,8 @@
 
 enum sectab { SEC_URL, SEC_AV, SEC_IDS };
 
+static void	ids_settings_form(struct html *, const ucl_object_t *);
+
 static struct {
 	enum sectab	 tab;
 	char		 sid[16];
@@ -648,7 +650,9 @@ ids_form(struct html *h, const ucl_object_t *f)
 	    "sid:1000001;)\">");
 	h_txt(h, jstr(f, "rules"));
 	h_raw(h, "</textarea><small class=\"help\">a rule a line, as "
-	    "Suricata writes them</small></label><details class=\"wfmore\"");
+	    "Suricata writes them</small></label>");
+	ids_settings_form(h, f);
+	h_raw(h, "<details class=\"wfmore\"");
 	if (jint(f, "divert", 0) > 0)
 		h_raw(h, " open");
 	h_raw(h, "><summary>Prevent, not only detect</summary><label>Divert "
@@ -667,6 +671,160 @@ ids_form(struct html *h, const ucl_object_t *f)
 	if (sec.busy)
 		h_raw(h, " disabled");
 	h_raw(h, ">Save</button></div></form>");
+}
+
+/* Suricata's settings, as ids_settings in the console writes them. */
+static const char *const evtypes[] = { "anomaly", "http", "dns", "tls",
+    "ssh", "flow", "netflow", "fileinfo", "drop", "smtp", "quic", "http2",
+    "dhcp", "smb" };
+
+static void
+set_select(struct html *h, const char *label, const char *name,
+    const char *cur, const char *const *opts, size_t n, const char *help)
+{
+	size_t	i;
+
+	h_fmt(h, "<label>%s <select name=\"%s\"><option value=\"\">"
+	    "Suricata's default</option>", label, name);
+	for (i = 0; i < n; i++) {
+		h_raw(h, "<option");
+		if (cur != NULL && strcmp(cur, opts[i]) == 0)
+			h_raw(h, " selected");
+		h_fmt(h, ">%s</option>", opts[i]);
+	}
+	h_raw(h, "</select>");
+	if (help != NULL)
+		h_fmt(h, "<small class=\"help\">%s</small>", help);
+	h_raw(h, "</label>");
+}
+
+static void
+set_input(struct html *h, const char *label, const char *name,
+    const char *cur, const char *ph, const char *help)
+{
+
+	h_fmt(h, "<label>%s <input name=\"%s\" spellcheck=\"false\" "
+	    "autocomplete=\"off\"", label, name);
+	h_attr(h, "value", cur != NULL ? cur : "");
+	h_attr(h, "placeholder", ph);
+	h_raw(h, ">");
+	if (help != NULL)
+		h_fmt(h, "<small class=\"help\">%s</small>", help);
+	h_raw(h, "</label>");
+}
+
+static bool
+has_word(const ucl_object_t *arr, const char *w)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((e = ucl_object_iterate(arr, &it, true)) != NULL)
+		if (ucl_object_type(e) == UCL_STRING && strcmp(
+		    ucl_object_tostring(e), w) == 0)
+			return (true);
+	return (false);
+}
+
+static void
+ids_settings_form(struct html *h, const ucl_object_t *f)
+{
+	static const char *const runmodes[] = { "autofp", "workers",
+	    "single" };
+	static const char *const mpms[] = { "ac", "ac-ks", "hs" };
+	static const char *const profiles[] = { "low", "medium", "high" };
+	static const char *const inlines[] = { "auto", "yes", "no" };
+	static const char *const policies[] = { "auto", "drop-packet",
+	    "drop-flow", "pass-packet", "pass-flow", "bypass", "reject",
+	    "ignore" };
+	char	num[24];
+	size_t	i;
+
+	h_raw(h, "<details class=\"wfmore\"><summary>Logging</summary>"
+	    "<p class=\"help\">What eve.json has besides alerts, each a "
+	    "record of its own; the statistics feed the graphs.</p><div "
+	    "class=\"checks\">");
+	for (i = 0; i < nitems(evtypes); i++) {
+		h_fmt(h, "<label class=\"check\"><input type=\"checkbox\" "
+		    "name=\"eve_%s\"%s> %s</label>", evtypes[i], has_word(jget(f,
+		    "eve"), evtypes[i]) ? " checked" : "", evtypes[i]);
+	}
+	h_raw(h, "</div><label class=\"check\"><input type=\"checkbox\" "
+	    "name=\"payload\"");
+	if (jbool(f, "payload"))
+		h_raw(h, " checked");
+	h_raw(h, "> An alert's packet and payload <small class=\"help\">"
+	    "larger records; what matched, readable</small></label>");
+	snprintf(num, sizeof(num), "%lld", (long long)(jget(f,
+	    "stats_interval") != NULL ? jint(f, "stats_interval", 10) : 10));
+	h_raw(h, "<label>Statistics every <input name=\"stats_interval\" "
+	    "type=\"number\" min=\"0\" max=\"3600\"");
+	h_attr(h, "value", num);
+	h_raw(h, "><small class=\"help\">seconds; 0 none</small></label>"
+	    "</details><details class=\"wfmore\"><summary>Performance"
+	    "</summary><div class=\"rowform\">");
+	set_select(h, "Runmode", "runmode", jstr(f, "runmode"), runmodes,
+	    nitems(runmodes), "workers: a thread does all of a packet");
+	set_select(h, "Pattern matcher", "mpm", jstr(f, "mpm"), mpms,
+	    nitems(mpms), "hs: Hyperscan, where it is built in");
+	set_select(h, "Detect profile", "profile", jstr(f, "profile"),
+	    profiles, nitems(profiles), "memory for speed");
+	h_raw(h, "</div><div class=\"rowform\">");
+	set_input(h, "Management CPUs", "management_cpus", jstr(f,
+	    "management_cpus"), "0", NULL);
+	set_input(h, "Worker CPUs", "worker_cpus", jstr(f, "worker_cpus"),
+	    "1-3", "its threads on these alone (cpu-affinity)");
+	snprintf(num, sizeof(num), "%lld", (long long)jint(f, "max_pending",
+	    0));
+	h_raw(h, "<label>Pending packets <input name=\"max_pending\" "
+	    "type=\"number\" min=\"0\" max=\"65535\" placeholder=\"1024\"");
+	if (jint(f, "max_pending", 0) > 0)
+		h_attr(h, "value", num);
+	h_raw(h, "></label></div></details><details class=\"wfmore\">"
+	    "<summary>Memory</summary><div class=\"rowform\">");
+	set_input(h, "Flows", "flow_memcap", jstr(f, "flow_memcap"), "128mb",
+	    NULL);
+	set_input(h, "Stream", "stream_memcap", jstr(f, "stream_memcap"),
+	    "64mb", NULL);
+	set_input(h, "Reassembly", "reassembly_memcap", jstr(f,
+	    "reassembly_memcap"), "256mb", NULL);
+	h_raw(h, "</div><div class=\"rowform\">");
+	set_input(h, "Fragments", "defrag_memcap", jstr(f, "defrag_memcap"),
+	    "32mb", NULL);
+	set_input(h, "Hosts", "host_memcap", jstr(f, "host_memcap"), "32mb",
+	    NULL);
+	set_input(h, "HTTP", "http_memcap", jstr(f, "http_memcap"), "64mb",
+	    NULL);
+	h_raw(h, "</div></details><details class=\"wfmore\"><summary>Stream "
+	    "and HTTP</summary><div class=\"rowform\">");
+	set_select(h, "Inline stream", "stream_inline", jstr(f,
+	    "stream_inline"), inlines, nitems(inlines), "where it prevents: "
+	    "the stream inspected before it passes");
+	set_input(h, "Reassembly depth", "reassembly_depth", jstr(f,
+	    "reassembly_depth"), "1mb", "of each stream, inspected");
+	h_raw(h, "</div><div class=\"rowform\">");
+	set_input(h, "HTTP request body", "http_request_body", jstr(f,
+	    "http_request_body"), "100kb", "inspected of each");
+	set_input(h, "HTTP response body", "http_response_body", jstr(f,
+	    "http_response_body"), "100kb", NULL);
+	h_raw(h, "</div><label class=\"check\"><input type=\"checkbox\" "
+	    "name=\"midstream\"");
+	if (jbool(f, "midstream"))
+		h_raw(h, " checked");
+	h_raw(h, "> Streams picked up midway <small class=\"help\">those "
+	    "begun before it started</small></label>");
+	set_select(h, "Past a limit", "exception_policy", jstr(f,
+	    "exception_policy"), policies, nitems(policies), "what is done "
+	    "with traffic when a memcap or the like is reached");
+	h_raw(h, "</details><details class=\"wfmore\"><summary>Its own YAML"
+	    "</summary><label>Besides the above <textarea name=\"yaml\" "
+	    "rows=\"5\" spellcheck=\"false\" placeholder=\"vlan:\n"
+	    "  use-for-tracking: false\">");
+	h_txt(h, jstr(f, "yaml"));
+	h_raw(h, "</textarea><small class=\"help\">Suricata's YAML, keys the "
+	    "form does not set; checked by suricata -T with the rest</small>"
+	    "</label></details>");
 }
 
 static const struct tcol icols[] = {
@@ -1156,6 +1314,42 @@ secpage_form(const char *form, const ucl_object_t *f)
 			ucl_object_insert_key(o, ucl_object_fromstring(jstr(f,
 			    "rules")), "rules", 0, false);
 		put_num(o, "divert", jstr(f, "divert"));
+		/* Its settings: each only when given. */
+		{
+			static const char *const strs[] = { "runmode", "mpm",
+			    "profile", "management_cpus", "worker_cpus",
+			    "flow_memcap", "stream_memcap", "reassembly_memcap",
+			    "defrag_memcap", "host_memcap", "http_memcap",
+			    "stream_inline", "reassembly_depth",
+			    "http_request_body", "http_response_body",
+			    "exception_policy", "yaml" };
+			ucl_object_t	*ev;
+			char		 k[32];
+			size_t		 i;
+
+			for (i = 0; i < nitems(strs); i++)
+				if (jstr(f, strs[i]) != NULL && jstr(f,
+				    strs[i])[0] != '\0')
+					ucl_object_insert_key(o,
+					    ucl_object_fromstring(jstr(f,
+					    strs[i])), strs[i], 0, true);
+			ev = ucl_object_typed_new(UCL_ARRAY);
+			for (i = 0; i < nitems(evtypes); i++) {
+				snprintf(k, sizeof(k), "eve_%s", evtypes[i]);
+				if (jbool(f, k))
+					ucl_array_append(ev,
+					    ucl_object_fromstring(evtypes[i]));
+			}
+			ucl_object_insert_key(o, ev, "eve", 0, false);
+			put_num(o, "stats_interval", jstr(f, "stats_interval"));
+			put_num(o, "max_pending", jstr(f, "max_pending"));
+			if (jbool(f, "payload"))
+				ucl_object_insert_key(o, ucl_object_frombool(true),
+				    "payload", 0, false);
+			if (jbool(f, "midstream"))
+				ucl_object_insert_key(o, ucl_object_frombool(true),
+				    "midstream", 0, false);
+		}
 		/* One stopped stays stopped, changed; its thresholds,
 		 * not in this form, stay. */
 		{

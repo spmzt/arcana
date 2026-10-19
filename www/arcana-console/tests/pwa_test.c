@@ -6604,6 +6604,36 @@ part_security(void)
 	    10);
 	wait_js("document.querySelector('table.secids button[data-act="
 	    "sec-ids-stop]')", 30);
+	/* Its settings changed in the form: logging, performance, the
+	 * stream and HTTP, each into its YAML; the rest kept. */
+	click_when("table.secids button[data-act=sec-edit]", 10);
+	wait_js("document.querySelector('form[data-form=sec-ids]') && "
+	    "document.querySelector('form[data-form=sec-ids]').runmode", 5);
+	run("const f = document.querySelector('form[data-form=sec-ids]'); "
+	    "f.querySelectorAll('details').forEach(d => d.open = true); "
+	    "f.eve_http.checked = true; f.eve_dns.checked = true; "
+	    "f.runmode.value = 'workers'; f.worker_cpus.value = '0'; "
+	    "f.http_response_body.value = '1mb'; f.stream_inline.value = "
+	    "'auto'; f.requestSubmit();");
+	for (i = 0; i < 300 && system("f=sdwan-ids-sec-lan.yaml; grep -q "
+	    "'^runmode: workers$' $f && grep -q '^        - http$' $f && "
+	    "grep -q '^        - dns$' $f && grep -q '^  inline: auto$' $f "
+	    "&& grep -q 'response-body-limit: 1mb$' $f && grep -q "
+	    "'^  interval: 10$' $f") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the settings are not written");
+	ATF_CHECK(system("grep -q 'suppress gen_id 1, sig_id 1000009' "
+	    "sdwan-ids-sec-lan.threshold") == 0);
+	wait_js("document.querySelector('table.secids') && !document."
+	    "querySelector('form[data-form=sec-ids]') && !document."
+	    "querySelector('table.secids.applying')", 20);
+	click_when("table.secids button[data-act=sec-edit]", 10);
+	wait_js("document.querySelector('form[data-form=sec-ids]') && "
+	    "document.querySelector('form[data-form=sec-ids]').runmode.value "
+	    "=== 'workers' && document.querySelector('form[data-form=sec-ids]')"
+	    ".eve_http.checked", 10);
+	shot("9v-security-ids-settings");
+	click_when("form[data-form=sec-ids] button[data-act=sec-cancel]", 5);
 	/* The ruleset's rules: fetched, then searched and one enabled by
 	 * sid, a job; the choice shown as set here. */
 	click_when("button[data-act=sec-idsview][data-arg=rules]", 10);

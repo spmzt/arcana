@@ -7414,6 +7414,51 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "threshold$' sdwan-ids-sec-lan.yaml && grep -qx 'suppress gen_id "
 	    "1, sig_id 1000009, track by_src, ip 10.0.0.9' "
 	    "sdwan-ids-sec-lan.threshold") == 0);
+	/* Its settings: each into Suricata's YAML, checked first; where the
+	 * host has Suricata itself, what it makes of the whole. */
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"runmode\":\"fast\",\"rules\":\"alert tcp any any -> any 23 "
+	    "(sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "runmode is autofp, workers or single") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"flow_memcap\":\"lots\",\"rules\":\"alert tcp any any -> any "
+	    "23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"eve\":[\"http\",\"dns\",\"tls\",\"flow\"],\"payload\":true,"
+	    "\"stats_interval\":30,\"runmode\":\"workers\",\"mpm\":\"ac-ks\","
+	    "\"profile\":\"high\",\"management_cpus\":\"0\",\"worker_cpus\":"
+	    "\"0-1\",\"max_pending\":2048,\"flow_memcap\":\"128mb\","
+	    "\"stream_memcap\":\"64mb\",\"reassembly_memcap\":\"256mb\","
+	    "\"defrag_memcap\":\"32mb\",\"host_memcap\":\"32mb\","
+	    "\"http_memcap\":\"64mb\",\"stream_inline\":\"auto\","
+	    "\"reassembly_depth\":\"1mb\",\"http_request_body\":\"200kb\","
+	    "\"http_response_body\":\"2mb\",\"midstream\":true,"
+	    "\"exception_policy\":\"drop-flow\",\"yaml\":\"vlan:\\n  "
+	    "use-for-tracking: false\\n\",\"rules\":\"alert tcp any any -> "
+	    "any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("f=sdwan-ids-sec-lan.yaml; grep -q '^        - alert:$' "
+	    "$f && grep -q '^            payload-printable: yes$' $f && "
+	    "grep -q '^        - tls$' $f && grep -q '^  interval: 30$' $f && "
+	    "grep -q '^runmode: workers$' $f && grep -q '^mpm-algo: ac-ks$' $f "
+	    "&& grep -q '^  profile: high$' $f && grep -q '^      cpu: \\[ 0-1 "
+	    "\\]$' $f && grep -q '^max-pending-packets: 2048$' $f && grep -q "
+	    "'^    depth: 1mb$' $f && grep -q '^          response-body-limit: "
+	    "2mb$' $f && grep -q '^exception-policy: drop-flow$' $f && grep -q "
+	    "'^  use-for-tracking: false$' $f") == 0);
+	if (access("/usr/local/bin/suricata", X_OK) == 0)
+		ATF_CHECK_MSG(system("/usr/local/bin/suricata -T -c "
+		    "sdwan-ids-sec-lan.yaml > suricata-T.out 2>&1") == 0,
+		    "Suricata refuses the settings: see suricata-T.out");
 	/* Stopped by the admin: kept in the list, told to the agent. */
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
