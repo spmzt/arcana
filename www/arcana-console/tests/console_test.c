@@ -2064,61 +2064,6 @@ ATF_TC_BODY(labels, tc)
 	resp_free(&r);
 }
 
-CONSOLE_TC(oinkcode, "Snort's registered rules: the oinkcode a secret of "
-    "the console's, put into the job's address by the console, refused "
-    "without it; never in the host's job title")
-ATF_TC_BODY(oinkcode, tc)
-{
-	struct authn	a;
-	struct resp	r;
-	char		cwd[MAXPATHLEN], body[400], sid[16], path[96];
-	int		i;
-
-	start(tc, 0, NULL);
-	enrol(&a);
-	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
-	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
-	    "jgd.sock\"}", cwd);
-	http("POST", "/api/servers", body, &r);
-	EXPECT(&r, 200);
-	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
-	resp_free(&r);
-	snprintf(path, sizeof(path), "/api/servers/%s/jobs", sid);
-	http("POST", path, "{\"jobs\":[{\"kind\":\"snort\",\"verb\":\"update\","
-	    "\"args\":[\"registered=yes\"]}]}", &r);
-	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "oinkcode") != NULL,
-	    "%d %s", r.status, r.body);
-	resp_free(&r);
-	/* The address and the code set: the job goes with both; the host
-	 * cannot fetch from port 9, and says so without the code. */
-	http("POST", "/api/settings", "{\"set\":{\"snort_rules_url\":\"https://"
-	    "127.0.0.1:9/snortrules-snapshot-31200.tar.gz\",\"snort_oinkcode\":"
-	    "\"SECRET123abc\"}}", &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	http("GET", "/api/settings", NULL, &r);
-	ATF_CHECK(strstr(r.body, "SECRET123abc") == NULL);
-	resp_free(&r);
-	http("POST", path, "{\"jobs\":[{\"kind\":\"snort\",\"verb\":\"update\","
-	    "\"args\":[\"registered=yes\"]}]}", &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	for (i = 0; i < 100; i++) {
-		http("GET", path, NULL, &r);
-		if (r.body != NULL && (strstr(r.body, "\"state\":\"failed\"") !=
-		    NULL || strstr(r.body, "\"state\":\"done\"") != NULL))
-			break;
-		resp_free(&r);
-		usleep(100000);
-	}
-	if (i == 100)
-		http("GET", path, NULL, &r);
-	ATF_CHECK_MSG(r.body != NULL && strstr(r.body, "SECRET123abc") == NULL
-	    && strstr(r.body, "oinkcode=...") != NULL, "%s", r.body != NULL ?
-	    r.body : "no answer");
-	resp_free(&r);
-}
-
 CONSOLE_TC(pfxlists, "The console's prefix lists: kept by name, each a "
     "description and prefixes checked as such; changed, taken away; a bad "
     "prefix or name refused")
@@ -7663,7 +7608,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, config_bundle);
 	ATF_TP_ADD_TC(tp, templates);
 	ATF_TP_ADD_TC(tp, pfxlists);
-	ATF_TP_ADD_TC(tp, oinkcode);
 	ATF_TP_ADD_TC(tp, labels);
 	ATF_TP_ADD_TC(tp, ldap);
 	ATF_TP_ADD_TC(tp, troubleshoot);

@@ -189,9 +189,6 @@ title_of(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_POUDRIERE:
 		rc = (t = poudriere_title(sp)) != NULL ? 0 : -1;
 		break;
-	case ARC_JOB_KIND_SNORT:
-		rc = (t = snort_title(sp)) != NULL ? 0 : -1;
-		break;
 	case ARC_JOB_KIND_CLAMAV:
 		rc = (t = clamav_title(sp)) != NULL ? 0 : -1;
 		break;
@@ -1020,10 +1017,6 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_POUDRIERE:
 		error = NULL;
 		ok = do_poudriere_job(&j->w, sp, &error) == 0;
-		break;
-	case ARC_JOB_KIND_SNORT:
-		error = NULL;
-		ok = do_snort_job(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_CLAMAV:
 		error = NULL;

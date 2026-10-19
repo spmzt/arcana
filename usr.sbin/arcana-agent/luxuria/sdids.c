@@ -384,7 +384,7 @@ file_text(struct work *w, const char *path)
 /*
  * Interface any, alone, in the pcap list: FreeBSD's libpcap has no any
  * device, so it is every interface that is up, but the loopback, pflog,
- * pfsync and enc, as arcana_snort makes it for Snort.  NULL, with errp,
+ * pfsync and enc.  NULL, with errp,
  * when there is none.
  */
 static char *

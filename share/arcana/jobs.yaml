@@ -401,11 +401,6 @@ kinds:
     uses: args text
     values: verb=jail-create|jail-update|jail-delete|ports-create|ports-update|ports-delete|bulk|stop|make-conf|conf|options
     destroys: verb=jail-delete|ports-delete
-  - kind: snort
-    title: Snort's settings, configuration and rules
-    needs: verb
-    uses: args text
-    values: verb=set|conf|update|rule
   - kind: clamav
     title: freshclam's mirrors of ClamAV's signatures
     needs: verb

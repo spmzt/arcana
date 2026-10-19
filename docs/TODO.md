@@ -901,7 +901,9 @@
     (agent_root_test:snort_live).  Registered rules done 2026-10-18:
     the oinkcode a secret of the console's (Settings, Console, with
     the rules' address), put into the job's address by the console and
-    scrubbed by the agent from the title, the trace and source.json.)
+    scrubbed by the agent from the title, the trace and source.json.
+    Removed 2026-10-19: Suricata alone is the IDS/IPS, as SD-WAN's
+    security policies already had it.)
   - The console clustered; disaster recovery across console clusters.
     (Decided 2026-10-18: active/active, a database only where
     required.  The design to choose from is docs/notes/console-cluster.md:
@@ -932,7 +934,7 @@
     tables, BIRD filters, SD-WAN zones?).  (Answered 2026-10-18 and
     done: MSS by ipfw tcp-setmss on SD-WAN tunnels, labels a
     console-side tag, prefix lists kept by the console and picked in
-    ipfw, BIRD, SD-WAN, Snort, Suricata, the proxy and IPsec forms.)
+    ipfw, BIRD, SD-WAN, Suricata, the proxy and IPsec forms.)
   - A certificates tab per host, by certctl and OpenSSL. (Done
     2026-10-12: trusted and untrusted, read with OpenSSL; a CA given,
     one distrusted and trusted again, kept where certctl rehash finds

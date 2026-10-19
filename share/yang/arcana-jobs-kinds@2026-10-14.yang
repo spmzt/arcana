@@ -137,14 +137,11 @@ submodule arcana-jobs-kinds {
       enum poudriere {
         value 37;
       }
-      enum snort {
+      enum clamav {
         value 38;
       }
-      enum clamav {
-        value 39;
-      }
       enum suricata {
-        value 40;
+        value 39;
       }
     }
     description
@@ -1606,36 +1603,6 @@ submodule arcana-jobs-kinds {
               enum make-conf;
               enum conf;
               enum options;
-            }
-            mandatory true;
-            description
-              "Verb";
-          }
-          leaf-list args {
-            type string;
-            ordered-by user;
-            description
-              "Arguments";
-          }
-          leaf text {
-            type string;
-            description
-              "The file";
-          }
-        }
-      }
-      case snort {
-        container snort {
-          presence
-            "This kind of job.";
-          description
-            "Snort's settings, configuration and rules";
-          leaf verb {
-            type enumeration {
-              enum set;
-              enum conf;
-              enum update;
-              enum rule;
             }
             mandatory true;
             description

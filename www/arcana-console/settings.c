@@ -59,7 +59,6 @@ static const char	*v_user(const char *);
 static const char	*v_secret(const char *);
 static const char	*v_safe(const char *);
 static const char	*v_ldapurl(const char *);
-static const char	*v_url_opt(const char *);
 static const char	*v_capath(const char *);
 static const char	*v_dn(const char *);
 static const char	*v_attr(const char *);
@@ -166,17 +165,6 @@ static struct setting {
 	{ "telegram_limits", K_BOOL, "Limits crossed to Telegram",
 	    "A figure of history over its limit, and back under.", NULL, NULL,
 	    NULL },
-	{ "snort_rules_url", K_TEXT, "Snort registered rules",
-	    "The archive's address at snort.org for the Snort the hosts run, "
-	    "without the oinkcode: https://www.snort.org/rules/"
-	    "snortrules-snapshot-31200.tar.gz for Snort 3.12. The Snort tab's "
-	    "Update with “registered rules” fetches it with the oinkcode; "
-	    "empty until then.", v_url_opt, NULL, NULL },
-	{ "snort_oinkcode", K_SECRET, "Snort oinkcode",
-	    "Your snort.org account's code, which the registered rules are "
-	    "fetched with. Kept in the data directory, readable by the "
-	    "console alone; never shown again, and scrubbed from the hosts' "
-	    "job records.", v_secret, NULL, NULL },
 	{ "ldap_url", K_TEXT, "LDAP directory",
 	    "ldaps://ldap.example.org or ldap://ldap.example.org (StartTLS is "
 	    "then required); empty for no sign-in by LDAP. The server's "
@@ -435,14 +423,6 @@ v_ldapurl(const char *s)
 	}
 	return (*p == '\0' || strcmp(p, "/") == 0 ? NULL :
 	    "nothing after the host and port");
-}
-
-/* An https:// URL, or none. */
-static const char *
-v_url_opt(const char *s)
-{
-
-	return (s[0] == '\0' ? NULL : v_url(s));
 }
 
 /* A CA file's path, or none. */

@@ -208,7 +208,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[122];
+	char	*argv[116];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -734,8 +734,6 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	snprintf(fstab, sizeof(fstab), "%s/fstab", cwd);
 	/* What the daemon has no option for: how the disks are, newfs. */
 	ATF_REQUIRE(mkdir("tools", 0755) == 0 || errno == EEXIST);
-	/* The system's own, for what Snort's rules come in. */
-	put("tools/tar", "#!/bin/sh\nexec /usr/bin/tar \"$@\"\n");
 	put("tools/rm", "#!/bin/sh\nexec /bin/rm \"$@\"\n");
 	put("tools/nvmecontrol", "#!/bin/sh\nprintf 'Critical Warning State: "
 	    "0x00\\nTemperature: 312 K\\nAvailable spare: 100\\nPercentage "
@@ -890,30 +888,6 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "qi 125 qri 10000 uri 3\\n\\t\\tgroup ff02::1%%em0 scopeid 0x1 mode "
 	    "exclude\\n'\n");
 	ATF_REQUIRE(chmod("fake-ifmcstat", 0755) == 0);
-	/* Snort: its version, and whatever -T is given taken; its
-	 * snort.lua, an alert, and rules to fetch by file://. */
-	put("fake-snort", "#!/bin/sh\necho \"snort $*\" >> snort.log\n"
-	    "[ \"$1\" = -V ] && { echo '  o\"  )~   Version 3.12.2.0'; "
-	    "exit 0; }\necho 'Snort successfully validated the "
-	    "configuration (with 0 warnings).'\n");
-	ATF_REQUIRE(chmod("fake-snort", 0755) == 0);
-	ATF_REQUIRE(mkdir("snort-etc", 0755) == 0 || errno == EEXIST);
-	ATF_REQUIRE(mkdir("snort-log", 0755) == 0 || errno == EEXIST);
-	put("snort-etc/snort.lua", "HOME_NET = 'any'\nEXTERNAL_NET = 'any'\n"
-	    "include 'snort_defaults.lua'\n");
-	put("snort-log/alert_json.txt", "{ \"timestamp\" : \"10/17-12:00:01."
-	    "000000\", \"proto\" : \"ICMP\", \"src_addr\" : \"192.0.2.1\", "
-	    "\"dst_addr\" : \"198.51.100.7\", \"gid\" : 1, \"sid\" : 1000001, "
-	    "\"rev\" : 2, \"msg\" : \"lab probe seen\", \"action\" : "
-	    "\"allow\", \"class\" : \"Misc activity\", \"priority\" : 3 }\n");
-	ATF_REQUIRE(mkdir("snort-src", 0755) == 0 || errno == EEXIST);
-	ATF_REQUIRE(mkdir("snort-src/lab", 0755) == 0 || errno == EEXIST);
-	put("snort-src/lab/lab.rules", "alert tcp any any -> any 23 ( msg:"
-	    "\"PROTOCOL-TELNET lab login\"; classtype:attempted-user; "
-	    "sid:105; rev:3; )\n# alert icmp any any -> any any ( msg:"
-	    "\"PROTOCOL-ICMP lab echo\"; itype:8; sid:106; rev:1; )\n");
-	ATF_REQUIRE(system("tar -czf snort-rules.tar.gz -C snort-src lab") ==
-	    0);
 	ATF_REQUIRE(chmod("fake-sysctl", 0755) == 0);
 	put("sysctl.conf", "# kept\nkern.ipc.somaxconn=1024\n");
 	/* What syslogd(8) wrote, in both of its forms. */
@@ -1176,13 +1150,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[111] = pdetc;
 	argv[112] = (char *)(uintptr_t)"--ifmcstat";
 	argv[113] = (char *)(uintptr_t)"./fake-ifmcstat";
-	argv[114] = (char *)(uintptr_t)"--snort";
-	argv[115] = (char *)(uintptr_t)"./fake-snort";
-	argv[116] = (char *)(uintptr_t)"--snort-etc";
-	argv[117] = (char *)(uintptr_t)"./snort-etc";
-	argv[118] = (char *)(uintptr_t)"--snort-log";
-	argv[119] = (char *)(uintptr_t)"./snort-log";
-	argv[120] = NULL;
+	argv[114] = NULL;
 	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
 	(void)mkdir(rootdir, 0755);

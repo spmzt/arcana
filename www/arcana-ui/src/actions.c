@@ -628,9 +628,6 @@ job_finished(struct op *op, bool ok, const char *err)
 	case JOB_BUILDER:
 		builder_refresh();
 		break;
-	case JOB_SNORT:
-		snort_refresh();
-		break;
 	case JOB_SECURITY:
 		/* The host's plugins, and the page's read of them. */
 		refresh_jails(s, false);

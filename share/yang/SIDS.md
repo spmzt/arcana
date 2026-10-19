@@ -84,7 +84,7 @@ bytes on the wire, where it was 9.
 | 62 100 | 100 | `arcana-jails` | `share/yang/arcana-jails@2026-10-14.sid` (51 used) |
 | 62 200 | 100 | `arcana-services` | `share/yang/arcana-services@2026-10-14.sid` (39 used) |
 | 62 300 | 100 | `arcana-packages` | `share/yang/arcana-packages@2026-10-14.sid` (63 used) |
-| 62 400 | 1 000 | `arcana-jobs`, its submodule `arcana-jobs-kinds` | `share/yang/arcana-jobs@2026-10-14.sid` (289 used; room for the kinds to come) |
+| 62 400 | 1 000 | `arcana-jobs`, its submodule `arcana-jobs-kinds` | `share/yang/arcana-jobs@2026-10-14.sid` (285 used; room for the kinds to come) |
 | 63 400 | 200 | `arcana-storage` | `share/yang/arcana-storage@2026-10-14.sid` (144 used) |
 | 63 600 | 100 | `arcana-sysctl` | `share/yang/arcana-sysctl@2026-10-14.sid` (12 used) |
 | 63 700 | 100 | `arcana-kernel` | `share/yang/arcana-kernel@2026-10-14.sid` (37 used) |

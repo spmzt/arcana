@@ -64,9 +64,6 @@ static const char *const poudriere_verb[] = {
 	"ports-update", "ports-delete", "bulk", "stop", "make-conf", "conf",
 	"options",
 };
-static const char *const snort_verb[] = {
-	"set", "conf", "update", "rule",
-};
 static const char *const clamav_verb[] = {
 	"mirrors",
 };
@@ -693,20 +690,6 @@ yjobs_spec(const struct arcana_jobs_submit_input_change *in,
 		sp->kind = ARC_JOB_KIND_POUDRIERE;
 		if (c->has_verb)
 			sp->verb = poudriere_verb[c->verb];
-		sp->names.n = c->args.n;
-		sp->names.v = c->args.v;
-		sp->text = c->text;
-		return (0);
-	}
-	case ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SNORT: {
-		const struct arcana_jobs_submit_input_change_snort *c =
-		    in->snort;
-
-		if (c == NULL)
-			return (EINVAL);
-		sp->kind = ARC_JOB_KIND_SNORT;
-		if (c->has_verb)
-			sp->verb = snort_verb[c->verb];
 		sp->names.n = c->args.n;
 		sp->names.v = c->args.v;
 		sp->text = c->text;

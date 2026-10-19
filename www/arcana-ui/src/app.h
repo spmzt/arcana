@@ -344,7 +344,6 @@ enum {
 	JOB_CERTS,
 	JOB_SSH,
 	JOB_BUILDER,
-	JOB_SNORT,
 	JOB_SECURITY,		/* a Security tab's plugin installed */
 };
 
@@ -947,13 +946,6 @@ void		 label_cell(struct html *, const char *, const char *);
 bool		 iflabel_form(const char *, const ucl_object_t *);
 bool		 iflabel_action(const char *, const char *);
 
-/* snort.c: the Security page's Snort tab. */
-void		 view_snort(struct html *, const char *);
-bool		 snort_form(const char *, const ucl_object_t *);
-bool		 snort_action(const char *, const char *, const char *);
-void		 snort_refresh(void);
-void		 snort_tick(double);
-void		 snort_loc(char *, size_t);
 /* builder.c: the Builder page, poudriere's. */
 void		 view_builder(struct html *);
 bool		 builder_form(const char *, const ucl_object_t *);

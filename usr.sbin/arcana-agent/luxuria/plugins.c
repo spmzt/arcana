@@ -9,7 +9,7 @@
  * that has to be installed, and is there only where its program is:
  * BIRD through birdc(8), strongSwan's IPsec through swanctl(8),
  * Squid and dnsmasq for SD-WAN's proxy and DHCP, poudriere(8) to
- * build packages, Snort and Suricata to detect.  A host says which it
+ * build packages, Suricata to detect.  A host says which it
  * has, and so does a jail with a network of its own, where the program
  * is the jail's.  WireGuard's wg(8) is the base system's: Invidia's.
  *
@@ -51,7 +51,6 @@ static const struct {
 	{ "c-icap", &opts.cicap_bin },
 	{ "suricata", &opts.suricata_bin },
 	{ "poudriere", &opts.poudriere_bin },
-	{ "snort", &opts.snort_bin },
 };
 
 /*

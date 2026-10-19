@@ -9,8 +9,7 @@
  * proxy the clients are told of.  Malware: c-icap with ClamAV's module
  * scanning what a URL filter fetches.  Signatures: ClamAV's databases as
  * freshclam keeps them.  IDS/IPS: Suricata, watching interfaces or
- * taking what an ipfw divert rule hands it.  Snort: Snort 3, the same
- * by Arcana's rc.d script, its rules kept (snort.c).  A host at a time: its
+ * taking what an ipfw divert rule hands it.  A host at a time: its
  * sdwan read tells what runs and the forms it was given; a save sends
  * the kind's whole list (POST /api/servers/<id>/security).
  */
@@ -22,7 +21,7 @@
 
 #include "app.h"
 
-enum sectab { SEC_URL, SEC_AV, SEC_IDS, SEC_SNORT };
+enum sectab { SEC_URL, SEC_AV, SEC_IDS };
 
 static struct {
 	enum sectab	 tab;
@@ -35,7 +34,7 @@ static struct {
 	bool		 busy;
 } sec = { .edit = -1 };
 
-static const char *const tabs[] = { "url", "antivirus", "ids", "snort" };
+static const char *const tabs[] = { "url", "antivirus", "ids" };
 
 static void
 sec_cb(int status, const ucl_object_t *o, const char *err, void *arg)
@@ -780,13 +779,12 @@ void
 view_secpage(struct html *h)
 {
 	static const char *const names[] = { "URL filter", "Antivirus",
-	    "IDS/IPS", "Snort" };
+	    "IDS/IPS" };
 	static const char *const titles[] = {
 	    "Squid: what the clients ask for, by name",
 	    ("ClamAV: what a URL filter fetches, scanned by c-icap; its "
 	    "signatures, by freshclam"),
-	    "Suricata: intrusion detection, and prevention",
-	    "Snort 3: intrusion detection and prevention, its rules here" };
+	    "Suricata: intrusion detection, and prevention" };
 	size_t	i;
 
 	h_raw(h, "<section class=\"secpage\"><div class=\"sechead\">");
@@ -803,12 +801,6 @@ view_secpage(struct html *h)
 		    "dim\">Each guards itself: its own URL filters, malware "
 		    "scanning and intrusion detection, by plugins it has "
 		    "installed (Arcana installs nothing).</p></div></section>");
-		return;
-	}
-	/* Snort's tab reads its own, not the host's sdwan read. */
-	if (sec.tab == SEC_SNORT) {
-		view_snort(h, sec.sid);
-		h_raw(h, "</section>");
 		return;
 	}
 	if (sec.error[0] != '\0') {
@@ -834,8 +826,6 @@ view_secpage(struct html *h)
 		break;
 	case SEC_IDS:
 		view_ids(h);
-		break;
-	case SEC_SNORT:
 		break;
 	}
 	h_raw(h, "</section>");
@@ -946,8 +936,6 @@ secpage_form(const char *form, const ucl_object_t *f)
 	ucl_object_t	*list, *o;
 	bool		 ids;
 
-	if (strncmp(form, "sn-", 3) == 0)
-		return (snort_form(form, f));
 	if (strcmp(form, "sec-mirrors") == 0) {
 		const ucl_object_t	*cl = jget(sec.state, "clamav");
 		char			*copy, *it, *line, *json[2];
@@ -1058,9 +1046,11 @@ secpage_open(const char *rest)
 	for (i = 0; i < nitems(tabs); i++)
 		if (strcmp(tab, tabs[i]) == 0)
 			sec.tab = (enum sectab)i;
-	/* The two tabs Antivirus was before. */
+	/* The two tabs Antivirus was before; Snort's, gone. */
 	if (strcmp(tab, "malware") == 0 || strcmp(tab, "signatures") == 0)
 		sec.tab = SEC_AV;
+	else if (strcmp(tab, "snort") == 0)
+		sec.tab = SEC_IDS;
 	rest += strcspn(rest, "/");
 	if (*rest == '/' && strcmp(rest + 1, sec.sid) != 0) {
 		snprintf(sec.sid, sizeof(sec.sid), "%.15s", rest + 1);
@@ -1091,8 +1081,6 @@ secpage_action(const char *act, const char *arg, const char *value)
 		sec_load();
 		return (true);
 	}
-	if (strncmp(act, "sn-", 3) == 0 || strcmp(act, "input:sn-text") == 0)
-		return (snort_action(act, arg, value));
 	if (strncmp(act, "sec-", 4) != 0 && strcmp(act, "input:sec-host") != 0)
 		return (false);
 	ids = sec.tab == SEC_IDS;
@@ -1263,10 +1251,6 @@ secpage_tick(double now)
 {
 	static double	last;
 
-	if (app.node == NODE_SECURITY && sec.tab == SEC_SNORT) {
-		snort_tick(now);
-		return;
-	}
 	if (app.node != NODE_SECURITY || !app.visible || sec.loading ||
 	    sec.busy || sec.edit >= 0 || now - last < 10000)
 		return;
