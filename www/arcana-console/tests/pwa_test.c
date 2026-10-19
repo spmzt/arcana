@@ -6500,6 +6500,74 @@ sent(void)
 	    "if (b) b.click();");
 }
 
+/*
+ * The Storage page: a host's NFS exports written, an iSCSI target added
+ * to ctl.conf by its form, a HAST resource's role set, each a job; what
+ * the tools say shown.
+ */
+static void
+part_netstore(void)
+{
+	int	i;
+
+	click_when("li.nasnode[data-act=select-storage]", 10);
+	wait_js("location.hash.startsWith('#/storage/nfs') && document."
+	    "querySelector('select[data-input=nas-host]')", 10);
+	run("const s = document.querySelector('select[data-input=nas-host]'); "
+	    "s.value = [...s.options].find(o => o.textContent === 'lab2').value; "
+	    "s.dispatchEvent(new Event('input', {bubbles: true}));");
+	wait_js("document.querySelector('form[data-form=nas-exports]') && "
+	    "document.querySelector('.naspage').textContent.includes('Exports "
+	    "list on localhost')", 20);
+	run("const f = document.querySelector('form[data-form=nas-exports]'); "
+	    "f.text.value = 'V4: /export -sec=sys\\n/export -network "
+	    "10.0.0.0/24\\n'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 300 && system("grep -q '^V4: /export -sec=sys$' "
+	    "exports") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the exports are not written");
+	dock_closed();
+	shot("9y-storage-nfs");
+	/* iSCSI: a target by its form, into ctl.conf, root's alone. */
+	click_when("button[data-act=nas-tab][data-arg=iscsi]", 10);
+	wait_js("document.querySelector('.naspage').textContent.includes("
+	    "'LABSERIAL0')", 20);
+	click_when("button[data-act=nas-target]", 10);
+	wait_js("document.querySelector('form[data-form=nas-target]')", 5);
+	run("const f = document.querySelector('form[data-form=nas-target]'); "
+	    "f.iqn.value = 'iqn.2026-10.org.example:lab'; f.path.value = "
+	    "'/dev/zvol/tank/lab'; f.user.value = 'labuser'; f.secret.value = "
+	    "'labsecret1234'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 300 && system("grep -q '^target iqn.2026-10.org."
+	    "example:lab {$' ctl.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the target is not written");
+	ATF_CHECK(system("grep -q 'chap labuser \"labsecret1234\"' ctl.conf "
+	    "&& grep -q 'path /dev/zvol/tank/lab' ctl.conf && ls -l ctl.conf | "
+	    "grep -q '^-rw-------'") == 0);
+	dock_closed();
+	shot("9y-storage-iscsi");
+	/* HAST: a resource of hast.conf made primary. */
+	click_when("button[data-act=nas-tab][data-arg=hast]", 10);
+	wait_js("document.querySelector('table.hastres') && document."
+	    "querySelector('table.hastres').textContent.includes('shared')",
+	    20);
+	click_when("table.hastres button[data-act=nas-role][data-value="
+	    "primary]", 10);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 300 && system("grep -q '^hastctl role primary shared$' "
+	    "netstore.log") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the role is not set");
+	dock_closed();
+	shot("9y-storage-hast");
+}
+
 static void
 part_security(void)
 {
@@ -6988,6 +7056,7 @@ ATF_TC_BODY(pwa_flows, tc)
 	part_flows();
 	part_trouble();
 	part_security();
+	part_netstore();
 	part_builder();
 }
 ATF_TC_CLEANUP(pwa_flows, tc)

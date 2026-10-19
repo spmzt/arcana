@@ -71,6 +71,7 @@ enum op {
 	OP_BUILDER,
 	OP_BUILDER_OPTIONS,
 	OP_SURICATA_RULES,
+	OP_NETSTORE,
 	OP_CERTS,
 	OP_SSH,
 	OP_CAPTURE,
@@ -1216,7 +1217,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_SURICATA_RULES ? "arc_suricata_rules" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_SURICATA_RULES ? "arc_suricata_rules" : c->op == OP_NETSTORE ? "arc_netstore" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1568,6 +1569,8 @@ call_run(struct kore_task *t)
 	struct arc_builder_options_rsp *bor;
 	struct arc_suricata_rules_req surq;
 	struct arc_suricata_rules_rsp *surr;
+	struct arc_netstore_req	 nsq;
+	struct arc_netstore_rsp	*nsr;
 	struct arc_certs_req	 ceq;
 	struct arc_certs_rsp	*cer;
 	struct arc_ssh_req	 sshq;
@@ -1696,6 +1699,7 @@ call_run(struct kore_task *t)
 	bur = NULL;
 	bor = NULL;
 	surr = NULL;
+	nsr = NULL;
 	cer = NULL;
 	sshr = NULL;
 	capr = NULL;
@@ -2662,6 +2666,38 @@ connected:
 		steps = bor->trace.v;
 		nsteps = bor->trace.n;
 		break;
+	case OP_NETSTORE:
+		/* nfs, iscsi or hast, when the page wants one alone. */
+		memset(&nsq, 0, sizeof(nsq));
+		{
+			const char	*one[1];
+
+			if (c->text != NULL && c->text[0] != '\0') {
+				one[0] = c->text;
+				nsq.names.v = one;
+				nsq.names.n = 1;
+			}
+			error = arc_netstore(&cl, &nsq, &nsr);
+		}
+		if (error != 0)
+			goto rpcfail;
+		ok = nsr->ok;
+		put_str(top, "error", nsr->error);
+		e = NULL;
+		if (nsr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, nsr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = nsr->trace.v;
+		nsteps = nsr->trace.n;
+		break;
 	case OP_SURICATA_RULES:
 		/* The words, a line each, as setup_suricata_rules made them. */
 		memset(&surq, 0, sizeof(surq));
@@ -3072,6 +3108,8 @@ done:
 		arc_builder_options_rsp_free(bor);
 	if (surr != NULL)
 		arc_suricata_rules_rsp_free(surr);
+	if (nsr != NULL)
+		arc_netstore_rsp_free(nsr);
 	if (cer != NULL)
 		arc_certs_rsp_free(cer);
 	if (sshr != NULL)
@@ -4461,6 +4499,29 @@ api_suricata_rules(struct http_request *req)
 	return (read_route(req, OP_SURICATA_RULES, setup_suricata_rules));
 }
 
+/* GET /api/servers/<id>/netstore[?of=nfs|iscsi|hast]: the host's NFS
+ * server, iSCSI target and HAST. */
+static const char *
+setup_netstore(struct call *c, const struct rq *q)
+{
+	char	v[8];
+
+	if (rq_param(q, "of", v, sizeof(v)) && v[0] != '\0') {
+		if (strcmp(v, "nfs") != 0 && strcmp(v, "iscsi") != 0 &&
+		    strcmp(v, "hast") != 0)
+			return ("of is nfs, iscsi or hast");
+		c->text = kore_strdup(v);
+	}
+	return (NULL);
+}
+
+int
+api_netstore(struct http_request *req)
+{
+
+	return (read_route(req, OP_NETSTORE, setup_netstore));
+}
+
 /* GET /api/servers/<id>/certs[?jail=]: the certificates OpenSSL trusts
  * there. */
 /* ?jail=name: the jail it is read in. */
@@ -4780,6 +4841,9 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_POUDRIERE] = "poudriere",
 	[ARC_JOB_KIND_CLAMAV] = "clamav",
 	[ARC_JOB_KIND_SURICATA] = "suricata",
+	[ARC_JOB_KIND_NFS] = "nfs",
+	[ARC_JOB_KIND_ISCSI] = "iscsi",
+	[ARC_JOB_KIND_HAST] = "hast",
 };
 
 /* Is kind one the console sends (workflows.c checks jobs.yaml's)? */
@@ -5107,6 +5171,9 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_POUDRIERE:
 	case ARC_JOB_KIND_CLAMAV:
 	case ARC_JOB_KIND_SURICATA:
+	case ARC_JOB_KIND_NFS:
+	case ARC_JOB_KIND_ISCSI:
+	case ARC_JOB_KIND_HAST:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
@@ -5536,6 +5603,7 @@ static const struct hread {
 	{ "builder", OP_BUILDER, NULL },
 	{ "builder/options", OP_BUILDER_OPTIONS, setup_builder_options },
 	{ "suricata/rules", OP_SURICATA_RULES, setup_suricata_rules },
+	{ "netstore", OP_NETSTORE, setup_netstore },
 	{ "services", OP_SERVICES, NULL },
 	{ "packages", OP_PACKAGES, setup_packages },
 	{ "net/", OP_NETWORK, setup_network },

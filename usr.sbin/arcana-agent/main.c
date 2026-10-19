@@ -82,6 +82,9 @@ struct opts opts = {
 	.ifmcstat_bin = PATH_IFMCSTAT_BIN,
 	.freshclam_conf = PATH_FRESHCLAM_CONF,
 	.suricata_rules = PATH_SURICATA_RULES,
+	.exports_file = "/etc/exports",
+	.ctl_conf = "/etc/ctl.conf",
+	.hast_conf = "/etc/hast.conf",
 	.poudriere_etc = PATH_POUDRIERE_ETC,
 	.swanctl_dir = PATH_SWANCTL_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
@@ -108,7 +111,7 @@ static bool	foreground;
 
 enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API,
     OPT_POUDRIERE, OPT_POUDRIERE_ETC, OPT_IFMCSTAT, OPT_FRESHCLAM_CONF,
-    OPT_SURICATA_RULES };
+    OPT_SURICATA_RULES, OPT_EXPORTS, OPT_CTL_CONF, OPT_HAST_CONF };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
@@ -128,6 +131,10 @@ static const struct option longopts[] = {
 	{ "ifmcstat", required_argument, NULL, OPT_IFMCSTAT },
 	{ "freshclam-conf", required_argument, NULL, OPT_FRESHCLAM_CONF },
 	{ "suricata-rules", required_argument, NULL, OPT_SURICATA_RULES },
+	/* The storage services' files: exports(5), ctl.conf(5), hast.conf(5). */
+	{ "exports", required_argument, NULL, OPT_EXPORTS },
+	{ "ctl-conf", required_argument, NULL, OPT_CTL_CONF },
+	{ "hast-conf", required_argument, NULL, OPT_HAST_CONF },
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -166,7 +173,8 @@ usage(void)
 	    "                 [--poudriere poudriere] [--poudriere-etc directory]\n"
 	    "                 [--ifmcstat ifmcstat]\n"
 	    "                 [--freshclam-conf file]\n"
-	    "                 [--suricata-rules directory]\n");
+	    "                 [--suricata-rules directory]\n"
+	    "                 [--exports file] [--ctl-conf file] [--hast-conf file]\n");
 	exit(2);
 }
 
@@ -388,6 +396,14 @@ main(int argc, char *argv[])
 		case OPT_SURICATA_RULES:
 			opts.suricata_rules = optarg;
 			break;
+		case OPT_EXPORTS:
+			opts.exports_file = optarg;
+			break;
+		case OPT_CTL_CONF:
+			opts.ctl_conf = optarg;
+			break;
+		case OPT_HAST_CONF:
+			opts.hast_conf = optarg;
 			break;
 			break;
 		case OPT_BIRD_WATCH:

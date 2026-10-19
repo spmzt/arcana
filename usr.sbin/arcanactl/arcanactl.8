@@ -409,6 +409,83 @@ into a directory of its own; the alerts it raised are kept, told in
 the sdwan read as the instance's
 .Dq replay .
 A job.
+.It Cm netstore Op Cm nfs | Cm iscsi | Cm hast
+The host's network storage services, as JSON: the NFS server
+.Xr ( nfsd 8 ,
+.Xr mountd 8 ,
+.Xr exports 5 ,
+NFSv4's minor version and pNFS's data servers and mirrors,
+.Xr pnfsserver 4 ) ,
+the iSCSI target
+.Xr ( ctld 8 ,
+.Xr ctl.conf 5 ,
+.Xr ctladm 8 )
+and HAST
+.Xr ( hastd 8 ,
+.Xr hast.conf 5 ,
+.Xr hastctl 8 ) .
+Nothing is changed.
+.It Cm nfs Cm exports Ar file | Cm server Ar key Ns = Ns Ar value ...
+.Cm exports
+writes
+.Pa /etc/exports
+from
+.Ar file
+and has
+.Xr mountd 8
+read it again.
+.Cm server
+sets
+.Cm enable
+.Pq Cm yes No or Cm no : No nfsd, with rpcbind and mountd ,
+.Cm v4 ,
+.Cm v4only ,
+.Cm minor
+(NFSv4's 0, 1 or 2:
+.Va vfs.nfsd.server_max_minorversion ,
+kept in
+.Pa sysctl.conf ) ,
+.Cm threads ,
+and pNFS's data servers
+.Cm pnfs Ns = Ns Ar host : Ns Ar path Ns Oo , Ns ... Oc
+and
+.Cm mirror
+.Pq nfsd's Fl n , Fl p No and Fl m .
+A job.
+.It Cm iscsi Cm conf Ar file | Cm enable Cm yes | no
+.Cm conf
+writes
+.Pa /etc/ctl.conf
+from
+.Ar file ,
+root's alone, and has
+.Xr ctld 8
+read it again;
+.Cm enable
+enables and starts ctld, or stops it.
+A job.
+.It Cm hast Cm conf Ar file | Cm enable Cm yes | no | Cm create Ar resource | Cm role Ar role resource
+.Cm conf
+writes
+.Pa /etc/hast.conf
+from
+.Ar file
+and has
+.Xr hastd 8
+read it again;
+.Cm enable
+enables and starts hastd, or stops it;
+.Cm create
+makes a resource's metadata
+.Pq Nm hastctl Cm create ,
+which destroys what its provider held;
+.Cm role
+sets a resource's role:
+.Cm init ,
+.Cm primary
+or
+.Cm secondary .
+A job.
 .It Cm cert Oo Cm list | Cm add Ar name file | Cm remove Ar name | Cm trust Ar file | Cm untrust Ar file | Cm rehash Oc
 The certificates OpenSSL trusts, of the host or of
 .Fl j Ns 's

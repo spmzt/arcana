@@ -189,6 +189,9 @@ loc_of(char *buf, size_t len)
 	case NODE_SECURITY:
 		secpage_loc(buf, len);
 		break;
+	case NODE_STORAGE:
+		naspage_loc(buf, len);
+		break;
 	case NODE_BUILDER:
 		builder_loc(buf, len);
 		break;
@@ -281,6 +284,13 @@ loc_go(const char *r)
 		snprintf(rest, sizeof(rest), "%s%s%s", np > 1 ? f[1] : "",
 		    np > 2 ? "/" : "", np > 2 ? f[2] : "");
 		secpage_open(rest);
+	} else if (IS(0, "storage")) {
+		char	rest[64];
+
+		dispatch("select-storage", "", "");
+		snprintf(rest, sizeof(rest), "%s%s%s", np > 1 ? f[1] : "",
+		    np > 2 ? "/" : "", np > 2 ? f[2] : "");
+		naspage_open(rest);
 	} else if (IS(0, "builder")) {
 		char	rest[64];
 
@@ -639,6 +649,7 @@ submit(const char *form, const ucl_object_t *f)
 	    ca_form(form, f) || certs_form(form, f) || ssh_form(form, f) || span_form(form, f) ||
 	    ipsec_form(form, f) || workflows_form(form, f) || sdwan_form(form, f) ||
 	    trouble_form(form, f) || secpage_form(form, f) ||
+	    naspage_form(form, f) ||
 	    builder_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
@@ -952,7 +963,8 @@ dispatch(const char *act, const char *arg, const char *value)
 	    span_action(act, arg, value) ||
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
 	    sdwan_action(act, arg, value) || trouble_action(act, arg, value) ||
-	    secpage_action(act, arg, value) || builder_action(act, arg, value) ||
+	    secpage_action(act, arg, value) || naspage_action(act, arg, value) ||
+	    builder_action(act, arg, value) ||
 	    iflabel_action(act, arg) || pfxlists_action(act, arg, value) ||
 	    user_action(act, arg) ||
 	    routing_action(act, arg, value) ||

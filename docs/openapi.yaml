@@ -1318,6 +1318,24 @@ paths:
       responses:
         "200":
           description: The read, under data, with the agent's trace.
+  /api/servers/{server}/netstore:
+    get:
+      tags: [servers]
+      summary: The host's NFS server, iSCSI target and HAST
+      description: >-
+        Under data, nfs (nfsd's and mountd's state, their rc.conf,
+        nfsd's flags with its threads and pNFS's data servers and
+        mirrors, vfs.nfsd.server_max_minorversion, exports and what
+        mountd exports), iscsi (ctld's state, ctl.conf, ctladm's LUNs,
+        sessions and ports) and hast (hastd's state, hast.conf, hastctl
+        status and list).  Changed by jobs of kinds nfs, iscsi and
+        hast.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - { name: of, in: query, schema: { type: string, enum: [nfs, iscsi, hast] } }
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
   /api/servers/{server}/history:
     get:
       tags: [servers]

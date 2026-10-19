@@ -71,6 +71,15 @@ static const char *const suricata_verb[] = {
 	"update", "rule", "sources", "source-enable", "source-disable",
 	"source-remove", "source-add", "pcap",
 };
+static const char *const nfs_verb[] = {
+	"exports", "server",
+};
+static const char *const iscsi_verb[] = {
+	"conf", "enable",
+};
+static const char *const hast_verb[] = {
+	"conf", "enable", "create", "role",
+};
 
 /*
  * Change c made job-spec sp, its arrays a's.  0, or EINVAL: no kind,
@@ -721,6 +730,48 @@ yjobs_spec(const struct arcana_jobs_submit_input_change *in,
 			sp->verb = suricata_verb[c->verb];
 		sp->names.n = c->args.n;
 		sp->names.v = c->args.v;
+		return (0);
+	}
+	case ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_NFS: {
+		const struct arcana_jobs_submit_input_change_nfs *c =
+		    in->nfs;
+
+		if (c == NULL)
+			return (EINVAL);
+		sp->kind = ARC_JOB_KIND_NFS;
+		if (c->has_verb)
+			sp->verb = nfs_verb[c->verb];
+		sp->names.n = c->args.n;
+		sp->names.v = c->args.v;
+		sp->text = c->text;
+		return (0);
+	}
+	case ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_ISCSI: {
+		const struct arcana_jobs_submit_input_change_iscsi *c =
+		    in->iscsi;
+
+		if (c == NULL)
+			return (EINVAL);
+		sp->kind = ARC_JOB_KIND_ISCSI;
+		if (c->has_verb)
+			sp->verb = iscsi_verb[c->verb];
+		sp->names.n = c->args.n;
+		sp->names.v = c->args.v;
+		sp->text = c->text;
+		return (0);
+	}
+	case ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_HAST: {
+		const struct arcana_jobs_submit_input_change_hast *c =
+		    in->hast;
+
+		if (c == NULL)
+			return (EINVAL);
+		sp->kind = ARC_JOB_KIND_HAST;
+		if (c->has_verb)
+			sp->verb = hast_verb[c->verb];
+		sp->names.n = c->args.n;
+		sp->names.v = c->args.v;
+		sp->text = c->text;
 		return (0);
 	}
 	default:

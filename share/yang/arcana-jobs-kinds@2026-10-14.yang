@@ -143,6 +143,15 @@ submodule arcana-jobs-kinds {
       enum suricata {
         value 39;
       }
+      enum nfs {
+        value 40;
+      }
+      enum iscsi {
+        value 41;
+      }
+      enum hast {
+        value 42;
+      }
     }
     description
       "A kind of job, by its number in arcana.yaml's job-kind.";
@@ -1674,6 +1683,92 @@ submodule arcana-jobs-kinds {
             ordered-by user;
             description
               "Arguments";
+          }
+        }
+      }
+      case nfs {
+        container nfs {
+          presence
+            "This kind of job.";
+          description
+            "The NFS server's exports and settings";
+          leaf verb {
+            type enumeration {
+              enum exports;
+              enum server;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
+        }
+      }
+      case iscsi {
+        container iscsi {
+          presence
+            "This kind of job.";
+          description
+            "The iSCSI target's ctl.conf, on or off";
+          leaf verb {
+            type enumeration {
+              enum conf;
+              enum enable;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
+        }
+      }
+      case hast {
+        container hast {
+          presence
+            "This kind of job.";
+          description
+            "HAST's resources, roles and hast.conf (destroys: verb=create)";
+          leaf verb {
+            type enumeration {
+              enum conf;
+              enum enable;
+              enum create;
+              enum role;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
           }
         }
       }

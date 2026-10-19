@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.153.0"
+#define	ARCANA_AGENT_VERSION	"0.154.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -128,6 +128,9 @@ struct opts {
 	const char	*ifmcstat_bin;	/* ifmcstat(8): IGMP's and MLD's state */
 	const char	*freshclam_conf; /* ClamAV's freshclam.conf, its mirrors */
 	const char	*suricata_rules; /* where suricata-update writes the ruleset */
+	const char	*exports_file;	/* exports(5) */
+	const char	*ctl_conf;	/* ctl.conf(5) */
+	const char	*hast_conf;	/* hast.conf(5) */
 	const char	*poudriere_etc;	/* where poudriere.conf and poudriere.d are */
 	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;
@@ -564,6 +567,14 @@ int		 do_sdwan_ids(struct work *, const char *, const char **);
 int		 do_notify(struct work *, const char *, const char *,
 		    const char *, const char **);
 void		 sdwan_ids_start(void);
+/* superbia/netstore.c: NFS, iSCSI and HAST. */
+struct arc_netstore_rsp;
+void		 do_netstore(struct work *, const char *const *, size_t,
+		    struct arc_netstore_rsp *);
+const char	*netstore_check(const struct arc_job_spec *);
+char		*netstore_title(const struct arc_job_spec *);
+int		 do_netstore_job(struct work *, const struct arc_job_spec *,
+		    const char **);
 const char	*suricata_ruleset(void);
 /* luxuria/surules.c: the ruleset's rules, and those the admin set. */
 struct arc_suricata_rules_rsp;

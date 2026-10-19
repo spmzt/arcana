@@ -166,6 +166,7 @@ enum node {
 	NODE_BUILDER,		/* poudriere: packages built */
 	NODE_SETTINGS,		/* the console's settings, a tab each */
 	NODE_DEVICES,		/* the hosts as a table */
+	NODE_STORAGE,		/* a host's NFS server, iSCSI target, HAST */
 };
 
 enum tab {
@@ -345,6 +346,7 @@ enum {
 	JOB_SSH,
 	JOB_BUILDER,
 	JOB_SECURITY,		/* a Security tab's plugin installed */
+	JOB_NETSTORE,		/* the Storage page's NFS, iSCSI or HAST */
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -927,6 +929,13 @@ void		 secpage_loc(char *, size_t);
 void		 secpage_open(const char *);
 void		 secpage_tick(double);
 void		 secpage_refresh(void);
+/* nas.c: the Storage page, NFS, iSCSI and HAST. */
+void		 view_naspage(struct html *);
+bool		 naspage_form(const char *, const ucl_object_t *);
+bool		 naspage_action(const char *, const char *, const char *);
+void		 naspage_loc(char *, size_t);
+void		 naspage_open(const char *);
+void		 naspage_refresh(void);
 /* secpage.c, for idsown.c: an intrusion detection's form, and a key of
  * it set, the list applied. */
 const ucl_object_t *sec_ids_spec(const char *);

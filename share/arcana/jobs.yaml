@@ -411,3 +411,19 @@ kinds:
     needs: verb
     uses: args
     values: verb=update|rule|sources|source-enable|source-disable|source-remove|source-add|pcap
+  - kind: nfs
+    title: The NFS server's exports and settings
+    needs: verb
+    uses: args text
+    values: verb=exports|server
+  - kind: iscsi
+    title: The iSCSI target's ctl.conf, on or off
+    needs: verb
+    uses: args text
+    values: verb=conf|enable
+  - kind: hast
+    title: HAST's resources, roles and hast.conf
+    needs: verb
+    uses: args text
+    values: verb=conf|enable|create|role
+    destroys: verb=create

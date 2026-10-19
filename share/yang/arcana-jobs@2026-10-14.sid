@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-jobs",
     "module-revision": "2026-10-14",
-    "sid-file-version": 8,
+    "sid-file-version": 9,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 400, 1 000.",
     "assignment-range": [
       {
@@ -1413,6 +1413,21 @@
       },
       {
         "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/hast",
+        "sid": "62680"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/hast/args",
+        "sid": "62681"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/hast/text",
+        "sid": "62682"
+      },
+      {
+        "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/clamav",
         "sid": "62683"
       },
@@ -1440,6 +1455,51 @@
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/suricata/verb",
         "sid": "62688"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/hast/verb",
+        "sid": "62689"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/iscsi",
+        "sid": "62690"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/iscsi/args",
+        "sid": "62691"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/iscsi/text",
+        "sid": "62692"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/iscsi/verb",
+        "sid": "62693"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/nfs",
+        "sid": "62694"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/nfs/args",
+        "sid": "62695"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/nfs/text",
+        "sid": "62696"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/nfs/verb",
+        "sid": "62697"
       }
     ]
   }

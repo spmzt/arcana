@@ -348,6 +348,7 @@ worker(void *arg)
 	struct arc_builder_options_rsp bor;
 	struct arc_crashes_rsp	 crr;
 	struct arc_suricata_rules_rsp surr;
+	struct arc_netstore_rsp	 nsr;
 	struct arc_job_spec	 bsp;
 	struct arc_certs_rsp	 cer;
 	struct arc_ssh_rsp	 sshr;
@@ -905,6 +906,18 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &crr.trace.v, &crr.trace.n);
 		rc = arc_crashes_reply(j->req, &crr);
+		break;
+	case ARC_CMD_NETSTORE:
+		what = "netstore";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "the storage services read");
+		memset(&nsr, 0, sizeof(nsr));
+		do_netstore(&w, j->pkg.names.v, j->pkg.names.n, &nsr);
+		ok = nsr.ok;
+		error = nsr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &nsr.trace.v, &nsr.trace.n);
+		rc = arc_netstore_reply(j->req, &nsr);
 		break;
 	case ARC_CMD_SURICATA_RULES:
 		what = "suricata-rules";
@@ -2429,6 +2442,37 @@ arc_builder_options_doit(cbl_req *req, const struct arc_builder_options_req *rq,
 	return (start(j));
 }
 
+/* The storage services: NFS, iSCSI, HAST, or all. */
+int
+arc_netstore_doit(cbl_req *req, const struct arc_netstore_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+	const char	**v;
+	size_t		 i;
+
+	if (rq->names.n > 3)
+		return (reject(req, "netstore reads nfs, iscsi and hast"));
+	for (i = 0; i < rq->names.n; i++)
+		if (rq->names.v[i] == NULL)
+			return (reject(req, "a word is missing"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_NETSTORE;
+	if (rq->names.n > 0) {
+		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL) {
+			free(j);
+			return (ENOMEM);
+		}
+		for (i = 0; i < rq->names.n; i++)
+			v[i] = xstrdup(rq->names.v[i]);
+		j->pkg.names.v = v;
+		j->pkg.names.n = rq->names.n;
+	}
+	return (start(j));
+}
+
 /* The ruleset's rules, searched: a page of them. */
 int
 arc_suricata_rules_doit(cbl_req *req, const struct arc_suricata_rules_req *rq,
@@ -2570,7 +2614,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_SURICATA)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_HAST)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2773,6 +2817,10 @@ check_spec(const struct arc_job_spec *sp)
 		return (clamav_check(sp));
 	case ARC_JOB_KIND_SURICATA:
 		return (suricata_check(sp));
+	case ARC_JOB_KIND_NFS:
+	case ARC_JOB_KIND_ISCSI:
+	case ARC_JOB_KIND_HAST:
+		return (netstore_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->safe)
 			return ("wireguard changes are not undone: not in "

@@ -336,6 +336,9 @@ struct arcana_jobs_submit_input_change_ssh;
 struct arcana_jobs_submit_input_change_poudriere;
 struct arcana_jobs_submit_input_change_clamav;
 struct arcana_jobs_submit_input_change_suricata;
+struct arcana_jobs_submit_input_change_nfs;
+struct arcana_jobs_submit_input_change_iscsi;
+struct arcana_jobs_submit_input_change_hast;
 struct arcana_jobs_submit_input_change;
 struct arcana_jobs_submit_input;
 struct arcana_jobs_submit_output;
@@ -1452,6 +1455,9 @@ enum arcana_jobs_jobs_job_kind {
 	ARCANA_JOBS_JOBS_JOB_KIND_POUDRIERE = 37,
 	ARCANA_JOBS_JOBS_JOB_KIND_CLAMAV = 38,
 	ARCANA_JOBS_JOBS_JOB_KIND_SURICATA = 39,
+	ARCANA_JOBS_JOBS_JOB_KIND_NFS = 40,
+	ARCANA_JOBS_JOBS_JOB_KIND_ISCSI = 41,
+	ARCANA_JOBS_JOBS_JOB_KIND_HAST = 42,
 };
 
 enum arcana_jobs_jobs_job_state {
@@ -1534,6 +1540,9 @@ enum arcana_jobs_submit_input_change_kind {
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_POUDRIERE,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_CLAMAV,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SURICATA,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_NFS,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_ISCSI,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_HAST,
 };
 
 enum arcana_jobs_submit_input_change_jail_action_action {
@@ -1686,6 +1695,23 @@ enum arcana_jobs_submit_input_change_suricata_verb {
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SURICATA_VERB_SOURCE_REMOVE = 5,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SURICATA_VERB_SOURCE_ADD = 6,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SURICATA_VERB_PCAP = 7,
+};
+
+enum arcana_jobs_submit_input_change_nfs_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_NFS_VERB_EXPORTS = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_NFS_VERB_SERVER = 1,
+};
+
+enum arcana_jobs_submit_input_change_iscsi_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_ISCSI_VERB_CONF = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_ISCSI_VERB_ENABLE = 1,
+};
+
+enum arcana_jobs_submit_input_change_hast_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_HAST_VERB_CONF = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_HAST_VERB_ENABLE = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_HAST_VERB_CREATE = 2,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_HAST_VERB_ROLE = 3,
 };
 
 enum arcana_storage_storage_dataset_type {
@@ -6191,6 +6217,39 @@ struct arcana_jobs_submit_input_change_suricata {
 	}			 args;
 };
 
+/* container, presence */
+struct arcana_jobs_submit_input_change_nfs {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_nfs_verb	 verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	const char	*text;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_iscsi {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_iscsi_verb	 verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	const char	*text;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_hast {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_hast_verb	 verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	const char	*text;
+};
+
 /* list entry */
 struct arcana_jobs_submit_input_change {
 	enum arcana_jobs_submit_input_change_kind	 kind;	/* the case given */
@@ -6234,6 +6293,9 @@ struct arcana_jobs_submit_input_change {
 	const struct arcana_jobs_submit_input_change_poudriere	*poudriere;
 	const struct arcana_jobs_submit_input_change_clamav	*clamav;
 	const struct arcana_jobs_submit_input_change_suricata	*suricata;
+	const struct arcana_jobs_submit_input_change_nfs	*nfs;
+	const struct arcana_jobs_submit_input_change_iscsi	*iscsi;
+	const struct arcana_jobs_submit_input_change_hast	*hast;
 };
 
 /* input */
@@ -11569,6 +11631,18 @@ int	arcana_jobs_submit_input_change_clamav_decode(const void *, size_t, struct a
 int	arcana_jobs_submit_input_change_suricata_encode(const struct arcana_jobs_submit_input_change_suricata *,
 	    struct cbl_ybuf *);
 int	arcana_jobs_submit_input_change_suricata_decode(const void *, size_t, struct arcana_jobs_submit_input_change_suricata *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_nfs_encode(const struct arcana_jobs_submit_input_change_nfs *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_nfs_decode(const void *, size_t, struct arcana_jobs_submit_input_change_nfs *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_iscsi_encode(const struct arcana_jobs_submit_input_change_iscsi *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_iscsi_decode(const void *, size_t, struct arcana_jobs_submit_input_change_iscsi *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_hast_encode(const struct arcana_jobs_submit_input_change_hast *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_hast_decode(const void *, size_t, struct arcana_jobs_submit_input_change_hast *,
 	    cbl_yarena *, int, char *, size_t);
 int	arcana_jobs_submit_input_change_encode(const struct arcana_jobs_submit_input_change *,
 	    struct cbl_ybuf *);

@@ -208,7 +208,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN], surules[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[118];
+	char	*argv[124];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -762,6 +762,20 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$p\"\nexit 0\n");
 	/* suricata, a plugin: checked, it takes all; run, it stays a while
 	 * with its pid file where it is told. */
+	/* ctladm(8), hastctl(8) and showmount(8), as they answer. */
+	put("tools/ctladm", "#!/bin/sh\necho \"ctladm $*\" >> netstore.log\n"
+	    "case \"$1\" in devlist) echo 'LUN Backend Size (Blocks) BS "
+	    "Serial Number Device ID'; echo '  0 block 2048 512 LABSERIAL0 "
+	    "LABDEV0' ;; islist) echo 'ID Portal Initiator name Target name' "
+	    ";; portlist) echo 'Port Online Frontend Name pp vp' ;; esac\n");
+	put("tools/hastctl", "#!/bin/sh\necho \"hastctl $*\" >> netstore.log\n"
+	    "case \"$1\" in status) printf 'Name\\tStatus\\tRole\\n"
+	    "shared\\tcomplete\\tsecondary\\n' ;; esac\n");
+	put("tools/showmount", "#!/bin/sh\necho 'Exports list on localhost:'\n"
+	    "echo '/export 10.0.0.0'\n");
+	put("exports", "/export -network 10.0.0.0/24\n");
+	put("hast.conf", "resource shared {\n\ton lab {\n\t\tlocal /dev/md9\n"
+	    "\t\tremote 10.0.0.2\n\t}\n}\n");
 	/* Its command socket, as Suricata answers, gone after a while. */
 	put("tools/scsrv.py", "import json, os, signal, socket, sys\n"
 	    "signal.alarm(300)\np = sys.argv[1]\ntry:\n    os.unlink(p)\n"
@@ -1241,7 +1255,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* Suricata's ruleset the test's, never the host's. */
 	argv[114] = (char *)(uintptr_t)"--suricata-rules";
 	argv[115] = surules;
-	argv[116] = NULL;
+	/* The storage services' files, the test's. */
+	argv[116] = (char *)(uintptr_t)"--exports";
+	argv[117] = (char *)(uintptr_t)"exports";
+	argv[118] = (char *)(uintptr_t)"--ctl-conf";
+	argv[119] = (char *)(uintptr_t)"ctl.conf";
+	argv[120] = (char *)(uintptr_t)"--hast-conf";
+	argv[121] = (char *)(uintptr_t)"hast.conf";
+	argv[122] = NULL;
 	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
 	snprintf(surules, sizeof(surules), "%s/rules", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);

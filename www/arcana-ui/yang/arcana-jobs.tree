@@ -320,8 +320,23 @@ module: arcana-jobs
        |        |     +---w args*   string
        |        |     +---w text?   string
        |        +--:(suricata)
-       |           +---w suricata!
+       |        |  +---w suricata!
+       |        |     +---w verb    enumeration
+       |        |     +---w args*   string
+       |        +--:(nfs)
+       |        |  +---w nfs!
+       |        |     +---w verb    enumeration
+       |        |     +---w args*   string
+       |        |     +---w text?   string
+       |        +--:(iscsi)
+       |        |  +---w iscsi!
+       |        |     +---w verb    enumeration
+       |        |     +---w args*   string
+       |        |     +---w text?   string
+       |        +--:(hast)
+       |           +---w hast!
        |              +---w verb    enumeration
        |              +---w args*   string
+       |              +---w text?   string
        +--ro output
           +--ro id*   uint64

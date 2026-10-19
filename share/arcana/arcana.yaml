@@ -403,6 +403,31 @@ definitions:
           across updates; the ruleset is made again from what was
           fetched (--offline) and applied as by update.  The host's
           only; never in safe mode.
+      - name: nfs
+        doc: |
+          The NFS server (nfsd(8), mountd(8)): verb exports writes
+          exports(5) from text and has mountd read it again; verb server
+          sets, by names, enable= (yes or no: nfsd, with rpcbind and
+          mountd, enabled and started, or stopped), v4= and v4only=
+          (nfsv4_server_enable, nfsv4_server_only), minor= (NFSv4's 0, 1
+          or 2: vfs.nfsd.server_max_minorversion, kept in sysctl.conf),
+          threads= and pNFS's data servers pnfs= (host:/path joined by
+          commas) and mirror= (nfsd's -n, -p and -m, pnfsserver(4)).
+          The host's only; never in safe mode.
+      - name: iscsi
+        doc: |
+          The iSCSI target (ctld(8)): verb conf writes ctl.conf(5) from
+          text (root's alone: it may hold CHAP secrets) and has ctld read
+          it again; verb enable, enable=yes or no, enables and starts it
+          or stops it.  The host's only; never in safe mode.
+      - name: hast
+        doc: |
+          HAST (hastd(8)): verb conf writes hast.conf(5) from text and
+          has hastd read it again; verb enable, enable=yes or no; verb
+          create, resource=, makes a resource's metadata (hastctl
+          create); verb role, resource= and role= (init, primary or
+          secondary), sets its role.  The host's only; never in safe
+          mode.
   - name: job-state
     type: enum
     entries:
@@ -3584,6 +3609,28 @@ operations:
           - json
           - trace
 
+  - name: netstore
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The host's network storage services, as a JSON object: "nfs" (the
+      NFS server: nfsd's and mountd's state, its rc.conf, nfsd's flags
+      with its threads and pNFS's data servers and mirrors,
+      vfs.nfsd.server_max_minorversion, exports(5) and what mountd
+      exports), "iscsi" (ctld's state, ctl.conf(5), ctladm's LUNs,
+      sessions and ports) and "hast" (hastd's state, hast.conf(5),
+      hastctl status and list).  Names: nfs, iscsi or hast, those
+      alone.  Nothing is changed.
+    do:
+      request:
+        attributes:
+          - names
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
 mcast-groups:
   - name: events
     auth: true

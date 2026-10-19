@@ -46,6 +46,10 @@ static const char *icon_sdwan = TREE_ICON("M5 7a2 2 0 1 0 0-.01M19 7a2 2 0 "
 /* A shield: the Security page. */
 static const char *icon_shield = TREE_ICON("M12 3l7 3v5c0 4.5-3 8.2-7 "
     "10-4-1.8-7-5.5-7-10V6l7-3zM9 12l2 2 4-4");
+/* Disks stacked: the Storage page, what a host serves of them. */
+static const char *icon_disks = TREE_ICON("M4 6c0-1.7 3.6-3 8-3s8 1.3 8 "
+    "3-3.6 3-8 3-8-1.3-8-3zM4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 "
+    "1.7 3.6 3 8 3s8-1.3 8-3v-6");
 /* A box with a wrench across it: packages built. */
 static const char *icon_builder = TREE_ICON("M3 8l9-5 9 5v8l-9 5-9-5V8zM3 8l9 "
     "5 9-5M12 13v8");
@@ -227,13 +231,15 @@ topbar(struct html *h)
 	    NODE_API || app.node == NODE_USAGE || app.node == NODE_WORKFLOWS ||
 	    app.node == NODE_SDWAN || app.node == NODE_SETTINGS || app.node ==
 	    NODE_DEVICES || app.node == NODE_TROUBLE || app.node ==
-	    NODE_SECURITY || app.node == NODE_BUILDER)
+	    NODE_SECURITY || app.node == NODE_BUILDER || app.node ==
+	    NODE_STORAGE)
 		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
 		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
 		    app.node == NODE_USAGE ? "Utilization" : app.node ==
 		    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ?
 		    "SD-WAN" : app.node == NODE_TROUBLE ? "Troubleshoot" : app.node ==
-		    NODE_SECURITY ? "Security" : app.node == NODE_BUILDER ?
+		    NODE_SECURITY ? "Security" : app.node == NODE_STORAGE ?
+		    "Storage" : app.node == NODE_BUILDER ?
 		    "Builder" : app.node == NODE_SETTINGS ? "Settings" : app.node ==
 		    NODE_DEVICES ? "Devices" :
 		    "All hosts");
@@ -380,6 +386,7 @@ rail(struct html *h)
 	    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ? "SD-WAN" :
 	    app.node == NODE_TROUBLE ? "Troubleshoot" :
 	    app.node == NODE_SECURITY ? "Security" :
+	    app.node == NODE_STORAGE ? "Storage" :
 	    app.node == NODE_BUILDER ? "Builder" :
 	    app.node == NODE_SETTINGS ? "Settings" : app.node == NODE_DEVICES ?
 	    "Devices" : app.node == NODE_FLEET || s == NULL ? "All hosts" :
@@ -413,6 +420,9 @@ rail(struct html *h)
 	    "</span><span class=\"name\">SD-WAN</span></li><li class=\"titem "
 	    "fleet secnode%s\" data-act=\"select-security\"><span class=\""
 	    "twig\">%s</span><span class=\"name\">Security</span></li>"
+	    "<li class=\"titem fleet nasnode%s\" data-act=\"select-storage\">"
+	    "<span class=\"twig\">%s</span><span class=\"name\">Storage</span>"
+	    "</li>"
 	    "<li class=\"titem fleet bldnode%s\" data-act=\"select-builder\">"
 	    "<span class=\"twig\">%s</span><span class=\"name\">Builder</span>"
 	    "</li><li class=\"titem "
@@ -425,6 +435,7 @@ rail(struct html *h)
 	    app.node == NODE_WORKFLOWS ? " selected" : "", icon_flows,
 	    app.node == NODE_SDWAN ? " selected" : "", icon_sdwan,
 	    app.node == NODE_SECURITY ? " selected" : "", icon_shield,
+	    app.node == NODE_STORAGE ? " selected" : "", icon_disks,
 	    app.node == NODE_BUILDER ? " selected" : "", icon_builder,
 	    app.node == NODE_TROUBLE ? " selected" : "", icon_trouble);
 	/* At the foot of the side bar: the console's own settings. */
@@ -839,6 +850,11 @@ stage(struct html *h)
 	}
 	if (app.node == NODE_SECURITY) {
 		view_secpage(h);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.node == NODE_STORAGE) {
+		view_naspage(h);
 		h_raw(h, "</main>");
 		return;
 	}

@@ -3542,6 +3542,74 @@ sdwan_cleanup()
 	stop_daemon
 }
 
+atf_test_case netstore cleanup
+netstore_head()
+{
+	atf_set "descr" "the NFS server, the iSCSI target and HAST: read, and changed by jobs"
+}
+netstore_body()
+{
+	mkdir -p tools
+	printf '#!/bin/sh\necho "ctladm $*" >> %s/ctladm.log\ncase "$1" in\ndevlist) echo "LUN Backend Size (Blocks) BS Serial Number Device ID"; echo "  0 block 2048 512 MYSERIAL0 MYDEVID0" ;;\nislist) echo "ID Portal Initiator name Target name" ;;\nportlist) echo "Port Online Frontend Name pp vp" ;;\nesac\n' "$(pwd)" > tools/ctladm
+	printf '#!/bin/sh\necho "hastctl $*" >> %s/hastctl.log\ncase "$1" in\nstatus) printf "Name\\tStatus\\tRole\\tComponents\\nshared\\tcomplete\\tprimary\\t/dev/ada1\\tb.example.org\\n" ;;\nlist) echo "shared:" ;;\nesac\n' "$(pwd)" > tools/hastctl
+	printf '#!/bin/sh\necho "Exports list on localhost:"\necho "/export 10.0.0.0"\n' > tools/showmount
+	printf '#!/bin/sh\necho "sysctl $*" >> %s/sysctl.log\n' "$(pwd)" > fake-sysctl
+	chmod +x tools/ctladm tools/hastctl tools/showmount fake-sysctl
+	printf '/export -network 10.0.0.0/24\n' > exports
+	DAEMON_ARGS="-2 $(pwd)/tools --exports $(pwd)/exports --ctl-conf $(pwd)/ctl.conf --hast-conf $(pwd)/hast.conf -Q $(pwd)/fake-sysctl -O $(pwd)/sysctl.conf"
+	start_daemon
+	for d in nfsd mountd ctld hastd; do
+		printf '#!/bin/sh\n' > rc.d/$d
+		chmod +x rc.d/$d
+	done
+	# Read whole, or one of them.
+	atf_check -o match:'"nfs":\{.*"exports_path":"[^"]*/exports","exports":"/export -network 10.0.0.0/24\\n","exported":"Exports list on localhost:' \
+	    -o match:'"iscsi":\{.*"luns":"LUN Backend[^"]*MYSERIAL0' \
+	    -o match:'"hast":\{.*"status":"Name\\tStatus\\tRole\\tComponents\\nshared\\tcomplete\\tprimary' \
+	    "$JGC" -c "$SOCK" netstore
+	atf_check -o match:'^\{"iscsi":' -o not-match:'"nfs"' "$JGC" -c "$SOCK" netstore iscsi
+	atf_check -s exit:1 -e match:'netstore reads nfs, iscsi and hast' "$JGC" -c "$SOCK" netstore smb
+	# NFS: exports(5) written, mountd told; the server's settings:
+	# NFSv4.2, nfsd's threads, pNFS's data servers and mirrors.
+	printf '/export -network 10.0.0.0/24\nV4: /export -sec=sys\n' > exports.new
+	atf_check -o match:'done +nfs exports' "$JGC" -c "$SOCK" nfs exports exports.new
+	atf_check -o inline:'/export -network 10.0.0.0/24\nV4: /export -sec=sys\n' cat exports
+	atf_check -o match:'done +nfs server' "$JGC" -c "$SOCK" nfs server enable=yes v4=yes \
+	    v4only=yes minor=2 threads=8 pnfs=ds1.example.org:/ds0,ds2.example.org:/ds1 mirror=2
+	atf_check -o match:'^nfs_server_flags="-u -t -n 8 -p ds1.example.org:/ds0,ds2.example.org:/ds1 -m 2"$' \
+	    -o match:'^nfsv4_server_enable="YES"$' -o match:'^nfsv4_server_only="YES"$' \
+	    -o match:'^rpcbind_enable="YES"$' -o match:'^mountd_enable="YES"$' cat rc.conf
+	atf_check -o match:'vfs.nfsd.server_max_minorversion=2' cat sysctl.log
+	atf_check -o match:'^vfs.nfsd.server_max_minorversion=2$' cat sysctl.conf
+	test -f running.nfsd || atf_fail "nfsd is not started"
+	atf_check -s exit:1 -e match:"minor is NFSv4's 0, 1 or 2" "$JGC" -c "$SOCK" nfs server minor=3
+	atf_check -s exit:1 -e match:'pnfs is the data servers' "$JGC" -c "$SOCK" nfs server 'pnfs=a b'
+	atf_check -s exit:1 -e match:'threads is 1 to 256' "$JGC" -c "$SOCK" nfs server threads=0
+	atf_check -s exit:1 -e match:'server takes enable=' "$JGC" -c "$SOCK" nfs server color=red
+	# iSCSI: ctl.conf root's alone; ctld on.
+	printf 'portal-group pg0 {\n\tlisten 0.0.0.0\n}\n' > ctl.new
+	atf_check -o match:'done +iscsi conf' "$JGC" -c "$SOCK" iscsi conf ctl.new
+	atf_check -o match:'^-rw-------' ls -l ctl.conf
+	atf_check -o match:'done +iscsi enable' "$JGC" -c "$SOCK" iscsi enable yes
+	test -f running.ctld || atf_fail "ctld is not started"
+	# HAST: hast.conf; a resource made, its role set.
+	printf 'resource shared {\n\ton a { local /dev/ada1\n\t\tremote 10.0.0.2 }\n}\n' > hast.new
+	atf_check -o match:'done +hast conf' "$JGC" -c "$SOCK" hast conf hast.new
+	atf_check -o match:'resource shared' cat hast.conf
+	atf_check -o match:'done +hast create shared' "$JGC" -c "$SOCK" hast create shared
+	atf_check -o match:'done +hast role shared' "$JGC" -c "$SOCK" hast role primary shared
+	atf_check -o match:'^hastctl create shared$' -o match:'^hastctl role primary shared$' cat hastctl.log
+	atf_check -s exit:1 -e match:'role is init, primary or secondary' "$JGC" -c "$SOCK" hast role leader shared
+	atf_check -s exit:1 -e match:'a hast resource is named' "$JGC" -c "$SOCK" hast create '../x'
+	# The host's alone.
+	atf_check -s exit:1 -e match:"the host's storage services are the host's" \
+	    "$JGC" -j web -c "$SOCK" iscsi enable yes
+}
+netstore_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case agent_build cleanup
 agent_build_head()
 {
@@ -8632,6 +8700,7 @@ atf_init_test_cases()
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
 	atf_add_test_case sdwan
+	atf_add_test_case netstore
 	atf_add_test_case sdwan_jail
 	atf_add_test_case jail_conf
 	atf_add_test_case carp
