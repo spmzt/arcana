@@ -695,6 +695,14 @@
   never made nor taken away.  The IPFW tab's Load the current file
   verified in a jail with its own rc.conf and script (the lab's
   arcswan1 root).
+- Nodes of the map that ran from the pointer (narrowed by the user to
+  vnet jails, 2026-10-19): a vnet jail's node had the class jail, which
+  the jails' cards' rule .jail also matched; its hover's CSS transform
+  (and rise's) overrode the node's transform attribute, so held it was
+  drawn off at the drawing's corner.  The class is vjail now, and
+  div.node the workflow steps' (rise would move SD-WAN's SVG nodes as
+  well).  Fixed, console 0.217.2; pwa_plugins drags one with a real
+  mouse.
 - Asked for on 2026-10-18:
   - Consoles clustered, active/active, over cblink: done, console
     0.215.0 (docs/notes/console-cluster.md has what is not yet).
@@ -1091,12 +1099,6 @@ Written and tested with stand-ins, never run for real:
   kernel, its gateway not being reached in that table, which came
   through as route(8) says it. Whether the address named to send from
   is the one a route then uses: route(8) took it.
-- Nodes of the map that move away from the pointer, as was reported
-  from a browser that is not the one the tests run: not reproduced. A
-  real mouse in headless Chromium keeps a host under it for every
-  step. What could cause it was changed: the pointer is the drawing's
-  while something is dragged, the neighbours outside no longer swing
-  about when a host is moved, and the drawing is as large as its room.
 - The network map with real tunnels between real hosts: the test has two
   names for one agent, so its links are the networks they share.
 - A vnet jail's network. Run for real, against the jail `gateway` of

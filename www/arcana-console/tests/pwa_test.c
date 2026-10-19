@@ -5901,16 +5901,50 @@ part_netsect(void)
 	    "document.querySelector('.hosts .hostcard')", 5);
 	shot("2a-fleet-running");
 	run("document.querySelector('li[data-act=select-network]').click()");
-	wait_js("document.querySelector('svg.topo .tnode.jail.up') && "
+	wait_js("document.querySelector('svg.topo .tnode.vjail.up') && "
 	    "document.querySelector('svg.topo .tlink.vnet')", 30);
-	ATF_CHECK(js_true("[...document.querySelectorAll('svg.topo .tnode.jail "
+	ATF_CHECK(js_true("[...document.querySelectorAll('svg.topo .tnode.vjail "
 	    ".name')].some(n => n.textContent === 'gw')"));
-	run("const n = document.querySelector('svg.topo .tnode.jail .box'); "
+	run("const n = document.querySelector('svg.topo .tnode.vjail .box'); "
 	    "ptr(n, 'pointerdown'); ptr(n, 'pointerup');");
-	wait_js("document.querySelector('svg.topo .tnode.jail.sel') && "
+	wait_js("document.querySelector('svg.topo .tnode.vjail.sel') && "
 	    "document.querySelector('.map-panel .iflist').textContent."
 	    "includes('epair1b')", 10);
 	shot("8d-vnet-jail-node");
+	/*
+	 * A real mouse over the jail's node, and then dragging it: it stays
+	 * where its transform attribute puts it, under the pointer.  A CSS
+	 * transform of a rule meant for something else (the jails' cards'
+	 * hover) once moved it off to the drawing's corner.
+	 */
+	{
+		double	jx, jy, mx, my;
+
+		jx = js_num("(r => r.x + r.width / 2)(document.querySelector("
+		    "'svg.topo .tnode.vjail .box').getBoundingClientRect())");
+		jy = js_num("(r => r.y + r.height / 2)(document.querySelector("
+		    "'svg.topo .tnode.vjail .box').getBoundingClientRect())");
+		mouse("pointerMove", jx, jy);
+		usleep(400000);
+		ATF_CHECK(js_true("(n => getComputedStyle(n).transform === "
+		    "'none' || (m => Math.abs(m.e - n.transform.baseVal."
+		    "consolidate().matrix.e) < 0.5 && Math.abs(m.f - n."
+		    "transform.baseVal.consolidate().matrix.f) < 0.5)(new "
+		    "DOMMatrix(getComputedStyle(n).transform)))(document."
+		    "querySelector('svg.topo .tnode.vjail'))"));
+		mouse("pointerDown", 0, 0);
+		mouse("pointerMove", jx + 40, jy + 30);
+		mouse("pointerMove", jx + 80, jy + 60);
+		usleep(300000);
+		mx = js_num("(r => r.x + r.width / 2)(document.querySelector("
+		    "'svg.topo .tnode.vjail .box').getBoundingClientRect())");
+		my = js_num("(r => r.y + r.height / 2)(document.querySelector("
+		    "'svg.topo .tnode.vjail .box').getBoundingClientRect())");
+		mouse("pointerUp", 0, 0);
+		ATF_CHECK_MSG(mx - jx > 70 && mx - jx < 90 && my - jy > 50 &&
+		    my - jy < 70, "the jail moved by %.0f,%.0f, not 80,60",
+		    mx - jx, my - jy);
+	}
 	/* Its network is its host's Network tab, the jail picked there. */
 	run("document.querySelector('.map-panel button[data-act="
 	    "topo-open-host]').click()");

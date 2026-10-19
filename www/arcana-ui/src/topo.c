@@ -2294,7 +2294,7 @@ map_nodes(struct html *h)
 		    "down" : t->ifs != NULL ? "up" : "unknown",
 		    strcmp(tp.sel, key) == 0 ? " sel" : "", tp.linking &&
 		    strcmp(tp.link_from, key) != 0 ? " target" : "",
-		    tn[i].jail[0] != '\0' ? " jail" : "", t->x, t->y);
+		    tn[i].jail[0] != '\0' ? " vjail" : "", t->x, t->y);
 		h_attr(h, "data-arg", key);
 		h_attr(h, "data-drop", key);
 		h_fmt(h, "><rect class=\"box\" x=\"%d\" y=\"%d\" width=\"%d\" "
