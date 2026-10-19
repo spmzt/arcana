@@ -221,14 +221,13 @@ pimd-3.1.0 3.2.0
 #!/bin/sh
 echo "fake-pkg $*" >&2
 case "$1" in -4|-6) shift ;; esac
-[ "$1" = -o ] && shift 2
+anyos=no; [ "$1" = -o ] && { anyos=yes; shift 2; }
 [ "$1" = -j ] && shift 2
 case "$1" in
 -vv)	printf 'Version                 : 2.3.1\nRepositories:\n  FreeBSD-ports: { \n    url             : "pkg+https://pkg.FreeBSD.org/FreeBSD:16:amd64/latest",\n    enabled         : yes,\n  }\n  builder: { \n    url             : "file:///usr/local/poudriere/data/packages/lab",\n    enabled         : no,\n  }\n' ;;
 update)	exit 0 ;;
 query)	printf 'aria2\t1.37.0_1\t0\t5242880\twww/aria2\tDownload utility\npimd\t3.1.0\t1\t102400\tnet/pimd\tPIM-SM daemon\n' ;;
 clean)	echo "$*" >> clean.log ;;
-install) echo "$*" >> install.log ;;
 version)
 	[ -s pending ] || exit 1
 	# pkg 2 says how each repository is first.
@@ -237,7 +236,17 @@ version)
 		printf '%-30s <   needs updating (remote has %s)
 ' "$nv" "$remote"
 	done < pending ;;
-upgrade)
+upgrade|install)
+	# A repository for a newer FreeBSD: refused but past OSVERSION,
+	# and pkg exits 0 still.
+	if [ -e newer -a $anyos = no ]; then
+		echo 'Error updating repositories!'
+		echo 'pkg: repository FreeBSD-base contains packages for wrong OS version: FreeBSD:16:amd64' >&2
+		echo "pkg: Repository FreeBSD-ports cannot be opened. 'pkg update' required" >&2
+		echo 'Your packages are up to date.'
+		exit 0
+	fi
+	[ "$1" = install ] && { echo "$*" >> install.log; exit 0; }
 	shift
 	[ "$1" = -r ] && { echo "upgrade from $2" >> repo.log; shift 2; }
 	dry=no; [ "$1" = -n ] && dry=yes; shift
@@ -792,6 +801,15 @@ packages_body()
 	atf_check -o match:'done +pkg install aria2 from builder$' \
 	    "$JGC" -c "$SOCK" pkg-install -r builder aria2
 	atf_check -o match:'^install -r builder -y aria2$' cat install.log
+	# A repository for a newer FreeBSD: no success, though pkg exits 0,
+	# and IGNORE_OSVERSION named for the console to ask; past it, done.
+	touch newer
+	atf_check -s exit:1 -o ignore -e match:'pkg upgrade: a repository has packages for a newer FreeBSD than this one, refused unless IGNORE_OSVERSION=yes: repository FreeBSD-base contains packages for wrong OS version: FreeBSD:16:amd64; Repository FreeBSD-ports cannot be opened' \
+	    "$JGC" -c "$SOCK" pkg-upgrade -n
+	atf_check -s exit:1 -o match:'failed +pkg install aria2' \
+	    "$JGC" -c "$SOCK" pkg-install aria2
+	atf_check -o match:'Upgraded: 0' "$JGC" -c "$SOCK" pkg-upgrade -O
+	rm newer
 	# The cache cleaned, as a job; all of it with -a.
 	atf_check -o match:'done +pkg clean$' "$JGC" -c "$SOCK" pkg-clean
 	atf_check -o match:'done +pkg clean -a$' "$JGC" -c "$SOCK" pkg-clean -a
