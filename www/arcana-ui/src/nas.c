@@ -210,7 +210,7 @@ view_nfs(struct html *h, const ucl_object_t *o)
 	    "</form><form class=\"secform\" data-form=\"nas-exports\"><h4>");
 	h_txt(h, jstr(o, "exports_path") != NULL ? jstr(o, "exports_path") :
 	    "exports");
-	h_raw(h, "</h4><label>What it exports <textarea name=\"text\" rows=\"8\" "
+	h_raw(h, "</h4><label class=\"wide\">What it exports <textarea name=\"text\" rows=\"8\" "
 	    "spellcheck=\"false\" placeholder=\"V4: /export -sec=sys\n"
 	    "/export/home -maproot=root -network 10.0.0.0/24\">");
 	h_txt(h, jstr(o, "exports"));
@@ -255,7 +255,8 @@ view_iscsi(struct html *h, const ucl_object_t *o)
 	h_raw(h, "<form class=\"secform\" data-form=\"nas-ctl\"><h4>");
 	h_txt(h, jstr(o, "conf_path") != NULL ? jstr(o, "conf_path") :
 	    "ctl.conf");
-	h_raw(h, "</h4><label>Portal groups, auth groups, targets and their "
+	h_raw(h, "</h4><label class=\"wide\">Portal groups, auth groups, "
+	    "targets and their "
 	    "LUNs <textarea name=\"text\" rows=\"12\" spellcheck=\"false\">");
 	h_txt(h, jstr(o, "conf"));
 	h_raw(h, "</textarea><small class=\"help\">ctl.conf(5), root's alone "
@@ -325,7 +326,7 @@ view_hast(struct html *h, const ucl_object_t *o)
 	h_raw(h, "<form class=\"secform\" data-form=\"nas-hast\"><h4>");
 	h_txt(h, jstr(o, "conf_path") != NULL ? jstr(o, "conf_path") :
 	    "hast.conf");
-	h_raw(h, "</h4><label>Its resources <textarea name=\"text\" rows=\"10\" "
+	h_raw(h, "</h4><label class=\"wide\">Its resources <textarea name=\"text\" rows=\"10\" "
 	    "spellcheck=\"false\" placeholder=\"resource shared {\n\ton a {\n"
 	    "\t\tlocal /dev/ada1\n\t\tremote 10.0.0.2\n\t}\n\ton b {\n\t\t"
 	    "local /dev/ada1\n\t\tremote 10.0.0.1\n\t}\n}\">");

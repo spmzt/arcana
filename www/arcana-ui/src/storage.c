@@ -1365,9 +1365,24 @@ view_storage(struct html *h, struct server *s)
 	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub\">");
 	for (k = 0; k < SK_N; k++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"st-kind\" "
-		    "data-arg=\"%s\">%s</button>", sg.kind == k ? " on" : "",
-		    kind_arg[k], kind_title[k]);
+		    "data-arg=\"%s\">%s</button>", sg.kind == k &&
+		    !sysview_shown("storage") ? " on" : "", kind_arg[k],
+		    kind_title[k]);
+	/* GEOM, GELI and devfs: of the system read, sysview.c's. */
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"sv-show\" "
+	    "data-arg=\"storage\" data-value=\"1\">GEOM</button><button "
+	    "class=\"ghost small%s\" data-act=\"sv-show\" data-arg=\"storage\" "
+	    "data-value=\"2\">GELI</button><button class=\"ghost small%s\" "
+	    "data-act=\"sv-show\" data-arg=\"storage\" data-value=\"3\">devfs"
+	    "</button>", sysview_shown("geom") ? " on" : "", sysview_shown(
+	    "geli") ? " on" : "", sysview_shown("devfs") ? " on" : "");
 	h_raw(h, "</nav>");
+	if (sysview_shown("storage")) {
+		h_raw(h, "</div>");
+		view_storage_geom(h, s, sysview_shown("geom") ? 0 :
+		    sysview_shown("geli") ? 1 : 2);
+		return;
+	}
 	k = sg.kind;
 	if (k == SK_DATASETS)
 		h_raw(h, "<button class=\"ghost small\" data-act=\""
@@ -1473,6 +1488,106 @@ import_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 }
 
 /* The boxes of storage: true when the one open is one of them. */
+/*
+ * ZFS's own properties, each a choice of its values, as a dataset is
+ * made or changed: compression, deduplication, record size, access
+ * times, sync writes, copies, the checksum, quota and reservation; and
+ * as it is made, its encryption with the passphrase typed twice.
+ */
+static const struct {
+	const char	*name, *title, *values, *help;
+} zf[] = {
+	{ "compression", "Compression", "lz4 zstd zstd-fast zstd-3 zstd-9 "
+	    "zstd-19 gzip-6 gzip-9 zle off", "lz4 cheap; zstd smaller" },
+	{ "dedup", "Deduplication", "off on verify sha256 sha512 skein "
+	    "blake3", "a table in memory, a few GB a TB of unique blocks" },
+	{ "recordsize", "Record size", "16K 32K 64K 128K 256K 512K 1M",
+	    "databases small, media large" },
+	{ "atime", "Access times", "on off", "off: no write on a read" },
+	{ "sync", "Sync writes", "standard always disabled", "disabled "
+	    "loses the last seconds on a crash" },
+	{ "copies", "Copies", "1 2 3", "of each block, on the same disks" },
+	{ "checksum", "Checksum", "on fletcher4 sha256 sha512 skein blake3",
+	    NULL },
+};
+
+static void
+zfs_fields(struct html *h, bool create)
+{
+	char	*vals, *p, *w;
+	size_t	 i;
+
+	h_raw(h, "<div class=\"zfields\">");
+	for (i = 0; i < nitems(zf); i++) {
+		h_fmt(h, "<label>%s<select name=\"z_%s\"><option value=\"\">"
+		    "%s</option>", zf[i].title, zf[i].name, create ? "inherited" :
+		    "as it is");
+		if ((vals = strdup(zf[i].values)) == NULL)
+			abort();
+		for (p = vals; (w = strsep(&p, " ")) != NULL;)
+			h_fmt(h, "<option>%s</option>", w);
+		free(vals);
+		h_raw(h, "</select>");
+		if (zf[i].help != NULL)
+			h_fmt(h, "<small>%s</small>", zf[i].help);
+		h_raw(h, "</label>");
+	}
+	h_raw(h, "<label>Quota<input name=\"z_quota\" spellcheck=\"false\" "
+	    "placeholder=\"none, or 20G\"></label><label>Reservation<input "
+	    "name=\"z_reservation\" spellcheck=\"false\" placeholder=\"none, or "
+	    "5G\"></label></div>");
+	if (create)
+		h_raw(h, "<div class=\"zfields\"><label>Encryption<select name=\""
+		    "z_encryption\"><option value=\"\">none</option><option value="
+		    "\"aes-256-gcm\">aes-256-gcm</option><option>aes-128-gcm"
+		    "</option><option>aes-256-ccm</option></select><small>a "
+		    "passphrase typed when it is mounted</small></label><label>"
+		    "Passphrase<input name=\"z_pass\" type=\"password\" "
+		    "autocomplete=\"new-password\" minlength=\"8\"></label>"
+		    "<label>Again<input name=\"z_again\" type=\"password\" "
+		    "autocomplete=\"new-password\"></label></div>");
+}
+
+/* An encrypted dataset made by its typed passphrase; what else was
+ * asked of it set by a job once it is there. */
+static struct {
+	char	*json;
+	char	 title[160];
+	char	 sid[16];
+	char	 name[256];
+} zenc;
+
+static void
+zenc_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct server	*s;
+	int		 i;
+
+	(void)arg;
+	sg.saving = false;
+	if (status != 200 || !jbool(o, "ok")) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "%s", jstr(o,
+		    "error") != NULL ? jstr(o, "error") : err != NULL ? err :
+		    "not made");
+		free(zenc.json);
+		zenc.json = NULL;
+		render();
+		return;
+	}
+	toast(false, "%s: made, encrypted", zenc.name);
+	app.modal = MODAL_NONE;
+	for (i = 0, s = NULL; i < app.nservers; i++)
+		if (strcmp(app.servers[i].id, zenc.sid) == 0)
+			s = &app.servers[i];
+	if (s != NULL && zenc.json != NULL)
+		job_send_host(s, zenc.json, zenc.title, JOB_STORAGE, zenc.name);
+	else
+		free(zenc.json);
+	zenc.json = NULL;
+	if (s != NULL)
+		refresh_storage(s, true);
+}
+
 bool
 storage_modal(struct html *h)
 {
@@ -1594,16 +1709,19 @@ storage_modal(struct html *h)
 		    "autofocus></label><label>Size, for a volume<input name=\""
 		    "volsize\" spellcheck=\"false\" autocomplete=\"off\" "
 		    "placeholder=\"empty for a file system; 10G for a volume\">"
-		    "</label><label>Properties<textarea name=\"props\" class=\""
-		    "code\" rows=\"4\" spellcheck=\"false\" placeholder=\""
-		    "compression=zstd&#10;quota=20G&#10;mountpoint=/srv/data\">"
-		    "</textarea><small>One <code>name=value</code> a line."
-		    "</small></label>");
+		    "</label>");
+		zfs_fields(h, true);
+		h_raw(h, "<label>Other properties<textarea name=\"props\" class=\""
+		    "code\" rows=\"3\" spellcheck=\"false\" placeholder=\""
+		    "mountpoint=/srv/data\"></textarea><small>One <code>name=value"
+		    "</code> a line.</small></label>");
 		return (true);
 	case SM_PROPS:
 		h_raw(h, "<form data-form=\"st-props\"><h2>Set properties of ");
 		h_txt(h, sg.target);
-		h_raw(h, "</h2><label>Properties<textarea name=\"props\" "
+		h_raw(h, "</h2>");
+		zfs_fields(h, false);
+		h_raw(h, "<label>Other properties<textarea name=\"props\" "
 		    "class=\"code\" rows=\"5\" spellcheck=\"false\" autofocus "
 		    "placeholder=\"quota=20G&#10;compression=zstd&#10;"
 		    "atime=off\"></textarea><small>One <code>name=value</code> "
@@ -1882,7 +2000,7 @@ storage_form(const char *form, const ucl_object_t *f)
 {
 	struct server	*s;
 	struct html	 b;
-	const char	*name, *v[16], *sz, *label;
+	const char	*name, *v[32], *sz, *label;
 	char		*text, *q, full[320], title[320];
 	int		 n, i;
 
@@ -1982,6 +2100,94 @@ storage_form(const char *form, const ucl_object_t *f)
 		n = prop_words(text, v, 14);
 		sz = jstr(f, "volsize") != NULL ? jstr(f, "volsize") : "";
 		label = jstr(f, "inherit") != NULL ? jstr(f, "inherit") : "";
+		/* The dedicated fields, name=value each beside the rest. */
+		{
+			static char	 zw[nitems(zf) + 2][160];
+			static const char *const extra[] = { "quota",
+			    "reservation" };
+			char		 k[32];
+			size_t		 zi;
+			int		 zn;
+
+			zn = 0;
+			for (zi = 0; n >= 0 && zi < nitems(zf) + 2; zi++) {
+				const char	*key = zi < nitems(zf) ?
+				    zf[zi].name : extra[zi - nitems(zf)];
+
+				snprintf(k, sizeof(k), "z_%s", key);
+				if (jstr(f, k) == NULL || jstr(f, k)[0] == '\0')
+					continue;
+				if (!name_ok(jstr(f, k), ".-")) {
+					snprintf(app.modal_error,
+					    sizeof(app.modal_error), "%s is a "
+					    "size or a word", key);
+					free(text);
+					return (true);
+				}
+				snprintf(zw[zn], sizeof(zw[zn]), "%s=%s", key,
+				    jstr(f, k));
+				v[n++] = zw[zn++];
+			}
+		}
+		/* Encrypted: made by its passphrase typed, not by a job. */
+		if (create && jstr(f, "z_encryption") != NULL && jstr(f,
+		    "z_encryption")[0] != '\0') {
+			const char	*pw = jstr(f, "z_pass") != NULL ? jstr(f,
+			    "z_pass") : "";
+			char		*body, *qd, *qp, url[96];
+			struct html	 jb;
+
+			if (strlen(pw) < 8 || jstr(f, "z_again") == NULL ||
+			    strcmp(pw, jstr(f, "z_again")) != 0 || sz[0] !=
+			    '\0') {
+				snprintf(app.modal_error, sizeof(app.modal_error),
+				    "%s", sz[0] != '\0' ? "An encrypted volume: "
+				    "zfs create it on the host" : "The passphrase, "
+				    "8 characters at least, the same twice");
+				free(text);
+				return (true);
+			}
+			free(zenc.json);
+			zenc.json = NULL;
+			if (n > 0) {
+				memset(&jb, 0, sizeof(jb));
+				h_raw(&jb, "{\"kind\":\"zfs\",\"verb\":\"set\","
+				    "\"args\":[");
+				q = json_quote(name);
+				h_raw(&jb, q);
+				free(q);
+				for (i = 0; i < n; i++) {
+					q = json_quote(v[i]);
+					h_raw(&jb, ",");
+					h_raw(&jb, q);
+					free(q);
+				}
+				h_raw(&jb, "]}");
+				zenc.json = jb.s;
+				snprintf(zenc.title, sizeof(zenc.title), "zfs set "
+				    "%s", name);
+			}
+			snprintf(zenc.sid, sizeof(zenc.sid), "%s", s->id);
+			snprintf(zenc.name, sizeof(zenc.name), "%s", name);
+			qd = json_quote(name);
+			qp = json_quote(pw);
+			if (asprintf(&body, "{\"dataset\":%s,\"new_key\":%s,"
+			    "\"create\":\"%s\"}", qd, qp, jstr(f,
+			    "z_encryption")) == -1)
+				abort();
+			explicit_bzero(qp, strlen(qp));
+			free(qd);
+			free(qp);
+			snprintf(url, sizeof(url), "/api/servers/%s/zfs/key",
+			    s->id);
+			sg.saving = true;
+			app.modal_error[0] = '\0';
+			api("POST", url, body, zenc_cb, NULL);
+			explicit_bzero(body, strlen(body));
+			free(body);
+			free(text);
+			return (true);
+		}
 		if (n < 0 || (!create && n == 0 && label[0] == '\0')) {
 			snprintf(app.modal_error, sizeof(app.modal_error),
 			    "%s", n < 0 ? "A property is name=value, one a "

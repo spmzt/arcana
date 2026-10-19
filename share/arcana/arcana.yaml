@@ -428,6 +428,27 @@ definitions:
           create); verb role, resource= and role= (init, primary or
           secondary), sets its role.  The host's only; never in safe
           mode.
+      - name: sysfile
+        doc: |
+          A file of the system's, one of a fixed table, written whole
+          from text, and the daemon that reads it told: the verb names
+          it, devfs.rules, devd (/usr/local/etc/devd/arcana.conf),
+          syslog.conf, newsyslog.conf, periodic.conf, audit_control,
+          audit_user, krb5.conf, ipsec.conf (setkey's), rctl.conf or
+          loader.conf.d (/boot/loader.conf.d/arcana.conf).  Verb periodic
+          sets periodic.conf's variables by names, name_enable=YES or
+          NO; verb rc rc.conf's kern_securelevel_enable= and
+          kern_securelevel= (-1 to 3), securelevel at boot.  The host's
+          only.
+      - name: geom
+        doc: |
+          A GEOM class at work, geom(8): the verb the class (mirror,
+          stripe, concat, raid3, label, nop, multipath, shsec, virstor,
+          cache, journal, eli or union), the first name its subcommand,
+          one of the class's own, or load or unload; the rest its words,
+          flags and names alone.  A GELI passphrase is text, given by a
+          file of the job's own (-J, -j).  The host's only; never in safe
+          mode.
   - name: job-state
     type: enum
     entries:
@@ -1238,6 +1259,16 @@ attribute-sets:
           max-count: 64
 
 
+      - name: zfs-create
+        type: text
+        doc: |
+          For zfs-key, the dataset made, encrypted with zfs-new-key as its
+          passphrase (keyformat passphrase, keylocation prompt): its
+          encryption, on or one of aes-128-ccm, aes-192-ccm, aes-256-ccm,
+          aes-128-gcm, aes-192-gcm, aes-256-gcm.  The dataset is not
+          there yet.
+        checks:
+          max-len: 16
   - name: host
     attributes:
       - name: hostname
@@ -3302,13 +3333,17 @@ operations:
       it is typed: with zfs-key, loaded (zfs load-key, which reads it
       on its standard input, through a pipe); with zfs-new-key, changed
       (zfs change-key, the same), and loaded first with zfs-key when it
-      is not.  A key is on no disk, in no job, no trace and no log.
+      is not; with zfs-create and zfs-new-key, the dataset made
+      encrypted, its passphrase the new key (zfs create -o encryption= -o
+      keyformat=passphrase -o keylocation=prompt).  A key is on no disk,
+      in no job, no trace and no log.
     do:
       request:
         attributes:
           - zfs-dataset
           - zfs-key
           - zfs-new-key
+          - zfs-create
         required:
           - zfs-dataset
       reply:
@@ -3621,6 +3656,30 @@ operations:
       sessions and ports) and "hast" (hastd's state, hast.conf(5),
       hastctl status and list).  Names: nfs, iscsi or hast, those
       alone.  Nothing is changed.
+    do:
+      request:
+        attributes:
+          - names
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+  - name: system
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The system's own configuration, as a JSON object: "files", each
+      file of the sysfile job's table with its path, its text, the
+      daemon that reads it (enabled, running) and what shows it at work
+      (devfs rule showsets, setkey -DP, rctl); and, with names empty or
+      host: "ntp" (ntpd, ntp.conf, ntpq -pn), "linux" (the service, its
+      modules), "securelevel" (now, and rc.conf's), "mac" (which MAC
+      modules are loaded), "auditd", "geom" (geom -t), "geli" (geli
+      list), "periodic" (periodic's variables, their defaults and what
+      periodic.conf says) and "svcj" (rc.conf's service jails).  Names:
+      files by name, and host.  Nothing is changed.
     do:
       request:
         attributes:

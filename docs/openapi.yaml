@@ -1336,6 +1336,24 @@ paths:
       responses:
         "200":
           description: The read, under data, with the agent's trace.
+  /api/servers/{server}/system:
+    get:
+      tags: [servers]
+      summary: The system's own configuration files, and settings beside them
+      description: >-
+        Under data, files (each of the sysfile job's table: devfs.rules,
+        devd, syslog.conf, newsyslog.conf, periodic.conf, audit_control,
+        audit_user, krb5.conf, ipsec.conf, rctl.conf, loader.conf.d, with
+        its path, text, daemon and what shows it at work), and ntp,
+        linux, securelevel, mac, auditd, geom, geli, periodic and svcj.
+        Changed by jobs of kind sysfile (verb the file's name, or
+        periodic), sysctl, kmod, ntp, service-config and service-action.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - { name: of, in: query, schema: { type: string }, description: "A file's name, or host" }
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
   /api/servers/{server}/history:
     get:
       tags: [servers]

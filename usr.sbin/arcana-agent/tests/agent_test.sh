@@ -3610,6 +3610,107 @@ netstore_cleanup()
 	stop_daemon
 }
 
+atf_test_case sysfiles cleanup
+sysfiles_head()
+{
+	atf_set "descr" "the system's own files, read and written by sysfile jobs, and the host's settings beside them"
+}
+sysfiles_body()
+{
+	mkdir -p tools root/etc/defaults root/etc/security
+	printf '#!/bin/sh\necho "0 devfsrules_hide_all"\n' > tools/devfs
+	printf '#!/bin/sh\necho "10.0.0.1 10.0.0.2 any"\necho "\tout ipsec esp/transport//require"\n' > tools/setkey
+	printf '#!/bin/sh\necho "jail:www:memoryuse:deny=1g"\n' > tools/rctl
+	cat > tools/geom <<EOS
+#!/bin/sh
+[ "\$1" = -t ] && { echo "Geom   Class   Provider"; echo "ada0   DISK    ada0"; exit 0; }
+[ "\$2" = status ] && { [ "\$1" = mirror ] && { echo "Name Status Components"; echo "mirror/gm0 COMPLETE md1"; exit 0; }; exit 1; }
+echo "geom \$*" >> $(pwd)/geom.log
+# A passphrase file: what it holds kept, to be looked at.
+while [ \$# -gt 0 ]; do [ "\$1" = -J ] || [ "\$1" = -j ] && cat "\$2" > $(pwd)/geom.pass; shift; done
+exit 0
+EOS
+	printf '#!/bin/sh\necho "Geom name: ada1p1.eli"\n' > tools/geli
+	printf '#!/bin/sh\necho "     remote  refid st t when poll reach delay offset jitter"\n' > tools/ntpq
+	chmod +x tools/*
+	printf '# defaults\ndaily_clean_tmps_enable="NO"\t\t# Delete stuff daily\ndaily_status_disks_enable="YES"\nsecurity_status_chksetuid_enable="YES"\n' > root/etc/defaults/periodic.conf
+	DAEMON_ARGS="-2 $(pwd)/tools --root $(pwd)/root"
+	start_daemon
+	for d in syslogd devfs devd auditd ipsec rctl ntpd linux; do
+		printf '#!/bin/sh\n' > rc.d/$d
+		chmod +x rc.d/$d
+	done
+	echo 'sshd_svcj="YES"' >> rc.conf
+	echo 'sshd_svcj_options="net_basic"' >> rc.conf
+	# Read whole: its files (none there yet), and the host beside.
+	atf_check -o match:'"files":\{"devfs.rules":\{"path":"/etc/devfs.rules","service":"devfs","enabled":false,"running":false,"shows":"0 devfsrules_hide_all\\n"\}' \
+	    -o match:'"ipsec.conf":\{"path":"/etc/ipsec.conf","service":"ipsec",[^}]*"shows":"10.0.0.1 10.0.0.2 any\\n' \
+	    -o match:'"rctl.conf":\{[^}]*"shows":"jail:www:memoryuse:deny=1g\\n"' \
+	    -o match:'"securelevel":\{"now":-?[0-9]+' -o match:'"mac":\{"mac_bsdextended":(true|false),' \
+	    -o match:'"geom":"Geom   Class   Provider\\nada0   DISK    ada0\\n"' -o match:'"geli":"Geom name: ada1p1.eli\\n"' \
+	    -o match:'"periodic":\[\{"name":"daily_clean_tmps_enable","default":"NO"\},\{"name":"daily_status_disks_enable","default":"YES"\},' \
+	    -o match:'"svcj":\{"sshd_svcj":"YES","sshd_svcj_options":"net_basic"\}' \
+	    "$JGC" -c "$SOCK" system
+	# The hardening sysctls this kernel has, and racct.
+	atf_check -o match:'"racct":[01],"hardening":\{"security.bsd.see_other_uids":[01],' \
+	    -o match:'"kern.elf64.aslr.enable":[01]' "$JGC" -c "$SOCK" system host
+	atf_check -o match:'^\{"files":\{"krb5.conf":\{"path":"/etc/krb5.conf"\}\}\}$' "$JGC" -c "$SOCK" system krb5.conf
+	atf_check -s exit:1 -e match:'system reads its files by name' "$JGC" -c "$SOCK" system passwd
+	# Written whole, each where the table says, its daemon told.
+	printf '*.err\t/var/log/errors\n' > syslog.new
+	touch running.syslogd
+	atf_check -o match:'done +syslog.conf written' "$JGC" -t -c "$SOCK" sysfile syslog.conf syslog.new
+	atf_check -o inline:'*.err\t/var/log/errors\n' cat root/etc/syslog.conf
+	printf 'flush\nspdflush\n' > ipsec.new
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sysfile ipsec.conf ipsec.new
+	atf_check -o match:'^-rw-------' ls -l root/etc/ipsec.conf
+	printf 'notify 0 { match "system" "IFNET"; action "logger $subsystem"; };\n' > devd.new
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sysfile devd devd.new
+	atf_check -o match:'IFNET' cat root/usr/local/etc/devd/arcana.conf
+	printf 'kern.racct.enable=1\n' > loader.new
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sysfile loader.conf.d loader.new
+	atf_check -o inline:'kern.racct.enable=1\n' cat root/boot/loader.conf.d/arcana.conf
+	# periodic.conf's variables, the rest kept.
+	atf_check -o match:'done +periodic.conf.s variables written' "$JGC" -c "$SOCK" sysfile periodic \
+	    daily_clean_tmps_enable=YES security_status_chksetuid_enable=NO
+	atf_check -o match:'\{"name":"daily_clean_tmps_enable","default":"NO","value":"YES"\}' \
+	    -o match:'\{"name":"security_status_chksetuid_enable","default":"YES","value":"NO"\}' \
+	    "$JGC" -c "$SOCK" system host
+	# securelevel at boot, rc.conf's, those two alone.
+	atf_check -o match:'done +securelevel at boot written' "$JGC" -c "$SOCK" sysfile rc \
+	    kern_securelevel_enable=YES kern_securelevel=2
+	atf_check -o match:'^kern_securelevel="2"$' -o match:'^kern_securelevel_enable="YES"$' cat rc.conf
+	atf_check -s exit:1 -e match:'rc sets kern_securelevel_enable' "$JGC" -c "$SOCK" sysfile rc sshd_enable=YES
+	atf_check -s exit:1 -e match:'kern_securelevel=-1 to 3' "$JGC" -c "$SOCK" sysfile rc kern_securelevel=7
+	# GEOM's classes loaded, their status; a class's command; GELI's
+	# passphrase by a file of its own, gone after.
+	atf_check -o match:'"geom_classes":\{"mirror":"Name Status Components\\nmirror/gm0 COMPLETE md1\\n"\}' \
+	    "$JGC" -c "$SOCK" system host
+	atf_check -o match:'done +geom mirror label /dev/md2' \
+	    "$JGC" -c "$SOCK" geom mirror label -v -b round-robin gm0 /dev/md1 /dev/md2
+	atf_check -o inline:'geom mirror label -v -b round-robin gm0 /dev/md1 /dev/md2\n' cat geom.log
+	printf 'correct horse' > pass.txt
+	atf_check -o match:'done +geom eli init /dev/md3' \
+	    "$JGC" -t -c "$SOCK" geom eli init -s 4096 /dev/md3 -P pass.txt
+	atf_check -o match:'^geom eli init -J .*/arcana-geli\.[0-9]+ -s 4096 /dev/md3$' tail -1 geom.log
+	atf_check -o inline:'correct horse' cat geom.pass
+	test -z "$(ls root | grep arcana-geli)" || atf_fail "the passphrase file stayed"
+	atf_check -s exit:1 -e match:"a geom job's verb is its class" "$JGC" -c "$SOCK" geom gpart add x
+	atf_check -s exit:1 -e match:'not a subcommand of the class' "$JGC" -c "$SOCK" geom mirror rm gm0
+	atf_check -s exit:1 -e match:'a word is a flag or a name' "$JGC" -c "$SOCK" geom mirror label 'gm0;reboot' /dev/md1
+	atf_check -s exit:1 -e match:"a passphrase is geli init's" "$JGC" -c "$SOCK" geom mirror label gm0 /dev/md1 -P pass.txt
+	# What it does not write, and what it does not take.
+	atf_check -s exit:1 -e match:"a sysfile job's verb names its file" "$JGC" -c "$SOCK" sysfile passwd syslog.new
+	printf 'bad\001\n' > ctl.new
+	atf_check -s exit:1 -e match:'lines of printable characters' "$JGC" -c "$SOCK" sysfile krb5.conf ctl.new
+	atf_check -s exit:1 -e match:'name_enable=YES or NO' "$JGC" -c "$SOCK" sysfile periodic daily_x=1
+	atf_check -s exit:1 -e match:"the system's files are the host's" "$JGC" -j web -c "$SOCK" sysfile krb5.conf syslog.new
+}
+sysfiles_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case agent_build cleanup
 agent_build_head()
 {
@@ -8701,6 +8802,7 @@ atf_init_test_cases()
 	atf_add_test_case network_more
 	atf_add_test_case sdwan
 	atf_add_test_case netstore
+	atf_add_test_case sysfiles
 	atf_add_test_case sdwan_jail
 	atf_add_test_case jail_conf
 	atf_add_test_case carp

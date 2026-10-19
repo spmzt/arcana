@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.154.0"
+#define	ARCANA_AGENT_VERSION	"0.155.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -567,6 +567,20 @@ int		 do_sdwan_ids(struct work *, const char *, const char **);
 int		 do_notify(struct work *, const char *, const char *,
 		    const char *, const char **);
 void		 sdwan_ids_start(void);
+/* superbia/geomjob.c: GEOM's classes at work. */
+const char	*geom_check(const struct arc_job_spec *);
+char		*geom_title(const struct arc_job_spec *);
+int		 do_geom_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+struct ucl_object_s *geom_classes_json(struct work *);
+/* superbia/sysfiles.c: the system's own configuration files. */
+struct arc_system_rsp;
+void		 do_system(struct work *, const char *const *, size_t,
+		    struct arc_system_rsp *);
+const char	*sysfile_check(const struct arc_job_spec *);
+char		*sysfile_title(const struct arc_job_spec *);
+int		 do_sysfile_job(struct work *, const struct arc_job_spec *,
+		    const char **);
 /* superbia/netstore.c: NFS, iSCSI and HAST. */
 struct arc_netstore_rsp;
 void		 do_netstore(struct work *, const char *const *, size_t,

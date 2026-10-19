@@ -72,6 +72,7 @@ enum op {
 	OP_BUILDER_OPTIONS,
 	OP_SURICATA_RULES,
 	OP_NETSTORE,
+	OP_SYSTEM,
 	OP_CERTS,
 	OP_SSH,
 	OP_CAPTURE,
@@ -132,6 +133,7 @@ struct call {
 	char			*text;		/* bird-config: the new text */
 	char			*key;		/* zfs-key: as typed, zeroed */
 	char			*new_key;
+	char			 zcreate[16];	/* zfs-key: made encrypted so */
 	struct arc_variable	*vars;		/* service-config: to set */
 	size_t			 nvars;
 	bool			 reads;		/* changes nothing: may be asked twice */
@@ -1217,7 +1219,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_SURICATA_RULES ? "arc_suricata_rules" : c->op == OP_NETSTORE ? "arc_netstore" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_SURICATA_RULES ? "arc_suricata_rules" : c->op == OP_NETSTORE ? "arc_netstore" : c->op == OP_SYSTEM ? "arc_system" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1571,6 +1573,8 @@ call_run(struct kore_task *t)
 	struct arc_suricata_rules_rsp *surr;
 	struct arc_netstore_req	 nsq;
 	struct arc_netstore_rsp	*nsr;
+	struct arc_system_req	 sysq;
+	struct arc_system_rsp	*sysr;
 	struct arc_certs_req	 ceq;
 	struct arc_certs_rsp	*cer;
 	struct arc_ssh_req	 sshq;
@@ -1700,6 +1704,7 @@ call_run(struct kore_task *t)
 	bor = NULL;
 	surr = NULL;
 	nsr = NULL;
+	sysr = NULL;
 	cer = NULL;
 	sshr = NULL;
 	capr = NULL;
@@ -2666,6 +2671,38 @@ connected:
 		steps = bor->trace.v;
 		nsteps = bor->trace.n;
 		break;
+	case OP_SYSTEM:
+		/* One of its files, or host, when the page wants it alone. */
+		memset(&sysq, 0, sizeof(sysq));
+		{
+			const char	*one[1];
+
+			if (c->text != NULL && c->text[0] != '\0') {
+				one[0] = c->text;
+				sysq.names.v = one;
+				sysq.names.n = 1;
+			}
+			error = arc_system(&cl, &sysq, &sysr);
+		}
+		if (error != 0)
+			goto rpcfail;
+		ok = sysr->ok;
+		put_str(top, "error", sysr->error);
+		e = NULL;
+		if (sysr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, sysr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = sysr->trace.v;
+		nsteps = sysr->trace.n;
+		break;
 	case OP_NETSTORE:
 		/* nfs, iscsi or hast, when the page wants one alone. */
 		memset(&nsq, 0, sizeof(nsq));
@@ -2815,6 +2852,7 @@ connected:
 		zkq.zfs_dataset = c->text;
 		zkq.zfs_key = c->key;
 		zkq.zfs_new_key = c->new_key;
+		zkq.zfs_create = c->zcreate[0] != '\0' ? c->zcreate : NULL;
 		if ((error = arc_zfs_key(&cl, &zkq, &zkr)) != 0)
 			goto rpcfail;
 		ok = zkr->ok;
@@ -3110,6 +3148,8 @@ done:
 		arc_suricata_rules_rsp_free(surr);
 	if (nsr != NULL)
 		arc_netstore_rsp_free(nsr);
+	if (sysr != NULL)
+		arc_system_rsp_free(sysr);
 	if (cer != NULL)
 		arc_certs_rsp_free(cer);
 	if (sshr != NULL)
@@ -4522,6 +4562,29 @@ api_netstore(struct http_request *req)
 	return (read_route(req, OP_NETSTORE, setup_netstore));
 }
 
+/* GET /api/servers/<id>/system[?of=file|host]: the system's own files
+ * and the host's settings beside them. */
+static const char *
+setup_system(struct call *c, const struct rq *q)
+{
+	char	v[32];
+
+	if (rq_param(q, "of", v, sizeof(v)) && v[0] != '\0') {
+		if (strspn(v, "abcdefghijklmnopqrstuvwxyz0123456789._") !=
+		    strlen(v))
+			return ("of is a file's name, or host");
+		c->text = kore_strdup(v);
+	}
+	return (NULL);
+}
+
+int
+api_system(struct http_request *req)
+{
+
+	return (read_route(req, OP_SYSTEM, setup_system));
+}
+
 /* GET /api/servers/<id>/certs[?jail=]: the certificates OpenSSL trusts
  * there. */
 /* ?jail=name: the jail it is read in. */
@@ -4604,10 +4667,11 @@ api_capture(struct http_request *req)
 }
 
 /*
- * POST /api/servers/<id>/zfs/key, {"dataset", "key", "new_key"}: the key
- * of an encrypted dataset asked for at a prompt, typed: loaded, or
- * changed.  Not a job: a job is kept.  The keys are zeroed as the call
- * ends, and are in no log.
+ * POST /api/servers/<id>/zfs/key, {"dataset", "key", "new_key",
+ * "create"}: the key of an encrypted dataset asked for at a prompt,
+ * typed: loaded, or changed; with create (its encryption), the dataset
+ * made encrypted, the new key its passphrase.  Not a job: a job is kept.
+ * The keys are zeroed as the call ends, and are in no log.
  */
 int
 api_zfs_key(struct http_request *req)
@@ -4632,6 +4696,15 @@ api_zfs_key(struct http_request *req)
 			c->key = kore_strdup(s);
 		if ((s = ucl_str(body, "new_key")) != NULL && s[0] != '\0')
 			c->new_key = kore_strdup(s);
+		/* Made encrypted, with the new key: its encryption. */
+		if ((s = ucl_str(body, "create")) != NULL && s[0] != '\0') {
+			if (strlen(s) >= sizeof(c->zcreate) || strspn(s,
+			    "abcdefghijklmnopqrstuvwxyz0123456789-") !=
+			    strlen(s))
+				bad = true;
+			else
+				strlcpy(c->zcreate, s, sizeof(c->zcreate));
+		}
 		if ((c->key != NULL && strlen(c->key) > 512) || (c->new_key !=
 		    NULL && strlen(c->new_key) > 512) || (c->key == NULL &&
 		    c->new_key == NULL))
@@ -4844,6 +4917,8 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_NFS] = "nfs",
 	[ARC_JOB_KIND_ISCSI] = "iscsi",
 	[ARC_JOB_KIND_HAST] = "hast",
+	[ARC_JOB_KIND_SYSFILE] = "sysfile",
+	[ARC_JOB_KIND_GEOM] = "geom",
 };
 
 /* Is kind one the console sends (workflows.c checks jobs.yaml's)? */
@@ -5174,6 +5249,8 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_NFS:
 	case ARC_JOB_KIND_ISCSI:
 	case ARC_JOB_KIND_HAST:
+	case ARC_JOB_KIND_SYSFILE:
+	case ARC_JOB_KIND_GEOM:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
@@ -5604,6 +5681,7 @@ static const struct hread {
 	{ "builder/options", OP_BUILDER_OPTIONS, setup_builder_options },
 	{ "suricata/rules", OP_SURICATA_RULES, setup_suricata_rules },
 	{ "netstore", OP_NETSTORE, setup_netstore },
+	{ "system", OP_SYSTEM, setup_system },
 	{ "services", OP_SERVICES, NULL },
 	{ "packages", OP_PACKAGES, setup_packages },
 	{ "net/", OP_NETWORK, setup_network },

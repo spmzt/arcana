@@ -334,7 +334,17 @@ module: arcana-jobs
        |        |     +---w args*   string
        |        |     +---w text?   string
        |        +--:(hast)
-       |           +---w hast!
+       |        |  +---w hast!
+       |        |     +---w verb    enumeration
+       |        |     +---w args*   string
+       |        |     +---w text?   string
+       |        +--:(sysfile)
+       |        |  +---w sysfile!
+       |        |     +---w verb    enumeration
+       |        |     +---w args*   string
+       |        |     +---w text?   string
+       |        +--:(geom)
+       |           +---w geom!
        |              +---w verb    enumeration
        |              +---w args*   string
        |              +---w text?   string

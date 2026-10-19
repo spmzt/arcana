@@ -90,6 +90,7 @@ wd(const char *method, const char *path, const char *body)
 static const char	*shots;
 
 static void	run(const char *);
+static void	dock_closed(void);
 
 static void
 shot(const char *name)
@@ -1302,6 +1303,12 @@ part_hosts(void)
 	/* Of every running jail at once: none runs here, which is said,
 	 * and nothing is asked. */
 	run("document.querySelector('button[data-act=pkg-clean-jails]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('has no running jail'))", 5);
+	ATF_CHECK(js_true("!document.querySelector('form[data-form=confirm]')"));
+	run("document.querySelectorAll('.toast').forEach(t => t.remove())");
+	run("document.querySelector('button[data-act=pkg-upgrade-jails]')"
+	    ".click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('has no running jail'))", 5);
 	ATF_CHECK(js_true("!document.querySelector('form[data-form=confirm]')"));
@@ -3209,6 +3216,119 @@ part_ssh(void)
 	shot("9c-ssh-keys");
 }
 
+/*
+ * A host's own configuration: the System tab (NTP, periodic), the
+ * Security tab (securelevel at boot, a MAC module), the Storage tab's
+ * devfs, the Logs tab's syslog and the Sysctl tab's hardening, each
+ * change a job, the files where the host keeps them.
+ */
+/* What a change put in the queue, where the queue is on, run. */
+static void
+queued_run(void)
+{
+	int	k;
+
+	for (k = 0; k < 20 && !js_true("!!document.querySelector('button["
+	    "data-act=queue-run]')"); k++)
+		usleep(100000);
+	run("const b = document.querySelector('button[data-act=queue-run]'); "
+	    "if (b) b.click();");
+}
+
+static void
+part_system(void)
+{
+	int	i;
+
+	run("document.querySelector('button.tab[data-arg=system]').click()");
+	wait_js("document.querySelector('form[data-form=sv-ntp]') && "
+	    "document.querySelector('table.periodic') && document.querySelector("
+	    "'table.periodic').textContent.includes('daily_clean_tmps_enable')",
+	    20);
+	run("const f = document.querySelector('form[data-form=sv-ntp]'); "
+	    "f.servers.value = '0.lab.pool.ntp.org, 1.lab.pool.ntp.org'; "
+	    "f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '0.lab.pool.ntp.org' ntp.conf") !=
+	    0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the NTP servers are not written");
+	click_when("table.periodic button[data-act=sv-periodic][data-arg="
+	    "daily_clean_tmps_enable]", 10);
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^daily_clean_tmps_enable=\"YES"
+	    "\"$' root/etc/periodic.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "periodic.conf is not written");
+	dock_closed();
+	shot("7p-system");
+	/* Security: securelevel at boot; a MAC module, kept in kld_list. */
+	run("document.querySelector('button.tab[data-arg=security]').click()");
+	wait_js("document.querySelector('form[data-form=sv-securelevel]') && "
+	    "document.querySelector('table.macs')", 20);
+	run("const f = document.querySelector('form[data-form=sv-securelevel]'); "
+	    "f.enable.checked = true; f.level.value = '1'; f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^kern_securelevel=\"1\"$' "
+	    "rc.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "securelevel at boot is not written");
+	click_when("table.macs button[data-act=sv-mac][data-arg="
+	    "mac_seeotheruids]", 10);
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q 'mac_seeotheruids' kld.log") !=
+	    0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the MAC module is not loaded");
+	dock_closed();
+	shot("7q-security");
+	/* devfs rules, of the Storage tab. */
+	run("document.querySelector('button.tab[data-arg=storage]').click()");
+	click_when("button[data-act=sv-show][data-arg=storage][data-value='3']",
+	    10);
+	wait_js("document.querySelector('form[data-form=sv-file] input[name="
+	    "file][value=\"devfs.rules\"]')", 20);
+	run("const f = document.querySelector('form[data-form=sv-file]'); "
+	    "f.text.value = '[lab=10]\\nadd include $devfsrules_hide_all\\n'; "
+	    "f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^\\[lab=10\\]$' "
+	    "root/etc/devfs.rules") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "devfs.rules is not written");
+	click_when("button[data-act=st-kind][data-arg=pools]", 10);
+	/* syslog: sent to another host. */
+	run("document.querySelector('button.tab[data-arg=log]').click()");
+	click_when("button[data-act=sv-show][data-arg=logconf]", 10);
+	wait_js("document.querySelector('form[data-form=sv-remote]')", 20);
+	run("const f = document.querySelector('form[data-form=sv-remote]'); "
+	    "f.host.value = 'logs.example.org'; f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^\\*\\.\\*.@logs.example.org$' "
+	    "root/etc/syslog.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "syslog.conf is not written");
+	click_when("button[data-act=sv-show][data-arg=logconf]", 10);
+	/* Hardening: the sysctls this kernel has, one applied. */
+	run("document.querySelector('button.tab[data-arg=sysctl]').click()");
+	click_when("button[data-act=sv-show][data-arg=hardening]", 10);
+	wait_js("document.querySelector('table.hardening') && document."
+	    "querySelector('table.hardening').textContent.includes("
+	    "'kern.elf64.aslr.enable')", 20);
+	if (js_true("!!document.querySelector('table.hardening button[data-act="
+	    "sv-harden]')")) {
+		click_when("table.hardening button[data-act=sv-harden]", 10);
+		queued_run();
+		for (i = 0; i < 300 && system("grep -q 'sysctl .*=' kld.log") !=
+		    0; i++)
+			usleep(100000);
+		ATF_CHECK_MSG(i < 300, "the hardening sysctl is not set");
+	}
+	dock_closed();
+	shot("7r-hardening");
+	click_when("button[data-act=sv-show][data-arg=hardening]", 10);
+}
+
 static void
 part_storage(void)
 {
@@ -3502,6 +3622,50 @@ part_storage(void)
 	ATF_CHECK(system("test -z \"$(ls -A tools/tmp)\"") == 0);
 	ATF_CHECK(js_true("![...document.querySelectorAll('.dock .op')].some("
 	    "o => o.textContent.includes('correct horse'))"));
+	/*
+	 * A dataset with ZFS's own properties chosen; one made encrypted,
+	 * its passphrase typed (not in a job), the rest set once it is.
+	 */
+	run("document.querySelector('button[data-act=st-kind][data-arg="
+	    "datasets]').click()");
+	click_when("button[data-act=st-dataset]", 10);
+	wait_js("document.querySelector('form[data-form=st-dataset] select"
+	    "[name=z_compression]')", 5);
+	run("const f = document.querySelector('form[data-form=st-dataset]'); "
+	    "f.name.value = 'tank/plain'; f.z_compression.value = 'lz4'; "
+	    "f.z_atime.value = 'off'; f.z_quota.value = '20G'; "
+	    "f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 200 && system("grep -q 'zfs create .*compression=lz4.*"
+	    "tank/plain' storage.log") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep 'zfs create' storage.log | grep 'tank/plain' | "
+	    "grep -q 'atime=off' && grep 'zfs create' storage.log | grep "
+	    "'tank/plain' | grep -q 'quota=20G'") == 0);
+	click_when("button[data-act=st-dataset]", 10);
+	wait_js("document.querySelector('form[data-form=st-dataset] select"
+	    "[name=z_encryption]')", 5);
+	run("const f = document.querySelector('form[data-form=st-dataset]'); "
+	    "f.name.value = 'tank/secret'; f.z_encryption.value = "
+	    "'aes-256-gcm'; f.z_pass.value = 'correct horse staple'; "
+	    "f.z_again.value = 'correct horse stable'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal').textContent.includes("
+	    "'the same twice')", 10);
+	run("const f = document.querySelector('form[data-form=st-dataset]'); "
+	    "f.z_again.value = 'correct horse staple'; f.z_compression.value = "
+	    "'zstd'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => t."
+	    "textContent.includes('tank/secret: made, encrypted'))", 10);
+	ATF_CHECK(system("grep -qx 'newkey=correct horse staple' storage.log") ==
+	    0);
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 200 && system("grep -q 'zfs set compression=zstd "
+	    "tank/secret\\|zfs set tank/secret compression=zstd' storage.log") !=
+	    0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 200, "the encrypted dataset's properties are not set");
+	ATF_CHECK(js_true("![...document.querySelectorAll('.dock .op')].some("
+	    "o => o.textContent.includes('correct horse staple'))"));
 	run("document.querySelector('tr[data-ds=\"tank/data\"] button"
 	    "[data-act=st-ask][data-arg=jail]').click()");
 	wait_js("document.querySelector('form[data-form=st-ask] input[name="
@@ -6369,6 +6533,7 @@ ATF_TC_BODY(pwa_storage, tc)
 
 	prologue(tc, 2);
 	part_storage();
+	part_system();
 }
 ATF_TC_CLEANUP(pwa_storage, tc)
 {

@@ -80,6 +80,15 @@ static const char *const iscsi_verb[] = {
 static const char *const hast_verb[] = {
 	"conf", "enable", "create", "role",
 };
+static const char *const sysfile_verb[] = {
+	"devfs.rules", "devd", "syslog.conf", "newsyslog.conf",
+	"periodic.conf", "audit_control", "audit_user", "krb5.conf",
+	"ipsec.conf", "rctl.conf", "loader.conf.d", "periodic", "rc",
+};
+static const char *const geom_verb[] = {
+	"mirror", "stripe", "concat", "raid3", "label", "nop", "multipath",
+	"shsec", "virstor", "cache", "journal", "eli", "union",
+};
 
 /*
  * Change c made job-spec sp, its arrays a's.  0, or EINVAL: no kind,
@@ -769,6 +778,34 @@ yjobs_spec(const struct arcana_jobs_submit_input_change *in,
 		sp->kind = ARC_JOB_KIND_HAST;
 		if (c->has_verb)
 			sp->verb = hast_verb[c->verb];
+		sp->names.n = c->args.n;
+		sp->names.v = c->args.v;
+		sp->text = c->text;
+		return (0);
+	}
+	case ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SYSFILE: {
+		const struct arcana_jobs_submit_input_change_sysfile *c =
+		    in->sysfile;
+
+		if (c == NULL)
+			return (EINVAL);
+		sp->kind = ARC_JOB_KIND_SYSFILE;
+		if (c->has_verb)
+			sp->verb = sysfile_verb[c->verb];
+		sp->names.n = c->args.n;
+		sp->names.v = c->args.v;
+		sp->text = c->text;
+		return (0);
+	}
+	case ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_GEOM: {
+		const struct arcana_jobs_submit_input_change_geom *c =
+		    in->geom;
+
+		if (c == NULL)
+			return (EINVAL);
+		sp->kind = ARC_JOB_KIND_GEOM;
+		if (c->has_verb)
+			sp->verb = geom_verb[c->verb];
 		sp->names.n = c->args.n;
 		sp->names.v = c->args.v;
 		sp->text = c->text;

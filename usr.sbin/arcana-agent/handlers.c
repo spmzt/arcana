@@ -349,6 +349,7 @@ worker(void *arg)
 	struct arc_crashes_rsp	 crr;
 	struct arc_suricata_rules_rsp surr;
 	struct arc_netstore_rsp	 nsr;
+	struct arc_system_rsp	 syr;
 	struct arc_job_spec	 bsp;
 	struct arc_certs_rsp	 cer;
 	struct arc_ssh_rsp	 sshr;
@@ -762,6 +763,8 @@ worker(void *arg)
 			zq.zfs_dataset = j->sha256;
 			zq.zfs_key = j->source;
 			zq.zfs_new_key = j->ref;
+			/* Made encrypted so, where it is asked. */
+			zq.zfs_create = j->host_keys;
 			pthread_mutex_lock(&change_lock);
 			if (change_note("%s", what))
 				do_zfs_key(&w, &zq, &zkr);
@@ -906,6 +909,18 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &crr.trace.v, &crr.trace.n);
 		rc = arc_crashes_reply(j->req, &crr);
+		break;
+	case ARC_CMD_SYSTEM:
+		what = "system";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "the system's files read");
+		memset(&syr, 0, sizeof(syr));
+		do_system(&w, j->pkg.names.v, j->pkg.names.n, &syr);
+		ok = syr.ok;
+		error = syr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &syr.trace.v, &syr.trace.n);
+		rc = arc_system_reply(j->req, &syr);
 		break;
 	case ARC_CMD_NETSTORE:
 		what = "netstore";
@@ -2328,6 +2343,7 @@ arc_zfs_key_doit(cbl_req *req, const struct arc_zfs_key_req *rq,
 	j->sha256 = xstrdup(rq->zfs_dataset);
 	j->source = rq->zfs_key != NULL ? xstrdup(rq->zfs_key) : NULL;
 	j->ref = rq->zfs_new_key != NULL ? xstrdup(rq->zfs_new_key) : NULL;
+	j->host_keys = rq->zfs_create != NULL ? xstrdup(rq->zfs_create) : NULL;
 	return (start(j));
 }
 
@@ -2429,6 +2445,37 @@ arc_builder_options_doit(cbl_req *req, const struct arc_builder_options_req *rq,
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_BUILDER_OPTIONS;
+	if (rq->names.n > 0) {
+		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL) {
+			free(j);
+			return (ENOMEM);
+		}
+		for (i = 0; i < rq->names.n; i++)
+			v[i] = xstrdup(rq->names.v[i]);
+		j->pkg.names.v = v;
+		j->pkg.names.n = rq->names.n;
+	}
+	return (start(j));
+}
+
+/* The system's own files, and the host's settings beside them. */
+int
+arc_system_doit(cbl_req *req, const struct arc_system_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+	const char	**v;
+	size_t		 i;
+
+	if (rq->names.n > 16)
+		return (reject(req, "system reads its files by name, and host"));
+	for (i = 0; i < rq->names.n; i++)
+		if (rq->names.v[i] == NULL)
+			return (reject(req, "a word is missing"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SYSTEM;
 	if (rq->names.n > 0) {
 		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL) {
 			free(j);
@@ -2614,7 +2661,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_HAST)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_GEOM)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2821,6 +2868,10 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_ISCSI:
 	case ARC_JOB_KIND_HAST:
 		return (netstore_check(sp));
+	case ARC_JOB_KIND_SYSFILE:
+		return (sysfile_check(sp));
+	case ARC_JOB_KIND_GEOM:
+		return (geom_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->safe)
 			return ("wireguard changes are not undone: not in "

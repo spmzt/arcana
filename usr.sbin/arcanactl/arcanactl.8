@@ -409,6 +409,68 @@ into a directory of its own; the alerts it raised are kept, told in
 the sdwan read as the instance's
 .Dq replay .
 A job.
+.It Cm system Op Ar file | Cm host
+The system's own configuration, as JSON: each file of the
+.Cm sysfile
+table with its path, its text, the daemon that reads it and what shows
+it at work; and the host's NTP peers, Linux compatibility, securelevel,
+MAC modules, auditd, GEOM's tree
+.Pq Nm geom Fl t ,
+GELI's providers, periodic's variables and service jails.
+Nothing is changed.
+.It Cm geom Ar class subcommand Oo Ar word ... Oc Op Fl P Ar passfile
+A GEOM class's command, as
+.Xr geom 8
+runs it
+.Po Nm geom Cm mirror Cm label ...
+is
+.Xr gmirror 8 's ,
+.Nm geom Cm eli Cm init ...
+.Xr geli 8 's
+.Pc :
+the class one of mirror, stripe, concat, raid3, label, nop, multipath,
+shsec, virstor, cache, journal, eli or union, the subcommand one of its
+own, or
+.Cm load
+or
+.Cm unload ,
+the words flags and names alone.
+A GELI passphrase is read from
+.Ar passfile
+and given to geli by a file of the job's own, never on a command line.
+A job.
+.It Cm sysfile Ar file path | Cm periodic Ar name Ns = Ns Cm YES | NO ... | Cm rc Ar name Ns = Ns Ar value ...
+Writes one of the system's files from
+.Ar path
+and tells the daemon that reads it:
+.Cm devfs.rules ,
+.Cm devd
+.Pq Pa /usr/local/etc/devd/arcana.conf ,
+.Cm syslog.conf ,
+.Cm newsyslog.conf ,
+.Cm periodic.conf ,
+.Cm audit_control ,
+.Cm audit_user ,
+.Cm krb5.conf ,
+.Cm ipsec.conf
+.Pq Xr setkey 8 's ,
+.Cm rctl.conf
+or
+.Cm loader.conf.d
+.Pq Pa /boot/loader.conf.d/arcana.conf ;
+no other path is written so.
+.Cm periodic
+sets
+.Xr periodic.conf 5 's
+variables.
+.Cm rc
+sets
+.Xr rc.conf 5 's
+.Va kern_securelevel_enable
+and
+.Va kern_securelevel ,
+securelevel at boot, and those alone.
+A job.
 .It Cm netstore Op Cm nfs | Cm iscsi | Cm hast
 The host's network storage services, as JSON: the NFS server
 .Xr ( nfsd 8 ,

@@ -877,6 +877,7 @@ stage(struct html *h)
 			{ "services", "Services" }, { "network", "Network" },
 			{ "firewall", "Firewall" },
 			{ "packages", "Packages" }, { "storage", "Storage" },
+			{ "system", "System" }, { "security", "Security" },
 			{ "kernel", "Kernel" }, { "sysctl", "Sysctl" },
 			{ "certificates", "Certificates" }, { "ssh", "SSH" },
 			{ "processes", "Processes" }, { "log", "Log" },
@@ -919,7 +920,8 @@ stage(struct html *h)
 			    "base system's" : "A plugin, not installed here: "
 			    "open it to install its package", plugins[t].title);
 		}
-		if (app.tab != TAB_JOBS)
+		if (app.tab != TAB_JOBS && app.tab != TAB_SYSTEM && app.tab !=
+		    TAB_SECURITY)
 			export_bar(h, plug ? (app.net.kind == NET_BIRD ? "bird" :
 			    "ipsec") : tabs[app.tab].arg);
 		h_raw(h, "</nav>");
@@ -951,6 +953,16 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_STORAGE) {
 		view_storage(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_SYSTEM) {
+		view_system(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_SECURITY) {
+		view_hostsec(h, s);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -3593,7 +3605,10 @@ view_packages(struct html *h, struct server *s)
 		h_raw(h, "<button class=\"ghost small\" data-act=\""
 		    "pkg-clean-jails\" data-arg=\"\" title=\"pkg clean in "
 		    "every running jail, one batch of a job each\">Clean the "
-		    "jails</button>");
+		    "jails</button><button class=\"ghost small\" data-act=\""
+		    "pkg-upgrade-jails\" title=\"pkg upgrade -y in every running "
+		    "jail, one batch of a job each\">Upgrade the jails"
+		    "</button>");
 	if (app.pkg.mode == 1)
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"pkg-check\""
 		    "%s title=\"pkg update, then list what has a newer version"

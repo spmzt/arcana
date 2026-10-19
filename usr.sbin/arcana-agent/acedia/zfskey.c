@@ -139,6 +139,54 @@ do_zfs_key(struct work *w, const struct arc_zfs_key_req *rq,
 		rsp->error = "a dataset is pool/name";
 		return;
 	}
+	/* Made encrypted, its passphrase the new key, read as zfs create
+	 * asks for it: on its standard input. */
+	if (rq->zfs_create != NULL && rq->zfs_create[0] != '\0') {
+		static const char *const algos[] = { "on", "aes-128-ccm",
+		    "aes-192-ccm", "aes-256-ccm", "aes-128-gcm", "aes-192-gcm",
+		    "aes-256-gcm" };
+		struct execres	 res;
+		char		*argv[12];
+		size_t		 i;
+
+		for (i = 0; i < nitems(algos); i++)
+			if (strcmp(rq->zfs_create, algos[i]) == 0)
+				break;
+		if (i == nitems(algos)) {
+			rsp->error = "its encryption is on or aes-128-ccm, "
+			    "aes-192-ccm, aes-256-ccm, aes-128-gcm, aes-192-gcm, "
+			    "aes-256-gcm";
+			return;
+		}
+		if (!has_new || has_key) {
+			rsp->error = "a dataset made encrypted takes its "
+			    "passphrase, as the new key";
+			return;
+		}
+		if ((e = key_ok(rq->zfs_new_key, "passphrase")) != NULL) {
+			rsp->error = e;
+			return;
+		}
+		argv[0] = (char *)(uintptr_t)opts.zfs_bin;
+		argv[1] = (char *)(uintptr_t)"create";
+		argv[2] = (char *)(uintptr_t)"-o";
+		argv[3] = wfmt(w, "encryption=%s", rq->zfs_create);
+		argv[4] = (char *)(uintptr_t)"-o";
+		argv[5] = (char *)(uintptr_t)"keyformat=passphrase";
+		argv[6] = (char *)(uintptr_t)"-o";
+		argv[7] = (char *)(uintptr_t)"keylocation=prompt";
+		argv[8] = (char *)(uintptr_t)rq->zfs_dataset;
+		argv[9] = NULL;
+		exec_set_stdin(rq->zfs_new_key, strlen(rq->zfs_new_key));
+		if (run_exec(w, argv, &res) != 0) {
+			rsp->error = res.errlen > 0 ? wstrndup(w, res.err,
+			    strcspn(res.err, "\n")) : wtext(w, exec_error(w,
+			    &res, "zfs create"));
+			return;
+		}
+		rsp->ok = true;
+		return;
+	}
 	if (!has_key && !has_new) {
 		rsp->error = "a key to load, or a new one";
 		return;

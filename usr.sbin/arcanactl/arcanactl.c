@@ -203,6 +203,9 @@ usage(void)
 	    "    crashes [backtrace core [program]]\n"
 	    "    clamav mirrors mirror ...\n"
 	    "    netstore [nfs | iscsi | hast]\n"
+	    "    system [file | host]\n"
+	    "    sysfile file path | periodic name=YES|NO ... |\n"
+	    "        rc kern_securelevel_enable=YES|NO kern_securelevel=N\n"	    "    geom class subcommand [word ...] [-P passfile]\n"
 	    "    nfs exports file | server key=value ...\n"
 	    "    iscsi conf file | enable yes|no\n"
 	    "    hast conf file | enable yes|no | create resource |\n"
@@ -2466,6 +2469,81 @@ cmd_crashes(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
+/* system [file | host]: the system's own files, and settings beside. */
+static int
+cmd_system(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_system_req	 rq;
+	struct arc_system_rsp	*rs;
+	int			 error;
+
+	if (argc > 2)
+		usage();
+	memset(&rq, 0, sizeof(rq));
+	rq.names.v = (const char **)(uintptr_t)&argv[1];
+	rq.names.n = (size_t)argc - 1;
+	if ((error = arc_system(cl, &rq, &rs)) != 0)
+		fail(cl, error, "system");
+	if (rs->json != NULL)
+		xo_emit("{:json/%s}\n", rs->json);
+	else if (rs->error != NULL)
+		warnx("%s", rs->error);
+	emit_trace(rs->trace.v, rs->trace.n);
+	error = rs->ok ? 0 : 1;
+	arc_system_rsp_free(rs);
+	return (error);
+}
+
+/* geom class subcommand [word ...] [-P passfile]: geom(8), a job; a
+ * GELI passphrase read from passfile. */
+static int
+cmd_geom(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	int			 n;
+
+	if (argc < 3)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_GEOM;
+	sp.verb = argv[1];
+	n = argc - 2;
+	if (n >= 3 && strcmp(argv[argc - 2], "-P") == 0) {
+		sp.text = slurp(argv[argc - 1]);
+		n -= 2;
+	}
+	sp.names.v = (const char **)(uintptr_t)&argv[2];
+	sp.names.n = (size_t)n;
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/* sysfile file path | periodic name=YES|NO ...: a file of the system's
+ * written from path, or periodic.conf's variables; a job. */
+static int
+cmd_sysfile(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+
+	if (argc < 3)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_SYSFILE;
+	sp.verb = argv[1];
+	if (strcmp(argv[1], "periodic") == 0 || strcmp(argv[1], "rc") == 0) {
+		sp.names.v = (const char **)(uintptr_t)&argv[2];
+		sp.names.n = (size_t)argc - 2;
+	} else {
+		if (argc != 3)
+			usage();
+		sp.text = slurp(argv[2]);
+	}
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
 /* netstore [nfs | iscsi | hast]: the host's storage services. */
 static int
 cmd_netstore(struct arc_client *cl, int argc, char **argv)
@@ -4341,6 +4419,12 @@ main(int argc, char *argv[])
 		rc = cmd_crashes(&cl, argc, argv);
 	else if (strcmp(argv[0], "clamav") == 0)
 		rc = cmd_clamav(&cl, argc, argv);
+	else if (strcmp(argv[0], "system") == 0)
+		rc = cmd_system(&cl, argc, argv);
+	else if (strcmp(argv[0], "geom") == 0)
+		rc = cmd_geom(&cl, argc, argv);
+	else if (strcmp(argv[0], "sysfile") == 0)
+		rc = cmd_sysfile(&cl, argc, argv);
 	else if (strcmp(argv[0], "netstore") == 0)
 		rc = cmd_netstore(&cl, argc, argv);
 	else if (strcmp(argv[0], "nfs") == 0)

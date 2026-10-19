@@ -5106,6 +5106,9 @@ ul.idsbars li i { display: block; height: .5rem; border-radius: 2px; background:
 ul.idsbars li b { text-align: right; font-variant-numeric: tabular-nums; }
 ul.advice { margin: .3rem 0 1rem; padding-left: 1.2rem; display: grid; gap: .3rem; font-size: .82rem; }
 /* The Storage page: what a tool says, as it says it. */
+/* ZFS's own properties, a choice each, side by side. */
+.zfields { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .5rem .8rem; margin: .4rem 0 .8rem; }
+.zfields label small { display: block; }
 pre.naspre { margin: 0 0 1rem; padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 6px; font-size: .74rem; overflow-x: auto; white-space: pre; }
 ul.advice li.warn::marker { color: var(--amber); }
 .secform textarea { font-family: var(--mono); font-size: .78rem; }

@@ -177,6 +177,8 @@ enum tab {
 	TAB_FIREWALL,
 	TAB_PACKAGES,
 	TAB_STORAGE,
+	TAB_SYSTEM,
+	TAB_SECURITY,
 	TAB_KERNEL,
 	TAB_SYSCTL,
 	TAB_CERTS,
@@ -347,6 +349,7 @@ enum {
 	JOB_BUILDER,
 	JOB_SECURITY,		/* a Security tab's plugin installed */
 	JOB_NETSTORE,		/* the Storage page's NFS, iSCSI or HAST */
+	JOB_SYSTEM,		/* a host's own configuration (sysview.c) */
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -929,6 +932,17 @@ void		 secpage_loc(char *, size_t);
 void		 secpage_open(const char *);
 void		 secpage_tick(double);
 void		 secpage_refresh(void);
+/* sysview.c: a host's own configuration, of the system read. */
+void		 refresh_system(struct server *, bool);
+void		 view_system(struct html *, struct server *);
+void		 view_hostsec(struct html *, struct server *);
+void		 view_storage_geom(struct html *, struct server *, int);
+void		 view_syslogconf(struct html *, struct server *);
+void		 view_hardening(struct html *, struct server *);
+void		 view_setkey(struct html *, struct server *);
+bool		 sysview_form(const char *, const ucl_object_t *);
+bool		 sysview_action(const char *, const char *, const char *);
+bool		 sysview_shown(const char *);
 /* nas.c: the Storage page, NFS, iSCSI and HAST. */
 void		 view_naspage(struct html *);
 bool		 naspage_form(const char *, const ucl_object_t *);

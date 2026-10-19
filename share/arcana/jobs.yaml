@@ -427,3 +427,13 @@ kinds:
     uses: args text
     values: verb=conf|enable|create|role
     destroys: verb=create
+  - kind: sysfile
+    title: A file of the system's written, its daemon told
+    needs: verb
+    uses: args text
+    values: verb=devfs.rules|devd|syslog.conf|newsyslog.conf|periodic.conf|audit_control|audit_user|krb5.conf|ipsec.conf|rctl.conf|loader.conf.d|periodic|rc
+  - kind: geom
+    title: A GEOM class's command, geom(8)
+    needs: verb args
+    uses: text
+    values: verb=mirror|stripe|concat|raid3|label|nop|multipath|shsec|virstor|cache|journal|eli|union

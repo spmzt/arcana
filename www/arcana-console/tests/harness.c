@@ -308,6 +308,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("rc.conf", "sshd_enable=\"YES\"\nsshd_flags=\"-4\"\n");
 	snprintf(buf, sizeof(buf), "#!/bin/sh\nconf=%s/rc.conf\n"
 	    "[ \"$1\" = -R ] && { conf=$2/etc/rc.conf; shift 2; }\n"
+	    "[ \"$1\" = -f ] && { conf=$2; touch \"$conf\"; shift 2; }\n"
 	    "[ \"$1\" = -i ] && shift\n"
 	    "case \"$1\" in\n"
 	    "-n) grep -q \"^$2=\" \"$conf\" || exit 1; sed -n \"s/^$2=\\\""
@@ -695,6 +696,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "printf 'prompt\\nunavailable\\npassphrase\\n' ;;\n"
 	    /* What zfs read: the key, on its standard input. */
 	    "'load-key tank/vault') echo \"key=$(cat)\" >> storage.log ;;\n"
+	    /* Made encrypted: the passphrase it read, as it asked. */
+	    "'create -o encryption=aes-256-gcm -o keyformat=passphrase -o "
+	    "keylocation=prompt tank/secret') echo \"newkey=$(cat)\" >> "
+	    "storage.log ;;\n"
 	    "'receive -u tank/fail') cat > /dev/null; echo \"cannot receive "
 	    "new filesystem stream: destination 'tank/fail' exists\" >&2; "
 	    "exit 1 ;;\n"
@@ -1274,6 +1279,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 		(void)mkdir(etc, 0755);
 	}
 	put("root/etc/hosts", "127.0.0.1 localhost\n");
+	(void)mkdir("root/etc/defaults", 0755);
+	put("root/etc/defaults/periodic.conf", "daily_clean_tmps_enable=\"NO\"\n"
+	    "daily_status_disks_enable=\"YES\"\n");
 	put("root/etc/rc.conf", "hostname=\"lab\"\nsshd_enable=\"YES\"\n");
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	snprintf(ntpconf, sizeof(ntpconf), "%s/ntp.conf", cwd);
