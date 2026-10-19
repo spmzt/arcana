@@ -3021,6 +3021,14 @@ echo "suricata-update $*" >> @LOG@
 while [ $# -gt 0 ]; do
 	case "$1" in
 	-o) out=$2; shift ;;
+	-D) data=$2; shift ;;
+	update-sources)
+		mkdir -p "$data/update/cache"; echo 'sources: {}' > "$data/update/cache/index.yaml"
+		exit 0 ;;
+	list-sources)
+		printf '\033[1;36mName\033[0m: \033[1;35met/open\033[0m\n  \033[1;36mVendor\033[0m: \033[1;35mProofpoint\033[0m\n  \033[1;36mSummary\033[0m: \033[1;35mEmerging Threats Open Ruleset\033[0m\n  \033[1;36mLicense\033[0m: \033[1;35mMIT\033[0m\n'
+		printf '\033[1;36mName\033[0m: \033[1;35met/pro\033[0m\n  \033[1;36mVendor\033[0m: \033[1;35mProofpoint\033[0m\n  \033[1;36mSummary\033[0m: \033[1;35mEmerging Threats Pro Ruleset\033[0m\n  \033[1;36mLicense\033[0m: \033[1;35mCommercial\033[0m\n  \033[1;36mParameters\033[0m: \033[1;35msecret-code\033[0m\n'
+		exit 0 ;;
 	--enable-conf) en=$2; shift ;;
 	--disable-conf) dis=$2; shift ;;
 	--drop-conf) drop=$2; shift ;;
@@ -3280,7 +3288,7 @@ EOS
 	# Fetched by the suricata job: the instance applied again takes it,
 	# and is told to read its rules again; the read says when.
 	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata update
-	atf_check -o match:"^suricata-update --no-test --no-reload --suricata .*/tools/suricata -o $(pwd)/rules --enable-conf .*/suricata-enable.conf --disable-conf .*/suricata-disable.conf --drop-conf .*/suricata-drop.conf\$" \
+	atf_check -o match:"^suricata-update --no-test --no-reload --suricata .*/tools/suricata -o $(pwd)/rules -D $(pwd) --enable-conf .*/suricata-enable.conf --disable-conf .*/suricata-disable.conf --drop-conf .*/suricata-drop.conf\$" \
 	    cat suricata-update.log
 	# The ruleset's rules, a page at a time: one disabled as it ships
 	# is a line commented out; a comment is no rule.
@@ -3313,6 +3321,38 @@ EOS
 	atf_check -o match:'"sid":2000001,[^}]*"enabled":false,"state":"off"' "$JGC" -c "$SOCK" suricata rules sid=2000001
 	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata rule default=2000001,2000005,2000006
 	atf_check -o match:'"changed":0,.*"total":3,"enabled":2' "$JGC" -c "$SOCK" suricata rules
+	# Rule sources: none known until the index is fetched, Emerging
+	# Threats Open the default; then the index's, each enabled or not
+	# by a file of the data directory's that the agent writes, a
+	# secret code in it alone, root's.
+	atf_check -o match:'"index":false,"sources":\[\],"default_et_open":true' \
+	    "$JGC" -c "$SOCK" suricata rules sources=1
+	atf_check -o match:'done +suricata-update: the index of rule sources fetched' \
+	    "$JGC" -c "$SOCK" suricata sources
+	atf_check -o match:'"index":true,"sources":\[\{"name":"et/open","vendor":"Proofpoint","summary":"Emerging Threats Open Ruleset","license":"MIT"\},\{"name":"et/pro",[^}]*"parameters":"secret-code"\}\],"default_et_open":true' \
+	    "$JGC" -c "$SOCK" suricata rules sources=1
+	atf_check -o match:'done +suricata enable et/pro' -o not-match:'S3CRET' \
+	    -e not-match:'S3CRET' \
+	    "$JGC" -t -c "$SOCK" suricata source-enable name=et/pro secret-code=S3CRET
+	atf_check -o inline:"source: 'et/pro'\nparams:\n  secret-code: 'S3CRET'\n" cat update/sources/et-pro.yaml
+	atf_check -o match:'^-rw-------' ls -l update/sources/et-pro.yaml
+	atf_check -o not-match:'S3CRET' "$JGC" -c "$SOCK" jobs
+	atf_check -o match:'"name":"et/pro",[^}]*"state":"enabled"\}.*"default_et_open":false' \
+	    "$JGC" -c "$SOCK" suricata rules sources=1
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata source-disable name=et/pro
+	test -f update/sources/et-pro.yaml.disabled || atf_fail "et/pro is not kept disabled"
+	atf_check -o match:'"state":"disabled".*"default_et_open":true' "$JGC" -c "$SOCK" suricata rules sources=1
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata source-enable name=et/pro
+	atf_check -o match:'S3CRET' cat update/sources/et-pro.yaml
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata source-add name=lab/local url=https://rules.example.org/local.rules
+	atf_check -o match:'\{"name":"lab/local","url":"https://rules.example.org/local.rules","state":"enabled"\}' \
+	    "$JGC" -c "$SOCK" suricata rules sources=1
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata source-remove name=lab/local
+	test ! -f update/sources/lab-local.yaml || atf_fail "lab/local stayed"
+	atf_check -s exit:1 -e match:"a source's name is" "$JGC" -c "$SOCK" suricata source-enable name=../x
+	atf_check -s exit:1 -e match:"are source-enable's" "$JGC" -c "$SOCK" suricata source-disable name=et/pro secret-code=x
+	atf_check -s exit:1 -e match:'needs its url=' "$JGC" -c "$SOCK" suricata source-add name=x
+	atf_check -s exit:1 -o match:'failed.*is not enabled' "$JGC" -c "$SOCK" suricata source-disable name=oisf/trafficid
 	atf_check -o match:"^  - $(pwd)/rules/suricata.rules\$" cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	atf_check -o match:'"ids_ruleset":\{"path":"[^"]*/rules/suricata.rules","at":[0-9]+,"size":[0-9]+\}' \
 	    "$JGC" -c "$SOCK" sdwan

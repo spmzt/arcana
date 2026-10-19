@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -35,6 +36,8 @@
 #define	SIDS_JOB	1000	/* sids a rule job sets, at most */
 #define	LIMIT_DEFAULT	100
 #define	LIMIT_MAX	500
+
+static void	sources_json(struct work *, ucl_object_t *);
 
 /* A rule the admin set: 'e' on, 'd' off, 'p' drop. */
 struct rstate {
@@ -380,7 +383,7 @@ do_suricata_rules(struct work *w, const char *const *names, size_t nn,
     struct arc_suricata_rules_rsp *rsp)
 {
 	static const char *const keys[] = { "q", "sid", "only", "classtype",
-	    "offset", "limit" };
+	    "offset", "limit", "sources" };
 	struct rstate	*v;
 	struct stat	 sb;
 	ucl_object_t	*top, *arr, *o;
@@ -403,9 +406,25 @@ do_suricata_rules(struct work *w, const char *const *names, size_t nn,
 				break;
 		if (k == nitems(keys)) {
 			rsp->error = "the rules are searched by q=, sid=, only=, "
-			    "classtype=, offset= and limit=";
+			    "classtype=, offset= and limit=; sources=1 says "
+			    "the rule sources";
 			return;
 		}
+	}
+	/* sources=1: the rule sources, not the rules. */
+	if (word_value(names, nn, "sources") != NULL) {
+		top = ucl_object_typed_new(UCL_OBJECT);
+		sources_json(w, top);
+		json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+		ucl_object_unref(top);
+		if (json == NULL) {
+			rsp->error = "out of memory";
+			return;
+		}
+		rsp->json = wstrdup(w, json);
+		free(json);
+		rsp->ok = true;
+		return;
 	}
 	q = word_value(names, nn, "q");
 	ct = word_value(names, nn, "classtype");
@@ -535,4 +554,392 @@ do_suricata_rules(struct work *w, const char *const *names, size_t nn,
 	rsp->json = wstrdup(w, json);
 	free(json);
 	rsp->ok = true;
+}
+
+/*
+ * Rule sources: suricata-update's index of them (list-sources, once
+ * update-sources fetched it), and those enabled, each a file of its
+ * data directory's update/sources, NAME.yaml (with / made -), or
+ * NAME.yaml.disabled.  The agent writes those files itself, so that a
+ * source's secret code is never on a command line nor in a trace.
+ */
+
+/* suricata-update's data directory: the rules directory's parent,
+ * /var/lib/suricata as it ships. */
+const char *
+suricata_data_dir(struct work *w)
+{
+	const char	*r = opts.suricata_rules, *slash;
+
+	if ((slash = strrchr(r, '/')) == NULL || slash == r)
+		return ("/");
+	return (wfmt(w, "%.*s", (int)(slash - r), r));
+}
+
+static bool
+source_name_ok(const char *s)
+{
+	size_t	n;
+
+	n = strlen(s);
+	return (n > 0 && n <= 64 && strspn(s, "abcdefghijklmnopqrstuvwxyz"
+	    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._/-") == n && s[0] != '/' &&
+	    s[0] != '.' && strstr(s, "..") == NULL);
+}
+
+static const char *
+source_file(struct work *w, const char *name, bool disabled)
+{
+	char	*safe, *p;
+
+	safe = wstrdup(w, name);
+	for (p = safe; *p != '\0'; p++)
+		if (*p == '/')
+			*p = '-';
+	return (wfmt(w, "%s/update/sources/%s.yaml%s", suricata_data_dir(w),
+	    safe, disabled ? ".disabled" : ""));
+}
+
+/* A word's value as YAML has it, in single quotes. */
+static const char *
+yaml_quoted(struct work *w, const char *v)
+{
+	char		*out, *q;
+	const char	*p;
+
+	out = wcalloc(w, strlen(v) * 2 + 3, 1);
+	q = out;
+	*q++ = '\'';
+	for (p = v; *p != '\0'; p++) {
+		if (*p == '\'')
+			*q++ = '\'';
+		*q++ = *p;
+	}
+	*q++ = '\'';
+	return (out);
+}
+
+const char *
+suricata_source_check(const struct arc_job_spec *sp)
+{
+	const char	*v;
+	size_t		 i;
+	bool		 name, url;
+
+	if (strcmp(sp->verb, "sources") == 0)
+		return (sp->names.n == 0 ? NULL : "sources takes no words");
+	name = url = false;
+	for (i = 0; i < sp->names.n; i++) {
+		v = sp->names.v[i];
+		if (v == NULL || strchr(v, '=') == NULL || strpbrk(v,
+		    "\n\r") != NULL || strlen(v) > 512)
+			return ("a source's words are key=value");
+		if (strncmp(v, "name=", 5) == 0) {
+			if (name || !source_name_ok(v + 5))
+				return ("a source's name is letters, digits and "
+				    ". _ / -, 64 at most");
+			name = true;
+		} else if (strncmp(v, "url=", 4) == 0) {
+			if (strcmp(sp->verb, "source-add") != 0 || (strncmp(v +
+			    4, "https://", 8) != 0 && strncmp(v + 4, "http://",
+			    7) != 0 && strncmp(v + 4, "file:///", 8) != 0) ||
+			    strpbrk(v, " \t") != NULL)
+				return ("source-add's url is http, https or "
+				    "file:///, without spaces");
+			url = true;
+		} else if (strcmp(sp->verb, "source-enable") != 0 ||
+		    strspn(v, "abcdefghijklmnopqrstuvwxyz-") != (size_t)(
+		    strchr(v, '=') - v) || strchr(v, '=') == v)
+			return ("a source's parameters (secret-code=...) are "
+			    "source-enable's");
+	}
+	if (!name)
+		return ("a source is named: name=et/open");
+	if (strcmp(sp->verb, "source-add") == 0 && !url)
+		return ("source-add needs its url=");
+	if (strcmp(sp->verb, "source-enable") != 0 && strcmp(sp->verb,
+	    "source-disable") != 0 && strcmp(sp->verb, "source-remove") != 0 &&
+	    strcmp(sp->verb, "source-add") != 0)
+		return ("a suricata job's verb is update, rule, sources, "
+		    "source-enable, source-disable, source-remove or source-add");
+	return (NULL);
+}
+
+/* The title, without a secret: the verb and the source's name. */
+char *
+suricata_source_title(const struct arc_job_spec *sp)
+{
+	const char	*name;
+	char		*t;
+	size_t		 i;
+
+	if (strcmp(sp->verb, "sources") == 0)
+		return (strdup("suricata-update: the index of rule sources "
+		    "fetched"));
+	name = "";
+	for (i = 0; i < sp->names.n; i++)
+		if (strncmp(sp->names.v[i], "name=", 5) == 0)
+			name = sp->names.v[i] + 5;
+	if (asprintf(&t, "suricata %s %s", sp->verb + 7, name) == -1)
+		return (NULL);
+	return (t);
+}
+
+int
+suricata_source_job(struct work *w, const struct arc_job_spec *sp,
+    const char **errp)
+{
+	struct execres	 res;
+	const char	*name, *bin, *on, *off, *text;
+	char		*argv[6];
+	size_t		 i;
+	int		 step, fd;
+	bool		 k;
+
+	if ((*errp = suricata_source_check(sp)) != NULL)
+		return (-1);
+	if (strcmp(sp->verb, "sources") == 0) {
+		if ((bin = tool(w, "suricata-update")) == NULL)
+			bin = "/usr/local/bin/suricata-update";
+		argv[0] = (char *)(uintptr_t)bin;
+		argv[1] = (char *)(uintptr_t)"-D";
+		argv[2] = (char *)(uintptr_t)suricata_data_dir(w);
+		argv[3] = (char *)(uintptr_t)"update-sources";
+		argv[4] = NULL;
+		if (run_exec(w, argv, &res) != 0) {
+			*errp = wtext(w, exec_error(w, &res, "suricata-update "
+			    "update-sources"));
+			return (-1);
+		}
+		return (0);
+	}
+	name = "";
+	for (i = 0; i < sp->names.n; i++)
+		if (strncmp(sp->names.v[i], "name=", 5) == 0)
+			name = sp->names.v[i] + 5;
+	on = source_file(w, name, false);
+	off = source_file(w, name, true);
+	step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+	    strcmp(sp->verb, "source-disable") == 0 ? wfmt(w, "%s disabled, "
+	    "kept as %s", name, off) : strcmp(sp->verb, "source-remove") == 0 ?
+	    wfmt(w, "%s taken away", name) : wfmt(w, "%s written", on));
+	if (strcmp(sp->verb, "source-disable") == 0) {
+		if (rename(on, off) != 0) {
+			*errp = wfmt(w, "%s is not enabled", name);
+			step_end(w, step, false, "%s", *errp);
+			return (-1);
+		}
+	} else if (strcmp(sp->verb, "source-remove") == 0) {
+		k = unlink(on) == 0;
+		if (!(unlink(off) == 0 || k)) {
+			*errp = wfmt(w, "%s is neither enabled nor disabled",
+			    name);
+			step_end(w, step, false, "%s", *errp);
+			return (-1);
+		}
+	} else {
+		/* Enabled again as it was, or with what is given. */
+		if (strcmp(sp->verb, "source-enable") == 0 && sp->names.n == 1 &&
+		    access(off, F_OK) == 0) {
+			if (rename(off, on) != 0) {
+				*errp = wfmt(w, "%s: %s", on, strerror(errno));
+				step_end(w, step, false, "%s", *errp);
+				return (-1);
+			}
+			step_end(w, step, true, NULL);
+			return (0);
+		}
+		text = wfmt(w, "source: %s\n", yaml_quoted(w, name));
+		if (strcmp(sp->verb, "source-add") == 0) {
+			for (i = 0; i < sp->names.n; i++)
+				if (strncmp(sp->names.v[i], "url=", 4) == 0)
+					text = wfmt(w, "%surl: %s\n", text,
+					    yaml_quoted(w, sp->names.v[i] + 4));
+		} else if (sp->names.n > 1) {
+			text = wfmt(w, "%sparams:\n", text);
+			for (i = 0; i < sp->names.n; i++)
+				if (strncmp(sp->names.v[i], "name=", 5) != 0)
+					text = wfmt(w, "%s  %.*s: %s\n", text,
+					    (int)(strchr(sp->names.v[i], '=') -
+					    sp->names.v[i]), sp->names.v[i],
+					    yaml_quoted(w, strchr(sp->names.v[i],
+					    '=') + 1));
+		}
+		(void)mkdir(wfmt(w, "%s/update", suricata_data_dir(w)), 0755);
+		(void)mkdir(wfmt(w, "%s/update/sources", suricata_data_dir(w)),
+		    0755);
+		(void)unlink(off);
+		/* Its secret, root's alone. */
+		if ((fd = open(on, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
+		    0600)) == -1 || write(fd, text, strlen(text)) !=
+		    (ssize_t)strlen(text) || close(fd) != 0) {
+			*errp = wfmt(w, "%s: %s", on, strerror(errno));
+			if (fd != -1)
+				(void)close(fd);
+			step_end(w, step, false, "%s", *errp);
+			return (-1);
+		}
+	}
+	step_end(w, step, true, NULL);
+	return (0);
+}
+
+/* A small file of the agent's own, whole; NULL when it is not there. */
+static char *
+file_slurp(struct work *w, const char *path)
+{
+	FILE	*fp;
+	char	*buf;
+	size_t	 n;
+
+	if ((fp = fopen(path, "re")) == NULL)
+		return (NULL);
+	buf = wcalloc(w, 64 * 1024 + 1, 1);
+	n = fread(buf, 1, 64 * 1024, fp);
+	fclose(fp);
+	buf[n] = '\0';
+	return (buf);
+}
+
+/* "\033[1;36mName\033[0m: ..." without its colours. */
+static void
+no_ansi(char *s)
+{
+	char	*r, *q;
+
+	for (r = q = s; *r != '\0';) {
+		if (*r == '\033' && r[1] == '[') {
+			r += 2;
+			r += strspn(r, "0123456789;");
+			if (*r != '\0')
+				r++;
+			continue;
+		}
+		*q++ = *r++;
+	}
+	*q = '\0';
+}
+
+/* The sources: the index's, and each enabled or disabled here. */
+static void
+sources_json(struct work *w, ucl_object_t *top)
+{
+	struct execres		 res;
+	ucl_object_t		*arr, *o;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*bin, *v, *st;
+	char			*argv[5], *copy, *it2, *line, *key, *val;
+	char			*text;
+	bool			 any;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	o = NULL;
+	if (access(wfmt(w, "%s/update/cache/index.yaml",
+	    suricata_data_dir(w)), R_OK) == 0) {
+		if ((bin = tool(w, "suricata-update")) == NULL)
+			bin = "/usr/local/bin/suricata-update";
+		argv[0] = (char *)(uintptr_t)bin;
+		argv[1] = (char *)(uintptr_t)"-D";
+		argv[2] = (char *)(uintptr_t)suricata_data_dir(w);
+		argv[3] = (char *)(uintptr_t)"list-sources";
+		argv[4] = NULL;
+		if (run_exec(w, argv, &res) == 0) {
+			copy = wstrdup(w, res.out);
+			no_ansi(copy);
+			for (it2 = copy; (line = strsep(&it2, "\n")) != NULL;) {
+				key = line + strspn(line, " ");
+				if ((val = strstr(key, ": ")) == NULL)
+					continue;
+				*val = '\0';
+				val += 2;
+				if (strcmp(key, "Name") == 0) {
+					o = ucl_object_typed_new(UCL_OBJECT);
+					ucl_array_append(arr, o);
+					put_s(o, "name", val);
+				} else if (o != NULL && (strcmp(key, "Vendor") ==
+				    0 || strcmp(key, "Summary") == 0 ||
+				    strcmp(key, "License") == 0 || strcmp(key,
+				    "Parameters") == 0 || strcmp(key,
+				    "Subscription") == 0 || strcmp(key,
+				    "Replaces") == 0 || strcmp(key,
+				    "Deprecated") == 0 || strcmp(key,
+				    "Obsolete") == 0)) {
+					key[0] = (char)tolower((unsigned char)
+					    key[0]);
+					put_s(o, key, val);
+				}
+			}
+		}
+		ucl_object_insert_key(top, ucl_object_frombool(true), "index", 0,
+		    false);
+	} else
+		ucl_object_insert_key(top, ucl_object_frombool(false), "index",
+		    0, false);
+	/* Each one's state here: enabled, disabled, or neither. */
+	any = false;
+	it = NULL;
+	while ((e = ucl_object_iterate(arr, &it, true)) != NULL) {
+		v = ucl_object_tostring(ucl_object_lookup(e, "name"));
+		st = access(source_file(w, v, false), F_OK) == 0 ? "enabled" :
+		    access(source_file(w, v, true), F_OK) == 0 ? "disabled" :
+		    NULL;
+		if (st != NULL && strcmp(st, "enabled") == 0)
+			any = true;
+		if (st != NULL)
+			put_s((ucl_object_t *)(uintptr_t)e, "state", st);
+	}
+	/* Those added by address, not in the index. */
+	{
+		DIR		*d;
+		struct dirent	*de;
+		size_t		 len;
+		bool		 dis;
+
+		if ((d = opendir(wfmt(w, "%s/update/sources",
+		    suricata_data_dir(w)))) != NULL) {
+			while ((de = readdir(d)) != NULL) {
+				len = strlen(de->d_name);
+				dis = len > 14 && strcmp(de->d_name + len - 14,
+				    ".yaml.disabled") == 0;
+				if (!dis && (len < 6 || strcmp(de->d_name + len -
+				    5, ".yaml") != 0))
+					continue;
+				text = file_slurp(w, wfmt(w, "%s/update/sources/"
+				    "%s", suricata_data_dir(w), de->d_name));
+				if (text == NULL || strstr(text, "\nurl: ") ==
+				    NULL || strncmp(text, "source: ", 8) != 0)
+					continue;
+				o = ucl_object_typed_new(UCL_OBJECT);
+				/* Its url found before its name is cut. */
+				val = strstr(text, "\nurl: ");
+				line = text + 8;
+				line[strcspn(line, "\n")] = '\0';
+				if (line[0] == '\'') {
+					line++;
+					line[strcspn(line, "'")] = '\0';
+				}
+				put_s(o, "name", line);
+				if (val != NULL) {
+					val++;
+					val += 5;
+					val[strcspn(val, "\n")] = '\0';
+					if (val[0] == '\'') {
+						val++;
+						val[strcspn(val, "'")] = '\0';
+					}
+					put_s(o, "url", val);
+				}
+				put_s(o, "state", dis ? "disabled" : "enabled");
+				if (!dis)
+					any = true;
+				ucl_array_append(arr, o);
+			}
+			closedir(d);
+		}
+	}
+	ucl_object_insert_key(top, arr, "sources", 0, false);
+	/* None enabled: suricata-update fetches Emerging Threats Open. */
+	ucl_object_insert_key(top, ucl_object_frombool(!any), "default_et_open",
+	    0, false);
 }

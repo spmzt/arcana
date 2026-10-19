@@ -944,6 +944,12 @@ void		 surules_load(const char *);
 bool		 surules_form(const char *, const ucl_object_t *);
 bool		 surules_action(const char *, const char *, const char *,
 		    char **, char *, size_t);
+void		 view_susources(struct html *, const char *);
+void		 susources_load(const char *);
+bool		 susources_form(const char *, const ucl_object_t *, char **,
+		    char *, size_t);
+bool		 susources_action(const char *, const char *, char **, char *,
+		    size_t);
 
 /* pfxlists.c: the console's prefix lists, used on any host. */
 void		 pfxlists_load(void);

@@ -33,6 +33,7 @@ static struct {
 					 * one, -1 none */
 	bool		 busy;
 	bool		 rules;		/* IDS/IPS: the ruleset's rules shown */
+	bool		 sources;	/* IDS/IPS: the rule sources shown */
 } sec = { .edit = -1 };
 
 static const char *const tabs[] = { "url", "antivirus", "ids" };
@@ -881,9 +882,15 @@ view_secpage(struct html *h)
 		    "data-act=\"sec-idsview\" data-arg=\"instances\">Instances"
 		    "</button><button class=\"tab%s\" data-act=\"sec-idsview\" "
 		    "data-arg=\"rules\" title=\"The ruleset suricata-update "
-		    "keeps, each rule on, off or a drop\">Rules</button></nav>",
-		    sec.rules ? "" : " on", sec.rules ? " on" : "");
-		if (sec.rules)
+		    "keeps, each rule on, off or a drop\">Rules</button><button "
+		    "class=\"tab%s\" data-act=\"sec-idsview\" data-arg=\""
+		    "sources\" title=\"Where suricata-update fetches the "
+		    "ruleset from\">Sources</button></nav>", sec.rules ||
+		    sec.sources ? "" : " on", sec.rules ? " on" : "",
+		    sec.sources ? " on" : "");
+		if (sec.sources)
+			view_susources(h, sec.sid);
+		else if (sec.rules)
 			view_surules(h, sec.sid);
 		else if (idsown_active())
 			view_idsown(h);
@@ -1052,6 +1059,18 @@ secpage_form(const char *form, const ucl_object_t *f)
 
 	if (surules_form(form, f) || idsown_form(form, f))
 		return (true);
+	{
+		char		*json[1], title[96];
+		const char	*t[1];
+
+		if (susources_form(form, f, &json[0], title, sizeof(title))) {
+			if (json[0] != NULL) {
+				t[0] = title;
+				sec_jobs(json, t, 1);
+			}
+			return (true);
+		}
+	}
 	if (strcmp(form, "sec-mirrors") == 0) {
 		const ucl_object_t	*cl = jget(sec.state, "clamav");
 		char			*copy, *it, *line, *json[2];
@@ -1223,12 +1242,13 @@ secpage_action(const char *act, const char *arg, const char *value)
 	}
 	if (idsown_action(act, arg, value))
 		return (true);
-	if (strncmp(act, "sur-", 4) == 0) {
+	if (strncmp(act, "sur-", 4) == 0 || strncmp(act, "sus-", 4) == 0) {
 		char	*json[1], title[96];
 		const char *t[1];
 
-		if (!surules_action(act, arg, value, &json[0], title,
-		    sizeof(title)))
+		if (strncmp(act, "sus-", 4) == 0 ? !susources_action(act, arg,
+		    &json[0], title, sizeof(title)) : !surules_action(act, arg,
+		    value, &json[0], title, sizeof(title)))
 			return (false);
 		if (json[0] != NULL) {
 			t[0] = title;
@@ -1241,8 +1261,11 @@ secpage_action(const char *act, const char *arg, const char *value)
 	ids = sec.tab == SEC_IDS;
 	if (strcmp(act, "sec-idsview") == 0) {
 		sec.rules = strcmp(arg, "rules") == 0;
+		sec.sources = strcmp(arg, "sources") == 0;
 		if (sec.rules)
 			surules_load(sec.sid);
+		if (sec.sources)
+			susources_load(sec.sid);
 		render();
 		return (true);
 	}
@@ -1440,6 +1463,8 @@ secpage_refresh(void)
 	sec_load();
 	if (sec.tab == SEC_IDS && sec.rules)
 		surules_load(sec.sid);
+	if (sec.tab == SEC_IDS && sec.sources)
+		susources_load(sec.sid);
 }
 
 /* Each tick: the page's host read again, every 10 s while it is shown

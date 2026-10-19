@@ -2671,9 +2671,9 @@ connected:
 			size_t		  n;
 
 			copy = kore_strdup(c->text != NULL ? c->text : "");
-			nv = kore_calloc(6, sizeof(*nv));
+			nv = kore_calloc(7, sizeof(*nv));
 			n = 0;
-			for (p = copy; p != NULL && n < 6; ) {
+			for (p = copy; p != NULL && n < 7; ) {
 				line = strsep(&p, "\n");
 				if (line[0] != '\0')
 					nv[n++] = line;
@@ -4434,8 +4434,8 @@ static const char *
 setup_suricata_rules(struct call *c, const struct rq *q)
 {
 	static const char *const keys[] = { "q", "sid", "only", "classtype",
-	    "offset", "limit" };
-	char	 v[200], buf[6 * 216];
+	    "offset", "limit", "sources" };
+	char	 v[200], buf[7 * 216];
 	size_t	 i, len;
 
 	len = 0;
@@ -4444,8 +4444,8 @@ setup_suricata_rules(struct call *c, const struct rq *q)
 		if (!rq_param(q, keys[i], v, sizeof(v)) || v[0] == '\0')
 			continue;
 		if (!http_argument_urldecode(v, 1) || strchr(v, '\n') != NULL)
-			return ("q, sid, only, classtype, offset and limit are "
-			    "words, escaped as a URL has them");
+			return ("q, sid, only, classtype, offset, limit and "
+			    "sources are words, escaped as a URL has them");
 		len += (size_t)snprintf(buf + len, sizeof(buf) - len, "%s=%s\n",
 		    keys[i], v);
 	}

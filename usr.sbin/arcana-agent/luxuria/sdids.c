@@ -1146,8 +1146,12 @@ suricata_check(const struct arc_job_spec *sp)
 		return ("a fetched ruleset is not undone: not in safe mode");
 	if (sp->verb != NULL && strcmp(sp->verb, "rule") == 0)
 		return (suricata_rule_check(sp));
+	if (sp->verb != NULL && (strcmp(sp->verb, "sources") == 0 ||
+	    strncmp(sp->verb, "source-", 7) == 0))
+		return (suricata_source_check(sp));
 	if (sp->verb == NULL || strcmp(sp->verb, "update") != 0)
-		return ("a suricata job's verb is update or rule");
+		return ("a suricata job's verb is update, rule, sources, "
+		    "source-enable, source-disable, source-remove or source-add");
 	if (sp->names.n > 0)
 		return ("update takes no words");
 	return (NULL);
@@ -1158,6 +1162,9 @@ suricata_title(const struct arc_job_spec *sp)
 {
 	char	*t;
 
+	if (strcmp(sp->verb, "sources") == 0 || strncmp(sp->verb, "source-",
+	    7) == 0)
+		return (suricata_source_title(sp));
 	if (sp->verb != NULL && strcmp(sp->verb, "rule") == 0) {
 		if (asprintf(&t, "suricata rules set: %s%s", sp->names.v[0],
 		    sp->names.n > 1 ? " ..." : "") == -1)
@@ -1172,7 +1179,7 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
 {
 	struct execres	 res;
-	char		*argv[16], *json;
+	char		*argv[20], *json;
 	const char	*bin, *e, *t;
 	pid_t		 pid;
 	size_t		 n;
@@ -1181,6 +1188,10 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
 
 	if ((*errp = suricata_check(sp)) != NULL)
 		return (-1);
+	/* The sources: their files, or their index fetched. */
+	if (strcmp(sp->verb, "sources") == 0 || strncmp(sp->verb, "source-",
+	    7) == 0)
+		return (suricata_source_job(w, sp, errp));
 	rule = strcmp(sp->verb, "rule") == 0;
 	/* The rules set are made into the ruleset already fetched. */
 	if (rule && access(SURICATA_RULESET, R_OK) != 0) {
@@ -1217,7 +1228,10 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
 	argv[4] = (char *)(uintptr_t)suricata_bin(w);
 	argv[5] = (char *)(uintptr_t)"-o";
 	argv[6] = (char *)(uintptr_t)opts.suricata_rules;
-	na = 7;
+	/* Its data directory, where its sources and cache are. */
+	argv[7] = (char *)(uintptr_t)"-D";
+	argv[8] = (char *)(uintptr_t)suricata_data_dir(w);
+	na = 9;
 	/* The admin's rules by sid, every time: they hold across updates. */
 	if (suricata_rule_args(w, argv, &na, errp) != 0) {
 		step_end(w, step, false, "%s", *errp);

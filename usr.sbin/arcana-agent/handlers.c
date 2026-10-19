@@ -2438,9 +2438,10 @@ arc_suricata_rules_doit(cbl_req *req, const struct arc_suricata_rules_req *rq,
 	const char	**v;
 	size_t		 i;
 
-	if (rq->names.n > 6)
+	if (rq->names.n > 7)
 		return (reject(req, "the rules are searched by q=, sid=, only=, "
-		    "classtype=, offset= and limit="));
+		    "classtype=, offset= and limit=; sources=1 says the rule "
+		    "sources"));
 	for (i = 0; i < rq->names.n; i++)
 		if (rq->names.v[i] == NULL)
 			return (reject(req, "a word is missing"));

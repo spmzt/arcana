@@ -6641,6 +6641,34 @@ part_security(void)
 	    "document.querySelector('table.surules .chip.st-up')", 30);
 	dock_closed();
 	shot("9w-security-ids-rules");
+	/* Its sources: the list fetched, a commercial one enabled with its
+	 * secret code, which the host keeps alone. */
+	click_when("button[data-act=sec-idsview][data-arg=sources]", 10);
+	wait_js("document.querySelector('.secpage .empty') && document."
+	    "querySelector('.secpage .empty').textContent.includes('list of "
+	    "sources is not fetched')", 20);
+	click_when("button[data-act=sus-index]", 10);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('table.susources') && document."
+	    "querySelector('table.susources').textContent.includes('et/pro') "
+	    "&& document.querySelector('table.susources').textContent."
+	    "includes('the default')", 30);
+	click_when("table.susources button[data-act=sus-ask][data-arg='et/pro']",
+	    10);
+	wait_js("document.querySelector('form[data-form=sus-enable]')", 5);
+	run("const f = document.querySelector('form[data-form=sus-enable]'); "
+	    "f.elements['secret-code'].value = 'S3CRET'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	ATF_CHECK(js_true("!document.body.textContent.includes('S3CRET')"));
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('table.susources') && document."
+	    "querySelector('table.susources .chip.st-up')", 30);
+	ATF_CHECK(system("grep -qx \"  secret-code: 'S3CRET'\" "
+	    "update/sources/et-pro.yaml") == 0);
+	ATF_CHECK(js_true("!document.body.textContent.includes('S3CRET')"));
+	dock_closed();
+	shot("9w-security-ids-sources");
 	click_when("button[data-act=sec-idsview][data-arg=instances]", 10);
 	/* Its rules of its own as a table: one added as its parts, one
 	 * disabled (kept, commented out), one changed, one deleted after

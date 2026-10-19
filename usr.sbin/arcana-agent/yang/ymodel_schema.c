@@ -27,7 +27,7 @@
  * arcana-jails: 347 nodes, 20 types, 59890 bytes
  * arcana-services: 38 nodes, 2 types, 6632 bytes
  * arcana-packages: 31 nodes, 0 types, 5210 bytes
- * arcana-jobs: 285 nodes, 27 types, 54084 bytes
+ * arcana-jobs: 285 nodes, 27 types, 54226 bytes
  * arcana-storage: 143 nodes, 2 types, 23626 bytes
  * arcana-sysctl: 11 nodes, 1 types, 2038 bytes
  * arcana-kernel: 36 nodes, 0 types, 5852 bytes
@@ -50,7 +50,7 @@
  * arcana-builder: 97 nodes, 3 types, 16459 bytes
  * arcana-notify: 6 nodes, 3 types, 1644 bytes
  * in all, 3111 nodes (children found 454 dense, 123 by a table, 78 by a search),
- * 220 types, 55 expressions, 677 identities, 637805 bytes
+ * 220 types, 55 expressions, 677 identities, 637947 bytes
  */
 
 #include <stdbool.h>
@@ -5184,12 +5184,17 @@ static const struct cbl_ytype t164 = {
 static const struct cbl_yitem t165_i[] = {
 	{ "update", INT64_C(0) },
 	{ "rule", INT64_C(1) },
+	{ "sources", INT64_C(2) },
+	{ "source-enable", INT64_C(3) },
+	{ "source-disable", INT64_C(4) },
+	{ "source-remove", INT64_C(5) },
+	{ "source-add", INT64_C(6) },
 };
 static const struct cbl_ytype t165 = {
 	.kind = CBL_YT_ENUMERATION,
 	.csize = sizeof(enum arcana_jobs_submit_input_change_suricata_verb),
 	.path = -1,
-	.nitems = 2,
+	.nitems = 7,
 	.items = t165_i,
 };
 

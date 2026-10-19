@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.150.0"
+#define	ARCANA_AGENT_VERSION	"0.151.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -573,6 +573,11 @@ const char	*suricata_rule_check(const struct arc_job_spec *);
 int		 suricata_rule_set(struct work *, const struct arc_job_spec *,
 		    const char **);
 int		 suricata_rule_args(struct work *, char **, int *,
+		    const char **);
+const char	*suricata_data_dir(struct work *);
+const char	*suricata_source_check(const struct arc_job_spec *);
+char		*suricata_source_title(const struct arc_job_spec *);
+int		 suricata_source_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 const char	*suricata_check(const struct arc_job_spec *);
 char		*suricata_title(const struct arc_job_spec *);

@@ -298,3 +298,327 @@ surules_action(const char *act, const char *arg, const char *value,
 	free(w);
 	return (true);
 }
+
+/*
+ * IDS/IPS, Sources: the rule sources suricata-update knows (its index,
+ * fetched by a job) and those enabled here, each enabled, disabled,
+ * removed or added by address, a job each.  None enabled, it fetches
+ * Emerging Threats Open.  A source that needs a parameter (a commercial
+ * one's secret code) asks for it as it is enabled; the host writes it
+ * to a file of its own and nowhere else.
+ */
+
+static struct {
+	char		 sid[16];
+	ucl_object_t	*o;
+	bool		 loading;
+	char		 error[256];
+	unsigned	 gen;
+	char		 asking[72];	/* the source whose parameters are
+					 * asked for */
+	bool		 adding;
+} so;
+
+static void
+so_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	if ((unsigned)(uintptr_t)arg != so.gen)
+		return;
+	so.loading = false;
+	if (status != 200 || !jbool(o, "ok")) {
+		snprintf(so.error, sizeof(so.error), "%s", jstr(o, "error") !=
+		    NULL ? jstr(o, "error") : err != NULL ? err :
+		    "the host did not answer");
+		render();
+		return;
+	}
+	so.error[0] = '\0';
+	if (so.o != NULL)
+		ucl_object_unref(so.o);
+	so.o = jget(o, "data") != NULL ? ucl_object_copy(jget(o, "data")) :
+	    ucl_object_typed_new(UCL_OBJECT);
+	render();
+}
+
+void
+susources_load(const char *sid)
+{
+	char	url[96];
+
+	if (sid == NULL || sid[0] == '\0')
+		return;
+	if (strcmp(sid, so.sid) != 0) {
+		snprintf(so.sid, sizeof(so.sid), "%s", sid);
+		if (so.o != NULL)
+			ucl_object_unref(so.o);
+		so.o = NULL;
+	}
+	snprintf(url, sizeof(url), "/api/servers/%s/suricata/rules?sources=1",
+	    sid);
+	so.loading = true;
+	api("GET", url, NULL, so_cb, (void *)(uintptr_t)++so.gen);
+}
+
+static void
+source_button(struct html *h, const char *act, const char *name,
+    const char *label, bool danger)
+{
+
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"%s\"", danger ?
+	    " danger" : "", act);
+	h_attr(h, "data-arg", name);
+	h_fmt(h, ">%s</button>", label);
+}
+
+void
+view_susources(struct html *h, const char *sid)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*st, *params;
+	char			*copy, *p, *w;
+
+	if (so.o == NULL || strcmp(sid, so.sid) != 0) {
+		if (!so.loading || strcmp(sid, so.sid) != 0)
+			susources_load(sid);
+		h_raw(h, "<div class=\"loader\"></div>");
+		return;
+	}
+	h_raw(h, "<div class=\"toolbar\"><button class=\"ghost\" data-act=\""
+	    "sus-index\" title=\"suricata-update update-sources: the list of "
+	    "sources it knows\">");
+	h_raw(h, jbool(so.o, "index") ? "Fetch the list again" :
+	    "Fetch the list of sources");
+	h_raw(h, "</button><span class=\"grow\"></span><button class=\"ghost\" "
+	    "data-act=\"sus-adding\">Add by address</button></div>");
+	if (so.error[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, so.error);
+		h_raw(h, "</div>");
+	}
+	h_raw(h, "<p class=\"dim\">Where suricata-update fetches the ruleset "
+	    "from. ");
+	h_raw(h, jbool(so.o, "default_et_open") ? "None is enabled here: it "
+	    "fetches Emerging Threats Open." : "It fetches those enabled.");
+	h_raw(h, " A change takes effect when the ruleset is fetched again "
+	    "(Instances, Fetch the ruleset).</p>");
+	if (so.adding) {
+		h_raw(h, "<form class=\"secform\" data-form=\"sus-add\"><h4>A "
+		    "source by its address</h4><div class=\"rowform\"><label>"
+		    "Name <input name=\"name\" required spellcheck=\"false\" "
+		    "placeholder=\"lab/local\" pattern=\"[A-Za-z0-9._/-]{1,64}\">"
+		    "</label><label>Address <input name=\"url\" required "
+		    "spellcheck=\"false\" placeholder=\"https://rules.example.org/"
+		    "local.rules\" pattern=\"(https?://|file:///)\\S+\"><small "
+		    "class=\"help\">a .rules file or an archive of them, by "
+		    "http, https or file:///</small></label></div><div class=\""
+		    "actions\"><button type=\"button\" class=\"ghost\" data-act="
+		    "\"sus-cancel\">Cancel</button><button type=\"submit\" "
+		    "class=\"primary\">Add</button></div></form>");
+	}
+	if (ucl_array_size(jget(so.o, "sources")) == 0) {
+		h_raw(h, "<div class=\"empty\"><p>The list of sources is not "
+		    "fetched on this host.</p><p class=\"dim\">Fetch the list "
+		    "of sources: Emerging Threats Open and Pro, OISF's, "
+		    "Abuse.ch's and others suricata-update knows.</p></div>");
+		return;
+	}
+	h_raw(h, "<table class=\"net susources\"><thead><tr><th>Source</th>"
+	    "<th>Vendor</th><th>What</th><th>License</th><th>State</th><th>"
+	    "</th></tr></thead><tbody>");
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(so.o, "sources"), &it, true)) !=
+	    NULL) {
+		st = jstr(e, "state");
+		params = jstr(e, "parameters");
+		h_raw(h, "<tr><td class=\"mono\"><b>");
+		h_txt(h, jstr(e, "name"));
+		h_raw(h, "</b>");
+		if (jstr(e, "url") != NULL) {
+			h_raw(h, "<br><small class=\"dim\">");
+			h_txt(h, jstr(e, "url"));
+			h_raw(h, "</small>");
+		}
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(e, "vendor"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(e, "summary"));
+		if (jstr(e, "subscription") != NULL) {
+			h_raw(h, " <a target=\"_blank\" rel=\"noopener\"");
+			h_attr(h, "href", jstr(e, "subscription"));
+			h_raw(h, ">subscription</a>");
+		}
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(e, "license"));
+		h_raw(h, "</td><td>");
+		if (st != NULL && strcmp(st, "enabled") == 0)
+			h_raw(h, "<span class=\"chip st-up\">enabled</span>");
+		else if (st != NULL)
+			h_raw(h, "<span class=\"chip st-down\">disabled</span>");
+		else if (jbool(so.o, "default_et_open") && strcmp(jstr(e,
+		    "name"), "et/open") == 0)
+			h_raw(h, "<span class=\"chip\">the default</span>");
+		h_raw(h, "</td><td class=\"acts\">");
+		if (st != NULL && strcmp(st, "enabled") == 0)
+			source_button(h, "sus-disable", jstr(e, "name"),
+			    "Disable", false);
+		else
+			source_button(h, params != NULL && st == NULL ?
+			    "sus-ask" : "sus-enable", jstr(e, "name"), "Enable",
+			    false);
+		if (st != NULL)
+			source_button(h, "sus-remove", jstr(e, "name"), "Remove",
+			    true);
+		h_raw(h, "</td></tr>");
+		/* Its parameters asked for, one input each. */
+		if (params != NULL && strcmp(so.asking, jstr(e, "name")) == 0) {
+			h_raw(h, "<tr class=\"sub\"><td colspan=\"6\"><form "
+			    "class=\"secform\" data-form=\"sus-enable\"><input "
+			    "type=\"hidden\" name=\"name\"");
+			h_attr(h, "value", jstr(e, "name"));
+			h_raw(h, "><div class=\"rowform\">");
+			if ((copy = strdup(params)) == NULL)
+				abort();
+			for (p = copy; (w = strsep(&p, ", ")) != NULL;) {
+				if (w[0] == '\0')
+					continue;
+				h_raw(h, "<label>");
+				h_txt(h, w);
+				h_raw(h, " <input type=\"password\" required "
+				    "autocomplete=\"off\"");
+				h_attr(h, "name", w);
+				h_raw(h, "></label>");
+			}
+			free(copy);
+			h_raw(h, "</div><small class=\"help\">Kept on the host "
+			    "alone, in suricata-update's file of the source, "
+			    "root's.</small><div class=\"actions\"><button type="
+			    "\"button\" class=\"ghost\" data-act=\"sus-cancel\">"
+			    "Cancel</button><button type=\"submit\" class=\""
+			    "primary\">Enable</button></div></form></td></tr>");
+		}
+	}
+	h_raw(h, "</tbody></table>");
+}
+
+/* A source job: verb and its words, the title without a secret. */
+static void
+source_job(char **jsonp, char *title, size_t tlen, const char *verb,
+    const char *const *words, size_t n, const char *name)
+{
+	char	*t, *q;
+	size_t	 i;
+
+	if (asprintf(jsonp, "{\"kind\":\"suricata\",\"verb\":\"%s\","
+	    "\"args\":[", verb) == -1)
+		abort();
+	for (i = 0; i < n; i++) {
+		q = json_quote(words[i]);
+		if (asprintf(&t, "%s%s%s", *jsonp, i > 0 ? "," : "", q) == -1)
+			abort();
+		free(*jsonp);
+		free(q);
+		*jsonp = t;
+	}
+	if (asprintf(&t, "%s]}", *jsonp) == -1)
+		abort();
+	free(*jsonp);
+	*jsonp = t;
+	snprintf(title, tlen, "suricata %s %s", verb + 7, name);
+}
+
+/* sus-add and sus-enable: *jsonp the job to send, or NULL. */
+bool
+susources_form(const char *form, const ucl_object_t *f, char **jsonp,
+    char *title, size_t tlen)
+{
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	const char		*words[8];
+	char			*w[8];
+	size_t			 n, i;
+
+	*jsonp = NULL;
+	if (strcmp(form, "sus-add") == 0) {
+		if (jstr(f, "name") == NULL || jstr(f, "url") == NULL)
+			return (true);
+		if (asprintf(&w[0], "name=%s", jstr(f, "name")) == -1 ||
+		    asprintf(&w[1], "url=%s", jstr(f, "url")) == -1)
+			abort();
+		words[0] = w[0];
+		words[1] = w[1];
+		source_job(jsonp, title, tlen, "source-add", words, 2, jstr(f,
+		    "name"));
+		free(w[0]);
+		free(w[1]);
+		so.adding = false;
+		return (true);
+	}
+	if (strcmp(form, "sus-enable") != 0 || jstr(f, "name") == NULL)
+		return (false);
+	n = 0;
+	if (asprintf(&w[n], "name=%s", jstr(f, "name")) == -1)
+		abort();
+	words[n] = w[n];
+	n++;
+	it = NULL;
+	while ((v = ucl_object_iterate(f, &it, true)) != NULL && n < 8) {
+		/* Its parameters alone: not the page's own (__submit). */
+		if (strcmp(ucl_object_key(v), "name") == 0 ||
+		    strncmp(ucl_object_key(v), "__", 2) == 0 ||
+		    ucl_object_type(v) != UCL_STRING)
+			continue;
+		if (asprintf(&w[n], "%s=%s", ucl_object_key(v),
+		    ucl_object_tostring(v)) == -1)
+			abort();
+		words[n] = w[n];
+		n++;
+	}
+	source_job(jsonp, title, tlen, "source-enable", words, n, jstr(f,
+	    "name"));
+	for (i = 0; i < n; i++)
+		free(w[i]);
+	so.asking[0] = '\0';
+	return (true);
+}
+
+/* sus-*: *jsonp a job to send, or NULL. */
+bool
+susources_action(const char *act, const char *arg, char **jsonp,
+    char *title, size_t tlen)
+{
+	const char	*words[1];
+	char		*w;
+
+	*jsonp = NULL;
+	if (strncmp(act, "sus-", 4) != 0)
+		return (false);
+	if (strcmp(act, "sus-index") == 0) {
+		if ((*jsonp = strdup("{\"kind\":\"suricata\",\"verb\":"
+		    "\"sources\"}")) == NULL)
+			abort();
+		snprintf(title, tlen, "suricata-update: the index of rule "
+		    "sources fetched");
+	} else if (strcmp(act, "sus-adding") == 0) {
+		so.adding = true;
+		render();
+	} else if (strcmp(act, "sus-cancel") == 0) {
+		so.adding = false;
+		so.asking[0] = '\0';
+		render();
+	} else if (strcmp(act, "sus-ask") == 0) {
+		snprintf(so.asking, sizeof(so.asking), "%s", arg);
+		render();
+	} else if (strcmp(act, "sus-enable") == 0 || strcmp(act,
+	    "sus-disable") == 0 || strcmp(act, "sus-remove") == 0) {
+		if (asprintf(&w, "name=%s", arg) == -1)
+			abort();
+		words[0] = w;
+		source_job(jsonp, title, tlen, strcmp(act, "sus-enable") == 0 ?
+		    "source-enable" : strcmp(act, "sus-disable") == 0 ?
+		    "source-disable" : "source-remove", words, 1, arg);
+		free(w);
+	}
+	return (true);
+}

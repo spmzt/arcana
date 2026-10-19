@@ -204,7 +204,10 @@ usage(void)
 	    "    clamav mirrors mirror ...\n"
 	    "    suricata update | rules [q=text sid=N only=enabled|disabled|changed\n"
 	    "        classtype=name offset=N limit=N] |\n"
-	    "        rule on=|off=|drop=|default=sid,... ...\n"
+	    "        rule on=|off=|drop=|default=sid,... ... | sources |\n"
+	    "        source-enable name=source [param=value ...] |\n"
+	    "        source-disable|source-remove name=source |\n"
+	    "        source-add name=source url=address\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
@@ -2487,10 +2490,12 @@ cmd_clamav(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
- * suricata update | rules [key=value ...] | rule state=sids ...:
- * suricata-update fetches the ruleset, and the instances take it; the
- * ruleset's rules, a page of them; rules set by sid.  update and rule
- * are jobs.
+ * suricata update | rules [key=value ...] | rule state=sids ... |
+ * sources | source-verb name=source ...: suricata-update fetches the
+ * ruleset, and the instances take it; the ruleset's rules, a page of
+ * them (sources=1: the rule sources); rules set by sid; the index of
+ * sources fetched; a source enabled, disabled, removed or added.  All
+ * but rules are jobs.
  */
 static int
 cmd_suricata(struct arc_client *cl, int argc, char **argv)
@@ -2515,8 +2520,10 @@ cmd_suricata(struct arc_client *cl, int argc, char **argv)
 		arc_suricata_rules_rsp_free(rs);
 		return (error);
 	}
-	if (argc < 2 || (strcmp(argv[1], "update") == 0 && argc != 2) ||
-	    (strcmp(argv[1], "update") != 0 && strcmp(argv[1], "rule") != 0))
+	if (argc < 2 || ((strcmp(argv[1], "update") == 0 || strcmp(argv[1],
+	    "sources") == 0) && argc != 2) || (strcmp(argv[1], "update") != 0 &&
+	    strcmp(argv[1], "rule") != 0 && strcmp(argv[1], "sources") != 0 &&
+	    strncmp(argv[1], "source-", 7) != 0))
 		usage();
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
