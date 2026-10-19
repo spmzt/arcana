@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.146.5"
+#define	ARCANA_AGENT_VERSION	"0.147.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -46,8 +46,7 @@
 #define	PATH_MOUNT_BIN		"/sbin/mount"
 #define	PATH_UMOUNT_BIN		"/sbin/umount"
 #define	PATH_FSTAB		"/etc/fstab"
-#define	PATH_WG_BIN		"/usr/local/bin/wg"
-#define	PATH_WG_BASE_BIN	"/usr/bin/wg"	/* FreeBSD 15 and later */
+#define	PATH_WG_BIN		"/usr/bin/wg"
 #define	PATH_WG_DIR		"/usr/local/etc/wireguard"
 #define	PATH_SWANCTL_BIN	"/usr/local/sbin/swanctl"
 #define	PATH_SQUID_BIN		"/usr/local/sbin/squid"
@@ -684,7 +683,6 @@ void		 plugins_there(struct work *, int, const char *,
 		    const char *const **, size_t *);
 const char	*plugin_bin(struct work *, const char *);
 void		 plugins_forget(void);
-extern const char wg_base_bin[];
 int		 do_if_vnet(struct work *, const char *, const char *, bool,
 		    bool, const char **);
 char *const	*scope_argv(struct work *, char *const []);

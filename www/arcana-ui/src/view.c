@@ -2449,7 +2449,7 @@ modal(struct html *h)
 		h_fmt(h, ", from its repository%s, with what they need.</p>"
 		    "<label>Packages<input name=\"names\" spellcheck=\"false\" "
 		    "autocomplete=\"off\" placeholder=\"strongswan "
-		    "wireguard-tools\" autofocus><small>Their names, with spaces "
+		    "bird3\" autofocus><small>Their names, with spaces "
 		    "between them.</small></label><label class=\"toggle\"><input "
 		    "type=\"checkbox\" name=\"anyos\"><span>Also packages built "
 		    "for a newer FreeBSD <em>IGNORE_OSVERSION</em></span></label>",

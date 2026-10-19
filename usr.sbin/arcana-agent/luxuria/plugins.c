@@ -10,14 +10,10 @@
  * BIRD through birdc(8), strongSwan's IPsec through swanctl(8),
  * Squid and dnsmasq for SD-WAN's proxy and DHCP, poudriere(8) to
  * build packages,
- * WireGuard's keys and peers through wg(8) (the
- * interface itself, if_wg(4) made by ifconfig(8), is the base system's
- * and Invidia's).  A host says which it has, and so does a jail with a
- * network of its own, where the program is the jail's.
- *
- * wg(8) is the base system's since FreeBSD 15, in /usr/bin; before,
- * and where the package is installed, it is /usr/local/bin's.  The
- * first that is there is the one run.
+ * WireGuard's keys and peers through wg(8), the base system's (the
+ * interface itself, if_wg(4) made by ifconfig(8), is Invidia's).  A
+ * host says which it has, and so does a jail with a network of its own,
+ * where the program is the jail's.
  *
  * A jail's programs are looked for as the jail sees them: a child
  * attaches to it and asks there, so that its own links (a /usr/local
@@ -46,35 +42,28 @@
 #define	PLUGINS_KEPT_S	10	/* a jail's answer, kept */
 #define	PLUGINS_JAILS	64
 
-/* The base system's wg(8), FreeBSD 15 and later. */
-const char		 wg_base_bin[] = PATH_WG_BASE_BIN;
-
 static const struct {
 	const char		*name;
 	const char *const	*program;
-	const char		*base;	/* the base system's, when it has one */
-	const char		*dflt;	/* tried only where program is this */
 } plugins[] = {
-	{ "bird", &opts.birdc_bin, NULL, NULL },
-	{ "wireguard", &opts.wg_bin, wg_base_bin, PATH_WG_BIN },
-	{ "strongswan", &opts.swanctl_bin, NULL, NULL },
-	{ "squid", &opts.squid_bin, NULL, NULL },
-	{ "dnsmasq", &opts.dnsmasq_bin, NULL, NULL },
-	{ "c-icap", &opts.cicap_bin, NULL, NULL },
-	{ "suricata", &opts.suricata_bin, NULL, NULL },
-	{ "poudriere", &opts.poudriere_bin, NULL, NULL },
-	{ "snort", &opts.snort_bin, NULL, NULL },
+	{ "bird", &opts.birdc_bin },
+	{ "wireguard", &opts.wg_bin },
+	{ "strongswan", &opts.swanctl_bin },
+	{ "squid", &opts.squid_bin },
+	{ "dnsmasq", &opts.dnsmasq_bin },
+	{ "c-icap", &opts.cicap_bin },
+	{ "suricata", &opts.suricata_bin },
+	{ "poudriere", &opts.poudriere_bin },
+	{ "snort", &opts.snort_bin },
 };
 
 /*
- * A bit for each plugin's program, and after them one for the base
- * system's wg(8), the only plugin with a program of the base system's:
- * a child in a jail writes them to its parent through a pipe.
+ * A bit for each plugin's program: a child in a jail writes them to its
+ * parent through a pipe.
  */
 #define	BIT_PROG(i)	(1u << (i))
-#define	BIT_BASE(i)	(plugins[i].base != NULL ? 1u << nitems(plugins) : 0u)
 #define	FOUND_NONE	0xffffffffu
-_Static_assert(nitems(plugins) + 1 < 32, "the bits of an unsigned int");
+_Static_assert(nitems(plugins) < 32, "the bits of an unsigned int");
 
 static struct {
 	int		jid;
@@ -83,32 +72,17 @@ static struct {
 }			kept[PLUGINS_JAILS];
 static pthread_mutex_t	kept_lock = PTHREAD_MUTEX_INITIALIZER;
 
-/* The paths of plugin i, its own and the base system's, or NULL. */
-static void
-paths_of(size_t i, const char **prog, const char **base)
-{
-
-	*prog = *plugins[i].program;
-	*base = plugins[i].base != NULL && plugins[i].dflt != NULL &&
-	    strcmp(*prog, plugins[i].dflt) == 0 ? plugins[i].base : NULL;
-}
-
 /* What is there to run, by access(2) where this process is. */
 static unsigned int
 found_here(void)
 {
-	const char	*prog, *base;
-	unsigned int	 m;
-	size_t		 i;
+	unsigned int	m;
+	size_t		i;
 
 	m = 0;
-	for (i = 0; i < nitems(plugins); i++) {
-		paths_of(i, &prog, &base);
-		if (access(prog, X_OK) == 0)
+	for (i = 0; i < nitems(plugins); i++)
+		if (access(*plugins[i].program, X_OK) == 0)
 			m |= BIT_PROG(i);
-		if (base != NULL && access(base, X_OK) == 0)
-			m |= BIT_BASE(i);
-	}
 	return (m);
 }
 
@@ -139,7 +113,7 @@ found_tools(void)
 static unsigned int
 found_beneath(const char *root)
 {
-	const char	*prog, *base;
+	const char	*prog;
 	unsigned int	 m;
 	size_t		 i;
 	int		 fd;
@@ -149,13 +123,10 @@ found_beneath(const char *root)
 		return (0);
 	m = 0;
 	for (i = 0; i < nitems(plugins); i++) {
-		paths_of(i, &prog, &base);
+		prog = *plugins[i].program;
 		if (faccessat(fd, prog + strspn(prog, "/"), X_OK,
 		    AT_RESOLVE_BENEATH) == 0)
 			m |= BIT_PROG(i);
-		if (base != NULL && faccessat(fd, base + strspn(base, "/"),
-		    X_OK, AT_RESOLVE_BENEATH) == 0)
-			m |= BIT_BASE(i);
 	}
 	close(fd);
 	return (m);
@@ -304,34 +275,20 @@ plugins_there(struct work *w, int jid, const char *root,
 	v = wcalloc(w, nitems(plugins), sizeof(*v));
 	n = 0;
 	for (i = 0; i < nitems(plugins); i++)
-		if ((m & (BIT_PROG(i) | BIT_BASE(i))) != 0)
+		if ((m & BIT_PROG(i)) != 0)
 			v[n++] = plugins[i].name;
 	*vp = v;
 	*np = n;
 }
 
-/*
- * The program that runs the plugin named where w works, the host or
- * its jail: its own when there, else the base system's; its own when
- * neither is, for the error to name it.
- */
+/* The program that runs the plugin named. */
 const char *
-plugin_bin(struct work *w, const char *name)
+plugin_bin(struct work *w __unused, const char *name)
 {
-	const char	*prog, *base;
-	unsigned int	 m;
-	size_t		 i;
+	size_t	i;
 
 	for (i = 0; i < nitems(plugins); i++)
 		if (strcmp(plugins[i].name, name) == 0)
-			break;
-	if (i == nitems(plugins))
-		return (NULL);
-	paths_of(i, &prog, &base);
-	if (base == NULL)
-		return (prog);
-	m = found_in(w->jail != NULL ? w->jid : 0, w->jail != NULL ?
-	    w->jroot : NULL);
-	return ((m & BIT_PROG(i)) == 0 && (m & BIT_BASE(i)) != 0 ? base :
-	    prog);
+			return (*plugins[i].program);
+	return (NULL);
 }

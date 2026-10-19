@@ -266,7 +266,7 @@ poudriere_check(const struct arc_job_spec *sp)
 			    "64 at most");
 		if (!word_ok(arg(sp, "version", 0)))
 			return ("say the FreeBSD version the jail has: "
-			    "15.0-RELEASE, 14.3-RELEASE");
+			    "15.1-RELEASE, 16.0-CURRENT");
 		if ((v = arg(sp, "arch", 0)) != NULL && !word_ok(v))
 			return ("an arch is one word: amd64, arm64.aarch64");
 		if ((v = arg(sp, "method", 0)) != NULL && !method_ok(v))

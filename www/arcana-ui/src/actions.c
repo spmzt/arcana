@@ -98,12 +98,10 @@ net_scope(void)
 
 /*
  * What each plugin with a tab needs installed: its program, and the
- * package that has it.  wg(8) is the base system's since FreeBSD 15;
- * before, it is wireguard-tools'.
+ * package that has it.  WireGuard's wg(8) is the base system's.
  */
 static const struct plugin_pkg plugin_pkgs[] = {
 	{ "bird", "BIRD", "birdc(8)", "bird3" },
-	{ "wireguard", "WireGuard", "wg(8)", "wireguard-tools" },
 	{ "strongswan", "strongSwan", "swanctl(8)", "strongswan" },
 };
 

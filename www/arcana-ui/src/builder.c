@@ -383,8 +383,8 @@ jail_form(struct html *h)
 	    "class=\"help\">letters, digits and _ : + -, no dot; an ABI's "
 	    "name (FreeBSD:15:amd64) is taken</small></label><label>FreeBSD "
 	    "version <input name=\"version\" required spellcheck=\"false\" "
-	    "placeholder=\"15.0-RELEASE\"><small class=\"help\">as the method "
-	    "names them: 15.0-RELEASE, 14.3-RELEASE, 16.0-CURRENT with "
+	    "placeholder=\"15.1-RELEASE\"><small class=\"help\">as the method "
+	    "names them: 15.1-RELEASE, 15-STABLE, 16.0-CURRENT with "
 	    "pkgbase</small></label><label>Arch <input name=\"arch\" "
 	    "spellcheck=\"false\" placeholder=\"amd64\"><small class=\"help\">"
 	    "TARGET_ARCH, arm64.aarch64; the host's when empty</small>"
@@ -490,7 +490,7 @@ view_jails(struct html *h)
 	if (ucl_array_size(jget(bld.state, "jails")) == 0)
 		h_raw(h, "<div class=\"empty\"><p>No build jail yet.</p><p "
 		    "class=\"dim\">Make one of the oldest FreeBSD the packages "
-		    "are for: 15.0-RELEASE builds packages 15.x runs.</p>"
+		    "are for: 15.1-RELEASE builds packages 15.x runs.</p>"
 		    "</div>");
 	else {
 		h_raw(h, "<table class=\"net bldjails\">");

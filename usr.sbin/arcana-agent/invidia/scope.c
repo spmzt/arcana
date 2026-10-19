@@ -152,7 +152,7 @@ scope_argv(struct work *w, char *const argv[])
 		v[k++] = (char *)(uintptr_t)w->jroot;
 		i = 1;
 	} else if (argv[0] == opts.birdc_bin || argv[0] == opts.bird_bin ||
-	    argv[0] == opts.wg_bin || argv[0] == wg_base_bin ||
+	    argv[0] == opts.wg_bin ||
 	    argv[0] == opts.ipfw_bin ||
 	    argv[0] == opts.swanctl_bin || argv[0] == opts.sysctl_bin ||
 	    argv[0] == opts.ifmcstat_bin) {
@@ -455,6 +455,10 @@ scope_missing(struct work *w, const struct execres *res, const char *prog,
 	if (w->jail == NULL || res->err == NULL || strstr(res->err,
 	    "execvp") == NULL)
 		return (NULL);
+	/* No package: the base system's, which the jail's does not have. */
+	if (package == NULL)
+		return (wfmt(w, "the jail %s has no %s: it is the jail's own "
+		    "base system's that is run there", w->jail, prog));
 	return (wfmt(w, "the jail %s has no %s: it is the jail's own that is "
 	    "run there (pkg -j %s install %s)", w->jail, prog, w->jail,
 	    package));
