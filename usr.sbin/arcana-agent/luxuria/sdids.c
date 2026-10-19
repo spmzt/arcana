@@ -429,10 +429,23 @@ expand_any(struct work *w, char *conf, const char **errp)
 	return (out);
 }
 
-/* Why an instance did not start, as its suricata.log says: its last
- * errors, or NULL. */
+/* How long the instance's suricata.log is: where a start's lines begin. */
+static long
+log_size(struct work *w, const char *name)
+{
+	struct stat	sb;
+
+	return (stat(wfmt(w, "%s/suricata.log", inst_path(w, name, "d")),
+	    &sb) == 0 ? (long)sb.st_size : 0);
+}
+
+/*
+ * Why an instance did not start, as its suricata.log says: the last
+ * errors written from from on, by this start (not -T's before it, which
+ * logs there too, nor an earlier start's), or NULL.
+ */
 static const char *
-log_errors(struct work *w, const char *name)
+log_errors(struct work *w, const char *name, long from)
 {
 	FILE		*fp;
 	char		 buf[512], *last[2];
@@ -443,10 +456,9 @@ log_errors(struct work *w, const char *name)
 	if ((fp = fopen(wfmt(w, "%s/suricata.log", inst_path(w, name, "d")),
 	    "r")) == NULL)
 		return (NULL);
-	if (fseek(fp, 0, SEEK_END) == 0 && (size = ftell(fp)) > 65536)
-		(void)fseek(fp, size - 65536, SEEK_SET);
-	else
-		rewind(fp);
+	if (fseek(fp, 0, SEEK_END) == 0 && (size = ftell(fp)) > from + 65536)
+		from = size - 65536;
+	(void)fseek(fp, from, SEEK_SET);
 	last[0] = last[1] = NULL;
 	n = 0;
 	while (fgets(buf, sizeof(buf), fp) != NULL) {
@@ -470,9 +482,15 @@ inst_start(struct work *w, const char *name, int divert, const char **errp)
 {
 	struct execres	 res;
 	char		*argv[10];
+	long		 from;
 	int		 n, i;
 
 	(void)mkdir(inst_path(w, name, "d"), 0750);
+	/* A pid file of one that is not running (a start that failed, a
+	 * crash) keeps Suricata from starting: it is not ours to keep. */
+	if (inst_pid(w, name) == 0)
+		(void)unlink(inst_path(w, name, "pid"));
+	from = log_size(w, name);
 	n = 0;
 	argv[n++] = (char *)(uintptr_t)suricata_bin(w);
 	argv[n++] = (char *)(uintptr_t)"-c";
@@ -488,7 +506,7 @@ inst_start(struct work *w, const char *name, int divert, const char **errp)
 	argv[n] = NULL;
 	if (run_exec(w, argv, &res) != 0) {
 		/* Daemonized, it says why in its own log, not here. */
-		if ((*errp = log_errors(w, name)) != NULL)
+		if ((*errp = log_errors(w, name, from)) != NULL)
 			*errp = wfmt(w, "suricata did not start: %s", *errp);
 		else
 			*errp = wtext(w, exec_error(w, &res, "suricata"));
@@ -498,7 +516,7 @@ inst_start(struct work *w, const char *name, int divert, const char **errp)
 	for (i = 0; i < 300 && inst_pid(w, name) == 0; i++)
 		usleep(100000);
 	if (inst_pid(w, name) == 0) {
-		*errp = (*errp = log_errors(w, name)) != NULL ? wfmt(w,
+		*errp = (*errp = log_errors(w, name, from)) != NULL ? wfmt(w,
 		    "suricata did not start: %s", *errp) : wfmt(w, "suricata "
 		    "did not start: see %s", inst_path(w, name, "d"));
 		return (-1);

@@ -314,9 +314,29 @@ poudriere_check(const struct arc_job_spec *sp)
 			return ("a ports tree's path is absolute");
 		return (NULL);
 	}
-	if (strcmp(verb, "jail-update") == 0 || strcmp(verb,
-	    "jail-delete") == 0 || strcmp(verb, "ports-update") == 0 ||
-	    strcmp(verb, "ports-delete") == 0)
+	/* -u: to version (-t), with a kernel (-K), its source built (-b);
+	 * its method is the one it was made with, which -m does not
+	 * change on an update. */
+	if (strcmp(verb, "jail-update") == 0) {
+		if (!pd_name_ok(arg(sp, "name", 0)))
+			return ("name the jail: letters, digits and _ : + -");
+		if ((v = arg(sp, "version", 0)) != NULL && !word_ok(v))
+			return ("say the version it goes to: 15.1-RELEASE, "
+			    "15-STABLE");
+		if ((v = arg(sp, "kernel", 0)) != NULL && v[0] != '\0' &&
+		    !pd_name_ok(v))
+			return ("a kernel's name is its configuration's: "
+			    "GENERIC; empty for GENERIC");
+		if ((v = arg(sp, "build", 0)) != NULL && strcmp(v, "yes") !=
+		    0 && strcmp(v, "no") != 0)
+			return ("build is yes or no");
+		if (arg(sp, "method", 0) != NULL)
+			return ("a jail is updated by the method it was made "
+			    "with: to change it, make the jail again");
+		return (NULL);
+	}
+	if (strcmp(verb, "jail-delete") == 0 || strcmp(verb,
+	    "ports-update") == 0 || strcmp(verb, "ports-delete") == 0)
 		return (pd_name_ok(arg(sp, "name", 0)) ? NULL : "name the jail "
 		    "or the ports tree: letters, digits and _ : + -");
 	if (strcmp(verb, "bulk") == 0) {
@@ -814,7 +834,7 @@ int
 do_poudriere_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
 {
-	const char	*verb, *v;
+	const char	*verb, *v, *m;
 	char		*argv[64 + 16];
 	long		 id;
 	size_t		 i;
@@ -866,6 +886,31 @@ do_poudriere_job(struct work *w, const struct arc_job_spec *sp,
 				ADD("-b");
 			if (yes(sp, "pkgbase-set"))
 				ADD("-B");
+		} else if (strcmp(verb, "jail-update") == 0) {
+			if ((v = arg(sp, "version", 0)) != NULL) {
+				ADD("-t");
+				ADD(v);
+			}
+			if ((v = arg(sp, "kernel", 0)) != NULL) {
+				ADD("-K");
+				ADD(v);
+			}
+			if (yes(sp, "build")) {
+				/* -b builds a src= tree; git and svn always
+				 * do; the others have no source. */
+				m = first_line(w, wfmt(w, "%s/jails/%s/method",
+				    pd_dir(w), arg(sp, "name", 0)));
+				if (m == NULL || !(strncmp(m, "src=", 4) == 0 ||
+				    strncmp(m, "git", 3) == 0 || strncmp(m,
+				    "svn", 3) == 0)) {
+					*errp = wfmt(w, "%s was made by %s: build "
+					    "is for one made from src= (git and "
+					    "svn always build)", arg(sp, "name", 0),
+					    m != NULL ? m : "an unknown method");
+					return (-1);
+				}
+				ADD("-b");
+			}
 		}
 	} else if (strncmp(verb, "ports-", 6) == 0) {
 		ADD("ports");

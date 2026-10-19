@@ -6613,12 +6613,16 @@ part_security(void)
 	    "'form[data-form=sec-proxy]').allow.value === '10.0.0.0/8, "
 	    "192.168.0.0/16'", 10);
 	click_when("form[data-form=sec-proxy] button[data-act=sec-cancel]", 10);
-	click_when("button[data-act=sec-tab][data-arg=malware]", 10);
-	wait_js("location.hash.startsWith('#/security/malware/') && document."
-	    "querySelector('table.secproxy button[data-act=sec-unscan]')", 10);
-	click_when("button[data-act=sec-tab][data-arg=signatures]", 10);
-	wait_js("document.querySelector('.secpage .empty') || document."
-	    "querySelector('table.secsigs')", 10);
+	/* Antivirus: ClamAV's scanning and its signatures, one tab. */
+	click_when("button[data-act=sec-tab][data-arg=antivirus]", 10);
+	wait_js("location.hash.startsWith('#/security/antivirus/') && document."
+	    "querySelector('table.secproxy button[data-act=sec-unscan]') && "
+	    "document.querySelector('.secpage h3.secsub') && (document."
+	    "querySelector('.secpage .empty') || document.querySelector("
+	    "'table.secsigs'))", 10);
+	ATF_CHECK(js_true("!document.querySelector('button[data-act=sec-tab]"
+	    "[data-arg=malware]') && !document.querySelector('button[data-act="
+	    "sec-tab][data-arg=signatures]')"));
 	/* No ClamAV here: installed by the button, when it is pressed. */
 	click_when(".sec-missing button[data-act=sec-install][data-arg=clamav]",
 	    10);
@@ -6694,6 +6698,21 @@ part_builder(void)
 	    "includes('done'))", 30);
 	run("document.querySelector('.dock > header').click()");
 	shot("9w-builder-jails");
+	/* Updated by a form: to a version (-t), with a kernel (-K); no
+	 * Build the source for a jail made from the release's sets. */
+	click_when("table.bldjails tr[data-jail='150amd64'] "
+	    "button[data-act=bld-jail-update]", 10);
+	wait_js("document.querySelector('form[data-form=bld-jail-update]') && "
+	    "!document.querySelector('form[data-form=bld-jail-update] "
+	    "input[name=build]')", 10);
+	run("const f = document.querySelector('form[data-form=bld-jail-update]'); "
+	    "f.version.value = '15.1-RELEASE'; f.kernel.value = 'GENERIC'; "
+	    "f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('li.bldrun')].some(l => l."
+	    "textContent.includes('jail -u -j 150amd64 -t 15.1-RELEASE -K "
+	    "GENERIC'))", 30);
+	run("document.querySelector('.dock > header').click()");
 	click_when("button[data-act=bld-tab][data-arg=ports]", 10);
 	click_when("button[data-act=bld-new][data-arg=ports]", 10);
 	wait_js("document.querySelector('form[data-form=bld-ports]')", 10);

@@ -22,7 +22,7 @@
 
 #include "app.h"
 
-enum sectab { SEC_URL, SEC_MALWARE, SEC_SIGS, SEC_IDS, SEC_SNORT };
+enum sectab { SEC_URL, SEC_AV, SEC_IDS, SEC_SNORT };
 
 static struct {
 	enum sectab	 tab;
@@ -35,8 +35,7 @@ static struct {
 	bool		 busy;
 } sec = { .edit = -1 };
 
-static const char *const tabs[] = { "url", "malware", "signatures", "ids",
-    "snort" };
+static const char *const tabs[] = { "url", "antivirus", "ids", "snort" };
 
 static void
 sec_cb(int status, const ucl_object_t *o, const char *err, void *arg)
@@ -287,7 +286,7 @@ proxy_form(struct html *h, const ucl_object_t *f)
 	if (jbool(f, "malware"))
 		h_raw(h, " checked");
 	h_raw(h, "> Scan what it fetches for malware <small class=\"help\">"
-	    "c-icap with ClamAV, on the loopback (the Malware tab)</small>"
+	    "c-icap with ClamAV, on the loopback (the Antivirus tab)</small>"
 	    "</label><details class=\"wfmore\"><summary>More options</summary>"
 	    "<label>Routing table <input name=\"fib\" type=\"number\" min=\"0\" "
 	    "max=\"65535\"");
@@ -409,7 +408,7 @@ view_malware(struct html *h)
 	    "URL filter fetches, before the client has it: one that holds "
 	    "malware is refused. Each URL filter that scans has its own "
 	    "c-icap on the loopback; turn it on in the filter's form. "
-	    "ClamAV's signatures are freshclam's (the Signatures tab).</p>");
+	    "ClamAV's signatures are freshclam's, below.</p>");
 	n = 0;
 	it = NULL;
 	while ((f = ucl_object_iterate(specs(false), &it, true)) != NULL)
@@ -780,12 +779,12 @@ view_ids(struct html *h)
 void
 view_secpage(struct html *h)
 {
-	static const char *const names[] = { "URL filter", "Malware",
-	    "Signatures", "IDS/IPS", "Snort" };
+	static const char *const names[] = { "URL filter", "Antivirus",
+	    "IDS/IPS", "Snort" };
 	static const char *const titles[] = {
 	    "Squid: what the clients ask for, by name",
-	    "c-icap with ClamAV: what a URL filter fetches, scanned",
-	    "freshclam: ClamAV's signatures",
+	    ("ClamAV: what a URL filter fetches, scanned by c-icap; its "
+	    "signatures, by freshclam"),
 	    "Suricata: intrusion detection, and prevention",
 	    "Snort 3: intrusion detection and prevention, its rules here" };
 	size_t	i;
@@ -827,10 +826,10 @@ view_secpage(struct html *h)
 	case SEC_URL:
 		view_url(h, false);
 		break;
-	case SEC_MALWARE:
+	case SEC_AV:
+		/* ClamAV: what it scans, then what it knows. */
 		view_malware(h);
-		break;
-	case SEC_SIGS:
+		h_raw(h, "<h3 class=\"secsub\">Signatures</h3>");
 		view_sigs(h);
 		break;
 	case SEC_IDS:
@@ -1059,6 +1058,9 @@ secpage_open(const char *rest)
 	for (i = 0; i < nitems(tabs); i++)
 		if (strcmp(tab, tabs[i]) == 0)
 			sec.tab = (enum sectab)i;
+	/* The two tabs Antivirus was before. */
+	if (strcmp(tab, "malware") == 0 || strcmp(tab, "signatures") == 0)
+		sec.tab = SEC_AV;
 	rest += strcspn(rest, "/");
 	if (*rest == '/' && strcmp(rest + 1, sec.sid) != 0) {
 		snprintf(sec.sid, sizeof(sec.sid), "%.15s", rest + 1);
@@ -1098,6 +1100,9 @@ secpage_action(const char *act, const char *arg, const char *value)
 		for (i = 0; i < nitems(tabs); i++)
 			if (strcmp(arg, tabs[i]) == 0)
 				sec.tab = (enum sectab)i;
+		if (strcmp(arg, "malware") == 0 || strcmp(arg, "signatures") ==
+		    0)
+			sec.tab = SEC_AV;
 		sec.edit = -1;
 		app.filter[0] = '\0';
 		return (true);

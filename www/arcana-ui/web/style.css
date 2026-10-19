@@ -5076,6 +5076,7 @@ details.wfmore[open] > summary { margin-bottom: .45rem; }
 .secpage .sechead { display: flex; align-items: center; gap: .8rem; margin-bottom: .6rem; }
 .secpage .secpick { display: inline-flex; align-items: center; gap: .5rem; font-size: .85rem; color: var(--fg-2); }
 .secpage p.lead { color: var(--fg-2); font-size: .85rem; max-width: 60rem; margin: .6rem 0; }
+.secpage h3.secsub { margin: 1.6rem 0 .2rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: .95rem; }
 .secform { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: .6rem .9rem; align-items: start; border: 1px solid var(--line); border-radius: 8px; padding: .8rem 1rem; margin: .6rem 0 1rem; background: var(--panel); }
 .secform h4, .secform details, .secform .actions { grid-column: 1 / -1; margin: 0; }
 .secform label { display: flex; flex-direction: column; gap: .3rem; min-width: 0; font-size: .8rem; color: var(--fg-2); }

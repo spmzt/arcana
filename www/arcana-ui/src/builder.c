@@ -29,7 +29,8 @@
 #include "app.h"
 
 enum bldtab { BLD_JAILS, BLD_PORTS, BLD_BULK };
-enum bldform { BF_NONE, BF_JAIL, BF_PORTS, BF_CONF, BF_MAKECONF };
+enum bldform { BF_NONE, BF_JAIL, BF_PORTS, BF_CONF, BF_MAKECONF,
+    BF_JUPDATE };
 
 static struct {
 	enum bldtab	 tab;
@@ -39,6 +40,7 @@ static struct {
 	char		 error[256];
 	enum bldform	 form;
 	char		 makeconf[80];	/* the make.conf the editor has */
+	char		 jail[80];	/* the jail BF_JUPDATE updates */
 	bool		 newmc;		/* a new one, named in the form */
 	bool		 busy;
 	/* A port's options, as builder/options read them. */
@@ -372,6 +374,62 @@ static const struct tcol jcols[] = {
 	{ "Path", "mnt", false }, { "Updated", "timestamp", true },
 };
 
+/*
+ * A jail brought up to date, poudriere jail -u: to another version
+ * (-t), with a kernel (-K), its source built first (-b) where it was
+ * made from src= or a checkout.  Its method stays the one it was made
+ * with: to change it, the jail is made again.
+ */
+static void
+jail_update_form(struct html *h)
+{
+	const ucl_object_t	*e, *j;
+	ucl_object_iter_t	 it;
+	const char		*m;
+	bool			 src;
+
+	e = NULL;
+	it = NULL;
+	while ((j = ucl_object_iterate(jget(bld.state, "jails"), &it, true)) !=
+	    NULL)
+		if (jstr(j, "name") != NULL && strcmp(jstr(j, "name"),
+		    bld.jail) == 0)
+			e = j;
+	m = jstr(e, "method") != NULL ? jstr(e, "method") : "";
+	src = strncmp(m, "src=", 4) == 0 || strncmp(m, "git", 3) == 0 ||
+	    strncmp(m, "svn", 3) == 0;
+	h_raw(h, "<form class=\"secform\" data-form=\"bld-jail-update\"><h4>"
+	    "Update ");
+	h_txt(h, bld.jail);
+	h_raw(h, "</h4><input type=\"hidden\" name=\"name\"");
+	h_attr(h, "value", bld.jail);
+	h_raw(h, "><p class=\"dim\">By its method, ");
+	h_txt(h, m[0] != '\0' ? m : "as it was made");
+	h_raw(h, ": poudriere updates a jail by the method it was made with, "
+	    "which -m does not change; to change it, make the jail again."
+	    "</p><label>To version <input name=\"version\" spellcheck=\"false\" "
+	    "placeholder=\"");
+	h_txt(h, jstr(e, "version") != NULL ? jstr(e, "version") :
+	    "15.1-RELEASE");
+	h_raw(h, "\"><small class=\"help\">-t: another release or branch; "
+	    "empty, the one it has, brought up to date</small></label>"
+	    "<label>Kernel <input name=\"kernel\" spellcheck=\"false\" "
+	    "pattern=\"[A-Za-z0-9_:+-]{0,64}\" placeholder=\"as it has\"><small "
+	    "class=\"help\">-K: a kernel installed, by its configuration's "
+	    "name (GENERIC)</small></label>");
+	if (src)
+		h_raw(h, "<label class=\"check\"><input type=\"checkbox\" "
+		    "name=\"build\"> Build the source <small class=\"help\">-b: "
+		    "the tree built first; git and svn always build</small>"
+		    "</label>");
+	h_raw(h, "<div class=\"actions\"><button type=\"button\" class=\"ghost\" "
+	    "data-act=\"bld-cancel\">Cancel</button><button type=\"submit\" "
+	    "class=\"primary\"");
+	if (bld.busy)
+		h_raw(h, " disabled");
+	h_raw(h, ">Update</button></div></form>");
+}
+
 static void
 jail_form(struct html *h)
 {
@@ -487,6 +545,8 @@ view_jails(struct html *h)
 	    "data-act=\"bld-new\" data-arg=\"jail\">New jail</button></div>");
 	if (bld.form == BF_JAIL)
 		jail_form(h);
+	if (bld.form == BF_JUPDATE)
+		jail_update_form(h);
 	if (ucl_array_size(jget(bld.state, "jails")) == 0)
 		h_raw(h, "<div class=\"empty\"><p>No build jail yet.</p><p "
 		    "class=\"dim\">Make one of the oldest FreeBSD the packages "
@@ -1208,6 +1268,19 @@ builder_form(const char *form, const ucl_object_t *f)
 
 	if (strncmp(form, "bld-", 4) != 0)
 		return (false);
+	if (strcmp(form, "bld-jail-update") == 0) {
+		args = ucl_object_typed_new(UCL_ARRAY);
+		kv(args, "name", jstr(f, "name"));
+		kv(args, "version", jstr(f, "version"));
+		kv(args, "kernel", jstr(f, "kernel"));
+		if (jbool(f, "build"))
+			kv(args, "build", "yes");
+		snprintf(title, sizeof(title), "poudriere jail-update %s",
+		    jstr(f, "name") != NULL ? jstr(f, "name") : "");
+		bld_send("jail-update", args, NULL, title);
+		bld.form = BF_NONE;
+		return (true);
+	}
 	if (strcmp(form, "bld-jail") == 0) {
 		args = ucl_object_typed_new(UCL_ARRAY);
 		kv(args, "name", jstr(f, "name"));
@@ -1427,14 +1500,16 @@ builder_action(const char *act, const char *arg, const char *value)
 		bld.makeconf[0] = '\0';
 		return (true);
 	}
-	if (strcmp(act, "bld-jail-update") == 0 || strcmp(act,
-	    "bld-ports-update") == 0) {
+	if (strcmp(act, "bld-jail-update") == 0 && arg != NULL) {
+		snprintf(bld.jail, sizeof(bld.jail), "%s", arg);
+		bld.form = BF_JUPDATE;
+		return (true);
+	}
+	if (strcmp(act, "bld-ports-update") == 0) {
 		args = ucl_object_typed_new(UCL_ARRAY);
 		kv(args, "name", arg);
-		snprintf(title, sizeof(title), "poudriere %s-update %s", act[4] ==
-		    'j' ? "jail" : "ports", arg);
-		bld_send(act[4] == 'j' ? "jail-update" : "ports-update", args, NULL,
-		    title);
+		snprintf(title, sizeof(title), "poudriere ports-update %s", arg);
+		bld_send("ports-update", args, NULL, title);
 		return (true);
 	}
 	if (strcmp(act, "bld-delete") == 0) {

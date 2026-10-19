@@ -2987,6 +2987,10 @@ exit 0; }
 d=\$(sed -n 's/^default-log-dir: //p' "\$2")
 printf '%s\\n' '{"timestamp":"2026-10-12T18:00:00.000000+0000","event_type":"flow","src_ip":"10.30.0.2"}' \\
     '{"timestamp":"2026-10-12T18:00:01.000000+0000","in_iface":"wg5","event_type":"alert","src_ip":"10.30.0.2","src_port":40000,"dest_ip":"10.20.0.1","dest_port":80,"proto":"TCP","alert":{"action":"allowed","signature_id":1000001,"rev":1,"signature":"ARCANA test \\"quoted\\"","category":"","severity":2}}' >> "\$d/eve.json"
+# As Suricata does: a pid file there refuses the start, said in its log;
+# FAILSTART in the configuration fails it.
+[ -f "\$4" ] && { echo "[1 - Main] 2026-10-19 Error: pidfile: pid file '\$4' exists but appears stale" >> "\$d/suricata.log"; exit 1; }
+grep -q FAILSTART "\$2" && { echo "[1 - Main] 2026-10-19 Error: suricata: this start fails" >> "\$d/suricata.log"; exit 1; }
 sh -c 'trap "echo usr2 >> $(pwd)/suricata.log" USR2; while :; do sleep 1; done' & echo \$! > "\$4"
 exit 0
 EOS
@@ -3249,6 +3253,20 @@ EOS
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$rs3"
 	atf_check -o not-match:'interface: any' -o not-match:'interface: lo[0-9]' \
 	    -o match:'^  - interface: [a-z]+[0-9]+$' cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+	# A pid file left by a start that failed or a crash: taken away, the
+	# instance started; and why a start fails is what that start
+	# logged, not an older error of the log.
+	kill "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
+	sleep 1
+	echo 99999 > "$(dirname "$f")/sdwan-ids-sw1.pid"
+	rs4=$(echo "$rs3" | sed 's/sid:1000001;/sid:1000004;/')
+	atf_check -o match:'suricata sw1 on [0-9]+ interfaces?, detects: started' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs4"
+	atf_check -s exit:0 kill -0 "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
+	echo "[1 - Main] 2026-10-18 Error: an old one" >> "$(dirname "$f")/sdwan-ids-sw1.d/suricata.log"
+	rs5=$(echo "$rs3" | sed 's/rule-files:/# FAILSTART\\nrule-files:/')
+	atf_check -s exit:1 -e match:'did not start: Error: suricata: this start fails$' \
+	    -e not-match:'an old one' -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs5"
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
 }
 sdwan_cleanup()
@@ -8137,7 +8155,7 @@ cmd=\$1; shift
 case "\$cmd" in
 jail|ports)
 	verb=\$1; shift
-	opts=yj:p:v:a:m:B:U:M:; [ \$cmd = jail ] && opts=yj:v:a:m:K:bB
+	opts=yj:p:v:a:m:B:U:M:; [ \$cmd = jail ] && opts=yj:v:a:m:K:bBt:
 	while getopts \$opts o; do
 		case \$o in j|p) n=\$OPTARG;; v) v=\$OPTARG;; a) a=\$OPTARG;; m) m=\$OPTARG;; B) br=\$OPTARG;; esac
 	done
@@ -8390,6 +8408,22 @@ EOF
 	    method=git+https kernel= pkgbase-set=yes
 	atf_check -o match:'"argv":\["[^"]*fake-poudriere","jail","-c","-j","git15","-v","15.0-STABLE","-m","git\+https","-K","","-B"\]' \
 	    "$JGC" -c "$SOCK" poudriere
+	# Updated: to a version (-t), with a kernel (-K), its source built
+	# (-b) where it was made from src= or a checkout; its method is the
+	# one it was made with.
+	for i in $(seq 1 50); do
+		[ -f pe/poudriere.d/jails/src15/method ] && break
+		sleep 0.1
+	done
+	atf_check -o match:'done +poudriere jail-update src15' \
+	    "$JGC" -c "$SOCK" poudriere jail-update name=src15 version=15-STABLE \
+	    kernel=GENERIC build=yes
+	atf_check -o match:'"argv":\["[^"]*fake-poudriere","jail","-u","-j","src15","-t","15-STABLE","-K","GENERIC","-b"\]' \
+	    "$JGC" -c "$SOCK" poudriere
+	atf_check -s exit:1 -o match:'made by pkgbase: build is for one made from src=' \
+	    -e ignore "$JGC" -c "$SOCK" poudriere jail-update name=FreeBSD:16:amd64 build=yes
+	atf_check -s exit:1 -e match:'updated by the method it was made with' -o ignore \
+	    "$JGC" -c "$SOCK" poudriere jail-update name=src15 method=http
 	atf_check -s exit:1 -e match:'key=value' -o ignore \
 	    "$JGC" -c "$SOCK" poudriere bulk net/bird3
 	atf_check -s exit:1 -e match:"the host's" -o ignore \

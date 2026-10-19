@@ -185,7 +185,7 @@ static struct {
 	bool	nopeers;		/* routing neighbours outside are hidden */
 	char	sel[80];		/* the node picked, or "" */
 	char	sel_if[16];		/* and its interface charted */
-	char	sel_link[80];		/* or the link picked */
+	char	sel_link[160];		/* or the link picked: its key */
 	bool	linking;		/* a link is being drawn */
 	char	link_from[80];
 	double	link_x, link_y;
@@ -1384,6 +1384,26 @@ if_joins(const ucl_object_t *o)
 }
 
 /*
+ * Is name a WireGuard interface of t: one its wg(8) read names, or wg<n>
+ * before that is read.  Its peers are tunnels, not a network shared.
+ */
+static bool
+if_wg(const struct thost *t, const char *name)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while (t != NULL && (o = ucl_object_iterate(jget(t->wg, "interfaces"),
+	    &it, true)) != NULL)
+		if (jstr(o, "name") != NULL && strcmp(jstr(o, "name"), name) ==
+		    0)
+			return (true);
+	return (strncmp(name, "wg", 2) == 0 && name[2] >= '0' && name[2] <=
+	    '9');
+}
+
+/*
  * A link between a and b, once: two ends that name each other are one
  * link, known by its two addresses whichever end it is seen from.
  */
@@ -1510,8 +1530,11 @@ links_build(void)
 					}
 					continue;
 				}
-				/* A network shared: gathered, joined below. */
-				if (!net_of(jstr(a, "address"), (int)jint(a,
+				/* A network shared: gathered, joined below;
+				 * not WireGuard's, whose peers are drawn as
+				 * the tunnels they are. */
+				if (if_wg(t, jstr(o, "name")) || !net_of(jstr(a,
+				    "address"), (int)jint(a,
 				    "prefixlen", 0), net, sizeof(net)))
 					continue;
 				for (k = 0; k < nsegs; k++)
