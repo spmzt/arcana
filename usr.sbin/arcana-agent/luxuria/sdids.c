@@ -16,7 +16,9 @@
  * (a divert port given) takes the UNIs' packets from ipfw's divert rules
  * instead and gives back those its rules let by: while it is not
  * running they pass nothing, so the thread says it, a fault, until it
- * runs again.  Like the proxies
+ * runs again.  One the admin stopped (stopped: true) stays in the list,
+ * kept for the next start, but is not run until it is started again.
+ * Like the proxies
  * of sdproxy.c: those named are started (again when their files
  * changed), those not named any more are stopped, and the list is kept
  * for the next start.
@@ -65,6 +67,7 @@ struct instance {
 	int	 nifs;
 	int	 divert;		/* its divert port, prevent; 0 detect */
 	bool	 down;			/* one that prevents, told not running */
+	bool	 stopped;		/* stopped by the admin, kept */
 	off_t	 off;			/* how far its eve.json is read */
 	char	*alerts[ALERTS_KEPT];	/* a ring, newest at head - 1 */
 	int	 head, nalerts;
@@ -728,7 +731,7 @@ divert_was(const char *name)
 
 /*
  * The instances applied: {"instances": [{"name", "interfaces", "conf",
- * "rules"}, ...]}.  Suricata must be there (a plugin); each instance's
+ * "rules", "stopped"}, ...]}.  Suricata must be there (a plugin); each instance's
  * files are written, checked by suricata -T, and it is started, again
  * when they changed; those not named any more are stopped.  Kept for
  * the next start.
@@ -793,6 +796,15 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 				return (-1);
 			}
 			ni[n].divert = (int)ucl_object_toint(f);
+		}
+		if ((f = ucl_object_lookup(in, "stopped")) != NULL) {
+			if (ucl_object_type(f) != UCL_BOOLEAN) {
+				ucl_object_unref(top);
+				*errp = wfmt(w, "%s: stopped is true or false",
+				    ni[n].name);
+				return (-1);
+			}
+			ni[n].stopped = ucl_object_toboolean(f);
 		}
 		fit = NULL;
 		while ((f = ucl_object_iterate(ucl_object_lookup(in,
@@ -871,6 +883,14 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 	for (k = 0; k < n; k++) {
 		in = ucl_object_iterate(ucl_object_lookup(top, "instances"), &it,
 		    true);
+		/* Stopped by the admin: not run, its place kept. */
+		if (ni[k].stopped) {
+			step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+			    "suricata %s stopped, kept", ni[k].name);
+			inst_stop(w, ni[k].name);
+			step_end(w, step, true, NULL);
+			continue;
+		}
 		conf = inst_conf(w, ni[k].name, ucl_object_tostring(
 		    ucl_object_lookup(in, "conf")));
 		e = NULL;
@@ -1048,6 +1068,9 @@ sdwan_ids_json(struct work *w, ucl_object_t *top)
 			    instances[i].divert), "divert", 0, false);
 		ucl_object_insert_key(o, ucl_object_frombool(inst_pid(w,
 		    instances[i].name) != 0), "running", 0, false);
+		if (instances[i].stopped)
+			ucl_object_insert_key(o, ucl_object_frombool(true),
+			    "stopped", 0, false);
 		ucl_object_insert_key(o, ucl_object_fromint((int64_t)
 		    instances[i].seen), "alerts_seen", 0, false);
 		al = ucl_object_typed_new(UCL_ARRAY);

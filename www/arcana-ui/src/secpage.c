@@ -742,9 +742,28 @@ view_ids(struct html *h)
 			h_raw(h, "</td><td>detects</td>");
 		h_fmt(h, "<td>%lld</td><td>", (long long)jint(l, "alerts_seen",
 		    0));
-		chip_run(h, l, "running");
+		if (jbool(f, "stopped"))
+			h_raw(h, "<span class=\"chip st-down\" title=\"Stopped "
+			    "here: kept, not run until it is started\">stopped"
+			    "</span>");
+		else
+			chip_run(h, l, "running");
 		h_raw(h, "</td><td class=\"acts\">");
-		start_button(h, l, true);
+		/* Stopped by the admin, or not running: Start; else Stop.
+		 * Either keeps its form. */
+		if (jbool(f, "stopped") || l == NULL || !jbool(l, "running")) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "sec-ids-run\" data-value=\"start\" title=\"Started "
+			    "on the host, its configuration as it is\"");
+			h_attr(h, "data-arg", jstr(f, "name"));
+			h_raw(h, ">Start</button>");
+		} else {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "sec-ids-stop\" title=\"Stopped on the host, its "
+			    "configuration kept for Start\"");
+			h_attr(h, "data-arg", jstr(f, "name"));
+			h_raw(h, ">Stop</button>");
+		}
 		h_raw(h, "<button class=\"ghost small\" data-act=\"sec-edit\"");
 		h_attr(h, "data-arg", jstr(f, "name"));
 		h_raw(h, ">Change</button><button class=\"ghost small danger\" "
@@ -1021,6 +1040,21 @@ secpage_form(const char *form, const ucl_object_t *f)
 			ucl_object_insert_key(o, ucl_object_fromstring(jstr(f,
 			    "rules")), "rules", 0, false);
 		put_num(o, "divert", jstr(f, "divert"));
+		/* One stopped stays stopped, changed. */
+		{
+			const ucl_object_t	*e;
+			ucl_object_iter_t	 it;
+
+			it = NULL;
+			while ((e = ucl_object_iterate(specs(true), &it, true)) !=
+			    NULL)
+				if (jstr(f, "orig") != NULL && jstr(e, "name") !=
+				    NULL && strcmp(jstr(e, "name"), jstr(f,
+				    "orig")) == 0 && jbool(e, "stopped"))
+					ucl_object_insert_key(o,
+					    ucl_object_frombool(true), "stopped",
+					    0, false);
+		}
 	}
 	ucl_array_append(list, o);
 	save(ids, list);
@@ -1132,6 +1166,40 @@ secpage_action(const char *act, const char *arg, const char *value)
 		    "files taken away.", arg);
 		confirm("Remove it?", body, "Remove", true, NULL,
 		    "sec-remove-yes", arg, value != NULL ? value : "proxy");
+		return (true);
+	}
+	if (strcmp(act, "sec-ids-stop") == 0) {
+		char	body[300];
+		int64_t	divert;
+
+		divert = 0;
+		it = NULL;
+		while ((e = ucl_object_iterate(specs(true), &it, true)) != NULL)
+			if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"),
+			    arg) == 0)
+				divert = jint(e, "divert", 0);
+		snprintf(body, sizeof(body), "Suricata %s is stopped on the host; "
+		    "its configuration is kept, to start it again.%s", arg,
+		    divert > 0 ? " It prevents: while it is stopped, what ipfw "
+		    "diverts to it passes nothing." : "");
+		confirm("Stop it?", body, "Stop", divert > 0, NULL,
+		    "sec-ids-run", arg, "stop");
+		return (true);
+	}
+	/* One's stopped set or cleared, the whole list applied again. */
+	if (strcmp(act, "sec-ids-run") == 0) {
+		ucl_object_t	*list;
+
+		list = specs_but(true, NULL);
+		it = NULL;
+		while ((e = ucl_object_iterate(list, &it, true)) != NULL)
+			if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"),
+			    arg) == 0)
+				ucl_object_replace_key((ucl_object_t *)(uintptr_t)
+				    e, ucl_object_frombool(value != NULL &&
+				    strcmp(value, "stop") == 0), "stopped", 0,
+				    false);
+		save(true, list);
 		return (true);
 	}
 	if (strcmp(act, "sec-start") == 0) {

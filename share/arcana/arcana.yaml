@@ -3149,8 +3149,9 @@ operations:
       port, for one that prevents: it is run on that port (-d), where
       the console's ipfw divert rules hand it the UNIs' packets, rather
       than by libpcap; while it is not running they pass nothing, a
-      Critical fault (ids) until it runs again.  Each is checked by
-      suricata -T before it runs; one whose files changed is started
+      Critical fault (ids) until it runs again; and "stopped", true for
+      one the admin stopped, which is not run but kept in the list until
+      it is started again.  Each is checked by suricata -T before it runs; one whose files changed is started
       again; those not named any more are stopped.  The alerts each
       writes (eve.json) are read every second into events, sdwan-ids,
       and kept, the latest in the sdwan read.  Kept for the next start.

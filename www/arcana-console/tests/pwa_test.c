@@ -6575,6 +6575,18 @@ part_security(void)
 	    "document.querySelector('table.secids').textContent.includes("
 	    "'detects')", 30);
 	shot("9v-security-ids");
+	/* Stopped, after asking, its form kept; started again. */
+	click_when("table.secids button[data-act=sec-ids-stop]", 30);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("document.querySelector('table.secids button[data-act="
+	    "sec-ids-run][data-value=start]') && document.querySelector("
+	    "'table.secids').textContent.includes('stopped') && document."
+	    "querySelector('table.secids').textContent.includes('lo0')", 30);
+	click_when("table.secids button[data-act=sec-ids-run][data-value=start]",
+	    10);
+	wait_js("document.querySelector('table.secids button[data-act="
+	    "sec-ids-stop]')", 30);
 	/* Removed, after asking. */
 	click_when("table.secids button[data-act=sec-remove]", 10);
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);

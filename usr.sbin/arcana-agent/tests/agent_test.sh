@@ -3283,6 +3283,23 @@ EOS
 	atf_check -s exit:0 kill -0 "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
 	echo "[1 - Main] 2026-10-18 Error: an old one" >> "$(dirname "$f")/sdwan-ids-sw1.d/suricata.log"
 	rs5=$(echo "$rs3" | sed 's/rule-files:/# FAILSTART\\nrule-files:/')
+	# Stopped by the admin: not run, its files and its place kept;
+	# started again as it was.
+	atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs4"
+	pid=$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")
+	rs6=$(echo "$rs4" | sed 's/"name":"sw1",/"name":"sw1","stopped":true,/')
+	atf_check -o match:'suricata sw1 stopped, kept' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs6"
+	kill -0 "$pid" 2>/dev/null && atf_fail "a stopped suricata still runs"
+	test -f "$(dirname "$f")/sdwan-ids-sw1.yaml" || atf_fail "a stopped suricata lost its file"
+	atf_check -o match:'"name":"sw1","interfaces":\[[^]]*\],"mode":"detect","running":false,"stopped":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"stopped":true' cat "$(dirname "$f")/sdwan-ids.json"
+	atf_check -o match:'suricata sw1 on [0-9]+ interfaces?, detects: started' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs4"
+	atf_check -s exit:0 kill -0 "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
+	atf_check -s exit:1 -e match:'stopped is true or false' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan ids "$(echo "$rs4" | sed 's/"name":"sw1",/"name":"sw1","stopped":1,/')"
 	atf_check -s exit:1 -e match:'did not start: Error: suricata: this start fails$' \
 	    -e not-match:'an old one' -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs5"
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'

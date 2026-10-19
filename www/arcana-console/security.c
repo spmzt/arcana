@@ -13,7 +13,8 @@
  * divert rule hands it (divert(4)).  The page sends each instance's
  * form; here it is checked and made into what the agent's sdwan-proxy
  * and sdwan-ids take, as group "security": instances named sec-, kept
- * apart from SD-WAN's, each with its form as spec, to show again.
+ * apart from SD-WAN's, each with its form as spec, to show again.  An
+ * intrusion detection the admin stopped stays in the list, not run.
  */
 
 #include <sys/types.h>
@@ -421,6 +422,10 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 	    "interfaces")), "interfaces", 0, false);
 	if (divert > 0)
 		ucl_object_insert_key(o, ucl_object_fromint(divert), "divert", 0,
+		    false);
+	/* Stopped by the admin: kept, not run. */
+	if (ucl_object_toboolean(ucl_object_lookup(in, "stopped")))
+		ucl_object_insert_key(o, ucl_object_frombool(true), "stopped", 0,
 		    false);
 	ucl_object_insert_key(o, ucl_object_fromstring(kore_buf_stringify(b,
 	    NULL)), "conf", 0, false);
