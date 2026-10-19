@@ -173,7 +173,7 @@ do_wireguard(struct work *w, struct arc_network_rsp *rsp)
 
 	rsp->has_ok = true;
 	rsp->ok = false;
-	argv[0] = (char *)(uintptr_t)plugin_bin(w, "wireguard");
+	argv[0] = (char *)(uintptr_t)opts.wg_bin;
 	argv[1] = (char *)(uintptr_t)"show";
 	argv[2] = (char *)(uintptr_t)"all";
 	argv[3] = (char *)(uintptr_t)"dump";
@@ -250,7 +250,7 @@ has_key(struct work *w, const char *ifname)
 	char		*argv[5];
 	int		 rc;
 
-	argv[0] = (char *)(uintptr_t)plugin_bin(w, "wireguard");
+	argv[0] = (char *)(uintptr_t)opts.wg_bin;
 	argv[1] = (char *)(uintptr_t)"show";
 	argv[2] = (char *)(uintptr_t)ifname;
 	argv[3] = (char *)(uintptr_t)"private-key";
@@ -291,7 +291,7 @@ new_key(struct work *w, const char *ifname, const char **errp)
 		*errp = wfmt(w, "%s: %s", opts.wg_dir, strerror(errno));
 		return (-1);
 	}
-	argv[0] = (char *)(uintptr_t)plugin_bin(w, "wireguard");
+	argv[0] = (char *)(uintptr_t)opts.wg_bin;
 	argv[1] = (char *)(uintptr_t)"set";
 	argv[2] = (char *)(uintptr_t)ifname;
 	argv[3] = (char *)(uintptr_t)"private-key";
@@ -328,7 +328,7 @@ wg_save(struct work *w, const char *ifname, const char **errp)
 	char			*argv[4], *path, *extra, *text;
 	int			 rc, step;
 
-	argv[0] = (char *)(uintptr_t)plugin_bin(w, "wireguard");
+	argv[0] = (char *)(uintptr_t)opts.wg_bin;
 	argv[1] = (char *)(uintptr_t)"showconf";
 	argv[2] = (char *)(uintptr_t)ifname;
 	argv[3] = NULL;
@@ -423,7 +423,7 @@ do_wg(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	if ((*errp = wg_check(w, sp)) != NULL)
 		return (-1);
 	n = 0;
-	argv[n++] = (char *)(uintptr_t)plugin_bin(w, "wireguard");
+	argv[n++] = (char *)(uintptr_t)opts.wg_bin;
 	argv[n++] = (char *)(uintptr_t)"set";
 	argv[n++] = (char *)(uintptr_t)sp->interface;
 	if (strcmp(sp->verb, "init") == 0) {

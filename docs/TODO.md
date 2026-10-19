@@ -481,7 +481,7 @@
   sessions and tables as state, the routes of a table as an action),
   arcana-wireguard (71 400: wg show dump, keys only said to be there)
   and arcana-netgraph (71 500: ngctl list -l), each the host's and a
-  vnet jail's by an augment of arcana-jails (luxuria/ybird.c, ywg.c,
+  vnet jail's by an augment of arcana-jails (luxuria/ybird.c, invidia/ywg.c,
   invidia/yng.c, yang_plugins).  The changes stay jobs (bird-config,
   wireguard, netgraph).  3.1.9: share/yang/arcana-host (71 600: the
   host's facts, the plugins as identities, a jail's too, the stats, the
@@ -1512,7 +1512,8 @@ it found and could be fixed was, and this is what stays:
   signs with RSA only, so `console.pem` must be RSA until Kore (or a
   patch like the one in `port/www/kore/files`) handles ECDSA.
 - A web terminal in the console: it could not be built.
-- Luxuria in the agent is the plugins, BIRD and WireGuard's `wg`; what
+- Luxuria in the agent is the plugins, BIRD among them (WireGuard's
+  `wg` is the base system's and Invidia's since 2026-10-19); what
   reaches outside (the release check, notifications) is the console's.
   A plugin is still built into the agent and the page: what makes it
   one is that it is there only where its program is installed.

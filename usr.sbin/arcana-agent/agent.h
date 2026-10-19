@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.147.0"
+#define	ARCANA_AGENT_VERSION	"0.147.1"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -474,7 +474,7 @@ int		 rc_word(struct work *, const char *, const char *,
 		    const char *, const char **);
 void		 rc_forget_if(struct work *, const char *);
 
-/* luxuria/wireguard.c: a plugin, through wg(8). */
+/* invidia/wireguard.c: WireGuard, through the base system's wg(8). */
 int		 do_wireguard(struct work *, struct arc_network_rsp *);
 const char	*wg_check(struct work *, const struct arc_job_spec *);
 int		 do_wg(struct work *, const struct arc_job_spec *,
@@ -681,7 +681,6 @@ int		 do_storage_job(struct work *, const struct arc_job_spec *,
 /* luxuria/plugins.c */
 void		 plugins_there(struct work *, int, const char *,
 		    const char *const **, size_t *);
-const char	*plugin_bin(struct work *, const char *);
 void		 plugins_forget(void);
 int		 do_if_vnet(struct work *, const char *, const char *, bool,
 		    bool, const char **);

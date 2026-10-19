@@ -9,11 +9,9 @@
  * that has to be installed, and is there only where its program is:
  * BIRD through birdc(8), strongSwan's IPsec through swanctl(8),
  * Squid and dnsmasq for SD-WAN's proxy and DHCP, poudriere(8) to
- * build packages,
- * WireGuard's keys and peers through wg(8), the base system's (the
- * interface itself, if_wg(4) made by ifconfig(8), is Invidia's).  A
- * host says which it has, and so does a jail with a network of its own,
- * where the program is the jail's.
+ * build packages, Snort and Suricata to detect.  A host says which it
+ * has, and so does a jail with a network of its own, where the program
+ * is the jail's.  WireGuard's wg(8) is the base system's: Invidia's.
  *
  * A jail's programs are looked for as the jail sees them: a child
  * attaches to it and asks there, so that its own links (a /usr/local
@@ -47,7 +45,6 @@ static const struct {
 	const char *const	*program;
 } plugins[] = {
 	{ "bird", &opts.birdc_bin },
-	{ "wireguard", &opts.wg_bin },
 	{ "strongswan", &opts.swanctl_bin },
 	{ "squid", &opts.squid_bin },
 	{ "dnsmasq", &opts.dnsmasq_bin },
@@ -279,16 +276,4 @@ plugins_there(struct work *w, int jid, const char *root,
 			v[n++] = plugins[i].name;
 	*vp = v;
 	*np = n;
-}
-
-/* The program that runs the plugin named. */
-const char *
-plugin_bin(struct work *w __unused, const char *name)
-{
-	size_t	i;
-
-	for (i = 0; i < nitems(plugins); i++)
-		if (strcmp(plugins[i].name, name) == 0)
-			return (*plugins[i].program);
-	return (NULL);
 }

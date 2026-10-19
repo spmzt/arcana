@@ -1771,7 +1771,8 @@ EOS
 	atf_check -o match:'fake-birdc disable bgp_edge' \
 	    "$JGC" -c "$SOCK" bird disable bgp_edge
 	# The host says which plugins it has: those whose program is there.
-	atf_check -o match:'Plugins: bird wireguard' "$JGC" -c "$SOCK" hello
+	# wg(8) is the base system's, not a plugin.
+	atf_check -o match:'Plugins: bird$' "$JGC" -c "$SOCK" hello
 	atf_check -o match:'fake-birdc configure' -o match:'Reconfigured' \
 	    "$JGC" -c "$SOCK" bird configure
 	# birdc ends well whatever was answered: what it said counts.

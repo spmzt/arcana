@@ -47,7 +47,7 @@ net_help(void)
 		return ("sections/network.html#carp-an-address-shared-between-"
 		    "hosts");
 	case NET_WIREGUARD:
-		return ("sections/plugins.html#wireguard");
+		return ("sections/network.html#wireguard");
 	case NET_BIRD:
 		return ("sections/plugins.html#bird");
 	case NET_IPSEC:

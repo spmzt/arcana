@@ -2374,21 +2374,24 @@ part_plugins(void)
 	wait_js("!document.querySelector('button.tab.plugin.missing') && "
 	    "!document.querySelector('.plugin-missing')", 20);
 
-	/* They are plugins, installed on the host: each a tab of its own,
-	 * not among what the Network tab has of the base system. */
+	/* BIRD and IPsec are plugins, installed on the host: each a tab
+	 * of its own, not among what the Network tab has of the base
+	 * system.  WireGuard is the base system's: a view of Network,
+	 * after Netgraph, and no tab of its own. */
 	run("document.querySelector('button.tab[data-arg=network]').click()");
 	wait_js("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=interfaces]')", 10);
-	ATF_CHECK(js_true("!document.querySelector('button[data-act=net-kind]"
+	ATF_CHECK(js_true("!document.querySelector('button.tab.plugin"
 	    "[data-arg=wireguard]') && !document.querySelector('button"
 	    "[data-act=net-kind][data-arg=bird]') && document.querySelector("
-	    "'button.tab.plugin[data-arg=bird]')"));
-	run("document.querySelector('button.tab.plugin[data-arg=wireguard]')"
-	    ".click()");
-	wait_js("document.querySelector('button.tab.plugin[data-arg=wireguard]"
-	    ".on') && !document.querySelector('button.tab[data-arg=network]"
-	    ".on') && !document.querySelector('button[data-act=net-kind]')",
-	    10);
+	    "'button.tab.plugin[data-arg=bird]') && document.querySelector("
+	    "'button[data-act=net-kind][data-arg=netgraph] + button[data-act="
+	    "net-kind][data-arg=wireguard]')"));
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=wireguard]').click()");
+	wait_js("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=wireguard].on') && document.querySelector("
+	    "'button.tab[data-arg=network].on')", 10);
 	wait_js("document.querySelector('.pane.wg button[data-act=wg-init]')",
 	    20);
 	ATF_CHECK(js_true("document.querySelector('.pane.wg').textContent."

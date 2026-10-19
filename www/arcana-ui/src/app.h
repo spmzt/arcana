@@ -220,8 +220,7 @@ enum netkind {
 	NET_MULTICAST,		/* IGMP's and MLD's state, ifmcstat(8) */
 };
 /* A plugin's view: a tab of its own on a host that has it. */
-#define	NET_PLUGIN(k)	((k) == NET_WIREGUARD || (k) == NET_BIRD ||	\
-			    (k) == NET_IPSEC)
+#define	NET_PLUGIN(k)	((k) == NET_BIRD || (k) == NET_IPSEC)
 
 /* The network tab's one table: what is shown, from which server. */
 struct netview {

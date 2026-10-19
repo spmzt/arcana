@@ -4795,8 +4795,9 @@ ATF_TC_BODY(services, tc)
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("bird", jstr(&r, "host.plugins.0"));
-	ATF_CHECK_STREQ("wireguard", jstr(&r, "host.plugins.1"));
-	ATF_CHECK_STREQ("strongswan", jstr(&r, "host.plugins.2"));
+	ATF_CHECK_STREQ("strongswan", jstr(&r, "host.plugins.1"));
+	/* WireGuard is no plugin: wg(8) is the base system's. */
+	ATF_CHECK(strstr(r.body, "\"wireguard\"") == NULL);
 	resp_free(&r);
 
 	/* BIRD's routes, asked for in birdc's words with , between. */

@@ -5,14 +5,14 @@ SRCS=		main.c handlers.c work.c
 SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c ysystem.c yhost.c yagent.c ysshd.c bundle.c l2.c ipfw.c
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c fwmatch.c pathcheck.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
-		rcroutes.c routes.c rtadv.c rtimes.c scope.c sdwan.c vnet.c \
-		yif.c yip.c yjobs_spec.c yjson.c ylne.c yni.c yrt.c yfw.c yts.c yng.c ysd.c
+		rcroutes.c routes.c rtadv.c rtimes.c scope.c sdwan.c vnet.c wireguard.c \
+		yif.c yip.c yjobs_spec.c yjson.c ylne.c yni.c yrt.c yfw.c yts.c yng.c ysd.c ywg.c
 # The IETF modules the collectors fill (PLAN-SDN-YANG 1.9): cblink-gen's
 # structs and tables of share/yang's modules, committed, so that building
 # needs no libyang; "make regen-yang" refreshes them.
 SRCS+=		ymodel_schema.c
 # Luxuria: what is not FreeBSD's own, the plugins.
-SRCS+=		bird.c birdwatch.c ybird.c ywg.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c telegram.c wireguard.c poudriere.c ybuilder.c snort.c clamav.c
+SRCS+=		bird.c birdwatch.c ybird.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c telegram.c poudriere.c ybuilder.c snort.c clamav.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c packages.c \
 		services.c update.c yjails.c yjf.c yjobs.c ypackages.c yservices.c

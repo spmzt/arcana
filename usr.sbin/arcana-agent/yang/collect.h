@@ -333,7 +333,7 @@ int	ybird_config_from(const char *path, const char *text,
 	    const char *sha256, const char *const *files, size_t nfiles,
 	    cbl_yarena *a, struct arcana_bird_bird_configuration *out);
 
-/* arcana-wireguard (luxuria/ywg.c): the wireguard kind. */
+/* arcana-wireguard (invidia/ywg.c): the wireguard kind. */
 int	ywg_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_wireguard_wireguard *out);
 

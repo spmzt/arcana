@@ -1329,8 +1329,8 @@ wg_poll(int i)
 	struct thost	*t;
 	char		 url[240];
 
-	if (!app.online || !plugin_at(&app.servers[tn[i].srv], tn[i].jail,
-	    "wireguard") || (t = thost(tn[i].key, true)) == NULL ||
+	/* wg(8) is the base system's: every host and vnet jail has it. */
+	if (!app.online || (t = thost(tn[i].key, true)) == NULL ||
 	    t->wg_loading)
 		return;
 	t->wg_loading = true;

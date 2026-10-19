@@ -161,8 +161,8 @@ const char *
 kind_plugin(int kind)
 {
 
-	return (kind == NET_WIREGUARD ? "wireguard" : kind == NET_BIRD ?
-	    "bird" : kind == NET_IPSEC ? "strongswan" : NULL);
+	return (kind == NET_BIRD ? "bird" : kind == NET_IPSEC ? "strongswan" :
+	    NULL);
 }
 
 /*

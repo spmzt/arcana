@@ -876,7 +876,6 @@ stage(struct html *h)
 			const char	*arg, *title;
 			int		 kind;
 		} plugins[] = {
-			{ "wireguard", "WireGuard", NET_WIREGUARD },
 			{ "bird", "BIRD", NET_BIRD },
 			{ "ipsec", "IPsec", NET_IPSEC },
 		};
@@ -890,7 +889,8 @@ stage(struct html *h)
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
 			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
 			    tabs[t].title);
-		for (t = 0; t < 3; t++) {
+		for (t = 0; t < (int)(sizeof(plugins) / sizeof(plugins[0]));
+		    t++) {
 			bool	there = s->list == NULL || plugin_where(s,
 			    kind_plugin(plugins[t].kind)) != NULL;
 
@@ -904,9 +904,8 @@ stage(struct html *h)
 			    "open it to install its package", plugins[t].title);
 		}
 		if (app.tab != TAB_JOBS)
-			export_bar(h, plug ? (const char *[]){ "wireguard",
-			    "bird", "ipsec" }[app.net.kind == NET_WIREGUARD ? 0 :
-			    app.net.kind == NET_BIRD ? 1 : 2] : tabs[app.tab].arg);
+			export_bar(h, plug ? (app.net.kind == NET_BIRD ? "bird" :
+			    "ipsec") : tabs[app.tab].arg);
 		h_raw(h, "</nav>");
 	}
 	if (app.tab == TAB_SUMMARY) {
