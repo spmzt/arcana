@@ -1790,7 +1790,7 @@ EOS
 	    "$JGC" -c "$SOCK" bird disable bgp_edge
 	# The host says which plugins it has: those whose program is there.
 	# wg(8) is the base system's, not a plugin.
-	atf_check -o match:'Plugins: bird$' "$JGC" -c "$SOCK" hello
+	atf_check -o match:'Plugins: bird( |$)' -o not-match:'Plugins:.*wireguard' "$JGC" -c "$SOCK" hello
 	atf_check -o match:'fake-birdc configure' -o match:'Reconfigured' \
 	    "$JGC" -c "$SOCK" bird configure
 	# birdc ends well whatever was answered: what it said counts.
@@ -3012,12 +3012,40 @@ grep -q FAILSTART "\$2" && { echo "[1 - Main] 2026-10-19 Error: suricata: this s
 sh -c 'trap "echo usr2 >> $(pwd)/suricata.log" USR2; while :; do sleep 1; done' & echo \$! > "\$4"
 exit 0
 EOS
-	# suricata-update: the ruleset written where -o says.
-	cat > tools/suricata-update <<EOS
+	# suricata-update: the ruleset written where -o says, a rule
+	# disabled as it ships; the sids of --enable-conf, --disable-conf
+	# and --drop-conf turned on, off and to drop, as it does.
+	cat > tools/suricata-update <<'EOS'
 #!/bin/sh
-echo "suricata-update \$*" >> $(pwd)/suricata-update.log
-mkdir -p "\$6" && echo 'alert tcp any any -> any 22 (msg:"ET"; sid:2000001;)' > "\$6/suricata.rules"
+echo "suricata-update $*" >> @LOG@
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-o) out=$2; shift ;;
+	--enable-conf) en=$2; shift ;;
+	--disable-conf) dis=$2; shift ;;
+	--drop-conf) drop=$2; shift ;;
+	esac
+	shift
+done
+mkdir -p "$out"
+f=$out/suricata.rules
+{
+	echo '# Emerging Threats Open'
+	echo 'alert tcp any any -> any 22 (msg:"ET"; sid:2000001;)'
+	echo '# alert http any any -> any any (msg:"ET INFO curl \"UA\""; flow:established; classtype:policy-violation; sid:2000005; rev:2; metadata:signature_severity Minor, created_at 2020_01_01;)'
+	echo 'alert dns any any -> any any (msg:"ET DNS query of a bad name"; classtype:bad-unknown; sid:2000006; rev:4;)'
+} > "$f"
+for s in $(grep -v '^#' "${en:-/dev/null}"); do
+	sed -i '' "/sid:$s;/s/^# //" "$f"
+done
+for s in $(grep -v '^#' "${dis:-/dev/null}"); do
+	sed -i '' "/sid:$s;/s/^alert/# alert/" "$f"
+done
+for s in $(grep -v '^#' "${drop:-/dev/null}"); do
+	sed -i '' "/sid:$s;/s/alert /drop /" "$f"
+done
 EOS
+	sed -i '' "s|@LOG@|$(pwd)/suricata-update.log|" tools/suricata-update
 	chmod +x tools/squid tools/security_file_certgen tools/c-icap tools/suricata tools/suricata-update
 	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
@@ -3252,8 +3280,39 @@ EOS
 	# Fetched by the suricata job: the instance applied again takes it,
 	# and is told to read its rules again; the read says when.
 	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata update
-	atf_check -o match:"^suricata-update --no-test --no-reload --suricata .*/tools/suricata -o $(pwd)/rules\$" \
+	atf_check -o match:"^suricata-update --no-test --no-reload --suricata .*/tools/suricata -o $(pwd)/rules --enable-conf .*/suricata-enable.conf --disable-conf .*/suricata-disable.conf --drop-conf .*/suricata-drop.conf\$" \
 	    cat suricata-update.log
+	# The ruleset's rules, a page at a time: one disabled as it ships
+	# is a line commented out; a comment is no rule.
+	atf_check -o match:'"total":3,"enabled":2,"matched":3' \
+	    -o match:'\{"sid":2000005,"gid":1,"rev":2,"action":"alert","msg":"ET INFO curl \\"UA\\"","classtype":"policy-violation","severity":"Minor","enabled":false,"rule":"alert http' \
+	    "$JGC" -c "$SOCK" suricata rules
+	atf_check -o match:'"matched":1,.*"sid":2000006,' -o not-match:'"sid":2000001,' \
+	    "$JGC" -c "$SOCK" suricata rules q=bad\ NAME
+	atf_check -o match:'"matched":1,.*"sid":2000005,' "$JGC" -c "$SOCK" suricata rules only=disabled
+	atf_check -o match:'"matched":1,.*"sid":2000005,' "$JGC" -c "$SOCK" suricata rules classtype=policy-violation
+	atf_check -o match:'"matched":3,"offset":1,"limit":1,"rules":\[\{"sid":2000005,[^]]*\]\}' \
+	    "$JGC" -c "$SOCK" suricata rules offset=1 limit=1
+	atf_check -s exit:1 -e match:'only is enabled, disabled or changed' "$JGC" -c "$SOCK" suricata rules only=x
+	atf_check -s exit:1 -e match:'searched by q=' "$JGC" -c "$SOCK" suricata rules color=red
+	# Set by sid, as jobs: kept, given to suricata-update from what was
+	# fetched (--offline), and holding when the ruleset is fetched again.
+	atf_check -s exit:1 -e match:'sid is a number' "$JGC" -c "$SOCK" suricata rule on=abc
+	atf_check -s exit:1 -e match:'on=, off=, drop= or default=' "$JGC" -c "$SOCK" suricata rule up=1
+	atf_check -o match:'done +suricata rules set: on=2000005 \.\.\.' \
+	    "$JGC" -c "$SOCK" suricata rule on=2000005 off=2000001 drop=2000006
+	atf_check -o match:' --offline$' tail -1 suricata-update.log
+	atf_check -o match:'"total":3,"enabled":2,"matched":3' \
+	    -o match:'"sid":2000001,[^}]*"enabled":false,"state":"off"' \
+	    -o match:'"sid":2000005,[^}]*"enabled":true,"state":"on"' \
+	    -o match:'"sid":2000006,[^}]*"action":"drop",[^}]*"enabled":true,"state":"drop"' \
+	    "$JGC" -c "$SOCK" suricata rules
+	atf_check -o match:'"changed":3,.*"matched":3' "$JGC" -c "$SOCK" suricata rules only=changed
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata update
+	atf_check -o not-match:'offline' tail -1 suricata-update.log
+	atf_check -o match:'"sid":2000001,[^}]*"enabled":false,"state":"off"' "$JGC" -c "$SOCK" suricata rules sid=2000001
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata rule default=2000001,2000005,2000006
+	atf_check -o match:'"changed":0,.*"total":3,"enabled":2' "$JGC" -c "$SOCK" suricata rules
 	atf_check -o match:"^  - $(pwd)/rules/suricata.rules\$" cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	atf_check -o match:'"ids_ruleset":\{"path":"[^"]*/rules/suricata.rules","at":[0-9]+,"size":[0-9]+\}' \
 	    "$JGC" -c "$SOCK" sdwan

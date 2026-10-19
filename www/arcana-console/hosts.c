@@ -70,6 +70,7 @@ enum op {
 	OP_JAIL_FILES,
 	OP_BUILDER,
 	OP_BUILDER_OPTIONS,
+	OP_SURICATA_RULES,
 	OP_CERTS,
 	OP_SSH,
 	OP_CAPTURE,
@@ -1215,7 +1216,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_SURICATA_RULES ? "arc_suricata_rules" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1565,6 +1566,8 @@ call_run(struct kore_task *t)
 	struct arc_builder_rsp	*bur;
 	struct arc_builder_options_req boq;
 	struct arc_builder_options_rsp *bor;
+	struct arc_suricata_rules_req surq;
+	struct arc_suricata_rules_rsp *surr;
 	struct arc_certs_req	 ceq;
 	struct arc_certs_rsp	*cer;
 	struct arc_ssh_req	 sshq;
@@ -1692,6 +1695,7 @@ call_run(struct kore_task *t)
 	jfiles = NULL;
 	bur = NULL;
 	bor = NULL;
+	surr = NULL;
 	cer = NULL;
 	sshr = NULL;
 	capr = NULL;
@@ -2658,6 +2662,47 @@ connected:
 		steps = bor->trace.v;
 		nsteps = bor->trace.n;
 		break;
+	case OP_SURICATA_RULES:
+		/* The words, a line each, as setup_suricata_rules made them. */
+		memset(&surq, 0, sizeof(surq));
+		{
+			const char	**nv;
+			char		 *p, *line, *copy;
+			size_t		  n;
+
+			copy = kore_strdup(c->text != NULL ? c->text : "");
+			nv = kore_calloc(6, sizeof(*nv));
+			n = 0;
+			for (p = copy; p != NULL && n < 6; ) {
+				line = strsep(&p, "\n");
+				if (line[0] != '\0')
+					nv[n++] = line;
+			}
+			surq.names.v = nv;
+			surq.names.n = n;
+			error = arc_suricata_rules(&cl, &surq, &surr);
+			kore_free(nv);
+			kore_free(copy);
+		}
+		if (error != 0)
+			goto rpcfail;
+		ok = surr->ok;
+		put_str(top, "error", surr->error);
+		e = NULL;
+		if (surr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, surr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = surr->trace.v;
+		nsteps = surr->trace.n;
+		break;
 	case OP_CERTS:
 		memset(&ceq, 0, sizeof(ceq));
 		ceq.jail = c->scope[0] != '\0' ? c->scope : NULL;
@@ -3025,6 +3070,8 @@ done:
 		arc_builder_rsp_free(bur);
 	if (bor != NULL)
 		arc_builder_options_rsp_free(bor);
+	if (surr != NULL)
+		arc_suricata_rules_rsp_free(surr);
 	if (cer != NULL)
 		arc_certs_rsp_free(cer);
 	if (sshr != NULL)
@@ -4379,6 +4426,40 @@ api_builder_options(struct http_request *req)
 	return (read_route(req, OP_BUILDER_OPTIONS, setup_builder_options));
 }
 
+/*
+ * GET /api/servers/<id>/suricata/rules[?q=&sid=&only=&classtype=&offset=
+ * &limit=]: a page of Suricata's ruleset, searched on the host.
+ */
+static const char *
+setup_suricata_rules(struct call *c, const struct rq *q)
+{
+	static const char *const keys[] = { "q", "sid", "only", "classtype",
+	    "offset", "limit" };
+	char	 v[200], buf[6 * 216];
+	size_t	 i, len;
+
+	len = 0;
+	buf[0] = '\0';
+	for (i = 0; i < nitems(keys); i++) {
+		if (!rq_param(q, keys[i], v, sizeof(v)) || v[0] == '\0')
+			continue;
+		if (!http_argument_urldecode(v, 1) || strchr(v, '\n') != NULL)
+			return ("q, sid, only, classtype, offset and limit are "
+			    "words, escaped as a URL has them");
+		len += (size_t)snprintf(buf + len, sizeof(buf) - len, "%s=%s\n",
+		    keys[i], v);
+	}
+	c->text = kore_strdup(buf);
+	return (NULL);
+}
+
+int
+api_suricata_rules(struct http_request *req)
+{
+
+	return (read_route(req, OP_SURICATA_RULES, setup_suricata_rules));
+}
+
 /* GET /api/servers/<id>/certs[?jail=]: the certificates OpenSSL trusts
  * there. */
 /* ?jail=name: the jail it is read in. */
@@ -5023,6 +5104,8 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_SSH:
 	case ARC_JOB_KIND_CARP:
 	case ARC_JOB_KIND_POUDRIERE:
+	case ARC_JOB_KIND_CLAMAV:
+	case ARC_JOB_KIND_SURICATA:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
@@ -5451,6 +5534,7 @@ static const struct hread {
 	{ "jails/files", OP_JAIL_FILES, NULL },
 	{ "builder", OP_BUILDER, NULL },
 	{ "builder/options", OP_BUILDER_OPTIONS, setup_builder_options },
+	{ "suricata/rules", OP_SURICATA_RULES, setup_suricata_rules },
 	{ "services", OP_SERVICES, NULL },
 	{ "packages", OP_PACKAGES, setup_packages },
 	{ "net/", OP_NETWORK, setup_network },

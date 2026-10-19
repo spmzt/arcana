@@ -314,8 +314,9 @@ not there yet is made from the port's sample, without its
 line.
 A running freshclam takes them when it is restarted.
 A job.
-.It Cm suricata Cm update
-Runs
+.It Cm suricata Cm update | Cm rules Oo Ar key Ns = Ns Ar value ... Oc | Cm rule Ar state Ns = Ns Ar sid Ns Oo , Ns Ar sid ... Oc ...
+.Cm update
+runs
 .Xr suricata-update 8 ,
 which fetches Suricata's ruleset (Emerging Threats Open unless it is
 told of other sources) to the agent's
@@ -323,6 +324,36 @@ told of other sources) to the agent's
 then the intrusion detection instances are applied again, so that one
 started before the ruleset was there takes it, and those that read it
 already read their rules again.
+A job.
+.Cm rules
+shows the ruleset's rules a page at a time, as JSON: each rule's sid,
+action, message, class, whether it is enabled and what it was set to,
+searched by
+.Cm q Ns = Ns Ar text ,
+.Cm sid Ns = Ns Ar N ,
+.Cm only Ns = Ns Cm enabled | disabled | changed ,
+.Cm classtype Ns = Ns Ar name ,
+.Cm offset Ns = Ns Ar N
+and
+.Cm limit Ns = Ns Ar N
+(100 unless given, 500 at most).
+.Cm rule
+sets rules by sid:
+.Cm on ,
+.Cm off ,
+.Cm drop
+(on, and made a drop for an instance that prevents) or back to the
+ruleset's
+.Cm default .
+What is set is kept by the agent and given to
+.Xr suricata-update 8
+each time it runs, as its
+.Pa enable.conf ,
+.Pa disable.conf
+and
+.Pa drop.conf ,
+so that it holds across updates; the ruleset is made again from what
+was fetched, and the instances read it again.
 A job.
 .It Cm cert Oo Cm list | Cm add Ar name file | Cm remove Ar name | Cm trust Ar file | Cm untrust Ar file | Cm rehash Oc
 The certificates OpenSSL trusts, of the host or of

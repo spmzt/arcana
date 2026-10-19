@@ -1653,14 +1653,21 @@ submodule arcana-jobs-kinds {
           presence
             "This kind of job.";
           description
-            "Suricata's ruleset fetched by suricata-update";
+            "Suricata's ruleset fetched by suricata-update, its rules set";
           leaf verb {
             type enumeration {
               enum update;
+              enum rule;
             }
             mandatory true;
             description
               "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
           }
         }
       }

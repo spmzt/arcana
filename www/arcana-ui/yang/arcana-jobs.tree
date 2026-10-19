@@ -322,5 +322,6 @@ module: arcana-jobs
        |        +--:(suricata)
        |           +---w suricata!
        |              +---w verb    enumeration
+       |              +---w args*   string
        +--ro output
           +--ro id*   uint64

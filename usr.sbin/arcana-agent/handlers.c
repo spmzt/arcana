@@ -347,6 +347,7 @@ worker(void *arg)
 	struct arc_builder_rsp	 bur;
 	struct arc_builder_options_rsp bor;
 	struct arc_crashes_rsp	 crr;
+	struct arc_suricata_rules_rsp surr;
 	struct arc_job_spec	 bsp;
 	struct arc_certs_rsp	 cer;
 	struct arc_ssh_rsp	 sshr;
@@ -904,6 +905,18 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &crr.trace.v, &crr.trace.n);
 		rc = arc_crashes_reply(j->req, &crr);
+		break;
+	case ARC_CMD_SURICATA_RULES:
+		what = "suricata-rules";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "Suricata's rules read");
+		memset(&surr, 0, sizeof(surr));
+		do_suricata_rules(&w, j->pkg.names.v, j->pkg.names.n, &surr);
+		ok = surr.ok;
+		error = surr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &surr.trace.v, &surr.trace.n);
+		rc = arc_suricata_rules_reply(j->req, &surr);
 		break;
 	case ARC_CMD_KERNEL:
 		what = "kernel";
@@ -2403,6 +2416,38 @@ arc_builder_options_doit(cbl_req *req, const struct arc_builder_options_req *rq,
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_BUILDER_OPTIONS;
+	if (rq->names.n > 0) {
+		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL) {
+			free(j);
+			return (ENOMEM);
+		}
+		for (i = 0; i < rq->names.n; i++)
+			v[i] = xstrdup(rq->names.v[i]);
+		j->pkg.names.v = v;
+		j->pkg.names.n = rq->names.n;
+	}
+	return (start(j));
+}
+
+/* The ruleset's rules, searched: a page of them. */
+int
+arc_suricata_rules_doit(cbl_req *req, const struct arc_suricata_rules_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+	const char	**v;
+	size_t		 i;
+
+	if (rq->names.n > 6)
+		return (reject(req, "the rules are searched by q=, sid=, only=, "
+		    "classtype=, offset= and limit="));
+	for (i = 0; i < rq->names.n; i++)
+		if (rq->names.v[i] == NULL)
+			return (reject(req, "a word is missing"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SURICATA_RULES;
 	if (rq->names.n > 0) {
 		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL) {
 			free(j);

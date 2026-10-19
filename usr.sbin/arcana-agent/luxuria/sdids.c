@@ -264,6 +264,14 @@ ruleset_path(void)
 	return (ruleset_buf);
 }
 
+/* Where suricata-update writes the ruleset, for surules.c. */
+const char *
+suricata_ruleset(void)
+{
+
+	return (ruleset_path());
+}
+
 /*
  * Did suricata -T refuse only rules of the ruleset it cannot parse here
  * (those that negate a HOME_NET of any: !any is nothing)?  Running, it
@@ -1120,17 +1128,26 @@ suricata_check(const struct arc_job_spec *sp)
 		return ("Suricata's ruleset is the host's");
 	if (sp->safe)
 		return ("a fetched ruleset is not undone: not in safe mode");
+	if (sp->verb != NULL && strcmp(sp->verb, "rule") == 0)
+		return (suricata_rule_check(sp));
 	if (sp->verb == NULL || strcmp(sp->verb, "update") != 0)
-		return ("a suricata job's verb is update");
+		return ("a suricata job's verb is update or rule");
 	if (sp->names.n > 0)
 		return ("update takes no words");
 	return (NULL);
 }
 
 char *
-suricata_title(const struct arc_job_spec *sp __unused)
+suricata_title(const struct arc_job_spec *sp)
 {
+	char	*t;
 
+	if (sp->verb != NULL && strcmp(sp->verb, "rule") == 0) {
+		if (asprintf(&t, "suricata rules set: %s%s", sp->names.v[0],
+		    sp->names.n > 1 ? " ..." : "") == -1)
+			return (NULL);
+		return (t);
+	}
 	return (strdup("suricata-update: the ruleset fetched"));
 }
 
@@ -1139,14 +1156,22 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
 {
 	struct execres	 res;
-	char		*argv[8], *json;
+	char		*argv[16], *json;
 	const char	*bin, *e, *t;
 	pid_t		 pid;
 	size_t		 n;
-	int		 step, i;
+	int		 step, i, na;
+	bool		 rule;
 
 	if ((*errp = suricata_check(sp)) != NULL)
 		return (-1);
+	rule = strcmp(sp->verb, "rule") == 0;
+	/* The rules set are made into the ruleset already fetched. */
+	if (rule && access(SURICATA_RULESET, R_OK) != 0) {
+		*errp = "the ruleset is not fetched yet: fetch it first "
+		    "(suricata update)";
+		return (-1);
+	}
 	if ((bin = tool(w, "suricata-update")) == NULL)
 		bin = "/usr/local/bin/suricata-update";
 	if (access(bin, X_OK) != 0) {
@@ -1154,7 +1179,17 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
 		    "suricata)", bin);
 		return (-1);
 	}
+	if (rule) {
+		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "the rules set kept");
+		if (suricata_rule_set(w, sp, errp) != 0) {
+			step_end(w, step, false, "%s", *errp);
+			return (-1);
+		}
+		step_end(w, step, true, NULL);
+	}
 	step = step_begin(w, ARC_STEP_KIND_EXEC, "suricata-update",
+	    rule ? "the ruleset made again, from what was fetched, to %s" :
 	    "the ruleset fetched to %s", SURICATA_RULESET);
 	/* Each instance is checked by suricata -T as it is applied: the
 	 * ruleset's own test would read a suricata.yaml of the port's,
@@ -1166,7 +1201,15 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
 	argv[4] = (char *)(uintptr_t)suricata_bin(w);
 	argv[5] = (char *)(uintptr_t)"-o";
 	argv[6] = (char *)(uintptr_t)opts.suricata_rules;
-	argv[7] = NULL;
+	na = 7;
+	/* The admin's rules by sid, every time: they hold across updates. */
+	if (suricata_rule_args(w, argv, &na, errp) != 0) {
+		step_end(w, step, false, "%s", *errp);
+		return (-1);
+	}
+	if (rule)
+		argv[na++] = (char *)(uintptr_t)"--offline";
+	argv[na] = NULL;
 	if (run_exec(w, argv, &res) != 0) {
 		t = res.outlen > 0 ? wstrndup(w, res.out, res.outlen) :
 		    res.errlen > 0 ? wstrndup(w, res.err, res.errlen) : "";

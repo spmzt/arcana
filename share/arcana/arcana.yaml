@@ -396,8 +396,13 @@ definitions:
           sources) to /var/lib/suricata/rules/suricata.rules; then the
           instances are applied again from what the agent kept of them,
           so that one started without it takes it, and those reading it
-          already read their rules again.  The host's only; never in
-          safe mode.
+          already read their rules again.  Verb rule sets rules by sid
+          (names on=, off=, drop= or default=, each sids joined by
+          commas): kept by the agent and given to suricata-update as its
+          enable.conf, disable.conf and drop.conf, so that they hold
+          across updates; the ruleset is made again from what was
+          fetched (--offline) and applied as by update.  The host's
+          only; never in safe mode.
   - name: job-state
     type: enum
     entries:
@@ -3541,6 +3546,31 @@ operations:
       "backtrace" too: lldb's thread list, every thread's backtrace and
       the signal's information, read from the core.  Nothing is
       changed.
+    do:
+      request:
+        attributes:
+          - names
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+  - name: suricata-rules
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The rules of Suricata's ruleset, suricata.rules as suricata-update
+      wrote it (a rule it disabled is a line commented out), as a JSON
+      object: "ruleset" (its path, when and its size), "total",
+      "enabled", "matched" (of the words), "changed" (how many rules
+      the admin set by sid: on, off or drop, kept across updates),
+      "offset", "limit" and "rules", each with
+      sid, gid, rev, action, msg, classtype, severity, enabled, state
+      and the rule's text.  Words: q=text (in the rule, any case),
+      sid=N, only=enabled, disabled or changed (those the admin set),
+      classtype=name, offset=N and limit=N (100 unless given, 500 at
+      most).  The host's only; nothing is changed.
     do:
       request:
         attributes:

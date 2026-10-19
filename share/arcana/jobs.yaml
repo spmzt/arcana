@@ -407,6 +407,7 @@ kinds:
     uses: args text
     values: verb=mirrors
   - kind: suricata
-    title: Suricata's ruleset fetched by suricata-update
+    title: Suricata's ruleset fetched by suricata-update, its rules set
     needs: verb
-    values: verb=update
+    uses: args
+    values: verb=update|rule

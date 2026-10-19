@@ -7393,6 +7393,31 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	ATF_CHECK(system("grep -q 'HOME_NET: \"any\"$' sdwan-ids-sec-lan.yaml && "
 	    "grep -q 'EXTERNAL_NET: \"any\"$' sdwan-ids-sec-lan.yaml") == 0);
+	/* Stopped by the admin: kept in the list, told to the agent. */
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"stopped\":true,\"rules\":\"alert tcp any any -> any 23 "
+	    "(sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '\"name\":\"sec-lan\",\"interfaces\":"
+	    "\\[\"lo0\"\\],\"stopped\":true' security-ids.json") == 0);
+	/* A job's words, its args, carried to the host for ClamAV and
+	 * Suricata alike. */
+	snprintf(t2, sizeof(t2), "/api/servers/%s/jobs", sa);
+	http("POST", t2, "{\"jobs\":[{\"kind\":\"clamav\",\"verb\":"
+	    "\"mirrors\",\"args\":[\"mirror=db.example.net\"]},{\"kind\":"
+	    "\"suricata\",\"verb\":\"rule\",\"args\":[\"off=2000001\"]}]}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", t2, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "freshclam mirrors db.example.net") !=
+	    NULL && strstr(r.body, "suricata rules set: off=2000001") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	snprintf(t2, sizeof(t2), "/api/servers/%s/security", sa);
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[]}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);

@@ -68,7 +68,7 @@ static const char *const clamav_verb[] = {
 	"mirrors",
 };
 static const char *const suricata_verb[] = {
-	"update",
+	"update", "rule",
 };
 
 /*
@@ -718,6 +718,8 @@ yjobs_spec(const struct arcana_jobs_submit_input_change *in,
 		sp->kind = ARC_JOB_KIND_SURICATA;
 		if (c->has_verb)
 			sp->verb = suricata_verb[c->verb];
+		sp->names.n = c->args.n;
+		sp->names.v = c->args.v;
 		return (0);
 	}
 	default:

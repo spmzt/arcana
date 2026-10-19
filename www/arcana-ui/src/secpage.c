@@ -32,6 +32,7 @@ static struct {
 	int		 edit;		/* the form open: an index, n for a new
 					 * one, -1 none */
 	bool		 busy;
+	bool		 rules;		/* IDS/IPS: the ruleset's rules shown */
 } sec = { .edit = -1 };
 
 static const char *const tabs[] = { "url", "antivirus", "ids" };
@@ -844,7 +845,17 @@ view_secpage(struct html *h)
 		view_sigs(h);
 		break;
 	case SEC_IDS:
-		view_ids(h);
+		/* Its instances, or the ruleset's rules. */
+		h_fmt(h, "<nav class=\"tabs sub\"><button class=\"tab%s\" "
+		    "data-act=\"sec-idsview\" data-arg=\"instances\">Instances"
+		    "</button><button class=\"tab%s\" data-act=\"sec-idsview\" "
+		    "data-arg=\"rules\" title=\"The ruleset suricata-update "
+		    "keeps, each rule on, off or a drop\">Rules</button></nav>",
+		    sec.rules ? "" : " on", sec.rules ? " on" : "");
+		if (sec.rules)
+			view_surules(h, sec.sid);
+		else
+			view_ids(h);
 		break;
 	}
 	h_raw(h, "</section>");
@@ -955,6 +966,8 @@ secpage_form(const char *form, const ucl_object_t *f)
 	ucl_object_t	*list, *o;
 	bool		 ids;
 
+	if (surules_form(form, f))
+		return (true);
 	if (strcmp(form, "sec-mirrors") == 0) {
 		const ucl_object_t	*cl = jget(sec.state, "clamav");
 		char			*copy, *it, *line, *json[2];
@@ -1115,9 +1128,29 @@ secpage_action(const char *act, const char *arg, const char *value)
 		sec_load();
 		return (true);
 	}
+	if (strncmp(act, "sur-", 4) == 0) {
+		char	*json[1], title[96];
+		const char *t[1];
+
+		if (!surules_action(act, arg, value, &json[0], title,
+		    sizeof(title)))
+			return (false);
+		if (json[0] != NULL) {
+			t[0] = title;
+			sec_jobs(json, t, 1);
+		}
+		return (true);
+	}
 	if (strncmp(act, "sec-", 4) != 0 && strcmp(act, "input:sec-host") != 0)
 		return (false);
 	ids = sec.tab == SEC_IDS;
+	if (strcmp(act, "sec-idsview") == 0) {
+		sec.rules = strcmp(arg, "rules") == 0;
+		if (sec.rules)
+			surules_load(sec.sid);
+		render();
+		return (true);
+	}
 	if (strcmp(act, "sec-tab") == 0) {
 		for (i = 0; i < nitems(tabs); i++)
 			if (strcmp(arg, tabs[i]) == 0)
@@ -1310,6 +1343,8 @@ secpage_refresh(void)
 {
 
 	sec_load();
+	if (sec.tab == SEC_IDS && sec.rules)
+		surules_load(sec.sid);
 }
 
 /* Each tick: the page's host read again, every 10 s while it is shown

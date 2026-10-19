@@ -5097,6 +5097,12 @@ details.wfmore[open] > summary { margin-bottom: .45rem; }
 table.net td.acts { white-space: nowrap; text-align: right; }
 table.net td.acts button + button { margin-left: .3rem; }
 ul.secalerts { list-style: none; margin: 0; padding: 0; font-size: .78rem; display: grid; gap: .2rem; }
+form.surq { flex-wrap: wrap; gap: .6rem; }
+form.surq input[name=q] { flex: 1 1 18rem; max-width: none; }
+form.surq input[name=classtype] { flex: 0 1 12rem; width: auto; }
+form.surq select { flex: 0 0 auto; width: auto; }
+pre.surule { margin: .4rem 0 0; white-space: pre-wrap; word-break: break-word; font-size: .74rem; color: var(--fg-2); }
+table.surules td:nth-child(2) { max-width: 36rem; white-space: normal; }
 pre.cert { font-size: .7rem; max-height: 14rem; overflow: auto; user-select: all; }
 .secform label.check input { width: auto; flex: none; margin: 0; }
 /* The Builder page: poudriere's jails, trees, builds and runs. */

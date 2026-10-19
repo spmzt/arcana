@@ -6587,6 +6587,44 @@ part_security(void)
 	    10);
 	wait_js("document.querySelector('table.secids button[data-act="
 	    "sec-ids-stop]')", 30);
+	/* The ruleset's rules: fetched, then searched and one enabled by
+	 * sid, a job; the choice shown as set here. */
+	click_when("button[data-act=sec-idsview][data-arg=rules]", 10);
+	wait_js("document.querySelector('.secpage .empty') && document."
+	    "querySelector('.secpage .empty').textContent.includes('not "
+	    "fetched')", 20);
+	click_when("button[data-act=sec-idsview][data-arg=instances]", 10);
+	click_when("button[data-act=sec-ruleset]", 10);
+	/* The queue left on before: what it holds run. */
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('.secpage') && document."
+	    "querySelector('.secpage').textContent.includes('suricata.rules, "
+	    "fetched')", 30);
+	click_when("button[data-act=sec-idsview][data-arg=rules]", 10);
+	wait_js("document.querySelector('table.surules') && document."
+	    "querySelector('.secpage').textContent.includes('3 rules, 2 "
+	    "enabled') && document.querySelector('table.surules').textContent."
+	    "includes('ET SCAN ssh')", 20);
+	run("const f = document.querySelector('form[data-form=sur-search]'); "
+	    "f.q.value = 'CURL'; f.requestSubmit();");
+	wait_js("document.querySelectorAll('table.surules tbody tr').length == 1 "
+	    "&& document.querySelector('table.surules').textContent.includes("
+	    "'ET INFO curl') && document.querySelector('table.surules')."
+	    "textContent.includes('as it ships')", 20);
+	click_when("table.surules button[data-act=sur-open]", 10);
+	wait_js("document.querySelector('pre.surule') && document."
+	    "querySelector('pre.surule').textContent.includes('sid:2000005;')",
+	    10);
+	click_when("table.surules button[data-act=sur-set][data-value=on]", 10);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('table.surules') && document."
+	    "querySelector('table.surules').textContent.includes('set on') && "
+	    "document.querySelector('table.surules .chip.st-up')", 30);
+	dock_closed();
+	shot("9w-security-ids-rules");
+	click_when("button[data-act=sec-idsview][data-arg=instances]", 10);
 	/* Removed, after asking. */
 	click_when("table.secids button[data-act=sec-remove]", 10);
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);

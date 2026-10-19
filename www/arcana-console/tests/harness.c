@@ -206,9 +206,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
-	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN];
+	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN], surules[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[116];
+	char	*argv[118];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -765,6 +765,24 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("tools/suricata", "#!/bin/sh\necho \"suricata $*\" >> squid.log\n"
 	    "[ \"$1\" = -T ] && exit 0\n"
 	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$4\"\nexit 0\n");
+	/* suricata-update: a ruleset of three rules where -o says, one
+	 * disabled as it ships; the sids of --disable-conf commented out
+	 * and those of --enable-conf not, as it does. */
+	put("tools/suricata-update", "#!/bin/sh\n"
+	    "echo \"suricata-update $*\" >> suricata-update.log\n"
+	    "while [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift ;; "
+	    "--enable-conf) en=$2; shift ;; --disable-conf) dis=$2; shift ;; "
+	    "esac; shift; done\nmkdir -p \"$out\"; f=$out/suricata.rules\n"
+	    "{ echo 'alert tcp any any -> any 22 (msg:\"ET SCAN ssh\"; "
+	    "classtype:attempted-recon; sid:2000001; rev:1;)'\n"
+	    "echo '# alert http any any -> any any (msg:\"ET INFO curl\"; "
+	    "classtype:policy-violation; sid:2000005; rev:2;)'\n"
+	    "echo 'alert dns any any -> any any (msg:\"ET DNS bad name\"; "
+	    "classtype:bad-unknown; sid:2000006; rev:4;)'; } > \"$f\"\n"
+	    "for s in $(grep -v '^#' \"${en:-/dev/null}\"); do sed -i '' "
+	    "\"/sid:$s;/s/^# //\" \"$f\"; done\n"
+	    "for s in $(grep -v '^#' \"${dis:-/dev/null}\"); do sed -i '' "
+	    "\"/sid:$s;/s/^alert/# alert/\" \"$f\"; done\nexit 0\n");
 	/* poudriere(8), a plugin: a jail or a tree made where it keeps
 	 * them (jset, pset), a build that says what it builds and takes a
 	 * second, the latest build of a set whose make.conf is there. */
@@ -1150,8 +1168,12 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[111] = pdetc;
 	argv[112] = (char *)(uintptr_t)"--ifmcstat";
 	argv[113] = (char *)(uintptr_t)"./fake-ifmcstat";
-	argv[114] = NULL;
+	/* Suricata's ruleset the test's, never the host's. */
+	argv[114] = (char *)(uintptr_t)"--suricata-rules";
+	argv[115] = surules;
+	argv[116] = NULL;
 	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
+	snprintf(surules, sizeof(surules), "%s/rules", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
 	(void)mkdir(rootdir, 0755);
 	{

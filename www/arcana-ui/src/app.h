@@ -927,6 +927,12 @@ void		 secpage_loc(char *, size_t);
 void		 secpage_open(const char *);
 void		 secpage_tick(double);
 void		 secpage_refresh(void);
+/* surules.c: Suricata's ruleset, rule by rule, in IDS/IPS. */
+void		 view_surules(struct html *, const char *);
+void		 surules_load(const char *);
+bool		 surules_form(const char *, const ucl_object_t *);
+bool		 surules_action(const char *, const char *, const char *,
+		    char **, char *, size_t);
 
 /* pfxlists.c: the console's prefix lists, used on any host. */
 void		 pfxlists_load(void);

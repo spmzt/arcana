@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.148.2"
+#define	ARCANA_AGENT_VERSION	"0.149.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -564,6 +564,16 @@ int		 do_sdwan_ids(struct work *, const char *, const char **);
 int		 do_notify(struct work *, const char *, const char *,
 		    const char *, const char **);
 void		 sdwan_ids_start(void);
+const char	*suricata_ruleset(void);
+/* luxuria/surules.c: the ruleset's rules, and those the admin set. */
+struct arc_suricata_rules_rsp;
+void		 do_suricata_rules(struct work *, const char *const *, size_t,
+		    struct arc_suricata_rules_rsp *);
+const char	*suricata_rule_check(const struct arc_job_spec *);
+int		 suricata_rule_set(struct work *, const struct arc_job_spec *,
+		    const char **);
+int		 suricata_rule_args(struct work *, char **, int *,
+		    const char **);
 const char	*suricata_check(const struct arc_job_spec *);
 char		*suricata_title(const struct arc_job_spec *);
 int		 do_suricata_job(struct work *, const struct arc_job_spec *,

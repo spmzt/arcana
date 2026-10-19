@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-jobs",
     "module-revision": "2026-10-14",
-    "sid-file-version": 7,
+    "sid-file-version": 8,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 400, 1 000.",
     "assignment-range": [
       {
@@ -1405,6 +1405,11 @@
         "namespace": "data",
         "identifier": "/arcana-jobs:submit/input/change/pkg-upgrade/pkg-repo",
         "sid": "62678"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/suricata/args",
+        "sid": "62679"
       },
       {
         "namespace": "data",

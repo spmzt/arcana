@@ -1295,6 +1295,29 @@ paths:
       responses:
         "200":
           description: The read, under data, with the agent's trace.
+  /api/servers/{server}/suricata/rules:
+    get:
+      tags: [servers]
+      summary: Suricata's ruleset, a page of its rules
+      description: >-
+        suricata.rules as suricata-update wrote it, searched on the
+        host: ruleset (path, at, size), total, enabled, matched,
+        changed (how many rules were set by sid), offset, limit and
+        rules, each with sid, gid, rev, action, msg, classtype,
+        severity, enabled, state (on, off or drop, when set) and rule,
+        its text.  Rules are set by a suricata job, verb rule, with
+        on=, off=, drop= or default= and sids joined by commas.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - { name: q, in: query, schema: { type: string }, description: Text in the rule, any case }
+        - { name: sid, in: query, schema: { type: integer } }
+        - { name: only, in: query, schema: { type: string, enum: [enabled, disabled, changed] } }
+        - { name: classtype, in: query, schema: { type: string, example: trojan-activity } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 500 } }
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
   /api/servers/{server}/history:
     get:
       tags: [servers]

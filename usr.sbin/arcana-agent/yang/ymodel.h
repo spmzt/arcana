@@ -1679,6 +1679,7 @@ enum arcana_jobs_submit_input_change_clamav_verb {
 
 enum arcana_jobs_submit_input_change_suricata_verb {
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SURICATA_VERB_UPDATE = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SURICATA_VERB_RULE = 1,
 };
 
 enum arcana_storage_storage_dataset_type {
@@ -6178,6 +6179,10 @@ struct arcana_jobs_submit_input_change_clamav {
 struct arcana_jobs_submit_input_change_suricata {
 	bool			 has_verb;
 	enum arcana_jobs_submit_input_change_suricata_verb	 verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
 };
 
 /* list entry */
