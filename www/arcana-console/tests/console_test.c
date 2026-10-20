@@ -1016,6 +1016,116 @@ ATF_TC_BODY(agent_update, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(smtpd, "OpenSMTPD read through the console; smtpd.conf rendered on "
+    "the host from the form; a table's passwords hashed there, never read back")
+ATF_TC_BODY(smtpd, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		path[160], jobs[160], body[2048], cwd[MAXPATHLEN];
+	int		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(path, sizeof(path), "/api/servers/%s/smtpd", jstr(&r,
+	    "servers.0.id"));
+	snprintf(jobs, sizeof(jobs), "/api/servers/%s/jobs", jstr(&r,
+	    "servers.0.id"));
+	resp_free(&r);
+	/* Installed (the fake), not running: no status asked. */
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "data.installed"));
+	ATF_CHECK_STREQ("false", jstr(&r, "data.running"));
+	ATF_CHECK(jstr(&r, "data.status") == NULL);
+	resp_free(&r);
+	/* The form, as the page sends it: rendered on the host, checked by
+	 * smtpd -n, written; the form kept and read back. */
+	snprintf(body, sizeof(body), "{\"jobs\":[{\"kind\":\"smtpd\",\"verb\":\"conf\","
+	    "\"text\":\"{\\\"listeners\\\":[{\\\"on\\\":\\\"localhost\\\"},"
+	    "{\\\"on\\\":\\\"em0\\\",\\\"port\\\":587,\\\"tls\\\":\\\"tls\\\","
+	    "\\\"pki\\\":\\\"mail\\\",\\\"auth\\\":true}],\\\"domains\\\":"
+	    "[\\\"example.org\\\"],\\\"delivery\\\":{\\\"kind\\\":\\\"maildir\\\","
+	    "\\\"aliases\\\":true}}\"}]}");
+	http("POST", jobs, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "smtpd conf") != NULL, "%s", r.body);
+	resp_free(&r);
+	for (i = 0; i < 300 && system("grep -q '^listen on em0 port 587 tls pki "
+	    "mail auth <credentials>$' smtpd.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "smtpd.conf is not rendered");
+	ATF_CHECK(system("grep -q '^smtpd -n -f ' smtpd.log") == 0);
+	ATF_CHECK(system("grep -q '^match from any for domain <domains> action "
+	    "\"local\"$' smtpd.conf") == 0);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("em0", jstr(&r, "data.spec.listeners.1.on"));
+	ATF_CHECK_MSG(strstr(r.body, "listen on localhost") != NULL, "%.600s",
+	    r.body);
+	resp_free(&r);
+	/* What the host refuses comes back as the job's failure. */
+	http("POST", jobs, "{\"jobs\":[{\"kind\":\"smtpd\",\"verb\":\"conf\","
+	    "\"text\":\"{\\\"listeners\\\":[]}\"}]}", &r);
+	EXPECT(&r, 502);
+	ATF_CHECK_MSG(strstr(r.body, "a listener at least") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	/* Credentials: hashed on the host, the clear password nowhere. */
+	http("POST", jobs, "{\"jobs\":[{\"kind\":\"smtpd\",\"verb\":\"table\","
+	    "\"args\":[\"credentials\"],\"text\":\"alice hunter2\\n\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 300 && access("smtpd.d/credentials", F_OK) != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the table is not written");
+	ATF_CHECK(system("grep -q '^alice	$6$fake$hashOf$1$' smtpd.d/credentials")
+	    == 0);
+	ATF_CHECK(system("grep -q '^encrypt <hunter2$' smtpd.log") == 0);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("alice", jstr(&r, "data.tables.credentials.0"));
+	ATF_CHECK(strstr(r.body, "hunter2") == NULL && strstr(r.body, "hashOf")
+	    == NULL);
+	resp_free(&r);
+	/* Started (its rc.d script there, as the port installs it): its
+	 * status and queue, as smtpctl says. */
+	ATF_REQUIRE(mkdir("rc.d", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(system("printf '#!/bin/sh\\n' > rc.d/smtpd && chmod +x "
+	    "rc.d/smtpd") == 0);
+	http("POST", jobs, "{\"jobs\":[{\"kind\":\"smtpd\",\"verb\":\"enable\","
+	    "\"args\":[\"enable=yes\"]}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 300 && access("running.smtpd", F_OK) != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "smtpd was not started");
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "data.running"));
+	ATF_CHECK_STREQ("running", jstr(&r, "data.status.mta"));
+	ATF_CHECK_STREQ("6022923fc9341b9d", jstr(&r, "data.queue.0.evpid"));
+	ATF_CHECK_STREQ("(TempFail) no route", jstr(&r, "data.queue.0.error"));
+	resp_free(&r);
+	http("POST", jobs, "{\"jobs\":[{\"kind\":\"smtpd\",\"verb\":\"remove\","
+	    "\"args\":[\"6022923fc9341b9d\"]}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 300 && system("grep -q '^smtpctl remove 6022923fc9341b9d$'"
+	    " smtpd.log") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the envelope was not removed");
+	http("POST", jobs, "{\"jobs\":[{\"kind\":\"smtpd\",\"verb\":\"remove\","
+	    "\"args\":[\"../x\"]}]}", &r);
+	EXPECT(&r, 502);
+	resp_free(&r);
+}
+
 CONSOLE_TC(update_notes, "What is new in the repository since the version "
     "running: the commit messages, new until the version's own commit, or "
     "the tags' messages where there are any")
@@ -7563,6 +7673,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, agent_update);
 	ATF_TP_ADD_TC(tp, agent_build);
 	ATF_TP_ADD_TC(tp, update_notes);
+	ATF_TP_ADD_TC(tp, smtpd);
 	ATF_TP_ADD_TC(tp, settings);
 	ATF_TP_ADD_TC(tp, mail);
 	ATF_TP_ADD_TC(tp, telegram);

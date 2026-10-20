@@ -25,6 +25,7 @@
 
 #include <err.h>
 #include <errno.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <jail.h>
 #include <stdio.h>
@@ -180,4 +181,36 @@ block_add(struct work *w, const char *text, const char *begin, const char *end,
 	len = strlen(text);
 	return (wfmt(w, "%s%s%s%s%s", text, len > 0 && text[len - 1] != '\n' ?
 	    "\n" : "", begin, body, end));
+}
+
+/*
+ * A file written whole: a new file beside it, its mode set, synced,
+ * closed once, then moved over the old; no symlink followed.  0, or -1
+ * and why in *errp.
+ */
+int
+file_put(struct work *w, const char *path, const char *text, mode_t mode,
+    const char **errp)
+{
+	const char	*tmp;
+	size_t		 len;
+	int		 fd;
+
+	tmp = wfmt(w, "%s.arcana-new", path);
+	len = strlen(text);
+	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC |
+	    O_NOFOLLOW, mode)) == -1 || fchmod(fd, mode) != 0 || write(fd, text,
+	    len) != (ssize_t)len || fsync(fd) != 0) {
+		*errp = wfmt(w, "%s: %s", path, strerror(errno));
+		if (fd != -1)
+			(void)close(fd);
+		(void)unlink(tmp);
+		return (-1);
+	}
+	if (close(fd) != 0 || rename(tmp, path) != 0) {
+		*errp = wfmt(w, "%s: %s", path, strerror(errno));
+		(void)unlink(tmp);
+		return (-1);
+	}
+	return (0);
 }

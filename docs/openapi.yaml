@@ -1220,6 +1220,28 @@ paths:
       responses:
         "200":
           description: ok.
+  /api/servers/{server}/smtpd:
+    get:
+      tags: [servers]
+      summary: OpenSMTPD on the host
+      description: 'Under data: installed, enabled, running; where it runs,
+        status (mda, mta, smtp: running or paused), stats (smtpctl show
+        stats), queue (each envelope: evpid, type, flags, from, to, dest,
+        created, expires, retries, lasttry, state, next, error) and
+        queued; conf and conf_path (smtpd.conf), spec (the form it was
+        rendered from on the host), tables (each kept there: the text, or
+        for credentials and secrets the users'' and labels'' names alone),
+        filters (the filter ports installed), mailer (what mailer.conf(5)
+        makes sendmail), pki (whether the agent has a certificate to
+        listen with).  The changes are jobs of kind smtpd: verb conf with
+        the form as text (JSON), table with a name and its text, enable
+        with enable=yes|no, pause and resume with mta|mda|smtp, schedule
+        and remove with an id or all, update with a table''s name.'
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
   /api/servers/{server}/jails/files:
     get:
       tags: [servers]

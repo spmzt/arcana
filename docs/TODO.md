@@ -1543,3 +1543,11 @@ it found and could be fixed was, and this is what stays:
     0.233.0.  Left: Squid, c-icap, unbound, dnsmasq and BIRD are still
     written by the console with the agent's places in them; jls stays
     a program the tests can fake, where libjail could not be.
+  - OpenSMTPD (mail/opensmtpd), a plugin: the Mail tab of a host, its
+    smtpd.conf rendered on the host from the form and checked by smtpd
+    -n, the tables (credentials hashed there), smtpctl's queue and
+    status, enable and start.  Done, agent 0.162.0, console 0.236.0.
+    The plan is docs/notes/opensmtpd.md; not yet: counters as graphs,
+    db: tables, a fault when the queue grows.
+  - Mail out of the console by sendmail(8) alone: the console's own
+    SMTP relay client and its settings are gone.  Done, console 0.235.0.

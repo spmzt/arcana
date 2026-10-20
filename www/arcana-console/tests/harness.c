@@ -208,7 +208,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN], surules[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[124];
+	char	*argv[128];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -335,7 +335,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "status) while [ -f hold.status ]; do sleep 0.1; done; "
 	    "[ -f running.$1 ] && { echo \"$1 is running as pid 7.\"; "
 	    "exit 0; }; echo \"$1 is not running.\"; exit 1 ;;\n"
-	    "start|restart) [ -f slow ] && sleep 3; touch running.$1 ;;\n"
+	    "start|onestart|restart) [ -f slow ] && sleep 3; touch running.$1 ;;\n"
 	    "stop) rm -f running.$1 ;;\n"
 	    "describe) echo \"The $1 daemon.\" ;;\n"
 	    "extracommands) echo reload ;;\n"
@@ -751,6 +751,27 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* suricata, a plugin: checked, it takes all; run, it stays a while
 	 * with its pid file where it is told. */
 	/* ctladm(8), hastctl(8) and showmount(8), as they answer. */
+	/* OpenSMTPD, a plugin: smtpd checks a file (BROKEN fails), smtpctl
+	 * answers as it does, encrypt hashes what it reads. */
+	put("tools/smtpd", "#!/bin/sh\necho \"smtpd $*\" >> smtpd.log\n"
+	    "[ \"$1\" = -n ] && { grep -q BROKEN \"$3\" && { echo 'smtpd: "
+	    "invalid virtual ip or interface: bogus0' >&2; exit 1; }; echo "
+	    "'configuration OK'; exit 0; }\nexit 0\n");
+	put("tools/smtpctl", "#!/bin/sh\necho \"smtpctl $*\" >> smtpd.log\n"
+	    "case \"$*\" in\n'show status') printf 'MDA running\\nMTA "
+	    "running\\nSMTP running\\n' ;;\n'show stats') printf "
+	    "'scheduler.delivery.ok=2\\nuptime=44\\nuptime.human=44s\\n' ;;\n"
+	    "'show queue') printf '6022923fc9341b9d|local|mta|auth|root@a"
+	    "|nobody@example.invalid|nobody@example.invalid|1792491081|"
+	    "1792491081|3|1792491200|pending|-2|(TempFail) no route\\n' ;;\n"
+	    "'update table '*|pause*|resume*) echo 'command succeeded' ;;\n"
+	    "schedule*) echo '1 envelope scheduled' ;;\nremove*) echo '1 "
+	    "envelope removed' ;;\nesac\nexit 0\n");
+	put("tools/encrypt", "#!/bin/sh\nread -r p\necho \"encrypt <$p\" >> "
+	    "smtpd.log\necho '$6$fake$hashOf$1'\n");
+	ATF_REQUIRE(chmod("tools/smtpd", 0755) == 0);
+	ATF_REQUIRE(chmod("tools/smtpctl", 0755) == 0);
+	ATF_REQUIRE(chmod("tools/encrypt", 0755) == 0);
 	put("tools/ctladm", "#!/bin/sh\necho \"ctladm $*\" >> netstore.log\n"
 	    "case \"$1\" in devlist) echo 'LUN Backend Size (Blocks) BS "
 	    "Serial Number Device ID'; echo '  0 block 2048 512 LABSERIAL0 "
@@ -1253,7 +1274,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[119] = (char *)(uintptr_t)"ctl.conf";
 	argv[120] = (char *)(uintptr_t)"--hast-conf";
 	argv[121] = (char *)(uintptr_t)"hast.conf";
-	argv[122] = NULL;
+	argv[122] = (char *)(uintptr_t)"--smtpd-conf";
+	argv[123] = (char *)(uintptr_t)"./smtpd.conf";
+	argv[124] = (char *)(uintptr_t)"--smtpd-dir";
+	argv[125] = (char *)(uintptr_t)"smtpd.d";
+	argv[126] = NULL;
 	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
 	snprintf(surules, sizeof(surules), "%s/rules", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);

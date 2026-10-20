@@ -3568,6 +3568,137 @@ sdwan_cleanup()
 	stop_daemon
 }
 
+atf_test_case smtpd cleanup
+smtpd_head()
+{
+	atf_set "descr" "OpenSMTPD: read whole (status, counters, queue, the file, the form, the tables); smtpd.conf rendered from the form and checked by smtpd -n; tables written, passwords hashed; the queue's commands"
+}
+smtpd_body()
+{
+	mkdir -p tools smtpd.d
+	cat > tools/smtpd <<EOS
+#!/bin/sh
+echo "smtpd \$*" >> $(pwd)/smtpd.log
+[ "\$1" = -n ] && { grep -q BROKEN "\$3" && { echo "smtpd: invalid virtual ip or interface: bogus0" >&2; exit 1; }; echo "configuration OK"; exit 0; }
+exit 0
+EOS
+	cat > tools/smtpctl <<EOS
+#!/bin/sh
+echo "smtpctl \$*" >> $(pwd)/smtpctl.log
+case "\$*" in
+"show status") printf 'MDA running\\nMTA paused\\nSMTP running\\n' ;;
+"show stats") printf 'control.session=1\\nscheduler.delivery.ok=2\\nscheduler.delivery.permfail=4\\nuptime=44\\nuptime.human=44s\\n' ;;
+"show queue") printf '6022923fc9341b9d|local|mta|auth|root@edge-a.example|nobody@example.invalid|nobody@example.invalid|1792491081|1792491081|3|1792491200|pending|-2|(TempFail) no route\\n' ;;
+"update table "*) echo "command succeeded" ;;
+pause*|resume*) echo "command succeeded" ;;
+schedule*) echo "1 envelope scheduled" ;;
+remove*) echo "1 envelope removed" ;;
+esac
+exit 0
+EOS
+	cat > tools/encrypt <<EOS
+#!/bin/sh
+read -r p; echo "encrypt \$* <\$p" >> $(pwd)/encrypt.log
+echo '\$6\$fake\$hashOf\$1'
+EOS
+	chmod +x tools/smtpd tools/smtpctl tools/encrypt
+	DAEMON_ARGS="-2 $(pwd)/tools --smtpd-conf $(pwd)/smtpd.conf --smtpd-dir $(pwd)/smtpd.d"
+	start_daemon
+	printf '#!/bin/sh\n' > rc.d/smtpd
+	chmod +x rc.d/smtpd
+	# Not running: installed, enabled or not, no status asked of it.
+	atf_check -o match:'"installed":true' -o match:'"running":false' -o not-match:'"status"' \
+	    -o match:'"filters":\[' -o match:'"pki":false' "$JGC" -c "$SOCK" smtpd
+	# The form rendered, checked by smtpd -n, written and kept beside.
+	cat > form.json <<'EOF'
+{"listeners":[{"on":"localhost"},{"on":"em0","port":587,"tls":"tls","pki":"mail","auth":true,"hostname":"mail.example.org"}],
+ "domains":["example.org","example.net"],
+ "delivery":{"kind":"maildir","path":"~/Maildir","aliases":true,"virtual":true},
+ "relay":{"host":"smtp.example.net","port":587,"proto":"smtp+tls","auth":true,"mail_from":"@example.org"},
+ "policy":{"max_size":"35M","check_rdns":true,"queue_compression":true,"bounce_warn":"4h","max_rcpt":100},
+ "own":"mta max-deferred 50\n"}
+EOF
+	atf_check -o match:'done +smtpd conf' "$JGC" -c "$SOCK" smtpd conf form.json
+	atf_check -o match:'^smtpd -n -f .*smtpd.conf.arcana-new$' cat smtpd.log
+	atf_check -o match:'^table aliases file:.*/smtpd.d/aliases$' -o match:'^table credentials file:' \
+	    -o match:'^table secrets file:' -o match:'^table domains file:' \
+	    -o match:'^filter check_rdns phase connect match !rdns disconnect "550 no rDNS"$' \
+	    -o match:'^listen on localhost$' \
+	    -o match:'^listen on em0 port 587 tls pki mail auth <credentials> hostname mail.example.org$' \
+	    -o match:'^action "local" maildir "~/Maildir" alias <aliases> virtual <virtuals>$' \
+	    -o match:'^action "relay" relay host smtp\+tls://relay@smtp.example.net:587 auth <secrets> mail-from "@example.org"$' \
+	    -o match:'^match from any for domain <domains> action "local"$' \
+	    -o match:'^match auth from any for any action "relay"$' \
+	    -o match:'^smtp max-message-size 35M$' -o match:'^queue compression$' \
+	    -o match:'^bounce warn-interval 4h$' -o match:'^smtp max-rcpt 100$' \
+	    -o match:'^mta max-deferred 50$' cat smtpd.conf
+	atf_check -o match:'"spec":\{"listeners":\[\{"on":"localhost"\}' "$JGC" -c "$SOCK" smtpd
+	# What the form may not say: a listener nowhere, a pki Arcana's with
+	# no certificate here, own lines that listen, a filter not installed.
+	printf '{"listeners":[]}' > f2.json
+	atf_check -s exit:1 -e match:'a listener at least' -o ignore "$JGC" -c "$SOCK" smtpd conf f2.json
+	printf '{"listeners":[{"on":"localhost","tls":"tls","pki":"arcana"}]}' > f3.json
+	atf_check -s exit:1 -e match:'without a certificate' -o ignore "$JGC" -c "$SOCK" smtpd conf f3.json
+	printf '{"listeners":[{"on":"localhost"}],"own":"listen on 0.0.0.0\\n"}' > f4.json
+	atf_check -s exit:1 -e match:'may not listen' -o ignore "$JGC" -c "$SOCK" smtpd conf f4.json
+	printf '{"listeners":[{"on":"localhost"}],"filters":[{"name":"nosuch"}]}' > f5.json
+	atf_check -s exit:1 -e match:'filter nosuch is not installed' -o ignore "$JGC" -c "$SOCK" smtpd conf f5.json
+	# What smtpd itself refuses is not put in place.
+	printf '{"listeners":[{"on":"localhost"}],"own":"# BROKEN\\n"}' > f6.json
+	atf_check -s exit:1 -o match:'failed.*smtpd does not take it: smtpd -n exited with status 1: smtpd: invalid virtual ip' \
+	    "$JGC" -c "$SOCK" smtpd conf f6.json
+	atf_check -o not-match:'BROKEN' cat smtpd.conf
+	atf_check -s exit:1 test -e smtpd.conf.arcana-new
+	# Tables: aliases as given; credentials' passwords hashed, the file
+	# root's alone, the clear password in no log; secrets root's alone.
+	printf 'root: admin@example.org\n' > aliases.txt
+	atf_check -o match:'done +smtpd table aliases' "$JGC" -c "$SOCK" smtpd table aliases aliases.txt
+	atf_check -o inline:'root: admin@example.org\n' cat smtpd.d/aliases
+	printf 'alice hunter2\nbob $6$kept$already\n' > creds.txt
+	atf_check -o match:'done +smtpd table credentials' -o not-match:'hunter2' "$JGC" -t -c "$SOCK" smtpd table credentials creds.txt
+	atf_check -o inline:'alice\t$6$fake$hashOf$1\nbob\t$6$kept$already\n' cat smtpd.d/credentials
+	atf_check -o match:'^-rw-------' ls -l smtpd.d/credentials
+	atf_check -o match:'^encrypt  <hunter2$' -o not-match:'already' cat encrypt.log
+	atf_check -o match:'"credentials":\["alice","bob"\]' -o not-match:'hunter2' -o not-match:'hashOf' "$JGC" -c "$SOCK" smtpd
+	printf 'relay user@example.net:s3cret\n' > secrets.txt
+	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd table secrets secrets.txt
+	atf_check -o match:'^-rw-------' ls -l smtpd.d/secrets
+	atf_check -o match:'"secrets":\["relay"\]' -o not-match:'s3cret' "$JGC" -c "$SOCK" smtpd
+	atf_check -s exit:1 -e match:'one of aliases' -o ignore "$JGC" -c "$SOCK" smtpd table nosuch aliases.txt
+	# Enabled and started; then the read asks smtpd itself: its status,
+	# counters and queue, as smtpctl prints them.
+	atf_check -o match:'done +smtpd enable' "$JGC" -c "$SOCK" smtpd enable yes
+	atf_check -o match:'^smtpd_enable="YES"$' cat rc.conf
+	test -f running.smtpd || atf_fail "smtpd was not started"
+	atf_check -o match:'"running":true' -o match:'"status":\{"mda":"running","mta":"paused","smtp":"running"\}' \
+	    -o match:'"stats":\{"control.session":1,"scheduler.delivery.ok":2,"scheduler.delivery.permfail":4,"uptime":44,"uptime.human":"44s"\}' \
+	    -o match:'"queue":\[\{"evpid":"6022923fc9341b9d","source":"local","type":"mta","flags":"auth","from":"root@edge-a.example","to":"nobody@example.invalid","dest":"nobody@example.invalid","created":1792491081,"expires":1792491081,"retries":3,"lasttry":1792491200,"state":"pending","next":-2,"error":"\(TempFail\) no route"\}\]' \
+	    -o match:'"queued":1' "$JGC" -c "$SOCK" smtpd
+	# A table written while it runs is read again; the queue's commands.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd table aliases aliases.txt
+	atf_check -o match:'^smtpctl update table aliases$' cat smtpctl.log
+	atf_check -o match:'done +smtpd pause mta' "$JGC" -c "$SOCK" smtpd pause mta
+	atf_check -o match:'done +smtpd resume mta' "$JGC" -c "$SOCK" smtpd resume mta
+	atf_check -o match:'done +smtpd schedule 6022923fc9341b9d' "$JGC" -c "$SOCK" smtpd schedule 6022923fc9341b9d
+	atf_check -o match:'done +smtpd remove all' "$JGC" -c "$SOCK" smtpd remove all
+	atf_check -o match:'^smtpctl pause mta$' -o match:'^smtpctl resume mta$' -o match:'^smtpctl schedule 6022923fc9341b9d$' \
+	    -o match:'^smtpctl remove all$' cat smtpctl.log
+	atf_check -s exit:1 -e match:'mta, mda or smtp' -o ignore "$JGC" -c "$SOCK" smtpd pause all
+	atf_check -s exit:1 -e match:"envelope's or a message's id" -o ignore "$JGC" -c "$SOCK" smtpd remove '../x'
+	# The form again while it runs: smtpd started again.
+	atf_check -o match:'done +smtpd conf' "$JGC" -c "$SOCK" smtpd conf form.json
+	atf_check -o match:'done +smtpd enable' "$JGC" -c "$SOCK" smtpd enable no
+	atf_check -o match:'^smtpd_enable="NO"$' cat rc.conf
+	test -f running.smtpd && atf_fail "smtpd was not stopped"
+	# Never a jail's, never safe.
+	atf_check -s exit:1 -e match:"the host's" -o ignore "$JGC" -j web -c "$SOCK" smtpd pause mta
+	atf_check -s exit:1 -e match:'not in safe mode' -o ignore "$JGC" -s -c "$SOCK" smtpd pause mta
+}
+smtpd_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case netstore cleanup
 netstore_head()
 {
@@ -7032,6 +7163,7 @@ atf_init_test_cases()
 	atf_add_test_case network_more
 	atf_add_test_case sdwan
 	atf_add_test_case netstore
+	atf_add_test_case smtpd
 	atf_add_test_case sysfiles
 	atf_add_test_case sdwan_jail
 	atf_add_test_case jail_conf

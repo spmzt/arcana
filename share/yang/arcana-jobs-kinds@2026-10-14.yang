@@ -158,6 +158,9 @@ submodule arcana-jobs-kinds {
       enum geom {
         value 44;
       }
+      enum smtpd {
+        value 45;
+      }
     }
     description
       "A kind of job, by its number in arcana.yaml's job-kind.";
@@ -1843,6 +1846,40 @@ submodule arcana-jobs-kinds {
               enum journal;
               enum eli;
               enum union;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
+        }
+      }
+      case smtpd {
+        container smtpd {
+          presence
+            "This kind of job.";
+          description
+            "OpenSMTPD's configuration, tables and queue";
+          leaf verb {
+            type enumeration {
+              enum conf;
+              enum table;
+              enum enable;
+              enum pause;
+              enum resume;
+              enum schedule;
+              enum remove;
+              enum update;
             }
             mandatory true;
             description

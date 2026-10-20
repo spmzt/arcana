@@ -878,6 +878,7 @@ stage(struct html *h)
 			{ "firewall", "Firewall" },
 			{ "packages", "Packages" }, { "storage", "Storage" },
 			{ "system", "System" }, { "security", "Security" },
+			{ "mail", "Mail" },
 			{ "kernel", "Kernel" }, { "sysctl", "Sysctl" },
 			{ "certificates", "Certificates" }, { "ssh", "SSH" },
 			{ "processes", "Processes" }, { "log", "Log" },
@@ -921,7 +922,7 @@ stage(struct html *h)
 			    "open it to install its package", plugins[t].title);
 		}
 		if (app.tab != TAB_JOBS && app.tab != TAB_SYSTEM && app.tab !=
-		    TAB_SECURITY)
+		    TAB_SECURITY && app.tab != TAB_MAIL)
 			export_bar(h, plug ? (app.net.kind == NET_BIRD ? "bird" :
 			    "ipsec") : tabs[app.tab].arg);
 		h_raw(h, "</nav>");
@@ -963,6 +964,11 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_SECURITY) {
 		view_hostsec(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_MAIL) {
+		view_mail(h, s);
 		h_raw(h, "</main>");
 		return;
 	}

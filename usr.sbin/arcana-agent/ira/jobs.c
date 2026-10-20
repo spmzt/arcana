@@ -206,6 +206,9 @@ title_of(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_GEOM:
 		rc = (t = geom_title(sp)) != NULL ? 0 : -1;
 		break;
+	case ARC_JOB_KIND_SMTPD:
+		rc = (t = smtpd_title(sp)) != NULL ? 0 : -1;
+		break;
 	case ARC_JOB_KIND_CARP:
 		rc = asprintf(&t, "%s: carp %s vhid %s%s%s", sp->interface,
 		    sp->verb, carp_vhid_of(sp), sp->address != NULL &&
@@ -1060,6 +1063,10 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_GEOM:
 		error = NULL;
 		ok = do_geom_job(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_SMTPD:
+		error = NULL;
+		ok = do_smtpd_job(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_CERT:
 		/* Any jail's: its files, not its network. */

@@ -3235,6 +3235,39 @@ queued_run(void)
 	    "if (b) b.click();");
 }
 
+/* The Mail tab: OpenSMTPD's form rendered on the host; a table written. */
+static void
+part_mail(void)
+{
+	int	i;
+
+	run("document.querySelector('button.tab[data-arg=mail]').click()");
+	wait_js("document.querySelector('section.mailview') && document."
+	    "querySelector('button[data-act=mail-conf]')", 20);
+	click_when("button[data-act=mail-conf]", 10);
+	wait_js("document.querySelector('form[data-form=mail-conf]')", 10);
+	run("const f = document.querySelector('form[data-form=mail-conf]'); "
+	    "f.listeners.value = 'localhost\\nem0 port 587 tls pki mail auth'; "
+	    "f.domains.value = 'example.org'; f.aliases.checked = true; "
+	    "f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^listen on em0 port 587 tls pki "
+	    "mail auth <credentials>$' smtpd.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "smtpd.conf is not rendered from the form");
+	click_when("button[data-act=mail-table][data-arg=aliases]", 10);
+	wait_js("document.querySelector('form[data-form=mail-table]')", 10);
+	run("const f = document.querySelector('form[data-form=mail-table]'); "
+	    "f.text.value = 'root: admin@example.org\\n'; f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^root: admin@example.org$' "
+	    "smtpd.d/aliases") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the aliases table is not written");
+	dock_closed();
+	shot("7q-mail");
+}
+
 static void
 part_system(void)
 {
@@ -6534,6 +6567,7 @@ ATF_TC_BODY(pwa_storage, tc)
 	prologue(tc, 2);
 	part_storage();
 	part_system();
+	part_mail();
 }
 ATF_TC_CLEANUP(pwa_storage, tc)
 {

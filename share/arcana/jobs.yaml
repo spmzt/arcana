@@ -452,3 +452,8 @@ kinds:
     needs: verb args
     uses: text
     values: verb=mirror|stripe|concat|raid3|label|nop|multipath|shsec|virstor|cache|journal|eli|union
+  - kind: smtpd
+    title: OpenSMTPD's configuration, tables and queue
+    needs: verb
+    uses: args text
+    values: verb=conf|table|enable|pause|resume|schedule|remove|update

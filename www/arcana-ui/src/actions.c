@@ -640,6 +640,9 @@ job_finished(struct op *op, bool ok, const char *err)
 		refresh_system(s, true);
 		refresh_ssh(s, false);
 		break;
+	case JOB_MAIL:
+		mail_refresh();
+		break;
 	case JOB_PROCESS:
 		refresh_procs(s, true);
 		break;

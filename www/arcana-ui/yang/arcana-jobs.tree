@@ -345,7 +345,12 @@ module: arcana-jobs
        |        |     +---w args*   string
        |        |     +---w text?   string
        |        +--:(geom)
-       |           +---w geom!
+       |        |  +---w geom!
+       |        |     +---w verb    enumeration
+       |        |     +---w args*   string
+       |        |     +---w text?   string
+       |        +--:(smtpd)
+       |           +---w smtpd!
        |              +---w verb    enumeration
        |              +---w args*   string
        |              +---w text?   string

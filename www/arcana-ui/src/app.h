@@ -179,6 +179,7 @@ enum tab {
 	TAB_STORAGE,
 	TAB_SYSTEM,
 	TAB_SECURITY,
+	TAB_MAIL,
 	TAB_KERNEL,
 	TAB_SYSCTL,
 	TAB_CERTS,
@@ -350,6 +351,7 @@ enum {
 	JOB_SECURITY,		/* a Security tab's plugin installed */
 	JOB_NETSTORE,		/* the Storage page's NFS, iSCSI or HAST */
 	JOB_SYSTEM,		/* a host's own configuration (sysview.c) */
+	JOB_MAIL,		/* a host's OpenSMTPD (mail.c) */
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -950,6 +952,11 @@ bool		 res_shown(struct html *, struct res *, const char *,
 char		*job_json(const char *, const char *, const char *const *,
 		    size_t, const char *, const char *);
 void		 view_system(struct html *, struct server *);
+/* mail.c: the host's OpenSMTPD. */
+void		 view_mail(struct html *, struct server *);
+bool		 mail_form(const char *, const ucl_object_t *);
+bool		 mail_action(const char *, const char *, const char *);
+void		 mail_refresh(void);
 void		 view_hostsec(struct html *, struct server *);
 void		 view_storage_geom(struct html *, struct server *, int);
 void		 view_syslogconf(struct html *, struct server *);

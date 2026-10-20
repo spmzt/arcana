@@ -457,6 +457,21 @@ definitions:
           flags and names alone.  A GELI passphrase is text, given by a
           file of the job's own (-J, -j).  The host's only; never in safe
           mode.
+      - name: smtpd
+        doc: |
+          OpenSMTPD (mail/opensmtpd, a plugin the host has installed):
+          verb conf renders smtpd.conf from the form given as text
+          (JSON: listeners, domains, delivery, relay, policy, filters
+          and own lines), checks it with smtpd -n and restarts smtpd
+          where it runs, the form kept beside the file; verb table, a
+          name (aliases, virtuals, domains, senders, credentials,
+          secrets) and its text, writes the table's file (credentials'
+          passwords hashed by OpenSMTPD's encrypt, the clear ones kept
+          nowhere; credentials and secrets root's alone) and has smtpd
+          read it again; verb enable, enable=yes or no; verbs pause and
+          resume with mta, mda or smtp; schedule and remove with an
+          envelope's or message's id or all; update with a table's
+          name: smtpctl's own.  The host's only; never in safe mode.
   - name: job-state
     type: enum
     entries:
@@ -3712,6 +3727,31 @@ operations:
       list), "periodic" (periodic's variables, their defaults and what
       periodic.conf says) and "svcj" (rc.conf's service jails).  Names:
       files by name, and host.  Nothing is changed.
+    do:
+      request:
+        attributes:
+          - names
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+  - name: smtpd
+    attribute-set: arcana
+    auth: true
+    doc: |
+      OpenSMTPD on this host, as a JSON object: "installed", "enabled",
+      "running"; where it runs, "status" (mda, mta, smtp: running or
+      paused), "stats" (smtpctl show stats, each counter), "queue" (each
+      envelope: evpid, type, flags, from, to, dest, created, expires,
+      retries, lasttry, state, next, error) and "queued"; "conf" and
+      "conf_path" (smtpd.conf), "spec" (the form it was rendered from,
+      when the console's), "tables" (each kept here: the text, or for
+      credentials and secrets the users' and labels' names alone),
+      "filters" (the filter ports installed), "mailer" (what
+      mailer.conf(5) makes sendmail), "pki" (whether this agent has a
+      certificate to listen with).  Nothing is changed.
     do:
       request:
         attributes:

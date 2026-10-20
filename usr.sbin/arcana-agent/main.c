@@ -70,6 +70,10 @@ struct opts opts = {
 	.ipfw_bin = "/sbin/ipfw",
 	.ipfw_rules = "/usr/local/etc/arcana/ipfw.rules",
 	.sysctl_conf = "/etc/sysctl.conf",
+	.smtpd_bin = "/usr/local/sbin/smtpd",
+	.smtpctl_bin = "/usr/local/sbin/smtpctl",
+	.smtpd_conf = "/usr/local/etc/mail/smtpd.conf",
+	.smtpd_dir = "/usr/local/etc/mail/arcana",
 	.log_dir = "/var/log",
 	.history_conf = "/usr/local/etc/arcana/history.conf",
 	.wg_bin = PATH_WG_BIN,
@@ -111,7 +115,8 @@ static bool	foreground;
 
 enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API,
     OPT_POUDRIERE, OPT_POUDRIERE_ETC, OPT_IFMCSTAT, OPT_FRESHCLAM_CONF,
-    OPT_SURICATA_RULES, OPT_EXPORTS, OPT_CTL_CONF, OPT_HAST_CONF };
+    OPT_SURICATA_RULES, OPT_EXPORTS, OPT_CTL_CONF, OPT_HAST_CONF,
+    OPT_SMTPD_CONF, OPT_SMTPD_DIR };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
@@ -135,6 +140,9 @@ static const struct option longopts[] = {
 	{ "exports", required_argument, NULL, OPT_EXPORTS },
 	{ "ctl-conf", required_argument, NULL, OPT_CTL_CONF },
 	{ "hast-conf", required_argument, NULL, OPT_HAST_CONF },
+	/* OpenSMTPD's smtpd.conf, and the directory of the agent's tables. */
+	{ "smtpd-conf", required_argument, NULL, OPT_SMTPD_CONF },
+	{ "smtpd-dir", required_argument, NULL, OPT_SMTPD_DIR },
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -174,7 +182,8 @@ usage(void)
 	    "                 [--ifmcstat ifmcstat]\n"
 	    "                 [--freshclam-conf file]\n"
 	    "                 [--suricata-rules directory]\n"
-	    "                 [--exports file] [--ctl-conf file] [--hast-conf file]\n");
+	    "                 [--exports file] [--ctl-conf file] [--hast-conf file]\n"
+	    "                 [--smtpd-conf file] [--smtpd-dir directory]\n");
 	exit(2);
 }
 
@@ -405,6 +414,12 @@ main(int argc, char *argv[])
 			break;
 		case OPT_HAST_CONF:
 			opts.hast_conf = optarg;
+			break;
+		case OPT_SMTPD_CONF:
+			opts.smtpd_conf = optarg;
+			break;
+		case OPT_SMTPD_DIR:
+			opts.smtpd_dir = optarg;
 			break;
 			break;
 		case OPT_BIRD_WATCH:

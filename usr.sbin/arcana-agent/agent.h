@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.161.0"
+#define	ARCANA_AGENT_VERSION	"0.162.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -113,6 +113,10 @@ struct opts {
 	const char	*ipfw_bin;
 	const char	*ipfw_rules;
 	const char	*sysctl_conf;
+	const char	*smtpd_bin;	/* OpenSMTPD, a plugin: smtpd(8) */
+	const char	*smtpctl_bin;	/* and smtpctl(8) */
+	const char	*smtpd_conf;	/* its smtpd.conf(5) */
+	const char	*smtpd_dir;	/* the agent's tables and kept form */
 	const char	*log_dir;	/* where syslogd(8) writes */
 	const char	*history_conf;	/* how the host is sampled */
 	const char	*tools_dir;	/* where programs without an option are */
@@ -602,6 +606,15 @@ const char	*netstore_check(const struct arc_job_spec *);
 char		*netstore_title(const struct arc_job_spec *);
 int		 do_netstore_job(struct work *, const struct arc_job_spec *,
 		    const char **);
+/* luxuria/smtpd.c: OpenSMTPD, a plugin: its read, and its job. */
+struct arc_smtpd_rsp;
+void		 do_smtpd(struct work *, struct arc_smtpd_rsp *);
+const char	*smtpd_check(const struct arc_job_spec *);
+char		*smtpd_title(const struct arc_job_spec *);
+int		 do_smtpd_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+char		*smtpd_render(struct work *, const struct ucl_object_s *,
+		    const char **);
 const char	*suricata_ruleset(void);
 /* luxuria/surules.c: the ruleset's rules, and those the admin set. */
 struct arc_suricata_rules_rsp;
@@ -687,6 +700,8 @@ bool		 peer_is_host(const cbl_peer *);
 int		 admit_register(cbl_ctx *, cbl_family **);
 /* superbia/tlsfiles.c: the agent's own TLS files renewed */
 const char	*tls_files_ca(void);
+const char	*tls_files_cert(void);
+const char	*tls_files_key(void);
 void		 tls_files_init(cbl_tls *, const char *, const char *,
 		    const char *);
 void		 do_tls(struct work *, const char *, const char *,
@@ -817,6 +832,8 @@ char		*block_cut(struct work *, const char *, const char *, const char *,
 		    char **);
 char		*block_add(struct work *, const char *, const char *, const char *,
 		    const char *);
+int		 file_put(struct work *, const char *, const char *, mode_t,
+		    const char **);
 int		 write_backup(struct work *, const char *, const char *, size_t,
 		    const char **);
 bool		 verify_jail8(struct work *, const char *, const char *,
