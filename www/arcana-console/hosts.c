@@ -1916,6 +1916,8 @@ connected:
 		pq.pkg_installed = c->installed;
 		pq.has_pkg_ip = c->pkg_ip != 0;
 		pq.pkg_ip = c->pkg_ip;
+		pq.has_pkg_anyos = c->anyos;
+		pq.pkg_anyos = c->anyos;
 		if ((error = arc_packages(&cl, &pq, &pr)) != 0)
 			goto rpcfail;
 		ok = pr->ok;
@@ -4842,7 +4844,7 @@ pick_jail(struct call *c, const char *name)
 	return (strlcpy(c->jail, name, sizeof(c->jail)) < sizeof(c->jail));
 }
 
-/* GET /api/servers/<id>/packages[?jail=<name>&refresh=1] */
+/* GET /api/servers/<id>/packages[?jail=<name>&refresh=1&ip=4|6&anyos=1] */
 static const char *
 setup_packages(struct call *c, const struct rq *q)
 {
@@ -4855,6 +4857,8 @@ setup_packages(struct call *c, const struct rq *q)
 	    strcmp(v, "1") == 0;
 	c->pkg_ip = rq_param(q, "ip", v, sizeof(v)) ? (uint8_t)(strcmp(v,
 	    "4") == 0 ? 4 : strcmp(v, "6") == 0 ? 6 : 0) : 0;
+	/* Past a repository for a newer FreeBSD, once asked. */
+	c->anyos = rq_param(q, "anyos", v, sizeof(v)) && strcmp(v, "1") == 0;
 	return (pick_jail(c, jail) ? NULL : "bad jail name");
 }
 

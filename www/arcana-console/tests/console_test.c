@@ -1096,6 +1096,21 @@ ATF_TC_BODY(smtpd, tc)
 	ATF_CHECK(system("grep -q '^alice	$6$fake$hashOf$1$' smtpd.d/credentials")
 	    == 0);
 	ATF_CHECK(system("grep -q '^encrypt <hunter2$' smtpd.log") == 0);
+	/* The same in the jail that runs: its table under its root, its
+	 * encrypt run in it (jexec), nothing of the host's touched. */
+	ATF_REQUIRE(system("mkdir -p jroot/smtpd.d && rm -f smtpd.d/aliases") ==
+	    0);
+	http("POST", jobs, "{\"jobs\":[{\"kind\":\"smtpd\",\"verb\":\"table\","
+	    "\"jail\":\"gw\",\"args\":[\"credentials\"],\"text\":\"bob pw2\\n\"}]}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 300 && system("grep -q '^bob	' jroot/smtpd.d/credentials "
+	    "2>/dev/null") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the jail's table is not written under its root");
+	ATF_CHECK(system("grep -q '^jexec 4 .*encrypt' jexec.log") == 0);
+	ATF_CHECK(system("grep -q '^bob' smtpd.d/credentials") != 0);
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("alice", jstr(&r, "data.tables.credentials.0"));

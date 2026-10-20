@@ -3024,6 +3024,12 @@ paths:
           in: query
           schema: { type: string, enum: ["1"] }
           description: pkg update first.
+        - name: anyos
+          in: query
+          schema: { type: string, enum: ["1"] }
+          description: Past a repository of packages for a newer FreeBSD
+            (pkg -o IGNORE_OSVERSION=yes); the error names
+            IGNORE_OSVERSION otherwise, for the panel to ask.
       responses:
         "200":
           description: The pending upgrades.

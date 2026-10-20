@@ -49,6 +49,7 @@ struct job {
 	bool			 installed;	/* packages: pkg query */
 	bool			 from_rc;	/* ipfw-rules: rc.conf's file */
 	uint8_t			 pkg_ip;	/* packages: pkg -4, -6 */
+	bool			 anyos;		/* packages: IGNORE_OSVERSION */
 	uint8_t			*binary;	/* agent-update */
 	size_t			 binlen;
 	char			*sha256;
@@ -467,12 +468,12 @@ worker(void *arg)
 		 */
 		if (!j->refresh)
 			do_packages(&w, j->jail, false, j->installed, j->pkg_ip,
-			    &pr);
+			    j->anyos, &pr);
 		else {
 			pthread_mutex_lock(&change_lock);
 			if (change_note("%s", what))
 				do_packages(&w, j->jail, true, false, j->pkg_ip,
-				    &pr);
+				    j->anyos, &pr);
 			else {
 				pr.has_ok = true;
 				pr.error = STOPPING;
@@ -2691,6 +2692,7 @@ arc_packages_doit(cbl_req *req, const struct arc_packages_req *rq,
 	j->refresh = rq->refresh;
 	j->installed = rq->pkg_installed;
 	j->pkg_ip = rq->has_pkg_ip ? rq->pkg_ip : 0;
+	j->anyos = rq->has_pkg_anyos && rq->pkg_anyos;
 	return (start(j));
 }
 

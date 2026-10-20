@@ -1140,8 +1140,11 @@ part_hosts(void)
 	shot("3b-step");
 	run("document.querySelector('.step-pane .close').click()");
 	wait_js("!document.querySelector('.step-pane .step-detail')", 5);
-	/* Beside the operation, what it is on the wire: its request and
-	 * reply as CBOR maps, and the sets they nest. */
+	/* Beside the operation, once asked for ({ }, off by default), what
+	 * it is on the wire: its request and reply as CBOR maps, and the
+	 * sets they nest. */
+	ATF_CHECK(js_true("!document.querySelector('.schema pre.cddl')"));
+	run("document.querySelector('.trace button[data-act=schema]').click()");
 	wait_js("document.querySelector('.schema pre.cddl')", 10);
 	ATF_CHECK(js_true("(() => { const t = document.querySelector("
 	    "'.schema').textContent; return t.includes('arcana') && "
@@ -1318,9 +1321,19 @@ part_hosts(void)
 	    ".click()");
 	run("document.querySelector('button[data-act=pkg-mode][data-arg=\"1\"]')"
 	    ".click()");
+	/* The pending read is refused by the newer repository: asked once
+	 * whether to read past OSVERSION; approved, read again past it. */
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "document.querySelector('.modal').textContent.includes('Read "
+	    "anyway')", 20);
+	shot("6b-osversion-read");
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
 	wait_js("document.querySelector('button[value=go]:not([disabled])')",
 	    20);
 	ATF_CHECK(system("grep -q '^-6 version -vRl <$' pkg.log") == 0);
+	ATF_CHECK(system("grep -q '^-6 -o IGNORE_OSVERSION=yes version -vRl <$' "
+	    "pkg.log") == 0);
 	run("document.querySelector('button[value=go]').click()");
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]')."

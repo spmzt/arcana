@@ -1308,6 +1308,12 @@ attribute-sets:
           there yet.
         checks:
           max-len: 16
+      - name: pkg-anyos
+        type: bool
+        doc: |
+          For packages: read past a repository of packages built for a
+          newer FreeBSD (pkg -o IGNORE_OSVERSION=yes), once the console
+          asked.
   - name: host
     attributes:
       - name: hostname
@@ -2193,7 +2199,10 @@ operations:
       refresh; with pkg-installed, the packages installed instead, each
       with its version, origin, size, comment and whether it came
       automatically, read from the host's own database (pkg query)
-      without asking the repository.
+      without asking the repository.  A repository of packages built
+      for a newer FreeBSD is refused by pkg (wrong OS version), and
+      the error says IGNORE_OSVERSION; with pkg-anyos the read goes
+      past it (pkg -o IGNORE_OSVERSION=yes), once the console asked.
     do:
       request:
         attributes:
@@ -2201,6 +2210,7 @@ operations:
           - refresh
           - pkg-installed
           - pkg-ip
+          - pkg-anyos
       reply:
         attributes:
           - ok

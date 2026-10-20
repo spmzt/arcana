@@ -229,6 +229,12 @@ update)	exit 0 ;;
 query)	printf 'aria2\t1.37.0_1\t0\t5242880\twww/aria2\tDownload utility\npimd\t3.1.0\t1\t102400\tnet/pimd\tPIM-SM daemon\n' ;;
 clean)	echo "$*" >> clean.log ;;
 version)
+	# A repository for a newer FreeBSD: refused, as upgrade is.
+	if [ -e newer -a $anyos = no ]; then
+		echo 'Error updating repositories!'
+		echo 'pkg: repository FreeBSD-base contains packages for wrong OS version: FreeBSD:16:amd64' >&2
+		exit 3
+	fi
 	[ -s pending ] || exit 1
 	# pkg 2 says how each repository is first.
 	printf 'FreeBSD-ports repository is up to date.\nFreeBSD-ports-kmods repository is up to date.\nFreeBSD-base repository is up to date.\nAll repositories are up to date.\n'
@@ -806,6 +812,10 @@ packages_body()
 	touch newer
 	atf_check -s exit:1 -o ignore -e match:'pkg upgrade: a repository has packages for a newer FreeBSD than this one, refused unless IGNORE_OSVERSION=yes: repository FreeBSD-base contains packages for wrong OS version: FreeBSD:16:amd64; Repository FreeBSD-ports cannot be opened' \
 	    "$JGC" -c "$SOCK" pkg-upgrade -n
+	# The pending read too: named the same, for the console to ask
+	# whether to read past it.
+	atf_check -s exit:1 -o ignore -e match:'pkg version: a repository has packages for a newer FreeBSD than this one, refused unless IGNORE_OSVERSION=yes' \
+	    "$JGC" -c "$SOCK" packages
 	atf_check -s exit:1 -o match:'failed +pkg install aria2' \
 	    "$JGC" -c "$SOCK" pkg-install aria2
 	atf_check -o match:'Upgraded: 0' "$JGC" -c "$SOCK" pkg-upgrade -O
