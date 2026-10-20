@@ -4351,22 +4351,75 @@ part_firewall(void)
 	    "querySelector('form[data-form=fw-edit]').live.checked && document"
 	    ".querySelector('form[data-form=fw-edit]').persist.checked"));
 	shot("7o-firewall-part");
-	/* One job: the new rule read by ipfw first, then the old one out
-	 * and the new one in; an interface's pattern, quoted the shell's
-	 * way, given to ipfw without its quotes. */
+	/* One job: the new rule read by ipfw -n first, then one script of
+	 * ipfw's, set 0's rule 1001 out and the new one in; an interface's
+	 * pattern, quoted the shell's way, given to ipfw without its
+	 * quotes. */
 	run("const f = document.querySelector('form[data-form=fw-edit]'); "
 	    "f.rule.value = 'allow tcp from any to me6 2222 in via \"wg[0-1]\"'; "
 	    "f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('ipfw "
 	    "1001 changed: 1001 allow tcp from any to me6 2222'))", 20);
-	ATF_CHECK(system("grep -n '' ipfw.log | grep -A9 'ipfw -q -n add 1001 "
-	    "allow tcp from any to me6 2222 in via wg\\[0-1\\]$' | grep -q "
-	    "'ipfw -q delete 1001$' && grep -q '^ipfw -q add 1001 allow tcp from "
-	    "any to me6 2222 in via wg\\[0-1\\]$' ipfw.log && grep -q '^add "
+	ATF_CHECK(system("grep -A3 '^ipfw -n /dev/stdin$' ipfw.log | grep -A2 "
+	    "'^ipfw -q /dev/stdin$' | grep -A1 '^set 0 delete 1001$' | grep -q "
+	    "'^add 1001 allow tcp from any to me6 2222 in via wg\\[0-1\\]$' && "
+	    "! grep -q '^ipfw -q delete 1001$' ipfw.log && grep -q '^add "
 	    "01001 allow tcp from any to me6 2222 in via wg\\[0-1\\]$' "
 	    "ipfw.rules && ! grep -q 'me6 22 in' ipfw.rules") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/*
+	 * Two kept rules of one number are two rows; one deleted, by its
+	 * words, the other stays.  A rule moved down where the numbers are
+	 * packed: asked first, the rules in its way moved on by one, the
+	 * farthest first, and none deleted.
+	 */
+	ATF_REQUIRE(system("printf 'add 01700 allow tcp from any to me 80 in\\n"
+	    "add 01700 allow tcp from any to me 443 in\\nadd 01701 count ip "
+	    "from any to any\\nadd 01702 count tcp from any to any\\n' >> "
+	    "ipfw.rules") == 0);
+	wait_js("document.querySelectorAll('table.fw-rules tr[data-rule="
+	    "\"1700\"]').length === 2", 30);
+	click_when("table.fw-rules tr[data-arg='1700/1']", 5);
+	click_when("tr.editing button[data-act=fw-del]", 5);
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t."
+	    "textContent.includes('ipfw delete 1700'))", 30);
+	for (i = 0; i < 50 && system("grep -q '^add 01700 allow tcp from any "
+	    "to me 80 in$' ipfw.rules && ! grep -q '^add 01700 allow tcp from "
+	    "any to me 443 in$' ipfw.rules && grep -q '^add 01600 ' ipfw.rules")
+	    != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 50, "the one rule of 1700 is not deleted alone: %s",
+	    "see ipfw.rules");
+	if (i >= 50)
+		(void)system("grep -n '' ipfw.rules >&2; tail -20 ipfw.log >&2");
+
+	run("document.querySelector('.dock > header').click()");
+	wait_js("document.querySelectorAll('table.fw-rules tr[data-rule="
+	    "\"1700\"]').length === 1", 30);
+	click_when("table.fw-rules tr[data-arg='1700/0']", 5);
+	click_when("tr.editing button[data-act=fw-move][data-arg=down]", 5);
+	wait_js("document.querySelector('form[data-form=confirm]') && document."
+	    "querySelector('.modal').textContent.includes('01702 becomes 01703') && "
+	    "document.querySelector('.modal').textContent.includes('takes "
+	    "01702')", 5);
+	shot("7o-firewall-make-room");
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t."
+	    "textContent.includes('ipfw renumber 1702 1703 1700 1702'))", 30);
+	for (i = 0; i < 50 && system("grep -q '^add 01701 count ip from any to "
+	    "any$' ipfw.rules && grep -q '^add 01702 allow tcp from any to me 80 "
+	    "in$' ipfw.rules && grep -q '^add 01703 count tcp from any to any$' "
+	    "ipfw.rules && ! grep -q '^add 01700' ipfw.rules") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 50, "the rules are not moved on to make room: %s",
+	    "see ipfw.rules");
+	if (i >= 50)
+		(void)system("grep -n '' ipfw.rules >&2");
+	run("document.querySelector('.dock > header').click()");
+	ATF_REQUIRE(system("sed -i '' -e '/^add 0170[0-3] /d' ipfw.rules") == 0);
 	/* The kept rules as a text, and the connections let through now,
 	 * read again by themselves. */
 	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-3\"]')."
@@ -4637,8 +4690,24 @@ part_firewall(void)
 	run("document.querySelector('.fwbar button[data-act=fw-rail]').click()");
 	wait_js("document.querySelector('.fwrail .titem.fw')", 5);
 	run("document.querySelector('button[data-act=fw-apply]').click()");
-	wait_js("document.querySelector('form[data-form=confirm]')", 5);
-	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	/* Rules the kernel has and that are not kept would be gone: said
+	 * first, by number, and the word typed to go on. */
+	wait_js("document.querySelector('form[data-form=confirm] "
+	    "input[name=typed]')", 5);
+	{
+		ucl_object_t	*t = js("return document.querySelector('.modal')"
+		    ".textContent");
+
+		ATF_CHECK_MSG(js_true("document.querySelector('.modal')."
+		    "textContent.includes('would be gone')"), "%s", t != NULL ?
+		    ucl_object_tostring_forced(t) : "?");
+		if (t != NULL)
+			ucl_object_unref(t);
+	}
+	shot("7o-firewall-apply-gone");
+	run("const f = document.querySelector('form[data-form=confirm]'); "
+	    "f.typed.value = 'apply'; f.typed.dispatchEvent(new Event('input', "
+	    "{bubbles: true})); f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('ipfw "
 	    "apply'))", 40);

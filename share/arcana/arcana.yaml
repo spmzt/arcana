@@ -151,10 +151,24 @@ definitions:
           line that set it before is replaced.
       - name: ipfw
         doc: |
-          The firewall, ipfw(8).  verb add, with names a rule's number
-          and then its words: with live it is added now, with persist
-          it is written into the kept rules.  verb delete and a number,
-          the same two ways.  verb apply loads the kept rules as the
+          The firewall, ipfw(8).  The live rules Arcana changes are set
+          0's, the set the kept rules are applied as; other sets are
+          not touched.  verb add, with names a rule's number and then
+          its words: with live it is added now, with persist it is
+          written into the kept rules; the first rule kept when none
+          is keeps the kernel's set 0 rules first, so that applying
+          does not take them away.  verb delete, a number and the
+          rule's words: that rule alone, the others of its number
+          staying; with the number alone, its only rule, refused when
+          it has several.  verb replace, the old number, the new and
+          the new rule's words, with text the old rule's words: that
+          rule replaced, the others of its number staying.  verb
+          renumber, pairs of numbers, from and to: each number's rules
+          given the other, now and kept, done in the order given,
+          refused whole unless each to is free by the time it is
+          reached.  Every change at a number is checked by ipfw -n
+          first and done as one ipfw script; if the kernel refuses a
+          line, the number's rules are put back as listed.  verb apply loads the kept rules as the
           host's whole ruleset without a gap: into set 1, which is
           disabled, then swapped with set 0; with safe the rules that
           were there wait in set 1 and are swapped back unless

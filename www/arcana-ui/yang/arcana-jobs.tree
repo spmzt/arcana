@@ -218,6 +218,7 @@ module: arcana-jobs
        |        |     +---w jail?      string
        |        |     +---w persist?   boolean
        |        |     +---w safe?      boolean
+       |        |     +---w text?      string
        |        +--:(bridge)
        |        |  +---w bridge!
        |        |     +---w verb       string

@@ -352,7 +352,7 @@ kinds:
   - kind: ipfw
     title: The firewall
     needs: verb args
-    uses: jail persist safe
+    uses: jail persist safe text
     destroys: verb=delete|flush|replace
   - kind: bridge
     title: A bridge

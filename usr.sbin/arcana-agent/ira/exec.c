@@ -140,7 +140,7 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	posix_spawn_file_actions_t	 fa;
 	posix_spawnattr_t		 sa;
 	sigset_t			 none, dfl;
-	struct pollfd			 pfd[2];
+	struct pollfd			 pfd[3];
 	struct capture			 out, eout;
 	static char			 pathenv[] =
 	    "PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin";
@@ -218,15 +218,23 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	posix_spawn_file_actions_destroy(&fa);
 	close(op[1]);
 	close(ep[1]);
+	/*
+	 * What the program reads is written as it reads it, beside its
+	 * output being read: a large input (a ruleset for ipfw -n) does not
+	 * wait on a pipe the program cannot empty while its own output
+	 * fills the other.
+	 */
+	off = 0;
 	if (in != NULL) {
-		/* Small, a key: it fits the pipe, and is written whole
-		 * before the program's output is read. */
 		close(ip[0]);
-		for (off = 0; rc == 0 && off < inlen; off += (size_t)wr)
-			if ((wr = write(ip[1], in + off, inlen - off)) <= 0)
-				break;
-		close(ip[1]);
-	}
+		if (rc != 0 || inlen == 0) {
+			close(ip[1]);
+			ip[1] = -1;
+		} else
+			(void)fcntl(ip[1], F_SETFL, fcntl(ip[1], F_GETFL) |
+			    O_NONBLOCK);
+	} else
+		ip[1] = -1;
 	if (rc != 0) {
 		close(op[0]);
 		close(ep[0]);
@@ -251,9 +259,25 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 		pfd[0].events = POLLIN;
 		pfd[1].fd = ep[0];
 		pfd[1].events = POLLIN;
-		n = poll(pfd, 2, exited ? 0 : 1000);
+		pfd[2].fd = ip[1];
+		pfd[2].events = POLLOUT;
+		n = poll(pfd, 3, exited ? 0 : 1000);
 		if (n == -1 && errno != EINTR)
 			err(1, "poll");
+		if (n > 0 && ip[1] != -1 && (pfd[2].revents & (POLLOUT | POLLHUP |
+		    POLLERR))) {
+			wr = (pfd[2].revents & POLLOUT) ? write(ip[1], in + off,
+			    inlen - off) : -1;
+			if (wr > 0)
+				off += (size_t)wr;
+			/* All of it written, or the program is not reading. */
+			if (off >= inlen || (wr == -1 && errno != EAGAIN &&
+			    errno != EINTR) || (pfd[2].revents & (POLLHUP |
+			    POLLERR))) {
+				close(ip[1]);
+				ip[1] = -1;
+			}
+		}
 		if (n > 0) {
 			if (op[0] != -1 &&
 			    (pfd[0].revents & (POLLIN | POLLHUP)))
@@ -281,6 +305,8 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 		close(op[0]);
 	if (ep[0] != -1)
 		close(ep[0]);
+	if (ip[1] != -1)
+		close(ip[1]);
 	while (!exited && waitpid(pid, &status, 0) == -1)
 		if (errno != EINTR)
 			err(1, "waitpid");

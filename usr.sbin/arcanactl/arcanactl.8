@@ -1066,14 +1066,43 @@ df
 .Pq set, unset or inherit ,
 maxaddr, timeout, and learn, external and dscpinherit, each on or off.
 .It Cm ipfw Oo Cm keep Oc Cm add Ar number Ar rule ...
-.It Cm ipfw Oo Cm keep Oc Cm delete Ar number
-.It Cm ipfw Oo Cm keep Oc Cm replace Ar number new-number rule ...
-Replaces the rule numbered
+.It Cm ipfw Oo Cm keep Oc Cm delete Ar number Op Ar rule ...
+.It Cm ipfw Oo Cm keep Oc Cm replace Ar number new-number rule ... Op Fl \-was Ar old-rule ...
+.It Cm ipfw Oo Cm keep Oc Cm renumber Ar from to Op Ar from to ...
+The live rules changed are set 0's, which the kept rules are applied
+as; no other set is touched.
+.Cm add
+keeping the first rule when none is kept keeps the kernel's set 0
+rules first, so that
+.Cm apply
+does not take them away.
+.Cm delete
+takes the one rule of
 .Ar number
-by the rule given, numbered
-.Ar new-number :
-the old one is deleted as the new is added, in the live rules, the kept
-ones, or both.
+whose words are
+.Ar rule ,
+the others of that number staying; with the number alone, its only
+rule, and it is refused when the number has several.
+.Cm replace
+puts the rule given, numbered
+.Ar new-number ,
+in place of the rule numbered
+.Ar number
+whose words follow
+.Fl \-was
+(its only one when they are not given).
+.Cm renumber
+gives each
+.Ar from
+number's rules the number
+.Ar to ,
+in the order given, refused as a whole unless each
+.Ar to
+is free when it is reached: the farthest first, to make room.
+Each change is read by
+.Ql ipfw -n
+first and done as one ipfw script; if the kernel refuses a line, the
+number's rules are put back as they were listed.
 .It Cm ipfw alias Ar name Cm addr Ar address ... | Cm ports Ar list | Cm value Ar word | Cm delete
 An alias of the kept rules: a name (letters, digits, _) standing for
 addresses, for ports (80,443) or for a word, used in rules as

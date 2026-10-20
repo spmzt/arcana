@@ -5022,7 +5022,25 @@ case "\$*" in
 	printf '06101     12     1440 (3s) STATE udp 10.0.0.5 5353 <-> 10.0.0.1 53 :default\n' ;;
 "-n -q "*) grep -q bogus "\$3" && { echo "ipfw: line 2: bad command bogus" >&2; exit 1; } ;;
 "-q add "*" refuse "*) echo "ipfw: unrecognised option refuse" >&2; exit 1 ;;
+"-q add "*) n="\${*#-q add }"; printf '%05d set 0 %s\n' "\${n%% *}" "\${n#* }" >> $(pwd)/live.rules ;;
 "list 1001") printf '01001 allow tcp from any to me6 22 in\n' ;;
+# set 0's rules, as they are now: live.rules.
+"-S list") [ -f $(pwd)/live.rules ] && cat $(pwd)/live.rules ;;
+"-S list "*) if [ -f $(pwd)/live.rules ] && grep -qE "^0*\$3 " $(pwd)/live.rules; then grep -E "^0*\$3 " $(pwd)/live.rules; else echo "ipfw: rule \$3 does not exist" >&2; fi ;;
+# The words as ipfw writes them back (all is ip), a line out for each
+# line in, as ipfw does: it writes while it reads.
+"-n /dev/stdin") tee $(pwd)/n.in | sed -e '/bogus/q' -e 's/^add \([0-9]*\) /\1 /' -e 's/ all / ip /g' -e 's/^\([0-9]*\) all /\1 ip /' | grep -v bogus
+	! grep -q bogus $(pwd)/n.in || { echo "Line 1: invalid action bogus" >&2; exit 65; } ;;
+# A script, a line at a time as ipfw does: stopped at what it refuses.
+"-q /dev/stdin") cat > $(pwd)/script.in; cat $(pwd)/script.in >> $(pwd)/script.log; touch $(pwd)/live.rules
+	while IFS= read -r l; do
+		case "\$l" in
+		*refuse*) echo "ipfw: unrecognised option refuse" >&2; exit 1 ;;
+		"set 0 delete "*) grep -vE "^0*\${l#set 0 delete } set 0 " $(pwd)/live.rules > $(pwd)/live.tmp; mv $(pwd)/live.tmp $(pwd)/live.rules ;;
+		"add "*) n="\${l#add }"; printf '%05d set 0 %s\n' "\${n%% *}" "\${n#* }" >> $(pwd)/live.rules ;;
+		esac
+	done < $(pwd)/script.in
+	sort -n -o $(pwd)/live.rules $(pwd)/live.rules ;;
 "-q "*.arcana-load) cat "\$2" > $(pwd)/loaded.rules; grep -q fails "\$2" && { echo "ipfw: line 1: getsockopt(IP_FW_XADD): Invalid argument" >&2; exit 1; } ;;
 esac
 exit 0
@@ -5053,26 +5071,76 @@ EOS
 	atf_check -o match:'^ipfw -q add 1002 allow tcp from any to me6 80 in$' \
 	    tail -1 ipfw.log
 	atf_check test ! -e fw/ipfw.rules
+	atf_check -o inline:'01002 set 0 allow tcp from any to me6 80 in\n' cat live.rules
+	# Deleted by a script of ipfw's, set 0's alone.
 	atf_check -o ignore "$JGC" -c "$SOCK" ipfw delete 1002
-	atf_check -o match:'^ipfw -q delete 1002$' tail -1 ipfw.log
-	# A rule changed as one: ipfw reads the new one first, then the
-	# old one goes and the new one comes; one ipfw does not take after
-	# all leaves the old one put back as it was listed.
+	atf_check -o match:'^ipfw -q /dev/stdin$' tail -1 ipfw.log
+	atf_check -o inline:'set 0 delete 1002\n' cat script.log
+	atf_check -o empty cat live.rules
+	# A rule changed as one: ipfw reads the new one first, then one
+	# script deletes the number and adds the new rule; one the kernel
+	# does not take after all leaves the number as it was listed.
+	printf '01001 set 0 allow tcp from any to me6 22 in\n' > live.rules
 	: > ipfw.log
-	atf_check -s exit:1 -o match:'did not take the new rule: .*refuse; the one before was put back' \
+	: > script.log
+	atf_check -s exit:1 -o match:'did not take it: .*refuse; rule 1001 was put back as it was' \
 	    "$JGC" -c "$SOCK" ipfw replace 1001 1001 allow tcp from any to me6 22 refuse in
-	atf_check -o inline:'ipfw -q -n add 1001 allow tcp from any to me6 22 refuse in
-ipfw list 1001
-ipfw -q delete 1001
-ipfw -q add 1001 allow tcp from any to me6 22 refuse in
-ipfw -q add 1001 allow tcp from any to me6 22 in
+	atf_check -o inline:'ipfw -S list 1001
+ipfw -n /dev/stdin
+ipfw -q /dev/stdin
+ipfw -q /dev/stdin
 ' cat ipfw.log
+	atf_check -o inline:'set 0 delete 1001
+add 1001 allow tcp from any to me6 22 refuse in
+set 0 delete 1001
+add 1001 allow tcp from any to me6 22 in
+' cat script.log
+	atf_check -o inline:'01001 set 0 allow tcp from any to me6 22 in\n' cat live.rules
 	atf_check -s exit:1 -e match:'with no quotes' -o ignore \
 	    "$JGC" -c "$SOCK" ipfw replace 1001 1001 allow ip from any to any via '"wg[0-1]"'
 	: > ipfw.log
 	atf_check -o match:'done +ipfw replace 1001 1001 allow ip from any to any via wg\[0-1\]' \
 	    "$JGC" -c "$SOCK" ipfw replace 1001 1001 allow ip from any to any via 'wg[0-1]'
-	atf_check -o match:'^ipfw -q add 1001 allow ip from any to any via wg\[0-1\]$' cat ipfw.log
+	atf_check -o inline:'01001 set 0 allow ip from any to any via wg[0-1]\n' cat live.rules
+	# Words ipfw reads that are not the rule's: refused, though it is
+	# the number's only one.
+	atf_check -s exit:1 -o match:'rule 1001 now is "allow ip from any to any via wg\[0-1\]", not these words' \
+	    "$JGC" -c "$SOCK" ipfw delete 1001 deny ip from any to any
+	atf_check -o inline:'01001 set 0 allow ip from any to any via wg[0-1]\n' cat live.rules
+
+	# Two rules of one number: one deleted by its words, the other
+	# staying; the number alone refused, nothing touched.  Set 0's are
+	# the rules Arcana changes: SD-WAN's set 30 rule of the same number
+	# stays, as ipfw is told "set 0 delete".
+	printf '00700 set 0 allow tcp from any to me 80 in\n00700 set 0 allow tcp from any to me 443 in\n00700 set 30 count ip from any to any\n' > live.rules
+	: > script.log
+	atf_check -s exit:1 -o match:'2 rules 700 now: say which, by its words; nothing was changed' \
+	    "$JGC" -c "$SOCK" ipfw delete 700
+	atf_check -o empty cat script.log
+	atf_check -o match:'done +ipfw delete 700 allow tcp from any to me 80 in' \
+	    "$JGC" -c "$SOCK" ipfw delete 700 allow tcp from any to me 80 in
+	atf_check -o inline:'set 0 delete 700\nadd 700 allow tcp from any to me 443 in\n' cat script.log
+	atf_check -o inline:'00700 set 0 allow tcp from any to me 443 in\n00700 set 30 count ip from any to any\n' cat live.rules
+	# One of two replaced, told by its words (--was): the other stays;
+	# with neither words nor a single rule, refused.
+	printf '00900 set 0 allow tcp from any to me 80 in\n00900 set 0 allow tcp from any to me 443 in\n' > live.rules
+	atf_check -s exit:1 -o match:'2 rules 900 now: say which' \
+	    "$JGC" -c "$SOCK" ipfw replace 900 900 deny ip from any to any
+	atf_check -o match:'done +ipfw replace 900 901 allow tcp from any to me 8443 in' \
+	    "$JGC" -c "$SOCK" ipfw replace 900 901 allow tcp from any to me 8443 in --was allow tcp from any to me 443 in
+	atf_check -o inline:'00900 set 0 allow tcp from any to me 80 in\n00901 set 0 allow tcp from any to me 8443 in\n' cat live.rules
+	# Rules moved on by one to make room, the farthest first; refused
+	# whole when a number is not free by the time it is reached.
+	printf '00800 set 0 count ip from any to any\n00801 set 0 count tcp from any to any\n00802 set 0 count udp from any to any\n' > live.rules
+	: > script.log
+	atf_check -s exit:1 -o match:'802 has a rule by the time 801 is moved there: nothing was changed' \
+	    "$JGC" -c "$SOCK" ipfw renumber 801 802 802 803
+	atf_check -o empty cat script.log
+	atf_check -o match:'done +ipfw renumber 802 803 801 802 800 801' \
+	    "$JGC" -c "$SOCK" ipfw renumber 802 803 801 802 800 801
+	atf_check -o inline:'00801 set 0 count ip from any to any\n00802 set 0 count tcp from any to any\n00803 set 0 count udp from any to any\n' cat live.rules
+	atf_check -o inline:'add 803 count udp from any to any\nset 0 delete 802\nadd 802 count tcp from any to any\nset 0 delete 801\nadd 801 count ip from any to any\nset 0 delete 800\n' cat script.log
+	rm live.rules
 	# Kept only: into the file, in the order of the numbers.
 	: > ipfw.log
 	atf_check -o match:'\(kept\)' \
@@ -5093,8 +5161,15 @@ add 01001 allow tcp from any to me6 22 in
 	atf_check -o match:'^add 01002 allow tcp from any to me6 443 in$' cat fw/ipfw.rules
 	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw delete 1002
 	atf_check -o not-match:'01002' cat fw/ipfw.rules
-	atf_check -o match:'"kept":\[\{"num":5,"text":"skipto 500 all from any to any out"\},\{"num":200' \
+	# Each kept rule with ipfw's own wording beside, as the kernel's
+	# listing of it would say (all is ip).
+	atf_check -o match:'"kept":\[\{"num":5,"text":"skipto 500 all from any to any out","norm":"skipto 500 ip from any to any out"\},\{"num":200' \
 	    -o match:'"file":true' "$JGC" -c "$SOCK" net ipfw
+	# Kept rules renumbered with their place in the file.
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw keep renumber 999 998
+	atf_check -o match:'^add 00998 deny log all from any to any$' -o not-match:'00999' cat fw/ipfw.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw keep renumber 998 999
+	atf_check -o match:'^add 00999 deny log all from any to any$' cat fw/ipfw.rules
 
 	# Applied: the kept rules into set 1 while it is off, swapped with
 	# set 0, and the old ones deleted.
@@ -5189,6 +5264,13 @@ ipfw -q add 200 deny tcp from any to me 22 \
 if [ -n "$x" ]; then
 	$fwcmd add 400 count ip from any to any
 fi
+cmd="ipfw -q add"
+pif="em0"
+ks="keep-state"
+$cmd 00500 check-state
+$cmd 00502 allow tcp from me to any out via $pif setup $ks
+$cmd 00504 allow ip from any to any via $nosuch
+echo add this is not a rule
 EOS
 	printf 'firewall_type="open"\nfirewall_script="%s/fw.sh"\n' "$(pwd)" >> rc.conf
 	atf_check -o inline:"# from $(pwd)/fw.sh
@@ -5198,8 +5280,16 @@ add 100 allow ip from any to any via lo0
 add 200 deny tcp from any to me 22 in via em0
 add 300 allow ip from ( 10.0.0.0/8 or 192.168.0.0/16 ) to any
 # left out, the script's own: if [ -n \"\$x\" ]; then
+# taken from inside the script's if, case or loop above: it may add these only at times
 add 400 count ip from any to any
 # left out, the script's own: fi
+# left out, the script's own: cmd=\"ipfw -q add\"
+# left out, the script's own: pif=\"em0\"
+# left out, the script's own: ks=\"keep-state\"
+add 00500 check-state
+add 00502 allow tcp from me to any out via em0 setup keep-state
+# left out, a variable not known here: \$cmd 00504 allow ip from any to any via \$nosuch
+# left out, the script's own: echo add this is not a rule
 " "$JGC" -c "$SOCK" ipfw rules -r
 	sed -i '' -e '/^firewall_type=/d' -e '/^firewall_script=/d' rc.conf
 
@@ -5248,6 +5338,28 @@ add 400 count ip from any to any
 	atf_check -s exit:1 -e match:'not taken back' -o ignore \
 	    "$JGC" -s -c "$SOCK" ipfw table T46 flush x
 
+	# A large kept file read through ipfw -n, which writes while it
+	# reads: the agent feeds it as it reads back, and does not wait.
+	awk 'BEGIN { for (i = 1; i <= 6000; i++) printf "add %05d allow tcp from any to me %d in // a rule long enough to fill the pipes\n", i + 10000, i }' > big.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w big.rules
+	atf_check -o match:'"num":16000,"text":"allow tcp from any to me 6000 in // a rule long enough to fill the pipes","norm":"allow tcp from any to me 6000 in' \
+	    timeout 60 "$JGC" -c "$SOCK" net ipfw
+
+	# The first rule kept, no rule being kept yet: set 0's rules are
+	# kept first (not SD-WAN's set 30, not the rule itself twice), so
+	# that applying does not take them away.
+	printf 'table T1 create type addr\n' > tbl.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w tbl.rules
+	printf '00010 set 0 allow ip from any to any via lo0\n00500 set 30 count ip from any to any\n00600 set 0 allow tcp from any to me 22 in\n' > live.rules
+	atf_check -o match:'now, and kept' "$JGC" -p -c "$SOCK" ipfw add 700 deny ip from any to any
+	atf_check -o inline:"table T1 create type addr
+# The kernel's rules when the first rule was kept, by Arcana: the kept rules are the whole ruleset once applied.
+add 00010 allow ip from any to any via lo0
+add 00600 allow tcp from any to me 22 in
+add 00700 deny ip from any to any
+" cat fw/ipfw.rules
+	rm live.rules
+
 	# A rule's words are ipfw's own; a number is a number; the sets
 	# are not a rule's to name; what ipfw refuses is said.
 	: > ipfw.log
@@ -5261,7 +5373,7 @@ add 400 count ip from any to any
 	    "$JGC" -c "$SOCK" ipfw add 10 set 1 allow ip from any to any
 	atf_check -s exit:1 -e match:'not put back by itself' -o ignore \
 	    "$JGC" -s -c "$SOCK" ipfw delete 5
-	atf_check -s exit:1 -e match:'is add, delete, alias, apply' -o ignore \
+	atf_check -s exit:1 -e match:'is add, delete, renumber, alias, apply' -o ignore \
 	    "$JGC" -c "$SOCK" ipfw flush
 	atf_check -o empty cat ipfw.log
 	atf_check -s exit:1 -o match:'unrecognised option refuse' \

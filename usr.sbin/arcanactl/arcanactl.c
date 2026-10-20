@@ -78,6 +78,7 @@ static const char *job_states[] = {
 static void	usage(void) __dead2;
 static void	fail(struct arc_client *, int, const char *) __dead2;
 static char	*slurp(const char *);
+static char	*words_joined(int, char **);
 
 /*
  * In capability mode (capsicum(4)) once the agent is connected: the
@@ -3544,11 +3545,44 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 	sp.verb = argv[1];
 	sp.names.v = (const char *const *)(uintptr_t)(argv + 2);
 	sp.names.n = (size_t)(argc - 2);
+	/* replace ... --was words: the old rule's words, to tell it from
+	 * another of its number. */
+	if (strcmp(argv[1], "replace") == 0) {
+		int	k;
+
+		for (k = 2; k < argc; k++)
+			if (strcmp(argv[k], "--was") == 0) {
+				sp.names.n = (size_t)(k - 2);
+				sp.text = words_joined(argc - k - 1, argv + k + 1);
+				break;
+			}
+	}
 	sp.live = !keep;
 	sp.persist = keep || persist;
 	sp.safe = safe;
 	sp.jail = netjail;
 	return (submit(cl, &sp));
+}
+
+/* Words joined by a space, a text of its own. */
+static char *
+words_joined(int n, char **v)
+{
+	char	*t;
+	size_t	 len;
+	int	 i;
+
+	len = 1;
+	for (i = 0; i < n; i++)
+		len += strlen(v[i]) + 1;
+	if ((t = calloc(1, len)) == NULL)
+		xo_err(1, "calloc");
+	for (i = 0; i < n; i++) {
+		if (i > 0)
+			strlcat(t, " ", len);
+		strlcat(t, v[i], len);
+	}
+	return (t);
 }
 
 /* bridge | geneve name verb word ...: a job; with -p kept in rc.conf. */

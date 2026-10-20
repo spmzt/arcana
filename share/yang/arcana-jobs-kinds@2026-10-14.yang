@@ -1099,6 +1099,11 @@ submodule arcana-jobs-kinds {
             description
               "Safe, undone unless confirmed";
           }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
         }
       }
       case bridge {

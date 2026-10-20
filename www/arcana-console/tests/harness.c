@@ -547,6 +547,17 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\\n' ;;\n"
 	    "'-n -q '*) grep -q bogus \"$3\" && { echo 'ipfw: line 2: bad "
 	    "command bogus' >&2; exit 1; } ;;\n"
+	    /* Rules read back as ipfw writes them (ipfw -n), a line out
+	     * for a line in; set 0's rules listed; a script logged. */
+	    "'-n /dev/stdin') sed -e 's/^add //' -e 's/ all / ip /g' ;;\n"
+	    "'-S list') printf '00005 set 0 skipto 500 ip from any to any "
+	    "out\\n00020 set 0 call 9100 ip from any to any in\\n00200 set 0 "
+	    "check-state :default\\n01001 set 0 allow tcp from any to me6 22 "
+	    "in\\n01999 set 0 return via any\\n09100 set 0 deny udp from any "
+	    "5678 to any 5678 in\\n65535 set 31 deny ip from any to any\\n' ;;\n"
+	    "'-S list '*) n=$(printf %05d \"$3\"); $0 -S list | grep \"^$n \" || "
+	    "{ echo \"ipfw: rule $3 does not exist\" >&2; } ;;\n"
+	    "'-q /dev/stdin') cat >> ipfw.log ;;\n"
 	    "'-q '*.arcana-load) cat \"$2\" > loaded.rules ;;\n"
 	    "esac\nexit 0\n");
 	ATF_REQUIRE(chmod("fake-ipfw", 0755) == 0);
@@ -1121,9 +1132,12 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(mkdir("tools", 0755) == 0 || errno == EEXIST);
 	put("tools/sendmail", buf);
 	ATF_REQUIRE(chmod("tools/sendmail", 0755) == 0);
+	/* No test asks the Internet: the release feed is a port nothing
+	 * listens on, refused at once. */
 	snprintf(buf, sizeof(buf), "rp_id = \"%s\";\norigin = \"%s\";\n"
 	    "datadir = \"%s/data\";\ncookie_secure = false;\n"
 	    "agent_binary = \"%s\";\nsendmail = \"%s/tools/sendmail\";\n"
+	    "update_url = \"https://127.0.0.1:9/releases/latest\";\n"
 	    "%s%s", RP_ID, harness_origin, cwd, send, cwd, local,
 	    harness_webconf);
 	put("web.conf", buf);
