@@ -77,8 +77,9 @@ jail_record(struct work *w, struct arc_jail *j, const char *name,
 		split_list(w, ji->ip6, &j->ip6.v, &j->ip6.n);
 		j->has_vnet = true;
 		j->vnet = ji->vnet;
-		/* Its own network may have its own BIRD, its own wg. */
-		if (ji->vnet && ji->path != NULL)
+		/* A jail's own programs: BIRD or wg in one with a network of
+		 * its own, OpenSMTPD in any. */
+		if (ji->path != NULL)
 			plugins_there(w, ji->jid, ji->path, &j->plugins.v,
 			    &j->plugins.n);
 		j->osrelease = wtext(w, ji->osrelease);
