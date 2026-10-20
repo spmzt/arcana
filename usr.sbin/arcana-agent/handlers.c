@@ -52,6 +52,9 @@ struct job {
 	uint8_t			*binary;	/* agent-update */
 	size_t			 binlen;
 	char			*sha256;
+	uint8_t			*sig;		/* by the console's CA key */
+	size_t			 siglen;
+	bool			 local;		/* asked by the local socket */
 	bool			 restart;
 	char			*source;	/* agent-build */
 	char			*ref;
@@ -348,6 +351,8 @@ worker(void *arg)
 	struct arc_builder_options_rsp bor;
 	struct arc_crashes_rsp	 crr;
 	struct arc_suricata_rules_rsp surr;
+	struct arc_netstore_rsp	 nsr;
+	struct arc_system_rsp	 syr;
 	struct arc_job_spec	 bsp;
 	struct arc_certs_rsp	 cer;
 	struct arc_ssh_rsp	 sshr;
@@ -688,7 +693,7 @@ worker(void *arg)
 		what = "storage";
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "storage");
-		memset(&stg, 0, sizeof(sr));
+		memset(&stg, 0, sizeof(stg));
 		/* A jail's: what its own zfs sees, the datasets given it. */
 		if (j->jail != NULL && j->action != ARC_STORAGE_KIND_DATASETS &&
 		    j->action != ARC_STORAGE_KIND_SNAPSHOTS) {
@@ -761,6 +766,8 @@ worker(void *arg)
 			zq.zfs_dataset = j->sha256;
 			zq.zfs_key = j->source;
 			zq.zfs_new_key = j->ref;
+			/* Made encrypted so, where it is asked. */
+			zq.zfs_create = j->host_keys;
 			pthread_mutex_lock(&change_lock);
 			if (change_note("%s", what))
 				do_zfs_key(&w, &zq, &zkr);
@@ -905,6 +912,30 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &crr.trace.v, &crr.trace.n);
 		rc = arc_crashes_reply(j->req, &crr);
+		break;
+	case ARC_CMD_SYSTEM:
+		what = "system";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "the system's files read");
+		memset(&syr, 0, sizeof(syr));
+		do_system(&w, j->pkg.names.v, j->pkg.names.n, &syr);
+		ok = syr.ok;
+		error = syr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &syr.trace.v, &syr.trace.n);
+		rc = arc_system_reply(j->req, &syr);
+		break;
+	case ARC_CMD_NETSTORE:
+		what = "netstore";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "the storage services read");
+		memset(&nsr, 0, sizeof(nsr));
+		do_netstore(&w, j->pkg.names.v, j->pkg.names.n, &nsr);
+		ok = nsr.ok;
+		error = nsr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &nsr.trace.v, &nsr.trace.n);
+		rc = arc_netstore_reply(j->req, &nsr);
 		break;
 	case ARC_CMD_SURICATA_RULES:
 		what = "suricata-rules";
@@ -1222,7 +1253,8 @@ worker(void *arg)
 		} else {
 			if (change_note("%s", what))
 				do_agent_update(&w, j->binary, j->binlen,
-				    j->sha256, &aur);
+				    j->sha256, j->sig, j->siglen, j->local,
+				    &aur);
 			else {
 				aur.has_ok = true;
 				aur.error = STOPPING;
@@ -1371,6 +1403,7 @@ job_free(struct job *j)
 	free((void *)(uintptr_t)j->pkg.names.v);
 	free(j->jail);
 	free(j->binary);
+	free(j->sig);
 	free(j->sha256);
 	free(j->source);
 	free(j->listen);
@@ -1404,8 +1437,10 @@ start(struct job *j)
 	int		error;
 
 	j->peer = peer_name(j->req);
-	if ((error = cbl_req_defer(j->req)) != 0)
+	if ((error = cbl_req_defer(j->req)) != 0) {
+		job_free(j);
 		return (error);
+	}
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 	error = pthread_create(&tid, &attr, worker, j);
@@ -1599,6 +1634,7 @@ arc_agent_update_doit(cbl_req *req, const struct arc_agent_update_req *rq,
     void *arg __unused)
 {
 	struct job	*j;
+	const cbl_peer	*peer;
 
 	if (rq->binary.len == 0 || strlen(rq->sha256) != 64)
 		return (reject(req, "a program and its SHA-256 are needed"));
@@ -1606,6 +1642,16 @@ arc_agent_update_doit(cbl_req *req, const struct arc_agent_update_req *rq,
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_AGENT_UPDATE;
+	/* The local socket's root is root already: its program is taken
+	 * unsigned; any other peer's must be signed by the CA. */
+	peer = cbl_req_peer(req);
+	j->local = peer != NULL && cbl_peer_transport(peer) == CBL_TR_UNIX;
+	if (rq->signature.len > 0) {
+		if ((j->sig = malloc(rq->signature.len)) == NULL)
+			err(1, "malloc");
+		memcpy(j->sig, rq->signature.p, rq->signature.len);
+		j->siglen = rq->signature.len;
+	}
 	if ((j->binary = malloc(rq->binary.len)) == NULL)
 		err(1, "malloc");
 	memcpy(j->binary, rq->binary.p, rq->binary.len);
@@ -2315,6 +2361,7 @@ arc_zfs_key_doit(cbl_req *req, const struct arc_zfs_key_req *rq,
 	j->sha256 = xstrdup(rq->zfs_dataset);
 	j->source = rq->zfs_key != NULL ? xstrdup(rq->zfs_key) : NULL;
 	j->ref = rq->zfs_new_key != NULL ? xstrdup(rq->zfs_new_key) : NULL;
+	j->host_keys = rq->zfs_create != NULL ? xstrdup(rq->zfs_create) : NULL;
 	return (start(j));
 }
 
@@ -2429,6 +2476,68 @@ arc_builder_options_doit(cbl_req *req, const struct arc_builder_options_req *rq,
 	return (start(j));
 }
 
+/* The system's own files, and the host's settings beside them. */
+int
+arc_system_doit(cbl_req *req, const struct arc_system_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+	const char	**v;
+	size_t		 i;
+
+	if (rq->names.n > 16)
+		return (reject(req, "system reads its files by name, and host"));
+	for (i = 0; i < rq->names.n; i++)
+		if (rq->names.v[i] == NULL)
+			return (reject(req, "a word is missing"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SYSTEM;
+	if (rq->names.n > 0) {
+		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL) {
+			free(j);
+			return (ENOMEM);
+		}
+		for (i = 0; i < rq->names.n; i++)
+			v[i] = xstrdup(rq->names.v[i]);
+		j->pkg.names.v = v;
+		j->pkg.names.n = rq->names.n;
+	}
+	return (start(j));
+}
+
+/* The storage services: NFS, iSCSI, HAST, or all. */
+int
+arc_netstore_doit(cbl_req *req, const struct arc_netstore_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+	const char	**v;
+	size_t		 i;
+
+	if (rq->names.n > 3)
+		return (reject(req, "netstore reads nfs, iscsi and hast"));
+	for (i = 0; i < rq->names.n; i++)
+		if (rq->names.v[i] == NULL)
+			return (reject(req, "a word is missing"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_NETSTORE;
+	if (rq->names.n > 0) {
+		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL) {
+			free(j);
+			return (ENOMEM);
+		}
+		for (i = 0; i < rq->names.n; i++)
+			v[i] = xstrdup(rq->names.v[i]);
+		j->pkg.names.v = v;
+		j->pkg.names.n = rq->names.n;
+	}
+	return (start(j));
+}
+
 /* The ruleset's rules, searched: a page of them. */
 int
 arc_suricata_rules_doit(cbl_req *req, const struct arc_suricata_rules_req *rq,
@@ -2438,9 +2547,10 @@ arc_suricata_rules_doit(cbl_req *req, const struct arc_suricata_rules_req *rq,
 	const char	**v;
 	size_t		 i;
 
-	if (rq->names.n > 6)
+	if (rq->names.n > 10)
 		return (reject(req, "the rules are searched by q=, sid=, only=, "
-		    "classtype=, offset= and limit="));
+		    "classtype=, offset= and limit=; sources=1 says the rule "
+		    "sources"));
 	for (i = 0; i < rq->names.n; i++)
 		if (rq->names.v[i] == NULL)
 			return (reject(req, "a word is missing"));
@@ -2569,7 +2679,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_SURICATA)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_GEOM)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2708,6 +2818,9 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_RTADVD:
 		if (sp->interface == NULL || sp->interface[0] == '\0')
 			return ("an rtadvd job needs an interface");
+		if (sp->safe)
+			return ("rtadvd's prefix is not undone: not in safe "
+			    "mode");
 		if (!sp->remove && (sp->names.n == 0 || !rtadvd_prefix_ok(
 		    sp->names.v[0])))
 			return ("an rtadvd job names the prefix advertised, an "
@@ -2726,6 +2839,10 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_NTP:
 		if (sp->jail != NULL && sp->jail[0] != '\0')
 			return ("a jail keeps the host's time");
+		/* Its undo would take arcana's block out, not put the old
+		 * servers back: not undone, so not safe. */
+		if (sp->safe)
+			return ("NTP servers are not undone: not in safe mode");
 		if (!sp->remove && sp->names.n == 0)
 			return ("name the NTP servers, or say remove");
 		for (i = 0; i < sp->names.n; i++)
@@ -2772,6 +2889,14 @@ check_spec(const struct arc_job_spec *sp)
 		return (clamav_check(sp));
 	case ARC_JOB_KIND_SURICATA:
 		return (suricata_check(sp));
+	case ARC_JOB_KIND_NFS:
+	case ARC_JOB_KIND_ISCSI:
+	case ARC_JOB_KIND_HAST:
+		return (netstore_check(sp));
+	case ARC_JOB_KIND_SYSFILE:
+		return (sysfile_check(sp));
+	case ARC_JOB_KIND_GEOM:
+		return (geom_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->safe)
 			return ("wireguard changes are not undone: not in "

@@ -143,6 +143,21 @@ submodule arcana-jobs-kinds {
       enum suricata {
         value 39;
       }
+      enum nfs {
+        value 40;
+      }
+      enum iscsi {
+        value 41;
+      }
+      enum hast {
+        value 42;
+      }
+      enum sysfile {
+        value 43;
+      }
+      enum geom {
+        value 44;
+      }
     }
     description
       "A kind of job, by its number in arcana.yaml's job-kind.";
@@ -1653,11 +1668,17 @@ submodule arcana-jobs-kinds {
           presence
             "This kind of job.";
           description
-            "Suricata's ruleset fetched by suricata-update, its rules set";
+            "Suricata's ruleset fetched by suricata-update, its rules and sources set";
           leaf verb {
             type enumeration {
               enum update;
               enum rule;
+              enum sources;
+              enum source-enable;
+              enum source-disable;
+              enum source-remove;
+              enum source-add;
+              enum pcap;
             }
             mandatory true;
             description
@@ -1668,6 +1689,170 @@ submodule arcana-jobs-kinds {
             ordered-by user;
             description
               "Arguments";
+          }
+        }
+      }
+      case nfs {
+        container nfs {
+          presence
+            "This kind of job.";
+          description
+            "The NFS server's exports and settings";
+          leaf verb {
+            type enumeration {
+              enum exports;
+              enum server;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
+        }
+      }
+      case iscsi {
+        container iscsi {
+          presence
+            "This kind of job.";
+          description
+            "The iSCSI target's ctl.conf, on or off";
+          leaf verb {
+            type enumeration {
+              enum conf;
+              enum enable;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
+        }
+      }
+      case hast {
+        container hast {
+          presence
+            "This kind of job.";
+          description
+            "HAST's resources, roles and hast.conf (destroys: verb=create)";
+          leaf verb {
+            type enumeration {
+              enum conf;
+              enum enable;
+              enum create;
+              enum role;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
+        }
+      }
+      case sysfile {
+        container sysfile {
+          presence
+            "This kind of job.";
+          description
+            "A file of the system's written, its daemon told";
+          leaf verb {
+            type enumeration {
+              enum devfs.rules;
+              enum devd;
+              enum syslog.conf;
+              enum newsyslog.conf;
+              enum periodic.conf;
+              enum audit_control;
+              enum audit_user;
+              enum krb5.conf;
+              enum ipsec.conf;
+              enum rctl.conf;
+              enum loader.conf.d;
+              enum periodic;
+              enum rc;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
+        }
+      }
+      case geom {
+        container geom {
+          presence
+            "This kind of job.";
+          description
+            "A GEOM class's command, geom(8)";
+          leaf verb {
+            type enumeration {
+              enum mirror;
+              enum stripe;
+              enum concat;
+              enum raid3;
+              enum label;
+              enum nop;
+              enum multipath;
+              enum shsec;
+              enum virstor;
+              enum cache;
+              enum journal;
+              enum eli;
+              enum union;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
           }
         }
       }

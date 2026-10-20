@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.150.0"
+#define	ARCANA_AGENT_VERSION	"0.158.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -128,6 +128,9 @@ struct opts {
 	const char	*ifmcstat_bin;	/* ifmcstat(8): IGMP's and MLD's state */
 	const char	*freshclam_conf; /* ClamAV's freshclam.conf, its mirrors */
 	const char	*suricata_rules; /* where suricata-update writes the ruleset */
+	const char	*exports_file;	/* exports(5) */
+	const char	*ctl_conf;	/* ctl.conf(5) */
+	const char	*hast_conf;	/* hast.conf(5) */
 	const char	*poudriere_etc;	/* where poudriere.conf and poudriere.d are */
 	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;
@@ -235,9 +238,13 @@ struct execres {
 	const char	*err;
 	size_t		 errlen;
 	bool		 truncated;	/* more output than was kept */
+	bool		 timedout;	/* killed: it did not finish in time */
 };
 
 int		 run_exec(struct work *, char *const [], struct execres *);
+bool		 pid_is(pid_t, const char *);
+pid_t		 pidfile_of(const char *, const char *);
+void		 pid_stop(pid_t, const char *, int);
 void		 exec_set_home(struct work *, const char *);
 void		 exec_set_env(struct work *, const char *, const char *);
 void		 exec_set_stdin(const char *, size_t);
@@ -542,6 +549,8 @@ struct ucl_object_s;
 void		 sdwan_json(struct work *, struct ucl_object_s *);
 const char	*sdwan_conf_path(const char *, char *, size_t);
 int		 sdwan_conf_write(const char *, const char *, const char **);
+const char	*sdwan_subst(struct work *, const char *, const char *const *,
+		    const char *const *, size_t);
 char		*sdwan_kept_read(const char *);
 
 /* luxuria/sdbird.c: a BIRD instance of each service, at the UNIs. */
@@ -564,6 +573,28 @@ int		 do_sdwan_ids(struct work *, const char *, const char **);
 int		 do_notify(struct work *, const char *, const char *,
 		    const char *, const char **);
 void		 sdwan_ids_start(void);
+/* superbia/geomjob.c: GEOM's classes at work. */
+const char	*geom_check(const struct arc_job_spec *);
+char		*geom_title(const struct arc_job_spec *);
+int		 do_geom_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+struct ucl_object_s *geom_classes_json(struct work *);
+/* superbia/sysfiles.c: the system's own configuration files. */
+struct arc_system_rsp;
+void		 do_system(struct work *, const char *const *, size_t,
+		    struct arc_system_rsp *);
+const char	*sysfile_check(const struct arc_job_spec *);
+char		*sysfile_title(const struct arc_job_spec *);
+int		 do_sysfile_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+/* superbia/netstore.c: NFS, iSCSI and HAST. */
+struct arc_netstore_rsp;
+void		 do_netstore(struct work *, const char *const *, size_t,
+		    struct arc_netstore_rsp *);
+const char	*netstore_check(const struct arc_job_spec *);
+char		*netstore_title(const struct arc_job_spec *);
+int		 do_netstore_job(struct work *, const struct arc_job_spec *,
+		    const char **);
 const char	*suricata_ruleset(void);
 /* luxuria/surules.c: the ruleset's rules, and those the admin set. */
 struct arc_suricata_rules_rsp;
@@ -573,6 +604,14 @@ const char	*suricata_rule_check(const struct arc_job_spec *);
 int		 suricata_rule_set(struct work *, const struct arc_job_spec *,
 		    const char **);
 int		 suricata_rule_args(struct work *, char **, int *,
+		    const char **);
+const char	*suricata_data_dir(struct work *);
+bool		 suricata_sources_secret(struct work *);
+bool		 suricata_name_ok(const char *);
+const char	*suricata_socket(struct work *, const char *);
+const char	*suricata_source_check(const struct arc_job_spec *);
+char		*suricata_source_title(const struct arc_job_spec *);
+int		 suricata_source_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 const char	*suricata_check(const struct arc_job_spec *);
 char		*suricata_title(const struct arc_job_spec *);
@@ -640,6 +679,7 @@ void		 transport_init(cbl_ctx *, cbl_loop *, cbl_tls *);
 bool		 peer_is_host(const cbl_peer *);
 int		 admit_register(cbl_ctx *, cbl_family **);
 /* superbia/tlsfiles.c: the agent's own TLS files renewed */
+const char	*tls_files_ca(void);
 void		 tls_files_init(cbl_tls *, const char *, const char *,
 		    const char *);
 void		 do_tls(struct work *, const char *, const char *,
@@ -789,7 +829,8 @@ int		 do_console_update(struct work *, const char *, const char *,
 
 /* ira/update.c */
 int		 do_agent_update(struct work *, const uint8_t *, size_t,
-		    const char *, struct arc_agent_update_rsp *);
+		    const char *, const uint8_t *, size_t, bool,
+		    struct arc_agent_update_rsp *);
 void		 service_restart(const char *);
 void		 service_detached(const char *, const char *);
 

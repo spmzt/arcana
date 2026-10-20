@@ -29,8 +29,23 @@ static struct {
 				 * -1 none */
 	bool	text;		/* the whole as text */
 	bool	thr;		/* the threshold form open */
+	bool	lua;		/* the Lua form open */
 	char	thr_kind[16];	/* its kind, which says its fields */
 } own = { .edit = -1, .thr_kind = "suppress" };
+
+/* More lines than OWN_MAX in the rules read: a change would lose
+ * those past it, so none is made until the text is cut by hand. */
+static bool	own_cut;
+
+/* The host changed: no instance of the one before is open. */
+void
+idsown_reset(void)
+{
+
+	own.name[0] = '\0';
+	own.edit = -1;
+	own.text = own.thr = own.lua = false;
+}
 
 /* A line of the rules: a rule, on or off, or a comment kept. */
 struct oline {
@@ -74,7 +89,13 @@ lines_of(const char *text, int *np)
 	if (v == NULL || (copy = strdup(text != NULL ? text : "")) == NULL)
 		abort();
 	n = 0;
-	for (it = copy; (line = strsep(&it, "\n")) != NULL && n < OWN_MAX;) {
+	own_cut = false;
+	for (it = copy; (line = strsep(&it, "\n")) != NULL;) {
+		if (n == OWN_MAX) {
+			if (line[strspn(line, " \t\r")] != '\0')
+				own_cut = true;
+			continue;
+		}
 		p = line + strspn(line, " \t\r");
 		if (*p == '\0')
 			continue;
@@ -423,9 +444,10 @@ view_thresholds(struct html *h, const char *text)
 		h_raw(h, "</select></label></div><div class=\"rowform\">");
 		if (sup)
 			h_raw(h, "<label>Address <input name=\"ip\" "
-			    "spellcheck=\"false\" placeholder=\"10.0.0.5, "
-			    "10.0.0.0/24, $HOME_NET\"><small class=\"help\">with "
-			    "a track: of those alone</small></label>");
+			    "spellcheck=\"false\" placeholder=\"10.0.0.5 or "
+			    "10.0.0.0/24\"><small class=\"help\">of this one "
+			    "alone (track by_src unless another is picked)"
+			    "</small></label>");
 		else {
 			if (!rate)
 				h_raw(h, "<label>Type <select name=\"type\">"
@@ -478,6 +500,67 @@ view_thresholds(struct html *h, const char *text)
 	}
 	h_raw(h, "</tbody></table>");
 	lines_free(v, n);
+}
+
+/* Its Lua scripts: for rules (lua:NAME.lua;) and as outputs. */
+static void
+view_lua(struct html *h, const ucl_object_t *f)
+{
+	const ucl_object_t	*e, *outs;
+	ucl_object_iter_t	 it;
+	bool			 out;
+
+	h_raw(h, "<div class=\"toolbar\"><strong>Lua scripts</strong><span "
+	    "class=\"grow\"></span><button class=\"ghost\" data-act=\""
+	    "lua-new\">Add</button></div><p class=\"dim\">A rule runs one by "
+	    "its <code>lua:NAME.lua;</code> keyword; one marked an output "
+	    "runs on what it asks for (Suricata's Lua output). Lua rules are "
+	    "allowed where it has scripts alone (security.lua.allow-rules).</p>");
+	if (own.lua) {
+		h_raw(h, "<form class=\"secform\" data-form=\"lua-add\"><div "
+		    "class=\"rowform\"><label>Name <input name=\"name\" "
+		    "required spellcheck=\"false\" placeholder=\"http-ua.lua\" "
+		    "pattern=\"[A-Za-z0-9_-]{1,32}\\.lua\"></label></div>"
+		    "<label>Script <textarea name=\"text\" rows=\"8\" "
+		    "spellcheck=\"false\" placeholder=\"function init (args) "
+		    "...\"></textarea></label><label class=\"check\"><input "
+		    "type=\"checkbox\" name=\"output\"> An output <small "
+		    "class=\"help\">not a rule's: it is run on what its init "
+		    "asks for</small></label><div class=\"actions\"><button "
+		    "type=\"button\" class=\"ghost\" data-act=\"lua-cancel\">"
+		    "Cancel</button><button type=\"submit\" class=\"primary\">"
+		    "Add</button></div></form>");
+	}
+	if (jget(f, "lua") == NULL || ucl_object_type(jget(f, "lua")) !=
+	    UCL_OBJECT) {
+		h_raw(h, "<p class=\"dim\">None.</p>");
+		return;
+	}
+	outs = jget(f, "lua_outputs");
+	h_raw(h, "<table class=\"net luas\"><thead><tr><th>Script</th><th>"
+	    "Size</th><th>Runs</th><th></th></tr></thead><tbody>");
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(f, "lua"), &it, true)) != NULL) {
+		const ucl_object_t	*o;
+		ucl_object_iter_t	 oit;
+
+		out = false;
+		oit = NULL;
+		while ((o = ucl_object_iterate(outs, &oit, true)) != NULL)
+			if (strcmp(ucl_object_tostring(o), ucl_object_key(e)) ==
+			    0)
+				out = true;
+		h_raw(h, "<tr><td class=\"mono\">");
+		h_txt(h, ucl_object_key(e));
+		h_fmt(h, "</td><td>%zu B</td><td>%s</td><td class=\"acts\">",
+		    strlen(ucl_object_tostring(e)), out ? "as an output" :
+		    "by rules");
+		h_raw(h, "<button class=\"ghost small danger\" data-act=\""
+		    "lua-del\"");
+		h_attr(h, "data-arg", ucl_object_key(e));
+		h_raw(h, ">Delete</button></td></tr>");
+	}
+	h_raw(h, "</tbody></table>");
 }
 
 void
@@ -549,6 +632,7 @@ view_idsown(struct html *h)
 		    "it prevents, drops, beside the ruleset's.</p></div>");
 		lines_free(v, n);
 		view_thresholds(h, jstr(f, "thresholds"));
+		view_lua(h, f);
 		return;
 	}
 	h_raw(h, "<table class=\"net ownrules\">");
@@ -594,6 +678,7 @@ view_idsown(struct html *h)
 	h_raw(h, "</tbody></table>");
 	lines_free(v, n);
 	view_thresholds(h, jstr(f, "thresholds"));
+	view_lua(h, f);
 }
 
 /* A line added to an instance's thresholds, the list applied. */
@@ -638,6 +723,11 @@ apply(struct oline *v, int n, int at, const char *text, bool on)
 {
 	char	*all, *dup;
 
+	if (own_cut || (at == OWN_MAX && n >= OWN_MAX)) {
+		toast(true, "More than %d lines of rules: change them as text, "
+		    "or in the instance's form", OWN_MAX);
+		return;
+	}
 	if (at == OWN_MAX && n < OWN_MAX) {
 		at = n++;
 		v[at].rule = true;
@@ -696,6 +786,9 @@ idsown_form(const char *form, const ucl_object_t *f)
 			    "and . : / $ ! [ ] , - alone");
 			return (true);
 		}
+		/* An address given with no track is by its source. */
+		if (strcmp(kind, "suppress") == 0 && track == NULL && ip != NULL)
+			track = "by_src";
 		if (strcmp(kind, "suppress") == 0)
 			snprintf(line, sizeof(line), "suppress gen_id %s, sig_id "
 			    "%s%s%s%s%s", gid != NULL ? gid : "1", sid, track !=
@@ -715,6 +808,41 @@ idsown_form(const char *form, const ucl_object_t *f)
 			    NULL ? type : "limit", track, cnt, sec);
 		thr_append(own.name, line);
 		own.thr = false;
+		return (true);
+	}
+	if (strcmp(form, "lua-add") == 0) {
+		const char	*nm = jstr(f, "name"), *keys[2];
+		ucl_object_t	*lua, *outs, *vals[2];
+		size_t		 len;
+
+		if ((spec = sec_ids_spec(own.name)) == NULL || nm == NULL ||
+		    (len = strlen(nm)) < 5 || len > 36 || strcmp(nm + len - 4,
+		    ".lua") != 0 || strspn(nm, "abcdefghijklmnopqrstuvwxyz"
+		    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != len - 4) {
+			toast(true, "A script is NAME.lua: letters, digits, _ "
+			    "and -");
+			return (true);
+		}
+		/* The form stays, with its text, while a change is applied. */
+		if (sec_ids_busy()) {
+			toast(true, "The last change is being applied: again in a "
+			    "moment");
+			return (true);
+		}
+		lua = jget(spec, "lua") != NULL ? ucl_object_copy(jget(spec,
+		    "lua")) : ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_replace_key(lua, ucl_object_fromstring(jstr(f,
+		    "text") != NULL ? jstr(f, "text") : ""), nm, 0, true);
+		outs = jget(spec, "lua_outputs") != NULL ? ucl_object_copy(
+		    jget(spec, "lua_outputs")) : ucl_object_typed_new(UCL_ARRAY);
+		if (jbool(f, "output"))
+			ucl_array_append(outs, ucl_object_fromstring(nm));
+		keys[0] = "lua";
+		keys[1] = "lua_outputs";
+		vals[0] = lua;
+		vals[1] = outs;
+		sec_ids_set_objs(own.name, keys, vals, 2);
+		own.lua = false;
 		return (true);
 	}
 	if (strcmp(form, "own-rule") != 0 || (spec = sec_ids_spec(own.name)) ==
@@ -799,6 +927,44 @@ idsown_action(const char *act, const char *arg, const char *value)
 		thr_append(value, line);
 		return (true);
 	}
+	if (strcmp(act, "lua-new") == 0 || strcmp(act, "lua-cancel") == 0) {
+		own.lua = strcmp(act, "lua-new") == 0;
+		render();
+		return (true);
+	}
+	if (strcmp(act, "lua-del") == 0) {
+		char	body[200];
+
+		snprintf(body, sizeof(body), "%s is taken out of %s's scripts "
+		    "and its file deleted on the host.", arg, own.name);
+		confirm("Delete the script?", body, "Delete", true, NULL,
+		    "lua-del-yes", arg, "");
+		return (true);
+	}
+	if (strcmp(act, "lua-del-yes") == 0) {
+		const ucl_object_t	*sp, *o;
+		ucl_object_iter_t	 oit;
+		ucl_object_t		*lua, *outs, *vals[2];
+		const char		*keys[2];
+
+		if ((sp = sec_ids_spec(own.name)) == NULL)
+			return (true);
+		lua = jget(sp, "lua") != NULL ? ucl_object_copy(jget(sp,
+		    "lua")) : ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_delete_key(lua, arg);
+		outs = ucl_object_typed_new(UCL_ARRAY);
+		oit = NULL;
+		while ((o = ucl_object_iterate(jget(sp, "lua_outputs"), &oit,
+		    true)) != NULL)
+			if (strcmp(ucl_object_tostring(o), arg) != 0)
+				ucl_array_append(outs, ucl_object_copy(o));
+		keys[0] = "lua";
+		keys[1] = "lua_outputs";
+		vals[0] = lua;
+		vals[1] = outs;
+		sec_ids_set_objs(own.name, keys, vals, 2);
+		return (true);
+	}
 	if (strcmp(act, "thr-new") == 0) {
 		own.thr = true;
 		render();
@@ -816,6 +982,12 @@ idsown_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	if (strcmp(act, "thr-del") == 0) {
+		confirm("Delete the threshold?", "The line is taken out of the "
+		    "instance's threshold.config: its alerts are told again as "
+		    "they come.", "Delete", true, NULL, "thr-del-yes", arg, "");
+		return (true);
+	}
+	if (strcmp(act, "thr-del-yes") == 0) {
 		const ucl_object_t	*sp;
 		struct oline		*tv;
 		char			*t;

@@ -289,8 +289,17 @@ view_sysctl(struct html *h, struct server *s)
 	}
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"sy-tree\" "
 	    "data-arg=\"\" title=\"The whole tree, which comes in parts\">all"
-	    "</button></nav>", sy.prefix[0] ==
-	    '\0' ? " on" : "");
+	    "</button>", sy.prefix[0] ==
+	    '\0' && !sysview_shown("hardening") ? " on" : "");
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"sv-show\" "
+	    "data-arg=\"hardening\" title=\"Sysctls of hardening, what each "
+	    "should be\">Hardening</button></nav>", sysview_shown("hardening") ?
+	    " on" : "");
+	if (sysview_shown("hardening")) {
+		h_raw(h, "</div>");
+		view_hardening(h, s);
+		return;
+	}
 	h_raw(h, "<form data-form=\"sy-from\" class=\"kmod-load\"><input name="
 	    "\"name\" spellcheck=\"false\" autocomplete=\"off\" placeholder="
 	    "\"or from a name: net.inet.tcp\"");
@@ -497,6 +506,8 @@ sysctl_form(const char *form, const ucl_object_t *f)
 		return (true);
 	}
 	if (strcmp(form, "sy-from") == 0) {
+		/* The tree asked for is shown, not the hardening helper. */
+		sysview_hide();
 		v = jstr(f, "name") != NULL ? jstr(f, "name") : "";
 		if (v[0] != '\0' && !name_ok(v)) {
 			toast(true, "A sysctl is named with letters, digits "

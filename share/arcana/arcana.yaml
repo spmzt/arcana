@@ -401,8 +401,62 @@ definitions:
           commas): kept by the agent and given to suricata-update as its
           enable.conf, disable.conf and drop.conf, so that they hold
           across updates; the ruleset is made again from what was
-          fetched (--offline) and applied as by update.  The host's
-          only; never in safe mode.
+          fetched (--offline) and applied as by update.  Verb sources
+          fetches suricata-update's index of sources (update-sources);
+          verbs source-enable (name=, and its parameters, a commercial
+          one's secret-code=, which the agent writes to the source's
+          file itself, root's alone), source-disable, source-remove and
+          source-add (name=, url=) each set one.  Verb pcap (instance=,
+          file=) runs a capture the host has through an instance's
+          configuration, offline (suricata -r), its alerts kept for the
+          sdwan read.  The host's only; never in safe mode.
+      - name: nfs
+        doc: |
+          The NFS server (nfsd(8), mountd(8)): verb exports writes
+          exports(5) from text and has mountd read it again; verb server
+          sets, by names, enable= (yes or no: nfsd, with rpcbind and
+          mountd, enabled and started, or stopped), v4= and v4only=
+          (nfsv4_server_enable, nfsv4_server_only), minor= (NFSv4's 0, 1
+          or 2: vfs.nfsd.server_max_minorversion, kept in sysctl.conf),
+          threads= and pNFS's data servers pnfs= (host:/path joined by
+          commas) and mirror= (nfsd's -n, -p and -m, pnfsserver(4)).
+          The host's only; never in safe mode.
+      - name: iscsi
+        doc: |
+          The iSCSI target (ctld(8)): verb conf writes ctl.conf(5) from
+          text (root's alone: it may hold CHAP secrets) and has ctld read
+          it again; verb enable, enable=yes or no, enables and starts it
+          or stops it.  The host's only; never in safe mode.
+      - name: hast
+        doc: |
+          HAST (hastd(8)): verb conf writes hast.conf(5) from text and
+          has hastd read it again; verb enable, enable=yes or no; verb
+          create, resource=, makes a resource's metadata (hastctl
+          create); verb role, resource= and role= (init, primary or
+          secondary), sets its role.  The host's only; never in safe
+          mode.
+      - name: sysfile
+        doc: |
+          A file of the system's, one of a fixed table, written whole
+          from text, and the daemon that reads it told: the verb names
+          it, devfs.rules, devd (/usr/local/etc/devd/arcana.conf),
+          syslog.conf, newsyslog.conf, periodic.conf, audit_control,
+          audit_user, krb5.conf, ipsec.conf (setkey's), rctl.conf or
+          loader.conf.d (/boot/loader.conf.d/arcana.conf).  Verb periodic
+          sets periodic.conf's variables by names, name_enable=YES or
+          NO; verb rc rc.conf's kern_securelevel_enable= and
+          kern_securelevel= (-1 to 3), securelevel at boot.  The host's
+          only.
+      - name: geom
+        doc: |
+          A GEOM class at work, geom(8): the verb the class (mirror,
+          stripe, concat, raid3, label, nop, multipath, shsec, virstor,
+          cache, journal, eli or union), the first name its subcommand,
+          one of the class's own, or load, unload, list or status; the
+          rest its words,
+          flags and names alone.  A GELI passphrase is text, given by a
+          file of the job's own (-J, -j).  The host's only; never in safe
+          mode.
   - name: job-state
     type: enum
     entries:
@@ -664,6 +718,15 @@ attribute-sets:
         type: bool
       - name: error
         type: text
+      - name: signature
+        type: bytes
+        doc: |
+          For agent-update: the program signed by the console's CA key
+          (SHA-256), which the host checks against the CA certificates
+          it trusts (-A) before anything else; needed from any peer but
+          the local socket, whose root is root already.
+        checks:
+          max-len: 1024
       - name: host
         type: nest
         nested-attributes: host
@@ -1213,6 +1276,16 @@ attribute-sets:
           max-count: 64
 
 
+      - name: zfs-create
+        type: text
+        doc: |
+          For zfs-key, the dataset made, encrypted with zfs-new-key as its
+          passphrase (keyformat passphrase, keylocation prompt): its
+          encryption, on or one of aes-128-ccm, aes-192-ccm, aes-256-ccm,
+          aes-128-gcm, aes-192-gcm, aes-256-gcm.  The dataset is not
+          there yet.
+        checks:
+          max-len: 16
   - name: host
     attributes:
       - name: hostname
@@ -2229,10 +2302,11 @@ operations:
     attribute-set: arcana
     auth: true
     doc: |
-      Replace arcana-agent with the program sent.  It is checked against
-      its SHA-256 and by running it with -V, on this host, before it
-      takes the place of the one installed, which is kept beside it
-      with the suffix .old.  With restart the service is restarted
+      Replace arcana-agent with the program sent.  It is checked by its
+      signature (the console's CA key over it, against the CA this host
+      trusts; not asked of the local socket), against its SHA-256 and
+      by running it with -V, on this host, before it takes the place of
+      the one installed, which is kept beside it with the suffix .old.  With restart the service is restarted
       after the reply; otherwise the new program runs from the next
       start.
     do:
@@ -2240,6 +2314,7 @@ operations:
         attributes:
           - binary
           - sha256
+          - signature
           - restart
         required:
           - binary
@@ -3277,13 +3352,17 @@ operations:
       it is typed: with zfs-key, loaded (zfs load-key, which reads it
       on its standard input, through a pipe); with zfs-new-key, changed
       (zfs change-key, the same), and loaded first with zfs-key when it
-      is not.  A key is on no disk, in no job, no trace and no log.
+      is not; with zfs-create and zfs-new-key, the dataset made
+      encrypted, its passphrase the new key (zfs create -o encryption= -o
+      keyformat=passphrase -o keylocation=prompt).  A key is on no disk,
+      in no job, no trace and no log.
     do:
       request:
         attributes:
           - zfs-dataset
           - zfs-key
           - zfs-new-key
+          - zfs-create
         required:
           - zfs-dataset
       reply:
@@ -3572,7 +3651,15 @@ operations:
       and the rule's text.  Words: q=text (in the rule, any case),
       sid=N, only=enabled, disabled or changed (those the admin set),
       classtype=name, offset=N and limit=N (100 unless given, 500 at
-      most).  The host's only; nothing is changed.
+      most).  With sources=1 instead, the rule sources: "index" (whether
+      suricata-update's is fetched), "sources" (each with name, vendor,
+      summary, license, parameters, subscription, and its state here,
+      enabled or disabled) and "default_et_open".  With instance=NAME
+      and command=CMD (iface=IF for iface-stat), Suricata's own answer
+      by the instance's unix command socket, one of the commands that
+      read: uptime, version, running-mode, capture-mode, memcap-list,
+      ruleset-stats, ruleset-failed-rules, ruleset-profile, iface-list,
+      iface-stat, dump-counters.  The host's only; nothing is changed.
     do:
       request:
         attributes:
@@ -3584,6 +3671,52 @@ operations:
           - json
           - trace
 
+  - name: netstore
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The host's network storage services, as a JSON object: "nfs" (the
+      NFS server: nfsd's and mountd's state, its rc.conf, nfsd's flags
+      with its threads and pNFS's data servers and mirrors,
+      vfs.nfsd.server_max_minorversion, exports(5) and what mountd
+      exports), "iscsi" (ctld's state, ctl.conf(5), ctladm's LUNs,
+      sessions and ports) and "hast" (hastd's state, hast.conf(5),
+      hastctl status and list).  Names: nfs, iscsi or hast, those
+      alone.  Nothing is changed.
+    do:
+      request:
+        attributes:
+          - names
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+  - name: system
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The system's own configuration, as a JSON object: "files", each
+      file of the sysfile job's table with its path, its text, the
+      daemon that reads it (enabled, running) and what shows it at work
+      (devfs rule showsets, setkey -DP, rctl); and, with names empty or
+      host: "ntp" (ntpd, ntp.conf, ntpq -pn), "linux" (the service, its
+      modules), "securelevel" (now, and rc.conf's), "mac" (which MAC
+      modules are loaded), "auditd", "geom" (geom -t), "geli" (geli
+      list), "periodic" (periodic's variables, their defaults and what
+      periodic.conf says) and "svcj" (rc.conf's service jails).  Names:
+      files by name, and host.  Nothing is changed.
+    do:
+      request:
+        attributes:
+          - names
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
 mcast-groups:
   - name: events
     auth: true

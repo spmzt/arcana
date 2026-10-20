@@ -208,7 +208,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN], surules[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[118];
+	char	*argv[124];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -308,6 +308,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("rc.conf", "sshd_enable=\"YES\"\nsshd_flags=\"-4\"\n");
 	snprintf(buf, sizeof(buf), "#!/bin/sh\nconf=%s/rc.conf\n"
 	    "[ \"$1\" = -R ] && { conf=$2/etc/rc.conf; shift 2; }\n"
+	    "[ \"$1\" = -f ] && { conf=$2; touch \"$conf\"; shift 2; }\n"
 	    "[ \"$1\" = -i ] && shift\n"
 	    "case \"$1\" in\n"
 	    "-n) grep -q \"^$2=\" \"$conf\" || exit 1; sed -n \"s/^$2=\\\""
@@ -695,6 +696,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "printf 'prompt\\nunavailable\\npassphrase\\n' ;;\n"
 	    /* What zfs read: the key, on its standard input. */
 	    "'load-key tank/vault') echo \"key=$(cat)\" >> storage.log ;;\n"
+	    /* Made encrypted: the passphrase it read, as it asked. */
+	    "'create -o encryption=aes-256-gcm -o keyformat=passphrase -o "
+	    "keylocation=prompt tank/secret') echo \"newkey=$(cat)\" >> "
+	    "storage.log ;;\n"
 	    "'receive -u tank/fail') cat > /dev/null; echo \"cannot receive "
 	    "new filesystem stream: destination 'tank/fail' exists\" >&2; "
 	    "exit 1 ;;\n"
@@ -757,14 +762,69 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "squid.log\nmkdir -p \"$3\"\n");
 	/* c-icap, a plugin: started, it stays a while with its pid file
 	 * where its configuration says. */
-	put("tools/c-icap", "#!/bin/sh\necho \"c-icap $*\" >> squid.log\n"
+	put("tools/c-icap", "#!/bin/sh\n"
+	    "[ \"$1\" = --hold ] && { echo $$ > \"$2\"; sleep 60; exit 0; }\n"
+	    "echo \"c-icap $*\" >> squid.log\n"
 	    "p=$(sed -n 's/^PidFile //p' \"$2\")\n"
-	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$p\"\nexit 0\n");
+	    "\"$0\" --hold \"$p\" > /dev/null 2>&1 &\nexit 0\n");
 	/* suricata, a plugin: checked, it takes all; run, it stays a while
 	 * with its pid file where it is told. */
-	put("tools/suricata", "#!/bin/sh\necho \"suricata $*\" >> squid.log\n"
+	/* ctladm(8), hastctl(8) and showmount(8), as they answer. */
+	put("tools/ctladm", "#!/bin/sh\necho \"ctladm $*\" >> netstore.log\n"
+	    "case \"$1\" in devlist) echo 'LUN Backend Size (Blocks) BS "
+	    "Serial Number Device ID'; echo '  0 block 2048 512 LABSERIAL0 "
+	    "LABDEV0' ;; islist) echo 'ID Portal Initiator name Target name' "
+	    ";; portlist) echo 'Port Online Frontend Name pp vp' ;; esac\n");
+	put("tools/hastctl", "#!/bin/sh\necho \"hastctl $*\" >> netstore.log\n"
+	    "case \"$1\" in status) printf 'Name\\tStatus\\tRole\\n"
+	    "shared\\tcomplete\\tsecondary\\n' ;; esac\n");
+	put("tools/showmount", "#!/bin/sh\necho 'Exports list on localhost:'\n"
+	    "echo '/export 10.0.0.0'\n");
+	put("exports", "/export -network 10.0.0.0/24\n");
+	put("hast.conf", "resource shared {\n\ton lab {\n\t\tlocal /dev/md9\n"
+	    "\t\tremote 10.0.0.2\n\t}\n}\n");
+	/* Its command socket, as Suricata answers, gone after a while. */
+	put("tools/scsrv.py", "import json, os, signal, socket, sys\n"
+	    "signal.alarm(300)\np = sys.argv[1]\ntry:\n    os.unlink(p)\n"
+	    "except OSError:\n    pass\ns = socket.socket(socket.AF_UNIX)\n"
+	    "s.bind(p)\ns.listen(4)\nr = {\"memcap-list\": {\"message\": "
+	    "[{\"name\": \"flow\", \"value\": \"32mb\"}, {\"name\": "
+	    "\"stream\", \"value\": \"64mb\"}], \"return\": \"OK\"}, "
+	    "\"ruleset-stats\": {\"message\": [{\"id\": 0, \"rules_loaded\": "
+	    "1, \"rules_failed\": 0, \"rules_skipped\": 0}], \"return\": "
+	    "\"OK\"}, \"ruleset-failed-rules\": {\"message\": [], \"return\": "
+	    "\"OK\"}, \"uptime\": {\"message\": 20, \"return\": \"OK\"}, "
+	    "\"iface-stat\": {\"message\": {\"pkts\": 3000, "
+	    "\"invalid-checksums\": 0, \"drop\": 5, \"bypassed\": 0}, "
+	    "\"return\": \"OK\"}}\nwhile True:\n    c, _ = s.accept()\n"
+	    "    f = c.makefile(\"rwb\")\n    for line in f:\n"
+	    "        o = json.loads(line)\n        a = {\"return\": \"OK\"} if "
+	    "\"version\" in o else dict(r.get(o.get(\"command\"), {\"message\": "
+	    "\"Unknown command\", \"return\": \"NOK\"}))\n"
+	    "        if o.get(\"command\") == \"iface-stat\":\n"
+	    "            a[\"message\"] = dict(a[\"message\"], iface=o["
+	    "\"arguments\"][\"iface\"])\n        f.write((json.dumps(a) + "
+	    "\"\\n\").encode())\n        f.flush()\n    c.close()\n");
+	put("tools/suricata", "#!/bin/sh\n"
+	    /* Started: the daemon, under its own name, its pid where told. */
+	    "[ \"$1\" = --hold ] && { echo $$ > \"$2\"; sleep 60; exit 0; }\n"
+	    "echo \"suricata $*\" >> squid.log\n"
+	    "[ \"$1\" = --build-info ] && { printf 'This is Suricata version "
+	    "8.0.7 RELEASE\\nFeatures: NETMAP HAVE_LUA\\n  Netmap support: "
+	    "yes\\n  Profiling rules enabled: no\\n  Plugin support "
+	    "(experimental): yes\\n'; exit 0; }\n"
 	    "[ \"$1\" = -T ] && exit 0\n"
-	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$4\"\n"
+	    /* A capture replayed: an alert of it where -l says. */
+	    "[ \"$3\" = -r ] && { echo '{\"timestamp\":\"2026-10-19T11:00:00"
+	    ".000000+0000\",\"event_type\":\"alert\",\"src_ip\":\"10.1.1.1\","
+	    "\"src_port\":1,\"dest_ip\":\"10.2.2.2\",\"dest_port\":2,\"proto\":"
+	    "\"TCP\",\"alert\":{\"action\":\"allowed\",\"signature_id\":"
+	    "2000009,\"rev\":1,\"signature\":\"ET REPLAYED\",\"category\":"
+	    "\"\",\"severity\":1}}' >> \"$6/eve.json\"; exit 0; }\n"
+	    "k=$(sed -n 's/^  filename: \\(.*\\.sock\\)$/\\1/p' \"$2\")\n"
+	    "[ -n \"$k\" ] && [ -x /usr/local/bin/python3 ] && "
+	    "/usr/local/bin/python3 tools/scsrv.py \"$k\" > /dev/null 2>&1 &\n"
+	    "\"$0\" --hold \"$4\" > /dev/null 2>&1 &\n"
 	    /* An alert in its eve.json, a second after it starts. */
 	    "d=$(sed -n 's/^default-log-dir: //p' \"$2\")\n"
 	    "[ -n \"$d\" ] && (sleep 1; mkdir -p \"$d\"; echo '{\"timestamp\":"
@@ -773,7 +833,23 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\"10.0.0.1\",\"dest_port\":23,\"proto\":\"TCP\",\"in_iface\":"
 	    "\"lo0\",\"alert\":{\"action\":\"allowed\",\"signature_id\":"
 	    "1000009,\"rev\":1,\"signature\":\"LOCAL telnet\",\"category\":"
-	    "\"\",\"severity\":2}}' >> \"$d/eve.json\") > /dev/null 2>&1 &\n"
+	    "\"\",\"severity\":2}}' >> \"$d/eve.json\"; "
+	    /* and two stats records, ten seconds apart. */
+	    "echo '{\"timestamp\":\"2026-10-19T10:00:00.000000+0000\","
+	    "\"event_type\":\"stats\",\"stats\":{\"uptime\":10,\"capture\":"
+	    "{\"kernel_packets\":1000,\"kernel_drops\":5},\"decoder\":{"
+	    "\"pkts\":995,\"bytes\":600000,\"invalid\":2},\"detect\":{"
+	    "\"alert\":1},\"tcp\":{\"sessions\":40,\"memuse\":1000},"
+	    "\"flow\":{\"total\":60,\"memuse\":4000},\"app_layer\":{\"flow\":"
+	    "{\"http\":7,\"tls\":11}}}}' >> \"$d/eve.json\"; "
+	    "echo '{\"timestamp\":\"2026-10-19T10:00:10.000000+0000\","
+	    "\"event_type\":\"stats\",\"stats\":{\"uptime\":20,\"capture\":"
+	    "{\"kernel_packets\":3000,\"kernel_drops\":5},\"decoder\":{"
+	    "\"pkts\":2995,\"bytes\":1800000,\"invalid\":2},\"detect\":{"
+	    "\"alert\":2},\"tcp\":{\"sessions\":90,\"memuse\":1000},"
+	    "\"flow\":{\"total\":130,\"memuse\":4000},\"app_layer\":{\"flow\":"
+	    "{\"http\":9,\"tls\":20,\"dns_udp\":4}}}}' >> \"$d/eve.json\") "
+	    "> /dev/null 2>&1 &\n"
 	    "exit 0\n");
 	/* suricata-update: a ruleset of three rules where -o says, one
 	 * disabled as it ships; the sids of --disable-conf commented out
@@ -781,6 +857,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("tools/suricata-update", "#!/bin/sh\n"
 	    "echo \"suricata-update $*\" >> suricata-update.log\n"
 	    "while [ $# -gt 0 ]; do case \"$1\" in -o) out=$2; shift ;; "
+	    "-D) data=$2; shift ;; update-sources) mkdir -p "
+	    "\"$data/update/cache\"; echo 'sources: {}' > "
+	    "\"$data/update/cache/index.yaml\"; exit 0 ;; list-sources) "
+	    "printf 'Name: et/open\\n  Vendor: Proofpoint\\n  Summary: "
+	    "Emerging Threats Open Ruleset\\n  License: MIT\\nName: et/pro"
+	    "\\n  Vendor: Proofpoint\\n  Summary: Emerging Threats Pro "
+	    "Ruleset\\n  License: Commercial\\n  Parameters: secret-code"
+	    "\\n'; exit 0 ;; "
 	    "--enable-conf) en=$2; shift ;; --disable-conf) dis=$2; shift ;; "
 	    "esac; shift; done\nmkdir -p \"$out\"; f=$out/suricata.rules\n"
 	    "{ echo 'alert tcp any any -> any 22 (msg:\"ET SCAN ssh\"; "
@@ -1181,7 +1265,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* Suricata's ruleset the test's, never the host's. */
 	argv[114] = (char *)(uintptr_t)"--suricata-rules";
 	argv[115] = surules;
-	argv[116] = NULL;
+	/* The storage services' files, the test's. */
+	argv[116] = (char *)(uintptr_t)"--exports";
+	argv[117] = (char *)(uintptr_t)"exports";
+	argv[118] = (char *)(uintptr_t)"--ctl-conf";
+	argv[119] = (char *)(uintptr_t)"ctl.conf";
+	argv[120] = (char *)(uintptr_t)"--hast-conf";
+	argv[121] = (char *)(uintptr_t)"hast.conf";
+	argv[122] = NULL;
 	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
 	snprintf(surules, sizeof(surules), "%s/rules", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
@@ -1193,6 +1284,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 		(void)mkdir(etc, 0755);
 	}
 	put("root/etc/hosts", "127.0.0.1 localhost\n");
+	(void)mkdir("root/etc/defaults", 0755);
+	put("root/etc/defaults/periodic.conf", "daily_clean_tmps_enable=\"NO\"\n"
+	    "daily_status_disks_enable=\"YES\"\n");
 	put("root/etc/rc.conf", "hostname=\"lab\"\nsshd_enable=\"YES\"\n");
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	snprintf(ntpconf, sizeof(ntpconf), "%s/ntp.conf", cwd);

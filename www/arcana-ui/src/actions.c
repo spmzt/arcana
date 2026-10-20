@@ -633,6 +633,13 @@ job_finished(struct op *op, bool ok, const char *err)
 		refresh_jails(s, false);
 		secpage_refresh();
 		break;
+	case JOB_NETSTORE:
+		naspage_refresh();
+		break;
+	case JOB_SYSTEM:
+		refresh_system(s, true);
+		refresh_ssh(s, false);
+		break;
 	case JOB_PROCESS:
 		refresh_procs(s, true);
 		break;

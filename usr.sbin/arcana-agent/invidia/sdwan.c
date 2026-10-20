@@ -217,14 +217,54 @@ sdwan_conf_write(const char *file, const char *text, const char **errp)
 	}
 	snprintf(tmp, sizeof(tmp), "%s.new", path);
 	if ((fp = fopen(tmp, "we")) == NULL || fputs(text, fp) == EOF ||
-	    fclose(fp) != 0 || rename(tmp, path) == -1) {
+	    fflush(fp) == EOF || fsync(fileno(fp)) != 0) {
 		*errp = strerror(errno);
 		if (fp != NULL)
 			fclose(fp);
 		unlink(tmp);
 		return (-1);
 	}
+	/* Closed once: a failed close or rename frees nothing twice. */
+	if (fclose(fp) != 0 || rename(tmp, path) == -1) {
+		*errp = strerror(errno);
+		unlink(tmp);
+		return (-1);
+	}
 	return (0);
+}
+
+/*
+ * A configuration's placeholders (@PID@ and the like) replaced by what
+ * the agent knows, in a buffer sized by what is written: a template of
+ * any length, with any number of them, comes out whole.
+ */
+const char *
+sdwan_subst(struct work *w, const char *conf, const char *const *from,
+    const char *const *to, size_t n)
+{
+	FILE	*fp;
+	char	*buf;
+	size_t	 len, i, k;
+
+	buf = NULL;
+	len = 0;
+	if ((fp = open_memstream(&buf, &len)) == NULL)
+		return (wstrdup(w, conf));
+	while (*conf != '\0') {
+		for (i = 0; i < n; i++) {
+			k = strlen(from[i]);
+			if (strncmp(conf, from[i], k) == 0) {
+				fputs(to[i], fp);
+				conf += k;
+				break;
+			}
+		}
+		if (i == n)
+			fputc(*conf++, fp);
+	}
+	if (fclose(fp) != 0 || buf == NULL)
+		return (wstrdup(w, conf));
+	return (wadopt(w, buf));
 }
 
 char *
@@ -238,11 +278,15 @@ sdwan_kept_read(const char *file)
 	if ((fp = fopen(path, "re")) == NULL)
 		return (NULL);
 	text = NULL;
+	len = 0;
+	/* As large as 64 instances' rules can be (sdids.c), with room. */
 	if (fseek(fp, 0, SEEK_END) == 0 && (len = ftell(fp)) > 0 && len <
-	    8 * 1024 * 1024 && (text = malloc((size_t)len + 1)) != NULL) {
+	    512L * 1024 * 1024 && (text = malloc((size_t)len + 1)) != NULL) {
 		rewind(fp);
 		text[fread(text, 1, (size_t)len, fp)] = '\0';
-	}
+	} else if (len > 0)
+		logmsg(LOG_ERR, "%s: %ld bytes, too large to be read: what it "
+		    "kept is not started", path, len);
 	fclose(fp);
 	return (text);
 }

@@ -468,6 +468,15 @@ view_logs(struct html *h, struct server *s)
 		h_txt(h, jstr(o, "name"));
 		h_raw(h, "</button>");
 	}
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"sv-show\" "
+	    "data-arg=\"logconf\" title=\"syslogd and newsyslog: what is "
+	    "logged where, and when turned over\">Configuration</button>",
+	    sysview_shown("logconf") ? " on" : "");
+	if (sysview_shown("logconf")) {
+		h_raw(h, "</nav></div>");
+		view_syslogconf(h, s);
+		return;
+	}
 	h_raw(h, "</nav><label class=\"lg-file\">Log<select "
 	    "data-input=\"lg-file\">");
 	n = 0;

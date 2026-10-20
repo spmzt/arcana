@@ -1008,7 +1008,7 @@ storage_argv(struct work *w, const struct arc_job_spec *sp, const char **errp)
 				goto name;
 			n = 0;
 			ARG(opts.helper_bin);
-			ARG("-Q");
+			ARG("--scope-helper");
 			ARG("0");
 			ARG("zfs-pipe");
 			ARG(opts.zfs_bin);

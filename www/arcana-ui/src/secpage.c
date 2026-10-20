@@ -23,6 +23,8 @@
 
 enum sectab { SEC_URL, SEC_AV, SEC_IDS };
 
+static void	ids_settings_form(struct html *, const ucl_object_t *);
+
 static struct {
 	enum sectab	 tab;
 	char		 sid[16];
@@ -32,24 +34,39 @@ static struct {
 	int		 edit;		/* the form open: an index, n for a new
 					 * one, -1 none */
 	bool		 busy;
+	unsigned	 gen;		/* of reads: an older reply is dropped */
 	bool		 rules;		/* IDS/IPS: the ruleset's rules shown */
+	bool		 sources;	/* IDS/IPS: the rule sources shown */
 } sec = { .edit = -1 };
 
 static const char *const tabs[] = { "url", "antivirus", "ids" };
 
+/* What a read was asked for: by whom, and whether it ends a save. */
+struct sec_read {
+	char		sid[16];
+	unsigned	gen;
+	bool		after_save;
+};
+
 static void
 sec_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
-	char	*sid = arg;
+	struct sec_read	*r = arg;
 
-	/* Read again, a save is done with. */
-	sec.busy = false;
-	/* Another host's, asked before this one was chosen: not its. */
-	if (strcmp(sid, sec.sid) != 0) {
-		free(sid);
+	/* The read a save asked for ends the save, even when a newer read
+	 * (a job's end asks for one) is on its way and brings the state. */
+	if (r->after_save && strcmp(r->sid, sec.sid) == 0)
+		sec.busy = false;
+	/* An older read, or another host's: not what is shown. */
+	if (r->gen != sec.gen || strcmp(r->sid, sec.sid) != 0) {
+		bool	after = r->after_save;
+
+		free(r);
+		if (after)
+			render();
 		return;
 	}
-	free(sid);
+	free(r);
 	sec.loading = false;
 	if (status != 200) {
 		snprintf(sec.error, sizeof(sec.error), "%s", err != NULL ? err :
@@ -68,17 +85,45 @@ sec_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 }
 
 static void
-sec_load(void)
+sec_load_after(bool after_save)
 {
-	char	url[96], *sid;
+	struct sec_read	*r;
+	char		 url[96];
 
 	if (sec.sid[0] == '\0')
 		return;
-	if ((sid = strdup(sec.sid)) == NULL)
+	if ((r = calloc(1, sizeof(*r))) == NULL)
 		abort();
+	snprintf(r->sid, sizeof(r->sid), "%s", sec.sid);
+	r->gen = ++sec.gen;
+	r->after_save = after_save;
 	snprintf(url, sizeof(url), "/api/servers/%s/sdwan", sec.sid);
 	sec.loading = true;
-	api("GET", url, NULL, sec_cb, sid);
+	api("GET", url, NULL, sec_cb, r);
+}
+
+static void
+sec_load(void)
+{
+
+	sec_load_after(false);
+}
+
+/* The host changed: nothing of the one before is shown. */
+static void
+sec_reset(void)
+{
+
+	if (sec.state != NULL)
+		ucl_object_unref(sec.state);
+	sec.state = NULL;
+	sec.edit = -1;
+	sec.busy = false;
+	sec.rules = false;
+	sec.sources = false;
+	sec.error[0] = '\0';
+	idsown_reset();
+	idsstats_reset();
 }
 
 /* The kind's forms on the host: what the page last saved. */
@@ -545,9 +590,8 @@ view_sigs(struct html *h)
 	if (cl == NULL) {
 		missing(h, "ClamAV is not installed on this host.", "clamav");
 		h_raw(h, "<div class=\"empty\"><p>No ClamAV here.</p><p class=\""
-		    "dim\">Once it is installed, start freshclam here, and "
-		    "enable clamav_freshclam on the Services tab to have it at "
-		    "boot.</p></div>");
+		    "dim\">Once it is installed, Start freshclam here enables "
+		    "it at boot and starts it.</p></div>");
 		return;
 	}
 	h_fmt(h, "<div class=\"toolbar\">%s<button class=\"ghost\" "
@@ -647,7 +691,9 @@ ids_form(struct html *h, const ucl_object_t *f)
 	    "sid:1000001;)\">");
 	h_txt(h, jstr(f, "rules"));
 	h_raw(h, "</textarea><small class=\"help\">a rule a line, as "
-	    "Suricata writes them</small></label><details class=\"wfmore\"");
+	    "Suricata writes them</small></label>");
+	ids_settings_form(h, f);
+	h_raw(h, "<details class=\"wfmore\"");
 	if (jint(f, "divert", 0) > 0)
 		h_raw(h, " open");
 	h_raw(h, "><summary>Prevent, not only detect</summary><label>Divert "
@@ -666,6 +712,224 @@ ids_form(struct html *h, const ucl_object_t *f)
 	if (sec.busy)
 		h_raw(h, " disabled");
 	h_raw(h, ">Save</button></div></form>");
+}
+
+/* Suricata's settings, as ids_settings in the console writes them. */
+static const char *const evtypes[] = { "anomaly", "http", "dns", "tls",
+    "ssh", "flow", "netflow", "fileinfo", "drop", "smtp", "quic", "http2",
+    "dhcp", "smb" };
+
+static void
+set_select(struct html *h, const char *label, const char *name,
+    const char *cur, const char *const *opts, size_t n, const char *help)
+{
+	size_t	i;
+
+	h_fmt(h, "<label>%s <select name=\"%s\"><option value=\"\">"
+	    "Suricata's default</option>", label, name);
+	for (i = 0; i < n; i++) {
+		h_raw(h, "<option");
+		if (cur != NULL && strcmp(cur, opts[i]) == 0)
+			h_raw(h, " selected");
+		h_fmt(h, ">%s</option>", opts[i]);
+	}
+	h_raw(h, "</select>");
+	if (help != NULL)
+		h_fmt(h, "<small class=\"help\">%s</small>", help);
+	h_raw(h, "</label>");
+}
+
+static void
+set_input(struct html *h, const char *label, const char *name,
+    const char *cur, const char *ph, const char *help)
+{
+
+	h_fmt(h, "<label>%s <input name=\"%s\" spellcheck=\"false\" "
+	    "autocomplete=\"off\"", label, name);
+	h_attr(h, "value", cur != NULL ? cur : "");
+	h_attr(h, "placeholder", ph);
+	h_raw(h, ">");
+	if (help != NULL)
+		h_fmt(h, "<small class=\"help\">%s</small>", help);
+	h_raw(h, "</label>");
+}
+
+static bool
+has_word(const ucl_object_t *arr, const char *w)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((e = ucl_object_iterate(arr, &it, true)) != NULL)
+		if (ucl_object_type(e) == UCL_STRING && strcmp(
+		    ucl_object_tostring(e), w) == 0)
+			return (true);
+	return (false);
+}
+
+static void
+ids_settings_form(struct html *h, const ucl_object_t *f)
+{
+	static const char *const runmodes[] = { "autofp", "workers",
+	    "single" };
+	static const char *const mpms[] = { "ac", "ac-ks", "hs" };
+	static const char *const profiles[] = { "low", "medium", "high" };
+	static const char *const inlines[] = { "auto", "yes", "no" };
+	static const char *const policies[] = { "auto", "drop-packet",
+	    "drop-flow", "pass-packet", "pass-flow", "bypass", "reject",
+	    "ignore" };
+	char	num[24];
+	size_t	i;
+
+	h_raw(h, "<details class=\"wfmore\"><summary>Logging</summary>"
+	    "<p class=\"help\">What eve.json has besides alerts, each a "
+	    "record of its own; the statistics feed the graphs.</p><div "
+	    "class=\"checks\">");
+	for (i = 0; i < nitems(evtypes); i++) {
+		h_fmt(h, "<label class=\"check\"><input type=\"checkbox\" "
+		    "name=\"eve_%s\"%s> %s</label>", evtypes[i], has_word(jget(f,
+		    "eve"), evtypes[i]) ? " checked" : "", evtypes[i]);
+	}
+	h_raw(h, "</div><label class=\"check\"><input type=\"checkbox\" "
+	    "name=\"payload\"");
+	if (jbool(f, "payload"))
+		h_raw(h, " checked");
+	h_raw(h, "> An alert's packet and payload <small class=\"help\">"
+	    "larger records; what matched, readable</small></label>");
+	snprintf(num, sizeof(num), "%lld", (long long)(jget(f,
+	    "stats_interval") != NULL ? jint(f, "stats_interval", 10) : 10));
+	h_raw(h, "<label>Statistics every <input name=\"stats_interval\" "
+	    "type=\"number\" min=\"0\" max=\"3600\"");
+	h_attr(h, "value", num);
+	h_raw(h, "><small class=\"help\">seconds; 0 none</small></label>");
+	h_raw(h, "<label class=\"check\"><input type=\"checkbox\" name=\""
+	    "pcap_log\"");
+	if (jbool(f, "pcap_log"))
+		h_raw(h, " checked");
+	h_raw(h, "> The packets of its alerts kept <small class=\"help\">"
+	    "pcap-log, conditional on alerts: files in its log directory, "
+	    "for Wireshark or a replay</small></label><div class=\"rowform\">");
+	set_input(h, "Each file up to", "pcap_log_limit", jstr(f,
+	    "pcap_log_limit"), "100mb", NULL);
+	snprintf(num, sizeof(num), "%lld", (long long)jint(f, "pcap_log_files",
+	    10));
+	h_raw(h, "<label>Files at most <input name=\"pcap_log_files\" "
+	    "type=\"number\" min=\"1\" max=\"1000\"");
+	h_attr(h, "value", num);
+	h_raw(h, "></label></div>");
+	h_raw(h, "</details><details class=\"wfmore\"><summary>Capture"
+	    "</summary><div class=\"rowform\"><label>By <select name=\""
+	    "capture\"><option value=\"pcap\">pcap(3): it watches</option>"
+	    "<option value=\"netmap\"");
+	if (jstr(f, "capture") != NULL && strcmp(jstr(f, "capture"),
+	    "netmap") == 0)
+		h_raw(h, " selected");
+	h_raw(h, ">netmap(4): it takes the NIC's rings</option></select>"
+	    "<small class=\"help\">netmap is faster, a thread a ring the "
+	    "NIC's RSS fills, and prevents at L2</small></label>");
+	h_raw(h, "<label>L2 pairs <input name=\"pairs\" spellcheck=\"false\" "
+	    "placeholder=\"em0:em1, em2:em2^\"");
+	joined_attr(h, "value", jget(f, "pairs"), ", ");
+	h_raw(h, "><small class=\"help\">netmap: what one gets Suricata "
+	    "passes to the other, dropping what its rules say (a bump in "
+	    "the wire); em0^ is em0's host stack</small></label></div>"
+	    "<label class=\"check\"><input type=\"checkbox\" name=\""
+	    "offload_off\"");
+	if (jbool(f, "offload_off"))
+		h_raw(h, " checked");
+	h_raw(h, "> Its interfaces' offloading off <small class=\"help\">"
+	    "checksums, TSO and LRO, by ifconfig(8) as it starts: Suricata "
+	    "sees packets as they are on the wire</small></label></details>"
+	    "<details class=\"wfmore\"><summary>Performance</summary>");
+	{
+		const ucl_object_t	*hc = jget(sec.state, "ids_host");
+		static const char *const presets[] = { "small", "medium",
+		    "large" };
+
+		if (hc != NULL && jint(hc, "ncpu", 0) > 0)
+			h_fmt(h, "<p class=\"help\">This host has %lld CPUs (0 "
+			    "to %lld), in %lld memory domain%s.</p>",
+			    (long long)jint(hc, "ncpu", 0), (long long)jint(hc,
+			    "ncpu", 0) - 1, (long long)jint(hc, "ndomains", 1),
+			    jint(hc, "ndomains", 1) == 1 ? "" : "s");
+		h_raw(h, "<div class=\"rowform\">");
+		set_select(h, "Preset", "preset", jstr(f, "preset"), presets,
+		    nitems(presets), "for a host of its size: what the fields "
+		    "below do not say");
+		h_raw(h, "</div>");
+	}
+	h_raw(h, "<div class=\"rowform\">");
+	set_select(h, "Runmode", "runmode", jstr(f, "runmode"), runmodes,
+	    nitems(runmodes), "workers: a thread does all of a packet");
+	set_select(h, "Pattern matcher", "mpm", jstr(f, "mpm"), mpms,
+	    nitems(mpms), "hs: Hyperscan, where it is built in");
+	set_select(h, "Detect profile", "profile", jstr(f, "profile"),
+	    profiles, nitems(profiles), "memory for speed");
+	h_raw(h, "</div><div class=\"rowform\">");
+	set_input(h, "Management CPUs", "management_cpus", jstr(f,
+	    "management_cpus"), "0", NULL);
+	set_input(h, "Worker CPUs", "worker_cpus", jstr(f, "worker_cpus"),
+	    "1-3", "its threads on these alone (cpu-affinity)");
+	snprintf(num, sizeof(num), "%lld", (long long)jint(f, "max_pending",
+	    0));
+	h_raw(h, "<label>Pending packets <input name=\"max_pending\" "
+	    "type=\"number\" min=\"0\" max=\"65535\" placeholder=\"1024\"");
+	if (jint(f, "max_pending", 0) > 0)
+		h_attr(h, "value", num);
+	h_raw(h, "></label></div></details><details class=\"wfmore\">"
+	    "<summary>Memory</summary><div class=\"rowform\">");
+	set_input(h, "Flows", "flow_memcap", jstr(f, "flow_memcap"), "128mb",
+	    NULL);
+	set_input(h, "Stream", "stream_memcap", jstr(f, "stream_memcap"),
+	    "64mb", NULL);
+	set_input(h, "Reassembly", "reassembly_memcap", jstr(f,
+	    "reassembly_memcap"), "256mb", NULL);
+	h_raw(h, "</div><div class=\"rowform\">");
+	set_input(h, "Fragments", "defrag_memcap", jstr(f, "defrag_memcap"),
+	    "32mb", NULL);
+	set_input(h, "Hosts", "host_memcap", jstr(f, "host_memcap"), "32mb",
+	    NULL);
+	set_input(h, "HTTP", "http_memcap", jstr(f, "http_memcap"), "64mb",
+	    NULL);
+	h_raw(h, "</div></details><details class=\"wfmore\"><summary>Stream "
+	    "and HTTP</summary><div class=\"rowform\">");
+	set_select(h, "Inline stream", "stream_inline", jstr(f,
+	    "stream_inline"), inlines, nitems(inlines), "where it prevents: "
+	    "the stream inspected before it passes");
+	set_input(h, "Reassembly depth", "reassembly_depth", jstr(f,
+	    "reassembly_depth"), "1mb", "of each stream, inspected");
+	h_raw(h, "</div><div class=\"rowform\">");
+	set_input(h, "HTTP request body", "http_request_body", jstr(f,
+	    "http_request_body"), "100kb", "inspected of each");
+	set_input(h, "HTTP response body", "http_response_body", jstr(f,
+	    "http_response_body"), "100kb", NULL);
+	h_raw(h, "</div><label class=\"check\"><input type=\"checkbox\" "
+	    "name=\"midstream\"");
+	if (jbool(f, "midstream"))
+		h_raw(h, " checked");
+	h_raw(h, "> Streams picked up midway <small class=\"help\">those "
+	    "begun before it started</small></label>");
+	set_select(h, "Past a limit", "exception_policy", jstr(f,
+	    "exception_policy"), policies, nitems(policies), "what is done "
+	    "with traffic when a memcap or the like is reached");
+	h_raw(h, "</details><details class=\"wfmore\"><summary>Plugins"
+	    "</summary><label>Plugins <input name=\"plugins\" spellcheck=\""
+	    "false\" placeholder=\"/usr/local/lib/suricata/plugins/"
+	    "eve-filetype.so\"");
+	joined_attr(h, "value", jget(f, "plugins"), ", ");
+	h_raw(h, "><small class=\"help\">Suricata's plugins (capture or eve "
+	    "output), shared objects under /usr/local/lib the admin "
+	    "installed; the host loads none that is not root's alone"
+	    "</small></label>");
+	h_raw(h, "</details><details class=\"wfmore\"><summary>Its own YAML"
+	    "</summary><label>Besides the above <textarea name=\"yaml\" "
+	    "rows=\"5\" spellcheck=\"false\" placeholder=\"vlan:\n"
+	    "  use-for-tracking: false\">");
+	h_txt(h, jstr(f, "yaml"));
+	h_raw(h, "</textarea><small class=\"help\">Suricata's YAML, keys the "
+	    "form does not set; checked by suricata -T with the rest</small>"
+	    "</label></details>");
 }
 
 static const struct tcol icols[] = {
@@ -741,9 +1005,44 @@ view_ids(struct html *h)
 		joined(h, jget(f, "interfaces"), ", ");
 		if (jint(f, "divert", 0) > 0)
 			h_fmt(h, "</td><td>prevents <small class=\"dim\">divert "
-			    "%lld</small></td>", (long long)jint(f, "divert", 0));
-		else
-			h_raw(h, "</td><td>detects</td>");
+			    "%lld</small>", (long long)jint(f, "divert", 0));
+		else if (ucl_array_size(jget(f, "pairs")) > 0) {
+			h_raw(h, "</td><td>prevents <small class=\"dim\">at L2, ");
+			joined(h, jget(f, "pairs"), ", ");
+			h_raw(h, "</small>");
+		} else
+			h_raw(h, "</td><td>detects");
+		if (jstr(f, "capture") != NULL && strcmp(jstr(f, "capture"),
+		    "netmap") == 0)
+			h_raw(h, " <small class=\"chip\">netmap</small>");
+		/* Offloading its interfaces still have on. */
+		if (!jbool(f, "offload_off") && l != NULL) {
+			const ucl_object_t	*oe;
+			ucl_object_iter_t	 oit;
+			bool			 any = false;
+
+			oit = NULL;
+			while ((oe = ucl_object_iterate(jget(l, "offload"), &oit,
+			    true)) != NULL)
+				if (ucl_array_size(oe) > 0)
+					any = true;
+			if (any) {
+				h_raw(h, " <span class=\"chip warn\" title=\""
+				    "Offloading on: ");
+				oit = NULL;
+				while ((oe = ucl_object_iterate(jget(l,
+				    "offload"), &oit, true)) != NULL) {
+					h_txt(h, ucl_object_key(oe));
+					h_raw(h, " ");
+					joined(h, oe, ",");
+					h_raw(h, "; ");
+				}
+				h_raw(h, "Suricata may see packets merged or "
+				    "with checksums not yet made: Capture, "
+				    "offloading off\">offload</span>");
+			}
+		}
+		h_raw(h, "</td>");
 		h_fmt(h, "<td>%lld</td><td>", (long long)jint(l, "alerts_seen",
 		    0));
 		if (jbool(f, "stopped"))
@@ -768,6 +1067,11 @@ view_ids(struct html *h)
 			h_attr(h, "data-arg", jstr(f, "name"));
 			h_raw(h, ">Stop</button>");
 		}
+		h_raw(h, "<button class=\"ghost small\" data-act=\"ist-open\" "
+		    "title=\"Packets, drops, alerts, memory and flows over "
+		    "time\"");
+		h_attr(h, "data-arg", jstr(f, "name"));
+		h_raw(h, ">Statistics</button>");
 		h_raw(h, "<button class=\"ghost small\" data-act=\"own-open\" "
 		    "title=\"Its rules besides the ruleset's\"");
 		h_attr(h, "data-arg", jstr(f, "name"));
@@ -881,12 +1185,20 @@ view_secpage(struct html *h)
 		    "data-act=\"sec-idsview\" data-arg=\"instances\">Instances"
 		    "</button><button class=\"tab%s\" data-act=\"sec-idsview\" "
 		    "data-arg=\"rules\" title=\"The ruleset suricata-update "
-		    "keeps, each rule on, off or a drop\">Rules</button></nav>",
-		    sec.rules ? "" : " on", sec.rules ? " on" : "");
-		if (sec.rules)
+		    "keeps, each rule on, off or a drop\">Rules</button><button "
+		    "class=\"tab%s\" data-act=\"sec-idsview\" data-arg=\""
+		    "sources\" title=\"Where suricata-update fetches the "
+		    "ruleset from\">Sources</button></nav>", sec.rules ||
+		    sec.sources ? "" : " on", sec.rules ? " on" : "",
+		    sec.sources ? " on" : "");
+		if (sec.sources)
+			view_susources(h, sec.sid);
+		else if (sec.rules)
 			view_surules(h, sec.sid);
 		else if (idsown_active())
 			view_idsown(h);
+		else if (idsstats_active())
+			view_idsstats(h);
 		else
 			view_ids(h);
 		break;
@@ -911,7 +1223,7 @@ save_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		toast(true, "%s", err != NULL ? err : jstr(o, "error") != NULL ?
 		    jstr(o, "error") : "not applied");
 	}
-	sec_load();
+	sec_load_after(status == 200 && jbool(o, "ok"));
 	render();
 }
 
@@ -992,6 +1304,65 @@ sec_ids_set(const char *name, const char *key, const char *text)
 	save(true, list);
 }
 
+/* For idsstats.c: the host the page is of, and its sdwan read. */
+const char *
+sec_host_id(void)
+{
+
+	return (sec.sid);
+}
+
+const ucl_object_t *
+sec_state(void)
+{
+
+	return (sec.state);
+}
+
+/* For idsstats.c: what runs of an intrusion detection, by name. */
+const ucl_object_t *
+sec_ids_live(const char *name)
+{
+
+	return (live(true, name));
+}
+
+/* Keys of a form set to objects of the caller's (taken), the list
+ * applied once. */
+void
+sec_ids_set_objs(const char *name, const char *const *keys,
+    ucl_object_t **vals, int n)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*list;
+	int			 i;
+
+	list = specs_but(true, NULL);
+	it = NULL;
+	while ((e = ucl_object_iterate(list, &it, true)) != NULL)
+		if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"), name) ==
+		    0)
+			for (i = 0; i < n; i++)
+				ucl_object_replace_key((ucl_object_t *)(uintptr_t)
+				    e, ucl_object_ref(vals[i]), keys[i], 0, true);
+	for (i = 0; i < n; i++)
+		ucl_object_unref(vals[i]);
+	save(true, list);
+}
+
+/* A job on the page's host, for idsstats.c. */
+void
+sec_job(char *json, const char *title)
+{
+	char		*j[1];
+	const char	*t[1];
+
+	j[0] = json;
+	t[0] = title;
+	sec_jobs(j, t, 1);
+}
+
 bool
 sec_ids_busy(void)
 {
@@ -1050,8 +1421,21 @@ secpage_form(const char *form, const ucl_object_t *f)
 	ucl_object_t	*list, *o;
 	bool		 ids;
 
-	if (surules_form(form, f) || idsown_form(form, f))
+	if (surules_form(form, f) || idsown_form(form, f) || idsstats_form(
+	    form, f))
 		return (true);
+	{
+		char		*json[1], title[96];
+		const char	*t[1];
+
+		if (susources_form(form, f, &json[0], title, sizeof(title))) {
+			if (json[0] != NULL) {
+				t[0] = title;
+				sec_jobs(json, t, 1);
+			}
+			return (true);
+		}
+	}
 	if (strcmp(form, "sec-mirrors") == 0) {
 		const ucl_object_t	*cl = jget(sec.state, "clamav");
 		char			*copy, *it, *line, *json[2];
@@ -1137,6 +1521,60 @@ secpage_form(const char *form, const ucl_object_t *f)
 			ucl_object_insert_key(o, ucl_object_fromstring(jstr(f,
 			    "rules")), "rules", 0, false);
 		put_num(o, "divert", jstr(f, "divert"));
+		/* Its settings: each only when given. */
+		{
+			static const char *const strs[] = { "capture",
+			    "preset", "runmode", "mpm",
+			    "profile", "management_cpus", "worker_cpus",
+			    "flow_memcap", "stream_memcap", "reassembly_memcap",
+			    "defrag_memcap", "host_memcap", "http_memcap",
+			    "stream_inline", "reassembly_depth",
+			    "http_request_body", "http_response_body",
+			    "exception_policy", "yaml", "pcap_log_limit" };
+			ucl_object_t	*ev;
+			char		 k[32];
+			size_t		 i;
+
+			for (i = 0; i < nitems(strs); i++)
+				if (jstr(f, strs[i]) != NULL && jstr(f,
+				    strs[i])[0] != '\0')
+					ucl_object_insert_key(o,
+					    ucl_object_fromstring(jstr(f,
+					    strs[i])), strs[i], 0, true);
+			ev = ucl_object_typed_new(UCL_ARRAY);
+			for (i = 0; i < nitems(evtypes); i++) {
+				snprintf(k, sizeof(k), "eve_%s", evtypes[i]);
+				if (jbool(f, k))
+					ucl_array_append(ev,
+					    ucl_object_fromstring(evtypes[i]));
+			}
+			ucl_object_insert_key(o, ev, "eve", 0, false);
+			put_num(o, "stats_interval", jstr(f, "stats_interval"));
+			put_num(o, "max_pending", jstr(f, "max_pending"));
+			if (jbool(f, "payload"))
+				ucl_object_insert_key(o, ucl_object_frombool(true),
+				    "payload", 0, false);
+			if (jbool(f, "midstream"))
+				ucl_object_insert_key(o, ucl_object_frombool(true),
+				    "midstream", 0, false);
+			if (jbool(f, "pcap_log")) {
+				ucl_object_insert_key(o, ucl_object_frombool(true),
+				    "pcap_log", 0, false);
+				put_num(o, "pcap_log_files", jstr(f,
+				    "pcap_log_files"));
+			}
+			if (jstr(f, "plugins") != NULL && jstr(f, "plugins")[0] !=
+			    '\0')
+				ucl_object_insert_key(o, words(jstr(f,
+				    "plugins")), "plugins", 0, false);
+			if (jbool(f, "offload_off"))
+				ucl_object_insert_key(o, ucl_object_frombool(true),
+				    "offload_off", 0, false);
+			if (jstr(f, "pairs") != NULL && jstr(f, "pairs")[0] !=
+			    '\0')
+				ucl_object_insert_key(o, words(jstr(f, "pairs")),
+				    "pairs", 0, false);
+		}
 		/* One stopped stays stopped, changed; its thresholds,
 		 * not in this form, stay. */
 		{
@@ -1159,6 +1597,14 @@ secpage_form(const char *form, const ucl_object_t *f)
 					    ucl_object_fromstring(jstr(e,
 					    "thresholds")), "thresholds", 0,
 					    false);
+				/* Its Lua scripts too, kept in Own rules. */
+				if (jget(e, "lua") != NULL)
+					ucl_object_insert_key(o, ucl_object_copy(
+					    jget(e, "lua")), "lua", 0, false);
+				if (jget(e, "lua_outputs") != NULL)
+					ucl_object_insert_key(o, ucl_object_copy(
+					    jget(e, "lua_outputs")), "lua_outputs",
+					    0, false);
 			}
 		}
 	}
@@ -1194,9 +1640,7 @@ secpage_open(const char *rest)
 	rest += strcspn(rest, "/");
 	if (*rest == '/' && strcmp(rest + 1, sec.sid) != 0) {
 		snprintf(sec.sid, sizeof(sec.sid), "%.15s", rest + 1);
-		if (sec.state != NULL)
-			ucl_object_unref(sec.state);
-		sec.state = NULL;
+		sec_reset();
 		sec_load();
 	}
 }
@@ -1221,14 +1665,15 @@ secpage_action(const char *act, const char *arg, const char *value)
 		sec_load();
 		return (true);
 	}
-	if (idsown_action(act, arg, value))
+	if (idsown_action(act, arg, value) || idsstats_action(act, arg))
 		return (true);
-	if (strncmp(act, "sur-", 4) == 0) {
+	if (strncmp(act, "sur-", 4) == 0 || strncmp(act, "sus-", 4) == 0) {
 		char	*json[1], title[96];
 		const char *t[1];
 
-		if (!surules_action(act, arg, value, &json[0], title,
-		    sizeof(title)))
+		if (strncmp(act, "sus-", 4) == 0 ? !susources_action(act, arg,
+		    &json[0], title, sizeof(title)) : !surules_action(act, arg,
+		    value, &json[0], title, sizeof(title)))
 			return (false);
 		if (json[0] != NULL) {
 			t[0] = title;
@@ -1241,8 +1686,11 @@ secpage_action(const char *act, const char *arg, const char *value)
 	ids = sec.tab == SEC_IDS;
 	if (strcmp(act, "sec-idsview") == 0) {
 		sec.rules = strcmp(arg, "rules") == 0;
+		sec.sources = strcmp(arg, "sources") == 0;
 		if (sec.rules)
 			surules_load(sec.sid);
+		if (sec.sources)
+			susources_load(sec.sid);
 		render();
 		return (true);
 	}
@@ -1261,10 +1709,7 @@ secpage_action(const char *act, const char *arg, const char *value)
 		if (value == NULL || strcmp(value, sec.sid) == 0)
 			return (true);
 		snprintf(sec.sid, sizeof(sec.sid), "%s", value);
-		if (sec.state != NULL)
-			ucl_object_unref(sec.state);
-		sec.state = NULL;
-		sec.edit = -1;
+		sec_reset();
 		sec_load();
 		return (true);
 	}
@@ -1440,6 +1885,8 @@ secpage_refresh(void)
 	sec_load();
 	if (sec.tab == SEC_IDS && sec.rules)
 		surules_load(sec.sid);
+	if (sec.tab == SEC_IDS && sec.sources)
+		susources_load(sec.sid);
 }
 
 /* Each tick: the page's host read again, every 10 s while it is shown

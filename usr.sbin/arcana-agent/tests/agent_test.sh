@@ -663,7 +663,7 @@ network_body()
 	atf_check -o save:routes.out "$JGC" -c "$SOCK" net routes -6
 	atf_check -o match:'"route-table":\{"rt-family":\[\{"address-family":"Internet6","rt-entry":\[\{"destination":"::1","gateway":"link#2","flags":"UHS","nhop":1,"mtu":16384,"interface-name":"lo0","metric":1,"weight":1,"fib":0,"prefixlen":128\}\]\}\]' \
 	    cat routes.out
-	atf_check -o match:'fake-helper -Q 0 routes 6 0 - -:' \
+	atf_check -o match:'fake-helper --scope-helper 0 routes 6 0 - -:' \
 	    "$JGC" -t -c "$SOCK" net routes -6
 	atf_check -o match:'"address-family":"Internet","rt-entry":\[\{"destination":"10.0.0.0/24"[^]]*\]\},\{"address-family":"Internet6","rt-entry":\[\{"destination":"::1"' \
 	    "$JGC" -c "$SOCK" net routes
@@ -674,18 +674,18 @@ network_body()
 	atf_check -o match:'"rt-family"' cat nh.out
 	# The connections and sockets: the kernel's own lists, read by the
 	# helper here (by the daemon itself when it is its own helper).
-	atf_check -o match:'fake-helper -Q 0 pcb-conns 4' \
+	atf_check -o match:'fake-helper --scope-helper 0 pcb-conns 4' \
 	    -o match:'"statistics":\{"socket":\[\{"protocol":"tcp4"' \
 	    "$JGC" -t -c "$SOCK" net connections -4
 	atf_check -o save:so.out "$JGC" -t -c "$SOCK" net sockets
-	atf_check -o match:'fake-helper -Q 0 pcb-socks 0' \
+	atf_check -o match:'fake-helper --scope-helper 0 pcb-socks 0' \
 	    -o match:'"sockstat":\{"socket":\[\{"user":"root","command":"sshd"' cat so.out
 	# The nexthop groups, what a route of several next hops points to.
 	atf_check -o match:'"nhgrp-index":1,"nhg-refcnt":1,"nhop-weights":\[\{"nh-index":5,"nh-weight":2' \
 	    -o match:'fake-netstat --libxo json -OnW -f inet$' \
 	    "$JGC" -t -c "$SOCK" net nhgroups
 	# The neighbours, of ARP and NDP, asked of the kernel.
-	atf_check -o match:'fake-helper -Q 0 route-neighs 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-neighs 0 -' \
 	    -o match:'"neighbours":\[\{"family":"inet","address":"10.0.0.2".*"router":true\}\],"total":2' \
 	    "$JGC" -t -c "$SOCK" net neighbours
 	atf_check -o match:'^\{"neighbours":\[\{"family":"inet6"[^]]*\],"total":2\}$' \
@@ -927,35 +927,35 @@ EOS
 
 	# Static routes: asked of the kernel by the helper, word by word.
 	atf_check -o match:'route add 10.77.0.0/16 via 10.0.0.1' \
-	    -o match:'fake-helper -Q 0 route-add 10.77.0.0/16 10.0.0.1 - 0 0 0 -' \
+	    -o match:'fake-helper --scope-helper 0 route-add 10.77.0.0/16 10.0.0.1 - 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
 	# With its cost, its share among those of one cost, and the address
 	# sent from; kept, they are in rc.conf's route too.
 	atf_check -o match:'route add 10.81.0.0/16 via 10.0.0.1 \(metric\) \(weight\) \(kept\)' \
-	    -o match:'fake-helper -Q 0 route-add 10.81.0.0/16 10.0.0.1 - 0 5 20 10.0.0.9' \
+	    -o match:'fake-helper --scope-helper 0 route-add 10.81.0.0/16 10.0.0.1 - 0 5 20 10.0.0.9' \
 	    "$JGC" -p -c "$SOCK" route add 10.81.0.0/16 10.0.0.1 metric 5 weight 20 source 10.0.0.9
 	atf_check -o match:'^route_[a-z0-9_]*="10.81.0.0/16 10.0.0.1 -ifa 10.0.0.9 -metric 5 -weight 20"$' \
 	    cat rc.conf
-	atf_check -o match:'fake-helper -Q 0 route-del 10.81.0.0/16 10.0.0.1 - 0 5' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-del 10.81.0.0/16 10.0.0.1 - 0 5' \
 	    "$JGC" -p -c "$SOCK" route delete 10.81.0.0/16 10.0.0.1 metric 5
 	atf_check -o not-match:'10.81.0.0' cat rc.conf
 	atf_check -s exit:1 -o match:'no address of the route.s family' \
 	    "$JGC" -c "$SOCK" route add 10.82.0.0/16 10.0.0.1 source 2001:db8::9
 	atf_check -s exit:1 -e match:'the address to send from is an address' -o ignore \
 	    "$JGC" -c "$SOCK" route add 10.82.0.0/16 10.0.0.1 source '-x'
-	atf_check -o match:'fake-helper -Q 0 route-add 2001:db8:7::/48 2001:db8::1 - 0 0 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-add 2001:db8:7::/48 2001:db8::1 - 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add 2001:db8:7::/48 2001:db8::1
-	atf_check -o match:'fake-helper -Q 0 route-add 10.78.0.0/16 - lo0 0 0 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-add 10.78.0.0/16 - lo0 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add 10.78.0.0/16 lo0
-	atf_check -o match:'fake-helper -Q 0 route-add ::/0 2001:db8::1 - 0 0 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-add ::/0 2001:db8::1 - 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add ::/0 2001:db8::1
-	atf_check -o match:'fake-helper -Q 0 route-del 10.77.0.0/16 - - 0 0' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-del 10.77.0.0/16 - - 0 0' \
 	    "$JGC" -c "$SOCK" route delete 10.77.0.0/16
 	atf_check -o match:'^ +[0-9]+ queued +route delete default via 10.0.0.1' \
 	    "$JGC" -q -c "$SOCK" route delete default 10.0.0.1
 	# Several gateways: one route of as many next hops, each with its
 	# share; not kept, not deleted as one, and each an address.
-	atf_check -o match:'fake-helper -Q 0 route-add 10.83.0.0/16 10.0.0.1@2,10.0.0.2 - 0 0 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-add 10.83.0.0/16 10.0.0.1@2,10.0.0.2 - 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add 10.83.0.0/16 10.0.0.1@2,10.0.0.2
 	atf_check -s exit:1 -o match:'rc.conf keeps a route of one gateway' \
 	    "$JGC" -p -c "$SOCK" route add 10.84.0.0/16 10.0.0.1,10.0.0.2
@@ -1175,7 +1175,7 @@ EOS
 	    "$JGC" -c "$SOCK" interface em0 destroy
 
 	# Routes: in a routing table of their own, and kept by a name.
-	atf_check -o match:'fake-helper -Q 0 route-add 10.77.0.0/16 10.0.0.1 - 2 0 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-add 10.77.0.0/16 10.0.0.1 - 2 0 0 -' \
 	    "$JGC" -F 2 -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
 	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
 	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 2001:db8:7::/48 2001:db8::1
@@ -1189,7 +1189,7 @@ EOS
 	atf_check -o ignore "$JGC" -p -c "$SOCK" route delete 10.77.0.0/16
 	atf_check -o match:'^static_routes="arc_10_80_0_0_16_fib3"$' \
 	    -o not-match:'route_arc_10_77' cat rc.conf
-	atf_check -o match:'fake-helper -Q 0 routes 4 2 - -' \
+	atf_check -o match:'fake-helper --scope-helper 0 routes 4 2 - -' \
 	    "$JGC" -t -F 2 -c "$SOCK" net routes -4
 
 	# The route to an address: the one taken, and those that cover it,
@@ -1207,7 +1207,7 @@ EOS
 	    "$JGC" -c "$SOCK" route get 203.0.113.9
 	atf_check -s exit:1 -e match:'not an IPv4 or IPv6 address' -o ignore \
 	    "$JGC" -c "$SOCK" route get '10.0.0.1;id'
-	atf_check -o match:'fake-helper -Q 0 route-get 10.77.5.5 4' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-get 10.77.5.5 4' \
 	    "$JGC" -t -F 4 -c "$SOCK" route get 10.77.5.5
 
 	# Netgraph: the nodes with their hooks, and the few commands.
@@ -2230,7 +2230,7 @@ EOS
 	# the host's are still the host's.
 	atf_check -o match:'"name":"epair91b"' -o match:'"address":"10.99.0.2"' \
 	    -o not-match:'"name":"lo0"' "$JGC" -j gateway -c "$SOCK" net interfaces
-	atf_check -o match:'^-Q 4 interfaces - 0$' cat helper.log
+	atf_check -o match:'^--scope-helper 4 interfaces - 0$' cat helper.log
 	atf_check -o match:'"name":"lo0"' -o not-match:'epair91b' \
 	    "$JGC" -c "$SOCK" net interfaces
 	# Its bridges and geneve tunnels: ifconfig told the jail once.
@@ -2238,11 +2238,11 @@ EOS
 	atf_check -o match:'^-j 4 -av$' cat ifconfig.log
 	# Its routes and its route to an address: the host's programs,
 	# told which jail.
-	atf_check -o match:'fake-helper -Q 4 routes 4 0 - -' \
+	atf_check -o match:'fake-helper --scope-helper 4 routes 4 0 - -' \
 	    "$JGC" -t -j gateway -c "$SOCK" net routes -4
 	atf_check -o match:'"gateway":"10.99.0.1","fib":"0","interface":"epair91b"' \
 	    "$JGC" -j gateway -c "$SOCK" route get 192.0.2.9
-	atf_check -o match:'^-Q 4 route-get 192.0.2.9 0$' cat helper.log
+	atf_check -o match:'^--scope-helper 4 route-get 192.0.2.9 0$' cat helper.log
 
 	# A change there: ifconfig and route with the jail, the job named
 	# after it, what is kept kept in the jail's own rc.conf.
@@ -2252,7 +2252,7 @@ EOS
 	atf_check -o match:'^ifconfig_epair91b_alias0="inet 10.99.0.5/24"$' \
 	    cat "$R/etc/rc.conf"
 	atf_check -o not-match:'10.99.0.5' cat rc.conf
-	atf_check -o match:'fake-helper -Q 4 route-add 10.77.0.0/16 10.99.0.1 - 0 0 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 4 route-add 10.77.0.0/16 10.99.0.1 - 0 0 0 -' \
 	    "$JGC" -j gateway -c "$SOCK" route add 10.77.0.0/16 10.99.0.1
 	# Its firewall is its own: ipfw is run in the jail, not on the host.
 	atf_check -o match:'gateway' -o match:'fake-jexec 4 .*/fake-ipfw -q add 100 allow ip from any to any' \
@@ -2949,13 +2949,13 @@ echo "setfib \$*" >> $(pwd)/setfib.log
 shift 2
 case "\$1" in
 # dnsmasq -C conf -x pid: started, says the pid file, this agent's pid.
-*dnsmasq) sleep 300 & echo \$! > "\$5" ;;
+*dnsmasq) "\$1" --hold "\$5" & ;;
 # local-unbound -c conf: started, says the pid file named in the conf.
-*local-unbound) p=\$(sed -n 's/.*pidfile: "\(.*\)"/\1/p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
+*local-unbound) p=\$(sed -n 's/.*pidfile: "\(.*\)"/\1/p' "\$3"); "\$1" --hold "\$p" & ;;
 # squid -f conf: started, says the pid file named in the conf.
-*squid) echo "squid \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^pid_filename //p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
+*squid) echo "squid \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^pid_filename //p' "\$3"); "\$1" --hold "\$p" & ;;
 # c-icap -f conf: started, says the pid file named in the conf.
-*c-icap) echo "c-icap \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^PidFile //p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
+*c-icap) echo "c-icap \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^PidFile //p' "\$3"); "\$1" --hold "\$p" & ;;
 # bird -c conf -s sock -P pid: started, says the socket.
 *) shift 3; touch "\$2" ;;
 esac
@@ -2963,12 +2963,14 @@ exit 0
 EOS
 	cat > fake-dnsmasq <<EOS
 #!/bin/sh
+[ "\$1" = --hold ] && { echo \$\$ > "\$2"; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
 echo "dnsmasq \$*" >> $(pwd)/dnsmasq.log
 [ "\$1" = --test ] && { grep -q BROKEN "\$3" && { echo "dnsmasq: bad option at line 1 of \$3" >&2; exit 1; }; exit 0; }
 exit 0
 EOS
 	cat > fake-local-unbound <<EOS
 #!/bin/sh
+[ "\$1" = --hold ] && { echo \$\$ > "\$2"; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
 echo "unbound \$*" >> $(pwd)/unbound.log
 exit 0
 EOS
@@ -2982,6 +2984,7 @@ EOS
 	mkdir -p tools
 	cat > tools/squid <<EOS
 #!/bin/sh
+[ "\$1" = --hold ] && { echo \$\$ > "\$2"; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
 echo "squid \$*" >> $(pwd)/squid.log
 [ "\$2" = parse ] && { grep -q BROKEN "\$4" && { echo "FATAL: Bungled \$4" >&2; exit 1; }; exit 0; }
 exit 0
@@ -2991,13 +2994,50 @@ EOS
 echo "certgen \$*" >> $(pwd)/squid.log
 mkdir -p "\$3"
 EOS
-	printf '#!/bin/sh\nexit 0\n' > tools/c-icap
+	printf '#!/bin/sh\n[ "$1" = --hold ] && { echo $$ > "$2"; i=0; while [ $i -lt 300 ]; do sleep 1; i=$((i+1)); done; exit 0; }\nexit 0\n' > tools/c-icap
 	# suricata: -T checks, and refuses BROKEN, and a ruleset whose rule
 	# negates any as Suricata does; run, it writes an alert and a flow
 	# to eve.json in its log directory, says its pid, and notes a USR2.
+	# Suricata's command socket, as it answers: a version, then a
+	# command a line; gone by itself after two minutes.
+	cat > tools/scsrv.py <<'EOS'
+import json, os, signal, socket, sys
+signal.alarm(120)
+p = sys.argv[1]
+try:
+    os.unlink(p)
+except OSError:
+    pass
+s = socket.socket(socket.AF_UNIX)
+s.bind(p)
+s.listen(4)
+r = {"uptime": {"message": 42, "return": "OK"},
+     "memcap-list": {"message": [{"name": "flow", "value": "32mb"}], "return": "OK"},
+     "ruleset-stats": {"message": [{"id": 0, "rules_loaded": 2, "rules_failed": 1, "rules_skipped": 0}], "return": "OK"},
+     "ruleset-profile": {"message": "Unknown command", "return": "NOK"},
+     "iface-stat": {"message": {"pkts": 7, "invalid-checksums": 0, "drop": 1, "bypassed": 0}, "return": "OK"}}
+while True:
+    c, _ = s.accept()
+    f = c.makefile("rwb")
+    for line in f:
+        o = json.loads(line)
+        a = {"return": "OK"} if "version" in o else dict(r.get(o.get("command"), {"message": "Unknown command", "return": "NOK"}))
+        if o.get("command") == "iface-stat":
+            a["message"] = dict(a["message"], iface=o["arguments"]["iface"])
+        f.write((json.dumps(a) + "\n").encode())
+        f.flush()
+    c.close()
+EOS
 	cat > tools/suricata <<EOS
 #!/bin/sh
+# Started: the daemon, under its own name, its pid in the file given.
+[ "\$1" = --hold ] && { echo \$\$ > "\$2"; trap "echo usr2 >> $(pwd)/suricata.log" USR2; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
 echo "suricata \$*" >> $(pwd)/suricata.log
+# A capture replayed (-r, -l its directory): an alert of it.
+[ "\$3" = -r ] && { printf '%s\\n' '{"timestamp":"2026-10-19T11:00:00.000000+0000","event_type":"alert","src_ip":"10.1.1.1","src_port":1,"dest_ip":"10.2.2.2","dest_port":2,"proto":"TCP","alert":{"action":"allowed","signature_id":2000009,"rev":1,"signature":"ET REPLAYED","category":"","severity":1}}' >> "\$6/eve.json"; exit 0; }
+[ "\$1" = --build-info ] && { printf 'This is Suricata version 8.0.7 RELEASE\nFeatures: IPFW NETMAP HAVE_LUA RUST\n  IPFW support:                            yes\n  Netmap support:                          yes v14+\n  Hyperscan support:                       no\n  Profiling enabled:                       no\n  Profiling rules enabled:                 no\n  Plugin support (experimental):           yes\n'; exit 0; }
+k=\$(sed -n 's/^  filename: \(.*\.sock\)\$/\1/p' "\$2" 2>/dev/null)
+[ -n "\$k" ] && [ "\$1" != -T ] && /usr/local/bin/python3 $(pwd)/tools/scsrv.py "\$k" > /dev/null 2>&1 &
 [ "\$1" = -T ] && { grep -q BROKEN "\$3" && { [ "\$5" = logging.outputs.0.console.enabled=yes ] && echo "E: detect: rule BROKEN at line 1" >&2; exit 1; }
 r=\$(sed -n 's/^  - \(.*\/suricata.rules\)\$/\\1/p' "\$3")
 [ -n "\$r" ] && grep -q NEGATED "\$r" && { echo "i: suricata: This is Suricata"; { echo "E: detect: Complete IP space negated. Rule address range is NIL."; echo "E: detect: error parsing signature \\"alert\\" from file \$r at line 1"; echo "E: suricata: Loading signatures failed."; } >&2; exit 1; }
@@ -3009,7 +3049,7 @@ printf '%s\\n' '{"timestamp":"2026-10-12T18:00:00.000000+0000","event_type":"flo
 # FAILSTART in the configuration fails it.
 [ -f "\$4" ] && { echo "[1 - Main] 2026-10-19 Error: pidfile: pid file '\$4' exists but appears stale" >> "\$d/suricata.log"; exit 1; }
 grep -q FAILSTART "\$2" && { echo "[1 - Main] 2026-10-19 Error: suricata: this start fails" >> "\$d/suricata.log"; exit 1; }
-sh -c 'trap "echo usr2 >> $(pwd)/suricata.log" USR2; while :; do sleep 1; done' & echo \$! > "\$4"
+"\$0" --hold "\$4" &
 exit 0
 EOS
 	# suricata-update: the ruleset written where -o says, a rule
@@ -3021,6 +3061,14 @@ echo "suricata-update $*" >> @LOG@
 while [ $# -gt 0 ]; do
 	case "$1" in
 	-o) out=$2; shift ;;
+	-D) data=$2; shift ;;
+	update-sources)
+		mkdir -p "$data/update/cache"; echo 'sources: {}' > "$data/update/cache/index.yaml"
+		exit 0 ;;
+	list-sources)
+		printf '\033[1;36mName\033[0m: \033[1;35met/open\033[0m\n  \033[1;36mVendor\033[0m: \033[1;35mProofpoint\033[0m\n  \033[1;36mSummary\033[0m: \033[1;35mEmerging Threats Open Ruleset\033[0m\n  \033[1;36mLicense\033[0m: \033[1;35mMIT\033[0m\n'
+		printf '\033[1;36mName\033[0m: \033[1;35met/pro\033[0m\n  \033[1;36mVendor\033[0m: \033[1;35mProofpoint\033[0m\n  \033[1;36mSummary\033[0m: \033[1;35mEmerging Threats Pro Ruleset\033[0m\n  \033[1;36mLicense\033[0m: \033[1;35mCommercial\033[0m\n  \033[1;36mParameters\033[0m: \033[1;35msecret-code\033[0m\n'
+		exit 0 ;;
 	--enable-conf) en=$2; shift ;;
 	--disable-conf) dis=$2; shift ;;
 	--drop-conf) drop=$2; shift ;;
@@ -3260,6 +3308,17 @@ EOS
 	sleep 2
 	atf_check -o match:'"alerts_seen":1,' "$JGC" -c "$SOCK" sdwan
 	atf_check -o inline:'4\n' sh -c "grep -c '\"event_type\":\"alert\"' '$(dirname "$f")/sdwan-ids-sw1.d/eve.json'"
+	# Its statistics: each stats record of eve.json a point, Suricata's
+	# totals, its flows by protocol the latest's; a stats record is no
+	# alert.
+	for st in '"timestamp":"2026-10-19T10:00:00.000000+0000","event_type":"stats","stats":{"uptime":10,"capture":{"kernel_packets":1000,"kernel_drops":5},"decoder":{"pkts":995,"bytes":600000,"invalid":2},"detect":{"alert":3},"tcp":{"sessions":40,"memuse":1000,"reassembly_memuse":2000},"flow":{"total":60,"memuse":4000},"app_layer":{"flow":{"http":7,"tls":11}}}' \
+	    '"timestamp":"2026-10-19T10:00:10.000000+0000","event_type":"stats","stats":{"uptime":20,"capture":{"kernel_packets":3000,"kernel_drops":5},"decoder":{"pkts":2995,"bytes":1800000,"invalid":2},"detect":{"alert":4},"tcp":{"sessions":90,"memuse":1000,"reassembly_memuse":2000},"flow":{"total":130,"memuse":4000},"app_layer":{"flow":{"http":9,"tls":20,"dns_udp":4}}}'; do
+		echo "{$st}" >> "$(dirname "$f")/sdwan-ids-sw1.d/eve.json"
+	done
+	sleep 2
+	atf_check -o match:'"alerts_seen":1,' \
+	    -o match:'"stats":\{"fields":\["t","uptime","packets","drops","bytes","alerts","invalid","sessions","flows","memuse"\],"series":\[\[1792404000,10,1000,5,600000,3,2,40,60,7000\],\[1792404010,20,3000,5,1800000,4,2,90,130,7000\]\],"flows":\{"http":9,"tls":20,"dns_udp":4\}\}' \
+	    "$JGC" -c "$SOCK" sdwan
 	# The Security section's Suricata beside SD-WAN's: each list its
 	# own, what was read of the other's kept.
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids \
@@ -3280,7 +3339,7 @@ EOS
 	# Fetched by the suricata job: the instance applied again takes it,
 	# and is told to read its rules again; the read says when.
 	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata update
-	atf_check -o match:"^suricata-update --no-test --no-reload --suricata .*/tools/suricata -o $(pwd)/rules --enable-conf .*/suricata-enable.conf --disable-conf .*/suricata-disable.conf --drop-conf .*/suricata-drop.conf\$" \
+	atf_check -o match:"^suricata-update --no-test --no-reload --suricata .*/tools/suricata -o $(pwd)/rules -D $(pwd) --enable-conf .*/suricata-enable.conf --disable-conf .*/suricata-disable.conf --drop-conf .*/suricata-drop.conf\$" \
 	    cat suricata-update.log
 	# The ruleset's rules, a page at a time: one disabled as it ships
 	# is a line commented out; a comment is no rule.
@@ -3313,6 +3372,38 @@ EOS
 	atf_check -o match:'"sid":2000001,[^}]*"enabled":false,"state":"off"' "$JGC" -c "$SOCK" suricata rules sid=2000001
 	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata rule default=2000001,2000005,2000006
 	atf_check -o match:'"changed":0,.*"total":3,"enabled":2' "$JGC" -c "$SOCK" suricata rules
+	# Rule sources: none known until the index is fetched, Emerging
+	# Threats Open the default; then the index's, each enabled or not
+	# by a file of the data directory's that the agent writes, a
+	# secret code in it alone, root's.
+	atf_check -o match:'"index":false,"sources":\[\],"default_et_open":true' \
+	    "$JGC" -c "$SOCK" suricata rules sources=1
+	atf_check -o match:'done +suricata-update: the index of rule sources fetched' \
+	    "$JGC" -c "$SOCK" suricata sources
+	atf_check -o match:'"index":true,"sources":\[\{"name":"et/open","vendor":"Proofpoint","summary":"Emerging Threats Open Ruleset","license":"MIT"\},\{"name":"et/pro",[^}]*"parameters":"secret-code"\}\],"default_et_open":true' \
+	    "$JGC" -c "$SOCK" suricata rules sources=1
+	atf_check -o match:'done +suricata enable et/pro' -o not-match:'S3CRET' \
+	    -e not-match:'S3CRET' \
+	    "$JGC" -t -c "$SOCK" suricata source-enable name=et/pro secret-code=S3CRET
+	atf_check -o inline:"source: 'et/pro'\nparams:\n  secret-code: 'S3CRET'\n" cat update/sources/et-pro.yaml
+	atf_check -o match:'^-rw-------' ls -l update/sources/et-pro.yaml
+	atf_check -o not-match:'S3CRET' "$JGC" -c "$SOCK" jobs
+	atf_check -o match:'"name":"et/pro",[^}]*"state":"enabled"\}.*"default_et_open":false' \
+	    "$JGC" -c "$SOCK" suricata rules sources=1
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata source-disable name=et/pro
+	test -f update/sources/et-pro.yaml.disabled || atf_fail "et/pro is not kept disabled"
+	atf_check -o match:'"state":"disabled".*"default_et_open":true' "$JGC" -c "$SOCK" suricata rules sources=1
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata source-enable name=et/pro
+	atf_check -o match:'S3CRET' cat update/sources/et-pro.yaml
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata source-add name=lab/local url=https://rules.example.org/local.rules
+	atf_check -o match:'\{"name":"lab/local","url":"https://rules.example.org/local.rules","state":"enabled"\}' \
+	    "$JGC" -c "$SOCK" suricata rules sources=1
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata source-remove name=lab/local
+	test ! -f update/sources/lab-local.yaml || atf_fail "lab/local stayed"
+	atf_check -s exit:1 -e match:"a source's name is" "$JGC" -c "$SOCK" suricata source-enable name=../x
+	atf_check -s exit:1 -e match:"are source-enable's" "$JGC" -c "$SOCK" suricata source-disable name=et/pro secret-code=x
+	atf_check -s exit:1 -e match:'needs its url=' "$JGC" -c "$SOCK" suricata source-add name=x
+	atf_check -s exit:1 -o match:'failed.*is not enabled' "$JGC" -c "$SOCK" suricata source-disable name=oisf/trafficid
 	atf_check -o match:"^  - $(pwd)/rules/suricata.rules\$" cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	atf_check -o match:'"ids_ruleset":\{"path":"[^"]*/rules/suricata.rules","at":[0-9]+,"size":[0-9]+\}' \
 	    "$JGC" -c "$SOCK" sdwan
@@ -3357,6 +3448,79 @@ EOS
 	    "$(echo "$rs7" | sed 's/ip 10.0.0.9/ip 10.0.0.8/')"
 	atf_check -s exit:1 -e match:'an instance is a name' -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    "$(echo "$rs4" | sed 's|"rules":|"thresholds":5,"rules":|')"
+	# By netmap(4), not pcap(3); its interfaces' offloading turned off
+	# as it starts, em0^ (a host stack, netmap's alone) being em0's.
+	printf '#!/bin/sh\necho "ifconfig $*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	chmod +x fake-ifconfig
+	rs8=$(echo "$rs4" | sed 's/"interfaces":\["any"\]/"interfaces":["wg5","wg5^"],"capture":"netmap","offload":false/')
+	atf_check -o match:'suricata sw1 on 2 interfaces, detects: started' \
+	    -o match:'wg5: checksum, TSO and LRO offloading off' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$rs8"
+	atf_check -o match:'suricata -c .*sdwan-ids-sw1.yaml --pidfile .* --netmap -D$' tail -1 suricata.log
+	atf_check -o inline:'ifconfig wg5 -rxcsum -txcsum -rxcsum6 -txcsum6 -tso -lro -vlanhwtso\nifconfig wg5 -rxcsum -txcsum -rxcsum6 -txcsum6 -tso -lro -vlanhwtso\n' \
+	    cat ifconfig.log
+	atf_check -o match:'"name":"sw1",[^]]*\],"mode":"detect",.*"capture":"netmap"' \
+	    -o match:'"ids_host":\{"ncpu":[1-9][0-9]*,"ndomains":[1-9]' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -s exit:1 -e match:"netmap's alone" -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    "$(echo "$rs4" | sed 's/"interfaces":\["any"\]/"interfaces":["wg5^"]/')"
+	atf_check -s exit:1 -e match:'capture is pcap or netmap' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    "$(echo "$rs4" | sed 's/"interfaces":/"capture":"bpf","interfaces":/')"
+	# What its Suricata is built with; and Suricata's own answers, by
+	# the instance's command socket, those that read alone.
+	atf_check -o match:'"ids_build":\{"version":"8.0.7","lua":true,"ipfw":true,"netmap":true,"hyperscan":false,"profiling":false,"profiling_rules":false,"plugins":true\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	if [ -x /usr/local/bin/python3 ]; then
+		rs9=$(echo "$rs4" | sed 's|rule-files:|unix-command:\\n  enabled: yes\\n  filename: @SOCKET@\\nrule-files:|; s/sid:1000004;/sid:1000009;/')
+		atf_check -o match:'detects: started' "$JGC" -t -c "$SOCK" sdwan ids "$rs9"
+		atf_check -o match:"^  filename: /.*/sdwan-ids-sw1.sock\$" cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+		for i in $(seq 1 50); do [ -S sdwan-ids-sw1.sock ] && break; sleep 0.1; done
+		atf_check -o inline:'{"message":[{"name": "flow", "value": "32mb"}],"return":"OK"}\n' \
+		    sh -c "\"$JGC\" -c \"$SOCK\" suricata rules instance=sw1 command=memcap-list | sed 's/\"message\": /\"message\":/; s/, \"return\": /,\"return\":/'"
+		atf_check -o match:'"iface": "wg5"' "$JGC" -c "$SOCK" suricata rules instance=sw1 command=iface-stat iface=wg5
+		atf_check -o match:'"rules_failed": 1' "$JGC" -c "$SOCK" suricata rules instance=sw1 command=ruleset-stats
+		atf_check -s exit:1 -e match:'a command is one that reads' "$JGC" -c "$SOCK" suricata rules instance=sw1 command=shutdown
+		atf_check -s exit:1 -e match:'it alone, names an iface' "$JGC" -c "$SOCK" suricata rules instance=sw1 command=iface-stat
+		atf_check -s exit:1 -e match:'does not answer' "$JGC" -c "$SOCK" suricata rules instance=nosuch command=uptime
+	fi
+	# Its Lua scripts: written to its own directory, which its
+	# configuration names; the same, left running; changed, started
+	# again; gone, taken away.  A name not NAME.lua refused.
+	rs10=$(echo "$rs4" | sed 's|rule-files:|default-rule-path: @LUADIR@\\nrule-files:|; s|"rules":|"lua":{"ua.lua":"-- one\\n"},"rules":|')
+	atf_check -o match:'detects: started' "$JGC" -t -c "$SOCK" sdwan ids "$rs10"
+	atf_check -o inline:'-- one\n' cat sdwan-ids-sw1.lua/ua.lua
+	atf_check -o match:"^default-rule-path: /.*/sdwan-ids-sw1.lua\$" cat sdwan-ids-sw1.yaml
+	atf_check -o match:'detects: as it was' "$JGC" -t -c "$SOCK" sdwan ids "$rs10"
+	atf_check -o match:'detects: started' "$JGC" -t -c "$SOCK" sdwan ids "$(echo "$rs10" | sed 's/-- one/-- two/')"
+	atf_check -o inline:'-- two\n' cat sdwan-ids-sw1.lua/ua.lua
+	atf_check -o match:'detects: started' "$JGC" -t -c "$SOCK" sdwan ids "$rs4"
+	test ! -f sdwan-ids-sw1.lua/ua.lua || atf_fail "a script not named stayed"
+	atf_check -s exit:1 -e match:'NAME.lua of letters' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    "$(echo "$rs4" | sed 's|"rules":|"lua":{"../x.lua":"x"},"rules":|')"
+	# Its plugins: under /usr/local/lib, there and root's alone.
+	atf_check -s exit:1 -e match:'is not there, or not root' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    "$(echo "$rs4" | sed 's|"rules":|"plugins":["/usr/local/lib/nosuch.so"],"rules":|')"
+	atf_check -s exit:1 -e match:'a .so under /usr/local/lib' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    "$(echo "$rs4" | sed 's|"rules":|"plugins":["/tmp/x.so"],"rules":|')"
+	if [ -f /usr/local/lib/libucl.so ] && [ "$(stat -f %u /usr/local/lib/libucl.so)" = 0 ]; then
+		atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids \
+		    "$(echo "$rs4" | sed 's|"rules":|"plugins":["/usr/local/lib/libucl.so"],"rules":|')"
+	fi
+	# A capture replayed through it, offline: its alerts kept for the
+	# read; a link, a path not whole, an instance not here, refused.
+	printf 'PCAP' > lab.pcap
+	ln -sf lab.pcap link.pcap
+	atf_check -o match:'done +suricata replays .*/lab.pcap through sw1' \
+	    "$JGC" -c "$SOCK" suricata pcap instance=sw1 file="$(pwd)/lab.pcap"
+	atf_check -o match:'"replay":\{"file":"[^"]*/lab.pcap","at":[0-9]+,"seconds":[0-9]+,"status":0,"alerts_total":1,"alerts":\[\{"name":"sw1",[^}]*"sid":2000009,' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -s exit:1 -o match:'not a file the host has' "$JGC" -c "$SOCK" suricata pcap instance=sw1 file="$(pwd)/link.pcap"
+	atf_check -s exit:1 -e match:'by its whole path' "$JGC" -c "$SOCK" suricata pcap instance=sw1 file=lab.pcap
+	atf_check -s exit:1 -o match:'no instance nosuch here' "$JGC" -c "$SOCK" suricata pcap instance=nosuch file="$(pwd)/lab.pcap"
+	# The packets of its alerts it keeps (pcap-log), listed.
+	printf 'PCAPLOG' > sdwan-ids-sw1.d/log.pcap.1792400000
+	atf_check -o match:'"pcaps":\[\{"path":"[^"]*/sdwan-ids-sw1.d/log.pcap.1792400000","size":7,' \
+	    "$JGC" -c "$SOCK" sdwan
 	# Stopped by the admin: not run, its files and its place kept;
 	# started again as it was.
 	atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs4"
@@ -3374,11 +3538,194 @@ EOS
 	atf_check -s exit:0 kill -0 "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
 	atf_check -s exit:1 -e match:'stopped is true or false' -o ignore \
 	    "$JGC" -c "$SOCK" sdwan ids "$(echo "$rs4" | sed 's/"name":"sw1",/"name":"sw1","stopped":1,/')"
+	# Many placeholders: the configuration comes out whole, as long as
+	# it is (the buffer was once a fixed size, and the loop hung).
+	many=$(printf '%s' "$rs4" | sed "s|rule-files:|$(printf '# @PID@%.0s' $(seq 1 400))\\\\nrule-files:|")
+	atf_check -o match:'detects: started' "$JGC" -t -c "$SOCK" sdwan ids "$many"
+	atf_check -o match:'^# /.*/sdwan-ids-sw1\.pid# /.*/sdwan-ids-sw1\.pid# ' cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	atf_check -s exit:1 -e match:'did not start: Error: suricata: this start fails$' \
 	    -e not-match:'an old one' -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs5"
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
 }
 sdwan_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case netstore cleanup
+netstore_head()
+{
+	atf_set "descr" "the NFS server, the iSCSI target and HAST: read, and changed by jobs"
+}
+netstore_body()
+{
+	mkdir -p tools
+	printf '#!/bin/sh\necho "ctladm $*" >> %s/ctladm.log\ncase "$1" in\ndevlist) echo "LUN Backend Size (Blocks) BS Serial Number Device ID"; echo "  0 block 2048 512 MYSERIAL0 MYDEVID0" ;;\nislist) echo "ID Portal Initiator name Target name" ;;\nportlist) echo "Port Online Frontend Name pp vp" ;;\nesac\n' "$(pwd)" > tools/ctladm
+	printf '#!/bin/sh\necho "hastctl $*" >> %s/hastctl.log\ncase "$1" in\nstatus) printf "Name\\tStatus\\tRole\\tComponents\\nshared\\tcomplete\\tprimary\\t/dev/ada1\\tb.example.org\\n" ;;\nlist) echo "shared:" ;;\nesac\n' "$(pwd)" > tools/hastctl
+	printf '#!/bin/sh\necho "Exports list on localhost:"\necho "/export 10.0.0.0"\n' > tools/showmount
+	printf '#!/bin/sh\necho "sysctl $*" >> %s/sysctl.log\n' "$(pwd)" > fake-sysctl
+	chmod +x tools/ctladm tools/hastctl tools/showmount fake-sysctl
+	printf '/export -network 10.0.0.0/24\n' > exports
+	DAEMON_ARGS="-2 $(pwd)/tools --exports $(pwd)/exports --ctl-conf $(pwd)/ctl.conf --hast-conf $(pwd)/hast.conf -Q $(pwd)/fake-sysctl -O $(pwd)/sysctl.conf"
+	start_daemon
+	for d in nfsd mountd ctld hastd; do
+		printf '#!/bin/sh\n' > rc.d/$d
+		chmod +x rc.d/$d
+	done
+	# Read whole, or one of them.
+	atf_check -o match:'"nfs":\{.*"exports_path":"[^"]*/exports","exports":"/export -network 10.0.0.0/24\\n","exported":"Exports list on localhost:' \
+	    -o match:'"iscsi":\{.*"luns":"LUN Backend[^"]*MYSERIAL0' \
+	    -o match:'"hast":\{.*"status":"Name\\tStatus\\tRole\\tComponents\\nshared\\tcomplete\\tprimary' \
+	    "$JGC" -c "$SOCK" netstore
+	atf_check -o match:'^\{"iscsi":' -o not-match:'"nfs"' "$JGC" -c "$SOCK" netstore iscsi
+	atf_check -s exit:1 -e match:'netstore reads nfs, iscsi and hast' "$JGC" -c "$SOCK" netstore smb
+	# NFS: exports(5) written, mountd told; the server's settings:
+	# NFSv4.2, nfsd's threads, pNFS's data servers and mirrors.
+	printf '/export -network 10.0.0.0/24\nV4: /export -sec=sys\n' > exports.new
+	atf_check -o match:'done +nfs exports' "$JGC" -c "$SOCK" nfs exports exports.new
+	atf_check -o inline:'/export -network 10.0.0.0/24\nV4: /export -sec=sys\n' cat exports
+	atf_check -o match:'done +nfs server' "$JGC" -c "$SOCK" nfs server enable=yes v4=yes \
+	    v4only=yes minor=2 threads=8 pnfs=ds1.example.org:/ds0,ds2.example.org:/ds1 mirror=2
+	atf_check -o match:'^nfs_server_flags="-u -t -n 8 -p ds1.example.org:/ds0,ds2.example.org:/ds1 -m 2"$' \
+	    -o match:'^nfsv4_server_enable="YES"$' -o match:'^nfsv4_server_only="YES"$' \
+	    -o match:'^rpcbind_enable="YES"$' -o match:'^mountd_enable="YES"$' cat rc.conf
+	# The flags merged: threads alone keeps pNFS's -p and -m; mirror
+	# without data servers is refused.
+	atf_check -o match:'done +nfs server' "$JGC" -c "$SOCK" nfs server threads=16
+	atf_check -o match:'^nfs_server_flags="-u -t -p ds1.example.org:/ds0,ds2.example.org:/ds1 -m 2 -n 16"$' cat rc.conf
+	atf_check -o match:'done' "$JGC" -c "$SOCK" nfs server pnfs=
+	atf_check -o match:'^nfs_server_flags="-u -t -n 16"$' cat rc.conf
+	atf_check -s exit:1 -o match:'failed.*mirror needs pNFS' "$JGC" -c "$SOCK" nfs server mirror=2
+	atf_check -o match:'vfs.nfsd.server_max_minorversion=2' cat sysctl.log
+	atf_check -o match:'^vfs.nfsd.server_max_minorversion=2$' cat sysctl.conf
+	test -f running.nfsd || atf_fail "nfsd is not started"
+	atf_check -s exit:1 -e match:"minor is NFSv4's 0, 1 or 2" "$JGC" -c "$SOCK" nfs server minor=3
+	atf_check -s exit:1 -e match:'pnfs is the data servers' "$JGC" -c "$SOCK" nfs server 'pnfs=a b'
+	atf_check -s exit:1 -e match:'threads is 1 to 256' "$JGC" -c "$SOCK" nfs server threads=0
+	atf_check -s exit:1 -e match:'server takes enable=' "$JGC" -c "$SOCK" nfs server color=red
+	# iSCSI: ctl.conf root's alone; ctld on.
+	printf 'portal-group pg0 {\n\tlisten 0.0.0.0\n}\n' > ctl.new
+	atf_check -o match:'done +iscsi conf' "$JGC" -c "$SOCK" iscsi conf ctl.new
+	atf_check -o match:'^-rw-------' ls -l ctl.conf
+	atf_check -o match:'done +iscsi enable' "$JGC" -c "$SOCK" iscsi enable yes
+	test -f running.ctld || atf_fail "ctld is not started"
+	# HAST: hast.conf; a resource made, its role set.
+	printf 'resource shared {\n\ton a { local /dev/ada1\n\t\tremote 10.0.0.2 }\n}\n' > hast.new
+	atf_check -o match:'done +hast conf' "$JGC" -c "$SOCK" hast conf hast.new
+	atf_check -o match:'resource shared' cat hast.conf
+	atf_check -o match:'done +hast create shared' "$JGC" -c "$SOCK" hast create shared
+	atf_check -o match:'done +hast role shared' "$JGC" -c "$SOCK" hast role primary shared
+	atf_check -o match:'^hastctl create shared$' -o match:'^hastctl role primary shared$' cat hastctl.log
+	atf_check -s exit:1 -e match:'role is init, primary or secondary' "$JGC" -c "$SOCK" hast role leader shared
+	atf_check -s exit:1 -e match:'a hast resource is named' "$JGC" -c "$SOCK" hast create '../x'
+	# The host's alone.
+	atf_check -s exit:1 -e match:"the host's storage services are the host's" \
+	    "$JGC" -j web -c "$SOCK" iscsi enable yes
+}
+netstore_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case sysfiles cleanup
+sysfiles_head()
+{
+	atf_set "descr" "the system's own files, read and written by sysfile jobs, and the host's settings beside them"
+}
+sysfiles_body()
+{
+	mkdir -p tools root/etc/defaults root/etc/security
+	printf '#!/bin/sh\necho "0 devfsrules_hide_all"\n' > tools/devfs
+	printf '#!/bin/sh\necho "10.0.0.1 10.0.0.2 any"\necho "\tout ipsec esp/transport//require"\n' > tools/setkey
+	printf '#!/bin/sh\necho "jail:www:memoryuse:deny=1g"\n' > tools/rctl
+	cat > tools/geom <<EOS
+#!/bin/sh
+[ "\$1" = -t ] && { echo "Geom   Class   Provider"; echo "ada0   DISK    ada0"; exit 0; }
+[ "\$2" = status ] && { [ "\$1" = mirror ] && { echo "Name Status Components"; echo "mirror/gm0 COMPLETE md1"; exit 0; }; exit 1; }
+echo "geom \$*" >> $(pwd)/geom.log
+# A passphrase file: what it holds kept, to be looked at.
+while [ \$# -gt 0 ]; do [ "\$1" = -J ] || [ "\$1" = -j ] && cat "\$2" > $(pwd)/geom.pass; shift; done
+exit 0
+EOS
+	printf '#!/bin/sh\necho "Geom name: ada1p1.eli"\n' > tools/geli
+	printf '#!/bin/sh\necho "     remote  refid st t when poll reach delay offset jitter"\n' > tools/ntpq
+	chmod +x tools/*
+	printf '# defaults\ndaily_clean_tmps_enable="NO"\t\t# Delete stuff daily\ndaily_status_disks_enable="YES"\nsecurity_status_chksetuid_enable="YES"\n' > root/etc/defaults/periodic.conf
+	DAEMON_ARGS="-2 $(pwd)/tools --root $(pwd)/root"
+	start_daemon
+	for d in syslogd devfs devd auditd ipsec rctl ntpd linux; do
+		printf '#!/bin/sh\n' > rc.d/$d
+		chmod +x rc.d/$d
+	done
+	echo 'sshd_svcj="YES"' >> rc.conf
+	echo 'sshd_svcj_options="net_basic"' >> rc.conf
+	# Read whole: its files (none there yet), and the host beside.
+	atf_check -o match:'"files":\{"devfs.rules":\{"path":"/etc/devfs.rules","service":"devfs","enabled":false,"running":false,"shows":"0 devfsrules_hide_all\\n"\}' \
+	    -o match:'"ipsec.conf":\{"path":"/etc/ipsec.conf","service":"ipsec",[^}]*"shows":"10.0.0.1 10.0.0.2 any\\n' \
+	    -o match:'"rctl.conf":\{[^}]*"shows":"jail:www:memoryuse:deny=1g\\n"' \
+	    -o match:'"securelevel":\{"now":-?[0-9]+' -o match:'"mac":\{"mac_bsdextended":(true|false),' \
+	    -o match:'"geom":"Geom   Class   Provider\\nada0   DISK    ada0\\n"' -o match:'"geli":"Geom name: ada1p1.eli\\n"' \
+	    -o match:'"periodic":\[\{"name":"daily_clean_tmps_enable","default":"NO"\},\{"name":"daily_status_disks_enable","default":"YES"\},' \
+	    -o match:'"svcj":\{"sshd_svcj":"YES","sshd_svcj_options":"net_basic"\}' \
+	    "$JGC" -c "$SOCK" system
+	# The hardening sysctls this kernel has, and racct.
+	atf_check -o match:'"racct":[01],"hardening":\{"security.bsd.see_other_uids":[01],' \
+	    -o match:'"kern.elf64.aslr.enable":[01]' "$JGC" -c "$SOCK" system host
+	atf_check -o match:'^\{"files":\{"krb5.conf":\{"path":"/etc/krb5.conf"\}\}\}$' "$JGC" -c "$SOCK" system krb5.conf
+	atf_check -s exit:1 -e match:'system reads its files by name' "$JGC" -c "$SOCK" system passwd
+	# Written whole, each where the table says, its daemon told.
+	printf '*.err\t/var/log/errors\n' > syslog.new
+	touch running.syslogd
+	atf_check -o match:'done +syslog.conf written' "$JGC" -t -c "$SOCK" sysfile syslog.conf syslog.new
+	atf_check -o inline:'*.err\t/var/log/errors\n' cat root/etc/syslog.conf
+	printf 'flush\nspdflush\n' > ipsec.new
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sysfile ipsec.conf ipsec.new
+	atf_check -o match:'^-rw-------' ls -l root/etc/ipsec.conf
+	printf 'notify 0 { match "system" "IFNET"; action "logger $subsystem"; };\n' > devd.new
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sysfile devd devd.new
+	atf_check -o match:'IFNET' cat root/usr/local/etc/devd/arcana.conf
+	printf 'kern.racct.enable=1\n' > loader.new
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sysfile loader.conf.d loader.new
+	atf_check -o inline:'kern.racct.enable=1\n' cat root/boot/loader.conf.d/arcana.conf
+	# periodic.conf's variables, the rest kept.
+	atf_check -o match:'done +periodic.conf.s variables written' "$JGC" -c "$SOCK" sysfile periodic \
+	    daily_clean_tmps_enable=YES security_status_chksetuid_enable=NO
+	atf_check -o match:'\{"name":"daily_clean_tmps_enable","default":"NO","value":"YES"\}' \
+	    -o match:'\{"name":"security_status_chksetuid_enable","default":"YES","value":"NO"\}' \
+	    "$JGC" -c "$SOCK" system host
+	# securelevel at boot, rc.conf's, those two alone.
+	atf_check -o match:'done +securelevel at boot written' "$JGC" -c "$SOCK" sysfile rc \
+	    kern_securelevel_enable=YES kern_securelevel=2
+	atf_check -o match:'^kern_securelevel="2"$' -o match:'^kern_securelevel_enable="YES"$' cat rc.conf
+	atf_check -s exit:1 -e match:'rc sets kern_securelevel_enable' "$JGC" -c "$SOCK" sysfile rc sshd_enable=YES
+	atf_check -s exit:1 -e match:'kern_securelevel=-1 to 3' "$JGC" -c "$SOCK" sysfile rc kern_securelevel=7
+	# GEOM's classes loaded, their status; a class's command; GELI's
+	# passphrase by a file of its own, gone after.
+	atf_check -o match:'"geom_classes":\{"mirror":"Name Status Components\\nmirror/gm0 COMPLETE md1\\n"\}' \
+	    "$JGC" -c "$SOCK" system host
+	atf_check -o match:'done +geom mirror label /dev/md2' \
+	    "$JGC" -c "$SOCK" geom mirror label -v -b round-robin gm0 /dev/md1 /dev/md2
+	atf_check -o inline:'geom mirror label -v -b round-robin gm0 /dev/md1 /dev/md2\n' cat geom.log
+	printf 'correct horse' > pass.txt
+	atf_check -o match:'done +geom eli init /dev/md3' \
+	    "$JGC" -t -c "$SOCK" geom eli init -s 4096 /dev/md3 -P pass.txt
+	atf_check -o match:'^geom eli init -J .*/arcana-geli\.[0-9]+ -s 4096 /dev/md3$' tail -1 geom.log
+	atf_check -o inline:'correct horse' cat geom.pass
+	test -z "$(ls root | grep arcana-geli)" || atf_fail "the passphrase file stayed"
+	atf_check -s exit:1 -e match:"a geom job's verb is its class" "$JGC" -c "$SOCK" geom gpart add x
+	atf_check -s exit:1 -e match:'not a subcommand of the class' "$JGC" -c "$SOCK" geom mirror rm gm0
+	atf_check -s exit:1 -e match:'a word is a flag or a name' "$JGC" -c "$SOCK" geom mirror label 'gm0;reboot' /dev/md1
+	atf_check -s exit:1 -e match:"a passphrase is geli init's" "$JGC" -c "$SOCK" geom mirror label gm0 /dev/md1 -P pass.txt
+	# What it does not write, and what it does not take.
+	atf_check -s exit:1 -e match:"a sysfile job's verb names its file" "$JGC" -c "$SOCK" sysfile passwd syslog.new
+	printf 'bad\001\n' > ctl.new
+	atf_check -s exit:1 -e match:'lines of printable characters' "$JGC" -c "$SOCK" sysfile krb5.conf ctl.new
+	atf_check -s exit:1 -e match:'name_enable=YES or NO' "$JGC" -c "$SOCK" sysfile periodic daily_x=1
+	atf_check -s exit:1 -e match:"the system's files are the host's" "$JGC" -j web -c "$SOCK" sysfile krb5.conf syslog.new
+	# Never safe: a file written whole has no undo kept.
+	atf_check -s exit:1 -e match:'not undone: not in safe mode' "$JGC" -s -c "$SOCK" sysfile krb5.conf syslog.new
+}
+sysfiles_cleanup()
 {
 	stop_daemon
 }
@@ -4844,7 +5191,7 @@ EOS
 	atf_check -o match:'done' "$JGC" -c "$SOCK" zfs replicate tank/data@b backup/data
 	atf_check -o match:"^0 zfs-pipe $(pwd)/fake-zfs tank/data@b backup/data - -\$" cat helper.log
 	atf_check -s exit:1 -e match:'a dataset is pool/name' -o ignore "$JGC" -c "$SOCK" zfs replicate tank/data backup/data
-	atf_check "$JGD" -Q 0 zfs-pipe "$(pwd)/fake-zfs" tank/data@b backup/data tank/data@a r
+	atf_check "$JGD" --scope-helper 0 zfs-pipe "$(pwd)/fake-zfs" tank/data@b backup/data tank/data@a r
 	atf_check -o match:'^zfs send -R -i tank/data@a tank/data@b$' \
 	    -o match:'^zfs receive -u backup/data$' cat storage.log
 	# A file system made on a partition: not on one that has one, is
@@ -8473,6 +8820,8 @@ atf_init_test_cases()
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
 	atf_add_test_case sdwan
+	atf_add_test_case netstore
+	atf_add_test_case sysfiles
 	atf_add_test_case sdwan_jail
 	atf_add_test_case jail_conf
 	atf_add_test_case carp

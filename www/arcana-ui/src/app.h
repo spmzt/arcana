@@ -166,6 +166,7 @@ enum node {
 	NODE_BUILDER,		/* poudriere: packages built */
 	NODE_SETTINGS,		/* the console's settings, a tab each */
 	NODE_DEVICES,		/* the hosts as a table */
+	NODE_STORAGE,		/* a host's NFS server, iSCSI target, HAST */
 };
 
 enum tab {
@@ -176,6 +177,8 @@ enum tab {
 	TAB_FIREWALL,
 	TAB_PACKAGES,
 	TAB_STORAGE,
+	TAB_SYSTEM,
+	TAB_SECURITY,
 	TAB_KERNEL,
 	TAB_SYSCTL,
 	TAB_CERTS,
@@ -345,6 +348,8 @@ enum {
 	JOB_SSH,
 	JOB_BUILDER,
 	JOB_SECURITY,		/* a Security tab's plugin installed */
+	JOB_NETSTORE,		/* the Storage page's NFS, iSCSI or HAST */
+	JOB_SYSTEM,		/* a host's own configuration (sysview.c) */
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -927,23 +932,61 @@ void		 secpage_loc(char *, size_t);
 void		 secpage_open(const char *);
 void		 secpage_tick(double);
 void		 secpage_refresh(void);
+/* sysview.c: a host's own configuration, of the system read. */
+void		 refresh_system(struct server *, bool);
+void		 view_system(struct html *, struct server *);
+void		 view_hostsec(struct html *, struct server *);
+void		 view_storage_geom(struct html *, struct server *, int);
+void		 view_syslogconf(struct html *, struct server *);
+void		 view_hardening(struct html *, struct server *);
+void		 view_setkey(struct html *, struct server *);
+bool		 sysview_form(const char *, const ucl_object_t *);
+bool		 sysview_action(const char *, const char *, const char *);
+bool		 sysview_shown(const char *);
+void		 sysview_hide(void);
+/* nas.c: the Storage page, NFS, iSCSI and HAST. */
+void		 view_naspage(struct html *);
+bool		 naspage_form(const char *, const ucl_object_t *);
+bool		 naspage_action(const char *, const char *, const char *);
+void		 naspage_loc(char *, size_t);
+void		 naspage_open(const char *);
+void		 naspage_refresh(void);
 /* secpage.c, for idsown.c: an intrusion detection's form, and a key of
  * it set, the list applied. */
 const ucl_object_t *sec_ids_spec(const char *);
 void		 sec_ids_set(const char *, const char *, const char *);
 bool		 sec_ids_busy(void);
+const ucl_object_t *sec_ids_live(const char *);
+void		 sec_ids_set_objs(const char *, const char *const *,
+		    ucl_object_t **, int);
+void		 sec_job(char *, const char *);
+const char	*sec_host_id(void);
+const ucl_object_t *sec_state(void);
+/* idsstats.c: an intrusion detection's statistics, as graphs. */
+void		 view_idsstats(struct html *);
+bool		 idsstats_active(void);
+bool		 idsstats_action(const char *, const char *);
+bool		 idsstats_form(const char *, const ucl_object_t *);
+void		 idsstats_reset(void);
 /* idsown.c: an intrusion detection's rules of its own, as a table. */
 void		 view_idsown(struct html *);
 bool		 idsown_active(void);
 int		 idsown_count(const char *);
 bool		 idsown_form(const char *, const ucl_object_t *);
 bool		 idsown_action(const char *, const char *, const char *);
+void		 idsown_reset(void);
 /* surules.c: Suricata's ruleset, rule by rule, in IDS/IPS. */
 void		 view_surules(struct html *, const char *);
 void		 surules_load(const char *);
 bool		 surules_form(const char *, const ucl_object_t *);
 bool		 surules_action(const char *, const char *, const char *,
 		    char **, char *, size_t);
+void		 view_susources(struct html *, const char *);
+void		 susources_load(const char *);
+bool		 susources_form(const char *, const ucl_object_t *, char **,
+		    char *, size_t);
+bool		 susources_action(const char *, const char *, char **, char *,
+		    size_t);
 
 /* pfxlists.c: the console's prefix lists, used on any host. */
 void		 pfxlists_load(void);

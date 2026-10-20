@@ -202,9 +202,22 @@ usage(void)
 	    "        make-conf name|- file|- | verb [key=value ...]\n"
 	    "    crashes [backtrace core [program]]\n"
 	    "    clamav mirrors mirror ...\n"
+	    "    netstore [nfs | iscsi | hast]\n"
+	    "    system [file | host]\n"
+	    "    sysfile file path | periodic name=YES|NO ... |\n"
+	    "        rc kern_securelevel_enable=YES|NO kern_securelevel=N\n"	    "    geom class subcommand [word ...] [-P passfile]\n"
+	    "    nfs exports file | server key=value ...\n"
+	    "    iscsi conf file | enable yes|no\n"
+	    "    hast conf file | enable yes|no | create resource |\n"
+	    "        role init|primary|secondary resource\n"
 	    "    suricata update | rules [q=text sid=N only=enabled|disabled|changed\n"
-	    "        classtype=name offset=N limit=N] |\n"
-	    "        rule on=|off=|drop=|default=sid,... ...\n"
+	    "        classtype=name offset=N limit=N | sources=1 |\n"
+	    "        instance=name command=command [iface=interface]] |\n"
+	    "        rule on=|off=|drop=|default=sid,... ... | sources |\n"
+	    "        source-enable name=source [param=value ...] |\n"
+	    "        source-disable|source-remove name=source |\n"
+	    "        source-add name=source url=address |\n"
+	    "        pcap instance=name file=path\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
@@ -227,7 +240,7 @@ usage(void)
 	    "    renice pid nice\n"
 	    "    log [-o lines] [-f position] [name [text]]\n"
 	    "    history [after]\n"
-	    "    history set seconds samples [cpu%% mem%% swap%%] "
+	    "    history set seconds samples [cpu%% mem%% swap%% [storage%%]] "
 	    "[rules list]\n"
 	    "    events [after | -f]\n"
 	    "    net bridges | geneve | ipfw | nhgroups\n"
@@ -273,7 +286,7 @@ usage(void)
 	    "    zpool create [-f] pool [mirror | raidz1 ...] device ... "
 	    "[mountpoint=path]\n"
 	    "    zpool add [-f] pool [mirror | log | cache ...] device ...\n"
-	    "    zpool destroy | export [-f] pool\n"
+	    "    zpool destroy | export pool\n"
 	    "    zpool import [-f] pool [altroot=path]\n"
 	    "    zpool attach pool device new-device\n"
 	    "    zpool detach | remove pool device\n"
@@ -2456,6 +2469,151 @@ cmd_crashes(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
+/* system [file | host]: the system's own files, and settings beside. */
+static int
+cmd_system(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_system_req	 rq;
+	struct arc_system_rsp	*rs;
+	int			 error;
+
+	if (argc > 2)
+		usage();
+	memset(&rq, 0, sizeof(rq));
+	rq.names.v = (const char **)(uintptr_t)&argv[1];
+	rq.names.n = (size_t)argc - 1;
+	if ((error = arc_system(cl, &rq, &rs)) != 0)
+		fail(cl, error, "system");
+	if (rs->json != NULL)
+		xo_emit("{:json/%s}\n", rs->json);
+	else if (rs->error != NULL)
+		warnx("%s", rs->error);
+	emit_trace(rs->trace.v, rs->trace.n);
+	error = rs->ok ? 0 : 1;
+	arc_system_rsp_free(rs);
+	return (error);
+}
+
+/* geom class subcommand [word ...] [-P passfile]: geom(8), a job; a
+ * GELI passphrase read from passfile. */
+static int
+cmd_geom(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	int			 n;
+
+	if (argc < 3)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_GEOM;
+	sp.verb = argv[1];
+	n = argc - 2;
+	if (n >= 3 && strcmp(argv[argc - 2], "-P") == 0) {
+		sp.text = slurp(argv[argc - 1]);
+		n -= 2;
+	}
+	sp.names.v = (const char **)(uintptr_t)&argv[2];
+	sp.names.n = (size_t)n;
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/* sysfile file path | periodic name=YES|NO ...: a file of the system's
+ * written from path, or periodic.conf's variables; a job. */
+static int
+cmd_sysfile(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+
+	if (argc < 3)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_SYSFILE;
+	sp.verb = argv[1];
+	if (strcmp(argv[1], "periodic") == 0 || strcmp(argv[1], "rc") == 0) {
+		sp.names.v = (const char **)(uintptr_t)&argv[2];
+		sp.names.n = (size_t)argc - 2;
+	} else {
+		if (argc != 3)
+			usage();
+		sp.text = slurp(argv[2]);
+	}
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/* netstore [nfs | iscsi | hast]: the host's storage services. */
+static int
+cmd_netstore(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_netstore_req	 rq;
+	struct arc_netstore_rsp	*rs;
+	int			 error;
+
+	if (argc > 2)
+		usage();
+	memset(&rq, 0, sizeof(rq));
+	rq.names.v = (const char **)(uintptr_t)&argv[1];
+	rq.names.n = (size_t)argc - 1;
+	if ((error = arc_netstore(cl, &rq, &rs)) != 0)
+		fail(cl, error, "netstore");
+	if (rs->json != NULL)
+		xo_emit("{:json/%s}\n", rs->json);
+	else if (rs->error != NULL)
+		warnx("%s", rs->error);
+	emit_trace(rs->trace.v, rs->trace.n);
+	error = rs->ok ? 0 : 1;
+	arc_netstore_rsp_free(rs);
+	return (error);
+}
+
+/*
+ * nfs exports file | server key=value ...; iscsi conf file | enable
+ * yes|no; hast conf file | enable yes|no | create resource | role role
+ * resource: the storage services changed, a job each.
+ */
+static int
+cmd_netstore_job(struct arc_client *cl, int argc, char **argv, int kind)
+{
+	struct arc_job_spec	 sp;
+	char			*w[2];
+
+	if (argc < 3)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = (uint32_t)kind;
+	sp.verb = argv[1];
+	if (strcmp(argv[1], "exports") == 0 || strcmp(argv[1], "conf") == 0) {
+		if (argc != 3)
+			usage();
+		sp.text = slurp(argv[2]);
+	} else if (strcmp(argv[1], "enable") == 0) {
+		if (argc != 3 || asprintf(&w[0], "enable=%s", argv[2]) == -1)
+			usage();
+		sp.names.v = (const char **)(uintptr_t)w;
+		sp.names.n = 1;
+	} else if (strcmp(argv[1], "create") == 0) {
+		if (argc != 3 || asprintf(&w[0], "resource=%s", argv[2]) == -1)
+			usage();
+		sp.names.v = (const char **)(uintptr_t)w;
+		sp.names.n = 1;
+	} else if (strcmp(argv[1], "role") == 0) {
+		if (argc != 4 || asprintf(&w[0], "role=%s", argv[2]) == -1 ||
+		    asprintf(&w[1], "resource=%s", argv[3]) == -1)
+			usage();
+		sp.names.v = (const char **)(uintptr_t)w;
+		sp.names.n = 2;
+	} else {
+		sp.names.v = (const char **)(uintptr_t)&argv[2];
+		sp.names.n = (size_t)argc - 2;
+	}
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
 /*
  * clamav mirrors mirror ...: freshclam.conf's DatabaseMirror lines, in
  * place of those there were; a job.
@@ -2487,10 +2645,12 @@ cmd_clamav(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
- * suricata update | rules [key=value ...] | rule state=sids ...:
- * suricata-update fetches the ruleset, and the instances take it; the
- * ruleset's rules, a page of them; rules set by sid.  update and rule
- * are jobs.
+ * suricata update | rules [key=value ...] | rule state=sids ... |
+ * sources | source-verb name=source ...: suricata-update fetches the
+ * ruleset, and the instances take it; the ruleset's rules, a page of
+ * them (sources=1: the rule sources); rules set by sid; the index of
+ * sources fetched; a source enabled, disabled, removed or added.  All
+ * but rules are jobs.
  */
 static int
 cmd_suricata(struct arc_client *cl, int argc, char **argv)
@@ -2515,8 +2675,11 @@ cmd_suricata(struct arc_client *cl, int argc, char **argv)
 		arc_suricata_rules_rsp_free(rs);
 		return (error);
 	}
-	if (argc < 2 || (strcmp(argv[1], "update") == 0 && argc != 2) ||
-	    (strcmp(argv[1], "update") != 0 && strcmp(argv[1], "rule") != 0))
+	if (argc < 2 || ((strcmp(argv[1], "update") == 0 || strcmp(argv[1],
+	    "sources") == 0) && argc != 2) || (strcmp(argv[1], "update") != 0 &&
+	    strcmp(argv[1], "rule") != 0 && strcmp(argv[1], "sources") != 0 &&
+	    strcmp(argv[1], "pcap") != 0 && strncmp(argv[1], "source-", 7) !=
+	    0))
 		usage();
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
@@ -4256,6 +4419,20 @@ main(int argc, char *argv[])
 		rc = cmd_crashes(&cl, argc, argv);
 	else if (strcmp(argv[0], "clamav") == 0)
 		rc = cmd_clamav(&cl, argc, argv);
+	else if (strcmp(argv[0], "system") == 0)
+		rc = cmd_system(&cl, argc, argv);
+	else if (strcmp(argv[0], "geom") == 0)
+		rc = cmd_geom(&cl, argc, argv);
+	else if (strcmp(argv[0], "sysfile") == 0)
+		rc = cmd_sysfile(&cl, argc, argv);
+	else if (strcmp(argv[0], "netstore") == 0)
+		rc = cmd_netstore(&cl, argc, argv);
+	else if (strcmp(argv[0], "nfs") == 0)
+		rc = cmd_netstore_job(&cl, argc, argv, ARC_JOB_KIND_NFS);
+	else if (strcmp(argv[0], "iscsi") == 0)
+		rc = cmd_netstore_job(&cl, argc, argv, ARC_JOB_KIND_ISCSI);
+	else if (strcmp(argv[0], "hast") == 0)
+		rc = cmd_netstore_job(&cl, argc, argv, ARC_JOB_KIND_HAST);
 	else if (strcmp(argv[0], "suricata") == 0)
 		rc = cmd_suricata(&cl, argc, argv);
 	else if (strcmp(argv[0], "poudriere") == 0)

@@ -43,6 +43,14 @@
 static cbl_tls	*t_tls;
 static char	 f_ca[MAXPATHLEN], f_cert[MAXPATHLEN], f_key[MAXPATHLEN];
 
+/* The CA file the agent trusts, when it has one. */
+const char *
+tls_files_ca(void)
+{
+
+	return (f_ca[0] != '\0' ? f_ca : NULL);
+}
+
 /* At the start: which files, and the context to read them again. */
 void
 tls_files_init(cbl_tls *tls, const char *ca, const char *cert,

@@ -144,17 +144,8 @@ certgen_bin(struct work *w)
 static pid_t
 inst_pid(struct work *w, const char *name)
 {
-	FILE	*fp;
-	long	 pid = 0;
 
-	if ((fp = fopen(inst_path(w, name, "pid"), "r")) == NULL)
-		return (0);
-	if (fscanf(fp, "%ld", &pid) != 1)
-		pid = 0;
-	fclose(fp);
-	if (pid <= 1 || kill((pid_t)pid, 0) != 0)
-		return (0);
-	return ((pid_t)pid);
+	return (pidfile_of(inst_path(w, name, "pid"), squid_bin(w)));
 }
 
 /* c-icap's files of an instance, beside the instance's own. */
@@ -182,32 +173,18 @@ icap_bin(struct work *w)
 static pid_t
 icap_pid(struct work *w, const char *name)
 {
-	FILE	*fp;
-	long	 pid = 0;
 
-	if ((fp = fopen(icap_path(w, name, "pid"), "r")) == NULL)
-		return (0);
-	if (fscanf(fp, "%ld", &pid) != 1)
-		pid = 0;
-	fclose(fp);
-	if (pid <= 1 || kill((pid_t)pid, 0) != 0)
-		return (0);
-	return ((pid_t)pid);
+	return (pidfile_of(icap_path(w, name, "pid"), icap_bin(w)));
 }
 
 static void
 icap_stop(struct work *w, const char *name)
 {
 	pid_t	pid;
-	int	i;
 
 	if ((pid = icap_pid(w, name)) == 0)
 		return;
-	(void)kill(pid, SIGTERM);
-	for (i = 0; i < 150 && kill(pid, 0) == 0; i++)
-		usleep(20000);
-	if (kill(pid, 0) == 0)
-		(void)kill(pid, SIGKILL);
+	pid_stop(pid, icap_bin(w), 3000);
 }
 
 /*
@@ -260,28 +237,13 @@ icap_start(struct work *w, const struct instance *in, const char *conf,
     const char **errp)
 {
 	struct execres	 res;
-	char		*argv[7], *text, *p, *q;
+	char		*argv[7], *text;
 	const char	*from[] = { "@ICAPPID@", "@ICAPCMD@" }, *to[2];
-	size_t		 i, n, len;
 	int		 k;
 
 	to[0] = icap_path(w, in->name, "pid");
 	to[1] = icap_path(w, in->name, "ctl");
-	len = strlen(conf) + 4 * MAXPATHLEN + 1;
-	text = wcalloc(w, 1, len);
-	for (p = (char *)(uintptr_t)conf, q = text; *p != '\0';) {
-		for (i = 0; i < 2; i++) {
-			n = strlen(from[i]);
-			if (strncmp(p, from[i], n) == 0) {
-				q = stpcpy(q, to[i]);
-				p += n;
-				break;
-			}
-		}
-		if (i == 2)
-			*q++ = *p++;
-	}
-	*q = '\0';
+	text = (char *)(uintptr_t)sdwan_subst(w, conf, from, to, 2);
 	if (sdwan_conf_write(wfmt(w, "sdwan-icap-%s.conf", in->name), text,
 	    errp) != 0)
 		return (-1);
@@ -325,15 +287,10 @@ static void
 inst_stop(struct work *w, const char *name)
 {
 	pid_t	pid;
-	int	i;
 
 	if ((pid = inst_pid(w, name)) == 0)
 		return;
-	(void)kill(pid, SIGTERM);
-	for (i = 0; i < 150 && kill(pid, 0) == 0; i++)
-		usleep(20000);
-	if (kill(pid, 0) == 0)
-		(void)kill(pid, SIGKILL);
+	pid_stop(pid, squid_bin(w), 3000);
 }
 
 /*
@@ -458,31 +415,13 @@ inst_conf(struct work *w, const char *name, const char *conf)
 	const char	*from[] = { "@PID@", "@CA@", "@SSLDB@", "@CERTGEN@",
 			    "@DENY@" };
 	const char	*to[5];
-	char		*out, *p, *q;
-	size_t		 i, n, len;
 
 	to[0] = inst_path(w, name, "pid");
 	to[1] = inst_path(w, name, "pem");
 	to[2] = inst_path(w, name, "ssl_db");
 	to[3] = certgen_bin(w);
 	to[4] = inst_path(w, name, "deny");
-	len = strlen(conf) + 5 * MAXPATHLEN * 4 + 1;
-	out = wcalloc(w, 1, len);
-	for (p = (char *)(uintptr_t)conf, q = out; *p != '\0';) {
-		for (i = 0; i < 5; i++) {
-			n = strlen(from[i]);
-			if (strncmp(p, from[i], n) == 0 && (size_t)(q - out) +
-			    strlen(to[i]) < len - 1) {
-				q = stpcpy(q, to[i]);
-				p += n;
-				break;
-			}
-		}
-		if (i == 5 && (size_t)(q - out) < len - 1)
-			*q++ = *p++;
-	}
-	*q = '\0';
-	return (out);
+	return ((char *)(uintptr_t)sdwan_subst(w, conf, from, to, 5));
 }
 
 /* An instance started in its table, or told its file again. */

@@ -46,6 +46,10 @@ static const char *icon_sdwan = TREE_ICON("M5 7a2 2 0 1 0 0-.01M19 7a2 2 0 "
 /* A shield: the Security page. */
 static const char *icon_shield = TREE_ICON("M12 3l7 3v5c0 4.5-3 8.2-7 "
     "10-4-1.8-7-5.5-7-10V6l7-3zM9 12l2 2 4-4");
+/* Disks stacked: the Storage page, what a host serves of them. */
+static const char *icon_disks = TREE_ICON("M4 6c0-1.7 3.6-3 8-3s8 1.3 8 "
+    "3-3.6 3-8 3-8-1.3-8-3zM4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 "
+    "1.7 3.6 3 8 3s8-1.3 8-3v-6");
 /* A box with a wrench across it: packages built. */
 static const char *icon_builder = TREE_ICON("M3 8l9-5 9 5v8l-9 5-9-5V8zM3 8l9 "
     "5 9-5M12 13v8");
@@ -227,13 +231,15 @@ topbar(struct html *h)
 	    NODE_API || app.node == NODE_USAGE || app.node == NODE_WORKFLOWS ||
 	    app.node == NODE_SDWAN || app.node == NODE_SETTINGS || app.node ==
 	    NODE_DEVICES || app.node == NODE_TROUBLE || app.node ==
-	    NODE_SECURITY || app.node == NODE_BUILDER)
+	    NODE_SECURITY || app.node == NODE_BUILDER || app.node ==
+	    NODE_STORAGE)
 		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
 		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
 		    app.node == NODE_USAGE ? "Utilization" : app.node ==
 		    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ?
 		    "SD-WAN" : app.node == NODE_TROUBLE ? "Troubleshoot" : app.node ==
-		    NODE_SECURITY ? "Security" : app.node == NODE_BUILDER ?
+		    NODE_SECURITY ? "Security" : app.node == NODE_STORAGE ?
+		    "Storage" : app.node == NODE_BUILDER ?
 		    "Builder" : app.node == NODE_SETTINGS ? "Settings" : app.node ==
 		    NODE_DEVICES ? "Devices" :
 		    "All hosts");
@@ -380,6 +386,7 @@ rail(struct html *h)
 	    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ? "SD-WAN" :
 	    app.node == NODE_TROUBLE ? "Troubleshoot" :
 	    app.node == NODE_SECURITY ? "Security" :
+	    app.node == NODE_STORAGE ? "Storage" :
 	    app.node == NODE_BUILDER ? "Builder" :
 	    app.node == NODE_SETTINGS ? "Settings" : app.node == NODE_DEVICES ?
 	    "Devices" : app.node == NODE_FLEET || s == NULL ? "All hosts" :
@@ -413,6 +420,9 @@ rail(struct html *h)
 	    "</span><span class=\"name\">SD-WAN</span></li><li class=\"titem "
 	    "fleet secnode%s\" data-act=\"select-security\"><span class=\""
 	    "twig\">%s</span><span class=\"name\">Security</span></li>"
+	    "<li class=\"titem fleet nasnode%s\" data-act=\"select-storage\">"
+	    "<span class=\"twig\">%s</span><span class=\"name\">Storage</span>"
+	    "</li>"
 	    "<li class=\"titem fleet bldnode%s\" data-act=\"select-builder\">"
 	    "<span class=\"twig\">%s</span><span class=\"name\">Builder</span>"
 	    "</li><li class=\"titem "
@@ -425,6 +435,7 @@ rail(struct html *h)
 	    app.node == NODE_WORKFLOWS ? " selected" : "", icon_flows,
 	    app.node == NODE_SDWAN ? " selected" : "", icon_sdwan,
 	    app.node == NODE_SECURITY ? " selected" : "", icon_shield,
+	    app.node == NODE_STORAGE ? " selected" : "", icon_disks,
 	    app.node == NODE_BUILDER ? " selected" : "", icon_builder,
 	    app.node == NODE_TROUBLE ? " selected" : "", icon_trouble);
 	/* At the foot of the side bar: the console's own settings. */
@@ -842,6 +853,11 @@ stage(struct html *h)
 		h_raw(h, "</main>");
 		return;
 	}
+	if (app.node == NODE_STORAGE) {
+		view_naspage(h);
+		h_raw(h, "</main>");
+		return;
+	}
 	if (app.node == NODE_BUILDER) {
 		view_builder(h);
 		h_raw(h, "</main>");
@@ -861,6 +877,7 @@ stage(struct html *h)
 			{ "services", "Services" }, { "network", "Network" },
 			{ "firewall", "Firewall" },
 			{ "packages", "Packages" }, { "storage", "Storage" },
+			{ "system", "System" }, { "security", "Security" },
 			{ "kernel", "Kernel" }, { "sysctl", "Sysctl" },
 			{ "certificates", "Certificates" }, { "ssh", "SSH" },
 			{ "processes", "Processes" }, { "log", "Log" },
@@ -903,7 +920,8 @@ stage(struct html *h)
 			    "base system's" : "A plugin, not installed here: "
 			    "open it to install its package", plugins[t].title);
 		}
-		if (app.tab != TAB_JOBS)
+		if (app.tab != TAB_JOBS && app.tab != TAB_SYSTEM && app.tab !=
+		    TAB_SECURITY)
 			export_bar(h, plug ? (app.net.kind == NET_BIRD ? "bird" :
 			    "ipsec") : tabs[app.tab].arg);
 		h_raw(h, "</nav>");
@@ -935,6 +953,16 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_STORAGE) {
 		view_storage(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_SYSTEM) {
+		view_system(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_SECURITY) {
+		view_hostsec(h, s);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -3577,7 +3605,10 @@ view_packages(struct html *h, struct server *s)
 		h_raw(h, "<button class=\"ghost small\" data-act=\""
 		    "pkg-clean-jails\" data-arg=\"\" title=\"pkg clean in "
 		    "every running jail, one batch of a job each\">Clean the "
-		    "jails</button>");
+		    "jails</button><button class=\"ghost small\" data-act=\""
+		    "pkg-upgrade-jails\" title=\"pkg upgrade -y in every running "
+		    "jail, one batch of a job each\">Upgrade the jails"
+		    "</button>");
 	if (app.pkg.mode == 1)
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"pkg-check\""
 		    "%s title=\"pkg update, then list what has a newer version"

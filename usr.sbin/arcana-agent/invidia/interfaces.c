@@ -1553,7 +1553,7 @@ ifq(struct work *w, const char *what, const char *ifname, const char *arg)
 		return ((out = ifq_text(what, ifname, arg)) != NULL ?
 		    wadopt(w, out) : NULL);
 	argv[0] = (char *)(uintptr_t)opts.helper_bin;
-	argv[1] = (char *)(uintptr_t)"-Q";
+	argv[1] = (char *)(uintptr_t)"--scope-helper";
 	argv[2] = wfmt(w, "%d", w->jid);
 	argv[3] = (char *)(uintptr_t)what;
 	argv[4] = (char *)(uintptr_t)(ifname != NULL ? ifname : "-");

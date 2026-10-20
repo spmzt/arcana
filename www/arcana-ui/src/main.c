@@ -105,7 +105,8 @@ static const char *const tabnames[] = {
 	[TAB_SUMMARY] = "summary", [TAB_JAILS] = "jails",
 	[TAB_SERVICES] = "services", [TAB_NETWORK] = "network",
 	[TAB_FIREWALL] = "firewall", [TAB_PACKAGES] = "packages",
-	[TAB_STORAGE] = "storage", [TAB_KERNEL] = "kernel",
+	[TAB_STORAGE] = "storage", [TAB_SYSTEM] = "system",
+	[TAB_SECURITY] = "security", [TAB_KERNEL] = "kernel",
 	[TAB_SYSCTL] = "sysctl", [TAB_CERTS] = "certificates",
 	[TAB_SSH] = "ssh",
 	[TAB_PROCESSES] = "processes",
@@ -188,6 +189,9 @@ loc_of(char *buf, size_t len)
 		break;
 	case NODE_SECURITY:
 		secpage_loc(buf, len);
+		break;
+	case NODE_STORAGE:
+		naspage_loc(buf, len);
 		break;
 	case NODE_BUILDER:
 		builder_loc(buf, len);
@@ -281,6 +285,13 @@ loc_go(const char *r)
 		snprintf(rest, sizeof(rest), "%s%s%s", np > 1 ? f[1] : "",
 		    np > 2 ? "/" : "", np > 2 ? f[2] : "");
 		secpage_open(rest);
+	} else if (IS(0, "storage")) {
+		char	rest[64];
+
+		dispatch("select-storage", "", "");
+		snprintf(rest, sizeof(rest), "%s%s%s", np > 1 ? f[1] : "",
+		    np > 2 ? "/" : "", np > 2 ? f[2] : "");
+		naspage_open(rest);
 	} else if (IS(0, "builder")) {
 		char	rest[64];
 
@@ -639,6 +650,7 @@ submit(const char *form, const ucl_object_t *f)
 	    ca_form(form, f) || certs_form(form, f) || ssh_form(form, f) || span_form(form, f) ||
 	    ipsec_form(form, f) || workflows_form(form, f) || sdwan_form(form, f) ||
 	    trouble_form(form, f) || secpage_form(form, f) ||
+	    naspage_form(form, f) || sysview_form(form, f) ||
 	    builder_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
@@ -952,7 +964,9 @@ dispatch(const char *act, const char *arg, const char *value)
 	    span_action(act, arg, value) ||
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
 	    sdwan_action(act, arg, value) || trouble_action(act, arg, value) ||
-	    secpage_action(act, arg, value) || builder_action(act, arg, value) ||
+	    sysview_action(act, arg, value) ||
+	    secpage_action(act, arg, value) || naspage_action(act, arg, value) ||
+	    builder_action(act, arg, value) ||
 	    iflabel_action(act, arg) || pfxlists_action(act, arg, value) ||
 	    user_action(act, arg) ||
 	    routing_action(act, arg, value) ||
@@ -1001,6 +1015,8 @@ dispatch(const char *act, const char *arg, const char *value)
 				refresh_firewall(s, false);
 			if (app.tab == TAB_STORAGE)
 				refresh_storage(s, false);
+			if (app.tab == TAB_SYSTEM || app.tab == TAB_SECURITY)
+				refresh_system(s, false);
 			if (app.tab == TAB_NETWORK && (strcmp(app.net.sid,
 			    s->id) != 0 || (app.net.data == NULL &&
 			    !app.net.loading)))
@@ -1047,6 +1063,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "log") == 0 ? TAB_LOG :
 		    strcmp(arg, "firewall") == 0 ? TAB_FIREWALL :
 		    strcmp(arg, "storage") == 0 ? TAB_STORAGE :
+		    strcmp(arg, "system") == 0 ? TAB_SYSTEM :
+		    strcmp(arg, "security") == 0 ? TAB_SECURITY :
 		    strcmp(arg, "jails") == 0 ? TAB_JAILS :
 		    strcmp(arg, "jobs") == 0 ? TAB_JOBS : TAB_SUMMARY;
 		app.node = NODE_HOST;
@@ -1071,6 +1089,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_firewall(s, true);
 		if (app.tab == TAB_STORAGE)
 			refresh_storage(s, true);
+		if (app.tab == TAB_SYSTEM || app.tab == TAB_SECURITY)
+			refresh_system(s, true);
 		close_service();
 		if (app.tab == TAB_SERVICES && s->services == NULL)
 			refresh_services(s, true);
@@ -1181,6 +1201,62 @@ dispatch(const char *act, const char *arg, const char *value)
 			snprintf(q[n].title, sizeof(q[n].title), "pkg clean%s "
 			    "in %s", arg[0] != '\0' ? " -a" : "", jstr(j,
 			    "name"));
+			snprintf(q[n].target, sizeof(q[n].target), "%s",
+			    jstr(j, "name"));
+			n++;
+		}
+		if (n > 0)
+			job_send_many(s, q, n, JOB_PACKAGES);
+		free(q);
+	} else if (strcmp(act, "pkg-upgrade-jails") == 0 && s != NULL) {
+		const ucl_object_t	*j;
+		ucl_object_iter_t	 it;
+		int			 n;
+
+		n = 0;
+		it = NULL;
+		while ((j = ucl_object_iterate(jget(s->list, "jails"), &it,
+		    true)) != NULL)
+			if (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
+			    "running") == 0)
+				n++;
+		if (n == 0) {
+			toast(true, "%s has no running jail", s->name);
+			return;
+		}
+		snprintf(body, sizeof(body), "pkg upgrade -y in each of the %d "
+		    "running jails of %s, each a job of its own in one batch: "
+		    "every package with a newer version in its repositories is "
+		    "replaced, and services may restart. A jail without pkg, or "
+		    "whose repositories cannot be read, fails alone; the others "
+		    "are upgraded all the same. The host's own packages are not "
+		    "touched.", n, s->name);
+		confirm("Upgrade the jails' packages", body, "Upgrade", true, "",
+		    "do-pkg-upgrade-jails", "", "");
+	} else if (strcmp(act, "do-pkg-upgrade-jails") == 0 && s != NULL) {
+		const ucl_object_t	*j;
+		ucl_object_iter_t	 it;
+		struct queued		*q;
+		char			*qj;
+		int			 n;
+
+		n = (int)ucl_array_size(jget(s->list, "jails"));
+		if (n == 0 || (q = calloc((size_t)n, sizeof(*q))) == NULL)
+			return;
+		n = 0;
+		it = NULL;
+		while ((j = ucl_object_iterate(jget(s->list, "jails"), &it,
+		    true)) != NULL) {
+			if (jstr(j, "name") == NULL || jstr(j, "state") ==
+			    NULL || strcmp(jstr(j, "state"), "running") != 0)
+				continue;
+			qj = json_quote(jstr(j, "name"));
+			if (asprintf(&q[n].json, "{\"kind\":\"pkg-upgrade\","
+			    "\"jail\":%s}", qj) == -1)
+				abort();
+			free(qj);
+			snprintf(q[n].title, sizeof(q[n].title), "pkg upgrade in "
+			    "%s", jstr(j, "name"));
 			snprintf(q[n].target, sizeof(q[n].target), "%s",
 			    jstr(j, "name"));
 			n++;
@@ -1569,6 +1645,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_firewall(s, true);
 		} else if (app.tab == TAB_STORAGE) {
 			refresh_storage(s, true);
+		} else if (app.tab == TAB_SYSTEM || app.tab == TAB_SECURITY) {
+			refresh_system(s, true);
 		} else if (app.tab == TAB_PACKAGES) {
 			app.pkg.loading = false;
 			refresh_packages(s, true);

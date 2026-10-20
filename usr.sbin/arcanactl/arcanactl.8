@@ -314,7 +314,7 @@ not there yet is made from the port's sample, without its
 line.
 A running freshclam takes them when it is restarted.
 A job.
-.It Cm suricata Cm update | Cm rules Oo Ar key Ns = Ns Ar value ... Oc | Cm rule Ar state Ns = Ns Ar sid Ns Oo , Ns Ar sid ... Oc ...
+.It Cm suricata Cm update | Cm rules Oo Ar key Ns = Ns Ar value ... Oc | Cm rule Ar state Ns = Ns Ar sid Ns Oo , Ns Ar sid ... Oc ... | Cm sources | Cm source- Ns Ar verb Cm name Ns = Ns Ar source Oo Ar key Ns = Ns Ar value ... Oc | Cm pcap Cm instance Ns = Ns Ar name Cm file Ns = Ns Ar path
 .Cm update
 runs
 .Xr suricata-update 8 ,
@@ -354,6 +354,199 @@ and
 .Pa drop.conf ,
 so that it holds across updates; the ruleset is made again from what
 was fetched, and the instances read it again.
+A job.
+.Cm rules Cm instance Ns = Ns Ar name Cm command Ns = Ns Ar command
+.Op Cm iface Ns = Ns Ar interface
+asks the instance's Suricata itself by its unix command socket, one of
+the commands that read alone:
+.Cm uptime ,
+.Cm version ,
+.Cm running-mode ,
+.Cm capture-mode ,
+.Cm memcap-list ,
+.Cm ruleset-stats ,
+.Cm ruleset-failed-rules ,
+.Cm ruleset-profile
+(where it is built with rule profiling),
+.Cm iface-list ,
+.Cm iface-stat
+(with
+.Cm iface )
+or
+.Cm dump-counters ,
+and prints its answer as JSON.
+.Cm rules Cm sources Ns =1
+shows the rule sources instead: those of the index
+.Cm sources
+fetched (suricata-update's
+.Cm update-sources ) ,
+each with its vendor, summary, license and the parameters it needs,
+enabled or disabled here, and those added by address.
+.Cm source-enable Cm name Ns = Ns Ar source
+.Op Ar parameter Ns = Ns Ar value ...
+enables a source, with its parameters (a commercial one's
+.Cm secret-code ) ;
+the agent writes suricata-update's file of it itself, root's alone, so
+that a secret is on no command line, in no title and in no trace.
+.Cm source-disable
+keeps it, disabled;
+.Cm source-remove
+takes it away;
+.Cm source-add Cm name Ns = Ns Ar source Cm url Ns = Ns Ar address
+adds one by its address.
+Each is a job; the ruleset is fetched with them by
+.Cm update .
+.Cm pcap Cm instance Ns = Ns Ar name Cm file Ns = Ns Ar path
+runs a capture the host has (a
+.Pa .pcap ,
+.Pa .pcapng
+or
+.Pa .cap ,
+by its whole path, not a link) through the instance's configuration
+and rules, offline
+.Pq Nm suricata Fl r ,
+into a directory of its own; the alerts it raised are kept, told in
+the sdwan read as the instance's
+.Dq replay .
+A job.
+.It Cm system Op Ar file | Cm host
+The system's own configuration, as JSON: each file of the
+.Cm sysfile
+table with its path, its text, the daemon that reads it and what shows
+it at work; and the host's NTP peers, Linux compatibility, securelevel,
+MAC modules, auditd, GEOM's tree
+.Pq Nm geom Fl t ,
+GELI's providers, periodic's variables and service jails.
+Nothing is changed.
+.It Cm geom Ar class subcommand Oo Ar word ... Oc Op Fl P Ar passfile
+A GEOM class's command, as
+.Xr geom 8
+runs it
+.Po Nm geom Cm mirror Cm label ...
+is
+.Xr gmirror 8 's ,
+.Nm geom Cm eli Cm init ...
+.Xr geli 8 's
+.Pc :
+the class one of mirror, stripe, concat, raid3, label, nop, multipath,
+shsec, virstor, cache, journal, eli or union, the subcommand one of its
+own, or
+.Cm load
+or
+.Cm unload ,
+the words flags and names alone.
+A GELI passphrase is read from
+.Ar passfile
+and given to geli by a file of the job's own, never on a command line.
+A job.
+.It Cm sysfile Ar file path | Cm periodic Ar name Ns = Ns Cm YES | NO ... | Cm rc Cm kern_securelevel_enable= Ns Cm YES | NO Cm kern_securelevel= Ns Ar level
+Writes one of the system's files from
+.Ar path
+and tells the daemon that reads it:
+.Cm devfs.rules ,
+.Cm devd
+.Pq Pa /usr/local/etc/devd/arcana.conf ,
+.Cm syslog.conf ,
+.Cm newsyslog.conf ,
+.Cm periodic.conf ,
+.Cm audit_control ,
+.Cm audit_user ,
+.Cm krb5.conf ,
+.Cm ipsec.conf
+.Pq Xr setkey 8 's ,
+.Cm rctl.conf
+or
+.Cm loader.conf.d
+.Pq Pa /boot/loader.conf.d/arcana.conf ;
+no other path is written so.
+.Cm periodic
+sets
+.Xr periodic.conf 5 's
+variables.
+.Cm rc
+sets
+.Xr rc.conf 5 's
+.Va kern_securelevel_enable
+and
+.Va kern_securelevel ,
+securelevel at boot, and those alone.
+A job.
+.It Cm netstore Op Cm nfs | Cm iscsi | Cm hast
+The host's network storage services, as JSON: the NFS server
+.Xr ( nfsd 8 ,
+.Xr mountd 8 ,
+.Xr exports 5 ,
+NFSv4's minor version and pNFS's data servers and mirrors,
+.Xr pnfsserver 4 ) ,
+the iSCSI target
+.Xr ( ctld 8 ,
+.Xr ctl.conf 5 ,
+.Xr ctladm 8 )
+and HAST
+.Xr ( hastd 8 ,
+.Xr hast.conf 5 ,
+.Xr hastctl 8 ) .
+Nothing is changed.
+.It Cm nfs Cm exports Ar file | Cm server Ar key Ns = Ns Ar value ...
+.Cm exports
+writes
+.Pa /etc/exports
+from
+.Ar file
+and has
+.Xr mountd 8
+read it again.
+.Cm server
+sets
+.Cm enable
+.Pq Cm yes No or Cm no : No nfsd, with rpcbind and mountd ,
+.Cm v4 ,
+.Cm v4only ,
+.Cm minor
+(NFSv4's 0, 1 or 2:
+.Va vfs.nfsd.server_max_minorversion ,
+kept in
+.Pa sysctl.conf ) ,
+.Cm threads ,
+and pNFS's data servers
+.Cm pnfs Ns = Ns Ar host : Ns Ar path Ns Oo , Ns ... Oc
+and
+.Cm mirror
+.Pq nfsd's Fl n , Fl p No and Fl m .
+A job.
+.It Cm iscsi Cm conf Ar file | Cm enable Cm yes | no
+.Cm conf
+writes
+.Pa /etc/ctl.conf
+from
+.Ar file ,
+root's alone, and has
+.Xr ctld 8
+read it again;
+.Cm enable
+enables and starts ctld, or stops it.
+A job.
+.It Cm hast Cm conf Ar file | Cm enable Cm yes | no | Cm create Ar resource | Cm role Ar role resource
+.Cm conf
+writes
+.Pa /etc/hast.conf
+from
+.Ar file
+and has
+.Xr hastd 8
+read it again;
+.Cm enable
+enables and starts hastd, or stops it;
+.Cm create
+makes a resource's metadata
+.Pq Nm hastctl Cm create ,
+which destroys what its provider held;
+.Cm role
+sets a resource's role:
+.Cm init ,
+.Cm primary
+or
+.Cm secondary .
 A job.
 .It Cm cert Oo Cm list | Cm add Ar name file | Cm remove Ar name | Cm trust Ar file | Cm untrust Ar file | Cm rehash Oc
 The certificates OpenSSL trusts, of the host or of
@@ -776,6 +969,12 @@ an empty list takes them away.
 The reply says what the samples take of the agent's memory.
 The samples are written down when the agent stops and read again when
 it starts.
+.It Cm net routes Oo Fl 4 | Fl 6 Oc Oo Fl o Ar rows Oc Op Ar text
+The routes, those with
+.Ar text
+in them alone, and with
+.Fl o
+read on after that many rows (a large table comes in pages).
 .It Cm net routes | connections | sockets Oo Fl 4 | Fl 6 Oc Cm parts Op Ar text
 The same table as a dump: in parts, each printed as an array of rows
 of its own when it comes, a route with its family in it; none is left
@@ -820,6 +1019,18 @@ df
 maxaddr, timeout, and learn, external and dscpinherit, each on or off.
 .It Cm ipfw Oo Cm keep Oc Cm add Ar number Ar rule ...
 .It Cm ipfw Oo Cm keep Oc Cm delete Ar number
+.It Cm ipfw Oo Cm keep Oc Cm replace Ar number new-number rule ...
+Replaces the rule numbered
+.Ar number
+by the rule given, numbered
+.Ar new-number :
+the old one is deleted as the new is added, in the live rules, the kept
+ones, or both.
+.It Cm ipfw alias Ar name Cm addr Ar address ... | Cm ports Ar list | Cm value Ar word | Cm delete
+An alias of the kept rules: a name (letters, digits, _) standing for
+addresses, for ports (80,443) or for a word, used in rules as
+.Ar $name
+and put in as they are applied; or deleted.
 A rule of the firewall, by a job: added to or deleted from what the
 kernel has now; with
 .Fl p
@@ -956,6 +1167,10 @@ only what changed since that one, which both have.
 What arrives is not mounted.
 .It Cm gpart newfs Oo Fl f Oc Ar partition Op Ar label
 Make a UFS file system on a partition.
+.It Cm gpart newfs-msdos Oo Fl f Oc Ar partition Op Ar label
+The same, a FAT file system
+.Pq Xr newfs_msdos 8 ,
+for an EFI partition or a disk another system reads.
 Refused while it is mounted, swapped on or a pool's device, and,
 without
 .Fl f ,
@@ -993,7 +1208,7 @@ A pool's own dataset is not destroyed.
 .It Cm zpool detach | remove Ar pool Ar device
 .It Cm zpool replace Ar pool Ar device Op Ar new-device
 .It Cm zpool export | destroy Ar pool
-.It Cm zpool import Ar pool Op Cm altroot= Ns Ar path
+.It Cm zpool import Oo Fl f Oc Ar pool Op Cm altroot= Ns Ar path
 .Xr zpool 8 ,
 by a job.
 A pool with a dataset mounted where the system lives, the root or
@@ -1001,7 +1216,10 @@ under
 .Pa /usr ,
 .Pa /var ,
 .Pa /home
-and the like, is not destroyed or exported, and no pool is by force.
+and the like, is not destroyed or exported, and neither is any pool by
+force; an import is, with
+.Fl f ,
+of a pool another host had.
 .Cm storage importable
 lists the pools that could be imported.
 .It Cm mount Ar path
@@ -1191,6 +1409,14 @@ operation takes them: each a name, the fib it runs in and its
 .Xr dnsmasq 8
 configuration; checked first, started or started again, those not
 named stopped.
+.It Cm sdwan proxy Ar json
+The URL filters of the services at this edge (MEF 88), as the
+sdwan-proxy operation takes them: each a name, its fib, its mode (sni
+or inspect), Squid's configuration and the domains denied.
+.It Cm sdwan ids Ar json
+The intrusion detection of the services at this edge, as the
+sdwan-ids operation takes them: each a name, its interfaces, Suricata's
+configuration, its rules and, to prevent, its divert port.
 .It Cm sdwan dns Ar json
 The DNS filters of the services at this edge (MEF 88), as the
 sdwan-dns operation takes them: each a name, the fib it runs in and
@@ -1508,6 +1734,11 @@ in place of the host's
 The host checks it against its SHA-256 and by running it with
 .Fl V
 before it replaces the one installed, which it keeps with the suffix
+.Pa .old ;
+over the local socket no signature is asked, as root there could put
+the program in place by hand, where a console's program must be signed
+by its CA key.
+The suffix is
 .Pa .old .
 With
 .Fl r

@@ -2708,6 +2708,15 @@ ATF_TC_BODY(tokens, tc)
 		EXPECT(&r, 403);
 		ATF_CHECK(strstr(r.body, "may not change") != NULL);
 		resp_free(&r);
+		/* Nor who is who: a token does not make itself an owner. */
+		http_bearer("PUT", "/api/users/intruder", wtok, "{\"role\":"
+		    "\"owner\"}", &r);
+		EXPECT(&r, 403);
+		resp_free(&r);
+		http_bearer("POST", "/api/groups", wtok, "{\"name\":\"g\"}",
+		    &r);
+		EXPECT(&r, 403);
+		resp_free(&r);
 		http_bearer("GET", "/api/settings", wtok, NULL, &r);
 		EXPECT(&r, 403);
 		resp_free(&r);
@@ -3946,7 +3955,7 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("10.0.0.1", jstr(&r, "data.best.gateway"));
 	ATF_CHECK_STREQ("em0", jstr(&r, "data.best.interface"));
 	resp_free(&r);
-	ATF_CHECK(system("grep -q '^-Q 0 route-get 10.77.5.5 1$' helper.log")
+	ATF_CHECK(system("grep -q '^--scope-helper 0 route-get 10.77.5.5 1$' helper.log")
 	    == 0);
 	snprintf(path, sizeof(path), "%.*s/net/lookup?to=10.0.0.1;id",
 	    (int)(strlen(base) - strlen("/services")), base);
@@ -3979,7 +3988,7 @@ ATF_TC_BODY(services, tc)
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	ATF_CHECK(system("grep -q '^-Q 4 route-get 192.0.2.9 0$' helper.log")
+	ATF_CHECK(system("grep -q '^--scope-helper 4 route-get 192.0.2.9 0$' helper.log")
 	    == 0);
 	snprintf(path, sizeof(path), "%.*s/net/interfaces?jail=a;b",
 	    (int)(strlen(base) - strlen("/services")), base);
@@ -4877,7 +4886,7 @@ ATF_TC_BODY(mtls, tc)
 {
 	struct authn	 a;
 	struct resp	 r;
-	char		 cwd[MAXPATHLEN], uri[64], body[256], path[128];
+	char		 cwd[MAXPATHLEN], uri[64], body[256], path[128], upd[128];
 	char		 jgd[MAXPATHLEN], listen[64], *argv[20];
 	char		 sid[16], sw[128];
 	FILE		*fp;
@@ -4892,7 +4901,8 @@ ATF_TC_BODY(mtls, tc)
 	pki("console", "ca", "DNS:console");
 	snprintf(harness_webconf, sizeof(harness_webconf), "tls {\n"
 	    "\tca = \"%s/pki/ca.pem\";\n\tcert = \"%s/pki/console.pem\";\n"
-	    "\tkey = \"%s/pki/console.key\";\n}\n", cwd, cwd, cwd);
+	    "\tkey = \"%s/pki/console.key\";\n\tca_key = \"%s/pki/ca.key\";\n"
+	    "}\n", cwd, cwd, cwd, cwd);
 	start(tc, 0, NULL);
 
 	/* A second arcana-agent, on TCP. */
@@ -4919,6 +4929,9 @@ ATF_TC_BODY(mtls, tc)
 	/* rc.conf: the test's own, never the host's. */
 	argv[i++] = (char *)(uintptr_t)"-y";
 	argv[i++] = (char *)(uintptr_t)"./fake-sysrc";
+	/* The program an update replaces: not the one under test. */
+	argv[i++] = (char *)(uintptr_t)"-U";
+	argv[i++] = (char *)(uintptr_t)"installed-agent2";
 	argv[i] = NULL;
 	pid = spawn_server(argv, "arcana-agent2.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent2.pid", "w")) != NULL);
@@ -4934,6 +4947,8 @@ ATF_TC_BODY(mtls, tc)
 	EXPECT(&r, 200);
 	snprintf(path, sizeof(path), "/api/servers/%s/jails",
 	    jstr(&r, "servers.0.id"));
+	snprintf(upd, sizeof(upd), "/api/servers/%s/agent-update",
+	    jstr(&r, "servers.0.id"));
 	ATF_CHECK_STREQ("false", jstr(&r, "servers.0.local"));
 	resp_free(&r);
 	http("GET", path, NULL, &r);
@@ -4941,6 +4956,16 @@ ATF_TC_BODY(mtls, tc)
 	ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
 	ATF_CHECK_MSG(strstr(jstr(&r, "trace.2.detail"), "mutual TLS") != NULL,
 	    "%s", jstr(&r, "trace.2.detail"));
+	resp_free(&r);
+	/* Over TLS the program sent is signed by the console's CA key, and
+	 * the host checks it against the CA it trusts before anything
+	 * else: here the console's own CA, so it is taken. */
+	ATF_REQUIRE(access("installed-agent2", F_OK) == -1);
+	http("POST", upd, "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "true") == 0, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "verified") != NULL, "%s", r.body);
+	ATF_CHECK(access("installed-agent2", X_OK) == 0);
 	resp_free(&r);
 
 	/* The certificate has to name the host the console expects. */
@@ -7414,6 +7439,129 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "threshold$' sdwan-ids-sec-lan.yaml && grep -qx 'suppress gen_id "
 	    "1, sig_id 1000009, track by_src, ip 10.0.0.9' "
 	    "sdwan-ids-sec-lan.threshold") == 0);
+	/* Its settings: each into Suricata's YAML, checked first; where the
+	 * host has Suricata itself, what it makes of the whole. */
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"runmode\":\"fast\",\"rules\":\"alert tcp any any -> any 23 "
+	    "(sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "runmode is autofp, workers or single") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"flow_memcap\":\"lots\",\"rules\":\"alert tcp any any -> any "
+	    "23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"eve\":[\"http\",\"dns\",\"tls\",\"flow\"],\"payload\":true,"
+	    "\"stats_interval\":30,\"runmode\":\"workers\",\"mpm\":\"ac-ks\","
+	    "\"profile\":\"high\",\"management_cpus\":\"0\",\"worker_cpus\":"
+	    "\"0-1\",\"max_pending\":2048,\"flow_memcap\":\"128mb\","
+	    "\"stream_memcap\":\"64mb\",\"reassembly_memcap\":\"256mb\","
+	    "\"defrag_memcap\":\"32mb\",\"host_memcap\":\"32mb\","
+	    "\"http_memcap\":\"64mb\",\"stream_inline\":\"auto\","
+	    "\"reassembly_depth\":\"1mb\",\"http_request_body\":\"200kb\","
+	    "\"http_response_body\":\"2mb\",\"midstream\":true,"
+	    "\"exception_policy\":\"drop-flow\",\"yaml\":\"vlan:\\n  "
+	    "use-for-tracking: false\\n\",\"rules\":\"alert tcp any any -> "
+	    "any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("f=sdwan-ids-sec-lan.yaml; grep -q '^        - alert:$' "
+	    "$f && grep -q '^            payload-printable: yes$' $f && "
+	    "grep -q '^        - tls$' $f && grep -q '^  interval: 30$' $f && "
+	    "grep -q '^runmode: workers$' $f && grep -q '^mpm-algo: ac-ks$' $f "
+	    "&& grep -q '^  profile: high$' $f && grep -q '^      cpu: \\[ 0-1 "
+	    "\\]$' $f && grep -q '^max-pending-packets: 2048$' $f && grep -q "
+	    "'^    depth: 1mb$' $f && grep -q '^          response-body-limit: "
+	    "2mb$' $f && grep -q '^exception-policy: drop-flow$' $f && grep -q "
+	    "'^  use-for-tracking: false$' $f") == 0);
+	if (access("/usr/local/bin/suricata", X_OK) == 0)
+		ATF_CHECK_MSG(system("/usr/local/bin/suricata -T -c "
+		    "sdwan-ids-sec-lan.yaml > suricata-T.out 2>&1") == 0,
+		    "Suricata refuses the settings: see suricata-T.out");
+	/* By netmap(4): a pair at L2, copy-mode ips both ways, a worker's
+	 * to the end; pairs are netmap's; not with divert.  A preset's
+	 * values where a field says none. */
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"pairs\":[\"em0:em1\"],"
+	    "\"rules\":\"alert tcp any any -> any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "pairs of interfaces are netmap's") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"capture\":\"netmap\",\"divert\":8600,"
+	    "\"pairs\":[\"em0:em1\"],\"rules\":\"alert tcp any any -> any "
+	    "23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "not both") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"capture\":\"netmap\",\"pairs\":[\"lo0:lo0^\"],"
+	    "\"home\":[\"any\"],\"preset\":\"large\",\"flow_memcap\":"
+	    "\"64mb\",\"offload_off\":true,\"rules\":\"alert tcp any any -> "
+	    "any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("f=sdwan-ids-sec-lan.yaml; grep -q '^netmap:$' $f && "
+	    "grep -A3 -x '  - interface: lo0' $f | grep -qx '    copy-iface: "
+	    "lo0^' && grep -A3 -x '  - interface: lo0^' $f | grep -qx '    "
+	    "copy-iface: lo0' && grep -q '^runmode: workers$' $f && ! grep -q "
+	    "'^pcap:' $f && grep -A1 -x 'flow:' $f | grep -qx '  memcap: 64mb' "
+	    "&& grep -A3 -x 'stream:' $f | grep -qx '    memcap: 2gb' && "
+	    "grep -q '^  profile: high$' $f") == 0);
+	ATF_CHECK(system("grep -q '\"capture\":\"netmap\"' security-ids.json "
+	    "&& grep -q '\"interfaces\":\\[\"lo0\",\"lo0^\"\\]' "
+	    "security-ids.json && grep -q '\"offload\":false' security-ids.json")
+	    == 0);
+	if (access("/usr/local/bin/suricata", X_OK) == 0)
+		ATF_CHECK_MSG(system("/usr/local/bin/suricata -T -c "
+		    "sdwan-ids-sec-lan.yaml > suricata-T.out 2>&1") == 0,
+		    "Suricata refuses netmap's: see suricata-T.out");
+	/* Lua: its scripts to the agent, allowed for rules, one an
+	 * output; the packets of its alerts kept; its plugins.  Suricata
+	 * itself checks the first two where the host has it. */
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"lua_outputs\":[\"nosuch.lua\"],\"rules\":\"alert tcp any any "
+	    "-> any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "a Lua output is one of its scripts") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
+	    "\"lua\":{\"pkts.lua\":\"function init (args)\\n  local needs = "
+	    "{}\\n  needs[\\\"type\\\"] = \\\"packet\\\"\\n  return needs\\n"
+	    "end\\nfunction setup (args)\\nend\\nfunction log (args)\\nend\\n"
+	    "function deinit (args)\\nend\\n\"},\"lua_outputs\":[\"pkts.lua\"],"
+	    "\"pcap_log\":true,\"pcap_log_limit\":\"10mb\",\"pcap_log_files\":"
+	    "3,\"rules\":\"alert tcp any any -> any 23 (sid:1000009;)\"}]}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("f=sdwan-ids-sec-lan.yaml; grep -q '^  - lua:$' $f && "
+	    "grep -q '^      scripts-dir: .*sdwan-ids-sec-lan.lua$' $f && "
+	    "grep -q '^        - pkts.lua$' $f && grep -q '^    allow-rules: "
+	    "yes$' $f && grep -q '^  - pcap-log:$' $f && grep -q '^      "
+	    "max-files: 3$' $f && grep -q '^      conditional: alerts$' $f && "
+	    "grep -q 'needs' sdwan-ids-sec-lan.lua/pkts.lua") == 0);
+	if (access("/usr/local/bin/suricata", X_OK) == 0)
+		ATF_CHECK_MSG(system("/usr/local/bin/suricata -T -c "
+		    "sdwan-ids-sec-lan.yaml > suricata-T.out 2>&1") == 0,
+		    "Suricata refuses Lua or pcap-log: see suricata-T.out");
+	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
+	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"plugins\":[\"/tmp/x.so\"],"
+	    "\"rules\":\"alert tcp any any -> any 23 (sid:1000009;)\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "a .so under /usr/local/lib") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
 	/* Stopped by the admin: kept in the list, told to the agent. */
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
