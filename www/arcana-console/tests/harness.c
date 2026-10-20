@@ -672,22 +672,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	 * are told; an fstab of the test's.
 	 */
 	put("fake-zfs", "#!/bin/sh\necho \"zfs $*\" >> storage.log\n"
-	    "case \"$*\" in\n'list -Hp -t filesystem,volume'*)\n"
-	    "printf 'tank\\tfilesystem\\t5000000\\t9000000\\t96000\\t/tank\\t"
-	    "lz4\\t1.50\\t0\\t0\\tyes\\ton\\t-\\t-\\toff\\toff\\t-\\tnone\\toff\\n'\n"
-	    "printf 'tank/data\\tfilesystem\\t4000000\\t9000000\\t4000000\\t"
-	    "/tank/data\\tlz4\\t2.00\\t8000000\\t0\\tyes\\ton\\t-\\t-\\toff\\t"
-	    "aes-256-gcm\\tunavailable\\tfile:///k\\toff\\n'"
-	    /* One whose key is asked for at a prompt. */
-	    "\nprintf 'tank/vault\\tfilesystem\\t2000000\\t9000000\\t2000000\\t"
-	    "/tank/vault\\tlz4\\t1.00\\t0\\t0\\tno\\ton\\t-\\t-\\toff\\t"
-	    "aes-256-gcm\\tunavailable\\tprompt\\toff\\n'"
-	    "\nprintf 'tank/vol\\tvolume\\t100000\\t9000000\\t100000\\t-\\toff"
-	    "\\t1.00\\t-\\t0\\t-\\t-\\ttank/data@a\\t1048576\\toff\\toff\\t-\\tnone"
-	    "\\toff\\n' ;;\n"
-	    "'list -Hp -t snapshot'*)\n"
-	    "printf 'tank/data@b\\t10000\\t4000000\\t1759500000\\n'\n"
-	    "printf 'tank/data@a\\t20000\\t3000000\\t1759400000\\n' ;;\n"
+	    "case \"$*\" in\n'list -j -p -t filesystem,volume'*)\n"
+	    "printf '%s\\n' '{\"output_version\":{\"command\":\"zfs list\",\"vers_major\":0,\"vers_minor\":1},\"datasets\":{\"tank\":{\"name\":\"tank\",\"type\":\"FILESYSTEM\",\"pool\":\"tank\",\"properties\":{\"type\":{\"value\":\"filesystem\"},\"used\":{\"value\":\"5000000\"},\"available\":{\"value\":\"9000000\"},\"referenced\":{\"value\":\"96000\"},\"mountpoint\":{\"value\":\"/tank\"},\"compression\":{\"value\":\"lz4\"},\"compressratio\":{\"value\":\"1.50\"},\"quota\":{\"value\":\"0\"},\"reservation\":{\"value\":\"0\"},\"mounted\":{\"value\":\"yes\"},\"canmount\":{\"value\":\"on\"},\"origin\":{\"value\":\"-\"},\"volsize\":{\"value\":\"-\"},\"readonly\":{\"value\":\"off\"},\"encryption\":{\"value\":\"off\"},\"keystatus\":{\"value\":\"-\"},\"keylocation\":{\"value\":\"none\"},\"jailed\":{\"value\":\"off\"}}},\"tank/data\":{\"name\":\"tank/data\",\"type\":\"FILESYSTEM\",\"pool\":\"tank\",\"properties\":{\"type\":{\"value\":\"filesystem\"},\"used\":{\"value\":\"4000000\"},\"available\":{\"value\":\"9000000\"},\"referenced\":{\"value\":\"4000000\"},\"mountpoint\":{\"value\":\"/tank/data\"},\"compression\":{\"value\":\"lz4\"},\"compressratio\":{\"value\":\"2.00\"},\"quota\":{\"value\":\"8000000\"},\"reservation\":{\"value\":\"0\"},\"mounted\":{\"value\":\"yes\"},\"canmount\":{\"value\":\"on\"},\"origin\":{\"value\":\"-\"},\"volsize\":{\"value\":\"-\"},\"readonly\":{\"value\":\"off\"},\"encryption\":{\"value\":\"aes-256-gcm\"},\"keystatus\":{\"value\":\"unavailable\"},\"keylocation\":{\"value\":\"file:///k\"},\"jailed\":{\"value\":\"off\"}}},\"tank/vault\":{\"name\":\"tank/vault\",\"type\":\"FILESYSTEM\",\"pool\":\"tank\",\"properties\":{\"type\":{\"value\":\"filesystem\"},\"used\":{\"value\":\"2000000\"},\"available\":{\"value\":\"9000000\"},\"referenced\":{\"value\":\"2000000\"},\"mountpoint\":{\"value\":\"/tank/vault\"},\"compression\":{\"value\":\"lz4\"},\"compressratio\":{\"value\":\"1.00\"},\"quota\":{\"value\":\"0\"},\"reservation\":{\"value\":\"0\"},\"mounted\":{\"value\":\"no\"},\"canmount\":{\"value\":\"on\"},\"origin\":{\"value\":\"-\"},\"volsize\":{\"value\":\"-\"},\"readonly\":{\"value\":\"off\"},\"encryption\":{\"value\":\"aes-256-gcm\"},\"keystatus\":{\"value\":\"unavailable\"},\"keylocation\":{\"value\":\"prompt\"},\"jailed\":{\"value\":\"off\"}}},\"tank/vol\":{\"name\":\"tank/vol\",\"type\":\"VOLUME\",\"pool\":\"tank\",\"properties\":{\"type\":{\"value\":\"volume\"},\"used\":{\"value\":\"100000\"},\"available\":{\"value\":\"9000000\"},\"referenced\":{\"value\":\"100000\"},\"mountpoint\":{\"value\":\"-\"},\"compression\":{\"value\":\"off\"},\"compressratio\":{\"value\":\"1.00\"},\"quota\":{\"value\":\"-\"},\"reservation\":{\"value\":\"0\"},\"mounted\":{\"value\":\"-\"},\"canmount\":{\"value\":\"-\"},\"origin\":{\"value\":\"tank/data@a\"},\"volsize\":{\"value\":\"1048576\"},\"readonly\":{\"value\":\"off\"},\"encryption\":{\"value\":\"off\"},\"keystatus\":{\"value\":\"-\"},\"keylocation\":{\"value\":\"none\"},\"jailed\":{\"value\":\"off\"}}}}}' ;;\n"
+	    "'list -j -p -t snapshot'*)\n"
+	    "printf '%s\\n' '{\"output_version\":{\"command\":\"zfs list\",\"vers_major\":0,\"vers_minor\":1},\"datasets\":{\"tank/data@b\":{\"name\":\"tank/data@b\",\"type\":\"SNAPSHOT\",\"pool\":\"tank\",\"properties\":{\"used\":{\"value\":\"10000\"},\"referenced\":{\"value\":\"4000000\"},\"creation\":{\"value\":\"1759500000\"}}},\"tank/data@a\":{\"name\":\"tank/data@a\",\"type\":\"SNAPSHOT\",\"pool\":\"tank\",\"properties\":{\"used\":{\"value\":\"20000\"},\"referenced\":{\"value\":\"3000000\"},\"creation\":{\"value\":\"1759400000\"}}}}}' ;;\n"
 	    "'list -H -o name -s createtxg -t snapshot -d 1 tank/data') "
 	    "printf 'tank/data@a\\ntank/data@b\\n' ;;\n"
 	    /* A snapshot sent: what zsend.data has; received into a file. */
@@ -708,17 +696,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("fake-zpool", "#!/bin/sh\necho \"zpool $*\" >> storage.log\n"
 	    "case \"$*\" in\n'list -Hp -o name,size,alloc,free,health') "
 	    "printf 'tank\\t14000000\\t5000000\\t9000000\\tDEGRADED\\n' ;;\n"
-	    "'list -Hp -o name,size,allocated'*) printf 'tank\\t14000000\\t"
-	    "5000000\\t9000000\\t12\\t35\\t1.00\\tDEGRADED\\n' ;;\n"
+	    "'list -j -p -o name,size,allocated'*) printf '%s\\n' '{\"output_version\":{\"command\":\"zpool list\",\"vers_major\":0,\"vers_minor\":1},\"pools\":{\"tank\":{\"name\":\"tank\",\"type\":\"POOL\",\"state\":\"DEGRADED\",\"properties\":{\"size\":{\"value\":\"14000000\"},\"allocated\":{\"value\":\"5000000\"},\"free\":{\"value\":\"9000000\"},\"fragmentation\":{\"value\":\"12\"},\"capacity\":{\"value\":\"35\"},\"dedupratio\":{\"value\":\"1.00\"},\"health\":{\"value\":\"DEGRADED\"}}}}}' ;;\n"
 	    "import) printf '   pool: spare\\n     id: 1234567890\\n  state: "
 	    "ONLINE\\n' ;;\n"
-	    "status) printf '  pool: tank\\n state: DEGRADED\\nstatus: One "
-	    "device was taken offline.\\n  scan: scrub repaired 0B in "
-	    "00:10:11 with 0 errors\\nconfig:\\n\\n\\tNAME        STATE     "
-	    "READ WRITE CKSUM\\n\\ttank        DEGRADED     0     0     0\\n"
-	    "\\t  mirror-0  DEGRADED     0     0     0\\n\\t    ada1p1  "
-	    "ONLINE       0     0     0\\n\\t    ada2p1  OFFLINE      0     0"
-	    "     0\\n\\nerrors: No known data errors\\n' ;;\nesac\nexit 0\n");
+	    "'status -j') printf '%s\\n' '{\"output_version\":{\"command\":\"zpool status\",\"vers_major\":0,\"vers_minor\":1},\"pools\":{\"tank\":{\"name\":\"tank\",\"state\":\"DEGRADED\",\"pool_guid\":\"1\",\"txg\":\"1\",\"spa_version\":\"5000\",\"zpl_version\":\"5\",\"status\":\"One or more devices has been taken offline by the administrator. Sufficient replicas exist for the pool to continue functioning.\",\"action\":\"Online the device using '\\''zpool online'\\''.\",\"msgid\":\"ZFS-8000-2Q\",\"moreinfo\":\"https://openzfs.github.io/openzfs-docs/msg/ZFS-8000-2Q\",\"scan_stats\":{\"function\":\"SCRUB\",\"state\":\"FINISHED\",\"start_time\":\"Sun Oct  4 02:49:49 2026\",\"end_time\":\"Sun Oct  4 03:00:00 2026\",\"errors\":\"0\"},\"vdevs\":{\"tank\":{\"name\":\"tank\",\"vdev_type\":\"root\",\"guid\":\"1\",\"class\":\"normal\",\"state\":\"DEGRADED\",\"read_errors\":\"0\",\"write_errors\":\"0\",\"checksum_errors\":\"0\",\"vdevs\":{\"mirror-0\":{\"name\":\"mirror-0\",\"vdev_type\":\"mirror\",\"guid\":\"2\",\"class\":\"normal\",\"state\":\"DEGRADED\",\"read_errors\":\"0\",\"write_errors\":\"0\",\"checksum_errors\":\"0\",\"vdevs\":{\"ada1p1\":{\"name\":\"ada1p1\",\"vdev_type\":\"disk\",\"guid\":\"3\",\"path\":\"/dev/ada1p1\",\"class\":\"normal\",\"state\":\"ONLINE\",\"read_errors\":\"0\",\"write_errors\":\"0\",\"checksum_errors\":\"0\"},\"ada2p1\":{\"name\":\"ada2p1\",\"vdev_type\":\"disk\",\"guid\":\"4\",\"path\":\"/dev/ada2p1\",\"class\":\"normal\",\"state\":\"OFFLINE\",\"read_errors\":\"0\",\"write_errors\":\"0\",\"checksum_errors\":\"0\"}}}}}},\"error_count\":\"0\",\"errlist\":[]}}}' ;;\nesac\nexit 0\n");
 	put("fake-gpart", "#!/bin/sh\necho \"gpart $*\" >> storage.log\n"
 	    "exit 0\n");
 	put("fake-mount", "#!/bin/sh\necho \"mount $*\" >> storage.log\n"

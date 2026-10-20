@@ -129,17 +129,27 @@ ${DIST}/yang.json: ${ARC_TOP}/share/arcana/yang-ops ${.CURDIR}/tools/yang.sh \
 	    ${.CURDIR}/yang > ${.TARGET}.tmp
 	mv ${.TARGET}.tmp ${.TARGET}
 YANG_OUT?=	${.CURDIR}/yang
+# The kinds of job as arcana-jobs's submodule, from jobs.yaml too.
+YANG_KINDS=	arcana-jobs-kinds@2026-10-14.yang
+YANG_KINDS_OUT?=	${ARC_TOP}/share/yang
 regen-yang: .PHONY
 	sh ${.CURDIR}/tools/yang.sh trees ${CBLINK_GEN} ${ARC_TOP}/share/yang \
 	    ${ARC_TOP}/share/arcana/yang-ops ${YANG_OUT}
+	awk -v out=yang -f ${ARC_TOP}/share/arcana/jobs.awk \
+	    ${ARC_TOP}/share/arcana/arcana.yaml ${ARC_TOP}/share/arcana/jobs.yaml \
+	    > ${YANG_KINDS_OUT}/${YANG_KINDS}
 check-yang: .PHONY
-	@t=$$(mktemp -d) && trap 'rm -rf "$$t"' EXIT && \
-	    ${MAKE} -C ${.CURDIR} regen-yang YANG_OUT="$$t" >/dev/null && \
-	    for f in $$(cd "$$t" && ls); do \
+	@t=$$(mktemp -d) && trap 'rm -rf "$$t"' EXIT && mkdir "$$t/k" && \
+	    ${MAKE} -C ${.CURDIR} regen-yang YANG_OUT="$$t" \
+	    YANG_KINDS_OUT="$$t/k" >/dev/null && \
+	    for f in $$(cd "$$t" && ls | grep -v '^k$$'); do \
 		cmp -s "$$t/$$f" ${.CURDIR}/yang/$$f || { echo \
 		    "www/arcana-ui: yang/$$f is not what make regen-yang makes" >&2; \
 		    exit 1; }; \
 	    done; \
+	    cmp -s "$$t/k/${YANG_KINDS}" ${ARC_TOP}/share/yang/${YANG_KINDS} || { \
+		echo "share/yang/${YANG_KINDS} is not what make regen-yang makes" >&2; \
+		exit 1; }; \
 	    echo "www/arcana-ui: yang/ is what make regen-yang makes"
 
 # The console's API as it is documented, for the API page: the document

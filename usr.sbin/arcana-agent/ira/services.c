@@ -28,7 +28,6 @@
 #include <unistd.h>
 
 #include "agent.h"
-#include "collect.h"
 
 struct script {
 	const char	*name;
@@ -522,73 +521,3 @@ out:
 	return (0);
 }
 
-/*
- * An action of arcana-services's (ARC_SERVICE_ACTION_START, _STOP,
- * _RESTART, _RELOAD) on service name, as service-action does it; what
- * its status says after it into *running, *pid (*has_pid: one) and
- * *status.  -1 and *errp: not done.
- */
-int
-yservices_action(struct work *w, const char *name, uint8_t action,
-    bool *running, bool *has_pid, uint32_t *pid, const char **status,
-    const char **errp)
-{
-	struct arc_service_action_rsp ar;
-	const struct arc_service *s;
-
-	if (action > ARC_SERVICE_ACTION_RELOAD) {
-		*errp = "not an action of arcana-services: enabling is "
-		    "configuration";
-		return (-1);
-	}
-	memset(&ar, 0, sizeof(ar));
-	do_service_action(w, name, action, &ar);
-	if (!ar.ok) {
-		*errp = ar.error != NULL ? ar.error : "the action failed";
-		return (-1);
-	}
-	s = ar.service_result;
-	*running = s != NULL && s->has_running && s->running;
-	*has_pid = s != NULL && s->has_pid;
-	*pid = *has_pid ? s->pid : 0;
-	*status = s != NULL ? s->status : NULL;
-	return (0);
-}
-
-/*
- * A service's configuration made what yservices_diff() says: enabled or
- * disabled (service-action's enable, disable), then its variables set
- * or unset (service-config).  -1 and *errp: not done, or done in part.
- */
-int
-yservices_apply(struct work *w, const char *name, int enable,
-    const struct arc_variable *vars, size_t nvars, const char **errp)
-{
-	struct arc_service_action_rsp ar;
-	struct arc_service_config_req rq;
-	struct arc_service_config_rsp cr;
-
-	if (enable != 0) {
-		memset(&ar, 0, sizeof(ar));
-		do_service_action(w, name, enable > 0 ?
-		    ARC_SERVICE_ACTION_ENABLE : ARC_SERVICE_ACTION_DISABLE,
-		    &ar);
-		if (!ar.ok) {
-			*errp = ar.error != NULL ? ar.error : "not enabled";
-			return (-1);
-		}
-	}
-	if (nvars == 0)
-		return (0);
-	memset(&rq, 0, sizeof(rq));
-	memset(&cr, 0, sizeof(cr));
-	rq.service = name;
-	rq.variables.n = nvars;
-	rq.variables.v = vars;
-	do_service_config(w, &rq, &cr);
-	if (!cr.ok) {
-		*errp = cr.error != NULL ? cr.error : "not set";
-		return (-1);
-	}
-	return (0);
-}

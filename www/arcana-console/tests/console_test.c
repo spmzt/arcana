@@ -4649,7 +4649,7 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK_STREQ("tank/data", jstr(&r, "data.datasets.1.name"));
 	resp_free(&r);
-	ATF_CHECK(system("grep -q '^jexec 4 .*zfs list -Hp -t filesystem,"
+	ATF_CHECK(system("grep -q '^jexec 4 .*zfs list -j -p -t filesystem,"
 	    "volume' jexec.log") == 0);
 	snprintf(path, sizeof(path), "%.*s/storage/datasets?jail=web",
 	    (int)(strlen(base) - strlen("/services")), base);

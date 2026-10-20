@@ -1,5 +1,13 @@
 # Plan: Arcana as an SDN on FreeBSD, and cblink as a YANG protocol
 
+**2026-10-20:** the collectors this plan had the agent fill (the
+`y*.c` files, `yang/ymodel*`, `yjson.c`, the generated `yjobs_spec.c`
+and their tests) were taken out of the tree: no operation served them,
+only their tests ran them, and they were 14k hand-written and 72k
+generated lines.  The YANG modules in `share/yang` stay, shown beside
+each operation's schema in the console; the collectors are in git's
+history (before agent 0.159.0) for when an operation carries YANG.
+
 Written 2026-10-13 from a reading of the RFCs listed at the end and of
 the tree as it is (agent 0.103.0, console 0.164.0). It says where
 Arcana stands in the IETF's SDN vocabulary, what it becomes, how the

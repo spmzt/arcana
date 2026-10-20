@@ -22,7 +22,6 @@
 #include <syslog.h>
 
 #include "agent.h"
-#include "collect.h"
 
 static int	pkg_run(struct work *, const char *, bool, uint8_t,
 		    const char *const *, size_t, struct execres *);
@@ -530,59 +529,3 @@ do_pkg_clean(struct work *w, const char *jail, bool all, const char **errp)
 	return (0);
 }
 
-/*
- * arcana-packages's refresh action on the host's packages (jail NULL)
- * or a running jail's: pkg update, as the packages operation's refresh
- * does it.  -1 and *errp: not done.
- */
-int
-ypackages_refresh(struct work *w, const char *jail, uint8_t ip,
-    const char **errp)
-{
-	struct arc_packages_rsp rsp;
-
-	memset(&rsp, 0, sizeof(rsp));
-	do_packages(w, jail, true, false, ip, &rsp);
-	if (!rsp.ok) {
-		*errp = rsp.error != NULL ? rsp.error : "pkg update failed";
-		return (-1);
-	}
-	return (0);
-}
-
-/*
- * Its upgrade action: pkg upgrade -y, as pkg-upgrade does it, its
- * output a's.  -1 and *errp: not done.
- */
-int
-ypackages_upgrade(struct work *w, const char *jail,
-    const struct arcana_packages_packages_upgrade_input *in, cbl_yarena *a,
-    struct arcana_packages_packages_upgrade_output *out, const char **errp)
-{
-	struct arc_pkg_upgrade_req rq;
-	struct arc_pkg_upgrade_rsp rsp;
-	int error;
-
-	memset(&rq, 0, sizeof(rq));
-	memset(&rsp, 0, sizeof(rsp));
-	rq.jail = jail;
-	rq.names.n = in->name.n;
-	rq.names.v = in->name.v;
-	rq.dry_run = in->has_dry_run && in->dry_run;
-	if ((rq.has_ignore_osversion = in->has_ignore_osversion))
-		rq.ignore_osversion = in->ignore_osversion;
-	/* ip-version's values are pkg-ip's: 0, 4, 6. */
-	if ((rq.has_pkg_ip = in->has_ip_version))
-		rq.pkg_ip = (uint8_t)in->ip_version;
-	rq.pkg_repo = in->repository;
-	do_pkg_upgrade(w, &rq, &rsp);
-	if (!rsp.ok) {
-		*errp = rsp.error != NULL ? rsp.error : "pkg upgrade failed";
-		return (-1);
-	}
-	if ((error = ypackages_upgraded(&rsp, a, out)) != 0) {
-		*errp = strerror(error);
-		return (-1);
-	}
-	return (0);
-}

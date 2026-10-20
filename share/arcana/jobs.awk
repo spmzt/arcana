@@ -6,13 +6,7 @@
 #	awk -v out=json -f jobs.awk arcana.yaml jobs.yaml > jobs.json
 #	awk -v out=yang -f jobs.awk arcana.yaml jobs.yaml > \
 #	    arcana-jobs-kinds@2026-10-14.yang
-#	awk -v out=yspec -f jobs.awk arcana.yaml jobs.yaml arcana.h > \
-#	    yjobs_spec.c
 #
-# out=yspec writes yjobs_spec(), a change of that submodule (its C
-# struct, as cblink-gen makes it) made the job-spec the agent's queue
-# takes; arcana.h, the family's C header, says which of job-spec's
-# members have a has_ beside them.
 #
 # arcana.yaml first: its job-kind entries and job-spec attributes are
 # what jobs.yaml must agree with.  A kind in the one and not the other,
@@ -226,10 +220,6 @@ END {
 		yang()
 		exit
 	}
-	if (out == "yspec") {
-		yspec()
-		exit
-	}
 	printf "{\"fields\":["
 	for (i = 1; i <= nf; i++) {
 		printf "%s{\"field\":%s,\"type\":%s,\"label\":%s", (i > 1 ? "," : ""), jstr(ff[i]), jstr(ft[i]), jstr(fl[i])
@@ -351,140 +341,3 @@ function kvals(k, f,    n, a, j, w) {
 	return ""
 }
 
-# Field i of kind k into the job-spec: the C to do it.
-function yspec_field(k, i,    f, m, vals, nv, w, j, tab) {
-	f = ff[i]
-	m = fa[i] != "" ? cname(fa[i]) : f
-	vals = kvals(k, f)
-	if (f == "set") {
-		print "\t\tfor (size_t i = 0; i < c->set.n; i++) {"
-		print "\t\t\tvars[nv].key = c->set.v[i].name;"
-		print "\t\t\tvars[nv++].value = c->set.v[i].value;"
-		print "\t\t}"
-		return
-	}
-	if (f == "unset") {
-		print "\t\tfor (size_t i = 0; i < c->unset.n; i++) {"
-		print "\t\t\tvars[nv].key = c->unset.v[i];"
-		print "\t\t\tvars[nv++].remove = true;"
-		print "\t\t}"
-		return
-	}
-	if (ft[i] == "list") {
-		printf "\t\tsp->%s.n = c->%s.n;\n", m, f
-		printf "\t\tsp->%s.v = c->%s.v;\n", m, f
-		return
-	}
-	if (vals != "") {
-		# action: the job-spec's own enumeration, the same order.
-		if (f == "action") {
-			m = kk[k] == "service-action" ? "service_action" : "action"
-			printf "\t\tif ((sp->has_%s = c->has_%s))\n", m, f
-			printf "\t\t\tsp->%s = (uint8_t)c->%s;\n", m, f
-			return
-		}
-		tab = cname(kk[k]) "_" f
-		printf "\t\tif (c->has_%s)\n", f
-		printf "\t\t\tsp->%s = %s[c->%s];\n", m, tab, f
-		return
-	}
-	if (ft[i] == "number" || (ft[i] == "bool" && (m in shas))) {
-		printf "\t\tif ((sp->has_%s = c->has_%s))\n", m, f
-		printf "\t\t\tsp->%s = c->%s;\n", m, f
-		return
-	}
-	if (ft[i] == "bool") {
-		printf "\t\tsp->%s = c->has_%s && c->%s;\n", m, f, f
-		return
-	}
-	printf "\t\tsp->%s = c->%s;\n", m, f
-}
-
-function yspec(    k, i, j, n, a, nv, w, f, vals, fields, nf2, seen, tab, line, w2) {
-	print "/*"
-	print " * Made from share/arcana/jobs.yaml by share/arcana/jobs.awk"
-	print " * (out=yspec): not to be edited.  A change of arcana-jobs's submit"
-	print " * (its struct, as cblink-gen makes it from arcana-jobs-kinds) made"
-	print " * the job-spec the agent's queue takes, field by field as jobs.yaml"
-	print " * names them."
-	print " */"
-	print ""
-	print "#include <errno.h>"
-	print "#include <string.h>"
-	print ""
-	print "#include <arcana.h>"
-	print ""
-	print "#include \"collect.h\""
-	print ""
-	# The enumerations whose words the job-spec takes as text.
-	for (k = 1; k <= nk; k++) {
-		n = split(kv[k], a, " ")
-		for (j = 1; j <= n; j++) {
-			split(a[j], w, "=")
-			if (w[1] == "action")
-				continue
-			tab = cname(kk[k]) "_" w[1]
-			nv = split(w[2], vals, "|")
-			printf "static const char *const %s[] = {\n", tab
-			line = "\t"
-			for (i = 1; i <= nv; i++) {
-				w2 = "\"" vals[i] "\","
-				if (length(line) + length(w2) > 70) {
-					print line
-					line = "\t"
-				}
-				line = line (line == "\t" ? "" : " ") w2
-			}
-			print line
-			print "};"
-		}
-	}
-	print ""
-	print "/*"
-	print " * Change c made job-spec sp, its arrays a's.  0, or EINVAL: no kind,"
-	print " * or one not given."
-	print " */"
-	print "int"
-	print "yjobs_spec(const struct arcana_jobs_submit_input_change *in,"
-	print "    cbl_yarena *a, struct arc_job_spec *sp)"
-	print "{"
-	print "\tstruct arc_variable *vars = NULL;"
-	print "\tsize_t nv = 0;"
-	print ""
-	print "\tmemset(sp, 0, sizeof(*sp));"
-	print "\tsp->has_kind = true;"
-	print "\tswitch (in->kind) {"
-	for (k = 1; k <= nk; k++) {
-		printf "\tcase ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_%s: {\n", uname(kk[k])
-		printf "\t\tconst struct arcana_jobs_submit_input_change_%s *c =\n", cname(kk[k])
-		printf "\t\t    in->%s;\n\n", cname(kk[k])
-		print "\t\tif (c == NULL)"
-		print "\t\t\treturn (EINVAL);"
-		printf "\t\tsp->kind = ARC_JOB_KIND_%s;\n", uname(kk[k])
-		fields = kn[k] " " ku[k]
-		if (fields ~ /(^| )(set|unset)( |$)/) {
-			print "\t\tif ((vars = cbl_yarena_alloc(a, (c->set.n + c->unset.n +"
-			print "\t\t    1) * sizeof(*vars))) == NULL)"
-			print "\t\t\treturn (ENOMEM);"
-			print "\t\tmemset(vars, 0, (c->set.n + c->unset.n + 1) *"
-			print "\t\t    sizeof(*vars));"
-		}
-		nf2 = split(fields, a, " ")
-		delete seen
-		for (j = 1; j <= nf2; j++)
-			if ((i = fidx(a[j])) > 0 && !(a[j] in seen)) {
-				seen[a[j]] = 1
-				yspec_field(k, i)
-			}
-		if (fields ~ /(^| )(set|unset)( |$)/) {
-			print "\t\tsp->variables.n = nv;"
-			print "\t\tsp->variables.v = vars;"
-		}
-		print "\t\treturn (0);"
-		print "\t}"
-	}
-	print "\tdefault:"
-	print "\t\treturn (EINVAL);"
-	print "\t}"
-	print "}"
-}
