@@ -158,7 +158,7 @@ conf_form(struct html *h, const ucl_object_t *o)
 	del = jget(sp, "delivery");
 	rel = jget(sp, "relay");
 	pol = jget(sp, "policy");
-	h_raw(h, "<form class=\"stack mailconf\" data-form=\"mail-conf\">"
+	h_raw(h, "<form class=\"stack mailconf\" data-form=\"ml-conf\">"
 	    "<h4>Listeners</h4><textarea name=\"listeners\" rows=\"3\" "
 	    "spellcheck=\"false\" placeholder=\"localhost\n"
 	    "em0 port 587 tls pki arcana auth hostname mail.example.org\">");
@@ -253,7 +253,7 @@ conf_form(struct html *h, const ucl_object_t *o)
 	    "<code>smtpd -n</code> before it is put in place; smtpd starts "
 	    "again where it runs.</small><div class=\"toolbar\"><button "
 	    "class=\"primary\">Apply</button><button type=\"button\" "
-	    "class=\"ghost\" data-act=\"mail-conf-close\">Close</button>"
+	    "class=\"ghost\" data-act=\"ml-conf-close\">Close</button>"
 	    "</div></form>");
 }
 
@@ -267,7 +267,7 @@ table_form(struct html *h, const ucl_object_t *o, const char *name)
 	secret = strcmp(name, "credentials") == 0 || strcmp(name, "secrets") ==
 	    0;
 	t = jget(jget(o, "tables"), name);
-	h_raw(h, "<form class=\"stack\" data-form=\"mail-table\"><input "
+	h_raw(h, "<form class=\"stack\" data-form=\"ml-table\"><input "
 	    "type=\"hidden\" name=\"name\"");
 	h_attr(h, "value", name);
 	h_raw(h, "><textarea name=\"text\" rows=\"6\" class=\"mono\" "
@@ -291,7 +291,7 @@ table_form(struct html *h, const ucl_object_t *o, const char *name)
 	    "smtpd.conf's table reads it; smtpd reads it again at once.");
 	h_raw(h, "</small><div class=\"toolbar\"><button class=\"primary\">"
 	    "Write</button><button type=\"button\" class=\"ghost\" "
-	    "data-act=\"mail-table-close\">Close</button></div></form>");
+	    "data-act=\"ml-table-close\">Close</button></div></form>");
 }
 
 void
@@ -313,7 +313,7 @@ view_mail(struct html *h, struct server *s)
 	int			 k;
 	bool			 running;
 
-	if (!res_shown(h, &ml.r, s->id, ml_load, "mail-retry"))
+	if (!res_shown(h, &ml.r, s->id, ml_load, "ml-retry"))
 		return;
 	o = ml.r.o;
 	h_raw(h, "<section class=\"sysview mailview\">");
@@ -341,12 +341,12 @@ view_mail(struct html *h, struct server *s)
 		    "class=\"ghost small\" data-act=\"%s\" data-arg=\"%s\">%s"
 		    "</button> ", paused ? "st-down" : "st-up", parts[i] ==
 		    NULL ? "" : parts[i], paused ? "paused" : "running",
-		    paused ? "mail-resume" : "mail-pause", parts[i], paused ?
+		    paused ? "ml-resume" : "ml-pause", parts[i], paused ?
 		    "Resume" : "Pause");
 	}
 	h_fmt(h, "<span class=\"grow\"></span><button class=\"ghost\" "
-	    "data-act=\"mail-enable\" data-arg=\"%s\">%s</button><button "
-	    "class=\"ghost\" data-act=\"mail-conf\">Configuration</button>"
+	    "data-act=\"ml-enable\" data-arg=\"%s\">%s</button><button "
+	    "class=\"ghost\" data-act=\"ml-conf\">Configuration</button>"
 	    "</div>", running ? "no" : "yes", running ? "Stop and disable" :
 	    "Enable and start");
 	if (jstr(o, "mailer") != NULL) {
@@ -363,9 +363,9 @@ view_mail(struct html *h, struct server *s)
 	if (running && jint(o, "queued", 0) > 0) {
 		h_fmt(h, "<div class=\"toolbar\"><span>%lld envelope%s</span>"
 		    "<span class=\"grow\"></span><button class=\"ghost small\" "
-		    "data-act=\"mail-schedule\" data-arg=\"all\">Try all now"
+		    "data-act=\"ml-schedule\" data-arg=\"all\">Try all now"
 		    "</button><button class=\"ghost small danger\" data-act=\""
-		    "mail-remove\" data-arg=\"all\">Remove all</button></div>",
+		    "ml-remove\" data-arg=\"all\">Remove all</button></div>",
 		    (long long)jint(o, "queued", 0), jint(o, "queued", 0) == 1 ?
 		    "" : "s");
 		tbl_head(h, "mailq", cols, 7, 0);
@@ -386,10 +386,10 @@ view_mail(struct html *h, struct server *s)
 			    (long long)jint(r, "retries", 0));
 			h_txt(h, jstr(r, "error") != NULL ? jstr(r, "error") : "");
 			h_raw(h, "</td><td class=\"acts\"><button class=\"ghost "
-			    "small\" data-act=\"mail-schedule\"");
+			    "small\" data-act=\"ml-schedule\"");
 			h_attr(h, "data-arg", jstr(r, "evpid"));
 			h_raw(h, ">Try now</button><button class=\"ghost small "
-			    "danger\" data-act=\"mail-remove\"");
+			    "danger\" data-act=\"ml-remove\"");
 			h_attr(h, "data-arg", jstr(r, "evpid"));
 			h_raw(h, ">Remove</button></td></tr>");
 		}
@@ -431,7 +431,7 @@ view_mail(struct html *h, struct server *s)
 	h_raw(h, "<h3 class=\"secsub\">Tables</h3><div class=\"toolbar\">");
 	for (i = 0; i < nitems(tables); i++) {
 		t = jget(jget(o, "tables"), tables[i]);
-		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"mail-table\" "
+		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"ml-table\" "
 		    "data-arg=\"%s\">%s%s</button>", strcmp(ml.table, tables[i])
 		    == 0 ? " on" : "", tables[i], tables[i], t != NULL ? " ✓"
 		    : "");
@@ -557,7 +557,7 @@ mail_form(const char *form, const ucl_object_t *f)
 	char		*copy, *it, *line, *json, *q, title[96];
 	const char	*v, *w[1];
 
-	if (strcmp(form, "mail-table") == 0) {
+	if (strcmp(form, "ml-table") == 0) {
 		if ((s = ml_server()) == NULL || jstr(f, "name") == NULL)
 			return (true);
 		w[0] = jstr(f, "name");
@@ -567,7 +567,7 @@ mail_form(const char *form, const ucl_object_t *f)
 		ml.table[0] = '\0';
 		return (true);
 	}
-	if (strcmp(form, "mail-conf") != 0)
+	if (strcmp(form, "ml-conf") != 0)
 		return (false);
 	if ((s = ml_server()) == NULL)
 		return (true);
@@ -666,48 +666,48 @@ mail_action(const char *act, const char *arg, const char *value)
 	char		 title[96], body[300];
 
 	(void)value;
-	if (strncmp(act, "mail-", 5) != 0)
+	if (strncmp(act, "ml-", 3) != 0)
 		return (false);
-	if (strcmp(act, "mail-retry") == 0) {
+	if (strcmp(act, "ml-retry") == 0) {
 		res_drop(&ml.r);
 		render();
 		return (true);
 	}
-	if (strcmp(act, "mail-conf") == 0) {
+	if (strcmp(act, "ml-conf") == 0) {
 		ml.conf = true;
 		return (true);
 	}
-	if (strcmp(act, "mail-conf-close") == 0) {
+	if (strcmp(act, "ml-conf-close") == 0) {
 		ml.conf = false;
 		return (true);
 	}
-	if (strcmp(act, "mail-table") == 0) {
+	if (strcmp(act, "ml-table") == 0) {
 		snprintf(ml.table, sizeof(ml.table), "%s", strcmp(ml.table, arg)
 		    == 0 ? "" : arg);
 		return (true);
 	}
-	if (strcmp(act, "mail-table-close") == 0) {
+	if (strcmp(act, "ml-table-close") == 0) {
 		ml.table[0] = '\0';
 		return (true);
 	}
 	if ((s = ml_server()) == NULL)
 		return (true);
-	if (strcmp(act, "mail-enable") == 0 && strcmp(arg, "no") == 0) {
+	if (strcmp(act, "ml-enable") == 0 && strcmp(arg, "no") == 0) {
 		confirm("Stop OpenSMTPD?", "smtpd is stopped and disabled: mail "
 		    "to this host is refused, and what is queued waits until it "
-		    "runs again.", "Stop", true, NULL, "mail-enable-yes", "no",
+		    "runs again.", "Stop", true, NULL, "ml-enable-yes", "no",
 		    "");
 		return (true);
 	}
-	if (strcmp(act, "mail-remove") == 0) {
+	if (strcmp(act, "ml-remove") == 0) {
 		snprintf(body, sizeof(body), "%s taken out of the queue, never "
 		    "delivered, the sender not told.", strcmp(arg, "all") == 0 ?
 		    "Every envelope is" : "The envelope is");
 		confirm("Remove from the queue?", body, "Remove", true, NULL,
-		    "mail-remove-yes", arg, "");
+		    "ml-remove-yes", arg, "");
 		return (true);
 	}
-	if (strcmp(act, "mail-enable") == 0 || strcmp(act, "mail-enable-yes")
+	if (strcmp(act, "ml-enable") == 0 || strcmp(act, "ml-enable-yes")
 	    == 0) {
 		snprintf(title, sizeof(title), "smtpd %s", strcmp(arg, "yes") ==
 		    0 ? "enabled and started" : "stopped and disabled");
@@ -715,12 +715,12 @@ mail_action(const char *act, const char *arg, const char *value)
 		send(s, job_json("smtpd", "enable", w, 1, NULL, NULL), title);
 		return (true);
 	}
-	if (strcmp(act, "mail-pause") == 0 || strcmp(act, "mail-resume") == 0 ||
-	    strcmp(act, "mail-schedule") == 0 || strcmp(act, "mail-remove-yes")
+	if (strcmp(act, "ml-pause") == 0 || strcmp(act, "ml-resume") == 0 ||
+	    strcmp(act, "ml-schedule") == 0 || strcmp(act, "ml-remove-yes")
 	    == 0) {
-		const char	*verb = strcmp(act, "mail-pause") == 0 ? "pause" :
-		    strcmp(act, "mail-resume") == 0 ? "resume" : strcmp(act,
-		    "mail-schedule") == 0 ? "schedule" : "remove";
+		const char	*verb = strcmp(act, "ml-pause") == 0 ? "pause" :
+		    strcmp(act, "ml-resume") == 0 ? "resume" : strcmp(act,
+		    "ml-schedule") == 0 ? "schedule" : "remove";
 
 		w[0] = arg;
 		snprintf(title, sizeof(title), "smtpd %s %s", verb, arg);

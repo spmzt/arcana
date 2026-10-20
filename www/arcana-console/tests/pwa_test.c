@@ -3243,10 +3243,10 @@ part_mail(void)
 
 	run("document.querySelector('button.tab[data-arg=mail]').click()");
 	wait_js("document.querySelector('section.mailview') && document."
-	    "querySelector('button[data-act=mail-conf]')", 20);
-	click_when("button[data-act=mail-conf]", 10);
-	wait_js("document.querySelector('form[data-form=mail-conf]')", 10);
-	run("const f = document.querySelector('form[data-form=mail-conf]'); "
+	    "querySelector('button[data-act=ml-conf]')", 20);
+	click_when("button[data-act=ml-conf]", 10);
+	wait_js("document.querySelector('form[data-form=ml-conf]')", 10);
+	run("const f = document.querySelector('form[data-form=ml-conf]'); "
 	    "f.listeners.value = 'localhost\\nem0 port 587 tls pki mail auth'; "
 	    "f.domains.value = 'example.org'; f.aliases.checked = true; "
 	    "f.requestSubmit();");
@@ -3255,9 +3255,9 @@ part_mail(void)
 	    "mail auth <credentials>$' smtpd.conf") != 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "smtpd.conf is not rendered from the form");
-	click_when("button[data-act=mail-table][data-arg=aliases]", 10);
-	wait_js("document.querySelector('form[data-form=mail-table]')", 10);
-	run("const f = document.querySelector('form[data-form=mail-table]'); "
+	click_when("button[data-act=ml-table][data-arg=aliases]", 10);
+	wait_js("document.querySelector('form[data-form=ml-table]')", 10);
+	run("const f = document.querySelector('form[data-form=ml-table]'); "
 	    "f.text.value = 'root: admin@example.org\\n'; f.requestSubmit();");
 	queued_run();
 	for (i = 0; i < 300 && system("grep -q '^root: admin@example.org$' "
