@@ -224,32 +224,18 @@ running(const char *name)
 static pid_t
 inst_pid(struct work *w, const char *name)
 {
-	FILE	*fp;
-	long	 pid = 0;
 
-	if ((fp = fopen(inst_path(w, name, "pid"), "r")) == NULL)
-		return (0);
-	if (fscanf(fp, "%ld", &pid) != 1)
-		pid = 0;
-	fclose(fp);
-	if (pid <= 1 || kill((pid_t)pid, 0) != 0)
-		return (0);
-	return ((pid_t)pid);
+	return (pidfile_of(inst_path(w, name, "pid"), suricata_bin(w)));
 }
 
 static void
 inst_stop(struct work *w, const char *name)
 {
 	pid_t	pid;
-	int	i;
 
 	if ((pid = inst_pid(w, name)) == 0)
 		return;
-	(void)kill(pid, SIGTERM);
-	for (i = 0; i < 250 && kill(pid, 0) == 0; i++)
-		usleep(20000);
-	if (kill(pid, 0) == 0)
-		(void)kill(pid, SIGKILL);
+	pid_stop(pid, suricata_bin(w), 5000);
 	(void)unlink(inst_path(w, name, "pid"));
 }
 

@@ -718,6 +718,15 @@ attribute-sets:
         type: bool
       - name: error
         type: text
+      - name: signature
+        type: bytes
+        doc: |
+          For agent-update: the program signed by the console's CA key
+          (SHA-256), which the host checks against the CA certificates
+          it trusts (-A) before anything else; needed from any peer but
+          the local socket, whose root is root already.
+        checks:
+          max-len: 1024
       - name: host
         type: nest
         nested-attributes: host
@@ -2293,10 +2302,11 @@ operations:
     attribute-set: arcana
     auth: true
     doc: |
-      Replace arcana-agent with the program sent.  It is checked against
-      its SHA-256 and by running it with -V, on this host, before it
-      takes the place of the one installed, which is kept beside it
-      with the suffix .old.  With restart the service is restarted
+      Replace arcana-agent with the program sent.  It is checked by its
+      signature (the console's CA key over it, against the CA this host
+      trusts; not asked of the local socket), against its SHA-256 and
+      by running it with -V, on this host, before it takes the place of
+      the one installed, which is kept beside it with the suffix .old.  With restart the service is restarted
       after the reply; otherwise the new program runs from the next
       start.
     do:
@@ -2304,6 +2314,7 @@ operations:
         attributes:
           - binary
           - sha256
+          - signature
           - restart
         required:
           - binary

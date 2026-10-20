@@ -4886,7 +4886,7 @@ ATF_TC_BODY(mtls, tc)
 {
 	struct authn	 a;
 	struct resp	 r;
-	char		 cwd[MAXPATHLEN], uri[64], body[256], path[128];
+	char		 cwd[MAXPATHLEN], uri[64], body[256], path[128], upd[128];
 	char		 jgd[MAXPATHLEN], listen[64], *argv[20];
 	char		 sid[16], sw[128];
 	FILE		*fp;
@@ -4901,7 +4901,8 @@ ATF_TC_BODY(mtls, tc)
 	pki("console", "ca", "DNS:console");
 	snprintf(harness_webconf, sizeof(harness_webconf), "tls {\n"
 	    "\tca = \"%s/pki/ca.pem\";\n\tcert = \"%s/pki/console.pem\";\n"
-	    "\tkey = \"%s/pki/console.key\";\n}\n", cwd, cwd, cwd);
+	    "\tkey = \"%s/pki/console.key\";\n\tca_key = \"%s/pki/ca.key\";\n"
+	    "}\n", cwd, cwd, cwd, cwd);
 	start(tc, 0, NULL);
 
 	/* A second arcana-agent, on TCP. */
@@ -4928,6 +4929,9 @@ ATF_TC_BODY(mtls, tc)
 	/* rc.conf: the test's own, never the host's. */
 	argv[i++] = (char *)(uintptr_t)"-y";
 	argv[i++] = (char *)(uintptr_t)"./fake-sysrc";
+	/* The program an update replaces: not the one under test. */
+	argv[i++] = (char *)(uintptr_t)"-U";
+	argv[i++] = (char *)(uintptr_t)"installed-agent2";
 	argv[i] = NULL;
 	pid = spawn_server(argv, "arcana-agent2.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent2.pid", "w")) != NULL);
@@ -4943,6 +4947,8 @@ ATF_TC_BODY(mtls, tc)
 	EXPECT(&r, 200);
 	snprintf(path, sizeof(path), "/api/servers/%s/jails",
 	    jstr(&r, "servers.0.id"));
+	snprintf(upd, sizeof(upd), "/api/servers/%s/agent-update",
+	    jstr(&r, "servers.0.id"));
 	ATF_CHECK_STREQ("false", jstr(&r, "servers.0.local"));
 	resp_free(&r);
 	http("GET", path, NULL, &r);
@@ -4950,6 +4956,16 @@ ATF_TC_BODY(mtls, tc)
 	ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
 	ATF_CHECK_MSG(strstr(jstr(&r, "trace.2.detail"), "mutual TLS") != NULL,
 	    "%s", jstr(&r, "trace.2.detail"));
+	resp_free(&r);
+	/* Over TLS the program sent is signed by the console's CA key, and
+	 * the host checks it against the CA it trusts before anything
+	 * else: here the console's own CA, so it is taken. */
+	ATF_REQUIRE(access("installed-agent2", F_OK) == -1);
+	http("POST", upd, "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "true") == 0, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "verified") != NULL, "%s", r.body);
+	ATF_CHECK(access("installed-agent2", X_OK) == 0);
 	resp_free(&r);
 
 	/* The certificate has to name the host the console expects. */

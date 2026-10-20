@@ -1734,6 +1734,11 @@ in place of the host's
 The host checks it against its SHA-256 and by running it with
 .Fl V
 before it replaces the one installed, which it keeps with the suffix
+.Pa .old ;
+over the local socket no signature is asked, as root there could put
+the program in place by hand, where a console's program must be signed
+by its CA key.
+The suffix is
 .Pa .old .
 With
 .Fl r

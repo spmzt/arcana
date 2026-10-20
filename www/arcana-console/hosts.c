@@ -1521,8 +1521,11 @@ bundle_of(const char *uri, const char *peer, char **out)
 		    "%s", msg);
 		return (why);
 	}
+	/* Its files, not its keys: a host's identity (WireGuard's and
+	 * strongSwan's private keys, the agent's own) stays its own; the
+	 * host applied to keeps or makes its own. */
 	memset(&q, 0, sizeof(q));
-	q.secrets = true;
+	q.secrets = false;
 	if ((error = arc_config_export(&cl, &q, &r)) != 0) {
 		snprintf(why, sizeof(why), "the host the bundle is read from "
 		    "did not answer: %s", strerror(error));
@@ -1659,7 +1662,8 @@ call_run(struct kore_task *t)
 	struct arc_sdwan_ids_req sdq5;
 	struct arc_sdwan_ids_rsp *sdr5;
 	struct arc_source_head_rsp *shr;
-	uint8_t			*bin;
+	uint8_t			*bin, *sig;
+	size_t			 siglen;
 	size_t			 binlen;
 	char			 sha[65];
 	unsigned char		 md[EVP_MAX_MD_SIZE];
@@ -2416,8 +2420,8 @@ connected:
 		nsteps = cxr->trace.n;
 		break;
 	case OP_CONFIG_APPLY:
-		/* Another host's bundle, secrets too, read by the console:
-		 * not through the page. */
+		/* Another host's bundle, its secrets left out, read by the
+		 * console: not through the page. */
 		if (c->from_uri != NULL) {
 			if ((msg = bundle_of(c->from_uri, c->from_peer,
 			    &bundle)) != NULL) {
@@ -3033,12 +3037,23 @@ connected:
 			put_str(top, "error", msg);
 			break;
 		}
+		/* Signed by the CA key: the host takes no other. */
+		if ((msg = pki_sign_data(bin, binlen, &sig, &siglen)) != NULL) {
+			ok = false;
+			put_str(top, "error", msg);
+			break;
+		}
 		memset(&auq, 0, sizeof(auq));
 		auq.binary.p = bin;
 		auq.binary.len = binlen;
 		auq.sha256 = sha;
+		auq.signature.p = sig;
+		auq.signature.len = siglen;
 		auq.restart = c->restart;
-		if ((error = arc_agent_update(&cl, &auq, &aur)) != 0)
+		error = arc_agent_update(&cl, &auq, &aur);
+		free(sig);
+		sig = NULL;
+		if (error != 0)
 			goto rpcfail;
 		ok = aur->ok;
 		put_str(top, "error", aur->error);

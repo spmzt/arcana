@@ -2949,13 +2949,13 @@ echo "setfib \$*" >> $(pwd)/setfib.log
 shift 2
 case "\$1" in
 # dnsmasq -C conf -x pid: started, says the pid file, this agent's pid.
-*dnsmasq) sleep 300 & echo \$! > "\$5" ;;
+*dnsmasq) "\$1" --hold "\$5" & ;;
 # local-unbound -c conf: started, says the pid file named in the conf.
-*local-unbound) p=\$(sed -n 's/.*pidfile: "\(.*\)"/\1/p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
+*local-unbound) p=\$(sed -n 's/.*pidfile: "\(.*\)"/\1/p' "\$3"); "\$1" --hold "\$p" & ;;
 # squid -f conf: started, says the pid file named in the conf.
-*squid) echo "squid \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^pid_filename //p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
+*squid) echo "squid \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^pid_filename //p' "\$3"); "\$1" --hold "\$p" & ;;
 # c-icap -f conf: started, says the pid file named in the conf.
-*c-icap) echo "c-icap \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^PidFile //p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
+*c-icap) echo "c-icap \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^PidFile //p' "\$3"); "\$1" --hold "\$p" & ;;
 # bird -c conf -s sock -P pid: started, says the socket.
 *) shift 3; touch "\$2" ;;
 esac
@@ -2963,12 +2963,14 @@ exit 0
 EOS
 	cat > fake-dnsmasq <<EOS
 #!/bin/sh
+[ "\$1" = --hold ] && { echo \$\$ > "\$2"; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
 echo "dnsmasq \$*" >> $(pwd)/dnsmasq.log
 [ "\$1" = --test ] && { grep -q BROKEN "\$3" && { echo "dnsmasq: bad option at line 1 of \$3" >&2; exit 1; }; exit 0; }
 exit 0
 EOS
 	cat > fake-local-unbound <<EOS
 #!/bin/sh
+[ "\$1" = --hold ] && { echo \$\$ > "\$2"; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
 echo "unbound \$*" >> $(pwd)/unbound.log
 exit 0
 EOS
@@ -2982,6 +2984,7 @@ EOS
 	mkdir -p tools
 	cat > tools/squid <<EOS
 #!/bin/sh
+[ "\$1" = --hold ] && { echo \$\$ > "\$2"; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
 echo "squid \$*" >> $(pwd)/squid.log
 [ "\$2" = parse ] && { grep -q BROKEN "\$4" && { echo "FATAL: Bungled \$4" >&2; exit 1; }; exit 0; }
 exit 0
@@ -2991,7 +2994,7 @@ EOS
 echo "certgen \$*" >> $(pwd)/squid.log
 mkdir -p "\$3"
 EOS
-	printf '#!/bin/sh\nexit 0\n' > tools/c-icap
+	printf '#!/bin/sh\n[ "$1" = --hold ] && { echo $$ > "$2"; i=0; while [ $i -lt 300 ]; do sleep 1; i=$((i+1)); done; exit 0; }\nexit 0\n' > tools/c-icap
 	# suricata: -T checks, and refuses BROKEN, and a ruleset whose rule
 	# negates any as Suricata does; run, it writes an alert and a flow
 	# to eve.json in its log directory, says its pid, and notes a USR2.
@@ -3027,6 +3030,8 @@ while True:
 EOS
 	cat > tools/suricata <<EOS
 #!/bin/sh
+# Started: the daemon, under its own name, its pid in the file given.
+[ "\$1" = --hold ] && { echo \$\$ > "\$2"; trap "echo usr2 >> $(pwd)/suricata.log" USR2; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
 echo "suricata \$*" >> $(pwd)/suricata.log
 # A capture replayed (-r, -l its directory): an alert of it.
 [ "\$3" = -r ] && { printf '%s\\n' '{"timestamp":"2026-10-19T11:00:00.000000+0000","event_type":"alert","src_ip":"10.1.1.1","src_port":1,"dest_ip":"10.2.2.2","dest_port":2,"proto":"TCP","alert":{"action":"allowed","signature_id":2000009,"rev":1,"signature":"ET REPLAYED","category":"","severity":1}}' >> "\$6/eve.json"; exit 0; }
@@ -3044,7 +3049,7 @@ printf '%s\\n' '{"timestamp":"2026-10-12T18:00:00.000000+0000","event_type":"flo
 # FAILSTART in the configuration fails it.
 [ -f "\$4" ] && { echo "[1 - Main] 2026-10-19 Error: pidfile: pid file '\$4' exists but appears stale" >> "\$d/suricata.log"; exit 1; }
 grep -q FAILSTART "\$2" && { echo "[1 - Main] 2026-10-19 Error: suricata: this start fails" >> "\$d/suricata.log"; exit 1; }
-sh -c 'trap "echo usr2 >> $(pwd)/suricata.log" USR2; while :; do sleep 1; done' & echo \$! > "\$4"
+"\$0" --hold "\$4" &
 exit 0
 EOS
 	# suricata-update: the ruleset written where -o says, a rule

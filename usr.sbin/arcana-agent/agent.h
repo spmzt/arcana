@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.156.0"
+#define	ARCANA_AGENT_VERSION	"0.157.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -242,6 +242,9 @@ struct execres {
 };
 
 int		 run_exec(struct work *, char *const [], struct execres *);
+bool		 pid_is(pid_t, const char *);
+pid_t		 pidfile_of(const char *, const char *);
+void		 pid_stop(pid_t, const char *, int);
 void		 exec_set_home(struct work *, const char *);
 void		 exec_set_env(struct work *, const char *, const char *);
 void		 exec_set_stdin(const char *, size_t);
@@ -676,6 +679,7 @@ void		 transport_init(cbl_ctx *, cbl_loop *, cbl_tls *);
 bool		 peer_is_host(const cbl_peer *);
 int		 admit_register(cbl_ctx *, cbl_family **);
 /* superbia/tlsfiles.c: the agent's own TLS files renewed */
+const char	*tls_files_ca(void);
 void		 tls_files_init(cbl_tls *, const char *, const char *,
 		    const char *);
 void		 do_tls(struct work *, const char *, const char *,
@@ -825,7 +829,8 @@ int		 do_console_update(struct work *, const char *, const char *,
 
 /* ira/update.c */
 int		 do_agent_update(struct work *, const uint8_t *, size_t,
-		    const char *, struct arc_agent_update_rsp *);
+		    const char *, const uint8_t *, size_t, bool,
+		    struct arc_agent_update_rsp *);
 void		 service_restart(const char *);
 void		 service_detached(const char *, const char *);
 

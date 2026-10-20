@@ -231,6 +231,38 @@ read_key(const char *path)
 }
 
 /*
+ * data signed by the CA key (SHA-256, or Ed25519's own), for a host to
+ * check against the CA it trusts: malloc(3)ed into *sigp, or NULL and
+ * why not.  What the console sends to replace a host's program.
+ */
+const char *
+pki_sign_data(const uint8_t *data, size_t len, uint8_t **sigp,
+    size_t *siglenp)
+{
+	EVP_PKEY	*key;
+	EVP_MD_CTX	*ctx;
+	const char	*e;
+
+	*sigp = NULL;
+	*siglenp = 0;
+	if (cfg.tls_ca_key == NULL || (key = read_key(cfg.tls_ca_key)) == NULL)
+		return ("the console has no CA key (tls.ca_key) to sign with");
+	e = NULL;
+	if ((ctx = EVP_MD_CTX_new()) == NULL || EVP_DigestSignInit(ctx, NULL,
+	    EVP_PKEY_id(key) == EVP_PKEY_ED25519 ? NULL : EVP_sha256(), NULL,
+	    key) != 1 || EVP_DigestSign(ctx, NULL, siglenp, data, len) != 1 ||
+	    (*sigp = malloc(*siglenp)) == NULL || EVP_DigestSign(ctx, *sigp,
+	    siglenp, data, len) != 1) {
+		free(*sigp);
+		*sigp = NULL;
+		e = "the console cannot sign with its CA key";
+	}
+	EVP_MD_CTX_free(ctx);
+	EVP_PKEY_free(key);
+	return (e);
+}
+
+/*
  * Without a tls { } block: the CA and the console's client certificate
  * live in the data directory, made at first start.
  */

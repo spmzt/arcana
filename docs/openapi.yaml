@@ -1798,7 +1798,8 @@ paths:
       tags: [servers]
       summary: Make the host what a bundle says
       description: With bundle, a host's bundle, or from, another host's
-        id, whose bundle the console reads there with its secrets, or
+        id, whose bundle the console reads there without its secrets (a
+        host's keys are its own identity and are never copied), or
         template, a template's name, and values, the value of each of
         its {{placeholders}} (one without a value or a default refuses
         the whole); and

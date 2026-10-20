@@ -27,6 +27,8 @@
 #include <unistd.h>
 
 #include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
 
 #include "agent.h"
 
@@ -46,9 +48,50 @@ sha256_is(const uint8_t *data, size_t len, const char *hex)
 	return (strcasecmp(got, hex) == 0);
 }
 
+/*
+ * Is the program signed by a CA this host trusts (-A)?  The console's
+ * CA key signs what it sends (SHA-256; Ed25519 with its own hash), and
+ * any certificate of the CA file verifies.
+ */
+static bool
+signed_by_ca(const uint8_t *data, size_t len, const uint8_t *sig,
+    size_t siglen, const char **why)
+{
+	FILE		*fp;
+	X509		*x;
+	EVP_PKEY	*pk;
+	EVP_MD_CTX	*ctx;
+	const char	*ca;
+	bool		 ok, any;
+
+	if ((ca = tls_files_ca()) == NULL || (fp = fopen(ca, "r")) == NULL) {
+		*why = "this host trusts no CA (-A): nothing can sign a program "
+		    "for it";
+		return (false);
+	}
+	ok = any = false;
+	while (!ok && (x = PEM_read_X509(fp, NULL, NULL, NULL)) != NULL) {
+		any = true;
+		if ((pk = X509_get0_pubkey(x)) != NULL && (ctx = EVP_MD_CTX_new())
+		    != NULL) {
+			ok = EVP_DigestVerifyInit(ctx, NULL, EVP_PKEY_id(pk) ==
+			    EVP_PKEY_ED25519 ? NULL : EVP_sha256(), NULL, pk) == 1 &&
+			    EVP_DigestVerify(ctx, sig, siglen, data, len) == 1;
+			EVP_MD_CTX_free(ctx);
+		}
+		X509_free(x);
+	}
+	fclose(fp);
+	if (!ok)
+		*why = any ? "the program is not signed by a CA this host trusts" :
+		    "the CA file holds no certificate";
+	return (ok);
+}
+
 int
 do_agent_update(struct work *w, const uint8_t *data, size_t len,
-    const char *sha256, struct arc_agent_update_rsp *rsp)
+    const char *sha256, const uint8_t *sig, size_t siglen, bool local,
+    struct arc_agent_update_rsp *rsp)
 {
 	struct execres	 res;
 	const char	*path, *nl;
@@ -63,6 +106,26 @@ do_agent_update(struct work *w, const uint8_t *data, size_t len,
 	new = wfmt(w, "%s.new", path);
 	old = wfmt(w, "%s.old", path);
 
+	/* Signed by the CA, unless asked by the local socket, whose root
+	 * could replace the program by hand. */
+	if (!local) {
+		const char	*why;
+
+		s = step_begin(w, ARC_STEP_KIND_LIB, "signature", "%zu bytes by "
+		    "the CA's key", siglen);
+		if (siglen == 0) {
+			step_end(w, s, false, "none");
+			rsp->error = "the program is not signed: a console signs "
+			    "what it sends with its CA key";
+			return (0);
+		}
+		if (!signed_by_ca(data, len, sig, siglen, &why)) {
+			step_end(w, s, false, "%s", why);
+			rsp->error = why;
+			return (0);
+		}
+		step_end(w, s, true, "verified");
+	}
 	s = step_begin(w, ARC_STEP_KIND_LIB, "SHA-256", "%zu bytes", len);
 	if (!sha256_is(data, len, sha256)) {
 		step_end(w, s, false, "not %s", sha256);

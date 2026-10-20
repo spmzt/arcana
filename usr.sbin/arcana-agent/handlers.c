@@ -52,6 +52,9 @@ struct job {
 	uint8_t			*binary;	/* agent-update */
 	size_t			 binlen;
 	char			*sha256;
+	uint8_t			*sig;		/* by the console's CA key */
+	size_t			 siglen;
+	bool			 local;		/* asked by the local socket */
 	bool			 restart;
 	char			*source;	/* agent-build */
 	char			*ref;
@@ -1250,7 +1253,8 @@ worker(void *arg)
 		} else {
 			if (change_note("%s", what))
 				do_agent_update(&w, j->binary, j->binlen,
-				    j->sha256, &aur);
+				    j->sha256, j->sig, j->siglen, j->local,
+				    &aur);
 			else {
 				aur.has_ok = true;
 				aur.error = STOPPING;
@@ -1399,6 +1403,7 @@ job_free(struct job *j)
 	free((void *)(uintptr_t)j->pkg.names.v);
 	free(j->jail);
 	free(j->binary);
+	free(j->sig);
 	free(j->sha256);
 	free(j->source);
 	free(j->listen);
@@ -1629,6 +1634,7 @@ arc_agent_update_doit(cbl_req *req, const struct arc_agent_update_req *rq,
     void *arg __unused)
 {
 	struct job	*j;
+	const cbl_peer	*peer;
 
 	if (rq->binary.len == 0 || strlen(rq->sha256) != 64)
 		return (reject(req, "a program and its SHA-256 are needed"));
@@ -1636,6 +1642,16 @@ arc_agent_update_doit(cbl_req *req, const struct arc_agent_update_req *rq,
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_AGENT_UPDATE;
+	/* The local socket's root is root already: its program is taken
+	 * unsigned; any other peer's must be signed by the CA. */
+	peer = cbl_req_peer(req);
+	j->local = peer != NULL && cbl_peer_transport(peer) == CBL_TR_UNIX;
+	if (rq->signature.len > 0) {
+		if ((j->sig = malloc(rq->signature.len)) == NULL)
+			err(1, "malloc");
+		memcpy(j->sig, rq->signature.p, rq->signature.len);
+		j->siglen = rq->signature.len;
+	}
 	if ((j->binary = malloc(rq->binary.len)) == NULL)
 		err(1, "malloc");
 	memcpy(j->binary, rq->binary.p, rq->binary.len);

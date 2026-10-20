@@ -504,10 +504,13 @@ run_pid(struct work *w, long id, int *exitp)
 		*exitp = atoi(s);
 		return (0);
 	}
+	/* The run is a shell (poudriere is a script): its pid is believed
+	 * when that process is one, and the group signalled is its. */
 	if ((s = first_line(w, wfmt(w, "%s/%ld.pid", dir, id))) == NULL ||
 	    (pid = (pid_t)atoi(s)) <= 1)
 		return (0);
-	return (kill(pid, 0) == 0 || errno == EPERM ? pid : 0);
+	return (pid_is(pid, opts.poudriere_bin) || pid_is(pid, "/bin/sh") ?
+	    pid : 0);
 }
 
 /* The last bytes of a run's log, from a line's start. */

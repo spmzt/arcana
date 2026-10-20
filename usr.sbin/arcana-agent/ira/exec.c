@@ -10,12 +10,15 @@
  */
 
 #include <sys/param.h>
+#include <sys/sysctl.h>
+#include <sys/user.h>
 #include <sys/wait.h>
 
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <libutil.h>
 #include <signal.h>
 #include <spawn.h>
 #include <stdio.h>
@@ -403,3 +406,77 @@ run_exec_lines(struct work *w, char *const argv[],
 	return (rc);
 }
 
+
+/*
+ * Is the process of a pid the program it is taken for?  A pid file
+ * left by a crash or a reboot names a number that may be another's by
+ * now: its name (ki_comm) or what it was started as (argv[0]) must be
+ * the program's before it is believed, let alone signalled.
+ */
+bool
+pid_is(pid_t pid, const char *prog)
+{
+	struct kinfo_proc	*kp;
+	const char		*base;
+	bool			 is;
+
+	if (pid <= 1 || prog == NULL)
+		return (false);
+	if ((kp = kinfo_getproc(pid)) == NULL)
+		return (false);
+	base = strrchr(prog, '/') != NULL ? strrchr(prog, '/') + 1 : prog;
+	is = strcmp(kp->ki_comm, base) == 0;
+	free(kp);
+	if (!is) {
+		/* What it was started as: its argv[0], or, a script's (whose
+		 * name the kernel gives its interpreter), argv[1]. */
+		int	mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_ARGS, pid };
+		char	av[2 * MAXPATHLEN], *p, *e;
+		size_t	len = sizeof(av) - 1;
+		int	k;
+
+		if (sysctl(mib, 4, av, &len, NULL, 0) == 0 && len > 0) {
+			av[len] = '\0';
+			for (p = av, k = 0; !is && k < 2 && p < av + len; p = e +
+			    1, k++) {
+				e = p + strlen(p);
+				is = strcmp(p, prog) == 0 || (strrchr(p, '/') !=
+				    NULL && strcmp(strrchr(p, '/') + 1, base) == 0);
+			}
+		}
+	}
+	return (is);
+}
+
+/* The pid a file holds, when that process is prog's; 0 otherwise. */
+pid_t
+pidfile_of(const char *path, const char *prog)
+{
+	FILE	*fp;
+	long	 pid = 0;
+
+	if ((fp = fopen(path, "re")) == NULL)
+		return (0);
+	if (fscanf(fp, "%ld", &pid) != 1)
+		pid = 0;
+	fclose(fp);
+	return (pid > 1 && pid_is((pid_t)pid, prog) ? (pid_t)pid : 0);
+}
+
+/*
+ * A program's process stopped: SIGTERM, up to wait_ms for it to go,
+ * then SIGKILL; each signal only while the pid is still that program's.
+ */
+void
+pid_stop(pid_t pid, const char *prog, int wait_ms)
+{
+	int	i;
+
+	if (!pid_is(pid, prog))
+		return;
+	(void)kill(pid, SIGTERM);
+	for (i = 0; i < wait_ms / 20 && pid_is(pid, prog); i++)
+		usleep(20000);
+	if (pid_is(pid, prog))
+		(void)kill(pid, SIGKILL);
+}
