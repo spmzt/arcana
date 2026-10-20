@@ -5,8 +5,11 @@
 
 /*
  * The host's network storage services, the base system's: the NFS
- * server (nfsd(8), mountd(8) and exports(5); NFSv4.2 by
- * vfs.nfsd.server_max_minorversion, pNFS by nfsd's -p and -m, as
+ * server, NFSv4 alone (nfsd(8) with nfsv4_server_only, mountd(8) for
+ * the exports, no NFSv3 and no rpcbind; exports(5) with its V4: root,
+ * a directory on ZFS; the datasets that share themselves by sharenfs,
+ * zfsprops(7), which zfs writes to /etc/zfs/exports for mountd; NFSv4.2
+ * by vfs.nfsd.server_max_minorversion, pNFS by nfsd's -p and -m, as
  * pnfsserver(4) has it), the iSCSI target (ctld(8), ctl.conf(5),
  * ctladm(8)) and HAST (hastd(8), hast.conf(5), hastctl(8)).  Read
  * whole (the netstore operation), changed by jobs of the nfs, iscsi and
@@ -14,6 +17,7 @@
  */
 
 #include <sys/param.h>
+#include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
 
@@ -159,13 +163,74 @@ nfs_flags_json(struct work *w, ucl_object_t *o, const char *flags)
 	}
 }
 
+/*
+ * The path of the first V4: line of exports(5), NFSv4's root; NULL
+ * for none.  *any says whether the text exports anything at all (a
+ * line that is not blank and not a comment).
+ */
+static const char *
+v4_root(struct work *w, const char *text, bool *any)
+{
+	char	*copy, *it, *line, *p;
+
+	*any = false;
+	if (text == NULL)
+		return (NULL);
+	copy = wstrdup(w, text);
+	for (it = copy; (line = strsep(&it, "\n")) != NULL;) {
+		line += strspn(line, " \t");
+		if (line[0] == '\0' || line[0] == '#')
+			continue;
+		*any = true;
+		if (strncmp(line, "V4:", 3) != 0)
+			continue;
+		p = line + 3;
+		p += strspn(p, " \t");
+		p[strcspn(p, " \t\r")] = '\0';
+		return (p[0] != '\0' ? p : NULL);
+	}
+	return (NULL);
+}
+
+/* Is the directory on ZFS?  NULL, or why it is not. */
+static const char *
+not_on_zfs(struct work *w, const char *path)
+{
+	struct statfs	sf;
+
+	if (statfs(path, &sf) == -1)
+		return (wfmt(w, "%s: %s", path, strerror(errno)));
+	if (strcmp(sf.f_fstypename, "zfs") != 0)
+		return (wfmt(w, "%s is not on ZFS (%s)", path, sf.f_fstypename));
+	return (NULL);
+}
+
+/* A ZFS filesystem's name: pool/path, no leading slash, no dots up. */
+static bool
+dataset_ok(const char *s)
+{
+	size_t	i, n;
+
+	n = strlen(s);
+	if (n == 0 || n > 256 || s[0] == '/' || s[0] == '-' ||
+	    strstr(s, "..") != NULL)
+		return (false);
+	for (i = 0; i < n; i++)
+		if (!isalnum((unsigned char)s[i]) && strchr("_.:/-", s[i]) ==
+		    NULL)
+			return (false);
+	return (true);
+}
+
 static ucl_object_t *
 nfs_json(struct work *w)
 {
-	ucl_object_t	*o;
-	const char	*v;
+	ucl_object_t	*o, *arr, *s;
+	const char	*v, *root, *why;
+	char		*copy, *it, *line, *name, *mnt, *share;
 	int		 minor;
 	size_t		 len;
+	bool		 any;
 
 	o = ucl_object_typed_new(UCL_OBJECT);
 	service_json(w, o, "nfsd");
@@ -181,8 +246,54 @@ nfs_json(struct work *w)
 		ucl_object_insert_key(o, ucl_object_fromint(minor),
 		    "max_minorversion", 0, false);
 	put_s(o, "exports_path", opts.exports_file);
-	if ((v = slurp(w, opts.exports_file)) != NULL)
+	if ((v = slurp(w, opts.exports_file)) != NULL) {
 		put_s(o, "exports", wtext(w, v));
+		/* NFSv4's root, and whether it is on ZFS. */
+		if ((root = v4_root(w, v, &any)) != NULL) {
+			put_s(o, "v4root", root);
+			why = not_on_zfs(w, root);
+			ucl_object_insert_key(o, ucl_object_frombool(why == NULL),
+			    "v4root_zfs", 0, false);
+			if (why != NULL)
+				put_s(o, "v4root_error", why);
+		}
+	}
+	/* What zfs wrote for mountd, from the datasets' sharenfs. */
+	if ((v = slurp(w, "/etc/zfs/exports")) != NULL)
+		put_s(o, "zfs_exports", wtext(w, v));
+	/* The datasets that share themselves (sharenfs, zfsprops(7)). */
+	{
+		struct execres	 res;
+		char		*argv[8];
+
+		argv[0] = (char *)(uintptr_t)opts.zfs_bin;
+		argv[1] = (char *)(uintptr_t)"list";
+		argv[2] = (char *)(uintptr_t)"-H";
+		argv[3] = (char *)(uintptr_t)"-o";
+		argv[4] = (char *)(uintptr_t)"name,mountpoint,sharenfs";
+		argv[5] = (char *)(uintptr_t)"-t";
+		argv[6] = (char *)(uintptr_t)"filesystem";
+		argv[7] = NULL;
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		if (run_exec(w, argv, &res) == 0 && res.out != NULL) {
+			copy = wstrndup(w, res.out, res.outlen);
+			for (it = copy; (line = strsep(&it, "\n")) != NULL;) {
+				name = strsep(&line, "\t");
+				mnt = strsep(&line, "\t");
+				share = line;
+				if (name == NULL || mnt == NULL || share == NULL ||
+				    strcmp(share, "off") == 0 || strcmp(share, "-") ==
+				    0)
+					continue;
+				s = ucl_object_typed_new(UCL_OBJECT);
+				put_s(s, "dataset", name);
+				put_s(s, "mountpoint", mnt);
+				put_s(s, "sharenfs", share);
+				ucl_array_append(arr, s);
+			}
+		}
+		ucl_object_insert_key(o, arr, "shares", 0, false);
+	}
 	/* What mountd exports now, as showmount(8) asks it. */
 	{
 		static const char *const e[] = { "-e", "localhost" };
@@ -337,8 +448,9 @@ words_known(const struct arc_job_spec *sp, const char *const *keys)
 const char *
 netstore_check(const struct arc_job_spec *sp)
 {
-	static const char *const server[] = { "enable", "v4", "v4only",
-	    "minor", "threads", "pnfs", "mirror", NULL };
+	static const char *const server[] = { "enable", "minor", "threads",
+	    "pnfs", "mirror", NULL };
+	static const char *const share[] = { "dataset", "sharenfs", NULL };
 	static const char *const enable[] = { "enable", NULL };
 	static const char *const role[] = { "resource", "role", NULL };
 	static const char *const create[] = { "resource", NULL };
@@ -355,15 +467,24 @@ netstore_check(const struct arc_job_spec *sp)
 		if (strcmp(sp->verb, "exports") == 0)
 			return (text_ok(sp->text) ? NULL : "exports is the text "
 			    "of exports(5)");
+		if (strcmp(sp->verb, "share") == 0) {
+			if (!words_known(sp, share) || (v = word(sp, "dataset")) ==
+			    NULL || !dataset_ok(v))
+				return ("share takes dataset= (a ZFS filesystem's "
+				    "name) and sharenfs=");
+			if ((v = word(sp, "sharenfs")) == NULL || v[0] == '\0' ||
+			    strlen(v) > 256 || strcspn(v, "\n\r") != strlen(v))
+				return ("sharenfs is on, off or exports(5) options, "
+				    "one line");
+			return (NULL);
+		}
 		if (strcmp(sp->verb, "server") != 0)
-			return ("an nfs job's verb is exports or server");
+			return ("an nfs job's verb is exports, share or server");
 		if (!words_known(sp, server))
-			return ("server takes enable=, v4=, v4only=, minor=, "
-			    "threads=, pnfs= and mirror=");
-		if (((v = word(sp, "enable")) != NULL && !yes_no(v)) ||
-		    ((v = word(sp, "v4")) != NULL && !yes_no(v)) ||
-		    ((v = word(sp, "v4only")) != NULL && !yes_no(v)))
-			return ("enable, v4 and v4only are yes or no");
+			return ("server takes enable=, minor=, threads=, pnfs= and "
+			    "mirror=");
+		if ((v = word(sp, "enable")) != NULL && !yes_no(v))
+			return ("enable is yes or no");
 		if ((v = word(sp, "minor")) != NULL && strcmp(v, "0") != 0 &&
 		    strcmp(v, "1") != 0 && strcmp(v, "2") != 0)
 			return ("minor is NFSv4's 0, 1 or 2");
@@ -482,12 +603,6 @@ nfs_server(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	const char	*v, *flags, *threads, *pnfs, *mirror;
 	bool		 on;
 
-	if ((v = word(sp, "v4")) != NULL && rc_set(w, "nfsv4_server_enable",
-	    "=", strcmp(v, "yes") == 0 ? "YES" : "NO", errp) != 0)
-		return (-1);
-	if ((v = word(sp, "v4only")) != NULL && rc_set(w, "nfsv4_server_only",
-	    "=", strcmp(v, "yes") == 0 ? "YES" : "NO", errp) != 0)
-		return (-1);
 	/* NFSv4.2 (or .1, or .0), now and at the next boot. */
 	if ((v = word(sp, "minor")) != NULL && do_sysctl_set(w,
 	    "vfs.nfsd.server_max_minorversion", v, true, errp) != 0)
@@ -547,8 +662,10 @@ nfs_server(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	}
 	if ((v = word(sp, "enable")) != NULL) {
 		on = strcmp(v, "yes") == 0;
-		/* rpcbind and mountd with it; nfsuserd for NFSv4's names. */
-		if (on && (rc_set(w, "rpcbind_enable", "=", "YES", errp) != 0 ||
+		/* NFSv4 alone: no NFSv3, so no rpcbind; mountd for the
+		 * exports (rc.d/nfsd and rc.d/mountd know the setting). */
+		if (on && (rc_set(w, "nfsv4_server_enable", "=", "YES", errp) !=
+		    0 || rc_set(w, "nfsv4_server_only", "=", "YES", errp) != 0 ||
 		    rc_set(w, "mountd_enable", "=", "YES", errp) != 0))
 			return (-1);
 		if (service_onoff(w, "nfsd", on, errp) != 0)
@@ -585,7 +702,36 @@ do_netstore_job(struct work *w, const struct arc_job_spec *sp,
 		return (-1);
 	switch (sp->kind) {
 	case ARC_JOB_KIND_NFS:
+		if (strcmp(sp->verb, "share") == 0) {
+			/* zfs writes /etc/zfs/exports and tells mountd itself. */
+			argv[0] = (char *)(uintptr_t)opts.zfs_bin;
+			argv[1] = (char *)(uintptr_t)"set";
+			argv[2] = wfmt(w, "sharenfs=%s", word(sp, "sharenfs"));
+			argv[3] = (char *)(uintptr_t)word(sp, "dataset");
+			argv[4] = NULL;
+			if (run_exec(w, argv, &res) != 0) {
+				*errp = wfmt(w, "zfs set sharenfs: %s", exec_error(w,
+				    &res, "zfs set"));
+				return (-1);
+			}
+			return (0);
+		}
 		if (strcmp(sp->verb, "exports") == 0) {
+			const char	*root, *why;
+			bool		 any;
+
+			/* NFSv4 alone: nothing is served without the V4:
+			 * root, and the root is a directory on ZFS. */
+			root = v4_root(w, sp->text, &any);
+			if (root == NULL && any) {
+				*errp = "NFSv4 alone: exports needs a V4: line, its "
+				    "root a directory on ZFS";
+				return (-1);
+			}
+			if (root != NULL && (why = not_on_zfs(w, root)) != NULL) {
+				*errp = wfmt(w, "V4: root %s", why);
+				return (-1);
+			}
 			if (put_file(w, opts.exports_file, sp->text, 0644, errp) !=
 			    0)
 				return (-1);

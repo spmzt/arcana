@@ -3718,31 +3718,57 @@ netstore_body()
 	printf '#!/bin/sh\necho "hastctl $*" >> %s/hastctl.log\ncase "$1" in\nstatus) printf "Name\\tStatus\\tRole\\tComponents\\nshared\\tcomplete\\tprimary\\t/dev/ada1\\tb.example.org\\n" ;;\nlist) echo "shared:" ;;\nesac\n' "$(pwd)" > tools/hastctl
 	printf '#!/bin/sh\necho "Exports list on localhost:"\necho "/export 10.0.0.0"\n' > tools/showmount
 	printf '#!/bin/sh\necho "sysctl $*" >> %s/sysctl.log\n' "$(pwd)" > fake-sysctl
-	chmod +x tools/ctladm tools/hastctl tools/showmount fake-sysctl
+	printf '#!/bin/sh\necho "zfs $*" >> %s/zfs.log\ncase "$1" in\nlist) printf "zroot/export\\t/export\\t-maproot=root\\nzroot/home\\t/home\\toff\\n" ;;\nesac\n' "$(pwd)" > fake-zfs
+	chmod +x tools/ctladm tools/hastctl tools/showmount fake-sysctl fake-zfs
 	printf '/export -network 10.0.0.0/24\n' > exports
-	DAEMON_ARGS="-2 $(pwd)/tools --exports $(pwd)/exports --ctl-conf $(pwd)/ctl.conf --hast-conf $(pwd)/hast.conf -Q $(pwd)/fake-sysctl -O $(pwd)/sysctl.conf"
+	DAEMON_ARGS="-2 $(pwd)/tools -z $(pwd)/fake-zfs --exports $(pwd)/exports --ctl-conf $(pwd)/ctl.conf --hast-conf $(pwd)/hast.conf -Q $(pwd)/fake-sysctl -O $(pwd)/sysctl.conf"
 	start_daemon
 	for d in nfsd mountd ctld hastd; do
 		printf '#!/bin/sh\n' > rc.d/$d
 		chmod +x rc.d/$d
 	done
 	# Read whole, or one of them.
-	atf_check -o match:'"nfs":\{.*"exports_path":"[^"]*/exports","exports":"/export -network 10.0.0.0/24\\n","exported":"Exports list on localhost:' \
+	atf_check -o match:'"nfs":\{.*"exports_path":"[^"]*/exports","exports":"/export -network 10.0.0.0/24\\n",.*"shares":\[\{"dataset":"zroot/export","mountpoint":"/export","sharenfs":"-maproot=root"\}\],"exported":"Exports list on localhost:' \
+	    -o not-match:'"v4root"' \
 	    -o match:'"iscsi":\{.*"luns":"LUN Backend[^"]*MYSERIAL0' \
 	    -o match:'"hast":\{.*"status":"Name\\tStatus\\tRole\\tComponents\\nshared\\tcomplete\\tprimary' \
 	    "$JGC" -c "$SOCK" netstore
 	atf_check -o match:'^\{"iscsi":' -o not-match:'"nfs"' "$JGC" -c "$SOCK" netstore iscsi
 	atf_check -s exit:1 -e match:'netstore reads nfs, iscsi and hast' "$JGC" -c "$SOCK" netstore smb
-	# NFS: exports(5) written, mountd told; the server's settings:
-	# NFSv4.2, nfsd's threads, pNFS's data servers and mirrors.
-	printf '/export -network 10.0.0.0/24\nV4: /export -sec=sys\n' > exports.new
-	atf_check -o match:'done +nfs exports' "$JGC" -c "$SOCK" nfs exports exports.new
-	atf_check -o inline:'/export -network 10.0.0.0/24\nV4: /export -sec=sys\n' cat exports
-	atf_check -o match:'done +nfs server' "$JGC" -c "$SOCK" nfs server enable=yes v4=yes \
-	    v4only=yes minor=2 threads=8 pnfs=ds1.example.org:/ds0,ds2.example.org:/ds1 mirror=2
+	# NFS, v4 alone: exports(5) written, mountd told, once its V4: root
+	# is a directory on ZFS; a text that exports needs the root; a
+	# root elsewhere (devfs), or nowhere, is refused.
+	printf 'V4: /dev -sec=sys\n' > exports.dev
+	atf_check -s exit:1 -o match:'failed.*V4: root /dev is not on ZFS \(devfs\)' "$JGC" -c "$SOCK" nfs exports exports.dev
+	printf 'V4: /nonesuch\n' > exports.none
+	atf_check -s exit:1 -o match:'failed.*V4: root /nonesuch: No such file' "$JGC" -c "$SOCK" nfs exports exports.none
+	printf '/export -network 10.0.0.0/24\n' > exports.nov4
+	atf_check -s exit:1 -o match:'failed.*exports needs a V4: line' "$JGC" -c "$SOCK" nfs exports exports.nov4
+	printf '# nothing yet\n' > exports.empty
+	atf_check -o match:'done +nfs exports' "$JGC" -c "$SOCK" nfs exports exports.empty
+	printf '/export -network 10.0.0.0/24\nV4: %s -sec=sys\n' "$(pwd)" > exports.new
+	fs=$(df -T . | awk 'NR==2{print $2}')
+	if [ "$fs" = zfs ]; then
+		atf_check -o match:'done +nfs exports' "$JGC" -c "$SOCK" nfs exports exports.new
+		atf_check -o inline:"/export -network 10.0.0.0/24\nV4: $(pwd) -sec=sys\n" cat exports
+		atf_check -o match:"\"v4root\":\"$(pwd)\",\"v4root_zfs\":true" "$JGC" -c "$SOCK" netstore nfs
+	else
+		atf_check -s exit:1 -o match:"failed.*V4: root $(pwd) is not on ZFS \($fs\)" "$JGC" -c "$SOCK" nfs exports exports.new
+	fi
+	# A dataset shared by its sharenfs: zfs set, which tells mountd.
+	atf_check -o match:'done +nfs share' "$JGC" -c "$SOCK" nfs share dataset=zroot/export 'sharenfs=-maproot=root -network 10.0.0.0/24'
+	atf_check -o match:'^zfs set sharenfs=-maproot=root -network 10.0.0.0/24 zroot/export$' cat zfs.log
+	atf_check -o match:'done +nfs share' "$JGC" -c "$SOCK" nfs share dataset=zroot/export sharenfs=off
+	atf_check -s exit:1 -e match:"share takes dataset=" "$JGC" -c "$SOCK" nfs share dataset=../x sharenfs=on
+	atf_check -s exit:1 -e match:"share takes dataset=" "$JGC" -c "$SOCK" nfs share dataset=/zroot sharenfs=on
+	# The server's settings: NFSv4 alone, up to 4.2, nfsd's threads,
+	# pNFS's data servers and mirrors.
+	atf_check -o match:'done +nfs server' "$JGC" -c "$SOCK" nfs server enable=yes \
+	    minor=2 threads=8 pnfs=ds1.example.org:/ds0,ds2.example.org:/ds1 mirror=2
 	atf_check -o match:'^nfs_server_flags="-u -t -n 8 -p ds1.example.org:/ds0,ds2.example.org:/ds1 -m 2"$' \
 	    -o match:'^nfsv4_server_enable="YES"$' -o match:'^nfsv4_server_only="YES"$' \
-	    -o match:'^rpcbind_enable="YES"$' -o match:'^mountd_enable="YES"$' cat rc.conf
+	    -o not-match:'^rpcbind_enable' -o match:'^mountd_enable="YES"$' cat rc.conf
+	atf_check -s exit:1 -e match:'server takes enable=' "$JGC" -c "$SOCK" nfs server v4only=no
 	# The flags merged: threads alone keeps pNFS's -p and -m; mirror
 	# without data servers is refused.
 	atf_check -o match:'done +nfs server' "$JGC" -c "$SOCK" nfs server threads=16

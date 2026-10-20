@@ -412,12 +412,17 @@ definitions:
           sdwan read.  The host's only; never in safe mode.
       - name: nfs
         doc: |
-          The NFS server (nfsd(8), mountd(8)): verb exports writes
-          exports(5) from text and has mountd read it again; verb server
-          sets, by names, enable= (yes or no: nfsd, with rpcbind and
-          mountd, enabled and started, or stopped), v4= and v4only=
-          (nfsv4_server_enable, nfsv4_server_only), minor= (NFSv4's 0, 1
-          or 2: vfs.nfsd.server_max_minorversion, kept in sysctl.conf),
+          The NFS server, NFSv4 alone (nfsd(8) with nfsv4_server_only,
+          mountd(8) for the exports; no NFSv3, no rpcbind): verb exports
+          writes exports(5) from text and has mountd read it again,
+          refused unless its V4: root is a directory on ZFS (any text
+          that exports needs the V4: line); verb share sets a dataset's
+          sharenfs (zfsprops(7)) by names dataset= and sharenfs= (on,
+          off or exports(5) options), zfs writing /etc/zfs/exports and
+          telling mountd; verb server sets, by names, enable= (yes or
+          no: nfsd, NFSv4 alone, with mountd, enabled and started, or
+          stopped), minor= (NFSv4's 0, 1 or 2:
+          vfs.nfsd.server_max_minorversion, kept in sysctl.conf),
           threads= and pNFS's data servers pnfs= (host:/path joined by
           commas) and mirror= (nfsd's -n, -p and -m, pnfsserver(4)).
           The host's only; never in safe mode.
@@ -3698,9 +3703,11 @@ operations:
     auth: true
     doc: |
       The host's network storage services, as a JSON object: "nfs" (the
-      NFS server: nfsd's and mountd's state, its rc.conf, nfsd's flags
-      with its threads and pNFS's data servers and mirrors,
-      vfs.nfsd.server_max_minorversion, exports(5) and what mountd
+      NFS server, NFSv4 alone: nfsd's and mountd's state, its rc.conf,
+      nfsd's flags with its threads and pNFS's data servers and mirrors,
+      vfs.nfsd.server_max_minorversion, exports(5) with its V4: root
+      and whether that is on ZFS, the datasets that share themselves
+      by sharenfs and what zfs wrote for mountd, and what mountd
       exports), "iscsi" (ctld's state, ctl.conf(5), ctladm's LUNs,
       sessions and ports) and "hast" (hastd's state, hast.conf(5),
       hastctl status and list).  Names: nfs, iscsi or hast, those

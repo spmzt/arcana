@@ -5,8 +5,9 @@
 
 /*
  * The Storage page: a host's network storage services, the base
- * system's, a tab each.  NFS: nfsd(8) and mountd(8), exports(5), NFSv4
- * up to 4.2 and pNFS (pnfsserver(4)).  iSCSI: the target, ctld(8) and
+ * system's, a tab each.  NFS, v4 alone: nfsd(8) and mountd(8),
+ * exports(5) with its V4: root on ZFS, the datasets that share
+ * themselves (sharenfs), NFSv4 up to 4.2 and pNFS (pnfsserver(4)).  iSCSI: the target, ctld(8) and
  * ctl.conf(5), its LUNs and sessions by ctladm(8).  HAST: hastd(8) and
  * hast.conf(5), its resources' roles by hastctl(8).  A host at a time
  * (GET /api/servers/<id>/netstore); each change a job of the nfs, iscsi
@@ -138,8 +139,14 @@ yes(const char *v)
 static void
 view_nfs(struct html *h, const ucl_object_t *o)
 {
-	const char	*minor;
-	int		 i;
+	static const struct tcol cols[] = {
+		{ "Dataset", "dataset", false },
+		{ "Mounted at", "mountpoint", false },
+		{ "sharenfs", "sharenfs", false },
+	};
+	const ucl_object_t	**rows, *r;
+	const char		*minor;
+	int			 i, k;
 
 	h_raw(h, "<p>");
 	state_chips(h, o, "nfsd", "nfsd");
@@ -149,17 +156,9 @@ view_nfs(struct html *h, const ucl_object_t *o)
 	    "type=\"checkbox\" name=\"enable\"");
 	if (yes(jstr(o, "nfs_server_enable")) || jbool(o, "nfsd_enabled"))
 		h_raw(h, " checked");
-	h_raw(h, "> Serves NFS <small class=\"help\">nfsd, with rpcbind and "
-	    "mountd</small></label><label class=\"check\"><input type=\""
-	    "checkbox\" name=\"v4\"");
-	if (yes(jstr(o, "nfsv4_server_enable")))
-		h_raw(h, " checked");
-	h_raw(h, "> NFSv4</label><label class=\"check\"><input type=\""
-	    "checkbox\" name=\"v4only\"");
-	if (yes(jstr(o, "nfsv4_server_only")))
-		h_raw(h, " checked");
-	h_raw(h, "> NFSv4 alone <small class=\"help\">no NFSv3, rpcbind and "
-	    "mountd for exports alone</small></label></div><div class=\""
+	h_raw(h, "> Serves NFS <small class=\"help\">nfsd, NFSv4 alone "
+	    "(nfsv4_server_only: no NFSv3, no rpcbind), mountd for the "
+	    "exports</small></label></div><div class=\""
 	    "rowform\"><label>NFSv4 up to <select name=\"minor\">");
 	minor = jget(o, "max_minorversion") != NULL ? NULL : "2";
 	for (i = 0; i <= 2; i++)
@@ -188,15 +187,65 @@ view_nfs(struct html *h, const ucl_object_t *o)
 	    "</form><form class=\"secform\" data-form=\"nas-exports\"><h4>");
 	h_txt(h, jstr(o, "exports_path") != NULL ? jstr(o, "exports_path") :
 	    "exports");
-	h_raw(h, "</h4><label class=\"wide\">What it exports <textarea name=\"text\" rows=\"8\" "
+	h_raw(h, "</h4>");
+	/* NFSv4's root, a directory on ZFS: the agent checks it. */
+	if (jstr(o, "v4root") != NULL) {
+		h_raw(h, "<p class=\"help\">NFSv4 root <code>");
+		h_txt(h, jstr(o, "v4root"));
+		h_raw(h, "</code>: ");
+		h_txt(h, jbool(o, "v4root_zfs") ? "on ZFS" : jstr(o,
+		    "v4root_error") != NULL ? jstr(o, "v4root_error") :
+		    "not on ZFS");
+		h_raw(h, "</p>");
+	} else
+		h_raw(h, "<p class=\"help\">No V4: line yet: NFSv4 alone serves "
+		    "nothing until its root, a directory on ZFS, is named.</p>");
+	h_raw(h, "<label class=\"wide\">What it exports <textarea name=\"text\" rows=\"8\" "
 	    "spellcheck=\"false\" placeholder=\"V4: /export -sec=sys\n"
 	    "/export/home -maproot=root -network 10.0.0.0/24\">");
 	h_txt(h, jstr(o, "exports"));
-	h_raw(h, "</textarea><small class=\"help\">exports(5): a line a "
-	    "directory and who may mount it; NFSv4 needs its root, a V4: "
-	    "line. A ZFS dataset may export itself instead (sharenfs).</small>"
+	h_raw(h, "</textarea><small class=\"help\">exports(5): first the "
+	    "V4: line, NFSv4's root, a directory on ZFS (the agent refuses "
+	    "any other); then a line a directory and who may mount it. "
+	    "Datasets share themselves below instead.</small>"
 	    "</label><div class=\"actions\"><button type=\"submit\" class=\""
 	    "primary\">Save and tell mountd</button></div></form>");
+	/* The datasets that share themselves: sharenfs, which zfs writes
+	 * to /etc/zfs/exports for mountd. */
+	h_raw(h, "<h4>ZFS shares</h4>");
+	if (jget(o, "shares") != NULL && ucl_array_size(jget(o, "shares")) >
+	    0) {
+		tbl_head(h, "nfsshares", cols, 3, 1);
+		h_raw(h, "<tbody>");
+		rows = tbl_rows("nfsshares", jget(o, "shares"), cols, 3, "");
+		for (k = 0; (r = rows[k]) != NULL; k++) {
+			h_raw(h, "<tr><td class=\"mono\">");
+			h_txt(h, jstr(r, "dataset"));
+			h_raw(h, "</td><td class=\"mono\">");
+			h_txt(h, jstr(r, "mountpoint"));
+			h_raw(h, "</td><td class=\"mono\">");
+			h_txt(h, jstr(r, "sharenfs"));
+			h_raw(h, "</td><td><button class=\"ghost small danger\" "
+			    "data-act=\"nas-unshare\"");
+			h_attr(h, "data-arg", jstr(r, "dataset"));
+			h_raw(h, ">Stop sharing</button></td></tr>");
+		}
+		free(rows);
+		h_raw(h, "</tbody></table>");
+	} else
+		h_raw(h, "<p class=\"help\">No dataset shares itself. A "
+		    "dataset's sharenfs (zfsprops(7)) exports its mountpoint: "
+		    "zfs writes /etc/zfs/exports, which mountd reads beside "
+		    "exports(5), and tells mountd itself.</p>");
+	h_raw(h, "<form class=\"secform\" data-form=\"nas-share\"><div class=\""
+	    "rowform\"><label>Dataset <input name=\"dataset\" spellcheck=\""
+	    "false\" placeholder=\"zroot/export/home\" required></label>"
+	    "<label>sharenfs <input name=\"sharenfs\" spellcheck=\"false\" "
+	    "placeholder=\"on, or -maproot=root -network 10.0.0.0/24\">"
+	    "</label></div><small class=\"help\">zfs set sharenfs=...: on "
+	    "for everyone, or exports(5) options</small><div class=\"actions\">"
+	    "<button type=\"submit\" class=\"primary\">Share</button></div>"
+	    "</form>");
 	pre(h, "Exported now (showmount -e)", jstr(o, "exported"));
 }
 
@@ -411,12 +460,25 @@ naspage_form(const char *form, const ucl_object_t *f)
 		    jstr(f, "text") : "", "hast conf");
 		return (true);
 	}
+	if (strcmp(form, "nas-share") == 0) {
+		if (jstr(f, "dataset") == NULL || jstr(f, "dataset")[0] == '\0')
+			return (true);
+		if (asprintf(&w[0], "dataset=%s", jstr(f, "dataset")) == -1 ||
+		    asprintf(&w[1], "sharenfs=%s", jstr(f, "sharenfs") != NULL &&
+		    jstr(f, "sharenfs")[0] != '\0' ? jstr(f, "sharenfs") : "on")
+		    == -1)
+			abort();
+		words[0] = w[0];
+		words[1] = w[1];
+		nas_job("nfs", "share", words, 2, NULL, "nfs share");
+		free(w[0]);
+		free(w[1]);
+		return (true);
+	}
 	if (strcmp(form, "nas-nfs") == 0) {
 		n = 0;
 		if (asprintf(&w[n++], "enable=%s", jbool(f, "enable") ? "yes" :
-		    "no") == -1 || asprintf(&w[n++], "v4=%s", jbool(f, "v4") ?
-		    "yes" : "no") == -1 || asprintf(&w[n++], "v4only=%s",
-		    jbool(f, "v4only") ? "yes" : "no") == -1 || asprintf(&w[n++],
+		    "no") == -1 || asprintf(&w[n++],
 		    "minor=%s", jstr(f, "minor") != NULL ? jstr(f, "minor") :
 		    "2") == -1)
 			abort();
@@ -518,6 +580,22 @@ naspage_action(const char *act, const char *arg, const char *value)
 			ucl_object_unref(nas.r.o);
 		nas.r.o = NULL;
 		nas_load();
+	} else if (strcmp(act, "nas-unshare") == 0) {
+		char	body[200];
+
+		snprintf(body, sizeof(body), "sharenfs is set off on %s: "
+		    "zfs takes it out of /etc/zfs/exports and tells mountd; "
+		    "whoever has it mounted loses it.", arg);
+		confirm("Stop sharing?", body, "Stop sharing", true, NULL,
+		    "nas-unshare-yes", arg, "");
+		return (true);
+	} else if (strcmp(act, "nas-unshare-yes") == 0) {
+		if (asprintf(&w[0], "dataset=%s", arg) == -1)
+			abort();
+		words[0] = w[0];
+		words[1] = "sharenfs=off";
+		nas_job("nfs", "share", words, 2, NULL, "nfs share");
+		free(w[0]);
 	} else if (strcmp(act, "nas-target") == 0)
 		nas.target = true;
 	else if (strcmp(act, "nas-cancel") == 0)
