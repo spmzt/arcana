@@ -427,10 +427,10 @@ kinds:
     uses: args
     values: verb=update|rule|sources|source-enable|source-disable|source-remove|source-add|pcap
   - kind: nfs
-    title: The NFS server's exports and settings
+    title: The NFS server's exports, ZFS shares and settings
     needs: verb
     uses: args text
-    values: verb=exports|server
+    values: verb=exports|share|server
   - kind: iscsi
     title: The iSCSI target's ctl.conf, on or off
     needs: verb
@@ -455,5 +455,5 @@ kinds:
   - kind: smtpd
     title: OpenSMTPD's configuration, tables and queue
     needs: verb
-    uses: args text
+    uses: jail args text
     values: verb=conf|table|enable|pause|resume|schedule|remove|update

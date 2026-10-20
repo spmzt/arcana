@@ -19,6 +19,8 @@ static struct {
 	struct res	 r;		/* the smtpd read */
 	bool		 conf;		/* the configuration form open */
 	char		 table[16];	/* the table being edited, or "" */
+	bool		 picked;	/* where, chosen by hand: jail */
+	char		 jail[64];	/* "" the host */
 } ml;
 
 /* Read again at the next draw (the Refresh button). */
@@ -29,13 +31,16 @@ mail_refresh(void)
 	res_drop(&ml.r);
 }
 
-/* Where OpenSMTPD is on the host: "" the host itself, a jail's name,
- * or NULL nowhere (the host's then, for the install line). */
+/* Where OpenSMTPD is looked for: the place picked in the tab, else
+ * where the host says the plugin is ("" the host itself, a jail's
+ * name), else the host. */
 static const char *
 ml_where(struct server *s)
 {
 	const char	*at;
 
+	if (ml.picked)
+		return (ml.jail);
 	at = plugin_anywhere(s, "smtpd");
 	return (at != NULL ? at : "");
 }
@@ -46,6 +51,9 @@ ml_load(const char *sid)
 	struct server	*s;
 	char		 url[128], q[64];
 
+	/* Another host: its own choice. */
+	if (strcmp(sid, ml.r.sid) != 0)
+		ml.picked = false;
 	q[0] = '\0';
 	if ((s = cur_server()) != NULL && ml_where(s)[0] != '\0')
 		snprintf(q, sizeof(q), "?jail=%s", ml_where(s));
@@ -337,29 +345,60 @@ view_mail(struct html *h, struct server *s)
 	static const char *const tables[] = { "aliases", "virtuals", "domains",
 	    "senders", "credentials", "secrets" };
 	static const char *const parts[] = { "mda", "mta", "smtp" };
-	const ucl_object_t	**rows, *r, *st, *t, *e;
+	const ucl_object_t	**rows, *r, *st, *t, *e, *sp;
 	ucl_object_iter_t	 it;
 	const ucl_object_t	*o;
 	size_t			 i;
 	int			 k;
 	bool			 running;
 
+	/* Where: the host, or any running jail of it, picked here. */
+	h_raw(h, "<div class=\"toolbar\"><label class=\"secpick\">Where "
+	    "<select data-input=\"ml-where\"><option value=\"\"");
+	if (ml_where(s)[0] == '\0')
+		h_raw(h, " selected");
+	h_raw(h, ">the host</option>");
+	it = NULL;
+	while (s->list != NULL && (e = ucl_object_iterate(jget(s->list,
+	    "jails"), &it, true)) != NULL) {
+		if (jstr(e, "name") == NULL || jstr(e, "state") == NULL ||
+		    strcmp(jstr(e, "state"), "running") != 0)
+			continue;
+		h_raw(h, "<option");
+		h_attr(h, "value", jstr(e, "name"));
+		if (strcmp(ml_where(s), jstr(e, "name")) == 0)
+			h_raw(h, " selected");
+		h_raw(h, ">jail ");
+		h_txt(h, jstr(e, "name"));
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select></label><small class=\"help\">OpenSMTPD on the "
+	    "host, or in a jail, with the host's network or its own</small>"
+	    "</div>");
 	if (!res_shown(h, &ml.r, s->id, ml_load, "ml-retry"))
 		return;
 	o = ml.r.o;
 	h_raw(h, "<section class=\"sysview mailview\">");
 	if (!jbool(o, "installed")) {
 		h_raw(h, "<div class=\"notice warn sec-missing\"><span>OpenSMTPD "
-		    "is not installed on this host: a plugin.</span><button "
-		    "class=\"primary small\" data-act=\"sec-install\" data-arg=\""
-		    "opensmtpd\">Install opensmtpd</button></div><div "
-		    "class=\"empty\"><p>No mail server here.</p><p class=\"dim\">"
-		    "FreeBSD comes with sendmail(8) and dma(8) for the host's "
-		    "own mail; OpenSMTPD, a port, serves a domain's.</p></div>"
-		    "</section>");
+		    "is not installed ");
+		if (jstr(o, "jail") != NULL) {
+			h_raw(h, "in jail ");
+			h_txt(h, jstr(o, "jail"));
+			h_raw(h, ": a plugin, the port mail/opensmtpd, installed "
+			    "there with pkg -j.</span></div>");
+		} else
+			h_raw(h, "on this host: a plugin.</span><button "
+			    "class=\"primary small\" data-act=\"sec-install\" "
+			    "data-arg=\"opensmtpd\">Install opensmtpd</button></div>");
+		h_raw(h, "<div class=\"empty\"><p>No mail server here.</p><p "
+		    "class=\"dim\">FreeBSD comes with sendmail(8) and dma(8) for "
+		    "the host's own mail; OpenSMTPD, a port, serves a domain's."
+		    "</p></div></section>");
 		return;
 	}
 	running = jbool(o, "running");
+	sp = jget(o, "spec");
 	h_raw(h, "<div class=\"toolbar\">");
 	if (jstr(o, "jail") != NULL) {
 		h_raw(h, "<span class=\"chip\">in jail ");
@@ -380,19 +419,113 @@ view_mail(struct html *h, struct server *s)
 		    paused ? "ml-resume" : "ml-pause", parts[i], paused ?
 		    "Resume" : "Pause");
 	}
-	h_fmt(h, "<span class=\"grow\"></span><button class=\"ghost\" "
-	    "data-act=\"ml-enable\" data-arg=\"%s\">%s</button><button "
-	    "class=\"ghost\" data-act=\"ml-conf\">Configuration</button>"
-	    "</div>", running ? "no" : "yes", running ? "Stop and disable" :
-	    "Enable and start");
-	if (jstr(o, "mailer") != NULL) {
-		h_raw(h, "<p class=\"dim\">sendmail(8) on this host is <code>");
-		h_txt(h, jstr(o, "mailer"));
-		h_raw(h, "</code> (mailer.conf(5)); OpenSMTPD's is <code>"
-		    "/usr/local/sbin/smtpctl</code>.</p>");
-	}
+	h_fmt(h, "<span class=\"grow\"></span><button class=\"%s\" "
+	    "data-act=\"ml-enable\" data-arg=\"%s\">%s</button></div>",
+	    running ? "ghost" : "primary", running ? "no" : "yes", running ?
+	    "Stop and disable" : "Enable and start");
+	/* At a glance: the queue and the counters that say most. */
+	if (running) {
+		static const struct {
+			const char	*key, *title;
+			bool		 warn;	/* more than none: a worry */
+		} show[] = {
+			{ "scheduler.delivery.ok", "delivered", false },
+			{ "scheduler.delivery.tempfail", "deferred", true },
+			{ "scheduler.delivery.permfail", "bounced", true },
+			{ "smtp.session", "SMTP sessions now", false },
+			{ "mta.session", "sessions out now", false },
+			{ "uptime.human", "up for", false },
+		};
+
+		h_fmt(h, "<div class=\"tiles\"><div class=\"tile%s\"><b>%lld</b>"
+		    "<span>in the queue</span></div>", jint(o, "queued", 0) > 0 ?
+		    " warn" : " ok", (long long)jint(o, "queued", 0));
+		st = jget(o, "stats");
+		for (i = 0; st != NULL && i < nitems(show); i++) {
+			if ((e = jget(st, show[i].key)) == NULL)
+				continue;
+			h_fmt(h, "<div class=\"tile%s\"><b>", show[i].warn &&
+			    ucl_object_type(e) == UCL_INT && ucl_object_toint(e) > 0
+			    ? " warn" : "");
+			if (ucl_object_type(e) == UCL_STRING)
+				h_txt(h, ucl_object_tostring(e));
+			else
+				h_fmt(h, "%lld", (long long)ucl_object_toint(e));
+			h_raw(h, "</b><span>");
+			h_txt(h, show[i].title);
+			h_raw(h, "</span></div>");
+		}
+		h_raw(h, "</div>");
+	} else
+		h_raw(h, "<p class=\"dim\">Stopped: nothing is received or sent; "
+		    "what waits in the queue waits.</p>");
+	/* Its configuration: the form's summary, the form on Edit. */
+	h_raw(h, "<h3 class=\"secsub\">Configuration</h3>");
 	if (ml.conf)
 		conf_form(h, o);
+	else if (sp == NULL)
+		h_raw(h, "<div class=\"empty\"><p>No configuration of Arcana's "
+		    "yet.</p><p class=\"dim\">smtpd.conf is rendered from a form: "
+		    "where it listens, the domains delivered here, the smart "
+		    "host, its policy and filters; the host checks it with "
+		    "smtpd -n before it is put in place.</p><button class=\""
+		    "primary\" data-act=\"ml-conf\">Set it up</button></div>");
+	else {
+		const ucl_object_t	*l, *del, *rel;
+		ucl_object_iter_t	 lit;
+		int			 n;
+
+		del = jget(sp, "delivery");
+		rel = jget(sp, "relay");
+		h_raw(h, "<dl class=\"kv\"><dt>Listens on</dt><dd>");
+		lit = NULL;
+		n = 0;
+		while ((l = ucl_object_iterate(jget(sp, "listeners"), &lit,
+		    true)) != NULL) {
+			h_raw(h, n++ > 0 ? ", " : "");
+			h_txt(h, jstr(l, "on") != NULL ? jstr(l, "on") : "?");
+			if (jget(l, "port") != NULL)
+				h_fmt(h, ":%lld", (long long)jint(l, "port", 0));
+			if (jstr(l, "tls") != NULL)
+				h_fmt(h, " (%s%s)", jstr(l, "tls"), jbool(l, "auth") ?
+				    ", auth" : "");
+		}
+		h_raw(h, n == 0 ? "nowhere" : "");
+		h_raw(h, "</dd><dt>Domains</dt><dd>");
+		lit = NULL;
+		n = 0;
+		while ((l = ucl_object_iterate(jget(sp, "domains"), &lit, true))
+		    != NULL) {
+			h_raw(h, n++ > 0 ? ", " : "");
+			h_txt(h, ucl_object_tostring_forced(l));
+		}
+		h_raw(h, n == 0 ? "the host's own name" : "");
+		h_raw(h, "</dd><dt>Delivered to</dt><dd>");
+		h_txt(h, del != NULL && jstr(del, "kind") != NULL ? jstr(del,
+		    "kind") : "maildir");
+		if (del != NULL && jstr(del, "path") != NULL) {
+			h_raw(h, " ");
+			h_txt(h, jstr(del, "path"));
+		}
+		h_raw(h, "</dd><dt>Mail out</dt><dd>");
+		if (rel != NULL && jstr(rel, "host") != NULL) {
+			h_raw(h, "by ");
+			h_txt(h, jstr(rel, "host"));
+			h_raw(h, jbool(rel, "auth") ? ", signed in" : "");
+		} else
+			h_raw(h, "straight to each domain's servers (MX)");
+		h_raw(h, "</dd><dt>Filters</dt><dd>");
+		lit = NULL;
+		n = 0;
+		while ((l = ucl_object_iterate(jget(sp, "filters"), &lit, true))
+		    != NULL) {
+			h_raw(h, n++ > 0 ? ", " : "");
+			h_txt(h, jstr(l, "name") != NULL ? jstr(l, "name") : "?");
+		}
+		h_raw(h, n == 0 ? "none" : "");
+		h_raw(h, "</dd></dl><div class=\"actions\"><button class=\"ghost\" "
+		    "data-act=\"ml-conf\">Edit</button></div>");
+	}
 	/* The queue, with smtpctl's commands. */
 	h_fmt(h, "<h3 class=\"secsub\">Queue%s</h3>", running ? "" :
 	    " (smtpd is not running)");
@@ -404,7 +537,7 @@ view_mail(struct html *h, struct server *s)
 		    "ml-remove\" data-arg=\"all\">Remove all</button></div>",
 		    (long long)jint(o, "queued", 0), jint(o, "queued", 0) == 1 ?
 		    "" : "s");
-		tbl_head(h, "mailq", cols, 7, 0);
+		tbl_head(h, "mailq", cols, 7, 1);
 		h_raw(h, "<tbody>");
 		rows = tbl_rows("mailq", jget(o, "queue"), cols, 7, "");
 		for (k = 0; (r = rows[k]) != NULL; k++) {
@@ -433,48 +566,48 @@ view_mail(struct html *h, struct server *s)
 		h_raw(h, "</tbody></table>");
 	} else if (running)
 		h_raw(h, "<p class=\"dim\">Empty: nothing waits.</p>");
-	/* Its counters, those that say most. */
-	if (running && (st = jget(o, "stats")) != NULL) {
-		static const struct {
-			const char	*key, *title;
-		} show[] = {
-			{ "scheduler.delivery.ok", "Delivered" },
-			{ "scheduler.delivery.tempfail", "Deferred" },
-			{ "scheduler.delivery.permfail", "Bounced" },
-			{ "smtp.session", "SMTP sessions now" },
-			{ "smtp.session.local", "Local sessions" },
-			{ "mta.session", "Sessions out now" },
-			{ "queue.bounce", "Bounces" },
-			{ "uptime.human", "Up for" },
-		};
-
-		h_raw(h, "<h3 class=\"secsub\">Counters</h3><dl class=\"kv\">");
-		for (i = 0; i < nitems(show); i++) {
-			if ((e = jget(st, show[i].key)) == NULL)
-				continue;
-			h_raw(h, "<dt>");
-			h_txt(h, show[i].title);
-			h_raw(h, "</dt><dd>");
-			if (ucl_object_type(e) == UCL_STRING)
-				h_txt(h, ucl_object_tostring(e));
-			else
-				h_fmt(h, "%lld", (long long)ucl_object_toint(e));
-			h_raw(h, "</dd>");
-		}
-		h_raw(h, "</dl>");
-	}
-	/* The tables, each written whole. */
-	h_raw(h, "<h3 class=\"secsub\">Tables</h3><div class=\"toolbar\">");
+	/* The tables, each written whole: what each holds, and its editor. */
+	h_raw(h, "<h3 class=\"secsub\">Tables</h3><table class=\"params\">"
+	    "<thead><tr><th>Table</th><th>Holds</th><th>Entries</th><th></th>"
+	    "</tr></thead><tbody>");
 	for (i = 0; i < nitems(tables); i++) {
+		static const char *const holds[] = { "local aliases",
+		    "virtual users and domains", "the domains delivered here",
+		    "who may send as whom", "users and their passwords, hashed",
+		    "the smart host's sign-in" };
+		long long	n = 0;
+
 		t = jget(jget(o, "tables"), tables[i]);
-		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"ml-table\" "
-		    "data-arg=\"%s\">%s%s</button>", strcmp(ml.table, tables[i])
-		    == 0 ? " on" : "", tables[i], tables[i], t != NULL ? " ✓"
-		    : "");
+		if (t != NULL && ucl_object_type(t) == UCL_ARRAY)
+			n = (long long)ucl_array_size(t);
+		else if (t != NULL && ucl_object_type(t) == UCL_STRING) {
+			const char	*p;
+
+			for (p = ucl_object_tostring(t); *p != '\0';
+			    p += strcspn(p, "\n"), p += *p == '\n') {
+				p += strspn(p, " \t");
+				if (*p != '\0' && *p != '\n' && *p != '#')
+					n++;
+			}
+		}
+		h_fmt(h, "<tr%s><td class=\"mono\">%s</td><td class=\"dim\">%s"
+		    "</td><td>", strcmp(ml.table, tables[i]) == 0 ? " class=\"on\""
+		    : "", tables[i], holds[i]);
+		if (t == NULL)
+			h_raw(h, "<span class=\"dim\">not written yet</span>");
+		else
+			h_fmt(h, "%lld", n);
+		h_fmt(h, "</td><td class=\"acts\"><button class=\"ghost small%s\" "
+		    "data-act=\"ml-table\" data-arg=\"%s\">%s</button></td></tr>",
+		    strcmp(ml.table, tables[i]) == 0 ? " on" : "", tables[i],
+		    t == NULL ? "Write" : "Edit");
 	}
-	h_raw(h, "</div>");
+	h_raw(h, "</tbody></table>");
 	if (ml.table[0] != '\0') {
 		t = jget(jget(o, "tables"), ml.table);
+		h_raw(h, "<h4>");
+		h_txt(h, ml.table);
+		h_raw(h, "</h4>");
 		if (t != NULL && ucl_object_type(t) == UCL_ARRAY) {
 			h_raw(h, "<p class=\"dim\">Kept on the host: ");
 			it = NULL;
@@ -487,12 +620,19 @@ view_mail(struct html *h, struct server *s)
 		}
 		table_form(h, o, ml.table);
 	}
-	h_raw(h, "<h3 class=\"secsub\">smtpd.conf</h3><pre class=\"mono naspre\">");
+	h_raw(h, "<details class=\"secform\"><summary>smtpd.conf as written"
+	    "</summary><pre class=\"mono naspre\">");
 	h_txt(h, jstr(o, "conf") != NULL ? jstr(o, "conf") : "(none yet)");
-	h_raw(h, "</pre><p class=\"dim\"><b>FreeBSD:</b> OpenSMTPD is the port "
-	    "mail/opensmtpd; what sendmail(8) is on the host is "
-	    "mailer.conf(5)'s choice; its queue is /var/spool/smtpd, its log "
-	    "/var/log/maillog (the Log tab).</p></section>");
+	h_raw(h, "</pre></details><p class=\"dim\"><b>FreeBSD:</b> OpenSMTPD "
+	    "is the port mail/opensmtpd; its queue is /var/spool/smtpd, its "
+	    "log /var/log/maillog (the Log tab)");
+	if (jstr(o, "mailer") != NULL) {
+		h_raw(h, "; sendmail(8) here is <code>");
+		h_txt(h, jstr(o, "mailer"));
+		h_raw(h, "</code>, mailer.conf(5)'s choice, OpenSMTPD's being "
+		    "<code>/usr/local/sbin/smtpctl</code>");
+	}
+	h_raw(h, ".</p></section>");
 }
 
 /* Words of a listener line into its object. */
@@ -701,7 +841,16 @@ mail_action(const char *act, const char *arg, const char *value)
 	const char	*w[1];
 	char		 title[96], body[300];
 
-	(void)value;
+	if (strcmp(act, "input:ml-where") == 0) {
+		ml.picked = true;
+		snprintf(ml.jail, sizeof(ml.jail), "%s", value != NULL ? value :
+		    "");
+		ml.conf = false;
+		ml.table[0] = '\0';
+		res_drop(&ml.r);
+		render();
+		return (true);
+	}
 	if (strncmp(act, "ml-", 3) != 0)
 		return (false);
 	if (strcmp(act, "ml-retry") == 0) {

@@ -1290,6 +1290,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "do-pkg-upgrade", "", "");
 	} else if (strcmp(act, "do-pkg-upgrade") == 0 && s != NULL) {
 		pkg_upgrade(s, value[0] != '\0' ? value : NULL, false, false);
+	} else if (strcmp(act, "do-pkg-read-anyos") == 0 && s != NULL) {
+		/* Approved: the pending read past OSVERSION, this session. */
+		app.pkg.anyos = true;
+		refresh_packages(s, true);
 	} else if ((strcmp(act, "do-pkg-anyos") == 0 || strcmp(act,
 	    "do-pkg-dry-anyos") == 0) && s != NULL) {
 		/* Approved: the same again, OSVERSION ignored. */
@@ -2046,7 +2050,7 @@ main(void)
 		snprintf(app.theme, sizeof(app.theme), "%s", t);
 		free(t);
 	}
-	app.trace_schema = true;
+	app.trace_schema = false;
 	{
 		char *r = arc_loc_get();
 

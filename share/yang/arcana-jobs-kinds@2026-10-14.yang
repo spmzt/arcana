@@ -1705,10 +1705,11 @@ submodule arcana-jobs-kinds {
           presence
             "This kind of job.";
           description
-            "The NFS server's exports and settings";
+            "The NFS server's exports, ZFS shares and settings";
           leaf verb {
             type enumeration {
               enum exports;
+              enum share;
               enum server;
             }
             mandatory true;
@@ -1884,6 +1885,11 @@ submodule arcana-jobs-kinds {
             mandatory true;
             description
               "Verb";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
           }
           leaf-list args {
             type string;

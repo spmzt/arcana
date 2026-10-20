@@ -505,10 +505,13 @@ Enabled and started, or stopped and disabled.
 .Xr smtpctl 8 Ap s
 own, as it takes them.
 .It Cm netstore Op Cm nfs | Cm iscsi | Cm hast
-The host's network storage services, as JSON: the NFS server
+The host's network storage services, as JSON: the NFS server, NFSv4 alone
 .Xr ( nfsd 8 ,
 .Xr mountd 8 ,
-.Xr exports 5 ,
+.Xr exports 5
+with its V4: root and whether it is on ZFS, the datasets that share
+themselves by
+.Cm sharenfs ,
 NFSv4's minor version and pNFS's data servers and mirrors,
 .Xr pnfsserver 4 ) ,
 the iSCSI target
@@ -520,7 +523,8 @@ and HAST
 .Xr hast.conf 5 ,
 .Xr hastctl 8 ) .
 Nothing is changed.
-.It Cm nfs Cm exports Ar file | Cm server Ar key Ns = Ns Ar value ...
+.It Cm nfs Cm exports Ar file | Cm share Cm dataset= Ns Ar name Cm sharenfs= Ns Ar value | Cm server Ar key Ns = Ns Ar value ...
+NFSv4 alone: no NFSv3, no rpcbind.
 .Cm exports
 writes
 .Pa /etc/exports
@@ -528,13 +532,24 @@ from
 .Ar file
 and has
 .Xr mountd 8
-read it again.
+read it again; refused unless its
+.Ql V4:
+root is a directory on ZFS.
+.Cm share
+sets a dataset's
+.Cm sharenfs
+.Pq Xr zfsprops 7 :
+.Cm on ,
+.Cm off
+or
+.Xr exports 5
+options; zfs writes
+.Pa /etc/zfs/exports
+and tells mountd.
 .Cm server
 sets
 .Cm enable
-.Pq Cm yes No or Cm no : No nfsd, with rpcbind and mountd ,
-.Cm v4 ,
-.Cm v4only ,
+.Pq Cm yes No or Cm no : No nfsd, NFSv4 alone, with mountd ,
 .Cm minor
 (NFSv4's 0, 1 or 2:
 .Va vfs.nfsd.server_max_minorversion ,
@@ -1797,6 +1812,20 @@ whether or not anyone stays connected, which is what a change that cuts
 the connection it was asked over needs.
 .Sh EXIT STATUS
 0 when the request succeeded, 1 when it failed, 2 for usage errors.
+.Sh SECURITY
+Once the agent is connected,
+.Nm
+runs in capability mode
+.Pq Xr capsicum 4 :
+the agent's answers are decoded and printed there.
+The files named on the command line, and the file behind an
+.Ql @word ,
+are opened to read by Casper's
+.Xr cap_fileargs 3
+service; for
+.Cm agent-build
+alone the program named is opened to write.
+Nothing else of the system is reachable from then on.
 .Sh EXAMPLES
 .Bd -literal -offset indent
 # arcanactl list

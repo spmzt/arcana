@@ -288,7 +288,7 @@ installed(struct work *w, const char *jail, struct arc_packages_rsp *rsp)
 
 int
 do_packages(struct work *w, const char *jail, bool refresh, bool inst,
-    uint8_t ip, struct arc_packages_rsp *rsp)
+    uint8_t ip, bool anyos, struct arc_packages_rsp *rsp)
 {
 	static const char *const update[] = { "update", "-q" };
 	static const char *const version[] = { "version", "-vRl", "<" };
@@ -312,14 +312,19 @@ do_packages(struct work *w, const char *jail, bool refresh, bool inst,
 	}
 	if (inst)
 		return (installed(w, jail, rsp));
-	if (refresh && pkg_run(w, jail, false, ip, update, 2, &res) != 0) {
-		rsp->error = wtext(w, exec_error(w, &res, "pkg update"));
+	/* A repository for a newer FreeBSD is named as such, for the
+	 * console to ask whether to read past it. */
+	if (refresh && pkg_run(w, jail, anyos, ip, update, 2, &res) != 0) {
+		rsp->error = (e = repo_error(w, &res, "pkg update")) != NULL ? e :
+		    wtext(w, exec_error(w, &res, "pkg update"));
 		return (0);
 	}
-	/* pkg version exits 0 with matches and 1 without, as grep does. */
-	if (pkg_run(w, jail, false, ip, version, 3, &res) != 0 && res.status !=
-	    1) {
-		rsp->error = wtext(w, exec_error(w, &res, "pkg version"));
+	/* pkg version exits 0 with matches and 1 without, as grep does;
+	 * a repository it could not read is an error whatever it exits. */
+	if (pkg_run(w, jail, anyos, ip, version, 3, &res) != 0 && ((e =
+	    repo_error(w, &res, "pkg version")) != NULL || res.status != 1)) {
+		rsp->error = e != NULL ? e : wtext(w, exec_error(w, &res,
+		    "pkg version"));
 		return (0);
 	}
 	parse_versions(w, &res, &v, &n);
@@ -444,7 +449,10 @@ do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
 	if (pkg_run(w, rq->jail, rq->ignore_osversion, rq->pkg_ip, args, n,
 	    &res) != 0 &&
 	    !(rq->dry_run && res.status == 1)) {
-		rsp->error = wtext(w, exec_error(w, &res, "pkg upgrade"));
+		/* A repository it could not read is said as such, the newer
+		 * FreeBSD's named, whatever pkg exited. */
+		rsp->error = (e = repo_error(w, &res, "pkg upgrade")) != NULL ? e :
+		    wtext(w, exec_error(w, &res, "pkg upgrade"));
 	} else if ((e = repo_error(w, &res, "pkg upgrade")) != NULL) {
 		rsp->error = e;
 	} else {

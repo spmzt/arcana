@@ -509,6 +509,13 @@ program, for pending upgrades and upgrading, on the host and with
 in running jails.
 Upgrades may run for up to an hour.
 .El
+.Pp
+A program run for a read, and for the samples the history keeps, runs
+at nice 10
+.Pq Xr setpriority 2 ,
+so that what the console asks for, often, does not crowd the host's
+own work; a program run by a job, or for a change asked directly, runs
+at the agent's own priority.
 .Sh ITS OWN SERVICE
 A stop or restart of
 .Nm arcana_agent

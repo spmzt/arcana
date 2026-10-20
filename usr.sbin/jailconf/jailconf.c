@@ -10,10 +10,13 @@
  */
 
 #include <sys/param.h>
+#include <sys/capsicum.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 
+#include <capsicum_helpers.h>
 #include <err.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,7 +52,7 @@ main(int argc, char *argv[])
 	size_t		 outlen;
 	unsigned char	 addr[16];
 	bool		 add, dryrun, verbose;
-	int		 ch, af, plen;
+	int		 ch, af, plen, dfd;
 
 	file = NULL;
 	dryrun = verbose = false;
@@ -101,6 +104,23 @@ main(int argc, char *argv[])
 		errx(1, "%s", conf.error);
 	if ((b = jc_find(&conf, jail, &f)) == NULL)
 		errx(1, "%s: no jail '%s'", file, jail);
+	/*
+	 * The files are read, includes and all; the one to change is
+	 * written in its directory, opened here.  Capability mode
+	 * (capsicum(4)) from now: the edit, its check and the write
+	 * reach nothing else.
+	 */
+	if (strrchr(f->path, '/') == NULL)
+		snprintf(def, sizeof(def), ".");
+	else
+		snprintf(def, sizeof(def), "%.*s", strrchr(f->path, '/') ==
+		    f->path ? 1 : (int)(strrchr(f->path, '/') - f->path),
+		    f->path);
+	if ((dfd = open(def, O_RDONLY | O_DIRECTORY | O_CLOEXEC)) == -1)
+		err(1, "%s", def);
+	caph_cache_catpages();
+	if (caph_enter() == -1)
+		err(1, "cap_enter");
 	if (jc_edit(&conf, f, b, key, value, add, &out, &outlen, errbuf,
 	    sizeof(errbuf)) == -1)
 		errx(1, "%s", errbuf);
@@ -112,9 +132,10 @@ main(int argc, char *argv[])
 		fputs(diff, stdout);
 		free(diff);
 	}
-	if (!dryrun && jc_write(f->path, out, outlen, errbuf,
+	if (!dryrun && jc_write_at(dfd, f->path, out, outlen, errbuf,
 	    sizeof(errbuf)) == -1)
 		errx(1, "%s", errbuf);
+	close(dfd);
 	free(out);
 	jc_free(&conf);
 	free(key);

@@ -9,10 +9,14 @@
  */
 
 #include <sys/param.h>
+#include <sys/capsicum.h>
 #include <sys/stat.h>
 
+#include <capsicum_helpers.h>
+#include <casper/cap_fileargs.h>
 #include <err.h>
 #include <fcntl.h>
+#include <libcasper.h>
 #include <libxo/xo.h>
 #include <poll.h>
 #include <sha256.h>
@@ -74,6 +78,14 @@ static const char *job_states[] = {
 static void	usage(void) __dead2;
 static void	fail(struct arc_client *, int, const char *) __dead2;
 static char	*slurp(const char *);
+
+/*
+ * In capability mode (capsicum(4)) once the agent is connected: the
+ * files named on the command line are opened by Casper's fileargs
+ * service, nothing else of the system is reachable.
+ */
+static fileargs_t	*files;		/* to read */
+static fileargs_t	*outfiles;	/* agent-build's program, to write */
 static const char *join(const char *const *, size_t);
 static void	emit_jail(const struct arc_jail *, bool);
 static void	emit_trace(const struct arc_step *, size_t);
@@ -956,8 +968,7 @@ again:
 		    rsp->binary.len, hex), rsp->sha256) != 0)
 			xo_errx(1, "agent-build: the program does not match "
 			    "its SHA-256");
-		(void)unlink(out);
-		if ((fd = open(out, O_WRONLY | O_CREAT | O_EXCL, 0755)) == -1 ||
+		if ((fd = fileargs_open(outfiles, out)) == -1 ||
 		    write(fd, rsp->binary.p, rsp->binary.len) !=
 		    (ssize_t)rsp->binary.len || close(fd) == -1)
 			xo_err(1, "%s", out);
@@ -1181,7 +1192,7 @@ cmd_agent_update(struct arc_client *cl, int argc, char **argv)
 	}
 	if (argc - optind != 1)
 		usage();
-	if ((fd = open(argv[optind], O_RDONLY)) == -1 || fstat(fd, &sb) == -1)
+	if ((fd = fileargs_open(files, argv[optind])) == -1 || fstat(fd, &sb) == -1)
 		xo_err(1, "%s", argv[optind]);
 	if (sb.st_size == 0 || sb.st_size > ARC_MAX_BINARY)
 		xo_errx(1, "%s: not a program an update can carry",
@@ -1259,7 +1270,7 @@ cmd_bird_config(struct arc_client *cl, int argc, char **argv)
 	text = NULL;
 	cur = NULL;
 	if (from != NULL) {
-		if ((fd = open(from, O_RDONLY)) == -1 || fstat(fd, &sb) == -1 ||
+		if ((fd = fileargs_open(files, from)) == -1 || fstat(fd, &sb) == -1 ||
 		    (text = malloc((size_t)sb.st_size + 1)) == NULL ||
 		    read(fd, text, (size_t)sb.st_size) != sb.st_size)
 			xo_err(1, "%s", from);
@@ -1401,7 +1412,7 @@ json_arg(const char *arg)
 
 	if (arg == NULL || arg[0] != '@')
 		return (arg);
-	if ((fp = fopen(arg + 1, "r")) == NULL)
+	if ((fp = fileargs_fopen(files, arg + 1, "r")) == NULL)
 		xo_err(1, "%s", arg + 1);
 	if ((text = malloc(8 * 1024 * 1024)) == NULL)
 		xo_err(1, "malloc");
@@ -2056,7 +2067,8 @@ slurp(const char *path)
 	char	*buf;
 	size_t	 len, cap, n;
 
-	if ((fp = strcmp(path, "-") == 0 ? stdin : fopen(path, "r")) == NULL)
+	if ((fp = strcmp(path, "-") == 0 ? stdin : fileargs_fopen(files, path,
+	    "r")) == NULL)
 		xo_err(1, "%s", path);
 	cap = 4096;
 	len = 0;
@@ -3489,7 +3501,7 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 		    (req.from_rc && from != NULL))
 			usage();
 		if (from != NULL) {
-			if ((fd = open(from, O_RDONLY)) == -1 || fstat(fd,
+			if ((fd = fileargs_open(files, from)) == -1 || fstat(fd,
 			    &sb) == -1 || (text = malloc((size_t)sb.st_size +
 			    1)) == NULL || read(fd, text, (size_t)sb.st_size) !=
 			    sb.st_size)
@@ -3684,7 +3696,7 @@ cmd_fstab(struct arc_client *cl, int argc, char **argv)
 	text = NULL;
 	cur = NULL;
 	if (from != NULL) {
-		if ((fd = open(from, O_RDONLY)) == -1 || fstat(fd, &sb) == -1 ||
+		if ((fd = fileargs_open(files, from)) == -1 || fstat(fd, &sb) == -1 ||
 		    (text = malloc((size_t)sb.st_size + 1)) == NULL ||
 		    read(fd, text, (size_t)sb.st_size) != sb.st_size)
 			xo_err(1, "%s", from);
@@ -4345,10 +4357,25 @@ main(int argc, char *argv[])
 	cbl_ctx			*ctx;
 	cbl_tls			*tls;
 	const char		*uri, *cafile, *certfile, *keyfile, *name, *errstr;
-	int			 ch, error, rc;
+	cap_rights_t		 rd, wr;
+	char			**names;
+	int			 ch, error, rc, i, nnames;
 
 	if ((argc = xo_parse_args(argc, argv)) < 0)
 		exit(2);
+	/*
+	 * Any word of the command line may name a file to read, and the
+	 * file behind an @word: these, and no other, Casper opens for us
+	 * once in capability mode.
+	 */
+	if ((names = calloc((size_t)argc * 2 + 1, sizeof(*names))) == NULL)
+		xo_err(1, "calloc");
+	nnames = 0;
+	for (i = 0; i < argc; i++) {
+		names[nnames++] = argv[i];
+		if (argv[i][0] == '@' && argv[i][1] != '\0')
+			names[nnames++] = argv[i] + 1;
+	}
 	uri = PATH_SOCKET;
 	cafile = certfile = keyfile = name = NULL;
 	while ((ch = getopt(argc, argv, "+A:C:c:F:j:K:N:pqstW:")) != -1) {
@@ -4427,6 +4454,26 @@ main(int argc, char *argv[])
 	if ((error = arc_client_init(&cl, conn)) != 0)
 		xo_errx(1, "%s: no %s family: %s", uri, ARC_FAMILY_NAME,
 		    strerror(error));
+	/*
+	 * Capability mode from here (capsicum(4)): the agent's socket is
+	 * connected and TLS is up; the files named on the command line
+	 * come through Casper's fileargs, to read, or for agent-build's
+	 * program alone to write; the time zone and the message catalogs
+	 * are cached first.
+	 */
+	cap_rights_init(&rd, CAP_READ, CAP_FSTAT, CAP_SEEK);
+	cap_rights_init(&wr, CAP_WRITE, CAP_FSTAT);
+	if ((files = fileargs_init(nnames, names, O_RDONLY, 0, &rd,
+	    FA_OPEN)) == NULL)
+		xo_err(1, "fileargs_init");
+	if (strcmp(argv[0], "agent-build") == 0 && (outfiles =
+	    fileargs_init(nnames, names, O_WRONLY | O_CREAT | O_TRUNC, 0755,
+	    &wr, FA_OPEN)) == NULL)
+		xo_err(1, "fileargs_init");
+	caph_cache_tzdata();
+	caph_cache_catpages();
+	if (caph_enter_casper() == -1)
+		xo_err(1, "cap_enter");
 
 	xo_open_container("arcana");
 	if (strcmp(argv[0], "hello") == 0 && argc == 1)

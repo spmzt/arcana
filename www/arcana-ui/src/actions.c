@@ -25,13 +25,14 @@ struct ctx {
 	int	op;
 	bool	user;
 	bool	dry_run;
+	bool	read;		/* packages: the pending read, not an upgrade */
 	enum pending pend;
 	int	net_kind;	/* the network table asked for */
 	bool	more;		/* rows to add to those there are */
 	int	op_family;	/* and its family */
 };
 
-static void	osversion_ask(const char *, bool);
+static void	osversion_ask(const char *, bool, bool);
 static void	 who_set(const ucl_object_t *);
 static struct ctx *ctx_new(void);
 static struct op *op_new(const char *, const char *);
@@ -704,7 +705,7 @@ job_finished(struct op *op, bool ok, const char *err)
 			refresh_packages(s, false);
 		}
 		if (!ok)
-			osversion_ask(err, false);
+			osversion_ask(err, false, false);
 		break;
 	}
 	app.quiet = false;
@@ -1711,15 +1712,31 @@ refresh_stats(struct server *s)
 
 /*
  * pkg refused packages built for a newer FreeBSD than the host's: the
- * same asked again past OSVERSION, once it is approved.
+ * same asked again past OSVERSION, once it is approved.  A read (the
+ * pending upgrades) asks once a session for the host or jail, then
+ * reads past it; an upgrade or a dry run asks each time.
  */
 static void
-osversion_ask(const char *err, bool dry_run)
+osversion_ask(const char *err, bool dry_run, bool read)
 {
 	char	body[700];
 
 	if (err == NULL || strstr(err, "OSVERSION") == NULL)
 		return;
+	if (read) {
+		if (app.pkg.asked)
+			return;
+		app.pkg.asked = true;
+		snprintf(body, sizeof(body), "pkg refused: the repository's "
+		    "packages are built for a newer FreeBSD than %s runs (its "
+		    "OSVERSION is lower than theirs), so what is pending cannot "
+		    "be read. Read past it with IGNORE_OSVERSION=yes? Upgrading "
+		    "asks again.", app.pkg.jail[0] != '\0' ? app.pkg.jail :
+		    "this host");
+		confirm("Packages for a newer FreeBSD", body, "Read anyway", true,
+		    "", "do-pkg-read-anyos", "", "");
+		return;
+	}
 	snprintf(body, sizeof(body), "pkg refused: the repository's packages "
 	    "are built for a newer FreeBSD than %s runs (its OSVERSION is "
 	    "lower than theirs). Installed anyway, a package may need what "
@@ -1777,8 +1794,8 @@ packages_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			snprintf(app.pkg.error, sizeof(app.pkg.error), "%s",
 			    err != NULL ? err : "no answer from the console");
 	}
-	if (!ok && c->user)
-		osversion_ask(err, c->dry_run);
+	if (!ok && (c->user || c->read))
+		osversion_ask(err, c->dry_run, c->read);
 	if (c->user)
 		toast(ok ? false : true, "%s: %s", c->jail[0] != '\0' ? c->jail :
 		    "host", ok ? (op != NULL ? op->title : "done") : err != NULL ?
@@ -1804,12 +1821,14 @@ refresh_packages(struct server *s, bool refresh)
 		app.pkg.result[0] = '\0';
 		/* Another host: its own packages, not a jail of the last. */
 		app.pkg.jail[0] = '\0';
+		app.pkg.anyos = app.pkg.asked = false;
 	}
 	snprintf(app.pkg.sid, sizeof(app.pkg.sid), "%s", s->id);
 	app.pkg.loading = true;
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	snprintf(c->jail, sizeof(c->jail), "%s", app.pkg.jail);
+	c->read = app.pkg.mode == 1;
 	/* Which view asked: an answer for the other is not shown. */
 	c->net_kind = app.pkg.mode;
 	snprintf(title, sizeof(title), "%s%s%s", refresh && app.pkg.mode ==
@@ -1820,7 +1839,8 @@ refresh_packages(struct server *s, bool refresh)
 	snprintf(url, sizeof(url), "/api/servers/%s/packages?jail=%s%s%s%s",
 	    s->id, url_word(app.pkg.jail) ? app.pkg.jail : "",
 	    app.pkg.mode == 0 ? "&installed=1" : refresh ? "&refresh=1" : "",
-	    app.pkg.ip == 4 ? "&ip=4" : app.pkg.ip == 6 ? "&ip=6" : "", "");
+	    app.pkg.ip == 4 ? "&ip=4" : app.pkg.ip == 6 ? "&ip=6" : "",
+	    app.pkg.anyos ? "&anyos=1" : "");
 	/* Read again by the page itself (after an upgrade): no task. */
 	if (app.quiet) {
 		api("GET", url, NULL, packages_cb, c);

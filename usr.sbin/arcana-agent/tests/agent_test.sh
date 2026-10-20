@@ -229,6 +229,12 @@ update)	exit 0 ;;
 query)	printf 'aria2\t1.37.0_1\t0\t5242880\twww/aria2\tDownload utility\npimd\t3.1.0\t1\t102400\tnet/pimd\tPIM-SM daemon\n' ;;
 clean)	echo "$*" >> clean.log ;;
 version)
+	# A repository for a newer FreeBSD: refused, as upgrade is.
+	if [ -e newer -a $anyos = no ]; then
+		echo 'Error updating repositories!'
+		echo 'pkg: repository FreeBSD-base contains packages for wrong OS version: FreeBSD:16:amd64' >&2
+		exit 3
+	fi
 	[ -s pending ] || exit 1
 	# pkg 2 says how each repository is first.
 	printf 'FreeBSD-ports repository is up to date.\nFreeBSD-ports-kmods repository is up to date.\nFreeBSD-base repository is up to date.\nAll repositories are up to date.\n'
@@ -806,6 +812,10 @@ packages_body()
 	touch newer
 	atf_check -s exit:1 -o ignore -e match:'pkg upgrade: a repository has packages for a newer FreeBSD than this one, refused unless IGNORE_OSVERSION=yes: repository FreeBSD-base contains packages for wrong OS version: FreeBSD:16:amd64; Repository FreeBSD-ports cannot be opened' \
 	    "$JGC" -c "$SOCK" pkg-upgrade -n
+	# The pending read too: named the same, for the console to ask
+	# whether to read past it.
+	atf_check -s exit:1 -o ignore -e match:'pkg version: a repository has packages for a newer FreeBSD than this one, refused unless IGNORE_OSVERSION=yes' \
+	    "$JGC" -c "$SOCK" packages
 	atf_check -s exit:1 -o match:'failed +pkg install aria2' \
 	    "$JGC" -c "$SOCK" pkg-install aria2
 	atf_check -o match:'Upgraded: 0' "$JGC" -c "$SOCK" pkg-upgrade -O
@@ -3585,6 +3595,10 @@ EOS
 	cat > tools/smtpctl <<EOS
 #!/bin/sh
 echo "smtpctl \$*" >> $(pwd)/smtpctl.log
+# The nice value a read's program gets, a job's not: set by the agent
+# just after the spawn, so a moment is given.
+sleep 0.2
+echo "nice \$(ps -o nice= -p \$\$ | tr -d ' ') \$*" >> $(pwd)/nice.log
 case "\$*" in
 "show status") printf 'MDA running\\nMTA paused\\nSMTP running\\n' ;;
 "show stats") printf 'control.session=1\\nscheduler.delivery.ok=2\\nscheduler.delivery.permfail=4\\nuptime=44\\nuptime.human=44s\\n' ;;
@@ -3683,6 +3697,8 @@ EOF
 	atf_check -o match:'done +smtpd remove all' "$JGC" -c "$SOCK" smtpd remove all
 	atf_check -o match:'^smtpctl pause mta$' -o match:'^smtpctl resume mta$' -o match:'^smtpctl schedule 6022923fc9341b9d$' \
 	    -o match:'^smtpctl remove all$' cat smtpctl.log
+	# A read's programs at nice 10, a job's at the agent's own.
+	atf_check -o match:'^nice 10 show status$' -o match:'^nice 0 pause mta$' cat nice.log
 	atf_check -s exit:1 -e match:'mta, mda or smtp' -o ignore "$JGC" -c "$SOCK" smtpd pause all
 	atf_check -s exit:1 -e match:"envelope's or a message's id" -o ignore "$JGC" -c "$SOCK" smtpd remove '../x'
 	# The form again while it runs: smtpd started again.
@@ -3712,31 +3728,57 @@ netstore_body()
 	printf '#!/bin/sh\necho "hastctl $*" >> %s/hastctl.log\ncase "$1" in\nstatus) printf "Name\\tStatus\\tRole\\tComponents\\nshared\\tcomplete\\tprimary\\t/dev/ada1\\tb.example.org\\n" ;;\nlist) echo "shared:" ;;\nesac\n' "$(pwd)" > tools/hastctl
 	printf '#!/bin/sh\necho "Exports list on localhost:"\necho "/export 10.0.0.0"\n' > tools/showmount
 	printf '#!/bin/sh\necho "sysctl $*" >> %s/sysctl.log\n' "$(pwd)" > fake-sysctl
-	chmod +x tools/ctladm tools/hastctl tools/showmount fake-sysctl
+	printf '#!/bin/sh\necho "zfs $*" >> %s/zfs.log\ncase "$1" in\nlist) printf "zroot/export\\t/export\\t-maproot=root\\nzroot/home\\t/home\\toff\\n" ;;\nesac\n' "$(pwd)" > fake-zfs
+	chmod +x tools/ctladm tools/hastctl tools/showmount fake-sysctl fake-zfs
 	printf '/export -network 10.0.0.0/24\n' > exports
-	DAEMON_ARGS="-2 $(pwd)/tools --exports $(pwd)/exports --ctl-conf $(pwd)/ctl.conf --hast-conf $(pwd)/hast.conf -Q $(pwd)/fake-sysctl -O $(pwd)/sysctl.conf"
+	DAEMON_ARGS="-2 $(pwd)/tools -z $(pwd)/fake-zfs --exports $(pwd)/exports --ctl-conf $(pwd)/ctl.conf --hast-conf $(pwd)/hast.conf -Q $(pwd)/fake-sysctl -O $(pwd)/sysctl.conf"
 	start_daemon
 	for d in nfsd mountd ctld hastd; do
 		printf '#!/bin/sh\n' > rc.d/$d
 		chmod +x rc.d/$d
 	done
 	# Read whole, or one of them.
-	atf_check -o match:'"nfs":\{.*"exports_path":"[^"]*/exports","exports":"/export -network 10.0.0.0/24\\n","exported":"Exports list on localhost:' \
+	atf_check -o match:'"nfs":\{.*"exports_path":"[^"]*/exports","exports":"/export -network 10.0.0.0/24\\n",.*"shares":\[\{"dataset":"zroot/export","mountpoint":"/export","sharenfs":"-maproot=root"\}\],"exported":"Exports list on localhost:' \
+	    -o not-match:'"v4root"' \
 	    -o match:'"iscsi":\{.*"luns":"LUN Backend[^"]*MYSERIAL0' \
 	    -o match:'"hast":\{.*"status":"Name\\tStatus\\tRole\\tComponents\\nshared\\tcomplete\\tprimary' \
 	    "$JGC" -c "$SOCK" netstore
 	atf_check -o match:'^\{"iscsi":' -o not-match:'"nfs"' "$JGC" -c "$SOCK" netstore iscsi
 	atf_check -s exit:1 -e match:'netstore reads nfs, iscsi and hast' "$JGC" -c "$SOCK" netstore smb
-	# NFS: exports(5) written, mountd told; the server's settings:
-	# NFSv4.2, nfsd's threads, pNFS's data servers and mirrors.
-	printf '/export -network 10.0.0.0/24\nV4: /export -sec=sys\n' > exports.new
-	atf_check -o match:'done +nfs exports' "$JGC" -c "$SOCK" nfs exports exports.new
-	atf_check -o inline:'/export -network 10.0.0.0/24\nV4: /export -sec=sys\n' cat exports
-	atf_check -o match:'done +nfs server' "$JGC" -c "$SOCK" nfs server enable=yes v4=yes \
-	    v4only=yes minor=2 threads=8 pnfs=ds1.example.org:/ds0,ds2.example.org:/ds1 mirror=2
+	# NFS, v4 alone: exports(5) written, mountd told, once its V4: root
+	# is a directory on ZFS; a text that exports needs the root; a
+	# root elsewhere (devfs), or nowhere, is refused.
+	printf 'V4: /dev -sec=sys\n' > exports.dev
+	atf_check -s exit:1 -o match:'failed.*V4: root /dev is not on ZFS \(devfs\)' "$JGC" -c "$SOCK" nfs exports exports.dev
+	printf 'V4: /nonesuch\n' > exports.none
+	atf_check -s exit:1 -o match:'failed.*V4: root /nonesuch: No such file' "$JGC" -c "$SOCK" nfs exports exports.none
+	printf '/export -network 10.0.0.0/24\n' > exports.nov4
+	atf_check -s exit:1 -o match:'failed.*exports needs a V4: line' "$JGC" -c "$SOCK" nfs exports exports.nov4
+	printf '# nothing yet\n' > exports.empty
+	atf_check -o match:'done +nfs exports' "$JGC" -c "$SOCK" nfs exports exports.empty
+	printf '/export -network 10.0.0.0/24\nV4: %s -sec=sys\n' "$(pwd)" > exports.new
+	fs=$(df -T . | awk 'NR==2{print $2}')
+	if [ "$fs" = zfs ]; then
+		atf_check -o match:'done +nfs exports' "$JGC" -c "$SOCK" nfs exports exports.new
+		atf_check -o inline:"/export -network 10.0.0.0/24\nV4: $(pwd) -sec=sys\n" cat exports
+		atf_check -o match:"\"v4root\":\"$(pwd)\",\"v4root_zfs\":true" "$JGC" -c "$SOCK" netstore nfs
+	else
+		atf_check -s exit:1 -o match:"failed.*V4: root $(pwd) is not on ZFS \($fs\)" "$JGC" -c "$SOCK" nfs exports exports.new
+	fi
+	# A dataset shared by its sharenfs: zfs set, which tells mountd.
+	atf_check -o match:'done +nfs share' "$JGC" -c "$SOCK" nfs share dataset=zroot/export 'sharenfs=-maproot=root -network 10.0.0.0/24'
+	atf_check -o match:'^zfs set sharenfs=-maproot=root -network 10.0.0.0/24 zroot/export$' cat zfs.log
+	atf_check -o match:'done +nfs share' "$JGC" -c "$SOCK" nfs share dataset=zroot/export sharenfs=off
+	atf_check -s exit:1 -e match:"share takes dataset=" "$JGC" -c "$SOCK" nfs share dataset=../x sharenfs=on
+	atf_check -s exit:1 -e match:"share takes dataset=" "$JGC" -c "$SOCK" nfs share dataset=/zroot sharenfs=on
+	# The server's settings: NFSv4 alone, up to 4.2, nfsd's threads,
+	# pNFS's data servers and mirrors.
+	atf_check -o match:'done +nfs server' "$JGC" -c "$SOCK" nfs server enable=yes \
+	    minor=2 threads=8 pnfs=ds1.example.org:/ds0,ds2.example.org:/ds1 mirror=2
 	atf_check -o match:'^nfs_server_flags="-u -t -n 8 -p ds1.example.org:/ds0,ds2.example.org:/ds1 -m 2"$' \
 	    -o match:'^nfsv4_server_enable="YES"$' -o match:'^nfsv4_server_only="YES"$' \
-	    -o match:'^rpcbind_enable="YES"$' -o match:'^mountd_enable="YES"$' cat rc.conf
+	    -o not-match:'^rpcbind_enable' -o match:'^mountd_enable="YES"$' cat rc.conf
+	atf_check -s exit:1 -e match:'server takes enable=' "$JGC" -c "$SOCK" nfs server v4only=no
 	# The flags merged: threads alone keeps pNFS's -p and -m; mirror
 	# without data servers is refused.
 	atf_check -o match:'done +nfs server' "$JGC" -c "$SOCK" nfs server threads=16

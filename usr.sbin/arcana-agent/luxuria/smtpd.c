@@ -63,6 +63,64 @@ encrypt_bin(struct work *w)
 	    "/usr/local/libexec/opensmtpd/encrypt");
 }
 
+/*
+ * smtpd's service, of the host or of the jail the work is in: there,
+ * service(8) is run by jexec and its rc.conf read by sysrc -R (rc_get
+ * does).
+ */
+static void
+svc_state(struct work *w, bool *enabled, bool *running)
+{
+	struct execres	 res;
+	const char	*v;
+	char		*argv[4];
+
+	if (w->jail == NULL) {
+		service_state(w, "smtpd", running, enabled);
+		return;
+	}
+	v = rc_get(w, "smtpd_enable");
+	*enabled = v != NULL && strcasecmp(v, "yes") == 0;
+	argv[0] = (char *)(uintptr_t)opts.service_bin;
+	argv[1] = (char *)(uintptr_t)"smtpd";
+	argv[2] = (char *)(uintptr_t)"onestatus";
+	argv[3] = NULL;
+	*running = run_exec(w, scope_jexec(w, argv), &res) == 0 && res.status ==
+	    0;
+}
+
+/* start, stop or restart it; 0, or -1 with why. */
+static int
+svc_do(struct work *w, const char *verb, const char **errp)
+{
+	struct arc_service_action_rsp	 r;
+	struct execres			 res;
+	char				*argv[4];
+
+	if (w->jail == NULL) {
+		memset(&r, 0, sizeof(r));
+		if (do_service_action(w, "smtpd", strcmp(verb, "start") == 0 ?
+		    ARC_SERVICE_ACTION_START : strcmp(verb, "stop") == 0 ?
+		    ARC_SERVICE_ACTION_STOP : ARC_SERVICE_ACTION_RESTART, &r) != 0
+		    || !r.ok) {
+			*errp = r.error != NULL ? r.error : wfmt(w, "smtpd: %s "
+			    "failed", verb);
+			return (-1);
+		}
+		return (0);
+	}
+	argv[0] = (char *)(uintptr_t)opts.service_bin;
+	argv[1] = (char *)(uintptr_t)"smtpd";
+	argv[2] = wfmt(w, "one%s", verb);
+	argv[3] = NULL;
+	if (run_exec(w, scope_jexec(w, argv), &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, wfmt(w, "service smtpd "
+		    "one%s", verb)));
+		return (-1);
+	}
+	return (0);
+}
+
 /* Is a file there, in the scope (the host's, or the jail's root)? */
 static bool
 scoped_x(struct work *w, const char *path, int mode)
@@ -526,7 +584,7 @@ ctl(struct work *w, const char *a, const char *b, const char *c)
 	argv[2] = (char *)(uintptr_t)b;
 	argv[3] = (char *)(uintptr_t)c;
 	argv[4] = NULL;
-	if (run_exec(w, argv, &res) != 0 || res.out == NULL)
+	if (run_exec(w, scope_jexec(w, argv), &res) != 0 || res.out == NULL)
 		return (NULL);
 	return (wstrndup(w, res.out, res.outlen));
 }
@@ -666,7 +724,7 @@ do_smtpd(struct work *w, struct arc_smtpd_rsp *rsp)
 	ucl_object_insert_key(top, ucl_object_frombool(installed), "installed",
 	    0, false);
 	enabled = running = false;
-	service_state(w, "smtpd", &enabled, &running);
+	svc_state(w, &enabled, &running);
 	ucl_object_insert_key(top, ucl_object_frombool(enabled), "enabled", 0,
 	    false);
 	ucl_object_insert_key(top, ucl_object_frombool(running), "running", 0,
@@ -849,18 +907,15 @@ smtpd_title(const struct arc_job_spec *sp)
 static int
 restart(struct work *w, const char **errp)
 {
-	struct arc_service_action_rsp	 r;
-	bool				 enabled, running;
+	const char	*e;
+	bool		 enabled, running;
 
 	enabled = running = false;
-	service_state(w, "smtpd", &enabled, &running);
+	svc_state(w, &enabled, &running);
 	if (!running)
 		return (0);
-	memset(&r, 0, sizeof(r));
-	if (do_service_action(w, "smtpd", ARC_SERVICE_ACTION_RESTART, &r) != 0
-	    || !r.ok) {
-		*errp = wfmt(w, "written, but smtpd did not start again: %s",
-		    r.error != NULL ? r.error : "restart failed");
+	if (svc_do(w, "restart", &e) != 0) {
+		*errp = wfmt(w, "written, but smtpd did not start again: %s", e);
 		return (-1);
 	}
 	return (0);
@@ -900,7 +955,7 @@ hashed(struct work *w, const char *text, const char **errp)
 		argv[1] = NULL;
 		exec_set_secret(true);
 		exec_set_stdin(wfmt(w, "%s\n", pass), strlen(pass) + 1);
-		if (run_exec(w, argv, &res) != 0 || res.out == NULL) {
+		if (run_exec(w, scope_jexec(w, argv), &res) != 0 || res.out == NULL) {
 			exec_set_secret(false);
 			*errp = "encrypt (OpenSMTPD's) did not hash the password";
 			return (NULL);
@@ -916,7 +971,6 @@ int
 do_smtpd_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
 	struct execres			 res;
-	struct arc_service_action_rsp	 r;
 	ucl_object_t			*o;
 	const char			*v, *conf, *path;
 	char				*argv[5], *text;
@@ -944,7 +998,7 @@ do_smtpd_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		argv[2] = (char *)(uintptr_t)"-f";
 		argv[3] = (char *)(uintptr_t)path;
 		argv[4] = NULL;
-		if (run_exec(w, argv, &res) != 0) {
+		if (run_exec(w, scope_jexec(w, argv), &res) != 0) {
 			(void)scope_unlink(w, path);
 			*errp = wfmt(w, "smtpd does not take it: %s", exec_error(w,
 			    &res, "smtpd -n"));
@@ -981,7 +1035,7 @@ do_smtpd_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 			return (-1);
 		}
 		enabled = running = false;
-		service_state(w, "smtpd", &enabled, &running);
+		svc_state(w, &enabled, &running);
 		if (!running)
 			return (0);
 		argv[0] = (char *)(uintptr_t)smtpctl_bin(w);
@@ -990,23 +1044,14 @@ do_smtpd_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		argv[3] = (char *)(uintptr_t)v;
 		argv[4] = NULL;
 		/* A table smtpd.conf does not name is not its to update. */
-		(void)run_exec(w, argv, &res);
+		(void)run_exec(w, scope_jexec(w, argv), &res);
 		return (0);
 	}
 	if (strcmp(sp->verb, "enable") == 0) {
-		memset(&r, 0, sizeof(r));
-		if (strcmp(v, "enable=yes") == 0) {
-			if (rc_set(w, "smtpd_enable", "=", "YES", errp) != 0 ||
-			    do_service_action(w, "smtpd", ARC_SERVICE_ACTION_START,
-			    &r) != 0 || !r.ok) {
-				*errp = r.error != NULL ? r.error : *errp != NULL ?
-				    *errp : "smtpd did not start";
-				return (-1);
-			}
-			return (0);
-		}
-		if (do_service_action(w, "smtpd", ARC_SERVICE_ACTION_STOP, &r) !=
-		    0)
+		if (strcmp(v, "enable=yes") == 0)
+			return (rc_set(w, "smtpd_enable", "=", "YES", errp) != 0 ||
+			    svc_do(w, "start", errp) != 0 ? -1 : 0);
+		if (svc_do(w, "stop", errp) != 0)
 			return (-1);
 		return (rc_set(w, "smtpd_enable", "=", "NO", errp));
 	}
@@ -1018,7 +1063,7 @@ do_smtpd_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	argv[3] = (char *)(uintptr_t)(strcmp(sp->verb, "update") == 0 ? v :
 	    NULL);
 	argv[4] = NULL;
-	if (run_exec(w, argv, &res) != 0) {
+	if (run_exec(w, scope_jexec(w, argv), &res) != 0) {
 		*errp = wtext(w, exec_error(w, &res, "smtpctl"));
 		return (-1);
 	}

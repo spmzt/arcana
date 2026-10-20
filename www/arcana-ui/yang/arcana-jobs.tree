@@ -352,6 +352,7 @@ module: arcana-jobs
        |        +--:(smtpd)
        |           +---w smtpd!
        |              +---w verb    enumeration
+       |              +---w jail?   string
        |              +---w args*   string
        |              +---w text?   string
        +--ro output

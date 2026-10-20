@@ -203,6 +203,8 @@ struct pkgview {
 	int		 mode;		/* 0 the installed, 1 the upgrades */
 	int		 ip;		/* pkg -4 or -6, or 0 either */
 	char		 repo[65];	/* pkg -r: one repository, or "" */
+	bool		 anyos;		/* reads past OSVERSION: approved */
+	bool		 asked;		/* ... or asked once already */
 };
 
 enum netkind {
