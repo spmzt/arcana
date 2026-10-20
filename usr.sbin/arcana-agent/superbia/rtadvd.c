@@ -97,7 +97,7 @@ do_rtadvd(struct work *w, const char *ifname, const char *const *names,
 {
 	struct execres	 res;
 	struct in6_addr	 a;
-	char		*old, *out, *b, *e, *kept, *argv[4], pfx[64];
+	char		*old, *out, *inner, *body, *kept, *argv[4], pfx[64];
 	size_t		 len, i;
 	int		 step, left;
 	bool		 enabled;
@@ -131,40 +131,30 @@ do_rtadvd(struct work *w, const char *ifname, const char *const *names,
 		}
 		old = wstrdup(w, "");
 	}
-	out = wcalloc(w, strlen(old) + 128 + n * 80, 1);
-	kept = wcalloc(w, strlen(old) + 1, 1);
-	left = 0;
-	if ((b = strstr(old, BEGIN)) != NULL && (e = strstr(b, END)) != NULL) {
-		/* The other interfaces' entries stay. */
-		*e = '\0';
-		left = entries_keep(b + strlen(BEGIN), ifname, kept, strlen(old)
-		    + 1);
-		*e = '#';
-		memcpy(out, old, (size_t)(b - old));
-		strcat(out, e + strlen(END));
-	} else
-		strcpy(out, old);
+	/* The block as it was, out; the other interfaces' entries stay,
+	 * in the new one at the end. */
+	out = block_cut(w, old, BEGIN, END, &inner);
+	kept = wcalloc(w, strlen(inner) + 1, 1);
+	left = entries_keep(inner, ifname, kept, strlen(inner) + 1);
+	body = wcalloc(w, strlen(kept) + 128 + n * 80, 1);
 	if (!remove || left > 0) {
-		if (out[0] != '\0' && out[strlen(out) - 1] != '\n')
-			strcat(out, "\n");
-		strcat(out, BEGIN);
-		strcat(out, kept);
+		strcat(body, kept);
 		if (!remove) {
 			snprintf(pfx, sizeof(pfx), "%s", names[0]);
 			*strchr(pfx, '/') = '\0';
-			sprintf(out + strlen(out), "%s:\\\n\t:addr=\"%s\":prefixlen"
+			sprintf(body + strlen(body), "%s:\\\n\t:addr=\"%s\":prefixlen"
 			    "#64:", ifname, pfx);
 			if (n > 1) {
-				strcat(out, "rdnss=\"");
+				strcat(body, "rdnss=\"");
 				for (i = 1; i < n; i++)
-					sprintf(out + strlen(out), "%s%s", i > 1 ?
+					sprintf(body + strlen(body), "%s%s", i > 1 ?
 					    "," : "", names[i]);
-				strcat(out, "\":");
+				strcat(body, "\":");
 			}
-			strcat(out, "\n");
+			strcat(body, "\n");
 			left++;
 		}
-		strcat(out, END);
+		out = block_add(w, out, BEGIN, END, body);
 	}
 	if (scope_replace(w, opts.rtadvd_conf, out, strlen(out), 0644,
 	    ".rtadvd.conf.was") != 0) {

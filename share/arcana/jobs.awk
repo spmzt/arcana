@@ -108,7 +108,8 @@ function flush_field() {
 	nf++
 	ff[nf] = fname; ft[nf] = ftype; fl[nf] = flabel; fa[nf] = fattr
 	fh[nf] = fhelp; fc[nf] = fchoices; fp[nf] = fpicker
-	fname = ftype = flabel = fattr = fhelp = fchoices = fpicker = ""
+	fr[nf] = frange; fe[nf] = fempty
+	fname = ftype = flabel = fattr = fhelp = fchoices = fpicker = frange = fempty = ""
 }
 
 function flush_kind() {
@@ -129,8 +130,12 @@ FILENAME ~ /arcana\.yaml$/ {
 		akind[value($0)] = 1
 		aorder[nak++] = value($0)
 	}
-	else if ($0 ~ /^      - name:/ && top == "job-spec")
+	else if ($0 ~ /^      - name:/ && top == "job-spec") {
 		aspec[value($0)] = 1
+		acur = value($0)
+	}
+	else if ($0 ~ /^        type:/ && top == "job-spec")
+		atype[acur] = value($0)
 	next
 }
 # arcana.h: struct arc_job_spec's members.
@@ -159,6 +164,8 @@ section == "f" && /^    attribute:/ { fattr = value($0); next }
 section == "f" && /^    help:/ { fhelp = value($0); next }
 section == "f" && /^    choices:/ { fchoices = value($0); next }
 section == "f" && /^    picker:/ { fpicker = value($0); next }
+section == "f" && /^    range:/ { frange = value($0); next }
+section == "f" && /^    empty:/ { fempty = value($0); next }
 section == "k" && /^  - kind:/ { flush_kind(); kname = value($0); next }
 section == "k" && /^    title:/ { ktitle = value($0); next }
 section == "k" && /^    needs:/ { kneeds = value($0); next }
@@ -218,6 +225,10 @@ END {
 	}
 	if (out == "yang") {
 		yang()
+		exit
+	}
+	if (out == "spec") {
+		spec()
 		exit
 	}
 	printf "{\"fields\":["
@@ -341,3 +352,45 @@ function kvals(k, f,    n, a, j, w) {
 	return ""
 }
 
+
+# The console's parser of a job: the kinds' names in the enum's order,
+# and each field's member of struct arc_job_spec, with how it is read
+# (text, number in its range, flag), made of jobs.yaml's fields and
+# arcana.yaml's attribute types; what is read by hand (a u8 of names,
+# a list, a map) is left out.
+function spec(    i, a, m, t, lo, hi, kind) {
+	print "/* Made from share/arcana/jobs.yaml by jobs.awk: not to be edited. */"
+	print "static const char *const job_kind_names[] = {"
+	for (i = 0; i < nak; i++)
+		printf "\t%s,\n", cstr(aorder[i])
+	print "};"
+	print "enum jobmtype { JM_TEXT, JM_NUM, JM_BOOL };"
+	print "struct jobmember {"
+	print "\tconst char\t*field;\t/* as the JSON names it */"
+	print "\tenum jobmtype\t type;"
+	print "\tsize_t\t\t off, has;\t/* of the member, and of has_ */"
+	print "\tuint64_t\t min, max;"
+	print "\tbool\t\t keep_empty;\t/* \"\" is a value, not nothing */"
+	print "};"
+	print "static const struct jobmember jobmembers[] = {"
+	for (i = 1; i <= nf; i++) {
+		if (ft[i] == "list" || ft[i] == "map")
+			continue
+		a = fa[i] != "" ? fa[i] : ff[i]
+		gsub(/_/, "-", a)
+		t = atype[a]
+		m = a
+		gsub(/-/, "_", m)
+		if (t == "text")
+			printf "\t{ %s, JM_TEXT, offsetof(struct arc_job_spec, %s), 0, 0, 0, %s },\n", cstr(ff[i]), m, (fe[i] == "keep" ? "true" : "false")
+		else if (t == "u32" || t == "u64") {
+			if (fr[i] == "" || split(fr[i], kind, "-") != 2) {
+				printf "jobs.awk: field %s is a number and has no range: lo-hi\n", ff[i] > "/dev/stderr"
+				exit 1
+			}
+			printf "\t{ %s, JM_NUM, offsetof(struct arc_job_spec, %s), offsetof(struct arc_job_spec, has_%s), %s, %s, false },\n", cstr(ff[i]), m, m, kind[1], kind[2]
+		} else if (t == "flag" || t == "bool")
+			printf "\t{ %s, JM_BOOL, offsetof(struct arc_job_spec, %s), 0, 0, 0, false },\n", cstr(ff[i]), m
+	}
+	print "};"
+}

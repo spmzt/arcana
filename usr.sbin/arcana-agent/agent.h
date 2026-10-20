@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.159.0"
+#define	ARCANA_AGENT_VERSION	"0.160.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -570,6 +570,13 @@ void		 sdwan_proxy_json(struct work *, struct ucl_object_s *);
 void		 clamav_mirrors_json(struct ucl_object_s *);
 void		 security_specs(const char *, struct ucl_object_s *, const char *);
 int		 do_sdwan_ids(struct work *, const char *, const char **);
+/* luxuria/idsconf.c: Suricata's YAML from an instance's settings. */
+char		*ids_conf_render(struct work *, const struct ucl_object_s *,
+		    const char *, const char *, int64_t, struct ucl_object_s *,
+		    const char **);
+char		*ids_conf_sdwan(struct work *, const struct ucl_object_s *,
+		    const char *, const char *, struct ucl_object_s *,
+		    const char **);
 int		 do_notify(struct work *, const char *, const char *,
 		    const char *, const char **);
 void		 sdwan_ids_start(void);
@@ -806,6 +813,10 @@ int		 ifaddr_change(struct work *, const char *, int, const void *,
 const char	*list_edit(struct work *, const char *, const char *,
 		    const char *, bool);
 bool		 list_has(const char *, const char *, const char *);
+char		*block_cut(struct work *, const char *, const char *, const char *,
+		    char **);
+char		*block_add(struct work *, const char *, const char *, const char *,
+		    const char *);
 int		 write_backup(struct work *, const char *, const char *, size_t,
 		    const char **);
 bool		 verify_jail8(struct work *, const char *, const char *,

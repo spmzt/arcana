@@ -141,3 +141,43 @@ verify_jail8(struct work *w, const char *scope, const char *name,
 	}
 	return (false);
 }
+
+/*
+ * A file's text without arcana's block, the lines from begin to end
+ * (each a whole line); what was between them in *innerp, "" when
+ * there was no block.  The text is a copy: the caller's stays.
+ */
+char *
+block_cut(struct work *w, const char *old, const char *begin, const char *end,
+    char **innerp)
+{
+	char	*out, *b, *e;
+
+	out = wstrdup(w, old);
+	if (innerp != NULL)
+		*innerp = wstrdup(w, "");
+	if ((b = strstr(out, begin)) == NULL || (e = strstr(b, end)) == NULL)
+		return (out);
+	if (innerp != NULL)
+		*innerp = wstrndup(w, b + strlen(begin), (size_t)(e - b -
+		    strlen(begin)));
+	memmove(b, e + strlen(end), strlen(e + strlen(end)) + 1);
+	return (out);
+}
+
+/*
+ * The text with arcana's block at its end: begin, the body, end; on a
+ * line of its own.  A body NULL or empty adds no block.
+ */
+char *
+block_add(struct work *w, const char *text, const char *begin, const char *end,
+    const char *body)
+{
+	size_t	len;
+
+	if (body == NULL || body[0] == '\0')
+		return ((char *)(uintptr_t)text);
+	len = strlen(text);
+	return (wfmt(w, "%s%s%s%s%s", text, len > 0 && text[len - 1] != '\n' ?
+	    "\n" : "", begin, body, end));
+}

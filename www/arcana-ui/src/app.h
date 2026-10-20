@@ -934,6 +934,21 @@ void		 secpage_tick(double);
 void		 secpage_refresh(void);
 /* sysview.c: a host's own configuration, of the system read. */
 void		 refresh_system(struct server *, bool);
+
+/* res.c: a page's read of one host's resource, and a job's JSON. */
+struct res {
+	char		 sid[16];	/* the host read */
+	ucl_object_t	*o;		/* what was read, NULL until it is */
+	bool		 loading;
+	char		 error[256];	/* why the read failed, or "" */
+	unsigned	 gen;		/* a reply not the latest is dropped */
+};
+void		 res_load(struct res *, const char *, const char *);
+void		 res_drop(struct res *);
+bool		 res_shown(struct html *, struct res *, const char *,
+		    void (*)(const char *), const char *);
+char		*job_json(const char *, const char *, const char *const *,
+		    size_t, const char *, const char *);
 void		 view_system(struct html *, struct server *);
 void		 view_hostsec(struct html *, struct server *);
 void		 view_storage_geom(struct html *, struct server *, int);

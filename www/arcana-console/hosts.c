@@ -381,7 +381,6 @@ static bool	 rq_param(const struct rq *, const char *, char *, size_t);
 static bool	 rq_u64(const struct rq *, const char *, uint64_t, uint64_t *);
 static int	 read_route(struct http_request *, enum op, read_setup *);
 static void	 spec_free(struct arc_job_spec *);
-static char	*jdup(const ucl_object_t *, const char *);
 static ucl_object_t *step_object(int, int, const char *, const char *,
 		    const char *, bool, uint64_t);
 static ucl_object_t *trace_object(struct call *, const struct arc_step *,
@@ -4893,53 +4892,7 @@ api_pkg_upgrade(struct http_request *req)
 	return (call_start(req, c));
 }
 
-static const char *job_kind_names[] = {
-	[ARC_JOB_KIND_JAIL_ACTION] = "jail-action",
-	[ARC_JOB_KIND_ADDRESS] = "address",
-	[ARC_JOB_KIND_SERVICE_ACTION] = "service-action",
-	[ARC_JOB_KIND_SERVICE_CONFIG] = "service-config",
-	[ARC_JOB_KIND_PKG_UPGRADE] = "pkg-upgrade",
-	[ARC_JOB_KIND_IF_ADDRESS] = "if-address",
-	[ARC_JOB_KIND_IF_STATE] = "if-state",
-	[ARC_JOB_KIND_ROUTE] = "route",
-	[ARC_JOB_KIND_IF_SET] = "if-set",
-	[ARC_JOB_KIND_IF_CREATE] = "if-create",
-	[ARC_JOB_KIND_IF_DESTROY] = "if-destroy",
-	[ARC_JOB_KIND_NETGRAPH] = "netgraph",
-	[ARC_JOB_KIND_WIREGUARD] = "wireguard",
-	[ARC_JOB_KIND_BIRD] = "bird",
-	[ARC_JOB_KIND_IF_VNET] = "if-vnet",
-	[ARC_JOB_KIND_KMOD] = "kmod",
-	[ARC_JOB_KIND_ZFS] = "zfs",
-	[ARC_JOB_KIND_ZPOOL] = "zpool",
-	[ARC_JOB_KIND_MOUNT] = "mount",
-	[ARC_JOB_KIND_GPART] = "gpart",
-	[ARC_JOB_KIND_CAM] = "cam",
-	[ARC_JOB_KIND_SYSCTL] = "sysctl",
-	[ARC_JOB_KIND_IPFW] = "ipfw",
-	[ARC_JOB_KIND_BRIDGE] = "bridge",
-	[ARC_JOB_KIND_GENEVE] = "geneve",
-	[ARC_JOB_KIND_PROCESS] = "process",
-	[ARC_JOB_KIND_PKG_CLEAN] = "pkg-clean",
-	[ARC_JOB_KIND_IPSEC] = "ipsec",
-	[ARC_JOB_KIND_PKG_INSTALL] = "pkg-install",
-	[ARC_JOB_KIND_NTP] = "ntp",
-	[ARC_JOB_KIND_RTADVD] = "rtadvd",
-	[ARC_JOB_KIND_IPSEC_SA] = "ipsec-sa",
-	[ARC_JOB_KIND_JAIL_CONF] = "jail-conf",
-	[ARC_JOB_KIND_NEIGHBOUR] = "neighbour",
-	[ARC_JOB_KIND_CERT] = "cert",
-	[ARC_JOB_KIND_SSH] = "ssh",
-	[ARC_JOB_KIND_CARP] = "carp",
-	[ARC_JOB_KIND_POUDRIERE] = "poudriere",
-	[ARC_JOB_KIND_CLAMAV] = "clamav",
-	[ARC_JOB_KIND_SURICATA] = "suricata",
-	[ARC_JOB_KIND_NFS] = "nfs",
-	[ARC_JOB_KIND_ISCSI] = "iscsi",
-	[ARC_JOB_KIND_HAST] = "hast",
-	[ARC_JOB_KIND_SYSFILE] = "sysfile",
-	[ARC_JOB_KIND_GEOM] = "geom",
-};
+#include "jobs_spec.h"
 
 /* Is kind one the console sends (workflows.c checks jobs.yaml's)? */
 bool
@@ -5048,15 +5001,6 @@ spec_free(struct arc_job_spec *sp)
 	memset(sp, 0, sizeof(*sp));
 }
 
-static char *
-jdup(const ucl_object_t *o, const char *key)
-{
-	const char	*s;
-
-	return ((s = ucl_str(o, key)) != NULL && *s != '\0' ? kore_strdup(s) :
-	    NULL);
-}
-
 /*
  * {"kind": "jail-action", "jail": "web", "action": "restart"} and its
  * siblings into a spec; NULL, or what is wrong.  The daemon checks the
@@ -5082,111 +5026,39 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		return ("unknown kind of job");
 	sp->has_kind = true;
 	sp->kind = (uint8_t)i;
-	sp->jail = jdup(o, "jail");
-	sp->address = jdup(o, "address");
-	sp->interface = jdup(o, "interface");
-	sp->service = jdup(o, "service");
-	sp->destination = jdup(o, "destination");
-	sp->gateway = jdup(o, "gateway");
-	sp->tunnel_local = jdup(o, "tunnel_local");
-	sp->tunnel_remote = jdup(o, "tunnel_remote");
-	sp->parent = jdup(o, "parent");
-	sp->verb = jdup(o, "verb");
-	sp->source = jdup(o, "source");
-	sp->peer = jdup(o, "peer");
-	sp->endpoint = jdup(o, "endpoint");
-	/* IPsec's connection, for an ipsec job. */
-	sp->conn = jdup(o, "conn");
-	sp->ipsec_mode = jdup(o, "ipsec_mode");
-	sp->local_ts = jdup(o, "local_ts");
-	sp->remote_ts = jdup(o, "remote_ts");
-	sp->pubkey = jdup(o, "pubkey");
-	sp->start_action = jdup(o, "start_action");
-	sp->local_id = jdup(o, "local_id");
-	sp->remote_id = jdup(o, "remote_id");
-	sp->child = jdup(o, "child");
-	sp->local_cert = jdup(o, "local_cert");
-	sp->remote_cert = jdup(o, "remote_cert");
-	sp->remote_ca = jdup(o, "remote_ca");
-	if ((v = ucl_object_lookup(o, "reqid")) != NULL && ucl_object_toint(v) >
-	    0 && ucl_object_toint(v) <= 16383) {
-		sp->has_reqid = true;
-		sp->reqid = (uint32_t)ucl_object_toint(v);
+	/* Each field as jobs.yaml has it (jobs_spec.h): its member, how it
+	 * is read; a number out of its range, or not one, is not there. */
+	for (i = 0; i < nitems(jobmembers); i++) {
+		const struct jobmember	*m = &jobmembers[i];
+		void			*at = (char *)sp + m->off;
+
+		v = ucl_object_lookup(o, m->field);
+		switch (m->type) {
+		case JM_TEXT:
+			if ((a = ucl_str(o, m->field)) != NULL && (*a != '\0' ||
+			    m->keep_empty))
+				*(const char **)at = kore_strdup(a);
+			break;
+		case JM_NUM:
+			if (v != NULL && ucl_object_type(v) == UCL_INT &&
+			    ucl_object_toint(v) >= (int64_t)m->min &&
+			    (uint64_t)ucl_object_toint(v) <= m->max) {
+				*(bool *)((char *)sp + m->has) = true;
+				*(uint32_t *)at = (uint32_t)ucl_object_toint(v);
+			}
+			break;
+		case JM_BOOL:
+			*(bool *)at = ucl_flag(o, m->field);
+			break;
+		}
 	}
-	/* Empty allowed-ips says a peer may send from nowhere: it is kept. */
-	if ((kind = ucl_str(o, "allowed_ips")) != NULL)
-		sp->allowed_ips = kore_strdup(kind);
-	if ((v = ucl_object_lookup(o, "keepalive")) != NULL &&
-	    ucl_object_toint(v) >= 0 && ucl_object_toint(v) <= 65535) {
-		sp->has_keepalive = true;
-		sp->keepalive = (uint32_t)ucl_object_toint(v);
-	}
-	if ((v = ucl_object_lookup(o, "listen_port")) != NULL &&
-	    ucl_object_toint(v) > 0 && ucl_object_toint(v) <= 65535) {
-		sp->has_listen_port = true;
-		sp->listen_port = (uint32_t)ucl_object_toint(v);
-	}
-	/* A description may be empty: that takes it off. */
-	if ((kind = ucl_str(o, "description")) != NULL)
-		sp->description = kore_strdup(kind);
-	if ((v = ucl_object_lookup(o, "mtu")) != NULL && ucl_object_toint(v) >
-	    0 && ucl_object_toint(v) <= 65535) {
-		sp->has_mtu = true;
-		sp->mtu = (uint32_t)ucl_object_toint(v);
-	}
-	/* 0 too: an interface put back in the first table. */
-	if ((v = ucl_object_lookup(o, "fib")) != NULL && ucl_object_type(v) ==
-	    UCL_INT && ucl_object_toint(v) >= 0 && ucl_object_toint(v) <=
-	    65535) {
-		sp->has_fib = true;
-		sp->fib = (uint32_t)ucl_object_toint(v);
-	}
-	if ((v = ucl_object_lookup(o, "tunnelfib")) != NULL &&
-	    ucl_object_type(v) == UCL_INT && ucl_object_toint(v) >= 0 &&
-	    ucl_object_toint(v) <= 65535) {
-		sp->has_tunnelfib = true;
-		sp->tunnelfib = (uint32_t)ucl_object_toint(v);
-	}
-	sp->addressing = jdup(o, "addressing");
-	sp->dataset = jdup(o, "dataset");
-	sp->snapshot = jdup(o, "snapshot");
-	sp->copy = jdup(o, "copy");
-	sp->path = jdup(o, "path");
-	sp->text = jdup(o, "text");
-	sp->start = ucl_flag(o, "start");
-	sp->preshared_key = jdup(o, "preshared_key");
-	sp->lladdr = jdup(o, "lladdr");
-	sp->temporary = ucl_flag(o, "temporary");
-	sp->user = jdup(o, "user");
-	sp->pkg_repo = jdup(o, "pkg_repo");
-	if ((v = ucl_object_lookup(o, "metric")) != NULL && ucl_object_toint(
-	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
-		sp->has_metric = true;
-		sp->metric = (uint32_t)ucl_object_toint(v);
-	}
-	if ((v = ucl_object_lookup(o, "weight")) != NULL && ucl_object_toint(
-	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
-		sp->has_weight = true;
-		sp->weight = (uint32_t)ucl_object_toint(v);
-	}
-	if ((v = ucl_object_lookup(o, "id")) != NULL && ucl_object_toint(v) >=
-	    0 && ucl_object_toint(v) <= 16777215) {
-		sp->has_id = true;
-		sp->id = (uint32_t)ucl_object_toint(v);
-	}
-	sp->remove = ucl_flag(o, "remove");
-	sp->recursive = ucl_flag(o, "recursive");
-	sp->force = ucl_flag(o, "force");
-	/* pkg -4 or -6, for a pkg-upgrade. */
+	/* pkg -4 or -6, for a pkg-upgrade: one of the two. */
 	if (ucl_object_toint(ucl_object_lookup(o, "pkg_ip")) == 4 ||
 	    ucl_object_toint(ucl_object_lookup(o, "pkg_ip")) == 6) {
 		sp->has_pkg_ip = true;
 		sp->pkg_ip = (uint8_t)ucl_object_toint(ucl_object_lookup(o,
 		    "pkg_ip"));
 	}
-	sp->safe = ucl_flag(o, "safe");
-	sp->live = ucl_flag(o, "live");
-	sp->persist = ucl_flag(o, "persist");
 	a = ucl_str(o, "action");
 	switch (sp->kind) {
 	case ARC_JOB_KIND_JAIL_ACTION:

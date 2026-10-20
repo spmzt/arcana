@@ -45,7 +45,7 @@ do_ntp(struct work *w, const char *const *servers, size_t n, bool remove,
     bool persist, const char **errp)
 {
 	struct execres	 res;
-	char		*old, *out, *b, *e, *argv[4];
+	char		*old, *out, *body, *argv[4];
 	size_t		 len, i;
 	int		 step;
 	bool		 enabled;
@@ -70,20 +70,12 @@ do_ntp(struct work *w, const char *const *servers, size_t n, bool remove,
 		old = wstrdup(w, "");
 	}
 	/* The block as it was, out; the new one at the end. */
-	out = wcalloc(w, strlen(old) + 64 + n * 300, 1);
-	if ((b = strstr(old, BEGIN)) != NULL && (e = strstr(b, END)) != NULL) {
-		memcpy(out, old, (size_t)(b - old));
-		strcat(out, e + strlen(END));
-	} else
-		strcpy(out, old);
+	out = block_cut(w, old, BEGIN, END, NULL);
 	if (!remove) {
-		if (out[0] != '\0' && out[strlen(out) - 1] != '\n')
-			strcat(out, "\n");
-		strcat(out, BEGIN);
+		body = wstrdup(w, "");
 		for (i = 0; i < n; i++)
-			sprintf(out + strlen(out), "server %s iburst\n",
-			    servers[i]);
-		strcat(out, END);
+			body = wfmt(w, "%sserver %s iburst\n", body, servers[i]);
+		out = block_add(w, out, BEGIN, END, body);
 	}
 	if (scope_replace(w, opts.ntp_conf, out, strlen(out), 0644,
 	    ".ntp.conf.was") != 0) {

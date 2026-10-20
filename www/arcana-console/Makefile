@@ -55,6 +55,17 @@ jobs_table.h: ${ARC_TOP}/share/arcana/jobs.yaml ${ARC_TOP}/share/arcana/jobs.awk
 	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}.tmp
 	mv ${.TARGET}.tmp ${.TARGET}
 workflows.pico workflows.o: jobs_table.h
+# The parser of a job as the API takes it: the kinds' names and each
+# field's member, from the same files.
+DPSRCS+=	jobs_spec.h
+CLEANFILES+=	jobs_spec.h jobs_spec.h.tmp
+jobs_spec.h: ${ARC_TOP}/share/arcana/jobs.yaml ${ARC_TOP}/share/arcana/jobs.awk \
+    ${ARC_TOP}/share/arcana/arcana.yaml
+	awk -v out=spec -f ${ARC_TOP}/share/arcana/jobs.awk \
+	    ${ARC_TOP}/share/arcana/arcana.yaml \
+	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}.tmp
+	mv ${.TARGET}.tmp ${.TARGET}
+hosts.pico hosts.o: jobs_spec.h
 
 HAS_TESTS=
 SUBDIR.${MK_TESTS}+= tests
