@@ -507,6 +507,11 @@ submodule arcana-jobs-kinds {
             description
               "Routing table of the tunnel's outer packets";
           }
+          leaf addressing {
+            type string;
+            description
+              "Addressing";
+          }
           leaf persist {
             type boolean;
             description

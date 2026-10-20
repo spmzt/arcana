@@ -133,11 +133,11 @@ YANG_OUT?=	${.CURDIR}/yang
 YANG_KINDS=	arcana-jobs-kinds@2026-10-14.yang
 YANG_KINDS_OUT?=	${ARC_TOP}/share/yang
 regen-yang: .PHONY
-	sh ${.CURDIR}/tools/yang.sh trees ${CBLINK_GEN} ${ARC_TOP}/share/yang \
-	    ${ARC_TOP}/share/arcana/yang-ops ${YANG_OUT}
 	awk -v out=yang -f ${ARC_TOP}/share/arcana/jobs.awk \
 	    ${ARC_TOP}/share/arcana/arcana.yaml ${ARC_TOP}/share/arcana/jobs.yaml \
 	    > ${YANG_KINDS_OUT}/${YANG_KINDS}
+	sh ${.CURDIR}/tools/yang.sh trees ${CBLINK_GEN} ${ARC_TOP}/share/yang \
+	    ${ARC_TOP}/share/arcana/yang-ops ${YANG_OUT}
 check-yang: .PHONY
 	@t=$$(mktemp -d) && trap 'rm -rf "$$t"' EXIT && mkdir "$$t/k" && \
 	    ${MAKE} -C ${.CURDIR} regen-yang YANG_OUT="$$t" \

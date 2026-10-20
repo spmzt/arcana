@@ -105,6 +105,7 @@ module: arcana-jobs
        |        |     +---w description?   string
        |        |     +---w fib?           uint32
        |        |     +---w tunnelfib?     uint32
+       |        |     +---w addressing?    string
        |        |     +---w persist?       boolean
        |        |     +---w safe?          boolean
        |        +--:(if-create)
