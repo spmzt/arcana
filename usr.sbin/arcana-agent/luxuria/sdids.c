@@ -106,6 +106,17 @@ static bool		 plugins_ok(struct work *, const char *,
 			    const ucl_object_t *, const char **);
 
 static pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
+/* One apply at a time, the table's lock taken only to read or change
+ * the table: the slow work (suricata -T, a start) holds no reader. */
+static pthread_mutex_t	apply_lock = PTHREAD_MUTEX_INITIALIZER;
+static bool		applying;	/* instances stop and start: no fault */
+
+/* What the table held of a group when an apply began: its names and
+ * divert ports, read under the lock, used without it. */
+struct was {
+	char	name[40];
+	int	divert;
+};
 static struct instance	instances[INSTANCES_MAX];
 static int		ninstances;
 static bool		reading;
@@ -832,6 +843,9 @@ guard(struct instance *in)
 {
 	bool	up;
 
+	/* Stopped and started again by an apply: not down. */
+	if (applying)
+		return;
 	if (in->divert == 0)
 		return;
 	up = running(in->name);
@@ -864,13 +878,13 @@ reader(void *arg __unused)
 /* The divert port an instance runs with now (the lock held); -1 when
  * it is not one of them. */
 static int
-divert_was(const char *name)
+divert_was(const struct was *was, int nwas, const char *name)
 {
 	int	i;
 
-	for (i = 0; i < ninstances; i++)
-		if (strcmp(instances[i].name, name) == 0)
-			return (instances[i].divert);
+	for (i = 0; i < nwas; i++)
+		if (strcmp(was[i].name, name) == 0)
+			return (was[i].divert);
 	return (-1);
 }
 
@@ -1023,7 +1037,8 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 	struct execres		 res;
 	char			*argv[8], *conf, *was;
 	const char		*rules, *thr, *e, *note, *what;
-	int			 n, i, k, step, nkeep;
+	struct was		 held[INSTANCES_MAX];
+	int			 n, i, k, step, nkeep, nheld;
 	bool			 ok, same, sec, luach;
 
 	if ((top = parse(json)) == NULL || ucl_object_type(top) != UCL_OBJECT) {
@@ -1160,28 +1175,38 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		    "installed by hand (pkg install suricata)", suricata_bin(w));
 		return (-1);
 	}
+	/* One apply at a time; the table read, then left to its readers
+	 * while the slow work is done. */
+	pthread_mutex_lock(&apply_lock);
 	pthread_mutex_lock(&lock);
-	/* Those not named any more: stopped, their files gone; the other
-	 * group's are not this list's. */
-	for (i = 0; i < ninstances; i++) {
+	applying = true;
+	for (i = nheld = 0; i < ninstances; i++) {
 		if (IS_SEC(instances[i].name) != sec)
 			continue;
+		snprintf(held[nheld].name, sizeof(held[nheld].name), "%s",
+		    instances[i].name);
+		held[nheld++].divert = instances[i].divert;
+	}
+	pthread_mutex_unlock(&lock);
+	/* Those not named any more: stopped, their files gone; the other
+	 * group's are not this list's. */
+	for (i = 0; i < nheld; i++) {
 		for (k = 0; k < n; k++)
-			if (strcmp(ni[k].name, instances[i].name) == 0)
+			if (strcmp(ni[k].name, held[i].name) == 0)
 				break;
 		if (k == n) {
 			step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-			    "suricata %s stopped", instances[i].name);
-			inst_stop(w, instances[i].name);
-			fault_clear("ids", instances[i].name, "Suricata %s taken "
-			    "away", instances[i].name);
-			(void)unlink(inst_path(w, instances[i].name, "yaml"));
-			(void)unlink(inst_path(w, instances[i].name, "rules"));
-			(void)unlink(inst_path(w, instances[i].name,
+			    "suricata %s stopped", held[i].name);
+			inst_stop(w, held[i].name);
+			fault_clear("ids", held[i].name, "Suricata %s taken "
+			    "away", held[i].name);
+			(void)unlink(inst_path(w, held[i].name, "yaml"));
+			(void)unlink(inst_path(w, held[i].name, "rules"));
+			(void)unlink(inst_path(w, held[i].name,
 			    "threshold"));
-			(void)unlink(inst_path(w, instances[i].name, "sock"));
-			(void)lua_sync(w, instances[i].name, NULL);
-			(void)rmdir(inst_path(w, instances[i].name, "lua"));
+			(void)unlink(inst_path(w, held[i].name, "sock"));
+			(void)lua_sync(w, held[i].name, NULL);
+			(void)rmdir(inst_path(w, held[i].name, "lua"));
 			step_end(w, step, true, NULL);
 		}
 	}
@@ -1225,7 +1250,8 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		    inst_path(w, ni[k].name, "rules"))) != NULL && strcmp(was,
 		    rules) == 0 && strcmp((was = file_text(w, inst_path(w,
 		    ni[k].name, "threshold"))) != NULL ? was : "", thr) == 0 &&
-		    inst_pid(w, ni[k].name) != 0 && divert_was(ni[k].name) ==
+		    inst_pid(w, ni[k].name) != 0 && divert_was(held, nheld,
+		    ni[k].name) ==
 		    ni[k].divert && !luach;
 		what = wfmt(w, "suricata %s on %d interface%s, %s: %s",
 		    ni[k].name, ni[k].nifs, ni[k].nifs == 1 ? "" : "s",
@@ -1289,6 +1315,7 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		else
 			step_end(w, step, true, NULL);
 	}
+	pthread_mutex_lock(&lock);
 	if (!ok) {
 		/* Those not named were stopped all the same: out of the
 		 * table, or the reader would say a divert one is down. */
@@ -1352,7 +1379,9 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			reading = true;
 		}
 	}
+	applying = false;
 	pthread_mutex_unlock(&lock);
+	pthread_mutex_unlock(&apply_lock);
 	ucl_object_unref(top);
 	if (!ok)
 		return (-1);

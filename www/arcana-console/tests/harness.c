@@ -762,9 +762,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "squid.log\nmkdir -p \"$3\"\n");
 	/* c-icap, a plugin: started, it stays a while with its pid file
 	 * where its configuration says. */
-	put("tools/c-icap", "#!/bin/sh\necho \"c-icap $*\" >> squid.log\n"
+	put("tools/c-icap", "#!/bin/sh\n"
+	    "[ \"$1\" = --hold ] && { echo $$ > \"$2\"; sleep 60; exit 0; }\n"
+	    "echo \"c-icap $*\" >> squid.log\n"
 	    "p=$(sed -n 's/^PidFile //p' \"$2\")\n"
-	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$p\"\nexit 0\n");
+	    "\"$0\" --hold \"$p\" > /dev/null 2>&1 &\nexit 0\n");
 	/* suricata, a plugin: checked, it takes all; run, it stays a while
 	 * with its pid file where it is told. */
 	/* ctladm(8), hastctl(8) and showmount(8), as they answer. */
@@ -803,7 +805,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "            a[\"message\"] = dict(a[\"message\"], iface=o["
 	    "\"arguments\"][\"iface\"])\n        f.write((json.dumps(a) + "
 	    "\"\\n\").encode())\n        f.flush()\n    c.close()\n");
-	put("tools/suricata", "#!/bin/sh\necho \"suricata $*\" >> squid.log\n"
+	put("tools/suricata", "#!/bin/sh\n"
+	    /* Started: the daemon, under its own name, its pid where told. */
+	    "[ \"$1\" = --hold ] && { echo $$ > \"$2\"; sleep 60; exit 0; }\n"
+	    "echo \"suricata $*\" >> squid.log\n"
 	    "[ \"$1\" = --build-info ] && { printf 'This is Suricata version "
 	    "8.0.7 RELEASE\\nFeatures: NETMAP HAVE_LUA\\n  Netmap support: "
 	    "yes\\n  Profiling rules enabled: no\\n  Plugin support "
@@ -819,7 +824,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "k=$(sed -n 's/^  filename: \\(.*\\.sock\\)$/\\1/p' \"$2\")\n"
 	    "[ -n \"$k\" ] && [ -x /usr/local/bin/python3 ] && "
 	    "/usr/local/bin/python3 tools/scsrv.py \"$k\" > /dev/null 2>&1 &\n"
-	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$4\"\n"
+	    "\"$0\" --hold \"$4\" > /dev/null 2>&1 &\n"
 	    /* An alert in its eve.json, a second after it starts. */
 	    "d=$(sed -n 's/^default-log-dir: //p' \"$2\")\n"
 	    "[ -n \"$d\" ] && (sleep 1; mkdir -p \"$d\"; echo '{\"timestamp\":"
