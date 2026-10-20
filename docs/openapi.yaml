@@ -718,7 +718,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup, traceroute, neighbours, ipsec, multicast]
+            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, bridges, geneve, ipfw, lookup, traceroute, neighbours, ipsec, multicast]
           description: traceroute?to=ADDRESS is one round of traceroute(8)
             or traceroute6(8) from the host, a probe a hop, as
             {"address","family","hops":[{"ttl","address","rtt","note"} or
@@ -1165,6 +1165,118 @@ paths:
             host: its jail, rules, steer and steered as its own ipfw has
             them; a target of a jail's edge says its jail, and a fault
             of one names its object id@jail.
+  /api/settings/mail-test:
+    post:
+      tags: [settings]
+      summary: A mail to say the alerts reach the address
+      description: Sent as the alerts are, by sendmail(8) of the host
+        mail_via names (or the one beside the console), to mail_to.
+      responses:
+        "200":
+          description: ok.
+  /api/cluster:
+    get:
+      tags: [console]
+      summary: The consoles that are one
+      description: Whether this console is of a cluster (on), its name
+        (self), the leader, the term, the changes committed and applied,
+        and each node with its origin and how far it holds the changes
+        (match).
+      responses:
+        "200":
+          description: The cluster's state.
+  /api/groups:
+    get:
+      tags: [users]
+      summary: The groups of users
+      description: Each a name, its roles (as a user's, per host and
+        fleet-wide) and its members; a user's roles are its own and its
+        groups'.
+      responses:
+        "200":
+          description: The groups.
+    post:
+      tags: [users]
+      summary: Make a group
+      description: '{"name", "roles", "members"}; the owner's.'
+      responses:
+        "200":
+          description: ok.
+  /api/groups/{name}:
+    put:
+      tags: [users]
+      summary: Change a group's roles or members
+      description: The same body as making one; the owner's.
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: ok.
+    delete:
+      tags: [users]
+      summary: Delete a group
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: ok.
+  /api/servers/{server}/jails/files:
+    get:
+      tags: [servers]
+      summary: The jail configuration files the host keeps
+      description: jail.conf and each file of jail.conf.d, their text
+        and which jails they define, for the Jails tab's editor.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
+  /api/servers/{server}/ssh:
+    get:
+      tags: [servers]
+      summary: sshd's configuration and keys, of the host or a jail
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - { name: jail, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
+  /api/servers/{server}/certs:
+    get:
+      tags: [servers]
+      summary: The certificates OpenSSL trusts, of the host or a jail
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - { name: jail, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
+  /api/servers/{server}/capture:
+    post:
+      tags: [servers]
+      summary: Packets captured on an interface for a while
+      description: '{"interface", "seconds", "packets", "filter"}: tcpdump(8)
+        on the host, the capture returned as a .pcap; an operator''s, as it
+        shows traffic.'
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The capture, application/vnd.tcpdump.pcap.
+  /api/servers/{server}/zfs/key:
+    post:
+      tags: [servers]
+      summary: An encrypted dataset's key, typed
+      description: '{"dataset", "key", "new_key", "create"}: the key loaded
+        (zfs load-key reads it on its standard input), changed with new_key,
+        or with create (its encryption) the dataset made encrypted, the
+        new key its passphrase.  Not a job: a job is kept, and the key is
+        in no log or trace.'
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok.
   /api/settings/telegram-test:
     post:
       tags: [settings]
@@ -1309,6 +1421,10 @@ paths:
         on=, off=, drop= or default= and sids joined by commas.
       parameters:
         - $ref: "#/components/parameters/server"
+        - { name: sources, in: query, schema: { type: string, enum: ["1"] }, description: "The rule sources instead: suricata-update's index, each enabled or disabled here" }
+        - { name: instance, in: query, schema: { type: string }, description: "With command: an instance, asked by its unix command socket" }
+        - { name: command, in: query, schema: { type: string, enum: [uptime, version, running-mode, capture-mode, memcap-list, ruleset-stats, ruleset-failed-rules, ruleset-profile, iface-list, iface-stat, dump-counters] } }
+        - { name: iface, in: query, schema: { type: string }, description: "iface-stat's interface" }
         - { name: q, in: query, schema: { type: string }, description: Text in the rule, any case }
         - { name: sid, in: query, schema: { type: integer } }
         - { name: only, in: query, schema: { type: string, enum: [enabled, disabled, changed] } }

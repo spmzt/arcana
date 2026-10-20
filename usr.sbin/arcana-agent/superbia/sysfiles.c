@@ -437,6 +437,9 @@ sysfile_check(const struct arc_job_spec *sp)
 
 	if (sp->jail != NULL && sp->jail[0] != '\0')
 		return ("the system's files are the host's");
+	/* A file written whole has no undo kept: never safe. */
+	if (sp->safe)
+		return ("a file of the system's is not undone: not in safe mode");
 	/* rc.conf's variables no service owns: securelevel's at boot. */
 	if (sp->verb != NULL && strcmp(sp->verb, "rc") == 0) {
 		if (sp->names.n == 0)
@@ -504,11 +507,11 @@ do_sysfile_job(struct work *w, const struct arc_job_spec *sp,
 	struct arc_service_action_rsp	 r;
 	const struct sysfile		*f;
 	struct execres			 res;
-	const char			*path, *tmp;
+	const char			*path, *tmp, *old;
 	char				*argv[6], *dir;
 	size_t				 i, len;
 	int				 fd;
-	bool				 enabled, running;
+	bool				 enabled, running, had;
 
 	if ((*errp = sysfile_check(sp)) != NULL)
 		return (-1);
@@ -555,17 +558,28 @@ do_sysfile_job(struct work *w, const struct arc_job_spec *sp,
 		(void)mkdir(dir, 0755);
 	}
 	tmp = wfmt(w, "%s.arcana-new", path);
+	old = wfmt(w, "%s.arcana-old", path);
 	len = strlen(sp->text);
-	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
-	    f->mode)) == -1 || write(fd, sp->text, len) != (ssize_t)len ||
-	    fsync(fd) != 0 || close(fd) != 0 || rename(tmp, path) != 0) {
+	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC |
+	    O_NOFOLLOW, f->mode)) == -1 || fchmod(fd, f->mode) != 0 || write(fd,
+	    sp->text, len) != (ssize_t)len || fsync(fd) != 0) {
 		*errp = wfmt(w, "%s: %s", path, strerror(errno));
 		if (fd != -1)
 			(void)close(fd);
 		(void)unlink(tmp);
 		return (-1);
 	}
-	/* Its daemon told, where it runs. */
+	/* What was there kept beside, to be put back when its daemon
+	 * refuses the new; closed once. */
+	had = link(path, old) == 0;
+	if (close(fd) != 0 || rename(tmp, path) != 0) {
+		*errp = wfmt(w, "%s: %s", path, strerror(errno));
+		(void)unlink(tmp);
+		(void)unlink(old);
+		return (-1);
+	}
+	/* Its daemon told, where it runs; refusing, it gets the old file
+	 * back and is told again. */
 	if (f->service != NULL) {
 		enabled = running = false;
 		service_state(w, f->service, &enabled, &running);
@@ -573,11 +587,20 @@ do_sysfile_job(struct work *w, const struct arc_job_spec *sp,
 			memset(&r, 0, sizeof(r));
 			if (do_service_action(w, f->service, f->action, &r) != 0 ||
 			    !r.ok) {
-				*errp = r.error != NULL ? r.error : wfmt(w,
-				    "%s did not take it", f->service);
+				*errp = wfmt(w, "%s did not take it%s%s; the file "
+				    "before it is %s", f->service, r.error !=
+				    NULL ? ": " : "", r.error != NULL ? r.error :
+				    "", had ? "put back" : "gone");
+				if (had && rename(old, path) == 0) {
+					memset(&r, 0, sizeof(r));
+					(void)do_service_action(w, f->service,
+					    f->action, &r);
+				}
 				return (-1);
 			}
 		}
 	}
+	if (had)
+		(void)unlink(old);
 	return (0);
 }

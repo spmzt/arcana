@@ -14,6 +14,7 @@
  * service-action, service-config, geom).
  */
 
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -32,6 +33,16 @@ static struct {
 	bool		 hardening;	/* the Sysctl tab: the hardening helper */
 	int		 storage;	/* the Storage tab: 1 GEOM, 2 GELI, 3 devfs */
 } sv;
+
+/* Another tab's own view is shown: ours of it is not. */
+void
+sysview_hide(void)
+{
+
+	sv.logconf = false;
+	sv.hardening = false;
+	sv.storage = 0;
+}
 
 /* Which of the other tabs' views of it is shown: logconf, hardening,
  * geom, geli, devfs. */
@@ -65,6 +76,9 @@ sv_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		snprintf(sv.error, sizeof(sv.error), "%s", jstr(o, "error") !=
 		    NULL ? jstr(o, "error") : err != NULL ? err :
 		    "the host did not answer");
+		/* Nothing, kept: asked again by Try again, not every draw. */
+		if (sv.o == NULL)
+			sv.o = ucl_object_typed_new(UCL_OBJECT);
 		render();
 		return;
 	}
@@ -108,7 +122,8 @@ data(struct html *h, struct server *s)
 	if (sv.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, sv.error);
-		h_raw(h, "</div>");
+		h_raw(h, " <button class=\"ghost small\" data-act=\"sv-retry\">"
+		    "Try again</button></div>");
 	}
 	return (sv.o);
 }
@@ -217,8 +232,8 @@ file_editor(struct html *h, const ucl_object_t *o, const char *file,
 
 /* ---- System ---------------------------------------------------------- */
 
-static const char *const svcj_opts[] = { "net_basic", "net_all", "nfsd",
-    "routing", "sysvipc", "mlock", "vmm" };
+static const char *const svcj_opts[] = { "net_basic", "net_all", "netv4",
+    "netv6", "nfsd", "routing", "sysvipc", "mlock", "vmm" };
 
 static void
 view_ntp(struct html *h, const ucl_object_t *o)
@@ -719,12 +734,16 @@ sv_server(void)
 static bool
 safe_word(const char *v, const char *more)
 {
-	size_t	n;
+	size_t	n, i;
 
 	n = v != NULL ? strlen(v) : 0;
-	return (n > 0 && n <= 128 && strspn(v, "abcdefghijklmnopqrstuvwxyz"
-	    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") + strspn(v, more) > 0 &&
-	    strcspn(v, " \t\n;'\"`$\\") == n);
+	if (n == 0 || n > 128)
+		return (false);
+	/* Each character a letter, a digit, or one of more. */
+	for (i = 0; i < n; i++)
+		if (!isalnum((unsigned char)v[i]) && strchr(more, v[i]) == NULL)
+			return (false);
+	return (true);
 }
 
 /* The current text of a file, for what is added to it. */
@@ -847,21 +866,33 @@ sysview_form(const char *form, const ucl_object_t *f)
 		return (true);
 	}
 	if (strcmp(form, "sv-securelevel") == 0) {
-		char	a[64], b[64];
+		const char	*lv = jstr(f, "level") != NULL ? jstr(f, "level") :
+		    "-1";
+		char		 body[400], val[80];
+		int		 now_lv, want;
 
-		snprintf(a, sizeof(a), "kern_securelevel_enable=%s", jbool(f,
-		    "enable") ? "YES" : "NO");
-		snprintf(b, sizeof(b), "kern_securelevel=%s", jstr(f, "level") !=
-		    NULL ? jstr(f, "level") : "-1");
-		w[0] = a;
-		w[1] = b;
-		send_words(s, "sysfile", "rc", w, 2, NULL, "securelevel at boot");
-		if (jbool(f, "now")) {
-			w[0] = "kern.securelevel";
-			w[1] = jstr(f, "level") != NULL ? jstr(f, "level") : "-1";
-			send_words(s, "sysctl", NULL, w, 2, ",\"persist\":false",
-			    "securelevel raised");
+		now_lv = (int)jint(jget(sv.o, "securelevel"), "now", -1);
+		want = atoi(lv);
+		if (jbool(f, "now") && want <= now_lv) {
+			toast(true, "securelevel is %d now and is never lowered "
+			    "while the host runs: only raised", now_lv);
+			return (true);
 		}
+		snprintf(val, sizeof(val), "%s|%s", jbool(f, "enable") ? "YES" :
+		    "NO", lv);
+		if (!jbool(f, "now")) {
+			sysview_action("sv-securelevel-yes", "boot", val);
+			return (true);
+		}
+		snprintf(body, sizeof(body), "securelevel goes from %d to %d now, "
+		    "and cannot come down until the host reboots. At 1 and above "
+		    "the immutable flags hold and kernel modules stay as they "
+		    "are; at 2 disks are not written raw (gpart, newfs, geli "
+		    "init fail); at 3 the firewall's rules are frozen (the "
+		    "Firewall tab and IDS divert fail). Type %d to confirm.",
+		    now_lv, want, want);
+		confirm("Raise securelevel now?", body, "Raise", true, lv,
+		    "sv-securelevel-yes", "now", val);
 		return (true);
 	}
 	if (strcmp(form, "sv-geom") == 0) {
@@ -927,14 +958,30 @@ sysview_action(const char *act, const char *arg, const char *value)
 		render();
 		return (true);
 	}
-	/* The Storage tab's own views leave these. */
+	/* The other tabs' own views leave these. */
 	if (strcmp(act, "st-kind") == 0)
 		sv.storage = 0;
+	if (strcmp(act, "sy-tree") == 0)
+		sv.hardening = false;
+	if (strcmp(act, "lg-jail") == 0 || strcmp(act, "input:lg-file") == 0)
+		sv.logconf = false;
 	if (strncmp(act, "sv-", 3) != 0)
 		return (false);
 	if ((s = sv_server()) == NULL)
 		return (true);
-	if (strcmp(act, "sv-linux") == 0 || strcmp(act, "sv-auditd") == 0) {
+	if (strcmp(act, "sv-retry") == 0) {
+		refresh_system(s, true);
+		render();
+		return (true);
+	}
+	if (strcmp(act, "sv-auditd") == 0 && strcmp(arg, "off") == 0) {
+		confirm("Stop auditing?", "auditd is stopped and disabled: "
+		    "nothing is recorded of what is done until it is started "
+		    "again.", "Stop", true, NULL, "sv-auditd-yes", "off", "");
+		return (true);
+	}
+	if (strcmp(act, "sv-linux") == 0 || strcmp(act, "sv-auditd") == 0 ||
+	    strcmp(act, "sv-auditd-yes") == 0) {
 		const char	*svc = strcmp(act, "sv-linux") == 0 ? "linux" :
 		    "auditd";
 		bool		 on = strcmp(arg, "on") == 0;
@@ -953,6 +1000,25 @@ sysview_action(const char *act, const char *arg, const char *value)
 		}
 		return (true);
 	}
+	if (strcmp(act, "sv-securelevel-yes") == 0) {
+		/* value: enable|level; arg: boot, or now as well. */
+		char	a[64], b[64], lv[8];
+
+		snprintf(lv, sizeof(lv), "%.7s", strchr(value, '|') != NULL ?
+		    strchr(value, '|') + 1 : "-1");
+		snprintf(a, sizeof(a), "kern_securelevel_enable=%.3s", value);
+		snprintf(b, sizeof(b), "kern_securelevel=%s", lv);
+		w[0] = a;
+		w[1] = b;
+		send_words(s, "sysfile", "rc", w, 2, NULL, "securelevel at boot");
+		if (strcmp(arg, "now") == 0) {
+			w[0] = "kern.securelevel";
+			w[1] = lv;
+			send_words(s, "sysctl", NULL, w, 2, ",\"persist\":false",
+			    "securelevel raised");
+		}
+		return (true);
+	}
 	if (strcmp(act, "sv-periodic") == 0) {
 		snprintf(a, sizeof(a), "%s=%s", arg, value != NULL ? value : "NO");
 		w[0] = a;
@@ -960,17 +1026,33 @@ sysview_action(const char *act, const char *arg, const char *value)
 		    "periodic.conf's variables written");
 		return (true);
 	}
-	if (strcmp(act, "sv-mac") == 0) {
+	if (strcmp(act, "sv-mac") == 0 && strcmp(value, "unload") == 0) {
+		char	body[200];
+
+		snprintf(body, sizeof(body), "%s is unloaded now and taken out of "
+		    "kld_list: its policy stops holding at once.", arg);
+		confirm("Unload the policy?", body, "Unload", true, NULL,
+		    "sv-mac-yes", arg, "unload");
+		return (true);
+	}
+	if (strcmp(act, "sv-mac") == 0 || strcmp(act, "sv-mac-yes") == 0) {
 		w[0] = arg;
-		snprintf(a, sizeof(a), "kldload %s", arg);
+		snprintf(a, sizeof(a), "kld%s %s", strcmp(value, "load") == 0 ?
+		    "load" : "unload", arg);
 		send_words(s, "kmod", strcmp(value, "load") == 0 ? "load" :
 		    "unload", w, 1, ",\"persist\":true", a);
 		return (true);
 	}
 	if (strcmp(act, "sv-racct") == 0) {
-		char	*t = appended(cur_text("loader.conf.d"),
-		    "kern.racct.enable=1");
+		char	*t;
 
+		/* Once: a line there already is not written again. */
+		if (strstr(cur_text("loader.conf.d"), "kern.racct.enable=1") !=
+		    NULL) {
+			toast(false, "It is set for the next boot already");
+			return (true);
+		}
+		t = appended(cur_text("loader.conf.d"), "kern.racct.enable=1");
 		send_file(s, "loader.conf.d", t);
 		free(t);
 		return (true);
@@ -983,6 +1065,25 @@ sysview_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	if (strcmp(act, "sv-harden-all") == 0) {
+		const ucl_object_t	*v;
+		char			 body[300];
+		int			 d;
+
+		for (i = 0, d = 0; i < nitems(hard); i++)
+			if ((v = ucl_object_lookup(jget(sv.o, "hardening"),
+			    hard[i].name)) != NULL && ucl_object_toint(v) !=
+			    hard[i].want)
+				d++;
+		snprintf(body, sizeof(body), "%d sysctls are set to their "
+		    "hardened value, a job each, and kept in sysctl.conf. Some "
+		    "change what programs may do: no memory writable and "
+		    "executable at once breaks JITs, and users no longer see "
+		    "others' processes.", d);
+		confirm("Apply the hardening?", body, "Apply", true, NULL,
+		    "sv-harden-all-yes", "", "");
+		return (true);
+	}
+	if (strcmp(act, "sv-harden-all-yes") == 0) {
 		const ucl_object_t	*v;
 		char			 num[16];
 

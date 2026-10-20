@@ -690,7 +690,7 @@ worker(void *arg)
 		what = "storage";
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "storage");
-		memset(&stg, 0, sizeof(sr));
+		memset(&stg, 0, sizeof(stg));
 		/* A jail's: what its own zfs sees, the datasets given it. */
 		if (j->jail != NULL && j->action != ARC_STORAGE_KIND_DATASETS &&
 		    j->action != ARC_STORAGE_KIND_SNAPSHOTS) {
@@ -1432,8 +1432,10 @@ start(struct job *j)
 	int		error;
 
 	j->peer = peer_name(j->req);
-	if ((error = cbl_req_defer(j->req)) != 0)
+	if ((error = cbl_req_defer(j->req)) != 0) {
+		job_free(j);
 		return (error);
+	}
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 	error = pthread_create(&tid, &attr, worker, j);
@@ -2800,6 +2802,9 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_RTADVD:
 		if (sp->interface == NULL || sp->interface[0] == '\0')
 			return ("an rtadvd job needs an interface");
+		if (sp->safe)
+			return ("rtadvd's prefix is not undone: not in safe "
+			    "mode");
 		if (!sp->remove && (sp->names.n == 0 || !rtadvd_prefix_ok(
 		    sp->names.v[0])))
 			return ("an rtadvd job names the prefix advertised, an "
@@ -2818,6 +2823,10 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_NTP:
 		if (sp->jail != NULL && sp->jail[0] != '\0')
 			return ("a jail keeps the host's time");
+		/* Its undo would take arcana's block out, not put the old
+		 * servers back: not undone, so not safe. */
+		if (sp->safe)
+			return ("NTP servers are not undone: not in safe mode");
 		if (!sp->remove && sp->names.n == 0)
 			return ("name the NTP servers, or say remove");
 		for (i = 0; i < sp->names.n; i++)

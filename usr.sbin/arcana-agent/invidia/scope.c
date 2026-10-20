@@ -206,7 +206,7 @@ helper_argv(struct work *w, const char *verb, size_t n,
 
 	v = wcalloc(w, n + 5, sizeof(*v));
 	v[0] = (char *)(uintptr_t)opts.helper_bin;
-	v[1] = (char *)(uintptr_t)"-Q";
+	v[1] = (char *)(uintptr_t)"--scope-helper";
 	v[2] = wfmt(w, "%d", w->jail != NULL ? w->jid : 0);
 	v[3] = (char *)(uintptr_t)verb;
 	for (i = 0; i < n; i++)
@@ -272,7 +272,7 @@ helper_socket(int jid, const char *verb, const char *word)
 		return (-1);
 	snprintf(js, sizeof(js), "%d", jid);
 	argv[0] = (char *)(uintptr_t)opts.helper_bin;
-	argv[1] = (char *)(uintptr_t)"-Q";
+	argv[1] = (char *)(uintptr_t)"--scope-helper";
 	argv[2] = js;
 	argv[3] = (char *)(uintptr_t)verb;
 	argv[4] = (char *)(uintptr_t)word;

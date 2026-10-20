@@ -365,8 +365,9 @@ main(int argc, char *argv[])
 	pidpath = PATH_PIDFILE;
 	gid = (gid_t)-1;
 	nl = 0;
-	/* Run again by the daemon, to look at a jail from inside it. */
-	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
+	/* Run again by the daemon, to look at a jail from inside it: a
+	 * word no one gives as an option (-Q is sysctl's). */
+	if (argc >= 2 && strcmp(argv[1], "--scope-helper") == 0)
 		return (scope_helper(argc - 2, argv + 2));
 	/* The letters are all taken: what comes after has a name. */
 	while ((ch = getopt_long(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:X:0:1:2:3:4:5:6:7:8:9:x:Y:y:Z:z:", longopts, NULL)) != -1) {

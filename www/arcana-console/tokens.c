@@ -85,8 +85,11 @@ bool
 token_writable(const char *path)
 {
 
+	/* Nor who is who: a token must not make itself an owner. */
 	return (token_readable(path) && strncmp(path, "/api/tokens", 11) !=
-	    0 && strncmp(path, "/api/ca", 7) != 0);
+	    0 && strncmp(path, "/api/ca", 7) != 0 && strncmp(path,
+	    "/api/users", 10) != 0 && strncmp(path, "/api/roles", 10) != 0 &&
+	    strncmp(path, "/api/groups", 11) != 0);
 }
 
 static void

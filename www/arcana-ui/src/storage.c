@@ -2130,11 +2130,11 @@ storage_form(const char *form, const ucl_object_t *f)
 			}
 		}
 		/* Encrypted: made by its passphrase typed, not by a job. */
-		if (create && jstr(f, "z_encryption") != NULL && jstr(f,
+		if (create && n >= 0 && jstr(f, "z_encryption") != NULL && jstr(f,
 		    "z_encryption")[0] != '\0') {
 			const char	*pw = jstr(f, "z_pass") != NULL ? jstr(f,
 			    "z_pass") : "";
-			char		*body, *qd, *qp, url[96];
+			char		*body, *qd, *qp, *qe, url[96];
 			struct html	 jb;
 
 			if (strlen(pw) < 8 || jstr(f, "z_again") == NULL ||
@@ -2171,13 +2171,14 @@ storage_form(const char *form, const ucl_object_t *f)
 			snprintf(zenc.name, sizeof(zenc.name), "%s", name);
 			qd = json_quote(name);
 			qp = json_quote(pw);
+			qe = json_quote(jstr(f, "z_encryption"));
 			if (asprintf(&body, "{\"dataset\":%s,\"new_key\":%s,"
-			    "\"create\":\"%s\"}", qd, qp, jstr(f,
-			    "z_encryption")) == -1)
+			    "\"create\":%s}", qd, qp, qe) == -1)
 				abort();
 			explicit_bzero(qp, strlen(qp));
 			free(qd);
 			free(qp);
+			free(qe);
 			snprintf(url, sizeof(url), "/api/servers/%s/zfs/key",
 			    s->id);
 			sg.saving = true;

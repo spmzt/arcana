@@ -153,7 +153,7 @@ found_by_helper(int jid)
 		return (FOUND_NONE);
 	work_init(&w);
 	argv[0] = (char *)(uintptr_t)opts.helper_bin;
-	argv[1] = (char *)(uintptr_t)"-Q";
+	argv[1] = (char *)(uintptr_t)"--scope-helper";
 	argv[2] = wfmt(&w, "%d", jid);
 	argv[3] = (char *)(uintptr_t)"plugins";
 	argv[4] = (char *)(uintptr_t)"-";

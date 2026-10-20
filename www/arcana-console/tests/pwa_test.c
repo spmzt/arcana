@@ -6723,6 +6723,11 @@ part_netstore(void)
 	    20);
 	click_when("table.hastres button[data-act=nas-role][data-value="
 	    "primary]", 10);
+	/* Asked first, the resource's name typed: two primaries split. */
+	wait_js("document.querySelector('form[data-form=confirm] input[name="
+	    "typed]')", 5);
+	run("const f = document.querySelector('form[data-form=confirm]'); "
+	    "f.typed.value = 'shared'; f.requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 300 && system("grep -q '^hastctl role primary shared$' "
@@ -7056,6 +7061,8 @@ part_security(void)
 	wait_js("document.querySelectorAll('table.thresholds tbody tr').length "
 	    "== 2", 30);
 	click_when("table.thresholds button[data-act=thr-del]", 10);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
 	wait_js("document.querySelectorAll('table.thresholds tbody tr').length "
 	    "== 1", 30);
 	ATF_CHECK(system("grep -q 'suppress' sdwan-ids-sec-lan.threshold") != 0);
@@ -7073,6 +7080,8 @@ part_security(void)
 	    "querySelector('table.luas').textContent.includes('ua.lua')", 20);
 	shot("9x-security-ids-lua");
 	click_when("table.luas button[data-act=lua-del]", 10);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
 	for (i = 0; i < 300 && access("sdwan-ids-sec-lan.lua/ua.lua", F_OK) ==
 	    0; i++)
 		usleep(100000);

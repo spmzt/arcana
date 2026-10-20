@@ -713,7 +713,8 @@
     writes them (stderr, its own log); interface any made the
     interfaces up; the ruleset's rules that negate a HOME_NET of any
     left out as Suricata does running.  Done, agent 0.146.2 to 0.146.4.
-  - Snort on several interfaces: an -i each.  Done, agent 0.146.5.
+  - Snort on several interfaces: an -i each.  Done, agent 0.146.5
+    (Snort was removed on 2026-10-19: Suricata alone is the IDS/IPS).
   - poudriere jail's -K, -b, -B and every -m method.  Done, agent
     0.146.3.
 - Asked for on 2026-10-17:
@@ -767,9 +768,9 @@
     uses (Squid with its URL filter, c-icap with ClamAV and freshclam,
     Suricata) each a tab, usable without SD-WAN.  Done 2026-10-16: a
     host at a time; URL filters (Squid as an explicit proxy, sni or
-    inspect), Malware (c-icap with ClamAV per filter), Signatures
-    (freshclam's databases read from their heads, freshclam started or
-    restarted as a service), IDS/IPS (Suricata on interfaces, or on a
+    inspect), Antivirus (one tab since 2026-10-19: c-icap with ClamAV
+    per filter, and freshclam's databases read from their heads,
+    freshclam started or restarted as a service), IDS/IPS (Suricata on interfaces, or on a
     divert port to prevent); kept apart from SD-WAN's instances by the
     agent (group security, named sec-, a file of their own).  Not tried
     with the real plugins yet: stand-ins in the tests.
@@ -808,7 +809,6 @@
   (the bot's token and chat ids kept by the console, the message sent
   over the Bot API's HTTPS).  A workflow step sends one too: the
   workflow menu has "notify" by mail or Telegram among its steps.
-  Not started.
   Done 2026-10-16: mail and Telegram each a way with its own filters
   (faults by severity, limits, jobs, runs), mail.c's watcher holding
   and sending on both, twenty an hour each; Telegram by an agent's
@@ -909,7 +909,8 @@
     required.  The design to choose from is docs/notes/console-cluster.md:
     shared NFS, PostgreSQL, or the console's own replication over
     cblink, the last recommended in two steps, leader election with
-    forwarding first, the stores replicated after.  Not started.)
+    forwarding first, the stores replicated after.  Done, console
+    0.215.0: active/active, Raft over cblink; see above.)
   - Agents in an HA pair on identical hardware and ports (CARP, the
     state shared), with CARP on its own for a host.  (CARP for a host
     done 2026-10-13: Network, CARP; vhids read and set through carp's

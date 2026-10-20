@@ -461,11 +461,19 @@ do_suricata_rules(struct work *w, const char *const *names, size_t nn,
 	    0, false);
 	total = enabled = matched = 0;
 	path = suricata_ruleset();
+	/* Read whole, not mapped: suricata-update truncates and rewrites
+	 * the file in place, and a mapping of it would fault. */
 	map = NULL;
 	if ((fd = open(path, O_RDONLY | O_CLOEXEC)) != -1 && fstat(fd, &sb) ==
-	    0 && sb.st_size > 0 && (map = mmap(NULL, (size_t)sb.st_size,
-	    PROT_READ, MAP_SHARED, fd, 0)) == MAP_FAILED)
-		map = NULL;
+	    0 && sb.st_size > 0 && sb.st_size < 1024L * 1024 * 1024 &&
+	    (map = malloc((size_t)sb.st_size)) != NULL) {
+		ssize_t	got = 0, rd;
+
+		while (got < sb.st_size && (rd = read(fd, map + got,
+		    (size_t)(sb.st_size - got))) > 0)
+			got += rd;
+		sb.st_size = got;
+	}
 	if (map != NULL) {
 		o = ucl_object_typed_new(UCL_OBJECT);
 		put_s(o, "path", path);
@@ -538,7 +546,7 @@ do_suricata_rules(struct work *w, const char *const *names, size_t nn,
 			ucl_array_append(arr, o);
 		}
 		free(line);
-		(void)munmap(map, (size_t)sb.st_size);
+		free(map);
 	}
 	if (fd != -1)
 		(void)close(fd);
@@ -698,7 +706,7 @@ suricata_source_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
 {
 	struct execres	 res;
-	const char	*name, *bin, *on, *off, *text;
+	const char	*name, *bin, *on, *off, *text, *tmp;
 	char		*argv[6];
 	size_t		 i;
 	int		 step, fd;
@@ -777,13 +785,23 @@ suricata_source_job(struct work *w, const struct arc_job_spec *sp,
 		(void)mkdir(wfmt(w, "%s/update/sources", suricata_data_dir(w)),
 		    0755);
 		(void)unlink(off);
-		/* Its secret, root's alone. */
-		if ((fd = open(on, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
-		    0600)) == -1 || write(fd, text, strlen(text)) !=
-		    (ssize_t)strlen(text) || close(fd) != 0) {
+		/* Its secret, root's alone: a new file, its mode set whatever
+		 * an older one had, moved over the old. */
+		tmp = wfmt(w, "%s.new", on);
+		if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC |
+		    O_NOFOLLOW, 0600)) == -1 || fchmod(fd, 0600) != 0 ||
+		    write(fd, text, strlen(text)) != (ssize_t)strlen(text) ||
+		    fsync(fd) != 0) {
 			*errp = wfmt(w, "%s: %s", on, strerror(errno));
 			if (fd != -1)
 				(void)close(fd);
+			(void)unlink(tmp);
+			step_end(w, step, false, "%s", *errp);
+			return (-1);
+		}
+		if (close(fd) != 0 || rename(tmp, on) != 0) {
+			*errp = wfmt(w, "%s: %s", on, strerror(errno));
+			(void)unlink(tmp);
 			step_end(w, step, false, "%s", *errp);
 			return (-1);
 		}
@@ -1077,4 +1095,28 @@ sc_read(struct work *w, const char *const *names, size_t nn,
 	rsp->json = wtext(w, r);
 	rsp->ok = true;
 	return (true);
+}
+
+/* Has any source enabled here a secret code (params in its file)? */
+bool
+suricata_sources_secret(struct work *w)
+{
+	struct dirent	*de;
+	DIR		*d;
+	char		*text;
+	bool		 any;
+
+	any = false;
+	if ((d = opendir(wfmt(w, "%s/update/sources", suricata_data_dir(w)))) ==
+	    NULL)
+		return (false);
+	while (!any && (de = readdir(d)) != NULL) {
+		if (de->d_name[0] == '.' || strstr(de->d_name, ".yaml") == NULL)
+			continue;
+		text = file_slurp(w, wfmt(w, "%s/update/sources/%s",
+		    suricata_data_dir(w), de->d_name));
+		any = text != NULL && strstr(text, "params:") != NULL;
+	}
+	closedir(d);
+	return (any);
 }

@@ -2395,6 +2395,14 @@ api_workflows(struct http_request *req)
 				return (reply_error(req, 404, "not_found",
 				    "no such server"));
 			}
+			/* A change on each host: the user's role there, as a
+			 * job on it would ask. */
+			if (!host_allowed(req, ucl_object_tostring_forced(e),
+			    true, false)) {
+				ucl_object_unref(w);
+				ucl_object_unref(body);
+				return (KORE_RESULT_OK);
+			}
 		}
 		n = run_start(w, hosts, params, NULL, "hand", &why);
 		ucl_object_unref(w);

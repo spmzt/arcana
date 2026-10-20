@@ -267,6 +267,7 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 			kill(pid, SIGTERM);
 			sleep(2);
 			kill(pid, SIGKILL);
+			res->timedout = true;
 			break;
 		}
 	}
@@ -309,6 +310,8 @@ exec_error(struct work *w, const struct execres *res, const char *prog)
 	len = res->err != NULL ? res->errlen : 0;
 	while (len > 0 && res->err[len - 1] == '\n')
 		len--;
+	if (res->timedout)
+		return (wfmt(w, "%s was killed: it did not finish in time", prog));
 	if (len == 0)
 		return (wfmt(w, "%s exited with status %d", prog,
 		    res->status));
@@ -370,8 +373,14 @@ run_exec_lines(struct work *w, char *const argv[],
 	posix_spawn_file_actions_destroy(&fa);
 	close(op[1]);
 	if (rc != 0 || (fp = fdopen(op[0], "r")) == NULL) {
+		int	e = rc != 0 ? rc : errno;
+
 		close(op[0]);
-		step_end(w, step, false, "%s", strerror(rc != 0 ? rc : errno));
+		/* Spawned but not read: reaped all the same, no zombie. */
+		if (rc == 0)
+			while (waitpid(pid, &status, 0) == -1 && errno == EINTR)
+				;
+		step_end(w, step, false, "%s", strerror(e));
 		return (-1);
 	}
 	line = NULL;

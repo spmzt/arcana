@@ -101,6 +101,15 @@ eng_ask(const char *cmd, const char *ifn, unsigned slot)
 	    eng.gen & 0xffff) << 16) | slot));
 }
 
+/* The host changed: no instance of the one before is open. */
+void
+idsstats_reset(void)
+{
+
+	open_name[0] = '\0';
+	eng_clear();
+}
+
 bool
 idsstats_active(void)
 {

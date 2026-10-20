@@ -52,6 +52,9 @@ sr_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		snprintf(sr.error, sizeof(sr.error), "%s", jstr(o, "error") !=
 		    NULL ? jstr(o, "error") : err != NULL ? err :
 		    "the host did not answer");
+		/* Nothing, kept: not asked again until Search is pressed. */
+		if (sr.o == NULL)
+			sr.o = ucl_object_typed_new(UCL_OBJECT);
 		render();
 		return;
 	}
@@ -330,6 +333,8 @@ so_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		snprintf(so.error, sizeof(so.error), "%s", jstr(o, "error") !=
 		    NULL ? jstr(o, "error") : err != NULL ? err :
 		    "the host did not answer");
+		if (so.o == NULL)
+			so.o = ucl_object_typed_new(UCL_OBJECT);
 		render();
 		return;
 	}
@@ -610,8 +615,15 @@ susources_action(const char *act, const char *arg, char **jsonp,
 	} else if (strcmp(act, "sus-ask") == 0) {
 		snprintf(so.asking, sizeof(so.asking), "%s", arg);
 		render();
+	} else if (strcmp(act, "sus-remove") == 0) {
+		char	body[200];
+
+		snprintf(body, sizeof(body), "%s is taken out of suricata-update's "
+		    "sources, with its settings; Disable keeps them.", arg);
+		confirm("Remove the source?", body, "Remove", true, NULL,
+		    "sus-remove-yes", arg, "");
 	} else if (strcmp(act, "sus-enable") == 0 || strcmp(act,
-	    "sus-disable") == 0 || strcmp(act, "sus-remove") == 0) {
+	    "sus-disable") == 0 || strcmp(act, "sus-remove-yes") == 0) {
 		if (asprintf(&w, "name=%s", arg) == -1)
 			abort();
 		words[0] = w;

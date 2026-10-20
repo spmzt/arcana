@@ -408,8 +408,7 @@ inst_conf(struct work *w, const char *name, const char *conf)
 			    "@CLASSIFICATION@", "@REFERENCE@", "@RULESET@",
 			    "@THRESHOLD@", "@SOCKET@", "@LUADIR@" },
 			*to[9];
-	char		*out, *p, *q, *l, *e;
-	size_t		 i, n, len;
+	char		*p, *l, *e;
 
 	/* The ruleset not fetched yet: its line out, the instance's own
 	 * rules alone. */
@@ -433,23 +432,8 @@ inst_conf(struct work *w, const char *name, const char *conf)
 	to[6] = inst_path(w, name, "threshold");
 	to[7] = inst_path(w, name, "sock");
 	to[8] = inst_path(w, name, "lua");
-	len = strlen(conf) + 8 * MAXPATHLEN + 1;
-	out = wcalloc(w, 1, len);
-	for (p = (char *)(uintptr_t)conf, q = out; *p != '\0';) {
-		for (i = 0; i < nitems(from); i++) {
-			n = strlen(from[i]);
-			if (strncmp(p, from[i], n) == 0 && (size_t)(q - out) +
-			    strlen(to[i]) < len - 1) {
-				q = stpcpy(q, to[i]);
-				p += n;
-				break;
-			}
-		}
-		if (i == nitems(from) && (size_t)(q - out) < len - 1)
-			*q++ = *p++;
-	}
-	*q = '\0';
-	return (out);
+	return ((char *)(uintptr_t)sdwan_subst(w, conf, from, to,
+	    nitems(from)));
 }
 
 /* A file's whole text, or NULL. */
@@ -1319,6 +1303,20 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		else
 			step_end(w, step, true, NULL);
 	}
+	if (!ok) {
+		/* Those not named were stopped all the same: out of the
+		 * table, or the reader would say a divert one is down. */
+		for (i = nkeep = 0; i < ninstances; i++) {
+			for (k = 0; k < n; k++)
+				if (strcmp(ni[k].name, instances[i].name) == 0)
+					break;
+			if (IS_SEC(instances[i].name) != sec || k < n)
+				instances[nkeep++] = instances[i];
+			else
+				alerts_free(&instances[i]);
+		}
+		ninstances = nkeep;
+	}
 	if (ok) {
 		/* What was read of those that stay is kept with them. */
 		for (k = 0; k < n; k++)
@@ -1412,6 +1410,7 @@ sdwan_ids_start(void)
 static ucl_object_t *
 build_json(struct work *w)
 {
+	static pthread_mutex_t	kept_lock = PTHREAD_MUTEX_INITIALIZER;
 	static char	*kept;
 	static time_t	 kept_mtime;
 	static const struct {
@@ -1432,20 +1431,25 @@ build_json(struct work *w)
 
 	if (stat(suricata_bin(w), &sb) != 0)
 		return (NULL);
+	/* Two reads at once: the cache is one's at a time. */
+	pthread_mutex_lock(&kept_lock);
 	if (kept == NULL || sb.st_mtime != kept_mtime) {
 		argv[0] = (char *)(uintptr_t)suricata_bin(w);
 		argv[1] = (char *)(uintptr_t)"--build-info";
 		argv[2] = NULL;
-		if (run_exec(w, argv, &res) != 0)
+		if (run_exec(w, argv, &res) != 0) {
+			pthread_mutex_unlock(&kept_lock);
 			return (NULL);
+		}
 		free(kept);
 		kept = strdup(res.out);
 		kept_mtime = sb.st_mtime;
 	}
-	if (kept == NULL)
+	copy = kept != NULL ? wstrdup(w, kept) : NULL;
+	pthread_mutex_unlock(&kept_lock);
+	if (copy == NULL)
 		return (NULL);
 	o = ucl_object_typed_new(UCL_OBJECT);
-	copy = wstrdup(w, kept);
 	for (it = copy; (line = strsep(&it, "\n")) != NULL;) {
 		line += strspn(line, " \t");
 		if ((v = strstr(line, "Suricata version ")) != NULL) {
@@ -1753,8 +1757,8 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
 	const char	*bin, *e, *t;
 	pid_t		 pid;
 	size_t		 n;
-	int		 step, i, na;
-	bool		 rule;
+	int		 step, i, na, rc;
+	bool		 rule, secret;
 
 	if ((*errp = suricata_check(sp)) != NULL)
 		return (-1);
@@ -1813,7 +1817,20 @@ do_suricata_job(struct work *w, const struct arc_job_spec *sp,
 	if (rule)
 		argv[na++] = (char *)(uintptr_t)"--offline";
 	argv[na] = NULL;
-	if (run_exec(w, argv, &res) != 0) {
+	/* A source with a secret code has it in the URLs suricata-update
+	 * logs: its output is then kept nowhere. */
+	secret = suricata_sources_secret(w);
+	exec_set_secret(secret);
+	rc = run_exec(w, argv, &res);
+	exec_set_secret(false);
+	if (rc != 0) {
+		if (secret) {
+			step_end(w, step, false, "suricata-update failed");
+			*errp = "suricata-update failed (its output is not kept: "
+			    "a source's secret code is in it); run it by hand to "
+			    "see why";
+			return (-1);
+		}
 		t = res.outlen > 0 ? wstrndup(w, res.out, res.outlen) :
 		    res.errlen > 0 ? wstrndup(w, res.err, res.errlen) : "";
 		n = strlen(t);
@@ -1880,7 +1897,7 @@ suricata_replay_check(const struct arc_job_spec *sp)
 	if (inst == NULL || !name_ok(inst))
 		return ("pcap names its instance=");
 	if (file == NULL || file[0] != '/' || strstr(file, "/../") != NULL ||
-	    (len = strlen(file)) < 6 || len > 512 || (strcmp(file + len - 5,
+	    (len = strlen(file)) < 8 || len > 512 || (strcmp(file + len - 5,
 	    ".pcap") != 0 && strcmp(file + len - 7, ".pcapng") != 0 &&
 	    strcmp(file + len - 4, ".cap") != 0))
 		return ("pcap's file= is a .pcap, .pcapng or .cap the host "

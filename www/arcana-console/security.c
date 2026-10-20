@@ -368,6 +368,18 @@ thresholds_ok(const char *text, const char *name, char *err, size_t errlen)
 	return (true);
 }
 
+/* A Lua script's name, as the agent takes it: NAME.lua. */
+static bool
+lua_name_ok(const char *k)
+{
+	size_t	len;
+
+	len = k != NULL ? strlen(k) : 0;
+	return (len >= 5 && len <= 36 && strcmp(k + len - 4, ".lua") == 0 &&
+	    strspn(k, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	    "0123456789_-") == len - 4);
+}
+
 /* A size as Suricata reads one: 64mb, 512kb, 1gb, or bytes. */
 static bool
 size_ok(const char *s)
@@ -527,6 +539,29 @@ ids_settings(const ucl_object_t *in, const char *name, struct kore_buf *b,
 		snprintf(err, errlen, "%s: its own YAML is 16 KB at most", name);
 		return (false);
 	}
+	/* The keys the console owns are not its to set again: a plugin,
+	 * a user or a socket of its own would go past the host's checks. */
+	if (extra != NULL) {
+		static const char *const owned[] = { "plugins:", "run-as:",
+		    "unix-command:", "default-rule-path:", "outputs:",
+		    "rule-files:", "pcap:", "netmap:", "security:",
+		    "threshold-file:", "classification-file:",
+		    "reference-config-file:", "default-log-dir:", "logging:",
+		    "af-packet:", "ipfw:" };
+		const char	*p;
+		size_t		 oi;
+
+		for (p = extra; p != NULL && *p != '\0'; p = strchr(p, '\n') !=
+		    NULL ? strchr(p, '\n') + 1 : NULL)
+			for (oi = 0; oi < nitems(owned); oi++)
+				if (strncmp(p, owned[oi], strlen(owned[oi])) == 0) {
+					snprintf(err, errlen, "%s: its own YAML "
+					    "may not set %.*s, which the form "
+					    "does", name, (int)strlen(owned[oi]) -
+					    1, owned[oi]);
+					return (false);
+				}
+	}
 	payload = ucl_object_toboolean(ucl_object_lookup(in, "payload"));
 
 	/* eve.json: alerts, and what else it was told to log. */
@@ -550,7 +585,8 @@ ids_settings(const ucl_object_t *in, const char *name, struct kore_buf *b,
 		it = NULL;
 		while ((e = ucl_object_iterate(ucl_object_lookup(in,
 		    "lua_outputs"), &it, true)) != NULL) {
-			if (ucl_object_type(e) != UCL_STRING || ucl_object_lookup(
+			if (ucl_object_type(e) != UCL_STRING || !lua_name_ok(
+			    ucl_object_tostring(e)) || ucl_object_lookup(
 			    ucl_object_lookup(in, "lua"), ucl_object_tostring(e)) ==
 			    NULL) {
 				snprintf(err, errlen, "%s: a Lua output is one of "
@@ -608,6 +644,9 @@ ids_settings(const ucl_object_t *in, const char *name, struct kore_buf *b,
 			kore_buf_appendf(b, "  - %s\n", v);
 		}
 	}
+	if ((rm == NULL || rm[0] == '\0') && ucl_array_size(
+	    ucl_object_lookup(in, "pairs")) > 0)
+		rm = "workers";
 	if (rm != NULL && rm[0] != '\0')
 		kore_buf_appendf(b, "runmode: %s\n", rm);
 	if (pending > 0)
@@ -689,7 +728,8 @@ nm_ifname_ok(const char *s)
 	char	buf[24];
 	size_t	n;
 
-	if (s == NULL || (n = strlen(s)) < 2 || n > 16)
+	/* 15 at most, the ^ of a host stack counted (IFNAMSIZ). */
+	if (s == NULL || (n = strlen(s)) < 2 || n > 15)
 		return (false);
 	snprintf(buf, sizeof(buf), "%.*s", (int)(s[n - 1] == '^' ? n - 1 :
 	    n), s);
@@ -794,10 +834,15 @@ ids_capture(const ucl_object_t *in, const char *name, int64_t divert,
 		    "them", name);
 		return (false);
 	}
-	/* netmap's IPS is a worker's to the end. */
-	if (ucl_array_size(pairs) > 0 && (sstr(in, "runmode") == NULL ||
-	    sstr(in, "runmode")[0] == '\0'))
-		kore_buf_appendf(b, "runmode: workers\n");
+	/* netmap's IPS is a worker's to the end: ids_settings writes the
+	 * runmode, workers unless the form says so. */
+	if (ucl_array_size(pairs) > 0 && sstr(in, "runmode") != NULL &&
+	    sstr(in, "runmode")[0] != '\0' && strcmp(sstr(in, "runmode"),
+	    "workers") != 0) {
+		snprintf(err, errlen, "%s: netmap's pairs need the workers "
+		    "runmode", name);
+		return (false);
+	}
 	return (true);
 }
 
@@ -848,6 +893,11 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 		if (ucl_object_type(e) == UCL_STRING && strcasecmp(
 		    ucl_object_tostring(e), "any") == 0)
 			home_any = true;
+	if (ucl_object_lookup(in, "home") != NULL && ucl_object_type(
+	    ucl_object_lookup(in, "home")) != UCL_ARRAY) {
+		snprintf(err, errlen, "%s: home is a list of networks", name);
+		goto bad;
+	}
 	if (home_any && ucl_array_size(ucl_object_lookup(in, "home")) != 1) {
 		snprintf(err, errlen, "%s: home (the networks it guards): any "
 		    "stands alone, every address", name);
@@ -912,7 +962,18 @@ ids_one(const ucl_object_t *in, const char *host, char *err, size_t errlen)
 	if (ucl_object_toboolean(ucl_object_lookup(in, "offload_off")))
 		ucl_object_insert_key(o, ucl_object_frombool(false), "offload",
 		    0, false);
-	/* Its Lua scripts and plugins: the agent writes and checks them. */
+	/* Its Lua scripts and plugins: the agent writes and checks them;
+	 * their names checked here, so its error is the right one. */
+	it = NULL;
+	while (ucl_object_lookup(in, "lua") != NULL && (e = ucl_object_iterate(
+	    ucl_object_lookup(in, "lua"), &it, true)) != NULL)
+		if (!lua_name_ok(ucl_object_key(e)) || ucl_object_type(e) !=
+		    UCL_STRING) {
+			snprintf(err, errlen, "%s: a Lua script is NAME.lua, of "
+			    "letters, digits, _ and -, its text", name);
+			ucl_object_unref(o);
+			goto bad;
+		}
 	if (ucl_object_lookup(in, "lua") != NULL)
 		ucl_object_insert_key(o, ucl_object_copy(ucl_object_lookup(in,
 		    "lua")), "lua", 0, false);

@@ -943,6 +943,7 @@ void		 view_setkey(struct html *, struct server *);
 bool		 sysview_form(const char *, const ucl_object_t *);
 bool		 sysview_action(const char *, const char *, const char *);
 bool		 sysview_shown(const char *);
+void		 sysview_hide(void);
 /* nas.c: the Storage page, NFS, iSCSI and HAST. */
 void		 view_naspage(struct html *);
 bool		 naspage_form(const char *, const ucl_object_t *);
@@ -966,12 +967,14 @@ void		 view_idsstats(struct html *);
 bool		 idsstats_active(void);
 bool		 idsstats_action(const char *, const char *);
 bool		 idsstats_form(const char *, const ucl_object_t *);
+void		 idsstats_reset(void);
 /* idsown.c: an intrusion detection's rules of its own, as a table. */
 void		 view_idsown(struct html *);
 bool		 idsown_active(void);
 int		 idsown_count(const char *);
 bool		 idsown_form(const char *, const ucl_object_t *);
 bool		 idsown_action(const char *, const char *, const char *);
+void		 idsown_reset(void);
 /* surules.c: Suricata's ruleset, rule by rule, in IDS/IPS. */
 void		 view_surules(struct html *, const char *);
 void		 surules_load(const char *);

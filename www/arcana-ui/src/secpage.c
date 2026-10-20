@@ -34,25 +34,39 @@ static struct {
 	int		 edit;		/* the form open: an index, n for a new
 					 * one, -1 none */
 	bool		 busy;
+	unsigned	 gen;		/* of reads: an older reply is dropped */
 	bool		 rules;		/* IDS/IPS: the ruleset's rules shown */
 	bool		 sources;	/* IDS/IPS: the rule sources shown */
 } sec = { .edit = -1 };
 
 static const char *const tabs[] = { "url", "antivirus", "ids" };
 
+/* What a read was asked for: by whom, and whether it ends a save. */
+struct sec_read {
+	char		sid[16];
+	unsigned	gen;
+	bool		after_save;
+};
+
 static void
 sec_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
-	char	*sid = arg;
+	struct sec_read	*r = arg;
 
-	/* Read again, a save is done with. */
-	sec.busy = false;
-	/* Another host's, asked before this one was chosen: not its. */
-	if (strcmp(sid, sec.sid) != 0) {
-		free(sid);
+	/* The read a save asked for ends the save, even when a newer read
+	 * (a job's end asks for one) is on its way and brings the state. */
+	if (r->after_save && strcmp(r->sid, sec.sid) == 0)
+		sec.busy = false;
+	/* An older read, or another host's: not what is shown. */
+	if (r->gen != sec.gen || strcmp(r->sid, sec.sid) != 0) {
+		bool	after = r->after_save;
+
+		free(r);
+		if (after)
+			render();
 		return;
 	}
-	free(sid);
+	free(r);
 	sec.loading = false;
 	if (status != 200) {
 		snprintf(sec.error, sizeof(sec.error), "%s", err != NULL ? err :
@@ -71,17 +85,45 @@ sec_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 }
 
 static void
-sec_load(void)
+sec_load_after(bool after_save)
 {
-	char	url[96], *sid;
+	struct sec_read	*r;
+	char		 url[96];
 
 	if (sec.sid[0] == '\0')
 		return;
-	if ((sid = strdup(sec.sid)) == NULL)
+	if ((r = calloc(1, sizeof(*r))) == NULL)
 		abort();
+	snprintf(r->sid, sizeof(r->sid), "%s", sec.sid);
+	r->gen = ++sec.gen;
+	r->after_save = after_save;
 	snprintf(url, sizeof(url), "/api/servers/%s/sdwan", sec.sid);
 	sec.loading = true;
-	api("GET", url, NULL, sec_cb, sid);
+	api("GET", url, NULL, sec_cb, r);
+}
+
+static void
+sec_load(void)
+{
+
+	sec_load_after(false);
+}
+
+/* The host changed: nothing of the one before is shown. */
+static void
+sec_reset(void)
+{
+
+	if (sec.state != NULL)
+		ucl_object_unref(sec.state);
+	sec.state = NULL;
+	sec.edit = -1;
+	sec.busy = false;
+	sec.rules = false;
+	sec.sources = false;
+	sec.error[0] = '\0';
+	idsown_reset();
+	idsstats_reset();
 }
 
 /* The kind's forms on the host: what the page last saved. */
@@ -548,9 +590,8 @@ view_sigs(struct html *h)
 	if (cl == NULL) {
 		missing(h, "ClamAV is not installed on this host.", "clamav");
 		h_raw(h, "<div class=\"empty\"><p>No ClamAV here.</p><p class=\""
-		    "dim\">Once it is installed, start freshclam here, and "
-		    "enable clamav_freshclam on the Services tab to have it at "
-		    "boot.</p></div>");
+		    "dim\">Once it is installed, Start freshclam here enables "
+		    "it at boot and starts it.</p></div>");
 		return;
 	}
 	h_fmt(h, "<div class=\"toolbar\">%s<button class=\"ghost\" "
@@ -1182,7 +1223,7 @@ save_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		toast(true, "%s", err != NULL ? err : jstr(o, "error") != NULL ?
 		    jstr(o, "error") : "not applied");
 	}
-	sec_load();
+	sec_load_after(status == 200 && jbool(o, "ok"));
 	render();
 }
 
@@ -1599,9 +1640,7 @@ secpage_open(const char *rest)
 	rest += strcspn(rest, "/");
 	if (*rest == '/' && strcmp(rest + 1, sec.sid) != 0) {
 		snprintf(sec.sid, sizeof(sec.sid), "%.15s", rest + 1);
-		if (sec.state != NULL)
-			ucl_object_unref(sec.state);
-		sec.state = NULL;
+		sec_reset();
 		sec_load();
 	}
 }
@@ -1670,10 +1709,7 @@ secpage_action(const char *act, const char *arg, const char *value)
 		if (value == NULL || strcmp(value, sec.sid) == 0)
 			return (true);
 		snprintf(sec.sid, sizeof(sec.sid), "%s", value);
-		if (sec.state != NULL)
-			ucl_object_unref(sec.state);
-		sec.state = NULL;
-		sec.edit = -1;
+		sec_reset();
 		sec_load();
 		return (true);
 	}

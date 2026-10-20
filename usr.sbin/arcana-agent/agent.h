@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.155.0"
+#define	ARCANA_AGENT_VERSION	"0.156.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -238,6 +238,7 @@ struct execres {
 	const char	*err;
 	size_t		 errlen;
 	bool		 truncated;	/* more output than was kept */
+	bool		 timedout;	/* killed: it did not finish in time */
 };
 
 int		 run_exec(struct work *, char *const [], struct execres *);
@@ -545,6 +546,8 @@ struct ucl_object_s;
 void		 sdwan_json(struct work *, struct ucl_object_s *);
 const char	*sdwan_conf_path(const char *, char *, size_t);
 int		 sdwan_conf_write(const char *, const char *, const char **);
+const char	*sdwan_subst(struct work *, const char *, const char *const *,
+		    const char *const *, size_t);
 char		*sdwan_kept_read(const char *);
 
 /* luxuria/sdbird.c: a BIRD instance of each service, at the UNIs. */
@@ -600,6 +603,7 @@ int		 suricata_rule_set(struct work *, const struct arc_job_spec *,
 int		 suricata_rule_args(struct work *, char **, int *,
 		    const char **);
 const char	*suricata_data_dir(struct work *);
+bool		 suricata_sources_secret(struct work *);
 bool		 suricata_name_ok(const char *);
 const char	*suricata_socket(struct work *, const char *);
 const char	*suricata_source_check(const struct arc_job_spec *);

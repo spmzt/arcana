@@ -33,6 +33,20 @@ static struct {
 	char	thr_kind[16];	/* its kind, which says its fields */
 } own = { .edit = -1, .thr_kind = "suppress" };
 
+/* More lines than OWN_MAX in the rules read: a change would lose
+ * those past it, so none is made until the text is cut by hand. */
+static bool	own_cut;
+
+/* The host changed: no instance of the one before is open. */
+void
+idsown_reset(void)
+{
+
+	own.name[0] = '\0';
+	own.edit = -1;
+	own.text = own.thr = own.lua = false;
+}
+
 /* A line of the rules: a rule, on or off, or a comment kept. */
 struct oline {
 	char	*text;		/* as written, without the "# " of one off */
@@ -75,7 +89,13 @@ lines_of(const char *text, int *np)
 	if (v == NULL || (copy = strdup(text != NULL ? text : "")) == NULL)
 		abort();
 	n = 0;
-	for (it = copy; (line = strsep(&it, "\n")) != NULL && n < OWN_MAX;) {
+	own_cut = false;
+	for (it = copy; (line = strsep(&it, "\n")) != NULL;) {
+		if (n == OWN_MAX) {
+			if (line[strspn(line, " \t\r")] != '\0')
+				own_cut = true;
+			continue;
+		}
 		p = line + strspn(line, " \t\r");
 		if (*p == '\0')
 			continue;
@@ -424,9 +444,10 @@ view_thresholds(struct html *h, const char *text)
 		h_raw(h, "</select></label></div><div class=\"rowform\">");
 		if (sup)
 			h_raw(h, "<label>Address <input name=\"ip\" "
-			    "spellcheck=\"false\" placeholder=\"10.0.0.5, "
-			    "10.0.0.0/24, $HOME_NET\"><small class=\"help\">with "
-			    "a track: of those alone</small></label>");
+			    "spellcheck=\"false\" placeholder=\"10.0.0.5 or "
+			    "10.0.0.0/24\"><small class=\"help\">of this one "
+			    "alone (track by_src unless another is picked)"
+			    "</small></label>");
 		else {
 			if (!rate)
 				h_raw(h, "<label>Type <select name=\"type\">"
@@ -702,6 +723,11 @@ apply(struct oline *v, int n, int at, const char *text, bool on)
 {
 	char	*all, *dup;
 
+	if (own_cut || (at == OWN_MAX && n >= OWN_MAX)) {
+		toast(true, "More than %d lines of rules: change them as text, "
+		    "or in the instance's form", OWN_MAX);
+		return;
+	}
 	if (at == OWN_MAX && n < OWN_MAX) {
 		at = n++;
 		v[at].rule = true;
@@ -760,6 +786,9 @@ idsown_form(const char *form, const ucl_object_t *f)
 			    "and . : / $ ! [ ] , - alone");
 			return (true);
 		}
+		/* An address given with no track is by its source. */
+		if (strcmp(kind, "suppress") == 0 && track == NULL && ip != NULL)
+			track = "by_src";
 		if (strcmp(kind, "suppress") == 0)
 			snprintf(line, sizeof(line), "suppress gen_id %s, sig_id "
 			    "%s%s%s%s%s", gid != NULL ? gid : "1", sid, track !=
@@ -792,6 +821,12 @@ idsown_form(const char *form, const ucl_object_t *f)
 		    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != len - 4) {
 			toast(true, "A script is NAME.lua: letters, digits, _ "
 			    "and -");
+			return (true);
+		}
+		/* The form stays, with its text, while a change is applied. */
+		if (sec_ids_busy()) {
+			toast(true, "The last change is being applied: again in a "
+			    "moment");
 			return (true);
 		}
 		lua = jget(spec, "lua") != NULL ? ucl_object_copy(jget(spec,
@@ -898,6 +933,15 @@ idsown_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	if (strcmp(act, "lua-del") == 0) {
+		char	body[200];
+
+		snprintf(body, sizeof(body), "%s is taken out of %s's scripts "
+		    "and its file deleted on the host.", arg, own.name);
+		confirm("Delete the script?", body, "Delete", true, NULL,
+		    "lua-del-yes", arg, "");
+		return (true);
+	}
+	if (strcmp(act, "lua-del-yes") == 0) {
 		const ucl_object_t	*sp, *o;
 		ucl_object_iter_t	 oit;
 		ucl_object_t		*lua, *outs, *vals[2];
@@ -938,6 +982,12 @@ idsown_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	if (strcmp(act, "thr-del") == 0) {
+		confirm("Delete the threshold?", "The line is taken out of the "
+		    "instance's threshold.config: its alerts are told again as "
+		    "they come.", "Delete", true, NULL, "thr-del-yes", arg, "");
+		return (true);
+	}
+	if (strcmp(act, "thr-del-yes") == 0) {
 		const ucl_object_t	*sp;
 		struct oline		*tv;
 		char			*t;

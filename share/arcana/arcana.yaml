@@ -401,8 +401,15 @@ definitions:
           commas): kept by the agent and given to suricata-update as its
           enable.conf, disable.conf and drop.conf, so that they hold
           across updates; the ruleset is made again from what was
-          fetched (--offline) and applied as by update.  The host's
-          only; never in safe mode.
+          fetched (--offline) and applied as by update.  Verb sources
+          fetches suricata-update's index of sources (update-sources);
+          verbs source-enable (name=, and its parameters, a commercial
+          one's secret-code=, which the agent writes to the source's
+          file itself, root's alone), source-disable, source-remove and
+          source-add (name=, url=) each set one.  Verb pcap (instance=,
+          file=) runs a capture the host has through an instance's
+          configuration, offline (suricata -r), its alerts kept for the
+          sdwan read.  The host's only; never in safe mode.
       - name: nfs
         doc: |
           The NFS server (nfsd(8), mountd(8)): verb exports writes
@@ -445,7 +452,8 @@ definitions:
           A GEOM class at work, geom(8): the verb the class (mirror,
           stripe, concat, raid3, label, nop, multipath, shsec, virstor,
           cache, journal, eli or union), the first name its subcommand,
-          one of the class's own, or load or unload; the rest its words,
+          one of the class's own, or load, unload, list or status; the
+          rest its words,
           flags and names alone.  A GELI passphrase is text, given by a
           file of the job's own (-J, -j).  The host's only; never in safe
           mode.
@@ -3632,7 +3640,15 @@ operations:
       and the rule's text.  Words: q=text (in the rule, any case),
       sid=N, only=enabled, disabled or changed (those the admin set),
       classtype=name, offset=N and limit=N (100 unless given, 500 at
-      most).  The host's only; nothing is changed.
+      most).  With sources=1 instead, the rule sources: "index" (whether
+      suricata-update's is fetched), "sources" (each with name, vendor,
+      summary, license, parameters, subscription, and its state here,
+      enabled or disabled) and "default_et_open".  With instance=NAME
+      and command=CMD (iface=IF for iface-stat), Suricata's own answer
+      by the instance's unix command socket, one of the commands that
+      read: uptime, version, running-mode, capture-mode, memcap-list,
+      ruleset-stats, ruleset-failed-rules, ruleset-profile, iface-list,
+      iface-stat, dump-counters.  The host's only; nothing is changed.
     do:
       request:
         attributes:

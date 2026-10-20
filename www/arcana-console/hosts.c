@@ -3257,6 +3257,7 @@ call_new(struct http_request *req, enum op op)
 	 * a route reads only by its method, so none can slip through as
 	 * a read (a viewer's, without the CSRF checks). */
 	mutate = req->method != HTTP_METHOD_GET || op == OP_ACTION ||
+	    op == OP_SYSTEM ||
 	    op == OP_ADDRESS ||
 	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
 	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL || op == OP_CAPTURE ||
@@ -4709,7 +4710,11 @@ api_zfs_key(struct http_request *req)
 		    NULL && strlen(c->new_key) > 512) || (c->key == NULL &&
 		    c->new_key == NULL))
 			bad = true;
-		/* The body's copy of them too. */
+		/* The body's copy of them wiped too, before it is freed. */
+		if ((s = ucl_str(body, "key")) != NULL)
+			explicit_bzero((char *)(uintptr_t)s, strlen(s));
+		if ((s = ucl_str(body, "new_key")) != NULL)
+			explicit_bzero((char *)(uintptr_t)s, strlen(s));
 		ucl_object_unref(body);
 	}
 	if (bad) {
@@ -5258,6 +5263,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			if (ucl_array_size(names) != 2)
 				return ("a sysctl job needs a name and a "
 				    "value as its args");
+			kore_free((void *)(uintptr_t)sp->verb);
 			sp->verb = NULL;
 		} else if (sp->kind == ARC_JOB_KIND_IPSEC_SA) {
 			/* The verb and the interface; but for key, its reqid and
@@ -5279,6 +5285,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 				return ("an rtadvd job needs an interface, and "
 				    "the prefix then up to 8 DNS servers as "
 				    "its args, or says remove");
+			kore_free((void *)(uintptr_t)sp->verb);
 			sp->verb = NULL;
 		} else if (sp->kind == ARC_JOB_KIND_NTP) {
 			/* The servers, and no verb; none with remove. */
@@ -5286,6 +5293,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			    == 0 && !sp->remove))
 				return ("an ntp job names 1 to 8 servers, or "
 				    "says remove");
+			kore_free((void *)(uintptr_t)sp->verb);
 			sp->verb = NULL;
 		} else
 		if (sp->verb == NULL || (n = ucl_array_size(names)) >

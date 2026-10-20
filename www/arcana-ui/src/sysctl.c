@@ -506,6 +506,8 @@ sysctl_form(const char *form, const ucl_object_t *f)
 		return (true);
 	}
 	if (strcmp(form, "sy-from") == 0) {
+		/* The tree asked for is shown, not the hardening helper. */
+		sysview_hide();
 		v = jstr(f, "name") != NULL ? jstr(f, "name") : "";
 		if (v[0] != '\0' && !name_ok(v)) {
 			toast(true, "A sysctl is named with letters, digits "

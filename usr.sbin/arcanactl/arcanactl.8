@@ -439,7 +439,7 @@ A GELI passphrase is read from
 .Ar passfile
 and given to geli by a file of the job's own, never on a command line.
 A job.
-.It Cm sysfile Ar file path | Cm periodic Ar name Ns = Ns Cm YES | NO ... | Cm rc Ar name Ns = Ns Ar value ...
+.It Cm sysfile Ar file path | Cm periodic Ar name Ns = Ns Cm YES | NO ... | Cm rc Cm kern_securelevel_enable= Ns Cm YES | NO Cm kern_securelevel= Ns Ar level
 Writes one of the system's files from
 .Ar path
 and tells the daemon that reads it:
@@ -969,6 +969,12 @@ an empty list takes them away.
 The reply says what the samples take of the agent's memory.
 The samples are written down when the agent stops and read again when
 it starts.
+.It Cm net routes Oo Fl 4 | Fl 6 Oc Oo Fl o Ar rows Oc Op Ar text
+The routes, those with
+.Ar text
+in them alone, and with
+.Fl o
+read on after that many rows (a large table comes in pages).
 .It Cm net routes | connections | sockets Oo Fl 4 | Fl 6 Oc Cm parts Op Ar text
 The same table as a dump: in parts, each printed as an array of rows
 of its own when it comes, a route with its family in it; none is left
@@ -1013,6 +1019,18 @@ df
 maxaddr, timeout, and learn, external and dscpinherit, each on or off.
 .It Cm ipfw Oo Cm keep Oc Cm add Ar number Ar rule ...
 .It Cm ipfw Oo Cm keep Oc Cm delete Ar number
+.It Cm ipfw Oo Cm keep Oc Cm replace Ar number new-number rule ...
+Replaces the rule numbered
+.Ar number
+by the rule given, numbered
+.Ar new-number :
+the old one is deleted as the new is added, in the live rules, the kept
+ones, or both.
+.It Cm ipfw alias Ar name Cm addr Ar address ... | Cm ports Ar list | Cm value Ar word | Cm delete
+An alias of the kept rules: a name (letters, digits, _) standing for
+addresses, for ports (80,443) or for a word, used in rules as
+.Ar $name
+and put in as they are applied; or deleted.
 A rule of the firewall, by a job: added to or deleted from what the
 kernel has now; with
 .Fl p
@@ -1149,6 +1167,10 @@ only what changed since that one, which both have.
 What arrives is not mounted.
 .It Cm gpart newfs Oo Fl f Oc Ar partition Op Ar label
 Make a UFS file system on a partition.
+.It Cm gpart newfs-msdos Oo Fl f Oc Ar partition Op Ar label
+The same, a FAT file system
+.Pq Xr newfs_msdos 8 ,
+for an EFI partition or a disk another system reads.
 Refused while it is mounted, swapped on or a pool's device, and,
 without
 .Fl f ,
@@ -1186,7 +1208,7 @@ A pool's own dataset is not destroyed.
 .It Cm zpool detach | remove Ar pool Ar device
 .It Cm zpool replace Ar pool Ar device Op Ar new-device
 .It Cm zpool export | destroy Ar pool
-.It Cm zpool import Ar pool Op Cm altroot= Ns Ar path
+.It Cm zpool import Oo Fl f Oc Ar pool Op Cm altroot= Ns Ar path
 .Xr zpool 8 ,
 by a job.
 A pool with a dataset mounted where the system lives, the root or
@@ -1194,7 +1216,10 @@ under
 .Pa /usr ,
 .Pa /var ,
 .Pa /home
-and the like, is not destroyed or exported, and no pool is by force.
+and the like, is not destroyed or exported, and neither is any pool by
+force; an import is, with
+.Fl f ,
+of a pool another host had.
 .Cm storage importable
 lists the pools that could be imported.
 .It Cm mount Ar path
@@ -1384,6 +1409,14 @@ operation takes them: each a name, the fib it runs in and its
 .Xr dnsmasq 8
 configuration; checked first, started or started again, those not
 named stopped.
+.It Cm sdwan proxy Ar json
+The URL filters of the services at this edge (MEF 88), as the
+sdwan-proxy operation takes them: each a name, its fib, its mode (sni
+or inspect), Squid's configuration and the domains denied.
+.It Cm sdwan ids Ar json
+The intrusion detection of the services at this edge, as the
+sdwan-ids operation takes them: each a name, its interfaces, Suricata's
+configuration, its rules and, to prevent, its divert port.
 .It Cm sdwan dns Ar json
 The DNS filters of the services at this edge (MEF 88), as the
 sdwan-dns operation takes them: each a name, the fib it runs in and

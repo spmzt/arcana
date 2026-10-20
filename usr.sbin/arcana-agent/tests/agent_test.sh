@@ -663,7 +663,7 @@ network_body()
 	atf_check -o save:routes.out "$JGC" -c "$SOCK" net routes -6
 	atf_check -o match:'"route-table":\{"rt-family":\[\{"address-family":"Internet6","rt-entry":\[\{"destination":"::1","gateway":"link#2","flags":"UHS","nhop":1,"mtu":16384,"interface-name":"lo0","metric":1,"weight":1,"fib":0,"prefixlen":128\}\]\}\]' \
 	    cat routes.out
-	atf_check -o match:'fake-helper -Q 0 routes 6 0 - -:' \
+	atf_check -o match:'fake-helper --scope-helper 0 routes 6 0 - -:' \
 	    "$JGC" -t -c "$SOCK" net routes -6
 	atf_check -o match:'"address-family":"Internet","rt-entry":\[\{"destination":"10.0.0.0/24"[^]]*\]\},\{"address-family":"Internet6","rt-entry":\[\{"destination":"::1"' \
 	    "$JGC" -c "$SOCK" net routes
@@ -674,18 +674,18 @@ network_body()
 	atf_check -o match:'"rt-family"' cat nh.out
 	# The connections and sockets: the kernel's own lists, read by the
 	# helper here (by the daemon itself when it is its own helper).
-	atf_check -o match:'fake-helper -Q 0 pcb-conns 4' \
+	atf_check -o match:'fake-helper --scope-helper 0 pcb-conns 4' \
 	    -o match:'"statistics":\{"socket":\[\{"protocol":"tcp4"' \
 	    "$JGC" -t -c "$SOCK" net connections -4
 	atf_check -o save:so.out "$JGC" -t -c "$SOCK" net sockets
-	atf_check -o match:'fake-helper -Q 0 pcb-socks 0' \
+	atf_check -o match:'fake-helper --scope-helper 0 pcb-socks 0' \
 	    -o match:'"sockstat":\{"socket":\[\{"user":"root","command":"sshd"' cat so.out
 	# The nexthop groups, what a route of several next hops points to.
 	atf_check -o match:'"nhgrp-index":1,"nhg-refcnt":1,"nhop-weights":\[\{"nh-index":5,"nh-weight":2' \
 	    -o match:'fake-netstat --libxo json -OnW -f inet$' \
 	    "$JGC" -t -c "$SOCK" net nhgroups
 	# The neighbours, of ARP and NDP, asked of the kernel.
-	atf_check -o match:'fake-helper -Q 0 route-neighs 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-neighs 0 -' \
 	    -o match:'"neighbours":\[\{"family":"inet","address":"10.0.0.2".*"router":true\}\],"total":2' \
 	    "$JGC" -t -c "$SOCK" net neighbours
 	atf_check -o match:'^\{"neighbours":\[\{"family":"inet6"[^]]*\],"total":2\}$' \
@@ -927,35 +927,35 @@ EOS
 
 	# Static routes: asked of the kernel by the helper, word by word.
 	atf_check -o match:'route add 10.77.0.0/16 via 10.0.0.1' \
-	    -o match:'fake-helper -Q 0 route-add 10.77.0.0/16 10.0.0.1 - 0 0 0 -' \
+	    -o match:'fake-helper --scope-helper 0 route-add 10.77.0.0/16 10.0.0.1 - 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
 	# With its cost, its share among those of one cost, and the address
 	# sent from; kept, they are in rc.conf's route too.
 	atf_check -o match:'route add 10.81.0.0/16 via 10.0.0.1 \(metric\) \(weight\) \(kept\)' \
-	    -o match:'fake-helper -Q 0 route-add 10.81.0.0/16 10.0.0.1 - 0 5 20 10.0.0.9' \
+	    -o match:'fake-helper --scope-helper 0 route-add 10.81.0.0/16 10.0.0.1 - 0 5 20 10.0.0.9' \
 	    "$JGC" -p -c "$SOCK" route add 10.81.0.0/16 10.0.0.1 metric 5 weight 20 source 10.0.0.9
 	atf_check -o match:'^route_[a-z0-9_]*="10.81.0.0/16 10.0.0.1 -ifa 10.0.0.9 -metric 5 -weight 20"$' \
 	    cat rc.conf
-	atf_check -o match:'fake-helper -Q 0 route-del 10.81.0.0/16 10.0.0.1 - 0 5' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-del 10.81.0.0/16 10.0.0.1 - 0 5' \
 	    "$JGC" -p -c "$SOCK" route delete 10.81.0.0/16 10.0.0.1 metric 5
 	atf_check -o not-match:'10.81.0.0' cat rc.conf
 	atf_check -s exit:1 -o match:'no address of the route.s family' \
 	    "$JGC" -c "$SOCK" route add 10.82.0.0/16 10.0.0.1 source 2001:db8::9
 	atf_check -s exit:1 -e match:'the address to send from is an address' -o ignore \
 	    "$JGC" -c "$SOCK" route add 10.82.0.0/16 10.0.0.1 source '-x'
-	atf_check -o match:'fake-helper -Q 0 route-add 2001:db8:7::/48 2001:db8::1 - 0 0 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-add 2001:db8:7::/48 2001:db8::1 - 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add 2001:db8:7::/48 2001:db8::1
-	atf_check -o match:'fake-helper -Q 0 route-add 10.78.0.0/16 - lo0 0 0 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-add 10.78.0.0/16 - lo0 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add 10.78.0.0/16 lo0
-	atf_check -o match:'fake-helper -Q 0 route-add ::/0 2001:db8::1 - 0 0 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-add ::/0 2001:db8::1 - 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add ::/0 2001:db8::1
-	atf_check -o match:'fake-helper -Q 0 route-del 10.77.0.0/16 - - 0 0' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-del 10.77.0.0/16 - - 0 0' \
 	    "$JGC" -c "$SOCK" route delete 10.77.0.0/16
 	atf_check -o match:'^ +[0-9]+ queued +route delete default via 10.0.0.1' \
 	    "$JGC" -q -c "$SOCK" route delete default 10.0.0.1
 	# Several gateways: one route of as many next hops, each with its
 	# share; not kept, not deleted as one, and each an address.
-	atf_check -o match:'fake-helper -Q 0 route-add 10.83.0.0/16 10.0.0.1@2,10.0.0.2 - 0 0 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-add 10.83.0.0/16 10.0.0.1@2,10.0.0.2 - 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add 10.83.0.0/16 10.0.0.1@2,10.0.0.2
 	atf_check -s exit:1 -o match:'rc.conf keeps a route of one gateway' \
 	    "$JGC" -p -c "$SOCK" route add 10.84.0.0/16 10.0.0.1,10.0.0.2
@@ -1175,7 +1175,7 @@ EOS
 	    "$JGC" -c "$SOCK" interface em0 destroy
 
 	# Routes: in a routing table of their own, and kept by a name.
-	atf_check -o match:'fake-helper -Q 0 route-add 10.77.0.0/16 10.0.0.1 - 2 0 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-add 10.77.0.0/16 10.0.0.1 - 2 0 0 -' \
 	    "$JGC" -F 2 -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
 	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
 	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 2001:db8:7::/48 2001:db8::1
@@ -1189,7 +1189,7 @@ EOS
 	atf_check -o ignore "$JGC" -p -c "$SOCK" route delete 10.77.0.0/16
 	atf_check -o match:'^static_routes="arc_10_80_0_0_16_fib3"$' \
 	    -o not-match:'route_arc_10_77' cat rc.conf
-	atf_check -o match:'fake-helper -Q 0 routes 4 2 - -' \
+	atf_check -o match:'fake-helper --scope-helper 0 routes 4 2 - -' \
 	    "$JGC" -t -F 2 -c "$SOCK" net routes -4
 
 	# The route to an address: the one taken, and those that cover it,
@@ -1207,7 +1207,7 @@ EOS
 	    "$JGC" -c "$SOCK" route get 203.0.113.9
 	atf_check -s exit:1 -e match:'not an IPv4 or IPv6 address' -o ignore \
 	    "$JGC" -c "$SOCK" route get '10.0.0.1;id'
-	atf_check -o match:'fake-helper -Q 0 route-get 10.77.5.5 4' \
+	atf_check -o match:'fake-helper --scope-helper 0 route-get 10.77.5.5 4' \
 	    "$JGC" -t -F 4 -c "$SOCK" route get 10.77.5.5
 
 	# Netgraph: the nodes with their hooks, and the few commands.
@@ -2230,7 +2230,7 @@ EOS
 	# the host's are still the host's.
 	atf_check -o match:'"name":"epair91b"' -o match:'"address":"10.99.0.2"' \
 	    -o not-match:'"name":"lo0"' "$JGC" -j gateway -c "$SOCK" net interfaces
-	atf_check -o match:'^-Q 4 interfaces - 0$' cat helper.log
+	atf_check -o match:'^--scope-helper 4 interfaces - 0$' cat helper.log
 	atf_check -o match:'"name":"lo0"' -o not-match:'epair91b' \
 	    "$JGC" -c "$SOCK" net interfaces
 	# Its bridges and geneve tunnels: ifconfig told the jail once.
@@ -2238,11 +2238,11 @@ EOS
 	atf_check -o match:'^-j 4 -av$' cat ifconfig.log
 	# Its routes and its route to an address: the host's programs,
 	# told which jail.
-	atf_check -o match:'fake-helper -Q 4 routes 4 0 - -' \
+	atf_check -o match:'fake-helper --scope-helper 4 routes 4 0 - -' \
 	    "$JGC" -t -j gateway -c "$SOCK" net routes -4
 	atf_check -o match:'"gateway":"10.99.0.1","fib":"0","interface":"epair91b"' \
 	    "$JGC" -j gateway -c "$SOCK" route get 192.0.2.9
-	atf_check -o match:'^-Q 4 route-get 192.0.2.9 0$' cat helper.log
+	atf_check -o match:'^--scope-helper 4 route-get 192.0.2.9 0$' cat helper.log
 
 	# A change there: ifconfig and route with the jail, the job named
 	# after it, what is kept kept in the jail's own rc.conf.
@@ -2252,7 +2252,7 @@ EOS
 	atf_check -o match:'^ifconfig_epair91b_alias0="inet 10.99.0.5/24"$' \
 	    cat "$R/etc/rc.conf"
 	atf_check -o not-match:'10.99.0.5' cat rc.conf
-	atf_check -o match:'fake-helper -Q 4 route-add 10.77.0.0/16 10.99.0.1 - 0 0 0 -' \
+	atf_check -o match:'fake-helper --scope-helper 4 route-add 10.77.0.0/16 10.99.0.1 - 0 0 0 -' \
 	    "$JGC" -j gateway -c "$SOCK" route add 10.77.0.0/16 10.99.0.1
 	# Its firewall is its own: ipfw is run in the jail, not on the host.
 	atf_check -o match:'gateway' -o match:'fake-jexec 4 .*/fake-ipfw -q add 100 allow ip from any to any' \
@@ -3533,6 +3533,11 @@ EOS
 	atf_check -s exit:0 kill -0 "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
 	atf_check -s exit:1 -e match:'stopped is true or false' -o ignore \
 	    "$JGC" -c "$SOCK" sdwan ids "$(echo "$rs4" | sed 's/"name":"sw1",/"name":"sw1","stopped":1,/')"
+	# Many placeholders: the configuration comes out whole, as long as
+	# it is (the buffer was once a fixed size, and the loop hung).
+	many=$(printf '%s' "$rs4" | sed "s|rule-files:|$(printf '# @PID@%.0s' $(seq 1 400))\\\\nrule-files:|")
+	atf_check -o match:'detects: started' "$JGC" -t -c "$SOCK" sdwan ids "$many"
+	atf_check -o match:'^# /.*/sdwan-ids-sw1\.pid# /.*/sdwan-ids-sw1\.pid# ' cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	atf_check -s exit:1 -e match:'did not start: Error: suricata: this start fails$' \
 	    -e not-match:'an old one' -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs5"
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
@@ -3579,6 +3584,13 @@ netstore_body()
 	atf_check -o match:'^nfs_server_flags="-u -t -n 8 -p ds1.example.org:/ds0,ds2.example.org:/ds1 -m 2"$' \
 	    -o match:'^nfsv4_server_enable="YES"$' -o match:'^nfsv4_server_only="YES"$' \
 	    -o match:'^rpcbind_enable="YES"$' -o match:'^mountd_enable="YES"$' cat rc.conf
+	# The flags merged: threads alone keeps pNFS's -p and -m; mirror
+	# without data servers is refused.
+	atf_check -o match:'done +nfs server' "$JGC" -c "$SOCK" nfs server threads=16
+	atf_check -o match:'^nfs_server_flags="-u -t -p ds1.example.org:/ds0,ds2.example.org:/ds1 -m 2 -n 16"$' cat rc.conf
+	atf_check -o match:'done' "$JGC" -c "$SOCK" nfs server pnfs=
+	atf_check -o match:'^nfs_server_flags="-u -t -n 16"$' cat rc.conf
+	atf_check -s exit:1 -o match:'failed.*mirror needs pNFS' "$JGC" -c "$SOCK" nfs server mirror=2
 	atf_check -o match:'vfs.nfsd.server_max_minorversion=2' cat sysctl.log
 	atf_check -o match:'^vfs.nfsd.server_max_minorversion=2$' cat sysctl.conf
 	test -f running.nfsd || atf_fail "nfsd is not started"
@@ -3705,6 +3717,8 @@ EOS
 	atf_check -s exit:1 -e match:'lines of printable characters' "$JGC" -c "$SOCK" sysfile krb5.conf ctl.new
 	atf_check -s exit:1 -e match:'name_enable=YES or NO' "$JGC" -c "$SOCK" sysfile periodic daily_x=1
 	atf_check -s exit:1 -e match:"the system's files are the host's" "$JGC" -j web -c "$SOCK" sysfile krb5.conf syslog.new
+	# Never safe: a file written whole has no undo kept.
+	atf_check -s exit:1 -e match:'not undone: not in safe mode' "$JGC" -s -c "$SOCK" sysfile krb5.conf syslog.new
 }
 sysfiles_cleanup()
 {
@@ -5172,7 +5186,7 @@ EOS
 	atf_check -o match:'done' "$JGC" -c "$SOCK" zfs replicate tank/data@b backup/data
 	atf_check -o match:"^0 zfs-pipe $(pwd)/fake-zfs tank/data@b backup/data - -\$" cat helper.log
 	atf_check -s exit:1 -e match:'a dataset is pool/name' -o ignore "$JGC" -c "$SOCK" zfs replicate tank/data backup/data
-	atf_check "$JGD" -Q 0 zfs-pipe "$(pwd)/fake-zfs" tank/data@b backup/data tank/data@a r
+	atf_check "$JGD" --scope-helper 0 zfs-pipe "$(pwd)/fake-zfs" tank/data@b backup/data tank/data@a r
 	atf_check -o match:'^zfs send -R -i tank/data@a tank/data@b$' \
 	    -o match:'^zfs receive -u backup/data$' cat storage.log
 	# A file system made on a partition: not on one that has one, is

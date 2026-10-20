@@ -215,7 +215,7 @@ kept(struct work *w)
 	fp = fopen(opts.sysctl_conf, "re");
 	text = NULL;
 	if (fp != NULL) {
-		text = wcalloc(w, SYSCTL_CONF_MAX + 1, 1);
+		text = wcalloc(w, SYSCTL_CONF_MAX + 2, 1);
 		n = fread(text, 1, SYSCTL_CONF_MAX, fp);
 		text[n] = '\0';
 		fclose(fp);
@@ -421,8 +421,8 @@ conf_set(struct work *w, const char *name, const char *value,
 			n = jl;
 		}
 	} else if ((fp = fopen(opts.sysctl_conf, "re")) != NULL) {
-		n = fread(text, 1, SYSCTL_CONF_MAX, fp);
-		if (!feof(fp)) {
+		n = fread(text, 1, SYSCTL_CONF_MAX + 1, fp);
+		if (n > SYSCTL_CONF_MAX) {
 			fclose(fp);
 			*errp = wfmt(w, "%s is larger than is edited from "
 			    "here", opts.sysctl_conf);
@@ -518,8 +518,13 @@ do_sysctl_jail(struct work *w, const char *prefix, struct arc_sysctl_rsp *rsp)
 	argv[2] = (char *)(uintptr_t)"--";
 	argv[3] = (char *)(uintptr_t)prefix;
 	argv[4] = NULL;
-	/* One it lacks is none: an empty list, as the host's has it. */
-	(void)run_exec(w, argv, &res);
+	/* One it lacks is none (sysctl -e exits 1 then): an empty list, as
+	 * the host's has it.  Not run, or killed, is an error. */
+	if (run_exec(w, argv, &res) != 0 && (res.status < 0 || res.status >=
+	    128)) {
+		rsp->error = wtext(w, exec_error(w, &res, "sysctl"));
+		return (0);
+	}
 	top = ucl_object_typed_new(UCL_OBJECT);
 	vals = ucl_object_typed_new(UCL_ARRAY);
 	text = wcalloc(w, res.outlen + 1, 1);

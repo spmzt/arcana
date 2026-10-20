@@ -174,8 +174,10 @@ do_clamav_job(struct work *w, const struct arc_job_spec *sp,
 		size_t	 len, cap;
 	}		 out;
 	size_t		 i, len;
-	bool		 from_sample, placed;
+	bool		 from_sample, placed, enabled, running;
 	int		 fd, step;
+	mode_t		 mode;
+	struct stat	 sb;
 
 	if ((*errp = clamav_check(sp)) != NULL)
 		return (-1);
@@ -229,17 +231,36 @@ do_clamav_job(struct work *w, const struct arc_job_spec *sp,
 	}
 	/* Beside it, then over it: never half written. */
 	snprintf(tmp, sizeof(tmp), "%s.arcana", conf);
-	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644)) ==
-	    -1 || write(fd, out.s, out.len) != (ssize_t)out.len ||
-	    fchmod(fd, 0644) != 0 || close(fd) != 0 || rename(tmp, conf) != 0) {
+	/* With the mode the file had (it may hold a proxy's password). */
+	mode = stat(conf, &sb) == 0 ? sb.st_mode & 0777 : 0644;
+	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC |
+	    O_NOFOLLOW, mode)) == -1 || write(fd, out.s, out.len) !=
+	    (ssize_t)out.len || fchmod(fd, mode) != 0 || fsync(fd) != 0) {
 		*errp = wfmt(w, "%s: %s", conf, strerror(errno));
 		if (fd != -1)
-			(void)unlink(tmp);
+			(void)close(fd);
+		(void)unlink(tmp);
+		step_end(w, step, false, "%s", *errp);
+		return (-1);
+	}
+	if (close(fd) != 0 || rename(tmp, conf) != 0) {
+		*errp = wfmt(w, "%s: %s", conf, strerror(errno));
+		(void)unlink(tmp);
 		step_end(w, step, false, "%s", *errp);
 		return (-1);
 	}
 	step_end(w, step, true, "%zu mirror%s", sp->names.n, sp->names.n == 1 ?
 	    "" : "s");
+	/* A running freshclam reads its mirrors as it starts again. */
+	enabled = running = false;
+	service_state(w, "clamav_freshclam", &enabled, &running);
+	if (running) {
+		struct arc_service_action_rsp	r;
+
+		memset(&r, 0, sizeof(r));
+		(void)do_service_action(w, "clamav_freshclam",
+		    ARC_SERVICE_ACTION_RESTART, &r);
+	}
 	return (0);
 }
 

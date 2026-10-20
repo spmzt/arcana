@@ -2708,6 +2708,15 @@ ATF_TC_BODY(tokens, tc)
 		EXPECT(&r, 403);
 		ATF_CHECK(strstr(r.body, "may not change") != NULL);
 		resp_free(&r);
+		/* Nor who is who: a token does not make itself an owner. */
+		http_bearer("PUT", "/api/users/intruder", wtok, "{\"role\":"
+		    "\"owner\"}", &r);
+		EXPECT(&r, 403);
+		resp_free(&r);
+		http_bearer("POST", "/api/groups", wtok, "{\"name\":\"g\"}",
+		    &r);
+		EXPECT(&r, 403);
+		resp_free(&r);
 		http_bearer("GET", "/api/settings", wtok, NULL, &r);
 		EXPECT(&r, 403);
 		resp_free(&r);
@@ -3946,7 +3955,7 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("10.0.0.1", jstr(&r, "data.best.gateway"));
 	ATF_CHECK_STREQ("em0", jstr(&r, "data.best.interface"));
 	resp_free(&r);
-	ATF_CHECK(system("grep -q '^-Q 0 route-get 10.77.5.5 1$' helper.log")
+	ATF_CHECK(system("grep -q '^--scope-helper 0 route-get 10.77.5.5 1$' helper.log")
 	    == 0);
 	snprintf(path, sizeof(path), "%.*s/net/lookup?to=10.0.0.1;id",
 	    (int)(strlen(base) - strlen("/services")), base);
@@ -3979,7 +3988,7 @@ ATF_TC_BODY(services, tc)
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	ATF_CHECK(system("grep -q '^-Q 4 route-get 192.0.2.9 0$' helper.log")
+	ATF_CHECK(system("grep -q '^--scope-helper 4 route-get 192.0.2.9 0$' helper.log")
 	    == 0);
 	snprintf(path, sizeof(path), "%.*s/net/interfaces?jail=a;b",
 	    (int)(strlen(base) - strlen("/services")), base);

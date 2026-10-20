@@ -47,6 +47,9 @@ nas_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		snprintf(nas.error, sizeof(nas.error), "%s", jstr(o, "error") !=
 		    NULL ? jstr(o, "error") : err != NULL ? err :
 		    "the host did not answer");
+		/* Nothing, kept: asked again by Try again, not every draw. */
+		if (nas.o == NULL)
+			nas.o = ucl_object_typed_new(UCL_OBJECT);
 		render();
 		return;
 	}
@@ -379,7 +382,8 @@ view_naspage(struct html *h)
 	if (nas.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, nas.error);
-		h_raw(h, "</div>");
+		h_raw(h, " <button class=\"ghost small\" data-act=\"nas-retry\">"
+		    "Try again</button></div>");
 	}
 	if (nas.o == NULL) {
 		if (!nas.loading)
@@ -475,17 +479,20 @@ naspage_form(const char *form, const ucl_object_t *f)
 			return (true);
 		}
 		/* Its portal group and auth group, then the target. */
+		/* Its portal group and auth group, named after it (two
+		 * targets on one address would else name one group twice),
+		 * then the target. */
 		if (asprintf(&text, "%s%s%sportal-group pg-%s {\n\tdiscovery-auth-"
 		    "group no-authentication\n\tlisten %s\n}\n\n%sauth-group "
 		    "ag-%s {\n%s%s%s%s%s}\n\ntarget %s {\n\tauth-group ag-%s\n"
 		    "\tportal-group pg-%s\n\tlun 0 {\n\t\tpath %s\n\t}\n}\n",
 		    conf != NULL ? conf : "", conf != NULL && conf[0] != '\0' &&
 		    conf[strlen(conf) - 1] != '\n' ? "\n" : "", conf != NULL &&
-		    conf[0] != '\0' ? "\n" : "", jstr(f, "listen"), jstr(f,
+		    conf[0] != '\0' ? "\n" : "", jstr(f, "iqn"), jstr(f,
 		    "listen"), "", jstr(f, "iqn"), chap ? "\tchap " : "\tauth-type "
 		    "none", chap ? user : "", chap ? " \"" : "", chap ? jstr(f,
 		    "secret") : "", chap ? "\"\n" : "\n", jstr(f, "iqn"), jstr(f,
-		    "iqn"), jstr(f, "listen"), jstr(f, "path")) == -1)
+		    "iqn"), jstr(f, "iqn"), jstr(f, "path")) == -1)
 			abort();
 		nas_job("iscsi", "conf", NULL, 0, text, "iscsi conf");
 		free(text);
@@ -519,6 +526,8 @@ naspage_action(const char *act, const char *arg, const char *value)
 		if (nas.o != NULL)
 			ucl_object_unref(nas.o);
 		nas.o = NULL;
+		nas.error[0] = '\0';
+		nas.target = false;
 		nas_load();
 		render();
 		return (true);
@@ -529,20 +538,50 @@ naspage_action(const char *act, const char *arg, const char *value)
 		for (i = 0; i < nitems(tabs); i++)
 			if (strcmp(arg, tabs[i]) == 0)
 				nas.tab = (enum nastab)i;
+	} else if (strcmp(act, "nas-retry") == 0) {
+		if (nas.o != NULL)
+			ucl_object_unref(nas.o);
+		nas.o = NULL;
+		nas_load();
 	} else if (strcmp(act, "nas-target") == 0)
 		nas.target = true;
 	else if (strcmp(act, "nas-cancel") == 0)
 		nas.target = false;
-	else if (strcmp(act, "nas-ctld") == 0 || strcmp(act, "nas-hastd") ==
-	    0) {
+	else if ((strcmp(act, "nas-ctld") == 0 || strcmp(act, "nas-hastd") ==
+	    0) && strcmp(arg, "no") == 0) {
+		/* Stopping drops every session: asked first. */
+		confirm(strcmp(act, "nas-ctld") == 0 ? "Stop the target?" :
+		    "Stop hastd?", strcmp(act, "nas-ctld") == 0 ? "ctld is "
+		    "stopped and disabled: every initiator's session ends, and "
+		    "its LUNs are gone until it is started." : "hastd is stopped "
+		    "and disabled: the resources stop replicating, and the "
+		    "primary's /dev/hast/* go away.", "Stop", true, NULL,
+		    strcmp(act, "nas-ctld") == 0 ? "nas-ctld-yes" : "nas-hastd-yes",
+		    "no", "");
+		return (true);
+	} else if (strcmp(act, "nas-ctld") == 0 || strcmp(act, "nas-hastd") ==
+	    0 || strcmp(act, "nas-ctld-yes") == 0 || strcmp(act,
+	    "nas-hastd-yes") == 0) {
 		if (asprintf(&w[0], "enable=%s", arg) == -1)
 			abort();
 		words[0] = w[0];
-		nas_job(strcmp(act, "nas-ctld") == 0 ? "iscsi" : "hast",
-		    "enable", words, 1, NULL, strcmp(act, "nas-ctld") == 0 ?
+		nas_job(strncmp(act, "nas-ctld", 8) == 0 ? "iscsi" : "hast",
+		    "enable", words, 1, NULL, strncmp(act, "nas-ctld", 8) == 0 ?
 		    "iscsi enable" : "hast enable");
 		free(w[0]);
 	} else if (strcmp(act, "nas-role") == 0) {
+		char	body[300];
+
+		/* A role is the pair's: two primaries split the data. */
+		snprintf(body, sizeof(body), "%s becomes %s on this host. The "
+		    "other host must be the other role: two primaries write "
+		    "apart, and init forgets what was replicated.", arg,
+		    value != NULL ? value : "");
+		confirm("Change the role?", body, "Change", true,
+		    value != NULL && strcmp(value, "secondary") != 0 ? arg :
+		    NULL, "nas-role-yes", arg, value != NULL ? value : "");
+		return (true);
+	} else if (strcmp(act, "nas-role-yes") == 0) {
 		if (asprintf(&w[0], "resource=%s", arg) == -1 || asprintf(&w[1],
 		    "role=%s", value != NULL ? value : "") == -1)
 			abort();
@@ -559,9 +598,15 @@ naspage_action(const char *act, const char *arg, const char *value)
 		    "metadata on its provider: what the provider holds is "
 		    "lost.", arg);
 		confirm("Create the resource?", body, "Create", true, arg,
-		    "nas-create-yes", arg, "");
+		    "nas-create-yes", arg, nas.sid);
 		return (true);
 	} else if (strcmp(act, "nas-create-yes") == 0) {
+		/* On the host it was asked of, not one picked meanwhile. */
+		if (value == NULL || strcmp(value, nas.sid) != 0) {
+			toast(true, "The host changed: ask again");
+			render();
+			return (true);
+		}
 		if (asprintf(&w[0], "resource=%s", arg) == -1)
 			abort();
 		words[0] = w[0];

@@ -74,12 +74,18 @@ put_file(struct work *w, const char *path, const char *text, mode_t mode,
 
 	tmp = wfmt(w, "%s.arcana-new", path);
 	len = strlen(text);
-	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode)) ==
-	    -1 || write(fd, text, len) != (ssize_t)len || fsync(fd) != 0 ||
-	    close(fd) != 0 || rename(tmp, path) != 0) {
+	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC |
+	    O_NOFOLLOW, mode)) == -1 || fchmod(fd, mode) != 0 || write(fd, text,
+	    len) != (ssize_t)len || fsync(fd) != 0) {
 		*errp = wfmt(w, "%s: %s", path, strerror(errno));
 		if (fd != -1)
 			(void)close(fd);
+		(void)unlink(tmp);
+		return (-1);
+	}
+	/* Closed once: a failed close or rename closes no other thread's. */
+	if (close(fd) != 0 || rename(tmp, path) != 0) {
+		*errp = wfmt(w, "%s: %s", path, strerror(errno));
 		(void)unlink(tmp);
 		return (-1);
 	}
@@ -393,8 +399,10 @@ netstore_check(const struct arc_job_spec *sp)
 			    role : create) || (v = word(sp, "resource")) ==
 			    NULL || v[0] == '\0' || strlen(v) > 64 || strspn(v,
 			    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-			    "0123456789_-.") != strlen(v))
-				return ("a hast resource is named: resource=");
+			    "0123456789_-.") != strlen(v) || v[0] == '-' ||
+			    v[0] == '.' || strcmp(v, "all") == 0)
+				return ("a hast resource is named: resource= "
+				    "(one, not all)");
 			if (strcmp(sp->verb, "role") == 0 && ((v = word(sp,
 			    "role")) == NULL || (strcmp(v, "init") != 0 &&
 			    strcmp(v, "primary") != 0 && strcmp(v,
@@ -446,9 +454,10 @@ service_onoff(struct work *w, const char *name, bool on, const char **errp)
 	return (0);
 }
 
-/* Told to read its configuration again, where it runs. */
-static void
-service_reload(struct work *w, const char *name)
+/* Told to read its configuration again, where it runs; -1 and why
+ * when it refuses (the file is written: what it said is the error). */
+static int
+service_reload(struct work *w, const char *name, const char **errp)
 {
 	struct arc_service_action_rsp	 r;
 	bool				 enabled, running;
@@ -456,9 +465,15 @@ service_reload(struct work *w, const char *name)
 	enabled = running = false;
 	service_state(w, name, &enabled, &running);
 	if (!running)
-		return;
+		return (0);
 	memset(&r, 0, sizeof(r));
-	(void)do_service_action(w, name, ARC_SERVICE_ACTION_RELOAD, &r);
+	if (do_service_action(w, name, ARC_SERVICE_ACTION_RELOAD, &r) != 0 ||
+	    !r.ok) {
+		*errp = wfmt(w, "written, but %s did not take it: %s", name,
+		    r.error != NULL ? r.error : "reload failed");
+		return (-1);
+	}
+	return (0);
 }
 
 static int
@@ -483,12 +498,50 @@ nfs_server(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	pnfs = word(sp, "pnfs");
 	mirror = word(sp, "mirror");
 	if (threads != NULL || pnfs != NULL || mirror != NULL) {
-		flags = wfmt(w, "-u -t -n %s%s%s%s%s", threads != NULL ? threads :
-		    "4", pnfs != NULL && pnfs[0] != '\0' ? " -p " : "", pnfs !=
-		    NULL && pnfs[0] != '\0' ? pnfs : "", mirror != NULL &&
-		    mirror[0] != '\0' && pnfs != NULL && pnfs[0] != '\0' ?
-		    " -m " : "", mirror != NULL && mirror[0] != '\0' && pnfs !=
-		    NULL && pnfs[0] != '\0' ? mirror : "");
+		/* The flags as they are, -n, -p and -m replaced by what is
+		 * given, the others kept. */
+		const char	*was = rc_get(w, "nfs_server_flags"), *has_p;
+		char		*copy, *it, *tok, out[1024];
+		size_t		 off;
+
+		copy = wstrdup(w, was != NULL ? was : "-u -t -n 4");
+		out[0] = '\0';
+		off = 0;
+		has_p = pnfs;
+		for (it = copy; (tok = strsep(&it, " \t")) != NULL;) {
+			if (tok[0] == '\0')
+				continue;
+			if ((strcmp(tok, "-n") == 0 && threads != NULL) ||
+			    (strcmp(tok, "-p") == 0 && pnfs != NULL) ||
+			    (strcmp(tok, "-m") == 0 && (mirror != NULL || (pnfs !=
+			    NULL && pnfs[0] == '\0')))) {
+				(void)strsep(&it, " \t");
+				continue;
+			}
+			if (strcmp(tok, "-p") == 0 && has_p == NULL)
+				has_p = "kept";
+			off += (size_t)snprintf(out + off, sizeof(out) - off,
+			    "%s%s", off > 0 ? " " : "", tok);
+		}
+		if (threads != NULL)
+			off += (size_t)snprintf(out + off, sizeof(out) - off,
+			    " -n %s", threads);
+		if (pnfs != NULL && pnfs[0] != '\0')
+			off += (size_t)snprintf(out + off, sizeof(out) - off,
+			    " -p %s", pnfs);
+		if (mirror != NULL && mirror[0] != '\0') {
+			if (has_p == NULL || has_p[0] == '\0') {
+				*errp = "mirror needs pNFS's data servers (pnfs=)";
+				return (-1);
+			}
+			off += (size_t)snprintf(out + off, sizeof(out) - off,
+			    " -m %s", mirror);
+		}
+		if (off >= sizeof(out)) {
+			*errp = "nfsd's flags are too long";
+			return (-1);
+		}
+		flags = out;
 		if (rc_set(w, "nfs_server_flags", "=", flags, errp) != 0)
 			return (-1);
 	}
@@ -537,16 +590,14 @@ do_netstore_job(struct work *w, const struct arc_job_spec *sp,
 			    0)
 				return (-1);
 			/* mountd reads exports(5) again on SIGHUP. */
-			service_reload(w, "mountd");
-			return (0);
+			return (service_reload(w, "mountd", errp));
 		}
 		return (nfs_server(w, sp, errp));
 	case ARC_JOB_KIND_ISCSI:
 		if (strcmp(sp->verb, "conf") == 0) {
 			if (put_file(w, opts.ctl_conf, sp->text, 0600, errp) != 0)
 				return (-1);
-			service_reload(w, "ctld");
-			return (0);
+			return (service_reload(w, "ctld", errp));
 		}
 		return (service_onoff(w, "ctld", strcmp(word(sp, "enable"),
 		    "yes") == 0, errp));
@@ -555,8 +606,7 @@ do_netstore_job(struct work *w, const struct arc_job_spec *sp,
 			if (put_file(w, opts.hast_conf, sp->text, 0644, errp) !=
 			    0)
 				return (-1);
-			service_reload(w, "hastd");
-			return (0);
+			return (service_reload(w, "hastd", errp));
 		}
 		if (strcmp(sp->verb, "enable") == 0)
 			return (service_onoff(w, "hastd", strcmp(word(sp,

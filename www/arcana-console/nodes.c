@@ -1512,8 +1512,10 @@ cluster_save(const char *name, const void *body, size_t len, bool gone)
 	 * defaults each node makes alike, in memory; the next change
 	 * writes them.
 	 */
+	/* Not started: nothing would be written, which must not pass for
+	 * written. */
 	if (!cl.started)
-		return (0);
+		return (-1);
 	deadline = now_ms() + CL_WAIT_MS;
 	err[0] = '\0';
 	pthread_mutex_lock(&cl.mu);

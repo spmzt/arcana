@@ -260,28 +260,13 @@ icap_start(struct work *w, const struct instance *in, const char *conf,
     const char **errp)
 {
 	struct execres	 res;
-	char		*argv[7], *text, *p, *q;
+	char		*argv[7], *text;
 	const char	*from[] = { "@ICAPPID@", "@ICAPCMD@" }, *to[2];
-	size_t		 i, n, len;
 	int		 k;
 
 	to[0] = icap_path(w, in->name, "pid");
 	to[1] = icap_path(w, in->name, "ctl");
-	len = strlen(conf) + 4 * MAXPATHLEN + 1;
-	text = wcalloc(w, 1, len);
-	for (p = (char *)(uintptr_t)conf, q = text; *p != '\0';) {
-		for (i = 0; i < 2; i++) {
-			n = strlen(from[i]);
-			if (strncmp(p, from[i], n) == 0) {
-				q = stpcpy(q, to[i]);
-				p += n;
-				break;
-			}
-		}
-		if (i == 2)
-			*q++ = *p++;
-	}
-	*q = '\0';
+	text = (char *)(uintptr_t)sdwan_subst(w, conf, from, to, 2);
 	if (sdwan_conf_write(wfmt(w, "sdwan-icap-%s.conf", in->name), text,
 	    errp) != 0)
 		return (-1);
@@ -458,31 +443,13 @@ inst_conf(struct work *w, const char *name, const char *conf)
 	const char	*from[] = { "@PID@", "@CA@", "@SSLDB@", "@CERTGEN@",
 			    "@DENY@" };
 	const char	*to[5];
-	char		*out, *p, *q;
-	size_t		 i, n, len;
 
 	to[0] = inst_path(w, name, "pid");
 	to[1] = inst_path(w, name, "pem");
 	to[2] = inst_path(w, name, "ssl_db");
 	to[3] = certgen_bin(w);
 	to[4] = inst_path(w, name, "deny");
-	len = strlen(conf) + 5 * MAXPATHLEN * 4 + 1;
-	out = wcalloc(w, 1, len);
-	for (p = (char *)(uintptr_t)conf, q = out; *p != '\0';) {
-		for (i = 0; i < 5; i++) {
-			n = strlen(from[i]);
-			if (strncmp(p, from[i], n) == 0 && (size_t)(q - out) +
-			    strlen(to[i]) < len - 1) {
-				q = stpcpy(q, to[i]);
-				p += n;
-				break;
-			}
-		}
-		if (i == 5 && (size_t)(q - out) < len - 1)
-			*q++ = *p++;
-	}
-	*q = '\0';
-	return (out);
+	return ((char *)(uintptr_t)sdwan_subst(w, conf, from, to, 5));
 }
 
 /* An instance started in its table, or told its file again. */

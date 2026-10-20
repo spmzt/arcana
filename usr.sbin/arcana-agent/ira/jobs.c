@@ -360,6 +360,7 @@ spec_copy(struct arc_job_spec *d, const struct arc_job_spec *s)
 	/* Every text the spec can carry: one left pointing into the request
 	 * that brought it is freed memory by the time the job runs. */
 	d->conn = xdup(s->conn);
+	d->pkg_repo = xdup(s->pkg_repo);
 	d->ipsec_mode = xdup(s->ipsec_mode);
 	d->local_ts = xdup(s->local_ts);
 	d->remote_ts = xdup(s->remote_ts);
@@ -430,6 +431,7 @@ job_free(struct qjob *j)
 	free((char *)(uintptr_t)j->spec.allowed_ips);
 	free((char *)(uintptr_t)j->spec.source);
 	free((char *)(uintptr_t)j->spec.conn);
+	free((char *)(uintptr_t)j->spec.pkg_repo);
 	free((char *)(uintptr_t)j->spec.ipsec_mode);
 	free((char *)(uintptr_t)j->spec.local_ts);
 	free((char *)(uintptr_t)j->spec.remote_ts);
@@ -534,7 +536,9 @@ await_confirm(struct qjob *j)
 	    (uintmax_t)j->id, j->title, confirmed ? "confirmed" : rejected ?
 	    "cancelled while unconfirmed: undoing it" :
 	    "not confirmed in time: undoing it");
-	return (confirmed);
+	/* Cancelled, then confirmed before the runner woke: the cancel
+	 * came first, and the client was told "undone". */
+	return (confirmed && !rejected);
 }
 
 /* What undoes an action on a service: the one that reverses it. */
@@ -887,12 +891,18 @@ undo(struct qjob *j)
 		rc = scr.ok ? 0 : -1;
 		e = scr.error;
 		break;
-	default:
+	case ARC_JOB_KIND_ROUTE:
 		rm.metric = sp->has_metric ? sp->metric : 0;
 		rm.weight = sp->has_weight ? sp->weight : 0;
 		rm.source = sp->source;
 		rc = do_route(&j->w, sp->destination, sp->gateway, !sp->remove,
 		    sp->has_fib ? sp->fib : 0, &rm, sp->persist, &e);
+		break;
+	default:
+		/* A kind with no undo is refused as safe at its check: this
+		 * is never reached, and says so rather than doing harm. */
+		rc = -1;
+		e = "this kind of job cannot be undone";
 		break;
 	}
 	if (rc != 0)
@@ -1452,8 +1462,9 @@ jobs_confirm(struct work *w, uint64_t id, const char **errp)
 	TAILQ_FOREACH(j, &jobs, link) {
 		if (j->id != id)
 			continue;
-		if (j->state != ARC_JOB_STATE_UNCONFIRMED) {
-			*errp = "the job is not waiting to be confirmed";
+		if (j->state != ARC_JOB_STATE_UNCONFIRMED || j->rejected) {
+			*errp = j->rejected ? "the job was cancelled: it is being "
+			    "undone" : "the job is not waiting to be confirmed";
 			break;
 		}
 		j->confirmed = true;
