@@ -19,6 +19,8 @@ static struct {
 	struct res	 r;		/* the smtpd read */
 	bool		 conf;		/* the configuration form open */
 	char		 table[16];	/* the table being edited, or "" */
+	bool		 picked;	/* where, chosen by hand: jail */
+	char		 jail[64];	/* "" the host */
 } ml;
 
 /* Read again at the next draw (the Refresh button). */
@@ -29,13 +31,16 @@ mail_refresh(void)
 	res_drop(&ml.r);
 }
 
-/* Where OpenSMTPD is on the host: "" the host itself, a jail's name,
- * or NULL nowhere (the host's then, for the install line). */
+/* Where OpenSMTPD is looked for: the place picked in the tab, else
+ * where the host says the plugin is ("" the host itself, a jail's
+ * name), else the host. */
 static const char *
 ml_where(struct server *s)
 {
 	const char	*at;
 
+	if (ml.picked)
+		return (ml.jail);
 	at = plugin_anywhere(s, "smtpd");
 	return (at != NULL ? at : "");
 }
@@ -46,6 +51,9 @@ ml_load(const char *sid)
 	struct server	*s;
 	char		 url[128], q[64];
 
+	/* Another host: its own choice. */
+	if (strcmp(sid, ml.r.sid) != 0)
+		ml.picked = false;
 	q[0] = '\0';
 	if ((s = cur_server()) != NULL && ml_where(s)[0] != '\0')
 		snprintf(q, sizeof(q), "?jail=%s", ml_where(s));
@@ -344,19 +352,49 @@ view_mail(struct html *h, struct server *s)
 	int			 k;
 	bool			 running;
 
+	/* Where: the host, or any running jail of it, picked here. */
+	h_raw(h, "<div class=\"toolbar\"><label class=\"secpick\">Where "
+	    "<select data-input=\"ml-where\"><option value=\"\"");
+	if (ml_where(s)[0] == '\0')
+		h_raw(h, " selected");
+	h_raw(h, ">the host</option>");
+	it = NULL;
+	while (s->list != NULL && (e = ucl_object_iterate(jget(s->list,
+	    "jails"), &it, true)) != NULL) {
+		if (jstr(e, "name") == NULL || jstr(e, "state") == NULL ||
+		    strcmp(jstr(e, "state"), "running") != 0)
+			continue;
+		h_raw(h, "<option");
+		h_attr(h, "value", jstr(e, "name"));
+		if (strcmp(ml_where(s), jstr(e, "name")) == 0)
+			h_raw(h, " selected");
+		h_raw(h, ">jail ");
+		h_txt(h, jstr(e, "name"));
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select></label><small class=\"help\">OpenSMTPD on the "
+	    "host, or in a jail, with the host's network or its own</small>"
+	    "</div>");
 	if (!res_shown(h, &ml.r, s->id, ml_load, "ml-retry"))
 		return;
 	o = ml.r.o;
 	h_raw(h, "<section class=\"sysview mailview\">");
 	if (!jbool(o, "installed")) {
 		h_raw(h, "<div class=\"notice warn sec-missing\"><span>OpenSMTPD "
-		    "is not installed on this host: a plugin.</span><button "
-		    "class=\"primary small\" data-act=\"sec-install\" data-arg=\""
-		    "opensmtpd\">Install opensmtpd</button></div><div "
-		    "class=\"empty\"><p>No mail server here.</p><p class=\"dim\">"
-		    "FreeBSD comes with sendmail(8) and dma(8) for the host's "
-		    "own mail; OpenSMTPD, a port, serves a domain's.</p></div>"
-		    "</section>");
+		    "is not installed ");
+		if (jstr(o, "jail") != NULL) {
+			h_raw(h, "in jail ");
+			h_txt(h, jstr(o, "jail"));
+			h_raw(h, ": a plugin, the port mail/opensmtpd, installed "
+			    "there with pkg -j.</span></div>");
+		} else
+			h_raw(h, "on this host: a plugin.</span><button "
+			    "class=\"primary small\" data-act=\"sec-install\" "
+			    "data-arg=\"opensmtpd\">Install opensmtpd</button></div>");
+		h_raw(h, "<div class=\"empty\"><p>No mail server here.</p><p "
+		    "class=\"dim\">FreeBSD comes with sendmail(8) and dma(8) for "
+		    "the host's own mail; OpenSMTPD, a port, serves a domain's."
+		    "</p></div></section>");
 		return;
 	}
 	running = jbool(o, "running");
@@ -701,7 +739,16 @@ mail_action(const char *act, const char *arg, const char *value)
 	const char	*w[1];
 	char		 title[96], body[300];
 
-	(void)value;
+	if (strcmp(act, "input:ml-where") == 0) {
+		ml.picked = true;
+		snprintf(ml.jail, sizeof(ml.jail), "%s", value != NULL ? value :
+		    "");
+		ml.conf = false;
+		ml.table[0] = '\0';
+		res_drop(&ml.r);
+		render();
+		return (true);
+	}
 	if (strncmp(act, "ml-", 3) != 0)
 		return (false);
 	if (strcmp(act, "ml-retry") == 0) {
