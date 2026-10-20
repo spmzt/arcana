@@ -501,6 +501,52 @@ cluster_changes(void (*fn)(const char *))
 		fn(names[i]);
 }
 
+/*
+ * A lock as a write of the log: its name with LOCK_PREFIX, its body
+ * the holder and when it runs out; gone when let go.  Every node
+ * applies it to its table, so that a new leader knows the locks the
+ * one before granted, and grants none twice.
+ */
+#define	LOCK_PREFIX	"\001lock\001"
+
+static void
+lock_apply(const char *name, const uint8_t *body, size_t len, bool gone)
+{
+	char		holder[128], *nl;
+	uint64_t	until;
+	int		i, free_i;
+
+	if (gone) {
+		for (i = 0; i < CL_LOCKS; i++)
+			if (strcmp(cl.locks[i].name, name) == 0)
+				cl.locks[i].name[0] = '\0';
+		return;
+	}
+	snprintf(holder, sizeof(holder), "%.*s", (int)(len > sizeof(holder) -
+	    1 ? sizeof(holder) - 1 : len), (const char *)body);
+	if ((nl = strchr(holder, '\n')) == NULL)
+		return;
+	*nl = '\0';
+	until = strtoull(nl + 1, NULL, 10);
+	free_i = -1;
+	for (i = 0; i < CL_LOCKS; i++) {
+		if (strcmp(cl.locks[i].name, name) == 0) {
+			strlcpy(cl.locks[i].holder, holder,
+			    sizeof(cl.locks[i].holder));
+			cl.locks[i].until = until;
+			return;
+		}
+		if (free_i == -1 && (cl.locks[i].name[0] == '\0' ||
+		    cl.locks[i].until <= now_ms()))
+			free_i = i;
+	}
+	if (free_i == -1)
+		return;
+	strlcpy(cl.locks[free_i].name, name, sizeof(cl.locks[free_i].name));
+	strlcpy(cl.locks[free_i].holder, holder, sizeof(cl.locks[free_i].holder));
+	cl.locks[free_i].until = until;
+}
+
 static void
 apply_one(const struct craft_entry *e)
 {
@@ -508,6 +554,11 @@ apply_one(const struct craft_entry *e)
 
 	cl.ring[e->seq % CL_RING].seq = e->seq;
 	cl.ring[e->seq % CL_RING].term = e->term;
+	if (strncmp(e->name, LOCK_PREFIX, strlen(LOCK_PREFIX)) == 0) {
+		lock_apply(e->name + strlen(LOCK_PREFIX), e->body, e->len,
+		    e->gone);
+		return;
+	}
 	if (e->name[0] == '\0' || !doc_name_ok(e->name))
 		return;
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, e->name);
@@ -1277,6 +1328,25 @@ acl_write_doit(cbl_req *req, const struct acl_write_req *rq,
  * The leader's lock name taken by holder for ttl ms, or held already by
  * it: true; the newest committed write into commitp.  With the lock.
  */
+/* The lock written to the log (the lock held, so the others know it,
+ * or let go): the write's place in *seqp, which the holder waits for. */
+static void
+lock_write(const char *name, const char *holder, uint64_t until, bool gone,
+    uint64_t *seqp)
+{
+	char		lname[256 + sizeof(LOCK_PREFIX)], body[160];
+	uint64_t	term, seq;
+
+	snprintf(lname, sizeof(lname), "%s%s", LOCK_PREFIX, name);
+	snprintf(body, sizeof(body), "%s\n%ju", holder, (uintmax_t)until);
+	if (craft_propose(&cl.c, lname, (const uint8_t *)body, strlen(body),
+	    gone, &term, &seq) == 0) {
+		if (seqp != NULL)
+			*seqp = seq;
+		pump(-1, NULL, NULL);
+	}
+}
+
 static bool
 lock_try(const char *name, const char *holder, uint64_t ttl,
     uint64_t *commitp, const char **why)
@@ -1295,12 +1365,6 @@ lock_try(const char *name, const char *holder, uint64_t ttl,
 		*why = "the leader has not heard from a majority";
 		return (false);
 	}
-	/* The locks the leader before held are known to it alone: none
-	 * is granted until every one of those has run out. */
-	if (cl.c.now_ms - cl.c.led_at < CL_LOCK_TTL_MS) {
-		*why = "a new leader: the locks of the one before run out first";
-		return (false);
-	}
 	now = now_ms();
 	*commitp = cl.c.commit;
 	free_i = -1;
@@ -1316,6 +1380,7 @@ lock_try(const char *name, const char *holder, uint64_t ttl,
 				return (false);
 			}
 			cl.locks[i].until = now + ttl;
+			lock_write(name, holder, now + ttl, false, commitp);
 			return (true);
 		}
 	}
@@ -1327,6 +1392,7 @@ lock_try(const char *name, const char *holder, uint64_t ttl,
 	strlcpy(cl.locks[free_i].holder, holder,
 	    sizeof(cl.locks[free_i].holder));
 	cl.locks[free_i].until = now + ttl;
+	lock_write(name, holder, now + ttl, false, commitp);
 	return (true);
 }
 
@@ -1337,8 +1403,11 @@ lock_drop(const char *name, const char *holder)
 
 	for (i = 0; i < CL_LOCKS; i++)
 		if (strcmp(cl.locks[i].name, name) == 0 &&
-		    strcmp(cl.locks[i].holder, holder) == 0)
+		    strcmp(cl.locks[i].holder, holder) == 0) {
 			cl.locks[i].name[0] = '\0';
+			if (cl.c.role == CRAFT_LEADER)
+				lock_write(name, holder, 0, true, NULL);
+		}
 }
 
 int

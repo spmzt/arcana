@@ -3538,6 +3538,22 @@ EOS
 	atf_check -s exit:0 kill -0 "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
 	atf_check -s exit:1 -e match:'stopped is true or false' -o ignore \
 	    "$JGC" -c "$SOCK" sdwan ids "$(echo "$rs4" | sed 's/"name":"sw1",/"name":"sw1","stopped":1,/')"
+	# Rendered here from its settings (the console's way): SD-WAN's
+	# shape, and the Security section's, each checked and started.
+	atf_check -o match:'suricata sw1 on 1 interface, detects: started' \
+	    "$JGC" -t -c "$SOCK" sdwan ids '{"instances":[{"name":"sw1","host":"edge-a","interfaces":["lo0"],"spec":{"flavor":"sdwan","service":"acme","home":["10.1.0.0/24"],"interfaces":["lo0"],"ruleset":false,"oneside":true},"rules":"alert tcp any any -> any 23 (sid:1000001;)\n"}]}'
+	atf_check -o match:'^# Written by arcana-agent for the Arcana console: SD-WAN service acme at edge-a\.$' \
+	    -o match:'^    HOME_NET: "\[10.1.0.0/24\]"$' -o match:'^  - interface: lo0$' \
+	    -o match:'^  async-oneside: true$' -o not-match:'@RULESET@' cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+	atf_check -s exit:1 -e match:'sw1: home .*: nonsense is not one' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"instances":[{"name":"sw1","interfaces":["lo0"],"spec":{"flavor":"sdwan","home":["nonsense"],"interfaces":["lo0"]},"rules":"x"}]}'
+	atf_check -o match:'suricata sec-x on 1 interface, detects: started' "$JGC" -t -c "$SOCK" sdwan ids \
+	    '{"group":"security","instances":[{"name":"sec-x","host":"edge-a","interfaces":["lo0"],"spec":{"interfaces":["lo0"],"home":["any"],"preset":"small","eve":["http"],"reassembly_depth":"1mb","yaml":"# mine\n"},"rules":"alert tcp any any -> any 23 (sid:1000001;)\n"}]}'
+	atf_check -o match:'^    HOME_NET: "any"$' -o match:'^runmode: autofp$' -o match:'^    depth: 1mb$' \
+	    -o match:'^        - http$' -o match:'^# mine$' -o match:'^unix-command:$' cat "$(dirname "$f")/sdwan-ids-sec-x.yaml"
+	atf_check -s exit:1 -e match:'sec-x: its own YAML may not set plugins' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"group":"security","instances":[{"name":"sec-x","interfaces":["lo0"],"spec":{"interfaces":["lo0"],"yaml":"plugins:\n  - /tmp/x.so\n"},"rules":"x"}]}'
+	atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids '{"group":"security","instances":[]}'
 	# Many placeholders: the configuration comes out whole, as long as
 	# it is (the buffer was once a fixed size, and the loop hung).
 	many=$(printf '%s' "$rs4" | sed "s|rule-files:|$(printf '# @PID@%.0s' $(seq 1 400))\\\\nrule-files:|")

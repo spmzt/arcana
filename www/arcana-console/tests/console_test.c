@@ -6994,12 +6994,14 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "recv ") != NULL && strstr(r.body, " not dst-ip me\",") != NULL &&
 	    strstr(r.body, "\"10 setfib 1 ip4 from any to 10.1.0.0/24 in "
 	    "diverted-loopback not dst-ip me\"") != NULL && strstr(r.body,
-	    "async-oneside: true\\n  drop-invalid: no") != NULL, "%s", r.body);
+	    "\"oneside\":true") != NULL, "%s", r.body);
+	/* The instance's settings, which the agent renders into Suricata's
+	 * YAML: the UNIs' prefixes its home, the ruleset, one side. */
 	ATF_CHECK_MSG(strstr(r.body, "{\"kind\":\"sdwan-ids\",\"instances\":[{"
-	    "\"name\":\"sw1\",\"interfaces\":[\"") != NULL && strstr(r.body,
-	    "default-log-dir: @LOGDIR@") != NULL && strstr(r.body,
-	    "HOME_NET: \\\"[10.1.0.0/24") != NULL && strstr(r.body,
-	    "  - @RULES@\\n  - @RULESET@\\n") != NULL &&
+	    "\"name\":\"sw1\",\"host\":\"") != NULL && strstr(r.body,
+	    "\"spec\":{\"flavor\":\"sdwan\",\"service\":\"acme\",\"home\":"
+	    "[\"10.1.0.0/24\"") != NULL && strstr(r.body,
+	    "\"ruleset\":true,\"oneside\":true}") != NULL &&
 	    strstr(r.body, "\"rules\":\"alert http any any -> $HOME_NET any "
 	    "(msg:\\\"x\\\"; sid:1000001; rev:1;)\\n\"") != NULL && strstr(
 	    r.body, "\"plugin\":\"suricata\",\"package\":\"suricata\"") != NULL,
@@ -7401,13 +7403,15 @@ ATF_TC_BODY(sdwan_apply, tc)
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\",\"10.0.0.0/8\"],"
 	    "\"rules\":\"alert tcp any any -> any 23 (sid:1000009;)\"}]}", &r);
-	EXPECT(&r, 400);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
 	ATF_CHECK_MSG(strstr(r.body, "any stands alone") != NULL, "%s", r.body);
 	resp_free(&r);
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"nonsense\"],"
 	    "\"rules\":\"alert tcp any any -> any 23 (sid:1000009;)\"}]}", &r);
-	EXPECT(&r, 400);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
 	ATF_CHECK_MSG(strstr(r.body, "nonsense is not one") != NULL && strstr(
 	    r.body, "or any") != NULL, "%s", r.body);
 	resp_free(&r);
@@ -7445,7 +7449,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
 	    "\"runmode\":\"fast\",\"rules\":\"alert tcp any any -> any 23 "
 	    "(sid:1000009;)\"}]}", &r);
-	EXPECT(&r, 400);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
 	ATF_CHECK_MSG(strstr(r.body, "runmode is autofp, workers or single") !=
 	    NULL, "%s", r.body);
 	resp_free(&r);
@@ -7453,7 +7458,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
 	    "\"flow_memcap\":\"lots\",\"rules\":\"alert tcp any any -> any "
 	    "23 (sid:1000009;)\"}]}", &r);
-	EXPECT(&r, 400);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
 	resp_free(&r);
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
@@ -7490,7 +7496,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"pairs\":[\"em0:em1\"],"
 	    "\"rules\":\"alert tcp any any -> any 23 (sid:1000009;)\"}]}", &r);
-	EXPECT(&r, 400);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
 	ATF_CHECK_MSG(strstr(r.body, "pairs of interfaces are netmap's") !=
 	    NULL, "%s", r.body);
 	resp_free(&r);
@@ -7498,7 +7505,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"sec-lan\",\"capture\":\"netmap\",\"divert\":8600,"
 	    "\"pairs\":[\"em0:em1\"],\"rules\":\"alert tcp any any -> any "
 	    "23 (sid:1000009;)\"}]}", &r);
-	EXPECT(&r, 400);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
 	ATF_CHECK_MSG(strstr(r.body, "not both") != NULL, "%s", r.body);
 	resp_free(&r);
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
@@ -7530,7 +7538,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"home\":[\"any\"],"
 	    "\"lua_outputs\":[\"nosuch.lua\"],\"rules\":\"alert tcp any any "
 	    "-> any 23 (sid:1000009;)\"}]}", &r);
-	EXPECT(&r, 400);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
 	ATF_CHECK_MSG(strstr(r.body, "a Lua output is one of its scripts") !=
 	    NULL, "%s", r.body);
 	resp_free(&r);
@@ -7558,7 +7567,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
 	    "\"sec-lan\",\"interfaces\":[\"lo0\"],\"plugins\":[\"/tmp/x.so\"],"
 	    "\"rules\":\"alert tcp any any -> any 23 (sid:1000009;)\"}]}", &r);
-	EXPECT(&r, 400);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
 	ATF_CHECK_MSG(strstr(r.body, "a .so under /usr/local/lib") != NULL,
 	    "%s", r.body);
 	resp_free(&r);
@@ -7569,8 +7579,9 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "(sid:1000009;)\"}]}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	ATF_CHECK(system("grep -q '\"name\":\"sec-lan\",\"interfaces\":"
-	    "\\[\"lo0\"\\],\"stopped\":true' security-ids.json") == 0);
+	ATF_CHECK(system("grep -q '\"name\":\"sec-lan\",\"host\":\"a\","
+	    "\"interfaces\":\\[\"lo0\"\\],\"stopped\":true' security-ids.json")
+	    == 0);
 	/* A job's words, its args, carried to the host for ClamAV and
 	 * Suricata alike. */
 	snprintf(t2, sizeof(t2), "/api/servers/%s/jobs", sa);
