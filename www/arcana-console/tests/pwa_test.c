@@ -15,6 +15,7 @@
  */
 
 #include <sys/param.h>
+#include <sys/mount.h>
 #include <sys/socket.h>
 
 #include <netinet/in.h>
@@ -6718,15 +6719,33 @@ part_netstore(void)
 	wait_js("document.querySelector('form[data-form=nas-exports]') && "
 	    "document.querySelector('.naspage').textContent.includes('Exports "
 	    "list on localhost')", 20);
-	run("const f = document.querySelector('form[data-form=nas-exports]'); "
-	    "f.text.value = 'V4: /export -sec=sys\\n/export -network "
-	    "10.0.0.0/24\\n'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	click_when("button[data-act=queue-run]", 5);
-	for (i = 0; i < 300 && system("grep -q '^V4: /export -sec=sys$' "
-	    "exports") != 0; i++)
-		usleep(100000);
-	ATF_CHECK_MSG(i < 300, "the exports are not written");
+	/* NFSv4's root is a directory on ZFS: this directory, when it is
+	 * (the agent checks with statfs); elsewhere the job is refused. */
+	{
+		struct statfs	 sf;
+		char		 js[600], here[MAXPATHLEN];
+		bool		 zfs;
+
+		ATF_REQUIRE(getcwd(here, sizeof(here)) != NULL);
+		zfs = statfs(".", &sf) == 0 && strcmp(sf.f_fstypename, "zfs") ==
+		    0;
+		snprintf(js, sizeof(js), "const f = document.querySelector("
+		    "'form[data-form=nas-exports]'); f.text.value = 'V4: %s "
+		    "-sec=sys\\n/export -network 10.0.0.0/24\\n'; "
+		    "f.requestSubmit();", here);
+		run(js);
+		wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+		click_when("button[data-act=queue-run]", 5);
+		if (zfs) {
+			snprintf(js, sizeof(js), "grep -q '^V4: %s -sec=sys$' exports",
+			    here);
+			for (i = 0; i < 300 && system(js) != 0; i++)
+				usleep(100000);
+			ATF_CHECK_MSG(i < 300, "the exports are not written");
+		} else
+			wait_js("document.body.textContent.includes('is not on "
+			    "ZFS')", 30);
+	}
 	dock_closed();
 	shot("9y-storage-nfs");
 	/* iSCSI: a target by its form, into ctl.conf, root's alone. */
