@@ -755,6 +755,7 @@ storage_fullness(void)
 		storage_over[i].seen = false;
 	if (limit != 0) {
 		work_init(&w);
+		w.nice = true;
 		argv[0] = (char *)(uintptr_t)opts.zpool_bin;
 		argv[1] = (char *)(uintptr_t)"list";
 		argv[2] = (char *)(uintptr_t)"-Hp";

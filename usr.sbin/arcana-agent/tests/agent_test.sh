@@ -3585,6 +3585,10 @@ EOS
 	cat > tools/smtpctl <<EOS
 #!/bin/sh
 echo "smtpctl \$*" >> $(pwd)/smtpctl.log
+# The nice value a read's program gets, a job's not: set by the agent
+# just after the spawn, so a moment is given.
+sleep 0.2
+echo "nice \$(ps -o nice= -p \$\$ | tr -d ' ') \$*" >> $(pwd)/nice.log
 case "\$*" in
 "show status") printf 'MDA running\\nMTA paused\\nSMTP running\\n' ;;
 "show stats") printf 'control.session=1\\nscheduler.delivery.ok=2\\nscheduler.delivery.permfail=4\\nuptime=44\\nuptime.human=44s\\n' ;;
@@ -3683,6 +3687,8 @@ EOF
 	atf_check -o match:'done +smtpd remove all' "$JGC" -c "$SOCK" smtpd remove all
 	atf_check -o match:'^smtpctl pause mta$' -o match:'^smtpctl resume mta$' -o match:'^smtpctl schedule 6022923fc9341b9d$' \
 	    -o match:'^smtpctl remove all$' cat smtpctl.log
+	# A read's programs at nice 10, a job's at the agent's own.
+	atf_check -o match:'^nice 10 show status$' -o match:'^nice 0 pause mta$' cat nice.log
 	atf_check -s exit:1 -e match:'mta, mda or smtp' -o ignore "$JGC" -c "$SOCK" smtpd pause all
 	atf_check -s exit:1 -e match:"envelope's or a message's id" -o ignore "$JGC" -c "$SOCK" smtpd remove '../x'
 	# The form again while it runs: smtpd started again.

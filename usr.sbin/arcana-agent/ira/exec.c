@@ -10,6 +10,7 @@
  */
 
 #include <sys/param.h>
+#include <sys/resource.h>
 #include <sys/sysctl.h>
 #include <sys/user.h>
 #include <sys/wait.h>
@@ -211,6 +212,8 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	posix_spawnattr_setflags(&sa, POSIX_SPAWN_SETSIGMASK |
 	    POSIX_SPAWN_SETSIGDEF);
 	rc = posix_spawn(&pid, argv[0], &fa, &sa, argv, env);
+	if (rc == 0 && w->nice)
+		(void)setpriority(PRIO_PROCESS, pid, READ_NICE);
 	posix_spawnattr_destroy(&sa);
 	posix_spawn_file_actions_destroy(&fa);
 	close(op[1]);
@@ -372,6 +375,8 @@ run_exec_lines(struct work *w, char *const argv[],
 	posix_spawnattr_setflags(&sa, POSIX_SPAWN_SETSIGMASK |
 	    POSIX_SPAWN_SETSIGDEF);
 	rc = posix_spawn(&pid, argv[0], &fa, &sa, argv, env);
+	if (rc == 0 && w->nice)
+		(void)setpriority(PRIO_PROCESS, pid, READ_NICE);
 	posix_spawnattr_destroy(&sa);
 	posix_spawn_file_actions_destroy(&fa);
 	close(op[1]);

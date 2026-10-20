@@ -216,6 +216,7 @@ reset_log(uint32_t rule)
 	last_rule = rule;
 	last_t = now;
 	work_init(&w);
+	w.nice = true;
 	snprintf(num, sizeof(num), "%u", rule);
 	argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
 	argv[1] = (char *)(uintptr_t)"-q";

@@ -20,7 +20,10 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.164.0"
+#define	ARCANA_AGENT_VERSION	"0.165.0"
+
+/* The nice(1) value of a program a read runs. */
+#define	READ_NICE		10
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -200,6 +203,12 @@ struct work {
 	const char	*jail;
 	int		 jid;
 	const char	*jroot;
+	/*
+	 * A read's: the programs it runs are given READ_NICE, so that
+	 * what the console asks for, often, does not crowd the host's
+	 * own work or a job's.
+	 */
+	bool		 nice;
 	/*
 	 * A job's trace is read by other threads while the job runs: the
 	 * step functions change it under this lock, and trace_copy() of

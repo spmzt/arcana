@@ -394,6 +394,32 @@ worker(void *arg)
 	work_init(&w);
 	trace_tell(&w, j->req);
 	restart = console = false;
+	/* A read's programs run at READ_NICE; what changes the host at
+	 * its own priority, as jobs do. */
+	switch (j->cmd) {
+	case ARC_CMD_ACTION:
+	case ARC_CMD_PKG_UPGRADE:
+	case ARC_CMD_NOTIFY:
+	case ARC_CMD_CONFIG_APPLY:
+	case ARC_CMD_TRANSPORT:
+	case ARC_CMD_SYSCTL:
+	case ARC_CMD_ZFS_KEY:
+	case ARC_CMD_TLS:
+	case ARC_CMD_SDWAN_PROBES:
+	case ARC_CMD_SDWAN_RULES:
+	case ARC_CMD_SDWAN_STEER:
+	case ARC_CMD_SDWAN_IDS:
+	case ARC_CMD_SERVICE_ACTION:
+	case ARC_CMD_CONSOLE_UPDATE:
+	case ARC_CMD_AGENT_BUILD:
+	case ARC_CMD_AGENT_UPDATE:
+	case ARC_CMD_BIRD_CONFIG:
+	case ARC_CMD_SERVICE_CONFIG:
+		break;
+	default:
+		w.nice = true;
+		break;
+	}
 	switch (j->cmd) {
 	case ARC_CMD_LIST:
 		what = j->config_only ? "list (configuration only)" : "list";
