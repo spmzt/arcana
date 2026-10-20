@@ -555,6 +555,19 @@ ts_run(struct kore_task *task)
 			finding(findings, "info", &t->p[i], "Not "
 			    "asked: %s", t->p[i].error);
 			t->p[i].survey = ucl_object_typed_new(UCL_OBJECT);
+		} else {
+			/* What it has of the ends: the panel says so of
+			 * every place asked, on the path or not. */
+			put(o, "src_local", ucl_object_frombool(flag(
+			    t->p[i].survey, "src.local")));
+			put(o, "dst_local", ucl_object_frombool(flag(
+			    t->p[i].survey, "dst.local")));
+			if (str(t->p[i].survey, "src.connected") != NULL)
+				put_s(o, "src_connected", str(t->p[i].survey,
+				    "src.connected"));
+			if (str(t->p[i].survey, "dst.connected") != NULL)
+				put_s(o, "dst_connected", str(t->p[i].survey,
+				    "dst.connected"));
 		}
 		ucl_array_append(places, o);
 	}

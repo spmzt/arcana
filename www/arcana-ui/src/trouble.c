@@ -518,6 +518,53 @@ result(struct html *h)
 		h_raw(h, "</li>");
 	}
 	h_raw(h, "</ul>");
+	/* Every place asked, on the path or not: what it has of the ends,
+	 * so that a place ticked and not passed is accounted for. */
+	if (ucl_array_size(jget(r, "places")) > 0) {
+		const ucl_object_t	*p, *hop;
+		ucl_object_iter_t	 pit, hit;
+		bool			 there, back;
+
+		h_raw(h, "<h4 class=\"family\">The places asked</h4><ul class=\""
+		    "chips tsplaces-asked\">");
+		pit = NULL;
+		while ((p = ucl_object_iterate(jget(r, "places"), &pit, true)) !=
+		    NULL) {
+			there = back = false;
+			hit = NULL;
+			while ((hop = ucl_object_iterate(jget(r, "hops"), &hit,
+			    true)) != NULL)
+				if (jstr(hop, "place") != NULL && jstr(p, "place") !=
+				    NULL && strcmp(jstr(hop, "place"), jstr(p,
+				    "place")) == 0)
+					there = true;
+			hit = NULL;
+			while ((hop = ucl_object_iterate(jget(r, "return"), &hit,
+			    true)) != NULL)
+				if (jstr(hop, "place") != NULL && jstr(p, "place") !=
+				    NULL && strcmp(jstr(hop, "place"), jstr(p,
+				    "place")) == 0)
+					back = true;
+			h_fmt(h, "<li class=\"chip %s\"><b>", jstr(p, "error") !=
+			    NULL ? "bad" : there || back ? "good" : "");
+			h_txt(h, jstr(p, "place") != NULL ? jstr(p, "place") : "?");
+			h_raw(h, "</b> ");
+			if (jstr(p, "error") != NULL)
+				h_txt(h, jstr(p, "error"));
+			else
+				h_txt(h, there && back ? "on the way there and back" :
+				    there ? "on the way there" : back ? "on the way "
+				    "back" : jbool(p, "src_local") ? "has the source, "
+				    "not on the path" : jbool(p, "dst_local") ? "has "
+				    "the destination, not on the path" : jstr(p,
+				    "src_connected") != NULL || jstr(p, "dst_connected")
+				    != NULL ? "on an end's network, not on the path" :
+				    "asked, not on the path: neither end is its, "
+				    "nor a route through it");
+			h_raw(h, "</li>");
+		}
+		h_raw(h, "</ul>");
+	}
 	path_graph(h, r);
 	way(h, "The way there", jget(r, "hops"), jget(r, "end"), false);
 	if (jget(r, "return") != NULL)
