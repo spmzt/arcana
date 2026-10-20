@@ -328,9 +328,115 @@ table_form(struct html *h, const ucl_object_t *o, const char *name)
 	    "line (the smart host's sign-in is the relay label); kept on the "
 	    "host, root's alone, never shown again." : "Written whole, as "
 	    "smtpd.conf's table reads it; smtpd reads it again at once.");
-	h_raw(h, "</small><div class=\"toolbar\"><button class=\"primary\">"
-	    "Write</button><button type=\"button\" class=\"ghost\" "
-	    "data-act=\"ml-table-close\">Close</button></div></form>");
+	h_raw(h, "</small><div class=\"toolbar\"><button class=\"danger\">"
+	    "Replace the whole table</button></div></form>");
+}
+
+/*
+ * A table's entries, one a row with Remove; a form that puts entries
+ * in by their key, the others kept; and, folded away, the whole table
+ * written at once.
+ */
+static void
+entries_view(struct html *h, const ucl_object_t *o, const char *name)
+{
+	static const struct tcol cols[] = {
+		{ "Entry", "key", false }, { "What it is", "value", false },
+	};
+	const ucl_object_t	*t, *e, **rows, *r;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*arr, *x;
+	char			*copy, *line, *p, *key;
+	size_t			 n;
+	int			 k;
+	bool			 secret;
+
+	secret = strcmp(name, "credentials") == 0 || strcmp(name, "secrets") ==
+	    0;
+	t = jget(jget(o, "tables"), name);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	if (t != NULL && ucl_object_type(t) == UCL_ARRAY) {
+		it = NULL;
+		while ((e = ucl_object_iterate(t, &it, true)) != NULL) {
+			x = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(x, ucl_object_fromstring(
+			    ucl_object_tostring(e)), "key", 0, false);
+			ucl_object_insert_key(x, ucl_object_fromstring(strcmp(
+			    name, "credentials") == 0 ? "a user; the password "
+			    "hashed on the host, not shown" : "a sign-in; kept on "
+			    "the host, not shown"), "value", 0, false);
+			ucl_array_append(arr, x);
+		}
+	} else if (t != NULL && ucl_object_type(t) == UCL_STRING) {
+		copy = strdup(ucl_object_tostring(t));
+		p = copy;
+		while ((line = strsep(&p, "\n")) != NULL) {
+			line += strspn(line, " \t");
+			if (line[0] == '\0' || line[0] == '#')
+				continue;
+			n = strcspn(line, " \t");
+			key = strndup(line, n > 0 && line[n - 1] == ':' ? n - 1 :
+			    n);
+			x = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(x, ucl_object_fromstring(key), "key",
+			    0, false);
+			ucl_object_insert_key(x, ucl_object_fromstring(line + n +
+			    strspn(line + n, " \t")), "value", 0, false);
+			ucl_array_append(arr, x);
+			free(key);
+		}
+		free(copy);
+	}
+	h_raw(h, "<div class=\"toolbar\"><h4>");
+	h_txt(h, name);
+	h_fmt(h, "</h4><span class=\"grow\"></span><button class=\"ghost "
+	    "small\" data-act=\"ml-table-close\">Close</button></div>");
+	if (ucl_array_size(arr) == 0)
+		h_raw(h, "<p class=\"dim\">No entry yet.</p>");
+	else {
+		h_raw(h, "<table class=\"net mlentries\">");
+		tbl_head(h, "mltable", cols, 2, 1);
+		h_raw(h, "<tbody>");
+		rows = tbl_rows("mltable", arr, cols, 2, "");
+		for (k = 0; (r = rows[k]) != NULL; k++) {
+			h_raw(h, "<tr><td class=\"mono\">");
+			h_txt(h, jstr(r, "key"));
+			h_raw(h, "</td><td class=\"mono dim\">");
+			h_txt(h, jstr(r, "value"));
+			h_raw(h, "</td><td class=\"acts\"><button class=\"ghost "
+			    "small danger\" data-act=\"ml-unentry\"");
+			h_attr(h, "data-arg", name);
+			h_attr(h, "data-value", jstr(r, "key"));
+			h_raw(h, ">Remove</button></td></tr>");
+		}
+		free(rows);
+		h_raw(h, "</tbody></table>");
+	}
+	ucl_object_unref(arr);
+	/* Put in by key: a new one added, one there replaced. */
+	h_raw(h, "<form class=\"stack\" data-form=\"ml-entry\"><input "
+	    "type=\"hidden\" name=\"name\"");
+	h_attr(h, "value", name);
+	h_raw(h, "><label class=\"wide\">Add or change<textarea name=\"text\" "
+	    "rows=\"3\" class=\"mono\" spellcheck=\"false\"");
+	h_attr(h, "placeholder", strcmp(name, "aliases") == 0 ? "postmaster: "
+	    "root" : strcmp(name, "virtuals") == 0 ? "alice@example.org alice" :
+	    strcmp(name, "domains") == 0 ? "example.net" : strcmp(name,
+	    "senders") == 0 ? "alice alice@example.org" : strcmp(name,
+	    "credentials") == 0 ? "alice her-password" : "relay "
+	    "user@example.net:password");
+	h_raw(h, "></textarea><small class=\"help\">A line each, its first "
+	    "word its key: a key there already is replaced (a new password, "
+	    "another address), a new one added, every other entry kept.");
+	if (secret)
+		h_raw(h, " Kept on the host, root's alone; the passwords never "
+		    "come back to the console.");
+	h_raw(h, "</small></label><div class=\"toolbar\"><button class=\""
+	    "primary\">Put in</button></div></form>");
+	h_raw(h, "<details class=\"secform\"><summary>Replace the whole table"
+	    "</summary><p class=\"dim\">What is written here becomes the "
+	    "whole table: an entry not in it is gone.</p>");
+	(void)secret;
 }
 
 void
@@ -537,6 +643,7 @@ view_mail(struct html *h, struct server *s)
 		    "ml-remove\" data-arg=\"all\">Remove all</button></div>",
 		    (long long)jint(o, "queued", 0), jint(o, "queued", 0) == 1 ?
 		    "" : "s");
+		h_raw(h, "<table class=\"net mailq\">");
 		tbl_head(h, "mailq", cols, 7, 1);
 		h_raw(h, "<tbody>");
 		rows = tbl_rows("mailq", jget(o, "queue"), cols, 7, "");
@@ -600,25 +707,14 @@ view_mail(struct html *h, struct server *s)
 		h_fmt(h, "</td><td class=\"acts\"><button class=\"ghost small%s\" "
 		    "data-act=\"ml-table\" data-arg=\"%s\">%s</button></td></tr>",
 		    strcmp(ml.table, tables[i]) == 0 ? " on" : "", tables[i],
-		    t == NULL ? "Write" : "Edit");
+		    strcmp(ml.table, tables[i]) == 0 ? "Open" : t == NULL ?
+		    "Start it" : "Open");
 	}
 	h_raw(h, "</tbody></table>");
 	if (ml.table[0] != '\0') {
-		t = jget(jget(o, "tables"), ml.table);
-		h_raw(h, "<h4>");
-		h_txt(h, ml.table);
-		h_raw(h, "</h4>");
-		if (t != NULL && ucl_object_type(t) == UCL_ARRAY) {
-			h_raw(h, "<p class=\"dim\">Kept on the host: ");
-			it = NULL;
-			k = 0;
-			while ((e = ucl_object_iterate(t, &it, true)) != NULL) {
-				h_raw(h, k++ > 0 ? ", " : "");
-				h_txt(h, ucl_object_tostring(e));
-			}
-			h_raw(h, k == 0 ? "none yet.</p>" : ".</p>");
-		}
+		entries_view(h, o, ml.table);
 		table_form(h, o, ml.table);
+		h_raw(h, "</details>");
 	}
 	h_raw(h, "<details class=\"secform\"><summary>smtpd.conf as written"
 	    "</summary><pre class=\"mono naspre\">");
@@ -733,6 +829,18 @@ mail_form(const char *form, const ucl_object_t *f)
 	char		*copy, *it, *line, *json, *q, title[96];
 	const char	*v, *w[1];
 
+	if (strcmp(form, "ml-entry") == 0) {
+		if ((s = ml_server()) == NULL || jstr(f, "name") == NULL ||
+		    jstr(f, "text") == NULL || jstr(f, "text")[strspn(jstr(f,
+		    "text"), " \t\n")] == '\0')
+			return (true);
+		w[0] = jstr(f, "name");
+		snprintf(title, sizeof(title), "smtpd table %s: entries put in",
+		    w[0]);
+		send(s, job_json("smtpd", "entry", w, 1, jstr(f, "text"),
+		    ml_extra(s)), title);
+		return (true);
+	}
 	if (strcmp(form, "ml-table") == 0) {
 		if ((s = ml_server()) == NULL || jstr(f, "name") == NULL)
 			return (true);
@@ -882,6 +990,29 @@ mail_action(const char *act, const char *arg, const char *value)
 		    "to this host is refused, and what is queued waits until it "
 		    "runs again.", "Stop", true, NULL, "ml-enable-yes", "no",
 		    "");
+		return (true);
+	}
+	if (strcmp(act, "ml-unentry") == 0 && value != NULL) {
+		snprintf(body, sizeof(body), "%s is taken out of the %s table; "
+		    "every other entry is kept.%s", value, arg, strcmp(arg,
+		    "credentials") == 0 ? " The user can no longer sign in." :
+		    strcmp(arg, "domains") == 0 ? " Mail for it is no longer "
+		    "delivered here." : "");
+		confirm("Remove the entry?", body, "Remove", true, NULL,
+		    "ml-unentry-yes", arg, value);
+		return (true);
+	}
+	if (strcmp(act, "ml-unentry-yes") == 0 && value != NULL) {
+		const char	*w2[2];
+
+		if ((s = ml_server()) == NULL)
+			return (true);
+		w2[0] = arg;
+		w2[1] = value;
+		snprintf(title, sizeof(title), "smtpd table %s: %s taken out",
+		    arg, value);
+		send(s, job_json("smtpd", "unentry", w2, 2, NULL, ml_extra(s)),
+		    title);
 		return (true);
 	}
 	if (strcmp(act, "ml-remove") == 0) {

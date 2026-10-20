@@ -3279,6 +3279,39 @@ part_mail(void)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the aliases table is not written");
 	dock_closed();
+	/* One entry at a time: one put in by its key, the other kept; one
+	 * removed, asked first, the other kept. */
+	click_when("button[data-act=ml-table][data-arg=aliases]", 10);
+	wait_js("document.querySelector('form[data-form=ml-entry]') && "
+	    "document.querySelector('button[data-act=ml-unentry][data-value="
+	    "root]')", 20);
+	run("const f = document.querySelector('form[data-form=ml-entry]'); "
+	    "f.text.value = 'postmaster: root\\n'; f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^postmaster: root$' "
+	    "smtpd.d/aliases && grep -q '^root: admin@example.org$' "
+	    "smtpd.d/aliases") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the entry is not put in beside the other");
+	dock_closed();
+	wait_js("document.querySelector('button[data-act=ml-unentry][data-value="
+	    "postmaster]')", 20);
+	run("document.querySelector('form[data-form=ml-entry]').scrollIntoView("
+	    "{block: 'center'})");
+	shot("7q-mail-entries");
+	run("document.querySelector('button[data-act=ml-unentry][data-value="
+	    "root]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "document.querySelector('.modal').textContent.includes('every "
+	    "other entry is kept')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^root:' smtpd.d/aliases") == 0;
+	    i++)
+		usleep(100000);
+	ATF_CHECK(system("! grep -q '^root:' smtpd.d/aliases && grep -q "
+	    "'^postmaster: root$' smtpd.d/aliases") == 0);
+	dock_closed();
 	shot("7q-mail");
 }
 

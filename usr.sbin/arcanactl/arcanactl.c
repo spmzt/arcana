@@ -2592,12 +2592,19 @@ cmd_smtpd(struct arc_client *cl, int argc, char **argv)
 		if (argc != 3)
 			usage();
 		sp.text = slurp(argv[2]);
-	} else if (strcmp(argv[1], "table") == 0) {
+	} else if (strcmp(argv[1], "table") == 0 || strcmp(argv[1], "entry") ==
+	    0) {
 		if (argc != 4)
 			usage();
 		sp.names.v = (const char **)(uintptr_t)&argv[2];
 		sp.names.n = 1;
 		sp.text = slurp(argv[3]);
+	} else if (strcmp(argv[1], "unentry") == 0) {
+		/* A table's name and an entry's key. */
+		if (argc != 4)
+			usage();
+		sp.names.v = (const char **)(uintptr_t)&argv[2];
+		sp.names.n = 2;
 	} else if (strcmp(argv[1], "enable") == 0) {
 		if (argc != 3 || asprintf(&w[0], "enable=%s", argv[2]) == -1)
 			usage();

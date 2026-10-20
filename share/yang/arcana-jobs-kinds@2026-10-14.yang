@@ -1880,6 +1880,8 @@ submodule arcana-jobs-kinds {
             type enumeration {
               enum conf;
               enum table;
+              enum entry;
+              enum unentry;
               enum enable;
               enum pause;
               enum resume;

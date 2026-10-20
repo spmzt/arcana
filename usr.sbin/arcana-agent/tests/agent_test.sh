@@ -3674,6 +3674,21 @@ EOF
 	atf_check -o match:'^-rw-------' ls -l smtpd.d/credentials
 	atf_check -o match:'^encrypt  <hunter2$' -o not-match:'already' cat encrypt.log
 	atf_check -o match:'"credentials":\["alice","bob"\]' -o not-match:'hunter2' -o not-match:'hashOf' "$JGC" -c "$SOCK" smtpd
+	# One entry at a time: a user added, another's password changed,
+	# the rest kept; one taken out; a key not there refused.
+	printf 'carol pw3\nalice newpass\n' > c2.txt
+	atf_check -o match:'done +smtpd entry credentials' -o not-match:'pw3' "$JGC" -t -c "$SOCK" smtpd entry credentials c2.txt
+	atf_check -o inline:'bob\t$6$kept$already\ncarol\t$6$fake$hashOf$1\nalice\t$6$fake$hashOf$1\n' cat smtpd.d/credentials
+	atf_check -o match:'^-rw-------' ls -l smtpd.d/credentials
+	atf_check -o match:'done +smtpd unentry credentials' "$JGC" -c "$SOCK" smtpd unentry credentials bob
+	atf_check -o inline:'carol\t$6$fake$hashOf$1\nalice\t$6$fake$hashOf$1\n' cat smtpd.d/credentials
+	atf_check -s exit:1 -o match:'credentials has no entry nosuch' "$JGC" -c "$SOCK" smtpd unentry credentials nosuch
+	printf 'postmaster: root\n' > a2.txt
+	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd entry aliases a2.txt
+	atf_check -o inline:'root: admin@example.org\npostmaster: root\n' cat smtpd.d/aliases
+	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd unentry aliases root
+	atf_check -o inline:'postmaster: root\n' cat smtpd.d/aliases
+	printf 'root: admin@example.org\n' > smtpd.d/aliases
 	printf 'relay user@example.net:s3cret\n' > secrets.txt
 	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd table secrets secrets.txt
 	atf_check -o match:'^-rw-------' ls -l smtpd.d/secrets

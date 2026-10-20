@@ -456,4 +456,4 @@ kinds:
     title: OpenSMTPD's configuration, tables and queue
     needs: verb
     uses: jail args text
-    values: verb=conf|table|enable|pause|resume|schedule|remove|update
+    values: verb=conf|table|entry|unentry|enable|pause|resume|schedule|remove|update

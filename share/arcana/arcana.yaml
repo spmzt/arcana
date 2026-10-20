@@ -490,7 +490,11 @@ definitions:
           read it again; verb enable, enable=yes or no; verbs pause and
           resume with mta, mda or smtp; schedule and remove with an
           envelope's or message's id or all; update with a table's
-          name: smtpctl's own.  The host's, or with jail a jail's (its
+          name: smtpctl's own; entry, with names a table's name and
+          text lines, puts each line in the table by its key (its
+          first word), replacing the lines of that key and keeping the
+          others; unentry, names a table's name and a key, takes that
+          key's lines out.  The host's, or with jail a jail's (its
           own files and programs, a network of its own or not); never in
           safe mode.
   - name: job-state

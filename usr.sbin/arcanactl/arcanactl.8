@@ -497,6 +497,19 @@ the host by OpenSMTPD's
 the clear one kept nowhere) or secrets (a label, then user:password);
 credentials and secrets are root's alone.
 Where smtpd runs it reads the table again.
+.It Cm smtpd entry Ar name Ar file
+.It Cm smtpd unentry Ar name Ar key
+One entry at a time, the others kept:
+.Cm entry
+puts each line of
+.Ar file
+in the table, replacing the lines of its key (its first word, an
+alias's without its colon) or added; a credentials password is hashed
+as above.
+.Cm unentry
+takes the lines of
+.Ar key
+out, and is refused when the table has none.
 .It Cm smtpd enable Cm yes | no
 Enabled and started, or stopped and disabled.
 .It Cm smtpd pause | resume Cm mta | mda | smtp

@@ -864,6 +864,20 @@ smtpd_check(const struct arc_job_spec *sp)
 			return ("a table is text, 1 MB at most");
 		return (NULL);
 	}
+	if (strcmp(sp->verb, "entry") == 0) {
+		if (sp->names.n != 1 || !table_name_ok(v))
+			return ("entry takes a table's name, and lines to put in");
+		if (sp->text == NULL || sp->text[strspn(sp->text, " \t\n")] ==
+		    '\0' || strlen(sp->text) > TABLE_MAX)
+			return ("entry takes the lines to put in, 1 MB at most");
+		return (NULL);
+	}
+	if (strcmp(sp->verb, "unentry") == 0) {
+		if (sp->names.n != 2 || !table_name_ok(v) ||
+		    !word_ok(sp->names.v[1], "@._-+:", 255))
+			return ("unentry takes a table's name and an entry's key");
+		return (NULL);
+	}
 	if (strcmp(sp->verb, "enable") == 0) {
 		if (sp->names.n != 1 || v == NULL || (strcmp(v, "enable=yes") !=
 		    0 && strcmp(v, "enable=no") != 0))
@@ -888,8 +902,8 @@ smtpd_check(const struct arc_job_spec *sp)
 			return ("update takes a table's name");
 		return (NULL);
 	}
-	return ("an smtpd job's verb is conf, table, enable, pause, resume, "
-	    "schedule, remove or update");
+	return ("an smtpd job's verb is conf, table, entry, unentry, enable, "
+	    "pause, resume, schedule, remove or update");
 }
 
 char *
@@ -967,6 +981,117 @@ hashed(struct work *w, const char *text, const char **errp)
 	return (out);
 }
 
+/* A table line's key: its first word, an alias's without its colon. */
+static char *
+table_key(struct work *w, const char *line)
+{
+	size_t	n;
+
+	line += strspn(line, " \t");
+	n = strcspn(line, " \t");
+	if (n > 0 && line[n - 1] == ':')
+		n--;
+	return (wstrndup(w, line, n));
+}
+
+/* The table written whole, and smtpd told where it runs. */
+static int
+table_put(struct work *w, const char *name, const char *text,
+    const char **errp)
+{
+	struct execres	 res;
+	char		*argv[5];
+	bool		 enabled, running;
+
+	scoped_mkdir(w, opts.smtpd_dir);
+	if (scope_replace(w, table_path(w, name), text, strlen(text),
+	    table_secret(name) ? 0600 : 0644, NULL) != 0) {
+		*errp = wfmt(w, "%s: %s", table_path(w, name), strerror(errno));
+		return (-1);
+	}
+	enabled = running = false;
+	svc_state(w, &enabled, &running);
+	if (!running)
+		return (0);
+	argv[0] = (char *)(uintptr_t)smtpctl_bin(w);
+	argv[1] = (char *)(uintptr_t)"update";
+	argv[2] = (char *)(uintptr_t)"table";
+	argv[3] = (char *)(uintptr_t)name;
+	argv[4] = NULL;
+	/* A table smtpd.conf does not name is not its to update. */
+	(void)run_exec(w, scope_jexec(w, argv), &res);
+	return (0);
+}
+
+/*
+ * Entries put in a table, the others kept: each line of text replaces
+ * the lines of its key (a user's new password, an alias's new
+ * address), or is added; a credentials password hashed first.  With
+ * drop, the lines of that key taken out instead, refused when none is.
+ */
+static int
+table_entries(struct work *w, const char *name, const char *text,
+    const char *drop, const char **errp)
+{
+	char		*old, *copy, *line, *out, *add, *k;
+	const char	*l;
+	size_t		 len;
+	int		 n;
+
+	if ((old = scope_slurp(w, table_path(w, name), &len)) == NULL)
+		old = wstrdup(w, "");
+	add = NULL;
+	if (drop == NULL) {
+		add = strcmp(name, "credentials") == 0 ? hashed(w, text, errp) :
+		    wstrdup(w, text);
+		if (add == NULL)
+			return (-1);
+	}
+	out = wstrdup(w, "");
+	n = 0;
+	copy = wstrdup(w, old);
+	while ((line = strsep(&copy, "\n")) != NULL) {
+		l = line + strspn(line, " \t");
+		if (l[0] != '\0' && l[0] != '#') {
+			k = table_key(w, l);
+			if (drop != NULL && strcmp(k, drop) == 0) {
+				n++;
+				continue;
+			}
+			/* Replaced by a line of the same key given. */
+			if (add != NULL) {
+				char	*a, *al;
+				bool	 same = false;
+
+				a = wstrdup(w, add);
+				while (!same && (al = strsep(&a, "\n")) != NULL)
+					if (al[strspn(al, " \t")] != '\0' &&
+					    strcmp(table_key(w, al), k) == 0)
+						same = true;
+				if (same)
+					continue;
+			}
+		}
+		if (line[0] != '\0' || copy != NULL)
+			out = wfmt(w, "%s%s\n", out, line);
+	}
+	if (drop != NULL && n == 0) {
+		*errp = wfmt(w, "%s has no entry %s", name, drop);
+		return (-1);
+	}
+	if (add != NULL) {
+		copy = add;
+		while ((line = strsep(&copy, "\n")) != NULL)
+			if (line[strspn(line, " \t")] != '\0')
+				out = wfmt(w, "%s%s\n", out, line);
+	}
+	/* Blank lines the file ended with are not kept growing. */
+	len = strlen(out);
+	while (len >= 2 && out[len - 1] == '\n' && out[len - 2] == '\n')
+		out[--len] = '\0';
+	return (table_put(w, name, out, errp));
+}
+
 int
 do_smtpd_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
@@ -975,7 +1100,6 @@ do_smtpd_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	const char			*v, *conf, *path;
 	char				*argv[5], *text;
 	int				 step;
-	bool				 enabled, running;
 
 	if ((*errp = smtpd_check(sp)) != NULL)
 		return (-1);
@@ -1024,29 +1148,16 @@ do_smtpd_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		return (restart(w, errp));
 	}
 	if (strcmp(sp->verb, "table") == 0) {
-		scoped_mkdir(w, opts.smtpd_dir);
 		text = strcmp(v, "credentials") == 0 ? hashed(w, sp->text, errp) :
 		    (char *)(uintptr_t)sp->text;
 		if (text == NULL)
 			return (-1);
-		if (scope_replace(w, table_path(w, v), text, strlen(text),
-		    table_secret(v) ? 0600 : 0644, NULL) != 0) {
-			*errp = wfmt(w, "%s: %s", table_path(w, v), strerror(errno));
-			return (-1);
-		}
-		enabled = running = false;
-		svc_state(w, &enabled, &running);
-		if (!running)
-			return (0);
-		argv[0] = (char *)(uintptr_t)smtpctl_bin(w);
-		argv[1] = (char *)(uintptr_t)"update";
-		argv[2] = (char *)(uintptr_t)"table";
-		argv[3] = (char *)(uintptr_t)v;
-		argv[4] = NULL;
-		/* A table smtpd.conf does not name is not its to update. */
-		(void)run_exec(w, scope_jexec(w, argv), &res);
-		return (0);
+		return (table_put(w, v, text, errp));
 	}
+	if (strcmp(sp->verb, "entry") == 0)
+		return (table_entries(w, v, sp->text, NULL, errp));
+	if (strcmp(sp->verb, "unentry") == 0)
+		return (table_entries(w, v, NULL, sp->names.v[1], errp));
 	if (strcmp(sp->verb, "enable") == 0) {
 		if (strcmp(v, "enable=yes") == 0)
 			return (rc_set(w, "smtpd_enable", "=", "YES", errp) != 0 ||
