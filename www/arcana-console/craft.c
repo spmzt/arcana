@@ -320,11 +320,15 @@ become_leader(struct craft *c)
 	int	i;
 
 	c->role = CRAFT_LEADER;
+	c->led_at = c->now_ms;
 	strlcpy(c->leader, c->self, sizeof(c->leader));
 	for (i = 0; i < c->npeers; i++) {
 		c->peers[i].next = craft_last_seq(c) + 1;
 		c->peers[i].match = 0;
 		c->peers[i].inflight = false;
+		/* Its vote, or not: the lease starts whole, and the first
+		 * beat's answers keep it. */
+		c->peers[i].heard_ms = c->now_ms;
 	}
 	/* A write of its own term, with nothing in it: what came before
 	 * is committed by it (Raft's section 5.4.2). */
@@ -369,6 +373,12 @@ craft_tick(struct craft *c, uint64_t now_ms)
 	int			 i;
 
 	c->now_ms = now_ms;
+	/* A leader no majority answers any more (cut off, or alone) is
+	 * one no longer: it steps down, lest it keep saying it leads while
+	 * the others elect another (Raft's check-quorum). */
+	if (c->role == CRAFT_LEADER && !craft_quorum_heard(c,
+	    CRAFT_ELECTION_MIN_MS))
+		become_follower(c, c->term, NULL);
 	if (c->role == CRAFT_LEADER) {
 		if (now_ms < c->heartbeat_at)
 			return;
@@ -391,6 +401,26 @@ craft_tick(struct craft *c, uint64_t now_ms)
 	}
 	if (now_ms >= c->election_at)
 		start_election(c);
+}
+
+/*
+ * Has the leader heard from a majority (itself counted) within this
+ * long?  What it grants on its own word (locks, the schedulers' turn)
+ * is granted on this alone: a lease shorter than an election.
+ */
+bool
+craft_quorum_heard(const struct craft *c, uint64_t within_ms)
+{
+	int	i, have;
+
+	if (c->role != CRAFT_LEADER)
+		return (false);
+	have = 1;
+	for (i = 0; i < c->npeers; i++)
+		if (c->peers[i].heard_ms != 0 && c->now_ms - c->peers[i].heard_ms
+		    <= within_ms)
+			have++;
+	return (have >= craft_quorum(c));
 }
 
 /* Is a candidate's log at least as new as this node's? */
@@ -505,6 +535,7 @@ craft_recv(struct craft *c, const struct craft_msg *m)
 		    (p = peer_of(c, m->from)) == NULL)
 			return;
 		p->inflight = false;
+		p->heard_ms = c->now_ms;
 		if (m->ok) {
 			uint64_t	was = c->commit;
 

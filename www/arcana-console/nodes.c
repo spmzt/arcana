@@ -63,6 +63,7 @@
 #define	CL_PENDING	64
 #define	CL_RING		1024
 #define	CL_LOCKS	64
+#define	CL_LOCK_TTL_MS	30000	/* a lock held this long, unless renewed */
 #define	ROLE_CONSOLE	"URI:urn:arcana:role:console"
 
 struct node {
@@ -166,7 +167,9 @@ cluster_leads(void)
 	if (!cl.on)
 		return (true);
 	pthread_mutex_lock(&cl.mu);
-	leads = cl.c.role == CRAFT_LEADER;
+	/* The leader on its lease: cut off, it leads nothing, and the
+	 * one elected instead runs them. */
+	leads = craft_quorum_heard(&cl.c, CRAFT_LEASE_MS);
 	pthread_mutex_unlock(&cl.mu);
 	return (leads);
 }
@@ -1286,6 +1289,18 @@ lock_try(const char *name, const char *holder, uint64_t ttl,
 		*why = "not the leader";
 		return (false);
 	}
+	/* On its lease alone: a leader cut off grants nothing, so that
+	 * the one elected instead and it never grant the same lock. */
+	if (!craft_quorum_heard(&cl.c, CRAFT_LEASE_MS)) {
+		*why = "the leader has not heard from a majority";
+		return (false);
+	}
+	/* The locks the leader before held are known to it alone: none
+	 * is granted until every one of those has run out. */
+	if (cl.c.now_ms - cl.c.led_at < CL_LOCK_TTL_MS) {
+		*why = "a new leader: the locks of the one before run out first";
+		return (false);
+	}
 	now = now_ms();
 	*commitp = cl.c.commit;
 	free_i = -1;
@@ -1570,7 +1585,6 @@ cluster_save(const char *name, const void *body, size_t len, bool gone)
 
 /* ---- Locks of the cluster ------------------------------------------------ */
 
-#define	CL_LOCK_TTL_MS	30000
 #define	CL_LOCK_WAIT_MS	10000
 
 static void

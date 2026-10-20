@@ -577,6 +577,99 @@ ATF_TC_BODY(five, tc)
 		run(5, s * 40503u + 17, 3000, false);
 }
 
+/*
+ * A leader cut off from the majority steps down within an election's
+ * time, and grants nothing on its lease before that; the three elect
+ * another, and at no moment do two hold a lease at once.
+ */
+ATF_TC_WITHOUT_HEAD(partition);
+ATF_TC_BODY(partition, tc)
+{
+	uint64_t	 cut, down_at;
+	int		 i, step, old, new, leases;
+
+	memset(nodes, 0, sizeof(nodes));
+	memset(leader_of_term, 0, sizeof(leader_of_term));
+	nn = 5;
+	seed = 7;
+	now = 1000;
+	nacks = nprops = 0;
+	drop_p = 0.0;
+	if (wires == NULL)
+		wires = calloc(MSGS_MAX, sizeof(*wires));
+	if (applied == NULL)
+		applied = calloc(SEQS_MAX, sizeof(*applied));
+	memset(wires, 0, MSGS_MAX * sizeof(*wires));
+	memset(applied, 0, SEQS_MAX * sizeof(*applied));
+	for (i = 0; i < nn; i++) {
+		snprintf(nodes[i].name, sizeof(nodes[i].name), "n%d", i);
+		part[i] = 0;
+	}
+	nodes[0].d.term = 1;
+	nodes[0].d.base_term = 1;
+	nodes[0].d.base_seq = 1;
+	for (i = 0; i < nn; i++)
+		start(i);
+	for (old = -1, step = 0; step < 1000 && old < 0; step++) {
+		now += 10;
+		for (i = 0; i < nn; i++) {
+			craft_tick(&nodes[i].c, now);
+			after(i);
+		}
+		deliver();
+		/* A leader with a lease, and every node holding the log (one
+		 * that holds nothing yet never elects). */
+		for (i = 0; i < nn; i++)
+			if (nodes[i].c.role == CRAFT_LEADER &&
+			    craft_quorum_heard(&nodes[i].c, CRAFT_LEASE_MS))
+				old = i;
+		for (i = 0; old >= 0 && i < nn; i++)
+			if (craft_last_seq(&nodes[i].c) == 0)
+				old = -1;
+	}
+	ATF_REQUIRE_MSG(old >= 0, "no leader with a lease, or a node with "
+	    "nothing");
+	/* The leader and one other on one side, three on the other. */
+	part[old] = 1;
+	part[(old + 1) % nn] = 1;
+	cut = now;
+	down_at = 0;
+	new = -1;
+	for (step = 0; step < 1000; step++) {
+		now += 10;
+		for (i = 0; i < nn; i++) {
+			craft_tick(&nodes[i].c, now);
+			after(i);
+		}
+		deliver();
+		/* Its lease is over within the lease's time, itself within
+		 * an election's; then it is a leader no more. */
+		if (now - cut > CRAFT_LEASE_MS + 50)
+			ATF_REQUIRE_MSG(!craft_quorum_heard(&nodes[old].c,
+			    CRAFT_LEASE_MS), "the cut-off leader keeps its lease "
+			    "%ju ms on", (uintmax_t)(now - cut));
+		if (down_at == 0 && nodes[old].c.role != CRAFT_LEADER)
+			down_at = now;
+		leases = 0;
+		for (i = 0; i < nn; i++)
+			if (craft_quorum_heard(&nodes[i].c, CRAFT_LEASE_MS)) {
+				leases++;
+				if (i != old)
+					new = i;
+			}
+		ATF_REQUIRE_MSG(leases <= 1, "two leaders hold a lease at once");
+	}
+	ATF_REQUIRE_MSG(down_at != 0 && down_at - cut <= CRAFT_ELECTION_MIN_MS +
+	    CRAFT_HEARTBEAT_MS + 50, "the cut-off leader stepped down after "
+	    "%ju ms", (uintmax_t)(down_at - cut));
+	ATF_REQUIRE_MSG(new >= 0 && part[new] == 0, "the majority elected no "
+	    "leader with a lease");
+	for (i = 0; i < nn; i++) {
+		craft_free(&nodes[i].c);
+		entries_free(nodes[i].d.log, nodes[i].d.nlog);
+	}
+}
+
 ATF_TC_WITHOUT_HEAD(snapshots);
 ATF_TC_BODY(snapshots, tc)
 {
@@ -595,5 +688,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, three);
 	ATF_TP_ADD_TC(tp, five);
 	ATF_TP_ADD_TC(tp, snapshots);
+	ATF_TP_ADD_TC(tp, partition);
 	return (atf_no_error());
 }

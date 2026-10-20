@@ -26,6 +26,10 @@
 #define	CRAFT_ELECTION_MIN_MS	1500	/* a follower's patience, at least */
 #define	CRAFT_ELECTION_SPAN_MS	1500	/* and a random part above it */
 #define	CRAFT_HEARTBEAT_MS	400
+/* A leader's lease: heard from a majority this recently, it is the one
+ * (less than CRAFT_ELECTION_MIN_MS: no other is elected before it
+ * stops saying so).  Longer silent, it steps down. */
+#define	CRAFT_LEASE_MS		(2 * CRAFT_HEARTBEAT_MS)
 
 enum craft_role { CRAFT_FOLLOWER, CRAFT_CANDIDATE, CRAFT_LEADER };
 
@@ -71,6 +75,7 @@ struct craft_peer {
 	bool		 voted;		/* gave its vote this term */
 	bool		 inflight;	/* an append is out, unanswered */
 	uint64_t	 sent_ms;
+	uint64_t	 heard_ms;	/* its last answer, this term */
 };
 
 struct craft {
@@ -92,6 +97,7 @@ struct craft {
 	uint64_t		 now_ms;
 	uint64_t		 election_at;	/* a follower's deadline */
 	uint64_t		 heartbeat_at;	/* a leader's next beat */
+	uint64_t		 led_at;	/* when it became the leader */
 	uint32_t		 rnd;
 	/* What the caller takes out. */
 	struct craft_msg	*out;
@@ -110,6 +116,7 @@ int	 craft_restore_entry(struct craft *, uint64_t, uint64_t, const char *,
 	    const uint8_t *, size_t, bool);
 void	 craft_free(struct craft *);
 void	 craft_tick(struct craft *, uint64_t);
+bool	 craft_quorum_heard(const struct craft *, uint64_t);
 void	 craft_recv(struct craft *, const struct craft_msg *);
 int	 craft_propose(struct craft *, const char *, const uint8_t *, size_t,
 	    bool, uint64_t *, uint64_t *);
