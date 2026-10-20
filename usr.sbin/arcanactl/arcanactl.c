@@ -2589,9 +2589,22 @@ cmd_smtpd(struct arc_client *cl, int argc, char **argv)
 	sp.kind = ARC_JOB_KIND_SMTPD;
 	sp.verb = argv[1];
 	if (strcmp(argv[1], "conf") == 0) {
-		if (argc != 3)
+		/* conf form.json [replace]: replace says the admin's own
+		 * smtpd.conf is to be replaced by the form. */
+		if (argc != 3 && !(argc == 4 && strcmp(argv[3], "replace") == 0))
 			usage();
 		sp.text = slurp(argv[2]);
+		sp.force = argc == 4;
+	} else if (strcmp(argv[1], "conf-text") == 0) {
+		/* conf-text [check] file: the admin's smtpd.conf as text. */
+		if (argc == 4 && strcmp(argv[2], "check") == 0) {
+			sp.names.v = (const char **)(uintptr_t)&argv[2];
+			sp.names.n = 1;
+			sp.text = slurp(argv[3]);
+		} else if (argc == 3)
+			sp.text = slurp(argv[2]);
+		else
+			usage();
 	} else if (strcmp(argv[1], "table") == 0 || strcmp(argv[1], "entry") ==
 	    0) {
 		if (argc != 4)

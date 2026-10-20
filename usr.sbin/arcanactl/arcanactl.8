@@ -482,13 +482,41 @@ what
 says of its status, counters and queue; its
 .Xr smtpd.conf 5 ,
 the form it was rendered from, and the tables the agent keeps.
-.It Cm smtpd conf Ar form.json
+.It Cm smtpd conf Ar form.json Op Cm replace
 .Xr smtpd.conf 5
 rendered on the host from the form (a JSON object: listeners,
 domains, delivery, relay, policy, filters and own lines, as the
 console's Mail tab sends it), checked by
 .Nm smtpd Fl n
 before it is put in place; smtpd is started again where it runs.
+A smtpd.conf the form did not write is not replaced unless
+.Cm replace
+is given; the one before is kept as
+.Pa smtpd.conf.arcana-old .
+.It Cm smtpd conf-text Oo Cm check Oc Ar file
+The admin's own
+.Xr smtpd.conf 5
+from
+.Ar file :
+checked by
+.Nm smtpd Fl n ,
+and unless
+.Cm check
+put in place, the one before kept as
+.Pa smtpd.conf.arcana-old ,
+and smtpd started again where it runs.
+The tables it declares are the tables
+.Cm entry
+and
+.Cm unentry
+write, at their own paths:
+.Cm file:
+tables by their first word,
+.Cm passwd:
+tables by the name before the first colon (a new password hashed,
+the rest of the line kept);
+.Cm db:
+tables are made the admin's way.
 .It Cm smtpd table Ar name Ar file
 A table written whole: aliases, virtuals, domains, senders,
 credentials (a user and a password a line: each password hashed on

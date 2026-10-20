@@ -1879,6 +1879,7 @@ submodule arcana-jobs-kinds {
           leaf verb {
             type enumeration {
               enum conf;
+              enum conf-text;
               enum table;
               enum entry;
               enum unentry;
@@ -1908,6 +1909,11 @@ submodule arcana-jobs-kinds {
             type string;
             description
               "The file";
+          }
+          leaf force {
+            type boolean;
+            description
+              "Force";
           }
         }
       }

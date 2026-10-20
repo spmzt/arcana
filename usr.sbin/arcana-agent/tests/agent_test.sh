@@ -3693,7 +3693,7 @@ EOF
 	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd table secrets secrets.txt
 	atf_check -o match:'^-rw-------' ls -l smtpd.d/secrets
 	atf_check -o match:'"secrets":\["relay"\]' -o not-match:'s3cret' "$JGC" -c "$SOCK" smtpd
-	atf_check -s exit:1 -e match:'one of aliases' -o ignore "$JGC" -c "$SOCK" smtpd table nosuch aliases.txt
+	atf_check -s exit:1 -o match:'smtpd.conf declares no table nosuch' "$JGC" -c "$SOCK" smtpd table nosuch aliases.txt
 	# Enabled and started; then the read asks smtpd itself: its status,
 	# counters and queue, as smtpctl prints them.
 	atf_check -o match:'done +smtpd enable' "$JGC" -c "$SOCK" smtpd enable yes
@@ -3721,6 +3721,56 @@ EOF
 	atf_check -o match:'done +smtpd enable' "$JGC" -c "$SOCK" smtpd enable no
 	atf_check -o match:'^smtpd_enable="NO"$' cat rc.conf
 	test -f running.smtpd && atf_fail "smtpd was not stopped"
+	# The admin's own smtpd.conf, its tables at their own paths and of
+	# their own backends: read as it declares them, the users of an
+	# auth table and of a passwd table by name alone; entries put in
+	# and taken out where they are, a passwd user's other fields and
+	# its hash's {SCHEME} kept; the form refused over it, the text
+	# checked and put in place with the one before kept.
+	mkdir -p own
+	printf 'root: admin@example.org\n' > own/aliases
+	printf 'carol:{SHA512-CRYPT}$6$old$hash:1001:1001::/var/vmail/carol:/usr/sbin/nologin\ndave:{SHA512-CRYPT}$6$d$h:1001:1001::/var/vmail/dave:/usr/sbin/nologin\n' > own/passwd
+	chmod 640 own/passwd
+	printf 'relay user@example.net:pw\n' > own/secrets
+	cat > smtpd.conf <<EOS
+# the admin's own
+table aliases file:$(pwd)/own/aliases
+table passwd passwd:$(pwd)/own/passwd
+table secrets $(pwd)/own/secrets
+table big db:$(pwd)/own/big.db
+table inl { a.example, b.example }
+listen on lo0 port submission auth <passwd>
+action "out" relay host smtp+tls://relay@smtp.example.net:587 auth <secrets>
+EOS
+	atf_check -o match:'"conf_arcana":false' \
+	    -o match:'"conf_tables":\[\{"name":"aliases","backend":"file","path":"[^"]*own/aliases","kind":"","secret":false,"editable":true,"entries":\[\{"key":"root","value":"admin@example.org"\}\]\}' \
+	    -o match:'\{"name":"passwd","backend":"passwd","path":"[^"]*own/passwd","kind":"auth","secret":true,"editable":true,"entries":\[\{"key":"carol"\},\{"key":"dave"\}\]\}' \
+	    -o match:'\{"name":"secrets","backend":"file","path":"[^"]*own/secrets","kind":"relay","secret":true' \
+	    -o match:'\{"name":"big","backend":"db","path":"[^"]*own/big.db","kind":"","secret":false,"editable":false\}' \
+	    -o not-match:'"name":"inl"' -o not-match:'old\$hash' -o not-match:'user@example.net:pw' \
+	    "$JGC" -c "$SOCK" smtpd
+	printf 'carol newpass\nerin pw5\n' > pw.txt
+	atf_check -o match:'done +smtpd entry passwd' -o not-match:'newpass' "$JGC" -t -c "$SOCK" smtpd entry passwd pw.txt
+	atf_check -o inline:'dave:{SHA512-CRYPT}$6$d$h:1001:1001::/var/vmail/dave:/usr/sbin/nologin\ncarol:{SHA512-CRYPT}$6$fake$hashOf$1:1001:1001::/var/vmail/carol:/usr/sbin/nologin\nerin:{SHA512-CRYPT}$6$fake$hashOf$1:::::\n' cat own/passwd
+	atf_check -o match:'^-rw-r-----' ls -l own/passwd
+	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd unentry passwd dave
+	atf_check -o not-match:'^dave:' cat own/passwd
+	printf 'postmaster: root\n' > a3.txt
+	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd entry aliases a3.txt
+	atf_check -o inline:'root: admin@example.org\npostmaster: root\n' cat own/aliases
+	atf_check -s exit:1 -o match:'made the admin.s way' "$JGC" -c "$SOCK" smtpd entry big a3.txt
+	atf_check -s exit:1 -o match:'is not Arcana.s' "$JGC" -c "$SOCK" smtpd conf form.json
+	atf_check -o match:'^# the admin.s own$' cat smtpd.conf
+	cp smtpd.conf mine.conf
+	printf 'listen on lo0 port 2525\n' >> mine.conf
+	atf_check -o match:'done +smtpd conf-text check' "$JGC" -c "$SOCK" smtpd conf-text check mine.conf
+	atf_check -o not-match:'2525' cat smtpd.conf
+	atf_check -o match:'done +smtpd conf-text' "$JGC" -c "$SOCK" smtpd conf-text mine.conf
+	atf_check -o match:'port 2525' cat smtpd.conf
+	atf_check -o match:'^# the admin.s own$' -o not-match:'2525' cat smtpd.conf.arcana-old
+	printf '# BROKEN\n' > broken.conf
+	atf_check -s exit:1 -o match:'smtpd does not take it' "$JGC" -c "$SOCK" smtpd conf-text broken.conf
+	atf_check -o match:'port 2525' cat smtpd.conf
 	# A jail's, with or without a network of its own: entered first
 	# (none runs here); never safe.
 	atf_check -s exit:1 -e match:'the jail web is not running' -o ignore "$JGC" -j web -c "$SOCK" smtpd

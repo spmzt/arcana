@@ -3269,33 +3269,23 @@ part_mail(void)
 	    "mail auth <credentials>$' smtpd.conf") != 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "smtpd.conf is not rendered from the form");
+	/* The tables smtpd.conf declares (the form's own here): one opened,
+	 * entries put in by key, one removed, asked first; the others
+	 * kept. */
 	click_when("button[data-act=ml-table][data-arg=aliases]", 10);
-	wait_js("document.querySelector('form[data-form=ml-table]')", 10);
-	run("const f = document.querySelector('form[data-form=ml-table]'); "
-	    "f.text.value = 'root: admin@example.org\\n'; f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=ml-entry]')", 10);
+	run("const f = document.querySelector('form[data-form=ml-entry]'); "
+	    "f.text.value = 'root: admin@example.org\\npostmaster: root\\n'; "
+	    "f.requestSubmit();");
 	queued_run();
 	for (i = 0; i < 300 && system("grep -q '^root: admin@example.org$' "
-	    "smtpd.d/aliases") != 0; i++)
+	    "smtpd.d/aliases && grep -q '^postmaster: root$' smtpd.d/aliases") !=
+	    0; i++)
 		usleep(100000);
-	ATF_CHECK_MSG(i < 300, "the aliases table is not written");
-	dock_closed();
-	/* One entry at a time: one put in by its key, the other kept; one
-	 * removed, asked first, the other kept. */
-	click_when("button[data-act=ml-table][data-arg=aliases]", 10);
-	wait_js("document.querySelector('form[data-form=ml-entry]') && "
-	    "document.querySelector('button[data-act=ml-unentry][data-value="
-	    "root]')", 20);
-	run("const f = document.querySelector('form[data-form=ml-entry]'); "
-	    "f.text.value = 'postmaster: root\\n'; f.requestSubmit();");
-	queued_run();
-	for (i = 0; i < 300 && system("grep -q '^postmaster: root$' "
-	    "smtpd.d/aliases && grep -q '^root: admin@example.org$' "
-	    "smtpd.d/aliases") != 0; i++)
-		usleep(100000);
-	ATF_CHECK_MSG(i < 300, "the entry is not put in beside the other");
+	ATF_CHECK_MSG(i < 300, "the aliases are not put in");
 	dock_closed();
 	wait_js("document.querySelector('button[data-act=ml-unentry][data-value="
-	    "postmaster]')", 20);
+	    "root]')", 20);
 	run("document.querySelector('form[data-form=ml-entry]').scrollIntoView("
 	    "{block: 'center'})");
 	shot("7q-mail-entries");
@@ -3312,6 +3302,32 @@ part_mail(void)
 	ATF_CHECK(system("! grep -q '^root:' smtpd.d/aliases && grep -q "
 	    "'^postmaster: root$' smtpd.d/aliases") == 0);
 	dock_closed();
+	/* smtpd.conf as text: made the admin's own (its header gone), put
+	 * in place once checked, the one before kept; from then on the
+	 * text leads, and the form is there on asking, with its warning. */
+	click_when("button[data-act=ml-text]", 10);
+	wait_js("document.querySelector('form[data-form=ml-conftext]')", 10);
+	run("const f = document.querySelector('form[data-form=ml-conftext]'); "
+	    "f.text.value = '# mine now\\n' + f.text.value.split('\\n')"
+	    ".filter(l => !l.startsWith('# Written by arcana-agent')).join("
+	    "'\\n'); f.querySelector('button[value=save]').click();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^# mine now$' smtpd.conf") != 0;
+	    i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "smtpd.conf is not written as text");
+	ATF_CHECK(system("grep -q '^# Written by arcana-agent' "
+	    "smtpd.conf.arcana-old") == 0);
+	dock_closed();
+	wait_js("document.querySelector('form[data-form=ml-conftext]') && "
+	    "document.querySelector('form[data-form=ml-conftext]').text.value."
+	    "startsWith('# mine now') && ![...document.querySelectorAll("
+	    "'.mailview dl.kv')].length", 20);
+	ATF_CHECK(js_true("[...document.querySelectorAll('.mailview details "
+	    "summary')].some(s => s.textContent.includes(\"Arcana's form "
+	    "instead\"))"));
+	run("document.querySelector('form[data-form=ml-conftext]')."
+	    "scrollIntoView({block: 'start'})");
 	shot("7q-mail");
 }
 

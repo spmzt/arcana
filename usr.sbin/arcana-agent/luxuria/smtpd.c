@@ -680,6 +680,204 @@ queue_json(struct work *w, const char *text, int64_t *np)
 	return (arr);
 }
 
+/*
+ * A table as smtpd.conf declares it, "table NAME [BACKEND:]PATH" (a
+ * path alone is a file:), or one of the agent's own when the file
+ * declares none of that name.  kind: "auth" for a table a listener
+ * signs users in by (its passwords hashed), "relay" for a smart host's
+ * sign-in (kept as given), "" else.
+ */
+struct ctable {
+	const char	*name;
+	const char	*backend;
+	const char	*path;
+	const char	*kind;
+	bool		 declared;
+};
+
+static bool
+tname_ok(const char *s)
+{
+	size_t	i, n;
+
+	n = s != NULL ? strlen(s) : 0;
+	if (n == 0 || n > 64)
+		return (false);
+	for (i = 0; i < n; i++)
+		if (!isalnum((unsigned char)s[i]) && s[i] != '_' && s[i] != '-')
+			return (false);
+	return (true);
+}
+
+/* How smtpd.conf uses a table: by listeners' auth, by a relay's. */
+static const char *
+table_kind(const char *conf, const char *name)
+{
+	char		 ref[80];
+	const char	*p, *bol;
+
+	snprintf(ref, sizeof(ref), "auth <%s>", name);
+	for (p = conf; p != NULL && (p = strstr(p, ref)) != NULL; p++) {
+		for (bol = p; bol > conf && bol[-1] != '\n'; bol--)
+			;
+		bol += strspn(bol, " \t");
+		if (strncmp(bol, "listen", 6) == 0)
+			return ("auth");
+		if (strncmp(bol, "action", 6) == 0)
+			return ("relay");
+	}
+	return ("");
+}
+
+/* The tables smtpd.conf declares; how many. */
+static int
+conf_tables(struct work *w, const char *conf, struct ctable *v, int max)
+{
+	char		*copy, *line, *name, *src, *colon;
+	int		 n;
+
+	n = 0;
+	if (conf == NULL)
+		return (0);
+	copy = wstrdup(w, conf);
+	while ((line = strsep(&copy, "\n")) != NULL && n < max) {
+		line += strspn(line, " \t");
+		if (strncmp(line, "table", 5) != 0 || (line[5] != ' ' &&
+		    line[5] != '\t'))
+			continue;
+		line += 5 + strspn(line + 5, " \t");
+		name = strsep(&line, " \t");
+		if (name == NULL || !tname_ok(name) || line == NULL)
+			continue;
+		src = line + strspn(line, " \t");
+		src[strcspn(src, " \t\r#")] = '\0';
+		if (src[0] == '{' || src[0] == '\0')
+			continue;	/* inline: smtpd.conf's own words */
+		v[n].name = wstrdup(w, name);
+		if (src[0] == '/') {
+			v[n].backend = "file";
+			v[n].path = wstrdup(w, src);
+		} else if ((colon = strchr(src, ':')) != NULL) {
+			v[n].backend = wstrndup(w, src, (size_t)(colon - src));
+			v[n].path = wstrdup(w, colon + 1);
+		} else
+			continue;
+		v[n].kind = table_kind(conf, name);
+		v[n].declared = true;
+		n++;
+	}
+	return (n);
+}
+
+/*
+ * The table of that name: smtpd.conf's, else the agent's own of that
+ * name.  False when there is none.
+ */
+static bool
+ctable_find(struct work *w, const char *name, struct ctable *ct)
+{
+	struct ctable	 v[32];
+	char		*conf;
+	size_t		 len;
+	int		 n, i;
+
+	conf = scope_slurp(w, opts.smtpd_conf, &len);
+	n = conf_tables(w, conf, v, (int)nitems(v));
+	for (i = 0; i < n; i++)
+		if (strcmp(v[i].name, name) == 0) {
+			*ct = v[i];
+			return (true);
+		}
+	if (!table_name_ok(name))
+		return (false);
+	ct->name = name;
+	ct->backend = "file";
+	ct->path = table_path(w, name);
+	ct->kind = strcmp(name, "credentials") == 0 ? "auth" : strcmp(name,
+	    "secrets") == 0 ? "relay" : "";
+	ct->declared = false;
+	return (true);
+}
+
+/* A line's key in a table of that backend: passwd(5)'s name before its
+ * colon; else its first word, an alias's without its colon. */
+static char *
+line_key(struct work *w, const char *backend, const char *line)
+{
+	size_t	n;
+
+	line += strspn(line, " \t");
+	if (strcmp(backend, "passwd") == 0)
+		return (wstrndup(w, line, strcspn(line, ":")));
+	n = strcspn(line, " \t");
+	if (n > 0 && line[n - 1] == ':')
+		n--;
+	return (wstrndup(w, line, n));
+}
+
+/*
+ * The entries of a table smtpd.conf declares, as JSON: each its key,
+ * and its value unless the table holds passwords or a sign-in.
+ */
+static ucl_object_t *
+ctable_json(struct work *w, const struct ctable *ct)
+{
+	ucl_object_t	*o, *arr, *e;
+	char		*text, *copy, *line, *key;
+	const char	*val;
+	size_t		 len;
+	bool		 secret;
+	int		 n;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(o, ucl_object_fromstring(ct->name), "name", 0,
+	    false);
+	ucl_object_insert_key(o, ucl_object_fromstring(ct->backend), "backend",
+	    0, false);
+	ucl_object_insert_key(o, ucl_object_fromstring(ct->path), "path", 0,
+	    false);
+	ucl_object_insert_key(o, ucl_object_fromstring(ct->kind), "kind", 0,
+	    false);
+	secret = ct->kind[0] != '\0' || strcmp(ct->backend, "passwd") == 0;
+	ucl_object_insert_key(o, ucl_object_frombool(secret), "secret", 0,
+	    false);
+	if (strcmp(ct->backend, "file") != 0 && strcmp(ct->backend,
+	    "passwd") != 0) {
+		/* db: and the others: their source is the admin's. */
+		ucl_object_insert_key(o, ucl_object_frombool(false), "editable",
+		    0, false);
+		return (o);
+	}
+	ucl_object_insert_key(o, ucl_object_frombool(true), "editable", 0,
+	    false);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	n = 0;
+	if ((text = scope_slurp(w, ct->path, &len)) != NULL) {
+		copy = wstrdup(w, text);
+		while ((line = strsep(&copy, "\n")) != NULL && n < 5000) {
+			line += strspn(line, " \t");
+			if (line[0] == '\0' || line[0] == '#')
+				continue;
+			key = line_key(w, ct->backend, line);
+			e = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(e, ucl_object_fromstring(key), "key",
+			    0, false);
+			if (!secret) {
+				val = line + strlen(key);
+				val += strspn(val, ": \t");
+				ucl_object_insert_key(e, ucl_object_fromstring(val),
+				    "value", 0, false);
+			}
+			ucl_array_append(arr, e);
+			n++;
+		}
+	} else
+		ucl_object_insert_key(o, ucl_object_fromstring(strerror(errno)),
+		    "error", 0, false);
+	ucl_object_insert_key(o, arr, "entries", 0, false);
+	return (o);
+}
+
 /* A table's text; the secret ones as their first words alone. */
 static ucl_object_t *
 table_json(struct work *w, const char *name)
@@ -739,9 +937,22 @@ do_smtpd(struct work *w, struct arc_smtpd_rsp *rsp)
 		ucl_object_insert_key(top, ucl_object_fromint(n), "queued", 0,
 		    false);
 	}
-	if ((text = scope_slurp(w, opts.smtpd_conf, &len)) != NULL)
+	if ((text = scope_slurp(w, opts.smtpd_conf, &len)) != NULL) {
+		struct ctable	 ct[32];
+		int		 nt, k;
+
 		ucl_object_insert_key(top, ucl_object_fromstring(text), "conf", 0,
 		    false);
+		/* Arcana's own when its form wrote it; the admin's else. */
+		ucl_object_insert_key(top, ucl_object_frombool(strstr(text,
+		    "# Written by arcana-agent") == text), "conf_arcana", 0,
+		    false);
+		nt = conf_tables(w, text, ct, (int)nitems(ct));
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		for (k = 0; k < nt; k++)
+			ucl_array_append(arr, ctable_json(w, &ct[k]));
+		ucl_object_insert_key(top, arr, "conf_tables", 0, false);
+	}
 	ucl_object_insert_key(top, ucl_object_fromstring(opts.smtpd_conf),
 	    "conf_path", 0, false);
 	/* The form it was rendered from, kept beside. */
@@ -857,15 +1068,24 @@ smtpd_check(const struct arc_job_spec *sp)
 		return (e);
 	}
 	if (strcmp(sp->verb, "table") == 0) {
-		if (sp->names.n != 1 || !table_name_ok(v))
+		if (sp->names.n != 1 || !tname_ok(v))
 			return ("table takes one of aliases, virtuals, domains, "
 			    "senders, credentials, secrets, and its text");
 		if (sp->text == NULL || strlen(sp->text) > TABLE_MAX)
 			return ("a table is text, 1 MB at most");
 		return (NULL);
 	}
+	if (strcmp(sp->verb, "conf-text") == 0) {
+		if (sp->names.n > 1 || (v != NULL && strcmp(v, "check") != 0) ||
+		    sp->text == NULL || sp->text[0] == '\0' || strlen(sp->text) >
+		    256 * 1024 || strchr(sp->text, '\0') != sp->text +
+		    strlen(sp->text))
+			return ("conf-text takes smtpd.conf's text, 256 KB at most, "
+			    "and check to only check it");
+		return (NULL);
+	}
 	if (strcmp(sp->verb, "entry") == 0) {
-		if (sp->names.n != 1 || !table_name_ok(v))
+		if (sp->names.n != 1 || !tname_ok(v))
 			return ("entry takes a table's name, and lines to put in");
 		if (sp->text == NULL || sp->text[strspn(sp->text, " \t\n")] ==
 		    '\0' || strlen(sp->text) > TABLE_MAX)
@@ -873,8 +1093,8 @@ smtpd_check(const struct arc_job_spec *sp)
 		return (NULL);
 	}
 	if (strcmp(sp->verb, "unentry") == 0) {
-		if (sp->names.n != 2 || !table_name_ok(v) ||
-		    !word_ok(sp->names.v[1], "@._-+:", 255))
+		if (sp->names.n != 2 || !tname_ok(v) ||
+		    !word_ok(sp->names.v[1], "@._-+", 255))
 			return ("unentry takes a table's name and an entry's key");
 		return (NULL);
 	}
@@ -902,8 +1122,8 @@ smtpd_check(const struct arc_job_spec *sp)
 			return ("update takes a table's name");
 		return (NULL);
 	}
-	return ("an smtpd job's verb is conf, table, entry, unentry, enable, "
-	    "pause, resume, schedule, remove or update");
+	return ("an smtpd job's verb is conf, conf-text, table, entry, "
+	    "unentry, enable, pause, resume, schedule, remove or update");
 }
 
 char *
@@ -936,6 +1156,30 @@ restart(struct work *w, const char **errp)
 }
 
 /*
+ * A password hashed by OpenSMTPD's encrypt, read on its standard input
+ * as it reads one given no word: in no command line, no trace.
+ */
+static char *
+hash_one(struct work *w, const char *pass, const char **errp)
+{
+	struct execres	 res;
+	char		*argv[2];
+
+	argv[0] = (char *)(uintptr_t)encrypt_bin(w);
+	argv[1] = NULL;
+	exec_set_secret(true);
+	exec_set_stdin(wfmt(w, "%s\n", pass), strlen(pass) + 1);
+	if (run_exec(w, scope_jexec(w, argv), &res) != 0 || res.out == NULL ||
+	    res.out[0] == '\0') {
+		exec_set_secret(false);
+		*errp = "encrypt (OpenSMTPD's) did not hash the password";
+		return (NULL);
+	}
+	exec_set_secret(false);
+	return (wstrndup(w, res.out, strcspn(res.out, "\n")));
+}
+
+/*
  * A credentials table from "user password" lines: each password hashed
  * by OpenSMTPD's encrypt, so the clear one is kept nowhere; a line
  * "user $..." (a hash already) is kept as it is.
@@ -943,8 +1187,7 @@ restart(struct work *w, const char **errp)
 static char *
 hashed(struct work *w, const char *text, const char **errp)
 {
-	struct execres	 res;
-	char		*out, *copy, *line, *user, *pass, *argv[3];
+	char		*out, *copy, *line, *user, *pass;
 
 	out = wstrdup(w, "");
 	copy = wstrdup(w, text);
@@ -963,50 +1206,43 @@ hashed(struct work *w, const char *text, const char **errp)
 			out = wfmt(w, "%s%s\t%s\n", out, user, pass);
 			continue;
 		}
-		/* The password on encrypt's standard input, as it reads one
-		 * given no word: in no command line, no trace. */
-		argv[0] = (char *)(uintptr_t)encrypt_bin(w);
-		argv[1] = NULL;
-		exec_set_secret(true);
-		exec_set_stdin(wfmt(w, "%s\n", pass), strlen(pass) + 1);
-		if (run_exec(w, scope_jexec(w, argv), &res) != 0 || res.out == NULL) {
-			exec_set_secret(false);
-			*errp = "encrypt (OpenSMTPD's) did not hash the password";
+		if ((pass = hash_one(w, pass, errp)) == NULL)
 			return (NULL);
-		}
-		exec_set_secret(false);
-		out = wfmt(w, "%s%s\t%.*s\n", out, user, (int)strcspn(res.out,
-		    "\n"), res.out);
+		out = wfmt(w, "%s%s\t%s\n", out, user, pass);
 	}
 	return (out);
 }
 
-/* A table line's key: its first word, an alias's without its colon. */
-static char *
-table_key(struct work *w, const char *line)
+/* A file's mode in the scope, or dflt when it is not there. */
+static mode_t
+scoped_mode(struct work *w, const char *path, mode_t dflt)
 {
-	size_t	n;
+	struct stat	 sb;
+	const char	*base;
+	int		 dfd, rc;
 
-	line += strspn(line, " \t");
-	n = strcspn(line, " \t");
-	if (n > 0 && line[n - 1] == ':')
-		n--;
-	return (wstrndup(w, line, n));
+	if ((dfd = scope_open_dir(w, path, &base)) == -1)
+		return (dflt);
+	rc = fstatat(dfd, base, &sb, 0);
+	close(dfd);
+	return (rc == 0 ? sb.st_mode & ALLPERMS : dflt);
 }
 
-/* The table written whole, and smtpd told where it runs. */
+/* The table written whole, its mode kept, and smtpd told where it runs. */
 static int
-table_put(struct work *w, const char *name, const char *text,
+ctable_put(struct work *w, const struct ctable *ct, const char *text,
     const char **errp)
 {
 	struct execres	 res;
 	char		*argv[5];
-	bool		 enabled, running;
+	bool		 enabled, running, secret;
 
-	scoped_mkdir(w, opts.smtpd_dir);
-	if (scope_replace(w, table_path(w, name), text, strlen(text),
-	    table_secret(name) ? 0600 : 0644, NULL) != 0) {
-		*errp = wfmt(w, "%s: %s", table_path(w, name), strerror(errno));
+	secret = ct->kind[0] != '\0' || strcmp(ct->backend, "passwd") == 0;
+	if (!ct->declared)
+		scoped_mkdir(w, opts.smtpd_dir);
+	if (scope_replace(w, ct->path, text, strlen(text), scoped_mode(w,
+	    ct->path, secret ? 0600 : 0644), NULL) != 0) {
+		*errp = wfmt(w, "%s: %s", ct->path, strerror(errno));
 		return (-1);
 	}
 	enabled = running = false;
@@ -1016,33 +1252,153 @@ table_put(struct work *w, const char *name, const char *text,
 	argv[0] = (char *)(uintptr_t)smtpctl_bin(w);
 	argv[1] = (char *)(uintptr_t)"update";
 	argv[2] = (char *)(uintptr_t)"table";
-	argv[3] = (char *)(uintptr_t)name;
+	argv[3] = (char *)(uintptr_t)ct->name;
 	argv[4] = NULL;
 	/* A table smtpd.conf does not name is not its to update. */
 	(void)run_exec(w, scope_jexec(w, argv), &res);
 	return (0);
 }
 
+static int
+table_put(struct work *w, const char *name, const char *text,
+    const char **errp)
+{
+	struct ctable	ct;
+
+	if (!ctable_find(w, name, &ct)) {
+		*errp = wfmt(w, "smtpd.conf declares no table %s", name);
+		return (-1);
+	}
+	return (ctable_put(w, &ct, text, errp));
+}
+
+/* A passwd(5) line's fields after the password ("uid:gid:gecos:home:
+ * shell"), or NULL. */
+static const char *
+pw_tail(const char *line)
+{
+	const char	*p;
+
+	if ((p = strchr(line, ':')) == NULL || (p = strchr(p + 1, ':')) ==
+	    NULL)
+		return (NULL);
+	return (p + 1);
+}
+
+/*
+ * passwd(5) lines for a passwd: table: "user password" hashed by
+ * encrypt; a user there already keeps the rest of their line, their
+ * hash's {SCHEME} written as before; a new one gets the fields every
+ * other line has alike, or empty ones.  A whole line (with colons) is
+ * taken as it is.
+ */
+static char *
+pw_lines(struct work *w, const char *old, const char *text,
+    const char **errp)
+{
+	char		*out, *copy, *line, *user, *pass, *hash, *ocopy, *ol;
+	const char	*tail, *same_tail, *scheme, *t, *ohash;
+	bool		 alike, prefixed;
+	int		 n;
+
+	/* What the other lines have alike: their tail, a {SCHEME}. */
+	same_tail = NULL;
+	alike = true;
+	prefixed = false;
+	n = 0;
+	ocopy = wstrdup(w, old);
+	while ((ol = strsep(&ocopy, "\n")) != NULL) {
+		ol += strspn(ol, " \t");
+		if (ol[0] == '\0' || ol[0] == '#' || (t = pw_tail(ol)) == NULL)
+			continue;
+		ohash = strchr(ol, ':') + 1;
+		if (n == 0)
+			prefixed = ohash[0] == '{';
+		else if (prefixed != (ohash[0] == '{'))
+			prefixed = false;
+		if (n++ == 0)
+			same_tail = t;
+		else if (same_tail != NULL && strcmp(same_tail, t) != 0)
+			alike = false;
+	}
+	out = wstrdup(w, "");
+	copy = wstrdup(w, text);
+	while ((line = strsep(&copy, "\n")) != NULL) {
+		line += strspn(line, " \t");
+		if (line[0] == '\0' || line[0] == '#')
+			continue;
+		user = strsep(&line, " \t");
+		if (strchr(user, ':') != NULL) {
+			/* A whole passwd(5) line. */
+			out = wfmt(w, "%s%s%s%s\n", out, user, line != NULL ? " " :
+			    "", line != NULL ? line : "");
+			continue;
+		}
+		pass = line != NULL ? line + strspn(line, " \t") : NULL;
+		if (pass == NULL || pass[0] == '\0' || !word_ok(user, "@._-+",
+		    128)) {
+			*errp = "a passwd table takes lines of user and password, "
+			    "or whole passwd(5) lines";
+			return (NULL);
+		}
+		if ((hash = hash_one(w, pass, errp)) == NULL)
+			return (NULL);
+		scheme = !prefixed ? "" : strncmp(hash, "$6$", 3) == 0 ?
+		    "{SHA512-CRYPT}" : strncmp(hash, "$5$", 3) == 0 ?
+		    "{SHA256-CRYPT}" : strncmp(hash, "$2", 2) == 0 ?
+		    "{BLF-CRYPT}" : "{CRYPT}";
+		/* Theirs, kept: the rest of their line. */
+		tail = NULL;
+		ocopy = wstrdup(w, old);
+		while ((ol = strsep(&ocopy, "\n")) != NULL && tail == NULL) {
+			ol += strspn(ol, " \t");
+			if (strncmp(ol, user, strlen(user)) == 0 &&
+			    ol[strlen(user)] == ':')
+				tail = pw_tail(ol);
+		}
+		if (tail == NULL)
+			/* uid:gid:gecos:home:shell, empty: four colons. */
+			tail = alike && same_tail != NULL ? same_tail : "::::";
+		out = wfmt(w, "%s%s:%s%s:%s\n", out, user, scheme, hash, tail);
+	}
+	return (out);
+}
+
 /*
  * Entries put in a table, the others kept: each line of text replaces
  * the lines of its key (a user's new password, an alias's new
- * address), or is added; a credentials password hashed first.  With
- * drop, the lines of that key taken out instead, refused when none is.
+ * address), or is added; a password hashed first where the table
+ * signs users in.  With drop, the lines of that key taken out
+ * instead, refused when none is.  The table is smtpd.conf's, at its
+ * own path, or the agent's own of that name.
  */
 static int
 table_entries(struct work *w, const char *name, const char *text,
     const char *drop, const char **errp)
 {
+	struct ctable	 ct;
 	char		*old, *copy, *line, *out, *add, *k;
 	const char	*l;
 	size_t		 len;
 	int		 n;
 
-	if ((old = scope_slurp(w, table_path(w, name), &len)) == NULL)
+	if (!ctable_find(w, name, &ct)) {
+		*errp = wfmt(w, "smtpd.conf declares no table %s", name);
+		return (-1);
+	}
+	if (strcmp(ct.backend, "file") != 0 && strcmp(ct.backend, "passwd") !=
+	    0) {
+		*errp = wfmt(w, "table %s is %s:%s, made the admin's way "
+		    "(makemap for db:): not written here", name, ct.backend,
+		    ct.path);
+		return (-1);
+	}
+	if ((old = scope_slurp(w, ct.path, &len)) == NULL)
 		old = wstrdup(w, "");
 	add = NULL;
 	if (drop == NULL) {
-		add = strcmp(name, "credentials") == 0 ? hashed(w, text, errp) :
+		add = strcmp(ct.backend, "passwd") == 0 ? pw_lines(w, old, text,
+		    errp) : strcmp(ct.kind, "auth") == 0 ? hashed(w, text, errp) :
 		    wstrdup(w, text);
 		if (add == NULL)
 			return (-1);
@@ -1053,7 +1409,7 @@ table_entries(struct work *w, const char *name, const char *text,
 	while ((line = strsep(&copy, "\n")) != NULL) {
 		l = line + strspn(line, " \t");
 		if (l[0] != '\0' && l[0] != '#') {
-			k = table_key(w, l);
+			k = line_key(w, ct.backend, l);
 			if (drop != NULL && strcmp(k, drop) == 0) {
 				n++;
 				continue;
@@ -1066,7 +1422,8 @@ table_entries(struct work *w, const char *name, const char *text,
 				a = wstrdup(w, add);
 				while (!same && (al = strsep(&a, "\n")) != NULL)
 					if (al[strspn(al, " \t")] != '\0' &&
-					    strcmp(table_key(w, al), k) == 0)
+					    strcmp(line_key(w, ct.backend, al), k) ==
+					    0)
 						same = true;
 				if (same)
 					continue;
@@ -1089,7 +1446,56 @@ table_entries(struct work *w, const char *name, const char *text,
 	len = strlen(out);
 	while (len >= 2 && out[len - 1] == '\n' && out[len - 2] == '\n')
 		out[--len] = '\0';
-	return (table_put(w, name, out, errp));
+	return (ctable_put(w, &ct, out, errp));
+}
+
+/*
+ * smtpd.conf put in place once smtpd -n has read it, the one before
+ * kept beside (smtpd.conf.arcana-old): the admin's file is never lost.
+ */
+static int
+conf_put(struct work *w, const char *conf, bool check_only,
+    const char **errp)
+{
+	struct execres	 res;
+	const char	*path, *base;
+	char		*argv[5];
+	int		 step;
+
+	path = wfmt(w, "%s.arcana-new", opts.smtpd_conf);
+	if (scope_replace(w, path, conf, strlen(conf), 0644, NULL) != 0) {
+		*errp = wfmt(w, "%s: %s", path, strerror(errno));
+		return (-1);
+	}
+	step = step_begin(w, ARC_STEP_KIND_EXEC, "smtpd -n", "the "
+	    "configuration checked");
+	argv[0] = (char *)(uintptr_t)smtpd_bin(w);
+	argv[1] = (char *)(uintptr_t)"-n";
+	argv[2] = (char *)(uintptr_t)"-f";
+	argv[3] = (char *)(uintptr_t)path;
+	argv[4] = NULL;
+	if (run_exec(w, scope_jexec(w, argv), &res) != 0) {
+		(void)scope_unlink(w, path);
+		*errp = wfmt(w, "smtpd does not take it: %s", exec_error(w, &res,
+		    "smtpd -n"));
+		step_end(w, step, false, "%s", *errp);
+		return (-1);
+	}
+	step_end(w, step, true, NULL);
+	if (check_only) {
+		(void)scope_unlink(w, path);
+		return (0);
+	}
+	base = strrchr(opts.smtpd_conf, '/') != NULL ? strrchr(opts.smtpd_conf,
+	    '/') + 1 : opts.smtpd_conf;
+	if (scope_replace(w, opts.smtpd_conf, conf, strlen(conf), scoped_mode(w,
+	    opts.smtpd_conf, 0644), wfmt(w, "%s.arcana-old", base)) != 0) {
+		*errp = wfmt(w, "%s: %s", opts.smtpd_conf, strerror(errno));
+		(void)scope_unlink(w, path);
+		return (-1);
+	}
+	(void)scope_unlink(w, path);
+	return (0);
 }
 
 int
@@ -1097,47 +1503,46 @@ do_smtpd_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
 	struct execres			 res;
 	ucl_object_t			*o;
-	const char			*v, *conf, *path;
+	const char			*v, *conf;
 	char				*argv[5], *text;
-	int				 step;
 
 	if ((*errp = smtpd_check(sp)) != NULL)
 		return (-1);
 	v = sp->names.n > 0 ? sp->names.v[0] : NULL;
+	if (strcmp(sp->verb, "conf-text") == 0) {
+		/* The admin's own smtpd.conf, as text: checked, put in place,
+		 * the one before kept; the form no longer what it is. */
+		if (conf_put(w, sp->text, v != NULL && strcmp(v, "check") == 0,
+		    errp) != 0)
+			return (-1);
+		if (v != NULL && strcmp(v, "check") == 0)
+			return (0);
+		(void)scope_unlink(w, spec_path(w));
+		return (restart(w, errp));
+	}
 	if (strcmp(sp->verb, "conf") == 0) {
+		size_t	 clen;
+		char	*cur;
+
 		if ((o = spec_of(sp->text)) == NULL || (conf = smtpd_render(w, o,
 		    errp)) == NULL)
 			return (-1);
+		/* The admin's own file is not replaced by the form unless
+		 * that is asked for (force). */
+		if ((cur = scope_slurp(w, opts.smtpd_conf, &clen)) != NULL &&
+		    strstr(cur, "# Written by arcana-agent") != cur &&
+		    !sp->force) {
+			ucl_object_unref(o);
+			*errp = wfmt(w, "%s is not Arcana's (its form did not write "
+			    "it): its own lines would be replaced; edit it as text, "
+			    "or replace it with the form on purpose", opts.smtpd_conf);
+			return (-1);
+		}
 		scoped_mkdir(w, opts.smtpd_dir);
-		/* Checked by smtpd itself before it is put in place. */
-		path = wfmt(w, "%s.arcana-new", opts.smtpd_conf);
-		if (scope_replace(w, path, conf, strlen(conf), 0644, NULL) != 0) {
-			*errp = wfmt(w, "%s: %s", path, strerror(errno));
-			return (-1);
-		}
-		step = step_begin(w, ARC_STEP_KIND_EXEC, "smtpd -n", "the "
-		    "configuration checked");
-		argv[0] = (char *)(uintptr_t)smtpd_bin(w);
-		argv[1] = (char *)(uintptr_t)"-n";
-		argv[2] = (char *)(uintptr_t)"-f";
-		argv[3] = (char *)(uintptr_t)path;
-		argv[4] = NULL;
-		if (run_exec(w, scope_jexec(w, argv), &res) != 0) {
-			(void)scope_unlink(w, path);
-			*errp = wfmt(w, "smtpd does not take it: %s", exec_error(w,
-			    &res, "smtpd -n"));
-			step_end(w, step, false, "%s", *errp);
+		if (conf_put(w, conf, false, errp) != 0) {
 			ucl_object_unref(o);
 			return (-1);
 		}
-		step_end(w, step, true, NULL);
-		if (scope_replace(w, opts.smtpd_conf, conf, strlen(conf), 0644,
-		    NULL) != 0) {
-			*errp = wfmt(w, "%s: %s", opts.smtpd_conf, strerror(errno));
-			ucl_object_unref(o);
-			return (-1);
-		}
-		(void)scope_unlink(w, path);
 		text = (char *)ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
 		ucl_object_unref(o);
 		if (text != NULL) {
