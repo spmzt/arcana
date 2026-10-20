@@ -3690,8 +3690,9 @@ EOF
 	atf_check -o match:'done +smtpd enable' "$JGC" -c "$SOCK" smtpd enable no
 	atf_check -o match:'^smtpd_enable="NO"$' cat rc.conf
 	test -f running.smtpd && atf_fail "smtpd was not stopped"
-	# Never a jail's, never safe.
-	atf_check -s exit:1 -e match:"the host's" -o ignore "$JGC" -j web -c "$SOCK" smtpd pause mta
+	# A jail's, with or without a network of its own: entered first
+	# (none runs here); never safe.
+	atf_check -s exit:1 -e match:'the jail web is not running' -o ignore "$JGC" -j web -c "$SOCK" smtpd
 	atf_check -s exit:1 -e match:'not in safe mode' -o ignore "$JGC" -s -c "$SOCK" smtpd pause mta
 }
 smtpd_cleanup()

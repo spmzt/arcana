@@ -29,20 +29,51 @@ mail_refresh(void)
 	res_drop(&ml.r);
 }
 
+/* Where OpenSMTPD is on the host: "" the host itself, a jail's name,
+ * or NULL nowhere (the host's then, for the install line). */
+static const char *
+ml_where(struct server *s)
+{
+	const char	*at;
+
+	at = plugin_anywhere(s, "smtpd");
+	return (at != NULL ? at : "");
+}
+
 static void
 ml_load(const char *sid)
 {
-	char	url[96];
+	struct server	*s;
+	char		 url[128], q[64];
 
-	snprintf(url, sizeof(url), "/api/servers/%s/smtpd", sid);
+	q[0] = '\0';
+	if ((s = cur_server()) != NULL && ml_where(s)[0] != '\0')
+		snprintf(q, sizeof(q), "?jail=%s", ml_where(s));
+	snprintf(url, sizeof(url), "/api/servers/%s/smtpd%s", sid, q);
 	res_load(&ml.r, sid, url);
+}
+
+/* A job's extra: the jail it is done in, when OpenSMTPD is a jail's. */
+static const char *
+ml_extra(struct server *s)
+{
+	static char	extra[96];
+	char		*q;
+
+	if (ml_where(s)[0] == '\0')
+		return (NULL);
+	q = json_quote(ml_where(s));
+	snprintf(extra, sizeof(extra), ",\"jail\":%s", q);
+	free(q);
+	return (extra);
 }
 
 static void
 send(struct server *s, char *json, const char *title)
 {
 
-	job_send(s, json, title, JOB_MAIL, s->name);
+	job_send(s, json, title, JOB_MAIL, ml_where(s)[0] != '\0' ?
+	    ml_where(s) : s->name);
 }
 
 static void
@@ -330,6 +361,11 @@ view_mail(struct html *h, struct server *s)
 	}
 	running = jbool(o, "running");
 	h_raw(h, "<div class=\"toolbar\">");
+	if (jstr(o, "jail") != NULL) {
+		h_raw(h, "<span class=\"chip\">in jail ");
+		h_txt(h, jstr(o, "jail"));
+		h_raw(h, "</span> ");
+	}
 	chip(h, jbool(o, "enabled"), "Enabled at boot", "Not at boot");
 	chip(h, running, "Running", "Stopped");
 	st = jget(o, "status");
@@ -563,7 +599,7 @@ mail_form(const char *form, const ucl_object_t *f)
 		w[0] = jstr(f, "name");
 		snprintf(title, sizeof(title), "smtpd table %s written", w[0]);
 		send(s, job_json("smtpd", "table", w, 1, jstr(f, "text") != NULL ?
-		    jstr(f, "text") : "", NULL), title);
+		    jstr(f, "text") : "", ml_extra(s)), title);
 		ml.table[0] = '\0';
 		return (true);
 	}
@@ -649,8 +685,8 @@ mail_form(const char *form, const ucl_object_t *f)
 	ucl_object_unref(spec);
 	q = json_quote(json != NULL ? json : "{}");
 	free(json);
-	if (asprintf(&json, "{\"kind\":\"smtpd\",\"verb\":\"conf\",\"text\":%s}",
-	    q) == -1)
+	if (asprintf(&json, "{\"kind\":\"smtpd\",\"verb\":\"conf\",\"text\":%s%s}",
+	    q, ml_extra(s) != NULL ? ml_extra(s) : "") == -1)
 		abort();
 	free(q);
 	send(s, json, "smtpd.conf from the form");
@@ -712,7 +748,7 @@ mail_action(const char *act, const char *arg, const char *value)
 		snprintf(title, sizeof(title), "smtpd %s", strcmp(arg, "yes") ==
 		    0 ? "enabled and started" : "stopped and disabled");
 		w[0] = strcmp(arg, "yes") == 0 ? "enable=yes" : "enable=no";
-		send(s, job_json("smtpd", "enable", w, 1, NULL, NULL), title);
+		send(s, job_json("smtpd", "enable", w, 1, NULL, ml_extra(s)), title);
 		return (true);
 	}
 	if (strcmp(act, "ml-pause") == 0 || strcmp(act, "ml-resume") == 0 ||
@@ -724,7 +760,7 @@ mail_action(const char *act, const char *arg, const char *value)
 
 		w[0] = arg;
 		snprintf(title, sizeof(title), "smtpd %s %s", verb, arg);
-		send(s, job_json("smtpd", verb, w, 1, NULL, NULL), title);
+		send(s, job_json("smtpd", verb, w, 1, NULL, ml_extra(s)), title);
 		return (true);
 	}
 	return (false);

@@ -472,7 +472,9 @@ and
 securelevel at boot, and those alone.
 A job.
 .It Cm smtpd
-OpenSMTPD on the host
+OpenSMTPD on the host, or with
+.Fl j
+in a jail (a network of its own or not)
 .Pq Pa mail/opensmtpd , a plugin ,
 as JSON: whether it is installed, enabled and running; where it runs,
 what

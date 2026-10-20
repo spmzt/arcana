@@ -1044,6 +1044,15 @@ ATF_TC_BODY(smtpd, tc)
 	ATF_CHECK_STREQ("false", jstr(&r, "data.running"));
 	ATF_CHECK(jstr(&r, "data.status") == NULL);
 	resp_free(&r);
+	/* A jail's (the one that runs here): read in its root, where
+	 * nothing is installed. */
+	snprintf(body, sizeof(body), "%s?jail=gw", path);
+	http("GET", body, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "data.installed") != NULL && strcmp(jstr(&r,
+	    "data.installed"), "false") == 0, "%.400s", r.body);
+	ATF_CHECK_STREQ("gw", jstr(&r, "data.jail"));
+	resp_free(&r);
 	/* The form, as the page sends it: rendered on the host, checked by
 	 * smtpd -n, written; the form kept and read back. */
 	snprintf(body, sizeof(body), "{\"jobs\":[{\"kind\":\"smtpd\",\"verb\":\"conf\","

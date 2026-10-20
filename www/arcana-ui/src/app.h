@@ -957,6 +957,7 @@ void		 view_mail(struct html *, struct server *);
 bool		 mail_form(const char *, const ucl_object_t *);
 bool		 mail_action(const char *, const char *, const char *);
 void		 mail_refresh(void);
+const char	*plugin_anywhere(const struct server *, const char *);
 void		 view_hostsec(struct html *, struct server *);
 void		 view_storage_geom(struct html *, struct server *, int);
 void		 view_syslogconf(struct html *, struct server *);

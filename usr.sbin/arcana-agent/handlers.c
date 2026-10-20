@@ -931,7 +931,10 @@ worker(void *arg)
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "OpenSMTPD read");
 		memset(&smr, 0, sizeof(smr));
-		do_smtpd(&w, &smr);
+		if (scope_enter_jail(&w, j->jail, &smr.error, false) == 0)
+			do_smtpd(&w, &smr);
+		else
+			smr.has_ok = true;
 		ok = smr.ok;
 		error = smr.error;
 		step_end(&w, root, ok, NULL);
@@ -2528,10 +2531,14 @@ arc_smtpd_doit(cbl_req *req, const struct arc_smtpd_req *rq,
 
 	if (rq->names.n > 0)
 		return (reject(req, "smtpd is read whole: no words"));
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
 	if ((j = calloc(1, sizeof(*j))) == NULL)
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_SMTPD;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
 	return (start(j));
 }
 

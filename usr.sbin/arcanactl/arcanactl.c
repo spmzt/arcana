@@ -2559,6 +2559,7 @@ cmd_smtpd(struct arc_client *cl, int argc, char **argv)
 
 	if (argc == 1) {
 		memset(&rq, 0, sizeof(rq));
+		rq.jail = netjail;
 		if ((error = arc_smtpd(cl, &rq, &rs)) != 0)
 			fail(cl, error, "smtpd");
 		if (rs->json != NULL)

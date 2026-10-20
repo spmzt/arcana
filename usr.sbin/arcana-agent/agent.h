@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.162.0"
+#define	ARCANA_AGENT_VERSION	"0.163.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -747,6 +747,7 @@ int		 scope_open_dir(struct work *, const char *, const char **);
 char		*scope_slurp(struct work *, const char *, size_t *);
 int		 scope_replace(struct work *, const char *, const char *,
 		    size_t, mode_t, const char *);
+int		 scope_unlink(struct work *, const char *);
 int		 scope_rename(struct work *, const char *, const char *,
 		    const char *);
 int		 scope_helper(int, char **);

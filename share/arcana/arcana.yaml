@@ -471,7 +471,9 @@ definitions:
           read it again; verb enable, enable=yes or no; verbs pause and
           resume with mta, mda or smtp; schedule and remove with an
           envelope's or message's id or all; update with a table's
-          name: smtpctl's own.  The host's only; never in safe mode.
+          name: smtpctl's own.  The host's, or with jail a jail's (its
+          own files and programs, a network of its own or not); never in
+          safe mode.
   - name: job-state
     type: enum
     entries:
@@ -3751,11 +3753,14 @@ operations:
       credentials and secrets the users' and labels' names alone),
       "filters" (the filter ports installed), "mailer" (what
       mailer.conf(5) makes sendmail), "pki" (whether this agent has a
-      certificate to listen with).  Nothing is changed.
+      certificate to listen with).  Of the host, or with jail of that
+      jail (one with or without a network of its own): its files, its
+      smtpctl, its service.  Nothing is changed.
     do:
       request:
         attributes:
           - names
+          - jail
       reply:
         attributes:
           - ok

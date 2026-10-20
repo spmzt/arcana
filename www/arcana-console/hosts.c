@@ -2679,6 +2679,7 @@ connected:
 		break;
 	case OP_SMTPD:
 		memset(&smq, 0, sizeof(smq));
+		smq.jail = c->scope[0] != '\0' ? c->scope : NULL;
 		if ((error = arc_smtpd(&cl, &smq, &smr)) != 0)
 			goto rpcfail;
 		ok = smr->ok;
@@ -4614,14 +4615,6 @@ api_system(struct http_request *req)
 	return (read_route(req, OP_SYSTEM, setup_system));
 }
 
-/* GET /api/servers/<id>/smtpd: OpenSMTPD on the host, whole. */
-int
-api_smtpd(struct http_request *req)
-{
-
-	return (read_route(req, OP_SMTPD, NULL));
-}
-
 /* GET /api/servers/<id>/certs[?jail=]: the certificates OpenSSL trusts
  * there. */
 /* ?jail=name: the jail it is read in. */
@@ -4637,6 +4630,14 @@ api_certs(struct http_request *req)
 {
 
 	return (read_route(req, OP_CERTS, setup_scope));
+}
+
+/* GET /api/servers/<id>/smtpd[?jail=]: OpenSMTPD of the host or a jail. */
+int
+api_smtpd(struct http_request *req)
+{
+
+	return (read_route(req, OP_SMTPD, setup_scope));
 }
 
 /* GET /api/servers/<id>/ssh[?jail=]: the base system's sshd there. */
@@ -5600,7 +5601,7 @@ static const struct hread {
 	{ "suricata/rules", OP_SURICATA_RULES, setup_suricata_rules },
 	{ "netstore", OP_NETSTORE, setup_netstore },
 	{ "system", OP_SYSTEM, setup_system },
-	{ "smtpd", OP_SMTPD, NULL },
+	{ "smtpd", OP_SMTPD, setup_scope },
 	{ "services", OP_SERVICES, NULL },
 	{ "packages", OP_PACKAGES, setup_packages },
 	{ "net/", OP_NETWORK, setup_network },

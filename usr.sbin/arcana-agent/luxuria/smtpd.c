@@ -63,6 +63,33 @@ encrypt_bin(struct work *w)
 	    "/usr/local/libexec/opensmtpd/encrypt");
 }
 
+/* Is a file there, in the scope (the host's, or the jail's root)? */
+static bool
+scoped_x(struct work *w, const char *path, int mode)
+{
+	const char	*base;
+	int		 dfd, rc;
+
+	if ((dfd = scope_open_dir(w, path, &base)) == -1)
+		return (false);
+	rc = faccessat(dfd, base, mode, AT_EACCESS);
+	close(dfd);
+	return (rc == 0);
+}
+
+/* A directory made in the scope, when it is not there. */
+static void
+scoped_mkdir(struct work *w, const char *path)
+{
+	const char	*base;
+	int		 dfd;
+
+	if ((dfd = scope_open_dir(w, path, &base)) == -1)
+		return;
+	(void)mkdirat(dfd, base, 0750);
+	close(dfd);
+}
+
 /* A table's file, under the directory of the agent's own. */
 static const char *
 table_path(struct work *w, const char *name)
@@ -194,6 +221,11 @@ smtpd_render(struct work *w, const ucl_object_t *in, const char **errp)
 		if ((v = sstr(l, "pki")) != NULL && strcmp(v, "arcana") == 0)
 			tls = true;
 	if (tls) {
+		if (w->jail != NULL) {
+			*errp = "pki arcana: the host's certificate is not a "
+			    "jail's to serve with: name a pki of the own lines";
+			goto bad;
+		}
 		if (tls_files_cert() == NULL) {
 			*errp = "pki arcana: this agent runs without a "
 			    "certificate (-C): no TLS of Arcana's to listen with";
@@ -240,7 +272,7 @@ smtpd_render(struct work *w, const ucl_object_t *in, const char **errp)
 		}
 		p = wfmt(w, "/usr/local/libexec/opensmtpd/filter-%s", sstr(e,
 		    "name"));
-		if (access(p, X_OK) != 0) {
+		if (!scoped_x(w, p, X_OK)) {
 			*errp = wfmt(w, "filter %s is not installed (%s): pkg "
 			    "install opensmtpd-filter-%s", sstr(e, "name"), p,
 			    sstr(e, "name"));
@@ -621,16 +653,16 @@ do_smtpd(struct work *w, struct arc_smtpd_rsp *rsp)
 	struct ucl_parser *p;
 	struct dirent	*de;
 	DIR		*d;
-	FILE		*fp;
-	char		*json, *text, line[256];
+	char		*json, *text, *line;
 	size_t		 len, i;
 	int64_t		 n;
+	int		 dfd;
 	bool		 enabled, running, installed;
 
 	rsp->has_ok = true;
 	rsp->ok = false;
 	top = ucl_object_typed_new(UCL_OBJECT);
-	installed = access(smtpd_bin(w), X_OK) == 0;
+	installed = scoped_x(w, smtpd_bin(w), X_OK);
 	ucl_object_insert_key(top, ucl_object_frombool(installed), "installed",
 	    0, false);
 	enabled = running = false;
@@ -671,7 +703,9 @@ do_smtpd(struct work *w, struct arc_smtpd_rsp *rsp)
 	ucl_object_insert_key(top, o, "tables", 0, false);
 	/* The filters installed, by their ports. */
 	arr = ucl_object_typed_new(UCL_ARRAY);
-	if ((d = opendir("/usr/local/libexec/opensmtpd")) != NULL) {
+	d = (dfd = scope_dirfd(w, "/usr/local/libexec/opensmtpd")) != -1 ?
+	    fdopendir(dfd) : NULL;
+	if (d != NULL) {
 		while ((de = readdir(d)) != NULL)
 			if (strncmp(de->d_name, "filter-", 7) == 0)
 				ucl_array_append(arr, ucl_object_fromstring(
@@ -680,19 +714,23 @@ do_smtpd(struct work *w, struct arc_smtpd_rsp *rsp)
 	}
 	ucl_object_insert_key(top, arr, "filters", 0, false);
 	/* What sendmail(8) is on this host (mailer.conf(5)). */
-	if ((fp = fopen("/etc/mail/mailer.conf", "r")) != NULL) {
-		while (fgets(line, sizeof(line), fp) != NULL)
+	if ((text = scope_slurp(w, "/etc/mail/mailer.conf", &len)) != NULL)
+		for (line = text; line != NULL; line = strchr(line, '\n') != NULL
+		    ? strchr(line, '\n') + 1 : NULL)
 			if (strncmp(line, "sendmail", 8) == 0 && isspace(
 			    (unsigned char)line[8])) {
-				line[strcspn(line, "\n")] = '\0';
 				ucl_object_insert_key(top, ucl_object_fromstring(
-				    line + 8 + strspn(line + 8, " \t")), "mailer",
-				    0, false);
+				    wstrndup(w, line + 8 + strspn(line + 8, " \t"),
+				    strcspn(line + 8 + strspn(line + 8, " \t"),
+				    "\n"))), "mailer", 0, false);
+				break;
 			}
-		fclose(fp);
-	}
-	ucl_object_insert_key(top, ucl_object_frombool(tls_files_cert() !=
-	    NULL), "pki", 0, false);
+	/* A jail serves with no certificate of the host's. */
+	ucl_object_insert_key(top, ucl_object_frombool(w->jail == NULL &&
+	    tls_files_cert() != NULL), "pki", 0, false);
+	if (w->jail != NULL)
+		ucl_object_insert_key(top, ucl_object_fromstring(w->jail), "jail",
+		    0, false);
 	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);
 	if (json == NULL) {
@@ -739,8 +777,6 @@ smtpd_check(const struct arc_job_spec *sp)
 	ucl_object_t	*o;
 	const char	*e, *v;
 
-	if (sp->jail != NULL && sp->jail[0] != '\0')
-		return ("OpenSMTPD is the host's");
 	if (sp->safe)
 		return ("mail is not undone: not in safe mode");
 	if (sp->verb == NULL)
@@ -894,11 +930,13 @@ do_smtpd_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		if ((o = spec_of(sp->text)) == NULL || (conf = smtpd_render(w, o,
 		    errp)) == NULL)
 			return (-1);
-		(void)mkdir(opts.smtpd_dir, 0750);
+		scoped_mkdir(w, opts.smtpd_dir);
 		/* Checked by smtpd itself before it is put in place. */
 		path = wfmt(w, "%s.arcana-new", opts.smtpd_conf);
-		if (file_put(w, path, conf, 0644, errp) != 0)
+		if (scope_replace(w, path, conf, strlen(conf), 0644, NULL) != 0) {
+			*errp = wfmt(w, "%s: %s", path, strerror(errno));
 			return (-1);
+		}
 		step = step_begin(w, ARC_STEP_KIND_EXEC, "smtpd -n", "the "
 		    "configuration checked");
 		argv[0] = (char *)(uintptr_t)smtpd_bin(w);
@@ -907,7 +945,7 @@ do_smtpd_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		argv[3] = (char *)(uintptr_t)path;
 		argv[4] = NULL;
 		if (run_exec(w, argv, &res) != 0) {
-			(void)unlink(path);
+			(void)scope_unlink(w, path);
 			*errp = wfmt(w, "smtpd does not take it: %s", exec_error(w,
 			    &res, "smtpd -n"));
 			step_end(w, step, false, "%s", *errp);
@@ -915,28 +953,33 @@ do_smtpd_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 			return (-1);
 		}
 		step_end(w, step, true, NULL);
-		if (rename(path, opts.smtpd_conf) != 0) {
+		if (scope_replace(w, opts.smtpd_conf, conf, strlen(conf), 0644,
+		    NULL) != 0) {
 			*errp = wfmt(w, "%s: %s", opts.smtpd_conf, strerror(errno));
 			ucl_object_unref(o);
 			return (-1);
 		}
+		(void)scope_unlink(w, path);
 		text = (char *)ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
 		ucl_object_unref(o);
 		if (text != NULL) {
-			(void)file_put(w, spec_path(w), text, 0600, errp);
+			(void)scope_replace(w, spec_path(w), text, strlen(text),
+			    0600, NULL);
 			free(text);
 		}
 		return (restart(w, errp));
 	}
 	if (strcmp(sp->verb, "table") == 0) {
-		(void)mkdir(opts.smtpd_dir, 0750);
+		scoped_mkdir(w, opts.smtpd_dir);
 		text = strcmp(v, "credentials") == 0 ? hashed(w, sp->text, errp) :
 		    (char *)(uintptr_t)sp->text;
 		if (text == NULL)
 			return (-1);
-		if (file_put(w, table_path(w, v), text, table_secret(v) ? 0600 :
-		    0644, errp) != 0)
+		if (scope_replace(w, table_path(w, v), text, strlen(text),
+		    table_secret(v) ? 0600 : 0644, NULL) != 0) {
+			*errp = wfmt(w, "%s: %s", table_path(w, v), strerror(errno));
 			return (-1);
+		}
 		enabled = running = false;
 		service_state(w, "smtpd", &enabled, &running);
 		if (!running)

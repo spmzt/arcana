@@ -1236,9 +1236,12 @@ paths:
         listen with).  The changes are jobs of kind smtpd: verb conf with
         the form as text (JSON), table with a name and its text, enable
         with enable=yes|no, pause and resume with mta|mda|smtp, schedule
-        and remove with an id or all, update with a table''s name.'
+        and remove with an id or all, update with a table''s name.  With
+        jail, that jail''s OpenSMTPD (a network of its own or not); the
+        jobs take jail too.'
       parameters:
         - $ref: "#/components/parameters/server"
+        - { name: jail, in: query, schema: { type: string } }
       responses:
         "200":
           description: The read, under data, with the agent's trace.

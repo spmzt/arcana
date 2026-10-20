@@ -902,11 +902,15 @@ stage(struct html *h)
 
 		plug = app.tab == TAB_NETWORK && NET_PLUGIN(app.net.kind);
 		h_raw(h, "<nav class=\"tabs\">");
-		for (t = 0; t < (int)(sizeof(tabs) / sizeof(tabs[0])); t++)
+		for (t = 0; t < (int)(sizeof(tabs) / sizeof(tabs[0])); t++) {
+			/* Mail is a plugin's: drawn with them. */
+			if (t == TAB_MAIL)
+				continue;
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
 			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
 			    tabs[t].title);
+		}
 		for (t = 0; t < (int)(sizeof(plugins) / sizeof(plugins[0]));
 		    t++) {
 			bool	there = s->list == NULL || plugin_where(s,
@@ -920,6 +924,19 @@ stage(struct html *h)
 			    "installed on this host or a jail of it, not the "
 			    "base system's" : "A plugin, not installed here: "
 			    "open it to install its package", plugins[t].title);
+		}
+		/* OpenSMTPD: a plugin of the host or of a jail of it, with the
+		 * host's network or its own. */
+		{
+			const char	*at = plugin_anywhere(s, "smtpd");
+
+			h_fmt(h, "<button class=\"tab plugin%s%s\" data-act=\"tab\" "
+			    "data-arg=\"mail\" title=\"%s%s\">Mail</button>",
+			    app.tab == TAB_MAIL ? " on" : "", s->list != NULL && at
+			    == NULL ? " missing" : "", at == NULL ? "A plugin, not "
+			    "installed here: open it to install its package" :
+			    "OpenSMTPD, a plugin, on ", at != NULL && at[0] != '\0' ?
+			    at : at != NULL ? "the host" : "");
 		}
 		if (app.tab != TAB_JOBS && app.tab != TAB_SYSTEM && app.tab !=
 		    TAB_SECURITY && app.tab != TAB_MAIL)

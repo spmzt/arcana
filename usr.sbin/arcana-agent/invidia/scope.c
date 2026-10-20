@@ -491,9 +491,15 @@ scope_open_dir(struct work *w, const char *path, const char **basep)
 	const char	*slash;
 	char		*dir;
 
-	if ((slash = strrchr(path, '/')) == NULL || slash[1] == '\0') {
+	if ((slash = strrchr(path, '/')) != NULL && slash[1] == '\0') {
 		errno = EINVAL;
 		return (-1);
+	}
+	/* A bare name is in the scope's own directory: the host's current
+	 * one (a test's), or the jail's root. */
+	if (slash == NULL) {
+		*basep = path;
+		return (scope_dirfd(w, "."));
 	}
 	dir = slash == path ? wstrdup(w, "/") : wstrndup(w, path,
 	    (size_t)(slash - path));
@@ -592,6 +598,20 @@ fail:
 }
 
 /* Move a file's name in its directory, or with to NULL take it away. */
+/* A file taken away, in the scope; 0, or -1 with errno. */
+int
+scope_unlink(struct work *w, const char *path)
+{
+	const char	*base;
+	int		 dfd, rc;
+
+	if ((dfd = scope_open_dir(w, path, &base)) == -1)
+		return (-1);
+	rc = unlinkat(dfd, base, 0);
+	close(dfd);
+	return (rc);
+}
+
 int
 scope_rename(struct work *w, const char *path, const char *from,
     const char *to)

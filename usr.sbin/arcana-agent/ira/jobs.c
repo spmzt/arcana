@@ -1065,8 +1065,10 @@ run(struct qjob *j)
 		ok = do_geom_job(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_SMTPD:
+		/* A jail's, with or without a network of its own. */
 		error = NULL;
-		ok = do_smtpd_job(&j->w, sp, &error) == 0;
+		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
+		    do_smtpd_job(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_CERT:
 		/* Any jail's: its files, not its network. */
