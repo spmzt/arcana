@@ -1252,28 +1252,54 @@ jc_diff(const char *path, const char *a, size_t alen, const char *b,
 
 /*
  * Replace path atomically: write a temporary file next to it with the
- * same mode and owner, fsync, rename.
+ * same mode and owner, fsync, rename.  With jc_write_at() the file is
+ * in the directory dfd is open on, path's last name: what a process in
+ * capability mode (capsicum(4)) can still do.
  */
 int
 jc_write(const char *path, const char *buf, size_t len, char *errbuf,
     size_t errlen)
 {
+	const char	*slash;
+	char		 dir[MAXPATHLEN];
+	int		 dfd, rc;
+
+	if ((slash = strrchr(path, '/')) == NULL)
+		snprintf(dir, sizeof(dir), ".");
+	else
+		snprintf(dir, sizeof(dir), "%.*s", slash == path ? 1 :
+		    (int)(slash - path), path);
+	if ((dfd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC)) == -1) {
+		snprintf(errbuf, errlen, "%s: %s", dir, strerror(errno));
+		return (-1);
+	}
+	rc = jc_write_at(dfd, path, buf, len, errbuf, errlen);
+	close(dfd);
+	return (rc);
+}
+
+int
+jc_write_at(int dfd, const char *path, const char *buf, size_t len,
+    char *errbuf, size_t errlen)
+{
 	struct stat	 sb;
+	const char	*base;
 	char		 tmp[MAXPATHLEN];
 	size_t		 off;
 	ssize_t		 w;
 	int		 fd;
 
-	if (stat(path, &sb) == -1) {
+	base = strrchr(path, '/') != NULL ? strrchr(path, '/') + 1 : path;
+	if (fstatat(dfd, base, &sb, 0) == -1) {
 		snprintf(errbuf, errlen, "stat %s: %s", path, strerror(errno));
 		return (-1);
 	}
-	if (snprintf(tmp, sizeof(tmp), "%s.XXXXXX", path) >=
+	if (snprintf(tmp, sizeof(tmp), "%s.XXXXXX", base) >=
 	    (int)sizeof(tmp)) {
 		snprintf(errbuf, errlen, "%s: path too long", path);
 		return (-1);
 	}
-	if ((fd = mkstemp(tmp)) == -1) {
+	if ((fd = mkostempsat(dfd, tmp, 0, O_CLOEXEC)) == -1) {
 		snprintf(errbuf, errlen, "mkstemp %s: %s", tmp,
 		    strerror(errno));
 		return (-1);
@@ -1292,16 +1318,16 @@ jc_write(const char *path, const char *buf, size_t len, char *errbuf,
 		goto fail;
 	}
 	close(fd);
-	if (rename(tmp, path) == -1) {
+	if (renameat(dfd, tmp, dfd, base) == -1) {
 		snprintf(errbuf, errlen, "rename %s: %s", path,
 		    strerror(errno));
-		unlink(tmp);
+		(void)unlinkat(dfd, tmp, 0);
 		return (-1);
 	}
 	return (0);
 
 fail:
 	close(fd);
-	unlink(tmp);
+	(void)unlinkat(dfd, tmp, 0);
 	return (-1);
 }

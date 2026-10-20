@@ -104,7 +104,15 @@ See what removing one would change:
 +	ip4.addr = 10.0.0.12;
  }
 .Ed
+.Sh SECURITY
+The files are read, includes and all; then
+.Nm
+runs in capability mode
+.Pq Xr capsicum 4 :
+the edit, its check and the write of the one file, in its directory
+opened beforehand, reach nothing else of the system.
 .Sh SEE ALSO
+.Xr capsicum 4 ,
 .Xr jail.conf 5 ,
 .Xr arcana-agent 8 ,
 .Xr jail 8 ,

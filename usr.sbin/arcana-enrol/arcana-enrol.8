@@ -122,3 +122,15 @@ Over plain HTTP, or with
 .Ev SSL_NO_VERIFY_PEER
 set, whoever can read the connection can take the token and have the
 certificate issued to a key of their own.
+.Pp
+Once the console has answered,
+.Nm
+runs in capability mode
+.Pq Xr capsicum 4 :
+the answer is parsed and the files are written through the directory
+opened beforehand, and nothing else of the system is reachable.
+.Xr sysrc 8
+and
+.Xr service 8
+are run by a child forked before that, told to go once the files are
+in place.

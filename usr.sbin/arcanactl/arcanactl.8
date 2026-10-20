@@ -1797,6 +1797,20 @@ whether or not anyone stays connected, which is what a change that cuts
 the connection it was asked over needs.
 .Sh EXIT STATUS
 0 when the request succeeded, 1 when it failed, 2 for usage errors.
+.Sh SECURITY
+Once the agent is connected,
+.Nm
+runs in capability mode
+.Pq Xr capsicum 4 :
+the agent's answers are decoded and printed there.
+The files named on the command line, and the file behind an
+.Ql @word ,
+are opened to read by Casper's
+.Xr cap_fileargs 3
+service; for
+.Cm agent-build
+alone the program named is opened to write.
+Nothing else of the system is reachable from then on.
 .Sh EXAMPLES
 .Bd -literal -offset indent
 # arcanactl list

@@ -7,7 +7,7 @@ MAN=		arcanactl.8
 CBLINK_SPECS=	${ARC_SPEC}
 CBLINK_PARTS=	h,c,client
 
-LDADD+=		-lxo -lmd
+LDADD+=		-lxo -lmd -lcasper -lcap_fileargs -lnv
 
 .include "${CBLINK_MK}"
 .include <bsd.prog.mk>

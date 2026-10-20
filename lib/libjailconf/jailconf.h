@@ -94,6 +94,8 @@ bool		 jc_verify(const char *, const char *, size_t, const char *,
 char		*jc_diff(const char *, const char *, size_t, const char *,
 		    size_t);
 int		 jc_write(const char *, const char *, size_t, char *, size_t);
+int		 jc_write_at(int, const char *, const char *, size_t, char *,
+		    size_t);
 bool		 jc_addr_split(const char *, int *, void *, int *);
 bool		 jc_value_equal(const char *, const char *, const char *);
 __END_DECLS
