@@ -3237,7 +3237,7 @@ int
 setting_group(const char *key)
 {
 
-	return (strncmp(key, "mail_", 5) == 0 || strncmp(key, "smtp_", 5) == 0 ?
+	return (strncmp(key, "mail_", 5) == 0 ?
 	    SETG_MAIL : strncmp(key, "telegram_", 9) == 0 ? SETG_TELEGRAM :
 	    strncmp(key, "ldap_", 5) == 0 ? SETG_LDAP : SETG_CONSOLE);
 }

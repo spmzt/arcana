@@ -1169,8 +1169,8 @@ paths:
     post:
       tags: [settings]
       summary: A mail to say the alerts reach the address
-      description: Sent as the alerts are, by sendmail(8) of the host
-        mail_via names (or the one beside the console), to mail_to.
+      description: Sent as the alerts are, by sendmail(8) on the console's
+        host (dma(8) as FreeBSD comes), to mail_to.
       responses:
         "200":
           description: ok.

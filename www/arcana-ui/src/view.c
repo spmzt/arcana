@@ -1877,32 +1877,6 @@ settings_fields(struct html *h, int group)
 				continue;
 			}
 		}
-		/* The ways mail goes, and the relay's security: chosen. */
-		if (strcmp(jstr(k, "key"), "mail_via") == 0 || strcmp(jstr(k,
-		    "key"), "smtp_security") == 0) {
-			static const char *const via[] = { "sendmail", "smtp",
-			    NULL }, *const sec[] = { "starttls", "tls", "none",
-			    NULL };
-			const char *const *o = jstr(k, "key")[0] == 'm' ? via :
-			    sec;
-
-			h_raw(h, "<label>");
-			h_txt(h, jstr(k, "label"));
-			h_raw(h, "<select");
-			h_attr(h, "name", jstr(k, "key"));
-			h_raw(h, ">");
-			for (; *o != NULL; o++) {
-				h_raw(h, "<option");
-				h_attr(h, "value", *o);
-				h_fmt(h, "%s>%s</option>", strcmp(jstr(k, "value") !=
-				    NULL ? jstr(k, "value") : "", *o) == 0 ?
-				    " selected" : "", *o);
-			}
-			h_raw(h, "</select><small>");
-			h_txt(h, jstr(k, "help"));
-			h_raw(h, "</small></label>");
-			continue;
-		}
 		/* A secret: never shown, said to be set, typed to change. */
 		if (jstr(k, "type") != NULL && strcmp(jstr(k, "type"),
 		    "secret") == 0) {
