@@ -5103,6 +5103,12 @@ ATF_TC_BODY(mtls, tc)
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^arcana_agent_sctp_also=\"192.0.2.99\"$' "
 	    "rc.conf") == 0);
+	/* An address of a loopback interface: said to give no path. */
+	http("POST", path, "{\"sctp_also\":\"127.0.0.1\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"sctp_also_loopback\":[\"127.0.0.1\"]") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
 	http("POST", path, "{\"sctp_also\":\"\"}", &r);
 	EXPECT(&r, 200);
 	ATF_CHECK(strstr(r.body, "also_error") == NULL);
@@ -5160,6 +5166,32 @@ ATF_TC_BODY(mtls, tc)
 		snprintf(b2, sizeof(b2), "grep -q '^arcana_agent_listen=\"tcp://"
 		    "127.0.0.1:1 keep %s\"$' rc.conf", was);
 		ATF_CHECK_MSG(system(b2) == 0, "%s", b2);
+		/*
+		 * Moved to SCTP at the same address: the SCTP listener the
+		 * agent opened beside the TCP one is the one moved to, and is
+		 * not closed with it; the host is reached there afterwards.
+		 */
+		if (modfind("sctp") != -1) {
+			char	sctp[64];
+
+			snprintf(sctp, sizeof(sctp), "sctp://127.0.0.1:%d", port);
+			snprintf(b2, sizeof(b2), "{\"uri\":\"%s\"}", sctp);
+			http("POST", path, b2, &r);
+			EXPECT(&r, 200);
+			ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "true") == 0 && strcmp(
+			    jstr(&r, "uri"), sctp) == 0, "%s", r.body);
+			resp_free(&r);
+			snprintf(b2, sizeof(b2), "/api/servers/%s/transport", sid);
+			http("GET", b2, NULL, &r);
+			EXPECT(&r, 200);
+			ATF_CHECK_MSG(strstr(r.body, "\"uri\":\"sctp://127.0.0.1:")
+			    != NULL && strstr(r.body, was) == NULL && strstr(r.body,
+			    "\"up\":true,\"addresses\"") != NULL, "%s", r.body);
+			resp_free(&r);
+			snprintf(b2, sizeof(b2), "grep -q '^arcana_agent_listen=\""
+			    "tcp://127.0.0.1:1 keep %s\"$' rc.conf", sctp);
+			ATF_CHECK_MSG(system(b2) == 0, "%s", b2);
+		}
 	}
 	snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
 	http("GET", path, NULL, &r);

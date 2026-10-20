@@ -601,8 +601,18 @@ listen_change(void *arg)
 		snprintf(sib, sizeof(sib), "sctp://%s", tc->uri + 6);
 	if (tc->add) {
 		for (i = 0; i < nlst; i++)
-			if (strcmp(lst[i].uri, tc->uri) == 0 && lst[i].up)
+			if (strcmp(lst[i].uri, tc->uri) == 0 && lst[i].up) {
+				/*
+				 * The SCTP listener opened beside a TCP one, now
+				 * asked for by itself (a host moved from tcp:// to
+				 * sctp:// at the same address): its own from now
+				 * on, not closed with the TCP one.
+				 */
+				pthread_mutex_lock(&t_lock);
+				lst[i].sctp = false;
+				pthread_mutex_unlock(&t_lock);
 				goto out;
+			}
 		if (nlst + 2 > T_LISTEN) {
 			snprintf(tc->error, sizeof(tc->error), "%d listeners "
 			    "at most", T_LISTEN);
@@ -858,6 +868,44 @@ also_set(struct work *w, const char *now)
 	return (e);
 }
 
+/*
+ * Is the address one of a loopback interface's?  Such an address gives
+ * an SCTP association no path to a peer elsewhere, as for listeners
+ * (sctp_loopback_only()): an "SCTP also" address there helps nothing.
+ */
+static bool
+addr_on_loopback(const char *addr)
+{
+	struct addrinfo	 hints, *ai;
+	struct ifaddrs	*ifap, *ifa;
+	bool		 on;
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_flags = AI_NUMERICHOST;
+	if (getaddrinfo(addr, NULL, &hints, &ai) != 0)
+		return (false);
+	on = false;
+	if (getifaddrs(&ifap) == 0) {
+		for (ifa = ifap; ifa != NULL && !on; ifa = ifa->ifa_next) {
+			if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family !=
+			    ai->ai_family || (ifa->ifa_flags & IFF_LOOPBACK) == 0)
+				continue;
+			if (ai->ai_family == AF_INET6)
+				on = memcmp(&((struct sockaddr_in6 *)(void *)
+				    ai->ai_addr)->sin6_addr, &((struct sockaddr_in6 *)
+				    (void *)ifa->ifa_addr)->sin6_addr,
+				    sizeof(struct in6_addr)) == 0;
+			else if (ai->ai_family == AF_INET)
+				on = ((struct sockaddr_in *)(void *)ai->ai_addr)->
+				    sin_addr.s_addr == ((struct sockaddr_in *)(void *)
+				    ifa->ifa_addr)->sin_addr.s_addr;
+		}
+		freeifaddrs(ifap);
+	}
+	freeaddrinfo(ai);
+	return (on);
+}
+
 /* {"listeners":[...],"sctp":bool,"sessions":[...],"seen":n} */
 int
 do_transport(struct work *w, bool retry, const char *listen,
@@ -927,6 +975,17 @@ do_transport(struct work *w, bool retry, const char *listen,
 	pthread_mutex_unlock(&t_lock);
 	ucl_object_insert_key(top, arr, "listeners", 0, false);
 	put(top, "sctp_also", opts.sctp_also != NULL ? opts.sctp_also : "");
+	/* Those of them on a loopback interface: no help to a peer. */
+	if (opts.sctp_also != NULL) {
+		char	*copy, *rest, *word;
+
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		copy = wstrdup(w, opts.sctp_also);
+		for (rest = copy; (word = strsep(&rest, " \t,")) != NULL; )
+			if (word[0] != '\0' && addr_on_loopback(word))
+				ucl_array_append(arr, ucl_object_fromstring(word));
+		ucl_object_insert_key(top, arr, "sctp_also_loopback", 0, false);
+	}
 	ucl_object_insert_key(top, ucl_object_frombool(kernel_has_sctp()),
 	    "sctp", 0, false);
 	arr = ucl_object_typed_new(UCL_ARRAY);

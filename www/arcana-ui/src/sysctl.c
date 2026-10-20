@@ -1043,7 +1043,32 @@ view_transport(struct html *h, struct server *s)
 		    "(<code>sctp_bindx(3)</code>, kept in rc.conf as "
 		    "<code>arcana_agent_sctp_also</code>). A listener on "
 		    "<code>0.0.0.0</code> or <code>[::]</code> has every address "
-		    "already.</p></details>", tr.busy ? " disabled" : "");
+		    "already.</p>", tr.busy ? " disabled" : "");
+		/* An address of a loopback interface gives no path to a peer
+		 * elsewhere: FreeBSD's SCTP scopes by the interface's type. */
+		if (ucl_array_size(jget(d, "sctp_also_loopback")) > 0) {
+			const ucl_object_t	*a;
+			ucl_object_iter_t	 ait = NULL;
+			int			 na = 0;
+
+			h_raw(h, "<div class=\"notice warn\">");
+			while ((a = ucl_object_iterate(jget(d, "sctp_also_loopback"),
+			    &ait, true)) != NULL) {
+				h_raw(h, na++ > 0 ? ", " : "");
+				h_raw(h, "<code>");
+				h_txt(h, ucl_object_tostring(a));
+				h_raw(h, "</code>");
+			}
+			h_fmt(h, " %s on a loopback interface. FreeBSD's SCTP leaves "
+			    "an address of a loopback-type interface out of an "
+			    "association with any peer not on this host "
+			    "(<code>sctp_is_address_in_scope()</code>): it decides by "
+			    "the interface, not the address, so a routable address on "
+			    "lo0 gives the console no path. Name an address of a real "
+			    "interface here, and reach the agent by that one.</div>",
+			    na == 1 ? "is" : "are");
+		}
+		h_raw(h, "</details>");
 	}
 	if (tr.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
