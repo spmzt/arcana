@@ -6790,6 +6790,24 @@ part_trouble(void)
 	ATF_CHECK(js_true("document.querySelector('datalist#ts-addrs')"));
 	ATF_CHECK(js_true("document.querySelector('details.tsplaces').open"));
 	shot("9t-troubleshoot");
+	/* Several places ticked: every one of them accounted for in the
+	 * result, on the path or not, and why. */
+	run("document.querySelectorAll('details.tsplaces input[type=checkbox]')"
+	    ".forEach(b => { b.checked = true; }); document.querySelector("
+	    "'form[data-form=ts-path]').requestSubmit();");
+	wait_js("document.querySelector('ul.tsplaces-asked') && document."
+	    "querySelectorAll('ul.tsplaces-asked li').length >= 2 && document."
+	    "querySelectorAll('ul.tsplaces-asked li').length === document."
+	    "querySelectorAll('details.tsplaces input[type=checkbox]:checked')"
+	    ".length", 30);
+	ATF_CHECK(js_true("[...document.querySelectorAll('ul.tsplaces-asked "
+	    "li')].every(l => /on the way|not on the path|not asked|asked,/."
+	    "test(l.textContent) || l.classList.contains('bad'))"));
+	shot("9t-troubleshoot-places");
+	run("document.querySelectorAll('details.tsplaces input[type=checkbox]')"
+	    ".forEach(b => { b.checked = false; }); document.querySelector("
+	    "'form[data-form=ts-path]').requestSubmit();");
+	wait_js("document.querySelector('ol.tsway li.tshop')", 20);
 	/* Swapped: the other way round, asked at once. */
 	run("document.querySelector('button[data-act=ts-swap]').click()");
 	wait_js("document.querySelector('form[data-form=ts-path]').src.value "
