@@ -4930,8 +4930,18 @@ firewall_aliases_head()
 }
 firewall_aliases_body()
 {
-	printf '#!/bin/sh\necho "ipfw $*" >> %s/ipfw.log\nexit 0\n' "$(pwd)" \
-	    > fake-ipfw
+	# Rule 1000 is in the kernel's set 0; scripts are logged.
+	cat > fake-ipfw <<EOS
+#!/bin/sh
+echo "ipfw \$*" >> $(pwd)/ipfw.log
+case "\$*" in
+"-S list 1000") echo "01000 set 0 allow tcp from table(lan) to me 80,443 in via vtnet0" ;;
+"-S list "*) echo "ipfw: rule \$3 does not exist" >&2 ;;
+"-n /dev/stdin") sed -e 's/^add //' ;;
+"-q /dev/stdin") cat >> $(pwd)/ipfw.log ;;
+esac
+exit 0
+EOS
 	chmod +x fake-ipfw
 	mkdir fw
 	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules"
@@ -4949,7 +4959,9 @@ firewall_aliases_body()
 	: > ipfw.log
 	atf_check -o match:'done' "$JGC" -c "$SOCK" -p ipfw add 1000 allow \
 	    tcp from '$lan' to me '$web' in via '$wan'
-	atf_check -o inline:'ipfw -q add 1000 allow tcp from table(lan) to me 80,443 in via vtnet0\n' \
+	# Added now, then kept: the kernel asked first for set 0's rules, to
+	# keep them too when none is kept yet (none here).
+	atf_check -o inline:'ipfw -q add 1000 allow tcp from table(lan) to me 80,443 in via vtnet0\nipfw -S list\n' \
 	    cat ipfw.log
 	atf_check -o match:'^#arcana alias lan addr$' \
 	    -o match:'^table lan create type addr$' \
@@ -4970,9 +4982,12 @@ firewall_aliases_body()
 	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias web ports 8080
 	atf_check -o match:'^add 01000 allow tcp from table\(lan\) to me 8080 in via vtnet0$' \
 	    -o not-match:'80,443' cat fw/ipfw.rules
-	atf_check -o match:'^ipfw -q delete 1000$' \
-	    -o match:'^ipfw -q add 1000 allow tcp from table\(lan\) to me 8080 in via vtnet0$' \
-	    cat ipfw.log
+	# The kernel's rule 1000, told by its words as put in before, changed
+	# by one checked script of ipfw's.
+	atf_check -o match:'^ipfw -S list 1000$' -o match:'^ipfw -n /dev/stdin$' \
+	    -o match:'^set 0 delete 1000$' \
+	    -o match:'^add 1000 allow tcp from table\(lan\) to me 8080 in via vtnet0$' \
+	    -o not-match:'^ipfw -q delete' cat ipfw.log
 	# The address list changed: its table, no rule.
 	: > ipfw.log
 	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias lan addr 10.1.0.0/16

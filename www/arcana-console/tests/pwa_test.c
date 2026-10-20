@@ -6549,7 +6549,9 @@ part_routes(void)
 	 * 3.1.1). */
 	run("[...document.querySelectorAll('.dock [data-act=trace]')].find(t "
 	    "=> t.textContent.includes('list jails')).click()");
-	/* Its CBOR first, what is on the wire today; the module a tab. */
+	/* The schema shown on asking ({ }, off by default): its CBOR
+	 * first, what is on the wire today; the module a tab. */
+	click_when(".trace button[data-act=schema]", 10);
 	click_when(".schema-tabs button[data-arg=yang]", 10);
 	wait_js("[...document.querySelectorAll('.schema h4')].some(h => "
 	    "h.textContent.includes('YANG model'))", 10);
