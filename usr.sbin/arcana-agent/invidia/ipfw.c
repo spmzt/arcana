@@ -217,7 +217,24 @@ kept_rule(const char *line, long *nump, const char **restp)
 	*nump = strtol(p, &end, 10);
 	if (*end != ' ' && *end != '\t')
 		return (false);
-	*restp = end + strspn(end, " \t");
+	end += strspn(end, " \t");
+	/*
+	 * "add N set S ...": a set of the rule's own, as a script that
+	 * stages its rules in a set writes them.  The kept rules are set
+	 * 0's once applied (Apply loads them into set 1 and swaps), so the
+	 * rule's words begin after it.
+	 */
+	if (strncmp(end, "set", 3) == 0 && (end[3] == ' ' || end[3] == '\t')) {
+		char	*after;
+
+		p = end + 3 + strspn(end + 3, " \t");
+		if (isdigit((unsigned char)*p)) {
+			(void)strtol(p, &after, 10);
+			if (*after == ' ' || *after == '\t')
+				end = after + strspn(after, " \t");
+		}
+	}
+	*restp = end;
 	return (true);
 }
 
@@ -946,9 +963,6 @@ script_ipfw(char *q)
 
 	n = strcspn(q, " \t");
 	tok = q;
-	/* A line that is ipfw's words alone (a rules file's). */
-	if (ipfw_word(q))
-		return (q);
 	/* A function of the script's own in ipfw's place (fw add ...): a
 	 * name, then ipfw's words. */
 	func = n > 0 && (isalpha((unsigned char)tok[0]) || tok[0] == '_');
@@ -1115,8 +1129,9 @@ rc_ruleset(struct work *w, const char **pathp, const char **errp)
 	static const char	 note[] = "# left out, applying does it: ";
 	static const char	 shnote[] = "# left out, the script's own: ";
 	char			*text, *out, *p, *line, *q, *c;
-	const char		*type, *script, *file;
+	const char		*type, *script, *file, *rest;
 	size_t			 len, n, o;
+	long			 num;
 	int			 step, e;
 	bool			 sh;
 
@@ -1255,6 +1270,37 @@ rc_ruleset(struct work *w, const char **pathp, const char **errp)
 			while ((q[0] == '-' && (q[1] == 'q' || q[1] == 'f') &&
 			    (q[2] == ' ' || q[2] == '\t')))
 				q += 2 + strspn(q + 2, " \t");
+			/*
+			 * A set of the script's own, as a script that stages
+			 * its rules in a set and swaps them in writes them:
+			 * applying stages the kept rules itself.  "set N
+			 * table|nat64…|nptv6 …" is that object's command,
+			 * kept without the set (applying gives it set 1, then
+			 * set 0); "add N set S …" the rule without it.
+			 */
+			{
+				char	*t = q, *after;
+
+				if (strncmp(t, "set", 3) == 0 && (t[3] == ' ' ||
+				    t[3] == '\t')) {
+					t += 3 + strspn(t + 3, " \t");
+					if (isdigit((unsigned char)*t)) {
+						(void)strtol(t, &after, 10);
+						after += strspn(after, " \t");
+						if ((strncmp(after, "table ", 6) == 0 ||
+						    strncmp(after, "nat64", 5) == 0 ||
+						    strncmp(after, "nptv6 ", 6) == 0) &&
+						    strstr(after, " all ") == NULL)
+							q = after;
+					}
+				}
+				if (kept_rule(q, &num, &rest) && rest != q &&
+				    strstr(q, " set ") != NULL &&
+				    strstr(q, " set ") < rest) {
+					q = wfmt(w, "add %05ld %s", num, wstrdup(w,
+					    rest));
+				}
+			}
 			/* Left out: the line as it is written. */
 			if (strncmp(q, "flush", 5) == 0 || strncmp(q, "set ",
 			    4) == 0 || strncmp(q, "delete ", 7) == 0 ||

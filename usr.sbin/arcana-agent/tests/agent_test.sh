@@ -5251,6 +5251,13 @@ add 00010 set 1 allow ip from table(T46) to any
 	atf_check -s exit:1 -e match:'line 2: the kept rules are what there is to be' \
 	    -o ignore "$JGC" -c "$SOCK" ipfw rules -w bad.rules
 	atf_check -o file:new.rules cat fw/ipfw.rules
+	# A kept rule written with a set of its own (a staging script's):
+	# loaded in set 1 once, not "set 1 set 1".
+	printf 'add 00010 set 1 allow ip from any to any\n' > set1.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w set1.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw apply
+	atf_check -o inline:'add 00010 set 1 allow ip from any to any\n' cat loaded.rules
+	atf_check -o match:'"kept":\[\{"num":10,"text":"allow ip from any to any"' "$JGC" -c "$SOCK" net ipfw
 	# What ipfw refuses of the load leaves set 0 alone.
 	printf 'add 00010 allow ip from any to fails\n' > f.rules
 	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w f.rules
@@ -5302,6 +5309,23 @@ $cmd 00502 allow tcp from me to any out via $pif setup $ks
 $cmd 00504 allow ip from any to any via $nosuch
 echo add this is not a rule
 EOS
+	cat > fw2.sh <<'EOS'
+#!/bin/sh
+set -e
+ipfw -q -f set 1 flush
+ipfw -q set 1 table all destroy
+ipfw -q set 1 nat64lsn all destroy
+ipfw set disable 1
+cmd="/sbin/ipfw -q add"
+v4="192.0.2.64/27"
+v6="2001:db8:ff::/96"
+ipfw -q set 1 nat64lsn NAT64 create prefix4 $v4 prefix6 $v6
+ipfw -q set 1 table T1 create type addr
+$cmd 00001 set 1 call 9000 ipv6 from any to any
+$cmd 00310 set 1 nat64lsn NAT64 ipv4 from any to $v4 in
+ipfw set swap 0 1
+ipfw delete set 1
+EOS
 	printf 'firewall_type="open"\nfirewall_script="%s/fw.sh"\n' "$(pwd)" >> rc.conf
 	atf_check -o inline:"# from $(pwd)/fw.sh
 # left out, the script's own: fwcmd=\"/sbin/ipfw -q\"
@@ -5320,6 +5344,28 @@ add 00500 check-state
 add 00502 allow tcp from me to any out via em0 setup keep-state
 # left out, a variable not known here: \$cmd 00504 allow ip from any to any via \$nosuch
 # left out, the script's own: echo add this is not a rule
+" "$JGC" -c "$SOCK" ipfw rules -r
+	# A script that stages its rules in set 1 and swaps them in, as
+	# Apply does: the shell's set -e its own; its set 1 objects kept
+	# without the set; its rules without their set, which Apply gives
+	# them; its staging and swap left to Apply.
+	sed -i '' -e '/^firewall_script=/d' rc.conf
+	printf 'firewall_script="%s/fw2.sh"\n' "$(pwd)" >> rc.conf
+	atf_check -o inline:"# from $(pwd)/fw2.sh
+# left out, the script's own: set -e
+# left out, applying does it: ipfw -q -f set 1 flush
+# left out, applying does it: ipfw -q set 1 table all destroy
+# left out, applying does it: ipfw -q set 1 nat64lsn all destroy
+# left out, applying does it: ipfw set disable 1
+# left out, the script's own: cmd=\"/sbin/ipfw -q add\"
+# left out, the script's own: v4=\"192.0.2.64/27\"
+# left out, the script's own: v6=\"2001:db8:ff::/96\"
+nat64lsn NAT64 create prefix4 192.0.2.64/27 prefix6 2001:db8:ff::/96
+table T1 create type addr
+add 00001 call 9000 ipv6 from any to any
+add 00310 nat64lsn NAT64 ipv4 from any to 192.0.2.64/27 in
+# left out, applying does it: ipfw set swap 0 1
+# left out, applying does it: ipfw delete set 1
 " "$JGC" -c "$SOCK" ipfw rules -r
 	sed -i '' -e '/^firewall_type=/d' -e '/^firewall_script=/d' rc.conf
 
