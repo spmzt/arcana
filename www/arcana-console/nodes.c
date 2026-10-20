@@ -516,18 +516,20 @@ lock_apply(const char *name, const uint8_t *body, size_t len, bool gone)
 	uint64_t	until;
 	int		i, free_i;
 
-	if (gone) {
-		for (i = 0; i < CL_LOCKS; i++)
-			if (strcmp(cl.locks[i].name, name) == 0)
-				cl.locks[i].name[0] = '\0';
-		return;
-	}
 	snprintf(holder, sizeof(holder), "%.*s", (int)(len > sizeof(holder) -
 	    1 ? sizeof(holder) - 1 : len), (const char *)body);
 	if ((nl = strchr(holder, '\n')) == NULL)
 		return;
 	*nl = '\0';
 	until = strtoull(nl + 1, NULL, 10);
+	/* Let go by its holder: another's, granted since, stays. */
+	if (gone) {
+		for (i = 0; i < CL_LOCKS; i++)
+			if (strcmp(cl.locks[i].name, name) == 0 &&
+			    strcmp(cl.locks[i].holder, holder) == 0)
+				cl.locks[i].name[0] = '\0';
+		return;
+	}
 	free_i = -1;
 	for (i = 0; i < CL_LOCKS; i++) {
 		if (strcmp(cl.locks[i].name, name) == 0) {
@@ -555,8 +557,13 @@ apply_one(const struct craft_entry *e)
 	cl.ring[e->seq % CL_RING].seq = e->seq;
 	cl.ring[e->seq % CL_RING].term = e->term;
 	if (strncmp(e->name, LOCK_PREFIX, strlen(LOCK_PREFIX)) == 0) {
-		lock_apply(e->name + strlen(LOCK_PREFIX), e->body, e->len,
-		    e->gone);
+		/* The leader's own writes were in its table as it granted
+		 * them: applied again late, an old grant would take a newer
+		 * holder's place.  The followers', and a new leader's, from
+		 * the log. */
+		if (cl.c.role != CRAFT_LEADER || e->term != cl.c.term)
+			lock_apply(e->name + strlen(LOCK_PREFIX), e->body,
+			    e->len, e->gone);
 		return;
 	}
 	if (e->name[0] == '\0' || !doc_name_ok(e->name))
@@ -1406,7 +1413,8 @@ lock_drop(const char *name, const char *holder)
 		    strcmp(cl.locks[i].holder, holder) == 0) {
 			cl.locks[i].name[0] = '\0';
 			if (cl.c.role == CRAFT_LEADER)
-				lock_write(name, holder, 0, true, NULL);
+				lock_write(name, holder, cl.locks[i].until, true,
+				    NULL);
 		}
 }
 
