@@ -1037,6 +1037,7 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 	struct execres		 res;
 	char			*argv[8], *conf, *was;
 	const char		*rules, *thr, *e, *note, *what;
+	const char		*raw;
 	struct was		 held[INSTANCES_MAX];
 	int			 n, i, k, step, nkeep, nheld;
 	bool			 ok, same, sec, luach;
@@ -1057,11 +1058,14 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 	while ((in = ucl_object_iterate(ucl_object_lookup(top, "instances"),
 	    &it, true)) != NULL) {
 		v = ucl_object_lookup(in, "name");
+		/* Its settings (the form, rendered here), or its YAML whole
+		 * with the agent's places, as arcanactl gives it. */
 		if (n == INSTANCES_MAX || v == NULL || ucl_object_type(v) !=
 		    UCL_STRING || !name_ok(ucl_object_tostring(v)) ||
-		    ucl_object_tostring(ucl_object_lookup(in, "conf")) == NULL ||
-		    strlen(ucl_object_tostring(ucl_object_lookup(in, "conf"))) >
-		    CONF_MAX || (ucl_object_lookup(in, "rules") != NULL &&
+		    (ucl_object_type(ucl_object_lookup(in, "spec")) != UCL_OBJECT
+		    && (ucl_object_tostring(ucl_object_lookup(in, "conf")) == NULL
+		    || strlen(ucl_object_tostring(ucl_object_lookup(in, "conf")))
+		    > CONF_MAX)) || (ucl_object_lookup(in, "rules") != NULL &&
 		    (ucl_object_type(ucl_object_lookup(in, "rules")) !=
 		    UCL_STRING || strlen(ucl_object_tostring(ucl_object_lookup(
 		    in, "rules"))) > RULES_MAX)) ||
@@ -1228,9 +1232,42 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			step_end(w, step, true, NULL);
 			continue;
 		}
-		conf = inst_conf(w, ni[k].name, ucl_object_tostring(
-		    ucl_object_lookup(in, "conf")));
+		/* Its YAML: given whole (arcanactl's way), or rendered from
+		 * its settings, the console's. */
 		e = NULL;
+		if (ucl_object_tostring(ucl_object_lookup(in, "conf")) == NULL &&
+		    ucl_object_type(ucl_object_lookup(in, "spec")) == UCL_OBJECT) {
+			const ucl_object_t	*spec = ucl_object_lookup(in, "spec");
+			ucl_object_t		*seen = ucl_object_typed_new(UCL_ARRAY);
+			const char		*host, *flavor;
+			char			 hn[MAXHOSTNAMELEN];
+
+			host = ucl_object_tostring(ucl_object_lookup(in, "host"));
+			if (host == NULL || strlen(host) > 64) {
+				if (gethostname(hn, sizeof(hn)) != 0)
+					snprintf(hn, sizeof(hn), "this host");
+				host = wstrdup(w, hn);
+			}
+			flavor = ucl_object_tostring(ucl_object_lookup(spec,
+			    "flavor"));
+			conf = flavor != NULL && strcmp(flavor, "sdwan") == 0 ?
+			    ids_conf_sdwan(w, spec, ni[k].name, host, seen, &e) :
+			    ids_conf_render(w, spec, ni[k].name, host,
+			    ni[k].divert, seen, &e);
+			ucl_object_unref(seen);
+			if (conf == NULL) {
+				step_end(w, step_begin(w, ARC_STEP_KIND_DAEMON,
+				    "arcana-agent", "suricata %s", ni[k].name),
+				    false, "%s", e);
+				*errp = e;
+				ok = false;
+				break;
+			}
+		} else
+			conf = (char *)(uintptr_t)ucl_object_tostring(
+			    ucl_object_lookup(in, "conf"));
+		raw = conf;
+		conf = inst_conf(w, ni[k].name, conf);
 		if ((conf = expand_any(w, conf, &e)) == NULL) {
 			*errp = wfmt(w, "%s: %s", ni[k].name, e);
 			ok = false;
@@ -1295,9 +1332,8 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			ok = false;
 			break;
 		}
-		if (note == NULL && strstr(ucl_object_tostring(ucl_object_lookup(
-		    in, "conf")), "@RULESET@") != NULL && strstr(conf,
-		    SURICATA_RULESET) == NULL)
+		if (note == NULL && strstr(raw, "@RULESET@") != NULL &&
+		    strstr(conf, SURICATA_RULESET) == NULL)
 			note = "the ruleset is not fetched yet (suricata-update): "
 			    "its own rules alone until it is";
 		inst_stop(w, ni[k].name);

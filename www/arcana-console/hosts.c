@@ -73,6 +73,7 @@ enum op {
 	OP_SURICATA_RULES,
 	OP_NETSTORE,
 	OP_SYSTEM,
+	OP_SMTPD,
 	OP_CERTS,
 	OP_SSH,
 	OP_CAPTURE,
@@ -381,7 +382,6 @@ static bool	 rq_param(const struct rq *, const char *, char *, size_t);
 static bool	 rq_u64(const struct rq *, const char *, uint64_t, uint64_t *);
 static int	 read_route(struct http_request *, enum op, read_setup *);
 static void	 spec_free(struct arc_job_spec *);
-static char	*jdup(const ucl_object_t *, const char *);
 static ucl_object_t *step_object(int, int, const char *, const char *,
 		    const char *, bool, uint64_t);
 static ucl_object_t *trace_object(struct call *, const struct arc_step *,
@@ -1219,7 +1219,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_SURICATA_RULES ? "arc_suricata_rules" : c->op == OP_NETSTORE ? "arc_netstore" : c->op == OP_SYSTEM ? "arc_system" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_SURICATA_RULES ? "arc_suricata_rules" : c->op == OP_NETSTORE ? "arc_netstore" : c->op == OP_SYSTEM ? "arc_system" : c->op == OP_SMTPD ? "arc_smtpd" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1578,6 +1578,8 @@ call_run(struct kore_task *t)
 	struct arc_netstore_rsp	*nsr;
 	struct arc_system_req	 sysq;
 	struct arc_system_rsp	*sysr;
+	struct arc_smtpd_req	 smq;
+	struct arc_smtpd_rsp	*smr;
 	struct arc_certs_req	 ceq;
 	struct arc_certs_rsp	*cer;
 	struct arc_ssh_req	 sshq;
@@ -2674,6 +2676,18 @@ connected:
 			put(top, "data", e);
 		steps = bor->trace.v;
 		nsteps = bor->trace.n;
+		break;
+	case OP_SMTPD:
+		memset(&smq, 0, sizeof(smq));
+		smq.jail = c->scope[0] != '\0' ? c->scope : NULL;
+		if ((error = arc_smtpd(&cl, &smq, &smr)) != 0)
+			goto rpcfail;
+		ok = smr->ok;
+		put_str(top, "error", smr->error);
+		if ((e = parse_json(smr->json)) != NULL)
+			put(top, "data", e);
+		steps = smr->trace.v;
+		nsteps = smr->trace.n;
 		break;
 	case OP_SYSTEM:
 		/* One of its files, or host, when the page wants it alone. */
@@ -4618,6 +4632,14 @@ api_certs(struct http_request *req)
 	return (read_route(req, OP_CERTS, setup_scope));
 }
 
+/* GET /api/servers/<id>/smtpd[?jail=]: OpenSMTPD of the host or a jail. */
+int
+api_smtpd(struct http_request *req)
+{
+
+	return (read_route(req, OP_SMTPD, setup_scope));
+}
+
 /* GET /api/servers/<id>/ssh[?jail=]: the base system's sshd there. */
 int
 api_ssh(struct http_request *req)
@@ -4893,53 +4915,7 @@ api_pkg_upgrade(struct http_request *req)
 	return (call_start(req, c));
 }
 
-static const char *job_kind_names[] = {
-	[ARC_JOB_KIND_JAIL_ACTION] = "jail-action",
-	[ARC_JOB_KIND_ADDRESS] = "address",
-	[ARC_JOB_KIND_SERVICE_ACTION] = "service-action",
-	[ARC_JOB_KIND_SERVICE_CONFIG] = "service-config",
-	[ARC_JOB_KIND_PKG_UPGRADE] = "pkg-upgrade",
-	[ARC_JOB_KIND_IF_ADDRESS] = "if-address",
-	[ARC_JOB_KIND_IF_STATE] = "if-state",
-	[ARC_JOB_KIND_ROUTE] = "route",
-	[ARC_JOB_KIND_IF_SET] = "if-set",
-	[ARC_JOB_KIND_IF_CREATE] = "if-create",
-	[ARC_JOB_KIND_IF_DESTROY] = "if-destroy",
-	[ARC_JOB_KIND_NETGRAPH] = "netgraph",
-	[ARC_JOB_KIND_WIREGUARD] = "wireguard",
-	[ARC_JOB_KIND_BIRD] = "bird",
-	[ARC_JOB_KIND_IF_VNET] = "if-vnet",
-	[ARC_JOB_KIND_KMOD] = "kmod",
-	[ARC_JOB_KIND_ZFS] = "zfs",
-	[ARC_JOB_KIND_ZPOOL] = "zpool",
-	[ARC_JOB_KIND_MOUNT] = "mount",
-	[ARC_JOB_KIND_GPART] = "gpart",
-	[ARC_JOB_KIND_CAM] = "cam",
-	[ARC_JOB_KIND_SYSCTL] = "sysctl",
-	[ARC_JOB_KIND_IPFW] = "ipfw",
-	[ARC_JOB_KIND_BRIDGE] = "bridge",
-	[ARC_JOB_KIND_GENEVE] = "geneve",
-	[ARC_JOB_KIND_PROCESS] = "process",
-	[ARC_JOB_KIND_PKG_CLEAN] = "pkg-clean",
-	[ARC_JOB_KIND_IPSEC] = "ipsec",
-	[ARC_JOB_KIND_PKG_INSTALL] = "pkg-install",
-	[ARC_JOB_KIND_NTP] = "ntp",
-	[ARC_JOB_KIND_RTADVD] = "rtadvd",
-	[ARC_JOB_KIND_IPSEC_SA] = "ipsec-sa",
-	[ARC_JOB_KIND_JAIL_CONF] = "jail-conf",
-	[ARC_JOB_KIND_NEIGHBOUR] = "neighbour",
-	[ARC_JOB_KIND_CERT] = "cert",
-	[ARC_JOB_KIND_SSH] = "ssh",
-	[ARC_JOB_KIND_CARP] = "carp",
-	[ARC_JOB_KIND_POUDRIERE] = "poudriere",
-	[ARC_JOB_KIND_CLAMAV] = "clamav",
-	[ARC_JOB_KIND_SURICATA] = "suricata",
-	[ARC_JOB_KIND_NFS] = "nfs",
-	[ARC_JOB_KIND_ISCSI] = "iscsi",
-	[ARC_JOB_KIND_HAST] = "hast",
-	[ARC_JOB_KIND_SYSFILE] = "sysfile",
-	[ARC_JOB_KIND_GEOM] = "geom",
-};
+#include "jobs_spec.h"
 
 /* Is kind one the console sends (workflows.c checks jobs.yaml's)? */
 bool
@@ -5048,15 +5024,6 @@ spec_free(struct arc_job_spec *sp)
 	memset(sp, 0, sizeof(*sp));
 }
 
-static char *
-jdup(const ucl_object_t *o, const char *key)
-{
-	const char	*s;
-
-	return ((s = ucl_str(o, key)) != NULL && *s != '\0' ? kore_strdup(s) :
-	    NULL);
-}
-
 /*
  * {"kind": "jail-action", "jail": "web", "action": "restart"} and its
  * siblings into a spec; NULL, or what is wrong.  The daemon checks the
@@ -5082,111 +5049,39 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		return ("unknown kind of job");
 	sp->has_kind = true;
 	sp->kind = (uint8_t)i;
-	sp->jail = jdup(o, "jail");
-	sp->address = jdup(o, "address");
-	sp->interface = jdup(o, "interface");
-	sp->service = jdup(o, "service");
-	sp->destination = jdup(o, "destination");
-	sp->gateway = jdup(o, "gateway");
-	sp->tunnel_local = jdup(o, "tunnel_local");
-	sp->tunnel_remote = jdup(o, "tunnel_remote");
-	sp->parent = jdup(o, "parent");
-	sp->verb = jdup(o, "verb");
-	sp->source = jdup(o, "source");
-	sp->peer = jdup(o, "peer");
-	sp->endpoint = jdup(o, "endpoint");
-	/* IPsec's connection, for an ipsec job. */
-	sp->conn = jdup(o, "conn");
-	sp->ipsec_mode = jdup(o, "ipsec_mode");
-	sp->local_ts = jdup(o, "local_ts");
-	sp->remote_ts = jdup(o, "remote_ts");
-	sp->pubkey = jdup(o, "pubkey");
-	sp->start_action = jdup(o, "start_action");
-	sp->local_id = jdup(o, "local_id");
-	sp->remote_id = jdup(o, "remote_id");
-	sp->child = jdup(o, "child");
-	sp->local_cert = jdup(o, "local_cert");
-	sp->remote_cert = jdup(o, "remote_cert");
-	sp->remote_ca = jdup(o, "remote_ca");
-	if ((v = ucl_object_lookup(o, "reqid")) != NULL && ucl_object_toint(v) >
-	    0 && ucl_object_toint(v) <= 16383) {
-		sp->has_reqid = true;
-		sp->reqid = (uint32_t)ucl_object_toint(v);
+	/* Each field as jobs.yaml has it (jobs_spec.h): its member, how it
+	 * is read; a number out of its range, or not one, is not there. */
+	for (i = 0; i < nitems(jobmembers); i++) {
+		const struct jobmember	*m = &jobmembers[i];
+		void			*at = (char *)sp + m->off;
+
+		v = ucl_object_lookup(o, m->field);
+		switch (m->type) {
+		case JM_TEXT:
+			if ((a = ucl_str(o, m->field)) != NULL && (*a != '\0' ||
+			    m->keep_empty))
+				*(const char **)at = kore_strdup(a);
+			break;
+		case JM_NUM:
+			if (v != NULL && ucl_object_type(v) == UCL_INT &&
+			    ucl_object_toint(v) >= (int64_t)m->min &&
+			    (uint64_t)ucl_object_toint(v) <= m->max) {
+				*(bool *)((char *)sp + m->has) = true;
+				*(uint32_t *)at = (uint32_t)ucl_object_toint(v);
+			}
+			break;
+		case JM_BOOL:
+			*(bool *)at = ucl_flag(o, m->field);
+			break;
+		}
 	}
-	/* Empty allowed-ips says a peer may send from nowhere: it is kept. */
-	if ((kind = ucl_str(o, "allowed_ips")) != NULL)
-		sp->allowed_ips = kore_strdup(kind);
-	if ((v = ucl_object_lookup(o, "keepalive")) != NULL &&
-	    ucl_object_toint(v) >= 0 && ucl_object_toint(v) <= 65535) {
-		sp->has_keepalive = true;
-		sp->keepalive = (uint32_t)ucl_object_toint(v);
-	}
-	if ((v = ucl_object_lookup(o, "listen_port")) != NULL &&
-	    ucl_object_toint(v) > 0 && ucl_object_toint(v) <= 65535) {
-		sp->has_listen_port = true;
-		sp->listen_port = (uint32_t)ucl_object_toint(v);
-	}
-	/* A description may be empty: that takes it off. */
-	if ((kind = ucl_str(o, "description")) != NULL)
-		sp->description = kore_strdup(kind);
-	if ((v = ucl_object_lookup(o, "mtu")) != NULL && ucl_object_toint(v) >
-	    0 && ucl_object_toint(v) <= 65535) {
-		sp->has_mtu = true;
-		sp->mtu = (uint32_t)ucl_object_toint(v);
-	}
-	/* 0 too: an interface put back in the first table. */
-	if ((v = ucl_object_lookup(o, "fib")) != NULL && ucl_object_type(v) ==
-	    UCL_INT && ucl_object_toint(v) >= 0 && ucl_object_toint(v) <=
-	    65535) {
-		sp->has_fib = true;
-		sp->fib = (uint32_t)ucl_object_toint(v);
-	}
-	if ((v = ucl_object_lookup(o, "tunnelfib")) != NULL &&
-	    ucl_object_type(v) == UCL_INT && ucl_object_toint(v) >= 0 &&
-	    ucl_object_toint(v) <= 65535) {
-		sp->has_tunnelfib = true;
-		sp->tunnelfib = (uint32_t)ucl_object_toint(v);
-	}
-	sp->addressing = jdup(o, "addressing");
-	sp->dataset = jdup(o, "dataset");
-	sp->snapshot = jdup(o, "snapshot");
-	sp->copy = jdup(o, "copy");
-	sp->path = jdup(o, "path");
-	sp->text = jdup(o, "text");
-	sp->start = ucl_flag(o, "start");
-	sp->preshared_key = jdup(o, "preshared_key");
-	sp->lladdr = jdup(o, "lladdr");
-	sp->temporary = ucl_flag(o, "temporary");
-	sp->user = jdup(o, "user");
-	sp->pkg_repo = jdup(o, "pkg_repo");
-	if ((v = ucl_object_lookup(o, "metric")) != NULL && ucl_object_toint(
-	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
-		sp->has_metric = true;
-		sp->metric = (uint32_t)ucl_object_toint(v);
-	}
-	if ((v = ucl_object_lookup(o, "weight")) != NULL && ucl_object_toint(
-	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
-		sp->has_weight = true;
-		sp->weight = (uint32_t)ucl_object_toint(v);
-	}
-	if ((v = ucl_object_lookup(o, "id")) != NULL && ucl_object_toint(v) >=
-	    0 && ucl_object_toint(v) <= 16777215) {
-		sp->has_id = true;
-		sp->id = (uint32_t)ucl_object_toint(v);
-	}
-	sp->remove = ucl_flag(o, "remove");
-	sp->recursive = ucl_flag(o, "recursive");
-	sp->force = ucl_flag(o, "force");
-	/* pkg -4 or -6, for a pkg-upgrade. */
+	/* pkg -4 or -6, for a pkg-upgrade: one of the two. */
 	if (ucl_object_toint(ucl_object_lookup(o, "pkg_ip")) == 4 ||
 	    ucl_object_toint(ucl_object_lookup(o, "pkg_ip")) == 6) {
 		sp->has_pkg_ip = true;
 		sp->pkg_ip = (uint8_t)ucl_object_toint(ucl_object_lookup(o,
 		    "pkg_ip"));
 	}
-	sp->safe = ucl_flag(o, "safe");
-	sp->live = ucl_flag(o, "live");
-	sp->persist = ucl_flag(o, "persist");
 	a = ucl_str(o, "action");
 	switch (sp->kind) {
 	case ARC_JOB_KIND_JAIL_ACTION:
@@ -5271,6 +5166,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_HAST:
 	case ARC_JOB_KIND_SYSFILE:
 	case ARC_JOB_KIND_GEOM:
+	case ARC_JOB_KIND_SMTPD:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
@@ -5705,6 +5601,7 @@ static const struct hread {
 	{ "suricata/rules", OP_SURICATA_RULES, setup_suricata_rules },
 	{ "netstore", OP_NETSTORE, setup_netstore },
 	{ "system", OP_SYSTEM, setup_system },
+	{ "smtpd", OP_SMTPD, setup_scope },
 	{ "services", OP_SERVICES, NULL },
 	{ "packages", OP_PACKAGES, setup_packages },
 	{ "net/", OP_NETWORK, setup_network },

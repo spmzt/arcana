@@ -23,15 +23,11 @@
 #define	SR_PAGE	50
 
 static struct {
-	char		 sid[16];	/* the host read */
+	struct res	 r;		/* the rules read */
 	char		 q[128];
 	char		 only[16];
 	char		 classtype[64];
 	long		 offset;
-	ucl_object_t	*o;
-	bool		 loading;
-	char		 error[256];
-	unsigned	 gen;		/* a reply not the latest is dropped */
 	long long	 open;		/* the sid whose text is shown */
 } sr;
 
@@ -40,31 +36,6 @@ static const struct tcol cols[] = {
 	{ "Class", "classtype", false }, { "Severity", "severity", false },
 	{ "Action", "action", false }, { "State", NULL, false },
 };
-
-static void
-sr_cb(int status, const ucl_object_t *o, const char *err, void *arg)
-{
-
-	if ((unsigned)(uintptr_t)arg != sr.gen)
-		return;
-	sr.loading = false;
-	if (status != 200 || !jbool(o, "ok")) {
-		snprintf(sr.error, sizeof(sr.error), "%s", jstr(o, "error") !=
-		    NULL ? jstr(o, "error") : err != NULL ? err :
-		    "the host did not answer");
-		/* Nothing, kept: not asked again until Search is pressed. */
-		if (sr.o == NULL)
-			sr.o = ucl_object_typed_new(UCL_OBJECT);
-		render();
-		return;
-	}
-	sr.error[0] = '\0';
-	if (sr.o != NULL)
-		ucl_object_unref(sr.o);
-	sr.o = jget(o, "data") != NULL ? ucl_object_copy(jget(o, "data")) :
-	    ucl_object_typed_new(UCL_OBJECT);
-	render();
-}
 
 /* A query's value, escaped as a URL has it. */
 static void
@@ -92,13 +63,8 @@ surules_load(const char *sid)
 
 	if (sid == NULL || sid[0] == '\0')
 		return;
-	if (strcmp(sid, sr.sid) != 0) {
-		snprintf(sr.sid, sizeof(sr.sid), "%s", sid);
-		if (sr.o != NULL)
-			ucl_object_unref(sr.o);
-		sr.o = NULL;
+	if (strcmp(sid, sr.r.sid) != 0)
 		sr.offset = 0;
-	}
 	snprintf(url, sizeof(url), "/api/servers/%s/suricata/rules", sid);
 	put_param(url, sizeof(url), "q", sr.q);
 	put_param(url, sizeof(url), "only", sr.only);
@@ -107,8 +73,7 @@ surules_load(const char *sid)
 	put_param(url, sizeof(url), "offset", sr.offset > 0 ? num : NULL);
 	snprintf(num, sizeof(num), "%d", SR_PAGE);
 	put_param(url, sizeof(url), "limit", num);
-	sr.loading = true;
-	api("GET", url, NULL, sr_cb, (void *)(uintptr_t)++sr.gen);
+	res_load(&sr.r, sid, url);
 }
 
 static void
@@ -149,12 +114,8 @@ view_surules(struct html *h, const char *sid)
 	size_t			  i;
 	int			  k;
 
-	if (sr.o == NULL || strcmp(sid, sr.sid) != 0) {
-		if (!sr.loading || strcmp(sid, sr.sid) != 0)
-			surules_load(sid);
-		h_raw(h, "<div class=\"loader\"></div>");
+	if (!res_shown(h, &sr.r, sid, surules_load, NULL))
 		return;
-	}
 	h_raw(h, "<form class=\"toolbar surq\" data-form=\"sur-search\"><input "
 	    "class=\"filter\" name=\"q\" placeholder=\"Search the rules: "
 	    "text, ET SCAN, a CVE\" autocomplete=\"off\" spellcheck=\"false\"");
@@ -171,34 +132,29 @@ view_surules(struct html *h, const char *sid)
 		h_fmt(h, ">%s</option>", only_names[i]);
 	}
 	h_raw(h, "</select><button class=\"primary\">Search</button></form>");
-	if (sr.error[0] != '\0') {
-		h_raw(h, "<div class=\"notice bad\">");
-		h_txt(h, sr.error);
-		h_raw(h, "</div>");
-	}
-	if (jget(sr.o, "ruleset") == NULL) {
+	if (jget(sr.r.o, "ruleset") == NULL) {
 		h_raw(h, "<div class=\"empty\"><p>The ruleset is not fetched "
 		    "on this host yet.</p><p class=\"dim\">Fetch the ruleset "
 		    "(Instances) runs suricata-update; its rules are set here "
 		    "once it has.</p></div>");
 		return;
 	}
-	matched = jint(sr.o, "matched", 0);
+	matched = jint(sr.r.o, "matched", 0);
 	h_fmt(h, "<p class=\"dim\">%lld rules, %lld enabled; %lld set here "
 	    "(enable.conf, disable.conf and drop.conf, given to "
-	    "suricata-update each time it runs). ", (long long)jint(sr.o,
-	    "total", 0), (long long)jint(sr.o, "enabled", 0),
-	    (long long)jint(sr.o, "changed", 0));
+	    "suricata-update each time it runs). ", (long long)jint(sr.r.o,
+	    "total", 0), (long long)jint(sr.r.o, "enabled", 0),
+	    (long long)jint(sr.r.o, "changed", 0));
 	if (matched == 0) {
 		h_raw(h, "None matches.</p>");
 		return;
 	}
 	h_fmt(h, "%lld match: %ld to %ld.</p>", matched, sr.offset + 1,
-	    sr.offset + (long)ucl_array_size(jget(sr.o, "rules")));
+	    sr.offset + (long)ucl_array_size(jget(sr.r.o, "rules")));
 	h_raw(h, "<table class=\"net surules\">");
 	tbl_head(h, "surules", cols, 6, 1);
 	h_raw(h, "<tbody>");
-	rows = tbl_rows("surules", jget(sr.o, "rules"), cols, 6, "");
+	rows = tbl_rows("surules", jget(sr.r.o, "rules"), cols, 6, "");
 	for (k = 0; (r = rows[k]) != NULL; k++) {
 		s = jint(r, "sid", 0);
 		h_fmt(h, "<tr><td class=\"mono\"><button class=\"link\" "
@@ -258,7 +214,7 @@ surules_form(const char *form, const ucl_object_t *f)
 	snprintf(sr.only, sizeof(sr.only), "%s", jstr(f, "only") != NULL ?
 	    jstr(f, "only") : "");
 	sr.offset = 0;
-	surules_load(sr.sid);
+	surules_load(sr.r.sid);
 	return (true);
 }
 
@@ -274,7 +230,7 @@ surules_action(const char *act, const char *arg, const char *value,
 		sr.offset += strcmp(arg, "next") == 0 ? SR_PAGE : -SR_PAGE;
 		if (sr.offset < 0)
 			sr.offset = 0;
-		surules_load(sr.sid);
+		surules_load(sr.r.sid);
 		return (true);
 	}
 	if (strcmp(act, "sur-open") == 0) {
@@ -312,39 +268,11 @@ surules_action(const char *act, const char *arg, const char *value,
  */
 
 static struct {
-	char		 sid[16];
-	ucl_object_t	*o;
-	bool		 loading;
-	char		 error[256];
-	unsigned	 gen;
+	struct res	 r;		/* the sources read */
 	char		 asking[72];	/* the source whose parameters are
 					 * asked for */
 	bool		 adding;
 } so;
-
-static void
-so_cb(int status, const ucl_object_t *o, const char *err, void *arg)
-{
-
-	if ((unsigned)(uintptr_t)arg != so.gen)
-		return;
-	so.loading = false;
-	if (status != 200 || !jbool(o, "ok")) {
-		snprintf(so.error, sizeof(so.error), "%s", jstr(o, "error") !=
-		    NULL ? jstr(o, "error") : err != NULL ? err :
-		    "the host did not answer");
-		if (so.o == NULL)
-			so.o = ucl_object_typed_new(UCL_OBJECT);
-		render();
-		return;
-	}
-	so.error[0] = '\0';
-	if (so.o != NULL)
-		ucl_object_unref(so.o);
-	so.o = jget(o, "data") != NULL ? ucl_object_copy(jget(o, "data")) :
-	    ucl_object_typed_new(UCL_OBJECT);
-	render();
-}
 
 void
 susources_load(const char *sid)
@@ -353,16 +281,9 @@ susources_load(const char *sid)
 
 	if (sid == NULL || sid[0] == '\0')
 		return;
-	if (strcmp(sid, so.sid) != 0) {
-		snprintf(so.sid, sizeof(so.sid), "%s", sid);
-		if (so.o != NULL)
-			ucl_object_unref(so.o);
-		so.o = NULL;
-	}
 	snprintf(url, sizeof(url), "/api/servers/%s/suricata/rules?sources=1",
 	    sid);
-	so.loading = true;
-	api("GET", url, NULL, so_cb, (void *)(uintptr_t)++so.gen);
+	res_load(&so.r, sid, url);
 }
 
 static void
@@ -384,27 +305,23 @@ view_susources(struct html *h, const char *sid)
 	const char		*st, *params;
 	char			*copy, *p, *w;
 
-	if (so.o == NULL || strcmp(sid, so.sid) != 0) {
-		if (!so.loading || strcmp(sid, so.sid) != 0)
-			susources_load(sid);
-		h_raw(h, "<div class=\"loader\"></div>");
+	if (!res_shown(h, &so.r, sid, susources_load, NULL))
 		return;
-	}
 	h_raw(h, "<div class=\"toolbar\"><button class=\"ghost\" data-act=\""
 	    "sus-index\" title=\"suricata-update update-sources: the list of "
 	    "sources it knows\">");
-	h_raw(h, jbool(so.o, "index") ? "Fetch the list again" :
+	h_raw(h, jbool(so.r.o, "index") ? "Fetch the list again" :
 	    "Fetch the list of sources");
 	h_raw(h, "</button><span class=\"grow\"></span><button class=\"ghost\" "
 	    "data-act=\"sus-adding\">Add by address</button></div>");
-	if (so.error[0] != '\0') {
+	if (so.r.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
-		h_txt(h, so.error);
+		h_txt(h, so.r.error);
 		h_raw(h, "</div>");
 	}
 	h_raw(h, "<p class=\"dim\">Where suricata-update fetches the ruleset "
 	    "from. ");
-	h_raw(h, jbool(so.o, "default_et_open") ? "None is enabled here: it "
+	h_raw(h, jbool(so.r.o, "default_et_open") ? "None is enabled here: it "
 	    "fetches Emerging Threats Open." : "It fetches those enabled.");
 	h_raw(h, " A change takes effect when the ruleset is fetched again "
 	    "(Instances, Fetch the ruleset).</p>");
@@ -422,7 +339,7 @@ view_susources(struct html *h, const char *sid)
 		    "\"sus-cancel\">Cancel</button><button type=\"submit\" "
 		    "class=\"primary\">Add</button></div></form>");
 	}
-	if (ucl_array_size(jget(so.o, "sources")) == 0) {
+	if (ucl_array_size(jget(so.r.o, "sources")) == 0) {
 		h_raw(h, "<div class=\"empty\"><p>The list of sources is not "
 		    "fetched on this host.</p><p class=\"dim\">Fetch the list "
 		    "of sources: Emerging Threats Open and Pro, OISF's, "
@@ -433,7 +350,7 @@ view_susources(struct html *h, const char *sid)
 	    "<th>Vendor</th><th>What</th><th>License</th><th>State</th><th>"
 	    "</th></tr></thead><tbody>");
 	it = NULL;
-	while ((e = ucl_object_iterate(jget(so.o, "sources"), &it, true)) !=
+	while ((e = ucl_object_iterate(jget(so.r.o, "sources"), &it, true)) !=
 	    NULL) {
 		st = jstr(e, "state");
 		params = jstr(e, "parameters");
@@ -461,7 +378,7 @@ view_susources(struct html *h, const char *sid)
 			h_raw(h, "<span class=\"chip st-up\">enabled</span>");
 		else if (st != NULL)
 			h_raw(h, "<span class=\"chip st-down\">disabled</span>");
-		else if (jbool(so.o, "default_et_open") && strcmp(jstr(e,
+		else if (jbool(so.r.o, "default_et_open") && strcmp(jstr(e,
 		    "name"), "et/open") == 0)
 			h_raw(h, "<span class=\"chip\">the default</span>");
 		h_raw(h, "</td><td class=\"acts\">");

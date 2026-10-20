@@ -18,7 +18,7 @@ WWWDIR?=	${PREFIX}/www/arcana-console
 DIST=		${.OBJDIR}/dist
 
 APP_SRCS=	cluster.c users.c pfxlists.c iflabels.c templates.c main.c actions.c ca.c carp.c api.c apidoc.c bird.c ecmp.c mtr.c fleet.c ipfw.c l2.c kernel.c storage.c sysctl.c procs.c logs.c usage.c tbl.c topo.c vpn.c jailmk.c certs.c sshd.c span.c ipsec.c workflow.c sdwan.c graph.c html.c json.c netview.c \
-		schema.c view.c live.c yaml.c export.c hostconf.c trouble.c routing.c birdform.c help.c secpage.c surules.c idsown.c idsstats.c nas.c sysview.c builder.c
+		schema.c view.c live.c yaml.c export.c hostconf.c trouble.c routing.c birdform.c help.c secpage.c surules.c idsown.c idsstats.c nas.c sysview.c builder.c res.c mail.c
 UCL_SRCS=	ucl_emitter_streamline.c ucl_emitter_utils.c ucl_emitter.c \
 		ucl_hash.c ucl_msgpack.c ucl_parser.c ucl_schema.c ucl_sexp.c \
 		ucl_util.c
@@ -129,17 +129,27 @@ ${DIST}/yang.json: ${ARC_TOP}/share/arcana/yang-ops ${.CURDIR}/tools/yang.sh \
 	    ${.CURDIR}/yang > ${.TARGET}.tmp
 	mv ${.TARGET}.tmp ${.TARGET}
 YANG_OUT?=	${.CURDIR}/yang
+# The kinds of job as arcana-jobs's submodule, from jobs.yaml too.
+YANG_KINDS=	arcana-jobs-kinds@2026-10-14.yang
+YANG_KINDS_OUT?=	${ARC_TOP}/share/yang
 regen-yang: .PHONY
+	awk -v out=yang -f ${ARC_TOP}/share/arcana/jobs.awk \
+	    ${ARC_TOP}/share/arcana/arcana.yaml ${ARC_TOP}/share/arcana/jobs.yaml \
+	    > ${YANG_KINDS_OUT}/${YANG_KINDS}
 	sh ${.CURDIR}/tools/yang.sh trees ${CBLINK_GEN} ${ARC_TOP}/share/yang \
 	    ${ARC_TOP}/share/arcana/yang-ops ${YANG_OUT}
 check-yang: .PHONY
-	@t=$$(mktemp -d) && trap 'rm -rf "$$t"' EXIT && \
-	    ${MAKE} -C ${.CURDIR} regen-yang YANG_OUT="$$t" >/dev/null && \
-	    for f in $$(cd "$$t" && ls); do \
+	@t=$$(mktemp -d) && trap 'rm -rf "$$t"' EXIT && mkdir "$$t/k" && \
+	    ${MAKE} -C ${.CURDIR} regen-yang YANG_OUT="$$t" \
+	    YANG_KINDS_OUT="$$t/k" >/dev/null && \
+	    for f in $$(cd "$$t" && ls | grep -v '^k$$'); do \
 		cmp -s "$$t/$$f" ${.CURDIR}/yang/$$f || { echo \
 		    "www/arcana-ui: yang/$$f is not what make regen-yang makes" >&2; \
 		    exit 1; }; \
 	    done; \
+	    cmp -s "$$t/k/${YANG_KINDS}" ${ARC_TOP}/share/yang/${YANG_KINDS} || { \
+		echo "share/yang/${YANG_KINDS} is not what make regen-yang makes" >&2; \
+		exit 1; }; \
 	    echo "www/arcana-ui: yang/ is what make regen-yang makes"
 
 # The console's API as it is documented, for the API page: the document

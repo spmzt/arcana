@@ -186,6 +186,27 @@ plugin_where(const struct server *s, const char *name)
 }
 
 /*
+ * The same, of any jail that runs, a network of its own or not: for a
+ * plugin that serves with the host's network (OpenSMTPD).
+ */
+const char *
+plugin_anywhere(const struct server *s, const char *name)
+{
+	const ucl_object_t	*j;
+	ucl_object_iter_t	 it;
+
+	if (plugin_at(s, "", name))
+		return ("");
+	it = NULL;
+	while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
+	    "jails"), &it, true)) != NULL)
+		if (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
+		    "running") == 0 && plugin_at(s, jstr(j, "name"), name))
+			return (jstr(j, "name"));
+	return (NULL);
+}
+
+/*
  * Has the host, or its jail named, the plugin?  A plugin works through
  * a program that is installed, not the base system's: BIRD, WireGuard's
  * wg(8).  The host says which it has, and which a vnet jail of it has.
@@ -639,6 +660,9 @@ job_finished(struct op *op, bool ok, const char *err)
 	case JOB_SYSTEM:
 		refresh_system(s, true);
 		refresh_ssh(s, false);
+		break;
+	case JOB_MAIL:
+		mail_refresh();
 		break;
 	case JOB_PROCESS:
 		refresh_procs(s, true);
@@ -3237,7 +3261,7 @@ int
 setting_group(const char *key)
 {
 
-	return (strncmp(key, "mail_", 5) == 0 || strncmp(key, "smtp_", 5) == 0 ?
+	return (strncmp(key, "mail_", 5) == 0 ?
 	    SETG_MAIL : strncmp(key, "telegram_", 9) == 0 ? SETG_TELEGRAM :
 	    strncmp(key, "ldap_", 5) == 0 ? SETG_LDAP : SETG_CONSOLE);
 }

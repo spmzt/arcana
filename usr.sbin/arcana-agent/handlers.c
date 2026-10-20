@@ -352,6 +352,7 @@ worker(void *arg)
 	struct arc_crashes_rsp	 crr;
 	struct arc_suricata_rules_rsp surr;
 	struct arc_netstore_rsp	 nsr;
+	struct arc_smtpd_rsp	 smr;
 	struct arc_system_rsp	 syr;
 	struct arc_job_spec	 bsp;
 	struct arc_certs_rsp	 cer;
@@ -924,6 +925,21 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &syr.trace.v, &syr.trace.n);
 		rc = arc_system_reply(j->req, &syr);
+		break;
+	case ARC_CMD_SMTPD:
+		what = "smtpd";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "OpenSMTPD read");
+		memset(&smr, 0, sizeof(smr));
+		if (scope_enter_jail(&w, j->jail, &smr.error, false) == 0)
+			do_smtpd(&w, &smr);
+		else
+			smr.has_ok = true;
+		ok = smr.ok;
+		error = smr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &smr.trace.v, &smr.trace.n);
+		rc = arc_smtpd_reply(j->req, &smr);
 		break;
 	case ARC_CMD_NETSTORE:
 		what = "netstore";
@@ -2507,6 +2523,25 @@ arc_system_doit(cbl_req *req, const struct arc_system_req *rq,
 	return (start(j));
 }
 
+int
+arc_smtpd_doit(cbl_req *req, const struct arc_smtpd_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->names.n > 0)
+		return (reject(req, "smtpd is read whole: no words"));
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SMTPD;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	return (start(j));
+}
+
 /* The storage services: NFS, iSCSI, HAST, or all. */
 int
 arc_netstore_doit(cbl_req *req, const struct arc_netstore_req *rq,
@@ -2679,7 +2714,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_GEOM)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_SMTPD)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2897,6 +2932,8 @@ check_spec(const struct arc_job_spec *sp)
 		return (sysfile_check(sp));
 	case ARC_JOB_KIND_GEOM:
 		return (geom_check(sp));
+	case ARC_JOB_KIND_SMTPD:
+		return (smtpd_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->safe)
 			return ("wireguard changes are not undone: not in "

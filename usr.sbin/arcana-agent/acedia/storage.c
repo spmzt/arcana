@@ -291,159 +291,245 @@ disks(struct work *w, struct arc_storage_rsp *rsp)
 	return (emit(w, top, rsp));
 }
 
-/* The fields of a line zfs(8) or zpool(8) printed with -H. */
-static int
-fields(char *line, char **f, int max)
+/* A program's JSON (zpool -j, zfs -j), parsed; NULL when it is not. */
+static ucl_object_t *
+json_of(const struct execres *res)
 {
-	int	n;
+	struct ucl_parser	*p;
+	ucl_object_t		*top;
 
-	for (n = 0; n < max && (f[n] = strsep(&line, "\t")) != NULL; n++)
-		;
-	return (n);
+	if (res->out == NULL || res->outlen == 0)
+		return (NULL);
+	p = ucl_parser_new(UCL_PARSER_NO_TIME);
+	top = ucl_parser_add_chunk(p, (const unsigned char *)res->out,
+	    res->outlen) ? ucl_parser_get_object(p) : NULL;
+	ucl_parser_free(p);
+	return (top);
+}
+
+/* A property's value, as zpool -j and zfs -j nest it. */
+static const char *
+jprop(const ucl_object_t *o, const char *prop)
+{
+	const ucl_object_t	*v;
+
+	v = ucl_object_lookup_path(o, "properties");
+	v = v != NULL ? ucl_object_lookup(v, prop) : NULL;
+	v = v != NULL ? ucl_object_lookup(v, "value") : NULL;
+	return (v != NULL && ucl_object_type(v) == UCL_STRING ?
+	    ucl_object_tostring(v) : NULL);
+}
+
+static const char *
+jtext(const ucl_object_t *o, const char *key)
+{
+	const ucl_object_t	*v;
+
+	v = ucl_object_lookup(o, key);
+	return (v != NULL && ucl_object_type(v) == UCL_STRING ?
+	    ucl_object_tostring(v) : NULL);
 }
 
 /*
- * What zpool status says of each pool, into the pool's object: its
- * state, status, action, scan and errors lines, and under "vdevs" the
- * devices as they are nested: {"name", "state", "read", "write",
- * "cksum", "depth", "note"}.
+ * The devices of a pool as zpool status -j nests them, flat under
+ * "vdevs", each with its depth: {"name", "state", "read", "write",
+ * "cksum", "depth"}.
+ */
+static void
+vdevs_of(const ucl_object_t *vdevs, int depth, ucl_object_t *out)
+{
+	const ucl_object_t	*d;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*v;
+
+	it = NULL;
+	while ((d = ucl_object_iterate(vdevs, &it, true)) != NULL) {
+		v = ucl_object_typed_new(UCL_OBJECT);
+		put(v, "name", jtext(d, "name") != NULL ? jtext(d, "name") :
+		    ucl_object_key(d));
+		putn(v, "depth", depth);
+		if (jtext(d, "state") != NULL)
+			put(v, "state", jtext(d, "state"));
+		if (jtext(d, "read_errors") != NULL) {
+			put(v, "read", jtext(d, "read_errors"));
+			put(v, "write", jtext(d, "write_errors"));
+			put(v, "cksum", jtext(d, "checksum_errors"));
+		}
+		ucl_array_append(out, v);
+		if (ucl_object_lookup(d, "vdevs") != NULL)
+			vdevs_of(ucl_object_lookup(d, "vdevs"), depth + 1, out);
+	}
+}
+
+/* Is a device, by its name or its path, one of these vdevs' or theirs? */
+static bool
+vdevs_have(const ucl_object_t *vdevs, const char *dev, const char *path)
+{
+	const ucl_object_t	*d;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((d = ucl_object_iterate(vdevs, &it, true)) != NULL) {
+		if ((jtext(d, "name") != NULL && strcmp(jtext(d, "name"), dev) ==
+		    0) || strcmp(ucl_object_key(d), dev) == 0 || (jtext(d,
+		    "path") != NULL && strcmp(jtext(d, "path"), path) == 0))
+			return (true);
+		if (ucl_object_lookup(d, "vdevs") != NULL && vdevs_have(
+		    ucl_object_lookup(d, "vdevs"), dev, path))
+			return (true);
+	}
+	return (false);
+}
+
+/* Is a device (ada1p1) one of a pool's, as zpool status -j has them? */
+static bool
+pool_has(struct work *w, const char *dev)
+{
+	struct execres		 res;
+	const ucl_object_t	*jp;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*top;
+	char			*argv[4];
+	bool			 has;
+
+	argv[0] = (char *)(uintptr_t)opts.zpool_bin;
+	argv[1] = (char *)(uintptr_t)"status";
+	argv[2] = (char *)(uintptr_t)"-j";
+	argv[3] = NULL;
+	if (run_exec(w, argv, &res) != 0 || (top = json_of(&res)) == NULL)
+		return (false);
+	has = false;
+	it = NULL;
+	while (!has && (jp = ucl_object_iterate(ucl_object_lookup(top, "pools"),
+	    &it, true)) != NULL)
+		has = ucl_object_lookup(jp, "vdevs") != NULL && vdevs_have(
+		    ucl_object_lookup(jp, "vdevs"), dev, wfmt(w, "/dev/%s", dev));
+	ucl_object_unref(top);
+	return (has);
+}
+
+/*
+ * What zpool status -j says of each pool, into the pool's object: its
+ * state, status, action, scan (said in a line, as the text has it),
+ * errors and see lines, and under "vdevs" the devices as they are
+ * nested.
  */
 static void
 pool_status(struct work *w, ucl_object_t *pools)
 {
-	static const char *const keys[] = { "state", "status", "action",
-	    "scan", "errors", "see" };
 	struct execres		 res;
-	const ucl_object_t	*c;
-	ucl_object_iter_t	 it;
-	ucl_object_t		*cur, *vdevs, *v;
-	char			*argv[3], *text, *line, *p, *f[6], *val;
-	const char		*key, *last;
-	size_t			 k;
-	int			 n, depth;
-	bool			 config;
+	const ucl_object_t	*c, *jp, *sc;
+	ucl_object_iter_t	 it, pit;
+	ucl_object_t		*top, *cur, *vdevs;
+	char			*argv[4];
+	const char		*fn, *st, *n;
 
 	argv[0] = (char *)(uintptr_t)opts.zpool_bin;
 	argv[1] = (char *)(uintptr_t)"status";
-	argv[2] = NULL;
-	if (run_exec(w, argv, &res) != 0 || res.out == NULL)
+	argv[2] = (char *)(uintptr_t)"-j";
+	argv[3] = NULL;
+	if (run_exec(w, argv, &res) != 0 || (top = json_of(&res)) == NULL)
 		return;
-	cur = vdevs = NULL;
-	config = false;
-	last = NULL;
-	text = wstrdup(w, res.out);
-	while ((line = strsep(&text, "\n")) != NULL) {
-		if (config && line[0] == '\t' && cur != NULL) {
-			/* A device: nested by two spaces a level. */
-			p = line + 1;
-			depth = (int)(strspn(p, " ") / 2);
-			p += strspn(p, " ");
-			if (strncmp(p, "NAME ", 5) == 0)
-				continue;
-			for (n = 0; n < 5 && (f[n] = strsep(&p, " ")) != NULL; )
-				if (f[n][0] != '\0')
-					n++;
-			if (n == 0)
-				continue;
-			v = ucl_object_typed_new(UCL_OBJECT);
-			put(v, "name", f[0]);
-			putn(v, "depth", depth);
-			if (n > 1)
-				put(v, "state", f[1]);
-			if (n > 4) {
-				put(v, "read", f[2]);
-				put(v, "write", f[3]);
-				put(v, "cksum", f[4]);
-			}
-			if (p != NULL && p[strspn(p, " ")] != '\0')
-				put(v, "note", p + strspn(p, " "));
-			ucl_array_append(vdevs, v);
-			continue;
-		}
-		p = line + strspn(line, " ");
-		if (strncmp(p, "pool: ", 6) == 0) {
-			cur = NULL;
-			it = NULL;
-			while ((c = ucl_object_iterate(pools, &it, true)) !=
-			    NULL)
-				if (strcmp(ucl_object_tostring(
-				    ucl_object_lookup(c, "name")), p + 6) == 0)
-					cur = (ucl_object_t *)(uintptr_t)c;
-			vdevs = ucl_object_typed_new(UCL_ARRAY);
-			if (cur != NULL)
-				ucl_object_insert_key(cur, vdevs, "vdevs", 0,
-				    false);
-			config = false;
-			last = NULL;
-			continue;
-		}
+	pit = NULL;
+	while ((jp = ucl_object_iterate(ucl_object_lookup(top, "pools"), &pit,
+	    true)) != NULL) {
+		n = jtext(jp, "name") != NULL ? jtext(jp, "name") :
+		    ucl_object_key(jp);
+		cur = NULL;
+		it = NULL;
+		while ((c = ucl_object_iterate(pools, &it, true)) != NULL)
+			if (strcmp(ucl_object_tostring(ucl_object_lookup(c,
+			    "name")), n) == 0)
+				cur = (ucl_object_t *)(uintptr_t)c;
 		if (cur == NULL)
 			continue;
-		if (strncmp(p, "config:", 7) == 0) {
-			config = true;
-			continue;
+		if (jtext(jp, "state") != NULL)
+			put(cur, "state", jtext(jp, "state"));
+		if (jtext(jp, "status") != NULL)
+			put(cur, "status", jtext(jp, "status"));
+		if (jtext(jp, "action") != NULL)
+			put(cur, "action", jtext(jp, "action"));
+		if (jtext(jp, "moreinfo") != NULL)
+			put(cur, "see", jtext(jp, "moreinfo"));
+		/* The scan, said in a line as the text would. */
+		if ((sc = ucl_object_lookup(jp, "scan_stats")) != NULL &&
+		    (fn = jtext(sc, "function")) != NULL && (st = jtext(sc,
+		    "state")) != NULL && strcmp(st, "NONE") != 0) {
+			char	fl[16];
+			size_t	k;
+
+			for (k = 0; k < sizeof(fl) - 1 && fn[k] != '\0'; k++)
+				fl[k] = (char)tolower((unsigned char)fn[k]);
+			fl[k] = '\0';
+			put(cur, "scan", wfmt(w, strcmp(st, "SCANNING") == 0 ?
+			    "%s in progress since %s%s%s" : strcmp(st,
+			    "CANCELED") == 0 ? "%s canceled on %s%s%s" :
+			    "%s finished with %s errors on %s", fl, strcmp(st,
+			    "FINISHED") == 0 ? (jtext(sc, "errors") != NULL ?
+			    jtext(sc, "errors") : "0") : (jtext(sc, "start_time")
+			    != NULL ? jtext(sc, "start_time") : "?"), strcmp(st,
+			    "FINISHED") == 0 ? (jtext(sc, "end_time") != NULL ?
+			    jtext(sc, "end_time") : "?") : "", ""));
 		}
-		key = NULL;
-		for (k = 0; k < nitems(keys); k++)
-			if (strncmp(p, keys[k], strlen(keys[k])) == 0 &&
-			    p[strlen(keys[k])] == ':')
-				key = keys[k];
-		if (key != NULL) {
-			config = false;
-			last = key;
-			put(cur, key, p + strlen(key) + 1 + strspn(p +
-			    strlen(key) + 1, " "));
-		} else if (last != NULL && line[0] != '\0' && (line[0] ==
-		    '\t' || line[0] == ' ') && !config) {
-			/* The line before, going on. */
-			val = wfmt(w, "%s %s", ucl_object_tostring(
-			    ucl_object_lookup(cur, last)), p + strspn(p,
-			    "\t "));
-			ucl_object_replace_key(cur, ucl_object_fromstring(val),
-			    last, 0, false);
-		}
+		if (jtext(jp, "error_count") != NULL)
+			put(cur, "errors", strcmp(jtext(jp, "error_count"), "0")
+			    == 0 ? "No known data errors" : wfmt(w, "%s data "
+			    "errors", jtext(jp, "error_count")));
+		vdevs = ucl_object_typed_new(UCL_ARRAY);
+		if (ucl_object_lookup(jp, "vdevs") != NULL)
+			vdevs_of(ucl_object_lookup(jp, "vdevs"), 0, vdevs);
+		ucl_object_insert_key(cur, vdevs, "vdevs", 0, false);
 	}
+	ucl_object_unref(top);
 }
 
 /*
  * {"pools": [{"name", "size", "alloc", "free", "frag", "cap", "dedup",
- * "health", and what pool_status() adds}]}.
+ * "health", and what pool_status() adds}]}, from zpool list -j.
  */
 static int
 pools(struct work *w, struct arc_storage_rsp *rsp)
 {
-	struct execres	 res;
-	ucl_object_t	*top, *arr, *o;
-	char		*argv[6], *text, *line, *f[8];
+	struct execres		 res;
+	const ucl_object_t	*jp;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*top, *arr, *o, *parsed;
+	char			*argv[7];
 
 	argv[0] = (char *)(uintptr_t)opts.zpool_bin;
 	argv[1] = (char *)(uintptr_t)"list";
-	argv[2] = (char *)(uintptr_t)"-Hp";
-	argv[3] = (char *)(uintptr_t)"-o";
-	argv[4] = (char *)(uintptr_t)"name,size,allocated,free,fragmentation,"
+	argv[2] = (char *)(uintptr_t)"-j";
+	argv[3] = (char *)(uintptr_t)"-p";
+	argv[4] = (char *)(uintptr_t)"-o";
+	argv[5] = (char *)(uintptr_t)"name,size,allocated,free,fragmentation,"
 	    "capacity,dedupratio,health";
-	argv[5] = NULL;
+	argv[6] = NULL;
 	if (run_exec(w, argv, &res) != 0) {
 		rsp->error = wtext(w, exec_error(w, &res, "zpool"));
 		return (0);
 	}
 	top = ucl_object_typed_new(UCL_OBJECT);
 	arr = ucl_object_typed_new(UCL_ARRAY);
-	text = wstrdup(w, res.out != NULL ? res.out : "");
-	while ((line = strsep(&text, "\n")) != NULL) {
-		if (fields(line, f, 8) < 8)
-			continue;
+	parsed = json_of(&res);
+	it = NULL;
+	while (parsed != NULL && (jp = ucl_object_iterate(ucl_object_lookup(
+	    parsed, "pools"), &it, true)) != NULL) {
 		o = ucl_object_typed_new(UCL_OBJECT);
-		put(o, "name", f[0]);
-		putnum(o, "size", f[1]);
-		putnum(o, "alloc", f[2]);
-		putnum(o, "free", f[3]);
-		putnum(o, "frag", f[4]);
-		putnum(o, "cap", f[5]);
-		put(o, "dedup", f[6]);
-		put(o, "health", f[7]);
+		put(o, "name", jtext(jp, "name") != NULL ? jtext(jp, "name") :
+		    ucl_object_key(jp));
+		putnum(o, "size", jprop(jp, "size"));
+		putnum(o, "alloc", jprop(jp, "allocated"));
+		putnum(o, "free", jprop(jp, "free"));
+		putnum(o, "frag", jprop(jp, "fragmentation"));
+		putnum(o, "cap", jprop(jp, "capacity"));
+		if (jprop(jp, "dedupratio") != NULL)
+			put(o, "dedup", jprop(jp, "dedupratio"));
+		if (jprop(jp, "health") != NULL)
+			put(o, "health", jprop(jp, "health"));
 		ucl_array_append(arr, o);
 	}
+	if (parsed != NULL)
+		ucl_object_unref(parsed);
 	pool_status(w, arr);
 	ucl_object_insert_key(top, arr, "pools", 0, false);
 	return (emit(w, top, rsp));
@@ -490,16 +576,29 @@ static int
 datasets(struct work *w, bool snaps, const char *filter,
     struct arc_storage_rsp *rsp)
 {
-	static const char *const dcols[] = { "name", "type", "used", "avail",
-	    "refer", "mountpoint", "compression", "ratio", "quota",
-	    "reservation", "mounted", "canmount", "origin", "volsize",
-	    "readonly", "encryption", "keystatus", "keylocation", "jailed" };
-	static const char *const scols[] = { "name", "used", "refer",
-	    "creation" };
+	/* What is asked of zfs, and what each is called in the reply. */
+	static const struct {
+		const char	*prop, *key;
+	} dcols[] = {
+		{ "type", "type" }, { "used", "used" }, { "available", "avail" },
+		{ "referenced", "refer" }, { "mountpoint", "mountpoint" },
+		{ "compression", "compression" }, { "compressratio", "ratio" },
+		{ "quota", "quota" }, { "reservation", "reservation" },
+		{ "mounted", "mounted" }, { "canmount", "canmount" },
+		{ "origin", "origin" }, { "volsize", "volsize" },
+		{ "readonly", "readonly" }, { "encryption", "encryption" },
+		{ "keystatus", "keystatus" }, { "keylocation", "keylocation" },
+		{ "jailed", "jailed" },
+	}, scols[] = {
+		{ "used", "used" }, { "referenced", "refer" },
+		{ "creation", "creation" },
+	};
 	struct execres		 res;
-	ucl_object_t		*top, *arr, *o;
-	const char *const	*cols;
-	char			*argv[12], *text, *line, *f[20];
+	const ucl_object_t	*jd;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*top, *arr, *o, *parsed;
+	const char		*v;
+	char			*argv[14];
 	uint64_t		 total;
 	int			 n, i, ncols;
 
@@ -508,12 +607,12 @@ datasets(struct work *w, bool snaps, const char *filter,
 		    "_ . : / -";
 		return (0);
 	}
-	cols = snaps ? scols : dcols;
 	ncols = snaps ? (int)nitems(scols) : (int)nitems(dcols);
 	n = 0;
 	argv[n++] = (char *)(uintptr_t)opts.zfs_bin;
 	argv[n++] = (char *)(uintptr_t)"list";
-	argv[n++] = (char *)(uintptr_t)"-Hp";
+	argv[n++] = (char *)(uintptr_t)"-j";
+	argv[n++] = (char *)(uintptr_t)"-p";
 	argv[n++] = (char *)(uintptr_t)"-t";
 	argv[n++] = (char *)(uintptr_t)(snaps ? "snapshot" :
 	    "filesystem,volume");
@@ -540,25 +639,30 @@ datasets(struct work *w, bool snaps, const char *filter,
 	top = ucl_object_typed_new(UCL_OBJECT);
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	total = 0;
-	text = wstrdup(w, res.out != NULL ? res.out : "");
-	while ((line = strsep(&text, "\n")) != NULL) {
-		if (fields(line, f, ncols) < ncols)
-			continue;
+	parsed = json_of(&res);
+	it = NULL;
+	while (parsed != NULL && (jd = ucl_object_iterate(ucl_object_lookup(
+	    parsed, "datasets"), &it, true)) != NULL) {
 		if (total++ >= STORAGE_ROWS)
 			continue;
 		o = ucl_object_typed_new(UCL_OBJECT);
+		put(o, "name", jtext(jd, "name") != NULL ? jtext(jd, "name") :
+		    ucl_object_key(jd));
 		for (i = 0; i < ncols; i++) {
-			if (strcmp(f[i], "-") == 0)
+			v = jprop(jd, snaps ? scols[i].prop : dcols[i].prop);
+			if (v == NULL || strcmp(v, "-") == 0)
 				continue;
 			/* Sizes and times are numbers; the rest words. */
-			if (isdigit((unsigned char)f[i][0]) && f[i][strspn(
-			    f[i], "0123456789")] == '\0' && i != 0)
-				putnum(o, cols[i], f[i]);
+			if (isdigit((unsigned char)v[0]) && v[strspn(v,
+			    "0123456789")] == '\0')
+				putnum(o, snaps ? scols[i].key : dcols[i].key, v);
 			else
-				put(o, cols[i], f[i]);
+				put(o, snaps ? scols[i].key : dcols[i].key, v);
 		}
 		ucl_array_append(arr, o);
 	}
+	if (parsed != NULL)
+		ucl_object_unref(parsed);
 	ucl_object_insert_key(top, arr, snaps ? "snapshots" : "datasets", 0,
 	    false);
 	if (total > STORAGE_ROWS || res.truncated) {
@@ -1459,9 +1563,8 @@ newfs_wrong(struct work *w, const char *dev, bool force)
 {
 	struct statfs	*mnt;
 	struct execres	 res;
-	const char	*bin, *p;
+	const char	*bin;
 	char		*argv[4], *path;
-	size_t		 len;
 	int		 n, i;
 
 	path = wfmt(w, "/dev/%s", dev);
@@ -1476,17 +1579,8 @@ newfs_wrong(struct work *w, const char *dev, bool force)
 	if (run_exec(w, argv, &res) == 0 && res.out != NULL && strstr(res.out,
 	    wfmt(w, "%s ", path)) != NULL)
 		return (wfmt(w, "the host swaps on %s", path));
-	argv[0] = (char *)(uintptr_t)opts.zpool_bin;
-	argv[1] = (char *)(uintptr_t)"status";
-	argv[2] = NULL;
-	len = strlen(dev);
-	if (run_exec(w, argv, &res) == 0 && res.out != NULL)
-		for (p = res.out; (p = strstr(p, dev)) != NULL; p += len)
-			if ((p == res.out || isspace((unsigned char)p[-1]) ||
-			    p[-1] == '/') && (p[len] == '\0' || isspace(
-			    (unsigned char)p[len])))
-				return (wfmt(w, "%s is a device of a pool",
-				    dev));
+	if (pool_has(w, dev))
+		return (wfmt(w, "%s is a device of a pool", dev));
 	if (force)
 		return (NULL);
 	if ((bin = tool(w, "fstyp")) == NULL)

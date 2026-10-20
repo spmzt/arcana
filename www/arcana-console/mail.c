@@ -13,9 +13,7 @@
  *
  * The console's host sends it: sendmail(8) -t, as FreeBSD comes, is
  * mailwrapper(8) and dma(8), which relays as /etc/dma/dma.conf says;
- * web.conf's sendmail names another.  Or, with Settings' mail_via
- * smtp, the console hands it to the relay they name itself (smtp.c).
- * Arcana sets up no mail server.  A Telegram message is sent by an
+ * web.conf's sendmail names another.  Arcana sets up no mail server.  A Telegram message is sent by an
  * agent (luxuria/telegram.c), the one of the host telegram_via names
  * or the one beside the console: the host that reaches the world
  * outside, not the console.
@@ -83,7 +81,6 @@ static size_t		ncursors;
 struct mailconf {
 	char	*to, *from, *faults, *jobs, *runs;
 	bool	 limits;
-	char	*via, *host, *port, *security, *user, *pass;
 	char	*tg_chats, *tg_token, *tg_via, *tg_faults, *tg_jobs, *tg_runs;
 	bool	 tg_limits;
 };
@@ -101,12 +98,6 @@ mc_load(struct mailconf *mc)
 	l = settings_peek("mail_limits");
 	mc->limits = strcmp(l, "true") == 0;
 	free(l);
-	mc->via = settings_peek("mail_via");
-	mc->host = settings_peek("smtp_host");
-	mc->port = settings_peek("smtp_port");
-	mc->security = settings_peek("smtp_security");
-	mc->user = settings_peek("smtp_user");
-	mc->pass = settings_peek("smtp_password");
 	mc->tg_chats = settings_peek("telegram_chats");
 	mc->tg_token = settings_peek("telegram_token");
 	mc->tg_via = settings_peek("telegram_via");
@@ -127,13 +118,6 @@ mc_free(struct mailconf *mc)
 	free(mc->faults);
 	free(mc->jobs);
 	free(mc->runs);
-	free(mc->via);
-	free(mc->host);
-	free(mc->port);
-	free(mc->security);
-	free(mc->user);
-	explicit_bzero(mc->pass, strlen(mc->pass));
-	free(mc->pass);
 	free(mc->tg_chats);
 	explicit_bzero(mc->tg_token, strlen(mc->tg_token));
 	free(mc->tg_token);
@@ -262,31 +246,6 @@ send_with(const struct mailconf *mc, const char *subject, const char *body,
 	    "") == -1) {
 		snprintf(err, errlen, "out of memory");
 		return (-1);
-	}
-	/* By the relay Settings name, from the console itself. */
-	if (strcmp(mc->via, "smtp") == 0) {
-		const char	*rcpt[32];
-		char		*list, *rp, *ra;
-		size_t		 nr;
-
-		if (mc->host[0] == '\0') {
-			snprintf(err, errlen, "no SMTP relay named in Settings");
-			free(msg);
-			return (-1);
-		}
-		if ((list = strdup(mc->to)) == NULL)
-			abort();
-		nr = 0;
-		for (rp = list; nr < nitems(rcpt) && (ra = strsep(&rp,
-		    " ,;\t")) != NULL; )
-			if (ra[0] != '\0')
-				rcpt[nr++] = ra;
-		st = smtp_send(mc->host, atoi(mc->port), mc->security, mc->user,
-		    mc->pass, from_address(mc, from, sizeof(from)), rcpt, nr, msg,
-		    err, errlen);
-		free(list);
-		free(msg);
-		return (st);
 	}
 	if (pipe2(in, O_CLOEXEC) == -1 || pipe2(out, O_CLOEXEC) == -1) {
 		snprintf(err, errlen, "pipe: %s", strerror(errno));
@@ -857,9 +816,7 @@ api_mail_test(struct http_request *req)
 	snprintf(body, sizeof(body), "This mail says the console's mail "
 	    "reaches you.\n\nIt was sent %s; faults, limits crossed, jobs and "
 	    "workflow runs come the same way, as Settings, Notifications "
-	    "says.\n", strcmp(mc.via, "smtp") == 0 ? "by the console to the "
-	    "SMTP relay Settings name" : "by sendmail(8) on the console's "
-	    "host");
+	    "says.\n", "by sendmail(8) on the console's host");
 	mc_free(&mc);
 	err[0] = '\0';
 	if (mail_send("Arcana: a test", body, err, sizeof(err)) != 0)

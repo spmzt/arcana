@@ -1169,8 +1169,8 @@ paths:
     post:
       tags: [settings]
       summary: A mail to say the alerts reach the address
-      description: Sent as the alerts are, by sendmail(8) of the host
-        mail_via names (or the one beside the console), to mail_to.
+      description: Sent as the alerts are, by sendmail(8) on the console's
+        host (dma(8) as FreeBSD comes), to mail_to.
       responses:
         "200":
           description: ok.
@@ -1220,6 +1220,31 @@ paths:
       responses:
         "200":
           description: ok.
+  /api/servers/{server}/smtpd:
+    get:
+      tags: [servers]
+      summary: OpenSMTPD on the host
+      description: 'Under data: installed, enabled, running; where it runs,
+        status (mda, mta, smtp: running or paused), stats (smtpctl show
+        stats), queue (each envelope: evpid, type, flags, from, to, dest,
+        created, expires, retries, lasttry, state, next, error) and
+        queued; conf and conf_path (smtpd.conf), spec (the form it was
+        rendered from on the host), tables (each kept there: the text, or
+        for credentials and secrets the users'' and labels'' names alone),
+        filters (the filter ports installed), mailer (what mailer.conf(5)
+        makes sendmail), pki (whether the agent has a certificate to
+        listen with).  The changes are jobs of kind smtpd: verb conf with
+        the form as text (JSON), table with a name and its text, enable
+        with enable=yes|no, pause and resume with mta|mda|smtp, schedule
+        and remove with an id or all, update with a table''s name.  With
+        jail, that jail''s OpenSMTPD (a network of its own or not); the
+        jobs take jail too.'
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - { name: jail, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
   /api/servers/{server}/jails/files:
     get:
       tags: [servers]

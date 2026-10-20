@@ -471,6 +471,39 @@ and
 .Va kern_securelevel ,
 securelevel at boot, and those alone.
 A job.
+.It Cm smtpd
+OpenSMTPD on the host, or with
+.Fl j
+in a jail (a network of its own or not)
+.Pq Pa mail/opensmtpd , a plugin ,
+as JSON: whether it is installed, enabled and running; where it runs,
+what
+.Xr smtpctl 8
+says of its status, counters and queue; its
+.Xr smtpd.conf 5 ,
+the form it was rendered from, and the tables the agent keeps.
+.It Cm smtpd conf Ar form.json
+.Xr smtpd.conf 5
+rendered on the host from the form (a JSON object: listeners,
+domains, delivery, relay, policy, filters and own lines, as the
+console's Mail tab sends it), checked by
+.Nm smtpd Fl n
+before it is put in place; smtpd is started again where it runs.
+.It Cm smtpd table Ar name Ar file
+A table written whole: aliases, virtuals, domains, senders,
+credentials (a user and a password a line: each password hashed on
+the host by OpenSMTPD's
+.Nm encrypt ,
+the clear one kept nowhere) or secrets (a label, then user:password);
+credentials and secrets are root's alone.
+Where smtpd runs it reads the table again.
+.It Cm smtpd enable Cm yes | no
+Enabled and started, or stopped and disabled.
+.It Cm smtpd pause | resume Cm mta | mda | smtp
+.It Cm smtpd schedule | remove Ar id | Cm all
+.It Cm smtpd update Ar table
+.Xr smtpctl 8 Ap s
+own, as it takes them.
 .It Cm netstore Op Cm nfs | Cm iscsi | Cm hast
 The host's network storage services, as JSON: the NFS server
 .Xr ( nfsd 8 ,

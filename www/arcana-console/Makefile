@@ -3,7 +3,7 @@
 SHLIB_NAME=	arcana-console.so
 SRCS=		api.c auth.c config.c hosts.c pki.c push.c servers.c settings.c security.c troubleshoot.c \
 		stream.c follow.c tokens.c transfers.c workflows.c sdwan.c sdwan_edge.c \
-		store.c update.c webpush.c audit.c mail.c smtp.c templates.c ldap.c labels.c prefixlists.c users.c \
+		store.c update.c webpush.c audit.c mail.c templates.c ldap.c labels.c prefixlists.c users.c \
 		craft.c nodes.c
 LIBDIR?=	${PREFIX}/lib/arcana
 MAN=		arcana-console.8
@@ -55,6 +55,17 @@ jobs_table.h: ${ARC_TOP}/share/arcana/jobs.yaml ${ARC_TOP}/share/arcana/jobs.awk
 	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}.tmp
 	mv ${.TARGET}.tmp ${.TARGET}
 workflows.pico workflows.o: jobs_table.h
+# The parser of a job as the API takes it: the kinds' names and each
+# field's member, from the same files.
+DPSRCS+=	jobs_spec.h
+CLEANFILES+=	jobs_spec.h jobs_spec.h.tmp
+jobs_spec.h: ${ARC_TOP}/share/arcana/jobs.yaml ${ARC_TOP}/share/arcana/jobs.awk \
+    ${ARC_TOP}/share/arcana/arcana.yaml
+	awk -v out=spec -f ${ARC_TOP}/share/arcana/jobs.awk \
+	    ${ARC_TOP}/share/arcana/arcana.yaml \
+	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}.tmp
+	mv ${.TARGET}.tmp ${.TARGET}
+hosts.pico hosts.o: jobs_spec.h
 
 HAS_TESTS=
 SUBDIR.${MK_TESTS}+= tests

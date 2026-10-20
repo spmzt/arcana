@@ -878,6 +878,7 @@ stage(struct html *h)
 			{ "firewall", "Firewall" },
 			{ "packages", "Packages" }, { "storage", "Storage" },
 			{ "system", "System" }, { "security", "Security" },
+			{ "mail", "Mail" },
 			{ "kernel", "Kernel" }, { "sysctl", "Sysctl" },
 			{ "certificates", "Certificates" }, { "ssh", "SSH" },
 			{ "processes", "Processes" }, { "log", "Log" },
@@ -901,11 +902,15 @@ stage(struct html *h)
 
 		plug = app.tab == TAB_NETWORK && NET_PLUGIN(app.net.kind);
 		h_raw(h, "<nav class=\"tabs\">");
-		for (t = 0; t < (int)(sizeof(tabs) / sizeof(tabs[0])); t++)
+		for (t = 0; t < (int)(sizeof(tabs) / sizeof(tabs[0])); t++) {
+			/* Mail is a plugin's: drawn with them. */
+			if (t == TAB_MAIL)
+				continue;
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
 			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
 			    tabs[t].title);
+		}
 		for (t = 0; t < (int)(sizeof(plugins) / sizeof(plugins[0]));
 		    t++) {
 			bool	there = s->list == NULL || plugin_where(s,
@@ -920,8 +925,21 @@ stage(struct html *h)
 			    "base system's" : "A plugin, not installed here: "
 			    "open it to install its package", plugins[t].title);
 		}
+		/* OpenSMTPD: a plugin of the host or of a jail of it, with the
+		 * host's network or its own. */
+		{
+			const char	*at = plugin_anywhere(s, "smtpd");
+
+			h_fmt(h, "<button class=\"tab plugin%s%s\" data-act=\"tab\" "
+			    "data-arg=\"mail\" title=\"%s%s\">Mail</button>",
+			    app.tab == TAB_MAIL ? " on" : "", s->list != NULL && at
+			    == NULL ? " missing" : "", at == NULL ? "A plugin, not "
+			    "installed here: open it to install its package" :
+			    "OpenSMTPD, a plugin, on ", at != NULL && at[0] != '\0' ?
+			    at : at != NULL ? "the host" : "");
+		}
 		if (app.tab != TAB_JOBS && app.tab != TAB_SYSTEM && app.tab !=
-		    TAB_SECURITY)
+		    TAB_SECURITY && app.tab != TAB_MAIL)
 			export_bar(h, plug ? (app.net.kind == NET_BIRD ? "bird" :
 			    "ipsec") : tabs[app.tab].arg);
 		h_raw(h, "</nav>");
@@ -963,6 +981,11 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_SECURITY) {
 		view_hostsec(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_MAIL) {
+		view_mail(h, s);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -1876,32 +1899,6 @@ settings_fields(struct html *h, int group)
 				settings_select(h, k, vals, titles);
 				continue;
 			}
-		}
-		/* The ways mail goes, and the relay's security: chosen. */
-		if (strcmp(jstr(k, "key"), "mail_via") == 0 || strcmp(jstr(k,
-		    "key"), "smtp_security") == 0) {
-			static const char *const via[] = { "sendmail", "smtp",
-			    NULL }, *const sec[] = { "starttls", "tls", "none",
-			    NULL };
-			const char *const *o = jstr(k, "key")[0] == 'm' ? via :
-			    sec;
-
-			h_raw(h, "<label>");
-			h_txt(h, jstr(k, "label"));
-			h_raw(h, "<select");
-			h_attr(h, "name", jstr(k, "key"));
-			h_raw(h, ">");
-			for (; *o != NULL; o++) {
-				h_raw(h, "<option");
-				h_attr(h, "value", *o);
-				h_fmt(h, "%s>%s</option>", strcmp(jstr(k, "value") !=
-				    NULL ? jstr(k, "value") : "", *o) == 0 ?
-				    " selected" : "", *o);
-			}
-			h_raw(h, "</select><small>");
-			h_txt(h, jstr(k, "help"));
-			h_raw(h, "</small></label>");
-			continue;
 		}
 		/* A secret: never shown, said to be set, typed to change. */
 		if (jstr(k, "type") != NULL && strcmp(jstr(k, "type"),

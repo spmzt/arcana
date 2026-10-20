@@ -24,11 +24,7 @@
 #include "app.h"
 
 static struct {
-	char		 sid[16];
-	ucl_object_t	*o;
-	bool		 loading;
-	char		 error[256];
-	unsigned	 gen;
+	struct res	 r;		/* the system read */
 	bool		 logconf;	/* the Logs tab: syslog's configuration */
 	bool		 hardening;	/* the Sysctl tab: the hardening helper */
 	int		 storage;	/* the Storage tab: 1 GEOM, 2 GELI, 3 devfs */
@@ -66,47 +62,22 @@ sysview_shown(const char *which)
 }
 
 static void
-sv_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+sv_load(const char *sid)
 {
+	char	url[96];
 
-	if ((unsigned)(uintptr_t)arg != sv.gen)
-		return;
-	sv.loading = false;
-	if (status != 200 || !jbool(o, "ok")) {
-		snprintf(sv.error, sizeof(sv.error), "%s", jstr(o, "error") !=
-		    NULL ? jstr(o, "error") : err != NULL ? err :
-		    "the host did not answer");
-		/* Nothing, kept: asked again by Try again, not every draw. */
-		if (sv.o == NULL)
-			sv.o = ucl_object_typed_new(UCL_OBJECT);
-		render();
-		return;
-	}
-	sv.error[0] = '\0';
-	if (sv.o != NULL)
-		ucl_object_unref(sv.o);
-	sv.o = jget(o, "data") != NULL ? ucl_object_copy(jget(o, "data")) :
-	    ucl_object_typed_new(UCL_OBJECT);
-	render();
+	snprintf(url, sizeof(url), "/api/servers/%s/system", sid);
+	res_load(&sv.r, sid, url);
 }
 
 void
 refresh_system(struct server *s, bool again)
 {
-	char	url[96];
 
-	if (s == NULL || (!again && sv.o != NULL && strcmp(sv.sid, s->id) ==
-	    0) || (sv.loading && strcmp(sv.sid, s->id) == 0))
+	if (s == NULL || (!again && sv.r.o != NULL && strcmp(sv.r.sid,
+	    s->id) == 0) || (sv.r.loading && strcmp(sv.r.sid, s->id) == 0))
 		return;
-	if (strcmp(sv.sid, s->id) != 0) {
-		snprintf(sv.sid, sizeof(sv.sid), "%s", s->id);
-		if (sv.o != NULL)
-			ucl_object_unref(sv.o);
-		sv.o = NULL;
-	}
-	snprintf(url, sizeof(url), "/api/servers/%s/system", s->id);
-	sv.loading = true;
-	api("GET", url, NULL, sv_cb, (void *)(uintptr_t)++sv.gen);
+	sv_load(s->id);
 }
 
 /* The read, when it is this host's; else asked for, and NULL. */
@@ -114,18 +85,8 @@ static const ucl_object_t *
 data(struct html *h, struct server *s)
 {
 
-	if (sv.o == NULL || strcmp(sv.sid, s->id) != 0) {
-		refresh_system(s, false);
-		h_raw(h, "<div class=\"loader\"></div>");
-		return (NULL);
-	}
-	if (sv.error[0] != '\0') {
-		h_raw(h, "<div class=\"notice bad\">");
-		h_txt(h, sv.error);
-		h_raw(h, " <button class=\"ghost small\" data-act=\"sv-retry\">"
-		    "Try again</button></div>");
-	}
-	return (sv.o);
+	return (res_shown(h, &sv.r, s->id, sv_load, "sv-retry") ? sv.r.o :
+	    NULL);
 }
 
 static void
@@ -139,15 +100,11 @@ send(struct server *s, char *json, const char *title)
 static void
 send_file(struct server *s, const char *file, const char *text)
 {
-	char	*json, *q, title[96];
+	char	title[96];
 
-	q = json_quote(text != NULL ? text : "");
-	if (asprintf(&json, "{\"kind\":\"sysfile\",\"verb\":\"%s\",\"text\":%s}",
-	    file, q) == -1)
-		abort();
-	free(q);
 	snprintf(title, sizeof(title), "%s written", file);
-	send(s, json, title);
+	send(s, job_json("sysfile", file, NULL, 0, text != NULL ? text : "",
+	    NULL), title);
 }
 
 /* A job of words: kind, verb (or none), its args. */
@@ -155,25 +112,8 @@ static void
 send_words(struct server *s, const char *kind, const char *verb,
     const char *const *w, size_t n, const char *extra, const char *title)
 {
-	char	*json, *t, *q;
-	size_t	 i;
 
-	if (asprintf(&json, "{\"kind\":\"%s\",%s%s%s\"args\":[", kind, verb !=
-	    NULL ? "\"verb\":\"" : "", verb != NULL ? verb : "", verb != NULL ?
-	    "\"," : "") == -1)
-		abort();
-	for (i = 0; i < n; i++) {
-		q = json_quote(w[i]);
-		if (asprintf(&t, "%s%s%s", json, i > 0 ? "," : "", q) == -1)
-			abort();
-		free(json);
-		free(q);
-		json = t;
-	}
-	if (asprintf(&t, "%s]%s}", json, extra != NULL ? extra : "") == -1)
-		abort();
-	free(json);
-	send(s, t, title);
+	send(s, job_json(kind, verb, w, n, NULL, extra), title);
 }
 
 static void
@@ -726,7 +666,7 @@ sv_server(void)
 	int	i;
 
 	for (i = 0; i < app.nservers; i++)
-		if (strcmp(app.servers[i].id, sv.sid) == 0)
+		if (strcmp(app.servers[i].id, sv.r.sid) == 0)
 			return (&app.servers[i]);
 	return (NULL);
 }
@@ -750,7 +690,7 @@ safe_word(const char *v, const char *more)
 static const char *
 cur_text(const char *file)
 {
-	const char	*t = jstr(jget(jget(sv.o, "files"), file), "text");
+	const char	*t = jstr(jget(jget(sv.r.o, "files"), file), "text");
 
 	return (t != NULL ? t : "");
 }
@@ -871,7 +811,7 @@ sysview_form(const char *form, const ucl_object_t *f)
 		char		 body[400], val[80];
 		int		 now_lv, want;
 
-		now_lv = (int)jint(jget(sv.o, "securelevel"), "now", -1);
+		now_lv = (int)jint(jget(sv.r.o, "securelevel"), "now", -1);
 		want = atoi(lv);
 		if (jbool(f, "now") && want <= now_lv) {
 			toast(true, "securelevel is %d now and is never lowered "
@@ -1070,7 +1010,7 @@ sysview_action(const char *act, const char *arg, const char *value)
 		int			 d;
 
 		for (i = 0, d = 0; i < nitems(hard); i++)
-			if ((v = ucl_object_lookup(jget(sv.o, "hardening"),
+			if ((v = ucl_object_lookup(jget(sv.r.o, "hardening"),
 			    hard[i].name)) != NULL && ucl_object_toint(v) !=
 			    hard[i].want)
 				d++;
@@ -1088,7 +1028,7 @@ sysview_action(const char *act, const char *arg, const char *value)
 		char			 num[16];
 
 		for (i = 0; i < nitems(hard); i++) {
-			if ((v = ucl_object_lookup(jget(sv.o, "hardening"),
+			if ((v = ucl_object_lookup(jget(sv.r.o, "hardening"),
 			    hard[i].name)) ==
 			    NULL || ucl_object_toint(v) == hard[i].want)
 				continue;

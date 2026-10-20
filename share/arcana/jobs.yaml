@@ -84,40 +84,51 @@ fields:
   - field: allowed_ips
     type: text
     label: Allowed addresses
+    empty: keep
   - field: keepalive
     type: number
     label: Keepalive, seconds
     help: Seconds between keepalives; empty for none.
+    range: 0-65535
   - field: listen_port
     type: number
     label: Port
     help: A UDP port, 1 to 65535.
+    range: 1-65535
   - field: description
     type: text
     label: Description
+    empty: keep
   - field: mtu
     type: number
     label: MTU
     help: Bytes; empty for the interface's own.
+    range: 1-65535
   - field: fib
     type: number
     label: Routing table
     help: A routing table, 0 the default (setfib(1)).
+    range: 0-65535
   - field: tunnelfib
     type: number
     label: Routing table of the tunnel's outer packets
+    range: 0-65535
   - field: metric
     type: number
     label: Metric
+    range: 1-4294967295
   - field: weight
     type: number
     label: Weight
+    range: 1-4294967295
   - field: id
     type: number
     label: Tag or identifier
+    range: 0-16777215
   - field: reqid
     type: number
     label: reqid
+    range: 1-16383
   - field: up
     type: bool
     label: Up
@@ -190,6 +201,10 @@ fields:
   - field: remote_ca
     type: text
     label: The peer's CA (x509ca)
+  - field: addressing
+    type: text
+    label: Addressing
+    help: How an interface gets its addresses: dhcp, slaac, or static.
   - field: dataset
     type: text
     label: Dataset
@@ -437,3 +452,8 @@ kinds:
     needs: verb args
     uses: text
     values: verb=mirror|stripe|concat|raid3|label|nop|multipath|shsec|virstor|cache|journal|eli|union
+  - kind: smtpd
+    title: OpenSMTPD's configuration, tables and queue
+    needs: verb
+    uses: args text
+    values: verb=conf|table|enable|pause|resume|schedule|remove|update

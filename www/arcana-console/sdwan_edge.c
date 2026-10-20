@@ -2385,29 +2385,27 @@ ids_of(const ucl_object_t *sw, struct kore_buf *rules, bool *rulesetp,
 }
 
 /*
- * Suricata's configuration for a service at an edge: it watches the
- * interfaces named (the service's UNIs here) by libpcap, its home
- * network the service's UNI subnets, and writes its alerts as eve.json
- * in its log directory, which the agent reads.  The agent places
- * @LOGDIR@, @RULES@ and @PID@.
+ * A service's instance as its settings, which the agent renders into
+ * Suricata's YAML (idsconf.c's SD-WAN shape): its home the UNIs'
+ * prefixes, the UNIs' interfaces, the ruleset when the policy says,
+ * and oneside where the edge itself answers some of the UNIs' traffic
+ * (the URL filter's Squid, malware scanning behind it, the DNS filter)
+ * and sees one side of those flows: taken as they come, a packet that
+ * looks wrong for want of the other side let by, not dropped.
  */
-static char *
-ids_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *ifs,
-    bool ruleset)
+static ucl_object_t *
+ids_spec(const ucl_object_t *sw, const ucl_object_t *ifs, bool ruleset)
 {
-	struct kore_buf		*b;
-	const ucl_object_t	*ep, *u, *v, *f;
+	const ucl_object_t	*ep, *u, *v;
 	ucl_object_iter_t	 it;
-	char			*out;
-	int			 i, n;
+	ucl_object_t		*spec, *home;
+	int			 i;
+	bool			 x, prevent, rs;
 
-	b = kore_buf_alloc(4096);
-	kore_buf_appendf(b, "%%YAML 1.1\n---\n# Written by the Arcana console: "
-	    "SD-WAN service %s at %s.\n# The intrusion detection of its "
-	    "security policies (MEF 88), by Suricata.\nvars:\n  "
-	    "address-groups:\n    HOME_NET: \"[", str(sw, "id"),
-	    server_name_of(sid));
-	n = 0;
+	spec = ucl_object_typed_new(UCL_OBJECT);
+	put(spec, "flavor", S("sdwan"));
+	put(spec, "service", S(str(sw, "id")));
+	home = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
 	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
 	    &it, true)) != NULL) {
@@ -2415,69 +2413,17 @@ ids_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *ifs,
 			continue;
 		for (i = 0; i < 2; i++) {
 			v = ucl_object_lookup(u, i == 0 ? "ipv4" : "ipv6");
-			if (str(v, "prefix") == NULL)
-				continue;
-			kore_buf_appendf(b, "%s%s", n++ > 0 ? "," : "", str(v,
-			    "prefix"));
+			if (str(v, "prefix") != NULL)
+				ucl_array_append(home, S(str(v, "prefix")));
 		}
 	}
-	if (n == 0)
-		kore_buf_appendf(b, "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16");
-	kore_buf_appendf(b, "]\"\n    EXTERNAL_NET: \"!$HOME_NET\"\n");
-	/* The groups the common rule sets name, as Suricata's own file has
-	 * them. */
-	kore_buf_appendf(b,
-	    "    HTTP_SERVERS: \"$HOME_NET\"\n    SMTP_SERVERS: \"$HOME_NET\"\n"
-	    "    SQL_SERVERS: \"$HOME_NET\"\n    DNS_SERVERS: \"$HOME_NET\"\n"
-	    "    TELNET_SERVERS: \"$HOME_NET\"\n    AIM_SERVERS: "
-	    "\"$EXTERNAL_NET\"\n    DC_SERVERS: \"$HOME_NET\"\n    DNP3_SERVER: "
-	    "\"$HOME_NET\"\n    DNP3_CLIENT: \"$HOME_NET\"\n    MODBUS_CLIENT: "
-	    "\"$HOME_NET\"\n    MODBUS_SERVER: \"$HOME_NET\"\n    ENIP_CLIENT: "
-	    "\"$HOME_NET\"\n    ENIP_SERVER: \"$HOME_NET\"\n  port-groups:\n"
-	    "    HTTP_PORTS: \"80\"\n    SHELLCODE_PORTS: \"!80\"\n"
-	    "    ORACLE_PORTS: 1521\n    SSH_PORTS: 22\n    DNP3_PORTS: 20000\n"
-	    "    MODBUS_PORTS: 502\n    FILE_DATA_PORTS: \"[$HTTP_PORTS,110,"
-	    "143]\"\n    FTP_PORTS: 21\n    GENEVE_PORTS: 6081\n    VXLAN_PORTS: "
-	    "4789\n    TEREDO_PORTS: 3544\n"
-	    "default-log-dir: @LOGDIR@\n"
-	    "outputs:\n  - eve-log:\n      enabled: yes\n      filetype: regular\n"
-	    "      filename: eve.json\n      types:\n        - alert\n"
-	    "logging:\n  default-log-level: notice\n  outputs:\n    - console:\n"
-	    "        enabled: no\n    - file:\n        enabled: yes\n"
-	    "        level: info\n        filename: suricata.log\n"
-	    "pcap:\n");
-	it = NULL;
-	while ((f = ucl_object_iterate(ifs, &it, true)) != NULL)
-		kore_buf_appendf(b, "  - interface: %s\n",
-		    ucl_object_tostring(f));
-	kore_buf_appendf(b, "rule-files:\n  - @RULES@\n");
-	if (ruleset)
-		kore_buf_appendf(b, "  - @RULESET@\n");
-	kore_buf_appendf(b, "classification-file: "
-	    "/usr/local/etc/suricata/classification.config\n"
-	    "reference-config-file: /usr/local/etc/suricata/reference.config\n"
-	    "run-as:\n  user: root\n");
-	/*
-	 * Where it prevents and the edge itself answers some of the UNI's
-	 * traffic (the URL filter's Squid, malware scanning behind it, the
-	 * DNS filter), it sees one side of those flows: what the edge sends
-	 * back goes out to the UNI without it.  Such a flow is taken as it
-	 * comes, and a packet of it that looks wrong for want of the other
-	 * side is let by, not dropped; what its rules drop is dropped all
-	 * the same, though one side alone may let a packet by before.
-	 * Elsewhere it sees both sides and stays strict.
-	 */
-	{
-		bool	x, prevent, rs;
-
-		if (ids_of(sw, NULL, &rs, &prevent) && prevent && (url_filters(
-		    sw, &x) || malware_scan(sw) || (dns_filters(sw, &x) && x)))
-			kore_buf_appendf(b, "stream:\n  midstream: true\n"
-			    "  async-oneside: true\n  drop-invalid: no\n");
-	}
-	out = strdup(kore_buf_stringify(b, NULL));
-	kore_buf_free(b);
-	return (out);
+	put(spec, "home", home);
+	put(spec, "interfaces", ucl_object_copy(ifs));
+	put(spec, "ruleset", ucl_object_frombool(ruleset));
+	if (ids_of(sw, NULL, &rs, &prevent) && prevent && (url_filters(sw,
+	    &x) || malware_scan(sw) || (dns_filters(sw, &x) && x)))
+		put(spec, "oneside", ucl_object_frombool(true));
+	return (spec);
 }
 
 /*
@@ -2532,10 +2478,9 @@ ids_build(struct plan *pl, const ucl_object_t *doc)
 			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
 			inst = ucl_object_typed_new(UCL_OBJECT);
 			put(inst, "name", S(name));
-			text = ids_conf(sw, sid, ifs, ruleset);
+			put(inst, "host", S(server_name_of(sid)));
+			put(inst, "spec", ids_spec(sw, ifs, ruleset));
 			put(inst, "interfaces", ifs);
-			put(inst, "conf", S(text));
-			free(text);
 			if (prevent) {
 				put(inst, "divert", I(IDS_PORT(ucl_object_toint(
 				    ucl_object_lookup(sw, "fib")))));

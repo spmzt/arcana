@@ -106,7 +106,8 @@ static const char *const tabnames[] = {
 	[TAB_SERVICES] = "services", [TAB_NETWORK] = "network",
 	[TAB_FIREWALL] = "firewall", [TAB_PACKAGES] = "packages",
 	[TAB_STORAGE] = "storage", [TAB_SYSTEM] = "system",
-	[TAB_SECURITY] = "security", [TAB_KERNEL] = "kernel",
+	[TAB_SECURITY] = "security", [TAB_MAIL] = "mail",
+	[TAB_KERNEL] = "kernel",
 	[TAB_SYSCTL] = "sysctl", [TAB_CERTS] = "certificates",
 	[TAB_SSH] = "ssh",
 	[TAB_PROCESSES] = "processes",
@@ -650,7 +651,7 @@ submit(const char *form, const ucl_object_t *f)
 	    ca_form(form, f) || certs_form(form, f) || ssh_form(form, f) || span_form(form, f) ||
 	    ipsec_form(form, f) || workflows_form(form, f) || sdwan_form(form, f) ||
 	    trouble_form(form, f) || secpage_form(form, f) ||
-	    naspage_form(form, f) || sysview_form(form, f) ||
+	    naspage_form(form, f) || sysview_form(form, f) || mail_form(form, f) ||
 	    builder_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
@@ -964,7 +965,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	    span_action(act, arg, value) ||
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
 	    sdwan_action(act, arg, value) || trouble_action(act, arg, value) ||
-	    sysview_action(act, arg, value) ||
+	    sysview_action(act, arg, value) || mail_action(act, arg, value) ||
 	    secpage_action(act, arg, value) || naspage_action(act, arg, value) ||
 	    builder_action(act, arg, value) ||
 	    iflabel_action(act, arg) || pfxlists_action(act, arg, value) ||
@@ -1065,6 +1066,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "storage") == 0 ? TAB_STORAGE :
 		    strcmp(arg, "system") == 0 ? TAB_SYSTEM :
 		    strcmp(arg, "security") == 0 ? TAB_SECURITY :
+		    strcmp(arg, "mail") == 0 ? TAB_MAIL :
 		    strcmp(arg, "jails") == 0 ? TAB_JAILS :
 		    strcmp(arg, "jobs") == 0 ? TAB_JOBS : TAB_SUMMARY;
 		app.node = NODE_HOST;
@@ -1647,6 +1649,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_storage(s, true);
 		} else if (app.tab == TAB_SYSTEM || app.tab == TAB_SECURITY) {
 			refresh_system(s, true);
+		} else if (app.tab == TAB_MAIL) {
+			mail_refresh();
 		} else if (app.tab == TAB_PACKAGES) {
 			app.pkg.loading = false;
 			refresh_packages(s, true);

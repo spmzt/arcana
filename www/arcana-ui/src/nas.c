@@ -28,49 +28,24 @@ static const char *const tabs[] = { "nfs", "iscsi", "hast" };
 
 static struct {
 	enum nastab	 tab;
-	char		 sid[16];
-	ucl_object_t	*o;
-	bool		 loading;
-	char		 error[256];
-	unsigned	 gen;
+	struct res	 r;		/* the netstore read */
 	bool		 target;	/* the iSCSI target form open */
 } nas;
 
 static void
-nas_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+nas_load_of(const char *sid)
 {
+	char	url[96];
 
-	if ((unsigned)(uintptr_t)arg != nas.gen)
-		return;
-	nas.loading = false;
-	if (status != 200 || !jbool(o, "ok")) {
-		snprintf(nas.error, sizeof(nas.error), "%s", jstr(o, "error") !=
-		    NULL ? jstr(o, "error") : err != NULL ? err :
-		    "the host did not answer");
-		/* Nothing, kept: asked again by Try again, not every draw. */
-		if (nas.o == NULL)
-			nas.o = ucl_object_typed_new(UCL_OBJECT);
-		render();
-		return;
-	}
-	nas.error[0] = '\0';
-	if (nas.o != NULL)
-		ucl_object_unref(nas.o);
-	nas.o = jget(o, "data") != NULL ? ucl_object_copy(jget(o, "data")) :
-	    ucl_object_typed_new(UCL_OBJECT);
-	render();
+	snprintf(url, sizeof(url), "/api/servers/%s/netstore", sid);
+	res_load(&nas.r, sid, url);
 }
 
 static void
 nas_load(void)
 {
-	char	url[96];
 
-	if (nas.sid[0] == '\0')
-		return;
-	snprintf(url, sizeof(url), "/api/servers/%s/netstore", nas.sid);
-	nas.loading = true;
-	api("GET", url, NULL, nas_cb, (void *)(uintptr_t)++nas.gen);
+	nas_load_of(nas.r.sid);
 }
 
 static struct server *
@@ -79,7 +54,7 @@ nas_server(void)
 	int	i;
 
 	for (i = 0; i < app.nservers; i++)
-		if (strcmp(app.servers[i].id, nas.sid) == 0)
+		if (strcmp(app.servers[i].id, nas.r.sid) == 0)
 			return (&app.servers[i]);
 	return (NULL);
 }
@@ -356,12 +331,12 @@ view_naspage(struct html *h)
 
 	h_raw(h, "<section class=\"secpage naspage\"><div class=\"sechead\">"
 	    "<label class=\"secpick\">Host <select data-input=\"nas-host\">");
-	if (nas.sid[0] == '\0')
+	if (nas.r.sid[0] == '\0')
 		h_raw(h, "<option value=\"\" selected>choose…</option>");
 	for (k = 0; k < app.nservers; k++) {
 		h_raw(h, "<option");
 		h_attr(h, "value", app.servers[k].id);
-		if (strcmp(app.servers[k].id, nas.sid) == 0)
+		if (strcmp(app.servers[k].id, nas.r.sid) == 0)
 			h_raw(h, " selected");
 		h_raw(h, ">");
 		h_txt(h, app.servers[k].name);
@@ -373,33 +348,33 @@ view_naspage(struct html *h)
 		    "\"%s\" title=\"%s\">%s</button>", (size_t)nas.tab == i ?
 		    " on" : "", tabs[i], titles[i], names[i]);
 	h_raw(h, "</nav>");
-	if (nas.sid[0] == '\0') {
+	if (nas.r.sid[0] == '\0') {
 		h_raw(h, "<div class=\"empty\"><p>Choose a host.</p><p class=\""
 		    "dim\">Its NFS server, iSCSI target and HAST: FreeBSD's "
 		    "own, nothing to install.</p></div></section>");
 		return;
 	}
-	if (nas.error[0] != '\0') {
+	if (nas.r.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
-		h_txt(h, nas.error);
+		h_txt(h, nas.r.error);
 		h_raw(h, " <button class=\"ghost small\" data-act=\"nas-retry\">"
 		    "Try again</button></div>");
 	}
-	if (nas.o == NULL) {
-		if (!nas.loading)
+	if (nas.r.o == NULL) {
+		if (!nas.r.loading)
 			nas_load();
 		h_raw(h, "<div class=\"loader\"></div></section>");
 		return;
 	}
 	switch (nas.tab) {
 	case NAS_NFS:
-		view_nfs(h, jget(nas.o, "nfs"));
+		view_nfs(h, jget(nas.r.o, "nfs"));
 		break;
 	case NAS_ISCSI:
-		view_iscsi(h, jget(nas.o, "iscsi"));
+		view_iscsi(h, jget(nas.r.o, "iscsi"));
 		break;
 	case NAS_HAST:
-		view_hast(h, jget(nas.o, "hast"));
+		view_hast(h, jget(nas.r.o, "hast"));
 		break;
 	}
 	h_raw(h, "</section>");
@@ -462,7 +437,7 @@ naspage_form(const char *form, const ucl_object_t *f)
 		return (true);
 	}
 	if (strcmp(form, "nas-target") == 0) {
-		const ucl_object_t	*o = jget(nas.o, "iscsi");
+		const ucl_object_t	*o = jget(nas.r.o, "iscsi");
 		const char		*conf = jstr(o, "conf");
 		const char		*user = jstr(f, "user");
 		bool			 chap;
@@ -513,20 +488,20 @@ naspage_action(const char *act, const char *arg, const char *value)
 		app.node = NODE_STORAGE;
 		app.jail[0] = '\0';
 		app.rail_open = false;
-		if (nas.sid[0] == '\0' && app.nservers == 1)
-			snprintf(nas.sid, sizeof(nas.sid), "%s",
+		if (nas.r.sid[0] == '\0' && app.nservers == 1)
+			snprintf(nas.r.sid, sizeof(nas.r.sid), "%s",
 			    app.servers[0].id);
 		nas_load();
 		render();
 		return (true);
 	}
 	if (strcmp(act, "input:nas-host") == 0) {
-		snprintf(nas.sid, sizeof(nas.sid), "%s", value != NULL ? value :
+		snprintf(nas.r.sid, sizeof(nas.r.sid), "%s", value != NULL ? value :
 		    "");
-		if (nas.o != NULL)
-			ucl_object_unref(nas.o);
-		nas.o = NULL;
-		nas.error[0] = '\0';
+		if (nas.r.o != NULL)
+			ucl_object_unref(nas.r.o);
+		nas.r.o = NULL;
+		nas.r.error[0] = '\0';
 		nas.target = false;
 		nas_load();
 		render();
@@ -539,9 +514,9 @@ naspage_action(const char *act, const char *arg, const char *value)
 			if (strcmp(arg, tabs[i]) == 0)
 				nas.tab = (enum nastab)i;
 	} else if (strcmp(act, "nas-retry") == 0) {
-		if (nas.o != NULL)
-			ucl_object_unref(nas.o);
-		nas.o = NULL;
+		if (nas.r.o != NULL)
+			ucl_object_unref(nas.r.o);
+		nas.r.o = NULL;
 		nas_load();
 	} else if (strcmp(act, "nas-target") == 0)
 		nas.target = true;
@@ -598,11 +573,11 @@ naspage_action(const char *act, const char *arg, const char *value)
 		    "metadata on its provider: what the provider holds is "
 		    "lost.", arg);
 		confirm("Create the resource?", body, "Create", true, arg,
-		    "nas-create-yes", arg, nas.sid);
+		    "nas-create-yes", arg, nas.r.sid);
 		return (true);
 	} else if (strcmp(act, "nas-create-yes") == 0) {
 		/* On the host it was asked of, not one picked meanwhile. */
-		if (value == NULL || strcmp(value, nas.sid) != 0) {
+		if (value == NULL || strcmp(value, nas.r.sid) != 0) {
 			toast(true, "The host changed: ask again");
 			render();
 			return (true);
@@ -623,8 +598,8 @@ void
 naspage_loc(char *buf, size_t len)
 {
 
-	snprintf(buf, len, "#/storage/%s%s%s", tabs[nas.tab], nas.sid[0] !=
-	    '\0' ? "/" : "", nas.sid);
+	snprintf(buf, len, "#/storage/%s%s%s", tabs[nas.tab], nas.r.sid[0] !=
+	    '\0' ? "/" : "", nas.r.sid);
 }
 
 void
@@ -638,11 +613,11 @@ naspage_open(const char *rest)
 		if (strcmp(tab, tabs[i]) == 0)
 			nas.tab = (enum nastab)i;
 	rest += strcspn(rest, "/");
-	if (*rest == '/' && strcmp(rest + 1, nas.sid) != 0) {
-		snprintf(nas.sid, sizeof(nas.sid), "%.15s", rest + 1);
-		if (nas.o != NULL)
-			ucl_object_unref(nas.o);
-		nas.o = NULL;
+	if (*rest == '/' && strcmp(rest + 1, nas.r.sid) != 0) {
+		snprintf(nas.r.sid, sizeof(nas.r.sid), "%.15s", rest + 1);
+		if (nas.r.o != NULL)
+			ucl_object_unref(nas.r.o);
+		nas.r.o = NULL;
 		nas_load();
 	}
 }

@@ -1522,3 +1522,32 @@ it found and could be fixed was, and this is what stays:
   reaches outside (the release check, notifications) is the console's.
   A plugin is still built into the agent and the page: what makes it
   one is that it is there only where its program is installed.
+
+- Asked for on 2026-10-20, after a review of the whole code:
+  - The review's findings fixed (agent 0.156.0, console 0.229.0).
+  - A cluster leader on a lease, stepping down when cut off; the locks
+    written to the log so a new leader knows them.  Done, console
+    0.230.0 and 0.233.0.
+  - A pid file believed only when the process is the program's; the
+    program a console sends signed by its CA key; a bundle copied from
+    another host without its keys.  Done, agent 0.157.0, console 0.231.0.
+  - The IDS table's lock held for the table alone.  Done, agent 0.158.0.
+  - The YANG collectors out of the tree; zpool and zfs read as JSON.
+    Done, agent 0.159.0.
+  - The console's job parser made from jobs.yaml; NTP's and rtadvd's
+    block editing shared; the panel's reads of a host's resource and
+    its job JSON built by one helper each.  Done, agent 0.160.0,
+    console 0.232.0.
+  - Suricata's YAML rendered by the agent from the form it is sent, so
+    that what runs is what was checked.  Done, agent 0.161.0, console
+    0.233.0.  Left: Squid, c-icap, unbound, dnsmasq and BIRD are still
+    written by the console with the agent's places in them; jls stays
+    a program the tests can fake, where libjail could not be.
+  - OpenSMTPD (mail/opensmtpd), a plugin: the Mail tab of a host, its
+    smtpd.conf rendered on the host from the form and checked by smtpd
+    -n, the tables (credentials hashed there), smtpctl's queue and
+    status, enable and start.  Done, agent 0.162.0, console 0.236.0.
+    The plan is docs/notes/opensmtpd.md; not yet: counters as graphs,
+    db: tables, a fault when the queue grows.
+  - Mail out of the console by sendmail(8) alone: the console's own
+    SMTP relay client and its settings are gone.  Done, console 0.235.0.

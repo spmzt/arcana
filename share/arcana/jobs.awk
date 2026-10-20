@@ -6,13 +6,7 @@
 #	awk -v out=json -f jobs.awk arcana.yaml jobs.yaml > jobs.json
 #	awk -v out=yang -f jobs.awk arcana.yaml jobs.yaml > \
 #	    arcana-jobs-kinds@2026-10-14.yang
-#	awk -v out=yspec -f jobs.awk arcana.yaml jobs.yaml arcana.h > \
-#	    yjobs_spec.c
 #
-# out=yspec writes yjobs_spec(), a change of that submodule (its C
-# struct, as cblink-gen makes it) made the job-spec the agent's queue
-# takes; arcana.h, the family's C header, says which of job-spec's
-# members have a has_ beside them.
 #
 # arcana.yaml first: its job-kind entries and job-spec attributes are
 # what jobs.yaml must agree with.  A kind in the one and not the other,
@@ -114,7 +108,8 @@ function flush_field() {
 	nf++
 	ff[nf] = fname; ft[nf] = ftype; fl[nf] = flabel; fa[nf] = fattr
 	fh[nf] = fhelp; fc[nf] = fchoices; fp[nf] = fpicker
-	fname = ftype = flabel = fattr = fhelp = fchoices = fpicker = ""
+	fr[nf] = frange; fe[nf] = fempty
+	fname = ftype = flabel = fattr = fhelp = fchoices = fpicker = frange = fempty = ""
 }
 
 function flush_kind() {
@@ -135,8 +130,12 @@ FILENAME ~ /arcana\.yaml$/ {
 		akind[value($0)] = 1
 		aorder[nak++] = value($0)
 	}
-	else if ($0 ~ /^      - name:/ && top == "job-spec")
+	else if ($0 ~ /^      - name:/ && top == "job-spec") {
 		aspec[value($0)] = 1
+		acur = value($0)
+	}
+	else if ($0 ~ /^        type:/ && top == "job-spec")
+		atype[acur] = value($0)
 	next
 }
 # arcana.h: struct arc_job_spec's members.
@@ -165,6 +164,8 @@ section == "f" && /^    attribute:/ { fattr = value($0); next }
 section == "f" && /^    help:/ { fhelp = value($0); next }
 section == "f" && /^    choices:/ { fchoices = value($0); next }
 section == "f" && /^    picker:/ { fpicker = value($0); next }
+section == "f" && /^    range:/ { frange = value($0); next }
+section == "f" && /^    empty:/ { fempty = value($0); next }
 section == "k" && /^  - kind:/ { flush_kind(); kname = value($0); next }
 section == "k" && /^    title:/ { ktitle = value($0); next }
 section == "k" && /^    needs:/ { kneeds = value($0); next }
@@ -226,8 +227,8 @@ END {
 		yang()
 		exit
 	}
-	if (out == "yspec") {
-		yspec()
+	if (out == "spec") {
+		spec()
 		exit
 	}
 	printf "{\"fields\":["
@@ -351,140 +352,45 @@ function kvals(k, f,    n, a, j, w) {
 	return ""
 }
 
-# Field i of kind k into the job-spec: the C to do it.
-function yspec_field(k, i,    f, m, vals, nv, w, j, tab) {
-	f = ff[i]
-	m = fa[i] != "" ? cname(fa[i]) : f
-	vals = kvals(k, f)
-	if (f == "set") {
-		print "\t\tfor (size_t i = 0; i < c->set.n; i++) {"
-		print "\t\t\tvars[nv].key = c->set.v[i].name;"
-		print "\t\t\tvars[nv++].value = c->set.v[i].value;"
-		print "\t\t}"
-		return
-	}
-	if (f == "unset") {
-		print "\t\tfor (size_t i = 0; i < c->unset.n; i++) {"
-		print "\t\t\tvars[nv].key = c->unset.v[i];"
-		print "\t\t\tvars[nv++].remove = true;"
-		print "\t\t}"
-		return
-	}
-	if (ft[i] == "list") {
-		printf "\t\tsp->%s.n = c->%s.n;\n", m, f
-		printf "\t\tsp->%s.v = c->%s.v;\n", m, f
-		return
-	}
-	if (vals != "") {
-		# action: the job-spec's own enumeration, the same order.
-		if (f == "action") {
-			m = kk[k] == "service-action" ? "service_action" : "action"
-			printf "\t\tif ((sp->has_%s = c->has_%s))\n", m, f
-			printf "\t\t\tsp->%s = (uint8_t)c->%s;\n", m, f
-			return
-		}
-		tab = cname(kk[k]) "_" f
-		printf "\t\tif (c->has_%s)\n", f
-		printf "\t\t\tsp->%s = %s[c->%s];\n", m, tab, f
-		return
-	}
-	if (ft[i] == "number" || (ft[i] == "bool" && (m in shas))) {
-		printf "\t\tif ((sp->has_%s = c->has_%s))\n", m, f
-		printf "\t\t\tsp->%s = c->%s;\n", m, f
-		return
-	}
-	if (ft[i] == "bool") {
-		printf "\t\tsp->%s = c->has_%s && c->%s;\n", m, f, f
-		return
-	}
-	printf "\t\tsp->%s = c->%s;\n", m, f
-}
 
-function yspec(    k, i, j, n, a, nv, w, f, vals, fields, nf2, seen, tab, line, w2) {
-	print "/*"
-	print " * Made from share/arcana/jobs.yaml by share/arcana/jobs.awk"
-	print " * (out=yspec): not to be edited.  A change of arcana-jobs's submit"
-	print " * (its struct, as cblink-gen makes it from arcana-jobs-kinds) made"
-	print " * the job-spec the agent's queue takes, field by field as jobs.yaml"
-	print " * names them."
-	print " */"
-	print ""
-	print "#include <errno.h>"
-	print "#include <string.h>"
-	print ""
-	print "#include <arcana.h>"
-	print ""
-	print "#include \"collect.h\""
-	print ""
-	# The enumerations whose words the job-spec takes as text.
-	for (k = 1; k <= nk; k++) {
-		n = split(kv[k], a, " ")
-		for (j = 1; j <= n; j++) {
-			split(a[j], w, "=")
-			if (w[1] == "action")
-				continue
-			tab = cname(kk[k]) "_" w[1]
-			nv = split(w[2], vals, "|")
-			printf "static const char *const %s[] = {\n", tab
-			line = "\t"
-			for (i = 1; i <= nv; i++) {
-				w2 = "\"" vals[i] "\","
-				if (length(line) + length(w2) > 70) {
-					print line
-					line = "\t"
-				}
-				line = line (line == "\t" ? "" : " ") w2
+# The console's parser of a job: the kinds' names in the enum's order,
+# and each field's member of struct arc_job_spec, with how it is read
+# (text, number in its range, flag), made of jobs.yaml's fields and
+# arcana.yaml's attribute types; what is read by hand (a u8 of names,
+# a list, a map) is left out.
+function spec(    i, a, m, t, lo, hi, kind) {
+	print "/* Made from share/arcana/jobs.yaml by jobs.awk: not to be edited. */"
+	print "static const char *const job_kind_names[] = {"
+	for (i = 0; i < nak; i++)
+		printf "\t%s,\n", cstr(aorder[i])
+	print "};"
+	print "enum jobmtype { JM_TEXT, JM_NUM, JM_BOOL };"
+	print "struct jobmember {"
+	print "\tconst char\t*field;\t/* as the JSON names it */"
+	print "\tenum jobmtype\t type;"
+	print "\tsize_t\t\t off, has;\t/* of the member, and of has_ */"
+	print "\tuint64_t\t min, max;"
+	print "\tbool\t\t keep_empty;\t/* \"\" is a value, not nothing */"
+	print "};"
+	print "static const struct jobmember jobmembers[] = {"
+	for (i = 1; i <= nf; i++) {
+		if (ft[i] == "list" || ft[i] == "map")
+			continue
+		a = fa[i] != "" ? fa[i] : ff[i]
+		gsub(/_/, "-", a)
+		t = atype[a]
+		m = a
+		gsub(/-/, "_", m)
+		if (t == "text")
+			printf "\t{ %s, JM_TEXT, offsetof(struct arc_job_spec, %s), 0, 0, 0, %s },\n", cstr(ff[i]), m, (fe[i] == "keep" ? "true" : "false")
+		else if (t == "u32" || t == "u64") {
+			if (fr[i] == "" || split(fr[i], kind, "-") != 2) {
+				printf "jobs.awk: field %s is a number and has no range: lo-hi\n", ff[i] > "/dev/stderr"
+				exit 1
 			}
-			print line
-			print "};"
-		}
+			printf "\t{ %s, JM_NUM, offsetof(struct arc_job_spec, %s), offsetof(struct arc_job_spec, has_%s), %s, %s, false },\n", cstr(ff[i]), m, m, kind[1], kind[2]
+		} else if (t == "flag" || t == "bool")
+			printf "\t{ %s, JM_BOOL, offsetof(struct arc_job_spec, %s), 0, 0, 0, false },\n", cstr(ff[i]), m
 	}
-	print ""
-	print "/*"
-	print " * Change c made job-spec sp, its arrays a's.  0, or EINVAL: no kind,"
-	print " * or one not given."
-	print " */"
-	print "int"
-	print "yjobs_spec(const struct arcana_jobs_submit_input_change *in,"
-	print "    cbl_yarena *a, struct arc_job_spec *sp)"
-	print "{"
-	print "\tstruct arc_variable *vars = NULL;"
-	print "\tsize_t nv = 0;"
-	print ""
-	print "\tmemset(sp, 0, sizeof(*sp));"
-	print "\tsp->has_kind = true;"
-	print "\tswitch (in->kind) {"
-	for (k = 1; k <= nk; k++) {
-		printf "\tcase ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_%s: {\n", uname(kk[k])
-		printf "\t\tconst struct arcana_jobs_submit_input_change_%s *c =\n", cname(kk[k])
-		printf "\t\t    in->%s;\n\n", cname(kk[k])
-		print "\t\tif (c == NULL)"
-		print "\t\t\treturn (EINVAL);"
-		printf "\t\tsp->kind = ARC_JOB_KIND_%s;\n", uname(kk[k])
-		fields = kn[k] " " ku[k]
-		if (fields ~ /(^| )(set|unset)( |$)/) {
-			print "\t\tif ((vars = cbl_yarena_alloc(a, (c->set.n + c->unset.n +"
-			print "\t\t    1) * sizeof(*vars))) == NULL)"
-			print "\t\t\treturn (ENOMEM);"
-			print "\t\tmemset(vars, 0, (c->set.n + c->unset.n + 1) *"
-			print "\t\t    sizeof(*vars));"
-		}
-		nf2 = split(fields, a, " ")
-		delete seen
-		for (j = 1; j <= nf2; j++)
-			if ((i = fidx(a[j])) > 0 && !(a[j] in seen)) {
-				seen[a[j]] = 1
-				yspec_field(k, i)
-			}
-		if (fields ~ /(^| )(set|unset)( |$)/) {
-			print "\t\tsp->variables.n = nv;"
-			print "\t\tsp->variables.v = vars;"
-		}
-		print "\t\treturn (0);"
-		print "\t}"
-	}
-	print "\tdefault:"
-	print "\t\treturn (EINVAL);"
-	print "\t}"
-	print "}"
+	print "};"
 }

@@ -51,6 +51,7 @@ static const struct {
 	{ "c-icap", &opts.cicap_bin },
 	{ "suricata", &opts.suricata_bin },
 	{ "poudriere", &opts.poudriere_bin },
+	{ "smtpd", &opts.smtpd_bin },
 };
 
 /*

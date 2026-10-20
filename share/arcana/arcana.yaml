@@ -457,6 +457,23 @@ definitions:
           flags and names alone.  A GELI passphrase is text, given by a
           file of the job's own (-J, -j).  The host's only; never in safe
           mode.
+      - name: smtpd
+        doc: |
+          OpenSMTPD (mail/opensmtpd, a plugin the host has installed):
+          verb conf renders smtpd.conf from the form given as text
+          (JSON: listeners, domains, delivery, relay, policy, filters
+          and own lines), checks it with smtpd -n and restarts smtpd
+          where it runs, the form kept beside the file; verb table, a
+          name (aliases, virtuals, domains, senders, credentials,
+          secrets) and its text, writes the table's file (credentials'
+          passwords hashed by OpenSMTPD's encrypt, the clear ones kept
+          nowhere; credentials and secrets root's alone) and has smtpd
+          read it again; verb enable, enable=yes or no; verbs pause and
+          resume with mta, mda or smtp; schedule and remove with an
+          envelope's or message's id or all; update with a table's
+          name: smtpctl's own.  The host's, or with jail a jail's (its
+          own files and programs, a network of its own or not); never in
+          safe mode.
   - name: job-state
     type: enum
     entries:
@@ -3221,11 +3238,16 @@ operations:
     doc: |
       The intrusion detection of the SD-WAN services at this edge (the
       ids criterion, Arcana's own: Suricata, a plugin the host has
-      installed, one instance per service), as the console writes them: json, an
-      object with "instances", each a "name", the "interfaces" it
-      watches (the service's UNIs here), its "conf", Suricata's YAML
-      with @LOGDIR@, @RULES@ and @PID@ for what the agent places,
-      "rules", the service's own rules, one a line, and "divert", a
+      installed, one instance per service): json, an object with
+      "instances", each a "name", the "interfaces" it watches (the
+      service's UNIs here), its configuration as one of two: "spec",
+      its settings (the console's form, or for an SD-WAN service
+      "flavor" sdwan with "service", "home", "interfaces", "ruleset"
+      and "oneside"), which the agent renders into Suricata's YAML and
+      checks, so that what runs is what was checked; or "conf", the
+      YAML whole, with @LOGDIR@, @RULES@ and @PID@ for what the agent
+      places, as arcanactl gives it; "host", the host's name for the
+      YAML's comment; "rules", the service's own rules, one a line, and "divert", a
       port, for one that prevents: it is run on that port (-d), where
       the console's ipfw divert rules hand it the UNIs' packets, rather
       than by libpcap; while it is not running they pass nothing, a
@@ -3711,6 +3733,34 @@ operations:
       request:
         attributes:
           - names
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+  - name: smtpd
+    attribute-set: arcana
+    auth: true
+    doc: |
+      OpenSMTPD on this host, as a JSON object: "installed", "enabled",
+      "running"; where it runs, "status" (mda, mta, smtp: running or
+      paused), "stats" (smtpctl show stats, each counter), "queue" (each
+      envelope: evpid, type, flags, from, to, dest, created, expires,
+      retries, lasttry, state, next, error) and "queued"; "conf" and
+      "conf_path" (smtpd.conf), "spec" (the form it was rendered from,
+      when the console's), "tables" (each kept here: the text, or for
+      credentials and secrets the users' and labels' names alone),
+      "filters" (the filter ports installed), "mailer" (what
+      mailer.conf(5) makes sendmail), "pki" (whether this agent has a
+      certificate to listen with).  Of the host, or with jail of that
+      jail (one with or without a network of its own): its files, its
+      smtpctl, its service.  Nothing is changed.
+    do:
+      request:
+        attributes:
+          - names
+          - jail
       reply:
         attributes:
           - ok

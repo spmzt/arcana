@@ -51,6 +51,21 @@ tls_files_ca(void)
 	return (f_ca[0] != '\0' ? f_ca : NULL);
 }
 
+/* The agent's own certificate and key, when it has them. */
+const char *
+tls_files_cert(void)
+{
+
+	return (f_cert[0] != '\0' ? f_cert : NULL);
+}
+
+const char *
+tls_files_key(void)
+{
+
+	return (f_key[0] != '\0' ? f_key : NULL);
+}
+
 /* At the start: which files, and the context to read them again. */
 void
 tls_files_init(cbl_tls *tls, const char *ca, const char *cert,
