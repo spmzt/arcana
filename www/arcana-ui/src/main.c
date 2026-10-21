@@ -1626,6 +1626,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		refresh_packages(s, false);
 	} else if (strcmp(act, "open-job") == 0 && s != NULL) {
 		open_job(s, atoll(arg), value);
+	} else if (strcmp(act, "job-cancel") == 0 && s != NULL) {
+		cancel_job(s, atoll(arg), value);
+	} else if (strcmp(act, "jobs-clear") == 0 && s != NULL) {
+		cancel_queued_jobs(s);
 	} else if (strcmp(act, "refresh") == 0 && s != NULL) {
 		int	before = app.nextop;
 

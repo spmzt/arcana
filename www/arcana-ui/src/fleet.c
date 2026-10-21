@@ -416,11 +416,12 @@ view_jobs(struct html *h, struct server *s)
 		{ "#", "id", true }, { "State", "state", false },
 		{ "Job", "title", false }, { "By", "peer", false },
 		{ "Queued", "created", true }, { "Took", NULL, false },
+		{ "", NULL, false },
 	};
 	const ucl_object_t	*j, *arr, **rows;
 	const char		*st;
 	char			 buf[48], id[24];
-	unsigned int		 n, i;
+	unsigned int		 n, i, queued;
 
 	h_raw(h, "<div class=\"toolbar\"><input class=\"filter\" id=\"filter\" "
 	    "data-input=\"filter\" placeholder=\"Filter rows\" autocomplete=\""
@@ -460,10 +461,23 @@ view_jobs(struct html *h, struct server *s)
 		h_raw(h, "<div class=\"empty\"><p>No jobs yet.</p></div>");
 		return;
 	}
+	/* Those not yet started can all be taken back at once. */
+	queued = 0;
+	for (i = 0; i < n; i++) {
+		j = ucl_array_find_index(arr, i);
+		if (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
+		    "queued") == 0)
+			queued++;
+	}
+	if (queued > 0)
+		h_fmt(h, "<div class=\"actions\"><button type=\"button\" "
+		    "class=\"ghost small\" data-act=\"jobs-clear\" title=\"Take "
+		    "every job that has not started out of the host's queue\">"
+		    "Clear the queue (%u queued)</button></div>", queued);
 	h_raw(h, "<table class=\"net jobs\">");
-	tbl_head(h, "jobs", jcols, 6, 0);
+	tbl_head(h, "jobs", jcols, 7, 0);
 	h_raw(h, "<tbody>");
-	rows = tbl_rows("jobs", arr, jcols, 6, app.filter);
+	rows = tbl_rows("jobs", arr, jcols, 7, app.filter);
 	for (n = 0; rows[n] != NULL; n++)
 		;
 	/* Newest first, unless an order was asked for. */
@@ -500,6 +514,22 @@ view_jobs(struct html *h, struct server *s)
 			snprintf(buf, sizeof(buf), "%lld s", (long long)(jint(j,
 			    "finished", 0) - jint(j, "started", 0)));
 			h_txt(h, buf);
+		}
+		h_raw(h, "</td><td class=\"acts\">");
+		/* Taken back while it can be: queued, or a safe change
+		 * waiting to be confirmed; pkg at work in a jail is stopped. */
+		if (strcmp(st, "queued") == 0 || strcmp(st, "unconfirmed") == 0 ||
+		    strcmp(st, "running") == 0) {
+			h_raw(h, "<button type=\"button\" class=\"icon\" "
+			    "data-act=\"job-cancel\"");
+			h_attr(h, "data-arg", id);
+			h_attr(h, "data-value", jstr(j, "title"));
+			h_fmt(h, " title=\"%s\">\xc3\x97</button>", strcmp(st,
+			    "queued") == 0 ? "Take it out of the queue" :
+			    strcmp(st, "unconfirmed") == 0 ? "Undo it now, "
+			    "instead of waiting for its time to run out" :
+			    "Stop it, where the agent can: pkg at work in a "
+			    "jail; another change is left to finish");
 		}
 		h_raw(h, "</td></tr>");
 	}

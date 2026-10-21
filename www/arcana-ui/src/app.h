@@ -626,6 +626,8 @@ void		 notes_load(const char *, const char *, const char *, bool);
 void		 agent_build(struct server *, const char *, bool);
 void		 agent_restarts(double);
 void		 op_cancel(struct op *);
+void		 op_done(struct op *, bool, const ucl_object_t *, const char *);
+void		 op_answered(int, int, int, const ucl_object_t *, const char *);
 void		 if_address(struct server *, const char *, const char *, bool,
 		    bool);
 void		 if_state(struct server *, const char *, bool);
@@ -648,6 +650,8 @@ void		 load_schema(void);
 const char	*schema_op(const ucl_object_t *);
 void		 view_schema(struct html *, const char *);
 void		 refresh_jobs(struct server *);
+void		 cancel_job(struct server *, long long, const char *);
+void		 cancel_queued_jobs(struct server *);
 void		 open_job(struct server *, long long, const char *);
 void		 refresh_packages(struct server *, bool);
 void		 pkg_upgrade(struct server *, const char *, bool, bool);
