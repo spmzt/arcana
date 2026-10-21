@@ -12,6 +12,14 @@
 
 JAIL=arcana-test
 
+# Does the kernel have SCTP: compiled in (kern.features.sctp) or the
+# module loaded.
+has_sctp()
+{
+	[ "$(sysctl -n kern.features.sctp 2>/dev/null)" = 1 ] ||
+	    kldstat -q -m sctp 2>/dev/null
+}
+
 programs()
 {
 	JGD="$(atf_get_srcdir)/../arcana-agent"
@@ -416,7 +424,7 @@ jail_network_cleanup()
 atf_test_case jail_plugins cleanup
 jail_plugins_head()
 {
-	atf_set "descr" "a vnet jail's plugins are looked for as the jail sees its files: a program behind a link inside it is found, though the host has none; wg(8) of the base system counts"
+	atf_set "descr" "a vnet jail's plugins are looked for as the jail sees its files: a program behind a link inside it is found, though the host has none; wg(8), the base system's, is no plugin"
 	atf_set "require.user" "root"
 	atf_set "is.exclusive" "true"
 }
@@ -441,11 +449,7 @@ jail_plugins_body()
 	atf_check -o match:'"name":"arcw_p1"' cat list.json
 	sed -n 's/.*"name":"arcw_p1"\(.*\)/\1/p' list.json > jail.json
 	atf_check -o match:'"plugins": ?\[[^]]*"squid"' \
-	    -o match:'"plugins": ?\[[^]]*"wireguard"' cat jail.json
-	# The host's own: wg(8) of the base system is WireGuard's there too.
-	if [ -x /usr/bin/wg ] && [ ! -e /usr/local/bin/wg ]; then
-		atf_check -o match:'Plugins:.*wireguard' "$JGC" -c "$SOCK" hello
-	fi
+	    -o not-match:'"plugins": ?\[[^]]*"wireguard"' cat jail.json
 	atf_check -o ignore jail -r arcw_p1
 }
 jail_plugins_cleanup()
@@ -706,7 +710,9 @@ sctp_multihome_body()
 {
 	local d="$(pwd)" port=24607 e0 e1 a b
 
-	kldstat -q -m sctp || atf_skip "the kernel has no SCTP"
+	has_sctp || atf_skip "the kernel has no SCTP"
+	[ "$(sysctl -n net.inet.sctp.ignore_loopback_iftype 2>/dev/null)" = 1 ] ||
+	    atf_skip "the kernel's SCTP scopes by the interface's type"
 	command -v openssl >/dev/null || atf_skip "no openssl"
 	programs
 	for j in arcw_ma arcw_mb; do
@@ -930,13 +936,118 @@ bird_live_cleanup()
 	true
 }
 
+atf_test_case pkg_lanes cleanup
+pkg_lanes_head()
+{
+	atf_set "descr" "jobs of pkg in jails run four at once, a jail's own" \
+	    "one after another, and the next job of another kind after all" \
+	    "of them; a pkg that says nothing is stopped with its child in" \
+	    "the jail, and one cancelled at work is stopped"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+	atf_set "timeout" "120"
+}
+pkg_lanes_body()
+{
+	local d="$(pwd)" j id
+
+	programs
+	for j in arcw_p1 arcw_p2 arcw_p3 arcw_p4 arcw_ps arcw_pc; do
+		jls -j $j >/dev/null 2>&1 && atf_skip "a jail $j is there already"
+	done
+	for j in arcw_p1 arcw_p2 arcw_p3 arcw_p4 arcw_ps arcw_pc; do
+		atf_check -o ignore jail -c name=$j persist path=/
+		echo $j >> jails.made
+	done
+	mkdir run etc etc/jail.conf.d
+	: > etc/jail.conf
+	# pkg, as the agent runs it: how many are at work when one starts,
+	# a jail's twice at once said; arcw_ps silent with a child, as a
+	# stalled download; arcw_pc silent until it is cancelled.
+	cat > fake-pkg <<EOS
+#!/bin/sh
+jail=host
+[ "\$1" = -j ] && { jail=\$2; shift 2; }
+case "\$1" in
+version) exit 1 ;;
+-vv) exit 0 ;;
+esac
+[ -e $d/run/\$jail ] && echo "twice \$jail" >> $d/lanes.log
+: > $d/run/\$jail
+echo "\$jail \$(ls $d/run | wc -l | tr -d ' ')" >> $d/lanes.log
+case "\$jail" in
+arcw_ps|arcw_pc)
+	# Stopped: no longer at work (its child is left to the agent).
+	trap "rm -f $d/run/\$jail; exit 143" TERM
+	sleep 300 &
+	echo \$! > $d/\$jail.child
+	wait ;;
+*)	sleep 2
+	echo "Your packages are up to date." ;;
+esac
+rm -f $d/run/\$jail
+EOS
+	chmod +x fake-pkg
+	"$JGD" -F -l "unix:$d/s.sock" -P "$d/fake-pkg" --pkg-idle 5 \
+	    -f "$d/etc/jail.conf" -D "$d/etc/jail.conf.d" \
+	    -1 "$d/history.conf" > daemon.out 2>&1 &
+	echo $! > daemon.pid
+	for i in $(seq 1 50); do [ -S s.sock ] && break; sleep 0.1; done
+	for j in arcw_ps arcw_pc arcw_p1 arcw_p1 arcw_p2 arcw_p3 arcw_p4; do
+		"$JGC" -q -c "unix:$d/s.sock" pkg-upgrade -j $j >> queued.out ||
+		    atf_fail "pkg-upgrade -j $j not queued"
+	done
+	# Then one of another kind: pkg on the host.
+	"$JGC" -q -c "unix:$d/s.sock" pkg-upgrade >> queued.out
+	id=$(awk '/in arcw_pc$/ { print $1 }' queued.out)
+	for i in $(seq 1 50); do [ -s arcw_pc.child ] && break; sleep 0.1; done
+	atf_check -o match:"^ *$id running" "$JGC" -c "unix:$d/s.sock" job-cancel $id
+	for i in $(seq 1 300); do
+		"$JGC" -c "unix:$d/s.sock" jobs | grep -q 'queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	"$JGC" -c "unix:$d/s.sock" jobs > jobs.out
+	cat lanes.log jobs.out
+	atf_check -o not-match:'queued|running' cat jobs.out
+	# Four at once at most, and four were.
+	atf_check -o inline:'4\n' sh -c "awk '{ print \$2 }' lanes.log | sort -n | tail -1"
+	atf_check -o not-match:twice cat lanes.log
+	# The host's after every jail's, alone.
+	atf_check -o match:'^host 1$' tail -1 lanes.log
+	# The silent one stopped, its child with it; the cancelled one too.
+	atf_check -o match:'failed +pkg upgrade in arcw_ps: pkg upgrade was killed: nothing came from it for 5 seconds' \
+	    -o match:'failed +pkg upgrade in arcw_pc: cancelled while at work' \
+	    -o match:'done +pkg upgrade in arcw_p1$' \
+	    -o match:'done +pkg upgrade in arcw_p4$' \
+	    -o match:'done +pkg upgrade$' cat jobs.out
+	for j in arcw_ps arcw_pc; do
+		atf_check -s not-exit:0 -e ignore kill -0 "$(cat $j.child)"
+	done
+}
+pkg_lanes_cleanup()
+{
+	local j
+
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	for j in arcw_ps arcw_pc; do
+		[ -f $j.child ] && kill "$(cat $j.child)" 2>/dev/null
+	done
+	if [ -f jails.made ]; then
+		for j in $(cat jails.made); do
+			jail -r $j 2>/dev/null
+		done
+	fi
+	true
+}
+
 atf_test_case sctp_loopback cleanup
 sctp_loopback_head()
 {
 	atf_set "descr" "an SCTP listener on a router's loopback address alone" \
-	    "(an address on lo0): FreeBSD's SCTP answers no peer elsewhere" \
-	    "from it, which the transport read says; with --sctp-also an" \
-	    "address of a real interface, SCTP by that one is answered"
+	    "(an address on lo0), with the kernel scoping by the address" \
+	    "(net.inet.sctp.ignore_loopback_iftype): SCTP to that address" \
+	    "from a peer elsewhere answered, and no warning said"
 	atf_set "require.user" "root"
 	atf_set "is.exclusive" "true"
 	atf_set "timeout" "120"
@@ -945,7 +1056,7 @@ sctp_loopback_body()
 {
 	local d="$(pwd)" port=24611 e a
 
-	kldstat -q -m sctp || atf_skip "the kernel has no SCTP"
+	has_sctp || atf_skip "the kernel has no SCTP"
 	command -v openssl >/dev/null || atf_skip "no openssl"
 	programs
 	for j in arcw_la arcw_lb; do
@@ -959,7 +1070,7 @@ sctp_loopback_body()
 		openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
 		    -keyout $n.key -out $n.csr -subj /CN=$n >/dev/null 2>&1
 		if [ $n = server ]; then
-			printf 'subjectAltName=IP:2001:db8:12::1,IP:2001:db8:99::1\nextendedKeyUsage=serverAuth\n' > $n.ext
+			printf 'subjectAltName=IP:2001:db8:12::1\nextendedKeyUsage=serverAuth\n' > $n.ext
 		else
 			printf 'subjectAltName=DNS:console\nextendedKeyUsage=clientAuth\n' > $n.ext
 		fi
@@ -985,36 +1096,30 @@ sctp_loopback_body()
 	mkdir -p etc/jail.conf.d
 	: > etc/jail.conf
 	a="-A $d/ca.pem -C $d/client.pem -K $d/client.key"
-	for also in "" 2001:db8:99::1; do
-		jexec arcw_la "$JGD" -F -l "tcp://[2001:db8:12::1]:$port" \
-		    -l "unix:$d/s.sock" ${also:+--sctp-also $also} \
-		    -A "$d/ca.pem" -C "$d/server.pem" -K "$d/server.key" \
-		    -f "$d/etc/jail.conf" -D "$d/etc/jail.conf.d" \
-		    -1 "$d/history.conf" > daemon.out 2>&1 &
-		echo $! > daemon.pid
-		for i in $(seq 1 50); do [ -S s.sock ] && break; sleep 0.1; done
-		sleep 0.5
-		atf_check -o save:t.json "$JGC" -c "unix:$d/s.sock" transport
-		if [ -z "$also" ]; then
-			# On lo0 alone: said, and why.
-			atf_check -o match:'"transport":"sctp","up":true,[^}]*"warning":"its addresses are all on a loopback interface' \
-			    cat t.json
-			atf_check -o ignore jexec arcw_lb "$JGC" \
-			    -c "tcp://[2001:db8:12::1]:$port" $a hello
-		else
-			# An address of a real interface too: no warning, and
-			# SCTP by that address answered.
-			atf_check -o not-match:'"warning"' cat t.json
-			atf_check -o ignore jexec arcw_lb "$JGC" \
-			    -c "sctp://[2001:db8:99::1]:$port" $a hello
-		fi
-		kill "$(cat daemon.pid)"
-		for i in $(seq 1 50); do
-			kill -0 "$(cat daemon.pid)" 2>/dev/null || break
-			sleep 0.1
-		done
-		rm -f s.sock daemon.pid
-	done
+	# The vnet's own value, as a new vnet takes it from the host's.
+	atf_check -o inline:'1\n' jexec arcw_la sysctl -n net.inet.sctp.ignore_loopback_iftype
+	jexec arcw_la "$JGD" -F -l "tcp://[2001:db8:12::1]:$port" \
+	    -l "unix:$d/s.sock" \
+	    -A "$d/ca.pem" -C "$d/server.pem" -K "$d/server.key" \
+	    -f "$d/etc/jail.conf" -D "$d/etc/jail.conf.d" \
+	    -1 "$d/history.conf" > daemon.out 2>&1 &
+	echo $! > daemon.pid
+	for i in $(seq 1 50); do [ -S s.sock ] && break; sleep 0.1; done
+	sleep 0.5
+	# The SCTP listener beside the TCP one, on lo0's address alone, up
+	# and warned of nothing.
+	atf_check -o save:t.json "$JGC" -c "unix:$d/s.sock" transport
+	atf_check -o match:'"transport":"sctp","up":true' \
+	    -o not-match:'"warning"' -o not-match:'loopback' cat t.json
+	# Both answered from the other jail: TCP, and SCTP to the same
+	# address on lo0.
+	atf_check -o ignore jexec arcw_lb "$JGC" \
+	    -c "tcp://[2001:db8:12::1]:$port" $a hello
+	atf_check -o ignore jexec arcw_lb "$JGC" \
+	    -c "sctp://[2001:db8:12::1]:$port" $a hello
+	# Over SCTP the association's paths: the agent's lo0 address.
+	atf_check -o match:'2001:db8:12::1' jexec arcw_lb "$JGC" \
+	    -c "sctp://[2001:db8:12::1]:$port" $a transport
 }
 sctp_loopback_cleanup()
 {
@@ -2328,6 +2433,7 @@ atf_init_test_cases()
 	atf_add_test_case sdwan_links
 	atf_add_test_case bird_live
 	atf_add_test_case sctp_multihome
+	atf_add_test_case pkg_lanes
 	atf_add_test_case sctp_loopback
 	atf_add_test_case sdwan_record
 	atf_add_test_case jail_make

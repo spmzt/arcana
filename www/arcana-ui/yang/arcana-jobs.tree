@@ -218,6 +218,7 @@ module: arcana-jobs
        |        |     +---w jail?      string
        |        |     +---w persist?   boolean
        |        |     +---w safe?      boolean
+       |        |     +---w text?      string
        |        +--:(bridge)
        |        |  +---w bridge!
        |        |     +---w verb       string
@@ -351,9 +352,10 @@ module: arcana-jobs
        |        |     +---w text?   string
        |        +--:(smtpd)
        |           +---w smtpd!
-       |              +---w verb    enumeration
-       |              +---w jail?   string
-       |              +---w args*   string
-       |              +---w text?   string
+       |              +---w verb     enumeration
+       |              +---w jail?    string
+       |              +---w args*    string
+       |              +---w text?    string
+       |              +---w force?   boolean
        +--ro output
           +--ro id*   uint64

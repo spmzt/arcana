@@ -92,6 +92,7 @@ static const char	*shots;
 
 static void	run(const char *);
 static void	dock_closed(void);
+static void	queued_run(void);
 
 static void
 shot(const char *name)
@@ -3249,6 +3250,60 @@ queued_run(void)
 	    "if (b) b.click();");
 }
 
+/*
+ * Settings, Notifications: how dma relays the console's mail, on a
+ * console with an agent beside it; written on that host by its agent.
+ */
+static void
+part_dma(void)
+{
+	int	i;
+
+	run("document.querySelector('.rail-foot li[data-act=settings]')"
+	    ".click()");
+	wait_js("document.querySelector('button[data-act=set-tab][data-arg="
+	    "notify]')", 10);
+	run("document.querySelector('button[data-act=set-tab][data-arg="
+	    "notify]').click()");
+	/* How dma relays: the console's host's smart host, TLS and
+	 * sign-in, written there by its agent; the password into
+	 * auth.conf alone, and never shown again. */
+	wait_js("document.querySelector('form[data-form=dma]')", 20);
+	run("const f = document.querySelector('form[data-form=dma]'); "
+	    "f.smarthost.value = 'smtp.example.net'; f.port.value = '587'; "
+	    "f.tls.value = 'starttls'; f.user.value = 'alerts@example.net'; "
+	    "f.password.value = 'pw-0f-dma'; f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^alerts@example.net|smtp."
+	    "example.net:pw-0f-dma$' root/etc/dma/auth.conf 2>/dev/null && "
+	    "grep -q '^SMARTHOST' root/etc/dma/dma.conf 2>/dev/null") != 0;
+	    i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "dma's sign-in is not written");
+	ATF_CHECK(system("grep -q '^SMARTHOST smtp.example.net$' "
+	    "root/etc/dma/dma.conf && grep -q '^STARTTLS$' root/etc/dma/dma.conf "
+	    "&& grep -q '^AUTHPATH /etc/dma/auth.conf$' root/etc/dma/dma.conf") ==
+	    0);
+	dock_closed();
+	wait_js("document.querySelector('form[data-form=dma] input[name="
+	    "password]') && document.querySelector('form[data-form=dma] "
+	    "input[name=password]').placeholder.includes('set')", 20);
+	{
+		ucl_object_t	*t = js("const h = document.body.innerHTML; const "
+		    "i = h.indexOf('pw-0f-dma'); return i < 0 ? 'none' : h.slice("
+		    "Math.max(0, i - 300), i + 60);");
+
+		ATF_CHECK_MSG(t != NULL && strcmp(ucl_object_tostring_forced(t),
+		    "none") == 0, "the password is in the page: %s", t != NULL ?
+		    ucl_object_tostring_forced(t) : "?");
+		if (t != NULL)
+			ucl_object_unref(t);
+	}
+	run("document.querySelector('form[data-form=dma]').scrollIntoView("
+	    "{block: 'center'})");
+	shot("0c-dma");
+}
+
 /* The Mail tab: OpenSMTPD's form rendered on the host; a table written. */
 static void
 part_mail(void)
@@ -3269,16 +3324,65 @@ part_mail(void)
 	    "mail auth <credentials>$' smtpd.conf") != 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "smtpd.conf is not rendered from the form");
+	/* The tables smtpd.conf declares (the form's own here): one opened,
+	 * entries put in by key, one removed, asked first; the others
+	 * kept. */
 	click_when("button[data-act=ml-table][data-arg=aliases]", 10);
-	wait_js("document.querySelector('form[data-form=ml-table]')", 10);
-	run("const f = document.querySelector('form[data-form=ml-table]'); "
-	    "f.text.value = 'root: admin@example.org\\n'; f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=ml-entry]')", 10);
+	run("const f = document.querySelector('form[data-form=ml-entry]'); "
+	    "f.text.value = 'root: admin@example.org\\npostmaster: root\\n'; "
+	    "f.requestSubmit();");
 	queued_run();
 	for (i = 0; i < 300 && system("grep -q '^root: admin@example.org$' "
-	    "smtpd.d/aliases") != 0; i++)
+	    "smtpd.d/aliases && grep -q '^postmaster: root$' smtpd.d/aliases") !=
+	    0; i++)
 		usleep(100000);
-	ATF_CHECK_MSG(i < 300, "the aliases table is not written");
+	ATF_CHECK_MSG(i < 300, "the aliases are not put in");
 	dock_closed();
+	wait_js("document.querySelector('button[data-act=ml-unentry][data-value="
+	    "root]')", 20);
+	run("document.querySelector('form[data-form=ml-entry]').scrollIntoView("
+	    "{block: 'center'})");
+	shot("7q-mail-entries");
+	run("document.querySelector('button[data-act=ml-unentry][data-value="
+	    "root]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "document.querySelector('.modal').textContent.includes('every "
+	    "other entry is kept')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^root:' smtpd.d/aliases") == 0;
+	    i++)
+		usleep(100000);
+	ATF_CHECK(system("! grep -q '^root:' smtpd.d/aliases && grep -q "
+	    "'^postmaster: root$' smtpd.d/aliases") == 0);
+	dock_closed();
+	/* smtpd.conf as text: made the admin's own (its header gone), put
+	 * in place once checked, the one before kept; from then on the
+	 * text leads, and the form is there on asking, with its warning. */
+	click_when("button[data-act=ml-text]", 10);
+	wait_js("document.querySelector('form[data-form=ml-conftext]')", 10);
+	run("const f = document.querySelector('form[data-form=ml-conftext]'); "
+	    "f.text.value = '# mine now\\n' + f.text.value.split('\\n')"
+	    ".filter(l => !l.startsWith('# Written by arcana-agent')).join("
+	    "'\\n'); f.querySelector('button[value=save]').click();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^# mine now$' smtpd.conf") != 0;
+	    i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "smtpd.conf is not written as text");
+	ATF_CHECK(system("grep -q '^# Written by arcana-agent' "
+	    "smtpd.conf.arcana-old") == 0);
+	dock_closed();
+	wait_js("document.querySelector('form[data-form=ml-conftext]') && "
+	    "document.querySelector('form[data-form=ml-conftext]').text.value."
+	    "startsWith('# mine now') && ![...document.querySelectorAll("
+	    "'.mailview dl.kv')].length", 20);
+	ATF_CHECK(js_true("[...document.querySelectorAll('.mailview details "
+	    "summary')].some(s => s.textContent.includes(\"Arcana's form "
+	    "instead\"))"));
+	run("document.querySelector('form[data-form=ml-conftext]')."
+	    "scrollIntoView({block: 'start'})");
 	shot("7q-mail");
 }
 
@@ -4075,7 +4179,7 @@ part_storage(void)
 	 * crossed is shown as the agent tells it, over the stream. */
 	wait_js("document.querySelector('.stage').textContent.includes("
 	    "'the moment the agent tells it')", 10);
-	run("window.evt0 = performance.now(); window.lim = (cpu, mem) => fetch('/api/servers').then(r => "
+	run("window.evt0 = performance.now(); window.lim = (cpu, mem) => fetch('/api/servers', {headers: {'X-Arcana': '1'}}).then(r => "
 	    "r.json()).then(j => Promise.all(j.servers.map(s => fetch("
 	    "'/api/servers/' + s.id + '/history', { method: 'POST', headers: "
 	    "{ 'Content-Type': 'application/json', 'X-Arcana': '1' }, body: "
@@ -4351,22 +4455,75 @@ part_firewall(void)
 	    "querySelector('form[data-form=fw-edit]').live.checked && document"
 	    ".querySelector('form[data-form=fw-edit]').persist.checked"));
 	shot("7o-firewall-part");
-	/* One job: the new rule read by ipfw first, then the old one out
-	 * and the new one in; an interface's pattern, quoted the shell's
-	 * way, given to ipfw without its quotes. */
+	/* One job: the new rule read by ipfw -n first, then one script of
+	 * ipfw's, set 0's rule 1001 out and the new one in; an interface's
+	 * pattern, quoted the shell's way, given to ipfw without its
+	 * quotes. */
 	run("const f = document.querySelector('form[data-form=fw-edit]'); "
 	    "f.rule.value = 'allow tcp from any to me6 2222 in via \"wg[0-1]\"'; "
 	    "f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('ipfw "
 	    "1001 changed: 1001 allow tcp from any to me6 2222'))", 20);
-	ATF_CHECK(system("grep -n '' ipfw.log | grep -A9 'ipfw -q -n add 1001 "
-	    "allow tcp from any to me6 2222 in via wg\\[0-1\\]$' | grep -q "
-	    "'ipfw -q delete 1001$' && grep -q '^ipfw -q add 1001 allow tcp from "
-	    "any to me6 2222 in via wg\\[0-1\\]$' ipfw.log && grep -q '^add "
+	ATF_CHECK(system("grep -A3 '^ipfw -n /dev/stdin$' ipfw.log | grep -A2 "
+	    "'^ipfw -q /dev/stdin$' | grep -A1 '^set 0 delete 1001$' | grep -q "
+	    "'^add 1001 allow tcp from any to me6 2222 in via wg\\[0-1\\]$' && "
+	    "! grep -q '^ipfw -q delete 1001$' ipfw.log && grep -q '^add "
 	    "01001 allow tcp from any to me6 2222 in via wg\\[0-1\\]$' "
 	    "ipfw.rules && ! grep -q 'me6 22 in' ipfw.rules") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/*
+	 * Two kept rules of one number are two rows; one deleted, by its
+	 * words, the other stays.  A rule moved down where the numbers are
+	 * packed: asked first, the rules in its way moved on by one, the
+	 * farthest first, and none deleted.
+	 */
+	ATF_REQUIRE(system("printf 'add 01700 allow tcp from any to me 80 in\\n"
+	    "add 01700 allow tcp from any to me 443 in\\nadd 01701 count ip "
+	    "from any to any\\nadd 01702 count tcp from any to any\\n' >> "
+	    "ipfw.rules") == 0);
+	wait_js("document.querySelectorAll('table.fw-rules tr[data-rule="
+	    "\"1700\"]').length === 2", 30);
+	click_when("table.fw-rules tr[data-arg='1700/1']", 5);
+	click_when("tr.editing button[data-act=fw-del]", 5);
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t."
+	    "textContent.includes('ipfw delete 1700'))", 30);
+	for (i = 0; i < 50 && system("grep -q '^add 01700 allow tcp from any "
+	    "to me 80 in$' ipfw.rules && ! grep -q '^add 01700 allow tcp from "
+	    "any to me 443 in$' ipfw.rules && grep -q '^add 01600 ' ipfw.rules")
+	    != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 50, "the one rule of 1700 is not deleted alone: %s",
+	    "see ipfw.rules");
+	if (i >= 50)
+		(void)system("grep -n '' ipfw.rules >&2; tail -20 ipfw.log >&2");
+
+	run("document.querySelector('.dock > header').click()");
+	wait_js("document.querySelectorAll('table.fw-rules tr[data-rule="
+	    "\"1700\"]').length === 1", 30);
+	click_when("table.fw-rules tr[data-arg='1700/0']", 5);
+	click_when("tr.editing button[data-act=fw-move][data-arg=down]", 5);
+	wait_js("document.querySelector('form[data-form=confirm]') && document."
+	    "querySelector('.modal').textContent.includes('01702 becomes 01703') && "
+	    "document.querySelector('.modal').textContent.includes('takes "
+	    "01702')", 5);
+	shot("7o-firewall-make-room");
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t."
+	    "textContent.includes('ipfw renumber 1702 1703 1700 1702'))", 30);
+	for (i = 0; i < 50 && system("grep -q '^add 01701 count ip from any to "
+	    "any$' ipfw.rules && grep -q '^add 01702 allow tcp from any to me 80 "
+	    "in$' ipfw.rules && grep -q '^add 01703 count tcp from any to any$' "
+	    "ipfw.rules && ! grep -q '^add 01700' ipfw.rules") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 50, "the rules are not moved on to make room: %s",
+	    "see ipfw.rules");
+	if (i >= 50)
+		(void)system("grep -n '' ipfw.rules >&2");
+	run("document.querySelector('.dock > header').click()");
+	ATF_REQUIRE(system("sed -i '' -e '/^add 0170[0-3] /d' ipfw.rules") == 0);
 	/* The kept rules as a text, and the connections let through now,
 	 * read again by themselves. */
 	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-3\"]')."
@@ -4637,8 +4794,24 @@ part_firewall(void)
 	run("document.querySelector('.fwbar button[data-act=fw-rail]').click()");
 	wait_js("document.querySelector('.fwrail .titem.fw')", 5);
 	run("document.querySelector('button[data-act=fw-apply]').click()");
-	wait_js("document.querySelector('form[data-form=confirm]')", 5);
-	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	/* Rules the kernel has and that are not kept would be gone: said
+	 * first, by number, and the word typed to go on. */
+	wait_js("document.querySelector('form[data-form=confirm] "
+	    "input[name=typed]')", 5);
+	{
+		ucl_object_t	*t = js("return document.querySelector('.modal')"
+		    ".textContent");
+
+		ATF_CHECK_MSG(js_true("document.querySelector('.modal')."
+		    "textContent.includes('would be gone')"), "%s", t != NULL ?
+		    ucl_object_tostring_forced(t) : "?");
+		if (t != NULL)
+			ucl_object_unref(t);
+	}
+	shot("7o-firewall-apply-gone");
+	run("const f = document.querySelector('form[data-form=confirm]'); "
+	    "f.typed.value = 'apply'; f.typed.dispatchEvent(new Event('input', "
+	    "{bubbles: true})); f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('ipfw "
 	    "apply'))", 40);
@@ -6172,7 +6345,7 @@ part_netsect(void)
 	 * lab's em1; and by em0 to fe80::1, which lab2 has on its loopback
 	 * alone, as every host does: no host of the fleet is that one.
 	 */
-	run("window.labIds = null; fetch('/api/servers').then(r => r.json())"
+	run("window.labIds = null; fetch('/api/servers', {headers: {'X-Arcana': '1'}}).then(r => r.json())"
 	    ".then(j => { const ids = {}; j.servers.forEach(v => ids[v.name] = "
 	    "v.id); window.labIds = ids; });");
 	wait_js("window.labIds && window.labIds.lab2", 10);
@@ -6447,7 +6620,9 @@ part_routes(void)
 	 * 3.1.1). */
 	run("[...document.querySelectorAll('.dock [data-act=trace]')].find(t "
 	    "=> t.textContent.includes('list jails')).click()");
-	/* Its CBOR first, what is on the wire today; the module a tab. */
+	/* The schema shown on asking ({ }, off by default): its CBOR
+	 * first, what is on the wire today; the module a tab. */
+	click_when(".trace button[data-act=schema]", 10);
 	click_when(".schema-tabs button[data-arg=yang]", 10);
 	wait_js("[...document.querySelectorAll('.schema h4')].some(h => "
 	    "h.textContent.includes('YANG model'))", 10);
@@ -6582,6 +6757,7 @@ ATF_TC_BODY(pwa_storage, tc)
 	part_storage();
 	part_system();
 	part_mail();
+	part_dma();
 }
 ATF_TC_CLEANUP(pwa_storage, tc)
 {
@@ -6670,6 +6846,24 @@ part_trouble(void)
 	ATF_CHECK(js_true("document.querySelector('datalist#ts-addrs')"));
 	ATF_CHECK(js_true("document.querySelector('details.tsplaces').open"));
 	shot("9t-troubleshoot");
+	/* Several places ticked: every one of them accounted for in the
+	 * result, on the path or not, and why. */
+	run("document.querySelectorAll('details.tsplaces input[type=checkbox]')"
+	    ".forEach(b => { b.checked = true; }); document.querySelector("
+	    "'form[data-form=ts-path]').requestSubmit();");
+	wait_js("document.querySelector('ul.tsplaces-asked') && document."
+	    "querySelectorAll('ul.tsplaces-asked li').length >= 2 && document."
+	    "querySelectorAll('ul.tsplaces-asked li').length === document."
+	    "querySelectorAll('details.tsplaces input[type=checkbox]:checked')"
+	    ".length", 30);
+	ATF_CHECK(js_true("[...document.querySelectorAll('ul.tsplaces-asked "
+	    "li')].every(l => /on the way|not on the path|not asked|asked,/."
+	    "test(l.textContent) || l.classList.contains('bad'))"));
+	shot("9t-troubleshoot-places");
+	run("document.querySelectorAll('details.tsplaces input[type=checkbox]')"
+	    ".forEach(b => { b.checked = false; }); document.querySelector("
+	    "'form[data-form=ts-path]').requestSubmit();");
+	wait_js("document.querySelector('ol.tsway li.tshop')", 20);
 	/* Swapped: the other way round, asked at once. */
 	run("document.querySelector('button[data-act=ts-swap]').click()");
 	wait_js("document.querySelector('form[data-form=ts-path]').src.value "

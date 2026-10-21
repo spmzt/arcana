@@ -1,8 +1,9 @@
 # SSL/TLS and SSH inspection: a plan
 
 Asked for on 2026-10-19 ("Plan for supporting the ssl/ssh inspection
-too"), after the decisions of 2026-10-18 said SSL inspection is wanted.
-Nothing here is built yet. FreeBSD 15.1 and later only; Arcana installs
+too"), after the decisions of 2026-10-18 said SSL inspection is wanted;
+on 2026-10-20 the engine was chosen: SSLproxy, transparent. Nothing
+here is built yet. FreeBSD 15.1 and later only; Arcana installs
 nothing by itself (a button the admin presses is fine); no pf.
 
 ## What there is today
@@ -43,7 +44,32 @@ Arcana reads Suricata's alerts today, not these records.
 5. **SSH: nothing** beyond what Suricata would log, and Arcana does not
    read it.
 
-## The plan, for TLS
+## The plan, for TLS: SSLproxy, transparent
+
+**Decided 2026-10-20:** "integrate and use sslproxy. I want to have the
+ability to transparent inspection without asking clients to set a
+proxy!" The engine is SSLproxy (security/sslproxy, 0.9.11 in ports), a
+plugin with an install button as BIRD is; clients set no proxy, they
+trust one root (1.) and nothing else.
+
+### 0. How the traffic reaches it
+
+- An ipfw `fwd` rule sends the clients' TLS to SSLproxy on the
+  loopback, in its own range of the kept rules (an Arcana part, so the
+  admin's rules are never touched, see the firewall's care rule):
+  `fwd 127.0.0.1,8443 tcp from <clients> to not me 443 in recv <lan>`,
+  and the same with `::1` for IPv6. `fwd` keeps the destination, so
+  SSLproxy's `ipfw` NAT engine reads it with getsockname(2); no NAT, no
+  divert, no pf.
+- On an SD-WAN edge the rule lives in the service's routing table
+  (setfib(2)) as the Squid intercept does today.
+- SSLproxy's proxyspec: `https 127.0.0.1 8443` (and `::1`), with
+  `natengine ipfw`; plain HTTP on 80 can go the same way (`http`), for
+  the same filter and log.
+- What SSLproxy does with a connection, per its filter rules (by SNI,
+  certificate CN, host, URI, source address): **Pass** (spliced, not
+  opened), **Block**, **Split** (opened and re-encrypted, logged), or
+  **Divert** (opened and handed to a listening program).
 
 ### 1. One inspection CA, the console's (first)
 
@@ -54,62 +80,61 @@ CA the agents trust (that one must never be trusted by browsers):
 - a root made by the console, its key kept there, and never sent to an
   edge;
 - for each edge that inspects, an **intermediate** signed by that root,
-  its key made on the edge (a request, as enrolment does), so an edge
-  lost gives away its own intermediate alone, which is then revoked by
-  issuing the edge a new one;
-- the root's certificate to download (PEM and DER) from Settings, and
-  shown in the URL filter's form: what the clients install once, for
-  every edge;
-- rotated as the console's CA is: the next root made, both trusted for a
-  while, the edges given new intermediates, the old root retired.
-
-Squid then bumps with `tls-cert=` the intermediate and its chain, so
-every edge is trusted by one root.
+  its key made on the edge (a request, as enrolment does): SSLproxy's
+  `CACert`/`CAKey`/`CAChain`, so an edge lost gives away its own
+  intermediate alone, which is then revoked by issuing a new one;
+- the root's certificate to download (PEM and DER) from Settings and
+  the inspection page: what the clients install once, for every edge;
+- rotated as the console's CA is.
 
 ### 2. What is not opened
 
-- A **do-not-decrypt list** for each filter and each SD-WAN policy:
-  domains (`ssl::server_name`) and destination prefixes, the second
-  reusing the console's prefix lists. They are `splice`d after the peek.
-- **Source classes**: a prefix list of clients that are inspected (the
-  guests' network), the rest spliced.
-- **Pinned or unsupported**: `on_unsupported_protocol tunnel all`, and a
-  bump that fails its handshake is spliced the next time for that name
-  (kept by the agent for a day), and said (3.).
-- No category feed: a list of categories would be a third party's.
-  Arcana offers a small default list (the FreeBSD update servers, the
-  hosts' package mirrors, the console itself), editable.
+- A **do-not-decrypt list**: domains and destination prefixes (the
+  console's prefix lists), as SSLproxy `Pass` rules (`PassSite`), plus
+  a small default list (the FreeBSD update and package servers, the
+  console itself), editable; no category feed (a third party's).
+- **Source classes**: the clients inspected (a prefix list, the guests'
+  network); the rest never reach SSLproxy, the `fwd` rule names them.
+- **Pinned or failing**: SSLproxy passes a connection whose handshake
+  fails (`PassUnsupported`-like behaviour by its options), and it is
+  told (3.).
 
 ### 3. What happened, told
 
-Squid's access log, in a format of Arcana's own with `%ssl::bump_mode`,
-`%ssl::>sni`, `%ssl::<cert_subject` and `%ssl::<cert_errors`, read by
-the agent as it reads eve.json: each connection's outcome (opened,
-passed, ended, failed) counted in the read, and a failed bump an event
-(`tls-inspect`), shown on the Security page and in the event log.
+SSLproxy's connect log (`ConnectLog`) and certificate log, read by the
+agent as it reads eve.json: each connection's outcome (opened, passed,
+blocked, failed) counted, a failure an event (`tls-inspect`), shown on
+the Security page and in the event log.
 
-### 4. Opened traffic to an IDS (later, and an open question)
+### 4. Opened traffic to the IDS and the scanners
 
-Squid encrypts again towards the server, so there is no plaintext on a
-wire for Suricata to read. The ways open:
+- **Suricata**: SSLproxy's mirror (`MirrorIf`, `MirrorTarget`) sends
+  what it opened as emulated packets to an interface; an epair(4) pair
+  whose other end Suricata reads (in IDS mode) gives it the plaintext.
+  This answers the old open question.
+- **Content logs and pcap** per connection (`ContentLogDir`,
+  `PcapLogDir`): off by default; a troubleshooting switch, kept a short
+  while.
+- **Divert to a program**: SSLproxy inserts its `SSLproxy:` line for
+  the program, which neither Squid nor c-icap read; not planned unless a
+  program of Arcana's own is wanted later.
 
-- **ICAP**: c-icap already gets the requests and responses of a bumped
-  connection. A c-icap service of Arcana's own that hands them to
-  Suricata as files (Suricata's file inspection) or runs its HTTP rules
-  is possible, but new code in C against c-icap's API.
-- **Leave it**: ClamAV on what is opened, Suricata on everything else,
-  and Suricata's TLS rules (by SNI, JA3/JA4, certificate) on what is
-  not opened.
+### 5. Squid beside it
 
-Recommended: leave it for now, and decide after 1.–3.
+The explicit-proxy URL filter of the Security page and its ICAP/ClamAV
+scanning stay Squid's (clients that do set a proxy). The transparent TLS
+of SD-WAN's url-filter criterion moves from Squid's
+`https_port intercept ssl-bump` to SSLproxy, so there is one way to
+open TLS without a proxy setting.
 
 ### Where it shows
 
-- Security › URL filter: in `inspect` mode, the do-not-decrypt list,
-  the source classes, the root to download, and what was opened,
-  passed, ended and failed.
-- SD-WAN: the url-filter criterion of a security policy gets the same
-  lists (named lists of the SD-WAN document).
+- Security › TLS inspection (new tab, a plugin's): on or off, the
+  clients and interfaces, the do-not-decrypt list, the root to
+  download, the mirror to Suricata, and what was opened, passed,
+  blocked and failed.
+- SD-WAN: the url-filter criterion of a security policy says
+  "inspected" and names the same lists.
 - Settings › Certificate authority: the inspection CA beside the
   console's, with its edges' intermediates.
 
@@ -152,27 +177,31 @@ as BIRD is, but not planned unless asked.
 
 ## Order
 
-1. The inspection CA, its intermediates, its download (TLS 1.).
-2. The do-not-decrypt and source lists (TLS 2.).
-3. What happened, told (TLS 3.), and Suricata's TLS and SSH records read
-   (SSH 1.), as one reader of the logs.
-4. SSH sessions logged, and recorded if wanted (SSH 2.).
-5. Then decide on TLS 4. and SSH 3.
+1. SSLproxy as a plugin: installed by a button, its rc.d service, its
+   conf rendered on the agent from a form (as smtpd.conf and
+   suricata.yaml are), the `fwd` rules in an Arcana range of the kept
+   rules (0.).
+2. The inspection CA, its intermediates, its download (1.).
+3. The do-not-decrypt and source lists (2.).
+4. The connect log read, and Suricata's TLS and SSH records (3., SSH
+   1.), one reader of the logs.
+5. The mirror to Suricata (4.).
+6. SD-WAN's transparent TLS moved from Squid to SSLproxy (5.).
+7. SSH sessions logged, and recorded if wanted (SSH 2.).
 
-Each step is tested as the URL filter is today: stand-ins for Squid and
-Suricata in agent_test, and a lab run against the real Squid and
-Suricata in a vnet jail before it is called done.
+Each step is tested with stand-ins for sslproxy and ipfw in agent_test,
+and a lab run with the real SSLproxy in a vnet jail before it is called
+done.
 
 ## For the user to decide
 
 1. One inspection root for the console, or one for each tenant fleet?
-   (One a fleet keeps a customer's clients from trusting another's.)
 2. Per-edge intermediates with the root key on the console only
-   (recommended), or one key shared by every edge (simpler, worse when
-   an edge is lost)?
+   (recommended), or one key shared by every edge?
 3. The default do-not-decrypt list: Arcana's small one and the admin's
    own, with no category feed — enough?
-4. SSH: sessions seen (Suricata) and logged (sshd) only, or also
-   recorded (script(1)), or a bastion plugin?
-5. A notice page for inspected clients (Squid's `deny_info` and a first
-   visit page), wanted?
+4. SD-WAN's transparent TLS moved from Squid's ssl-bump to SSLproxy
+   (recommended: one way to inspect without a proxy setting), or both
+   kept?
+5. SSH: sessions seen (Suricata) and logged (sshd) only, or also
+   recorded (script(1))?

@@ -966,6 +966,7 @@ void		 view_syslogconf(struct html *, struct server *);
 void		 view_hardening(struct html *, struct server *);
 void		 view_setkey(struct html *, struct server *);
 bool		 sysview_form(const char *, const ucl_object_t *);
+void		 dma_settings(struct html *);
 bool		 sysview_action(const char *, const char *, const char *);
 bool		 sysview_shown(const char *);
 void		 sysview_hide(void);

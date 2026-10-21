@@ -1043,7 +1043,8 @@ view_transport(struct html *h, struct server *s)
 		    "(<code>sctp_bindx(3)</code>, kept in rc.conf as "
 		    "<code>arcana_agent_sctp_also</code>). A listener on "
 		    "<code>0.0.0.0</code> or <code>[::]</code> has every address "
-		    "already.</p></details>", tr.busy ? " disabled" : "");
+		    "already.</p>", tr.busy ? " disabled" : "");
+		h_raw(h, "</details>");
 	}
 	if (tr.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");

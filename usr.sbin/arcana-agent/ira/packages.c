@@ -43,6 +43,7 @@ pkg_run(struct work *w, const char *jail, bool anyos, uint8_t ip,
 {
 	char	**argv;
 	size_t	 i, k;
+	int	 rc;
 
 	argv = wcalloc(w, n + 8, sizeof(*argv));
 	k = 0;
@@ -60,7 +61,12 @@ pkg_run(struct work *w, const char *jail, bool anyos, uint8_t ip,
 	for (i = 0; i < n; i++)
 		argv[k++] = (char *)(uintptr_t)args[i];
 	argv[k] = NULL;
-	return (run_exec(w, argv, res));
+	/* Watched: a pkg that hangs (a stalled fetch) is stopped, its
+	 * child in the jail with it. */
+	exec_set_watch(opts.pkg_idle_s);
+	rc = run_exec(w, argv, res);
+	exec_set_watch(0);
+	return (rc);
 }
 
 /*

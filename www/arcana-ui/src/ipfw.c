@@ -97,6 +97,7 @@ static struct {
 	int		 sect;		/* a part; or one of the views below */
 	bool		 rail_hosts;	/* the tree of hosts is wanted back */
 	long long	 edit;		/* the rule being changed, or 0 */
+	int		 edit_k;	/* which of its number's rows */
 	long long	 move;		/* the number offered for it, or 0 */
 	char		 jail[256];	/* the vnet jail whose it is, or "" */
 	/* The counters at the look before, for what each took since. */
@@ -437,19 +438,6 @@ count(const ucl_object_t *arr, int lo, int hi)
 	return (n);
 }
 
-static bool
-has_num(const ucl_object_t *arr, int64_t num)
-{
-	const ucl_object_t	*o;
-	ucl_object_iter_t	 it;
-
-	it = NULL;
-	while ((o = ucl_object_iterate(arr, &it, true)) != NULL)
-		if (jint(o, "num", 0) == num)
-			return (true);
-	return (false);
-}
-
 static void
 bytes(char *buf, size_t len, int64_t n)
 {
@@ -468,51 +456,159 @@ bytes(char *buf, size_t len, int64_t n)
 static ucl_object_t *
 rows_of(int lo, int hi)
 {
-	const ucl_object_t	*o;
+	const ucl_object_t	*o, *k;
 	ucl_object_t		*arr, *r;
-	ucl_object_iter_t	 it;
+	ucl_object_iter_t	 it, kit;
 	const ucl_object_t	*live, *kept;
+	bool			*used;
+	char			 where[32];
+	int			 nk, i, pass;
 
 	live = jget(fw.data, "rules");
 	kept = jget(fw.data, "kept");
+	nk = (int)ucl_array_size(kept);
+	if ((used = calloc((size_t)nk + 1, sizeof(*used))) == NULL)
+		abort();
 	arr = ucl_object_typed_new(UCL_ARRAY);
+	/*
+	 * Each rule of the kernel's set 0 beside the kept rule of its
+	 * number with its words (as ipfw writes them back, "norm"), so
+	 * that two rules of one number are two rows, each with its own.
+	 */
 	it = NULL;
 	while ((o = ucl_object_iterate(live, &it, true)) != NULL) {
 		if (jint(o, "num", 0) < lo || jint(o, "num", 0) > hi)
 			continue;
 		r = ucl_object_copy(o);
-		ucl_object_insert_key(r, ucl_object_fromstring(jbool(o,
-		    "disabled") ? "set off" : has_num(kept, jint(o, "num",
-		    0)) ? "now, kept" : "now only"), "where", 0, false);
+		if (jbool(o, "disabled"))
+			snprintf(where, sizeof(where), "set off");
+		else if (jint(o, "set", 0) != 0)
+			snprintf(where, sizeof(where), "set %lld", (long long)
+			    jint(o, "set", 0));
+		else {
+			snprintf(where, sizeof(where), "now only");
+			for (pass = 0; pass < 2 && strcmp(where, "now only") == 0;
+			    pass++) {
+				kit = NULL;
+				i = 0;
+				while ((k = ucl_object_iterate(kept, &kit, true)) !=
+				    NULL) {
+					if (!used[i] && jint(k, "num", 0) == jint(o,
+					    "num", 0) && jstr(o, "text") != NULL &&
+					    ((jstr(k, pass == 0 ? "norm" : "text") !=
+					    NULL && strcmp(jstr(k, pass == 0 ? "norm" :
+					    "text"), jstr(o, "text")) == 0))) {
+						used[i] = true;
+						snprintf(where, sizeof(where),
+						    "now, kept");
+						ucl_object_insert_key(r,
+						    ucl_object_fromstring(jstr(k,
+						    "text")), "ktext", 0, false);
+						if (jstr(k, "source") != NULL)
+							ucl_object_insert_key(r,
+							    ucl_object_fromstring(jstr(k,
+							    "source")), "ksrc", 0, false);
+						break;
+					}
+					i++;
+				}
+			}
+		}
+		ucl_object_insert_key(r, ucl_object_fromstring(where), "where",
+		    0, false);
 		ucl_array_append(arr, r);
 	}
+	kit = NULL;
+	i = 0;
+	while ((k = ucl_object_iterate(kept, &kit, true)) != NULL) {
+		if (!used[i++] && jint(k, "num", 0) >= lo && jint(k, "num", 0) <=
+		    hi) {
+			r = ucl_object_copy(k);
+			ucl_object_insert_key(r, ucl_object_fromstring(jstr(k,
+			    "text")), "ktext", 0, false);
+			if (jstr(k, "source") != NULL)
+				ucl_object_insert_key(r, ucl_object_fromstring(
+				    jstr(k, "source")), "ksrc", 0, false);
+			ucl_object_insert_key(r, ucl_object_fromstring("kept, "
+			    "not loaded"), "where", 0, false);
+			ucl_array_append(arr, r);
+		}
+	}
+	free(used);
+	/* Which of its number's rows each is, in the order they came. */
 	it = NULL;
-	while ((o = ucl_object_iterate(kept, &it, true)) != NULL) {
-		if (jint(o, "num", 0) < lo || jint(o, "num", 0) > hi ||
-		    has_num(live, jint(o, "num", 0)))
-			continue;
-		r = ucl_object_copy(o);
-		ucl_object_insert_key(r, ucl_object_fromstring("kept, not "
-		    "loaded"), "where", 0, false);
-		ucl_array_append(arr, r);
+	while ((o = ucl_object_iterate(arr, &it, true)) != NULL) {
+		const ucl_object_t	*q;
+		ucl_object_iter_t	 qit = NULL;
+		int			 n = 0;
+
+		while ((q = ucl_object_iterate(arr, &qit, true)) != NULL &&
+		    q != o)
+			if (jint(q, "num", 0) == jint(o, "num", 0))
+				n++;
+		ucl_object_insert_key((ucl_object_t *)(uintptr_t)o,
+		    ucl_object_fromint(n), "k", 0, false);
 	}
 	return (arr);
 }
 
-/* The text a rule has where it is kept, or NULL. */
-static const char *
-kept_text(long long num)
+/* Is a row one Arcana changes: set 0's, or kept? */
+static bool
+row_ours(const ucl_object_t *r)
 {
+	const char	*w = jstr(r, "where");
+
+	return (w != NULL && (strcmp(w, "now only") == 0 || strcmp(w,
+	    "now, kept") == 0 || strcmp(w, "kept, not loaded") == 0));
+}
+
+/* The row of a number's k-th rule, a copy to unref; NULL for none. */
+static ucl_object_t *
+row_find(long long num, int k)
+{
+	ucl_object_t		*arr, *r;
 	const ucl_object_t	*o;
 	ucl_object_iter_t	 it;
 
+	arr = rows_of(1, 65534);
+	r = NULL;
 	it = NULL;
-	while ((o = ucl_object_iterate(jget(fw.data, "kept"), &it, true)) !=
-	    NULL)
-		if (jint(o, "num", 0) == num)
-			return (jstr(o, "source") != NULL ? jstr(o, "source") :
-			    jstr(o, "text"));
-	return (NULL);
+	while ((o = ucl_object_iterate(arr, &it, true)) != NULL)
+		if (jint(o, "num", 0) == num && jint(o, "k", 0) == k) {
+			r = ucl_object_copy(o);
+			break;
+		}
+	ucl_object_unref(arr);
+	return (r);
+}
+
+/* How many rows of Arcana's a number has. */
+static int
+num_rows(long long num)
+{
+	ucl_object_t		*arr;
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	arr = rows_of((int)num, (int)num);
+	n = 0;
+	it = NULL;
+	while ((o = ucl_object_iterate(arr, &it, true)) != NULL)
+		if (row_ours(o))
+			n++;
+	ucl_object_unref(arr);
+	return (n);
+}
+
+/* The words a row's rule is named by to the host: as kept, or as the
+ * kernel lists it. */
+static const char *
+row_words(const ucl_object_t *r)
+{
+
+	return (jstr(r, "ktext") != NULL ? jstr(r, "ktext") : jstr(r,
+	    "text"));
 }
 
 /*
@@ -1060,68 +1156,103 @@ view_objects(struct html *h)
 	}
 }
 
-static const ucl_object_t *
-rule_at(const ucl_object_t *arr, long long num, bool live)
-{
-	const ucl_object_t	*o;
-	ucl_object_iter_t	 it;
-
-	it = NULL;
-	while ((o = ucl_object_iterate(arr, &it, true)) != NULL)
-		if (jint(o, "num", 0) == num && !(live && jbool(o,
-		    "disabled")))
-			return (o);
-	return (NULL);
-}
-
-/* What Apply would do: the kept rules beside those of the kernel. */
+/*
+ * What Apply would do: the kept rules beside set 0's of the kernel,
+ * paired by number and words as ipfw writes them back (a kept rule's
+ * "norm"), so that how ipfw writes a rule is no difference; two rules
+ * of a number are paired one with one.  *addp, *delp, *chgp counted;
+ * h NULL to count alone.
+ */
 static void
-view_diff(struct html *h)
+diff_rows(struct html *h, int *addp, int *delp, int *chgp, char *gone,
+    size_t glen)
 {
 	const ucl_object_t	*live, *kept, *o, *k;
-	ucl_object_iter_t	 it;
-	int			 add, del, differ;
+	ucl_object_iter_t	 it, kit;
+	bool			*kused, *lused;
+	int			 nl, nk, i, j, pass;
 
 	live = jget(fw.data, "rules");
 	kept = jget(fw.data, "kept");
-	h_raw(h, "<h4 class=\"family\">What Apply would change</h4><p class="
-	    "\"dim\">Apply makes the kept rules the whole ruleset. Beside "
-	    "what the kernel has now, that is these rules more, these "
-	    "fewer, and these whose words are not the same: which may be "
-	    "only how ipfw writes a rule back (<code>dst-port</code> for a "
-	    "port, a name for a number), and may be a rule that was "
-	    "changed on one side.</p><table class=\"net fw-diff\"><thead><tr>"
-	    "<th></th><th>Number</th><th>Rule</th></tr></thead><tbody>");
-	add = del = differ = 0;
-	it = NULL;
-	while ((k = ucl_object_iterate(kept, &it, true)) != NULL) {
-		if ((o = rule_at(live, jint(k, "num", 0), true)) == NULL) {
-			add++;
-			h_fmt(h, "<tr class=\"d-add pick\" data-act=\"fw-goto\" "
-			    "data-arg=\"%lld\"><td>+ added</td><td><b>%05lld</b>"
-			    "</td><td class=\"mono\">", (long long)jint(k, "num",
-			    0), (long long)jint(k, "num", 0));
-			h_txt(h, jstr(k, "text"));
-			h_raw(h, "</td></tr>");
-		} else if (jstr(o, "text") != NULL && jstr(k, "text") != NULL &&
-		    strcmp(jstr(o, "text"), jstr(k, "text")) != 0) {
-			differ++;
+	nl = (int)ucl_array_size(live);
+	nk = (int)ucl_array_size(kept);
+	if ((kused = calloc((size_t)nk + 1, 1)) == NULL || (lused = calloc(
+	    (size_t)nl + 1, 1)) == NULL)
+		abort();
+	*addp = *delp = *chgp = 0;
+	if (gone != NULL && glen > 0)
+		gone[0] = '\0';
+#define	OURS(o)	(!jbool((o), "disabled") && jint((o), "set", 0) == 0 && \
+	    jint((o), "num", 0) != 65535)
+	/* The same: by norm, then by the words as kept. */
+	for (pass = 0; pass < 2; pass++) {
+		kit = NULL;
+		for (j = 0; (k = ucl_object_iterate(kept, &kit, true)) != NULL;
+		    j++) {
+			if (kused[j])
+				continue;
+			it = NULL;
+			for (i = 0; (o = ucl_object_iterate(live, &it, true)) !=
+			    NULL; i++)
+				if (!lused[i] && OURS(o) && jint(o, "num", 0) ==
+				    jint(k, "num", 0) && jstr(o, "text") != NULL &&
+				    jstr(k, pass == 0 ? "norm" : "text") != NULL &&
+				    strcmp(jstr(o, "text"), jstr(k, pass == 0 ?
+				    "norm" : "text")) == 0) {
+					kused[j] = lused[i] = true;
+					break;
+				}
+		}
+	}
+	/* Of one number, the rest paired in order: other words. */
+	kit = NULL;
+	for (j = 0; (k = ucl_object_iterate(kept, &kit, true)) != NULL; j++) {
+		if (kused[j])
+			continue;
+		it = NULL;
+		for (i = 0; (o = ucl_object_iterate(live, &it, true)) != NULL;
+		    i++)
+			if (!lused[i] && OURS(o) && jint(o, "num", 0) == jint(k,
+			    "num", 0))
+				break;
+		if (o != NULL) {
+			kused[j] = lused[i] = true;
+			(*chgp)++;
+			if (h == NULL)
+				continue;
 			h_fmt(h, "<tr class=\"d-chg pick\" data-act=\"fw-goto\" "
 			    "data-arg=\"%lld\"><td>~ differs</td><td><b>%05lld"
 			    "</b></td><td class=\"mono\"><del>", (long long)
 			    jint(k, "num", 0), (long long)jint(k, "num", 0));
 			h_txt(h, jstr(o, "text"));
 			h_raw(h, "</del><br><ins>");
-			h_txt(h, jstr(k, "text"));
+			h_txt(h, jstr(k, "norm") != NULL ? jstr(k, "norm") : jstr(k,
+			    "text"));
 			h_raw(h, "</ins></td></tr>");
+		} else {
+			kused[j] = true;
+			(*addp)++;
+			if (h == NULL)
+				continue;
+			h_fmt(h, "<tr class=\"d-add pick\" data-act=\"fw-goto\" "
+			    "data-arg=\"%lld\"><td>+ added</td><td><b>%05lld</b>"
+			    "</td><td class=\"mono\">", (long long)jint(k, "num",
+			    0), (long long)jint(k, "num", 0));
+			h_txt(h, jstr(k, "text"));
+			h_raw(h, "</td></tr>");
 		}
 	}
 	it = NULL;
-	while ((o = ucl_object_iterate(live, &it, true)) != NULL) {
-		if (jbool(o, "disabled") || jint(o, "num", 0) == 65535 ||
-		    rule_at(kept, jint(o, "num", 0), false) != NULL)
+	for (i = 0; (o = ucl_object_iterate(live, &it, true)) != NULL; i++) {
+		if (lused[i] || !OURS(o))
 			continue;
-		del++;
+		(*delp)++;
+		if (gone != NULL && strlen(gone) + 8 < glen)
+			snprintf(gone + strlen(gone), glen - strlen(gone),
+			    "%s%05lld", gone[0] != '\0' ? ", " : "", (long long)
+			    jint(o, "num", 0));
+		if (h == NULL)
+			continue;
 		h_fmt(h, "<tr class=\"d-del pick\" data-act=\"fw-goto\" "
 		    "data-arg=\"%lld\"><td>− removed</td><td><b>%05lld</b></td>"
 		    "<td class=\"mono\">", (long long)jint(o, "num", 0),
@@ -1129,6 +1260,25 @@ view_diff(struct html *h)
 		h_txt(h, jstr(o, "text"));
 		h_raw(h, "</td></tr>");
 	}
+#undef	OURS
+	free(kused);
+	free(lused);
+}
+
+static void
+view_diff(struct html *h)
+{
+	int	add, del, differ;
+
+	h_raw(h, "<h4 class=\"family\">What Apply would change</h4><p class="
+	    "\"dim\">Apply makes the kept rules the whole of set 0, the rules "
+	    "Arcana keeps; SD-WAN's sets and the default rule are not "
+	    "touched. Each kept rule is set beside the kernel's as ipfw "
+	    "writes it back (ipfw -n), so a rule written another way, "
+	    "<code>all</code> for <code>ip</code> or a port's name, is not a "
+	    "difference.</p><table class=\"net fw-diff\"><thead><tr><th></th>"
+	    "<th>Number</th><th>Rule</th></tr></thead><tbody>");
+	diff_rows(h, &add, &del, &differ, NULL, 0);
 	h_raw(h, "</tbody></table>");
 	if (add + del + differ == 0)
 		h_raw(h, "<div class=\"empty small\"><p>Nothing: the kernel "
@@ -2576,15 +2726,186 @@ more_form(const char *form, const ucl_object_t *f)
 }
 
 /* The actions of the views above; true when act is one of them. */
+/*
+ * The numbers of a part that have a rule of Arcana's: 1 now (set 0), 2
+ * kept, 3 both.  65536 of them, to free.
+ */
+static uint8_t *
+taken_in(int lo, int hi)
+{
+	ucl_object_t		*arr;
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	uint8_t			*t;
+	const char		*w;
+
+	if ((t = calloc(65537, 1)) == NULL)
+		abort();
+	arr = rows_of(lo, hi);
+	it = NULL;
+	while ((o = ucl_object_iterate(arr, &it, true)) != NULL) {
+		if (!row_ours(o))
+			continue;
+		w = jstr(o, "where");
+		t[jint(o, "num", 0)] |= strncmp(w, "now", 3) == 0 ? 1 : 0;
+		t[jint(o, "num", 0)] |= strcmp(w, "now only") != 0 ? 2 : 0;
+	}
+	ucl_object_unref(arr);
+	return (t);
+}
+
+/*
+ * Room for a rule just after number anchor (after) or just before it:
+ * *tp the number it takes, and pairs, from and to with the farthest
+ * first, that move the rules in its way on by one when no number is
+ * free there (what the user asked for: the next rules make room, as
+ * BASIC's lines did).  *sidesp has what the pairs touch, now (1) and
+ * kept (2).  False, and why, when the part has no room left.
+ */
+static bool
+plan_place(const uint8_t *taken, int lo, int hi, long long anchor,
+    bool after, long long *tp, char *pairs, size_t plen, int *sidesp,
+    char *why, size_t wlen)
+{
+	long long	j, m, n2;
+	size_t		off;
+
+	pairs[0] = '\0';
+	*sidesp = 0;
+	off = 0;
+	if (after) {
+		if (anchor + 1 > hi) {
+			snprintf(why, wlen, "%05lld is the end of this part: no "
+			    "number after it", anchor);
+			return (false);
+		}
+		if (!taken[anchor + 1]) {
+			for (n2 = anchor + 1; n2 <= hi && !taken[n2]; n2++)
+				;
+			*tp = (anchor + n2) / 2;
+			if (*tp <= anchor)
+				*tp = anchor + 1;
+			return (true);
+		}
+		for (j = anchor + 1; j <= hi && taken[j]; j++)
+			;
+		if (j > hi) {
+			snprintf(why, wlen, "No number is free after %05lld up to "
+			    "the end of this part (%05d): the rules there are "
+			    "packed; move one to another part first", anchor, hi);
+			return (false);
+		}
+		for (m = j - 1; m >= anchor + 1; m--) {
+			off += (size_t)snprintf(pairs + off, plen > off ? plen -
+			    off : 0, "%s%lld %lld", off > 0 ? " " : "", m, m + 1);
+			*sidesp |= taken[m];
+		}
+		*tp = anchor + 1;
+		return (off < plen);
+	}
+	if (anchor - 1 < lo) {
+		snprintf(why, wlen, "%05lld is the start of this part: no number "
+		    "before it", anchor);
+		return (false);
+	}
+	if (!taken[anchor - 1]) {
+		for (n2 = anchor - 1; n2 >= lo && !taken[n2]; n2--)
+			;
+		*tp = (anchor + n2 + 1) / 2;
+		if (*tp >= anchor)
+			*tp = anchor - 1;
+		return (true);
+	}
+	for (j = anchor - 1; j >= lo && taken[j]; j--)
+		;
+	if (j < lo) {
+		snprintf(why, wlen, "No number is free before %05lld down to the "
+		    "start of this part (%05d): the rules there are packed; "
+		    "move one to another part first", anchor, lo);
+		return (false);
+	}
+	for (m = j + 1; m <= anchor - 1; m++) {
+		off += (size_t)snprintf(pairs + off, plen > off ? plen - off : 0,
+		    "%s%lld %lld", off > 0 ? " " : "", m, m - 1);
+		*sidesp |= taken[m];
+	}
+	*tp = anchor - 1;
+	return (off < plen);
+}
+
+/*
+ * The rule being changed placed just after or before anchor: where a
+ * number is free, it is offered (Save moves it, with its words as
+ * they are in the box); where none is, the rules in its way are moved
+ * on by one first, asked.  Its own move goes in the same job when it
+ * is its number's only rule, and is Save's otherwise.
+ */
+static void
+place_rule(long long anchor, bool after)
+{
+	uint8_t		*taken;
+	long long	 cur, t;
+	char		 pairs[1200], why[200], arg[1300], body[1400];
+	char		 readable[900];
+	int		 sides, alone, lo, hi;
+
+	cur = fw.edit;
+	lo = sects[fw.sect].lo;
+	hi = sects[fw.sect].hi;
+	taken = taken_in(lo, hi);
+	alone = num_rows(cur) <= 1;
+	if (!plan_place(taken, lo, hi, anchor, after, &t, pairs, sizeof(pairs),
+	    &sides, why, sizeof(why))) {
+		toast(true, "%s", why);
+		free(taken);
+		return;
+	}
+	sides |= taken[cur];
+	free(taken);
+	if (pairs[0] == '\0') {
+		fw.move = t == cur ? 0 : t;
+		return;
+	}
+	snprintf(arg, sizeof(arg), "%d %d %s%s", (sides & 1) != 0, (sides &
+	    2) != 0, pairs, "");
+	if (alone)
+		snprintf(arg + strlen(arg), sizeof(arg) - strlen(arg),
+		    " %lld %lld", cur, t);
+	/* The pairs said as a sentence: 01702 becomes 01703, ... */
+	{
+		char		*copy, *p, *f, *t2;
+		size_t		 o = 0;
+
+		copy = strdup(pairs);
+		p = copy;
+		readable[0] = '\0';
+		while ((f = strsep(&p, " ")) != NULL && (t2 = strsep(&p, " ")) !=
+		    NULL)
+			o += (size_t)snprintf(readable + o, sizeof(readable) > o ?
+			    sizeof(readable) - o : 0, "%s%05lld becomes %05lld",
+			    o > 0 ? ", " : "", atoll(f), atoll(t2));
+		free(copy);
+	}
+	snprintf(body, sizeof(body), "No number is free there, so the rules in "
+	    "the way move on by one, the farthest first: %s%s. Then this rule "
+	    "takes %05lld%s. No rule is deleted: each is put at its new number "
+	    "before its old one goes, and nothing is done if a number is not "
+	    "free by then.", readable, (sides & 3) == 3 ? ", now "
+	    "and in the kept rules" : (sides & 1) ? ", now" : ", in the kept "
+	    "rules", t, alone ? "" : " when you Save, as it shares its number "
+	    "with another rule");
+	confirm("Make room for the rule", body, "Move them", false, NULL,
+	    "do-fw-renumber", arg, alone ? "" : "move");
+	if (!alone)
+		fw.move = t;
+}
+
 static bool
 more_action(struct server *s, const char *act, const char *arg,
     const char *value)
 {
-	const ucl_object_t	*o, **rules;
-	ucl_object_iter_t	 it;
 	char			 words[400], body[400];
-	long long		 before, after, cur;
-	int			 n, i;
+	long long		 cur;
 
 	if (strcmp(act, "fw-alias-edit") == 0) {
 		snprintf(alias_edit, sizeof(alias_edit), "%s", arg);
@@ -2610,121 +2931,124 @@ more_action(struct server *s, const char *act, const char *arg,
 		object_job(s, "table", words, false);
 	} else if (strcmp(act, "fw-drop") == 0 && fw.sect >= 0) {
 		/*
-		 * A rule dropped before or after another of the part: its
-		 * row opened with a number between that one and its
-		 * neighbour on that side, for Save to move it there.
+		 * A rule dropped before or after another of the part: placed
+		 * there, the rules in its way moved on by one when no number
+		 * is free (asked first).  Dropped above its place, it goes
+		 * before the rule that follows the one dropped on; below,
+		 * after the one before, so that the rules made to move are
+		 * never the dropped one.
 		 */
-		long long	 at, lo, hi, x;
-		const char	*colon;
+		uint8_t		*taken;
+		long long	 at, x;
+		const char	*slash, *colon;
+		bool		 after;
 
 		cur = atoll(arg);
+		fw.edit = cur;
+		fw.edit_k = (slash = strchr(arg, '/')) != NULL ? atoi(slash + 1) :
+		    0;
+		fw.move = 0;
 		at = atoll(value);
 		colon = strchr(value, ':');
-		lo = sects[fw.sect].lo - 1;
-		hi = sects[fw.sect].hi + 1;
-		n = (int)ucl_array_size(jget(fw.data, "rules")) + (int)
-		    ucl_array_size(jget(fw.data, "kept"));
-		if ((rules = calloc((size_t)n + 1, sizeof(*rules))) == NULL)
-			abort();
-		n = 0;
-		it = NULL;
-		while ((o = ucl_object_iterate(jget(fw.data, "rules"), &it,
-		    true)) != NULL)
-			rules[n++] = o;
-		it = NULL;
-		while ((o = ucl_object_iterate(jget(fw.data, "kept"), &it,
-		    true)) != NULL)
-			rules[n++] = o;
-		if (colon != NULL && strcmp(colon + 1, "before") == 0) {
-			hi = at;
-			for (i = 0; i < n; i++)
-				if ((x = jint(rules[i], "num", 0)) < at && x >
-				    lo && x != cur)
-					lo = x;
-		} else {
-			lo = at;
-			for (i = 0; i < n; i++)
-				if ((x = jint(rules[i], "num", 0)) > at && x <
-				    hi && x != cur)
-					hi = x;
-		}
-		free(rules);
+		after = colon == NULL || strcmp(colon + 1, "before") != 0;
 		if (cur <= 0 || at <= 0)
 			return (true);
-		if (hi - lo < 2)
-			toast(true, "No number is free between %05lld and "
-			    "%05lld: give one of them another first", lo, hi);
-		else {
-			fw.edit = cur;
-			fw.move = (lo + hi) / 2;
-			/* Where it already is: nothing to move. */
-			if (fw.move == cur)
-				fw.move = 0;
+		taken = taken_in(sects[fw.sect].lo, sects[fw.sect].hi);
+		if (num_rows(cur) <= 1)
+			taken[cur] = 0;
+		if (after && at < cur) {
+			for (x = at + 1; x < cur && !taken[x]; x++)
+				;
+			free(taken);
+			if (x >= cur)
+				return (true);	/* already there */
+			place_rule(x, false);
+		} else if (!after && at > cur) {
+			for (x = at - 1; x > cur && !taken[x]; x--)
+				;
+			free(taken);
+			if (x <= cur)
+				return (true);
+			place_rule(x, true);
+		} else {
+			free(taken);
+			place_rule(at, after);
 		}
 	} else if (strcmp(act, "fw-move") == 0 && fw.edit > 0 && fw.sect >=
 	    0) {
 		/*
-		 * A number half way to the next but one rule on that
-		 * side: the rule's place once it is saved with it.
+		 * One place up or down: past the rule above or below.  A
+		 * rule that shares its number goes past its twin first.
 		 */
-		n = (int)ucl_array_size(jget(fw.data, "rules")) + (int)
-		    ucl_array_size(jget(fw.data, "kept"));
-		if ((rules = calloc((size_t)n + 1, sizeof(*rules))) == NULL)
-			abort();
-		n = 0;
-		it = NULL;
-		while ((o = ucl_object_iterate(jget(fw.data, "rules"), &it,
-		    true)) != NULL)
-			rules[n++] = o;
-		it = NULL;
-		while ((o = ucl_object_iterate(jget(fw.data, "kept"), &it,
-		    true)) != NULL)
-			rules[n++] = o;
-		qsort(rules, (size_t)n, sizeof(*rules), num_cmp);
+		uint8_t		*taken;
+		long long	 x;
+		int		 nr;
+
 		cur = fw.edit;
-		before = sects[fw.sect].lo - 1;
-		after = sects[fw.sect].hi + 1;
+		nr = num_rows(cur);
+		taken = taken_in(sects[fw.sect].lo, sects[fw.sect].hi);
 		if (arg[0] == 'u') {
-			/* Between the two rules above this one. */
-			long long	p1 = -1, p2 = sects[fw.sect].lo - 1;
-
-			for (i = 0; i < n; i++) {
-				long long	x = jint(rules[i], "num", 0);
-
-				if (x >= cur || x < sects[fw.sect].lo)
-					continue;
-				if (x != p1) {
-					p2 = p1 == -1 ? p2 : p1;
-					p1 = x;
-				}
+			if (fw.edit_k > 0) {
+				free(taken);
+				place_rule(cur, false);
+				return (true);
 			}
-			before = p1 == -1 ? cur : p2;
-			after = p1 == -1 ? cur : p1;
+			for (x = cur - 1; x >= sects[fw.sect].lo && !taken[x]; x--)
+				;
+			free(taken);
+			if (x < sects[fw.sect].lo)
+				toast(true, "It is the first of its part already");
+			else
+				place_rule(x, false);
 		} else {
-			long long	n1 = -1, n2 = -1;
-
-			for (i = 0; i < n; i++) {
-				long long	x = jint(rules[i], "num", 0);
-
-				if (x <= cur || x > sects[fw.sect].hi)
-					continue;
-				if (n1 == -1)
-					n1 = x;
-				else if (x != n1 && n2 == -1)
-					n2 = x;
+			if (fw.edit_k < nr - 1) {
+				free(taken);
+				place_rule(cur, true);
+				return (true);
 			}
-			before = n1 == -1 ? cur : n1;
-			after = n1 == -1 ? cur : n2 == -1 ? sects[fw.sect].hi +
-			    1 : n2;
+			for (x = cur + 1; x <= sects[fw.sect].hi && !taken[x]; x++)
+				;
+			free(taken);
+			if (x > sects[fw.sect].hi)
+				toast(true, "It is the last of its part already");
+			else
+				place_rule(x, true);
 		}
-		free(rules);
-		if (after - before < 2)
-			toast(true, before == after ? "It is the %s of its "
-			    "part already" : "No number is free there: give "
-			    "one of the two rules another first", arg[0] ==
-			    'u' ? "first" : "last");
-		else
-			fw.move = (before + after) / 2;
+	} else if (strcmp(act, "do-fw-renumber") == 0) {
+		/* "live kept from to ...": one job, the host checking it
+		 * whole before it moves anything. */
+		struct html	 b;
+		char		*copy, *p, *w;
+		int		 live, kept, k;
+
+		copy = strdup(arg);
+		p = copy;
+		live = (w = strsep(&p, " ")) != NULL ? atoi(w) : 0;
+		kept = (w = strsep(&p, " ")) != NULL ? atoi(w) : 0;
+		memset(&b, 0, sizeof(b));
+		h_raw(&b, "{\"kind\":\"ipfw\",\"verb\":\"renumber\",\"args\":[");
+		k = 0;
+		while ((w = strsep(&p, " ")) != NULL)
+			if (*w != '\0' && strspn(w, "0123456789") == strlen(w))
+				h_fmt(&b, "%s\"%s\"", k++ > 0 ? "," : "", w);
+		h_fmt(&b, "],\"live\":%s,\"persist\":%s}", live ? "true" :
+		    "false", kept ? "true" : "false");
+		/* The title: the pairs, after the two sides' flags. */
+		{
+			const char	*t = arg;
+			int		 sk;
+
+			for (sk = 0; sk < 2 && t != NULL; sk++)
+				t = (t = strchr(t, ' ')) != NULL ? t + 1 : NULL;
+			snprintf(words, sizeof(words), "ipfw renumber %.300s",
+			    t != NULL ? t : "");
+		}
+		fw_job(s, b.s, words);
+		free(b.s);
+		free(copy);
+		/* Its own move is Save's when it shares its number. */
+		if (value == NULL || value[0] == '\0')
+			fw.edit = fw.move = 0;
 	} else
 		return (false);
 	return (true);
@@ -3289,14 +3613,16 @@ view_firewall(struct html *h, struct server *s)
 		bool		 keptr = strcmp(where, "now, kept") == 0 ||
 		    !now;
 		long long	 num = (long long)jint(o, "num", 0);
+		int		 rk = (int)jint(o, "k", 0);
 
-		if (fw.edit == num) {
+		if (fw.edit == num && fw.edit_k == rk && row_ours(o)) {
 			/*
 			 * Being changed, in its own row: its words as they
 			 * are kept, which are the ones that were written,
 			 * or as ipfw says them.
 			 */
-			kt = kept_text(num);
+			kt = jstr(o, "ksrc") != NULL ? jstr(o, "ksrc") : jstr(o,
+			    "ktext");
 			h_fmt(h, "<tr class=\"editing\" data-rule=\"%lld\"><td "
 			    "colspan=\"5\"><form data-form=\"fw-edit\" class="
 			    "\"fw-add\"><button type=\"button\" class=\"icon\" "
@@ -3317,31 +3643,36 @@ view_firewall(struct html *h, struct server *s)
 			    "name=\"persist\"%s><span>keep</span></label>"
 			    "<button class=\"small\">Save</button><button type="
 			    "\"button\" class=\"ghost small danger\" data-act="
-			    "\"fw-del\" data-arg=\"%lld\" data-value=\"%s\">"
+			    "\"fw-del\" data-arg=\"%lld/%d\" data-value=\"%s\">"
 			    "Delete</button><button type=\"button\" class=\""
 			    "ghost small\" data-act=\"fw-edit\" data-arg=\"0\">"
 			    "Cancel</button></form></td></tr>", now && loaded ?
-			    " checked" : "", keptr ? " checked" : "", num,
+			    " checked" : "", keptr ? " checked" : "", num, rk,
 			    strcmp(where, "now, kept") == 0 ? "both" : now ?
 			    "live" : "kept");
 			continue;
 		}
-		h_fmt(h, "<tr class=\"pick%s\" data-act=\"fw-edit\" data-arg=\""
-		    "%lld\" data-rule=\"%lld\" draggable=\"true\" data-reorder="
-		    "\"fw\" title=\"Press to change it; drag it to another "
-		    "place\"><td><b>%05lld</b></td><td class=\"mono rule\">",
-		    now ? "" : " off", num, num, num);
+		if (row_ours(o))
+			h_fmt(h, "<tr class=\"pick%s\" data-act=\"fw-edit\" "
+			    "data-arg=\"%lld/%d\" data-rule=\"%lld\" draggable=\""
+			    "true\" data-reorder=\"fw\" title=\"Press to change "
+			    "it; drag it to another place\"><td><b>%05lld</b></td>"
+			    "<td class=\"mono rule\">", now ? "" : " off", num, rk,
+			    num, num);
+		else
+			/* Another set's: SD-WAN's own, the default rule's,
+			 * or the rules Apply holds back. Not changed here. */
+			h_fmt(h, "<tr class=\"off\" data-rule=\"%lld\" title=\""
+			    "%s\"><td><b>%05lld</b></td><td class=\"mono "
+			    "rule\">", num, strcmp(where, "set off") == 0 ?
+			    "Held back by Apply in safe mode until it is "
+			    "confirmed: not changed here" : "Of another set than "
+			    "the kept rules' (set 0): SD-WAN's or the default "
+			    "rule's, not changed here", num);
 		/* Kept with aliases: its own words, ipfw's when hovered. */
 		{
-			const char	*src = NULL;
-			const ucl_object_t *kk;
-			ucl_object_iter_t   kit = NULL;
+			const char	*src = jstr(o, "ksrc");
 
-			while ((kk = ucl_object_iterate(jget(fw.data, "kept"),
-			    &kit, true)) != NULL)
-				if (jint(kk, "num", 0) == num && jstr(kk,
-				    "source") != NULL)
-					src = jstr(kk, "source");
 			if (src != NULL) {
 				h_raw(h, "<span class=\"aliased\"");
 				h_attr(h, "title", jstr(o, "text"));
@@ -3520,21 +3851,25 @@ firewall_form(const char *form, const ucl_object_t *f)
 	 */
 	memset(&b, 0, sizeof(b));
 	if (edit && fw.edit > 0) {
-		was_live = was_kept = false;
-		it = NULL;
-		while ((o = ucl_object_iterate(jget(fw.data, "rules"), &it,
-		    true)) != NULL)
-			if (jint(o, "num", 0) == fw.edit)
-				was_live = true;
-		was_kept = kept_text(fw.edit) != NULL;
+		ucl_object_t	*row;
+
+		/* The rule as it is, named by its words: another rule of
+		 * its number stays. */
+		row = row_find(fw.edit, fw.edit_k);
+		was_live = was_kept = row != NULL && row_ours(row);
 		(void)del;
+		(void)o;
+		(void)it;
 		if (was_live || was_kept) {
 			h_fmt(&b, "{\"kind\":\"ipfw\",\"verb\":\"replace\","
 			    "\"args\":[\"%lld\",\"%d\"", fw.edit, num);
 			rule_args(&b, rule);
-			h_fmt(&b, "],\"live\":%s,\"persist\":%s}", jbool(f,
-			    "live") ? "true" : "false", jbool(f, "persist") ?
-			    "true" : "false");
+			q = json_quote(row_words(row));
+			h_fmt(&b, "],\"text\":%s,\"live\":%s,\"persist\":%s}", q,
+			    jbool(f, "live") ? "true" : "false", jbool(f,
+			    "persist") ? "true" : "false");
+			free(q);
+			ucl_object_unref(row);
 			snprintf(title, sizeof(title), "ipfw %lld changed: %d "
 			    "%.130s", fw.edit, num, rule);
 			fw_job(s, b.s, title);
@@ -3543,6 +3878,8 @@ firewall_form(const char *form, const ucl_object_t *f)
 			fw.move = 0;
 			return (true);
 		}
+		if (row != NULL)
+			ucl_object_unref(row);
 	}
 	/* The prefix list picked: its table made, or filled again, and
 	 * its entries added, before the rule that names it. */
@@ -3578,7 +3915,7 @@ bool
 firewall_action(const char *act, const char *arg, const char *value)
 {
 	struct server	*s;
-	char		 json[256], title[96], body[500];
+	char		 json[256], title[96], body[900];
 	size_t		 i;
 
 	/* A rule being typed: the words that may come next follow it. */
@@ -3637,7 +3974,17 @@ firewall_action(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "fw-live") == 0) {
 		fw.dyn_paused = !fw.dyn_paused;
 	} else if (strcmp(act, "fw-edit") == 0) {
-		fw.edit = atoll(arg) == fw.edit ? 0 : atoll(arg);
+		/* "num/k": the number's k-th row, two rules of a number
+		 * being two rows. */
+		const char	*slash = strchr(arg, '/');
+		int		 k = slash != NULL ? atoi(slash + 1) : 0;
+
+		if (atoll(arg) == fw.edit && k == fw.edit_k)
+			fw.edit = 0;
+		else {
+			fw.edit = atoll(arg);
+			fw.edit_k = k;
+		}
 		fw.move = 0;
 	} else if (strcmp(act, "fw-jail") == 0) {
 		/* Another firewall: the host's, or a jail's own. */
@@ -3674,15 +4021,28 @@ firewall_action(const char *act, const char *arg, const char *value)
 		snprintf(fw.file_note, sizeof(fw.file_note), "The layout, not "
 		    "kept yet: make it this host's own, then Keep.");
 	} else if (strcmp(act, "fw-apply") == 0) {
-		snprintf(body, sizeof(body), "The %d kept rules become the "
-		    "whole ruleset of %s, in place of the %d it has now. They "
-		    "are loaded into set 1 while it is off and swapped with "
-		    "set 0, so that no packet meets half a ruleset. The rules "
-		    "of now wait in set 1: if the console cannot reach the "
-		    "host afterwards, the host swaps them back by itself.",
-		    (int)ucl_array_size(jget(fw.data, "kept")), s->name,
-		    (int)ucl_array_size(jget(fw.data, "rules")));
-		confirm("Apply the kept rules", body, "Apply", true, "",
+		int	add, del, chg;
+		char	gone[200], lost[400];
+
+		/* What would go is said first: rules the kernel runs with
+		 * that are not kept. */
+		diff_rows(NULL, &add, &del, &chg, gone, sizeof(gone));
+		lost[0] = '\0';
+		if (del > 0)
+			snprintf(lost, sizeof(lost), "%d rule%s the kernel has now "
+			    "%s not kept and would be gone: %s. Keep %s first "
+			    "(What Apply would change) if %s wanted. ", del, del ==
+			    1 ? "" : "s", del == 1 ? "is" : "are", gone, del == 1 ?
+			    "it" : "them", del == 1 ? "it is" : "they are");
+		snprintf(body, sizeof(body), "%sThe kept rules become the whole "
+		    "of set 0 on %s: %d added, %d removed, %d with other words. "
+		    "They are loaded into set 1 while it is off and swapped "
+		    "with set 0, so that no packet meets half a ruleset. The "
+		    "rules of now wait in set 1: if the console cannot reach "
+		    "the host afterwards, the host swaps them back by itself.",
+		    lost, s->name, add, del, chg);
+		confirm(del > 0 ? "Apply: rules would be gone" : "Apply the kept "
+		    "rules", body, "Apply", true, del > 0 ? "apply" : "",
 		    "do-fw-apply", "", "");
 	} else if (strcmp(act, "do-fw-apply") == 0) {
 		fw_job(s, "{\"kind\":\"ipfw\",\"verb\":\"apply\",\"safe\":true}",
@@ -3707,12 +4067,33 @@ firewall_action(const char *act, const char *arg, const char *value)
 		snprintf(title, sizeof(title), "ipfw %s", arg);
 		fw_job(s, json, title);
 	} else if (strcmp(act, "fw-del") == 0 && atoi(arg) > 0) {
-		snprintf(json, sizeof(json), "{\"kind\":\"ipfw\",\"verb\":"
-		    "\"delete\",\"args\":[\"%d\"],\"live\":%s,\"persist\":%s}",
-		    atoi(arg), strcmp(value, "kept") == 0 ? "false" : "true",
-		    strcmp(value, "live") == 0 ? "false" : "true");
-		snprintf(title, sizeof(title), "ipfw delete %d", atoi(arg));
-		fw_job(s, json, title);
+		/* That rule alone, named by its words: another of its
+		 * number stays. */
+		const char	*slash = strchr(arg, '/');
+		ucl_object_t	*row;
+		struct html	 b;
+
+		if ((row = row_find(atoll(arg), slash != NULL ? atoi(slash + 1) :
+		    0)) == NULL || !row_ours(row)) {
+			toast(true, "That rule is not there any more: the page "
+			    "reads the firewall again");
+			if (row != NULL)
+				ucl_object_unref(row);
+			refresh_firewall(s, true);
+			return (true);
+		}
+		memset(&b, 0, sizeof(b));
+		h_fmt(&b, "{\"kind\":\"ipfw\",\"verb\":\"delete\",\"args\":"
+		    "[\"%d\"", atoi(arg));
+		rule_args(&b, row_words(row));
+		h_fmt(&b, "],\"live\":%s,\"persist\":%s}", strcmp(value, "kept") ==
+		    0 ? "false" : "true", strcmp(value, "live") == 0 ? "false" :
+		    "true");
+		snprintf(title, sizeof(title), "ipfw delete %d %.60s", atoi(arg),
+		    row_words(row));
+		fw_job(s, b.s, title);
+		free(b.s);
+		ucl_object_unref(row);
 		fw.edit = 0;
 	}
 	return (true);

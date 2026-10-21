@@ -1099,6 +1099,11 @@ submodule arcana-jobs-kinds {
             description
               "Safe, undone unless confirmed";
           }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
         }
       }
       case bridge {
@@ -1808,6 +1813,7 @@ submodule arcana-jobs-kinds {
               enum loader.conf.d;
               enum periodic;
               enum rc;
+              enum dma;
             }
             mandatory true;
             description
@@ -1874,7 +1880,10 @@ submodule arcana-jobs-kinds {
           leaf verb {
             type enumeration {
               enum conf;
+              enum conf-text;
               enum table;
+              enum entry;
+              enum unentry;
               enum enable;
               enum pause;
               enum resume;
@@ -1901,6 +1910,11 @@ submodule arcana-jobs-kinds {
             type string;
             description
               "The file";
+          }
+          leaf force {
+            type boolean;
+            description
+              "Force";
           }
         }
       }

@@ -19,6 +19,7 @@
 #include <sys/module.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 
@@ -41,6 +42,20 @@
 #include <unistd.h>
 
 #include "harness.h"
+
+/* Does the kernel have SCTP: compiled in, or the module loaded. */
+static bool
+has_sctp(void)
+{
+	size_t	len;
+	int	have;
+
+	len = sizeof(have);
+	if (sysctlbyname("kern.features.sctp", &have, &len, NULL, 0) == 0 &&
+	    have != 0)
+		return (true);
+	return (modfind("sctp") != -1);
+}
 
 
 struct authn {
@@ -4900,7 +4915,7 @@ ATF_TC_BODY(mtls, tc)
 	    &r, "data.sessions.0.subject"), "console") != NULL);
 	resp_free(&r);
 	snprintf(sw, sizeof(sw), "/api/servers/%s/transport/switch", sid);
-	if (modfind("sctp") != -1) {
+	if (has_sctp()) {
 		http("POST", sw, "{\"transport\":\"sctp\"}", &r);
 		EXPECT(&r, 200);
 		ATF_CHECK_STREQ("true", jstr(&r, "ok"));
@@ -5097,7 +5112,7 @@ ATF_TC_BODY(mtls, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK_STREQ("192.0.2.99", jstr(&r, "data.sctp_also"));
-	if (modfind("sctp") != -1)
+	if (has_sctp())
 		ATF_CHECK_MSG(strstr(r.body, "\"also_error\":\"192.0.2.99: ")
 		    != NULL, "%s", r.body);
 	resp_free(&r);
@@ -5160,6 +5175,32 @@ ATF_TC_BODY(mtls, tc)
 		snprintf(b2, sizeof(b2), "grep -q '^arcana_agent_listen=\"tcp://"
 		    "127.0.0.1:1 keep %s\"$' rc.conf", was);
 		ATF_CHECK_MSG(system(b2) == 0, "%s", b2);
+		/*
+		 * Moved to SCTP at the same address: the SCTP listener the
+		 * agent opened beside the TCP one is the one moved to, and is
+		 * not closed with it; the host is reached there afterwards.
+		 */
+		if (has_sctp()) {
+			char	sctp[64];
+
+			snprintf(sctp, sizeof(sctp), "sctp://127.0.0.1:%d", port);
+			snprintf(b2, sizeof(b2), "{\"uri\":\"%s\"}", sctp);
+			http("POST", path, b2, &r);
+			EXPECT(&r, 200);
+			ATF_CHECK_MSG(strcmp(jstr(&r, "ok"), "true") == 0 && strcmp(
+			    jstr(&r, "uri"), sctp) == 0, "%s", r.body);
+			resp_free(&r);
+			snprintf(b2, sizeof(b2), "/api/servers/%s/transport", sid);
+			http("GET", b2, NULL, &r);
+			EXPECT(&r, 200);
+			ATF_CHECK_MSG(strstr(r.body, "\"uri\":\"sctp://127.0.0.1:")
+			    != NULL && strstr(r.body, was) == NULL && strstr(r.body,
+			    "\"up\":true,\"addresses\"") != NULL, "%s", r.body);
+			resp_free(&r);
+			snprintf(b2, sizeof(b2), "grep -q '^arcana_agent_listen=\""
+			    "tcp://127.0.0.1:1 keep %s\"$' rc.conf", sctp);
+			ATF_CHECK_MSG(system(b2) == 0, "%s", b2);
+		}
 	}
 	snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
 	http("GET", path, NULL, &r);

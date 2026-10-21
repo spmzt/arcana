@@ -217,13 +217,33 @@ kept_rule(const char *line, long *nump, const char **restp)
 	*nump = strtol(p, &end, 10);
 	if (*end != ' ' && *end != '\t')
 		return (false);
-	*restp = end + strspn(end, " \t");
+	end += strspn(end, " \t");
+	/*
+	 * "add N set S ...": a set of the rule's own, as a script that
+	 * stages its rules in a set writes them.  The kept rules are set
+	 * 0's once applied (Apply loads them into set 1 and swaps), so the
+	 * rule's words begin after it.
+	 */
+	if (strncmp(end, "set", 3) == 0 && (end[3] == ' ' || end[3] == '\t')) {
+		char	*after;
+
+		p = end + 3 + strspn(end + 3, " \t");
+		if (isdigit((unsigned char)*p)) {
+			(void)strtol(p, &after, 10);
+			if (*after == ' ' || *after == '\t')
+				end = after + strspn(after, " \t");
+		}
+	}
+	*restp = end;
 	return (true);
 }
 
 static bool	alias_name_ok(const char *);
 static bool	src_rule(const char *, long *, const char **);
 static bool	prefix_ok(const char *);
+static size_t	split(struct work *, const char *, const char **, size_t);
+static int	ipfw_norm(struct work *, int, const long *, const char *const *,
+		    const char **, const char **);
 
 /*
  * Is there a firewall to ask?  ipfw in the kernel; or another program
@@ -766,6 +786,46 @@ do_ipfw(struct work *w, struct arc_network_rsp *rsp)
 			srcnum = -1;
 		}
 	}
+	/*
+	 * Each kept rule as ipfw writes it back (ipfw -n, the kernel not
+	 * asked): "norm", what the kernel's listing of it would say, for
+	 * the panel to set beside the kernel's own without a difference of
+	 * wording.  Where ipfw stops at one, those after have none.
+	 */
+	{
+		const ucl_object_t	*ko;
+		ucl_object_iter_t	 kit;
+		const char		**texts, **out, *e;
+		long			*nums;
+		int			 nk, k;
+
+		nk = (int)ucl_array_size(kept);
+		nums = wcalloc(w, (size_t)nk + 1, sizeof(*nums));
+		texts = wcalloc(w, (size_t)nk + 1, sizeof(*texts));
+		out = wcalloc(w, (size_t)nk + 1, sizeof(*out));
+		k = 0;
+		kit = NULL;
+		while ((ko = ucl_object_iterate(kept, &kit, true)) != NULL &&
+		    k < nk) {
+			nums[k] = (long)ucl_object_toint(ucl_object_lookup(ko,
+			    "num"));
+			texts[k] = ucl_object_tostring(ucl_object_lookup(ko,
+			    "text"));
+			if (texts[k] == NULL)
+				texts[k] = "";
+			k++;
+		}
+		if (nk > 0)
+			(void)ipfw_norm(w, nk, nums, texts, out, &e);
+		k = 0;
+		kit = NULL;
+		while ((ko = ucl_object_iterate(kept, &kit, true)) != NULL &&
+		    k < nk) {
+			if (out[k] != NULL)
+				put((ucl_object_t *)(uintptr_t)ko, "norm", out[k]);
+			k++;
+		}
+	}
 	ucl_object_insert_key(top, kept, "kept", 0, false);
 	ucl_object_insert_key(top, other, "other", 0, false);
 	ucl_object_insert_key(top, ucl_object_frombool(text != NULL), "file", 0,
@@ -879,18 +939,50 @@ unshell(char *q)
  * its options: the line begins with ipfw (or its path) or a variable
  * holding it ($fwcmd, ${cmd}); NULL for a line of the shell's own.
  */
+static bool
+ipfw_word(const char *q)
+{
+	static const char *const words[] = { "add", "table", "pipe", "queue",
+	    "sched", "nat", "nat64lsn", "nat64stl", "nat64clat", "nptv6",
+	    "flush", "set", "delete" };
+	size_t	i, n;
+
+	n = strcspn(q, " \t");
+	for (i = 0; i < nitems(words); i++)
+		if (n == strlen(words[i]) && strncmp(q, words[i], n) == 0)
+			return (true);
+	return (false);
+}
+
 static char *
 script_ipfw(char *q)
 {
-	char	*tok;
-	size_t	 n;
+	char	*tok, *after;
+	size_t	 n, i;
+	bool	 func;
 
 	n = strcspn(q, " \t");
 	tok = q;
+	/* A function of the script's own in ipfw's place (fw add ...): a
+	 * name, then ipfw's words. */
+	func = n > 0 && (isalpha((unsigned char)tok[0]) || tok[0] == '_');
+	for (i = 0; func && i < n; i++)
+		if (!isalnum((unsigned char)tok[i]) && tok[i] != '_')
+			func = false;
+	after = q + n;
+	after += strspn(after, " \t");
+	if (func && !ipfw_word(after))
+		func = false;
+	/* The shell's own commands are not a function standing for ipfw. */
+	if (func && ((n == 4 && strncmp(tok, "echo", 4) == 0) || (n == 6 &&
+	    (strncmp(tok, "printf", 6) == 0 || strncmp(tok, "logger", 6) ==
+	    0)) || (n == 4 && strncmp(tok, "test", 4) == 0) || (n == 5 &&
+	    strncmp(tok, "local", 5) == 0)))
+		func = false;
 	/* ipfw, a path to it, or a variable: not an assignment. */
-	if (memchr(tok, '=', n) != NULL || !((n == 4 && strncmp(tok, "ipfw",
-	    4) == 0) || (tok[0] == '/' && n > 5 && strncmp(tok + n - 5,
-	    "/ipfw", 5) == 0) || (tok[0] == '$' && n > 1)))
+	if (!func && (memchr(tok, '=', n) != NULL || !((n == 4 && strncmp(tok,
+	    "ipfw", 4) == 0) || (tok[0] == '/' && n > 5 && strncmp(tok + n - 5,
+	    "/ipfw", 5) == 0) || (tok[0] == '$' && n > 1))))
 		return (NULL);
 	q += n;
 	q += strspn(q, " \t");
@@ -908,6 +1000,120 @@ script_ipfw(char *q)
 	return (q);
 }
 
+/* A script's variables, as its assignments set them. */
+struct shvar {
+	char		 name[64];
+	const char	*value;		/* NULL: set by what is not known here */
+};
+#define	SHVARS	128
+
+/*
+ * NAME=value at the head of a line: true, the name and the value as the
+ * shell would take it (one word, or quoted), into *namep and *valp.
+ */
+static bool
+sh_assignment(struct work *w, const char *q, char *name, size_t nlen,
+    char **valp)
+{
+	const char	*v, *e;
+	size_t		 n;
+
+	n = 0;
+	if (!isalpha((unsigned char)q[0]) && q[0] != '_')
+		return (false);
+	while (isalnum((unsigned char)q[n]) || q[n] == '_')
+		n++;
+	if (q[n] != '=' || n >= nlen)
+		return (false);
+	memcpy(name, q, n);
+	name[n] = '\0';
+	v = q + n + 1;
+	if (*v == '"' || *v == '\'') {
+		if ((e = strchr(v + 1, *v)) == NULL)
+			return (false);
+		*valp = wstrndup(w, v + 1, (size_t)(e - v - 1));
+	} else
+		*valp = wstrndup(w, v, strcspn(v, " \t;"));
+	return (true);
+}
+
+/*
+ * The line with $NAME and ${NAME} put in from vars; *unknownp true when
+ * one is not known (a variable set by what is not read here, a $1).
+ */
+static char *
+sh_subst(struct work *w, const char *q, const struct shvar *vars, int nv,
+    bool *unknownp)
+{
+	char		*out, name[64];
+	const char	*p, *val;
+	size_t		 cap, len, n;
+	int		 i;
+	bool		 brace;
+
+	cap = strlen(q) + 1;
+	for (i = 0; i < nv; i++)
+		if (vars[i].value != NULL)
+			cap += strlen(vars[i].value) * 8;
+	out = wcalloc(w, cap + 1, 1);
+	len = 0;
+	for (p = q; *p != '\0' && len < cap;) {
+		if (p[0] != '$') {
+			out[len++] = *p++;
+			continue;
+		}
+		brace = p[1] == '{';
+		n = 0;
+		while (n < sizeof(name) - 1 && (isalnum((unsigned char)p[1 +
+		    brace + n]) || p[1 + brace + n] == '_'))
+			n++;
+		if (n == 0 || (brace && p[1 + brace + n] != '}')) {
+			if (unknownp != NULL)
+				*unknownp = true;
+			out[len++] = *p++;
+			continue;
+		}
+		memcpy(name, p + 1 + brace, n);
+		name[n] = '\0';
+		val = NULL;
+		for (i = nv - 1; i >= 0 && val == NULL; i--)
+			if (strcmp(vars[i].name, name) == 0)
+				val = vars[i].value;
+		if (val == NULL) {
+			if (unknownp != NULL)
+				*unknownp = true;
+			n += 1 + brace + (brace ? 1 : 0);
+			memcpy(out + len, p, n < cap - len ? n : cap - len);
+			len += n;
+			p += n;
+			continue;
+		}
+		len += strlcpy(out + len, val, cap - len);
+		p += 1 + brace + n + (brace ? 1 : 0);
+	}
+	out[len < cap ? len : cap] = '\0';
+	return (out);
+}
+
+/* Does the line open (1) or close (-1) a block of the shell's? */
+static int
+sh_block(const char *q)
+{
+	static const char *const open[] = { "if", "case", "for", "while",
+	    "until" };
+	static const char *const close[] = { "fi", "esac", "done" };
+	size_t	i, n;
+
+	n = strcspn(q, " \t;");
+	for (i = 0; i < nitems(open); i++)
+		if (n == strlen(open[i]) && strncmp(q, open[i], n) == 0)
+			return (1);
+	for (i = 0; i < nitems(close); i++)
+		if (n == strlen(close[i]) && strncmp(q, close[i], n) == 0)
+			return (-1);
+	return (0);
+}
+
 /*
  * The file the host, or the jail, loads now as its firewall, as kept
  * rules: the script rc.conf's firewall_script names when it is one of
@@ -923,8 +1129,9 @@ rc_ruleset(struct work *w, const char **pathp, const char **errp)
 	static const char	 note[] = "# left out, applying does it: ";
 	static const char	 shnote[] = "# left out, the script's own: ";
 	char			*text, *out, *p, *line, *q, *c;
-	const char		*type, *script, *file;
+	const char		*type, *script, *file, *rest;
 	size_t			 len, n, o;
+	long			 num;
 	int			 step, e;
 	bool			 sh;
 
@@ -975,26 +1182,87 @@ rc_ruleset(struct work *w, const char **pathp, const char **errp)
 				memmove(c + 1, c + n, strlen(c + n) + 1);
 			}
 		}
-	for (n = 1, p = text; *p != '\0'; p++)
-		if (*p == '\n')
-			n++;
-	out = wcalloc(w, len + n * sizeof(shnote) + 2, 1);
-	o = 0;
-	p = text;
-	while ((line = strsep(&p, "\n")) != NULL) {
-		if (p == NULL && line[0] == '\0')
-			break;
-		q = line + strspn(line, " \t");
-		if (q[0] == '\0' || q[0] == '#') {
-			if (sh && q[0] == '#' && q[1] == '!')
+	/*
+	 * Written on a stream: a variable put in makes a line longer.  The
+	 * script's assignments are kept (NAME=value, the variables known
+	 * by then put in), so that "cmd=\"ipfw -q add\"" and "$cmd 00010
+	 * allow ..." read as the rule they make; a line naming a variable
+	 * that is not known is left out, said so.  A rule the script adds
+	 * inside an if, case or loop is taken, and said so above it.
+	 */
+	{
+		static const char	 varnote[] = "# left out, a variable "
+		    "not known here: ";
+		struct shvar	*vars;
+		FILE		*fp;
+		char		*buf, name[64], *val, *sub;
+		size_t		 blen;
+		int		 nvars, depth, i;
+		bool		 unknown, said;
+
+		vars = wcalloc(w, SHVARS, sizeof(*vars));
+		nvars = depth = 0;
+		said = false;
+		buf = NULL;
+		blen = 0;
+		if ((fp = open_memstream(&buf, &blen)) == NULL) {
+			*errp = wfmt(w, "open_memstream: %s", strerror(errno));
+			return (NULL);
+		}
+		p = text;
+		while ((line = strsep(&p, "\n")) != NULL) {
+			if (p == NULL && line[0] == '\0')
+				break;
+			q = line + strspn(line, " \t");
+			if (q[0] == '\0' || q[0] == '#') {
+				if (sh && q[0] == '#' && q[1] == '!')
+					continue;
+				fprintf(fp, "%s\n", line);
 				continue;
-			q = line;
-		} else if (sh && (c = script_ipfw(q)) == NULL) {
-			/* The shell's own: kept, as a comment. */
-			memcpy(out + o, shnote, sizeof(shnote) - 1);
-			o += sizeof(shnote) - 1;
-		} else {
+			}
 			if (sh) {
+				if (sh_block(q) != 0) {
+					depth += sh_block(q);
+					if (depth < 0)
+						depth = 0;
+					said = false;
+				}
+				if (sh_assignment(w, q, name, sizeof(name), &val)) {
+					unknown = false;
+					val = sh_subst(w, val, vars, nvars, &unknown);
+					if (strstr(val, "$(") != NULL || strchr(val,
+					    '`') != NULL || unknown)
+						val = NULL;
+					for (i = 0; i < nvars; i++)
+						if (strcmp(vars[i].name, name) == 0)
+							break;
+					if (i == nvars && nvars < SHVARS)
+						nvars++;
+					if (i < SHVARS) {
+						strlcpy(vars[i].name, name,
+						    sizeof(vars[i].name));
+						vars[i].value = val;
+					}
+					fprintf(fp, "%s%s\n", shnote, q);
+					continue;
+				}
+				unknown = false;
+				sub = sh_subst(w, q, vars, nvars, &unknown);
+				if ((c = script_ipfw(sub)) == NULL) {
+					/* The shell's own: kept, as a comment. */
+					fprintf(fp, "%s%s\n", shnote, q);
+					continue;
+				}
+				if (unknown) {
+					fprintf(fp, "%s%s\n", varnote, q);
+					continue;
+				}
+				if (depth > 0 && !said) {
+					fprintf(fp, "# taken from inside the script's "
+					    "if, case or loop above: it may add these "
+					    "only at times\n");
+					said = true;
+				}
 				q = c;
 				q[unshell(q)] = '\0';
 			}
@@ -1002,21 +1270,57 @@ rc_ruleset(struct work *w, const char **pathp, const char **errp)
 			while ((q[0] == '-' && (q[1] == 'q' || q[1] == 'f') &&
 			    (q[2] == ' ' || q[2] == '\t')))
 				q += 2 + strspn(q + 2, " \t");
+			/*
+			 * A set of the script's own, as a script that stages
+			 * its rules in a set and swaps them in writes them:
+			 * applying stages the kept rules itself.  "set N
+			 * table|nat64…|nptv6 …" is that object's command,
+			 * kept without the set (applying gives it set 1, then
+			 * set 0); "add N set S …" the rule without it.
+			 */
+			{
+				char	*t = q, *after;
+
+				if (strncmp(t, "set", 3) == 0 && (t[3] == ' ' ||
+				    t[3] == '\t')) {
+					t += 3 + strspn(t + 3, " \t");
+					if (isdigit((unsigned char)*t)) {
+						(void)strtol(t, &after, 10);
+						after += strspn(after, " \t");
+						if ((strncmp(after, "table ", 6) == 0 ||
+						    strncmp(after, "nat64", 5) == 0 ||
+						    strncmp(after, "nptv6 ", 6) == 0) &&
+						    strstr(after, " all ") == NULL)
+							q = after;
+					}
+				}
+				if (kept_rule(q, &num, &rest) && rest != q &&
+				    strstr(q, " set ") != NULL &&
+				    strstr(q, " set ") < rest) {
+					q = wfmt(w, "add %05ld %s", num, wstrdup(w,
+					    rest));
+				}
+			}
 			/* Left out: the line as it is written. */
 			if (strncmp(q, "flush", 5) == 0 || strncmp(q, "set ",
 			    4) == 0 || strncmp(q, "delete ", 7) == 0 ||
 			    q[0] == '-') {
-				memcpy(out + o, note, sizeof(note) - 1);
-				o += sizeof(note) - 1;
-				q = line + strspn(line, " \t");
+				fprintf(fp, "%s%s\n", note, line + strspn(line,
+				    " \t"));
+				continue;
 			}
+			fprintf(fp, "%s\n", q);
 		}
-		len = strlen(q);
-		memcpy(out + o, q, len);
-		o += len;
-		out[o++] = '\n';
+		if (fclose(fp) != 0 || buf == NULL) {
+			free(buf);
+			*errp = "out of memory";
+			return (NULL);
+		}
+		out = wstrdup(w, buf);
+		free(buf);
 	}
-	out[o] = '\0';
+	(void)n;
+	(void)o;
 	return (out);
 }
 
@@ -1192,14 +1496,40 @@ ipfw_check(const struct arc_job_spec *sp)
 		if (sp->safe)
 			return ("a rule replaced is not put back by itself: "
 			    "apply the kept rules in safe mode instead");
+		/* The old rule's words, to tell it from another of its
+		 * number: one line, ipfw's words or aliases. */
+		if (sp->text != NULL && (strlen(sp->text) > 4096 ||
+		    strcspn(sp->text, "\n\r#") != strlen(sp->text)))
+			return ("the old rule's words are one line, with no #");
 	} else if (strcmp(verb, "delete") == 0) {
-		if (sp->names.n != 1 || !number_ok(sp->names.v[0]))
-			return ("name the rule to delete by its number");
+		if (sp->names.n < 1 || sp->names.n > IPFW_WORDS ||
+		    !number_ok(sp->names.v[0]))
+			return ("name the rule to delete by its number, and by "
+			    "its words when the number has several");
+		for (i = 1; i < sp->names.n; i++)
+			if (!word_ok(sp->names.v[i]))
+				return ("a rule's words are ipfw's: letters, "
+				    "digits and . _ : / , - { } ! ( ) = and "
+				    "the like, with no quotes");
 		if (!sp->live && !sp->persist)
 			return ("say live, persist or both");
 		if (sp->safe)
 			return ("a rule deleted is not put back by itself: "
 			    "apply the kept rules in safe mode instead");
+	} else if (strcmp(verb, "renumber") == 0) {
+		if (sp->names.n < 2 || sp->names.n % 2 != 0 || sp->names.n > 64)
+			return ("renumber takes pairs of numbers, from and to, "
+			    "up to 32 of them");
+		for (i = 0; i < sp->names.n; i++)
+			if (!number_ok(sp->names.v[i]))
+				return ("a rule's number is 1 to 65534");
+		for (i = 0; i + 1 < sp->names.n; i += 2)
+			if (strcmp(sp->names.v[i], sp->names.v[i + 1]) == 0)
+				return ("a rule renumbered gets another number");
+		if (!sp->live && !sp->persist)
+			return ("say live, persist or both");
+		if (sp->safe)
+			return ("rules renumbered are not put back by themselves");
 	} else if (strcmp(verb, "alias") == 0) {
 		if (sp->names.n < 2 || !alias_name_ok(sp->names.v[0]))
 			return ("an alias is its name (letters, digits, _), and "
@@ -1258,9 +1588,9 @@ ipfw_check(const struct arc_job_spec *sp)
 		if (sp->safe)
 			return ("it is not taken back by itself");
 	} else
-		return ("an ipfw job is add, delete, alias, apply, enable, "
-		    "disable, zero, or table, nat, nat64lsn, nat64stl, nat64clat, "
-		    "nptv6, pipe, queue, sched with their words");
+		return ("an ipfw job is add, delete, renumber, alias, apply, "
+		    "enable, disable, zero, or table, nat, nat64lsn, nat64stl, "
+		    "nat64clat, nptv6, pipe, queue, sched with their words");
 	return (NULL);
 }
 
@@ -1281,12 +1611,558 @@ ipfw_title(const struct arc_job_spec *sp)
 	}
 	if (asprintf(&t, "ipfw %s%s%s", sp->verb != NULL ? sp->verb : "?", all,
 	    strcmp(sp->verb != NULL ? sp->verb : "", "add") == 0 || strcmp(
-	    sp->verb != NULL ? sp->verb : "", "delete") == 0 ? sp->live &&
+	    sp->verb != NULL ? sp->verb : "", "delete") == 0 || strcmp(
+	    sp->verb != NULL ? sp->verb : "", "renumber") == 0 ? sp->live &&
 	    sp->persist ? " (now, and kept)" : sp->persist ? " (kept)" :
 	    " (now)" : sp->persist ? " (kept)" : "") == -1)
 		t = NULL;
 	free(all);
 	return (t);
+}
+
+/* ---- The kernel's rules, one by one --------------------------------- */
+
+/*
+ * The kept rules become set 0's: Apply swaps them in there, and a rule
+ * added now goes there.  The other sets are not touched here: SD-WAN's
+ * own, the rules Apply holds back in set 1, the default rule's 31.
+ * ipfw has no name for one rule among several of a number, so a rule
+ * is picked by its number and its words; a change at a number is one
+ * script of ipfw's, its rules checked first by ipfw -n, and the
+ * number's rules are put back as they were listed when the kernel
+ * refuses a line of it after all.
+ */
+#define	SCRIPT_MAX	(4 * 1024 * 1024)	/* a ruleset, for ipfw -n */
+
+struct liverule {
+	long		 num;
+	const char	*text;
+};
+
+/*
+ * Set 0's rules of a number, or of every number (0) but the default.
+ * How many, or -1 when ipfw could not be asked.
+ */
+static int
+live_rules(struct work *w, long num, struct liverule **outp)
+{
+	struct liverule	*v, *nv;
+	struct execres	 res;
+	char		*argv[5], *text, *p, *line, *end;
+	long		 set;
+	int		 n, cap;
+
+	*outp = NULL;
+	argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
+	argv[1] = (char *)(uintptr_t)"-S";
+	argv[2] = (char *)(uintptr_t)"list";
+	argv[3] = num > 0 ? wfmt(w, "%ld", num) : NULL;
+	argv[4] = NULL;
+	if (run_exec_max(w, scope_argv(w, argv), &res, 16 * 1024 * 1024) !=
+	    0) {
+		/* A number with no rule is not a failure. */
+		if (num > 0 && ((res.err != NULL && strstr(res.err,
+		    "does not exist") != NULL) || (res.out != NULL &&
+		    strstr(res.out, "does not exist") != NULL)))
+			return (0);
+		return (-1);
+	}
+	text = wstrndup(w, res.out != NULL ? res.out : "", res.outlen);
+	cap = 16;
+	v = wcalloc(w, (size_t)cap, sizeof(*v));
+	n = 0;
+	p = text;
+	while ((line = strsep(&p, "\n")) != NULL) {
+		if (!isdigit((unsigned char)line[0]))
+			continue;
+		if (n == cap) {
+			nv = wcalloc(w, (size_t)cap * 2, sizeof(*nv));
+			memcpy(nv, v, (size_t)n * sizeof(*v));
+			v = nv;
+			cap *= 2;
+		}
+		v[n].num = strtol(line, &end, 10);
+		end += strspn(end, " ");
+		set = 0;
+		if (strncmp(end, "set ", 4) == 0) {
+			set = strtol(end + 4, &end, 10);
+			end += strspn(end, " ");
+		}
+		if (set != 0 || v[n].num == 65535 || (num > 0 && v[n].num !=
+		    num))
+			continue;
+		v[n].text = end;
+		n++;
+	}
+	*outp = v;
+	return (n);
+}
+
+/*
+ * Rules as ipfw writes them back, read by ipfw -n, which asks nothing
+ * of the kernel: out[i] the words of rule nums[i] texts[i].  0 when ipfw
+ * took every one; -1 and why when it stopped at one.
+ */
+static int
+ipfw_norm(struct work *w, int n, const long *nums, const char *const *texts,
+    const char **out, const char **errp)
+{
+	struct execres	 res;
+	char		*in, *argv[4], *t, *p, *line;
+	size_t		 len, off;
+	int		 i, k, rc;
+
+	for (i = 0; i < n; i++)
+		out[i] = NULL;
+	if (n == 0)
+		return (0);
+	len = 1;
+	for (i = 0; i < n; i++) {
+		/* A script's # begins a comment: not a rule's words. */
+		if (strchr(texts[i], '#') != NULL || strchr(texts[i], '\n') !=
+		    NULL) {
+			*errp = wfmt(w, "rule %ld has a # in its words, which "
+			    "ipfw reads as a comment in a script", nums[i]);
+			return (-1);
+		}
+		len += strlen(texts[i]) + 24;
+	}
+	if (len > SCRIPT_MAX) {
+		*errp = "too many rules to check at once";
+		return (-1);
+	}
+	in = wcalloc(w, len, 1);
+	off = 0;
+	for (i = 0; i < n; i++)
+		off += (size_t)snprintf(in + off, len - off, "add %ld %s\n",
+		    nums[i], texts[i]);
+	argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
+	argv[1] = (char *)(uintptr_t)"-n";
+	argv[2] = (char *)(uintptr_t)"/dev/stdin";
+	argv[3] = NULL;
+	exec_set_stdin(in, off);
+	rc = run_exec_max(w, scope_argv(w, argv), &res, 2 * SCRIPT_MAX);
+	t = wstrndup(w, res.out != NULL ? res.out : "", res.outlen);
+	k = 0;
+	for (p = t; (line = strsep(&p, "\n")) != NULL && k < n;) {
+		if (!isdigit((unsigned char)line[0]))
+			continue;
+		line += strspn(line, "0123456789");
+		out[k++] = line + strspn(line, " ");
+	}
+	if (rc != 0 || k < n) {
+		*errp = res.errlen > 0 ? wtext(w, wstrndup(w, res.err,
+		    strcspn(res.err, "\n"))) : rc == 0 ? wfmt(w, "ipfw -n wrote "
+		    "back %d of the %d rules", k, n) : wtext(w, exec_error(w,
+		    &res, "ipfw -n"));
+		return (-1);
+	}
+	return (0);
+}
+
+/* ipfw reading its commands, a line each, from the script (ipfw -q). */
+static int
+ipfw_script(struct work *w, const char *script, const char **errp)
+{
+	struct execres	 res;
+	char		*argv[4];
+
+	argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
+	argv[1] = (char *)(uintptr_t)"-q";
+	argv[2] = (char *)(uintptr_t)"/dev/stdin";
+	argv[3] = NULL;
+	exec_set_stdin(script, strlen(script));
+	if (run_exec(w, scope_argv(w, argv), &res) != 0) {
+		*errp = scope_missing(w, &res, "ipfw", NULL);
+		if (*errp == NULL)
+			*errp = res.errlen > 0 ? wtext(w, wstrndup(w, res.err,
+			    strcspn(res.err, "\n"))) : wtext(w, exec_error(w,
+			    &res, "ipfw"));
+		return (-1);
+	}
+	return (0);
+}
+
+/*
+ * Which of a number's rules lv is the one of these words: the same
+ * text, or the same once ipfw -n has written them; with no words, or
+ * none the same, the number's only rule.  -1 and why when it cannot be
+ * told which.
+ */
+static int
+live_pick(struct work *w, long num, const struct liverule *lv, int nl,
+    const char *words, const char **errp)
+{
+	const char	*nw, *e;
+	int		 i;
+
+	if (nl <= 0) {
+		*errp = wfmt(w, "there is no rule %ld now", num);
+		return (-1);
+	}
+	if (words != NULL && words[0] != '\0') {
+		for (i = 0; i < nl; i++)
+			if (strcmp(lv[i].text, words) == 0)
+				return (i);
+		/* Words ipfw reads, and none of the rules: not this one. */
+		if (ipfw_norm(w, 1, &num, &words, &nw, &e) == 0) {
+			for (i = 0; i < nl; i++)
+				if (strcmp(lv[i].text, nw) == 0)
+					return (i);
+			*errp = wfmt(w, "%s rule %ld now has these words: "
+			    "nothing was changed", nl == 1 ? "the" : "no",
+			    num);
+			if (nl == 1)
+				*errp = wfmt(w, "rule %ld now is \"%s\", not "
+				    "these words: nothing was changed", num,
+				    lv[0].text);
+			return (-1);
+		}
+	}
+	/* No words, or words ipfw cannot read here (aliases): the only
+	 * rule of the number. */
+	if (nl == 1)
+		return (0);
+	*errp = words != NULL && words[0] != '\0' ? wfmt(w, "%d rules %ld "
+	    "now, none of them these words: nothing was changed", nl, num) :
+	    wfmt(w, "%d rules %ld now: say which, by its words; nothing was "
+	    "changed", nl, num);
+	return (-1);
+}
+
+/* lv's rules as an ipfw script's add lines, at num. */
+static size_t
+add_lines(char *buf, size_t len, long num, const struct liverule *lv,
+    int nl, int skip)
+{
+	size_t	off;
+	int	i;
+
+	off = 0;
+	for (i = 0; i < nl; i++)
+		if (i != skip)
+			off += (size_t)snprintf(buf + off, len > off ? len - off :
+			    0, "add %ld %s\n", num, lv[i].text);
+	return (off);
+}
+
+/*
+ * At num, set 0's rules lv become lv but drop (-1: none dropped), and
+ * words are added at to (words NULL: none).  Checked whole by ipfw -n
+ * first; then one script: the number deleted, the others added again,
+ * the new one last.  If the kernel refuses a line after all, the
+ * number's rules are put back as they were listed.
+ */
+static int
+live_redo(struct work *w, long num, const struct liverule *lv, int nl,
+    int drop, long to, const char *words, const char **errp)
+{
+	long		*nums;
+	const char	**texts, **out, *e, *e2;
+	char		*script, *back;
+	size_t		 len, off;
+	int		 i, n;
+
+	nums = wcalloc(w, (size_t)nl + 2, sizeof(*nums));
+	texts = wcalloc(w, (size_t)nl + 2, sizeof(*texts));
+	out = wcalloc(w, (size_t)nl + 2, sizeof(*out));
+	n = 0;
+	len = 64;
+	for (i = 0; i < nl; i++) {
+		len += strlen(lv[i].text) + 24;
+		if (i == drop)
+			continue;
+		nums[n] = num;
+		texts[n++] = lv[i].text;
+	}
+	if (words != NULL) {
+		nums[n] = to;
+		texts[n++] = words;
+		len += strlen(words) + 24;
+	}
+	if (ipfw_norm(w, n, nums, texts, out, &e) != 0) {
+		*errp = wfmt(w, "ipfw does not take %s, so nothing was "
+		    "changed: %s", words != NULL ? "the rule" : "the rules left",
+		    e);
+		return (-1);
+	}
+	if (len > SCRIPT_MAX) {
+		*errp = wfmt(w, "rule %ld has too many rules to change at once",
+		    num);
+		return (-1);
+	}
+	script = wcalloc(w, len, 1);
+	off = 0;
+	if (nl > 0)
+		off += (size_t)snprintf(script, len, "set 0 delete %ld\n", num);
+	off += add_lines(script + off, len - off, num, lv, nl, drop);
+	if (words != NULL)
+		off += (size_t)snprintf(script + off, len - off, "add %ld %s\n",
+		    to, words);
+	if (ipfw_script(w, script, &e) == 0)
+		return (0);
+	if (nl == 0) {
+		*errp = wfmt(w, "ipfw did not take it: %s", e);
+		return (-1);
+	}
+	/* As they were: the number emptied, its rules added again. */
+	back = wcalloc(w, len, 1);
+	off = (size_t)snprintf(back, len, "set 0 delete %ld\n", num);
+	(void)add_lines(back + off, len - off, num, lv, nl, -1);
+	if (ipfw_script(w, back, &e2) != 0)
+		*errp = wtext(w, wfmt(w, "ipfw did not take it: %s; and rule "
+		    "%ld could not be put back as it was (%s): its rules were: "
+		    "%s", e, num, e2, back + strcspn(back, "\n") + 1));
+	else
+		*errp = wtext(w, wfmt(w, "ipfw did not take it: %s; rule %ld "
+		    "was put back as it was", e, num));
+	return (-1);
+}
+
+/*
+ * Set 0's rules of from moved to to, which has none: added there first,
+ * then from deleted, so there is no moment without them; if the kernel
+ * refuses a line, to is emptied again and from is as it was.
+ */
+static int
+live_move(struct work *w, long from, long to, const struct liverule *lv,
+    int nl, const char **errp)
+{
+	long		*nums;
+	const char	**texts, **out, *e, *e2;
+	char		*script;
+	size_t		 len, off;
+	int		 i;
+
+	nums = wcalloc(w, (size_t)nl + 1, sizeof(*nums));
+	texts = wcalloc(w, (size_t)nl + 1, sizeof(*texts));
+	out = wcalloc(w, (size_t)nl + 1, sizeof(*out));
+	len = 64;
+	for (i = 0; i < nl; i++) {
+		nums[i] = to;
+		texts[i] = lv[i].text;
+		len += strlen(lv[i].text) + 24;
+	}
+	if (ipfw_norm(w, nl, nums, texts, out, &e) != 0) {
+		*errp = wfmt(w, "ipfw does not take rule %ld at %ld, so nothing "
+		    "was changed: %s", from, to, e);
+		return (-1);
+	}
+	if (len > SCRIPT_MAX) {
+		*errp = wfmt(w, "rule %ld has too many rules to move at once",
+		    from);
+		return (-1);
+	}
+	script = wcalloc(w, len, 1);
+	off = add_lines(script, len, to, lv, nl, -1);
+	(void)snprintf(script + off, len - off, "set 0 delete %ld\n", from);
+	if (ipfw_script(w, script, &e) == 0)
+		return (0);
+	if (ipfw_script(w, wfmt(w, "set 0 delete %ld\n", to), &e2) != 0)
+		*errp = wtext(w, wfmt(w, "ipfw did not take it: %s; and %ld, "
+		    "where rule %ld was being copied, could not be emptied "
+		    "again (%s): look at both", e, to, from, e2));
+	else
+		*errp = wtext(w, wfmt(w, "ipfw did not take it: %s; rule %ld "
+		    "is as it was", e, from));
+	return (-1);
+}
+
+/* ---- The kept rules, one by one -------------------------------------- */
+
+/* The kept file's lines, in order; how many.  NULL text: none. */
+static int
+kept_lines(struct work *w, char *text, char ***linesp)
+{
+	char	**v, *p, *line;
+	int	  n, cap;
+
+	n = 0;
+	cap = 1;
+	for (p = text; p != NULL && *p != '\0'; p++)
+		if (*p == '\n')
+			cap++;
+	v = wcalloc(w, (size_t)cap + 1, sizeof(*v));
+	p = text;
+	while (p != NULL && *p != '\0' && (line = strsep(&p, "\n")) != NULL &&
+	    n < cap)
+		v[n++] = line;
+	*linesp = v;
+	return (n);
+}
+
+/*
+ * The kept rule of a number with these words: its line's place among
+ * lines, and the place of its own words' line just before it (-1 for
+ * none).  *atp -1 when the number has no kept rule.  The same words, as
+ * kept or as their own, or the same once ipfw -n has written both, or
+ * the number's only rule; -1 and why when several are kept and it
+ * cannot be told which.
+ */
+static int
+kept_pick(struct work *w, char **lines, int nlines, long num,
+    const char *words, int *atp, int *srcp, const char **errp)
+{
+	const char	*rest, *nw, *e, *at_rest[64], **out;
+	long		 n, nums[64];
+	int		 i, at[64], nat;
+
+	*atp = *srcp = -1;
+	nat = 0;
+	for (i = 0; i < nlines && nat < (int)nitems(at); i++)
+		if (kept_rule(lines[i], &n, &rest) && n == num) {
+			at_rest[nat] = rest;
+			at[nat++] = i;
+		}
+	if (nat == 0)
+		return (0);
+#define	SRC_OF(k)	(at[k] > 0 && src_rule(lines[at[k] - 1], &n, &rest) && \
+	    n == num ? at[k] - 1 : -1)
+	if (words != NULL && words[0] != '\0') {
+		for (i = 0; i < nat; i++)
+			if (strcmp(at_rest[i], words) == 0 || (SRC_OF(i) >= 0 &&
+			    src_rule(lines[SRC_OF(i)], &n, &rest) && strcmp(rest,
+			    words) == 0))
+				goto found;
+		/* As ipfw writes them: words and the kept lines alike. */
+		out = wcalloc(w, (size_t)nat + 1, sizeof(*out));
+		for (i = 0; i < nat; i++)
+			nums[i] = num;
+		if (ipfw_norm(w, 1, &num, &words, &nw, &e) == 0 &&
+		    ipfw_norm(w, nat, nums, at_rest, out, &e) == 0) {
+			for (i = 0; i < nat; i++)
+				if (strcmp(out[i], nw) == 0)
+					goto found;
+			/* Words ipfw reads, and none of the kept rules. */
+			*errp = wfmt(w, "no kept rule %ld has these words: "
+			    "nothing was changed", num);
+			return (-1);
+		}
+	}
+	if (nat == 1) {
+		i = 0;
+		goto found;
+	}
+	*errp = words != NULL && words[0] != '\0' ? wfmt(w, "%d kept rules "
+	    "%ld, none of them these words: nothing was changed", nat, num) :
+	    wfmt(w, "%d kept rules %ld: say which, by its words; nothing was "
+	    "changed", nat, num);
+	return (-1);
+found:
+	*atp = at[i];
+	*srcp = SRC_OF(i);
+#undef	SRC_OF
+	return (0);
+}
+
+/*
+ * One kept rule of a number taken out of the kept file, picked as
+ * kept_pick does, with its own words' line; with dry, only whether it
+ * can be told.  0 when the number has no kept rule too.
+ */
+static int
+kept_drop_one(struct work *w, long num, const char *words, bool dry,
+    const char **errp)
+{
+	char	*old, *out, **lines;
+	size_t	 oldlen, len;
+	int	 nl, i, at, src, rc;
+
+	pthread_mutex_lock(&file_lock);
+	if ((old = file_read(w, &oldlen)) == NULL) {
+		rc = errno == ENOENT ? 0 : -1;
+		if (rc != 0)
+			*errp = wfmt(w, "%s: %s", opts.ipfw_rules,
+			    strerror(errno));
+		pthread_mutex_unlock(&file_lock);
+		return (rc);
+	}
+	nl = kept_lines(w, old, &lines);
+	if (kept_pick(w, lines, nl, num, words, &at, &src, errp) != 0) {
+		pthread_mutex_unlock(&file_lock);
+		return (-1);
+	}
+	if (at < 0 || dry) {
+		pthread_mutex_unlock(&file_lock);
+		return (0);
+	}
+	out = wcalloc(w, oldlen + 2, 1);
+	len = 0;
+	for (i = 0; i < nl; i++)
+		if (i != at && i != src)
+			len += (size_t)snprintf(out + len, oldlen + 2 - len,
+			    "%s\n", lines[i]);
+	rc = file_write(w, out, len, errp);
+	pthread_mutex_unlock(&file_lock);
+	return (rc);
+}
+
+/*
+ * The kept rules of one number given another, which has none (with
+ * their own words' lines); their place in the file moves with the
+ * number, so the file stays in the order of the numbers.
+ */
+static int
+kept_renumber(struct work *w, long from, long to, const char **errp)
+{
+	char		*old, *out, **lines, *moved;
+	const char	*rest;
+	size_t		 oldlen, len, mlen, cap;
+	long		 n;
+	int		 nl, i;
+	bool		 put;
+	int		 rc;
+
+	pthread_mutex_lock(&file_lock);
+	if ((old = file_read(w, &oldlen)) == NULL) {
+		rc = errno == ENOENT ? 0 : -1;
+		if (rc != 0)
+			*errp = wfmt(w, "%s: %s", opts.ipfw_rules,
+			    strerror(errno));
+		pthread_mutex_unlock(&file_lock);
+		return (rc);
+	}
+	nl = kept_lines(w, old, &lines);
+	for (i = 0; i < nl; i++)
+		if (kept_rule(lines[i], &n, &rest) && n == to) {
+			*errp = wfmt(w, "kept rule %ld is there already: it is "
+			    "moved first", to);
+			pthread_mutex_unlock(&file_lock);
+			return (-1);
+		}
+	cap = oldlen + 64;
+	moved = wcalloc(w, cap, 1);
+	mlen = 0;
+	for (i = 0; i < nl; i++) {
+		if (src_rule(lines[i], &n, &rest) && n == from)
+			mlen += (size_t)snprintf(moved + mlen, cap - mlen,
+			    "#arcana add %05ld %s\n", to, rest);
+		else if (kept_rule(lines[i], &n, &rest) && n == from)
+			mlen += (size_t)snprintf(moved + mlen, cap - mlen,
+			    "add %05ld %s\n", to, rest);
+	}
+	out = wcalloc(w, oldlen + mlen + 2, 1);
+	len = 0;
+	put = mlen == 0;
+	for (i = 0; i < nl; i++) {
+		if ((src_rule(lines[i], &n, &rest) || kept_rule(lines[i], &n,
+		    &rest)) && n == from)
+			continue;
+		if (!put && (kept_rule(lines[i], &n, &rest) || src_rule(
+		    lines[i], &n, &rest)) && n > to) {
+			len += (size_t)snprintf(out + len, oldlen + mlen + 2 -
+			    len, "%s", moved);
+			put = true;
+		}
+		len += (size_t)snprintf(out + len, oldlen + mlen + 2 - len,
+		    "%s\n", lines[i]);
+	}
+	if (!put)
+		len += (size_t)snprintf(out + len, oldlen + mlen + 2 - len, "%s",
+		    moved);
+	rc = file_write(w, out, len, errp);
+	pthread_mutex_unlock(&file_lock);
+	return (rc);
 }
 
 /*
@@ -1296,13 +2172,6 @@ ipfw_title(const struct arc_job_spec *sp)
 static int
 kept_change_src(struct work *w, long num, const char *rule, const char *src,
     const char **errp);
-
-static int
-kept_change(struct work *w, long num, const char *rule, const char **errp)
-{
-
-	return (kept_change_src(w, num, rule, NULL, errp));
-}
 
 /* The same, the rule's own words with aliases kept before it. */
 static int
@@ -1325,6 +2194,60 @@ kept_change_src(struct work *w, long num, const char *rule, const char *src,
 	}
 	if (old == NULL)
 		old = wstrdup(w, "");
+	/*
+	 * The first rule kept, with no rule kept yet: the kernel's rules
+	 * are kept first, so that applying the kept rules keeps what the
+	 * host runs with, and does not take it all away for the one.
+	 */
+	if (rule != NULL && have()) {
+		struct liverule	*lv;
+		int		 nl, i;
+		bool		 any = false;
+
+		for (p = old; !any && p != NULL && *p != '\0';) {
+			line = p;
+			p = strchr(p, '\n');
+			if (p != NULL)
+				*p++ = '\0';
+			any = kept_rule(line, &n, &rest);
+			if (p != NULL)
+				p[-1] = '\n';
+		}
+		if (!any && (nl = live_rules(w, 0, &lv)) > 0) {
+			const char	*nr, *e;
+			char		*seed;
+			size_t		 slen, soff;
+			int		 same = -1;
+
+			/* The rule kept now may be in the kernel already
+			 * (added now and kept): not kept twice. */
+			for (i = 0; i < nl && same < 0; i++)
+				if (lv[i].num == num && strcmp(lv[i].text, rule) ==
+				    0)
+					same = i;
+			if (same < 0 && ipfw_norm(w, 1, &num, &rule, &nr, &e) ==
+			    0)
+				for (i = 0; i < nl && same < 0; i++)
+					if (lv[i].num == num && strcmp(lv[i].text,
+					    nr) == 0)
+						same = i;
+			slen = oldlen + 200;
+			for (i = 0; i < nl; i++)
+				slen += strlen(lv[i].text) + 16;
+			seed = wcalloc(w, slen, 1);
+			soff = (size_t)snprintf(seed, slen, "%s%s# The kernel's "
+			    "rules when the first rule was kept, by Arcana: "
+			    "the kept rules are the whole ruleset once applied.\n",
+			    old, oldlen > 0 && old[oldlen - 1] != '\n' ? "\n" : "");
+			for (i = 0; i < nl; i++)
+				if (i != same)
+					soff += (size_t)snprintf(seed + soff, slen -
+					    soff, "add %05ld %s\n", lv[i].num,
+					    lv[i].text);
+			old = seed;
+			oldlen = soff;
+		}
+	}
 	cap = oldlen + (rule != NULL ? strlen(rule) : 0) + (src != NULL ?
 	    strlen(src) : 0) + 128;
 	out = wcalloc(w, cap, 1);
@@ -1810,55 +2733,141 @@ kept_forget(struct work *w, const char *const words[], size_t n,
 	return (rc);
 }
 
-/* ipfw with argv's words after the ones given, in the jail's scope. */
+/*
+ * A rule deleted: of its number, the one of the words given, now and
+ * where it is kept; with no words, the number's only rule.  Which, on
+ * each side, is told before anything is touched.
+ */
 static int
-ipfw_words(struct work *w, const char **errp, const char *const *pre,
-    size_t npre, const char *const *words, size_t nwords)
+delete_one(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
-	struct execres	 res;
-	char		*argv[IPFW_WORDS + 8];
-	size_t		 i, n;
+	struct liverule	*lv;
+	const char	*words;
+	long		 num;
+	int		 nl, i;
 
-	n = 0;
-	argv[n++] = (char *)(uintptr_t)opts.ipfw_bin;
-	for (i = 0; i < npre && n < nitems(argv) - 1; i++)
-		argv[n++] = (char *)(uintptr_t)pre[i];
-	for (i = 0; i < nwords && n < nitems(argv) - 1; i++)
-		argv[n++] = (char *)(uintptr_t)words[i];
-	argv[n] = NULL;
-	if (run_exec(w, scope_argv(w, argv), &res) != 0) {
-		if (errp != NULL) {
-			*errp = scope_missing(w, &res, "ipfw", NULL);
-			if (*errp == NULL)
-				*errp = wtext(w, exec_error(w, &res, "ipfw"));
-		}
+	num = strtol(sp->names.v[0], NULL, 10);
+	words = sp->names.n > 1 ? join(w, (const char *const *)(uintptr_t)
+	    (sp->names.v + 1), sp->names.n - 1) : NULL;
+	if (sp->persist && kept_drop_one(w, num, words, true, errp) != 0)
 		return (-1);
+	nl = 0;
+	lv = NULL;
+	i = -1;
+	if (sp->live) {
+		if ((nl = live_rules(w, num, &lv)) < 0) {
+			*errp = "ipfw could not be asked for the rules";
+			return (-1);
+		}
+		if (nl == 0 && !sp->persist) {
+			*errp = wfmt(w, "there is no rule %ld now", num);
+			return (-1);
+		}
+		if (nl > 0 && (i = live_pick(w, num, lv, nl, words, errp)) < 0)
+			return (-1);
+	}
+	if (sp->live && nl > 0 && live_redo(w, num, lv, nl, i, 0, NULL, errp) !=
+	    0)
+		return (-1);
+	if (sp->persist && kept_drop_one(w, num, words, false, errp) != 0)
+		return (-1);
+	return (0);
+}
+
+/*
+ * Rules given other numbers, pairs of from and to in the order given
+ * (the farthest first, when a run of them makes room for another).
+ * Planned whole first: each to must be free, now and kept, by the time
+ * it is reached, and each from be there; nothing is touched otherwise.
+ */
+static int
+renumber(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	struct liverule	*lv;
+	uint8_t		*live_at, *kept_at;
+	char		*text, **lines;
+	const char	*rest;
+	size_t		 i, len;
+	long		 from, to, n;
+	int		 nl, k;
+
+	live_at = wcalloc(w, 65536, 1);
+	kept_at = wcalloc(w, 65536, 1);
+	if (sp->live) {
+		if ((nl = live_rules(w, 0, &lv)) < 0) {
+			*errp = "ipfw could not be asked for the rules";
+			return (-1);
+		}
+		for (k = 0; k < nl; k++)
+			live_at[lv[k].num] = 1;
+	}
+	if (sp->persist) {
+		pthread_mutex_lock(&file_lock);
+		text = file_read(w, &len);
+		pthread_mutex_unlock(&file_lock);
+		nl = kept_lines(w, text, &lines);
+		for (k = 0; k < nl; k++)
+			if (kept_rule(lines[k], &n, &rest) && n > 0 && n < 65536)
+				kept_at[n] = 1;
+	}
+	for (i = 0; i + 1 < sp->names.n; i += 2) {
+		from = strtol(sp->names.v[i], NULL, 10);
+		to = strtol(sp->names.v[i + 1], NULL, 10);
+		if (!live_at[from] && !kept_at[from]) {
+			*errp = wfmt(w, "there is no rule %ld to move: nothing "
+			    "was changed", from);
+			return (-1);
+		}
+		if (live_at[to] || kept_at[to]) {
+			*errp = wfmt(w, "%ld has a rule by the time %ld is moved "
+			    "there: nothing was changed", to, from);
+			return (-1);
+		}
+		live_at[to] = live_at[from];
+		kept_at[to] = kept_at[from];
+		live_at[from] = kept_at[from] = 0;
+	}
+	for (i = 0; i + 1 < sp->names.n; i += 2) {
+		from = strtol(sp->names.v[i], NULL, 10);
+		to = strtol(sp->names.v[i + 1], NULL, 10);
+		if (sp->live) {
+			if ((nl = live_rules(w, from, &lv)) < 0) {
+				*errp = "ipfw could not be asked for the rules";
+				return (-1);
+			}
+			if (nl > 0 && live_move(w, from, to, lv, nl, errp) != 0) {
+				if (i > 0)
+					*errp = wfmt(w, "%s (the moves before it "
+					    "were done)", *errp);
+				return (-1);
+			}
+		}
+		if (sp->persist && kept_renumber(w, from, to, errp) != 0)
+			return (-1);
 	}
 	return (0);
 }
 
 /*
- * A rule changed as one: the new one read by ipfw without being done
- * (ipfw -n) before anything is touched; then the rules of the old
- * number deleted and the new one added; and if ipfw does not take it
- * after all, the old ones put back as ipfw listed them.  Kept, the
- * kept file's lines of the old number go and the new one comes.
+ * A rule changed as one: of the old number, the rule of the words it
+ * had (text; with none, the number's only rule) goes and the new one
+ * comes, the others of that number staying; ipfw -n reads them all
+ * before anything is touched, and the number is put back as it was
+ * listed if the kernel does not take it after all.  Kept, that one
+ * line goes and the new one comes.
  */
 static int
 replace(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
-	const char *const	 pre_n[] = { "-q", "-n", "add" };
-	const char *const	 pre_add[] = { "-q", "add" };
-	struct execres		 res;
-	const char		**words, *e;
-	char			*argv[5], *text, *p, *line, *rule, *wp, *wd, *src;
-	const char		*oldv[IPFW_WORDS + 2];
-	size_t			 i, len, nw, no;
-	bool			 had;
+	struct liverule		*lv;
+	const char		**words;
+	char			*rule, *src;
+	size_t			 i, nw;
+	long			 old;
+	int			 nl, k;
 
 	words = (const char **)(uintptr_t)(sp->names.v + 1);
 	nw = sp->names.n - 1;
-	text = NULL;
 	src = NULL;
 	/* $aliases put in, the rule's own words kept beside. */
 	if (uses_alias(words + 1, nw - 1)) {
@@ -1875,54 +2884,29 @@ replace(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		for (i = 1; i < nw; i++)
 			words[i] = ex[i - 1];
 	}
+	old = strtol(sp->names.v[0], NULL, 10);
+	rule = join(w, words + 1, nw - 1);
+	/* Which rule of the old number, on each side, before anything is
+	 * touched: the one of the words it had (text), or its only one. */
+	if (sp->persist && kept_drop_one(w, old, sp->text, true, errp) != 0)
+		return (-1);
 	if (sp->live) {
-		if (ipfw_words(w, errp, pre_n, nitems(pre_n), words, nw) != 0) {
-			*errp = wfmt(w, "ipfw does not take the new rule, so "
-			    "nothing was changed: %s", *errp);
+		if ((nl = live_rules(w, old, &lv)) < 0) {
+			*errp = "ipfw could not be asked for the rules";
 			return (-1);
 		}
-		/* The old number's rules, as ipfw lists them. */
-		argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
-		argv[1] = (char *)(uintptr_t)"list";
-		argv[2] = (char *)(uintptr_t)sp->names.v[0];
-		argv[3] = NULL;
-		had = run_exec(w, scope_argv(w, argv), &res) == 0 && res.out !=
-		    NULL && res.outlen > 0;
-		if (had)
-			text = wstrndup(w, res.out, res.outlen);
-		if (had && ipfw(w, errp, true, "delete", sp->names.v[0], NULL) !=
+		k = -1;
+		if (nl > 0 && (k = live_pick(w, old, lv, nl, sp->text, errp)) <
 		    0)
 			return (-1);
-		if (ipfw_words(w, errp, pre_add, nitems(pre_add), words, nw) !=
-		    0) {
-			e = *errp;
-			for (p = text; p != NULL && (line = strsep(&p, "\n")) !=
-			    NULL;) {
-				if (!isdigit((unsigned char)line[0]))
-					continue;
-				no = 0;
-				oldv[no++] = sp->names.v[0];
-				wp = line + strcspn(line, " ");
-				while ((wd = strsep(&wp, " ")) != NULL && no <
-				    nitems(oldv) - 1)
-					if (*wd != '\0')
-						oldv[no++] = wd;
-				(void)ipfw_words(w, NULL, pre_add, nitems(pre_add),
-				    oldv, no);
-			}
-			*errp = wfmt(w, "ipfw did not take the new rule: %s; the "
-			    "one before was put back", e);
-			return (-1);
-		}
-	}
-	if (sp->persist) {
-		rule = join(w, words + 1, nw - 1);
-		(void)len;
-		if (kept_change(w, strtol(sp->names.v[0], NULL, 10), NULL,
-		    errp) != 0 || kept_change_src(w, strtol(sp->names.v[1],
-		    NULL, 10), rule, src, errp) != 0)
+		if (live_redo(w, old, lv, nl, k, strtol(sp->names.v[1], NULL,
+		    10), rule, errp) != 0)
 			return (-1);
 	}
+	if (sp->persist && (kept_drop_one(w, old, sp->text, false, errp) !=
+	    0 || kept_change_src(w, strtol(sp->names.v[1], NULL, 10), rule,
+	    src, errp) != 0))
+		return (-1);
 	return (0);
 }
 
@@ -1968,8 +2952,9 @@ alias_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	long		 num;
 	bool		 del, addr, named;
 	struct {
-		long	 num;
-		char	*rule;
+		long		 num;
+		char		*rule;
+		const char	*was;	/* as it was put in before, or NULL */
 	}		 redo[512];
 	size_t		 nredo = 0;
 
@@ -2080,18 +3065,38 @@ alias_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 			continue;
 		redo[nredo].num = num;
 		redo[nredo].rule = join(w, e, nv);
+		redo[nredo].was = NULL;
+		/* Its words as the file had them put in before: the rule
+		 * the kernel has now, to be told from another of its
+		 * number. */
+		{
+			char		**ol;
+			const char	 *orest, *krest;
+			long		  on, kn;
+			int		  nol, j;
+
+			nol = kept_lines(w, wstrdup(w, text), &ol);
+			for (j = 0; j + 1 < nol; j++)
+				if (src_rule(ol[j], &on, &orest) && on == num &&
+				    strcmp(orest, rest) == 0 && kept_rule(ol[j + 1],
+				    &kn, &krest) && kn == num) {
+					redo[nredo].was = krest;
+					break;
+				}
+		}
 		nredo++;
 	}
+	/* Now too: each rule that names it, in the kernel, is put in again
+	 * from its words; one that is not loaded now stays so. */
 	for (i = 0; i < nredo; i++) {
-		const char	*pre[] = { "-q", "add" };
-		const char	*wv[IPFW_WORDS + 1];
-		char		 nb[16];
+		struct liverule	*lv;
+		int		 nl, pick;
 
-		snprintf(nb, sizeof(nb), "%ld", redo[i].num);
-		(void)ipfw(w, NULL, true, "delete", nb, NULL);
-		wv[0] = wstrdup(w, nb);
-		nv = split(w, redo[i].rule, wv + 1, nitems(wv) - 1);
-		if (ipfw_words(w, errp, pre, nitems(pre), wv, nv + 1) != 0)
+		if ((nl = live_rules(w, redo[i].num, &lv)) <= 0)
+			continue;
+		if ((pick = live_pick(w, redo[i].num, lv, nl, redo[i].was,
+		    errp)) < 0 || live_redo(w, redo[i].num, lv, nl, pick,
+		    redo[i].num, redo[i].rule, errp) != 0)
 			return (-1);
 	}
 	return (0);
@@ -2162,15 +3167,10 @@ do_ipfw_job(struct work *w, const struct arc_job_spec *sp, bool *heldp,
 	}
 	if (strcmp(verb, "replace") == 0)
 		return (replace(w, sp, errp));
-	if (strcmp(verb, "delete") == 0) {
-		if (sp->live && ipfw(w, errp, true, "delete", sp->names.v[0],
-		    NULL) != 0)
-			return (-1);
-		if (sp->persist && kept_change(w, strtol(sp->names.v[0], NULL,
-		    10), NULL, errp) != 0)
-			return (-1);
-		return (0);
-	}
+	if (strcmp(verb, "delete") == 0)
+		return (delete_one(w, sp, errp));
+	if (strcmp(verb, "renumber") == 0)
+		return (renumber(w, sp, errp));
 	if (strcmp(verb, "apply") == 0) {
 		if (apply(w, sp->safe, errp) != 0)
 			return (-1);
@@ -2252,14 +3252,35 @@ do_ipfw_job(struct work *w, const struct arc_job_spec *sp, bool *heldp,
 const char *
 ipfw_unadd(struct work *w, const struct arc_job_spec *sp)
 {
-	const char	*e;
+	struct liverule	 *lv;
+	const char	**words, *e, *src, *rule;
+	long		  num;
+	size_t		  i;
+	int		  nl, k;
 
 	e = NULL;
-	if (sp->live)
-		(void)ipfw(w, &e, true, "delete", sp->names.v[0], NULL);
+	num = strtol(sp->names.v[0], NULL, 10);
+	words = (const char **)(uintptr_t)(sp->names.v + 1);
+	src = join(w, words, sp->names.n - 1);
+	rule = src;
+	/* As it was added: its aliases put in. */
+	if (uses_alias(words, sp->names.n - 1)) {
+		struct alias	a[ALIAS_MAX];
+		const char	**x;
+		size_t		 na;
+
+		na = aliases_now(w, a, nitems(a));
+		if ((x = expand(w, a, na, words, sp->names.n - 1, &e)) != NULL)
+			rule = join(w, x, sp->names.n - 1);
+		e = NULL;
+	}
+	(void)i;
+	/* That rule alone: another of its number stays. */
+	if (sp->live && (nl = live_rules(w, num, &lv)) > 0 && (k = live_pick(w,
+	    num, lv, nl, rule, &e)) >= 0)
+		(void)live_redo(w, num, lv, nl, k, 0, NULL, &e);
 	if (sp->persist)
-		(void)kept_change(w, strtol(sp->names.v[0], NULL, 10), NULL,
-		    &e);
+		(void)kept_drop_one(w, num, src, false, &e);
 	return (e);
 }
 

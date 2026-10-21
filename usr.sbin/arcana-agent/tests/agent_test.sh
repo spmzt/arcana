@@ -11,6 +11,14 @@
 
 # Programs next to the tests in the build tree, else the configuration
 # variables arcana-agent and arcanactl, else the installed ones.
+# Does the kernel have SCTP: compiled in (kern.features.sctp) or the
+# module loaded.
+has_sctp()
+{
+	[ "$(sysctl -n kern.features.sctp 2>/dev/null)" = 1 ] ||
+	    kldstat -q -m sctp 2>/dev/null
+}
+
 programs()
 {
 	JGD="$(atf_get_srcdir)/../arcana-agent"
@@ -3674,11 +3682,26 @@ EOF
 	atf_check -o match:'^-rw-------' ls -l smtpd.d/credentials
 	atf_check -o match:'^encrypt  <hunter2$' -o not-match:'already' cat encrypt.log
 	atf_check -o match:'"credentials":\["alice","bob"\]' -o not-match:'hunter2' -o not-match:'hashOf' "$JGC" -c "$SOCK" smtpd
+	# One entry at a time: a user added, another's password changed,
+	# the rest kept; one taken out; a key not there refused.
+	printf 'carol pw3\nalice newpass\n' > c2.txt
+	atf_check -o match:'done +smtpd entry credentials' -o not-match:'pw3' "$JGC" -t -c "$SOCK" smtpd entry credentials c2.txt
+	atf_check -o inline:'bob\t$6$kept$already\ncarol\t$6$fake$hashOf$1\nalice\t$6$fake$hashOf$1\n' cat smtpd.d/credentials
+	atf_check -o match:'^-rw-------' ls -l smtpd.d/credentials
+	atf_check -o match:'done +smtpd unentry credentials' "$JGC" -c "$SOCK" smtpd unentry credentials bob
+	atf_check -o inline:'carol\t$6$fake$hashOf$1\nalice\t$6$fake$hashOf$1\n' cat smtpd.d/credentials
+	atf_check -s exit:1 -o match:'credentials has no entry nosuch' "$JGC" -c "$SOCK" smtpd unentry credentials nosuch
+	printf 'postmaster: root\n' > a2.txt
+	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd entry aliases a2.txt
+	atf_check -o inline:'root: admin@example.org\npostmaster: root\n' cat smtpd.d/aliases
+	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd unentry aliases root
+	atf_check -o inline:'postmaster: root\n' cat smtpd.d/aliases
+	printf 'root: admin@example.org\n' > smtpd.d/aliases
 	printf 'relay user@example.net:s3cret\n' > secrets.txt
 	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd table secrets secrets.txt
 	atf_check -o match:'^-rw-------' ls -l smtpd.d/secrets
 	atf_check -o match:'"secrets":\["relay"\]' -o not-match:'s3cret' "$JGC" -c "$SOCK" smtpd
-	atf_check -s exit:1 -e match:'one of aliases' -o ignore "$JGC" -c "$SOCK" smtpd table nosuch aliases.txt
+	atf_check -s exit:1 -o match:'smtpd.conf declares no table nosuch' "$JGC" -c "$SOCK" smtpd table nosuch aliases.txt
 	# Enabled and started; then the read asks smtpd itself: its status,
 	# counters and queue, as smtpctl prints them.
 	atf_check -o match:'done +smtpd enable' "$JGC" -c "$SOCK" smtpd enable yes
@@ -3706,6 +3729,56 @@ EOF
 	atf_check -o match:'done +smtpd enable' "$JGC" -c "$SOCK" smtpd enable no
 	atf_check -o match:'^smtpd_enable="NO"$' cat rc.conf
 	test -f running.smtpd && atf_fail "smtpd was not stopped"
+	# The admin's own smtpd.conf, its tables at their own paths and of
+	# their own backends: read as it declares them, the users of an
+	# auth table and of a passwd table by name alone; entries put in
+	# and taken out where they are, a passwd user's other fields and
+	# its hash's {SCHEME} kept; the form refused over it, the text
+	# checked and put in place with the one before kept.
+	mkdir -p own
+	printf 'root: admin@example.org\n' > own/aliases
+	printf 'carol:{SHA512-CRYPT}$6$old$hash:1001:1001::/var/vmail/carol:/usr/sbin/nologin\ndave:{SHA512-CRYPT}$6$d$h:1001:1001::/var/vmail/dave:/usr/sbin/nologin\n' > own/passwd
+	chmod 640 own/passwd
+	printf 'relay user@example.net:pw\n' > own/secrets
+	cat > smtpd.conf <<EOS
+# the admin's own
+table aliases file:$(pwd)/own/aliases
+table passwd passwd:$(pwd)/own/passwd
+table secrets $(pwd)/own/secrets
+table big db:$(pwd)/own/big.db
+table inl { a.example, b.example }
+listen on lo0 port submission auth <passwd>
+action "out" relay host smtp+tls://relay@smtp.example.net:587 auth <secrets>
+EOS
+	atf_check -o match:'"conf_arcana":false' \
+	    -o match:'"conf_tables":\[\{"name":"aliases","backend":"file","path":"[^"]*own/aliases","kind":"","secret":false,"editable":true,"entries":\[\{"key":"root","value":"admin@example.org"\}\]\}' \
+	    -o match:'\{"name":"passwd","backend":"passwd","path":"[^"]*own/passwd","kind":"auth","secret":true,"editable":true,"entries":\[\{"key":"carol"\},\{"key":"dave"\}\]\}' \
+	    -o match:'\{"name":"secrets","backend":"file","path":"[^"]*own/secrets","kind":"relay","secret":true' \
+	    -o match:'\{"name":"big","backend":"db","path":"[^"]*own/big.db","kind":"","secret":false,"editable":false\}' \
+	    -o not-match:'"name":"inl"' -o not-match:'old\$hash' -o not-match:'user@example.net:pw' \
+	    "$JGC" -c "$SOCK" smtpd
+	printf 'carol newpass\nerin pw5\n' > pw.txt
+	atf_check -o match:'done +smtpd entry passwd' -o not-match:'newpass' "$JGC" -t -c "$SOCK" smtpd entry passwd pw.txt
+	atf_check -o inline:'dave:{SHA512-CRYPT}$6$d$h:1001:1001::/var/vmail/dave:/usr/sbin/nologin\ncarol:{SHA512-CRYPT}$6$fake$hashOf$1:1001:1001::/var/vmail/carol:/usr/sbin/nologin\nerin:{SHA512-CRYPT}$6$fake$hashOf$1:::::\n' cat own/passwd
+	atf_check -o match:'^-rw-r-----' ls -l own/passwd
+	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd unentry passwd dave
+	atf_check -o not-match:'^dave:' cat own/passwd
+	printf 'postmaster: root\n' > a3.txt
+	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd entry aliases a3.txt
+	atf_check -o inline:'root: admin@example.org\npostmaster: root\n' cat own/aliases
+	atf_check -s exit:1 -o match:'made the admin.s way' "$JGC" -c "$SOCK" smtpd entry big a3.txt
+	atf_check -s exit:1 -o match:'is not Arcana.s' "$JGC" -c "$SOCK" smtpd conf form.json
+	atf_check -o match:'^# the admin.s own$' cat smtpd.conf
+	cp smtpd.conf mine.conf
+	printf 'listen on lo0 port 2525\n' >> mine.conf
+	atf_check -o match:'done +smtpd conf-text check' "$JGC" -c "$SOCK" smtpd conf-text check mine.conf
+	atf_check -o not-match:'2525' cat smtpd.conf
+	atf_check -o match:'done +smtpd conf-text' "$JGC" -c "$SOCK" smtpd conf-text mine.conf
+	atf_check -o match:'port 2525' cat smtpd.conf
+	atf_check -o match:'^# the admin.s own$' -o not-match:'2525' cat smtpd.conf.arcana-old
+	printf '# BROKEN\n' > broken.conf
+	atf_check -s exit:1 -o match:'smtpd does not take it' "$JGC" -c "$SOCK" smtpd conf-text broken.conf
+	atf_check -o match:'port 2525' cat smtpd.conf
 	# A jail's, with or without a network of its own: entered first
 	# (none runs here); never safe.
 	atf_check -s exit:1 -e match:'the jail web is not running' -o ignore "$JGC" -j web -c "$SOCK" smtpd
@@ -3889,6 +3962,44 @@ EOS
 	atf_check -o match:'^kern_securelevel="2"$' -o match:'^kern_securelevel_enable="YES"$' cat rc.conf
 	atf_check -s exit:1 -e match:'rc sets kern_securelevel_enable' "$JGC" -c "$SOCK" sysfile rc sshd_enable=YES
 	atf_check -s exit:1 -e match:'kern_securelevel=-1 to 3' "$JGC" -c "$SOCK" sysfile rc kern_securelevel=7
+	# dma(8): its smart host, port, TLS and sign-in, dma.conf's keys of
+	# these alone (the admin's other lines kept), the sign-in a line of
+	# auth.conf for that host, root's and mail's alone; the password
+	# never read back; a user kept with no password given keeps it.
+	mkdir -p root/etc/dma
+	printf '# the admin'"'"'s\nMASQUERADE arcana@example.org\nSMARTHOST old.example.net\nPORT 25\n' > root/etc/dma/dma.conf
+	printf 'other|elsewhere.example.net:keepme\n' > root/etc/dma/auth.conf
+	atf_check -o match:"done +dma's smart host written" env ARCANA_DMA_PASSWORD='s3cret:x' \
+	    "$JGC" -c "$SOCK" sysfile dma smarthost=smtp.example.net port=587 tls=starttls user=alerts@example.net
+	atf_check -o inline:"# the admin's
+MASQUERADE arcana@example.org
+# The smart host, set by Arcana:
+SMARTHOST smtp.example.net
+PORT 587
+SECURETRANSFER
+STARTTLS
+AUTHPATH /etc/dma/auth.conf
+" cat root/etc/dma/dma.conf
+	atf_check -o inline:'other|elsewhere.example.net:keepme\nalerts@example.net|smtp.example.net:s3cret:x\n' cat root/etc/dma/auth.conf
+	atf_check -o match:'^-rw-r-----' ls -l root/etc/dma/auth.conf
+	atf_check -o match:'"dma":\{"conf_path":"/etc/dma/dma.conf","smarthost":"smtp.example.net","port":"587","tls":"starttls","user":"alerts@example.net","password_set":true\}' \
+	    -o not-match:'s3cret' "$JGC" -c "$SOCK" system host
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sysfile dma smarthost=smtp.example.net port=465 tls=tls user=alerts@example.net
+	atf_check -o match:'s3cret:x' cat root/etc/dma/auth.conf
+	atf_check -o match:'^PORT 465$' -o match:'^SECURETRANSFER$' -o not-match:'STARTTLS' cat root/etc/dma/dma.conf
+	atf_check -s exit:1 -o match:'a password for bob at smtp.example.net is needed' \
+	    "$JGC" -c "$SOCK" sysfile dma smarthost=smtp.example.net user=bob
+	# No sign-in, then no smart host: delivered straight, the admin's
+	# lines and the other host's sign-in kept.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sysfile dma smarthost=smtp.example.net user=
+	atf_check -o inline:'other|elsewhere.example.net:keepme\n' cat root/etc/dma/auth.conf
+	atf_check -o not-match:'AUTHPATH' cat root/etc/dma/dma.conf
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sysfile dma smarthost=
+	atf_check -o inline:"# the admin's
+MASQUERADE arcana@example.org
+" cat root/etc/dma/dma.conf
+	atf_check -s exit:1 -e match:'smarthost is a host' "$JGC" -c "$SOCK" sysfile dma smarthost='a;b'
+	atf_check -s exit:1 -e match:'tls is none' "$JGC" -c "$SOCK" sysfile dma smarthost=x.example tls=maybe
 	# GEOM's classes loaded, their status; a class's command; GELI's
 	# passphrase by a file of its own, gone after.
 	atf_check -o match:'"geom_classes":\{"mirror":"Name Status Components\\nmirror/gm0 COMPLETE md1\\n"\}' \
@@ -4318,6 +4429,8 @@ EOS
 		sleep 0.1
 	done
 	atf_check -o match:'^kldload -n sctp$' cat kld.log
+	# The module in already (kldstat -m: compiled in is no module to
+	# unload, and the fake loads nothing), the agent leaves it.
 	if kldstat -q -m sctp 2>/dev/null; then
 		atf_check -o not-match:'kldunload' cat kld.log
 	else
@@ -4394,7 +4507,7 @@ b"
 	    -o match:'"sessions":\[\{"transport":"unix"' \
 	    -o match:'"seen":[0-9]+' "$JGC" -c "$SOCK" transport
 	# SCTP is tried again only where the kernel has it.
-	if kldstat -q -m sctp 2>/dev/null; then
+	if has_sctp; then
 		atf_check -o match:'"sctp":true' "$JGC" -c "$SOCK" transport retry
 	else
 		atf_check -s exit:1 -e match:'load the sctp module first' \
@@ -4915,8 +5028,18 @@ firewall_aliases_head()
 }
 firewall_aliases_body()
 {
-	printf '#!/bin/sh\necho "ipfw $*" >> %s/ipfw.log\nexit 0\n' "$(pwd)" \
-	    > fake-ipfw
+	# Rule 1000 is in the kernel's set 0; scripts are logged.
+	cat > fake-ipfw <<EOS
+#!/bin/sh
+echo "ipfw \$*" >> $(pwd)/ipfw.log
+case "\$*" in
+"-S list 1000") echo "01000 set 0 allow tcp from table(lan) to me 80,443 in via vtnet0" ;;
+"-S list "*) echo "ipfw: rule \$3 does not exist" >&2 ;;
+"-n /dev/stdin") sed -e 's/^add //' ;;
+"-q /dev/stdin") cat >> $(pwd)/ipfw.log ;;
+esac
+exit 0
+EOS
 	chmod +x fake-ipfw
 	mkdir fw
 	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules"
@@ -4934,7 +5057,9 @@ firewall_aliases_body()
 	: > ipfw.log
 	atf_check -o match:'done' "$JGC" -c "$SOCK" -p ipfw add 1000 allow \
 	    tcp from '$lan' to me '$web' in via '$wan'
-	atf_check -o inline:'ipfw -q add 1000 allow tcp from table(lan) to me 80,443 in via vtnet0\n' \
+	# Added now, then kept: the kernel asked first for set 0's rules, to
+	# keep them too when none is kept yet (none here).
+	atf_check -o inline:'ipfw -q add 1000 allow tcp from table(lan) to me 80,443 in via vtnet0\nipfw -S list\n' \
 	    cat ipfw.log
 	atf_check -o match:'^#arcana alias lan addr$' \
 	    -o match:'^table lan create type addr$' \
@@ -4955,9 +5080,12 @@ firewall_aliases_body()
 	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias web ports 8080
 	atf_check -o match:'^add 01000 allow tcp from table\(lan\) to me 8080 in via vtnet0$' \
 	    -o not-match:'80,443' cat fw/ipfw.rules
-	atf_check -o match:'^ipfw -q delete 1000$' \
-	    -o match:'^ipfw -q add 1000 allow tcp from table\(lan\) to me 8080 in via vtnet0$' \
-	    cat ipfw.log
+	# The kernel's rule 1000, told by its words as put in before, changed
+	# by one checked script of ipfw's.
+	atf_check -o match:'^ipfw -S list 1000$' -o match:'^ipfw -n /dev/stdin$' \
+	    -o match:'^set 0 delete 1000$' \
+	    -o match:'^add 1000 allow tcp from table\(lan\) to me 8080 in via vtnet0$' \
+	    -o not-match:'^ipfw -q delete' cat ipfw.log
 	# The address list changed: its table, no rule.
 	: > ipfw.log
 	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias lan addr 10.1.0.0/16
@@ -5022,7 +5150,25 @@ case "\$*" in
 	printf '06101     12     1440 (3s) STATE udp 10.0.0.5 5353 <-> 10.0.0.1 53 :default\n' ;;
 "-n -q "*) grep -q bogus "\$3" && { echo "ipfw: line 2: bad command bogus" >&2; exit 1; } ;;
 "-q add "*" refuse "*) echo "ipfw: unrecognised option refuse" >&2; exit 1 ;;
+"-q add "*) n="\${*#-q add }"; printf '%05d set 0 %s\n' "\${n%% *}" "\${n#* }" >> $(pwd)/live.rules ;;
 "list 1001") printf '01001 allow tcp from any to me6 22 in\n' ;;
+# set 0's rules, as they are now: live.rules.
+"-S list") [ -f $(pwd)/live.rules ] && cat $(pwd)/live.rules ;;
+"-S list "*) if [ -f $(pwd)/live.rules ] && grep -qE "^0*\$3 " $(pwd)/live.rules; then grep -E "^0*\$3 " $(pwd)/live.rules; else echo "ipfw: rule \$3 does not exist" >&2; fi ;;
+# The words as ipfw writes them back (all is ip), a line out for each
+# line in, as ipfw does: it writes while it reads.
+"-n /dev/stdin") tee $(pwd)/n.in | sed -e '/bogus/q' -e 's/^add \([0-9]*\) /\1 /' -e 's/ all / ip /g' -e 's/^\([0-9]*\) all /\1 ip /' | grep -v bogus
+	! grep -q bogus $(pwd)/n.in || { echo "Line 1: invalid action bogus" >&2; exit 65; } ;;
+# A script, a line at a time as ipfw does: stopped at what it refuses.
+"-q /dev/stdin") cat > $(pwd)/script.in; cat $(pwd)/script.in >> $(pwd)/script.log; touch $(pwd)/live.rules
+	while IFS= read -r l; do
+		case "\$l" in
+		*refuse*) echo "ipfw: unrecognised option refuse" >&2; exit 1 ;;
+		"set 0 delete "*) grep -vE "^0*\${l#set 0 delete } set 0 " $(pwd)/live.rules > $(pwd)/live.tmp; mv $(pwd)/live.tmp $(pwd)/live.rules ;;
+		"add "*) n="\${l#add }"; printf '%05d set 0 %s\n' "\${n%% *}" "\${n#* }" >> $(pwd)/live.rules ;;
+		esac
+	done < $(pwd)/script.in
+	sort -n -o $(pwd)/live.rules $(pwd)/live.rules ;;
 "-q "*.arcana-load) cat "\$2" > $(pwd)/loaded.rules; grep -q fails "\$2" && { echo "ipfw: line 1: getsockopt(IP_FW_XADD): Invalid argument" >&2; exit 1; } ;;
 esac
 exit 0
@@ -5053,26 +5199,76 @@ EOS
 	atf_check -o match:'^ipfw -q add 1002 allow tcp from any to me6 80 in$' \
 	    tail -1 ipfw.log
 	atf_check test ! -e fw/ipfw.rules
+	atf_check -o inline:'01002 set 0 allow tcp from any to me6 80 in\n' cat live.rules
+	# Deleted by a script of ipfw's, set 0's alone.
 	atf_check -o ignore "$JGC" -c "$SOCK" ipfw delete 1002
-	atf_check -o match:'^ipfw -q delete 1002$' tail -1 ipfw.log
-	# A rule changed as one: ipfw reads the new one first, then the
-	# old one goes and the new one comes; one ipfw does not take after
-	# all leaves the old one put back as it was listed.
+	atf_check -o match:'^ipfw -q /dev/stdin$' tail -1 ipfw.log
+	atf_check -o inline:'set 0 delete 1002\n' cat script.log
+	atf_check -o empty cat live.rules
+	# A rule changed as one: ipfw reads the new one first, then one
+	# script deletes the number and adds the new rule; one the kernel
+	# does not take after all leaves the number as it was listed.
+	printf '01001 set 0 allow tcp from any to me6 22 in\n' > live.rules
 	: > ipfw.log
-	atf_check -s exit:1 -o match:'did not take the new rule: .*refuse; the one before was put back' \
+	: > script.log
+	atf_check -s exit:1 -o match:'did not take it: .*refuse; rule 1001 was put back as it was' \
 	    "$JGC" -c "$SOCK" ipfw replace 1001 1001 allow tcp from any to me6 22 refuse in
-	atf_check -o inline:'ipfw -q -n add 1001 allow tcp from any to me6 22 refuse in
-ipfw list 1001
-ipfw -q delete 1001
-ipfw -q add 1001 allow tcp from any to me6 22 refuse in
-ipfw -q add 1001 allow tcp from any to me6 22 in
+	atf_check -o inline:'ipfw -S list 1001
+ipfw -n /dev/stdin
+ipfw -q /dev/stdin
+ipfw -q /dev/stdin
 ' cat ipfw.log
+	atf_check -o inline:'set 0 delete 1001
+add 1001 allow tcp from any to me6 22 refuse in
+set 0 delete 1001
+add 1001 allow tcp from any to me6 22 in
+' cat script.log
+	atf_check -o inline:'01001 set 0 allow tcp from any to me6 22 in\n' cat live.rules
 	atf_check -s exit:1 -e match:'with no quotes' -o ignore \
 	    "$JGC" -c "$SOCK" ipfw replace 1001 1001 allow ip from any to any via '"wg[0-1]"'
 	: > ipfw.log
 	atf_check -o match:'done +ipfw replace 1001 1001 allow ip from any to any via wg\[0-1\]' \
 	    "$JGC" -c "$SOCK" ipfw replace 1001 1001 allow ip from any to any via 'wg[0-1]'
-	atf_check -o match:'^ipfw -q add 1001 allow ip from any to any via wg\[0-1\]$' cat ipfw.log
+	atf_check -o inline:'01001 set 0 allow ip from any to any via wg[0-1]\n' cat live.rules
+	# Words ipfw reads that are not the rule's: refused, though it is
+	# the number's only one.
+	atf_check -s exit:1 -o match:'rule 1001 now is "allow ip from any to any via wg\[0-1\]", not these words' \
+	    "$JGC" -c "$SOCK" ipfw delete 1001 deny ip from any to any
+	atf_check -o inline:'01001 set 0 allow ip from any to any via wg[0-1]\n' cat live.rules
+
+	# Two rules of one number: one deleted by its words, the other
+	# staying; the number alone refused, nothing touched.  Set 0's are
+	# the rules Arcana changes: SD-WAN's set 30 rule of the same number
+	# stays, as ipfw is told "set 0 delete".
+	printf '00700 set 0 allow tcp from any to me 80 in\n00700 set 0 allow tcp from any to me 443 in\n00700 set 30 count ip from any to any\n' > live.rules
+	: > script.log
+	atf_check -s exit:1 -o match:'2 rules 700 now: say which, by its words; nothing was changed' \
+	    "$JGC" -c "$SOCK" ipfw delete 700
+	atf_check -o empty cat script.log
+	atf_check -o match:'done +ipfw delete 700 allow tcp from any to me 80 in' \
+	    "$JGC" -c "$SOCK" ipfw delete 700 allow tcp from any to me 80 in
+	atf_check -o inline:'set 0 delete 700\nadd 700 allow tcp from any to me 443 in\n' cat script.log
+	atf_check -o inline:'00700 set 0 allow tcp from any to me 443 in\n00700 set 30 count ip from any to any\n' cat live.rules
+	# One of two replaced, told by its words (--was): the other stays;
+	# with neither words nor a single rule, refused.
+	printf '00900 set 0 allow tcp from any to me 80 in\n00900 set 0 allow tcp from any to me 443 in\n' > live.rules
+	atf_check -s exit:1 -o match:'2 rules 900 now: say which' \
+	    "$JGC" -c "$SOCK" ipfw replace 900 900 deny ip from any to any
+	atf_check -o match:'done +ipfw replace 900 901 allow tcp from any to me 8443 in' \
+	    "$JGC" -c "$SOCK" ipfw replace 900 901 allow tcp from any to me 8443 in --was allow tcp from any to me 443 in
+	atf_check -o inline:'00900 set 0 allow tcp from any to me 80 in\n00901 set 0 allow tcp from any to me 8443 in\n' cat live.rules
+	# Rules moved on by one to make room, the farthest first; refused
+	# whole when a number is not free by the time it is reached.
+	printf '00800 set 0 count ip from any to any\n00801 set 0 count tcp from any to any\n00802 set 0 count udp from any to any\n' > live.rules
+	: > script.log
+	atf_check -s exit:1 -o match:'802 has a rule by the time 801 is moved there: nothing was changed' \
+	    "$JGC" -c "$SOCK" ipfw renumber 801 802 802 803
+	atf_check -o empty cat script.log
+	atf_check -o match:'done +ipfw renumber 802 803 801 802 800 801' \
+	    "$JGC" -c "$SOCK" ipfw renumber 802 803 801 802 800 801
+	atf_check -o inline:'00801 set 0 count ip from any to any\n00802 set 0 count tcp from any to any\n00803 set 0 count udp from any to any\n' cat live.rules
+	atf_check -o inline:'add 803 count udp from any to any\nset 0 delete 802\nadd 802 count tcp from any to any\nset 0 delete 801\nadd 801 count ip from any to any\nset 0 delete 800\n' cat script.log
+	rm live.rules
 	# Kept only: into the file, in the order of the numbers.
 	: > ipfw.log
 	atf_check -o match:'\(kept\)' \
@@ -5093,8 +5289,15 @@ add 01001 allow tcp from any to me6 22 in
 	atf_check -o match:'^add 01002 allow tcp from any to me6 443 in$' cat fw/ipfw.rules
 	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw delete 1002
 	atf_check -o not-match:'01002' cat fw/ipfw.rules
-	atf_check -o match:'"kept":\[\{"num":5,"text":"skipto 500 all from any to any out"\},\{"num":200' \
+	# Each kept rule with ipfw's own wording beside, as the kernel's
+	# listing of it would say (all is ip).
+	atf_check -o match:'"kept":\[\{"num":5,"text":"skipto 500 all from any to any out","norm":"skipto 500 ip from any to any out"\},\{"num":200' \
 	    -o match:'"file":true' "$JGC" -c "$SOCK" net ipfw
+	# Kept rules renumbered with their place in the file.
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw keep renumber 999 998
+	atf_check -o match:'^add 00998 deny log all from any to any$' -o not-match:'00999' cat fw/ipfw.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw keep renumber 998 999
+	atf_check -o match:'^add 00999 deny log all from any to any$' cat fw/ipfw.rules
 
 	# Applied: the kept rules into set 1 while it is off, swapped with
 	# set 0, and the old ones deleted.
@@ -5146,6 +5349,13 @@ add 00010 set 1 allow ip from table(T46) to any
 	atf_check -s exit:1 -e match:'line 2: the kept rules are what there is to be' \
 	    -o ignore "$JGC" -c "$SOCK" ipfw rules -w bad.rules
 	atf_check -o file:new.rules cat fw/ipfw.rules
+	# A kept rule written with a set of its own (a staging script's):
+	# loaded in set 1 once, not "set 1 set 1".
+	printf 'add 00010 set 1 allow ip from any to any\n' > set1.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w set1.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw apply
+	atf_check -o inline:'add 00010 set 1 allow ip from any to any\n' cat loaded.rules
+	atf_check -o match:'"kept":\[\{"num":10,"text":"allow ip from any to any"' "$JGC" -c "$SOCK" net ipfw
 	# What ipfw refuses of the load leaves set 0 alone.
 	printf 'add 00010 allow ip from any to fails\n' > f.rules
 	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w f.rules
@@ -5189,6 +5399,30 @@ ipfw -q add 200 deny tcp from any to me 22 \
 if [ -n "$x" ]; then
 	$fwcmd add 400 count ip from any to any
 fi
+cmd="ipfw -q add"
+pif="em0"
+ks="keep-state"
+$cmd 00500 check-state
+$cmd 00502 allow tcp from me to any out via $pif setup $ks
+$cmd 00504 allow ip from any to any via $nosuch
+echo add this is not a rule
+EOS
+	cat > fw2.sh <<'EOS'
+#!/bin/sh
+set -e
+ipfw -q -f set 1 flush
+ipfw -q set 1 table all destroy
+ipfw -q set 1 nat64lsn all destroy
+ipfw set disable 1
+cmd="/sbin/ipfw -q add"
+v4="192.0.2.64/27"
+v6="2001:db8:ff::/96"
+ipfw -q set 1 nat64lsn NAT64 create prefix4 $v4 prefix6 $v6
+ipfw -q set 1 table T1 create type addr
+$cmd 00001 set 1 call 9000 ipv6 from any to any
+$cmd 00310 set 1 nat64lsn NAT64 ipv4 from any to $v4 in
+ipfw set swap 0 1
+ipfw delete set 1
 EOS
 	printf 'firewall_type="open"\nfirewall_script="%s/fw.sh"\n' "$(pwd)" >> rc.conf
 	atf_check -o inline:"# from $(pwd)/fw.sh
@@ -5198,8 +5432,38 @@ add 100 allow ip from any to any via lo0
 add 200 deny tcp from any to me 22 in via em0
 add 300 allow ip from ( 10.0.0.0/8 or 192.168.0.0/16 ) to any
 # left out, the script's own: if [ -n \"\$x\" ]; then
+# taken from inside the script's if, case or loop above: it may add these only at times
 add 400 count ip from any to any
 # left out, the script's own: fi
+# left out, the script's own: cmd=\"ipfw -q add\"
+# left out, the script's own: pif=\"em0\"
+# left out, the script's own: ks=\"keep-state\"
+add 00500 check-state
+add 00502 allow tcp from me to any out via em0 setup keep-state
+# left out, a variable not known here: \$cmd 00504 allow ip from any to any via \$nosuch
+# left out, the script's own: echo add this is not a rule
+" "$JGC" -c "$SOCK" ipfw rules -r
+	# A script that stages its rules in set 1 and swaps them in, as
+	# Apply does: the shell's set -e its own; its set 1 objects kept
+	# without the set; its rules without their set, which Apply gives
+	# them; its staging and swap left to Apply.
+	sed -i '' -e '/^firewall_script=/d' rc.conf
+	printf 'firewall_script="%s/fw2.sh"\n' "$(pwd)" >> rc.conf
+	atf_check -o inline:"# from $(pwd)/fw2.sh
+# left out, the script's own: set -e
+# left out, applying does it: ipfw -q -f set 1 flush
+# left out, applying does it: ipfw -q set 1 table all destroy
+# left out, applying does it: ipfw -q set 1 nat64lsn all destroy
+# left out, applying does it: ipfw set disable 1
+# left out, the script's own: cmd=\"/sbin/ipfw -q add\"
+# left out, the script's own: v4=\"192.0.2.64/27\"
+# left out, the script's own: v6=\"2001:db8:ff::/96\"
+nat64lsn NAT64 create prefix4 192.0.2.64/27 prefix6 2001:db8:ff::/96
+table T1 create type addr
+add 00001 call 9000 ipv6 from any to any
+add 00310 nat64lsn NAT64 ipv4 from any to 192.0.2.64/27 in
+# left out, applying does it: ipfw set swap 0 1
+# left out, applying does it: ipfw delete set 1
 " "$JGC" -c "$SOCK" ipfw rules -r
 	sed -i '' -e '/^firewall_type=/d' -e '/^firewall_script=/d' rc.conf
 
@@ -5248,6 +5512,28 @@ add 400 count ip from any to any
 	atf_check -s exit:1 -e match:'not taken back' -o ignore \
 	    "$JGC" -s -c "$SOCK" ipfw table T46 flush x
 
+	# A large kept file read through ipfw -n, which writes while it
+	# reads: the agent feeds it as it reads back, and does not wait.
+	awk 'BEGIN { for (i = 1; i <= 6000; i++) printf "add %05d allow tcp from any to me %d in // a rule long enough to fill the pipes\n", i + 10000, i }' > big.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w big.rules
+	atf_check -o match:'"num":16000,"text":"allow tcp from any to me 6000 in // a rule long enough to fill the pipes","norm":"allow tcp from any to me 6000 in' \
+	    timeout 60 "$JGC" -c "$SOCK" net ipfw
+
+	# The first rule kept, no rule being kept yet: set 0's rules are
+	# kept first (not SD-WAN's set 30, not the rule itself twice), so
+	# that applying does not take them away.
+	printf 'table T1 create type addr\n' > tbl.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w tbl.rules
+	printf '00010 set 0 allow ip from any to any via lo0\n00500 set 30 count ip from any to any\n00600 set 0 allow tcp from any to me 22 in\n' > live.rules
+	atf_check -o match:'now, and kept' "$JGC" -p -c "$SOCK" ipfw add 700 deny ip from any to any
+	atf_check -o inline:"table T1 create type addr
+# The kernel's rules when the first rule was kept, by Arcana: the kept rules are the whole ruleset once applied.
+add 00010 allow ip from any to any via lo0
+add 00600 allow tcp from any to me 22 in
+add 00700 deny ip from any to any
+" cat fw/ipfw.rules
+	rm live.rules
+
 	# A rule's words are ipfw's own; a number is a number; the sets
 	# are not a rule's to name; what ipfw refuses is said.
 	: > ipfw.log
@@ -5261,7 +5547,7 @@ add 400 count ip from any to any
 	    "$JGC" -c "$SOCK" ipfw add 10 set 1 allow ip from any to any
 	atf_check -s exit:1 -e match:'not put back by itself' -o ignore \
 	    "$JGC" -s -c "$SOCK" ipfw delete 5
-	atf_check -s exit:1 -e match:'is add, delete, alias, apply' -o ignore \
+	atf_check -s exit:1 -e match:'is add, delete, renumber, alias, apply' -o ignore \
 	    "$JGC" -c "$SOCK" ipfw flush
 	atf_check -o empty cat ipfw.log
 	atf_check -s exit:1 -o match:'unrecognised option refuse' \

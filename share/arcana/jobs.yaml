@@ -352,7 +352,7 @@ kinds:
   - kind: ipfw
     title: The firewall
     needs: verb args
-    uses: jail persist safe
+    uses: jail persist safe text
     destroys: verb=delete|flush|replace
   - kind: bridge
     title: A bridge
@@ -446,7 +446,7 @@ kinds:
     title: A file of the system's written, its daemon told
     needs: verb
     uses: args text
-    values: verb=devfs.rules|devd|syslog.conf|newsyslog.conf|periodic.conf|audit_control|audit_user|krb5.conf|ipsec.conf|rctl.conf|loader.conf.d|periodic|rc
+    values: verb=devfs.rules|devd|syslog.conf|newsyslog.conf|periodic.conf|audit_control|audit_user|krb5.conf|ipsec.conf|rctl.conf|loader.conf.d|periodic|rc|dma
   - kind: geom
     title: A GEOM class's command, geom(8)
     needs: verb args
@@ -455,5 +455,5 @@ kinds:
   - kind: smtpd
     title: OpenSMTPD's configuration, tables and queue
     needs: verb
-    uses: jail args text
-    values: verb=conf|table|enable|pause|resume|schedule|remove|update
+    uses: jail args text force
+    values: verb=conf|conf-text|table|entry|unentry|enable|pause|resume|schedule|remove|update

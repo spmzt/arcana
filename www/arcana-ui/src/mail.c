@@ -18,7 +18,8 @@
 static struct {
 	struct res	 r;		/* the smtpd read */
 	bool		 conf;		/* the configuration form open */
-	char		 table[16];	/* the table being edited, or "" */
+	bool		 text;		/* smtpd.conf as text, Arcana's own */
+	char		 table[72];	/* the table being edited, or "" */
 	bool		 picked;	/* where, chosen by hand: jail */
 	char		 jail[64];	/* "" the host */
 } ml;
@@ -328,9 +329,285 @@ table_form(struct html *h, const ucl_object_t *o, const char *name)
 	    "line (the smart host's sign-in is the relay label); kept on the "
 	    "host, root's alone, never shown again." : "Written whole, as "
 	    "smtpd.conf's table reads it; smtpd reads it again at once.");
-	h_raw(h, "</small><div class=\"toolbar\"><button class=\"primary\">"
-	    "Write</button><button type=\"button\" class=\"ghost\" "
-	    "data-act=\"ml-table-close\">Close</button></div></form>");
+	h_raw(h, "</small><div class=\"toolbar\"><button class=\"danger\">"
+	    "Replace the whole table</button></div></form>");
+}
+
+/*
+ * A table's entries, one a row with Remove; a form that puts entries
+ * in by their key, the others kept; and, folded away, the whole table
+ * written at once.
+ */
+static void
+entries_view(struct html *h, const ucl_object_t *o, const char *name)
+{
+	static const struct tcol cols[] = {
+		{ "Entry", "key", false }, { "What it is", "value", false },
+	};
+	const ucl_object_t	*t, *e, **rows, *r;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*arr, *x;
+	char			*copy, *line, *p, *key;
+	size_t			 n;
+	int			 k;
+	bool			 secret;
+
+	secret = strcmp(name, "credentials") == 0 || strcmp(name, "secrets") ==
+	    0;
+	t = jget(jget(o, "tables"), name);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	if (t != NULL && ucl_object_type(t) == UCL_ARRAY) {
+		it = NULL;
+		while ((e = ucl_object_iterate(t, &it, true)) != NULL) {
+			x = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(x, ucl_object_fromstring(
+			    ucl_object_tostring(e)), "key", 0, false);
+			ucl_object_insert_key(x, ucl_object_fromstring(strcmp(
+			    name, "credentials") == 0 ? "a user; the password "
+			    "hashed on the host, not shown" : "a sign-in; kept on "
+			    "the host, not shown"), "value", 0, false);
+			ucl_array_append(arr, x);
+		}
+	} else if (t != NULL && ucl_object_type(t) == UCL_STRING) {
+		copy = strdup(ucl_object_tostring(t));
+		p = copy;
+		while ((line = strsep(&p, "\n")) != NULL) {
+			line += strspn(line, " \t");
+			if (line[0] == '\0' || line[0] == '#')
+				continue;
+			n = strcspn(line, " \t");
+			key = strndup(line, n > 0 && line[n - 1] == ':' ? n - 1 :
+			    n);
+			x = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(x, ucl_object_fromstring(key), "key",
+			    0, false);
+			ucl_object_insert_key(x, ucl_object_fromstring(line + n +
+			    strspn(line + n, " \t")), "value", 0, false);
+			ucl_array_append(arr, x);
+			free(key);
+		}
+		free(copy);
+	}
+	h_raw(h, "<div class=\"toolbar\"><h4>");
+	h_txt(h, name);
+	h_fmt(h, "</h4><span class=\"grow\"></span><button class=\"ghost "
+	    "small\" data-act=\"ml-table-close\">Close</button></div>");
+	if (ucl_array_size(arr) == 0)
+		h_raw(h, "<p class=\"dim\">No entry yet.</p>");
+	else {
+		h_raw(h, "<table class=\"net mlentries\">");
+		tbl_head(h, "mltable", cols, 2, 1);
+		h_raw(h, "<tbody>");
+		rows = tbl_rows("mltable", arr, cols, 2, "");
+		for (k = 0; (r = rows[k]) != NULL; k++) {
+			h_raw(h, "<tr><td class=\"mono\">");
+			h_txt(h, jstr(r, "key"));
+			h_raw(h, "</td><td class=\"mono dim\">");
+			h_txt(h, jstr(r, "value"));
+			h_raw(h, "</td><td class=\"acts\"><button class=\"ghost "
+			    "small danger\" data-act=\"ml-unentry\"");
+			h_attr(h, "data-arg", name);
+			h_attr(h, "data-value", jstr(r, "key"));
+			h_raw(h, ">Remove</button></td></tr>");
+		}
+		free(rows);
+		h_raw(h, "</tbody></table>");
+	}
+	ucl_object_unref(arr);
+	/* Put in by key: a new one added, one there replaced. */
+	h_raw(h, "<form class=\"stack\" data-form=\"ml-entry\"><input "
+	    "type=\"hidden\" name=\"name\"");
+	h_attr(h, "value", name);
+	h_raw(h, "><label class=\"wide\">Add or change<textarea name=\"text\" "
+	    "rows=\"3\" class=\"mono\" spellcheck=\"false\"");
+	h_attr(h, "placeholder", strcmp(name, "aliases") == 0 ? "postmaster: "
+	    "root" : strcmp(name, "virtuals") == 0 ? "alice@example.org alice" :
+	    strcmp(name, "domains") == 0 ? "example.net" : strcmp(name,
+	    "senders") == 0 ? "alice alice@example.org" : strcmp(name,
+	    "credentials") == 0 ? "alice her-password" : "relay "
+	    "user@example.net:password");
+	h_raw(h, "></textarea><small class=\"help\">A line each, its first "
+	    "word its key: a key there already is replaced (a new password, "
+	    "another address), a new one added, every other entry kept.");
+	if (secret)
+		h_raw(h, " Kept on the host, root's alone; the passwords never "
+		    "come back to the console.");
+	h_raw(h, "</small></label><div class=\"toolbar\"><button class=\""
+	    "primary\">Put in</button></div></form>");
+	h_raw(h, "<details class=\"secform\"><summary>Replace the whole table"
+	    "</summary><p class=\"dim\">What is written here becomes the "
+	    "whole table: an entry not in it is gone.</p>");
+	(void)secret;
+}
+
+/* Is smtpd.conf the admin's own, one Arcana's form did not write? */
+static bool
+conf_own(const ucl_object_t *o)
+{
+
+	return (jstr(o, "conf") != NULL && !jbool(o, "conf_arcana"));
+}
+
+/* smtpd.conf as text: checked by smtpd -n, saved with the old kept. */
+static void
+conftext_view(struct html *h, const ucl_object_t *o)
+{
+
+	h_raw(h, "<form class=\"stack\" data-form=\"ml-conftext\"><label class="
+	    "\"wide\">");
+	h_txt(h, jstr(o, "conf_path") != NULL ? jstr(o, "conf_path") :
+	    "smtpd.conf");
+	h_raw(h, "<textarea name=\"text\" rows=\"22\" class=\"mono\" "
+	    "spellcheck=\"false\">");
+	h_txt(h, jstr(o, "conf") != NULL ? jstr(o, "conf") : "");
+	h_raw(h, "</textarea><small class=\"help\">smtpd.conf(5) as it is. The "
+	    "host checks it with <code>smtpd -n</code> before it is put in "
+	    "place, and keeps the one before as smtpd.conf.arcana-old; smtpd "
+	    "has no reload, so it starts again where it runs.</small></label>"
+	    "<div class=\"toolbar\"><button class=\"ghost\" name=\"how\" "
+	    "value=\"check\">Check</button><button class=\"primary\" name=\""
+	    "how\" value=\"save\">Save and restart smtpd</button>");
+	if (!conf_own(o))
+		h_raw(h, "<button type=\"button\" class=\"ghost\" data-act=\""
+		    "ml-text-close\">Close</button>");
+	h_raw(h, "</div></form>");
+}
+
+/* The tables smtpd.conf declares, each a row; one opened below. */
+static void
+ctables_view(struct html *h, const ucl_object_t *o)
+{
+	static const struct tcol cols[] = {
+		{ "Table", "name", false }, { "Where", "path", false },
+		{ "Used for", "kind", false }, { "Entries", "n", true },
+	};
+	const ucl_object_t	**rows, *r, *t, *open;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*arr, *x;
+	const char		*kind;
+	int			 k;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	open = NULL;
+	it = NULL;
+	while ((t = ucl_object_iterate(jget(o, "conf_tables"), &it, true)) !=
+	    NULL) {
+		x = ucl_object_copy(t);
+		ucl_object_insert_key(x, ucl_object_fromint(jget(t, "entries") !=
+		    NULL ? (int64_t)ucl_array_size(jget(t, "entries")) : -1), "n",
+		    0, false);
+		ucl_array_append(arr, x);
+		if (jstr(t, "name") != NULL && strcmp(jstr(t, "name"), ml.table)
+		    == 0)
+			open = t;
+	}
+	h_raw(h, "<p class=\"dim\">The tables your smtpd.conf declares, at their "
+	    "own paths: entries are put in and taken out there, and smtpd reads "
+	    "the table again at once (smtpctl update table).</p><table class="
+	    "\"net mltables\">");
+	tbl_head(h, "mlctables", cols, 4, 1);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("mlctables", arr, cols, 4, "");
+	for (k = 0; (r = rows[k]) != NULL; k++) {
+		kind = jstr(r, "kind") != NULL ? jstr(r, "kind") : "";
+		h_raw(h, "<tr><td class=\"mono\">");
+		h_txt(h, jstr(r, "name"));
+		h_raw(h, "</td><td class=\"mono dim\">");
+		h_txt(h, jstr(r, "backend"));
+		h_raw(h, ":");
+		h_txt(h, jstr(r, "path"));
+		h_fmt(h, "</td><td class=\"dim\">%s</td><td>", strcmp(kind, "auth")
+		    == 0 ? "signs users in" : strcmp(kind, "relay") == 0 ?
+		    "the smart host's sign-in" : "");
+		if (!jbool(r, "editable"))
+			h_raw(h, "<span class=\"dim\">made the admin's way</span>");
+		else if (jstr(r, "error") != NULL) {
+			h_raw(h, "<span class=\"dim\">");
+			h_txt(h, strcmp(jstr(r, "error"), "No such file or directory")
+			    == 0 ? "not written yet" : jstr(r, "error"));
+			h_raw(h, "</span>");
+		} else
+			h_fmt(h, "%lld", (long long)jint(r, "n", 0));
+		h_raw(h, "</td><td class=\"acts\">");
+		if (jbool(r, "editable")) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\"ml-table\"");
+			h_attr(h, "data-arg", jstr(r, "name"));
+			h_raw(h, ">Open</button>");
+		}
+		h_raw(h, "</td></tr>");
+	}
+	free(rows);
+	h_raw(h, "</tbody></table>");
+	ucl_object_unref(arr);
+	if (open == NULL)
+		return;
+	/* The one opened: its entries, Remove each, and Add or change. */
+	{
+		static const struct tcol ecols[] = {
+			{ "Entry", "key", false }, { "What it is", "value", false },
+		};
+		const ucl_object_t	**er;
+		bool			 secret = jbool(open, "secret");
+		bool			 pw = jstr(open, "backend") != NULL &&
+		    strcmp(jstr(open, "backend"), "passwd") == 0;
+
+		kind = jstr(open, "kind") != NULL ? jstr(open, "kind") : "";
+		h_raw(h, "<div class=\"toolbar\"><h4>");
+		h_txt(h, jstr(open, "name"));
+		h_raw(h, " <small class=\"dim mono\">");
+		h_txt(h, jstr(open, "path"));
+		h_raw(h, "</small></h4><span class=\"grow\"></span><button class=\""
+		    "ghost small\" data-act=\"ml-table-close\">Close</button></div>");
+		if (ucl_array_size(jget(open, "entries")) == 0)
+			h_raw(h, "<p class=\"dim\">No entry yet.</p>");
+		else {
+			h_raw(h, "<table class=\"net mlentries\">");
+			tbl_head(h, "mltable", ecols, 2, 1);
+			h_raw(h, "<tbody>");
+			er = tbl_rows("mltable", jget(open, "entries"), ecols, 2, "");
+			for (k = 0; (r = er[k]) != NULL; k++) {
+				h_raw(h, "<tr><td class=\"mono\">");
+				h_txt(h, jstr(r, "key"));
+				h_raw(h, "</td><td class=\"mono dim\">");
+				if (secret)
+					h_txt(h, strcmp(kind, "relay") == 0 ? "a sign-in, "
+					    "kept on the host, not shown" : "a user; the "
+					    "password hashed on the host, not shown");
+				else
+					h_txt(h, jstr(r, "value") != NULL ? jstr(r,
+					    "value") : "");
+				h_raw(h, "</td><td class=\"acts\"><button class=\"ghost "
+				    "small danger\" data-act=\"ml-unentry\"");
+				h_attr(h, "data-arg", jstr(open, "name"));
+				h_attr(h, "data-value", jstr(r, "key"));
+				h_raw(h, ">Remove</button></td></tr>");
+			}
+			free(er);
+			h_raw(h, "</tbody></table>");
+		}
+		h_raw(h, "<form class=\"stack\" data-form=\"ml-entry\"><input "
+		    "type=\"hidden\" name=\"name\"");
+		h_attr(h, "value", jstr(open, "name"));
+		h_raw(h, "><label class=\"wide\">Add or change<textarea name=\""
+		    "text\" rows=\"3\" class=\"mono\" spellcheck=\"false\"");
+		h_attr(h, "placeholder", pw || strcmp(kind, "auth") == 0 ?
+		    "alice@example.org her-password" : strcmp(kind, "relay") == 0 ?
+		    "relay user@example.net:password" : "postmaster: root");
+		h_raw(h, "></textarea><small class=\"help\">A line each, by its "
+		    "key: one there already is replaced, a new one added, every "
+		    "other entry kept.");
+		if (pw)
+			h_raw(h, " passwd(5) lines: a user and a password, the "
+			    "password hashed with OpenSMTPD's encrypt and written "
+			    "as the others are ({SCHEME} included); a user there "
+			    "keeps the rest of their line. A whole passwd line is "
+			    "taken as it is.");
+		else if (strcmp(kind, "auth") == 0)
+			h_raw(h, " A user and a password: the password hashed with "
+			    "OpenSMTPD's encrypt, the clear one kept nowhere.");
+		h_raw(h, "</small></label><div class=\"toolbar\"><button class=\""
+		    "primary\">Put in</button></div></form>");
+	}
 }
 
 void
@@ -461,15 +738,30 @@ view_mail(struct html *h, struct server *s)
 		    "what waits in the queue waits.</p>");
 	/* Its configuration: the form's summary, the form on Edit. */
 	h_raw(h, "<h3 class=\"secsub\">Configuration</h3>");
-	if (ml.conf)
+	if (ml.conf) {
+		if (conf_own(o))
+			h_raw(h, "<div class=\"notice warn\">Applying this form "
+			    "replaces your own smtpd.conf with what the form makes; "
+			    "the one before is kept as smtpd.conf.arcana-old.</div>");
 		conf_form(h, o);
-	else if (sp == NULL)
-		h_raw(h, "<div class=\"empty\"><p>No configuration of Arcana's "
-		    "yet.</p><p class=\"dim\">smtpd.conf is rendered from a form: "
-		    "where it listens, the domains delivered here, the smart "
-		    "host, its policy and filters; the host checks it with "
-		    "smtpd -n before it is put in place.</p><button class=\""
-		    "primary\" data-act=\"ml-conf\">Set it up</button></div>");
+	} else if (conf_own(o) || ml.text) {
+		conftext_view(h, o);
+		if (conf_own(o))
+			h_raw(h, "<details class=\"secform\"><summary>Or set it up "
+			    "with Arcana's form instead</summary><p class=\"dim\">The "
+			    "form writes the whole of smtpd.conf: your own lines go, "
+			    "kept as smtpd.conf.arcana-old.</p><button class=\"ghost\" "
+			    "data-act=\"ml-conf\">Open the form</button></details>");
+	} else if (sp == NULL)
+		h_raw(h, "<div class=\"empty\"><p>No smtpd.conf yet.</p><p class=\""
+		    "dim\">Write it yourself, as smtpd.conf(5) has it, or have it "
+		    "made from a form: where it listens, the domains delivered "
+		    "here, the smart host, its policy and filters. Either way the "
+		    "host checks it with smtpd -n before it is put in place.</p>"
+		    "<div class=\"toolbar\"><button class=\"primary\" data-act=\""
+		    "ml-conf\">Set it up with the form</button><button class=\""
+		    "ghost\" data-act=\"ml-text\">Write it as text</button></div>"
+		    "</div>");
 	else {
 		const ucl_object_t	*l, *del, *rel;
 		ucl_object_iter_t	 lit;
@@ -524,7 +816,8 @@ view_mail(struct html *h, struct server *s)
 		}
 		h_raw(h, n == 0 ? "none" : "");
 		h_raw(h, "</dd></dl><div class=\"actions\"><button class=\"ghost\" "
-		    "data-act=\"ml-conf\">Edit</button></div>");
+		    "data-act=\"ml-conf\">Edit</button><button class=\"ghost\" "
+		    "data-act=\"ml-text\">Edit as text</button></div>");
 	}
 	/* The queue, with smtpctl's commands. */
 	h_fmt(h, "<h3 class=\"secsub\">Queue%s</h3>", running ? "" :
@@ -537,6 +830,7 @@ view_mail(struct html *h, struct server *s)
 		    "ml-remove\" data-arg=\"all\">Remove all</button></div>",
 		    (long long)jint(o, "queued", 0), jint(o, "queued", 0) == 1 ?
 		    "" : "s");
+		h_raw(h, "<table class=\"net mailq\">");
 		tbl_head(h, "mailq", cols, 7, 1);
 		h_raw(h, "<tbody>");
 		rows = tbl_rows("mailq", jget(o, "queue"), cols, 7, "");
@@ -566,7 +860,12 @@ view_mail(struct html *h, struct server *s)
 		h_raw(h, "</tbody></table>");
 	} else if (running)
 		h_raw(h, "<p class=\"dim\">Empty: nothing waits.</p>");
-	/* The tables, each written whole: what each holds, and its editor. */
+	/* The tables smtpd.conf declares; else Arcana's own. */
+	if (ucl_array_size(jget(o, "conf_tables")) > 0) {
+		h_raw(h, "<h3 class=\"secsub\">Tables</h3>");
+		ctables_view(h, o);
+		goto conf_shown;
+	}
 	h_raw(h, "<h3 class=\"secsub\">Tables</h3><table class=\"params\">"
 	    "<thead><tr><th>Table</th><th>Holds</th><th>Entries</th><th></th>"
 	    "</tr></thead><tbody>");
@@ -600,30 +899,24 @@ view_mail(struct html *h, struct server *s)
 		h_fmt(h, "</td><td class=\"acts\"><button class=\"ghost small%s\" "
 		    "data-act=\"ml-table\" data-arg=\"%s\">%s</button></td></tr>",
 		    strcmp(ml.table, tables[i]) == 0 ? " on" : "", tables[i],
-		    t == NULL ? "Write" : "Edit");
+		    strcmp(ml.table, tables[i]) == 0 ? "Open" : t == NULL ?
+		    "Start it" : "Open");
 	}
 	h_raw(h, "</tbody></table>");
 	if (ml.table[0] != '\0') {
-		t = jget(jget(o, "tables"), ml.table);
-		h_raw(h, "<h4>");
-		h_txt(h, ml.table);
-		h_raw(h, "</h4>");
-		if (t != NULL && ucl_object_type(t) == UCL_ARRAY) {
-			h_raw(h, "<p class=\"dim\">Kept on the host: ");
-			it = NULL;
-			k = 0;
-			while ((e = ucl_object_iterate(t, &it, true)) != NULL) {
-				h_raw(h, k++ > 0 ? ", " : "");
-				h_txt(h, ucl_object_tostring(e));
-			}
-			h_raw(h, k == 0 ? "none yet.</p>" : ".</p>");
-		}
+		entries_view(h, o, ml.table);
 		table_form(h, o, ml.table);
+		h_raw(h, "</details>");
 	}
+conf_shown:
+	if (conf_own(o) || ml.text)
+		goto conf_text_shown;
 	h_raw(h, "<details class=\"secform\"><summary>smtpd.conf as written"
 	    "</summary><pre class=\"mono naspre\">");
 	h_txt(h, jstr(o, "conf") != NULL ? jstr(o, "conf") : "(none yet)");
-	h_raw(h, "</pre></details><p class=\"dim\"><b>FreeBSD:</b> OpenSMTPD "
+	h_raw(h, "</pre></details>");
+conf_text_shown:
+	h_raw(h, "<p class=\"dim\"><b>FreeBSD:</b> OpenSMTPD "
 	    "is the port mail/opensmtpd; its queue is /var/spool/smtpd, its "
 	    "log /var/log/maillog (the Log tab)");
 	if (jstr(o, "mailer") != NULL) {
@@ -733,6 +1026,33 @@ mail_form(const char *form, const ucl_object_t *f)
 	char		*copy, *it, *line, *json, *q, title[96];
 	const char	*v, *w[1];
 
+	if (strcmp(form, "ml-conftext") == 0) {
+		const char	*w1[1] = { "check" };
+		bool		 check;
+
+		if ((s = ml_server()) == NULL || jstr(f, "text") == NULL)
+			return (true);
+		check = jstr(f, "how") != NULL && strcmp(jstr(f, "how"), "check")
+		    == 0;
+		send(s, job_json("smtpd", "conf-text", w1, check ? 1 : 0, jstr(f,
+		    "text"), ml_extra(s)), check ? "smtpd.conf checked" :
+		    "smtpd.conf written");
+		if (!check)
+			ml.text = false;
+		return (true);
+	}
+	if (strcmp(form, "ml-entry") == 0) {
+		if ((s = ml_server()) == NULL || jstr(f, "name") == NULL ||
+		    jstr(f, "text") == NULL || jstr(f, "text")[strspn(jstr(f,
+		    "text"), " \t\n")] == '\0')
+			return (true);
+		w[0] = jstr(f, "name");
+		snprintf(title, sizeof(title), "smtpd table %s: entries put in",
+		    w[0]);
+		send(s, job_json("smtpd", "entry", w, 1, jstr(f, "text"),
+		    ml_extra(s)), title);
+		return (true);
+	}
 	if (strcmp(form, "ml-table") == 0) {
 		if ((s = ml_server()) == NULL || jstr(f, "name") == NULL)
 			return (true);
@@ -825,8 +1145,10 @@ mail_form(const char *form, const ucl_object_t *f)
 	ucl_object_unref(spec);
 	q = json_quote(json != NULL ? json : "{}");
 	free(json);
-	if (asprintf(&json, "{\"kind\":\"smtpd\",\"verb\":\"conf\",\"text\":%s%s}",
-	    q, ml_extra(s) != NULL ? ml_extra(s) : "") == -1)
+	/* Over the admin's own file: said to replace it, as warned. */
+	if (asprintf(&json, "{\"kind\":\"smtpd\",\"verb\":\"conf\",\"text\":%s%s%s}",
+	    q, ml_extra(s) != NULL ? ml_extra(s) : "", conf_own(ml.r.o) ?
+	    ",\"force\":true" : "") == -1)
 		abort();
 	free(q);
 	send(s, json, "smtpd.conf from the form");
@@ -858,6 +1180,17 @@ mail_action(const char *act, const char *arg, const char *value)
 		render();
 		return (true);
 	}
+	if (strcmp(act, "ml-text") == 0) {
+		ml.text = true;
+		ml.conf = false;
+		render();
+		return (true);
+	}
+	if (strcmp(act, "ml-text-close") == 0) {
+		ml.text = false;
+		render();
+		return (true);
+	}
 	if (strcmp(act, "ml-conf") == 0) {
 		ml.conf = true;
 		return (true);
@@ -882,6 +1215,29 @@ mail_action(const char *act, const char *arg, const char *value)
 		    "to this host is refused, and what is queued waits until it "
 		    "runs again.", "Stop", true, NULL, "ml-enable-yes", "no",
 		    "");
+		return (true);
+	}
+	if (strcmp(act, "ml-unentry") == 0 && value != NULL) {
+		snprintf(body, sizeof(body), "%s is taken out of the %s table; "
+		    "every other entry is kept.%s", value, arg, strcmp(arg,
+		    "credentials") == 0 ? " The user can no longer sign in." :
+		    strcmp(arg, "domains") == 0 ? " Mail for it is no longer "
+		    "delivered here." : "");
+		confirm("Remove the entry?", body, "Remove", true, NULL,
+		    "ml-unentry-yes", arg, value);
+		return (true);
+	}
+	if (strcmp(act, "ml-unentry-yes") == 0 && value != NULL) {
+		const char	*w2[2];
+
+		if ((s = ml_server()) == NULL)
+			return (true);
+		w2[0] = arg;
+		w2[1] = value;
+		snprintf(title, sizeof(title), "smtpd table %s: %s taken out",
+		    arg, value);
+		send(s, job_json("smtpd", "unentry", w2, 2, NULL, ml_extra(s)),
+		    title);
 		return (true);
 	}
 	if (strcmp(act, "ml-remove") == 0) {

@@ -23,6 +23,7 @@
 
 #include <ctype.h>
 #include <dirent.h>
+#include <grp.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -33,6 +34,8 @@
 #include <ucl.h>
 
 #include "agent.h"
+
+static ucl_object_t	*dma_json(struct work *);
 
 #define	TEXT_MAX	(256 * 1024)
 
@@ -403,6 +406,8 @@ do_system(struct work *w, const char *const *names, size_t n,
 		    "kern.racct.enable", 0)), "racct", 0, false);
 		ucl_object_insert_key(top, hardening_json(), "hardening", 0,
 		    false);
+		/* dma(8): what it relays by. */
+		ucl_object_insert_key(top, dma_json(w), "dma", 0, false);
 	}
 	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);
@@ -413,6 +418,297 @@ do_system(struct work *w, const char *const *names, size_t n,
 	rsp->json = wstrdup(w, json);
 	free(json);
 	rsp->ok = true;
+}
+
+/* ---- dma(8): the smart host it relays by, TLS, and its sign-in ---- */
+
+/*
+ * dma.conf's keys Arcana sets; the others are the admin's.  SMARTHOST
+ * and PORT take a value; SECURETRANSFER, STARTTLS and AUTHPATH are
+ * dma's flags and path (dma.conf(5)).
+ */
+static const char *const dma_keys[] = { "SMARTHOST", "PORT",
+    "SECURETRANSFER", "STARTTLS", "OPPORTUNISTIC_TLS", "AUTHPATH" };
+#define	DMA_CONF	"/etc/dma/dma.conf"
+#define	DMA_AUTH	"/etc/dma/auth.conf"
+
+/* An active line of dma.conf for the key: its value, or "" for a flag;
+ * NULL when the file has none. */
+static const char *
+dma_get(struct work *w, const char *conf, const char *key)
+{
+	char		*copy, *line;
+	size_t		 n;
+
+	if (conf == NULL)
+		return (NULL);
+	copy = wstrdup(w, conf);
+	n = strlen(key);
+	while ((line = strsep(&copy, "\n")) != NULL) {
+		line += strspn(line, " \t");
+		if (strncmp(line, key, n) == 0 && (line[n] == '\0' ||
+		    line[n] == ' ' || line[n] == '\t')) {
+			line += n + strspn(line + n, " \t");
+			line[strcspn(line, " \t#")] = '\0';
+			return (line);
+		}
+	}
+	return (NULL);
+}
+
+/* The user of auth.conf's line for that smart host ("user|host:pw"),
+ * or NULL; *setp whether it has a password. */
+static const char *
+dma_auth_user(struct work *w, const char *auth, const char *host,
+    bool *setp, const char **pwp)
+{
+	char	*copy, *line, *bar, *colon;
+
+	*setp = false;
+	if (pwp != NULL)
+		*pwp = NULL;
+	if (auth == NULL || host == NULL || host[0] == '\0')
+		return (NULL);
+	copy = wstrdup(w, auth);
+	while ((line = strsep(&copy, "\n")) != NULL) {
+		if (line[0] == '#' || (bar = strchr(line, '|')) == NULL ||
+		    (colon = strchr(bar, ':')) == NULL)
+			continue;
+		if ((size_t)(colon - bar - 1) == strlen(host) && strncmp(bar + 1,
+		    host, strlen(host)) == 0) {
+			*setp = colon[1] != '\0';
+			if (pwp != NULL)
+				*pwp = colon + 1;
+			return (wstrndup(w, line, (size_t)(bar - line)));
+		}
+	}
+	return (NULL);
+}
+
+/* What dma relays by, as dma.conf and auth.conf say. */
+static ucl_object_t *
+dma_json(struct work *w)
+{
+	ucl_object_t	*o;
+	const char	*conf, *auth, *host, *v, *user;
+	bool		 set, sec, start;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	conf = slurp(w, rooted(w, DMA_CONF));
+	auth = slurp(w, rooted(w, DMA_AUTH));
+	put_s(o, "conf_path", DMA_CONF);
+	host = dma_get(w, conf, "SMARTHOST");
+	put_s(o, "smarthost", host != NULL ? host : "");
+	v = dma_get(w, conf, "PORT");
+	put_s(o, "port", v != NULL ? v : "");
+	sec = dma_get(w, conf, "SECURETRANSFER") != NULL;
+	start = dma_get(w, conf, "STARTTLS") != NULL;
+	put_s(o, "tls", !sec ? "none" : start ? (dma_get(w, conf,
+	    "OPPORTUNISTIC_TLS") != NULL ? "opportunistic" : "starttls") :
+	    "tls");
+	user = dma_auth_user(w, auth, host, &set, NULL);
+	put_s(o, "user", user != NULL ? user : "");
+	ucl_object_insert_key(o, ucl_object_frombool(set), "password_set", 0,
+	    false);
+	return (o);
+}
+
+/* Is it a host name for SMARTHOST: letters, digits, dots, dashes (an
+ * address too, IPv4's; auth.conf's ':' leaves IPv6 out). */
+static bool
+dma_host_ok(const char *s)
+{
+
+	return (s[0] != '\0' && strlen(s) <= 253 && s[0] != '-' && strspn(s,
+	    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
+	    == strlen(s));
+}
+
+/* A word of the dma verb: key=value, its value. */
+static const char *
+dma_word(const struct arc_job_spec *sp, const char *key)
+{
+	size_t	i, n;
+
+	n = strlen(key);
+	for (i = 0; i < sp->names.n; i++)
+		if (strncmp(sp->names.v[i], key, n) == 0 && sp->names.v[i][n] ==
+		    '=')
+			return (sp->names.v[i] + n + 1);
+	return (NULL);
+}
+
+static const char *
+dma_check(const struct arc_job_spec *sp)
+{
+	const char	*v;
+	size_t		 i;
+
+	for (i = 0; i < sp->names.n; i++) {
+		v = sp->names.v[i];
+		if (v == NULL || (strncmp(v, "smarthost=", 10) != 0 &&
+		    strncmp(v, "port=", 5) != 0 && strncmp(v, "tls=", 4) != 0 &&
+		    strncmp(v, "user=", 5) != 0))
+			return ("dma takes smarthost=, port=, tls= and user=");
+	}
+	if ((v = dma_word(sp, "smarthost")) == NULL)
+		return ("dma takes smarthost= (empty: delivered straight to "
+		    "each domain's servers)");
+	if (v[0] != '\0' && !dma_host_ok(v))
+		return ("smarthost is a host's name or IPv4 address");
+	if ((v = dma_word(sp, "port")) != NULL && v[0] != '\0' && (strspn(v,
+	    "0123456789") != strlen(v) || atoi(v) < 1 || atoi(v) > 65535))
+		return ("port is 1 to 65535");
+	if ((v = dma_word(sp, "tls")) != NULL && strcmp(v, "none") != 0 &&
+	    strcmp(v, "starttls") != 0 && strcmp(v, "tls") != 0 &&
+	    strcmp(v, "opportunistic") != 0)
+		return ("tls is none, starttls, opportunistic or tls");
+	if ((v = dma_word(sp, "user")) != NULL && v[0] != '\0' && (strlen(v) >
+	    128 || strcspn(v, "|: \t\n") != strlen(v)))
+		return ("user is one word, with no | or :");
+	if (sp->text != NULL && (strlen(sp->text) > 256 || strchr(sp->text,
+	    '\n') != NULL))
+		return ("the password is one line, 256 characters at most");
+	return (NULL);
+}
+
+/* A file of /etc/dma written whole, owner root and group mail where
+ * the agent may say so, mode as given. */
+static int
+dma_put(struct work *w, const char *path, const char *text, mode_t mode,
+    const char **errp)
+{
+	struct group	*gr;
+	const char	*tmp;
+	size_t		 len;
+	int		 fd;
+
+	tmp = wfmt(w, "%s.arcana-new", path);
+	len = strlen(text);
+	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC |
+	    O_NOFOLLOW, mode)) == -1 || fchmod(fd, mode) != 0 || write(fd,
+	    text, len) != (ssize_t)len || fsync(fd) != 0) {
+		*errp = wfmt(w, "%s: %s", path, strerror(errno));
+		if (fd != -1)
+			(void)close(fd);
+		(void)unlink(tmp);
+		return (-1);
+	}
+	/* dma runs setgid mail: auth.conf is the group's to read. */
+	if (geteuid() == 0 && (gr = getgrnam("mail")) != NULL)
+		(void)fchown(fd, 0, gr->gr_gid);
+	if (close(fd) != 0 || rename(tmp, path) != 0) {
+		*errp = wfmt(w, "%s: %s", path, strerror(errno));
+		(void)unlink(tmp);
+		return (-1);
+	}
+	return (0);
+}
+
+/*
+ * dma relays by the smart host given (none: straight to each domain's
+ * servers), on its port, with TLS as said, signing in as user: dma.conf's
+ * keys of these alone written, the admin's other lines kept; the
+ * sign-in a line of auth.conf for that host ("user|host:password"),
+ * the other hosts' kept.  No password given keeps the one there.
+ */
+static int
+dma_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	const char	*host, *port, *tls, *user, *conf, *auth, *oldpw, *pw;
+	const char	*cpath, *apath;
+	char		*copy, *line, *out, *aout;
+	size_t		 i, n;
+	bool		 set, owned;
+
+	host = dma_word(sp, "smarthost");
+	port = dma_word(sp, "port");
+	tls = dma_word(sp, "tls") != NULL ? dma_word(sp, "tls") : "none";
+	user = dma_word(sp, "user");
+	cpath = rooted(w, DMA_CONF);
+	apath = rooted(w, DMA_AUTH);
+	conf = slurp(w, cpath);
+	auth = slurp(w, apath);
+	/* The sign-in first: a user with no password there or given is
+	 * refused before anything is written. */
+	pw = sp->text != NULL && sp->text[0] != '\0' ? sp->text : NULL;
+	if (user != NULL && user[0] != '\0' && host[0] != '\0') {
+		const char	*was;
+
+		/* The password kept is that user's alone, not another's of
+		 * the same host. */
+		was = dma_auth_user(w, auth, host, &set, &oldpw);
+		if (was == NULL || strcmp(was, user) != 0)
+			set = false;
+		if (pw == NULL && !set) {
+			*errp = wfmt(w, "a password for %s at %s is needed: none "
+			    "is kept for it", user, host);
+			return (-1);
+		}
+		if (pw == NULL)
+			pw = oldpw;
+	}
+	/* dma.conf: its lines kept but those of the keys set here. */
+	out = wstrdup(w, "");
+	copy = wstrdup(w, conf != NULL ? conf : "");
+	while ((line = strsep(&copy, "\n")) != NULL) {
+		const char	*t = line + strspn(line, " \t");
+
+		owned = false;
+		for (i = 0; i < nitems(dma_keys) && !owned; i++) {
+			n = strlen(dma_keys[i]);
+			owned = strncmp(t, dma_keys[i], n) == 0 && (t[n] == '\0' ||
+			    t[n] == ' ' || t[n] == '\t');
+		}
+		if (owned || (t[0] == '\0' && copy == NULL))
+			continue;
+		if (strcmp(line, "# The smart host, set by Arcana:") == 0)
+			continue;
+		out = wfmt(w, "%s%s\n", out, line);
+	}
+	if (host[0] != '\0') {
+		out = wfmt(w, "%s# The smart host, set by Arcana:\nSMARTHOST %s\n",
+		    out, host);
+		if (port != NULL && port[0] != '\0')
+			out = wfmt(w, "%sPORT %s\n", out, port);
+		if (strcmp(tls, "none") != 0)
+			out = wfmt(w, "%sSECURETRANSFER\n", out);
+		if (strcmp(tls, "starttls") == 0 || strcmp(tls,
+		    "opportunistic") == 0)
+			out = wfmt(w, "%sSTARTTLS\n", out);
+		if (strcmp(tls, "opportunistic") == 0)
+			out = wfmt(w, "%sOPPORTUNISTIC_TLS\n", out);
+		if (user != NULL && user[0] != '\0')
+			out = wfmt(w, "%sAUTHPATH %s\n", out, DMA_AUTH);
+	}
+	/* auth.conf: that host's line put in place, or taken out. */
+	aout = wstrdup(w, "");
+	copy = wstrdup(w, auth != NULL ? auth : "");
+	while ((line = strsep(&copy, "\n")) != NULL) {
+		char	*bar = strchr(line, '|'), *colon;
+
+		if (line[0] == '\0' && copy == NULL)
+			continue;
+		if (host[0] != '\0' && line[0] != '#' && bar != NULL && (colon =
+		    strchr(bar, ':')) != NULL && (size_t)(colon - bar - 1) ==
+		    strlen(host) && strncmp(bar + 1, host, strlen(host)) == 0)
+			continue;
+		aout = wfmt(w, "%s%s\n", aout, line);
+	}
+	if (host[0] != '\0' && user != NULL && user[0] != '\0')
+		aout = wfmt(w, "%s%s|%s:%s\n", aout, user, host, pw);
+	{
+		char	*dir = wstrdup(w, cpath);
+
+		if (strrchr(dir, '/') != NULL) {
+			*strrchr(dir, '/') = '\0';
+			(void)mkdir(dir, 0755);
+		}
+	}
+	if (dma_put(w, apath, aout, 0640, errp) != 0 || dma_put(w, cpath, out,
+	    0644, errp) != 0)
+		return (-1);
+	return (0);
 }
 
 /* ---- The sysfile job: a file of the table written ------------------ */
@@ -459,6 +755,8 @@ sysfile_check(const struct arc_job_spec *sp)
 		}
 		return (NULL);
 	}
+	if (sp->verb != NULL && strcmp(sp->verb, "dma") == 0)
+		return (dma_check(sp));
 	if (sp->verb != NULL && strcmp(sp->verb, "periodic") == 0) {
 		/* periodic.conf's variables: name=YES|NO, each a periodic
 		 * one. */
@@ -494,7 +792,8 @@ sysfile_title(const struct arc_job_spec *sp)
 	char	*t;
 
 	if (asprintf(&t, "%s written", strcmp(sp->verb, "periodic") == 0 ?
-	    "periodic.conf's variables" : strcmp(sp->verb, "rc") == 0 ?
+	    "periodic.conf's variables" : strcmp(sp->verb, "dma") == 0 ?
+	    "dma's smart host" : strcmp(sp->verb, "rc") == 0 ?
 	    "securelevel at boot" : sp->verb) == -1)
 		return (NULL);
 	return (t);
@@ -526,6 +825,8 @@ do_sysfile_job(struct work *w, const struct arc_job_spec *sp,
 		}
 		return (0);
 	}
+	if (strcmp(sp->verb, "dma") == 0)
+		return (dma_job(w, sp, errp));
 	if (strcmp(sp->verb, "periodic") == 0) {
 		/* sysrc -f periodic.conf: each variable, the rest kept. */
 		for (i = 0; i < sp->names.n; i++) {

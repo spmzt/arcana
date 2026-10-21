@@ -66,6 +66,8 @@ static TAILQ_HEAD(, qjob) jobs = TAILQ_HEAD_INITIALIZER(jobs);
 static pthread_mutex_t	jobs_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t	jobs_cv = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t	confirm_cv = PTHREAD_COND_INITIALIZER;
+/* Jobs of pkg in jails at work in lanes of their own; under jobs_lock. */
+static int		lanes_busy;
 static uint64_t		nextid = 1;
 
 static char	*xdup(const char *);
@@ -73,7 +75,9 @@ static char	*title_of(const struct arc_job_spec *);
 static void	 spec_copy(struct arc_job_spec *, const struct arc_job_spec *);
 static void	 job_free(struct qjob *);
 static void	 trim(void);
-static void	 run(struct qjob *);
+static void	 run(struct qjob *, bool) __no_lock_analysis;
+static bool	 pkg_lane(const struct arc_job_spec *);
+static bool	 lane_jail_busy(const char *);
 static bool	 await_confirm(struct qjob *);
 static void	 undo_prepare(struct qjob *);
 static const char *undo(struct qjob *);
@@ -916,9 +920,12 @@ undo(struct qjob *j)
 	    safe_wait(sp)));
 }
 
-/* Do what the job says; its outcome goes into the job. */
+/*
+ * Do what the job says; its outcome goes into the job.  In a lane, the
+ * runner holds change_lock for every lane at once (lanes()).
+ */
 static void
-run(struct qjob *j)
+run(struct qjob *j, bool lane)
 {
 	struct arc_action_rsp		 ar;
 	struct arc_address_req		 dq;
@@ -938,9 +945,13 @@ run(struct qjob *j)
 	sp = &j->spec;
 	root = step_begin(&j->w, ARC_STEP_KIND_DAEMON, "arcana-agent", "job %ju: %s",
 	    (uintmax_t)j->id, j->title);
-	pthread_mutex_lock(&change_lock);
-	go = change_note("job %ju: %s, from %s", (uintmax_t)j->id, j->title,
-	    j->peer);
+	if (lane)
+		go = !changes_stopping();
+	else {
+		pthread_mutex_lock(&change_lock);
+		go = change_note("job %ju: %s, from %s", (uintmax_t)j->id,
+		    j->title, j->peer);
+	}
 	pthread_mutex_lock(&jobs_lock);
 	j->begun = go;
 	pthread_mutex_unlock(&jobs_lock);
@@ -1197,8 +1208,13 @@ run(struct qjob *j)
 	/* The firewall's old rules waited for that: now they go. */
 	if (held)
 		(void)ipfw_settle(&j->w, true);
-	(void)change_note(NULL);
-	pthread_mutex_unlock(&change_lock);
+	if (!lane) {
+		(void)change_note(NULL);
+		pthread_mutex_unlock(&change_lock);
+	}
+	/* Cancelled at work: said so, whatever the program said. */
+	if (!ok && j->w.cancel)
+		error = "cancelled while at work: pkg was stopped";
 	step_end(&j->w, root, ok, NULL);
 
 	/* Said while the job is still ours: once done, it may be forgotten. */
@@ -1235,6 +1251,127 @@ run(struct qjob *j)
 	pthread_mutex_unlock(&jobs_lock);
 }
 
+/*
+ * May the job run beside others in a lane: pkg in a jail named (each
+ * jail its own packages, database and lock), not a safe change, which
+ * waits for its confirmation alone.
+ */
+static bool
+pkg_lane(const struct arc_job_spec *sp)
+{
+
+	return ((sp->kind == ARC_JOB_KIND_PKG_UPGRADE ||
+	    sp->kind == ARC_JOB_KIND_PKG_INSTALL ||
+	    sp->kind == ARC_JOB_KIND_PKG_CLEAN) && !sp->safe &&
+	    sp->jail != NULL && sp->jail[0] != '\0' &&
+	    strcmp(sp->jail, "*") != 0);
+}
+
+/* The first job in the queue still to run, or NULL; jobs_lock held. */
+static struct qjob *
+next_queued(void)
+{
+	struct qjob	*j;
+
+	TAILQ_FOREACH(j, &jobs, link)
+		if (j->state == ARC_JOB_STATE_QUEUED)
+			return (j);
+	return (NULL);
+}
+
+/*
+ * The next job for a lane: the first queued one of pkg in a jail not at
+ * work already, before the first queued job of another kind; NULL if
+ * none.  A jail's own are taken in order: one behind a busy jail's is
+ * busy too.  *morep: a job of pkg in a jail is queued there still.
+ * jobs_lock held.
+ */
+static struct qjob *
+next_lane(bool *morep)
+{
+	struct qjob	*j;
+
+	*morep = false;
+	TAILQ_FOREACH(j, &jobs, link) {
+		if (j->state != ARC_JOB_STATE_QUEUED)
+			continue;
+		if (!pkg_lane(&j->spec))
+			break;
+		*morep = true;
+		if (!lane_jail_busy(j->spec.jail))
+			return (j);
+	}
+	return (NULL);
+}
+
+/* Is a job of pkg in that jail at work in a lane?  jobs_lock held. */
+static bool
+lane_jail_busy(const char *jail)
+{
+	struct qjob	*j;
+
+	TAILQ_FOREACH(j, &jobs, link)
+		if (j->state == ARC_JOB_STATE_RUNNING && pkg_lane(&j->spec) &&
+		    strcmp(j->spec.jail, jail) == 0)
+			return (true);
+	return (false);
+}
+
+static void *
+lane(void *arg)
+{
+	struct qjob	*j = arg;
+
+	run(j, true);
+	pthread_mutex_lock(&jobs_lock);
+	lanes_busy--;
+	pthread_cond_broadcast(&jobs_cv);
+	pthread_mutex_unlock(&jobs_lock);
+	return (NULL);
+}
+
+/*
+ * The jobs of pkg in jails at the head of the queue, up to PKG_LANES at
+ * once under one hold of change_lock: a jail's download that stalls
+ * holds up no other jail.  Taken in the queue's order, a jail's own one
+ * after another; the first job of another kind waits for every lane.
+ */
+static void
+lanes(void)
+{
+	pthread_attr_t	 attr;
+	pthread_t	 tid;
+	struct qjob	*j;
+	bool		 more;
+	int		 error;
+
+	pthread_mutex_lock(&change_lock);
+	(void)change_note("pkg in jails, %d at once", PKG_LANES);
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	pthread_mutex_lock(&jobs_lock);
+	for (;;) {
+		j = lanes_busy < PKG_LANES ? next_lane(&more) : NULL;
+		if (lanes_busy >= PKG_LANES)
+			more = true;
+		if (j != NULL) {
+			j->state = ARC_JOB_STATE_RUNNING;
+			j->started = time(NULL);
+			lanes_busy++;
+			if ((error = pthread_create(&tid, &attr, lane, j)) != 0)
+				errc(1, error, "pthread_create");
+			continue;
+		}
+		if (lanes_busy == 0 && !more)
+			break;
+		pthread_cond_wait(&jobs_cv, &jobs_lock);
+	}
+	pthread_mutex_unlock(&jobs_lock);
+	pthread_attr_destroy(&attr);
+	(void)change_note(NULL);
+	pthread_mutex_unlock(&change_lock);
+}
+
 static void *
 runner(void *arg __unused)
 {
@@ -1242,18 +1379,17 @@ runner(void *arg __unused)
 
 	for (;;) {
 		pthread_mutex_lock(&jobs_lock);
-		for (;;) {
-			TAILQ_FOREACH(j, &jobs, link)
-				if (j->state == ARC_JOB_STATE_QUEUED)
-					break;
-			if (j != NULL)
-				break;
+		while ((j = next_queued()) == NULL)
 			pthread_cond_wait(&jobs_cv, &jobs_lock);
+		if (pkg_lane(&j->spec)) {
+			pthread_mutex_unlock(&jobs_lock);
+			lanes();
+			continue;
 		}
 		j->state = ARC_JOB_STATE_RUNNING;
 		j->started = time(NULL);
 		pthread_mutex_unlock(&jobs_lock);
-		run(j);
+		run(j, false);
 	}
 	return (NULL);
 }
@@ -1423,6 +1559,15 @@ jobs_cancel(struct work *w, uint64_t id, const char **errp)
 		if (j->state == ARC_JOB_STATE_UNCONFIRMED) {
 			j->rejected = true;
 			pthread_cond_broadcast(&confirm_cv);
+			o = wcalloc(w, 1, sizeof(*o));
+			fill(w, o, j, false);
+			break;
+		}
+		/* pkg in a jail at work: stopped, which a download or
+		 * the catalogue's update survives; a change it was making
+		 * pkg's own database rolls back. */
+		if (j->state == ARC_JOB_STATE_RUNNING && pkg_lane(&j->spec)) {
+			j->w.cancel = true;
 			o = wcalloc(w, 1, sizeof(*o));
 			fill(w, o, j, false);
 			break;

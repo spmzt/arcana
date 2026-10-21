@@ -1536,6 +1536,8 @@ set_notify(struct html *h)
 	    "mail-test\"%s>Send a test mail</button></div></form>",
 	    app.modal_busy ? " disabled" : "", app.modal_busy ? " disabled" :
 	    "");
+	/* How dma, which sends it, relays: set on the console's host. */
+	dma_settings(h);
 	/* By Telegram: the same, to chats, by a bot, from a host. */
 	h_raw(h, "<h3>By Telegram</h3><form data-form=\"settings-telegram\" "
 	    "class=\"settings set-form mail\"><p class=\"dim\">The same, as "

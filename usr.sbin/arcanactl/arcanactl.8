@@ -439,7 +439,7 @@ A GELI passphrase is read from
 .Ar passfile
 and given to geli by a file of the job's own, never on a command line.
 A job.
-.It Cm sysfile Ar file path | Cm periodic Ar name Ns = Ns Cm YES | NO ... | Cm rc Cm kern_securelevel_enable= Ns Cm YES | NO Cm kern_securelevel= Ns Ar level
+.It Cm sysfile Ar file path | Cm periodic Ar name Ns = Ns Cm YES | NO ... | Cm rc Cm kern_securelevel_enable= Ns Cm YES | NO Cm kern_securelevel= Ns Ar level | Cm dma Cm smarthost= Ns Ar host Oo Cm port= Ns Ar port Oc Oo Cm tls= Ns Cm none | starttls | opportunistic | tls Oc Op Cm user= Ns Ar name
 Writes one of the system's files from
 .Ar path
 and tells the daemon that reads it:
@@ -470,6 +470,40 @@ sets
 and
 .Va kern_securelevel ,
 securelevel at boot, and those alone.
+.Cm dma
+sets how
+.Xr dma 8
+relays the host's mail: in
+.Pa /etc/dma/dma.conf ,
+.Va SMARTHOST ,
+.Va PORT ,
+.Va SECURETRANSFER ,
+.Va STARTTLS ,
+.Va OPPORTUNISTIC_TLS
+and
+.Va AUTHPATH
+alone, its other lines kept; an empty
+.Ar host
+delivers straight, with none of them.
+.Cm tls=tls
+is TLS from the start (465),
+.Cm starttls
+STARTTLS required,
+.Cm opportunistic
+STARTTLS when the relay offers it.
+With
+.Cm user= ,
+the sign-in is that host's line of
+.Pa /etc/dma/auth.conf ,
+mode 0640, group mail; its password is read from
+.Ev ARCANA_DMA_PASSWORD ,
+never from the command line, and the one kept is kept when none is
+given; an empty
+.Cm user=
+removes the sign-in.
+The host's
+.Cm system
+read shows these, and whether a password is set, never the password.
 A job.
 .It Cm smtpd
 OpenSMTPD on the host, or with
@@ -482,13 +516,41 @@ what
 says of its status, counters and queue; its
 .Xr smtpd.conf 5 ,
 the form it was rendered from, and the tables the agent keeps.
-.It Cm smtpd conf Ar form.json
+.It Cm smtpd conf Ar form.json Op Cm replace
 .Xr smtpd.conf 5
 rendered on the host from the form (a JSON object: listeners,
 domains, delivery, relay, policy, filters and own lines, as the
 console's Mail tab sends it), checked by
 .Nm smtpd Fl n
 before it is put in place; smtpd is started again where it runs.
+A smtpd.conf the form did not write is not replaced unless
+.Cm replace
+is given; the one before is kept as
+.Pa smtpd.conf.arcana-old .
+.It Cm smtpd conf-text Oo Cm check Oc Ar file
+The admin's own
+.Xr smtpd.conf 5
+from
+.Ar file :
+checked by
+.Nm smtpd Fl n ,
+and unless
+.Cm check
+put in place, the one before kept as
+.Pa smtpd.conf.arcana-old ,
+and smtpd started again where it runs.
+The tables it declares are the tables
+.Cm entry
+and
+.Cm unentry
+write, at their own paths:
+.Cm file:
+tables by their first word,
+.Cm passwd:
+tables by the name before the first colon (a new password hashed,
+the rest of the line kept);
+.Cm db:
+tables are made the admin's way.
 .It Cm smtpd table Ar name Ar file
 A table written whole: aliases, virtuals, domains, senders,
 credentials (a user and a password a line: each password hashed on
@@ -497,6 +559,19 @@ the host by OpenSMTPD's
 the clear one kept nowhere) or secrets (a label, then user:password);
 credentials and secrets are root's alone.
 Where smtpd runs it reads the table again.
+.It Cm smtpd entry Ar name Ar file
+.It Cm smtpd unentry Ar name Ar key
+One entry at a time, the others kept:
+.Cm entry
+puts each line of
+.Ar file
+in the table, replacing the lines of its key (its first word, an
+alias's without its colon) or added; a credentials password is hashed
+as above.
+.Cm unentry
+takes the lines of
+.Ar key
+out, and is refused when the table has none.
 .It Cm smtpd enable Cm yes | no
 Enabled and started, or stopped and disabled.
 .It Cm smtpd pause | resume Cm mta | mda | smtp
@@ -1066,14 +1141,43 @@ df
 .Pq set, unset or inherit ,
 maxaddr, timeout, and learn, external and dscpinherit, each on or off.
 .It Cm ipfw Oo Cm keep Oc Cm add Ar number Ar rule ...
-.It Cm ipfw Oo Cm keep Oc Cm delete Ar number
-.It Cm ipfw Oo Cm keep Oc Cm replace Ar number new-number rule ...
-Replaces the rule numbered
+.It Cm ipfw Oo Cm keep Oc Cm delete Ar number Op Ar rule ...
+.It Cm ipfw Oo Cm keep Oc Cm replace Ar number new-number rule ... Op Fl \-was Ar old-rule ...
+.It Cm ipfw Oo Cm keep Oc Cm renumber Ar from to Op Ar from to ...
+The live rules changed are set 0's, which the kept rules are applied
+as; no other set is touched.
+.Cm add
+keeping the first rule when none is kept keeps the kernel's set 0
+rules first, so that
+.Cm apply
+does not take them away.
+.Cm delete
+takes the one rule of
 .Ar number
-by the rule given, numbered
-.Ar new-number :
-the old one is deleted as the new is added, in the live rules, the kept
-ones, or both.
+whose words are
+.Ar rule ,
+the others of that number staying; with the number alone, its only
+rule, and it is refused when the number has several.
+.Cm replace
+puts the rule given, numbered
+.Ar new-number ,
+in place of the rule numbered
+.Ar number
+whose words follow
+.Fl \-was
+(its only one when they are not given).
+.Cm renumber
+gives each
+.Ar from
+number's rules the number
+.Ar to ,
+in the order given, refused as a whole unless each
+.Ar to
+is free when it is reached: the farthest first, to make room.
+Each change is read by
+.Ql ipfw -n
+first and done as one ipfw script; if the kernel refuses a line, the
+number's rules are put back as they were listed.
 .It Cm ipfw alias Ar name Cm addr Ar address ... | Cm ports Ar list | Cm value Ar word | Cm delete
 An alias of the kept rules: a name (letters, digits, _) standing for
 addresses, for ports (80,443) or for a word, used in rules as

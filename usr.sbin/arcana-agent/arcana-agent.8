@@ -61,6 +61,7 @@
 .Op Fl W Ar swapinfo
 .Op Fl Z Ar zpool
 .Op Fl P Ar pkg
+.Op Fl -pkg-idle Ar seconds
 .Op Fl -bird-watch Ar seconds
 .Op Fl -sctp-also Ar addresses
 .Op Fl -telegram-api Ar url
@@ -164,6 +165,11 @@ in a running jail.
 Every reply carries a trace: the library calls, system calls, files and
 programs the request used, with the output of every program.
 Changes are made one at a time; reading is not held up by them.
+Jobs of pkg in jails are the exception: those at the head of the queue,
+each in a jail of its own, run up to four at once, a jail's own one
+after another, so that a download stalled in one jail holds up no
+other; the next job of any other kind waits for all of them.
+Such a job can be cancelled while it runs: its pkg is stopped.
 .Pp
 Every operation requires an authenticated peer.
 On a local socket that is anyone who can open it: the socket is mode
@@ -330,6 +336,14 @@ and
 are.
 Default
 .Pa /usr/local/etc .
+.It Fl -pkg-idle Ar seconds
+How long
+.Xr pkg 8
+may say nothing before it is stopped, with what it started
+.Pq Nm pkg Fl j Ns 's child in the jail :
+a download that stalls, or a question pkg waits on.
+Off a terminal pkg prints a dot for each tenth of a download.
+Default 600.
 .It Fl -bird-watch Ar seconds
 How often the BIRD of the host, and that of each running jail with a
 network of its own where
@@ -507,7 +521,10 @@ The
 program, for pending upgrades and upgrading, on the host and with
 .Fl j
 in running jails.
-Upgrades may run for up to an hour.
+Upgrades may run for up to an hour, and are stopped sooner when pkg
+says nothing for
+.Fl -pkg-idle
+seconds.
 .El
 .Pp
 A program run for a read, and for the samples the history keeps, runs

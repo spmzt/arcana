@@ -93,6 +93,7 @@ struct opts opts = {
 	.swanctl_dir = PATH_SWANCTL_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
 	.bird_watch_s = 15,
+	.pkg_idle_s = PKG_IDLE_SEC,
 	.bird_bin = PATH_BIRD_BIN,
 	.bird_conf = PATH_BIRD_CONF,
 	.setfib_bin = PATH_SETFIB_BIN,
@@ -116,11 +117,13 @@ static bool	foreground;
 enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API,
     OPT_POUDRIERE, OPT_POUDRIERE_ETC, OPT_IFMCSTAT, OPT_FRESHCLAM_CONF,
     OPT_SURICATA_RULES, OPT_EXPORTS, OPT_CTL_CONF, OPT_HAST_CONF,
-    OPT_SMTPD_CONF, OPT_SMTPD_DIR };
+    OPT_SMTPD_CONF, OPT_SMTPD_DIR, OPT_PKG_IDLE };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
 	{ "root", required_argument, NULL, OPT_ROOT },
+	/* A pkg that says nothing for this long is stopped. */
+	{ "pkg-idle", required_argument, NULL, OPT_PKG_IDLE },
 	/* How often BIRD's sessions are looked at for faults; 0, never. */
 	{ "bird-watch", required_argument, NULL, OPT_BIRD_WATCH },
 	/* More addresses each SCTP listener is bound to (sctp_bindx(3)),
@@ -421,6 +424,11 @@ main(int argc, char *argv[])
 		case OPT_SMTPD_DIR:
 			opts.smtpd_dir = optarg;
 			break;
+			break;
+		case OPT_PKG_IDLE:
+			opts.pkg_idle_s = (int)strtonum(optarg, 1, 86400, &errstr);
+			if (errstr != NULL)
+				errx(1, "--pkg-idle %s: %s", optarg, errstr);
 			break;
 		case OPT_BIRD_WATCH:
 			opts.bird_watch_s = (int)strtonum(optarg, 0, 3600, &errstr);
