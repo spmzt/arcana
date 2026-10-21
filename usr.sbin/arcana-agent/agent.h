@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.176.0"
+#define	ARCANA_AGENT_VERSION	"0.177.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -85,6 +85,15 @@
 #define	JAIL_E_SEP		"\037"
 
 #define	EXEC_TIMEOUT_SEC	3600	/* a pkg upgrade can take a while */
+/*
+ * pkg is stopped when nothing has come from it for this long (default
+ * of --pkg-idle): off a terminal it prints a dot each tenth of a
+ * download, so a large package on a slow link is quiet for minutes, but
+ * not for ten.
+ */
+#define	PKG_IDLE_SEC		600
+/* Jobs of pkg in jails, each its own jail, at work at once. */
+#define	PKG_LANES		4
 #define	TRACE_MAX		ARC_MAX_STEPS
 #define	TRACE_DEPTH		16
 
@@ -162,6 +171,7 @@ struct opts {
 	const char	*build_conf;	/* this host's config.mk for it */
 	const char	*root;		/* --root: the system's files under it */
 	int		 bird_watch_s;	/* --bird-watch: BIRD's sessions, how often */
+	int		 pkg_idle_s;	/* --pkg-idle: a silent pkg, stopped after */
 	char		 build[65];	/* SHA-256 of the running program */
 	bool		 debug;
 };
@@ -217,6 +227,11 @@ struct work {
 	pthread_mutex_t	 lock;
 	/* The peer told each step as it begins and ends, or NULL. */
 	cbl_conn	*tell;
+	/*
+	 * A job's, set by another thread when it is cancelled at work: a
+	 * watched program it runs (exec_set_watch()) is stopped.
+	 */
+	_Atomic bool	 cancel;
 };
 
 void		 work_init(struct work *);
@@ -252,6 +267,8 @@ struct execres {
 	size_t		 errlen;
 	bool		 truncated;	/* more output than was kept */
 	bool		 timedout;	/* killed: it did not finish in time */
+	int		 stalled;	/* killed: silent this many seconds */
+	bool		 cancelled;	/* killed: its job was cancelled */
 };
 
 int		 run_exec(struct work *, char *const [], struct execres *);
@@ -262,6 +279,7 @@ void		 exec_set_home(struct work *, const char *);
 void		 exec_set_env(struct work *, const char *, const char *);
 void		 exec_set_stdin(const char *, size_t);
 void		 exec_set_secret(bool);
+void		 exec_set_watch(int);
 int		 run_exec_lines(struct work *, char *const [],
 		    void (*)(const char *, void *), void *);
 int		 run_exec_max(struct work *, char *const [], struct execres *,

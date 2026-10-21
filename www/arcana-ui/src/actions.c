@@ -2913,9 +2913,10 @@ job_cancel_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 /*
  * Give up what an entry of the activity list waits for, where that is
  * safe.  A job that has not started is taken out of the host's queue;
- * a safe change waiting to be confirmed is undone at once; one at work
- * is left to finish, as stopping a change half way is what would not
- * be safe.  A reading still on its way is no longer
+ * a safe change waiting to be confirmed is undone at once; pkg at work
+ * in a jail is stopped by the agent; any other at work is left to
+ * finish, as stopping a change half way is what would not be safe.  A
+ * reading still on its way is no longer
  * waited for: the host may finish it, and nothing was to change.
  */
 void

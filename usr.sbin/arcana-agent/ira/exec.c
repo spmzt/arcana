@@ -110,6 +110,31 @@ exec_set_secret(bool on)
 	exec_secret = on;
 }
 
+/*
+ * The programs this thread runs while this is set (pkg): each in a
+ * process group of its own, so that what it starts (pkg -j's child in
+ * the jail) is stopped with it; stopped too once nothing has come from
+ * it for idle seconds, and when its job is cancelled.  0: not watched.
+ */
+static _Thread_local int	exec_idle;
+
+void
+exec_set_watch(int idle)
+{
+
+	exec_idle = idle;
+}
+
+/* The program stopped, its process group with it when it has one. */
+static void
+exec_kill(pid_t pid, bool group)
+{
+
+	(void)kill(group ? -pid : pid, SIGTERM);
+	sleep(2);
+	(void)kill(group ? -pid : pid, SIGKILL);
+}
+
 void
 exec_set_home(struct work *w, const char *dir)
 {
@@ -151,8 +176,9 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	char				*env[6];
 	const char			*cmdline;
 	size_t				 i;
-	time_t				 deadline;
+	time_t				 deadline, heard;
 	int				 ne;
+	bool				 group;
 
 	ne = 0;
 	env[ne++] = pathenv;
@@ -209,8 +235,12 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	posix_spawnattr_init(&sa);
 	posix_spawnattr_setsigmask(&sa, &none);
 	posix_spawnattr_setsigdefault(&sa, &dfl);
+	/* Watched: a process group of its own, stopped whole. */
+	group = exec_idle > 0;
+	if (group)
+		posix_spawnattr_setpgroup(&sa, 0);
 	posix_spawnattr_setflags(&sa, POSIX_SPAWN_SETSIGMASK |
-	    POSIX_SPAWN_SETSIGDEF);
+	    POSIX_SPAWN_SETSIGDEF | (group ? POSIX_SPAWN_SETPGROUP : 0));
 	rc = posix_spawn(&pid, argv[0], &fa, &sa, argv, env);
 	if (rc == 0 && w->nice)
 		(void)setpriority(PRIO_PROCESS, pid, READ_NICE);
@@ -254,6 +284,7 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	 */
 	exited = false;
 	deadline = time(NULL) + EXEC_TIMEOUT_SEC;
+	heard = time(NULL);
 	while (op[0] != -1 || ep[0] != -1) {
 		pfd[0].fd = op[0];
 		pfd[0].events = POLLIN;
@@ -279,6 +310,10 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 			}
 		}
 		if (n > 0) {
+			/* Something from it: not silent. */
+			if ((op[0] != -1 && (pfd[0].revents & POLLIN)) ||
+			    (ep[0] != -1 && (pfd[1].revents & POLLIN)))
+				heard = time(NULL);
 			if (op[0] != -1 &&
 			    (pfd[0].revents & (POLLIN | POLLHUP)))
 				capture_read(&op[0], &out);
@@ -294,10 +329,18 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 			continue;
 		}
 		if (time(NULL) > deadline) {
-			kill(pid, SIGTERM);
-			sleep(2);
-			kill(pid, SIGKILL);
+			exec_kill(pid, group);
 			res->timedout = true;
+			break;
+		}
+		if (group && w->cancel) {
+			exec_kill(pid, group);
+			res->cancelled = true;
+			break;
+		}
+		if (group && time(NULL) - heard > exec_idle) {
+			exec_kill(pid, group);
+			res->stalled = exec_idle;
 			break;
 		}
 	}
@@ -327,8 +370,11 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	else
 		step_exec(w, step, argv, rc, res->out, MIN(res->outlen,
 		    (size_t)ARC_MAX_OUTPUT), res->err, res->errlen);
-	step_end(w, step, rc == 0, "exit status %d%s", rc,
-	    out.truncated || eout.truncated ? ", output truncated" : "");
+	step_end(w, step, rc == 0, "exit status %d%s%s", rc,
+	    out.truncated || eout.truncated ? ", output truncated" : "",
+	    res->timedout ? ", killed: out of time" : res->cancelled ?
+	    ", stopped: the job was cancelled" : res->stalled > 0 ?
+	    ", killed: silent too long" : "");
 	return (rc);
 }
 
@@ -344,6 +390,13 @@ exec_error(struct work *w, const struct execres *res, const char *prog)
 		len--;
 	if (res->timedout)
 		return (wfmt(w, "%s was killed: it did not finish in time", prog));
+	if (res->cancelled)
+		return (wfmt(w, "%s was stopped: the job was cancelled", prog));
+	if (res->stalled > 0)
+		return (wfmt(w, "%s was killed: nothing came from it for %d "
+		    "%s (a download that stalled, or a question it waits on)",
+		    prog, res->stalled >= 120 ? res->stalled / 60 : res->stalled,
+		    res->stalled >= 120 ? "minutes" : "seconds"));
 	if (len == 0)
 		return (wfmt(w, "%s exited with status %d", prog,
 		    res->status));

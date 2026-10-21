@@ -424,7 +424,7 @@ jail_network_cleanup()
 atf_test_case jail_plugins cleanup
 jail_plugins_head()
 {
-	atf_set "descr" "a vnet jail's plugins are looked for as the jail sees its files: a program behind a link inside it is found, though the host has none; wg(8) of the base system counts"
+	atf_set "descr" "a vnet jail's plugins are looked for as the jail sees its files: a program behind a link inside it is found, though the host has none; wg(8), the base system's, is no plugin"
 	atf_set "require.user" "root"
 	atf_set "is.exclusive" "true"
 }
@@ -449,11 +449,7 @@ jail_plugins_body()
 	atf_check -o match:'"name":"arcw_p1"' cat list.json
 	sed -n 's/.*"name":"arcw_p1"\(.*\)/\1/p' list.json > jail.json
 	atf_check -o match:'"plugins": ?\[[^]]*"squid"' \
-	    -o match:'"plugins": ?\[[^]]*"wireguard"' cat jail.json
-	# The host's own: wg(8) of the base system is WireGuard's there too.
-	if [ -x /usr/bin/wg ] && [ ! -e /usr/local/bin/wg ]; then
-		atf_check -o match:'Plugins:.*wireguard' "$JGC" -c "$SOCK" hello
-	fi
+	    -o not-match:'"plugins": ?\[[^]]*"wireguard"' cat jail.json
 	atf_check -o ignore jail -r arcw_p1
 }
 jail_plugins_cleanup()
@@ -937,6 +933,111 @@ bird_live_cleanup()
 	fi
 	jail -r arcw_ba 2>/dev/null
 	jail -r arcw_bb 2>/dev/null
+	true
+}
+
+atf_test_case pkg_lanes cleanup
+pkg_lanes_head()
+{
+	atf_set "descr" "jobs of pkg in jails run four at once, a jail's own" \
+	    "one after another, and the next job of another kind after all" \
+	    "of them; a pkg that says nothing is stopped with its child in" \
+	    "the jail, and one cancelled at work is stopped"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+	atf_set "timeout" "120"
+}
+pkg_lanes_body()
+{
+	local d="$(pwd)" j id
+
+	programs
+	for j in arcw_p1 arcw_p2 arcw_p3 arcw_p4 arcw_ps arcw_pc; do
+		jls -j $j >/dev/null 2>&1 && atf_skip "a jail $j is there already"
+	done
+	for j in arcw_p1 arcw_p2 arcw_p3 arcw_p4 arcw_ps arcw_pc; do
+		atf_check -o ignore jail -c name=$j persist path=/
+		echo $j >> jails.made
+	done
+	mkdir run etc etc/jail.conf.d
+	: > etc/jail.conf
+	# pkg, as the agent runs it: how many are at work when one starts,
+	# a jail's twice at once said; arcw_ps silent with a child, as a
+	# stalled download; arcw_pc silent until it is cancelled.
+	cat > fake-pkg <<EOS
+#!/bin/sh
+jail=host
+[ "\$1" = -j ] && { jail=\$2; shift 2; }
+case "\$1" in
+version) exit 1 ;;
+-vv) exit 0 ;;
+esac
+[ -e $d/run/\$jail ] && echo "twice \$jail" >> $d/lanes.log
+: > $d/run/\$jail
+echo "\$jail \$(ls $d/run | wc -l | tr -d ' ')" >> $d/lanes.log
+case "\$jail" in
+arcw_ps|arcw_pc)
+	# Stopped: no longer at work (its child is left to the agent).
+	trap "rm -f $d/run/\$jail; exit 143" TERM
+	sleep 300 &
+	echo \$! > $d/\$jail.child
+	wait ;;
+*)	sleep 2
+	echo "Your packages are up to date." ;;
+esac
+rm -f $d/run/\$jail
+EOS
+	chmod +x fake-pkg
+	"$JGD" -F -l "unix:$d/s.sock" -P "$d/fake-pkg" --pkg-idle 5 \
+	    -f "$d/etc/jail.conf" -D "$d/etc/jail.conf.d" \
+	    -1 "$d/history.conf" > daemon.out 2>&1 &
+	echo $! > daemon.pid
+	for i in $(seq 1 50); do [ -S s.sock ] && break; sleep 0.1; done
+	for j in arcw_ps arcw_pc arcw_p1 arcw_p1 arcw_p2 arcw_p3 arcw_p4; do
+		"$JGC" -q -c "unix:$d/s.sock" pkg-upgrade -j $j >> queued.out ||
+		    atf_fail "pkg-upgrade -j $j not queued"
+	done
+	# Then one of another kind: pkg on the host.
+	"$JGC" -q -c "unix:$d/s.sock" pkg-upgrade >> queued.out
+	id=$(awk '/in arcw_pc$/ { print $1 }' queued.out)
+	for i in $(seq 1 50); do [ -s arcw_pc.child ] && break; sleep 0.1; done
+	atf_check -o match:"^ *$id running" "$JGC" -c "unix:$d/s.sock" job-cancel $id
+	for i in $(seq 1 300); do
+		"$JGC" -c "unix:$d/s.sock" jobs | grep -q 'queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	"$JGC" -c "unix:$d/s.sock" jobs > jobs.out
+	cat lanes.log jobs.out
+	atf_check -o not-match:'queued|running' cat jobs.out
+	# Four at once at most, and four were.
+	atf_check -o inline:'4\n' sh -c "awk '{ print \$2 }' lanes.log | sort -n | tail -1"
+	atf_check -o not-match:twice cat lanes.log
+	# The host's after every jail's, alone.
+	atf_check -o match:'^host 1$' tail -1 lanes.log
+	# The silent one stopped, its child with it; the cancelled one too.
+	atf_check -o match:'failed +pkg upgrade in arcw_ps: pkg upgrade was killed: nothing came from it for 5 seconds' \
+	    -o match:'failed +pkg upgrade in arcw_pc: cancelled while at work' \
+	    -o match:'done +pkg upgrade in arcw_p1$' \
+	    -o match:'done +pkg upgrade in arcw_p4$' \
+	    -o match:'done +pkg upgrade$' cat jobs.out
+	for j in arcw_ps arcw_pc; do
+		atf_check -s not-exit:0 -e ignore kill -0 "$(cat $j.child)"
+	done
+}
+pkg_lanes_cleanup()
+{
+	local j
+
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	for j in arcw_ps arcw_pc; do
+		[ -f $j.child ] && kill "$(cat $j.child)" 2>/dev/null
+	done
+	if [ -f jails.made ]; then
+		for j in $(cat jails.made); do
+			jail -r $j 2>/dev/null
+		done
+	fi
 	true
 }
 
@@ -2332,6 +2433,7 @@ atf_init_test_cases()
 	atf_add_test_case sdwan_links
 	atf_add_test_case bird_live
 	atf_add_test_case sctp_multihome
+	atf_add_test_case pkg_lanes
 	atf_add_test_case sctp_loopback
 	atf_add_test_case sdwan_record
 	atf_add_test_case jail_make
