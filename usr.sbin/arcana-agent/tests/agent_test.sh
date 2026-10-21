@@ -3954,6 +3954,44 @@ EOS
 	atf_check -o match:'^kern_securelevel="2"$' -o match:'^kern_securelevel_enable="YES"$' cat rc.conf
 	atf_check -s exit:1 -e match:'rc sets kern_securelevel_enable' "$JGC" -c "$SOCK" sysfile rc sshd_enable=YES
 	atf_check -s exit:1 -e match:'kern_securelevel=-1 to 3' "$JGC" -c "$SOCK" sysfile rc kern_securelevel=7
+	# dma(8): its smart host, port, TLS and sign-in, dma.conf's keys of
+	# these alone (the admin's other lines kept), the sign-in a line of
+	# auth.conf for that host, root's and mail's alone; the password
+	# never read back; a user kept with no password given keeps it.
+	mkdir -p root/etc/dma
+	printf '# the admin'"'"'s\nMASQUERADE arcana@example.org\nSMARTHOST old.example.net\nPORT 25\n' > root/etc/dma/dma.conf
+	printf 'other|elsewhere.example.net:keepme\n' > root/etc/dma/auth.conf
+	atf_check -o match:"done +dma's smart host written" env ARCANA_DMA_PASSWORD='s3cret:x' \
+	    "$JGC" -c "$SOCK" sysfile dma smarthost=smtp.example.net port=587 tls=starttls user=alerts@example.net
+	atf_check -o inline:"# the admin's
+MASQUERADE arcana@example.org
+# The smart host, set by Arcana:
+SMARTHOST smtp.example.net
+PORT 587
+SECURETRANSFER
+STARTTLS
+AUTHPATH /etc/dma/auth.conf
+" cat root/etc/dma/dma.conf
+	atf_check -o inline:'other|elsewhere.example.net:keepme\nalerts@example.net|smtp.example.net:s3cret:x\n' cat root/etc/dma/auth.conf
+	atf_check -o match:'^-rw-r-----' ls -l root/etc/dma/auth.conf
+	atf_check -o match:'"dma":\{"conf_path":"/etc/dma/dma.conf","smarthost":"smtp.example.net","port":"587","tls":"starttls","user":"alerts@example.net","password_set":true\}' \
+	    -o not-match:'s3cret' "$JGC" -c "$SOCK" system host
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sysfile dma smarthost=smtp.example.net port=465 tls=tls user=alerts@example.net
+	atf_check -o match:'s3cret:x' cat root/etc/dma/auth.conf
+	atf_check -o match:'^PORT 465$' -o match:'^SECURETRANSFER$' -o not-match:'STARTTLS' cat root/etc/dma/dma.conf
+	atf_check -s exit:1 -o match:'a password for bob at smtp.example.net is needed' \
+	    "$JGC" -c "$SOCK" sysfile dma smarthost=smtp.example.net user=bob
+	# No sign-in, then no smart host: delivered straight, the admin's
+	# lines and the other host's sign-in kept.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sysfile dma smarthost=smtp.example.net user=
+	atf_check -o inline:'other|elsewhere.example.net:keepme\n' cat root/etc/dma/auth.conf
+	atf_check -o not-match:'AUTHPATH' cat root/etc/dma/dma.conf
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sysfile dma smarthost=
+	atf_check -o inline:"# the admin's
+MASQUERADE arcana@example.org
+" cat root/etc/dma/dma.conf
+	atf_check -s exit:1 -e match:'smarthost is a host' "$JGC" -c "$SOCK" sysfile dma smarthost='a;b'
+	atf_check -s exit:1 -e match:'tls is none' "$JGC" -c "$SOCK" sysfile dma smarthost=x.example tls=maybe
 	# GEOM's classes loaded, their status; a class's command; GELI's
 	# passphrase by a file of its own, gone after.
 	atf_check -o match:'"geom_classes":\{"mirror":"Name Status Components\\nmirror/gm0 COMPLETE md1\\n"\}' \

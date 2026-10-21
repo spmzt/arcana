@@ -92,6 +92,7 @@ static const char	*shots;
 
 static void	run(const char *);
 static void	dock_closed(void);
+static void	queued_run(void);
 
 static void
 shot(const char *name)
@@ -3249,6 +3250,60 @@ queued_run(void)
 	    "if (b) b.click();");
 }
 
+/*
+ * Settings, Notifications: how dma relays the console's mail, on a
+ * console with an agent beside it; written on that host by its agent.
+ */
+static void
+part_dma(void)
+{
+	int	i;
+
+	run("document.querySelector('.rail-foot li[data-act=settings]')"
+	    ".click()");
+	wait_js("document.querySelector('button[data-act=set-tab][data-arg="
+	    "notify]')", 10);
+	run("document.querySelector('button[data-act=set-tab][data-arg="
+	    "notify]').click()");
+	/* How dma relays: the console's host's smart host, TLS and
+	 * sign-in, written there by its agent; the password into
+	 * auth.conf alone, and never shown again. */
+	wait_js("document.querySelector('form[data-form=dma]')", 20);
+	run("const f = document.querySelector('form[data-form=dma]'); "
+	    "f.smarthost.value = 'smtp.example.net'; f.port.value = '587'; "
+	    "f.tls.value = 'starttls'; f.user.value = 'alerts@example.net'; "
+	    "f.password.value = 'pw-0f-dma'; f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^alerts@example.net|smtp."
+	    "example.net:pw-0f-dma$' root/etc/dma/auth.conf 2>/dev/null && "
+	    "grep -q '^SMARTHOST' root/etc/dma/dma.conf 2>/dev/null") != 0;
+	    i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "dma's sign-in is not written");
+	ATF_CHECK(system("grep -q '^SMARTHOST smtp.example.net$' "
+	    "root/etc/dma/dma.conf && grep -q '^STARTTLS$' root/etc/dma/dma.conf "
+	    "&& grep -q '^AUTHPATH /etc/dma/auth.conf$' root/etc/dma/dma.conf") ==
+	    0);
+	dock_closed();
+	wait_js("document.querySelector('form[data-form=dma] input[name="
+	    "password]') && document.querySelector('form[data-form=dma] "
+	    "input[name=password]').placeholder.includes('set')", 20);
+	{
+		ucl_object_t	*t = js("const h = document.body.innerHTML; const "
+		    "i = h.indexOf('pw-0f-dma'); return i < 0 ? 'none' : h.slice("
+		    "Math.max(0, i - 300), i + 60);");
+
+		ATF_CHECK_MSG(t != NULL && strcmp(ucl_object_tostring_forced(t),
+		    "none") == 0, "the password is in the page: %s", t != NULL ?
+		    ucl_object_tostring_forced(t) : "?");
+		if (t != NULL)
+			ucl_object_unref(t);
+	}
+	run("document.querySelector('form[data-form=dma]').scrollIntoView("
+	    "{block: 'center'})");
+	shot("0c-dma");
+}
+
 /* The Mail tab: OpenSMTPD's form rendered on the host; a table written. */
 static void
 part_mail(void)
@@ -4124,7 +4179,7 @@ part_storage(void)
 	 * crossed is shown as the agent tells it, over the stream. */
 	wait_js("document.querySelector('.stage').textContent.includes("
 	    "'the moment the agent tells it')", 10);
-	run("window.evt0 = performance.now(); window.lim = (cpu, mem) => fetch('/api/servers').then(r => "
+	run("window.evt0 = performance.now(); window.lim = (cpu, mem) => fetch('/api/servers', {headers: {'X-Arcana': '1'}}).then(r => "
 	    "r.json()).then(j => Promise.all(j.servers.map(s => fetch("
 	    "'/api/servers/' + s.id + '/history', { method: 'POST', headers: "
 	    "{ 'Content-Type': 'application/json', 'X-Arcana': '1' }, body: "
@@ -6290,7 +6345,7 @@ part_netsect(void)
 	 * lab's em1; and by em0 to fe80::1, which lab2 has on its loopback
 	 * alone, as every host does: no host of the fleet is that one.
 	 */
-	run("window.labIds = null; fetch('/api/servers').then(r => r.json())"
+	run("window.labIds = null; fetch('/api/servers', {headers: {'X-Arcana': '1'}}).then(r => r.json())"
 	    ".then(j => { const ids = {}; j.servers.forEach(v => ids[v.name] = "
 	    "v.id); window.labIds = ids; });");
 	wait_js("window.labIds && window.labIds.lab2", 10);
@@ -6702,6 +6757,7 @@ ATF_TC_BODY(pwa_storage, tc)
 	part_storage();
 	part_system();
 	part_mail();
+	part_dma();
 }
 ATF_TC_CLEANUP(pwa_storage, tc)
 {

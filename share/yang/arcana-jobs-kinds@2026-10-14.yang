@@ -1813,6 +1813,7 @@ submodule arcana-jobs-kinds {
               enum loader.conf.d;
               enum periodic;
               enum rc;
+              enum dma;
             }
             mandatory true;
             description

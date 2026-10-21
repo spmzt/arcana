@@ -439,7 +439,7 @@ A GELI passphrase is read from
 .Ar passfile
 and given to geli by a file of the job's own, never on a command line.
 A job.
-.It Cm sysfile Ar file path | Cm periodic Ar name Ns = Ns Cm YES | NO ... | Cm rc Cm kern_securelevel_enable= Ns Cm YES | NO Cm kern_securelevel= Ns Ar level
+.It Cm sysfile Ar file path | Cm periodic Ar name Ns = Ns Cm YES | NO ... | Cm rc Cm kern_securelevel_enable= Ns Cm YES | NO Cm kern_securelevel= Ns Ar level | Cm dma Cm smarthost= Ns Ar host Oo Cm port= Ns Ar port Oc Oo Cm tls= Ns Cm none | starttls | opportunistic | tls Oc Op Cm user= Ns Ar name
 Writes one of the system's files from
 .Ar path
 and tells the daemon that reads it:
@@ -470,6 +470,40 @@ sets
 and
 .Va kern_securelevel ,
 securelevel at boot, and those alone.
+.Cm dma
+sets how
+.Xr dma 8
+relays the host's mail: in
+.Pa /etc/dma/dma.conf ,
+.Va SMARTHOST ,
+.Va PORT ,
+.Va SECURETRANSFER ,
+.Va STARTTLS ,
+.Va OPPORTUNISTIC_TLS
+and
+.Va AUTHPATH
+alone, its other lines kept; an empty
+.Ar host
+delivers straight, with none of them.
+.Cm tls=tls
+is TLS from the start (465),
+.Cm starttls
+STARTTLS required,
+.Cm opportunistic
+STARTTLS when the relay offers it.
+With
+.Cm user= ,
+the sign-in is that host's line of
+.Pa /etc/dma/auth.conf ,
+mode 0640, group mail; its password is read from
+.Ev ARCANA_DMA_PASSWORD ,
+never from the command line, and the one kept is kept when none is
+given; an empty
+.Cm user=
+removes the sign-in.
+The host's
+.Cm system
+read shows these, and whether a password is set, never the password.
 A job.
 .It Cm smtpd
 OpenSMTPD on the host, or with

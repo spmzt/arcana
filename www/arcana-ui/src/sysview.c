@@ -74,8 +74,11 @@ void
 refresh_system(struct server *s, bool again)
 {
 
+	/* Again, after a job: asked whatever is on its way, which may be
+	 * from before the job (res's generation drops its answer). */
 	if (s == NULL || (!again && sv.r.o != NULL && strcmp(sv.r.sid,
-	    s->id) == 0) || (sv.r.loading && strcmp(sv.r.sid, s->id) == 0))
+	    s->id) == 0) || (!again && sv.r.loading && strcmp(sv.r.sid,
+	    s->id) == 0))
 		return;
 	sv_load(s->id);
 }
@@ -708,6 +711,114 @@ appended(const char *text, const char *line)
 	return (t);
 }
 
+/* The console's own host: its agent writes dma's files. */
+static struct server *
+local_server(void)
+{
+	int	i;
+
+	for (i = 0; i < app.nservers; i++)
+		if (app.servers[i].local)
+			return (&app.servers[i]);
+	return (NULL);
+}
+
+/*
+ * Settings' mail, relayed by dma(8) on the console's host: its smart
+ * host, port, TLS and sign-in, as dma.conf and auth.conf say them, read
+ * from that host and written there by its agent (a sysfile job).
+ */
+void
+dma_settings(struct html *h)
+{
+	static const char *const tls[][2] = {
+		{ "none", "none: plain SMTP" },
+		{ "starttls", "STARTTLS, required (587)" },
+		{ "opportunistic", "STARTTLS when the relay offers it" },
+		{ "tls", "TLS from the start (465)" },
+	};
+	struct server		*s;
+	const ucl_object_t	*o, *d;
+	size_t			 i;
+
+	h_raw(h, "<h4>Relayed by dma</h4>");
+	if ((s = local_server()) == NULL) {
+		h_raw(h, "<p class=\"dim\">No agent beside the console: dma's "
+		    "relay is set in /etc/dma/dma.conf and auth.conf on the "
+		    "console's host by hand.</p>");
+		return;
+	}
+	if ((o = res_shown(h, &sv.r, s->id, sv_load, "sv-retry") ? sv.r.o :
+	    NULL) == NULL)
+		return;
+	d = jget(o, "dma");
+	h_raw(h, "<form data-form=\"dma\" data-clear-secrets class=\"settings "
+	    "set-form\"><p class="
+	    "\"dim\">dma(8), FreeBSD's own mail agent, sends the console's "
+	    "mail: straight to each domain's servers, or through a smart host "
+	    "that signs it in. Set in <code>/etc/dma/dma.conf</code> (its other "
+	    "lines kept) and <code>/etc/dma/auth.conf</code> (root's and the "
+	    "mail group's alone) on the console's host by its agent; the "
+	    "password is never shown again.</p><div class=\"rowform\"><label>"
+	    "Smart host<input name=\"smarthost\" spellcheck=\"false\" "
+	    "autocomplete=\"off\" placeholder=\"smtp.example.net, or empty: "
+	    "straight\"");
+	h_attr(h, "value", jstr(d, "smarthost") != NULL ? jstr(d, "smarthost") :
+	    "");
+	h_raw(h, "></label><label>Port<input name=\"port\" inputmode=\"numeric\" "
+	    "size=\"6\" placeholder=\"587\"");
+	h_attr(h, "value", jstr(d, "port") != NULL ? jstr(d, "port") : "");
+	h_raw(h, "></label><label>TLS<select name=\"tls\">");
+	for (i = 0; i < nitems(tls); i++) {
+		h_raw(h, "<option");
+		h_attr(h, "value", tls[i][0]);
+		if (jstr(d, "tls") != NULL && strcmp(jstr(d, "tls"), tls[i][0]) ==
+		    0)
+			h_raw(h, " selected");
+		h_raw(h, ">");
+		h_txt(h, tls[i][1]);
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select></label></div><div class=\"rowform\"><label>User"
+	    "<input name=\"user\" spellcheck=\"false\" autocomplete=\"off\" "
+	    "placeholder=\"alerts@example.net, or empty: no sign-in\"");
+	h_attr(h, "value", jstr(d, "user") != NULL ? jstr(d, "user") : "");
+	h_fmt(h, "></label><label>Password<input name=\"password\" "
+	    "type=\"password\" autocomplete=\"new-password\" placeholder=\"%s\">"
+	    "</label></div><div class=\"actions\"><button class=\"primary\">"
+	    "Save</button></div></form>", jbool(d, "password_set") ? "set: "
+	    "empty keeps it" : "");
+}
+
+/* The dma form: a sysfile job on the console's host. */
+static bool
+dma_form(const ucl_object_t *f)
+{
+	struct server	*s;
+	const char	*w[4];
+	char		*a[4];
+	int		 i;
+
+	if ((s = local_server()) == NULL)
+		return (true);
+	if (asprintf(&a[0], "smarthost=%s", jstr(f, "smarthost") != NULL ?
+	    jstr(f, "smarthost") : "") == -1 || asprintf(&a[1], "port=%s",
+	    jstr(f, "port") != NULL ? jstr(f, "port") : "") == -1 ||
+	    asprintf(&a[2], "tls=%s", jstr(f, "tls") != NULL ? jstr(f, "tls") :
+	    "none") == -1 || asprintf(&a[3], "user=%s", jstr(f, "user") !=
+	    NULL ? jstr(f, "user") : "") == -1)
+		abort();
+	for (i = 0; i < 4; i++)
+		w[i] = a[i];
+	/* The password in the job's text alone: empty keeps the one there. */
+	send(s, job_json("sysfile", "dma", w, 4, jstr(f, "password") != NULL &&
+	    jstr(f, "password")[0] != '\0' ? jstr(f, "password") : NULL, NULL),
+	    "dma's smart host");
+	for (i = 0; i < 4; i++)
+		free(a[i]);
+	return (true);
+}
+
 bool
 sysview_form(const char *form, const ucl_object_t *f)
 {
@@ -716,6 +827,8 @@ sysview_form(const char *form, const ucl_object_t *f)
 	char		*buf[40], *t, *copy, *p, *tok;
 	size_t		 n, i;
 
+	if (strcmp(form, "dma") == 0)
+		return (dma_form(f));
 	if (strncmp(form, "sv-", 3) != 0)
 		return (false);
 	if ((s = sv_server()) == NULL)

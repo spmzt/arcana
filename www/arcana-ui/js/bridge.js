@@ -247,6 +247,13 @@ addToLibrary({
 			act("submit:" + (f.getAttribute("data-form") ||
 			    f.getAttribute("id") || ""), "",
 			    JSON.stringify(o));
+			/* A form that says so keeps no password once sent:
+			 * the field shows what is kept again (its placeholder).
+			 * Others, read again by a step that follows, keep it. */
+			if (f.hasAttribute("data-clear-secrets"))
+				for (i = 0; i < f.elements.length; i++)
+					if (f.elements[i].type === "password")
+						f.elements[i].value = "";
 		});
 		document.addEventListener("input", function (e) {
 			var t = e.target;

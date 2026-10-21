@@ -221,7 +221,8 @@ usage(void)
 	    "    smtpd conf form.json | table name file | enable yes|no |\n"
 	    "        pause|resume mta|mda|smtp | schedule|remove id|all | update name\n"
 	    "    sysfile file path | periodic name=YES|NO ... |\n"
-	    "        rc kern_securelevel_enable=YES|NO kern_securelevel=N\n"	    "    geom class subcommand [word ...] [-P passfile]\n"
+	    "        rc kern_securelevel_enable=YES|NO kern_securelevel=N |\n"
+	    "        dma smarthost=host [port=N] [tls=none|starttls|opportunistic|tls] [user=name]\n"	    "    geom class subcommand [word ...] [-P passfile]\n"
 	    "    nfs exports file | server key=value ...\n"
 	    "    iscsi conf file | enable yes|no\n"
 	    "    hast conf file | enable yes|no | create resource |\n"
@@ -2535,8 +2536,9 @@ cmd_geom(struct arc_client *cl, int argc, char **argv)
 	return (submit(cl, &sp));
 }
 
-/* sysfile file path | periodic name=YES|NO ...: a file of the system's
- * written from path, or periodic.conf's variables; a job. */
+/* sysfile file path | periodic name=YES|NO ... | dma key=value ...: a
+ * file of the system's written from path, periodic.conf's variables, or
+ * dma's smart host (its password from ARCANA_DMA_PASSWORD); a job. */
 static int
 cmd_sysfile(struct arc_client *cl, int argc, char **argv)
 {
@@ -2548,9 +2550,13 @@ cmd_sysfile(struct arc_client *cl, int argc, char **argv)
 	sp.has_kind = true;
 	sp.kind = ARC_JOB_KIND_SYSFILE;
 	sp.verb = argv[1];
-	if (strcmp(argv[1], "periodic") == 0 || strcmp(argv[1], "rc") == 0) {
+	if (strcmp(argv[1], "periodic") == 0 || strcmp(argv[1], "rc") == 0 ||
+	    strcmp(argv[1], "dma") == 0) {
 		sp.names.v = (const char **)(uintptr_t)&argv[2];
 		sp.names.n = (size_t)argc - 2;
+		/* dma's password from the environment: on no command line. */
+		if (strcmp(argv[1], "dma") == 0)
+			sp.text = getenv("ARCANA_DMA_PASSWORD");
 	} else {
 		if (argc != 3)
 			usage();

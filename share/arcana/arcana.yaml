@@ -464,8 +464,14 @@ definitions:
           loader.conf.d (/boot/loader.conf.d/arcana.conf).  Verb periodic
           sets periodic.conf's variables by names, name_enable=YES or
           NO; verb rc rc.conf's kern_securelevel_enable= and
-          kern_securelevel= (-1 to 3), securelevel at boot.  The host's
-          only.
+          kern_securelevel= (-1 to 3), securelevel at boot.  Verb dma
+          sets dma(8)'s smart host: args smarthost= (empty: delivered
+          straight), port=, tls= (none, starttls, opportunistic or tls)
+          and user=, the password the text (one line; none keeps the one
+          there).  dma.conf's SMARTHOST, PORT, SECURETRANSFER, STARTTLS,
+          OPPORTUNISTIC_TLS and AUTHPATH alone are written, its other
+          lines kept; the sign-in is that host's line of auth.conf, mode
+          0640, group mail.  The host's only.
       - name: geom
         doc: |
           A GEOM class at work, geom(8): the verb the class (mirror,
@@ -3762,7 +3768,9 @@ operations:
       modules), "securelevel" (now, and rc.conf's), "mac" (which MAC
       modules are loaded), "auditd", "geom" (geom -t), "geli" (geli
       list), "periodic" (periodic's variables, their defaults and what
-      periodic.conf says) and "svcj" (rc.conf's service jails).  Names:
+      periodic.conf says), "svcj" (rc.conf's service jails) and "dma"
+      (dma's smart host, port, tls, user and password_set, never the
+      password).  Names:
       files by name, and host.  Nothing is changed.
     do:
       request:
