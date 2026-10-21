@@ -34,14 +34,12 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-#include <net/if.h>
 
 #include <netinet/in.h>
 #include <netinet/sctp.h>
 
 #include <arpa/inet.h>
 #include <errno.h>
-#include <ifaddrs.h>
 #include <netdb.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -216,63 +214,6 @@ sctp_also_bind(struct tlisten *t, const char *list, bool add)
 			    word, strerror(errno));
 	}
 	free(copy);
-}
-
-/*
- * Are the addresses an SCTP socket is bound to all on loopback
- * interfaces, one of them a routable one (a router's loopback)?  Then
- * FreeBSD's SCTP answers no peer elsewhere: an address on a loopback
- * interface is out of a non-loopback peer's scope
- * (sctp_is_address_in_scope()), so no INIT-ACK leaves, while TCP from
- * the same address works.  ::1 and 127/8 alone are local by intent.
- */
-static bool
-sctp_loopback_only(int fd)
-{
-	struct sockaddr		*addrs, *sa;
-	struct ifaddrs		*ifap, *ifa;
-	bool			 routable, all, on_loop;
-	int			 n, i;
-
-	if ((n = sctp_getladdrs(fd, 0, &addrs)) <= 0)
-		return (false);
-	if (getifaddrs(&ifap) == -1) {
-		sctp_freeladdrs(addrs);
-		return (false);
-	}
-	routable = false;
-	all = true;
-	sa = addrs;
-	for (i = 0; i < n && all; i++) {
-		on_loop = false;
-		for (ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
-			if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family !=
-			    sa->sa_family)
-				continue;
-			if ((sa->sa_family == AF_INET6 && memcmp(&((struct
-			    sockaddr_in6 *)(void *)sa)->sin6_addr, &((struct
-			    sockaddr_in6 *)(void *)ifa->ifa_addr)->sin6_addr,
-			    sizeof(struct in6_addr)) == 0) || (sa->sa_family ==
-			    AF_INET && ((struct sockaddr_in *)(void *)sa)->
-			    sin_addr.s_addr == ((struct sockaddr_in *)(void *)
-			    ifa->ifa_addr)->sin_addr.s_addr)) {
-				on_loop = (ifa->ifa_flags & IFF_LOOPBACK) != 0;
-				break;
-			}
-		}
-		/* The wildcard, or an address no interface has: not this. */
-		if (!on_loop)
-			all = false;
-		else if ((sa->sa_family == AF_INET6 && !IN6_IS_ADDR_LOOPBACK(
-		    &((struct sockaddr_in6 *)(void *)sa)->sin6_addr)) ||
-		    (sa->sa_family == AF_INET && (ntohl(((struct sockaddr_in *)
-		    (void *)sa)->sin_addr.s_addr) >> 24) != IN_LOOPBACKNET))
-			routable = true;
-		sa = (struct sockaddr *)((char *)sa + sa->sa_len);
-	}
-	freeifaddrs(ifap);
-	sctp_freeladdrs(addrs);
-	return (all && routable);
 }
 
 /* The addresses a socket of SCTP has at its end, or its peer's. */
@@ -868,44 +809,6 @@ also_set(struct work *w, const char *now)
 	return (e);
 }
 
-/*
- * Is the address one of a loopback interface's?  Such an address gives
- * an SCTP association no path to a peer elsewhere, as for listeners
- * (sctp_loopback_only()): an "SCTP also" address there helps nothing.
- */
-static bool
-addr_on_loopback(const char *addr)
-{
-	struct addrinfo	 hints, *ai;
-	struct ifaddrs	*ifap, *ifa;
-	bool		 on;
-
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_flags = AI_NUMERICHOST;
-	if (getaddrinfo(addr, NULL, &hints, &ai) != 0)
-		return (false);
-	on = false;
-	if (getifaddrs(&ifap) == 0) {
-		for (ifa = ifap; ifa != NULL && !on; ifa = ifa->ifa_next) {
-			if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family !=
-			    ai->ai_family || (ifa->ifa_flags & IFF_LOOPBACK) == 0)
-				continue;
-			if (ai->ai_family == AF_INET6)
-				on = memcmp(&((struct sockaddr_in6 *)(void *)
-				    ai->ai_addr)->sin6_addr, &((struct sockaddr_in6 *)
-				    (void *)ifa->ifa_addr)->sin6_addr,
-				    sizeof(struct in6_addr)) == 0;
-			else if (ai->ai_family == AF_INET)
-				on = ((struct sockaddr_in *)(void *)ai->ai_addr)->
-				    sin_addr.s_addr == ((struct sockaddr_in *)(void *)
-				    ifa->ifa_addr)->sin_addr.s_addr;
-		}
-		freeifaddrs(ifap);
-	}
-	freeaddrinfo(ai);
-	return (on);
-}
-
 /* {"listeners":[...],"sctp":bool,"sessions":[...],"seen":n} */
 int
 do_transport(struct work *w, bool retry, const char *listen,
@@ -961,31 +864,11 @@ do_transport(struct work *w, bool retry, const char *listen,
 			    lst[i].l), false, NULL), "addresses", 0, false);
 		if (lst[i].also_error[0] != '\0')
 			put(o, "also_error", lst[i].also_error);
-		/* Only on a router's loopback: answered over TCP, not SCTP. */
-		if (lst[i].up && lst[i].l != NULL && strncmp(lst[i].uri,
-		    "sctp:", 5) == 0 && sctp_loopback_only(cbl_listener_fd(
-		    lst[i].l)))
-			put(o, "warning", "its addresses are all on a loopback "
-			    "interface, which FreeBSD's SCTP answers no peer "
-			    "elsewhere from (TCP is answered); listen on an "
-			    "address of a real interface too (--sctp-also) and "
-			    "reach the agent by that one");
 		ucl_array_append(arr, o);
 	}
 	pthread_mutex_unlock(&t_lock);
 	ucl_object_insert_key(top, arr, "listeners", 0, false);
 	put(top, "sctp_also", opts.sctp_also != NULL ? opts.sctp_also : "");
-	/* Those of them on a loopback interface: no help to a peer. */
-	if (opts.sctp_also != NULL) {
-		char	*copy, *rest, *word;
-
-		arr = ucl_object_typed_new(UCL_ARRAY);
-		copy = wstrdup(w, opts.sctp_also);
-		for (rest = copy; (word = strsep(&rest, " \t,")) != NULL; )
-			if (word[0] != '\0' && addr_on_loopback(word))
-				ucl_array_append(arr, ucl_object_fromstring(word));
-		ucl_object_insert_key(top, arr, "sctp_also_loopback", 0, false);
-	}
 	ucl_object_insert_key(top, ucl_object_frombool(kernel_has_sctp()),
 	    "sctp", 0, false);
 	arr = ucl_object_typed_new(UCL_ARRAY);

@@ -19,6 +19,7 @@
 #include <sys/module.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 
@@ -41,6 +42,20 @@
 #include <unistd.h>
 
 #include "harness.h"
+
+/* Does the kernel have SCTP: compiled in, or the module loaded. */
+static bool
+has_sctp(void)
+{
+	size_t	len;
+	int	have;
+
+	len = sizeof(have);
+	if (sysctlbyname("kern.features.sctp", &have, &len, NULL, 0) == 0 &&
+	    have != 0)
+		return (true);
+	return (modfind("sctp") != -1);
+}
 
 
 struct authn {
@@ -4900,7 +4915,7 @@ ATF_TC_BODY(mtls, tc)
 	    &r, "data.sessions.0.subject"), "console") != NULL);
 	resp_free(&r);
 	snprintf(sw, sizeof(sw), "/api/servers/%s/transport/switch", sid);
-	if (modfind("sctp") != -1) {
+	if (has_sctp()) {
 		http("POST", sw, "{\"transport\":\"sctp\"}", &r);
 		EXPECT(&r, 200);
 		ATF_CHECK_STREQ("true", jstr(&r, "ok"));
@@ -5097,18 +5112,12 @@ ATF_TC_BODY(mtls, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK_STREQ("192.0.2.99", jstr(&r, "data.sctp_also"));
-	if (modfind("sctp") != -1)
+	if (has_sctp())
 		ATF_CHECK_MSG(strstr(r.body, "\"also_error\":\"192.0.2.99: ")
 		    != NULL, "%s", r.body);
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^arcana_agent_sctp_also=\"192.0.2.99\"$' "
 	    "rc.conf") == 0);
-	/* An address of a loopback interface: said to give no path. */
-	http("POST", path, "{\"sctp_also\":\"127.0.0.1\"}", &r);
-	EXPECT(&r, 200);
-	ATF_CHECK_MSG(strstr(r.body, "\"sctp_also_loopback\":[\"127.0.0.1\"]") !=
-	    NULL, "%s", r.body);
-	resp_free(&r);
 	http("POST", path, "{\"sctp_also\":\"\"}", &r);
 	EXPECT(&r, 200);
 	ATF_CHECK(strstr(r.body, "also_error") == NULL);
@@ -5171,7 +5180,7 @@ ATF_TC_BODY(mtls, tc)
 		 * agent opened beside the TCP one is the one moved to, and is
 		 * not closed with it; the host is reached there afterwards.
 		 */
-		if (modfind("sctp") != -1) {
+		if (has_sctp()) {
 			char	sctp[64];
 
 			snprintf(sctp, sizeof(sctp), "sctp://127.0.0.1:%d", port);

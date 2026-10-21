@@ -11,6 +11,14 @@
 
 # Programs next to the tests in the build tree, else the configuration
 # variables arcana-agent and arcanactl, else the installed ones.
+# Does the kernel have SCTP: compiled in (kern.features.sctp) or the
+# module loaded.
+has_sctp()
+{
+	[ "$(sysctl -n kern.features.sctp 2>/dev/null)" = 1 ] ||
+	    kldstat -q -m sctp 2>/dev/null
+}
+
 programs()
 {
 	JGD="$(atf_get_srcdir)/../arcana-agent"
@@ -4421,6 +4429,8 @@ EOS
 		sleep 0.1
 	done
 	atf_check -o match:'^kldload -n sctp$' cat kld.log
+	# The module in already (kldstat -m: compiled in is no module to
+	# unload, and the fake loads nothing), the agent leaves it.
 	if kldstat -q -m sctp 2>/dev/null; then
 		atf_check -o not-match:'kldunload' cat kld.log
 	else
@@ -4497,7 +4507,7 @@ b"
 	    -o match:'"sessions":\[\{"transport":"unix"' \
 	    -o match:'"seen":[0-9]+' "$JGC" -c "$SOCK" transport
 	# SCTP is tried again only where the kernel has it.
-	if kldstat -q -m sctp 2>/dev/null; then
+	if has_sctp; then
 		atf_check -o match:'"sctp":true' "$JGC" -c "$SOCK" transport retry
 	else
 		atf_check -s exit:1 -e match:'load the sctp module first' \

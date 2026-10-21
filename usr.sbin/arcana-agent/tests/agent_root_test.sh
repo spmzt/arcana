@@ -12,6 +12,14 @@
 
 JAIL=arcana-test
 
+# Does the kernel have SCTP: compiled in (kern.features.sctp) or the
+# module loaded.
+has_sctp()
+{
+	[ "$(sysctl -n kern.features.sctp 2>/dev/null)" = 1 ] ||
+	    kldstat -q -m sctp 2>/dev/null
+}
+
 programs()
 {
 	JGD="$(atf_get_srcdir)/../arcana-agent"
@@ -706,7 +714,9 @@ sctp_multihome_body()
 {
 	local d="$(pwd)" port=24607 e0 e1 a b
 
-	kldstat -q -m sctp || atf_skip "the kernel has no SCTP"
+	has_sctp || atf_skip "the kernel has no SCTP"
+	[ "$(sysctl -n net.inet.sctp.ignore_loopback_iftype 2>/dev/null)" = 1 ] ||
+	    atf_skip "the kernel's SCTP scopes by the interface's type"
 	command -v openssl >/dev/null || atf_skip "no openssl"
 	programs
 	for j in arcw_ma arcw_mb; do
@@ -934,9 +944,9 @@ atf_test_case sctp_loopback cleanup
 sctp_loopback_head()
 {
 	atf_set "descr" "an SCTP listener on a router's loopback address alone" \
-	    "(an address on lo0): FreeBSD's SCTP answers no peer elsewhere" \
-	    "from it, which the transport read says; with --sctp-also an" \
-	    "address of a real interface, SCTP by that one is answered"
+	    "(an address on lo0), with the kernel scoping by the address" \
+	    "(net.inet.sctp.ignore_loopback_iftype): SCTP to that address" \
+	    "from a peer elsewhere answered, and no warning said"
 	atf_set "require.user" "root"
 	atf_set "is.exclusive" "true"
 	atf_set "timeout" "120"
@@ -945,7 +955,7 @@ sctp_loopback_body()
 {
 	local d="$(pwd)" port=24611 e a
 
-	kldstat -q -m sctp || atf_skip "the kernel has no SCTP"
+	has_sctp || atf_skip "the kernel has no SCTP"
 	command -v openssl >/dev/null || atf_skip "no openssl"
 	programs
 	for j in arcw_la arcw_lb; do
@@ -959,7 +969,7 @@ sctp_loopback_body()
 		openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
 		    -keyout $n.key -out $n.csr -subj /CN=$n >/dev/null 2>&1
 		if [ $n = server ]; then
-			printf 'subjectAltName=IP:2001:db8:12::1,IP:2001:db8:99::1\nextendedKeyUsage=serverAuth\n' > $n.ext
+			printf 'subjectAltName=IP:2001:db8:12::1\nextendedKeyUsage=serverAuth\n' > $n.ext
 		else
 			printf 'subjectAltName=DNS:console\nextendedKeyUsage=clientAuth\n' > $n.ext
 		fi
@@ -985,36 +995,30 @@ sctp_loopback_body()
 	mkdir -p etc/jail.conf.d
 	: > etc/jail.conf
 	a="-A $d/ca.pem -C $d/client.pem -K $d/client.key"
-	for also in "" 2001:db8:99::1; do
-		jexec arcw_la "$JGD" -F -l "tcp://[2001:db8:12::1]:$port" \
-		    -l "unix:$d/s.sock" ${also:+--sctp-also $also} \
-		    -A "$d/ca.pem" -C "$d/server.pem" -K "$d/server.key" \
-		    -f "$d/etc/jail.conf" -D "$d/etc/jail.conf.d" \
-		    -1 "$d/history.conf" > daemon.out 2>&1 &
-		echo $! > daemon.pid
-		for i in $(seq 1 50); do [ -S s.sock ] && break; sleep 0.1; done
-		sleep 0.5
-		atf_check -o save:t.json "$JGC" -c "unix:$d/s.sock" transport
-		if [ -z "$also" ]; then
-			# On lo0 alone: said, and why.
-			atf_check -o match:'"transport":"sctp","up":true,[^}]*"warning":"its addresses are all on a loopback interface' \
-			    cat t.json
-			atf_check -o ignore jexec arcw_lb "$JGC" \
-			    -c "tcp://[2001:db8:12::1]:$port" $a hello
-		else
-			# An address of a real interface too: no warning, and
-			# SCTP by that address answered.
-			atf_check -o not-match:'"warning"' cat t.json
-			atf_check -o ignore jexec arcw_lb "$JGC" \
-			    -c "sctp://[2001:db8:99::1]:$port" $a hello
-		fi
-		kill "$(cat daemon.pid)"
-		for i in $(seq 1 50); do
-			kill -0 "$(cat daemon.pid)" 2>/dev/null || break
-			sleep 0.1
-		done
-		rm -f s.sock daemon.pid
-	done
+	# The vnet's own value, as a new vnet takes it from the host's.
+	atf_check -o inline:'1\n' jexec arcw_la sysctl -n net.inet.sctp.ignore_loopback_iftype
+	jexec arcw_la "$JGD" -F -l "tcp://[2001:db8:12::1]:$port" \
+	    -l "unix:$d/s.sock" \
+	    -A "$d/ca.pem" -C "$d/server.pem" -K "$d/server.key" \
+	    -f "$d/etc/jail.conf" -D "$d/etc/jail.conf.d" \
+	    -1 "$d/history.conf" > daemon.out 2>&1 &
+	echo $! > daemon.pid
+	for i in $(seq 1 50); do [ -S s.sock ] && break; sleep 0.1; done
+	sleep 0.5
+	# The SCTP listener beside the TCP one, on lo0's address alone, up
+	# and warned of nothing.
+	atf_check -o save:t.json "$JGC" -c "unix:$d/s.sock" transport
+	atf_check -o match:'"transport":"sctp","up":true' \
+	    -o not-match:'"warning"' -o not-match:'loopback' cat t.json
+	# Both answered from the other jail: TCP, and SCTP to the same
+	# address on lo0.
+	atf_check -o ignore jexec arcw_lb "$JGC" \
+	    -c "tcp://[2001:db8:12::1]:$port" $a hello
+	atf_check -o ignore jexec arcw_lb "$JGC" \
+	    -c "sctp://[2001:db8:12::1]:$port" $a hello
+	# Over SCTP the association's paths: the agent's lo0 address.
+	atf_check -o match:'2001:db8:12::1' jexec arcw_lb "$JGC" \
+	    -c "sctp://[2001:db8:12::1]:$port" $a transport
 }
 sctp_loopback_cleanup()
 {

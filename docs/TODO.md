@@ -1162,7 +1162,10 @@ What was once in the list above, and when it was run:
   INIT-ACK is sent: reproduced between two vnet jails (the root test
   sctp_loopback), and SCTP to an address of a real interface, bound
   too with --sctp-also, answered.  The transport read and the host
-  page now say so of such a listener.
+  page said so of such a listener until 2026-10-21, when the kernel
+  learnt to scope by the address rather than the interface's type
+  (net.inet.sctp.ignore_loopback_iftype); the warnings went, and
+  sctp_loopback now has SCTP to the lo0 address answered.
 - BIRD's forms against the real BIRD (2026-10-17): every
   configuration the console's BIRD forms and SD-WAN write is taken or
   refused by BIRD 3.3.2's own parser (bird -p) in the tests where the

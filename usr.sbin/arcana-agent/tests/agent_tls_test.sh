@@ -7,6 +7,14 @@
 # made here with openssl(1), a daemon on a free loopback port.
 #
 
+# Does the kernel have SCTP: compiled in (kern.features.sctp) or the
+# module loaded.
+has_sctp()
+{
+	[ "$(sysctl -n kern.features.sctp 2>/dev/null)" = 1 ] ||
+	    kldstat -q -m sctp 2>/dev/null
+}
+
 programs()
 {
 	JGD="$(atf_get_srcdir)/../arcana-agent"
@@ -107,7 +115,7 @@ mtls_body()
 	    -o match:"\"uri\":\"sctp://127.0.0.1:$PORT\",\"transport\":\"sctp\"" \
 	    -o match:'"sessions":\[\{"transport":"tcp","address":"127.0.0.1:[0-9]+","subject":"[^"]+"' \
 	    cat t.json
-	if kldstat -q -m sctp 2>/dev/null; then
+	if has_sctp; then
 		atf_check -o match:'"transport":"sctp","up":true' cat t.json
 		atf_check -o match:'"sessions":\[\{"transport":"sctp"' \
 		    "$JGC" -c "sctp://127.0.0.1:$PORT" -A ca.pem -C client.pem \
