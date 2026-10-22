@@ -9,8 +9,11 @@
  * hosts at once.
  *
  * A step is a job of any kind (share/arcana/jobs.yaml says what each
- * needs and uses, and the steps are checked against it), or a read of
- * the host whose answer a later step looks at.  Before a step there may
+ * needs and uses, and the steps are checked against it), a read of
+ * the host whose answer a later step looks at, a message sent, or an
+ * approval: the host's run waits there, told by mail or Telegram when
+ * asked, until someone approves the step (POST /api/runs/<n>/approve)
+ * or stops the run, or its time runs out and it fails.  Before a step there may
  * be a condition: a read made then, or an earlier step's answer, a path
  * in it and a test of what is there; a step whose condition fails is
  * skipped.  A step that fails stops the host's run, or the run goes on,
@@ -24,7 +27,10 @@
  * or removed, jail-state; threshold, kmsg, link and the rest), each
  * with what it must match, a value of which may be ${param.NAME}, that
  * parameter's default.  One that runs by itself may hold a step
- * that destroys (jobs.yaml's destroys) only when it says so.
+ * that destroys (jobs.yaml's destroys) only when it says so.  Its
+ * hosts run at once, or one after the other (serial): then the next
+ * begins when the one before is done, and a host that failed leaves
+ * the rest not run.
  *
  *	GET    /api/workflows		the workflows
  *	POST   /api/workflows		one made or changed
@@ -33,6 +39,7 @@
  *	GET    /api/runs		the last runs
  *	GET    /api/runs/<n>		one, each host and step with its trace
  *	DELETE /api/runs/<n>		one running stopped
+ *	POST   /api/runs/<n>/approve	{"step"}: a step waiting approved
  *
  * The workflows are kept in workflows.json and the last runs in
  * runs.json, written as they go, each run's traces in a file of its
@@ -695,6 +702,7 @@ wf_check(const ucl_object_t *in, const char **whyp)
 		ucl_array_append((ucl_object_t *)(uintptr_t)ucl_object_lookup(w,
 		    "hosts"), ucl_object_fromstring(ucl_object_tostring(v)));
 	}
+	put(w, "serial", ucl_object_frombool(ucl_flag(in, "serial")));
 	put(w, "params", ucl_object_typed_new(UCL_ARRAY));
 	it = NULL;
 	n = 0;
@@ -735,12 +743,32 @@ wf_check(const ucl_object_t *in, const char **whyp)
 		of = ucl_str(st, "read");
 		if ((job != NULL) + (of != NULL) + (ucl_object_lookup(st,
 		    "arcana") != NULL) + (ucl_object_lookup(st, "notify") !=
-		    NULL) != 1) {
+		    NULL) + (ucl_object_lookup(st, "approval") != NULL) != 1) {
 			ucl_object_unref(s);
-			REFUSE("step %s is a job, a read, a notify or Arcana's "
-			    "own", ids[n]);
+			REFUSE("step %s is a job, a read, a notify, an approval "
+			    "or Arcana's own", ids[n]);
 		}
-		if (ucl_object_lookup(st, "notify") != NULL) {
+		if (ucl_object_lookup(st, "approval") != NULL) {
+			const ucl_object_t	*ap = ucl_object_lookup(st,
+			    "approval");
+			const char		*via = ucl_str(ap, "via");
+			const char		*text = ucl_str(ap, "text");
+			int64_t			 timeout = ucl_object_toint(
+			    ucl_object_lookup(ap, "timeout"));
+
+			if (ucl_object_type(ap) != UCL_OBJECT || text == NULL ||
+			    text[0] == '\0' || strlen(text) > 2000 || (via != NULL
+			    && via[0] != '\0' && strcmp(via, "mail") != 0 &&
+			    strcmp(via, "telegram") != 0 && strcmp(via, "all") != 0)
+			    || timeout < 0 || timeout > 7 * 86400) {
+				ucl_object_unref(s);
+				REFUSE("step %s: an approval says its text, 2000 "
+				    "characters at most, how it is told (mail, "
+				    "telegram, all, or not) and for how long it "
+				    "waits, 0 or seconds to a week", ids[n]);
+			}
+			put(s, "approval", ucl_object_copy(ap));
+		} else if (ucl_object_lookup(st, "notify") != NULL) {
 			const ucl_object_t	*nt = ucl_object_lookup(st,
 			    "notify");
 			const char		*via = ucl_str(nt, "via");
@@ -939,8 +967,29 @@ struct run {
 	struct hostrun	 hosts[RUN_HOSTS_MAX];
 	int		 nsteps;
 	bool		 cancel;
-	time_t		 looked;	/* runs.json, for a stop */
+	ucl_object_t	*approved;	/* steps approved: {step, by, at} */
+	time_t		 looked;	/* runs.json, for a stop or an approval */
 };
+
+/* Was step id approved?  By whom, when asked.  r's lock held. */
+static bool
+approved_by(const struct run *r, const char *id, char *by, size_t len)
+{
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while (r->approved != NULL && (v = ucl_object_iterate(r->approved,
+	    &it, true)) != NULL)
+		if (ucl_str(v, "step") != NULL && strcmp(ucl_str(v, "step"),
+		    id) == 0) {
+			if (by != NULL)
+				snprintf(by, len, "%s", ucl_str(v, "by") != NULL ?
+				    ucl_str(v, "by") : "?");
+			return (true);
+		}
+	return (false);
+}
 
 /* The run as runs.json keeps it, with the traces or without. */
 static ucl_object_t *
@@ -968,6 +1017,8 @@ run_object(struct run *r, bool traces)
 		put(o, "event", ucl_object_copy(r->event));
 	if (r->cancel)
 		put(o, "cancel", ucl_object_frombool(true));
+	if (r->approved != NULL && ucl_array_size(r->approved) > 0)
+		put(o, "approved", ucl_object_copy(r->approved));
 	hs = ucl_object_typed_new(UCL_ARRAY);
 	for (i = 0; i < r->nhosts; i++) {
 		h = ucl_object_typed_new(UCL_OBJECT);
@@ -1014,6 +1065,38 @@ run_object(struct run *r, bool traces)
 	return (o);
 }
 
+/*
+ * What the list's entry e of r says that any worker may have put
+ * there: a stop, and the steps approved.  True when something new was
+ * taken.  r's lock held.
+ */
+static bool
+run_take(struct run *r, const ucl_object_t *e)
+{
+	const ucl_object_t	*a, *v;
+	ucl_object_iter_t	 it;
+	bool			 took;
+
+	took = false;
+	if (!r->cancel && ucl_object_toboolean(ucl_object_lookup(e,
+	    "cancel"))) {
+		r->cancel = true;
+		took = true;
+	}
+	if ((a = ucl_object_lookup(e, "approved")) == NULL)
+		return (took);
+	if (r->approved == NULL)
+		r->approved = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((v = ucl_object_iterate(a, &it, true)) != NULL)
+		if (ucl_str(v, "step") != NULL && !approved_by(r, ucl_str(v,
+		    "step"), NULL, 0)) {
+			ucl_array_append(r->approved, ucl_object_copy(v));
+			took = true;
+		}
+	return (took);
+}
+
 /* The file a run's traces are in: runs/<id>.json. */
 static const char *
 run_file(uint32_t id, char *buf, size_t len)
@@ -1053,8 +1136,10 @@ run_save(struct run *r)
 	    true)) != NULL) {
 		if ((uint32_t)ucl_object_toint(ucl_object_lookup(e, "id")) ==
 		    r->id) {
-			if (ucl_object_toboolean(ucl_object_lookup(e, "cancel")))
-				r->cancel = true;
+			if (run_take(r, e)) {
+				ucl_object_unref(mine);
+				mine = run_object(r, false);
+			}
 			ucl_array_append(keep, ucl_object_ref(mine));
 			found = true;
 		} else
@@ -1107,37 +1192,62 @@ step_set(struct hostrun *hr, int k, const char *state, const char *fmt, ...)
 }
 
 /*
- * Was a stop asked?  In runs.json, where any worker puts it: looked at
- * every two seconds, between what writes it anyway.
+ * What runs.json says of the run, where any worker puts a stop or an
+ * approval: looked at every two seconds, between what writes it
+ * anyway.  r's lock held.
  */
-static bool
-cancelled(struct run *r)
+static void
+run_look(struct run *r)
 {
 	ucl_object_t		*top;
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
-	bool			 c;
+
+	if (time(NULL) - r->looked < 2)
+		return;
+	r->looked = time(NULL);
+	pthread_mutex_lock(&wf_lock);
+	top = store_load(RUNS_FILE);
+	pthread_mutex_unlock(&wf_lock);
+	it = NULL;
+	while (top != NULL && (e = ucl_object_iterate(ucl_object_lookup(top,
+	    "runs"), &it, true)) != NULL)
+		if ((uint32_t)ucl_object_toint(ucl_object_lookup(e, "id")) ==
+		    r->id)
+			(void)run_take(r, e);
+	if (top != NULL)
+		ucl_object_unref(top);
+}
+
+/* Was a stop asked? */
+static bool
+cancelled(struct run *r)
+{
+	bool	c;
 
 	pthread_mutex_lock(&r->lock);
-	if (!r->cancel && time(NULL) - r->looked >= 2) {
-		r->looked = time(NULL);
-		pthread_mutex_lock(&wf_lock);
-		top = store_load(RUNS_FILE);
-		pthread_mutex_unlock(&wf_lock);
-		it = NULL;
-		while (top != NULL && (e = ucl_object_iterate(
-		    ucl_object_lookup(top, "runs"), &it, true)) != NULL)
-			if ((uint32_t)ucl_object_toint(ucl_object_lookup(e,
-			    "id")) == r->id && ucl_object_toboolean(
-			    ucl_object_lookup(e, "cancel")))
-				r->cancel = true;
-		if (top != NULL)
-			ucl_object_unref(top);
-	}
+	if (!r->cancel)
+		run_look(r);
 	c = r->cancel;
 	pthread_mutex_unlock(&r->lock);
 	return (c);
 }
+
+/* Was step id approved?  By whom, when so. */
+static bool
+approved(struct run *r, const char *id, char *by, size_t len)
+{
+	bool	a;
+
+	pthread_mutex_lock(&r->lock);
+	if (!(a = approved_by(r, id, by, len))) {
+		run_look(r);
+		a = approved_by(r, id, by, len);
+	}
+	pthread_mutex_unlock(&r->lock);
+	return (a);
+}
+
 
 static ucl_object_t *
 parse(const char *json)
@@ -1414,6 +1524,75 @@ run_notify(struct hostrun *hr, int k, const ucl_object_t *step)
 	return (true);
 }
 
+/*
+ * An approval: the host's run waits here, its text told when asked,
+ * until the step is approved, the run is stopped, or its time is
+ * out.
+ */
+static bool
+run_approval(struct hostrun *hr, int k, const ucl_object_t *step)
+{
+	const ucl_object_t	*ap;
+	ucl_object_t		*ans;
+	char			*text, subject[300], err[600], by[64];
+	time_t			 until;
+	int			 rc;
+
+	ap = ucl_object_lookup(step, "approval");
+	text = expand(ucl_str(ap, "text"), hr->run->params, &hr->h,
+	    hr->answers, hr->run->event);
+	pthread_mutex_lock(&hr->run->lock);
+	snprintf(hr->steps[k].title, sizeof(hr->steps[k].title), "%s", text);
+	pthread_mutex_unlock(&hr->run->lock);
+	step_set(hr, k, "waiting", NULL);
+	err[0] = '\0';
+	if (ucl_str(ap, "via") != NULL && ucl_str(ap, "via")[0] != '\0') {
+		snprintf(subject, sizeof(subject), "Arcana: workflow %s on %s "
+		    "waits for an approval", ucl_str(hr->run->wf, "name") !=
+		    NULL ? ucl_str(hr->run->wf, "name") : "?", hr->h.name);
+		if ((rc = alert_send(ucl_str(ap, "via"), subject, text, err,
+		    sizeof(err))) < 0)
+			thread_log(LOG_WARNING, "workflow %s, run %u: not told: "
+			    "%s", ucl_str(hr->run->wf, "name"), hr->run->id,
+			    err);
+		else if (rc == 0)
+			err[0] = '\0';
+	}
+	until = ucl_object_toint(ucl_object_lookup(ap, "timeout")) > 0 ?
+	    time(NULL) + ucl_object_toint(ucl_object_lookup(ap, "timeout")) :
+	    0;
+	for (;;) {
+		if (approved(hr->run, ucl_str(step, "id"), by, sizeof(by)))
+			break;
+		if (cancelled(hr->run)) {
+			free(text);
+			step_set(hr, k, "cancelled", "stopped while it waited");
+			return (false);
+		}
+		if (until != 0 && time(NULL) >= until) {
+			free(text);
+			step_set(hr, k, "failed", "not approved within %jd s",
+			    (intmax_t)ucl_object_toint(ucl_object_lookup(ap,
+			    "timeout")));
+			return (false);
+		}
+		sleep(1);
+	}
+	ans = ucl_object_typed_new(UCL_OBJECT);
+	put(ans, "text", ucl_object_fromstring(text));
+	put(ans, "approved_by", ucl_object_fromstring(by));
+	if (err[0] != '\0')
+		put(ans, "not_sent", ucl_object_fromstring(err));
+	free(text);
+	step_answer(hr, k, step, ans);
+	pthread_mutex_lock(&hr->run->lock);
+	snprintf(hr->steps[k].title, sizeof(hr->steps[k].title),
+	    "approved by %s", by);
+	pthread_mutex_unlock(&hr->run->lock);
+	step_set(hr, k, "done", NULL);
+	return (true);
+}
+
 static bool
 run_arcana(struct hostrun *hr, int k, const ucl_object_t *step)
 {
@@ -1586,8 +1765,9 @@ host_run(void *arg)
 		ok = ucl_object_lookup(step, "job") != NULL ? run_job(hr, k,
 		    step) : ucl_object_lookup(step, "arcana") != NULL ?
 		    run_arcana(hr, k, step) : ucl_object_lookup(step,
-		    "notify") != NULL ? run_notify(hr, k, step) : run_read(hr,
-		    k, step);
+		    "notify") != NULL ? run_notify(hr, k, step) :
+		    ucl_object_lookup(step, "approval") != NULL ?
+		    run_approval(hr, k, step) : run_read(hr, k, step);
 		if (ok)
 			continue;
 		of = ucl_str(step, "on_fail");
@@ -1626,12 +1806,35 @@ run_main(void *arg)
 {
 	struct run	*r = arg;
 	int		 i, k;
-	bool		 failed;
+	bool		 failed, serial;
 
-	for (i = 0; i < r->nhosts; i++)
+	serial = ucl_flag(r->wf, "serial");
+	for (i = 0; i < r->nhosts; i++) {
 		r->hosts[i].started = pthread_create(&r->hosts[i].thread,
 		    NULL, host_run, &r->hosts[i]) == 0;
-	for (i = 0; i < r->nhosts; i++)
+		if (!serial)
+			continue;
+		/* One after the other: the next when this one is done; a
+		 * host that is not leaves the rest not run. */
+		if (r->hosts[i].started)
+			(void)pthread_join(r->hosts[i].thread, NULL);
+		else
+			snprintf(r->hosts[i].state, sizeof(r->hosts[i].state),
+			    "failed");
+		if (strcmp(r->hosts[i].state, "done") == 0)
+			continue;
+		pthread_mutex_lock(&r->lock);
+		for (i++; i < r->nhosts; i++) {
+			snprintf(r->hosts[i].state, sizeof(r->hosts[i].state),
+			    "not run");
+			for (k = 0; k < r->nsteps; k++)
+				snprintf(r->hosts[i].steps[k].state,
+				    sizeof(r->hosts[i].steps[k].state), "not run");
+		}
+		pthread_mutex_unlock(&r->lock);
+		break;
+	}
+	for (i = 0; !serial && i < r->nhosts; i++)
 		if (r->hosts[i].started)
 			(void)pthread_join(r->hosts[i].thread, NULL);
 		else
@@ -1666,6 +1869,8 @@ run_main(void *arg)
 	ucl_object_unref(r->params);
 	if (r->event != NULL)
 		ucl_object_unref(r->event);
+	if (r->approved != NULL)
+		ucl_object_unref(r->approved);
 	pthread_mutex_destroy(&r->lock);
 	free(r);
 	return (NULL);
@@ -2293,7 +2498,8 @@ run_cut(ucl_object_t *run)
 		    &sit, true)) != NULL) {
 			if (ucl_str(st, "state") == NULL)
 				continue;
-			if (strcmp(ucl_str(st, "state"), "running") == 0) {
+			if (strcmp(ucl_str(st, "state"), "running") == 0 ||
+			    strcmp(ucl_str(st, "state"), "waiting") == 0) {
 				put((ucl_object_t *)(uintptr_t)st, "state",
 				    ucl_object_fromstring("interrupted"));
 				put((ucl_object_t *)(uintptr_t)st, "detail",
@@ -2565,7 +2771,7 @@ api_runs(struct http_request *req)
 			return (reply_list(req, RUNS_FILE, "runs", false));
 	} else if (!guard(req, true))
 		return (KORE_RESULT_OK);
-	n = (uint32_t)strtoul(strrchr(req->path, '/') + 1, NULL, 10);
+	n = (uint32_t)strtoul(req->path + sizeof("/api/runs/") - 1, NULL, 10);
 	pthread_mutex_lock(&wf_lock);
 	top = store_load(RUNS_FILE);
 	one = NULL;
@@ -2580,6 +2786,63 @@ api_runs(struct http_request *req)
 		if (top != NULL)
 			ucl_object_unref(top);
 		return (reply_error(req, 404, "not-found", "no such run"));
+	}
+	if (req->method == HTTP_METHOD_POST) {
+		/* An approval of a step that waits, on any of its hosts: the
+		 * run's threads see it when they look next. */
+		ucl_object_t		*in, *a, *one_ap;
+		const ucl_object_t	*h, *st;
+		ucl_object_iter_t	 hit, sit;
+		const char		*id;
+		bool			 waits;
+
+		if ((in = read_json(req)) == NULL || (id = ucl_str(in, "step")) ==
+		    NULL) {
+			pthread_mutex_unlock(&wf_lock);
+			ucl_object_unref(top);
+			if (in != NULL)
+				ucl_object_unref(in);
+			return (reply_error(req, 400, "invalid", "say the step"));
+		}
+		waits = false;
+		hit = NULL;
+		while ((h = ucl_object_iterate(ucl_object_lookup(one, "hosts"),
+		    &hit, true)) != NULL) {
+			sit = NULL;
+			while ((st = ucl_object_iterate(ucl_object_lookup(h,
+			    "steps"), &sit, true)) != NULL)
+				waits = waits || (ucl_str(st, "id") != NULL &&
+				    strcmp(ucl_str(st, "id"), id) == 0 && ucl_str(st,
+				    "state") != NULL && strcmp(ucl_str(st, "state"),
+				    "waiting") == 0);
+		}
+		if (strcmp(ucl_str(one, "state"), "running") != 0 || !waits) {
+			pthread_mutex_unlock(&wf_lock);
+			ucl_object_unref(top);
+			ucl_object_unref(in);
+			return (reply_error(req, 409, "not-waiting", "no step %s "
+			    "waits for an approval", id));
+		}
+		if ((a = (ucl_object_t *)(uintptr_t)ucl_object_lookup(one,
+		    "approved")) == NULL) {
+			a = ucl_object_typed_new(UCL_ARRAY);
+			put(one, "approved", a);
+		}
+		one_ap = ucl_object_typed_new(UCL_OBJECT);
+		put(one_ap, "step", ucl_object_fromstring(id));
+		put(one_ap, "by", ucl_object_fromstring(session_user(req) != NULL ?
+		    session_user(req) : "?"));
+		put(one_ap, "at", ucl_object_fromint(time(NULL)));
+		ucl_array_append(a, one_ap);
+		(void)store_save(RUNS_FILE, top);
+		kore_log(LOG_NOTICE, "run %u: step %s approved by %s", n, id,
+		    ucl_str(one_ap, "by"));
+		pthread_mutex_unlock(&wf_lock);
+		ucl_object_unref(top);
+		ucl_object_unref(in);
+		top = ucl_object_typed_new(UCL_OBJECT);
+		put(top, "ok", ucl_object_frombool(true));
+		return (reply_json(req, 200, top));
 	}
 	if (req->method == HTTP_METHOD_DELETE) {
 		/* A stop: the run's threads see it when they write next. */

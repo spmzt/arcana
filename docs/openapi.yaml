@@ -2435,7 +2435,11 @@ paths:
         Each step has an id and a job (an object as the jobs
         API takes one, its kind's fields as share/arcana/jobs.yaml says)
         or a read (hello, jails, services, stats, events, history,
-        packages), or arcana, one of Arcana's own (check, build, agents,
+        packages), or notify ({via, text}), or approval ({text, via,
+        timeout}: the host's run waits there, told by via when given,
+        until POST /api/runs/{n}/approve names the step, the run is
+        stopped, or timeout seconds pass and it fails; 0 waits on),
+        or arcana, one of Arcana's own (check, build, agents,
         console: the head of agent_source against what was last built
         and updated to, the agent built on the step's host, sent to
         every host, the console updated where it runs); with when, a
@@ -2444,7 +2448,9 @@ paths:
         stop, continue or a later step's id. Values may be ${param.X},
         ${host.id}, ${host.name}, ${step.ID.PATH} or ${event.PATH}.
         every is 0 or 60 seconds to a week; on, events with what they
-        match; one that runs by itself and destroys says destructive.
+        match; one that runs by itself and destroys says destructive;
+        serial runs its hosts one after the other, a host that fails
+        leaving the rest not run.
       requestBody:
         required: true
         content:
@@ -2546,6 +2552,32 @@ paths:
         "200": { $ref: "#/components/responses/Ok" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /api/runs/{n}/approve:
+    post:
+      tags: [workflows]
+      summary: A step waiting for an approval approved, on every host
+      description: "{step}: the id of a step in the waiting state on
+        some host of the run; who approved it and when go into the
+        run's approved list and the step's answer."
+      parameters:
+        - name: n
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [step]
+              properties:
+                step: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error", description: The run ended, or no such step waits. }
   /api/transfers:
     get:
       tags: [storage]
@@ -3525,6 +3557,10 @@ components:
           type: array
           items: { type: string }
           description: Server ids it runs on by itself; by hand, those picked.
+        serial:
+          type: boolean
+          description: The hosts one after the other, not at once; a
+            host that fails leaves the rest not run.
         params:
           type: array
           items:
@@ -3539,7 +3575,8 @@ components:
             required: [id]
             description: >-
               A job (job, its kind's fields), a read (read: hello, jails,
-              services, stats, events, history or packages) or one of
+              services, stats, events, history or packages), a message
+              (notify), an approval waited for (approval) or one of
               Arcana's own (arcana), with when and on_fail.
             properties:
               id: { type: string }
@@ -3579,6 +3616,15 @@ components:
         params: { type: object, additionalProperties: { type: string } }
         event: { type: object, description: The event that began it. }
         cancel: { type: boolean, description: A stop was asked for. }
+        approved:
+          type: array
+          description: The approval steps approved, by whom and when.
+          items:
+            type: object
+            properties:
+              step: { type: string }
+              by: { type: string }
+              at: { type: integer }
         hosts:
           type: array
           items:
@@ -3597,7 +3643,8 @@ components:
                     id: { type: string }
                     state:
                       type: string
-                      enum: [pending, running, done, failed, skipped, cancelled]
+                      enum: [pending, running, waiting, done, failed, skipped, cancelled, not run, interrupted]
+                      description: waiting at an approval step.
                     job: { type: integer, description: The host's job number. }
                     title: { type: string }
                     error: { type: string }
