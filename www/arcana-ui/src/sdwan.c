@@ -4638,6 +4638,14 @@ sdwan_modal(struct html *h)
 			    "auto", "On the tunnels over it, by ipfw tcp-setmss: "
 			    "auto for the tunnel's kind (and IPsec under it), a "
 			    "number of bytes, or empty for none.");
+			snprintf(ms, sizeof(ms), "%lld", (long long)jint(t, "mtu",
+			    0));
+			text_field(h, "Tunnel MTU", "mtu", jstr(t, "mtu") != NULL ?
+			    jstr(t, "mtu") : jint(t, "mtu", 0) > 0 ? ms : "", "auto",
+			    "The tunnel interfaces' MTU (ifconfig mtu): auto takes "
+			    "the tunnel's overhead off 1500, so the inner packets "
+			    "are not fragmented; a number of bytes, 1280 to 9000; "
+			    "or empty for the kernel's.");
 		}
 		h_raw(h, "</fieldset>");
 		return (true);
@@ -6548,7 +6556,8 @@ sd_forms(const char *form, const ucl_object_t *f)
 			static const char *const keys[] = { "id", "type",
 			    "billing", "tunnel", NULL };
 			static const char *const tkeys[] = { "kind", "algorithms",
-			    "esn", "encap", "lifetime", "ipsec", "mss", NULL };
+			    "esn", "encap", "lifetime", "ipsec", "mss", "mtu",
+			    NULL };
 			const ucl_object_t	*old = jfind(arr, "id", was);
 
 			/* What the form does not know of the underlay and its
@@ -6584,6 +6593,11 @@ sd_forms(const char *form, const ucl_object_t *f)
 			put_str(t, "mss", "auto");
 		else
 			put_int(t, "mss", jstr(f, "mss"));
+		/* The tunnels' MTU: auto takes the overhead off 1500. */
+		if (jstr(f, "mtu") != NULL && strcmp(jstr(f, "mtu"), "auto") == 0)
+			put_str(t, "mtu", "auto");
+		else
+			put_int(t, "mtu", jstr(f, "mtu"));
 		ucl_object_insert_key(o, t, "tunnel", 0, false);
 		/* In the place of the one changed, else at the end. */
 		n = ucl_array_size(arr);

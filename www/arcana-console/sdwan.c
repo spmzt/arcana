@@ -2459,6 +2459,14 @@ check_doc(const ucl_object_t *doc, struct ck *c)
 			    NULL))
 				return (fail(c, "mss is auto, or 536 to 1460 "
 				    "bytes"));
+			/* The tunnel interfaces' MTU: auto (1500 less the
+			 * tunnel's overhead), or bytes. */
+			if (ucl_object_lookup(t, "mtu") != NULL && !(str(t,
+			    "mtu") != NULL && strcmp(str(t, "mtu"), "auto") == 0)
+			    && !is_int(ucl_object_lookup(t, "mtu"), 1280, 9000,
+			    NULL))
+				return (fail(c, "mtu is auto, or 1280 to 9000 "
+				    "bytes"));
 			/* The USWE tunnel (Mplify 119 §10): IPsec keyed by the
 			 * edges themselves, its algorithms and flags here. */
 			if (str(t, "algorithms") != NULL && !one_of(str(t,

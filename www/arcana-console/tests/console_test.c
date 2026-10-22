@@ -6519,6 +6519,19 @@ ATF_TC_BODY(sdwan_lists, tc)
 	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "mss is auto") != NULL,
 	    "%s", r.body);
 	resp_free(&r);
+	/* The tunnels' MTU likewise: auto, 1500 less the overhead, on the
+	 * interface made; or bytes, 1280 to 9000; else refused. */
+	ATF_REQUIRE(swap_in(doc, "\"mss\":\"auto\"", "\"mtu\":\"auto\",\"mss\":"
+	    "\"auto\"", bad, sizeof(bad)));
+	http("POST", "/api/sdwan/check", bad, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE(swap_in(doc, "\"mss\":\"auto\"", "\"mtu\":100,\"mss\":"
+	    "\"auto\"", bad, sizeof(bad)));
+	http("POST", "/api/sdwan/check", bad, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "mtu is auto") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
 }
 
 CONSOLE_TC(sdwan_apply, "SD-WAN made on the edges: planned, applied, kept")

@@ -95,6 +95,8 @@ static bool		rekeying;	/* a uswe tunnel's keys being turned */
 #define	USWE_LIFETIME_S	86400	/* a uswe tunnel's keys, unless the UCS says */
 
 static const char	*server_name_of(const char *);
+static int		 tunnel_mtu(const ucl_object_t *, const ucl_object_t *,
+		    const ucl_object_t *);
 static bool		 edge_ref(const char *, char *, size_t, char *, size_t,
 			    char *, size_t, char *, size_t);
 static ucl_object_t	*sdwan_read(const char *, char *, size_t, int *);
@@ -619,6 +621,7 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 	const char		*kind, *id, *sid;
 	char			 ifn[32], key[200], h[20], port[80];
 	int64_t			 unit, fib;
+	int			 mtu;
 	bool			 ipsec;
 
 	a = ucl_array_find_index(ucl_object_lookup(t, "ends"),
@@ -655,6 +658,9 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 		    "args", args, "persist", B(true), NULL));
 		make(o, job("if-set", "interface", S(ifn), "fib", I(fib),
 		    "persist", B(true), NULL));
+		if ((mtu = tunnel_mtu(pl->doc, t, a)) > 0)
+			make(o, job("if-set", "interface", S(ifn), "mtu", I(mtu),
+			    "persist", B(true), NULL));
 		if (str(a, "inner4") != NULL) {
 			snprintf(port, sizeof(port), "%s/31", str(a, "inner4"));
 			make(o, job("if-address", "interface", S(ifn),
@@ -668,6 +674,10 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 		 */
 		p = job("if-create", "interface", S(ifn), "fib", I(fib),
 		    "description", S("sdwan"), "persist", B(true), NULL);
+		/* Its MTU, when the UCS says (auto: the overhead taken off
+		 * 1500), so the inner packets are not fragmented. */
+		if ((mtu = tunnel_mtu(pl->doc, t, a)) > 0)
+			put(p, "mtu", I(mtu));
 		if (strcmp(kind, "wg") != 0) {
 			put(p, "tunnel_local", S(str(a, "underlay")));
 			put(p, "tunnel_remote", S(str(b, "underlay")));
@@ -3715,20 +3725,17 @@ app_has(const ucl_object_t *afs, const char *app)
  * gif and geneve, and 20 more over an IPv6 underlay, less the inner
  * headers (40 for IPv4, 60 for IPv6); 0 when none is to be clamped.
  */
+/*
+ * What a tunnel's kind takes off the outer MTU: its own header (gre
+ * 24 with its key, gif 20, geneve 50, wg 60, uswe 73), IPsec's 64 when
+ * ESP is under it, and 20 more when the outer packets are IPv6.
+ */
 static int
-tunnel_mss(const ucl_object_t *doc, const ucl_object_t *t,
-    const ucl_object_t *end, int fam)
+tunnel_overhead(const ucl_object_t *t, const ucl_object_t *end)
 {
-	const ucl_object_t	*u, *tt, *v;
-	const char		*kind;
-	int			 mtu, over;
+	const char	*kind;
+	int		 over;
 
-	if ((u = by(ucl_object_lookup(doc, "ucs"), "id", str(t, "ucs"))) ==
-	    NULL || (tt = ucl_object_lookup(u, "tunnel")) == NULL ||
-	    (v = ucl_object_lookup(tt, "mss")) == NULL)
-		return (0);
-	if (ucl_object_type(v) == UCL_INT)
-		return ((int)ucl_object_toint(v));
 	kind = str(t, "kind") != NULL ? str(t, "kind") : "gre";
 	over = strcmp(kind, "gif") == 0 ? 20 : strcmp(kind, "geneve") == 0 ?
 	    50 : strcmp(kind, "wg") == 0 ? 60 : strcmp(kind, "uswe") == 0 ? 73 :
@@ -3738,7 +3745,47 @@ tunnel_mss(const ucl_object_t *doc, const ucl_object_t *t,
 	if (str(end, "underlay") != NULL && strchr(str(end, "underlay"), ':')
 	    != NULL)
 		over += 20;
-	mtu = 1500 - over;
+	return (over);
+}
+
+/*
+ * The MTU a tunnel's interface is made with: the UCS's tunnel.mtu in
+ * bytes, or with auto 1500 less the overhead (an underlay of 1500 is
+ * what the Internet gives); 0 when none is set, the kernel's default.
+ * Both ends of a tunnel have the same kind and outer family, so both
+ * compute the same.
+ */
+static int
+tunnel_mtu(const ucl_object_t *doc, const ucl_object_t *t,
+    const ucl_object_t *end)
+{
+	const ucl_object_t	*u, *tt, *v;
+
+	if ((u = by(ucl_object_lookup(doc, "ucs"), "id", str(t, "ucs"))) ==
+	    NULL || (tt = ucl_object_lookup(u, "tunnel")) == NULL ||
+	    (v = ucl_object_lookup(tt, "mtu")) == NULL)
+		return (0);
+	if (ucl_object_type(v) == UCL_INT)
+		return ((int)ucl_object_toint(v));
+	return (1500 - tunnel_overhead(t, end));
+}
+
+static int
+tunnel_mss(const ucl_object_t *doc, const ucl_object_t *t,
+    const ucl_object_t *end, int fam)
+{
+	const ucl_object_t	*u, *tt, *v;
+	int			 mtu;
+
+	if ((u = by(ucl_object_lookup(doc, "ucs"), "id", str(t, "ucs"))) ==
+	    NULL || (tt = ucl_object_lookup(u, "tunnel")) == NULL ||
+	    (v = ucl_object_lookup(tt, "mss")) == NULL)
+		return (0);
+	if (ucl_object_type(v) == UCL_INT)
+		return ((int)ucl_object_toint(v));
+	/* auto: from the tunnel's MTU, set or computed, less the headers. */
+	if ((mtu = tunnel_mtu(doc, t, end)) == 0)
+		mtu = 1500 - tunnel_overhead(t, end);
 	return (mtu - (fam == 6 ? 60 : 40));
 }
 
