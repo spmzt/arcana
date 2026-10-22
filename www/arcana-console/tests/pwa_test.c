@@ -5588,6 +5588,32 @@ part_flows(void)
 	    "'gre'; f.requestSubmit();");
 	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
 	    "includes('Edges')", 20);
+	/*
+	 * What a form does not know of its object stays as it was: a key
+	 * put into the document by hand survives the form's save (the
+	 * page is opened again first, to read the document as it is).
+	 */
+	run("fetch('/api/sdwan').then(r => r.json()).then(d => { d.ucs[0]."
+	    "tunnel.mtu = 'auto'; d.ucs[0].note = 'kept'; return fetch("
+	    "'/api/sdwan', { method: 'PUT', headers: { 'content-type': "
+	    "'application/json', 'X-Arcana': '1' }, body: JSON.stringify(d) }); }).then(r => { "
+	    "window.mtuput = r.status; });");
+	wait_js("window.mtuput === 200", 10);
+	host_open(NULL);
+	wait_js("document.querySelector('button.tab[data-arg=summary]')", 10);
+	run("document.querySelector('li[data-act=select-sdwan]').click()");
+	wait_js("document.querySelector('button[data-act=sd-ucs-edit][data-arg="
+	    "net]')", 20);
+	run("document.querySelector('button[data-act=sd-ucs-edit][data-arg="
+	    "net]').click()");
+	wait_js("document.querySelector('form[data-form=sd-ucs] input[name=id]"
+	    "')?.value === 'net'", 5);
+	run("document.querySelector('form[data-form=sd-ucs]').requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-ucs]')", 10);
+	run("window.mtukept = null; fetch('/api/sdwan').then(r => r.json())."
+	    "then(d => { window.mtukept = d.ucs[0].tunnel.mtu === 'auto' && "
+	    "d.ucs[0].note === 'kept'; });");
+	wait_js("window.mtukept === true", 10);
 	run("document.querySelector('.sd-guide button[data-act=sd-go]')."
 	    "click()");
 	wait_js("document.querySelector('form[data-form=sd-edge] details."

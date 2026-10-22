@@ -64,6 +64,7 @@ static const ucl_object_t *jfind(const ucl_object_t *, const char *,
 static void	 put_str(ucl_object_t *, const char *, const char *);
 static void	 put_int(ucl_object_t *, const char *, const char *);
 static void	 put_list(ucl_object_t *, const char *, const char *);
+static ucl_object_t *merged_from(const ucl_object_t *, const char *const *);
 static void	 list_put(ucl_object_t *, const char *, const char *,
 		    const char *, ucl_object_t *);
 
@@ -6437,7 +6438,13 @@ sd_forms(const char *form, const ucl_object_t *f)
 		}
 		/* was: swvc|end_point|name; the name is what is replaced. */
 		q = strrchr(was, '|');
-		o = ucl_object_typed_new(UCL_OBJECT);
+		{
+			static const char *const keys[] = { "name", "zone", "pool",
+			    "reach", NULL };
+
+			o = merged_from(q != NULL ? jfind(jget(r, "groups"),
+			    "name", q + 1) : NULL, keys);
+		}
 		put_str(o, "name", id);
 		put_str(o, "zone", jstr(f, "zone"));
 		put_str(o, "pool", jstr(f, "pool"));
@@ -6461,7 +6468,13 @@ sd_forms(const char *form, const ucl_object_t *f)
 			ucl_object_unref(doc);
 			return (true);
 		}
-		o = ucl_object_typed_new(UCL_OBJECT);
+		{
+			static const char *const keys[] = { "name", "kind",
+			    "protocols", "ports", "items", NULL };
+
+			o = merged_from(jfind(jget(doc, "lists"), "name", was),
+			    keys);
+		}
 		put_str(o, "name", id);
 		put_str(o, "kind", v);
 		if (strcmp(v, "services") == 0) {
@@ -6518,7 +6531,19 @@ sd_forms(const char *form, const ucl_object_t *f)
 			arr = ucl_object_typed_new(UCL_ARRAY);
 			ucl_object_insert_key(doc, arr, "ucs", 0, false);
 		}
-		o = ucl_object_typed_new(UCL_OBJECT);
+		{
+			static const char *const keys[] = { "id", "type",
+			    "billing", "tunnel", NULL };
+			static const char *const tkeys[] = { "kind", "algorithms",
+			    "esn", "encap", "lifetime", "ipsec", "mss", NULL };
+			const ucl_object_t	*old = jfind(arr, "id", was);
+
+			/* What the form does not know of the underlay and its
+			 * tunnel stays as it was. */
+			o = merged_from(old, keys);
+			t = merged_from(old != NULL ? jget(old, "tunnel") : NULL,
+			    tkeys);
+		}
 		ucl_object_insert_key(o, ucl_object_fromstring(id), "id", 0,
 		    false);
 		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f, "type") !=
@@ -6526,7 +6551,6 @@ sd_forms(const char *form, const ucl_object_t *f)
 		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f, "billing")
 		    != NULL ? jstr(f, "billing") : "flat-rate"), "billing", 0,
 		    false);
-		t = ucl_object_typed_new(UCL_OBJECT);
 		ucl_object_insert_key(t, ucl_object_fromstring(jstr(f, "kind") !=
 		    NULL ? jstr(f, "kind") : "gre"), "kind", 0, false);
 		if (jstr(f, "kind") != NULL && strcmp(jstr(f, "kind"), "uswe") ==
@@ -6694,7 +6718,13 @@ sd_forms(const char *form, const ucl_object_t *f)
 			ucl_object_insert_key(ed, links, "ucs_end_points", 0,
 			    false);
 		}
-		o = ucl_object_typed_new(UCL_OBJECT);
+		{
+			static const char *const keys[] = { "id", "ucs", "interface",
+			    "address", "gateway", "bandwidth", "breakout", "backup",
+			    "addressing", "vrf", "routing", NULL };
+
+			o = merged_from(jfind(links, "id", was), keys);
+		}
 		if (jstr(f, "id") != NULL && jstr(f, "id")[0] != '\0')
 			snprintf(buf, sizeof(buf), "%s", jstr(f, "id"));
 		else
@@ -6794,6 +6824,26 @@ swvc_mut(ucl_object_t *doc)
 
 	return ((ucl_object_t *)(uintptr_t)jfind(jget(doc, "swvcs"), "id",
 	    sd.swvc));
+}
+
+/*
+ * An object a form edits, begun from the one it replaces: a copy of
+ * that, less the keys the form sets itself (NULL-ended), so what the
+ * form does not know of stays as it was; a new object when there was
+ * none.
+ */
+static ucl_object_t *
+merged_from(const ucl_object_t *old, const char *const *keys)
+{
+	ucl_object_t	*o;
+	size_t		 i;
+
+	if (old == NULL || ucl_object_type(old) != UCL_OBJECT)
+		return (ucl_object_typed_new(UCL_OBJECT));
+	o = ucl_object_copy(old);
+	for (i = 0; keys[i] != NULL; i++)
+		(void)ucl_object_delete_key(o, keys[i]);
+	return (o);
 }
 
 /* In a list of objects: the one whose key is was replaced, else o added. */
@@ -7328,7 +7378,13 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			ucl_object_unref(doc);
 			return (true);
 		}
-		o = ucl_object_typed_new(UCL_OBJECT);
+		{
+			static const char *const keys[] = { "name", "criteria",
+			    NULL };
+
+			o = merged_from(jfind(jget(sw, "security_policies"),
+			    "name", was), keys);
+		}
 		put_str(o, "name", jstr(f, "name"));
 		cr = ucl_object_typed_new(UCL_OBJECT);
 		if ((jstr(f, "allow") != NULL && jstr(f, "allow")[0] != '\0') ||
