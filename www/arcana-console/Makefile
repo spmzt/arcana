@@ -10,17 +10,11 @@ MAN=		arcana-console.8
 
 .include "${.CURDIR}/../../share/mk/arcana.mk"
 
-CBLINK_SPECS=	${ARC_SPEC}
-CBLINK_PARTS=	h,c,client
-
 # The consoles of a cluster to each other: a family served and asked
 # both, apart from arcana.yaml's, of which the console is a client.
-CLUSTER_SPEC=	${ARC_TOP}/share/arcana/cluster.yaml
-SRCS+=		cluster.h cluster.c cluster_client.c cluster_server.c
-CLEANFILES+=	cluster.h cluster.c cluster_client.c cluster_server.c
-cluster.c cluster_client.c cluster_server.c: cluster.h
-cluster.h: ${CLUSTER_SPEC} ${CBLINK_GEN}
-	${CBLINK_GEN} -m h,c,client,server -o ${.OBJDIR} ${CLUSTER_SPEC}
+ARC_WIRE=	client
+ARC_CLUSTER=	yes
+.include "${.CURDIR}/../../share/mk/arcana.wire.mk"
 
 .if empty(KORE_FEATURES:M-DKORE_USE_TASKS)
 .error Kore must be built with tasks (TASKS=1): KORE_FEATURES is "${KORE_FEATURES}"
@@ -70,5 +64,4 @@ hosts.pico hosts.o: jobs_spec.h
 HAS_TESTS=
 SUBDIR.${MK_TESTS}+= tests
 
-.include "${CBLINK_MK}"
 .include <bsd.lib.mk>

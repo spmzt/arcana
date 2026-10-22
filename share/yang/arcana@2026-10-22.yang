@@ -1,0 +1,4894 @@
+module arcana {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana";
+  prefix arc;
+
+  import cblink-gen {
+    prefix cg;
+  }
+  import ietf-yang-structure-ext {
+    prefix sx;
+  }
+  import arcana-family {
+    prefix fam;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "One FreeBSD host, as the Arcana agent serves it: its jails, services,
+     packages, network tables and usage, and changes to them.
+     Served by arcana-agent(8).  Every operation needs an authenticated peer.
+     Replies report failures in ok/error and always carry a trace, so the
+     output of a failed jail(8) run still reaches the client.
+     
+     
+     Written by share/arcana/wire.awk from share/arcana/arcana.yaml: the operations of the family spec as rpcs, on wire version 2.  Do not edit.";
+
+  revision 2026-10-22 {
+    description
+      "From the spec as of this day.";
+  }
+
+  fam:family "arcana";
+  fam:version 2;
+
+  // max-jails = 4096
+  // max-steps = 1024
+  // max-services = 1024
+  // max-packages = 16384
+  // max-batch = 64
+  // max-json = 4194304
+  // max-binary = 6291456
+  // max-output = 262144
+
+  grouping set-arcana {
+    leaf jail {
+      type string {
+        length "1..255";
+      }
+    }
+    leaf action {
+      type uint8 {
+        range "0..3";
+      }
+      description
+        "One of action: 0 start 1 stop 2 restart 3 kill.";
+    }
+    leaf address {
+      type string {
+        length "2..64";
+      }
+      description
+        "An IPv4 or IPv6 address, optionally with /prefixlen.";
+    }
+    leaf interface {
+      type string {
+        length "1..15";
+      }
+    }
+    leaf remove {
+      type empty;
+      description
+        "Remove the address instead of adding it.";
+    }
+    leaf live {
+      type empty;
+      description
+        "Change the running jail.";
+    }
+    leaf persist {
+      type empty;
+      description
+        "Change the jail's configuration file.";
+    }
+    leaf dry-run {
+      type empty;
+      description
+        "Change nothing; report the plan and the diff.";
+    }
+    leaf config-only {
+      type empty;
+      description
+        "List configured jails without looking at running ones.";
+    }
+    leaf ok {
+      type boolean;
+    }
+    leaf error {
+      type string;
+    }
+    leaf signature {
+      type binary {
+        length "0..1024";
+      }
+      description
+        "For agent-update: the program signed by the console's CA key
+         (SHA-256), which the host checks against the CA certificates
+         it trusts (-A) before anything else; needed from any peer but
+         the local socket, whose root is root already.";
+    }
+    container host {
+      cg:struct "host";
+      uses set-host;
+    }
+    list jails {
+      cg:struct "jail";
+      max-elements 4096;
+      uses set-jail;
+    }
+    container result {
+      cg:struct "jail";
+      description
+        "The jail as it is after the operation.";
+      uses set-jail;
+    }
+    leaf diff {
+      type string;
+      description
+        "Unified diff of the configuration change.";
+    }
+    leaf-list scopes {
+      type string;
+      description
+        "Configuration files jail(8) is run with (-f).";
+    }
+    list conf-errors {
+      cg:struct "conf-error";
+      uses set-conf-error;
+    }
+    list trace {
+      cg:struct "step";
+      max-elements 1024;
+      uses set-step;
+    }
+    leaf service {
+      type string {
+        length "1..64";
+      }
+      description
+        "An rc.d script's name.";
+    }
+    leaf service-action {
+      type uint8 {
+        range "0..5";
+      }
+      description
+        "One of service-action: 0 start 1 stop 2 restart 3 reload 4 enable 5 disable.";
+    }
+    list services {
+      cg:struct "service";
+      max-elements 1024;
+      uses set-service;
+    }
+    container service-result {
+      cg:struct "service";
+      description
+        "The service as it is after the operation.";
+      uses set-service;
+    }
+    list variables {
+      cg:struct "variable";
+      description
+        "rc.conf variables of a service, to set or as they are.";
+      uses set-variable;
+    }
+    leaf description {
+      type string;
+      description
+        "What the script says of itself (service describe).";
+    }
+    leaf net-kind {
+      type uint8 {
+        range "0..15";
+      }
+      description
+        "One of net-kind: 0 routes 1 nexthops 2 connections 3 sockets 4 interfaces 5 netgraph 6 wireguard 7 bird 8 bird-routes 9 bridges 10 geneve 11 ipfw 12 nhgroups 13 neighbours 14 ipsec 15 multicast.";
+    }
+    leaf net-family {
+      type uint8 {
+        range "0..2";
+      }
+      description
+        "One of net-family: 0 all 1 inet 2 inet6.";
+    }
+    leaf json {
+      type string {
+        length "0..4194304";
+      }
+      description
+        "What the program printed with --libxo json, as it is.";
+    }
+    container stats {
+      cg:struct "stats";
+      uses set-stats;
+    }
+    list batch {
+      cg:struct "job-spec";
+      max-elements 64;
+      min-elements 1;
+      description
+        "Jobs to queue, run in this order.";
+      uses set-job-spec;
+    }
+    list jobs {
+      cg:struct "job";
+      uses set-job;
+    }
+    container job {
+      cg:struct "job";
+      uses set-job;
+    }
+    leaf id {
+      type uint64;
+      description
+        "A job's number, unique while the daemon runs.";
+    }
+    list packages {
+      cg:struct "package";
+      max-elements 16384;
+      description
+        "Packages with a newer version in the repository.";
+      uses set-package;
+    }
+    leaf-list names {
+      type string;
+      max-elements 16384;
+      description
+        "Package names to upgrade; none means all of them.";
+    }
+    leaf refresh {
+      type empty;
+      description
+        "Fetch the repository catalogue first (pkg update).";
+    }
+    leaf upgraded {
+      type uint32;
+      description
+        "How many packages pkg upgrade reported.";
+    }
+    leaf-list commands {
+      type string;
+      description
+        "The script's extra commands (service extracommands).";
+    }
+    leaf binary {
+      type binary {
+        length "0..6291456";
+      }
+      description
+        "A new arcana-agent, for this host's system and machine.";
+    }
+    leaf sha256 {
+      type string {
+        length "0..64";
+      }
+      description
+        "The SHA-256 of binary, in hex.";
+    }
+    leaf source {
+      type string {
+        length "0..1024";
+      }
+      description
+        "A git repository with the Arcana tree, as git clone takes it.";
+    }
+    leaf ref {
+      type string {
+        length "0..128";
+      }
+      description
+        "The branch or tag to build; the repository's default if absent.";
+    }
+    leaf net-filter {
+      type string {
+        length "0..128";
+      }
+      description
+        "For the routes: keep the rows that contain this text, searched
+         for on the host, which a table too large to send needs.";
+    }
+    leaf total {
+      type uint64;
+      description
+        "Rows in the table on the host, when not all were sent.";
+    }
+    leaf truncated {
+      type empty;
+      description
+        "More rows matched than the reply carries.";
+    }
+    leaf activity {
+      type string;
+      description
+        "What holds the daemon's change lock now, if it is not a job.";
+    }
+    leaf since {
+      type int64;
+      description
+        "Unix time activity began.";
+    }
+    leaf stopping {
+      type empty;
+      description
+        "The daemon was told to stop and waits for what is under way.";
+    }
+    leaf host-keys {
+      type string {
+        length "0..8192";
+      }
+      description
+        "SSH host keys of the repository's server, as known_hosts lines.
+         In a reply: what ssh-keyscan found, for the user to confirm
+         when this host does not know the server.  In a request: the
+         lines confirmed, which this host keeps and checks the server
+         against from then on.";
+    }
+    leaf ssh-key {
+      type string {
+        length "0..1024";
+      }
+      description
+        "A private key on this host for git to show the repository's
+         server, instead of the one this host makes for itself.";
+    }
+    leaf-list fingerprints {
+      type string;
+      description
+        "The fingerprints of host-keys, as ssh-keygen -l prints them.";
+    }
+    leaf deploy-key {
+      type string {
+        length "0..1024";
+      }
+      description
+        "The public key this host shows the repository's server, to be
+         allowed there as a read-only deploy key.";
+    }
+    leaf restart {
+      type empty;
+      description
+        "Restart the service once the new program is in place.";
+    }
+    leaf restarting {
+      type empty;
+      description
+        "The service is being restarted; the connection will drop.";
+    }
+    leaf agent-version {
+      type string {
+        length "0..64";
+      }
+      description
+        "The version the program in place reports.";
+    }
+    leaf net-fib {
+      type uint32;
+      description
+        "The routing table to read or look in; 0 when not given.";
+    }
+    leaf lookup {
+      type string {
+        length "2..64";
+      }
+      description
+        "An IPv4 or IPv6 address to find the route to.";
+    }
+    leaf conf-path {
+      type string {
+        length "0..255";
+      }
+      description
+        "A file of BIRD's configuration; its main one when not given.";
+    }
+    leaf conf-text {
+      type string {
+        length "0..4194304";
+      }
+      description
+        "A configuration file's whole text.";
+    }
+    leaf-list files {
+      type string;
+      description
+        "The files BIRD's configuration is made of.";
+    }
+    leaf safe {
+      type empty;
+      description
+        "For bird-config: the daemon is told to take the new
+         configuration back by itself (configure timeout) unless it is
+         confirmed within the time the agent allows, and the file is
+         then put back as it was.";
+    }
+    leaf confirm {
+      type empty;
+      description
+        "For bird-config: the change made with safe stays.  A client
+         that still reaches the host after the change says so.";
+    }
+    leaf confirm-by {
+      type int64;
+      description
+        "After a change with safe, the Unix time it is taken back at.";
+    }
+    leaf storage-kind {
+      type uint8 {
+        range "0..6";
+      }
+      description
+        "One of storage-kind: 0 disks 1 pools 2 datasets 3 snapshots 4 mounts 5 importable 6 health.";
+    }
+    leaf retry {
+      type empty;
+      description
+        "For transport: start the SCTP listeners that are not up, now
+         that the kernel can.";
+    }
+    leaf offset {
+      type uint32;
+      description
+        "For the routes of network: how many of the rows that would
+         be sent to leave out first, to read on in a table too large
+         for one reply.";
+    }
+    leaf log-name {
+      type string {
+        length "0..128";
+      }
+      description
+        "For log, the file in the host's log directory to read.";
+    }
+    leaf position {
+      type uint64;
+      description
+        "For log, the byte of the file to read on from: what a reply
+         before gave as where it ended.";
+    }
+    leaf lines {
+      type uint32;
+      description
+        "For log, how many lines to send at most.";
+    }
+    leaf after {
+      type uint64;
+      description
+        "For history, the time, in seconds since the epoch, after
+         which samples are asked for.  For events, the number of the
+         last event the asker has.";
+    }
+    leaf sample-step {
+      type uint32;
+      description
+        "For history, the seconds between two samples, 1 to 3600.";
+    }
+    leaf sample-keep {
+      type uint32;
+      description
+        "For history, how many samples the agent keeps, at most 5000;
+         with 0 it does not sample and holds no memory for it.";
+    }
+    leaf pid {
+      type uint32;
+      description
+        "For processes, the one to say more of.";
+    }
+    leaf limit-cpu {
+      type uint32;
+      description
+        "For history, the percentage of the CPUs busy above which an
+         event is made, and another when it falls under it again; 0
+         for none.";
+    }
+    leaf limit-mem {
+      type uint32;
+      description
+        "For history, the same for the memory in use.";
+    }
+    leaf limit-swap {
+      type uint32;
+      description
+        "For history, the same for the swap in use.";
+    }
+    list routes {
+      cg:struct "route";
+      description
+        "The routes of a part of network's dump of the routes.";
+      uses set-route;
+    }
+    leaf seconds {
+      type uint32 {
+        range "1..60";
+      }
+      description
+        "For fw-trace, how long to follow, at most.";
+    }
+    leaf packets {
+      type uint32 {
+        range "1..1000";
+      }
+      description
+        "For fw-trace, how many packets to follow, at most.";
+    }
+    leaf ignore-osversion {
+      type boolean;
+      description
+        "For pkg-upgrade, pkg told to install packages built for a
+         newer FreeBSD than the host's (IGNORE_OSVERSION), which it
+         refuses otherwise.";
+    }
+    leaf pkg-installed {
+      type boolean;
+      description
+        "For packages, the packages installed (pkg query, from the
+         host's own database, without the repository) and not those
+         the repository has newer versions of.";
+    }
+    leaf pkg-ip {
+      type uint8 {
+        range "min..6";
+      }
+      description
+        "For packages and pkg-upgrade, the repository reached over
+         IPv4 only (4, pkg -4) or IPv6 only (6, pkg -6); 0 or none
+         either.";
+    }
+    leaf limit-rules {
+      type string {
+        length "0..2048";
+      }
+      description
+        "For history, with how to sample: the limits of one device or
+         jail each, with commas: net:<interface>=<bytes a second, in
+         and out>, disk:<disk>=<bytes a second, read and written>,
+         jail-cpu:<jail>=<percent of one CPU>, jail-mem:<jail>=<bytes>.
+         An event (threshold) when one is crossed, either way; empty
+         takes them all away, and none given leaves them as they are.";
+    }
+    leaf zfs-recursive {
+      type empty;
+      description
+        "For zfs-send, the datasets under the snapshot's too (-R).";
+    }
+    leaf from-rc {
+      type empty;
+      description
+        "For ipfw-rules, nothing written: the script rc.conf's
+         firewall_script names, or the file firewall_type names, as
+         kept rules.";
+    }
+    leaf rc-file {
+      type string;
+      description
+        "For ipfw-rules with from-rc, the file that was read.";
+    }
+    leaf commit {
+      type string {
+        length "0..64";
+      }
+      description
+        "The commit of a repository: what source-head found at its
+         head, or what agent-build and console-update built.";
+    }
+    leaf count {
+      type uint32;
+      description
+        "How many at most.";
+    }
+    leaf log {
+      type string {
+        length "0..262144";
+      }
+      description
+        "The latest commits of a repository's branch, newest first,
+         as a JSON list: each its commit, time, subject and body.";
+    }
+    leaf tags {
+      type string {
+        length "0..262144";
+      }
+      description
+        "The repository's tags, newest first, as a JSON list: each its
+         name, time and message; the release notes where their
+         messages are.";
+    }
+    leaf safe-wait {
+      type uint32 {
+        range "10..3600";
+      }
+      description
+        "For bird-config with safe: the seconds the change waits to be
+         confirmed before it is taken back, in place of the agent's own
+         (-w); the console's rollback timer for the host.";
+    }
+    leaf zfs-dataset {
+      type string {
+        length "0..255";
+      }
+      description
+        "For zfs-key, the encrypted dataset.";
+    }
+    leaf zfs-key {
+      type string {
+        length "0..512";
+      }
+      description
+        "For zfs-key, the dataset's key as it is typed: a passphrase,
+         or 64 hex digits for keyformat hex.";
+    }
+    leaf zfs-new-key {
+      type string {
+        length "0..512";
+      }
+      description
+        "For zfs-key, the key it is to have from now on.";
+    }
+    leaf tls-verb {
+      type string {
+        length "0..16";
+      }
+      description
+        "For tls, status, csr or install.";
+    }
+    leaf tls-cert {
+      type string {
+        length "0..32768";
+      }
+      description
+        "For tls install, the host's new certificate as PEM, the
+         intermediate CAs after it.";
+    }
+    leaf tls-ca {
+      type string {
+        length "0..65536";
+      }
+      description
+        "For tls install, the CAs the host is to trust from now on, as
+         PEM, one after the other.";
+    }
+    leaf tls-peer {
+      type string {
+        length "0..32768";
+      }
+      description
+        "For tls install, the asking console's own certificate as PEM,
+         its intermediate CAs after it: the host takes the change only
+         when that one is still trusted afterwards.";
+    }
+    leaf secrets {
+      type empty;
+      description
+        "For config-export, the secrets with the files too: keys and
+         shared secrets (WireGuard's, strongSwan's, the agent's own
+         never).";
+    }
+    leaf bundle {
+      type string {
+        length "0..4194304";
+      }
+      description
+        "For config-apply, a host's bundle, as config-export made it.";
+    }
+    leaf anyway {
+      type empty;
+      description
+        "For config-apply, though the hardware is not the bundle's: an
+         interface or a disk it names is not on this host.";
+    }
+    leaf new-hostname {
+      type string {
+        length "0..255";
+      }
+      description
+        "For config-apply, the host's name instead of the bundle's.";
+    }
+    leaf path-src {
+      type string {
+        length "0..64";
+      }
+      description
+        "For path-check, the packet's source address.";
+    }
+    leaf path-dst {
+      type string {
+        length "0..64";
+      }
+      description
+        "For path-check, its destination address.";
+    }
+    leaf path-proto {
+      type string {
+        length "0..8";
+      }
+      description
+        "For path-check, tcp, udp, icmp or ip (any).";
+    }
+    leaf path-port {
+      type uint32;
+      description
+        "For path-check, the destination port of tcp or udp.";
+    }
+    leaf path-reply {
+      type empty;
+      description
+        "For path-check, the packet is a reply: from path-src's
+         path-port to an ephemeral port of path-dst, a TCP segment of
+         a connection (ACK, no SYN), an ICMP echo reply; met where no
+         state of its request may be.";
+    }
+    leaf listen {
+      type string {
+        length "0..255";
+      }
+      description
+        "For transport: a listener the agent has now as well, tcp://
+         or sctp:// and an address and port (and an SCTP one beside a
+         TCP one, once the kernel has SCTP); none when it has it.";
+    }
+    leaf unlisten {
+      type string {
+        length "0..255";
+      }
+      description
+        "For transport: a listener the agent closes (with the SCTP one
+         beside it); the local socket is not one.";
+    }
+    leaf listen-keep {
+      type empty;
+      description
+        "For transport, with listen and unlisten: kept for the next
+         start too, listen taking unlisten's place in rc.conf
+         (arcana_agent_listen, or -l in arcana_agent_flags).";
+    }
+    leaf sctp-also {
+      type string {
+        length "0..512";
+      }
+      description
+        "For transport: the other addresses every SCTP listener is
+         bound to (sctp_bindx(3)), separated by spaces, in place of
+         those before (\"\" for none), and kept in rc.conf
+         (arcana_agent_sctp_also): the association with the console
+         has a path by each.";
+    }
+    leaf notify-token {
+      type string {
+        length "0..128";
+      }
+      description
+        "For notify, the Telegram bot's token, as BotFather gave it:
+         used for this message, neither kept nor logged nor traced.";
+    }
+    leaf notify-chat {
+      type string {
+        length "0..64";
+      }
+      description
+        "For notify, the chat the message goes to: a number (a user,
+         a group, negative), or @ and a channel's name.";
+    }
+    leaf notify-text {
+      type string {
+        length "0..4096";
+      }
+      description
+        "For notify, the message.";
+    }
+    leaf limit-storage {
+      type uint32;
+      description
+        "For history, the same for how full a file system of the host's
+         is (a ZFS pool's allocated share of its size, another local
+         one's as df(1) has it): over it, a storage fault; 0 for none.
+         Without it, as it was.";
+    }
+    leaf pkg-repo {
+      type string {
+        length "0..64";
+      }
+      description
+        "For pkg-upgrade, the repository to upgrade from only (pkg
+         upgrade -r), one of those the packages operation lists in
+         pkg-repos; without it, each package from where pkg's own
+         configuration has it.";
+    }
+    leaf-list pkg-repos {
+      type string;
+      max-elements 64;
+      description
+        "For packages, the repositories pkg is configured with there
+         (pkg -vv), enabled or not: any of them may be named in
+         pkg-repo, which pkg then takes from alone.";
+    }
+    leaf zfs-create {
+      type string {
+        length "0..16";
+      }
+      description
+        "For zfs-key, the dataset made, encrypted with zfs-new-key as its
+         passphrase (keyformat passphrase, keylocation prompt): its
+         encryption, on or one of aes-128-ccm, aes-192-ccm, aes-256-ccm,
+         aes-128-gcm, aes-192-gcm, aes-256-gcm.  The dataset is not
+         there yet.";
+    }
+    leaf pkg-anyos {
+      type boolean;
+      description
+        "For packages: read past a repository of packages built for a
+         newer FreeBSD (pkg -o IGNORE_OSVERSION=yes), once the console
+         asked.";
+    }
+    leaf lanes {
+      type uint8;
+      description
+        "How many jobs of pkg in jails run at once, 1 to 32.";
+    }
+    leaf pkgbase {
+      type boolean;
+      description
+        "For a jail's packages: whether its base system is pkgbase
+         (FreeBSD-runtime is one of its packages).";
+    }
+  }
+
+  grouping set-host {
+    leaf hostname {
+      type string;
+    }
+    leaf sysname {
+      type string;
+    }
+    leaf release {
+      type string;
+    }
+    leaf machine {
+      type string;
+    }
+    leaf osreldate {
+      type uint32;
+    }
+    leaf ncpu {
+      type uint32;
+    }
+    leaf physmem {
+      type uint64;
+    }
+    leaf boottime {
+      type int64;
+    }
+    leaf time {
+      type int64;
+    }
+    leaf securelevel {
+      type int32;
+    }
+    leaf privileged {
+      type boolean;
+    }
+    leaf version {
+      type string;
+      description
+        "arcana-agent version.";
+    }
+    leaf build {
+      type string {
+        length "0..64";
+      }
+      description
+        "The SHA-256 of the running arcana-agent, in hex: two builds of
+         one version differ in it.";
+    }
+    leaf-list plugins {
+      type string;
+      description
+        "The plugins the host has: what works through a program that
+         is not the base system's and is installed there.  bird is
+         BIRD, through birdc(8); wireguard is WireGuard's keys and
+         peers, through wg(8); strongswan is IPsec, through
+         swanctl(8).";
+    }
+    leaf safe-wait {
+      type uint32;
+      description
+        "The seconds a change made in safe mode waits to be confirmed
+         before the agent undoes it, when the change does not say:
+         the agent's own (-w).
+         ";
+    }
+  }
+
+  grouping set-jail {
+    leaf name {
+      type string;
+    }
+    leaf state {
+      type uint8 {
+        range "0..3";
+      }
+      description
+        "One of jail-state: 0 running 1 stopped 2 dying 3 absent.";
+    }
+    leaf jid {
+      type uint32;
+    }
+    leaf configured {
+      type boolean;
+    }
+    leaf scope {
+      type string;
+      description
+        "The configuration file that defines the jail.";
+    }
+    leaf hostname {
+      type string;
+    }
+    leaf path {
+      type string;
+    }
+    leaf-list ip4 {
+      type string;
+    }
+    leaf-list ip6 {
+      type string;
+    }
+    leaf vnet {
+      type boolean;
+    }
+    leaf osrelease {
+      type string;
+    }
+    leaf persist {
+      type boolean;
+    }
+    leaf securelevel {
+      type int32;
+    }
+    leaf parent {
+      type uint32;
+    }
+    leaf children {
+      type uint32;
+    }
+    leaf nproc {
+      type uint32;
+    }
+    leaf rss-kb {
+      type uint64;
+    }
+    leaf cpu-pct {
+      type decimal64 {
+        fraction-digits 2;
+      }
+    }
+    leaf interface {
+      type string;
+    }
+    list params {
+      cg:struct "param";
+      description
+        "Configured parameters as jail(8) resolves them.";
+      uses set-param;
+    }
+    leaf-list plugins {
+      type string;
+      description
+        "Of a running jail with a network of its own: the plugins it
+         has, as a host's, by the programs installed in the jail.
+         ";
+    }
+  }
+
+  grouping set-param {
+    leaf key {
+      type string;
+    }
+    leaf-list values {
+      type string;
+    }
+  }
+
+  grouping set-service {
+    leaf name {
+      type string;
+    }
+    leaf path {
+      type string;
+      description
+        "The script, in /etc/rc.d or /usr/local/etc/rc.d.";
+    }
+    leaf rcvar {
+      type string;
+      description
+        "The rc.conf variable that enables it, if it has one.";
+    }
+    leaf enabled {
+      type boolean;
+    }
+    leaf running {
+      type boolean;
+      description
+        "What \"service <name> status\" says; absent when not asked.";
+    }
+    leaf pid {
+      type uint32;
+    }
+    leaf status {
+      type string;
+      description
+        "The status line, as the script printed it.";
+    }
+  }
+
+  grouping set-variable {
+    leaf key {
+      type string;
+    }
+    leaf value {
+      type string;
+    }
+    leaf remove {
+      type empty;
+      description
+        "In a request, unset the variable instead (sysrc -x).";
+    }
+  }
+
+  grouping set-stats {
+    description
+      "How busy the host is, at this moment.";
+    leaf cpu-pct {
+      type decimal64 {
+        fraction-digits 2;
+      }
+      description
+        "Of all CPUs, since the previous sample (kern.cp_time).";
+    }
+    leaf load1 {
+      type decimal64 {
+        fraction-digits 2;
+      }
+    }
+    leaf load5 {
+      type decimal64 {
+        fraction-digits 2;
+      }
+    }
+    leaf load15 {
+      type decimal64 {
+        fraction-digits 2;
+      }
+    }
+    leaf mem-total {
+      type uint64;
+      description
+        "Bytes.";
+    }
+    leaf mem-used {
+      type uint64;
+      description
+        "Active, wired and laundry pages.";
+    }
+    leaf mem-inactive {
+      type uint64;
+    }
+    leaf mem-free {
+      type uint64;
+    }
+    leaf swap-total {
+      type uint64;
+    }
+    leaf swap-used {
+      type uint64;
+    }
+    list pools {
+      cg:struct "pool";
+      description
+        "ZFS pools, from zpool list.";
+      uses set-pool;
+    }
+  }
+
+  grouping set-job-spec {
+    description
+      "One change to queue; the attributes its kind needs.";
+    leaf kind {
+      type uint8 {
+        range "0..46";
+      }
+      description
+        "One of job-kind: 0 jail-action 1 address 2 service-action 3 service-config 4 pkg-upgrade 5 if-address 6 if-state 7 route 8 if-set 9 if-create 10 if-destroy 11 netgraph 12 wireguard 13 bird 14 if-vnet 15 kmod 16 zfs 17 zpool 18 mount 19 gpart 20 cam 21 sysctl 22 ipfw 23 bridge 24 geneve 25 process 26 pkg-clean 27 ipsec 28 pkg-install 29 ntp 30 rtadvd 31 ipsec-sa 32 jail-conf 33 neighbour 34 cert 35 ssh 36 carp 37 poudriere 38 clamav 39 suricata 40 nfs 41 iscsi 42 hast 43 sysfile 44 geom 45 smtpd 46 jail-base.";
+    }
+    leaf jail {
+      type string {
+        length "0..255";
+      }
+    }
+    leaf action {
+      type uint8 {
+        range "0..3";
+      }
+      description
+        "One of action: 0 start 1 stop 2 restart 3 kill.";
+    }
+    leaf address {
+      type string {
+        length "0..64";
+      }
+    }
+    leaf interface {
+      type string {
+        length "0..15";
+      }
+    }
+    leaf remove {
+      type empty;
+    }
+    leaf live {
+      type empty;
+    }
+    leaf persist {
+      type empty;
+    }
+    leaf service {
+      type string {
+        length "0..64";
+      }
+    }
+    leaf service-action {
+      type uint8 {
+        range "0..5";
+      }
+      description
+        "One of service-action: 0 start 1 stop 2 restart 3 reload 4 enable 5 disable.";
+    }
+    list variables {
+      cg:struct "variable";
+      uses set-variable;
+    }
+    leaf-list names {
+      type string;
+    }
+    leaf up {
+      type boolean;
+      description
+        "For if-state.";
+    }
+    leaf safe {
+      type empty;
+      description
+        "Undo the change unless job-confirm comes for the job within
+         the time the daemon allows.  A client that can still reach the
+         daemon after the change confirms; one the change cut off
+         cannot, and the host comes back by itself.  For the changes
+         that can be taken back: if-address, if-state, if-set,
+         if-create, route, address, service-config, and a service's
+         start, stop, enable and disable.";
+    }
+    leaf destination {
+      type string {
+        length "0..64";
+      }
+      description
+        "For route, as default, a network with its prefix length, or a
+         host address.";
+    }
+    leaf gateway {
+      type string {
+        length "0..512";
+      }
+      description
+        "For route, an address, or the name of an interface; or
+         several addresses with a comma between, each with its share
+         after an @ when it has one (10.0.0.1@2,10.0.0.2), for a
+         route with as many next hops.";
+    }
+    leaf fib {
+      type uint32;
+      description
+        "For route, the routing table; 0 when not given.  For if-set
+         and if-create, the interface's: what is received on it is
+         looked up there.";
+    }
+    leaf mtu {
+      type uint32;
+      description
+        "For if-set and if-create.";
+    }
+    leaf description {
+      type string {
+        length "0..64";
+      }
+      description
+        "For if-set and if-create.";
+    }
+    leaf tunnel-local {
+      type string {
+        length "0..64";
+      }
+      description
+        "For if-create, a tunnel's outer address on this host.";
+    }
+    leaf tunnel-remote {
+      type string {
+        length "0..64";
+      }
+      description
+        "For if-create, a tunnel's outer address at the far end.";
+    }
+    leaf id {
+      type uint32;
+      description
+        "For if-create, a VLAN tag or a VXLAN identifier.";
+    }
+    leaf parent {
+      type string {
+        length "0..15";
+      }
+      description
+        "For if-create, the interface a VLAN rides or a bridge takes in.";
+    }
+    leaf verb {
+      type string {
+        length "0..16";
+      }
+      description
+        "For netgraph, wireguard, bird, poudriere, clamav and suricata, what to do.";
+    }
+    leaf peer {
+      type string {
+        length "0..44";
+      }
+      description
+        "For wireguard, a peer's public key.";
+    }
+    leaf endpoint {
+      type string {
+        length "0..128";
+      }
+      description
+        "For wireguard, where a peer is reached, as address and port.";
+    }
+    leaf allowed-ips {
+      type string {
+        length "0..1024";
+      }
+      description
+        "For wireguard, the networks a peer may send from, with commas.";
+    }
+    leaf keepalive {
+      type uint32;
+      description
+        "For wireguard, seconds between keepalives to a peer; 0 for none.";
+    }
+    leaf listen-port {
+      type uint32;
+      description
+        "For wireguard, the port the interface listens on.";
+    }
+    leaf recursive {
+      type empty;
+      description
+        "For zfs, with those under it (-r).";
+    }
+    leaf force {
+      type empty;
+      description
+        "For unmounting, though it is in use (-f).";
+    }
+    leaf metric {
+      type uint32;
+      description
+        "For route, the cost of the route: of several to one
+         destination the lowest is used (route -metric).";
+    }
+    leaf weight {
+      type uint32;
+      description
+        "For route, its share among routes of the same metric to one
+         destination (route -weight).";
+    }
+    leaf source {
+      type string {
+        length "0..64";
+      }
+      description
+        "For route, the address of this host that what takes the route
+         is sent from (route -ifa).";
+    }
+    leaf pkg-ip {
+      type uint8 {
+        range "min..6";
+      }
+      description
+        "For pkg-upgrade, the repository reached over IPv4 only (4,
+         pkg -4) or IPv6 only (6, pkg -6).";
+    }
+    leaf conn {
+      type string {
+        length "0..32";
+      }
+      description
+        "For ipsec, the connection: letters, digits, - and _, kept in
+         conf.d/arcana-<conn>.conf.";
+    }
+    leaf ipsec-mode {
+      type string {
+        length "0..9";
+      }
+      description
+        "For ipsec conn, tunnel or transport.";
+    }
+    leaf local-ts {
+      type string {
+        length "0..512";
+      }
+      description
+        "For ipsec conn, this side's traffic selectors with commas, as
+         swanctl.conf(5) writes them (2001:db8::1[gre]); none says the
+         address itself in transport mode, everything in tunnel mode.";
+    }
+    leaf remote-ts {
+      type string {
+        length "0..512";
+      }
+      description
+        "For ipsec conn, the peer's traffic selectors, as local-ts.";
+    }
+    leaf pubkey {
+      type string {
+        length "0..1024";
+      }
+      description
+        "For ipsec conn, the peer's public key in base64 (DER), as the
+         ipsec network kind tells it of that host.";
+    }
+    leaf reqid {
+      type uint32;
+      description
+        "For ipsec conn, the reqid of the ipsec(4) interface it serves:
+         tunnel mode, its policies the interface's.  For if-create of an
+         ipsec interface, the reqid it is made with.";
+    }
+    leaf start-action {
+      type string {
+        length "0..5";
+      }
+      description
+        "For ipsec conn: start, up at once and kept up; trap, up with
+         the first packet that needs it (the default); none, only by
+         up.";
+    }
+    leaf local-id {
+      type string {
+        length "0..128";
+      }
+      description
+        "For ipsec conn, this side's identity when it is not its
+         address (behind NAT, the address it has there).";
+    }
+    leaf remote-id {
+      type string {
+        length "0..128";
+      }
+      description
+        "For ipsec conn, the peer's identity, as local-id.";
+    }
+    leaf tunnelfib {
+      type uint32;
+      description
+        "For if-set and if-create of a tunnel (gif, gre, vxlan, geneve,
+         wg), the routing table its outer packets are sent by.";
+    }
+    leaf child {
+      type string {
+        length "0..32";
+      }
+      description
+        "For ipsec child and unchild, the child's name under the
+         connection conn: its mode, traffic, reqid and start are the
+         child's.";
+    }
+    leaf local-cert {
+      type string {
+        length "0..128";
+      }
+      description
+        "For ipsec conn, this host's certificate, a file in swanctl's
+         x509 (its key in private or pkcs8), in place of the key
+         arcana made it.";
+    }
+    leaf remote-cert {
+      type string {
+        length "0..128";
+      }
+      description
+        "For ipsec conn, the peer's certificate, a file in swanctl's
+         x509, in place of its public key.";
+    }
+    leaf remote-ca {
+      type string {
+        length "0..128";
+      }
+      description
+        "For ipsec conn, a CA in swanctl's x509ca that signed the
+         peer's certificate, which remote-id names, in place of its
+         public key.";
+    }
+    leaf addressing {
+      type string {
+        length "0..8";
+      }
+      description
+        "For if-set, how the interface gets its address: dhcp
+         (dhclient, by rc.conf's DHCP word, so with persist), slaac
+         (inet6 accept_rtadv and rtsol, kept in ifconfig_<if>_ipv6),
+         static, which takes both off, or was: as it was before
+         Arcana first set dhcp or slaac on it (rc.conf's two lines,
+         DHCP and SLAAC, kept by the agent then), nothing when that
+         was not kept (Mplify 119 §12.2.3.2, §12.2.3.3).  A safe
+         change undone puts back what the interface had before it.";
+    }
+    leaf safe-wait {
+      type uint32 {
+        range "10..3600";
+      }
+      description
+        "With safe: the seconds the change waits to be confirmed
+         before it is undone, in place of the agent's own (-w); the
+         console's rollback timer for the host.";
+    }
+    leaf dataset {
+      type string {
+        length "0..255";
+      }
+      description
+        "For jail-conf, the jail's ZFS dataset.";
+    }
+    leaf snapshot {
+      type string {
+        length "0..255";
+      }
+      description
+        "For jail-conf make, the base jail's snapshot it is made from.";
+    }
+    leaf copy {
+      type string {
+        length "0..8";
+      }
+      description
+        "For jail-conf make, clone or send.";
+    }
+    leaf path {
+      type string {
+        length "0..1024";
+      }
+      description
+        "For jail-conf, the jail's root, its dataset's mountpoint; for
+         cert, the certificate's file name.";
+    }
+    leaf text {
+      type string {
+        length "0..65536";
+      }
+      description
+        "For jail-conf, a file's whole content; for cert add, the
+         certificate as PEM.";
+    }
+    leaf start {
+      type empty;
+      description
+        "For jail-conf make, the jail started once made.";
+    }
+    leaf preshared-key {
+      type string {
+        length "0..44";
+      }
+      description
+        "For wireguard peer, the peer's preshared key, 44 characters of
+         base64: given to wg(8) in a file of the agent's that is there
+         only while it is read, and in no title nor trace.";
+    }
+    leaf lladdr {
+      type string {
+        length "0..17";
+      }
+      description
+        "For neighbour add, the link address, six bytes of hex.";
+    }
+    leaf temporary {
+      type empty;
+      description
+        "For neighbour add, one that ages out as the others do.";
+    }
+    leaf user {
+      type string {
+        length "0..32";
+      }
+      description
+        "For ssh authorize, unauthorize and options, the user whose keys.";
+    }
+    leaf pkg-repo {
+      type string {
+        length "0..64";
+      }
+      description
+        "For pkg-upgrade and pkg-install, the repository only (pkg -r),
+         one of those pkg is configured with there.";
+    }
+    leaf release {
+      type string {
+        length "0..16";
+      }
+      description
+        "A FreeBSD release to go to (jail-base upgrade: \"16\", the
+         latest of that major, or \"15.2\"); for convert, the branch
+         of the FreeBSD-base repository, the jail's own release when
+         none.";
+    }
+  }
+
+  grouping set-job {
+    leaf id {
+      type uint64;
+    }
+    leaf kind {
+      type uint8 {
+        range "0..46";
+      }
+      description
+        "One of job-kind: 0 jail-action 1 address 2 service-action 3 service-config 4 pkg-upgrade 5 if-address 6 if-state 7 route 8 if-set 9 if-create 10 if-destroy 11 netgraph 12 wireguard 13 bird 14 if-vnet 15 kmod 16 zfs 17 zpool 18 mount 19 gpart 20 cam 21 sysctl 22 ipfw 23 bridge 24 geneve 25 process 26 pkg-clean 27 ipsec 28 pkg-install 29 ntp 30 rtadvd 31 ipsec-sa 32 jail-conf 33 neighbour 34 cert 35 ssh 36 carp 37 poudriere 38 clamav 39 suricata 40 nfs 41 iscsi 42 hast 43 sysfile 44 geom 45 smtpd 46 jail-base.";
+    }
+    leaf title {
+      type string;
+      description
+        "What it does, in words.";
+    }
+    leaf state {
+      type uint8 {
+        range "0..4";
+      }
+      description
+        "One of job-state: 0 queued 1 running 2 done 3 cancelled 4 unconfirmed.";
+    }
+    leaf ok {
+      type boolean;
+      description
+        "With state done, whether it succeeded.";
+    }
+    leaf error {
+      type string;
+    }
+    leaf created {
+      type int64;
+      description
+        "Unix time it was queued.";
+    }
+    leaf started {
+      type int64;
+    }
+    leaf finished {
+      type int64;
+    }
+    leaf peer {
+      type string;
+      description
+        "Who queued it.";
+    }
+    leaf confirm-by {
+      type int64;
+      description
+        "With state unconfirmed, the Unix time it is undone at.";
+    }
+    list trace {
+      cg:struct "step";
+      description
+        "The steps so far; it grows while the job runs.";
+      uses set-step;
+    }
+  }
+
+  grouping set-package {
+    leaf name {
+      type string;
+    }
+    leaf installed {
+      type string;
+      description
+        "The installed version.";
+    }
+    leaf available {
+      type string;
+      description
+        "The repository's version.";
+    }
+    leaf automatic {
+      type boolean;
+      description
+        "Installed as what another package needs, not asked for by
+         name (pkg's automatic flag).";
+    }
+    leaf comment {
+      type string;
+      description
+        "What it is, in a line.";
+    }
+    leaf size {
+      type uint64;
+      description
+        "Bytes it takes installed.";
+    }
+    leaf origin {
+      type string;
+      description
+        "Its port, category/name.";
+    }
+  }
+
+  grouping set-pool {
+    leaf name {
+      type string;
+    }
+    leaf size {
+      type uint64;
+    }
+    leaf alloc {
+      type uint64;
+    }
+    leaf free {
+      type uint64;
+    }
+    leaf health {
+      type string;
+    }
+  }
+
+  grouping set-conf-error {
+    leaf scope {
+      type string;
+    }
+    leaf message {
+      type string;
+    }
+  }
+
+  grouping set-step {
+    leaf id {
+      type uint32;
+    }
+    leaf parent {
+      type int32;
+      description
+        "Index of the parent step, -1 for the root.";
+    }
+    leaf kind {
+      type uint8 {
+        range "0..4";
+      }
+      description
+        "One of step-kind: 0 daemon 1 lib 2 syscall 3 file 4 exec.";
+    }
+    leaf label {
+      type string;
+    }
+    leaf detail {
+      type string;
+    }
+    leaf status {
+      type uint8 {
+        range "0..2";
+      }
+      description
+        "One of step-status: 0 ok 1 failed 2 incomplete.";
+    }
+    leaf duration-us {
+      type uint64;
+    }
+    leaf-list argv {
+      type string;
+    }
+    leaf exit {
+      type int32;
+    }
+    leaf output {
+      type binary {
+        length "0..262144";
+      }
+      description
+        "What the program wrote to standard output.";
+    }
+    leaf error-output {
+      type binary {
+        length "0..262144";
+      }
+      description
+        "What the program wrote to standard error.";
+    }
+  }
+
+  grouping set-route {
+    leaf family {
+      type string;
+      description
+        "The table it is of, Internet or Internet6.";
+    }
+    leaf destination {
+      type string;
+      description
+        "The prefix, or default.";
+    }
+    leaf gateway {
+      type string;
+      description
+        "The next hop's address, or link#n for a route on a link.";
+    }
+    leaf flags {
+      type string;
+      description
+        "Its flags as netstat -r writes them, UGS and so on.";
+    }
+    leaf nhop {
+      type uint32;
+      description
+        "The kernel's nexthop it uses.";
+    }
+    leaf mtu {
+      type uint32;
+    }
+    leaf interface-name {
+      type string;
+    }
+    leaf metric {
+      type uint32;
+    }
+    leaf weight {
+      type uint32;
+      description
+        "Its share, against the other ways of a route of several.";
+    }
+    leaf fib {
+      type uint32;
+    }
+    leaf prefixlen {
+      type uint32;
+    }
+    leaf source {
+      type string;
+      description
+        "The address it sends from, when it is set.";
+    }
+    leaf path {
+      type uint32;
+      description
+        "Which of the ways of a route of several (ECMP) this is.";
+    }
+    leaf paths {
+      type uint32;
+      description
+        "How many ways the route has.";
+    }
+    leaf expire-time {
+      type uint32;
+      description
+        "When a route that expires does.";
+    }
+  }
+
+  grouping set-part {
+    leaf json {
+      type string;
+      description
+        "The next rows, a JSON array (connections, sockets, sysctl).";
+    }
+    leaf total {
+      type uint64;
+      description
+        "Rows in the table on the host.";
+    }
+    list routes {
+      cg:struct "route";
+      description
+        "The next routes, typed.";
+      uses set-route;
+    }
+  }
+
+  grouping set-chunk {
+    leaf data {
+      type binary {
+        length "0..262144";
+      }
+      description
+        "The next bytes of what zfs send wrote, or receive is to read.";
+    }
+  }
+
+  grouping attr-jail {
+    leaf jail {
+      type string {
+        length "1..255";
+      }
+    }
+  }
+
+  grouping attr-action {
+    leaf action {
+      type uint8 {
+        range "0..3";
+      }
+      description
+        "One of action: 0 start 1 stop 2 restart 3 kill.";
+    }
+  }
+
+  grouping attr-address {
+    leaf address {
+      type string {
+        length "2..64";
+      }
+      description
+        "An IPv4 or IPv6 address, optionally with /prefixlen.";
+    }
+  }
+
+  grouping attr-interface {
+    leaf interface {
+      type string {
+        length "1..15";
+      }
+    }
+  }
+
+  grouping attr-remove {
+    leaf remove {
+      type empty;
+      description
+        "Remove the address instead of adding it.";
+    }
+  }
+
+  grouping attr-live {
+    leaf live {
+      type empty;
+      description
+        "Change the running jail.";
+    }
+  }
+
+  grouping attr-persist {
+    leaf persist {
+      type empty;
+      description
+        "Change the jail's configuration file.";
+    }
+  }
+
+  grouping attr-dry-run {
+    leaf dry-run {
+      type empty;
+      description
+        "Change nothing; report the plan and the diff.";
+    }
+  }
+
+  grouping attr-config-only {
+    leaf config-only {
+      type empty;
+      description
+        "List configured jails without looking at running ones.";
+    }
+  }
+
+  grouping attr-ok {
+    leaf ok {
+      type boolean;
+    }
+  }
+
+  grouping attr-error {
+    leaf error {
+      type string;
+    }
+  }
+
+  grouping attr-signature {
+    leaf signature {
+      type binary {
+        length "0..1024";
+      }
+      description
+        "For agent-update: the program signed by the console's CA key
+         (SHA-256), which the host checks against the CA certificates
+         it trusts (-A) before anything else; needed from any peer but
+         the local socket, whose root is root already.";
+    }
+  }
+
+  grouping attr-host {
+    container host {
+      cg:struct "host";
+      uses set-host;
+    }
+  }
+
+  grouping attr-jails {
+    list jails {
+      cg:struct "jail";
+      max-elements 4096;
+      uses set-jail;
+    }
+  }
+
+  grouping attr-result {
+    container result {
+      cg:struct "jail";
+      description
+        "The jail as it is after the operation.";
+      uses set-jail;
+    }
+  }
+
+  grouping attr-diff {
+    leaf diff {
+      type string;
+      description
+        "Unified diff of the configuration change.";
+    }
+  }
+
+  grouping attr-scopes {
+    leaf-list scopes {
+      type string;
+      description
+        "Configuration files jail(8) is run with (-f).";
+    }
+  }
+
+  grouping attr-conf-errors {
+    list conf-errors {
+      cg:struct "conf-error";
+      uses set-conf-error;
+    }
+  }
+
+  grouping attr-trace {
+    list trace {
+      cg:struct "step";
+      max-elements 1024;
+      uses set-step;
+    }
+  }
+
+  grouping attr-service {
+    leaf service {
+      type string {
+        length "1..64";
+      }
+      description
+        "An rc.d script's name.";
+    }
+  }
+
+  grouping attr-service-action {
+    leaf service-action {
+      type uint8 {
+        range "0..5";
+      }
+      description
+        "One of service-action: 0 start 1 stop 2 restart 3 reload 4 enable 5 disable.";
+    }
+  }
+
+  grouping attr-services {
+    list services {
+      cg:struct "service";
+      max-elements 1024;
+      uses set-service;
+    }
+  }
+
+  grouping attr-service-result {
+    container service-result {
+      cg:struct "service";
+      description
+        "The service as it is after the operation.";
+      uses set-service;
+    }
+  }
+
+  grouping attr-variables {
+    list variables {
+      cg:struct "variable";
+      description
+        "rc.conf variables of a service, to set or as they are.";
+      uses set-variable;
+    }
+  }
+
+  grouping attr-description {
+    leaf description {
+      type string;
+      description
+        "What the script says of itself (service describe).";
+    }
+  }
+
+  grouping attr-net-kind {
+    leaf net-kind {
+      type uint8 {
+        range "0..15";
+      }
+      description
+        "One of net-kind: 0 routes 1 nexthops 2 connections 3 sockets 4 interfaces 5 netgraph 6 wireguard 7 bird 8 bird-routes 9 bridges 10 geneve 11 ipfw 12 nhgroups 13 neighbours 14 ipsec 15 multicast.";
+    }
+  }
+
+  grouping attr-net-family {
+    leaf net-family {
+      type uint8 {
+        range "0..2";
+      }
+      description
+        "One of net-family: 0 all 1 inet 2 inet6.";
+    }
+  }
+
+  grouping attr-json {
+    leaf json {
+      type string {
+        length "0..4194304";
+      }
+      description
+        "What the program printed with --libxo json, as it is.";
+    }
+  }
+
+  grouping attr-stats {
+    container stats {
+      cg:struct "stats";
+      uses set-stats;
+    }
+  }
+
+  grouping attr-batch {
+    list batch {
+      cg:struct "job-spec";
+      max-elements 64;
+      min-elements 1;
+      description
+        "Jobs to queue, run in this order.";
+      uses set-job-spec;
+    }
+  }
+
+  grouping attr-jobs {
+    list jobs {
+      cg:struct "job";
+      uses set-job;
+    }
+  }
+
+  grouping attr-job {
+    container job {
+      cg:struct "job";
+      uses set-job;
+    }
+  }
+
+  grouping attr-id {
+    leaf id {
+      type uint64;
+      description
+        "A job's number, unique while the daemon runs.";
+    }
+  }
+
+  grouping attr-packages {
+    list packages {
+      cg:struct "package";
+      max-elements 16384;
+      description
+        "Packages with a newer version in the repository.";
+      uses set-package;
+    }
+  }
+
+  grouping attr-names {
+    leaf-list names {
+      type string;
+      max-elements 16384;
+      description
+        "Package names to upgrade; none means all of them.";
+    }
+  }
+
+  grouping attr-refresh {
+    leaf refresh {
+      type empty;
+      description
+        "Fetch the repository catalogue first (pkg update).";
+    }
+  }
+
+  grouping attr-upgraded {
+    leaf upgraded {
+      type uint32;
+      description
+        "How many packages pkg upgrade reported.";
+    }
+  }
+
+  grouping attr-commands {
+    leaf-list commands {
+      type string;
+      description
+        "The script's extra commands (service extracommands).";
+    }
+  }
+
+  grouping attr-binary {
+    leaf binary {
+      type binary {
+        length "0..6291456";
+      }
+      description
+        "A new arcana-agent, for this host's system and machine.";
+    }
+  }
+
+  grouping attr-sha256 {
+    leaf sha256 {
+      type string {
+        length "0..64";
+      }
+      description
+        "The SHA-256 of binary, in hex.";
+    }
+  }
+
+  grouping attr-source {
+    leaf source {
+      type string {
+        length "0..1024";
+      }
+      description
+        "A git repository with the Arcana tree, as git clone takes it.";
+    }
+  }
+
+  grouping attr-ref {
+    leaf ref {
+      type string {
+        length "0..128";
+      }
+      description
+        "The branch or tag to build; the repository's default if absent.";
+    }
+  }
+
+  grouping attr-net-filter {
+    leaf net-filter {
+      type string {
+        length "0..128";
+      }
+      description
+        "For the routes: keep the rows that contain this text, searched
+         for on the host, which a table too large to send needs.";
+    }
+  }
+
+  grouping attr-total {
+    leaf total {
+      type uint64;
+      description
+        "Rows in the table on the host, when not all were sent.";
+    }
+  }
+
+  grouping attr-truncated {
+    leaf truncated {
+      type empty;
+      description
+        "More rows matched than the reply carries.";
+    }
+  }
+
+  grouping attr-activity {
+    leaf activity {
+      type string;
+      description
+        "What holds the daemon's change lock now, if it is not a job.";
+    }
+  }
+
+  grouping attr-since {
+    leaf since {
+      type int64;
+      description
+        "Unix time activity began.";
+    }
+  }
+
+  grouping attr-stopping {
+    leaf stopping {
+      type empty;
+      description
+        "The daemon was told to stop and waits for what is under way.";
+    }
+  }
+
+  grouping attr-host-keys {
+    leaf host-keys {
+      type string {
+        length "0..8192";
+      }
+      description
+        "SSH host keys of the repository's server, as known_hosts lines.
+         In a reply: what ssh-keyscan found, for the user to confirm
+         when this host does not know the server.  In a request: the
+         lines confirmed, which this host keeps and checks the server
+         against from then on.";
+    }
+  }
+
+  grouping attr-ssh-key {
+    leaf ssh-key {
+      type string {
+        length "0..1024";
+      }
+      description
+        "A private key on this host for git to show the repository's
+         server, instead of the one this host makes for itself.";
+    }
+  }
+
+  grouping attr-fingerprints {
+    leaf-list fingerprints {
+      type string;
+      description
+        "The fingerprints of host-keys, as ssh-keygen -l prints them.";
+    }
+  }
+
+  grouping attr-deploy-key {
+    leaf deploy-key {
+      type string {
+        length "0..1024";
+      }
+      description
+        "The public key this host shows the repository's server, to be
+         allowed there as a read-only deploy key.";
+    }
+  }
+
+  grouping attr-restart {
+    leaf restart {
+      type empty;
+      description
+        "Restart the service once the new program is in place.";
+    }
+  }
+
+  grouping attr-restarting {
+    leaf restarting {
+      type empty;
+      description
+        "The service is being restarted; the connection will drop.";
+    }
+  }
+
+  grouping attr-agent-version {
+    leaf agent-version {
+      type string {
+        length "0..64";
+      }
+      description
+        "The version the program in place reports.";
+    }
+  }
+
+  grouping attr-net-fib {
+    leaf net-fib {
+      type uint32;
+      description
+        "The routing table to read or look in; 0 when not given.";
+    }
+  }
+
+  grouping attr-lookup {
+    leaf lookup {
+      type string {
+        length "2..64";
+      }
+      description
+        "An IPv4 or IPv6 address to find the route to.";
+    }
+  }
+
+  grouping attr-conf-path {
+    leaf conf-path {
+      type string {
+        length "0..255";
+      }
+      description
+        "A file of BIRD's configuration; its main one when not given.";
+    }
+  }
+
+  grouping attr-conf-text {
+    leaf conf-text {
+      type string {
+        length "0..4194304";
+      }
+      description
+        "A configuration file's whole text.";
+    }
+  }
+
+  grouping attr-files {
+    leaf-list files {
+      type string;
+      description
+        "The files BIRD's configuration is made of.";
+    }
+  }
+
+  grouping attr-safe {
+    leaf safe {
+      type empty;
+      description
+        "For bird-config: the daemon is told to take the new
+         configuration back by itself (configure timeout) unless it is
+         confirmed within the time the agent allows, and the file is
+         then put back as it was.";
+    }
+  }
+
+  grouping attr-confirm {
+    leaf confirm {
+      type empty;
+      description
+        "For bird-config: the change made with safe stays.  A client
+         that still reaches the host after the change says so.";
+    }
+  }
+
+  grouping attr-confirm-by {
+    leaf confirm-by {
+      type int64;
+      description
+        "After a change with safe, the Unix time it is taken back at.";
+    }
+  }
+
+  grouping attr-storage-kind {
+    leaf storage-kind {
+      type uint8 {
+        range "0..6";
+      }
+      description
+        "One of storage-kind: 0 disks 1 pools 2 datasets 3 snapshots 4 mounts 5 importable 6 health.";
+    }
+  }
+
+  grouping attr-retry {
+    leaf retry {
+      type empty;
+      description
+        "For transport: start the SCTP listeners that are not up, now
+         that the kernel can.";
+    }
+  }
+
+  grouping attr-offset {
+    leaf offset {
+      type uint32;
+      description
+        "For the routes of network: how many of the rows that would
+         be sent to leave out first, to read on in a table too large
+         for one reply.";
+    }
+  }
+
+  grouping attr-log-name {
+    leaf log-name {
+      type string {
+        length "0..128";
+      }
+      description
+        "For log, the file in the host's log directory to read.";
+    }
+  }
+
+  grouping attr-position {
+    leaf position {
+      type uint64;
+      description
+        "For log, the byte of the file to read on from: what a reply
+         before gave as where it ended.";
+    }
+  }
+
+  grouping attr-lines {
+    leaf lines {
+      type uint32;
+      description
+        "For log, how many lines to send at most.";
+    }
+  }
+
+  grouping attr-after {
+    leaf after {
+      type uint64;
+      description
+        "For history, the time, in seconds since the epoch, after
+         which samples are asked for.  For events, the number of the
+         last event the asker has.";
+    }
+  }
+
+  grouping attr-sample-step {
+    leaf sample-step {
+      type uint32;
+      description
+        "For history, the seconds between two samples, 1 to 3600.";
+    }
+  }
+
+  grouping attr-sample-keep {
+    leaf sample-keep {
+      type uint32;
+      description
+        "For history, how many samples the agent keeps, at most 5000;
+         with 0 it does not sample and holds no memory for it.";
+    }
+  }
+
+  grouping attr-pid {
+    leaf pid {
+      type uint32;
+      description
+        "For processes, the one to say more of.";
+    }
+  }
+
+  grouping attr-limit-cpu {
+    leaf limit-cpu {
+      type uint32;
+      description
+        "For history, the percentage of the CPUs busy above which an
+         event is made, and another when it falls under it again; 0
+         for none.";
+    }
+  }
+
+  grouping attr-limit-mem {
+    leaf limit-mem {
+      type uint32;
+      description
+        "For history, the same for the memory in use.";
+    }
+  }
+
+  grouping attr-limit-swap {
+    leaf limit-swap {
+      type uint32;
+      description
+        "For history, the same for the swap in use.";
+    }
+  }
+
+  grouping attr-routes {
+    list routes {
+      cg:struct "route";
+      description
+        "The routes of a part of network's dump of the routes.";
+      uses set-route;
+    }
+  }
+
+  grouping attr-seconds {
+    leaf seconds {
+      type uint32 {
+        range "1..60";
+      }
+      description
+        "For fw-trace, how long to follow, at most.";
+    }
+  }
+
+  grouping attr-packets {
+    leaf packets {
+      type uint32 {
+        range "1..1000";
+      }
+      description
+        "For fw-trace, how many packets to follow, at most.";
+    }
+  }
+
+  grouping attr-ignore-osversion {
+    leaf ignore-osversion {
+      type boolean;
+      description
+        "For pkg-upgrade, pkg told to install packages built for a
+         newer FreeBSD than the host's (IGNORE_OSVERSION), which it
+         refuses otherwise.";
+    }
+  }
+
+  grouping attr-pkg-installed {
+    leaf pkg-installed {
+      type boolean;
+      description
+        "For packages, the packages installed (pkg query, from the
+         host's own database, without the repository) and not those
+         the repository has newer versions of.";
+    }
+  }
+
+  grouping attr-pkg-ip {
+    leaf pkg-ip {
+      type uint8 {
+        range "min..6";
+      }
+      description
+        "For packages and pkg-upgrade, the repository reached over
+         IPv4 only (4, pkg -4) or IPv6 only (6, pkg -6); 0 or none
+         either.";
+    }
+  }
+
+  grouping attr-limit-rules {
+    leaf limit-rules {
+      type string {
+        length "0..2048";
+      }
+      description
+        "For history, with how to sample: the limits of one device or
+         jail each, with commas: net:<interface>=<bytes a second, in
+         and out>, disk:<disk>=<bytes a second, read and written>,
+         jail-cpu:<jail>=<percent of one CPU>, jail-mem:<jail>=<bytes>.
+         An event (threshold) when one is crossed, either way; empty
+         takes them all away, and none given leaves them as they are.";
+    }
+  }
+
+  grouping attr-zfs-recursive {
+    leaf zfs-recursive {
+      type empty;
+      description
+        "For zfs-send, the datasets under the snapshot's too (-R).";
+    }
+  }
+
+  grouping attr-from-rc {
+    leaf from-rc {
+      type empty;
+      description
+        "For ipfw-rules, nothing written: the script rc.conf's
+         firewall_script names, or the file firewall_type names, as
+         kept rules.";
+    }
+  }
+
+  grouping attr-rc-file {
+    leaf rc-file {
+      type string;
+      description
+        "For ipfw-rules with from-rc, the file that was read.";
+    }
+  }
+
+  grouping attr-commit {
+    leaf commit {
+      type string {
+        length "0..64";
+      }
+      description
+        "The commit of a repository: what source-head found at its
+         head, or what agent-build and console-update built.";
+    }
+  }
+
+  grouping attr-count {
+    leaf count {
+      type uint32;
+      description
+        "How many at most.";
+    }
+  }
+
+  grouping attr-log {
+    leaf log {
+      type string {
+        length "0..262144";
+      }
+      description
+        "The latest commits of a repository's branch, newest first,
+         as a JSON list: each its commit, time, subject and body.";
+    }
+  }
+
+  grouping attr-tags {
+    leaf tags {
+      type string {
+        length "0..262144";
+      }
+      description
+        "The repository's tags, newest first, as a JSON list: each its
+         name, time and message; the release notes where their
+         messages are.";
+    }
+  }
+
+  grouping attr-safe-wait {
+    leaf safe-wait {
+      type uint32 {
+        range "10..3600";
+      }
+      description
+        "For bird-config with safe: the seconds the change waits to be
+         confirmed before it is taken back, in place of the agent's own
+         (-w); the console's rollback timer for the host.";
+    }
+  }
+
+  grouping attr-zfs-dataset {
+    leaf zfs-dataset {
+      type string {
+        length "0..255";
+      }
+      description
+        "For zfs-key, the encrypted dataset.";
+    }
+  }
+
+  grouping attr-zfs-key {
+    leaf zfs-key {
+      type string {
+        length "0..512";
+      }
+      description
+        "For zfs-key, the dataset's key as it is typed: a passphrase,
+         or 64 hex digits for keyformat hex.";
+    }
+  }
+
+  grouping attr-zfs-new-key {
+    leaf zfs-new-key {
+      type string {
+        length "0..512";
+      }
+      description
+        "For zfs-key, the key it is to have from now on.";
+    }
+  }
+
+  grouping attr-tls-verb {
+    leaf tls-verb {
+      type string {
+        length "0..16";
+      }
+      description
+        "For tls, status, csr or install.";
+    }
+  }
+
+  grouping attr-tls-cert {
+    leaf tls-cert {
+      type string {
+        length "0..32768";
+      }
+      description
+        "For tls install, the host's new certificate as PEM, the
+         intermediate CAs after it.";
+    }
+  }
+
+  grouping attr-tls-ca {
+    leaf tls-ca {
+      type string {
+        length "0..65536";
+      }
+      description
+        "For tls install, the CAs the host is to trust from now on, as
+         PEM, one after the other.";
+    }
+  }
+
+  grouping attr-tls-peer {
+    leaf tls-peer {
+      type string {
+        length "0..32768";
+      }
+      description
+        "For tls install, the asking console's own certificate as PEM,
+         its intermediate CAs after it: the host takes the change only
+         when that one is still trusted afterwards.";
+    }
+  }
+
+  grouping attr-secrets {
+    leaf secrets {
+      type empty;
+      description
+        "For config-export, the secrets with the files too: keys and
+         shared secrets (WireGuard's, strongSwan's, the agent's own
+         never).";
+    }
+  }
+
+  grouping attr-bundle {
+    leaf bundle {
+      type string {
+        length "0..4194304";
+      }
+      description
+        "For config-apply, a host's bundle, as config-export made it.";
+    }
+  }
+
+  grouping attr-anyway {
+    leaf anyway {
+      type empty;
+      description
+        "For config-apply, though the hardware is not the bundle's: an
+         interface or a disk it names is not on this host.";
+    }
+  }
+
+  grouping attr-new-hostname {
+    leaf new-hostname {
+      type string {
+        length "0..255";
+      }
+      description
+        "For config-apply, the host's name instead of the bundle's.";
+    }
+  }
+
+  grouping attr-path-src {
+    leaf path-src {
+      type string {
+        length "0..64";
+      }
+      description
+        "For path-check, the packet's source address.";
+    }
+  }
+
+  grouping attr-path-dst {
+    leaf path-dst {
+      type string {
+        length "0..64";
+      }
+      description
+        "For path-check, its destination address.";
+    }
+  }
+
+  grouping attr-path-proto {
+    leaf path-proto {
+      type string {
+        length "0..8";
+      }
+      description
+        "For path-check, tcp, udp, icmp or ip (any).";
+    }
+  }
+
+  grouping attr-path-port {
+    leaf path-port {
+      type uint32;
+      description
+        "For path-check, the destination port of tcp or udp.";
+    }
+  }
+
+  grouping attr-path-reply {
+    leaf path-reply {
+      type empty;
+      description
+        "For path-check, the packet is a reply: from path-src's
+         path-port to an ephemeral port of path-dst, a TCP segment of
+         a connection (ACK, no SYN), an ICMP echo reply; met where no
+         state of its request may be.";
+    }
+  }
+
+  grouping attr-listen {
+    leaf listen {
+      type string {
+        length "0..255";
+      }
+      description
+        "For transport: a listener the agent has now as well, tcp://
+         or sctp:// and an address and port (and an SCTP one beside a
+         TCP one, once the kernel has SCTP); none when it has it.";
+    }
+  }
+
+  grouping attr-unlisten {
+    leaf unlisten {
+      type string {
+        length "0..255";
+      }
+      description
+        "For transport: a listener the agent closes (with the SCTP one
+         beside it); the local socket is not one.";
+    }
+  }
+
+  grouping attr-listen-keep {
+    leaf listen-keep {
+      type empty;
+      description
+        "For transport, with listen and unlisten: kept for the next
+         start too, listen taking unlisten's place in rc.conf
+         (arcana_agent_listen, or -l in arcana_agent_flags).";
+    }
+  }
+
+  grouping attr-sctp-also {
+    leaf sctp-also {
+      type string {
+        length "0..512";
+      }
+      description
+        "For transport: the other addresses every SCTP listener is
+         bound to (sctp_bindx(3)), separated by spaces, in place of
+         those before (\"\" for none), and kept in rc.conf
+         (arcana_agent_sctp_also): the association with the console
+         has a path by each.";
+    }
+  }
+
+  grouping attr-notify-token {
+    leaf notify-token {
+      type string {
+        length "0..128";
+      }
+      description
+        "For notify, the Telegram bot's token, as BotFather gave it:
+         used for this message, neither kept nor logged nor traced.";
+    }
+  }
+
+  grouping attr-notify-chat {
+    leaf notify-chat {
+      type string {
+        length "0..64";
+      }
+      description
+        "For notify, the chat the message goes to: a number (a user,
+         a group, negative), or @ and a channel's name.";
+    }
+  }
+
+  grouping attr-notify-text {
+    leaf notify-text {
+      type string {
+        length "0..4096";
+      }
+      description
+        "For notify, the message.";
+    }
+  }
+
+  grouping attr-limit-storage {
+    leaf limit-storage {
+      type uint32;
+      description
+        "For history, the same for how full a file system of the host's
+         is (a ZFS pool's allocated share of its size, another local
+         one's as df(1) has it): over it, a storage fault; 0 for none.
+         Without it, as it was.";
+    }
+  }
+
+  grouping attr-pkg-repo {
+    leaf pkg-repo {
+      type string {
+        length "0..64";
+      }
+      description
+        "For pkg-upgrade, the repository to upgrade from only (pkg
+         upgrade -r), one of those the packages operation lists in
+         pkg-repos; without it, each package from where pkg's own
+         configuration has it.";
+    }
+  }
+
+  grouping attr-pkg-repos {
+    leaf-list pkg-repos {
+      type string;
+      max-elements 64;
+      description
+        "For packages, the repositories pkg is configured with there
+         (pkg -vv), enabled or not: any of them may be named in
+         pkg-repo, which pkg then takes from alone.";
+    }
+  }
+
+  grouping attr-zfs-create {
+    leaf zfs-create {
+      type string {
+        length "0..16";
+      }
+      description
+        "For zfs-key, the dataset made, encrypted with zfs-new-key as its
+         passphrase (keyformat passphrase, keylocation prompt): its
+         encryption, on or one of aes-128-ccm, aes-192-ccm, aes-256-ccm,
+         aes-128-gcm, aes-192-gcm, aes-256-gcm.  The dataset is not
+         there yet.";
+    }
+  }
+
+  grouping attr-pkg-anyos {
+    leaf pkg-anyos {
+      type boolean;
+      description
+        "For packages: read past a repository of packages built for a
+         newer FreeBSD (pkg -o IGNORE_OSVERSION=yes), once the console
+         asked.";
+    }
+  }
+
+  grouping attr-lanes {
+    leaf lanes {
+      type uint8;
+      description
+        "How many jobs of pkg in jails run at once, 1 to 32.";
+    }
+  }
+
+  grouping attr-pkgbase {
+    leaf pkgbase {
+      type boolean;
+      description
+        "For a jail's packages: whether its base system is pkgbase
+         (FreeBSD-runtime is one of its packages).";
+    }
+  }
+
+  rpc hello {
+    fam:command 1;
+    fam:auth;
+    output {
+      uses attr-host;
+    }
+  }
+
+  rpc list {
+    fam:command 2;
+    fam:auth;
+    input {
+      uses attr-config-only;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-host;
+      uses attr-jails;
+      uses attr-scopes;
+      uses attr-conf-errors;
+      uses attr-trace;
+    }
+  }
+
+  rpc action {
+    fam:command 3;
+    fam:auth;
+    input {
+      uses attr-jail {
+        refine jail {
+          mandatory true;
+        }
+      }
+      uses attr-action {
+        refine action {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-result;
+      uses attr-trace;
+    }
+  }
+
+  rpc address {
+    fam:command 4;
+    fam:auth;
+    input {
+      uses attr-jail {
+        refine jail {
+          mandatory true;
+        }
+      }
+      uses attr-address {
+        refine address {
+          mandatory true;
+        }
+      }
+      uses attr-interface;
+      uses attr-remove;
+      uses attr-live;
+      uses attr-persist;
+      uses attr-dry-run;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-result;
+      uses attr-diff;
+      uses attr-trace;
+    }
+  }
+
+  rpc services {
+    fam:command 5;
+    fam:auth;
+    description
+      "The rc.d scripts of the host with whether they are enabled, and for
+       the enabled ones whether they run.";
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-services;
+      uses attr-trace;
+    }
+  }
+
+  rpc service-action {
+    fam:command 6;
+    fam:auth;
+    input {
+      uses attr-service {
+        refine service {
+          mandatory true;
+        }
+      }
+      uses attr-service-action {
+        refine service-action {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-service-result;
+      uses attr-trace;
+    }
+  }
+
+  rpc service-config {
+    fam:command 7;
+    fam:auth;
+    description
+      "A service's rc.conf variables, read through sysrc(8); with
+       variables in the request, set or unset them first.";
+    input {
+      uses attr-service {
+        refine service {
+          mandatory true;
+        }
+      }
+      uses attr-variables;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-service-result;
+      uses attr-variables;
+      uses attr-description;
+      uses attr-commands;
+      uses attr-trace;
+    }
+  }
+
+  rpc network {
+    fam:command 8;
+    fam:auth;
+    description
+      "The host's routing table, nexthops, connections or sockets, as
+       netstat(1) and sockstat(1) print them with --libxo json.
+       With jail, those of a running jail that has a network of its own
+       (vnet), read from the host: nothing runs in the jail for it but
+       the jail's own birdc and wg.  As a dump, the routes, connections
+       and sockets come in parts as they are taken: each item has total,
+       how many rows the table has, and the next rows: routes, typed,
+       for the routes, and json, an array of them, for the connections
+       and sockets; nothing is left out for size.";
+    input {
+      uses attr-net-kind {
+        refine net-kind {
+          mandatory true;
+        }
+      }
+      uses attr-net-family;
+      uses attr-net-filter;
+      uses attr-net-fib;
+      uses attr-jail;
+      uses attr-offset;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-total;
+      uses attr-truncated;
+      uses attr-trace;
+    }
+  }
+
+  rpc network-dump {
+    fam:command 8;
+    fam:auth;
+    fam:dump "network";
+    description
+      "The dump form of network: each item of the dump is one output.";
+    input {
+      uses attr-net-kind {
+        refine net-kind {
+          mandatory true;
+        }
+      }
+      uses attr-net-family;
+      uses attr-net-filter;
+      uses attr-net-fib;
+      uses attr-jail;
+    }
+    output {
+      uses attr-json;
+      uses attr-total;
+      uses attr-routes;
+    }
+  }
+
+  rpc stats {
+    fam:command 9;
+    fam:auth;
+    description
+      "CPU, memory, swap and ZFS pool usage of the host.";
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-stats;
+      uses attr-trace;
+    }
+  }
+
+  rpc packages {
+    fam:command 10;
+    fam:auth;
+    description
+      "Packages of the host, or of a running jail, that the repository has
+       newer versions of (pkg version -vRl '<'), after pkg update with
+       refresh; with pkg-installed, the packages installed instead, each
+       with its version, origin, size, comment and whether it came
+       automatically, read from the host's own database (pkg query)
+       without asking the repository.  A repository of packages built
+       for a newer FreeBSD is refused by pkg (wrong OS version), and
+       the error says IGNORE_OSVERSION; with pkg-anyos the read goes
+       past it (pkg -o IGNORE_OSVERSION=yes), once the console asked.";
+    input {
+      uses attr-jail;
+      uses attr-refresh;
+      uses attr-pkg-installed;
+      uses attr-pkg-ip;
+      uses attr-pkg-anyos;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-packages;
+      uses attr-trace;
+      uses attr-pkg-repos;
+      uses attr-pkgbase;
+    }
+  }
+
+  rpc pkg-upgrade {
+    fam:command 11;
+    fam:auth;
+    description
+      "pkg upgrade -y on the host or in a running jail, of the named
+       packages or of all; dry-run only shows what pkg would do;
+       ignore-osversion upgrades to packages built for a newer FreeBSD
+       too, as a job of kind pkg-upgrade does with force; pkg-repo
+       takes them from that repository alone (pkg upgrade -r).";
+    input {
+      uses attr-jail;
+      uses attr-names;
+      uses attr-dry-run;
+      uses attr-ignore-osversion;
+      uses attr-pkg-ip;
+      uses attr-pkg-repo;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-upgraded;
+      uses attr-packages;
+      uses attr-trace;
+    }
+  }
+
+  rpc job-submit {
+    fam:command 12;
+    fam:auth;
+    description
+      "Queue changes.  The daemon runs them one after another in the order
+       given, whether or not the client stays connected, and keeps their
+       outcome for job and jobs.";
+    input {
+      uses attr-batch {
+        refine batch {
+          min-elements 1;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-jobs;
+    }
+  }
+
+  rpc jobs {
+    fam:command 13;
+    fam:auth;
+    description
+      "The queued, running and recent jobs, without their traces; and
+       what the daemon is doing now that is not a job: a request a client
+       waits for, which holds up changes and a stop as a job does.";
+    output {
+      uses attr-ok;
+      uses attr-jobs;
+      uses attr-activity;
+      uses attr-since;
+      uses attr-stopping;
+      uses attr-lanes;
+    }
+  }
+
+  rpc jobs-set {
+    fam:command 14;
+    fam:auth;
+    description
+      "How many jobs of pkg in jails run at once: lanes, 1 to 32, kept
+       for the next start (jobs.conf beside the agent's other kept
+       files).  The reply says what it is now.";
+    input {
+      uses attr-lanes {
+        refine lanes {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-lanes;
+    }
+  }
+
+  rpc job {
+    fam:command 15;
+    fam:auth;
+    description
+      "One job with its trace so far.";
+    input {
+      uses attr-id {
+        refine id {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-job;
+    }
+  }
+
+  rpc job-cancel {
+    fam:command 16;
+    fam:auth;
+    description
+      "Take a job that has not started out of the queue.";
+    input {
+      uses attr-id {
+        refine id {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-job;
+    }
+  }
+
+  rpc job-confirm {
+    fam:command 17;
+    fam:auth;
+    description
+      "Confirm a job that is unconfirmed: the change stays.  That the
+       request arrived is the point: the client still reaches the host.";
+    input {
+      uses attr-id {
+        refine id {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-job;
+    }
+  }
+
+  rpc agent-update {
+    fam:command 18;
+    fam:auth;
+    description
+      "Replace arcana-agent with the program sent.  It is checked by its
+       signature (the console's CA key over it, against the CA this host
+       trusts; not asked of the local socket), against its SHA-256 and
+       by running it with -V, on this host, before it takes the place of
+       the one installed, which is kept beside it with the suffix .old.  With restart the service is restarted
+       after the reply; otherwise the new program runs from the next
+       start.";
+    input {
+      uses attr-binary {
+        refine binary {
+          mandatory true;
+        }
+      }
+      uses attr-sha256 {
+        refine sha256 {
+          mandatory true;
+        }
+      }
+      uses attr-signature;
+      uses attr-restart;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-agent-version;
+      uses attr-restarting;
+      uses attr-trace;
+    }
+  }
+
+  rpc agent-build {
+    fam:command 19;
+    fam:auth;
+    description
+      "Build arcana-agent from a git repository on this host and return
+       the program.  The tree is cloned afresh into the build directory
+       and built with make(1), as an unprivileged user when the daemon
+       is root; nothing is installed.";
+    input {
+      uses attr-source {
+        refine source {
+          mandatory true;
+        }
+      }
+      uses attr-ref;
+      uses attr-host-keys;
+      uses attr-ssh-key;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-binary;
+      uses attr-sha256;
+      uses attr-agent-version;
+      uses attr-host-keys;
+      uses attr-fingerprints;
+      uses attr-deploy-key;
+      uses attr-trace;
+      uses attr-commit;
+    }
+  }
+
+  rpc console-update {
+    fam:command 20;
+    fam:auth;
+    description
+      "Build the whole tree from a git repository on this host and install
+       it, then restart the console's service: how a console updates
+       itself, through the agent of the host it runs on.  The build runs
+       as an unprivileged user when the daemon is root; make install runs
+       as the daemon.  The repository is fetched as agent-build fetches
+       it, host keys and all.";
+    input {
+      uses attr-source {
+        refine source {
+          mandatory true;
+        }
+      }
+      uses attr-ref;
+      uses attr-host-keys;
+      uses attr-ssh-key;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-host-keys;
+      uses attr-fingerprints;
+      uses attr-deploy-key;
+      uses attr-restarting;
+      uses attr-trace;
+      uses attr-commit;
+    }
+  }
+
+  rpc route-lookup {
+    fam:command 21;
+    fam:auth;
+    description
+      "The route this host would send a packet to an address by, as
+       route(8) get tells it, and the other routes of its table that
+       cover the address, which are what is left when the best one goes:
+       a JSON object with \"best\" and the array \"candidates\", each with
+       its prefix length.";
+    input {
+      uses attr-lookup {
+        refine lookup {
+          mandatory true;
+        }
+      }
+      uses attr-net-fib;
+      uses attr-jail;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc bird-config {
+    fam:command 22;
+    fam:auth;
+    description
+      "BIRD's configuration.  Without conf-text, read a file of it: the
+       main one, or with conf-path one it includes; the reply has its
+       text, the SHA-256 of that, and the files the configuration is made
+       of.  With conf-text, put that in the file's place: sha256 must be
+       that of the text it was made from, so that what somebody else
+       changed meanwhile is not lost.  The whole configuration is parsed
+       by bird(8) first, and what it refuses is not left in place; then
+       the daemon is told to read it.  With dry-run it is parsed only,
+       and the file left as it was.  With safe the daemon takes it back
+       by itself unless a request with confirm comes by confirm-by, and
+       the file is then as it was before.";
+    input {
+      uses attr-conf-path;
+      uses attr-conf-text;
+      uses attr-sha256;
+      uses attr-dry-run;
+      uses attr-jail;
+      uses attr-safe;
+      uses attr-confirm;
+      uses attr-safe-wait;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-conf-path;
+      uses attr-conf-text;
+      uses attr-sha256;
+      uses attr-files;
+      uses attr-trace;
+      uses attr-confirm-by;
+    }
+  }
+
+  rpc kernel {
+    fam:command 23;
+    fam:auth;
+    description
+      "The kernel's modules and its memory, as a JSON object: \"files\",
+       every file linked into the kernel with its id, name, path, the
+       references to it, its size, and the modules it holds; \"available\",
+       the modules of the module path that are not loaded; \"kept\", what
+       rc.conf's kld_list loads at boot; and \"memory\", with the sizes
+       of the kernel's memory map and the largest of its malloc(9) types
+       and uma(9) zones.";
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc storage {
+    fam:command 24;
+    fam:auth;
+    description
+      "The host's storage, as a JSON object, of the kind asked for.  More
+       datasets or snapshots than a reply carries come as the first of
+       them, with total and truncated.  With jail, the datasets or the
+       snapshots that jail's own zfs list sees: those given to it.";
+    input {
+      uses attr-storage-kind {
+        refine storage-kind {
+          mandatory true;
+        }
+      }
+      uses attr-net-filter;
+      uses attr-jail;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-total;
+      uses attr-truncated;
+      uses attr-trace;
+    }
+  }
+
+  rpc fstab {
+    fam:command 25;
+    fam:auth;
+    description
+      "fstab(5).  Without conf-text, read it, with the SHA-256 of its
+       text.  With conf-text, put that in its place: it has to be an
+       fstab, and sha256 that of the text it was made from.  The one
+       before is kept beside it.  With dry-run it is only checked.";
+    input {
+      uses attr-conf-text;
+      uses attr-sha256;
+      uses attr-dry-run;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-conf-text;
+      uses attr-sha256;
+      uses attr-trace;
+    }
+  }
+
+  rpc transport {
+    fam:command 26;
+    fam:auth;
+    description
+      "How the agent is reached, as a JSON object: \"listeners\", each
+       with its uri, its transport (tcp, sctp or unix) and whether it is
+       up, and why not when it is not; \"sctp\", whether the kernel has it;
+       and \"sessions\", the connections open now, each with its
+       transport, the address and the certificate's name of who is at
+       the other end, and since when.  An agent that listens on TCP
+       listens on SCTP at the same address and port as well, once the
+       kernel has SCTP: it does not load it, and does not try by itself
+       again.  With retry it tries now.  With listen it listens there
+       too, with unlisten it closes that one: an address changed from
+       the console, the new one listened on and tried before the old
+       one is closed.";
+    input {
+      uses attr-retry;
+      uses attr-listen;
+      uses attr-unlisten;
+      uses attr-listen-keep;
+      uses attr-sctp-also;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc sysctl {
+    fam:command 27;
+    fam:auth;
+    description
+      "The kernel's state, sysctl(8), as a JSON object: \"values\", each
+       with its name, its value as sysctl prints it, whether it can be
+       set, and what it is said to be; \"kept\", what sysctl.conf(5) sets
+       at boot.  net-filter is where in the tree to begin, a name or
+       the start of one; without it the whole tree, of which more than
+       a reply carries comes as the first, with total and truncated.
+       As a dump the values come in parts, as the tree is walked and
+       as fast as they are taken: each item has json, an array of the
+       next of them, and nothing is left out for size.  With jail,
+       those of that vnet jail's network as its own sysctl(8) reads
+       them (net-filter then names where, under net.), name and value
+       each.";
+    input {
+      uses attr-net-filter;
+      uses attr-jail;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-total;
+      uses attr-truncated;
+      uses attr-trace;
+    }
+  }
+
+  rpc sysctl-dump {
+    fam:command 27;
+    fam:auth;
+    fam:dump "sysctl";
+    description
+      "The dump form of sysctl: each item of the dump is one output.";
+    input {
+      uses attr-net-filter;
+    }
+    output {
+      uses attr-json;
+      uses attr-total;
+    }
+  }
+
+  rpc ipfw-rules {
+    fam:command 28;
+    fam:auth;
+    description
+      "The kept rules of the firewall, a file of ipfw(8) commands, one
+       a line.  Without conf-text, read it, with the SHA-256 of its
+       text.  With conf-text, put that in its place, once ipfw has
+       read it without doing it (ipfw -n) and found nothing wrong:
+       sha256 is that of the text it was made from.  The one before is
+       kept beside it.  With dry-run it is only checked.  jail is the
+       vnet jail whose firewall it is.  With from-rc, the file the host
+       (or the jail) loads now is read and made into kept rules, which
+       are not written: the script rc.conf's firewall_script names, when
+       it is not /etc/rc.firewall, its ipfw commands taken out of it
+       (ipfw, its path or a variable holding it, the options off) and
+       the shell's own lines left in as comments; else the file
+       firewall_type names.  What
+       applying does itself (flush, set, delete, options) is left in
+       as comments.  sha256 is still the kept file's, for a change
+       made from it.";
+    input {
+      uses attr-conf-text;
+      uses attr-sha256;
+      uses attr-dry-run;
+      uses attr-jail;
+      uses attr-from-rc;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-conf-text;
+      uses attr-sha256;
+      uses attr-trace;
+      uses attr-rc-file;
+    }
+  }
+
+  rpc processes {
+    fam:command 29;
+    fam:auth;
+    description
+      "What runs on the host, as a JSON object: \"processes\", each with
+       its pid, ppid, user, jid and jail, state, nice, pri, threads, rss
+       and size in bytes, time (the CPU seconds it has used), wcpu (the
+       kernel's decayed share of one CPU, in percent, as top(1) shows
+       it), cpu (its share between this look and the one before), in
+       and out (blocks read and written) and io (blocks a second since
+       the look before), start, comm and args; \"jails\", each jail with
+       its jid, name, procs, threads, cpu, wcpu and rss added up;
+       \"ncpu\"; and \"elapsed\", the seconds between the two looks.  With
+       jail, only the processes of that jail.  With pid, one process
+       alone and more of it: \"files\", each with its fd, type, path or
+       socket's addresses; \"threads\", each with its tid, name, state,
+       priority and cpu.";
+    input {
+      uses attr-jail;
+      uses attr-pid;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc log {
+    fam:command 30;
+    fam:auth;
+    description
+      "A log of the host, as syslogd(8) wrote it, as a JSON object:
+       \"files\", the logs of the log directory that can be read, each
+       with its name, size and when it was last written; \"name\", the
+       one read (messages, when log-name names none); \"lines\", its last
+       lines, each with its time, host, tag, pid and text when the line
+       is one of syslog's, with level when syslogd writes one (-v),
+       and its text alone when not; \"position\", where the file ended;
+       and \"rotated\", when the file is shorter than position said.
+       A packed log (.bz2, .gz, .xz, .zst) is unpacked to be read,
+       and not followed.  @dmesg is the kernel's message buffer,
+       followed as it comes: each line has seq, its number, and seen,
+       when the agent saw it (none for what was there when it
+       started); position is then the newest number, after which
+       the next asking is answered.  @audit the audit trail of now (praudit).  With jail, the logs
+       of that jail's own /var/log.  With net-filter only the lines that have
+       that text in them, in either case.  With position only what was
+       written after it, which is how a log is followed.  lines is how
+       many to send at most: 200, when it is not given.";
+    input {
+      uses attr-log-name;
+      uses attr-net-filter;
+      uses attr-position;
+      uses attr-lines;
+      uses attr-jail;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc history {
+    fam:command 31;
+    fam:auth;
+    description
+      "How busy the host has been, which the agent samples by itself
+       and keeps the last of, as a JSON object: \"step\", the seconds
+       between two samples; \"keep\", how many are kept; \"bytes\", the
+       memory that takes; \"fields\", the names of what a sample begins
+       with, in order (t, cpu, load, mem, swap, rx, tx, read, write: a
+       time, a percentage, the load average, bytes of memory and of
+       swap in use, bytes a second received and sent on all interfaces
+       but the loopback, and read from and written to all disks);
+       \"nets\" and \"disks\", the names of the interfaces and the disks
+       told apart, at most 16 of each; \"samples\", each an array of the
+       fields, then bytes a second in and out of each of nets, then
+       read and written of each of disks; \"mem_total\", \"swap_total\" and
+       \"ncpu\".  With after only the samples after that time.  With
+       sample-step and sample-keep, both, the agent first samples that
+       way from now on, and keeps it for its next start: an hour every
+       five seconds until it is told otherwise; limit-cpu, limit-mem
+       and limit-swap with them are the percentages above which an
+       event (kind threshold) is made, limit-storage that of a file
+       system, looked at each minute, also a storage fault (Mplify 119's
+       resource faults), and limit-rules the limits of an interface, a
+       disk or a jail.  The reply has \"limits\", and
+       \"rules\", each with its kind, name, limit and whether it is over.
+       Each running jail is told apart as well, at most 16, in \"jails\":
+       its share of one CPU in percent and its memory in bytes, as the
+       kernel's resource accounting has them, follow the disks' in a
+       sample.  That needs kern.racct.enable=1 in loader.conf(5):
+       \"racct\" says whether the kernel accounts.  The
+       samples are written down when the agent stops and every few
+       minutes, and read again when it starts.";
+    input {
+      uses attr-after;
+      uses attr-sample-step;
+      uses attr-sample-keep;
+      uses attr-limit-cpu;
+      uses attr-limit-mem;
+      uses attr-limit-swap;
+      uses attr-limit-rules;
+      uses attr-limit-storage;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc events {
+    fam:command 32;
+    fam:auth;
+    description
+      "What happened on the host, as it happened, as a JSON object:
+       \"events\", each with its number n, its time t, its kind and data,
+       what it is about; \"last\", the number of the newest; \"first\",
+       that of the oldest still kept, of \"kept\" at most.  With after
+       only the events of a greater number: asked again with the last
+       number seen, none is missed, unless first is beyond it.  The
+       kinds: route-add and route-del, a route with its attributes as
+       network's routes have them; routes, with changed, how many more
+       routes changed in a second than are said one by one; link and
+       link-del, an interface with up, carrier and mtu; address-add
+       and address-del, an interface's address and prefixlen; neigh
+       and neigh-del, a neighbour (ARP, NDP) as network's neighbours
+       has one.  They are the kernel's own netlink(4) messages, of the
+       host's network, and of each jail's own (vnet) too: one of a
+       jail's has \"jail\", its name, beside its kind.  threshold, with
+       what (cpu, mem, swap, net, disk, jail-cpu or jail-mem; the last
+       four with name, the device's or the jail's), value, limit and
+       over, when a figure of history crosses its limit, either way.
+       kmsg, with seq and text, a line the kernel wrote, the moment the
+       agent sees it; or with more, how many came in that second
+       beyond the twenty said one by one.  sdwan-tunnel, with id,
+       address, state (up or down) and misses, when a tunnel the agent
+       measures (sdwan-probes) goes down or comes up, or by bfd when
+       BFD says so.  sdwan-fault, with type, severity, object, by,
+       description and state (set or cleared), when a fault is seen or
+       cleared (Mplify 119 §11.3): the sdwan reply lists the day's.
+       sdwan-security, with seq, rule, action, src, dst, iface and
+       comment, when a rule logged to the routing socket (ipfw's logdst
+       rtsock) sees a packet: the security policies' denies; twenty a
+       second at most, the rest counted into the record.  The sdwan reply
+       has \"rules\" (the set, how many rules and which tables),
+       \"steer\" (each prefix's candidates with their states and which
+       is chosen), \"record\" (count, the day's; seq; last, the latest
+       500, each t, seq, rule, action, src, dst, iface, comment) and
+       \"proxy\" (each instance's name, fib, mode, running and ca, its
+       certificate) too.  job, with id, title, ok and error, when a
+       job ends.  jail-state, with jail, state (running or stopped) and
+       jid, when a jail is made or removed, the host's or one made in a
+       jail (its name parent.child), as kqueue(2)'s EVFILT_JAIL tells
+       it.  crash, with pid, process (its name), jid, jail (its name,
+       empty for the host's), uid, signal, core (whether it dumped
+       one) and, when it did not and the kernel said why, reason, its
+       words (\"sugid process denied by kern.sugid_coredump\", a daemon
+       that set its group, as bird -g does; \"bad address\"), when the
+       kernel says a process died of a signal that dumps core
+       (kern.logsigexit).  Such a death is a fault too, crash, Major,
+       of host:bird or jail:web/nginx, by kernel: the signal by name,
+       how many times in 24 hours and the reason, said anew at each
+       crash and cleared after an hour without one.";
+    input {
+      uses attr-after;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  sx:structure event-ntf {
+    fam:command 33;
+    fam:group "events";
+    description
+      "One event, the moment it happens: json is it as events has
+       one, {\"n\",\"t\",\"kind\",\"data\"}, of the same number.  What is sent
+       while nobody listens is not kept for them; events has the last
+       512, to read what came before a subscription or while it was
+       gone.";
+    uses attr-json;
+  }
+
+  rpc fw-trace {
+    fam:command 34;
+    fam:auth;
+    description
+      "Packets followed by the kernel itself through the firewall: each
+       that ipfw decides on whose source or destination is net-filter
+       (an address), as the kernel's ipfw:::rule-matched probe tells it
+       to dtrace(1), for up to seconds (10) or packets (100), whichever
+       ends first.  json: {\"packets\":[...],\"seconds\",\"limit\"}, each
+       with ms (since it began), verdict (pass, deny, divert, tee,
+       dummynet, netgraph, ngtee, nat, reass, nat64), family, source,
+       destination, proto, sport, dport, rule (its number), interface
+       and direction (in or out).  With jail, of a jail's own firewall
+       (vnet): the packets on the jail's interfaces.  It needs
+       dtraceall(4) loaded.";
+    input {
+      uses attr-jail;
+      uses attr-net-filter {
+        refine net-filter {
+          mandatory true;
+        }
+      }
+      uses attr-seconds;
+      uses attr-packets;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc network-parts {
+    fam:command 35;
+    fam:auth;
+    fam:stream "part";
+    fam:credit 2097152;
+    description
+      "The routes, connections or sockets as network's dump has them,
+       as a stream: each data message a part, the routes typed and the
+       rest as JSON, total in each; the host half-closes it once all
+       were sent, or closes it with why not.  A part is sent only when
+       the reader has room for it, which it gives back as it takes
+       them: over SCTP the stream shares the association with whatever
+       else asks the host at once, and a slow reader holds nothing but
+       its own stream.";
+    input {
+      uses attr-net-kind {
+        refine net-kind {
+          mandatory true;
+        }
+      }
+      uses attr-net-family;
+      uses attr-net-filter;
+      uses attr-net-fib;
+      uses attr-jail;
+    }
+    output {
+      uses attr-ok;
+    }
+  }
+
+  rpc sysctl-parts {
+    fam:command 36;
+    fam:auth;
+    fam:stream "part";
+    fam:credit 2097152;
+    description
+      "The kernel's state as sysctl's dump has it, as a stream: each
+       data message a part, json the next values.  As network-parts.";
+    input {
+      uses attr-net-filter;
+    }
+    output {
+      uses attr-ok;
+    }
+  }
+
+  rpc zfs-send {
+    fam:command 37;
+    fam:auth;
+    fam:stream "chunk";
+    fam:credit 4194304;
+    description
+      "zfs send of a snapshot, the first of names, as a stream: each
+       data message the next bytes it wrote; with a second name, a
+       snapshot of the same dataset, only what changed since that one
+       (-i); with recursive, the datasets under it too (-R).  The host
+       half-closes it once send ended well, or closes it with what send
+       said.  For another host's zfs-receive, whatever carries the
+       bytes between them: the console does.";
+    input {
+      uses attr-names;
+      uses attr-zfs-recursive;
+    }
+    output {
+      uses attr-ok;
+    }
+  }
+
+  rpc zfs-receive {
+    fam:command 38;
+    fam:auth;
+    fam:stream "chunk";
+    fam:credit 4194304;
+    description
+      "zfs receive -u into the dataset that names names, as a stream:
+       each data message the next bytes of what zfs send wrote, given
+       to receive only as fast as it reads them.  Half-closed by the
+       sender once all was sent; the host closes it once receive ended,
+       with nothing when it did well, with what it said when not.  A
+       dataset is never overwritten (no -F), nor a pool's own received
+       into.";
+    input {
+      uses attr-names;
+    }
+    output {
+      uses attr-ok;
+    }
+  }
+
+  rpc source-head {
+    fam:command 39;
+    fam:auth;
+    description
+      "The commit at the head of a repository's branch (ref, or its
+       default), as git ls-remote tells it, fetched as agent-build
+       fetches: over SSH with the host keys a person confirmed, never
+       one taken on trust.  Nothing is cloned or built.";
+    input {
+      uses attr-source {
+        refine source {
+          mandatory true;
+        }
+      }
+      uses attr-ref;
+      uses attr-host-keys;
+      uses attr-ssh-key;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-commit;
+      uses attr-host-keys;
+      uses attr-fingerprints;
+      uses attr-deploy-key;
+      uses attr-trace;
+    }
+  }
+
+  rpc source-log {
+    fam:command 40;
+    fam:auth;
+    description
+      "What is new in a repository's branch: its latest commits (count,
+       100 unless said), newest first, each its hash, time, subject and
+       body, and its tags with their messages, the release notes where
+       there are any.  A bare clone without the files (blob:none) is
+       kept in the build directory as log.git and fetched again each
+       time, over SSH as agent-build fetches.  Nothing is built.";
+    input {
+      uses attr-source {
+        refine source {
+          mandatory true;
+        }
+      }
+      uses attr-ref;
+      uses attr-host-keys;
+      uses attr-ssh-key;
+      uses attr-count;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-commit;
+      uses attr-log;
+      uses attr-tags;
+      uses attr-host-keys;
+      uses attr-fingerprints;
+      uses attr-deploy-key;
+      uses attr-trace;
+    }
+  }
+
+  rpc traceroute {
+    fam:command 41;
+    fam:auth;
+    description
+      "One round of traceroute(8), or traceroute6(8), from this host to
+       an address: a probe for each hop, numeric, a second's wait each,
+       30 hops at most.  A JSON object with \"address\", \"family\", \"hops\"
+       (each with its \"ttl\" and the \"address\" that answered, its \"rtt\"
+       in milliseconds and what traceroute noted of it, or \"lost\") and
+       \"reached\".  The console asks again and again, as mtr(8) does.";
+    input {
+      uses attr-lookup {
+        refine lookup {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc sdwan-probes {
+    fam:command 42;
+    fam:auth;
+    description
+      "The tunnels the agent is to measure from now on, as the console
+       has an SD-WAN edge measure them (Mplify 119 §11.4): json, an
+       array of targets, each with its \"id\" and \"address\", and maybe
+       \"fib\" (the table it is reached by, 0), \"interval\" (ms between
+       two probes, 100), \"size\" (bytes, 64), \"count\" (probes, 0 for
+       without end), \"dscp\" (0), \"down\" and \"up\" (misses in a row that
+       make it down, 3; answers that make it up, 3), \"timeout\" (ms,
+       1000), \"eval\" (ms of one sample, 1000), \"history\" (samples kept,
+       3600), \"report\" and \"tca\" (thresholds a metric: \"delay\" and
+       \"ipdv\" in ms, \"loss\" a fraction, and \"damping\", intervals in a
+       row, 1; a metric over its threshold is a fault, tca, cleared
+       under it again).  Kept for the next start.  An empty array
+       stops them all.  Each is ICMP echo on a raw socket: root.";
+    input {
+      uses attr-json {
+        refine json {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-trace;
+    }
+  }
+
+  rpc sdwan {
+    fam:command 43;
+    fam:auth;
+    description
+      "What the probes have seen, as a JSON object: \"targets\", each
+       with its id, address, family, fib, state (unknown, up, down,
+       ended, error, with error why), since (when the state began),
+       interval, size, eval, dscp, sent, received, misses (in a row),
+       last_rtt (ms), \"now\" (the sample in progress: sent, recv, delay,
+       ipdv, loss, age) and \"samples\", the last kept, the oldest
+       first (with after, only those after that time), each an array
+       of the time, the one-way delay (ms, half
+       the mean round trip), the delay variation (ms), the loss ratio,
+       the least and the most, and the probes sent and answered; and
+       \"probing\", whether the thread runs.  A target that goes down or
+       comes up is an event, sdwan-tunnel, with its id, address, state
+       and misses.";
+    input {
+      uses attr-after;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc sdwan-rules {
+    fam:command 44;
+    fam:auth;
+    description
+      "The rules that classify what comes in at the SD-WAN UNIs and
+       steer it, as the console compiles them: json, an object with
+       \"set\" (2 to 31, the ipfw set they live in, emptied and filled
+       while disabled), \"tables\" (each a \"name\", a \"valtype\" of skipto,
+       ipv4, ipv6 or legacy, and \"entries\", each a prefix and a value),
+       \"objects\" (dummynet pipes and queues and nat instances the rules
+       name: each \"pipe N config ...\", \"queue N config ...\", \"sched N
+       config ...\" or \"nat N config ...\", made before the rules, deleted
+       with them, their modules loaded) and \"rules\" (each its number and
+       its words).  Kept for the next start.  With no rules, the set is
+       emptied.";
+    input {
+      uses attr-json {
+        refine json {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-trace;
+    }
+  }
+
+  rpc sdwan-steer {
+    fam:command 45;
+    fam:auth;
+    description
+      "What the policy tables of the rules hold: json, an object with
+       \"entries\", each a \"table\", a \"prefix\" and its \"candidates\", each
+       a tunnel's \"id\" (as the probes know it) and the address it goes
+       \"via\", in the console's order.  The first whose far end the
+       probes do not say is down is the one, made again here when a
+       probe's state changes.  Kept for the next start.";
+    input {
+      uses attr-json {
+        refine json {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-trace;
+    }
+  }
+
+  rpc sdwan-bird {
+    fam:command 46;
+    fam:auth;
+    description
+      "The BIRD instances of the SD-WAN services at this edge, one each,
+       as the console writes them: json, an object with \"instances\",
+       each a \"name\", the \"fib\" it runs in and its \"conf\", BIRD's
+       configuration text.  Each file is parsed by bird(8) before it is
+       made the instance's; one running is told to read it again, one
+       not yet is started in its table (setfib) with a control socket
+       and a pid file of its own beside the agent's kept files; those
+       not named any more are stopped.  Kept for the next start.  The
+       sdwan read tells each instance and its protocols.  With \"jail\"
+       the instances are an edge's that is a vnet jail: each run in it
+       by jexec(8) in the jail's table, its files beneath the jail's
+       root (/var/run), kept in a file of the jail's own; those of the
+       other edges are left as they are.";
+    input {
+      uses attr-json {
+        refine json {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-trace;
+    }
+  }
+
+  rpc sdwan-dhcp {
+    fam:command 47;
+    fam:auth;
+    description
+      "The DHCP servers of the SD-WAN services at this edge (dnsmasq,
+       one instance per service, in its table), as the console writes
+       them: json, an object with \"instances\", each a \"name\", the \"fib\"
+       it runs in and its \"conf\", dnsmasq's configuration text, to which
+       the agent adds the pid and lease files.  Each is checked by
+       dnsmasq --test before it is made the instance's; one running is
+       stopped and started again on it, one not yet is started in its
+       table (setfib); those not named any more are stopped.  Kept for
+       the next start.  The sdwan read tells each instance and the
+       leases it gave.";
+    input {
+      uses attr-json {
+        refine json {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-trace;
+    }
+  }
+
+  rpc sdwan-dns {
+    fam:command 48;
+    fam:auth;
+    description
+      "The DNS filters of the SD-WAN services at this edge (MEF 88: the
+       base system's unbound, local-unbound, one instance per service,
+       in its table), as the console writes them: json, an object with
+       \"instances\", each a \"name\", the \"fib\" it runs in and its \"conf\",
+       unbound's configuration text, to which the agent adds the pid
+       file.  Each is checked by local-unbound-checkconf before it is
+       made the instance's; one running is stopped and started again on
+       it, one not yet is started in its table (setfib); those not
+       named any more are stopped.  Kept for the next start.  The sdwan
+       read tells each instance.";
+    input {
+      uses attr-json {
+        refine json {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-trace;
+    }
+  }
+
+  rpc sdwan-proxy {
+    fam:command 49;
+    fam:auth;
+    description
+      "The proxies of the SD-WAN services at this edge (MEF 88's
+       url-filter: Squid, a plugin the host has installed, one instance
+       per service in its table), as the console writes them: json, an
+       object with \"instances\", each a \"name\", the \"fib\" it runs in,
+       its \"mode\" (sni, the TLS names looked at and nothing opened;
+       inspect, TLS opened with a CA of the instance's own), its \"conf\",
+       Squid's configuration text with @PID@, @CA@, @SSLDB@, @CERTGEN@
+       and @DENY@ for what the agent places, and \"deny\", the domains
+       denied, one a line.  The CA is made by the agent, openssl(1),
+       once per instance and kept; its certificate is in the sdwan read
+       for the clients to trust where TLS is opened.  Each file is
+       checked by squid -k parse before it is made the instance's; one
+       running is told to reconfigure, one not yet is started in its
+       table (setfib); those not named any more are stopped.  Kept for
+       the next start.";
+    input {
+      uses attr-json {
+        refine json {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-trace;
+    }
+  }
+
+  rpc sdwan-ids {
+    fam:command 50;
+    fam:auth;
+    description
+      "The intrusion detection of the SD-WAN services at this edge (the
+       ids criterion, Arcana's own: Suricata, a plugin the host has
+       installed, one instance per service): json, an object with
+       \"instances\", each a \"name\", the \"interfaces\" it watches (the
+       service's UNIs here), its configuration as one of two: \"spec\",
+       its settings (the console's form, or for an SD-WAN service
+       \"flavor\" sdwan with \"service\", \"home\", \"interfaces\", \"ruleset\"
+       and \"oneside\"), which the agent renders into Suricata's YAML and
+       checks, so that what runs is what was checked; or \"conf\", the
+       YAML whole, with @LOGDIR@, @RULES@ and @PID@ for what the agent
+       places, as arcanactl gives it; \"host\", the host's name for the
+       YAML's comment; \"rules\", the service's own rules, one a line, and \"divert\", a
+       port, for one that prevents: it is run on that port (-d), where
+       the console's ipfw divert rules hand it the UNIs' packets, rather
+       than by libpcap; while it is not running they pass nothing, a
+       Critical fault (ids) until it runs again; \"thresholds\", its
+       threshold.config lines, written to a file of its own that @THRESHOLD@
+       names; and \"stopped\", true for
+       one the admin stopped, which is not run but kept in the list until
+       it is started again.  Each is checked by suricata -T before it runs; one whose files changed is started
+       again; those not named any more are stopped.  The alerts each
+       writes (eve.json) are read every second into events, sdwan-ids,
+       and kept, the latest in the sdwan read.  Kept for the next start.";
+    input {
+      uses attr-json {
+        refine json {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-trace;
+    }
+  }
+
+  rpc jail-files {
+    fam:command 51;
+    fam:auth;
+    description
+      "The files jails are made with, as the jail-conf job writes them,
+       as a JSON object: \"defaults\", the file every jail includes (its
+       \"path\" and \"text\", text null when there is none); \"dir\", where
+       the jails' files are; \"templates\", each a \"name\" and its
+       \"text\"; and \"jails\", each jail file there with its \"name\" and
+       \"text\".  Files of 64 KiB and less.";
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc certs {
+    fam:command 52;
+    fam:auth;
+    description
+      "The certificates OpenSSL trusts, of the host or of jail, as a JSON
+       object: \"trusted\", each of /etc/ssl/certs, and \"untrusted\", each of
+       /etc/ssl/untrusted, with its \"file\", \"subject\", \"cn\", \"org\",
+       \"country\", \"issuer\", \"not_before\" and \"not_after\" (seconds of the
+       epoch), \"sha256\", \"key\", \"ca\", \"self_signed\", and \"local\", the
+       path of the copy of it the host was given, when it was; and
+       \"localbase\", \"added_dir\", \"distrusted_dir\", \"certctl\" (whether
+       there is one) and \"now\".";
+    input {
+      uses attr-jail;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc ssh {
+    fam:command 53;
+    fam:auth;
+    description
+      "The base system's sshd, of the host or of jail, as a JSON object:
+       \"settings\", what sshd -T says of those that matter here, each key
+       an array of values (\"settings_from_file\" says why they are the
+       file's instead); \"banner_text\"; \"host_keys\", each with its \"path\",
+       \"type\", \"bits\", \"fingerprint\", \"comment\" and its \"certificate\"
+       (\"kind\", \"id\", \"principals\", \"valid_after\", \"valid_before\", -1 for
+       forever, \"ca\", the signing key's fingerprint) and whether
+       \"certificate_used\"; \"users\", those who may sign in, each with
+       \"name\", \"uid\", \"home\", \"shell\", \"keys_file\" and \"keys\" (each
+       \"type\", \"fingerprint\", \"bits\", \"comment\", \"options\"); \"user_cas\";
+       \"before_kept\".";
+    input {
+      uses attr-jail;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc capture {
+    fam:command 54;
+    fam:auth;
+    description
+      "Packets taken with tcpdump(1) off interface, of the host or of
+       jail's own network (vnet): an interface, a bridge's span port, or
+       a bpf(4) tap, as ipfw's per-rule ipfw<number> of a rule with log
+       (logdst bpf).  net-filter is a pcap-filter(7) expression; packets
+       (50, 500 at most) or seconds (10, 60 at most), whichever ends
+       first.  json: \"source\", \"filter\", \"lines\" (tcpdump -n -tttt's,
+       one a packet), \"packets\", \"limit\", \"seconds\", \"timed_out\",
+       \"bytes\" and \"pcap\", the capture as a pcap file in base64.
+       Without interface, \"sources\", what tcpdump -D lists.";
+    input {
+      uses attr-jail;
+      uses attr-interface;
+      uses attr-net-filter;
+      uses attr-seconds;
+      uses attr-packets;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc zfs-key {
+    fam:command 55;
+    fam:auth;
+    description
+      "The key of an encrypted dataset whose keylocation is prompt, as
+       it is typed: with zfs-key, loaded (zfs load-key, which reads it
+       on its standard input, through a pipe); with zfs-new-key, changed
+       (zfs change-key, the same), and loaded first with zfs-key when it
+       is not; with zfs-create and zfs-new-key, the dataset made
+       encrypted, its passphrase the new key (zfs create -o encryption= -o
+       keyformat=passphrase -o keylocation=prompt).  A key is on no disk,
+       in no job, no trace and no log.";
+    input {
+      uses attr-zfs-dataset {
+        refine zfs-dataset {
+          mandatory true;
+        }
+      }
+      uses attr-zfs-key;
+      uses attr-zfs-new-key;
+      uses attr-zfs-create;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-trace;
+    }
+  }
+
+  rpc tls {
+    fam:command 56;
+    fam:auth;
+    description
+      "The host's own TLS files, those of -A, -C and -K, renewed without
+       a restart.  status: a JSON object of \"cert\" (its \"subject\",
+       \"issuer\", \"not_before\", \"not_after\", \"sha256\" and \"chain\", the
+       CAs sent after it), \"ca\" (each trusted CA, the same fields) and
+       \"pending\" (whether a key waits for its certificate).  csr: a new
+       EC P-256 key made beside the host's key (.next, 0600), never
+       sent, and a certificate request for it, \"csr\" of the JSON.
+       install: with tls-cert, a certificate for that waiting key, which
+       becomes the host's with it; with tls-ca, the CAs to trust; either
+       or both, the files before kept beside (.before), then read again
+       for the connections made from now on (open ones keep theirs).
+       tls-peer must be the asking console's own certificate, and it
+       must still be trusted with what is installed: nothing locks the
+       console out.  What fails puts the files back.";
+    input {
+      uses attr-tls-verb {
+        refine tls-verb {
+          mandatory true;
+        }
+      }
+      uses attr-tls-cert;
+      uses attr-tls-ca;
+      uses attr-tls-peer;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  sx:structure step-ntf {
+    fam:command 57;
+    fam:group "steps";
+    description
+      "A step of what a request of the peer's own does, told while the
+       request runs: when the step begins (status incomplete, a program's
+       command line as its label) and again when it ends, with its status,
+       duration, exit and output.  Sent on the connection that made the
+       request, and only when it subscribed to steps; the reply carries
+       the whole trace as ever.  trace holds the one step, its id its
+       place in the trace.";
+    uses attr-trace;
+  }
+
+  rpc config-export {
+    fam:command 58;
+    fam:auth;
+    description
+      "All that makes the host what it is, as a JSON object, to keep or to
+       make another host the same with (config-apply): \"arcana\" is
+       \"host\", \"format\" 1; \"host\", \"agent\" (its version) and \"taken\";
+       \"facts\", what the hardware and the system are (arch, release,
+       cpu, ncpu, memory, \"interfaces\": each physical one's name, driver
+       and MAC, a cloned one is configuration, \"disks\": each name and
+       size); \"packages\", those installed by hand (pkg query, not the
+       automatic ones), each name, origin and version; \"files\", each
+       configuration file there is of those Arcana manages (rc.conf and
+       rc.conf.d, loader.conf, sysctl.conf, jail.conf and jail.conf.d,
+       fstab, hosts, resolv.conf, ntp.conf, rtadvd.conf, sshd_config,
+       devfs.rules, syslog.conf, the agent's ipfw.rules and history.conf,
+       bird.conf, swanctl's, WireGuard's, dnsmasq's), its path, mode,
+       owner, group and text; a secret's text only with secrets, else
+       \"secret\": true without it.  The agent's own keys and certificates
+       never: a host's identity is its own.  Jails' and datasets' data
+       are not configuration: zfs-send carries them.";
+    input {
+      uses attr-secrets;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc config-apply {
+    fam:command 59;
+    fam:auth;
+    description
+      "A bundle of config-export's made this host's configuration.  First
+       the hardware: each physical interface and disk the bundle names
+       has to be here, and the arch the same, else nothing is done
+       unless anyway.  json says \"mismatches\" (what is not), \"files\"
+       (each path, \"state\" same, changed, new or withheld, a secret the
+       bundle does not carry, which stays as it is, and \"diff\", a
+       unified diff, for one changed), \"packages\" (those the bundle has
+       that this host does not: Arcana installs none by itself), and,
+       when it was done, \"backup\", where the files before are kept
+       (/var/backups/arcana/config-<time>), \"applied\" and \"reboot\": what
+       the files say takes hold at boot.  new-hostname puts that in
+       rc.conf's hostname instead.  With dry-run only the report.";
+    input {
+      uses attr-bundle {
+        refine bundle {
+          mandatory true;
+        }
+      }
+      uses attr-dry-run;
+      uses attr-anyway;
+      uses attr-new-hostname;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc path-check {
+    fam:command 60;
+    fam:auth;
+    description
+      "What this host does with a packet from path-src to path-dst (of
+       path-proto, to path-port), and with its reply, without one being
+       sent: as a JSON object, \"host\" and \"addresses\" (each of the host's
+       own, its interface, prefix and the interface's FIB), whether the
+       source and the destination are the host's or on a network it is
+       on (\"src\", \"dst\"), \"forwarding\" (net.inet.ip.forwarding and its
+       IPv6 twin), \"ingress\" (the interface it comes in on: interface if
+       given, else the one the route back to the source is by), \"fib\",
+       \"route\" (the route to the destination: the send route, as
+       route-lookup's best, or none), \"neighbor\" (the next hop's ARP or
+       NDP entry), \"return\" (the route back to the source from where the
+       reply comes in: the receive route, and \"symmetric\", whether it is
+       by the interface the request came in on), \"firewall\" (ipfw's
+       ruleset walked for the request in and out and the reply in and
+       out, each \"verdict\", \"rule\", \"text\", \"by_state\", what it could not
+       judge, \"setfib\", \"fwd\"), and \"findings\", each \"severity\" (bad,
+       warn, info, ok) and \"what\", in words.  With jail, of a vnet
+       jail's own network.  Nothing is sent, nothing is changed.";
+    input {
+      uses attr-path-src {
+        refine path-src {
+          mandatory true;
+        }
+      }
+      uses attr-path-dst {
+        refine path-dst {
+          mandatory true;
+        }
+      }
+      uses attr-path-proto;
+      uses attr-path-port;
+      uses attr-interface;
+      uses attr-net-fib;
+      uses attr-jail;
+      uses attr-path-reply;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc notify {
+    fam:command 61;
+    fam:auth;
+    description
+      "A message sent to a Telegram chat by a bot, over the Bot API's
+       HTTPS (sendMessage, by fetch(3), the server's certificate checked
+       against the host's CAs): the console's alerts and a workflow's
+       notify step, sent from a host that reaches the world outside.
+       The token is not kept; the trace names the chat, not the token.";
+    input {
+      uses attr-notify-token {
+        refine notify-token {
+          mandatory true;
+        }
+      }
+      uses attr-notify-chat {
+        refine notify-chat {
+          mandatory true;
+        }
+      }
+      uses attr-notify-text {
+        refine notify-text {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-trace;
+    }
+  }
+
+  rpc builder {
+    fam:command 62;
+    fam:auth;
+    description
+      "poudriere(8) on this host, as a JSON object: \"installed\" and
+       \"program\"; \"conf_file\", \"configured\" (it is there) and \"conf\",
+       poudriere.conf's assignments (poudriere.d's own after it);
+       \"basefs\" and \"data\", the data directory; \"jails\" and \"ports\",
+       each with its \"name\" and what poudriere keeps of it, a file a
+       key (version, arch, method, mnt, fs, timestamp, the seconds);
+       \"makeconf\", each make.conf of poudriere.d with its \"name\" (empty
+       for make.conf itself, the part before -make.conf otherwise),
+       \"file\" and \"text\"; \"repos\", each package repository under the
+       data directory with its \"path\" and how many \"packages\" its All
+       has; \"builds\", the latest build of each as poudriere status -f
+       -H -l tells it (\"set\", \"ports\", \"jail\", \"build\", \"status\",
+       \"queued\", \"inspected\", \"ignored\", \"built\", \"failed\", \"skipped\",
+       \"fetched\", \"remaining\", \"time\", \"logs\", and from the build's log
+       directory \"failed_ports\", each with \"origin\", \"package\", \"phase\",
+       \"reason\" when poudriere found one, \"elapsed\", \"log_file\" and
+       \"log\", the end of its build log, and \"skipped_ports\", each with
+       \"origin\", \"package\" and \"because\", the package that failed
+       before it), and \"builds_error\" when it could not tell; \"runs\", what the poudriere job started, the
+       newest first, each with \"id\", \"title\", \"argv\", \"started\",
+       \"state\" (running, done, failed or lost: no exit and no process,
+       as after a reboot), \"pid\" while it runs, \"exit\" once it has
+       ended, \"log_file\" and, for the newest ten and those running,
+       \"log\", the end of its output; \"options\", each options directory
+       of poudriere.d (\"name\": its prefix, empty for options itself;
+       \"dir\"), each with the \"ports\" it sets: \"name\" (category_port),
+       \"pkgname\", \"set\" and \"unset\".";
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc builder-options {
+    fam:command 63;
+    fam:auth;
+    description
+      "A port's options as a poudriere build takes them, names its
+       words: jail, ports (default), set and origin (net/bird3,
+       @flavor).  make showconfig in the port's directory of the tree,
+       with the options directory that build copies, as a JSON object:
+       \"pkgname\", \"options_dir\" and \"options_dir_exists\" (the build's
+       own, made at the first options set, when none is there yet),
+       \"options_file\" and \"configured\" (it is there), and \"sections\",
+       the port's own options first, then each group, single, radio or
+       multi as the port says it (\"title\"), each option with \"name\",
+       \"on\" and \"description\".";
+    input {
+      uses attr-names;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc crashes {
+    fam:command 64;
+    fam:auth;
+    description
+      "The cores the kernel dumped where kern.corefile says, as a JSON
+       object: \"corefile\", \"directory\" and \"cores\", each with name,
+       program, pid, size and time.  With names \"backtrace\", a core's
+       name and its program (found by the core's name when not given),
+       \"backtrace\" too: lldb's thread list, every thread's backtrace and
+       the signal's information, read from the core.  Nothing is
+       changed.";
+    input {
+      uses attr-names;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc suricata-rules {
+    fam:command 65;
+    fam:auth;
+    description
+      "The rules of Suricata's ruleset, suricata.rules as suricata-update
+       wrote it (a rule it disabled is a line commented out), as a JSON
+       object: \"ruleset\" (its path, when and its size), \"total\",
+       \"enabled\", \"matched\" (of the words), \"changed\" (how many rules
+       the admin set by sid: on, off or drop, kept across updates),
+       \"offset\", \"limit\" and \"rules\", each with
+       sid, gid, rev, action, msg, classtype, severity, enabled, state
+       and the rule's text.  Words: q=text (in the rule, any case),
+       sid=N, only=enabled, disabled or changed (those the admin set),
+       classtype=name, offset=N and limit=N (100 unless given, 500 at
+       most).  With sources=1 instead, the rule sources: \"index\" (whether
+       suricata-update's is fetched), \"sources\" (each with name, vendor,
+       summary, license, parameters, subscription, and its state here,
+       enabled or disabled) and \"default_et_open\".  With instance=NAME
+       and command=CMD (iface=IF for iface-stat), Suricata's own answer
+       by the instance's unix command socket, one of the commands that
+       read: uptime, version, running-mode, capture-mode, memcap-list,
+       ruleset-stats, ruleset-failed-rules, ruleset-profile, iface-list,
+       iface-stat, dump-counters.  The host's only; nothing is changed.";
+    input {
+      uses attr-names;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc netstore {
+    fam:command 66;
+    fam:auth;
+    description
+      "The host's network storage services, as a JSON object: \"nfs\" (the
+       NFS server, NFSv4 alone: nfsd's and mountd's state, its rc.conf,
+       nfsd's flags with its threads and pNFS's data servers and mirrors,
+       vfs.nfsd.server_max_minorversion, exports(5) with its V4: root
+       and whether that is on ZFS, the datasets that share themselves
+       by sharenfs and what zfs wrote for mountd, and what mountd
+       exports), \"iscsi\" (ctld's state, ctl.conf(5), ctladm's LUNs,
+       sessions and ports) and \"hast\" (hastd's state, hast.conf(5),
+       hastctl status and list).  Names: nfs, iscsi or hast, those
+       alone.  Nothing is changed.";
+    input {
+      uses attr-names;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc system {
+    fam:command 67;
+    fam:auth;
+    description
+      "The system's own configuration, as a JSON object: \"files\", each
+       file of the sysfile job's table with its path, its text, the
+       daemon that reads it (enabled, running) and what shows it at work
+       (devfs rule showsets, setkey -DP, rctl); and, with names empty or
+       host: \"ntp\" (ntpd, ntp.conf, ntpq -pn), \"linux\" (the service, its
+       modules), \"securelevel\" (now, and rc.conf's), \"mac\" (which MAC
+       modules are loaded), \"auditd\", \"geom\" (geom -t), \"geli\" (geli
+       list), \"periodic\" (periodic's variables, their defaults and what
+       periodic.conf says), \"svcj\" (rc.conf's service jails) and \"dma\"
+       (dma's smart host, port, tls, user and password_set, never the
+       password).  Names:
+       files by name, and host.  Nothing is changed.";
+    input {
+      uses attr-names;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc smtpd {
+    fam:command 68;
+    fam:auth;
+    description
+      "OpenSMTPD on this host, as a JSON object: \"installed\", \"enabled\",
+       \"running\"; where it runs, \"status\" (mda, mta, smtp: running or
+       paused), \"stats\" (smtpctl show stats, each counter), \"queue\" (each
+       envelope: evpid, type, flags, from, to, dest, created, expires,
+       retries, lasttry, state, next, error) and \"queued\"; \"conf\" and
+       \"conf_path\" (smtpd.conf), \"spec\" (the form it was rendered from,
+       when the console's), \"tables\" (each kept here: the text, or for
+       credentials and secrets the users' and labels' names alone),
+       \"filters\" (the filter ports installed), \"mailer\" (what
+       mailer.conf(5) makes sendmail), \"pki\" (whether this agent has a
+       certificate to listen with).  Of the host, or with jail of that
+       jail (one with or without a network of its own): its files, its
+       smtpctl, its service.  Nothing is changed.";
+    input {
+      uses attr-names;
+      uses attr-jail;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  sx:structure part {
+    cg:struct "part";
+    description
+      "A data message of a stream of parts.";
+    uses set-part;
+  }
+
+  sx:structure chunk {
+    cg:struct "chunk";
+    description
+      "A data message of a stream of chunks.";
+    uses set-chunk;
+  }
+
+}

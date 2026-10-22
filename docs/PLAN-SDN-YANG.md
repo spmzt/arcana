@@ -227,7 +227,11 @@ to port: the open-source ones found (cerfcast/teaparty, the
 `stamp-suite` crate) are Rust; they serve as interoperation peers in
 the lab.
 
-**D-9 Coexistence: decided 2026-10-13, none.** cblink 2 replaces the
+**D-9 Coexistence: decided 2026-10-13, none.** (2026-10-22: the agent,
+arcanactl and the console speak version 2 alone, by an interim module
+written from arcana.yaml by share/arcana/wire.awk, an rpc an
+operation; the YAML stays the editing source until Y-3 moves the
+operations onto the standard models, module by module.) cblink 2 replaces the
 `arcana` v1 family outright; agent and console of one release speak
 only version 2. A fleet is carried across by `agent-update` from the
 last v1 console before the console itself is updated, and the two

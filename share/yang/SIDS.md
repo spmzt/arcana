@@ -124,6 +124,8 @@ bytes on the wire, where it was 9.
 | 72 300 | 100 | `arcana-sshd` | `share/yang/arcana-sshd@2026-10-15.sid` (69 used) |
 | 72 400 | 200 | `arcana-builder` | `share/yang/arcana-builder@2026-10-17.sid` (98 used) |
 | 72 600 | 100 | `arcana-notify` | `share/yang/arcana-notify@2026-10-17.sid` (7 used) |
+| 73 000 | 4 000 | `arcana`, the wire of the family spec (`share/arcana/arcana.yaml`, written by `share/arcana/wire.awk`: an rpc an operation) | `share/yang/arcana@2026-10-22.sid` (1 652 used; `make regen-wire` numbers a new item, `make check-wire` holds the rest) |
+| 77 000 | 200 | `arcana-cluster`, the consoles' own family (`share/arcana/cluster.yaml`) | `share/yang/arcana-cluster@2026-10-22.sid` (84 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

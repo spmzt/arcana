@@ -1,0 +1,449 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-cluster",
+    "module-revision": "2026-10-22",
+    "description": "Arcana's SIDs for arcana-cluster (RFC 9595's experimental range; share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "cblink-gen",
+        "module-revision": "2026-10-22"
+      },
+      {
+        "module-name": "ietf-yang-structure-ext",
+        "module-revision": "2020-06-17"
+      },
+      {
+        "module-name": "arcana-family",
+        "module-revision": "2026-10-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "77000",
+        "size": "200"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-cluster",
+        "sid": "77000"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append",
+        "sid": "77001"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/input",
+        "sid": "77002"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/input/commit-seq",
+        "sid": "77003"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/input/doc",
+        "sid": "77004"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/input/doc/body",
+        "sid": "77005"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/input/doc/gone",
+        "sid": "77006"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/input/doc/name",
+        "sid": "77007"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/input/doc/seq",
+        "sid": "77008"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/input/doc/term",
+        "sid": "77009"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/input/node",
+        "sid": "77010"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/input/origin",
+        "sid": "77011"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/input/prev-seq",
+        "sid": "77012"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/input/prev-term",
+        "sid": "77013"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/input/term",
+        "sid": "77014"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/output",
+        "sid": "77015"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/output/last-seq",
+        "sid": "77016"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/output/last-term",
+        "sid": "77017"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/output/ok",
+        "sid": "77018"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:append/output/term",
+        "sid": "77019"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:lock",
+        "sid": "77020"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:lock/input",
+        "sid": "77021"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:lock/input/holder",
+        "sid": "77022"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:lock/input/lock",
+        "sid": "77023"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:lock/input/node",
+        "sid": "77024"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:lock/input/ttl-ms",
+        "sid": "77025"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:lock/output",
+        "sid": "77026"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:lock/output/commit-seq",
+        "sid": "77027"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:lock/output/error",
+        "sid": "77028"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:lock/output/ok",
+        "sid": "77029"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot",
+        "sid": "77030"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/input",
+        "sid": "77031"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/input/doc",
+        "sid": "77032"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/input/doc/body",
+        "sid": "77033"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/input/doc/gone",
+        "sid": "77034"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/input/doc/name",
+        "sid": "77035"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/input/doc/seq",
+        "sid": "77036"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/input/doc/term",
+        "sid": "77037"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/input/first",
+        "sid": "77038"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/input/last",
+        "sid": "77039"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/input/last-seq",
+        "sid": "77040"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/input/last-term",
+        "sid": "77041"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/input/node",
+        "sid": "77042"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/input/term",
+        "sid": "77043"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/output",
+        "sid": "77044"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/output/error",
+        "sid": "77045"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/output/ok",
+        "sid": "77046"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:snapshot/output/term",
+        "sid": "77047"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:unlock",
+        "sid": "77048"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:unlock/input",
+        "sid": "77049"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:unlock/input/holder",
+        "sid": "77050"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:unlock/input/lock",
+        "sid": "77051"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:unlock/input/node",
+        "sid": "77052"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:unlock/output",
+        "sid": "77053"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:unlock/output/error",
+        "sid": "77054"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:unlock/output/ok",
+        "sid": "77055"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:vote",
+        "sid": "77056"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:vote/input",
+        "sid": "77057"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:vote/input/last-seq",
+        "sid": "77058"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:vote/input/last-term",
+        "sid": "77059"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:vote/input/node",
+        "sid": "77060"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:vote/input/term",
+        "sid": "77061"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:vote/output",
+        "sid": "77062"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:vote/output/granted",
+        "sid": "77063"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:vote/output/term",
+        "sid": "77064"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write",
+        "sid": "77065"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/input",
+        "sid": "77066"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/input/doc",
+        "sid": "77067"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/input/doc/body",
+        "sid": "77068"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/input/doc/gone",
+        "sid": "77069"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/input/doc/name",
+        "sid": "77070"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/input/doc/seq",
+        "sid": "77071"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/input/doc/term",
+        "sid": "77072"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/input/node",
+        "sid": "77073"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/output",
+        "sid": "77074"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/output/doc",
+        "sid": "77075"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/output/doc/body",
+        "sid": "77076"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/output/doc/gone",
+        "sid": "77077"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/output/doc/name",
+        "sid": "77078"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/output/doc/seq",
+        "sid": "77079"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/output/doc/term",
+        "sid": "77080"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/output/error",
+        "sid": "77081"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/output/ok",
+        "sid": "77082"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-cluster:write/output/term",
+        "sid": "77083"
+      }
+    ]
+  }
+}

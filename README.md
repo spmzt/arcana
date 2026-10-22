@@ -26,7 +26,7 @@ own: <https://spmzt.github.io/arcana-docs/> (its source is
 | `usr.sbin/arcanactl` | `arcanactl(8)`: talk to an arcana-agent from a shell, with libxo(3) output. |
 | `usr.sbin/arcana-enrol` | `arcana-enrol(8)`: join a host to the console with a one-time token; it gets its certificate from the console's CA. |
 | `lib/libjailconf` | The in-place editor behind both. |
-| `share/arcana/arcana.yaml` | The cblink family: the contract between arcana-agent and its clients. |
+| `share/arcana/arcana.yaml` | The cblink family: the contract between arcana-agent and its clients; `share/yang/arcana@<rev>.yang` is its wire, the YANG module `share/arcana/wire.awk` writes from it. |
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the design and the
 trust boundaries; [docs/NAMING.md](docs/NAMING.md) is the naming design
@@ -51,6 +51,8 @@ jailconf):
   tree without the submodule (a release tarball, the port) uses an
   installed `devel/cblink`;
 - `devel/libcbor`, which cblink needs.
+- `net/libyang3`, which `cblink-gen` needs to read the YANG modules the
+  wire is written in (a build dependency only: nothing links it).
 
 ```sh
 git clone --recurse-submodules https://github.com/spmzt/arcana.git

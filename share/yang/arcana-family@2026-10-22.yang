@@ -1,0 +1,75 @@
+module arcana-family {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-family";
+  prefix fam;
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "What a module of Arcana's says about the cblink family that
+     carries it: which family and version, each rpc's command number
+     and whether it needs an authenticated peer, which rpcs are dumps
+     or open streams, and which structures go to which multicast
+     group.  No data nodes: the module is imported for its extensions
+     alone, and has no SIDs.  Arcana's own, beside cblink's family 1
+     (cblink.yang), whose rpcs travel without these.";
+
+  revision 2026-10-22 {
+    description
+      "Initial revision.";
+    reference
+      "cblink docs/FAMILIES.md; Arcana docs/PLAN-SDN-YANG.md.";
+  }
+
+  extension family {
+    argument name;
+    description
+      "On a module: the cblink family its rpcs belong to.";
+  }
+
+  extension version {
+    argument number;
+    description
+      "On a module: the family's version, as hello tells it.";
+  }
+
+  extension command {
+    argument number;
+    description
+      "On an rpc: its command number in the family, the frame's.";
+  }
+
+  extension auth {
+    description
+      "On an rpc or a structure: only an authenticated peer may ask for
+       it, or hear it.";
+  }
+
+  extension dump {
+    argument rpc;
+    description
+      "On an rpc: a dump form of the rpc named, its items this rpc's
+       output, each a dump item of the command.";
+  }
+
+  extension stream {
+    argument structure;
+    description
+      "On an rpc: it opens a stream whose data messages are the
+       structure named.";
+  }
+
+  extension credit {
+    argument bytes;
+    description
+      "On an rpc that opens a stream: the credit the opener gives.";
+  }
+
+  extension group {
+    argument name;
+    description
+      "On a structure: a notification of the multicast group named.";
+  }
+}

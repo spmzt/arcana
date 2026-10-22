@@ -1,0 +1,508 @@
+module arcana-cluster {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-cluster";
+  prefix acl;
+
+  import cblink-gen {
+    prefix cg;
+  }
+  import ietf-yang-structure-ext {
+    prefix sx;
+  }
+  import arcana-family {
+    prefix fam;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The consoles of one cluster, to each other: who leads (terms and
+     votes, a heartbeat from the leader), the console's stores replicated
+     (each a whole document, numbered by the leader's term and sequence,
+     committed once a majority holds it), a follower's write sent to the
+     leader, and the locks of what is read, changed and written.  Served by
+     arcana-console(8) on its cluster listener, to peers whose certificate,
+     of the console's CA, says urn:arcana:role:console.
+     
+     
+     Written by share/arcana/wire.awk from share/arcana/arcana-cluster.yaml: the operations of the family spec as rpcs, on wire version 2.  Do not edit.";
+
+  revision 2026-10-22 {
+    description
+      "From the spec as of this day.";
+  }
+
+  fam:family "arcana-cluster";
+  fam:version 2;
+
+  // max-doc = 16777216
+  // max-docs = 4096
+
+  grouping set-doc {
+    leaf name {
+      type string {
+        length "0..255";
+      }
+      description
+        "The store's name in the data directory (servers.json,
+         runs/7.json); empty in the write a leader makes at the start of
+         its term, which writes nothing.";
+    }
+    leaf term {
+      type uint64;
+      description
+        "The term of the leader that wrote it.";
+    }
+    leaf seq {
+      type uint64;
+      description
+        "Its number among the leader's writes, over every term.";
+    }
+    leaf body {
+      type binary {
+        length "0..16777216";
+      }
+      description
+        "The document, whole.";
+    }
+    leaf gone {
+      type empty;
+      description
+        "The document was taken away.";
+    }
+  }
+
+  grouping set-cluster {
+    leaf node {
+      type string {
+        length "1..64";
+      }
+      description
+        "The node's name, as web.conf's cluster block has it.";
+    }
+    leaf term {
+      type uint64;
+    }
+    leaf last-term {
+      type uint64;
+      description
+        "The term of the newest write the node holds.";
+    }
+    leaf last-seq {
+      type uint64;
+      description
+        "The sequence of the newest write the node holds.";
+    }
+    leaf commit-seq {
+      type uint64;
+      description
+        "The newest write a majority holds.";
+    }
+    leaf prev-term {
+      type uint64;
+      description
+        "The term of the write before those sent.";
+    }
+    leaf prev-seq {
+      type uint64;
+      description
+        "The sequence of the write before those sent.";
+    }
+    leaf first {
+      type empty;
+      description
+        "The first part of a snapshot.";
+    }
+    leaf last {
+      type empty;
+      description
+        "The last part of a snapshot.";
+    }
+    leaf granted {
+      type boolean;
+    }
+    leaf ok {
+      type boolean;
+    }
+    leaf error {
+      type string {
+        length "0..1024";
+      }
+    }
+    leaf leader {
+      type string {
+        length "0..64";
+      }
+      description
+        "Who leads, as the node knows it.";
+    }
+    leaf origin {
+      type string {
+        length "0..255";
+      }
+      description
+        "The node's web origin, for the browser's to be told.";
+    }
+    list doc {
+      cg:struct "doc";
+      uses set-doc;
+    }
+    leaf lock {
+      type string {
+        length "0..255";
+      }
+      description
+        "A lock's name.";
+    }
+    leaf holder {
+      type string {
+        length "0..128";
+      }
+      description
+        "Who holds it, the node and a token of its own.";
+    }
+    leaf ttl-ms {
+      type uint32;
+      description
+        "How long the lock is held unless given back.";
+    }
+  }
+
+  grouping attr-node {
+    leaf node {
+      type string {
+        length "1..64";
+      }
+      description
+        "The node's name, as web.conf's cluster block has it.";
+    }
+  }
+
+  grouping attr-term {
+    leaf term {
+      type uint64;
+    }
+  }
+
+  grouping attr-last-term {
+    leaf last-term {
+      type uint64;
+      description
+        "The term of the newest write the node holds.";
+    }
+  }
+
+  grouping attr-last-seq {
+    leaf last-seq {
+      type uint64;
+      description
+        "The sequence of the newest write the node holds.";
+    }
+  }
+
+  grouping attr-commit-seq {
+    leaf commit-seq {
+      type uint64;
+      description
+        "The newest write a majority holds.";
+    }
+  }
+
+  grouping attr-prev-term {
+    leaf prev-term {
+      type uint64;
+      description
+        "The term of the write before those sent.";
+    }
+  }
+
+  grouping attr-prev-seq {
+    leaf prev-seq {
+      type uint64;
+      description
+        "The sequence of the write before those sent.";
+    }
+  }
+
+  grouping attr-first {
+    leaf first {
+      type empty;
+      description
+        "The first part of a snapshot.";
+    }
+  }
+
+  grouping attr-last {
+    leaf last {
+      type empty;
+      description
+        "The last part of a snapshot.";
+    }
+  }
+
+  grouping attr-granted {
+    leaf granted {
+      type boolean;
+    }
+  }
+
+  grouping attr-ok {
+    leaf ok {
+      type boolean;
+    }
+  }
+
+  grouping attr-error {
+    leaf error {
+      type string {
+        length "0..1024";
+      }
+    }
+  }
+
+  grouping attr-leader {
+    leaf leader {
+      type string {
+        length "0..64";
+      }
+      description
+        "Who leads, as the node knows it.";
+    }
+  }
+
+  grouping attr-origin {
+    leaf origin {
+      type string {
+        length "0..255";
+      }
+      description
+        "The node's web origin, for the browser's to be told.";
+    }
+  }
+
+  grouping attr-doc {
+    list doc {
+      cg:struct "doc";
+      uses set-doc;
+    }
+  }
+
+  grouping attr-lock {
+    leaf lock {
+      type string {
+        length "0..255";
+      }
+      description
+        "A lock's name.";
+    }
+  }
+
+  grouping attr-holder {
+    leaf holder {
+      type string {
+        length "0..128";
+      }
+      description
+        "Who holds it, the node and a token of its own.";
+    }
+  }
+
+  grouping attr-ttl-ms {
+    leaf ttl-ms {
+      type uint32;
+      description
+        "How long the lock is held unless given back.";
+    }
+  }
+
+  rpc vote {
+    fam:command 1;
+    fam:auth;
+    description
+      "A candidate asks for the node's vote in term.  Granted once a term,
+       to a candidate whose newest write is as new as the node's own.";
+    input {
+      uses attr-node {
+        refine node {
+          mandatory true;
+        }
+      }
+      uses attr-term {
+        refine term {
+          mandatory true;
+        }
+      }
+      uses attr-last-term;
+      uses attr-last-seq;
+    }
+    output {
+      uses attr-term;
+      uses attr-granted;
+    }
+  }
+
+  rpc append {
+    fam:command 2;
+    fam:auth;
+    description
+      "The leader of term, to a follower: the writes after prev-seq (none,
+       as a heartbeat), each a document with its version, taken only when
+       the follower holds prev-seq of prev-term; and the newest write a
+       majority holds, which the follower may now make its own.  Its
+       origin, for the browser's.  The reply says how far the follower's
+       writes agree with the leader's.";
+    input {
+      uses attr-node {
+        refine node {
+          mandatory true;
+        }
+      }
+      uses attr-term {
+        refine term {
+          mandatory true;
+        }
+      }
+      uses attr-prev-term;
+      uses attr-prev-seq;
+      uses attr-commit-seq;
+      uses attr-origin;
+      uses attr-doc;
+    }
+    output {
+      uses attr-term;
+      uses attr-ok;
+      uses attr-last-term;
+      uses attr-last-seq;
+    }
+  }
+
+  rpc snapshot {
+    fam:command 3;
+    fam:auth;
+    description
+      "The leader of term, to a follower too far behind for the writes it
+       keeps: every document as it is up to last-seq of last-term, in
+       parts, first to last; the follower's own taken away for them.";
+    input {
+      uses attr-node {
+        refine node {
+          mandatory true;
+        }
+      }
+      uses attr-term {
+        refine term {
+          mandatory true;
+        }
+      }
+      uses attr-last-term {
+        refine last-term {
+          mandatory true;
+        }
+      }
+      uses attr-last-seq {
+        refine last-seq {
+          mandatory true;
+        }
+      }
+      uses attr-first;
+      uses attr-last;
+      uses attr-doc;
+    }
+    output {
+      uses attr-term;
+      uses attr-ok;
+      uses attr-error;
+    }
+  }
+
+  rpc write {
+    fam:command 4;
+    fam:auth;
+    description
+      "A follower, to the leader: a document as it is now to be, written
+       by the leader once a majority holds it; the version it took.";
+    input {
+      uses attr-node {
+        refine node {
+          mandatory true;
+        }
+      }
+      uses attr-doc {
+        refine doc {
+          min-elements 1;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-term;
+      uses attr-doc;
+    }
+  }
+
+  rpc lock {
+    fam:command 5;
+    fam:auth;
+    description
+      "A lock of the cluster's, held by holder for ttl-ms at most: what is
+       read, changed and written again by one node at a time.  Taken or
+       not at once (the asker tries again); taken, the reply says the
+       newest write committed, which the asker waits to have written
+       before it reads what it changes.";
+    input {
+      uses attr-node {
+        refine node {
+          mandatory true;
+        }
+      }
+      uses attr-lock {
+        refine lock {
+          mandatory true;
+        }
+      }
+      uses attr-holder {
+        refine holder {
+          mandatory true;
+        }
+      }
+      uses attr-ttl-ms;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-commit-seq;
+    }
+  }
+
+  rpc unlock {
+    fam:command 6;
+    fam:auth;
+    description
+      "The lock given back.";
+    input {
+      uses attr-node {
+        refine node {
+          mandatory true;
+        }
+      }
+      uses attr-lock {
+        refine lock {
+          mandatory true;
+        }
+      }
+      uses attr-holder {
+        refine holder {
+          mandatory true;
+        }
+      }
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+    }
+  }
+
+}

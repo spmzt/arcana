@@ -35,8 +35,13 @@ AF_UNIX socket.
 ## The arcana family
 
 `share/arcana/arcana.yaml` is the contract between `arcana-agent` and
-its clients; cblink-gen(1) generates the C structures, validation
-policies, client wrappers and server glue from it.
+its clients.  Its wire is cblink version 2: `share/arcana/wire.awk`
+writes the YANG module `share/yang/arcana@<rev>.yang` from it (an rpc
+an operation, a structure an event or a stream's payload, the SIDs in
+`arcana@<rev>.sid`), cblink-gen(1) generates the C structures and the
+schema tables from the module, and wire.awk writes the header that keeps
+the version-1 names over them and the glue to cblink (the handlers'
+trampolines, the replies, the client calls).
 
 | Operation | Does | Mechanism in `arcana-agent` |
 |---|---|---|

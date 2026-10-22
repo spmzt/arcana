@@ -424,6 +424,7 @@ spec_copy(struct arc_job_spec *d, const struct arc_job_spec *s)
 	d->preshared_key = xdup(s->preshared_key);
 	d->lladdr = xdup(s->lladdr);
 	d->user = xdup(s->user);
+	d->release = xdup(s->release);
 	d->variables.v = NULL;
 	d->names.v = NULL;
 	if (s->variables.n > 0) {

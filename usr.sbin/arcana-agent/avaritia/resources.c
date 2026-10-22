@@ -138,7 +138,8 @@ resources_measure(struct work *w, struct arc_stats *st)
 	int		 step;
 
 	st->has_cpu_pct = true;
-	st->cpu_pct = cpu_pct(w);
+	/* Hundredths on the wire (decimal64, 2 digits), the loads too. */
+	st->cpu_pct = (int64_t)(cpu_pct(w) * 100.0);
 
 	step = step_begin(w, ARC_STEP_KIND_LIB, "sysctlbyname(3)",
 	    "vm.loadavg, vm.stats.vm.*");
@@ -146,9 +147,9 @@ resources_measure(struct work *w, struct arc_stats *st)
 	if (sysctlbyname("vm.loadavg", &la, &len, NULL, 0) == 0 &&
 	    la.fscale > 0) {
 		st->has_load1 = st->has_load5 = st->has_load15 = true;
-		st->load1 = (double)la.ldavg[0] / la.fscale;
-		st->load5 = (double)la.ldavg[1] / la.fscale;
-		st->load15 = (double)la.ldavg[2] / la.fscale;
+		st->load1 = (int64_t)((double)la.ldavg[0] * 100.0 / la.fscale);
+		st->load5 = (int64_t)((double)la.ldavg[1] * 100.0 / la.fscale);
+		st->load15 = (int64_t)((double)la.ldavg[2] * 100.0 / la.fscale);
 	}
 	page = (uint64_t)getpagesize();
 	st->has_mem_total = st->has_mem_used = st->has_mem_inactive =
@@ -159,8 +160,8 @@ resources_measure(struct work *w, struct arc_stats *st)
 	    vmstat("vm.stats.vm.v_laundry_count")) * page;
 	st->mem_inactive = vmstat("vm.stats.vm.v_inactive_count") * page;
 	st->mem_free = vmstat("vm.stats.vm.v_free_count") * page;
-	step_end(w, step, true, "%.0f%% CPU, %ju of %ju MiB in use",
-	    st->cpu_pct, (uintmax_t)(st->mem_used >> 20),
+	step_end(w, step, true, "%jd%% CPU, %ju of %ju MiB in use",
+	    (intmax_t)(st->cpu_pct / 100), (uintmax_t)(st->mem_used >> 20),
 	    (uintmax_t)(st->mem_total >> 20));
 	swap(w, st);
 }

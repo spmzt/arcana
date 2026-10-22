@@ -390,9 +390,14 @@ recv_data(cbl_stream *s, cbl_msg *data, void *arg)
 	struct xfer		*x = arg;
 	struct arc_chunk	 d;
 	struct chunk		*c;
+	cbl_yarena		*a;
 
-	if (cbl_validate(cbl_msg_body(data), &arc_chunk_policy, NULL) != 0 ||
-	    arc_chunk_parse(data, cbl_msg_body(data), &d) != 0) {
+	if ((a = cbl_yarena_new()) == NULL) {
+		(void)cbl_stream_reset(s, ENOMEM);
+		return;
+	}
+	if (arcana_chunk_parse(data, &d, a, CBL_YD_STRICT, NULL, 0) != 0) {
+		cbl_yarena_free(a);
 		(void)cbl_stream_reset(s, EBADMSG);
 		return;
 	}
@@ -400,12 +405,14 @@ recv_data(cbl_stream *s, cbl_msg *data, void *arg)
 	if ((c = calloc(1, sizeof(*c))) == NULL || (c->p = malloc(d.data.len +
 	    1)) == NULL) {
 		free(c);
+		cbl_yarena_free(a);
 		(void)cbl_stream_reset(s, ENOMEM);
 		return;
 	}
 	memcpy(c->p, d.data.p, d.data.len);
 	c->len = d.data.len;
 	c->took = cbl_msg_len(data);
+	cbl_yarena_free(a);
 	pthread_mutex_lock(&x->lock);
 	STAILQ_INSERT_TAIL(&x->chunks, c, next);
 	pthread_cond_signal(&x->wake);
