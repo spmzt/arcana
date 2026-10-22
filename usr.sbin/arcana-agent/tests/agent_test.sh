@@ -3101,6 +3101,66 @@ EOS
 	atf_check -o inline:'--initiate --child t1 --timeout 20\n--terminate --ike t1 --timeout 10\n--terminate --ike t1 --timeout 10\n--initiate --child t1 --timeout 20\n' cat swanctl.log
 }
 
+safe_sysfile_head()
+{
+	atf_set "descr" "A file of the system's written in safe mode goes back as it was and its daemon is told again; periodic.conf and rc.conf's variables too; dma is refused"
+}
+safe_sysfile_body()
+{
+	mkdir -p root/etc/defaults
+	printf '# defaults\ndaily_clean_tmps_enable="NO"\n' > root/etc/defaults/periodic.conf
+	printf 'daily_status_disks_enable="YES"\n' > root/etc/periodic.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	printf '#!/bin/sh\n' > rc.d/syslogd
+	chmod +x rc.d/syslogd
+	touch running.syslogd
+
+	# A file that was not there is gone again; one that was is as it
+	# was; the daemon told each time.
+	printf '*.err\t/var/log/errors\n' > syslog.new
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sysfile syslog.conf syslog.new
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'syslog.conf, as it was' "$JGC" -c "$SOCK" job 1
+	atf_check test ! -f root/etc/syslog.conf
+	printf '*.*\t/var/log/all\n' > root/etc/syslog.conf
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sysfile syslog.conf syslog.new
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 2
+	atf_check -o inline:'*.*\t/var/log/all\n' cat root/etc/syslog.conf
+	# Confirmed: it stays.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" sysfile syslog.conf syslog.new
+	atf_check -o inline:'*.err\t/var/log/errors\n' cat root/etc/syslog.conf
+
+	# periodic.conf whole as it was; rc.conf's variables as they were.
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sysfile periodic daily_clean_tmps_enable=YES
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sysfile rc kern_securelevel_enable=YES kern_securelevel=2
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o inline:'daily_status_disks_enable="YES"\n' cat root/etc/periodic.conf
+	atf_check -o not-match:'securelevel' cat rc.conf
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' "$JGC" -c "$SOCK" job 4
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' "$JGC" -c "$SOCK" job 5
+
+	# dma's smart host is not put back.
+	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
+	    "$JGC" -s -c "$SOCK" sysfile dma smarthost=mail.example.net
+}
+
 safe_mode_head()
 {
 	atf_set "descr" "A safe change stays when confirmed, and is undone when not"
@@ -4618,8 +4678,10 @@ MASQUERADE arcana@example.org
 	atf_check -s exit:1 -e match:'lines of printable characters' "$JGC" -c "$SOCK" sysfile krb5.conf ctl.new
 	atf_check -s exit:1 -e match:'name_enable=YES or NO' "$JGC" -c "$SOCK" sysfile periodic daily_x=1
 	atf_check -s exit:1 -e match:"the system's files are the host's" "$JGC" -j web -c "$SOCK" sysfile krb5.conf syslog.new
-	# Never safe: a file written whole has no undo kept.
-	atf_check -s exit:1 -e match:'not undone: not in safe mode' "$JGC" -s -c "$SOCK" sysfile krb5.conf syslog.new
+	# Safe: the file is kept to be put back (safe_sysfile); dma's smart
+	# host is not.
+	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" sysfile krb5.conf syslog.new
+	atf_check -s exit:1 -e match:'not undone: not in safe mode' "$JGC" -s -c "$SOCK" sysfile dma smarthost=mail.example.net
 }
 sysfiles_cleanup()
 {
@@ -8114,6 +8176,7 @@ atf_init_test_cases()
 	atf_add_test_case safe_bird
 	atf_add_test_case safe_wireguard
 	atf_add_test_case safe_ipsec
+	atf_add_test_case safe_sysfile
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart
 	atf_add_test_case agent_build

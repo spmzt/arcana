@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.186.0"
+#define	ARCANA_AGENT_VERSION	"0.187.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -642,6 +642,8 @@ const char	*sysfile_check(const struct arc_job_spec *);
 char		*sysfile_title(const struct arc_job_spec *);
 int		 do_sysfile_job(struct work *, const struct arc_job_spec *,
 		    const char **);
+const char	*sysfile_path(struct work *, const char *);
+int		 sysfile_tell(struct work *, const char *, const char **);
 /* superbia/netstore.c: NFS, iSCSI and HAST. */
 struct arc_netstore_rsp;
 void		 do_netstore(struct work *, const char *const *, size_t,

@@ -1927,6 +1927,11 @@ submodule arcana-jobs-kinds {
             description
               "The file";
           }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
         }
       }
       case geom {

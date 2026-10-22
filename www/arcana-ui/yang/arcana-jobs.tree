@@ -363,6 +363,7 @@ module: arcana-jobs
        |        |     +---w verb    enumeration
        |        |     +---w args*   string
        |        |     +---w text?   string
+       |        |     +---w safe?   boolean
        |        +--:(geom)
        |        |  +---w geom!
        |        |     +---w verb    enumeration

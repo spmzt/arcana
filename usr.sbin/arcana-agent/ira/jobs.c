@@ -758,6 +758,20 @@ undo_prepare(struct qjob *j)
 			    sp->interface)));
 		}
 		break;
+	case ARC_JOB_KIND_SYSFILE:
+		/* The file as it is, or rc.conf's variables as they are. */
+		if (strcmp(sp->verb, "rc") == 0) {
+			for (i = 0; i < sp->names.n; i++) {
+				char	*name = wstrdup(&j->w, sp->names.v[i]);
+
+				name[strcspn(name, "=")] = '\0';
+				undo_snap_rc(j, name);
+			}
+		} else if (!undo_snap_file(j, sysfile_path(&j->w, sp->verb)))
+			return (wfmt(&j->w, "not changed: %s could not be read, "
+			    "so it could not be put back: %s", sysfile_path(&j->w,
+			    sp->verb), strerror(errno)));
+		break;
 	case ARC_JOB_KIND_IPSEC:
 		/* A connection's files as they are (or are not), to go back
 		 * before the daemon reads them again; up and down are each
@@ -1030,6 +1044,13 @@ undo(struct qjob *j)
 		return (wfmt(&j->w, "not confirmed within %d s; %s",
 		    safe_wait(sp), j->undo_note));
 	switch (sp->kind) {
+	case ARC_JOB_KIND_SYSFILE:
+		if (strcmp(sp->verb, "rc") == 0)
+			rc = undo_rc_back(j, &e);
+		else
+			rc = undo_files_back(j, &e) == 0 ? sysfile_tell(&j->w,
+			    sp->verb, &e) : -1;
+		break;
 	case ARC_JOB_KIND_IPSEC:
 		if (strcmp(sp->verb, "up") == 0 || strcmp(sp->verb, "down") == 0)
 			rc = ipsec_toggle(&j->w, sp->conn, sp->verb[0] == 'd', &e);

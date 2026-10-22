@@ -1888,7 +1888,15 @@ each the other's undo;
 .Cm init
 and
 .Cm start
-are refused in safe mode.
+are refused in safe mode), and a file of the system's
+.Pq Cm sysfile ,
+put back as it was and its daemon told again,
+.Cm periodic Ns 's
+file and
+.Cm rc Ns 's
+variables likewise;
+.Cm dma
+is refused.
 A change that would cut the client off is refused unless it is made in
 safe mode: taking away the address the request came in by, bringing its
 interface down or destroying it, moving that interface to another table
