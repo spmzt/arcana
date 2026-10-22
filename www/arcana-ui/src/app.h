@@ -324,6 +324,7 @@ struct op {
 	double		 next_poll;
 	bool		 polling;
 	bool		 waiting;	/* the host does not answer; it runs on */
+	long long	 confirm_by;	/* a safe change waiting: undone then, or 0 */
 	int		 what;		/* JOB_*: what to refresh when done */
 	char		*again;		/* a job as it was sent, to send again */
 	char		 target[256];	/* the jail or service */

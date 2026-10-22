@@ -70,7 +70,9 @@ static struct {
 	 * and so through the network as the change left it, says it stays.
 	 */
 	bool		 unsafe;
-	double		 confirm_at;	/* when to say so, or 0 */
+	long long	 confirm_by;	/* BIRD takes it back then, unless told
+					 * to keep it (Confirm); 0 none waits */
+	long long	 shown_left;	/* the seconds left as last drawn */
 	char		 confirm_sid[9];
 	char		 confirm_jail[256];
 	bool		 confirming;
@@ -428,14 +430,16 @@ conf_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		bd.draft = NULL;
 		app.modal = MODAL_NONE;
 		if (jint(o, "confirm_by", 0) > 0) {
-			/* To be confirmed, once the change has settled. */
-			bd.confirm_at = arc_now() + CONFIRM_AFTER_MS;
+			/* Kept only when told so: BIRD runs its own timer,
+			 * and the admin looks at what the change did first. */
+			bd.confirm_by = jint(o, "confirm_by", 0);
+			bd.shown_left = -1;
 			snprintf(bd.confirm_sid, sizeof(bd.confirm_sid), "%s",
 			    bd.sid);
 			snprintf(bd.confirm_jail, sizeof(bd.confirm_jail), "%s",
 			    bd.jail);
-			toast(false, "BIRD has its new configuration, and takes "
-			    "it back unless the host is still reached");
+			toast(false, "BIRD runs its new configuration, and takes "
+			    "it back by itself unless it is confirmed in time");
 		} else
 			toast(false, "BIRD has its new configuration");
 		if (cur_server() != NULL) {
@@ -463,28 +467,15 @@ confirm_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	bd.reload_at = arc_now() + 4 * CONFIRM_AFTER_MS;
 }
 
-/*
- * From the tick: the change made in safe mode is confirmed, a while
- * after it was made.  A page that cannot reach the host any more
- * confirms nothing, and BIRD takes the change back by itself.
- */
-void
-bird_tick(double now)
+/* Told so (Confirm): BIRD keeps the change made in safe mode. */
+static void
+confirm_now(void)
 {
-	struct server	*s;
-	char		 url[96], *qj, *body;
+	char	 url[96], *qj, *body;
 
-	if (bd.reload_at != 0 && now >= bd.reload_at) {
-		bd.reload_at = 0;
-		if ((s = cur_server()) != NULL && strcmp(s->id, bd.sid) == 0 &&
-		    app.net.kind == NET_BIRD) {
-			conf_load(s, true);
-			render();
-		}
-	}
-	if (bd.confirm_at == 0 || now < bd.confirm_at || bd.confirming)
+	if (bd.confirm_by == 0 || bd.confirming)
 		return;
-	bd.confirm_at = 0;
+	bd.confirm_by = 0;
 	bd.confirming = true;
 	snprintf(url, sizeof(url), "/api/servers/%s/bird/config",
 	    bd.confirm_sid);
@@ -495,6 +486,40 @@ bird_tick(double now)
 	api("POST", url, body, confirm_cb, NULL);
 	free(body);
 	render();
+}
+
+/*
+ * From the tick: while a change waits to be confirmed, the seconds it
+ * has left are drawn; when they run out, BIRD has taken it back by
+ * itself, and the file is read again.
+ */
+void
+bird_tick(double now)
+{
+	struct server	*s;
+	long long	 left;
+
+	if (bd.reload_at != 0 && now >= bd.reload_at) {
+		bd.reload_at = 0;
+		if ((s = cur_server()) != NULL && strcmp(s->id, bd.sid) == 0 &&
+		    app.net.kind == NET_BIRD) {
+			conf_load(s, true);
+			render();
+		}
+	}
+	if (bd.confirm_by == 0)
+		return;
+	left = bd.confirm_by - (long long)(now / 1000);
+	if (left < 0) {
+		bd.confirm_by = 0;
+		toast(true, "BIRD's new configuration was not confirmed in "
+		    "time, and is taken back by itself");
+		bd.reload_at = now + CONFIRM_AFTER_MS;
+		render();
+	} else if (left != bd.shown_left) {
+		bd.shown_left = left;
+		render();
+	}
 }
 
 /* Past what is at p: a comment or a string whole, else one character. */
@@ -1505,10 +1530,17 @@ view_bird(struct html *h, struct server *s, const ucl_object_t *data)
 	routes_view(h, s, data);
 
 	/* From here on: what the configuration is made of. */
-	if (bd.confirm_at != 0 || bd.confirming)
-		h_raw(h, "<div class=\"notice\">BIRD runs a new configuration "
-		    "and takes it back by itself unless this page reaches "
-		    "the host again in a moment: it is being confirmed.</div>");
+	if (bd.confirm_by != 0 && strcmp(s->id, bd.confirm_sid) == 0) {
+		long long left = bd.confirm_by - (long long)(arc_now() / 1000);
+
+		h_fmt(h, "<div class=\"notice\">BIRD runs the new configuration "
+		    "and takes it back by itself in <b>%lld s</b> unless it is "
+		    "confirmed. Look at its neighbours and routes first. "
+		    "<button class=\"small\" data-act=\"bird-confirm\">Confirm"
+		    "</button></div>", left > 0 ? left : 0);
+	} else if (bd.confirming)
+		h_raw(h, "<div class=\"notice\">BIRD is being told to keep the "
+		    "new configuration.</div>");
 	h_raw(h, "<h4 class=\"family\">Configuration");
 	if (ucl_array_size(bd.files) > 1) {
 		h_raw(h, " <select class=\"conf-file\" data-input=\""
@@ -2345,6 +2377,8 @@ bird_action(const char *act, const char *arg, const char *value)
 			app.modal = MODAL_BIRD_FILE;
 	} else if (strcmp(act, "bird-safe") == 0) {
 		bd.unsafe = !bd.unsafe;
+	} else if (strcmp(act, "bird-confirm") == 0) {
+		confirm_now();
 	} else if (strcmp(act, "bird-routes-of") == 0) {
 		/* arg: protocol or export; of the neighbour whose box it is. */
 		if (name_ok(bd.proto)) {

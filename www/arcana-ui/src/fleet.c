@@ -505,6 +505,19 @@ view_jobs(struct html *h, struct server *s)
 		h_txt(h, id);
 		h_raw(h, "</td><td class=\"st\">");
 		h_txt(h, st);
+		/* A safe change waiting: undone by the host at its time
+		 * unless the console reaches it again (reading it is that). */
+		if (strcmp(st, "unconfirmed") == 0 && jint(j, "confirm_by", 0) >
+		    0) {
+			long long left = jint(j, "confirm_by", 0) - (long long)(
+			    arc_now() / 1000);
+
+			snprintf(buf, sizeof(buf), "undone in %lld s", left > 0 ?
+			    left : 0);
+			h_raw(h, "<small>");
+			h_txt(h, buf);
+			h_raw(h, "</small>");
+		}
 		h_raw(h, "</td><td>");
 		h_txt(h, jstr(j, "title"));
 		if (jstr(j, "error") != NULL) {
