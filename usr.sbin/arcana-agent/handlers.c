@@ -2977,6 +2977,8 @@ check_spec(const struct arc_job_spec *sp)
 			return ("netgraph changes cannot be undone: not in "
 			    "safe mode");
 		return (ng_check(sp->verb, sp->names.v, sp->names.n));
+	case ARC_JOB_KIND_JAIL_ALLOW:
+		return (jail_allow_check(sp));
 	case ARC_JOB_KIND_JAIL_CONF:
 		return (jail_conf_check(sp));
 	case ARC_JOB_KIND_NEIGHBOUR:

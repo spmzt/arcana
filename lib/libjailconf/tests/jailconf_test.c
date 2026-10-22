@@ -73,6 +73,77 @@ edit(const char *text, const char *jail, const char *key, const char *value,
 	free(_out);							\
 } while (0)
 
+/* jc_replace: one value of key in a block, or none; the text back. */
+static char *
+replace(const char *text, const char *jail, const char *key,
+    const char *value, int *np)
+{
+	struct jc_conf	 conf;
+	struct jc_block	*b;
+	struct jc_file	*f;
+	size_t		 len;
+	char		*out;
+
+	put("jail.conf", text);
+	ATF_REQUIRE_MSG(jc_load(&conf, "jail.conf") == 0, "load: %s",
+	    conf.error);
+	ATF_REQUIRE_MSG((b = jc_find(&conf, jail, &f)) != NULL,
+	    "no jail %s", jail);
+	out = NULL;
+	*np = jc_replace(f, b, key, value, &out, &len);
+	ATF_REQUIRE(*np >= 0);
+	ATF_CHECK_EQ(strlen(out), len);
+	jc_free(&conf);
+	return (out);
+}
+
+ATF_TC_WITHOUT_HEAD(replace_value);
+ATF_TC_BODY(replace_value, tc)
+{
+	struct jc_conf	 conf;
+	char		*out;
+	int		 n;
+
+	/* A bare boolean set to 0 in its place; one with a value too; a
+	 * second statement of the key goes; a key the block lacks comes
+	 * last, indented like the others; taken out, the line goes with
+	 * it; a value with a blank is quoted. */
+	out = replace("j {\n\tpath = \"/j\";\n\tallow.raw_sockets;\n"
+	    "\tallow.mount = 1; allow.mount += 1;\n}\n", "j",
+	    "allow.raw_sockets", "0", &n);
+	ATF_CHECK_EQ(1, n);
+	ATF_CHECK_STREQ("j {\n\tpath = \"/j\";\n\tallow.raw_sockets = 0;\n"
+	    "\tallow.mount = 1; allow.mount += 1;\n}\n", out);
+	free(out);
+	out = replace("j {\n\tpath = \"/j\";\n\tallow.mount = 1; "
+	    "allow.mount += 1;\n}\n", "j", "allow.mount", "0", &n);
+	ATF_CHECK_EQ(2, n);
+	ATF_CHECK_STREQ("j {\n\tpath = \"/j\";\n\tallow.mount = 0; \n}\n",
+	    out);
+	free(out);
+	out = replace("j {\n\tpath = \"/j\";\n}\n", "j", "allow.sysvipc",
+	    "1", &n);
+	ATF_CHECK_EQ(0, n);
+	ATF_CHECK_STREQ("j {\n\tpath = \"/j\";\n\tallow.sysvipc = 1;\n}\n",
+	    out);
+	ATF_CHECK(jc_load_buf(&conf, "jail.conf", out, strlen(out)) == 0);
+	ATF_CHECK(jc_block_has(jc_find(&conf, "j", NULL), "allow.sysvipc",
+	    "1"));
+	jc_free(&conf);
+	free(out);
+	out = replace("j {\n\tpath = \"/j\";\n\tallow.raw_sockets;\n"
+	    "\tpersist;\n}\n", "j", "allow.raw_sockets", NULL, &n);
+	ATF_CHECK_EQ(1, n);
+	ATF_CHECK_STREQ("j {\n\tpath = \"/j\";\n\tpersist;\n}\n", out);
+	free(out);
+	out = replace("j { path = \"/j\"; }\n", "j", "exec.start",
+	    "sh /etc/rc", &n);
+	ATF_CHECK_EQ(0, n);
+	ATF_CHECK_STREQ("j { path = \"/j\"; exec.start = \"sh /etc/rc\"; }\n",
+	    out);
+	free(out);
+}
+
 ATF_TC_WITHOUT_HEAD(add_extends_list);
 ATF_TC_BODY(add_extends_list, tc)
 {
@@ -356,5 +427,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, addresses);
 	ATF_TP_ADD_TC(tp, diff_format);
 	ATF_TP_ADD_TC(tp, write_atomic);
+	ATF_TP_ADD_TC(tp, replace_value);
 	return (atf_no_error());
 }

@@ -161,6 +161,42 @@ jail_events_nested_cleanup()
 	cleanup
 }
 
+atf_test_case jail_allow_live cleanup
+jail_allow_live_head()
+{
+	atf_set "descr" "jail-allow on a running jail: a parameter set with JAIL_UPDATE as jail -m does, read back by jls and in the list; in safe mode and not confirmed, set back as it was"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+jail_allow_live_body()
+{
+	DAEMON_ARGS="-w 2"
+	start_daemon
+	AJ=arcana-allow-test
+	jls -j "$AJ" >/dev/null 2>&1 && atf_skip "a jail named $AJ exists"
+	atf_check -o ignore jail -c name="$AJ" path=/ persist allow.raw_sockets=0
+	atf_check -o match:'jailparam_set\(3\)' -o match:'JAIL_UPDATE, 2 parameters' "$JGC" -t -c "$SOCK" allow "$AJ" allow.raw_sockets=1 allow.sysvipc=1
+	atf_check -o match:'^(1|true)$' jls -j "$AJ" allow.raw_sockets
+	atf_check -o match:'^(1|true)$' jls -j "$AJ" allow.sysvipc
+	# Safe mode: set to 0 and not confirmed, back to 1.
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" allow "$AJ" allow.raw_sockets=0
+	sleep 0.5
+	atf_check -o match:'^(0|false)$' jls -j "$AJ" allow.raw_sockets
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' -o match:'undo' "$JGC" -c "$SOCK" job $("$JGC" -c "$SOCK" jobs | awk '$1 ~ /^[0-9]+$/ {print $1}' | sort -n | tail -1)
+	atf_check -o match:'^(1|true)$' jls -j "$AJ" allow.raw_sockets
+	atf_check -o ignore jail -r "$AJ"
+}
+jail_allow_live_cleanup()
+{
+	jail -r arcana-allow-test >/dev/null 2>&1
+	cleanup
+}
+
 atf_test_case live_address cleanup
 live_address_head()
 {
@@ -1687,6 +1723,7 @@ atf_init_test_cases()
 	atf_add_test_case devd_watch
 	atf_add_test_case lifecycle
 	atf_add_test_case jail_events_nested
+	atf_add_test_case jail_allow_live
 	atf_add_test_case live_address
 	atf_add_test_case aliases
 	atf_add_test_case routes

@@ -98,6 +98,7 @@ static int	cmd_hello(struct arc_client *);
 static int	cmd_list(struct arc_client *, int, char **);
 static int	cmd_action(struct arc_client *, uint8_t, int, char **);
 static int	cmd_address(struct arc_client *, int, char **);
+static int	cmd_allow(struct arc_client *, int, char **);
 static int	cmd_services(struct arc_client *);
 static int	cmd_net(struct arc_client *, int, char **);
 static int	cmd_stats(struct arc_client *);
@@ -247,6 +248,7 @@ usage(void)
 	    "        sign ca-key-file [principal ...] | user-cas file\n"
 	    "    ntp server ... | remove\n"
 	    "    rtadvd interface prefix [dns ...] | interface remove\n"
+	    "    allow [-n] jail allow.name=0|1|unset ...   (-p: in its file too)\n"
 	    "    sysctl [name | start of a name]\n"
 	    "    sysctl parts [name | start of a name]\n"
 	    "    sysctl name=value\n"
@@ -2064,6 +2066,36 @@ cmd_rtadvd(struct arc_client *cl, int argc, char **argv)
 		sp.names.v = (const char **)(uintptr_t)&argv[2];
 		sp.names.n = (size_t)argc - 2;
 	}
+	return (submit(cl, &sp));
+}
+
+/*
+ * A jail's permissions: its allow.* parameters set on the running jail
+ * and, with -p, in its file; -n leaves the running jail alone (the
+ * file for the next start).
+ */
+static int
+cmd_allow(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	sp;
+	bool			live;
+
+	live = true;
+	if (argc > 1 && strcmp(argv[1], "-n") == 0) {
+		live = false;
+		argc--;
+		argv++;
+	}
+	if (argc < 3)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_JAIL_ALLOW;
+	sp.jail = argv[1];
+	sp.live = live;
+	sp.persist = persist;
+	sp.names.v = (const char **)(uintptr_t)&argv[2];
+	sp.names.n = (size_t)argc - 2;
 	return (submit(cl, &sp));
 }
 
@@ -4656,6 +4688,8 @@ main(int argc, char *argv[])
 		rc = cmd_ntp(&cl, argc, argv);
 	else if (strcmp(argv[0], "rtadvd") == 0)
 		rc = cmd_rtadvd(&cl, argc, argv);
+	else if (strcmp(argv[0], "allow") == 0)
+		rc = cmd_allow(&cl, argc, argv);
 	else if (strcmp(argv[0], "ipsec-sa") == 0)
 		rc = cmd_ipsec_sa(&cl, argc, argv);
 	else if (strcmp(argv[0], "kmod") == 0)

@@ -7155,6 +7155,52 @@ jail_conf_cleanup()
 	stop_daemon
 }
 
+atf_test_case jail_allow cleanup
+jail_allow_head()
+{
+	atf_set "descr" "jail-allow: a jail's allow.* parameters in its file (replaced, or taken out), the running jail alone refused when it does not run, the words and names checked, and the file back in safe mode"
+}
+jail_allow_body()
+{
+	start_daemon
+	# A parameter the kernel lacks, a bad value, a bad name, unset
+	# without the file, and nothing to do on a stopped jail.
+	atf_check -s exit:1 -o match:'no such parameter' -e ignore "$JGC" -p -c "$SOCK" allow vpn allow.nosuchthing=1
+	atf_check -s exit:1 -e match:'0, 1 or unset' -o ignore "$JGC" -p -c "$SOCK" allow vpn allow.raw_sockets=maybe
+	atf_check -s exit:1 -e match:"jail\(8\)'s allow" -o ignore "$JGC" -p -c "$SOCK" allow vpn persist=1
+	atf_check -s exit:1 -e match:'say persist' -o ignore "$JGC" -c "$SOCK" allow vpn allow.raw_sockets=unset
+	atf_check -s exit:1 -o match:'is not running' -e ignore "$JGC" -c "$SOCK" allow vpn allow.raw_sockets=1
+	# In its file, in jail.conf.d: two set, the file read back; one
+	# set again replaces; unset takes it out with its line.
+	atf_check -o match:'jail vpn allow: allow.raw_sockets=1 \.\.\. \(kept\)' -o match:'jc_replace' "$JGC" -t -p -c "$SOCK" allow -n vpn allow.raw_sockets=1 allow.mount.zfs=0
+	atf_check -o inline:'vpn {\n\tpath = /usr/jails/vpn;\n\tvnet;\n\tvnet.interface = epair0b;\n\tallow.raw_sockets = 1;\n\tallow.mount.zfs = 0;\n}\n' cat etc/jail.conf.d/vpn.conf
+	atf_check -o match:'not running: its file alone' "$JGC" -t -p -c "$SOCK" allow vpn allow.raw_sockets=0
+	atf_check -o inline:'vpn {\n\tpath = /usr/jails/vpn;\n\tvnet;\n\tvnet.interface = epair0b;\n\tallow.raw_sockets = 0;\n\tallow.mount.zfs = 0;\n}\n' cat etc/jail.conf.d/vpn.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" allow -n vpn allow.raw_sockets=unset
+	atf_check -o inline:'vpn {\n\tpath = /usr/jails/vpn;\n\tvnet;\n\tvnet.interface = epair0b;\n\tallow.mount.zfs = 0;\n}\n' cat etc/jail.conf.d/vpn.conf
+	# A jail of the main file: its block there, the others untouched.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" allow -n web allow.sysvipc=1
+	atf_check -o match:'allow.sysvipc = 1;' -o match:'interface = lo0;' cat etc/jail.conf
+	# Safe mode, not confirmed: the file as it was.
+	cp etc/jail.conf.d/vpn.conf vpn.was
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" allow -n vpn allow.chflags=1
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'vpn.conf, as it was' "$JGC" -c "$SOCK" job $("$JGC" -c "$SOCK" jobs | awk '$1 ~ /^[0-9]+$/ {print $1}' | sort -n | tail -1)
+	atf_check cmp vpn.was etc/jail.conf.d/vpn.conf
+	# Confirmed, it stays.
+	atf_check -o match:'confirmed: it stays' "$JGC" -s -p -c "$SOCK" allow -n vpn allow.chflags=1
+	atf_check -o match:'allow.chflags = 1;' cat etc/jail.conf.d/vpn.conf
+}
+jail_allow_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case carp cleanup
 carp_head()
 {
@@ -8435,6 +8481,7 @@ atf_init_test_cases()
 	atf_add_test_case sysfiles
 	atf_add_test_case sdwan_jail
 	atf_add_test_case jail_conf
+	atf_add_test_case jail_allow
 	atf_add_test_case carp
 	atf_add_test_case neighbours
 	atf_add_test_case multicast

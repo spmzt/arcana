@@ -299,6 +299,13 @@ module: arcana-jobs
        |        |     +---w text?       string
        |        |     +---w start?      boolean
        |        |     +---w args*       string
+       |        +--:(jail-allow)
+       |        |  +---w jail-allow!
+       |        |     +---w jail       string
+       |        |     +---w args*      string
+       |        |     +---w live?      boolean
+       |        |     +---w persist?   boolean
+       |        |     +---w safe?      boolean
        |        +--:(carp)
        |        |  +---w carp!
        |        |     +---w verb             enumeration

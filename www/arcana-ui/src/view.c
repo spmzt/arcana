@@ -1195,6 +1195,7 @@ jail_page(struct html *h)
 	    jbool(j, "vnet") ? "yes" : "no", jbool(j, "persist") ? "yes" :
 	    "no");
 	h_raw(h, "</dl>");
+	jail_allow_section(h, s, j);
 
 	/*
 	 * A jail with a network of its own: that network is in the host's
@@ -2366,6 +2367,7 @@ modal(struct html *h)
 	case MODAL_JAIL_TEMPLATE:
 	case MODAL_JAIL_REMOVE:
 	case MODAL_JAIL_FILE:
+	case MODAL_JAIL_ALLOW:
 		if (!jailmk_modal(h))
 			return;
 		break;
@@ -2394,6 +2396,7 @@ modal(struct html *h)
 		break;
 	case MODAL_IPSEC_CONN:
 	case MODAL_IPSEC_CHILD:
+	case MODAL_IPSEC_SA:
 		if (!ipsec_modal(h))
 			return;
 		break;

@@ -1078,6 +1078,8 @@ jail_object(const struct arc_jail *j)
 		put(o, "plugins", strs(j->plugins.v, j->plugins.n));
 	put_str(o, "osrelease", j->osrelease);
 	put(o, "persist", ucl_object_frombool(j->persist));
+	if (j->allow.n > 0)
+		put(o, "allow", strs(j->allow.v, j->allow.n));
 	put_str(o, "interface", j->interface);
 	if (j->has_nproc) {
 		put(o, "nproc", ucl_object_fromint(j->nproc));
@@ -5201,6 +5203,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_RTADVD:
 	case ARC_JOB_KIND_IPSEC_SA:
 	case ARC_JOB_KIND_JAIL_CONF:
+	case ARC_JOB_KIND_JAIL_ALLOW:
 	case ARC_JOB_KIND_SSH:
 	case ARC_JOB_KIND_CARP:
 	case ARC_JOB_KIND_POUDRIERE:
@@ -5233,6 +5236,15 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 				    "interface, and but for key its reqid, "
 				    "tunnel_local and tunnel_remote, and the SAs' "
 				    "words as args");
+		} else if (sp->kind == ARC_JOB_KIND_JAIL_ALLOW) {
+			/* The jail and its allow.* words; live, persist; no verb. */
+			if (sp->jail == NULL || ucl_array_size(names) == 0 ||
+			    ucl_array_size(names) > 32 || (!sp->live && !sp->persist))
+				return ("a jail-allow job names a jail, its "
+				    "allow.name=0|1|unset words as args, 1 to 32, and "
+				    "live, persist or both");
+			kore_free((void *)(uintptr_t)sp->verb);
+			sp->verb = NULL;
 		} else if (sp->kind == ARC_JOB_KIND_RTADVD) {
 			/* The interface; the prefix and the DNS servers, or
 			 * remove; no verb. */

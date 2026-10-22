@@ -975,7 +975,13 @@ module arcana {
       type string;
       description
         "Of a running jail with a network of its own: the plugins it
-         has, as a host's, by the programs installed in the jail.
+         has, as a host's, by the programs installed in the jail.";
+    }
+    leaf-list allow {
+      type string;
+      description
+        "Of a running jail: its allow.* parameters as the kernel has
+         them, each \"allow.name=0|1\" (jail-allow sets them).
          ";
     }
   }
@@ -1095,10 +1101,10 @@ module arcana {
       "One change to queue; the attributes its kind needs.";
     leaf kind {
       type uint8 {
-        range "0..46";
+        range "0..47";
       }
       description
-        "One of job-kind: 0 jail-action 1 address 2 service-action 3 service-config 4 pkg-upgrade 5 if-address 6 if-state 7 route 8 if-set 9 if-create 10 if-destroy 11 netgraph 12 wireguard 13 bird 14 if-vnet 15 kmod 16 zfs 17 zpool 18 mount 19 gpart 20 cam 21 sysctl 22 ipfw 23 bridge 24 geneve 25 process 26 pkg-clean 27 ipsec 28 pkg-install 29 ntp 30 rtadvd 31 ipsec-sa 32 jail-conf 33 neighbour 34 cert 35 ssh 36 carp 37 poudriere 38 clamav 39 suricata 40 nfs 41 iscsi 42 hast 43 sysfile 44 geom 45 smtpd 46 jail-base.";
+        "One of job-kind: 0 jail-action 1 address 2 service-action 3 service-config 4 pkg-upgrade 5 if-address 6 if-state 7 route 8 if-set 9 if-create 10 if-destroy 11 netgraph 12 wireguard 13 bird 14 if-vnet 15 kmod 16 zfs 17 zpool 18 mount 19 gpart 20 cam 21 sysctl 22 ipfw 23 bridge 24 geneve 25 process 26 pkg-clean 27 ipsec 28 pkg-install 29 ntp 30 rtadvd 31 ipsec-sa 32 jail-conf 33 neighbour 34 cert 35 ssh 36 carp 37 poudriere 38 clamav 39 suricata 40 nfs 41 iscsi 42 hast 43 sysfile 44 geom 45 smtpd 46 jail-allow 47 jail-base.";
     }
     leaf jail {
       type string {
@@ -1535,10 +1541,10 @@ module arcana {
     }
     leaf kind {
       type uint8 {
-        range "0..46";
+        range "0..47";
       }
       description
-        "One of job-kind: 0 jail-action 1 address 2 service-action 3 service-config 4 pkg-upgrade 5 if-address 6 if-state 7 route 8 if-set 9 if-create 10 if-destroy 11 netgraph 12 wireguard 13 bird 14 if-vnet 15 kmod 16 zfs 17 zpool 18 mount 19 gpart 20 cam 21 sysctl 22 ipfw 23 bridge 24 geneve 25 process 26 pkg-clean 27 ipsec 28 pkg-install 29 ntp 30 rtadvd 31 ipsec-sa 32 jail-conf 33 neighbour 34 cert 35 ssh 36 carp 37 poudriere 38 clamav 39 suricata 40 nfs 41 iscsi 42 hast 43 sysfile 44 geom 45 smtpd 46 jail-base.";
+        "One of job-kind: 0 jail-action 1 address 2 service-action 3 service-config 4 pkg-upgrade 5 if-address 6 if-state 7 route 8 if-set 9 if-create 10 if-destroy 11 netgraph 12 wireguard 13 bird 14 if-vnet 15 kmod 16 zfs 17 zpool 18 mount 19 gpart 20 cam 21 sysctl 22 ipfw 23 bridge 24 geneve 25 process 26 pkg-clean 27 ipsec 28 pkg-install 29 ntp 30 rtadvd 31 ipsec-sa 32 jail-conf 33 neighbour 34 cert 35 ssh 36 carp 37 poudriere 38 clamav 39 suricata 40 nfs 41 iscsi 42 hast 43 sysfile 44 geom 45 smtpd 46 jail-allow 47 jail-base.";
     }
     leaf title {
       type string;

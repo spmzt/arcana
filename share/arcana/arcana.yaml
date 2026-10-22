@@ -503,6 +503,11 @@ definitions:
           key's lines out.  The host's, or with jail a jail's (its
           own files and programs, a network of its own or not); never in
           safe mode.
+      - name: jail-allow
+        doc: |
+          A jail's allow.* parameters set on the running jail (live)
+          and in its file (persist): jail and names, each
+          allow.name=0|1|unset.
       - name: jail-base
         doc: |
           A running jail's base system by pkg(8), as pkgbase.  Verb
@@ -1470,6 +1475,12 @@ attribute-sets:
         doc: |
           Of a running jail with a network of its own: the plugins it
           has, as a host's, by the programs installed in the jail.
+      - name: allow
+        type: text
+        multi-attr: true
+        doc: |
+          Of a running jail: its allow.* parameters as the kernel has
+          them, each "allow.name=0|1" (jail-allow sets them).
 
   - name: param
     attributes:

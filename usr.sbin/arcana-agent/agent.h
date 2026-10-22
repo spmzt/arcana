@@ -23,7 +23,7 @@
 _Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
     "written for cblink 0.2: its wire, its structs");
 
-#define	ARCANA_AGENT_VERSION	"0.196.0"
+#define	ARCANA_AGENT_VERSION	"0.197.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -358,6 +358,16 @@ int		 do_action(struct work *, const char *, uint8_t,
 const char	*jail_conf_check(const struct arc_job_spec *);
 int		 do_jail_conf(struct work *, const struct arc_job_spec *,
 		    const char **);
+int		 jail_allow_names(struct work *, const char ***, size_t *);
+int		 jail_allow_live(struct work *, int, const char **, size_t,
+		    const char ***);
+const char	*jail_allow_check(const struct arc_job_spec *);
+int		 do_jail_allow(struct work *, const struct arc_job_spec *,
+		    const char **);
+int		 jail_allow_undo_prepare(struct work *, const struct arc_job_spec *,
+		    const char **, struct arc_variable **, size_t *, const char **);
+int		 jail_allow_undo(struct work *, const struct arc_job_spec *,
+		    const struct arc_variable *, size_t, const char **);
 void		 do_jail_files(struct work *, struct arc_jail_files_rsp *);
 
 /* superbia/certs.c: the certificates OpenSSL trusts */

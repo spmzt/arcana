@@ -89,6 +89,8 @@ bool		 jc_block_has(const struct jc_block *, const char *,
 int		 jc_edit(const struct jc_conf *, struct jc_file *,
 		    struct jc_block *, const char *, const char *, bool,
 		    char **, size_t *, char *, size_t);
+int		 jc_replace(struct jc_file *, const struct jc_block *,
+		    const char *, const char *, char **, size_t *);
 bool		 jc_verify(const char *, const char *, size_t, const char *,
 		    const char *, const char *, bool);
 char		*jc_diff(const char *, const char *, size_t, const char *,

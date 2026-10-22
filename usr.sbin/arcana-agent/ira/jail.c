@@ -82,6 +82,18 @@ jail_record(struct work *w, struct arc_jail *j, const char *name,
 		if (ji->path != NULL)
 			plugins_there(w, ji->jid, ji->path, &j->plugins.v,
 			    &j->plugins.n);
+		/* Its permissions, as the kernel has them. */
+		{
+			const char	**names, **live;
+			size_t		 nn;
+			int		 nl;
+
+			if (jail_allow_names(w, &names, &nn) == 0 && (nl =
+			    jail_allow_live(w, ji->jid, names, nn, &live)) > 0) {
+				j->allow.v = live;
+				j->allow.n = (size_t)nl;
+			}
+		}
 		j->osrelease = wtext(w, ji->osrelease);
 		j->has_persist = true;
 		j->persist = ji->persist;

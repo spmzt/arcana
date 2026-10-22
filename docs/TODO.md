@@ -1105,6 +1105,18 @@
     somewhere, with the number reused meanwhile).  Not reproduced; look
     for a close(2) of a descriptor already closed, in the console's
     threads (the SD-WAN manager, the subscriptions, the pool).
+    A review of every close in the console (2026-10-22) found none;
+    what it found instead: kore_log() called from threads that are not
+    the worker (store.c, the SD-WAN manager's identities_tick and
+    job_run, stream_run, call_run, the cluster peers), against api.c's
+    own rule, which races Kore's log channel and may close its
+    descriptor twice; a short write(2) in store_write leaves errno as
+    it was, so the message may be stale; apply_begin() reads the run
+    after pthread_detach, when run_main may have freed it; descriptors
+    leaked on error paths in store_write, pki.c, nodes.c, auth.c,
+    push.c and mail.c; a retried request in hosts.c keeps the dropped
+    connection's steps box, so the retry never subscribes to steps.
+    store.c now logs through thread_log(); the rest is to do.
 
 Written and tested with stand-ins, never run for real:
 

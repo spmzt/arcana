@@ -161,8 +161,11 @@ submodule arcana-jobs-kinds {
       enum smtpd {
         value 45;
       }
-      enum jail-base {
+      enum jail-allow {
         value 46;
+      }
+      enum jail-base {
+        value 47;
       }
     }
     description
@@ -1535,6 +1538,41 @@ submodule arcana-jobs-kinds {
             ordered-by user;
             description
               "Arguments";
+          }
+        }
+      }
+      case jail-allow {
+        container jail-allow {
+          presence
+            "This kind of job.";
+          description
+            "A jail's permissions (allow.*), on the running jail and in its file";
+          leaf jail {
+            type string;
+            mandatory true;
+            description
+              "Jail";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf live {
+            type boolean;
+            description
+              "Live";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
           }
         }
       }
