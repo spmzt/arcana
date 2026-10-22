@@ -3913,6 +3913,17 @@ EOS
 	atf_check -o match:'"chosen":0' "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'"type":"bfd","severity":"Cleared","was":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is up","cleared":true,"cleared_at":[0-9]+' \
 	    "$JGC" -c "$SOCK" sdwan
+	# The breakout's default route steered too: by the first candidate
+	# whose beacon is not down (none probed here: the first), put in its
+	# table in place of what was there; told in the read.
+	: > route.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[{"table":"sw1_known","prefix":"10.1.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"},{"id":"t2","via":"100.64.0.3"}]}],"routes":[{"fib":2,"destination":"0.0.0.0/0","candidates":[{"id":"bo:a-inet","via":"192.0.2.254"},{"id":"bo:a-wg","via":"192.0.2.253"}]}]}'
+	atf_check -o match:'^0 route-del 0.0.0.0/0 - - 2 0$' -o match:'^0 route-add 0.0.0.0/0 192.0.2.254 - 2 0 0 -$' cat route.log
+	atf_check -o match:'"routes":\[\{"fib":2,"destination":"0.0.0.0/0","chosen":0,"candidates":\[\{"id":"bo:a-inet","via":"192.0.2.254","state":"not probed"\},\{"id":"bo:a-wg","via":"192.0.2.253","state":"not probed"\}\]\}\]' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -s exit:1 -e match:'a route is a fib, a destination' -o ignore "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[],"routes":[{"fib":"x"}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"sw1","fib":1,"conf":"router id 100.64.0.0;\nprotocol device {}\nprotocol static {}\n"}]}'
 	atf_check -o match:'configure$' cat birdc.log

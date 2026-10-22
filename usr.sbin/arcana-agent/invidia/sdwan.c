@@ -91,6 +91,18 @@ struct steer {
 	int		chosen;		/* -1: none */
 };
 
+/* A route of a table steered among gateways: the breakout's default,
+ * by the first uplink whose beacon answers (its candidates are probe
+ * targets, not tunnels). */
+struct sroute {
+	int		fib;
+	char		dest[64];
+	int		ncand;
+	struct cand	cand[CANDS_MAX];
+	int		chosen;		/* -1: none */
+};
+#define	SROUTES_MAX	64
+
 /* An edge: the host ("" its jail), or a vnet jail of it. */
 struct edge {
 	char		 jail[64];
@@ -103,6 +115,9 @@ struct edge {
 	struct steer	*steers;
 	int		 nsteers;
 	bool		 steered;	/* the tables hold the choices */
+	struct sroute	*routes;
+	int		 nroutes;
+	bool		 routed;	/* the tables hold the routes chosen */
 };
 
 #define	EDGES_MAX	32
@@ -604,6 +619,48 @@ steer_apply(struct work *w, struct edge *e, bool force,
 	return (0);
 }
 
+/*
+ * Each steered route by the first candidate whose beacon is not down,
+ * put in its table in place of what is there when the choice changed;
+ * all of them with force.  Under the lock.
+ */
+static int
+routes_apply(struct work *w, struct edge *e, bool force, const char **errp)
+{
+	struct sroute	*r;
+	const char	*err;
+	int		 i, k, c, changed;
+
+	changed = 0;
+	for (i = 0; i < e->nroutes; i++) {
+		r = &e->routes[i];
+		c = -1;
+		for (k = 0; k < r->ncand && c == -1; k++)
+			if (probe_state_of(e->jail, r->cand[k].id) != PROBE_DOWN)
+				c = k;
+		if (c != r->chosen)
+			changed++;
+		r->chosen = c;
+	}
+	if (!force && changed == 0 && e->routed)
+		return (0);
+	for (i = 0; i < e->nroutes; i++) {
+		r = &e->routes[i];
+		if (r->chosen < 0)
+			continue;
+		/* What is there goes first: the kernel keeps one route to a
+		 * destination in a table; none there is no fault. */
+		err = NULL;
+		(void)do_route(w, r->dest, NULL, true, (uint32_t)r->fib, NULL,
+		    false, &err);
+		if (do_route(w, r->dest, r->cand[r->chosen].via, false,
+		    (uint32_t)r->fib, NULL, false, errp) != 0)
+			return (-1);
+	}
+	e->routed = true;
+	return (0);
+}
+
 /* A probe's state changed: the choices made again, here, at each edge
  * that steers. */
 void
@@ -615,12 +672,14 @@ sdwan_probe_changed(void)
 
 	pthread_mutex_lock(&lock);
 	for (i = 0; i < nedges; i++) {
-		if (edges[i]->nsteers == 0)
+		if (edges[i]->nsteers == 0 && edges[i]->nroutes == 0)
 			continue;
 		work_init(&w);
 		err = NULL;
-		if (edge_enter(&w, edges[i], &err) != 0 || steer_apply(&w,
-		    edges[i], false, &err) != 0)
+		if (edge_enter(&w, edges[i], &err) != 0 || (edges[i]->nsteers >
+		    0 && steer_apply(&w, edges[i], false, &err) != 0) ||
+		    (edges[i]->nroutes > 0 && routes_apply(&w, edges[i], false,
+		    &err) != 0))
 			logmsg(LOG_WARNING, "sdwan%s%s: steering not changed: %s",
 			    edges[i]->jail[0] != '\0' ? " of " : "",
 			    edges[i]->jail, err);
@@ -703,14 +762,90 @@ bad:
 }
 
 /* The steering set: checked, kept, and the tables filled by it. */
+/* The steered routes of the payload (routes, an array; none is fine). */
+static int
+routes_parse(struct work *w, const char *json, struct sroute **outp,
+    const char **errp)
+{
+	ucl_object_t		*top;
+	const ucl_object_t	*e, *c, *cands;
+	ucl_object_iter_t	 it, cit;
+	struct sroute		*v, *s;
+	int			 n;
+
+	if ((top = parse(json)) == NULL) {
+		*errp = "the steering is an object with entries, an array";
+		return (-1);
+	}
+	if ((v = calloc(SROUTES_MAX, sizeof(*v))) == NULL) {
+		ucl_object_unref(top);
+		*errp = strerror(errno);
+		return (-1);
+	}
+	n = 0;
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(top, "routes"), &it,
+	    true)) != NULL) {
+		if (n == SROUTES_MAX) {
+			*errp = wfmt(w, "%d routes at most", SROUTES_MAX);
+			goto bad;
+		}
+		s = &v[n];
+		if (ucl_object_type(e) != UCL_OBJECT || ucl_object_type(
+		    ucl_object_lookup(e, "fib")) != UCL_INT || ucl_object_toint(
+		    ucl_object_lookup(e, "fib")) < 0 || ucl_object_toint(
+		    ucl_object_lookup(e, "fib")) > 65535 || !prefix_ok(sval(e,
+		    "destination"))) {
+			*errp = "a route is a fib, a destination and its "
+			    "candidates, each a probe target's id and the gateway "
+			    "it goes via";
+			goto bad;
+		}
+		s->fib = (int)ucl_object_toint(ucl_object_lookup(e, "fib"));
+		snprintf(s->dest, sizeof(s->dest), "%s", sval(e, "destination"));
+		s->chosen = -1;
+		cands = ucl_object_lookup(e, "candidates");
+		cit = NULL;
+		while ((c = ucl_object_iterate(cands, &cit, true)) != NULL) {
+			if (s->ncand == CANDS_MAX) {
+				*errp = wfmt(w, "%s: %d candidates at most",
+				    s->dest, CANDS_MAX);
+				goto bad;
+			}
+			if (sval(c, "id") == NULL || strlen(sval(c, "id")) >=
+			    sizeof(s->cand[0].id) || !address_ok(sval(c,
+			    "via"))) {
+				*errp = wfmt(w, "%s: a candidate is a probe "
+				    "target's id and the gateway it goes via",
+				    s->dest);
+				goto bad;
+			}
+			snprintf(s->cand[s->ncand].id, sizeof(s->cand[0].id),
+			    "%s", sval(c, "id"));
+			snprintf(s->cand[s->ncand].via, sizeof(s->cand[0].via),
+			    "%s", sval(c, "via"));
+			s->ncand++;
+		}
+		n++;
+	}
+	ucl_object_unref(top);
+	*outp = v;
+	return (n);
+bad:
+	ucl_object_unref(top);
+	free(v);
+	return (-1);
+}
+
 int
 do_sdwan_steer(struct work *w, const char *json, const char **errp)
 {
 	struct steer	*v;
+	struct sroute	*rv;
 	struct edge	*ed;
 	ucl_object_t	*top;
 	const char	*e, *jail, *file;
-	int		 n, step, rc;
+	int		 n, nr, step, rc;
 
 	if ((top = parse(json)) == NULL) {
 		*errp = "the steering is an object with entries, an array";
@@ -723,39 +858,53 @@ do_sdwan_steer(struct work *w, const char *json, const char **errp)
 		return (-1);
 	if ((n = steers_parse(w, json, &v, errp)) < 0)
 		return (-1);
+	if ((nr = routes_parse(w, json, &rv, errp)) < 0) {
+		free(v);
+		return (-1);
+	}
 	pthread_mutex_lock(&lock);
 	if ((ed = edge_of(jail, true)) == NULL) {
 		pthread_mutex_unlock(&lock);
 		free(v);
+		free(rv);
 		*errp = wfmt(w, "%d edges at most on a host", EDGES_MAX);
 		return (-1);
 	}
 	if (ed->set == 0 && n > 0) {
 		pthread_mutex_unlock(&lock);
 		free(v);
+		free(rv);
 		*errp = "no rules are applied: the steering fills their tables";
 		return (-1);
 	}
 	if (edge_enter(w, ed, errp) != 0) {
 		pthread_mutex_unlock(&lock);
 		free(v);
+		free(rv);
 		return (-1);
 	}
 	free(ed->steers);
 	ed->steers = v;
 	ed->nsteers = n;
 	ed->steered = false;
+	free(ed->routes);
+	ed->routes = rv;
+	ed->nroutes = nr;
+	ed->routed = false;
 	step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "steer%s%s: "
-	    "%d prefix%s", jail[0] != '\0' ? " of " : "", jail, n, n == 1 ?
-	    "" : "es");
+	    "%d prefix%s%s%s", jail[0] != '\0' ? " of " : "", jail, n, n == 1 ?
+	    "" : "es", nr > 0 ? ", the breakout's default route" : "", nr > 1 ?
+	    "s" : "");
 	rc = n > 0 ? steer_apply(w, ed, true, errp) : 0;
+	if (rc == 0 && nr > 0)
+		rc = routes_apply(w, ed, true, errp);
 	step_end(w, step, rc == 0, rc == 0 ? NULL : "%s", *errp);
 	file = edge_file(w, ed, STEER_FILE);
 	pthread_mutex_unlock(&lock);
 	if (rc != 0)
 		return (-1);
 	e = NULL;
-	if (edge_keep(jail, file, json, n == 0, &e) != 0) {
+	if (edge_keep(jail, file, json, n == 0 && nr == 0, &e) != 0) {
 		*errp = wfmt(w, "%s: %s", file, e);
 		return (-1);
 	}
@@ -1205,6 +1354,9 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	}
 	/* The tables are new and empty: the steering fills them again. */
 	ed->steered = false;
+	if (ed->nroutes > 0 && routes_apply(w, ed, true, &err) != 0)
+		logmsg(LOG_WARNING, "sdwan%s%s: the breakout's route not steered: "
+		    "%s", ed->jail[0] != '\0' ? " of " : "", ed->jail, err);
 	if (ed->nsteers > 0 && ed->set != 0 && steer_apply(w, ed, true, &err) !=
 	    0)
 		logmsg(LOG_WARNING, "sdwan: steering not applied: %s", err);
@@ -1418,6 +1570,36 @@ edge_json(struct work *w, const struct edge *ed, ucl_object_t *top)
 	ucl_object_insert_key(top, arr, "steer", 0, false);
 	ucl_object_insert_key(top, ucl_object_frombool(steered), "steered", 0,
 	    false);
+	/* The breakout's routes steered, where there are any. */
+	if (ed->nroutes == 0)
+		return;
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < ed->nroutes; i++) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(e, ucl_object_fromint(ed->routes[i].fib),
+		    "fib", 0, false);
+		ucl_object_insert_key(e, ucl_object_fromstring(ed->routes[i].dest),
+		    "destination", 0, false);
+		ucl_object_insert_key(e, ucl_object_fromint(ed->routes[i].chosen),
+		    "chosen", 0, false);
+		cs = ucl_object_typed_new(UCL_ARRAY);
+		for (k = 0; k < ed->routes[i].ncand; k++) {
+			c = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(c, ucl_object_fromstring(
+			    ed->routes[i].cand[k].id), "id", 0, false);
+			ucl_object_insert_key(c, ucl_object_fromstring(
+			    ed->routes[i].cand[k].via), "via", 0, false);
+			st = probe_state_of(ed->jail, ed->routes[i].cand[k].id);
+			ucl_object_insert_key(c, ucl_object_fromstring(st ==
+			    PROBE_DOWN ? "down" : st == PROBE_UP ? "up" : st ==
+			    PROBE_NONE ? "not probed" : "unknown"), "state", 0,
+			    false);
+			ucl_array_append(cs, c);
+		}
+		ucl_object_insert_key(e, cs, "candidates", 0, false);
+		ucl_array_append(arr, e);
+	}
+	ucl_object_insert_key(top, arr, "routes", 0, false);
 }
 
 /*

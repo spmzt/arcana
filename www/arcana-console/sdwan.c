@@ -2700,6 +2700,11 @@ check_doc(const ucl_object_t *doc, struct ck *c)
 			else if (str(e, "gateway") != NULL && !address(str(e,
 			    "gateway"), &a))
 				ok = fail(c, "its gateway is an address");
+			else if (str(e, "beacon") != NULL && !address(str(e,
+			    "beacon"), &a))
+				ok = fail(c, "its beacon is an address: what is probed "
+				    "by this uplink when the edge has several "
+				    "breakouts");
 			else if (ucl_flag(e, "breakout") && strcmp(str(u,
 			    "type"), "public") != 0)
 				ok = fail(c, "only an Internet Access, a public "

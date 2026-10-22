@@ -367,6 +367,7 @@ struct plan {
 	ucl_object_t		*notes;		/* what the plan leaves out, and why */
 	ucl_object_t		*ready;		/* the document deployed, its own */
 	ucl_object_t		*learned;	/* sid/ifname: the host's address */
+	ucl_object_t		*boroutes;	/* sid: the breakout's steered routes */
 	char			 why[300];
 };
 /*
@@ -5107,7 +5108,14 @@ rules_build(struct plan *pl, const char *sid)
 	o = object(pl, sid, "steer", PH_STEER, "the steering: %u far "
 	    "prefix%s, each by the tunnels that may carry it",
 	    ucl_array_size(entries), ucl_array_size(entries) == 1 ? "" : "es");
-	if (o != NULL) {
+	if (o != NULL && ucl_object_lookup(pl->boroutes, sid) != NULL) {
+		j = job("sdwan-steer", "entries", entries, NULL);
+		put(j, "routes", ucl_object_copy(ucl_object_lookup(pl->boroutes,
+		    sid)));
+		make(o, j);
+		unmake(o, job("sdwan-steer", "entries", ucl_object_typed_new(
+		    UCL_ARRAY), NULL));
+	} else	if (o != NULL) {
 		make(o, job("sdwan-steer", "entries", entries, NULL));
 		unmake(o, job("sdwan-steer", "entries", ucl_object_typed_new(
 		    UCL_ARRAY), NULL));
@@ -5893,6 +5901,79 @@ bird_build(struct plan *pl, const ucl_object_t *doc)
 }
 
 /*
+ * The edge's own breakout UCS end points of a service, the most
+ * preferred first (the order of the document among equals); how many.
+ */
+static int
+breakouts_of(struct plan *pl, const ucl_object_t *sw, const char *sid,
+    const ucl_object_t **out, int max)
+{
+	const ucl_object_t	*edge, *uep, *t;
+	ucl_object_iter_t	 it;
+	int			 n, i, k;
+
+	edge = by(ucl_object_lookup(pl->doc, "edges"), "server", sid);
+	n = 0;
+	it = NULL;
+	while (n < max && (uep = ucl_object_iterate(ucl_object_lookup(edge,
+	    "ucs_end_points"), &it, true)) != NULL)
+		if (ucl_flag(uep, "breakout") && in_list(ucl_object_lookup(sw,
+		    "ucs"), str(uep, "ucs")))
+			out[n++] = uep;
+	for (i = 1; i < n; i++) {
+		t = out[i];
+		for (k = i; k > 0 && ucl_object_toint(ucl_object_lookup(out[k -
+		    1], "preference")) < ucl_object_toint(ucl_object_lookup(t,
+		    "preference")); k--)
+			out[k] = out[k - 1];
+		out[k] = t;
+	}
+	return (n);
+}
+
+/*
+ * A probe target of an edge's, beside the tunnels': the service's
+ * settings, through the table said.
+ */
+static void
+probe_target(struct plan *pl, const char *sid, const ucl_object_t *sw,
+    const char *id, const char *address, int64_t fib)
+{
+	const ucl_object_t	*po, *v;
+	ucl_object_iter_t	 pit;
+	ucl_object_t		*o, *tg, *targets, *j;
+
+	o = (ucl_object_t *)(uintptr_t)by(ucl_object_lookup(pl->edges, sid),
+	    "key", "probes");
+	if (o == NULL) {
+		o = object(pl, sid, "probes", PH_PROBE, "the tunnels measured: "
+		    "ICMP echo through the service's table");
+		if (o == NULL)
+			return;
+		make(o, job("sdwan-probes", "targets", ucl_object_typed_new(
+		    UCL_ARRAY), NULL));
+		unmake(o, job("sdwan-probes", "targets", ucl_object_typed_new(
+		    UCL_ARRAY), NULL));
+	}
+	j = (ucl_object_t *)(uintptr_t)ucl_array_find_index(ucl_object_lookup(o,
+	    "make"), 0);
+	targets = (ucl_object_t *)(uintptr_t)ucl_object_lookup(j, "targets");
+	tg = ucl_object_typed_new(UCL_OBJECT);
+	put(tg, "id", S(id));
+	put(tg, "address", S(address));
+	put(tg, "fib", I(fib));
+	if ((po = ucl_object_lookup(ucl_object_lookup(sw, "intervals"), "eval"))
+	    != NULL)
+		put(tg, "eval", ucl_object_copy(po));
+	if ((po = ucl_object_lookup(sw, "probe")) != NULL) {
+		pit = NULL;
+		while ((v = ucl_object_iterate(po, &pit, true)) != NULL)
+			put(tg, ucl_object_key(v), ucl_object_copy(v));
+	}
+	ucl_array_append(targets, tg);
+}
+
+/*
  * What every edge is to have: pl->edges, each edge's objects; NULL and
  * pl->why when it cannot be said.
  */
@@ -5916,6 +5997,7 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 	pl->tunnels = ucl_object_typed_new(UCL_ARRAY);
 	pl->lists = lists_kept();
 	pl->used = ucl_object_typed_new(UCL_OBJECT);
+	pl->boroutes = ucl_object_typed_new(UCL_OBJECT);
 	pl->learned = ucl_object_typed_new(UCL_OBJECT);
 	/* The hosts as they are reached now: a UCS end point's address may
 	 * be asked of its host (ucs_address). */
@@ -6347,7 +6429,7 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 	it = NULL;
 	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
 	    true)) != NULL) {
-		const ucl_object_t	*edge, *bo, *tt, *fe;
+		const ucl_object_t	*edge, *tt, *fe;
 		const char		*bo_sid, *gw;
 		bool			 local;
 		int			 af;
@@ -6359,7 +6441,7 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 
 			if (!breaks_here(pl, sw, sid))
 				continue;
-			bo = breakout_of(pl, sw, sid, &local, &bo_sid);
+			(void)breakout_of(pl, sw, sid, &local, &bo_sid);
 			/* A breakout domain of its own (Mplify 119 R20-R26):
 			 * the default route there, the UNIs' routes with it,
 			 * the subscriber's table without a default route. */
@@ -6367,27 +6449,96 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 			if (fib != ucl_object_toint(ucl_object_lookup(sw, "fib")))
 				breakout_uni_routes(pl, sid, sw, fib);
 			if (local) {
-				gw = str(bo, "gateway");
-				if (gw == NULL) {
-					char	note[300];
+				/*
+				 * By the edge's own uplinks, the most preferred
+				 * first: its gateway the table's default route;
+				 * the others stand by, each with a route to its
+				 * gateway, and with several the agent probes each
+				 * one's beacon (its gateway, unless said) and puts
+				 * the first that answers in the default's place
+				 * (breakout failover, Arcana's own).
+				 */
+				const ucl_object_t	*cands[16];
+				ucl_object_t		*rts[2], *cd, *arr;
+				const char		*beacon;
+				char			 key[80];
+				int			 nc, c, fam;
 
-					snprintf(note, sizeof(note), "swvc %s: "
-					    "%s breaks out by %s, which has no "
-					    "gateway: no default route in its "
-					    "table", str(sw, "id"),
-					    server_name_of(sid), str(bo, "id"));
-					ucl_array_append(pl->notes, S(note));
-					continue;
+				rts[0] = rts[1] = NULL;
+				nc = breakouts_of(pl, sw, sid, cands, 16);
+				for (c = 0; c < nc; c++) {
+					gw = str(cands[c], "gateway");
+					if (gw == NULL) {
+						char	note[300];
+
+						snprintf(note, sizeof(note), "swvc %s: "
+						    "%s breaks out by %s, which has no "
+						    "gateway: no default route by it",
+						    str(sw, "id"), server_name_of(sid),
+						    str(cands[c], "id"));
+						ucl_array_append(pl->notes, S(note));
+						continue;
+					}
+					af = family(gw);
+					fam = af == AF_INET ? 0 : 1;
+					snprintf(n, sizeof(n), "%s/%d", gw, af == AF_INET
+					    ? 32 : 128);
+					route_fib_obj(pl, sid, sw, fib, PH_ROUTE, n,
+					    str(cands[c], "interface"), "the breakout "
+					    "gateway, by its interface");
+					if (rts[fam] == NULL) {
+						route_fib_obj(pl, sid, sw, fib, PH_ROUTE, af
+						    == AF_INET ? "0.0.0.0/0" : "::/0", gw,
+						    "the Internet, by local breakout");
+						rts[fam] = ucl_object_typed_new(UCL_OBJECT);
+						put(rts[fam], "fib", I(fib));
+						put(rts[fam], "destination", S(af == AF_INET
+						    ? "0.0.0.0/0" : "::/0"));
+						put(rts[fam], "candidates",
+						    ucl_object_typed_new(UCL_ARRAY));
+					}
+					cd = ucl_object_typed_new(UCL_OBJECT);
+					snprintf(key, sizeof(key), "bo:%s", str(cands[c],
+					    "id"));
+					put(cd, "id", S(key));
+					put(cd, "via", S(gw));
+					ucl_array_append((ucl_object_t *)(uintptr_t)
+					    ucl_object_lookup(rts[fam], "candidates"), cd);
 				}
-				af = family(gw);
-				snprintf(n, sizeof(n), "%s/%d", gw, af == AF_INET ?
-				    32 : 128);
-				route_fib_obj(pl, sid, sw, fib, PH_ROUTE, n, str(bo,
-				    "interface"), "the breakout gateway, by its "
-				    "interface");
-				route_fib_obj(pl, sid, sw, fib, PH_ROUTE, af ==
-				    AF_INET ? "0.0.0.0/0" : "::/0", gw, "the Internet, "
-				    "by local breakout");
+				for (fam = 0; fam < 2; fam++) {
+					if (rts[fam] == NULL)
+						continue;
+					if (ucl_array_size(ucl_object_lookup(rts[fam],
+					    "candidates")) < 2) {
+						ucl_object_unref(rts[fam]);
+						continue;
+					}
+					for (c = 0; c < nc; c++) {
+						gw = str(cands[c], "gateway");
+						if (gw == NULL || (family(gw) == AF_INET) !=
+						    (fam == 0))
+							continue;
+						beacon = str(cands[c], "beacon") != NULL ?
+						    str(cands[c], "beacon") : gw;
+						if (strcmp(beacon, gw) != 0) {
+							snprintf(n, sizeof(n), "%s/%d", beacon,
+							    fam == 0 ? 32 : 128);
+							route_fib_obj(pl, sid, sw, fib,
+							    PH_ROUTE, n, gw, "the breakout's "
+							    "beacon, by its gateway");
+						}
+						snprintf(key, sizeof(key), "bo:%s",
+						    str(cands[c], "id"));
+						probe_target(pl, sid, sw, key, beacon, fib);
+					}
+					if ((arr = (ucl_object_t *)(uintptr_t)
+					    ucl_object_lookup(pl->boroutes, sid)) == NULL) {
+						arr = ucl_object_typed_new(UCL_ARRAY);
+						ucl_object_insert_key(pl->boroutes, arr, sid,
+						    0, true);
+					}
+					ucl_array_append(arr, rts[fam]);
+				}
 				continue;
 			}
 			for (af = AF_INET; af != AF_UNSPEC; af = af == AF_INET ?
@@ -6499,6 +6650,8 @@ plan_free(struct plan *pl)
 		ucl_object_unref(pl->notes);
 	if (pl->learned != NULL)
 		ucl_object_unref(pl->learned);
+	if (pl->boroutes != NULL)
+		ucl_object_unref(pl->boroutes);
 	if (pl->ready != NULL)
 		ucl_object_unref(pl->ready);
 	memset(pl, 0, sizeof(*pl));

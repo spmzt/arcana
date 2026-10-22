@@ -4943,6 +4943,12 @@ sdwan_modal(struct html *h)
 			    "place among this edge's uplinks, the higher first: the "
 			    "steering's order where a policy names no end points, "
 			    "and the breakout taken first. 0 to 65535.");
+			text_field(h, "Beacon", "beacon", lk != NULL && jstr(lk,
+			    "beacon") != NULL ? jstr(lk, "beacon") : "", "the gateway",
+			    "An address probed by this uplink where the edge has "
+			    "several breakouts: when it stops answering, the next "
+			    "breakout takes the default route. Empty: the gateway "
+			    "itself.");
 			h_raw(h, "</div><div class=\"two\">");
 			snprintf(nb, sizeof(nb), "%lld", (long long)jint(bg, "as", 0));
 			text_field(h, "BGP: the underlay's AS", "bgp_as", jint(bg,
@@ -6902,6 +6908,8 @@ sd_forms(const char *form, const ucl_object_t *f)
 		if ((v = jstr(f, "preference")) != NULL && v[0] != '\0')
 			ucl_object_insert_key(o, ucl_object_fromint(strtoll(v, NULL,
 			    10)), "preference", 0, false);
+		if ((v = jstr(f, "beacon")) != NULL && v[0] != '\0')
+			put_str(o, "beacon", v);
 		{
 			ucl_object_t	*rt = ucl_object_typed_new(UCL_OBJECT), *bg;
 

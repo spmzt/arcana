@@ -6695,11 +6695,116 @@ ATF_TC_BODY(sdwan_loop, tc)
 	    "route 10.1.0.0/24 via \\\"lo0\\\";\\n\\troute 10.1.8.0/22 via "
 	    "10.1.0.2;\\n}") != NULL && strstr(r.body, "route 10.30.0.0/24 via "
 	    "\\\"wg5\\\";") != NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"route:1:10.1.0.0/24\"") == NULL &&
-	    strstr(r.body, "\"key\":\"route:1:10.30.0.0/24\"") == NULL, "%s",
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"route:acme:10.1.0.0/24\"") == NULL &&
+	    strstr(r.body, "\"key\":\"route:acme:10.30.0.0/24\"") == NULL, "%s",
 	    r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\\\"gre100\\\", \\\"geneve102\\\", \\\"lo1") != NULL,
 	    "%s", r.body);
+	resp_free(&r);
+}
+
+CONSOLE_TC(sdwan_breakout, "Breakout failover: an edge with several breakout "
+    "uplinks has a route to each one's gateway, the default by the most "
+    "preferred, a probe to each one's beacon, and the agent told to put "
+    "the first that answers in the default's place")
+ATF_TC_BODY(sdwan_breakout, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		/* A second Internet Access, WireGuard, breaking out too, less
+		 * preferred, with a beacon of its own. */
+		{ "\"tunnel\":{\"kind\":\"gre\",\"ipsec\":true}}",
+		    "\"tunnel\":{\"kind\":\"gre\",\"ipsec\":true}},{\"id\":\"wgnet\","
+		    "\"type\":\"public\",\"billing\":\"flat-rate\",\"tunnel\":{"
+		    "\"kind\":\"wg\"}}" },
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"breakout\":true",
+		    "\"id\":\"a-wg\",\"ucs\":\"wgnet\",\"interface\":\"vtnet3\","
+		    "\"address\":\"203.0.113.1\",\"gateway\":\"203.0.113.254\","
+		    "\"beacon\":\"198.51.100.1\",\"breakout\":true,\"preference\":5},"
+		    "{\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\","
+		    "\"breakout\":true,\"preference\":10" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"ucs\":[\"inet\",\"mpls\"]", "\"ucs\":[\"inet\",\"wgnet\","
+		    "\"mpls\"]" },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* A beacon that is no address is refused. */
+	ATF_REQUIRE(swap_in(doc, "\"beacon\":\"198.51.100.1\"",
+	    "\"beacon\":\"nowhere\"", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "its beacon is an "
+	    "address") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/*
+	 * In the breakout table (2): each gateway by its interface, the
+	 * default by the preferred (inet, 10, over wg, 5), the wg one's
+	 * beacon by its gateway; a probe to each beacon; the steering's
+	 * route with both candidates in that order.
+	 */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"route:acme:2:192.0.2.254/32\"") !=
+	    NULL && strstr(r.body, "\"key\":\"route:acme:2:203.0.113.254/32\"") !=
+	    NULL && strstr(r.body, "\"key\":\"route:acme:2:198.51.100.1/32\"") != NULL,
+	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"destination\":\"0.0.0.0/0\",\"gateway\":"
+	    "\"192.0.2.254\"") != NULL && strstr(r.body, "\"destination\":"
+	    "\"0.0.0.0/0\",\"gateway\":\"203.0.113.254\"") == NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"id\":\"bo:a-inet\",\"address\":"
+	    "\"192.0.2.254\",\"fib\":2") != NULL && strstr(r.body, "\"id\":"
+	    "\"bo:a-wg\",\"address\":\"198.51.100.1\",\"fib\":2") != NULL, "%s",
+	    r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"routes\":[{\"fib\":2,\"destination\":"
+	    "\"0.0.0.0/0\",\"candidates\":[{\"id\":\"bo:a-inet\",\"via\":"
+	    "\"192.0.2.254\"},{\"id\":\"bo:a-wg\",\"via\":\"203.0.113.254\"}]}]")
+	    != NULL, "%s", r.body);
 	resp_free(&r);
 }
 
@@ -8208,6 +8313,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan_mesh);
 	ATF_TP_ADD_TC(tp, sdwan_host);
 	ATF_TP_ADD_TC(tp, sdwan_loop);
+	ATF_TP_ADD_TC(tp, sdwan_breakout);
 	ATF_TP_ADD_TC(tp, sdwan_lists);
 	ATF_TP_ADD_TC(tp, sdwan_uswe);
 	ATF_TP_ADD_TC(tp, sdwan_jail);
