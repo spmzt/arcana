@@ -835,6 +835,23 @@ undo_prepare(struct qjob *j)
 			j->undo_kept = j->undo_files[0].had;
 		}
 		break;
+	case ARC_JOB_KIND_IPSEC_SA:
+		/* The key pair, the next pair and what was set, as files; the
+		 * SAs in place come back by derivation, so those set by hand
+		 * refuse here. */
+		if ((e = sa_undo_check(&j->w, sp)) != NULL)
+			return (e);
+		{
+			const char	*key, *next, *state;
+
+			sa_files(&j->w, sp->interface, &key, &next, &state);
+			if (!undo_snap_file(j, key) || !undo_snap_file(j, next) ||
+			    !undo_snap_file(j, state))
+				return (wfmt(&j->w, "not changed: %s's key files "
+				    "could not be read, so they could not be put "
+				    "back: %s", sp->interface, strerror(errno)));
+		}
+		break;
 	case ARC_JOB_KIND_BIRD:
 		/* Enabled or disabled: from the state it has now.  A restart
 		 * or reload leaves nothing to put back, and the job says so.
@@ -1147,6 +1164,9 @@ undo(struct qjob *j)
 		else
 			rc = undo_files_back(j, &e) == 0 ? ipsec_undo(&j->w,
 			    sp->conn, !j->undo_kept, &e) : -1;
+		break;
+	case ARC_JOB_KIND_IPSEC_SA:
+		rc = undo_files_back(j, &e) == 0 ? sa_undo(&j->w, sp, &e) : -1;
 		break;
 	case ARC_JOB_KIND_WIREGUARD:
 		rc = wg_syncconf(&j->w, sp->interface, j->undo_secret, &e);

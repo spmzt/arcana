@@ -323,6 +323,9 @@ sa_state_load(struct work *w, const char *ifname)
 	return (o);
 }
 
+static const char	*sstr(const ucl_object_t *, const char *);
+static ucl_object_t	*derive_words(const struct sa_words *);
+
 static int
 sa_state_save(struct work *w, const char *ifname, const ucl_object_t *o,
     const char **errp)
@@ -841,6 +844,12 @@ sa_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		    "at", 0, false);
 		(void)ucl_object_delete_key(stt, "next_spi_in");
 		(void)ucl_object_delete_key(stt, "next_spi_out");
+		if (ucl_object_lookup(stt, "next_derive") != NULL)
+			ucl_object_replace_key(stt, ucl_object_copy(ucl_object_lookup(
+			    stt, "next_derive")), "derive", 0, false);
+		else
+			(void)ucl_object_delete_key(stt, "derive");
+		(void)ucl_object_delete_key(stt, "next_derive");
 		rc = sa_state_save(w, sp->interface, stt, errp);
 		if (rc == 0)
 			step_end(w, step, true, "spi in %#x out %#x", u32(stt,
@@ -922,7 +931,23 @@ sa_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		return (-1);
 	}
 	/* Kept: the SPIs put in, for a rotation to take out; when; for how
-	 * long. */
+	 * long; and a derive's words, so that a safe job not confirmed can
+	 * put the SAs in again as they were (set by hand, they cannot be). */
+	if (derive) {
+		ucl_object_t	*d = derive_words(&sw);
+
+		/* A rotation derives in, then out: both, once both are. */
+		if (rotate && sw.install != 0 && ucl_object_lookup(stt,
+		    "next_derive") != NULL && sstr(ucl_object_lookup(stt,
+		    "next_derive"), "install") != NULL && strcmp(sstr(
+		    ucl_object_lookup(stt, "next_derive"), "install"), sstr(d,
+		    "install")) != 0)
+			ucl_object_replace_key(d, ucl_object_fromstring("both"),
+			    "install", 0, false);
+		ucl_object_replace_key(stt, d, rotate ? "next_derive" : "derive",
+		    0, false);
+	} else
+		(void)ucl_object_delete_key(stt, "derive");
 	if (in)
 		ucl_object_replace_key(stt, ucl_object_fromint(sw.spi_in), rotate ?
 		    "next_spi_in" : "spi_in", 0, false);
@@ -937,6 +962,182 @@ sa_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		    "lifetime", 0, false);
 	rc = sa_state_save(w, sp->interface, stt, errp);
 	ucl_object_unref(stt);
+	return (rc);
+}
+
+/* ---- Safe mode ------------------------------------------------------ */
+
+static const char *
+sstr(const ucl_object_t *o, const char *key)
+{
+	const ucl_object_t	*v;
+
+	v = o != NULL ? ucl_object_lookup(o, key) : NULL;
+	return (v != NULL && ucl_object_type(v) == UCL_STRING ?
+	    ucl_object_tostring(v) : NULL);
+}
+
+/* A derive's words as the state file keeps them: nothing secret, the
+ * keys come from the pair and the peer's public half. */
+static ucl_object_t *
+derive_words(const struct sa_words *sw)
+{
+	ucl_object_t	*o;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(o, ucl_object_fromstring(sw->peer), "peer", 0,
+	    false);
+	ucl_object_insert_key(o, ucl_object_fromint(sw->epoch), "epoch", 0,
+	    false);
+	ucl_object_insert_key(o, ucl_object_fromstring(sw->enc), "enc", 0,
+	    false);
+	if (sw->auth != NULL)
+		ucl_object_insert_key(o, ucl_object_fromstring(sw->auth), "auth",
+		    0, false);
+	ucl_object_insert_key(o, ucl_object_fromstring(sw->install == 1 ? "in" :
+	    sw->install == 2 ? "out" : "both"), "install", 0, false);
+	if (sw->encap)
+		ucl_object_insert_key(o, ucl_object_frombool(true), "encap", 0,
+		    false);
+	if (sw->esn)
+		ucl_object_insert_key(o, ucl_object_frombool(true), "esn", 0,
+		    false);
+	if (sw->lifetime != 0)
+		ucl_object_insert_key(o, ucl_object_fromint(sw->lifetime),
+		    "lifetime", 0, false);
+	return (o);
+}
+
+/* The SAs derived again from the words kept, the pair's or the next's. */
+static int
+sa_rederive(struct work *w, const struct arc_job_spec *sp,
+    const ucl_object_t *d, bool next, const char **errp)
+{
+	struct arc_job_spec	 s;
+	const char		*v[20];
+	size_t			 n;
+
+	if (sstr(d, "peer") == NULL || sstr(d, "enc") == NULL) {
+		*errp = wfmt(w, "%s: the words of its SAs were not kept whole",
+		    sp->interface);
+		return (-1);
+	}
+	n = 0;
+	v[n++] = "peer";
+	v[n++] = sstr(d, "peer");
+	v[n++] = "epoch";
+	v[n++] = wfmt(w, "%u", u32(d, "epoch"));
+	v[n++] = "enc";
+	v[n++] = sstr(d, "enc");
+	if (sstr(d, "auth") != NULL) {
+		v[n++] = "auth";
+		v[n++] = sstr(d, "auth");
+	}
+	v[n++] = "install";
+	v[n++] = sstr(d, "install") != NULL ? sstr(d, "install") : "both";
+	if (ucl_object_toboolean(ucl_object_lookup(d, "encap")))
+		v[n++] = "encap";
+	if (ucl_object_toboolean(ucl_object_lookup(d, "esn")))
+		v[n++] = "esn";
+	if (u32(d, "lifetime") != 0) {
+		v[n++] = "lifetime";
+		v[n++] = wfmt(w, "%u", u32(d, "lifetime"));
+	}
+	if (next)
+		v[n++] = "next";
+	s = *sp;
+	s.verb = "derive";
+	s.names.n = n;
+	s.names.v = v;
+	return (sa_job(w, &s, errp));
+}
+
+/* The files a safe job puts back: the pair, the next pair, the state. */
+void
+sa_files(struct work *w, const char *ifname, const char **key,
+    const char **next, const char **state)
+{
+	char	buf[MAXPATHLEN];
+
+	*key = key_path(w, ifname, false);
+	*next = key_path(w, ifname, true);
+	sdwan_conf_path(wfmt(w, STATE_FILE, ifname), buf, sizeof(buf));
+	*state = wstrdup(w, buf);
+}
+
+/*
+ * Can a safe job of this spec be undone?  A key pair made is put back
+ * from its file; the SAs in place come back only when they were
+ * derived, their words kept: set by hand, their keys are nowhere.
+ * NULL, or why not.
+ */
+const char *
+sa_undo_check(struct work *w, const struct arc_job_spec *sp)
+{
+	ucl_object_t	*stt;
+	const char	*e;
+
+	if (sp->verb == NULL || sp->interface == NULL || strcmp(sp->verb,
+	    "key") == 0)
+		return (NULL);
+	if ((stt = sa_state_load(w, sp->interface)) == NULL)
+		return (NULL);
+	e = NULL;
+	if (((u32(stt, "spi_in") != 0 || u32(stt, "spi_out") != 0) &&
+	    ucl_object_lookup(stt, "derive") == NULL) || ((u32(stt,
+	    "next_spi_in") != 0 || u32(stt, "next_spi_out") != 0) &&
+	    ucl_object_lookup(stt, "next_derive") == NULL))
+		e = wfmt(w, "%s: the SAs in place were set by hand, not "
+		    "derived, and could not be put back: not in safe mode",
+		    sp->interface);
+	ucl_object_unref(stt);
+	return (e);
+}
+
+/*
+ * After the files are back as they were: the kernel's SAs of the pair
+ * gone, and those the state file says were in derived again, the
+ * pair's and the next pair's.
+ */
+int
+sa_undo(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	ucl_object_t	*stt;
+	char		 text[400];
+	int		 step, rc;
+	bool		 any;
+
+	if (strcmp(sp->verb, "key") == 0)
+		return (0);
+	step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s: its "
+	    "SAs as they were", sp->interface);
+	snprintf(text, sizeof(text), "deleteall %s %s esp ;\ndeleteall %s %s "
+	    "esp ;\n", sp->tunnel_local, sp->tunnel_remote, sp->tunnel_remote,
+	    sp->tunnel_local);
+	(void)sa_setkey(w, text, false, errp);
+	rc = 0;
+	any = false;
+	if ((stt = sa_state_load(w, sp->interface)) != NULL) {
+		if ((u32(stt, "spi_in") != 0 || u32(stt, "spi_out") != 0) &&
+		    ucl_object_lookup(stt, "derive") != NULL) {
+			rc = sa_rederive(w, sp, ucl_object_lookup(stt, "derive"),
+			    false, errp);
+			any = true;
+		}
+		if (rc == 0 && (u32(stt, "next_spi_in") != 0 || u32(stt,
+		    "next_spi_out") != 0) && ucl_object_lookup(stt,
+		    "next_derive") != NULL) {
+			rc = sa_rederive(w, sp, ucl_object_lookup(stt,
+			    "next_derive"), true, errp);
+			any = true;
+		}
+		ucl_object_unref(stt);
+	}
+	if (rc != 0)
+		step_end(w, step, false, "%s", *errp);
+	else
+		step_end(w, step, true, any ? "derived again as kept" : "none "
+		    "were in: none put in");
 	return (rc);
 }
 

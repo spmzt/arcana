@@ -23,7 +23,7 @@
 _Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
     "written for cblink 0.2: its wire, its structs");
 
-#define	ARCANA_AGENT_VERSION	"0.195.0"
+#define	ARCANA_AGENT_VERSION	"0.196.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -696,6 +696,11 @@ int		 do_rtadvd(struct work *, const char *, const char *const *,
 /* invidia/sa.c: manually keyed SAs by setkey(8). */
 const char	*sa_check(const struct arc_job_spec *);
 int		 do_sa_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+void		 sa_files(struct work *, const char *, const char **,
+		    const char **, const char **);
+const char	*sa_undo_check(struct work *, const struct arc_job_spec *);
+int		 sa_undo(struct work *, const struct arc_job_spec *,
 		    const char **);
 void		 sa_keys_json(struct work *, struct ucl_object_s *);
 bool		 rtadvd_prefix_ok(const char *);

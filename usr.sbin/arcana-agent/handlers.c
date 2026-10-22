@@ -2845,9 +2845,9 @@ check_spec(const struct arc_job_spec *sp)
 			    "safe mode");
 		return (ipsec_check(sp));
 	case ARC_JOB_KIND_IPSEC_SA:
-		if (sp->safe)
-			return ("security associations are not undone: not in "
-			    "safe mode");
+		/* In safe mode, the key files and the state go back, the SAs
+		 * derived again from the words kept; the runner refuses, before
+		 * the change, SAs set by hand, whose keys are nowhere. */
 		return (sa_check(sp));
 	case ARC_JOB_KIND_PKG_INSTALL:
 		if (sp->safe)
