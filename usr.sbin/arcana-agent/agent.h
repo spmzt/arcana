@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.183.0"
+#define	ARCANA_AGENT_VERSION	"0.184.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -506,6 +506,10 @@ const char	*wg_check(struct work *, const struct arc_job_spec *);
 int		 do_wg(struct work *, const struct arc_job_spec *,
 		    const char **);
 void		 wg_forget(struct work *, const char *);
+char		*wg_conf_path(struct work *, const char *);
+int		 wg_showconf(struct work *, const char *, char **, const char **);
+int		 wg_syncconf(struct work *, const char *, const char *,
+		    const char **);
 bool		 wg_key_ok(const char *);
 
 /* luxuria/ipsec.c: a plugin, strongSwan through swanctl(8). */

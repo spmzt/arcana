@@ -726,6 +726,11 @@ submodule arcana-jobs-kinds {
             description
               "Preshared key";
           }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
         }
       }
       case bird {

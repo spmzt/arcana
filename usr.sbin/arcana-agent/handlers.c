@@ -2974,9 +2974,6 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_SMTPD:
 		return (smtpd_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
-		if (sp->safe)
-			return ("wireguard changes are not undone: not in "
-			    "safe mode");
 		if (sp->interface == NULL || !valid_ifname(sp->interface))
 			return ("invalid interface name");
 		work_init(&cw);

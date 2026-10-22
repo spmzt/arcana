@@ -1871,7 +1871,14 @@ and BIRD told something: a protocol enabled or disabled is put back as
 it was,
 .Cm configure
 runs on BIRD's own timer, confirmed or undone with the job, and a restart
-or reload has nothing to put back, which the job says.
+or reload has nothing to put back, which the job says), and a WireGuard
+interface's key, port or peers, synced back from what
+.Xr wg 8
+printed before the change, with
+.Xr wg-quick 8 Ns 's
+file and the
+.Pa rc.conf
+variables as they were.
 A change that would take away the address the request came in by is
 refused unless it is made in safe mode.
 .Pp

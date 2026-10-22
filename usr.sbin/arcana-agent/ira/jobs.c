@@ -13,10 +13,12 @@
  * trace, which grows while a job runs, are kept for whoever asks later.
  */
 
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/queue.h>
 
 #include <err.h>
+#include <errno.h>
 #include <limits.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -58,6 +60,20 @@ struct qjob {
 	bool			 undo_kept;	/* rc.conf had the route */
 	bool			 undo_enabled;	/* bird: the protocol was */
 	const char		*undo_note;	/* why nothing is put back */
+	char			*undo_secret;	/* malloc'd, zeroed at the end:
+						 * wireguard: showconf before */
+	struct undo_file {		/* files as they were: text, or none */
+		const char	*path;
+		char		*text;	/* malloc'd, zeroed at the end */
+		size_t		 len;
+		bool		 had;
+	}			 undo_files[4];
+	int			 undo_nfiles;
+	struct undo_rc {		/* rc.conf variables as they were */
+		const char	*name;
+		const char	*value;	/* NULL: unset */
+	}			 undo_rc[6];
+	int			 undo_nrc;
 	bool			 undo_none;	/* it changed nothing: as it was */
 	bool			 undo_live;	/* rc.conf had it before: keep that */
 	char			*title;
@@ -576,6 +592,117 @@ static const uint8_t svc_reverse[] = {
 };
 
 /*
+ * A file as it is before a safe change (its text, or that there is
+ * none), to be put back after; the text may hold a key, so it is
+ * malloc'd and zeroed at the job's end.  False when it cannot be read.
+ */
+static bool
+undo_snap_file(struct qjob *j, const char *path)
+{
+	struct undo_file	*f;
+	char			*text;
+	size_t			 len;
+
+	if (j->undo_nfiles == (int)nitems(j->undo_files))
+		return (false);
+	f = &j->undo_files[j->undo_nfiles];
+	f->path = path;
+	f->text = NULL;
+	f->len = 0;
+	if ((text = scope_slurp(&j->w, path, &len)) != NULL) {
+		if ((f->text = malloc(len + 1)) == NULL)
+			err(1, "malloc");
+		memcpy(f->text, text, len);
+		f->text[len] = '\0';
+		explicit_bzero(text, len);
+		f->len = len;
+		f->had = true;
+	} else if (errno == ENOENT)
+		f->had = false;
+	else
+		return (false);
+	j->undo_nfiles++;
+	return (true);
+}
+
+/* The files back as they were: the text written, or the file gone. */
+static int
+undo_files_back(struct qjob *j, const char **errp)
+{
+	const struct undo_file	*f;
+	int			 i, step, rc;
+
+	rc = 0;
+	for (i = 0; i < j->undo_nfiles; i++) {
+		f = &j->undo_files[i];
+		step = step_begin(&j->w, ARC_STEP_KIND_FILE, f->had ? "write" :
+		    "remove", "%s, as it was", f->path);
+		if (f->had)
+			rc = scope_replace(&j->w, f->path, f->text, f->len, 0600,
+			    NULL) == 0 ? rc : -1;
+		else if (scope_unlink(&j->w, f->path) != 0 && errno != ENOENT)
+			rc = -1;
+		step_end(&j->w, step, rc == 0, rc == 0 ? NULL : "%s",
+		    strerror(errno));
+		if (rc != 0) {
+			*errp = wfmt(&j->w, "%s: %s", f->path, strerror(errno));
+			return (-1);
+		}
+	}
+	return (0);
+}
+
+/* An rc.conf variable as it is, whole: a list comes back exactly. */
+static void
+undo_snap_rc(struct qjob *j, const char *name)
+{
+
+	if (j->undo_nrc == (int)nitems(j->undo_rc))
+		return;
+	j->undo_rc[j->undo_nrc].name = name;
+	j->undo_rc[j->undo_nrc].value = rc_get(&j->w, name);
+	j->undo_nrc++;
+}
+
+static int
+undo_rc_back(struct qjob *j, const char **errp)
+{
+	const struct undo_rc	*r;
+	int			 i;
+
+	for (i = 0; i < j->undo_nrc; i++) {
+		r = &j->undo_rc[i];
+		if (r->value == NULL)
+			rc_unset(&j->w, r->name);
+		else if (rc_set(&j->w, r->name, "=", r->value, errp) != 0)
+			return (-1);
+	}
+	return (0);
+}
+
+/* What a safe change kept to put things back: gone, keys zeroed. */
+static void
+undo_forget(struct qjob *j)
+{
+	int	i;
+
+	if (j->undo_secret != NULL) {
+		explicit_bzero(j->undo_secret, strlen(j->undo_secret));
+		free(j->undo_secret);
+		j->undo_secret = NULL;
+	}
+	for (i = 0; i < j->undo_nfiles; i++)
+		if (j->undo_files[i].text != NULL) {
+			explicit_bzero(j->undo_files[i].text,
+			    j->undo_files[i].len);
+			free(j->undo_files[i].text);
+			j->undo_files[i].text = NULL;
+		}
+	j->undo_nfiles = 0;
+	j->undo_nrc = 0;
+}
+
+/*
  * Before a safe change: what it will take to put things back, which
  * afterwards can no longer be read.
  */
@@ -608,6 +735,28 @@ undo_prepare(struct qjob *j)
 		    (j->undo_conf != NULL && strcmp(j->undo_conf,
 		    sp->names.v[1]) == 0)))
 			j->undo_none = true;
+		break;
+	case ARC_JOB_KIND_WIREGUARD:
+		/* The interface whole as wg prints it (key, port, peers), to
+		 * sync it back; with persist, wg-quick's file and the rc.conf
+		 * variables that bring it up, as they are. */
+		e = NULL;
+		if (wg_showconf(&j->w, sp->interface, &j->undo_secret, &e) != 0)
+			return (wfmt(&j->w, "not changed: %s could not be read, "
+			    "so it could not be put back: %s", sp->interface, e));
+		if (sp->persist) {
+			if (!undo_snap_file(j, wg_conf_path(&j->w,
+			    sp->interface)))
+				return (wfmt(&j->w, "not changed: %s could not "
+				    "be read, so it could not be put back: %s",
+				    wg_conf_path(&j->w, sp->interface),
+				    strerror(errno)));
+			undo_snap_rc(j, "wireguard_interfaces");
+			undo_snap_rc(j, "wireguard_enable");
+			undo_snap_rc(j, "cloned_interfaces");
+			undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s", rc_ifname(&j->w,
+			    sp->interface)));
+		}
 		break;
 	case ARC_JOB_KIND_BIRD:
 		/* Enabled or disabled: from the state it has now.  A restart
@@ -863,6 +1012,12 @@ undo(struct qjob *j)
 		return (wfmt(&j->w, "not confirmed within %d s; %s",
 		    safe_wait(sp), j->undo_note));
 	switch (sp->kind) {
+	case ARC_JOB_KIND_WIREGUARD:
+		rc = wg_syncconf(&j->w, sp->interface, j->undo_secret, &e);
+		if (sp->persist && (undo_files_back(j, &e) != 0 ||
+		    undo_rc_back(j, &e) != 0))
+			rc = -1;
+		break;
 	case ARC_JOB_KIND_BIRD:
 		if (strcmp(sp->verb, "configure") == 0)
 			rc = bird_configure_undo(&j->w, &e);
@@ -1354,6 +1509,7 @@ run(struct qjob *j, bool lane)
 		held = false;
 	} else if (ok && go && sp->safe && (error = confirm_apply(j)) != NULL)
 		ok = false;
+	undo_forget(j);
 	/* The firewall's old rules waited for that: now they go. */
 	if (held)
 		(void)ipfw_settle(&j->w, true);

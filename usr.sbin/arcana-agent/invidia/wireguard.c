@@ -23,6 +23,7 @@
 #include <arpa/inet.h>
 
 #include <ctype.h>
+#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
@@ -490,5 +491,81 @@ do_wg(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	}
 	if (sp->persist)
 		return (wg_save(w, sp->interface, errp));
+	return (0);
+}
+
+/* The file wg-quick(8) reads for the interface, for a safe change's
+ * snapshot of it. */
+char *
+wg_conf_path(struct work *w, const char *ifname)
+{
+
+	return (conf_path(w, ifname));
+}
+
+/*
+ * The interface as wg(8) showconf prints it, private key included:
+ * malloc'd, never in w's pool, for the caller to zero and free.  What a
+ * safe change is put back from.
+ */
+int
+wg_showconf(struct work *w, const char *ifname, char **textp,
+    const char **errp)
+{
+	struct execres	 res;
+	char		*argv[4];
+	int		 rc;
+
+	argv[0] = (char *)(uintptr_t)opts.wg_bin;
+	argv[1] = (char *)(uintptr_t)"showconf";
+	argv[2] = (char *)(uintptr_t)ifname;
+	argv[3] = NULL;
+	exec_set_secret(true);
+	rc = run_exec(w, argv, &res);
+	exec_set_secret(false);
+	if (rc != 0 || res.out == NULL) {
+		*errp = wtext(w, exec_error(w, &res, "wg showconf"));
+		return (-1);
+	}
+	if ((*textp = strndup(res.out, res.outlen)) == NULL)
+		err(1, "strndup");
+	return (0);
+}
+
+/*
+ * The interface as it was: wg(8) syncconf from a file there only while
+ * wg reads it, which sets the key, the port and the whole set of peers
+ * back, and takes away what was added since.
+ */
+int
+wg_syncconf(struct work *w, const char *ifname, const char *text,
+    const char **errp)
+{
+	struct execres	 res;
+	char		*argv[5], *path;
+	int		 rc, step;
+
+	path = wfmt(w, "%s/.%s.sync.%08x", opts.wg_dir, ifname, arc4random());
+	if (scope_replace(w, path, text, strlen(text), 0600, NULL) != 0) {
+		*errp = wfmt(w, "%s: %s", opts.wg_dir, strerror(errno));
+		return (-1);
+	}
+	step = step_begin(w, ARC_STEP_KIND_EXEC, "wg", "syncconf %s: the key, "
+	    "the port and the peers as they were", ifname);
+	argv[0] = (char *)(uintptr_t)opts.wg_bin;
+	argv[1] = (char *)(uintptr_t)"syncconf";
+	argv[2] = (char *)(uintptr_t)ifname;
+	argv[3] = path;
+	argv[4] = NULL;
+	exec_set_secret(true);
+	rc = run_exec(w, argv, &res);
+	exec_set_secret(false);
+	(void)scope_rename(w, path, strrchr(path, '/') + 1, NULL);
+	if (rc != 0) {
+		*errp = wtext(w, exec_error(w, &res, "wg syncconf"));
+		step_end(w, step, false, "%s", *errp);
+		return (-1);
+	}
+	step_end(w, step, true, NULL);
 	return (0);
 }

@@ -146,6 +146,7 @@ module: arcana-jobs
        |        |     +---w listen-port?     uint32
        |        |     +---w persist?         boolean
        |        |     +---w preshared-key?   string
+       |        |     +---w safe?            boolean
        |        +--:(bird)
        |        |  +---w bird!
        |        |     +---w verb    enumeration

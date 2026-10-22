@@ -295,7 +295,7 @@ kinds:
   - kind: wireguard
     title: A WireGuard interface's key or peers
     needs: interface verb
-    uses: jail peer endpoint allowed_ips keepalive listen_port persist preshared_key
+    uses: jail peer endpoint allowed_ips keepalive listen_port persist preshared_key safe
     values: verb=init|peer|unpeer
   - kind: bird
     title: BIRD told something

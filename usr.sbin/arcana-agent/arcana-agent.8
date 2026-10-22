@@ -597,7 +597,16 @@ BIRD's configuration taken back by BIRD itself
 which read it with a timer a little longer than the wait, and is told to
 keep it
 .Pq Cm configure confirm
-when the job is confirmed.
+when the job is confirmed, and a WireGuard interface synced back
+.Pq Cm wg syncconf
+from what
+.Cm wg showconf
+printed before, a text held in memory only and never written to the
+trace, with its
+.Xr wg-quick 8
+file and the
+.Pa rc.conf
+variables as they were.
 What has to be read before the change for that, and cannot be, fails
 the job before the change is made.
 .Sh BUILDS

@@ -2915,6 +2915,100 @@ EOS
 	atf_check -o match:'done' "$JGC" -c "$SOCK" bird configure
 }
 
+safe_wireguard_head()
+{
+	atf_set "descr" "A WireGuard change in safe mode is put back with wg syncconf from what showconf printed before; wg-quick's file and rc.conf as they were; the key never in the trace"
+}
+safe_wireguard_body()
+{
+	PEER='xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg='
+	mkdir wg
+	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	# wg: the interface's peers in a file; showconf prints them; syncconf
+	# puts the file given in their place, and keeps what it read.
+	cat > fake-wg <<EOS
+#!/bin/sh
+d=$(pwd)
+echo "\$*" >> \$d/wg.log
+case "\$1 \$2 \$3" in
+"show all dump")
+	printf 'wg0\tSECRETKEY\tPUBKEY\t51820\toff\n' ;;
+"show wg0 private-key") echo SECRETKEY ;;
+"showconf wg0 ")
+	printf '[Interface]\nListenPort = 51820\nPrivateKey = SECRETKEY\n'
+	cat \$d/peers ;;
+"set wg0 peer") printf '\n[Peer]\nPublicKey = %s\nAllowedIPs = 10.9.9.2/32\n' "\$4" >> \$d/peers ;;
+"syncconf wg0 "*) cp "\$3" \$d/sync.got; ls -la "\$3" | cut -c1-10 > \$d/sync.mode; grep -v 'PrivateKey\|ListenPort\|Interface' "\$3" > \$d/peers ;;
+"showconf wg9 ") echo "Unable to access interface: No such device" >&2; exit 1 ;;
+esac
+exit 0
+EOS
+	chmod +x fake-wg fake-ifconfig
+	: > peers
+	DAEMON_ARGS="-k $(pwd)/fake-wg -o $(pwd)/wg"
+	start_daemon
+
+	# Confirmed: it stays.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" wg wg0 peer $PEER allowed-ips 10.9.9.2/32
+	atf_check -o match:"$PEER" cat peers
+
+	# Not confirmed: the peers as they were, by syncconf from what
+	# showconf printed; the file wg read is gone after; the key is in
+	# neither the trace nor the log.
+	: > peers
+	: > wg.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" wg wg0 peer $PEER endpoint 192.0.2.9:51820
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'syncconf wg0: the key, the port and the peers as they were' \
+	    -o not-match:'SECRETKEY' "$JGC" -t -c "$SOCK" job 2
+	atf_check -o match:"^set wg0 peer $PEER endpoint" -o match:'^syncconf wg0 ' \
+	    cat wg.log
+	atf_check -o match:'^\[Interface\]$' -o match:'^PrivateKey = SECRETKEY$' \
+	    -o not-match:'Peer' cat sync.got
+	atf_check -o match:'^-rw-------' cat sync.mode
+	atf_check -o empty cat peers
+	atf_check -o empty ls wg
+	atf_check -o not-match:'SECRETKEY' cat daemon.out
+
+	# With persist: wg-quick's file and rc.conf as they were, which
+	# was without them.
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" wg wg0 peer $PEER
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'wg0.conf, as it was' "$JGC" -c "$SOCK" job 3
+	atf_check -o empty ls wg
+	atf_check -o not-match:'wireguard' cat rc.conf
+	# And with a file and variables there before: those again.
+	printf '[Interface]\nPrivateKey = OLDKEY\n' > wg/wg0.conf
+	printf 'wireguard_interfaces="wg0"\nwireguard_enable="YES"\n' >> rc.conf
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" wg wg0 peer $PEER
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 4
+	atf_check -o match:'^PrivateKey = OLDKEY$' -o not-match:'SECRETKEY' cat wg/wg0.conf
+	atf_check -o match:'^wireguard_interfaces="wg0"$' \
+	    -o match:'^wireguard_enable="YES"$' cat rc.conf
+
+	# One wg cannot show is not changed.
+	atf_check -s exit:1 -o match:'not changed: wg9 could not be read, so it could not be put back' \
+	    "$JGC" -s -c "$SOCK" wg wg9 peer $PEER
+	atf_check -o not-match:'set wg9' cat wg.log
+}
+
 safe_mode_head()
 {
 	atf_set "descr" "A safe change stays when confirmed, and is undone when not"
@@ -7926,6 +8020,7 @@ atf_init_test_cases()
 	atf_add_test_case safe_sysctl
 	atf_add_test_case safe_route_delete
 	atf_add_test_case safe_bird
+	atf_add_test_case safe_wireguard
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart
 	atf_add_test_case agent_build
