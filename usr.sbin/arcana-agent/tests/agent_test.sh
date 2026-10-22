@@ -3917,6 +3917,44 @@ EOS
 	    '{"instances":[{"name":"sw1","fib":1,"conf":"router id 100.64.0.0;\nprotocol device {}\nprotocol static {}\n"}]}'
 	atf_check -o match:'configure$' cat birdc.log
 	atf_check -o inline:'1\n' sh -c "grep -c '^setfib' setfib.log"
+	# An edge that is a vnet jail: its instance run in the jail by jexec,
+	# its file beneath the jail's root, named with the jail, kept in a
+	# file of its own; the host's instance beside it, untouched.
+	R=$(pwd)/jroot
+	mkdir -p "$R/var/run"
+	cat > fake-jls <<EOS
+#!/bin/sh
+case "\$2" in
+gw) echo "7 new $R" ;;
+*) echo "jls: jail \"\$2\" not found" >&2; exit 1 ;;
+esac
+EOS
+	cat > fake-jexec <<EOS
+#!/bin/sh
+echo "jexec \$*" >> $(pwd)/jexec.log
+shift
+# The jail's /var/run is beneath its root here.
+n=0; for a; do case "\$a" in /var/run/*) a="$R\$a" ;; esac; set -- "\$@" "\$a"; n=\$((n+1)); done
+shift \$n
+exec "\$@"
+EOS
+	chmod +x fake-jls fake-jexec
+	atf_check -s exit:1 -e match:'not running' -o ignore "$JGC" -c "$SOCK" sdwan bird \
+	    '{"jail":"nope","instances":[{"name":"sw1-nope","fib":1,"conf":"router id 100.64.0.2;\n"}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
+	    '{"jail":"gw","instances":[{"name":"sw1-gw","fib":1,"conf":"router id 100.64.0.2;\nprotocol device {}\n"}]}'
+	atf_check -o match:'^jexec 7 .*fake-bird -p -c /var/run/arcana-sdwan-bird-sw1-gw.conf$' \
+	    -o match:'^jexec 7 .*fake-setfib -F 1 .*fake-bird -c /var/run/arcana-sdwan-bird-sw1-gw.conf -s /var/run/arcana-sdwan-bird-sw1-gw.ctl -P /var/run/arcana-sdwan-bird-sw1-gw.pid$' \
+	    -o match:'^jexec 7 .*fake-birdc -s /var/run/arcana-sdwan-bird-sw1-gw.ctl show status$' cat jexec.log
+	atf_check -o match:'^router id 100.64.0.2;$' cat "$R/var/run/arcana-sdwan-bird-sw1-gw.conf"
+	atf_check -o match:'"name":"sw1","fib":1,"running":true' -o match:'"name":"sw1-gw","fib":1,"jail":"gw","running":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	test -f "$(dirname "$f")/sdwan-bird@gw.json" || atf_fail "the jail's instances are not kept"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird '{"jail":"gw","instances":[]}'
+	atf_check -o match:'"name":"sw1","fib":1' -o not-match:'sw1-gw' "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'^jexec 7 .*fake-birdc -s /var/run/arcana-sdwan-bird-sw1-gw.ctl down$' cat jexec.log
+	test ! -f "$R/var/run/arcana-sdwan-bird-sw1-gw.conf" || atf_fail "the jail's file stayed"
+	test ! -f "$(dirname "$f")/sdwan-bird@gw.json" || atf_fail "the jail's kept file stayed"
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird '{"instances":[]}'
 	atf_check -o match:'down$' cat birdc.log
 	test ! -f "$(dirname "$f")/sdwan-bird-sw1.conf" || atf_fail "the instance's file stayed"

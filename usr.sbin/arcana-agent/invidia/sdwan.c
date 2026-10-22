@@ -1459,3 +1459,12 @@ sdwan_json(struct work *w, ucl_object_t *top)
 	ucl_object_insert_key(top, arr, "edges", 0, false);
 	pthread_mutex_unlock(&lock);
 }
+
+/* A payload's "jail", checked, "" for the host; NULL and why for a bad
+ * one: for the BIRD instances, which are an edge's too. */
+const char *
+sdwan_payload_jail(const ucl_object_t *top, const char **errp)
+{
+
+	return (payload_jail(top, errp));
+}

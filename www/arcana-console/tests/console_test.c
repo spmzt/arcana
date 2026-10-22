@@ -6208,6 +6208,7 @@ static const char sdwan_jail_doc[] =
     "\"inet\",\"interface\":\"vtnet0\",\"address\":\"192.0.2.2\"}]}],"
     "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"ucs\":[\"inet\"],"
     "\"reserved_prefixes\":[\"100.64.0.0/24\"],"
+    "\"bfd\":{\"interval\":200,\"multiplier\":3},"
     "\"zones\":[{\"name\":\"rest\",\"prefixes\":\"Default\"}],"
     "\"intervals\":{\"eval\":1000,\"arrival\":100,\"ir\":500},"
     "\"flows\":[{\"name\":\"all\",\"criteria\":{\"any\":true}}],"
@@ -6287,7 +6288,16 @@ ATF_TC_BODY(sdwan_jail, tc)
 	    "\"links\":[{\"interface\":\"vtnet0\",\"id\":\"g-inet\",\"role\":"
 	    "\"ucs\"},{\"interface\":\"epair1b\",\"id\":\"uni-br\",\"role\":"
 	    "\"uni\"}]") != NULL, "%s", r.body);
+	/* The jail's BIRD, with BFD: an instance named by the jail too,
+	 * run in it by the host's agent. */
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-bird\",\"instances\":[{"
+	    "\"name\":\"sw1-gw\",\"fib\":1,") != NULL, "%s", r.body);
 	resp_free(&r);
+	/* The jail runs no BIRD here (jls lists none in a test): the
+	 * service without BFD from here on. */
+	ATF_REQUIRE(swap_in(doc, "\"bfd\":{\"interval\":200,\"multiplier\":3},", "",
+	    t1, sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
 	/* Applied: the jail's jobs run in it, its probes, rules and
 	 * steering are the jail's on the agent, the host's its own. */
 	/* What the jail's edge needs is looked for in the jail, as it

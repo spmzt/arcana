@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.191.0"
+#define	ARCANA_AGENT_VERSION	"0.192.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -603,6 +603,7 @@ int		 sdwan_conf_write(const char *, const char *, const char **);
 const char	*sdwan_subst(struct work *, const char *, const char *const *,
 		    const char *const *, size_t);
 char		*sdwan_kept_read(const char *);
+const char	*sdwan_payload_jail(const struct ucl_object_s *, const char **);
 
 /* luxuria/sdbird.c: a BIRD instance of each service, at the UNIs. */
 int		 do_sdwan_bird(struct work *, const char *, const char **);

@@ -5799,6 +5799,7 @@ bird_build(struct plan *pl, const ucl_object_t *doc)
 	ucl_object_iter_t	 it, eit, pit;
 	ucl_object_t		*o, *inst, *list, *j;
 	char			 name[32];
+	char			 esid[80], ejail[64], *q;
 	const char		*sid;
 	char			*text;
 	bool			 here;
@@ -5821,8 +5822,19 @@ bird_build(struct plan *pl, const ucl_object_t *doc)
 					here = true;
 			if (!here)
 				continue;
-			snprintf(name, sizeof(name), "sw%jd", (intmax_t)
-			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+			/* An edge that is a vnet jail: the instance named by the
+			 * jail too, run in it by the host's agent. */
+			if (sdwan_edge_split(sid, esid, sizeof(esid), ejail,
+			    sizeof(ejail)) && ejail[0] != '\0') {
+				snprintf(name, sizeof(name), "sw%jd-%.26s", (intmax_t)
+				    ucl_object_toint(ucl_object_lookup(sw, "fib")),
+				    ejail);
+				for (q = name; *q != '\0'; q++)
+					if (*q == '.')
+						*q = '_';
+			} else
+				snprintf(name, sizeof(name), "sw%jd", (intmax_t)
+				    ucl_object_toint(ucl_object_lookup(sw, "fib")));
 			inst = ucl_object_typed_new(UCL_OBJECT);
 			put(inst, "name", S(name));
 			put(inst, "fib", I(efib(pl, sw, sid)));
@@ -9187,17 +9199,17 @@ sdwan_read(const char *edge, char *name, size_t nlen, int *status)
 /*
  * What an edge that is a vnet jail is not given yet, said: the jail's
  * own network takes its interfaces, routes, tunnels (gre, gif, GENEVE,
- * WireGuard, IKEv2), BIRD, ipfw rules and steering, probes and net.*
- * sysctls; the services the host runs for an SD-WAN service (dnsmasq,
- * unbound, Squid, Suricata, its BIRD), NTP, rtadvd and manual SAs (a
- * uswe tunnel) are the host's only.
+ * WireGuard, IKEv2), BIRD (run in the jail by the host's agent, with
+ * BFD), ipfw rules and steering, probes and net.* sysctls; the services
+ * the host runs for an SD-WAN service (dnsmasq, unbound, Squid,
+ * Suricata), NTP, rtadvd and manual SAs (a uswe tunnel) are the host's
+ * only.
  */
 static bool
 jail_kind_ok(const char *kind, char *why, size_t wlen)
 {
 	static const char *const not[] = { "sdwan-dns", "sdwan-dhcp",
-	    "sdwan-proxy", "sdwan-ids", "sdwan-bird", "ntp", "rtadvd",
-	    "ipsec-sa" };
+	    "sdwan-proxy", "sdwan-ids", "ntp", "rtadvd", "ipsec-sa" };
 	size_t	i;
 
 	for (i = 0; kind != NULL && i < nitems(not); i++)
