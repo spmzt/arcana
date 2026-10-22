@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.187.0"
+#define	ARCANA_AGENT_VERSION	"0.188.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -470,6 +470,9 @@ bool		 if_is_up(struct work *, const char *, bool *);
 bool		 if_link(struct work *, const char *, bool *);
 bool		 if_exists(struct work *, const char *);
 const char	*if_json(struct work *);
+struct ucl_object_s *if_object(struct work *, const char *);
+int		 if_recreate(struct work *, const char *, const struct ucl_object_s *, int,
+		    int, const char **);
 bool		 if_owning(const struct sockaddr *, char *, size_t);
 const char	*if_address_with_prefix(struct work *, const char *,
 		    const char *);

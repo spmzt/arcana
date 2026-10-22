@@ -132,6 +132,7 @@ module: arcana-jobs
        |        |     +---w interface    string
        |        |     +---w jail?        string
        |        |     +---w persist?     boolean
+       |        |     +---w safe?        boolean
        |        +--:(netgraph)
        |        |  +---w netgraph!
        |        |     +---w verb    enumeration

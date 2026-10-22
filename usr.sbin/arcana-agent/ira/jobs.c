@@ -72,8 +72,9 @@ struct qjob {
 	struct undo_rc {		/* rc.conf variables as they were */
 		const char	*name;
 		const char	*value;	/* NULL: unset */
-	}			 undo_rc[6];
+	}			 undo_rc[10];
 	int			 undo_nrc;
+	ucl_object_t		*undo_if;	/* if-destroy: as it was */
 	bool			 undo_none;	/* it changed nothing: as it was */
 	bool			 undo_live;	/* rc.conf had it before: keep that */
 	char			*title;
@@ -700,6 +701,10 @@ undo_forget(struct qjob *j)
 		}
 	j->undo_nfiles = 0;
 	j->undo_nrc = 0;
+	if (j->undo_if != NULL) {
+		ucl_object_unref(j->undo_if);
+		j->undo_if = NULL;
+	}
 }
 
 /*
@@ -756,6 +761,29 @@ undo_prepare(struct qjob *j)
 			undo_snap_rc(j, "cloned_interfaces");
 			undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s", rc_ifname(&j->w,
 			    sp->interface)));
+		}
+		break;
+	case ARC_JOB_KIND_IF_DESTROY:
+		/* The interface as it is: its addresses, tunnel, MTU,
+		 * description and state, its tables, and what rc.conf has
+		 * of it. */
+		if ((j->undo_if = if_object(&j->w, sp->interface)) == NULL)
+			return (wfmt(&j->w, "not changed: no interface %s to "
+			    "make again", sp->interface));
+		if_current(&j->w, sp->interface, &j->undo_mtu, &j->undo_fib,
+		    &j->undo_tunnelfib, descr, sizeof(descr));
+		if (sp->persist) {
+			const char	*rcif = rc_ifname(&j->w, sp->interface);
+			int		 n;
+
+			undo_snap_rc(j, "cloned_interfaces");
+			undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s", rcif));
+			undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s_descr", rcif));
+			undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s_ipv6", rcif));
+			undo_snap_rc(j, wfmt(&j->w, "create_args_%s", rcif));
+			for (n = 0; n < 4; n++)
+				undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s_alias%d",
+				    rcif, n));
 		}
 		break;
 	case ARC_JOB_KIND_SYSFILE:
@@ -1044,6 +1072,12 @@ undo(struct qjob *j)
 		return (wfmt(&j->w, "not confirmed within %d s; %s",
 		    safe_wait(sp), j->undo_note));
 	switch (sp->kind) {
+	case ARC_JOB_KIND_IF_DESTROY:
+		rc = if_recreate(&j->w, sp->interface, j->undo_if, j->undo_fib,
+		    j->undo_tunnelfib, &e);
+		if (rc == 0 && sp->persist)
+			rc = undo_rc_back(j, &e);
+		break;
 	case ARC_JOB_KIND_SYSFILE:
 		if (strcmp(sp->verb, "rc") == 0)
 			rc = undo_rc_back(j, &e);

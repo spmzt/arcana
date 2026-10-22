@@ -609,7 +609,9 @@ file and the
 variables as they were, and an IPsec connection's files put back before
 .Xr swanctl 8
 reads them again, its SAs ended first when the connection was new, and a
-file of the system's written whole put back and its daemon told again.
+file of the system's written whole put back and its daemon told again,
+and a tunnel, tap, tun or loopback interface destroyed made again as it
+was read before.
 What has to be read before the change for that, and cannot be, fails
 the job before the change is made.
 .Sh BUILDS

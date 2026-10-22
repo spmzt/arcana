@@ -1896,7 +1896,11 @@ file and
 .Cm rc Ns 's
 variables likewise;
 .Cm dma
-is refused.
+is refused), and a gif, gre, me, tap, tun or lo interface destroyed, made
+again as it was: its tunnel, addresses, MTU, description, state, tables
+and
+.Pa rc.conf
+lines (one with keys, members or a pair's other end is refused).
 A change that would cut the client off is refused unless it is made in
 safe mode: taking away the address the request came in by, bringing its
 interface down or destroying it, moving that interface to another table

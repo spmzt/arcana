@@ -285,7 +285,7 @@ kinds:
   - kind: if-destroy
     title: An interface destroyed
     needs: interface
-    uses: jail persist
+    uses: jail persist safe
     destroys: always
   - kind: netgraph
     title: The netgraph graph changed

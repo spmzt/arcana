@@ -3161,6 +3161,46 @@ safe_sysfile_body()
 	    "$JGC" -s -c "$SOCK" sysfile dma smarthost=mail.example.net
 }
 
+safe_if_destroy_head()
+{
+	atf_set "descr" "An interface destroyed in safe mode is made again as it was: addresses, MTU, state and rc.conf; only a tunnel, tap, tun or lo"
+}
+safe_if_destroy_body()
+{
+	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	chmod +x fake-ifconfig
+	start_daemon
+
+	# lo0 is here to be read; ifconfig is a fake, so nothing happens
+	# to it: what the undo would run is in its log.
+	printf 'cloned_interfaces="lo0"\nifconfig_lo0="inet 127.0.0.1/8 mtu 16384 up"\nifconfig_lo0_descr="the loopback"\n' >> rc.conf
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" interface lo0 destroy
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 1
+	atf_check -o match:'^lo0 destroy$' -o match:'^lo0 create$' \
+	    -o match:'^lo0 inet6? [0-9a-f.:]+\/[0-9]+$' -o match:'^lo0 inet6? [0-9a-f.:]+\/[0-9]+ alias$' \
+	    -o match:'^lo0 mtu [0-9]+$' -o match:'^lo0 up$' cat ifconfig.log
+	atf_check -o match:'^cloned_interfaces="lo0"$' \
+	    -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 16384 up"$' \
+	    -o match:'^ifconfig_lo0_descr="the loopback"$' cat rc.conf
+
+	# What cannot be made again as it was is refused; what is not
+	# there is not destroyed.
+	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
+	    "$JGC" -s -c "$SOCK" interface wg0 destroy
+	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
+	    "$JGC" -s -c "$SOCK" interface epair3a destroy
+	: > ifconfig.log
+	atf_check -s exit:1 -o match:'not changed: no interface gif9 to make again' \
+	    "$JGC" -s -c "$SOCK" interface gif9 destroy
+	atf_check -o empty cat ifconfig.log
+}
+
 safe_mode_head()
 {
 	atf_set "descr" "A safe change stays when confirmed, and is undone when not"
@@ -8177,6 +8217,7 @@ atf_init_test_cases()
 	atf_add_test_case safe_wireguard
 	atf_add_test_case safe_ipsec
 	atf_add_test_case safe_sysfile
+	atf_add_test_case safe_if_destroy
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart
 	atf_add_test_case agent_build
