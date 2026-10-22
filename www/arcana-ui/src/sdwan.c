@@ -4598,6 +4598,28 @@ sdwan_modal(struct html *h)
 			    "a policy that says so.</small></label>", t != NULL &&
 			    jbool(t, "ipsec") ? " checked" : "");
 		h_raw(h, "</div>");
+		/* For every kind of tunnel: the clamp and the MTU. */
+		h_raw(h, "<div class=\"two\">");
+		{
+			char	ms[32];
+
+			snprintf(ms, sizeof(ms), "%lld", (long long)jint(t, "mss",
+			    0));
+			text_field(h, "TCP MSS clamped to", "mss", jstr(t, "mss") !=
+			    NULL ? jstr(t, "mss") : jint(t, "mss", 0) > 0 ? ms : "",
+			    "auto", "On the tunnels over it, by ipfw tcp-setmss: "
+			    "auto for the tunnel's kind (and IPsec under it), a "
+			    "number of bytes, or empty for none.");
+			snprintf(ms, sizeof(ms), "%lld", (long long)jint(t, "mtu",
+			    0));
+			text_field(h, "Tunnel MTU", "mtu", jstr(t, "mtu") != NULL ?
+			    jstr(t, "mtu") : jint(t, "mtu", 0) > 0 ? ms : "", "auto",
+			    "The tunnel interfaces' MTU (ifconfig mtu): auto takes "
+			    "the tunnel's overhead off 1500, so the inner packets "
+			    "are not fragmented; a number of bytes, 1280 to 9000; "
+			    "or empty for the kernel's.");
+		}
+		h_raw(h, "</div>");
 		if (strcmp(sd.ucs_kind, "uswe") != 0)
 			return (true);
 		/* A USWE tunnel's SAs: the base system's ipsec(4) and
@@ -4627,25 +4649,6 @@ sdwan_modal(struct html *h)
 			    jint(t, "lifetime", 0) > 0 ? lt : "", "86400", "120 "
 			    "seconds to a year; both ends turn them at the half "
 			    "of it.");
-		}
-		{
-			char	ms[32];
-
-			snprintf(ms, sizeof(ms), "%lld", (long long)jint(t, "mss",
-			    0));
-			text_field(h, "TCP MSS clamped to", "mss", jstr(t, "mss") !=
-			    NULL ? jstr(t, "mss") : jint(t, "mss", 0) > 0 ? ms : "",
-			    "auto", "On the tunnels over it, by ipfw tcp-setmss: "
-			    "auto for the tunnel's kind (and IPsec under it), a "
-			    "number of bytes, or empty for none.");
-			snprintf(ms, sizeof(ms), "%lld", (long long)jint(t, "mtu",
-			    0));
-			text_field(h, "Tunnel MTU", "mtu", jstr(t, "mtu") != NULL ?
-			    jstr(t, "mtu") : jint(t, "mtu", 0) > 0 ? ms : "", "auto",
-			    "The tunnel interfaces' MTU (ifconfig mtu): auto takes "
-			    "the tunnel's overhead off 1500, so the inner packets "
-			    "are not fragmented; a number of bytes, 1280 to 9000; "
-			    "or empty for the kernel's.");
 		}
 		h_raw(h, "</fieldset>");
 		return (true);
