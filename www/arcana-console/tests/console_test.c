@@ -6923,6 +6923,113 @@ ATF_TC_BODY(sdwan_nat64, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(sdwan_sets, "Destination sets by BGP attribute: a service's sets "
+    "(AS path, communities), an edge's breakout for each by one of its "
+    "uplinks, written as BIRD's filter to the kernel with that gateway, the "
+    "gateway routed by its interface in the service's table; bgp_import "
+    "sets keeps every other BGP route out of the kernel; checked")
+ATF_TC_BODY(sdwan_sets, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		/* The country's routes, by their AS path or a community, go
+		 * out by a-inet on a; nothing else of BGP's reaches its
+		 * kernel. */
+		{ "{\"server\":\"@A\",\"ntp\"",
+		    "{\"server\":\"@A\",\"breakout_sets\":[{\"set\":\"country\","
+		    "\"via\":\"a-inet\"}],\"bgp_import\":\"sets\",\"ntp\"" },
+		{ "\"reserved_prefixes\":[\"100.64.0.0/24\"],",
+		    "\"reserved_prefixes\":[\"100.64.0.0/24\"],\"bgp_sets\":[{"
+		    "\"name\":\"country\",\"as_path\":[64600,64601],\"communities\":"
+		    "[[64600,100]]}]," },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* A set that is none, an uplink that is no breakout of the edge:
+	 * refused. */
+	ATF_REQUIRE(swap_in(doc, "\"set\":\"country\"", "\"set\":\"nowhere\"", t1,
+	    sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "nowhere is no bgp_sets "
+	    "name") != NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_REQUIRE(swap_in(doc, "\"via\":\"a-inet\"", "\"via\":\"a-mpls\"", t1,
+	    sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "no breakout UCS end "
+	    "point of this edge") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* a's BIRD: the filters, the gateway rewritten, the rest of BGP
+	 * kept out; the gateway's route in the service's table; b's
+	 * BIRD as ever. */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "filter to_kernel4 {\\n\\tif source = "
+	    "RTS_DEVICE || source = RTS_INHERIT || dest != RTD_UNICAST then "
+	    "reject;\\n\\t# country, by a-inet\\n\\tif bgp_path ~ [64600, 64601] || "
+	    "bgp_community ~ [(64600, 100)] then { gw = 192.0.2.254; accept; }"
+	    "\\n\\tif source = RTS_BGP then reject;\\n\\taccept;\\n}") != NULL,
+	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "filter to_kernel6 {\\n\\tif source = "
+	    "RTS_DEVICE || source = RTS_INHERIT || dest != RTD_UNICAST then "
+	    "reject;\\n\\tif source = RTS_BGP then reject;\\n\\taccept;\\n}") !=
+	    NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "export filter to_kernel4;") != NULL &&
+	    strstr(r.body, "export filter to_kernel6;") != NULL && strstr(
+	    r.body, "export where source != RTS_DEVICE") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"destination\":\"192.0.2.254/32\","
+	    "\"gateway\":\"vtnet0\",\"fib\":1") != NULL, "%s", r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(sdwan_lists, "SD-WAN's named lists: prefixes, services, UCS, "
     "edges and UCS End Points kept once, each named where a value would "
     "be, checked; a prefix list an ipfw table, a service list the AFS's "
@@ -8430,6 +8537,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan_loop);
 	ATF_TP_ADD_TC(tp, sdwan_breakout);
 	ATF_TP_ADD_TC(tp, sdwan_nat64);
+	ATF_TP_ADD_TC(tp, sdwan_sets);
 	ATF_TP_ADD_TC(tp, sdwan_lists);
 	ATF_TP_ADD_TC(tp, sdwan_uswe);
 	ATF_TP_ADD_TC(tp, sdwan_jail);

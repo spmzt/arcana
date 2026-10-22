@@ -5448,6 +5448,79 @@ bird_loop(struct plan *pl, const ucl_object_t *sw, const char *sid,
 }
 
 /*
+ * The filters to the kernel of an edge whose breakout is chosen by BGP
+ * attribute (edges[].breakout_sets, bgp_import): written into b, true
+ * when there are any.  One set's routes go by the end point named for
+ * it, in the family of its gateway.
+ */
+static bool
+edge_sets(struct plan *pl, const ucl_object_t *sw, const char *sid,
+    struct kore_buf *b)
+{
+	const ucl_object_t	*edge, *bs, *set, *uep, *m;
+	ucl_object_iter_t	 it, mit;
+	const char		*gw;
+	bool			 only;
+	int			 fam, n;
+
+	edge = by(ucl_object_lookup(pl->doc, "edges"), "server", sid);
+	only = str(edge, "bgp_import") != NULL && strcmp(str(edge,
+	    "bgp_import"), "sets") == 0;
+	if (!only && ucl_array_size(ucl_object_lookup(edge, "breakout_sets")) ==
+	    0)
+		return (false);
+	for (fam = 4; fam <= 6; fam += 2) {
+		kore_buf_appendf(b, "# Destination sets by BGP attribute, each by "
+		    "the uplink named for it\nfilter to_kernel%d {\n\tif source = "
+		    "RTS_DEVICE || source = RTS_INHERIT || dest != RTD_UNICAST "
+		    "then reject;\n%s", fam, sw_loop(sw) ? "\tif proto ~ \"orig*\" "
+		    "then reject;\n" : "");
+		it = NULL;
+		while ((bs = ucl_object_iterate(ucl_object_lookup(edge,
+		    "breakout_sets"), &it, true)) != NULL) {
+			set = by(ucl_object_lookup(sw, "bgp_sets"), "name", str(bs,
+			    "set"));
+			uep = by(ucl_object_lookup(edge, "ucs_end_points"), "id",
+			    str(bs, "via"));
+			gw = str(uep, "gateway");
+			if (set == NULL || gw == NULL || (family(gw) == AF_INET) !=
+			    (fam == 4))
+				continue;
+			kore_buf_appendf(b, "\t# %s, by %s\n\tif ", str(set, "name"),
+			    str(uep, "id"));
+			n = 0;
+			if (ucl_array_size(ucl_object_lookup(set, "as_path")) > 0) {
+				kore_buf_appendf(b, "bgp_path ~ [");
+				mit = NULL;
+				while ((m = ucl_object_iterate(ucl_object_lookup(set,
+				    "as_path"), &mit, true)) != NULL)
+					kore_buf_appendf(b, "%s%jd", n++ > 0 ? ", " : "",
+					    (intmax_t)ucl_object_toint(m));
+				kore_buf_appendf(b, "]");
+			}
+			if (ucl_array_size(ucl_object_lookup(set, "communities")) >
+			    0) {
+				kore_buf_appendf(b, "%sbgp_community ~ [", n > 0 ? " || "
+				    : "");
+				n = 0;
+				mit = NULL;
+				while ((m = ucl_object_iterate(ucl_object_lookup(set,
+				    "communities"), &mit, true)) != NULL)
+					kore_buf_appendf(b, "%s(%jd, %jd)", n++ > 0 ? ", " :
+					    "", (intmax_t)ucl_object_toint(
+					    ucl_array_find_index(m, 0)), (intmax_t)
+					    ucl_object_toint(ucl_array_find_index(m, 1)));
+				kore_buf_appendf(b, "]");
+			}
+			kore_buf_appendf(b, " then { gw = %s; accept; }\n", gw);
+		}
+		kore_buf_appendf(b, "%s\taccept;\n}\n\n", only ? "\tif source = RTS_BGP "
+		    "then reject;\n" : "");
+	}
+	return (true);
+}
+
+/*
  * The BIRD configuration of a service at an edge: the kernel's table
  * learned and kept (the routes the console made stay), the UNIs'
  * connected routes, iBGP with every other edge by each tunnel (next
@@ -5464,7 +5537,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	const char		*rid, *ifn;
 	char			 ifbuf[32], ifaces[1200], sym[80], *out, ktab[48];
 	char			 l4[64];
-	const char		*kexp;
+	const char		*kexp, *kexp6;
 	int64_t			 as;
 	int			 n, k;
 
@@ -5560,6 +5633,21 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    "RTS_INHERIT && dest = RTD_UNICAST && proto !~ \"orig*\";" :
 	    "export where source != RTS_DEVICE && source != RTS_INHERIT && dest "
 	    "= RTD_UNICAST;";
+	kexp6 = kexp;
+	/*
+	 * Destination sets by BGP attribute (Arcana's own, beside MEF 70.2's
+	 * application flows): a route whose AS path or communities match a
+	 * set of the service's (swvcs[].bgp_sets) goes out by the uplink the
+	 * edge names for it (edges[].breakout_sets), its gateway written as
+	 * the route's on its way to the kernel; with bgp_import "sets" no
+	 * other BGP route reaches the kernel, which keeps its own default.
+	 * BIRD alone, no table of prefixes to rebuild: the sets hold the
+	 * whole of a country's or a provider's routes.
+	 */
+	if (edge_sets(pl, sw, sid, b)) {
+		kexp = "export filter to_kernel4;";
+		kexp6 = "export filter to_kernel6;";
+	}
 	kore_buf_appendf(b, "protocol kernel kernel4 {\n%s\tlearn;\n"
 	    "\tmerge paths on;\n"
 	    "\tpersist;\n\tipv4 {\n\t\timport filter { preference = 200; accept; "
@@ -5567,7 +5655,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    "%s\tlearn;\n\tmerge paths on;\n\tpersist;\n\tipv6 {"
 	    "\n\t\timport filter { "
 	    "preference = 200; accept; };\n\t\t%s\n\t};\n}\n\n", ktab, kexp,
-	    ktab, kexp);
+	    ktab, kexp6);
 	/* BFD on each tunnel interface here (R58, R59, R159): the iBGP
 	 * sessions go down with it, and the agent reads the sessions. */
 	if (sw_bfd(sw)) {
@@ -6653,6 +6741,40 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 				route_fib_obj(pl, sid, sw, fib, PH_ROUTE, af ==
 				    AF_INET ? "0.0.0.0/0" : "::/0", str(fe, af ==
 				    AF_INET ? "inner4" : "inner6"), why);
+			}
+		}
+	}
+	/* The uplinks the sets go out by (edges[].breakout_sets): each
+	 * gateway by its interface in the service's table here, which the
+	 * routes BIRD writes with that gateway need. */
+	it = NULL;
+	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
+	    true)) != NULL) {
+		const ucl_object_t	*edge, *bs, *uep;
+		ucl_object_iter_t	 bit;
+
+		it2 = NULL;
+		while ((edge = ucl_object_iterate(ucl_object_lookup(doc,
+		    "edges"), &it2, true)) != NULL) {
+			if (!edge_in(sw, str(edge, "server")))
+				continue;
+			bit = NULL;
+			while ((bs = ucl_object_iterate(ucl_object_lookup(edge,
+			    "breakout_sets"), &bit, true)) != NULL) {
+				if (by(ucl_object_lookup(sw, "bgp_sets"), "name",
+				    str(bs, "set")) == NULL)
+					continue;
+				uep = by(ucl_object_lookup(edge, "ucs_end_points"),
+				    "id", str(bs, "via"));
+				if (str(uep, "gateway") == NULL || str(uep, "interface")
+				    == NULL)
+					continue;
+				snprintf(n, sizeof(n), "%s/%d", str(uep, "gateway"),
+				    family(str(uep, "gateway")) == AF_INET ? 32 : 128);
+				route_fib_obj(pl, str(edge, "server"), sw, efib(pl, sw,
+				    str(edge, "server")), PH_ROUTE, n, str(uep,
+				    "interface"), "the gateway a destination set goes "
+				    "out by, by its interface");
 			}
 		}
 	}

@@ -4721,6 +4721,37 @@ sdwan_modal(struct html *h)
 		    " checked" : "", e != NULL && jbool(e, "host_bird") ?
 		    " checked" : "", e != NULL && jget(e, "transit") != NULL &&
 		    !jbool(e, "transit") ? "" : " checked");
+		/* The uplink each destination set goes out by, and what else
+		 * of BGP reaches the kernel. */
+		{
+			const ucl_object_t	*bs;
+			ucl_object_iter_t	 bit = NULL;
+			char			 btext[2000];
+
+			btext[0] = '\0';
+			while (e != NULL && (bs = ucl_object_iterate(jget(e,
+			    "breakout_sets"), &bit, true)) != NULL && strlen(btext) + 200
+			    < sizeof(btext))
+				snprintf(btext + strlen(btext), sizeof(btext) - strlen(
+				    btext), "%s%s %s", btext[0] != '\0' ? "\n" : "", jstr(bs,
+				    "set") != NULL ? jstr(bs, "set") : "", jstr(bs, "via") !=
+				    NULL ? jstr(bs, "via") : "");
+			h_raw(h, "<label>Breakout by destination set<textarea name=\""
+			    "breakout_sets\" rows=\"2\" spellcheck=\"false\" placeholder=\""
+			    "country lte\">");
+			h_txt(h, btext);
+			h_fmt(h, "</textarea><small>One a line: a set of a service here "
+			    "(by its name) and the UCS end point of this edge it goes "
+			    "out by, a breakout with a gateway.</small></label><label>"
+			    "BGP routes into the kernel<select name=\"bgp_import\"><option "
+			    "value=\"all\"%s>All of them</option><option value=\"sets\"%s>"
+			    "Only the destination sets': the kernel keeps its own default "
+			    "route</option></select></label>", e != NULL && jstr(e,
+			    "bgp_import") != NULL && strcmp(jstr(e, "bgp_import"), "sets")
+			    == 0 ? "" : " selected", e != NULL && jstr(e, "bgp_import") !=
+			    NULL && strcmp(jstr(e, "bgp_import"), "sets") == 0 ?
+			    " selected" : "");
+		}
 		h_raw(h, "</details>");
 		/* What it does to the host, before anything is done. */
 		h_raw(h, "<details class=\"sd-effects\"" );
@@ -5220,6 +5251,46 @@ sdwan_modal_service(struct html *h)
 					    NULL ? jstr(jget(o, "nat64"), "edge") : "");
 			}
 			h_raw(h, "</select></label></fieldset>");
+			/* Destination sets by BGP attribute: lines of a name, AS
+			 * numbers and as:value communities. */
+			{
+				const ucl_object_t	*xs, *xm;
+				ucl_object_iter_t	 xit = NULL, xmit;
+				char			 stext[4000];
+
+				stext[0] = '\0';
+				while ((xs = ucl_object_iterate(jget(o, "bgp_sets"), &xit,
+				    true)) != NULL && strlen(stext) + 200 < sizeof(stext)) {
+					snprintf(stext + strlen(stext), sizeof(stext) -
+					    strlen(stext), "%s%s", stext[0] != '\0' ? "\n" : "",
+					    jstr(xs, "name") != NULL ? jstr(xs, "name") : "");
+					xmit = NULL;
+					while ((xm = ucl_object_iterate(jget(xs, "as_path"),
+					    &xmit, true)) != NULL && strlen(stext) + 20 <
+					    sizeof(stext))
+						snprintf(stext + strlen(stext), sizeof(stext) -
+						    strlen(stext), " %lld", (long long)
+						    ucl_object_toint(xm));
+					xmit = NULL;
+					while ((xm = ucl_object_iterate(jget(xs, "communities"),
+					    &xmit, true)) != NULL && strlen(stext) + 20 <
+					    sizeof(stext))
+						snprintf(stext + strlen(stext), sizeof(stext) -
+						    strlen(stext), " %lld:%lld", (long long)
+						    ucl_object_toint(ucl_array_find_index(xm, 0)),
+						    (long long)ucl_object_toint(ucl_array_find_index(
+						    xm, 1)));
+				}
+				h_raw(h, "<label>Destination sets by BGP attribute<textarea "
+				    "name=\"bgp_sets\" rows=\"3\" spellcheck=\"false\" "
+				    "placeholder=\"country 64600 64601 64600:100\">");
+				h_txt(h, stext);
+				h_raw(h, "</textarea><small>One a line: a name, then the AS "
+				    "numbers any of which in a route's path puts it in the "
+				    "set, and as:value communities any of which does. An "
+				    "edge names the uplink each set goes out by (Arcana's "
+				    "own, by BIRD alone).</small></label>");
+			}
 			h_raw(h, "<fieldset><legend>Routing domains <small class=\""
 			    "dim\">Mplify 119 §7.3: each a table, a route "
 			    "distinguisher, route targets and an MPLS label; all "
@@ -6821,6 +6892,32 @@ sd_forms(const char *form, const ucl_object_t *f)
 		if (!checked(f, "transit"))
 			ucl_object_insert_key(ed, ucl_object_frombool(false),
 			    "transit", 0, false);
+		(void)ucl_object_delete_key(ed, "bgp_import");
+		if (jstr(f, "bgp_import") != NULL && strcmp(jstr(f, "bgp_import"),
+		    "sets") == 0)
+			put_str(ed, "bgp_import", "sets");
+		(void)ucl_object_delete_key(ed, "breakout_sets");
+		if ((v = jstr(f, "breakout_sets")) != NULL && v[0] != '\0') {
+			ucl_object_t	*bss = ucl_object_typed_new(UCL_ARRAY);
+			char		*copy = strdup(v), *it2 = copy, *line;
+
+			while (it2 != NULL && (line = strsep(&it2, "\n")) != NULL) {
+				char	sn[80], via[80];
+
+				if (sscanf(line, "%79s %79s", sn, via) == 2) {
+					ucl_object_t	*bs = ucl_object_typed_new(UCL_OBJECT);
+
+					put_str(bs, "set", sn);
+					put_str(bs, "via", via);
+					ucl_array_append(bss, bs);
+				}
+			}
+			free(copy);
+			if (ucl_array_size(bss) > 0)
+				ucl_object_insert_key(ed, bss, "breakout_sets", 0, false);
+			else
+				ucl_object_unref(bss);
+		}
 		(void)ucl_object_delete_key(ed, "ntp");
 		if ((v = jstr(f, "ntp")) != NULL && v[0] != '\0')
 			ucl_object_insert_key(ed, list_of(v), "ntp", 0, false);
@@ -7371,6 +7468,49 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			if ((v = jstr(f, "n64_edge")) != NULL && v[0] != '\0')
 				put_str(n64, "edge", v);
 			ucl_object_insert_key(o, n64, "nat64", 0, false);
+		}
+		(void)ucl_object_delete_key(o, "bgp_sets");
+		if ((v = jstr(f, "bgp_sets")) != NULL && v[0] != '\0') {
+			ucl_object_t	*sets = ucl_object_typed_new(UCL_ARRAY);
+			char		*copy = strdup(v), *it2 = copy, *line, *tok;
+
+			while (it2 != NULL && (line = strsep(&it2, "\n")) != NULL) {
+				ucl_object_t	*xs, *ap, *cm, *pair;
+				char		*lp = line, *colon;
+
+				while ((tok = strsep(&lp, " \t\r")) != NULL && tok[0] ==
+				    '\0')
+					;
+				if (tok == NULL)
+					continue;
+				xs = ucl_object_typed_new(UCL_OBJECT);
+				put_str(xs, "name", tok);
+				ap = ucl_object_typed_new(UCL_ARRAY);
+				cm = ucl_object_typed_new(UCL_ARRAY);
+				while ((tok = strsep(&lp, " \t\r")) != NULL) {
+					if (tok[0] == '\0')
+						continue;
+					if ((colon = strchr(tok, ':')) != NULL) {
+						*colon++ = '\0';
+						pair = ucl_object_typed_new(UCL_ARRAY);
+						ucl_array_append(pair, ucl_object_fromint(strtoll(
+						    tok, NULL, 10)));
+						ucl_array_append(pair, ucl_object_fromint(strtoll(
+						    colon, NULL, 10)));
+						ucl_array_append(cm, pair);
+					} else
+						ucl_array_append(ap, ucl_object_fromint(strtoll(
+						    tok, NULL, 10)));
+				}
+				ucl_object_insert_key(xs, ap, "as_path", 0, false);
+				ucl_object_insert_key(xs, cm, "communities", 0, false);
+				ucl_array_append(sets, xs);
+			}
+			free(copy);
+			if (ucl_array_size(sets) > 0)
+				ucl_object_insert_key(o, sets, "bgp_sets", 0, false);
+			else
+				ucl_object_unref(sets);
 		}
 		/* The routing domains: the three in order where a field has
 		 * three values by commas; each only with something in it. */

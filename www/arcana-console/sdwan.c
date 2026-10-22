@@ -1671,6 +1671,58 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 		    "underlay's"));
 	if (!domains(c, sw))
 		return (false);
+	/* Destination sets by BGP attribute (Arcana's own): a set is the
+	 * routes whose AS path holds any of its AS numbers, or that carry
+	 * any of its communities; an edge names the uplink each goes out
+	 * by (breakout_sets). */
+	if ((v = ucl_object_lookup(sw, "bgp_sets")) != NULL && !is_null(v)) {
+		const ucl_object_t	*xs, *xm;
+		ucl_object_iter_t	 xit, xmit;
+		ucl_object_t		*xseen;
+
+		if (ucl_object_type(v) != UCL_ARRAY || ucl_array_size(v) >
+		    LIST_MAX)
+			return (fail(c, "bgp_sets is a list, each a name, as_path "
+			    "(AS numbers) and communities ([as, value])"));
+		xseen = ucl_object_typed_new(UCL_OBJECT);
+		xit = NULL;
+		while ((xs = ucl_object_iterate(v, &xit, true)) != NULL) {
+			if (!ident(str(xs, "name")) || ucl_object_lookup(xseen,
+			    str(xs, "name")) != NULL) {
+				ucl_object_unref(xseen);
+				return (fail(c, "bgp_sets: each has a name of its own, "
+				    "printable ASCII"));
+			}
+			ucl_object_insert_key(xseen, ucl_object_frombool(true),
+			    str(xs, "name"), 0, true);
+			if (ucl_array_size(ucl_object_lookup(xs, "as_path")) == 0 &&
+			    ucl_array_size(ucl_object_lookup(xs, "communities")) == 0) {
+				ucl_object_unref(xseen);
+				return (fail(c, "bgp_sets: %s names no AS number and no "
+				    "community", str(xs, "name")));
+			}
+			xmit = NULL;
+			while ((xm = ucl_object_iterate(ucl_object_lookup(xs,
+			    "as_path"), &xmit, true)) != NULL)
+				if (!is_int(xm, 1, 4294967295LL, NULL)) {
+					ucl_object_unref(xseen);
+					return (fail(c, "bgp_sets: %s: as_path is a list "
+					    "of AS numbers", str(xs, "name")));
+				}
+			xmit = NULL;
+			while ((xm = ucl_object_iterate(ucl_object_lookup(xs,
+			    "communities"), &xmit, true)) != NULL)
+				if (ucl_object_type(xm) != UCL_ARRAY || ucl_array_size(
+				    xm) != 2 || !is_int(ucl_array_find_index(xm, 0), 0,
+				    65535, NULL) || !is_int(ucl_array_find_index(xm, 1),
+				    0, 65535, NULL)) {
+					ucl_object_unref(xseen);
+					return (fail(c, "bgp_sets: %s: a community is [as, "
+					    "value], each 0 to 65535", str(xs, "name")));
+				}
+		}
+		ucl_object_unref(xseen);
+	}
 	/* NAT64 (RFC 6146, Arcana's own beside MEF 70.2 §10.5): the service's
 	 * IPv6 hosts reach the Internet's IPv4 through one edge, by a
 	 * prefix (64:ff9b::/96 as a rule) and a pool of IPv4 addresses of
@@ -2628,6 +2680,62 @@ check_doc(const ucl_object_t *doc, struct ck *c)
 		    ucl_object_type(e) != UCL_BOOLEAN) {
 			ok = fail(c, "own_table is true or false");
 			break;
+		}
+		/* The uplink a destination set goes out by (breakout_sets),
+		 * and whether other BGP routes reach the kernel (bgp_import). */
+		if ((e = ucl_object_lookup(v, "bgp_import")) != NULL && !one_of(
+		    ucl_object_type(e) == UCL_STRING ? ucl_object_tostring(e) :
+		    NULL, (const char *const[]){ "all", "sets", NULL })) {
+			ok = fail(c, "bgp_import is all (every BGP route into the "
+			    "kernel) or sets (only the destination sets', the "
+			    "kernel keeping its own default route)");
+			break;
+		}
+		if ((e = ucl_object_lookup(v, "breakout_sets")) != NULL &&
+		    !is_null(e)) {
+			const ucl_object_t	*bs, *xsw, *xs, *xu;
+			ucl_object_iter_t	 bit, xit, xsit;
+			bool			 found, viaok;
+
+			if (ucl_object_type(e) != UCL_ARRAY) {
+				ok = fail(c, "breakout_sets is a list, each a set and "
+				    "the UCS end point of this edge it goes out by");
+				break;
+			}
+			bit = NULL;
+			while (ok && (bs = ucl_object_iterate(e, &bit, true)) != NULL) {
+				found = viaok = false;
+				xit = NULL;
+				while ((xsw = ucl_object_iterate(ucl_object_lookup(doc,
+				    "swvcs"), &xit, true)) != NULL) {
+					xsit = NULL;
+					while ((xs = ucl_object_iterate(ucl_object_lookup(
+					    xsw, "bgp_sets"), &xsit, true)) != NULL)
+						if (str(xs, "name") != NULL && str(bs, "set") !=
+						    NULL && strcmp(str(xs, "name"), str(bs,
+						    "set")) == 0)
+							found = true;
+				}
+				xsit = NULL;
+				while ((xu = ucl_object_iterate(ucl_object_lookup(v,
+				    "ucs_end_points"), &xsit, true)) != NULL)
+					if (str(xu, "id") != NULL && str(bs, "via") != NULL
+					    && strcmp(str(xu, "id"), str(bs, "via")) == 0 &&
+					    ucl_flag(xu, "breakout") && str(xu, "gateway") !=
+					    NULL)
+						viaok = true;
+				if (!found)
+					ok = fail(c, "breakout_sets: %s is no bgp_sets "
+					    "name of a service", str(bs, "set") != NULL ?
+					    str(bs, "set") : "(none)");
+				else if (!viaok)
+					ok = fail(c, "breakout_sets: %s goes out by %s, "
+					    "which is no breakout UCS end point of this "
+					    "edge with a gateway", str(bs, "set"), str(bs,
+					    "via") != NULL ? str(bs, "via") : "(none)");
+			}
+			if (!ok)
+				break;
 		}
 		if ((e = ucl_object_lookup(v, "transit")) != NULL &&
 		    ucl_object_type(e) != UCL_BOOLEAN) {
