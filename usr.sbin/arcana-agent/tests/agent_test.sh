@@ -1867,9 +1867,9 @@ EOS
 	    "$JGC" -c "$SOCK" wg wg0 peer "$PEER" allowed-ips '10.0.0.0/40'
 	atf_check -s exit:1 -e match:'the interface is wg and its number' -o ignore \
 	    "$JGC" -c "$SOCK" wg em0 init
-	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
-	    "$JGC" -s -c "$SOCK" wg wg0 init
-	atf_check -o empty cat wg.log
+	# Safe too (safe_wireguard); what wg refuses fails as before.
+	atf_check -s exit:1 -o match:'No such device' \
+	    "$JGC" -s -c "$SOCK" wg wg9 init
 
 	# Kept for a boot: written as wg-quick(8) reads it, for nobody
 	# else to read, and rc.conf told to bring it up.
@@ -3392,8 +3392,8 @@ safe_mode_body()
 	# What cannot be taken back is not taken in safe mode.
 	atf_check -s exit:1 -e match:'cannot be undone' -o ignore \
 	    "$JGC" -q -s -c "$SOCK" service sshd restart
-	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
-	    "$JGC" -q -s -c "$SOCK" interface gif4 destroy
+	atf_check -s exit:1 -o match:'no interface gif4 to make again' \
+	    "$JGC" -s -c "$SOCK" interface gif4 destroy
 	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
 	    "$JGC" -q -s -c "$SOCK" ng shutdown em0:
 
@@ -5245,9 +5245,8 @@ EOS
 b"
 	atf_check -s exit:1 -e match:'not set from here' -o ignore \
 	    "$JGC" -j web -c "$SOCK" sysctl kern.hostname=x
-	atf_check -s exit:1 -e match:'not taken back by itself' -o ignore \
-	    "$JGC" -s -c "$SOCK" sysctl kern.hostname=x
-	atf_check -o empty cat kld.log
+	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" sysctl kern.hostname=x
+	atf_check -o match:'sysctl kern.hostname=x' cat kld.log
 
 	# How the agent is reached: its listeners, and who is connected
 	# now, which is at least who asks.
@@ -5417,9 +5416,9 @@ EOS
 		atf_check -s exit:1 -e not-empty -o ignore \
 		    "$JGC" -c "$SOCK" bridge bridge0 $bad
 	done
-	atf_check -s exit:1 -e match:'not taken back by itself' -o ignore \
-	    "$JGC" -s -c "$SOCK" bridge bridge0 vlanfilter on
-	atf_check -o empty cat ifconfig.log
+	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" bridge bridge0 vlanfilter on
+	atf_check -o match:'bridge0 vlanfilter' cat ifconfig.log
+	: > ifconfig.log
 
 	# A member of a bridge takes no address: the bridge does.  One it
 	# has may be taken away.
