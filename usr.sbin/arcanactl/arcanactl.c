@@ -323,7 +323,9 @@ usage(void)
 	    "[package ...]\n"
 	    "    pkg-clean [-a] [-j jail | -J]\n"
 	    "    pkg-install [-O] [-4 | -6] [-r repo] [-j jail] package ...\n"
-	    "    jobs\n"
+	    "    jail-base jail convert [-O] [-4 | -6] [-b release] [set ...]\n"
+	    "    jail-base jail upgrade [-O] [-4 | -6] release\n"
+	    "    jobs [lanes number]\n"
 	    "    job [-w] id\n"
 	    "    job-cancel id\n"
 	    "    agent-update [-r] program\n"
@@ -3938,6 +3940,84 @@ cmd_packages(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
+/* jobs lanes number: how many jobs of pkg in jails run at once. */
+static int
+cmd_jobs_set(struct arc_client *cl, const char *number)
+{
+	struct arc_jobs_set_req	 req;
+	struct arc_jobs_set_rsp	*rsp;
+	const char		*errstr;
+	int			 error;
+
+	memset(&req, 0, sizeof(req));
+	req.has_lanes = true;
+	req.lanes = (uint8_t)strtonum(number, 1, 32, &errstr);
+	if (errstr != NULL)
+		xo_errx(2, "lanes %s: %s", number, errstr);
+	if ((error = arc_jobs_set(cl, &req, &rsp)) != 0)
+		fail(cl, error, "jobs lanes");
+	if (!rsp->ok)
+		xo_errx(1, "jobs lanes: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	xo_emit("{T:Lanes}: {:lanes/%u} jobs of pkg in jails at once\n",
+	    rsp->lanes);
+	arc_jobs_set_rsp_free(rsp);
+	return (0);
+}
+
+/*
+ * jail-base jail convert [-O] [-4 | -6] [-b release] [set ...] |
+ * upgrade [-O] [-4 | -6] release: a running jail's base system by pkg
+ * as pkgbase, a job.
+ */
+static int
+cmd_jail_base(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	int			 ch;
+	bool			 up;
+
+	if (argc < 3)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_JAIL_BASE;
+	sp.jail = argv[1];
+	sp.verb = argv[2];
+	up = strcmp(argv[2], "upgrade") == 0;
+	if (!up && strcmp(argv[2], "convert") != 0)
+		usage();
+	optind = 3;
+	while ((ch = getopt(argc, argv, "46Ob:")) != -1) {
+		switch (ch) {
+		case '4':
+		case '6':
+			sp.has_pkg_ip = true;
+			sp.pkg_ip = ch == '4' ? 4 : 6;
+			break;
+		case 'O':
+			sp.force = true;
+			break;
+		case 'b':
+			if (up)
+				usage();
+			sp.release = optarg;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (up) {
+		if (optind != argc - 1)
+			usage();
+		sp.release = argv[optind];
+	} else if (optind < argc) {
+		sp.names.v = (const char **)(uintptr_t)&argv[optind];
+		sp.names.n = (size_t)(argc - optind);
+	}
+	return (submit(cl, &sp));
+}
+
 /*
  * pkg-clean [-a] [-j jail | -J]: the cache of downloaded packages, a
  * job; with -J, of every running jail, one batch of a job each.
@@ -4306,6 +4386,9 @@ cmd_jobs(struct arc_client *cl)
 	for (i = 0; i < rsp->jobs.n; i++)
 		emit_job(&rsp->jobs.v[i]);
 	xo_close_list("job");
+	if (rsp->has_lanes)
+		xo_emit("{T:Lanes}: {:lanes/%u} jobs of pkg in jails at once\n",
+		    rsp->lanes);
 	/* What is under way that is not a job, and a stop that waits. */
 	if (rsp->activity != NULL)
 		xo_emit("{Lwc:Under way}{:activity/%s}{d:/ (%jd s)}"
@@ -4644,6 +4727,11 @@ main(int argc, char *argv[])
 		rc = cmd_packages(&cl, argc, argv);
 	else if (strcmp(argv[0], "jobs") == 0 && argc == 1)
 		rc = cmd_jobs(&cl);
+	else if (strcmp(argv[0], "jobs") == 0 && argc == 3 && strcmp(argv[1],
+	    "lanes") == 0)
+		rc = cmd_jobs_set(&cl, argv[2]);
+	else if (strcmp(argv[0], "jail-base") == 0)
+		rc = cmd_jail_base(&cl, argc, argv);
 	else if (strcmp(argv[0], "job") == 0)
 		rc = cmd_job(&cl, argc, argv);
 	else if (strcmp(argv[0], "job-cancel") == 0)

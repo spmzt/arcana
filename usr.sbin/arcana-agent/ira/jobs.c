@@ -17,12 +17,14 @@
 #include <sys/queue.h>
 
 #include <err.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <ucl.h>
 
@@ -66,8 +68,10 @@ static TAILQ_HEAD(, qjob) jobs = TAILQ_HEAD_INITIALIZER(jobs);
 static pthread_mutex_t	jobs_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t	jobs_cv = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t	confirm_cv = PTHREAD_COND_INITIALIZER;
-/* Jobs of pkg in jails at work in lanes of their own; under jobs_lock. */
+/* Jobs of pkg in jails at work in lanes of their own, and how many
+ * lanes there are (jobs-set, kept in jobs.conf); under jobs_lock. */
 static int		lanes_busy;
+static int		lanes_max = PKG_LANES;
 static uint64_t		nextid = 1;
 
 static char	*xdup(const char *);
@@ -301,6 +305,13 @@ title_of(const struct arc_job_spec *sp)
 		rc = asprintf(&t, "pkg clean%s%s%s", sp->force ? " -a" : "",
 		    sp->jail != NULL && sp->jail[0] != '\0' ? " in " : "",
 		    sp->jail != NULL ? sp->jail : "");
+		break;
+	case ARC_JOB_KIND_JAIL_BASE:
+		rc = asprintf(&t, "jail %s: %s%s%s", sp->jail != NULL ? sp->jail :
+		    "?", sp->verb != NULL && strcmp(sp->verb, "upgrade") == 0 ?
+		    "base to " : "to pkgbase", sp->verb != NULL && strcmp(sp->verb,
+		    "upgrade") == 0 && sp->release != NULL ? sp->release : "",
+		    sp->force ? " (any OSVERSION)" : "");
 		break;
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:
@@ -1124,6 +1135,10 @@ run(struct qjob *j, bool lane)
 		error = NULL;
 		ok = do_pkg_clean(&j->w, sp->jail, sp->force, &error) == 0;
 		break;
+	case ARC_JOB_KIND_JAIL_BASE:
+		error = NULL;
+		ok = do_jail_base(&j->w, sp, &error) == 0;
+		break;
 	case ARC_JOB_KIND_PKG_INSTALL:
 		error = NULL;
 		ok = do_pkg_install(&j->w, sp, &error) == 0;
@@ -1262,7 +1277,8 @@ pkg_lane(const struct arc_job_spec *sp)
 
 	return ((sp->kind == ARC_JOB_KIND_PKG_UPGRADE ||
 	    sp->kind == ARC_JOB_KIND_PKG_INSTALL ||
-	    sp->kind == ARC_JOB_KIND_PKG_CLEAN) && !sp->safe &&
+	    sp->kind == ARC_JOB_KIND_PKG_CLEAN ||
+	    sp->kind == ARC_JOB_KIND_JAIL_BASE) && !sp->safe &&
 	    sp->jail != NULL && sp->jail[0] != '\0' &&
 	    strcmp(sp->jail, "*") != 0);
 }
@@ -1346,13 +1362,13 @@ lanes(void)
 	int		 error;
 
 	pthread_mutex_lock(&change_lock);
-	(void)change_note("pkg in jails, %d at once", PKG_LANES);
+	(void)change_note("pkg in jails, %d at once", jobs_lanes());
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 	pthread_mutex_lock(&jobs_lock);
 	for (;;) {
-		j = lanes_busy < PKG_LANES ? next_lane(&more) : NULL;
-		if (lanes_busy >= PKG_LANES)
+		j = lanes_busy < lanes_max ? next_lane(&more) : NULL;
+		if (lanes_busy >= lanes_max)
 			more = true;
 		if (j != NULL) {
 			j->state = ARC_JOB_STATE_RUNNING;
@@ -1370,6 +1386,68 @@ lanes(void)
 	pthread_attr_destroy(&attr);
 	(void)change_note(NULL);
 	pthread_mutex_unlock(&change_lock);
+}
+
+/* How many lanes there are: 1 to 32. */
+int
+jobs_lanes(void)
+{
+	int	n;
+
+	pthread_mutex_lock(&jobs_lock);
+	n = lanes_max;
+	pthread_mutex_unlock(&jobs_lock);
+	return (n);
+}
+
+/*
+ * The lanes set, and kept in jobs.conf for the next start; a lane at
+ * work beyond a smaller number finishes, and no new one starts until
+ * fewer are busy.  NULL, or why not.
+ */
+const char *
+jobs_set_lanes(int n)
+{
+	FILE	*fp;
+	char	 tmp[PATH_MAX];
+
+	if (n < 1 || n > 32)
+		return ("lanes is 1 to 32");
+	snprintf(tmp, sizeof(tmp), "%s.new", opts.jobs_conf);
+	if ((fp = fopen(tmp, "we")) == NULL)
+		return ("jobs.conf could not be written");
+	fprintf(fp, "# Written by arcana-agent: jobs-set.\nlanes=%d\n", n);
+	if (fclose(fp) != 0 || rename(tmp, opts.jobs_conf) == -1) {
+		(void)unlink(tmp);
+		return ("jobs.conf could not be written");
+	}
+	pthread_mutex_lock(&jobs_lock);
+	lanes_max = n;
+	pthread_cond_broadcast(&jobs_cv);
+	pthread_mutex_unlock(&jobs_lock);
+	logmsg(LOG_INFO, "jobs: pkg in jails, %d at once", n);
+	return (NULL);
+}
+
+/* jobs.conf read at start: lanes=N; absent or odd, the default. */
+void
+jobs_conf_load(void)
+{
+	FILE	*fp;
+	char	 line[128];
+	long	 n;
+
+	lanes_max = opts.pkg_lanes;
+	if ((fp = fopen(opts.jobs_conf, "re")) == NULL)
+		return;
+	while (fgets(line, sizeof(line), fp) != NULL) {
+		if (strncmp(line, "lanes=", 6) != 0)
+			continue;
+		n = strtol(line + 6, NULL, 10);
+		if (n >= 1 && n <= 32)
+			lanes_max = (int)n;
+	}
+	fclose(fp);
 }
 
 static void *

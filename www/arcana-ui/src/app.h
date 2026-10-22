@@ -204,6 +204,7 @@ struct pkgview {
 	int		 ip;		/* pkg -4 or -6, or 0 either */
 	char		 repo[65];	/* pkg -r: one repository, or "" */
 	bool		 anyos;		/* reads past OSVERSION: approved */
+	bool		 base_up;	/* the jail-base modal: upgrade, not convert */
 	bool		 asked;		/* ... or asked once already */
 };
 
@@ -430,6 +431,7 @@ enum modal {
 	MODAL_ROLE,		/* a role: what it allows */
 	MODAL_UGROUP,		/* a group of users: its roles, its members */
 	MODAL_PKG_INSTALL,
+	MODAL_JAIL_BASE,
 	MODAL_WF_RUN,
 	MODAL_IF_VNET,
 	MODAL_STORAGE,
@@ -650,6 +652,7 @@ void		 load_schema(void);
 const char	*schema_op(const ucl_object_t *);
 void		 view_schema(struct html *, const char *);
 void		 refresh_jobs(struct server *);
+void		 set_job_lanes(struct server *, int);
 void		 cancel_job(struct server *, long long, const char *);
 void		 cancel_queued_jobs(struct server *);
 void		 open_job(struct server *, long long, const char *);

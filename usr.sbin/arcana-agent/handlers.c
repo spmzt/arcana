@@ -2742,7 +2742,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_SMTPD)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_JAIL_BASE)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2840,6 +2840,19 @@ check_spec(const struct arc_job_spec *sp)
 			return ("an install is not taken back by itself");
 		if (sp->names.n == 0)
 			return ("name the packages to install");
+		break;
+	case ARC_JOB_KIND_JAIL_BASE:
+		if (sp->safe)
+			return ("a jail's base is not taken back by itself");
+		if (sp->jail == NULL || sp->jail[0] == '\0' || strcmp(sp->jail,
+		    "*") == 0)
+			return ("name the jail");
+		if (sp->verb == NULL || (strcmp(sp->verb, "convert") != 0 &&
+		    strcmp(sp->verb, "upgrade") != 0))
+			return ("verb convert or upgrade");
+		if (strcmp(sp->verb, "upgrade") == 0 && (sp->release == NULL ||
+		    sp->release[0] == '\0'))
+			return ("name the release to go to: 16, or 15.2");
 		break;
 	case ARC_JOB_KIND_PKG_CLEAN:
 		if (sp->safe)
@@ -3147,9 +3160,28 @@ arc_jobs_doit(cbl_req *req, void *arg __unused)
 		rsp.since = since;
 	}
 	rsp.stopping = changes_stopping();
+	rsp.has_lanes = true;
+	rsp.lanes = (uint8_t)jobs_lanes();
 	error = arc_jobs_reply(req, &rsp);
 	work_free(&w);
 	return (error);
+}
+
+int
+arc_jobs_set_doit(cbl_req *req, const struct arc_jobs_set_req *rq,
+    void *arg __unused)
+{
+	struct arc_jobs_set_rsp	rsp;
+	const char		*e;
+
+	memset(&rsp, 0, sizeof(rsp));
+	rsp.has_ok = true;
+	e = jobs_set_lanes((int)rq->lanes);
+	rsp.ok = e == NULL;
+	rsp.error = e;
+	rsp.has_lanes = true;
+	rsp.lanes = (uint8_t)jobs_lanes();
+	return (arc_jobs_set_reply(req, &rsp));
 }
 
 int

@@ -2097,6 +2097,21 @@ part_nettab(void)
 	    "button[data-act=job-cancel]')"));
 	ATF_CHECK(js_true("!document.querySelector('button[data-act="
 	    "jobs-clear]')"));
+	/* How many jobs of pkg in jails run at once: said, and set. */
+	wait_js("document.querySelector('form[data-form=jobs-lanes] "
+	    "input[name=lanes]') && document.querySelector('form[data-form="
+	    "jobs-lanes] input[name=lanes]').value === '4'", 10);
+	run("const f = document.querySelector('form[data-form=jobs-lanes]'); "
+	    "f.lanes.value = '2'; f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=jobs-lanes] "
+	    "input[name=lanes]').value === '2'", 10);
+	/* A jail's base by pkg: the buttons are a jail's, not the host's
+	 * (no jail runs here, so only the host can be chosen). */
+	run("document.querySelector('button.tab[data-arg=packages]').click()");
+	wait_js("document.querySelector('button[data-act=pkg-target]')", 10);
+	ATF_CHECK(js_true("!document.querySelector('button[data-act="
+	    "jail-base]')"));
+	run("document.querySelector('button.tab[data-arg=jobs]').click()");
 
 	/*
 	 * On a phone: nothing is wider than the screen, on any of the

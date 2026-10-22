@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.177.0"
+#define	ARCANA_AGENT_VERSION	"0.178.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -172,6 +172,8 @@ struct opts {
 	const char	*root;		/* --root: the system's files under it */
 	int		 bird_watch_s;	/* --bird-watch: BIRD's sessions, how often */
 	int		 pkg_idle_s;	/* --pkg-idle: a silent pkg, stopped after */
+	int		 pkg_lanes;	/* jobs of pkg in jails at once, at start */
+	const char	*jobs_conf;	/* where lanes is kept */
 	char		 build[65];	/* SHA-256 of the running program */
 	bool		 debug;
 };
@@ -837,6 +839,13 @@ int		 do_packages(struct work *, const char *, bool, bool, uint8_t,
 int		 do_pkg_upgrade(struct work *, const struct arc_pkg_upgrade_req *,
 		    struct arc_pkg_upgrade_rsp *);
 int		 do_pkg_clean(struct work *, const char *, bool, const char **);
+int		 do_jail_base(struct work *, const struct arc_job_spec *,
+		    const char **);
+const char	*pkg_repo_error(struct work *, const struct execres *,
+		    const char *);
+int		 jobs_lanes(void);
+const char	*jobs_set_lanes(int);
+void		 jobs_conf_load(void);
 int		 do_pkg_install(struct work *, const struct arc_job_spec *,
 		    const char **);
 

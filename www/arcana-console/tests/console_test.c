@@ -3382,6 +3382,21 @@ ATF_TC_BODY(telegram, tc)
 	    "tg.out | grep -qx 2 && grep -q '\"chat_id\":-100,' tg.out && "
 	    "grep -q '\"chat_id\":42,' tg.out && grep -q '\"text\":\"Arcana: "
 	    "a test.' tg.out") == 0);
+	/* How many jobs of pkg in jails run at once: set, said by the
+	 * jobs list, and refused outside 1 to 32. */
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs/config", sid);
+	http("POST", path, "{\"lanes\":3}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("3", jstr(&r, "lanes"));
+	resp_free(&r);
+	http("POST", path, "{\"lanes\":0}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", sid);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("3", jstr(&r, "lanes"));
+	resp_free(&r);
 	/* A job that failed, told within a tick or two. */
 	sleep(2);
 	snprintf(path, sizeof(path), "/api/servers/%s/jobs", sid);

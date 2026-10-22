@@ -229,9 +229,17 @@ pimd-3.1.0 3.2.0
 #!/bin/sh
 echo "fake-pkg $*" >&2
 case "$1" in -4|-6) shift ;; esac
-anyos=no; [ "$1" = -o ] && { anyos=yes; shift 2; }
+anyos=no
+while [ "$1" = -o ]; do
+	echo "opt $2" >> opts.log
+	[ "$2" = IGNORE_OSVERSION=yes ] && anyos=yes
+	shift 2
+done
 [ "$1" = -j ] && shift 2
 case "$1" in
+# pkgbase: FreeBSD-runtime is installed once the file pkgbase is there.
+info)	[ -e pkgbase ] && exit 0 || exit 1 ;;
+rquery)	printf 'FreeBSD-runtime\nFreeBSD-set-base-jail\nFreeBSD-set-base-jail-dbg\nFreeBSD-set-minimal-jail\n' ;;
 -vv)	printf 'Version                 : 2.3.1\nRepositories:\n  FreeBSD-ports: { \n    url             : "pkg+https://pkg.FreeBSD.org/FreeBSD:16:amd64/latest",\n    enabled         : yes,\n  }\n  builder: { \n    url             : "file:///usr/local/poudriere/data/packages/lab",\n    enabled         : no,\n  }\n' ;;
 update)	exit 0 ;;
 query)	printf 'aria2\t1.37.0_1\t0\t5242880\twww/aria2\tDownload utility\npimd\t3.1.0\t1\t102400\tnet/pimd\tPIM-SM daemon\n' ;;
@@ -305,6 +313,7 @@ start_daemon()
 	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
 	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
 	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
+	    --jobs-conf "$(pwd)/jobs.conf" \
 	    -X "$(pwd)/fake-traceroute" -4 "$(pwd)/ntp.conf" \
 	    -6 "$(pwd)/rtadvd.conf" -7 "$(pwd)/fake-dnsmasq" -8 "$(pwd)/fake-rtsol" \
 	    -9 "$(pwd)/fake-setkey" -0 "$(pwd)/fake-local-unbound" \
@@ -837,6 +846,101 @@ packages_body()
 	atf_check -s exit:2 -e ignore "$JGC" -c "$SOCK" pkg-clean -J -j web
 }
 packages_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case jail_base cleanup
+jail_base_head()
+{
+	atf_set "descr" "a jail's base system to pkgbase and to a newer release, through pkg(8); and the lanes of pkg jobs"
+}
+jail_base_body()
+{
+	local R i
+
+	R="$(pwd)/web"
+	mkdir -p "$R/etc" "$R/usr/local/etc"
+	printf 'hostname="web"\n' > "$R/etc/rc.conf"
+	start_daemon
+	# jls: web runs, on 15.1; old, an older release; nothing else.
+	cat > fake-jls <<EOS
+#!/bin/sh
+case "\$2" in
+web) case "\$*" in *osrelease*) echo 15.1-RELEASE-p3 ;; *) echo "7 inherit $R" ;; esac ;;
+old) case "\$*" in *osrelease*) echo 14.3-RELEASE ;; *) echo "8 inherit $R" ;; esac ;;
+*) echo "jls: jail \"\$2\" not found" >&2; exit 1 ;;
+esac
+EOS
+	chmod +x fake-jls
+	# Not running, not a verb, no release to go to: refused at once.
+	atf_check -s exit:1 -o match:'not running' \
+	    "$JGC" -c "$SOCK" jail-base nope convert
+	atf_check -s exit:2 -o ignore -e match:'usage' \
+	    "$JGC" -c "$SOCK" jail-base web reinstall
+	atf_check -s exit:2 -o ignore -e match:'usage' \
+	    "$JGC" -c "$SOCK" jail-base web upgrade
+	# Too old for pkgbase.
+	atf_check -s exit:1 -o match:'needs FreeBSD 15.1' \
+	    "$JGC" -c "$SOCK" jail-base old convert
+	# Converted: the repository's file in the jail, /etc kept aside,
+	# pkg update then install of the default set from FreeBSD-base.
+	atf_check -o save:cv.out "$JGC" -t -c "$SOCK" jail-base web convert
+	atf_check -o match:'base_release_1' cat "$R/usr/local/etc/pkg/repos/FreeBSD-base.conf"
+	atf_check -o match:'pkg.FreeBSD.org/\$\{ABI\}/base_release_1' cat "$R/usr/local/etc/pkg/repos/FreeBSD-base.conf"
+	test -s "$R/var/backups/etc-before-pkgbase.tar"
+	atf_check -o match:'rc.conf' tar -tf "$R/var/backups/etc-before-pkgbase.tar"
+	atf_check -o match:'fake-pkg -j web update -r FreeBSD-base' cat cv.out
+	atf_check -o match:'^install -r FreeBSD-base -y FreeBSD-set-base-jail$' cat install.log
+	atf_check -o match:'restart the jail' cat cv.out
+	# Sets named, and one the repository has not; a branch named.
+	rm install.log
+	atf_check -o ignore "$JGC" -c "$SOCK" jail-base web convert -b 16 \
+	    FreeBSD-set-minimal-jail
+	atf_check -o match:'^install -r FreeBSD-base -y FreeBSD-set-minimal-jail$' cat install.log
+	atf_check -o match:'base_latest' cat "$R/usr/local/etc/pkg/repos/FreeBSD-base.conf"
+	atf_check -s exit:1 -o match:'has no FreeBSD-set-tests; its sets: FreeBSD-set-base-jail, FreeBSD-set-minimal-jail' \
+	    "$JGC" -c "$SOCK" jail-base web convert FreeBSD-set-tests
+	atf_check -s exit:1 -o match:"'bsd' is not a set's name" \
+	    "$JGC" -c "$SOCK" jail-base web convert bsd
+	# Not on pkgbase yet: no upgrade; on it: no second conversion.
+	atf_check -s exit:1 -o match:'not on pkgbase' \
+	    "$JGC" -c "$SOCK" jail-base web upgrade 16
+	touch pkgbase
+	atf_check -s exit:1 -o match:'on pkgbase already' \
+	    "$JGC" -c "$SOCK" jail-base web convert
+	# Upgraded to the latest 16: the new ABI and OSVERSION on every
+	# pkg, past OSVERSION for the base, the base then the rest.
+	rm -f opts.log
+	atf_check -o save:up.out "$JGC" -t -c "$SOCK" jail-base web upgrade 16
+	atf_check -o match:'opt ABI=FreeBSD:16:[a-z0-9]+' -o match:'opt OSVERSION=1600000' \
+	    -o match:'opt IGNORE_OSVERSION=yes' cat opts.log
+	atf_check -o match:'base_latest' cat "$R/usr/local/etc/pkg/repos/FreeBSD-base.conf"
+	atf_check -o match:'upgrade from FreeBSD-base' cat repo.log
+	atf_check -o match:'fake-pkg -o ABI=FreeBSD:16:[a-z0-9]+ -o OSVERSION=1600000 -j web upgrade -y' cat up.out
+	# A release of its own; beyond the host's kernel, refused.
+	atf_check -o ignore "$JGC" -c "$SOCK" jail-base web upgrade 15.2
+	atf_check -o match:'opt OSVERSION=1502000' cat opts.log
+	atf_check -o match:'base_release_2' cat "$R/usr/local/etc/pkg/repos/FreeBSD-base.conf"
+	atf_check -s exit:1 -o match:'cannot run a newer userland' \
+	    "$JGC" -c "$SOCK" jail-base web upgrade 99
+	atf_check -s exit:1 -o match:'is not a release' \
+	    "$JGC" -c "$SOCK" jail-base web upgrade sixteen
+	# The lanes of pkg jobs in jails: said, set, kept for the next start.
+	atf_check -o match:'^Lanes: 4 ' "$JGC" -c "$SOCK" jobs
+	atf_check -o match:'^Lanes: 2 ' "$JGC" -c "$SOCK" jobs lanes 2
+	atf_check -o match:'^Lanes: 2 ' "$JGC" -c "$SOCK" jobs
+	atf_check -o match:'^lanes=2$' cat jobs.conf
+	atf_check -s exit:2 -o ignore -e match:'lanes 40' "$JGC" -c "$SOCK" jobs lanes 40
+	stop_daemon
+	start_daemon
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs > /dev/null 2>&1 && break
+		sleep 0.05
+	done
+	atf_check -o match:'^Lanes: 2 ' "$JGC" -c "$SOCK" jobs
+}
+jail_base_cleanup()
 {
 	stop_daemon
 }
@@ -7535,5 +7639,6 @@ atf_init_test_cases()
 	atf_add_test_case network
 	atf_add_test_case ipsec
 	atf_add_test_case packages
+	atf_add_test_case jail_base
 	atf_add_test_case jobs
 }

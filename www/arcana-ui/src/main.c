@@ -730,6 +730,81 @@ submit_form(const char *form, const ucl_object_t *f)
 		free(b.s);
 		app.modal = MODAL_NONE;
 		job_send(cur_server(), q, title, JOB_PACKAGES, app.pkg.jail);
+	} else if (strcmp(form, "jobs-lanes") == 0 && cur_server() != NULL) {
+		set_job_lanes(cur_server(), jstr(f, "lanes") != NULL ?
+		    atoi(jstr(f, "lanes")) : 0);
+	} else if (strcmp(form, "jail-base") == 0 && cur_server() != NULL) {
+		char	*q, *qj, *qr, title[300];
+
+		/* A jail's base to pkgbase, or to a newer release: a job. */
+		if (app.pkg.jail[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "Choose a jail first");
+			return;
+		}
+		s = jstr(f, "release") != NULL ? jstr(f, "release") : "";
+		if (app.pkg.base_up && (s[0] == '\0' || strspn(s, "0123456789.")
+		    != strlen(s))) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "Name the release to go to: 16, or 15.2");
+			return;
+		}
+		if (strspn(s, "0123456789.") != strlen(s)) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "A release is 16, or 15.2");
+			return;
+		}
+		qj = json_quote(app.pkg.jail);
+		qr = json_quote(s);
+		{
+			struct html	 b;
+			const char	*p;
+			char		 word[80], *w;
+			size_t		 n, nw;
+
+			/* The sets named, as a JSON array; none, the default. */
+			memset(&b, 0, sizeof(b));
+			nw = 0;
+			for (p = jstr(f, "sets") != NULL ? jstr(f, "sets") : "";
+			    !app.pkg.base_up && *p != '\0'; ) {
+				p += strspn(p, " ,\t");
+				n = strcspn(p, " ,\t");
+				if (n == 0)
+					break;
+				if (n >= sizeof(word) || strspn(p,
+				    "abcdefghijklmnopqrstuvwxyz"
+				    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.+") < n) {
+					snprintf(app.modal_error,
+					    sizeof(app.modal_error), "A set is "
+					    "named FreeBSD-set-...");
+					free(b.s);
+					free(qj);
+					free(qr);
+					return;
+				}
+				snprintf(word, sizeof(word), "%.*s", (int)n, p);
+				w = json_quote(word);
+				h_fmt(&b, "%s%s", nw++ > 0 ? "," : "", w);
+				free(w);
+				p += n;
+			}
+			if (asprintf(&q, "{\"kind\":\"jail-base\",\"jail\":%s,"
+			    "\"verb\":\"%s\",\"packages\":[%s]%s%s%s%s%s}", qj,
+			    app.pkg.base_up ? "upgrade" : "convert", b.s != NULL ?
+			    b.s : "", s[0] != '\0' ? ",\"release\":" : "",
+			    s[0] != '\0' ? qr : "", app.pkg.ip != 0 ? (app.pkg.ip ==
+			    4 ? ",\"pkg_ip\":4" : ",\"pkg_ip\":6") : "", jbool(f,
+			    "anyos") ? ",\"force\":true" : "", "") == -1)
+				abort();
+			free(b.s);
+		}
+		free(qj);
+		free(qr);
+		snprintf(title, sizeof(title), "jail %s: %s%s", app.pkg.jail,
+		    app.pkg.base_up ? "base to " : "to pkgbase", app.pkg.base_up ?
+		    s : "");
+		app.modal = MODAL_NONE;
+		job_send(cur_server(), q, title, JOB_PACKAGES, app.pkg.jail);
 	} else if (strcmp(form, "login-token") == 0) {
 		login_token(jstr(f, "token") != NULL ? jstr(f, "token") : "");
 	} else if (iflabel_form(form, f) || pfxlists_form(form, f) ||
@@ -1122,6 +1197,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		refresh_packages(s, true);
 	} else if (strcmp(act, "pkg-install") == 0 && s != NULL) {
 		app.modal = MODAL_PKG_INSTALL;
+		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "jail-base") == 0 && s != NULL) {
+		app.pkg.base_up = strcmp(arg, "upgrade") == 0;
+		app.modal = MODAL_JAIL_BASE;
 		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "pkg-clean") == 0 && s != NULL) {
 		snprintf(body, sizeof(body), "pkg clean%s on %s%s%s: %s",

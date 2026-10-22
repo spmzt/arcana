@@ -161,6 +161,9 @@ submodule arcana-jobs-kinds {
       enum smtpd {
         value 45;
       }
+      enum jail-base {
+        value 46;
+      }
     }
     description
       "A kind of job, by its number in arcana.yaml's job-kind.";
@@ -1353,6 +1356,50 @@ submodule arcana-jobs-kinds {
             type string;
             description
               "Repository";
+          }
+        }
+      }
+      case jail-base {
+        container jail-base {
+          presence
+            "This kind of job.";
+          description
+            "A jail's base system by pkg, to pkgbase or a newer release";
+          leaf jail {
+            type string;
+            mandatory true;
+            description
+              "Jail";
+          }
+          leaf verb {
+            type enumeration {
+              enum convert;
+              enum upgrade;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list packages {
+            type string;
+            ordered-by user;
+            description
+              "Packages";
+          }
+          leaf release {
+            type string;
+            description
+              "Release";
+          }
+          leaf force {
+            type boolean;
+            description
+              "Force";
+          }
+          leaf pkg-ip {
+            type uint32;
+            description
+              "pkg's network";
           }
         }
       }

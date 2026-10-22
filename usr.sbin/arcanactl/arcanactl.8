@@ -1451,6 +1451,42 @@ one of those
 .Cm packages
 lists, enabled or not.
 What is still pending follows.
+.It Cm jail-base Ar jail Cm convert Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl b Ar release Oc Op Ar set ...
+.It Cm jail-base Ar jail Cm upgrade Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Ar release
+A running jail's base system by
+.Xr pkg 8 ,
+as pkgbase; a job.
+.Cm convert
+installs the base system packages over the jail's files from the
+official FreeBSD-base repository of the jail's own release
+.Pq Fl b Ar release No names another branch: Dq 16 , the latest of that major, or Dq 15.2 ,
+the sets named, or
+.Li FreeBSD-set-base-jail
+when none; the repository must have them.
+.Cm upgrade
+takes a jail already on pkgbase to
+.Ar release ,
+its base packages and then its other packages for the new ABI, never
+beyond the host's kernel.
+Both write the repository's file in the jail, keep its
+.Pa /etc
+aside in
+.Pa /var/backups/etc-before-pkgbase.tar
+first, and name the
+.Pa .pkgnew
+and
+.Pa .pkgsave
+files left to merge; the jail is to be restarted after.
+.Fl O
+reads past
+.Ev OSVERSION
+for the other packages;
+.Fl 4
+and
+.Fl 6
+as for
+.Cm pkg-upgrade .
+Needs FreeBSD 15.1 or later in the jail.
 .It Cm pkg-clean Oo Fl a Oc Oo Fl j Ar jail | Fl J Oc
 .Nm pkg clean Fl y ,
 a job: the downloaded packages no longer needed, or no longer in the
@@ -1474,6 +1510,13 @@ also packages built for a newer FreeBSD; with
 from that repository alone.
 .It Cm jobs
 The host's queued, running and recently finished jobs.
+.It Cm jobs Cm lanes Ar number
+How many jobs of pkg in jails run at once, 1 to 32, kept for the
+agent's next start in
+.Pa jobs.conf
+beside its other kept files;
+.Cm jobs
+says the number.
 .It Cm job Oo Fl w Oc Ar id
 One job with the trace of what it has done so far;
 .Fl w

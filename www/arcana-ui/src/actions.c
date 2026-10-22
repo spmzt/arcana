@@ -1655,6 +1655,46 @@ jobs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	free(c);
 }
 
+static void
+lanes_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct ctx	*c;
+	struct server	*s;
+
+	c = arg;
+	if (status != 200 || !jbool(o, "ok"))
+		toast(true, "%s: lanes not set: %s", c->name, status == 200 &&
+		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
+		    err : "failed");
+	else
+		toast(false, "%s: pkg in jails, %lld at once", c->name,
+		    (long long)jint(o, "lanes", 0));
+	if ((s = server_by_id(c->sid)) != NULL) {
+		s->jobs_loading = false;
+		refresh_jobs(s);
+	}
+	free(c);
+}
+
+/* How many jobs of pkg in jails the host runs at once: 1 to 32. */
+void
+set_job_lanes(struct server *s, int lanes)
+{
+	struct ctx	*c;
+	char		 url[128], body[32];
+
+	if (lanes < 1 || lanes > 32) {
+		toast(true, "%s: lanes is 1 to 32", s->name);
+		return;
+	}
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	snprintf(c->name, sizeof(c->name), "%s", s->name);
+	snprintf(url, sizeof(url), "/api/servers/%s/jobs/config", s->id);
+	snprintf(body, sizeof(body), "{\"lanes\":%d}", lanes);
+	api("POST", url, body, lanes_cb, c);
+}
+
 /* The host's own record of jobs, whoever queued them; quiet. */
 void
 refresh_jobs(struct server *s)

@@ -164,6 +164,10 @@ fields:
     type: text
     label: Repository
     help: Only from this one of pkg's repositories (pkg -r); empty, from where pkg's configuration has each package.
+  - field: release
+    type: text
+    label: Release
+    help: The FreeBSD release to go to, "16" or "15.2"; for convert, the FreeBSD-base repository's branch, the jail's own release when empty.
   - field: conn
     type: text
     label: Connection
@@ -380,6 +384,11 @@ kinds:
     title: Packages installed
     needs: packages
     uses: jail force pkg_ip pkg_repo
+  - kind: jail-base
+    title: A jail's base system by pkg, to pkgbase or a newer release
+    needs: jail verb
+    uses: packages release force pkg_ip
+    values: verb=convert|upgrade
   - kind: jail-conf
     title: A jail made, removed; the jails' defaults or a template
     needs: verb

@@ -2458,6 +2458,47 @@ modal(struct html *h)
 		if (!workflows_modal(h))
 			return;
 		break;
+	case MODAL_JAIL_BASE:
+		if (cur_server() == NULL || app.pkg.jail[0] == '\0')
+			return;
+		h_fmt(h, "<form data-form=\"jail-base\"><h2>%s</h2><p>The jail "
+		    "<b>", app.pkg.base_up ? "Upgrade the base system" : "To "
+		    "pkgbase");
+		h_txt(h, app.pkg.jail);
+		h_raw(h, "</b>");
+		if (app.pkg.base_up)
+			h_raw(h, ", already on pkgbase, is taken to the release "
+			    "named: its base packages from the FreeBSD-base "
+			    "repository of that release, then its other packages "
+			    "for the new ABI, never beyond the host's kernel.</p>"
+			    "<label>Release<input name=\"release\" spellcheck=\""
+			    "false\" autocomplete=\"off\" placeholder=\"16\" "
+			    "autofocus><small>16, the latest of that major; or "
+			    "15.2, that release.</small></label>");
+		else
+			h_raw(h, " gets the base system packages (pkgbase) "
+			    "installed over its files, from the FreeBSD-base "
+			    "repository of its own release; it must run FreeBSD "
+			    "15.1 or later.</p><label>Sets<input name=\"sets\" "
+			    "spellcheck=\"false\" autocomplete=\"off\" placeholder="
+			    "\"FreeBSD-set-base-jail\"><small>FreeBSD-set-base-jail "
+			    "when empty; FreeBSD-set-minimal-jail is smaller, "
+			    "FreeBSD-set-optional-jail adds to it. The job says "
+			    "which the repository has.</small></label><label>"
+			    "Repository branch<input name=\"release\" spellcheck="
+			    "\"false\" autocomplete=\"off\" placeholder=\"the "
+			    "jail's own release\"><small>Empty for the jail's own "
+			    "release; 16 for the latest of that major.</small>"
+			    "</label>");
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "anyos\"><span>Also packages built for a newer FreeBSD "
+		    "<em>IGNORE_OSVERSION</em></span></label><p class=\"dim\">Its "
+		    "/etc is kept aside in /var/backups first; what pkg leaves "
+		    "beside a file it did not replace (.pkgnew, .pkgsave) is "
+		    "named in the job's trace, to merge by hand. Restart the "
+		    "jail after%s.</p>", app.pkg.ip == 4 ? "; over IPv4" :
+		    app.pkg.ip == 6 ? "; over IPv6" : "");
+		break;
 	case MODAL_PKG_INSTALL:
 		if (cur_server() == NULL)
 			return;
@@ -2783,6 +2824,10 @@ modal(struct html *h)
 			break;
 		case MODAL_PKG_INSTALL:
 			h_raw(h, "<button class=\"primary\">Install</button>");
+			break;
+		case MODAL_JAIL_BASE:
+			h_fmt(h, "<button class=\"danger\">%s</button>",
+			    app.pkg.base_up ? "Upgrade" : "Convert");
 			break;
 		case MODAL_WF_RUN:
 			h_raw(h, "<button class=\"primary\">Run</button>");
@@ -3599,6 +3644,16 @@ view_packages(struct html *h, struct server *s)
 	    "small\" data-act=\"pkg-clean\" data-arg=\"all\" title=\"pkg "
 	    "clean -a: all the downloaded packages deleted\">Clean all"
 	    "</button>");
+	/* A jail's base system by pkg: to pkgbase, or a newer release. */
+	if (app.pkg.jail[0] != '\0')
+		h_raw(h, "<button class=\"ghost small\" data-act=\"jail-base\" "
+		    "data-arg=\"convert\" title=\"The base system packages "
+		    "(pkgbase) installed over the jail's files, from the "
+		    "FreeBSD-base repository of its release\">To pkgbase\u2026"
+		    "</button><button class=\"ghost small\" data-act=\"jail-base"
+		    "\" data-arg=\"upgrade\" title=\"A jail on pkgbase taken to a "
+		    "newer FreeBSD release, base and packages\">Base upgrade\u2026"
+		    "</button>");
 	/* Of every running jail at once, from the host's page. */
 	if (app.pkg.jail[0] == '\0')
 		h_raw(h, "<button class=\"ghost small\" data-act=\""

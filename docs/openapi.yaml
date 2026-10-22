@@ -2010,6 +2010,38 @@ paths:
                             health: { type: string }
                   trace: { type: array }
 
+  /api/servers/{server}/jobs/config:
+    post:
+      tags: [servers]
+      summary: How many jobs of pkg in jails run at once
+      description: |
+        The agent runs jobs of pkg in jails in lanes of their own, so
+        that one jail's stalled download holds up no other; lanes, 1
+        to 32, is how many at once, kept on the host for the agent's
+        next start.  The jobs list says the number as "lanes".
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lanes]
+              properties:
+                lanes: { type: integer, minimum: 1, maximum: 32 }
+      responses:
+        "200":
+          description: The number now.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  lanes: { type: integer }
+        "400":
+          description: lanes is not 1 to 32.
   /api/servers/{server}/jobs:
     get:
       tags: [servers]

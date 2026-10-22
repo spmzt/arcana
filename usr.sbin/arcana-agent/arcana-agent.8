@@ -62,6 +62,7 @@
 .Op Fl Z Ar zpool
 .Op Fl P Ar pkg
 .Op Fl -pkg-idle Ar seconds
+.Op Fl -jobs-conf Ar file
 .Op Fl -bird-watch Ar seconds
 .Op Fl -sctp-also Ar addresses
 .Op Fl -telegram-api Ar url
@@ -344,6 +345,11 @@ may say nothing before it is stopped, with what it started
 a download that stalls, or a question pkg waits on.
 Off a terminal pkg prints a dot for each tenth of a download.
 Default 600.
+.It Fl -jobs-conf Ar file
+Where how many jobs of pkg in jails run at once is kept
+.Pq Cm jobs-set ;
+.Pa /usr/local/etc/arcana/jobs.conf
+by default.
 .It Fl -bird-watch Ar seconds
 How often the BIRD of the host, and that of each running jail with a
 network of its own where

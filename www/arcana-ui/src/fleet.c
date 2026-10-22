@@ -435,6 +435,16 @@ view_jobs(struct html *h, struct server *s)
 		h_raw(h, "<div class=\"empty\"><div class=\"loader\"></div></div>");
 		return;
 	}
+	/* Jobs of pkg in jails run in lanes of their own: how many. */
+	if (jget(s->jobs, "lanes") != NULL)
+		h_fmt(h, "<form data-form=\"jobs-lanes\" class=\"toolbar inline\">"
+		    "<label title=\"Jobs of pkg in jails run beside each other, "
+		    "so that one jail's stalled download holds up no other; "
+		    "every other kind of job waits for them all\">pkg in jails at "
+		    "once <input type=\"number\" name=\"lanes\" id=\"jobs-lanes\" "
+		    "min=\"1\" max=\"32\" value=\"%lld\" style=\"width:4em\">"
+		    "</label><button type=\"submit\" class=\"ghost small\">Set"
+		    "</button></form>", (long long)jint(s->jobs, "lanes", 0));
 	/*
 	 * What the agent is at now that is not a job: a request somebody
 	 * waits for.  It holds up the jobs, and a stop, as a job does.

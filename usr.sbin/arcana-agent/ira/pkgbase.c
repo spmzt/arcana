@@ -1,0 +1,516 @@
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
+ * Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
+ */
+
+/*
+ * A running jail's base system by pkg(8), as pkgbase: converted to it
+ * from the official FreeBSD-base repository of its own release, or
+ * taken to a newer release once it is on it.  "pkg -j <jail>" runs in
+ * the jail; the repository's file is written under the jail's root;
+ * its /etc is kept aside in a tar before anything changes; and what
+ * pkg left beside a changed file (.pkgnew, .pkgsave) is named at the
+ * end, for the admin to merge.  The jail is to be restarted after
+ * either, for the new base to run.
+ */
+
+#include <sys/param.h>
+#include <sys/stat.h>
+#include <sys/sysctl.h>
+
+#include <ctype.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "agent.h"
+
+#define	BASE_REPO	"FreeBSD-base"
+#define	BASE_SET	"FreeBSD-set-base-jail"
+#define	REPO_FILE	"/usr/local/etc/pkg/repos/FreeBSD-base.conf"
+#define	ETC_BACKUP	"/var/backups/etc-before-pkgbase.tar"
+#define	PATH_TAR	"/usr/bin/tar"
+#define	PATH_FIND	"/usr/bin/find"
+
+/* A release as a jail says it (15.1-RELEASE-p2, 16.0-CURRENT) or as
+ * the job names it ("16", "15.2"). */
+struct release {
+	int	 major, minor;
+	bool	 branch;	/* -STABLE or -CURRENT: no release of its own */
+};
+
+static bool
+parse_release(const char *s, struct release *r)
+{
+	char	*end;
+	long	 m;
+
+	memset(r, 0, sizeof(*r));
+	if (s == NULL)
+		return (false);
+	m = strtol(s, &end, 10);
+	if (end == s || m < 1 || m > 99)
+		return (false);
+	r->major = (int)m;
+	if (*end == '.') {
+		m = strtol(end + 1, &end, 10);
+		if (m < 0 || m > 99)
+			return (false);
+		r->minor = (int)m;
+	}
+	r->branch = strstr(end, "CURRENT") != NULL || strstr(end, "STABLE") !=
+	    NULL;
+	return (*end == '\0' || *end == '-');
+}
+
+/* The repository's branch for a release: a release's own, or the
+ * latest of a major for -STABLE, -CURRENT, or a major alone. */
+static const char *
+branch_of(struct work *w, const struct release *r, bool major_alone)
+{
+
+	if (r->branch || major_alone)
+		return ("base_latest");
+	return (wfmt(w, "base_release_%d", r->minor));
+}
+
+/*
+ * pkg -j jail, with -4/-6, IGNORE_OSVERSION, and the ABI and OSVERSION
+ * of a release to go to when given: watched, as every pkg is.
+ */
+static int
+pkg(struct work *w, const struct arc_job_spec *sp, bool anyos,
+    const char *abi, const char *osversion, const char *const *args,
+    size_t n, struct execres *res)
+{
+	char	**argv;
+	size_t	  i, k;
+	int	  rc;
+
+	argv = wcalloc(w, n + 12, sizeof(*argv));
+	k = 0;
+	argv[k++] = (char *)(uintptr_t)opts.pkg_bin;
+	if (sp->has_pkg_ip && (sp->pkg_ip == 4 || sp->pkg_ip == 6))
+		argv[k++] = (char *)(uintptr_t)(sp->pkg_ip == 4 ? "-4" : "-6");
+	if (anyos) {
+		argv[k++] = (char *)(uintptr_t)"-o";
+		argv[k++] = (char *)(uintptr_t)"IGNORE_OSVERSION=yes";
+	}
+	if (abi != NULL) {
+		argv[k++] = (char *)(uintptr_t)"-o";
+		argv[k++] = wfmt(w, "ABI=%s", abi);
+		argv[k++] = (char *)(uintptr_t)"-o";
+		argv[k++] = wfmt(w, "OSVERSION=%s", osversion);
+	}
+	argv[k++] = (char *)(uintptr_t)"-j";
+	argv[k++] = (char *)(uintptr_t)sp->jail;
+	for (i = 0; i < n; i++)
+		argv[k++] = (char *)(uintptr_t)args[i];
+	argv[k] = NULL;
+	exec_set_watch(opts.pkg_idle_s);
+	rc = run_exec(w, argv, res);
+	exec_set_watch(0);
+	return (rc);
+}
+
+/* What pkg said went wrong: its repository lines, or its last words. */
+static const char *
+pkg_failed(struct work *w, const struct execres *res, const char *prog)
+{
+	const char	*e;
+
+	if ((e = pkg_repo_error(w, res, prog)) != NULL)
+		return (e);
+	return (wtext(w, exec_error(w, res, prog)));
+}
+
+/*
+ * The jail named, running: w works in it (its root, for the files),
+ * and its release as jls(8) says it.
+ */
+static const char *
+jail_of(struct work *w, const char *name, const char **releasep)
+{
+	struct execres	 res;
+	char		*argv[5];
+	const char	*e;
+
+	if (name == NULL || name[0] == '\0' || strcmp(name, "*") == 0)
+		return ("name the jail");
+	if (scope_enter_jail(w, name, &e, false) != 0)
+		return (e);
+	argv[0] = (char *)(uintptr_t)opts.jls_bin;
+	argv[1] = (char *)(uintptr_t)"-j";
+	argv[2] = (char *)(uintptr_t)name;
+	argv[3] = (char *)(uintptr_t)"osrelease";
+	argv[4] = NULL;
+	if (run_exec(w, argv, &res) != 0 || res.out == NULL)
+		return (wfmt(w, "jls did not say the release of jail %s", name));
+	*releasep = wstrndup(w, res.out, strcspn(res.out, " \n"));
+	return (NULL);
+}
+
+/* Is the jail on pkgbase: is FreeBSD-runtime one of its packages? */
+static bool
+on_pkgbase(struct work *w, const struct arc_job_spec *sp)
+{
+	static const char *const info[] = { "info", "-q", "FreeBSD-runtime" };
+	struct execres	res;
+
+	return (pkg(w, sp, false, NULL, NULL, info, 3, &res) == 0);
+}
+
+/* The directories above path made, as mkdir -p would. */
+static int
+mkdirs(const char *path)
+{
+	char	buf[PATH_MAX], *p;
+
+	if (strlcpy(buf, path, sizeof(buf)) >= sizeof(buf))
+		return (-1);
+	if ((p = strrchr(buf, '/')) == NULL)
+		return (0);
+	*p = '\0';
+	for (p = buf + 1; *p != '\0'; p++)
+		if (*p == '/') {
+			*p = '\0';
+			if (mkdir(buf, 0755) == -1 && errno != EEXIST)
+				return (-1);
+			*p = '/';
+		}
+	if (mkdir(buf, 0755) == -1 && errno != EEXIST)
+		return (-1);
+	return (0);
+}
+
+/* The FreeBSD-base repository's file under the jail's root, for a
+ * branch; a step of the trace. */
+static const char *
+repo_write(struct work *w, const char *root, const char *branch)
+{
+	const char	*path, *e;
+	char		*text;
+	size_t		 len;
+	int		 step, rc;
+
+	/* The directory on the host, the file by its name in the jail. */
+	path = REPO_FILE;
+	text = wfmt(w, BASE_REPO ": {\n  url: \"pkg+https://pkg.FreeBSD.org/"
+	    "${ABI}/%s\",\n  mirror_type: \"srv\",\n  signature_type: "
+	    "\"fingerprints\",\n  fingerprints: \"/usr/share/keys/pkg\",\n  "
+	    "enabled: yes\n}\n", branch);
+	len = strlen(text);
+	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
+	e = NULL;
+	rc = mkdirs(wfmt(w, "%s" REPO_FILE, root)) == -1 ? -1 : scope_replace(w,
+	    path, text, len, 0644, NULL);
+	if (rc != 0)
+		e = wfmt(w, "%s: %s", path, strerror(errno));
+	step_end(w, step, e == NULL, "%s", e != NULL ? e : branch);
+	return (e);
+}
+
+/* The jail's /etc kept aside, whole, before the base changes. */
+static const char *
+etc_backup(struct work *w, const char *root)
+{
+	struct execres	 res;
+	char		*argv[8];
+	const char	*tar;
+
+	tar = wfmt(w, "%s" ETC_BACKUP, root);
+	if (mkdirs(tar) == -1)
+		return (wfmt(w, "%s: %s", tar, strerror(errno)));
+	argv[0] = (char *)(uintptr_t)PATH_TAR;
+	argv[1] = (char *)(uintptr_t)"-C";
+	argv[2] = (char *)(uintptr_t)root;
+	argv[3] = (char *)(uintptr_t)"-cf";
+	argv[4] = (char *)(uintptr_t)tar;
+	argv[5] = (char *)(uintptr_t)"etc";
+	argv[6] = NULL;
+	if (run_exec(w, argv, &res) != 0)
+		return (wtext(w, exec_error(w, &res, "tar of etc")));
+	return (NULL);
+}
+
+/* What pkg left beside the files it did not replace, under /etc, named
+ * in a step for the admin to merge; nothing is an error. */
+static void
+leftovers(struct work *w, const char *root)
+{
+	struct execres	 res;
+	char		*argv[12];
+	const char	*etc;
+	int		 step;
+
+	etc = wfmt(w, "%s/etc", root);
+	argv[0] = (char *)(uintptr_t)PATH_FIND;
+	argv[1] = (char *)(uintptr_t)etc;
+	argv[2] = (char *)(uintptr_t)"(";
+	argv[3] = (char *)(uintptr_t)"-name";
+	argv[4] = (char *)(uintptr_t)"*.pkgnew";
+	argv[5] = (char *)(uintptr_t)"-o";
+	argv[6] = (char *)(uintptr_t)"-name";
+	argv[7] = (char *)(uintptr_t)"*.pkgsave";
+	argv[8] = (char *)(uintptr_t)")";
+	argv[9] = NULL;
+	if (run_exec(w, argv, &res) != 0)
+		return;
+	step = step_begin(w, ARC_STEP_KIND_FILE, "merge", "what pkg left beside "
+	    "the files it kept");
+	step_end(w, step, true, "%s", res.out != NULL && res.outlen > 0 ?
+	    "the .pkgnew files hold the packages' versions of files that "
+	    "differed, the .pkgsave ones the jail's: merge them, then restart "
+	    "the jail" : "none: restart the jail for the new base to run");
+}
+
+/* A set's name as the repository has them. */
+static bool
+valid_set(const char *s)
+{
+
+	if (strncmp(s, "FreeBSD-set-", 12) != 0 || strlen(s) > 64)
+		return (false);
+	for (; *s != '\0'; s++)
+		if (!isalnum((unsigned char)*s) && strchr("_.+-", *s) == NULL)
+			return (false);
+	return (true);
+}
+
+/*
+ * The sets the repository offers (FreeBSD-set-*), a step of the trace;
+ * NULL and *errp when one asked for is not among them.
+ */
+static const char *
+sets_check(struct work *w, const struct arc_job_spec *sp, bool anyos,
+    const char *abi, const char *osversion, const char *const *sets,
+    size_t nsets)
+{
+	static const char *const query[] = { "rquery", "-a", "-r", BASE_REPO,
+	    "%n" };
+	struct execres	 res;
+	const char	*have, *missing;
+	char		*copy, *it, *line;
+	size_t		 i;
+	bool		 found;
+
+	if (pkg(w, sp, anyos, abi, osversion, query, 5, &res) != 0)
+		return (pkg_failed(w, &res, "pkg rquery"));
+	have = NULL;
+	copy = wstrndup(w, res.out != NULL ? res.out : "", res.outlen);
+	for (it = copy; (line = strsep(&it, "\n")) != NULL; )
+		if (strncmp(line, "FreeBSD-set-", 12) == 0 && strstr(line,
+		    "-dbg") == NULL)
+			have = have == NULL ? wstrdup(w, line) : wfmt(w, "%s, %s",
+			    have, line);
+	missing = NULL;
+	for (i = 0; i < nsets; i++) {
+		found = false;
+		copy = wstrndup(w, res.out != NULL ? res.out : "", res.outlen);
+		for (it = copy; (line = strsep(&it, "\n")) != NULL; )
+			if (strcmp(line, sets[i]) == 0)
+				found = true;
+		if (!found)
+			missing = missing == NULL ? sets[i] : wfmt(w, "%s, %s",
+			    missing, sets[i]);
+	}
+	if (missing != NULL)
+		return (wfmt(w, "the repository has no %s; its sets: %s", missing,
+		    have != NULL ? have : "none"));
+	return (NULL);
+}
+
+/*
+ * convert: the base system packages installed over the jail's files
+ * from the FreeBSD-base repository of its release (or of the branch
+ * release names): the sets named, FreeBSD-set-base-jail when none.
+ */
+static int
+convert(struct work *w, const struct arc_job_spec *sp, const char *root,
+    const char *osrelease, const char **errp)
+{
+	static const char *const update[] = { "update", "-r", BASE_REPO };
+	struct release	 r;
+	struct execres	 res;
+	const char *const *sets;
+	const char	**args, **one, *e, *branch;
+	size_t		 nsets, n, i;
+	bool		 major_alone;
+
+	if (!parse_release(osrelease, &r)) {
+		*errp = wfmt(w, "the jail's release is not known (%s)",
+		    osrelease != NULL ? osrelease : "none");
+		return (-1);
+	}
+	if (r.major < 15 || (r.major == 15 && r.minor < 1 && !r.branch)) {
+		*errp = wfmt(w, "pkgbase needs FreeBSD 15.1 or later; the jail "
+		    "runs %s", osrelease);
+		return (-1);
+	}
+	if (on_pkgbase(w, sp)) {
+		*errp = wfmt(w, "jail %s is on pkgbase already (FreeBSD-runtime "
+		    "is installed)", sp->jail);
+		return (-1);
+	}
+	if (sp->names.n > 0) {
+		sets = sp->names.v;
+		nsets = sp->names.n;
+		for (i = 0; i < nsets; i++)
+			if (sets[i] == NULL || !valid_set(sets[i])) {
+				*errp = wfmt(w, "'%s' is not a set's name "
+				    "(FreeBSD-set-...)", sets[i] != NULL ?
+				    sets[i] : "");
+				return (-1);
+			}
+	} else {
+		one = wcalloc(w, 1, sizeof(*one));
+		one[0] = BASE_SET;
+		sets = one;
+		nsets = 1;
+	}
+	/* The branch: the jail's own release, unless one is named. */
+	major_alone = false;
+	if (sp->release != NULL && sp->release[0] != '\0') {
+		if (!parse_release(sp->release, &r)) {
+			*errp = wfmt(w, "'%s' is not a release: 16, or 15.2",
+			    sp->release);
+			return (-1);
+		}
+		major_alone = strchr(sp->release, '.') == NULL;
+	}
+	branch = branch_of(w, &r, major_alone);
+	if ((e = repo_write(w, root, branch)) != NULL || (e = etc_backup(w,
+	    root)) != NULL) {
+		*errp = e;
+		return (-1);
+	}
+	if (pkg(w, sp, sp->force, NULL, NULL, update, 3, &res) != 0 || (e =
+	    pkg_repo_error(w, &res, "pkg update")) != NULL) {
+		*errp = e != NULL ? e : pkg_failed(w, &res, "pkg update");
+		return (-1);
+	}
+	if ((e = sets_check(w, sp, sp->force, NULL, NULL, sets, nsets)) !=
+	    NULL) {
+		*errp = e;
+		return (-1);
+	}
+	args = wcalloc(w, nsets + 5, sizeof(*args));
+	n = 0;
+	args[n++] = "install";
+	args[n++] = "-r";
+	args[n++] = BASE_REPO;
+	args[n++] = "-y";
+	for (i = 0; i < nsets; i++)
+		args[n++] = sets[i];
+	if (pkg(w, sp, sp->force, NULL, NULL, args, n, &res) != 0 || (e =
+	    pkg_repo_error(w, &res, "pkg install")) != NULL) {
+		*errp = e != NULL ? e : pkg_failed(w, &res, "pkg install");
+		return (-1);
+	}
+	leftovers(w, root);
+	return (0);
+}
+
+/*
+ * upgrade: a jail on pkgbase taken to release ("16": the latest of
+ * that major; "15.2": that release): its base packages from the
+ * FreeBSD-base repository of the new ABI, then its other packages for
+ * it.  Never beyond the host's kernel: a userland newer than the
+ * kernel does not run.
+ */
+static int
+upgrade(struct work *w, const struct arc_job_spec *sp, const char *root,
+    const char **errp)
+{
+	static const char *const update[] = { "update", "-r", BASE_REPO };
+	static const char *const base[] = { "upgrade", "-r", BASE_REPO, "-y" };
+	static const char *const rest[] = { "upgrade", "-y" };
+	struct release	 r;
+	struct execres	 res;
+	const char	*e, *abi, *osversion;
+	char		 arch[64];
+	size_t		 len;
+	int		 hostrel;
+	bool		 major_alone;
+
+	if (sp->release == NULL || sp->release[0] == '\0' || !parse_release(
+	    sp->release, &r)) {
+		*errp = wfmt(w, "'%s' is not a release to go to: 16, or 15.2",
+		    sp->release != NULL ? sp->release : "");
+		return (-1);
+	}
+	major_alone = strchr(sp->release, '.') == NULL;
+	if (!on_pkgbase(w, sp)) {
+		*errp = wfmt(w, "jail %s is not on pkgbase: convert it first",
+		    sp->jail);
+		return (-1);
+	}
+	len = sizeof(hostrel);
+	if (sysctlbyname("kern.osreldate", &hostrel, &len, NULL, 0) == -1)
+		hostrel = 0;
+	if (hostrel > 0 && r.major > hostrel / 100000) {
+		*errp = wfmt(w, "the host's kernel is FreeBSD %d: a jail cannot "
+		    "run a newer userland than that", hostrel / 100000);
+		return (-1);
+	}
+	len = sizeof(arch);
+	if (sysctlbyname("hw.machine_arch", arch, &len, NULL, 0) == -1) {
+		*errp = "hw.machine_arch is not known";
+		return (-1);
+	}
+	abi = wfmt(w, "FreeBSD:%d:%s", r.major, arch);
+	osversion = wfmt(w, "%d", r.major * 100000 + r.minor * 1000);
+	if ((e = repo_write(w, root, branch_of(w, &r, major_alone))) != NULL ||
+	    (e = etc_backup(w, root)) != NULL) {
+		*errp = e;
+		return (-1);
+	}
+	/* The new release's repository is for a newer FreeBSD by design:
+	 * read past OSVERSION for the base; the rest as asked. */
+	if (pkg(w, sp, true, abi, osversion, update, 3, &res) != 0 || (e =
+	    pkg_repo_error(w, &res, "pkg update")) != NULL) {
+		*errp = e != NULL ? e : pkg_failed(w, &res, "pkg update");
+		return (-1);
+	}
+	if (pkg(w, sp, true, abi, osversion, base, 4, &res) != 0 || (e =
+	    pkg_repo_error(w, &res, "pkg upgrade")) != NULL) {
+		*errp = e != NULL ? e : pkg_failed(w, &res, "pkg upgrade of the "
+		    "base");
+		return (-1);
+	}
+	if (pkg(w, sp, sp->force, abi, osversion, rest, 2, &res) != 0 || (e =
+	    pkg_repo_error(w, &res, "pkg upgrade")) != NULL) {
+		leftovers(w, root);
+		*errp = wfmt(w, "the base is on %s; the other packages are not: "
+		    "%s", sp->release, e != NULL ? e : pkg_failed(w, &res,
+		    "pkg upgrade"));
+		return (-1);
+	}
+	leftovers(w, root);
+	return (0);
+}
+
+int
+do_jail_base(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	const char	*root, *osrelease, *e;
+
+	if (sp->verb == NULL) {
+		*errp = "verb convert or upgrade";
+		return (-1);
+	}
+	osrelease = NULL;
+	if ((e = jail_of(w, sp->jail, &osrelease)) != NULL) {
+		*errp = e;
+		return (-1);
+	}
+	root = w->jroot;
+	if (strcmp(sp->verb, "convert") == 0)
+		return (convert(w, sp, root, osrelease, errp));
+	if (strcmp(sp->verb, "upgrade") == 0)
+		return (upgrade(w, sp, root, errp));
+	*errp = wfmt(w, "'%s': verb convert or upgrade", sp->verb);
+	return (-1);
+}

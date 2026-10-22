@@ -266,6 +266,14 @@ module: arcana-jobs
        |        |     +---w force?      boolean
        |        |     +---w pkg-ip?     uint32
        |        |     +---w pkg-repo?   string
+       |        +--:(jail-base)
+       |        |  +---w jail-base!
+       |        |     +---w jail        string
+       |        |     +---w verb        enumeration
+       |        |     +---w packages*   string
+       |        |     +---w release?    string
+       |        |     +---w force?      boolean
+       |        |     +---w pkg-ip?     uint32
        |        +--:(jail-conf)
        |        |  +---w jail-conf!
        |        |     +---w verb        enumeration

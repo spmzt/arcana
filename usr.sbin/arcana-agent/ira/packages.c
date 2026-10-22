@@ -29,8 +29,6 @@ static void	parse_versions(struct work *, const struct execres *,
 		    struct arc_package **, size_t *);
 static bool	valid_pkg(const char *);
 static const char *check_jail(struct work *, const char *);
-static const char *repo_error(struct work *, const struct execres *,
-		    const char *);
 
 /*
  * "pkg [-4 | -6] [-o IGNORE_OSVERSION=yes] [-j jail] args...": with
@@ -77,8 +75,8 @@ pkg_run(struct work *w, const char *jail, bool anyos, uint8_t ip,
  * version") is said to need IGNORE_OSVERSION, for the console to ask
  * whether to go on past it.
  */
-static const char *
-repo_error(struct work *w, const struct execres *res, const char *prog)
+const char *
+pkg_repo_error(struct work *w, const struct execres *res, const char *prog)
 {
 	const char	*text[] = { res->err, res->out };
 	char		*copy, *it, *line, *why;
@@ -321,14 +319,14 @@ do_packages(struct work *w, const char *jail, bool refresh, bool inst,
 	/* A repository for a newer FreeBSD is named as such, for the
 	 * console to ask whether to read past it. */
 	if (refresh && pkg_run(w, jail, anyos, ip, update, 2, &res) != 0) {
-		rsp->error = (e = repo_error(w, &res, "pkg update")) != NULL ? e :
+		rsp->error = (e = pkg_repo_error(w, &res, "pkg update")) != NULL ? e :
 		    wtext(w, exec_error(w, &res, "pkg update"));
 		return (0);
 	}
 	/* pkg version exits 0 with matches and 1 without, as grep does;
 	 * a repository it could not read is an error whatever it exits. */
 	if (pkg_run(w, jail, anyos, ip, version, 3, &res) != 0 && ((e =
-	    repo_error(w, &res, "pkg version")) != NULL || res.status != 1)) {
+	    pkg_repo_error(w, &res, "pkg version")) != NULL || res.status != 1)) {
 		rsp->error = e != NULL ? e : wtext(w, exec_error(w, &res,
 		    "pkg version"));
 		return (0);
@@ -457,9 +455,9 @@ do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
 	    !(rq->dry_run && res.status == 1)) {
 		/* A repository it could not read is said as such, the newer
 		 * FreeBSD's named, whatever pkg exited. */
-		rsp->error = (e = repo_error(w, &res, "pkg upgrade")) != NULL ? e :
+		rsp->error = (e = pkg_repo_error(w, &res, "pkg upgrade")) != NULL ? e :
 		    wtext(w, exec_error(w, &res, "pkg upgrade"));
-	} else if ((e = repo_error(w, &res, "pkg upgrade")) != NULL) {
+	} else if ((e = pkg_repo_error(w, &res, "pkg upgrade")) != NULL) {
 		rsp->error = e;
 	} else {
 		rsp->ok = true;
@@ -517,7 +515,7 @@ do_pkg_install(struct work *w, const struct arc_job_spec *sp,
 		*errp = wtext(w, exec_error(w, &res, "pkg install"));
 		return (-1);
 	}
-	if ((e = repo_error(w, &res, "pkg install")) != NULL) {
+	if ((e = pkg_repo_error(w, &res, "pkg install")) != NULL) {
 		*errp = e;
 		return (-1);
 	}
