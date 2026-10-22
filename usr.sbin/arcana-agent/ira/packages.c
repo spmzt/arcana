@@ -314,6 +314,14 @@ do_packages(struct work *w, const char *jail, bool refresh, bool inst,
 		pkg_repos(w, jail, &rv, &rsp->pkg_repos.n);
 		rsp->pkg_repos.v = rv;
 	}
+	/* A jail's base: pkgbase when FreeBSD-runtime is a package of it. */
+	if (jail != NULL && *jail != '\0') {
+		static const char *const runtime[] = { "info", "-q",
+		    "FreeBSD-runtime" };
+
+		rsp->has_pkgbase = true;
+		rsp->pkgbase = pkg_run(w, jail, false, 0, runtime, 3, &res) == 0;
+	}
 	if (inst)
 		return (installed(w, jail, rsp));
 	/* A repository for a newer FreeBSD is named as such, for the

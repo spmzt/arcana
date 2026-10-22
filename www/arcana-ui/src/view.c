@@ -3644,16 +3644,18 @@ view_packages(struct html *h, struct server *s)
 	    "small\" data-act=\"pkg-clean\" data-arg=\"all\" title=\"pkg "
 	    "clean -a: all the downloaded packages deleted\">Clean all"
 	    "</button>");
-	/* A jail's base system by pkg: to pkgbase, or a newer release. */
-	if (app.pkg.jail[0] != '\0')
-		h_raw(h, "<button class=\"ghost small\" data-act=\"jail-base\" "
-		    "data-arg=\"convert\" title=\"The base system packages "
-		    "(pkgbase) installed over the jail's files, from the "
-		    "FreeBSD-base repository of its release\">To pkgbase\u2026"
-		    "</button><button class=\"ghost small\" data-act=\"jail-base"
-		    "\" data-arg=\"upgrade\" title=\"A jail on pkgbase taken to a "
-		    "newer FreeBSD release, base and packages\">Base upgrade\u2026"
-		    "</button>");
+	/* A jail's base system by pkg: to pkgbase while it is not on it;
+	 * once it is, to a newer release.  The read says which. */
+	if (app.pkg.jail[0] != '\0' && mine && jget(app.pkg.data, "pkgbase") !=
+	    NULL)
+		h_raw(h, !jbool(app.pkg.data, "pkgbase") ? "<button class=\"ghost "
+		    "small\" data-act=\"jail-base\" data-arg=\"convert\" title=\""
+		    "The base system packages (pkgbase) installed over the "
+		    "jail's files, from the FreeBSD-base repository of its "
+		    "release\">To pkgbase\u2026</button>" : "<button class=\"ghost "
+		    "small\" data-act=\"jail-base\" data-arg=\"upgrade\" title=\"A "
+		    "jail on pkgbase taken to a newer FreeBSD release, base and "
+		    "packages\">Base upgrade\u2026</button>");
 	/* Of every running jail at once, from the host's page. */
 	if (app.pkg.jail[0] == '\0')
 		h_raw(h, "<button class=\"ghost small\" data-act=\""

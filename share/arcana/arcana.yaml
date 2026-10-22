@@ -1357,6 +1357,11 @@ attribute-sets:
       - name: lanes
         type: u8
         doc: How many jobs of pkg in jails run at once, 1 to 32.
+      - name: pkgbase
+        type: bool
+        doc: |
+          For a jail's packages: whether its base system is pkgbase
+          (FreeBSD-runtime is one of its packages).
   - name: host
     attributes:
       - name: hostname
@@ -2270,6 +2275,7 @@ operations:
           - packages
           - trace
           - pkg-repos
+          - pkgbase
 
   - name: pkg-upgrade
     attribute-set: arcana

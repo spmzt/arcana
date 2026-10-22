@@ -1945,6 +1945,8 @@ connected:
 		put(top, "packages", a);
 		/* pkg's repositories there, any of which -r may name. */
 		put(top, "repos", strs(pr->pkg_repos.v, pr->pkg_repos.n));
+		if (pr->has_pkgbase)
+			put(top, "pkgbase", ucl_object_frombool(pr->pkgbase));
 		steps = pr->trace.v;
 		nsteps = pr->trace.n;
 		break;
