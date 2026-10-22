@@ -3065,7 +3065,9 @@ cuts_off(cbl_req *req, const struct arc_job_spec *sp)
 			return (NULL);
 	} else if ((sp->jail != NULL && sp->jail[0] != '\0') ||
 	    (sp->kind != ARC_JOB_KIND_IF_ADDRESS && sp->kind !=
-	    ARC_JOB_KIND_IF_STATE && sp->kind != ARC_JOB_KIND_IF_DESTROY))
+	    ARC_JOB_KIND_IF_STATE && sp->kind != ARC_JOB_KIND_IF_DESTROY &&
+	    sp->kind != ARC_JOB_KIND_IF_SET && sp->kind != ARC_JOB_KIND_ROUTE &&
+	    sp->kind != ARC_JOB_KIND_SYSCTL && sp->kind != ARC_JOB_KIND_IPFW))
 		return (NULL);
 	len = sizeof(ss);
 	if ((fd = cbl_conn_fd(cbl_req_conn(req))) == -1 || getsockname(fd,
@@ -3074,7 +3076,71 @@ cuts_off(cbl_req *req, const struct arc_job_spec *sp)
 	    ifname, sizeof(ifname)))
 		return (NULL);
 	hit = false;
-	if (sp->kind == ARC_JOB_KIND_IF_ADDRESS) {
+	if (sp->kind == ARC_JOB_KIND_SYSCTL) {
+		/* Forwarding, or the tables, turned over under the path. */
+		static const char *const cut[] = { "net.fibs",
+		    "net.add_addr_allfibs", "net.inet.ip.forwarding",
+		    "net.inet6.ip6.forwarding" };
+		size_t	i;
+
+		for (i = 0; i < nitems(cut) && !hit; i++)
+			hit = sp->names.n > 0 && strcmp(sp->names.v[0], cut[i]) ==
+			    0;
+	} else if (sp->kind == ARC_JOB_KIND_IPFW)
+		/* A rule set swapped in, or the firewall turned on: the
+		 * path is whatever the rules say. */
+		hit = sp->verb != NULL && (strcmp(sp->verb, "apply") == 0 ||
+		    strcmp(sp->verb, "enable") == 0);
+	else if (sp->kind == ARC_JOB_KIND_IF_SET)
+		/* Moved to another table, the interface's addresses go
+		 * with it; a tunnel's outer path is the tunnelfib's. */
+		hit = strcmp(sp->interface, ifname) == 0 && (sp->has_fib ||
+		    sp->has_tunnelfib);
+	else if (sp->kind == ARC_JOB_KIND_ROUTE) {
+		/*
+		 * A route added or deleted that covers the peer, in the
+		 * table this interface is in: the way back may change.
+		 */
+		struct sockaddr_storage	 ps;
+		socklen_t		 plen;
+		const unsigned char	*pa;
+		unsigned char		 net[16];
+		char			 dest[65];
+		const char		*slash;
+		int			 af, plen_bits, max;
+
+		plen = sizeof(ps);
+		if (getpeername(fd, (struct sockaddr *)&ps, &plen) == -1 ||
+		    (sp->has_fib ? (int)sp->fib : 0) != if_fib(ifname))
+			return (NULL);
+		strlcpy(dest, sp->destination, sizeof(dest));
+		slash = strchr(dest, '/');
+		dest[strcspn(dest, "/")] = '\0';
+		if (ps.ss_family == AF_INET6 && IN6_IS_ADDR_V4MAPPED(
+		    &((struct sockaddr_in6 *)&ps)->sin6_addr)) {
+			af = AF_INET;
+			pa = (const unsigned char *)&((struct sockaddr_in6 *)
+			    &ps)->sin6_addr + 12;
+		} else if (ps.ss_family == AF_INET6) {
+			af = AF_INET6;
+			pa = (const unsigned char *)&((struct sockaddr_in6 *)
+			    &ps)->sin6_addr;
+		} else {
+			af = AF_INET;
+			pa = (const unsigned char *)&((struct sockaddr_in *)
+			    &ps)->sin_addr;
+		}
+		max = af == AF_INET ? 32 : 128;
+		if (strcmp(dest, "default") == 0) {
+			memset(net, 0, sizeof(net));
+			plen_bits = 0;
+		} else if (inet_pton(af, dest, net) != 1)
+			return (NULL);
+		else
+			plen_bits = slash != NULL ? atoi(slash + 1) : max;
+		hit = plen_bits >= 0 && plen_bits <= max && prefix_covers(pa,
+		    net, plen_bits);
+	} else if (sp->kind == ARC_JOB_KIND_IF_ADDRESS) {
 		if (!sp->remove || strcmp(sp->interface, ifname) != 0)
 			return (NULL);
 		strlcpy(addr, sp->address, sizeof(addr));

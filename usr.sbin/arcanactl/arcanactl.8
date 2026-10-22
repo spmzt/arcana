@@ -1889,8 +1889,14 @@ each the other's undo;
 and
 .Cm start
 are refused in safe mode.
-A change that would take away the address the request came in by is
-refused unless it is made in safe mode.
+A change that would cut the client off is refused unless it is made in
+safe mode: taking away the address the request came in by, bringing its
+interface down or destroying it, moving that interface to another table
+.Pq Cm fib , Cm tunnelfib ,
+a route added or deleted over the client's address in the table that
+interface is in, the sysctls that turn forwarding or the tables over
+.Pq Va net.fibs , net.add_addr_allfibs , net.inet.ip.forwarding , net.inet6.ip6.forwarding ,
+and the firewall's rules swapped in or turned on.
 .Pp
 These run
 .Xr ifconfig 8

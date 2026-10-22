@@ -123,7 +123,8 @@ finding(struct pc *c, const char *sev, const char *fmt, ...)
 	ucl_array_append(c->findings, o);
 }
 
-static int
+/* The FIB an interface is in, 0 when it cannot be asked. */
+int
 if_fib(const char *name)
 {
 	struct ifreq	ifr;
@@ -209,12 +210,12 @@ addr_lines(FILE *out)
 	return (0);
 }
 
-static bool
-covers(int af, const uint8_t *a, const uint8_t *net, int len)
+/* Is address a within the prefix net/len? */
+bool
+prefix_covers(const uint8_t *a, const uint8_t *net, int len)
 {
 	int	i;
 
-	(void)af;
 	for (i = 0; i < len / 8; i++)
 		if (a[i] != net[i])
 			return (false);
@@ -287,11 +288,11 @@ addr_line(const char *line, void *arg)
 		 * longest. */
 		if (af == c->af && !ucl_object_toboolean(ucl_object_lookup(o,
 		    "loopback"))) {
-			if (covers(af, c->src, a, n) && n > c->sbest) {
+			if (prefix_covers(c->src, a, n) && n > c->sbest) {
 				c->sbest = n;
 				c->srcif = wstrdup(c->w, ifn);
 			}
-			if (covers(af, c->dst, a, n) && n > c->dbest) {
+			if (prefix_covers(c->dst, a, n) && n > c->dbest) {
 				c->dbest = n;
 				c->dstif = wstrdup(c->w, ifn);
 			}

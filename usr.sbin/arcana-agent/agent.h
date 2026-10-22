@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.185.0"
+#define	ARCANA_AGENT_VERSION	"0.186.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -769,6 +769,8 @@ int		 do_path_check(struct work *, const char *, const char *,
 		    const char *, uint32_t, const char *, bool, uint32_t, bool,
 		    struct arc_path_check_rsp *);
 bool		 kmod_loaded(const char *);
+bool		 prefix_covers(const uint8_t *, const uint8_t *, int);
+int		 if_fib(const char *);
 
 /* acedia/storage.c: disks, pools, datasets, mounts. */
 int		 do_storage(struct work *, uint8_t, const char *,
