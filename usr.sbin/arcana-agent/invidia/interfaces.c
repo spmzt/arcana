@@ -134,6 +134,16 @@ extras(int s4, int s6, const char *name, ucl_object_t *o)
 	ucl_object_t		*t;
 	char			 descr[256], a[NI_MAXHOST], b[NI_MAXHOST];
 
+	/* Its table, and a tunnel's for its outer packets: told when they
+	 * are not the first, which is most interfaces'. */
+	memset(&ifr, 0, sizeof(ifr));
+	strlcpy(ifr.ifr_name, name, sizeof(ifr.ifr_name));
+	if (s4 != -1 && ioctl(s4, SIOCGIFFIB, &ifr) == 0 && ifr.ifr_fib != 0)
+		put(o, "fib", ucl_object_fromint(ifr.ifr_fib));
+	memset(&ifr, 0, sizeof(ifr));
+	strlcpy(ifr.ifr_name, name, sizeof(ifr.ifr_name));
+	if (s4 != -1 && ioctl(s4, SIOCGTUNFIB, &ifr) == 0 && ifr.ifr_fib != 0)
+		put(o, "tunnelfib", ucl_object_fromint(ifr.ifr_fib));
 	memset(&ifr, 0, sizeof(ifr));
 	strlcpy(ifr.ifr_name, name, sizeof(ifr.ifr_name));
 	ifr.ifr_buffer.buffer = descr;
@@ -171,7 +181,8 @@ extras(int s4, int s6, const char *name, ucl_object_t *o)
 
 /*
  * {"interfaces": [{"name", "up", "flags", "link", "mtu", "ether",
- * "description", "tunnel": {"local", "remote"}, counters,
+ * "description", "fib" and "tunnelfib" when not 0, "tunnel": {"local",
+ * "remote"}, counters,
  * "addresses": [{"family", "address", "prefixlen", "broadcast" or
  * "destination"}]}]}; family narrows the addresses.
  */

@@ -1977,13 +1977,16 @@ part_nettab(void)
 	run("document.querySelector('tr[data-if=lo0] button[data-act=if-edit]')"
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=if-set]')", 5);
+	/* The form has the interface's tables too: FIB and a tunnel's. */
 	run("const f = document.querySelector('form[data-form=if-set]'); "
-	    "f.mtu.value = '9000'; f.persist.checked = false; "
-	    "f.requestSubmit();");
+	    "f.mtu.value = '9000'; f.fib.value = '1'; f.tunnelfib.value = '1'; "
+	    "f.persist.checked = false; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
 	    "t.textContent.includes('lo0: set'))", 20);
 	ATF_CHECK(system("grep -q '^lo0 mtu 9000$' ifconfig.log") == 0);
+	ATF_CHECK(system("grep -q '^lo0 fib 1$' ifconfig.log && grep -q "
+	    "'^lo0 tunnelfib 1$' ifconfig.log") == 0);
 	/*
 	 * A task that waits says what it asked and where it is: the
 	 * request held back here, then the job's readings, to see each

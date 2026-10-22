@@ -472,6 +472,18 @@ interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 			    "mtu", 0));
 			h_txt(h, buf);
 		}
+		/* Its tables, when not the first: FIB, and a tunnel's outer. */
+		if (jint(o, "fib", 0) > 0 || jint(o, "tunnelfib", 0) > 0) {
+			snprintf(buf, sizeof(buf), "%s%lld%s%s%lld", jint(o,
+			    "fib", 0) > 0 ? "fib " : "", (long long)jint(o, "fib",
+			    0), jint(o, "fib", 0) > 0 && jint(o, "tunnelfib", 0) >
+			    0 ? ", " : "", jint(o, "tunnelfib", 0) > 0 ?
+			    "tunnelfib " : "", (long long)jint(o, "tunnelfib",
+			    0));
+			h_raw(h, "<small>");
+			h_txt(h, buf);
+			h_raw(h, "</small>");
+		}
 		h_raw(h, "</td><td class=\"mono\">");
 		h_txt(h, jstr(o, "ether"));
 		h_raw(h, "</td><td>");
@@ -493,11 +505,12 @@ interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 		    "data-act=\"%s\"", up ? "if-down" : "if-up");
 		h_attr(h, "data-arg", name);
 		h_fmt(h, ">%s</button><button class=\"ghost small\" "
-		    "data-act=\"if-edit\" title=\"MTU and description\"", up ?
-		    "Down" : "Up");
+		    "data-act=\"if-edit\" title=\"MTU, description and tables\"",
+		    up ? "Down" : "Up");
 		h_attr(h, "data-arg", name);
-		snprintf(buf, sizeof(buf), "%lld %s", (long long)jint(o, "mtu",
-		    0), jstr(o, "description") != NULL ? jstr(o,
+		snprintf(buf, sizeof(buf), "%lld %lld %lld %s", (long long)jint(o,
+		    "mtu", 0), (long long)jint(o, "fib", 0), (long long)jint(o,
+		    "tunnelfib", 0), jstr(o, "description") != NULL ? jstr(o,
 		    "description") : "");
 		h_attr(h, "data-value", buf);
 		h_raw(h, ">Edit</button>");

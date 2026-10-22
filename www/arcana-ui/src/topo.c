@@ -3613,7 +3613,14 @@ topo_modal(struct html *h)
 		h_raw(h, "<div class=\"two\"><label>MTU<input name=\"mtu\" "
 		    "inputmode=\"numeric\" autocomplete=\"off\"></label><label>"
 		    "Description<input name=\"description\" autocomplete=\"off\">"
-		    "</label></div>");
+		    "</label></div><div class=\"two\"><label>Routing table (FIB)"
+		    "<input name=\"fib\" inputmode=\"numeric\" autocomplete=\"off\" "
+		    "placeholder=\"0\"><small>Set first: its addresses and "
+		    "routes go in it.</small></label><label>Tunnel's outer "
+		    "table<input name=\"tunnelfib\" inputmode=\"numeric\" "
+		    "autocomplete=\"off\" placeholder=\"0\"><small>Where the far "
+		    "end is looked up: an underlay table for an overlay "
+		    "tunnel.</small></label></div>");
 		if (strcmp(tp.create_kind, "wg") == 0)
 			h_raw(h, "<p class=\"dim\">A WireGuard interface gets its key "
 			    "and port on the WireGuard tab once it is made, and is "
@@ -3639,6 +3646,21 @@ topo_modal(struct html *h)
 		    "description\" autocomplete=\"off\"");
 		h_attr(h, "value", app.confirm.body);
 		h_raw(h, "><small>Empty takes it off.</small></label>");
+		/* Its tables: the one its addresses and routes are in, and a
+		 * tunnel's for its outer packets (setfib, tunnelfib). */
+		h_raw(h, "<div class=\"two\"><label>Routing table (FIB)<input "
+		    "name=\"fib\" inputmode=\"numeric\" autocomplete=\"off\"");
+		if (app.confirm.fib >= 0)
+			h_fmt(h, " value=\"%d\"", app.confirm.fib);
+		h_raw(h, "><small>Empty leaves it; 0 is the first. The "
+		    "interface's addresses and routes go with it.</small>"
+		    "</label><label>Tunnel's outer table<input name=\""
+		    "tunnelfib\" inputmode=\"numeric\" autocomplete=\"off\"");
+		if (app.confirm.tunnelfib >= 0)
+			h_fmt(h, " value=\"%d\"", app.confirm.tunnelfib);
+		h_raw(h, "><small>Where a gre, gif, wg or vxlan looks up its far "
+		    "end: an underlay table keeps a tunnel from routing its own "
+		    "packets into itself.</small></label></div>");
 		h_raw(h, keep_field);
 		return (true);
 	case MODAL_NG_CONNECT:
@@ -3919,7 +3941,7 @@ topo_form(const char *form, const ucl_object_t *f)
 {
 	struct server	*s;
 	const char	*name;
-	char		 title[160], *a, *b, *c, *d, *e, *g, *i, *k;
+	char		 title[160], *a, *b, *c, *d, *e, *g, *i, *k, *fb, *tf;
 	int		 n;
 
 	nodes_build();
@@ -3979,12 +4001,14 @@ topo_form(const char *form, const ucl_object_t *f)
 		i = number(f, "mtu", "mtu");
 		k = number(f, "id", "id");
 		rq = number(f, "reqid", "reqid");
+		fb = number(f, "fib", "fib");
+		tf = number(f, "tunnelfib", "tunnelfib");
 		snprintf(title, sizeof(title), "create %s", name);
 		/* name is a kind of the list and digits. */
 		node_job(n, title, name, "{\"kind\":\"if-create\",\"interface\":"
-		    "\"%s\"%s%s%s%s%s%s%s%s%s,\"persist\":%s,\"safe\":true}", name,
-		    a, b, c, d, e, g, i, k, rq, jbool(f, "persist") && strcmp(
-		    kind, "wg") != 0 ? "true" : "false");
+		    "\"%s\"%s%s%s%s%s%s%s%s%s%s%s,\"persist\":%s,\"safe\":true}",
+		    name, a, b, c, d, e, g, i, k, rq, fb, tf, jbool(f,
+		    "persist") && strcmp(kind, "wg") != 0 ? "true" : "false");
 		free(a);
 		free(b);
 		free(c);
@@ -3994,6 +4018,8 @@ topo_form(const char *form, const ucl_object_t *f)
 		free(i);
 		free(k);
 		free(rq);
+		free(fb);
+		free(tf);
 		app.modal = MODAL_NONE;
 		tp.last_poll = 0;
 		return (true);
@@ -4032,15 +4058,19 @@ topo_form(const char *form, const ucl_object_t *f)
 		if ((s = cur_server()) == NULL)
 			return (true);
 		i = number(f, "mtu", "mtu");
+		fb = number(f, "fib", "fib");
+		tf = number(f, "tunnelfib", "tunnelfib");
 		a = json_quote(jstr(f, "description") != NULL ? jstr(f,
 		    "description") : "");
 		b = json_quote(app.confirm.arg);
 		snprintf(title, sizeof(title), "%s: set", app.confirm.arg);
 		if_job(s, title, app.confirm.arg, "{\"kind\":\"if-set\","
-		    "\"interface\":%s%s,\"description\":%s,\"persist\":%s,"
-		    "\"safe\":true}", b, i, a, jbool(f, "persist") ? "true" :
-		    "false");
+		    "\"interface\":%s%s%s%s,\"description\":%s,\"persist\":%s,"
+		    "\"safe\":true}", b, i, fb, tf, a, jbool(f, "persist") ?
+		    "true" : "false");
 		free(i);
+		free(fb);
+		free(tf);
 		free(a);
 		free(b);
 		app.modal = MODAL_NONE;

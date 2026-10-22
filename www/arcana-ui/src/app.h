@@ -448,6 +448,8 @@ struct confirm {
 	char		 act[64];	/* action to run on confirm */
 	char		 arg[256];
 	char		 value[512];
+	int		 fib;		/* if-set: the interface's tables now, */
+	int		 tunnelfib;	/* or -1 unknown */
 };
 
 struct toast {

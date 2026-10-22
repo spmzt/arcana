@@ -1561,12 +1561,19 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "do-if-down") == 0 && s != NULL) {
 		if_state(s, arg, false);
 	} else if (strcmp(act, "if-edit") == 0 && s != NULL) {
-		/* value: "mtu description", as the row has them now. */
+		/* value: "mtu fib tunnelfib description", as the row has
+		 * them now; a table unknown is -1. */
+		const char	*p = value;
+
 		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
 		snprintf(app.confirm.value, sizeof(app.confirm.value), "%d",
-		    atoi(value));
-		snprintf(app.confirm.body, sizeof(app.confirm.body), "%s",
-		    strchr(value, ' ') != NULL ? strchr(value, ' ') + 1 : "");
+		    atoi(p));
+		p = strchr(p, ' ') != NULL ? strchr(p, ' ') + 1 : "";
+		app.confirm.fib = atoi(p);
+		p = strchr(p, ' ') != NULL ? strchr(p, ' ') + 1 : "";
+		app.confirm.tunnelfib = atoi(p);
+		p = strchr(p, ' ') != NULL ? strchr(p, ' ') + 1 : "";
+		snprintf(app.confirm.body, sizeof(app.confirm.body), "%s", p);
 		app.modal = MODAL_IF_SET;
 		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "if-vnet-give") == 0 && s != NULL &&
