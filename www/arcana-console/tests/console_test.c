@@ -6574,6 +6574,125 @@ ATF_TC_BODY(sdwan_host, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(sdwan_loop, "iBGP between the edges' loopbacks: a lo(4) per edge, "
+    "a static to each far loopback over every tunnel with BFD on each path, "
+    "one multihop session per edge, reflection on the edges carrying "
+    "transit, the UNIs' prefixes as the edge's own statics, no far-prefix "
+    "kernel statics")
+ATF_TC_BODY(sdwan_loop, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	const char	*p;
+	size_t		i;
+	int		n;
+	static const char *const edits[][2] = {
+		{ "\"bfd\":{\"interval\":200,\"multiplier\":3},",
+		    "\"bfd\":{\"interval\":200,\"multiplier\":3},\"ibgp\":"
+		    "\"loopback\"," },
+		/* b carries no transit: it reflects nothing, breaks out for
+		 * nobody. */
+		{ "{\"server\":\"@B\",\"ucs_end_points\"",
+		    "{\"server\":\"@B\",\"transit\":false,\"ucs_end_points\"" },
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* Without BFD the loopbacks' routes go unwatched: refused. */
+	ATF_REQUIRE(swap_in(doc, "\"bfd\":{\"interval\":200,\"multiplier\":3},",
+	    "\"bfd\":null,", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "ibgp loopback needs "
+	    "bfd") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/*
+	 * The plan: a loopback per edge after the tunnels' pairs (.0/31,
+	 * .2/31), so a's is 100.64.0.4 and b's 100.64.0.6; a's BIRD has
+	 * a static to b's loopback by the gre tunnel (b's inner .1), the
+	 * backup geneve one (.3) in a lower static, a multihop session
+	 * from loopback to loopback with rr client (a carries transit,
+	 * b does not), the hq UNI's subnet and static route and the
+	 * remote end point's prefix as its own statics kept out of the
+	 * kernel; no kernel static for the far prefixes on b.
+	 */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"loop:acme\"") != NULL &&
+	    strstr(r.body, "\"address\":\"100.64.0.4/32\"") != NULL && strstr(
+	    r.body, "\"address\":\"100.64.0.6/32\"") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "protocol static loop4_0 {\\n\\tipv4;\\n\\t"
+	    "route 100.64.0.6/32 via 100.64.0.1 bfd;\\n}") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "protocol static loop4b_0 {\\n\\tipv4 { "
+	    "preference 150; };\\n\\troute 100.64.0.6/32 via 100.64.0.3 bfd;\\n}")
+	    != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "local 100.64.0.4 as 64600;\\n\\tneighbor "
+	    "100.64.0.6 as 64600;\\n\\tmultihop;\\n\\trr client;\\n}") != NULL,
+	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "local 100.64.0.6 as 64600;\\n\\tneighbor "
+	    "100.64.0.4 as 64600;\\n\\tmultihop;\\n}") != NULL, "%s", r.body);
+	for (n = 0, p = r.body; (p = strstr(p, "rr client")) != NULL; p++)
+		n++;
+	ATF_CHECK_MSG(n == 1, "rr client %d times", n);
+	ATF_CHECK_MSG(strstr(r.body, "multihop {\\n\\t\\tinterval 200 ms;") !=
+	    NULL && strstr(r.body, "proto !~ \\\"orig*\\\";") != NULL, "%s",
+	    r.body);
+	ATF_CHECK_MSG(strstr(r.body, "protocol static orig4_hq {\\n\\tipv4;\\n\\t"
+	    "route 10.1.0.0/24 via \\\"lo0\\\";\\n\\troute 10.1.8.0/22 via "
+	    "10.1.0.2;\\n}") != NULL && strstr(r.body, "route 10.30.0.0/24 via "
+	    "\\\"wg5\\\";") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"route:1:10.1.0.0/24\"") == NULL &&
+	    strstr(r.body, "\"key\":\"route:1:10.30.0.0/24\"") == NULL, "%s",
+	    r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\\\"gre100\\\", \\\"geneve102\\\", \\\"lo1") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(sdwan_lists, "SD-WAN's named lists: prefixes, services, UCS, "
     "edges and UCS End Points kept once, each named where a value would "
     "be, checked; a prefix list an ipfw table, a service list the AFS's "
@@ -8078,6 +8197,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan_apply);
 	ATF_TP_ADD_TC(tp, sdwan_mesh);
 	ATF_TP_ADD_TC(tp, sdwan_host);
+	ATF_TP_ADD_TC(tp, sdwan_loop);
 	ATF_TP_ADD_TC(tp, sdwan_lists);
 	ATF_TP_ADD_TC(tp, sdwan_uswe);
 	ATF_TP_ADD_TC(tp, sdwan_jail);

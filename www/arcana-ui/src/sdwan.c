@@ -4713,9 +4713,14 @@ sdwan_modal(struct html *h)
 		    "of its own.</label><label class=\"toggle\"><input type=\""
 		    "checkbox\" name=\"host_bird\" value=\"1\"%s> The host runs "
 		    "its own BIRD: no service with BFD or routing at a UNI may "
-		    "put one here</label>", e != NULL && jbool(e, "own_table") ?
+		    "put one here</label><label class=\"toggle\"><input type=\""
+		    "checkbox\" name=\"transit\" value=\"1\"%s> Carries transit: "
+		    "what the other edges exchange may pass through it, and break "
+		    "out here, when their direct tunnels are down (off for an edge "
+		    "on a usage-billed or thin link)</label>", e != NULL && jbool(e, "own_table") ?
 		    " checked" : "", e != NULL && jbool(e, "host_bird") ?
-		    " checked" : "");
+		    " checked" : "", e != NULL && jget(e, "transit") != NULL &&
+		    !jbool(e, "transit") ? "" : " checked");
 		h_raw(h, "</details>");
 		/* What it does to the host, before anything is done. */
 		h_raw(h, "<details class=\"sd-effects\"" );
@@ -5299,6 +5304,15 @@ sdwan_modal_service(struct html *h)
 		    "interval", 200));
 		text_field(h, "BFD interval, ms", "bfd_interval", buf, "200", "100 "
 		    "to 300; three missed and the tunnel is down.");
+		h_fmt(h, "<label>iBGP between the edges<select name=\"ibgp\">"
+		    "<option value=\"tunnel\"%s>By each tunnel: a session between its "
+		    "ends</option><option value=\"loopback\"%s>Between loopbacks: "
+		    "one session with each edge, multihop, over every tunnel at once "
+		    "(ECMP); a third edge carries the traffic while every direct "
+		    "tunnel is down; needs BFD</option></select></label>", edit &&
+		    jstr(o, "ibgp") != NULL && strcmp(jstr(o, "ibgp"), "loopback") ==
+		    0 ? "" : " selected", edit && jstr(o, "ibgp") != NULL && strcmp(
+		    jstr(o, "ibgp"), "loopback") == 0 ? " selected" : "");
 		h_raw(h, "</div><fieldset><legend>Threshold crossing alerts: a "
 		    "fault when a tunnel's metric passes one (Mplify 119 §11.4)"
 		    "</legend><div class=\"two\">");
@@ -6767,6 +6781,10 @@ sd_forms(const char *form, const ucl_object_t *f)
 		if (checked(f, "host_bird"))
 			ucl_object_insert_key(ed, ucl_object_frombool(true),
 			    "host_bird", 0, false);
+		(void)ucl_object_delete_key(ed, "transit");
+		if (!checked(f, "transit"))
+			ucl_object_insert_key(ed, ucl_object_frombool(false),
+			    "transit", 0, false);
 		(void)ucl_object_delete_key(ed, "ntp");
 		if ((v = jstr(f, "ntp")) != NULL && v[0] != '\0')
 			ucl_object_insert_key(ed, list_of(v), "ntp", 0, false);
@@ -7370,6 +7388,10 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			    "3");
 			ucl_object_insert_key(o, t, "bfd", 0, false);
 		}
+		(void)ucl_object_delete_key(o, "ibgp");
+		if (jstr(f, "ibgp") != NULL && strcmp(jstr(f, "ibgp"), "loopback") ==
+		    0)
+			put_str(o, "ibgp", "loopback");
 		/* What is folded under "more". */
 		(void)ucl_object_delete_key(o, "groups");
 		(void)ucl_object_delete_key(o, "importance");

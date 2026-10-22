@@ -1663,6 +1663,30 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 		    "underlay's"));
 	if (!domains(c, sw))
 		return (false);
+	/* iBGP between the edges' loopbacks (Arcana's own): one session with
+	 * each edge, multihop, over every tunnel at once; needs BFD, and no
+	 * control plane, for the edges carrying transit reflect themselves. */
+	if ((v = ucl_object_lookup(sw, "ibgp")) != NULL && !is_null(v)) {
+		if (ucl_object_type(v) != UCL_STRING || (strcmp(
+		    ucl_object_tostring(v), "tunnel") != 0 && strcmp(
+		    ucl_object_tostring(v), "loopback") != 0))
+			return (fail(c, "ibgp is tunnel (a session by each tunnel, "
+			    "between its ends) or loopback (one with each edge, "
+			    "between loopbacks, multihop, over every tunnel at "
+			    "once)"));
+		if (strcmp(ucl_object_tostring(v), "loopback") == 0) {
+			if (ucl_object_lookup(sw, "bfd") == NULL || is_null(
+			    ucl_object_lookup(sw, "bfd")))
+				return (fail(c, "ibgp loopback needs bfd: the "
+				    "loopbacks' routes over the tunnels are watched "
+				    "by it"));
+			if (ucl_object_lookup(sw, "control_plane") != NULL &&
+			    !is_null(ucl_object_lookup(sw, "control_plane")))
+				return (fail(c, "ibgp loopback and a control plane "
+				    "are one or the other: the edges that carry "
+				    "transit reflect"));
+		}
+	}
 	/* The control plane (Mplify 119 §8.3, R9-R13): an edge of the
 	 * service the others' iBGP goes to, a route reflector. */
 	if ((v = ucl_object_lookup(sw, "control_plane")) != NULL && !is_null(
@@ -2560,6 +2584,13 @@ check_doc(const ucl_object_t *doc, struct ck *c)
 		if ((e = ucl_object_lookup(v, "own_table")) != NULL &&
 		    ucl_object_type(e) != UCL_BOOLEAN) {
 			ok = fail(c, "own_table is true or false");
+			break;
+		}
+		if ((e = ucl_object_lookup(v, "transit")) != NULL &&
+		    ucl_object_type(e) != UCL_BOOLEAN) {
+			ok = fail(c, "transit is true or false: whether the edge "
+			    "carries what the other edges exchange, and breaks "
+			    "out for them");
 			break;
 		}
 		if ((e = ucl_object_lookup(v, "host_bird")) != NULL &&
