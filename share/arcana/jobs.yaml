@@ -352,7 +352,7 @@ kinds:
   - kind: sysctl
     title: A sysctl set
     needs: args
-    uses: persist
+    uses: jail persist safe
   - kind: ipfw
     title: The firewall
     needs: verb args

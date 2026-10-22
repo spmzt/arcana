@@ -1859,8 +1859,13 @@ With
 nobody confirms.
 Safe mode is for what can be taken back: an address, an interface's
 state, MTU and description, an interface made, a route, a jail's
-address, a service's variables, and a service started, stopped, enabled
-or disabled.
+address, a service's variables, a service started, stopped, enabled
+or disabled, and a sysctl, whose value before (and its line in
+.Pa sysctl.conf ,
+with
+.Fl p )
+is put back; one the kernel takes only once keeps the new value until it
+boots again, and the job says so.
 A change that would take away the address the request came in by is
 refused unless it is made in safe mode.
 .Pp

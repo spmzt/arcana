@@ -51,6 +51,8 @@ struct qjob {
 	const char		*made;		/* if-create: the name it got */
 	struct arc_variable	*undo_vars;	/* service-config: as they were */
 	size_t			 undo_nvars;
+	const char		*undo_value;	/* sysctl: the kernel's before */
+	const char		*undo_conf;	/* sysctl: sysctl.conf's, or NULL */
 	bool			 undo_none;	/* it changed nothing: as it was */
 	bool			 undo_live;	/* rc.conf had it before: keep that */
 	char			*title;
@@ -83,7 +85,7 @@ static void	 run(struct qjob *, bool) __no_lock_analysis;
 static bool	 pkg_lane(const struct arc_job_spec *);
 static bool	 lane_jail_busy(const char *);
 static bool	 await_confirm(struct qjob *);
-static void	 undo_prepare(struct qjob *);
+static const char *undo_prepare(struct qjob *);
 static const char *undo(struct qjob *);
 static void	*runner(void *);
 static void	 fill(struct work *, struct arc_job *, struct qjob *, bool);
@@ -571,11 +573,11 @@ static const uint8_t svc_reverse[] = {
  * Before a safe change: what it will take to put things back, which
  * afterwards can no longer be read.
  */
-static void
+static const char *
 undo_prepare(struct qjob *j)
 {
 	const struct arc_job_spec	*sp;
-	const char			*v;
+	const char			*v, *e;
 	char				 descr[256];
 	size_t				 i;
 	bool				 running, enabled, up;
@@ -583,10 +585,24 @@ undo_prepare(struct qjob *j)
 	/*
 	 * What is undone is what the job changed, not what it was asked:
 	 * an interface that was up already is not brought down for having
-	 * been told to come up.
+	 * been told to come up.  What cannot be read now cannot be put
+	 * back later: the job fails here, before the change.
 	 */
 	sp = &j->spec;
 	switch (sp->kind) {
+	case ARC_JOB_KIND_SYSCTL:
+		e = NULL;
+		if ((j->undo_value = sysctl_get(&j->w, sp->names.v[0], &e)) ==
+		    NULL)
+			return (wfmt(&j->w, "not changed: its value now could "
+			    "not be read, so it could not be put back: %s", e));
+		if (sp->persist)
+			j->undo_conf = sysctl_conf_get(&j->w, sp->names.v[0]);
+		if (strcmp(j->undo_value, sp->names.v[1]) == 0 && (!sp->persist ||
+		    (j->undo_conf != NULL && strcmp(j->undo_conf,
+		    sp->names.v[1]) == 0)))
+			j->undo_none = true;
+		break;
 	case ARC_JOB_KIND_IF_ADDRESS:
 		/* To put an address back, its prefix length is needed. */
 		j->undo_address = if_address_with_prefix(&j->w, sp->interface,
@@ -657,6 +673,7 @@ undo_prepare(struct qjob *j)
 	default:
 		break;
 	}
+	return (NULL);
 }
 
 /*
@@ -916,6 +933,33 @@ undo(struct qjob *j)
 		rc = do_route(&j->w, sp->destination, sp->gateway, !sp->remove,
 		    sp->has_fib ? sp->fib : 0, &rm, sp->persist, &e);
 		break;
+	case ARC_JOB_KIND_SYSCTL:
+		/*
+		 * The kernel's value as it was, and sysctl.conf's line as it
+		 * was, or none.  A tunable that takes a value once (net.fibs,
+		 * say) refuses the first: the file is still put back, and
+		 * the job says the kernel keeps the new value until a boot.
+		 */
+		{
+			const char	*ce;
+
+			rc = do_sysctl_set(&j->w, sp->names.v[0], j->undo_value,
+			    false, &e);
+			ce = NULL;
+			if (sp->persist && sysctl_conf_restore(&j->w,
+			    sp->names.v[0], j->undo_conf, &ce) != 0) {
+				e = e != NULL ? wfmt(&j->w, "%s; and %s", e, ce) :
+				    ce;
+				rc = -1;
+			} else if (rc != 0) {
+				e = wfmt(&j->w, "%s: the kernel keeps %s=%s "
+				    "until it boots again%s", e, sp->names.v[0],
+				    sp->names.v[1], sp->persist ? ", when "
+				    "sysctl.conf, put back as it was, sets it" :
+				    "");
+			}
+		}
+		break;
 	default:
 		/* A kind with no undo is refused as safe at its check: this
 		 * is never reached, and says so rather than doing harm. */
@@ -972,8 +1016,10 @@ run(struct qjob *j, bool lane)
 	if (go && inside && scope_enter(&j->w, sp->jail, &error) != 0) {
 		ok = false;
 		go = false;
-	} else if (go && sp->safe)
-		undo_prepare(j);
+	} else if (go && sp->safe && (error = undo_prepare(j)) != NULL) {
+		ok = false;
+		go = false;
+	}
 	if (!go) {
 		ok = false;
 		if (error == NULL)

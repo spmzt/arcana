@@ -587,7 +587,12 @@ the daemon undoes the change, as it also does when it is stopped while
 waiting, or when the job is cancelled while it waits
 .Pq job-cancel :
 an address is put back with the prefix length it had, an
-interface brought back up or down, a route deleted or added again.
+interface brought back up or down, a route deleted or added again, a
+sysctl set to the value it had and its line in
+.Pa sysctl.conf
+put back or taken out.
+What has to be read before the change for that, and cannot be, fails
+the job before the change is made.
 .Sh BUILDS
 A client may ask for
 .Nm

@@ -210,7 +210,9 @@ module: arcana-jobs
        |        +--:(sysctl)
        |        |  +---w sysctl!
        |        |     +---w args*      string
+       |        |     +---w jail?      string
        |        |     +---w persist?   boolean
+       |        |     +---w safe?      boolean
        |        +--:(ipfw)
        |        |  +---w ipfw!
        |        |     +---w verb       string

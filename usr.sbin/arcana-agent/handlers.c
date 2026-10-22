@@ -2868,8 +2868,6 @@ check_spec(const struct arc_job_spec *sp)
 		    strncmp(sp->names.v[0], "net.", 4) != 0))
 			return ("a jail's sysctls are not set from here, but its "
 			    "network's (net.*), which are its own");
-		if (sp->safe)
-			return ("a sysctl is not taken back by itself");
 		if (sp->names.n != 2 || !sysctl_name_ok(sp->names.v[0]))
 			return ("name one sysctl, with letters, digits and "
 			    ". _ - %, and its value");

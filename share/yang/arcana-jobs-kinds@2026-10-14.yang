@@ -1062,10 +1062,20 @@ submodule arcana-jobs-kinds {
             description
               "Arguments";
           }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
           leaf persist {
             type boolean;
             description
               "Kept for a boot";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
           }
         }
       }

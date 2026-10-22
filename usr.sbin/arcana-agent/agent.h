@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.180.0"
+#define	ARCANA_AGENT_VERSION	"0.181.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -699,6 +699,10 @@ int		 do_sysctl_jail(struct work *, const char *,
 int		 do_sysctl_set(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 sysctl_name_ok(const char *);
+const char	*sysctl_get(struct work *, const char *, const char **);
+const char	*sysctl_conf_get(struct work *, const char *);
+int		 sysctl_conf_restore(struct work *, const char *, const char *,
+		    const char **);
 bool		 valid_jail(const char *);
 bool		 valid_ifname(const char *);
 bool		 sysctl_part(struct cbl_dump_state *, const char *, char **,

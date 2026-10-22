@@ -2621,6 +2621,99 @@ notify_cleanup()
 }
 
 atf_test_case safe_mode cleanup
+safe_sysctl_head()
+{
+	atf_set "descr" "A sysctl set in safe mode is put back: the kernel's value and sysctl.conf's line; one that cannot be read is not changed"
+}
+safe_sysctl_body()
+{
+	# sysctl -n answers from a file of values; a set rewrites it, and
+	# net.fibs takes no smaller value, as the kernel refuses some.
+	cat > fake-sysctl <<EOS
+#!/bin/sh
+echo "sysctl \$*" >> $(pwd)/sysctl.log
+if [ "\$1" = -n ]; then
+	v=\$(sed -n "s/^\$2=//p" $(pwd)/sysctl.values)
+	[ -n "\$v" ] || { echo "sysctl: unknown oid '\$2'" >&2; exit 1; }
+	echo "\$v"
+	exit 0
+fi
+name=\${1%%=*}
+val=\${1#*=}
+cur=\$(sed -n "s/^\$name=//p" $(pwd)/sysctl.values)
+[ -n "\$cur" ] || { echo "sysctl: unknown oid '\$name'" >&2; exit 1; }
+if [ "\$name" = net.fibs ] && [ "\$val" -lt "\$cur" ]; then
+	echo "sysctl: net.fibs: Invalid argument" >&2
+	exit 1
+fi
+sed -i '' "s/^\$name=.*/\$name=\$val/" $(pwd)/sysctl.values
+exit 0
+EOS
+	chmod +x fake-sysctl
+	printf 'net.inet.ip.forwarding=0\nkern.ipc.somaxconn=1024\nnet.inet.tcp.blackhole=0\nnet.fibs=1\n' > sysctl.values
+	printf '# kept\nkern.ipc.somaxconn=1024\n' > sysctl.conf
+	DAEMON_ARGS="-Q $(pwd)/fake-sysctl -O $(pwd)/sysctl.conf"
+	start_daemon
+
+	# Confirmed: it stays.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" sysctl net.inet.ip.forwarding=1
+	atf_check -o match:'^net.inet.ip.forwarding=1$' cat sysctl.values
+
+	# Not confirmed: the kernel's value and the file's line as they
+	# were; a line the change added is taken out again.
+	: > sysctl.log
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" sysctl kern.ipc.somaxconn=4096
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" sysctl net.inet.tcp.blackhole=2
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'kern.ipc.somaxconn=1024 again' "$JGC" -c "$SOCK" job 2
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'net.inet.tcp.blackhole no longer set' "$JGC" -c "$SOCK" job 3
+	atf_check -o match:'^sysctl kern.ipc.somaxconn=4096$' \
+	    -o match:'^sysctl kern.ipc.somaxconn=1024$' \
+	    -o match:'^sysctl net.inet.tcp.blackhole=2$' \
+	    -o match:'^sysctl net.inet.tcp.blackhole=0$' cat sysctl.log
+	atf_check -o match:'^kern.ipc.somaxconn=1024$' \
+	    -o match:'^net.inet.tcp.blackhole=0$' cat sysctl.values
+	atf_check -o match:'^# kept$' -o match:'^kern.ipc.somaxconn=1024$' \
+	    -o not-match:'4096' -o not-match:'blackhole' cat sysctl.conf
+
+	# One whose value cannot be read is not changed at all.
+	: > sysctl.log
+	atf_check -s exit:1 -o match:'could not be read, so it could not be put back' \
+	    "$JGC" -s -c "$SOCK" sysctl kern.nosuch=1
+	atf_check -o not-match:'kern.nosuch=1' cat sysctl.log
+
+	# One the kernel takes only once keeps the new value, and the job
+	# says so; the file is still put back.
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" sysctl net.fibs=4
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'could not be undone' \
+	    -o match:'the kernel keeps net.fibs=4 until it boots again, when sysctl.conf, put back as it was, sets it' \
+	    "$JGC" -c "$SOCK" job 5
+	atf_check -o match:'^net.fibs=4$' cat sysctl.values
+	atf_check -o not-match:'net.fibs' cat sysctl.conf
+
+	# What was so already is left so.
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sysctl net.inet.ip.forwarding=1
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'it was so before, and is left so' \
+	    "$JGC" -c "$SOCK" job 6
+}
+
 safe_mode_head()
 {
 	atf_set "descr" "A safe change stays when confirmed, and is undone when not"
@@ -7627,6 +7720,7 @@ atf_init_test_cases()
 	atf_add_test_case storage
 	atf_add_test_case notify
 	atf_add_test_case safe_mode
+	atf_add_test_case safe_sysctl
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart
 	atf_add_test_case agent_build
