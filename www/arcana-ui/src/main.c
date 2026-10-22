@@ -1659,6 +1659,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		if (app.net.kind == NET_INTERFACES)
 			topo_poll(s);
 		refresh_network(s, true);
+	} else if (strcmp(act, "input:sy-jail") == 0 && s != NULL) {
+		sysctl_set_jail(s, value);
 	} else if (strcmp(act, "input:net-fib") == 0 && s != NULL) {
 		app.net.fib = atoi(value) > 0 && atoi(value) < 65536 ?
 		    atoi(value) : 0;

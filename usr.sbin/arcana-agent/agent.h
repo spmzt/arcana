@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.190.0"
+#define	ARCANA_AGENT_VERSION	"0.191.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10

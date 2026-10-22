@@ -2911,12 +2911,18 @@ part_plugins(void)
 	    "f.export_ipv4.value = 'none'; f.import_ipv4.value = 'filter "
 	    "bgp_out'; f.requestSubmit();");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('takes it back unless the host is still "
-	    "reached'))", 20);
+	    "t.textContent.includes('takes it back by itself unless it is "
+	    "confirmed in time'))", 20);
 	ATF_CHECK(system("grep -q '^\t\timport filter bgp_out;$' bird/bird.conf "
 	    "&& grep -q '^\t\texport none;$' bird/bird.conf && ! grep -q "
 	    "'export filter bgp_out' bird/bird.conf && grep -q '^configure "
 	    "timeout 60$' birdc.log") == 0);
+	/* Kept only when told so: the seconds left shown, then Confirm. */
+	wait_js("document.querySelector('.notice button[data-act=bird-confirm]') && "
+	    "/takes it back by itself in [0-9]+ s/.test(document.querySelector("
+	    "'.notice button[data-act=bird-confirm]').closest('.notice').textContent)", 10);
+	shot("7g-bird-confirm");
+	run("document.querySelector('.notice button[data-act=bird-confirm]').click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('BIRD keeps its new configuration'))", 30);
 	ATF_CHECK(system("grep -q '^configure confirm$' birdc.log") == 0);

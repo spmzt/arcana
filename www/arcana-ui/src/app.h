@@ -881,6 +881,7 @@ bool		 usage_action(const char *, const char *, const char *);
 bool		 usage_form(const char *, const ucl_object_t *);
 void		 fmt_size(char *, size_t, double);
 void		 refresh_sysctl(struct server *, bool);
+void		 sysctl_set_jail(struct server *, const char *);
 void		 sysctl_stream(const ucl_object_t *);
 void		 network_stream(const ucl_object_t *);
 void		 view_sysctl(struct html *, struct server *);

@@ -3189,16 +3189,22 @@ safe_if_destroy_body()
 	    -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 16384 up"$' \
 	    -o match:'^ifconfig_lo0_descr="the loopback"$' cat rc.conf
 
-	# What cannot be made again as it was is refused; what is not
-	# there is not destroyed.
+	# What cannot be made again as it was is refused; what was not
+	# listed is destroyed as asked, with nothing to make again.
 	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
 	    "$JGC" -s -c "$SOCK" interface wg0 destroy
 	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
 	    "$JGC" -s -c "$SOCK" interface epair3a destroy
 	: > ifconfig.log
-	atf_check -s exit:1 -o match:'not changed: no interface gif9 to make again' \
-	    "$JGC" -s -c "$SOCK" interface gif9 destroy
-	atf_check -o empty cat ifconfig.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface gif9 destroy
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'gif9 was not listed before: there is nothing to make again' \
+	    "$JGC" -c "$SOCK" job 2
+	atf_check -o inline:'gif9 destroy\n' cat ifconfig.log
 }
 
 safe_l2_head()
@@ -3392,7 +3398,7 @@ safe_mode_body()
 	# What cannot be taken back is not taken in safe mode.
 	atf_check -s exit:1 -e match:'cannot be undone' -o ignore \
 	    "$JGC" -q -s -c "$SOCK" service sshd restart
-	atf_check -s exit:1 -o match:'no interface gif4 to make again' \
+	atf_check -o match:'confirmed: it stays' \
 	    "$JGC" -s -c "$SOCK" interface gif4 destroy
 	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
 	    "$JGC" -q -s -c "$SOCK" ng shutdown em0:

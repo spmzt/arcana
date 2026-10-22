@@ -779,9 +779,13 @@ undo_prepare(struct qjob *j)
 		/* The interface as it is: its addresses, tunnel, MTU,
 		 * description and state, its tables, and what rc.conf has
 		 * of it. */
-		if ((j->undo_if = if_object(&j->w, sp->interface)) == NULL)
-			return (wfmt(&j->w, "not changed: no interface %s to "
-			    "make again", sp->interface));
+		if ((j->undo_if = if_object(&j->w, sp->interface)) == NULL) {
+			/* Not listed: ifconfig says whether there is one to
+			 * destroy; there is none to make again. */
+			j->undo_note = wfmt(&j->w, "%s was not listed before: "
+			    "there is nothing to make again", sp->interface);
+			break;
+		}
 		if_current(&j->w, sp->interface, &j->undo_mtu, &j->undo_fib,
 		    &j->undo_tunnelfib, descr, sizeof(descr));
 		if (sp->persist) {
