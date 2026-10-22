@@ -4703,6 +4703,19 @@ sdwan_modal(struct html *h)
 		    "the host does not keep time already: the edge's clock "
 		    "lines up faults and key turns with the other edges "
 		    "(ntpd). Empty: the host as it is.");
+		/* A host-as-subscriber edge, and one whose BIRD is its own. */
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "own_table\" value=\"1\"%s> Host as subscriber: the service's "
+		    "overlay in the host's own routing table (0), its uplinks in "
+		    "tables of their own (each link's VRF), its UNI left where "
+		    "it is; nothing of the host's jails and daemons moves. Its "
+		    "breakout needs the service's breakout domain to have a fib "
+		    "of its own.</label><label class=\"toggle\"><input type=\""
+		    "checkbox\" name=\"host_bird\" value=\"1\"%s> The host runs "
+		    "its own BIRD: no service with BFD or routing at a UNI may "
+		    "put one here</label>", e != NULL && jbool(e, "own_table") ?
+		    " checked" : "", e != NULL && jbool(e, "host_bird") ?
+		    " checked" : "");
 		h_raw(h, "</details>");
 		/* What it does to the host, before anything is done. */
 		h_raw(h, "<details class=\"sd-effects\"" );
@@ -6174,6 +6187,11 @@ sdwan_modal_service(struct html *h)
 		}
 		h_raw(h, "<div class=\"two\">");
 		ifn = sd.link_if[0] != '\0' ? sd.link_if : jstr(u, "interface");
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "host_addressed\" value=\"1\"%s> The host has the UNI's "
+		    "addresses already (a bridge of its jails, say): none is "
+		    "added or taken away</label>", u != NULL && jbool(u,
+		    "host_addressed") ? " checked" : "");
 		h_raw(h, "<label>Interface");
 		if (sd.ifs_loading)
 			h_raw(h, "<span class=\"dim\"> · asking the host</span>");
@@ -6741,6 +6759,14 @@ sd_forms(const char *form, const ucl_object_t *f)
 			    "ucs_end_points", 0, false);
 			ucl_array_append(arr, ed);
 		}
+		(void)ucl_object_delete_key(ed, "own_table");
+		if (checked(f, "own_table"))
+			ucl_object_insert_key(ed, ucl_object_frombool(true),
+			    "own_table", 0, false);
+		(void)ucl_object_delete_key(ed, "host_bird");
+		if (checked(f, "host_bird"))
+			ucl_object_insert_key(ed, ucl_object_frombool(true),
+			    "host_bird", 0, false);
 		(void)ucl_object_delete_key(ed, "ntp");
 		if ((v = jstr(f, "ntp")) != NULL && v[0] != '\0')
 			ucl_object_insert_key(ed, list_of(v), "ntp", 0, false);
@@ -7792,14 +7818,17 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		u = jget(old, "uni") != NULL ? ucl_object_copy(jget(old, "uni")) :
 		    ucl_object_typed_new(UCL_OBJECT);
 		(void)ucl_object_delete_key(o, "uni");
-		for (i = 0; i < 9; i++) {
+		for (i = 0; i < 10; i++) {
 			static const char *const keys[] = { "id", "interface",
 			    "vlan", "ipv4", "ipv6", "routes", "bgp", "ospf",
-			    "max_frame" };
+			    "max_frame", "host_addressed" };
 
 			(void)ucl_object_delete_key(u, keys[i]);
 		}
 		put_int(u, "max_frame", jstr(f, "mf"));
+		if (checked(f, "host_addressed"))
+			ucl_object_insert_key(u, ucl_object_frombool(true),
+			    "host_addressed", 0, false);
 		if (jstr(f, "routes") != NULL && strspn(jstr(f, "routes"),
 		    " \t\n") != strlen(jstr(f, "routes")))
 			ucl_object_insert_key(u, routes_of(jstr(f, "routes")),

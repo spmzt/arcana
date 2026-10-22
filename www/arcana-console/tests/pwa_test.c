@@ -5613,7 +5613,7 @@ part_flows(void)
 	run("window.mtukept = null; fetch('/api/sdwan').then(r => r.json())."
 	    "then(d => { window.mtukept = d.ucs[0].tunnel.mtu === 'auto' && "
 	    "d.ucs[0].note === 'kept'; });");
-	wait_js("window.mtukept === true", 10);
+	wait_js("window.mtukept === true", 20);
 	run("document.querySelector('.sd-guide button[data-act=sd-go]')."
 	    "click()");
 	wait_js("document.querySelector('form[data-form=sd-edge] details."

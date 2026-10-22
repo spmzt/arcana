@@ -263,6 +263,19 @@ ATF_TC_CLEANUP(name, tc)						\
 	stop();								\
 }
 
+/* The same with three minutes: an apply made twice over. */
+#define	CONSOLE_TC_LONG(name, descr)					\
+ATF_TC_WITH_CLEANUP(name);						\
+ATF_TC_HEAD(name, tc)							\
+{									\
+	atf_tc_set_md_var(tc, "descr", descr);				\
+	atf_tc_set_md_var(tc, "timeout", "180");				\
+}									\
+ATF_TC_CLEANUP(name, tc)						\
+{									\
+	stop();								\
+}
+
 CONSOLE_TC(unauthenticated, "Without a session only health and status work")
 ATF_TC_BODY(unauthenticated, tc)
 {
@@ -6471,6 +6484,96 @@ ATF_TC_BODY(sdwan_mesh, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(sdwan_host, "A host-as-subscriber edge (own_table): the service's "
+    "overlay in the host's own table, its uplinks in tables of their own, "
+    "its UNI left where it is; a host running its own BIRD takes no "
+    "service's")
+ATF_TC_BODY(sdwan_host, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		/* b is the host-as-subscriber: its uplink in table 2. */
+		{ "{\"server\":\"@B\",\"ucs_end_points\":[{\"id\":\"b-inet\","
+		    "\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "{\"server\":\"@B\",\"own_table\":true,\"ucs_end_points\":[{"
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\",\"vrf\":2" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\",\"host_addressed\":true" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* A host that runs its own BIRD cannot carry the service's (bfd). */
+	ATF_REQUIRE(swap_in(doc, "\"own_table\":true", "\"own_table\":true,"
+	    "\"host_bird\":true", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "runs its own BIRD") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/*
+	 * On b: its tunnel end, its routes and its BIRD in the host's own
+	 * table (0, no kernel table statement), its UNI not moved nor
+	 * addressed (host_addressed), the uplinks' connected routes kept
+	 * in the host's table too (allfibs); on a, as ever, table 1.
+	 */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"interface\":\"gre100\",\"fib\":1,") !=
+	    NULL && strstr(r.body, "\"interface\":\"gre101\",\"fib\":0,") != NULL,
+	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"if-set\",\"interface\":\"lo0\","
+	    "\"fib\":1,") != NULL && strstr(r.body, "\"key\":\"uni:branch\","
+	    "\"phase\":") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"allfibs\":true") != NULL && strstr(
+	    r.body, "\"allfibs\":false") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"name\":\"sw1\",\"fib\":0,") != NULL &&
+	    strstr(r.body, "\"name\":\"sw1\",\"fib\":1,") != NULL, "%s", r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(sdwan_lists, "SD-WAN's named lists: prefixes, services, UCS, "
     "edges and UCS End Points kept once, each named where a value would "
     "be, checked; a prefix list an ipfw table, a service list the AFS's "
@@ -6638,7 +6741,7 @@ ATF_TC_BODY(sdwan_lists, tc)
 	resp_free(&r);
 }
 
-CONSOLE_TC(sdwan_apply, "SD-WAN made on the edges: planned, applied, kept")
+CONSOLE_TC_LONG(sdwan_apply, "SD-WAN made on the edges: planned, applied, kept")
 ATF_TC_BODY(sdwan_apply, tc)
 {
 	struct authn	a;
@@ -7974,6 +8077,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan);
 	ATF_TP_ADD_TC(tp, sdwan_apply);
 	ATF_TP_ADD_TC(tp, sdwan_mesh);
+	ATF_TP_ADD_TC(tp, sdwan_host);
 	ATF_TP_ADD_TC(tp, sdwan_lists);
 	ATF_TP_ADD_TC(tp, sdwan_uswe);
 	ATF_TP_ADD_TC(tp, sdwan_jail);

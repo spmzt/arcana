@@ -1290,6 +1290,11 @@ uni(struct ck *c, const ucl_object_t *u, struct pfx *nets, int *nnets)
 	    ucl_object_lookup(u, "vlan"), 0, 4094, NULL))
 		return (fail(c, "its UNI's vlan is 0, untagged, or 1 to 4094 "
 		    "(§11.2)"));
+	/* The host has the UNI's addresses already (a bridge of its jails,
+	 * say): none is added or taken away (Arcana's own). */
+	if (ucl_object_lookup(u, "host_addressed") != NULL && ucl_object_type(
+	    ucl_object_lookup(u, "host_addressed")) != UCL_BOOLEAN)
+		return (fail(c, "its UNI's host_addressed is true or false"));
 	if (ucl_object_lookup(u, "max_frame") != NULL && !is_int(
 	    ucl_object_lookup(u, "max_frame"), 1522, 65535, NULL))
 		return (fail(c, "its UNI's max_frame is 1522 or more (R126)"));
@@ -2547,6 +2552,75 @@ check_doc(const ucl_object_t *doc, struct ck *c)
 			ok = fail(c, "no such server (an edge is a server, or "
 			    "server/jail for a vnet jail on it)");
 			break;
+		}
+		/* A host-as-subscriber edge (Arcana's own): the services'
+		 * overlay in the host's own table, the first; host_bird says
+		 * the host runs its own BIRD there, so no service may put
+		 * one there. */
+		if ((e = ucl_object_lookup(v, "own_table")) != NULL &&
+		    ucl_object_type(e) != UCL_BOOLEAN) {
+			ok = fail(c, "own_table is true or false");
+			break;
+		}
+		if ((e = ucl_object_lookup(v, "host_bird")) != NULL &&
+		    ucl_object_type(e) != UCL_BOOLEAN) {
+			ok = fail(c, "host_bird is true or false");
+			break;
+		}
+		if (ucl_flag(v, "host_bird") || ucl_flag(v, "own_table")) {
+			const ucl_object_t	*xsw, *xep, *xu, *xue;
+			ucl_object_iter_t	 xit, xeit, xuit;
+			bool			 bird, breaks;
+
+			/* Of the services here: one that needs BIRD (BFD, or
+			 * routing at a UNI) cannot have it on a host that
+			 * runs its own; one breaking out here from an
+			 * own-table edge needs a breakout table of its own,
+			 * for the host's default route is not the service's
+			 * to write. */
+			breaks = false;
+			xuit = NULL;
+			while ((xue = ucl_object_iterate(ucl_object_lookup(v,
+			    "ucs_end_points"), &xuit, true)) != NULL)
+				if (ucl_flag(xue, "breakout"))
+					breaks = true;
+			xit = NULL;
+			while (ok && (xsw = ucl_object_iterate(ucl_object_lookup(
+			    doc, "swvcs"), &xit, true)) != NULL) {
+				bird = !is_null(ucl_object_lookup(xsw, "bfd")) &&
+				    ucl_object_lookup(xsw, "bfd") != NULL;
+				xeit = NULL;
+				while ((xep = ucl_object_iterate(ucl_object_lookup(
+				    xsw, "end_points"), &xeit, true)) != NULL) {
+					if (str(xep, "edge") == NULL || strcmp(str(
+					    xep, "edge"), str(v, "server")) != 0)
+						continue;
+					xu = ucl_object_lookup(xep, "uni");
+					if (xu != NULL && ucl_object_lookup(xu,
+					    "routing") != NULL && !is_null(
+					    ucl_object_lookup(xu, "routing")))
+						bird = true;
+					if (ucl_flag(v, "host_bird") && bird)
+						ok = fail(c, "it runs its own BIRD "
+						    "(host_bird): service %s, which "
+						    "needs one here (bfd, or routing "
+						    "at a UNI), cannot have it",
+						    str(xsw, "id"));
+					else if (ucl_flag(v, "own_table") && breaks
+					    && (ucl_object_lookup(ucl_object_lookup(
+					    ucl_object_lookup(xsw, "domains"),
+					    "breakout"), "fib") == NULL))
+						ok = fail(c, "an own-table edge "
+						    "breaking out needs service %s's "
+						    "breakout domain to have a fib "
+						    "of its own: the host's default "
+						    "route is not the service's to "
+						    "write", str(xsw, "id"));
+					break;
+				}
+			}
+			if (!ok)
+				break;
 		}
 		/* NTP (Mplify 119 §12.2.2): the servers the edge keeps time by. */
 		if ((e = ucl_object_lookup(v, "ntp")) != NULL && !is_null(e)) {

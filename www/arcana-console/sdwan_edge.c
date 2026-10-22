@@ -369,6 +369,33 @@ struct plan {
 	ucl_object_t		*learned;	/* sid/ifname: the host's address */
 	char			 why[300];
 };
+/*
+ * A host-as-subscriber edge (edges[].own_table): the service's overlay
+ * lives in the host's own table, the first, and its uplinks go to
+ * underlay tables (the UCS End Points' vrf); nothing of the host's is
+ * moved, its jails and daemons stay as they are.  Arcana's own, beside
+ * Mplify 119 §7.3.
+ */
+static bool
+edge_own_table(struct plan *pl, const char *sid)
+{
+	const ucl_object_t	*e;
+
+	e = by(ucl_object_lookup(pl->doc, "edges"), "server", sid);
+	return (e != NULL && ucl_flag(e, "own_table"));
+}
+
+/* The table a service's overlay is in on an edge: the first on an
+ * own-table edge, else the service's own. */
+static int64_t
+efib(struct plan *pl, const ucl_object_t *sw, const char *sid)
+{
+
+	if (sid != NULL && edge_own_table(pl, sid))
+		return (0);
+	return (ucl_object_toint(ucl_object_lookup(sw, "fib")));
+}
+
 
 static ucl_object_t *
 edge_list(struct plan *pl, const char *sid)
@@ -667,7 +694,9 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 	id = str(t, "id");
 	sid = str(a, "edge");
 	unit = ucl_object_toint(ucl_object_lookup(a, "unit"));
-	fib = ucl_object_toint(ucl_object_lookup(t, "fib"));
+	/* The table this end is in: the service's, or the host's own. */
+	fib = efib(pl, by(ucl_object_lookup(pl->doc, "swvcs"), "id", str(t,
+	    "swvc")), sid);
 	ipsec = ucl_flag(t, "ipsec");
 	snprintf(ifn, sizeof(ifn), "%s", str(a, "ifname"));
 	snprintf(key, sizeof(key), "tvc:%s", id);
@@ -1264,7 +1293,7 @@ route_multi_obj(struct plan *pl, const char *sid, const ucl_object_t *sw,
 	char		 key[200];
 	int64_t		 fib;
 
-	fib = ucl_object_toint(ucl_object_lookup(sw, "fib"));
+	fib = efib(pl, sw, sid);
 	snprintf(key, sizeof(key), "route:%jd:%s", (intmax_t)fib, prefix);
 	if ((o = object(pl, sid, key, PH_ROUTE, "%s via %s, fib %jd (%s)",
 	    prefix, gws, (intmax_t)fib, why)) == NULL)
@@ -1339,8 +1368,8 @@ route_obj(struct plan *pl, const char *sid, const ucl_object_t *sw,
     const char *prefix, const char *gw, const char *why)
 {
 
-	route_fib_obj(pl, sid, sw, ucl_object_toint(ucl_object_lookup(sw,
-	    "fib")), PH_ROUTE, prefix, gw, why);
+	route_fib_obj(pl, sid, sw, efib(pl, sw, sid), PH_ROUTE, prefix, gw,
+	    why);
 }
 
 /*
@@ -1557,7 +1586,7 @@ remote_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 	time_t			 now;
 
 	r = ucl_object_lookup(ep, "remote");
-	fib = ucl_object_toint(ucl_object_lookup(sw, "fib"));
+	fib = efib(pl, sw, str(ep, "edge"));
 	port = ucl_object_lookup(r, "port") != NULL ? ucl_object_toint(
 	    ucl_object_lookup(r, "port")) : WG_REMOTE_PORT;
 	if (!net_parse(str(r, "prefix"), &n) || !remote_addr(pl, sw, ep, NULL,
@@ -1627,7 +1656,7 @@ uni_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 	int			 i, k, ns;
 
 	u = ucl_object_lookup(ep, "uni");
-	fib = ucl_object_toint(ucl_object_lookup(sw, "fib"));
+	fib = efib(pl, sw, str(ep, "edge"));
 	vlan = ucl_object_toint(ucl_object_lookup(u, "vlan"));
 	ifn = str(u, "interface");
 	snprintf(key, sizeof(key), "uni:%s", str(ep, "id"));
@@ -1663,16 +1692,20 @@ uni_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 		unmake(o, job("if-destroy", "interface", S(vif), "persist",
 		    B(true), NULL));
 		ifn = vif;
-	} else {
+	} else if (fib > 0) {
+		/* Into the service's table; on an own-table edge it is in
+		 * the host's already, and stays. */
 		make(o, job("if-set", "interface", S(ifn), "fib", I(fib),
 		    "persist", B(true), NULL));
 	}
 	for (i = 0; i < 2; i++) {
 		v = ucl_object_lookup(u, fams[i]);
-		/* The provider's addresses go on, whoever addresses the hosts. */
+		/* The provider's addresses go on, whoever addresses the hosts;
+		 * not when the host has them already (host_addressed: a
+		 * bridge of the host's jails, say). */
 		if (str(v, "mode") == NULL || (strcmp(str(v, "mode"), "static")
 		    != 0 && strcmp(str(v, "mode"), "dhcp") != 0 && strcmp(str(v,
-		    "mode"), "slaac") != 0))
+		    "mode"), "slaac") != 0) || ucl_flag(u, "host_addressed"))
 			continue;
 		ns = 0;
 		subs[ns++] = v;
@@ -1705,7 +1738,7 @@ uni_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 			}
 		}
 	}
-	if (vlan == 0)
+	if (vlan == 0 && fib > 0)
 		unmake(o, job("if-set", "interface", S(ifn), "fib", I(0),
 		    "persist", B(true), NULL));
 	/* SLAAC (§11.5): the base system's rtadvd advertises the prefix on
@@ -2008,8 +2041,7 @@ dhcp_build(struct plan *pl, const ucl_object_t *doc)
 			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
 			inst = ucl_object_typed_new(UCL_OBJECT);
 			put(inst, "name", S(name));
-			put(inst, "fib", I(ucl_object_toint(ucl_object_lookup(sw,
-			    "fib"))));
+			put(inst, "fib", I(efib(pl, sw, sid)));
 			text = dhcp_conf(pl, sw, sid);
 			put(inst, "conf", S(text));
 			free(text);
@@ -2426,8 +2458,7 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
 			inst = ucl_object_typed_new(UCL_OBJECT);
 			put(inst, "name", S(name));
-			put(inst, "fib", I(ucl_object_toint(ucl_object_lookup(sw,
-			    "fib"))));
+			put(inst, "fib", I(efib(pl, sw, sid)));
 			put(inst, "mode", S(inspect ? "inspect" : "sni"));
 			text = proxy_conf(pl, sw, sid, inspect, &deny);
 			put(inst, "conf", S(text));
@@ -2780,8 +2811,7 @@ dns_build(struct plan *pl, const ucl_object_t *doc)
 			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
 			inst = ucl_object_typed_new(UCL_OBJECT);
 			put(inst, "name", S(name));
-			put(inst, "fib", I(ucl_object_toint(ucl_object_lookup(sw,
-			    "fib"))));
+			put(inst, "fib", I(efib(pl, sw, sid)));
 			text = dns_conf(sw, sid, pl->lists);
 			put(inst, "conf", S(text));
 			free(text);
@@ -4300,8 +4330,7 @@ rules_build(struct plan *pl, const char *sid)
 						    port, pfx[x], uni);
 					rule(rules, RULE_FROM, "setfib %jd ip4 from any "
 					    "to any in recv %s diverted-loopback",
-					    (intmax_t)ucl_object_toint(
-					    ucl_object_lookup(sw, "fib")), uni);
+					    (intmax_t)efib(pl, sw, sid), uni);
 					for (x = 0; x < np; x++)
 						rule(rules, RULE_FROM, "setfib %jd ip4 from "
 						    "any to %s in diverted-loopback not dst-ip "
@@ -5019,7 +5048,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	const ucl_object_t	*ep, *u, *t, *e0, *e1, *me, *far, *v, *cp;
 	ucl_object_iter_t	 it, tit;
 	const char		*rid, *ifn;
-	char			 ifbuf[32], ifaces[1200], sym[80], *out;
+	char			 ifbuf[32], ifaces[1200], sym[80], *out, ktab[48];
 	int64_t			 as;
 	int			 n, k;
 
@@ -5092,18 +5121,23 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	/* merge paths: the iBGP sessions over parallel tunnels, each with
 	 * next hop self, give one prefix several equal paths, which the
 	 * kernel then carries as one multipath route (ECMP). */
-	kore_buf_appendf(b, "protocol kernel kernel4 {\n\tkernel table %jd;\n\tlearn;\n"
+	/* The service's table on this edge; on an own-table edge the
+	 * host's own, the first, which BIRD takes without being told. */
+	if (efib(pl, sw, sid) > 0)
+		snprintf(ktab, sizeof(ktab), "\tkernel table %jd;\n",
+		    (intmax_t)efib(pl, sw, sid));
+	else
+		ktab[0] = '\0';
+	kore_buf_appendf(b, "protocol kernel kernel4 {\n%s\tlearn;\n"
 	    "\tmerge paths on;\n"
 	    "\tpersist;\n\tipv4 {\n\t\timport filter { preference = 200; accept; "
 	    "};\n\t\texport where source != RTS_DEVICE && source != RTS_INHERIT "
-	    "&& dest = RTD_UNICAST;\n\t};\n}\n\nprotocol kernel kernel6 {\n\t"
-	    "kernel table %jd;\n\tlearn;\n\tmerge paths on;\n\tpersist;\n\tipv6 {"
+	    "&& dest = RTD_UNICAST;\n\t};\n}\n\nprotocol kernel kernel6 {\n"
+	    "%s\tlearn;\n\tmerge paths on;\n\tpersist;\n\tipv6 {"
 	    "\n\t\timport filter { "
 	    "preference = 200; accept; };\n\t\texport where source != RTS_DEVICE "
-	    "&& source != RTS_INHERIT && dest = RTD_UNICAST;\n\t};\n}\n\n",
-	    (intmax_t)
-	    ucl_object_toint(ucl_object_lookup(sw, "fib")), (intmax_t)
-	    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+	    "&& source != RTS_INHERIT && dest = RTD_UNICAST;\n\t};\n}\n\n", ktab,
+	    ktab);
 	/* BFD on each tunnel interface here (R58, R59, R159): the iBGP
 	 * sessions go down with it, and the agent reads the sessions. */
 	if (sw_bfd(sw)) {
@@ -5445,8 +5479,7 @@ bird_build(struct plan *pl, const ucl_object_t *doc)
 			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
 			inst = ucl_object_typed_new(UCL_OBJECT);
 			put(inst, "name", S(name));
-			put(inst, "fib", I(ucl_object_toint(ucl_object_lookup(sw,
-			    "fib"))));
+			put(inst, "fib", I(efib(pl, sw, sid)));
 			text = bird_conf(pl, sw, sid);
 			put(inst, "conf", S(text));
 			free(text);
@@ -5573,9 +5606,29 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 		    "end_points"), &it2, true)) != NULL) {
 			o = (ucl_object_t *)(uintptr_t)by(ucl_object_lookup(
 			    pl->edges, str(ep, "edge")), "key", "fibs");
-			if (o == NULL)
+			if (o == NULL) {
+				const ucl_object_t	*oe, *ou;
+				ucl_object_iter_t	 oit;
+				bool			 vrfs = false;
+
 				o = object(pl, str(ep, "edge"), "fibs", PH_FIBS,
 				    "net.fibs");
+				/* An own-table edge whose uplinks are in tables
+				 * of their own keeps their connected routes in
+				 * the host's table too (add_addr_allfibs on):
+				 * the host's own daemons and jails still reach
+				 * the uplinks; a service's own table wants it
+				 * off. */
+				oe = by(ucl_object_lookup(pl->doc, "edges"),
+				    "server", str(ep, "edge"));
+				oit = NULL;
+				while ((ou = ucl_object_iterate(ucl_object_lookup(
+				    oe, "ucs_end_points"), &oit, true)) != NULL)
+					if (ucl_object_lookup(ou, "vrf") != NULL)
+						vrfs = true;
+				put(o, "allfibs", B(edge_own_table(pl, str(ep,
+				    "edge")) && vrfs));
+			}
 			if (ucl_object_toint(ucl_object_lookup(o, "fibs")) <=
 			    fib) {
 				put(o, "fibs", I(fib + 1));
@@ -6553,12 +6606,25 @@ do_make(struct run *r, ucl_object_t *s)
 
 	if (ucl_object_lookup(s, "fibs") != NULL) {
 		/* An address's route in every table would cross the
-		 * services: the kernel's default, 0, is what works. */
-		if (sysctl_of(str(s, "server"), "net.add_addr_allfibs") > 0) {
+		 * services: the kernel's default, 0, is what works.  An
+		 * own-table edge with its uplinks in tables of their own
+		 * wants the opposite: their connected routes in the host's
+		 * table too. */
+		if (!ucl_flag(s, "allfibs") && sysctl_of(str(s, "server"),
+		    "net.add_addr_allfibs") > 0) {
 			step_set(r, s, "failed", "net.add_addr_allfibs is 1 on "
 			    "the host: an interface's addresses are routed in "
 			    "every table, so a service cannot have one of its "
 			    "own; set it to 0 (sysctl.conf) first");
+			return (false);
+		}
+		if (ucl_flag(s, "allfibs") && sysctl_of(str(s, "server"),
+		    "net.add_addr_allfibs") == 0) {
+			step_set(r, s, "failed", "net.add_addr_allfibs is 0 on "
+			    "the host: an own-table edge whose uplinks are in "
+			    "tables of their own needs their addresses' routes "
+			    "in the host's table too; set it to 1 (sysctl.conf) "
+			    "first");
 			return (false);
 		}
 		/* net.fibs only ever goes up. */
