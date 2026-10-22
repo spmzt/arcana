@@ -234,12 +234,14 @@ module: arcana-jobs
        |        |     +---w args*      string
        |        |     +---w jail?      string
        |        |     +---w persist?   boolean
+       |        |     +---w safe?      boolean
        |        +--:(geneve)
        |        |  +---w geneve!
        |        |     +---w verb       string
        |        |     +---w args*      string
        |        |     +---w jail?      string
        |        |     +---w persist?   boolean
+       |        |     +---w safe?      boolean
        |        +--:(process)
        |        |  +---w process!
        |        |     +---w verb    enumeration

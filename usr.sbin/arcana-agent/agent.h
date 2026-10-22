@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.188.0"
+#define	ARCANA_AGENT_VERSION	"0.189.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -731,6 +731,7 @@ bool		 sysctl_value_ok(const char *);
 int		 do_l2(struct work *, bool, struct arc_network_rsp *);
 const char	*bridge_holding(struct work *, const char *);
 const char	*l2_check(const struct arc_job_spec *);
+int		 l2_destroy(struct work *, const char *, const char **);
 char		*l2_title(const struct arc_job_spec *);
 int		 do_l2_job(struct work *, const struct arc_job_spec *,
 		    const char **);

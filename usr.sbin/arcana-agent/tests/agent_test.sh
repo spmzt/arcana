@@ -3201,6 +3201,57 @@ safe_if_destroy_body()
 	atf_check -o empty cat ifconfig.log
 }
 
+safe_l2_head()
+{
+	atf_set "descr" "A bridge's member, flag, vlanfilter or static address in safe mode is taken back by the inverse word, a geneve made destroyed again, rc.conf as it was; what sets a value is refused"
+}
+safe_l2_body()
+{
+	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	chmod +x fake-ifconfig
+	start_daemon
+	printf 'ifconfig_bridge0="addm em1 up"\n' >> rc.conf
+
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" bridge bridge0 addm tap9
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bridge bridge0 deletem em1
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bridge bridge0 vlanfilter on
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bridge bridge0 flag tap9 -stp
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bridge bridge0 static tap9 00:11:22:33:44:55
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" geneve geneve7 create id 7 local 192.0.2.1 remote 192.0.2.2
+	for i in $(seq 1 300); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	for n in 1 2 3 4 5 6; do
+		atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+		    "$JGC" -c "$SOCK" job $n
+	done
+	atf_check -o match:'^bridge0 addm tap9$' -o match:'^bridge0 deletem tap9$' \
+	    -o match:'^bridge0 deletem em1$' -o match:'^bridge0 addm em1$' \
+	    -o match:'^bridge0 vlanfilter$' -o match:'^bridge0 -vlanfilter$' \
+	    -o match:'^bridge0 -stp tap9$' -o match:'^bridge0 stp tap9$' \
+	    -o match:'^bridge0 static tap9 00:11:22:33:44:55$' \
+	    -o match:'^bridge0 deladdr 00:11:22:33:44:55$' \
+	    -o match:'^geneve7 create geneveid 7 genevelocal 192.0.2.1 generemote 192.0.2.2$|^geneve7 create geneveid 7 genevelocal 192.0.2.1 geneveremote 192.0.2.2$' \
+	    -o match:'^geneve7 destroy$' cat ifconfig.log
+	atf_check -o match:'^ifconfig_bridge0="addm em1 up"$' -o not-match:'geneve7' \
+	    -o not-match:'cloned_interfaces' cat rc.conf
+
+	# Confirmed: it stays, in rc.conf too.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -p -c "$SOCK" bridge bridge0 addm tap9
+	atf_check -o match:'^ifconfig_bridge0="addm em1 up addm tap9"$' cat rc.conf
+
+	# What sets a value over another, or forgets what was learned, is
+	# not taken back.
+	for c in "bridge bridge0 set proto stp" "bridge bridge0 access tap9 20" \
+	    "bridge bridge0 flush" "geneve geneve7 set learn off"; do
+		atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
+		    "$JGC" -s -c "$SOCK" $c
+	done
+}
+
 safe_mode_head()
 {
 	atf_set "descr" "A safe change stays when confirmed, and is undone when not"
@@ -8218,6 +8269,7 @@ atf_init_test_cases()
 	atf_add_test_case safe_ipsec
 	atf_add_test_case safe_sysfile
 	atf_add_test_case safe_if_destroy
+	atf_add_test_case safe_l2
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart
 	atf_add_test_case agent_build

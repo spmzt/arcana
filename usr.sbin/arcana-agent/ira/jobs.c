@@ -763,6 +763,18 @@ undo_prepare(struct qjob *j)
 			    sp->interface)));
 		}
 		break;
+	case ARC_JOB_KIND_BRIDGE:
+	case ARC_JOB_KIND_GENEVE:
+		/* The inverse word is run (addm and deletem, a flag and
+		 * its -flag, vlanfilter on and off, static and deladdr, a
+		 * geneve made and destroyed); rc.conf's line as it was. */
+		if (sp->persist) {
+			undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s", rc_ifname(&j->w,
+			    sp->interface)));
+			if (sp->kind == ARC_JOB_KIND_GENEVE)
+				undo_snap_rc(j, "cloned_interfaces");
+		}
+		break;
 	case ARC_JOB_KIND_IF_DESTROY:
 		/* The interface as it is: its addresses, tunnel, MTU,
 		 * description and state, its tables, and what rc.conf has
@@ -1077,6 +1089,45 @@ undo(struct qjob *j)
 		    j->undo_tunnelfib, &e);
 		if (rc == 0 && sp->persist)
 			rc = undo_rc_back(j, &e);
+		break;
+	case ARC_JOB_KIND_BRIDGE:
+	case ARC_JOB_KIND_GENEVE:
+		{
+			struct arc_job_spec	 back;
+			const char		*nv[2];
+
+			back = *sp;
+			back.safe = false;
+			back.persist = false;
+			back.names.v = nv;
+			back.names.n = sp->names.n;
+			nv[0] = sp->names.n > 0 ? sp->names.v[0] : NULL;
+			nv[1] = sp->names.n > 1 ? sp->names.v[1] : NULL;
+			if (sp->kind == ARC_JOB_KIND_GENEVE) {
+				/* Made: destroyed again, rc.conf aside. */
+				rc = l2_destroy(&j->w, sp->interface, &e);
+			} else {
+				if (strcmp(sp->verb, "addm") == 0)
+					back.verb = "deletem";
+				else if (strcmp(sp->verb, "deletem") == 0)
+					back.verb = "addm";
+				else if (strcmp(sp->verb, "vlanfilter") == 0)
+					nv[0] = sp->names.v[0][1] == 'n' ? "off" :
+					    "on";
+				else if (strcmp(sp->verb, "flag") == 0)
+					nv[1] = sp->names.v[1][0] == '-' ?
+					    sp->names.v[1] + 1 : wfmt(&j->w, "-%s",
+					    sp->names.v[1]);
+				else if (strcmp(sp->verb, "static") == 0) {
+					back.verb = "deladdr";
+					nv[0] = sp->names.v[1];
+					back.names.n = 1;
+				}
+				rc = do_l2_job(&j->w, &back, &e);
+			}
+			if (rc == 0 && sp->persist)
+				rc = undo_rc_back(j, &e);
+		}
 		break;
 	case ARC_JOB_KIND_SYSFILE:
 		if (strcmp(sp->verb, "rc") == 0)

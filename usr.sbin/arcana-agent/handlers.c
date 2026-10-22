@@ -2817,8 +2817,19 @@ check_spec(const struct arc_job_spec *sp)
 		break;
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:
-		if (sp->safe)
-			return ("it is not taken back by itself");
+		/* Undone by the inverse word, where there is one: a member
+		 * in or out, a flag, vlanfilter, a static address, a geneve
+		 * made.  What sets a value over another, or forgets what
+		 * was learned, is not. */
+		if (sp->safe && sp->verb != NULL && !((sp->kind ==
+		    ARC_JOB_KIND_BRIDGE && (strcmp(sp->verb, "addm") == 0 ||
+		    strcmp(sp->verb, "deletem") == 0 || strcmp(sp->verb,
+		    "vlanfilter") == 0 || strcmp(sp->verb, "flag") == 0 ||
+		    strcmp(sp->verb, "static") == 0)) || (sp->kind ==
+		    ARC_JOB_KIND_GENEVE && strcmp(sp->verb, "create") == 0)))
+			return ("only addm, deletem, vlanfilter, flag and static "
+			    "of a bridge, and a geneve made, are taken back: "
+			    "not in safe mode");
 		if ((e = l2_check(sp)) != NULL)
 			return (e);
 		break;

@@ -1002,3 +1002,21 @@ do_l2_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		keep(w, sp->interface, out, n, create);
 	return (0);
 }
+
+/* A geneve made in safe mode and not confirmed: destroyed again. */
+int
+l2_destroy(struct work *w, const char *ifname, const char **errp)
+{
+	struct execres	 res;
+	char		*argv[4];
+
+	argv[0] = (char *)(uintptr_t)opts.ifconfig_bin;
+	argv[1] = (char *)(uintptr_t)ifname;
+	argv[2] = (char *)(uintptr_t)"destroy";
+	argv[3] = NULL;
+	if (run_exec(w, scope_argv(w, argv), &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "ifconfig"));
+		return (-1);
+	}
+	return (0);
+}
