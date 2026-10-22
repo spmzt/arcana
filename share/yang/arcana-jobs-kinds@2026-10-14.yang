@@ -266,6 +266,11 @@ submodule arcana-jobs-kinds {
             description
               "Action";
           }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
         }
       }
       case service-config {
@@ -300,6 +305,11 @@ submodule arcana-jobs-kinds {
             ordered-by user;
             description
               "Variables to unset";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
           }
         }
       }
@@ -607,6 +617,11 @@ submodule arcana-jobs-kinds {
             description
               "Kept for a boot";
           }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
         }
       }
       case if-destroy {
@@ -831,6 +846,11 @@ submodule arcana-jobs-kinds {
             type boolean;
             description
               "Kept for a boot";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
           }
         }
       }

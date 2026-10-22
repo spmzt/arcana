@@ -2028,17 +2028,33 @@ connected:
 		put_str(top, "error", jr->error);
 		/*
 		 * A safe change waits to hear from the console again, and
-		 * here the console is: the change stays.  Had it cut the
-		 * host off, this would not have got through, and the host
-		 * would undo it by itself.
+		 * here the console is: the change stays.  The proof is a
+		 * new connection to the host, dialled now: this read may
+		 * have come over one kept open from before the change,
+		 * which a change that cut the host off would not touch.
+		 * No new connection, no confirmation: the host undoes the
+		 * change by itself.
 		 */
 		if (jr->job != NULL && jr->job->state ==
 		    ARC_JOB_STATE_UNCONFIRMED) {
+			struct arc_client	 fcl;
+			cbl_conn		*fconn;
+			cbl_tls			*ftls;
+			const char		*fe;
+
 			memset(&jfq, 0, sizeof(jfq));
 			jfq.has_id = true;
 			jfq.id = c->jobid;
-			if (arc_job_confirm(&cl, &jfq, &jfr) == 0)
-				arc_job_confirm_rsp_free(jfr);
+			if ((fe = hosts_dial(c->uri, c->peer, &fconn, &ftls,
+			    &fcl)) == NULL) {
+				if (arc_job_confirm(&fcl, &jfq, &jfr) == 0)
+					arc_job_confirm_rsp_free(jfr);
+				hosts_release(c->uri, c->peer, fconn, ftls,
+				    &fcl, true);
+			} else
+				kore_log(LOG_WARNING, "%s: job %ju unconfirmed: "
+				    "no new connection to the host: %s", c->uri,
+				    (uintmax_t)c->jobid, fe);
 		}
 		if (jr->job != NULL) {
 			put(top, "job", job_object(c, jr->job, true,

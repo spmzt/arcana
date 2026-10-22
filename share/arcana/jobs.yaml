@@ -253,11 +253,12 @@ kinds:
   - kind: service-action
     title: A service started, stopped, reloaded, enabled or disabled
     needs: service action
+    uses: safe
     values: action=start|stop|restart|reload|enable|disable
   - kind: service-config
     title: A service's variables in rc.conf
     needs: service
-    uses: set unset
+    uses: set unset safe
   - kind: pkg-upgrade
     title: Packages upgraded
     uses: jail packages force pkg_ip pkg_repo
@@ -280,7 +281,7 @@ kinds:
   - kind: if-create
     title: An interface made
     needs: interface
-    uses: jail tunnel_local tunnel_remote address destination description mtu fib tunnelfib id parent reqid persist
+    uses: jail tunnel_local tunnel_remote address destination description mtu fib tunnelfib id parent reqid persist safe
   - kind: if-destroy
     title: An interface destroyed
     needs: interface
@@ -309,7 +310,7 @@ kinds:
   - kind: kmod
     title: A kernel module loaded or unloaded, or kept in kld_list or not
     needs: verb args
-    uses: persist
+    uses: persist safe
     values: verb=load|unload|keep|forget
   - kind: ntp
     title: The NTP servers the host keeps time by

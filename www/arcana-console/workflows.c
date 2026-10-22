@@ -201,6 +201,68 @@ kind_of(const char *kind)
 	return (NULL);
 }
 
+/* Does a kind of job take a field (jobs.yaml's uses), safe say? */
+bool
+workflow_kind_uses(const char *kind, const char *field)
+{
+	const struct jobkind	*k;
+	const char		*p;
+	size_t			 n;
+
+	if ((k = kind_of(kind)) == NULL || k->uses == NULL)
+		return (false);
+	n = strlen(field);
+	for (p = k->uses; (p = strstr(p, field)) != NULL; p += n)
+		if ((p == k->uses || p[-1] == ' ') && (p[n] == '\0' || p[n] ==
+		    ' '))
+			return (true);
+	return (false);
+}
+
+/*
+ * A job the console runs on a host for a workflow or an SD-WAN apply is
+ * made in safe mode whenever its kind can be undone (jobs.yaml says
+ * which): the console's next read of the job confirms it, so a change
+ * that cut the host off is taken back by the host itself.  A step may
+ * say safe: false.
+ */
+void
+workflow_job_safe(ucl_object_t *job)
+{
+
+	if (workflow_kind_uses(ucl_str(job, "kind"), "safe") &&
+	    ucl_object_lookup(job, "safe") == NULL)
+		ucl_object_insert_key(job, ucl_object_frombool(true), "safe", 0,
+		    false);
+}
+
+/*
+ * A job submitted for a workflow or an apply: in safe mode where its
+ * kind allows; one the host refuses in safe mode all the same (a verb
+ * of the kind it cannot undo: a service restarted, say) is sent again
+ * without, and *notep says so.  hosts_submit()'s reply and status.
+ */
+char *
+workflow_submit(const char *uri, const char *peer, const char *name,
+    ucl_object_t *job, int *status, const char **errp, const char **notep)
+{
+	char	*json;
+
+	*notep = NULL;
+	workflow_job_safe(job);
+	json = hosts_submit(uri, peer, name, job, status, errp);
+	if (json == NULL || *status == 200 || !ucl_object_toboolean(
+	    ucl_object_lookup(job, "safe")) || (strstr(json, "not in safe "
+	    "mode") == NULL && strstr(json, "taken back by itself") == NULL &&
+	    strstr(json, "is not undone") == NULL && strstr(json, "cannot be "
+	    "undone") == NULL))
+		return (json);
+	free(json);
+	(void)ucl_object_delete_key(job, "safe");
+	*notep = "not in safe mode: the host cannot undo this one";
+	return (hosts_submit(uri, peer, name, job, status, errp));
+}
+
 /* Is word one of the words of list, "a b c"? */
 static bool
 word_in(const char *list, const char *word, size_t len)
@@ -1098,7 +1160,7 @@ run_job(struct hostrun *hr, int k, const ucl_object_t *step)
 {
 	struct hoststep		*x = &hr->steps[k];
 	ucl_object_t		*job, *ans, *jr;
-	const char		*e, *st;
+	const char		*e, *st, *note;
 	char			*json;
 	int			 status;
 	time_t			 until;
@@ -1107,8 +1169,8 @@ run_job(struct hostrun *hr, int k, const ucl_object_t *step)
 
 	job = expand_obj(ucl_object_lookup(step, "job"), hr->run->params,
 	    &hr->h, hr->answers, hr->run->event);
-	json = hosts_submit(hr->h.uri, hr->h.peer, hr->h.name, job, &status,
-	    &e);
+	json = workflow_submit(hr->h.uri, hr->h.peer, hr->h.name, job, &status,
+	    &e, &note);
 	ucl_object_unref(job);
 	if (json == NULL) {
 		step_set(hr, k, "failed", "%s", e);
@@ -1163,8 +1225,9 @@ run_job(struct hostrun *hr, int k, const ucl_object_t *step)
 			ucl_object_insert_key(hr->answers, ucl_object_ref(jr),
 			    ucl_object_tostring(ucl_object_lookup(step, "id")),
 			    0, true);
-			step_set(hr, k, ok ? "done" : "failed", ok ? NULL : "%s",
-			    ok ? NULL : ucl_object_tostring_forced(path_get(jr,
+			step_set(hr, k, ok ? "done" : "failed", ok && note ==
+			    NULL ? NULL : "%s", ok ? note :
+			    ucl_object_tostring_forced(path_get(jr,
 			    "job.error")));
 			ucl_object_unref(jr);
 			free(json);

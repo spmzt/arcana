@@ -1613,6 +1613,11 @@ ATF_TC_BODY(workflows, tc)
 	    "hosts.0.steps.1.title"));
 	ATF_CHECK(jstr(&r, "hosts.0.steps.1.trace.job.trace.0.label") !=
 	    NULL);
+	/* A job the console runs is in safe mode where the host can undo
+	 * it; a restart it cannot, so that one was sent again without,
+	 * and the step says so. */
+	ATF_CHECK_STREQ("not in safe mode: the host cannot undo this one",
+	    jstr(&r, "hosts.0.steps.1.error"));
 	/* Its traces are in the run's own file, not in the list. */
 	snprintf(body, sizeof(body), "test -s data/runs/%s.json", run);
 	ATF_CHECK(system(body) == 0);
