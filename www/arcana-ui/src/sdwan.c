@@ -4885,6 +4885,14 @@ sdwan_modal(struct html *h)
 			    "underlay's own (setfib): the interface and the tunnels' "
 			    "outer packets go by it (§12.2.3.4).");
 			h_raw(h, "</div><div class=\"two\">");
+			snprintf(nb, sizeof(nb), "%lld", lk != NULL ? (long long)
+			    jint(lk, "preference", 0) : 0LL);
+			text_field(h, "Preference", "preference", lk != NULL &&
+			    jint(lk, "preference", 0) > 0 ? nb : "", "10", "Its "
+			    "place among this edge's uplinks, the higher first: the "
+			    "steering's order where a policy names no end points, "
+			    "and the breakout taken first. 0 to 65535.");
+			h_raw(h, "</div><div class=\"two\">");
 			snprintf(nb, sizeof(nb), "%lld", (long long)jint(bg, "as", 0));
 			text_field(h, "BGP: the underlay's AS", "bgp_as", jint(bg,
 			    "as", 0) > 0 ? nb : "", "65000", "With a neighbour, BGP "
@@ -6748,7 +6756,7 @@ sd_forms(const char *form, const ucl_object_t *f)
 		{
 			static const char *const keys[] = { "id", "ucs", "interface",
 			    "address", "gateway", "bandwidth", "breakout", "backup",
-			    "addressing", "vrf", "routing", NULL };
+			    "addressing", "vrf", "routing", "preference", NULL };
 
 			o = merged_from(jfind(links, "id", was), keys);
 		}
@@ -6785,6 +6793,9 @@ sd_forms(const char *form, const ucl_object_t *f)
 		if ((v = jstr(f, "vrf")) != NULL && v[0] != '\0')
 			ucl_object_insert_key(o, ucl_object_fromint(strtoll(v, NULL,
 			    10)), "vrf", 0, false);
+		if ((v = jstr(f, "preference")) != NULL && v[0] != '\0')
+			ucl_object_insert_key(o, ucl_object_fromint(strtoll(v, NULL,
+			    10)), "preference", 0, false);
 		{
 			ucl_object_t	*rt = ucl_object_typed_new(UCL_OBJECT), *bg;
 

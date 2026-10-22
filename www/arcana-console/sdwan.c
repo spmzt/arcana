@@ -2561,6 +2561,14 @@ check_doc(const ucl_object_t *doc, struct ck *c)
 			    !is_int(ucl_object_lookup(e, "bandwidth"), 0,
 			    INT64_MAX, NULL))
 				ok = fail(c, "its bandwidth is bits per second");
+			/* Its place among the edge's uplinks: the steering's
+			 * order where a policy names none, and the breakout
+			 * taken first (Arcana's own). */
+			else if (ucl_object_lookup(e, "preference") != NULL &&
+			    !is_int(ucl_object_lookup(e, "preference"), 0, 65535,
+			    NULL))
+				ok = fail(c, "its preference is 0 to 65535, the "
+				    "higher taken first");
 			/* How it is addressed and routed (Mplify 119 §12.2.3):
 			 * by DHCP or SLAAC the address is learned from the
 			 * host; a vrf is a table of its own; bgp or ospf with

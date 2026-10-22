@@ -896,6 +896,18 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					    "public") == 0 && strcmp(str(uy,
 					    "type"), "public") == 0))
 						continue;
+					/* Two Internet Accesses join only when
+					 * their tunnels are of one kind, IPsec
+					 * alike: K transports on a pair of edges
+					 * give K tunnels, not K squared. */
+					if (strcmp(str(x, "ucs"), str(y, "ucs"))
+					    != 0) {
+						tunnel_of(ux, &kind, &ipsec, &said);
+						tunnel_of(uy, &k2, &ip2, &said2);
+						if (strcmp(kind, k2) != 0 || ipsec !=
+						    ip2)
+							continue;
+					}
 					/* The control tunnel: over the UCS named,
 					 * between the host and each edge. */
 					if (pass == 1 && (strcmp(str(x, "ucs"), ctvc)
@@ -3081,6 +3093,17 @@ tunnel_listed(struct plan *pl, const ucl_object_t *t, const ucl_object_t *mine,
 			*prefp = ucl_object_toint(ucl_object_lookup(e,
 			    "preference"));
 	}
+	/* The policy naming none: the end point's own preference, the
+	 * edge's default order over its uplinks. */
+	if (*prefp == 0) {
+		const ucl_object_t	*edge, *uep;
+
+		edge = by(ucl_object_lookup(pl->doc, "edges"), "server",
+		    str(mine, "edge"));
+		uep = by(ucl_object_lookup(edge, "ucs_end_points"), "id",
+		    str(mine, "ucs_ep"));
+		*prefp = ucl_object_toint(ucl_object_lookup(uep, "preference"));
+	}
 	return (true);
 }
 
@@ -3317,11 +3340,14 @@ static const ucl_object_t *
 breakout_of(struct plan *pl, const ucl_object_t *sw, const char *sid,
     bool *localp, const char **bo_sid)
 {
-	const ucl_object_t	*edge, *uep;
+	const ucl_object_t	*edge, *uep, *best;
 	ucl_object_iter_t	 it, uit;
 	int			 far, pass;
+	int64_t			 bpref;
 
 	for (pass = 0; pass < 2; pass++) {
+		best = NULL;
+		bpref = -1;
 		it = NULL;
 		while ((edge = ucl_object_iterate(ucl_object_lookup(pl->doc,
 		    "edges"), &it, true)) != NULL) {
@@ -3340,10 +3366,25 @@ breakout_of(struct plan *pl, const ucl_object_t *sw, const char *sid,
 				    NULL && tunnel_for(pl, str(sw, "id"), sid,
 				    str(edge, "server"), AF_INET6, &far) == NULL)
 					continue;
-				*localp = pass == 0;
-				*bo_sid = str(edge, "server");
-				return (uep);
+				/* Of the edge's own, the one preferred most;
+				 * elsewhere the first found. */
+				if (pass == 1) {
+					*localp = false;
+					*bo_sid = str(edge, "server");
+					return (uep);
+				}
+				if (ucl_object_toint(ucl_object_lookup(uep,
+				    "preference")) > bpref) {
+					bpref = ucl_object_toint(
+					    ucl_object_lookup(uep, "preference"));
+					best = uep;
+					*bo_sid = str(edge, "server");
+				}
 			}
+		}
+		if (best != NULL) {
+			*localp = true;
+			return (best);
 		}
 	}
 	return (NULL);

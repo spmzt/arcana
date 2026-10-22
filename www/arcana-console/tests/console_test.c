@@ -6367,6 +6367,100 @@ ATF_TC_BODY(sdwan_jail, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(sdwan_mesh, "Several transports on a pair of edges: two Internet "
+    "Accesses join only when their tunnels are of one kind, IPsec alike, so "
+    "K transports give K tunnels; a UCS End Point's preference orders the "
+    "steering where a policy names none")
+ATF_TC_BODY(sdwan_mesh, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		/* A second Internet Access, WireGuard, beside the gre one. */
+		{ "\"tunnel\":{\"kind\":\"gre\",\"ipsec\":true}}",
+		    "\"tunnel\":{\"kind\":\"gre\",\"ipsec\":true}},{\"id\":\"wgnet\","
+		    "\"type\":\"public\",\"billing\":\"flat-rate\",\"tunnel\":{"
+		    "\"kind\":\"wg\"}}" },
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-wg\",\"ucs\":\"wgnet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\",\"breakout\":true,\"preference\":1},"
+		    "{\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\",\"preference\":10" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-wg\",\"ucs\":\"wgnet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\",\"preference\":1},{\"id\":\"b-inet\","
+		    "\"ucs\":\"inet\",\"interface\":\"vtnet0\",\"address\":"
+		    "\"192.0.2.2\",\"preference\":10" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"ucs\":[\"inet\",\"mpls\"]", "\"ucs\":[\"inet\",\"wgnet\","
+		    "\"mpls\"]" },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* A preference out of range is refused. */
+	ATF_REQUIRE(swap_in(doc, "\"preference\":10", "\"preference\":70000", t1,
+	    sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "its preference is 0 "
+	    "to 65535") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* Three tunnels, one a transport: gre over inet, wg over wgnet,
+	 * geneve over mpls; none across inet and wgnet. */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"id\":\"acme/a-inet-b-inet\"") != NULL &&
+	    strstr(r.body, "\"id\":\"acme/a-wg-b-wg\"") != NULL &&
+	    strstr(r.body, "\"id\":\"acme/a-mpls-b-mpls\"") != NULL &&
+	    strstr(r.body, "a-inet-b-wg") == NULL && strstr(r.body,
+	    "a-wg-b-inet") == NULL && jstr(&r, "tunnels.3.id") == NULL, "%s",
+	    r.body);
+	/* The steering's order where no policy names end points: the gre
+	 * tunnel, its end preferred 10, before the wg one, preferred 1. */
+	ATF_CHECK_MSG(strstr(r.body, "\"preference\":10") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(sdwan_lists, "SD-WAN's named lists: prefixes, services, UCS, "
     "edges and UCS End Points kept once, each named where a value would "
     "be, checked; a prefix list an ipfw table, a service list the AFS's "
@@ -7839,6 +7933,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, workflows);
 	ATF_TP_ADD_TC(tp, sdwan);
 	ATF_TP_ADD_TC(tp, sdwan_apply);
+	ATF_TP_ADD_TC(tp, sdwan_mesh);
 	ATF_TP_ADD_TC(tp, sdwan_lists);
 	ATF_TP_ADD_TC(tp, sdwan_uswe);
 	ATF_TP_ADD_TC(tp, sdwan_jail);
