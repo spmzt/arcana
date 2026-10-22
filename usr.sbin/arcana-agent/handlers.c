@@ -2827,8 +2827,11 @@ check_spec(const struct arc_job_spec *sp)
 			return (e);
 		break;
 	case ARC_JOB_KIND_IPSEC:
-		if (sp->safe)
-			return ("IPsec changes are not undone: not in safe mode");
+		/* A key made, a daemon started: nothing to put back. */
+		if (sp->safe && sp->verb != NULL && (strcmp(sp->verb, "init") ==
+		    0 || strcmp(sp->verb, "start") == 0))
+			return ("IPsec init and start are not undone: not in "
+			    "safe mode");
 		return (ipsec_check(sp));
 	case ARC_JOB_KIND_IPSEC_SA:
 		if (sp->safe)

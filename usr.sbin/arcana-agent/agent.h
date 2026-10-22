@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.184.0"
+#define	ARCANA_AGENT_VERSION	"0.185.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -517,6 +517,10 @@ int		 do_ipsec(struct work *, struct arc_network_rsp *);
 const char	*ipsec_check(const struct arc_job_spec *);
 int		 do_ipsec_job(struct work *, const struct arc_job_spec *,
 		    const char **);
+void		 ipsec_conn_files(struct work *, const char *, const char **,
+		    const char **, const char **);
+int		 ipsec_undo(struct work *, const char *, bool, const char **);
+int		 ipsec_toggle(struct work *, const char *, bool, const char **);
 
 /* luxuria/bird.c: a plugin, through birdc(8). */
 int		 do_bird(struct work *, struct arc_network_rsp *);

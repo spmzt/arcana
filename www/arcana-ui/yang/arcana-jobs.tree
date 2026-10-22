@@ -263,6 +263,7 @@ module: arcana-jobs
        |        |     +---w local-id?        string
        |        |     +---w remote-id?       string
        |        |     +---w persist?         boolean
+       |        |     +---w safe?            boolean
        |        +--:(pkg-install)
        |        |  +---w pkg-install!
        |        |     +---w packages*   string

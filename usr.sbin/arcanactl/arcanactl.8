@@ -1878,7 +1878,17 @@ printed before the change, with
 .Xr wg-quick 8 Ns 's
 file and the
 .Pa rc.conf
-variables as they were.
+variables as they were, and an IPsec connection or child made, changed
+or taken away, whose files go back as they were before the daemon reads
+them again (a connection that was new has its SAs ended first), and
+.Cm up
+and
+.Cm down ,
+each the other's undo;
+.Cm init
+and
+.Cm start
+are refused in safe mode.
 A change that would take away the address the request came in by is
 refused unless it is made in safe mode.
 .Pp

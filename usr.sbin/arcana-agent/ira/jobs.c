@@ -758,6 +758,24 @@ undo_prepare(struct qjob *j)
 			    sp->interface)));
 		}
 		break;
+	case ARC_JOB_KIND_IPSEC:
+		/* A connection's files as they are (or are not), to go back
+		 * before the daemon reads them again; up and down are each
+		 * other's undo. */
+		if (strcmp(sp->verb, "up") == 0 || strcmp(sp->verb, "down") == 0)
+			break;
+		{
+			const char	*conf, *json, *pub;
+
+			ipsec_conn_files(&j->w, sp->conn, &conf, &json, &pub);
+			if (!undo_snap_file(j, conf) || !undo_snap_file(j, json) ||
+			    !undo_snap_file(j, pub))
+				return (wfmt(&j->w, "not changed: %s's files "
+				    "could not be read, so they could not be put "
+				    "back: %s", sp->conn, strerror(errno)));
+			j->undo_kept = j->undo_files[0].had;
+		}
+		break;
 	case ARC_JOB_KIND_BIRD:
 		/* Enabled or disabled: from the state it has now.  A restart
 		 * or reload leaves nothing to put back, and the job says so.
@@ -1012,6 +1030,13 @@ undo(struct qjob *j)
 		return (wfmt(&j->w, "not confirmed within %d s; %s",
 		    safe_wait(sp), j->undo_note));
 	switch (sp->kind) {
+	case ARC_JOB_KIND_IPSEC:
+		if (strcmp(sp->verb, "up") == 0 || strcmp(sp->verb, "down") == 0)
+			rc = ipsec_toggle(&j->w, sp->conn, sp->verb[0] == 'd', &e);
+		else
+			rc = undo_files_back(j, &e) == 0 ? ipsec_undo(&j->w,
+			    sp->conn, !j->undo_kept, &e) : -1;
+		break;
 	case ARC_JOB_KIND_WIREGUARD:
 		rc = wg_syncconf(&j->w, sp->interface, j->undo_secret, &e);
 		if (sp->persist && (undo_files_back(j, &e) != 0 ||

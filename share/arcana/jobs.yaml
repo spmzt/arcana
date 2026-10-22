@@ -377,7 +377,7 @@ kinds:
   - kind: ipsec
     title: IPsec, strongSwan
     needs: verb
-    uses: jail conn child tunnel_local tunnel_remote ipsec_mode pubkey local_cert remote_cert remote_ca local_ts remote_ts reqid start_action local_id remote_id persist
+    uses: jail conn child tunnel_local tunnel_remote ipsec_mode pubkey local_cert remote_cert remote_ca local_ts remote_ts reqid start_action local_id remote_id persist safe
     values: verb=init|start|conn|unconn|child|unchild|up|down ipsec_mode=tunnel|transport start_action=start|trap|none
     destroys: verb=unconn|unchild
   - kind: pkg-install

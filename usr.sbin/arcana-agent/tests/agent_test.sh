@@ -3009,6 +3009,98 @@ EOS
 	atf_check -o not-match:'set wg9' cat wg.log
 }
 
+safe_ipsec_head()
+{
+	atf_set "descr" "An IPsec connection changed in safe mode: its files back as they were and the daemon told; up and down each other's undo; init and start refused"
+}
+safe_ipsec_body()
+{
+	mkdir -p swanctl/conf.d swanctl/pkcs8 swanctl/pubkey
+	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	cat > fake-swanctl <<EOS
+#!/bin/sh
+d=$(pwd)
+echo "\$*" >> \$d/swanctl.log
+case "\$1" in
+--list-conns|--list-sas) echo "" ;;
+--load-all)	ls \$d/swanctl/conf.d > \$d/loaded ; echo "successfully loaded" ;;
+--load-creds|--initiate|--terminate|--stats) echo ok ;;
+*)		exit 2 ;;
+esac
+EOS
+	chmod +x fake-ifconfig fake-swanctl
+	start_daemon
+	atf_check -o ignore "$JGC" -c "$SOCK" -p ipsec init
+	PUB=$(sed -e '/-----/d' swanctl/pubkey/arcana.pub | tr -d '\n')
+
+	# A key made or the daemon started has nothing to put back.
+	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
+	    "$JGC" -s -c "$SOCK" ipsec init
+	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
+	    "$JGC" -s -c "$SOCK" ipsec start
+
+	# A connection made and not confirmed: its SAs ended, its files
+	# gone again, the daemon told to read conf.d again.
+	: > swanctl.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec conn t1 10.202.0.1 10.202.0.2 mode transport pubkey "$PUB"
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'arcana-t1.conf, as it was' "$JGC" -c "$SOCK" job 2
+	atf_check -o match:'^--terminate --ike t1 --force$' cat swanctl.log
+	atf_check -o inline:'--load-all --noprompt\n' tail -1 swanctl.log
+	atf_check -o empty ls swanctl/conf.d
+	atf_check -o inline:'arcana.pub\n' ls swanctl/pubkey
+
+	# Confirmed, it stays; a child added and not confirmed leaves the
+	# files as they were, and the daemon is told, no SA ended.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" ipsec conn t1 10.202.0.1 10.202.0.2 mode transport pubkey "$PUB"
+	cp swanctl/conf.d/arcana-t1.conf t1.conf.was
+	cp swanctl/conf.d/arcana-t1.json t1.json.was
+	: > swanctl.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec child t1 c2 tunnel
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 4
+	atf_check cmp t1.conf.was swanctl/conf.d/arcana-t1.conf
+	atf_check cmp t1.json.was swanctl/conf.d/arcana-t1.json
+	atf_check -o not-match:'terminate' -o match:'^--load-all --noprompt$' cat swanctl.log
+
+	# Taken away and not confirmed: back, files and all.
+	: > swanctl.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec unconn t1
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 5
+	atf_check cmp t1.conf.was swanctl/conf.d/arcana-t1.conf
+	atf_check cmp t1.json.was swanctl/conf.d/arcana-t1.json
+	atf_check test -f swanctl/pubkey/arcana-t1.pub
+	atf_check -o inline:'--load-all --noprompt\n' tail -1 swanctl.log
+
+	# up not confirmed is down again, and down up again.
+	: > swanctl.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec up t1
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec down t1
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o inline:'--initiate --child t1 --timeout 20\n--terminate --ike t1 --timeout 10\n--terminate --ike t1 --timeout 10\n--initiate --child t1 --timeout 20\n' cat swanctl.log
+}
+
 safe_mode_head()
 {
 	atf_set "descr" "A safe change stays when confirmed, and is undone when not"
@@ -8021,6 +8113,7 @@ atf_init_test_cases()
 	atf_add_test_case safe_route_delete
 	atf_add_test_case safe_bird
 	atf_add_test_case safe_wireguard
+	atf_add_test_case safe_ipsec
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart
 	atf_add_test_case agent_build

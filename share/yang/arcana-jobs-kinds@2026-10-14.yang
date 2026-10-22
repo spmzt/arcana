@@ -1343,6 +1343,11 @@ submodule arcana-jobs-kinds {
             description
               "Kept for a boot";
           }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
         }
       }
       case pkg-install {
