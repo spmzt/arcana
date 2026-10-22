@@ -1176,7 +1176,7 @@ connection(struct ck *c, const ucl_object_t *v, int af, bool *none)
  * communities.
  */
 static bool
-routing(struct ck *c, const ucl_object_t *v, const char *what,
+routing_one(struct ck *c, const ucl_object_t *v, const char *what,
     const struct pfx *nets, int nnets)
 {
 	const ucl_object_t	*e, *m;
@@ -1223,7 +1223,7 @@ routing(struct ck *c, const ucl_object_t *v, const char *what,
 			for (i = 0; i < nnets; i++)
 				if (holds(&nets[i], &a))
 					break;
-			if (nnets > 0 && i == nnets)
+			if (nnets > 0 && i == nnets && !ucl_flag(v, "multihop"))
 				return (fail(c, "bgp: %s is not within the UNI's "
 				    "prefixes (§11.6.2)",
 				    ucl_object_tostring_forced(m)));
@@ -1231,6 +1231,18 @@ routing(struct ck *c, const ucl_object_t *v, const char *what,
 		if (ucl_object_lookup(v, "hold_time") != NULL && !is_int(
 		    ucl_object_lookup(v, "hold_time"), 3, 65535, NULL))
 			return (fail(c, "bgp: hold_time is 3 to 65535 seconds"));
+		/* A session from a source address of this edge's (a loopback),
+		 * multihop, watched by BFD: Arcana's own beyond §11.6.2. */
+		if (str(v, "source") != NULL && (!address(str(v, "source"), &a) ||
+		    (a.af == AF_INET && strcmp(fam, "ipv6") == 0) || (a.af ==
+		    AF_INET6 && strcmp(fam, "ipv4") == 0)))
+			return (fail(c, "bgp: source is an address of this edge's, "
+			    "of the family, the session is from"));
+		if ((ucl_object_lookup(v, "multihop") != NULL && ucl_object_type(
+		    ucl_object_lookup(v, "multihop")) != UCL_BOOLEAN) ||
+		    (ucl_object_lookup(v, "bfd") != NULL && ucl_object_type(
+		    ucl_object_lookup(v, "bfd")) != UCL_BOOLEAN))
+			return (fail(c, "bgp: multihop and bfd are true or false"));
 		e = ucl_object_lookup(v, "communities");
 		if (e != NULL && (ucl_object_type(e) != UCL_ARRAY ||
 		    ucl_array_size(e) > LIST_MAX))
@@ -1267,6 +1279,32 @@ routing(struct ck *c, const ucl_object_t *v, const char *what,
 	if (ucl_object_lookup(v, "dead") != NULL && !is_int(
 	    ucl_object_lookup(v, "dead"), 2, 65535, NULL))
 		return (fail(c, "ospf: dead is seconds, 2 to 65535"));
+	if (ucl_object_lookup(v, "bfd") != NULL && ucl_object_type(
+	    ucl_object_lookup(v, "bfd")) != UCL_BOOLEAN)
+		return (fail(c, "ospf: bfd is true or false"));
+	return (true);
+}
+
+/* One entry, or a list of them: an area per family, several BGP
+ * neighbours each of their own AS (Arcana's own beyond §11.6). */
+static bool
+routing(struct ck *c, const ucl_object_t *v, const char *what,
+    const struct pfx *nets, int nnets)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	if (is_null(v))
+		return (true);
+	if (ucl_object_type(v) != UCL_ARRAY)
+		return (routing_one(c, v, what, nets, nnets));
+	if (ucl_array_size(v) > 16)
+		return (fail(c, "its UNI's %s is one entry, or a list of 16 at "
+		    "most", what));
+	it = NULL;
+	while ((e = ucl_object_iterate(v, &it, true)) != NULL)
+		if (!routing_one(c, e, what, nets, nnets))
+			return (false);
 	return (true);
 }
 

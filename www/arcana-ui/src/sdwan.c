@@ -6459,6 +6459,19 @@ sdwan_modal_service(struct html *h)
 			communities_text(jget(bgp, "communities"), cm, sizeof(cm));
 			text_field(h, "Communities", "bgp_comm", cm, "65000:100",
 			    "Put on the routes learned, by commas.");
+			h_raw(h, "</div><div class=\"two\">");
+			text_field(h, "Source address", "bgp_src", jstr(bgp, "source"), "",
+			    "Ours, the session is from (a loopback's, say). Empty: the "
+			    "UNI's.");
+			h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+			    "bgp_mh\" value=\"1\"%s> Multihop: the neighbour is not on the "
+			    "link</label><label class=\"toggle\"><input type=\"checkbox\" "
+			    "name=\"bgp_bfd\" value=\"1\"%s> BFD on the session</label>",
+			    jbool(bgp, "multihop") ? " checked" : "", jbool(bgp, "bfd") ?
+			    " checked" : "");
+			if (bgp != NULL && ucl_object_type(bgp) == UCL_ARRAY)
+				h_raw(h, "<small>Several neighbours in the document: kept "
+				    "as they are.</small>");
 			h_raw(h, "</div></fieldset><fieldset><legend>OSPF with the "
 			    "subscriber <small class=\"dim\">§11.6.3, by BIRD; "
 			    "empty area: none</small></legend><div class=\"two\">");
@@ -6479,6 +6492,16 @@ sdwan_modal_service(struct html *h)
 			    "hello", 0));
 			text_field(h, "Hello, seconds", "ospf_hello", jint(ospf,
 			    "hello", 0) > 0 ? buf : "", "10", NULL);
+			h_raw(h, "</div><div class=\"two\">");
+			text_field(h, "OSPFv3 area, if another", "ospf_area6", "", "",
+			    "With both families and areas of their own: v2 the area "
+			    "above, v3 this one.");
+			h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+			    "ospf_bfd\" value=\"1\"%s> BFD with the neighbour</label>",
+			    jbool(ospf, "bfd") ? " checked" : "");
+			if (ospf != NULL && ucl_object_type(ospf) == UCL_ARRAY)
+				h_raw(h, "<small>Several areas in the document: kept as "
+				    "they are.</small>");
 			h_raw(h, "</div></fieldset><div class=\"two\">");
 			snprintf(buf, sizeof(buf), "%lld", (long long)jint(u,
 			    "max_frame", 0));
@@ -8034,6 +8057,11 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			    "vlan", "ipv4", "ipv6", "routes", "bgp", "ospf",
 			    "max_frame", "host_addressed", "clat" };
 
+			/* Several neighbours or areas, written by hand: kept. */
+			if ((strcmp(keys[i], "bgp") == 0 || strcmp(keys[i], "ospf") ==
+			    0) && jget(u, keys[i]) != NULL && ucl_object_type(jget(u,
+			    keys[i])) == UCL_ARRAY)
+				continue;
 			(void)ucl_object_delete_key(u, keys[i]);
 		}
 		put_int(u, "max_frame", jstr(f, "mf"));
@@ -8050,27 +8078,56 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		    " \t\n") != strlen(jstr(f, "routes")))
 			ucl_object_insert_key(u, routes_of(jstr(f, "routes")),
 			    "routes", 0, false);
-		if (jstr(f, "bgp_as") != NULL && jstr(f, "bgp_as")[0] != '\0') {
+		if (jget(u, "bgp") == NULL && jstr(f, "bgp_as") != NULL && jstr(f,
+		    "bgp_as")[0] != '\0') {
 			t = ucl_object_typed_new(UCL_OBJECT);
 			put_str(t, "family", jstr(f, "bgp_fam"));
 			put_int(t, "as", jstr(f, "bgp_as"));
 			put_list(t, "neighbors", jstr(f, "bgp_nb"));
 			put_str(t, "password", jstr(f, "bgp_pw"));
 			put_int(t, "hold_time", jstr(f, "bgp_hold"));
+			if (jstr(f, "bgp_src") != NULL && jstr(f, "bgp_src")[0] != '\0')
+				put_str(t, "source", jstr(f, "bgp_src"));
+			if (checked(f, "bgp_mh"))
+				ucl_object_insert_key(t, ucl_object_frombool(true),
+				    "multihop", 0, false);
+			if (checked(f, "bgp_bfd"))
+				ucl_object_insert_key(t, ucl_object_frombool(true), "bfd",
+				    0, false);
 			if (jstr(f, "bgp_comm") != NULL && jstr(f, "bgp_comm")[0] !=
 			    '\0')
 				ucl_object_insert_key(t, communities_of(jstr(f,
 				    "bgp_comm")), "communities", 0, false);
 			ucl_object_insert_key(u, t, "bgp", 0, false);
 		}
-		if (jstr(f, "ospf_area") != NULL && jstr(f, "ospf_area")[0] !=
-		    '\0') {
-			t = ucl_object_typed_new(UCL_OBJECT);
-			put_str(t, "family", jstr(f, "ospf_fam"));
-			put_int(t, "area", jstr(f, "ospf_area"));
-			put_int(t, "cost", jstr(f, "ospf_cost"));
-			put_int(t, "hello", jstr(f, "ospf_hello"));
-			ucl_object_insert_key(u, t, "ospf", 0, false);
+		if (jget(u, "ospf") == NULL && jstr(f, "ospf_area") != NULL && jstr(
+		    f, "ospf_area")[0] != '\0') {
+			ucl_object_t	*arr = NULL;
+			int		 q;
+
+			/* An area of each family's own: two entries. */
+			if (jstr(f, "ospf_area6") != NULL && jstr(f, "ospf_area6")[0] !=
+			    '\0' && strcmp(jstr(f, "ospf_area6"), jstr(f, "ospf_area"))
+			    != 0)
+				arr = ucl_object_typed_new(UCL_ARRAY);
+			for (q = 0; q < (arr != NULL ? 2 : 1); q++) {
+				t = ucl_object_typed_new(UCL_OBJECT);
+				put_str(t, "family", arr != NULL ? (q == 0 ? "ipv4" :
+				    "ipv6") : jstr(f, "ospf_fam"));
+				put_int(t, "area", q == 0 ? jstr(f, "ospf_area") : jstr(f,
+				    "ospf_area6"));
+				put_int(t, "cost", jstr(f, "ospf_cost"));
+				put_int(t, "hello", jstr(f, "ospf_hello"));
+				if (checked(f, "ospf_bfd"))
+					ucl_object_insert_key(t, ucl_object_frombool(true),
+					    "bfd", 0, false);
+				if (arr != NULL)
+					ucl_array_append(arr, t);
+				else
+					ucl_object_insert_key(u, t, "ospf", 0, false);
+			}
+			if (arr != NULL)
+				ucl_object_insert_key(u, arr, "ospf", 0, false);
 		}
 		snprintf(buf, sizeof(buf), "uni-%s", jstr(f, "id"));
 		put_str(u, "id", jstr(old != NULL ? jget(old, "uni") : NULL, "id")

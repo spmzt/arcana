@@ -5261,15 +5261,216 @@ sw_routes(const ucl_object_t *sw)
 }
 
 /* BIRD's channel of a family, with what comes in and goes out. */
+/* A channel of a protocol, with what else it says (next hop self). */
 static void
-bird_channel(struct kore_buf *b, const char *fam, int64_t pref,
-    const char *export)
+bird_channel_x(struct kore_buf *b, const char *fam, int64_t pref,
+    const char *export, const char *extra)
 {
 
 	/* BIRD 3 has a route's preference in the channel, not the
 	 * protocol. */
 	kore_buf_appendf(b, "\t%s {\n\t\tpreference %jd;\n\t\timport all;\n"
-	    "\t\texport %s;\n\t};\n", fam, (intmax_t)pref, export);
+	    "\t\texport %s;\n%s\t};\n", fam, (intmax_t)pref, export, extra);
+}
+
+static void
+bird_channel(struct kore_buf *b, const char *fam, int64_t pref,
+    const char *export)
+{
+
+	bird_channel_x(b, fam, pref, export, "");
+}
+
+/* The k-th entry of a UNI's bgp or ospf: one object, or a list of them
+ * (several neighbours, a family each); NULL past the end. */
+static const ucl_object_t *
+entry_at(const ucl_object_t *rs, int k)
+{
+
+	if (is_nullish(rs))
+		return (NULL);
+	if (ucl_object_type(rs) == UCL_ARRAY)
+		return (ucl_array_find_index(rs, (unsigned int)k));
+	return (k == 0 ? rs : NULL);
+}
+
+/*
+ * BGP and OSPF with a neighbour at an interface, as an entry says them
+ * (§11.6.2, §11.6.3): a UNI's with the subscriber (protocols uni_*), a
+ * UCS End Point's with the underlay (ucs_*, Mplify 119 §12.2.3.5).
+ * Each may be one entry or a list of them: an OSPF area per family,
+ * several BGP neighbours of their own AS, hold time and password; a
+ * neighbour of the service's own AS is iBGP, given next hop self; one
+ * reached by a source address of this edge's (a loopback's) is a
+ * multihop session; bfd watches the one that says so.
+ */
+static void
+bird_routing(struct kore_buf *b, const ucl_object_t *u, const char *what,
+    const char *id, const char *sym, const char *ifn, int64_t as)
+{
+	const ucl_object_t	*rs, *r, *m;
+	ucl_object_iter_t	 nit;
+	const char		*fam, *pfx, *src;
+	int64_t			 dist, ras;
+	int			 n, k;
+	bool			 ibgp, mh;
+
+	pfx = strcmp(what, "UNI") == 0 ? "uni" : "ucs";
+	n = 0;
+	rs = ucl_object_lookup(u, "bgp");
+	for (k = 0; (r = entry_at(rs, k)) != NULL; k++) {
+		fam = str(r, "family") != NULL ? str(r, "family") : "both";
+		dist = ucl_object_lookup(r, "distance") != NULL ?
+		    ucl_object_toint(ucl_object_lookup(r, "distance")) : 200;
+		ras = ucl_object_toint(ucl_object_lookup(r, "as"));
+		ibgp = ras == as;
+		mh = ucl_flag(r, "multihop");
+		src = str(r, "source");
+		nit = NULL;
+		while ((m = ucl_object_iterate(ucl_object_lookup(r, "neighbors"),
+		    &nit, true)) != NULL) {
+			const ucl_object_t	*cm;
+			ucl_object_iter_t	 cit;
+			char			 exp[1200];
+
+			/* What goes to the subscriber carries the communities
+			 * agreed. */
+			snprintf(exp, sizeof(exp), "all");
+			if (ucl_array_size(ucl_object_lookup(r, "communities")) >
+			    0) {
+				snprintf(exp, sizeof(exp), "filter {\n");
+				cit = NULL;
+				while ((cm = ucl_object_iterate(ucl_object_lookup(r,
+				    "communities"), &cit, true)) != NULL)
+					snprintf(exp + strlen(exp), sizeof(exp) -
+					    strlen(exp), "\t\t\tbgp_community.add((%jd, "
+					    "%jd));\n", (intmax_t)ucl_object_toint(
+					    ucl_array_find_index(cm, 0)), (intmax_t)
+					    ucl_object_toint(ucl_array_find_index(cm,
+					    1)));
+				snprintf(exp + strlen(exp), sizeof(exp) - strlen(exp),
+				    "\t\t\taccept;\n\t\t}");
+			}
+			kore_buf_appendf(b, "# %s %s, the neighbour's %s%s%s\nprotocol "
+			    "bgp %s_%s_%d {\n", what, id, ucl_object_tostring_forced(m),
+			    ibgp ? ", iBGP" : "", mh ? ", multihop" : "", pfx, sym,
+			    n++);
+			if (src != NULL)
+				kore_buf_appendf(b, "\tlocal %s as %jd;\n", src,
+				    (intmax_t)as);
+			else
+				kore_buf_appendf(b, "\tlocal as %jd;\n", (intmax_t)as);
+			kore_buf_appendf(b, "\tneighbor %s as %jd;\n",
+			    ucl_object_tostring_forced(m), (intmax_t)ras);
+			if (mh)
+				kore_buf_appendf(b, "\tmultihop;\n");
+			else
+				kore_buf_appendf(b, "\tinterface \"%s\";\n", ifn);
+			if (ucl_flag(r, "bfd"))
+				kore_buf_appendf(b, "\tbfd on;\n");
+			if (str(r, "password") != NULL)
+				kore_buf_appendf(b, "\tauthentication md5;\n\tpassword "
+				    "\"%s\";\n", str(r, "password"));
+			if (ucl_object_lookup(r, "hold_time") != NULL)
+				kore_buf_appendf(b, "\thold time %jd;\n", (intmax_t)
+				    ucl_object_toint(ucl_object_lookup(r,
+				    "hold_time")));
+			if (strcmp(fam, "ipv6") != 0 && family(
+			    ucl_object_tostring_forced(m)) == AF_INET)
+				bird_channel_x(b, "ipv4", 256 - dist, exp, ibgp ?
+				    "\t\tnext hop self;\n" : "");
+			if (strcmp(fam, "ipv4") != 0 && family(
+			    ucl_object_tostring_forced(m)) == AF_INET6)
+				bird_channel_x(b, "ipv6", 256 - dist, exp, ibgp ?
+				    "\t\tnext hop self;\n" : "");
+			kore_buf_appendf(b, "}\n\n");
+		}
+	}
+	rs = ucl_object_lookup(u, "ospf");
+	for (k = 0; (r = entry_at(rs, k)) != NULL; k++) {
+		const char	*vers[] = { "v2", "v3" };
+		int		 vi;
+
+		fam = str(r, "family") != NULL ? str(r, "family") : "both";
+		dist = ucl_object_lookup(r, "distance") != NULL ?
+		    ucl_object_toint(ucl_object_lookup(r, "distance")) : 200;
+		for (vi = 0; vi < 2; vi++) {
+			if ((vi == 0 && strcmp(fam, "ipv6") == 0) || (vi == 1 &&
+			    strcmp(fam, "ipv4") == 0))
+				continue;
+			kore_buf_appendf(b, "# %s %s, OSPF%s with the neighbour\n"
+			    "protocol ospf %s %s_%s_%s", what, id, vi == 0 ? "v2" :
+			    "v3", vers[vi], pfx, sym, vers[vi]);
+			if (k > 0)
+				kore_buf_appendf(b, "_%d", k);
+			kore_buf_appendf(b, " {\n");
+			bird_channel(b, vi == 0 ? "ipv4" : "ipv6", 256 - dist, "all");
+			kore_buf_appendf(b, "\tarea %jd {\n\t\tinterface \"%s\" {\n",
+			    (intmax_t)(ucl_object_lookup(r, "area") != NULL ?
+			    ucl_object_toint(ucl_object_lookup(r, "area")) : 0), ifn);
+			if (ucl_object_lookup(r, "cost") != NULL)
+				kore_buf_appendf(b, "\t\t\tcost %jd;\n", (intmax_t)
+				    ucl_object_toint(ucl_object_lookup(r, "cost")));
+			if (ucl_object_lookup(r, "hello") != NULL)
+				kore_buf_appendf(b, "\t\t\thello %jd;\n", (intmax_t)
+				    ucl_object_toint(ucl_object_lookup(r, "hello")));
+			if (ucl_object_lookup(r, "dead") != NULL)
+				kore_buf_appendf(b, "\t\t\tdead %jd;\n", (intmax_t)
+				    ucl_object_toint(ucl_object_lookup(r, "dead")));
+			if (ucl_flag(r, "bfd"))
+				kore_buf_appendf(b, "\t\t\tbfd on;\n");
+			if (str(r, "password") != NULL)
+				kore_buf_appendf(b, "\t\t\tauthentication cryptographic;"
+				    "\n\t\t\tpassword \"%s\";\n", str(r, "password"));
+			kore_buf_appendf(b, "\t\t};\n\t};\n}\n\n");
+		}
+	}
+}
+
+/*
+ * Do the UNIs of the service at the edge want BFD with their neighbours
+ * (an entry with bfd)?  Their interfaces appended to b after the
+ * tunnels' when b is given; *mhp set when a neighbour is multihop.
+ */
+static bool
+uni_bfd(struct plan *pl, const ucl_object_t *sw, const char *sid,
+    struct kore_buf *b, int *first, bool *mhp)
+{
+	const ucl_object_t	*ep, *u, *r;
+	ucl_object_iter_t	 it;
+	char			 ifbuf[32];
+	bool			 any, here;
+	int			 k;
+
+	any = false;
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		if (str(ep, "edge") == NULL || strcmp(str(ep, "edge"), sid) != 0 ||
+		    (u = ucl_object_lookup(ep, "uni")) == NULL)
+			continue;
+		here = false;
+		for (k = 0; (r = entry_at(ucl_object_lookup(u, "bgp"), k)) != NULL;
+		    k++)
+			if (ucl_flag(r, "bfd")) {
+				here = true;
+				if (ucl_flag(r, "multihop") && mhp != NULL)
+					*mhp = true;
+			}
+		for (k = 0; (r = entry_at(ucl_object_lookup(u, "ospf"), k)) !=
+		    NULL; k++)
+			if (ucl_flag(r, "bfd"))
+				here = true;
+		if (!here)
+			continue;
+		any = true;
+		if (b != NULL) {
+			kore_buf_appendf(b, "%s\"%s\"", *first ? "" : ", ", uni_ifname(
+			    pl, sw, ep, ifbuf, sizeof(ifbuf)));
+			*first = 0;
+		}
+	}
+	return (any);
 }
 
 /*
@@ -5538,6 +5739,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	char			 ifbuf[32], ifaces[1200], sym[80], *out, ktab[48];
 	char			 l4[64];
 	const char		*kexp, *kexp6;
+	bool			 mh;
 	int64_t			 as;
 	int			 n, k;
 
@@ -5658,7 +5860,8 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    ktab, kexp6);
 	/* BFD on each tunnel interface here (R58, R59, R159): the iBGP
 	 * sessions go down with it, and the agent reads the sessions. */
-	if (sw_bfd(sw)) {
+	mh = false;
+	if (sw_bfd(sw) || uni_bfd(pl, sw, sid, NULL, NULL, &mh)) {
 		const ucl_object_t	*bfd = ucl_object_lookup(sw, "bfd");
 		int			 first = 1;
 		int64_t			 bi, bm;
@@ -5678,6 +5881,8 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 					first = 0;
 				}
 		}
+		/* The UNIs whose neighbours are watched by BFD too. */
+		(void)uni_bfd(pl, sw, sid, b, &first, &mh);
 		if (first)
 			kore_buf_appendf(b, "\"none\"");
 		bi = ucl_object_lookup(bfd, "interval") != NULL ?
@@ -5688,7 +5893,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		    "%jd;\n\t};\n", (intmax_t)bi, (intmax_t)bm);
 		/* The sessions between loopbacks are multihop, watched by
 		 * multihop BFD alike. */
-		if (sw_loop(sw))
+		if (sw_loop(sw) || mh)
 			kore_buf_appendf(b, "\tmultihop {\n\t\tinterval %jd ms;\n\t\t"
 			    "multiplier %jd;\n\t};\n", (intmax_t)bi, (intmax_t)bm);
 		kore_buf_appendf(b, "}\n\n");
@@ -5797,124 +6002,6 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	out = strdup(kore_buf_stringify(b, NULL));
 	kore_buf_free(b);
 	return (out);
-}
-
-/*
- * BGP and OSPF with a neighbour at an interface, as an entry says them
- * (§11.6.2, §11.6.3): a UNI's with the subscriber (protocols uni_*), a
- * UCS End Point's with the underlay (ucs_*, Mplify 119 §12.2.3.5).
- */
-static void
-bird_routing(struct kore_buf *b, const ucl_object_t *u, const char *what,
-    const char *id, const char *sym, const char *ifn, int64_t as)
-{
-	const ucl_object_t	*r, *m;
-	ucl_object_iter_t	 nit;
-	const char		*fam, *pfx;
-	int64_t			 dist;
-	int			 n;
-
-	pfx = strcmp(what, "UNI") == 0 ? "uni" : "ucs";
-		r = ucl_object_lookup(u, "bgp");
-		if (!is_nullish(r)) {
-			fam = str(r, "family");
-			dist = ucl_object_lookup(r, "distance") != NULL ?
-			    ucl_object_toint(ucl_object_lookup(r, "distance")) :
-			    200;
-			n = 0;
-			nit = NULL;
-			while ((m = ucl_object_iterate(ucl_object_lookup(r,
-			    "neighbors"), &nit, true)) != NULL) {
-				const ucl_object_t	*cm;
-				ucl_object_iter_t	 cit;
-				char			 exp[1200];
-
-				/* What goes to the subscriber carries the
-				 * communities agreed. */
-				snprintf(exp, sizeof(exp), "all");
-				if (ucl_array_size(ucl_object_lookup(r,
-				    "communities")) > 0) {
-					snprintf(exp, sizeof(exp), "filter {\n");
-					cit = NULL;
-					while ((cm = ucl_object_iterate(
-					    ucl_object_lookup(r, "communities"),
-					    &cit, true)) != NULL)
-						snprintf(exp + strlen(exp),
-						    sizeof(exp) - strlen(exp),
-						    "\t\t\tbgp_community.add((%jd, "
-						    "%jd));\n", (intmax_t)
-						    ucl_object_toint(
-						    ucl_array_find_index(cm, 0)),
-						    (intmax_t)ucl_object_toint(
-						    ucl_array_find_index(cm, 1)));
-					snprintf(exp + strlen(exp), sizeof(exp) -
-					    strlen(exp), "\t\t\taccept;\n\t\t}");
-				}
-				kore_buf_appendf(b, "# %s %s, the neighbour's %s\nprotocol "
-				    "bgp %s_%s_%d {\n\tlocal as %jd;\n\tneighbor "
-				    "%s as %jd;\n\tinterface \"%s\";\n", what, id,
-				    ucl_object_tostring_forced(m),
-				    pfx, sym, n++, (intmax_t)as,
-				    ucl_object_tostring_forced(m), (intmax_t)
-				    ucl_object_toint(ucl_object_lookup(r, "as")),
-				    ifn);
-				if (str(r, "password") != NULL)
-					kore_buf_appendf(b, "\tauthentication md5;\n"
-					    "\tpassword \"%s\";\n", str(r, "password"));
-				if (ucl_object_lookup(r, "hold_time") != NULL)
-					kore_buf_appendf(b, "\thold time %jd;\n", (intmax_t)
-					    ucl_object_toint(ucl_object_lookup(r,
-					    "hold_time")));
-				if (strcmp(fam, "ipv6") != 0 && family(
-				    ucl_object_tostring_forced(m)) == AF_INET)
-					bird_channel(b, "ipv4", 256 - dist, exp);
-				if (strcmp(fam, "ipv4") != 0 && family(
-				    ucl_object_tostring_forced(m)) == AF_INET6)
-					bird_channel(b, "ipv6", 256 - dist, exp);
-				kore_buf_appendf(b, "}\n\n");
-			}
-		}
-		r = ucl_object_lookup(u, "ospf");
-		if (!is_nullish(r)) {
-			const char	*vers[] = { "v2", "v3" };
-			int		 vi;
-
-			fam = str(r, "family");
-			dist = ucl_object_lookup(r, "distance") != NULL ?
-			    ucl_object_toint(ucl_object_lookup(r, "distance")) :
-			    200;
-			for (vi = 0; vi < 2; vi++) {
-				if ((vi == 0 && strcmp(fam, "ipv6") == 0) || (vi ==
-				    1 && strcmp(fam, "ipv4") == 0))
-					continue;
-				kore_buf_appendf(b, "# %s %s, OSPF%s with the neighbour\n"
-				    "protocol ospf %s %s_%s_%s {\n", what, id, vi ==
-				    0 ? "v2" : "v3", vers[vi], pfx, sym, vers[vi]);
-				bird_channel(b, vi == 0 ? "ipv4" : "ipv6", 256 - dist,
-				    "all");
-				kore_buf_appendf(b, "\tarea %jd {\n\t\tinterface \"%s\" {\n",
-				    (intmax_t)(ucl_object_lookup(r, "area") != NULL
-				    ? ucl_object_toint(ucl_object_lookup(r, "area"))
-				    : 0), ifn);
-				if (ucl_object_lookup(r, "cost") != NULL)
-					kore_buf_appendf(b, "\t\t\tcost %jd;\n", (intmax_t)
-					    ucl_object_toint(ucl_object_lookup(r,
-					    "cost")));
-				if (ucl_object_lookup(r, "hello") != NULL)
-					kore_buf_appendf(b, "\t\t\thello %jd;\n", (intmax_t)
-					    ucl_object_toint(ucl_object_lookup(r,
-					    "hello")));
-				if (ucl_object_lookup(r, "dead") != NULL)
-					kore_buf_appendf(b, "\t\t\tdead %jd;\n", (intmax_t)
-					    ucl_object_toint(ucl_object_lookup(r,
-					    "dead")));
-				if (str(r, "password") != NULL)
-					kore_buf_appendf(b, "\t\t\tauthentication "
-					    "cryptographic;\n\t\t\tpassword \"%s\";"
-					    "\n", str(r, "password"));
-				kore_buf_appendf(b, "\t\t};\n\t};\n}\n\n");
-			}
-		}
 }
 
 /* "\tkernel table N;\n" for a table that is not the first. */

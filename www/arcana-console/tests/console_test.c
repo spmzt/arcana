@@ -7030,6 +7030,109 @@ ATF_TC_BODY(sdwan_sets, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(sdwan_neigh, "Routing neighbours at a UNI: several BGP entries, "
+    "one of the service's own AS from a source address, multihop, with BFD "
+    "(iBGP, next hop self); OSPF an area per family with BFD; BFD on the "
+    "UNI's interface too, and multihop; checked")
+ATF_TC_BODY(sdwan_neigh, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		/* hq: the subscriber's eBGP neighbour watched by BFD, and an
+		 * iBGP one of the service's AS from the provider address,
+		 * multihop. */
+		{ "\"bgp\":{\"family\":\"ipv4\",\"as\":65010,\"neighbors\":"
+		    "[\"10.1.0.2\"],\"password\":\"s3cret\",\"hold_time\":90,"
+		    "\"distance\":150,\"communities\":[[64600,100]]}",
+		    "\"bgp\":[{\"family\":\"ipv4\",\"as\":65010,\"neighbors\":"
+		    "[\"10.1.0.2\"],\"password\":\"s3cret\",\"hold_time\":90,"
+		    "\"distance\":150,\"communities\":[[64600,100]],\"bfd\":true},"
+		    "{\"family\":\"ipv4\",\"as\":64600,\"neighbors\":[\"10.1.0.3\"],"
+		    "\"source\":\"10.1.0.1\",\"multihop\":true,\"bfd\":true}]" },
+		/* branch: OSPFv3 in the backbone with BFD, OSPFv2 in area 1. */
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+		{ "\"dns\":[\"2001:db8:1::1\"]}}}",
+		    "\"dns\":[\"2001:db8:1::1\"]},\"ospf\":[{\"family\":\"ipv6\","
+		    "\"area\":0,\"cost\":50,\"bfd\":true},{\"family\":\"ipv4\","
+		    "\"area\":1}]}}" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* A source that is no address is refused. */
+	ATF_REQUIRE(swap_in(doc, "\"source\":\"10.1.0.1\"", "\"source\":"
+	    "\"nowhere\"", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "bgp: source is an "
+	    "address") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "protocol bgp uni_hq_0 {\\n\\tlocal as "
+	    "64600;\\n\\tneighbor 10.1.0.2 as 65010;\\n\\tinterface \\\"lo0\\\";"
+	    "\\n\\tbfd on;\\n\\tauthentication md5;") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, ", iBGP, multihop\\nprotocol bgp uni_hq_1 "
+	    "{\\n\\tlocal 10.1.0.1 as 64600;\\n\\tneighbor 10.1.0.3 as 64600;\\n\\t"
+	    "multihop;\\n\\tbfd on;\\n\\tipv4 {\\n\\t\\tpreference 56;\\n\\t\\t"
+	    "import all;\\n\\t\\texport all;\\n\\t\\tnext hop self;\\n\\t};\\n}") !=
+	    NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "protocol bfd {\\n\\tinterface \\\"gre100\\\", "
+	    "\\\"geneve102\\\", \\\"lo0\\\" {") != NULL && strstr(r.body,
+	    "\\tmultihop {\\n") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "protocol ospf v3 uni_branch_v3 {") != NULL
+	    && strstr(r.body, "\\tarea 0 {\\n\\t\\tinterface \\\"vlan") != NULL &&
+	    strstr(r.body, "\\t\\t\\tcost 50;\\n\\t\\t\\tbfd on;\\n") != NULL &&
+	    strstr(r.body, "protocol ospf v2 uni_branch_v2_1 {") != NULL &&
+	    strstr(r.body, "\\tarea 1 {\\n") != NULL, "%s", r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(sdwan_lists, "SD-WAN's named lists: prefixes, services, UCS, "
     "edges and UCS End Points kept once, each named where a value would "
     "be, checked; a prefix list an ipfw table, a service list the AFS's "
@@ -8538,6 +8641,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan_breakout);
 	ATF_TP_ADD_TC(tp, sdwan_nat64);
 	ATF_TP_ADD_TC(tp, sdwan_sets);
+	ATF_TP_ADD_TC(tp, sdwan_neigh);
 	ATF_TP_ADD_TC(tp, sdwan_lists);
 	ATF_TP_ADD_TC(tp, sdwan_uswe);
 	ATF_TP_ADD_TC(tp, sdwan_jail);
