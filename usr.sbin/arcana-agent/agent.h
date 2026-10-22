@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.186.0"
+#define	ARCANA_AGENT_VERSION	"0.191.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -470,6 +470,9 @@ bool		 if_is_up(struct work *, const char *, bool *);
 bool		 if_link(struct work *, const char *, bool *);
 bool		 if_exists(struct work *, const char *);
 const char	*if_json(struct work *);
+struct ucl_object_s *if_object(struct work *, const char *);
+int		 if_recreate(struct work *, const char *, const struct ucl_object_s *, int,
+		    int, const char **);
 bool		 if_owning(const struct sockaddr *, char *, size_t);
 const char	*if_address_with_prefix(struct work *, const char *,
 		    const char *);
@@ -642,6 +645,8 @@ const char	*sysfile_check(const struct arc_job_spec *);
 char		*sysfile_title(const struct arc_job_spec *);
 int		 do_sysfile_job(struct work *, const struct arc_job_spec *,
 		    const char **);
+const char	*sysfile_path(struct work *, const char *);
+int		 sysfile_tell(struct work *, const char *, const char **);
 /* superbia/netstore.c: NFS, iSCSI and HAST. */
 struct arc_netstore_rsp;
 void		 do_netstore(struct work *, const char *const *, size_t,
@@ -726,6 +731,7 @@ bool		 sysctl_value_ok(const char *);
 int		 do_l2(struct work *, bool, struct arc_network_rsp *);
 const char	*bridge_holding(struct work *, const char *);
 const char	*l2_check(const struct arc_job_spec *);
+int		 l2_destroy(struct work *, const char *, const char **);
 char		*l2_title(const struct arc_job_spec *);
 int		 do_l2_job(struct work *, const struct arc_job_spec *,
 		    const char **);

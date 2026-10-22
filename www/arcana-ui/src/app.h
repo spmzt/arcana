@@ -324,6 +324,7 @@ struct op {
 	double		 next_poll;
 	bool		 polling;
 	bool		 waiting;	/* the host does not answer; it runs on */
+	long long	 confirm_by;	/* a safe change waiting: undone then, or 0 */
 	int		 what;		/* JOB_*: what to refresh when done */
 	char		*again;		/* a job as it was sent, to send again */
 	char		 target[256];	/* the jail or service */
@@ -448,6 +449,8 @@ struct confirm {
 	char		 act[64];	/* action to run on confirm */
 	char		 arg[256];
 	char		 value[512];
+	int		 fib;		/* if-set: the interface's tables now, */
+	int		 tunnelfib;	/* or -1 unknown */
 };
 
 struct toast {
@@ -878,6 +881,7 @@ bool		 usage_action(const char *, const char *, const char *);
 bool		 usage_form(const char *, const ucl_object_t *);
 void		 fmt_size(char *, size_t, double);
 void		 refresh_sysctl(struct server *, bool);
+void		 sysctl_set_jail(struct server *, const char *);
 void		 sysctl_stream(const ucl_object_t *);
 void		 network_stream(const ucl_object_t *);
 void		 view_sysctl(struct html *, struct server *);

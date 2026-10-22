@@ -733,9 +733,9 @@ sysfile_check(const struct arc_job_spec *sp)
 
 	if (sp->jail != NULL && sp->jail[0] != '\0')
 		return ("the system's files are the host's");
-	/* A file written whole has no undo kept: never safe. */
-	if (sp->safe)
-		return ("a file of the system's is not undone: not in safe mode");
+	/* dma's smart host is not put back: never safe. */
+	if (sp->safe && sp->verb != NULL && strcmp(sp->verb, "dma") == 0)
+		return ("dma's smart host is not undone: not in safe mode");
 	/* rc.conf's variables no service owns: securelevel's at boot. */
 	if (sp->verb != NULL && strcmp(sp->verb, "rc") == 0) {
 		if (sp->names.n == 0)
@@ -903,5 +903,49 @@ do_sysfile_job(struct work *w, const struct arc_job_spec *sp,
 	}
 	if (had)
 		(void)unlink(old);
+	return (0);
+}
+
+/*
+ * For a safe change: the file a verb writes, where the host keeps it
+ * (periodic's is periodic.conf); NULL for rc, which sets rc.conf's
+ * variables, and dma, which is never safe.
+ */
+const char *
+sysfile_path(struct work *w, const char *verb)
+{
+	const struct sysfile	*f;
+
+	if (verb == NULL || strcmp(verb, "rc") == 0 || strcmp(verb, "dma") == 0)
+		return (NULL);
+	if (strcmp(verb, "periodic") == 0)
+		return (rooted(w, "/etc/periodic.conf"));
+	if ((f = file_of(verb)) == NULL)
+		return (NULL);
+	return (rooted(w, f->path));
+}
+
+/* The file is as it was again: its daemon told once more, where it
+ * runs, as it was told after the write. */
+int
+sysfile_tell(struct work *w, const char *verb, const char **errp)
+{
+	struct arc_service_action_rsp	 r;
+	const struct sysfile		*f;
+	bool				 enabled, running;
+
+	if ((f = file_of(verb)) == NULL || f->service == NULL)
+		return (0);
+	enabled = running = false;
+	service_state(w, f->service, &enabled, &running);
+	if (!running && !enabled)
+		return (0);
+	memset(&r, 0, sizeof(r));
+	if (do_service_action(w, f->service, f->action, &r) != 0 || !r.ok) {
+		*errp = wfmt(w, "%s did not take the file as it was%s%s",
+		    f->service, r.error != NULL ? ": " : "", r.error != NULL ?
+		    r.error : "");
+		return (-1);
+	}
 	return (0);
 }

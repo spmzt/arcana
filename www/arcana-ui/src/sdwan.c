@@ -64,6 +64,7 @@ static const ucl_object_t *jfind(const ucl_object_t *, const char *,
 static void	 put_str(ucl_object_t *, const char *, const char *);
 static void	 put_int(ucl_object_t *, const char *, const char *);
 static void	 put_list(ucl_object_t *, const char *, const char *);
+static ucl_object_t *merged_from(const ucl_object_t *, const char *const *);
 static void	 list_put(ucl_object_t *, const char *, const char *,
 		    const char *, ucl_object_t *);
 
@@ -2413,26 +2414,39 @@ view_applied(struct html *h)
 	const ucl_object_t	*ap, *s;
 	ucl_object_iter_t	 it;
 	char			 age[32];
-	int			 n, done, failed;
+	int			 n, done, failed, undone;
 
 	ap = jget(sd.applied, "apply");
 	if (ap == NULL || jstr(ap, "state") == NULL)
 		return;
-	n = done = failed = 0;
+	n = done = failed = undone = 0;
 	it = NULL;
 	while ((s = ucl_object_iterate(jget(ap, "steps"), &it, true)) != NULL) {
 		n++;
 		if (strcmp(jstr(s, "state"), "done") == 0)
 			done++;
-		else if (strcmp(jstr(s, "state"), "failed") == 0)
+		else if (strcmp(jstr(s, "state"), "failed") == 0 || strcmp(jstr(s,
+		    "state"), "undo failed") == 0)
 			failed++;
+		else if (strcmp(jstr(s, "state"), "undone") == 0)
+			undone++;
 	}
 	fmt_age(age, sizeof(age), (double)jint(ap, "started", 0) * 1000);
+	/* Rolled back: a step failed, and what the apply had made before
+	 * it was taken away again; the edges are as they were. */
 	h_fmt(h, "<div class=\"sd-block sd-applied %s\"><h3>%s <small class="
-	    "\"dim\">", jstr(ap, "state"), sd.applying ? "Applying" :
+	    "\"dim\">", strcmp(jstr(ap, "state"), "rolled back") == 0 ? "failed"
+	    : jstr(ap, "state"), sd.applying ? "Applying" :
 	    strcmp(jstr(ap, "state"), "done") == 0 ? "Last apply: done" :
-	    "Last apply: failed");
+	    strcmp(jstr(ap, "state"), "rolled back") == 0 ? "Last apply: rolled "
+	    "back" : "Last apply: failed");
 	h_txt(h, age);
+	if (strcmp(jstr(ap, "state"), "rolled back") == 0 && jstr(ap,
+	    "failed_step") != NULL) {
+		h_fmt(h, " · %d undone after ", undone);
+		h_txt(h, jstr(ap, "failed_step"));
+		h_raw(h, " failed");
+	}
 	h_fmt(h, " · %d of %d steps done%s</small></h3>", done, n,
 	    failed > 0 ? ", some failed" : "");
 	if (sd.applying || failed > 0) {
@@ -4624,6 +4638,14 @@ sdwan_modal(struct html *h)
 			    "auto", "On the tunnels over it, by ipfw tcp-setmss: "
 			    "auto for the tunnel's kind (and IPsec under it), a "
 			    "number of bytes, or empty for none.");
+			snprintf(ms, sizeof(ms), "%lld", (long long)jint(t, "mtu",
+			    0));
+			text_field(h, "Tunnel MTU", "mtu", jstr(t, "mtu") != NULL ?
+			    jstr(t, "mtu") : jint(t, "mtu", 0) > 0 ? ms : "", "auto",
+			    "The tunnel interfaces' MTU (ifconfig mtu): auto takes "
+			    "the tunnel's overhead off 1500, so the inner packets "
+			    "are not fragmented; a number of bytes, 1280 to 9000; "
+			    "or empty for the kernel's.");
 		}
 		h_raw(h, "</fieldset>");
 		return (true);
@@ -4826,9 +4848,42 @@ sdwan_modal(struct html *h)
 		    "checkbox\" name=\"breakout\" value=\"1\"%s> Breakout: the "
 		    "Internet is reached here</label><label class=\"toggle\">"
 		    "<input type=\"checkbox\" name=\"backup\" value=\"1\"%s> "
-		    "Backup: used only when nothing else is left</label></div>"
-		    "</div>", lk != NULL && jbool(lk, "breakout") ? " checked" :
-		    "", lk != NULL && jbool(lk, "backup") ? " checked" : "");
+		    "Backup: used only when nothing else is left</label>"
+		    "<label class=\"toggle\"><input type=\"checkbox\" name=\"nat\" "
+		    "value=\"1\"%s> Behind NAT (CGNAT): the far WireGuard peers "
+		    "get no endpoint for it; this end finds them and its "
+		    "keepalive holds the mapping</label></div></div>", lk != NULL
+		    && jbool(lk, "breakout") ? " checked" : "", lk != NULL &&
+		    jbool(lk, "backup") ? " checked" : "", lk != NULL && jbool(lk,
+		    "nat") ? " checked" : "");
+		/* Relays toward edges: a process of yours on the host (FEC,
+		 * obfuscation) the wg peer points at, reaching the far
+		 * underlay at its port; one a line. */
+		{
+			const ucl_object_t	*rl;
+			ucl_object_iter_t	 rit;
+			char			 rtext[1200];
+			size_t			 rn = 0;
+
+			rtext[0] = '\0';
+			rit = NULL;
+			while (lk != NULL && (rl = ucl_object_iterate(jget(lk,
+			    "relay"), &rit, true)) != NULL && rn < sizeof(rtext) -
+			    200)
+				rn += (size_t)snprintf(rtext + rn, sizeof(rtext) - rn,
+				    "%s %s %lld\n", jstr(rl, "to") != NULL ? jstr(rl,
+				    "to") : "", jstr(rl, "endpoint") != NULL ? jstr(rl,
+				    "endpoint") : "", (long long)jint(rl, "port", 0));
+			h_raw(h, "<label>Relays, WireGuard only<textarea name=\""
+			    "relay\" rows=\"2\" spellcheck=\"false\" placeholder=\"edge "
+			    "127.0.0.1:51821 14350\">");
+			h_txt(h, rtext);
+			h_raw(h, "</textarea><small>One a line: the far edge's id, "
+			    "the relay's listener here that the wg peer points at "
+			    "(host:port), and the port the relay reaches the far "
+			    "underlay at. The relay process is yours; its flow goes "
+			    "by this uplink's table.</small></label>");
+		}
 		/* How the interface is addressed and routed (Mplify 119
 		 * §12.2.3): by DHCP or SLAAC the address is learned from the
 		 * host at each plan; a table of its own; BGP or OSPF with the
@@ -4862,6 +4917,14 @@ sdwan_modal(struct html *h)
 			    jint(lk, "vrf", 0) > 0 ? nb : "", "3", "A table of the "
 			    "underlay's own (setfib): the interface and the tunnels' "
 			    "outer packets go by it (§12.2.3.4).");
+			h_raw(h, "</div><div class=\"two\">");
+			snprintf(nb, sizeof(nb), "%lld", lk != NULL ? (long long)
+			    jint(lk, "preference", 0) : 0LL);
+			text_field(h, "Preference", "preference", lk != NULL &&
+			    jint(lk, "preference", 0) > 0 ? nb : "", "10", "Its "
+			    "place among this edge's uplinks, the higher first: the "
+			    "steering's order where a policy names no end points, "
+			    "and the breakout taken first. 0 to 65535.");
 			h_raw(h, "</div><div class=\"two\">");
 			snprintf(nb, sizeof(nb), "%lld", (long long)jint(bg, "as", 0));
 			text_field(h, "BGP: the underlay's AS", "bgp_as", jint(bg,
@@ -6437,7 +6500,13 @@ sd_forms(const char *form, const ucl_object_t *f)
 		}
 		/* was: swvc|end_point|name; the name is what is replaced. */
 		q = strrchr(was, '|');
-		o = ucl_object_typed_new(UCL_OBJECT);
+		{
+			static const char *const keys[] = { "name", "zone", "pool",
+			    "reach", NULL };
+
+			o = merged_from(q != NULL ? jfind(jget(r, "groups"),
+			    "name", q + 1) : NULL, keys);
+		}
 		put_str(o, "name", id);
 		put_str(o, "zone", jstr(f, "zone"));
 		put_str(o, "pool", jstr(f, "pool"));
@@ -6461,7 +6530,13 @@ sd_forms(const char *form, const ucl_object_t *f)
 			ucl_object_unref(doc);
 			return (true);
 		}
-		o = ucl_object_typed_new(UCL_OBJECT);
+		{
+			static const char *const keys[] = { "name", "kind",
+			    "protocols", "ports", "items", NULL };
+
+			o = merged_from(jfind(jget(doc, "lists"), "name", was),
+			    keys);
+		}
 		put_str(o, "name", id);
 		put_str(o, "kind", v);
 		if (strcmp(v, "services") == 0) {
@@ -6518,7 +6593,20 @@ sd_forms(const char *form, const ucl_object_t *f)
 			arr = ucl_object_typed_new(UCL_ARRAY);
 			ucl_object_insert_key(doc, arr, "ucs", 0, false);
 		}
-		o = ucl_object_typed_new(UCL_OBJECT);
+		{
+			static const char *const keys[] = { "id", "type",
+			    "billing", "tunnel", NULL };
+			static const char *const tkeys[] = { "kind", "algorithms",
+			    "esn", "encap", "lifetime", "ipsec", "mss", "mtu",
+			    NULL };
+			const ucl_object_t	*old = jfind(arr, "id", was);
+
+			/* What the form does not know of the underlay and its
+			 * tunnel stays as it was. */
+			o = merged_from(old, keys);
+			t = merged_from(old != NULL ? jget(old, "tunnel") : NULL,
+			    tkeys);
+		}
 		ucl_object_insert_key(o, ucl_object_fromstring(id), "id", 0,
 		    false);
 		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f, "type") !=
@@ -6526,7 +6614,6 @@ sd_forms(const char *form, const ucl_object_t *f)
 		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f, "billing")
 		    != NULL ? jstr(f, "billing") : "flat-rate"), "billing", 0,
 		    false);
-		t = ucl_object_typed_new(UCL_OBJECT);
 		ucl_object_insert_key(t, ucl_object_fromstring(jstr(f, "kind") !=
 		    NULL ? jstr(f, "kind") : "gre"), "kind", 0, false);
 		if (jstr(f, "kind") != NULL && strcmp(jstr(f, "kind"), "uswe") ==
@@ -6547,6 +6634,11 @@ sd_forms(const char *form, const ucl_object_t *f)
 			put_str(t, "mss", "auto");
 		else
 			put_int(t, "mss", jstr(f, "mss"));
+		/* The tunnels' MTU: auto takes the overhead off 1500. */
+		if (jstr(f, "mtu") != NULL && strcmp(jstr(f, "mtu"), "auto") == 0)
+			put_str(t, "mtu", "auto");
+		else
+			put_int(t, "mtu", jstr(f, "mtu"));
 		ucl_object_insert_key(o, t, "tunnel", 0, false);
 		/* In the place of the one changed, else at the end. */
 		n = ucl_array_size(arr);
@@ -6694,7 +6786,14 @@ sd_forms(const char *form, const ucl_object_t *f)
 			ucl_object_insert_key(ed, links, "ucs_end_points", 0,
 			    false);
 		}
-		o = ucl_object_typed_new(UCL_OBJECT);
+		{
+			static const char *const keys[] = { "id", "ucs", "interface",
+			    "address", "gateway", "bandwidth", "breakout", "backup",
+			    "addressing", "vrf", "routing", "preference", "nat", "relay",
+			    NULL };
+
+			o = merged_from(jfind(links, "id", was), keys);
+		}
 		if (jstr(f, "id") != NULL && jstr(f, "id")[0] != '\0')
 			snprintf(buf, sizeof(buf), "%s", jstr(f, "id"));
 		else
@@ -6721,6 +6820,34 @@ sd_forms(const char *form, const ucl_object_t *f)
 		if (checked(f, "backup"))
 			ucl_object_insert_key(o, ucl_object_frombool(true),
 			    "backup", 0, false);
+		if (checked(f, "nat"))
+			ucl_object_insert_key(o, ucl_object_frombool(true), "nat",
+			    0, false);
+		if ((v = jstr(f, "relay")) != NULL && v[0] != '\0') {
+			ucl_object_t	*rls = ucl_object_typed_new(UCL_ARRAY);
+			char		*copy = strdup(v), *it2 = copy, *line;
+
+			while (it2 != NULL && (line = strsep(&it2, "\n")) != NULL) {
+				char	to[80], ep[96];
+				long	port;
+
+				if (sscanf(line, "%79s %95s %ld", to, ep, &port) == 3) {
+					ucl_object_t	*rl = ucl_object_typed_new(
+					    UCL_OBJECT);
+
+					put_str(rl, "to", to);
+					put_str(rl, "endpoint", ep);
+					ucl_object_insert_key(rl, ucl_object_fromint(
+					    port), "port", 0, false);
+					ucl_array_append(rls, rl);
+				}
+			}
+			free(copy);
+			if (ucl_array_size(rls) > 0)
+				ucl_object_insert_key(o, rls, "relay", 0, false);
+			else
+				ucl_object_unref(rls);
+		}
 		if ((v = jstr(f, "addressing")) != NULL && v[0] != '\0' && strcmp(v,
 		    "static") != 0)
 			ucl_object_insert_key(o, ucl_object_fromstring(v),
@@ -6728,6 +6855,9 @@ sd_forms(const char *form, const ucl_object_t *f)
 		if ((v = jstr(f, "vrf")) != NULL && v[0] != '\0')
 			ucl_object_insert_key(o, ucl_object_fromint(strtoll(v, NULL,
 			    10)), "vrf", 0, false);
+		if ((v = jstr(f, "preference")) != NULL && v[0] != '\0')
+			ucl_object_insert_key(o, ucl_object_fromint(strtoll(v, NULL,
+			    10)), "preference", 0, false);
 		{
 			ucl_object_t	*rt = ucl_object_typed_new(UCL_OBJECT), *bg;
 
@@ -6794,6 +6924,26 @@ swvc_mut(ucl_object_t *doc)
 
 	return ((ucl_object_t *)(uintptr_t)jfind(jget(doc, "swvcs"), "id",
 	    sd.swvc));
+}
+
+/*
+ * An object a form edits, begun from the one it replaces: a copy of
+ * that, less the keys the form sets itself (NULL-ended), so what the
+ * form does not know of stays as it was; a new object when there was
+ * none.
+ */
+static ucl_object_t *
+merged_from(const ucl_object_t *old, const char *const *keys)
+{
+	ucl_object_t	*o;
+	size_t		 i;
+
+	if (old == NULL || ucl_object_type(old) != UCL_OBJECT)
+		return (ucl_object_typed_new(UCL_OBJECT));
+	o = ucl_object_copy(old);
+	for (i = 0; keys[i] != NULL; i++)
+		(void)ucl_object_delete_key(o, keys[i]);
+	return (o);
 }
 
 /* In a list of objects: the one whose key is was replaced, else o added. */
@@ -7328,7 +7478,13 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			ucl_object_unref(doc);
 			return (true);
 		}
-		o = ucl_object_typed_new(UCL_OBJECT);
+		{
+			static const char *const keys[] = { "name", "criteria",
+			    NULL };
+
+			o = merged_from(jfind(jget(sw, "security_policies"),
+			    "name", was), keys);
+		}
 		put_str(o, "name", jstr(f, "name"));
 		cr = ucl_object_typed_new(UCL_OBJECT);
 		if ((jstr(f, "allow") != NULL && jstr(f, "allow")[0] != '\0') ||
@@ -8551,10 +8707,13 @@ sdwan_action(const char *act, const char *arg, const char *value)
 
 		snprintf(body, sizeof(body), "On the edges, as jobs in Mplify "
 		    "119's order: %d to make, %d to make again, %d to take away; "
-		    "%d stay as they are. Each edge goes through safe mode, so a "
-		    "step that fails is undone; the UNIs come last.",
-		    count_change("make"), count_change("remake"), count_change(
-		    "unmake"), count_change("keep"));
+		    "%d stay as they are. Every job the host can undo runs in "
+		    "safe mode, confirmed by the console's next read of it; when "
+		    "a step fails, everything this apply made before it is taken "
+		    "away again (rolled back), and what it took away at its start "
+		    "stays away. The UNIs come last.", count_change("make"),
+		    count_change("remake"), count_change("unmake"), count_change(
+		    "keep"));
 		confirm("Deploy to the edges", body, "Deploy", false, "",
 		    "sd-apply", "", "");
 	} else if (strcmp(act, "sd-show-kept") == 0) {

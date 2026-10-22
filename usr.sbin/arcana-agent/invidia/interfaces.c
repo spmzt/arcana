@@ -134,6 +134,16 @@ extras(int s4, int s6, const char *name, ucl_object_t *o)
 	ucl_object_t		*t;
 	char			 descr[256], a[NI_MAXHOST], b[NI_MAXHOST];
 
+	/* Its table, and a tunnel's for its outer packets: told when they
+	 * are not the first, which is most interfaces'. */
+	memset(&ifr, 0, sizeof(ifr));
+	strlcpy(ifr.ifr_name, name, sizeof(ifr.ifr_name));
+	if (s4 != -1 && ioctl(s4, SIOCGIFFIB, &ifr) == 0 && ifr.ifr_fib != 0)
+		put(o, "fib", ucl_object_fromint(ifr.ifr_fib));
+	memset(&ifr, 0, sizeof(ifr));
+	strlcpy(ifr.ifr_name, name, sizeof(ifr.ifr_name));
+	if (s4 != -1 && ioctl(s4, SIOCGTUNFIB, &ifr) == 0 && ifr.ifr_fib != 0)
+		put(o, "tunnelfib", ucl_object_fromint(ifr.ifr_fib));
 	memset(&ifr, 0, sizeof(ifr));
 	strlcpy(ifr.ifr_name, name, sizeof(ifr.ifr_name));
 	ifr.ifr_buffer.buffer = descr;
@@ -171,7 +181,8 @@ extras(int s4, int s6, const char *name, ucl_object_t *o)
 
 /*
  * {"interfaces": [{"name", "up", "flags", "link", "mtu", "ether",
- * "description", "tunnel": {"local", "remote"}, counters,
+ * "description", "fib" and "tunnelfib" when not 0, "tunnel": {"local",
+ * "remote"}, counters,
  * "addresses": [{"family", "address", "prefixlen", "broadcast" or
  * "destination"}]}]}; family narrows the addresses.
  */
@@ -1648,3 +1659,108 @@ if_json(struct work *w)
 	return (ifq(w, "interfaces", NULL, "0"));
 }
 
+
+/*
+ * One interface as do_interfaces() tells it, by name, for a safe
+ * destroy's snapshot; NULL for none.  The caller unrefs it.
+ */
+ucl_object_t *
+if_object(struct work *w, const char *name)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*top, *found;
+	const ucl_object_t	*o, *v;
+	ucl_object_iter_t	 it;
+	const char		*json;
+
+	if ((json = if_json(w)) == NULL)
+		return (NULL);
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	top = ucl_parser_add_string(p, json, 0) ? ucl_parser_get_object(p) :
+	    NULL;
+	ucl_parser_free(p);
+	if (top == NULL)
+		return (NULL);
+	found = NULL;
+	it = NULL;
+	while ((o = ucl_object_iterate(ucl_object_lookup(top, "interfaces"),
+	    &it, true)) != NULL)
+		if ((v = ucl_object_lookup(o, "name")) != NULL && strcmp(
+		    ucl_object_tostring_forced(v), name) == 0) {
+			found = ucl_object_ref(o);
+			break;
+		}
+	ucl_object_unref(top);
+	return (found);
+}
+
+/*
+ * The interface made again as its object says, for a safe destroy
+ * undone: its tables first, its tunnel, its addresses (link-local ones
+ * aside, which it gets itself), MTU and description; up or down as it
+ * was.  rc.conf is not touched: the job's snapshot puts that back.
+ */
+int
+if_recreate(struct work *w, const char *name, const ucl_object_t *o, int fib,
+    int tunnelfib, const char **errp)
+{
+	struct arc_job_spec	 cs;
+	const ucl_object_t	*t, *a, *v;
+	ucl_object_iter_t	 it;
+	const char		*made, *addr;
+	int			 n;
+
+	memset(&cs, 0, sizeof(cs));
+	cs.has_kind = true;
+	cs.kind = ARC_JOB_KIND_IF_CREATE;
+	cs.interface = (char *)(uintptr_t)name;
+	if ((t = ucl_object_lookup(o, "tunnel")) != NULL) {
+		cs.tunnel_local = (char *)(uintptr_t)ucl_object_tostring(
+		    ucl_object_lookup(t, "local"));
+		cs.tunnel_remote = (char *)(uintptr_t)ucl_object_tostring(
+		    ucl_object_lookup(t, "remote"));
+	}
+	if ((v = ucl_object_lookup(o, "mtu")) != NULL && ucl_object_toint(v) >
+	    0) {
+		cs.has_mtu = true;
+		cs.mtu = (uint32_t)ucl_object_toint(v);
+	}
+	if ((v = ucl_object_lookup(o, "description")) != NULL)
+		cs.description = (char *)(uintptr_t)ucl_object_tostring(v);
+	if (fib > 0) {
+		cs.has_fib = true;
+		cs.fib = (uint32_t)fib;
+	}
+	if (tunnelfib > 0) {
+		cs.has_tunnelfib = true;
+		cs.tunnelfib = (uint32_t)tunnelfib;
+	}
+	/* The first address with the creation, the rest after it. */
+	n = 0;
+	it = NULL;
+	while ((a = ucl_object_iterate(ucl_object_lookup(o, "addresses"), &it,
+	    true)) != NULL) {
+		if ((v = ucl_object_lookup(a, "address")) == NULL ||
+		    strchr(ucl_object_tostring_forced(v), '%') != NULL ||
+		    strncasecmp(ucl_object_tostring_forced(v), "fe80:", 5) == 0)
+			continue;
+		addr = wfmt(w, "%s/%lld", ucl_object_tostring_forced(v),
+		    (long long)ucl_object_toint(ucl_object_lookup(a,
+		    "prefixlen")));
+		if (n++ == 0) {
+			cs.address = (char *)(uintptr_t)addr;
+			if (do_if_create(w, &cs, &made, errp) != 0)
+				return (-1);
+			continue;
+		}
+		if (do_if_address(w, name, addr, false, false, errp) != 0)
+			return (-1);
+	}
+	if (n == 0 && do_if_create(w, &cs, &made, errp) != 0)
+		return (-1);
+	if ((v = ucl_object_lookup(o, "up")) != NULL &&
+	    !ucl_object_toboolean(v) && do_if_state(w, name, false, errp) != 0)
+		return (-1);
+	return (0);
+}

@@ -4995,6 +4995,9 @@ job_object(struct call *c, const struct arc_job *j, bool trace, uint64_t us)
 	put(o, "ok", j->has_ok ? ucl_object_frombool(j->ok) :
 	    ucl_object_typed_new(UCL_NULL));
 	put_str(o, "error", j->error);
+	/* A safe change waiting: when the host undoes it by itself. */
+	if (j->has_confirm_by && j->confirm_by > 0)
+		put(o, "confirm_by", ucl_object_fromint(j->confirm_by));
 	put_str(o, "peer", j->peer);
 	put(o, "created", ucl_object_fromint(j->created));
 	put(o, "started", j->has_started ? ucl_object_fromint(j->started) :

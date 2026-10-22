@@ -72,8 +72,9 @@ struct qjob {
 	struct undo_rc {		/* rc.conf variables as they were */
 		const char	*name;
 		const char	*value;	/* NULL: unset */
-	}			 undo_rc[6];
+	}			 undo_rc[10];
 	int			 undo_nrc;
+	ucl_object_t		*undo_if;	/* if-destroy: as it was */
 	bool			 undo_none;	/* it changed nothing: as it was */
 	bool			 undo_live;	/* rc.conf had it before: keep that */
 	char			*title;
@@ -700,6 +701,10 @@ undo_forget(struct qjob *j)
 		}
 	j->undo_nfiles = 0;
 	j->undo_nrc = 0;
+	if (j->undo_if != NULL) {
+		ucl_object_unref(j->undo_if);
+		j->undo_if = NULL;
+	}
 }
 
 /*
@@ -757,6 +762,59 @@ undo_prepare(struct qjob *j)
 			undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s", rc_ifname(&j->w,
 			    sp->interface)));
 		}
+		break;
+	case ARC_JOB_KIND_BRIDGE:
+	case ARC_JOB_KIND_GENEVE:
+		/* The inverse word is run (addm and deletem, a flag and
+		 * its -flag, vlanfilter on and off, static and deladdr, a
+		 * geneve made and destroyed); rc.conf's line as it was. */
+		if (sp->persist) {
+			undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s", rc_ifname(&j->w,
+			    sp->interface)));
+			if (sp->kind == ARC_JOB_KIND_GENEVE)
+				undo_snap_rc(j, "cloned_interfaces");
+		}
+		break;
+	case ARC_JOB_KIND_IF_DESTROY:
+		/* The interface as it is: its addresses, tunnel, MTU,
+		 * description and state, its tables, and what rc.conf has
+		 * of it. */
+		if ((j->undo_if = if_object(&j->w, sp->interface)) == NULL) {
+			/* Not listed: ifconfig says whether there is one to
+			 * destroy; there is none to make again. */
+			j->undo_note = wfmt(&j->w, "%s was not listed before: "
+			    "there is nothing to make again", sp->interface);
+			break;
+		}
+		if_current(&j->w, sp->interface, &j->undo_mtu, &j->undo_fib,
+		    &j->undo_tunnelfib, descr, sizeof(descr));
+		if (sp->persist) {
+			const char	*rcif = rc_ifname(&j->w, sp->interface);
+			int		 n;
+
+			undo_snap_rc(j, "cloned_interfaces");
+			undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s", rcif));
+			undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s_descr", rcif));
+			undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s_ipv6", rcif));
+			undo_snap_rc(j, wfmt(&j->w, "create_args_%s", rcif));
+			for (n = 0; n < 4; n++)
+				undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s_alias%d",
+				    rcif, n));
+		}
+		break;
+	case ARC_JOB_KIND_SYSFILE:
+		/* The file as it is, or rc.conf's variables as they are. */
+		if (strcmp(sp->verb, "rc") == 0) {
+			for (i = 0; i < sp->names.n; i++) {
+				char	*name = wstrdup(&j->w, sp->names.v[i]);
+
+				name[strcspn(name, "=")] = '\0';
+				undo_snap_rc(j, name);
+			}
+		} else if (!undo_snap_file(j, sysfile_path(&j->w, sp->verb)))
+			return (wfmt(&j->w, "not changed: %s could not be read, "
+			    "so it could not be put back: %s", sysfile_path(&j->w,
+			    sp->verb), strerror(errno)));
 		break;
 	case ARC_JOB_KIND_IPSEC:
 		/* A connection's files as they are (or are not), to go back
@@ -1030,6 +1088,58 @@ undo(struct qjob *j)
 		return (wfmt(&j->w, "not confirmed within %d s; %s",
 		    safe_wait(sp), j->undo_note));
 	switch (sp->kind) {
+	case ARC_JOB_KIND_IF_DESTROY:
+		rc = if_recreate(&j->w, sp->interface, j->undo_if, j->undo_fib,
+		    j->undo_tunnelfib, &e);
+		if (rc == 0 && sp->persist)
+			rc = undo_rc_back(j, &e);
+		break;
+	case ARC_JOB_KIND_BRIDGE:
+	case ARC_JOB_KIND_GENEVE:
+		{
+			struct arc_job_spec	 back;
+			const char		*nv[2];
+
+			back = *sp;
+			back.safe = false;
+			back.persist = false;
+			back.names.v = nv;
+			back.names.n = sp->names.n;
+			nv[0] = sp->names.n > 0 ? sp->names.v[0] : NULL;
+			nv[1] = sp->names.n > 1 ? sp->names.v[1] : NULL;
+			if (sp->kind == ARC_JOB_KIND_GENEVE) {
+				/* Made: destroyed again, rc.conf aside. */
+				rc = l2_destroy(&j->w, sp->interface, &e);
+			} else {
+				if (strcmp(sp->verb, "addm") == 0)
+					back.verb = "deletem";
+				else if (strcmp(sp->verb, "deletem") == 0)
+					back.verb = "addm";
+				else if (strcmp(sp->verb, "vlanfilter") == 0)
+					nv[0] = sp->names.v[0][1] == 'n' ? "off" :
+					    "on";
+				else if (strcmp(sp->verb, "flag") == 0)
+					nv[1] = sp->names.v[1][0] == '-' ?
+					    sp->names.v[1] + 1 : wfmt(&j->w, "-%s",
+					    sp->names.v[1]);
+				else if (strcmp(sp->verb, "static") == 0) {
+					back.verb = "deladdr";
+					nv[0] = sp->names.v[1];
+					back.names.n = 1;
+				}
+				rc = do_l2_job(&j->w, &back, &e);
+			}
+			if (rc == 0 && sp->persist)
+				rc = undo_rc_back(j, &e);
+		}
+		break;
+	case ARC_JOB_KIND_SYSFILE:
+		if (strcmp(sp->verb, "rc") == 0)
+			rc = undo_rc_back(j, &e);
+		else
+			rc = undo_files_back(j, &e) == 0 ? sysfile_tell(&j->w,
+			    sp->verb, &e) : -1;
+		break;
 	case ARC_JOB_KIND_IPSEC:
 		if (strcmp(sp->verb, "up") == 0 || strcmp(sp->verb, "down") == 0)
 			rc = ipsec_toggle(&j->w, sp->conn, sp->verb[0] == 'd', &e);

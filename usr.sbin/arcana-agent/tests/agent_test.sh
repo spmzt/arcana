@@ -1867,9 +1867,9 @@ EOS
 	    "$JGC" -c "$SOCK" wg wg0 peer "$PEER" allowed-ips '10.0.0.0/40'
 	atf_check -s exit:1 -e match:'the interface is wg and its number' -o ignore \
 	    "$JGC" -c "$SOCK" wg em0 init
-	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
-	    "$JGC" -s -c "$SOCK" wg wg0 init
-	atf_check -o empty cat wg.log
+	# Safe too (safe_wireguard); what wg refuses fails as before.
+	atf_check -s exit:1 -o match:'No such device' \
+	    "$JGC" -s -c "$SOCK" wg wg9 init
 
 	# Kept for a boot: written as wg-quick(8) reads it, for nobody
 	# else to read, and rc.conf told to bring it up.
@@ -3101,6 +3101,163 @@ EOS
 	atf_check -o inline:'--initiate --child t1 --timeout 20\n--terminate --ike t1 --timeout 10\n--terminate --ike t1 --timeout 10\n--initiate --child t1 --timeout 20\n' cat swanctl.log
 }
 
+safe_sysfile_head()
+{
+	atf_set "descr" "A file of the system's written in safe mode goes back as it was and its daemon is told again; periodic.conf and rc.conf's variables too; dma is refused"
+}
+safe_sysfile_body()
+{
+	mkdir -p root/etc/defaults
+	printf '# defaults\ndaily_clean_tmps_enable="NO"\n' > root/etc/defaults/periodic.conf
+	printf 'daily_status_disks_enable="YES"\n' > root/etc/periodic.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	printf '#!/bin/sh\n' > rc.d/syslogd
+	chmod +x rc.d/syslogd
+	touch running.syslogd
+
+	# A file that was not there is gone again; one that was is as it
+	# was; the daemon told each time.
+	printf '*.err\t/var/log/errors\n' > syslog.new
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sysfile syslog.conf syslog.new
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'syslog.conf, as it was' "$JGC" -c "$SOCK" job 1
+	atf_check test ! -f root/etc/syslog.conf
+	printf '*.*\t/var/log/all\n' > root/etc/syslog.conf
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sysfile syslog.conf syslog.new
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 2
+	atf_check -o inline:'*.*\t/var/log/all\n' cat root/etc/syslog.conf
+	# Confirmed: it stays.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" sysfile syslog.conf syslog.new
+	atf_check -o inline:'*.err\t/var/log/errors\n' cat root/etc/syslog.conf
+
+	# periodic.conf whole as it was; rc.conf's variables as they were.
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sysfile periodic daily_clean_tmps_enable=YES
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sysfile rc kern_securelevel_enable=YES kern_securelevel=2
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o inline:'daily_status_disks_enable="YES"\n' cat root/etc/periodic.conf
+	atf_check -o not-match:'securelevel' cat rc.conf
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' "$JGC" -c "$SOCK" job 4
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' "$JGC" -c "$SOCK" job 5
+
+	# dma's smart host is not put back.
+	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
+	    "$JGC" -s -c "$SOCK" sysfile dma smarthost=mail.example.net
+}
+
+safe_if_destroy_head()
+{
+	atf_set "descr" "An interface destroyed in safe mode is made again as it was: addresses, MTU, state and rc.conf; only a tunnel, tap, tun or lo"
+}
+safe_if_destroy_body()
+{
+	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	chmod +x fake-ifconfig
+	start_daemon
+
+	# lo0 is here to be read; ifconfig is a fake, so nothing happens
+	# to it: what the undo would run is in its log.
+	printf 'cloned_interfaces="lo0"\nifconfig_lo0="inet 127.0.0.1/8 mtu 16384 up"\nifconfig_lo0_descr="the loopback"\n' >> rc.conf
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" interface lo0 destroy
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 1
+	atf_check -o match:'^lo0 destroy$' -o match:'^lo0 create$' \
+	    -o match:'^lo0 inet6? [0-9a-f.:]+\/[0-9]+$' -o match:'^lo0 inet6? [0-9a-f.:]+\/[0-9]+ alias$' \
+	    -o match:'^lo0 mtu [0-9]+$' -o match:'^lo0 up$' cat ifconfig.log
+	atf_check -o match:'^cloned_interfaces="lo0"$' \
+	    -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 16384 up"$' \
+	    -o match:'^ifconfig_lo0_descr="the loopback"$' cat rc.conf
+
+	# What cannot be made again as it was is refused; what was not
+	# listed is destroyed as asked, with nothing to make again.
+	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
+	    "$JGC" -s -c "$SOCK" interface wg0 destroy
+	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
+	    "$JGC" -s -c "$SOCK" interface epair3a destroy
+	: > ifconfig.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface gif9 destroy
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'gif9 was not listed before: there is nothing to make again' \
+	    "$JGC" -c "$SOCK" job 2
+	atf_check -o inline:'gif9 destroy\n' cat ifconfig.log
+}
+
+safe_l2_head()
+{
+	atf_set "descr" "A bridge's member, flag, vlanfilter or static address in safe mode is taken back by the inverse word, a geneve made destroyed again, rc.conf as it was; what sets a value is refused"
+}
+safe_l2_body()
+{
+	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	chmod +x fake-ifconfig
+	start_daemon
+	printf 'ifconfig_bridge0="addm em1 up"\n' >> rc.conf
+
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" bridge bridge0 addm tap9
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bridge bridge0 deletem em1
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bridge bridge0 vlanfilter on
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bridge bridge0 flag tap9 -stp
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bridge bridge0 static tap9 00:11:22:33:44:55
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" geneve geneve7 create id 7 local 192.0.2.1 remote 192.0.2.2
+	for i in $(seq 1 300); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	for n in 1 2 3 4 5 6; do
+		atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+		    "$JGC" -c "$SOCK" job $n
+	done
+	atf_check -o match:'^bridge0 addm tap9$' -o match:'^bridge0 deletem tap9$' \
+	    -o match:'^bridge0 deletem em1$' -o match:'^bridge0 addm em1$' \
+	    -o match:'^bridge0 vlanfilter$' -o match:'^bridge0 -vlanfilter$' \
+	    -o match:'^bridge0 -stp tap9$' -o match:'^bridge0 stp tap9$' \
+	    -o match:'^bridge0 static tap9 00:11:22:33:44:55$' \
+	    -o match:'^bridge0 deladdr 00:11:22:33:44:55$' \
+	    -o match:'^geneve7 create geneveid 7 genevelocal 192.0.2.1 generemote 192.0.2.2$|^geneve7 create geneveid 7 genevelocal 192.0.2.1 geneveremote 192.0.2.2$' \
+	    -o match:'^geneve7 destroy$' cat ifconfig.log
+	atf_check -o match:'^ifconfig_bridge0="addm em1 up"$' -o not-match:'geneve7' \
+	    -o not-match:'cloned_interfaces' cat rc.conf
+
+	# Confirmed: it stays, in rc.conf too.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -p -c "$SOCK" bridge bridge0 addm tap9
+	atf_check -o match:'^ifconfig_bridge0="addm em1 up addm tap9"$' cat rc.conf
+
+	# What sets a value over another, or forgets what was learned, is
+	# not taken back.
+	for c in "bridge bridge0 set proto stp" "bridge bridge0 access tap9 20" \
+	    "bridge bridge0 flush" "geneve geneve7 set learn off"; do
+		atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
+		    "$JGC" -s -c "$SOCK" $c
+	done
+}
+
 safe_mode_head()
 {
 	atf_set "descr" "A safe change stays when confirmed, and is undone when not"
@@ -3241,8 +3398,8 @@ safe_mode_body()
 	# What cannot be taken back is not taken in safe mode.
 	atf_check -s exit:1 -e match:'cannot be undone' -o ignore \
 	    "$JGC" -q -s -c "$SOCK" service sshd restart
-	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
-	    "$JGC" -q -s -c "$SOCK" interface gif4 destroy
+	atf_check -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" interface gif4 destroy
 	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
 	    "$JGC" -q -s -c "$SOCK" ng shutdown em0:
 
@@ -4618,8 +4775,10 @@ MASQUERADE arcana@example.org
 	atf_check -s exit:1 -e match:'lines of printable characters' "$JGC" -c "$SOCK" sysfile krb5.conf ctl.new
 	atf_check -s exit:1 -e match:'name_enable=YES or NO' "$JGC" -c "$SOCK" sysfile periodic daily_x=1
 	atf_check -s exit:1 -e match:"the system's files are the host's" "$JGC" -j web -c "$SOCK" sysfile krb5.conf syslog.new
-	# Never safe: a file written whole has no undo kept.
-	atf_check -s exit:1 -e match:'not undone: not in safe mode' "$JGC" -s -c "$SOCK" sysfile krb5.conf syslog.new
+	# Safe: the file is kept to be put back (safe_sysfile); dma's smart
+	# host is not.
+	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" sysfile krb5.conf syslog.new
+	atf_check -s exit:1 -e match:'not undone: not in safe mode' "$JGC" -s -c "$SOCK" sysfile dma smarthost=mail.example.net
 }
 sysfiles_cleanup()
 {
@@ -5092,9 +5251,8 @@ EOS
 b"
 	atf_check -s exit:1 -e match:'not set from here' -o ignore \
 	    "$JGC" -j web -c "$SOCK" sysctl kern.hostname=x
-	atf_check -s exit:1 -e match:'not taken back by itself' -o ignore \
-	    "$JGC" -s -c "$SOCK" sysctl kern.hostname=x
-	atf_check -o empty cat kld.log
+	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" sysctl kern.hostname=x
+	atf_check -o match:'sysctl kern.hostname=x' cat kld.log
 
 	# How the agent is reached: its listeners, and who is connected
 	# now, which is at least who asks.
@@ -5264,9 +5422,9 @@ EOS
 		atf_check -s exit:1 -e not-empty -o ignore \
 		    "$JGC" -c "$SOCK" bridge bridge0 $bad
 	done
-	atf_check -s exit:1 -e match:'not taken back by itself' -o ignore \
-	    "$JGC" -s -c "$SOCK" bridge bridge0 vlanfilter on
-	atf_check -o empty cat ifconfig.log
+	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" bridge bridge0 vlanfilter on
+	atf_check -o match:'bridge0 vlanfilter' cat ifconfig.log
+	: > ifconfig.log
 
 	# A member of a bridge takes no address: the bridge does.  One it
 	# has may be taken away.
@@ -8114,6 +8272,9 @@ atf_init_test_cases()
 	atf_add_test_case safe_bird
 	atf_add_test_case safe_wireguard
 	atf_add_test_case safe_ipsec
+	atf_add_test_case safe_sysfile
+	atf_add_test_case safe_if_destroy
+	atf_add_test_case safe_l2
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart
 	atf_add_test_case agent_build

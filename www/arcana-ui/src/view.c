@@ -1356,9 +1356,19 @@ dock(struct html *h)
 			h_txt(h, o->title);
 			h_raw(h, "</span><span class=\"s\">");
 			h_txt(h, o->server);
-			if (o->job > 0)
+			if (o->job > 0) {
 				h_fmt(h, " · job %lld%s", o->job, o->waiting ?
 				    ", host away, it runs on there" : "");
+				/* A safe change the host has made and waits to
+				 * hear about: reading it confirms it; unread,
+				 * the host undoes it at its time. */
+				if (o->state == OP_RUNNING && o->confirm_by > 0)
+					h_fmt(h, ", made in safe mode: undone in "
+					    "%lld s unless confirmed",
+					    o->confirm_by - (long long)(arc_now() /
+					    1000) > 0 ? o->confirm_by - (long long)(
+					    arc_now() / 1000) : 0);
+			}
 			else if (o->live && o->state == OP_RUNNING)
 				h_raw(h, " · live");
 			h_raw(h, "</span>");

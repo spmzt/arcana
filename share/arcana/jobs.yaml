@@ -285,7 +285,7 @@ kinds:
   - kind: if-destroy
     title: An interface destroyed
     needs: interface
-    uses: jail persist
+    uses: jail persist safe
     destroys: always
   - kind: netgraph
     title: The netgraph graph changed
@@ -362,11 +362,11 @@ kinds:
   - kind: bridge
     title: A bridge
     needs: verb args
-    uses: jail persist
+    uses: jail persist safe
   - kind: geneve
     title: A geneve tunnel
     needs: verb args
-    uses: jail persist
+    uses: jail persist safe
   - kind: process
     title: A process signalled or reniced
     needs: verb args
@@ -455,7 +455,7 @@ kinds:
   - kind: sysfile
     title: A file of the system's written, its daemon told
     needs: verb
-    uses: args text
+    uses: args text safe
     values: verb=devfs.rules|devd|syslog.conf|newsyslog.conf|periodic.conf|audit_control|audit_user|krb5.conf|ipsec.conf|rctl.conf|loader.conf.d|periodic|rc|dma
   - kind: geom
     title: A GEOM class's command, geom(8)

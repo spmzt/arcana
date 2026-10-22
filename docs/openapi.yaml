@@ -2241,11 +2241,14 @@ paths:
       summary: How the last apply went, and the ones before
       responses:
         "200":
-          description: applying, and apply (state running, done or
-            failed; started, ended, fresh, its steps each with its
-            state and detail, and the tunnels); history, the last fifty
-            applies, each started, ended, state, fresh, steps, made,
-            remade, unmade, failed, and edges with each one's steps.
+          description: applying, and apply (state running, done, failed
+            or rolled back, with failed_step; started, ended, fresh, its
+            steps each with its state (pending, done, failed, not run,
+            undone, undo failed) and detail, and the tunnels); history,
+            the last fifty applies, each started, ended, state,
+            failed_step, fresh, steps, made, remade, unmade, failed, and
+            edges with each one's steps. A step that fails rolls the
+            apply back; what it made before is taken away again (undone).
     post:
       tags: [sdwan]
       summary: Apply, in a thread of the console

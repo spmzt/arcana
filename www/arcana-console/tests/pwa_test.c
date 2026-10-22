@@ -1977,13 +1977,16 @@ part_nettab(void)
 	run("document.querySelector('tr[data-if=lo0] button[data-act=if-edit]')"
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=if-set]')", 5);
+	/* The form has the interface's tables too: FIB and a tunnel's. */
 	run("const f = document.querySelector('form[data-form=if-set]'); "
-	    "f.mtu.value = '9000'; f.persist.checked = false; "
-	    "f.requestSubmit();");
+	    "f.mtu.value = '9000'; f.fib.value = '1'; f.tunnelfib.value = '1'; "
+	    "f.persist.checked = false; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
 	    "t.textContent.includes('lo0: set'))", 20);
 	ATF_CHECK(system("grep -q '^lo0 mtu 9000$' ifconfig.log") == 0);
+	ATF_CHECK(system("grep -q '^lo0 fib 1$' ifconfig.log && grep -q "
+	    "'^lo0 tunnelfib 1$' ifconfig.log") == 0);
 	/*
 	 * A task that waits says what it asked and where it is: the
 	 * request held back here, then the job's readings, to see each
@@ -2908,12 +2911,18 @@ part_plugins(void)
 	    "f.export_ipv4.value = 'none'; f.import_ipv4.value = 'filter "
 	    "bgp_out'; f.requestSubmit();");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('takes it back unless the host is still "
-	    "reached'))", 20);
+	    "t.textContent.includes('takes it back by itself unless it is "
+	    "confirmed in time'))", 20);
 	ATF_CHECK(system("grep -q '^\t\timport filter bgp_out;$' bird/bird.conf "
 	    "&& grep -q '^\t\texport none;$' bird/bird.conf && ! grep -q "
 	    "'export filter bgp_out' bird/bird.conf && grep -q '^configure "
 	    "timeout 60$' birdc.log") == 0);
+	/* Kept only when told so: the seconds left shown, then Confirm. */
+	wait_js("document.querySelector('.notice button[data-act=bird-confirm]') && "
+	    "/takes it back by itself in [0-9]+ s/.test(document.querySelector("
+	    "'.notice button[data-act=bird-confirm]').closest('.notice').textContent)", 10);
+	shot("7g-bird-confirm");
+	run("document.querySelector('.notice button[data-act=bird-confirm]').click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('BIRD keeps its new configuration'))", 30);
 	ATF_CHECK(system("grep -q '^configure confirm$' birdc.log") == 0);
@@ -5579,6 +5588,32 @@ part_flows(void)
 	    "'gre'; f.requestSubmit();");
 	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
 	    "includes('Edges')", 20);
+	/*
+	 * What a form does not know of its object stays as it was: a key
+	 * put into the document by hand survives the form's save (the
+	 * page is opened again first, to read the document as it is).
+	 */
+	run("fetch('/api/sdwan').then(r => r.json()).then(d => { d.ucs[0]."
+	    "tunnel.mtu = 'auto'; d.ucs[0].note = 'kept'; return fetch("
+	    "'/api/sdwan', { method: 'PUT', headers: { 'content-type': "
+	    "'application/json', 'X-Arcana': '1' }, body: JSON.stringify(d) }); }).then(r => { "
+	    "window.mtuput = r.status; });");
+	wait_js("window.mtuput === 200", 10);
+	host_open(NULL);
+	wait_js("document.querySelector('button.tab[data-arg=summary]')", 10);
+	run("document.querySelector('li[data-act=select-sdwan]').click()");
+	wait_js("document.querySelector('button[data-act=sd-ucs-edit][data-arg="
+	    "net]')", 20);
+	run("document.querySelector('button[data-act=sd-ucs-edit][data-arg="
+	    "net]').click()");
+	wait_js("document.querySelector('form[data-form=sd-ucs] input[name=id]"
+	    "')?.value === 'net'", 5);
+	run("document.querySelector('form[data-form=sd-ucs]').requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-ucs]')", 10);
+	run("window.mtukept = null; fetch('/api/sdwan').then(r => r.json())."
+	    "then(d => { window.mtukept = d.ucs[0].tunnel.mtu === 'auto' && "
+	    "d.ucs[0].note === 'kept'; });");
+	wait_js("window.mtukept === true", 10);
 	run("document.querySelector('.sd-guide button[data-act=sd-go]')."
 	    "click()");
 	wait_js("document.querySelector('form[data-form=sd-edge] details."

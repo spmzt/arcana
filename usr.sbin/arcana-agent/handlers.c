@@ -2817,8 +2817,19 @@ check_spec(const struct arc_job_spec *sp)
 		break;
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:
-		if (sp->safe)
-			return ("it is not taken back by itself");
+		/* Undone by the inverse word, where there is one: a member
+		 * in or out, a flag, vlanfilter, a static address, a geneve
+		 * made.  What sets a value over another, or forgets what
+		 * was learned, is not. */
+		if (sp->safe && sp->verb != NULL && !((sp->kind ==
+		    ARC_JOB_KIND_BRIDGE && (strcmp(sp->verb, "addm") == 0 ||
+		    strcmp(sp->verb, "deletem") == 0 || strcmp(sp->verb,
+		    "vlanfilter") == 0 || strcmp(sp->verb, "flag") == 0 ||
+		    strcmp(sp->verb, "static") == 0)) || (sp->kind ==
+		    ARC_JOB_KIND_GENEVE && strcmp(sp->verb, "create") == 0)))
+			return ("only addm, deletem, vlanfilter, flag and static "
+			    "of a bridge, and a geneve made, are taken back: "
+			    "not in safe mode");
 		if ((e = l2_check(sp)) != NULL)
 			return (e);
 		break;
@@ -2941,9 +2952,25 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_IF_DESTROY:
 		if (sp->interface == NULL || !valid_ifname(sp->interface))
 			return ("invalid interface name");
-		if (sp->safe)
-			return ("an interface destroyed cannot be made again "
-			    "as it was: not in safe mode");
+		/* Made again as it was: a tunnel, a tap or tun, a loopback;
+		 * not what has keys, members or a pair's other end. */
+		if (sp->safe) {
+			static const char *const again[] = { "gif", "gre", "me",
+			    "tap", "tun", "lo" };
+			size_t	k, alen;
+
+			for (k = 0; k < nitems(again); k++) {
+				alen = strlen(again[k]);
+				if (strncmp(sp->interface, again[k], alen) == 0 &&
+				    sp->interface[alen + strspn(sp->interface +
+				    alen, "0123456789")] == '\0')
+					break;
+			}
+			if (k == nitems(again))
+				return ("only a gif, gre, me, tap, tun or lo "
+				    "interface destroyed is made again as it "
+				    "was: not in safe mode");
+		}
 		break;
 	case ARC_JOB_KIND_NETGRAPH:
 		if (sp->safe)

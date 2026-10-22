@@ -35,6 +35,7 @@ static struct {
 	char		 error[300];
 	double		 fetched;
 	char		 prefix[64];	/* where in the tree */
+	char		 jail[256];	/* a vnet jail's own (net.*), or "" the host's */
 	char		 asked[64];	/* what data is the answer for */
 	char		 edit[204];	/* the one being set */
 	int64_t		 total;
@@ -153,8 +154,8 @@ refresh_sysctl(struct server *s, bool again)
 	if (asprintf(&key, "%s %s", s->id, sy.prefix) == -1)
 		abort();
 	if (sy.nostream) {
-		snprintf(url, sizeof(url), "sysctl%s%s", sy.prefix[0] != '\0' ?
-		    "?filter=" : "", sy.prefix);
+		snprintf(url, sizeof(url), "sysctl?jail=%s%s%s", sy.jail,
+		    sy.prefix[0] != '\0' ? "&filter=" : "", sy.prefix);
 		host_read(s, url, "read the sysctls", true, sysctl_cb, key);
 		return;
 	}
@@ -188,10 +189,11 @@ refresh_sysctl(struct server *s, bool again)
 	sy.total = 0;
 	sy.streaming = true;
 	snprintf(msg, sizeof(msg), "{\"id\":%d,\"server\":\"%s\",\"what\":"
-	    "\"sysctl\",\"filter\":\"%s\"}", ++sy.stream, s->id, sy.prefix);
+	    "\"sysctl\",\"filter\":\"%s\",\"jail\":\"%s\"}", ++sy.stream, s->id,
+	    sy.prefix, sy.jail);
 	arc_stream_send(msg);
-	snprintf(url, sizeof(url), "/api/servers/%s/sysctl?filter=kern.ostype",
-	    s->id);
+	snprintf(url, sizeof(url), "/api/servers/%s/sysctl?filter=kern.ostype"
+	    "&jail=%s", s->id, sy.jail);
 	api("GET", url, NULL, kept_cb, key);
 }
 
@@ -299,6 +301,45 @@ view_sysctl(struct html *h, struct server *s)
 		h_raw(h, "</div>");
 		view_hardening(h, s);
 		return;
+	}
+	/* Whose: the host's, or a running vnet jail's own network's. */
+	{
+		const ucl_object_t	*j;
+		ucl_object_iter_t	 jit;
+		int			 nj = 0;
+
+		jit = NULL;
+		while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
+		    "jails"), &jit, true)) != NULL)
+			if (net_jail_ok(j) && jstr(j, "state") != NULL &&
+			    strcmp(jstr(j, "state"), "running") == 0)
+				nj++;
+		if (nj > 0 || sy.jail[0] != '\0') {
+			h_raw(h, "<label class=\"net-jail\" title=\"Whose "
+			    "sysctls: the host's, or a vnet jail's own network's "
+			    "(net.*), which are its to read and set\"><select "
+			    "data-input=\"sy-jail\">");
+			h_fmt(h, "<option value=\"\"%s>", sy.jail[0] == '\0' ?
+			    " selected" : "");
+			h_txt(h, s->name);
+			h_raw(h, "</option>");
+			jit = NULL;
+			while (s->list != NULL && (j = ucl_object_iterate(jget(
+			    s->list, "jails"), &jit, true)) != NULL) {
+				if (!net_jail_ok(j) || (strcmp(jstr(j, "name"),
+				    sy.jail) != 0 && (jstr(j, "state") == NULL ||
+				    strcmp(jstr(j, "state"), "running") != 0)))
+					continue;
+				h_raw(h, "<option");
+				h_attr(h, "value", jstr(j, "name"));
+				if (strcmp(jstr(j, "name"), sy.jail) == 0)
+					h_raw(h, " selected");
+				h_raw(h, ">jail ");
+				h_txt(h, jstr(j, "name"));
+				h_raw(h, "</option>");
+			}
+			h_raw(h, "</select></label>");
+		}
 	}
 	h_raw(h, "<form data-form=\"sy-from\" class=\"kmod-load\"><input name="
 	    "\"name\" spellcheck=\"false\" autocomplete=\"off\" placeholder="
@@ -441,7 +482,7 @@ sysctl_form(const char *form, const ucl_object_t *f)
 {
 	struct server	*s;
 	const char	*v;
-	char		*qn, *qv, *json, title[300];
+	char		*qn, *qv, *qj, *json, title[300];
 
 	if (strcmp(form, "sy-set") != 0 && strcmp(form, "sy-from") != 0 &&
 	    strcmp(form, "tr-safe") != 0 && strcmp(form, "tr-move") != 0 &&
@@ -526,16 +567,37 @@ sysctl_form(const char *form, const ucl_object_t *f)
 	}
 	qn = json_quote(sy.edit);
 	qv = json_quote(v);
+	qj = json_quote(sy.jail);
+	/* A vnet jail's own are net.*; safe, where the host's timer runs:
+	 * reading the job confirms it. */
 	if (asprintf(&json, "{\"kind\":\"sysctl\",\"args\":[%s,%s],"
-	    "\"persist\":%s}", qn, qv, jbool(f, "persist") ? "true" : "false")
-	    == -1)
+	    "\"persist\":%s,\"safe\":true%s%s}", qn, qv, jbool(f, "persist") ?
+	    "true" : "false", sy.jail[0] != '\0' ? ",\"jail\":" : "",
+	    sy.jail[0] != '\0' ? qj : "") == -1)
 		abort();
 	free(qn);
 	free(qv);
-	snprintf(title, sizeof(title), "sysctl %s=%s", sy.edit, v);
-	job_send_host(s, json, title, JOB_SYSCTL, sy.edit);
+	free(qj);
+	snprintf(title, sizeof(title), "sysctl %s=%s%s%s", sy.edit, v,
+	    sy.jail[0] != '\0' ? " in " : "", sy.jail);
+	if (sy.jail[0] != '\0')
+		job_send(s, json, title, JOB_SYSCTL, sy.jail);
+	else
+		job_send_host(s, json, title, JOB_SYSCTL, sy.edit);
 	sy.edit[0] = '\0';
 	return (true);
+}
+
+/* Whose sysctls the tab shows: the host's, or a vnet jail's own. */
+void
+sysctl_set_jail(struct server *s, const char *jail)
+{
+
+	snprintf(sy.jail, sizeof(sy.jail), "%s", jail != NULL ? jail : "");
+	sy.edit[0] = '\0';
+	if (sy.jail[0] != '\0' && strncmp(sy.prefix, "net.", 4) != 0)
+		snprintf(sy.prefix, sizeof(sy.prefix), "net.");
+	refresh_sysctl(s, true);
 }
 
 static void

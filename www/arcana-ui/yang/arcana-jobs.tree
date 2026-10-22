@@ -132,6 +132,7 @@ module: arcana-jobs
        |        |     +---w interface    string
        |        |     +---w jail?        string
        |        |     +---w persist?     boolean
+       |        |     +---w safe?        boolean
        |        +--:(netgraph)
        |        |  +---w netgraph!
        |        |     +---w verb    enumeration
@@ -233,12 +234,14 @@ module: arcana-jobs
        |        |     +---w args*      string
        |        |     +---w jail?      string
        |        |     +---w persist?   boolean
+       |        |     +---w safe?      boolean
        |        +--:(geneve)
        |        |  +---w geneve!
        |        |     +---w verb       string
        |        |     +---w args*      string
        |        |     +---w jail?      string
        |        |     +---w persist?   boolean
+       |        |     +---w safe?      boolean
        |        +--:(process)
        |        |  +---w process!
        |        |     +---w verb    enumeration
@@ -363,6 +366,7 @@ module: arcana-jobs
        |        |     +---w verb    enumeration
        |        |     +---w args*   string
        |        |     +---w text?   string
+       |        |     +---w safe?   boolean
        |        +--:(geom)
        |        |  +---w geom!
        |        |     +---w verb    enumeration

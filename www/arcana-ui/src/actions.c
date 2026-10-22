@@ -743,6 +743,11 @@ job_poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (jstr(o, "job.state") != NULL)
 		snprintf(op->stage, sizeof(op->stage), "%s", jstr(o,
 		    "job.state"));
+	/* A safe change the host waits to hear about: shown with the time
+	 * it has; this read is what confirms it, through the console. */
+	op->confirm_by = jstr(o, "job.state") != NULL && strcmp(jstr(o,
+	    "job.state"), "unconfirmed") == 0 ? jint(o, "job.confirm_by", 0) :
+	    0;
 	if ((t = jget(o, "job.trace")) != NULL) {
 		if (op->trace != NULL)
 			ucl_object_unref(op->trace);
@@ -761,17 +766,28 @@ job_poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		snprintf(op->error, sizeof(op->error), "%s", err != NULL ? err :
 		    "failed");
 	{
-		char body[256];
+		char	body[256];
+		bool	not_undone;
 
+		/* A safe change that was not confirmed and could not be
+		 * taken back leaves the host changed: an alert, not a mere
+		 * failure, here and on every device that is told. */
+		not_undone = !ok && strstr(op->error, "could not be undone") !=
+		    NULL;
 		snprintf(body, sizeof(body), "%s on %s: %s", op->title,
 		    op->server, ok ? "done" : op->error);
+		if (not_undone)
+			toast(true, "Not undone: %s on %s was not confirmed, "
+			    "and the host could not take it back. Look at the "
+			    "host: %s", op->title, op->server, op->error);
 		/* Here, when it took a while; and every change that this
 		 * browser asked for, to the other devices that are told. */
-		if (op->finished - op->started >= NOTIFY_MS)
-			arc_notify(ok ? "Arcana: done" : "Arcana: failed", body);
-		if (op->what != JOB_WATCH)
-			arc_push_send(ok ? "Arcana: done" : "Arcana: failed",
-			    body);
+		if (not_undone || op->finished - op->started >= NOTIFY_MS)
+			arc_notify(not_undone ? "Arcana: NOT UNDONE" : ok ?
+			    "Arcana: done" : "Arcana: failed", body);
+		if (op->what != JOB_WATCH || not_undone)
+			arc_push_send(not_undone ? "Arcana: NOT UNDONE" : ok ?
+			    "Arcana: done" : "Arcana: failed", body);
 	}
 	job_finished(op, ok, err);
 }

@@ -95,6 +95,8 @@ static bool		rekeying;	/* a uswe tunnel's keys being turned */
 #define	USWE_LIFETIME_S	86400	/* a uswe tunnel's keys, unless the UCS says */
 
 static const char	*server_name_of(const char *);
+static int		 tunnel_mtu(const ucl_object_t *, const ucl_object_t *,
+		    const ucl_object_t *);
 static bool		 edge_ref(const char *, char *, size_t, char *, size_t,
 			    char *, size_t, char *, size_t);
 static ucl_object_t	*sdwan_read(const char *, char *, size_t, int *);
@@ -610,6 +612,41 @@ digest(const ucl_object_t *o, char *buf, size_t len)
 	return (buf);
 }
 
+/* The UCS End Point a tunnel's end is on, in the document; or NULL. */
+static const ucl_object_t *
+uep_of(struct plan *pl, const ucl_object_t *end)
+{
+	const ucl_object_t	*edge;
+
+	edge = by(ucl_object_lookup(pl->doc, "edges"), "server", str(end,
+	    "edge"));
+	return (by(ucl_object_lookup(edge, "ucs_end_points"), "id", str(end,
+	    "ucs_ep")));
+}
+
+/*
+ * This end's relay toward the far end's edge, if its UCS End Point names
+ * one: a FEC or obfuscating relay on the host (speederv2, say) that the
+ * wg peer's endpoint points at, the relay itself reaching the far
+ * underlay address at its port.
+ */
+static const ucl_object_t *
+relay_of(struct plan *pl, const ucl_object_t *a, const ucl_object_t *b)
+{
+	const ucl_object_t	*ua, *r;
+	ucl_object_iter_t	 it;
+
+	if ((ua = uep_of(pl, a)) == NULL)
+		return (NULL);
+	it = NULL;
+	while ((r = ucl_object_iterate(ucl_object_lookup(ua, "relay"), &it,
+	    true)) != NULL)
+		if (str(r, "to") != NULL && strcmp(str(r, "to"), str(b, "edge"))
+		    == 0)
+			return (r);
+	return (NULL);
+}
+
 /* One end of a tunnel: its interface, and how it knows the far end. */
 static void
 tvc_end(struct plan *pl, const ucl_object_t *t, int me)
@@ -619,6 +656,7 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 	const char		*kind, *id, *sid;
 	char			 ifn[32], key[200], h[20], port[80];
 	int64_t			 unit, fib;
+	int			 mtu;
 	bool			 ipsec;
 
 	a = ucl_array_find_index(ucl_object_lookup(t, "ends"),
@@ -655,6 +693,9 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 		    "args", args, "persist", B(true), NULL));
 		make(o, job("if-set", "interface", S(ifn), "fib", I(fib),
 		    "persist", B(true), NULL));
+		if ((mtu = tunnel_mtu(pl->doc, t, a)) > 0)
+			make(o, job("if-set", "interface", S(ifn), "mtu", I(mtu),
+			    "persist", B(true), NULL));
 		if (str(a, "inner4") != NULL) {
 			snprintf(port, sizeof(port), "%s/31", str(a, "inner4"));
 			make(o, job("if-address", "interface", S(ifn),
@@ -668,13 +709,21 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 		 */
 		p = job("if-create", "interface", S(ifn), "fib", I(fib),
 		    "description", S("sdwan"), "persist", B(true), NULL);
+		/* Its MTU, when the UCS says (auto: the overhead taken off
+		 * 1500), so the inner packets are not fragmented. */
+		if ((mtu = tunnel_mtu(pl->doc, t, a)) > 0)
+			put(p, "mtu", I(mtu));
 		if (strcmp(kind, "wg") != 0) {
 			put(p, "tunnel_local", S(str(a, "underlay")));
 			put(p, "tunnel_remote", S(str(b, "underlay")));
-			if (ucl_object_lookup(a, "vrf") != NULL)
-				put(p, "tunnelfib", I(ucl_object_toint(
-				    ucl_object_lookup(a, "vrf"))));
 		}
+		/* Its outer packets by the underlay's table, wg's too; not
+		 * through a relay, which is on this host, in the first
+		 * table. */
+		if (ucl_object_lookup(a, "vrf") != NULL && relay_of(pl, a, b) ==
+		    NULL)
+			put(p, "tunnelfib", I(ucl_object_toint(
+			    ucl_object_lookup(a, "vrf"))));
 		/* A USWE tunnel is an ipsec(4) interface whose SAs the agent
 		 * keys: its reqid is its unit. */
 		if (strcmp(kind, "uswe") == 0)
@@ -768,17 +817,30 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 	if (o == NULL)
 		return;
 	if (strcmp(kind, "wg") == 0) {
+		const ucl_object_t	*rl, *ub;
+
 		snprintf(key, sizeof(key), "${wg:%s:%s}", str(b, "edge"), str(b,
 		    "ifname"));
-		snprintf(port, sizeof(port), "%s%s%s:%jd", family(str(b,
-		    "underlay")) == AF_INET6 ? "[" : "", str(b, "underlay"),
-		    family(str(b, "underlay")) == AF_INET6 ? "]" : "",
-		    (intmax_t)(WG_PORT + ucl_object_toint(ucl_object_lookup(b,
-		    "unit"))));
+		/*
+		 * Where the far end is: through this end's relay when it
+		 * names one toward that edge; nowhere when the far end is
+		 * behind NAT (it finds this end, and the keepalive holds
+		 * the mapping); else the far underlay's address and port.
+		 */
+		if ((rl = relay_of(pl, a, b)) != NULL)
+			snprintf(port, sizeof(port), "%s", str(rl, "endpoint"));
+		else
+			snprintf(port, sizeof(port), "%s%s%s:%jd", family(str(b,
+			    "underlay")) == AF_INET6 ? "[" : "", str(b,
+			    "underlay"), family(str(b, "underlay")) == AF_INET6 ?
+			    "]" : "", (intmax_t)(WG_PORT + ucl_object_toint(
+			    ucl_object_lookup(b, "unit"))));
+		ub = uep_of(pl, b);
 		p = job("wireguard", "verb", S("peer"), "interface", S(ifn),
-		    "peer", S(key), "endpoint", S(port), "allowed_ips",
-		    S("0.0.0.0/0,::/0"), "keepalive", I(25), "persist", B(true),
-		    NULL);
+		    "peer", S(key), "allowed_ips", S("0.0.0.0/0,::/0"),
+		    "keepalive", I(25), "persist", B(true), NULL);
+		if (rl != NULL || ub == NULL || !ucl_flag(ub, "nat"))
+			put(p, "endpoint", S(port));
 	} else {
 		/*
 		 * One connection for the pair of outer addresses and the
@@ -886,6 +948,18 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					    "public") == 0 && strcmp(str(uy,
 					    "type"), "public") == 0))
 						continue;
+					/* Two Internet Accesses join only when
+					 * their tunnels are of one kind, IPsec
+					 * alike: K transports on a pair of edges
+					 * give K tunnels, not K squared. */
+					if (strcmp(str(x, "ucs"), str(y, "ucs"))
+					    != 0) {
+						tunnel_of(ux, &kind, &ipsec, &said);
+						tunnel_of(uy, &k2, &ip2, &said2);
+						if (strcmp(kind, k2) != 0 || ipsec !=
+						    ip2)
+							continue;
+					}
 					/* The control tunnel: over the UCS named,
 					 * between the host and each edge. */
 					if (pass == 1 && (strcmp(str(x, "ucs"), ctvc)
@@ -3071,6 +3145,17 @@ tunnel_listed(struct plan *pl, const ucl_object_t *t, const ucl_object_t *mine,
 			*prefp = ucl_object_toint(ucl_object_lookup(e,
 			    "preference"));
 	}
+	/* The policy naming none: the end point's own preference, the
+	 * edge's default order over its uplinks. */
+	if (*prefp == 0) {
+		const ucl_object_t	*edge, *uep;
+
+		edge = by(ucl_object_lookup(pl->doc, "edges"), "server",
+		    str(mine, "edge"));
+		uep = by(ucl_object_lookup(edge, "ucs_end_points"), "id",
+		    str(mine, "ucs_ep"));
+		*prefp = ucl_object_toint(ucl_object_lookup(uep, "preference"));
+	}
 	return (true);
 }
 
@@ -3307,11 +3392,14 @@ static const ucl_object_t *
 breakout_of(struct plan *pl, const ucl_object_t *sw, const char *sid,
     bool *localp, const char **bo_sid)
 {
-	const ucl_object_t	*edge, *uep;
+	const ucl_object_t	*edge, *uep, *best;
 	ucl_object_iter_t	 it, uit;
 	int			 far, pass;
+	int64_t			 bpref;
 
 	for (pass = 0; pass < 2; pass++) {
+		best = NULL;
+		bpref = -1;
 		it = NULL;
 		while ((edge = ucl_object_iterate(ucl_object_lookup(pl->doc,
 		    "edges"), &it, true)) != NULL) {
@@ -3330,10 +3418,25 @@ breakout_of(struct plan *pl, const ucl_object_t *sw, const char *sid,
 				    NULL && tunnel_for(pl, str(sw, "id"), sid,
 				    str(edge, "server"), AF_INET6, &far) == NULL)
 					continue;
-				*localp = pass == 0;
-				*bo_sid = str(edge, "server");
-				return (uep);
+				/* Of the edge's own, the one preferred most;
+				 * elsewhere the first found. */
+				if (pass == 1) {
+					*localp = false;
+					*bo_sid = str(edge, "server");
+					return (uep);
+				}
+				if (ucl_object_toint(ucl_object_lookup(uep,
+				    "preference")) > bpref) {
+					bpref = ucl_object_toint(
+					    ucl_object_lookup(uep, "preference"));
+					best = uep;
+					*bo_sid = str(edge, "server");
+				}
 			}
+		}
+		if (best != NULL) {
+			*localp = true;
+			return (best);
 		}
 	}
 	return (NULL);
@@ -3715,20 +3818,17 @@ app_has(const ucl_object_t *afs, const char *app)
  * gif and geneve, and 20 more over an IPv6 underlay, less the inner
  * headers (40 for IPv4, 60 for IPv6); 0 when none is to be clamped.
  */
+/*
+ * What a tunnel's kind takes off the outer MTU: its own header (gre
+ * 24 with its key, gif 20, geneve 50, wg 60, uswe 73), IPsec's 64 when
+ * ESP is under it, and 20 more when the outer packets are IPv6.
+ */
 static int
-tunnel_mss(const ucl_object_t *doc, const ucl_object_t *t,
-    const ucl_object_t *end, int fam)
+tunnel_overhead(const ucl_object_t *t, const ucl_object_t *end)
 {
-	const ucl_object_t	*u, *tt, *v;
-	const char		*kind;
-	int			 mtu, over;
+	const char	*kind;
+	int		 over;
 
-	if ((u = by(ucl_object_lookup(doc, "ucs"), "id", str(t, "ucs"))) ==
-	    NULL || (tt = ucl_object_lookup(u, "tunnel")) == NULL ||
-	    (v = ucl_object_lookup(tt, "mss")) == NULL)
-		return (0);
-	if (ucl_object_type(v) == UCL_INT)
-		return ((int)ucl_object_toint(v));
 	kind = str(t, "kind") != NULL ? str(t, "kind") : "gre";
 	over = strcmp(kind, "gif") == 0 ? 20 : strcmp(kind, "geneve") == 0 ?
 	    50 : strcmp(kind, "wg") == 0 ? 60 : strcmp(kind, "uswe") == 0 ? 73 :
@@ -3738,7 +3838,47 @@ tunnel_mss(const ucl_object_t *doc, const ucl_object_t *t,
 	if (str(end, "underlay") != NULL && strchr(str(end, "underlay"), ':')
 	    != NULL)
 		over += 20;
-	mtu = 1500 - over;
+	return (over);
+}
+
+/*
+ * The MTU a tunnel's interface is made with: the UCS's tunnel.mtu in
+ * bytes, or with auto 1500 less the overhead (an underlay of 1500 is
+ * what the Internet gives); 0 when none is set, the kernel's default.
+ * Both ends of a tunnel have the same kind and outer family, so both
+ * compute the same.
+ */
+static int
+tunnel_mtu(const ucl_object_t *doc, const ucl_object_t *t,
+    const ucl_object_t *end)
+{
+	const ucl_object_t	*u, *tt, *v;
+
+	if ((u = by(ucl_object_lookup(doc, "ucs"), "id", str(t, "ucs"))) ==
+	    NULL || (tt = ucl_object_lookup(u, "tunnel")) == NULL ||
+	    (v = ucl_object_lookup(tt, "mtu")) == NULL)
+		return (0);
+	if (ucl_object_type(v) == UCL_INT)
+		return ((int)ucl_object_toint(v));
+	return (1500 - tunnel_overhead(t, end));
+}
+
+static int
+tunnel_mss(const ucl_object_t *doc, const ucl_object_t *t,
+    const ucl_object_t *end, int fam)
+{
+	const ucl_object_t	*u, *tt, *v;
+	int			 mtu;
+
+	if ((u = by(ucl_object_lookup(doc, "ucs"), "id", str(t, "ucs"))) ==
+	    NULL || (tt = ucl_object_lookup(u, "tunnel")) == NULL ||
+	    (v = ucl_object_lookup(tt, "mss")) == NULL)
+		return (0);
+	if (ucl_object_type(v) == UCL_INT)
+		return ((int)ucl_object_toint(v));
+	/* auto: from the tunnel's MTU, set or computed, less the headers. */
+	if ((mtu = tunnel_mtu(doc, t, end)) == 0)
+		mtu = 1500 - tunnel_overhead(t, end);
 	return (mtu - (fam == 6 ? 60 : 40));
 }
 
@@ -3966,6 +4106,46 @@ rules_build(struct plan *pl, const char *sid)
 	objects = ucl_object_typed_new(UCL_ARRAY);
 	if ((dn = calloc(1, sizeof(*dn))) == NULL)
 		return (false);
+	/*
+	 * A relay's own flow (its process on this host, in the first
+	 * table, reaching the far underlay at the relay's port) goes by
+	 * the underlay's table like the tunnel's outer packets would.
+	 */
+	{
+		const ucl_object_t	*redge, *ue, *rl, *fe, *fu;
+		ucl_object_iter_t	 reit, rrit, rfit;
+		const char		*rfar;
+
+		redge = by(ucl_object_lookup(pl->doc, "edges"), "server", sid);
+		reit = NULL;
+		while ((ue = ucl_object_iterate(ucl_object_lookup(redge,
+		    "ucs_end_points"), &reit, true)) != NULL) {
+			if (ucl_object_lookup(ue, "vrf") == NULL)
+				continue;
+			rrit = NULL;
+			while ((rl = ucl_object_iterate(ucl_object_lookup(ue,
+			    "relay"), &rrit, true)) != NULL) {
+				fe = by(ucl_object_lookup(pl->doc, "edges"),
+				    "server", str(rl, "to"));
+				rfit = NULL;
+				rfar = NULL;
+				while (rfar == NULL && (fu = ucl_object_iterate(
+				    ucl_object_lookup(fe, "ucs_end_points"), &rfit,
+				    true)) != NULL)
+					if (str(fu, "ucs") != NULL && strcmp(str(fu,
+					    "ucs"), str(ue, "ucs")) == 0)
+						rfar = ucs_address(pl, str(rl, "to"),
+						    fu);
+				if (rfar != NULL)
+					rule(pre, RULE_FROM + 1, "setfib %jd udp from "
+					    "me to %s dst-port %jd out",
+					    (intmax_t)ucl_object_toint(
+					    ucl_object_lookup(ue, "vrf")), rfar,
+					    (intmax_t)ucl_object_toint(
+					    ucl_object_lookup(rl, "port")));
+			}
+		}
+	}
 	dn->next = DN_FROM;
 	next = RULE_FROM + 2;
 	any = false;
@@ -6354,11 +6534,11 @@ static void *
 run_main(void *arg)
 {
 	struct run		*r = arg;
-	ucl_object_t		*s, *ap;
+	ucl_object_t		*s, *ap, *made_now, *failed_at;
 	ucl_object_iter_t	 it;
 	const char		*ch;
 	int			 ph;
-	bool			 ok;
+	bool			 ok, rolled;
 
 	ok = true;
 	/* Taken away first, the last made first. */
@@ -6394,7 +6574,11 @@ run_main(void *arg)
 			    "server")), str(s, "key"));
 			step_set(r, s, "done", NULL);
 		}
-	/* Then made, step by step, every edge before the next step. */
+	/* Then made, step by step, every edge before the next step; what
+	 * this apply makes is remembered, to be taken away again should
+	 * a later step fail. */
+	made_now = ucl_object_typed_new(UCL_ARRAY);
+	failed_at = NULL;
 	for (ph = 1; ok && ph <= PHASES; ph++) {
 		it = NULL;
 		while (ok && (s = (ucl_object_t *)(uintptr_t)ucl_object_iterate(
@@ -6407,8 +6591,32 @@ run_main(void *arg)
 			put(s, "unmake", ucl_object_copy(ucl_object_lookup(s,
 			    "unmake_new")));
 			ok = do_make(r, s);
+			if (ok)
+				ucl_array_append(made_now, ucl_object_ref(s));
+			else
+				failed_at = s;
 		}
 	}
+	/*
+	 * A step failed: the apply is rolled back whole.  Everything it
+	 * made before, the last first, is taken away again by the unmake
+	 * jobs that making it left (what the apply took away at its start
+	 * is not made again: it is gone).  The edges are left as they
+	 * were before the apply, but for that.
+	 */
+	rolled = false;
+	while (!ok && ucl_array_size(made_now) > 0) {
+		ucl_object_t	*m = ucl_array_pop_last(made_now);
+		bool		 undone;
+
+		rolled = true;
+		undone = do_unmake(r, m);
+		step_set(r, m, undone ? "undone" : "undo failed", undone ?
+		    "taken away again: a step after it failed" : str(m,
+		    "detail"));
+		ucl_object_unref(m);
+	}
+	ucl_object_unref(made_now);
 	/* All made: only the allocations of what is there now are kept. */
 	if (ok)
 		put(r->st, "alloc", ucl_object_ref(r->alloc));
@@ -6418,7 +6626,10 @@ run_main(void *arg)
 	    r->steps, &it, true)) != NULL)
 		if (strcmp(str(s, "state"), "pending") == 0)
 			put(s, "state", S("not run"));
-	put(ap, "state", S(ok ? "done" : "failed"));
+	put(ap, "state", S(ok ? "done" : rolled ? "rolled back" : "failed"));
+	if (failed_at != NULL)
+		put(ap, "failed_step", S(str(failed_at, "title") != NULL ?
+		    str(failed_at, "title") : str(failed_at, "key")));
 	put(ap, "ended", I(time(NULL)));
 	/* Into the history: when, how it went, what it did; 50 kept. */
 	{
@@ -6475,7 +6686,10 @@ run_main(void *arg)
 		put(h, "started", I(ucl_object_toint(ucl_object_lookup(ap,
 		    "started"))));
 		put(h, "ended", I(time(NULL)));
-		put(h, "state", S(ok ? "done" : "failed"));
+		put(h, "state", S(ok ? "done" : rolled ? "rolled back" :
+		    "failed"));
+		if (failed_at != NULL)
+			put(h, "failed_step", S(str(ap, "failed_step")));
 		put(h, "fresh", B(ucl_flag(ap, "fresh")));
 		put(h, "steps", I(nsteps));
 		put(h, "made", I(made));
@@ -6489,7 +6703,7 @@ run_main(void *arg)
 	}
 	state_save(r->st);
 	thread_log(ok ? LOG_NOTICE : LOG_ERR, "sdwan: apply %s", ok ? "done" :
-	    "failed");
+	    rolled ? "rolled back" : "failed");
 	ucl_object_unref(r->st);
 	ucl_object_unref(r->alloc);
 	ucl_object_unref(r->keys);
