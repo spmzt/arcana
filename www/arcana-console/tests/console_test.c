@@ -6335,36 +6335,6 @@ ATF_TC_BODY(sdwan_jail, tc)
 	    strstr(r.body, "an edge that is a vnet jail has no ntp yet") != NULL,
 	    "%s", r.body);
 	resp_free(&r);
-	/*
-	 * A step that fails after others were made rolls the apply back:
-	 * what it made before is taken away again, the last first, and
-	 * the apply says which step failed.  A route the host refuses
-	 * (10.66.0.0/16, the stand-in's) comes after the tunnels; made
-	 * all again, the tunnels are destroyed once at the start and
-	 * once more by the rollback.
-	 */
-	ATF_REQUIRE(swap_in(doc, "\"ntp\":[\"10.0.0.1\"],", "", t1,
-	    sizeof(t1)));
-	ATF_REQUIRE(swap_in(t1, "\"prefix\":\"10.1.8.0/22\"",
-	    "\"prefix\":\"10.66.0.0/16\"", doc, sizeof(doc)));
-	ATF_REQUIRE(swap_in(doc, "\"version\":2", "\"version\":3", t1,
-	    sizeof(t1)));
-	http("PUT", "/api/sdwan", t1, &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	ATF_REQUIRE(system(": > ifconfig.log") == 0);
-	http("POST", "/api/sdwan/apply", "{\"fresh\":true}", &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	sdwan_wait(&r);
-	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "rolled back") == 0 &&
-	    jstr(&r, "apply.failed_step") != NULL && strstr(r.body,
-	    "\"state\":\"undone\"") != NULL && strstr(r.body, "taken away "
-	    "again: a step after it failed") != NULL, "%s", r.body);
-	ATF_CHECK_MSG(system("test \"$(grep -c '^gre100 destroy' ifconfig.log)\" "
-	    "-ge 2 && grep -q '^gre100 create' ifconfig.log") == 0,
-	    "the tunnel was not made and taken away again");
-	resp_free(&r);
 }
 
 CONSOLE_TC(sdwan_mesh, "Several transports on a pair of edges: two Internet "
@@ -6476,6 +6446,21 @@ ATF_TC_BODY(sdwan_mesh, tc)
 	    && strstr(r.body, "\"endpoint\":\"192.0.2.2:51101\"") != NULL &&
 	    strstr(r.body, "setfib 2 udp from me to 192.0.2.1 dst-port 14350 "
 	    "out") != NULL, "%s", r.body);
+	resp_free(&r);
+	/*
+	 * Two tunnels to the same edge: a far prefix's route goes over
+	 * both at once, one multipath route (ECMP) the kernel shares the
+	 * flows over, not kept in rc.conf; and BIRD merges the paths iBGP
+	 * brings.
+	 */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG((strstr(r.body, "\"gateway\":\"100.64.0.0,100.64.0.2\"")
+	    != NULL || strstr(r.body, "\"gateway\":\"100.64.0.2,100.64.0.0\"")
+	    != NULL || strstr(r.body, "\"gateway\":\"100.64.0.1,100.64.0.3\"")
+	    != NULL || strstr(r.body, "\"gateway\":\"100.64.0.3,100.64.0.1\"")
+	    != NULL) && strstr(r.body, "merge paths on") != NULL, "%s",
+	    r.body);
 	resp_free(&r);
 	/* A relay toward no edge, or on an underlay that is not WireGuard,
 	 * is refused. */
@@ -6969,7 +6954,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "console: SD-WAN service acme at a, in routing table 1.") != NULL,
 	    "%s", r.body);
 	ATF_CHECK(strstr(r.body, "router id 100.64.0.0;") != NULL);
-	ATF_CHECK(strstr(r.body, "kernel table 1;\\n\\tlearn;\\n\\tpersist;") !=
+	ATF_CHECK(strstr(r.body, "kernel table 1;\\n\\tlearn;\\n\\tmerge paths on;\\n\\tpersist;") !=
 	    NULL);
 	ATF_CHECK_MSG(strstr(r.body, "protocol direct {\\n\\tipv4;\\n\\tipv6;\\n"
 	    "\\tinterface \\\"lo0\\\", \\\"gre100\\\", \\\"gif102\\\", \\\"gre104\\\";"
@@ -7746,6 +7731,36 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	ATF_CHECK(access("sdwan-proxy-sec-web.conf", F_OK) != 0);
 	ATF_CHECK(access("sdwan-proxy-sw1.conf", F_OK) == 0);
+	/*
+	 * A step that fails after others were made rolls the apply back:
+	 * what it made before is taken away again, the last first, and
+	 * the apply says which step failed.  A route the host refuses
+	 * (10.66.0.0/16, the stand-in's, as a UNI's static route the far
+	 * edge gets a route to) comes after the tunnels; made all again,
+	 * the tunnels are destroyed once at the start and once more by
+	 * the rollback.
+	 */
+	http("GET", "/api/sdwan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(swap_in(r.body, "\"prefix\":\"10.1.8.0/22\",\"next_hop\"",
+	    "\"prefix\":\"10.66.0.0/16\",\"next_hop\"", t1, sizeof(t1)));
+	resp_free(&r);
+	http("PUT", "/api/sdwan", t1, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE(system(": > ifconfig.log") == 0);
+	http("POST", "/api/sdwan/apply", "{\"fresh\":true}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "rolled back") == 0 &&
+	    jstr(&r, "apply.failed_step") != NULL && strstr(r.body,
+	    "\"state\":\"undone\"") != NULL && strstr(r.body, "taken away "
+	    "again: a step after it failed") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(system("test \"$(grep -c '^gre100 destroy' ifconfig.log)\" "
+	    "-ge 2 && grep -q '^gre100 create' ifconfig.log") == 0,
+	    "the tunnel was not made and taken away again");
+	resp_free(&r);
 }
 
 /*

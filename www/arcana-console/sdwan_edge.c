@@ -1207,6 +1207,74 @@ tunnel_for(struct plan *pl, const char *swvc, const char *a, const char *b,
 	return (best);
 }
 
+/*
+ * Every tunnel a route from edge a to edge b may take for af, as the
+ * gateways of one multipath route (ECMP): the far inner addresses of
+ * the tunnels that are no backup, with , between; of the backups when
+ * there is no other.  "" when none.
+ */
+static const char *
+tunnels_for(struct plan *pl, const char *swvc, const char *a, const char *b,
+    int af, char *buf, size_t len)
+{
+	const ucl_object_t	*t, *e0, *e1, *far;
+	ucl_object_iter_t	 it;
+	int			 pass, n;
+
+	buf[0] = '\0';
+	for (pass = 0; pass < 2 && buf[0] == '\0'; pass++) {
+		n = 0;
+		it = NULL;
+		while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
+			if (strcmp(str(t, "swvc"), swvc) != 0 || ucl_flag(t,
+			    "control") || ucl_flag(t, "backup") != (pass == 1))
+				continue;
+			e0 = ucl_array_find_index(ucl_object_lookup(t, "ends"), 0);
+			e1 = ucl_array_find_index(ucl_object_lookup(t, "ends"), 1);
+			if (strcmp(str(e0, "edge"), a) == 0 && strcmp(str(e1,
+			    "edge"), b) == 0)
+				far = e1;
+			else if (strcmp(str(e1, "edge"), a) == 0 && strcmp(str(e0,
+			    "edge"), b) == 0)
+				far = e0;
+			else
+				continue;
+			if (str(far, af == AF_INET ? "inner4" : "inner6") == NULL)
+				continue;
+			if (n++ > 0)
+				strlcat(buf, ",", len);
+			strlcat(buf, str(far, af == AF_INET ? "inner4" : "inner6"),
+			    len);
+		}
+	}
+	return (buf);
+}
+
+/*
+ * A route to a far prefix over every tunnel to its edge at once: one
+ * multipath route, which the kernel shares the flows over.  Not kept in
+ * rc.conf (it keeps one gateway); taken away whole, without a gateway,
+ * which the host cannot undo by itself: not in safe mode.
+ */
+static void
+route_multi_obj(struct plan *pl, const char *sid, const ucl_object_t *sw,
+    const char *prefix, const char *gws, const char *why)
+{
+	ucl_object_t	*o;
+	char		 key[200];
+	int64_t		 fib;
+
+	fib = ucl_object_toint(ucl_object_lookup(sw, "fib"));
+	snprintf(key, sizeof(key), "route:%jd:%s", (intmax_t)fib, prefix);
+	if ((o = object(pl, sid, key, PH_ROUTE, "%s via %s, fib %jd (%s)",
+	    prefix, gws, (intmax_t)fib, why)) == NULL)
+		return;
+	make(o, job("route", "destination", S(prefix), "gateway", S(gws), "fib",
+	    I(fib), "persist", B(false), NULL));
+	unmake(o, job("route", "destination", S(prefix), "fib", I(fib),
+	    "remove", B(true), "persist", B(false), "safe", B(false), NULL));
+}
+
 /* The prefixes at an end point's UNI: its subnets and static routes. */
 static void
 uni_prefixes(const ucl_object_t *ep, ucl_object_t *out)
@@ -5021,11 +5089,16 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	 * the document's routes stay as they are and BGP's fill in the
 	 * rest; what is learned here goes in, but not the connected, nor
 	 * a route to nowhere. */
+	/* merge paths: the iBGP sessions over parallel tunnels, each with
+	 * next hop self, give one prefix several equal paths, which the
+	 * kernel then carries as one multipath route (ECMP). */
 	kore_buf_appendf(b, "protocol kernel kernel4 {\n\tkernel table %jd;\n\tlearn;\n"
+	    "\tmerge paths on;\n"
 	    "\tpersist;\n\tipv4 {\n\t\timport filter { preference = 200; accept; "
 	    "};\n\t\texport where source != RTS_DEVICE && source != RTS_INHERIT "
 	    "&& dest = RTD_UNICAST;\n\t};\n}\n\nprotocol kernel kernel6 {\n\t"
-	    "kernel table %jd;\n\tlearn;\n\tpersist;\n\tipv6 {\n\t\timport filter { "
+	    "kernel table %jd;\n\tlearn;\n\tmerge paths on;\n\tpersist;\n\tipv6 {"
+	    "\n\t\timport filter { "
 	    "preference = 200; accept; };\n\t\texport where source != RTS_DEVICE "
 	    "&& source != RTS_INHERIT && dest = RTD_UNICAST;\n\t};\n}\n\n",
 	    (intmax_t)
@@ -5767,6 +5840,7 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 			    "end_points"), &it3, true)) != NULL) {
 				const ucl_object_t	*p, *tt, *fe;
 				ucl_object_iter_t	 pit;
+				char			 gws[600];
 
 				if (strcmp(str(ep, "edge"), str(ep2, "edge")) ==
 				    0)
@@ -5803,11 +5877,24 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 					fe = ucl_array_find_index(
 					    ucl_object_lookup(tt, "ends"),
 					    (unsigned int)far);
-					route_obj(pl, str(ep, "edge"), sw,
-					    ucl_object_tostring(p), str(fe,
-					    family(ucl_object_tostring(p)) ==
-					    AF_INET ? "inner4" : "inner6"),
-					    str(ep2, "id"));
+					/* Over every tunnel to that edge at
+					 * once when there are several (ECMP);
+					 * by the one when there is one. */
+					(void)tunnels_for(pl, str(sw, "id"),
+					    str(ep, "edge"), str(ep2, "edge"),
+					    family(ucl_object_tostring(p)), gws,
+					    sizeof(gws));
+					if (strchr(gws, ',') != NULL)
+						route_multi_obj(pl, str(ep,
+						    "edge"), sw,
+						    ucl_object_tostring(p), gws,
+						    str(ep2, "id"));
+					else
+						route_obj(pl, str(ep, "edge"), sw,
+						    ucl_object_tostring(p), str(fe,
+						    family(ucl_object_tostring(p))
+						    == AF_INET ? "inner4" :
+						    "inner6"), str(ep2, "id"));
 				}
 				ucl_object_unref(pfx);
 			}
