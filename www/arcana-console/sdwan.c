@@ -1298,6 +1298,14 @@ uni(struct ck *c, const ucl_object_t *u, struct pfx *nets, int *nnets)
 	if (ucl_object_lookup(u, "max_frame") != NULL && !is_int(
 	    ucl_object_lookup(u, "max_frame"), 1522, 65535, NULL))
 		return (fail(c, "its UNI's max_frame is 1522 or more (R126)"));
+	/* CLAT (RFC 6877, Arcana's own): the IPv4 hosts behind the UNI as
+	 * IPv6 to the service's NAT64, by a /96 of their own. */
+	if (ucl_object_lookup(u, "clat") != NULL && !is_null(ucl_object_lookup(
+	    u, "clat")) && (ucl_object_type(ucl_object_lookup(u, "clat")) !=
+	    UCL_OBJECT || !prefix(str(ucl_object_lookup(u, "clat"), "prefix"),
+	    &p, false) || p.af != AF_INET6 || p.len != 96))
+		return (fail(c, "its UNI's clat is an object with a prefix, an "
+		    "IPv6 /96 of its own (RFC 6877)"));
 	if (!connection(c, ucl_object_lookup(u, "ipv4"), AF_INET, &none4) ||
 	    !connection(c, ucl_object_lookup(u, "ipv6"), AF_INET6, &none6))
 		return (false);
@@ -1663,6 +1671,34 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 		    "underlay's"));
 	if (!domains(c, sw))
 		return (false);
+	/* NAT64 (RFC 6146, Arcana's own beside MEF 70.2 §10.5): the service's
+	 * IPv6 hosts reach the Internet's IPv4 through one edge, by a
+	 * prefix (64:ff9b::/96 as a rule) and a pool of IPv4 addresses of
+	 * the edge's. */
+	if ((v = ucl_object_lookup(sw, "nat64")) != NULL && !is_null(v)) {
+		struct pfx	 q6, q4;
+		const ucl_object_t	*xe;
+		ucl_object_iter_t	 xit;
+		bool			 found = false;
+
+		if (ucl_object_type(v) != UCL_OBJECT || !prefix(str(v, "prefix"),
+		    &q6, false) || q6.af != AF_INET6 || q6.len != 96)
+			return (fail(c, "nat64 is an object: prefix, an IPv6 /96 "
+			    "(64:ff9b::/96 as a rule), pool, an IPv4 prefix, edge, "
+			    "where it is done"));
+		if (!prefix(str(v, "pool"), &q4, false) || q4.af != AF_INET)
+			return (fail(c, "nat64: pool is an IPv4 prefix of the "
+			    "edge's, which its NAT takes out"));
+		xit = NULL;
+		while ((xe = ucl_object_iterate(ucl_object_lookup(doc, "edges"),
+		    &xit, true)) != NULL)
+			if (str(xe, "server") != NULL && str(v, "edge") != NULL &&
+			    strcmp(str(xe, "server"), str(v, "edge")) == 0)
+				found = true;
+		if (!found)
+			return (fail(c, "nat64: edge is one of the edges, the one "
+			    "that translates and breaks out"));
+	}
 	/* iBGP between the edges' loopbacks (Arcana's own): one session with
 	 * each edge, multihop, over every tunnel at once; needs BFD, and no
 	 * control plane, for the edges carrying transit reflect themselves. */
@@ -1990,6 +2026,13 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 		} else {
 			if (!uni(c, u, nets, &nnets))
 				return (false);
+			if (ucl_object_lookup(u, "clat") != NULL && !is_null(
+			    ucl_object_lookup(u, "clat")) && (ucl_object_lookup(sw,
+			    "nat64") == NULL || is_null(ucl_object_lookup(sw,
+			    "nat64"))))
+				return (fail(c, "its UNI's clat needs the service's "
+				    "nat64: that is what carries its IPv4 to the "
+				    "Internet"));
 			if (ucl_object_lookup(seen_uni, str(u, "id")) != NULL)
 				return (fail(c, "UNI %s is another end point's "
 				    "too (R3, R16)", str(u, "id")));

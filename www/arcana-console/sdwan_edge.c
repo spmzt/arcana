@@ -101,6 +101,8 @@ static bool		 edge_ref(const char *, char *, size_t, char *, size_t,
 			    char *, size_t, char *, size_t);
 static ucl_object_t	*sdwan_read(const char *, char *, size_t, int *);
 static bool		 jail_kind_ok(const char *, char *, size_t);
+static const char	*symbol(const char *, char *, size_t);
+static bool		 is_nullish(const ucl_object_t *);
 struct plan;
 static const char *uni_ifname(struct plan *, const ucl_object_t *,
 		    const ucl_object_t *, char *, size_t);
@@ -1480,6 +1482,10 @@ uni_prefixes(const ucl_object_t *ep, ucl_object_t *out)
 	while ((e = ucl_object_iterate(ucl_object_lookup(u, "routes"), &it,
 	    true)) != NULL)
 		ucl_array_append(out, S(str(e, "prefix")));
+	/* Its CLAT prefix: the IPv4 hosts behind it, as IPv6 (RFC 6877). */
+	if (str(ucl_object_lookup(u, "clat"), "prefix") != NULL)
+		ucl_array_append(out, S(str(ucl_object_lookup(u, "clat"),
+		    "prefix")));
 }
 
 /* A route in a table of a service's, made and taken away. */
@@ -4320,6 +4326,28 @@ group_rules(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
 	}
 }
 
+/* A kernel module loaded and kept on an edge, once (an object key). */
+static void
+kmod_obj(struct plan *pl, const char *sid, const char *key, const char *module,
+    const char *what)
+{
+	ucl_object_t	*ko, *ka;
+
+	if (by(ucl_object_lookup(pl->edges, sid), "key", key) != NULL)
+		return;
+	ko = object(pl, sid, key, PH_FIBS, "%s loaded and kept, for %s", module,
+	    what);
+	if (ko == NULL)
+		return;
+	put(ko, "make", ucl_object_typed_new(UCL_ARRAY));
+	ka = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(ka, S(module));
+	make(ko, job("kmod", "verb", S("load"), "args", ka, NULL));
+	ka = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(ka, S(module));
+	make(ko, job("kmod", "verb", S("keep"), "args", ka, NULL));
+}
+
 /*
  * The rules of one edge, and its steering: for each service with an
  * end point here, the zone table and each zone's block, each flow
@@ -4331,6 +4359,8 @@ static bool
 rules_build(struct plan *pl, const char *sid)
 {
 	const ucl_object_t	*sw, *ep, *zone, *afs, *pol, *v, *bo, *r, *sec;
+	const ucl_object_t	*n64;
+	char			 n64n[32];
 	ucl_object_iter_t	 it, eit, zit, ait;
 	ucl_object_t		*o, *tables, *rules, *entries, *zt, *j, *pre;
 	ucl_object_t		*objects, *kt;
@@ -4572,6 +4602,55 @@ rules_build(struct plan *pl, const char *sid)
 			while ((p = ucl_object_iterate(pfx, &pit, true)) != NULL)
 				entry(kt, ucl_object_tostring(p), "0");
 			ucl_object_unref(pfx);
+		}
+		/*
+		 * NAT64 (RFC 6146, Arcana's own beside MEF 70.2 §10.5): at the
+		 * edge named, the IPv6 of the service's hosts to the Internet's
+		 * IPv4 through ipfw's nat64lsn, its pool among the known
+		 * prefixes so that the NAT of the breakout takes it out; CLAT
+		 * (RFC 6877) at a UNI that says so, nat64clat: the IPv4 hosts
+		 * behind it carried as IPv6 to the NAT64, and back.  Before the
+		 * zones' rules, which steer what is left.
+		 */
+		n64 = is_nullish(ucl_object_lookup(sw, "nat64")) ? NULL :
+		    ucl_object_lookup(sw, "nat64");
+		snprintf(n64n, sizeof(n64n), "sw%jd_64", (intmax_t)
+		    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+		if (n64 != NULL && str(n64, "edge") != NULL && strcmp(str(n64,
+		    "edge"), sid) == 0 && str(n64, "pool") != NULL && str(n64,
+		    "prefix") != NULL) {
+			entry(kt, str(n64, "pool"), "0");
+			snprintf(words, sizeof(words), "nat64lsn %s create prefix4 %s "
+			    "prefix6 %s allow_private", n64n, str(n64, "pool"), str(
+			    n64, "prefix"));
+			ucl_array_append(objects, S(words));
+			rule(rules, RULE_FROM, "nat64lsn %s ip6 from table(%s) to %s "
+			    "in", n64n, kname, str(n64, "prefix"));
+			kmod_obj(pl, sid, "nat64", "ipfw_nat64", "NAT64 and CLAT");
+		}
+		eit = NULL;
+		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+		    "end_points"), &eit, true)) != NULL) {
+			const ucl_object_t	*cl;
+			char			 cn[64], csym[40];
+
+			cl = ucl_object_lookup(ucl_object_lookup(ep, "uni"), "clat");
+			if (strcmp(str(ep, "edge"), sid) != 0 || str(cl, "prefix") ==
+			    NULL || n64 == NULL || str(n64, "prefix") == NULL)
+				continue;
+			uni = uni_ifname(pl, sw, ep, ifn, sizeof(ifn));
+			symbol(str(ep, "id"), csym, sizeof(csym));
+			snprintf(cn, sizeof(cn), "sw%jd_c%.20s", (intmax_t)
+			    ucl_object_toint(ucl_object_lookup(sw, "fib")), csym);
+			snprintf(words, sizeof(words), "nat64clat %s create clat_prefix "
+			    "%s plat_prefix %s", cn, str(cl, "prefix"), str(n64,
+			    "prefix"));
+			ucl_array_append(objects, S(words));
+			rule(rules, RULE_FROM, "nat64clat %s ip4 from any to not "
+			    "table(%s) in recv %s", cn, kname, uni);
+			rule(rules, RULE_FROM, "nat64clat %s ip6 from any to %s in", cn,
+			    str(cl, "prefix"));
+			kmod_obj(pl, sid, "nat64", "ipfw_nat64", "NAT64 and CLAT");
 		}
 		bo = breakout_of(pl, sw, sid, &local, &bo_sid);
 		breaks = false;
@@ -5043,6 +5122,13 @@ rules_build(struct plan *pl, const char *sid)
 				rule(pre, RULE_FROM + 1, "setfib %jd ip from any "
 				    "to table(%s) in recv %s", (intmax_t)bo_fib_of(
 				    sw), kname, bif);
+				/* What comes back for the NAT64's pool, once the NAT
+				 * gave it back: IPv6 again, to the host it is for. */
+				if (n64 != NULL && str(n64, "edge") != NULL && strcmp(
+				    str(n64, "edge"), sid) == 0 && str(n64, "pool") !=
+				    NULL)
+					rule(pre, RULE_FROM + 1, "nat64lsn %s ip4 from any "
+					    "to %s in recv %s", n64n, str(n64, "pool"), bif);
 			}
 		}
 	}

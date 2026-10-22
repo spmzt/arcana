@@ -74,8 +74,8 @@ struct table {
 
 /* A dummynet pipe or queue, or a nat instance: its kind and number. */
 struct object {
-	char	kind[8];
-	char	num[8];
+	char	kind[12];
+	char	num[32];	/* a number; a nat64 instance's name */
 };
 
 struct cand {
@@ -930,10 +930,12 @@ rules_clear(struct work *w, const struct edge *e, int s)
 		snprintf(alt, sizeof(alt), "%s_alt", e->tables[i].name);
 		(void)ipfw_words(w, NULL, 1, "table", alt, "destroy", NULL);
 	}
-	/* The queues before the pipes they are in. */
+	/* The queues before the pipes they are in; a NAT64 instance is
+	 * destroyed, not deleted. */
 	for (i = e->nobjects - 1; i >= 0; i--)
 		(void)ipfw_words(w, NULL, 1, e->objects[i].kind,
-		    e->objects[i].num, "delete", NULL);
+		    e->objects[i].num, strncmp(e->objects[i].kind, "nat64", 5) ==
+		    0 ? "destroy" : "delete", NULL);
 }
 
 /*
@@ -979,18 +981,31 @@ object_ok(const char *line, struct object *o)
 	n = strcspn(line, " ");
 	if (n >= sizeof(o->kind) || (strncmp(line, "pipe", n) != 0 && strncmp(
 	    line, "queue", n) != 0 && strncmp(line, "sched", n) != 0 &&
-	    strncmp(line, "nat", n) != 0))
+	    strncmp(line, "nat", n) != 0 && strncmp(line, "nat64lsn", n) != 0 &&
+	    strncmp(line, "nat64clat", n) != 0))
 		return (false);
 	snprintf(o->kind, sizeof(o->kind), "%.*s", (int)n, line);
 	p = line + n + strspn(line + n, " ");
-	n = strspn(p, "0123456789");
-	if (n == 0 || n >= sizeof(o->num) || p[n] != ' ' || strtol(p, NULL,
-	    10) < 1 || strtol(p, NULL, 10) > 65535)
-		return (false);
-	snprintf(o->num, sizeof(o->num), "%.*s", (int)n, p);
-	p += n + 1;
-	if (strncmp(p, "config ", 7) != 0)
-		return (false);
+	if (strncmp(o->kind, "nat64", 5) == 0) {
+		/* A NAT64 instance is named, and created, not configured. */
+		for (n = 0; isalnum((unsigned char)p[n]) || p[n] == '_'; n++)
+			;
+		if (n == 0 || n >= sizeof(o->num) || p[n] != ' ')
+			return (false);
+		snprintf(o->num, sizeof(o->num), "%.*s", (int)n, p);
+		p += n + 1;
+		if (strncmp(p, "create ", 7) != 0)
+			return (false);
+	} else {
+		n = strspn(p, "0123456789");
+		if (n == 0 || n >= sizeof(o->num) || p[n] != ' ' || strtol(p,
+		    NULL, 10) < 1 || strtol(p, NULL, 10) > 65535)
+			return (false);
+		snprintf(o->num, sizeof(o->num), "%.*s", (int)n, p);
+		p += n + 1;
+		if (strncmp(p, "config ", 7) != 0)
+			return (false);
+	}
 	for (i = 0; p[i] != '\0'; i++)
 		if (!isalnum((unsigned char)p[i]) && strchr(" ._:/,-", p[i]) ==
 		    NULL)
@@ -1008,7 +1023,7 @@ object_module(struct work *w, const char *kind)
 	argv[0] = (char *)(uintptr_t)opts.kldload_bin;
 	argv[1] = (char *)(uintptr_t)"-n";
 	argv[2] = (char *)(uintptr_t)(strcmp(kind, "nat") == 0 ? "ipfw_nat" :
-	    "dummynet");
+	    strcmp(kind, "nat64") == 0 ? "ipfw_nat64" : "dummynet");
 	argv[3] = NULL;
 	(void)run_exec(w, argv, &res);
 }
@@ -1035,7 +1050,7 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	int64_t			 s;
 	int			 n, nr, step, fd, nob, kk;
 	const char		*line, *err, *jail, *rfile, *load;
-	bool			 ok, dn, natm, empty;
+	bool			 ok, dn, natm, n64, empty;
 
 	if ((top = parse(json)) == NULL || ucl_object_type(top) != UCL_OBJECT) {
 		if (top != NULL)
@@ -1073,7 +1088,7 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		return (-1);
 	}
 	nob = 0;
-	dn = natm = false;
+	dn = natm = n64 = false;
 	it = NULL;
 	while ((r = ucl_object_iterate(ucl_object_lookup(top, "objects"), &it,
 	    true)) != NULL) {
@@ -1084,11 +1099,14 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		if (!object_ok(ucl_object_type(r) == UCL_STRING ?
 		    ucl_object_tostring(r) : NULL, &no[nob])) {
 			*errp = "an object is a pipe, queue, sched or nat, its "
-			    "number, config and its words";
+			    "number, config and its words; or nat64lsn or "
+			    "nat64clat, its name, create and its words";
 			goto bad;
 		}
 		if (strcmp(no[nob].kind, "nat") == 0)
 			natm = true;
+		else if (strncmp(no[nob].kind, "nat64", 5) == 0)
+			n64 = true;
 		else
 			dn = true;
 		nob++;
@@ -1330,6 +1348,8 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		object_module(w, "pipe");
 	if (natm)
 		object_module(w, "nat");
+	if (n64)
+		object_module(w, "nat64");
 	if (nr > 0 && ipfw_words(w, &err, 1, load, NULL) != 0) {
 		ok = false;
 		rules_clear(w, ed, (int)s);

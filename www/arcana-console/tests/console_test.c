@@ -6808,6 +6808,121 @@ ATF_TC_BODY(sdwan_breakout, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(sdwan_nat64, "NAT64 at one edge (nat64lsn, its pool among the "
+    "known prefixes, the way in before the zones, the way back after the "
+    "NAT) and CLAT at a UNI (nat64clat), ipfw_nat64 kept; checked")
+ATF_TC_BODY(sdwan_nat64, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"reserved_prefixes\":[\"100.64.0.0/24\"],",
+		    "\"reserved_prefixes\":[\"100.64.0.0/24\"],\"nat64\":{\"prefix\":"
+		    "\"64:ff9b::/96\",\"pool\":\"192.0.2.64/26\",\"edge\":\"@A\"}," },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\",\"clat\":{\"prefix\":"
+		    "\"2001:db8:c::/96\"}" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* A prefix that is no /96, an edge that is none, a CLAT without
+	 * the service's NAT64: refused. */
+	ATF_REQUIRE(swap_in(doc, "\"prefix\":\"64:ff9b::/96\"", "\"prefix\":"
+	    "\"64:ff9b::/64\"", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "nat64 is an object") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_REQUIRE(swap_in(doc, "\"edge\":\"", "\"edge\":\"nosuch", t1,
+	    sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && (strstr(r.body, "nat64: edge is one of "
+	    "the edges") != NULL || strstr(r.body, "no such") != NULL), "%s",
+	    r.body);
+	resp_free(&r);
+	ATF_REQUIRE(swap_in(doc, "\"nat64\":{\"prefix\":\"64:ff9b::/96\",\"pool\":"
+	    "\"192.0.2.64/26\",\"edge\":\"", "\"nat64x\":{\"prefix\":\"64:ff9b::/96\","
+	    "\"pool\":\"192.0.2.64/26\",\"edge\":\"", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "clat needs the "
+	    "service's nat64") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/*
+	 * On a: the nat64lsn instance, the pool in the known table, the
+	 * IPv6 way in before the zones (rule 100), the pool's way back
+	 * after the NAT (11), the CLAT of hq with the NAT64 prefix as
+	 * its PLAT, and ipfw_nat64 kept.
+	 */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"nat64lsn sw1_64 create prefix4 "
+	    "192.0.2.64/26 prefix6 64:ff9b::/96 allow_private\"") != NULL,
+	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "[\"192.0.2.64/26\",\"0\"]") != NULL, "%s",
+	    r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"10 nat64lsn sw1_64 ip6 from "
+	    "table(sw1_known) to 64:ff9b::/96 in\"") != NULL && strstr(r.body,
+	    "\"11 nat64lsn sw1_64 ip4 from any to 192.0.2.64/26 in recv "
+	    "vtnet0\"") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"nat64clat sw1_chq create clat_prefix "
+	    "2001:db8:c::/96 plat_prefix 64:ff9b::/96\"") != NULL && strstr(
+	    r.body, "\"10 nat64clat sw1_chq ip4 from any to not table(sw1_known) "
+	    "in recv lo0\"") != NULL && strstr(r.body, "\"10 nat64clat sw1_chq "
+	    "ip6 from any to 2001:db8:c::/96 in\"") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"nat64\"") != NULL && strstr(
+	    r.body, "\"args\":[\"ipfw_nat64\"]") != NULL, "%s", r.body);
+	/* The CLAT prefix is hq's, routed to a from b like its subnet. */
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"route:acme:2001:db8:c::/96\"") !=
+	    NULL || strstr(r.body, "carries 2001:db8:c::/96") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(sdwan_lists, "SD-WAN's named lists: prefixes, services, UCS, "
     "edges and UCS End Points kept once, each named where a value would "
     "be, checked; a prefix list an ipfw table, a service list the AFS's "
@@ -8314,6 +8429,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan_host);
 	ATF_TP_ADD_TC(tp, sdwan_loop);
 	ATF_TP_ADD_TC(tp, sdwan_breakout);
+	ATF_TP_ADD_TC(tp, sdwan_nat64);
 	ATF_TP_ADD_TC(tp, sdwan_lists);
 	ATF_TP_ADD_TC(tp, sdwan_uswe);
 	ATF_TP_ADD_TC(tp, sdwan_jail);

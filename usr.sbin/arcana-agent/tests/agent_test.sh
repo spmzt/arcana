@@ -3668,6 +3668,21 @@ EOS
 	    '{"set":30,"tables":[],"objects":["pipe 3000 config bw 1Mbit/s; reboot"],"rules":["10 allow ip from any to any"]}'
 	atf_check -s exit:1 -e match:'an object is' -o ignore "$JGC" -c "$SOCK" sdwan rules \
 	    '{"set":30,"tables":[],"objects":["table t create"],"rules":["10 allow ip from any to any"]}'
+	# NAT64 instances (nat64lsn, nat64clat): named, created before the
+	# rules, their module loaded, destroyed with the rules.
+	: > ipfw.log
+	: > kldload.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[],"objects":["nat64lsn sw1_64 create prefix4 192.0.2.64/26 prefix6 64:ff9b::/96 allow_private","nat64clat sw1_chq create clat_prefix 2001:db8:c::/96 plat_prefix 64:ff9b::/96"],"rules":["10 nat64lsn sw1_64 ip6 from any to 64:ff9b::/96 in","99 count ip from any to any"]}'
+	atf_check -o match:'^nat64lsn sw1_64 create prefix4 192.0.2.64/26 prefix6 64:ff9b::/96 allow_private$' \
+	    -o match:'^nat64clat sw1_chq create clat_prefix 2001:db8:c::/96 plat_prefix 64:ff9b::/96$' \
+	    -o match:'^add 10 set 30 nat64lsn sw1_64 ip6 from any to 64:ff9b::/96 in$' cat ipfw.log
+	atf_check -o match:'ipfw_nat64' cat kldload.log
+	atf_check -s exit:1 -e match:'an object is' -o ignore "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[],"objects":["nat64lsn sw1_64 config prefix4 192.0.2.64/26"],"rules":["10 allow ip from any to any"]}'
+	: > ipfw.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules '{"set":30,"tables":[],"rules":[]}'
+	atf_check -o match:'^ipfw -q nat64clat sw1_chq destroy$' -o match:'^ipfw -q nat64lsn sw1_64 destroy$' cat ipfw.log
 	: > ipfw.log
 	: > kldload.log
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \

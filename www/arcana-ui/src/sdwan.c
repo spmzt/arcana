@@ -5194,6 +5194,32 @@ sdwan_modal_service(struct html *h)
 			    "breakout"), *du = jget(d, "subscriber");
 			char			 nb[32], rt[200];
 
+			/* NAT64 at one edge, CLAT at the UNIs that say so. */
+			h_raw(h, "<fieldset><legend>NAT64 <small class=\"dim\">RFC 6146, "
+			    "Arcana's own: the service's IPv6 hosts reach the "
+			    "Internet's IPv4 through one edge (ipfw nat64lsn); a UNI "
+			    "with a CLAT prefix carries its IPv4 hosts there as IPv6 "
+			    "(RFC 6877)</small></legend><div class=\"two\">");
+			text_field(h, "NAT64 prefix", "n64_prefix", jstr(jget(o, "nat64"),
+			    "prefix"), "64:ff9b::/96", "An IPv6 /96: the IPv4 Internet "
+			    "as the hosts see it. Empty: no NAT64.");
+			text_field(h, "NAT64 pool", "n64_pool", jstr(jget(o, "nat64"),
+			    "pool"), "192.0.2.64/26", "IPv4 addresses the translated "
+			    "flows go out from, taken out by the breakout's NAT.");
+			h_raw(h, "</div><label>NAT64 edge<select name=\"n64_edge\">");
+			option(h, "", "none", jstr(jget(o, "nat64"), "edge") != NULL ?
+			    jstr(jget(o, "nat64"), "edge") : "");
+			{
+				const ucl_object_t	*ne;
+				ucl_object_iter_t	 nit = NULL;
+
+				while ((ne = ucl_object_iterate(jget(sd.doc, "edges"),
+				    &nit, true)) != NULL)
+					option(h, jstr(ne, "server"), host_name(jstr(ne,
+					    "server")), jstr(jget(o, "nat64"), "edge") !=
+					    NULL ? jstr(jget(o, "nat64"), "edge") : "");
+			}
+			h_raw(h, "</select></label></fieldset>");
 			h_raw(h, "<fieldset><legend>Routing domains <small class=\""
 			    "dim\">Mplify 119 §7.3: each a table, a route "
 			    "distinguisher, route targets and an MPLS label; all "
@@ -6388,6 +6414,10 @@ sdwan_modal_service(struct html *h)
 			text_field(h, "Largest frame, bytes", "mf", jint(u,
 			    "max_frame", 0) > 0 ? buf : "", "1522", "1522 or more "
 			    "(R126). Empty: the interface's own.");
+			text_field(h, "CLAT prefix", "clat", jstr(jget(u, "clat"),
+			    "prefix"), "", "An IPv6 /96 of this UNI's own: its IPv4 "
+			    "hosts reach the IPv4 Internet through the service's NAT64 "
+			    "(RFC 6877). Empty: none.");
 			v = jget(o, "availability");
 			snprintf(buf, sizeof(buf), "%g", v != NULL ?
 			    ucl_object_todouble(v) : 0.0);
@@ -7331,6 +7361,17 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			ucl_object_insert_key(o, cp, "control_plane", 0, false);
 		}
 		put_list(o, "reserved_prefixes", jstr(f, "reserved"));
+		(void)ucl_object_delete_key(o, "nat64");
+		if ((v = jstr(f, "n64_prefix")) != NULL && v[0] != '\0') {
+			ucl_object_t	*n64 = ucl_object_typed_new(UCL_OBJECT);
+
+			put_str(n64, "prefix", v);
+			if ((v = jstr(f, "n64_pool")) != NULL && v[0] != '\0')
+				put_str(n64, "pool", v);
+			if ((v = jstr(f, "n64_edge")) != NULL && v[0] != '\0')
+				put_str(n64, "edge", v);
+			ucl_object_insert_key(o, n64, "nat64", 0, false);
+		}
 		/* The routing domains: the three in order where a field has
 		 * three values by commas; each only with something in it. */
 		{
@@ -7848,14 +7889,20 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		u = jget(old, "uni") != NULL ? ucl_object_copy(jget(old, "uni")) :
 		    ucl_object_typed_new(UCL_OBJECT);
 		(void)ucl_object_delete_key(o, "uni");
-		for (i = 0; i < 10; i++) {
+		for (i = 0; i < 11; i++) {
 			static const char *const keys[] = { "id", "interface",
 			    "vlan", "ipv4", "ipv6", "routes", "bgp", "ospf",
-			    "max_frame", "host_addressed" };
+			    "max_frame", "host_addressed", "clat" };
 
 			(void)ucl_object_delete_key(u, keys[i]);
 		}
 		put_int(u, "max_frame", jstr(f, "mf"));
+		if (jstr(f, "clat") != NULL && jstr(f, "clat")[0] != '\0') {
+			ucl_object_t	*cl = ucl_object_typed_new(UCL_OBJECT);
+
+			put_str(cl, "prefix", jstr(f, "clat"));
+			ucl_object_insert_key(u, cl, "clat", 0, false);
+		}
 		if (checked(f, "host_addressed"))
 			ucl_object_insert_key(u, ucl_object_frombool(true),
 			    "host_addressed", 0, false);
