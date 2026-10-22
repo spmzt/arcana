@@ -958,6 +958,11 @@ submodule arcana-jobs-kinds {
             description
               "Arguments";
           }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
         }
       }
       case zfs {

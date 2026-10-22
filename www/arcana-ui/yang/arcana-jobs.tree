@@ -189,6 +189,7 @@ module: arcana-jobs
        |        |     +---w tunnel-local?    string
        |        |     +---w tunnel-remote?   string
        |        |     +---w args*            string
+       |        |     +---w safe?            boolean
        |        +--:(zfs)
        |        |  +---w zfs!
        |        |     +---w verb         string

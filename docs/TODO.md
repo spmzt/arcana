@@ -1098,6 +1098,14 @@
 
 ## Not yet verified
 
+  - Seen once on a console 0.275.0, in its log: "writing
+    sdwan-state.json: Bad file descriptor".  store_write's own
+    descriptor comes from mkstemp(3) just before, so EBADF there means
+    another thread closed a number it did not own (a double close
+    somewhere, with the number reused meanwhile).  Not reproduced; look
+    for a close(2) of a descriptor already closed, in the console's
+    threads (the SD-WAN manager, the subscriptions, the pool).
+
 Written and tested with stand-ins, never run for real:
 
 - A route in another routing table: the one tried was refused by the
