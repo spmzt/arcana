@@ -387,7 +387,7 @@ kinds:
   - kind: jail-base
     title: A jail's base system by pkg, to pkgbase or a newer release
     needs: jail verb
-    uses: packages release force pkg_ip
+    uses: packages release force pkg_ip pkg_repo
     values: verb=convert|upgrade
   - kind: jail-conf
     title: A jail made, removed; the jails' defaults or a template

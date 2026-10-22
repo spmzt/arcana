@@ -8,7 +8,9 @@
  * A running jail's base system by pkg(8), as pkgbase: converted to it
  * from the official FreeBSD-base repository of its own release, or
  * taken to a newer release once it is on it.  "pkg -j <jail>" runs in
- * the jail; the repository's file is written under the jail's root;
+ * the jail; the official repository's file is written under the jail's
+ * root under a name of arcana's own, or one of the jail's own
+ * repositories is used (pkg-repo);
  * its /etc is kept aside in a tar before anything changes; and what
  * pkg left beside a changed file (.pkgnew, .pkgsave) is named at the
  * end, for the admin to merge.  The jail is to be restarted after
@@ -27,9 +29,13 @@
 
 #include "agent.h"
 
-#define	BASE_REPO	"FreeBSD-base"
+/* The official repository, defined under a name of arcana's own so
+ * that a definition of the admin's (a mirror of base, often named
+ * FreeBSD-base) is never merged into it; or one of the jail's own
+ * repositories, named by pkg-repo, used as it is. */
+#define	BASE_REPO	"arcana-base"
 #define	BASE_SET	"FreeBSD-set-base-jail"
-#define	REPO_FILE	"/usr/local/etc/pkg/repos/FreeBSD-base.conf"
+#define	REPO_FILE	"/usr/local/etc/pkg/repos/arcana-base.conf"
 #define	ETC_BACKUP	"/var/backups/etc-before-pkgbase.tar"
 #define	PATH_TAR	"/usr/bin/tar"
 #define	PATH_FIND	"/usr/bin/find"
@@ -284,12 +290,11 @@ valid_set(const char *s)
  * NULL and *errp when one asked for is not among them.
  */
 static const char *
-sets_check(struct work *w, const struct arc_job_spec *sp, bool anyos,
-    const char *abi, const char *osversion, const char *const *sets,
-    size_t nsets)
+sets_check(struct work *w, const struct arc_job_spec *sp, const char *repo,
+    bool anyos, const char *abi, const char *osversion,
+    const char *const *sets, size_t nsets)
 {
-	static const char *const query[] = { "rquery", "-a", "-r", BASE_REPO,
-	    "%n" };
+	const char	*query[] = { "rquery", "-a", "-r", repo, "%n" };
 	struct execres	 res;
 	const char	*have, *missing;
 	char		*copy, *it, *line;
@@ -317,8 +322,8 @@ sets_check(struct work *w, const struct arc_job_spec *sp, bool anyos,
 			    missing, sets[i]);
 	}
 	if (missing != NULL)
-		return (wfmt(w, "the repository has no %s; its sets: %s", missing,
-		    have != NULL ? have : "none"));
+		return (wfmt(w, "repository %s has no %s; its sets: %s", repo,
+		    missing, have != NULL ? have : "none"));
 	return (NULL);
 }
 
@@ -327,15 +332,40 @@ sets_check(struct work *w, const struct arc_job_spec *sp, bool anyos,
  * from the FreeBSD-base repository of its release (or of the branch
  * release names): the sets named, FreeBSD-set-base-jail when none.
  */
+/*
+ * The repository the base comes from: one of the jail's own when the
+ * job names it (pkg-repo; it must be there), else the official one,
+ * written under arcana's name for the branch.  NULL and *errp when
+ * neither can be.
+ */
+static const char *
+base_repo(struct work *w, const struct arc_job_spec *sp, const char *root,
+    const char *branch, const char **errp)
+{
+	const char	*e;
+
+	if (sp->pkg_repo != NULL && sp->pkg_repo[0] != '\0') {
+		if ((e = pkg_repo_check(w, sp->jail, sp->pkg_repo)) != NULL) {
+			*errp = e;
+			return (NULL);
+		}
+		return (sp->pkg_repo);
+	}
+	if ((e = repo_write(w, root, branch)) != NULL) {
+		*errp = e;
+		return (NULL);
+	}
+	return (BASE_REPO);
+}
+
 static int
 convert(struct work *w, const struct arc_job_spec *sp, const char *root,
     const char *osrelease, const char **errp)
 {
-	static const char *const update[] = { "update", "-r", BASE_REPO };
 	struct release	 r;
 	struct execres	 res;
 	const char *const *sets;
-	const char	**args, **one, *e, *branch;
+	const char	**args, **one, *e, *branch, *repo, *update[3];
 	size_t		 nsets, n, i;
 	bool		 major_alone;
 
@@ -381,18 +411,23 @@ convert(struct work *w, const struct arc_job_spec *sp, const char *root,
 		major_alone = strchr(sp->release, '.') == NULL;
 	}
 	branch = branch_of(w, &r, major_alone);
-	if ((e = repo_write(w, root, branch)) != NULL || (e = etc_backup(w,
-	    root)) != NULL) {
+	if ((repo = base_repo(w, sp, root, branch, errp)) == NULL)
+		return (-1);
+	if ((e = etc_backup(w, root)) != NULL) {
 		*errp = e;
 		return (-1);
 	}
+	update[0] = "update";
+	update[1] = "-r";
+	update[2] = repo;
 	if (pkg(w, sp, sp->force, NULL, NULL, update, 3, &res) != 0 || (e =
 	    pkg_repo_error(w, &res, "pkg update")) != NULL) {
-		*errp = e != NULL ? e : pkg_failed(w, &res, "pkg update");
+		*errp = wfmt(w, "repository %s: %s", repo, e != NULL ? e :
+		    pkg_failed(w, &res, "pkg update"));
 		return (-1);
 	}
-	if ((e = sets_check(w, sp, sp->force, NULL, NULL, sets, nsets)) !=
-	    NULL) {
+	if ((e = sets_check(w, sp, repo, sp->force, NULL, NULL, sets, nsets))
+	    != NULL) {
 		*errp = e;
 		return (-1);
 	}
@@ -400,7 +435,7 @@ convert(struct work *w, const struct arc_job_spec *sp, const char *root,
 	n = 0;
 	args[n++] = "install";
 	args[n++] = "-r";
-	args[n++] = BASE_REPO;
+	args[n++] = repo;
 	args[n++] = "-y";
 	for (i = 0; i < nsets; i++)
 		args[n++] = sets[i];
@@ -424,12 +459,10 @@ static int
 upgrade(struct work *w, const struct arc_job_spec *sp, const char *root,
     const char **errp)
 {
-	static const char *const update[] = { "update", "-r", BASE_REPO };
-	static const char *const base[] = { "upgrade", "-r", BASE_REPO, "-y" };
 	static const char *const rest[] = { "upgrade", "-y" };
 	struct release	 r;
 	struct execres	 res;
-	const char	*e, *abi, *osversion;
+	const char	*e, *abi, *osversion, *repo, *update[3], *base[4];
 	char		 arch[64];
 	size_t		 len;
 	int		 hostrel;
@@ -462,22 +495,32 @@ upgrade(struct work *w, const struct arc_job_spec *sp, const char *root,
 	}
 	abi = wfmt(w, "FreeBSD:%d:%s", r.major, arch);
 	osversion = wfmt(w, "%d", r.major * 100000 + r.minor * 1000);
-	if ((e = repo_write(w, root, branch_of(w, &r, major_alone))) != NULL ||
-	    (e = etc_backup(w, root)) != NULL) {
+	if ((repo = base_repo(w, sp, root, branch_of(w, &r, major_alone),
+	    errp)) == NULL)
+		return (-1);
+	if ((e = etc_backup(w, root)) != NULL) {
 		*errp = e;
 		return (-1);
 	}
+	update[0] = "update";
+	update[1] = "-r";
+	update[2] = repo;
+	base[0] = "upgrade";
+	base[1] = "-r";
+	base[2] = repo;
+	base[3] = "-y";
 	/* The new release's repository is for a newer FreeBSD by design:
 	 * read past OSVERSION for the base; the rest as asked. */
 	if (pkg(w, sp, true, abi, osversion, update, 3, &res) != 0 || (e =
 	    pkg_repo_error(w, &res, "pkg update")) != NULL) {
-		*errp = e != NULL ? e : pkg_failed(w, &res, "pkg update");
+		*errp = wfmt(w, "repository %s: %s", repo, e != NULL ? e :
+		    pkg_failed(w, &res, "pkg update"));
 		return (-1);
 	}
 	if (pkg(w, sp, true, abi, osversion, base, 4, &res) != 0 || (e =
 	    pkg_repo_error(w, &res, "pkg upgrade")) != NULL) {
-		*errp = e != NULL ? e : pkg_failed(w, &res, "pkg upgrade of the "
-		    "base");
+		*errp = wfmt(w, "repository %s: %s", repo, e != NULL ? e :
+		    pkg_failed(w, &res, "pkg upgrade of the base"));
 		return (-1);
 	}
 	if (pkg(w, sp, sp->force, abi, osversion, rest, 2, &res) != 0 || (e =

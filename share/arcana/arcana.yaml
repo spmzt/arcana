@@ -507,16 +507,19 @@ definitions:
         doc: |
           A running jail's base system by pkg(8), as pkgbase.  Verb
           convert installs the base system packages over the jail's
-          files from the official FreeBSD-base repository of its own
-          release (names the sets to install, FreeBSD-set-base-jail
-          when none; release, the repository's branch instead of the
+          files from the official base repository of its own release
+          (names the sets to install, FreeBSD-set-base-jail when
+          none; release, the repository's branch instead of the
           jail's own); verb upgrade takes a jail already on pkgbase to
           release, "16" (the latest of that major) or "15.2", its base
           packages and then its other packages for the new ABI, never
-          beyond the host's kernel.  Both write the repository's file
-          in the jail, keep its /etc aside in /var/backups first, and
-          name the .pkgnew and .pkgsave files left to merge; the jail
-          is to be restarted after.  With force, past OSVERSION for
+          beyond the host's kernel.  The official repository is
+          written in the jail under arcana's own name, arcana-base,
+          so that a repository of the admin's is not merged into it;
+          with pkg-repo, one of the jail's own repositories is used
+          instead, as it is.  Both keep the jail's /etc aside in
+          /var/backups first and name the .pkgnew and .pkgsave files
+          left to merge; the jail is to be restarted after.  With force, past OSVERSION for
           the other packages (IGNORE_OSVERSION); pkg-ip as pkg -4 or
           -6.  Needs FreeBSD 15.1 or later in the jail.
   - name: job-state

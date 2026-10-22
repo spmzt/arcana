@@ -2490,6 +2490,31 @@ modal(struct html *h)
 			    "jail's own release\"><small>Empty for the jail's own "
 			    "release; 16 for the latest of that major.</small>"
 			    "</label>");
+		/* The base from one of the jail's own repositories, or the
+		 * official one under arcana's name. */
+		if (app.pkg.data != NULL && ucl_array_size(jget(app.pkg.data,
+		    "repos")) > 0) {
+			const ucl_object_t	*rr;
+			ucl_object_iter_t	 rit;
+
+			h_raw(h, "<label>Base repository<select name=\"repo\">"
+			    "<option value=\"\">FreeBSD's official (arcana-base)"
+			    "</option>");
+			rit = NULL;
+			while ((rr = ucl_object_iterate(jget(app.pkg.data,
+			    "repos"), &rit, true)) != NULL) {
+				h_raw(h, "<option");
+				h_attr(h, "value", ucl_object_tostring(rr));
+				h_raw(h, ">");
+				h_txt(h, ucl_object_tostring(rr));
+				h_raw(h, "</option>");
+			}
+			h_raw(h, "</select><small>The official repository is "
+			    "written in the jail under arcana's own name, so a "
+			    "mirror of yours named like it is not merged into it; "
+			    "or one of the jail's repositories, as it is: it "
+			    "must have the release.</small></label>");
+		}
 		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
 		    "anyos\"><span>Also packages built for a newer FreeBSD "
 		    "<em>IGNORE_OSVERSION</em></span></label><p class=\"dim\">Its "

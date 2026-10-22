@@ -1451,18 +1451,24 @@ one of those
 .Cm packages
 lists, enabled or not.
 What is still pending follows.
-.It Cm jail-base Ar jail Cm convert Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl b Ar release Oc Op Ar set ...
-.It Cm jail-base Ar jail Cm upgrade Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Ar release
+.It Cm jail-base Ar jail Cm convert Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl r Ar repo Oc Oo Fl b Ar release Oc Op Ar set ...
+.It Cm jail-base Ar jail Cm upgrade Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl r Ar repo Oc Ar release
 A running jail's base system by
 .Xr pkg 8 ,
 as pkgbase; a job.
 .Cm convert
 installs the base system packages over the jail's files from the
-official FreeBSD-base repository of the jail's own release
+official base repository of the jail's own release
 .Pq Fl b Ar release No names another branch: Dq 16 , the latest of that major, or Dq 15.2 ,
 the sets named, or
 .Li FreeBSD-set-base-jail
 when none; the repository must have them.
+The official repository is written in the jail under a name of
+arcana's own,
+.Li arcana-base ,
+so that a repository of the admin's is not merged into it;
+.Fl r Ar repo
+uses one of the jail's own repositories instead, as it is.
 .Cm upgrade
 takes a jail already on pkgbase to
 .Ar release ,

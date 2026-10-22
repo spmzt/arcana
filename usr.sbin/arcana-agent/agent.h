@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.179.0"
+#define	ARCANA_AGENT_VERSION	"0.180.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -843,6 +843,7 @@ int		 do_jail_base(struct work *, const struct arc_job_spec *,
 		    const char **);
 const char	*pkg_repo_error(struct work *, const struct execres *,
 		    const char *);
+const char	*pkg_repo_check(struct work *, const char *, const char *);
 int		 jobs_lanes(void);
 const char	*jobs_set_lanes(int);
 void		 jobs_conf_load(void);

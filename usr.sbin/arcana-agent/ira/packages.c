@@ -155,8 +155,8 @@ pkg_repos(struct work *w, const char *jail, const char ***vp, size_t *np)
 }
 
 /* Is repo one of pkg's repositories there?  NULL, or why not. */
-static const char *
-repo_check(struct work *w, const char *jail, const char *repo)
+const char *
+pkg_repo_check(struct work *w, const char *jail, const char *repo)
 {
 	const char	**v;
 	const char	*p;
@@ -426,7 +426,7 @@ do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
 	rsp->has_ok = true;
 	rsp->ok = false;
 	if ((e = check_jail(w, rq->jail)) != NULL ||
-	    (e = repo_check(w, rq->jail, rq->pkg_repo)) != NULL) {
+	    (e = pkg_repo_check(w, rq->jail, rq->pkg_repo)) != NULL) {
 		rsp->error = e;
 		return (0);
 	}
@@ -498,7 +498,7 @@ do_pkg_install(struct work *w, const struct arc_job_spec *sp,
 	size_t		 i, n;
 
 	if ((e = check_jail(w, sp->jail)) != NULL ||
-	    (e = repo_check(w, sp->jail, sp->pkg_repo)) != NULL) {
+	    (e = pkg_repo_check(w, sp->jail, sp->pkg_repo)) != NULL) {
 		*errp = e;
 		return (-1);
 	}

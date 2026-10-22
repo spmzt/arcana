@@ -759,9 +759,16 @@ submit_form(const char *form, const ucl_object_t *f)
 		{
 			struct html	 b;
 			const char	*p;
-			char		 word[80], *w;
+			char		 word[80], *w, rp[96], *qp;
 			size_t		 n, nw;
 
+			/* The base from one of the jail's repositories. */
+			rp[0] = '\0';
+			if (jstr(f, "repo") != NULL && jstr(f, "repo")[0] != '\0') {
+				qp = json_quote(jstr(f, "repo"));
+				snprintf(rp, sizeof(rp), ",\"pkg_repo\":%s", qp);
+				free(qp);
+			}
 			/* The sets named, as a JSON array; none, the default. */
 			memset(&b, 0, sizeof(b));
 			nw = 0;
@@ -794,7 +801,7 @@ submit_form(const char *form, const ucl_object_t *f)
 			    b.s : "", s[0] != '\0' ? ",\"release\":" : "",
 			    s[0] != '\0' ? qr : "", app.pkg.ip != 0 ? (app.pkg.ip ==
 			    4 ? ",\"pkg_ip\":4" : ",\"pkg_ip\":6") : "", jbool(f,
-			    "anyos") ? ",\"force\":true" : "", "") == -1)
+			    "anyos") ? ",\"force\":true" : "", rp) == -1)
 				abort();
 			free(b.s);
 		}

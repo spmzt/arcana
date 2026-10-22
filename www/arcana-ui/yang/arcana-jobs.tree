@@ -274,6 +274,7 @@ module: arcana-jobs
        |        |     +---w release?    string
        |        |     +---w force?      boolean
        |        |     +---w pkg-ip?     uint32
+       |        |     +---w pkg-repo?   string
        |        +--:(jail-conf)
        |        |  +---w jail-conf!
        |        |     +---w verb        enumeration

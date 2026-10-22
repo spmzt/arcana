@@ -1401,6 +1401,11 @@ submodule arcana-jobs-kinds {
             description
               "pkg's network";
           }
+          leaf pkg-repo {
+            type string;
+            description
+              "Repository";
+          }
         }
       }
       case jail-conf {

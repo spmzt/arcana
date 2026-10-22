@@ -323,8 +323,9 @@ usage(void)
 	    "[package ...]\n"
 	    "    pkg-clean [-a] [-j jail | -J]\n"
 	    "    pkg-install [-O] [-4 | -6] [-r repo] [-j jail] package ...\n"
-	    "    jail-base jail convert [-O] [-4 | -6] [-b release] [set ...]\n"
-	    "    jail-base jail upgrade [-O] [-4 | -6] release\n"
+	    "    jail-base jail convert [-O] [-4 | -6] [-r repo] [-b release] "
+	    "[set ...]\n"
+	    "    jail-base jail upgrade [-O] [-4 | -6] [-r repo] release\n"
 	    "    jobs [lanes number]\n"
 	    "    job [-w] id\n"
 	    "    job-cancel id\n"
@@ -3988,7 +3989,7 @@ cmd_jail_base(struct arc_client *cl, int argc, char **argv)
 	if (!up && strcmp(argv[2], "convert") != 0)
 		usage();
 	optind = 3;
-	while ((ch = getopt(argc, argv, "46Ob:")) != -1) {
+	while ((ch = getopt(argc, argv, "46Ob:r:")) != -1) {
 		switch (ch) {
 		case '4':
 		case '6':
@@ -3997,6 +3998,9 @@ cmd_jail_base(struct arc_client *cl, int argc, char **argv)
 			break;
 		case 'O':
 			sp.force = true;
+			break;
+		case 'r':
+			sp.pkg_repo = optarg;
 			break;
 		case 'b':
 			if (up)
