@@ -24,6 +24,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <ucl.h>
+
 #include "agent.h"
 
 /*
@@ -258,5 +260,107 @@ do_route(struct work *w, const char *destination, const char *gateway,
 		    &e);
 		return (-1);
 	}
+	return (0);
+}
+
+/*
+ * What the kernel has for a destination in a FIB, as its list says it,
+ * before a safe delete without a gateway: the gateway (or interface),
+ * cost, share and source to add it back with, and whether rc.conf keeps
+ * it.  One line, or it cannot be put back: none is no such route, two
+ * are two ways (ECMP) of which the delete takes both.
+ */
+struct found {
+	struct work		*w;
+	const char		*dest;
+	const char		*gw;
+	struct route_more	 more;
+	int			 n;
+};
+
+static void
+found_line(const char *line, void *arg)
+{
+	struct found		*f = arg;
+	struct ucl_parser	*p;
+	ucl_object_t		*o;
+	const ucl_object_t	*v;
+	const char		*s;
+
+	if (line[0] != '{')
+		return;
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	o = ucl_parser_add_chunk(p, (const unsigned char *)line, strlen(line)) ?
+	    ucl_parser_get_object(p) : NULL;
+	ucl_parser_free(p);
+	if (o == NULL)
+		return;
+	if ((v = ucl_object_lookup(o, "destination")) != NULL && (s =
+	    ucl_object_tostring(v)) != NULL && strcmp(s, f->dest) == 0) {
+		f->n++;
+		s = (v = ucl_object_lookup(o, "gateway")) != NULL ?
+		    ucl_object_tostring(v) : NULL;
+		/* A route of an interface, not of an address: by its name. */
+		if (s != NULL && strncmp(s, "link#", 5) == 0)
+			s = (v = ucl_object_lookup(o, "interface-name")) !=
+			    NULL ? ucl_object_tostring(v) : NULL;
+		f->gw = s != NULL ? wstrdup(f->w, s) : NULL;
+		f->more.metric = (v = ucl_object_lookup(o, "metric")) != NULL ?
+		    (uint32_t)ucl_object_toint(v) : 0;
+		/* The share of one among several: 1 alone is the kernel's default,
+		 * not a choice to carry into rc.conf. */
+		f->more.weight = (v = ucl_object_lookup(o, "weight")) != NULL &&
+		    ucl_object_toint(v) != 1 ? (uint32_t)ucl_object_toint(v) : 0;
+		f->more.source = (v = ucl_object_lookup(o, "source")) != NULL &&
+		    (s = ucl_object_tostring(v)) != NULL ? wstrdup(f->w, s) :
+		    NULL;
+	}
+	ucl_object_unref(o);
+}
+
+int
+route_snapshot(struct work *w, const char *destination, uint32_t fib,
+    const char **gwp, struct route_more *more, bool *keptp, const char **errp)
+{
+	struct found	 f;
+	const char	*dest, *words[4];
+	int		 af;
+
+	if (!parse_dest(w, destination, &af, &dest)) {
+		*errp = wfmt(w, "%s is not a destination: default, or an "
+		    "address with or without a prefix length", destination);
+		return (-1);
+	}
+	memset(&f, 0, sizeof(f));
+	f.w = w;
+	f.dest = dest;
+	words[0] = "0";
+	words[1] = wfmt(w, "%u", fib);
+	words[2] = dest;
+	words[3] = "-";
+	if (helper_lines(w, "routes", 4, words, found_line, &f) != 0) {
+		*errp = "the kernel did not list its routes";
+		return (-1);
+	}
+	if (f.n == 0) {
+		*errp = wfmt(w, "no route to %s in FIB %u", dest, fib);
+		return (-1);
+	}
+	if (f.n > 1) {
+		*errp = wfmt(w, "%s in FIB %u has %d ways: a route of several "
+		    "gateways is not put back from here", dest, fib, f.n);
+		return (-1);
+	}
+	if (f.gw == NULL) {
+		*errp = wfmt(w, "%s in FIB %u has no gateway or interface to "
+		    "add it back by", dest, fib);
+		return (-1);
+	}
+	*gwp = f.gw;
+	*more = f.more;
+	*keptp = rc_get(w, wfmt(w, "%sroute_%s", af == AF_INET6 ||
+	    (af == AF_UNSPEC && strchr(f.gw, ':') != NULL) ? "ipv6_" : "",
+	    route_name(w, dest, fib))) != NULL;
 	return (0);
 }

@@ -2992,10 +2992,6 @@ check_spec(const struct arc_job_spec *sp)
 		if (sp->destination == NULL || sp->destination[0] == '\0' ||
 		    sp->destination[0] == '-')
 			return ("a route needs a destination");
-		if (sp->safe && sp->remove && (sp->gateway == NULL ||
-		    sp->gateway[0] == '\0'))
-			return ("to delete a route safely, name its gateway: "
-			    "it is what puts the route back");
 		if (sp->gateway != NULL && sp->gateway[0] == '-')
 			return ("invalid gateway");
 		if (sp->source != NULL && sp->source[strspn(sp->source,

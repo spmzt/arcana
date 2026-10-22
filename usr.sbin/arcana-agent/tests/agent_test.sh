@@ -190,7 +190,7 @@ routes)
 		jot 3000 0 | awk -v f="\$3" '{ d = sprintf("10.%d.%d.0/24", int(\$1 / 250), \$1 % 250); if (f == "-" || index(d, f)) printf "{\\"destination\\":\\"%s\\",\\"gateway\\":\\"192.0.2.1\\",\\"flags\\":\\"UGS\\",\\"nhop\\":%d,\\"mtu\\":1500,\\"interface-name\\":\\"em0\\",\\"metric\\":1,\\"weight\\":1,\\"fib\\":0,\\"prefixlen\\":24}\\n", d, \$1 }'
 		echo "#total 3000"; exit 0
 	fi
-	[ "\$1" != 6 ] && echo '{"destination":"10.0.0.0/24","gateway":"link#1","flags":"U","nhop":2,"mtu":1500,"interface-name":"em0","metric":1,"weight":1,"fib":'\$2',"prefixlen":24}'
+	[ "\$1" != 6 ] && echo '{"destination":"10.0.0.0/24","gateway":"link#1","flags":"U","nhop":2,"mtu":16384,"interface-name":"lo0","metric":1,"weight":1,"fib":'\$2',"prefixlen":24}'
 	[ "\$1" = 0 ] && echo "#family 6"
 	[ "\$1" != 4 ] && echo '{"destination":"::1","gateway":"link#2","flags":"UHS","nhop":1,"mtu":16384,"interface-name":"lo0","metric":1,"weight":1,"fib":'\$2',"prefixlen":128}'
 	echo "#total 2" ;;
@@ -2714,6 +2714,93 @@ EOS
 	    "$JGC" -c "$SOCK" job 6
 }
 
+safe_route_delete_head()
+{
+	atf_set "descr" "A route deleted without its gateway in safe mode is put back as the kernel listed it; a route of several ways, or none, is not deleted"
+}
+safe_route_delete_body()
+{
+	# The kernel's routes, as a file of lines; a FIB's (\$2), those a
+	# filter (\$3) matches.
+	cat > routes.json <<EOS
+{"destination":"10.78.0.0/16","gateway":"10.0.0.1","flags":"UGS","nhop":1,"mtu":1500,"interface-name":"em0","metric":3,"weight":1,"fib":0,"prefixlen":16,"source":"10.0.0.9"}
+{"destination":"10.0.0.0/24","gateway":"link#1","flags":"U","nhop":2,"mtu":16384,"interface-name":"lo0","metric":1,"weight":1,"fib":0,"prefixlen":24}
+{"destination":"default","gateway":"10.1.0.1","flags":"UGS","nhop":3,"mtu":1500,"interface-name":"em1","metric":1,"weight":1,"fib":1,"prefixlen":0}
+{"destination":"10.80.0.0/16","gateway":"10.0.0.1","flags":"UGS","nhop":4,"mtu":1500,"interface-name":"em0","metric":1,"weight":1,"fib":0,"prefixlen":16,"path":1,"paths":2}
+{"destination":"10.80.0.0/16","gateway":"10.0.0.2","flags":"UGS","nhop":5,"mtu":1500,"interface-name":"em0","metric":1,"weight":1,"fib":0,"prefixlen":16,"path":2,"paths":2}
+EOS
+	cat > fake-helper <<EOS
+#!/bin/sh
+echo "fake-helper \$*" >&2
+shift
+jid=\$1 verb=\$2
+shift 2
+case "\$verb" in
+routes)
+	grep -e "\\"fib\\":\$2," $(pwd)/routes.json | grep -e "\${3#-}"
+	echo "#total 5" ;;
+route-add|route-del)
+	echo "\$jid \$verb \$*" >> $(pwd)/route.log ;;
+exists) echo 1 ;;
+esac
+exit 0
+EOS
+	chmod +x fake-helper
+	start_daemon
+	printf 'static_routes="arc_10_78_0_0_16"\nroute_arc_10_78_0_0_16="10.78.0.0/16 10.0.0.1 -ifa 10.0.0.9 -metric 3"\n' >> rc.conf
+
+	# Not confirmed: added back with the gateway, cost, share and
+	# source it had, and into rc.conf, where it was kept.
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" route delete 10.78.0.0/16
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 1
+	atf_check -o match:'^0 route-del 10.78.0.0/16 - - 0 0$' \
+	    -o match:'^0 route-add 10.78.0.0/16 10.0.0.1 - 0 3 0 10.0.0.9$' cat route.log
+	atf_check -o match:'^static_routes="arc_10_78_0_0_16"$' \
+	    -o match:'^route_arc_10_78_0_0_16="10.78.0.0/16 10.0.0.1 -ifa 10.0.0.9 -metric 3"$' cat rc.conf
+
+	# A route of an interface comes back by the interface's name; one
+	# rc.conf did not keep is not put there.
+	: > route.log
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" route delete 10.0.0.0/24
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'^0 route-del 10.0.0.0/24 - - 0 0$' \
+	    -o match:'^0 route-add 10.0.0.0/24 - lo0 0 1 0 -$' cat route.log
+	atf_check -o not-match:'10_0_0_0_24' cat rc.conf
+
+	# In another FIB: that FIB's route.
+	: > route.log
+	atf_check -o match:'queued' "$JGC" -q -s -F 1 -c "$SOCK" route delete default
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'^0 route-del 0.0.0.0/0 - - 1 0$' \
+	    -o match:'^0 route-add 0.0.0.0/0 10.1.0.1 - 1 1 0 -$' cat route.log
+
+	# A route of two ways is not deleted: it could not be put back.
+	: > route.log
+	atf_check -s exit:1 -o match:'not changed: it could not be put back: 10.80.0.0/16 in FIB 0 has 2 ways' \
+	    "$JGC" -s -c "$SOCK" route delete 10.80.0.0/16
+	atf_check -o empty cat route.log
+
+	# Confirmed: it stays gone.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" route delete 10.78.0.0/16
+	atf_check -o match:'^0 route-del 10.78.0.0/16 - - 0 0$' \
+	    -o not-match:'route-add' cat route.log
+}
+
 safe_mode_head()
 {
 	atf_set "descr" "A safe change stays when confirmed, and is undone when not"
@@ -2766,9 +2853,11 @@ safe_mode_body()
 	    -o match:'^0 route-add 10.78.0.0/16 10.0.0.1 - 0 0 0 -$' cat route.log
 	atf_check -o match:'not confirmed in time: undoing it' cat daemon.out
 
-	# A route deleted without its gateway could not be put back.
-	atf_check -s exit:1 -e match:'name its gateway' -o ignore \
-	    "$JGC" -q -s -c "$SOCK" route delete 10.79.0.0/16
+	# A route deleted without its gateway is put back as the kernel
+	# listed it; one the kernel does not list is not deleted at all.
+	atf_check -s exit:1 -o match:'not changed: it could not be put back: no route to 10.79.0.0/16 in FIB 0' \
+	    "$JGC" -s -c "$SOCK" route delete 10.79.0.0/16
+	atf_check -o not-match:'10.79' cat route.log
 
 	# One cancelled while it waits to be confirmed is undone then, not
 	# when its timer of a minute runs out.
@@ -7721,6 +7810,7 @@ atf_init_test_cases()
 	atf_add_test_case notify
 	atf_add_test_case safe_mode
 	atf_add_test_case safe_sysctl
+	atf_add_test_case safe_route_delete
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart
 	atf_add_test_case agent_build

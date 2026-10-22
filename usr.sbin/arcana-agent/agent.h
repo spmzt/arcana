@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.181.0"
+#define	ARCANA_AGENT_VERSION	"0.182.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -483,6 +483,8 @@ struct route_more {
 };
 int		 do_route(struct work *, const char *, const char *, bool,
 		    uint32_t, const struct route_more *, bool, const char **);
+int		 route_snapshot(struct work *, const char *, uint32_t,
+		    const char **, struct route_more *, bool *, const char **);
 
 /* invidia/rcconf.c: what of the network rc.conf keeps. */
 bool		 rc_name_ok(const char *);

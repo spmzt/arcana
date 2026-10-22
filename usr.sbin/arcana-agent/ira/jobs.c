@@ -53,6 +53,9 @@ struct qjob {
 	size_t			 undo_nvars;
 	const char		*undo_value;	/* sysctl: the kernel's before */
 	const char		*undo_conf;	/* sysctl: sysctl.conf's, or NULL */
+	const char		*undo_gateway;	/* route deleted: as listed */
+	struct route_more	 undo_more;
+	bool			 undo_kept;	/* rc.conf had the route */
 	bool			 undo_none;	/* it changed nothing: as it was */
 	bool			 undo_live;	/* rc.conf had it before: keep that */
 	char			*title;
@@ -603,6 +606,19 @@ undo_prepare(struct qjob *j)
 		    sp->names.v[1]) == 0)))
 			j->undo_none = true;
 		break;
+	case ARC_JOB_KIND_ROUTE:
+		/* Deleted without its gateway: the kernel's list says what
+		 * to add back, and must say one thing. */
+		if (!sp->remove || (sp->gateway != NULL && sp->gateway[0] !=
+		    '\0'))
+			break;
+		e = NULL;
+		if (route_snapshot(&j->w, sp->destination, sp->has_fib ?
+		    sp->fib : 0, &j->undo_gateway, &j->undo_more, &j->undo_kept,
+		    &e) != 0)
+			return (wfmt(&j->w, "not changed: it could not be put "
+			    "back: %s", e));
+		break;
 	case ARC_JOB_KIND_IF_ADDRESS:
 		/* To put an address back, its prefix length is needed. */
 		j->undo_address = if_address_with_prefix(&j->w, sp->interface,
@@ -927,6 +943,14 @@ undo(struct qjob *j)
 		e = scr.error;
 		break;
 	case ARC_JOB_KIND_ROUTE:
+		if (j->undo_gateway != NULL) {
+			/* Back as the kernel listed it; into rc.conf only
+			 * when it was there. */
+			rc = do_route(&j->w, sp->destination, j->undo_gateway,
+			    false, sp->has_fib ? sp->fib : 0, &j->undo_more,
+			    sp->persist && j->undo_kept, &e);
+			break;
+		}
 		rm.metric = sp->has_metric ? sp->metric : 0;
 		rm.weight = sp->has_weight ? sp->weight : 0;
 		rm.source = sp->source;
