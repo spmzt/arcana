@@ -2801,6 +2801,120 @@ EOS
 	    -o not-match:'route-add' cat route.log
 }
 
+safe_bird_head()
+{
+	atf_set "descr" "BIRD told something in safe mode: a protocol put back as it was, configure on BIRD's own timer confirmed or undone with the job, a reload with nothing to put back"
+}
+safe_bird_body()
+{
+	# birdc: a protocol's state in a file; configure timeout keeps a
+	# timer that confirm and undo take away.
+	cat > fake-birdc <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/birdc.log
+[ "\$1" = -r ] && shift
+printf 'BIRD 3.1.2 ready.\n'
+case "\$*" in
+"show status") printf 'BIRD 3.1.2\nDaemon is up and running\n' ;;
+"show protocols "*) [ -f $(pwd)/proto.\$3 ] && printf 'Name       Proto      Table      State  Since         Info\n%s   BGP        ---        %s     12:01:02.345  Established\n' "\$3" "\$(cat $(pwd)/proto.\$3)" || echo "No protocols match" ;;
+"enable "*) echo up > $(pwd)/proto.\$2; echo "\$2: enabled" ;;
+"disable "*) echo down > $(pwd)/proto.\$2; echo "\$2: disabled" ;;
+"reload "*|"restart "*) echo "\$2: reloading" ;;
+"configure timeout "*) touch $(pwd)/bird.timer; printf 'Reading configuration from bird.conf\nReconfigured\n' ;;
+"configure confirm") if [ -f $(pwd)/bird.timer ] && [ ! -f $(pwd)/bird.late ]; then rm $(pwd)/bird.timer; echo "Reconfiguration confirmed"; else echo "Nothing to do"; fi ;;
+"configure undo") rm -f $(pwd)/bird.timer; echo "Undo requested" ;;
+configure) printf 'Reading configuration from bird.conf\nReconfigured\n' ;;
+esac
+exit 0
+EOS
+	printf '#!/bin/sh\nexit 0\n' > fake-bird
+	chmod +x fake-birdc fake-bird
+	mkdir -p bird
+	printf 'router id 192.0.2.1;\n' > bird/bird.conf
+	echo up > proto.bgp_core
+	start_daemon
+
+	# Confirmed: it stays.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" bird disable bgp_core
+	atf_check -o match:'^down$' cat proto.bgp_core
+
+	# Not confirmed: the protocol as it was.
+	: > birdc.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bird enable bgp_core
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 2
+	atf_check -o match:'^enable bgp_core$' -o match:'^disable bgp_core$' cat birdc.log
+	atf_check -o match:'^down$' cat proto.bgp_core
+
+	# What was so already is left so; a reload has nothing to put
+	# back, and the job says so; a protocol BIRD lacks is not touched.
+	: > birdc.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bird disable bgp_core
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bird reload all
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'it was so before, and is left so' \
+	    "$JGC" -c "$SOCK" job 3
+	atf_check -s exit:1 -o match:'not confirmed within 2 s; a reload is not undone: there is nothing to put back' \
+	    "$JGC" -c "$SOCK" job 4
+	atf_check -o not-match:'^enable' cat birdc.log
+	atf_check -s exit:1 -o match:'not changed: its state now could not be read, so it could not be put back: BIRD has no protocol nosuch' \
+	    "$JGC" -s -c "$SOCK" bird enable nosuch
+	atf_check -o not-match:'^enable nosuch' cat birdc.log
+
+	# configure: BIRD's own timer, 5 s past the job's wait; confirmed,
+	# BIRD is told to keep it.
+	: > birdc.log
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    -o match:'configure confirm' "$JGC" -s -c "$SOCK" bird configure
+	atf_check -o match:'^configure timeout 7$' -o match:'^configure confirm$' cat birdc.log
+	atf_check test ! -f bird.timer
+	# Not confirmed: BIRD is told to take it back.
+	: > birdc.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bird configure
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 7
+	atf_check -o match:'^configure timeout 7$' -o match:'^configure undo$' cat birdc.log
+	# Confirmed too late for BIRD: the change is gone, and the job
+	# says so.
+	touch bird.late
+	atf_check -s exit:1 -o match:'confirmed, but BIRD did not keep it: its timer had run out, and BIRD had taken the change back' \
+	    "$JGC" -s -c "$SOCK" bird configure
+	rm bird.late bird.timer
+	# Cancelled while it waits, it is undone at once (another change to
+	# BIRD, job or operation, waits for the job to end: the lock on
+	# changes is held through the wait).
+	atf_check -o save:q.out "$JGC" -q -s -W 60 -c "$SOCK" bird configure
+	id=$(awk '/queued/ {print $1; exit}' q.out)
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q "^ *$id unconfirmed" && break
+		sleep 0.1
+	done
+	: > birdc.log
+	atf_check -o ignore "$JGC" -c "$SOCK" job-cancel "$id"
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q "^ *$id \(unconfirmed\|running\)" ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'^configure undo$' cat birdc.log
+	atf_check -o match:'done' "$JGC" -c "$SOCK" bird configure
+}
+
 safe_mode_head()
 {
 	atf_set "descr" "A safe change stays when confirmed, and is undone when not"
@@ -7811,6 +7925,7 @@ atf_init_test_cases()
 	atf_add_test_case safe_mode
 	atf_add_test_case safe_sysctl
 	atf_add_test_case safe_route_delete
+	atf_add_test_case safe_bird
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart
 	atf_add_test_case agent_build

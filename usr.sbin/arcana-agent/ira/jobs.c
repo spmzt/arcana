@@ -56,6 +56,8 @@ struct qjob {
 	const char		*undo_gateway;	/* route deleted: as listed */
 	struct route_more	 undo_more;
 	bool			 undo_kept;	/* rc.conf had the route */
+	bool			 undo_enabled;	/* bird: the protocol was */
+	const char		*undo_note;	/* why nothing is put back */
 	bool			 undo_none;	/* it changed nothing: as it was */
 	bool			 undo_live;	/* rc.conf had it before: keep that */
 	char			*title;
@@ -89,6 +91,7 @@ static bool	 pkg_lane(const struct arc_job_spec *);
 static bool	 lane_jail_busy(const char *);
 static bool	 await_confirm(struct qjob *);
 static const char *undo_prepare(struct qjob *);
+static const char *confirm_apply(struct qjob *);
 static const char *undo(struct qjob *);
 static void	*runner(void *);
 static void	 fill(struct work *, struct arc_job *, struct qjob *, bool);
@@ -606,6 +609,24 @@ undo_prepare(struct qjob *j)
 		    sp->names.v[1]) == 0)))
 			j->undo_none = true;
 		break;
+	case ARC_JOB_KIND_BIRD:
+		/* Enabled or disabled: from the state it has now.  A restart
+		 * or reload leaves nothing to put back, and the job says so.
+		 * configure is BIRD's own timer, taken at the change. */
+		if (strcmp(sp->verb, "enable") == 0 || strcmp(sp->verb,
+		    "disable") == 0) {
+			e = NULL;
+			if (bird_proto_enabled(&j->w, sp->names.v[0],
+			    &j->undo_enabled, &e) != 0)
+				return (wfmt(&j->w, "not changed: its state "
+				    "now could not be read, so it could not be "
+				    "put back: %s", e));
+			if (j->undo_enabled == (sp->verb[0] == 'e'))
+				j->undo_none = true;
+		} else if (strcmp(sp->verb, "configure") != 0)
+			j->undo_note = wfmt(&j->w, "a %s is not undone: there "
+			    "is nothing to put back", sp->verb);
+		break;
 	case ARC_JOB_KIND_ROUTE:
 		/* Deleted without its gateway: the kernel's list says what
 		 * to add back, and must say one thing. */
@@ -795,6 +816,30 @@ give_pair(struct qjob *j, const char **errp)
 	return (true);
 }
 
+/*
+ * Confirmed: what was made on a timer of its own is told to stay.  NULL,
+ * or what to say of a job whose change did not stay after all.
+ */
+static const char *
+confirm_apply(struct qjob *j)
+{
+	const char	*e;
+	int		 step;
+
+	if (j->spec.kind != ARC_JOB_KIND_BIRD || strcmp(j->spec.verb,
+	    "configure") != 0)
+		return (NULL);
+	e = NULL;
+	step = step_begin(&j->w, ARC_STEP_KIND_EXEC, "birdc", "configure "
+	    "confirm");
+	if (bird_configure_confirm(&j->w, &e) == 0) {
+		step_end(&j->w, step, true, NULL);
+		return (NULL);
+	}
+	step_end(&j->w, step, false, "%s", e);
+	return (wfmt(&j->w, "confirmed, but BIRD did not keep it: %s", e));
+}
+
 /* Take a safe change back; returns what to say of the job. */
 static const char *
 undo(struct qjob *j)
@@ -814,7 +859,17 @@ undo(struct qjob *j)
 	if (j->undo_none)
 		return (wfmt(&j->w, "not confirmed within %d s; it was so "
 		    "before, and is left so", safe_wait(sp)));
+	if (j->undo_note != NULL)
+		return (wfmt(&j->w, "not confirmed within %d s; %s",
+		    safe_wait(sp), j->undo_note));
 	switch (sp->kind) {
+	case ARC_JOB_KIND_BIRD:
+		if (strcmp(sp->verb, "configure") == 0)
+			rc = bird_configure_undo(&j->w, &e);
+		else
+			rc = do_bird_verb(&j->w, sp->verb[0] == 'e' ? "disable" :
+			    "enable", sp->names.v, sp->names.n, &e);
+		break;
 	case ARC_JOB_KIND_IF_ADDRESS:
 		rc = do_if_address(&j->w, sp->interface, j->undo_address != NULL ?
 		    j->undo_address : sp->address, !sp->remove, sp->persist,
@@ -1169,9 +1224,16 @@ run(struct qjob *j, bool lane)
 		    do_cert(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_BIRD:
+		/* Safe, configure runs on BIRD's own timer, a little longer
+		 * than the job's wait: the job confirms it, or BIRD takes it
+		 * back by itself should the daemon be stopped. */
 		error = NULL;
-		ok = do_bird_verb(&j->w, sp->verb, sp->names.v, sp->names.n,
-		    &error) == 0;
+		if (sp->safe && strcmp(sp->verb, "configure") == 0)
+			ok = bird_configure_safe(&j->w, safe_wait(sp) + 5,
+			    &error) == 0;
+		else
+			ok = do_bird_verb(&j->w, sp->verb, sp->names.v,
+			    sp->names.n, &error) == 0;
 		break;
 	case ARC_JOB_KIND_KMOD:
 		error = NULL;
@@ -1284,12 +1346,14 @@ run(struct qjob *j, bool lane)
 		error = ur.error;
 		break;
 	}
-	/* A safe change stays only when the client is heard from again. */
+	/* A safe change stays only when the client is heard from again;
+	 * and what runs on a timer of its own (BIRD) is then told so. */
 	if (ok && go && sp->safe && !await_confirm(j)) {
 		ok = false;
 		error = undo(j);
 		held = false;
-	}
+	} else if (ok && go && sp->safe && (error = confirm_apply(j)) != NULL)
+		ok = false;
 	/* The firewall's old rules waited for that: now they go. */
 	if (held)
 		(void)ipfw_settle(&j->w, true);

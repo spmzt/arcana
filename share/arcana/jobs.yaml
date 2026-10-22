@@ -300,7 +300,7 @@ kinds:
   - kind: bird
     title: BIRD told something
     needs: verb
-    uses: jail args
+    uses: jail args safe
     values: verb=enable|disable|restart|reload|configure
   - kind: if-vnet
     title: An interface given to a jail, or taken back

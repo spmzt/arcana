@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.182.0"
+#define	ARCANA_AGENT_VERSION	"0.183.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -518,6 +518,11 @@ int		 do_ipsec_job(struct work *, const struct arc_job_spec *,
 int		 do_bird(struct work *, struct arc_network_rsp *);
 void		 bird_watch_start(void);
 const char	*bird_check(const char *, const char *const *, size_t);
+int		 bird_proto_enabled(struct work *, const char *, bool *,
+		    const char **);
+int		 bird_configure_safe(struct work *, int, const char **);
+int		 bird_configure_confirm(struct work *, const char **);
+int		 bird_configure_undo(struct work *, const char **);
 int		 do_bird_verb(struct work *, const char *, const char *const *,
 		    size_t, const char **);
 int		 do_bird_config(struct work *,

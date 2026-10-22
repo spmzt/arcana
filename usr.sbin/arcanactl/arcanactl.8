@@ -1860,12 +1860,18 @@ nobody confirms.
 Safe mode is for what can be taken back: an address, an interface's
 state, MTU and description, an interface made, a route, a jail's
 address, a service's variables, a service started, stopped, enabled
-or disabled, and a sysctl, whose value before (and its line in
+or disabled, a sysctl, whose value before (and its line in
 .Pa sysctl.conf ,
 with
 .Fl p )
-is put back; one the kernel takes only once keeps the new value until it
-boots again, and the job says so.
+is put back (one the kernel takes only once keeps the new value until it
+boots again, and the job says so), a route deleted without its gateway
+(put back as the kernel listed it; one of several ways is not deleted),
+and BIRD told something: a protocol enabled or disabled is put back as
+it was,
+.Cm configure
+runs on BIRD's own timer, confirmed or undone with the job, and a restart
+or reload has nothing to put back, which the job says.
 A change that would take away the address the request came in by is
 refused unless it is made in safe mode.
 .Pp

@@ -2984,9 +2984,6 @@ check_spec(const struct arc_job_spec *sp)
 		work_free(&cw);
 		return (e);
 	case ARC_JOB_KIND_BIRD:
-		if (sp->safe)
-			return ("what BIRD was told is not taken back: not in "
-			    "safe mode");
 		return (bird_check(sp->verb, sp->names.v, sp->names.n));
 	case ARC_JOB_KIND_ROUTE:
 		if (sp->destination == NULL || sp->destination[0] == '\0' ||
