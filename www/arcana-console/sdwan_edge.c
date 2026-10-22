@@ -612,6 +612,41 @@ digest(const ucl_object_t *o, char *buf, size_t len)
 	return (buf);
 }
 
+/* The UCS End Point a tunnel's end is on, in the document; or NULL. */
+static const ucl_object_t *
+uep_of(struct plan *pl, const ucl_object_t *end)
+{
+	const ucl_object_t	*edge;
+
+	edge = by(ucl_object_lookup(pl->doc, "edges"), "server", str(end,
+	    "edge"));
+	return (by(ucl_object_lookup(edge, "ucs_end_points"), "id", str(end,
+	    "ucs_ep")));
+}
+
+/*
+ * This end's relay toward the far end's edge, if its UCS End Point names
+ * one: a FEC or obfuscating relay on the host (speederv2, say) that the
+ * wg peer's endpoint points at, the relay itself reaching the far
+ * underlay address at its port.
+ */
+static const ucl_object_t *
+relay_of(struct plan *pl, const ucl_object_t *a, const ucl_object_t *b)
+{
+	const ucl_object_t	*ua, *r;
+	ucl_object_iter_t	 it;
+
+	if ((ua = uep_of(pl, a)) == NULL)
+		return (NULL);
+	it = NULL;
+	while ((r = ucl_object_iterate(ucl_object_lookup(ua, "relay"), &it,
+	    true)) != NULL)
+		if (str(r, "to") != NULL && strcmp(str(r, "to"), str(b, "edge"))
+		    == 0)
+			return (r);
+	return (NULL);
+}
+
 /* One end of a tunnel: its interface, and how it knows the far end. */
 static void
 tvc_end(struct plan *pl, const ucl_object_t *t, int me)
@@ -681,10 +716,14 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 		if (strcmp(kind, "wg") != 0) {
 			put(p, "tunnel_local", S(str(a, "underlay")));
 			put(p, "tunnel_remote", S(str(b, "underlay")));
-			if (ucl_object_lookup(a, "vrf") != NULL)
-				put(p, "tunnelfib", I(ucl_object_toint(
-				    ucl_object_lookup(a, "vrf"))));
 		}
+		/* Its outer packets by the underlay's table, wg's too; not
+		 * through a relay, which is on this host, in the first
+		 * table. */
+		if (ucl_object_lookup(a, "vrf") != NULL && relay_of(pl, a, b) ==
+		    NULL)
+			put(p, "tunnelfib", I(ucl_object_toint(
+			    ucl_object_lookup(a, "vrf"))));
 		/* A USWE tunnel is an ipsec(4) interface whose SAs the agent
 		 * keys: its reqid is its unit. */
 		if (strcmp(kind, "uswe") == 0)
@@ -778,17 +817,30 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 	if (o == NULL)
 		return;
 	if (strcmp(kind, "wg") == 0) {
+		const ucl_object_t	*rl, *ub;
+
 		snprintf(key, sizeof(key), "${wg:%s:%s}", str(b, "edge"), str(b,
 		    "ifname"));
-		snprintf(port, sizeof(port), "%s%s%s:%jd", family(str(b,
-		    "underlay")) == AF_INET6 ? "[" : "", str(b, "underlay"),
-		    family(str(b, "underlay")) == AF_INET6 ? "]" : "",
-		    (intmax_t)(WG_PORT + ucl_object_toint(ucl_object_lookup(b,
-		    "unit"))));
+		/*
+		 * Where the far end is: through this end's relay when it
+		 * names one toward that edge; nowhere when the far end is
+		 * behind NAT (it finds this end, and the keepalive holds
+		 * the mapping); else the far underlay's address and port.
+		 */
+		if ((rl = relay_of(pl, a, b)) != NULL)
+			snprintf(port, sizeof(port), "%s", str(rl, "endpoint"));
+		else
+			snprintf(port, sizeof(port), "%s%s%s:%jd", family(str(b,
+			    "underlay")) == AF_INET6 ? "[" : "", str(b,
+			    "underlay"), family(str(b, "underlay")) == AF_INET6 ?
+			    "]" : "", (intmax_t)(WG_PORT + ucl_object_toint(
+			    ucl_object_lookup(b, "unit"))));
+		ub = uep_of(pl, b);
 		p = job("wireguard", "verb", S("peer"), "interface", S(ifn),
-		    "peer", S(key), "endpoint", S(port), "allowed_ips",
-		    S("0.0.0.0/0,::/0"), "keepalive", I(25), "persist", B(true),
-		    NULL);
+		    "peer", S(key), "allowed_ips", S("0.0.0.0/0,::/0"),
+		    "keepalive", I(25), "persist", B(true), NULL);
+		if (rl != NULL || ub == NULL || !ucl_flag(ub, "nat"))
+			put(p, "endpoint", S(port));
 	} else {
 		/*
 		 * One connection for the pair of outer addresses and the
@@ -4054,6 +4106,46 @@ rules_build(struct plan *pl, const char *sid)
 	objects = ucl_object_typed_new(UCL_ARRAY);
 	if ((dn = calloc(1, sizeof(*dn))) == NULL)
 		return (false);
+	/*
+	 * A relay's own flow (its process on this host, in the first
+	 * table, reaching the far underlay at the relay's port) goes by
+	 * the underlay's table like the tunnel's outer packets would.
+	 */
+	{
+		const ucl_object_t	*redge, *ue, *rl, *fe, *fu;
+		ucl_object_iter_t	 reit, rrit, rfit;
+		const char		*rfar;
+
+		redge = by(ucl_object_lookup(pl->doc, "edges"), "server", sid);
+		reit = NULL;
+		while ((ue = ucl_object_iterate(ucl_object_lookup(redge,
+		    "ucs_end_points"), &reit, true)) != NULL) {
+			if (ucl_object_lookup(ue, "vrf") == NULL)
+				continue;
+			rrit = NULL;
+			while ((rl = ucl_object_iterate(ucl_object_lookup(ue,
+			    "relay"), &rrit, true)) != NULL) {
+				fe = by(ucl_object_lookup(pl->doc, "edges"),
+				    "server", str(rl, "to"));
+				rfit = NULL;
+				rfar = NULL;
+				while (rfar == NULL && (fu = ucl_object_iterate(
+				    ucl_object_lookup(fe, "ucs_end_points"), &rfit,
+				    true)) != NULL)
+					if (str(fu, "ucs") != NULL && strcmp(str(fu,
+					    "ucs"), str(ue, "ucs")) == 0)
+						rfar = ucs_address(pl, str(rl, "to"),
+						    fu);
+				if (rfar != NULL)
+					rule(pre, RULE_FROM + 1, "setfib %jd udp from "
+					    "me to %s dst-port %jd out",
+					    (intmax_t)ucl_object_toint(
+					    ucl_object_lookup(ue, "vrf")), rfar,
+					    (intmax_t)ucl_object_toint(
+					    ucl_object_lookup(rl, "port")));
+			}
+		}
+	}
 	dn->next = DN_FROM;
 	next = RULE_FROM + 2;
 	any = false;

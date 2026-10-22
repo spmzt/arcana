@@ -6392,11 +6392,17 @@ ATF_TC_BODY(sdwan_mesh, tc)
 		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
 		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
 		    "\"address\":\"10.99.0.1\"" },
+		/* b's wg end goes through a relay of its own toward a, in a
+		 * table of its own; a's is behind NAT. */
 		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
 		    "\"id\":\"b-wg\",\"ucs\":\"wgnet\",\"interface\":\"vtnet0\","
-		    "\"address\":\"192.0.2.2\",\"preference\":1},{\"id\":\"b-inet\","
-		    "\"ucs\":\"inet\",\"interface\":\"vtnet0\",\"address\":"
-		    "\"192.0.2.2\",\"preference\":10" },
+		    "\"address\":\"192.0.2.2\",\"preference\":1,\"vrf\":2,\"relay\":"
+		    "[{\"to\":\"@A\",\"endpoint\":\"127.0.0.1:51821\",\"port\":14350}]},"
+		    "{\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\",\"preference\":10" },
+		{ "\"address\":\"192.0.2.1\",\"breakout\":true,\"preference\":1}",
+		    "\"address\":\"192.0.2.1\",\"breakout\":true,\"preference\":1,"
+		    "\"nat\":true}" },
 		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
 		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
 		    "\"address\":\"10.99.0.2\"" },
@@ -6458,6 +6464,25 @@ ATF_TC_BODY(sdwan_mesh, tc)
 	 * tunnel, its end preferred 10, before the wg one, preferred 1. */
 	ATF_CHECK_MSG(strstr(r.body, "\"preference\":10") != NULL, "%s",
 	    r.body);
+	/*
+	 * b's wg peer toward a points at b's relay, its interface made
+	 * without a tunnelfib (the relay is on the host, in the first
+	 * table) and the relay's own flow sent by b's underlay table;
+	 * a's peer toward b has b's address and port; a's wg end is
+	 * behind NAT, so nobody is given an endpoint for it but through
+	 * a relay.
+	 */
+	ATF_CHECK_MSG(strstr(r.body, "\"endpoint\":\"127.0.0.1:51821\"") != NULL
+	    && strstr(r.body, "\"endpoint\":\"192.0.2.2:51101\"") != NULL &&
+	    strstr(r.body, "setfib 2 udp from me to 192.0.2.1 dst-port 14350 "
+	    "out") != NULL, "%s", r.body);
+	resp_free(&r);
+	/* A relay toward no edge, or on an underlay that is not WireGuard,
+	 * is refused. */
+	ATF_REQUIRE(swap_in(doc, "\"to\":\"", "\"to\":\"x", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "to is one of the "
+	    "edges") != NULL, "%s", r.body);
 	resp_free(&r);
 }
 

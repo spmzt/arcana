@@ -4848,9 +4848,42 @@ sdwan_modal(struct html *h)
 		    "checkbox\" name=\"breakout\" value=\"1\"%s> Breakout: the "
 		    "Internet is reached here</label><label class=\"toggle\">"
 		    "<input type=\"checkbox\" name=\"backup\" value=\"1\"%s> "
-		    "Backup: used only when nothing else is left</label></div>"
-		    "</div>", lk != NULL && jbool(lk, "breakout") ? " checked" :
-		    "", lk != NULL && jbool(lk, "backup") ? " checked" : "");
+		    "Backup: used only when nothing else is left</label>"
+		    "<label class=\"toggle\"><input type=\"checkbox\" name=\"nat\" "
+		    "value=\"1\"%s> Behind NAT (CGNAT): the far WireGuard peers "
+		    "get no endpoint for it; this end finds them and its "
+		    "keepalive holds the mapping</label></div></div>", lk != NULL
+		    && jbool(lk, "breakout") ? " checked" : "", lk != NULL &&
+		    jbool(lk, "backup") ? " checked" : "", lk != NULL && jbool(lk,
+		    "nat") ? " checked" : "");
+		/* Relays toward edges: a process of yours on the host (FEC,
+		 * obfuscation) the wg peer points at, reaching the far
+		 * underlay at its port; one a line. */
+		{
+			const ucl_object_t	*rl;
+			ucl_object_iter_t	 rit;
+			char			 rtext[1200];
+			size_t			 rn = 0;
+
+			rtext[0] = '\0';
+			rit = NULL;
+			while (lk != NULL && (rl = ucl_object_iterate(jget(lk,
+			    "relay"), &rit, true)) != NULL && rn < sizeof(rtext) -
+			    200)
+				rn += (size_t)snprintf(rtext + rn, sizeof(rtext) - rn,
+				    "%s %s %lld\n", jstr(rl, "to") != NULL ? jstr(rl,
+				    "to") : "", jstr(rl, "endpoint") != NULL ? jstr(rl,
+				    "endpoint") : "", (long long)jint(rl, "port", 0));
+			h_raw(h, "<label>Relays, WireGuard only<textarea name=\""
+			    "relay\" rows=\"2\" spellcheck=\"false\" placeholder=\"edge "
+			    "127.0.0.1:51821 14350\">");
+			h_txt(h, rtext);
+			h_raw(h, "</textarea><small>One a line: the far edge's id, "
+			    "the relay's listener here that the wg peer points at "
+			    "(host:port), and the port the relay reaches the far "
+			    "underlay at. The relay process is yours; its flow goes "
+			    "by this uplink's table.</small></label>");
+		}
 		/* How the interface is addressed and routed (Mplify 119
 		 * §12.2.3): by DHCP or SLAAC the address is learned from the
 		 * host at each plan; a table of its own; BGP or OSPF with the
@@ -6756,7 +6789,8 @@ sd_forms(const char *form, const ucl_object_t *f)
 		{
 			static const char *const keys[] = { "id", "ucs", "interface",
 			    "address", "gateway", "bandwidth", "breakout", "backup",
-			    "addressing", "vrf", "routing", "preference", NULL };
+			    "addressing", "vrf", "routing", "preference", "nat", "relay",
+			    NULL };
 
 			o = merged_from(jfind(links, "id", was), keys);
 		}
@@ -6786,6 +6820,34 @@ sd_forms(const char *form, const ucl_object_t *f)
 		if (checked(f, "backup"))
 			ucl_object_insert_key(o, ucl_object_frombool(true),
 			    "backup", 0, false);
+		if (checked(f, "nat"))
+			ucl_object_insert_key(o, ucl_object_frombool(true), "nat",
+			    0, false);
+		if ((v = jstr(f, "relay")) != NULL && v[0] != '\0') {
+			ucl_object_t	*rls = ucl_object_typed_new(UCL_ARRAY);
+			char		*copy = strdup(v), *it2 = copy, *line;
+
+			while (it2 != NULL && (line = strsep(&it2, "\n")) != NULL) {
+				char	to[80], ep[96];
+				long	port;
+
+				if (sscanf(line, "%79s %95s %ld", to, ep, &port) == 3) {
+					ucl_object_t	*rl = ucl_object_typed_new(
+					    UCL_OBJECT);
+
+					put_str(rl, "to", to);
+					put_str(rl, "endpoint", ep);
+					ucl_object_insert_key(rl, ucl_object_fromint(
+					    port), "port", 0, false);
+					ucl_array_append(rls, rl);
+				}
+			}
+			free(copy);
+			if (ucl_array_size(rls) > 0)
+				ucl_object_insert_key(o, rls, "relay", 0, false);
+			else
+				ucl_object_unref(rls);
+		}
 		if ((v = jstr(f, "addressing")) != NULL && v[0] != '\0' && strcmp(v,
 		    "static") != 0)
 			ucl_object_insert_key(o, ucl_object_fromstring(v),

@@ -1589,6 +1589,48 @@ domains(struct ck *c, const ucl_object_t *sw)
 
 static bool security_policy(struct ck *, const ucl_object_t *);
 
+/*
+ * A UCS End Point's relays: each toward an edge of the document, with
+ * the endpoint the wg peer points at (host:port, the relay's listener
+ * on this host) and the port the relay reaches the far underlay at.
+ * For a WireGuard underlay only: the relay carries its UDP.
+ */
+static bool
+relays_ok(struct ck *c, const ucl_object_t *doc, const ucl_object_t *u,
+    const ucl_object_t *relay)
+{
+	const ucl_object_t	*r;
+	ucl_object_iter_t	 it;
+	const char		*ep, *colon, *t;
+	char			*end;
+
+	if (ucl_object_type(relay) != UCL_ARRAY)
+		return (fail(c, "its relay is a list: to, endpoint, port"));
+	t = ucl_object_lookup(u, "tunnel") != NULL ? ucl_object_tostring(
+	    ucl_object_lookup(ucl_object_lookup(u, "tunnel"), "kind")) : NULL;
+	if (t == NULL || strcmp(t, "wg") != 0)
+		return (fail(c, "a relay is for a WireGuard underlay, whose UDP "
+		    "it carries"));
+	it = NULL;
+	while ((r = ucl_object_iterate(relay, &it, true)) != NULL) {
+		if (ucl_object_type(r) != UCL_OBJECT || str(r, "to") == NULL ||
+		    by(ucl_object_lookup(doc, "edges"), "server", str(r, "to")) ==
+		    NULL)
+			return (fail(c, "a relay's to is one of the edges"));
+		ep = str(r, "endpoint");
+		colon = ep != NULL ? strrchr(ep, ':') : NULL;
+		if (ep == NULL || colon == NULL || colon == ep || strlen(ep) > 80 ||
+		    colon[1] == '\0' || strtol(colon + 1, &end, 10) < 1 || strtol(
+		    colon + 1, NULL, 10) > 65535 || *end != '\0')
+			return (fail(c, "a relay's endpoint is host:port, the "
+			    "relay's listener on the host ([v6]:port)"));
+		if (!is_int(ucl_object_lookup(r, "port"), 1, 65535, NULL))
+			return (fail(c, "a relay's port is the far relay's, 1 "
+			    "to 65535"));
+	}
+	return (true);
+}
+
 static bool
 swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
     ucl_object_t *seen_ep, ucl_object_t *seen_uni, ucl_object_t *seen_if)
@@ -2569,6 +2611,17 @@ check_doc(const ucl_object_t *doc, struct ck *c)
 			    NULL))
 				ok = fail(c, "its preference is 0 to 65535, the "
 				    "higher taken first");
+			/* Behind NAT (CGNAT): the far wg peers get no endpoint
+			 * for it.  A relay toward an edge: a process on the
+			 * host (FEC, obfuscation) the wg peer's endpoint points
+			 * at, itself reaching the far underlay at a port. */
+			else if (ucl_object_lookup(e, "nat") != NULL &&
+			    ucl_object_type(ucl_object_lookup(e, "nat")) !=
+			    UCL_BOOLEAN)
+				ok = fail(c, "its nat is true or false");
+			else if (ucl_object_lookup(e, "relay") != NULL && !relays_ok(c,
+			    doc, u, ucl_object_lookup(e, "relay")))
+				ok = false;
 			/* How it is addressed and routed (Mplify 119 §12.2.3):
 			 * by DHCP or SLAAC the address is learned from the
 			 * host; a vrf is a table of its own; bgp or ospf with
