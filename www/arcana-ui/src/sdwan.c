@@ -2414,26 +2414,39 @@ view_applied(struct html *h)
 	const ucl_object_t	*ap, *s;
 	ucl_object_iter_t	 it;
 	char			 age[32];
-	int			 n, done, failed;
+	int			 n, done, failed, undone;
 
 	ap = jget(sd.applied, "apply");
 	if (ap == NULL || jstr(ap, "state") == NULL)
 		return;
-	n = done = failed = 0;
+	n = done = failed = undone = 0;
 	it = NULL;
 	while ((s = ucl_object_iterate(jget(ap, "steps"), &it, true)) != NULL) {
 		n++;
 		if (strcmp(jstr(s, "state"), "done") == 0)
 			done++;
-		else if (strcmp(jstr(s, "state"), "failed") == 0)
+		else if (strcmp(jstr(s, "state"), "failed") == 0 || strcmp(jstr(s,
+		    "state"), "undo failed") == 0)
 			failed++;
+		else if (strcmp(jstr(s, "state"), "undone") == 0)
+			undone++;
 	}
 	fmt_age(age, sizeof(age), (double)jint(ap, "started", 0) * 1000);
+	/* Rolled back: a step failed, and what the apply had made before
+	 * it was taken away again; the edges are as they were. */
 	h_fmt(h, "<div class=\"sd-block sd-applied %s\"><h3>%s <small class="
-	    "\"dim\">", jstr(ap, "state"), sd.applying ? "Applying" :
+	    "\"dim\">", strcmp(jstr(ap, "state"), "rolled back") == 0 ? "failed"
+	    : jstr(ap, "state"), sd.applying ? "Applying" :
 	    strcmp(jstr(ap, "state"), "done") == 0 ? "Last apply: done" :
-	    "Last apply: failed");
+	    strcmp(jstr(ap, "state"), "rolled back") == 0 ? "Last apply: rolled "
+	    "back" : "Last apply: failed");
 	h_txt(h, age);
+	if (strcmp(jstr(ap, "state"), "rolled back") == 0 && jstr(ap,
+	    "failed_step") != NULL) {
+		h_fmt(h, " · %d undone after ", undone);
+		h_txt(h, jstr(ap, "failed_step"));
+		h_raw(h, " failed");
+	}
 	h_fmt(h, " · %d of %d steps done%s</small></h3>", done, n,
 	    failed > 0 ? ", some failed" : "");
 	if (sd.applying || failed > 0) {
@@ -8607,10 +8620,13 @@ sdwan_action(const char *act, const char *arg, const char *value)
 
 		snprintf(body, sizeof(body), "On the edges, as jobs in Mplify "
 		    "119's order: %d to make, %d to make again, %d to take away; "
-		    "%d stay as they are. Each edge goes through safe mode, so a "
-		    "step that fails is undone; the UNIs come last.",
-		    count_change("make"), count_change("remake"), count_change(
-		    "unmake"), count_change("keep"));
+		    "%d stay as they are. Every job the host can undo runs in "
+		    "safe mode, confirmed by the console's next read of it; when "
+		    "a step fails, everything this apply made before it is taken "
+		    "away again (rolled back), and what it took away at its start "
+		    "stays away. The UNIs come last.", count_change("make"),
+		    count_change("remake"), count_change("unmake"), count_change(
+		    "keep"));
 		confirm("Deploy to the edges", body, "Deploy", false, "",
 		    "sd-apply", "", "");
 	} else if (strcmp(act, "sd-show-kept") == 0) {

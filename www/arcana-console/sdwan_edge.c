@@ -6354,11 +6354,11 @@ static void *
 run_main(void *arg)
 {
 	struct run		*r = arg;
-	ucl_object_t		*s, *ap;
+	ucl_object_t		*s, *ap, *made_now, *failed_at;
 	ucl_object_iter_t	 it;
 	const char		*ch;
 	int			 ph;
-	bool			 ok;
+	bool			 ok, rolled;
 
 	ok = true;
 	/* Taken away first, the last made first. */
@@ -6394,7 +6394,11 @@ run_main(void *arg)
 			    "server")), str(s, "key"));
 			step_set(r, s, "done", NULL);
 		}
-	/* Then made, step by step, every edge before the next step. */
+	/* Then made, step by step, every edge before the next step; what
+	 * this apply makes is remembered, to be taken away again should
+	 * a later step fail. */
+	made_now = ucl_object_typed_new(UCL_ARRAY);
+	failed_at = NULL;
 	for (ph = 1; ok && ph <= PHASES; ph++) {
 		it = NULL;
 		while (ok && (s = (ucl_object_t *)(uintptr_t)ucl_object_iterate(
@@ -6407,8 +6411,32 @@ run_main(void *arg)
 			put(s, "unmake", ucl_object_copy(ucl_object_lookup(s,
 			    "unmake_new")));
 			ok = do_make(r, s);
+			if (ok)
+				ucl_array_append(made_now, ucl_object_ref(s));
+			else
+				failed_at = s;
 		}
 	}
+	/*
+	 * A step failed: the apply is rolled back whole.  Everything it
+	 * made before, the last first, is taken away again by the unmake
+	 * jobs that making it left (what the apply took away at its start
+	 * is not made again: it is gone).  The edges are left as they
+	 * were before the apply, but for that.
+	 */
+	rolled = false;
+	while (!ok && ucl_array_size(made_now) > 0) {
+		ucl_object_t	*m = ucl_array_pop_last(made_now);
+		bool		 undone;
+
+		rolled = true;
+		undone = do_unmake(r, m);
+		step_set(r, m, undone ? "undone" : "undo failed", undone ?
+		    "taken away again: a step after it failed" : str(m,
+		    "detail"));
+		ucl_object_unref(m);
+	}
+	ucl_object_unref(made_now);
 	/* All made: only the allocations of what is there now are kept. */
 	if (ok)
 		put(r->st, "alloc", ucl_object_ref(r->alloc));
@@ -6418,7 +6446,10 @@ run_main(void *arg)
 	    r->steps, &it, true)) != NULL)
 		if (strcmp(str(s, "state"), "pending") == 0)
 			put(s, "state", S("not run"));
-	put(ap, "state", S(ok ? "done" : "failed"));
+	put(ap, "state", S(ok ? "done" : rolled ? "rolled back" : "failed"));
+	if (failed_at != NULL)
+		put(ap, "failed_step", S(str(failed_at, "title") != NULL ?
+		    str(failed_at, "title") : str(failed_at, "key")));
 	put(ap, "ended", I(time(NULL)));
 	/* Into the history: when, how it went, what it did; 50 kept. */
 	{
@@ -6475,7 +6506,10 @@ run_main(void *arg)
 		put(h, "started", I(ucl_object_toint(ucl_object_lookup(ap,
 		    "started"))));
 		put(h, "ended", I(time(NULL)));
-		put(h, "state", S(ok ? "done" : "failed"));
+		put(h, "state", S(ok ? "done" : rolled ? "rolled back" :
+		    "failed"));
+		if (failed_at != NULL)
+			put(h, "failed_step", S(str(ap, "failed_step")));
 		put(h, "fresh", B(ucl_flag(ap, "fresh")));
 		put(h, "steps", I(nsteps));
 		put(h, "made", I(made));
@@ -6489,7 +6523,7 @@ run_main(void *arg)
 	}
 	state_save(r->st);
 	thread_log(ok ? LOG_NOTICE : LOG_ERR, "sdwan: apply %s", ok ? "done" :
-	    "failed");
+	    rolled ? "rolled back" : "failed");
 	ucl_object_unref(r->st);
 	ucl_object_unref(r->alloc);
 	ucl_object_unref(r->keys);

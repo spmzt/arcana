@@ -6335,6 +6335,36 @@ ATF_TC_BODY(sdwan_jail, tc)
 	    strstr(r.body, "an edge that is a vnet jail has no ntp yet") != NULL,
 	    "%s", r.body);
 	resp_free(&r);
+	/*
+	 * A step that fails after others were made rolls the apply back:
+	 * what it made before is taken away again, the last first, and
+	 * the apply says which step failed.  A route the host refuses
+	 * (10.66.0.0/16, the stand-in's) comes after the tunnels; made
+	 * all again, the tunnels are destroyed once at the start and
+	 * once more by the rollback.
+	 */
+	ATF_REQUIRE(swap_in(doc, "\"ntp\":[\"10.0.0.1\"],", "", t1,
+	    sizeof(t1)));
+	ATF_REQUIRE(swap_in(t1, "\"prefix\":\"10.1.8.0/22\"",
+	    "\"prefix\":\"10.66.0.0/16\"", doc, sizeof(doc)));
+	ATF_REQUIRE(swap_in(doc, "\"version\":2", "\"version\":3", t1,
+	    sizeof(t1)));
+	http("PUT", "/api/sdwan", t1, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE(system(": > ifconfig.log") == 0);
+	http("POST", "/api/sdwan/apply", "{\"fresh\":true}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "rolled back") == 0 &&
+	    jstr(&r, "apply.failed_step") != NULL && strstr(r.body,
+	    "\"state\":\"undone\"") != NULL && strstr(r.body, "taken away "
+	    "again: a step after it failed") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(system("test \"$(grep -c '^gre100 destroy' ifconfig.log)\" "
+	    "-ge 2 && grep -q '^gre100 create' ifconfig.log") == 0,
+	    "the tunnel was not made and taken away again");
+	resp_free(&r);
 }
 
 CONSOLE_TC(sdwan_lists, "SD-WAN's named lists: prefixes, services, UCS, "
