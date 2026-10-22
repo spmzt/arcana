@@ -106,6 +106,7 @@ add(const char *id, const char *name, const char *uri, const char *peer,
 	s->tenant = tenant != NULL && *tenant != '\0' ? kore_strdup(tenant) :
 	    NULL;
 	s->safe_wait = 0;
+	s->pkg_repos = NULL;
 	pthread_mutex_unlock(&table_lock);
 }
 
@@ -152,6 +153,10 @@ servers_init(void)
 		k = ucl_object_toint(ucl_object_lookup(o, "safe_wait"));
 		servers[nservers - 1].safe_wait = k >= SAFE_WAIT_MIN &&
 		    k <= SAFE_WAIT_MAX ? (int)k : 0;
+		if (ucl_object_type(ucl_object_lookup(o, "pkg_repos")) ==
+		    UCL_OBJECT)
+			servers[nservers - 1].pkg_repos = ucl_object_ref(
+			    ucl_object_lookup(o, "pkg_repos"));
 	}
 	local_done = ucl_flag(doc, "local_done");
 	ucl_object_unref(doc);
@@ -390,6 +395,9 @@ server_object(const struct server *s)
 	if (s->safe_wait > 0)
 		ucl_object_insert_key(o, ucl_object_fromint(s->safe_wait),
 		    "safe_wait", 0, false);
+	if (s->pkg_repos != NULL)
+		ucl_object_insert_key(o, ucl_object_ref(s->pkg_repos),
+		    "pkg_repos", 0, false);
 	return (o);
 }
 
@@ -491,7 +499,7 @@ api_servers(struct http_request *req)
 /*
  * DELETE /api/servers/<id>; POST {safe_wait}: its rollback timer, the
  * seconds a change made in safe mode there waits to be confirmed before
- * the agent undoes it, 0 for the agent's own (-w).
+ * the agent undoes it, 0 for the agent's own (-w); {tenant}; {pkg_repos}.
  */
 int
 api_server(struct http_request *req)
@@ -542,6 +550,70 @@ api_server(struct http_request *req)
 				return (api_servers(req));
 			}
 		}
+		/*
+		 * {pkg_repos: {"<jail>" or ".": {upgrade, install, base}}}:
+		 * which of pkg's repositories each action takes packages
+		 * from there, per jail ("." the host), "" or absent for
+		 * any; kept whole, as given.
+		 */
+		if ((v = ucl_object_lookup(body, "pkg_repos")) != NULL) {
+			const ucl_object_t	*jo, *ao;
+			ucl_object_iter_t	 jit, ait;
+			ucl_object_t		*keep;
+
+			if (ucl_object_type(v) != UCL_OBJECT) {
+				ucl_object_unref(body);
+				return (reply_error(req, 400, "invalid",
+				    "pkg_repos is an object: a jail's name, or "
+				    ". for the host, to {upgrade, install, "
+				    "base}"));
+			}
+			jit = NULL;
+			while ((jo = ucl_object_iterate(v, &jit, true)) != NULL) {
+				const char	*jn = ucl_object_key(jo);
+
+				if (jn == NULL || strlen(jn) > 64 ||
+				    ucl_object_type(jo) != UCL_OBJECT) {
+					ucl_object_unref(body);
+					return (reply_error(req, 400, "invalid",
+					    "pkg_repos: a jail's name, 64 at "
+					    "most, to an object"));
+				}
+				ait = NULL;
+				while ((ao = ucl_object_iterate(jo, &ait, true)) !=
+				    NULL) {
+					const char	*an = ucl_object_key(ao);
+
+					if (an == NULL || (strcmp(an, "upgrade") !=
+					    0 && strcmp(an, "install") != 0 &&
+					    strcmp(an, "base") != 0) ||
+					    ucl_object_type(ao) != UCL_STRING ||
+					    strlen(ucl_object_tostring(ao)) > 64) {
+						ucl_object_unref(body);
+						return (reply_error(req, 400,
+						    "invalid", "pkg_repos: upgrade, "
+						    "install or base, each a "
+						    "repository's name, 64 at most"));
+					}
+				}
+			}
+			keep = ucl_object_ref(v);
+			pthread_mutex_lock(&table_lock);
+			if (servers[i].pkg_repos != NULL)
+				ucl_object_unref(servers[i].pkg_repos);
+			servers[i].pkg_repos = keep;
+			pthread_mutex_unlock(&table_lock);
+			if (ucl_object_lookup(body, "safe_wait") == NULL) {
+				ucl_object_unref(body);
+				if (save() == -1)
+					return (reply_error(req, 500, "store",
+					    "cannot save"));
+				kore_log(LOG_NOTICE, "server %s: pkg repositories "
+				    "chosen", id);
+				req->method = HTTP_METHOD_GET;
+				return (api_servers(req));
+			}
+		}
 		v = ucl_object_lookup(body, "safe_wait");
 		k = v != NULL && ucl_object_type(v) == UCL_INT ?
 		    ucl_object_toint(v) : -1;
@@ -572,6 +644,8 @@ api_server(struct http_request *req)
 	kore_free(servers[i].uri);
 	kore_free(servers[i].peer_name);
 	kore_free(servers[i].tenant);
+	if (servers[i].pkg_repos != NULL)
+		ucl_object_unref(servers[i].pkg_repos);
 	memmove(&servers[i], &servers[i + 1],
 	    (size_t)(nservers - i - 1) * sizeof(servers[0]));
 	nservers--;

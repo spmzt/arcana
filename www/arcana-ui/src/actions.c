@@ -1864,6 +1864,8 @@ refresh_packages(struct server *s, bool refresh)
 		app.pkg.result[0] = '\0';
 		/* Another host: its own packages, not a jail of the last. */
 		app.pkg.jail[0] = '\0';
+		snprintf(app.pkg.repo, sizeof(app.pkg.repo), "%s",
+		    pkg_repo_kept(s, "", "upgrade"));
 		app.pkg.anyos = app.pkg.asked = false;
 	}
 	snprintf(app.pkg.sid, sizeof(app.pkg.sid), "%s", s->id);
@@ -3672,3 +3674,72 @@ load_push(void)
 	api("GET", "/api/push", NULL, push_cb, NULL);
 }
 
+
+/*
+ * Which of pkg's repositories an action (upgrade, install, base) takes
+ * from on s, in a jail or on the host ("" or NULL): what was chosen
+ * there last time, kept with the server by the console; "" for any.
+ */
+const char *
+pkg_repo_kept(const struct server *s, const char *jail, const char *action)
+{
+	const ucl_object_t	*o;
+	const char		*v;
+
+	if (s == NULL || s->list == NULL || (o = jget(s->list, "pkg_repos")) ==
+	    NULL)
+		return ("");
+	o = ucl_object_lookup(o, jail != NULL && jail[0] != '\0' ? jail : ".");
+	v = o != NULL ? jstr(o, action) : NULL;
+	return (v != NULL ? v : "");
+}
+
+static void
+repo_kept_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)o;
+	(void)arg;
+	if (status != 200)
+		toast(true, "The repository chosen was not kept by the "
+		    "console: %s", err != NULL ? err : "no answer");
+}
+
+/* The choice made now, kept with the server for the next time. */
+void
+pkg_repo_keep(struct server *s, const char *jail, const char *action,
+    const char *repo)
+{
+	ucl_object_t	*all, *jo;
+	const char	*key;
+	char		*json, url[64], *body;
+
+	if (s == NULL || s->list == NULL)
+		return;
+	repo = repo != NULL ? repo : "";
+	if (strcmp(pkg_repo_kept(s, jail, action), repo) == 0)
+		return;
+	key = jail != NULL && jail[0] != '\0' ? jail : ".";
+	if ((all = (ucl_object_t *)(uintptr_t)jget(s->list, "pkg_repos")) ==
+	    NULL) {
+		all = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key((ucl_object_t *)(uintptr_t)s->list, all,
+		    "pkg_repos", 0, false);
+	}
+	if ((jo = (ucl_object_t *)(uintptr_t)ucl_object_lookup(all, key)) ==
+	    NULL) {
+		jo = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(all, jo, key, 0, true);
+	}
+	ucl_object_replace_key(jo, ucl_object_fromstring(repo), action, 0,
+	    true);
+	if ((json = (char *)ucl_object_emit(all, UCL_EMIT_JSON_COMPACT)) ==
+	    NULL)
+		return;
+	if (asprintf(&body, "{\"pkg_repos\":%s}", json) == -1)
+		abort();
+	free(json);
+	snprintf(url, sizeof(url), "/api/servers/%s", s->id);
+	api("POST", url, body, repo_kept_cb, NULL);
+	free(body);
+}

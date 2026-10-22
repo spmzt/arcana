@@ -658,6 +658,10 @@ void		 cancel_queued_jobs(struct server *);
 void		 open_job(struct server *, long long, const char *);
 void		 refresh_packages(struct server *, bool);
 void		 pkg_upgrade(struct server *, const char *, bool, bool);
+const char	*pkg_repo_kept(const struct server *, const char *,
+		    const char *);
+void		 pkg_repo_keep(struct server *, const char *, const char *,
+		    const char *);
 void		 address_change(const char *, const char *, bool, bool, bool,
 		    bool);
 void		 check_health(void);

@@ -546,9 +546,21 @@ paths:
           application/json:
             schema:
               type: object
-              required: [safe_wait]
               properties:
                 safe_wait: { type: integer, minimum: 0, maximum: 3600 }
+                tenant: { type: string, description: "the fleet it is in; \"\" for none" }
+                pkg_repos:
+                  type: object
+                  description: Which of pkg's repositories each action takes
+                    packages from there (pkg -r), per jail; the key "." is the
+                    host; "" or absent is any repository. Kept whole, as
+                    given, and listed with the server.
+                  additionalProperties:
+                    type: object
+                    properties:
+                      upgrade: { type: string, maxLength: 64 }
+                      install: { type: string, maxLength: 64 }
+                      base: { type: string, maxLength: 64 }
       responses:
         "200": { $ref: "#/components/responses/Servers" }
         "400": { $ref: "#/components/responses/Error" }

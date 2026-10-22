@@ -1375,6 +1375,12 @@ part_hosts(void)
 	    "'builder' && document.querySelector('button[value=go]:not("
 	    "[disabled])')", 20);
 	shot("6c-pkg-repo");
+	/* And the console keeps the choice for the host, per action, so the
+	 * next time the tab opens it is chosen already. */
+	run("fetch('/api/servers').then(r => r.json()).then(j => { window.prk = "
+	    "j.servers.some(s => s.pkg_repos && s.pkg_repos['.'] && "
+	    "s.pkg_repos['.'].upgrade === 'builder'); });");
+	wait_js("window.prk === true", 10);
 
 	/* The page opened again: what ended is still along the bottom. */
 	go("/");

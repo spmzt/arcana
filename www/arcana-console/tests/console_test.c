@@ -3758,6 +3758,25 @@ ATF_TC_BODY(services, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("15", jstr(&r, "servers.0.safe_wait"));
 	resp_free(&r);
+	/* Which repository each pkg action takes from, per jail: kept
+	 * with the server, as given; the shape is checked. */
+	http("POST", body, "{\"pkg_repos\":{\".\":{\"upgrade\":\"mine\"},"
+	    "\"web\":{\"install\":\"\",\"base\":\"FreeBSD-base\"}}}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("FreeBSD-base", jstr(&r, "servers.0.pkg_repos.web.base"));
+	ATF_CHECK_STREQ("FreeBSD-base", jstr(&r,
+	    "servers.0.pkg_repos.web.base"));
+	ATF_CHECK_STREQ("15", jstr(&r, "servers.0.safe_wait"));
+	resp_free(&r);
+	http("POST", body, "{\"pkg_repos\":{\"web\":{\"remove\":\"x\"}}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", body, "{\"pkg_repos\":[]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("GET", "/api/servers", NULL, &r);
+	ATF_CHECK_STREQ("FreeBSD-base", jstr(&r, "servers.0.pkg_repos.web.base"));
+	resp_free(&r);
 
 	/*
 	 * A safe change waits to hear from the console again; reading

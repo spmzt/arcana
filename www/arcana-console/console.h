@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.256.0"
+#define	ARCW_VERSION		"0.257.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -251,6 +251,8 @@ struct server {
 	char	*peer_name;
 	char	*tenant;	/* the fleet it is in, or NULL */
 	int	 safe_wait;	/* s a safe change waits; 0 the agent's own */
+	ucl_object_t *pkg_repos;	/* {"jail, or . the host": {upgrade, install, base}}: pkg -r
+				 * chosen there per action, or NULL */
 };
 
 void		 servers_init(void);

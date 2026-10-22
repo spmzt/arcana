@@ -19,7 +19,7 @@
 #include "app.h"
 #include "qrcodegen.h"
 
-static void	pkg_repo_select(struct html *);
+static void	pkg_repo_select(struct html *, const char *);
 static const char *icon_grid =
     "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 3h7v7H3z"
     "M14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z\"/></svg>";
@@ -2220,27 +2220,35 @@ view_settings(struct html *h)
 /*
  * Which of pkg's repositories there to take packages from (pkg -r),
  * the packages read's: any (as pkg is configured), or one alone,
- * enabled or not.  Nothing when the read named none.
+ * enabled or not.  Nothing when the read named none.  Chosen as it
+ * was for this action here (the host's, or the jail's) last time: the
+ * console keeps the choice per jail and action; upgrade's is the tab's
+ * current one.
  */
 static void
-pkg_repo_select(struct html *h)
+pkg_repo_select(struct html *h, const char *action)
 {
 	const ucl_object_t	*r;
 	ucl_object_iter_t	 it;
+	const char		*chosen;
 
 	if (app.pkg.data == NULL || ucl_array_size(jget(app.pkg.data,
 	    "repos")) == 0)
 		return;
+	chosen = strcmp(action, "upgrade") == 0 ? app.pkg.repo :
+	    pkg_repo_kept(cur_server(), app.pkg.jail, action);
 	h_raw(h, "<label class=\"pkg-repo\" title=\"Only from this one of "
 	    "pkg's repositories (pkg -r), enabled or not; or from where "
-	    "pkg's own configuration has each package\">From<select name=\""
-	    "repo\"><option value=\"\">any repository</option>");
+	    "pkg's own configuration has each package. Remembered for ");
+	h_txt(h, app.pkg.jail[0] != '\0' ? app.pkg.jail : "the host");
+	h_raw(h, "\">From<select name=\"repo\"><option value=\"\">any "
+	    "repository</option>");
 	it = NULL;
 	while ((r = ucl_object_iterate(jget(app.pkg.data, "repos"), &it,
 	    true)) != NULL) {
 		h_raw(h, "<option");
 		h_attr(h, "value", ucl_object_tostring_forced(r));
-		if (strcmp(app.pkg.repo, ucl_object_tostring_forced(r)) == 0)
+		if (strcmp(chosen, ucl_object_tostring_forced(r)) == 0)
 			h_raw(h, " selected");
 		h_raw(h, ">");
 		h_txt(h, ucl_object_tostring_forced(r));
@@ -2505,6 +2513,11 @@ modal(struct html *h)
 			    "repos"), &rit, true)) != NULL) {
 				h_raw(h, "<option");
 				h_attr(h, "value", ucl_object_tostring(rr));
+				/* As chosen for this jail's base last time. */
+				if (strcmp(pkg_repo_kept(cur_server(),
+				    app.pkg.jail, "base"),
+				    ucl_object_tostring(rr)) == 0)
+					h_raw(h, " selected");
 				h_raw(h, ">");
 				h_txt(h, ucl_object_tostring(rr));
 				h_raw(h, "</option>");
@@ -2547,7 +2560,7 @@ modal(struct html *h)
 		    "for a newer FreeBSD <em>IGNORE_OSVERSION</em></span></label>",
 		    app.pkg.ip == 4 ? ", over IPv4" : app.pkg.ip == 6 ?
 		    ", over IPv6" : "");
-		pkg_repo_select(h);
+		pkg_repo_select(h, "install");
 		break;
 	case MODAL_LOOKUP:
 		if (cur_server() == NULL)
@@ -3770,7 +3783,7 @@ view_packages(struct html *h, struct server *s)
 		h_fmt(h, "<div class=\"buttons\"><span class=\"dim\">%d pending; "
 		    "none selected means all</span>", n);
 		/* From one of pkg's repositories, or any. */
-		pkg_repo_select(h);
+		pkg_repo_select(h, "upgrade");
 		h_fmt(h, "<button class=\"ghost\" value=\"dry\"%s>Dry run"
 		    "</button><button class=\"danger\" value=\"go\"%s>Upgrade"
 		    "</button></div>", packages_busy(s) ? " disabled" : "",

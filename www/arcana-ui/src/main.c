@@ -710,6 +710,8 @@ submit_form(const char *form, const ucl_object_t *f)
 
 			/* From one repository: pkg install -r. */
 			rp[0] = '\0';
+			pkg_repo_keep(cur_server(), app.pkg.jail, "install",
+			    jstr(f, "repo"));
 			if (jstr(f, "repo") != NULL && jstr(f, "repo")[0] != '\0') {
 				qr = json_quote(jstr(f, "repo"));
 				snprintf(rp, sizeof(rp), ",\"pkg_repo\":%s", qr);
@@ -764,6 +766,8 @@ submit_form(const char *form, const ucl_object_t *f)
 
 			/* The base from one of the jail's repositories. */
 			rp[0] = '\0';
+			pkg_repo_keep(cur_server(), app.pkg.jail, "base",
+			    jstr(f, "repo"));
 			if (jstr(f, "repo") != NULL && jstr(f, "repo")[0] != '\0') {
 				qp = json_quote(jstr(f, "repo"));
 				snprintf(rp, sizeof(rp), ",\"pkg_repo\":%s", qp);
@@ -888,6 +892,7 @@ submit_form(const char *form, const ucl_object_t *f)
 		/* From one repository, or any. */
 		snprintf(app.pkg.repo, sizeof(app.pkg.repo), "%s",
 		    jstr(f, "repo") != NULL ? jstr(f, "repo") : "");
+		pkg_repo_keep(s2, app.pkg.jail, "upgrade", app.pkg.repo);
 		if (dry)
 			pkg_upgrade(s2, any ? names : NULL, true, false);
 		else if (any)
@@ -1193,8 +1198,9 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_packages(s, false);
 	} else if (strcmp(act, "pkg-target") == 0 && s != NULL) {
 		snprintf(app.pkg.jail, sizeof(app.pkg.jail), "%s", arg);
-		/* Another's repositories: none chosen there yet. */
-		app.pkg.repo[0] = '\0';
+		/* The repository chosen there last time, kept by the console. */
+		snprintf(app.pkg.repo, sizeof(app.pkg.repo), "%s",
+		    pkg_repo_kept(s, arg, "upgrade"));
 		if (app.pkg.data != NULL)
 			ucl_object_unref(app.pkg.data);
 		app.pkg.data = NULL;
@@ -1325,7 +1331,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		const ucl_object_t	*j;
 		ucl_object_iter_t	 it;
 		struct queued		*q;
-		char			*qj;
+		char			*qj, *qr;
 		int			 n;
 
 		n = (int)ucl_array_size(jget(s->list, "jails"));
@@ -1339,10 +1345,16 @@ dispatch(const char *act, const char *arg, const char *value)
 			    NULL || strcmp(jstr(j, "state"), "running") != 0)
 				continue;
 			qj = json_quote(jstr(j, "name"));
+			/* From the repository chosen for that jail, if one. */
+			qr = json_quote(pkg_repo_kept(s, jstr(j, "name"), "upgrade"));
 			if (asprintf(&q[n].json, "{\"kind\":\"pkg-upgrade\","
-			    "\"jail\":%s}", qj) == -1)
+			    "\"jail\":%s%s%s}", qj, pkg_repo_kept(s, jstr(j, "name"),
+			    "upgrade")[0] != '\0' ? ",\"pkg_repo\":" : "",
+			    pkg_repo_kept(s, jstr(j, "name"), "upgrade")[0] != '\0' ?
+			    qr : "") == -1)
 				abort();
 			free(qj);
+			free(qr);
 			snprintf(q[n].title, sizeof(q[n].title), "pkg upgrade in "
 			    "%s", jstr(j, "name"));
 			snprintf(q[n].target, sizeof(q[n].target), "%s",
