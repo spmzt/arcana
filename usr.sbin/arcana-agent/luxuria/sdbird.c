@@ -28,6 +28,9 @@
 
 #include <ucl.h>
 
+#include <dirent.h>
+#include <errno.h>
+
 #include "agent.h"
 
 #define	BIRD_FILE	"sdwan-bird.json"
@@ -37,7 +40,22 @@
 struct instance {
 	char	name[40];
 	int	fib;
+	/* An edge that is a vnet jail: the instance runs in it (jexec), its
+	 * files beneath its root, as resolved when it was applied. */
+	char	jail[64];
+	int	jid;
+	char	jroot[256];
 };
+
+/* w works on the instance's jail, or on the host. */
+static void
+inst_scope(struct work *w, const struct instance *in)
+{
+
+	w->jail = in->jail[0] != '\0' ? in->jail : NULL;
+	w->jid = in->jail[0] != '\0' ? in->jid : 0;
+	w->jroot = in->jail[0] != '\0' ? in->jroot : NULL;
+}
 
 /* A BFD session as an instance lists it: the far address, where. */
 struct bfd {
@@ -95,29 +113,33 @@ name_ok(const char *s)
 	return (true);
 }
 
-/* Where an instance's files are: beside the agent's kept files. */
+/* Where an instance's files are: beside the agent's kept files; a
+ * jail's in its /var/run, as its programs see them. */
 static const char *
-inst_path(struct work *w, const char *name, const char *ext)
+inst_path(struct work *w, const struct instance *in, const char *ext)
 {
 	char	buf[MAXPATHLEN];
 
-	sdwan_conf_path(wfmt(w, "sdwan-bird-%s.%s", name, ext), buf,
+	if (in->jail[0] != '\0')
+		return (wfmt(w, "/var/run/arcana-sdwan-bird-%s.%s", in->name, ext));
+	sdwan_conf_path(wfmt(w, "sdwan-bird-%s.%s", in->name, ext), buf,
 	    sizeof(buf));
 	return (wstrdup(w, buf));
 }
 
 /* birdc on an instance's socket; 0 and its output when it answered. */
 static int
-inst_birdc(struct work *w, const char *name, const char *a, const char *b,
-    struct execres *res)
+inst_birdc(struct work *w, const struct instance *in, const char *a,
+    const char *b, struct execres *res)
 {
 	char	*argv[7];
 	int	 n;
 
+	inst_scope(w, in);
 	n = 0;
 	argv[n++] = (char *)(uintptr_t)opts.birdc_bin;
 	argv[n++] = (char *)(uintptr_t)"-s";
-	argv[n++] = (char *)(uintptr_t)inst_path(w, name, "ctl");
+	argv[n++] = (char *)(uintptr_t)inst_path(w, in, "ctl");
 	argv[n++] = (char *)(uintptr_t)a;
 	if (b != NULL)
 		argv[n++] = (char *)(uintptr_t)b;
@@ -126,14 +148,14 @@ inst_birdc(struct work *w, const char *name, const char *a, const char *b,
 }
 
 static bool
-inst_alive(struct work *w, const char *name)
+inst_alive(struct work *w, const struct instance *in)
 {
 	struct execres	res;
 
 	/* Its socket there, and answering. */
-	if (access(inst_path(w, name, "ctl"), F_OK) != 0)
+	if (in->jail[0] == '\0' && access(inst_path(w, in, "ctl"), F_OK) != 0)
 		return (false);
-	return (inst_birdc(w, name, "show", "status", &res) == 0 && res.out !=
+	return (inst_birdc(w, in, "show", "status", &res) == 0 && res.out !=
 	    NULL && strstr(res.out, "BIRD") != NULL && strstr(res.out,
 	    "Shutdown") == NULL);
 }
@@ -148,10 +170,10 @@ inst_up(struct work *w, const struct instance *in, bool was,
 	/* One that answers on its socket is told again, whether this agent
 	 * started it or one before it did. */
 	(void)was;
-	if (inst_alive(w, in->name)) {
+	if (inst_alive(w, in)) {
 		/* "Reconfigured", or "Reconfiguration in progress" (or queued)
 		 * while its sessions settle: taken, either way. */
-		if (inst_birdc(w, in->name, "configure", NULL, &res) != 0 ||
+		if (inst_birdc(w, in, "configure", NULL, &res) != 0 ||
 		    res.out == NULL || strstr(res.out, "Reconfigur") == NULL) {
 			*errp = wfmt(w, "%s: bird did not take its "
 			    "configuration: %s", in->name, res.out != NULL ?
@@ -163,7 +185,8 @@ inst_up(struct work *w, const struct instance *in, bool was,
 	return (inst_start(w, in, errp));
 }
 
-/* An instance started in its table, with a socket and pid file of its own. */
+/* An instance started in its table, with a socket and pid file of its
+ * own; a jail's in the jail, by jexec(8). */
 static int
 inst_start(struct work *w, const struct instance *in, const char **errp)
 {
@@ -171,19 +194,20 @@ inst_start(struct work *w, const struct instance *in, const char **errp)
 	char		*argv[10];
 	int		 n;
 
+	inst_scope(w, in);
 	n = 0;
 	argv[n++] = (char *)(uintptr_t)opts.setfib_bin;
 	argv[n++] = (char *)(uintptr_t)"-F";
 	argv[n++] = wfmt(w, "%d", in->fib);
 	argv[n++] = (char *)(uintptr_t)opts.bird_bin;
 	argv[n++] = (char *)(uintptr_t)"-c";
-	argv[n++] = (char *)(uintptr_t)inst_path(w, in->name, "conf");
+	argv[n++] = (char *)(uintptr_t)inst_path(w, in, "conf");
 	argv[n++] = (char *)(uintptr_t)"-s";
-	argv[n++] = (char *)(uintptr_t)inst_path(w, in->name, "ctl");
+	argv[n++] = (char *)(uintptr_t)inst_path(w, in, "ctl");
 	argv[n++] = (char *)(uintptr_t)"-P";
-	argv[n++] = (char *)(uintptr_t)inst_path(w, in->name, "pid");
+	argv[n++] = (char *)(uintptr_t)inst_path(w, in, "pid");
 	argv[n] = NULL;
-	if (run_exec(w, argv, &res) != 0) {
+	if (run_exec(w, scope_jexec(w, argv), &res) != 0) {
 		*errp = wtext(w, exec_error(w, &res, "bird"));
 		return (-1);
 	}
@@ -192,13 +216,18 @@ inst_start(struct work *w, const struct instance *in, const char **errp)
 
 /* An instance stopped, its files gone. */
 static void
-inst_down(struct work *w, const char *name)
+inst_down(struct work *w, const struct instance *in)
 {
 	struct execres	res;
 
-	(void)inst_birdc(w, name, "down", NULL, &res);
-	(void)unlink(inst_path(w, name, "conf"));
-	(void)unlink(inst_path(w, name, "pid"));
+	(void)inst_birdc(w, in, "down", NULL, &res);
+	if (in->jail[0] != '\0') {
+		(void)scope_unlink(w, inst_path(w, in, "conf"));
+		(void)scope_unlink(w, inst_path(w, in, "pid"));
+	} else {
+		(void)unlink(inst_path(w, in, "conf"));
+		(void)unlink(inst_path(w, in, "pid"));
+	}
 }
 
 static ucl_object_t *
@@ -216,9 +245,11 @@ parse(const char *json)
 }
 
 /*
- * The instances applied: {"instances": [{"name", "fib", "conf"}, ...]}.
- * Each file is parsed by bird before it is made the instance's; those
- * not named any more are stopped.  Kept for the next start.
+ * The instances applied: {"instances": [{"name", "fib", "conf"}, ...]},
+ * the host's, or with "jail" those of an edge that is a vnet jail, run
+ * in it.  Each file is parsed by bird before it is made the instance's;
+ * those of the same edge not named any more are stopped, the other
+ * edges' left as they are.  Kept for the next start, a file per edge.
  */
 int
 do_sdwan_bird(struct work *w, const char *json, const char **errp)
@@ -226,11 +257,11 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 	ucl_object_t		*top;
 	const ucl_object_t	*in, *v;
 	ucl_object_iter_t	 it;
-	struct instance		 ni[INSTANCES_MAX];
+	struct instance		 ni[INSTANCES_MAX], keep[INSTANCES_MAX];
 	struct execres		 res;
-	char			*argv[5];
-	const char		*conf, *e;
-	int			 n, i, k, step;
+	char			*argv[5], path[MAXPATHLEN];
+	const char		*conf, *e, *jail, *file;
+	int			 n, i, k, step, nkeep;
 	bool			 was, ok;
 
 	if ((top = parse(json)) == NULL || ucl_object_type(top) != UCL_OBJECT) {
@@ -238,6 +269,19 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 			ucl_object_unref(top);
 		*errp = "the instances are an object: instances, each a name, "
 		    "a fib and its conf";
+		return (-1);
+	}
+	if ((jail = sdwan_payload_jail(top, errp)) == NULL) {
+		ucl_object_unref(top);
+		return (-1);
+	}
+	if (jail[0] != '\0' && scope_enter(w, jail, errp) != 0) {
+		ucl_object_unref(top);
+		return (-1);
+	}
+	if (jail[0] != '\0' && strlen(w->jroot) >= sizeof(ni[0].jroot)) {
+		ucl_object_unref(top);
+		*errp = wfmt(w, "the jail %s is too deep a path", jail);
 		return (-1);
 	}
 	n = 0;
@@ -268,18 +312,28 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 		snprintf(ni[n].name, sizeof(ni[n].name), "%s",
 		    ucl_object_tostring(v));
 		ni[n].fib = (int)ucl_object_toint(ucl_object_lookup(in, "fib"));
+		snprintf(ni[n].jail, sizeof(ni[n].jail), "%s", jail);
+		ni[n].jid = jail[0] != '\0' ? w->jid : 0;
+		snprintf(ni[n].jroot, sizeof(ni[n].jroot), "%s", jail[0] != '\0' ?
+		    w->jroot : "");
 		n++;
 	}
 	pthread_mutex_lock(&lock);
-	/* Those that go, first. */
+	/* Those of this edge that go, first; the other edges' are kept. */
+	nkeep = 0;
 	for (i = 0; i < ninstances; i++) {
+		if (strcmp(instances[i].jail, jail) != 0) {
+			keep[nkeep++] = instances[i];
+			continue;
+		}
 		for (k = 0; k < n; k++)
 			if (strcmp(ni[k].name, instances[i].name) == 0)
 				break;
 		if (k == n) {
 			step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-			    "bird %s stopped", instances[i].name);
-			inst_down(w, instances[i].name);
+			    "bird %s%s%s stopped", instances[i].name, jail[0] !=
+			    '\0' ? " of " : "", jail);
+			inst_down(w, &instances[i]);
 			step_end(w, step, true, NULL);
 		}
 	}
@@ -294,11 +348,15 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 			if (strcmp(ni[k].name, instances[i].name) == 0)
 				was = true;
 		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "bird "
-		    "%s in fib %d: %s", ni[k].name, ni[k].fib, was ?
-		    "configured again" : "started");
+		    "%s in fib %d%s%s: %s", ni[k].name, ni[k].fib, jail[0] != '\0' ?
+		    " of " : "", jail, was ? "configured again" : "started");
 		e = NULL;
-		if (sdwan_conf_write(wfmt(w, "sdwan-bird-%s.conf", ni[k].name),
-		    conf, &e) != 0) {
+		inst_scope(w, &ni[k]);
+		if (jail[0] != '\0' ? scope_replace(w, inst_path(w, &ni[k],
+		    "conf"), conf, strlen(conf), 0644, NULL) != 0 && (e =
+		    wfmt(w, "%s: %s", inst_path(w, &ni[k], "conf"), strerror(
+		    errno))) != NULL : sdwan_conf_write(wfmt(w, "sdwan-bird-%s.conf",
+		    ni[k].name), conf, &e) != 0) {
 			step_end(w, step, false, "%s", e);
 			*errp = wfmt(w, "%s: %s", ni[k].name, e);
 			ok = false;
@@ -308,7 +366,7 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 		argv[0] = (char *)(uintptr_t)opts.bird_bin;
 		argv[1] = (char *)(uintptr_t)"-p";
 		argv[2] = (char *)(uintptr_t)"-c";
-		argv[3] = (char *)(uintptr_t)inst_path(w, ni[k].name, "conf");
+		argv[3] = (char *)(uintptr_t)inst_path(w, &ni[k], "conf");
 		argv[4] = NULL;
 		if (run_exec(w, argv, &res) != 0) {
 			step_end(w, step, false, "bird does not take it");
@@ -326,17 +384,33 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 		}
 		step_end(w, step, true, NULL);
 	}
-	if (ok) {
-		memcpy(instances, ni, sizeof(*ni) * (size_t)n);
-		ninstances = n;
+	if (ok && nkeep + n <= INSTANCES_MAX) {
+		memcpy(instances, keep, sizeof(*keep) * (size_t)nkeep);
+		memcpy(instances + nkeep, ni, sizeof(*ni) * (size_t)n);
+		ninstances = nkeep + n;
+	} else if (ok) {
+		*errp = wfmt(w, "%d instances at most, all edges counted",
+		    INSTANCES_MAX);
+		ok = false;
 	}
 	pthread_mutex_unlock(&lock);
 	ucl_object_unref(top);
 	if (!ok)
 		return (-1);
+	/* Kept, a file per edge; a jail's with no instance goes, so that a
+	 * start makes none for a jail that has none now. */
+	file = jail[0] != '\0' ? wfmt(w, "sdwan-bird@%s.json", jail) : BIRD_FILE;
+	if (jail[0] != '\0' && n == 0) {
+		if (unlink(sdwan_conf_path(file, path, sizeof(path))) == -1 &&
+		    errno != ENOENT) {
+			*errp = wfmt(w, "%s: %s", file, strerror(errno));
+			return (-1);
+		}
+		return (0);
+	}
 	e = NULL;
-	if (sdwan_conf_write(BIRD_FILE, json, &e) != 0) {
-		*errp = wfmt(w, "%s: %s", BIRD_FILE, e);
+	if (sdwan_conf_write(file, json, &e) != 0) {
+		*errp = wfmt(w, "%s: %s", file, e);
 		return (-1);
 	}
 	return (0);
@@ -348,13 +422,14 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
  * interval, timeout; into out, at most max; how many.
  */
 static int
-bfd_read(struct work *w, const char *name, struct bfd *out, int max)
+bfd_read(struct work *w, const struct instance *in, struct bfd *out,
+    int max)
 {
 	struct execres	 res;
 	char		*text, *line, *p, *f[6];
 	int		 n, k;
 
-	if (inst_birdc(w, name, "show", "bfd sessions", &res) != 0 || res.out ==
+	if (inst_birdc(w, in, "show", "bfd sessions", &res) != 0 || res.out ==
 	    NULL)
 		return (0);
 	n = 0;
@@ -376,7 +451,7 @@ bfd_read(struct work *w, const char *name, struct bfd *out, int max)
 		}
 		if (f[2][0] == '\0')
 			continue;
-		snprintf(out[n].instance, sizeof(out[n].instance), "%s", name);
+		snprintf(out[n].instance, sizeof(out[n].instance), "%s", in->name);
 		snprintf(out[n].address, sizeof(out[n].address), "%s", f[0]);
 		snprintf(out[n].iface, sizeof(out[n].iface), "%s", f[1]);
 		snprintf(out[n].since, sizeof(out[n].since), "%s", f[3]);
@@ -416,7 +491,7 @@ bfd_watch(void *arg __unused)
 		work_init(&w);
 		m = 0;
 		for (i = 0; i < n && m < BFD_MAX; i++)
-			m += bfd_read(&w, in[i].name, now + m, BFD_MAX - m);
+			m += bfd_read(&w, &in[i], now + m, BFD_MAX - m);
 		changed = false;
 		nchg = 0;
 		/* Seen up once: from then on, down is a fault. */
@@ -504,14 +579,34 @@ protocols_watch(struct work *w, const struct instance *in)
 	char		*text, *line, *word, *rest, obj[160];
 	int		 k;
 
-	if (inst_birdc(w, name, "show", "protocols", &res) != 0 || res.out ==
+	if (inst_birdc(w, in, "show", "protocols", &res) != 0 || res.out ==
 	    NULL) {
+		struct instance	again = *in;
+
 		/* Gone (BIRD 3.3.3 has died on a reconfigure): started
-		 * again, on its file as it is. */
+		 * again, on its file as it is; a jail's where the jail is
+		 * now, if it runs. */
 		fault_set("bird-instance", "Critical", name, "bird", "the BIRD "
 		    "instance %s does not answer: started again", name);
 		e = NULL;
-		if (inst_start(w, in, &e) != 0)
+		if (again.jail[0] != '\0') {
+			if (scope_enter(w, again.jail, &e) != 0 || strlen(w->jroot)
+			    >= sizeof(again.jroot)) {
+				logmsg(LOG_WARNING, "sdwan bird: %s not started "
+				    "again: %s", name, e != NULL ? e : "the jail's "
+				    "path");
+				return;
+			}
+			again.jid = w->jid;
+			snprintf(again.jroot, sizeof(again.jroot), "%s", w->jroot);
+			pthread_mutex_lock(&lock);
+			for (k = 0; k < ninstances; k++)
+				if (strcmp(instances[k].name, again.name) == 0 &&
+				    strcmp(instances[k].jail, again.jail) == 0)
+					instances[k] = again;
+			pthread_mutex_unlock(&lock);
+		}
+		if (inst_start(w, &again, &e) != 0)
 			logmsg(LOG_WARNING, "sdwan bird: %s not started again: %s",
 			    name, e);
 		return;
@@ -567,9 +662,12 @@ void
 sdwan_bird_start(void)
 {
 	struct work	 w;
-	char		*json;
+	struct dirent	*de;
+	DIR		*d;
+	char		*json, dir[MAXPATHLEN], *slash;
 	const char	*e;
 	pthread_t	 tid;
+	size_t		 n;
 	int		 error;
 
 	work_init(&w);
@@ -578,6 +676,28 @@ sdwan_bird_start(void)
 		if (do_sdwan_bird(&w, json, &e) != 0)
 			logmsg(LOG_WARNING, "sdwan bird: %s", e);
 		free(json);
+	}
+	/* The jails', each from its own file. */
+	sdwan_conf_path(BIRD_FILE, dir, sizeof(dir));
+	if ((slash = strrchr(dir, '/')) == NULL)
+		snprintf(dir, sizeof(dir), ".");
+	else
+		*slash = '\0';
+	if ((d = opendir(dir)) != NULL) {
+		while ((de = readdir(d)) != NULL) {
+			n = strlen(de->d_name);
+			if (strncmp(de->d_name, "sdwan-bird@", 11) != 0 || n <= 16 ||
+			    strcmp(de->d_name + n - 5, ".json") != 0)
+				continue;
+			if ((json = sdwan_kept_read(de->d_name)) == NULL)
+				continue;
+			e = NULL;
+			if (do_sdwan_bird(&w, json, &e) != 0)
+				logmsg(LOG_WARNING, "sdwan bird: %s: %s", de->d_name,
+				    e);
+			free(json);
+		}
+		closedir(d);
 	}
 	work_free(&w);
 	if ((error = pthread_create(&tid, NULL, bfd_watch, NULL)) != 0)
@@ -608,8 +728,11 @@ sdwan_bird_json(struct work *w, ucl_object_t *top)
 		    "name", 0, false);
 		ucl_object_insert_key(o, ucl_object_fromint(instances[i].fib),
 		    "fib", 0, false);
+		if (instances[i].jail[0] != '\0')
+			ucl_object_insert_key(o, ucl_object_fromstring(
+			    instances[i].jail), "jail", 0, false);
 		ps = ucl_object_typed_new(UCL_ARRAY);
-		if (inst_birdc(w, instances[i].name, "show", "protocols",
+		if (inst_birdc(w, &instances[i], "show", "protocols",
 		    &res) == 0 && res.out != NULL) {
 			ucl_object_insert_key(o, ucl_object_frombool(true),
 			    "running", 0, false);

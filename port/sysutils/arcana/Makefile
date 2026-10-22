@@ -10,6 +10,7 @@ WWW=		https://github.com/spmzt/arcana
 LICENSE=	BSD2CLAUSE
 LICENSE_FILE=	${WRKSRC}/LICENSE
 
+BUILD_DEPENDS=	cblink-gen:devel/cblink
 LIB_DEPENDS=	libcblink.so:devel/cblink
 
 USES=		uidfix

@@ -128,12 +128,36 @@ From a shell, `arcanactl agent-build -y` confirms the keys shown, and
 `-i key` names the key.
 
 The host that builds needs what the build needs: `git`, the base
-compiler and `devel/libcbor`; cblink is cloned with the tree, a
+compiler, `devel/libcbor` and `net/libyang3` (for cblink-gen, which
+reads the wire's YANG modules); cblink is cloned with the tree, a
 submodule, and built with it. If the linker
 are somewhere else on it, `/usr/local/etc/arcana/config.mk` there is
 copied into the tree as its `config.mk`. When the agent is root, git
 and make run as `nobody`. From a shell, `arcanactl agent-build [-o
 file] repository [ref]` builds and saves the program.
+
+## The wire of cblink 0.2
+
+Since agent 0.195.0 and console 0.276.0 the agent, arcanactl and the
+console speak cblink's wire version 2 alone (YANG-CBOR bodies keyed by
+SID, `share/yang/arcana@<rev>.yang`), on `libcblink.so.2`; a version-2
+program and a version-1 one do not understand each other.  Moving a
+fleet over, in an order that never leaves you without a working
+arcanactl:
+
+1. Push the tree; on the console host pull and `make` (build only).
+2. Install `devel/cblink` 0.2 on every host (`pkg upgrade cblink` from
+   the console's Packages tab): `libcblink.so.2` installs beside
+   `.so.1`; nothing uses it yet.
+3. From the console's fleet page, update every agent but the console
+   host's own.  Each becomes version 2 and the old console can no
+   longer reach it: expected.  Check each with the new arcanactl from
+   the build tree (`obj/usr.sbin/arcanactl/arcanactl`, which finds
+   the submodule's library by its rpath): `hello` shows the version.
+4. Last, the console host: `make install`, `service arcana_console
+   restart`, `service arcana_agent restart`.  Then `arcanactl hello`
+   locally and to each host; the fleet page green.
+5. Before step 4 a host goes back by `arcana-agent.old` and a restart.
 
 ## Versions
 

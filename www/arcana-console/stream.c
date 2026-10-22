@@ -220,9 +220,14 @@ r_data(cbl_stream *st, cbl_msg *data, void *arg)
 	struct arc_part	 d;
 	struct qpart	*q;
 	char		*rows, *text;
+	cbl_yarena	*a;
 
-	if (cbl_validate(cbl_msg_body(data), &arc_part_policy, NULL) != 0 ||
-	    arc_part_parse(data, cbl_msg_body(data), &d) != 0) {
+	if ((a = cbl_yarena_new()) == NULL) {
+		(void)cbl_stream_reset(st, ENOMEM);
+		return;
+	}
+	if (arcana_part_parse(data, &d, a, CBL_YD_STRICT, NULL, 0) != 0) {
+		cbl_yarena_free(a);
 		(void)cbl_stream_reset(st, EBADMSG);
 		return;
 	}
@@ -240,6 +245,7 @@ r_data(cbl_stream *st, cbl_msg *data, void *arg)
 	free(rows);
 	if ((q = calloc(1, sizeof(*q))) == NULL) {
 		free(text);
+		cbl_yarena_free(a);
 		(void)cbl_stream_reset(st, ENOMEM);
 		return;
 	}
@@ -251,6 +257,7 @@ r_data(cbl_stream *st, cbl_msg *data, void *arg)
 	STAILQ_INSERT_TAIL(&r->parts, q, next);
 	pthread_cond_signal(&r->wake);
 	pthread_mutex_unlock(&r->lock);
+	cbl_yarena_free(a);
 }
 
 static void

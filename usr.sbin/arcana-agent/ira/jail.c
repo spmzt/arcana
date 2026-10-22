@@ -96,7 +96,8 @@ jail_record(struct work *w, struct arc_jail *j, const char *name,
 		j->has_rss_kb = true;
 		j->rss_kb = ji->rss_kb;
 		j->has_cpu_pct = true;
-		j->cpu_pct = ji->cpu_pct;
+		/* Hundredths of a percent on the wire (decimal64, 2 digits). */
+		j->cpu_pct = (int64_t)(ji->cpu_pct * 100.0);
 		return;
 	}
 	j->hostname = cjail_param1(cj, "host.hostname");

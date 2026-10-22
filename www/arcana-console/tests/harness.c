@@ -253,8 +253,13 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\"4 new %s/jroot\"; exit 0; }\necho \"jls: jail not found\" >&2\n"
 	    "exit 1\n", cwd);
 	put("fake-jls", buf);
-	put("fake-jexec", "#!/bin/sh\necho \"jexec $*\" >> jexec.log\nshift\n"
-	    "exec \"$@\"\n");
+	/* The jail's /var/run is beneath its root here: what a program is
+	 * given there, it finds. */
+	snprintf(buf, sizeof(buf), "#!/bin/sh\necho \"jexec $*\" >> jexec.log\n"
+	    "shift\nn=0; for a; do case \"$a\" in /var/run/*) a=%s/jroot$a ;; "
+	    "esac; set -- \"$@\" \"$a\"; n=$((n+1)); done\nshift $n\n"
+	    "exec \"$@\"\n", cwd);
+	put("fake-jexec", buf);
 	put("fake-helper", "#!/bin/sh\necho \"$*\" >> helper.log\n"
 	    "case \"$3\" in\n"
 	    /* The routes, as the helper reads them through netlink(4). */

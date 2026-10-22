@@ -293,7 +293,8 @@ operation, done live through the kernel and persistently through
 Superbia's edit of the configuration, and traced by Gula. A file is
 where its main concern lives.
 
-How the operations (the cblink family in `share/arcana/arcana.yaml`)
+How the operations (the cblink family in `share/arcana/arcana.yaml`, its
+wire the YANG module written from it)
 fall under the Archives:
 
 | Operations | Archive |

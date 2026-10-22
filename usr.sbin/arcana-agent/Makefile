@@ -23,8 +23,8 @@ MAN=		arcana-agent.8
 
 .include "${.CURDIR}/../../share/mk/arcana.mk"
 
-CBLINK_SPECS=	${ARC_SPEC}
-CBLINK_PARTS=	h,c,server
+ARC_WIRE=	server
+.include "${.CURDIR}/../../share/mk/arcana.wire.mk"
 
 CFLAGS+=	${JAILCONF_CFLAGS} ${UCL_CFLAGS}
 LDADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
@@ -52,5 +52,4 @@ arcana_agent.sh: arcana_agent.in
 HAS_TESTS=
 SUBDIR.${MK_TESTS}+= tests
 
-.include "${CBLINK_MK}"
 .include <bsd.prog.mk>

@@ -195,6 +195,8 @@ members(struct html *h, const ucl_object_t *set, const ucl_object_t *list,
 			h_raw(h, " ");
 		h_raw(h, " <span class=\"c\">; ");
 		h_txt(h, jstr(a, "name"));
+		if (list != NULL && m != NULL && jget(m, "sid") != NULL)
+			h_fmt(h, " SID %lld", (long long)jint(m, "sid", 0));
 		ck = jstr(a, "checks");
 		if (ck != NULL && ck[0] != '\0') {
 			h_raw(h, " (");
@@ -272,7 +274,10 @@ view_schema(struct html *h, const char *op)
 	h_txt(h, jstr(app.schema, "family"));
 	h_raw(h, " · ");
 	h_txt(h, op);
-	h_fmt(h, " · command %lld</span></h4>", (long long)jint(o, "cmd", 0));
+	h_fmt(h, " · command %lld", (long long)jint(o, "cmd", 0));
+	if (jget(o, "sid") != NULL)
+		h_fmt(h, " · SID %lld", (long long)jint(o, "sid", 0));
+	h_raw(h, "</span></h4>");
 	if (jstr(o, "doc") != NULL && jstr(o, "doc")[0] != '\0') {
 		h_raw(h, "<p class=\"dim\">");
 		h_txt(h, jstr(o, "doc"));
@@ -291,7 +296,9 @@ view_schema(struct html *h, const char *op)
 	for (i = 0; i < nseen; i++)
 		set_block(h, seen[i], seen, &nseen);
 	h_raw(h, "</pre><p class=\"dim note\">A message is a CBOR map keyed "
-	    "by attribute number; ? marks what may be absent.</p></div>");
+	    "by SID (RFC 9254): the rpc's input or output at the top, each "
+	    "member by its own, the number at the left its place in the set; "
+	    "? marks what may be absent.</p></div>");
 	for (i = 0; i < nseen; i++)
 		free((void *)(uintptr_t)seen[i]);
 }

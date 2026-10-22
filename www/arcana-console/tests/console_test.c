@@ -263,6 +263,19 @@ ATF_TC_CLEANUP(name, tc)						\
 	stop();								\
 }
 
+/* The same with three minutes: an apply made twice over. */
+#define	CONSOLE_TC_LONG(name, descr)					\
+ATF_TC_WITH_CLEANUP(name);						\
+ATF_TC_HEAD(name, tc)							\
+{									\
+	atf_tc_set_md_var(tc, "descr", descr);				\
+	atf_tc_set_md_var(tc, "timeout", "180");				\
+}									\
+ATF_TC_CLEANUP(name, tc)						\
+{									\
+	stop();								\
+}
+
 CONSOLE_TC(unauthenticated, "Without a session only health and status work")
 ATF_TC_BODY(unauthenticated, tc)
 {
@@ -6195,6 +6208,7 @@ static const char sdwan_jail_doc[] =
     "\"inet\",\"interface\":\"vtnet0\",\"address\":\"192.0.2.2\"}]}],"
     "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"ucs\":[\"inet\"],"
     "\"reserved_prefixes\":[\"100.64.0.0/24\"],"
+    "\"bfd\":{\"interval\":200,\"multiplier\":3},"
     "\"zones\":[{\"name\":\"rest\",\"prefixes\":\"Default\"}],"
     "\"intervals\":{\"eval\":1000,\"arrival\":100,\"ir\":500},"
     "\"flows\":[{\"name\":\"all\",\"criteria\":{\"any\":true}}],"
@@ -6274,7 +6288,16 @@ ATF_TC_BODY(sdwan_jail, tc)
 	    "\"links\":[{\"interface\":\"vtnet0\",\"id\":\"g-inet\",\"role\":"
 	    "\"ucs\"},{\"interface\":\"epair1b\",\"id\":\"uni-br\",\"role\":"
 	    "\"uni\"}]") != NULL, "%s", r.body);
+	/* The jail's BIRD, with BFD: an instance named by the jail too,
+	 * run in it by the host's agent. */
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-bird\",\"instances\":[{"
+	    "\"name\":\"sw1-gw\",\"fib\":1,") != NULL, "%s", r.body);
 	resp_free(&r);
+	/* The jail runs no BIRD here (jls lists none in a test): the
+	 * service without BFD from here on. */
+	ATF_REQUIRE(swap_in(doc, "\"bfd\":{\"interval\":200,\"multiplier\":3},", "",
+	    t1, sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
 	/* Applied: the jail's jobs run in it, its probes, rules and
 	 * steering are the jail's on the agent, the host's its own. */
 	/* What the jail's edge needs is looked for in the jail, as it
@@ -6334,36 +6357,6 @@ ATF_TC_BODY(sdwan_jail, tc)
 	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "failed") == 0 &&
 	    strstr(r.body, "an edge that is a vnet jail has no ntp yet") != NULL,
 	    "%s", r.body);
-	resp_free(&r);
-	/*
-	 * A step that fails after others were made rolls the apply back:
-	 * what it made before is taken away again, the last first, and
-	 * the apply says which step failed.  A route the host refuses
-	 * (10.66.0.0/16, the stand-in's) comes after the tunnels; made
-	 * all again, the tunnels are destroyed once at the start and
-	 * once more by the rollback.
-	 */
-	ATF_REQUIRE(swap_in(doc, "\"ntp\":[\"10.0.0.1\"],", "", t1,
-	    sizeof(t1)));
-	ATF_REQUIRE(swap_in(t1, "\"prefix\":\"10.1.8.0/22\"",
-	    "\"prefix\":\"10.66.0.0/16\"", doc, sizeof(doc)));
-	ATF_REQUIRE(swap_in(doc, "\"version\":2", "\"version\":3", t1,
-	    sizeof(t1)));
-	http("PUT", "/api/sdwan", t1, &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	ATF_REQUIRE(system(": > ifconfig.log") == 0);
-	http("POST", "/api/sdwan/apply", "{\"fresh\":true}", &r);
-	EXPECT(&r, 200);
-	resp_free(&r);
-	sdwan_wait(&r);
-	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "rolled back") == 0 &&
-	    jstr(&r, "apply.failed_step") != NULL && strstr(r.body,
-	    "\"state\":\"undone\"") != NULL && strstr(r.body, "taken away "
-	    "again: a step after it failed") != NULL, "%s", r.body);
-	ATF_CHECK_MSG(system("test \"$(grep -c '^gre100 destroy' ifconfig.log)\" "
-	    "-ge 2 && grep -q '^gre100 create' ifconfig.log") == 0,
-	    "the tunnel was not made and taken away again");
 	resp_free(&r);
 }
 
@@ -6477,12 +6470,666 @@ ATF_TC_BODY(sdwan_mesh, tc)
 	    strstr(r.body, "setfib 2 udp from me to 192.0.2.1 dst-port 14350 "
 	    "out") != NULL, "%s", r.body);
 	resp_free(&r);
+	/*
+	 * Two tunnels to the same edge: a far prefix's route goes over
+	 * both at once, one multipath route (ECMP) the kernel shares the
+	 * flows over, not kept in rc.conf; and BIRD merges the paths iBGP
+	 * brings.
+	 */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG((strstr(r.body, "\"gateway\":\"100.64.0.0,100.64.0.2\"")
+	    != NULL || strstr(r.body, "\"gateway\":\"100.64.0.2,100.64.0.0\"")
+	    != NULL || strstr(r.body, "\"gateway\":\"100.64.0.1,100.64.0.3\"")
+	    != NULL || strstr(r.body, "\"gateway\":\"100.64.0.3,100.64.0.1\"")
+	    != NULL) && strstr(r.body, "merge paths on") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
 	/* A relay toward no edge, or on an underlay that is not WireGuard,
 	 * is refused. */
 	ATF_REQUIRE(swap_in(doc, "\"to\":\"", "\"to\":\"x", t1, sizeof(t1)));
 	http("POST", "/api/sdwan/check", t1, &r);
 	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "to is one of the "
 	    "edges") != NULL, "%s", r.body);
+	resp_free(&r);
+}
+
+CONSOLE_TC(sdwan_host, "A host-as-subscriber edge (own_table): the service's "
+    "overlay in the host's own table, its uplinks in tables of their own, "
+    "its UNI left where it is; a host running its own BIRD takes no "
+    "service's")
+ATF_TC_BODY(sdwan_host, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		/* b is the host-as-subscriber: its uplink in table 2. */
+		{ "{\"server\":\"@B\",\"ucs_end_points\":[{\"id\":\"b-inet\","
+		    "\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "{\"server\":\"@B\",\"own_table\":true,\"ucs_end_points\":[{"
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\",\"vrf\":2" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\",\"host_addressed\":true" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* A host that runs its own BIRD cannot carry the service's (bfd). */
+	ATF_REQUIRE(swap_in(doc, "\"own_table\":true", "\"own_table\":true,"
+	    "\"host_bird\":true", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "runs its own BIRD") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/*
+	 * On b: its tunnel end, its routes and its BIRD in the host's own
+	 * table (0, no kernel table statement), its UNI not moved nor
+	 * addressed (host_addressed), the uplinks' connected routes kept
+	 * in the host's table too (allfibs); on a, as ever, table 1.
+	 */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"interface\":\"gre100\",\"fib\":1,") !=
+	    NULL && strstr(r.body, "\"interface\":\"gre101\",\"fib\":0,") != NULL,
+	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"if-set\",\"interface\":\"lo0\","
+	    "\"fib\":1,") != NULL && strstr(r.body, "\"key\":\"uni:branch\","
+	    "\"phase\":") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"allfibs\":true") != NULL && strstr(
+	    r.body, "\"allfibs\":false") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"name\":\"sw1\",\"fib\":0,") != NULL &&
+	    strstr(r.body, "\"name\":\"sw1\",\"fib\":1,") != NULL, "%s", r.body);
+	resp_free(&r);
+}
+
+CONSOLE_TC(sdwan_loop, "iBGP between the edges' loopbacks: a lo(4) per edge, "
+    "a static to each far loopback over every tunnel with BFD on each path, "
+    "one multihop session per edge, reflection on the edges carrying "
+    "transit, the UNIs' prefixes as the edge's own statics, no far-prefix "
+    "kernel statics")
+ATF_TC_BODY(sdwan_loop, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	const char	*p;
+	size_t		i;
+	int		n;
+	static const char *const edits[][2] = {
+		{ "\"bfd\":{\"interval\":200,\"multiplier\":3},",
+		    "\"bfd\":{\"interval\":200,\"multiplier\":3},\"ibgp\":"
+		    "\"loopback\"," },
+		/* b carries no transit: it reflects nothing, breaks out for
+		 * nobody. */
+		{ "{\"server\":\"@B\",\"ucs_end_points\"",
+		    "{\"server\":\"@B\",\"transit\":false,\"ucs_end_points\"" },
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* Without BFD the loopbacks' routes go unwatched: refused. */
+	ATF_REQUIRE(swap_in(doc, "\"bfd\":{\"interval\":200,\"multiplier\":3},",
+	    "\"bfd\":null,", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "ibgp loopback needs "
+	    "bfd") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/*
+	 * The plan: a loopback per edge after the tunnels' pairs (.0/31,
+	 * .2/31), so a's is 100.64.0.4 and b's 100.64.0.6; a's BIRD has
+	 * a static to b's loopback by the gre tunnel (b's inner .1), the
+	 * backup geneve one (.3) in a lower static, a multihop session
+	 * from loopback to loopback with rr client (a carries transit,
+	 * b does not), the hq UNI's subnet and static route and the
+	 * remote end point's prefix as its own statics kept out of the
+	 * kernel; no kernel static for the far prefixes on b.
+	 */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"loop:acme\"") != NULL &&
+	    strstr(r.body, "\"address\":\"100.64.0.4/32\"") != NULL && strstr(
+	    r.body, "\"address\":\"100.64.0.6/32\"") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "protocol static loop4_0 {\\n\\tipv4;\\n\\t"
+	    "route 100.64.0.6/32 via 100.64.0.1 bfd;\\n}") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "protocol static loop4b_0 {\\n\\tipv4 { "
+	    "preference 150; };\\n\\troute 100.64.0.6/32 via 100.64.0.3 bfd;\\n}")
+	    != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "local 100.64.0.4 as 64600;\\n\\tneighbor "
+	    "100.64.0.6 as 64600;\\n\\tmultihop;\\n\\trr client;\\n}") != NULL,
+	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "local 100.64.0.6 as 64600;\\n\\tneighbor "
+	    "100.64.0.4 as 64600;\\n\\tmultihop;\\n}") != NULL, "%s", r.body);
+	for (n = 0, p = r.body; (p = strstr(p, "rr client")) != NULL; p++)
+		n++;
+	ATF_CHECK_MSG(n == 1, "rr client %d times", n);
+	ATF_CHECK_MSG(strstr(r.body, "multihop {\\n\\t\\tinterval 200 ms;") !=
+	    NULL && strstr(r.body, "proto !~ \\\"orig*\\\";") != NULL, "%s",
+	    r.body);
+	ATF_CHECK_MSG(strstr(r.body, "protocol static orig4_hq {\\n\\tipv4;\\n\\t"
+	    "route 10.1.0.0/24 via \\\"lo0\\\";\\n\\troute 10.1.8.0/22 via "
+	    "10.1.0.2;\\n}") != NULL && strstr(r.body, "route 10.30.0.0/24 via "
+	    "\\\"wg5\\\";") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"route:acme:10.1.0.0/24\"") == NULL &&
+	    strstr(r.body, "\"key\":\"route:acme:10.30.0.0/24\"") == NULL, "%s",
+	    r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\\\"gre100\\\", \\\"geneve102\\\", \\\"lo1") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+}
+
+CONSOLE_TC(sdwan_breakout, "Breakout failover: an edge with several breakout "
+    "uplinks has a route to each one's gateway, the default by the most "
+    "preferred, a probe to each one's beacon, and the agent told to put "
+    "the first that answers in the default's place")
+ATF_TC_BODY(sdwan_breakout, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		/* A second Internet Access, WireGuard, breaking out too, less
+		 * preferred, with a beacon of its own. */
+		{ "\"tunnel\":{\"kind\":\"gre\",\"ipsec\":true}}",
+		    "\"tunnel\":{\"kind\":\"gre\",\"ipsec\":true}},{\"id\":\"wgnet\","
+		    "\"type\":\"public\",\"billing\":\"flat-rate\",\"tunnel\":{"
+		    "\"kind\":\"wg\"}}" },
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"breakout\":true",
+		    "\"id\":\"a-wg\",\"ucs\":\"wgnet\",\"interface\":\"vtnet3\","
+		    "\"address\":\"203.0.113.1\",\"gateway\":\"203.0.113.254\","
+		    "\"beacon\":\"198.51.100.1\",\"breakout\":true,\"preference\":5},"
+		    "{\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\","
+		    "\"breakout\":true,\"preference\":10" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"ucs\":[\"inet\",\"mpls\"]", "\"ucs\":[\"inet\",\"wgnet\","
+		    "\"mpls\"]" },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* A beacon that is no address is refused. */
+	ATF_REQUIRE(swap_in(doc, "\"beacon\":\"198.51.100.1\"",
+	    "\"beacon\":\"nowhere\"", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "its beacon is an "
+	    "address") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/*
+	 * In the breakout table (2): each gateway by its interface, the
+	 * default by the preferred (inet, 10, over wg, 5), the wg one's
+	 * beacon by its gateway; a probe to each beacon; the steering's
+	 * route with both candidates in that order.
+	 */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"route:acme:2:192.0.2.254/32\"") !=
+	    NULL && strstr(r.body, "\"key\":\"route:acme:2:203.0.113.254/32\"") !=
+	    NULL && strstr(r.body, "\"key\":\"route:acme:2:198.51.100.1/32\"") != NULL,
+	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"destination\":\"0.0.0.0/0\",\"gateway\":"
+	    "\"192.0.2.254\"") != NULL && strstr(r.body, "\"destination\":"
+	    "\"0.0.0.0/0\",\"gateway\":\"203.0.113.254\"") == NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"id\":\"bo:a-inet\",\"address\":"
+	    "\"192.0.2.254\",\"fib\":2") != NULL && strstr(r.body, "\"id\":"
+	    "\"bo:a-wg\",\"address\":\"198.51.100.1\",\"fib\":2") != NULL, "%s",
+	    r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"routes\":[{\"fib\":2,\"destination\":"
+	    "\"0.0.0.0/0\",\"candidates\":[{\"id\":\"bo:a-inet\",\"via\":"
+	    "\"192.0.2.254\"},{\"id\":\"bo:a-wg\",\"via\":\"203.0.113.254\"}]}]")
+	    != NULL, "%s", r.body);
+	resp_free(&r);
+}
+
+CONSOLE_TC(sdwan_nat64, "NAT64 at one edge (nat64lsn, its pool among the "
+    "known prefixes, the way in before the zones, the way back after the "
+    "NAT) and CLAT at a UNI (nat64clat), ipfw_nat64 kept; checked")
+ATF_TC_BODY(sdwan_nat64, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"reserved_prefixes\":[\"100.64.0.0/24\"],",
+		    "\"reserved_prefixes\":[\"100.64.0.0/24\"],\"nat64\":{\"prefix\":"
+		    "\"64:ff9b::/96\",\"pool\":\"192.0.2.64/26\",\"edge\":\"@A\"}," },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\",\"clat\":{\"prefix\":"
+		    "\"2001:db8:c::/96\"}" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* A prefix that is no /96, an edge that is none, a CLAT without
+	 * the service's NAT64: refused. */
+	ATF_REQUIRE(swap_in(doc, "\"prefix\":\"64:ff9b::/96\"", "\"prefix\":"
+	    "\"64:ff9b::/64\"", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "nat64 is an object") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_REQUIRE(swap_in(doc, "\"edge\":\"", "\"edge\":\"nosuch", t1,
+	    sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && (strstr(r.body, "nat64: edge is one of "
+	    "the edges") != NULL || strstr(r.body, "no such") != NULL), "%s",
+	    r.body);
+	resp_free(&r);
+	ATF_REQUIRE(swap_in(doc, "\"nat64\":{\"prefix\":\"64:ff9b::/96\",\"pool\":"
+	    "\"192.0.2.64/26\",\"edge\":\"", "\"nat64x\":{\"prefix\":\"64:ff9b::/96\","
+	    "\"pool\":\"192.0.2.64/26\",\"edge\":\"", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "clat needs the "
+	    "service's nat64") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/*
+	 * On a: the nat64lsn instance, the pool in the known table, the
+	 * IPv6 way in before the zones (rule 100), the pool's way back
+	 * after the NAT (11), the CLAT of hq with the NAT64 prefix as
+	 * its PLAT, and ipfw_nat64 kept.
+	 */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"nat64lsn sw1_64 create prefix4 "
+	    "192.0.2.64/26 prefix6 64:ff9b::/96 allow_private\"") != NULL,
+	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "[\"192.0.2.64/26\",\"0\"]") != NULL, "%s",
+	    r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"10 nat64lsn sw1_64 ip6 from "
+	    "table(sw1_known) to 64:ff9b::/96 in\"") != NULL && strstr(r.body,
+	    "\"11 nat64lsn sw1_64 ip4 from any to 192.0.2.64/26 in recv "
+	    "vtnet0\"") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"nat64clat sw1_chq create clat_prefix "
+	    "2001:db8:c::/96 plat_prefix 64:ff9b::/96\"") != NULL && strstr(
+	    r.body, "\"10 nat64clat sw1_chq ip4 from any to not table(sw1_known) "
+	    "in recv lo0\"") != NULL && strstr(r.body, "\"10 nat64clat sw1_chq "
+	    "ip6 from any to 2001:db8:c::/96 in\"") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"nat64\"") != NULL && strstr(
+	    r.body, "\"args\":[\"ipfw_nat64\"]") != NULL, "%s", r.body);
+	/* The CLAT prefix is hq's, routed to a from b like its subnet. */
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"route:acme:2001:db8:c::/96\"") !=
+	    NULL || strstr(r.body, "carries 2001:db8:c::/96") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+}
+
+CONSOLE_TC(sdwan_sets, "Destination sets by BGP attribute: a service's sets "
+    "(AS path, communities), an edge's breakout for each by one of its "
+    "uplinks, written as BIRD's filter to the kernel with that gateway, the "
+    "gateway routed by its interface in the service's table; bgp_import "
+    "sets keeps every other BGP route out of the kernel; checked")
+ATF_TC_BODY(sdwan_sets, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		/* The country's routes, by their AS path or a community, go
+		 * out by a-inet on a; nothing else of BGP's reaches its
+		 * kernel. */
+		{ "{\"server\":\"@A\",\"ntp\"",
+		    "{\"server\":\"@A\",\"breakout_sets\":[{\"set\":\"country\","
+		    "\"via\":\"a-inet\"}],\"bgp_import\":\"sets\",\"ntp\"" },
+		{ "\"reserved_prefixes\":[\"100.64.0.0/24\"],",
+		    "\"reserved_prefixes\":[\"100.64.0.0/24\"],\"bgp_sets\":[{"
+		    "\"name\":\"country\",\"as_path\":[64600,64601],\"communities\":"
+		    "[[64600,100]]}]," },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* A set that is none, an uplink that is no breakout of the edge:
+	 * refused. */
+	ATF_REQUIRE(swap_in(doc, "\"set\":\"country\"", "\"set\":\"nowhere\"", t1,
+	    sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "nowhere is no bgp_sets "
+	    "name") != NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_REQUIRE(swap_in(doc, "\"via\":\"a-inet\"", "\"via\":\"a-mpls\"", t1,
+	    sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "no breakout UCS end "
+	    "point of this edge") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* a's BIRD: the filters, the gateway rewritten, the rest of BGP
+	 * kept out; the gateway's route in the service's table; b's
+	 * BIRD as ever. */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "filter to_kernel4 {\\n\\tif source = "
+	    "RTS_DEVICE || source = RTS_INHERIT || dest != RTD_UNICAST then "
+	    "reject;\\n\\t# country, by a-inet\\n\\tif bgp_path ~ [64600, 64601] || "
+	    "bgp_community ~ [(64600, 100)] then { gw = 192.0.2.254; accept; }"
+	    "\\n\\tif source = RTS_BGP then reject;\\n\\taccept;\\n}") != NULL,
+	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "filter to_kernel6 {\\n\\tif source = "
+	    "RTS_DEVICE || source = RTS_INHERIT || dest != RTD_UNICAST then "
+	    "reject;\\n\\tif source = RTS_BGP then reject;\\n\\taccept;\\n}") !=
+	    NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "export filter to_kernel4;") != NULL &&
+	    strstr(r.body, "export filter to_kernel6;") != NULL && strstr(
+	    r.body, "export where source != RTS_DEVICE") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"destination\":\"192.0.2.254/32\","
+	    "\"gateway\":\"vtnet0\",\"fib\":1") != NULL, "%s", r.body);
+	resp_free(&r);
+}
+
+CONSOLE_TC(sdwan_neigh, "Routing neighbours at a UNI: several BGP entries, "
+    "one of the service's own AS from a source address, multihop, with BFD "
+    "(iBGP, next hop self); OSPF an area per family with BFD; BFD on the "
+    "UNI's interface too, and multihop; checked")
+ATF_TC_BODY(sdwan_neigh, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	size_t		i;
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		/* hq: the subscriber's eBGP neighbour watched by BFD, and an
+		 * iBGP one of the service's AS from the provider address,
+		 * multihop. */
+		{ "\"bgp\":{\"family\":\"ipv4\",\"as\":65010,\"neighbors\":"
+		    "[\"10.1.0.2\"],\"password\":\"s3cret\",\"hold_time\":90,"
+		    "\"distance\":150,\"communities\":[[64600,100]]}",
+		    "\"bgp\":[{\"family\":\"ipv4\",\"as\":65010,\"neighbors\":"
+		    "[\"10.1.0.2\"],\"password\":\"s3cret\",\"hold_time\":90,"
+		    "\"distance\":150,\"communities\":[[64600,100]],\"bfd\":true},"
+		    "{\"family\":\"ipv4\",\"as\":64600,\"neighbors\":[\"10.1.0.3\"],"
+		    "\"source\":\"10.1.0.1\",\"multihop\":true,\"bfd\":true}]" },
+		/* branch: OSPFv3 in the backbone with BFD, OSPFv2 in area 1. */
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+		{ "\"dns\":[\"2001:db8:1::1\"]}}}",
+		    "\"dns\":[\"2001:db8:1::1\"]},\"ospf\":[{\"family\":\"ipv6\","
+		    "\"area\":0,\"cost\":50,\"bfd\":true},{\"family\":\"ipv4\","
+		    "\"area\":1}]}}" },
+	};
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* A source that is no address is refused. */
+	ATF_REQUIRE(swap_in(doc, "\"source\":\"10.1.0.1\"", "\"source\":"
+	    "\"nowhere\"", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "bgp: source is an "
+	    "address") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "protocol bgp uni_hq_0 {\\n\\tlocal as "
+	    "64600;\\n\\tneighbor 10.1.0.2 as 65010;\\n\\tinterface \\\"lo0\\\";"
+	    "\\n\\tbfd on;\\n\\tauthentication md5;") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, ", iBGP, multihop\\nprotocol bgp uni_hq_1 "
+	    "{\\n\\tlocal 10.1.0.1 as 64600;\\n\\tneighbor 10.1.0.3 as 64600;\\n\\t"
+	    "multihop;\\n\\tbfd on;\\n\\tipv4 {\\n\\t\\tpreference 56;\\n\\t\\t"
+	    "import all;\\n\\t\\texport all;\\n\\t\\tnext hop self;\\n\\t};\\n}") !=
+	    NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "protocol bfd {\\n\\tinterface \\\"gre100\\\", "
+	    "\\\"geneve102\\\", \\\"lo0\\\" {") != NULL && strstr(r.body,
+	    "\\tmultihop {\\n") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "protocol ospf v3 uni_branch_v3 {") != NULL
+	    && strstr(r.body, "\\tarea 0 {\\n\\t\\tinterface \\\"vlan") != NULL &&
+	    strstr(r.body, "\\t\\t\\tcost 50;\\n\\t\\t\\tbfd on;\\n") != NULL &&
+	    strstr(r.body, "protocol ospf v2 uni_branch_v2_1 {") != NULL &&
+	    strstr(r.body, "\\tarea 1 {\\n") != NULL, "%s", r.body);
 	resp_free(&r);
 }
 
@@ -6653,7 +7300,7 @@ ATF_TC_BODY(sdwan_lists, tc)
 	resp_free(&r);
 }
 
-CONSOLE_TC(sdwan_apply, "SD-WAN made on the edges: planned, applied, kept")
+CONSOLE_TC_LONG(sdwan_apply, "SD-WAN made on the edges: planned, applied, kept")
 ATF_TC_BODY(sdwan_apply, tc)
 {
 	struct authn	a;
@@ -6969,7 +7616,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "console: SD-WAN service acme at a, in routing table 1.") != NULL,
 	    "%s", r.body);
 	ATF_CHECK(strstr(r.body, "router id 100.64.0.0;") != NULL);
-	ATF_CHECK(strstr(r.body, "kernel table 1;\\n\\tlearn;\\n\\tpersist;") !=
+	ATF_CHECK(strstr(r.body, "kernel table 1;\\n\\tlearn;\\n\\tmerge paths on;\\n\\tpersist;") !=
 	    NULL);
 	ATF_CHECK_MSG(strstr(r.body, "protocol direct {\\n\\tipv4;\\n\\tipv6;\\n"
 	    "\\tinterface \\\"lo0\\\", \\\"gre100\\\", \\\"gif102\\\", \\\"gre104\\\";"
@@ -7746,6 +8393,36 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	ATF_CHECK(access("sdwan-proxy-sec-web.conf", F_OK) != 0);
 	ATF_CHECK(access("sdwan-proxy-sw1.conf", F_OK) == 0);
+	/*
+	 * A step that fails after others were made rolls the apply back:
+	 * what it made before is taken away again, the last first, and
+	 * the apply says which step failed.  A route the host refuses
+	 * (10.66.0.0/16, the stand-in's, as a UNI's static route the far
+	 * edge gets a route to) comes after the tunnels; made all again,
+	 * the tunnels are destroyed once at the start and once more by
+	 * the rollback.
+	 */
+	http("GET", "/api/sdwan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(swap_in(r.body, "\"prefix\":\"10.1.8.0/22\",\"next_hop\"",
+	    "\"prefix\":\"10.66.0.0/16\",\"next_hop\"", t1, sizeof(t1)));
+	resp_free(&r);
+	http("PUT", "/api/sdwan", t1, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE(system(": > ifconfig.log") == 0);
+	http("POST", "/api/sdwan/apply", "{\"fresh\":true}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "rolled back") == 0 &&
+	    jstr(&r, "apply.failed_step") != NULL && strstr(r.body,
+	    "\"state\":\"undone\"") != NULL && strstr(r.body, "taken away "
+	    "again: a step after it failed") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(system("test \"$(grep -c '^gre100 destroy' ifconfig.log)\" "
+	    "-ge 2 && grep -q '^gre100 create' ifconfig.log") == 0,
+	    "the tunnel was not made and taken away again");
+	resp_free(&r);
 }
 
 /*
@@ -7959,6 +8636,12 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan);
 	ATF_TP_ADD_TC(tp, sdwan_apply);
 	ATF_TP_ADD_TC(tp, sdwan_mesh);
+	ATF_TP_ADD_TC(tp, sdwan_host);
+	ATF_TP_ADD_TC(tp, sdwan_loop);
+	ATF_TP_ADD_TC(tp, sdwan_breakout);
+	ATF_TP_ADD_TC(tp, sdwan_nat64);
+	ATF_TP_ADD_TC(tp, sdwan_sets);
+	ATF_TP_ADD_TC(tp, sdwan_neigh);
 	ATF_TP_ADD_TC(tp, sdwan_lists);
 	ATF_TP_ADD_TC(tp, sdwan_uswe);
 	ATF_TP_ADD_TC(tp, sdwan_jail);

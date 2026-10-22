@@ -33,6 +33,9 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
+_Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
+    "written for cblink 0.2: its wire, its structs");
+
 #define	PATH_SOCKET	"unix:/var/run/arcana-agent.sock"
 #define	MAX_FRAME	(8 * 1024 * 1024)
 #define	MAX_ATTRS	(1024 * 1024)
@@ -404,7 +407,7 @@ emit_jail(const struct arc_jail *j, bool table)
 		    j->scope != NULL ? j->scope : "");
 		if (j->has_nproc)
 			xo_emit("{e:nproc/%u}{e:rss-kb/%ju}{e:cpu-pct/%.1f}",
-			    j->nproc, (uintmax_t)j->rss_kb, j->cpu_pct);
+			    j->nproc, (uintmax_t)j->rss_kb, j->cpu_pct / 100.0);
 		xo_close_instance("jail");
 		return;
 	}
@@ -444,7 +447,7 @@ emit_jail(const struct arc_jail *j, bool table)
 	if (j->has_nproc)
 		xo_emit("{Lwc:Processes}{:nproc/%u}, {:rss-kb/%ju} KiB, "
 		    "{:cpu-pct/%.1f}% CPU\n", j->nproc, (uintmax_t)j->rss_kb,
-		    j->cpu_pct);
+		    j->cpu_pct / 100.0);
 	if (j->params.n > 0) {
 		xo_open_list("param");
 		for (i = 0; i < j->params.n; i++) {
@@ -3803,9 +3806,9 @@ cmd_stats(struct arc_client *cl)
 		fail(cl, error, "stats");
 	if ((st = rsp->stats) != NULL) {
 		xo_open_container("stats");
-		xo_emit("{Lwc:CPU}{:cpu-pct/%.1f}%\n", st->cpu_pct);
+		xo_emit("{Lwc:CPU}{:cpu-pct/%.1f}%\n", st->cpu_pct / 100.0);
 		xo_emit("{Lwc:Load}{:load1/%.2f} {:load5/%.2f} {:load15/%.2f}\n",
-		    st->load1, st->load5, st->load15);
+		    st->load1 / 100.0, st->load5 / 100.0, st->load15 / 100.0);
 		xo_emit("{Lwc:Memory}{:mem-used/%ju} used, {:mem-inactive/%ju} "
 		    "inactive, {:mem-free/%ju} free of {:mem-total/%ju} MiB\n",
 		    (uintmax_t)(st->mem_used >> 20),

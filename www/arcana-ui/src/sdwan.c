@@ -4598,6 +4598,28 @@ sdwan_modal(struct html *h)
 			    "a policy that says so.</small></label>", t != NULL &&
 			    jbool(t, "ipsec") ? " checked" : "");
 		h_raw(h, "</div>");
+		/* For every kind of tunnel: the clamp and the MTU. */
+		h_raw(h, "<div class=\"two\">");
+		{
+			char	ms[32];
+
+			snprintf(ms, sizeof(ms), "%lld", (long long)jint(t, "mss",
+			    0));
+			text_field(h, "TCP MSS clamped to", "mss", jstr(t, "mss") !=
+			    NULL ? jstr(t, "mss") : jint(t, "mss", 0) > 0 ? ms : "",
+			    "auto", "On the tunnels over it, by ipfw tcp-setmss: "
+			    "auto for the tunnel's kind (and IPsec under it), a "
+			    "number of bytes, or empty for none.");
+			snprintf(ms, sizeof(ms), "%lld", (long long)jint(t, "mtu",
+			    0));
+			text_field(h, "Tunnel MTU", "mtu", jstr(t, "mtu") != NULL ?
+			    jstr(t, "mtu") : jint(t, "mtu", 0) > 0 ? ms : "", "auto",
+			    "The tunnel interfaces' MTU (ifconfig mtu): auto takes "
+			    "the tunnel's overhead off 1500, so the inner packets "
+			    "are not fragmented; a number of bytes, 1280 to 9000; "
+			    "or empty for the kernel's.");
+		}
+		h_raw(h, "</div>");
 		if (strcmp(sd.ucs_kind, "uswe") != 0)
 			return (true);
 		/* A USWE tunnel's SAs: the base system's ipsec(4) and
@@ -4627,25 +4649,6 @@ sdwan_modal(struct html *h)
 			    jint(t, "lifetime", 0) > 0 ? lt : "", "86400", "120 "
 			    "seconds to a year; both ends turn them at the half "
 			    "of it.");
-		}
-		{
-			char	ms[32];
-
-			snprintf(ms, sizeof(ms), "%lld", (long long)jint(t, "mss",
-			    0));
-			text_field(h, "TCP MSS clamped to", "mss", jstr(t, "mss") !=
-			    NULL ? jstr(t, "mss") : jint(t, "mss", 0) > 0 ? ms : "",
-			    "auto", "On the tunnels over it, by ipfw tcp-setmss: "
-			    "auto for the tunnel's kind (and IPsec under it), a "
-			    "number of bytes, or empty for none.");
-			snprintf(ms, sizeof(ms), "%lld", (long long)jint(t, "mtu",
-			    0));
-			text_field(h, "Tunnel MTU", "mtu", jstr(t, "mtu") != NULL ?
-			    jstr(t, "mtu") : jint(t, "mtu", 0) > 0 ? ms : "", "auto",
-			    "The tunnel interfaces' MTU (ifconfig mtu): auto takes "
-			    "the tunnel's overhead off 1500, so the inner packets "
-			    "are not fragmented; a number of bytes, 1280 to 9000; "
-			    "or empty for the kernel's.");
 		}
 		h_raw(h, "</fieldset>");
 		return (true);
@@ -4703,6 +4706,55 @@ sdwan_modal(struct html *h)
 		    "the host does not keep time already: the edge's clock "
 		    "lines up faults and key turns with the other edges "
 		    "(ntpd). Empty: the host as it is.");
+		/* A host-as-subscriber edge, and one whose BIRD is its own. */
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "own_table\" value=\"1\"%s> Host as subscriber: the service's "
+		    "overlay in the host's own routing table (0), its uplinks in "
+		    "tables of their own (each link's VRF), its UNI left where "
+		    "it is; nothing of the host's jails and daemons moves. Its "
+		    "breakout needs the service's breakout domain to have a fib "
+		    "of its own.</label><label class=\"toggle\"><input type=\""
+		    "checkbox\" name=\"host_bird\" value=\"1\"%s> The host runs "
+		    "its own BIRD: no service with BFD or routing at a UNI may "
+		    "put one here</label><label class=\"toggle\"><input type=\""
+		    "checkbox\" name=\"transit\" value=\"1\"%s> Carries transit: "
+		    "what the other edges exchange may pass through it, and break "
+		    "out here, when their direct tunnels are down (off for an edge "
+		    "on a usage-billed or thin link)</label>", e != NULL && jbool(e, "own_table") ?
+		    " checked" : "", e != NULL && jbool(e, "host_bird") ?
+		    " checked" : "", e != NULL && jget(e, "transit") != NULL &&
+		    !jbool(e, "transit") ? "" : " checked");
+		/* The uplink each destination set goes out by, and what else
+		 * of BGP reaches the kernel. */
+		{
+			const ucl_object_t	*bs;
+			ucl_object_iter_t	 bit = NULL;
+			char			 btext[2000];
+
+			btext[0] = '\0';
+			while (e != NULL && (bs = ucl_object_iterate(jget(e,
+			    "breakout_sets"), &bit, true)) != NULL && strlen(btext) + 200
+			    < sizeof(btext))
+				snprintf(btext + strlen(btext), sizeof(btext) - strlen(
+				    btext), "%s%s %s", btext[0] != '\0' ? "\n" : "", jstr(bs,
+				    "set") != NULL ? jstr(bs, "set") : "", jstr(bs, "via") !=
+				    NULL ? jstr(bs, "via") : "");
+			h_raw(h, "<label>Breakout by destination set<textarea name=\""
+			    "breakout_sets\" rows=\"2\" spellcheck=\"false\" placeholder=\""
+			    "country lte\">");
+			h_txt(h, btext);
+			h_fmt(h, "</textarea><small>One a line: a set of a service here "
+			    "(by its name) and the UCS end point of this edge it goes "
+			    "out by, a breakout with a gateway.</small></label><label>"
+			    "BGP routes into the kernel<select name=\"bgp_import\"><option "
+			    "value=\"all\"%s>All of them</option><option value=\"sets\"%s>"
+			    "Only the destination sets': the kernel keeps its own default "
+			    "route</option></select></label>", e != NULL && jstr(e,
+			    "bgp_import") != NULL && strcmp(jstr(e, "bgp_import"), "sets")
+			    == 0 ? "" : " selected", e != NULL && jstr(e, "bgp_import") !=
+			    NULL && strcmp(jstr(e, "bgp_import"), "sets") == 0 ?
+			    " selected" : "");
+		}
 		h_raw(h, "</details>");
 		/* What it does to the host, before anything is done. */
 		h_raw(h, "<details class=\"sd-effects\"" );
@@ -4925,6 +4977,12 @@ sdwan_modal(struct html *h)
 			    "place among this edge's uplinks, the higher first: the "
 			    "steering's order where a policy names no end points, "
 			    "and the breakout taken first. 0 to 65535.");
+			text_field(h, "Beacon", "beacon", lk != NULL && jstr(lk,
+			    "beacon") != NULL ? jstr(lk, "beacon") : "", "the gateway",
+			    "An address probed by this uplink where the edge has "
+			    "several breakouts: when it stops answering, the next "
+			    "breakout takes the default route. Empty: the gateway "
+			    "itself.");
 			h_raw(h, "</div><div class=\"two\">");
 			snprintf(nb, sizeof(nb), "%lld", (long long)jint(bg, "as", 0));
 			text_field(h, "BGP: the underlay's AS", "bgp_as", jint(bg,
@@ -5170,6 +5228,72 @@ sdwan_modal_service(struct html *h)
 			    "breakout"), *du = jget(d, "subscriber");
 			char			 nb[32], rt[200];
 
+			/* NAT64 at one edge, CLAT at the UNIs that say so. */
+			h_raw(h, "<fieldset><legend>NAT64 <small class=\"dim\">RFC 6146, "
+			    "Arcana's own: the service's IPv6 hosts reach the "
+			    "Internet's IPv4 through one edge (ipfw nat64lsn); a UNI "
+			    "with a CLAT prefix carries its IPv4 hosts there as IPv6 "
+			    "(RFC 6877)</small></legend><div class=\"two\">");
+			text_field(h, "NAT64 prefix", "n64_prefix", jstr(jget(o, "nat64"),
+			    "prefix"), "64:ff9b::/96", "An IPv6 /96: the IPv4 Internet "
+			    "as the hosts see it. Empty: no NAT64.");
+			text_field(h, "NAT64 pool", "n64_pool", jstr(jget(o, "nat64"),
+			    "pool"), "192.0.2.64/26", "IPv4 addresses the translated "
+			    "flows go out from, taken out by the breakout's NAT.");
+			h_raw(h, "</div><label>NAT64 edge<select name=\"n64_edge\">");
+			option(h, "", "none", jstr(jget(o, "nat64"), "edge") != NULL ?
+			    jstr(jget(o, "nat64"), "edge") : "");
+			{
+				const ucl_object_t	*ne;
+				ucl_object_iter_t	 nit = NULL;
+
+				while ((ne = ucl_object_iterate(jget(sd.doc, "edges"),
+				    &nit, true)) != NULL)
+					option(h, jstr(ne, "server"), host_name(jstr(ne,
+					    "server")), jstr(jget(o, "nat64"), "edge") !=
+					    NULL ? jstr(jget(o, "nat64"), "edge") : "");
+			}
+			h_raw(h, "</select></label></fieldset>");
+			/* Destination sets by BGP attribute: lines of a name, AS
+			 * numbers and as:value communities. */
+			{
+				const ucl_object_t	*xs, *xm;
+				ucl_object_iter_t	 xit = NULL, xmit;
+				char			 stext[4000];
+
+				stext[0] = '\0';
+				while ((xs = ucl_object_iterate(jget(o, "bgp_sets"), &xit,
+				    true)) != NULL && strlen(stext) + 200 < sizeof(stext)) {
+					snprintf(stext + strlen(stext), sizeof(stext) -
+					    strlen(stext), "%s%s", stext[0] != '\0' ? "\n" : "",
+					    jstr(xs, "name") != NULL ? jstr(xs, "name") : "");
+					xmit = NULL;
+					while ((xm = ucl_object_iterate(jget(xs, "as_path"),
+					    &xmit, true)) != NULL && strlen(stext) + 20 <
+					    sizeof(stext))
+						snprintf(stext + strlen(stext), sizeof(stext) -
+						    strlen(stext), " %lld", (long long)
+						    ucl_object_toint(xm));
+					xmit = NULL;
+					while ((xm = ucl_object_iterate(jget(xs, "communities"),
+					    &xmit, true)) != NULL && strlen(stext) + 20 <
+					    sizeof(stext))
+						snprintf(stext + strlen(stext), sizeof(stext) -
+						    strlen(stext), " %lld:%lld", (long long)
+						    ucl_object_toint(ucl_array_find_index(xm, 0)),
+						    (long long)ucl_object_toint(ucl_array_find_index(
+						    xm, 1)));
+				}
+				h_raw(h, "<label>Destination sets by BGP attribute<textarea "
+				    "name=\"bgp_sets\" rows=\"3\" spellcheck=\"false\" "
+				    "placeholder=\"country 64600 64601 64600:100\">");
+				h_txt(h, stext);
+				h_raw(h, "</textarea><small>One a line: a name, then the AS "
+				    "numbers any of which in a route's path puts it in the "
+				    "set, and as:value communities any of which does. An "
+				    "edge names the uplink each set goes out by (Arcana's "
+				    "own, by BIRD alone).</small></label>");
+			}
 			h_raw(h, "<fieldset><legend>Routing domains <small class=\""
 			    "dim\">Mplify 119 §7.3: each a table, a route "
 			    "distinguisher, route targets and an MPLS label; all "
@@ -5286,6 +5410,15 @@ sdwan_modal_service(struct html *h)
 		    "interval", 200));
 		text_field(h, "BFD interval, ms", "bfd_interval", buf, "200", "100 "
 		    "to 300; three missed and the tunnel is down.");
+		h_fmt(h, "<label>iBGP between the edges<select name=\"ibgp\">"
+		    "<option value=\"tunnel\"%s>By each tunnel: a session between its "
+		    "ends</option><option value=\"loopback\"%s>Between loopbacks: "
+		    "one session with each edge, multihop, over every tunnel at once "
+		    "(ECMP); a third edge carries the traffic while every direct "
+		    "tunnel is down; needs BFD</option></select></label>", edit &&
+		    jstr(o, "ibgp") != NULL && strcmp(jstr(o, "ibgp"), "loopback") ==
+		    0 ? "" : " selected", edit && jstr(o, "ibgp") != NULL && strcmp(
+		    jstr(o, "ibgp"), "loopback") == 0 ? " selected" : "");
 		h_raw(h, "</div><fieldset><legend>Threshold crossing alerts: a "
 		    "fault when a tunnel's metric passes one (Mplify 119 §11.4)"
 		    "</legend><div class=\"two\">");
@@ -6174,6 +6307,11 @@ sdwan_modal_service(struct html *h)
 		}
 		h_raw(h, "<div class=\"two\">");
 		ifn = sd.link_if[0] != '\0' ? sd.link_if : jstr(u, "interface");
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "host_addressed\" value=\"1\"%s> The host has the UNI's "
+		    "addresses already (a bridge of its jails, say): none is "
+		    "added or taken away</label>", u != NULL && jbool(u,
+		    "host_addressed") ? " checked" : "");
 		h_raw(h, "<label>Interface");
 		if (sd.ifs_loading)
 			h_raw(h, "<span class=\"dim\"> · asking the host</span>");
@@ -6324,6 +6462,19 @@ sdwan_modal_service(struct html *h)
 			communities_text(jget(bgp, "communities"), cm, sizeof(cm));
 			text_field(h, "Communities", "bgp_comm", cm, "65000:100",
 			    "Put on the routes learned, by commas.");
+			h_raw(h, "</div><div class=\"two\">");
+			text_field(h, "Source address", "bgp_src", jstr(bgp, "source"), "",
+			    "Ours, the session is from (a loopback's, say). Empty: the "
+			    "UNI's.");
+			h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+			    "bgp_mh\" value=\"1\"%s> Multihop: the neighbour is not on the "
+			    "link</label><label class=\"toggle\"><input type=\"checkbox\" "
+			    "name=\"bgp_bfd\" value=\"1\"%s> BFD on the session</label>",
+			    jbool(bgp, "multihop") ? " checked" : "", jbool(bgp, "bfd") ?
+			    " checked" : "");
+			if (bgp != NULL && ucl_object_type(bgp) == UCL_ARRAY)
+				h_raw(h, "<small>Several neighbours in the document: kept "
+				    "as they are.</small>");
 			h_raw(h, "</div></fieldset><fieldset><legend>OSPF with the "
 			    "subscriber <small class=\"dim\">§11.6.3, by BIRD; "
 			    "empty area: none</small></legend><div class=\"two\">");
@@ -6344,12 +6495,26 @@ sdwan_modal_service(struct html *h)
 			    "hello", 0));
 			text_field(h, "Hello, seconds", "ospf_hello", jint(ospf,
 			    "hello", 0) > 0 ? buf : "", "10", NULL);
+			h_raw(h, "</div><div class=\"two\">");
+			text_field(h, "OSPFv3 area, if another", "ospf_area6", "", "",
+			    "With both families and areas of their own: v2 the area "
+			    "above, v3 this one.");
+			h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+			    "ospf_bfd\" value=\"1\"%s> BFD with the neighbour</label>",
+			    jbool(ospf, "bfd") ? " checked" : "");
+			if (ospf != NULL && ucl_object_type(ospf) == UCL_ARRAY)
+				h_raw(h, "<small>Several areas in the document: kept as "
+				    "they are.</small>");
 			h_raw(h, "</div></fieldset><div class=\"two\">");
 			snprintf(buf, sizeof(buf), "%lld", (long long)jint(u,
 			    "max_frame", 0));
 			text_field(h, "Largest frame, bytes", "mf", jint(u,
 			    "max_frame", 0) > 0 ? buf : "", "1522", "1522 or more "
 			    "(R126). Empty: the interface's own.");
+			text_field(h, "CLAT prefix", "clat", jstr(jget(u, "clat"),
+			    "prefix"), "", "An IPv6 /96 of this UNI's own: its IPv4 "
+			    "hosts reach the IPv4 Internet through the service's NAT64 "
+			    "(RFC 6877). Empty: none.");
 			v = jget(o, "availability");
 			snprintf(buf, sizeof(buf), "%g", v != NULL ?
 			    ucl_object_todouble(v) : 0.0);
@@ -6741,6 +6906,44 @@ sd_forms(const char *form, const ucl_object_t *f)
 			    "ucs_end_points", 0, false);
 			ucl_array_append(arr, ed);
 		}
+		(void)ucl_object_delete_key(ed, "own_table");
+		if (checked(f, "own_table"))
+			ucl_object_insert_key(ed, ucl_object_frombool(true),
+			    "own_table", 0, false);
+		(void)ucl_object_delete_key(ed, "host_bird");
+		if (checked(f, "host_bird"))
+			ucl_object_insert_key(ed, ucl_object_frombool(true),
+			    "host_bird", 0, false);
+		(void)ucl_object_delete_key(ed, "transit");
+		if (!checked(f, "transit"))
+			ucl_object_insert_key(ed, ucl_object_frombool(false),
+			    "transit", 0, false);
+		(void)ucl_object_delete_key(ed, "bgp_import");
+		if (jstr(f, "bgp_import") != NULL && strcmp(jstr(f, "bgp_import"),
+		    "sets") == 0)
+			put_str(ed, "bgp_import", "sets");
+		(void)ucl_object_delete_key(ed, "breakout_sets");
+		if ((v = jstr(f, "breakout_sets")) != NULL && v[0] != '\0') {
+			ucl_object_t	*bss = ucl_object_typed_new(UCL_ARRAY);
+			char		*copy = strdup(v), *it2 = copy, *line;
+
+			while (it2 != NULL && (line = strsep(&it2, "\n")) != NULL) {
+				char	sn[80], via[80];
+
+				if (sscanf(line, "%79s %79s", sn, via) == 2) {
+					ucl_object_t	*bs = ucl_object_typed_new(UCL_OBJECT);
+
+					put_str(bs, "set", sn);
+					put_str(bs, "via", via);
+					ucl_array_append(bss, bs);
+				}
+			}
+			free(copy);
+			if (ucl_array_size(bss) > 0)
+				ucl_object_insert_key(ed, bss, "breakout_sets", 0, false);
+			else
+				ucl_object_unref(bss);
+		}
 		(void)ucl_object_delete_key(ed, "ntp");
 		if ((v = jstr(f, "ntp")) != NULL && v[0] != '\0')
 			ucl_object_insert_key(ed, list_of(v), "ntp", 0, false);
@@ -6858,6 +7061,8 @@ sd_forms(const char *form, const ucl_object_t *f)
 		if ((v = jstr(f, "preference")) != NULL && v[0] != '\0')
 			ucl_object_insert_key(o, ucl_object_fromint(strtoll(v, NULL,
 			    10)), "preference", 0, false);
+		if ((v = jstr(f, "beacon")) != NULL && v[0] != '\0')
+			put_str(o, "beacon", v);
 		{
 			ucl_object_t	*rt = ucl_object_typed_new(UCL_OBJECT), *bg;
 
@@ -7279,6 +7484,60 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			ucl_object_insert_key(o, cp, "control_plane", 0, false);
 		}
 		put_list(o, "reserved_prefixes", jstr(f, "reserved"));
+		(void)ucl_object_delete_key(o, "nat64");
+		if ((v = jstr(f, "n64_prefix")) != NULL && v[0] != '\0') {
+			ucl_object_t	*n64 = ucl_object_typed_new(UCL_OBJECT);
+
+			put_str(n64, "prefix", v);
+			if ((v = jstr(f, "n64_pool")) != NULL && v[0] != '\0')
+				put_str(n64, "pool", v);
+			if ((v = jstr(f, "n64_edge")) != NULL && v[0] != '\0')
+				put_str(n64, "edge", v);
+			ucl_object_insert_key(o, n64, "nat64", 0, false);
+		}
+		(void)ucl_object_delete_key(o, "bgp_sets");
+		if ((v = jstr(f, "bgp_sets")) != NULL && v[0] != '\0') {
+			ucl_object_t	*sets = ucl_object_typed_new(UCL_ARRAY);
+			char		*copy = strdup(v), *it2 = copy, *line, *tok;
+
+			while (it2 != NULL && (line = strsep(&it2, "\n")) != NULL) {
+				ucl_object_t	*xs, *ap, *cm, *pair;
+				char		*lp = line, *colon;
+
+				while ((tok = strsep(&lp, " \t\r")) != NULL && tok[0] ==
+				    '\0')
+					;
+				if (tok == NULL)
+					continue;
+				xs = ucl_object_typed_new(UCL_OBJECT);
+				put_str(xs, "name", tok);
+				ap = ucl_object_typed_new(UCL_ARRAY);
+				cm = ucl_object_typed_new(UCL_ARRAY);
+				while ((tok = strsep(&lp, " \t\r")) != NULL) {
+					if (tok[0] == '\0')
+						continue;
+					if ((colon = strchr(tok, ':')) != NULL) {
+						*colon++ = '\0';
+						pair = ucl_object_typed_new(UCL_ARRAY);
+						ucl_array_append(pair, ucl_object_fromint(strtoll(
+						    tok, NULL, 10)));
+						ucl_array_append(pair, ucl_object_fromint(strtoll(
+						    colon, NULL, 10)));
+						ucl_array_append(cm, pair);
+					} else
+						ucl_array_append(ap, ucl_object_fromint(strtoll(
+						    tok, NULL, 10)));
+				}
+				ucl_object_insert_key(xs, ap, "as_path", 0, false);
+				ucl_object_insert_key(xs, cm, "communities", 0, false);
+				ucl_array_append(sets, xs);
+			}
+			free(copy);
+			if (ucl_array_size(sets) > 0)
+				ucl_object_insert_key(o, sets, "bgp_sets", 0, false);
+			else
+				ucl_object_unref(sets);
+		}
 		/* The routing domains: the three in order where a field has
 		 * three values by commas; each only with something in it. */
 		{
@@ -7344,6 +7603,10 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			    "3");
 			ucl_object_insert_key(o, t, "bfd", 0, false);
 		}
+		(void)ucl_object_delete_key(o, "ibgp");
+		if (jstr(f, "ibgp") != NULL && strcmp(jstr(f, "ibgp"), "loopback") ==
+		    0)
+			put_str(o, "ibgp", "loopback");
 		/* What is folded under "more". */
 		(void)ucl_object_delete_key(o, "groups");
 		(void)ucl_object_delete_key(o, "importance");
@@ -7792,39 +8055,82 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		u = jget(old, "uni") != NULL ? ucl_object_copy(jget(old, "uni")) :
 		    ucl_object_typed_new(UCL_OBJECT);
 		(void)ucl_object_delete_key(o, "uni");
-		for (i = 0; i < 9; i++) {
+		for (i = 0; i < 11; i++) {
 			static const char *const keys[] = { "id", "interface",
 			    "vlan", "ipv4", "ipv6", "routes", "bgp", "ospf",
-			    "max_frame" };
+			    "max_frame", "host_addressed", "clat" };
 
+			/* Several neighbours or areas, written by hand: kept. */
+			if ((strcmp(keys[i], "bgp") == 0 || strcmp(keys[i], "ospf") ==
+			    0) && jget(u, keys[i]) != NULL && ucl_object_type(jget(u,
+			    keys[i])) == UCL_ARRAY)
+				continue;
 			(void)ucl_object_delete_key(u, keys[i]);
 		}
 		put_int(u, "max_frame", jstr(f, "mf"));
+		if (jstr(f, "clat") != NULL && jstr(f, "clat")[0] != '\0') {
+			ucl_object_t	*cl = ucl_object_typed_new(UCL_OBJECT);
+
+			put_str(cl, "prefix", jstr(f, "clat"));
+			ucl_object_insert_key(u, cl, "clat", 0, false);
+		}
+		if (checked(f, "host_addressed"))
+			ucl_object_insert_key(u, ucl_object_frombool(true),
+			    "host_addressed", 0, false);
 		if (jstr(f, "routes") != NULL && strspn(jstr(f, "routes"),
 		    " \t\n") != strlen(jstr(f, "routes")))
 			ucl_object_insert_key(u, routes_of(jstr(f, "routes")),
 			    "routes", 0, false);
-		if (jstr(f, "bgp_as") != NULL && jstr(f, "bgp_as")[0] != '\0') {
+		if (jget(u, "bgp") == NULL && jstr(f, "bgp_as") != NULL && jstr(f,
+		    "bgp_as")[0] != '\0') {
 			t = ucl_object_typed_new(UCL_OBJECT);
 			put_str(t, "family", jstr(f, "bgp_fam"));
 			put_int(t, "as", jstr(f, "bgp_as"));
 			put_list(t, "neighbors", jstr(f, "bgp_nb"));
 			put_str(t, "password", jstr(f, "bgp_pw"));
 			put_int(t, "hold_time", jstr(f, "bgp_hold"));
+			if (jstr(f, "bgp_src") != NULL && jstr(f, "bgp_src")[0] != '\0')
+				put_str(t, "source", jstr(f, "bgp_src"));
+			if (checked(f, "bgp_mh"))
+				ucl_object_insert_key(t, ucl_object_frombool(true),
+				    "multihop", 0, false);
+			if (checked(f, "bgp_bfd"))
+				ucl_object_insert_key(t, ucl_object_frombool(true), "bfd",
+				    0, false);
 			if (jstr(f, "bgp_comm") != NULL && jstr(f, "bgp_comm")[0] !=
 			    '\0')
 				ucl_object_insert_key(t, communities_of(jstr(f,
 				    "bgp_comm")), "communities", 0, false);
 			ucl_object_insert_key(u, t, "bgp", 0, false);
 		}
-		if (jstr(f, "ospf_area") != NULL && jstr(f, "ospf_area")[0] !=
-		    '\0') {
-			t = ucl_object_typed_new(UCL_OBJECT);
-			put_str(t, "family", jstr(f, "ospf_fam"));
-			put_int(t, "area", jstr(f, "ospf_area"));
-			put_int(t, "cost", jstr(f, "ospf_cost"));
-			put_int(t, "hello", jstr(f, "ospf_hello"));
-			ucl_object_insert_key(u, t, "ospf", 0, false);
+		if (jget(u, "ospf") == NULL && jstr(f, "ospf_area") != NULL && jstr(
+		    f, "ospf_area")[0] != '\0') {
+			ucl_object_t	*arr = NULL;
+			int		 q;
+
+			/* An area of each family's own: two entries. */
+			if (jstr(f, "ospf_area6") != NULL && jstr(f, "ospf_area6")[0] !=
+			    '\0' && strcmp(jstr(f, "ospf_area6"), jstr(f, "ospf_area"))
+			    != 0)
+				arr = ucl_object_typed_new(UCL_ARRAY);
+			for (q = 0; q < (arr != NULL ? 2 : 1); q++) {
+				t = ucl_object_typed_new(UCL_OBJECT);
+				put_str(t, "family", arr != NULL ? (q == 0 ? "ipv4" :
+				    "ipv6") : jstr(f, "ospf_fam"));
+				put_int(t, "area", q == 0 ? jstr(f, "ospf_area") : jstr(f,
+				    "ospf_area6"));
+				put_int(t, "cost", jstr(f, "ospf_cost"));
+				put_int(t, "hello", jstr(f, "ospf_hello"));
+				if (checked(f, "ospf_bfd"))
+					ucl_object_insert_key(t, ucl_object_frombool(true),
+					    "bfd", 0, false);
+				if (arr != NULL)
+					ucl_array_append(arr, t);
+				else
+					ucl_object_insert_key(u, t, "ospf", 0, false);
+			}
+			if (arr != NULL)
+				ucl_object_insert_key(u, arr, "ospf", 0, false);
 		}
 		snprintf(buf, sizeof(buf), "uni-%s", jstr(f, "id"));
 		put_str(u, "id", jstr(old != NULL ? jget(old, "uni") : NULL, "id")

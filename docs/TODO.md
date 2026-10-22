@@ -255,12 +255,14 @@
   documents zeroing; 1.12.3 came with 1.7. Next: 1.11, the first GET,
   on an arcana branch with cblink v2. For the user (2026-10-14): that
   branch builds only once the agent and console speak cblink 2, which
-  has no v1; how it carries the 60 operations of arcana.yaml until Y-3
-  converts them is not in the plan. Either an interim module made
-  mechanically from arcana.yaml, an rpc an operation with its
-  attributes (the JSON blobs as strings), so the branch runs at once and
-  Y-3 replaces it a module at a time; or Y-3's conversions first, 1.11
-  after. Meanwhile Y-2's cblink side goes on. Done on cblink v2
+  has no v1; how it carries the 68 operations of arcana.yaml until Y-3
+  converts them: decided and done 2026-10-22, the interim module
+  (share/arcana/wire.awk writes share/yang/arcana@<rev>.yang from
+  arcana.yaml, an rpc an operation, on Arcana's own family with the
+  version-1 command numbers; cblink-gen 0.2.1's cg:struct keeps one
+  struct per attribute set; the YAML stays the editing source, D-9's
+  "the YAML goes" deferred to Y-3), so Y-3 replaces it a module at a
+  time. Meanwhile Y-2's cblink side goes on. Done on cblink v2
   (2026-10-14): 2.1, the instance tree (<cbl_data.h>: nodes of the
   tables, keys by an index, defaults on demand and made, to and from
   the structs and YANG-CBOR), its edits (RFC 6241's operations, all or

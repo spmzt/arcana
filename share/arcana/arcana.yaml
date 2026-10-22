@@ -3232,7 +3232,11 @@ operations:
       not yet is started in its table (setfib) with a control socket
       and a pid file of its own beside the agent's kept files; those
       not named any more are stopped.  Kept for the next start.  The
-      sdwan read tells each instance and its protocols.
+      sdwan read tells each instance and its protocols.  With "jail"
+      the instances are an edge's that is a vnet jail: each run in it
+      by jexec(8) in the jail's table, its files beneath the jail's
+      root (/var/run), kept in a file of the jail's own; those of the
+      other edges are left as they are.
     do:
       request:
         attributes:

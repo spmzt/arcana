@@ -3668,6 +3668,21 @@ EOS
 	    '{"set":30,"tables":[],"objects":["pipe 3000 config bw 1Mbit/s; reboot"],"rules":["10 allow ip from any to any"]}'
 	atf_check -s exit:1 -e match:'an object is' -o ignore "$JGC" -c "$SOCK" sdwan rules \
 	    '{"set":30,"tables":[],"objects":["table t create"],"rules":["10 allow ip from any to any"]}'
+	# NAT64 instances (nat64lsn, nat64clat): named, created before the
+	# rules, their module loaded, destroyed with the rules.
+	: > ipfw.log
+	: > kldload.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[],"objects":["nat64lsn sw1_64 create prefix4 192.0.2.64/26 prefix6 64:ff9b::/96 allow_private","nat64clat sw1_chq create clat_prefix 2001:db8:c::/96 plat_prefix 64:ff9b::/96"],"rules":["10 nat64lsn sw1_64 ip6 from any to 64:ff9b::/96 in","99 count ip from any to any"]}'
+	atf_check -o match:'^nat64lsn sw1_64 create prefix4 192.0.2.64/26 prefix6 64:ff9b::/96 allow_private$' \
+	    -o match:'^nat64clat sw1_chq create clat_prefix 2001:db8:c::/96 plat_prefix 64:ff9b::/96$' \
+	    -o match:'^add 10 set 30 nat64lsn sw1_64 ip6 from any to 64:ff9b::/96 in$' cat ipfw.log
+	atf_check -o match:'ipfw_nat64' cat kldload.log
+	atf_check -s exit:1 -e match:'an object is' -o ignore "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[],"objects":["nat64lsn sw1_64 config prefix4 192.0.2.64/26"],"rules":["10 allow ip from any to any"]}'
+	: > ipfw.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules '{"set":30,"tables":[],"rules":[]}'
+	atf_check -o match:'^ipfw -q nat64clat sw1_chq destroy$' -o match:'^ipfw -q nat64lsn sw1_64 destroy$' cat ipfw.log
 	: > ipfw.log
 	: > kldload.log
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
@@ -3913,10 +3928,59 @@ EOS
 	atf_check -o match:'"chosen":0' "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'"type":"bfd","severity":"Cleared","was":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is up","cleared":true,"cleared_at":[0-9]+' \
 	    "$JGC" -c "$SOCK" sdwan
+	# The breakout's default route steered too: by the first candidate
+	# whose beacon is not down (none probed here: the first), put in its
+	# table in place of what was there; told in the read.
+	: > route.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[{"table":"sw1_known","prefix":"10.1.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"},{"id":"t2","via":"100.64.0.3"}]}],"routes":[{"fib":2,"destination":"0.0.0.0/0","candidates":[{"id":"bo:a-inet","via":"192.0.2.254"},{"id":"bo:a-wg","via":"192.0.2.253"}]}]}'
+	atf_check -o match:'^0 route-del 0.0.0.0/0 - - 2 0$' -o match:'^0 route-add 0.0.0.0/0 192.0.2.254 - 2 0 0 -$' cat route.log
+	atf_check -o match:'"routes":\[\{"fib":2,"destination":"0.0.0.0/0","chosen":0,"candidates":\[\{"id":"bo:a-inet","via":"192.0.2.254","state":"not probed"\},\{"id":"bo:a-wg","via":"192.0.2.253","state":"not probed"\}\]\}\]' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -s exit:1 -e match:'a route is a fib, a destination' -o ignore "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[],"routes":[{"fib":"x"}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"sw1","fib":1,"conf":"router id 100.64.0.0;\nprotocol device {}\nprotocol static {}\n"}]}'
 	atf_check -o match:'configure$' cat birdc.log
 	atf_check -o inline:'1\n' sh -c "grep -c '^setfib' setfib.log"
+	# An edge that is a vnet jail: its instance run in the jail by jexec,
+	# its file beneath the jail's root, named with the jail, kept in a
+	# file of its own; the host's instance beside it, untouched.
+	R=$(pwd)/jroot
+	mkdir -p "$R/var/run"
+	cat > fake-jls <<EOS
+#!/bin/sh
+case "\$2" in
+gw) echo "7 new $R" ;;
+*) echo "jls: jail \"\$2\" not found" >&2; exit 1 ;;
+esac
+EOS
+	cat > fake-jexec <<EOS
+#!/bin/sh
+echo "jexec \$*" >> $(pwd)/jexec.log
+shift
+# The jail's /var/run is beneath its root here.
+n=0; for a; do case "\$a" in /var/run/*) a="$R\$a" ;; esac; set -- "\$@" "\$a"; n=\$((n+1)); done
+shift \$n
+exec "\$@"
+EOS
+	chmod +x fake-jls fake-jexec
+	atf_check -s exit:1 -e match:'not running' -o ignore "$JGC" -c "$SOCK" sdwan bird \
+	    '{"jail":"nope","instances":[{"name":"sw1-nope","fib":1,"conf":"router id 100.64.0.2;\n"}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
+	    '{"jail":"gw","instances":[{"name":"sw1-gw","fib":1,"conf":"router id 100.64.0.2;\nprotocol device {}\n"}]}'
+	atf_check -o match:'^jexec 7 .*fake-bird -p -c /var/run/arcana-sdwan-bird-sw1-gw.conf$' \
+	    -o match:'^jexec 7 .*fake-setfib -F 1 .*fake-bird -c /var/run/arcana-sdwan-bird-sw1-gw.conf -s /var/run/arcana-sdwan-bird-sw1-gw.ctl -P /var/run/arcana-sdwan-bird-sw1-gw.pid$' \
+	    -o match:'^jexec 7 .*fake-birdc -s /var/run/arcana-sdwan-bird-sw1-gw.ctl show status$' cat jexec.log
+	atf_check -o match:'^router id 100.64.0.2;$' cat "$R/var/run/arcana-sdwan-bird-sw1-gw.conf"
+	atf_check -o match:'"name":"sw1","fib":1,"running":true' -o match:'"name":"sw1-gw","fib":1,"jail":"gw","running":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	test -f "$(dirname "$f")/sdwan-bird@gw.json" || atf_fail "the jail's instances are not kept"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird '{"jail":"gw","instances":[]}'
+	atf_check -o match:'"name":"sw1","fib":1' -o not-match:'sw1-gw' "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'^jexec 7 .*fake-birdc -s /var/run/arcana-sdwan-bird-sw1-gw.ctl down$' cat jexec.log
+	test ! -f "$R/var/run/arcana-sdwan-bird-sw1-gw.conf" || atf_fail "the jail's file stayed"
+	test ! -f "$(dirname "$f")/sdwan-bird@gw.json" || atf_fail "the jail's kept file stayed"
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird '{"instances":[]}'
 	atf_check -o match:'down$' cat birdc.log
 	test ! -f "$(dirname "$f")/sdwan-bird-sw1.conf" || atf_fail "the instance's file stayed"

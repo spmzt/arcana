@@ -1176,7 +1176,7 @@ connection(struct ck *c, const ucl_object_t *v, int af, bool *none)
  * communities.
  */
 static bool
-routing(struct ck *c, const ucl_object_t *v, const char *what,
+routing_one(struct ck *c, const ucl_object_t *v, const char *what,
     const struct pfx *nets, int nnets)
 {
 	const ucl_object_t	*e, *m;
@@ -1223,7 +1223,7 @@ routing(struct ck *c, const ucl_object_t *v, const char *what,
 			for (i = 0; i < nnets; i++)
 				if (holds(&nets[i], &a))
 					break;
-			if (nnets > 0 && i == nnets)
+			if (nnets > 0 && i == nnets && !ucl_flag(v, "multihop"))
 				return (fail(c, "bgp: %s is not within the UNI's "
 				    "prefixes (§11.6.2)",
 				    ucl_object_tostring_forced(m)));
@@ -1231,6 +1231,18 @@ routing(struct ck *c, const ucl_object_t *v, const char *what,
 		if (ucl_object_lookup(v, "hold_time") != NULL && !is_int(
 		    ucl_object_lookup(v, "hold_time"), 3, 65535, NULL))
 			return (fail(c, "bgp: hold_time is 3 to 65535 seconds"));
+		/* A session from a source address of this edge's (a loopback),
+		 * multihop, watched by BFD: Arcana's own beyond §11.6.2. */
+		if (str(v, "source") != NULL && (!address(str(v, "source"), &a) ||
+		    (a.af == AF_INET && strcmp(fam, "ipv6") == 0) || (a.af ==
+		    AF_INET6 && strcmp(fam, "ipv4") == 0)))
+			return (fail(c, "bgp: source is an address of this edge's, "
+			    "of the family, the session is from"));
+		if ((ucl_object_lookup(v, "multihop") != NULL && ucl_object_type(
+		    ucl_object_lookup(v, "multihop")) != UCL_BOOLEAN) ||
+		    (ucl_object_lookup(v, "bfd") != NULL && ucl_object_type(
+		    ucl_object_lookup(v, "bfd")) != UCL_BOOLEAN))
+			return (fail(c, "bgp: multihop and bfd are true or false"));
 		e = ucl_object_lookup(v, "communities");
 		if (e != NULL && (ucl_object_type(e) != UCL_ARRAY ||
 		    ucl_array_size(e) > LIST_MAX))
@@ -1267,6 +1279,32 @@ routing(struct ck *c, const ucl_object_t *v, const char *what,
 	if (ucl_object_lookup(v, "dead") != NULL && !is_int(
 	    ucl_object_lookup(v, "dead"), 2, 65535, NULL))
 		return (fail(c, "ospf: dead is seconds, 2 to 65535"));
+	if (ucl_object_lookup(v, "bfd") != NULL && ucl_object_type(
+	    ucl_object_lookup(v, "bfd")) != UCL_BOOLEAN)
+		return (fail(c, "ospf: bfd is true or false"));
+	return (true);
+}
+
+/* One entry, or a list of them: an area per family, several BGP
+ * neighbours each of their own AS (Arcana's own beyond §11.6). */
+static bool
+routing(struct ck *c, const ucl_object_t *v, const char *what,
+    const struct pfx *nets, int nnets)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	if (is_null(v))
+		return (true);
+	if (ucl_object_type(v) != UCL_ARRAY)
+		return (routing_one(c, v, what, nets, nnets));
+	if (ucl_array_size(v) > 16)
+		return (fail(c, "its UNI's %s is one entry, or a list of 16 at "
+		    "most", what));
+	it = NULL;
+	while ((e = ucl_object_iterate(v, &it, true)) != NULL)
+		if (!routing_one(c, e, what, nets, nnets))
+			return (false);
 	return (true);
 }
 
@@ -1290,9 +1328,22 @@ uni(struct ck *c, const ucl_object_t *u, struct pfx *nets, int *nnets)
 	    ucl_object_lookup(u, "vlan"), 0, 4094, NULL))
 		return (fail(c, "its UNI's vlan is 0, untagged, or 1 to 4094 "
 		    "(§11.2)"));
+	/* The host has the UNI's addresses already (a bridge of its jails,
+	 * say): none is added or taken away (Arcana's own). */
+	if (ucl_object_lookup(u, "host_addressed") != NULL && ucl_object_type(
+	    ucl_object_lookup(u, "host_addressed")) != UCL_BOOLEAN)
+		return (fail(c, "its UNI's host_addressed is true or false"));
 	if (ucl_object_lookup(u, "max_frame") != NULL && !is_int(
 	    ucl_object_lookup(u, "max_frame"), 1522, 65535, NULL))
 		return (fail(c, "its UNI's max_frame is 1522 or more (R126)"));
+	/* CLAT (RFC 6877, Arcana's own): the IPv4 hosts behind the UNI as
+	 * IPv6 to the service's NAT64, by a /96 of their own. */
+	if (ucl_object_lookup(u, "clat") != NULL && !is_null(ucl_object_lookup(
+	    u, "clat")) && (ucl_object_type(ucl_object_lookup(u, "clat")) !=
+	    UCL_OBJECT || !prefix(str(ucl_object_lookup(u, "clat"), "prefix"),
+	    &p, false) || p.af != AF_INET6 || p.len != 96))
+		return (fail(c, "its UNI's clat is an object with a prefix, an "
+		    "IPv6 /96 of its own (RFC 6877)"));
 	if (!connection(c, ucl_object_lookup(u, "ipv4"), AF_INET, &none4) ||
 	    !connection(c, ucl_object_lookup(u, "ipv6"), AF_INET6, &none6))
 		return (false);
@@ -1658,6 +1709,110 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 		    "underlay's"));
 	if (!domains(c, sw))
 		return (false);
+	/* Destination sets by BGP attribute (Arcana's own): a set is the
+	 * routes whose AS path holds any of its AS numbers, or that carry
+	 * any of its communities; an edge names the uplink each goes out
+	 * by (breakout_sets). */
+	if ((v = ucl_object_lookup(sw, "bgp_sets")) != NULL && !is_null(v)) {
+		const ucl_object_t	*xs, *xm;
+		ucl_object_iter_t	 xit, xmit;
+		ucl_object_t		*xseen;
+
+		if (ucl_object_type(v) != UCL_ARRAY || ucl_array_size(v) >
+		    LIST_MAX)
+			return (fail(c, "bgp_sets is a list, each a name, as_path "
+			    "(AS numbers) and communities ([as, value])"));
+		xseen = ucl_object_typed_new(UCL_OBJECT);
+		xit = NULL;
+		while ((xs = ucl_object_iterate(v, &xit, true)) != NULL) {
+			if (!ident(str(xs, "name")) || ucl_object_lookup(xseen,
+			    str(xs, "name")) != NULL) {
+				ucl_object_unref(xseen);
+				return (fail(c, "bgp_sets: each has a name of its own, "
+				    "printable ASCII"));
+			}
+			ucl_object_insert_key(xseen, ucl_object_frombool(true),
+			    str(xs, "name"), 0, true);
+			if (ucl_array_size(ucl_object_lookup(xs, "as_path")) == 0 &&
+			    ucl_array_size(ucl_object_lookup(xs, "communities")) == 0) {
+				ucl_object_unref(xseen);
+				return (fail(c, "bgp_sets: %s names no AS number and no "
+				    "community", str(xs, "name")));
+			}
+			xmit = NULL;
+			while ((xm = ucl_object_iterate(ucl_object_lookup(xs,
+			    "as_path"), &xmit, true)) != NULL)
+				if (!is_int(xm, 1, 4294967295LL, NULL)) {
+					ucl_object_unref(xseen);
+					return (fail(c, "bgp_sets: %s: as_path is a list "
+					    "of AS numbers", str(xs, "name")));
+				}
+			xmit = NULL;
+			while ((xm = ucl_object_iterate(ucl_object_lookup(xs,
+			    "communities"), &xmit, true)) != NULL)
+				if (ucl_object_type(xm) != UCL_ARRAY || ucl_array_size(
+				    xm) != 2 || !is_int(ucl_array_find_index(xm, 0), 0,
+				    65535, NULL) || !is_int(ucl_array_find_index(xm, 1),
+				    0, 65535, NULL)) {
+					ucl_object_unref(xseen);
+					return (fail(c, "bgp_sets: %s: a community is [as, "
+					    "value], each 0 to 65535", str(xs, "name")));
+				}
+		}
+		ucl_object_unref(xseen);
+	}
+	/* NAT64 (RFC 6146, Arcana's own beside MEF 70.2 §10.5): the service's
+	 * IPv6 hosts reach the Internet's IPv4 through one edge, by a
+	 * prefix (64:ff9b::/96 as a rule) and a pool of IPv4 addresses of
+	 * the edge's. */
+	if ((v = ucl_object_lookup(sw, "nat64")) != NULL && !is_null(v)) {
+		struct pfx	 q6, q4;
+		const ucl_object_t	*xe;
+		ucl_object_iter_t	 xit;
+		bool			 found = false;
+
+		if (ucl_object_type(v) != UCL_OBJECT || !prefix(str(v, "prefix"),
+		    &q6, false) || q6.af != AF_INET6 || q6.len != 96)
+			return (fail(c, "nat64 is an object: prefix, an IPv6 /96 "
+			    "(64:ff9b::/96 as a rule), pool, an IPv4 prefix, edge, "
+			    "where it is done"));
+		if (!prefix(str(v, "pool"), &q4, false) || q4.af != AF_INET)
+			return (fail(c, "nat64: pool is an IPv4 prefix of the "
+			    "edge's, which its NAT takes out"));
+		xit = NULL;
+		while ((xe = ucl_object_iterate(ucl_object_lookup(doc, "edges"),
+		    &xit, true)) != NULL)
+			if (str(xe, "server") != NULL && str(v, "edge") != NULL &&
+			    strcmp(str(xe, "server"), str(v, "edge")) == 0)
+				found = true;
+		if (!found)
+			return (fail(c, "nat64: edge is one of the edges, the one "
+			    "that translates and breaks out"));
+	}
+	/* iBGP between the edges' loopbacks (Arcana's own): one session with
+	 * each edge, multihop, over every tunnel at once; needs BFD, and no
+	 * control plane, for the edges carrying transit reflect themselves. */
+	if ((v = ucl_object_lookup(sw, "ibgp")) != NULL && !is_null(v)) {
+		if (ucl_object_type(v) != UCL_STRING || (strcmp(
+		    ucl_object_tostring(v), "tunnel") != 0 && strcmp(
+		    ucl_object_tostring(v), "loopback") != 0))
+			return (fail(c, "ibgp is tunnel (a session by each tunnel, "
+			    "between its ends) or loopback (one with each edge, "
+			    "between loopbacks, multihop, over every tunnel at "
+			    "once)"));
+		if (strcmp(ucl_object_tostring(v), "loopback") == 0) {
+			if (ucl_object_lookup(sw, "bfd") == NULL || is_null(
+			    ucl_object_lookup(sw, "bfd")))
+				return (fail(c, "ibgp loopback needs bfd: the "
+				    "loopbacks' routes over the tunnels are watched "
+				    "by it"));
+			if (ucl_object_lookup(sw, "control_plane") != NULL &&
+			    !is_null(ucl_object_lookup(sw, "control_plane")))
+				return (fail(c, "ibgp loopback and a control plane "
+				    "are one or the other: the edges that carry "
+				    "transit reflect"));
+		}
+	}
 	/* The control plane (Mplify 119 §8.3, R9-R13): an edge of the
 	 * service the others' iBGP goes to, a route reflector. */
 	if ((v = ucl_object_lookup(sw, "control_plane")) != NULL && !is_null(
@@ -1961,6 +2116,13 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 		} else {
 			if (!uni(c, u, nets, &nnets))
 				return (false);
+			if (ucl_object_lookup(u, "clat") != NULL && !is_null(
+			    ucl_object_lookup(u, "clat")) && (ucl_object_lookup(sw,
+			    "nat64") == NULL || is_null(ucl_object_lookup(sw,
+			    "nat64"))))
+				return (fail(c, "its UNI's clat needs the service's "
+				    "nat64: that is what carries its IPv4 to the "
+				    "Internet"));
 			if (ucl_object_lookup(seen_uni, str(u, "id")) != NULL)
 				return (fail(c, "UNI %s is another end point's "
 				    "too (R3, R16)", str(u, "id")));
@@ -2548,6 +2710,138 @@ check_doc(const ucl_object_t *doc, struct ck *c)
 			    "server/jail for a vnet jail on it)");
 			break;
 		}
+		/* A host-as-subscriber edge (Arcana's own): the services'
+		 * overlay in the host's own table, the first; host_bird says
+		 * the host runs its own BIRD there, so no service may put
+		 * one there. */
+		if ((e = ucl_object_lookup(v, "own_table")) != NULL &&
+		    ucl_object_type(e) != UCL_BOOLEAN) {
+			ok = fail(c, "own_table is true or false");
+			break;
+		}
+		/* The uplink a destination set goes out by (breakout_sets),
+		 * and whether other BGP routes reach the kernel (bgp_import). */
+		if ((e = ucl_object_lookup(v, "bgp_import")) != NULL && !one_of(
+		    ucl_object_type(e) == UCL_STRING ? ucl_object_tostring(e) :
+		    NULL, (const char *const[]){ "all", "sets", NULL })) {
+			ok = fail(c, "bgp_import is all (every BGP route into the "
+			    "kernel) or sets (only the destination sets', the "
+			    "kernel keeping its own default route)");
+			break;
+		}
+		if ((e = ucl_object_lookup(v, "breakout_sets")) != NULL &&
+		    !is_null(e)) {
+			const ucl_object_t	*bs, *xsw, *xs, *xu;
+			ucl_object_iter_t	 bit, xit, xsit;
+			bool			 found, viaok;
+
+			if (ucl_object_type(e) != UCL_ARRAY) {
+				ok = fail(c, "breakout_sets is a list, each a set and "
+				    "the UCS end point of this edge it goes out by");
+				break;
+			}
+			bit = NULL;
+			while (ok && (bs = ucl_object_iterate(e, &bit, true)) != NULL) {
+				found = viaok = false;
+				xit = NULL;
+				while ((xsw = ucl_object_iterate(ucl_object_lookup(doc,
+				    "swvcs"), &xit, true)) != NULL) {
+					xsit = NULL;
+					while ((xs = ucl_object_iterate(ucl_object_lookup(
+					    xsw, "bgp_sets"), &xsit, true)) != NULL)
+						if (str(xs, "name") != NULL && str(bs, "set") !=
+						    NULL && strcmp(str(xs, "name"), str(bs,
+						    "set")) == 0)
+							found = true;
+				}
+				xsit = NULL;
+				while ((xu = ucl_object_iterate(ucl_object_lookup(v,
+				    "ucs_end_points"), &xsit, true)) != NULL)
+					if (str(xu, "id") != NULL && str(bs, "via") != NULL
+					    && strcmp(str(xu, "id"), str(bs, "via")) == 0 &&
+					    ucl_flag(xu, "breakout") && str(xu, "gateway") !=
+					    NULL)
+						viaok = true;
+				if (!found)
+					ok = fail(c, "breakout_sets: %s is no bgp_sets "
+					    "name of a service", str(bs, "set") != NULL ?
+					    str(bs, "set") : "(none)");
+				else if (!viaok)
+					ok = fail(c, "breakout_sets: %s goes out by %s, "
+					    "which is no breakout UCS end point of this "
+					    "edge with a gateway", str(bs, "set"), str(bs,
+					    "via") != NULL ? str(bs, "via") : "(none)");
+			}
+			if (!ok)
+				break;
+		}
+		if ((e = ucl_object_lookup(v, "transit")) != NULL &&
+		    ucl_object_type(e) != UCL_BOOLEAN) {
+			ok = fail(c, "transit is true or false: whether the edge "
+			    "carries what the other edges exchange, and breaks "
+			    "out for them");
+			break;
+		}
+		if ((e = ucl_object_lookup(v, "host_bird")) != NULL &&
+		    ucl_object_type(e) != UCL_BOOLEAN) {
+			ok = fail(c, "host_bird is true or false");
+			break;
+		}
+		if (ucl_flag(v, "host_bird") || ucl_flag(v, "own_table")) {
+			const ucl_object_t	*xsw, *xep, *xu, *xue;
+			ucl_object_iter_t	 xit, xeit, xuit;
+			bool			 bird, breaks;
+
+			/* Of the services here: one that needs BIRD (BFD, or
+			 * routing at a UNI) cannot have it on a host that
+			 * runs its own; one breaking out here from an
+			 * own-table edge needs a breakout table of its own,
+			 * for the host's default route is not the service's
+			 * to write. */
+			breaks = false;
+			xuit = NULL;
+			while ((xue = ucl_object_iterate(ucl_object_lookup(v,
+			    "ucs_end_points"), &xuit, true)) != NULL)
+				if (ucl_flag(xue, "breakout"))
+					breaks = true;
+			xit = NULL;
+			while (ok && (xsw = ucl_object_iterate(ucl_object_lookup(
+			    doc, "swvcs"), &xit, true)) != NULL) {
+				bird = !is_null(ucl_object_lookup(xsw, "bfd")) &&
+				    ucl_object_lookup(xsw, "bfd") != NULL;
+				xeit = NULL;
+				while ((xep = ucl_object_iterate(ucl_object_lookup(
+				    xsw, "end_points"), &xeit, true)) != NULL) {
+					if (str(xep, "edge") == NULL || strcmp(str(
+					    xep, "edge"), str(v, "server")) != 0)
+						continue;
+					xu = ucl_object_lookup(xep, "uni");
+					if (xu != NULL && ucl_object_lookup(xu,
+					    "routing") != NULL && !is_null(
+					    ucl_object_lookup(xu, "routing")))
+						bird = true;
+					if (ucl_flag(v, "host_bird") && bird)
+						ok = fail(c, "it runs its own BIRD "
+						    "(host_bird): service %s, which "
+						    "needs one here (bfd, or routing "
+						    "at a UNI), cannot have it",
+						    str(xsw, "id"));
+					else if (ucl_flag(v, "own_table") && breaks
+					    && (ucl_object_lookup(ucl_object_lookup(
+					    ucl_object_lookup(xsw, "domains"),
+					    "breakout"), "fib") == NULL))
+						ok = fail(c, "an own-table edge "
+						    "breaking out needs service %s's "
+						    "breakout domain to have a fib "
+						    "of its own: the host's default "
+						    "route is not the service's to "
+						    "write", str(xsw, "id"));
+					break;
+				}
+			}
+			if (!ok)
+				break;
+		}
 		/* NTP (Mplify 119 §12.2.2): the servers the edge keeps time by. */
 		if ((e = ucl_object_lookup(v, "ntp")) != NULL && !is_null(e)) {
 			const ucl_object_t	*ns;
@@ -2595,6 +2889,11 @@ check_doc(const ucl_object_t *doc, struct ck *c)
 			else if (str(e, "gateway") != NULL && !address(str(e,
 			    "gateway"), &a))
 				ok = fail(c, "its gateway is an address");
+			else if (str(e, "beacon") != NULL && !address(str(e,
+			    "beacon"), &a))
+				ok = fail(c, "its beacon is an address: what is probed "
+				    "by this uplink when the edge has several "
+				    "breakouts");
 			else if (ucl_flag(e, "breakout") && strcmp(str(u,
 			    "type"), "public") != 0)
 				ok = fail(c, "only an Internet Access, a public "

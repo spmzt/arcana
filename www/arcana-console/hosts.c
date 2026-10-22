@@ -1082,7 +1082,7 @@ jail_object(const struct arc_jail *j)
 	if (j->has_nproc) {
 		put(o, "nproc", ucl_object_fromint(j->nproc));
 		put(o, "rss_kb", ucl_object_fromint((int64_t)j->rss_kb));
-		put(o, "cpu_pct", ucl_object_fromdouble(j->cpu_pct));
+		put(o, "cpu_pct", ucl_object_fromdouble(j->cpu_pct / 100.0));
 		put(o, "securelevel", ucl_object_fromint(j->securelevel));
 		put(o, "children", ucl_object_fromint(j->children));
 	}
@@ -2097,10 +2097,11 @@ connected:
 			const struct arc_stats *st = str->stats;
 			ucl_object_t *pl, *po;
 
-			put(e, "cpu_pct", ucl_object_fromdouble(st->cpu_pct));
-			put(e, "load1", ucl_object_fromdouble(st->load1));
-			put(e, "load5", ucl_object_fromdouble(st->load5));
-			put(e, "load15", ucl_object_fromdouble(st->load15));
+			/* Hundredths on the wire (decimal64, 2 digits). */
+			put(e, "cpu_pct", ucl_object_fromdouble(st->cpu_pct / 100.0));
+			put(e, "load1", ucl_object_fromdouble(st->load1 / 100.0));
+			put(e, "load5", ucl_object_fromdouble(st->load5 / 100.0));
+			put(e, "load15", ucl_object_fromdouble(st->load15 / 100.0));
 			put(e, "mem_total", ucl_object_fromint((int64_t)
 			    st->mem_total));
 			put(e, "mem_used", ucl_object_fromint((int64_t)

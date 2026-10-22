@@ -110,11 +110,15 @@ ${DIST}/jobs.json: ${ARC_TOP}/share/arcana/jobs.yaml \
 	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}.tmp
 	mv ${.TARGET}.tmp ${.TARGET}
 
+# The family's reference the Schema panel shows: the spec's sets and
+# operations with the SIDs the wire carries them by (share/yang's .sid).
 ${DIST}/schema.json: ${ARC_TOP}/share/arcana/arcana.yaml \
-    ${.CURDIR}/tools/schema.awk
+    ${ARC_TOP}/share/arcana/wire.awk ${ARC_TOP}/share/yang/arcana@2026-10-22.sid
 	mkdir -p ${DIST}
-	${CBLINK_GEN} -m md -o ${.OBJDIR} ${ARC_TOP}/share/arcana/arcana.yaml
-	awk -f ${.CURDIR}/tools/schema.awk ${.OBJDIR}/arcana.md > ${.TARGET}
+	awk -v out=schema -v sids=${ARC_TOP}/share/yang/arcana@2026-10-22.sid \
+	    -f ${ARC_TOP}/share/arcana/wire.awk ${ARC_TOP}/share/arcana/arcana.yaml \
+	    > ${.TARGET}.tmp
+	mv ${.TARGET}.tmp ${.TARGET}
 
 # The YANG model of each operation converted to YANG (share/arcana/
 # yang-ops), shown beside its CBOR schema: the module's RFC 8340 tree.

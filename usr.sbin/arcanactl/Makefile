@@ -4,10 +4,9 @@ MAN=		arcanactl.8
 
 .include "${.CURDIR}/../../share/mk/arcana.mk"
 
-CBLINK_SPECS=	${ARC_SPEC}
-CBLINK_PARTS=	h,c,client
+ARC_WIRE=	client
+.include "${.CURDIR}/../../share/mk/arcana.wire.mk"
 
 LDADD+=		-lxo -lmd -lcasper -lcap_fileargs -lnv
 
-.include "${CBLINK_MK}"
 .include <bsd.prog.mk>

@@ -30,8 +30,9 @@ ARG KORE_SHA256=94f767eb113f2c97a133b9609c78c4e3795c420dc8726154edce49965df6b8ed
 # The libucl release base imports; the PWA compiles it to wasm.
 ARG LIBUCL_VERSION=0.9.4
 ARG LIBUCL_SHA256=319d8ff13441f55d91cd7f3708a54bd03779733e26958c2346c5109014520aaf
-# jail(8) for the tests, gmake for Kore, libcbor for libcblink.
-RUN pkg install -y FreeBSD-jail gmake libcbor && \
+# jail(8) for the tests, gmake for Kore, libcbor for libcblink, libyang
+# for cblink-gen.
+RUN pkg install -y FreeBSD-jail gmake libcbor libyang3 && \
     pkg-cleanup
 
 # Kore, with tasks, as arcana-console.so needs it.  It builds as C99 with
