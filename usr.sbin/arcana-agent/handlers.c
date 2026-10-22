@@ -2742,7 +2742,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_SMTPD)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_JAIL_BASE)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2827,8 +2827,11 @@ check_spec(const struct arc_job_spec *sp)
 			return (e);
 		break;
 	case ARC_JOB_KIND_IPSEC:
-		if (sp->safe)
-			return ("IPsec changes are not undone: not in safe mode");
+		/* A key made, a daemon started: nothing to put back. */
+		if (sp->safe && sp->verb != NULL && (strcmp(sp->verb, "init") ==
+		    0 || strcmp(sp->verb, "start") == 0))
+			return ("IPsec init and start are not undone: not in "
+			    "safe mode");
 		return (ipsec_check(sp));
 	case ARC_JOB_KIND_IPSEC_SA:
 		if (sp->safe)
@@ -2840,6 +2843,19 @@ check_spec(const struct arc_job_spec *sp)
 			return ("an install is not taken back by itself");
 		if (sp->names.n == 0)
 			return ("name the packages to install");
+		break;
+	case ARC_JOB_KIND_JAIL_BASE:
+		if (sp->safe)
+			return ("a jail's base is not taken back by itself");
+		if (sp->jail == NULL || sp->jail[0] == '\0' || strcmp(sp->jail,
+		    "*") == 0)
+			return ("name the jail");
+		if (sp->verb == NULL || (strcmp(sp->verb, "convert") != 0 &&
+		    strcmp(sp->verb, "upgrade") != 0))
+			return ("verb convert or upgrade");
+		if (strcmp(sp->verb, "upgrade") == 0 && (sp->release == NULL ||
+		    sp->release[0] == '\0'))
+			return ("name the release to go to: 16, or 15.2");
 		break;
 	case ARC_JOB_KIND_PKG_CLEAN:
 		if (sp->safe)
@@ -2855,8 +2871,6 @@ check_spec(const struct arc_job_spec *sp)
 		    strncmp(sp->names.v[0], "net.", 4) != 0))
 			return ("a jail's sysctls are not set from here, but its "
 			    "network's (net.*), which are its own");
-		if (sp->safe)
-			return ("a sysctl is not taken back by itself");
 		if (sp->names.n != 2 || !sysctl_name_ok(sp->names.v[0]))
 			return ("name one sysctl, with letters, digits and "
 			    ". _ - %, and its value");
@@ -2963,9 +2977,6 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_SMTPD:
 		return (smtpd_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
-		if (sp->safe)
-			return ("wireguard changes are not undone: not in "
-			    "safe mode");
 		if (sp->interface == NULL || !valid_ifname(sp->interface))
 			return ("invalid interface name");
 		work_init(&cw);
@@ -2973,18 +2984,11 @@ check_spec(const struct arc_job_spec *sp)
 		work_free(&cw);
 		return (e);
 	case ARC_JOB_KIND_BIRD:
-		if (sp->safe)
-			return ("what BIRD was told is not taken back: not in "
-			    "safe mode");
 		return (bird_check(sp->verb, sp->names.v, sp->names.n));
 	case ARC_JOB_KIND_ROUTE:
 		if (sp->destination == NULL || sp->destination[0] == '\0' ||
 		    sp->destination[0] == '-')
 			return ("a route needs a destination");
-		if (sp->safe && sp->remove && (sp->gateway == NULL ||
-		    sp->gateway[0] == '\0'))
-			return ("to delete a route safely, name its gateway: "
-			    "it is what puts the route back");
 		if (sp->gateway != NULL && sp->gateway[0] == '-')
 			return ("invalid gateway");
 		if (sp->source != NULL && sp->source[strspn(sp->source,
@@ -3061,7 +3065,9 @@ cuts_off(cbl_req *req, const struct arc_job_spec *sp)
 			return (NULL);
 	} else if ((sp->jail != NULL && sp->jail[0] != '\0') ||
 	    (sp->kind != ARC_JOB_KIND_IF_ADDRESS && sp->kind !=
-	    ARC_JOB_KIND_IF_STATE && sp->kind != ARC_JOB_KIND_IF_DESTROY))
+	    ARC_JOB_KIND_IF_STATE && sp->kind != ARC_JOB_KIND_IF_DESTROY &&
+	    sp->kind != ARC_JOB_KIND_IF_SET && sp->kind != ARC_JOB_KIND_ROUTE &&
+	    sp->kind != ARC_JOB_KIND_SYSCTL && sp->kind != ARC_JOB_KIND_IPFW))
 		return (NULL);
 	len = sizeof(ss);
 	if ((fd = cbl_conn_fd(cbl_req_conn(req))) == -1 || getsockname(fd,
@@ -3070,7 +3076,71 @@ cuts_off(cbl_req *req, const struct arc_job_spec *sp)
 	    ifname, sizeof(ifname)))
 		return (NULL);
 	hit = false;
-	if (sp->kind == ARC_JOB_KIND_IF_ADDRESS) {
+	if (sp->kind == ARC_JOB_KIND_SYSCTL) {
+		/* Forwarding, or the tables, turned over under the path. */
+		static const char *const cut[] = { "net.fibs",
+		    "net.add_addr_allfibs", "net.inet.ip.forwarding",
+		    "net.inet6.ip6.forwarding" };
+		size_t	i;
+
+		for (i = 0; i < nitems(cut) && !hit; i++)
+			hit = sp->names.n > 0 && strcmp(sp->names.v[0], cut[i]) ==
+			    0;
+	} else if (sp->kind == ARC_JOB_KIND_IPFW)
+		/* A rule set swapped in, or the firewall turned on: the
+		 * path is whatever the rules say. */
+		hit = sp->verb != NULL && (strcmp(sp->verb, "apply") == 0 ||
+		    strcmp(sp->verb, "enable") == 0);
+	else if (sp->kind == ARC_JOB_KIND_IF_SET)
+		/* Moved to another table, the interface's addresses go
+		 * with it; a tunnel's outer path is the tunnelfib's. */
+		hit = strcmp(sp->interface, ifname) == 0 && (sp->has_fib ||
+		    sp->has_tunnelfib);
+	else if (sp->kind == ARC_JOB_KIND_ROUTE) {
+		/*
+		 * A route added or deleted that covers the peer, in the
+		 * table this interface is in: the way back may change.
+		 */
+		struct sockaddr_storage	 ps;
+		socklen_t		 plen;
+		const unsigned char	*pa;
+		unsigned char		 net[16];
+		char			 dest[65];
+		const char		*slash;
+		int			 af, plen_bits, max;
+
+		plen = sizeof(ps);
+		if (getpeername(fd, (struct sockaddr *)&ps, &plen) == -1 ||
+		    (sp->has_fib ? (int)sp->fib : 0) != if_fib(ifname))
+			return (NULL);
+		strlcpy(dest, sp->destination, sizeof(dest));
+		slash = strchr(dest, '/');
+		dest[strcspn(dest, "/")] = '\0';
+		if (ps.ss_family == AF_INET6 && IN6_IS_ADDR_V4MAPPED(
+		    &((struct sockaddr_in6 *)&ps)->sin6_addr)) {
+			af = AF_INET;
+			pa = (const unsigned char *)&((struct sockaddr_in6 *)
+			    &ps)->sin6_addr + 12;
+		} else if (ps.ss_family == AF_INET6) {
+			af = AF_INET6;
+			pa = (const unsigned char *)&((struct sockaddr_in6 *)
+			    &ps)->sin6_addr;
+		} else {
+			af = AF_INET;
+			pa = (const unsigned char *)&((struct sockaddr_in *)
+			    &ps)->sin_addr;
+		}
+		max = af == AF_INET ? 32 : 128;
+		if (strcmp(dest, "default") == 0) {
+			memset(net, 0, sizeof(net));
+			plen_bits = 0;
+		} else if (inet_pton(af, dest, net) != 1)
+			return (NULL);
+		else
+			plen_bits = slash != NULL ? atoi(slash + 1) : max;
+		hit = plen_bits >= 0 && plen_bits <= max && prefix_covers(pa,
+		    net, plen_bits);
+	} else if (sp->kind == ARC_JOB_KIND_IF_ADDRESS) {
 		if (!sp->remove || strcmp(sp->interface, ifname) != 0)
 			return (NULL);
 		strlcpy(addr, sp->address, sizeof(addr));
@@ -3147,9 +3217,28 @@ arc_jobs_doit(cbl_req *req, void *arg __unused)
 		rsp.since = since;
 	}
 	rsp.stopping = changes_stopping();
+	rsp.has_lanes = true;
+	rsp.lanes = (uint8_t)jobs_lanes();
 	error = arc_jobs_reply(req, &rsp);
 	work_free(&w);
 	return (error);
+}
+
+int
+arc_jobs_set_doit(cbl_req *req, const struct arc_jobs_set_req *rq,
+    void *arg __unused)
+{
+	struct arc_jobs_set_rsp	rsp;
+	const char		*e;
+
+	memset(&rsp, 0, sizeof(rsp));
+	rsp.has_ok = true;
+	e = jobs_set_lanes((int)rq->lanes);
+	rsp.ok = e == NULL;
+	rsp.error = e;
+	rsp.has_lanes = true;
+	rsp.lanes = (uint8_t)jobs_lanes();
+	return (arc_jobs_set_reply(req, &rsp));
 }
 
 int

@@ -76,6 +76,7 @@ struct opts opts = {
 	.smtpd_dir = "/usr/local/etc/mail/arcana",
 	.log_dir = "/var/log",
 	.history_conf = "/usr/local/etc/arcana/history.conf",
+	.jobs_conf = "/usr/local/etc/arcana/jobs.conf",
 	.wg_bin = PATH_WG_BIN,
 	.wg_dir = PATH_WG_DIR,
 	.swanctl_bin = PATH_SWANCTL_BIN,
@@ -94,6 +95,7 @@ struct opts opts = {
 	.birdc_bin = PATH_BIRDC_BIN,
 	.bird_watch_s = 15,
 	.pkg_idle_s = PKG_IDLE_SEC,
+	.pkg_lanes = PKG_LANES,
 	.bird_bin = PATH_BIRD_BIN,
 	.bird_conf = PATH_BIRD_CONF,
 	.setfib_bin = PATH_SETFIB_BIN,
@@ -117,13 +119,14 @@ static bool	foreground;
 enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API,
     OPT_POUDRIERE, OPT_POUDRIERE_ETC, OPT_IFMCSTAT, OPT_FRESHCLAM_CONF,
     OPT_SURICATA_RULES, OPT_EXPORTS, OPT_CTL_CONF, OPT_HAST_CONF,
-    OPT_SMTPD_CONF, OPT_SMTPD_DIR, OPT_PKG_IDLE };
+    OPT_SMTPD_CONF, OPT_SMTPD_DIR, OPT_PKG_IDLE, OPT_JOBS_CONF };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
 	{ "root", required_argument, NULL, OPT_ROOT },
 	/* A pkg that says nothing for this long is stopped. */
 	{ "pkg-idle", required_argument, NULL, OPT_PKG_IDLE },
+	{ "jobs-conf", required_argument, NULL, OPT_JOBS_CONF },
 	/* How often BIRD's sessions are looked at for faults; 0, never. */
 	{ "bird-watch", required_argument, NULL, OPT_BIRD_WATCH },
 	/* More addresses each SCTP listener is bound to (sctp_bindx(3)),
@@ -186,7 +189,8 @@ usage(void)
 	    "                 [--freshclam-conf file]\n"
 	    "                 [--suricata-rules directory]\n"
 	    "                 [--exports file] [--ctl-conf file] [--hast-conf file]\n"
-	    "                 [--smtpd-conf file] [--smtpd-dir directory]\n");
+	    "                 [--smtpd-conf file] [--smtpd-dir directory]\n"
+	    "                 [--jobs-conf file]\n");
 	exit(2);
 }
 
@@ -424,6 +428,9 @@ main(int argc, char *argv[])
 		case OPT_SMTPD_DIR:
 			opts.smtpd_dir = optarg;
 			break;
+			break;
+		case OPT_JOBS_CONF:
+			opts.jobs_conf = optarg;
 			break;
 		case OPT_PKG_IDLE:
 			opts.pkg_idle_s = (int)strtonum(optarg, 1, 86400, &errstr);
@@ -737,6 +744,7 @@ main(int argc, char *argv[])
 	}
 	/* And on SCTP where it listens on TCP, if the kernel has it. */
 	transport_init(ctx, loop, tls);
+	jobs_conf_load();
 	jobs_init();
 	history_start();
 	probe_start();

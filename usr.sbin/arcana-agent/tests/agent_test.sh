@@ -190,7 +190,7 @@ routes)
 		jot 3000 0 | awk -v f="\$3" '{ d = sprintf("10.%d.%d.0/24", int(\$1 / 250), \$1 % 250); if (f == "-" || index(d, f)) printf "{\\"destination\\":\\"%s\\",\\"gateway\\":\\"192.0.2.1\\",\\"flags\\":\\"UGS\\",\\"nhop\\":%d,\\"mtu\\":1500,\\"interface-name\\":\\"em0\\",\\"metric\\":1,\\"weight\\":1,\\"fib\\":0,\\"prefixlen\\":24}\\n", d, \$1 }'
 		echo "#total 3000"; exit 0
 	fi
-	[ "\$1" != 6 ] && echo '{"destination":"10.0.0.0/24","gateway":"link#1","flags":"U","nhop":2,"mtu":1500,"interface-name":"em0","metric":1,"weight":1,"fib":'\$2',"prefixlen":24}'
+	[ "\$1" != 6 ] && echo '{"destination":"10.0.0.0/24","gateway":"link#1","flags":"U","nhop":2,"mtu":16384,"interface-name":"lo0","metric":1,"weight":1,"fib":'\$2',"prefixlen":24}'
 	[ "\$1" = 0 ] && echo "#family 6"
 	[ "\$1" != 4 ] && echo '{"destination":"::1","gateway":"link#2","flags":"UHS","nhop":1,"mtu":16384,"interface-name":"lo0","metric":1,"weight":1,"fib":'\$2',"prefixlen":128}'
 	echo "#total 2" ;;
@@ -229,9 +229,17 @@ pimd-3.1.0 3.2.0
 #!/bin/sh
 echo "fake-pkg $*" >&2
 case "$1" in -4|-6) shift ;; esac
-anyos=no; [ "$1" = -o ] && { anyos=yes; shift 2; }
+anyos=no
+while [ "$1" = -o ]; do
+	echo "opt $2" >> opts.log
+	[ "$2" = IGNORE_OSVERSION=yes ] && anyos=yes
+	shift 2
+done
 [ "$1" = -j ] && shift 2
 case "$1" in
+# pkgbase: FreeBSD-runtime is installed once the file pkgbase is there.
+info)	[ -e pkgbase ] && exit 0 || exit 1 ;;
+rquery)	printf 'FreeBSD-runtime\nFreeBSD-set-base-jail\nFreeBSD-set-base-jail-dbg\nFreeBSD-set-minimal-jail\n' ;;
 -vv)	printf 'Version                 : 2.3.1\nRepositories:\n  FreeBSD-ports: { \n    url             : "pkg+https://pkg.FreeBSD.org/FreeBSD:16:amd64/latest",\n    enabled         : yes,\n  }\n  builder: { \n    url             : "file:///usr/local/poudriere/data/packages/lab",\n    enabled         : no,\n  }\n' ;;
 update)	exit 0 ;;
 query)	printf 'aria2\t1.37.0_1\t0\t5242880\twww/aria2\tDownload utility\npimd\t3.1.0\t1\t102400\tnet/pimd\tPIM-SM daemon\n' ;;
@@ -305,6 +313,7 @@ start_daemon()
 	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
 	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
 	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
+	    --jobs-conf "$(pwd)/jobs.conf" \
 	    -X "$(pwd)/fake-traceroute" -4 "$(pwd)/ntp.conf" \
 	    -6 "$(pwd)/rtadvd.conf" -7 "$(pwd)/fake-dnsmasq" -8 "$(pwd)/fake-rtsol" \
 	    -9 "$(pwd)/fake-setkey" -0 "$(pwd)/fake-local-unbound" \
@@ -837,6 +846,110 @@ packages_body()
 	atf_check -s exit:2 -e ignore "$JGC" -c "$SOCK" pkg-clean -J -j web
 }
 packages_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case jail_base cleanup
+jail_base_head()
+{
+	atf_set "descr" "a jail's base system to pkgbase and to a newer release, through pkg(8); and the lanes of pkg jobs"
+}
+jail_base_body()
+{
+	local R i
+
+	R="$(pwd)/web"
+	mkdir -p "$R/etc" "$R/usr/local/etc"
+	printf 'hostname="web"\n' > "$R/etc/rc.conf"
+	start_daemon
+	# jls: web runs, on 15.1; old, an older release; nothing else.
+	cat > fake-jls <<EOS
+#!/bin/sh
+case "\$2" in
+web) case "\$*" in *osrelease*) echo 15.1-RELEASE-p3 ;; *) echo "7 inherit $R" ;; esac ;;
+old) case "\$*" in *osrelease*) echo 14.3-RELEASE ;; *) echo "8 inherit $R" ;; esac ;;
+*) echo "jls: jail \"\$2\" not found" >&2; exit 1 ;;
+esac
+EOS
+	chmod +x fake-jls
+	# Not running, not a verb, no release to go to: refused at once.
+	atf_check -s exit:1 -o match:'not running' \
+	    "$JGC" -c "$SOCK" jail-base nope convert
+	atf_check -s exit:2 -o ignore -e match:'usage' \
+	    "$JGC" -c "$SOCK" jail-base web reinstall
+	atf_check -s exit:2 -o ignore -e match:'usage' \
+	    "$JGC" -c "$SOCK" jail-base web upgrade
+	# Too old for pkgbase.
+	atf_check -s exit:1 -o match:'needs FreeBSD 15.1' \
+	    "$JGC" -c "$SOCK" jail-base old convert
+	# Converted: the repository's file in the jail, /etc kept aside,
+	# pkg update then install of the default set from FreeBSD-base.
+	atf_check -o save:cv.out "$JGC" -t -c "$SOCK" jail-base web convert
+	atf_check -o match:'base_release_1' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	atf_check -o match:'pkg.FreeBSD.org/\$\{ABI\}/base_release_1' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	test -s "$R/var/backups/etc-before-pkgbase.tar"
+	atf_check -o match:'rc.conf' tar -tf "$R/var/backups/etc-before-pkgbase.tar"
+	atf_check -o match:'fake-pkg -j web update -r arcana-base' cat cv.out
+	atf_check -o match:'^install -r arcana-base -y FreeBSD-set-base-jail$' cat install.log
+	atf_check -o match:'^arcana-base: \{' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	atf_check -o match:'restart the jail' cat cv.out
+	# Sets named, and one the repository has not; a branch named.
+	rm install.log
+	atf_check -o ignore "$JGC" -c "$SOCK" jail-base web convert -b 16 \
+	    FreeBSD-set-minimal-jail
+	atf_check -o match:'^install -r arcana-base -y FreeBSD-set-minimal-jail$' cat install.log
+	atf_check -o match:'base_latest' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	# From one of the jail's own repositories instead: nothing written,
+	# the one named used; one pkg has not, refused.
+	rm install.log "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	atf_check -o ignore "$JGC" -c "$SOCK" jail-base web convert -r builder
+	atf_check -o match:'^install -r builder -y FreeBSD-set-base-jail$' cat install.log
+	test ! -e "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	atf_check -s exit:1 -o match:'pkg has no repository nosuch in jail web' \
+	    "$JGC" -c "$SOCK" jail-base web convert -r nosuch
+	atf_check -s exit:1 -o match:'repository arcana-base has no FreeBSD-set-tests; its sets: FreeBSD-set-base-jail, FreeBSD-set-minimal-jail' \
+	    "$JGC" -c "$SOCK" jail-base web convert FreeBSD-set-tests
+	atf_check -s exit:1 -o match:"'bsd' is not a set's name" \
+	    "$JGC" -c "$SOCK" jail-base web convert bsd
+	# Not on pkgbase yet: no upgrade; on it: no second conversion.
+	atf_check -s exit:1 -o match:'not on pkgbase' \
+	    "$JGC" -c "$SOCK" jail-base web upgrade 16
+	touch pkgbase
+	atf_check -s exit:1 -o match:'on pkgbase already' \
+	    "$JGC" -c "$SOCK" jail-base web convert
+	# Upgraded to the latest 16: the new ABI and OSVERSION on every
+	# pkg, past OSVERSION for the base, the base then the rest.
+	rm -f opts.log
+	atf_check -o save:up.out "$JGC" -t -c "$SOCK" jail-base web upgrade 16
+	atf_check -o match:'opt ABI=FreeBSD:16:[a-z0-9]+' -o match:'opt OSVERSION=1600000' \
+	    -o match:'opt IGNORE_OSVERSION=yes' cat opts.log
+	atf_check -o match:'base_latest' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	atf_check -o match:'upgrade from arcana-base' cat repo.log
+	atf_check -o match:'fake-pkg -o ABI=FreeBSD:16:[a-z0-9]+ -o OSVERSION=1600000 -j web upgrade -y' cat up.out
+	# A release of its own; beyond the host's kernel, refused.
+	atf_check -o ignore "$JGC" -c "$SOCK" jail-base web upgrade 15.2
+	atf_check -o match:'opt OSVERSION=1502000' cat opts.log
+	atf_check -o match:'base_release_2' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	atf_check -s exit:1 -o match:'cannot run a newer userland' \
+	    "$JGC" -c "$SOCK" jail-base web upgrade 99
+	atf_check -s exit:1 -o match:'is not a release' \
+	    "$JGC" -c "$SOCK" jail-base web upgrade sixteen
+	# The lanes of pkg jobs in jails: said, set, kept for the next start.
+	atf_check -o match:'^Lanes: 4 ' "$JGC" -c "$SOCK" jobs
+	atf_check -o match:'^Lanes: 2 ' "$JGC" -c "$SOCK" jobs lanes 2
+	atf_check -o match:'^Lanes: 2 ' "$JGC" -c "$SOCK" jobs
+	atf_check -o match:'^lanes=2$' cat jobs.conf
+	atf_check -s exit:2 -o ignore -e match:'lanes 40' "$JGC" -c "$SOCK" jobs lanes 40
+	stop_daemon
+	start_daemon
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs > /dev/null 2>&1 && break
+		sleep 0.05
+	done
+	atf_check -o match:'^Lanes: 2 ' "$JGC" -c "$SOCK" jobs
+}
+jail_base_cleanup()
 {
 	stop_daemon
 }
@@ -2508,6 +2621,486 @@ notify_cleanup()
 }
 
 atf_test_case safe_mode cleanup
+safe_sysctl_head()
+{
+	atf_set "descr" "A sysctl set in safe mode is put back: the kernel's value and sysctl.conf's line; one that cannot be read is not changed"
+}
+safe_sysctl_body()
+{
+	# sysctl -n answers from a file of values; a set rewrites it, and
+	# net.fibs takes no smaller value, as the kernel refuses some.
+	cat > fake-sysctl <<EOS
+#!/bin/sh
+echo "sysctl \$*" >> $(pwd)/sysctl.log
+if [ "\$1" = -n ]; then
+	v=\$(sed -n "s/^\$2=//p" $(pwd)/sysctl.values)
+	[ -n "\$v" ] || { echo "sysctl: unknown oid '\$2'" >&2; exit 1; }
+	echo "\$v"
+	exit 0
+fi
+name=\${1%%=*}
+val=\${1#*=}
+cur=\$(sed -n "s/^\$name=//p" $(pwd)/sysctl.values)
+[ -n "\$cur" ] || { echo "sysctl: unknown oid '\$name'" >&2; exit 1; }
+if [ "\$name" = net.fibs ] && [ "\$val" -lt "\$cur" ]; then
+	echo "sysctl: net.fibs: Invalid argument" >&2
+	exit 1
+fi
+sed -i '' "s/^\$name=.*/\$name=\$val/" $(pwd)/sysctl.values
+exit 0
+EOS
+	chmod +x fake-sysctl
+	printf 'net.inet.ip.forwarding=0\nkern.ipc.somaxconn=1024\nnet.inet.tcp.blackhole=0\nnet.fibs=1\n' > sysctl.values
+	printf '# kept\nkern.ipc.somaxconn=1024\n' > sysctl.conf
+	DAEMON_ARGS="-Q $(pwd)/fake-sysctl -O $(pwd)/sysctl.conf"
+	start_daemon
+
+	# Confirmed: it stays.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" sysctl net.inet.ip.forwarding=1
+	atf_check -o match:'^net.inet.ip.forwarding=1$' cat sysctl.values
+
+	# Not confirmed: the kernel's value and the file's line as they
+	# were; a line the change added is taken out again.
+	: > sysctl.log
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" sysctl kern.ipc.somaxconn=4096
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" sysctl net.inet.tcp.blackhole=2
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'kern.ipc.somaxconn=1024 again' "$JGC" -c "$SOCK" job 2
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'net.inet.tcp.blackhole no longer set' "$JGC" -c "$SOCK" job 3
+	atf_check -o match:'^sysctl kern.ipc.somaxconn=4096$' \
+	    -o match:'^sysctl kern.ipc.somaxconn=1024$' \
+	    -o match:'^sysctl net.inet.tcp.blackhole=2$' \
+	    -o match:'^sysctl net.inet.tcp.blackhole=0$' cat sysctl.log
+	atf_check -o match:'^kern.ipc.somaxconn=1024$' \
+	    -o match:'^net.inet.tcp.blackhole=0$' cat sysctl.values
+	atf_check -o match:'^# kept$' -o match:'^kern.ipc.somaxconn=1024$' \
+	    -o not-match:'4096' -o not-match:'blackhole' cat sysctl.conf
+
+	# One whose value cannot be read is not changed at all.
+	: > sysctl.log
+	atf_check -s exit:1 -o match:'could not be read, so it could not be put back' \
+	    "$JGC" -s -c "$SOCK" sysctl kern.nosuch=1
+	atf_check -o not-match:'kern.nosuch=1' cat sysctl.log
+
+	# One the kernel takes only once keeps the new value, and the job
+	# says so; the file is still put back.
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" sysctl net.fibs=4
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'could not be undone' \
+	    -o match:'the kernel keeps net.fibs=4 until it boots again, when sysctl.conf, put back as it was, sets it' \
+	    "$JGC" -c "$SOCK" job 5
+	atf_check -o match:'^net.fibs=4$' cat sysctl.values
+	atf_check -o not-match:'net.fibs' cat sysctl.conf
+
+	# What was so already is left so.
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sysctl net.inet.ip.forwarding=1
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'it was so before, and is left so' \
+	    "$JGC" -c "$SOCK" job 6
+}
+
+safe_route_delete_head()
+{
+	atf_set "descr" "A route deleted without its gateway in safe mode is put back as the kernel listed it; a route of several ways, or none, is not deleted"
+}
+safe_route_delete_body()
+{
+	# The kernel's routes, as a file of lines; a FIB's (\$2), those a
+	# filter (\$3) matches.
+	cat > routes.json <<EOS
+{"destination":"10.78.0.0/16","gateway":"10.0.0.1","flags":"UGS","nhop":1,"mtu":1500,"interface-name":"em0","metric":3,"weight":1,"fib":0,"prefixlen":16,"source":"10.0.0.9"}
+{"destination":"10.0.0.0/24","gateway":"link#1","flags":"U","nhop":2,"mtu":16384,"interface-name":"lo0","metric":1,"weight":1,"fib":0,"prefixlen":24}
+{"destination":"default","gateway":"10.1.0.1","flags":"UGS","nhop":3,"mtu":1500,"interface-name":"em1","metric":1,"weight":1,"fib":1,"prefixlen":0}
+{"destination":"10.80.0.0/16","gateway":"10.0.0.1","flags":"UGS","nhop":4,"mtu":1500,"interface-name":"em0","metric":1,"weight":1,"fib":0,"prefixlen":16,"path":1,"paths":2}
+{"destination":"10.80.0.0/16","gateway":"10.0.0.2","flags":"UGS","nhop":5,"mtu":1500,"interface-name":"em0","metric":1,"weight":1,"fib":0,"prefixlen":16,"path":2,"paths":2}
+EOS
+	cat > fake-helper <<EOS
+#!/bin/sh
+echo "fake-helper \$*" >&2
+shift
+jid=\$1 verb=\$2
+shift 2
+case "\$verb" in
+routes)
+	grep -e "\\"fib\\":\$2," $(pwd)/routes.json | grep -e "\${3#-}"
+	echo "#total 5" ;;
+route-add|route-del)
+	echo "\$jid \$verb \$*" >> $(pwd)/route.log ;;
+exists) echo 1 ;;
+esac
+exit 0
+EOS
+	chmod +x fake-helper
+	start_daemon
+	printf 'static_routes="arc_10_78_0_0_16"\nroute_arc_10_78_0_0_16="10.78.0.0/16 10.0.0.1 -ifa 10.0.0.9 -metric 3"\n' >> rc.conf
+
+	# Not confirmed: added back with the gateway, cost, share and
+	# source it had, and into rc.conf, where it was kept.
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" route delete 10.78.0.0/16
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 1
+	atf_check -o match:'^0 route-del 10.78.0.0/16 - - 0 0$' \
+	    -o match:'^0 route-add 10.78.0.0/16 10.0.0.1 - 0 3 0 10.0.0.9$' cat route.log
+	atf_check -o match:'^static_routes="arc_10_78_0_0_16"$' \
+	    -o match:'^route_arc_10_78_0_0_16="10.78.0.0/16 10.0.0.1 -ifa 10.0.0.9 -metric 3"$' cat rc.conf
+
+	# A route of an interface comes back by the interface's name; one
+	# rc.conf did not keep is not put there.
+	: > route.log
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" route delete 10.0.0.0/24
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'^0 route-del 10.0.0.0/24 - - 0 0$' \
+	    -o match:'^0 route-add 10.0.0.0/24 - lo0 0 1 0 -$' cat route.log
+	atf_check -o not-match:'10_0_0_0_24' cat rc.conf
+
+	# In another FIB: that FIB's route.
+	: > route.log
+	atf_check -o match:'queued' "$JGC" -q -s -F 1 -c "$SOCK" route delete default
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'^0 route-del 0.0.0.0/0 - - 1 0$' \
+	    -o match:'^0 route-add 0.0.0.0/0 10.1.0.1 - 1 1 0 -$' cat route.log
+
+	# A route of two ways is not deleted: it could not be put back.
+	: > route.log
+	atf_check -s exit:1 -o match:'not changed: it could not be put back: 10.80.0.0/16 in FIB 0 has 2 ways' \
+	    "$JGC" -s -c "$SOCK" route delete 10.80.0.0/16
+	atf_check -o empty cat route.log
+
+	# Confirmed: it stays gone.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" route delete 10.78.0.0/16
+	atf_check -o match:'^0 route-del 10.78.0.0/16 - - 0 0$' \
+	    -o not-match:'route-add' cat route.log
+}
+
+safe_bird_head()
+{
+	atf_set "descr" "BIRD told something in safe mode: a protocol put back as it was, configure on BIRD's own timer confirmed or undone with the job, a reload with nothing to put back"
+}
+safe_bird_body()
+{
+	# birdc: a protocol's state in a file; configure timeout keeps a
+	# timer that confirm and undo take away.
+	cat > fake-birdc <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/birdc.log
+[ "\$1" = -r ] && shift
+printf 'BIRD 3.1.2 ready.\n'
+case "\$*" in
+"show status") printf 'BIRD 3.1.2\nDaemon is up and running\n' ;;
+"show protocols "*) [ -f $(pwd)/proto.\$3 ] && printf 'Name       Proto      Table      State  Since         Info\n%s   BGP        ---        %s     12:01:02.345  Established\n' "\$3" "\$(cat $(pwd)/proto.\$3)" || echo "No protocols match" ;;
+"enable "*) echo up > $(pwd)/proto.\$2; echo "\$2: enabled" ;;
+"disable "*) echo down > $(pwd)/proto.\$2; echo "\$2: disabled" ;;
+"reload "*|"restart "*) echo "\$2: reloading" ;;
+"configure timeout "*) touch $(pwd)/bird.timer; printf 'Reading configuration from bird.conf\nReconfigured\n' ;;
+"configure confirm") if [ -f $(pwd)/bird.timer ] && [ ! -f $(pwd)/bird.late ]; then rm $(pwd)/bird.timer; echo "Reconfiguration confirmed"; else echo "Nothing to do"; fi ;;
+"configure undo") rm -f $(pwd)/bird.timer; echo "Undo requested" ;;
+configure) printf 'Reading configuration from bird.conf\nReconfigured\n' ;;
+esac
+exit 0
+EOS
+	printf '#!/bin/sh\nexit 0\n' > fake-bird
+	chmod +x fake-birdc fake-bird
+	mkdir -p bird
+	printf 'router id 192.0.2.1;\n' > bird/bird.conf
+	echo up > proto.bgp_core
+	start_daemon
+
+	# Confirmed: it stays.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" bird disable bgp_core
+	atf_check -o match:'^down$' cat proto.bgp_core
+
+	# Not confirmed: the protocol as it was.
+	: > birdc.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bird enable bgp_core
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 2
+	atf_check -o match:'^enable bgp_core$' -o match:'^disable bgp_core$' cat birdc.log
+	atf_check -o match:'^down$' cat proto.bgp_core
+
+	# What was so already is left so; a reload has nothing to put
+	# back, and the job says so; a protocol BIRD lacks is not touched.
+	: > birdc.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bird disable bgp_core
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bird reload all
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'it was so before, and is left so' \
+	    "$JGC" -c "$SOCK" job 3
+	atf_check -s exit:1 -o match:'not confirmed within 2 s; a reload is not undone: there is nothing to put back' \
+	    "$JGC" -c "$SOCK" job 4
+	atf_check -o not-match:'^enable' cat birdc.log
+	atf_check -s exit:1 -o match:'not changed: its state now could not be read, so it could not be put back: BIRD has no protocol nosuch' \
+	    "$JGC" -s -c "$SOCK" bird enable nosuch
+	atf_check -o not-match:'^enable nosuch' cat birdc.log
+
+	# configure: BIRD's own timer, 5 s past the job's wait; confirmed,
+	# BIRD is told to keep it.
+	: > birdc.log
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    -o match:'configure confirm' "$JGC" -s -c "$SOCK" bird configure
+	atf_check -o match:'^configure timeout 7$' -o match:'^configure confirm$' cat birdc.log
+	atf_check test ! -f bird.timer
+	# Not confirmed: BIRD is told to take it back.
+	: > birdc.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" bird configure
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 7
+	atf_check -o match:'^configure timeout 7$' -o match:'^configure undo$' cat birdc.log
+	# Confirmed too late for BIRD: the change is gone, and the job
+	# says so.
+	touch bird.late
+	atf_check -s exit:1 -o match:'confirmed, but BIRD did not keep it: its timer had run out, and BIRD had taken the change back' \
+	    "$JGC" -s -c "$SOCK" bird configure
+	rm bird.late bird.timer
+	# Cancelled while it waits, it is undone at once (another change to
+	# BIRD, job or operation, waits for the job to end: the lock on
+	# changes is held through the wait).
+	atf_check -o save:q.out "$JGC" -q -s -W 60 -c "$SOCK" bird configure
+	id=$(awk '/queued/ {print $1; exit}' q.out)
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q "^ *$id unconfirmed" && break
+		sleep 0.1
+	done
+	: > birdc.log
+	atf_check -o ignore "$JGC" -c "$SOCK" job-cancel "$id"
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q "^ *$id \(unconfirmed\|running\)" ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'^configure undo$' cat birdc.log
+	atf_check -o match:'done' "$JGC" -c "$SOCK" bird configure
+}
+
+safe_wireguard_head()
+{
+	atf_set "descr" "A WireGuard change in safe mode is put back with wg syncconf from what showconf printed before; wg-quick's file and rc.conf as they were; the key never in the trace"
+}
+safe_wireguard_body()
+{
+	PEER='xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg='
+	mkdir wg
+	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	# wg: the interface's peers in a file; showconf prints them; syncconf
+	# puts the file given in their place, and keeps what it read.
+	cat > fake-wg <<EOS
+#!/bin/sh
+d=$(pwd)
+echo "\$*" >> \$d/wg.log
+case "\$1 \$2 \$3" in
+"show all dump")
+	printf 'wg0\tSECRETKEY\tPUBKEY\t51820\toff\n' ;;
+"show wg0 private-key") echo SECRETKEY ;;
+"showconf wg0 ")
+	printf '[Interface]\nListenPort = 51820\nPrivateKey = SECRETKEY\n'
+	cat \$d/peers ;;
+"set wg0 peer") printf '\n[Peer]\nPublicKey = %s\nAllowedIPs = 10.9.9.2/32\n' "\$4" >> \$d/peers ;;
+"syncconf wg0 "*) cp "\$3" \$d/sync.got; ls -la "\$3" | cut -c1-10 > \$d/sync.mode; grep -v 'PrivateKey\|ListenPort\|Interface' "\$3" > \$d/peers ;;
+"showconf wg9 ") echo "Unable to access interface: No such device" >&2; exit 1 ;;
+esac
+exit 0
+EOS
+	chmod +x fake-wg fake-ifconfig
+	: > peers
+	DAEMON_ARGS="-k $(pwd)/fake-wg -o $(pwd)/wg"
+	start_daemon
+
+	# Confirmed: it stays.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" wg wg0 peer $PEER allowed-ips 10.9.9.2/32
+	atf_check -o match:"$PEER" cat peers
+
+	# Not confirmed: the peers as they were, by syncconf from what
+	# showconf printed; the file wg read is gone after; the key is in
+	# neither the trace nor the log.
+	: > peers
+	: > wg.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" wg wg0 peer $PEER endpoint 192.0.2.9:51820
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'syncconf wg0: the key, the port and the peers as they were' \
+	    -o not-match:'SECRETKEY' "$JGC" -t -c "$SOCK" job 2
+	atf_check -o match:"^set wg0 peer $PEER endpoint" -o match:'^syncconf wg0 ' \
+	    cat wg.log
+	atf_check -o match:'^\[Interface\]$' -o match:'^PrivateKey = SECRETKEY$' \
+	    -o not-match:'Peer' cat sync.got
+	atf_check -o match:'^-rw-------' cat sync.mode
+	atf_check -o empty cat peers
+	atf_check -o empty ls wg
+	atf_check -o not-match:'SECRETKEY' cat daemon.out
+
+	# With persist: wg-quick's file and rc.conf as they were, which
+	# was without them.
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" wg wg0 peer $PEER
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'wg0.conf, as it was' "$JGC" -c "$SOCK" job 3
+	atf_check -o empty ls wg
+	atf_check -o not-match:'wireguard' cat rc.conf
+	# And with a file and variables there before: those again.
+	printf '[Interface]\nPrivateKey = OLDKEY\n' > wg/wg0.conf
+	printf 'wireguard_interfaces="wg0"\nwireguard_enable="YES"\n' >> rc.conf
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" wg wg0 peer $PEER
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 4
+	atf_check -o match:'^PrivateKey = OLDKEY$' -o not-match:'SECRETKEY' cat wg/wg0.conf
+	atf_check -o match:'^wireguard_interfaces="wg0"$' \
+	    -o match:'^wireguard_enable="YES"$' cat rc.conf
+
+	# One wg cannot show is not changed.
+	atf_check -s exit:1 -o match:'not changed: wg9 could not be read, so it could not be put back' \
+	    "$JGC" -s -c "$SOCK" wg wg9 peer $PEER
+	atf_check -o not-match:'set wg9' cat wg.log
+}
+
+safe_ipsec_head()
+{
+	atf_set "descr" "An IPsec connection changed in safe mode: its files back as they were and the daemon told; up and down each other's undo; init and start refused"
+}
+safe_ipsec_body()
+{
+	mkdir -p swanctl/conf.d swanctl/pkcs8 swanctl/pubkey
+	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	cat > fake-swanctl <<EOS
+#!/bin/sh
+d=$(pwd)
+echo "\$*" >> \$d/swanctl.log
+case "\$1" in
+--list-conns|--list-sas) echo "" ;;
+--load-all)	ls \$d/swanctl/conf.d > \$d/loaded ; echo "successfully loaded" ;;
+--load-creds|--initiate|--terminate|--stats) echo ok ;;
+*)		exit 2 ;;
+esac
+EOS
+	chmod +x fake-ifconfig fake-swanctl
+	start_daemon
+	atf_check -o ignore "$JGC" -c "$SOCK" -p ipsec init
+	PUB=$(sed -e '/-----/d' swanctl/pubkey/arcana.pub | tr -d '\n')
+
+	# A key made or the daemon started has nothing to put back.
+	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
+	    "$JGC" -s -c "$SOCK" ipsec init
+	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
+	    "$JGC" -s -c "$SOCK" ipsec start
+
+	# A connection made and not confirmed: its SAs ended, its files
+	# gone again, the daemon told to read conf.d again.
+	: > swanctl.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec conn t1 10.202.0.1 10.202.0.2 mode transport pubkey "$PUB"
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'arcana-t1.conf, as it was' "$JGC" -c "$SOCK" job 2
+	atf_check -o match:'^--terminate --ike t1 --force$' cat swanctl.log
+	atf_check -o inline:'--load-all --noprompt\n' tail -1 swanctl.log
+	atf_check -o empty ls swanctl/conf.d
+	atf_check -o inline:'arcana.pub\n' ls swanctl/pubkey
+
+	# Confirmed, it stays; a child added and not confirmed leaves the
+	# files as they were, and the daemon is told, no SA ended.
+	atf_check -o match:'done' -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" ipsec conn t1 10.202.0.1 10.202.0.2 mode transport pubkey "$PUB"
+	cp swanctl/conf.d/arcana-t1.conf t1.conf.was
+	cp swanctl/conf.d/arcana-t1.json t1.json.was
+	: > swanctl.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec child t1 c2 tunnel
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 4
+	atf_check cmp t1.conf.was swanctl/conf.d/arcana-t1.conf
+	atf_check cmp t1.json.was swanctl/conf.d/arcana-t1.json
+	atf_check -o not-match:'terminate' -o match:'^--load-all --noprompt$' cat swanctl.log
+
+	# Taken away and not confirmed: back, files and all.
+	: > swanctl.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec unconn t1
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 5
+	atf_check cmp t1.conf.was swanctl/conf.d/arcana-t1.conf
+	atf_check cmp t1.json.was swanctl/conf.d/arcana-t1.json
+	atf_check test -f swanctl/pubkey/arcana-t1.pub
+	atf_check -o inline:'--load-all --noprompt\n' tail -1 swanctl.log
+
+	# up not confirmed is down again, and down up again.
+	: > swanctl.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec up t1
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec down t1
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o inline:'--initiate --child t1 --timeout 20\n--terminate --ike t1 --timeout 10\n--terminate --ike t1 --timeout 10\n--initiate --child t1 --timeout 20\n' cat swanctl.log
+}
+
 safe_mode_head()
 {
 	atf_set "descr" "A safe change stays when confirmed, and is undone when not"
@@ -2560,9 +3153,11 @@ safe_mode_body()
 	    -o match:'^0 route-add 10.78.0.0/16 10.0.0.1 - 0 0 0 -$' cat route.log
 	atf_check -o match:'not confirmed in time: undoing it' cat daemon.out
 
-	# A route deleted without its gateway could not be put back.
-	atf_check -s exit:1 -e match:'name its gateway' -o ignore \
-	    "$JGC" -q -s -c "$SOCK" route delete 10.79.0.0/16
+	# A route deleted without its gateway is put back as the kernel
+	# listed it; one the kernel does not list is not deleted at all.
+	atf_check -s exit:1 -o match:'not changed: it could not be put back: no route to 10.79.0.0/16 in FIB 0' \
+	    "$JGC" -s -c "$SOCK" route delete 10.79.0.0/16
+	atf_check -o not-match:'10.79' cat route.log
 
 	# One cancelled while it waits to be confirmed is undone then, not
 	# when its timer of a minute runs out.
@@ -7514,6 +8109,11 @@ atf_init_test_cases()
 	atf_add_test_case storage
 	atf_add_test_case notify
 	atf_add_test_case safe_mode
+	atf_add_test_case safe_sysctl
+	atf_add_test_case safe_route_delete
+	atf_add_test_case safe_bird
+	atf_add_test_case safe_wireguard
+	atf_add_test_case safe_ipsec
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart
 	atf_add_test_case agent_build
@@ -7535,5 +8135,6 @@ atf_init_test_cases()
 	atf_add_test_case network
 	atf_add_test_case ipsec
 	atf_add_test_case packages
+	atf_add_test_case jail_base
 	atf_add_test_case jobs
 }

@@ -161,6 +161,9 @@ submodule arcana-jobs-kinds {
       enum smtpd {
         value 45;
       }
+      enum jail-base {
+        value 46;
+      }
     }
     description
       "A kind of job, by its number in arcana.yaml's job-kind.";
@@ -263,6 +266,11 @@ submodule arcana-jobs-kinds {
             description
               "Action";
           }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
         }
       }
       case service-config {
@@ -297,6 +305,11 @@ submodule arcana-jobs-kinds {
             ordered-by user;
             description
               "Variables to unset";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
           }
         }
       }
@@ -604,6 +617,11 @@ submodule arcana-jobs-kinds {
             description
               "Kept for a boot";
           }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
         }
       }
       case if-destroy {
@@ -723,6 +741,11 @@ submodule arcana-jobs-kinds {
             description
               "Preshared key";
           }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
         }
       }
       case bird {
@@ -753,6 +776,11 @@ submodule arcana-jobs-kinds {
             ordered-by user;
             description
               "Arguments";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
           }
         }
       }
@@ -818,6 +846,11 @@ submodule arcana-jobs-kinds {
             type boolean;
             description
               "Kept for a boot";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
           }
         }
       }
@@ -1059,10 +1092,20 @@ submodule arcana-jobs-kinds {
             description
               "Arguments";
           }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
           leaf persist {
             type boolean;
             description
               "Kept for a boot";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
           }
         }
       }
@@ -1320,6 +1363,11 @@ submodule arcana-jobs-kinds {
             description
               "Kept for a boot";
           }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
         }
       }
       case pkg-install {
@@ -1338,6 +1386,55 @@ submodule arcana-jobs-kinds {
             type string;
             description
               "Jail";
+          }
+          leaf force {
+            type boolean;
+            description
+              "Force";
+          }
+          leaf pkg-ip {
+            type uint32;
+            description
+              "pkg's network";
+          }
+          leaf pkg-repo {
+            type string;
+            description
+              "Repository";
+          }
+        }
+      }
+      case jail-base {
+        container jail-base {
+          presence
+            "This kind of job.";
+          description
+            "A jail's base system by pkg, to pkgbase or a newer release";
+          leaf jail {
+            type string;
+            mandatory true;
+            description
+              "Jail";
+          }
+          leaf verb {
+            type enumeration {
+              enum convert;
+              enum upgrade;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list packages {
+            type string;
+            ordered-by user;
+            description
+              "Packages";
+          }
+          leaf release {
+            type string;
+            description
+              "Release";
           }
           leaf force {
             type boolean;

@@ -19,7 +19,7 @@
 #include "app.h"
 #include "qrcodegen.h"
 
-static void	pkg_repo_select(struct html *);
+static void	pkg_repo_select(struct html *, const char *);
 static const char *icon_grid =
     "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 3h7v7H3z"
     "M14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z\"/></svg>";
@@ -2220,27 +2220,35 @@ view_settings(struct html *h)
 /*
  * Which of pkg's repositories there to take packages from (pkg -r),
  * the packages read's: any (as pkg is configured), or one alone,
- * enabled or not.  Nothing when the read named none.
+ * enabled or not.  Nothing when the read named none.  Chosen as it
+ * was for this action here (the host's, or the jail's) last time: the
+ * console keeps the choice per jail and action; upgrade's is the tab's
+ * current one.
  */
 static void
-pkg_repo_select(struct html *h)
+pkg_repo_select(struct html *h, const char *action)
 {
 	const ucl_object_t	*r;
 	ucl_object_iter_t	 it;
+	const char		*chosen;
 
 	if (app.pkg.data == NULL || ucl_array_size(jget(app.pkg.data,
 	    "repos")) == 0)
 		return;
+	chosen = strcmp(action, "upgrade") == 0 ? app.pkg.repo :
+	    pkg_repo_kept(cur_server(), app.pkg.jail, action);
 	h_raw(h, "<label class=\"pkg-repo\" title=\"Only from this one of "
 	    "pkg's repositories (pkg -r), enabled or not; or from where "
-	    "pkg's own configuration has each package\">From<select name=\""
-	    "repo\"><option value=\"\">any repository</option>");
+	    "pkg's own configuration has each package. Remembered for ");
+	h_txt(h, app.pkg.jail[0] != '\0' ? app.pkg.jail : "the host");
+	h_raw(h, "\">From<select name=\"repo\"><option value=\"\">any "
+	    "repository</option>");
 	it = NULL;
 	while ((r = ucl_object_iterate(jget(app.pkg.data, "repos"), &it,
 	    true)) != NULL) {
 		h_raw(h, "<option");
 		h_attr(h, "value", ucl_object_tostring_forced(r));
-		if (strcmp(app.pkg.repo, ucl_object_tostring_forced(r)) == 0)
+		if (strcmp(chosen, ucl_object_tostring_forced(r)) == 0)
 			h_raw(h, " selected");
 		h_raw(h, ">");
 		h_txt(h, ucl_object_tostring_forced(r));
@@ -2458,6 +2466,77 @@ modal(struct html *h)
 		if (!workflows_modal(h))
 			return;
 		break;
+	case MODAL_JAIL_BASE:
+		if (cur_server() == NULL || app.pkg.jail[0] == '\0')
+			return;
+		h_fmt(h, "<form data-form=\"jail-base\"><h2>%s</h2><p>The jail "
+		    "<b>", app.pkg.base_up ? "Upgrade the base system" : "To "
+		    "pkgbase");
+		h_txt(h, app.pkg.jail);
+		h_raw(h, "</b>");
+		if (app.pkg.base_up)
+			h_raw(h, ", already on pkgbase, is taken to the release "
+			    "named: its base packages from the FreeBSD-base "
+			    "repository of that release, then its other packages "
+			    "for the new ABI, never beyond the host's kernel.</p>"
+			    "<label>Release<input name=\"release\" spellcheck=\""
+			    "false\" autocomplete=\"off\" placeholder=\"16\" "
+			    "autofocus><small>16, the latest of that major; or "
+			    "15.2, that release.</small></label>");
+		else
+			h_raw(h, " gets the base system packages (pkgbase) "
+			    "installed over its files, from the FreeBSD-base "
+			    "repository of its own release; it must run FreeBSD "
+			    "15.1 or later.</p><label>Sets<input name=\"sets\" "
+			    "spellcheck=\"false\" autocomplete=\"off\" placeholder="
+			    "\"FreeBSD-set-base-jail\"><small>FreeBSD-set-base-jail "
+			    "when empty; FreeBSD-set-minimal-jail is smaller, "
+			    "FreeBSD-set-optional-jail adds to it. The job says "
+			    "which the repository has.</small></label><label>"
+			    "Repository branch<input name=\"release\" spellcheck="
+			    "\"false\" autocomplete=\"off\" placeholder=\"the "
+			    "jail's own release\"><small>Empty for the jail's own "
+			    "release; 16 for the latest of that major.</small>"
+			    "</label>");
+		/* The base from one of the jail's own repositories, or the
+		 * official one under arcana's name. */
+		if (app.pkg.data != NULL && ucl_array_size(jget(app.pkg.data,
+		    "repos")) > 0) {
+			const ucl_object_t	*rr;
+			ucl_object_iter_t	 rit;
+
+			h_raw(h, "<label>Base repository<select name=\"repo\">"
+			    "<option value=\"\">FreeBSD's official (arcana-base)"
+			    "</option>");
+			rit = NULL;
+			while ((rr = ucl_object_iterate(jget(app.pkg.data,
+			    "repos"), &rit, true)) != NULL) {
+				h_raw(h, "<option");
+				h_attr(h, "value", ucl_object_tostring(rr));
+				/* As chosen for this jail's base last time. */
+				if (strcmp(pkg_repo_kept(cur_server(),
+				    app.pkg.jail, "base"),
+				    ucl_object_tostring(rr)) == 0)
+					h_raw(h, " selected");
+				h_raw(h, ">");
+				h_txt(h, ucl_object_tostring(rr));
+				h_raw(h, "</option>");
+			}
+			h_raw(h, "</select><small>The official repository is "
+			    "written in the jail under arcana's own name, so a "
+			    "mirror of yours named like it is not merged into it; "
+			    "or one of the jail's repositories, as it is: it "
+			    "must have the release.</small></label>");
+		}
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "anyos\"><span>Also packages built for a newer FreeBSD "
+		    "<em>IGNORE_OSVERSION</em></span></label><p class=\"dim\">Its "
+		    "/etc is kept aside in /var/backups first; what pkg leaves "
+		    "beside a file it did not replace (.pkgnew, .pkgsave) is "
+		    "named in the job's trace, to merge by hand. Restart the "
+		    "jail after%s.</p>", app.pkg.ip == 4 ? "; over IPv4" :
+		    app.pkg.ip == 6 ? "; over IPv6" : "");
+		break;
 	case MODAL_PKG_INSTALL:
 		if (cur_server() == NULL)
 			return;
@@ -2481,7 +2560,7 @@ modal(struct html *h)
 		    "for a newer FreeBSD <em>IGNORE_OSVERSION</em></span></label>",
 		    app.pkg.ip == 4 ? ", over IPv4" : app.pkg.ip == 6 ?
 		    ", over IPv6" : "");
-		pkg_repo_select(h);
+		pkg_repo_select(h, "install");
 		break;
 	case MODAL_LOOKUP:
 		if (cur_server() == NULL)
@@ -2783,6 +2862,10 @@ modal(struct html *h)
 			break;
 		case MODAL_PKG_INSTALL:
 			h_raw(h, "<button class=\"primary\">Install</button>");
+			break;
+		case MODAL_JAIL_BASE:
+			h_fmt(h, "<button class=\"danger\">%s</button>",
+			    app.pkg.base_up ? "Upgrade" : "Convert");
 			break;
 		case MODAL_WF_RUN:
 			h_raw(h, "<button class=\"primary\">Run</button>");
@@ -3599,6 +3682,18 @@ view_packages(struct html *h, struct server *s)
 	    "small\" data-act=\"pkg-clean\" data-arg=\"all\" title=\"pkg "
 	    "clean -a: all the downloaded packages deleted\">Clean all"
 	    "</button>");
+	/* A jail's base system by pkg: to pkgbase while it is not on it;
+	 * once it is, to a newer release.  The read says which. */
+	if (app.pkg.jail[0] != '\0' && mine && jget(app.pkg.data, "pkgbase") !=
+	    NULL)
+		h_raw(h, !jbool(app.pkg.data, "pkgbase") ? "<button class=\"ghost "
+		    "small\" data-act=\"jail-base\" data-arg=\"convert\" title=\""
+		    "The base system packages (pkgbase) installed over the "
+		    "jail's files, from the FreeBSD-base repository of its "
+		    "release\">To pkgbase\u2026</button>" : "<button class=\"ghost "
+		    "small\" data-act=\"jail-base\" data-arg=\"upgrade\" title=\"A "
+		    "jail on pkgbase taken to a newer FreeBSD release, base and "
+		    "packages\">Base upgrade\u2026</button>");
 	/* Of every running jail at once, from the host's page. */
 	if (app.pkg.jail[0] == '\0')
 		h_raw(h, "<button class=\"ghost small\" data-act=\""
@@ -3688,7 +3783,7 @@ view_packages(struct html *h, struct server *s)
 		h_fmt(h, "<div class=\"buttons\"><span class=\"dim\">%d pending; "
 		    "none selected means all</span>", n);
 		/* From one of pkg's repositories, or any. */
-		pkg_repo_select(h);
+		pkg_repo_select(h, "upgrade");
 		h_fmt(h, "<button class=\"ghost\" value=\"dry\"%s>Dry run"
 		    "</button><button class=\"danger\" value=\"go\"%s>Upgrade"
 		    "</button></div>", packages_busy(s) ? " disabled" : "",

@@ -1613,6 +1613,11 @@ ATF_TC_BODY(workflows, tc)
 	    "hosts.0.steps.1.title"));
 	ATF_CHECK(jstr(&r, "hosts.0.steps.1.trace.job.trace.0.label") !=
 	    NULL);
+	/* A job the console runs is in safe mode where the host can undo
+	 * it; a restart it cannot, so that one was sent again without,
+	 * and the step says so. */
+	ATF_CHECK_STREQ("not in safe mode: the host cannot undo this one",
+	    jstr(&r, "hosts.0.steps.1.error"));
 	/* Its traces are in the run's own file, not in the list. */
 	snprintf(body, sizeof(body), "test -s data/runs/%s.json", run);
 	ATF_CHECK(system(body) == 0);
@@ -3382,6 +3387,21 @@ ATF_TC_BODY(telegram, tc)
 	    "tg.out | grep -qx 2 && grep -q '\"chat_id\":-100,' tg.out && "
 	    "grep -q '\"chat_id\":42,' tg.out && grep -q '\"text\":\"Arcana: "
 	    "a test.' tg.out") == 0);
+	/* How many jobs of pkg in jails run at once: set, said by the
+	 * jobs list, and refused outside 1 to 32. */
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs/config", sid);
+	http("POST", path, "{\"lanes\":3}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("3", jstr(&r, "lanes"));
+	resp_free(&r);
+	http("POST", path, "{\"lanes\":0}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", sid);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("3", jstr(&r, "lanes"));
+	resp_free(&r);
 	/* A job that failed, told within a tick or two. */
 	sleep(2);
 	snprintf(path, sizeof(path), "/api/servers/%s/jobs", sid);
@@ -3742,6 +3762,25 @@ ATF_TC_BODY(services, tc)
 	http("POST", body, "{\"safe_wait\":15}", &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("15", jstr(&r, "servers.0.safe_wait"));
+	resp_free(&r);
+	/* Which repository each pkg action takes from, per jail: kept
+	 * with the server, as given; the shape is checked. */
+	http("POST", body, "{\"pkg_repos\":{\".\":{\"upgrade\":\"mine\"},"
+	    "\"web\":{\"install\":\"\",\"base\":\"FreeBSD-base\"}}}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("FreeBSD-base", jstr(&r, "servers.0.pkg_repos.web.base"));
+	ATF_CHECK_STREQ("FreeBSD-base", jstr(&r,
+	    "servers.0.pkg_repos.web.base"));
+	ATF_CHECK_STREQ("15", jstr(&r, "servers.0.safe_wait"));
+	resp_free(&r);
+	http("POST", body, "{\"pkg_repos\":{\"web\":{\"remove\":\"x\"}}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", body, "{\"pkg_repos\":[]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("GET", "/api/servers", NULL, &r);
+	ATF_CHECK_STREQ("FreeBSD-base", jstr(&r, "servers.0.pkg_repos.web.base"));
 	resp_free(&r);
 
 	/*

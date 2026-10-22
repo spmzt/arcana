@@ -49,6 +49,7 @@ enum op {
 	OP_JOBS,
 	OP_JOB,
 	OP_JOB_CANCEL,
+	OP_JOBS_SET,
 	OP_AGENT_UPDATE,
 	OP_AGENT_BUILD,
 	OP_CONSOLE_UPDATE,
@@ -1229,7 +1230,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_PKG_UPGRADE ? "arc_pkg_upgrade" :
 	    c->op == OP_JOB_SUBMIT ? "arc_job_submit" : c->op == OP_JOBS ?
 	    "arc_jobs" : c->op == OP_JOB ? "arc_job" : c->op == OP_JOB_CANCEL ?
-	    "arc_job_cancel" : c->op == OP_AGENT_UPDATE ? "arc_agent_update" :
+	    "arc_job_cancel" : c->op == OP_JOBS_SET ? "arc_jobs_set" : c->op == OP_AGENT_UPDATE ? "arc_agent_update" :
 	    c->op == OP_AGENT_BUILD ? "arc_agent_build" :
 	    c->op == OP_CONSOLE_UPDATE ? "arc_console_update" :
 	    c->op == OP_SOURCE_HEAD ? "arc_source_head" :
@@ -1632,6 +1633,8 @@ call_run(struct kore_task *t)
 	struct arc_job_rsp	*jr;
 	struct arc_job_cancel_req jcq;
 	struct arc_job_cancel_rsp *jcr;
+	struct arc_jobs_set_req	lnq;
+	struct arc_jobs_set_rsp	*lnr;
 	struct arc_job_confirm_req jfq;
 	struct arc_job_confirm_rsp *jfr;
 	struct arc_agent_update_req auq;
@@ -1738,6 +1741,7 @@ call_run(struct kore_task *t)
 	jlr = NULL;
 	jr = NULL;
 	jcr = NULL;
+	lnr = NULL;
 	aur = NULL;
 	abr = NULL;
 	cur = NULL;
@@ -1941,6 +1945,8 @@ connected:
 		put(top, "packages", a);
 		/* pkg's repositories there, any of which -r may name. */
 		put(top, "repos", strs(pr->pkg_repos.v, pr->pkg_repos.n));
+		if (pr->has_pkgbase)
+			put(top, "pkgbase", ucl_object_frombool(pr->pkgbase));
 		steps = pr->trace.v;
 		nsteps = pr->trace.n;
 		break;
@@ -2009,6 +2015,8 @@ connected:
 			put(top, "since", ucl_object_fromint(jlr->since));
 		}
 		put(top, "stopping", ucl_object_frombool(jlr->stopping));
+		if (jlr->has_lanes)
+			put(top, "lanes", ucl_object_fromint(jlr->lanes));
 		break;
 	case OP_JOB:
 		memset(&jq, 0, sizeof(jq));
@@ -2020,17 +2028,33 @@ connected:
 		put_str(top, "error", jr->error);
 		/*
 		 * A safe change waits to hear from the console again, and
-		 * here the console is: the change stays.  Had it cut the
-		 * host off, this would not have got through, and the host
-		 * would undo it by itself.
+		 * here the console is: the change stays.  The proof is a
+		 * new connection to the host, dialled now: this read may
+		 * have come over one kept open from before the change,
+		 * which a change that cut the host off would not touch.
+		 * No new connection, no confirmation: the host undoes the
+		 * change by itself.
 		 */
 		if (jr->job != NULL && jr->job->state ==
 		    ARC_JOB_STATE_UNCONFIRMED) {
+			struct arc_client	 fcl;
+			cbl_conn		*fconn;
+			cbl_tls			*ftls;
+			const char		*fe;
+
 			memset(&jfq, 0, sizeof(jfq));
 			jfq.has_id = true;
 			jfq.id = c->jobid;
-			if (arc_job_confirm(&cl, &jfq, &jfr) == 0)
-				arc_job_confirm_rsp_free(jfr);
+			if ((fe = hosts_dial(c->uri, c->peer, &fconn, &ftls,
+			    &fcl)) == NULL) {
+				if (arc_job_confirm(&fcl, &jfq, &jfr) == 0)
+					arc_job_confirm_rsp_free(jfr);
+				hosts_release(c->uri, c->peer, fconn, ftls,
+				    &fcl, true);
+			} else
+				kore_log(LOG_WARNING, "%s: job %ju unconfirmed: "
+				    "no new connection to the host: %s", c->uri,
+				    (uintmax_t)c->jobid, fe);
 		}
 		if (jr->job != NULL) {
 			put(top, "job", job_object(c, jr->job, true,
@@ -2040,6 +2064,17 @@ connected:
 			c->status = 200;
 			goto done;
 		}
+		break;
+	case OP_JOBS_SET:
+		memset(&lnq, 0, sizeof(lnq));
+		lnq.has_lanes = true;
+		lnq.lanes = (uint8_t)c->fib;
+		if ((error = arc_jobs_set(&cl, &lnq, &lnr)) != 0)
+			goto rpcfail;
+		ok = lnr->ok;
+		put_str(top, "error", lnr->error);
+		if (lnr->has_lanes)
+			put(top, "lanes", ucl_object_fromint(lnr->lanes));
 		break;
 	case OP_JOB_CANCEL:
 		memset(&jcq, 0, sizeof(jcq));
@@ -3232,6 +3267,8 @@ done:
 		arc_job_rsp_free(jr);
 	if (jcr != NULL)
 		arc_job_cancel_rsp_free(jcr);
+	if (lnr != NULL)
+		arc_jobs_set_rsp_free(lnr);
 	if (aur != NULL)
 		arc_agent_update_rsp_free(aur);
 	if (abr != NULL)
@@ -5346,6 +5383,37 @@ api_jobs(struct http_request *req)
 		kore_free(c);
 		return (reply_error(req, 400, "invalid", "%s", e));
 	}
+	return (call_start(req, c));
+}
+
+/*
+ * POST /api/servers/<id>/jobs/config: how many jobs of pkg in jails
+ * run at once there, {"lanes": N}, 1 to 32; the reply says the number.
+ */
+int
+api_jobs_config(struct http_request *req)
+{
+	struct call	*c;
+	ucl_object_t	*body;
+	int64_t		 lanes;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_JOBS_SET)) == NULL)
+		return (KORE_RESULT_OK);
+	body = read_json(req);
+	lanes = body != NULL && ucl_object_lookup(body, "lanes") != NULL ?
+	    ucl_object_toint(ucl_object_lookup(body, "lanes")) : 0;
+	if (body != NULL)
+		ucl_object_unref(body);
+	if (lanes < 1 || lanes > 32) {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "lanes is 1 to 32"));
+	}
+	c->fib = (uint32_t)lanes;
 	return (call_start(req, c));
 }
 

@@ -164,6 +164,26 @@ mtls_body()
 	atf_check -s exit:1 -o match:'failed' -o not-match:'cut you off' \
 	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key \
 	    interface lo0 remove 127.0.0.9
+	# So would moving that interface to another table, a route over
+	# the client's address in the table it is in, forwarding or the
+	# tables turned over, the firewall's rules swapped in or turned
+	# on: refused unless in safe mode.  A route elsewhere, or in
+	# another table, is not.
+	for c in "interface lo0 fib 1" "interface lo0 tunnelfib 1" \
+	    "route add 127.0.0.0/8 127.0.0.1" "route delete default" \
+	    "route add default 127.0.0.1" "sysctl net.fibs=2" \
+	    "sysctl net.inet.ip.forwarding=1" "ipfw enable" "ipfw apply"; do
+		atf_check -s exit:1 -e match:'would cut you off' -o ignore \
+		    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key $c
+	done
+	for c in "route add 10.99.0.0/16 127.0.0.1" "sysctl kern.hostname=x" \
+	    "interface lo0 mtu 16384"; do
+		atf_check -s ignore -e not-match:'cut you off' -o ignore \
+		    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key $c
+	done
+	atf_check -s ignore -e not-match:'cut you off' -o ignore \
+	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key -F 3 \
+	    route add 127.0.0.0/8 127.0.0.1
 }
 mtls_cleanup()
 {

@@ -1375,6 +1375,12 @@ part_hosts(void)
 	    "'builder' && document.querySelector('button[value=go]:not("
 	    "[disabled])')", 20);
 	shot("6c-pkg-repo");
+	/* And the console keeps the choice for the host, per action, so the
+	 * next time the tab opens it is chosen already. */
+	run("fetch('/api/servers').then(r => r.json()).then(j => { window.prk = "
+	    "j.servers.some(s => s.pkg_repos && s.pkg_repos['.'] && "
+	    "s.pkg_repos['.'].upgrade === 'builder'); });");
+	wait_js("window.prk === true", 10);
 
 	/* The page opened again: what ended is still along the bottom. */
 	go("/");
@@ -2015,6 +2021,53 @@ part_nettab(void)
 	run("window.hold.poll = false;");
 	wait_js("[...document.querySelectorAll('.dock .o-ok')].filter(t => "
 	    "t.textContent.includes('lo0: set')).length >= 2", 20);
+	/*
+	 * A task whose request is still on its way can be given up from
+	 * the list: the request is aborted and the entry ends as cancelled,
+	 * its pending graph gone, instead of waiting for ever.
+	 */
+	run("window.hold.jobs = true;");
+	run("document.querySelector('tr[data-if=lo0] button[data-act=if-edit]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=if-set]')", 5);
+	run("const f = document.querySelector('form[data-form=if-set]'); "
+	    "f.mtu.value = '1500'; f.persist.checked = false; "
+	    "f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('.dock.open .pending-graph') && "
+	    "document.querySelector('.pending-graph').textContent.includes("
+	    "'waiting for the answer') && document.querySelector('.dock li."
+	    "o-running button[data-act=op-cancel]')", 10);
+	run("document.querySelector('.dock li.o-running button[data-act="
+	    "op-cancel]').click()");
+	/* The hold kept the request from going out at all: let it go,
+	 * aborted as it is, so that its answer is the abort. */
+	run("window.hold.jobs = false;");
+	wait_js("[...document.querySelectorAll('.dock li.o-failed')].some(t => "
+	    "t.textContent.includes('lo0: set')) && !document.querySelector("
+	    "'.dock li.o-running') && !document.querySelector('.pending-graph')",
+	    10);
+	/*
+	 * Answered without a job number, a task ends as failed and says
+	 * so, rather than waiting to begin for ever.
+	 */
+	run("const of4 = window.fetch; window.fetch = function (u, o) { "
+	    "const s = String(u); if (o && o.method === 'POST' && s.endsWith("
+	    "'/jobs') && window.nojob) { window.nojob = false; return Promise."
+	    "resolve(new Response('{\"ok\":true,\"jobs\":[{\"id\":0}]}', "
+	    "{ status: 200, headers: { 'Content-Type': 'application/json' } "
+	    "})); } return of4.call(this, u, o); }; window.nojob = true;");
+	run("document.querySelector('tr[data-if=lo0] button[data-act=if-edit]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=if-set]')", 5);
+	run("const f = document.querySelector('form[data-form=if-set]'); "
+	    "f.mtu.value = '1500'; f.persist.checked = false; "
+	    "f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('.dock li.o-failed')].filter(t "
+	    "=> t.textContent.includes('lo0: set')).length >= 2 && !document."
+	    "querySelector('.dock li.o-running') && !document.querySelector("
+	    "'.pending-graph')", 10);
 	run("document.querySelector('.dock > header').click()");
 
 	/* Netgraph: the nodes as a graph, with the hooks that join them. */
@@ -2044,6 +2097,27 @@ part_nettab(void)
 	run("document.querySelector('button.tab[data-arg=jobs]').click()");
 	wait_js("document.querySelector('table.jobs tr.j-done')", 10);
 	shot("5-jobs");
+	/* A job that is over cannot be taken back, and with none queued
+	 * there is no queue to clear. */
+	ATF_CHECK(js_true("!document.querySelector('table.jobs tr.j-done "
+	    "button[data-act=job-cancel]')"));
+	ATF_CHECK(js_true("!document.querySelector('button[data-act="
+	    "jobs-clear]')"));
+	/* How many jobs of pkg in jails run at once: said, and set. */
+	wait_js("document.querySelector('form[data-form=jobs-lanes] "
+	    "input[name=lanes]') && document.querySelector('form[data-form="
+	    "jobs-lanes] input[name=lanes]').value === '4'", 10);
+	run("const f = document.querySelector('form[data-form=jobs-lanes]'); "
+	    "f.lanes.value = '2'; f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=jobs-lanes] "
+	    "input[name=lanes]').value === '2'", 10);
+	/* A jail's base by pkg: the buttons are a jail's, not the host's
+	 * (no jail runs here, so only the host can be chosen). */
+	run("document.querySelector('button.tab[data-arg=packages]').click()");
+	wait_js("document.querySelector('button[data-act=pkg-target]')", 10);
+	ATF_CHECK(js_true("!document.querySelector('button[data-act="
+	    "jail-base]')"));
+	run("document.querySelector('button.tab[data-arg=jobs]').click()");
 
 	/*
 	 * On a phone: nothing is wider than the screen, on any of the

@@ -1170,3 +1170,50 @@ do_ipsec_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	}
 	return (0);
 }
+
+/*
+ * A safe change to a connection: the files it is made of, for the
+ * snapshot taken before and put back after, and what the daemon is
+ * then told.
+ */
+void
+ipsec_conn_files(struct work *w, const char *conn, const char **confp,
+    const char **jsonp, const char **pubp)
+{
+
+	*confp = sw_path(w, wfmt(w, "conf.d/arcana-%s.conf", conn));
+	*jsonp = sw_path(w, wfmt(w, "conf.d/arcana-%s.json", conn));
+	*pubp = sw_path(w, wfmt(w, "pubkey/arcana-%s.pub", conn));
+}
+
+/*
+ * The files are back as they were: the daemon reads conf.d again, after
+ * the SAs of a connection that was not there before are ended (loaded,
+ * it may have started them; unloaded, it would leave them up).
+ */
+int
+ipsec_undo(struct work *w, const char *conn, bool was_new, const char **errp)
+{
+	struct execres	res;
+
+	if (was_new)
+		(void)swanctl(w, &res, "--terminate", "--ike", conn, "--force",
+		    NULL);
+	return (reload(w, errp));
+}
+
+/* up undone is down, and down up. */
+int
+ipsec_toggle(struct work *w, const char *conn, bool up, const char **errp)
+{
+	struct execres	res;
+
+	if (swanctl(w, &res, up ? "--initiate" : "--terminate", up ? "--child" :
+	    "--ike", conn, "--timeout", up ? "20" : "10") != 0) {
+		*errp = not_running(&res) ? "strongSwan is not running" :
+		    wtext(w, exec_error(w, &res, up ? "swanctl --initiate" :
+		    "swanctl --terminate"));
+		return (-1);
+	}
+	return (0);
+}

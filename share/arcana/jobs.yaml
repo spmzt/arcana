@@ -164,6 +164,10 @@ fields:
     type: text
     label: Repository
     help: Only from this one of pkg's repositories (pkg -r); empty, from where pkg's configuration has each package.
+  - field: release
+    type: text
+    label: Release
+    help: The FreeBSD release to go to, "16" or "15.2"; for convert, the FreeBSD-base repository's branch, the jail's own release when empty.
   - field: conn
     type: text
     label: Connection
@@ -249,11 +253,12 @@ kinds:
   - kind: service-action
     title: A service started, stopped, reloaded, enabled or disabled
     needs: service action
+    uses: safe
     values: action=start|stop|restart|reload|enable|disable
   - kind: service-config
     title: A service's variables in rc.conf
     needs: service
-    uses: set unset
+    uses: set unset safe
   - kind: pkg-upgrade
     title: Packages upgraded
     uses: jail packages force pkg_ip pkg_repo
@@ -276,7 +281,7 @@ kinds:
   - kind: if-create
     title: An interface made
     needs: interface
-    uses: jail tunnel_local tunnel_remote address destination description mtu fib tunnelfib id parent reqid persist
+    uses: jail tunnel_local tunnel_remote address destination description mtu fib tunnelfib id parent reqid persist safe
   - kind: if-destroy
     title: An interface destroyed
     needs: interface
@@ -291,12 +296,12 @@ kinds:
   - kind: wireguard
     title: A WireGuard interface's key or peers
     needs: interface verb
-    uses: jail peer endpoint allowed_ips keepalive listen_port persist preshared_key
+    uses: jail peer endpoint allowed_ips keepalive listen_port persist preshared_key safe
     values: verb=init|peer|unpeer
   - kind: bird
     title: BIRD told something
     needs: verb
-    uses: jail args
+    uses: jail args safe
     values: verb=enable|disable|restart|reload|configure
   - kind: if-vnet
     title: An interface given to a jail, or taken back
@@ -305,7 +310,7 @@ kinds:
   - kind: kmod
     title: A kernel module loaded or unloaded, or kept in kld_list or not
     needs: verb args
-    uses: persist
+    uses: persist safe
     values: verb=load|unload|keep|forget
   - kind: ntp
     title: The NTP servers the host keeps time by
@@ -348,7 +353,7 @@ kinds:
   - kind: sysctl
     title: A sysctl set
     needs: args
-    uses: persist
+    uses: jail persist safe
   - kind: ipfw
     title: The firewall
     needs: verb args
@@ -373,13 +378,18 @@ kinds:
   - kind: ipsec
     title: IPsec, strongSwan
     needs: verb
-    uses: jail conn child tunnel_local tunnel_remote ipsec_mode pubkey local_cert remote_cert remote_ca local_ts remote_ts reqid start_action local_id remote_id persist
+    uses: jail conn child tunnel_local tunnel_remote ipsec_mode pubkey local_cert remote_cert remote_ca local_ts remote_ts reqid start_action local_id remote_id persist safe
     values: verb=init|start|conn|unconn|child|unchild|up|down ipsec_mode=tunnel|transport start_action=start|trap|none
     destroys: verb=unconn|unchild
   - kind: pkg-install
     title: Packages installed
     needs: packages
     uses: jail force pkg_ip pkg_repo
+  - kind: jail-base
+    title: A jail's base system by pkg, to pkgbase or a newer release
+    needs: jail verb
+    uses: packages release force pkg_ip pkg_repo
+    values: verb=convert|upgrade
   - kind: jail-conf
     title: A jail made, removed; the jails' defaults or a template
     needs: verb

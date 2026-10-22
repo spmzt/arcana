@@ -546,9 +546,21 @@ paths:
           application/json:
             schema:
               type: object
-              required: [safe_wait]
               properties:
                 safe_wait: { type: integer, minimum: 0, maximum: 3600 }
+                tenant: { type: string, description: "the fleet it is in; \"\" for none" }
+                pkg_repos:
+                  type: object
+                  description: Which of pkg's repositories each action takes
+                    packages from there (pkg -r), per jail; the key "." is the
+                    host; "" or absent is any repository. Kept whole, as
+                    given, and listed with the server.
+                  additionalProperties:
+                    type: object
+                    properties:
+                      upgrade: { type: string, maxLength: 64 }
+                      install: { type: string, maxLength: 64 }
+                      base: { type: string, maxLength: 64 }
       responses:
         "200": { $ref: "#/components/responses/Servers" }
         "400": { $ref: "#/components/responses/Error" }
@@ -2010,6 +2022,38 @@ paths:
                             health: { type: string }
                   trace: { type: array }
 
+  /api/servers/{server}/jobs/config:
+    post:
+      tags: [servers]
+      summary: How many jobs of pkg in jails run at once
+      description: |
+        The agent runs jobs of pkg in jails in lanes of their own, so
+        that one jail's stalled download holds up no other; lanes, 1
+        to 32, is how many at once, kept on the host for the agent's
+        next start.  The jobs list says the number as "lanes".
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lanes]
+              properties:
+                lanes: { type: integer, minimum: 1, maximum: 32 }
+      responses:
+        "200":
+          description: The number now.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  lanes: { type: integer }
+        "400":
+          description: lanes is not 1 to 32.
   /api/servers/{server}/jobs:
     get:
       tags: [servers]
@@ -2075,10 +2119,15 @@ paths:
                       up: { type: boolean, description: For if-state. }
                       safe:
                         type: boolean
-                        description: For if-address, if-state and route.
-                          The host undoes the change unless the console
-                          reaches it again in time; reading the job
-                          (GET …/jobs/{job}) is that.
+                        description: For the kinds the host can undo (the
+                          generated jobs spec lists safe among a kind's
+                          uses; a verb of the kind it cannot undo, a service
+                          restarted say, is refused with "not in safe
+                          mode"). The host undoes the change unless the
+                          console reaches it again in time; reading the job
+                          (GET …/jobs/{job}) is that, confirmed over a new
+                          connection to the host. Workflow steps and the
+                          SD-WAN apply send it wherever the kind allows.
                       destination: { type: string, description: For route. }
                       gateway: { type: string, description: For route; an
                           address or an interface. }

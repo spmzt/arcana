@@ -55,6 +55,7 @@ module: arcana-jobs
        |        |  +---w service-action!
        |        |     +---w service    string
        |        |     +---w action     enumeration
+       |        |     +---w safe?      boolean
        |        +--:(service-config)
        |        |  +---w service-config!
        |        |     +---w service    string
@@ -62,6 +63,7 @@ module: arcana-jobs
        |        |     |  +---w name     string
        |        |     |  +---w value?   string
        |        |     +---w unset*     string
+       |        |     +---w safe?      boolean
        |        +--:(pkg-upgrade)
        |        |  +---w pkg-upgrade!
        |        |     +---w jail?       string
@@ -124,6 +126,7 @@ module: arcana-jobs
        |        |     +---w parent?          string
        |        |     +---w reqid?           uint32
        |        |     +---w persist?         boolean
+       |        |     +---w safe?            boolean
        |        +--:(if-destroy)
        |        |  +---w if-destroy!
        |        |     +---w interface    string
@@ -146,11 +149,13 @@ module: arcana-jobs
        |        |     +---w listen-port?     uint32
        |        |     +---w persist?         boolean
        |        |     +---w preshared-key?   string
+       |        |     +---w safe?            boolean
        |        +--:(bird)
        |        |  +---w bird!
        |        |     +---w verb    enumeration
        |        |     +---w jail?   string
        |        |     +---w args*   string
+       |        |     +---w safe?   boolean
        |        +--:(if-vnet)
        |        |  +---w if-vnet!
        |        |     +---w interface    string
@@ -163,6 +168,7 @@ module: arcana-jobs
        |        |     +---w verb       enumeration
        |        |     +---w args*      string
        |        |     +---w persist?   boolean
+       |        |     +---w safe?      boolean
        |        +--:(ntp)
        |        |  +---w ntp!
        |        |     +---w args*      string
@@ -210,7 +216,9 @@ module: arcana-jobs
        |        +--:(sysctl)
        |        |  +---w sysctl!
        |        |     +---w args*      string
+       |        |     +---w jail?      string
        |        |     +---w persist?   boolean
+       |        |     +---w safe?      boolean
        |        +--:(ipfw)
        |        |  +---w ipfw!
        |        |     +---w verb       string
@@ -259,10 +267,20 @@ module: arcana-jobs
        |        |     +---w local-id?        string
        |        |     +---w remote-id?       string
        |        |     +---w persist?         boolean
+       |        |     +---w safe?            boolean
        |        +--:(pkg-install)
        |        |  +---w pkg-install!
        |        |     +---w packages*   string
        |        |     +---w jail?       string
+       |        |     +---w force?      boolean
+       |        |     +---w pkg-ip?     uint32
+       |        |     +---w pkg-repo?   string
+       |        +--:(jail-base)
+       |        |  +---w jail-base!
+       |        |     +---w jail        string
+       |        |     +---w verb        enumeration
+       |        |     +---w packages*   string
+       |        |     +---w release?    string
        |        |     +---w force?      boolean
        |        |     +---w pkg-ip?     uint32
        |        |     +---w pkg-repo?   string

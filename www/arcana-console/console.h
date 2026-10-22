@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.252.0"
+#define	ARCW_VERSION		"0.258.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -251,6 +251,8 @@ struct server {
 	char	*peer_name;
 	char	*tenant;	/* the fleet it is in, or NULL */
 	int	 safe_wait;	/* s a safe change waits; 0 the agent's own */
+	ucl_object_t *pkg_repos;	/* {"jail, or . the host": {upgrade, install, base}}: pkg -r
+				 * chosen there per action, or NULL */
 };
 
 void		 servers_init(void);
@@ -272,6 +274,10 @@ int		 api_ca(struct http_request *);
 int		 hosts_init(void);
 bool		 hosts_job_kind_known(const char *);
 int		 workflows_kinds_check(void);
+bool		 workflow_kind_uses(const char *, const char *);
+void		 workflow_job_safe(ucl_object_t *);
+char		*workflow_submit(const char *, const char *, const char *,
+		    ucl_object_t *, int *, const char **, const char **);
 void		 hosts_forget(const char *);
 const char	*hosts_shared(const char *, const char *, cbl_conn **,
 		    struct arc_client *);
@@ -402,6 +408,7 @@ int		 api_bird_config(struct http_request *);
 int		 api_packages(struct http_request *);
 int		 api_pkg_upgrade(struct http_request *);
 int		 api_jobs(struct http_request *);
+int		 api_jobs_config(struct http_request *);
 int		 api_job(struct http_request *);
 void		 api_call_free(struct http_request *);
 

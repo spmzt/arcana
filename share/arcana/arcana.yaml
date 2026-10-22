@@ -503,6 +503,25 @@ definitions:
           key's lines out.  The host's, or with jail a jail's (its
           own files and programs, a network of its own or not); never in
           safe mode.
+      - name: jail-base
+        doc: |
+          A running jail's base system by pkg(8), as pkgbase.  Verb
+          convert installs the base system packages over the jail's
+          files from the official base repository of its own release
+          (names the sets to install, FreeBSD-set-base-jail when
+          none; release, the repository's branch instead of the
+          jail's own); verb upgrade takes a jail already on pkgbase to
+          release, "16" (the latest of that major) or "15.2", its base
+          packages and then its other packages for the new ABI, never
+          beyond the host's kernel.  The official repository is
+          written in the jail under arcana's own name, arcana-base,
+          so that a repository of the admin's is not merged into it;
+          with pkg-repo, one of the jail's own repositories is used
+          instead, as it is.  Both keep the jail's /etc aside in
+          /var/backups first and name the .pkgnew and .pkgsave files
+          left to merge; the jail is to be restarted after.  With force, past OSVERSION for
+          the other packages (IGNORE_OSVERSION); pkg-ip as pkg -4 or
+          -6.  Needs FreeBSD 15.1 or later in the jail.
   - name: job-state
     type: enum
     entries:
@@ -1338,6 +1357,14 @@ attribute-sets:
           For packages: read past a repository of packages built for a
           newer FreeBSD (pkg -o IGNORE_OSVERSION=yes), once the console
           asked.
+      - name: lanes
+        type: u8
+        doc: How many jobs of pkg in jails run at once, 1 to 32.
+      - name: pkgbase
+        type: bool
+        doc: |
+          For a jail's packages: whether its base system is pkgbase
+          (FreeBSD-runtime is one of its packages).
   - name: host
     attributes:
       - name: hostname
@@ -1850,6 +1877,15 @@ attribute-sets:
         checks:
           max-len: 64
 
+      - name: release
+        type: text
+        doc: |
+          A FreeBSD release to go to (jail-base upgrade: "16", the
+          latest of that major, or "15.2"); for convert, the branch
+          of the FreeBSD-base repository, the jail's own release when
+          none.
+        checks:
+          max-len: 16
   - name: job
     attributes:
       - name: id
@@ -2242,6 +2278,7 @@ operations:
           - packages
           - trace
           - pkg-repos
+          - pkgbase
 
   - name: pkg-upgrade
     attribute-set: arcana
@@ -2303,6 +2340,26 @@ operations:
           - activity
           - since
           - stopping
+          - lanes
+
+  - name: jobs-set
+    attribute-set: arcana
+    auth: true
+    doc: |
+      How many jobs of pkg in jails run at once: lanes, 1 to 32, kept
+      for the next start (jobs.conf beside the agent's other kept
+      files).  The reply says what it is now.
+    do:
+      request:
+        attributes:
+          - lanes
+        required:
+          - lanes
+      reply:
+        attributes:
+          - ok
+          - error
+          - lanes
 
   - name: job
     attribute-set: arcana

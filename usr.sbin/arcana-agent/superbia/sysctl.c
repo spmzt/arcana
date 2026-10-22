@@ -387,26 +387,19 @@ do_sysctl(struct work *w, const char *prefix, struct arc_sysctl_rsp *rsp)
 }
 
 /*
- * name=value in sysctl.conf, in place of the line that set the name
- * before, or as a new last line.  The file is written beside itself and
- * moved into its place.
+ * sysctl.conf's text, the host's or the jail's own beneath its root (its
+ * rc reads it as it starts), NUL-ended, into *np; NULL with *errp set
+ * when it cannot be read.  An absent file is empty.  Under conf_lock.
  */
-static int
-conf_set(struct work *w, const char *name, const char *value,
-    const char **errp)
+static char *
+sysctl_conf_text(struct work *w, size_t *np, const char **errp)
 {
-	char	*text, *out, *p, *line, *tmp;
+	char	*text;
 	FILE	*fp;
-	size_t	 n, cap, len, nl;
-	bool	 done, quote;
-	int	 fd, rc;
+	size_t	 n;
 
-	rc = -1;
-	pthread_mutex_lock(&conf_lock);
 	text = wcalloc(w, SYSCTL_CONF_MAX + 1, 1);
 	n = 0;
-	/* A jail's own sysctl.conf, beneath its root: its rc reads it as
-	 * it starts. */
 	if (w->jail != NULL) {
 		char	*j;
 		size_t	 jl;
@@ -415,7 +408,7 @@ conf_set(struct work *w, const char *name, const char *value,
 			if (jl > SYSCTL_CONF_MAX) {
 				*errp = wfmt(w, "%s's /etc/sysctl.conf is larger "
 				    "than is edited from here", w->jail);
-				goto out;
+				return (NULL);
 			}
 			memcpy(text, j, jl);
 			n = jl;
@@ -426,29 +419,102 @@ conf_set(struct work *w, const char *name, const char *value,
 			fclose(fp);
 			*errp = wfmt(w, "%s is larger than is edited from "
 			    "here", opts.sysctl_conf);
-			goto out;
+			return (NULL);
 		}
 		fclose(fp);
 	} else if (errno != ENOENT) {
 		*errp = wfmt(w, "%s: %s", opts.sysctl_conf, strerror(errno));
-		goto out;
+		return (NULL);
 	}
 	text[n] = '\0';
+	*np = n;
+	return (text);
+}
+
+/* Is this line of sysctl.conf the one that sets name?  Then the value. */
+static const char *
+conf_line_sets(const char *line, const char *name, size_t nl)
+{
+	const char	*s;
+
+	s = line + strspn(line, " \t");
+	if (strncmp(s, name, nl) != 0 || (s[nl] != '=' && s[nl] != ' ' &&
+	    s[nl] != '\t') || s[nl + strspn(s + nl, " \t")] != '=')
+		return (NULL);
+	s += nl + strspn(s + nl, " \t") + 1;
+	return (s + strspn(s, " \t"));
+}
+
+/*
+ * The value sysctl.conf sets name to, as written (quotes and a trailing
+ * comment taken off), in w's pool; NULL when no line sets it, or the
+ * file cannot be read.
+ */
+const char *
+sysctl_conf_get(struct work *w, const char *name)
+{
+	const char	*e, *v, *found;
+	char		*text, *p, *line, *out;
+	size_t		 n, nl, vl;
+
+	pthread_mutex_lock(&conf_lock);
+	e = NULL;
+	found = NULL;
+	if ((text = sysctl_conf_text(w, &n, &e)) != NULL) {
+		nl = strlen(name);
+		p = text;
+		while (p != NULL && *p != '\0' && (line = strsep(&p, "\n")) !=
+		    NULL)
+			if ((v = conf_line_sets(line, name, nl)) != NULL) {
+				found = v;
+				break;
+			}
+	}
+	pthread_mutex_unlock(&conf_lock);
+	if (found == NULL)
+		return (NULL);
+	out = wstrdup(w, found);
+	if (out[0] == '"') {
+		memmove(out, out + 1, strlen(out));
+		if ((p = strchr(out, '"')) != NULL)
+			*p = '\0';
+	} else if ((p = strchr(out, '#')) != NULL)
+		*p = '\0';
+	vl = strlen(out);
+	while (vl > 0 && (out[vl - 1] == ' ' || out[vl - 1] == '\t'))
+		out[--vl] = '\0';
+	return (out);
+}
+
+/*
+ * name=value in sysctl.conf, in place of the line that set the name
+ * before, or as a new last line; with no value, the line goes.  The file
+ * is written beside itself and moved into its place.
+ */
+static int
+conf_set(struct work *w, const char *name, const char *value,
+    const char **errp)
+{
+	char	*text, *out, *p, *line, *tmp;
+	size_t	 n, cap, len, nl;
+	bool	 done, quote;
+	int	 fd, rc;
+
+	rc = -1;
+	pthread_mutex_lock(&conf_lock);
+	if ((text = sysctl_conf_text(w, &n, errp)) == NULL)
+		goto out;
 	nl = strlen(name);
-	quote = strpbrk(value, " \t#") != NULL;
-	cap = n + nl + strlen(value) + 16;
+	quote = value != NULL && strpbrk(value, " \t#") != NULL;
+	cap = n + nl + (value != NULL ? strlen(value) : 0) + 16;
 	out = wcalloc(w, cap, 1);
 	len = 0;
 	done = false;
 	p = text;
 	while (p != NULL && *p != '\0' && (line = strsep(&p, "\n")) != NULL) {
-		const char	*s = line + strspn(line, " \t");
-
-		if (strncmp(s, name, nl) == 0 && (s[nl] == '=' || s[nl] ==
-		    ' ' || s[nl] == '\t') && s[nl + strspn(s + nl, " \t")] ==
-		    '=') {
+		if (conf_line_sets(line, name, nl) != NULL) {
 			/* Once: a second line for the name goes. */
-			if (!done)
+			if (!done && value != NULL)
 				len += (size_t)snprintf(out + len, cap - len,
 				    "%s=%s%s%s\n", name, quote ? "\"" : "",
 				    value, quote ? "\"" : "");
@@ -457,7 +523,7 @@ conf_set(struct work *w, const char *name, const char *value,
 		}
 		len += (size_t)snprintf(out + len, cap - len, "%s\n", line);
 	}
-	if (!done)
+	if (!done && value != NULL)
 		len += (size_t)snprintf(out + len, cap - len, "%s=%s%s%s\n",
 		    name, quote ? "\"" : "", value, quote ? "\"" : "");
 	if (w->jail != NULL) {
@@ -595,6 +661,67 @@ do_sysctl_set(struct work *w, const char *name, const char *value,
 	}
 	step_end(w, step, true, NULL);
 	return (0);
+}
+
+/*
+ * sysctl.conf as it was before a safe change: the line that set name
+ * back, or none.  A step of its own, so the trace says what was put
+ * back.
+ */
+int
+sysctl_conf_restore(struct work *w, const char *name, const char *value,
+    const char **errp)
+{
+	int	step;
+
+	step = step_begin(w, ARC_STEP_KIND_FILE, w->jail != NULL ? wfmt(w,
+	    "%s's /etc/sysctl.conf", w->jail) : opts.sysctl_conf, value != NULL ?
+	    "%s=%s again" : "%s no longer set%s", name, value != NULL ? value :
+	    "");
+	if (conf_set(w, name, value, errp) != 0) {
+		step_end(w, step, false, "%s", *errp);
+		return (-1);
+	}
+	step_end(w, step, true, NULL);
+	return (0);
+}
+
+/*
+ * One sysctl's value as the kernel has it now (a vnet jail's, when w is
+ * in its scope), in w's pool; NULL with *errp set when there is no such
+ * sysctl, or sysctl(8) could not be run.
+ */
+const char *
+sysctl_get(struct work *w, const char *name, const char **errp)
+{
+	struct execres	 res;
+	char		*argv[4], *v;
+	size_t		 n;
+
+	if (!sysctl_name_ok(name)) {
+		*errp = "a sysctl is named with letters, digits and . _ - %";
+		return (NULL);
+	}
+	argv[0] = (char *)(uintptr_t)opts.sysctl_bin;
+	argv[1] = (char *)(uintptr_t)"-n";
+	argv[2] = (char *)(uintptr_t)name;
+	argv[3] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "sysctl"));
+		return (NULL);
+	}
+	n = res.outlen;
+	v = wcalloc(w, n + 1, 1);
+	if (res.out != NULL)
+		memcpy(v, res.out, n);
+	while (n > 0 && (v[n - 1] == '\n' || v[n - 1] == '\r'))
+		v[--n] = '\0';
+	if (!sysctl_value_ok(v)) {
+		*errp = wfmt(w, "%s's value is not one line: it cannot be put "
+		    "back", name);
+		return (NULL);
+	}
+	return (v);
 }
 
 /*

@@ -859,13 +859,18 @@ static struct {
 	time_t	 by;
 } pend;
 
+/* A job's safe configure: BIRD's own timer runs, and the job's confirm
+ * or undo is to come; until then no other change goes to BIRD.  Under
+ * pend_lock. */
+static bool	job_timer;
+
 static bool
 pending(void)
 {
 	bool	p;
 
 	pthread_mutex_lock(&pend_lock);
-	p = pend.active;
+	p = pend.active || job_timer;
 	pthread_mutex_unlock(&pend_lock);
 	return (p);
 }
@@ -1251,5 +1256,121 @@ back:
 	    NULL) == 0, NULL);
 	rsp->conf_text = wtext(w, old);
 	rsp->sha256 = sha;
+	return (0);
+}
+
+/*
+ * A job's verbs in safe mode.  Enable and disable are undone by their
+ * opposite, from the protocol's state before: "down" is disabled, any
+ * other state (up, start, …) is enabled, as show protocols says it.
+ */
+int
+bird_proto_enabled(struct work *w, const char *name, bool *enabledp,
+    const char **errp)
+{
+	struct execres	 res;
+	const char	*line, *nl, *p;
+	size_t		 nl_len, col;
+
+	if (birdc(w, true, "show", "protocols", name, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "birdc"));
+		return (-1);
+	}
+	nl_len = strlen(name);
+	for (line = res.out; line != NULL && *line != '\0'; line = *nl !=
+	    '\0' ? nl + 1 : nl) {
+		nl = line + strcspn(line, "\n");
+		if (strncmp(line, "No protocols match", 18) == 0)
+			break;
+		if (strncmp(line, name, nl_len) != 0 || (line[nl_len] != ' ' &&
+		    line[nl_len] != '\t'))
+			continue;
+		/* Name, Proto, Table, State: the fourth word. */
+		p = line + nl_len;
+		for (col = 1; col < 3; col++) {
+			p += strspn(p, " \t");
+			p += strcspn(p, " \t\n");
+		}
+		p += strspn(p, " \t");
+		*enabledp = strncmp(p, "down", 4) != 0 || (p[4] != ' ' &&
+		    p[4] != '\t' && p[4] != '\n' && p[4] != '\0');
+		return (0);
+	}
+	*errp = wfmt(w, "BIRD has no protocol %s", name);
+	return (-1);
+}
+
+/*
+ * configure, with BIRD's own timer a little longer than the job's wait:
+ * confirmed by the job, or taken back by BIRD itself, whichever comes
+ * first.  One at a time: the operation's change, or another job's.
+ */
+int
+bird_configure_safe(struct work *w, int wait, const char **errp)
+{
+	struct execres	res;
+
+	pthread_mutex_lock(&pend_lock);
+	if (pend.active || job_timer) {
+		pthread_mutex_unlock(&pend_lock);
+		*errp = "a change to BIRD's configuration waits to be "
+		    "confirmed: it stays or is taken back first";
+		return (-1);
+	}
+	job_timer = true;
+	pthread_mutex_unlock(&pend_lock);
+	if (birdc(w, false, "configure", "timeout", wfmt(w, "%d", wait), &res) !=
+	    0 || !took(&res)) {
+		pthread_mutex_lock(&pend_lock);
+		job_timer = false;
+		pthread_mutex_unlock(&pend_lock);
+		*errp = wfmt(w, "BIRD did not take its configuration: %s",
+		    said(w, &res));
+		return (-1);
+	}
+	return (0);
+}
+
+/* The job was confirmed: BIRD is told to keep it.  "Nothing to do" is
+ * BIRD's word for a timer that has run out: the change is gone. */
+int
+bird_configure_confirm(struct work *w, const char **errp)
+{
+	struct execres	res;
+	int		rc;
+
+	rc = birdc(w, false, "configure", "confirm", NULL, &res);
+	pthread_mutex_lock(&pend_lock);
+	job_timer = false;
+	pthread_mutex_unlock(&pend_lock);
+	if (rc == 0 && res.out != NULL && strstr(res.out, "Reconfiguration "
+	    "confirmed") != NULL)
+		return (0);
+	*errp = res.out != NULL && strstr(res.out, "Nothing to do") != NULL ?
+	    "its timer had run out, and BIRD had taken the change back" :
+	    wfmt(w, "BIRD did not confirm it: %s", said(w, &res));
+	return (-1);
+}
+
+/* The job was not confirmed: BIRD is told to take it back now. */
+int
+bird_configure_undo(struct work *w, const char **errp)
+{
+	struct execres	res;
+	int		rc;
+
+	rc = birdc(w, false, "configure", "undo", NULL, &res);
+	pthread_mutex_lock(&pend_lock);
+	job_timer = false;
+	pthread_mutex_unlock(&pend_lock);
+	if (rc != 0) {
+		*errp = wtext(w, exec_error(w, &res, "birdc"));
+		return (-1);
+	}
+	if (res.out != NULL && (strstr(res.out, "not available") != NULL ||
+	    strstr(res.out, "error") != NULL)) {
+		*errp = wfmt(w, "BIRD did not take it back: %s", said(w, &res));
+		return (-1);
+	}
 	return (0);
 }

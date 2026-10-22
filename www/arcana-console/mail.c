@@ -584,17 +584,29 @@ event(const struct mailconf *mc, const char *host, const ucl_object_t *e)
 			    "", ucl_object_toboolean(ucl_object_lookup(d,
 			    "over")) ? "over" : "back under", str(d, "value"),
 			    str(d, "limit"));
-		} else if (strcmp(kind, "job") == 0 && strcmp(jobs, "none") !=
-		    0) {
-			if (ucl_object_toboolean(ucl_object_lookup(d, "ok"))) {
+		} else if (strcmp(kind, "job") == 0) {
+			const char	*error = str(d, "error") != NULL ?
+			    str(d, "error") : "failed";
+
+			/* A safe change that could not be taken back is an
+			 * alert whatever the settings say of jobs: the host
+			 * is left changed and unconfirmed. */
+			if (!ucl_object_toboolean(ucl_object_lookup(d, "ok")) &&
+			    strstr(error, "could not be undone") != NULL)
+				hold(ch, "%s %s: ALERT: job %s was not confirmed "
+				    "and could not be undone, the host is left "
+				    "changed: %s: %s", when, host, str(d, "id"),
+				    str(d, "title"), error);
+			else if (strcmp(jobs, "none") == 0)
+				continue;
+			else if (ucl_object_toboolean(ucl_object_lookup(d,
+			    "ok"))) {
 				if (strcmp(jobs, "all") == 0)
 					hold(ch, "%s %s: job %s done: %s", when,
 					    host, str(d, "id"), str(d, "title"));
 			} else
 				hold(ch, "%s %s: job %s failed: %s: %s", when,
-				    host, str(d, "id"), str(d, "title"), str(d,
-				    "error") != NULL ? str(d, "error") :
-				    "failed");
+				    host, str(d, "id"), str(d, "title"), error);
 		}
 	}
 }

@@ -62,6 +62,7 @@
 .Op Fl Z Ar zpool
 .Op Fl P Ar pkg
 .Op Fl -pkg-idle Ar seconds
+.Op Fl -jobs-conf Ar file
 .Op Fl -bird-watch Ar seconds
 .Op Fl -sctp-also Ar addresses
 .Op Fl -telegram-api Ar url
@@ -344,6 +345,11 @@ may say nothing before it is stopped, with what it started
 a download that stalls, or a question pkg waits on.
 Off a terminal pkg prints a dot for each tenth of a download.
 Default 600.
+.It Fl -jobs-conf Ar file
+Where how many jobs of pkg in jails run at once is kept
+.Pq Cm jobs-set ;
+.Pa /usr/local/etc/arcana/jobs.conf
+by default.
 .It Fl -bird-watch Ar seconds
 How often the BIRD of the host, and that of each running jail with a
 network of its own where
@@ -581,7 +587,30 @@ the daemon undoes the change, as it also does when it is stopped while
 waiting, or when the job is cancelled while it waits
 .Pq job-cancel :
 an address is put back with the prefix length it had, an
-interface brought back up or down, a route deleted or added again.
+interface brought back up or down, a route deleted or added again, a
+sysctl set to the value it had and its line in
+.Pa sysctl.conf
+put back or taken out, a route deleted without its gateway added back as
+the kernel listed it, a BIRD protocol enabled or disabled again, and
+BIRD's configuration taken back by BIRD itself
+.Pq Cm configure undo ,
+which read it with a timer a little longer than the wait, and is told to
+keep it
+.Pq Cm configure confirm
+when the job is confirmed, and a WireGuard interface synced back
+.Pq Cm wg syncconf
+from what
+.Cm wg showconf
+printed before, a text held in memory only and never written to the
+trace, with its
+.Xr wg-quick 8
+file and the
+.Pa rc.conf
+variables as they were, and an IPsec connection's files put back before
+.Xr swanctl 8
+reads them again, its SAs ended first when the connection was new.
+What has to be read before the change for that, and cannot be, fails
+the job before the change is made.
 .Sh BUILDS
 A client may ask for
 .Nm

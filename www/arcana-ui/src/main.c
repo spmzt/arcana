@@ -710,6 +710,8 @@ submit_form(const char *form, const ucl_object_t *f)
 
 			/* From one repository: pkg install -r. */
 			rp[0] = '\0';
+			pkg_repo_keep(cur_server(), app.pkg.jail, "install",
+			    jstr(f, "repo"));
 			if (jstr(f, "repo") != NULL && jstr(f, "repo")[0] != '\0') {
 				qr = json_quote(jstr(f, "repo"));
 				snprintf(rp, sizeof(rp), ",\"pkg_repo\":%s", qr);
@@ -728,6 +730,90 @@ submit_form(const char *form, const ucl_object_t *f)
 		    jstr(f, "names"), app.pkg.jail[0] != '\0' ? " in " : "",
 		    app.pkg.jail);
 		free(b.s);
+		app.modal = MODAL_NONE;
+		job_send(cur_server(), q, title, JOB_PACKAGES, app.pkg.jail);
+	} else if (strcmp(form, "jobs-lanes") == 0 && cur_server() != NULL) {
+		set_job_lanes(cur_server(), jstr(f, "lanes") != NULL ?
+		    atoi(jstr(f, "lanes")) : 0);
+	} else if (strcmp(form, "jail-base") == 0 && cur_server() != NULL) {
+		char	*q, *qj, *qr, title[300];
+
+		/* A jail's base to pkgbase, or to a newer release: a job. */
+		if (app.pkg.jail[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "Choose a jail first");
+			return;
+		}
+		s = jstr(f, "release") != NULL ? jstr(f, "release") : "";
+		if (app.pkg.base_up && (s[0] == '\0' || strspn(s, "0123456789.")
+		    != strlen(s))) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "Name the release to go to: 16, or 15.2");
+			return;
+		}
+		if (strspn(s, "0123456789.") != strlen(s)) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "A release is 16, or 15.2");
+			return;
+		}
+		qj = json_quote(app.pkg.jail);
+		qr = json_quote(s);
+		{
+			struct html	 b;
+			const char	*p;
+			char		 word[80], *w, rp[96], *qp;
+			size_t		 n, nw;
+
+			/* The base from one of the jail's repositories. */
+			rp[0] = '\0';
+			pkg_repo_keep(cur_server(), app.pkg.jail, "base",
+			    jstr(f, "repo"));
+			if (jstr(f, "repo") != NULL && jstr(f, "repo")[0] != '\0') {
+				qp = json_quote(jstr(f, "repo"));
+				snprintf(rp, sizeof(rp), ",\"pkg_repo\":%s", qp);
+				free(qp);
+			}
+			/* The sets named, as a JSON array; none, the default. */
+			memset(&b, 0, sizeof(b));
+			nw = 0;
+			for (p = jstr(f, "sets") != NULL ? jstr(f, "sets") : "";
+			    !app.pkg.base_up && *p != '\0'; ) {
+				p += strspn(p, " ,\t");
+				n = strcspn(p, " ,\t");
+				if (n == 0)
+					break;
+				if (n >= sizeof(word) || strspn(p,
+				    "abcdefghijklmnopqrstuvwxyz"
+				    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.+") < n) {
+					snprintf(app.modal_error,
+					    sizeof(app.modal_error), "A set is "
+					    "named FreeBSD-set-...");
+					free(b.s);
+					free(qj);
+					free(qr);
+					return;
+				}
+				snprintf(word, sizeof(word), "%.*s", (int)n, p);
+				w = json_quote(word);
+				h_fmt(&b, "%s%s", nw++ > 0 ? "," : "", w);
+				free(w);
+				p += n;
+			}
+			if (asprintf(&q, "{\"kind\":\"jail-base\",\"jail\":%s,"
+			    "\"verb\":\"%s\",\"packages\":[%s]%s%s%s%s%s}", qj,
+			    app.pkg.base_up ? "upgrade" : "convert", b.s != NULL ?
+			    b.s : "", s[0] != '\0' ? ",\"release\":" : "",
+			    s[0] != '\0' ? qr : "", app.pkg.ip != 0 ? (app.pkg.ip ==
+			    4 ? ",\"pkg_ip\":4" : ",\"pkg_ip\":6") : "", jbool(f,
+			    "anyos") ? ",\"force\":true" : "", rp) == -1)
+				abort();
+			free(b.s);
+		}
+		free(qj);
+		free(qr);
+		snprintf(title, sizeof(title), "jail %s: %s%s", app.pkg.jail,
+		    app.pkg.base_up ? "base to " : "to pkgbase", app.pkg.base_up ?
+		    s : "");
 		app.modal = MODAL_NONE;
 		job_send(cur_server(), q, title, JOB_PACKAGES, app.pkg.jail);
 	} else if (strcmp(form, "login-token") == 0) {
@@ -806,6 +892,7 @@ submit_form(const char *form, const ucl_object_t *f)
 		/* From one repository, or any. */
 		snprintf(app.pkg.repo, sizeof(app.pkg.repo), "%s",
 		    jstr(f, "repo") != NULL ? jstr(f, "repo") : "");
+		pkg_repo_keep(s2, app.pkg.jail, "upgrade", app.pkg.repo);
 		if (dry)
 			pkg_upgrade(s2, any ? names : NULL, true, false);
 		else if (any)
@@ -1111,8 +1198,9 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_packages(s, false);
 	} else if (strcmp(act, "pkg-target") == 0 && s != NULL) {
 		snprintf(app.pkg.jail, sizeof(app.pkg.jail), "%s", arg);
-		/* Another's repositories: none chosen there yet. */
-		app.pkg.repo[0] = '\0';
+		/* The repository chosen there last time, kept by the console. */
+		snprintf(app.pkg.repo, sizeof(app.pkg.repo), "%s",
+		    pkg_repo_kept(s, arg, "upgrade"));
 		if (app.pkg.data != NULL)
 			ucl_object_unref(app.pkg.data);
 		app.pkg.data = NULL;
@@ -1122,6 +1210,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		refresh_packages(s, true);
 	} else if (strcmp(act, "pkg-install") == 0 && s != NULL) {
 		app.modal = MODAL_PKG_INSTALL;
+		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "jail-base") == 0 && s != NULL) {
+		app.pkg.base_up = strcmp(arg, "upgrade") == 0;
+		app.modal = MODAL_JAIL_BASE;
 		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "pkg-clean") == 0 && s != NULL) {
 		snprintf(body, sizeof(body), "pkg clean%s on %s%s%s: %s",
@@ -1239,7 +1331,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		const ucl_object_t	*j;
 		ucl_object_iter_t	 it;
 		struct queued		*q;
-		char			*qj;
+		char			*qj, *qr;
 		int			 n;
 
 		n = (int)ucl_array_size(jget(s->list, "jails"));
@@ -1253,10 +1345,16 @@ dispatch(const char *act, const char *arg, const char *value)
 			    NULL || strcmp(jstr(j, "state"), "running") != 0)
 				continue;
 			qj = json_quote(jstr(j, "name"));
+			/* From the repository chosen for that jail, if one. */
+			qr = json_quote(pkg_repo_kept(s, jstr(j, "name"), "upgrade"));
 			if (asprintf(&q[n].json, "{\"kind\":\"pkg-upgrade\","
-			    "\"jail\":%s}", qj) == -1)
+			    "\"jail\":%s%s%s}", qj, pkg_repo_kept(s, jstr(j, "name"),
+			    "upgrade")[0] != '\0' ? ",\"pkg_repo\":" : "",
+			    pkg_repo_kept(s, jstr(j, "name"), "upgrade")[0] != '\0' ?
+			    qr : "") == -1)
 				abort();
 			free(qj);
+			free(qr);
 			snprintf(q[n].title, sizeof(q[n].title), "pkg upgrade in "
 			    "%s", jstr(j, "name"));
 			snprintf(q[n].target, sizeof(q[n].target), "%s",
@@ -1626,6 +1724,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		refresh_packages(s, false);
 	} else if (strcmp(act, "open-job") == 0 && s != NULL) {
 		open_job(s, atoll(arg), value);
+	} else if (strcmp(act, "job-cancel") == 0 && s != NULL) {
+		cancel_job(s, atoll(arg), value);
+	} else if (strcmp(act, "jobs-clear") == 0 && s != NULL) {
+		cancel_queued_jobs(s);
 	} else if (strcmp(act, "refresh") == 0 && s != NULL) {
 		int	before = app.nextop;
 

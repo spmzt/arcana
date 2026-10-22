@@ -1451,6 +1451,48 @@ one of those
 .Cm packages
 lists, enabled or not.
 What is still pending follows.
+.It Cm jail-base Ar jail Cm convert Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl r Ar repo Oc Oo Fl b Ar release Oc Op Ar set ...
+.It Cm jail-base Ar jail Cm upgrade Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl r Ar repo Oc Ar release
+A running jail's base system by
+.Xr pkg 8 ,
+as pkgbase; a job.
+.Cm convert
+installs the base system packages over the jail's files from the
+official base repository of the jail's own release
+.Pq Fl b Ar release No names another branch: Dq 16 , the latest of that major, or Dq 15.2 ,
+the sets named, or
+.Li FreeBSD-set-base-jail
+when none; the repository must have them.
+The official repository is written in the jail under a name of
+arcana's own,
+.Li arcana-base ,
+so that a repository of the admin's is not merged into it;
+.Fl r Ar repo
+uses one of the jail's own repositories instead, as it is.
+.Cm upgrade
+takes a jail already on pkgbase to
+.Ar release ,
+its base packages and then its other packages for the new ABI, never
+beyond the host's kernel.
+Both write the repository's file in the jail, keep its
+.Pa /etc
+aside in
+.Pa /var/backups/etc-before-pkgbase.tar
+first, and name the
+.Pa .pkgnew
+and
+.Pa .pkgsave
+files left to merge; the jail is to be restarted after.
+.Fl O
+reads past
+.Ev OSVERSION
+for the other packages;
+.Fl 4
+and
+.Fl 6
+as for
+.Cm pkg-upgrade .
+Needs FreeBSD 15.1 or later in the jail.
 .It Cm pkg-clean Oo Fl a Oc Oo Fl j Ar jail | Fl J Oc
 .Nm pkg clean Fl y ,
 a job: the downloaded packages no longer needed, or no longer in the
@@ -1474,6 +1516,13 @@ also packages built for a newer FreeBSD; with
 from that repository alone.
 .It Cm jobs
 The host's queued, running and recently finished jobs.
+.It Cm jobs Cm lanes Ar number
+How many jobs of pkg in jails run at once, 1 to 32, kept for the
+agent's next start in
+.Pa jobs.conf
+beside its other kept files;
+.Cm jobs
+says the number.
 .It Cm job Oo Fl w Oc Ar id
 One job with the trace of what it has done so far;
 .Fl w
@@ -1810,10 +1859,44 @@ With
 nobody confirms.
 Safe mode is for what can be taken back: an address, an interface's
 state, MTU and description, an interface made, a route, a jail's
-address, a service's variables, and a service started, stopped, enabled
-or disabled.
-A change that would take away the address the request came in by is
-refused unless it is made in safe mode.
+address, a service's variables, a service started, stopped, enabled
+or disabled, a sysctl, whose value before (and its line in
+.Pa sysctl.conf ,
+with
+.Fl p )
+is put back (one the kernel takes only once keeps the new value until it
+boots again, and the job says so), a route deleted without its gateway
+(put back as the kernel listed it; one of several ways is not deleted),
+and BIRD told something: a protocol enabled or disabled is put back as
+it was,
+.Cm configure
+runs on BIRD's own timer, confirmed or undone with the job, and a restart
+or reload has nothing to put back, which the job says), and a WireGuard
+interface's key, port or peers, synced back from what
+.Xr wg 8
+printed before the change, with
+.Xr wg-quick 8 Ns 's
+file and the
+.Pa rc.conf
+variables as they were, and an IPsec connection or child made, changed
+or taken away, whose files go back as they were before the daemon reads
+them again (a connection that was new has its SAs ended first), and
+.Cm up
+and
+.Cm down ,
+each the other's undo;
+.Cm init
+and
+.Cm start
+are refused in safe mode.
+A change that would cut the client off is refused unless it is made in
+safe mode: taking away the address the request came in by, bringing its
+interface down or destroying it, moving that interface to another table
+.Pq Cm fib , Cm tunnelfib ,
+a route added or deleted over the client's address in the table that
+interface is in, the sysctls that turn forwarding or the tables over
+.Pq Va net.fibs , net.add_addr_allfibs , net.inet.ip.forwarding , net.inet6.ip6.forwarding ,
+and the firewall's rules swapped in or turned on.
 .Pp
 These run
 .Xr ifconfig 8

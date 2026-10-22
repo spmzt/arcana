@@ -6057,7 +6057,7 @@ static bool
 job_run(const char *sid, const ucl_object_t *j, char *why, size_t wlen)
 {
 	char		 uri[256], peer[256], name[128], *json, jail[64];
-	const char	*e, *st;
+	const char	*e, *st, *note;
 	ucl_object_t	*ans, *jr, *jj;
 	uint64_t	 id;
 	time_t		 until;
@@ -6117,7 +6117,13 @@ job_run(const char *sid, const ucl_object_t *j, char *why, size_t wlen)
 	jj = ucl_object_copy(j);
 	if (jail[0] != '\0')
 		put(jj, "jail", S(jail));
-	json = hosts_submit(uri, peer, name, jj, &status, &e);
+	/* In safe mode where the kind can be undone: the poll below, a
+	 * fresh connection to the host, is what confirms it. */
+	json = workflow_submit(uri, peer, name, jj, &status, &e, &note);
+	if (note != NULL)
+		kore_log(LOG_NOTICE, "sdwan apply: %s: %s %s: %s", name, str(j,
+		    "kind"), str(j, "interface") != NULL ? str(j, "interface") :
+		    "", note);
 	ucl_object_unref(jj);
 	if (json == NULL) {
 		snprintf(why, wlen, "%s", e != NULL ? e : "not sent");

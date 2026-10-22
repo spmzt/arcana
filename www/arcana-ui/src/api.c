@@ -25,7 +25,8 @@ struct inflight {
 	/* A GET of a host's: kept for the tab it was made for (export.c). */
 	char		 url[300];
 	int		 node, tab;
-	int		 op;		/* the quiet task it is, or 0 */
+	int		 op;		/* the task it is, or 0 */
+	bool		 awaited;	/* op: the task that awaited it; else a quiet poll */
 	void		 (*wcb)(bool, const char *, void *);
 	void		*arg;
 };
@@ -87,11 +88,17 @@ api(const char *method, const char *url, const char *body, api_cb *cb,
 	 * request after is its, said in its graph while it waits.
 	 */
 	p->op = 0;
+	p->awaited = false;
 	if (app.nops > 0 && app.ops[0].await) {
 		snprintf(app.ops[0].method, sizeof(app.ops[0].method), "%s",
 		    method);
 		snprintf(app.ops[0].url, sizeof(app.ops[0].url), "%s", url);
 		app.ops[0].await = false;
+		/* Bound to it: given up with it, and ended by its answer
+		 * when its callback does not end it. */
+		p->op = app.ops[0].id;
+		p->awaited = true;
+		app.ops[0].req = id;
 	} else if (app.quiet && strcmp(method, "GET") == 0)
 		/* The page's own poll: a task too, shown apart from what
 		 * was asked for, so that every exchange can be seen. */
@@ -146,9 +153,11 @@ arc_on_http(int id, int status, char *text)
 	}
 	if (status == 200 && p.url[0] != '\0')
 		export_note(p.url, p.node, p.tab, o);
-	if (p.op != 0)
+	if (p.op != 0 && !p.awaited)
 		op_quiet_end(p.op, status);
 	p.cb(status, o, err, p.arg);
+	if (p.awaited)
+		op_answered(p.op, id, status, o, err);
 	if (o != NULL)
 		ucl_object_unref(o);
 	free(text);

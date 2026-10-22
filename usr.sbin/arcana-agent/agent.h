@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.177.0"
+#define	ARCANA_AGENT_VERSION	"0.186.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -172,6 +172,8 @@ struct opts {
 	const char	*root;		/* --root: the system's files under it */
 	int		 bird_watch_s;	/* --bird-watch: BIRD's sessions, how often */
 	int		 pkg_idle_s;	/* --pkg-idle: a silent pkg, stopped after */
+	int		 pkg_lanes;	/* jobs of pkg in jails at once, at start */
+	const char	*jobs_conf;	/* where lanes is kept */
 	char		 build[65];	/* SHA-256 of the running program */
 	bool		 debug;
 };
@@ -481,6 +483,8 @@ struct route_more {
 };
 int		 do_route(struct work *, const char *, const char *, bool,
 		    uint32_t, const struct route_more *, bool, const char **);
+int		 route_snapshot(struct work *, const char *, uint32_t,
+		    const char **, struct route_more *, bool *, const char **);
 
 /* invidia/rcconf.c: what of the network rc.conf keeps. */
 bool		 rc_name_ok(const char *);
@@ -502,6 +506,10 @@ const char	*wg_check(struct work *, const struct arc_job_spec *);
 int		 do_wg(struct work *, const struct arc_job_spec *,
 		    const char **);
 void		 wg_forget(struct work *, const char *);
+char		*wg_conf_path(struct work *, const char *);
+int		 wg_showconf(struct work *, const char *, char **, const char **);
+int		 wg_syncconf(struct work *, const char *, const char *,
+		    const char **);
 bool		 wg_key_ok(const char *);
 
 /* luxuria/ipsec.c: a plugin, strongSwan through swanctl(8). */
@@ -509,11 +517,20 @@ int		 do_ipsec(struct work *, struct arc_network_rsp *);
 const char	*ipsec_check(const struct arc_job_spec *);
 int		 do_ipsec_job(struct work *, const struct arc_job_spec *,
 		    const char **);
+void		 ipsec_conn_files(struct work *, const char *, const char **,
+		    const char **, const char **);
+int		 ipsec_undo(struct work *, const char *, bool, const char **);
+int		 ipsec_toggle(struct work *, const char *, bool, const char **);
 
 /* luxuria/bird.c: a plugin, through birdc(8). */
 int		 do_bird(struct work *, struct arc_network_rsp *);
 void		 bird_watch_start(void);
 const char	*bird_check(const char *, const char *const *, size_t);
+int		 bird_proto_enabled(struct work *, const char *, bool *,
+		    const char **);
+int		 bird_configure_safe(struct work *, int, const char **);
+int		 bird_configure_confirm(struct work *, const char **);
+int		 bird_configure_undo(struct work *, const char **);
 int		 do_bird_verb(struct work *, const char *, const char *const *,
 		    size_t, const char **);
 int		 do_bird_config(struct work *,
@@ -697,6 +714,10 @@ int		 do_sysctl_jail(struct work *, const char *,
 int		 do_sysctl_set(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 sysctl_name_ok(const char *);
+const char	*sysctl_get(struct work *, const char *, const char **);
+const char	*sysctl_conf_get(struct work *, const char *);
+int		 sysctl_conf_restore(struct work *, const char *, const char *,
+		    const char **);
 bool		 valid_jail(const char *);
 bool		 valid_ifname(const char *);
 bool		 sysctl_part(struct cbl_dump_state *, const char *, char **,
@@ -748,6 +769,8 @@ int		 do_path_check(struct work *, const char *, const char *,
 		    const char *, uint32_t, const char *, bool, uint32_t, bool,
 		    struct arc_path_check_rsp *);
 bool		 kmod_loaded(const char *);
+bool		 prefix_covers(const uint8_t *, const uint8_t *, int);
+int		 if_fib(const char *);
 
 /* acedia/storage.c: disks, pools, datasets, mounts. */
 int		 do_storage(struct work *, uint8_t, const char *,
@@ -837,6 +860,14 @@ int		 do_packages(struct work *, const char *, bool, bool, uint8_t,
 int		 do_pkg_upgrade(struct work *, const struct arc_pkg_upgrade_req *,
 		    struct arc_pkg_upgrade_rsp *);
 int		 do_pkg_clean(struct work *, const char *, bool, const char **);
+int		 do_jail_base(struct work *, const struct arc_job_spec *,
+		    const char **);
+const char	*pkg_repo_error(struct work *, const struct execres *,
+		    const char *);
+const char	*pkg_repo_check(struct work *, const char *, const char *);
+int		 jobs_lanes(void);
+const char	*jobs_set_lanes(int);
+void		 jobs_conf_load(void);
 int		 do_pkg_install(struct work *, const struct arc_job_spec *,
 		    const char **);
 

@@ -36,7 +36,6 @@ static void	osversion_ask(const char *, bool, bool);
 static void	 who_set(const ucl_object_t *);
 static struct ctx *ctx_new(void);
 static struct op *op_new(const char *, const char *);
-static void	op_done(struct op *, bool, const ucl_object_t *, const char *);
 static struct server *server_by_id(const char *);
 static void	merge_jail(struct server *, const ucl_object_t *);
 static char	*emit(const ucl_object_t *);
@@ -535,7 +534,7 @@ op_trace_fetch(struct op *op)
 	api("GET", url, NULL, trace_fetch_cb, c);
 }
 
-static void
+void
 op_done(struct op *o, bool ok, const ucl_object_t *reply, const char *err)
 {
 	const ucl_object_t	*t;
@@ -821,14 +820,16 @@ job_submit_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		if ((op = op_find(sub->ops[i])) == NULL)
 			continue;
 		snprintf(path, sizeof(path), "jobs.%d.id", i);
-		if (status == 200 && jbool(o, "ok") && jget(o, path) != NULL) {
+		if (status == 200 && jbool(o, "ok") && jint(o, path, 0) > 0) {
 			op->job = op->watched = jint(o, path, 0);
 			op->next_poll = arc_now();
 			snprintf(op->stage, sizeof(op->stage), "accepted");
 			continue;
 		}
 		if (status == 200)
-			err = jstr(o, "error");
+			err = jstr(o, "error") != NULL ? jstr(o, "error") :
+			    jbool(o, "ok") ? "the console gave it no job number" :
+			    NULL;
 		op_done(op, false, o, err);
 		op->job = -1;
 		job_finished(op, false, err);
@@ -845,7 +846,7 @@ jobs_submit(struct server *s, struct queued *q, int n)
 	struct op	*op;
 	char		*body, *p, url[128];
 	size_t		 len;
-	int		 i;
+	int		 i, req;
 
 	if ((sub = calloc(1, sizeof(*sub))) == NULL)
 		abort();
@@ -883,7 +884,9 @@ jobs_submit(struct server *s, struct queued *q, int n)
 			snprintf(op->url, sizeof(op->url), "%s", url);
 			op->await = false;
 		}
-	api("POST", url, body, job_submit_cb, sub);
+	req = api("POST", url, body, job_submit_cb, sub);
+	for (i = 0; i < sub->nops; i++)
+		op_wait(sub->ops[i], req);
 	free(body);
 }
 
@@ -1652,6 +1655,46 @@ jobs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	free(c);
 }
 
+static void
+lanes_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct ctx	*c;
+	struct server	*s;
+
+	c = arg;
+	if (status != 200 || !jbool(o, "ok"))
+		toast(true, "%s: lanes not set: %s", c->name, status == 200 &&
+		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
+		    err : "failed");
+	else
+		toast(false, "%s: pkg in jails, %lld at once", c->name,
+		    (long long)jint(o, "lanes", 0));
+	if ((s = server_by_id(c->sid)) != NULL) {
+		s->jobs_loading = false;
+		refresh_jobs(s);
+	}
+	free(c);
+}
+
+/* How many jobs of pkg in jails the host runs at once: 1 to 32. */
+void
+set_job_lanes(struct server *s, int lanes)
+{
+	struct ctx	*c;
+	char		 url[128], body[32];
+
+	if (lanes < 1 || lanes > 32) {
+		toast(true, "%s: lanes is 1 to 32", s->name);
+		return;
+	}
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	snprintf(c->name, sizeof(c->name), "%s", s->name);
+	snprintf(url, sizeof(url), "/api/servers/%s/jobs/config", s->id);
+	snprintf(body, sizeof(body), "{\"lanes\":%d}", lanes);
+	api("POST", url, body, lanes_cb, c);
+}
+
 /* The host's own record of jobs, whoever queued them; quiet. */
 void
 refresh_jobs(struct server *s)
@@ -1821,6 +1864,8 @@ refresh_packages(struct server *s, bool refresh)
 		app.pkg.result[0] = '\0';
 		/* Another host: its own packages, not a jail of the last. */
 		app.pkg.jail[0] = '\0';
+		snprintf(app.pkg.repo, sizeof(app.pkg.repo), "%s",
+		    pkg_repo_kept(s, "", "upgrade"));
 		app.pkg.anyos = app.pkg.asked = false;
 	}
 	snprintf(app.pkg.sid, sizeof(app.pkg.sid), "%s", s->id);
@@ -2901,13 +2946,65 @@ job_cancel_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	struct ctx	*c;
 
+	struct server	*s;
+
 	c = arg;
 	/* Taken back, the next reading of the job ends its entry. */
 	if (status != 200 || !jbool(o, "ok"))
 		toast(true, "%s: not cancelled: %s", c->name, status == 200 &&
 		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
 		    err : "failed");
+	else if (c->sid[0] != '\0')
+		toast(false, "%s: %s", c->name, jstr(o, "job.state") != NULL ?
+		    jstr(o, "job.state") : "cancelled");
+	/* Asked from the Jobs tab: its record read again. */
+	if (c->sid[0] != '\0' && (s = server_by_id(c->sid)) != NULL) {
+		s->jobs_loading = false;
+		refresh_jobs(s);
+	}
 	free(c);
+}
+
+/*
+ * Job id of the server's record taken back, from the Jobs tab: out of
+ * the queue if it has not started, undone if it waits to be confirmed;
+ * the agent says when it can be neither.
+ */
+void
+cancel_job(struct server *s, long long id, const char *title)
+{
+	struct ctx	*c;
+	char		 url[128];
+
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	snprintf(c->name, sizeof(c->name), "%s", title != NULL && title[0] !=
+	    '\0' ? title : "the job");
+	snprintf(url, sizeof(url), "/api/servers/%s/jobs/%lld", s->id, id);
+	api("DELETE", url, NULL, job_cancel_cb, c);
+}
+
+/* Every job still queued on the server taken back, one by one. */
+void
+cancel_queued_jobs(struct server *s)
+{
+	const ucl_object_t	*j, *arr;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	if (s->jobs == NULL || (arr = jget(s->jobs, "jobs")) == NULL)
+		return;
+	it = NULL;
+	n = 0;
+	while ((j = ucl_object_iterate(arr, &it, true)) != NULL)
+		if (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
+		    "queued") == 0) {
+			cancel_job(s, (long long)jint(j, "id", 0), jstr(j,
+			    "title"));
+			n++;
+		}
+	if (n == 0)
+		toast(false, "%s: nothing is queued", s->name);
 }
 
 /*
@@ -2939,6 +3036,35 @@ op_cancel(struct op *op)
 		live_cancel(op->id);
 	else if (op->req != 0)
 		arc_http_abort(op->req);
+	else
+		/* Nothing is on its way for it: it waits for an answer that
+		 * cannot come, so it is given up here and now. */
+		op_done(op, false, NULL, "given up");
+}
+
+/*
+ * Request req, which task opid awaited, has been answered and its
+ * callback has run.  A task the callback did not end — did not make a
+ * job of, a live read, or hand on to another request — would wait for
+ * ever: it is ended here by what the answer was.
+ */
+void
+op_answered(int opid, int req, int status, const ucl_object_t *o,
+    const char *err)
+{
+	struct op	*op;
+	bool		 ok;
+
+	if ((op = op_find(opid)) == NULL || op->req != req)
+		return;
+	op->req = 0;
+	if (op->state != OP_RUNNING || op->job != 0 || op->live || op->await)
+		return;
+	ok = status >= 200 && status < 300 && (jget(o, "ok") == NULL ||
+	    jbool(o, "ok"));
+	if (!ok && err == NULL)
+		err = status == 200 ? jstr(o, "error") : "no answer";
+	op_done(op, ok, o, err);
 }
 
 /* Dotted versions compared number by number: <0, 0, >0. */
@@ -3548,3 +3674,72 @@ load_push(void)
 	api("GET", "/api/push", NULL, push_cb, NULL);
 }
 
+
+/*
+ * Which of pkg's repositories an action (upgrade, install, base) takes
+ * from on s, in a jail or on the host ("" or NULL): what was chosen
+ * there last time, kept with the server by the console; "" for any.
+ */
+const char *
+pkg_repo_kept(const struct server *s, const char *jail, const char *action)
+{
+	const ucl_object_t	*o;
+	const char		*v;
+
+	if (s == NULL || s->list == NULL || (o = jget(s->list, "pkg_repos")) ==
+	    NULL)
+		return ("");
+	o = ucl_object_lookup(o, jail != NULL && jail[0] != '\0' ? jail : ".");
+	v = o != NULL ? jstr(o, action) : NULL;
+	return (v != NULL ? v : "");
+}
+
+static void
+repo_kept_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)o;
+	(void)arg;
+	if (status != 200)
+		toast(true, "The repository chosen was not kept by the "
+		    "console: %s", err != NULL ? err : "no answer");
+}
+
+/* The choice made now, kept with the server for the next time. */
+void
+pkg_repo_keep(struct server *s, const char *jail, const char *action,
+    const char *repo)
+{
+	ucl_object_t	*all, *jo;
+	const char	*key;
+	char		*json, url[64], *body;
+
+	if (s == NULL || s->list == NULL)
+		return;
+	repo = repo != NULL ? repo : "";
+	if (strcmp(pkg_repo_kept(s, jail, action), repo) == 0)
+		return;
+	key = jail != NULL && jail[0] != '\0' ? jail : ".";
+	if ((all = (ucl_object_t *)(uintptr_t)jget(s->list, "pkg_repos")) ==
+	    NULL) {
+		all = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key((ucl_object_t *)(uintptr_t)s->list, all,
+		    "pkg_repos", 0, false);
+	}
+	if ((jo = (ucl_object_t *)(uintptr_t)ucl_object_lookup(all, key)) ==
+	    NULL) {
+		jo = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(all, jo, key, 0, true);
+	}
+	ucl_object_replace_key(jo, ucl_object_fromstring(repo), action, 0,
+	    true);
+	if ((json = (char *)ucl_object_emit(all, UCL_EMIT_JSON_COMPACT)) ==
+	    NULL)
+		return;
+	if (asprintf(&body, "{\"pkg_repos\":%s}", json) == -1)
+		abort();
+	free(json);
+	snprintf(url, sizeof(url), "/api/servers/%s", s->id);
+	api("POST", url, body, repo_kept_cb, NULL);
+	free(body);
+}

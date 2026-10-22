@@ -208,7 +208,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN], surules[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[128];
+	char	*argv[132];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -1295,7 +1295,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[123] = (char *)(uintptr_t)"./smtpd.conf";
 	argv[124] = (char *)(uintptr_t)"--smtpd-dir";
 	argv[125] = (char *)(uintptr_t)"smtpd.d";
-	argv[126] = NULL;
+	/* The lanes of pkg jobs, kept in the test's directory. */
+	argv[126] = (char *)(uintptr_t)"--jobs-conf";
+	argv[127] = (char *)(uintptr_t)"jobs.conf";
+	argv[128] = NULL;
 	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
 	snprintf(surules, sizeof(surules), "%s/rules", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);

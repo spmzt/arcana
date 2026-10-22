@@ -13,16 +13,20 @@
  * trace, which grows while a job runs, are kept for whoever asks later.
  */
 
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/queue.h>
 
 #include <err.h>
+#include <errno.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <ucl.h>
 
@@ -49,6 +53,27 @@ struct qjob {
 	const char		*made;		/* if-create: the name it got */
 	struct arc_variable	*undo_vars;	/* service-config: as they were */
 	size_t			 undo_nvars;
+	const char		*undo_value;	/* sysctl: the kernel's before */
+	const char		*undo_conf;	/* sysctl: sysctl.conf's, or NULL */
+	const char		*undo_gateway;	/* route deleted: as listed */
+	struct route_more	 undo_more;
+	bool			 undo_kept;	/* rc.conf had the route */
+	bool			 undo_enabled;	/* bird: the protocol was */
+	const char		*undo_note;	/* why nothing is put back */
+	char			*undo_secret;	/* malloc'd, zeroed at the end:
+						 * wireguard: showconf before */
+	struct undo_file {		/* files as they were: text, or none */
+		const char	*path;
+		char		*text;	/* malloc'd, zeroed at the end */
+		size_t		 len;
+		bool		 had;
+	}			 undo_files[4];
+	int			 undo_nfiles;
+	struct undo_rc {		/* rc.conf variables as they were */
+		const char	*name;
+		const char	*value;	/* NULL: unset */
+	}			 undo_rc[6];
+	int			 undo_nrc;
 	bool			 undo_none;	/* it changed nothing: as it was */
 	bool			 undo_live;	/* rc.conf had it before: keep that */
 	char			*title;
@@ -66,8 +91,10 @@ static TAILQ_HEAD(, qjob) jobs = TAILQ_HEAD_INITIALIZER(jobs);
 static pthread_mutex_t	jobs_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t	jobs_cv = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t	confirm_cv = PTHREAD_COND_INITIALIZER;
-/* Jobs of pkg in jails at work in lanes of their own; under jobs_lock. */
+/* Jobs of pkg in jails at work in lanes of their own, and how many
+ * lanes there are (jobs-set, kept in jobs.conf); under jobs_lock. */
 static int		lanes_busy;
+static int		lanes_max = PKG_LANES;
 static uint64_t		nextid = 1;
 
 static char	*xdup(const char *);
@@ -79,7 +106,8 @@ static void	 run(struct qjob *, bool) __no_lock_analysis;
 static bool	 pkg_lane(const struct arc_job_spec *);
 static bool	 lane_jail_busy(const char *);
 static bool	 await_confirm(struct qjob *);
-static void	 undo_prepare(struct qjob *);
+static const char *undo_prepare(struct qjob *);
+static const char *confirm_apply(struct qjob *);
 static const char *undo(struct qjob *);
 static void	*runner(void *);
 static void	 fill(struct work *, struct arc_job *, struct qjob *, bool);
@@ -301,6 +329,13 @@ title_of(const struct arc_job_spec *sp)
 		rc = asprintf(&t, "pkg clean%s%s%s", sp->force ? " -a" : "",
 		    sp->jail != NULL && sp->jail[0] != '\0' ? " in " : "",
 		    sp->jail != NULL ? sp->jail : "");
+		break;
+	case ARC_JOB_KIND_JAIL_BASE:
+		rc = asprintf(&t, "jail %s: %s%s%s", sp->jail != NULL ? sp->jail :
+		    "?", sp->verb != NULL && strcmp(sp->verb, "upgrade") == 0 ?
+		    "base to " : "to pkgbase", sp->verb != NULL && strcmp(sp->verb,
+		    "upgrade") == 0 && sp->release != NULL ? sp->release : "",
+		    sp->force ? " (any OSVERSION)" : "");
 		break;
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:
@@ -557,14 +592,125 @@ static const uint8_t svc_reverse[] = {
 };
 
 /*
+ * A file as it is before a safe change (its text, or that there is
+ * none), to be put back after; the text may hold a key, so it is
+ * malloc'd and zeroed at the job's end.  False when it cannot be read.
+ */
+static bool
+undo_snap_file(struct qjob *j, const char *path)
+{
+	struct undo_file	*f;
+	char			*text;
+	size_t			 len;
+
+	if (j->undo_nfiles == (int)nitems(j->undo_files))
+		return (false);
+	f = &j->undo_files[j->undo_nfiles];
+	f->path = path;
+	f->text = NULL;
+	f->len = 0;
+	if ((text = scope_slurp(&j->w, path, &len)) != NULL) {
+		if ((f->text = malloc(len + 1)) == NULL)
+			err(1, "malloc");
+		memcpy(f->text, text, len);
+		f->text[len] = '\0';
+		explicit_bzero(text, len);
+		f->len = len;
+		f->had = true;
+	} else if (errno == ENOENT)
+		f->had = false;
+	else
+		return (false);
+	j->undo_nfiles++;
+	return (true);
+}
+
+/* The files back as they were: the text written, or the file gone. */
+static int
+undo_files_back(struct qjob *j, const char **errp)
+{
+	const struct undo_file	*f;
+	int			 i, step, rc;
+
+	rc = 0;
+	for (i = 0; i < j->undo_nfiles; i++) {
+		f = &j->undo_files[i];
+		step = step_begin(&j->w, ARC_STEP_KIND_FILE, f->had ? "write" :
+		    "remove", "%s, as it was", f->path);
+		if (f->had)
+			rc = scope_replace(&j->w, f->path, f->text, f->len, 0600,
+			    NULL) == 0 ? rc : -1;
+		else if (scope_unlink(&j->w, f->path) != 0 && errno != ENOENT)
+			rc = -1;
+		step_end(&j->w, step, rc == 0, rc == 0 ? NULL : "%s",
+		    strerror(errno));
+		if (rc != 0) {
+			*errp = wfmt(&j->w, "%s: %s", f->path, strerror(errno));
+			return (-1);
+		}
+	}
+	return (0);
+}
+
+/* An rc.conf variable as it is, whole: a list comes back exactly. */
+static void
+undo_snap_rc(struct qjob *j, const char *name)
+{
+
+	if (j->undo_nrc == (int)nitems(j->undo_rc))
+		return;
+	j->undo_rc[j->undo_nrc].name = name;
+	j->undo_rc[j->undo_nrc].value = rc_get(&j->w, name);
+	j->undo_nrc++;
+}
+
+static int
+undo_rc_back(struct qjob *j, const char **errp)
+{
+	const struct undo_rc	*r;
+	int			 i;
+
+	for (i = 0; i < j->undo_nrc; i++) {
+		r = &j->undo_rc[i];
+		if (r->value == NULL)
+			rc_unset(&j->w, r->name);
+		else if (rc_set(&j->w, r->name, "=", r->value, errp) != 0)
+			return (-1);
+	}
+	return (0);
+}
+
+/* What a safe change kept to put things back: gone, keys zeroed. */
+static void
+undo_forget(struct qjob *j)
+{
+	int	i;
+
+	if (j->undo_secret != NULL) {
+		explicit_bzero(j->undo_secret, strlen(j->undo_secret));
+		free(j->undo_secret);
+		j->undo_secret = NULL;
+	}
+	for (i = 0; i < j->undo_nfiles; i++)
+		if (j->undo_files[i].text != NULL) {
+			explicit_bzero(j->undo_files[i].text,
+			    j->undo_files[i].len);
+			free(j->undo_files[i].text);
+			j->undo_files[i].text = NULL;
+		}
+	j->undo_nfiles = 0;
+	j->undo_nrc = 0;
+}
+
+/*
  * Before a safe change: what it will take to put things back, which
  * afterwards can no longer be read.
  */
-static void
+static const char *
 undo_prepare(struct qjob *j)
 {
 	const struct arc_job_spec	*sp;
-	const char			*v;
+	const char			*v, *e;
 	char				 descr[256];
 	size_t				 i;
 	bool				 running, enabled, up;
@@ -572,10 +718,95 @@ undo_prepare(struct qjob *j)
 	/*
 	 * What is undone is what the job changed, not what it was asked:
 	 * an interface that was up already is not brought down for having
-	 * been told to come up.
+	 * been told to come up.  What cannot be read now cannot be put
+	 * back later: the job fails here, before the change.
 	 */
 	sp = &j->spec;
 	switch (sp->kind) {
+	case ARC_JOB_KIND_SYSCTL:
+		e = NULL;
+		if ((j->undo_value = sysctl_get(&j->w, sp->names.v[0], &e)) ==
+		    NULL)
+			return (wfmt(&j->w, "not changed: its value now could "
+			    "not be read, so it could not be put back: %s", e));
+		if (sp->persist)
+			j->undo_conf = sysctl_conf_get(&j->w, sp->names.v[0]);
+		if (strcmp(j->undo_value, sp->names.v[1]) == 0 && (!sp->persist ||
+		    (j->undo_conf != NULL && strcmp(j->undo_conf,
+		    sp->names.v[1]) == 0)))
+			j->undo_none = true;
+		break;
+	case ARC_JOB_KIND_WIREGUARD:
+		/* The interface whole as wg prints it (key, port, peers), to
+		 * sync it back; with persist, wg-quick's file and the rc.conf
+		 * variables that bring it up, as they are. */
+		e = NULL;
+		if (wg_showconf(&j->w, sp->interface, &j->undo_secret, &e) != 0)
+			return (wfmt(&j->w, "not changed: %s could not be read, "
+			    "so it could not be put back: %s", sp->interface, e));
+		if (sp->persist) {
+			if (!undo_snap_file(j, wg_conf_path(&j->w,
+			    sp->interface)))
+				return (wfmt(&j->w, "not changed: %s could not "
+				    "be read, so it could not be put back: %s",
+				    wg_conf_path(&j->w, sp->interface),
+				    strerror(errno)));
+			undo_snap_rc(j, "wireguard_interfaces");
+			undo_snap_rc(j, "wireguard_enable");
+			undo_snap_rc(j, "cloned_interfaces");
+			undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s", rc_ifname(&j->w,
+			    sp->interface)));
+		}
+		break;
+	case ARC_JOB_KIND_IPSEC:
+		/* A connection's files as they are (or are not), to go back
+		 * before the daemon reads them again; up and down are each
+		 * other's undo. */
+		if (strcmp(sp->verb, "up") == 0 || strcmp(sp->verb, "down") == 0)
+			break;
+		{
+			const char	*conf, *json, *pub;
+
+			ipsec_conn_files(&j->w, sp->conn, &conf, &json, &pub);
+			if (!undo_snap_file(j, conf) || !undo_snap_file(j, json) ||
+			    !undo_snap_file(j, pub))
+				return (wfmt(&j->w, "not changed: %s's files "
+				    "could not be read, so they could not be put "
+				    "back: %s", sp->conn, strerror(errno)));
+			j->undo_kept = j->undo_files[0].had;
+		}
+		break;
+	case ARC_JOB_KIND_BIRD:
+		/* Enabled or disabled: from the state it has now.  A restart
+		 * or reload leaves nothing to put back, and the job says so.
+		 * configure is BIRD's own timer, taken at the change. */
+		if (strcmp(sp->verb, "enable") == 0 || strcmp(sp->verb,
+		    "disable") == 0) {
+			e = NULL;
+			if (bird_proto_enabled(&j->w, sp->names.v[0],
+			    &j->undo_enabled, &e) != 0)
+				return (wfmt(&j->w, "not changed: its state "
+				    "now could not be read, so it could not be "
+				    "put back: %s", e));
+			if (j->undo_enabled == (sp->verb[0] == 'e'))
+				j->undo_none = true;
+		} else if (strcmp(sp->verb, "configure") != 0)
+			j->undo_note = wfmt(&j->w, "a %s is not undone: there "
+			    "is nothing to put back", sp->verb);
+		break;
+	case ARC_JOB_KIND_ROUTE:
+		/* Deleted without its gateway: the kernel's list says what
+		 * to add back, and must say one thing. */
+		if (!sp->remove || (sp->gateway != NULL && sp->gateway[0] !=
+		    '\0'))
+			break;
+		e = NULL;
+		if (route_snapshot(&j->w, sp->destination, sp->has_fib ?
+		    sp->fib : 0, &j->undo_gateway, &j->undo_more, &j->undo_kept,
+		    &e) != 0)
+			return (wfmt(&j->w, "not changed: it could not be put "
+			    "back: %s", e));
+		break;
 	case ARC_JOB_KIND_IF_ADDRESS:
 		/* To put an address back, its prefix length is needed. */
 		j->undo_address = if_address_with_prefix(&j->w, sp->interface,
@@ -646,6 +877,7 @@ undo_prepare(struct qjob *j)
 	default:
 		break;
 	}
+	return (NULL);
 }
 
 /*
@@ -751,6 +983,30 @@ give_pair(struct qjob *j, const char **errp)
 	return (true);
 }
 
+/*
+ * Confirmed: what was made on a timer of its own is told to stay.  NULL,
+ * or what to say of a job whose change did not stay after all.
+ */
+static const char *
+confirm_apply(struct qjob *j)
+{
+	const char	*e;
+	int		 step;
+
+	if (j->spec.kind != ARC_JOB_KIND_BIRD || strcmp(j->spec.verb,
+	    "configure") != 0)
+		return (NULL);
+	e = NULL;
+	step = step_begin(&j->w, ARC_STEP_KIND_EXEC, "birdc", "configure "
+	    "confirm");
+	if (bird_configure_confirm(&j->w, &e) == 0) {
+		step_end(&j->w, step, true, NULL);
+		return (NULL);
+	}
+	step_end(&j->w, step, false, "%s", e);
+	return (wfmt(&j->w, "confirmed, but BIRD did not keep it: %s", e));
+}
+
 /* Take a safe change back; returns what to say of the job. */
 static const char *
 undo(struct qjob *j)
@@ -770,7 +1026,30 @@ undo(struct qjob *j)
 	if (j->undo_none)
 		return (wfmt(&j->w, "not confirmed within %d s; it was so "
 		    "before, and is left so", safe_wait(sp)));
+	if (j->undo_note != NULL)
+		return (wfmt(&j->w, "not confirmed within %d s; %s",
+		    safe_wait(sp), j->undo_note));
 	switch (sp->kind) {
+	case ARC_JOB_KIND_IPSEC:
+		if (strcmp(sp->verb, "up") == 0 || strcmp(sp->verb, "down") == 0)
+			rc = ipsec_toggle(&j->w, sp->conn, sp->verb[0] == 'd', &e);
+		else
+			rc = undo_files_back(j, &e) == 0 ? ipsec_undo(&j->w,
+			    sp->conn, !j->undo_kept, &e) : -1;
+		break;
+	case ARC_JOB_KIND_WIREGUARD:
+		rc = wg_syncconf(&j->w, sp->interface, j->undo_secret, &e);
+		if (sp->persist && (undo_files_back(j, &e) != 0 ||
+		    undo_rc_back(j, &e) != 0))
+			rc = -1;
+		break;
+	case ARC_JOB_KIND_BIRD:
+		if (strcmp(sp->verb, "configure") == 0)
+			rc = bird_configure_undo(&j->w, &e);
+		else
+			rc = do_bird_verb(&j->w, sp->verb[0] == 'e' ? "disable" :
+			    "enable", sp->names.v, sp->names.n, &e);
+		break;
 	case ARC_JOB_KIND_IF_ADDRESS:
 		rc = do_if_address(&j->w, sp->interface, j->undo_address != NULL ?
 		    j->undo_address : sp->address, !sp->remove, sp->persist,
@@ -899,11 +1178,46 @@ undo(struct qjob *j)
 		e = scr.error;
 		break;
 	case ARC_JOB_KIND_ROUTE:
+		if (j->undo_gateway != NULL) {
+			/* Back as the kernel listed it; into rc.conf only
+			 * when it was there. */
+			rc = do_route(&j->w, sp->destination, j->undo_gateway,
+			    false, sp->has_fib ? sp->fib : 0, &j->undo_more,
+			    sp->persist && j->undo_kept, &e);
+			break;
+		}
 		rm.metric = sp->has_metric ? sp->metric : 0;
 		rm.weight = sp->has_weight ? sp->weight : 0;
 		rm.source = sp->source;
 		rc = do_route(&j->w, sp->destination, sp->gateway, !sp->remove,
 		    sp->has_fib ? sp->fib : 0, &rm, sp->persist, &e);
+		break;
+	case ARC_JOB_KIND_SYSCTL:
+		/*
+		 * The kernel's value as it was, and sysctl.conf's line as it
+		 * was, or none.  A tunable that takes a value once (net.fibs,
+		 * say) refuses the first: the file is still put back, and
+		 * the job says the kernel keeps the new value until a boot.
+		 */
+		{
+			const char	*ce;
+
+			rc = do_sysctl_set(&j->w, sp->names.v[0], j->undo_value,
+			    false, &e);
+			ce = NULL;
+			if (sp->persist && sysctl_conf_restore(&j->w,
+			    sp->names.v[0], j->undo_conf, &ce) != 0) {
+				e = e != NULL ? wfmt(&j->w, "%s; and %s", e, ce) :
+				    ce;
+				rc = -1;
+			} else if (rc != 0) {
+				e = wfmt(&j->w, "%s: the kernel keeps %s=%s "
+				    "until it boots again%s", e, sp->names.v[0],
+				    sp->names.v[1], sp->persist ? ", when "
+				    "sysctl.conf, put back as it was, sets it" :
+				    "");
+			}
+		}
 		break;
 	default:
 		/* A kind with no undo is refused as safe at its check: this
@@ -961,8 +1275,10 @@ run(struct qjob *j, bool lane)
 	if (go && inside && scope_enter(&j->w, sp->jail, &error) != 0) {
 		ok = false;
 		go = false;
-	} else if (go && sp->safe)
-		undo_prepare(j);
+	} else if (go && sp->safe && (error = undo_prepare(j)) != NULL) {
+		ok = false;
+		go = false;
+	}
 	if (!go) {
 		ok = false;
 		if (error == NULL)
@@ -1088,9 +1404,16 @@ run(struct qjob *j, bool lane)
 		    do_cert(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_BIRD:
+		/* Safe, configure runs on BIRD's own timer, a little longer
+		 * than the job's wait: the job confirms it, or BIRD takes it
+		 * back by itself should the daemon be stopped. */
 		error = NULL;
-		ok = do_bird_verb(&j->w, sp->verb, sp->names.v, sp->names.n,
-		    &error) == 0;
+		if (sp->safe && strcmp(sp->verb, "configure") == 0)
+			ok = bird_configure_safe(&j->w, safe_wait(sp) + 5,
+			    &error) == 0;
+		else
+			ok = do_bird_verb(&j->w, sp->verb, sp->names.v,
+			    sp->names.n, &error) == 0;
 		break;
 	case ARC_JOB_KIND_KMOD:
 		error = NULL;
@@ -1123,6 +1446,10 @@ run(struct qjob *j, bool lane)
 	case ARC_JOB_KIND_PKG_CLEAN:
 		error = NULL;
 		ok = do_pkg_clean(&j->w, sp->jail, sp->force, &error) == 0;
+		break;
+	case ARC_JOB_KIND_JAIL_BASE:
+		error = NULL;
+		ok = do_jail_base(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_PKG_INSTALL:
 		error = NULL;
@@ -1199,12 +1526,15 @@ run(struct qjob *j, bool lane)
 		error = ur.error;
 		break;
 	}
-	/* A safe change stays only when the client is heard from again. */
+	/* A safe change stays only when the client is heard from again;
+	 * and what runs on a timer of its own (BIRD) is then told so. */
 	if (ok && go && sp->safe && !await_confirm(j)) {
 		ok = false;
 		error = undo(j);
 		held = false;
-	}
+	} else if (ok && go && sp->safe && (error = confirm_apply(j)) != NULL)
+		ok = false;
+	undo_forget(j);
 	/* The firewall's old rules waited for that: now they go. */
 	if (held)
 		(void)ipfw_settle(&j->w, true);
@@ -1262,7 +1592,8 @@ pkg_lane(const struct arc_job_spec *sp)
 
 	return ((sp->kind == ARC_JOB_KIND_PKG_UPGRADE ||
 	    sp->kind == ARC_JOB_KIND_PKG_INSTALL ||
-	    sp->kind == ARC_JOB_KIND_PKG_CLEAN) && !sp->safe &&
+	    sp->kind == ARC_JOB_KIND_PKG_CLEAN ||
+	    sp->kind == ARC_JOB_KIND_JAIL_BASE) && !sp->safe &&
 	    sp->jail != NULL && sp->jail[0] != '\0' &&
 	    strcmp(sp->jail, "*") != 0);
 }
@@ -1346,13 +1677,13 @@ lanes(void)
 	int		 error;
 
 	pthread_mutex_lock(&change_lock);
-	(void)change_note("pkg in jails, %d at once", PKG_LANES);
+	(void)change_note("pkg in jails, %d at once", jobs_lanes());
 	pthread_attr_init(&attr);
 	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 	pthread_mutex_lock(&jobs_lock);
 	for (;;) {
-		j = lanes_busy < PKG_LANES ? next_lane(&more) : NULL;
-		if (lanes_busy >= PKG_LANES)
+		j = lanes_busy < lanes_max ? next_lane(&more) : NULL;
+		if (lanes_busy >= lanes_max)
 			more = true;
 		if (j != NULL) {
 			j->state = ARC_JOB_STATE_RUNNING;
@@ -1370,6 +1701,68 @@ lanes(void)
 	pthread_attr_destroy(&attr);
 	(void)change_note(NULL);
 	pthread_mutex_unlock(&change_lock);
+}
+
+/* How many lanes there are: 1 to 32. */
+int
+jobs_lanes(void)
+{
+	int	n;
+
+	pthread_mutex_lock(&jobs_lock);
+	n = lanes_max;
+	pthread_mutex_unlock(&jobs_lock);
+	return (n);
+}
+
+/*
+ * The lanes set, and kept in jobs.conf for the next start; a lane at
+ * work beyond a smaller number finishes, and no new one starts until
+ * fewer are busy.  NULL, or why not.
+ */
+const char *
+jobs_set_lanes(int n)
+{
+	FILE	*fp;
+	char	 tmp[PATH_MAX];
+
+	if (n < 1 || n > 32)
+		return ("lanes is 1 to 32");
+	snprintf(tmp, sizeof(tmp), "%s.new", opts.jobs_conf);
+	if ((fp = fopen(tmp, "we")) == NULL)
+		return ("jobs.conf could not be written");
+	fprintf(fp, "# Written by arcana-agent: jobs-set.\nlanes=%d\n", n);
+	if (fclose(fp) != 0 || rename(tmp, opts.jobs_conf) == -1) {
+		(void)unlink(tmp);
+		return ("jobs.conf could not be written");
+	}
+	pthread_mutex_lock(&jobs_lock);
+	lanes_max = n;
+	pthread_cond_broadcast(&jobs_cv);
+	pthread_mutex_unlock(&jobs_lock);
+	logmsg(LOG_INFO, "jobs: pkg in jails, %d at once", n);
+	return (NULL);
+}
+
+/* jobs.conf read at start: lanes=N; absent or odd, the default. */
+void
+jobs_conf_load(void)
+{
+	FILE	*fp;
+	char	 line[128];
+	long	 n;
+
+	lanes_max = opts.pkg_lanes;
+	if ((fp = fopen(opts.jobs_conf, "re")) == NULL)
+		return;
+	while (fgets(line, sizeof(line), fp) != NULL) {
+		if (strncmp(line, "lanes=", 6) != 0)
+			continue;
+		n = strtol(line + 6, NULL, 10);
+		if (n >= 1 && n <= 32)
+			lanes_max = (int)n;
+	}
+	fclose(fp);
 }
 
 static void *
