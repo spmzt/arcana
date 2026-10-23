@@ -326,6 +326,8 @@ static const char *action_names[] = {
 	[ARC_ACTION_STOP] = "stop",
 	[ARC_ACTION_RESTART] = "restart",
 	[ARC_ACTION_KILL] = "kill",
+	[ARC_ACTION_ENABLE] = "enable",
+	[ARC_ACTION_DISABLE] = "disable",
 };
 
 static const char *net_kind_names[] = {
@@ -1080,6 +1082,9 @@ jail_object(const struct arc_jail *j)
 		put(o, "plugins", strs(j->plugins.v, j->plugins.n));
 	put_str(o, "osrelease", j->osrelease);
 	put(o, "persist", ucl_object_frombool(j->persist));
+	/* Started at boot (rc.conf's jail_list): told of a jail defined. */
+	if (j->has_boot)
+		put(o, "boot", ucl_object_frombool(j->boot));
 	if (j->allow.n > 0)
 		put(o, "allow", strs(j->allow.v, j->allow.n));
 	put_str(o, "interface", j->interface);

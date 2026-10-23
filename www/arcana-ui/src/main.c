@@ -1897,6 +1897,9 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "describes.", arg);
 		confirm("Kill jail", body, "Kill", true, arg, "do-kill", arg,
 		    "");
+	} else if (strcmp(act, "jail-boot") == 0 && (strcmp(value, "enable") ==
+	    0 || strcmp(value, "disable") == 0)) {
+		jail_action(arg, value);
 	} else if (strcmp(act, "do-stop") == 0) {
 		jail_action(arg, "stop");
 	} else if (strcmp(act, "do-restart") == 0) {

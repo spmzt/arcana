@@ -1167,6 +1167,18 @@ part_hosts(void)
 	    "etc/jail.conf -c web')", 5);
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	run("document.querySelector('.dock > header').click()");
+	/* Started at boot or not: rc.conf's jail_list, the jail as it is. */
+	wait_js("document.querySelector('#j-web button[data-act=jail-boot]"
+	    "[data-value=enable]')", 20);
+	run("document.querySelector('#j-web button[data-act=jail-boot]')"
+	    ".click()");
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 100 && system("grep -q '^jail_list=\"web\"$' rc.conf && "
+	    "grep -q '^jail_enable=\"YES\"$' rc.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 100, "web is not in jail_list");
+	wait_js("document.querySelector('#j-web button[data-act=jail-boot].on"
+	    "[data-value=disable]')", 20);
 
 	/* Previewing a persistent address change shows the diff. */
 	run("document.querySelector('#j-db').click()");
@@ -1978,8 +1990,9 @@ part_nettab(void)
 	run("const f = document.querySelector('form[data-form=kept-rename]'); "
 	    "f.name.value = 'edge2_lan'; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	for (i = 0; i < 100 && system("grep -q '^route_edge2_lan=' rc.conf") !=
-	    0; i++)
+	/* The new name is written first, the old one taken out after. */
+	for (i = 0; i < 100 && system("grep -q '^route_edge2_lan=' rc.conf && "
+	    "! grep -q lan_fib2 rc.conf") != 0; i++)
 		usleep(100000);
 	ATF_CHECK(system("grep -q '^route_edge2_lan=\"10.88.0.0/16 10.0.0.1 "
 	    "-fib 2 -ifa 10.0.0.9 -metric 5 -weight 20\"$' rc.conf && ! grep "

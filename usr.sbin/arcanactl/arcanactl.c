@@ -142,7 +142,7 @@ usage(void)
 	    "commands:\n"
 	    "    hello\n"
 	    "    list [-c]\n"
-	    "    start | stop | restart | kill jail\n"
+	    "    start | stop | restart | kill | enable | disable jail\n"
 	    "    address add | remove [-lnp] [-i interface] jail address\n"
 	    "    services\n"
 	    "    service name start | stop | restart | reload | enable | "
@@ -425,6 +425,9 @@ emit_jail(const struct arc_jail *j, bool table)
 	if (j->has_jid)
 		xo_emit(" ({Lw:jid}{:jid/%u})", j->jid);
 	xo_emit("\n");
+	if (j->has_boot)
+		xo_emit("{Lwc:At boot}{:boot/%s}\n", j->boot ? "started" :
+		    "not started");
 	if (j->hostname != NULL)
 		xo_emit("{Lwc:Hostname}{:hostname/%s}\n", j->hostname);
 	if (j->path != NULL)
@@ -4748,6 +4751,10 @@ main(int argc, char *argv[])
 		rc = cmd_action(&cl, ARC_ACTION_RESTART, argc, argv);
 	else if (strcmp(argv[0], "kill") == 0)
 		rc = cmd_action(&cl, ARC_ACTION_KILL, argc, argv);
+	else if (strcmp(argv[0], "enable") == 0)
+		rc = cmd_action(&cl, ARC_ACTION_ENABLE, argc, argv);
+	else if (strcmp(argv[0], "disable") == 0)
+		rc = cmd_action(&cl, ARC_ACTION_DISABLE, argc, argv);
 	else if (strcmp(argv[0], "address") == 0)
 		rc = cmd_address(&cl, argc, argv);
 	else if (strcmp(argv[0], "services") == 0 && argc == 1)

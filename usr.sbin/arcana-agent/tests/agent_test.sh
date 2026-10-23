@@ -8559,6 +8559,47 @@ bird_watch_cleanup()
 	stop_daemon
 }
 
+atf_test_case jail_boot cleanup
+jail_boot_head()
+{
+	atf_set "descr" "a jail started at boot or not, by jail_list and jail_enable, never left an empty list that starts every jail"
+}
+jail_boot_body()
+{
+	start_daemon
+	# jail_enable off: the list is the jail alone, then turned on.
+	atf_check -o match:'^At boot: +started$' "$JGC" -c "$SOCK" enable web
+	atf_check -o match:'^jail_list="web"$' -o match:'^jail_enable="YES"$' \
+	    cat rc.conf
+	atf_check -o match:'^At boot: +not started$' "$JGC" -c "$SOCK" \
+	    disable db
+	atf_check -o match:'^At boot: +started$' "$JGC" -c "$SOCK" enable db
+	atf_check -o match:'^jail_list="web db"$' cat rc.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" disable web
+	atf_check -o match:'^jail_list="db"$' cat rc.conf
+	# The last one named: jail_enable off, not an empty list.
+	atf_check -o match:'^At boot: +not started$' "$JGC" -c "$SOCK" \
+	    disable db
+	atf_check -o match:'^jail_enable="NO"$' cat rc.conf
+	# Every jail started (an empty list): one left out is every other.
+	sed -i '' -e '/^jail_list=/d' -e 's/^jail_enable=.*/jail_enable="YES"/' \
+	    rc.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" disable vpn
+	atf_check -o match:'^jail_list=".*web' -o match:'^jail_list=".*db' \
+	    -o match:'^jail_list=".*mail' -o not-match:'vpn' cat rc.conf
+	# Started at boot already: nothing written.
+	cp rc.conf rc.before
+	atf_check -o ignore "$JGC" -c "$SOCK" enable web
+	atf_check -o empty diff rc.before rc.conf
+	# Only a jail defined.
+	atf_check -s exit:1 -o ignore -e match:'not defined' \
+	    "$JGC" -c "$SOCK" enable nosuch
+}
+jail_boot_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case reboot cleanup
 reboot_head()
 {
@@ -8588,6 +8629,7 @@ reboot_cleanup()
 atf_init_test_cases()
 {
 	atf_add_test_case reboot
+	atf_add_test_case jail_boot
 	atf_add_test_case bird_watch
 	atf_add_test_case poudriere
 	atf_add_test_case host_watch

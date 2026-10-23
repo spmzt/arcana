@@ -8,6 +8,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "agent.h"
 
@@ -130,6 +131,100 @@ jail_record(struct work *w, struct arc_jail *j, const char *name,
 	j->persist = cjail_param(cj, "persist") != NULL;
 }
 
+/* rc.conf's word for on. */
+static bool
+rc_yes(const char *v)
+{
+
+	return (v != NULL && (strcasecmp(v, "yes") == 0 || strcasecmp(v,
+	    "true") == 0 || strcasecmp(v, "on") == 0 || strcmp(v, "1") == 0));
+}
+
+/* What rc.d/jail starts at boot, read once for every jail asked of. */
+void
+jail_boot_read(struct work *w, struct jboot *b)
+{
+
+	b->on = rc_yes(rc_get(w, "jail_enable"));
+	b->list = rc_get(w, "jail_list");
+	if (b->list != NULL && b->list[strspn(b->list, " \t")] == '\0')
+		b->list = NULL;
+}
+
+/* Is name started at boot: on, and the list empty or naming it? */
+bool
+jail_boot_of(const struct jboot *b, const char *name)
+{
+	const char	*p;
+	size_t		 n, len;
+
+	if (!b->on)
+		return (false);
+	if (b->list == NULL)
+		return (true);
+	len = strlen(name);
+	for (p = b->list; *p != '\0'; p += n) {
+		p += strspn(p, " \t");
+		n = strcspn(p, " \t");
+		if (n == len && strncmp(p, name, len) == 0)
+			return (true);
+	}
+	return (false);
+}
+
+/*
+ * name started at boot, or not, by rc.conf alone.  rc.d/jail starts
+ * every jail when jail_list is empty, so neither an emptied list nor
+ * jail_enable turned on over one is ever left: the list is made of
+ * the jails meant, and with none, jail_enable is off.
+ */
+int
+jail_boot_set(struct work *w, const char *name, bool on,
+    const struct cconf *conf, const char **errp)
+{
+	struct jboot	 b;
+	const char	*rest, *p;
+	size_t		 i, n, len, words;
+
+	jail_boot_read(w, &b);
+	if (on) {
+		if (!b.on)
+			return (rc_set(w, "jail_list", "=", name, errp) != 0 ||
+			    rc_set(w, "jail_enable", "=", "YES", errp) != 0 ?
+			    -1 : 0);
+		if (jail_boot_of(&b, name))
+			return (0);
+		return (rc_set(w, "jail_list", "+=", name, errp));
+	}
+	if (!jail_boot_of(&b, name))
+		return (0);
+	/* The others the list names, or every other jail defined. */
+	rest = "";
+	words = 0;
+	len = strlen(name);
+	if (b.list != NULL) {
+		for (p = b.list; *p != '\0'; p += n) {
+			p += strspn(p, " \t");
+			if ((n = strcspn(p, " \t")) == 0)
+				break;
+			if (n == len && strncmp(p, name, len) == 0)
+				continue;
+			rest = wfmt(w, "%s%s%.*s", rest, words > 0 ? " " : "",
+			    (int)n, p);
+			words++;
+		}
+	} else
+		for (i = 0; i < conf->njails; i++)
+			if (strcmp(conf->jails[i].name, name) != 0) {
+				rest = wfmt(w, "%s%s%s", rest, words > 0 ? " " :
+				    "", conf->jails[i].name);
+				words++;
+			}
+	if (words == 0)
+		return (rc_set(w, "jail_enable", "=", "NO", errp));
+	return (rc_set(w, "jail_list", "=", rest, errp));
+}
+
 /* The jail as it is now: re-read runtime state, use conf for the rest. */
 struct arc_jail *
 jail_current(struct work *w, const char *name, const struct cconf *conf)
@@ -150,5 +245,12 @@ jail_current(struct work *w, const char *name, const struct cconf *conf)
 		jails_procstats(w, ji, 1);
 	j = wcalloc(w, 1, sizeof(*j));
 	jail_record(w, j, name, ji, conf_jail(conf, name));
+	if (j->configured) {
+		struct jboot	 b;
+
+		jail_boot_read(w, &b);
+		j->has_boot = true;
+		j->boot = jail_boot_of(&b, name);
+	}
 	return (j);
 }

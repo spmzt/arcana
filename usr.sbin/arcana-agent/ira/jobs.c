@@ -113,7 +113,8 @@ static const char *undo(struct qjob *);
 static void	*runner(void *);
 static void	 fill(struct work *, struct arc_job *, struct qjob *, bool);
 
-static const char *action_names[] = { "start", "stop", "restart", "kill" };
+static const char *action_names[] = { "start", "stop", "restart", "kill",
+    "enable", "disable" };
 static const char *svc_names[] = { "start", "stop", "restart", "reload",
     "enable", "disable" };
 

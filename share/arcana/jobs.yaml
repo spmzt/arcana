@@ -248,9 +248,9 @@ fields:
 
 kinds:
   - kind: jail-action
-    title: A jail started, stopped, restarted or killed
+    title: A jail started, stopped, restarted or killed, or started at boot or not
     needs: jail action
-    values: action=start|stop|restart|kill
+    values: action=start|stop|restart|kill|enable|disable
   - kind: address
     title: An address of a jail
     needs: jail address

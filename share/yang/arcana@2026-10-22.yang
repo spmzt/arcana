@@ -52,10 +52,10 @@ module arcana {
     }
     leaf action {
       type uint8 {
-        range "0..3";
+        range "0..5";
       }
       description
-        "One of action: 0 start 1 stop 2 restart 3 kill.";
+        "One of action: 0 start 1 stop 2 restart 3 kill 4 enable 5 disable.";
     }
     leaf address {
       type string {
@@ -981,7 +981,13 @@ module arcana {
       type string;
       description
         "Of a running jail: its allow.* parameters as the kernel has
-         them, each \"allow.name=0|1\" (jail-allow sets them).
+         them, each \"allow.name=0|1\" (jail-allow sets them).";
+    }
+    leaf boot {
+      type boolean;
+      description
+        "Of a jail defined: started at boot by rc.d/jail, jail_enable
+         being yes and jail_list empty or naming it.
          ";
     }
   }
@@ -1113,10 +1119,10 @@ module arcana {
     }
     leaf action {
       type uint8 {
-        range "0..3";
+        range "0..5";
       }
       description
-        "One of action: 0 start 1 stop 2 restart 3 kill.";
+        "One of action: 0 start 1 stop 2 restart 3 kill 4 enable 5 disable.";
     }
     leaf address {
       type string {
@@ -1821,10 +1827,10 @@ module arcana {
   grouping attr-action {
     leaf action {
       type uint8 {
-        range "0..3";
+        range "0..5";
       }
       description
-        "One of action: 0 start 1 stop 2 restart 3 kill.";
+        "One of action: 0 start 1 stop 2 restart 3 kill 4 enable 5 disable.";
     }
   }
 

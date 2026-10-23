@@ -1413,7 +1413,9 @@ jail_action(const char *jail, const char *action)
 	    "\"action\":\"%s\"}", qj, action) == -1)
 		abort();
 	free(qj);
-	if (!app.queue_on) {
+	/* At boot or not changes rc.conf alone: the jail is as it was. */
+	if (!app.queue_on && strcmp(action, "enable") != 0 && strcmp(action,
+	    "disable") != 0) {
 		jailui(s, jail)->pending = strcmp(action, "start") == 0 ?
 		    PEND_START : strcmp(action, "stop") == 0 ? PEND_STOP :
 		    strcmp(action, "restart") == 0 ? PEND_RESTART : PEND_KILL;

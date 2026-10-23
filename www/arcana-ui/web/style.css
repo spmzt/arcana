@@ -1399,6 +1399,8 @@ html.fx .gauge .spark .line {
 .pkgs .buttons .dim { flex: 1; }
 table.net td.c-run { color: var(--cyan); }
 table.net.mcast-ifs { margin-bottom: 14px; }
+/* A jail started at boot (rc.conf's jail_list): the toggle lit. */
+.actions .act.boot.on { color: var(--green); border-color: var(--green); }
 /* Network › Routes › Kept in rc.conf: what rc(8) would skip, said so. */
 table.net.kept td.mono { font-size: .8rem; }
 .kept-note { color: var(--amber); font-size: .78rem; white-space: nowrap; }

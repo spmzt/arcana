@@ -187,7 +187,7 @@ submodule arcana-jobs-kinds {
           presence
             "This kind of job.";
           description
-            "A jail started, stopped, restarted or killed";
+            "A jail started, stopped, restarted or killed, or started at boot or not";
           leaf jail {
             type string;
             mandatory true;
@@ -200,6 +200,8 @@ submodule arcana-jobs-kinds {
               enum stop;
               enum restart;
               enum kill;
+              enum enable;
+              enum disable;
             }
             mandatory true;
             description

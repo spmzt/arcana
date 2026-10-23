@@ -581,6 +581,19 @@ actions(struct html *h, struct server *s, const ucl_object_t *j,
 		h_raw(h, " title=\"jail_remove(2): no stop scripts\">"
 		    "Kill</button>");
 	}
+	/* Started at boot, by rc.conf's jail_list: said by the agent. */
+	if (configured && ucl_object_lookup(j, "boot") != NULL) {
+		bool	boot = jbool(j, "boot");
+
+		h_fmt(h, "<button class=\"act boot%s\" data-act=\"jail-boot\" "
+		    "data-value=\"%s\"%s title=\"%s\"", boot ? " on" : "",
+		    boot ? "disable" : "enable", busy ? " disabled" : "",
+		    boot ? "Started at boot (rc.conf's jail_list): press to "
+		    "leave it out" : "Not started at boot: press to add it to "
+		    "rc.conf's jail_list");
+		h_attr(h, "data-arg", name);
+		h_raw(h, boot ? ">At boot</button>" : ">Not at boot</button>");
+	}
 	h_raw(h, "</div>");
 }
 

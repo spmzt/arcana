@@ -744,6 +744,17 @@ definitions:
       - restart
       - name: kill
         doc: Remove the jail with jail_remove(2), without its stop scripts.
+      - name: enable
+        doc: |
+          Started at boot from now: rc.conf's jail_list names it, and
+          jail_enable is yes.  With jail_enable off before, the list is
+          the jail alone, not every jail rc.d/jail would start with an
+          empty one; with an empty list and jail_enable on, every jail
+          starts already and nothing is written.
+      - name: disable
+        doc: |
+          Not started at boot: taken out of jail_list.  An empty list
+          (every jail started) becomes every jail defined but this one.
   - name: jail-state
     type: enum
     entries:
@@ -1511,6 +1522,11 @@ attribute-sets:
         doc: |
           Of a running jail: its allow.* parameters as the kernel has
           them, each "allow.name=0|1" (jail-allow sets them).
+      - name: boot
+        type: bool
+        doc: |
+          Of a jail defined: started at boot by rc.d/jail, jail_enable
+          being yes and jail_list empty or naming it.
 
   - name: param
     attributes:

@@ -64,6 +64,7 @@ do_list(struct work *w, bool config_only, struct arc_list_rsp *rsp)
 	struct arc_host	*host;
 	struct arc_jail	*jails;
 	struct cconf	 conf;
+	struct jboot	 boot;
 	struct jinfo	*list;
 	struct jref	*refs;
 	size_t		 n, i, k, m;
@@ -104,9 +105,16 @@ do_list(struct work *w, bool config_only, struct arc_list_rsp *rsp)
 	}
 	qsort(refs, k, sizeof(*refs), cmp_jail);
 	jails = wcalloc(w, k + 1, sizeof(*jails));
-	for (i = 0; i < k; i++)
+	/* What starts at boot: rc.conf read once for them all. */
+	jail_boot_read(w, &boot);
+	for (i = 0; i < k; i++) {
 		jail_record(w, &jails[i], refs[i].name, refs[i].ji,
 		    conf_jail(&conf, refs[i].name));
+		if (jails[i].configured) {
+			jails[i].has_boot = true;
+			jails[i].boot = jail_boot_of(&boot, refs[i].name);
+		}
+	}
 	rsp->jails.v = jails;
 	rsp->jails.n = k;
 	return (0);
@@ -176,7 +184,8 @@ do_action(struct work *w, const char *name, uint8_t action,
 	jid = jail_lookup(w, name);
 	/* The addresses it has now, to clean up after it. */
 	ji = NULL;
-	if (jid >= 0 && action != ARC_ACTION_START &&
+	if (jid >= 0 && action != ARC_ACTION_START && action !=
+	    ARC_ACTION_ENABLE && action != ARC_ACTION_DISABLE &&
 	    jails_running(w, &list, &n, &e) == 0)
 		for (i = 0; i < n; i++)
 			if (list[i].jid == jid)
@@ -210,6 +219,16 @@ do_action(struct work *w, const char *name, uint8_t action,
 			rsp->error = wfmt(w, "jail '%s' is not defined in "
 			    "%s or %s/*.conf", name, opts.jail_conf,
 			    opts.jail_conf_d);
+		goto out;
+	}
+	/* Started at boot or not: rc.conf alone, the jail as it is. */
+	if (action == ARC_ACTION_ENABLE || action == ARC_ACTION_DISABLE) {
+		e = NULL;
+		if (jail_boot_set(w, name, action == ARC_ACTION_ENABLE, &conf,
+		    &e) == 0)
+			rsp->ok = true;
+		else
+			rsp->error = e;
 		goto out;
 	}
 	switch (action) {

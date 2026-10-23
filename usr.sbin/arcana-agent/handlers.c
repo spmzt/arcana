@@ -96,6 +96,8 @@ static const char *action_names[] = {
 	[ARC_ACTION_STOP] = "stop",
 	[ARC_ACTION_RESTART] = "restart",
 	[ARC_ACTION_KILL] = "kill",
+	[ARC_ACTION_ENABLE] = "enable",
+	[ARC_ACTION_DISABLE] = "disable",
 };
 
 static const char *net_kind_names[] = {

@@ -23,7 +23,7 @@
 _Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
     "written for cblink 0.2: its wire, its structs");
 
-#define	ARCANA_AGENT_VERSION	"0.205.0"
+#define	ARCANA_AGENT_VERSION	"0.206.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -334,6 +334,15 @@ struct cconf {
 	size_t		 nerrors;
 };
 
+/* rc.d/jail's say on what starts at boot: jail_enable, jail_list. */
+struct jboot {
+	bool		 on;		/* jail_enable is yes */
+	const char	*list;		/* jail_list, or NULL: every jail */
+};
+void		 jail_boot_read(struct work *, struct jboot *);
+bool		 jail_boot_of(const struct jboot *, const char *);
+int		 jail_boot_set(struct work *, const char *, bool,
+		    const struct cconf *, const char **);
 void		 conf_read(struct work *, struct cconf *);
 int		 conf_scope_read(struct work *, const char *, struct cjail **,
 		    size_t *, const char **);

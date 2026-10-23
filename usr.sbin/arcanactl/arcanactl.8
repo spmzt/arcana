@@ -101,6 +101,23 @@ only configured ones.
 Change the jail's state.
 .Cm kill
 removes the jail without running its stop scripts.
+.It Cm enable | disable Ar jail
+Start the jail at boot, or not, by
+.Xr rc.conf 5 Ns 's
+.Va jail_list
+and
+.Va jail_enable ,
+as rc.d/jail reads them; the running jail is left as it is.
+rc.d/jail starts every jail when
+.Va jail_list
+is empty, so an empty list is never left: disabling one of all makes
+the list every other jail, enabling one with
+.Va jail_enable
+off makes it the list alone, and disabling the last one named turns
+.Va jail_enable
+off.
+.Nm list
+says of each jail whether it starts at boot.
 .It Cm address add | remove Oo Fl lnp Oc Oo Fl i Ar interface Oc Ar jail Ar address Ns Op / Ns Ar len
 Add or remove an address:
 .Fl l
