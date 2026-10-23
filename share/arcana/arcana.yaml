@@ -660,6 +660,30 @@ definitions:
           address, filter mode, link-level address and sources; and
           "settings", the kernel's (net.inet.igmp.* and net.inet6.mld.*,
           name and value), which a job of kind sysctl sets.
+      - name: bird-ospf
+        doc: |
+          BIRD's OSPF, from birdc(8): a JSON object with "protocols",
+          each OSPF protocol with its "name" and the "areas" it is in.
+          With the filter "topology", or "topology" and a protocol's
+          name, each also has "topology": per area, its "routers", each
+          with its "distance" (or "unreachable") and "links" (kind
+          router, network, stubnet, external and the like, "to", and
+          "metric" or "metric2"), and its transit "networks", each with
+          its designated router ("dr"), "distance" and "routers", as
+          "show ospf topology all" tells them from the link-state
+          database.  Every router of an area tells the same.
+      - name: kept-routes
+        doc: |
+          The static routes rc.conf keeps, from sysrc(8), of the host
+          or the jail: a JSON object with "routes", each with its
+          "name", "family", "list" (static_routes or
+          ipv6_static_routes), "variable", "value" as route(8) is given
+          it, and read from it "destination", "gateway", "kind"
+          (gateway, interface, blackhole or reject) and "fib";
+          "listed" false for a variable the list does not name (rc(8)
+          leaves it), "missing" true for a name without its variable;
+          and "defaults", the default routers, each with its
+          "variable", "family", "fib" and "gateway".
   - name: storage-kind
     type: enum
     entries:

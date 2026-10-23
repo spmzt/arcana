@@ -325,9 +325,9 @@ hold(int ch, const char *fmt, ...)
 	if (c->held == NULL)
 		if ((c->held = calloc(1, MAIL_HELD)) == NULL)
 			abort();
-	if (c->nheld + strlen(line) + 2 < MAIL_HELD) {
+	if (c->nheld + strlen(line) + 3 < MAIL_HELD) {
 		c->nheld += (size_t)snprintf(c->held + c->nheld, MAIL_HELD -
-		    c->nheld, "%s\n", line);
+		    c->nheld, ch == CH_TELEGRAM ? "%s\n\n" : "%s\n", line);
 		c->held_lines++;
 	}
 	pthread_mutex_unlock(&lock);
@@ -490,7 +490,10 @@ alert_send(const char *how, const char *subject, const char *text, char *err,
 		else if (ch == CH_MAIL)
 			(void)send_with(&mc, subject, text, one, sizeof(one));
 		else {
-			if (asprintf(&msg, "%s\n\n%s", subject, text) == -1)
+			/* "Arcana: workflow w on h": a sign, and the rest. */
+			if (asprintf(&msg, "%s %s\n\n%s", strstr(subject,
+			    "approval") != NULL ? "⏳" : "🔔", strncmp(subject,
+			    "Arcana: ", 8) == 0 ? subject + 8 : subject, text) == -1)
 				abort();
 			(void)tg_send(&mc, msg, one, sizeof(one));
 			free(msg);
@@ -535,6 +538,65 @@ str(const ucl_object_t *o, const char *k)
 	return (ucl_object_tostring_forced(v));
 }
 
+/*
+ * The notices as Telegram shows them: plain text (the agent sends no
+ * parse mode), a sign first so a glance says what it is, the host
+ * next, then what and when on lines of their own.
+ */
+static const char *
+tg_sign(const char *severity)
+{
+
+	if (severity == NULL)
+		return ("⚪");
+	if (strcasecmp(severity, "Critical") == 0)
+		return ("🔴");
+	if (strcasecmp(severity, "Major") == 0)
+		return ("🟠");
+	if (strcasecmp(severity, "Minor") == 0)
+		return ("🟡");
+	return ("🔵");
+}
+
+static void
+tg_fault(const char *when, const char *host, const ucl_object_t *d, int min)
+{
+	const char	*desc = str(d, "description");
+
+	if (strcmp(str(d, "state") != NULL ? str(d, "state") : "",
+	    "cleared") == 0 || strcmp(str(d, "severity") != NULL ? str(d,
+	    "severity") : "", "Cleared") == 0)
+		hold(CH_TELEGRAM, "✅ %s · cleared\n%s of %s\n🕒 %s", host,
+		    str(d, "type"), str(d, "object"), when);
+	else if (severity_rank(str(d, "severity")) >= min)
+		hold(CH_TELEGRAM, "%s %s · %s fault\n%s of %s%s%s\n🕒 %s",
+		    tg_sign(str(d, "severity")), host, str(d, "severity"),
+		    str(d, "type"), str(d, "object"), desc != NULL &&
+		    desc[0] != '\0' ? "\n" : "", desc != NULL ? desc : "",
+		    when);
+}
+
+static void
+tg_job(const char *when, const char *host, const ucl_object_t *d,
+    const char *error, const char *jobs)
+{
+	bool	ok = ucl_object_toboolean(ucl_object_lookup(d, "ok"));
+
+	if (!ok && strstr(error, "could not be undone") != NULL)
+		hold(CH_TELEGRAM, "🚨 %s · job %s not confirmed, not undone\n"
+		    "The host is left changed.\n%s\n⚠️ %s\n🕒 %s", host,
+		    str(d, "id"), str(d, "title"), error, when);
+	else if (strcmp(jobs, "none") == 0)
+		return;
+	else if (ok) {
+		if (strcmp(jobs, "all") == 0)
+			hold(CH_TELEGRAM, "✅ %s · job %s done\n%s\n🕒 %s", host,
+			    str(d, "id"), str(d, "title"), when);
+	} else
+		hold(CH_TELEGRAM, "❌ %s · job %s failed\n%s\n⚠️ %s\n🕒 %s",
+		    host, str(d, "id"), str(d, "title"), error, when);
+}
+
 /* One event of a host, held when it is one asked for. */
 static void
 event(const struct mailconf *mc, const char *host, const ucl_object_t *e)
@@ -567,6 +629,10 @@ event(const struct mailconf *mc, const char *host, const ucl_object_t *e)
 			min = severity_rank(faults);
 			if (min < 0)
 				continue;
+			if (ch == CH_TELEGRAM) {
+				tg_fault(when, host, d, min);
+				continue;
+			}
 			if (strcmp(str(d, "state") != NULL ? str(d, "state") :
 			    "", "cleared") == 0 || strcmp(str(d, "severity") !=
 			    NULL ? str(d, "severity") : "", "Cleared") == 0)
@@ -578,6 +644,17 @@ event(const struct mailconf *mc, const char *host, const ucl_object_t *e)
 				    str(d, "object"), str(d, "description") !=
 				    NULL ? str(d, "description") : "");
 		} else if (strcmp(kind, "threshold") == 0 && limits) {
+			if (ch == CH_TELEGRAM) {
+				bool	over = ucl_object_toboolean(ucl_object_lookup(d,
+				    "over"));
+
+				hold(ch, "%s %s · %s%s%s %s its limit\n%s, the limit %s\n"
+				    "🕒 %s", over ? "📈" : "📉", host, str(d, "what"),
+				    str(d, "name") != NULL ? " " : "", str(d, "name") !=
+				    NULL ? str(d, "name") : "", over ? "over" :
+				    "back under", str(d, "value"), str(d, "limit"), when);
+				continue;
+			}
 			hold(ch, "%s %s: %s%s%s %s its limit: %s, the limit %s",
 			    when, host, str(d, "what"), str(d, "name") != NULL ?
 			    " " : "", str(d, "name") != NULL ? str(d, "name") :
@@ -591,6 +668,10 @@ event(const struct mailconf *mc, const char *host, const ucl_object_t *e)
 			/* A safe change that could not be taken back is an
 			 * alert whatever the settings say of jobs: the host
 			 * is left changed and unconfirmed. */
+			if (ch == CH_TELEGRAM) {
+				tg_job(when, host, d, error, jobs);
+				continue;
+			}
 			if (!ucl_object_toboolean(ucl_object_lookup(d, "ok")) &&
 			    strstr(error, "could not be undone") != NULL)
 				hold(ch, "%s %s: ALERT: job %s was not confirmed "
@@ -628,7 +709,12 @@ mail_run(const char *workflow, unsigned int run, const char *state)
 		if (!chan_on(&mc, ch) || strcmp(runs, "none") == 0 || (ok &&
 		    strcmp(runs, "all") != 0))
 			continue;
-		hold(ch, "workflow %s, run %u: %s", workflow, run, state);
+		if (ch == CH_TELEGRAM)
+			hold(ch, "🔁 workflow %s · run %u\n%s %s", workflow, run, ok ?
+			    "✅" : strcmp(state, "failed") == 0 ? "❌" : strcmp(state,
+			    "cancelled") == 0 ? "⏹️" : "ℹ️", state);
+		else
+			hold(ch, "workflow %s, run %u: %s", workflow, run, state);
 		any = true;
 	}
 	mc_free(&mc);
@@ -690,10 +776,13 @@ mail_flush(void)
 				    err);
 		} else {
 			mc_load(&mc);
-			/* One thing: its line; more: what the mail's subject
-			 * says, then each. */
-			if ((lines == 1 ? asprintf(&msg, "Arcana: %s", body) :
-			    asprintf(&msg, "%s\n%s", subject, body)) == -1)
+			/* A heading, how many, then each, a blank line
+			 * between. */
+			for (i = strlen(body); i > 0 && body[i - 1] == '\n'; i--)
+				body[i - 1] = '\0';
+			if ((lines == 1 ? asprintf(&msg, "🛰️ Arcana\n\n%s", body) :
+			    asprintf(&msg, "🛰️ Arcana · %zu events\n\n%s", lines,
+			    body)) == -1)
 				abort();
 			if (tg_send(&mc, msg, err, sizeof(err)) != 0)
 				thread_log(LOG_WARNING, "telegram: not sent: %s",
@@ -858,7 +947,7 @@ tgtest_run(struct kore_task *t)
 
 	mc_load(&mc);
 	snprintf(tt->chats, sizeof(tt->chats), "%s", mc.tg_chats);
-	tt->rc = tg_send(&mc, "Arcana: a test.\n\nThis message says the "
+	tt->rc = tg_send(&mc, "🛰️ Arcana: a test.\n\n✅ This message says the "
 	    "console's alerts reach this chat: faults, limits crossed, jobs "
 	    "and workflow runs come the same way, as Settings, Notifications "
 	    "says.", tt->err, sizeof(tt->err));

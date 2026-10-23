@@ -181,12 +181,14 @@ title_of(const struct arc_job_spec *sp)
 		    "down");
 		break;
 	case ARC_JOB_KIND_ROUTE:
-		rc = asprintf(&t, "route %s %s%s%s%s%s%s%s", sp->remove ?
+		rc = asprintf(&t, "route %s %s%s%s%s%s%s%s%s%s", sp->remove ?
 		    "delete" : "add", sp->destination, sp->gateway != NULL ?
 		    " via " : "", sp->gateway != NULL ? sp->gateway : "",
 		    sp->has_fib && sp->fib != 0 ? " (fib)" : "",
 		    sp->has_metric && sp->metric != 0 ? " (metric)" : "",
 		    sp->has_weight && sp->weight != 0 ? " (weight)" : "",
+		    sp->names.n > 0 ? " as " : "", sp->names.n > 0 ?
+		    sp->names.v[0] : "", sp->verb != NULL ? " (kept only)" :
 		    sp->persist ? " (kept)" : "");
 		break;
 	case ARC_JOB_KIND_IF_SET:
@@ -1345,6 +1347,8 @@ undo(struct qjob *j)
 		rm.metric = sp->has_metric ? sp->metric : 0;
 		rm.weight = sp->has_weight ? sp->weight : 0;
 		rm.source = sp->source;
+		rm.name = sp->names.n > 0 ? sp->names.v[0] : NULL;
+		rm.rc_only = false;
 		rc = do_route(&j->w, sp->destination, sp->gateway, !sp->remove,
 		    sp->has_fib ? sp->fib : 0, &rm, sp->persist, &e);
 		break;
@@ -1656,6 +1660,8 @@ run(struct qjob *j, bool lane)
 		rm.metric = sp->has_metric ? sp->metric : 0;
 		rm.weight = sp->has_weight ? sp->weight : 0;
 		rm.source = sp->source;
+		rm.name = sp->names.n > 0 ? sp->names.v[0] : NULL;
+		rm.rc_only = sp->verb != NULL && strcmp(sp->verb, "keep") == 0;
 		ok = do_route(&j->w, sp->destination, sp->gateway, sp->remove,
 		    sp->has_fib ? sp->fib : 0, &rm, sp->persist, &error) == 0;
 		break;

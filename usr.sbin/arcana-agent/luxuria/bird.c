@@ -718,6 +718,173 @@ do_bird_routes(struct work *w, const char *filter, struct arc_network_rsp *rsp)
 	return (0);
 }
 
+/*
+ * What "show ospf topology all <proto>" says, made an array of areas:
+ * each with its routers (distance or unreachable, and links: what, to,
+ * metric or metric2) and its transit networks (dr, distance, routers).
+ * A line's tabs say where it belongs: none an area, one a router or a
+ * network, two what it has.
+ */
+static ucl_object_t *
+ospf_topology(struct work *w, char *text)
+{
+	ucl_object_t	*areas, *area, *node, *links, *l;
+	char		*line, *p, w1[24], w2[80], w3[16];
+	long long	 num;
+	int		 tabs, n, isnet;
+
+	areas = ucl_object_typed_new(UCL_ARRAY);
+	area = node = NULL;
+	isnet = 0;
+	while ((line = strsep(&text, "\n")) != NULL) {
+		for (tabs = 0; line[tabs] == '\t'; tabs++)
+			;
+		p = line + tabs;
+		if ((n = sscanf(p, "%23s %79s %15s %lld", w1, w2, w3, &num)) < 1)
+			continue;
+		if (tabs == 0 && strcmp(w1, "area") == 0 && n >= 2) {
+			area = ucl_object_typed_new(UCL_OBJECT);
+			put(area, "area", wstrdup(w, w2));
+			ucl_object_insert_key(area, ucl_object_typed_new(
+			    UCL_ARRAY), "routers", 0, false);
+			ucl_object_insert_key(area, ucl_object_typed_new(
+			    UCL_ARRAY), "networks", 0, false);
+			ucl_array_append(areas, area);
+			node = NULL;
+		} else if (tabs == 1 && area != NULL && n >= 2 &&
+		    (strcmp(w1, "router") == 0 || strcmp(w1, "network") == 0)) {
+			isnet = w1[0] == 'n';
+			node = ucl_object_typed_new(UCL_OBJECT);
+			put(node, "id", wstrdup(w, w2));
+			ucl_object_insert_key(node, ucl_object_typed_new(
+			    UCL_ARRAY), isnet ? "routers" : "links", 0, false);
+			ucl_array_append((ucl_object_t *)(uintptr_t)
+			    ucl_object_lookup(area, isnet ? "networks" :
+			    "routers"), node);
+		} else if (tabs >= 2 && node != NULL) {
+			if (strcmp(w1, "distance") == 0 && n >= 2)
+				ucl_object_insert_key(node, ucl_object_fromint(
+				    strtoll(w2, NULL, 10)), "distance", 0, false);
+			else if (strcmp(w1, "unreachable") == 0)
+				ucl_object_insert_key(node,
+				    ucl_object_frombool(true), "unreachable", 0,
+				    false);
+			else if (strcmp(w1, "dr") == 0 && n >= 2)
+				put(node, "dr", wstrdup(w, w2));
+			else if (isnet && strcmp(w1, "router") == 0 && n >= 2)
+				ucl_array_append((ucl_object_t *)(uintptr_t)
+				    ucl_object_lookup(node, "routers"),
+				    ucl_object_fromstring(w2));
+			else if (!isnet && n >= 2) {
+				l = ucl_object_typed_new(UCL_OBJECT);
+				put(l, "kind", wstrdup(w, w1));
+				put(l, "to", wstrdup(w, w2));
+				if (n == 4 && (strcmp(w3, "metric") == 0 ||
+				    strcmp(w3, "metric2") == 0))
+					ucl_object_insert_key(l,
+					    ucl_object_fromint(num), w3[6] ==
+					    '2' ? "metric2" : "metric", 0, true);
+				links = (ucl_object_t *)(uintptr_t)
+				    ucl_object_lookup(node, "links");
+				ucl_array_append(links, l);
+			}
+		}
+	}
+	return (areas);
+}
+
+/*
+ * BIRD's OSPF protocols, each with the areas it is in; with the filter
+ * "topology", or "topology" and a protocol's name, each area's routers
+ * and transit networks too, from its link-state database.  Asking one
+ * router of an area is enough: every router of it holds the same.
+ */
+int
+do_bird_ospf(struct work *w, const char *filter, struct arc_network_rsp *rsp)
+{
+	struct execres	 res, r2;
+	ucl_object_t	*top, *arr, *po, *areas;
+	unsigned char	*json;
+	char		*text, *line, *t2, *l2, *argv[8], name[64], proto[16];
+	char		 only[64], area[24];
+	const char	*p;
+	bool		 topology;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	only[0] = '\0';
+	topology = false;
+	if (filter != NULL && filter[0] != '\0') {
+		if (strncmp(filter, "topology", 8) != 0 || (filter[8] != '\0' &&
+		    filter[8] != ' ' && filter[8] != ',')) {
+			rsp->error = "the filter is topology, or topology and an "
+			    "OSPF protocol's name";
+			return (0);
+		}
+		topology = true;
+		if (filter[8] != '\0')
+			snprintf(only, sizeof(only), "%s", filter + 9);
+		for (p = only; *p != '\0'; p++)
+			if (!isalnum((unsigned char)*p) && *p != '_') {
+				rsp->error = "a protocol's name is letters, "
+				    "digits and _";
+				return (0);
+			}
+	}
+	if (birdc(w, true, "show", "protocols", NULL, &res) != 0) {
+		if ((rsp->error = scope_missing(w, &res, "birdc(8)",
+		    "bird3")) == NULL)
+			rsp->error = wtext(w, exec_error(w, &res, "birdc"));
+		return (0);
+	}
+	top = ucl_object_typed_new(UCL_OBJECT);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	text = wstrdup(w, res.out != NULL ? res.out : "");
+	while ((line = strsep(&text, "\n")) != NULL) {
+		if (sscanf(line, "%63s %15s", name, proto) != 2 ||
+		    strcmp(proto, "OSPF") != 0 || (only[0] != '\0' &&
+		    strcmp(only, name) != 0))
+			continue;
+		po = ucl_object_typed_new(UCL_OBJECT);
+		put(po, "name", wstrdup(w, name));
+		areas = ucl_object_typed_new(UCL_ARRAY);
+		if (birdc(w, true, "show", "ospf", name, &r2) == 0)
+			for (t2 = wstrdup(w, r2.out != NULL ? r2.out : "");
+			    (l2 = strsep(&t2, "\n")) != NULL; )
+				if (sscanf(l2, " Area: %23s", area) == 1)
+					ucl_array_append(areas,
+					    ucl_object_fromstring(area));
+		ucl_object_insert_key(po, areas, "areas", 0, false);
+		if (topology) {
+			argv[0] = (char *)(uintptr_t)opts.birdc_bin;
+			argv[1] = (char *)(uintptr_t)"-r";
+			argv[2] = (char *)(uintptr_t)"show";
+			argv[3] = (char *)(uintptr_t)"ospf";
+			argv[4] = (char *)(uintptr_t)"topology";
+			argv[5] = (char *)(uintptr_t)"all";
+			argv[6] = name;
+			argv[7] = NULL;
+			if (run_exec(w, argv, &r2) == 0)
+				ucl_object_insert_key(po, ospf_topology(w,
+				    wstrdup(w, r2.out != NULL ? r2.out : "")),
+				    "topology", 0, false);
+		}
+		ucl_array_append(arr, po);
+	}
+	ucl_object_insert_key(top, arr, "protocols", 0, false);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	if (json == NULL || strlen((char *)json) > ARC_MAX_JSON) {
+		free(json);
+		rsp->error = "this topology is more than a reply carries: ask "
+		    "for one protocol";
+		return (0);
+	}
+	rsp->json = wtext(w, wadopt(w, json));
+	rsp->ok = true;
+	return (0);
+}
+
 /* NULL when birdc may be told verb, about the protocol named or all. */
 const char *
 bird_check(const char *verb, const char *const *names, size_t n)

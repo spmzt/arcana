@@ -226,6 +226,7 @@ enum netkind {
 	NET_SPAN,		/* bridges' span ports, taps, capture */
 	NET_CARP,		/* carp(4)'s vhids, from the interfaces */
 	NET_MULTICAST,		/* IGMP's and MLD's state, ifmcstat(8) */
+	NET_KEPT,		/* the static routes rc.conf keeps */
 };
 /* A plugin's view: a tab of its own on a host that has it. */
 #define	NET_PLUGIN(k)	((k) == NET_BIRD || (k) == NET_IPSEC)
@@ -382,6 +383,7 @@ enum modal {
 	MODAL_HOST_KEY,
 	MODAL_IF_ADDRESS,
 	MODAL_ROUTE,
+	MODAL_KEPT_RENAME,
 	MODAL_TUNNEL,
 	MODAL_IF_CREATE,
 	MODAL_IF_SET,
@@ -640,7 +642,7 @@ void		 if_address(struct server *, const char *, const char *, bool,
 		    bool);
 void		 if_state(struct server *, const char *, bool);
 void		 route_change(struct server *, const char *, const char *, bool,
-		    bool, int, int, int, const char *);
+		    bool, int, int, int, const char *, const char *, bool);
 bool		 service_busy(const struct server *, const char *);
 bool		 packages_busy(const struct server *);
 void		 load_settings(void);
@@ -719,6 +721,9 @@ void		 view_jobs(struct html *, struct server *);
 
 /* topo.c: the fleet's network as a map, traffic, routes, netgraph. */
 void		 view_netmap(struct html *);
+void		 view_overlay(struct html *);
+void		 view_leaks(struct html *);
+bool		 leaks_action(const char *, const char *, const char *);
 void		 view_netgraph(struct html *, struct server *,
 		    const ucl_object_t *);
 void		 view_lookup(struct html *, const struct server *);
@@ -865,6 +870,8 @@ void		 help_button(struct html *);
 bool		 routing_action(const char *, const char *, const char *);
 int		 topo_gw_owner(const char *, int, const char *, char *, size_t,
 		    char *, size_t);
+int		 topo_if_rates(int, const char *, const char *, bool, double *,
+		    double *, int);
 bool		 ecmp_shown(void);
 void		 ecmp_tick(double);
 void		 ecmp_group(struct html *, const struct server *,
@@ -874,7 +881,7 @@ void		 nhop_modal(struct html *);
 bool		 nhop_action(const char *, const char *, const char *);
 void		 ecmp_head(struct html *);
 enum { NETSECT_MAP, NETSECT_GROUPS, NETSECT_TRACE, NETSECT_BGP, NETSECT_OSPF,
-    NETSECT_BFD, NETSECT_PREFIXES };
+    NETSECT_BFD, NETSECT_PREFIXES, NETSECT_OVERLAY, NETSECT_LEAKS };
 void		 view_traceroute(struct html *);
 bool		 mtr_action(const char *, const char *, const char *);
 void		 mtr_tick(double);

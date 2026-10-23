@@ -1066,6 +1066,22 @@ asked again.
 .It Cm net nhgroups
 The kernel's nexthop groups, what a route of several next hops points
 to, each with its next hops and their shares.
+.It Cm net kept-routes
+The static routes
+.Xr rc.conf 5
+keeps, of the host or with
+.Fl j
+of the jail, as
+.Xr sysrc 8
+reads them: each name of
+.Va static_routes
+and
+.Va ipv6_static_routes
+with its variable, read as
+.Xr route 8
+would read it (destination, gateway, kind and table); a variable
+neither list names, which rc.d/routing leaves, and a name without its
+variable; and the default routers of each table.
 .It Cm net neighbours Oo Fl 4 | Fl 6 Oc Op Ar text
 The neighbours, those of ARP and of NDP, asked of the kernel through
 .Xr netlink 4 :
@@ -1556,7 +1572,7 @@ Bring a network interface up or down.
 Add an IPv4 or IPv6
 .Ar address ,
 with its prefix length, to an interface as an alias, or take it off.
-.It Cm route add Ar destination gateway Oo Cm metric Ar n Oc Oo Cm weight Ar n Oc Oo Cm source Ar address Oc
+.It Cm route Oo Cm keep Oc Cm add Ar destination gateway Oo Cm metric Ar n Oc Oo Cm weight Ar n Oc Oo Cm source Ar address Oc Oo Cm name Ar word Oc
 Add a static route to
 .Ar destination ,
 which is
@@ -1580,9 +1596,54 @@ its share among routes of one cost; and
 the address of the host that what takes the route is sent from.
 The routing table is that of the option
 .Fl F .
-.It Cm route delete Ar destination Oo Ar gateway Oc Oo Cm metric Ar n Oc
+With
+.Fl p
+the route is kept in
+.Xr rc.conf 5
+too, as
+.Va route_ Ns Ar name
+in
+.Va static_routes
+.Pq Va ipv6_ Ns ... of IPv6 ;
+.Ar name
+is the
+.Cm name
+given, letters, digits and _, or the name rc.conf keeps the route to
+.Ar destination
+in that table by already, whatever it is, or else
+.Li arc_
+and the destination.
+A new name for a route kept already renames it.
+A default route without other words is kept as
+.Va defaultrouter
+.Pq Va defaultrouter_fib Ns Ar N
+instead.
+After
+.Cm keep
+the route is kept in, or taken out of,
+.Xr rc.conf 5
+alone, the kernel's table left as it is: for one another program
+such as
+.Xr bird 8
+puts in the table.
+.Cm keep add
+with a
+.Cm name
+and no
+.Ar gateway
+renames the route
+.Xr rc.conf 5
+keeps to
+.Ar destination ,
+its words as they are, whoever wrote them.
+.It Cm route Oo Cm keep Oc Cm delete Ar destination Oo Ar gateway Oc Oo Cm metric Ar n Oc Oo Cm name Ar word Oc
 Delete the route to
-.Ar destination .
+.Ar destination ;
+with
+.Fl p
+also from
+.Xr rc.conf 5 ,
+found there by its destination and table whatever its name.
 .It Cm route get Ar address
 The route the host would send a packet to
 .Ar address
@@ -1837,6 +1898,15 @@ with
 what each carries, a BGP route's path and communities.
 They are counted first: more than 2000 are not sent, and the count is
 said instead.
+.It Cm bird ospf Op Cm topology Op Ar protocol
+BIRD's OSPF protocols, each with the areas it is in; with
+.Cm topology ,
+what each area's link-state database says, from
+.Ql show ospf topology all :
+its routers with their distance and links
+.Pq router, network, stubnet, external, with the metric ,
+and its transit networks with their designated router and routers.
+Every router of an area holds the same database.
 .It Cm bird confirm
 The configuration put in place with
 .Fl s

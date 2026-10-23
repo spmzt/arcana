@@ -97,6 +97,8 @@ module: arcana-jobs
        |        |     +---w metric?        uint32
        |        |     +---w weight?        uint32
        |        |     +---w source?        string
+       |        |     +---w route-name*    string
+       |        |     +---w verb?          enumeration
        |        |     +---w persist?       boolean
        |        |     +---w safe?          boolean
        |        +--:(if-set)

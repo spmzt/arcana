@@ -225,6 +225,112 @@ route_delete(struct html *h, const ucl_object_t *e, const char *family)
 }
 
 /*
+ * The static routes rc.conf keeps (static_routes, ipv6_static_routes),
+ * each by its name: a new name for it, or forgotten there, the kernel's
+ * table left as it is.  A variable no list names, which rc.d/routing
+ * leaves, and a name without its variable are said so; the default
+ * routers, of each table, under them.
+ */
+static const struct column kept_cols[] = {
+	{ "Name", "name", NULL },
+	{ "Destination", "destination", NULL },
+	{ "Gateway", "gateway", NULL },
+	{ "Kind", "kind", NULL },
+	{ "FIB", "fib", NULL },
+	{ "Family", "family", NULL },
+};
+
+static int
+kept_table(struct html *h, const ucl_object_t *data)
+{
+	struct tcol		 tc[7];
+	const ucl_object_t	**rows, *r, *d;
+	ucl_object_iter_t	 it;
+	char			 v[96];
+	const char		*dest;
+	size_t			 i, c, n;
+
+	for (c = 0; c < 6; c++) {
+		tc[c].title = kept_cols[c].title;
+		tc[c].key = kept_cols[c].path;
+		tc[c].num = c == 4;
+	}
+	tc[6].title = "Value";
+	tc[6].key = "value";
+	tc[6].num = false;
+	h_raw(h, "<table class=\"net kept\">");
+	tbl_head(h, "net-kept", tc, 7, 1);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("net-kept", jget(data, "routes"), tc, 7, app.filter);
+	for (i = 0; rows[i] != NULL; i++) {
+		r = rows[i];
+		h_raw(h, "<tr>");
+		for (c = 0; c < 6; c++)
+			cell(h, r, &kept_cols[c]);
+		h_raw(h, "<td class=\"mono dim\">");
+		if (jstr(r, "value") != NULL)
+			h_txt(h, jstr(r, "value"));
+		if (jbool(r, "missing"))
+			h_raw(h, "<span class=\"kept-note\" title=\"The list "
+			    "names it, rc.conf has no variable for it: rc(8) "
+			    "skips it\">no variable</span>");
+		else if (!jbool(r, "listed"))
+			h_raw(h, " <span class=\"kept-note\" title=\"No list "
+			    "names it: rc.d/routing does not add it at "
+			    "boot\">not listed</span>");
+		h_raw(h, "</td><td>");
+		dest = jstr(r, "destination");
+		if (dest != NULL && jbool(r, "listed")) {
+			snprintf(v, sizeof(v), "%lld %s", (long long)jint(r,
+			    "fib", 0), jstr(r, "name") != NULL ? jstr(r,
+			    "name") : "");
+			h_raw(h, "<button class=\"icon\" data-act=\"kept-rename\" "
+			    "title=\"Keep it by another name, its words as they "
+			    "are\"");
+			h_attr(h, "data-arg", dest);
+			h_attr(h, "data-value", v);
+			h_raw(h, ">✎</button>");
+			snprintf(v, sizeof(v), "%lld", (long long)jint(r, "fib",
+			    0));
+			h_raw(h, "<button class=\"icon\" data-act=\"kept-forget\" "
+			    "title=\"Forget it in rc.conf: not added at the next "
+			    "boot; the kernel's table as it is\"");
+			h_attr(h, "data-arg", dest);
+			h_attr(h, "data-value", v);
+			h_raw(h, ">×</button>");
+		}
+		h_raw(h, "</td></tr>");
+	}
+	free(rows);
+	h_raw(h, "</tbody></table>");
+	n = i;
+	/* The default routers: rc.conf's own variables, not by a name. */
+	d = jget(data, "defaults");
+	if (d != NULL && ucl_array_size(d) > 0) {
+		h_raw(h, "<h3 class=\"kept-h\">Default routers</h3><table class="
+		    "\"net\"><thead><tr><th>Variable</th><th>Gateway</th><th>"
+		    "FIB</th><th>Family</th></tr></thead><tbody>");
+		it = NULL;
+		while ((r = ucl_object_iterate(d, &it, true)) != NULL) {
+			h_raw(h, "<tr><td class=\"mono\">");
+			h_txt(h, jstr(r, "variable") != NULL ? jstr(r,
+			    "variable") : "");
+			h_raw(h, "</td><td>");
+			h_txt(h, jstr(r, "gateway") != NULL ? jstr(r,
+			    "gateway") : "");
+			h_fmt(h, "</td><td>%lld</td><td>", (long long)jint(r,
+			    "fib", 0));
+			h_txt(h, jstr(r, "family") != NULL ? jstr(r, "family") :
+			    "");
+			h_raw(h, "</td></tr>");
+		}
+		h_raw(h, "</tbody></table>");
+		n++;
+	}
+	return ((int)n);
+}
+
+/*
  * The nexthop groups, what a route of several next hops points to:
  * each a row of its own, its next hops one under the other, each with
  * its gateway and interface and a bar of its share of the group.
@@ -657,15 +763,15 @@ view_network(struct html *h, struct server *s)
 		{ "interfaces", "Interfaces" }, { "netgraph", "Netgraph" },
 		{ "wireguard", "WireGuard" }, { "bird", "BIRD" },
 		{ "bridges", "Bridges" }, { "geneve", "Geneve" },
-		{ "nhgroups", "Nexthop groups" }, { "neighbours", "Neighbours" },
+		{ "nhgroups", "Load balance" }, { "neighbours", "Neighbours" },
 		{ "ipsec", "IPsec" }, { "span", "Span" }, { "carp", "CARP" },
-		{ "multicast", "Multicast" },
+		{ "multicast", "Multicast" }, { "kept-routes", "Kept routes" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
 	char			 age[32];
 	int			 i, n, shown;
-	bool			 mine, plug, nh;
+	bool			 mine, plug, nh, rt;
 
 	/* What was read for this view: another's is not drawn as it. */
 	mine = app.net.data != NULL && strcmp(app.net.sid, s->id) == 0 &&
@@ -681,16 +787,18 @@ view_network(struct html *h, struct server *s)
 	h_raw(h, "<nav class=\"sub\">");
 	/* The nexthop groups are of the Nexthops, not a tab of their own. */
 	nh = app.net.kind == NET_NEXTHOPS || app.net.kind == NET_NHGROUPS;
+	/* What rc.conf keeps is of the Routes, not a tab of its own. */
+	rt = app.net.kind == NET_ROUTES || app.net.kind == NET_KEPT;
 	/* Routes to WireGuard, the base system's. */
 	for (i = 0; i <= NET_WIREGUARD && !plug; i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ||
-		    (i == NET_NEXTHOPS && nh) ? " on" : "", kinds[i].arg,
-		    kinds[i].title);
+		    (i == NET_NEXTHOPS && nh) || (i == NET_ROUTES && rt) ?
+		    " on" : "", kinds[i].arg, kinds[i].title);
 	/* What is of the base system too, and came later. */
 	for (i = 8; i < (int)(sizeof(kinds) / sizeof(kinds[0])) && !plug;
 	    i++)
-		if (i != NET_NHGROUPS && !NET_PLUGIN(i))
+		if (i != NET_NHGROUPS && i != NET_KEPT && !NET_PLUGIN(i))
 			h_fmt(h, "<button class=\"ghost small%s\" data-act=\""
 			    "net-kind\" data-arg=\"%s\">%s</button>",
 			    (int)app.net.kind == i ? " on" : "", kinds[i].arg,
@@ -706,16 +814,29 @@ view_network(struct html *h, struct server *s)
 		    "Groups</button></nav>", app.net.kind ==
 		    NET_NEXTHOPS ? " on" : "", app.net.kind == NET_NHGROUPS ?
 		    " on" : "");
-	h_raw(h, "<nav class=\"sub\">");
-	for (i = 0; i < 3 && !plug && app.net.kind != NET_SPAN; i++) {
-		static const int fams[] = { 0, 4, 6 };
+	if (rt)
+		h_fmt(h, "<nav class=\"sub\" title=\"The kernel's table now, "
+		    "or the static routes rc.conf adds at boot, each by its "
+		    "name\"><button class=\"ghost small%s\" data-act=\"net-kind\" "
+		    "data-arg=\"routes\">In the table</button><button class="
+		    "\"ghost small%s\" data-act=\"net-kind\" data-arg=\""
+		    "kept-routes\">Kept in rc.conf</button></nav>",
+		    app.net.kind == NET_ROUTES ? " on" : "", app.net.kind ==
+		    NET_KEPT ? " on" : "");
+	/* rc.conf's routes are of both families, read at once. */
+	if (app.net.kind != NET_KEPT) {
+		h_raw(h, "<nav class=\"sub\">");
+		for (i = 0; i < 3 && !plug && app.net.kind != NET_SPAN; i++) {
+			static const int fams[] = { 0, 4, 6 };
 
-		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-family\" "
-		    "data-arg=\"%d\">%s</button>", app.net.family == fams[i] ?
-		    " on" : "", fams[i], fams[i] == 0 ? "all" : fams[i] == 4 ?
-		    "inet" : "inet6");
+			h_fmt(h, "<button class=\"ghost small%s\" data-act="
+			    "\"net-family\" data-arg=\"%d\">%s</button>",
+			    app.net.family == fams[i] ? " on" : "", fams[i],
+			    fams[i] == 0 ? "all" : fams[i] == 4 ? "inet" :
+			    "inet6");
+		}
+		h_raw(h, "</nav>");
 	}
-	h_raw(h, "</nav>");
 	if (app.net.kind == NET_INTERFACES)
 		h_raw(h, "<button class=\"ghost small\" data-act=\""
 		    "topo-if-create\" data-arg=\"\" title=\"Create an epair, a "
@@ -740,6 +861,10 @@ view_network(struct html *h, struct server *s)
 	if (app.net.kind == NET_NEIGHBOURS)
 		h_raw(h, "<button class=\"ghost small\" data-act=\"neigh-add\" "
 		    "title=\"An ARP or NDP entry set by hand\">+ neighbour"
+		    "</button>");
+	if (app.net.kind == NET_KEPT)
+		h_raw(h, "<button class=\"ghost small\" data-act=\"route-add\" "
+		    "title=\"Add a static route, kept by a name\">+ route"
 		    "</button>");
 	if (app.net.kind == NET_ROUTES)
 		h_raw(h, "<button class=\"ghost small\" data-act=\"net-lookup\" "
@@ -889,6 +1014,9 @@ view_network(struct html *h, struct server *s)
 	case NET_MULTICAST:
 		view_multicast(h, jget(app.net.data, "data"));
 		return;
+	case NET_KEPT:
+		shown = kept_table(h, jget(app.net.data, "data"));
+		break;
 	default:
 		shown = table(h, jget(app.net.data, "data.sockstat.socket"),
 		    sock_cols, 7, NULL);

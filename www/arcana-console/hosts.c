@@ -338,6 +338,8 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_WIREGUARD] = "wireguard",
 	[ARC_NET_KIND_BIRD] = "bird",
 	[ARC_NET_KIND_BIRD_ROUTES] = "bird-routes",
+	[ARC_NET_KIND_BIRD_OSPF] = "bird-ospf",
+	[ARC_NET_KIND_KEPT_ROUTES] = "kept-routes",
 	[ARC_NET_KIND_BRIDGES] = "bridges",
 	[ARC_NET_KIND_GENEVE] = "geneve",
 	[ARC_NET_KIND_IPFW] = "ipfw",
@@ -3813,8 +3815,8 @@ setup_network(struct call *c, const struct rq *q)
 	    !pick_scope(q, c))
 		return ("kind is one of routes, nexthops, nhgroups, "
 		    "connections, sockets, interfaces, netgraph, wireguard, "
-		    "bird, bird-routes, bridges, geneve, ipfw, neighbours, "
-		    "ipsec, lookup; fib a number");
+		    "bird, bird-routes, bird-ospf, bridges, geneve, ipfw, neighbours, "
+		    "ipsec, kept-routes, lookup; fib a number");
 	c->action = (uint8_t)i;
 	/* Read on in a table too large for one reply. */
 	if (rq_param(q, "offset", off, sizeof(off)) && off[0] != '\0') {
@@ -3838,7 +3840,8 @@ setup_network(struct call *c, const struct rq *q)
 	if (rq_param(q, "filter", c->jail, sizeof(c->jail))) {
 		/* BIRD's routes are asked for in words, with , between. */
 		for (p = c->jail; *p != '\0'; p++)
-			if (*p == ',' && c->action == ARC_NET_KIND_BIRD_ROUTES)
+			if (*p == ',' && (c->action == ARC_NET_KIND_BIRD_ROUTES ||
+			    c->action == ARC_NET_KIND_BIRD_OSPF))
 				c->jail[p - c->jail] = ' ';
 			else if (!isalnum((unsigned char)*p) && strchr(".:/_-",
 			    *p) == NULL)
@@ -5161,10 +5164,23 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			    "address");
 		break;
 	case ARC_JOB_KIND_ROUTE:
+		/* The name rc.conf keeps it by: one word, or none. */
+		names = ucl_object_lookup(o, "route_name");
+		if (ucl_array_size(names) > 1 || (names != NULL &&
+		    ucl_object_type(names) != UCL_ARRAY))
+			return ("a route's route_name is a list of one name");
+		if ((v = ucl_array_head(names)) != NULL && ucl_object_type(v) ==
+		    UCL_STRING && ucl_object_tostring(v)[0] != '\0') {
+			nv = kore_calloc(1, sizeof(*nv));
+			nv[0] = kore_strdup(ucl_object_tostring(v));
+			sp->names.v = nv;
+			sp->names.n = 1;
+		}
 		if (sp->destination == NULL || (!sp->remove && sp->gateway ==
-		    NULL))
+		    NULL && (sp->verb == NULL || sp->names.n == 0)))
 			return ("a route job needs a destination, and a "
-			    "gateway to add one");
+			    "gateway to add one (or keep and a name to rename "
+			    "one kept)");
 		break;
 	case ARC_JOB_KIND_IF_VNET:
 		if (sp->interface == NULL || sp->jail == NULL)

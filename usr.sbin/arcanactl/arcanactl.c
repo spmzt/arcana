@@ -165,9 +165,9 @@ usage(void)
 	    "address [peer address]]\n        [mtu number] [description "
 	    "text] [id number] [parent interface] [reqid number]\n"
 	    "        [fib number] [tunnelfib number]\n"
-	    "    route add destination gateway[@share][,gateway[@share]...] [metric n] [weight n] "
-	    "[source address]\n"
-	    "    route delete destination [gateway] [metric n]\n"
+	    "    route [keep] add destination gateway[@share][,gateway[@share]...] [metric n]\n"
+	    "        [weight n] [source address] [name word]\n"
+	    "    route [keep] delete destination [gateway] [metric n] [name word]\n"
 	    "    route get address\n"
 	    "    traceroute address\n"
 	    "    sdwan [probes | rules | steer | bird | dhcp | dns | proxy | ids json]\n"
@@ -199,6 +199,7 @@ usage(void)
 	    "    bird config [file]\n"
 	    "    bird config -w new-text [-n] [file]\n"
 	    "    bird confirm\n"
+	    "    bird ospf [topology [protocol]]\n"
 	    "    bird routes [prefix | for address] [protocol | export name]\n"
 	    "        [table name] [all]\n"
 	    "    stats\n"
@@ -265,7 +266,7 @@ usage(void)
 	    "    history set seconds samples [cpu%% mem%% swap%% [storage%%]] "
 	    "[rules list]\n"
 	    "    events [after | -f]\n"
-	    "    net bridges | geneve | ipfw | nhgroups\n"
+	    "    net bridges | geneve | ipfw | nhgroups | kept-routes\n"
 	    "    bridge name addm | deletem member\n"
 	    "    bridge name access member vlan\n"
 	    "    bridge name trunk member vlan-list [untagged-vlan]\n"
@@ -1346,6 +1347,40 @@ cmd_bird_confirm(struct arc_client *cl)
 }
 
 /* bird routes [words]: routes of BIRD's tables, said in birdc's words. */
+/* bird ospf [topology [protocol]]: BIRD's OSPF areas, or their topology. */
+static int
+cmd_bird_ospf(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_network_req	 req;
+	struct arc_network_rsp	*rsp;
+	char			 words[96];
+	int			 error;
+
+	words[0] = '\0';
+	if (argc > 2 || (argc >= 1 && strcmp(argv[0], "topology") != 0))
+		usage();
+	if (argc >= 1 && snprintf(words, sizeof(words), "%s%s%s", argv[0],
+	    argc == 2 ? "," : "", argc == 2 ? argv[1] : "") >=
+	    (int)sizeof(words))
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.has_net_kind = true;
+	req.net_kind = ARC_NET_KIND_BIRD_OSPF;
+	req.net_filter = words[0] != '\0' ? words : NULL;
+	req.jail = netjail;
+	if ((error = arc_network(cl, &req, &rsp)) != 0)
+		fail(cl, error, "bird ospf");
+	if (rsp->json != NULL)
+		xo_emit("{:json/%s}\n", rsp->json);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("bird ospf: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_network_rsp_free(rsp);
+	return (error);
+}
+
 static int
 cmd_bird_routes(struct arc_client *cl, int argc, char **argv)
 {
@@ -1600,6 +1635,8 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 		return (cmd_bird_config(cl, argc - 1, argv + 1));
 	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "routes") == 0)
 		return (cmd_bird_routes(cl, argc - 2, argv + 2));
+	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "ospf") == 0)
+		return (cmd_bird_ospf(cl, argc - 2, argv + 2));
 	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "confirm") == 0 &&
 	    argc == 2)
 		return (cmd_bird_confirm(cl));
@@ -1661,22 +1698,44 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 	if (strcmp(argv[0], "route") == 0 && strcmp(argv[1], "get") == 0)
 		return (cmd_route_get(cl, argc, argv));
 	if (strcmp(argv[0], "route") == 0) {
-		/* route add destination gateway | delete destination [gw] */
+		/*
+		 * route [keep] add destination gateway | delete destination
+		 * [gw]; keep: in rc.conf alone, the kernel's table as it is.
+		 */
 		sp.kind = ARC_JOB_KIND_ROUTE;
+		if (strcmp(argv[1], "keep") == 0) {
+			if (argc < 4)
+				usage();
+			sp.verb = "keep";
+			sp.persist = true;
+			argc--;
+			argv++;
+		}
 		sp.has_fib = fib != 0;
 		sp.fib = fib;
 		sp.remove = strcmp(argv[1], "delete") == 0;
 		if (!sp.remove && (strcmp(argv[1], "add") != 0 || argc < 4))
 			usage();
+		if (strcmp(argv[1], "add") != 0 && strcmp(argv[1], "delete") !=
+		    0)
+			usage();
 		sp.destination = argv[2];
 		/* Then the gateway, and words with what follows each. */
 		i = 3;
 		if (i < argc && strcmp(argv[i], "metric") != 0 && strcmp(
-		    argv[i], "weight") != 0 && strcmp(argv[i], "source") != 0)
+		    argv[i], "weight") != 0 && strcmp(argv[i], "source") != 0 &&
+		    strcmp(argv[i], "name") != 0)
 			sp.gateway = argv[i++];
 		for (; i + 1 < argc; i += 2) {
 			if (strcmp(argv[i], "source") == 0) {
 				sp.source = argv[i + 1];
+				continue;
+			}
+			if (strcmp(argv[i], "name") == 0) {
+				/* What rc.conf keeps it by: route_<name>. */
+				sp.names.v = (const char *const *)(uintptr_t)
+				    &argv[i + 1];
+				sp.names.n = 1;
 				continue;
 			}
 			num = (uint32_t)strtonum(argv[i + 1], 1, UINT32_MAX,
@@ -1693,7 +1752,9 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 			} else
 				usage();
 		}
-		if (i != argc || (!sp.remove && sp.gateway == NULL))
+		/* keep add destination name word: the kept one renamed. */
+		if (i != argc || (!sp.remove && sp.gateway == NULL &&
+		    (sp.verb == NULL || sp.names.n == 0)))
 			usage();
 		goto send;
 	}
@@ -1882,7 +1943,7 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
 	    "bird-routes", "bridges", "geneve", "ipfw", "nhgroups",
-	    "neighbours", "ipsec", "multicast" };
+	    "neighbours", "ipsec", "multicast", "bird-ospf", "kept-routes" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;

@@ -785,9 +785,15 @@ stage(struct html *h)
 		h_fmt(h, "<div class=\"netsect\"><nav class=\"tabs\"><button "
 		    "class=\"tab%s\" data-act=\"netsect-tab\" data-arg=\"map\">"
 		    "Map</button><button class=\"tab%s\" data-act=\"netsect-tab\" "
+		    "data-arg=\"overlay\" title=\"Every tunnel of every host: "
+		    "gre, gif, WireGuard, geneve, vxlan, VPNs, both ends\">"
+		    "Overlay</button><button class=\"tab%s\" data-act=\"netsect-tab\" "
+		    "data-arg=\"leaks\" title=\"Where one routing table reaches "
+		    "into another: networks leaked, and the FIB settings\">"
+		    "Leaking</button><button class=\"tab%s\" data-act=\"netsect-tab\" "
 		    "data-arg=\"groups\" title=\"How each route of several next "
 		    "hops shares what it sends, as the agents sampled it, at "
-		    "both ends\">Nexthop groups</button><button class=\"tab%s\" "
+		    "both ends\">Load balance</button><button class=\"tab%s\" "
 		    "data-act=\"netsect-tab\" data-arg=\"traceroute\" title=\"The "
 		    "way from a host to an address, hop by hop, again and again "
 		    "as mtr does\">Traceroute</button><button class=\"tab%s\" "
@@ -802,12 +808,18 @@ stage(struct html *h)
 		    "console, for ipfw tables, BIRD sets and SD-WAN zones on any "
 		    "host\">Prefix lists</button></nav>",
 		    app.netsect == NETSECT_MAP ? " on" : "", app.netsect ==
+		    NETSECT_OVERLAY ? " on" : "", app.netsect == NETSECT_LEAKS ?
+		    " on" : "", app.netsect ==
 		    NETSECT_GROUPS ? " on" : "", app.netsect == NETSECT_TRACE ?
 		    " on" : "", app.netsect == NETSECT_BGP ? " on" : "",
 		    app.netsect == NETSECT_OSPF ? " on" : "", app.netsect ==
 		    NETSECT_BFD ? " on" : "", app.netsect == NETSECT_PREFIXES ?
 		    " on" : "");
-		if (app.netsect == NETSECT_GROUPS)
+		if (app.netsect == NETSECT_OVERLAY)
+			view_overlay(h);
+		else if (app.netsect == NETSECT_LEAKS)
+			view_leaks(h);
+		else 		if (app.netsect == NETSECT_GROUPS)
 			view_ecmp(h);
 		else if (app.netsect == NETSECT_TRACE)
 			view_traceroute(h);
@@ -2445,6 +2457,13 @@ modal(struct html *h)
 		    "\"checkbox\" name=\"persist\" checked><span>Keep it in "
 		    "<code>rc.conf</code>, to be there after a boot</span>"
 		    "</label>"
+		    "<label>Name<input name=\"name\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"edge2_gre0\">"
+		    "<small>What <code>rc.conf</code> keeps it by, <code>"
+		    "route_&lt;name&gt;</code>: the host or the interface it "
+		    "goes by, letters, digits and _. Empty: the name it has, "
+		    "or <code>arc_</code> and its destination.</small>"
+		    "</label>"
 		    "<label>Destination<input name=\"destination\" "
 		    "spellcheck=\"false\" autocomplete=\"off\" "
 		    "placeholder=\"10.20.0.0/16\" autofocus><small>A network "
@@ -2474,6 +2493,21 @@ modal(struct html *h)
 			h_fmt(h, " value=\"%d\"", app.net.fib);
 		h_raw(h, " placeholder=\"0\"><small>The table the route goes "
 		    "into; 0 is the first.</small></label></div>");
+		break;
+	case MODAL_KEPT_RENAME:
+		h_raw(h, "<form data-form=\"kept-rename\"><h2>Rename the kept "
+		    "route</h2><p>The route <code>rc.conf</code> keeps to <b>");
+		h_txt(h, app.confirm.arg);
+		h_fmt(h, "</b> (table %d) as <code>", atoi(app.confirm.value));
+		h_txt(h, app.confirm.title);
+		h_raw(h, "</code>, kept by another name: its words stay as "
+		    "they are. The kernel's table is not touched.</p>"
+		    "<label>Name<input name=\"name\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" autofocus");
+		h_attr(h, "value", app.confirm.title);
+		h_raw(h, "><small>The host or the interface it goes by: "
+		    "router1, edge2_gre0. Letters, digits and _.</small>"
+		    "</label>");
 		break;
 	case MODAL_WF_RUN:
 		if (!workflows_modal(h))
@@ -2788,6 +2822,9 @@ modal(struct html *h)
 			break;
 		case MODAL_ROUTE:
 			h_raw(h, "<button class=\"primary\">Add</button>");
+			break;
+		case MODAL_KEPT_RENAME:
+			h_raw(h, "<button class=\"primary\">Rename</button>");
 			break;
 		case MODAL_TUNNEL:
 		case MODAL_IF_CREATE:

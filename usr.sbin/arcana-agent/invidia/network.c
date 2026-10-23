@@ -489,6 +489,10 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 		return (do_multicast(w, rsp));
 	if (kind == ARC_NET_KIND_BIRD_ROUTES)
 		return (do_bird_routes(w, filter, rsp));
+	if (kind == ARC_NET_KIND_BIRD_OSPF)
+		return (do_bird_ospf(w, filter, rsp));
+	if (kind == ARC_NET_KIND_KEPT_ROUTES)
+		return (do_kept_routes(w, rsp));
 	if (kind == ARC_NET_KIND_BRIDGES || kind == ARC_NET_KIND_GENEVE)
 		return (do_l2(w, kind == ARC_NET_KIND_GENEVE, rsp));
 	if (kind == ARC_NET_KIND_IPFW)

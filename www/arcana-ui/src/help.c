@@ -24,6 +24,7 @@ net_help(void)
 
 	switch (app.net.kind) {
 	case NET_ROUTES:
+	case NET_KEPT:
 		return ("sections/network.html#routes");
 	case NET_NEXTHOPS:
 	case NET_NHGROUPS:
@@ -109,6 +110,7 @@ help_path(void)
 		return (app.netsect == NETSECT_GROUPS ?
 		    "sections/network.html#nexthops-and-their-groups" :
 		    app.netsect == NETSECT_TRACE ? "sections/map.html#traceroute" :
+		    app.netsect >= NETSECT_OVERLAY ? "sections/map.html" :
 		    app.netsect >= NETSECT_BGP ? "sections/map.html#bgp-ospf-and-bfd" :
 		    "sections/map.html");
 	case NODE_USAGE:

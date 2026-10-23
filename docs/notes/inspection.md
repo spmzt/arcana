@@ -205,3 +205,14 @@ done.
    kept?
 5. SSH: sessions seen (Suricata) and logged (sshd) only, or also
    recorded (script(1))?
+
+## Decided (the user, 2026-10-23)
+
+1. One inspection root **per tenant fleet**: a tenant's clients trust only
+   its own root.
+2. **Per-edge intermediates**, each root's key on the console only.
+3. The do-not-decrypt list is Arcana's small default and the admin's own;
+   no category feed.
+4. SD-WAN's transparent TLS **moves from Squid's ssl-bump to SSLproxy**;
+   Squid keeps the explicit-proxy URL filter and ICAP.
+5. SSH: **seen** (Suricata) **and logged** (sshd) only; not recorded.

@@ -182,10 +182,10 @@ module arcana {
     }
     leaf net-kind {
       type uint8 {
-        range "0..15";
+        range "0..17";
       }
       description
-        "One of net-kind: 0 routes 1 nexthops 2 connections 3 sockets 4 interfaces 5 netgraph 6 wireguard 7 bird 8 bird-routes 9 bridges 10 geneve 11 ipfw 12 nhgroups 13 neighbours 14 ipsec 15 multicast.";
+        "One of net-kind: 0 routes 1 nexthops 2 connections 3 sockets 4 interfaces 5 netgraph 6 wireguard 7 bird 8 bird-routes 9 bridges 10 geneve 11 ipfw 12 nhgroups 13 neighbours 14 ipsec 15 multicast 16 bird-ospf 17 kept-routes.";
     }
     leaf net-family {
       type uint8 {
@@ -2023,10 +2023,10 @@ module arcana {
   grouping attr-net-kind {
     leaf net-kind {
       type uint8 {
-        range "0..15";
+        range "0..17";
       }
       description
-        "One of net-kind: 0 routes 1 nexthops 2 connections 3 sockets 4 interfaces 5 netgraph 6 wireguard 7 bird 8 bird-routes 9 bridges 10 geneve 11 ipfw 12 nhgroups 13 neighbours 14 ipsec 15 multicast.";
+        "One of net-kind: 0 routes 1 nexthops 2 connections 3 sockets 4 interfaces 5 netgraph 6 wireguard 7 bird 8 bird-routes 9 bridges 10 geneve 11 ipfw 12 nhgroups 13 neighbours 14 ipsec 15 multicast 16 bird-ospf 17 kept-routes.";
     }
   }
 

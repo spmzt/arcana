@@ -1325,6 +1325,57 @@ EOS
 	atf_check -o ignore "$JGC" -p -c "$SOCK" route delete 10.77.0.0/16
 	atf_check -o match:'^static_routes="arc_10_80_0_0_16_fib3"$' \
 	    -o not-match:'route_arc_10_77' cat rc.conf
+
+	# Kept by the name given; another route's name is refused; one
+	# kept is found by its destination and table whatever its name.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 10.90.0.0/16 10.0.0.1 \
+	    name router1
+	atf_check -o match:'^route_router1="10.90.0.0/16 10.0.0.1"$' \
+	    -o match:'^static_routes="arc_10_80_0_0_16_fib3 router1"$' cat rc.conf
+	atf_check -s exit:1 -o match:'another route by the name router1' \
+	    "$JGC" -p -c "$SOCK" route add 10.91.0.0/16 10.0.0.1 name router1
+	atf_check -s exit:1 -o match:'cannot name a route' \
+	    "$JGC" -p -c "$SOCK" route add 10.91.0.0/16 10.0.0.1 name 9lives
+	# A route kept by hand, with words the agent does not write:
+	# renamed in rc.conf alone, its words as they are; the kernel's
+	# table not asked.
+	printf 'route_home="10.92.0.0/16 -gateway 10.0.0.3 -mtu 1400"\n' >> rc.conf
+	sed -i '' -e 's/^static_routes="\(.*\)"$/static_routes="\1 home"/' rc.conf
+	atf_check -o not-match:'route-add' -o not-match:'route-del' \
+	    "$JGC" -t -c "$SOCK" route keep add 10.92.0.0/16 name edge2_gre0
+	atf_check -o match:'^route_edge2_gre0="10.92.0.0/16 -gateway 10.0.0.3 -mtu 1400"$' \
+	    -o not-match:'route_home' \
+	    -o match:'^static_routes="arc_10_80_0_0_16_fib3 router1 edge2_gre0"$' \
+	    cat rc.conf
+	# Added again by another name: the old name goes.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 10.90.0.0/16 10.0.0.1 \
+	    name router2
+	atf_check -o match:'^route_router2="10.90.0.0/16 10.0.0.1"$' \
+	    -o not-match:'router1' cat rc.conf
+	# Kept in rc.conf alone, and forgotten there alone; not in safe
+	# mode, there being nothing live to undo.
+	atf_check -o not-match:'route-add' \
+	    "$JGC" -t -c "$SOCK" route keep add 10.93.0.0/16 10.0.0.1 name lan2
+	atf_check -o match:'^route_lan2="10.93.0.0/16 10.0.0.1"$' cat rc.conf
+	atf_check -s exit:1 -e match:'nothing to undo' \
+	    "$JGC" -s -c "$SOCK" route keep delete 10.93.0.0/16
+	# What rc.conf keeps, read: each by its name, read as route(8)
+	# would; one the list does not name; the default routers.
+	printf 'route_stray="10.94.0.0/16 10.0.0.1"\n' >> rc.conf
+	atf_check -o match:'"name":"lan2","family":"inet","list":"static_routes","variable":"route_lan2","listed":true,"value":"10.93.0.0/16 10.0.0.1","destination":"10.93.0.0/16","gateway":"10.0.0.1","kind":"gateway","fib":0' \
+	    -o match:'"name":"arc_10_80_0_0_16_fib3".*"gateway":"lo0","kind":"interface","fib":3' \
+	    -o match:'"name":"edge2_gre0".*"gateway":"10.0.0.3"' \
+	    -o match:'"name":"stray".*"listed":false' \
+	    -o match:'"name":"arc_2001_db8_7___48","family":"inet6"' \
+	    "$JGC" -c "$SOCK" net kept-routes
+	atf_check -o not-match:'route-del' \
+	    "$JGC" -t -c "$SOCK" route keep delete 10.93.0.0/16
+	atf_check -o not-match:'lan2' cat rc.conf
+	# Deleted with -p: found by its destination, whatever its name.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" route delete 10.90.0.0/16
+	atf_check -o not-match:'router2' cat rc.conf
+	sed -i '' -e '/^route_stray=/d' -e '/^route_edge2_gre0=/d' \
+	    -e 's/^static_routes=.*/static_routes="arc_10_80_0_0_16_fib3"/' rc.conf
 	atf_check -o match:'fake-helper --scope-helper 0 routes 4 2 - -' \
 	    "$JGC" -t -F 2 -c "$SOCK" net routes -4
 
@@ -1342,9 +1393,13 @@ EOS
 	atf_check -o not-match:'^defaultrouter=' -o match:'^defaultrouter_fib3=' cat rc.conf
 	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 10.66.0.0/16 10.0.0.1
 	atf_check -o match:'^route_arc_10_66_0_0_16="10.66.0.0/16 10.0.0.1"$' cat rc.conf
-	printf 'static_routes="arc_default_fib2"\nroute_arc_default_fib2="default 10.0.0.252 -fib 2"\n' >> rc.conf
+	# A default route kept by a name before: in the list as sysrc +=
+	# leaves it, one assignment.
+	sed -i '' -e 's/^static_routes="\(.*\)"$/static_routes="\1 arc_default_fib2"/' rc.conf
+	printf 'route_arc_default_fib2="default 10.0.0.252 -fib 2"\n' >> rc.conf
 	atf_check -o ignore "$JGC" -p -F 2 -c "$SOCK" route add default 10.0.0.252
-	atf_check -o match:'^defaultrouter_fib2="10.0.0.252"$' -o not-match:'arc_default_fib2' cat rc.conf
+	atf_check -o match:'^defaultrouter_fib2="10.0.0.252"$' -o not-match:'arc_default_fib2' \
+	    -o match:'^static_routes="arc_10_80_0_0_16_fib3 arc_10_66_0_0_16"$' cat rc.conf
 
 	# The route to an address: the one taken, and those that cover it,
 	# each with the length of its prefix.
@@ -1785,6 +1840,9 @@ rpki1      RPKI       ---        up     2026-10-01    Established
   Status:           Established
   Serial number:    42
 EOP
+"show protocols") printf 'BIRD 2.15.1 ready.\nName       Proto      Table      State  Since         Info\nbgp_core   BGP        ---        up     2026-10-01    Established\nospf1      OSPF       master4    up     2026-10-01    Running\n' ;;
+"show ospf ospf1") printf 'BIRD 2.15.1 ready.\nospf1:\nRFC1583 compatibility: disabled\nNumber of areas: 1\n\tArea: 0.0.0.0 (0) [BACKBONE]\n\t\tStub:\tNo\n' ;;
+"show ospf topology all ospf1") printf 'BIRD 2.15.1 ready.\n\narea 0.0.0.0\n\n\trouter 192.0.2.1\n\t\tdistance 0\n\t\trouter 10.0.0.2 metric 10\n\t\tnetwork 10.255.0.0/24 metric 10\n\n\trouter 10.0.0.2\n\t\tdistance 10\n\t\trouter 192.0.2.1 metric 10\n\t\tstubnet 10.9.0.0/24 metric 10\n\t\texternal 0.0.0.0/0 metric2 10000\n\n\tnetwork 10.255.0.0/24\n\t\tdr 192.0.2.1\n\t\tdistance 10\n\t\trouter 192.0.2.1\n\t\trouter 10.0.0.2\n' ;;
 "show ospf neighbors") printf 'BIRD 2.15.1 ready.\nospf1:\nRouter ID   \tPri\t     State     \tDTime\tInterface  Router IP\n10.0.0.2    \t  1\tFull/PtP  \t00:00:35\tgif0       10.255.0.2\n' ;;
 "show bfd sessions") printf 'BIRD 2.15.1 ready.\nbfd1:\nIP address                Interface  State      Since         Interval  Timeout\nfe80::1                   gif0       Up         13:01:27.605    0.200    1.000\nfe80::2                   gre1       Down       13:02:00.000    1.000    0.000\n' ;;
 "show symbols table") printf 'BIRD 2.15.1 ready.\nmaster4    routing table\nr4         routing table\n' ;;
@@ -2008,6 +2066,18 @@ EOS
 	    -o match:'\{"via":"198.51.100.7","interface":"gre0"\},\{"via":"198.51.100.9","interface":"gre1"\}' \
 	    -o match:'"count":2' cat r.json
 	atf_check -o match:'"routes":\[\]' "$JGC" -c "$SOCK" bird routes table master6
+
+	# OSPF: each protocol with the areas it is in; with topology, what
+	# its link-state database says, routers with their links and the
+	# transit networks; a protocol's name is a word.
+	atf_check -o match:'"protocols":\[\{"name":"ospf1","areas":\["0.0.0.0"\]\}\]' \
+	    "$JGC" -c "$SOCK" bird ospf
+	atf_check -o save:o.json "$JGC" -c "$SOCK" bird ospf topology ospf1
+	atf_check -o match:'"id":"10.0.0.2","links":\[\{"kind":"router","to":"192.0.2.1","metric":10\},\{"kind":"stubnet","to":"10.9.0.0/24","metric":10\},\{"kind":"external","to":"0.0.0.0/0","metric2":10000\}\],"distance":10' \
+	    -o match:'"networks":\[\{"id":"10.255.0.0/24","routers":\["192.0.2.1","10.0.0.2"\],"dr":"192.0.2.1","distance":10\}\]' \
+	    cat o.json
+	atf_check -s exit:1 -e match:'letters, digits and _' -o ignore \
+	    "$JGC" -c "$SOCK" bird ospf topology 'x-y'
 	atf_check -o match:'"message":"Network not found"' \
 	    "$JGC" -c "$SOCK" bird routes 10.9.0.0/16
 	# A neighbour's whole table is counted, not carried.

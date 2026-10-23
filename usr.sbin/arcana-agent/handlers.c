@@ -115,6 +115,8 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_NEIGHBOURS] = "neighbours",
 	[ARC_NET_KIND_IPSEC] = "ipsec",
 	[ARC_NET_KIND_MULTICAST] = "multicast",
+	[ARC_NET_KIND_BIRD_OSPF] = "bird-ospf",
+	[ARC_NET_KIND_KEPT_ROUTES] = "kept-routes",
 };
 
 static const char *service_action_names[] = {
@@ -3024,8 +3026,20 @@ check_spec(const struct arc_job_spec *sp)
 		    "0123456789abcdefABCDEF.:")] != '\0')
 			return ("the address to send from is an address");
 		if (!sp->remove && (sp->gateway == NULL ||
-		    sp->gateway[0] == '\0'))
-			return ("a route to add needs a gateway");
+		    sp->gateway[0] == '\0') && (sp->verb == NULL ||
+		    sp->names.n == 0))
+			return ("a route to add needs a gateway; one kept is "
+			    "renamed with keep and a name alone");
+		if (sp->names.n > 1)
+			return ("a route is kept by one name");
+		if (sp->verb != NULL && strcmp(sp->verb, "keep") != 0)
+			return ("a route's verb is keep (rc.conf alone), or none");
+		if (sp->verb != NULL && !sp->persist)
+			return ("keep is rc.conf's: say persist too");
+		if (sp->verb != NULL && sp->safe)
+			return ("a route kept or forgotten in rc.conf alone "
+			    "changes nothing live: there is nothing to undo, "
+			    "so not in safe mode");
 		break;
 	case ARC_JOB_KIND_SERVICE_ACTION:
 		if (sp->service == NULL || !valid_service(sp->service))
@@ -3087,7 +3101,7 @@ cuts_off(cbl_req *req, const struct arc_job_spec *sp)
 	 * In a jail the request did not come in by any address of its;
 	 * an interface given to a jail is one the host has no more.
 	 */
-	if (sp->safe)
+	if (sp->safe || (sp->kind == ARC_JOB_KIND_ROUTE && sp->verb != NULL))
 		return (NULL);
 	if (sp->kind == ARC_JOB_KIND_IF_VNET) {
 		if (sp->remove)

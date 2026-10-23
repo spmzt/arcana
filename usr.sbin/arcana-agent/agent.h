@@ -23,7 +23,7 @@
 _Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
     "written for cblink 0.2: its wire, its structs");
 
-#define	ARCANA_AGENT_VERSION	"0.200.0"
+#define	ARCANA_AGENT_VERSION	"0.203.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -496,11 +496,14 @@ struct route_more {
 	uint32_t	 metric;	/* 0: the system's */
 	uint32_t	 weight;
 	const char	*source;	/* the address sent from, or NULL */
+	const char	*name;		/* rc.conf's for it, or NULL: arc_... */
+	bool		 rc_only;	/* rc.conf alone, the kernel as it is */
 };
 int		 do_route(struct work *, const char *, const char *, bool,
 		    uint32_t, const struct route_more *, bool, const char **);
 int		 route_snapshot(struct work *, const char *, uint32_t,
 		    const char **, struct route_more *, bool *, const char **);
+int		 do_kept_routes(struct work *, struct arc_network_rsp *);
 
 /* invidia/rcconf.c: what of the network rc.conf keeps. */
 bool		 rc_name_ok(const char *);
@@ -558,6 +561,8 @@ int		 scope_enter(struct work *, const char *, const char **);
 int		 scope_enter_jail(struct work *, const char *, const char **,
 		    bool);
 int		 do_bird_routes(struct work *, const char *,
+		    struct arc_network_rsp *);
+int		 do_bird_ospf(struct work *, const char *,
 		    struct arc_network_rsp *);
 /* superbia/kernel.c: the kernel's modules and memory. */
 int		 do_kernel(struct work *, struct arc_kernel_rsp *);

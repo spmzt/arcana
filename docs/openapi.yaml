@@ -730,7 +730,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, bridges, geneve, ipfw, lookup, traceroute, neighbours, ipsec, multicast]
+            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, bird-ospf, bridges, geneve, ipfw, lookup, traceroute, neighbours, ipsec, multicast, kept-routes]
           description: traceroute?to=ADDRESS is one round of traceroute(8)
             or traceroute6(8) from the host, a probe a hop, as
             {"address","family","hops":[{"ttl","address","rtt","note"} or
@@ -750,7 +750,11 @@ paths:
             route for what `filter` names, in birdc's words with a comma
             between them (a prefix, an address, `protocol,name`,
             `export,name`, `table,name`, `all`), refused with their count
-            when there are more than 2000; lookup is the route to the
+            when there are more than 2000; bird-ospf is each OSPF
+            protocol with its areas, and with `filter` topology (or
+            `topology,name`) its link-state database's routers, their
+            links and metrics, and its transit networks;
+            lookup is the route to the
             address in `to`, with `best` and `candidates` under `data`;
             multicast is ifmcstat(8) as {"interfaces":[{"name","igmp",
             "mld","groups":[{"family","group","mode","lladdr",
