@@ -1921,6 +1921,10 @@ links_build(void)
 				}
 				if (nexts == EXT_MAX)
 					continue;
+				/* A BGP neighbour outside whose session is down:
+				 * left out, it says nothing of the network. */
+				if (!ospf && !up)
+					continue;
 				memset(&exts[nexts], 0, sizeof(exts[0]));
 				exts[nexts].host = s;
 				exts[nexts].ospf = ospf;
@@ -2382,6 +2386,13 @@ if_label(struct html *h, const char *name, int fib, int tfib)
 		    : tfib, tfib);
 }
 
+/*
+ * The links' labels, drawn after the links and the nodes so that no line
+ * crosses them: a link's go here unless they show only under the
+ * pointer (quiet) or the link is dimmed, when they stay in its group.
+ */
+static struct html	tlab;
+
 static void
 map_links(struct html *h)
 {
@@ -2390,8 +2401,10 @@ map_links(struct html *h)
 	struct tlink	*l;
 	char		 rate[24];
 	double		 x1, y1, x2, y2, mx, my, bend, w;
+	struct html	*lh;
 	int		 i, flow, fa, ta, fb, tb, outer;
 
+	h_reset(&tlab);
 	for (i = 0; i < nlinks; i++) {
 		l = &links[i];
 		if (tp.hide[l->kind] || !place(l->a, &x1, &y1) || !place(l->b,
@@ -2446,6 +2459,13 @@ map_links(struct html *h)
 		h_raw(h, "\"><title>");
 		h_txt(h, l->label);
 		h_raw(h, "</title></path>");
+		if ((labels_quiet(l->kind) && strcmp(tp.sel_link, l->key) != 0) ||
+		    !link_in_fib(l, tp.fib))
+			lh = h;
+		else {
+			lh = &tlab;
+			h_fmt(lh, "<g class=\"tlabel %s\">", kinds[l->kind]);
+		}
 		/*
 		 * A tunnel's or a point to point link's ends are named each
 		 * at its own end, past the host's box; its rate is in the
@@ -2457,34 +2477,36 @@ map_links(struct html *h)
 
 			curve(NULL, x1, y1, x2, y2, bend, leave_t(x1, y1, x2,
 			    y2, bend, true), &ex, &ey);
-			h_fmt(h, "<text class=\"lbl end\" x=\"%.1f\" y=\"%.1f\">",
+			h_fmt(lh, "<text class=\"lbl end\" x=\"%.1f\" y=\"%.1f\">",
 			    ex, ey - 5);
-			if_label(h, l->ifa, fa, ta);
-			h_raw(h, "</text>");
+			if_label(lh, l->ifa, fa, ta);
+			h_raw(lh, "</text>");
 			if (l->ifb[0] != '\0') {
 				curve(NULL, x1, y1, x2, y2, bend, leave_t(x1, y1,
 				    x2, y2, bend, false), &ex, &ey);
-				h_fmt(h, "<text class=\"lbl end\" x=\"%.1f\" "
+				h_fmt(lh, "<text class=\"lbl end\" x=\"%.1f\" "
 				    "y=\"%.1f\">", ex, ey - 5);
-				if_label(h, l->ifb, fb, tb);
-				h_raw(h, "</text>");
+				if_label(lh, l->ifb, fb, tb);
+				h_raw(lh, "</text>");
 			}
 		} else if (l->b >= 0) {
-			h_fmt(h, "<text class=\"lbl\" x=\"%.1f\" y=\"%.1f\">", mx,
+			h_fmt(lh, "<text class=\"lbl\" x=\"%.1f\" y=\"%.1f\">", mx,
 			    my - 7);
-			h_txt(h, l->label);
+			h_txt(lh, l->label);
 			if (l->more > 0)
-				h_fmt(h, " +%d", l->more);
-			h_raw(h, "</text>");
+				h_fmt(lh, " +%d", l->more);
+			h_raw(lh, "</text>");
 		}
 		if (l->rate >= 1) {
 			fmt_rate(rate, sizeof(rate), l->rate);
-			h_fmt(h, "<text class=\"rate\" x=\"%.1f\" y=\"%.1f\">",
+			h_fmt(lh, "<text class=\"rate\" x=\"%.1f\" y=\"%.1f\">",
 			    mx, l->b >= 0 && l->kind < LK_LAN ? my + 3.5 : my +
 			    14);
-			h_txt(h, rate);
-			h_raw(h, "</text>");
+			h_txt(lh, rate);
+			h_raw(lh, "</text>");
 		}
+		if (lh == &tlab)
+			h_raw(lh, "</g>");
 		h_raw(h, "</g>");
 	}
 }
@@ -2640,9 +2662,8 @@ map_nodes(struct html *h)
 				    ey, ex, ey, ex, ey + 36);
 			else
 				h_fmt(h, "><path class=\"cloud\" transform=\"translate("
-				    "%.1f,%.1f)\" d=\"M-44 10 q-16 0 -16 -14 q0 -14 14 -14 q4 "
-				    "-14 20 -12 q10 -12 24 -4 q16 -6 24 8 q14 2 12 16 q-2 12 -16 "
-				    "12 z\"/><text class=\"name\" x=\"%.1f\" y=\"%.1f\">", ex,
+				    "%.1f,%.1f)\" d=\"M-36 16 A15 15 0 0 1 -30 -12 A18 18 0 0 1 "
+				    "0 -26 A18 18 0 0 1 30 -12 A15 15 0 0 1 36 16 Z\"/><text class=\"name\" x=\"%.1f\" y=\"%.1f\">", ex,
 				    ey, ex, ey - 2);
 			h_fit(h, e->label, 16);
 			h_fmt(h, "</text><text class=\"sub\" x=\"%.1f\" y=\"%.1f\">", ex,
@@ -2943,6 +2964,11 @@ map(struct html *h)
 		h_fmt(h, "<path class=\"tdraft\" d=\"M%.1f %.1f L%.1f %.1f\"/>",
 		    t->x + NODE_W / 2, t->y, tp.link_x, tp.link_y);
 	map_nodes(h);
+	if (tlab.len > 0) {
+		h_raw(h, "<g class=\"tlabels\">");
+		h_raw(h, tlab.s);
+		h_raw(h, "</g>");
+	}
 	h_raw(h, "</svg><div class=\"map-tools\">"
 	    "<button class=\"ghost small\" data-act=\"topo-zoom-in\" "
 	    "title=\"Closer\">+</button>"

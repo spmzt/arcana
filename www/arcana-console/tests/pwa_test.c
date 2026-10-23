@@ -6126,7 +6126,7 @@ part_netsect(void)
 	click_at(".map-tools button[data-act=topo-labels]");
 	wait_js("!document.querySelector('.map-labels')", 5);
 	/* On no line is its name written over its rate. */
-	ATF_CHECK(js_true("[...document.querySelectorAll('svg.topo g.tlink')]"
+	ATF_CHECK(js_true("[...document.querySelectorAll('svg.topo g.tlink, svg.topo g.tlabel')]"
 	    ".every(g => { const r = g.querySelector('.rate'); if (!r) "
 	    "return true; const b = r.getBBox(); return [...g.querySelectorAll("
 	    "'.lbl')].every(l => { const a = l.getBBox(); return a.x + a.width "
@@ -6900,8 +6900,8 @@ part_mesh(void)
 	    "document.querySelector('svg.topo g.tpeer.ospf circle.glyph') && "
 	    "document.querySelector('svg.topo .tlink.bgp') && document."
 	    "querySelector('svg.topo .tlink.ospf')", 60);
-	ATF_CHECK(js_true("[...document.querySelectorAll('svg.topo .tlink.bgp "
-	    ".lbl')].some(t => t.textContent.startsWith('iBGP AS64512'))"));
+	ATF_CHECK(js_true("[...document.querySelectorAll('svg.topo .tlink.bgp .lbl, svg.topo "
+	    ".tlabel.bgp .lbl')].some(t => t.textContent.startsWith('iBGP AS64512'))"));
 	usleep(1500000);
 	click_at("button[data-act=topo-fit]");
 	usleep(500000);
