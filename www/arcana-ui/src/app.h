@@ -719,6 +719,7 @@ void		 view_jobs(struct html *, struct server *);
 
 /* topo.c: the fleet's network as a map, traffic, routes, netgraph. */
 void		 view_netmap(struct html *);
+void		 view_overlay(struct html *);
 void		 view_netgraph(struct html *, struct server *,
 		    const ucl_object_t *);
 void		 view_lookup(struct html *, const struct server *);
@@ -865,6 +866,8 @@ void		 help_button(struct html *);
 bool		 routing_action(const char *, const char *, const char *);
 int		 topo_gw_owner(const char *, int, const char *, char *, size_t,
 		    char *, size_t);
+int		 topo_if_rates(int, const char *, const char *, bool, double *,
+		    double *, int);
 bool		 ecmp_shown(void);
 void		 ecmp_tick(double);
 void		 ecmp_group(struct html *, const struct server *,
@@ -874,7 +877,7 @@ void		 nhop_modal(struct html *);
 bool		 nhop_action(const char *, const char *, const char *);
 void		 ecmp_head(struct html *);
 enum { NETSECT_MAP, NETSECT_GROUPS, NETSECT_TRACE, NETSECT_BGP, NETSECT_OSPF,
-    NETSECT_BFD, NETSECT_PREFIXES };
+    NETSECT_BFD, NETSECT_PREFIXES, NETSECT_OVERLAY };
 void		 view_traceroute(struct html *);
 bool		 mtr_action(const char *, const char *, const char *);
 void		 mtr_tick(double);

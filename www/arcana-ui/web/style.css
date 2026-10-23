@@ -5241,3 +5241,44 @@ svg.topo g.tpeer.ospf:hover .glyph { filter: drop-shadow(0 0 6px var(--amber)); 
 :root { --fib1: #fb7185; --fib2: #38bdf8; --fib3: #e2e8f0; --fib4: #fde047; --fib5: #c4b5fd; --fib6: #2dd4bf; }
 .tlink .outer { fill: none; stroke: var(--dim); stroke-width: 6; stroke-dasharray: 1.4 9; stroke-linecap: butt; opacity: .8; pointer-events: none; }
 .map-legend .outer::before { border-top: 4px dotted var(--fg-2); }
+
+/* The OSPF map: links coloured by area with their metrics, the fleet's
+ * routers solid and those outside dotted, transit networks as hubs. */
+:root { --oma0: #fbbf24; --oma1: #2dd4bf; --oma2: #60a5fa; --oma3: #f472b6; --oma4: #a3e635; --oma5: #c4b5fd; }
+svg.topo .omedge path { fill: none; stroke-width: 1.8; }
+svg.topo .omedge.a0 path { stroke: var(--oma0); } svg.topo .omedge.a1 path { stroke: var(--oma1); } svg.topo .omedge.a2 path { stroke: var(--oma2); }
+svg.topo .omedge.a3 path { stroke: var(--oma3); } svg.topo .omedge.a4 path { stroke: var(--oma4); } svg.topo .omedge.a5 path { stroke: var(--oma5); }
+svg.topo .omedge text { font-size: 9px; text-anchor: middle; fill: var(--fg-2); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+svg.topo .omr .glyph { fill: var(--bg-2); stroke: var(--fg-2); stroke-width: 1.8; stroke-dasharray: 4 3; }
+svg.topo .omr.fleet .glyph { stroke: var(--cyan); stroke-dasharray: none; }
+svg.topo .omr .arrows { fill: none; stroke: var(--fg); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg.topo .omr .name { font-size: 11px; font-weight: 700; text-anchor: middle; fill: var(--fg); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+svg.topo .omr .sub, svg.topo .omnet text { font-size: 8.5px; text-anchor: middle; fill: var(--dim); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+svg.topo .omnet rect { fill: var(--bg-2); stroke: var(--blue); stroke-width: 1.6; }
+svg.topo .omnet circle { fill: var(--blue); }
+svg.topo .omnote { font-size: 14px; text-anchor: middle; fill: var(--dim); }
+.map-legend.om .oma0::before { border-color: var(--oma0); } .map-legend.om .oma1::before { border-color: var(--oma1); } .map-legend.om .oma2::before { border-color: var(--oma2); }
+.map-legend.om .oma3::before { border-color: var(--oma3); } .map-legend.om .oma4::before { border-color: var(--oma4); } .map-legend.om .oma5::before { border-color: var(--oma5); }
+.map-legend.om .omfleet::before { border: 2px solid var(--cyan); border-radius: 50%; width: 10px; height: 10px; }
+.map-legend.om .omout::before { border: 2px dashed var(--fg-2); border-radius: 50%; width: 10px; height: 10px; }
+.map-legend.om .omnetk::before { border: 2px solid var(--blue); width: 14px; height: 6px; }
+.map-legend.om .note { color: var(--dim); cursor: default; }
+.map-legend.om .note::before { display: none; }
+/* Load balance: two groups a row where there is room, each compact. */
+.ecmp-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr)); gap: .8rem; }
+.ecmp-list .ecmp-group { margin: 0; padding: .6rem .7rem; }
+.ecmp-list .ecmp-group h4 { margin: 0; font-size: .82rem; }
+.ecmp-list .ecmp { gap: .7rem; margin-top: .4rem; }
+.ecmp-list .ecmp-chart { height: 56px; }
+.ecmp-list .ecmp-side h5 { margin-bottom: .2rem; font-size: .64rem; }
+.ecmp-list .ecmp-key { margin-top: .3rem; gap: .15rem; }
+.ecmp-list .ecmp-key li { font-size: .7rem; flex-wrap: nowrap; overflow: hidden; }
+.ecmp-list .ecmp-key li span, .ecmp-list .ecmp-key li small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ecmp-list .glegend { display: none; }
+/* The Overlay tab: its table scrolls sideways on a narrow screen; the
+ * WireGuard peers under it. */
+.scrollx { overflow-x: auto; max-width: 100%; }
+.overlay-page table.overlay td { white-space: nowrap; }
+.overlay-page > .pane { margin-top: 1rem; }
+.ecmp-list .ecmp-key li span { flex: none; }
+.ecmp-list .ecmp-key li small { min-width: 0; }

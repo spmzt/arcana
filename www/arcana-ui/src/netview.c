@@ -657,7 +657,7 @@ view_network(struct html *h, struct server *s)
 		{ "interfaces", "Interfaces" }, { "netgraph", "Netgraph" },
 		{ "wireguard", "WireGuard" }, { "bird", "BIRD" },
 		{ "bridges", "Bridges" }, { "geneve", "Geneve" },
-		{ "nhgroups", "Nexthop groups" }, { "neighbours", "Neighbours" },
+		{ "nhgroups", "Load balance" }, { "neighbours", "Neighbours" },
 		{ "ipsec", "IPsec" }, { "span", "Span" }, { "carp", "CARP" },
 		{ "multicast", "Multicast" },
 	};

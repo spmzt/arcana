@@ -115,6 +115,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_NEIGHBOURS] = "neighbours",
 	[ARC_NET_KIND_IPSEC] = "ipsec",
 	[ARC_NET_KIND_MULTICAST] = "multicast",
+	[ARC_NET_KIND_BIRD_OSPF] = "bird-ospf",
 };
 
 static const char *service_action_names[] = {

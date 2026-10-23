@@ -109,6 +109,7 @@ help_path(void)
 		return (app.netsect == NETSECT_GROUPS ?
 		    "sections/network.html#nexthops-and-their-groups" :
 		    app.netsect == NETSECT_TRACE ? "sections/map.html#traceroute" :
+		    app.netsect == NETSECT_OVERLAY ? "sections/map.html" :
 		    app.netsect >= NETSECT_BGP ? "sections/map.html#bgp-ospf-and-bfd" :
 		    "sections/map.html");
 	case NODE_USAGE:

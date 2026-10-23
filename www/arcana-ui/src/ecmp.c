@@ -34,6 +34,7 @@
 #define	EC_SAMPLES	1000	/* samples of an interface looked at */
 #define	EC_GROUPS_MS	15000	/* the groups of every host, read again */
 #define	EC_IFS_MS	15000	/* every host's interfaces, for addresses */
+#define	EC_FILL_S	45	/* a gap in a share's samples taken as no change */
 #define	CW		360	/* a chart's box */
 #define	CH		110
 
@@ -48,6 +49,7 @@ struct share {
 	char		 key[96];	/* what makes it this share */
 	int		 srv;		/* whose samples; -1 none */
 	char		 ifn[16];
+	char		 jail[64];	/* a jail's: read by the page, not sampled */
 	long long	 weight;
 	double		 bin[EC_BINS];	/* bytes a second, each column */
 	bool		 has[EC_BINS];
@@ -225,15 +227,13 @@ shares(const struct server *s, const ucl_object_t *g, bool recv,
 				    "169.254.", 8) == 0 ? "no host of this "
 				    "console has it on that link, or several do" :
 				    "not a host of this console");
-			else if (jail[0] != '\0')
-				snprintf(sh[k].why, sizeof(sh[k].why), "in jail "
-				    "%.40s of %.30s: a jail's interfaces are not "
-				    "sampled", jail, app.servers[srv].name);
 			else {
+				snprintf(sh[k].jail, sizeof(sh[k].jail), "%s", jail);
 				sh[k].srv = srv;
 				snprintf(sh[k].ifn, sizeof(sh[k].ifn), "%s", ifn);
 				snprintf(sh[k].where, sizeof(sh[k].where),
-				    "%.30s · %s", app.servers[srv].name, ifn);
+				    "%.30s%s%.24s · %s", app.servers[srv].name, jail[0] !=
+				    '\0' ? "/" : "", jail, ifn);
 			}
 			ns++;
 		}
@@ -245,11 +245,17 @@ shares(const struct server *s, const ucl_object_t *g, bool recv,
 	for (k = 0; k < ns; k++) {
 		if (sh[k].srv == -1)
 			continue;
-		m = usage_if_rates(app.servers[sh[k].srv].id, sh[k].ifn, !recv,
-		    t0, t, v, EC_SAMPLES);
+		/* A jail's, as the page read it: its agent samples its
+		 * host's interfaces only. */
+		m = sh[k].jail[0] != '\0' ? topo_if_rates(sh[k].srv, sh[k].jail,
+		    sh[k].ifn, !recv, t, v, EC_SAMPLES) : usage_if_rates(
+		    app.servers[sh[k].srv].id, sh[k].ifn, !recv, t0, t, v,
+		    EC_SAMPLES);
 		if (m == -1) {
-			snprintf(sh[k].why, sizeof(sh[k].why), "%s is not "
-			    "among what its agent samples", sh[k].ifn);
+			snprintf(sh[k].why, sizeof(sh[k].why), sh[k].jail[0] !=
+			    '\0' ? "in jail %.40s: read while this section is open, "
+			    "not yet" : "%s is not among what its agent samples",
+			    sh[k].jail[0] != '\0' ? sh[k].jail : sh[k].ifn);
 			sh[k].srv = -1;
 			continue;
 		}
@@ -267,6 +273,33 @@ shares(const struct server *s, const ucl_object_t *g, bool recv,
 				sh[k].bin[b] = acc[b] / cnt[b];
 				sh[k].has[b] = true;
 			}
+		/*
+		 * A gap of less than EC_FILL_S between its samples is the
+		 * share as it was: hosts sample at moments of their own, and
+		 * a column needs every share to be drawn.
+		 */
+		{
+			bool	real[EC_BINS];
+			int	last, first, fill;
+
+			fill = (int)ceil(EC_FILL_S / w);
+			memcpy(real, sh[k].has, sizeof(real));
+			for (last = -1, first = -1, b = 0; b < EC_BINS; b++) {
+				if (real[b]) {
+					if (first == -1)
+						first = b;
+					last = b;
+				} else if (last >= 0 && b - last <= fill) {
+					sh[k].bin[b] = sh[k].bin[last];
+					sh[k].has[b] = true;
+				}
+			}
+			for (b = 0; first > 0 && b < first; b++)
+				if (first - b <= fill) {
+					sh[k].bin[b] = sh[k].bin[first];
+					sh[k].has[b] = true;
+				}
+		}
 	}
 	/* The columns every sampled share has. */
 	for (b = 0; b < EC_BINS; b++) {
@@ -452,8 +485,9 @@ spans(struct html *h)
 
 static const char note[] = "<p class=\"dim ecmp-note\">What each next hop "
     "carried, as the agents sampled their interfaces, beside the weight it "
-    "was given (dashed). An interface's traffic is all of it, not only the "
-    "group's; next hops by one interface are one share.</p>";
+    "was given: the dashed lines are where the shares would meet by the "
+    "weights. An interface's traffic is all of it, not only the group's; "
+    "next hops by one interface are one share.</p>";
 
 /* The host page's: above its groups, how far back. */
 void
@@ -481,6 +515,7 @@ view_ecmp(struct html *h)
 	h_raw(h, "</div>");
 	n = 0;
 	waiting = 0;
+	h_raw(h, "<div class=\"ecmp-list\">");
 	for (i = 0; i < app.nservers; i++) {
 		e = ehost(app.servers[i].id, false);
 		if (e == NULL || (e->fams == NULL && e->error[0] == '\0')) {
@@ -513,10 +548,11 @@ view_ecmp(struct html *h)
 			}
 		}
 	}
+	h_raw(h, "</div>");
 	if (n == 0)
 		h_raw(h, waiting > 0 ? "<div class=\"empty\"><div class="
 		    "\"loader\"></div></div>" : "<div class=\"empty\"><h2>No "
-		    "nexthop groups</h2><p>No route of any host has several "
+		    "load balancing</h2><p>No route of any host has several "
 		    "next hops. One is made by a route with several gateways, "
 		    "<code>10.0.0.1@2,10.0.0.2@1</code>.</p></div>");
 	h_raw(h, "</div>");
@@ -538,13 +574,14 @@ ecmp_action(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "bgp") == 0 ? NETSECT_BGP : strcmp(arg,
 		    "ospf") == 0 ? NETSECT_OSPF : strcmp(arg, "bfd") == 0 ?
 		    NETSECT_BFD : strcmp(arg, "lists") == 0 ? NETSECT_PREFIXES :
-		    NETSECT_MAP;
+		    strcmp(arg, "overlay") == 0 ? NETSECT_OVERLAY : NETSECT_MAP;
 		if (app.netsect == NETSECT_PREFIXES)
 			pfxlists_load();
 		ec.ifs_asked = 0;
 		if (app.netsect == NETSECT_GROUPS)
 			ecmp_tick(arc_now());
-		else if (app.netsect >= NETSECT_BGP)
+		else if (app.netsect >= NETSECT_BGP && app.netsect !=
+		    NETSECT_OVERLAY)
 			topo_bird_now();
 		return (true);
 	}

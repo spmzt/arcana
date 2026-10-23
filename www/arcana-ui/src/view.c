@@ -785,9 +785,12 @@ stage(struct html *h)
 		h_fmt(h, "<div class=\"netsect\"><nav class=\"tabs\"><button "
 		    "class=\"tab%s\" data-act=\"netsect-tab\" data-arg=\"map\">"
 		    "Map</button><button class=\"tab%s\" data-act=\"netsect-tab\" "
+		    "data-arg=\"overlay\" title=\"Every tunnel of every host: "
+		    "gre, gif, WireGuard, geneve, vxlan, VPNs, both ends\">"
+		    "Overlay</button><button class=\"tab%s\" data-act=\"netsect-tab\" "
 		    "data-arg=\"groups\" title=\"How each route of several next "
 		    "hops shares what it sends, as the agents sampled it, at "
-		    "both ends\">Nexthop groups</button><button class=\"tab%s\" "
+		    "both ends\">Load balance</button><button class=\"tab%s\" "
 		    "data-act=\"netsect-tab\" data-arg=\"traceroute\" title=\"The "
 		    "way from a host to an address, hop by hop, again and again "
 		    "as mtr does\">Traceroute</button><button class=\"tab%s\" "
@@ -802,12 +805,15 @@ stage(struct html *h)
 		    "console, for ipfw tables, BIRD sets and SD-WAN zones on any "
 		    "host\">Prefix lists</button></nav>",
 		    app.netsect == NETSECT_MAP ? " on" : "", app.netsect ==
+		    NETSECT_OVERLAY ? " on" : "", app.netsect ==
 		    NETSECT_GROUPS ? " on" : "", app.netsect == NETSECT_TRACE ?
 		    " on" : "", app.netsect == NETSECT_BGP ? " on" : "",
 		    app.netsect == NETSECT_OSPF ? " on" : "", app.netsect ==
 		    NETSECT_BFD ? " on" : "", app.netsect == NETSECT_PREFIXES ?
 		    " on" : "");
-		if (app.netsect == NETSECT_GROUPS)
+		if (app.netsect == NETSECT_OVERLAY)
+			view_overlay(h);
+		else 		if (app.netsect == NETSECT_GROUPS)
 			view_ecmp(h);
 		else if (app.netsect == NETSECT_TRACE)
 			view_traceroute(h);

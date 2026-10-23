@@ -23,7 +23,7 @@
 _Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
     "written for cblink 0.2: its wire, its structs");
 
-#define	ARCANA_AGENT_VERSION	"0.200.0"
+#define	ARCANA_AGENT_VERSION	"0.201.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -558,6 +558,8 @@ int		 scope_enter(struct work *, const char *, const char **);
 int		 scope_enter_jail(struct work *, const char *, const char **,
 		    bool);
 int		 do_bird_routes(struct work *, const char *,
+		    struct arc_network_rsp *);
+int		 do_bird_ospf(struct work *, const char *,
 		    struct arc_network_rsp *);
 /* superbia/kernel.c: the kernel's modules and memory. */
 int		 do_kernel(struct work *, struct arc_kernel_rsp *);

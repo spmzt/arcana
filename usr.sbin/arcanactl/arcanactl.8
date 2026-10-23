@@ -1837,6 +1837,15 @@ with
 what each carries, a BGP route's path and communities.
 They are counted first: more than 2000 are not sent, and the count is
 said instead.
+.It Cm bird ospf Op Cm topology Op Ar protocol
+BIRD's OSPF protocols, each with the areas it is in; with
+.Cm topology ,
+what each area's link-state database says, from
+.Ql show ospf topology all :
+its routers with their distance and links
+.Pq router, network, stubnet, external, with the metric ,
+and its transit networks with their designated router and routers.
+Every router of an area holds the same database.
 .It Cm bird confirm
 The configuration put in place with
 .Fl s

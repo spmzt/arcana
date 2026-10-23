@@ -199,6 +199,7 @@ usage(void)
 	    "    bird config [file]\n"
 	    "    bird config -w new-text [-n] [file]\n"
 	    "    bird confirm\n"
+	    "    bird ospf [topology [protocol]]\n"
 	    "    bird routes [prefix | for address] [protocol | export name]\n"
 	    "        [table name] [all]\n"
 	    "    stats\n"
@@ -1346,6 +1347,40 @@ cmd_bird_confirm(struct arc_client *cl)
 }
 
 /* bird routes [words]: routes of BIRD's tables, said in birdc's words. */
+/* bird ospf [topology [protocol]]: BIRD's OSPF areas, or their topology. */
+static int
+cmd_bird_ospf(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_network_req	 req;
+	struct arc_network_rsp	*rsp;
+	char			 words[96];
+	int			 error;
+
+	words[0] = '\0';
+	if (argc > 2 || (argc >= 1 && strcmp(argv[0], "topology") != 0))
+		usage();
+	if (argc >= 1 && snprintf(words, sizeof(words), "%s%s%s", argv[0],
+	    argc == 2 ? "," : "", argc == 2 ? argv[1] : "") >=
+	    (int)sizeof(words))
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.has_net_kind = true;
+	req.net_kind = ARC_NET_KIND_BIRD_OSPF;
+	req.net_filter = words[0] != '\0' ? words : NULL;
+	req.jail = netjail;
+	if ((error = arc_network(cl, &req, &rsp)) != 0)
+		fail(cl, error, "bird ospf");
+	if (rsp->json != NULL)
+		xo_emit("{:json/%s}\n", rsp->json);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("bird ospf: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_network_rsp_free(rsp);
+	return (error);
+}
+
 static int
 cmd_bird_routes(struct arc_client *cl, int argc, char **argv)
 {
@@ -1600,6 +1635,8 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 		return (cmd_bird_config(cl, argc - 1, argv + 1));
 	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "routes") == 0)
 		return (cmd_bird_routes(cl, argc - 2, argv + 2));
+	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "ospf") == 0)
+		return (cmd_bird_ospf(cl, argc - 2, argv + 2));
 	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "confirm") == 0 &&
 	    argc == 2)
 		return (cmd_bird_confirm(cl));

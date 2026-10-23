@@ -338,6 +338,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_WIREGUARD] = "wireguard",
 	[ARC_NET_KIND_BIRD] = "bird",
 	[ARC_NET_KIND_BIRD_ROUTES] = "bird-routes",
+	[ARC_NET_KIND_BIRD_OSPF] = "bird-ospf",
 	[ARC_NET_KIND_BRIDGES] = "bridges",
 	[ARC_NET_KIND_GENEVE] = "geneve",
 	[ARC_NET_KIND_IPFW] = "ipfw",
@@ -3813,7 +3814,7 @@ setup_network(struct call *c, const struct rq *q)
 	    !pick_scope(q, c))
 		return ("kind is one of routes, nexthops, nhgroups, "
 		    "connections, sockets, interfaces, netgraph, wireguard, "
-		    "bird, bird-routes, bridges, geneve, ipfw, neighbours, "
+		    "bird, bird-routes, bird-ospf, bridges, geneve, ipfw, neighbours, "
 		    "ipsec, lookup; fib a number");
 	c->action = (uint8_t)i;
 	/* Read on in a table too large for one reply. */
@@ -3838,7 +3839,8 @@ setup_network(struct call *c, const struct rq *q)
 	if (rq_param(q, "filter", c->jail, sizeof(c->jail))) {
 		/* BIRD's routes are asked for in words, with , between. */
 		for (p = c->jail; *p != '\0'; p++)
-			if (*p == ',' && c->action == ARC_NET_KIND_BIRD_ROUTES)
+			if (*p == ',' && (c->action == ARC_NET_KIND_BIRD_ROUTES ||
+			    c->action == ARC_NET_KIND_BIRD_OSPF))
 				c->jail[p - c->jail] = ' ';
 			else if (!isalnum((unsigned char)*p) && strchr(".:/_-",
 			    *p) == NULL)

@@ -39,7 +39,7 @@
 #define	MAX_NODES	(MAX_SERVERS + 32)
 #define	TOPO_IFS	64
 #define	TOPO_HIST	48
-#define	TOPO_LINKS	256
+#define	TOPO_LINKS	1024
 #define	TOPO_SEGS	48
 #define	TOPO_HOPS	16
 #define	TOPO_ALTS	3
@@ -54,6 +54,7 @@
 #define	VIEW_W		(tp.vw > 0 ? tp.vw : arc_narrow() ? 360.0 : 900.0)
 #define	VIEW_H		(tp.vh > 0 ? tp.vh : arc_narrow() ? 450.0 : 560.0)
 #define	LEGEND_H	64.0		/* the legend, over the drawing's foot */
+#define	TOOLS_H		52.0		/* the buttons, over its head */
 
 struct ifrate {
 	char	name[16];
@@ -432,6 +433,11 @@ places_load(void)
 	free(text);
 }
 
+/* Where the node dragged now was when taken hold of. */
+static double	drag_x0, drag_y0;
+/* The neighbour being dragged, by its key, or "". */
+static char	peer_dragging[160];
+
 static void
 places_save(void)
 {
@@ -765,10 +771,38 @@ static void
 peers_layout(void)
 {
 	static bool	 fixed[EXT_MAX];
+	static uint32_t	 sig;
 	struct thost	*h;
 	double		 dx, dy, ox, oy, w, hh;
+	uint32_t	 s;
+	const char	*c;
 	int		 i, k, round, moved;
 
+	/*
+	 * Worked out again only when what they hang on changes: which they
+	 * are, the shape the nodes were placed for, those dragged and where.
+	 * A node moved by hand moves none of them.
+	 */
+	s = 2166136261u ^ (uint32_t)nexts ^ tp.shape_sig ^ (tp.stencil ? 7 : 0);
+	for (i = 0; i < nexts; i++) {
+		s = (s ^ (uint32_t)(exts[i].host * 2 + exts[i].ospf)) * 16777619u;
+		for (c = exts[i].label; *c != '\0'; c++)
+			s = (s ^ (unsigned char)*c) * 16777619u;
+	}
+	if (s == sig && s != 0) {
+		/* Only the one being dragged moves, with the hand. */
+		for (i = 0; peer_dragging[0] != '\0' && i < nexts; i++) {
+			char	key[160];
+
+			if (as_leader(i) != i)
+				continue;
+			peer_key(key, sizeof(key), &exts[i]);
+			if (strcmp(key, peer_dragging) == 0)
+				as_place_raw(i, &peer_x[i], &peer_y[i], &fixed[i]);
+		}
+		return;
+	}
+	sig = s;
 	for (i = 0; i < nexts; i++)
 		if (as_leader(i) == i)
 			as_place_raw(i, &peer_x[i], &peer_y[i], &fixed[i]);
@@ -855,22 +889,34 @@ node_placed_among(int i)
 }
 
 /*
- * The shape of the fleet, for placing it: the core, the nodes on some
- * cycle of links and those alone, goes on the circle; the others hang
- * off it, each behind the node it is reached through.  Found by taking
- * away, again and again, the nodes linked to one other drawn node only.
+ * The shape of the fleet, for placing it.  A host and its vnet jails are
+ * a family: links inside a family (an epair, a bridge, an uplink network
+ * they all have an address on) say nothing of where the family stands.
+ * Between families: the core, the nodes on some cycle of links, goes on
+ * the circle; a node reached through one other hangs behind it, found
+ * by taking away, again and again, the nodes linked to one other only.
+ * A node with no link out of its family hangs behind the one of its
+ * family that has (a host behind its jail that routes); a family with
+ * none is its host on the circle and its jails behind it.
  */
+static int
+node_family(int i)
+{
+
+	return (tn[i].jail[0] != '\0' ? node_host(i) : i);
+}
+
 static void
 topo_shape(void)
 {
 	static unsigned char	adj[MAX_NODES][MAX_NODES];
-	bool			drawn[MAX_NODES], gone[MAX_NODES];
-	int			deg[MAX_NODES], i, k, m, a, b, s, changed;
+	bool			drawn[MAX_NODES], gone[MAX_NODES], ext[MAX_NODES];
+	int			deg[MAX_NODES], inner[MAX_NODES], ninner;
+	int			i, k, m, a, b, s, changed, best;
 
 	memset(adj, 0, sizeof(adj));
 	for (i = 0; i < ntn; i++) {
 		drawn[i] = node_placed_among(i);
-		gone[i] = !drawn[i];
 		tparent[i] = -1;
 	}
 	for (k = 0; k < nlinks; k++) {
@@ -879,7 +925,7 @@ topo_shape(void)
 		if (a < 0 || a >= ntn)
 			continue;
 		if (b >= 0) {
-			if (b < ntn && a != b)
+			if (b < ntn && node_family(a) != node_family(b))
 				adj[a][b] = adj[b][a] = 1;
 			continue;
 		}
@@ -887,8 +933,15 @@ topo_shape(void)
 		if ((s = -b - 1) >= nsegs)
 			continue;
 		for (m = 0; m < segs[s].n; m++)
-			if ((b = segs[s].member[m]) >= 0 && b < ntn && b != a)
+			if ((b = segs[s].member[m]) >= 0 && b < ntn &&
+			    node_family(a) != node_family(b))
 				adj[a][b] = adj[b][a] = 1;
+	}
+	for (i = 0; i < ntn; i++) {
+		ext[i] = false;
+		for (k = 0; k < ntn; k++)
+			ext[i] = ext[i] || (adj[i][k] && drawn[k]);
+		gone[i] = !drawn[i] || !ext[i];
 	}
 	for (i = 0; i < ntn; i++)
 		for (deg[i] = 0, k = 0; k < ntn; k++)
@@ -911,7 +964,34 @@ topo_shape(void)
 		}
 	} while (changed);
 	for (i = 0; i < ntn; i++)
-		tcore[i] = drawn[i] && !gone[i];
+		tcore[i] = drawn[i] && ext[i] && !gone[i];
+	/*
+	 * Those with no link out of their family: behind the one of it that
+	 * has, in the core first; else the family's host is on the circle
+	 * and they hang behind it.  Placed last: first in the strip order.
+	 */
+	ninner = 0;
+	for (i = 0; i < ntn; i++) {
+		if (!drawn[i] || ext[i])
+			continue;
+		best = -1;
+		for (k = 0; k < ntn; k++)
+			if (k != i && drawn[k] && ext[k] &&
+			    node_family(k) == node_family(i) && (best == -1 ||
+			    (tcore[k] && !tcore[best])))
+				best = k;
+		if (best == -1 && tn[i].jail[0] == '\0') {
+			tcore[i] = true;	/* a family alone: its host */
+			continue;
+		}
+		tparent[i] = best != -1 ? best : node_family(i);
+		inner[ninner++] = i;
+	}
+	if (ninner > 0 && ntstrip + ninner <= MAX_NODES) {
+		memmove(tstrip + ninner, tstrip, ntstrip * sizeof(tstrip[0]));
+		memcpy(tstrip, inner, ninner * sizeof(tstrip[0]));
+		ntstrip += ninner;
+	}
 }
 
 /* Node i behind node p, outward from (cx, cy), beside p's other ones. */
@@ -935,6 +1015,86 @@ place_behind(int i, int p, double cx, double cy, double d)
 	t->x = pt->x + d * cos(a);
 	t->y = pt->y + d * 0.8 * sin(a);
 	t->placed = true;
+}
+
+/* How many leaves hang below node v, itself if none. */
+static int
+tree_leaves(int v)
+{
+	int	k, s;
+
+	for (s = 0, k = 0; k < ntn; k++)
+		if (tparent[k] == v && !tcore[k])
+			s += tree_leaves(k);
+	return (s > 0 ? s : 1);
+}
+
+static int
+tree_depth(int v)
+{
+	int	k, m, dd;
+
+	for (m = 0, k = 0; k < ntn; k++)
+		if (tparent[k] == v && !tcore[k] && (dd = tree_depth(k)) > m)
+			m = dd;
+	return (m + 1);
+}
+
+/* The children of v in the sector a0..a1, round (ox, oy), a depth out. */
+static void
+tree_ring(int v, double a0, double a1, double ox, double oy, double step,
+    int depth)
+{
+	struct thost	*t;
+	double		 a, span;
+	int		 k, all, done;
+
+	all = tree_leaves(v);
+	for (done = 0, k = 0; k < ntn; k++) {
+		if (tparent[k] != v || tcore[k] || (t = thost(tn[k].key,
+		    true)) == NULL)
+			continue;
+		span = (a1 - a0) * tree_leaves(k) / all;
+		a = a0 + (a1 - a0) * done / all + span / 2;
+		if (!t->placed) {
+			t->x = ox + depth * step * cos(a);
+			t->y = oy + depth * step * sin(a);
+			t->placed = true;
+		}
+		tree_ring(k, a0 + (a1 - a0) * done / all, a0 + (a1 - a0) * done /
+		    all + span, ox, oy, step, depth + 1);
+		done += tree_leaves(k);
+	}
+}
+
+/*
+ * A core node's hanging tree: in its sector of the circle (all of it
+ * for a core of one), facing out from the middle (cx, cy); each depth a
+ * step further, the step widened until the outer ring has room.
+ */
+static void
+place_tree(int c, int ncore, double cx, double cy, double d)
+{
+	struct thost	*t;
+	double		 a, w, step, need;
+	int		 leaves, depth;
+
+	if ((t = thost(tn[c].key, false)) == NULL || !t->placed)
+		return;
+	if (tree_leaves(c) == 1 && tree_depth(c) == 1)
+		return;			/* nothing hangs off it */
+	w = ncore <= 1 ? 2 * M_PI : 2 * M_PI / ncore;
+	if (w > 1.4 * M_PI)
+		w = 1.4 * M_PI;
+	a = ncore <= 1 || fabs(t->x - cx) + fabs(t->y - cy) < 1 ? -M_PI / 2 :
+	    atan2(t->y - cy, t->x - cx);
+	leaves = tree_leaves(c);
+	depth = tree_depth(c) - 1;
+	step = d;
+	need = 175.0 * leaves / (w * (depth > 0 ? depth : 1));
+	if (need > step)
+		step = need;
+	tree_ring(c, a - w / 2, a + w / 2, t->x, t->y, step, 1);
 }
 
 /*
@@ -970,9 +1130,13 @@ places_fill(void)
 		r = 720;
 	if (tp.stencil)
 		r *= 1.25;
+	/* Behind a node: as far as hosts are on a small circle, never so far
+	 * that chains outrun the drawing. */
 	d = n > 1 ? 2 * r * sin(M_PI / n) : 260;
-	if (d < 240)
-		d = 240;
+	if (d < 200)
+		d = 200;
+	if (d > 320)
+		d = 320;
 	any = false;
 	cx = cy = 0;
 	for (k = 0, i = 0; i < n; i++)
@@ -1007,7 +1171,27 @@ places_fill(void)
 			t->placed = true;
 		}
 	}
-	/* The leaves, from the core outward. */
+	/*
+	 * What hangs off the core: on a fresh layout, a radial tree around
+	 * each core node, in the sector of the circle facing out from it;
+	 * one seen later goes behind the node it hangs off.
+	 */
+	if (!any) {
+		double	ccx = 0, ccy = 0;
+		int	nc = 0;
+
+		for (i = 0; i < n; i++)
+			if ((t = thost(tn[order[i]].key, false)) != NULL &&
+			    t->placed) {
+				ccx += t->x;
+				ccy += t->y;
+				nc++;
+			}
+		ccx = nc > 0 ? ccx / nc : 0;
+		ccy = nc > 0 ? ccy / nc : 0;
+		for (i = 0; i < n; i++)
+			place_tree(order[i], n, ccx, ccy, d);
+	}
 	for (k = ntstrip - 1; k >= 0; k--) {
 		i = tstrip[k];
 		if ((t = thost(tn[i].key, true)) == NULL || t->placed ||
@@ -1461,6 +1645,35 @@ rate_now(struct thost *t, const char *name)
 	if (t == NULL || (r = rate_of(t, name, false)) == NULL || r->n == 0)
 		return (0);
 	return ((double)r->in[r->n - 1] + r->out[r->n - 1]);
+}
+
+/*
+ * An interface of a jail as this page read it while the network section
+ * was open, for the load balance tab (an agent samples its host's
+ * interfaces only): when, in seconds, and bytes a second, newest last.
+ * How many, or -1 when the page has not read it.
+ */
+int
+topo_if_rates(int srv, const char *jail, const char *ifn, bool out,
+    double *t, double *v, int max)
+{
+	struct thost	*th;
+	struct ifrate	*r;
+	char		 key[80];
+	int		 i, n, k;
+
+	snprintf(key, sizeof(key), "%s/%s", app.servers[srv].id, jail);
+	if ((th = thost(key, false)) == NULL || (r = rate_of(th, ifn,
+	    false)) == NULL || r->n == 0)
+		return (-1);
+	n = r->n < max ? r->n : max;
+	for (i = 0; i < n; i++) {
+		k = r->n - n + i;
+		t[i] = th->fetched / 1000.0 - (double)(r->n - 1 - k) *
+		    TOPO_POLL_MS / 1000.0;
+		v[i] = out ? r->out[k] : r->in[k];
+	}
+	return (n);
 }
 
 /* A reading of a host's interfaces: kept, and made into rates. */
@@ -3269,6 +3482,596 @@ wfmt_cls(void)
 	return (cls);
 }
 
+/*
+ * The OSPF map: the routers and transit networks of every OSPF area the
+ * fleet's BIRDs are in, as their link-state databases tell them.  Every
+ * router of an area holds the same database, so a host is asked for its
+ * topology only when what is known already lacks it: its router ID, or
+ * one of its neighbours, in each of its protocol's areas (a second OSPF
+ * domain with the same area number is asked for on its own).  First each
+ * host with OSPF is asked which protocols and areas it has, which is
+ * cheap; then one host at a time for a topology, until none is missing.
+ */
+#define	OM_NODES	256
+#define	OM_EDGES	1024
+#define	OM_ASKED	64
+#define	OM_AREAS	12
+
+struct omnode {
+	char	id[96];		/* a router ID, or area/network */
+	char	label[80];
+	bool	net;
+	int	node;		/* the fleet's node with this router ID, or -1 */
+	int	area;
+	int	stubs, exts;
+	double	x, y;
+};
+
+struct omedge {
+	int	a, b, area;
+	long	m;		/* a's metric towards b, or -1 */
+	long	mb;		/* b's towards a, or -1 */
+};
+
+static struct {
+	bool		on, built;
+	int		wait;
+	ucl_object_t	*sum[MAX_NODES];
+	struct {
+		int		 node;
+		char		 proto[64];
+		ucl_object_t	*topo;
+	}		asked[OM_ASKED];
+	int		nasked;
+	struct omnode	n[OM_NODES];
+	int		nn;
+	struct omedge	e[OM_EDGES];
+	int		ne;
+	char		areas[OM_AREAS][24];
+	int		nareas;
+	char		note[200];
+	int		failed;		/* hosts that could not say */
+	char		fail_why[120];
+} om;
+
+static void	om_plan(void);
+static void	om_fit(void);
+
+/* A node's BIRD's router ID, from its status: true when there is one. */
+static bool
+node_rid(int i, char *buf, size_t len)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	struct thost		*t;
+	const char		*s;
+
+	if ((t = thost(tn[i].key, false)) == NULL || t->bird == NULL)
+		return (false);
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(t->bird, "status"), &it, true)) !=
+	    NULL)
+		if ((s = ucl_object_tostring(o)) != NULL &&
+		    strncmp(s, "Router ID is ", 13) == 0) {
+			snprintf(buf, len, "%s", s + 13);
+			return (true);
+		}
+	return (false);
+}
+
+static void
+om_reset(void)
+{
+	int	i;
+
+	for (i = 0; i < MAX_NODES; i++)
+		if (om.sum[i] != NULL)
+			ucl_object_unref(om.sum[i]);
+	for (i = 0; i < om.nasked; i++)
+		if (om.asked[i].topo != NULL)
+			ucl_object_unref(om.asked[i].topo);
+	memset(&om, 0, sizeof(om));
+}
+
+static void
+om_sum_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	char	*key = arg;
+	int	 i;
+
+	(void)err;
+	om.wait--;
+	if ((i = node_index(key)) != -1 && status == 200 && jbool(o, "ok") &&
+	    jget(o, "data") != NULL && om.on)
+		om.sum[i] = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o,
+		    "data"));
+	else if (om.on) {
+		om.failed++;
+		snprintf(om.fail_why, sizeof(om.fail_why), "%s", err != NULL ?
+		    err : jstr(o, "error") != NULL ? jstr(o, "error") : "no answer");
+	}
+	free(key);
+	if (om.on)
+		om_plan();
+}
+
+static void
+om_topo_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	intptr_t	k = (intptr_t)arg;
+	const ucl_object_t *p;
+
+	om.wait--;
+	if (om.on && k >= 0 && k < om.nasked && status == 200 && jbool(o,
+	    "ok") && (p = ucl_array_find_index(jget(o, "data.protocols"),
+	    0)) != NULL && jget(p, "topology") != NULL)
+		om.asked[k].topo = ucl_object_ref((ucl_object_t *)(uintptr_t)
+		    jget(p, "topology"));
+	else if (om.on && err != NULL)
+		snprintf(om.note, sizeof(om.note), "%s", err);
+	if (om.on)
+		om_plan();
+}
+
+/* Does an area of a topology known already hold the router id? */
+static bool
+om_holds(const char *area, const char *id)
+{
+	const ucl_object_t	*a, *r;
+	ucl_object_iter_t	 it, rit;
+	int			 k;
+
+	for (k = 0; k < om.nasked; k++) {
+		it = NULL;
+		while ((a = ucl_object_iterate(om.asked[k].topo, &it, true)) !=
+		    NULL) {
+			if (jstr(a, "area") == NULL || (area != NULL &&
+			    strcmp(jstr(a, "area"), area) != 0))
+				continue;
+			rit = NULL;
+			while ((r = ucl_object_iterate(jget(a, "routers"), &rit,
+			    true)) != NULL)
+				if (jstr(r, "id") != NULL && strcmp(jstr(r, "id"),
+				    id) == 0)
+					return (true);
+		}
+	}
+	return (false);
+}
+
+/*
+ * Is node i's protocol p known: its router in each of p's areas, and
+ * each of p's neighbours somewhere, in what was told already?
+ */
+static bool
+om_covered(int i, const ucl_object_t *p)
+{
+	const ucl_object_t	*a, *nb;
+	ucl_object_iter_t	 it;
+	struct thost		*t;
+	char			 rid[64];
+
+	if (!node_rid(i, rid, sizeof(rid)))
+		return (false);
+	it = NULL;
+	while ((a = ucl_object_iterate(jget(p, "areas"), &it, true)) != NULL)
+		if (!om_holds(ucl_object_tostring(a), rid))
+			return (false);
+	t = thost(tn[i].key, false);
+	it = NULL;
+	while (t != NULL && (nb = ucl_object_iterate(jget(t->bird, "ospf"),
+	    &it, true)) != NULL)
+		if (jstr(nb, "proto") != NULL && jstr(p, "name") != NULL &&
+		    strcmp(jstr(nb, "proto"), jstr(p, "name")) == 0 &&
+		    jstr(nb, "router-id") != NULL && !om_holds(NULL, jstr(nb,
+		    "router-id")))
+			return (false);
+	return (true);
+}
+
+static int
+om_area(const char *id)
+{
+	int	k;
+
+	for (k = 0; k < om.nareas; k++)
+		if (strcmp(om.areas[k], id) == 0)
+			return (k);
+	if (om.nareas == OM_AREAS)
+		return (OM_AREAS - 1);
+	snprintf(om.areas[om.nareas], sizeof(om.areas[0]), "%s", id);
+	return (om.nareas++);
+}
+
+static int
+om_node(const char *id, bool net, int area)
+{
+	int	k;
+
+	for (k = 0; k < om.nn; k++)
+		if (om.n[k].net == net && strcmp(om.n[k].id, id) == 0)
+			return (k);
+	if (om.nn == OM_NODES)
+		return (-1);
+	memset(&om.n[om.nn], 0, sizeof(om.n[0]));
+	snprintf(om.n[om.nn].id, sizeof(om.n[0].id), "%s", id);
+	snprintf(om.n[om.nn].label, sizeof(om.n[0].label), "%s", net ?
+	    strchr(id, '/') + 1 : id);
+	om.n[om.nn].net = net;
+	om.n[om.nn].node = -1;
+	om.n[om.nn].area = area;
+	return (om.nn++);
+}
+
+static void
+om_edge(int a, int b, int area, long m)
+{
+	int	k;
+
+	if (a < 0 || b < 0 || a == b)
+		return;
+	for (k = 0; k < om.ne; k++) {
+		if (om.e[k].area != area)
+			continue;
+		if (om.e[k].a == a && om.e[k].b == b) {
+			if (m >= 0)
+				om.e[k].m = m;
+			return;
+		}
+		if (om.e[k].a == b && om.e[k].b == a) {
+			if (m >= 0)
+				om.e[k].mb = m;
+			return;
+		}
+	}
+	if (om.ne == OM_EDGES)
+		return;
+	om.e[om.ne].a = a;
+	om.e[om.ne].b = b;
+	om.e[om.ne].area = area;
+	om.e[om.ne].m = m;
+	om.e[om.ne].mb = -1;
+	om.ne++;
+}
+
+/* The graph, from every topology told: routers once, however many areas. */
+static void
+om_build(void)
+{
+	const ucl_object_t	*a, *r, *l, *nw, *x;
+	ucl_object_iter_t	 it, rit, lit;
+	char			 key[96], rid[64];
+	const char		*kind;
+	int			 k, i, ai, ri, ni;
+
+	om.nn = om.ne = 0;
+	for (k = 0; k < om.nasked; k++) {
+		it = NULL;
+		while ((a = ucl_object_iterate(om.asked[k].topo, &it, true)) !=
+		    NULL) {
+			if (jstr(a, "area") == NULL)
+				continue;
+			ai = om_area(jstr(a, "area"));
+			rit = NULL;
+			while ((r = ucl_object_iterate(jget(a, "routers"), &rit,
+			    true)) != NULL) {
+				if (jstr(r, "id") == NULL || (ri = om_node(jstr(r,
+				    "id"), false, ai)) == -1)
+					continue;
+				lit = NULL;
+				while ((l = ucl_object_iterate(jget(r, "links"),
+				    &lit, true)) != NULL) {
+					if ((kind = jstr(l, "kind")) == NULL ||
+					    jstr(l, "to") == NULL)
+						continue;
+					if (strcmp(kind, "router") == 0)
+						om_edge(ri, om_node(jstr(l, "to"),
+						    false, ai), ai, jint(l, "metric",
+						    -1));
+					else if (strcmp(kind, "network") == 0) {
+						snprintf(key, sizeof(key), "%s/%s",
+						    jstr(a, "area"), jstr(l, "to"));
+						om_edge(ri, om_node(key, true, ai),
+						    ai, jint(l, "metric", -1));
+					} else if (strcmp(kind, "stubnet") == 0)
+						om.n[ri].stubs++;
+					else if (strcmp(kind, "external") == 0)
+						om.n[ri].exts++;
+				}
+			}
+			rit = NULL;
+			while ((nw = ucl_object_iterate(jget(a, "networks"), &rit,
+			    true)) != NULL) {
+				if (jstr(nw, "id") == NULL)
+					continue;
+				snprintf(key, sizeof(key), "%s/%s", jstr(a, "area"),
+				    jstr(nw, "id"));
+				if ((ni = om_node(key, true, ai)) == -1)
+					continue;
+				lit = NULL;
+				while ((x = ucl_object_iterate(jget(nw, "routers"),
+				    &lit, true)) != NULL)
+					om_edge(om_node(ucl_object_tostring(x),
+					    false, ai), ni, ai, -1);
+			}
+		}
+	}
+	/* The fleet's own: named as the map names them. */
+	for (i = 0; i < ntn; i++)
+		if (node_rid(i, rid, sizeof(rid)))
+			for (k = 0; k < om.nn; k++)
+				if (!om.n[k].net && om.n[k].node == -1 &&
+				    strcmp(om.n[k].id, rid) == 0) {
+					om.n[k].node = i;
+					snprintf(om.n[k].label, sizeof(om.n[k].label),
+					    "%s", tn[i].name);
+				}
+	/* Laid out by springs on the links and a push between all. */
+	{
+		double	 t, d, dx, dy, f, r0, kk;
+		static double vx[OM_NODES], vy[OM_NODES];
+		int	 it2, p, q;
+
+		r0 = 80 + 40 * sqrt((double)om.nn);
+		for (p = 0; p < om.nn; p++) {
+			om.n[p].x = r0 * cos(2 * M_PI * p / (om.nn > 0 ? om.nn :
+			    1));
+			om.n[p].y = r0 * sin(2 * M_PI * p / (om.nn > 0 ? om.nn :
+			    1)) * 0.75;
+		}
+		kk = 150;
+		for (it2 = 0, t = 60; it2 < 300; it2++, t *= 0.985) {
+			for (p = 0; p < om.nn; p++)
+				vx[p] = vy[p] = 0;
+			for (p = 0; p < om.nn; p++)
+				for (q = p + 1; q < om.nn; q++) {
+					dx = om.n[p].x - om.n[q].x;
+					dy = om.n[p].y - om.n[q].y;
+					d = sqrt(dx * dx + dy * dy) + 0.01;
+					f = kk * kk / d;
+					vx[p] += dx / d * f;
+					vy[p] += dy / d * f;
+					vx[q] -= dx / d * f;
+					vy[q] -= dy / d * f;
+				}
+			for (k = 0; k < om.ne; k++) {
+				p = om.e[k].a;
+				q = om.e[k].b;
+				dx = om.n[p].x - om.n[q].x;
+				dy = om.n[p].y - om.n[q].y;
+				d = sqrt(dx * dx + dy * dy) + 0.01;
+				f = d * d / kk;
+				vx[p] -= dx / d * f;
+				vy[p] -= dy / d * f;
+				vx[q] += dx / d * f;
+				vy[q] += dy / d * f;
+			}
+			for (p = 0; p < om.nn; p++) {
+				d = sqrt(vx[p] * vx[p] + vy[p] * vy[p]) + 0.01;
+				om.n[p].x += vx[p] / d * (d < t ? d : t);
+				om.n[p].y += vy[p] / d * (d < t ? d : t);
+			}
+		}
+	}
+	om.built = true;
+	{
+		int	rn = 0, nn = 0;
+
+		for (k = 0; k < om.nn; k++)
+			om.n[k].net ? nn++ : rn++;
+		snprintf(om.note, sizeof(om.note), "%d routers, %d transit "
+		    "network%s in %d area%s, read from %d link-state "
+		    "database%s", rn, nn, nn == 1 ? "" : "s", om.nareas,
+		    om.nareas == 1 ? "" : "s", om.nasked, om.nasked == 1 ? "" :
+		    "s");
+		if (om.failed > 0)
+			snprintf(om.note + strlen(om.note), sizeof(om.note) -
+			    strlen(om.note), "; %d host%s could not say (an agent "
+			    "before 0.201.0?): %s", om.failed, om.failed == 1 ? "" :
+			    "s", om.fail_why);
+	}
+	om_fit();
+}
+
+/*
+ * The next host to ask for a topology: one whose OSPF the topologies
+ * known so far lack, one at a time, so that what one tells spares the
+ * others; none left, the graph.
+ */
+static void
+om_plan(void)
+{
+	const ucl_object_t	*p;
+	ucl_object_iter_t	 it;
+	char			 more[120], url[240];
+	int			 i, k;
+
+	if (om.wait > 0)
+		return;
+	for (i = 0; i < ntn; i++) {
+		if (om.sum[i] == NULL)
+			continue;
+		it = NULL;
+		while ((p = ucl_object_iterate(jget(om.sum[i], "protocols"), &it,
+		    true)) != NULL) {
+			if (jstr(p, "name") == NULL)
+				continue;
+			for (k = 0; k < om.nasked; k++)
+				if (om.asked[k].node == i && strcmp(
+				    om.asked[k].proto, jstr(p, "name")) == 0)
+					break;
+			if (k < om.nasked || om_covered(i, p))
+				continue;
+			if (om.nasked == OM_ASKED)
+				break;
+			om.asked[om.nasked].node = i;
+			snprintf(om.asked[om.nasked].proto,
+			    sizeof(om.asked[0].proto), "%s", jstr(p, "name"));
+			snprintf(more, sizeof(more), "filter=topology,%s",
+			    jstr(p, "name"));
+			node_url(i, "bird-ospf", more, url, sizeof(url));
+			om.wait++;
+			api("GET", url, NULL, om_topo_cb, (void *)(intptr_t)
+			    om.nasked++);
+			snprintf(om.note, sizeof(om.note), "Asking %s for its "
+			    "link-state database (%s)…", tn[i].name, jstr(p,
+			    "name"));
+			return;
+		}
+	}
+	om_build();
+}
+
+/* The map's OSPF map, asked for: each host with OSPF told of first. */
+static void
+om_start(void)
+{
+	const ucl_object_t	*p;
+	ucl_object_iter_t	 it;
+	struct thost		*t;
+	char			 url[240];
+	int			 i;
+
+	om_reset();
+	om.on = true;
+	for (i = 0; i < ntn; i++) {
+		if ((t = thost(tn[i].key, false)) == NULL || t->bird == NULL)
+			continue;
+		it = NULL;
+		while ((p = ucl_object_iterate(jget(t->bird, "protocols"), &it,
+		    true)) != NULL)
+			if (jstr(p, "proto") != NULL && strcmp(jstr(p, "proto"),
+			    "OSPF") == 0)
+				break;
+		if (p == NULL)
+			continue;
+		node_url(i, "bird-ospf", "", url, sizeof(url));
+		om.wait++;
+		api("GET", url, NULL, om_sum_cb, strdup(tn[i].key));
+	}
+	snprintf(om.note, sizeof(om.note), om.wait > 0 ? "Asking each host "
+	    "with OSPF for its areas…" : "No host's BIRD runs OSPF.");
+}
+
+static void
+om_fit(void)
+{
+	double	x0, y0, x1, y1, zx, zy;
+	int	k;
+
+	if (om.nn == 0)
+		return;
+	x0 = x1 = om.n[0].x;
+	y0 = y1 = om.n[0].y;
+	for (k = 1; k < om.nn; k++) {
+		x0 = om.n[k].x < x0 ? om.n[k].x : x0;
+		x1 = om.n[k].x > x1 ? om.n[k].x : x1;
+		y0 = om.n[k].y < y0 ? om.n[k].y : y0;
+		y1 = om.n[k].y > y1 ? om.n[k].y : y1;
+	}
+	zx = VIEW_W / (x1 - x0 + 200);
+	zy = (VIEW_H - LEGEND_H - TOOLS_H) / (y1 - y0 + 160);
+	tp.zoom = zx < zy ? zx : zy;
+	if (tp.zoom > 1.7)
+		tp.zoom = 1.7;
+	if (tp.zoom < 0.15)
+		tp.zoom = 0.15;
+	tp.panx = (x0 + x1) / 2;
+	tp.pany = (y0 + y1) / 2 + (LEGEND_H - TOOLS_H) / 2 / tp.zoom;
+}
+
+/* The OSPF map drawn: links by area with their metrics, then the nodes. */
+static void
+om_draw(struct html *h)
+{
+	struct omnode	*n;
+	struct omedge	*e;
+	int		 k;
+
+	for (k = 0; k < om.ne; k++) {
+		e = &om.e[k];
+		h_fmt(h, "<g class=\"omedge a%d\"><path d=\"M%.1f %.1f L%.1f "
+		    "%.1f\"/>", e->area % 6, om.n[e->a].x, om.n[e->a].y,
+		    om.n[e->b].x, om.n[e->b].y);
+		if (e->m >= 0 || e->mb >= 0) {
+			h_fmt(h, "<text x=\"%.1f\" y=\"%.1f\">", (om.n[e->a].x +
+			    om.n[e->b].x) / 2, (om.n[e->a].y + om.n[e->b].y) / 2 -
+			    3);
+			if (e->m >= 0 && e->mb >= 0 && e->m != e->mb)
+				h_fmt(h, "%ld / %ld", e->m, e->mb);
+			else
+				h_fmt(h, "%ld", e->m >= 0 ? e->m : e->mb);
+			h_raw(h, "</text>");
+		}
+		h_raw(h, "<title>");
+		h_txt(h, om.n[e->a].label);
+		h_raw(h, " ⇄ ");
+		h_txt(h, om.n[e->b].label);
+		h_fmt(h, " · area %s</title></g>", om.areas[e->area]);
+	}
+	for (k = 0; k < om.nn; k++) {
+		n = &om.n[k];
+		if (n->net) {
+			h_fmt(h, "<g class=\"omnet\" transform=\"translate(%.1f,"
+			    "%.1f)\"><rect x=\"-26\" y=\"-8\" width=\"52\" height=\""
+			    "16\" rx=\"3\"/><circle cx=\"-14\" r=\"2\"/><circle "
+			    "r=\"2\"/><circle cx=\"14\" r=\"2\"/><text y=\"24\">",
+			    n->x, n->y);
+			h_fit(h, n->label, 24);
+			h_raw(h, "</text><title>A transit network: ");
+			h_txt(h, n->label);
+			h_raw(h, "</title></g>");
+			continue;
+		}
+		h_fmt(h, "<g class=\"omr%s\" transform=\"translate(%.1f,%.1f)\">"
+		    "<circle class=\"glyph\" r=\"20\"/><path class=\"arrows\" "
+		    "d=\"M-13 -5h22M3 -10l6 5-6 5M13 5h-22M-3 10l-6-5 6-5\"/>"
+		    "<text class=\"name\" y=\"34\">", n->node != -1 ? " fleet" :
+		    "", n->x, n->y);
+		h_fit(h, n->label, 22);
+		h_raw(h, "</text>");
+		if (n->node != -1) {
+			h_raw(h, "<text class=\"sub\" y=\"46\">");
+			h_txt(h, n->id);
+			h_raw(h, "</text>");
+		}
+		h_raw(h, "<title>");
+		h_txt(h, n->label);
+		h_fmt(h, " · router ID %s", n->id);
+		if (n->stubs > 0 || n->exts > 0)
+			h_fmt(h, " · %d stub network%s, %d external route%s",
+			    n->stubs, n->stubs == 1 ? "" : "s", n->exts,
+			    n->exts == 1 ? "" : "s");
+		h_raw(h, n->node != -1 ? " · a host of this console" :
+		    " · a router outside this console");
+		h_raw(h, "</title></g>");
+	}
+	if (!om.built) {
+		h_fmt(h, "<text class=\"omnote\" x=\"%.1f\" y=\"%.1f\">", tp.panx,
+		    tp.pany);
+		h_txt(h, om.note);
+		h_raw(h, "</text>");
+	}
+}
+
+/* The OSPF map's legend: the areas by colour, the kinds of node, the count. */
+static void
+om_legend(struct html *h)
+{
+	int	k;
+
+	h_raw(h, "<ul class=\"map-legend om\">");
+	for (k = 0; k < om.nareas; k++)
+		h_fmt(h, "<li class=\"key oma%d\">area %s</li>", k % 6,
+		    om.areas[k]);
+	h_raw(h, "<li class=\"key omfleet\">a host of this console</li>"
+	    "<li class=\"key omout\">a router outside</li>"
+	    "<li class=\"key omnetk\">transit network</li><li class=\"key "
+	    "note\">");
+	h_txt(h, om.note);
+	h_raw(h, "</li></ul>");
+}
+
 static void
 map(struct html *h)
 {
@@ -3292,16 +4095,20 @@ map(struct html *h)
 	    "%.1f\" fill=\"url(#dots)\" data-drag=\"topo-pan\" data-arg=\"\"/>",
 	    wfmt_cls(), tp.panx - w / 2, tp.pany - ht / 2, w,
 	    ht, tp.panx - w * 2, tp.pany - ht * 2, w * 4, ht * 4);
-	map_links(h);
-	map_path(h);
-	if (tp.linking && (t = thost(tp.link_from, false)) != NULL)
-		h_fmt(h, "<path class=\"tdraft\" d=\"M%.1f %.1f L%.1f %.1f\"/>",
-		    t->x + NODE_W / 2, t->y, tp.link_x, tp.link_y);
-	map_nodes(h);
-	if (tlab.len > 0) {
-		h_raw(h, "<g class=\"tlabels\">");
-		h_raw(h, tlab.s);
-		h_raw(h, "</g>");
+	if (om.on)
+		om_draw(h);
+	else {
+		map_links(h);
+		map_path(h);
+		if (tp.linking && (t = thost(tp.link_from, false)) != NULL)
+			h_fmt(h, "<path class=\"tdraft\" d=\"M%.1f %.1f L%.1f "
+			    "%.1f\"/>", t->x + NODE_W / 2, t->y, tp.link_x, tp.link_y);
+		map_nodes(h);
+		if (tlab.len > 0) {
+			h_raw(h, "<g class=\"tlabels\">");
+			h_raw(h, tlab.s);
+			h_raw(h, "</g>");
+		}
 	}
 	h_raw(h, "</svg><div class=\"map-tools\">"
 	    "<button class=\"ghost small\" data-act=\"topo-zoom-in\" "
@@ -3330,6 +4137,10 @@ map(struct html *h)
 	    "title=\"Drawn as a network diagram: routers, switches, clouds and "
 	    "straight lines, as an engineer draws one\">Diagram</button>",
 	    tp.stencil ? " on" : "");
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-ospfmap\" "
+	    "title=\"Every OSPF area the hosts are in, its routers and transit "
+	    "networks, from one host's link-state database per area\">OSPF "
+	    "map%s</button>", om.on ? " on" : "", om.on && !om.built ? "…" : "");
 	h_raw(h, "<button class=\"ghost small\" data-act=\"topo-png\" title=\"The "
 	    "map as it is shown, saved as a PNG picture\">PNG</button>");
 	{
@@ -3390,6 +4201,11 @@ map(struct html *h)
 			    lk[k].title);
 		}
 		h_raw(h, "</div>");
+	}
+	if (om.on) {
+		om_legend(h);
+		h_raw(h, "</div>");
+		return;
 	}
 	/* The legend says what a line is, and takes its kind away or back. */
 	h_raw(h, "<ul class=\"map-legend\">");
@@ -3781,6 +4597,332 @@ wg_sessions(struct html *h)
 		h_raw(h, "</ul></section>");
 }
 
+/*
+ * The Overlay tab: every tunnel of every host, one row an end, its far
+ * end named when a host of this console has it: gre(4), gif(4) and the
+ * like by their outer addresses, WireGuard by its peers' keys, and the
+ * VPNs' tun and tap.  WireGuard's peers with when each last shook hands
+ * come under it, as the map's panel had them.
+ */
+/* A row's cell, as text. */
+static void
+ov_set(ucl_object_t *o, const char *key, const char *value)
+{
+
+	ucl_object_replace_key(o, ucl_object_fromstring(value != NULL ? value :
+	    ""), key, 0, true);
+}
+
+static const char *
+overlay_kind(const struct thost *t, const ucl_object_t *o)
+{
+	const char	*n = jstr(o, "name");
+
+	if (n == NULL)
+		return (NULL);
+	if (wg_iface((struct thost *)(uintptr_t)t, NULL, n) != NULL ||
+	    strncmp(n, "wg", 2) == 0)
+		return ("WireGuard");
+	if (strncmp(n, "gre", 3) == 0)
+		return ("gre");
+	if (strncmp(n, "gif", 3) == 0)
+		return ("gif");
+	if (strncmp(n, "geneve", 6) == 0)
+		return ("geneve");
+	if (strncmp(n, "vxlan", 5) == 0)
+		return ("vxlan");
+	if (strncmp(n, "tun", 3) == 0 || strncmp(n, "tap", 3) == 0)
+		return ("VPN (tun)");
+	if (strncmp(n, "me", 2) == 0 && jget(o, "tunnel") != NULL)
+		return ("minimal encapsulation");
+	if (jget(o, "tunnel") != NULL)
+		return ("tunnel");
+	return (NULL);
+}
+
+/* An end's far end: the host with the remote address, and the interface
+ * there whose own remote is this end's local. */
+static void
+overlay_far(const ucl_object_t *o, char *buf, size_t len)
+{
+	const ucl_object_t	*f;
+	ucl_object_iter_t	 it;
+	struct thost		*t;
+	int			 p;
+
+	buf[0] = '\0';
+	if (jstr(o, "tunnel.remote") == NULL || (p = owner(jstr(o,
+	    "tunnel.remote"), NULL, 0)) == -1)
+		return;
+	snprintf(buf, len, "%s", tn[p].label);
+	if ((t = thost(tn[p].key, false)) == NULL)
+		return;
+	it = NULL;
+	while ((f = ucl_object_iterate(jget(t->ifs, "interfaces"), &it, true)) !=
+	    NULL)
+		if (jstr(f, "tunnel.remote") != NULL && jstr(o, "tunnel.local") !=
+		    NULL && addr_same(jstr(f, "tunnel.remote"), jstr(o,
+		    "tunnel.local")) && jstr(f, "name") != NULL) {
+			snprintf(buf + strlen(buf), len - strlen(buf), " · %s",
+			    jstr(f, "name"));
+			return;
+		}
+}
+
+static ucl_object_t *
+overlay_rows(void)
+{
+	const ucl_object_t	*o, *a, *nb, *wi, *p;
+	ucl_object_iter_t	 it, ait, nit, wit, pit;
+	ucl_object_t		*all, *r;
+	struct thost		*t;
+	const char		*kind, *n;
+	char			 buf[256], far[160], rate[24];
+	int			 i, k, peers, live;
+	int64_t			 now, hs, best;
+
+	all = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < ntn; i++) {
+		ucl_object_t	*list;
+
+		if ((t = thost(tn[i].key, false)) == NULL || (t->ifs == NULL &&
+		    t->wg == NULL))
+			continue;
+		/* Its interfaces, and a WireGuard interface its WireGuard
+		 * tells of when the interfaces read lack it. */
+		list = ucl_object_typed_new(UCL_ARRAY);
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(t->ifs, "interfaces"), &it,
+		    true)) != NULL)
+			ucl_array_append(list, ucl_object_ref((ucl_object_t *)
+			    (uintptr_t)o));
+		wit = NULL;
+		while ((wi = ucl_object_iterate(jget(t->wg, "interfaces"), &wit,
+		    true)) != NULL) {
+			ucl_object_t	*f;
+
+			if (jstr(wi, "name") == NULL || if_named(t, jstr(wi, "name")) !=
+			    NULL)
+				continue;
+			f = ucl_object_typed_new(UCL_OBJECT);
+			ov_set(f, "name", jstr(wi, "name"));
+			ucl_object_insert_key(f, ucl_object_frombool(true), "up", 0,
+			    false);
+			ucl_array_append(list, f);
+		}
+		it = NULL;
+		while ((o = ucl_object_iterate(list, &it, true)) != NULL) {
+			if ((kind = overlay_kind(t, o)) == NULL ||
+			    (n = jstr(o, "name")) == NULL)
+				continue;
+			r = ucl_object_typed_new(UCL_OBJECT);
+			ov_set(r, "host", tn[i].label);
+			ov_set(r, "key", tn[i].key);
+			ov_set(r, "if", n);
+			ov_set(r, "kind", kind);
+			/* Its inner addresses, link-local left out. */
+			buf[0] = '\0';
+			ait = NULL;
+			while ((a = ucl_object_iterate(jget(o, "addresses"),
+			    &ait, true)) != NULL)
+				if (jstr(a, "address") != NULL && strncmp(jstr(a,
+				    "address"), "fe80:", 5) != 0)
+					snprintf(buf + strlen(buf), sizeof(buf) -
+					    strlen(buf), "%s%s/%lld", buf[0] != '\0' ?
+					    " " : "", jstr(a, "address"), (long long)
+					    jint(a, "prefixlen", 0));
+			ov_set(r, "inner", buf);
+			far[0] = '\0';
+			if (jstr(o, "tunnel.local") != NULL) {
+				snprintf(buf, sizeof(buf), "%s → %s", jstr(o,
+				    "tunnel.local"), jstr(o, "tunnel.remote") !=
+				    NULL ? jstr(o, "tunnel.remote") : "?");
+				overlay_far(o, far, sizeof(far));
+			} else
+				buf[0] = '\0';
+			/* WireGuard: its peers, their endpoints, the last
+			 * handshake of any. */
+			peers = live = 0;
+			best = 0;
+			now = t->wg != NULL ? jint(t->wg, "now", 0) : 0;
+			wit = NULL;
+			while (t->wg != NULL && (wi = ucl_object_iterate(jget(t->wg,
+			    "interfaces"), &wit, true)) != NULL) {
+				if (jstr(wi, "name") == NULL || strcmp(jstr(wi,
+				    "name"), n) != 0)
+					continue;
+				pit = NULL;
+				while ((p = ucl_object_iterate(jget(wi, "peers"),
+				    &pit, true)) != NULL) {
+					const char	*other = NULL;
+
+					peers++;
+					hs = jint(p, "latest-handshake", 0);
+					if (hs > best)
+						best = hs;
+					if (hs != 0 && now - hs < 180)
+						live++;
+					if (jstr(p, "endpoint") != NULL &&
+					    strlen(buf) + 40 < sizeof(buf))
+						snprintf(buf + strlen(buf), sizeof(buf) -
+						    strlen(buf), "%s%s", buf[0] !=
+						    '\0' ? ", " : "→ ", jstr(p,
+						    "endpoint"));
+					for (k = 0; k < nhosts && other == NULL;
+					    k++)
+						if (&hosts[k] != t && (other =
+						    wg_iface(&hosts[k], jstr(p,
+						    "public-key"), NULL)) != NULL &&
+						    node_index(hosts[k].sid) != -1)
+							snprintf(far + strlen(far),
+							    sizeof(far) - strlen(far),
+							    "%s%s · %s", far[0] !=
+							    '\0' ? ", " : "", tn[node_index(
+							    hosts[k].sid)].label, other);
+				}
+			}
+			ov_set(r, "outer", buf);
+			ov_set(r, "far", far);
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(o, "fib",
+			    0));
+			ov_set(r, "fib", buf);
+			if (jget(o, "tunnel") != NULL) {
+				snprintf(buf, sizeof(buf), "%lld", (long long)jint(o,
+				    "tunnelfib", 0));
+				ov_set(r, "tfib", buf);
+			} else
+				ov_set(r, "tfib", "");
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(o, "mtu",
+			    0));
+			ov_set(r, "mtu", buf);
+			if (peers > 0) {
+				if (best == 0)
+					snprintf(buf, sizeof(buf), "%s · %d peer%s, "
+					    "none shook hands", jbool(o, "up") ?
+					    "up" : "down", peers, peers == 1 ? "" :
+					    "s");
+				else {
+					char	age[32];
+
+					vpn_age(age, sizeof(age), now - best);
+					snprintf(buf, sizeof(buf), "%s · %d of %d "
+					    "peer%s live · %s", jbool(o, "up") ?
+					    "up" : "down", live, peers, peers == 1 ?
+					    "" : "s", age);
+				}
+			} else
+				snprintf(buf, sizeof(buf), "%s", jbool(o, "up") ?
+				    (jstr(o, "link") == NULL || strcmp(jstr(o,
+				    "link"), "up") == 0 ? "up" : "up, no link") :
+				    "down");
+			ov_set(r, "state", buf);
+			fmt_rate(rate, sizeof(rate), rate_now(t, n));
+			ov_set(r, "rate", rate);
+			snprintf(buf, sizeof(buf), "%.0f", rate_now(t, n));
+			ov_set(r, "bps", buf);
+			/* OSPF over it, as BIRD's neighbours say. */
+			buf[0] = '\0';
+			nit = NULL;
+			while (t->bird != NULL && (nb = ucl_object_iterate(jget(
+			    t->bird, "ospf"), &nit, true)) != NULL)
+				if (jstr(nb, "interface") != NULL && strcmp(jstr(nb,
+				    "interface"), n) == 0)
+					snprintf(buf, sizeof(buf), "%s",
+					    jstr(nb, "state") != NULL ? jstr(nb,
+					    "state") : "yes");
+			ov_set(r, "ospf", buf);
+			ucl_array_append(all, r);
+		}
+		ucl_object_unref(list);
+	}
+	return (all);
+}
+
+void
+view_overlay(struct html *h)
+{
+	static const struct tcol cols[] = {
+		{ "Host", "host", false }, { "Interface", "if", false },
+		{ "Kind", "kind", false }, { "Inner", "inner", false },
+		{ "Outer", "outer", false }, { "Far end", "far", false },
+		{ "FIB", "fib", true }, { "Outer FIB", "tfib", true },
+		{ "MTU", "mtu", true }, { "State", "state", false },
+		{ "Traffic", "bps", true }, { "OSPF", "ospf", false },
+	};
+	const ucl_object_t	**rows, *r;
+	ucl_object_t		*all;
+	int			 i, n, total, reading;
+
+	nodes_build();
+	links_build();
+	for (reading = 0, i = 0; i < ntn; i++)
+		if (thost(tn[i].key, false) == NULL || thost(tn[i].key,
+		    false)->ifs == NULL)
+			reading++;
+	all = overlay_rows();
+	total = (int)ucl_array_size(all);
+	if (total == 0) {
+		h_raw(h, reading > 0 ? "<div class=\"empty\"><div class=\"loader\">"
+		    "</div></div>" : "<div class=\"empty\"><h2>No overlay "
+		    "tunnels</h2><p>No host has a gre, gif, WireGuard, geneve, "
+		    "vxlan or VPN interface. One is made on the map: drag from a "
+		    "host's port onto another.</p></div>");
+		ucl_object_unref(all);
+		return;
+	}
+	rows = tbl_rows("overlay", all, cols, (int)nitems(cols), app.filter);
+	for (n = 0; rows[n] != NULL; n++)
+		;
+	h_raw(h, "<div class=\"overlay-page\"><div class=\"toolbar\"><input "
+	    "class=\"filter\" id=\"filter\" data-input=\"filter\" placeholder="
+	    "\"Filter by host, interface, kind, address…\" autocomplete=\"off\" "
+	    "spellcheck=\"false\"");
+	h_attr(h, "value", app.filter);
+	h_fmt(h, "><span class=\"tally\"><b>%d</b> of %d tunnel end%s</span>"
+	    "</div><div class=\"scrollx\"><table class=\"net overlay\">", n, total, total == 1 ? "" :
+	    "s");
+	tbl_head(h, "overlay", cols, (int)nitems(cols), 0);
+	h_raw(h, "<tbody>");
+	for (i = 0; (r = rows[i]) != NULL; i++) {
+		h_raw(h, "<tr class=\"pick\" data-act=\"topo-open-host\"");
+		h_attr(h, "data-arg", jstr(r, "key"));
+		h_raw(h, " title=\"Its host's interfaces\"><td><b>");
+		h_txt(h, jstr(r, "host"));
+		h_raw(h, "</b></td><td class=\"mono\">");
+		h_txt(h, jstr(r, "if"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(r, "kind"));
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(r, "inner")[0] != '\0' ? jstr(r, "inner") :
+		    "—");
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(r, "outer")[0] != '\0' ? jstr(r, "outer") :
+		    "—");
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(r, "far")[0] != '\0' ? jstr(r, "far") :
+		    "outside");
+		h_raw(h, "</td><td class=\"num\">");
+		h_txt(h, jstr(r, "fib"));
+		h_raw(h, "</td><td class=\"num\">");
+		h_txt(h, jstr(r, "tfib")[0] != '\0' ? jstr(r, "tfib") : "—");
+		h_raw(h, "</td><td class=\"num\">");
+		h_txt(h, strcmp(jstr(r, "mtu"), "0") != 0 ? jstr(r, "mtu") : "—");
+		h_fmt(h, "</td><td class=\"%s\">", strncmp(jstr(r, "state"),
+		    "up", 2) == 0 ? "ok" : "bad");
+		h_txt(h, jstr(r, "state"));
+		h_raw(h, "</td><td class=\"num\">");
+		h_txt(h, jstr(r, "rate"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(r, "ospf")[0] != '\0' ? jstr(r, "ospf") : "—");
+		h_raw(h, "</td></tr>");
+	}
+	h_raw(h, "</tbody></table></div>");
+	wg_sessions(h);
+	h_raw(h, "</div>");
+	free(rows);
+	ucl_object_unref(all);
+}
+
 /* Nothing picked: what there is, and where the traffic goes. */
 static void
 panel_overview(struct html *h)
@@ -3809,7 +4951,6 @@ panel_overview(struct html *h)
 		    "</div><div><b>%d</b><span>OSPF between hosts</span></div>"
 		    "<div><b>%d</b><span>neighbours outside</span></div></div>"
 		    "</section>", kinds[LK_BGP], kinds[LK_OSPF], nexts);
-	wg_sessions(h);
 	/* Everything every host receives and sends, over time. */
 	memset(&sum, 0, sizeof(sum));
 	for (i = 0; i < nhosts; i++) {
@@ -5077,8 +6218,8 @@ zoom_by(double f, double x, double y)
 	double	z;
 
 	z = tp.zoom * f;
-	if (z < 0.25)
-		z = 0.25;
+	if (z < 0.1)
+		z = 0.1;
 	if (z > 4)
 		z = 4;
 	/* What is under the pointer stays under it. */
@@ -5114,15 +6255,15 @@ fit(void)
 	 * under them. */
 	zx = VIEW_W / (x1 - x0 + NODE_W + (nexts > 0 && !tp.nopeers ? 640 :
 	    120) * (VIEW_W < 600 ? 0.5 : 1.0));
-	zy = (VIEW_H - LEGEND_H) / (y1 - y0 + NODE_H + (nexts > 0 &&
+	zy = (VIEW_H - LEGEND_H - TOOLS_H) / (y1 - y0 + NODE_H + (nexts > 0 &&
 	    !tp.nopeers ? 460 : 140) * (VIEW_W < 600 ? 0.5 : 1.0));
 	tp.zoom = zx < zy ? zx : zy;
 	if (tp.zoom > 1.7)
 		tp.zoom = 1.7;
-	if (tp.zoom < 0.25)
-		tp.zoom = 0.25;
+	if (tp.zoom < 0.1)
+		tp.zoom = 0.1;
 	tp.panx = (x0 + x1) / 2;
-	tp.pany = (y0 + y1) / 2 + LEGEND_H / 2 / tp.zoom;
+	tp.pany = (y0 + y1) / 2 + (LEGEND_H - TOOLS_H) / 2 / tp.zoom;
 }
 
 /* Called when the section is opened: read every host at once. */
@@ -5171,6 +6312,8 @@ topo_action(const char *act, const char *arg, const char *value)
 			return (true);
 		/* It moves by where it was taken hold of, not by its middle. */
 		if (act[10] == 's') {
+			drag_x0 = t->x;
+			drag_y0 = t->y;
 			grab_x = t->x - x;
 			grab_y = t->y - y;
 		} else {
@@ -5180,6 +6323,19 @@ topo_action(const char *act, const char *arg, const char *value)
 		tp.touched = true;
 		tp.custom = true;
 	} else if (strcmp(act, "topo-node-end") == 0) {
+		/* The neighbours dragged beside it are kept from it: by as
+		 * much as it moved, so that they stay where they are. */
+		if ((t = thost(arg, false)) != NULL) {
+			size_t	len = strlen(arg);
+
+			for (i = 0; i < tp.npeers; i++)
+				if (strncmp(tp.peers[i].key, arg, len) == 0 &&
+				    tp.peers[i].key[len] == '\t') {
+					tp.peers[i].dx -= t->x - drag_x0;
+					tp.peers[i].dy -= t->y - drag_y0;
+				}
+			peers_save();
+		}
 		places_save();
 	} else if (strcmp(act, "topo-node-click") == 0) {
 		tp.sel_link[0] = tp.sel_if[0] = '\0';
@@ -5320,8 +6476,10 @@ topo_action(const char *act, const char *arg, const char *value)
 			pp->dx = x + peer_gx - t->x;
 			pp->dy = y + peer_gy - t->y;
 		}
+		snprintf(peer_dragging, sizeof(peer_dragging), "%s", arg);
 		tp.touched = true;
 	} else if (strcmp(act, "topo-peer-end") == 0) {
+		peer_dragging[0] = '\0';
 		peers_save();
 	} else if (strcmp(act, "topo-peer-click") == 0) {
 		char	sid[80];
@@ -5386,6 +6544,12 @@ topo_action(const char *act, const char *arg, const char *value)
 		arc_svg_png("svg.topo", tp.stencil ? "network-diagram.png" :
 		    "network-map.png");
 		return (true);		/* nothing to draw again */
+	} else if (strcmp(act, "topo-ospfmap") == 0) {
+		if (om.on) {
+			om_reset();
+			fit();
+		} else
+			om_start();
 	} else if (strcmp(act, "topo-stencil") == 0) {
 		tp.stencil = !tp.stencil;
 	} else if (strcmp(act, "topo-arrange") == 0) {

@@ -660,6 +660,18 @@ definitions:
           address, filter mode, link-level address and sources; and
           "settings", the kernel's (net.inet.igmp.* and net.inet6.mld.*,
           name and value), which a job of kind sysctl sets.
+      - name: bird-ospf
+        doc: |
+          BIRD's OSPF, from birdc(8): a JSON object with "protocols",
+          each OSPF protocol with its "name" and the "areas" it is in.
+          With the filter "topology", or "topology" and a protocol's
+          name, each also has "topology": per area, its "routers", each
+          with its "distance" (or "unreachable") and "links" (kind
+          router, network, stubnet, external and the like, "to", and
+          "metric" or "metric2"), and its transit "networks", each with
+          its designated router ("dr"), "distance" and "routers", as
+          "show ospf topology all" tells them from the link-state
+          database.  Every router of an area tells the same.
   - name: storage-kind
     type: enum
     entries:

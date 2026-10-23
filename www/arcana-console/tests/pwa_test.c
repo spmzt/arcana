@@ -6209,6 +6209,14 @@ part_netsect(void)
 		    "'svg.topo .tnode .box').getBoundingClientRect())");
 		y0 = js_num("(r => r.y + r.height / 2)(document.querySelector("
 		    "'svg.topo .tnode .box').getBoundingClientRect())");
+		/* And no other node moves with it: the neighbours outside,
+		 * the other hosts. */
+		run("window.others = () => [...document.querySelectorAll('svg.topo "
+		    "g.tpeer[data-drag] :is(.cloud, .glyph), svg.topo g.tnode .box')]"
+		    ".filter(e => e !== document.querySelector('svg.topo g.tnode "
+		    ".box')).map(e => { const r = e.getBoundingClientRect(); "
+		    "return Math.round(r.x) + ',' + Math.round(r.y); }).join(' '); "
+		    "window.before = window.others();");
 		mouse("pointerMove", x0, y0);
 		mouse("pointerDown", 0, 0);
 		for (step = 1; step <= 16; step++) {
@@ -6227,6 +6235,14 @@ part_netsect(void)
 			    "pointer at %.0f,%.0f", step, cx, cy, x, y);
 		}
 		mouse("pointerUp", 0, 0);
+		usleep(400000);
+		ATF_CHECK_MSG(js_true("window.others() === window.before"),
+		    "other nodes moved with the host dragged: the %.0fth of %.0f "
+		    "(%.0f neighbours first)", js_num("(() => { const a = window."
+		    "before.split(' '), b = window.others().split(' '); return "
+		    "a.findIndex((v, i) => v !== b[i]); })()"), js_num("window."
+		    "before.split(' ').length"), js_num("document.querySelectorAll("
+		    "'svg.topo g.tpeer[data-drag]').length"));
 	}
 	/* Two fingers parting on the map bring it closer. */
 	run("window.vb = document.querySelector('svg.topo').getAttribute("
@@ -6296,13 +6312,23 @@ part_netsect(void)
 	wait_js("document.querySelectorAll('svg.topo g.tpeer.bgp').length >= 2 "
 	    "&& document.querySelector('svg.topo g.tpeer.ospf') && "
 	    "[...document.querySelectorAll('.map-panel h4')].some(h => "
-	    "h.textContent === 'WireGuard sessions') && [...document."
-	    "querySelectorAll('.map-panel h4')].some(h => h.textContent === "
-	    "'Routing')", 60);
+	    "h.textContent === 'Routing')", 60);
 	ATF_CHECK(js_true("document.querySelector('svg.topo g.tpeer.bgp')."
-	    "textContent.includes('AS65001') && document.querySelector("
-	    "'.iflist.wgs').textContent.includes('192.0.2.9:51820')"));
+	    "textContent.includes('AS65001')"));
 	shot("8a-overview");
+	/* The Overlay tab: every tunnel end, and WireGuard's peers with
+	 * when each shook hands. */
+	run("document.querySelector('.netsect button.tab[data-arg=overlay]')"
+	    ".click()");
+	wait_js("document.querySelector('.overlay-page table.overlay tbody tr') "
+	    "&& [...document.querySelectorAll('table.overlay td')].some(t => "
+	    "t.textContent === 'WireGuard') && document.querySelector("
+	    "'.overlay-page .iflist.wgs').textContent.includes('192.0.2.9:51820')",
+	    30);
+	shot("8a-overlay");
+	run("document.querySelector('.netsect button.tab[data-arg=map]')"
+	    ".click()");
+	wait_js("document.querySelector('svg.topo g.tpeer.bgp')", 20);
 	run("document.documentElement.dataset.theme = 'onyx'");
 	shot("8a-onyx");
 	run("delete document.documentElement.dataset.theme");
@@ -6960,6 +6986,25 @@ part_mesh(void)
 	    "(b.x + b.width / 2 - 140) + ' ' + (b.y + b.height / 2 - 95) + "
 	    "' 280 190');");
 	shot("9-mesh-outer");
+	/*
+	 * The OSPF map: two domains here, the shared network's (three hosts)
+	 * and the outside router's; one link-state database read for each,
+	 * not one per host.
+	 */
+	click_at("button[data-act=topo-fit]");
+	click_at("button[data-act=topo-ospfmap]");
+	wait_js("document.querySelector('.map-legend.om .note') && document."
+	    "querySelector('.map-legend.om .note').textContent.includes('read "
+	    "from')", 30);
+	ATF_CHECK(js_true("document.querySelectorAll('svg.topo .omr.fleet')"
+	    ".length === 3 && document.querySelectorAll('svg.topo .omr:not(.fleet)')"
+	    ".length >= 1 && document.querySelector('svg.topo .omnet') && "
+	    "document.querySelector('.map-legend.om .note').textContent."
+	    "includes('read from 2 link-state databases')"));
+	shot("9-mesh-ospf");
+	click_at("button[data-act=topo-ospfmap]");
+	wait_js("!document.querySelector('.map-legend.om') && document."
+	    "querySelector('svg.topo .tnode')", 10);
 	click_at("button[data-act=topo-fit]");
 	usleep(300000);
 	run("const s = document.querySelector('select[data-input=topo-fib]');"
@@ -6972,6 +7017,85 @@ part_mesh(void)
 	wait_js("!document.querySelector('svg.topo.stencil')", 5);
 	usleep(500000);
 	shot("9-mesh-map-fib1");
+}
+
+/*
+ * The map at scale, of build/lab/scale-lab.sh's fleet (up first, as
+ * root; skipped without it): every node added, the map drawn as boxes
+ * and as a diagram, a picture of each named by the shape and size, and
+ * no two nodes, nor a node and a neighbour outside, drawn over each
+ * other.
+ */
+static const char overlaps_js[] =
+    "(() => { const r = [...document.querySelectorAll('svg.topo g.tnode "
+    ":is(rect.box, .glyph)')].map(e => e.getBoundingClientRect()); "
+    "const p = [...document.querySelectorAll('svg.topo g.tpeer[data-drag] "
+    ":is(.cloud, .glyph)')].map(e => e.getBoundingClientRect()); "
+    "const hit = (a, b) => a.x < b.x + b.width - 2 && b.x < a.x + a.width - 2 "
+    "&& a.y < b.y + b.height - 2 && b.y < a.y + a.height - 2; let n = 0; "
+    "for (let i = 0; i < r.length; i++) { for (let k = i + 1; k < r.length; "
+    "k++) n += hit(r[i], r[k]); for (const q of p) n += hit(r[i], q); } "
+    "return n; })()";
+
+/* How many nodes lie outside the map shown, after Fit. */
+static const char outside_js[] =
+    "(() => { const s = document.querySelector('svg.topo').getBoundingClientRect(); "
+    "return [...document.querySelectorAll('svg.topo g.tnode :is(rect.box, "
+    ".glyph)')].filter(e => { const r = e.getBoundingClientRect(); "
+    "return r.x < s.x - 1 || r.y < s.y - 1 || r.x + r.width > s.x + s.width + 1 "
+    "|| r.y + r.height > s.y + s.height + 1; }).length; })()";
+
+static void
+part_scale(void)
+{
+	char	script[512], shape[32], name[64];
+	FILE	*fp;
+	int	k, n, tunnels;
+
+	if ((fp = fopen("/usr/jails/arcscale1/tmp/shape", "r")) == NULL ||
+	    access("/usr/jails/arcscale1/tmp/s.sock", R_OK | W_OK) == -1)
+		atf_tc_skip("no scale lab: run build/lab/scale-lab.sh up N SHAPE");
+	ATF_REQUIRE(fscanf(fp, "%31s %d %d", shape, &n, &tunnels) == 3);
+	fclose(fp);
+	for (k = 1; k <= n; k++) {
+		run("document.querySelector('button[data-act=add-server]')"
+		    ".click()");
+		wait_js("document.querySelector('form[data-form=add-server]')",
+		    5);
+		snprintf(script, sizeof(script), "const f = document."
+		    "querySelector('form[data-form=add-server]'); f.name.value "
+		    "= 'n%d'; f.uri.value = 'unix:/usr/jails/arcscale%d/tmp/"
+		    "s.sock'; f.requestSubmit();", k, k);
+		run(script);
+		snprintf(script, sizeof(script), "document.querySelector('"
+		    ".hostbar[data-server=n%d]')", k);
+		wait_js(script, 20);
+	}
+	run("document.querySelector('li[data-act=select-network]').click()");
+	snprintf(script, sizeof(script), "document.querySelectorAll('svg.topo "
+	    ".tnode.up').length === %d && document.querySelectorAll('svg.topo "
+	    ".tlink.tunnel').length >= %d", n, tunnels);
+	wait_js(script, 120);
+	usleep(3000000);
+	click_at("button[data-act=topo-fit]");
+	usleep(800000);
+	k = (int)js_num(overlaps_js);
+	snprintf(name, sizeof(name), "10-scale-%s-%d-map", shape, n);
+	shot(name);
+	ATF_CHECK_MSG(k == 0, "%s of %d: %d overlaps in the map", shape, n, k);
+	k = (int)js_num(outside_js);
+	ATF_CHECK_MSG(k == 0, "%s of %d: %d nodes out of view after Fit", shape,
+	    n, k);
+	click_at("button[data-act=topo-stencil]");
+	wait_js("document.querySelector('svg.topo.stencil')", 5);
+	usleep(3000000);	/* the forwarding sysctls read */
+	click_at("button[data-act=topo-fit]");
+	usleep(800000);
+	k = (int)js_num(overlaps_js);
+	snprintf(name, sizeof(name), "10-scale-%s-%d-diagram", shape, n);
+	shot(name);
+	ATF_CHECK_MSG(k == 0, "%s of %d: %d overlaps in the diagram", shape, n,
+	    k);
 }
 
 ATF_TC_WITH_CLEANUP(pwa_plugins);
@@ -6989,6 +7113,25 @@ ATF_TC_BODY(pwa_plugins, tc)
 	part_netsect();
 }
 ATF_TC_CLEANUP(pwa_plugins, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_scale);
+ATF_TC_HEAD(pwa_scale, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The map of build/lab/scale-lab.sh's fleet, of any size and shape: no node over another (skipped without the lab)");
+	atf_tc_set_md_var(tc, "timeout", "600");
+}
+ATF_TC_BODY(pwa_scale, tc)
+{
+
+	prologue(tc, 0);
+	part_scale();
+}
+ATF_TC_CLEANUP(pwa_scale, tc)
 {
 
 	browser_stop();
@@ -7778,6 +7921,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, pwa_nettab);
 	ATF_TP_ADD_TC(tp, pwa_plugins);
 	ATF_TP_ADD_TC(tp, pwa_mesh);
+	ATF_TP_ADD_TC(tp, pwa_scale);
 	ATF_TP_ADD_TC(tp, pwa_storage);
 	ATF_TP_ADD_TC(tp, pwa_firewall);
 	ATF_TP_ADD_TC(tp, pwa_flows);

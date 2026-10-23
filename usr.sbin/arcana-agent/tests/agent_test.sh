@@ -1785,6 +1785,9 @@ rpki1      RPKI       ---        up     2026-10-01    Established
   Status:           Established
   Serial number:    42
 EOP
+"show protocols") printf 'BIRD 2.15.1 ready.\nName       Proto      Table      State  Since         Info\nbgp_core   BGP        ---        up     2026-10-01    Established\nospf1      OSPF       master4    up     2026-10-01    Running\n' ;;
+"show ospf ospf1") printf 'BIRD 2.15.1 ready.\nospf1:\nRFC1583 compatibility: disabled\nNumber of areas: 1\n\tArea: 0.0.0.0 (0) [BACKBONE]\n\t\tStub:\tNo\n' ;;
+"show ospf topology all ospf1") printf 'BIRD 2.15.1 ready.\n\narea 0.0.0.0\n\n\trouter 192.0.2.1\n\t\tdistance 0\n\t\trouter 10.0.0.2 metric 10\n\t\tnetwork 10.255.0.0/24 metric 10\n\n\trouter 10.0.0.2\n\t\tdistance 10\n\t\trouter 192.0.2.1 metric 10\n\t\tstubnet 10.9.0.0/24 metric 10\n\t\texternal 0.0.0.0/0 metric2 10000\n\n\tnetwork 10.255.0.0/24\n\t\tdr 192.0.2.1\n\t\tdistance 10\n\t\trouter 192.0.2.1\n\t\trouter 10.0.0.2\n' ;;
 "show ospf neighbors") printf 'BIRD 2.15.1 ready.\nospf1:\nRouter ID   \tPri\t     State     \tDTime\tInterface  Router IP\n10.0.0.2    \t  1\tFull/PtP  \t00:00:35\tgif0       10.255.0.2\n' ;;
 "show bfd sessions") printf 'BIRD 2.15.1 ready.\nbfd1:\nIP address                Interface  State      Since         Interval  Timeout\nfe80::1                   gif0       Up         13:01:27.605    0.200    1.000\nfe80::2                   gre1       Down       13:02:00.000    1.000    0.000\n' ;;
 "show symbols table") printf 'BIRD 2.15.1 ready.\nmaster4    routing table\nr4         routing table\n' ;;
@@ -2008,6 +2011,18 @@ EOS
 	    -o match:'\{"via":"198.51.100.7","interface":"gre0"\},\{"via":"198.51.100.9","interface":"gre1"\}' \
 	    -o match:'"count":2' cat r.json
 	atf_check -o match:'"routes":\[\]' "$JGC" -c "$SOCK" bird routes table master6
+
+	# OSPF: each protocol with the areas it is in; with topology, what
+	# its link-state database says, routers with their links and the
+	# transit networks; a protocol's name is a word.
+	atf_check -o match:'"protocols":\[\{"name":"ospf1","areas":\["0.0.0.0"\]\}\]' \
+	    "$JGC" -c "$SOCK" bird ospf
+	atf_check -o save:o.json "$JGC" -c "$SOCK" bird ospf topology ospf1
+	atf_check -o match:'"id":"10.0.0.2","links":\[\{"kind":"router","to":"192.0.2.1","metric":10\},\{"kind":"stubnet","to":"10.9.0.0/24","metric":10\},\{"kind":"external","to":"0.0.0.0/0","metric2":10000\}\],"distance":10' \
+	    -o match:'"networks":\[\{"id":"10.255.0.0/24","routers":\["192.0.2.1","10.0.0.2"\],"dr":"192.0.2.1","distance":10\}\]' \
+	    cat o.json
+	atf_check -s exit:1 -e match:'letters, digits and _' -o ignore \
+	    "$JGC" -c "$SOCK" bird ospf topology 'x-y'
 	atf_check -o match:'"message":"Network not found"' \
 	    "$JGC" -c "$SOCK" bird routes 10.9.0.0/16
 	# A neighbour's whole table is counted, not carried.
