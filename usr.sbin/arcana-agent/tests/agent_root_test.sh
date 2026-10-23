@@ -342,6 +342,12 @@ routes_body()
 	atf_check -o match:'"gateway":"127.0.77.2"' -o not-match:'127.0.77.3' \
 	    "$JGC" -c "$SOCK" net routes -4 198.51.100.
 	atf_check -o match:'done' "$JGC" -c "$SOCK" route delete 198.51.100.0/24
+	# A route by a link-local gateway with its zone, as a router
+	# advertisement gives one.
+	atf_check -o match:'done +route add 2001:db8:79::/48 via fe80::1%lo0' \
+	    "$JGC" -c "$SOCK" route add 2001:db8:79::/48 fe80::1%lo0
+	atf_check -o match:'2001:db8:79::/48 +fe80::1%lo0' netstat -rn6
+	atf_check -o match:'done' "$JGC" -c "$SOCK" route delete 2001:db8:79::/48
 	# A neighbour, as ARP has it: listed by the kernel, and told as an
 	# event when it comes and when it goes.
 	ep=$(ifconfig epair create)

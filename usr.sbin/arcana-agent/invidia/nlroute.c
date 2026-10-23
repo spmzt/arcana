@@ -329,7 +329,7 @@ prefix(const char *s, int af, struct sockaddr_storage *ss, int *plenp)
 	struct sockaddr_in	*s4;
 	struct sockaddr_in6	*s6;
 	const char		*slash, *e;
-	char			 buf[INET6_ADDRSTRLEN + 1];
+	char			 buf[INET6_ADDRSTRLEN + IFNAMSIZ + 2], *zone;
 
 	memset(ss, 0, sizeof(*ss));
 	s4 = (struct sockaddr_in *)(void *)ss;
@@ -343,7 +343,12 @@ prefix(const char *s, int af, struct sockaddr_storage *ss, int *plenp)
 	slash = strchr(s, '/');
 	snprintf(buf, sizeof(buf), "%.*s", slash != NULL ? (int)(slash - s) :
 	    (int)strlen(s), s);
-	if (inet_pton(AF_INET, buf, &s4->sin_addr) == 1) {
+	/* A link-local address with its zone, fe80::1%em0: the zone is
+	 * the interface, carried as the scope. */
+	zone = strchr(buf, '%');
+	if (zone != NULL)
+		*zone++ = '\0';
+	if (zone == NULL && inet_pton(AF_INET, buf, &s4->sin_addr) == 1) {
 		s4->sin_family = AF_INET;
 		s4->sin_len = sizeof(*s4);
 		*plenp = 32;
@@ -351,6 +356,15 @@ prefix(const char *s, int af, struct sockaddr_storage *ss, int *plenp)
 		s6->sin6_family = AF_INET6;
 		s6->sin6_len = sizeof(*s6);
 		*plenp = 128;
+		if (zone != NULL) {
+			if (!IN6_IS_ADDR_LINKLOCAL(&s6->sin6_addr) ||
+			    (s6->sin6_scope_id = if_nametoindex(zone)) == 0)
+				return (false);
+			/* As the kernel keeps it: in the address too. */
+			s6->sin6_addr.s6_addr[2] = (uint8_t)(s6->sin6_scope_id >>
+			    8);
+			s6->sin6_addr.s6_addr[3] = (uint8_t)s6->sin6_scope_id;
+		}
 	} else
 		return (false);
 	if (slash != NULL) {
@@ -450,6 +464,13 @@ route_change(struct snl_state *ss, bool del, int argc, char **argv)
 	    AF_UNSPEC, &src, &gplen)))
 		return (2);
 	af = dst.ss_family;
+	/* A link-local gateway is reached by the interface its zone names:
+	 * the kernel wants that interface said. */
+	if (has_gw && !many && oif == 0 && gw.ss_family == AF_INET6 &&
+	    IN6_IS_ADDR_LINKLOCAL(&((struct sockaddr_in6 *)(void *)&gw)->
+	    sin6_addr))
+		oif = ((struct sockaddr_in6 *)(void *)&gw)->sin6_scope_id;
+	af = dst.ss_family;
 	flags = RTF_UP | RTF_STATIC | (has_gw ? RTF_GATEWAY : 0) |
 	    (plen == (af == AF_INET ? 32 : 128) ? RTF_HOST : 0);
 
@@ -482,6 +503,10 @@ route_change(struct snl_state *ss, bool del, int argc, char **argv)
 			rtnh = snl_reserve_msg_object(&nw, struct rtnexthop);
 			rtnh->rtnh_hops = at != NULL ? (unsigned char)strtoul(
 			    at, NULL, 10) : 1;
+			if (gw.ss_family == AF_INET6 && IN6_IS_ADDR_LINKLOCAL(&(
+			    (struct sockaddr_in6 *)(void *)&gw)->sin6_addr))
+				rtnh->rtnh_ifindex = (int)((struct sockaddr_in6 *)
+				    (void *)&gw)->sin6_scope_id;
 			if (gw.ss_family == af)
 				snl_add_msg_attr_ip(&nw, RTA_GATEWAY,
 				    (struct sockaddr *)&gw);
