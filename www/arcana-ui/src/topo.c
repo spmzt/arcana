@@ -217,6 +217,7 @@ static struct {
 	bool	hide[LK_KINDS];		/* kinds of links not drawn */
 	bool	hide_best, hide_alt;	/* nor the route traced */
 	int	fib;			/* the routing table shown alone, or -1 */
+	bool	stencil;		/* drawn as a network diagram: glyphs, straight lines */
 	double	last_poll;
 } tp = { .zoom = 1.0, .fib = -1 };
 
@@ -1950,8 +1951,8 @@ leave_t(double x1, double y1, double x2, double y2, double bend, bool from_a)
 	ey = from_a ? y1 : y2;
 	for (t = 0.02; t < 0.42; t += 0.01) {
 		curve(NULL, x1, y1, x2, y2, bend, from_a ? t : 1 - t, &px, &py);
-		if (fabs(px - ex) > NODE_W / 2 + 16 || fabs(py - ey) >
-		    NODE_H / 2 + 12)
+		if (tp.stencil ? hypot(px - ex, py - ey) > 40 : fabs(px - ex) >
+		    NODE_W / 2 + 16 || fabs(py - ey) > NODE_H / 2 + 12)
 			break;
 	}
 	return (from_a ? t : 1 - t);
@@ -1969,6 +1970,29 @@ if_tables(const ucl_object_t *o, int *fibp, int *tfibp)
 	*fibp = o != NULL ? (int)jint(o, "fib", 0) : 0;
 	*tfibp = o != NULL && jget(o, "tunnel") != NULL ? (int)jint(o,
 	    "tunnelfib", 0) : -1;
+}
+
+/* How many interfaces each routing table has, over the hosts read: by
+ * their own table and, a tunnel, by its outer packets' too. */
+static void
+fibs_present(int n[8])
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	int			 i, f, tf;
+
+	memset(n, 0, 8 * sizeof(int));
+	for (i = 0; i < nhosts; i++) {
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(hosts[i].ifs, "interfaces"),
+		    &it, true)) != NULL) {
+			if_tables(o, &f, &tf);
+			if (f >= 0 && f < 8)
+				n[f]++;
+			if (tf >= 0 && tf < 8 && tf != f)
+				n[tf]++;
+		}
+	}
 }
 
 /* The tables of a link's end: the interface's at node i. */
@@ -2007,9 +2031,9 @@ if_label(char *buf, size_t len, const char *name, int fib, int tfib)
 {
 
 	if (tfib >= 0 && tfib != fib)
-		snprintf(buf, len, "%s t%d→%d", name, fib, tfib);
+		snprintf(buf, len, "%s · fib %d → %d", name, fib, tfib);
 	else if (fib > 0)
-		snprintf(buf, len, "%s t%d", name, fib);
+		snprintf(buf, len, "%s · fib %d", name, fib);
 	else
 		snprintf(buf, len, "%s", name);
 }
@@ -2036,7 +2060,7 @@ map_links(struct html *h)
 		 * table's colour beside its own. */
 		fib = fa > fb ? fa : fb;
 		outer = ta >= 0 && ta != fa ? ta : tb >= 0 && tb != fb ? tb : -1;
-		bend = bend_of(i);
+		bend = tp.stencil ? 0 : bend_of(i);
 		w = 1.6 + log10(1 + l->rate / 1000.0) * 1.1;
 		if (w > 7)
 			w = 7;
@@ -2194,10 +2218,16 @@ map_nodes(struct html *h)
 	for (k = 0; !tp.hide[LK_LAN] && k < nsegs; k++) {
 		if (segs[k].n < 3 || segs[k].same != 0)
 			continue;
-		h_fmt(h, "<g class=\"tseg\" transform=\"translate(%.1f,%.1f)\">"
-		    "<rect x=\"-9\" y=\"-9\" width=\"18\" height=\"18\" "
-		    "transform=\"rotate(45)\"/><text y=\"28\">", segs[k].x,
-		    segs[k].y);
+		if (tp.stencil)
+			/* The segment's bar, as a diagram draws a shared medium. */
+			h_fmt(h, "<g class=\"tseg bar\" transform=\"translate(%.1f,%.1f)"
+			    "\"><rect x=\"-48\" y=\"-4\" width=\"96\" height=\"8\" rx=\"4\"/>"
+			    "<text y=\"28\">", segs[k].x, segs[k].y);
+		else
+			h_fmt(h, "<g class=\"tseg\" transform=\"translate(%.1f,%.1f)\">"
+			    "<rect x=\"-9\" y=\"-9\" width=\"18\" height=\"18\" "
+			    "transform=\"rotate(45)\"/><text y=\"28\">", segs[k].x,
+			    segs[k].y);
 		h_txt(h, segs[k].net);
 		h_raw(h, "</text>");
 		/* The others of the same hosts, one a line under it. */
@@ -2234,10 +2264,18 @@ map_nodes(struct html *h)
 			    "up" : "down");
 			h_attr(h, "data-arg", key);
 		}
-		h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><rect x=\"%.1f\" "
-		    "y=\"%.1f\" width=\"112\" height=\"34\" rx=\"17\"/><text "
-		    "class=\"name\" x=\"%.1f\" y=\"%.1f\">", t->x, t->y, ex, ey,
-		    ex - 56, ey - 17, ex, ey - 2);
+		if (tp.stencil)
+			/* A cloud: the network beyond this console. */
+			h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><path class=\"cloud\" "
+			    "transform=\"translate(%.1f,%.1f)\" d=\"M-44 10 q-16 0 -16 -14 "
+			    "q0 -14 14 -14 q4 -14 20 -12 q10 -12 24 -4 q16 -6 24 8 q14 2 "
+			    "12 16 q-2 12 -16 12 z\"/><text class=\"name\" x=\"%.1f\" "
+			    "y=\"%.1f\">", t->x, t->y, ex, ey, ex, ey, ex, ey - 2);
+		else
+			h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><rect x=\"%.1f\" "
+			    "y=\"%.1f\" width=\"112\" height=\"34\" rx=\"17\"/><text "
+			    "class=\"name\" x=\"%.1f\" y=\"%.1f\">", t->x, t->y, ex, ey,
+			    ex - 56, ey - 17, ex, ey - 2);
 		h_fit(h, e->label, 16);
 		h_fmt(h, "</text><text class=\"sub\" x=\"%.1f\" y=\"%.1f\">", ex,
 		    ey + 10);
@@ -2397,14 +2435,30 @@ map_nodes(struct html *h)
 		    tn[i].jail[0] != '\0' ? " vjail" : "", t->x, t->y);
 		h_attr(h, "data-arg", key);
 		h_attr(h, "data-drop", key);
-		h_fmt(h, "><rect class=\"box\" x=\"%d\" y=\"%d\" width=\"%d\" "
-		    "height=\"%d\" rx=\"10\"/><circle class=\"led\" cx=\"%d\" "
-		    "cy=\"-10\" r=\"4\"/><text class=\"name\" x=\"%d\" y=\"-5\">",
-		    -NODE_W / 2, -NODE_H / 2, NODE_W, NODE_H, -NODE_W / 2 + 14,
-		    -NODE_W / 2 + 26);
-		h_fit(h, tn[i].name, 13);
-		h_fmt(h, "</text><text class=\"sub\" x=\"%d\" y=\"15\">",
-		    -NODE_W / 2 + 12);
+		if (tp.stencil && tn[i].jail[0] != '\0')
+			/* A jail: a server, as the stencils draw one. */
+			h_raw(h, "><rect class=\"glyph\" x=\"-22\" y=\"-28\" width=\"44\" "
+			    "height=\"56\" rx=\"4\"/><path class=\"lines\" d=\"M-14 -16h28M-14 "
+			    "-6h28M-14 4h28\"/><circle class=\"led\" cx=\"12\" cy=\"16\" "
+			    "r=\"3\"/><text class=\"name\" x=\"0\" y=\"44\">");
+		else if (tp.stencil)
+			/* A router: the circle with its four arrows. */
+			h_raw(h, "><circle class=\"glyph\" r=\"28\"/><path class=\"arrows\" "
+			    "d=\"M-18 -8h30M4 -14l8 6-8 6M18 8h-30M-4 14l-8-6 8-6\"/>"
+			    "<circle class=\"led\" cx=\"20\" cy=\"-20\" r=\"4\"/><text "
+			    "class=\"name\" x=\"0\" y=\"44\">");
+		else
+			h_fmt(h, "><rect class=\"box\" x=\"%d\" y=\"%d\" width=\"%d\" "
+			    "height=\"%d\" rx=\"10\"/><circle class=\"led\" cx=\"%d\" "
+			    "cy=\"-10\" r=\"4\"/><text class=\"name\" x=\"%d\" y=\"-5\">",
+			    -NODE_W / 2, -NODE_H / 2, NODE_W, NODE_H, -NODE_W / 2 + 14,
+			    -NODE_W / 2 + 26);
+		h_fit(h, tn[i].name, tp.stencil ? 16 : 13);
+		if (tp.stencil)
+			h_raw(h, "</text><text class=\"sub\" x=\"0\" y=\"57\">");
+		else
+			h_fmt(h, "</text><text class=\"sub\" x=\"%d\" y=\"15\">",
+			    -NODE_W / 2 + 12);
 		if (t->ifs == NULL)
 			snprintf(sub, sizeof(sub), "%s", t->failed ?
 			    "no answer" : "reading…");
@@ -2418,7 +2472,7 @@ map_nodes(struct html *h)
 		h_raw(h, tn[i].jail[0] != '\0' ? " (a jail) · " : " · ");
 		h_txt(h, sub);
 		h_fmt(h, "</title><circle class=\"port\" cx=\"%d\" cy=\"0\" "
-		    "r=\"7\" data-drag=\"topo-link\"", NODE_W / 2);
+		    "r=\"7\" data-drag=\"topo-link\"", tp.stencil ? 28 : NODE_W / 2);
 		h_attr(h, "data-arg", key);
 		h_raw(h, "><title>Drag to another host to join them with a "
 		    "tunnel</title></circle></g>");
@@ -2448,10 +2502,11 @@ labels_quiet(int kind)
 static const char *
 wfmt_cls(void)
 {
-	static char	cls[40];
+	static char	cls[56];
 
-	snprintf(cls, sizeof(cls), "%s%s%s", tp.linking ? " linking" : "",
-	    tp.no_names ? " no-names" : "", tp.no_rates ? " no-rates" : "");
+	snprintf(cls, sizeof(cls), "%s%s%s%s", tp.linking ? " linking" : "",
+	    tp.no_names ? " no-names" : "", tp.no_rates ? " no-rates" : "",
+	    tp.stencil ? " stencil" : "");
 	return (cls);
 }
 
@@ -2506,6 +2561,30 @@ map(struct html *h)
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-peers\" "
 	    "title=\"BGP and OSPF neighbours that are not hosts of this "
 	    "console\">Peers</button>", tp.nopeers ? "" : " on");
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-stencil\" "
+	    "title=\"Drawn as a network diagram: routers, switches, clouds and "
+	    "straight lines, as an engineer draws one\">Diagram</button>",
+	    tp.stencil ? " on" : "");
+	{
+		int	f, n[8], more;
+
+		fibs_present(n);
+		for (f = 1, more = 0; f < 8; f++)
+			more += n[f] > 0;
+		if (more > 0) {
+			h_fmt(h, "<label class=\"fibsel\" title=\"Only the links in one "
+			    "routing table: by an interface in it, or a tunnel whose "
+			    "outer packets go by it\">FIB<select data-input=\"topo-fib\">"
+			    "<option value=\"-1\"%s>all</option>", tp.fib < 0 ?
+			    " selected" : "");
+			for (f = 0; f < 8; f++)
+				if (n[f] > 0)
+					h_fmt(h, "<option value=\"%d\"%s>%d%s</option>", f,
+					    tp.fib == f ? " selected" : "", f, f == 0 ?
+					    " (default)" : "");
+			h_raw(h, "</select></label>");
+		}
+	}
 	h_raw(h, "</div>");
 	/* The labels' switches: each kind of line's written or not. */
 	if (tp.labels_open) {
@@ -2571,40 +2650,23 @@ map(struct html *h)
 			    off ? "Show" : "Hide", lg[k].title);
 		}
 	}
-	/* The routing tables the interfaces are in, each with how many;
-	 * one picked shows its links alone: those in it by an interface
-	 * or by a tunnel's outer packets. */
+	/* The routing tables' colours, when there is more than the first:
+	 * a key, not a switch (the toolbar's FIB picks one). */
 	{
-		const ucl_object_t	*o;
-		ucl_object_iter_t	 it;
-		int			 i, f, tf, n[8];
+		int	f, n[8], more;
 
-		memset(n, 0, sizeof(n));
-		for (i = 0; i < nhosts; i++) {
-			it = NULL;
-			while ((o = ucl_object_iterate(jget(hosts[i].ifs,
-			    "interfaces"), &it, true)) != NULL) {
-				if_tables(o, &f, &tf);
-				if (f >= 0 && f < 8)
-					n[f]++;
-				if (tf >= 0 && tf < 8 && tf != f)
-					n[tf]++;
-			}
-		}
-		h_raw(h, "</ul><ul class=\"map-legend tables\"><li class=\"head\">"
-		    "Tables</li>");
-		h_fmt(h, "<li class=\"all%s\" data-act=\"topo-fib\" data-arg=\"-1\" "
-		    "title=\"Every table\">all</li>", tp.fib < 0 ? " on" : "");
-		for (f = 0; f < 8; f++) {
-			if (n[f] == 0)
-				continue;
-			h_fmt(h, "<li class=\"fib%d%s\" data-act=\"topo-fib\" "
-			    "data-arg=\"%d\" title=\"Only the links in routing "
-			    "table %d: by an interface in it, or a tunnel whose "
-			    "outer packets go by it\">table %d <small>%d</small>"
-			    "</li>", f > 6 ? 6 : f, tp.fib == f ? " on" : "", f, f,
-			    f, n[f]);
-		}
+		fibs_present(n);
+		for (f = 1, more = 0; f < 8; f++)
+			more += n[f] > 0;
+		for (f = 1; more > 0 && f < 8; f++)
+			if (n[f] > 0)
+				h_fmt(h, "<li class=\"key fib%d\" title=\"A link whose "
+				    "interface is in routing table %d\">FIB %d</li>", f > 6 ?
+				    6 : f, f, f);
+		if (more > 0)
+			h_raw(h, "<li class=\"key outer\" title=\"A tunnel whose outer "
+			    "packets go by another table than its own: the dashed line "
+			    "in that table's colour\">outer path</li>");
 	}
 	h_raw(h, "</ul></div>");
 }
@@ -2782,10 +2844,10 @@ panel_host(struct html *h, int node, struct thost *t)
 		h_raw(h, "</b>");
 		if (fib > 0)
 			h_fmt(h, "<span class=\"chip fib%d\" title=\"Its routing table\">"
-			    "table %d</span>", fib > 6 ? 6 : fib, fib);
+			    "FIB %d</span>", fib > 6 ? 6 : fib, fib);
 		if (tfib >= 0 && tfib != fib)
 			h_fmt(h, "<span class=\"chip fib%d\" title=\"The table its outer "
-			    "packets go by (tunnelfib)\">outer %d</span>", tfib > 6 ? 6 :
+			    "packets go by (tunnelfib)\">outer FIB %d</span>", tfib > 6 ? 6 :
 			    tfib, tfib);
 		if (jstr(o, "description") != NULL) {
 			h_raw(h, "<span class=\"dim\">");
@@ -4508,9 +4570,8 @@ topo_action(const char *act, const char *arg, const char *value)
 		for (i = 0; i < LK_KINDS; i++)
 			if (strcmp(arg, names[i]) == 0)
 				tp.labels[i] = labels_quiet(i) ? 1 : 2;
-	} else if (strcmp(act, "topo-fib") == 0) {
-		n = atoi(arg);
-		tp.fib = n < 0 || tp.fib == n ? -1 : n;
+	} else if (strcmp(act, "input:topo-fib") == 0) {
+		tp.fib = atoi(value);
 	} else if (strcmp(act, "topo-legend") == 0) {
 		static const char *const names[] = { "tunnel", "p2p", "lan",
 		    "bgp", "ospf", "vnet" };
@@ -4545,6 +4606,8 @@ topo_action(const char *act, const char *arg, const char *value)
 		node_open(n, NET_BRIDGES);
 	} else if (strcmp(act, "topo-peers") == 0) {
 		tp.nopeers = !tp.nopeers;
+	} else if (strcmp(act, "topo-stencil") == 0) {
+		tp.stencil = !tp.stencil;
 	} else if (strcmp(act, "topo-arrange") == 0) {
 		for (i = 0; i < nhosts; i++)
 			hosts[i].placed = false;

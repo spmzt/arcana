@@ -5168,3 +5168,39 @@ table.sessions .path b { font-weight: 500; color: var(--cyan); }
 .wfpalette li.notify { border-left-color: var(--violet, var(--cyan)); }
 /* A chip that is a switch, on. */
 button.chip.on { border-color: var(--green); color: var(--green); }
+
+/* The map as a network diagram: router and server glyphs, an Ethernet
+ * bar for a shared network, a cloud for what is beyond the console,
+ * straight lines. */
+svg.topo.stencil .tnode .glyph { fill: var(--bg-2); stroke: var(--fg-2); stroke-width: 2; }
+svg.topo.stencil .tnode.up .glyph { stroke: var(--cyan); }
+svg.topo.stencil .tnode.down .glyph { stroke: rgba(var(--red-rgb), .8); }
+svg.topo.stencil .tnode.unknown .glyph { stroke-dasharray: 4 4; }
+svg.topo.stencil .tnode:hover .glyph, svg.topo.stencil .tnode.sel .glyph { stroke: var(--fg); filter: drop-shadow(0 0 6px var(--cyan)); }
+svg.topo.stencil .tnode .arrows { fill: none; stroke: var(--fg); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+svg.topo.stencil .tnode .lines { fill: none; stroke: var(--fg-2); stroke-width: 1.5; }
+svg.topo.stencil .tnode .name { text-anchor: middle; font-size: 12px; font-weight: 600; }
+svg.topo.stencil .tnode .sub { text-anchor: middle; }
+svg.topo.stencil .tseg.bar rect { fill: var(--blue); stroke: none; }
+svg.topo.stencil .tpeer .cloud { fill: var(--bg-2); stroke: var(--dim); stroke-width: 1.6; }
+svg.topo.stencil .tpeer.up .cloud { stroke: var(--fg-2); }
+svg.topo.stencil .tpeer rect { display: none; }
+svg.topo.stencil .tpeer .name, svg.topo.stencil .tpeer .sub { text-anchor: middle; }
+
+/* The routing tables (FIBs) on the map: a colour each past the first,
+ * on a link in it, on the thin dashed line of a tunnel whose outer
+ * packets go by another, on the key and on the panel's chips. */
+:root { --fib1: #ff9f43; --fib2: #4cd27a; --fib3: #c084fc; --fib4: #ff6b6b; --fib5: #38bdf8; --fib6: #facc15; }
+.tlink.fib1 .wire { stroke: var(--fib1); } .tlink.fib2 .wire { stroke: var(--fib2); } .tlink.fib3 .wire { stroke: var(--fib3); }
+.tlink.fib4 .wire { stroke: var(--fib4); } .tlink.fib5 .wire { stroke: var(--fib5); } .tlink.fib6 .wire { stroke: var(--fib6); }
+.tlink .outer { fill: none; stroke: var(--dim); stroke-width: 2; stroke-dasharray: 5 7; opacity: .95; pointer-events: none; }
+.tlink.o1 .outer { stroke: var(--fib1); } .tlink.o2 .outer { stroke: var(--fib2); } .tlink.o3 .outer { stroke: var(--fib3); }
+.tlink.o4 .outer { stroke: var(--fib4); } .tlink.o5 .outer { stroke: var(--fib5); } .tlink.o6 .outer { stroke: var(--fib6); }
+.map-legend .fib1::before { border-color: var(--fib1); } .map-legend .fib2::before { border-color: var(--fib2); } .map-legend .fib3::before { border-color: var(--fib3); }
+.map-legend .fib4::before { border-color: var(--fib4); } .map-legend .fib5::before { border-color: var(--fib5); } .map-legend .fib6::before { border-color: var(--fib6); }
+.map-legend .outer::before { border-top: 2px dashed var(--dim); }
+.map-legend li.key { cursor: default; }
+.chip.fib1 { color: var(--fib1); } .chip.fib2 { color: var(--fib2); } .chip.fib3 { color: var(--fib3); } .chip.fib4 { color: var(--fib4); } .chip.fib5 { color: var(--fib5); } .chip.fib6 { color: var(--fib6); }
+.iflist li.dim { opacity: .45; }
+.map-tools label.fibsel { display: inline-flex; align-items: center; gap: .35rem; font-size: .78rem; color: var(--dim); margin-left: .4rem; }
+.map-tools label.fibsel select { font-size: .78rem; }

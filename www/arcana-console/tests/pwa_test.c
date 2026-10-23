@@ -6090,18 +6090,20 @@ part_netsect(void)
 	click_at(".map-legend li[data-arg=lan]");
 	wait_js("document.querySelector('svg.topo .tlink.lan') && "
 	    "!document.querySelector('.map-legend li.off')", 5);
-	/* The routing tables: listed with how many interfaces each has,
-	 * every one of the lab's in the first; picking one shows its
-	 * links alone, picking it again shows all. */
-	ATF_CHECK(js_true("document.querySelector('.map-legend.tables li.on"
-	    "[data-arg=\"-1\"]') !== null && document.querySelector('.map-legend"
-	    ".tables li[data-arg=\"0\"] small').textContent > 0"));
-	click_at(".map-legend.tables li[data-arg=\"0\"]");
-	wait_js("document.querySelector('.map-legend.tables li.on[data-arg="
-	    "\"0\"]') && document.querySelector('svg.topo .tlink.lan')", 5);
-	click_at(".map-legend.tables li[data-arg=\"0\"]");
-	wait_js("document.querySelector('.map-legend.tables li.on[data-arg="
-	    "\"-1\"]')", 5);
+	/* Every interface of the lab is in the first routing table: no FIB
+	 * to pick in the toolbar, no colour key in the legend. */
+	ATF_CHECK(js_true("!document.querySelector('select[data-input=topo-fib]') "
+	    "&& !document.querySelector('.map-legend li.key')"));
+	/* Drawn as a diagram: router glyphs in place of the boxes, straight
+	 * lines, the shared network a bar; and back. */
+	click_at("button[data-act=topo-stencil]");
+	wait_js("document.querySelector('svg.topo.stencil') && document."
+	    "querySelectorAll('svg.topo .tnode circle.glyph').length === 2 && "
+	    "document.querySelector('svg.topo .tseg.bar')", 5);
+	shot("8-network-diagram");
+	click_at("button[data-act=topo-stencil]");
+	wait_js("!document.querySelector('svg.topo.stencil') && document."
+	    "querySelector('svg.topo .tnode rect.box')", 5);
 	/* Labels, kind by kind: the shared networks' left out, the others
 	 * as they were. */
 	click_at(".map-tools button[data-act=topo-labels]");
