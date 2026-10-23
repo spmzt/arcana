@@ -53,6 +53,7 @@
  */
 #define	VIEW_W		(tp.vw > 0 ? tp.vw : arc_narrow() ? 360.0 : 900.0)
 #define	VIEW_H		(tp.vh > 0 ? tp.vh : arc_narrow() ? 450.0 : 560.0)
+#define	LEGEND_H	64.0		/* the legend, over the drawing's foot */
 
 struct ifrate {
 	char	name[16];
@@ -83,14 +84,16 @@ struct thost {
 	bool		 wg_loading;
 	ucl_object_t	*bird;		/* what its BIRD says, if it has one */
 	bool		 bird_loading;
+	int		 fwd4, fwd6;	/* forwards: 0 unknown, 1 no, 2 yes */
+	bool		 fwd_loading;
+	double		 fwd_fetched;
 };
 
 /*
  * A routing neighbour that is not a host of this console: drawn beside
  * the host that speaks to it.
  */
-#define	EXT_MAX		160
-#define	EXT_PER_HOST	8
+#define	EXT_MAX		512
 struct ext {
 	int	host;			/* the server it is a neighbour of */
 	bool	ospf;			/* or BGP */
@@ -173,6 +176,7 @@ static struct tlink	links[TOPO_LINKS];
 static int		nlinks;
 static struct seg	segs[TOPO_SEGS];
 static bool	seg_same(const struct seg *, const struct seg *);
+static void	bgp_label(char *, size_t, const char *, const char *);
 static int		nsegs;
 
 static struct {
@@ -216,8 +220,10 @@ static struct {
 	bool	peers_loaded;
 	bool	hide[LK_KINDS];		/* kinds of links not drawn */
 	bool	hide_best, hide_alt;	/* nor the route traced */
+	int	fib;			/* the routing table shown alone, or -1 */
+	bool	stencil;		/* drawn as a network diagram: glyphs, straight lines */
 	double	last_poll;
-} tp = { .zoom = 1.0 };
+} tp = { .zoom = 1.0, .fib = -1 };
 
 static struct {
 	char		from[80];
@@ -578,7 +584,7 @@ peer_key(char *buf, size_t len, const struct ext *e)
 static void
 peer_place(const struct ext *e, struct thost *t, double *exp, double *eyp)
 {
-	double	cx, cy, a;
+	double	cx, cy, a, step;
 	int	m, k;
 
 	cx = cy = 0;
@@ -595,9 +601,186 @@ peer_place(const struct ext *e, struct thost *t, double *exp, double *eyp)
 		    atan2(t->y - cy, t->x - cx);
 		t->out_set = true;
 	}
-	a = t->out_a + (e->slot - (e->of - 1) / 2.0) * 0.36;
-	*exp = t->x + 185 * (e->slot % 2 == 1 ? 1.5 : 1.0) * cos(a);
-	*eyp = t->y + 125 * (e->slot % 2 == 1 ? 1.5 : 1.0) * sin(a);
+	step = e->of > 1 && 2.6 / (e->of - 1) < 0.36 ? 2.6 / (e->of - 1) : 0.36;
+	a = t->out_a + (e->slot - (e->of - 1) / 2.0) * step;
+	*exp = t->x + 185 * (1 + 0.4 * (e->slot % 3)) * cos(a);
+	*eyp = t->y + 125 * (1 + 0.4 * (e->slot % 3)) * sin(a);
+}
+
+/*
+ * The diagram draws a BGP neighbour's AS once, a cloud every session
+ * to it runs to: its first session leads, and the cloud stands where
+ * the leader was dragged to, else at the mean of its sessions' places.
+ */
+static int
+as_leader(int i)
+{
+	int	k;
+
+	for (k = 0; k < i; k++)
+		if (exts[k].ospf == exts[i].ospf && strcmp(exts[k].label,
+		    exts[i].label) == 0)
+			return (k);
+	return (i);
+}
+
+static void
+as_place_raw(int lead, double *xp, double *yp, bool *keptp)
+{
+	struct peerpos	*pp;
+	struct thost	*t;
+	double		 x, y, sx, sy;
+	char		 key[160];
+	int		 k, n, others;
+
+	*keptp = false;
+	peer_key(key, sizeof(key), &exts[lead]);
+	if ((pp = peer_kept(key, false)) != NULL && (pp->dx != 0 || pp->dy != 0)
+	    && (t = thost(tn[
+	    exts[lead].host].key, false)) != NULL) {
+		*xp = t->x + pp->dx;
+		*yp = t->y + pp->dy;
+		*keptp = true;
+		return;
+	}
+	sx = sy = 0;
+	n = others = 0;
+	for (k = 0; k < nexts; k++) {
+		if (exts[k].ospf != exts[lead].ospf || strcmp(exts[k].label,
+		    exts[lead].label) != 0 || (t = thost(tn[exts[k].host].key, false)) == NULL)
+			continue;
+		peer_place(&exts[k], t, &x, &y);
+		sx += x;
+		sy += y;
+		n++;
+		others += exts[k].host != exts[lead].host;
+	}
+	*xp = n > 0 ? sx / n : 0;
+	*yp = n > 0 ? sy / n : 0;
+	if (others == 0)	/* one host's alone: beside it */
+		return;
+	/*
+	 * Several hosts' neighbour: the mean of their places can fall in
+	 * the middle of the fleet, over its links.  Out past the hosts'
+	 * box then, just beyond it, the way the mean leans, or by its turn
+	 * when it leans nowhere.
+	 */
+	{
+		double	x0, y0, x1, y1, cx, cy, a, tx, ty;
+		int	m, nth;
+
+		x0 = y0 = x1 = y1 = 0;
+		for (m = 0, k = 0; k < nhosts; k++) {
+			if (!hosts[k].placed || node_index(hosts[k].sid) == -1)
+				continue;
+			if (m == 0 || hosts[k].x < x0)
+				x0 = hosts[k].x;
+			if (m == 0 || hosts[k].x > x1)
+				x1 = hosts[k].x;
+			if (m == 0 || hosts[k].y < y0)
+				y0 = hosts[k].y;
+			if (m == 0 || hosts[k].y > y1)
+				y1 = hosts[k].y;
+			m++;
+		}
+		if (*xp < x0 - 120 || *xp > x1 + 120 || *yp < y0 - 80 ||
+		    *yp > y1 + 80)
+			return;
+		cx = (x0 + x1) / 2;
+		cy = (y0 + y1) / 2;
+		for (nth = 0, k = 0; k < lead; k++)
+			nth += as_leader(k) == k;
+		a = hypot(*xp - cx, *yp - cy) > 40 ? atan2(*yp - cy, *xp - cx) :
+		    -M_PI / 2 + nth * 0.7;
+		tx = fabs(cos(a)) > 1e-3 ? ((x1 - x0) / 2 + 170) / fabs(cos(a)) :
+		    1e9;
+		ty = fabs(sin(a)) > 1e-3 ? ((y1 - y0) / 2 + 110) / fabs(sin(a)) :
+		    1e9;
+		*xp = cx + (tx < ty ? tx : ty) * cos(a);
+		*yp = cy + (tx < ty ? tx : ty) * sin(a);
+	}
+}
+
+/*
+ * Where every neighbour's node stands, worked out once a drawing: its
+ * own place, then pushed apart from the others and from the hosts
+ * where they overlap, a few rounds, the dragged ones staying put.
+ */
+static double	peer_x[EXT_MAX], peer_y[EXT_MAX];
+
+static void
+peers_layout(void)
+{
+	static bool	 fixed[EXT_MAX];
+	struct thost	*h;
+	double		 dx, dy, ox, oy, w, hh;
+	int		 i, k, round, moved;
+
+	for (i = 0; i < nexts; i++)
+		if (as_leader(i) == i)
+			as_place_raw(i, &peer_x[i], &peer_y[i], &fixed[i]);
+	for (round = 0; round < 40; round++) {
+		moved = 0;
+		for (i = 0; i < nexts; i++) {
+			if (as_leader(i) != i || fixed[i])
+				continue;
+			/* Clear of the other neighbours' nodes. */
+			for (k = 0; k < nexts; k++) {
+				if (k == i || as_leader(k) != k)
+					continue;
+				dx = peer_x[i] - peer_x[k];
+				dy = peer_y[i] - peer_y[k];
+				ox = 104 - fabs(dx);
+				oy = 62 - fabs(dy);
+				if (ox <= 0 || oy <= 0)
+					continue;
+				/* Along the shorter way out, half each, all
+				 * of it when the other is held. */
+				w = fixed[k] ? 1.0 : 0.5;
+				if (ox < oy) {
+					peer_x[i] += (dx >= 0 ? 1 : -1) * ox * w;
+					if (!fixed[k])
+						peer_x[k] -= (dx >= 0 ? 1 : -1) * ox *
+						    w;
+				} else {
+					peer_y[i] += (dy >= 0 ? 1 : -1) * oy * w;
+					if (!fixed[k])
+						peer_y[k] -= (dy >= 0 ? 1 : -1) * oy *
+						    w;
+				}
+				moved++;
+			}
+			/* And of the hosts. */
+			for (k = 0; k < nhosts; k++) {
+				h = &hosts[k];
+				if (!h->placed || node_index(h->sid) == -1)
+					continue;
+				dx = peer_x[i] - h->x;
+				dy = peer_y[i] - h->y;
+				hh = NODE_H / 2 + 40;
+				ox = NODE_W / 2 + 60 - fabs(dx);
+				oy = hh - fabs(dy);
+				if (ox <= 0 || oy <= 0)
+					continue;
+				if (ox < oy)
+					peer_x[i] += (dx >= 0 ? 1 : -1) * ox;
+				else
+					peer_y[i] += (dy >= 0 ? 1 : -1) * oy;
+				moved++;
+			}
+		}
+		if (moved == 0)
+			break;
+	}
+}
+
+/* Where a neighbour's node is drawn, as peers_layout() left it. */
+static void
+as_place(int lead, double *xp, double *yp)
+{
+
+	*xp = peer_x[lead];
+	*yp = peer_y[lead];
 }
 
 /* Hosts not placed yet go on a circle, in the order of the tree. */
@@ -610,9 +793,11 @@ places_fill(void)
 
 	if (!tp.loaded)
 		places_load();
-	r = app.nservers < 3 ? 170 : 120 + 26.0 * app.nservers;
-	if (r > 520)
-		r = 520;
+	r = app.nservers < 3 ? 170 : 190 + 42.0 * app.nservers;
+	if (r > 720)
+		r = 720;
+	if (tp.stencil)
+		r *= 1.25;
 	for (i = 0; i < ntn; i++) {
 		if ((t = thost(tn[i].key, true)) == NULL || t->placed)
 			continue;
@@ -629,7 +814,7 @@ places_fill(void)
 					nth++;
 			t->x = ht->x + ((nth + 1) / 2) * (nth % 2 == 1 ? -1 :
 			    1) * (NODE_W + 30);
-			t->y = ht->y + NODE_H + 90;
+			t->y = ht->y + NODE_H + (tp.stencil ? 150 : 90);
 			t->placed = true;
 			continue;
 		}
@@ -1059,6 +1244,67 @@ rate_now(struct thost *t, const char *name)
 }
 
 /* A reading of a host's interfaces: kept, and made into rates. */
+/* Whether a node forwards packets, by family: the diagram draws a
+ * router then, a server otherwise. */
+static void
+fwd_cb(int status, const ucl_object_t *o, const char *err, void *arg, bool v6)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	struct thost		*t;
+	char			*sid;
+	int			 on;
+
+	(void)err;
+	sid = arg;
+	t = thost(sid, false);
+	free(sid);
+	if (t == NULL)
+		return;
+	t->fwd_loading = false;
+	t->fwd_fetched = arc_now();
+	if (status != 200 || !jbool(o, "ok"))
+		return;
+	on = 1;
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(o, "data.values"), &it, true)) !=
+	    NULL)
+		if (jstr(e, "value") != NULL && strcmp(jstr(e, "value"), "1")
+		    == 0)
+			on = 2;
+	if (v6)
+		t->fwd6 = on;
+	else
+		t->fwd4 = on;
+}
+
+static void
+fwd4_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	fwd_cb(status, o, err, arg, false);
+}
+
+static void
+fwd6_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	fwd_cb(status, o, err, arg, true);
+}
+
+/* Does a node forward packets?  Before its sysctls are read, a host is
+ * taken to and a jail not to. */
+static bool
+node_routes(const struct thost *t, bool jail)
+{
+
+	if (t->fwd4 == 2 || t->fwd6 == 2)
+		return (true);
+	if (t->fwd4 == 1 && t->fwd6 == 1)
+		return (false);
+	return (!jail);
+}
+
 /* A node's bridges, for the map to draw beside it. */
 static void
 bridges_cb(int status, const ucl_object_t *o, const char *err, void *arg)
@@ -1156,6 +1402,19 @@ node_poll(int i)
 		t->br_loading = true;
 		node_url(i, "bridges", "", url, sizeof(url));
 		api("GET", url, NULL, bridges_cb, strdup(tn[i].key));
+	}
+	/* The diagram draws a router or a server by whether it forwards. */
+	if (tp.stencil && !t->fwd_loading && arc_now() - t->fwd_fetched >
+	    60000) {
+		t->fwd_loading = true;
+		snprintf(url, sizeof(url), "/api/servers/%s/sysctl?filter=net.inet."
+		    "ip.forwarding%s%s", app.servers[tn[i].srv].id, tn[i].jail[0] !=
+		    '\0' ? "&jail=" : "", tn[i].jail);
+		api("GET", url, NULL, fwd4_cb, strdup(tn[i].key));
+		snprintf(url, sizeof(url), "/api/servers/%s/sysctl?filter=net.inet6."
+		    "ip6.forwarding%s%s", app.servers[tn[i].srv].id, tn[i].jail[0] !=
+		    '\0' ? "&jail=" : "", tn[i].jail);
+		api("GET", url, NULL, fwd6_cb, strdup(tn[i].key));
 	}
 }
 
@@ -1653,20 +1912,14 @@ links_build(void)
 							    sizeof(l->label),
 							    "OSPF");
 						else
-							snprintf(l->label,
-							    sizeof(l->label),
-							    "BGP AS%s ⇄ AS%s",
-							    jstr(o, "local-as") !=
-							    NULL ? jstr(o,
-							    "local-as") : "?",
-							    jstr(o,
-							    "neighbor-as") !=
-							    NULL ? jstr(o,
-							    "neighbor-as") : "?");
+							bgp_label(l->label,
+							    sizeof(l->label), jstr(o,
+							    "local-as"), jstr(o,
+							    "neighbor-as"));
 					}
 					continue;
 				}
-				if (nexts == EXT_MAX || mine == EXT_PER_HOST)
+				if (nexts == EXT_MAX)
 					continue;
 				memset(&exts[nexts], 0, sizeof(exts[0]));
 				exts[nexts].host = s;
@@ -1688,8 +1941,20 @@ links_build(void)
 				nexts++;
 			}
 		}
-		for (k = nexts - mine; k < nexts; k++)
-			exts[k].of = mine;
+		/* Fanned out by AS or router, however many sessions. */
+		{
+			int	j, groups;
+
+			for (groups = 0, k = nexts - mine; k < nexts; k++) {
+				for (j = nexts - mine; j < k; j++)
+					if (exts[j].ospf == exts[k].ospf &&
+					    strcmp(exts[j].label, exts[k].label) == 0)
+						break;
+				exts[k].slot = j < k ? exts[j].slot : groups++;
+			}
+			for (k = nexts - mine; k < nexts; k++)
+				exts[k].of = groups;
+		}
 	}
 	/* Two hosts in a network: a link.  More: a node they all join. */
 	for (k = 0; k < nsegs; k++) {
@@ -1936,6 +2201,85 @@ bend_of(int i)
 	return ((n % 2 == 1 ? 1 : -1) * 34.0 * ((n + 1) / 2));
 }
 
+/* A BGP session's name: "iBGP AS65000" within one AS, "eBGP AS65000 ⇄
+ * AS65001" across two. */
+static void
+bgp_label(char *buf, size_t len, const char *las, const char *nas)
+{
+
+	if (las != NULL && nas != NULL && strcmp(las, nas) == 0)
+		snprintf(buf, len, "iBGP AS%s", las);
+	else
+		snprintf(buf, len, "eBGP AS%s ⇄ AS%s", las != NULL ? las : "?",
+		    nas != NULL ? nas : "?");
+}
+
+/* A link between routing neighbours rather than a wire: BGP, OSPF. */
+static bool
+neighbourship(int kind)
+{
+
+	return (kind == LK_BGP || kind == LK_OSPF);
+}
+
+/* The diagram's curve for the i-th neighbourship of a pair: the
+ * straight links keep the middle, these bow out one side then the
+ * other, further each time. */
+static double
+neighbour_bend(int i)
+{
+	int	k, n;
+
+	n = 0;
+	for (k = 0; k < i; k++)
+		if (neighbourship(links[k].kind) && ((links[k].a == links[i].a
+		    && links[k].b == links[i].b) || (links[k].a == links[i].b &&
+		    links[k].b == links[i].a)))
+			n++;
+	return ((n % 2 == 0 ? 1 : -1) * (46.0 + 30.0 * (n / 2)) *
+	    (links[i].a > links[i].b ? -1 : 1));
+}
+
+/* The i-th link of a pair drawn straight, as the diagram draws them:
+ * shifted sideways so that those of the pair lie side by side. */
+static void
+para_shift(int i, double *x1, double *y1, double *x2, double *y2)
+{
+	double	dx, dy, len, off, gap;
+	int	k, n, of;
+
+	/* Its place among the pair's straight links, and how many there
+	 * are: spread at most 20 either side, inside the router's glyph,
+	 * so that each meets it however many there are. */
+	n = of = 0;
+	for (k = 0; k < nlinks; k++) {
+		if (neighbourship(links[k].kind) || !((links[k].a == links[i].a
+		    && links[k].b == links[i].b) || (links[k].a == links[i].b &&
+		    links[k].b == links[i].a)))
+			continue;
+		if (k < i)
+			n++;
+		of++;
+	}
+	if (of < 2)
+		return;
+	gap = 40.0 / (of - 1);
+	if (gap > 14)
+		gap = 14;
+	off = (n - (of - 1) / 2.0) * gap;
+	if (links[i].a > links[i].b)
+		off = -off;
+	dx = *x2 - *x1;
+	dy = *y2 - *y1;
+	len = sqrt(dx * dx + dy * dy);
+	if (len < 1)
+		len = 1;
+	*x1 -= dy / len * off;
+	*x2 -= dy / len * off;
+	*y1 += dx / len * off;
+	*y2 += dx / len * off;
+}
+
 /*
  * Where along a link, from its end at (x, y), it leaves the host's box
  * there, and a little further: where that end's name is written.
@@ -1949,11 +2293,93 @@ leave_t(double x1, double y1, double x2, double y2, double bend, bool from_a)
 	ey = from_a ? y1 : y2;
 	for (t = 0.02; t < 0.42; t += 0.01) {
 		curve(NULL, x1, y1, x2, y2, bend, from_a ? t : 1 - t, &px, &py);
-		if (fabs(px - ex) > NODE_W / 2 + 16 || fabs(py - ey) >
-		    NODE_H / 2 + 12)
+		if (tp.stencil ? hypot(px - ex, py - ey) > 40 : fabs(px - ex) >
+		    NODE_W / 2 + 16 || fabs(py - ey) > NODE_H / 2 + 12)
 			break;
 	}
 	return (from_a ? t : 1 - t);
+}
+
+/*
+ * The routing tables an interface is in: its own (fib), and for a
+ * tunnel the one its outer packets are looked up in (tunnelfib), -1
+ * when it is no tunnel.  The agent leaves both out when 0.
+ */
+static void
+if_tables(const ucl_object_t *o, int *fibp, int *tfibp)
+{
+
+	*fibp = o != NULL ? (int)jint(o, "fib", 0) : 0;
+	*tfibp = o != NULL && jget(o, "tunnel") != NULL ? (int)jint(o,
+	    "tunnelfib", 0) : -1;
+}
+
+/* How many interfaces each routing table has, over the hosts read: by
+ * their own table and, a tunnel, by its outer packets' too. */
+static void
+fibs_present(int n[8])
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	int			 i, f, tf;
+
+	memset(n, 0, 8 * sizeof(int));
+	for (i = 0; i < nhosts; i++) {
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(hosts[i].ifs, "interfaces"),
+		    &it, true)) != NULL) {
+			if_tables(o, &f, &tf);
+			if (f >= 0 && f < 8)
+				n[f]++;
+			if (tf >= 0 && tf < 8 && tf != f)
+				n[tf]++;
+		}
+	}
+}
+
+/* The tables of a link's end: the interface's at node i. */
+static void
+link_tables(int i, const char *ifn, int *fibp, int *tfibp)
+{
+	const struct thost	*t;
+
+	*fibp = 0;
+	*tfibp = -1;
+	if (i < 0 || ifn == NULL || ifn[0] == '\0')
+		return;
+	t = thost(tn[i].key, false);
+	if_tables(if_named(t, ifn), fibp, tfibp);
+}
+
+/* Is the link in the table shown?  In it by either end's interface,
+ * or by a tunnel's outer packets. */
+static bool
+link_in_fib(const struct tlink *l, int fib)
+{
+	int	fa, ta, fb, tb;
+
+	if (fib < 0)
+		return (true);
+	link_tables(l->a, l->ifa, &fa, &ta);
+	link_tables(l->b, l->ifb, &fb, &tb);
+	return (fa == fib || ta == fib || (l->b >= 0 && (fb == fib || tb ==
+	    fib)));
+}
+
+/* An interface's name with its tables, each in its table's colour:
+ * "gre0 fib 1", "gre0 fib 0 → 1" (a tunnel whose outer packets go by
+ * another table); the name alone in table 0. */
+static void
+if_label(struct html *h, const char *name, int fib, int tfib)
+{
+
+	h_txt(h, name);
+	if (fib > 0 || (tfib >= 0 && tfib != fib))
+		h_fmt(h, " <tspan class=\"fib fib%d\">fib %d</tspan>", fib > 6 ? 6
+		    : fib, fib);
+	if (tfib >= 0 && tfib != fib)
+		h_fmt(h, " <tspan class=\"fib fib%d\">→ %d</tspan>", tfib > 6 ? 6
+		    : tfib, tfib);
 }
 
 static void
@@ -1964,25 +2390,49 @@ map_links(struct html *h)
 	struct tlink	*l;
 	char		 rate[24];
 	double		 x1, y1, x2, y2, mx, my, bend, w;
-	int		 i, flow;
+	int		 i, flow, fa, ta, fb, tb, outer;
 
 	for (i = 0; i < nlinks; i++) {
 		l = &links[i];
 		if (tp.hide[l->kind] || !place(l->a, &x1, &y1) || !place(l->b,
 		    &x2, &y2))
 			continue;
-		bend = bend_of(i);
+		link_tables(l->a, l->ifa, &fa, &ta);
+		link_tables(l->b, l->ifb, &fb, &tb);
+		/* A link keeps its kind's colour; its tables are said at its
+		 * ends, and a tunnel whose outer packets go by another table
+		 * gets a thin dashed line of that table's colour along its own.
+		 * With one table shown, the links outside it are dimmed, not
+		 * gone: the map keeps its shape. */
+		outer = ta >= 0 && ta != fa ? ta : tb >= 0 && tb != fb ? tb : -1;
+		if (tp.stencil && neighbourship(l->kind) && l->b >= 0)
+			bend = neighbour_bend(i);
+		else if (tp.stencil) {
+			bend = 0;
+			para_shift(i, &x1, &y1, &x2, &y2);
+		} else
+			bend = bend_of(i);
 		w = 1.6 + log10(1 + l->rate / 1000.0) * 1.1;
 		if (w > 7)
 			w = 7;
 		flow = l->rate < 1000 ? 0 : l->rate < 100000 ? 1 : l->rate <
 		    10000000 ? 2 : 3;
-		h_fmt(h, "<g class=\"tlink %s %s flow%d%s%s\"><path class=\""
-		    "wire\" style=\"stroke-width:%.1f\" d=\"", kinds[l->kind],
+		h_fmt(h, "<g class=\"tlink %s %s flow%d%s%s", kinds[l->kind],
 		    l->up ? "up" : "down", flow, strcmp(tp.sel_link, l->key) ==
-		    0 ? " sel" : "", labels_quiet(l->kind) ? " quiet" : "", w);
+		    0 ? " sel" : "", labels_quiet(l->kind) ? " quiet" : "");
+		if (outer >= 0)
+			h_fmt(h, " o%d", outer > 6 ? 6 : outer);
+		if (!link_in_fib(l, tp.fib))
+			h_raw(h, " dim");
+		h_fmt(h, "\"><path class=\"wire\" style=\"stroke-width:%.1f\" d=\"",
+		    w);
 		curve(h, x1, y1, x2, y2, bend, 0.5, &mx, &my);
 		h_raw(h, "\"/>");
+		if (outer >= 0) {
+			h_raw(h, "<path class=\"outer\" d=\"");
+			curve(h, x1, y1, x2, y2, bend, 0.5, NULL, NULL);
+			h_raw(h, "\"/>");
+		}
 		if (flow > 0) {
 			h_raw(h, "<path class=\"flow\" d=\"");
 			curve(h, x1, y1, x2, y2, bend, 0.5, NULL, NULL);
@@ -2009,14 +2459,14 @@ map_links(struct html *h)
 			    y2, bend, true), &ex, &ey);
 			h_fmt(h, "<text class=\"lbl end\" x=\"%.1f\" y=\"%.1f\">",
 			    ex, ey - 5);
-			h_txt(h, l->ifa);
+			if_label(h, l->ifa, fa, ta);
 			h_raw(h, "</text>");
 			if (l->ifb[0] != '\0') {
 				curve(NULL, x1, y1, x2, y2, bend, leave_t(x1, y1,
 				    x2, y2, bend, false), &ex, &ey);
 				h_fmt(h, "<text class=\"lbl end\" x=\"%.1f\" "
 				    "y=\"%.1f\">", ex, ey - 5);
-				h_txt(h, l->ifb);
+				if_label(h, l->ifb, fb, tb);
 				h_raw(h, "</text>");
 			}
 		} else if (l->b >= 0) {
@@ -2111,16 +2561,31 @@ map_nodes(struct html *h)
 	struct thost		*t;
 	char			 rate[24], sub[64];
 	double			 total;
-	int			 i, k, nif;
+	int			 i, k, nif, f, tf, dim;
 
 	/* A network several are in: with its lines, or not at all. */
 	for (k = 0; !tp.hide[LK_LAN] && k < nsegs; k++) {
 		if (segs[k].n < 3 || segs[k].same != 0)
 			continue;
-		h_fmt(h, "<g class=\"tseg\" transform=\"translate(%.1f,%.1f)\">"
-		    "<rect x=\"-9\" y=\"-9\" width=\"18\" height=\"18\" "
-		    "transform=\"rotate(45)\"/><text y=\"28\">", segs[k].x,
-		    segs[k].y);
+		/* Outside the table shown: dimmed, with its lines. */
+		for (dim = tp.fib >= 0, i = 0; dim && i < segs[k].n; i++) {
+			link_tables(segs[k].member[i], segs[k].ifn[i], &f, &tf);
+			if (f == tp.fib || tf == tp.fib)
+				dim = 0;
+		}
+		if (tp.stencil)
+			/* A hub, as a diagram draws a shared medium. */
+			h_fmt(h, "<g class=\"tseg hub%s\" transform=\"translate(%.1f,"
+			    "%.1f)\"><rect x=\"-30\" y=\"-9\" width=\"60\" height=\"18\" "
+			    "rx=\"3\"/><circle cx=\"-18\" cy=\"0\" r=\"2.2\"/><circle cx=\"-6\" "
+			    "cy=\"0\" r=\"2.2\"/><circle cx=\"6\" cy=\"0\" r=\"2.2\"/><circle "
+			    "cx=\"18\" cy=\"0\" r=\"2.2\"/><text y=\"28\">", dim ? " dim" :
+			    "", segs[k].x, segs[k].y);
+		else
+			h_fmt(h, "<g class=\"tseg%s\" transform=\"translate(%.1f,%.1f)\">"
+			    "<rect x=\"-9\" y=\"-9\" width=\"18\" height=\"18\" "
+			    "transform=\"rotate(45)\"/><text y=\"28\">", dim ? " dim" :
+			    "", segs[k].x, segs[k].y);
 		h_txt(h, segs[k].net);
 		h_raw(h, "</text>");
 		/* The others of the same hosts, one a line under it. */
@@ -2131,6 +2596,7 @@ map_nodes(struct html *h)
 		}
 		h_raw(h, "</g>");
 	}
+	peers_layout();
 	/* The routing neighbours outside, fanned out away from the middle. */
 	for (i = 0; !tp.nopeers && i < nexts; i++) {
 		if (tp.hide[exts[i].ospf ? LK_OSPF : LK_BGP])
@@ -2140,39 +2606,60 @@ map_nodes(struct html *h)
 
 		if ((t = thost(tn[e->host].key, false)) == NULL)
 			continue;
-		peer_place(e, t, &ex, &ey);
-		/* Where it was dragged to, beside its host, as it moves. */
 		{
-			struct peerpos	*pp;
-			char		 key[160];
+			char	key[160];
+			int	lead, ns, k;
 
-			peer_key(key, sizeof(key), e);
-			if ((pp = peer_kept(key, false)) != NULL) {
-				ex = t->x + pp->dx;
-				ey = t->y + pp->dy;
-			}
-			/* Dragged to put it elsewhere; picked, BIRD's. */
-			h_fmt(h, "<g class=\"tpeer %s %s\" data-drag=\""
-			    "topo-peer\"", e->ospf ? "ospf" : "bgp", e->up ?
-			    "up" : "down");
+			lead = as_leader(i);
+			as_place(lead, &ex, &ey);
+			peer_key(key, sizeof(key), &exts[lead]);
+			/* Every session or adjacency: a line to its node. */
+			h_fmt(h, "<g class=\"tpeer %s session %s\"><path d=\"M%.1f %.1f "
+			    "L%.1f %.1f\"><title>", e->ospf ? "ospf" : "bgp", e->up ? "up" :
+			    "down", t->x, t->y, ex, ey);
+			h_txt(h, tn[e->host].name);
+			h_raw(h, " · ");
+			h_txt(h, e->label);
+			h_raw(h, " · ");
+			h_txt(h, e->sub);
+			h_raw(h, "</title></path></g>");
+			if (lead != i)
+				continue;
+			for (ns = 0, k = 0; k < nexts; k++)
+				ns += as_leader(k) == lead;
+			/* The node, dragged as one: an AS a cloud, an OSPF
+			 * neighbour a dotted router. */
+			h_fmt(h, "<g class=\"tpeer %s %s\" data-drag=\"topo-peer\"",
+			    e->ospf ? "ospf" : "bgp", e->up ? "up" : "down");
 			h_attr(h, "data-arg", key);
+			if (e->ospf)
+				h_fmt(h, "><circle class=\"glyph\" cx=\"%.1f\" cy=\"%.1f\" "
+				    "r=\"22\"/><path class=\"arrows\" transform=\"translate("
+				    "%.1f,%.1f)\" d=\"M-14 -6h24M3 -11l6 5-6 5M14 6h-24M-3 11l-6"
+				    "-5 6-5\"/><text class=\"name\" x=\"%.1f\" y=\"%.1f\">", ex,
+				    ey, ex, ey, ex, ey + 36);
+			else
+				h_fmt(h, "><path class=\"cloud\" transform=\"translate("
+				    "%.1f,%.1f)\" d=\"M-44 10 q-16 0 -16 -14 q0 -14 14 -14 q4 "
+				    "-14 20 -12 q10 -12 24 -4 q16 -6 24 8 q14 2 12 16 q-2 12 -16 "
+				    "12 z\"/><text class=\"name\" x=\"%.1f\" y=\"%.1f\">", ex,
+				    ey, ex, ey - 2);
+			h_fit(h, e->label, 16);
+			h_fmt(h, "</text><text class=\"sub\" x=\"%.1f\" y=\"%.1f\">", ex,
+			    e->ospf ? ey + 48 : ey + 10);
+			if (ns > 1)
+				h_fmt(h, "%d %s", ns, e->ospf ? "adjacencies" : "sessions");
+			else
+				h_fit(h, e->sub, 20);
+			h_raw(h, "</text><title>");
+			h_txt(h, e->label);
+			if (e->ospf)
+				h_fmt(h, ": an OSPF neighbour outside this console, %d "
+				    "adjacenc%s with it</title></g>", ns, ns == 1 ? "y" : "ies");
+			else
+				h_fmt(h, ": a BGP neighbour outside this console, %d "
+				    "session%s to it</title></g>", ns, ns == 1 ? "" : "s");
 		}
-		h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><rect x=\"%.1f\" "
-		    "y=\"%.1f\" width=\"112\" height=\"34\" rx=\"17\"/><text "
-		    "class=\"name\" x=\"%.1f\" y=\"%.1f\">", t->x, t->y, ex, ey,
-		    ex - 56, ey - 17, ex, ey - 2);
-		h_fit(h, e->label, 16);
-		h_fmt(h, "</text><text class=\"sub\" x=\"%.1f\" y=\"%.1f\">", ex,
-		    ey + 10);
-		h_fit(h, e->sub, 20);
-		h_raw(h, "</text><title>");
-		h_txt(h, e->label);
-		h_raw(h, " · ");
-		h_txt(h, e->sub);
-		h_raw(h, " — ");
-		h_txt(h, e->ospf ? "An OSPF neighbour outside this console" :
-		    "A BGP neighbour outside this console");
-		h_raw(h, "</title></g>");
 	}
 	/* The running jails of each host, hung under it. */
 	for (i = 0; tp.jails && i < app.nservers; i++) {
@@ -2222,17 +2709,26 @@ map_nodes(struct html *h)
 		const char		*mn, *st;
 		char			 other[24];
 		double			 bx, by;
-		int			 nb, k, np, len;
+		int			 nb, nbr, nm, k, np, len;
 
 		if ((t = thost(tn[i].key, false)) == NULL || !t->placed ||
 		    t->bridges == NULL)
 			continue;
 		nb = 0;
+		nbr = (int)ucl_array_size(t->bridges);
+		if (nbr > 4)
+			nbr = 4;
 		bit = NULL;
 		while ((b = ucl_object_iterate(t->bridges, &bit, true)) != NULL &&
 		    nb < 4) {
-			bx = t->x - NODE_W / 2 + 46 + nb * 104;
-			by = t->y - NODE_H / 2 - 40;
+			/* The diagram: centred above the router, side by side. */
+			if (tp.stencil) {
+				bx = t->x + (nb - (nbr - 1) / 2.0) * 90;
+				by = t->y - 88;
+			} else {
+				bx = t->x - NODE_W / 2 + 46 + nb * 104;
+				by = t->y - NODE_H / 2 - 40;
+			}
 			/* To the jails behind its members, first: under it. */
 			mit = NULL;
 			while ((m = ucl_object_iterate(jget(b, "members"), &mit,
@@ -2263,16 +2759,35 @@ map_nodes(struct html *h)
 							    jt->y);
 				}
 			}
-			h_raw(h, "<g class=\"tbridge\" data-act=\""
-			    "topo-open-bridges\"");
+			if_tables(if_named(t, jstr(b, "name")), &f, &tf);
+			h_fmt(h, "<g class=\"tbridge%s\" data-act=\"topo-open-bridges\"",
+			    tp.fib >= 0 && f != tp.fib ? " dim" : "");
 			h_attr(h, "data-arg", tn[i].key);
-			h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><rect x=\""
-			    "%.1f\" y=\"%.1f\" width=\"96\" height=\"28\" rx=\""
-			    "4\"/><text class=\"name\" x=\"%.1f\" y=\"%.1f\">",
-			    bx, by + 14, bx, t->y - NODE_H / 2, bx - 48, by -
-			    14, bx - 42, by - 2);
-			h_fit(h, jstr(b, "name"), 9);
+			/* Its line runs to the host's middle, under the glyph. */
+			if (tp.stencil) {
+				/* A switch, as the stencils draw one: a flat box, an
+				 * arrow each way on two rows; its line runs to the
+				 * router's middle, under the router's glyph. */
+				h_fmt(h, "><path class=\"up\" d=\"M%.1f %.1f L%.1f %.1f\"/><rect "
+				    "x=\"%.1f\" y=\"%.1f\" width=\"60\" height=\"24\" rx=\"3\"/>"
+				    "<path class=\"sw\" transform=\"translate(%.1f,%.1f)\" "
+				    "d=\"M-20 -5h38m-6 -4l6 4l-6 4M20 5h-38m6 -4l-6 4l6 4\"/>"
+				    "<text class=\"name\" x=\"%.1f\" y=\"%.1f\">", bx, by +
+				    12, t->x, t->y, bx - 30, by - 12, bx, by, bx, by - 22);
+				h_fit(h, jstr(b, "name"), 12);
+			} else {
+				h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><rect x=\""
+				    "%.1f\" y=\"%.1f\" width=\"96\" height=\"28\" rx=\""
+				    "4\"/><text class=\"name\" x=\"%.1f\" y=\"%.1f\">",
+				    bx, by + 14, bx, t->y, bx - 48, by - 14, bx - 42, by -
+				    2);
+				h_fit(h, jstr(b, "name"), 9);
+			}
 			h_raw(h, "</text>");
+			/* The diagram puts them on the switch's top edge. */
+			nm = (int)ucl_array_size(jget(b, "members"));
+			if (nm > 9)
+				nm = 9;
 			np = 0;
 			mit = NULL;
 			while ((m = ucl_object_iterate(jget(b, "members"), &mit,
@@ -2283,8 +2798,9 @@ map_nodes(struct html *h)
 				    st != NULL && strcmp(st, "forwarding") ==
 				    0 ? "fwd" : st != NULL && (strcmp(st,
 				    "discarding") == 0 || strcmp(st,
-				    "blocking") == 0) ? "block" : "learn", bx -
-				    40 + np * 10, by + 7);
+				    "blocking") == 0) ? "block" : "learn", tp.stencil ?
+				    bx + (np - (nm - 1) / 2.0) * 8 : bx - 40 + np * 10,
+				    tp.stencil ? by - 12 : by + 7);
 				np++;
 			}
 			h_raw(h, "<title>");
@@ -2320,14 +2836,30 @@ map_nodes(struct html *h)
 		    tn[i].jail[0] != '\0' ? " vjail" : "", t->x, t->y);
 		h_attr(h, "data-arg", key);
 		h_attr(h, "data-drop", key);
-		h_fmt(h, "><rect class=\"box\" x=\"%d\" y=\"%d\" width=\"%d\" "
-		    "height=\"%d\" rx=\"10\"/><circle class=\"led\" cx=\"%d\" "
-		    "cy=\"-10\" r=\"4\"/><text class=\"name\" x=\"%d\" y=\"-5\">",
-		    -NODE_W / 2, -NODE_H / 2, NODE_W, NODE_H, -NODE_W / 2 + 14,
-		    -NODE_W / 2 + 26);
-		h_fit(h, tn[i].name, 13);
-		h_fmt(h, "</text><text class=\"sub\" x=\"%d\" y=\"15\">",
-		    -NODE_W / 2 + 12);
+		if (tp.stencil && !node_routes(t, tn[i].jail[0] != '\0'))
+			/* It forwards nothing: a server, as the stencils draw one. */
+			h_raw(h, "><rect class=\"glyph\" x=\"-22\" y=\"-28\" width=\"44\" "
+			    "height=\"56\" rx=\"4\"/><path class=\"lines\" d=\"M-14 -16h28M-14 "
+			    "-6h28M-14 4h28\"/><circle class=\"led\" cx=\"12\" cy=\"16\" "
+			    "r=\"3\"/><text class=\"name\" x=\"0\" y=\"44\">");
+		else if (tp.stencil)
+			/* A router: the circle with its four arrows. */
+			h_raw(h, "><circle class=\"glyph\" r=\"28\"/><path class=\"arrows\" "
+			    "d=\"M-18 -8h30M4 -14l8 6-8 6M18 8h-30M-4 14l-8-6 8-6\"/>"
+			    "<circle class=\"led\" cx=\"20\" cy=\"-20\" r=\"4\"/><text "
+			    "class=\"name\" x=\"0\" y=\"44\">");
+		else
+			h_fmt(h, "><rect class=\"box\" x=\"%d\" y=\"%d\" width=\"%d\" "
+			    "height=\"%d\" rx=\"10\"/><circle class=\"led\" cx=\"%d\" "
+			    "cy=\"-10\" r=\"4\"/><text class=\"name\" x=\"%d\" y=\"-5\">",
+			    -NODE_W / 2, -NODE_H / 2, NODE_W, NODE_H, -NODE_W / 2 + 14,
+			    -NODE_W / 2 + 26);
+		h_fit(h, tn[i].name, tp.stencil ? 16 : 13);
+		if (tp.stencil)
+			h_raw(h, "</text><text class=\"sub\" x=\"0\" y=\"57\">");
+		else
+			h_fmt(h, "</text><text class=\"sub\" x=\"%d\" y=\"15\">",
+			    -NODE_W / 2 + 12);
 		if (t->ifs == NULL)
 			snprintf(sub, sizeof(sub), "%s", t->failed ?
 			    "no answer" : "reading…");
@@ -2341,7 +2873,7 @@ map_nodes(struct html *h)
 		h_raw(h, tn[i].jail[0] != '\0' ? " (a jail) · " : " · ");
 		h_txt(h, sub);
 		h_fmt(h, "</title><circle class=\"port\" cx=\"%d\" cy=\"0\" "
-		    "r=\"7\" data-drag=\"topo-link\"", NODE_W / 2);
+		    "r=\"7\" data-drag=\"topo-link\"", tp.stencil ? 28 : NODE_W / 2);
 		h_attr(h, "data-arg", key);
 		h_raw(h, "><title>Drag to another host to join them with a "
 		    "tunnel</title></circle></g>");
@@ -2361,6 +2893,9 @@ labels_quiet(int kind)
 
 	if (tp.labels[kind] != 0)
 		return (tp.labels[kind] == 2);
+	/* A jail's line says what its node already shows. */
+	if (kind == LK_VNET)
+		return (true);
 	for (i = n = 0; i < nlinks; i++)
 		if (links[i].kind == kind)
 			n++;
@@ -2371,10 +2906,11 @@ labels_quiet(int kind)
 static const char *
 wfmt_cls(void)
 {
-	static char	cls[40];
+	static char	cls[56];
 
-	snprintf(cls, sizeof(cls), "%s%s%s", tp.linking ? " linking" : "",
-	    tp.no_names ? " no-names" : "", tp.no_rates ? " no-rates" : "");
+	snprintf(cls, sizeof(cls), "%s%s%s%s", tp.linking ? " linking" : "",
+	    tp.no_names ? " no-names" : "", tp.no_rates ? " no-rates" : "",
+	    tp.stencil ? " stencil" : "");
 	return (cls);
 }
 
@@ -2429,6 +2965,32 @@ map(struct html *h)
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-peers\" "
 	    "title=\"BGP and OSPF neighbours that are not hosts of this "
 	    "console\">Peers</button>", tp.nopeers ? "" : " on");
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-stencil\" "
+	    "title=\"Drawn as a network diagram: routers, switches, clouds and "
+	    "straight lines, as an engineer draws one\">Diagram</button>",
+	    tp.stencil ? " on" : "");
+	h_raw(h, "<button class=\"ghost small\" data-act=\"topo-png\" title=\"The "
+	    "map as it is shown, saved as a PNG picture\">PNG</button>");
+	{
+		int	f, n[8], more;
+
+		fibs_present(n);
+		for (f = 1, more = 0; f < 8; f++)
+			more += n[f] > 0;
+		if (more > 0) {
+			h_fmt(h, "<label class=\"fibsel\" title=\"Only the links in one "
+			    "routing table: by an interface in it, or a tunnel whose "
+			    "outer packets go by it\">FIB<select data-input=\"topo-fib\">"
+			    "<option value=\"-1\"%s>all</option>", tp.fib < 0 ?
+			    " selected" : "");
+			for (f = 0; f < 8; f++)
+				if (n[f] > 0)
+					h_fmt(h, "<option value=\"%d\"%s>%d%s</option>", f,
+					    tp.fib == f ? " selected" : "", f, f == 0 ?
+					    " (default)" : "");
+			h_raw(h, "</select></label>");
+		}
+	}
 	h_raw(h, "</div>");
 	/* The labels' switches: each kind of line's written or not. */
 	if (tp.labels_open) {
@@ -2493,6 +3055,24 @@ map(struct html *h)
 			    "</li>", lg[k].cls, off ? " off" : "", lg[k].cls,
 			    off ? "Show" : "Hide", lg[k].title);
 		}
+	}
+	/* The routing tables' colours, when there is more than the first:
+	 * a key, not a switch (the toolbar's FIB picks one). */
+	{
+		int	f, n[8], more;
+
+		fibs_present(n);
+		for (f = 1, more = 0; f < 8; f++)
+			more += n[f] > 0;
+		for (f = 1; more > 0 && f < 8; f++)
+			if (n[f] > 0)
+				h_fmt(h, "<li class=\"key fib%d\" title=\"A link whose "
+				    "interface is in routing table %d\">FIB %d</li>", f > 6 ?
+				    6 : f, f, f);
+		if (more > 0)
+			h_raw(h, "<li class=\"key outer\" title=\"A tunnel whose outer "
+			    "packets go by another table than its own: the dashed line "
+			    "in that table's colour\">outer path</li>");
 	}
 	h_raw(h, "</ul></div>");
 }
@@ -2632,6 +3212,7 @@ panel_host(struct html *h, int node, struct thost *t)
 	struct ifrate		*r;
 	const char		*name;
 	char			 in[24], out[24];
+	int			 fib, tfib;
 
 	h_raw(h, "<section class=\"pane\"><h4>");
 	h_txt(h, tn[node].label);
@@ -2658,13 +3239,22 @@ panel_host(struct html *h, int node, struct thost *t)
 		if ((name = jstr(o, "name")) == NULL)
 			continue;
 		r = rate_of(t, name, false);
-		h_fmt(h, "<li class=\"%s%s\" data-act=\"topo-sel-if\"", jbool(o,
+		if_tables(o, &fib, &tfib);
+		h_fmt(h, "<li class=\"%s%s%s\" data-act=\"topo-sel-if\"", jbool(o,
 		    "up") ? "up" : "down", strcmp(tp.sel_if, name) == 0 ?
-		    " sel" : "");
+		    " sel" : "", tp.fib >= 0 && fib != tp.fib && tfib != tp.fib ?
+		    " dim" : "");
 		h_attr(h, "data-arg", name);
 		h_raw(h, "><div class=\"ifhead\"><i class=\"led\"></i><b>");
 		h_txt(h, name);
 		h_raw(h, "</b>");
+		if (fib > 0)
+			h_fmt(h, "<span class=\"chip fib%d\" title=\"Its routing table\">"
+			    "FIB %d</span>", fib > 6 ? 6 : fib, fib);
+		if (tfib >= 0 && tfib != fib)
+			h_fmt(h, "<span class=\"chip fib%d\" title=\"The table its outer "
+			    "packets go by (tunnelfib)\">outer FIB %d</span>", tfib > 6 ? 6 :
+			    tfib, tfib);
 		if (jstr(o, "description") != NULL) {
 			h_raw(h, "<span class=\"dim\">");
 			h_txt(h, jstr(o, "description"));
@@ -4161,18 +4751,20 @@ fit(void)
 			y1 = hosts[i].y;
 		n++;
 	}
-	tp.panx = (x0 + x1) / 2;
-	tp.pany = (y0 + y1) / 2;
-	/* Room around them, and more when neighbours stand beside them. */
+	/* Room around them, and more when neighbours stand beside them;
+	 * the legend lies over the drawing's foot, so that much is left
+	 * under them. */
 	zx = VIEW_W / (x1 - x0 + NODE_W + (nexts > 0 && !tp.nopeers ? 640 :
 	    120) * (VIEW_W < 600 ? 0.5 : 1.0));
-	zy = VIEW_H / (y1 - y0 + NODE_H + (nexts > 0 && !tp.nopeers ? 460 :
-	    140) * (VIEW_W < 600 ? 0.5 : 1.0));
+	zy = (VIEW_H - LEGEND_H) / (y1 - y0 + NODE_H + (nexts > 0 &&
+	    !tp.nopeers ? 460 : 140) * (VIEW_W < 600 ? 0.5 : 1.0));
 	tp.zoom = zx < zy ? zx : zy;
 	if (tp.zoom > 1.7)
 		tp.zoom = 1.7;
 	if (tp.zoom < 0.25)
 		tp.zoom = 0.25;
+	tp.panx = (x0 + x1) / 2;
+	tp.pany = (y0 + y1) / 2 + LEGEND_H / 2 / tp.zoom;
 }
 
 /* Called when the section is opened: read every host at once. */
@@ -4356,7 +4948,9 @@ topo_action(const char *act, const char *arg, const char *value)
 
 				peer_key(key, sizeof(key), &exts[i]);
 				if (strcmp(key, arg) == 0) {
-					peer_place(&exts[i], t, &cx, &cy);
+					peers_layout();
+					/* Where its node is drawn. */
+					as_place(as_leader(i), &cx, &cy);
 					pp->dx = cx - t->x;
 					pp->dy = cy - t->y;
 				}
@@ -4386,6 +4980,8 @@ topo_action(const char *act, const char *arg, const char *value)
 		for (i = 0; i < LK_KINDS; i++)
 			if (strcmp(arg, names[i]) == 0)
 				tp.labels[i] = labels_quiet(i) ? 1 : 2;
+	} else if (strcmp(act, "input:topo-fib") == 0) {
+		tp.fib = atoi(value);
 	} else if (strcmp(act, "topo-legend") == 0) {
 		static const char *const names[] = { "tunnel", "p2p", "lan",
 		    "bgp", "ospf", "vnet" };
@@ -4420,6 +5016,12 @@ topo_action(const char *act, const char *arg, const char *value)
 		node_open(n, NET_BRIDGES);
 	} else if (strcmp(act, "topo-peers") == 0) {
 		tp.nopeers = !tp.nopeers;
+	} else if (strcmp(act, "topo-png") == 0) {
+		arc_svg_png("svg.topo", tp.stencil ? "network-diagram.png" :
+		    "network-map.png");
+		return (true);		/* nothing to draw again */
+	} else if (strcmp(act, "topo-stencil") == 0) {
+		tp.stencil = !tp.stencil;
 	} else if (strcmp(act, "topo-arrange") == 0) {
 		for (i = 0; i < nhosts; i++)
 			hosts[i].placed = false;

@@ -1328,6 +1328,24 @@ EOS
 	atf_check -o match:'fake-helper --scope-helper 0 routes 4 2 - -' \
 	    "$JGC" -t -F 2 -c "$SOCK" net routes -4
 
+	# A default route is rc.conf's defaultrouter, per table past the
+	# first; one there already is kept all the same when asked; a
+	# default kept by a name before moves to the variable.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" route add default 10.0.0.254
+	atf_check -o ignore "$JGC" -p -F 3 -c "$SOCK" route add default 10.0.0.253
+	atf_check -o ignore "$JGC" -p -c "$SOCK" route add default 2001:db8::fe
+	atf_check -o match:'^defaultrouter="10.0.0.254"$' \
+	    -o match:'^defaultrouter_fib3="10.0.0.253"$' \
+	    -o match:'^ipv6_defaultrouter="2001:db8::fe"$' \
+	    -o not-match:'route_arc_default' cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" route delete default 10.0.0.254
+	atf_check -o not-match:'^defaultrouter=' -o match:'^defaultrouter_fib3=' cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 10.66.0.0/16 10.0.0.1
+	atf_check -o match:'^route_arc_10_66_0_0_16="10.66.0.0/16 10.0.0.1"$' cat rc.conf
+	printf 'static_routes="arc_default_fib2"\nroute_arc_default_fib2="default 10.0.0.252 -fib 2"\n' >> rc.conf
+	atf_check -o ignore "$JGC" -p -F 2 -c "$SOCK" route add default 10.0.0.252
+	atf_check -o match:'^defaultrouter_fib2="10.0.0.252"$' -o not-match:'arc_default_fib2' cat rc.conf
+
 	# The route to an address: the one taken, and those that cover it,
 	# each with the length of its prefix.
 	atf_check -o save:get.out "$JGC" -c "$SOCK" route get 10.77.5.5

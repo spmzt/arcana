@@ -1255,6 +1255,101 @@ addToLibrary({
 		a.remove();
 		setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
 	},
+	/*
+	 * A drawing of the page saved as a PNG picture, as it is shown but
+	 * in the light theme (paper), whatever the page wears: a copy of the
+	 * SVG with every element's computed style written on it (the page's
+	 * classes and variables do not travel with it), drawn twice its size
+	 * on a canvas over the map's background.  The theme is put on for
+	 * the reading alone, transitions off, and taken off again.
+	 */
+	arc_svg_png__deps: ["$UTF8ToString"],
+	arc_svg_png: function (selp, namep) {
+		var svg = document.querySelector(UTF8ToString(selp)),
+		    name = UTF8ToString(namep), props = ["fill", "fill-opacity",
+		    "stroke", "stroke-width", "stroke-dasharray", "stroke-opacity",
+		    "stroke-linecap", "stroke-linejoin", "stroke-dashoffset",
+		    "paint-order", "opacity", "font-family", "font-style",
+		    "font-size", "font-weight", "text-anchor", "letter-spacing",
+		    "dominant-baseline", "visibility", "display"],
+		    clone, src, dst, i, cs, r, w, h, bg, el, img, root, old, calm;
+
+		if (svg === null)
+			return;
+		root = document.documentElement;
+		old = root.getAttribute("data-theme");
+		calm = document.createElement("style");
+		calm.textContent = "*, *::before, *::after { transition: none " +
+		    "!important; animation: none !important; }";
+		document.head.appendChild(calm);
+		root.setAttribute("data-theme", "paper");
+		clone = svg.cloneNode(true);
+		src = [svg].concat(Array.prototype.slice.call(
+		    svg.querySelectorAll("*")));
+		dst = [clone].concat(Array.prototype.slice.call(
+		    clone.querySelectorAll("*")));
+		for (i = 0; i < src.length && i < dst.length; i++) {
+			cs = getComputedStyle(src[i]);
+			dst[i].setAttribute("style", props.map(function (p) {
+				return (p + ":" + cs.getPropertyValue(p));
+			}).join(";"));
+		}
+		r = svg.getBoundingClientRect();
+		w = Math.max(1, Math.round(r.width * 2));
+		h = Math.max(1, Math.round(r.height * 2));
+		clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+		clone.setAttribute("width", w);
+		clone.setAttribute("height", h);
+		bg = "";
+		for (el = svg; el !== null && (bg === "" || bg === "transparent" ||
+		    bg === "rgba(0, 0, 0, 0)"); el = el.parentElement)
+			bg = getComputedStyle(el).backgroundColor;
+		if (old === null)
+			root.removeAttribute("data-theme");
+		else
+			root.setAttribute("data-theme", old);
+		calm.remove();
+		img = new Image();
+		img.onload = function () {
+			var c = document.createElement("canvas"),
+			    x = c.getContext("2d");
+
+			c.width = w;
+			c.height = h;
+			x.fillStyle = bg || "#f3f5f7";
+			x.fillRect(0, 0, w, h);
+			x.drawImage(img, 0, 0, w, h);
+			c.toBlob(function (b) {
+				var url, a;
+
+				/* The last one, for whoever checks what was
+				 * saved. */
+				window.arcSaved = { name: name, type: "image/png",
+				    size: b.size, width: w, height: h };
+				/* And the picture itself, for a test to show. */
+				(function (s) {
+					var fr = new FileReader();
+
+					fr.onload = function () { s.url = fr.result; };
+					fr.readAsDataURL(b);
+				})(window.arcSaved);
+				url = URL.createObjectURL(b);
+				a = document.createElement("a");
+				a.href = url;
+				a.download = name;
+				document.body.appendChild(a);
+				a.click();
+				a.remove();
+				setTimeout(function () { URL.revokeObjectURL(url); },
+				    10000);
+			}, "image/png");
+		};
+		img.onerror = function () {
+			window.arcSaved = { name: name, error: true };
+		};
+		img.src = "data:image/svg+xml;charset=utf-8," +
+		    encodeURIComponent(new XMLSerializer().serializeToString(clone));
+	},
 	/* A file made of base64, saved: a capture's pcap. */
 	arc_save_b64__deps: ["$UTF8ToString"],
 	arc_save_b64: function (namep, typep, b64p) {

@@ -122,8 +122,8 @@ do_route(struct work *w, const char *destination, const char *gateway,
 	static const struct route_more	none;
 	struct execres	 res;
 	unsigned char	 raw[16];
-	const char	*dest, *name, *list, *e, *mods, *words[7];
-	bool		 iface;
+	const char	*dest, *name, *list, *e, *mods, *pfx, *var, *words[7];
+	bool		 iface, added;
 	int		 af, gaf, n;
 
 	if (more == NULL)
@@ -242,16 +242,51 @@ do_route(struct work *w, const char *destination, const char *gateway,
 		words[n++] = more->source != NULL && more->source[0] !=
 		    '\0' ? more->source : "-";
 	}
+	added = false;
 	if (run_exec(w, helper_argv(w, remove ? "route-del" : "route-add",
 	    (size_t)n, words), &res) != 0) {
 		*errp = wtext(w, exec_error(w, &res, "route"));
-		return (-1);
-	}
+		/* One there already (set by hand, say) is kept all the same
+		 * when that is asked. */
+		if (remove || !persist || strstr(*errp, "there already") == NULL)
+			return (-1);
+	} else
+		added = !remove;
 	if (!persist)
 		return (0);
-	/* route_<name> is what rc(8) gives route add, the family aside. */
 	name = route_name(w, dest, fib);
 	list = af == AF_INET ? "static_routes" : "ipv6_static_routes";
+	pfx = af == AF_INET ? "" : "ipv6_";
+	/*
+	 * A default route is rc.conf's defaultrouter, of its table's own
+	 * past the first (rc.d/routing); one by an interface, or with a
+	 * cost, share or source, goes among the static routes as route(8)
+	 * takes it, as every other route does, route_<name> being what
+	 * rc(8) gives route add.
+	 */
+	if (strcmp(dest, "default") == 0 && !iface && mods[0] == '\0') {
+		var = wfmt(w, "%sdefaultrouter%s", pfx, fib != 0 ? wfmt(w,
+		    "_fib%u", fib) : "");
+		if (remove) {
+			rc_unset(w, var);
+			return (0);
+		}
+		if (rc_set(w, var, "=", gateway, errp) != 0) {
+			if (added) {
+				e = NULL;
+				(void)do_route(w, destination, gateway, true, fib,
+				    more, false, &e);
+			}
+			return (-1);
+		}
+		/* Kept by a name before: that goes, the variable says it. */
+		if (rc_get(w, wfmt(w, "%sroute_%s", pfx, name)) != NULL) {
+			e = NULL;
+			(void)rc_set(w, list, "-=", name, &e);
+			rc_unset(w, wfmt(w, "%sroute_%s", pfx, name));
+		}
+		return (0);
+	}
 	if (remove) {
 		e = NULL;
 		(void)rc_set(w, list, "-=", name, &e);
@@ -259,14 +294,16 @@ do_route(struct work *w, const char *destination, const char *gateway,
 		    name));
 		return (0);
 	}
-	if (rc_set(w, wfmt(w, "%sroute_%s", af == AF_INET ? "" : "ipv6_", name),
-	    "=", wfmt(w, "%s%s %s%s%s%s", dest, iface ? " -iface" : "", gateway,
-	    fib != 0 ? " -fib " : "", fib != 0 ? wfmt(w, "%u", fib) : "",
-	    mods), errp) != 0 || rc_set(w, list, "+=", name, errp) != 0) {
+	if (rc_set(w, wfmt(w, "%sroute_%s", pfx, name), "=", wfmt(w,
+	    "%s%s %s%s%s%s", dest, iface ? " -iface" : "", gateway, fib != 0 ?
+	    " -fib " : "", fib != 0 ? wfmt(w, "%u", fib) : "", mods), errp) !=
+	    0 || rc_set(w, list, "+=", name, errp) != 0) {
 		/* Not kept: not left half done either. */
-		e = NULL;
-		(void)do_route(w, destination, gateway, true, fib, more, false,
-		    &e);
+		if (added) {
+			e = NULL;
+			(void)do_route(w, destination, gateway, true, fib, more,
+			    false, &e);
+		}
 		return (-1);
 	}
 	return (0);
@@ -333,7 +370,7 @@ route_snapshot(struct work *w, const char *destination, uint32_t fib,
     const char **gwp, struct route_more *more, bool *keptp, const char **errp)
 {
 	struct found	 f;
-	const char	*dest, *words[4];
+	const char	*dest, *pfx, *words[4];
 	int		 af;
 
 	if (!parse_dest(w, destination, &af, &dest)) {
@@ -368,8 +405,11 @@ route_snapshot(struct work *w, const char *destination, uint32_t fib,
 	}
 	*gwp = f.gw;
 	*more = f.more;
-	*keptp = rc_get(w, wfmt(w, "%sroute_%s", af == AF_INET6 ||
-	    (af == AF_UNSPEC && strchr(f.gw, ':') != NULL) ? "ipv6_" : "",
-	    route_name(w, dest, fib))) != NULL;
+	pfx = af == AF_INET6 || (af == AF_UNSPEC && strchr(f.gw, ':') != NULL) ?
+	    "ipv6_" : "";
+	*keptp = rc_get(w, wfmt(w, "%sroute_%s", pfx, route_name(w, dest,
+	    fib))) != NULL || (strcmp(dest, "default") == 0 && rc_get(w, wfmt(w,
+	    "%sdefaultrouter%s", pfx, fib != 0 ? wfmt(w, "_fib%u", fib) : ""))
+	    != NULL);
 	return (0);
 }

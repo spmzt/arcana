@@ -2,6 +2,21 @@
 
 ## To do
 
+- FEC relays as a plugin (asked 2026-10-23): udpspeeder, the forward
+  error correction relay the WireGuard underlays can be carried
+  through, is in the ports now (net/udpspeeder, the package to come
+  from the build servers).  Treat it like the other plugins: found by
+  its program, its rc service and configuration read and written by
+  the agent (the client's -l/-r, --mode, --mtu, -f ratios, --fifo; the
+  server's listener), started, stopped and kept by rc.conf, shown on a
+  tab with its counters, offered for installation by pkg(8) where it is
+  missing; the SD-WAN model's `relay` names it instead of a bare
+  endpoint, and the apply makes the client and server processes.  And
+  its overhead worked out from the packets going through it: the FEC
+  ratio in force (-f x:y at each size band) against the packet sizes
+  seen on the wg interface, as a share of the underlay's bandwidth,
+  shown with the tunnel's rate and kept in the history.
+
 - SD-WAN (MEF 70.2 now, Mplify 119 later), step by step. Done: the
   services kept and checked by the console, and shown; the edges made
   from them (a FIB per service, the UNIs and tunnels in it, gre, gif,

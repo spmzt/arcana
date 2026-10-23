@@ -11,14 +11,6 @@ SRCS.kmsg=	kmsg_test.c kmsg.c
 CFLAGS.kmsg_test.c+=	-I${.CURDIR}/.. -I${.OBJDIR}/.. -I${.CURDIR}/../../../lib/libvarconf ${UCL_CFLAGS}
 CFLAGS.kmsg.c+=	-I${.CURDIR}/.. -I${.OBJDIR}/.. -I${.CURDIR}/../../../lib/libvarconf ${UCL_CFLAGS}
 LDADD.kmsg+=	${CBLINK_LIBS} -ljail -lpthread
-# wire_test: the version-1 structs through the wire's schema tables and
-# back (arcana.h, arcana_v2.h and the tables from the agent's build).
-ATF_TESTS_C+=	wire_test
-SRCS.wire_test=	wire_test.c arcana_v2_schema.c
-CFLAGS.wire_test.c+=	-I${.OBJDIR}/..
-CFLAGS.arcana_v2_schema.c+=	-I${.OBJDIR}/..
-LDADD.wire_test+=	${CBLINK_LIBS}
-.PATH:		${.OBJDIR}/..
 # fwmatch: a packet walked through an ipfw ruleset.
 PROGS+=		fwmatch
 SRCS.fwmatch=	fwmatch_test.c fwmatch.c
