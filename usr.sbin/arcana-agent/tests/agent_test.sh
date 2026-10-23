@@ -8554,8 +8554,35 @@ bird_watch_cleanup()
 	stop_daemon
 }
 
+atf_test_case reboot cleanup
+reboot_head()
+{
+	atf_set "descr" "the host rebooted by shutdown(8) -r a minute from now; never in safe mode, never a jail"
+}
+reboot_body()
+{
+	mkdir -p tools
+	# shutdown(8): the parent says its child's pid and goes.
+	printf '#!/bin/sh\necho "$*" >> %s/shutdown.log\necho "shutdown: [pid 4242]" >&2\nexit 0\n' \
+	    "$(pwd)" > tools/shutdown
+	chmod +x tools/shutdown
+	DAEMON_ARGS="-2 $(pwd)/tools"
+	start_daemon
+	atf_check -o match:'done +reboot, a minute after' "$JGC" -c "$SOCK" reboot
+	atf_check -o inline:'-r +1 rebooted from Arcana\n' cat shutdown.log
+	atf_check -s exit:1 -e match:'not undone: not in safe mode' \
+	    "$JGC" -s -c "$SOCK" reboot
+	atf_check -s exit:2 -e match:'restarted' "$JGC" -j web -c "$SOCK" reboot
+	atf_check -o inline:'-r +1 rebooted from Arcana\n' cat shutdown.log
+}
+reboot_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case reboot
 	atf_add_test_case bird_watch
 	atf_add_test_case poudriere
 	atf_add_test_case host_watch

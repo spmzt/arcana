@@ -338,6 +338,9 @@ title_of(const struct arc_job_spec *sp)
 		    sp->jail != NULL && sp->jail[0] != '\0' ? " in " : "",
 		    sp->jail != NULL ? sp->jail : "");
 		break;
+	case ARC_JOB_KIND_REBOOT:
+		rc = asprintf(&t, "reboot, a minute after");
+		break;
 	case ARC_JOB_KIND_JAIL_BASE:
 		rc = asprintf(&t, "jail %s: %s%s%s", sp->jail != NULL ? sp->jail :
 		    "?", sp->verb != NULL && strcmp(sp->verb, "upgrade") == 0 ?
@@ -713,6 +716,34 @@ undo_forget(struct qjob *j)
 		ucl_object_unref(j->undo_if);
 		j->undo_if = NULL;
 	}
+}
+
+/*
+ * The host rebooted by shutdown(8) a minute from now: its parent says
+ * the child's pid and goes, so the job is done, and its answer and the
+ * console's next read are out before the host stops.
+ */
+static int
+do_reboot(struct work *w, const char **errp)
+{
+	struct execres	 res;
+	const char	*sh;
+	char		*argv[5];
+
+	if ((sh = tool(w, "shutdown")) == NULL) {
+		*errp = "this host has no shutdown(8)";
+		return (-1);
+	}
+	argv[0] = (char *)(uintptr_t)sh;
+	argv[1] = (char *)(uintptr_t)"-r";
+	argv[2] = (char *)(uintptr_t)"+1";
+	argv[3] = (char *)(uintptr_t)"rebooted from Arcana";
+	argv[4] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "shutdown"));
+		return (-1);
+	}
+	return (0);
 }
 
 /*
@@ -1614,6 +1645,10 @@ run(struct qjob *j, bool lane)
 	case ARC_JOB_KIND_JAIL_BASE:
 		error = NULL;
 		ok = do_jail_base(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_REBOOT:
+		error = NULL;
+		ok = do_reboot(&j->w, &error) == 0;
 		break;
 	case ARC_JOB_KIND_PKG_INSTALL:
 		error = NULL;

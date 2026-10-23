@@ -2744,7 +2744,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_JAIL_BASE)
+	if (!sp->has_kind || sp->kind >= ARC_JOB_KIND_COUNT)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2856,6 +2856,12 @@ check_spec(const struct arc_job_spec *sp)
 			return ("an install is not taken back by itself");
 		if (sp->names.n == 0)
 			return ("name the packages to install");
+		break;
+	case ARC_JOB_KIND_REBOOT:
+		if (sp->safe)
+			return ("a reboot is not undone: not in safe mode");
+		if (sp->jail != NULL && sp->jail[0] != '\0')
+			return ("a jail is restarted (jail-action), not rebooted");
 		break;
 	case ARC_JOB_KIND_JAIL_BASE:
 		if (sp->safe)

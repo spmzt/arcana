@@ -1524,6 +1524,16 @@ part_nettab(void)
 	(void)fp;
 	(void)i;
 
+	/* Reboot asks for the host's name typed; closed here, never sent:
+	 * this agent has no stand-in for shutdown(8). */
+	click_when("button[data-act=host-reboot]", 10);
+	wait_js("document.querySelector('form[data-form=confirm].danger') && "
+	    "document.querySelector('form[data-form=confirm] h2').textContent "
+	    "=== 'Reboot the host' && document.querySelector("
+	    "'form[data-form=confirm] input[name=typed]')", 5);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('form[data-form=confirm]')", 5);
+
 	/* The interfaces, in the network tab: an address is added to one
 	 * through the queue, as any change is. */
 	run("document.querySelector('button.tab[data-arg=network]').click()");

@@ -396,6 +396,9 @@ kinds:
     needs: jail verb
     uses: packages release force pkg_ip pkg_repo
     values: verb=convert|upgrade
+  - kind: reboot
+    title: The host rebooted, a minute after
+    destroys: always
   - kind: jail-conf
     title: A jail made, removed; the jails' defaults or a template
     needs: verb

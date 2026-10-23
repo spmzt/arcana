@@ -5163,6 +5163,10 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			return ("an if-address job needs an interface and an "
 			    "address");
 		break;
+	case ARC_JOB_KIND_REBOOT:
+		if (sp->jail != NULL && sp->jail[0] != '\0')
+			return ("a jail is restarted (jail-action), not rebooted");
+		break;
 	case ARC_JOB_KIND_ROUTE:
 		/* The name rc.conf keeps it by: one word, or none. */
 		names = ucl_object_lookup(o, "route_name");

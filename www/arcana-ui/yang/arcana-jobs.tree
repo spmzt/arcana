@@ -290,6 +290,8 @@ module: arcana-jobs
        |        |     +---w force?      boolean
        |        |     +---w pkg-ip?     uint32
        |        |     +---w pkg-repo?   string
+       |        +--:(reboot)
+       |        |  +---w reboot!
        |        +--:(jail-conf)
        |        |  +---w jail-conf!
        |        |     +---w verb        enumeration

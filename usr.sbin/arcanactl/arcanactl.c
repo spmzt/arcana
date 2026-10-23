@@ -125,6 +125,7 @@ static int	submit(struct arc_client *, struct arc_job_spec *);
 static void	emit_job(const struct arc_job *);
 static int	cmd_jobs(struct arc_client *);
 static int	cmd_job(struct arc_client *, int, char **);
+static int	cmd_reboot(struct arc_client *);
 static int	cmd_interface(struct arc_client *, int, char **);
 static int	cmd_job_cancel(struct arc_client *, int, char **);
 static int	cmd_service(struct arc_client *, int, char **);
@@ -170,6 +171,7 @@ usage(void)
 	    "    route [keep] delete destination [gateway] [metric n] [name word]\n"
 	    "    route get address\n"
 	    "    traceroute address\n"
+	    "    reboot\n"
 	    "    sdwan [probes | rules | steer | bird | dhcp | dns | proxy | ids json]\n"
 	    "    ng mkpeer | connect | rmhook | shutdown | name argument "
 	    "...\n"
@@ -2585,6 +2587,21 @@ cmd_crashes(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
+/* reboot: the host, by shutdown(8) a minute from now; a job. */
+static int
+cmd_reboot(struct arc_client *cl)
+{
+	struct arc_job_spec	 sp;
+
+	if (netjail != NULL)
+		xo_errx(2, "a jail is restarted (restart jail), not rebooted");
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_REBOOT;
+	sp.safe = safe;		/* refused by the host, which says why */
+	return (submit(cl, &sp));
+}
+
 /* system [file | host]: the system's own files, and settings beside. */
 static int
 cmd_system(struct arc_client *cl, int argc, char **argv)
@@ -4741,6 +4758,8 @@ main(int argc, char *argv[])
 	    strcmp(argv[0], "route") == 0 || strcmp(argv[0], "ng") == 0 ||
 	    strcmp(argv[0], "wg") == 0 || strcmp(argv[0], "bird") == 0)
 		rc = cmd_interface(&cl, argc, argv);
+	else if (strcmp(argv[0], "reboot") == 0 && argc == 1)
+		rc = cmd_reboot(&cl);
 	else if (strcmp(argv[0], "net") == 0)
 		rc = cmd_net(&cl, argc, argv);
 	else if (strcmp(argv[0], "stats") == 0 && argc == 1)

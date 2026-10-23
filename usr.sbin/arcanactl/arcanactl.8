@@ -1719,6 +1719,15 @@ a probe a hop, a second's wait, 30 hops at most, as JSON.
 The console's Traceroute asks again and again, as
 .Xr mtr 8
 does.
+.It Cm reboot
+Reboot the host, by
+.Xr shutdown 8
+.Fl r
+a minute from now: the job is done when the shutdown is set, so its
+answer comes back before the host goes.
+It is never undone, so not with
+.Fl s ,
+and a jail is restarted, not rebooted.
 .It Cm interface Ar name Cm mtu Ar number
 .It Cm interface Ar name Cm description Ar text
 Set an interface's MTU or its description; an empty text takes the

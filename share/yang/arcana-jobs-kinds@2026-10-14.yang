@@ -167,6 +167,9 @@ submodule arcana-jobs-kinds {
       enum jail-base {
         value 47;
       }
+      enum reboot {
+        value 48;
+      }
     }
     description
       "A kind of job, by its number in arcana.yaml's job-kind.";
@@ -1487,6 +1490,14 @@ submodule arcana-jobs-kinds {
             description
               "Repository";
           }
+        }
+      }
+      case reboot {
+        container reboot {
+          presence
+            "This kind of job.";
+          description
+            "The host rebooted, a minute after (destroys: always)";
         }
       }
       case jail-conf {

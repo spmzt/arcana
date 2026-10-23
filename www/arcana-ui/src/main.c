@@ -1560,6 +1560,23 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "off.");
 		confirm("Delete the route", body, "Delete", true, "",
 		    "do-route-delete", arg, value);
+	} else if (strcmp(act, "host-reboot") == 0 && s != NULL) {
+		char body[400];
+
+		snprintf(body, sizeof(body), "%s reboots, by shutdown -r a "
+		    "minute after: every jail, service and connection on it "
+		    "stops until it is up again. Type its name to go on.",
+		    s->name);
+		confirm("Reboot the host", body, "Reboot", true, s->name,
+		    "do-host-reboot", s->id, "");
+	} else if (strcmp(act, "do-host-reboot") == 0 && s != NULL &&
+	    strcmp(arg, s->id) == 0) {
+		char	*json;
+
+		if ((json = strdup("{\"kind\":\"reboot\"}")) == NULL)
+			abort();
+		job_send_host(s, json, "reboot, a minute after", JOB_SYSTEM,
+		    s->name);
 	} else if (strcmp(act, "kept-rename") == 0 && s != NULL) {
 		/* arg: the destination; value: its table, a space, its
 		 * name. */

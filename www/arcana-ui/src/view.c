@@ -523,6 +523,10 @@ hostbar(struct html *h, struct server *s)
 		    "title=\"This host runs another arcana-agent than the "
 		    "console has: update it on Devices\">Agent behind</button>");
 	}
+	if (host != NULL)
+		h_raw(h, "<button class=\"ghost small\" data-act=\"host-reboot\" "
+		    "title=\"Reboot this host: shutdown -r, a minute after\">"
+		    "Reboot</button>");
 	h_raw(h, "</div><div class=\"freshness\">");
 	if (s->list != NULL) {
 		fmt_age(age, sizeof(age), s->fetched);

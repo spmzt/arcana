@@ -527,6 +527,12 @@ definitions:
           left to merge; the jail is to be restarted after.  With force, past OSVERSION for
           the other packages (IGNORE_OSVERSION); pkg-ip as pkg -4 or
           -6.  Needs FreeBSD 15.1 or later in the jail.
+      - name: reboot
+        doc: |
+          The host itself rebooted, by shutdown(8) -r a minute from
+          now, so that the job's answer reaches whoever asked before
+          the host goes; it is not undone, so never in safe mode, and
+          a jail is restarted (jail-action), not rebooted.
   - name: job-state
     type: enum
     entries:
