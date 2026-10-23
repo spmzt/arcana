@@ -177,9 +177,18 @@ do_route(struct work *w, const char *destination, const char *gateway,
 				gaf = n1;
 		}
 	} else if (gateway != NULL && gateway[0] != '\0') {
+		const char	*zone;
+
 		if (inet_pton(AF_INET, gateway, raw) == 1)
 			gaf = AF_INET;
 		else if (inet_pton(AF_INET6, gateway, raw) == 1)
+			gaf = AF_INET6;
+		/* A link-local gateway with its zone, fe80::1%em0, as route(8)
+		 * and a router advertisement give it. */
+		else if ((zone = strchr(gateway, '%')) != NULL && zone > gateway
+		    && inet_pton(AF_INET6, wstrndup(w, gateway, (size_t)(zone -
+		    gateway)), raw) == 1 && IN6_IS_ADDR_LINKLOCAL((struct in6_addr *)
+		    raw) && if_exists(w, zone + 1))
 			gaf = AF_INET6;
 		else if (if_exists(w, gateway) || ifname_cloneable(gateway))
 			/* One not there yet (a tunnel the same apply makes) is

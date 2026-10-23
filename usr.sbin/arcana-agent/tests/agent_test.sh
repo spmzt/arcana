@@ -1101,6 +1101,11 @@ EOS
 	    "$JGC" -c "$SOCK" route add 10.0.0.0/33 10.0.0.1
 	atf_check -s exit:1 -o match:'neither an address nor an interface' \
 	    "$JGC" -c "$SOCK" route add 10.79.0.0/16 nope0
+	# A link-local gateway with its zone, as a router advertisement gives it.
+	atf_check -o ignore "$JGC" -c "$SOCK" route add 2001:db8:79::/48 fe80::1%lo0
+	atf_check -o match:'2001:db8:79::/48 fe80::1%lo0' cat route.log
+	atf_check -s exit:1 -o match:'neither an address nor an interface' \
+	    "$JGC" -c "$SOCK" route add 2001:db8:79::/48 fe80::1%nope0
 	atf_check -s exit:1 -e match:'needs a gateway' -o ignore \
 	    "$JGC" -q -c "$SOCK" route add 10.79.0.0/16 ''
 	atf_check -o not-match:'10.79' -o not-match:'/33' cat route.log
