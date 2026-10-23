@@ -5240,4 +5240,4 @@ svg.topo g.tpeer.ospf:hover .glyph { filter: drop-shadow(0 0 6px var(--amber)); 
  * dots inside it. */
 :root { --fib1: #fb7185; --fib2: #38bdf8; --fib3: #e2e8f0; --fib4: #fde047; --fib5: #c4b5fd; --fib6: #2dd4bf; }
 .tlink .outer { fill: none; stroke: var(--dim); stroke-width: 6; stroke-dasharray: 1.4 9; stroke-linecap: butt; opacity: .8; pointer-events: none; }
-.map-legend .outer::before { border-top: 4px dotted var(--fib1); }
+.map-legend .outer::before { border-top: 4px dotted var(--fg-2); }

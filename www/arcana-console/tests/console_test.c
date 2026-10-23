@@ -3600,7 +3600,7 @@ ATF_TC_BODY(telegram, tc)
 	resp_free(&r);
 	ATF_CHECK(system("grep -c '^REQ POST /bot123:abc_DEF/sendMessage' "
 	    "tg.out | grep -qx 2 && grep -q '\"chat_id\":-100,' tg.out && "
-	    "grep -q '\"chat_id\":42,' tg.out && grep -q '\"text\":\"Arcana: "
+	    "grep -q '\"chat_id\":42,' tg.out && grep -q '\"text\":\"🛰️ Arcana: "
 	    "a test.' tg.out") == 0);
 	/* How many jobs of pkg in jails run at once: set, said by the
 	 * jobs list, and refused outside 1 to 32. */
@@ -3627,8 +3627,8 @@ ATF_TC_BODY(telegram, tc)
 	for (i = 0; i < 150 && system("grep -q 'failed: certificate trust "
 	    "nosuch.0' tg.out") != 0; i++)
 		usleep(100000);
-	ATF_CHECK_MSG(system("grep -q '\"text\":\"Arcana: [0-9:]* here: job "
-	    "[0-9]* failed: certificate trust nosuch.0' tg.out") == 0,
+	ATF_CHECK_MSG(system("grep -q '❌ here · job [0-9]* failed.ncertificate "
+	    "trust nosuch.0.n⚠️ [^\"]*.n🕒 [0-9:]*\"' tg.out") == 0,
 	    "no message of the job");
 	/* A workflow's notify step: its text made for the host. */
 	http("POST", "/api/workflows", "{\"name\":\"bad\",\"steps\":[{\"id\":"

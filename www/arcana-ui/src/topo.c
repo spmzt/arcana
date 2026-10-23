@@ -3425,15 +3425,10 @@ map(struct html *h)
 		fibs_present(n);
 		for (f = 1, more = 0; f < 8; f++)
 			more += n[f] > 0;
-		for (f = 1; more > 0 && f < 8; f++)
-			if (n[f] > 0)
-				h_fmt(h, "<li class=\"key fib%d\" title=\"A link whose "
-				    "interface is in routing table %d\">FIB %d</li>", f > 6 ?
-				    6 : f, f, f);
 		if (more > 0)
 			h_raw(h, "<li class=\"key outer\" title=\"A tunnel whose outer "
-			    "packets go by another table than its own: ticks across it in "
-			    "that table's colour\">outer table</li>");
+			    "packets go by another table than its own: ticks across it, in "
+			    "the colour its ends' labels give that table\">outer table</li>");
 	}
 	h_raw(h, "</ul></div>");
 }
