@@ -1342,9 +1342,13 @@ EOS
 	atf_check -o not-match:'^defaultrouter=' -o match:'^defaultrouter_fib3=' cat rc.conf
 	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 10.66.0.0/16 10.0.0.1
 	atf_check -o match:'^route_arc_10_66_0_0_16="10.66.0.0/16 10.0.0.1"$' cat rc.conf
-	printf 'static_routes="arc_default_fib2"\nroute_arc_default_fib2="default 10.0.0.252 -fib 2"\n' >> rc.conf
+	# A default route kept by a name before: in the list as sysrc +=
+	# leaves it, one assignment.
+	sed -i '' -e 's/^static_routes="\(.*\)"$/static_routes="\1 arc_default_fib2"/' rc.conf
+	printf 'route_arc_default_fib2="default 10.0.0.252 -fib 2"\n' >> rc.conf
 	atf_check -o ignore "$JGC" -p -F 2 -c "$SOCK" route add default 10.0.0.252
-	atf_check -o match:'^defaultrouter_fib2="10.0.0.252"$' -o not-match:'arc_default_fib2' cat rc.conf
+	atf_check -o match:'^defaultrouter_fib2="10.0.0.252"$' -o not-match:'arc_default_fib2' \
+	    -o match:'^static_routes="arc_10_80_0_0_16_fib3 arc_10_66_0_0_16"$' cat rc.conf
 
 	# The route to an address: the one taken, and those that cover it,
 	# each with the length of its prefix.
