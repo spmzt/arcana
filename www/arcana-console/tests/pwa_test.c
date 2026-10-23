@@ -6095,11 +6095,11 @@ part_netsect(void)
 	ATF_CHECK(js_true("!document.querySelector('select[data-input=topo-fib]') "
 	    "&& !document.querySelector('.map-legend li.key')"));
 	/* Drawn as a diagram: router glyphs in place of the boxes, straight
-	 * lines, the shared network a bar; and back. */
+	 * lines (a shared network of three or more would be a bar); and back. */
 	click_at("button[data-act=topo-stencil]");
 	wait_js("document.querySelector('svg.topo.stencil') && document."
-	    "querySelectorAll('svg.topo .tnode circle.glyph').length === 2 && "
-	    "document.querySelector('svg.topo .tseg.bar')", 5);
+	    "querySelectorAll('svg.topo .tnode circle.glyph').length >= 2 && "
+	    "!document.querySelector('svg.topo .tnode rect.box')", 5);
 	shot("8-network-diagram");
 	click_at("button[data-act=topo-stencil]");
 	wait_js("!document.querySelector('svg.topo.stencil') && document."
@@ -6427,6 +6427,10 @@ part_netsect(void)
 	    "document.querySelector('.map-panel .iflist').textContent."
 	    "includes('epair1b')", 10);
 	shot("8d-vnet-jail-node");
+	/* Shown whole first: the jail hangs under its host, maybe out of
+	 * view or under the legend after the drags above. */
+	run("document.querySelector('button[data-act=topo-fit]').click()");
+	usleep(500000);
 	/*
 	 * A real mouse over the jail's node, and then dragging it: it stays
 	 * where its transform attribute puts it, under the pointer.  A CSS
@@ -6855,6 +6859,64 @@ ATF_TC_CLEANUP(pwa_nettab, tc)
 	browser_stop();
 }
 
+/*
+ * The five-node lab of build/lab/mesh5-lab.sh (run as root first; the
+ * case is skipped without it): every node a server of the console by
+ * its unix socket, and the map drawn of them, as boxes, as a diagram,
+ * and with one routing table picked.  Pictures for the eye more than
+ * checks: the lab has several underlays, overlays and tables at once.
+ */
+static void
+part_mesh(void)
+{
+	char	script[512];
+	int	k;
+
+	if (access("/usr/jails/arcmesh1/tmp/s.sock", R_OK | W_OK) == -1)
+		atf_tc_skip("no five-node lab: run build/lab/mesh5-lab.sh up");
+	for (k = 1; k <= 5; k++) {
+		run("document.querySelector('button[data-act=add-server]')"
+		    ".click()");
+		wait_js("document.querySelector('form[data-form=add-server]')",
+		    5);
+		snprintf(script, sizeof(script), "const f = document."
+		    "querySelector('form[data-form=add-server]'); f.name.value "
+		    "= 'arcmesh%d'; f.uri.value = 'unix:/usr/jails/arcmesh%d/tmp/"
+		    "s.sock'; f.requestSubmit();", k, k);
+		run(script);
+		snprintf(script, sizeof(script), "document.querySelector('"
+		    ".hostbar[data-server=arcmesh%d]')", k);
+		wait_js(script, 20);
+	}
+	run("document.querySelector('li[data-act=select-network]').click()");
+	wait_js("document.querySelectorAll('svg.topo .tnode.up').length === 5",
+	    60);
+	wait_js("document.querySelectorAll('svg.topo .tlink.tunnel').length "
+	    ">= 10 && document.querySelector('select[data-input=topo-fib]')",
+	    30);
+	usleep(1500000);
+	click_at("button[data-act=topo-fit]");
+	usleep(500000);
+	shot("9-mesh-map");
+	click_at("button[data-act=topo-stencil]");
+	wait_js("document.querySelector('svg.topo.stencil') && document."
+	    "querySelectorAll('svg.topo .tuplink').length >= 5", 10);
+	usleep(2500000);	/* the forwarding sysctls read: routers */
+	click_at("button[data-act=topo-fit]");
+	usleep(500000);
+	shot("9-mesh-diagram");
+	run("const s = document.querySelector('select[data-input=topo-fib]');"
+	    " s.value = '1'; s.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("document.querySelector('svg.topo .tlink.dim')", 5);
+	usleep(500000);
+	shot("9-mesh-diagram-fib1");
+	click_at("button[data-act=topo-stencil]");
+	wait_js("!document.querySelector('svg.topo.stencil')", 5);
+	usleep(500000);
+	shot("9-mesh-map-fib1");
+}
+
 ATF_TC_WITH_CLEANUP(pwa_plugins);
 ATF_TC_HEAD(pwa_plugins, tc)
 {
@@ -6870,6 +6932,25 @@ ATF_TC_BODY(pwa_plugins, tc)
 	part_netsect();
 }
 ATF_TC_CLEANUP(pwa_plugins, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_mesh);
+ATF_TC_HEAD(pwa_mesh, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The five-node lab on the map: boxes, the diagram, a routing table picked (skipped without the lab)");
+	atf_tc_set_md_var(tc, "timeout", "300");
+}
+ATF_TC_BODY(pwa_mesh, tc)
+{
+
+	prologue(tc, 0);
+	part_mesh();
+}
+ATF_TC_CLEANUP(pwa_mesh, tc)
 {
 
 	browser_stop();
@@ -7639,6 +7720,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, pwa_hosts);
 	ATF_TP_ADD_TC(tp, pwa_nettab);
 	ATF_TP_ADD_TC(tp, pwa_plugins);
+	ATF_TP_ADD_TC(tp, pwa_mesh);
 	ATF_TP_ADD_TC(tp, pwa_storage);
 	ATF_TP_ADD_TC(tp, pwa_firewall);
 	ATF_TP_ADD_TC(tp, pwa_flows);

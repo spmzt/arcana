@@ -5191,8 +5191,11 @@ svg.topo.stencil .tpeer .name, svg.topo.stencil .tpeer .sub { text-anchor: middl
  * on a link in it, on the thin dashed line of a tunnel whose outer
  * packets go by another, on the key and on the panel's chips. */
 :root { --fib1: #ff9f43; --fib2: #4cd27a; --fib3: #c084fc; --fib4: #ff6b6b; --fib5: #38bdf8; --fib6: #facc15; }
-.tlink.fib1 .wire { stroke: var(--fib1); } .tlink.fib2 .wire { stroke: var(--fib2); } .tlink.fib3 .wire { stroke: var(--fib3); }
-.tlink.fib4 .wire { stroke: var(--fib4); } .tlink.fib5 .wire { stroke: var(--fib5); } .tlink.fib6 .wire { stroke: var(--fib6); }
+svg.topo .lbl tspan.fib { font-weight: 600; }
+svg.topo .lbl tspan.fib1 { fill: var(--fib1); } svg.topo .lbl tspan.fib2 { fill: var(--fib2); } svg.topo .lbl tspan.fib3 { fill: var(--fib3); }
+svg.topo .lbl tspan.fib4 { fill: var(--fib4); } svg.topo .lbl tspan.fib5 { fill: var(--fib5); } svg.topo .lbl tspan.fib6 { fill: var(--fib6); }
+.tlink.dim { opacity: .12; pointer-events: none; }
+.tlink.dim .lbl, .tlink.dim .rate { display: none; }
 .tlink .outer { fill: none; stroke: var(--dim); stroke-width: 2; stroke-dasharray: 5 7; opacity: .95; pointer-events: none; }
 .tlink.o1 .outer { stroke: var(--fib1); } .tlink.o2 .outer { stroke: var(--fib2); } .tlink.o3 .outer { stroke: var(--fib3); }
 .tlink.o4 .outer { stroke: var(--fib4); } .tlink.o5 .outer { stroke: var(--fib5); } .tlink.o6 .outer { stroke: var(--fib6); }
@@ -5204,3 +5207,18 @@ svg.topo.stencil .tpeer .name, svg.topo.stencil .tpeer .sub { text-anchor: middl
 .iflist li.dim { opacity: .45; }
 .map-tools label.fibsel { display: inline-flex; align-items: center; gap: .35rem; font-size: .78rem; color: var(--dim); margin-left: .4rem; }
 .map-tools label.fibsel select { font-size: .78rem; }
+svg.topo.stencil g.tbridge .sw { fill: none; stroke: var(--fg); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; opacity: 1; }
+svg.topo.stencil g.tbridge rect { fill: var(--bg-2); stroke: var(--blue, var(--cyan)); stroke-width: 1.8; }
+svg.topo.stencil .tseg.hub rect { fill: var(--bg-2); stroke: var(--blue); stroke-width: 1.8; }
+svg.topo.stencil .tseg.hub circle { fill: var(--blue); }
+svg.topo .tseg.dim, svg.topo g.tbridge.dim { opacity: .15; pointer-events: none; }
+svg.topo .underlay { fill: none; stroke: var(--dim); stroke-width: 1; stroke-dasharray: 2 5; opacity: .6; }
+svg.topo .tuplink .ulink { fill: none; stroke: var(--fg-2); stroke-width: 1.4; }
+svg.topo .tuplink .cloud { fill: var(--bg-2); stroke: var(--fg-2); stroke-width: 1.6; }
+svg.topo .tuplink .name { font-size: 10px; font-weight: 700; fill: var(--fg); text-anchor: middle; }
+svg.topo .tuplink .sub { font-size: 8.5px; fill: var(--dim); text-anchor: middle; }
+svg.topo.stencil .tpeer.ospf .glyph { fill: var(--bg-2); stroke: var(--amber); stroke-width: 1.8; stroke-dasharray: 4 3; }
+svg.topo.stencil .tpeer.ospf.down .glyph { stroke: var(--red); }
+svg.topo.stencil .tpeer.ospf .arrows { fill: none; stroke: var(--fg-2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg.topo.stencil .tpeer.session path { stroke-dasharray: 6 4; }
+svg.topo.stencil .tpeer.session.down path { stroke: var(--red); }
