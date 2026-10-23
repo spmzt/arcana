@@ -1255,6 +1255,79 @@ addToLibrary({
 		a.remove();
 		setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
 	},
+	/*
+	 * A drawing of the page saved as a PNG picture, as it is shown: a
+	 * copy of the SVG with every element's computed style written on
+	 * it (the page's classes and variables do not travel with it),
+	 * drawn twice its size on a canvas over the map's background.
+	 */
+	arc_svg_png__deps: ["$UTF8ToString"],
+	arc_svg_png: function (selp, namep) {
+		var svg = document.querySelector(UTF8ToString(selp)),
+		    name = UTF8ToString(namep), props = ["fill", "fill-opacity",
+		    "stroke", "stroke-width", "stroke-dasharray", "stroke-opacity",
+		    "stroke-linecap", "stroke-linejoin", "opacity", "font-family",
+		    "font-size", "font-weight", "text-anchor", "letter-spacing",
+		    "dominant-baseline", "visibility", "display"],
+		    clone, src, dst, i, cs, r, w, h, bg, el, img;
+
+		if (svg === null)
+			return;
+		clone = svg.cloneNode(true);
+		src = [svg].concat(Array.prototype.slice.call(
+		    svg.querySelectorAll("*")));
+		dst = [clone].concat(Array.prototype.slice.call(
+		    clone.querySelectorAll("*")));
+		for (i = 0; i < src.length && i < dst.length; i++) {
+			cs = getComputedStyle(src[i]);
+			dst[i].setAttribute("style", props.map(function (p) {
+				return (p + ":" + cs.getPropertyValue(p));
+			}).join(";"));
+		}
+		r = svg.getBoundingClientRect();
+		w = Math.max(1, Math.round(r.width * 2));
+		h = Math.max(1, Math.round(r.height * 2));
+		clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+		clone.setAttribute("width", w);
+		clone.setAttribute("height", h);
+		bg = "";
+		for (el = svg; el !== null && (bg === "" || bg === "transparent" ||
+		    bg === "rgba(0, 0, 0, 0)"); el = el.parentElement)
+			bg = getComputedStyle(el).backgroundColor;
+		img = new Image();
+		img.onload = function () {
+			var c = document.createElement("canvas"),
+			    x = c.getContext("2d");
+
+			c.width = w;
+			c.height = h;
+			x.fillStyle = bg || "#101418";
+			x.fillRect(0, 0, w, h);
+			x.drawImage(img, 0, 0, w, h);
+			c.toBlob(function (b) {
+				var url, a;
+
+				/* The last one, for whoever checks what was
+				 * saved. */
+				window.arcSaved = { name: name, type: "image/png",
+				    size: b.size, width: w, height: h };
+				url = URL.createObjectURL(b);
+				a = document.createElement("a");
+				a.href = url;
+				a.download = name;
+				document.body.appendChild(a);
+				a.click();
+				a.remove();
+				setTimeout(function () { URL.revokeObjectURL(url); },
+				    10000);
+			}, "image/png");
+		};
+		img.onerror = function () {
+			window.arcSaved = { name: name, error: true };
+		};
+		img.src = "data:image/svg+xml;charset=utf-8," +
+		    encodeURIComponent(new XMLSerializer().serializeToString(clone));
+	},
 	/* A file made of base64, saved: a capture's pcap. */
 	arc_save_b64__deps: ["$UTF8ToString"],
 	arc_save_b64: function (namep, typep, b64p) {

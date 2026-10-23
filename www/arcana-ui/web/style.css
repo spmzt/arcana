@@ -5182,10 +5182,10 @@ svg.topo.stencil .tnode .lines { fill: none; stroke: var(--fg-2); stroke-width: 
 svg.topo.stencil .tnode .name { text-anchor: middle; font-size: 12px; font-weight: 600; }
 svg.topo.stencil .tnode .sub { text-anchor: middle; }
 svg.topo.stencil .tseg.bar rect { fill: var(--blue); stroke: none; }
-svg.topo.stencil .tpeer .cloud { fill: var(--bg-2); stroke: var(--dim); stroke-width: 1.6; }
-svg.topo.stencil .tpeer.up .cloud { stroke: var(--fg-2); }
-svg.topo.stencil .tpeer rect { display: none; }
-svg.topo.stencil .tpeer .name, svg.topo.stencil .tpeer .sub { text-anchor: middle; }
+svg.topo .tpeer .cloud { fill: var(--bg-2); stroke: var(--dim); stroke-width: 1.6; }
+svg.topo .tpeer.up .cloud { stroke: var(--fg-2); }
+svg.topo .tpeer rect { display: none; }
+svg.topo .tpeer .name, svg.topo .tpeer .sub { text-anchor: middle; }
 
 /* The routing tables (FIBs) on the map: a colour each past the first,
  * on a link in it, on the thin dashed line of a tunnel whose outer
@@ -5212,10 +5212,19 @@ svg.topo.stencil g.tbridge rect { fill: var(--bg-2); stroke: var(--blue, var(--c
 svg.topo.stencil .tseg.hub rect { fill: var(--bg-2); stroke: var(--blue); stroke-width: 1.8; }
 svg.topo.stencil .tseg.hub circle { fill: var(--blue); }
 svg.topo .tseg.dim, svg.topo g.tbridge.dim { opacity: .15; pointer-events: none; }
-svg.topo.stencil .tpeer.ospf .glyph { fill: var(--bg-2); stroke: var(--amber); stroke-width: 1.8; stroke-dasharray: 4 3; }
-svg.topo.stencil .tpeer.ospf.down .glyph { stroke: var(--red); }
-svg.topo.stencil .tpeer.ospf .arrows { fill: none; stroke: var(--fg-2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-svg.topo.stencil .tpeer.session path { stroke-dasharray: 6 4; }
-svg.topo.stencil .tpeer.session.down path { stroke: var(--red); }
+svg.topo .tpeer.ospf .glyph { fill: var(--bg-2); stroke: var(--amber); stroke-width: 1.8; stroke-dasharray: 4 3; }
+svg.topo .tpeer.ospf.down .glyph { stroke: var(--red); }
+svg.topo .tpeer.ospf .arrows { fill: none; stroke: var(--fg-2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg.topo .tpeer.session path { stroke-dasharray: 6 4; }
+svg.topo .tpeer.session.down path { stroke: var(--red); }
 svg.topo.stencil g.tbridge path.up { opacity: 1; stroke-width: 1.6; }
 svg.topo.stencil g.tbridge .name { text-anchor: middle; }
+/* A BGP session's line to its AS: under the hand, not in its way. */
+svg.topo .tpeer.session path { pointer-events: none; }
+/* The neighbours' glyphs, in both views: the old line rule does not
+ * dash or dim their outlines. */
+svg.topo g.tpeer.bgp .cloud { fill: var(--bg-2); stroke: var(--magenta); stroke-width: 1.6; stroke-dasharray: none; opacity: 1; }
+svg.topo g.tpeer.bgp.down .cloud { stroke-dasharray: 4 3; opacity: .7; }
+svg.topo g.tpeer.ospf path.arrows { stroke: var(--fg-2); stroke-dasharray: none; opacity: 1; }
+svg.topo g.tpeer:hover .cloud, svg.topo g.tpeer:hover .glyph { filter: drop-shadow(0 0 6px var(--magenta)); }
+svg.topo g.tpeer.ospf:hover .glyph { filter: drop-shadow(0 0 6px var(--amber)); }

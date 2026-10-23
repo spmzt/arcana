@@ -177,6 +177,7 @@ static struct tlink	links[TOPO_LINKS];
 static int		nlinks;
 static struct seg	segs[TOPO_SEGS];
 static bool	seg_same(const struct seg *, const struct seg *);
+static void	bgp_label(char *, size_t, const char *, const char *);
 static int		nsegs;
 
 static struct {
@@ -632,7 +633,8 @@ as_place(int lead, double *xp, double *yp)
 	int		 k, n;
 
 	peer_key(key, sizeof(key), &exts[lead]);
-	if ((pp = peer_kept(key, false)) != NULL && (t = thost(tn[
+	if ((pp = peer_kept(key, false)) != NULL && (pp->dx != 0 || pp->dy != 0)
+	    && (t = thost(tn[
 	    exts[lead].host].key, false)) != NULL) {
 		*xp = t->x + pp->dx;
 		*yp = t->y + pp->dy;
@@ -651,6 +653,48 @@ as_place(int lead, double *xp, double *yp)
 	}
 	*xp = n > 0 ? sx / n : 0;
 	*yp = n > 0 ? sy / n : 0;
+	if (n < 2)
+		return;
+	/*
+	 * Several hosts' neighbour: the mean of their places can fall in
+	 * the middle of the fleet, over its links.  Out past the hosts'
+	 * box then, just beyond it, the way the mean leans, or by its turn
+	 * when it leans nowhere.
+	 */
+	{
+		double	x0, y0, x1, y1, cx, cy, a, tx, ty;
+		int	m, nth;
+
+		x0 = y0 = x1 = y1 = 0;
+		for (m = 0, k = 0; k < nhosts; k++) {
+			if (!hosts[k].placed || node_index(hosts[k].sid) == -1)
+				continue;
+			if (m == 0 || hosts[k].x < x0)
+				x0 = hosts[k].x;
+			if (m == 0 || hosts[k].x > x1)
+				x1 = hosts[k].x;
+			if (m == 0 || hosts[k].y < y0)
+				y0 = hosts[k].y;
+			if (m == 0 || hosts[k].y > y1)
+				y1 = hosts[k].y;
+			m++;
+		}
+		if (*xp < x0 - 120 || *xp > x1 + 120 || *yp < y0 - 80 ||
+		    *yp > y1 + 80)
+			return;
+		cx = (x0 + x1) / 2;
+		cy = (y0 + y1) / 2;
+		for (nth = 0, k = 0; k < lead; k++)
+			nth += !exts[k].ospf && as_leader(k) == k;
+		a = hypot(*xp - cx, *yp - cy) > 40 ? atan2(*yp - cy, *xp - cx) :
+		    -M_PI / 2 + nth * 0.7;
+		tx = fabs(cos(a)) > 1e-3 ? ((x1 - x0) / 2 + 170) / fabs(cos(a)) :
+		    1e9;
+		ty = fabs(sin(a)) > 1e-3 ? ((y1 - y0) / 2 + 110) / fabs(sin(a)) :
+		    1e9;
+		*xp = cx + (tx < ty ? tx : ty) * cos(a);
+		*yp = cy + (tx < ty ? tx : ty) * sin(a);
+	}
 }
 
 /* Hosts not placed yet go on a circle, in the order of the tree. */
@@ -1782,16 +1826,10 @@ links_build(void)
 							    sizeof(l->label),
 							    "OSPF");
 						else
-							snprintf(l->label,
-							    sizeof(l->label),
-							    "BGP AS%s ⇄ AS%s",
-							    jstr(o, "local-as") !=
-							    NULL ? jstr(o,
-							    "local-as") : "?",
-							    jstr(o,
-							    "neighbor-as") !=
-							    NULL ? jstr(o,
-							    "neighbor-as") : "?");
+							bgp_label(l->label,
+							    sizeof(l->label), jstr(o,
+							    "local-as"), jstr(o,
+							    "neighbor-as"));
 					}
 					continue;
 				}
@@ -2065,22 +2103,72 @@ bend_of(int i)
 	return ((n % 2 == 1 ? 1 : -1) * 34.0 * ((n + 1) / 2));
 }
 
+/* A BGP session's name: "iBGP AS65000" within one AS, "eBGP AS65000 ⇄
+ * AS65001" across two. */
+static void
+bgp_label(char *buf, size_t len, const char *las, const char *nas)
+{
+
+	if (las != NULL && nas != NULL && strcmp(las, nas) == 0)
+		snprintf(buf, len, "iBGP AS%s", las);
+	else
+		snprintf(buf, len, "eBGP AS%s ⇄ AS%s", las != NULL ? las : "?",
+		    nas != NULL ? nas : "?");
+}
+
+/* A link between routing neighbours rather than a wire: BGP, OSPF. */
+static bool
+neighbourship(int kind)
+{
+
+	return (kind == LK_BGP || kind == LK_OSPF);
+}
+
+/* The diagram's curve for the i-th neighbourship of a pair: the
+ * straight links keep the middle, these bow out one side then the
+ * other, further each time. */
+static double
+neighbour_bend(int i)
+{
+	int	k, n;
+
+	n = 0;
+	for (k = 0; k < i; k++)
+		if (neighbourship(links[k].kind) && ((links[k].a == links[i].a
+		    && links[k].b == links[i].b) || (links[k].a == links[i].b &&
+		    links[k].b == links[i].a)))
+			n++;
+	return ((n % 2 == 0 ? 1 : -1) * (46.0 + 30.0 * (n / 2)) *
+	    (links[i].a > links[i].b ? -1 : 1));
+}
+
 /* The i-th link of a pair drawn straight, as the diagram draws them:
  * shifted sideways so that those of the pair lie side by side. */
 static void
 para_shift(int i, double *x1, double *y1, double *x2, double *y2)
 {
-	double	dx, dy, len, off;
-	int	k, n;
+	double	dx, dy, len, off, gap;
+	int	k, n, of;
 
-	n = 0;
-	for (k = 0; k < i; k++)
-		if ((links[k].a == links[i].a && links[k].b == links[i].b) ||
-		    (links[k].a == links[i].b && links[k].b == links[i].a))
+	/* Its place among the pair's straight links, and how many there
+	 * are: spread at most 20 either side, inside the router's glyph,
+	 * so that each meets it however many there are. */
+	n = of = 0;
+	for (k = 0; k < nlinks; k++) {
+		if (neighbourship(links[k].kind) || !((links[k].a == links[i].a
+		    && links[k].b == links[i].b) || (links[k].a == links[i].b &&
+		    links[k].b == links[i].a)))
+			continue;
+		if (k < i)
 			n++;
-	if (n == 0)
+		of++;
+	}
+	if (of < 2)
 		return;
-	off = (n % 2 == 1 ? 1 : -1) * 14.0 * ((n + 1) / 2);
+	gap = 40.0 / (of - 1);
+	if (gap > 14)
+		gap = 14;
+	off = (n - (of - 1) / 2.0) * gap;
 	if (links[i].a > links[i].b)
 		off = -off;
 	dx = *x2 - *x1;
@@ -2219,7 +2307,9 @@ map_links(struct html *h)
 		 * With one table shown, the links outside it are dimmed, not
 		 * gone: the map keeps its shape. */
 		outer = ta >= 0 && ta != fa ? ta : tb >= 0 && tb != fb ? tb : -1;
-		if (tp.stencil) {
+		if (tp.stencil && neighbourship(l->kind) && l->b >= 0)
+			bend = neighbour_bend(i);
+		else if (tp.stencil) {
 			bend = 0;
 			para_shift(i, &x1, &y1, &x2, &y2);
 		} else
@@ -2417,7 +2507,7 @@ map_nodes(struct html *h)
 
 		if ((t = thost(tn[e->host].key, false)) == NULL)
 			continue;
-		if (tp.stencil && !e->ospf) {
+		if (!e->ospf) {
 			char	key[160];
 			int	lead, ns, k;
 
@@ -2439,14 +2529,15 @@ map_nodes(struct html *h)
 			for (ns = 0, k = 0; k < nexts; k++)
 				ns += !exts[k].ospf && strcmp(exts[k].label, e->label)
 				    == 0;
-			/* The leader: the cloud, dragged as one. */
+			/* The leader: the AS, a cloud, dragged as one. */
 			h_fmt(h, "<g class=\"tpeer bgp %s\" data-drag=\"topo-peer\"",
 			    e->up ? "up" : "down");
 			h_attr(h, "data-arg", key);
-			h_fmt(h, "><path class=\"cloud\" transform=\"translate(%.1f,%.1f)"
-			    "\" d=\"M-44 10 q-16 0 -16 -14 q0 -14 14 -14 q4 -14 20 -12 q10 "
-			    "-12 24 -4 q16 -6 24 8 q14 2 12 16 q-2 12 -16 12 z\"/><text "
-			    "class=\"name\" x=\"%.1f\" y=\"%.1f\">", ex, ey, ex, ey - 2);
+				h_fmt(h, "><path class=\"cloud\" transform=\"translate("
+				    "%.1f,%.1f)\" d=\"M-44 10 q-16 0 -16 -14 q0 -14 14 -14 q4 "
+				    "-14 20 -12 q10 -12 24 -4 q16 -6 24 8 q14 2 12 16 q-2 12 -16 "
+				    "12 z\"/><text class=\"name\" x=\"%.1f\" y=\"%.1f\">", ex,
+				    ey, ex, ey - 2);
 			h_fit(h, e->label, 16);
 			h_fmt(h, "</text><text class=\"sub\" x=\"%.1f\" y=\"%.1f\">", ex,
 			    ey + 10);
@@ -2477,28 +2568,15 @@ map_nodes(struct html *h)
 			    "up" : "down");
 			h_attr(h, "data-arg", key);
 		}
-		if (tp.stencil && e->ospf)
-			/* An OSPF neighbour: a router outside the console, dotted. */
+		/* An OSPF neighbour: a router outside the console, dotted. */
 			h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><circle class=\"glyph\" "
 			    "cx=\"%.1f\" cy=\"%.1f\" r=\"22\"/><path class=\"arrows\" "
 			    "transform=\"translate(%.1f,%.1f)\" d=\"M-14 -6h24M3 -11l6 5-6 5"
 			    "M14 6h-24M-3 11l-6-5 6-5\"/><text class=\"name\" x=\"%.1f\" "
 			    "y=\"%.1f\">", t->x, t->y, ex, ey, ex, ey, ex, ey, ex, ey + 36);
-		else if (tp.stencil)
-			/* A BGP neighbour: a cloud, the network beyond this console. */
-			h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><path class=\"cloud\" "
-			    "transform=\"translate(%.1f,%.1f)\" d=\"M-44 10 q-16 0 -16 -14 "
-			    "q0 -14 14 -14 q4 -14 20 -12 q10 -12 24 -4 q16 -6 24 8 q14 2 "
-			    "12 16 q-2 12 -16 12 z\"/><text class=\"name\" x=\"%.1f\" "
-			    "y=\"%.1f\">", t->x, t->y, ex, ey, ex, ey, ex, ey - 2);
-		else
-			h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><rect x=\"%.1f\" "
-			    "y=\"%.1f\" width=\"112\" height=\"34\" rx=\"17\"/><text "
-			    "class=\"name\" x=\"%.1f\" y=\"%.1f\">", t->x, t->y, ex, ey,
-			    ex - 56, ey - 17, ex, ey - 2);
 		h_fit(h, e->label, 16);
 		h_fmt(h, "</text><text class=\"sub\" x=\"%.1f\" y=\"%.1f\">", ex,
-		    tp.stencil && e->ospf ? ey + 48 : ey + 10);
+		    ey + 48);
 		h_fit(h, e->sub, 20);
 		h_raw(h, "</text><title>");
 		h_txt(h, e->label);
@@ -2741,6 +2819,9 @@ labels_quiet(int kind)
 
 	if (tp.labels[kind] != 0)
 		return (tp.labels[kind] == 2);
+	/* A jail's line says what its node already shows. */
+	if (kind == LK_VNET)
+		return (true);
 	for (i = n = 0; i < nlinks; i++)
 		if (links[i].kind == kind)
 			n++;
@@ -2814,6 +2895,8 @@ map(struct html *h)
 	    "title=\"Drawn as a network diagram: routers, switches, clouds and "
 	    "straight lines, as an engineer draws one\">Diagram</button>",
 	    tp.stencil ? " on" : "");
+	h_raw(h, "<button class=\"ghost small\" data-act=\"topo-png\" title=\"The "
+	    "map as it is shown, saved as a PNG picture\">PNG</button>");
 	{
 		int	f, n[8], more;
 
@@ -4791,7 +4874,11 @@ topo_action(const char *act, const char *arg, const char *value)
 
 				peer_key(key, sizeof(key), &exts[i]);
 				if (strcmp(key, arg) == 0) {
-					peer_place(&exts[i], t, &cx, &cy);
+					/* A BGP neighbour is drawn where its AS is. */
+					if (exts[i].ospf)
+						peer_place(&exts[i], t, &cx, &cy);
+					else
+						as_place(as_leader(i), &cx, &cy);
 					pp->dx = cx - t->x;
 					pp->dy = cy - t->y;
 				}
@@ -4857,6 +4944,10 @@ topo_action(const char *act, const char *arg, const char *value)
 		node_open(n, NET_BRIDGES);
 	} else if (strcmp(act, "topo-peers") == 0) {
 		tp.nopeers = !tp.nopeers;
+	} else if (strcmp(act, "topo-png") == 0) {
+		arc_svg_png("svg.topo", tp.stencil ? "network-diagram.png" :
+		    "network-map.png");
+		return (true);		/* nothing to draw again */
 	} else if (strcmp(act, "topo-stencil") == 0) {
 		tp.stencil = !tp.stencil;
 	} else if (strcmp(act, "topo-arrange") == 0) {

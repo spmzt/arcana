@@ -6160,11 +6160,11 @@ part_netsect(void)
 		shot("8b-bent");
 		/* A neighbour outside, dragged elsewhere, stays there. */
 		x0 = js_num("(r => r.x + r.width / 2)(document.querySelector("
-		    "'svg.topo g.tpeer rect').getBoundingClientRect())");
+		    "'svg.topo g.tpeer[data-drag] :is(.cloud, .glyph)').getBoundingClientRect())");
 		y0 = js_num("(r => r.y + r.height / 2)(document.querySelector("
-		    "'svg.topo g.tpeer rect').getBoundingClientRect())");
-		run("window.p0 = document.querySelector('svg.topo g.tpeer rect')"
-		    ".getAttribute('x')");
+		    "'svg.topo g.tpeer[data-drag] :is(.cloud, .glyph)').getBoundingClientRect())");
+		run("window.p0 = document.querySelector('svg.topo g.tpeer[data-drag] :is(.cloud, .glyph)')"
+		    ".getBoundingClientRect().x");
 		mouse("pointerMove", x0, y0);
 		mouse("pointerDown", 0, 0);
 		for (step = 1; step <= 6; step++) {
@@ -6172,8 +6172,8 @@ part_netsect(void)
 			usleep(150000);
 		}
 		mouse("pointerUp", 0, 0);
-		wait_js("document.querySelector('svg.topo g.tpeer rect')."
-		    "getAttribute('x') !== window.p0 && (localStorage.getItem("
+		wait_js("document.querySelector('svg.topo g.tpeer[data-drag] :is(.cloud, .glyph)')."
+		    "getBoundingClientRect().x !== window.p0 && (localStorage.getItem("
 		    "'arc_topo_peers') || '').length > 0", 5);
 		/* Taken by where it was held: it does not jump to the
 		 * pointer, it moves with it. */
@@ -6181,10 +6181,10 @@ part_netsect(void)
 			double	cx, cy;
 
 			cx = js_num("(r => r.x + r.width / 2)(document."
-			    "querySelector('svg.topo g.tpeer rect')."
+			    "querySelector('svg.topo g.tpeer[data-drag] :is(.cloud, .glyph)')."
 			    "getBoundingClientRect())");
 			cy = js_num("(r => r.y + r.height / 2)(document."
-			    "querySelector('svg.topo g.tpeer rect')."
+			    "querySelector('svg.topo g.tpeer[data-drag] :is(.cloud, .glyph)')."
 			    "getBoundingClientRect())");
 			ATF_CHECK_MSG(fabs(cx - (x0 - 60)) < 6 && fabs(cy -
 			    (y0 + 24)) < 6, "the neighbour is at %.0f,%.0f and "
@@ -6894,6 +6894,14 @@ part_mesh(void)
 	wait_js("document.querySelectorAll('svg.topo .tlink.tunnel').length "
 	    ">= 10 && document.querySelector('select[data-input=topo-fib]')",
 	    30);
+	/* And the neighbours: an AS outside, OSPF outside, iBGP and OSPF
+	 * between hosts. */
+	wait_js("document.querySelector('svg.topo g.tpeer.bgp .cloud') && "
+	    "document.querySelector('svg.topo g.tpeer.ospf circle.glyph') && "
+	    "document.querySelector('svg.topo .tlink.bgp') && document."
+	    "querySelector('svg.topo .tlink.ospf')", 60);
+	ATF_CHECK(js_true("[...document.querySelectorAll('svg.topo .tlink.bgp "
+	    ".lbl')].some(t => t.textContent.startsWith('iBGP AS64512'))"));
 	usleep(1500000);
 	click_at("button[data-act=topo-fit]");
 	usleep(500000);
@@ -6906,6 +6914,12 @@ part_mesh(void)
 	click_at("button[data-act=topo-fit]");
 	usleep(500000);
 	shot("9-mesh-diagram");
+	/* Saved as a PNG picture: twice the size shown. */
+	run("window.arcSaved = null;");
+	click_at("button[data-act=topo-png]");
+	wait_js("window.arcSaved && window.arcSaved.type === 'image/png' && "
+	    "window.arcSaved.size > 10000 && window.arcSaved.name === "
+	    "'network-diagram.png'", 10);
 	/* A close look at a switch and the router it hangs on. */
 	run("const g = document.querySelector('svg.topo.stencil g.tbridge rect')"
 	    ".getBBox(); document.querySelector('svg.topo').setAttribute("
