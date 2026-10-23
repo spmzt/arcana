@@ -2364,126 +2364,6 @@ seg_same(const struct seg *a, const struct seg *b)
 	return (true);
 }
 
-/* The interface of a host holding an address, or NULL. */
-static const ucl_object_t *
-if_holding(const struct thost *t, const char *addr)
-{
-	const ucl_object_t	*o, *a;
-	ucl_object_iter_t	 it, ait;
-
-	it = NULL;
-	while ((o = ucl_object_iterate(jget(t->ifs, "interfaces"), &it, true))
-	    != NULL) {
-		ait = NULL;
-		while ((a = ucl_object_iterate(jget(o, "addresses"), &ait, true))
-		    != NULL)
-			if (addr_same(jstr(a, "address"), addr))
-				return (o);
-	}
-	return (NULL);
-}
-
-/*
- * The diagram's underlays: on each host, the interfaces its tunnels'
- * outer packets leave by (the one holding a tunnel's local address),
- * each a cloud of its own beside the host, and the clouds joined to
- * each other in a full mesh: the internet, or whatever carries them.
- */
-struct uplink {
-	int	node;
-	char	ifn[16];
-	char	sub[48];
-	double	x, y;
-};
-
-static void
-uplinks_draw(struct html *h)
-{
-	static struct uplink	 up[MAX_NODES * 4];
-	const ucl_object_t	*o, *u;
-	ucl_object_iter_t	 it;
-	struct thost		*t;
-	double			 cx, cy, ang, d;
-	int			 i, k, m, nu, of;
-
-	cx = cy = 0;
-	for (m = 0, k = 0; k < nhosts; k++)
-		if (hosts[k].placed && node_index(hosts[k].sid) != -1) {
-			cx += hosts[k].x;
-			cy += hosts[k].y;
-			m++;
-		}
-	cx = m > 0 ? cx / m : 0;
-	cy = m > 0 ? cy / m : 0;
-	nu = 0;
-	for (i = 0; i < ntn; i++) {
-		if ((t = thost(tn[i].key, false)) == NULL || !t->placed)
-			continue;
-		if (!t->out_set) {
-			t->out_a = fabs(t->x - cx) + fabs(t->y - cy) < 1 ? -M_PI /
-			    2 : atan2(t->y - cy, t->x - cx);
-			t->out_set = true;
-		}
-		of = 0;
-		it = NULL;
-		while ((o = ucl_object_iterate(jget(t->ifs, "interfaces"), &it,
-		    true)) != NULL && nu < (int)(sizeof(up) / sizeof(up[0]))) {
-			if (jstr(o, "tunnel.local") == NULL || (u = if_holding(t,
-			    jstr(o, "tunnel.local"))) == NULL || jstr(u, "name") ==
-			    NULL)
-				continue;
-			for (k = 0; k < nu; k++)
-				if (up[k].node == i && strcmp(up[k].ifn, jstr(u,
-				    "name")) == 0)
-					break;
-			if (k < nu)
-				continue;
-			up[nu].node = i;
-			snprintf(up[nu].ifn, sizeof(up[nu].ifn), "%s", jstr(u,
-			    "name"));
-			snprintf(up[nu].sub, sizeof(up[nu].sub), "%s", jstr(o,
-			    "tunnel.local"));
-			/* Beside the host, across the way out: first one
-			 * side, then the other, then further. */
-			ang = t->out_a + (of % 2 == 0 ? 1 : -1) * M_PI / 2;
-			d = 150 + 70 * (of / 2);
-			up[nu].x = t->x + d * 1.2 * cos(ang);
-			up[nu].y = t->y + d * 0.8 * sin(ang);
-			of++;
-			nu++;
-		}
-	}
-	/* The mesh first, under everything. */
-	for (i = 0; i < nu; i++)
-		for (k = i + 1; k < nu; k++)
-			if (up[i].node != up[k].node)
-				h_fmt(h, "<path class=\"underlay\" d=\"M%.1f %.1f "
-				    "L%.1f %.1f\"/>", up[i].x, up[i].y, up[k].x,
-				    up[k].y);
-	for (i = 0; i < nu; i++) {
-		if ((t = thost(tn[up[i].node].key, false)) == NULL)
-			continue;
-		h_fmt(h, "<g class=\"tuplink\"><path class=\"ulink\" d=\"M%.1f %.1f "
-		    "L%.1f %.1f\"/><path class=\"cloud\" transform=\"translate("
-		    "%.1f,%.1f)\" d=\"M-44 10 q-16 0 -16 -14 q0 -14 14 -14 q4 -14 "
-		    "20 -12 q10 -12 24 -4 q16 -6 24 8 q14 2 12 16 q-2 12 -16 12 z"
-		    "\"/><text class=\"name\" x=\"%.1f\" y=\"%.1f\">", t->x, t->y,
-		    up[i].x, up[i].y, up[i].x, up[i].y, up[i].x, up[i].y - 2);
-		h_fit(h, up[i].ifn, 14);
-		h_fmt(h, "</text><text class=\"sub\" x=\"%.1f\" y=\"%.1f\">",
-		    up[i].x, up[i].y + 10);
-		h_fit(h, up[i].sub, 20);
-		h_raw(h, "</text><title>");
-		h_txt(h, up[i].ifn);
-		h_raw(h, " on ");
-		h_txt(h, tn[up[i].node].name);
-		h_raw(h, ": an underlay, the tunnels' outer packets leave by it "
-		    "from ");
-		h_txt(h, up[i].sub);
-		h_raw(h, "</title></g>");
-	}
-}
-
 static void
 map_nodes(struct html *h)
 {
@@ -2528,8 +2408,6 @@ map_nodes(struct html *h)
 		}
 		h_raw(h, "</g>");
 	}
-	if (tp.stencil)
-		uplinks_draw(h);
 	/* The routing neighbours outside, fanned out away from the middle. */
 	for (i = 0; !tp.nopeers && i < nexts; i++) {
 		if (tp.hide[exts[i].ospf ? LK_OSPF : LK_BGP])

@@ -6900,7 +6900,8 @@ part_mesh(void)
 	shot("9-mesh-map");
 	click_at("button[data-act=topo-stencil]");
 	wait_js("document.querySelector('svg.topo.stencil') && document."
-	    "querySelectorAll('svg.topo .tuplink').length >= 5", 10);
+	    "querySelectorAll('svg.topo .tnode circle.glyph').length >= 4 && "
+	    "!document.querySelector('svg.topo .tuplink')", 10);
 	usleep(2500000);	/* the forwarding sysctls read: routers */
 	click_at("button[data-act=topo-fit]");
 	usleep(500000);
