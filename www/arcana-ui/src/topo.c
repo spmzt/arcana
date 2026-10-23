@@ -133,6 +133,9 @@ struct tlink {
 	double	rate;			/* bytes a second, both ways */
 	bool	up;
 	int	more;			/* networks shared besides the one named */
+	bool	ospf_in;		/* an OSPF adjacency runs over it */
+	bool	ospf_in_up;
+	bool	ospf_stray;		/* OSPF: an adjacency no link carries */
 };
 
 /* A network more than two hosts are in: a node of its own. */
@@ -1731,6 +1734,66 @@ link_same(int a, int b, const char *ifa, const char *ifb)
 }
 
 /* The links, from the interfaces every host has now. */
+/*
+ * OSPF over a link drawn already: an adjacency names its interface, and
+ * the two hosts' tunnel, point to point link or network on it carries
+ * it, drawn inside it.  A pair's OSPF link of its own is drawn only for
+ * an adjacency no such link carries.
+ */
+static void
+ospf_carriers(void)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	struct tlink		*l, *c;
+	const char		*ifn, *addr, *st;
+	int			 i, k, m, s, sg, peer;
+	bool			 up;
+
+	for (i = 0; i < nhosts; i++) {
+		if (hosts[i].bird == NULL || (s = node_index(hosts[i].sid)) ==
+		    -1)
+			continue;
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(hosts[i].bird, "ospf"), &it,
+		    true)) != NULL) {
+			addr = jstr(o, "address");
+			ifn = jstr(o, "interface");
+			if (addr == NULL || (peer = owner(addr, NULL, 0)) == -1 ||
+			    peer == s)
+				continue;
+			st = jstr(o, "state") != NULL ? jstr(o, "state") : "";
+			up = strncmp(st, "Full", 4) == 0;
+			c = NULL;
+			for (k = 0; ifn != NULL && c == NULL && k < nlinks; k++) {
+				l = &links[k];
+				if (l->kind > LK_LAN)
+					continue;
+				if (l->a == s && strcmp(l->ifa, ifn) == 0) {
+					if (l->b == peer)
+						c = l;
+					else if (l->b < 0 && (sg = -l->b - 1) < nsegs)
+						for (m = 0; m < segs[sg].n; m++)
+							if (segs[sg].member[m] == peer)
+								c = l;
+				} else if (l->b == s && l->a == peer &&
+				    strcmp(l->ifb, ifn) == 0)
+					c = l;
+			}
+			if (c != NULL) {
+				c->ospf_in = true;
+				c->ospf_in_up = c->ospf_in_up || up;
+				continue;
+			}
+			for (k = 0; k < nlinks; k++)
+				if (links[k].kind == LK_OSPF && ((links[k].a == s &&
+				    links[k].b == peer) || (links[k].a == peer &&
+				    links[k].b == s)))
+					links[k].ospf_stray = true;
+		}
+	}
+}
+
 static void
 links_build(void)
 {
@@ -2056,6 +2119,7 @@ links_build(void)
 			    "%s", tn[i].jail, tn[node_host(i)].name);
 		}
 	}
+	ospf_carriers();
 	for (i = 0; i < nlinks; i++) {
 		l = &links[i];
 		l->rate = rate_now(thost(tn[l->a].key, false), l->ifa);
@@ -2444,6 +2508,8 @@ map_links(struct html *h)
 		l = &links[i];
 		if (node_lone(l->a) || node_lone(l->b))
 			continue;
+		if (l->kind == LK_OSPF && !l->ospf_stray)
+			continue;
 		if (tp.hide[l->kind] || !place(l->a, &x1, &y1) || !place(l->b,
 		    &x2, &y2))
 			continue;
@@ -2478,8 +2544,10 @@ map_links(struct html *h)
 		    w);
 		curve(h, x1, y1, x2, y2, bend, 0.5, &mx, &my);
 		h_raw(h, "\"/>");
-		if (outer >= 0) {
-			h_raw(h, "<path class=\"outer\" d=\"");
+		/* OSPF over it: a dotted line inside it. */
+		if (l->ospf_in && !tp.hide[LK_OSPF]) {
+			h_fmt(h, "<path class=\"ospfin%s\" d=\"", l->ospf_in_up ? "" :
+			    " down");
 			curve(h, x1, y1, x2, y2, bend, 0.5, NULL, NULL);
 			h_raw(h, "\"/>");
 		}
@@ -2495,6 +2563,10 @@ map_links(struct html *h)
 		curve(h, x1, y1, x2, y2, bend, 0.5, NULL, NULL);
 		h_raw(h, "\"><title>");
 		h_txt(h, l->label);
+		if (l->ospf_in)
+			h_raw(h, " · OSPF over it");
+		if (outer >= 0)
+			h_fmt(h, " · its outer packets by FIB %d", outer);
 		h_raw(h, "</title></path>");
 		if ((labels_quiet(l->kind) && strcmp(tp.sel_link, l->key) != 0) ||
 		    !link_in_fib(l, tp.fib))
@@ -3137,10 +3209,6 @@ map(struct html *h)
 				h_fmt(h, "<li class=\"key fib%d\" title=\"A link whose "
 				    "interface is in routing table %d\">FIB %d</li>", f > 6 ?
 				    6 : f, f, f);
-		if (more > 0)
-			h_raw(h, "<li class=\"key outer\" title=\"A tunnel whose outer "
-			    "packets go by another table than its own: the dashed line "
-			    "in that table's colour\">outer path</li>");
 	}
 	h_raw(h, "</ul></div>");
 }

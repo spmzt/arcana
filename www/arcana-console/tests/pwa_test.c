@@ -6916,7 +6916,10 @@ part_mesh(void)
 	wait_js("document.querySelector('svg.topo g.tpeer.bgp .cloud') && "
 	    "document.querySelector('svg.topo g.tpeer.ospf circle.glyph') && "
 	    "document.querySelector('svg.topo .tlink.bgp') && document."
-	    "querySelector('svg.topo .tlink.ospf')", 60);
+	    "querySelector('svg.topo .tlink.lan .ospfin')", 60);
+	/* OSPF over the shared network is drawn inside its links, not as a
+	 * link of its own. */
+	ATF_CHECK(js_true("!document.querySelector('svg.topo .tlink.ospf')"));
 	ATF_CHECK(js_true("[...document.querySelectorAll('svg.topo .tlink.bgp .lbl, svg.topo "
 	    ".tlabel.bgp .lbl')].some(t => t.textContent.startsWith('iBGP AS64512'))"));
 	usleep(1500000);
