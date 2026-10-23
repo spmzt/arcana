@@ -93,8 +93,7 @@ struct thost {
  * A routing neighbour that is not a host of this console: drawn beside
  * the host that speaks to it.
  */
-#define	EXT_MAX		160
-#define	EXT_PER_HOST	8
+#define	EXT_MAX		512
 struct ext {
 	int	host;			/* the server it is a neighbour of */
 	bool	ospf;			/* or BGP */
@@ -585,7 +584,7 @@ peer_key(char *buf, size_t len, const struct ext *e)
 static void
 peer_place(const struct ext *e, struct thost *t, double *exp, double *eyp)
 {
-	double	cx, cy, a;
+	double	cx, cy, a, step;
 	int	m, k;
 
 	cx = cy = 0;
@@ -602,9 +601,10 @@ peer_place(const struct ext *e, struct thost *t, double *exp, double *eyp)
 		    atan2(t->y - cy, t->x - cx);
 		t->out_set = true;
 	}
-	a = t->out_a + (e->slot - (e->of - 1) / 2.0) * 0.36;
-	*exp = t->x + 185 * (e->slot % 2 == 1 ? 1.5 : 1.0) * cos(a);
-	*eyp = t->y + 125 * (e->slot % 2 == 1 ? 1.5 : 1.0) * sin(a);
+	step = e->of > 1 && 2.6 / (e->of - 1) < 0.36 ? 2.6 / (e->of - 1) : 0.36;
+	a = t->out_a + (e->slot - (e->of - 1) / 2.0) * step;
+	*exp = t->x + 185 * (1 + 0.4 * (e->slot % 3)) * cos(a);
+	*eyp = t->y + 125 * (1 + 0.4 * (e->slot % 3)) * sin(a);
 }
 
 /*
@@ -618,42 +618,46 @@ as_leader(int i)
 	int	k;
 
 	for (k = 0; k < i; k++)
-		if (!exts[k].ospf && strcmp(exts[k].label, exts[i].label) == 0)
+		if (exts[k].ospf == exts[i].ospf && strcmp(exts[k].label,
+		    exts[i].label) == 0)
 			return (k);
 	return (i);
 }
 
 static void
-as_place(int lead, double *xp, double *yp)
+as_place_raw(int lead, double *xp, double *yp, bool *keptp)
 {
 	struct peerpos	*pp;
 	struct thost	*t;
 	double		 x, y, sx, sy;
 	char		 key[160];
-	int		 k, n;
+	int		 k, n, others;
 
+	*keptp = false;
 	peer_key(key, sizeof(key), &exts[lead]);
 	if ((pp = peer_kept(key, false)) != NULL && (pp->dx != 0 || pp->dy != 0)
 	    && (t = thost(tn[
 	    exts[lead].host].key, false)) != NULL) {
 		*xp = t->x + pp->dx;
 		*yp = t->y + pp->dy;
+		*keptp = true;
 		return;
 	}
 	sx = sy = 0;
-	n = 0;
+	n = others = 0;
 	for (k = 0; k < nexts; k++) {
-		if (exts[k].ospf || strcmp(exts[k].label, exts[lead].label) !=
-		    0 || (t = thost(tn[exts[k].host].key, false)) == NULL)
+		if (exts[k].ospf != exts[lead].ospf || strcmp(exts[k].label,
+		    exts[lead].label) != 0 || (t = thost(tn[exts[k].host].key, false)) == NULL)
 			continue;
 		peer_place(&exts[k], t, &x, &y);
 		sx += x;
 		sy += y;
 		n++;
+		others += exts[k].host != exts[lead].host;
 	}
 	*xp = n > 0 ? sx / n : 0;
 	*yp = n > 0 ? sy / n : 0;
-	if (n < 2)
+	if (others == 0)	/* one host's alone: beside it */
 		return;
 	/*
 	 * Several hosts' neighbour: the mean of their places can fall in
@@ -685,7 +689,7 @@ as_place(int lead, double *xp, double *yp)
 		cx = (x0 + x1) / 2;
 		cy = (y0 + y1) / 2;
 		for (nth = 0, k = 0; k < lead; k++)
-			nth += !exts[k].ospf && as_leader(k) == k;
+			nth += as_leader(k) == k;
 		a = hypot(*xp - cx, *yp - cy) > 40 ? atan2(*yp - cy, *xp - cx) :
 		    -M_PI / 2 + nth * 0.7;
 		tx = fabs(cos(a)) > 1e-3 ? ((x1 - x0) / 2 + 170) / fabs(cos(a)) :
@@ -695,6 +699,88 @@ as_place(int lead, double *xp, double *yp)
 		*xp = cx + (tx < ty ? tx : ty) * cos(a);
 		*yp = cy + (tx < ty ? tx : ty) * sin(a);
 	}
+}
+
+/*
+ * Where every neighbour's node stands, worked out once a drawing: its
+ * own place, then pushed apart from the others and from the hosts
+ * where they overlap, a few rounds, the dragged ones staying put.
+ */
+static double	peer_x[EXT_MAX], peer_y[EXT_MAX];
+
+static void
+peers_layout(void)
+{
+	static bool	 fixed[EXT_MAX];
+	struct thost	*h;
+	double		 dx, dy, ox, oy, w, hh;
+	int		 i, k, round, moved;
+
+	for (i = 0; i < nexts; i++)
+		if (as_leader(i) == i)
+			as_place_raw(i, &peer_x[i], &peer_y[i], &fixed[i]);
+	for (round = 0; round < 40; round++) {
+		moved = 0;
+		for (i = 0; i < nexts; i++) {
+			if (as_leader(i) != i || fixed[i])
+				continue;
+			/* Clear of the other neighbours' nodes. */
+			for (k = 0; k < nexts; k++) {
+				if (k == i || as_leader(k) != k)
+					continue;
+				dx = peer_x[i] - peer_x[k];
+				dy = peer_y[i] - peer_y[k];
+				ox = 104 - fabs(dx);
+				oy = 62 - fabs(dy);
+				if (ox <= 0 || oy <= 0)
+					continue;
+				/* Along the shorter way out, half each, all
+				 * of it when the other is held. */
+				w = fixed[k] ? 1.0 : 0.5;
+				if (ox < oy) {
+					peer_x[i] += (dx >= 0 ? 1 : -1) * ox * w;
+					if (!fixed[k])
+						peer_x[k] -= (dx >= 0 ? 1 : -1) * ox *
+						    w;
+				} else {
+					peer_y[i] += (dy >= 0 ? 1 : -1) * oy * w;
+					if (!fixed[k])
+						peer_y[k] -= (dy >= 0 ? 1 : -1) * oy *
+						    w;
+				}
+				moved++;
+			}
+			/* And of the hosts. */
+			for (k = 0; k < nhosts; k++) {
+				h = &hosts[k];
+				if (!h->placed || node_index(h->sid) == -1)
+					continue;
+				dx = peer_x[i] - h->x;
+				dy = peer_y[i] - h->y;
+				hh = NODE_H / 2 + 40;
+				ox = NODE_W / 2 + 60 - fabs(dx);
+				oy = hh - fabs(dy);
+				if (ox <= 0 || oy <= 0)
+					continue;
+				if (ox < oy)
+					peer_x[i] += (dx >= 0 ? 1 : -1) * ox;
+				else
+					peer_y[i] += (dy >= 0 ? 1 : -1) * oy;
+				moved++;
+			}
+		}
+		if (moved == 0)
+			break;
+	}
+}
+
+/* Where a neighbour's node is drawn, as peers_layout() left it. */
+static void
+as_place(int lead, double *xp, double *yp)
+{
+
+	*xp = peer_x[lead];
+	*yp = peer_y[lead];
 }
 
 /* Hosts not placed yet go on a circle, in the order of the tree. */
@@ -1833,7 +1919,7 @@ links_build(void)
 					}
 					continue;
 				}
-				if (nexts == EXT_MAX || mine == EXT_PER_HOST)
+				if (nexts == EXT_MAX)
 					continue;
 				memset(&exts[nexts], 0, sizeof(exts[0]));
 				exts[nexts].host = s;
@@ -1855,8 +1941,20 @@ links_build(void)
 				nexts++;
 			}
 		}
-		for (k = nexts - mine; k < nexts; k++)
-			exts[k].of = mine;
+		/* Fanned out by AS or router, however many sessions. */
+		{
+			int	j, groups;
+
+			for (groups = 0, k = nexts - mine; k < nexts; k++) {
+				for (j = nexts - mine; j < k; j++)
+					if (exts[j].ospf == exts[k].ospf &&
+					    strcmp(exts[j].label, exts[k].label) == 0)
+						break;
+				exts[k].slot = j < k ? exts[j].slot : groups++;
+			}
+			for (k = nexts - mine; k < nexts; k++)
+				exts[k].of = groups;
+		}
 	}
 	/* Two hosts in a network: a link.  More: a node they all join. */
 	for (k = 0; k < nsegs; k++) {
@@ -2498,6 +2596,7 @@ map_nodes(struct html *h)
 		}
 		h_raw(h, "</g>");
 	}
+	peers_layout();
 	/* The routing neighbours outside, fanned out away from the middle. */
 	for (i = 0; !tp.nopeers && i < nexts; i++) {
 		if (tp.hide[exts[i].ospf ? LK_OSPF : LK_BGP])
@@ -2507,17 +2606,17 @@ map_nodes(struct html *h)
 
 		if ((t = thost(tn[e->host].key, false)) == NULL)
 			continue;
-		if (!e->ospf) {
+		{
 			char	key[160];
 			int	lead, ns, k;
 
 			lead = as_leader(i);
 			as_place(lead, &ex, &ey);
 			peer_key(key, sizeof(key), &exts[lead]);
-			/* Every session: a line to the AS's cloud. */
-			h_fmt(h, "<g class=\"tpeer bgp session %s\"><path d=\"M%.1f %.1f "
-			    "L%.1f %.1f\"><title>", e->up ? "up" : "down", t->x, t->y, ex,
-			    ey);
+			/* Every session or adjacency: a line to its node. */
+			h_fmt(h, "<g class=\"tpeer %s session %s\"><path d=\"M%.1f %.1f "
+			    "L%.1f %.1f\"><title>", e->ospf ? "ospf" : "bgp", e->up ? "up" :
+			    "down", t->x, t->y, ex, ey);
 			h_txt(h, tn[e->host].name);
 			h_raw(h, " · ");
 			h_txt(h, e->label);
@@ -2527,12 +2626,19 @@ map_nodes(struct html *h)
 			if (lead != i)
 				continue;
 			for (ns = 0, k = 0; k < nexts; k++)
-				ns += !exts[k].ospf && strcmp(exts[k].label, e->label)
-				    == 0;
-			/* The leader: the AS, a cloud, dragged as one. */
-			h_fmt(h, "<g class=\"tpeer bgp %s\" data-drag=\"topo-peer\"",
-			    e->up ? "up" : "down");
+				ns += as_leader(k) == lead;
+			/* The node, dragged as one: an AS a cloud, an OSPF
+			 * neighbour a dotted router. */
+			h_fmt(h, "<g class=\"tpeer %s %s\" data-drag=\"topo-peer\"",
+			    e->ospf ? "ospf" : "bgp", e->up ? "up" : "down");
 			h_attr(h, "data-arg", key);
+			if (e->ospf)
+				h_fmt(h, "><circle class=\"glyph\" cx=\"%.1f\" cy=\"%.1f\" "
+				    "r=\"22\"/><path class=\"arrows\" transform=\"translate("
+				    "%.1f,%.1f)\" d=\"M-14 -6h24M3 -11l6 5-6 5M14 6h-24M-3 11l-6"
+				    "-5 6-5\"/><text class=\"name\" x=\"%.1f\" y=\"%.1f\">", ex,
+				    ey, ex, ey, ex, ey + 36);
+			else
 				h_fmt(h, "><path class=\"cloud\" transform=\"translate("
 				    "%.1f,%.1f)\" d=\"M-44 10 q-16 0 -16 -14 q0 -14 14 -14 q4 "
 				    "-14 20 -12 q10 -12 24 -4 q16 -6 24 8 q14 2 12 16 q-2 12 -16 "
@@ -2540,52 +2646,20 @@ map_nodes(struct html *h)
 				    ey, ex, ey - 2);
 			h_fit(h, e->label, 16);
 			h_fmt(h, "</text><text class=\"sub\" x=\"%.1f\" y=\"%.1f\">", ex,
-			    ey + 10);
+			    e->ospf ? ey + 48 : ey + 10);
 			if (ns > 1)
-				h_fmt(h, "%d sessions", ns);
+				h_fmt(h, "%d %s", ns, e->ospf ? "adjacencies" : "sessions");
 			else
 				h_fit(h, e->sub, 20);
 			h_raw(h, "</text><title>");
 			h_txt(h, e->label);
-			h_fmt(h, ": a BGP neighbour outside this console, %d session%s "
-			    "to it</title></g>", ns, ns == 1 ? "" : "s");
-			continue;
+			if (e->ospf)
+				h_fmt(h, ": an OSPF neighbour outside this console, %d "
+				    "adjacenc%s with it</title></g>", ns, ns == 1 ? "y" : "ies");
+			else
+				h_fmt(h, ": a BGP neighbour outside this console, %d "
+				    "session%s to it</title></g>", ns, ns == 1 ? "" : "s");
 		}
-		peer_place(e, t, &ex, &ey);
-		/* Where it was dragged to, beside its host, as it moves. */
-		{
-			struct peerpos	*pp;
-			char		 key[160];
-
-			peer_key(key, sizeof(key), e);
-			if ((pp = peer_kept(key, false)) != NULL) {
-				ex = t->x + pp->dx;
-				ey = t->y + pp->dy;
-			}
-			/* Dragged to put it elsewhere; picked, BIRD's. */
-			h_fmt(h, "<g class=\"tpeer %s %s\" data-drag=\""
-			    "topo-peer\"", e->ospf ? "ospf" : "bgp", e->up ?
-			    "up" : "down");
-			h_attr(h, "data-arg", key);
-		}
-		/* An OSPF neighbour: a router outside the console, dotted. */
-			h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><circle class=\"glyph\" "
-			    "cx=\"%.1f\" cy=\"%.1f\" r=\"22\"/><path class=\"arrows\" "
-			    "transform=\"translate(%.1f,%.1f)\" d=\"M-14 -6h24M3 -11l6 5-6 5"
-			    "M14 6h-24M-3 11l-6-5 6-5\"/><text class=\"name\" x=\"%.1f\" "
-			    "y=\"%.1f\">", t->x, t->y, ex, ey, ex, ey, ex, ey, ex, ey + 36);
-		h_fit(h, e->label, 16);
-		h_fmt(h, "</text><text class=\"sub\" x=\"%.1f\" y=\"%.1f\">", ex,
-		    ey + 48);
-		h_fit(h, e->sub, 20);
-		h_raw(h, "</text><title>");
-		h_txt(h, e->label);
-		h_raw(h, " · ");
-		h_txt(h, e->sub);
-		h_raw(h, " — ");
-		h_txt(h, e->ospf ? "An OSPF neighbour outside this console" :
-		    "A BGP neighbour outside this console");
-		h_raw(h, "</title></g>");
 	}
 	/* The running jails of each host, hung under it. */
 	for (i = 0; tp.jails && i < app.nservers; i++) {
@@ -4874,11 +4948,9 @@ topo_action(const char *act, const char *arg, const char *value)
 
 				peer_key(key, sizeof(key), &exts[i]);
 				if (strcmp(key, arg) == 0) {
-					/* A BGP neighbour is drawn where its AS is. */
-					if (exts[i].ospf)
-						peer_place(&exts[i], t, &cx, &cy);
-					else
-						as_place(as_leader(i), &cx, &cy);
+					peers_layout();
+					/* Where its node is drawn. */
+					as_place(as_leader(i), &cx, &cy);
 					pp->dx = cx - t->x;
 					pp->dy = cy - t->y;
 				}

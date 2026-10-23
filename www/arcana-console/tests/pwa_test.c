@@ -6920,6 +6920,16 @@ part_mesh(void)
 	wait_js("window.arcSaved && window.arcSaved.type === 'image/png' && "
 	    "window.arcSaved.size > 10000 && window.arcSaved.name === "
 	    "'network-diagram.png'", 10);
+	/* The picture itself, shown over the page: the light theme, readable
+	 * text; and the page keeps its own theme. */
+	wait_js("window.arcSaved.url", 10);
+	run("const i = document.createElement('img'); i.id = 'pngview'; "
+	    "i.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;"
+	    "object-fit:contain;z-index:99999;background:#888'; i.src = "
+	    "window.arcSaved.url; document.body.appendChild(i);");
+	wait_js("document.getElementById('pngview').complete", 5);
+	shot("9-mesh-png");
+	run("document.getElementById('pngview').remove();");
 	/* A close look at a switch and the router it hangs on. */
 	run("const g = document.querySelector('svg.topo.stencil g.tbridge rect')"
 	    ".getBBox(); document.querySelector('svg.topo').setAttribute("
