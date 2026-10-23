@@ -24,6 +24,7 @@ net_help(void)
 
 	switch (app.net.kind) {
 	case NET_ROUTES:
+	case NET_KEPT:
 		return ("sections/network.html#routes");
 	case NET_NEXTHOPS:
 	case NET_NHGROUPS:

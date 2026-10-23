@@ -226,6 +226,7 @@ enum netkind {
 	NET_SPAN,		/* bridges' span ports, taps, capture */
 	NET_CARP,		/* carp(4)'s vhids, from the interfaces */
 	NET_MULTICAST,		/* IGMP's and MLD's state, ifmcstat(8) */
+	NET_KEPT,		/* the static routes rc.conf keeps */
 };
 /* A plugin's view: a tab of its own on a host that has it. */
 #define	NET_PLUGIN(k)	((k) == NET_BIRD || (k) == NET_IPSEC)
@@ -382,6 +383,7 @@ enum modal {
 	MODAL_HOST_KEY,
 	MODAL_IF_ADDRESS,
 	MODAL_ROUTE,
+	MODAL_KEPT_RENAME,
 	MODAL_TUNNEL,
 	MODAL_IF_CREATE,
 	MODAL_IF_SET,
@@ -640,7 +642,7 @@ void		 if_address(struct server *, const char *, const char *, bool,
 		    bool);
 void		 if_state(struct server *, const char *, bool);
 void		 route_change(struct server *, const char *, const char *, bool,
-		    bool, int, int, int, const char *);
+		    bool, int, int, int, const char *, const char *, bool);
 bool		 service_busy(const struct server *, const char *);
 bool		 packages_busy(const struct server *);
 void		 load_settings(void);

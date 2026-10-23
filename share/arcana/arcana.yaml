@@ -672,6 +672,18 @@ definitions:
           its designated router ("dr"), "distance" and "routers", as
           "show ospf topology all" tells them from the link-state
           database.  Every router of an area tells the same.
+      - name: kept-routes
+        doc: |
+          The static routes rc.conf keeps, from sysrc(8), of the host
+          or the jail: a JSON object with "routes", each with its
+          "name", "family", "list" (static_routes or
+          ipv6_static_routes), "variable", "value" as route(8) is given
+          it, and read from it "destination", "gateway", "kind"
+          (gateway, interface, blackhole or reject) and "fib";
+          "listed" false for a variable the list does not name (rc(8)
+          leaves it), "missing" true for a name without its variable;
+          and "defaults", the default routers, each with its
+          "variable", "family", "fib" and "gateway".
   - name: storage-kind
     type: enum
     entries:

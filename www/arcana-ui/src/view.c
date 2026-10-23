@@ -2457,6 +2457,13 @@ modal(struct html *h)
 		    "\"checkbox\" name=\"persist\" checked><span>Keep it in "
 		    "<code>rc.conf</code>, to be there after a boot</span>"
 		    "</label>"
+		    "<label>Name<input name=\"name\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"edge2_gre0\">"
+		    "<small>What <code>rc.conf</code> keeps it by, <code>"
+		    "route_&lt;name&gt;</code>: the host or the interface it "
+		    "goes by, letters, digits and _. Empty: the name it has, "
+		    "or <code>arc_</code> and its destination.</small>"
+		    "</label>"
 		    "<label>Destination<input name=\"destination\" "
 		    "spellcheck=\"false\" autocomplete=\"off\" "
 		    "placeholder=\"10.20.0.0/16\" autofocus><small>A network "
@@ -2486,6 +2493,21 @@ modal(struct html *h)
 			h_fmt(h, " value=\"%d\"", app.net.fib);
 		h_raw(h, " placeholder=\"0\"><small>The table the route goes "
 		    "into; 0 is the first.</small></label></div>");
+		break;
+	case MODAL_KEPT_RENAME:
+		h_raw(h, "<form data-form=\"kept-rename\"><h2>Rename the kept "
+		    "route</h2><p>The route <code>rc.conf</code> keeps to <b>");
+		h_txt(h, app.confirm.arg);
+		h_fmt(h, "</b> (table %d) as <code>", atoi(app.confirm.value));
+		h_txt(h, app.confirm.title);
+		h_raw(h, "</code>, kept by another name: its words stay as "
+		    "they are. The kernel's table is not touched.</p>"
+		    "<label>Name<input name=\"name\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" autofocus");
+		h_attr(h, "value", app.confirm.title);
+		h_raw(h, "><small>The host or the interface it goes by: "
+		    "router1, edge2_gre0. Letters, digits and _.</small>"
+		    "</label>");
 		break;
 	case MODAL_WF_RUN:
 		if (!workflows_modal(h))
@@ -2800,6 +2822,9 @@ modal(struct html *h)
 			break;
 		case MODAL_ROUTE:
 			h_raw(h, "<button class=\"primary\">Add</button>");
+			break;
+		case MODAL_KEPT_RENAME:
+			h_raw(h, "<button class=\"primary\">Rename</button>");
 			break;
 		case MODAL_TUNNEL:
 		case MODAL_IF_CREATE:

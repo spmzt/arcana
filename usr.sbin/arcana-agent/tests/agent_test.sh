@@ -1325,6 +1325,57 @@ EOS
 	atf_check -o ignore "$JGC" -p -c "$SOCK" route delete 10.77.0.0/16
 	atf_check -o match:'^static_routes="arc_10_80_0_0_16_fib3"$' \
 	    -o not-match:'route_arc_10_77' cat rc.conf
+
+	# Kept by the name given; another route's name is refused; one
+	# kept is found by its destination and table whatever its name.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 10.90.0.0/16 10.0.0.1 \
+	    name router1
+	atf_check -o match:'^route_router1="10.90.0.0/16 10.0.0.1"$' \
+	    -o match:'^static_routes="arc_10_80_0_0_16_fib3 router1"$' cat rc.conf
+	atf_check -s exit:1 -o match:'another route by the name router1' \
+	    "$JGC" -p -c "$SOCK" route add 10.91.0.0/16 10.0.0.1 name router1
+	atf_check -s exit:1 -o match:'cannot name a route' \
+	    "$JGC" -p -c "$SOCK" route add 10.91.0.0/16 10.0.0.1 name 9lives
+	# A route kept by hand, with words the agent does not write:
+	# renamed in rc.conf alone, its words as they are; the kernel's
+	# table not asked.
+	printf 'route_home="10.92.0.0/16 -gateway 10.0.0.3 -mtu 1400"\n' >> rc.conf
+	sed -i '' -e 's/^static_routes="\(.*\)"$/static_routes="\1 home"/' rc.conf
+	atf_check -o not-match:'route-add' -o not-match:'route-del' \
+	    "$JGC" -t -c "$SOCK" route keep add 10.92.0.0/16 name edge2_gre0
+	atf_check -o match:'^route_edge2_gre0="10.92.0.0/16 -gateway 10.0.0.3 -mtu 1400"$' \
+	    -o not-match:'route_home' \
+	    -o match:'^static_routes="arc_10_80_0_0_16_fib3 router1 edge2_gre0"$' \
+	    cat rc.conf
+	# Added again by another name: the old name goes.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 10.90.0.0/16 10.0.0.1 \
+	    name router2
+	atf_check -o match:'^route_router2="10.90.0.0/16 10.0.0.1"$' \
+	    -o not-match:'router1' cat rc.conf
+	# Kept in rc.conf alone, and forgotten there alone; not in safe
+	# mode, there being nothing live to undo.
+	atf_check -o not-match:'route-add' \
+	    "$JGC" -t -c "$SOCK" route keep add 10.93.0.0/16 10.0.0.1 name lan2
+	atf_check -o match:'^route_lan2="10.93.0.0/16 10.0.0.1"$' cat rc.conf
+	atf_check -s exit:1 -e match:'nothing to undo' \
+	    "$JGC" -s -c "$SOCK" route keep delete 10.93.0.0/16
+	# What rc.conf keeps, read: each by its name, read as route(8)
+	# would; one the list does not name; the default routers.
+	printf 'route_stray="10.94.0.0/16 10.0.0.1"\n' >> rc.conf
+	atf_check -o match:'"name":"lan2","family":"inet","list":"static_routes","variable":"route_lan2","listed":true,"value":"10.93.0.0/16 10.0.0.1","destination":"10.93.0.0/16","gateway":"10.0.0.1","kind":"gateway","fib":0' \
+	    -o match:'"name":"arc_10_80_0_0_16_fib3".*"gateway":"lo0","kind":"interface","fib":3' \
+	    -o match:'"name":"edge2_gre0".*"gateway":"10.0.0.3"' \
+	    -o match:'"name":"stray".*"listed":false' \
+	    -o match:'"name":"arc_2001_db8_7___48","family":"inet6"' \
+	    "$JGC" -c "$SOCK" net kept-routes
+	atf_check -o not-match:'route-del' \
+	    "$JGC" -t -c "$SOCK" route keep delete 10.93.0.0/16
+	atf_check -o not-match:'lan2' cat rc.conf
+	# Deleted with -p: found by its destination, whatever its name.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" route delete 10.90.0.0/16
+	atf_check -o not-match:'router2' cat rc.conf
+	sed -i '' -e '/^route_stray=/d' -e '/^route_edge2_gre0=/d' \
+	    -e 's/^static_routes=.*/static_routes="arc_10_80_0_0_16_fib3"/' rc.conf
 	atf_check -o match:'fake-helper --scope-helper 0 routes 4 2 - -' \
 	    "$JGC" -t -F 2 -c "$SOCK" net routes -4
 

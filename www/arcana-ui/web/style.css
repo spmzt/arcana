@@ -1399,6 +1399,10 @@ html.fx .gauge .spark .line {
 .pkgs .buttons .dim { flex: 1; }
 table.net td.c-run { color: var(--cyan); }
 table.net.mcast-ifs { margin-bottom: 14px; }
+/* Network › Routes › Kept in rc.conf: what rc(8) would skip, said so. */
+table.net.kept td.mono { font-size: .8rem; }
+.kept-note { color: var(--amber); font-size: .78rem; white-space: nowrap; }
+h3.kept-h { margin: 18px 0 6px; font-size: .9rem; color: var(--dim); font-weight: 500; }
 form.mcast-set .toolbar { flex-wrap: wrap; }
 .sub button.on { color: var(--cyan); border-color: var(--cyan); }
 button.small { font-size: .72rem; padding: .25rem .6rem; }

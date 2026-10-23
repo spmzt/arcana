@@ -730,7 +730,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, bird-ospf, bridges, geneve, ipfw, lookup, traceroute, neighbours, ipsec, multicast]
+            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, bird-ospf, bridges, geneve, ipfw, lookup, traceroute, neighbours, ipsec, multicast, kept-routes]
           description: traceroute?to=ADDRESS is one round of traceroute(8)
             or traceroute6(8) from the host, a probe a hop, as
             {"address","family","hops":[{"ttl","address","rtt","note"} or

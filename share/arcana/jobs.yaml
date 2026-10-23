@@ -58,6 +58,11 @@ fields:
     label: Arguments
     help: Words, a space between them, as the job takes them.
     attribute: names
+  - field: route_name
+    type: list
+    label: Name
+    help: What rc.conf keeps the route by (route_<name>), letters, digits and _; empty for the name it has, or arc_ and its destination.
+    attribute: names
   - field: packages
     type: list
     label: Packages
@@ -273,7 +278,8 @@ kinds:
   - kind: route
     title: A static route added or deleted
     needs: destination
-    uses: jail gateway remove fib metric weight source persist safe
+    uses: jail gateway remove fib metric weight source route_name verb persist safe
+    values: verb=keep
   - kind: if-set
     title: An interface's MTU, description, routing tables or addressing
     needs: interface

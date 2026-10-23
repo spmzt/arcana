@@ -1920,13 +1920,59 @@ part_nettab(void)
 	    "f.destination.value = '10.88.0.0/16'; f.gateway.value = "
 	    "'10.0.0.1'; f.metric.value = '5'; f.weight.value = '20'; "
 	    "f.source.value = '10.0.0.9'; f.fib.value = '2'; "
-	    "f.requestSubmit();");
+	    "f.name.value = 'lan_fib2'; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('route "
 	    "add 10.88.0.0/16 via 10.0.0.1'))", 20);
 	ATF_CHECK(system("grep -q '^0 route-add 10.88.0.0/16 10.0.0.1 - 2 5 "
 	    "20 10.0.0.9$' route.log") == 0);
+	/* Kept in rc.conf by the name given. */
+	ATF_CHECK(system("grep -q '^route_lan_fib2=\"10.88.0.0/16 10.0.0.1 "
+	    "-fib 2 ' rc.conf && grep -q '^static_routes=\".*lan_fib2' "
+	    "rc.conf") == 0);
 	run("document.querySelector('.dock > header').click()");
+
+	/*
+	 * What rc.conf keeps, beside the table, each route by its name:
+	 * renamed there, its words as they are, and forgotten there, the
+	 * kernel's table not asked either time.
+	 */
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=kept-routes]').click()");
+	wait_js("[...document.querySelectorAll('table.net.kept tbody tr')].some("
+	    "r => r.textContent.includes('lan_fib2') && r.textContent.includes("
+	    "'10.88.0.0/16') && r.textContent.includes('-metric 5'))", 15);
+	ATF_CHECK(js_true("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=routes].on') !== null"));
+	shot("7k-kept-routes");
+	run("document.querySelector('button[data-act=kept-rename][data-arg="
+	    "\"10.88.0.0/16\"]').click()");
+	wait_js("document.querySelector('form[data-form=kept-rename]') && "
+	    "document.querySelector('form[data-form=kept-rename]').name.value "
+	    "=== 'lan_fib2'", 5);
+	run("const f = document.querySelector('form[data-form=kept-rename]'); "
+	    "f.name.value = 'edge2_lan'; f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 100 && system("grep -q '^route_edge2_lan=' rc.conf") !=
+	    0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q '^route_edge2_lan=\"10.88.0.0/16 10.0.0.1 "
+	    "-fib 2 -ifa 10.0.0.9 -metric 5 -weight 20\"$' rc.conf && ! grep "
+	    "-q lan_fib2 rc.conf") == 0);
+	run("document.querySelector('.dock > header').click()");
+	wait_js("[...document.querySelectorAll('table.net.kept tbody tr')].some("
+	    "r => r.textContent.includes('edge2_lan'))", 15);
+	run("document.querySelector('button[data-act=kept-forget][data-arg="
+	    "\"10.88.0.0/16\"]').click()");
+	click_when(".modal button.danger", 5);
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 100 && system("grep -q edge2_lan rc.conf") == 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("! grep -q edge2_lan rc.conf") == 0);
+	ATF_CHECK(system("test \"$(grep -c 10.88.0.0 route.log)\" = 1") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=routes]').click()");
 
 	/* A route's nexthop opens in a box, read from the host. */
 	wait_js("document.querySelector('table.net button.cell-link[data-act="

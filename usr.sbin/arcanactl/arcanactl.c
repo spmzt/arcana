@@ -165,9 +165,9 @@ usage(void)
 	    "address [peer address]]\n        [mtu number] [description "
 	    "text] [id number] [parent interface] [reqid number]\n"
 	    "        [fib number] [tunnelfib number]\n"
-	    "    route add destination gateway[@share][,gateway[@share]...] [metric n] [weight n] "
-	    "[source address]\n"
-	    "    route delete destination [gateway] [metric n]\n"
+	    "    route [keep] add destination gateway[@share][,gateway[@share]...] [metric n]\n"
+	    "        [weight n] [source address] [name word]\n"
+	    "    route [keep] delete destination [gateway] [metric n] [name word]\n"
 	    "    route get address\n"
 	    "    traceroute address\n"
 	    "    sdwan [probes | rules | steer | bird | dhcp | dns | proxy | ids json]\n"
@@ -266,7 +266,7 @@ usage(void)
 	    "    history set seconds samples [cpu%% mem%% swap%% [storage%%]] "
 	    "[rules list]\n"
 	    "    events [after | -f]\n"
-	    "    net bridges | geneve | ipfw | nhgroups\n"
+	    "    net bridges | geneve | ipfw | nhgroups | kept-routes\n"
 	    "    bridge name addm | deletem member\n"
 	    "    bridge name access member vlan\n"
 	    "    bridge name trunk member vlan-list [untagged-vlan]\n"
@@ -1698,22 +1698,44 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 	if (strcmp(argv[0], "route") == 0 && strcmp(argv[1], "get") == 0)
 		return (cmd_route_get(cl, argc, argv));
 	if (strcmp(argv[0], "route") == 0) {
-		/* route add destination gateway | delete destination [gw] */
+		/*
+		 * route [keep] add destination gateway | delete destination
+		 * [gw]; keep: in rc.conf alone, the kernel's table as it is.
+		 */
 		sp.kind = ARC_JOB_KIND_ROUTE;
+		if (strcmp(argv[1], "keep") == 0) {
+			if (argc < 4)
+				usage();
+			sp.verb = "keep";
+			sp.persist = true;
+			argc--;
+			argv++;
+		}
 		sp.has_fib = fib != 0;
 		sp.fib = fib;
 		sp.remove = strcmp(argv[1], "delete") == 0;
 		if (!sp.remove && (strcmp(argv[1], "add") != 0 || argc < 4))
 			usage();
+		if (strcmp(argv[1], "add") != 0 && strcmp(argv[1], "delete") !=
+		    0)
+			usage();
 		sp.destination = argv[2];
 		/* Then the gateway, and words with what follows each. */
 		i = 3;
 		if (i < argc && strcmp(argv[i], "metric") != 0 && strcmp(
-		    argv[i], "weight") != 0 && strcmp(argv[i], "source") != 0)
+		    argv[i], "weight") != 0 && strcmp(argv[i], "source") != 0 &&
+		    strcmp(argv[i], "name") != 0)
 			sp.gateway = argv[i++];
 		for (; i + 1 < argc; i += 2) {
 			if (strcmp(argv[i], "source") == 0) {
 				sp.source = argv[i + 1];
+				continue;
+			}
+			if (strcmp(argv[i], "name") == 0) {
+				/* What rc.conf keeps it by: route_<name>. */
+				sp.names.v = (const char *const *)(uintptr_t)
+				    &argv[i + 1];
+				sp.names.n = 1;
 				continue;
 			}
 			num = (uint32_t)strtonum(argv[i + 1], 1, UINT32_MAX,
@@ -1730,7 +1752,9 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 			} else
 				usage();
 		}
-		if (i != argc || (!sp.remove && sp.gateway == NULL))
+		/* keep add destination name word: the kept one renamed. */
+		if (i != argc || (!sp.remove && sp.gateway == NULL &&
+		    (sp.verb == NULL || sp.names.n == 0)))
 			usage();
 		goto send;
 	}
@@ -1919,7 +1943,7 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
 	    "bird-routes", "bridges", "geneve", "ipfw", "nhgroups",
-	    "neighbours", "ipsec", "multicast" };
+	    "neighbours", "ipsec", "multicast", "bird-ospf", "kept-routes" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;

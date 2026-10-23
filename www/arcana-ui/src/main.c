@@ -660,6 +660,19 @@ submit(const char *form, const ucl_object_t *f)
 	submit_form(form, f);
 }
 
+/* A name rc.conf can keep a route by (route_<name>), or none. */
+static bool
+route_name_ok(const char *n)
+{
+
+	if (n == NULL || n[0] == '\0')
+		return (true);
+	if ((n[0] >= '0' && n[0] <= '9') || strlen(n) > 64)
+		return (false);
+	return (n[strspn(n, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"
+	    "WXYZ0123456789_")] == '\0');
+}
+
 static void
 submit_form(const char *form, const ucl_object_t *f)
 {
@@ -939,6 +952,12 @@ submit_form(const char *form, const ucl_object_t *f)
 			    "Give a destination and a gateway");
 			return;
 		}
+		if (!route_name_ok(jstr(f, "name"))) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "A name is letters, digits and _, not first a "
+			    "digit");
+			return;
+		}
 		/* A number, or nothing: not half of one. */
 		for (i = 0; i < 3; i++) {
 			static const char *const nf[] = { "metric", "weight",
@@ -961,7 +980,22 @@ submit_form(const char *form, const ucl_object_t *f)
 			    "fib")[0] != '\0' ? atoi(jstr(f, "fib")) :
 			    app.net.fib, jstr(f, "metric") != NULL ? atoi(jstr(
 			    f, "metric")) : 0, jstr(f, "weight") != NULL ?
-			    atoi(jstr(f, "weight")) : 0, jstr(f, "source"));
+			    atoi(jstr(f, "weight")) : 0, jstr(f, "source"),
+			    jstr(f, "name"), false);
+	} else if (strcmp(form, "kept-rename") == 0) {
+		/* The route rc.conf keeps, by a new name, its words as they
+		 * are; app.confirm.arg its destination, .value its table. */
+		s = jstr(f, "name") != NULL ? jstr(f, "name") : "";
+		if (s[0] == '\0' || !route_name_ok(s)) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "A name is letters, digits and _, not first a "
+			    "digit");
+			return;
+		}
+		app.modal = MODAL_NONE;
+		if ((s2 = cur_server()) != NULL)
+			route_change(s2, app.confirm.arg, "", false, true,
+			    atoi(app.confirm.value), 0, 0, NULL, s, true);
 	} else if (strcmp(form, "lookup") == 0) {
 		/* The box stays: what the host answers is shown in it. */
 		s = jstr(f, "address") != NULL ? jstr(f, "address") : "";
@@ -1481,7 +1515,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "ipsec") == 0 ? NET_IPSEC :
 		    strcmp(arg, "span") == 0 ? NET_SPAN :
 		    strcmp(arg, "carp") == 0 ? NET_CARP :
-		    strcmp(arg, "multicast") == 0 ? NET_MULTICAST : NET_ROUTES;
+		    strcmp(arg, "multicast") == 0 ? NET_MULTICAST :
+		    strcmp(arg, "kept-routes") == 0 ? NET_KEPT : NET_ROUTES;
 		if (app.net.kind == NET_INTERFACES)
 			topo_poll(s);
 		app.net.loading = false;
@@ -1525,8 +1560,31 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "off.");
 		confirm("Delete the route", body, "Delete", true, "",
 		    "do-route-delete", arg, value);
+	} else if (strcmp(act, "kept-rename") == 0 && s != NULL) {
+		/* arg: the destination; value: its table, a space, its
+		 * name. */
+		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
+		snprintf(app.confirm.value, sizeof(app.confirm.value), "%d",
+		    atoi(value));
+		snprintf(app.confirm.title, sizeof(app.confirm.title), "%s",
+		    strchr(value, ' ') != NULL ? strchr(value, ' ') + 1 : "");
+		app.modal = MODAL_KEPT_RENAME;
+		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "kept-forget") == 0 && s != NULL) {
+		char body[400];
+
+		snprintf(body, sizeof(body), "rc.conf forgets the route to %s "
+		    "(table %s), on %s: it is not added again at the next "
+		    "boot. The route in the kernel's table now, if any, stays "
+		    "as it is.", arg, value, s->name);
+		confirm("Forget the kept route", body, "Forget", true, "",
+		    "do-kept-forget", arg, value);
+	} else if (strcmp(act, "do-kept-forget") == 0 && s != NULL) {
+		route_change(s, arg, "", true, true, atoi(value), 0, 0, NULL,
+		    NULL, true);
 	} else if (strcmp(act, "do-route-delete") == 0 && s != NULL) {
-		route_change(s, arg, value, true, true, app.net.fib, 0, 0, NULL);
+		route_change(s, arg, value, true, true, app.net.fib, 0, 0, NULL,
+		    NULL, false);
 	} else if ((strcmp(act, "if-addr-add") == 0 || strcmp(act,
 	    "if-addr-edit") == 0) && s != NULL) {
 		/* One changed: the form with what it is now, which goes

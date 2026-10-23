@@ -2301,7 +2301,7 @@ refresh_network(struct server *s, bool user)
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
 	    "bridges", "geneve", "nhgroups", "neighbours", "ipsec",
-	    "bridges", "interfaces", "multicast" };
+	    "bridges", "interfaces", "multicast", "kept-routes" };
 	struct ctx	*c;
 	struct op	*op;
 	char		 url[640], title[160], fib[24], c0jail[270];
@@ -3521,35 +3521,55 @@ if_state(struct server *s, const char *ifname, bool up)
 	job_send(s, json, title, JOB_IFACE, ifname);
 }
 
-/* Add a static route on s, or delete the one to destination. */
+/*
+ * Add a static route on s, or delete the one to destination; kept in
+ * rc.conf by name when one is given.  keep: rc.conf alone, the kernel's
+ * table as it is (a route BIRD puts there, say); with a name and no
+ * gateway, the one rc.conf keeps renamed.
+ */
 void
 route_change(struct server *s, const char *destination, const char *gateway,
     bool remove, bool persist, int fib, int metric, int weight,
-    const char *source)
+    const char *source, const char *name, bool keep)
 {
-	char	*qd, *qg, *qs, *json, title[200], more[160];
+	char	*qd, *qg, *qs, *qn, *json, title[200], more[300];
+	bool	 named;
 
+	named = name != NULL && name[0] != '\0';
 	qd = json_quote(destination);
 	qg = json_quote(gateway);
 	qs = json_quote(source != NULL ? source : "");
-	/* Its cost, its share, where it is sent from: when given. */
-	snprintf(more, sizeof(more), "%s%.0d%s%.0d%s%s", metric > 0 ?
+	qn = json_quote(named ? name : "");
+	/* Its cost, its share, where it is sent from, its name: when
+	 * given. */
+	snprintf(more, sizeof(more), "%s%.0d%s%.0d%s%s%s%s%s%s", metric > 0 ?
 	    ",\"metric\":" : "", metric > 0 ? metric : 0, weight > 0 ?
 	    ",\"weight\":" : "", weight > 0 ? weight : 0, source != NULL &&
 	    source[0] != '\0' ? ",\"source\":" : "", source != NULL &&
-	    source[0] != '\0' ? qs : "");
-	/* Safe, unless it is a delete that could not be put back. */
+	    source[0] != '\0' ? qs : "", named ? ",\"route_name\":[" : "",
+	    named ? qn : "", named ? "]" : "", keep ? ",\"verb\":\"keep\"" :
+	    "");
+	/* Safe, unless it is a delete that could not be put back, or
+	 * rc.conf's alone. */
 	if (asprintf(&json, "{\"kind\":\"route\",\"destination\":%s%s%s,"
 	    "\"remove\":%s,\"persist\":%s,\"fib\":%d%s,\"safe\":%s}", qd,
 	    gateway[0] != '\0' ? ",\"gateway\":" : "", gateway[0] != '\0' ?
-	    qg : "", remove ? "true" : "false", persist ? "true" : "false",
-	    fib, more, !remove || gateway[0] != '\0' ? "true" : "false") == -1)
+	    qg : "", remove ? "true" : "false", persist || keep ? "true" :
+	    "false", fib, more, !keep && (!remove || gateway[0] != '\0') ?
+	    "true" : "false") == -1)
 		abort();
 	free(qd);
 	free(qg);
 	free(qs);
-	snprintf(title, sizeof(title), "route %s %s%s%s", remove ? "delete" :
-	    "add", destination, gateway[0] != '\0' ? " via " : "", gateway);
+	free(qn);
+	if (keep && !remove && gateway[0] == '\0')
+		snprintf(title, sizeof(title), "route %s kept as %s",
+		    destination, named ? name : "");
+	else
+		snprintf(title, sizeof(title), "route %s%s %s%s%s%s%s",
+		    keep ? "keep " : "", remove ? "delete" : "add",
+		    destination, gateway[0] != '\0' ? " via " : "", gateway,
+		    named ? " as " : "", named ? name : "");
 	job_send(s, json, title, JOB_IFACE, destination);
 }
 

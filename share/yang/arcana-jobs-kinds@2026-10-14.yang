@@ -477,6 +477,19 @@ submodule arcana-jobs-kinds {
             description
               "Source address";
           }
+          leaf-list route-name {
+            type string;
+            ordered-by user;
+            description
+              "Name";
+          }
+          leaf verb {
+            type enumeration {
+              enum keep;
+            }
+            description
+              "Verb";
+          }
           leaf persist {
             type boolean;
             description
