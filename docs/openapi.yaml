@@ -320,7 +320,7 @@ paths:
               properties:
                 name: { type: string }
                 tenant: { type: string, description: the fleet whose hosts alone the user sees; empty for every fleet }
-                roles: { type: array, items: { type: string }, description: names of roles, one at least }
+                roles: { type: array, items: { type: string }, description: "names of roles, one at least" }
       responses:
         "200": { description: "the users and roles" }
         "409": { description: "the last owner stays one" }
@@ -337,7 +337,7 @@ paths:
               properties:
                 name: { type: string }
                 console: { type: string, enum: [owner, operator, member] }
-                hosts: { type: object, additionalProperties: { type: string, enum: [viewer, operator, admin] }, description: a role by host id, or "*" for all }
+                hosts: { type: object, additionalProperties: { type: string, enum: [viewer, operator, admin] }, description: "a role by host id, or \"*\" for all" }
                 ldap_group: { type: string, description: "a directory group's DN: its members get the role as they sign in by LDAP; empty for none" }
       responses:
         "200": { description: "the users and roles" }
@@ -1462,7 +1462,7 @@ paths:
         - { name: instance, in: query, schema: { type: string }, description: "With command: an instance, asked by its unix command socket" }
         - { name: command, in: query, schema: { type: string, enum: [uptime, version, running-mode, capture-mode, memcap-list, ruleset-stats, ruleset-failed-rules, ruleset-profile, iface-list, iface-stat, dump-counters] } }
         - { name: iface, in: query, schema: { type: string }, description: "iface-stat's interface" }
-        - { name: q, in: query, schema: { type: string }, description: Text in the rule, any case }
+        - { name: q, in: query, schema: { type: string }, description: "Text in the rule, any case" }
         - { name: sid, in: query, schema: { type: integer } }
         - { name: only, in: query, schema: { type: string, enum: [enabled, disabled, changed] } }
         - { name: classtype, in: query, schema: { type: string, example: trojan-activity } }
@@ -2108,11 +2108,7 @@ paths:
                           bridge, geneve, process, pkg-clean, ipsec,
                           pkg-install, ntp, rtadvd, ipsec-sa, jail-conf,
                           neighbour, cert, ssh, carp, poudriere]
-                      jail: { type: string, description: The jail acted on.
-                          For a job that changes a network, the vnet jail
-                          whose network it is; for if-vnet, the jail the
-                          interface is given to, or with remove taken
-                          from. }
+                      jail: { type: string, description: "The jail acted on. For a job that changes a network, the vnet jail whose network it is; for if-vnet, the jail the interface is given to, or with remove taken from." }
                       action: { type: string, description: For jail-action
                           and service-action. }
                       address: { type: string }
@@ -2134,9 +2130,7 @@ paths:
                       gateway: { type: string, description: For route; an
                           address or an interface. }
                       live: { type: boolean }
-                      force: { type: boolean, description: For
-                          pkg-upgrade, also packages built for a newer
-                          FreeBSD than the host's (IGNORE_OSVERSION). }
+                      force: { type: boolean, description: "For pkg-upgrade, also packages built for a newer FreeBSD than the host's (IGNORE_OSVERSION)." }
                       persist: { type: boolean }
                       service: { type: string }
                       set:
@@ -2145,26 +2139,16 @@ paths:
                       unset: { type: array, items: { type: string } }
                       packages: { type: array, items: { type: string },
                         description: For pkg-upgrade and pkg-install. }
-                      verb: { type: string, description: For ipsec, init,
-                          start, conn, unconn, up or down. }
-                      conn: { type: string, description: For ipsec, the
-                          connection, kept in conf.d/arcana-<conn>.conf. }
-                      tunnel_local: { type: string, description: For
-                          if-create a tunnel's outer address here; for
-                          ipsec conn, this host's address. }
-                      tunnel_remote: { type: string, description: The far
-                          end's, as tunnel_local. }
+                      verb: { type: string, description: "For ipsec, init, start, conn, unconn, up or down." }
+                      conn: { type: string, description: "For ipsec, the connection, kept in conf.d/arcana-<conn>.conf." }
+                      tunnel_local: { type: string, description: "For if-create a tunnel's outer address here; for ipsec conn, this host's address." }
+                      tunnel_remote: { type: string, description: "The far end's, as tunnel_local." }
                       ipsec_mode: { type: string, enum: [tunnel, transport] }
-                      pubkey: { type: string, description: For ipsec conn,
-                          the peer's public key in base64, as its
-                          net/ipsec tells it. }
-                      local_ts: { type: string, description: For ipsec conn,
-                          this side's traffic selectors, with commas. }
+                      pubkey: { type: string, description: "For ipsec conn, the peer's public key in base64, as its net/ipsec tells it." }
+                      local_ts: { type: string, description: "For ipsec conn, this side's traffic selectors, with commas." }
                       remote_ts: { type: string }
                       reqid: { type: integer, minimum: 1, maximum: 16383,
-                          description: For ipsec conn, the ipsec(4)
-                          interface it serves; for if-create, that
-                          interface's reqid. }
+                          description: "For ipsec conn, the ipsec(4) interface it serves; for if-create, that interface's reqid." }
                       start_action: { type: string, enum: [start, trap, none] }
                       local_id: { type: string }
                       remote_id: { type: string }
@@ -2289,15 +2273,15 @@ paths:
             schema:
               type: object
               properties:
-                interval: { type: integer, description: hours, 1 to 720 }
+                interval: { type: integer, description: "hours, 1 to 720" }
                 feeds:
                   type: array
                   items:
                     type: object
                     properties:
                       name: { type: string }
-                      url: { type: string, description: https, http or file }
-                      text: { type: string, description: pasted entries, one a line }
+                      url: { type: string, description: "https, http or file" }
+                      text: { type: string, description: "pasted entries, one a line" }
       responses:
         "200":
           description: "{kept: true}"
@@ -2579,7 +2563,7 @@ paths:
         "200": { $ref: "#/components/responses/Ok" }
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
-        "409": { $ref: "#/components/responses/Error", description: The run ended, or no such step waits. }
+        "409": { $ref: "#/components/responses/Error", description: "The run ended, or no such step waits." }
   /api/transfers:
     get:
       tags: [storage]
@@ -2606,12 +2590,10 @@ paths:
               properties:
                 from: { type: string, description: A server's id. }
                 snapshot: { type: string, description: dataset@name }
-                since: { type: string, description: A snapshot of the
-                    same dataset both have, for what changed since. }
+                since: { type: string, description: "A snapshot of the same dataset both have, for what changed since." }
                 recursive: { type: boolean }
                 to: { type: string }
-                dataset: { type: string, description: pool/name, not
-                    there yet. }
+                dataset: { type: string, description: "pool/name, not there yet." }
       responses:
         "200":
           description: id and state
@@ -3150,16 +3132,13 @@ paths:
             schema:
               type: object
               properties:
-                jail: { type: string, description: A running jail, or
-                    absent for the host. }
+                jail: { type: string, description: "A running jail, or absent for the host." }
                 packages:
                   type: array
                   items: { type: string }
                   description: None means all pending ones.
                 dry_run: { type: boolean }
-                ignore_osversion: { type: boolean, description: Also
-                    packages built for a newer FreeBSD than the host's,
-                    which pkg refuses otherwise (IGNORE_OSVERSION). }
+                ignore_osversion: { type: boolean, description: "Also packages built for a newer FreeBSD than the host's, which pkg refuses otherwise (IGNORE_OSVERSION)." }
                 pkg_repo: { type: string, description: "From this one
                     of pkg's repositories alone (pkg upgrade -r), one
                     of those the packages read lists in repos; a job of
