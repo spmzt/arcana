@@ -789,48 +789,89 @@ as_place(int lead, double *xp, double *yp)
 	*yp = peer_y[lead];
 }
 
-/* Hosts not placed yet go on a circle, in the order of the tree. */
+/*
+ * Is node i placed among the others: a host, or a vnet jail but one
+ * known (read) to be linked to its own host alone, which is not drawn.
+ */
+static bool
+node_placed_among(int i)
+{
+	struct thost	*t;
+
+	if (tn[i].jail[0] == '\0')
+		return (true);
+	if ((t = thost(tn[i].key, false)) == NULL || t->ifs == NULL)
+		return (true);
+	return (!node_lone(i));
+}
+
+/*
+ * Nodes not placed yet go on a circle, each host followed by its vnet
+ * jails: a jail stands as far from the others as hosts do.  One seen
+ * after the rest were placed goes beside its host, outward, at the
+ * distance between neighbours on the circle.
+ */
 static void
 places_fill(void)
 {
-	struct thost	*t;
-	double		 r, a;
-	int		 i;
+	struct thost	*t, *ht;
+	double		 r, a, d, cx, cy;
+	int		 order[MAX_NODES], i, k, n, h, slot, nth;
+	bool		 any;
 
 	if (!tp.loaded)
 		places_load();
-	r = app.nservers < 3 ? 170 : 190 + 42.0 * app.nservers;
+	n = 0;
+	for (h = 0; h < ntn; h++) {
+		if (tn[h].jail[0] != '\0')
+			continue;
+		order[n++] = h;
+		for (i = 0; i < ntn; i++)
+			if (tn[i].jail[0] != '\0' && node_host(i) == h &&
+			    node_placed_among(i))
+				order[n++] = i;
+	}
+	r = n < 3 ? 170 : 190 + 42.0 * n;
 	if (r > 720)
 		r = 720;
 	if (tp.stencil)
 		r *= 1.25;
-	for (i = 0; i < ntn; i++) {
+	d = n > 1 ? 2 * r * sin(M_PI / n) : 220;
+	any = false;
+	cx = cy = 0;
+	for (k = 0, i = 0; i < n; i++)
+		if ((t = thost(tn[order[i]].key, false)) != NULL && t->placed) {
+			any = true;
+			cx += t->x;
+			cy += t->y;
+			k++;
+		}
+	cx = k > 0 ? cx / k : 0;
+	cy = k > 0 ? cy / k : 0;
+	for (slot = 0; slot < n; slot++) {
+		i = order[slot];
 		if ((t = thost(tn[i].key, true)) == NULL || t->placed)
 			continue;
-		if (tn[i].jail[0] != '\0') {
-			/* A jail: under its host, beside the others of it. */
-			struct thost	*ht;
-			int		 k, nth;
-
+		if (any && tn[i].jail[0] != '\0') {
 			if ((ht = thost(tn[node_host(i)].key, false)) == NULL ||
 			    !ht->placed)
 				continue;
-			for (nth = 0, k = app.nservers; k < i; k++)
-				if (tn[k].srv == tn[i].srv)
+			for (nth = 0, k = 0; k < i; k++)
+				if (tn[k].jail[0] != '\0' && node_host(k) ==
+				    node_host(i))
 					nth++;
-			t->x = ht->x + ((nth + 1) / 2) * (nth % 2 == 1 ? -1 :
-			    1) * (NODE_W + 30);
-			t->y = ht->y + NODE_H + (tp.stencil ? 150 : 90);
+			a = (fabs(ht->x - cx) + fabs(ht->y - cy) < 1 ? M_PI / 2 :
+			    atan2(ht->y - cy, ht->x - cx)) + ((nth + 1) / 2) *
+			    (nth % 2 == 1 ? -0.6 : 0.6);
+			t->x = ht->x + d * cos(a);
+			t->y = ht->y + d * 0.8 * sin(a);
 			t->placed = true;
 			continue;
 		}
-		a = M_PI + 2 * M_PI * i / (app.nservers > 0 ? app.nservers :
-		    1);
+		a = M_PI + 2 * M_PI * slot / (n > 0 ? n : 1);
 		/* On a phone the room is tall: the circle is too. */
-		t->x = app.nservers == 1 ? 0 : r * cos(a) * (arc_narrow() ?
-		    0.5 : 1.35);
-		t->y = app.nservers == 1 ? 0 : r * sin(a) * (arc_narrow() ?
-		    1.5 : 0.8);
+		t->x = n == 1 ? 0 : r * cos(a) * (arc_narrow() ? 0.5 : 1.35);
+		t->y = n == 1 ? 0 : r * sin(a) * (arc_narrow() ? 1.5 : 0.8);
 		t->placed = true;
 	}
 }
