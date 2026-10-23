@@ -2557,17 +2557,26 @@ map_nodes(struct html *h)
 		const char		*mn, *st;
 		char			 other[24];
 		double			 bx, by;
-		int			 nb, k, np, len;
+		int			 nb, nbr, nm, k, np, len;
 
 		if ((t = thost(tn[i].key, false)) == NULL || !t->placed ||
 		    t->bridges == NULL)
 			continue;
 		nb = 0;
+		nbr = (int)ucl_array_size(t->bridges);
+		if (nbr > 4)
+			nbr = 4;
 		bit = NULL;
 		while ((b = ucl_object_iterate(t->bridges, &bit, true)) != NULL &&
 		    nb < 4) {
-			bx = t->x - NODE_W / 2 + 46 + nb * 104;
-			by = t->y - NODE_H / 2 - 40;
+			/* The diagram: centred above the router, side by side. */
+			if (tp.stencil) {
+				bx = t->x + (nb - (nbr - 1) / 2.0) * 90;
+				by = t->y - 88;
+			} else {
+				bx = t->x - NODE_W / 2 + 46 + nb * 104;
+				by = t->y - NODE_H / 2 - 40;
+			}
 			/* To the jails behind its members, first: under it. */
 			mit = NULL;
 			while ((m = ucl_object_iterate(jget(b, "members"), &mit,
@@ -2604,14 +2613,15 @@ map_nodes(struct html *h)
 			h_attr(h, "data-arg", tn[i].key);
 			/* Its line runs to the host's middle, under the glyph. */
 			if (tp.stencil) {
-				/* A switch: the flat box with its arrows. */
-				h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><rect x=\""
-				    "%.1f\" y=\"%.1f\" width=\"72\" height=\"26\" rx=\"3\"/>"
+				/* A switch, as the stencils draw one: a flat box, an
+				 * arrow each way on two rows; its line runs to the
+				 * router's middle, under the router's glyph. */
+				h_fmt(h, "><path class=\"up\" d=\"M%.1f %.1f L%.1f %.1f\"/><rect "
+				    "x=\"%.1f\" y=\"%.1f\" width=\"60\" height=\"24\" rx=\"3\"/>"
 				    "<path class=\"sw\" transform=\"translate(%.1f,%.1f)\" "
-				    "d=\"M-26 -4h22l-5 -4m5 4l-5 4M26 -4h-22l5 -4m-5 4l5 4\"/>"
+				    "d=\"M-20 -5h38m-6 -4l6 4l-6 4M20 5h-38m6 -4l-6 4l6 4\"/>"
 				    "<text class=\"name\" x=\"%.1f\" y=\"%.1f\">", bx, by +
-				    13, bx, t->y, bx - 36, by - 13, bx, by, bx - 34, by +
-				    30);
+				    12, t->x, t->y, bx - 30, by - 12, bx, by, bx, by - 22);
 				h_fit(h, jstr(b, "name"), 12);
 			} else {
 				h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><rect x=\""
@@ -2622,6 +2632,10 @@ map_nodes(struct html *h)
 				h_fit(h, jstr(b, "name"), 9);
 			}
 			h_raw(h, "</text>");
+			/* The diagram puts them on the switch's top edge. */
+			nm = (int)ucl_array_size(jget(b, "members"));
+			if (nm > 9)
+				nm = 9;
 			np = 0;
 			mit = NULL;
 			while ((m = ucl_object_iterate(jget(b, "members"), &mit,
@@ -2632,8 +2646,9 @@ map_nodes(struct html *h)
 				    st != NULL && strcmp(st, "forwarding") ==
 				    0 ? "fwd" : st != NULL && (strcmp(st,
 				    "discarding") == 0 || strcmp(st,
-				    "blocking") == 0) ? "block" : "learn", bx -
-				    40 + np * 10, by + 7);
+				    "blocking") == 0) ? "block" : "learn", tp.stencil ?
+				    bx + (np - (nm - 1) / 2.0) * 8 : bx - 40 + np * 10,
+				    tp.stencil ? by - 12 : by + 7);
 				np++;
 			}
 			h_raw(h, "<title>");

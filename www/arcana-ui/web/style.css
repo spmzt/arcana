@@ -5217,3 +5217,5 @@ svg.topo.stencil .tpeer.ospf.down .glyph { stroke: var(--red); }
 svg.topo.stencil .tpeer.ospf .arrows { fill: none; stroke: var(--fg-2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 svg.topo.stencil .tpeer.session path { stroke-dasharray: 6 4; }
 svg.topo.stencil .tpeer.session.down path { stroke: var(--red); }
+svg.topo.stencil g.tbridge path.up { opacity: 1; stroke-width: 1.6; }
+svg.topo.stencil g.tbridge .name { text-anchor: middle; }

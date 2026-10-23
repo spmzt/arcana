@@ -6906,6 +6906,13 @@ part_mesh(void)
 	click_at("button[data-act=topo-fit]");
 	usleep(500000);
 	shot("9-mesh-diagram");
+	/* A close look at a switch and the router it hangs on. */
+	run("const g = document.querySelector('svg.topo.stencil g.tbridge rect')"
+	    ".getBBox(); document.querySelector('svg.topo').setAttribute("
+	    "'viewBox', (g.x - 90) + ' ' + (g.y - 50) + ' 240 170');");
+	shot("9-mesh-diagram-switch");
+	click_at("button[data-act=topo-fit]");
+	usleep(300000);
 	run("const s = document.querySelector('select[data-input=topo-fib]');"
 	    " s.value = '1'; s.dispatchEvent(new Event('input', { bubbles: "
 	    "true }));");
