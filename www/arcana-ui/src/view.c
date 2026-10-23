@@ -2825,6 +2825,12 @@ modal(struct html *h)
 		case MODAL_IPSEC_CONN:
 			h_raw(h, "<button class=\"primary\">Add</button>");
 			break;
+		case MODAL_IPSEC_SA:
+			h_raw(h, "<button class=\"primary\">Send</button>");
+			break;
+		case MODAL_JAIL_ALLOW:
+			h_raw(h, "<button class=\"primary\">Change</button>");
+			break;
 		case MODAL_WG_CLIENT:
 			h_raw(h, "<button class=\"primary\">Make the client"
 			    "</button>");

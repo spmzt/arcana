@@ -3292,8 +3292,9 @@ table.broutes tr.attrs pre { margin: 0 0 .4rem 1.2rem; font-size: .72rem; color:
 .modal table.net select { max-width: 13rem; }
 .modal table.allow { width: 100%; table-layout: auto; }
 .modal table.allow th, .modal table.allow td { white-space: nowrap; }
-.modal table.allow th:first-child { white-space: normal; overflow-wrap: anywhere; }
-.modal table.allow select { max-width: 11rem; }
+.modal table.allow th:first-child { width: 16rem; white-space: nowrap; overflow-wrap: normal; }
+.modal table.allow td:last-child { width: 10rem; }
+.modal table.allow select { width: 100%; min-width: 9rem; max-width: 12rem; }
 
 /* Plugins: what was installed, apart from what the base system has. */
 nav.tabs .tab.plugin:first-of-type, nav.tabs .tab:not(.plugin) + .tab.plugin { margin-left: 1.2rem; }
