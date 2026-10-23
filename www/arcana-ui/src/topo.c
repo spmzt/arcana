@@ -180,8 +180,15 @@ static int		nlinks;
 static struct seg	segs[TOPO_SEGS];
 static bool	seg_same(const struct seg *, const struct seg *);
 static bool	node_lone(int);
+static bool	node_placed_among(int);
 static void	bgp_label(char *, size_t, const char *, const char *);
 static int		nsegs;
+
+/* The fleet's shape (topo_shape) and the neighbours' places (peers_layout). */
+static bool	tcore[MAX_NODES];
+static int	tparent[MAX_NODES];	/* the node a leaf hangs off, or -1 */
+static int	tstrip[MAX_NODES], ntstrip;	/* in the order taken away */
+static double	peer_x[EXT_MAX], peer_y[EXT_MAX];
 
 static struct {
 	double	zoom, panx, pany;
@@ -206,6 +213,8 @@ static struct {
 	double	vw, vh;			/* the room the map has, in pixels */
 	double	fit_w, fit_h;		/* and had when fitted */
 	bool	touched;		/* moved, zoomed: no fitting unasked */
+	bool	custom;			/* placed by hand: the shape is not followed */
+	uint32_t shape_sig;		/* the shape the nodes were placed for */
 	int	labels[LK_KINDS];	/* each kind's: 0 as fits, 1 shown,
 					   2 left out */
 	bool	labels_open;		/* the labels' switches shown */
@@ -418,6 +427,7 @@ places_load(void)
 			t->x = x;
 			t->y = y;
 			t->placed = true;
+			tp.custom = true;
 		}
 	free(text);
 }
@@ -607,7 +617,7 @@ peer_place(const struct ext *e, struct thost *t, double *exp, double *eyp)
 		    atan2(t->y - cy, t->x - cx);
 		t->out_set = true;
 	}
-	step = e->of > 1 && 2.6 / (e->of - 1) < 0.36 ? 2.6 / (e->of - 1) : 0.36;
+	step = e->of > 1 && 1.6 / (e->of - 1) < 0.36 ? 1.6 / (e->of - 1) : 0.36;
 	a = t->out_a + (e->slot - (e->of - 1) / 2.0) * step;
 	*exp = t->x + 185 * (1 + 0.4 * (e->slot % 3)) * cos(a);
 	*eyp = t->y + 125 * (1 + 0.4 * (e->slot % 3)) * sin(a);
@@ -707,13 +717,50 @@ as_place_raw(int lead, double *xp, double *yp, bool *keptp)
 	}
 }
 
+/* The neighbours' nodes kept out of the core's circle: back out along
+ * their way from its middle.  How many were moved. */
+static int
+peers_outside(const bool *fixed)
+{
+	struct thost	*t;
+	double		 cx, cy, r, d, a;
+	int		 i, k, m, moved;
+
+	cx = cy = r = 0;
+	for (m = 0, k = 0; k < ntn; k++)
+		if (tcore[k] && (t = thost(tn[k].key, false)) != NULL &&
+		    t->placed) {
+			cx += t->x;
+			cy += t->y;
+			m++;
+		}
+	if (m < 3)
+		return (0);
+	cx /= m;
+	cy /= m;
+	for (k = 0; k < ntn; k++)
+		if (tcore[k] && (t = thost(tn[k].key, false)) != NULL &&
+		    t->placed && hypot(t->x - cx, t->y - cy) > r)
+			r = hypot(t->x - cx, t->y - cy);
+	for (moved = 0, i = 0; i < nexts; i++) {
+		if (as_leader(i) != i || fixed[i])
+			continue;
+		d = hypot(peer_x[i] - cx, peer_y[i] - cy);
+		if (d >= r + 110)
+			continue;
+		a = d < 1 ? -M_PI / 2 : atan2(peer_y[i] - cy, peer_x[i] - cx);
+		peer_x[i] = cx + (r + 110) * cos(a);
+		peer_y[i] = cy + (r + 110) * sin(a);
+		moved++;
+	}
+	return (moved);
+}
+
 /*
  * Where every neighbour's node stands, worked out once a drawing: its
  * own place, then pushed apart from the others and from the hosts
  * where they overlap, a few rounds, the dragged ones staying put.
  */
-static double	peer_x[EXT_MAX], peer_y[EXT_MAX];
-
 static void
 peers_layout(void)
 {
@@ -775,6 +822,8 @@ peers_layout(void)
 				moved++;
 			}
 		}
+		/* None inside the circle of the core: out past it. */
+		moved += peers_outside(fixed);
 		if (moved == 0)
 			break;
 	}
@@ -806,29 +855,114 @@ node_placed_among(int i)
 }
 
 /*
- * Nodes not placed yet go on a circle, each host followed by its vnet
- * jails: a jail stands as far from the others as hosts do.  One seen
- * after the rest were placed goes beside its host, outward, at the
- * distance between neighbours on the circle.
+ * The shape of the fleet, for placing it: the core, the nodes on some
+ * cycle of links and those alone, goes on the circle; the others hang
+ * off it, each behind the node it is reached through.  Found by taking
+ * away, again and again, the nodes linked to one other drawn node only.
+ */
+static void
+topo_shape(void)
+{
+	static unsigned char	adj[MAX_NODES][MAX_NODES];
+	bool			drawn[MAX_NODES], gone[MAX_NODES];
+	int			deg[MAX_NODES], i, k, m, a, b, s, changed;
+
+	memset(adj, 0, sizeof(adj));
+	for (i = 0; i < ntn; i++) {
+		drawn[i] = node_placed_among(i);
+		gone[i] = !drawn[i];
+		tparent[i] = -1;
+	}
+	for (k = 0; k < nlinks; k++) {
+		a = links[k].a;
+		b = links[k].b;
+		if (a < 0 || a >= ntn)
+			continue;
+		if (b >= 0) {
+			if (b < ntn && a != b)
+				adj[a][b] = adj[b][a] = 1;
+			continue;
+		}
+		/* A network several are in joins each to the others. */
+		if ((s = -b - 1) >= nsegs)
+			continue;
+		for (m = 0; m < segs[s].n; m++)
+			if ((b = segs[s].member[m]) >= 0 && b < ntn && b != a)
+				adj[a][b] = adj[b][a] = 1;
+	}
+	for (i = 0; i < ntn; i++)
+		for (deg[i] = 0, k = 0; k < ntn; k++)
+			deg[i] += adj[i][k] && !gone[i] && !gone[k];
+	ntstrip = 0;
+	do {
+		changed = 0;
+		for (i = 0; i < ntn; i++) {
+			if (gone[i] || deg[i] != 1)
+				continue;
+			for (k = 0; k < ntn; k++)
+				if (adj[i][k] && !gone[k])
+					break;
+			gone[i] = true;
+			tparent[i] = k < ntn ? k : -1;
+			tstrip[ntstrip++] = i;
+			if (k < ntn)
+				deg[k]--;
+			changed = 1;
+		}
+	} while (changed);
+	for (i = 0; i < ntn; i++)
+		tcore[i] = drawn[i] && !gone[i];
+}
+
+/* Node i behind node p, outward from (cx, cy), beside p's other ones. */
+static void
+place_behind(int i, int p, double cx, double cy, double d)
+{
+	struct thost	*t, *pt;
+	double		 a;
+	int		 k, nth;
+
+	if ((t = thost(tn[i].key, true)) == NULL || (pt = thost(tn[p].key,
+	    false)) == NULL || !pt->placed)
+		return;
+	for (nth = 0, k = 0; k < ntn; k++)
+		if (k != i && tparent[k] == p && thost(tn[k].key, false) !=
+		    NULL && thost(tn[k].key, false)->placed)
+			nth++;
+	a = (fabs(pt->x - cx) + fabs(pt->y - cy) < 1 ? -M_PI / 2 :
+	    atan2(pt->y - cy, pt->x - cx)) + ((nth + 1) / 2) * (nth % 2 == 1 ?
+	    -0.6 : 0.6);
+	t->x = pt->x + d * cos(a);
+	t->y = pt->y + d * 0.8 * sin(a);
+	t->placed = true;
+}
+
+/*
+ * Nodes not placed yet: the core on a circle, each host followed by its
+ * vnet jails, a jail as far from the others as hosts are; the others
+ * behind the node they hang off, from the core outward.  One seen after
+ * the rest were placed goes beside the node it hangs off, or its host.
  */
 static void
 places_fill(void)
 {
 	struct thost	*t, *ht;
-	double		 r, a, d, cx, cy;
-	int		 order[MAX_NODES], i, k, n, h, slot, nth;
+	double		 r, d, cx, cy;
+	int		 order[MAX_NODES], i, k, n, h, slot;
 	bool		 any;
 
 	if (!tp.loaded)
 		places_load();
+	topo_shape();
 	n = 0;
 	for (h = 0; h < ntn; h++) {
 		if (tn[h].jail[0] != '\0')
 			continue;
-		order[n++] = h;
+		if (tcore[h])
+			order[n++] = h;
 		for (i = 0; i < ntn; i++)
 			if (tn[i].jail[0] != '\0' && node_host(i) == h &&
-			    node_placed_among(i))
+			    tcore[i])
 				order[n++] = i;
 	}
 	r = n < 3 ? 170 : 190 + 42.0 * n;
@@ -836,7 +970,9 @@ places_fill(void)
 		r = 720;
 	if (tp.stencil)
 		r *= 1.25;
-	d = n > 1 ? 2 * r * sin(M_PI / n) : 220;
+	d = n > 1 ? 2 * r * sin(M_PI / n) : 260;
+	if (d < 240)
+		d = 240;
 	any = false;
 	cx = cy = 0;
 	for (k = 0, i = 0; i < n; i++)
@@ -853,27 +989,64 @@ places_fill(void)
 		if ((t = thost(tn[i].key, true)) == NULL || t->placed)
 			continue;
 		if (any && tn[i].jail[0] != '\0') {
-			if ((ht = thost(tn[node_host(i)].key, false)) == NULL ||
-			    !ht->placed)
-				continue;
-			for (nth = 0, k = 0; k < i; k++)
-				if (tn[k].jail[0] != '\0' && node_host(k) ==
-				    node_host(i))
-					nth++;
-			a = (fabs(ht->x - cx) + fabs(ht->y - cy) < 1 ? M_PI / 2 :
-			    atan2(ht->y - cy, ht->x - cx)) + ((nth + 1) / 2) *
-			    (nth % 2 == 1 ? -0.6 : 0.6);
-			t->x = ht->x + d * cos(a);
-			t->y = ht->y + d * 0.8 * sin(a);
-			t->placed = true;
+			if ((ht = thost(tn[node_host(i)].key, false)) != NULL &&
+			    ht->placed) {
+				tparent[i] = node_host(i);
+				place_behind(i, node_host(i), cx, cy, d);
+			}
 			continue;
 		}
-		a = M_PI + 2 * M_PI * slot / (n > 0 ? n : 1);
-		/* On a phone the room is tall: the circle is too. */
-		t->x = n == 1 ? 0 : r * cos(a) * (arc_narrow() ? 0.5 : 1.35);
-		t->y = n == 1 ? 0 : r * sin(a) * (arc_narrow() ? 1.5 : 0.8);
-		t->placed = true;
+		{
+			double	a = M_PI + 2 * M_PI * slot / (n > 0 ? n : 1);
+
+			/* On a phone the room is tall: the circle is too. */
+			t->x = n == 1 ? 0 : r * cos(a) * (arc_narrow() ? 0.5 :
+			    1.35);
+			t->y = n == 1 ? 0 : r * sin(a) * (arc_narrow() ? 1.5 :
+			    0.8);
+			t->placed = true;
+		}
 	}
+	/* The leaves, from the core outward. */
+	for (k = ntstrip - 1; k >= 0; k--) {
+		i = tstrip[k];
+		if ((t = thost(tn[i].key, true)) == NULL || t->placed ||
+		    tparent[i] < 0)
+			continue;
+		place_behind(i, tparent[i], cx, cy, d);
+	}
+}
+
+/*
+ * Once the links are known, the nodes placed again for the shape they
+ * make, as long as none was placed by hand: the first drawing has no
+ * links yet, and a jail or a tunnel may come later.
+ */
+static void
+layout_follow(void)
+{
+	uint32_t	h;
+	int		i;
+
+	topo_shape();
+	h = 2166136261u ^ (uint32_t)ntn;
+	for (i = 0; i < ntn; i++) {
+		h = (h ^ (uint32_t)(tcore[i] ? 1 : 0)) * 16777619u;
+		h = (h ^ (uint32_t)(tparent[i] + 2)) * 16777619u;
+		h = (h ^ (uint32_t)(node_placed_among(i) ? 1 : 0)) * 16777619u;
+	}
+	if (h == tp.shape_sig)
+		return;
+	tp.shape_sig = h;
+	if (tp.custom)
+		return;
+	for (i = 0; i < nhosts; i++) {
+		hosts[i].placed = false;
+		hosts[i].out_set = false;
+	}
+	places_fill();
+	if (!tp.touched)
+		fit();
 }
 
 /* An address as bytes and its family; a zone after % is left out. */
@@ -2585,6 +2758,13 @@ map_links(struct html *h)
 		    w);
 		curve(h, x1, y1, x2, y2, bend, 0.5, &mx, &my);
 		h_raw(h, "\"/>");
+		/* A tunnel whose outer packets go by another table: ticks across
+		 * it in that table's colour, a rail, unlike OSPF's dots. */
+		if (outer >= 0) {
+			h_raw(h, "<path class=\"outer\" d=\"");
+			curve(h, x1, y1, x2, y2, bend, 0.5, NULL, NULL);
+			h_raw(h, "\"/>");
+		}
 		/* OSPF over it: a dotted line inside it. */
 		if (l->ospf_in && !tp.hide[LK_OSPF]) {
 			h_fmt(h, "<path class=\"ospfin%s\" d=\"", l->ospf_in_up ? "" :
@@ -3250,6 +3430,10 @@ map(struct html *h)
 				h_fmt(h, "<li class=\"key fib%d\" title=\"A link whose "
 				    "interface is in routing table %d\">FIB %d</li>", f > 6 ?
 				    6 : f, f, f);
+		if (more > 0)
+			h_raw(h, "<li class=\"key outer\" title=\"A tunnel whose outer "
+			    "packets go by another table than its own: ticks across it in "
+			    "that table's colour\">outer table</li>");
 	}
 	h_raw(h, "</ul></div>");
 }
@@ -3733,6 +3917,7 @@ view_netmap(struct html *h)
 		fit();
 	}
 	links_build();
+	layout_follow();
 	/* The first neighbours outside to show need room: once. */
 	if (nexts > 0 && !tp.refitted) {
 		tp.refitted = true;
@@ -4998,6 +5183,7 @@ topo_action(const char *act, const char *arg, const char *value)
 			t->y = y + grab_y;
 		}
 		tp.touched = true;
+		tp.custom = true;
 	} else if (strcmp(act, "topo-node-end") == 0) {
 		places_save();
 	} else if (strcmp(act, "topo-node-click") == 0) {
@@ -5208,6 +5394,10 @@ topo_action(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "topo-stencil") == 0) {
 		tp.stencil = !tp.stencil;
 	} else if (strcmp(act, "topo-arrange") == 0) {
+		tp.custom = false;
+		tp.shape_sig = 0;
+		for (i = 0; i < nhosts; i++)
+			hosts[i].out_set = false;
 		for (i = 0; i < nhosts; i++)
 			hosts[i].placed = false;
 		places_fill();

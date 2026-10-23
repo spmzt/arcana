@@ -6955,6 +6955,11 @@ part_mesh(void)
 	    ".getBBox(); document.querySelector('svg.topo').setAttribute("
 	    "'viewBox', (g.x - 90) + ' ' + (g.y - 50) + ' 240 170');");
 	shot("9-mesh-diagram-switch");
+	run("const b = document.querySelector('svg.topo .tlink.o2 .wire').getBBox(); "
+	    "document.querySelector('svg.topo').setAttribute('viewBox', "
+	    "(b.x + b.width / 2 - 140) + ' ' + (b.y + b.height / 2 - 95) + "
+	    "' 280 190');");
+	shot("9-mesh-outer");
 	click_at("button[data-act=topo-fit]");
 	usleep(300000);
 	run("const s = document.querySelector('select[data-input=topo-fib]');"
