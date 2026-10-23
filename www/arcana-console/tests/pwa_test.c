@@ -6090,6 +6090,18 @@ part_netsect(void)
 	click_at(".map-legend li[data-arg=lan]");
 	wait_js("document.querySelector('svg.topo .tlink.lan') && "
 	    "!document.querySelector('.map-legend li.off')", 5);
+	/* The routing tables: listed with how many interfaces each has,
+	 * every one of the lab's in the first; picking one shows its
+	 * links alone, picking it again shows all. */
+	ATF_CHECK(js_true("document.querySelector('.map-legend.tables li.on"
+	    "[data-arg=\"-1\"]') !== null && document.querySelector('.map-legend"
+	    ".tables li[data-arg=\"0\"] small').textContent > 0"));
+	click_at(".map-legend.tables li[data-arg=\"0\"]");
+	wait_js("document.querySelector('.map-legend.tables li.on[data-arg="
+	    "\"0\"]') && document.querySelector('svg.topo .tlink.lan')", 5);
+	click_at(".map-legend.tables li[data-arg=\"0\"]");
+	wait_js("document.querySelector('.map-legend.tables li.on[data-arg="
+	    "\"-1\"]')", 5);
 	/* Labels, kind by kind: the shared networks' left out, the others
 	 * as they were. */
 	click_at(".map-tools button[data-act=topo-labels]");

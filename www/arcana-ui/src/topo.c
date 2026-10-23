@@ -216,8 +216,9 @@ static struct {
 	bool	peers_loaded;
 	bool	hide[LK_KINDS];		/* kinds of links not drawn */
 	bool	hide_best, hide_alt;	/* nor the route traced */
+	int	fib;			/* the routing table shown alone, or -1 */
 	double	last_poll;
-} tp = { .zoom = 1.0 };
+} tp = { .zoom = 1.0, .fib = -1 };
 
 static struct {
 	char		from[80];
@@ -1956,33 +1957,107 @@ leave_t(double x1, double y1, double x2, double y2, double bend, bool from_a)
 	return (from_a ? t : 1 - t);
 }
 
+/*
+ * The routing tables an interface is in: its own (fib), and for a
+ * tunnel the one its outer packets are looked up in (tunnelfib), -1
+ * when it is no tunnel.  The agent leaves both out when 0.
+ */
+static void
+if_tables(const ucl_object_t *o, int *fibp, int *tfibp)
+{
+
+	*fibp = o != NULL ? (int)jint(o, "fib", 0) : 0;
+	*tfibp = o != NULL && jget(o, "tunnel") != NULL ? (int)jint(o,
+	    "tunnelfib", 0) : -1;
+}
+
+/* The tables of a link's end: the interface's at node i. */
+static void
+link_tables(int i, const char *ifn, int *fibp, int *tfibp)
+{
+	const struct thost	*t;
+
+	*fibp = 0;
+	*tfibp = -1;
+	if (i < 0 || ifn == NULL || ifn[0] == '\0')
+		return;
+	t = thost(tn[i].key, false);
+	if_tables(if_named(t, ifn), fibp, tfibp);
+}
+
+/* Is the link in the table shown?  In it by either end's interface,
+ * or by a tunnel's outer packets. */
+static bool
+link_in_fib(const struct tlink *l, int fib)
+{
+	int	fa, ta, fb, tb;
+
+	if (fib < 0)
+		return (true);
+	link_tables(l->a, l->ifa, &fa, &ta);
+	link_tables(l->b, l->ifb, &fb, &tb);
+	return (fa == fib || ta == fib || (l->b >= 0 && (fb == fib || tb ==
+	    fib)));
+}
+
+/* An interface's name with its tables: "gre0 t1", "gre0 t0→1" (a tunnel
+ * whose outer packets go by another table); the name alone in table 0. */
+static void
+if_label(char *buf, size_t len, const char *name, int fib, int tfib)
+{
+
+	if (tfib >= 0 && tfib != fib)
+		snprintf(buf, len, "%s t%d→%d", name, fib, tfib);
+	else if (fib > 0)
+		snprintf(buf, len, "%s t%d", name, fib);
+	else
+		snprintf(buf, len, "%s", name);
+}
+
 static void
 map_links(struct html *h)
 {
 	static const char *const kinds[] = { "tunnel", "p2p", "lan", "bgp",
 	    "ospf", "vnet" };
 	struct tlink	*l;
-	char		 rate[24];
+	char		 rate[24], lbl[40];
 	double		 x1, y1, x2, y2, mx, my, bend, w;
-	int		 i, flow;
+	int		 i, flow, fa, ta, fb, tb, fib, outer;
 
 	for (i = 0; i < nlinks; i++) {
 		l = &links[i];
-		if (tp.hide[l->kind] || !place(l->a, &x1, &y1) || !place(l->b,
-		    &x2, &y2))
+		if (tp.hide[l->kind] || !link_in_fib(l, tp.fib) || !place(l->a,
+		    &x1, &y1) || !place(l->b, &x2, &y2))
 			continue;
+		link_tables(l->a, l->ifa, &fa, &ta);
+		link_tables(l->b, l->ifb, &fb, &tb);
+		/* Coloured by its table past the first; a tunnel whose outer
+		 * packets go by another table gets a thin dashed line of that
+		 * table's colour beside its own. */
+		fib = fa > fb ? fa : fb;
+		outer = ta >= 0 && ta != fa ? ta : tb >= 0 && tb != fb ? tb : -1;
 		bend = bend_of(i);
 		w = 1.6 + log10(1 + l->rate / 1000.0) * 1.1;
 		if (w > 7)
 			w = 7;
 		flow = l->rate < 1000 ? 0 : l->rate < 100000 ? 1 : l->rate <
 		    10000000 ? 2 : 3;
-		h_fmt(h, "<g class=\"tlink %s %s flow%d%s%s\"><path class=\""
-		    "wire\" style=\"stroke-width:%.1f\" d=\"", kinds[l->kind],
+		h_fmt(h, "<g class=\"tlink %s %s flow%d%s%s", kinds[l->kind],
 		    l->up ? "up" : "down", flow, strcmp(tp.sel_link, l->key) ==
-		    0 ? " sel" : "", labels_quiet(l->kind) ? " quiet" : "", w);
+		    0 ? " sel" : "", labels_quiet(l->kind) ? " quiet" : "");
+		if (fib > 0)
+			h_fmt(h, " fib%d", fib > 6 ? 6 : fib);
+		if (outer >= 0)
+			h_fmt(h, " o%d", outer > 6 ? 6 : outer);
+		h_fmt(h, "\"><path class=\"wire\" style=\"stroke-width:%.1f\" d=\"",
+		    w);
 		curve(h, x1, y1, x2, y2, bend, 0.5, &mx, &my);
 		h_raw(h, "\"/>");
+		if (outer >= 0) {
+			h_raw(h, "<path class=\"outer\" d=\"");
+			curve(h, x1, y1, x2, y2, bend, 0.5, NULL, NULL);
+			h_raw(h, "\"/>");
+		}
 		if (flow > 0) {
 			h_raw(h, "<path class=\"flow\" d=\"");
 			curve(h, x1, y1, x2, y2, bend, 0.5, NULL, NULL);
@@ -2009,14 +2084,16 @@ map_links(struct html *h)
 			    y2, bend, true), &ex, &ey);
 			h_fmt(h, "<text class=\"lbl end\" x=\"%.1f\" y=\"%.1f\">",
 			    ex, ey - 5);
-			h_txt(h, l->ifa);
+			if_label(lbl, sizeof(lbl), l->ifa, fa, ta);
+			h_txt(h, lbl);
 			h_raw(h, "</text>");
 			if (l->ifb[0] != '\0') {
 				curve(NULL, x1, y1, x2, y2, bend, leave_t(x1, y1,
 				    x2, y2, bend, false), &ex, &ey);
 				h_fmt(h, "<text class=\"lbl end\" x=\"%.1f\" "
 				    "y=\"%.1f\">", ex, ey - 5);
-				h_txt(h, l->ifb);
+				if_label(lbl, sizeof(lbl), l->ifb, fb, tb);
+				h_txt(h, lbl);
 				h_raw(h, "</text>");
 			}
 		} else if (l->b >= 0) {
@@ -2494,6 +2571,41 @@ map(struct html *h)
 			    off ? "Show" : "Hide", lg[k].title);
 		}
 	}
+	/* The routing tables the interfaces are in, each with how many;
+	 * one picked shows its links alone: those in it by an interface
+	 * or by a tunnel's outer packets. */
+	{
+		const ucl_object_t	*o;
+		ucl_object_iter_t	 it;
+		int			 i, f, tf, n[8];
+
+		memset(n, 0, sizeof(n));
+		for (i = 0; i < nhosts; i++) {
+			it = NULL;
+			while ((o = ucl_object_iterate(jget(hosts[i].ifs,
+			    "interfaces"), &it, true)) != NULL) {
+				if_tables(o, &f, &tf);
+				if (f >= 0 && f < 8)
+					n[f]++;
+				if (tf >= 0 && tf < 8 && tf != f)
+					n[tf]++;
+			}
+		}
+		h_raw(h, "</ul><ul class=\"map-legend tables\"><li class=\"head\">"
+		    "Tables</li>");
+		h_fmt(h, "<li class=\"all%s\" data-act=\"topo-fib\" data-arg=\"-1\" "
+		    "title=\"Every table\">all</li>", tp.fib < 0 ? " on" : "");
+		for (f = 0; f < 8; f++) {
+			if (n[f] == 0)
+				continue;
+			h_fmt(h, "<li class=\"fib%d%s\" data-act=\"topo-fib\" "
+			    "data-arg=\"%d\" title=\"Only the links in routing "
+			    "table %d: by an interface in it, or a tunnel whose "
+			    "outer packets go by it\">table %d <small>%d</small>"
+			    "</li>", f > 6 ? 6 : f, tp.fib == f ? " on" : "", f, f,
+			    f, n[f]);
+		}
+	}
 	h_raw(h, "</ul></div>");
 }
 
@@ -2632,6 +2744,7 @@ panel_host(struct html *h, int node, struct thost *t)
 	struct ifrate		*r;
 	const char		*name;
 	char			 in[24], out[24];
+	int			 fib, tfib;
 
 	h_raw(h, "<section class=\"pane\"><h4>");
 	h_txt(h, tn[node].label);
@@ -2658,13 +2771,22 @@ panel_host(struct html *h, int node, struct thost *t)
 		if ((name = jstr(o, "name")) == NULL)
 			continue;
 		r = rate_of(t, name, false);
-		h_fmt(h, "<li class=\"%s%s\" data-act=\"topo-sel-if\"", jbool(o,
+		if_tables(o, &fib, &tfib);
+		h_fmt(h, "<li class=\"%s%s%s\" data-act=\"topo-sel-if\"", jbool(o,
 		    "up") ? "up" : "down", strcmp(tp.sel_if, name) == 0 ?
-		    " sel" : "");
+		    " sel" : "", tp.fib >= 0 && fib != tp.fib && tfib != tp.fib ?
+		    " dim" : "");
 		h_attr(h, "data-arg", name);
 		h_raw(h, "><div class=\"ifhead\"><i class=\"led\"></i><b>");
 		h_txt(h, name);
 		h_raw(h, "</b>");
+		if (fib > 0)
+			h_fmt(h, "<span class=\"chip fib%d\" title=\"Its routing table\">"
+			    "table %d</span>", fib > 6 ? 6 : fib, fib);
+		if (tfib >= 0 && tfib != fib)
+			h_fmt(h, "<span class=\"chip fib%d\" title=\"The table its outer "
+			    "packets go by (tunnelfib)\">outer %d</span>", tfib > 6 ? 6 :
+			    tfib, tfib);
 		if (jstr(o, "description") != NULL) {
 			h_raw(h, "<span class=\"dim\">");
 			h_txt(h, jstr(o, "description"));
@@ -4386,6 +4508,9 @@ topo_action(const char *act, const char *arg, const char *value)
 		for (i = 0; i < LK_KINDS; i++)
 			if (strcmp(arg, names[i]) == 0)
 				tp.labels[i] = labels_quiet(i) ? 1 : 2;
+	} else if (strcmp(act, "topo-fib") == 0) {
+		n = atoi(arg);
+		tp.fib = n < 0 || tp.fib == n ? -1 : n;
 	} else if (strcmp(act, "topo-legend") == 0) {
 		static const char *const names[] = { "tunnel", "p2p", "lan",
 		    "bgp", "ospf", "vnet" };
