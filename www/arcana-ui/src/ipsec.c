@@ -107,7 +107,11 @@ view_ipsec(struct html *h, struct server *s, const ucl_object_t *data)
 		    "title=\"service strongswan onestart\">Start</button>");
 	h_fmt(h, "<button class=\"ghost small\" data-act=\"ipsec-init\" "
 	    "title=\"%s\">%s</button><button class=\"ghost small\" data-act=\""
-	    "ipsec-conn-add\">+ connection</button></span></h4>",
+	    "ipsec-conn-add\">+ connection</button><button class=\"ghost "
+	    "small\" data-act=\"ipsec-sa-add\" title=\"Security associations "
+	    "keyed by hand or by a key agreement of the two hosts' own, for an "
+	    "ipsec(4) interface: setkey(8), no IKE\">+ manual SAs</button>"
+	    "</span></h4>",
 	    jstr(data, "public-key") != NULL ? "Keep it started at boot; the "
 	    "key it has stays" : "The host makes its key and keeps it",
 	    jstr(data, "public-key") != NULL ? "At boot" : "Make its key");
@@ -374,11 +378,65 @@ cert_pick(struct html *h, const char *name, const char *label, bool ca)
 	h_raw(h, "</select></label>");
 }
 
+/* Manually keyed SAs of an ipsec(4) interface: a verb, its words. */
+static bool
+ipsec_sa_modal(struct html *h)
+{
+
+	if (app.modal != MODAL_IPSEC_SA)
+		return (false);
+	h_raw(h, "<form data-form=\"ipsec-sa\"><h2>Manually keyed security "
+	    "associations</h2><p>For an ipsec(4) interface made with a reqid, "
+	    "without IKE: the SAs set by setkey(8) from keys given here "
+	    "(<b>set</b>), or derived on both hosts from a key pair each "
+	    "host makes (<b>key</b>) and the other's public half (<b>derive"
+	    "</b>), the public halves shown by the host's SD-WAN read; a "
+	    "rotation derives from the next pair (<b>key next</b>, <b>derive "
+	    "&hellip; next</b>) and <b>commit</b> makes it the pair; <b>clear"
+	    "</b> takes the SAs out.  In safe mode the host puts back what "
+	    "was in when the console does not confirm the job: derived SAs "
+	    "come back from their words, ones set by hand cannot, so a safe "
+	    "job over those is refused.</p>"
+	    "<div class=\"two\"><label>Verb<select name=\"verb\">"
+	    "<option value=\"key\">key: a pair of this interface's</option>"
+	    "<option value=\"derive\">derive: the SAs from the pair and "
+	    "the peer's public half</option>"
+	    "<option value=\"set\">set: the SAs from keys given</option>"
+	    "<option value=\"commit\">commit: the next pair the pair</option>"
+	    "<option value=\"clear\">clear: the SAs out</option></select>"
+	    "</label><label>Interface<input name=\"interface\" spellcheck=\""
+	    "false\" autocomplete=\"off\" placeholder=\"ipsec0\" autofocus>"
+	    "</label></div>"
+	    "<div class=\"two\"><label>reqid<input name=\"reqid\" inputmode="
+	    "\"numeric\" placeholder=\"100\"><small>The interface's; not "
+	    "for key.</small></label><label>This host's outer address<input "
+	    "name=\"local\" spellcheck=\"false\" autocomplete=\"off\" "
+	    "placeholder=\"192.0.2.1\"></label></div>"
+	    "<label>The peer's outer address<input name=\"remote\" "
+	    "spellcheck=\"false\" autocomplete=\"off\" placeholder=\""
+	    "192.0.2.2\"></label>"
+	    "<label>Words<input name=\"words\" spellcheck=\"false\" "
+	    "autocomplete=\"off\" placeholder=\"peer &lt;base64&gt; enc "
+	    "aes-gcm-16 epoch 1 lifetime 3600\"><small>As arcanactl takes "
+	    "them: for derive, <code>peer</code>, <code>enc</code> (aes-cbc "
+	    "with <code>auth</code>, or aes-gcm-16), <code>epoch</code>, "
+	    "<code>install</code> both, in or out, <code>encap</code>, "
+	    "<code>esn</code>, <code>lifetime</code>, <code>next</code>; for "
+	    "set, <code>spi-in</code>, <code>spi-out</code>, <code>key-in"
+	    "</code>, <code>key-out</code>, <code>akey-in</code>, <code>"
+	    "akey-out</code> in hex; for key, <code>next</code> at most."
+	    "</small></label>"
+	    "<label class=\"toggle\"><input type=\"checkbox\" name=\"safe\" "
+	    "checked><span>Safe mode <em>undone by the host unless the "
+	    "console confirms it</em></span></label>");
+	return (true);
+}
+
 bool
 ipsec_modal(struct html *h)
 {
 
-	if (ipsec_child_modal(h))
+	if (ipsec_child_modal(h) || ipsec_sa_modal(h))
 		return (true);
 	if (app.modal != MODAL_IPSEC_CONN)
 		return (false);
@@ -527,6 +585,84 @@ ipsec_form(const char *form, const ucl_object_t *f)
 			*qk, *lts, *rts, *lid, *rid, *qs, *way, *lcert;
 	size_t		 n;
 
+	if (strcmp(form, "ipsec-sa") == 0) {
+		const char	*verb, *p, *e;
+		char		*words, *qw, *qi, *q;
+		size_t		 len;
+		bool		 iskey;
+
+		if ((s = cur_server()) == NULL)
+			return (true);
+		verb = jstr(f, "verb") != NULL ? jstr(f, "verb") : "derive";
+		iskey = strcmp(verb, "key") == 0;
+		v = jstr(f, "interface");
+		if (v == NULL || strncmp(v, "ipsec", 5) != 0 || v[5] == '\0' ||
+		    v[5 + strspn(v + 5, "0123456789")] != '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "The "
+			    "interface is an ipsec(4) one, ipsec0");
+			return (true);
+		}
+		qi = json_quote(v);
+		reqid[0] = '\0';
+		ql = qr = NULL;
+		if (!iskey) {
+			v = jstr(f, "reqid");
+			if (v == NULL || v[0] == '\0' || strlen(v) > 5 || v[strspn(v,
+			    "0123456789")] != '\0' || atoi(v) < 1 || atoi(v) > 16383
+			    || jstr(f, "local") == NULL || jstr(f, "local")[0] ==
+			    '\0' || jstr(f, "remote") == NULL || jstr(f, "remote")[0]
+			    == '\0') {
+				snprintf(app.modal_error, sizeof(app.modal_error),
+				    "But for key, the reqid (1 to 16383) and the two "
+				    "outer addresses are needed");
+				free(qi);
+				return (true);
+			}
+			snprintf(reqid, sizeof(reqid), ",\"reqid\":%d", atoi(v));
+			ql = json_quote(jstr(f, "local"));
+			qr = json_quote(jstr(f, "remote"));
+		}
+		/* The words, each a string of the args list. */
+		words = strdup("");
+		len = 0;
+		for (p = jstr(f, "words") != NULL ? jstr(f, "words") : ""; *p !=
+		    '\0'; p = e) {
+			p += strspn(p, " \t\n,");
+			e = p + strcspn(p, " \t\n,");
+			if (e == p)
+				break;
+			{
+				char	*word = strndup(p, (size_t)(e - p));
+
+				q = json_quote(word);
+				free(word);
+			}
+			if (asprintf(&qw, "%s%s%s", words, len > 0 ? "," : "", q) ==
+			    -1)
+				abort();
+			free(q);
+			free(words);
+			words = qw;
+			len++;
+		}
+		snprintf(title, sizeof(title), "ipsec sa %s %s", verb, jstr(f,
+		    "interface"));
+		if (iskey)
+			ipsec_job(s, title, "{\"kind\":\"ipsec-sa\",\"verb\":\"key\","
+			    "\"interface\":%s,\"args\":[%s],\"safe\":%s}", qi, words,
+			    jbool(f, "safe") ? "true" : "false");
+		else
+			ipsec_job(s, title, "{\"kind\":\"ipsec-sa\",\"verb\":\"%s\","
+			    "\"interface\":%s%s,\"tunnel_local\":%s,\"tunnel_remote\":%s,"
+			    "\"args\":[%s],\"safe\":%s}", verb, qi, reqid, ql, qr,
+			    words, jbool(f, "safe") ? "true" : "false");
+		free(qi);
+		free(ql);
+		free(qr);
+		free(words);
+		app.modal = MODAL_NONE;
+		return (true);
+	}
 	if (strcmp(form, "ipsec-child") == 0) {
 		char	*qc, *qd;
 
@@ -689,6 +825,9 @@ ipsec_action(const char *act, const char *arg, const char *value)
 		    "\"conn\":%s,\"child\":%s}", qc, qd);
 		free(qc);
 		free(qd);
+	} else if (strcmp(act, "ipsec-sa-add") == 0) {
+		app.modal = MODAL_IPSEC_SA;
+		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "ipsec-conn-add") == 0) {
 		app.modal = MODAL_IPSEC_CONN;
 		app.modal_error[0] = '\0';

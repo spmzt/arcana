@@ -32,6 +32,7 @@ SD-WAN, in MEF 70.2's terms with Mplify 119 and MEF 88:
 | Paths, the probes, the rules, the steering and the manager | [Probes, rules and steering](https://spmzt.github.io/arcana-docs/sdwan/steering.html) |
 | Internet breakout, NAT, bandwidth, importance, egress | [Breakout, bandwidth and egress](https://spmzt.github.io/arcana-docs/sdwan/traffic.html) |
 | Static, BGP and OSPF at a UNI, BFD, the control plane, the hosts' addresses, the WAN links | [Routing and addresses at the UNIs](https://spmzt.github.io/arcana-docs/sdwan/routing.html) |
+| Tunnel MTU, several transports per pair, WireGuard behind NAT or a relay, ECMP, an edge in its own table, loopback iBGP and transit, breakout failover, NAT64 and CLAT, destination sets by BGP, neighbours at a UNI, the safe apply | [Several uplinks, several tunnels: the mesh](https://spmzt.github.io/arcana-docs/sdwan/mesh.html) |
 | Security policies, lists and feeds, the record, URL filters, identities, malware, intrusion detection, zero trust and the audit trail | [Security](https://spmzt.github.io/arcana-docs/sdwan/security.html) |
 | Where Arcana stands against Mplify 117.1, MEF 138 and MEF 118.1 | [Conformance: SASE](https://spmzt.github.io/arcana-docs/sdwan/conformance.html) |
 | The routing domains, uswe tunnels and their keys, conformance | [Mplify 119](https://spmzt.github.io/arcana-docs/sdwan/mplify.html) |

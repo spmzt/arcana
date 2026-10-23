@@ -1149,6 +1149,108 @@ jc_edit(const struct jc_conf *conf, struct jc_file *f, struct jc_block *b,
 }
 
 /*
+ * Set key to one value in the jail's block b of file f, or take it out:
+ * every statement of key the block has goes, a bare one ("allow.x;")
+ * too, and with a value a "key = value;" statement comes where the
+ * first was, else on a line of its own last in the block; a value of
+ * letters, digits and _ . - + / : is written bare, any other quoted.
+ * The new contents of f are returned in *outp; nothing is written.
+ * The number of statements taken out, or -1.
+ */
+int
+jc_replace(struct jc_file *f, const struct jc_block *b, const char *key,
+    const char *value, char **outp, size_t *outlenp)
+{
+	const struct jc_stmt	*st;
+	struct strbuf		 out, ins;
+	size_t			 i, j, from, to, at, ls, copied;
+	int			 n;
+	bool			 bare, placed;
+
+	memset(&out, 0, sizeof(out));
+	memset(&ins, 0, sizeof(ins));
+	if (value != NULL) {
+		bare = value[0] != '\0';
+		for (i = 0; value[i] != '\0'; i++)
+			if (!isalnum((unsigned char)value[i]) && strchr("_.-+/:",
+			    value[i]) == NULL)
+				bare = false;
+		sb_puts(&ins, key);
+		sb_puts(&ins, " = ");
+		if (bare)
+			sb_puts(&ins, value);
+		else
+			sb_putq(&ins, value, '"');
+		sb_putc(&ins, ';');
+	}
+	n = 0;
+	copied = 0;
+	placed = false;
+	for (i = 0; i < b->nstmts; i++) {
+		st = &b->stmts[i];
+		if (st->keyvar || strcmp(st->key, key) != 0 || st->off < copied)
+			continue;
+		/* The statement, with its line when it has it to itself. */
+		from = st->off;
+		to = st->end;
+		for (j = from; j > 0 && (f->buf[j - 1] == ' ' || f->buf[j - 1] ==
+		    '\t'); j--)
+			;
+		for (at = to; at < f->len && (f->buf[at] == ' ' || f->buf[at] ==
+		    '\t'); at++)
+			;
+		sb_putn(&out, f->buf + copied, from - copied);
+		if (value != NULL && !placed) {
+			/* In its place, the first time. */
+			sb_putn(&out, ins.s, ins.len);
+			placed = true;
+		} else if ((j == 0 || f->buf[j - 1] == '\n') && (at >= f->len ||
+		    f->buf[at] == '\n')) {
+			/* Its line goes: the indentation before it was
+			 * copied already, so back over it. */
+			out.len -= from - j;
+			to = at < f->len ? at + 1 : at;
+		}
+		copied = to;
+		n++;
+	}
+	if (value != NULL && !placed) {
+		/* New, before the closing brace, as jc_edit puts one. */
+		for (ls = b->close; ls > b->open && (f->buf[ls - 1] == ' ' ||
+		    f->buf[ls - 1] == '\t'); ls--)
+			;
+		if (ls > b->open && f->buf[ls - 1] == '\n') {
+			at = ls;
+			sb_putn(&out, f->buf + copied, at - copied);
+			if (b->nstmts > 0) {
+				st = &b->stmts[0];
+				for (i = st->off; i > 0 && (f->buf[i - 1] == ' ' ||
+				    f->buf[i - 1] == '\t'); i--)
+					;
+				if (i == 0 || f->buf[i - 1] == '\n')
+					sb_putn(&out, f->buf + i, st->off - i);
+				else
+					sb_putc(&out, '\t');
+			} else
+				sb_putc(&out, '\t');
+			sb_putn(&out, ins.s, ins.len);
+			sb_putc(&out, '\n');
+		} else {
+			at = b->close;
+			sb_putn(&out, f->buf + copied, at - copied);
+			sb_putn(&out, ins.s, ins.len);
+			sb_putc(&out, ' ');
+		}
+		copied = at;
+	}
+	sb_putn(&out, f->buf + copied, f->len - copied);
+	free(ins.s);
+	*outlenp = out.len;
+	*outp = sb_take(&out);
+	return (n);
+}
+
+/*
  * Check an edit before writing it: the new text of path still parses and
  * jail's block now does (add) or does not (remove) hold the value.
  */

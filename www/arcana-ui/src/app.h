@@ -396,6 +396,7 @@ enum modal {
 	MODAL_JAIL_TEMPLATE,
 	MODAL_JAIL_REMOVE,
 	MODAL_JAIL_FILE,
+	MODAL_JAIL_ALLOW,
 	MODAL_NEIGH,
 	MODAL_CARP,
 	MODAL_CERT_ADD,
@@ -411,6 +412,7 @@ enum modal {
 	MODAL_BIRD_FORM,	/* a BGP, OSPF or BFD protocol as a form */
 	MODAL_IPSEC_CONN,
 	MODAL_IPSEC_CHILD,
+	MODAL_IPSEC_SA,
 	MODAL_SD_UCS,
 	MODAL_SD_EDGE,
 	MODAL_SD_LINK,
@@ -752,6 +754,8 @@ void		 jailmk_buttons(struct html *);
 bool		 jailmk_modal(struct html *);
 bool		 jailmk_form(const char *, const ucl_object_t *);
 bool		 jailmk_action(const char *, const char *, const char *);
+void		 jail_allow_section(struct html *, const struct server *,
+		    const ucl_object_t *);
 /* netview.c: a neighbour set by hand. */
 bool		 neigh_modal(struct html *);
 bool		 neigh_form(const char *, const ucl_object_t *);

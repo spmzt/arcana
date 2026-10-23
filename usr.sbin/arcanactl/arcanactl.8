@@ -902,6 +902,27 @@ until one is done.
 .It Cm ipsec-sa clear Ar interface reqid local remote
 Every SA between the two addresses deleted, the next pair and what was
 kept of the SAs with them.
+.It Cm allow Oo Fl n Oc Ar jail Ar allow.name=0|1|unset ...
+The jail's permissions, the
+.Va allow.*
+parameters of
+.Xr jail 8
+(allow.raw_sockets, allow.mount.zfs and the rest this kernel has, as
+.Xr jls 8
+lists them): each set on the running jail at once, as
+.Nm jail Fl m
+does; with
+.Fl p
+in the jail's own file too, the statement replaced or, with
+.Cm unset ,
+taken out, for the next start; with
+.Fl n
+the running jail is left alone and the file alone is changed.
+A jail not running takes the file alone.
+In safe mode
+.Pq Fl s
+the values and the file go back as they were when the job is not
+confirmed.
 .It Cm rtadvd Ar interface prefix Op Ar dns ...
 Router advertisements on the interface, for the hosts behind it to
 address themselves (SLAAC): an entry for it written into

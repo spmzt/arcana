@@ -29,7 +29,146 @@ static struct {
 	char		 edit[72];	/* the template edited, "" a new one */
 	char		 rm[72];	/* the jail taken away */
 	char		 file[72];	/* the jail whose file is changed */
+	char		 allow[72];	/* the jail whose permissions are */
 } jm;
+
+/* The allow.* parameters jail(8) has on FreeBSD 15; a running jail
+ * says its own, this is for one stopped. */
+static const char *const allow_names[] = {
+	"allow.set_hostname", "allow.sysvipc", "allow.raw_sockets",
+	"allow.chflags", "allow.mount", "allow.mount.devfs",
+	"allow.mount.fdescfs", "allow.mount.nullfs", "allow.mount.procfs",
+	"allow.mount.linprocfs", "allow.mount.linsysfs", "allow.mount.tmpfs",
+	"allow.mount.zfs", "allow.mount.fusefs", "allow.quotas",
+	"allow.socket_af", "allow.mlock", "allow.reserved_ports",
+	"allow.read_msgbuf", "allow.unprivileged_proc_debug", "allow.vmm",
+	"allow.nfsd", "allow.adjtime", "allow.settime", "allow.extattr",
+	"allow.suser", "allow.routing",
+};
+
+/* What the jail's file says of an allow.* parameter: "1", "0", or NULL. */
+static const char *
+allow_in_file(const ucl_object_t *j, const char *name)
+{
+	const ucl_object_t	*p, *v;
+	ucl_object_iter_t	 it, vit;
+	const char		*s;
+
+	it = NULL;
+	while ((p = ucl_object_iterate(jget(j, "params"), &it, true)) != NULL) {
+		if (jstr(p, "key") == NULL || strcmp(jstr(p, "key"), name) != 0)
+			continue;
+		vit = NULL;
+		s = "1";
+		while ((v = ucl_object_iterate(jget(p, "values"), &vit, true)) !=
+		    NULL)
+			s = ucl_object_tostring(v);
+		return (s != NULL && (strcmp(s, "0") == 0 || strcmp(s, "false") ==
+		    0) ? "0" : "1");
+	}
+	return (NULL);
+}
+
+/* What the running jail has: "1", "0", or NULL when it is not running. */
+static const char *
+allow_live(const ucl_object_t *j, const char *name)
+{
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	const char		*s;
+	size_t			 n;
+
+	n = strlen(name);
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(j, "allow"), &it, true)) != NULL) {
+		s = ucl_object_tostring(v);
+		if (s != NULL && strncmp(s, name, n) == 0 && s[n] == '=')
+			return (s[n + 1] == '1' ? "1" : "0");
+	}
+	return (NULL);
+}
+
+/* The parameters to show: the running jail's, else the known ones,
+ * and any its file names that are not among them. */
+static size_t
+allow_list(const ucl_object_t *j, const char **names, size_t max)
+{
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	const char		*s, *eq;
+	size_t			 n, i, k;
+	static char		 own[64][48];
+
+	n = 0;
+	it = NULL;
+	while (n < max && n < 64 && (v = ucl_object_iterate(jget(j, "allow"),
+	    &it, true)) != NULL) {
+		s = ucl_object_tostring(v);
+		if (s == NULL || (eq = strchr(s, '=')) == NULL || (size_t)(eq -
+		    s) >= sizeof(own[0]))
+			continue;
+		memcpy(own[n], s, (size_t)(eq - s));
+		own[n][eq - s] = '\0';
+		names[n] = own[n];
+		n++;
+	}
+	if (n == 0)
+		for (i = 0; i < nitems(allow_names) && n < max; i++)
+			names[n++] = allow_names[i];
+	it = NULL;
+	while (n < max && n < 64 && (v = ucl_object_iterate(jget(j, "params"),
+	    &it, true)) != NULL) {
+		s = jstr(v, "key");
+		if (s == NULL || strncmp(s, "allow.", 6) != 0 || strlen(s) >=
+		    sizeof(own[0]))
+			continue;
+		for (k = 0; k < n; k++)
+			if (strcmp(names[k], s) == 0)
+				break;
+		if (k < n)
+			continue;
+		snprintf(own[n], sizeof(own[n]), "%s", s);
+		names[n] = own[n];
+		n++;
+	}
+	return (n);
+}
+
+/* The permissions of a jail on its page: each allow.* parameter, what
+ * the running jail has and what its file says. */
+void
+jail_allow_section(struct html *h, const struct server *s,
+    const ucl_object_t *j)
+{
+	const char	*names[64], *live, *file;
+	size_t		 n, i;
+	bool		 running;
+
+	(void)s;
+	running = jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
+	    "running") == 0;
+	n = allow_list(j, names, nitems(names));
+	h_raw(h, "<h4>Permissions <small class=\"dim\">allow.*, as jail(8) "
+	    "takes them</small> <button class=\"ghost small\" data-act=\""
+	    "jm-allow\"");
+	h_attr(h, "data-arg", jstr(j, "name"));
+	h_raw(h, ">Change</button></h4><table class=\"params allow\"><thead>"
+	    "<tr><th>Parameter</th><th>Now</th><th>In its file</th></tr>"
+	    "</thead><tbody>");
+	for (i = 0; i < n; i++) {
+		live = allow_live(j, names[i]);
+		file = allow_in_file(j, names[i]);
+		h_raw(h, "<tr><th>");
+		h_txt(h, names[i]);
+		h_fmt(h, "</th><td class=\"%s\">%s</td><td class=\"%s\">%s</td>"
+		    "</tr>", live != NULL && live[0] == '1' ? "on" : "off",
+		    !running ? "—" : live == NULL ? "?" : live[0] == '1' ?
+		    "allowed" : "no", file != NULL && file[0] == '1' ? "on" :
+		    "off", file == NULL ? "<span class=\"dim\">not set</span>" :
+		    file[0] == '1' ? "allowed" : "no");
+	}
+	h_raw(h, "</tbody></table>");
+}
 
 static void
 jm_reset(struct server *s)
@@ -384,6 +523,53 @@ jailmk_modal(struct html *h)
 		h_raw(h, "</textarea></label>");
 		return (true);
 	}
+	case MODAL_JAIL_ALLOW: {
+		const ucl_object_t	*j;
+		const char		*names[64], *live, *file;
+		size_t			 na, i;
+		bool			 running;
+
+		if (cur_server() == NULL || (j = find_jail(cur_server(),
+		    jm.allow)) == NULL)
+			return (false);
+		running = jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
+		    "running") == 0;
+		na = allow_list(j, names, nitems(names));
+		h_raw(h, "<form data-form=\"jm-allow\" class=\"wide\"><h2>Permissions "
+		    "of ");
+		h_txt(h, jm.allow);
+		h_raw(h, "</h2><p>jail(8)'s <code>allow.*</code> parameters: what the "
+		    "jail may do. Each left as it is, allowed, refused, or taken "
+		    "out of its file (the kernel's default then, from the next "
+		    "start). Set on the running jail at once (<code>jail -m</code>), "
+		    "in its file for the next start, or both.</p><table class=\""
+		    "params allow\"><thead><tr><th>Parameter</th><th>Now</th><th>In "
+		    "its file</th><th>Set to</th></tr></thead><tbody>");
+		for (i = 0; i < na; i++) {
+			live = allow_live(j, names[i]);
+			file = allow_in_file(j, names[i]);
+			h_raw(h, "<tr><th>");
+			h_txt(h, names[i]);
+			h_fmt(h, "</th><td>%s</td><td>%s</td><td><select name=\"",
+			    !running ? "—" : live == NULL ? "?" : live[0] == '1' ?
+			    "allowed" : "no", file == NULL ? "not set" : file[0] == '1'
+			    ? "allowed" : "no");
+			h_txt(h, names[i]);
+			h_raw(h, "\"><option value=\"\">as it is</option><option value="
+			    "\"1\">allowed</option><option value=\"0\">no</option>"
+			    "<option value=\"unset\">out of its file</option></select>"
+			    "</td></tr>");
+		}
+		h_fmt(h, "</tbody></table><fieldset class=\"toggles\"><label class=\""
+		    "toggle\"><input type=\"checkbox\" name=\"live\"%s%s> On the "
+		    "running jail now</label><label class=\"toggle\"><input type=\""
+		    "checkbox\" name=\"persist\" checked> In its file, for the next "
+		    "start</label><label class=\"toggle\"><input type=\"checkbox\" "
+		    "name=\"safe\" checked> Safe mode <small>put back by the host "
+		    "unless the console confirms it</small></label></fieldset>",
+		    running ? " checked" : "", running ? "" : " disabled");
+		return (true);
+	}
 	case MODAL_JAIL_REMOVE:
 		h_raw(h, "<form data-form=\"jm-remove\"><h2>Take away ");
 		h_txt(h, jm.rm);
@@ -539,6 +725,67 @@ jailmk_form(const char *form, const ucl_object_t *f)
 		app.modal = MODAL_NONE;
 		return (true);
 	}
+	if (strcmp(form, "jm-allow") == 0) {
+		const ucl_object_t	*j;
+		const char		*names[64], *val;
+		char			*words, *qw, *qn, *q;
+		size_t			 na, i, n;
+		bool			 live, keep;
+
+		if ((j = find_jail(s, jm.allow)) == NULL)
+			return (true);
+		na = allow_list(j, names, nitems(names));
+		live = jbool(f, "live");
+		keep = jbool(f, "persist");
+		if (!live && !keep) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "On the "
+			    "running jail, in its file, or both");
+			return (true);
+		}
+		words = strdup("");
+		n = 0;
+		for (i = 0; i < na; i++) {
+			val = jstr(f, names[i]);
+			if (val == NULL || val[0] == '\0')
+				continue;
+			if (strcmp(val, "unset") == 0 && !keep) {
+				snprintf(app.modal_error, sizeof(app.modal_error),
+				    "%s out of its file: tick its file", names[i]);
+				free(words);
+				return (true);
+			}
+			if (asprintf(&q, "%s=%s", names[i], val) == -1)
+				abort();
+			qw = json_quote(q);
+			free(q);
+			if (asprintf(&q, "%s%s%s", words, n > 0 ? "," : "", qw) == -1)
+				abort();
+			free(qw);
+			free(words);
+			words = q;
+			n++;
+		}
+		if (n == 0) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "Nothing "
+			    "to change: set a parameter to allowed, no, or out of "
+			    "its file");
+			free(words);
+			return (true);
+		}
+		qn = json_quote(jm.allow);
+		snprintf(title, sizeof(title), "jail %s allow%s", jm.allow, keep ?
+		    live ? " (now, and kept)" : " (kept)" : "");
+		if (asprintf(&q, "{\"kind\":\"jail-allow\",\"jail\":%s,\"args\":[%s],"
+		    "\"live\":%s,\"persist\":%s,\"safe\":%s}", qn, words, live ?
+		    "true" : "false", keep ? "true" : "false", jbool(f, "safe") ?
+		    "true" : "false") == -1)
+			abort();
+		job_send_host(s, q, title, JOB_JAIL, "jails");
+		free(qn);
+		free(words);
+		app.modal = MODAL_NONE;
+		return (true);
+	}
 	if (strcmp(form, "jm-remove") == 0) {
 		v = jstr(f, "ds") != NULL ? jstr(f, "ds") : "";
 		q1 = json_quote(jm.rm);
@@ -682,6 +929,9 @@ jailmk_action(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "jm-rm") == 0) {
 		snprintf(jm.rm, sizeof(jm.rm), "%s", arg);
 		app.modal = MODAL_JAIL_REMOVE;
+	} else if (strcmp(act, "jm-allow") == 0) {
+		snprintf(jm.allow, sizeof(jm.allow), "%s", arg);
+		app.modal = MODAL_JAIL_ALLOW;
 	}
 	return (true);
 }

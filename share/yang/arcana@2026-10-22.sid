@@ -2,6 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana",
     "module-revision": "2026-10-22",
+    "sid-file-version": 1,
     "description": "Arcana's SIDs for arcana (RFC 9595's experimental range; share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -8283,6 +8284,21 @@
         "namespace": "data",
         "identifier": "/arcana:zfs-send/output/ok",
         "sid": "74651"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:action/output/result/allow",
+        "sid": "74652"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:address/output/result/allow",
+        "sid": "74653"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:list/output/jails/allow",
+        "sid": "74654"
       }
     ]
   }

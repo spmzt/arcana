@@ -1940,6 +1940,208 @@ ATF_TC_BODY(workflows, tc)
 	resp_free(&r);
 }
 
+/* Wait for a step of a run's first host to reach a state; the run in r. */
+static void
+step_wait(const char *n, int k, const char *state, struct resp *r)
+{
+	char	path[64], key[64];
+	int	i;
+
+	snprintf(path, sizeof(path), "/api/runs/%s", n);
+	snprintf(key, sizeof(key), "hosts.0.steps.%d.state", k);
+	for (i = 0; i < 300; i++) {
+		http("GET", path, NULL, r);
+		if (r->status == 200 && jstr(r, key) != NULL && strcmp(jstr(r,
+		    key), state) == 0)
+			return;
+		resp_free(r);
+		usleep(100000);
+	}
+	ATF_REQUIRE_MSG(0, "run %s: step %d not %s", n, k, state);
+}
+
+CONSOLE_TC(workflow_approval, "A workflow waits at an approval step until "
+    "someone approves it, the run is stopped or its time is out; serial, "
+    "its hosts run one after the other and a failure leaves the rest not run")
+ATF_TC_BODY(workflow_approval, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[2048], sid[16], gone[16], run[32];
+	char		wid[16], path[128];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	http("POST", "/api/servers", "{\"name\":\"gone\",\"uri\":"
+	    "\"unix:/nonexistent/arcana.sock\"}", &r);
+	EXPECT(&r, 200);
+	snprintf(gone, sizeof(gone), "%s", strcmp(jstr(&r, "servers.0.name"),
+	    "gone") == 0 ? jstr(&r, "servers.0.id") : jstr(&r, "servers.1.id"));
+	resp_free(&r);
+
+	/* What an approval must say. */
+	snprintf(body, sizeof(body), "{\"name\":\"bad\",\"hosts\":[\"%s\"],"
+	    "\"steps\":[{\"id\":\"a\",\"approval\":{\"via\":\"all\"}}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "an approval says") != NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"bad\",\"hosts\":[\"%s\"],"
+	    "\"steps\":[{\"id\":\"a\",\"approval\":{\"text\":\"go?\","
+	    "\"timeout\":99999999}}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"bad\",\"hosts\":[\"%s\"],"
+	    "\"steps\":[{\"id\":\"a\",\"approval\":{\"text\":\"go?\"},"
+	    "\"read\":\"hello\"}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_MSG(strstr(r.body, "an approval or") != NULL, "%s", r.body);
+	resp_free(&r);
+
+	/*
+	 * A read, an approval, a read: the run waits at the approval with
+	 * its text expanded, an approval of a step that does not wait is
+	 * refused, the step approved says by whom and the run goes on.
+	 */
+	snprintf(body, sizeof(body), "{\"name\":\"gated\",\"hosts\":[\"%s\"],"
+	    "\"steps\":[{\"id\":\"r\",\"read\":\"hello\"},"
+	    "{\"id\":\"ok\",\"name\":\"Go on?\",\"approval\":{\"text\":\"Go on "
+	    "with ${host.name}?\"}},{\"id\":\"s\",\"read\":\"services\"}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	snprintf(wid, sizeof(wid), "%s", jstr(&r, "id"));
+	ATF_CHECK_STREQ("false", jstr(&r, "serial"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/workflows/%s/run", wid);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	step_wait(run, 1, "waiting", &r);
+	ATF_CHECK_STREQ("running", jstr(&r, "state"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.0.state"));
+	ATF_CHECK_STREQ("Go on with lab?", jstr(&r, "hosts.0.steps.1.title"));
+	ATF_CHECK_STREQ("pending", jstr(&r, "hosts.0.steps.2.state"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/runs/%s/approve", run);
+	http("POST", path, "{\"step\":\"s\"}", &r);
+	EXPECT(&r, 409);
+	ATF_CHECK(strstr(r.body, "no step s waits") != NULL);
+	resp_free(&r);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", path, "{\"step\":\"ok\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	run_wait(run, &r);
+	ATF_CHECK_STREQ("done", jstr(&r, "state"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.1.state"));
+	ATF_CHECK_STREQ("approved by admin", jstr(&r, "hosts.0.steps.1.title"));
+	ATF_CHECK_STREQ("admin", jstr(&r, "hosts.0.steps.1.trace.approved_by"));
+	ATF_CHECK_STREQ("ok", jstr(&r, "approved.0.step"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.2.state"));
+	resp_free(&r);
+	/* Ended, it takes no more approvals. */
+	http("POST", path, "{\"step\":\"ok\"}", &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+
+	/* Stopped while it waits: the step is cancelled, and the run. */
+	snprintf(path, sizeof(path), "/api/workflows/%s/run", wid);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	step_wait(run, 1, "waiting", &r);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/runs/%s", run);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	run_wait(run, &r);
+	ATF_CHECK_STREQ("cancelled", jstr(&r, "state"));
+	ATF_CHECK_STREQ("cancelled", jstr(&r, "hosts.0.steps.1.state"));
+	ATF_CHECK_STREQ("stopped while it waited", jstr(&r,
+	    "hosts.0.steps.1.error"));
+	ATF_CHECK_STREQ("cancelled", jstr(&r, "hosts.0.steps.2.state"));
+	resp_free(&r);
+
+	/* Its time out: the step fails, and what follows a failure follows
+	 * (here, on at the last step). */
+	snprintf(body, sizeof(body), "{\"name\":\"timed\",\"hosts\":[\"%s\"],"
+	    "\"steps\":[{\"id\":\"ok\",\"approval\":{\"text\":\"go?\","
+	    "\"timeout\":1},\"on_fail\":\"s\"},{\"id\":\"x\",\"read\":\"hello\"},"
+	    "{\"id\":\"s\",\"read\":\"hello\"}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	snprintf(wid, sizeof(wid), "%s", jstr(&r, "id"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/workflows/%s/run", wid);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	run_wait(run, &r);
+	ATF_CHECK_STREQ("failed", jstr(&r, "state"));
+	ATF_CHECK_STREQ("failed", jstr(&r, "hosts.0.steps.0.state"));
+	ATF_CHECK_STREQ("not approved within 1 s", jstr(&r,
+	    "hosts.0.steps.0.error"));
+	ATF_CHECK_STREQ("not run", jstr(&r, "hosts.0.steps.1.state"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.2.state"));
+	resp_free(&r);
+
+	/*
+	 * Serial: the hosts one after the other, in the workflow's order;
+	 * the first fails (it is not there), so the second is not run.
+	 * The same at once: both run, the second done.
+	 */
+	snprintf(body, sizeof(body), "{\"name\":\"serial\",\"serial\":true,"
+	    "\"hosts\":[\"%s\",\"%s\"],\"steps\":[{\"id\":\"r\",\"read\":"
+	    "\"hello\"}]}", gone, sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	snprintf(wid, sizeof(wid), "%s", jstr(&r, "id"));
+	ATF_CHECK_STREQ("true", jstr(&r, "serial"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/workflows/%s/run", wid);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	run_wait(run, &r);
+	ATF_CHECK_STREQ("failed", jstr(&r, "state"));
+	ATF_CHECK_STREQ("gone", jstr(&r, "hosts.0.name"));
+	ATF_CHECK_STREQ("failed", jstr(&r, "hosts.0.state"));
+	ATF_CHECK_STREQ("not run", jstr(&r, "hosts.1.state"));
+	ATF_CHECK_STREQ("not run", jstr(&r, "hosts.1.steps.0.state"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"id\":\"%s\",\"name\":\"serial\","
+	    "\"hosts\":[\"%s\",\"%s\"],\"steps\":[{\"id\":\"r\",\"read\":"
+	    "\"hello\"}]}", wid, gone, sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "serial"));
+	resp_free(&r);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	run_wait(run, &r);
+	ATF_CHECK_STREQ("failed", jstr(&r, "hosts.0.state"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.1.state"));
+	resp_free(&r);
+}
+
 /*
  * A directory for the LDAP case: the slapd of a tree the configuration
  * names (slapd, slapd_lib for its libraries, slapd_etc for its schema),
@@ -8633,6 +8835,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, ldap);
 	ATF_TP_ADD_TC(tp, troubleshoot);
 	ATF_TP_ADD_TC(tp, workflows);
+	ATF_TP_ADD_TC(tp, workflow_approval);
 	ATF_TP_ADD_TC(tp, sdwan);
 	ATF_TP_ADD_TC(tp, sdwan_apply);
 	ATF_TP_ADD_TC(tp, sdwan_mesh);

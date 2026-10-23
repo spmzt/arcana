@@ -260,6 +260,11 @@ title_of(const struct arc_job_spec *sp)
 		    0 ? sp->lladdr : "", sp->temporary ? " (ages out)" : "",
 		    sp->persist ? sp->live ? " (now, and kept)" : " (kept)" : "");
 		break;
+	case ARC_JOB_KIND_JAIL_ALLOW:
+		rc = asprintf(&t, "jail %s allow: %s%s%s", sp->jail, sp->names.n > 0 ?
+		    sp->names.v[0] : "", sp->names.n > 1 ? " ..." : "", sp->persist ?
+		    sp->live ? " (now, and kept)" : " (kept)" : "");
+		break;
 	case ARC_JOB_KIND_JAIL_CONF:
 		rc = asprintf(&t, "jail %s%s%s%s%s", sp->verb, sp->jail != NULL &&
 		    sp->jail[0] != '\0' ? " " : sp->names.n > 0 ? " " : "",
@@ -835,6 +840,39 @@ undo_prepare(struct qjob *j)
 			j->undo_kept = j->undo_files[0].had;
 		}
 		break;
+	case ARC_JOB_KIND_JAIL_ALLOW:
+		/* The jail's file, and the live values of the parameters named,
+		 * to be set again. */
+		{
+			const char	*path;
+
+			e = NULL;
+			if (jail_allow_undo_prepare(&j->w, sp, &path, &j->undo_vars,
+			    &j->undo_nvars, &e) != 0)
+				return (wfmt(&j->w, "not changed: %s", e));
+			if (path != NULL && !undo_snap_file(j, path))
+				return (wfmt(&j->w, "not changed: %s could not be read, "
+				    "so it could not be put back: %s", path,
+				    strerror(errno)));
+		}
+		break;
+	case ARC_JOB_KIND_IPSEC_SA:
+		/* The key pair, the next pair and what was set, as files; the
+		 * SAs in place come back by derivation, so those set by hand
+		 * refuse here. */
+		if ((e = sa_undo_check(&j->w, sp)) != NULL)
+			return (e);
+		{
+			const char	*key, *next, *state;
+
+			sa_files(&j->w, sp->interface, &key, &next, &state);
+			if (!undo_snap_file(j, key) || !undo_snap_file(j, next) ||
+			    !undo_snap_file(j, state))
+				return (wfmt(&j->w, "not changed: %s's key files "
+				    "could not be read, so they could not be put "
+				    "back: %s", sp->interface, strerror(errno)));
+		}
+		break;
 	case ARC_JOB_KIND_BIRD:
 		/* Enabled or disabled: from the state it has now.  A restart
 		 * or reload leaves nothing to put back, and the job says so.
@@ -1147,6 +1185,13 @@ undo(struct qjob *j)
 		else
 			rc = undo_files_back(j, &e) == 0 ? ipsec_undo(&j->w,
 			    sp->conn, !j->undo_kept, &e) : -1;
+		break;
+	case ARC_JOB_KIND_IPSEC_SA:
+		rc = undo_files_back(j, &e) == 0 ? sa_undo(&j->w, sp, &e) : -1;
+		break;
+	case ARC_JOB_KIND_JAIL_ALLOW:
+		rc = undo_files_back(j, &e) == 0 ? jail_allow_undo(&j->w, sp,
+		    j->undo_vars, j->undo_nvars, &e) : -1;
 		break;
 	case ARC_JOB_KIND_WIREGUARD:
 		rc = wg_syncconf(&j->w, sp->interface, j->undo_secret, &e);
@@ -1461,6 +1506,10 @@ run(struct qjob *j, bool lane)
 	case ARC_JOB_KIND_JAIL_CONF:
 		error = NULL;
 		ok = do_jail_conf(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_JAIL_ALLOW:
+		error = NULL;
+		ok = do_jail_allow(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_NEIGHBOUR:
 		error = NULL;

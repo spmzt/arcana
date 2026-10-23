@@ -14,6 +14,7 @@ SRCS.raft_test=		raft_test.c craft.c
 # The panel's YAML, natively: base's libucl and libyaml.
 SRCS.yaml_test=		yaml_test.c yaml.c
 CFLAGS.yaml_test.c+=	-DDISTDIR='"${.OBJDIR}/../../arcana-ui/dist"'
+CFLAGS.yaml_test.c+=	-DOPENAPI='"${.CURDIR}/../../../docs/openapi.yaml"'
 CFLAGS.yaml.c+=		-I/usr/include/private/yaml
 LDADD.yaml_test+=	-lprivateyaml
 .PATH:			${.CURDIR}/.. ${.CURDIR}/../../arcana-ui/src

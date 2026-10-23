@@ -1101,6 +1101,11 @@ EOS
 	    "$JGC" -c "$SOCK" route add 10.0.0.0/33 10.0.0.1
 	atf_check -s exit:1 -o match:'neither an address nor an interface' \
 	    "$JGC" -c "$SOCK" route add 10.79.0.0/16 nope0
+	# A link-local gateway with its zone, as a router advertisement gives it.
+	atf_check -o ignore "$JGC" -c "$SOCK" route add 2001:db8:79::/48 fe80::1%lo0
+	atf_check -o match:'2001:db8:79::/48 fe80::1%lo0' cat route.log
+	atf_check -s exit:1 -o match:'neither an address nor an interface' \
+	    "$JGC" -c "$SOCK" route add 2001:db8:79::/48 fe80::1%nope0
 	atf_check -s exit:1 -e match:'needs a gateway' -o ignore \
 	    "$JGC" -q -c "$SOCK" route add 10.79.0.0/16 ''
 	atf_check -o not-match:'10.79' -o not-match:'/33' cat route.log
@@ -3099,6 +3104,128 @@ EOS
 		sleep 0.1
 	done
 	atf_check -o inline:'--initiate --child t1 --timeout 20\n--terminate --ike t1 --timeout 10\n--terminate --ike t1 --timeout 10\n--initiate --child t1 --timeout 20\n' cat swanctl.log
+}
+
+atf_test_case safe_ipsec_sa cleanup
+safe_ipsec_sa_head()
+{
+	atf_set "descr" "Manually keyed SAs in safe mode: not confirmed, the key files and what was set go back and the SAs derived again as they were; set by hand, they cannot be and the job is refused before the change"
+}
+safe_ipsec_sa_body()
+{
+	write_rc
+	cat > fake-setkey <<EOS
+#!/bin/sh
+echo "setkey \$*" >> $(pwd)/setkey.log
+[ "\$1" = -f ] && cat "\$2" >> $(pwd)/setkey.conf
+exit 0
+EOS
+	chmod +x fake-setkey
+	start_daemon
+	K=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+	A=0011223344556677889900112233445566778899
+	wait_jobs() {
+		for i in $(seq 1 200); do
+			"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+			    break
+			sleep 0.1
+		done
+	}
+	last_job() {
+		"$JGC" -c "$SOCK" jobs | awk '$1 ~ /^[0-9]+$/ {print $1}' | sort -n | tail -1
+	}
+
+	# Set by hand where nothing was, not confirmed: the SAs put in are
+	# taken out again and nothing is kept.
+	rm -f setkey.conf
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec-sa set ipsec0 100 10.202.0.1 10.202.0.2 spi-in 0x1001 spi-out 0x1002 enc aes-cbc auth hmac-sha1 key-in $K key-out $K akey-in $A akey-out $A
+	wait_jobs
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'none were in: none put in' "$JGC" -c "$SOCK" job $(last_job)
+	atf_check -o match:'^add 10.202.0.1 10.202.0.2 esp 0x1002 ' \
+	    -o match:'^deleteall 10.202.0.1 10.202.0.2 esp ;$' \
+	    -o match:'^deleteall 10.202.0.2 10.202.0.1 esp ;$' cat setkey.conf
+	test -z "$(find . -name sdwan-sa-ipsec0.json)" || atf_fail "the state kept"
+
+	# Set by hand and confirmed, it stays; on top of it, a safe derive
+	# is refused before it changes anything: the keys set by hand are
+	# nowhere to put back.
+	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" ipsec-sa set ipsec0 100 10.202.0.1 10.202.0.2 spi-in 0x1001 spi-out 0x1002 enc aes-cbc auth hmac-sha1 key-in $K key-out $K akey-in $A akey-out $A
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec0
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec1
+	P0=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec0"' | sed -E 's/.*"public":"([^"]*)".*/\1/')
+	P1=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec1"' | sed -E 's/.*"public":"([^"]*)".*/\1/')
+	rm -f setkey.conf
+	atf_check -s exit:1 -o match:'set by hand, not derived' -o match:'not in safe mode' "$JGC" -s -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$P1" enc aes-cbc auth hmac-sha2-256
+	test ! -e setkey.conf || atf_fail "changed before the refusal"
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa clear ipsec0 100 10.202.0.1 10.202.0.2
+
+	# Derived and confirmed; derived again at another epoch and not
+	# confirmed: the SAs of the first epoch put in again, the same
+	# SPIs, and what was set as it was.
+	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$P1" enc aes-cbc auth hmac-sha2-256 encap esn
+	S_IN=$(grep '^add 10.202.0.2 10.202.0.1 .* -u 100 ' setkey.conf | tail -1 | sed -E 's/.*esp (0x[0-9a-f]+).*/\1/')
+	S_OUT=$(grep '^add 10.202.0.1 10.202.0.2 .* -u 100 ' setkey.conf | tail -1 | sed -E 's/.*esp (0x[0-9a-f]+).*/\1/')
+	KEY_OUT=$(grep '^add 10.202.0.1 10.202.0.2 .* -u 100 ' setkey.conf | tail -1 | sed -E 's/.*-E aes-cbc (0x[0-9a-f]+).*/\1/')
+	STATE=$(find . -name sdwan-sa-ipsec0.json)
+	cp "$STATE" state.was
+	atf_check -o match:'"derive":\{"peer":"' -o match:'"install":"both"' -o match:'"encap":true' cat state.was
+	rm -f setkey.conf
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$P1" enc aes-gcm-16 epoch 1
+	wait_jobs
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'sdwan-sa-ipsec0.json, as it was' \
+	    -o match:'derived again as kept' "$JGC" -c "$SOCK" job $(last_job)
+	# The new SAs in, then everything out, then the old ones in again:
+	# the same SPIs and keys as the first time.
+	atf_check -o match:'^add 10.202.0.1 10.202.0.2 esp 0x[0-9a-f]+ -m tunnel -u 100 -r 128 -E aes-gcm-16 ' cat setkey.conf
+	atf_check -o inline:'1\n' sh -c "grep -c '^deleteall 10.202.0.1 10.202.0.2 esp' setkey.conf"
+	atf_check -o match:"^add 10.202.0.1 10.202.0.2 esp $S_OUT -m tunnel -u 100 -r 128 -esn -natt .* -E aes-cbc $KEY_OUT -A hmac-sha2-256 " \
+	    -o match:"^add 10.202.0.2 10.202.0.1 esp $S_IN -m tunnel -u 100 " cat setkey.conf
+	atf_check -o inline:'1\n' sh -c "tail -1 setkey.conf | grep -c '^add 10.202.0.2 10.202.0.1 esp $S_IN '"
+	atf_check -o match:"\"spi_in\":$((S_IN)),\"spi_out\":$((S_OUT))" -o match:'"interface":"ipsec0",.*"pending":false' "$JGC" -c "$SOCK" sdwan
+
+	# A key pair made over the one there, not confirmed: the file as
+	# it was, the SAs untouched.
+	cp "$(dirname "$STATE")/sdwan-key-ipsec0.pem" key.was
+	rm -f setkey.conf
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec-sa key ipsec0
+	wait_jobs
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'sdwan-key-ipsec0.pem, as it was' "$JGC" -c "$SOCK" job $(last_job)
+	atf_check cmp key.was "$(dirname "$STATE")/sdwan-key-ipsec0.pem"
+	test ! -e setkey.conf || atf_fail "the SAs touched for a key"
+
+	# A rotation under way (the next pair, its SAs in and out), then
+	# committed in safe mode and not confirmed: the next pair back, the
+	# state back to pending, the pair's SAs and the next ones derived
+	# again.
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec0 next
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec1 next
+	N1=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec1"' | sed -E 's/.*"next":"([^"]*)".*/\1/')
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$N1" enc aes-cbc auth hmac-sha2-256 next install in
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$N1" enc aes-cbc auth hmac-sha2-256 next install out
+	atf_check -o match:'"next_derive":\{"peer":"' -o match:'"install":"both"' cat "$STATE"
+	cp "$STATE" state.pending
+	cp "$(dirname "$STATE")/sdwan-key-ipsec0-next.pem" next.was
+	rm -f setkey.conf
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipsec-sa commit ipsec0 100 10.202.0.1 10.202.0.2
+	wait_jobs
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'sdwan-key-ipsec0-next.pem, as it was' \
+	    -o match:'derived again as kept' "$JGC" -c "$SOCK" job $(last_job)
+	atf_check cmp next.was "$(dirname "$STATE")/sdwan-key-ipsec0-next.pem"
+	atf_check -o match:'"interface":"ipsec0",.*"pending":true' "$JGC" -c "$SOCK" sdwan
+	# Four SAs in again after the deleteall: the pair's two, the next's two.
+	atf_check -o inline:'4\n' sh -c "sed -n '/^deleteall 10.202.0.2 10.202.0.1/,\$p' setkey.conf | grep -c '^add '"
+	# Committed and confirmed: done.
+	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" ipsec-sa commit ipsec0 100 10.202.0.1 10.202.0.2
+	test ! -e "$(dirname "$STATE")/sdwan-key-ipsec0-next.pem" || atf_fail "the next pair still there"
+	atf_check -o match:'"derive":\{"peer":"' -o not-match:'next_derive' cat "$STATE"
+}
+safe_ipsec_sa_cleanup()
+{
+	stop_daemon
 }
 
 safe_sysfile_head()
@@ -7033,6 +7160,52 @@ jail_conf_cleanup()
 	stop_daemon
 }
 
+atf_test_case jail_allow cleanup
+jail_allow_head()
+{
+	atf_set "descr" "jail-allow: a jail's allow.* parameters in its file (replaced, or taken out), the running jail alone refused when it does not run, the words and names checked, and the file back in safe mode"
+}
+jail_allow_body()
+{
+	start_daemon
+	# A parameter the kernel lacks, a bad value, a bad name, unset
+	# without the file, and nothing to do on a stopped jail.
+	atf_check -s exit:1 -o match:'no such parameter' -e ignore "$JGC" -p -c "$SOCK" allow vpn allow.nosuchthing=1
+	atf_check -s exit:1 -e match:'0, 1 or unset' -o ignore "$JGC" -p -c "$SOCK" allow vpn allow.raw_sockets=maybe
+	atf_check -s exit:1 -e match:"jail\(8\)'s allow" -o ignore "$JGC" -p -c "$SOCK" allow vpn persist=1
+	atf_check -s exit:1 -e match:'say persist' -o ignore "$JGC" -c "$SOCK" allow vpn allow.raw_sockets=unset
+	atf_check -s exit:1 -o match:'is not running' -e ignore "$JGC" -c "$SOCK" allow vpn allow.raw_sockets=1
+	# In its file, in jail.conf.d: two set, the file read back; one
+	# set again replaces; unset takes it out with its line.
+	atf_check -o match:'jail vpn allow: allow.raw_sockets=1 \.\.\. \(kept\)' -o match:'jc_replace' "$JGC" -t -p -c "$SOCK" allow -n vpn allow.raw_sockets=1 allow.mount.zfs=0
+	atf_check -o inline:'vpn {\n\tpath = /usr/jails/vpn;\n\tvnet;\n\tvnet.interface = epair0b;\n\tallow.raw_sockets = 1;\n\tallow.mount.zfs = 0;\n}\n' cat etc/jail.conf.d/vpn.conf
+	atf_check -o match:'not running: its file alone' "$JGC" -t -p -c "$SOCK" allow vpn allow.raw_sockets=0
+	atf_check -o inline:'vpn {\n\tpath = /usr/jails/vpn;\n\tvnet;\n\tvnet.interface = epair0b;\n\tallow.raw_sockets = 0;\n\tallow.mount.zfs = 0;\n}\n' cat etc/jail.conf.d/vpn.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" allow -n vpn allow.raw_sockets=unset
+	atf_check -o inline:'vpn {\n\tpath = /usr/jails/vpn;\n\tvnet;\n\tvnet.interface = epair0b;\n\tallow.mount.zfs = 0;\n}\n' cat etc/jail.conf.d/vpn.conf
+	# A jail of the main file: its block there, the others untouched.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" allow -n web allow.sysvipc=1
+	atf_check -o match:'allow.sysvipc = 1;' -o match:'interface = lo0;' cat etc/jail.conf
+	# Safe mode, not confirmed: the file as it was.
+	cp etc/jail.conf.d/vpn.conf vpn.was
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" allow -n vpn allow.chflags=1
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'vpn.conf, as it was' "$JGC" -c "$SOCK" job $("$JGC" -c "$SOCK" jobs | awk '$1 ~ /^[0-9]+$/ {print $1}' | sort -n | tail -1)
+	atf_check cmp vpn.was etc/jail.conf.d/vpn.conf
+	# Confirmed, it stays.
+	atf_check -o match:'confirmed: it stays' "$JGC" -s -p -c "$SOCK" allow -n vpn allow.chflags=1
+	atf_check -o match:'allow.chflags = 1;' cat etc/jail.conf.d/vpn.conf
+}
+jail_allow_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case carp cleanup
 carp_head()
 {
@@ -8313,6 +8486,7 @@ atf_init_test_cases()
 	atf_add_test_case sysfiles
 	atf_add_test_case sdwan_jail
 	atf_add_test_case jail_conf
+	atf_add_test_case jail_allow
 	atf_add_test_case carp
 	atf_add_test_case neighbours
 	atf_add_test_case multicast
@@ -8336,6 +8510,7 @@ atf_init_test_cases()
 	atf_add_test_case safe_bird
 	atf_add_test_case safe_wireguard
 	atf_add_test_case safe_ipsec
+	atf_add_test_case safe_ipsec_sa
 	atf_add_test_case safe_sysfile
 	atf_add_test_case safe_if_destroy
 	atf_add_test_case safe_l2

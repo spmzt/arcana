@@ -1038,6 +1038,42 @@ view_run(struct html *h)
 		    "data-arg=\"%lld\"", (long long)jint(r, "id", 0));
 		h_raw(h, ">Stop</button>");
 	}
+	/* Each step that waits on some host, once: approved for them all. */
+	if (r != NULL) {
+		const ucl_object_t	*hh, *ss;
+		ucl_object_iter_t	 hit, sit;
+		char			 seen[16][17], arg[48];
+		int			 nseen = 0, q;
+
+		hit = NULL;
+		while ((hh = ucl_object_iterate(jget(r, "hosts"), &hit, true)) !=
+		    NULL) {
+			sit = NULL;
+			while ((ss = ucl_object_iterate(jget(hh, "steps"), &sit,
+			    true)) != NULL) {
+				if (jstr(ss, "state") == NULL || strcmp(jstr(ss,
+				    "state"), "waiting") != 0 || jstr(ss, "id") ==
+				    NULL)
+					continue;
+				for (q = 0; q < nseen; q++)
+					if (strcmp(seen[q], jstr(ss, "id")) == 0)
+						break;
+				if (q < nseen || nseen == 16)
+					continue;
+				snprintf(seen[nseen++], sizeof(seen[0]), "%s",
+				    jstr(ss, "id"));
+				snprintf(arg, sizeof(arg), "%lld:%s", (long long)
+				    jint(r, "id", 0), jstr(ss, "id"));
+				h_raw(h, "<button class=\"small\" data-act=\""
+				    "wf-run-approve\"");
+				h_attr(h, "data-arg", arg);
+				h_attr(h, "title", jstr(ss, "title"));
+				h_raw(h, ">Approve ");
+				h_txt(h, jstr(ss, "id"));
+				h_raw(h, "</button>");
+			}
+		}
+	}
 	h_raw(h, "<span class=\"age\">");
 	h_txt(h, jstr(r, "trigger"));
 	h_raw(h, " · ");
@@ -1503,6 +1539,8 @@ view_step(struct html *h, const ucl_object_t *st, int i, int n)
 		    " selected" : "", arcana_steps[r].title);
 	h_fmt(h, "<option value=\"notify\"%s>a message, by mail or "
 	    "Telegram</option>", jget(st, "notify") != NULL ? " selected" : "");
+	h_fmt(h, "<option value=\"approval\"%s>an approval, waited for"
+	    "</option>", jget(st, "approval") != NULL ? " selected" : "");
 	h_fmt(h, "</select><span class=\"acts\"><button class=\"icon\" "
 	    "data-act=\"wf-step-del\" data-arg=\"%d\" title=\"Take the step "
 	    "away\">×</button></span></div>", i);
@@ -1541,6 +1579,48 @@ view_step(struct html *h, const ucl_object_t *st, int i, int n)
 		    "the workflow runs on: <code>${host.name}</code> its name, "
 		    "<code>${param.x}</code> a parameter, <code>${step.id.path}"
 		    "</code> what an earlier step answered.</small></div></div>");
+	}
+	/* An approval: what is asked, how it is told, and for how long the
+	 * host's run waits. */
+	if (jget(st, "approval") != NULL) {
+		static const char *const vias[] = { "", "all", "mail",
+		    "telegram" };
+		static const char *const says[] = {
+		    "not told: seen on this page",
+		    "by mail and Telegram, each set up", "by mail", "by Telegram"
+		};
+		const char	*via = jstr(st, "approval.via");
+
+		h_raw(h, "<div class=\"wffields\"><div class=\"wffield\"><label>"
+		    "Asked");
+		snprintf(path, sizeof(path), "steps.%d.approval.text", i);
+		input(h, "text", path, jstr(st, "approval.text"), "Go on with "
+		    "${host.name}?");
+		h_raw(h, "</label><small class=\"help\">The host's run waits "
+		    "here until someone approves the step on the run's page, "
+		    "or stops the run.</small></div><div class=\"wffield\">"
+		    "<label>Told<select data-input=\"wf\"");
+		snprintf(path, sizeof(path), "text:steps.%d.approval.via", i);
+		h_attr(h, "data-arg", path);
+		h_raw(h, ">");
+		for (r = 0; r < nitems(vias); r++)
+			h_fmt(h, "<option value=\"%s\"%s>%s</option>", vias[r],
+			    (via != NULL ? strcmp(via, vias[r]) == 0 : r == 0) ?
+			    " selected" : "", says[r]);
+		h_raw(h, "</select></label></div><div class=\"wffield\"><label>"
+		    "Waits");
+		snprintf(path, sizeof(path), "steps.%d.approval.timeout", i);
+		{
+			char	num[24];
+
+			snprintf(num, sizeof(num), "%lld", (long long)jint(st,
+			    "approval.timeout", 0));
+			input(h, "num", path, num, "0");
+		}
+		h_raw(h, "</label><small class=\"help\">Seconds, a week at most; "
+		    "0 waits until the run is stopped.  Past them the step "
+		    "fails, and what follows a failure follows.</small></div>"
+		    "</div>");
 	}
 	if (job != NULL) {
 		h_fmt(h, "<label>Kind<select data-input=\"wf-kind\" data-arg="
@@ -2111,10 +2191,21 @@ view_palette(struct html *h)
 	}
 	h_raw(h, "</ul>");
 	if (wf.pal_filter[0] == '\0' || ci_has("a message, by mail or "
-	    "Telegram", wf.pal_filter))
-		h_raw(h, "<h5>Tell</h5><ul><li draggable=\"true\" data-palette="
-		    "\"wf\" data-act=\"wf-pal-add\" class=\"notify\" data-arg="
-		    "\"notify\">a message, by mail or Telegram</li></ul>");
+	    "Telegram", wf.pal_filter) || ci_has("an approval, waited for",
+	    wf.pal_filter)) {
+		h_raw(h, "<h5>Tell</h5><ul>");
+		if (wf.pal_filter[0] == '\0' || ci_has("a message, by mail or "
+		    "Telegram", wf.pal_filter))
+			h_raw(h, "<li draggable=\"true\" data-palette=\"wf\" "
+			    "data-act=\"wf-pal-add\" class=\"notify\" data-arg=\""
+			    "notify\">a message, by mail or Telegram</li>");
+		if (wf.pal_filter[0] == '\0' || ci_has("an approval, waited for",
+		    wf.pal_filter))
+			h_raw(h, "<li draggable=\"true\" data-palette=\"wf\" "
+			    "data-act=\"wf-pal-add\" class=\"notify\" data-arg=\""
+			    "approval\">an approval, waited for</li>");
+		h_raw(h, "</ul>");
+	}
 	h_raw(h, "</aside>");
 }
 
@@ -2234,6 +2325,12 @@ view_edit(struct html *h)
 		h_txt(h, app.servers[k].name);
 		h_raw(h, "</span></label>");
 	}
+	h_raw(h, "<label class=\"toggle\"><input type=\"checkbox\" data-input="
+	    "\"wf\" data-arg=\"bool:serial\"");
+	h_raw(h, jbool(d, "serial") ? " checked" : "");
+	h_raw(h, "><span>One host after the other <em>the next begins when "
+	    "the one before is done; a host that fails leaves the rest not "
+	    "run</em></span></label>");
 	h_raw(h, "</fieldset><fieldset><legend>Parameters, asked for when it "
 	    "runs</legend><ul class=\"wfparams\">");
 	i = 0;
@@ -2581,6 +2678,11 @@ step_new(const char *what, int k)
 		ucl_object_insert_key(a, ucl_object_fromstring("${host.name}: "),
 		    "text", 0, true);
 		ucl_object_insert_key(st, a, "notify", 0, true);
+	} else if (strcmp(what, "approval") == 0) {
+		a = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(a, ucl_object_fromstring("Go on with "
+		    "${host.name}?"), "text", 0, true);
+		ucl_object_insert_key(st, a, "approval", 0, true);
 	} else {
 		a = ucl_object_typed_new(UCL_OBJECT);
 		if (strncmp(what, "job:", 4) == 0 && what[4] != '\0')
@@ -2877,7 +2979,15 @@ workflows_action(const char *act, const char *arg, const char *value)
 			(void)ucl_object_delete_key(st, "read");
 			(void)ucl_object_delete_key(st, "arcana");
 			(void)ucl_object_delete_key(st, "notify");
-			if (strcmp(value, "notify") == 0) {
+			(void)ucl_object_delete_key(st, "approval");
+			if (strcmp(value, "approval") == 0) {
+				ucl_object_t	*ap = ucl_object_typed_new(
+				    UCL_OBJECT);
+
+				ucl_object_insert_key(ap, ucl_object_fromstring(
+				    "Go on with ${host.name}?"), "text", 0, true);
+				ucl_object_insert_key(st, ap, "approval", 0, true);
+			} else if (strcmp(value, "notify") == 0) {
 				ucl_object_t	*nt = ucl_object_typed_new(
 				    UCL_OBJECT);
 
@@ -2980,6 +3090,15 @@ workflows_action(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "wf-run-stop") == 0) {
 		snprintf(url, sizeof(url), "/api/runs/%.15s", arg);
 		api("DELETE", url, NULL, done_cb, NULL);
+	} else if (strcmp(act, "wf-run-approve") == 0) {
+		const char	*colon = strchr(arg, ':');
+
+		if (colon == NULL)
+			return (true);
+		snprintf(url, sizeof(url), "/api/runs/%.*s/approve", (int)(colon -
+		    arg), arg);
+		snprintf(buf, sizeof(buf), "{\"step\":\"%.16s\"}", colon + 1);
+		api("POST", url, buf, done_cb, NULL);
 	} else if (strcmp(act, "wf-step-pick") == 0) {
 		snprintf(wf.pick, sizeof(wf.pick), "%s", strcmp(wf.pick, arg) ==
 		    0 ? "" : arg);

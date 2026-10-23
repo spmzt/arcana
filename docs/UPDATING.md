@@ -142,22 +142,34 @@ Since agent 0.195.0 and console 0.276.0 the agent, arcanactl and the
 console speak cblink's wire version 2 alone (YANG-CBOR bodies keyed by
 SID, `share/yang/arcana@<rev>.yang`), on `libcblink.so.2`; a version-2
 program and a version-1 one do not understand each other.  Moving a
-fleet over, in an order that never leaves you without a working
-arcanactl:
+fleet over, host by host from the tree, in an order that never leaves
+you without a working arcanactl.  The library comes with the tree:
+the submodule `cblink/` is built first and `make install` at the top
+installs `libcblink.so.2` with the programs, so no cblink package is
+needed; `net/libyang3` is, to build cblink-gen.
 
-1. Push the tree; on the console host pull and `make` (build only).
-2. Install `devel/cblink` 0.2 on every host (`pkg upgrade cblink` from
-   the console's Packages tab): `libcblink.so.2` installs beside
-   `.so.1`; nothing uses it yet.
-3. From the console's fleet page, update every agent but the console
-   host's own.  Each becomes version 2 and the old console can no
-   longer reach it: expected.  Check each with the new arcanactl from
-   the build tree (`obj/usr.sbin/arcanactl/arcanactl`, which finds
-   the submodule's library by its rpath): `hello` shows the version.
-4. Last, the console host: `make install`, `service arcana_console
-   restart`, `service arcana_agent restart`.  Then `arcanactl hello`
-   locally and to each host; the fleet page green.
-5. Before step 4 a host goes back by `arcana-agent.old` and a restart.
+1. On every host but the console's, in the tree there:
+
+   ```
+   git pull && git submodule update --init
+   make && make install
+   service arcana_agent restart
+   ```
+
+   Each becomes version 2 and the old console can no longer reach it:
+   expected.  Check it with the new arcanactl, from the build tree of
+   any updated host or the console host's (`obj/usr.sbin/arcanactl/
+   arcanactl`, which finds the submodule's library by its rpath):
+   `hello` shows the version.  A host goes back with the program it
+   had (`arcana-agent.old` when the console updated it last) and a
+   restart; after step 2 there is no going back.
+2. Last, the console host: the same, then `service arcana_console
+   restart` too.  Then `arcanactl hello` locally and to each host; the
+   fleet page green.
+
+The console's own agent update (the fleet page) sends a program built
+on one host to the others: it works again once every host has the new
+library, that is, from the next change after this one.
 
 ## Versions
 

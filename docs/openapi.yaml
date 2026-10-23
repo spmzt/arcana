@@ -320,7 +320,7 @@ paths:
               properties:
                 name: { type: string }
                 tenant: { type: string, description: the fleet whose hosts alone the user sees; empty for every fleet }
-                roles: { type: array, items: { type: string }, description: names of roles, one at least }
+                roles: { type: array, items: { type: string }, description: "names of roles, one at least" }
       responses:
         "200": { description: "the users and roles" }
         "409": { description: "the last owner stays one" }
@@ -337,7 +337,7 @@ paths:
               properties:
                 name: { type: string }
                 console: { type: string, enum: [owner, operator, member] }
-                hosts: { type: object, additionalProperties: { type: string, enum: [viewer, operator, admin] }, description: a role by host id, or "*" for all }
+                hosts: { type: object, additionalProperties: { type: string, enum: [viewer, operator, admin] }, description: "a role by host id, or \"*\" for all" }
                 ldap_group: { type: string, description: "a directory group's DN: its members get the role as they sign in by LDAP; empty for none" }
       responses:
         "200": { description: "the users and roles" }
@@ -363,7 +363,7 @@ paths:
   /api/users/{name}:
     put:
       tags: [auth]
-      summary: Keep the user of the name (as POST /api/users with it: tenant, roles)
+      summary: "Keep the user of the name (as POST /api/users with it: tenant, roles)"
       parameters:
         - { name: name, in: path, required: true, schema: { type: string } }
       responses:
@@ -1210,7 +1210,7 @@ paths:
     post:
       tags: [users]
       summary: Make a group
-      description: '{"name", "roles", "members"}; the owner's.'
+      description: "{\"name\", \"roles\", \"members\"}; the owner's."
       responses:
         "200":
           description: ok.
@@ -1462,7 +1462,7 @@ paths:
         - { name: instance, in: query, schema: { type: string }, description: "With command: an instance, asked by its unix command socket" }
         - { name: command, in: query, schema: { type: string, enum: [uptime, version, running-mode, capture-mode, memcap-list, ruleset-stats, ruleset-failed-rules, ruleset-profile, iface-list, iface-stat, dump-counters] } }
         - { name: iface, in: query, schema: { type: string }, description: "iface-stat's interface" }
-        - { name: q, in: query, schema: { type: string }, description: Text in the rule, any case }
+        - { name: q, in: query, schema: { type: string }, description: "Text in the rule, any case" }
         - { name: sid, in: query, schema: { type: integer } }
         - { name: only, in: query, schema: { type: string, enum: [enabled, disabled, changed] } }
         - { name: classtype, in: query, schema: { type: string, example: trojan-activity } }
@@ -1585,7 +1585,8 @@ paths:
     get:
       tags: [servers]
       summary: What happened on the host, as it happened
-      description: Under data. events is each event with its number n,
+      description: >-
+        Under data. events is each event with its number n,
         its time t, its kind and data; last the number of the newest,
         first that of the oldest still kept, kept how many are at most.
         Ask again with after set to the last number seen and none is
@@ -1834,7 +1835,8 @@ paths:
     post:
       tags: [servers]
       summary: Make the host what a bundle says
-      description: With bundle, a host's bundle, or from, another host's
+      description: >-
+        With bundle, a host's bundle, or from, another host's
         id, whose bundle the console reads there without its secrets (a
         host's keys are its own identity and are never copied), or
         template, a template's name, and values, the value of each of
@@ -2106,11 +2108,7 @@ paths:
                           bridge, geneve, process, pkg-clean, ipsec,
                           pkg-install, ntp, rtadvd, ipsec-sa, jail-conf,
                           neighbour, cert, ssh, carp, poudriere]
-                      jail: { type: string, description: The jail acted on.
-                          For a job that changes a network, the vnet jail
-                          whose network it is; for if-vnet, the jail the
-                          interface is given to, or with remove taken
-                          from. }
+                      jail: { type: string, description: "The jail acted on. For a job that changes a network, the vnet jail whose network it is; for if-vnet, the jail the interface is given to, or with remove taken from." }
                       action: { type: string, description: For jail-action
                           and service-action. }
                       address: { type: string }
@@ -2132,9 +2130,7 @@ paths:
                       gateway: { type: string, description: For route; an
                           address or an interface. }
                       live: { type: boolean }
-                      force: { type: boolean, description: For
-                          pkg-upgrade, also packages built for a newer
-                          FreeBSD than the host's (IGNORE_OSVERSION). }
+                      force: { type: boolean, description: "For pkg-upgrade, also packages built for a newer FreeBSD than the host's (IGNORE_OSVERSION)." }
                       persist: { type: boolean }
                       service: { type: string }
                       set:
@@ -2143,26 +2139,16 @@ paths:
                       unset: { type: array, items: { type: string } }
                       packages: { type: array, items: { type: string },
                         description: For pkg-upgrade and pkg-install. }
-                      verb: { type: string, description: For ipsec, init,
-                          start, conn, unconn, up or down. }
-                      conn: { type: string, description: For ipsec, the
-                          connection, kept in conf.d/arcana-<conn>.conf. }
-                      tunnel_local: { type: string, description: For
-                          if-create a tunnel's outer address here; for
-                          ipsec conn, this host's address. }
-                      tunnel_remote: { type: string, description: The far
-                          end's, as tunnel_local. }
+                      verb: { type: string, description: "For ipsec, init, start, conn, unconn, up or down." }
+                      conn: { type: string, description: "For ipsec, the connection, kept in conf.d/arcana-<conn>.conf." }
+                      tunnel_local: { type: string, description: "For if-create a tunnel's outer address here; for ipsec conn, this host's address." }
+                      tunnel_remote: { type: string, description: "The far end's, as tunnel_local." }
                       ipsec_mode: { type: string, enum: [tunnel, transport] }
-                      pubkey: { type: string, description: For ipsec conn,
-                          the peer's public key in base64, as its
-                          net/ipsec tells it. }
-                      local_ts: { type: string, description: For ipsec conn,
-                          this side's traffic selectors, with commas. }
+                      pubkey: { type: string, description: "For ipsec conn, the peer's public key in base64, as its net/ipsec tells it." }
+                      local_ts: { type: string, description: "For ipsec conn, this side's traffic selectors, with commas." }
                       remote_ts: { type: string }
                       reqid: { type: integer, minimum: 1, maximum: 16383,
-                          description: For ipsec conn, the ipsec(4)
-                          interface it serves; for if-create, that
-                          interface's reqid. }
+                          description: "For ipsec conn, the ipsec(4) interface it serves; for if-create, that interface's reqid." }
                       start_action: { type: string, enum: [start, trap, none] }
                       local_id: { type: string }
                       remote_id: { type: string }
@@ -2287,15 +2273,15 @@ paths:
             schema:
               type: object
               properties:
-                interval: { type: integer, description: hours, 1 to 720 }
+                interval: { type: integer, description: "hours, 1 to 720" }
                 feeds:
                   type: array
                   items:
                     type: object
                     properties:
                       name: { type: string }
-                      url: { type: string, description: https, http or file }
-                      text: { type: string, description: pasted entries, one a line }
+                      url: { type: string, description: "https, http or file" }
+                      text: { type: string, description: "pasted entries, one a line" }
       responses:
         "200":
           description: "{kept: true}"
@@ -2435,7 +2421,11 @@ paths:
         Each step has an id and a job (an object as the jobs
         API takes one, its kind's fields as share/arcana/jobs.yaml says)
         or a read (hello, jails, services, stats, events, history,
-        packages), or arcana, one of Arcana's own (check, build, agents,
+        packages), or notify ({via, text}), or approval ({text, via,
+        timeout}: the host's run waits there, told by via when given,
+        until POST /api/runs/{n}/approve names the step, the run is
+        stopped, or timeout seconds pass and it fails; 0 waits on),
+        or arcana, one of Arcana's own (check, build, agents,
         console: the head of agent_source against what was last built
         and updated to, the agent built on the step's host, sent to
         every host, the console updated where it runs); with when, a
@@ -2444,7 +2434,9 @@ paths:
         stop, continue or a later step's id. Values may be ${param.X},
         ${host.id}, ${host.name}, ${step.ID.PATH} or ${event.PATH}.
         every is 0 or 60 seconds to a week; on, events with what they
-        match; one that runs by itself and destroys says destructive.
+        match; one that runs by itself and destroys says destructive;
+        serial runs its hosts one after the other, a host that fails
+        leaving the rest not run.
       requestBody:
         required: true
         content:
@@ -2546,6 +2538,32 @@ paths:
         "200": { $ref: "#/components/responses/Ok" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /api/runs/{n}/approve:
+    post:
+      tags: [workflows]
+      summary: A step waiting for an approval approved, on every host
+      description: "{step}: the id of a step in the waiting state on
+        some host of the run; who approved it and when go into the
+        run's approved list and the step's answer."
+      parameters:
+        - name: n
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [step]
+              properties:
+                step: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error", description: "The run ended, or no such step waits." }
   /api/transfers:
     get:
       tags: [storage]
@@ -2572,12 +2590,10 @@ paths:
               properties:
                 from: { type: string, description: A server's id. }
                 snapshot: { type: string, description: dataset@name }
-                since: { type: string, description: A snapshot of the
-                    same dataset both have, for what changed since. }
+                since: { type: string, description: "A snapshot of the same dataset both have, for what changed since." }
                 recursive: { type: boolean }
                 to: { type: string }
-                dataset: { type: string, description: pool/name, not
-                    there yet. }
+                dataset: { type: string, description: "pool/name, not there yet." }
       responses:
         "200":
           description: id and state
@@ -3116,16 +3132,13 @@ paths:
             schema:
               type: object
               properties:
-                jail: { type: string, description: A running jail, or
-                    absent for the host. }
+                jail: { type: string, description: "A running jail, or absent for the host." }
                 packages:
                   type: array
                   items: { type: string }
                   description: None means all pending ones.
                 dry_run: { type: boolean }
-                ignore_osversion: { type: boolean, description: Also
-                    packages built for a newer FreeBSD than the host's,
-                    which pkg refuses otherwise (IGNORE_OSVERSION). }
+                ignore_osversion: { type: boolean, description: "Also packages built for a newer FreeBSD than the host's, which pkg refuses otherwise (IGNORE_OSVERSION)." }
                 pkg_repo: { type: string, description: "From this one
                     of pkg's repositories alone (pkg upgrade -r), one
                     of those the packages read lists in repos; a job of
@@ -3525,6 +3538,10 @@ components:
           type: array
           items: { type: string }
           description: Server ids it runs on by itself; by hand, those picked.
+        serial:
+          type: boolean
+          description: The hosts one after the other, not at once; a
+            host that fails leaves the rest not run.
         params:
           type: array
           items:
@@ -3539,7 +3556,8 @@ components:
             required: [id]
             description: >-
               A job (job, its kind's fields), a read (read: hello, jails,
-              services, stats, events, history or packages) or one of
+              services, stats, events, history or packages), a message
+              (notify), an approval waited for (approval) or one of
               Arcana's own (arcana), with when and on_fail.
             properties:
               id: { type: string }
@@ -3574,11 +3592,20 @@ components:
           type: string
           enum: [running, done, failed, cancelled, interrupted]
           description: interrupted when the console stopped while it ran.
-        started: { type: number, description: Unix time, to the millisecond. }
-        ended: { type: number, description: Unix time, to the millisecond. }
+        started: { type: number, description: "Unix time, to the millisecond." }
+        ended: { type: number, description: "Unix time, to the millisecond." }
         params: { type: object, additionalProperties: { type: string } }
         event: { type: object, description: The event that began it. }
         cancel: { type: boolean, description: A stop was asked for. }
+        approved:
+          type: array
+          description: The approval steps approved, by whom and when.
+          items:
+            type: object
+            properties:
+              step: { type: string }
+              by: { type: string }
+              at: { type: integer }
         hosts:
           type: array
           items:
@@ -3597,12 +3624,13 @@ components:
                     id: { type: string }
                     state:
                       type: string
-                      enum: [pending, running, done, failed, skipped, cancelled]
+                      enum: [pending, running, waiting, done, failed, skipped, cancelled, not run, interrupted]
+                      description: waiting at an approval step.
                     job: { type: integer, description: The host's job number. }
                     title: { type: string }
                     error: { type: string }
-                    started: { type: number, description: Unix time, to the millisecond. }
-                    ended: { type: number, description: Unix time, to the millisecond. }
+                    started: { type: number, description: "Unix time, to the millisecond." }
+                    ended: { type: number, description: "Unix time, to the millisecond." }
                     trace:
                       type: object
                       description: >-

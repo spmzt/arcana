@@ -1172,6 +1172,15 @@ part_hosts(void)
 	run("document.querySelector('#j-db').click()");
 	wait_js("document.querySelector('.jail-page')", 5);
 	shot("4-jail-page");
+	/* Its permissions: the table, and the form to change them. */
+	ATF_CHECK(js_true("document.querySelector('.jail-page table.allow') !== null"));
+	run("document.querySelector('.jail-page button[data-act=jm-allow]').click()");
+	wait_js("document.querySelector('form[data-form=jm-allow] table.allow select')", 5);
+	shot("4-jail-allow");
+	ATF_CHECK(js_true("document.querySelector('.modal .buttons button.primary').textContent === 'Change'"));
+	ATF_CHECK(js_true("document.querySelector('form[data-form=jm-allow] table.allow select').getBoundingClientRect().width > 100"));
+	ATF_CHECK(js_true("(() => { const m = document.querySelector('.modal'), t = m.querySelector('table.allow'); return t.getBoundingClientRect().right <= m.getBoundingClientRect().right + 1; })()"));
+	run("document.querySelector('.modal button[data-act=close]').click()");
 	ATF_CHECK(js_true("document.querySelector('.jail-page h1').textContent "
 	    "=== 'db'"));
 	run("document.querySelector('.jail-page button[data-act=address-add]')"

@@ -37,7 +37,7 @@ store_load(const char *name)
 	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
 	    UCL_PARSER_DISABLE_MACRO);
 	if (!ucl_parser_add_file(p, path)) {
-		kore_log(LOG_ERR, "%s: %s", path, ucl_parser_get_error(p));
+		thread_log(LOG_ERR, "%s: %s", path, ucl_parser_get_error(p));
 		ucl_parser_free(p);
 		return (NULL);
 	}
@@ -52,7 +52,7 @@ store_write(const char *name, const void *body, size_t len)
 {
 	char		 path[MAXPATHLEN], tmp[MAXPATHLEN], *p;
 	ssize_t		 w;
-	int		 fd;
+	int		 fd, e;
 
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, name);
 	snprintf(tmp, sizeof(tmp), "%s.XXXXXX", path);
@@ -63,13 +63,22 @@ store_write(const char *name, const void *body, size_t len)
 		*p = '/';
 	}
 	if ((fd = mkstemp(tmp)) == -1) {
-		kore_log(LOG_ERR, "mkstemp %s: %s", tmp, strerror(errno));
+		thread_log(LOG_ERR, "mkstemp %s: %s", tmp, strerror(errno));
 		return (-1);
 	}
 	w = len > 0 ? write(fd, body, len) : 0;
-	if (w != (ssize_t)len || fchmod(fd, 0600) == -1 || fsync(fd) == -1 ||
-	    close(fd) == -1 || rename(tmp, path) == -1) {
-		kore_log(LOG_ERR, "writing %s: %s", path, strerror(errno));
+	/* A short write sets no errno: a full disk, as a rule. */
+	if (w >= 0 && w != (ssize_t)len)
+		errno = ENOSPC;
+	if (w != (ssize_t)len || fchmod(fd, 0600) == -1 || fsync(fd) == -1) {
+		e = errno;
+		(void)close(fd);
+		thread_log(LOG_ERR, "writing %s: %s", path, strerror(e));
+		unlink(tmp);
+		return (-1);
+	}
+	if (close(fd) == -1 || rename(tmp, path) == -1) {
+		thread_log(LOG_ERR, "writing %s: %s", path, strerror(errno));
 		unlink(tmp);
 		return (-1);
 	}
@@ -144,7 +153,7 @@ sweep_dir(const char *dir)
 			continue;
 		snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
 		if (unlink(path) == 0)
-			kore_log(LOG_NOTICE, "%s: a write cut short, taken away",
+			thread_log(LOG_NOTICE, "%s: a write cut short, taken away",
 			    path);
 	}
 	closedir(d);
