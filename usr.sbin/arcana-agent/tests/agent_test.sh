@@ -321,7 +321,9 @@ start_daemon()
 	    --bird-watch 0 $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
-	for i in $(seq 1 100); do
+	# Ready a minute at most: the whole suite at once can make it slow,
+	# and a case that went on before would find no socket.
+	for i in $(seq 1 1200); do
 		grep -q 'ready' daemon.out 2>/dev/null && return
 		sleep 0.05
 	done
@@ -336,9 +338,15 @@ stop_daemon()
 	pid=$(cat daemon.pid)
 	kill "$pid" 2>/dev/null
 	# Gone before anything follows: one that left later would take
-	# away the socket the next one had made.
+	# away the socket the next one had made.  A minute on a busy host,
+	# then for good.
+	for i in $(seq 1 1200); do
+		kill -0 "$pid" 2>/dev/null || return 0
+		sleep 0.05
+	done
+	kill -9 "$pid" 2>/dev/null
 	for i in $(seq 1 100); do
-		kill -0 "$pid" 2>/dev/null || break
+		kill -0 "$pid" 2>/dev/null || return 0
 		sleep 0.05
 	done
 	true

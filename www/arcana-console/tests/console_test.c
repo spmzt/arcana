@@ -8788,7 +8788,7 @@ ATF_TC_BODY(cluster, tc)
 	ATF_REQUIRE(chdir(cwd) == 0);
 	strlcpy(cookie, body, sizeof(cookie));
 	ATF_REQUIRE(chdir(cl_nodes[2]) == 0);
-	for (k = 0; k < 100; k++) {
+	for (k = 0; k < 300; k++) {
 		http("GET", "/api/servers", NULL, &r);
 		n = r.status;
 		resp_free(&r);

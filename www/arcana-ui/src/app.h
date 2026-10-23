@@ -521,6 +521,7 @@ struct app {
 	bool		 peek;		/* app.jail is shown in a box over the page */
 	bool		 rail_open;	/* the tree, on a narrow screen, is unfolded */
 	bool		 who_open;	/* the top bar's menu, on a phone */
+	bool		 acct_open;	/* the account button's menu */
 	char		 theme[16];	/* "" for the default */
 	ucl_object_t	*settings;	/* /api/settings, while its dialog is open */
 	ucl_object_t	*push;		/* /api/push: the devices that are told */

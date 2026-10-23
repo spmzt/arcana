@@ -2035,6 +2035,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.rail_open = !app.rail_open;
 	} else if (strcmp(act, "who-toggle") == 0) {
 		app.who_open = !app.who_open;
+	} else if (strcmp(act, "acct-toggle") == 0) {
+		app.acct_open = !app.acct_open;
 	} else if (strcmp(act, "quiet-toggle") == 0) {
 		app.show_quiet = !app.show_quiet;
 	} else if (strcmp(act, "settings") == 0 || strcmp(act, "keys") == 0 ||
@@ -2163,6 +2165,10 @@ arc_on_action(char *act, char *arg, char *value)
 	if (app.who_open && strcmp(act, "who-toggle") != 0 && strcmp(act,
 	    "resize") != 0)
 		app.who_open = false;
+	/* So does the account menu, but at Notify, which it holds. */
+	if (app.acct_open && strcmp(act, "acct-toggle") != 0 && strcmp(act,
+	    "resize") != 0 && strcmp(act, "notify") != 0)
+		app.acct_open = false;
 	dispatch(act, arg, value);
 	free(act);
 	free(arg);

@@ -684,6 +684,61 @@ label {
 }
 .who button.on { color: var(--cyan); border-color: var(--cyan); }
 
+/* The account: an initial and the name, the role under it; its menu
+ * holds who is signed in, Notify and Log out. */
+.acct { position: relative; }
+.acct-btn {
+	display: flex;
+	align-items: center;
+	gap: .45rem;
+	padding: .2rem .65rem .2rem .25rem;
+}
+.acct-btn .avatar {
+	display: grid;
+	place-items: center;
+	width: 1.65rem;
+	height: 1.65rem;
+	border-radius: 50%;
+	background: rgba(var(--accent-rgb), .16);
+	color: var(--cyan);
+	font-weight: 600;
+	font-size: .8rem;
+}
+.acct-id {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	line-height: 1.15;
+}
+.acct-id b { font-weight: 500; font-size: .8rem; }
+.acct-id small { color: var(--dim); font-size: .66rem; letter-spacing: .02em; }
+.acct-menu {
+	display: none;
+	position: absolute;
+	right: 0;
+	top: calc(100% + .35rem);
+	z-index: 20;
+	flex-direction: column;
+	gap: .3rem;
+	min-width: 12rem;
+	padding: .5rem;
+	border: 1px solid var(--line-2);
+	background: var(--bg-2);
+	box-shadow: 0 20px 40px -12px #000;
+}
+.acct-menu.open { display: flex; }
+.acct-menu button { text-align: left; }
+.acct-who {
+	display: flex;
+	flex-direction: column;
+	gap: .15rem;
+	padding: .15rem .3rem .45rem;
+	border-bottom: 1px solid var(--line);
+	color: var(--dim);
+	font-size: .74rem;
+}
+.acct-who b { color: var(--fg); font-weight: 500; }
+
 .banner {
 	padding: .5rem 1rem;
 	font-size: .78rem;
@@ -3504,6 +3559,17 @@ svg.topo .tlink.quiet.sel .lbl, svg.topo .tlink.quiet.sel .rate { display: inlin
 		overflow: visible;
 	}
 	.who.open { display: flex; }
+	/* On a phone the bar's menu is the account's: no second level. */
+	.acct-btn { display: none; }
+	.acct-menu {
+		display: flex;
+		position: static;
+		min-width: 0;
+		padding: 0;
+		border: 0;
+		background: none;
+		box-shadow: none;
+	}
 	.who button, .who button:first-child {
 		display: block;
 		padding: .65rem .8rem;

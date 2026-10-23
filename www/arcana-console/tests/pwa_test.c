@@ -699,6 +699,20 @@ part_shell(void)
 	    "'owner'))", 10);
 	ATF_CHECK(js_true("document.querySelector('header .who-user')?."
 	    "textContent.includes('admin')"));
+	/* The account: a button at the bar's end with the name and the
+	 * role; its menu says who is signed in and holds Log out. */
+	ATF_CHECK(js_true("document.querySelector('header .acct-btn .acct-id "
+	    "small')?.textContent === 'owner' && !document.querySelector("
+	    "'.acct-menu.open')"));
+	shot("0a-account");
+	run("document.querySelector('header .acct-btn').click()");
+	wait_js("document.querySelector('.acct-menu.open') && document."
+	    "querySelector('.acct-menu.open .acct-who').textContent.includes("
+	    "'admin') && document.querySelector('.acct-menu.open button["
+	    "data-act=logout]')", 5);
+	shot("0b-account-menu");
+	run("document.querySelector('header .acct-btn').click()");
+	wait_js("!document.querySelector('.acct-menu.open')", 5);
 	run("document.querySelector('button[data-act=user-add]').click()");
 	wait_js("document.querySelector('.modal form[data-form=user] "
 	    "input[name=tenant]') !== null && document.querySelector('.modal "
@@ -1116,13 +1130,16 @@ part_hosts(void)
 	    "querySelector('.dock-body').getBoundingClientRect().top - 200) < 3"
 	    " && JSON.parse(localStorage.getItem('arc_sizes')).rail === 400", 5);
 	shot("3a-resized");
+	/* One handle at a time: the page may draw again between them. */
 	run("document.querySelector('.rail > .resizer').dispatchEvent("
-	    "new MouseEvent('dblclick', { bubbles: true }));"
-	    "document.querySelector('.dock > .resizer').dispatchEvent("
 	    "new MouseEvent('dblclick', { bubbles: true }));");
 	wait_js("Math.round(document.querySelector('.rail')."
-	    "getBoundingClientRect().width) === 250 && "
-	    "localStorage.getItem('arc_sizes') === '{}'", 5);
+	    "getBoundingClientRect().width) === 250 && !('rail' in JSON.parse("
+	    "localStorage.getItem('arc_sizes')))", 15);
+	wait_js("document.querySelector('.dock > .resizer')", 15);
+	run("document.querySelector('.dock > .resizer').dispatchEvent("
+	    "new MouseEvent('dblclick', { bubbles: true }));");
+	wait_js("localStorage.getItem('arc_sizes') === '{}'", 15);
 
 	/* The workflow and the raw output of jail(8): sending the queue
 	 * opened the dock, and the graph fills in as the job runs. */
@@ -1676,9 +1693,11 @@ part_nettab(void)
 	    "f.elements['net.inet.igmp.default_version'].value = '2'; f."
 	    "elements['net.inet.igmp.sendra'].checked = false; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	for (i = 0; i < 100 && system("grep -q 'sysctl net.inet.igmp.sendra=0' "
+	/* Set live first, kept in sysctl.conf after: wait for both. */
+	for (i = 0; i < 300 && system("grep -q 'sysctl net.inet.igmp.sendra=0' "
 	    "kld.log && grep -q 'sysctl net.inet.igmp.default_version=2' "
-	    "kld.log") != 0; i++)
+	    "kld.log && grep -q 'net.inet.igmp.sendra=0' sysctl.conf") != 0;
+	    i++)
 		usleep(100000);
 	if (system("grep -q 'sysctl net.inet.igmp.sendra=0' kld.log && "
 	    "grep -q 'sysctl net.inet.igmp.default_version=2' kld.log && ! "

@@ -271,6 +271,38 @@ topbar(struct html *h)
 	    "<div class=\"who%s\">", app.who_open ? " on" : "", app.who_open ?
 	    " open" : "");
 	help_button(h);
+	/*
+	 * Who is signed in, as an account button at the end: its menu says
+	 * the name and the role, and holds Notify and Log out.  Without a
+	 * name (a token), those two stand in the bar as they are.
+	 */
+	if (app.user[0] != '\0') {
+		h_fmt(h, "<div class=\"acct\"><button class=\"ghost acct-btn%s\" "
+		    "data-act=\"acct-toggle\" title=\"Your account\" "
+		    "aria-haspopup=\"menu\" aria-expanded=\"%s\"><span "
+		    "class=\"avatar\" aria-hidden=\"true\">", app.acct_open ?
+		    " on" : "", app.acct_open ? "true" : "false");
+		h_fmt(h, "%c", toupper((unsigned char)app.user[0]));
+		h_raw(h, "</span><span class=\"acct-id who-user\"><b>");
+		h_txt(h, app.user);
+		h_raw(h, "</b>");
+		if (app.console_role[0] != '\0') {
+			h_raw(h, "<small>");
+			h_txt(h, app.console_role);
+			h_raw(h, "</small>");
+		}
+		h_fmt(h, "</span></button><div class=\"acct-menu%s\" role=\"menu\">"
+		    "<div class=\"acct-who\">Signed in as <b>", app.acct_open ?
+		    " open" : "");
+		h_txt(h, app.user);
+		h_raw(h, "</b>");
+		if (app.console_role[0] != '\0') {
+			h_raw(h, "<span>Role: ");
+			h_txt(h, app.console_role);
+			h_raw(h, "</span>");
+		}
+		h_raw(h, "</div>");
+	}
 	if (app.notify != 3)
 		h_fmt(h, "<button class=\"ghost%s\" data-act=\"notify\" title=\""
 		    "Notify when a task that took more than ten seconds "
@@ -279,17 +311,10 @@ topbar(struct html *h)
 		    app.notify_off ? "off, press to turn on" : "on, press to "
 		    "turn off" : app.notify == 2 ? "blocked in the browser's "
 		    "settings" : "off, press to allow");
-	if (app.user[0] != '\0') {
-		h_raw(h, "<span class=\"dim who-user\" title=\"Signed in as\">");
-		h_txt(h, app.user);
-		if (app.console_role[0] != '\0') {
-			h_raw(h, " · ");
-			h_txt(h, app.console_role);
-		}
-		h_raw(h, "</span>");
-	}
-	h_raw(h, "<button class=\"ghost\" data-act=\"logout\">Log out</button>"
-	    "</div></header>");
+	h_raw(h, "<button class=\"ghost\" data-act=\"logout\">Log out</button>");
+	if (app.user[0] != '\0')
+		h_raw(h, "</div></div>");
+	h_raw(h, "</div></header>");
 }
 
 /*
