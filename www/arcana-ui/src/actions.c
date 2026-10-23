@@ -2565,8 +2565,10 @@ status_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	app.setup_required = jbool(o, "setup_required");
 	app.by_ldap = jbool(o, "by_ldap");
-	app.by_token = jbool(o, "by_token") || app.by_ldap;
+	app.by_password = jbool(o, "by_password");
+	app.by_token = jbool(o, "by_token") || app.by_ldap || app.by_password;
 	app.ldap_on = jbool(o, "ldap");
+	app.password_on = jbool(o, "password");
 	who_set(o);
 	origin_check(jstr(o, "origin"), jstr(o, "rp_id"));
 	if (jbool(o, "authenticated")) {
@@ -2595,7 +2597,9 @@ auth_done_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	app.auth_busy = false;
 	if (status == 200 && jbool(o, "authenticated")) {
 		app.by_ldap = jbool(o, "by_ldap");
-		app.by_token = jbool(o, "by_token") || app.by_ldap;
+		app.by_password = jbool(o, "by_password");
+		app.by_token = jbool(o, "by_token") || app.by_ldap ||
+		    app.by_password;
 		who_set(o);
 		app.invite_token[0] = '\0';
 		app.screen = SCREEN_CONSOLE;
@@ -2662,9 +2666,18 @@ login_token(const char *token)
 	free(body);
 }
 
-/* A directory's user and password: the console asks the directory. */
+/* How a limited session was opened, for what the page says of it. */
+const char *
+signed_in_how(void)
+{
+
+	return (app.by_ldap ? "by a directory's user" : app.by_password ?
+	    "with a password" : "with an API token");
+}
+
+/* A user and password: the console's own, or the directory's. */
 void
-login_ldap(const char *user, const char *password)
+login_password(const char *user, const char *password)
 {
 	char	*qu, *qp, *body;
 
@@ -2679,7 +2692,7 @@ login_ldap(const char *user, const char *password)
 	explicit_bzero(qp, strlen(qp));
 	free(qu);
 	free(qp);
-	api("POST", "/api/auth/login/ldap", body, auth_done_cb, NULL);
+	api("POST", "/api/auth/login/password", body, auth_done_cb, NULL);
 	explicit_bzero(body, strlen(body));
 	free(body);
 }
@@ -2823,6 +2836,12 @@ logout_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	app.screen = SCREEN_LOGIN;
 	app.auth_error[0] = '\0';
+	/* The reply is the status: which ways in the sign-in page offers. */
+	if (status == 200) {
+		app.ldap_on = jbool(o, "ldap");
+		app.password_on = jbool(o, "password");
+	}
+	app.by_token = app.by_ldap = app.by_password = false;
 }
 
 void

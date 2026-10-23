@@ -711,8 +711,28 @@ part_shell(void)
 	    "'admin') && document.querySelector('.acct-menu.open button["
 	    "data-act=logout]')", 5);
 	shot("0b-account-menu");
-	run("document.querySelector('header .acct-btn').click()");
-	wait_js("!document.querySelector('.acct-menu.open')", 5);
+	/* A password of the console's own, from that menu: two that are
+	 * not the same refused, then set; the users table says so. */
+	run("document.querySelector('.acct-menu.open button[data-act="
+	    "password]').click()");
+	wait_js("document.querySelector('.modal form[data-form=password-set]"
+	    "') && !document.querySelector('.acct-menu.open')", 5);
+	run("const f = document.querySelector('form[data-form=password-set]');"
+	    " f.password.value = 'a long lab password'; f.again.value = "
+	    "'another lab password'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal .err')?.textContent.includes("
+	    "'not the same')", 5);
+	shot("0b1-password");
+	run("const f = document.querySelector('form[data-form=password-set]');"
+	    " f.password.value = 'a long lab password'; f.again.value = "
+	    "'a long lab password'; f.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('.toast')].some(t => t.textContent.includes("
+	    "'admin password set')) && [...document.querySelectorAll("
+	    "'table.users tbody tr')].some(tr => tr.textContent.includes("
+	    "'admin') && tr.textContent.includes('password'))", 15);
+	ATF_CHECK(system("grep -q '\"password\": *\"\\$2b\\$' "
+	    "data/users.json") == 0);
 	run("document.querySelector('button[data-act=user-add]').click()");
 	wait_js("document.querySelector('.modal form[data-form=user] "
 	    "input[name=tenant]') !== null && document.querySelector('.modal "
@@ -825,6 +845,22 @@ part_shell(void)
 	wait_js("document.querySelector('.set-body')?.textContent.includes("
 	    "'not one of a cluster') && !document.querySelector("
 	    "'.set-body .notice.bad')", 20);
+	/* Signed in with the password: the page offers it now, and the
+	 * session is limited as the token's was. */
+	run("document.querySelector('button[data-act=logout]').click()");
+	wait_js("document.querySelector('form[data-form=login-password]')", 10);
+	run("const f = document.querySelector('form[data-form=login-password]'"
+	    "); f.user.value = 'admin'; f.password.value = 'a long lab "
+	    "password'; f.requestSubmit();");
+	wait_js("document.querySelector('.shell')", 20);
+	go("/#/settings/aaa/keys");
+	wait_js("document.querySelector('.set-body .keys-token')?.textContent"
+	    ".includes('opened with a password') && !document.querySelector("
+	    "'form[data-form=add-key]')", 20);
+	run("document.querySelector('header .acct-btn').click()");
+	wait_js("document.querySelector('.acct-menu.open') && !document."
+	    "querySelector('.acct-menu.open button[data-act=password]')", 5);
+	run("document.querySelector('header .acct-btn').click()");
 	run("document.querySelector('button[data-act=logout]').click()");
 	click_when("button[data-act=login]", 10);
 	wait_js("document.querySelector('.shell')", 20);
@@ -5629,7 +5665,7 @@ part_flows(void)
 	    20);
 	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
 	    ".click()");
-	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 22",
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 23",
 	    5);
 	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
 	    ".click()");

@@ -27,7 +27,10 @@ static struct {
 	char		 edit[72];	/* the user or role edited, "" a new one */
 	char		 invite_user[72];
 	char		 invite[120];	/* the token issued, shown once */
+	char		 pw_user[72];	/* whose password, "" one's own */
 } us;
+
+static void	password_send(const char *);
 
 static const struct {
 	int		 tab;
@@ -195,6 +198,9 @@ set_users(struct html *h)
 		if (app.user[0] != '\0' && jstr(u, "name") != NULL && strcmp(
 		    app.user, jstr(u, "name")) == 0)
 			h_raw(h, " <span class=\"dim\">you</span>");
+		if (jbool(u, "password"))
+			h_raw(h, " <span class=\"chip\" title=\"Has a password of "
+			    "the console's own, beside their keys\">password</span>");
 		if (jstr(u, "source") != NULL && strcmp(jstr(u, "source"),
 		    "ldap") == 0)
 			h_raw(h, " <span class=\"chip\" title=\"Made at their "
@@ -233,7 +239,17 @@ set_users(struct html *h)
 		    "data-act=\"user-invite\" title=\"A one-time link for their "
 		    "first key\"");
 		h_attr(h, "data-arg", jstr(u, "name"));
-		h_raw(h, ">Invite</button> <button class=\"icon\" data-act=\""
+		h_raw(h, ">Invite</button> ");
+		/* The directory keeps its users' passwords. */
+		if (!app.by_token && (jstr(u, "source") == NULL || strcmp(jstr(u,
+		    "source"), "ldap") != 0)) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "password\" title=\"A password of the console's own, "
+			    "set or taken away\"");
+			h_attr(h, "data-arg", jstr(u, "name"));
+			h_raw(h, ">Password</button> ");
+		}
+		h_raw(h, "<button class=\"icon\" data-act=\""
 		    "user-edit\" title=\"Change the roles or the tenant\"");
 		h_attr(h, "data-arg", jstr(u, "name"));
 		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
@@ -628,6 +644,16 @@ user_form(const char *form, const ucl_object_t *f)
 	char			 url[200];
 	const char		*name;
 
+	if (strcmp(form, "password-set") == 0) {
+		if (jstr(f, "password") == NULL || jstr(f, "again") == NULL ||
+		    strcmp(jstr(f, "password"), jstr(f, "again")) != 0) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "The two are not the same.");
+			return (true);
+		}
+		password_send(jstr(f, "password"));
+		return (true);
+	}
 	if (strcmp(form, "user") != 0 && strcmp(form, "role") != 0 &&
 	    strcmp(form, "ugroup") != 0)
 		return (false);
@@ -716,10 +742,90 @@ user_form(const char *form, const ucl_object_t *f)
 	return (true);
 }
 
+/* The password set or taken away: said, and the users read again. */
+static void
+password_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	app.modal_busy = false;
+	if (status != 200) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "%s", err !=
+		    NULL ? err : jstr(o, "error.message") != NULL ? jstr(o,
+		    "error.message") : "not kept");
+		render();
+		return;
+	}
+	app.modal = MODAL_NONE;
+	app.modal_error[0] = '\0';
+	toast(false, "%s password %s", jstr(o, "user") != NULL ? jstr(o,
+	    "user") : "The", jbool(o, "password") ? "set" : "taken away");
+	if (us.all != NULL)
+		users_load();
+	render();
+}
+
+/* POST /api/auth/password for the user (us.pw_user, "" one's own). */
+static void
+password_send(const char *pw)
+{
+	char	*qu, *qp, *body;
+
+	qu = json_quote(us.pw_user);
+	qp = json_quote(pw);
+	if (asprintf(&body, "{\"user\":%s,\"password\":%s}", qu, qp) == -1)
+		abort();
+	explicit_bzero(qp, strlen(qp));
+	free(qu);
+	free(qp);
+	app.modal_busy = true;
+	api("POST", "/api/auth/password", body, password_cb, NULL);
+	explicit_bzero(body, strlen(body));
+	free(body);
+}
+
+/* The password dialog: a new one, twice; or none. */
+bool
+password_modal(struct html *h)
+{
+	const char	*who;
+
+	who = us.pw_user[0] != '\0' ? us.pw_user : app.user;
+	h_raw(h, "<form data-form=\"password-set\"><h2>A password for <b>");
+	h_txt(h, who);
+	h_raw(h, "</b></h2><p>A password of the console's own, beside the "
+	    "security keys: kept as a bcrypt hash, never shown. Signed in "
+	    "with it, the console's settings, sign-in keys, users, tokens and "
+	    "CA stay with a key. Setting it again, or taking it away, signs "
+	    "out what it signed in.</p><input type=\"text\" name=\"user\" "
+	    "autocomplete=\"username\" hidden");
+	h_attr(h, "value", who);
+	h_raw(h, "><label>New password<input type=\"password\" name=\""
+	    "password\" required minlength=\"12\" maxlength=\"72\" "
+	    "autocomplete=\"new-password\" autofocus><small>12 characters at "
+	    "least, 72 bytes at most.</small></label><label>Again<input "
+	    "type=\"password\" name=\"again\" required minlength=\"12\" "
+	    "maxlength=\"72\" autocomplete=\"new-password\"></label>");
+	return (true);
+}
+
 bool
 user_action(const char *act, const char *arg)
 {
 	char	url[200], body[300];
+
+	if (strcmp(act, "password") == 0) {
+		snprintf(us.pw_user, sizeof(us.pw_user), "%s", arg != NULL &&
+		    strcmp(arg, app.user) != 0 ? arg : "");
+		app.acct_open = false;
+		app.modal = MODAL_PASSWORD;
+		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "password-remove") == 0) {
+		password_send("");
+		return (true);
+	}
 
 	if (strcmp(act, "user-add") == 0 || strcmp(act, "user-edit") == 0 ||
 	    strcmp(act, "role-add") == 0 || strcmp(act, "role-edit") == 0 ||

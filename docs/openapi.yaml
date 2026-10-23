@@ -231,23 +231,26 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
 
-  /api/auth/login/ldap:
+  /api/auth/login/password:
     post:
       tags: [auth]
-      summary: Log in as a directory's user
+      summary: Log in with a user name and a password
       description: |
-        When Settings name an LDAP directory (ldap_url): the user is
-        looked up under the base by the user attribute, as the reader
-        Settings name or anonymously, and the console binds as the
-        entry found with the password, over TLS always (ldaps://, or
-        StartTLS on ldap://; the certificate checked).  With a group
-        set, its members alone (member, uniqueMember or memberUid).
-        The session is limited as a token's: not the console's
-        settings, sign-in, push, enrolment, tokens or CA.  The status
-        says by_ldap, and ldap whether a directory is set.  An empty
-        password is refused (400), a wrong one or an unknown user 401
-        without saying which, an outsider 401; after five failures in
-        a minute, 429 for the rest of it.
+        A user with a password of the console's own (set by POST
+        /api/auth/password) is checked against it, a bcrypt hash, and
+        against nothing else.  Any other user, when Settings name an
+        LDAP directory (ldap_url), is looked up under the base by the
+        user attribute, as the reader Settings name or anonymously, and
+        the console binds as the entry found with the password, over
+        TLS always (ldaps://, or StartTLS on ldap://; the certificate
+        checked); with a group set, its members alone (member,
+        uniqueMember or memberUid).  The session is limited as a
+        token's - not the console's settings, sign-in, push, enrolment,
+        users, tokens or CA.  The status says by_password or by_ldap,
+        and password and ldap whether either way is there.  An empty
+        password to the directory is refused (400), a wrong one or an
+        unknown user 401 without saying which; after five failures in a
+        minute, either way, 429 for the rest of it.
       security: []
       requestBody:
         required: true
@@ -265,9 +268,46 @@ paths:
         "401":
           description: Refused.
         "404":
-          description: No directory is set up.
+          description: No user has a password and no directory is set up.
         "429":
           description: Too many failures this minute.
+  /api/auth/password:
+    post:
+      tags: [auth]
+      summary: Set or take away a password of the console's own
+      description: |
+        For the session's own user when user is not given; another
+        user's is the owner's to set.  Only from a session opened with
+        a security key - not one opened by a password or a token.  A
+        password is 12 characters at least and 72 bytes at most (what
+        bcrypt reads), without control characters; empty or null takes
+        it away.  A user the directory keeps (source ldap) has none.
+        The user's sessions opened by a password before end.  GET
+        /api/users says whether each user has one, never the hash.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                user: { type: string, maxLength: 64 }
+                password: { type: string, nullable: true, maxLength: 72 }
+      responses:
+        "200":
+          description: Set, or taken away.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  user: { type: string }
+                  password: { type: boolean, description: whether the user has one now }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /api/auth/login/token:
     post:
       tags: [auth]
@@ -308,7 +348,7 @@ paths:
       tags: [auth]
       summary: The console's users and roles (owner only)
       responses:
-        "200": { description: "users, each name, tenant, roles (names), console (what the roles come to), created, keys, invites; roles, each name, console (owner, operator, member), hosts ({id or \"*\": viewer, operator, admin}), users (how many have it)" }
+        "200": { description: "users, each name, tenant, roles (names), console (what the roles come to), created, keys, invites, password (whether they have one; never the hash); roles, each name, console (owner, operator, member), hosts ({id or \"*\": viewer, operator, admin}), users (how many have it)" }
     post:
       tags: [auth]
       summary: Add a user, or replace the one of the name
@@ -3406,6 +3446,15 @@ components:
                 description: >-
                   The origin the console is configured for; security keys
                   work only when the page is open there.
+              ldap:
+                type: boolean
+                description: A directory is set up for sign-in by password.
+              password:
+                type: boolean
+                description: A user has a password of the console's own.
+              by_token: { type: boolean, description: the session is limited as an API token's is }
+              by_ldap: { type: boolean, description: opened by a directory's user }
+              by_password: { type: boolean, description: opened by a password of the console's own }
     Credentials:
       description: The registered keys.
       content:

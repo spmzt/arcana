@@ -63,6 +63,7 @@ struct session {
 	char		who[64];	/* the key it was opened with */
 	char		tok[17];	/* the API token it was, its id; "" a key */
 	bool		ldap;		/* opened by a directory's user */
+	bool		pw;		/* ... by the console's own password */
 	char		user[64];	/* the console user (users.c); "" none */
 	time_t		written;	/* last as its document has it */
 };
@@ -103,7 +104,7 @@ static bool	 verify_sig(int, const uint8_t *, size_t, const uint8_t *,
 static bool	 key_matches(int, const uint8_t *, size_t);
 static ucl_object_t *cred_list(void);
 static const ucl_object_t *cred_find(const char *);
-static void	 session_start(struct http_request *, const char *,
+static struct session *session_start(struct http_request *, const char *,
 		    const char *, const char *);
 static void	 sessions_save(void);
 static void	 sessions_load(void);
@@ -519,6 +520,8 @@ session_put(struct session *s)
 		put(e, "token", ucl_object_fromstring(s->tok));
 	if (s->ldap)
 		put(e, "ldap", ucl_object_frombool(true));
+	if (s->pw)
+		put(e, "password", ucl_object_frombool(true));
 	if (s->user[0] != '\0')
 		put(e, "user", ucl_object_fromstring(s->user));
 	session_doc(s, name, sizeof(name));
@@ -600,6 +603,7 @@ sessions_load(void)
 		    "token") != NULL ? ucl_object_tostring_forced(
 		    ucl_object_lookup(e, "token")) : "");
 		s->ldap = ucl_object_toboolean(ucl_object_lookup(e, "ldap"));
+		s->pw = ucl_object_toboolean(ucl_object_lookup(e, "password"));
 		snprintf(s->user, sizeof(s->user), "%s", ucl_object_lookup(e,
 		    "user") != NULL ? ucl_object_tostring_forced(
 		    ucl_object_lookup(e, "user")) : "");
@@ -645,19 +649,24 @@ session_by_token(struct http_request *req)
 {
 	struct session	*s;
 
-	/* A directory's user is limited as a token is: what changes the
-	 * console's own sign-in, tokens, CA and settings takes a key. */
+	/* One opened by a password, the directory's or the console's, is
+	 * limited as a token is: what changes the console's own sign-in,
+	 * tokens, users, CA and settings takes a key. */
 	return ((s = session_of(req)) != NULL && (s->tok[0] != '\0' ||
-	    s->ldap));
+	    s->ldap || s->pw));
 }
 
-/* Was the session opened by a directory's user? */
-static bool
-session_by_ldap(struct http_request *req)
+/* How the session was opened: by a key, a directory or a password. */
+enum by { BY_KEY, BY_LDAP, BY_PASSWORD };
+
+static enum by
+session_by(struct http_request *req)
 {
 	struct session	*s;
 
-	return ((s = session_of(req)) != NULL && s->ldap);
+	if ((s = session_of(req)) == NULL)
+		return (BY_KEY);
+	return (s->ldap ? BY_LDAP : s->pw ? BY_PASSWORD : BY_KEY);
 }
 
 bool
@@ -774,6 +783,18 @@ sessions_end_user(const char *user)
 			session_end(&sessions[i]);
 }
 
+/* The user's sessions opened by their password: its change ends them. */
+void
+sessions_end_password(const char *user)
+{
+	int	i;
+
+	for (i = 0; i < SESSIONS; i++)
+		if (sessions[i].used && sessions[i].pw && strcmp(
+		    sessions[i].user, user) == 0)
+			session_end(&sessions[i]);
+}
+
 /* The user a key belongs to: the built-in owner's when it says none. */
 static const char *
 cred_user(const ucl_object_t *c)
@@ -822,8 +843,8 @@ creds_forget_user(const char *user)
 
 /* A new session in a cookie only the console can read, opened by the
  * key named who, or by the API token of id tok, for the console user
- * (NULL or "": none). */
-static void
+ * (NULL or "": none); its slot, for the caller to mark. */
+static struct session *
 session_start(struct http_request *req, const char *who, const char *tok,
     const char *user)
 {
@@ -853,7 +874,7 @@ session_start(struct http_request *req, const char *who, const char *tok,
 	s->used = true;
 	snprintf(s->who, sizeof(s->who), "%s", who != NULL ? who : "");
 	snprintf(s->tok, sizeof(s->tok), "%s", tok != NULL ? tok : "");
-	s->ldap = false;
+	s->ldap = s->pw = false;
 	snprintf(s->user, sizeof(s->user), "%s", user != NULL ? user : "");
 	snprintf(last_user, sizeof(last_user), "%s", s->user);
 	snprintf(cookie, sizeof(cookie), "%s=%s; Path=/; HttpOnly; "
@@ -862,11 +883,12 @@ session_start(struct http_request *req, const char *who, const char *tok,
 	http_response_header(req, "set-cookie", cookie);
 	explicit_bzero(token, sizeof(token));
 	session_put(s);
+	return (s);
 }
 
 static int
 status_reply_as(struct http_request *req, bool authenticated, bool by_token,
-    bool by_ldap)
+    enum by by)
 {
 	ucl_object_t	*o;
 
@@ -876,8 +898,10 @@ status_reply_as(struct http_request *req, bool authenticated, bool by_token,
 	 * does not offer what it may not do. */
 	if (authenticated && by_token)
 		put(o, "by_token", ucl_object_frombool(true));
-	if (authenticated && by_ldap)
+	if (authenticated && by == BY_LDAP)
 		put(o, "by_ldap", ucl_object_frombool(true));
+	if (authenticated && by == BY_PASSWORD)
+		put(o, "by_password", ucl_object_frombool(true));
 	/* Who, and what they may (users.c): the page offers no more. */
 	if (authenticated) {
 		const char	*u = session_user(req);
@@ -899,8 +923,10 @@ status_reply_as(struct http_request *req, bool authenticated, bool by_token,
 		} else
 			put(o, "console", ucl_object_fromstring("operator"));
 	}
-	/* The page offers a user and password when a directory is set. */
+	/* The page offers a user and password when a directory is set,
+	 * or a user has a password of the console's own. */
 	put(o, "ldap", ucl_object_frombool(ldap_enabled()));
+	put(o, "password", ucl_object_frombool(users_any_password()));
 	put(o, "setup_required", ucl_object_frombool(
 	    ucl_array_size(cred_list()) == 0));
 	put(o, "rp_id", ucl_object_fromstring(cfg.rp_id));
@@ -915,7 +941,7 @@ status_reply(struct http_request *req, bool authenticated)
 {
 
 	return (status_reply_as(req, authenticated, authenticated &&
-	    session_by_token(req), authenticated && session_by_ldap(req)));
+	    session_by_token(req), authenticated ? session_by(req) : BY_KEY));
 }
 
 int
@@ -1308,74 +1334,145 @@ api_login_token(struct http_request *req)
 	kore_log(LOG_NOTICE, "login with %s", who);
 	ucl_object_unref(body);
 	/* Its cookie is only on its way: said so here. */
-	return (status_reply_as(req, true, true, false));
+	return (status_reply_as(req, true, true, BY_KEY));
 }
 
 /*
- * POST {"user", "password"}: a sign-in by the directory Settings name,
- * limited as a token's is.  The password is kept nowhere: it goes to
- * the directory and is wiped.
+ * POST {"user", "password"}: a sign-in by a password, limited as a
+ * token's is.  A user with a password of the console's own (users.c)
+ * is checked against it, and against nothing else; any other, by the
+ * directory Settings name, when there is one.  The password is kept
+ * nowhere: it is hashed, or goes to the directory, and is wiped.
+ * Failures count towards one limit a minute, both ways alike.
  */
 int
-api_login_ldap(struct http_request *req)
+api_login_password(struct http_request *req)
 {
+	struct session	*s;
 	ucl_object_t	*body;
 	const char	*user, *password, *roles[ROLES_LDAP_MAX];
 	char		 who[96], err[300];
 	int		 nroles;
-	bool		 ok;
+	bool		 ok, own;
 
 	if (req->method != HTTP_METHOD_POST)
 		return (reply_error(req, 405, "method", "POST"));
 	config_refresh();
-	if (!ldap_enabled())
-		return (reply_error(req, 404, "ldap", "sign-in by LDAP is not "
-		    "set up on this console"));
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "bad_request", "expected a JSON "
 		    "object"));
 	user = ucl_str(body, "user");
 	password = ucl_str(body, "password");
+	own = user != NULL && user_has_password(user);
+	if (!own && !ldap_enabled() && !users_any_password()) {
+		ucl_object_unref(body);
+		return (reply_error(req, 404, "password", "no sign-in by "
+		    "password on this console: no user has one, and no "
+		    "directory is set up"));
+	}
 	nroles = 0;
-	ok = ldap_login(user, password, who, sizeof(who), err, sizeof(err),
-	    roles, &nroles, ROLES_LDAP_MAX);
-	/* The directory's groups give the user's roles (users.c): the user
-	 * kept, or made, as the groups say, unless the owner made it. */
-	if (ok)
-		users_ldap_sync(user, roles, nroles);
+	err[0] = '\0';
+	if (signin_throttled()) {
+		snprintf(err, sizeof(err), "too many failed sign-ins: try "
+		    "again in a minute");
+		ok = false;
+	} else if (own || !ldap_enabled()) {
+		/* Compared even for a user with none, the time the same. */
+		ok = user_password_ok(user, password);
+		if (ok)
+			snprintf(who, sizeof(who), "%s (password)", user);
+		else {
+			signin_failed();
+			snprintf(err, sizeof(err), "the user name or the "
+			    "password is not right");
+		}
+	} else {
+		ok = ldap_login(user, password, who, sizeof(who), err,
+		    sizeof(err), roles, &nroles, ROLES_LDAP_MAX);
+		/* The directory's groups give the user's roles (users.c):
+		 * the user kept, or made, as the groups say, unless the
+		 * owner made it. */
+		if (ok)
+			users_ldap_sync(user, roles, nroles);
+	}
 	if (password != NULL)
 		explicit_bzero((char *)(uintptr_t)password, strlen(password));
-	ucl_object_unref(body);
-	if (!ok)
+	if (!ok) {
+		kore_log(LOG_NOTICE, "login by password refused: %s", err);
+		ucl_object_unref(body);
 		return (reply_error(req, strstr(err, "too many") != NULL ? 429 :
 		    strstr(err, "not set") != NULL || strstr(err, "characters")
 		    != NULL ? 400 : 401, "login", "%s", err));
+	}
 	/* A user the console knows by that name has its roles; one it
 	 * does not is limited as a write token is. */
-	session_start(req, who, "", user_exists(user) ? user : NULL);
-	{
-		struct session	*s = session_of(req);
+	s = session_start(req, who, "", user_exists(user) ? user : NULL);
+	if (own)
+		s->pw = true;
+	else
+		s->ldap = true;
+	session_put(s);
+	kore_log(LOG_NOTICE, "login by %s", who);
+	ucl_object_unref(body);
+	return (status_reply_as(req, true, true, own ? BY_PASSWORD : BY_LDAP));
+}
 
-		/* The cookie is only on its way: the slot just made is the
-		 * newest; marked by its who, which session_start set. */
-		if (s == NULL) {
-			int	i, best = -1;
+/*
+ * POST {"user", "password"}: a password of the console's own set for
+ * the user, or taken away when it is "" or null.  The user is the
+ * session's own when not named; another's is the owner's to set.  Only
+ * from a session opened with a key: guard() refuses one opened by a
+ * password or a token (/api/auth is not theirs).  The user's sessions
+ * opened by the password before end.
+ */
+int
+api_auth_password(struct http_request *req)
+{
+	ucl_object_t	*body, *o;
+	const char	*me, *user, *password, *e;
+	char		 name[72];
+	bool		 set;
 
-			for (i = 0; i < SESSIONS; i++)
-				if (sessions[i].used && strcmp(sessions[i].who,
-				    who) == 0 && (best < 0 || sessions[i].created
-				    >= sessions[best].created))
-					best = i;
-			if (best >= 0) {
-				sessions[best].ldap = true;
-				session_put(&sessions[best]);
-			}
-		} else {
-			s->ldap = true;
-			session_put(s);
-		}
+	if (req->method != HTTP_METHOD_POST)
+		return (reply_error(req, 405, "method", "POST"));
+	if (!guard(req, true))
+		return (KORE_RESULT_OK);
+	if ((body = read_json(req)) == NULL)
+		return (reply_error(req, 400, "bad_request", "{\"user\", "
+		    "\"password\"}"));
+	me = session_user(req);
+	user = ucl_str(body, "user") != NULL && ucl_str(body, "user")[0] !=
+	    '\0' ? ucl_str(body, "user") : me;
+	password = ucl_str(body, "password");
+	if (user == NULL || !user_name_ok(user)) {
+		ucl_object_unref(body);
+		return (reply_error(req, 400, "invalid", "whose password: "
+		    "\"user\""));
 	}
-	return (status_reply_as(req, true, true, true));
+	if ((me == NULL || strcmp(me, user) != 0) && user_console(me) !=
+	    CROLE_OWNER) {
+		ucl_object_unref(body);
+		return (reply_error(req, 403, "role", "another user's password "
+		    "is the owner's to set"));
+	}
+	snprintf(name, sizeof(name), "%s", user);
+	set = password != NULL && password[0] != '\0';
+	e = user_password_set(name, password);
+	if (password != NULL)
+		explicit_bzero((char *)(uintptr_t)password, strlen(password));
+	ucl_object_unref(body);
+	if (e != NULL)
+		return (reply_error(req, strcmp(e, "no such user") == 0 ? 404 :
+		    strstr(e, "written") != NULL || strstr(e, "crypt") != NULL ?
+		    500 : 400, "invalid", "%s", e));
+	sessions_end_password(name);
+	kore_log(LOG_NOTICE, "password of %s %s by %s", name, set ? "set" :
+	    "taken away", session_who(req) != NULL ? session_who(req) : "?");
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "ok", ucl_object_frombool(true));
+	put(o, "user", ucl_object_fromstring(name));
+	put(o, "password", ucl_object_frombool(set));
+	return (reply_json(req, 200, o));
 }
 
 int

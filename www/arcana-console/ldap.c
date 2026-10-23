@@ -17,8 +17,8 @@
  * Settings name) and its name, as the SMTP relay's is.  Every read and
  * write waits LDAP_WAIT_S at most.  An empty password is refused
  * first: a directory takes it as an anonymous bind and says yes.
- * Failures are counted, and after LDAP_TRIES in a minute every sign-in
- * waits for the minute to pass.
+ * Failures are counted, and after SIGNIN_TRIES in a minute every
+ * sign-in waits for the minute to pass.
  */
 
 #include <sys/param.h>
@@ -47,7 +47,6 @@
 #include "console.h"
 
 #define	LDAP_WAIT_S	10
-#define	LDAP_TRIES	5		/* failures a minute before a wait */
 #define	LDAP_MSG_MAX	65536		/* a message of the server's, at most */
 
 /* Tags (RFC 4511 §4.1): universal, and the application ones. */
@@ -685,8 +684,13 @@ search(struct lconn *c, const char *base, int scope, struct ber *f, char *dn,
 static time_t	fail_minute;		/* the minute the failures are of */
 static int	fails;
 
-static bool
-throttled(void)
+/*
+ * Failed sign-ins by password, the directory's and the console's own
+ * (users.c) alike: after SIGNIN_TRIES in a minute, every one waits for
+ * the minute to pass.
+ */
+bool
+signin_throttled(void)
 {
 	time_t	now;
 
@@ -695,14 +699,14 @@ throttled(void)
 		fail_minute = now;
 		fails = 0;
 	}
-	return (fails >= LDAP_TRIES);
+	return (fails >= SIGNIN_TRIES);
 }
 
-static void
-failed(void)
+void
+signin_failed(void)
 {
 
-	(void)throttled();
+	(void)signin_throttled();
 	fails++;
 }
 
@@ -797,7 +801,7 @@ ldap_login(const char *user, const char *password, char *who, size_t wholen,
 		    "empty one would be an anonymous bind");
 		return (false);
 	}
-	if (throttled()) {
+	if (signin_throttled()) {
 		snprintf(err, errlen, "too many failed sign-ins: try again in "
 		    "a minute");
 		return (false);
@@ -841,13 +845,13 @@ ldap_login(const char *user, const char *password, char *who, size_t wholen,
 		snprintf(err, errlen, "no such user, or a wrong password");
 		kore_log(LOG_NOTICE, "LDAP sign-in of %s refused: no entry with "
 		    "%s=%s under %s", user, attr, user, base);
-		failed();
+		signin_failed();
 		goto out;
 	}
 	if (n > 1) {
 		snprintf(err, errlen, "more than one entry has %s=%s: the "
 		    "directory is ambiguous", attr, user);
-		failed();
+		signin_failed();
 		goto out;
 	}
 	/* The user's own bind is what checks the password. */
@@ -860,7 +864,7 @@ ldap_login(const char *user, const char *password, char *who, size_t wholen,
 		} else
 			kore_log(LOG_NOTICE, "LDAP sign-in of %s failed: %s",
 			    user, err);
-		failed();
+		signin_failed();
 		goto out;
 	}
 	if (group != NULL && group[0] != '\0') {
@@ -874,7 +878,7 @@ ldap_login(const char *user, const char *password, char *who, size_t wholen,
 		if (search(&c, group, 0, &f, gdn, sizeof(gdn), &n) != 0) {
 			kore_log(LOG_NOTICE, "LDAP sign-in of %s failed: %s",
 			    user, err);
-			failed();
+			signin_failed();
 			goto out;
 		}
 		if (n == 0) {
@@ -882,7 +886,7 @@ ldap_login(const char *user, const char *password, char *who, size_t wholen,
 			    "console admits");
 			kore_log(LOG_NOTICE, "LDAP sign-in of %s refused: %s is "
 			    "not in %s", user, dn, group);
-			failed();
+			signin_failed();
 			goto out;
 		}
 	}

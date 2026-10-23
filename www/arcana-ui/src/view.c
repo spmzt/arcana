@@ -302,6 +302,10 @@ topbar(struct html *h)
 			h_raw(h, "</span>");
 		}
 		h_raw(h, "</div>");
+		/* One's own password: set from a session a key opened. */
+		if (!app.by_token)
+			h_raw(h, "<button class=\"ghost\" data-act=\"password\" "
+			    "data-arg=\"\">Password…</button>");
 	}
 	if (app.notify != 3)
 		h_fmt(h, "<button class=\"ghost%s\" data-act=\"notify\" title=\""
@@ -1697,8 +1701,7 @@ set_keys(struct html *h)
 		h_fmt(h, "<p class=\"notice keys-token\">This session was opened "
 		    "%s, so the keys that sign in are neither listed nor added "
 		    "here. Sign out, and sign in with a security key or a "
-		    "passkey to see and manage them.</p>", app.by_ldap ? "by a "
-		    "directory's user" : "with an API token");
+		    "passkey to see and manage them.</p>", signed_in_how());
 		return;
 	}
 	h_raw(h, "<form data-form=\"add-key\" class=\"set-form\"><ul class=\""
@@ -2231,8 +2234,7 @@ view_settings(struct html *h)
 		h_fmt(h, "<div class=\"notice warn\">Signed in %s: the console's "
 		    "settings, its sign-in keys, tokens and CA are shown and "
 		    "changed only to one signed in with a security key or a "
-		    "passkey.</div>", app.by_ldap ? "by a directory's user" :
-		    "with an API token");
+		    "passkey.</div>", signed_in_how());
 	else if (app.user[0] != '\0' && strcmp(app.console_role, "owner") != 0) {
 		h_raw(h, "<div class=\"notice warn\">Signed in as <b>");
 		h_txt(h, app.user);
@@ -2531,6 +2533,10 @@ modal(struct html *h)
 			h_fmt(h, " value=\"%d\"", app.net.fib);
 		h_raw(h, " placeholder=\"0\"><small>The table the route goes "
 		    "into; 0 is the first.</small></label></div>");
+		break;
+	case MODAL_PASSWORD:
+		if (!password_modal(h))
+			return;
 		break;
 	case MODAL_KEPT_RENAME:
 		h_raw(h, "<form data-form=\"kept-rename\"><h2>Rename the kept "
@@ -2864,6 +2870,13 @@ modal(struct html *h)
 		case MODAL_KEPT_RENAME:
 			h_raw(h, "<button class=\"primary\">Rename</button>");
 			break;
+		case MODAL_PASSWORD:
+			h_fmt(h, "<button type=\"button\" class=\"ghost danger\" "
+			    "data-act=\"password-remove\"%s>Take it away</button>"
+			    "<button class=\"primary\"%s>Set the password</button>",
+			    app.modal_busy ? " disabled" : "", app.modal_busy ?
+			    " disabled" : "");
+			break;
 		case MODAL_TUNNEL:
 		case MODAL_IF_CREATE:
 		case MODAL_NG_MKPEER:
@@ -3133,19 +3146,24 @@ auth_screen(struct html *h)
 		h_fmt(h, "<button class=\"ghost\" data-act=\"login-passkey\"%s "
 		    "title=\"A passkey on this device, or on a phone nearby\">"
 		    "Use a passkey</button>", app.auth_busy ? " disabled" : "");
-		/* A directory's user, where the console asks one. */
-		if (app.ldap_on)
-			h_fmt(h, "<form data-form=\"login-ldap\" class=\"login-ldap"
-			    "\"><label>User<input name=\"user\" required "
-			    "autocomplete=\"username\" spellcheck=\"false\" "
-			    "maxlength=\"64\"></label><label>Password<input type=\""
-			    "password\" name=\"password\" required autocomplete=\""
-			    "current-password\"></label><button class=\"ghost\"%s>"
-			    "Sign in with the directory</button><p class=\"dim\">"
-			    "Your LDAP user and password. Signed in so, the "
-			    "console's own settings, sign-in keys, tokens and CA "
-			    "stay with a security key.</p></form>", app.auth_busy ?
-			    " disabled" : "");
+		/* A user and password, where a user has one of the console's
+		 * own or the console asks a directory. */
+		if (app.ldap_on || app.password_on)
+			h_fmt(h, "<form data-form=\"login-password\" class=\""
+			    "login-password\"><label>User<input name=\"user\" "
+			    "required autocomplete=\"username\" spellcheck=\""
+			    "false\" maxlength=\"64\"></label><label>Password"
+			    "<input type=\"password\" name=\"password\" required "
+			    "autocomplete=\"current-password\"></label><button "
+			    "class=\"ghost\"%s>Sign in with a password</button>"
+			    "<p class=\"dim\">%s Signed in so, the console's own "
+			    "settings, sign-in keys, users, tokens and CA stay with "
+			    "a security key.</p></form>", app.auth_busy ?
+			    " disabled" : "", app.ldap_on && app.password_on ?
+			    "The password the console keeps for you, or your "
+			    "directory's (LDAP)." : app.ldap_on ? "Your directory's "
+			    "(LDAP) user and password." : "The password the "
+			    "console keeps for you.");
 		/* No key at hand: an API token that writes. */
 		h_fmt(h, "<details class=\"login-token\"><summary>Sign in with "
 		    "an API token</summary><form data-form=\"login-token\">"

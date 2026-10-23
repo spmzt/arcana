@@ -28,7 +28,7 @@
 _Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
     "written for cblink 0.2: its wire, its structs");
 
-#define	ARCW_VERSION		"0.301.0"
+#define	ARCW_VERSION		"0.302.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -163,8 +163,12 @@ bool		 session_by_token(struct http_request *);
 bool		 ldap_enabled(void);
 bool		 ldap_login(const char *, const char *, char *, size_t, char *,
 		    size_t, const char **, int *, int);
+#define	SIGNIN_TRIES	5		/* failures a minute before a wait */
+bool		 signin_throttled(void);
+void		 signin_failed(void);
 int		 api_login_token(struct http_request *);
-int		 api_login_ldap(struct http_request *);
+int		 api_login_password(struct http_request *);
+int		 api_auth_password(struct http_request *);
 
 /* prefixlists.c: the console's prefix lists, used on any host. */
 int		 api_prefix_lists(struct http_request *);
@@ -213,6 +217,7 @@ bool		 host_role_ok(struct http_request *, const char *, bool, bool);
 int		 cred_count_of(const char *);
 void		 creds_forget_user(const char *);
 void		 sessions_end_user(const char *);
+void		 sessions_end_password(const char *);
 
 /* users.c: the console's users and their roles (RBAC). */
 #define	ADMIN_USER	"admin"
@@ -239,6 +244,13 @@ int		 api_roles(struct http_request *);
 int		 roles_ldap_groups(const char **, const char **, int);
 void		 users_ldap_sync(const char *, const char **, int);
 int		 api_role(struct http_request *);
+/* A password of the console's own, beside the keys: bcrypt by crypt(3). */
+#define	PASSWORD_MIN	12		/* characters at least */
+#define	PASSWORD_MAX	72		/* bytes at most: bcrypt's own */
+bool		 user_has_password(const char *);
+bool		 user_password_ok(const char *, const char *);
+const char	*user_password_set(const char *, const char *);
+bool		 users_any_password(void);
 /* audit.c: the audit trail of Policy Actions (MEF 118.1 §13.1). */
 void		 audit_add(const char *, const char *, const char *,
 		    const char *, const char *, const char *, const char *, ...)

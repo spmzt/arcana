@@ -384,6 +384,7 @@ enum modal {
 	MODAL_IF_ADDRESS,
 	MODAL_ROUTE,
 	MODAL_KEPT_RENAME,
+	MODAL_PASSWORD,
 	MODAL_TUNNEL,
 	MODAL_IF_CREATE,
 	MODAL_IF_SET,
@@ -491,7 +492,9 @@ struct app {
 	bool		 auth_busy;
 	bool		 by_token;	/* signed in with an API token, or by LDAP: limited */
 	bool		 by_ldap;	/* ... by a directory's user */
-	bool		 ldap_on;	/* the console takes a user and password */
+	bool		 by_password;	/* ... by a password of the console's */
+	bool		 ldap_on;	/* the console asks a directory */
+	bool		 password_on;	/* a user has a password of its own */
 	char		 user[64];	/* the console user signed in, or "" */
 	char		 console_role[16];	/* owner, operator, member */
 	char		 tenant[64];	/* the user's fleet, or "" */
@@ -678,7 +681,8 @@ void		 check_update(void);
 void		 auth_status(void);
 void		 login(bool);
 void		 login_token(const char *);
-void		 login_ldap(const char *, const char *);
+void		 login_password(const char *, const char *);
+const char	*signed_in_how(void);
 void		 enrol(const char *, const char *);
 void		 add_key(const char *);
 void		 logout(void);
@@ -941,6 +945,7 @@ void		 set_aaa(struct html *);
 bool		 user_modal(struct html *);
 bool		 user_form(const char *, const ucl_object_t *);
 bool		 user_action(const char *, const char *);
+bool		 password_modal(struct html *);
 /* ca.c: Settings, Certificate authority. */
 void		 ca_load(void);
 void		 cluster_tick(double);
