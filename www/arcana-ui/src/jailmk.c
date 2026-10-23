@@ -535,7 +535,8 @@ jailmk_modal(struct html *h)
 		running = jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
 		    "running") == 0;
 		na = allow_list(j, names, nitems(names));
-		h_raw(h, "<form data-form=\"jm-allow\"><h2>Permissions of ");
+		h_raw(h, "<form data-form=\"jm-allow\" class=\"wide\"><h2>Permissions "
+		    "of ");
 		h_txt(h, jm.allow);
 		h_raw(h, "</h2><p>jail(8)'s <code>allow.*</code> parameters: what the "
 		    "jail may do. Each left as it is, allowed, refused, or taken "
