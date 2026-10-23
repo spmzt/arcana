@@ -382,7 +382,8 @@ view_url(struct html *h, bool malware_only)
 		    "ended at the name.</p></div>");
 		return;
 	}
-	h_raw(h, "<table class=\"net secproxy\">");
+	h_fmt(h, "<table class=\"net secproxy%s\">", sec.busy ? " applying" :
+	    "");
 	tbl_head(h, "secproxy", pcols, 6, 1);
 	h_raw(h, "<tbody>");
 	rows = tbl_rows("secproxy", specs(false), pcols, 6, app.filter);

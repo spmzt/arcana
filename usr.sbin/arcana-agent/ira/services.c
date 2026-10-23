@@ -249,7 +249,9 @@ service_state(struct work *w, const char *name, bool *running, bool *enabled)
 	s.name = name;
 	svc_status(w, &s);
 	*running = s.running;
-	*enabled = sysrc_all(w, &res) == 0 && enabled_in(&res, name);
+	/* rc.subr's own answer, by the script's real rcvar: one quick run,
+	 * not sysrc -A's every variable with the defaults (seconds). */
+	*enabled = svc_run(w, name, "enabled", &res) == 0;
 }
 
 /* "service <name> rcvar": the first variable it names, or NULL. */

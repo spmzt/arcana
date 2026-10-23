@@ -337,6 +337,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "done; exit 0; fi\n"
 	    "case \"$2\" in\n"
 	    "rcvar) echo \"${1}_enable=\\\"NO\\\"\" ;;\n"
+	    "enabled) grep -q \"^${1}_enable=\\\"YES\\\"\" \"$conf\" ;;\n"
 	    "status) while [ -f hold.status ]; do sleep 0.1; done; "
 	    "[ -f running.$1 ] && { echo \"$1 is running as pid 7.\"; "
 	    "exit 0; }; echo \"$1 is not running.\"; exit 1 ;;\n"

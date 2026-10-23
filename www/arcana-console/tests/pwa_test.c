@@ -1224,9 +1224,9 @@ part_hosts(void)
 	    "t.textContent.includes('list services')) && document."
 	    "querySelector('.dock.open .trace.o-live .node.k-exec."
 	    "st-incomplete') && document.querySelectorAll('.services .svc')"
-	    ".length === 2", 20);
-	ATF_CHECK(js_true("[...document.querySelectorAll('.dock.open .trace "
-	    ".node.k-exec')].some(n => n.textContent.includes('status'))"));
+	    ".length === 2 && [...document.querySelectorAll('.dock.open "
+	    ".trace .node.k-exec')].some(n => n.textContent.includes("
+	    "'status'))", 20);
 	shot("6a-services-live");
 	(void)unlink("hold.status");
 	wait_js("[...document.querySelectorAll('.dock .op.o-ok')].some(t => "
@@ -1241,10 +1241,14 @@ part_hosts(void)
 	 */
 	ATF_REQUIRE((fp = fopen("fake-pkg", "r")) != NULL);
 	fclose(fp);
+	/* Held until the test lets it go, not for a time a busy host may
+	 * outlast before Cancel is pressed. */
+	put("hold.pkg", "");
 	ATF_REQUIRE(system("cp fake-pkg fake-pkg.fast && "
-	    "{ echo '#!/bin/sh'; echo 'sleep 3'; echo 'exec ./fake-pkg.fast "
-	    "\"$@\"'; } > fake-pkg.slow && chmod +x fake-pkg.slow && "
-	    "mv fake-pkg.slow fake-pkg") == 0);
+	    "{ echo '#!/bin/sh'; echo 'i=0; while [ -e hold.pkg ] && "
+	    "[ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done'; echo 'exec "
+	    "./fake-pkg.fast \"$@\"'; } > fake-pkg.slow && chmod +x "
+	    "fake-pkg.slow && mv fake-pkg.slow fake-pkg") == 0);
 	/* Asked with GET, or over the console's socket. */
 	run("window.pkgAsked = 0; const of = window.fetch; window.fetch = "
 	    "function (u, o) { if (String(u).includes('/packages')) "
@@ -1261,11 +1265,21 @@ part_hosts(void)
 	ATF_CHECK(js_true("window.pkgAsked === 1"));
 	/* Given up: the entry ends as cancelled, and the tab says so. */
 	run("document.querySelector('.dock > header').click()");
-	wait_js("document.querySelector('.ops button[data-act=op-cancel]')", 5);
+	/* The packages read's own entry: on a busy host other reads may
+	 * be on their way too, each with its own cancel. */
+	wait_js("(window.pkgOp = [...document.querySelectorAll('.ops .op')]"
+	    ".find(o => o.querySelector('.t')?.textContent.includes('packages')"
+	    " && o.querySelector('button[data-act=op-cancel]'))) !== undefined",
+	    5);
 	shot("6a-cancel");
-	run("document.querySelector('.ops button[data-act=op-cancel]').click()");
-	wait_js("!document.querySelector('.ops button[data-act=op-cancel]') && "
-	    "document.querySelector('.ops .op.o-failed')", 5);
+	run("window.pkgId = window.pkgOp.querySelector('button[data-act="
+	    "op-cancel]').dataset.arg; window.pkgOp.querySelector('button"
+	    "[data-act=op-cancel]').click()");
+	wait_js("[...document.querySelectorAll('.ops .op.o-failed')].some(o =>"
+	    " o.querySelector('.t')?.textContent.includes('packages')) && "
+	    "!document.querySelector('.ops button[data-act=op-cancel][data-arg="
+	    "\"' + window.pkgId + '\"]')", 15);
+	(void)unlink("hold.pkg");
 	run("document.querySelector('.dock > header').click()");
 	ATF_REQUIRE(system("mv fake-pkg.fast fake-pkg") == 0);
 	/*
@@ -1524,8 +1538,9 @@ part_nettab(void)
 	(void)fp;
 	(void)i;
 
-	/* Reboot asks for the host's name typed; closed here, never sent:
-	 * this agent has no stand-in for shutdown(8). */
+	/* Reboot, on the System tab, asks for the host's name typed; closed
+	 * here, never sent: this agent has no stand-in for shutdown(8). */
+	run("document.querySelector('button.tab[data-arg=system]').click()");
 	click_when("button[data-act=host-reboot]", 10);
 	wait_js("document.querySelector('form[data-form=confirm].danger') && "
 	    "document.querySelector('form[data-form=confirm] h2').textContent "
@@ -4722,18 +4737,15 @@ part_firewall(void)
 	    "${fwcmd} add 200 allow ip from any to any via lo0\\n' > fw.sh && "
 	    "printf 'firewall_script=\"%s/fw.sh\"\\n' \"$(pwd)\" >> rc.conf")
 	    == 0);
-	run("window.fwn = 0; window.fetch = function (u, o) { if (String(u)"
-	    ".includes('/net/ipfw')) window.fwn++; return window.fetch1(u, o); "
-	    "};");
-	run("document.querySelector('button.tab[data-arg=summary]').click()");
-	run("document.querySelector('button.tab[data-arg=firewall]').click()");
-	wait_js("window.fwn >= 1", 15);
-	run("window.fetch = window.fetch1;");
+	/* Read again: a read still on its way is not asked twice, so the
+	 * tab is refreshed until the page has the script's name. */
 	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-3\"]')."
 	    "click()");
-	wait_js("document.querySelector('button[data-act=fw-load-rc]') && "
-	    "document.querySelector('button[data-act=fw-load-rc]').title"
-	    ".includes('fw.sh')", 10);
+	wait_js("(() => { const b = document.querySelector('button[data-act="
+	    "fw-load-rc]'); if (b && b.title.includes('fw.sh')) return true; "
+	    "if (!window.fwk || Date.now() - window.fwk > 3000) { window.fwk "
+	    "= Date.now(); document.querySelector('button[data-act=refresh]')"
+	    "?.click(); } return false; })()", 30);
 	run("document.querySelector('button[data-act=fw-load-rc]').click()");
 	wait_js("document.querySelector('form[data-form=fw-text] textarea')"
 	    ".value === '# left out, the script\\'s own: fwcmd=\"/sbin/ipfw -q\""
@@ -7874,13 +7886,18 @@ part_security(void)
 	wait_js("document.querySelector('table.secids') && document."
 	    "querySelector('table.secids').textContent.includes('Own rules "
 	    "(1)')", 10);
-	/* Removed, after asking. */
+	/* Removed, after asking; once the last change is applied, for the
+	 * page takes one at a time and drops another meanwhile. */
+	wait_js("document.querySelector('table.secids') && !document."
+	    "querySelector('table.secids.applying')", 30);
 	click_when("table.secids button[data-act=sec-remove]", 10);
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
 	wait_js("!document.querySelector('table.secids') && document."
 	    "querySelector('.secpage .empty')", 30);
 	click_when("button[data-act=sec-tab][data-arg=url]", 10);
+	wait_js("document.querySelector('table.secproxy') && !document."
+	    "querySelector('table.secproxy.applying')", 30);
 	click_when("table.secproxy button[data-act=sec-remove]", 10);
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]').requestSubmit()");

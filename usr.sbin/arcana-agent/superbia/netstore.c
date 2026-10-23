@@ -135,7 +135,7 @@ service_json(struct work *w, ucl_object_t *o, const char *name)
 	bool	enabled, running;
 
 	enabled = running = false;
-	service_state(w, name, &enabled, &running);
+	service_state(w, name, &running, &enabled);
 	put_b(o, wfmt(w, "%s_enabled", name), enabled);
 	put_b(o, wfmt(w, "%s_running", name), running);
 }
@@ -584,7 +584,7 @@ service_reload(struct work *w, const char *name, const char **errp)
 	bool				 enabled, running;
 
 	enabled = running = false;
-	service_state(w, name, &enabled, &running);
+	service_state(w, name, &running, &enabled);
 	if (!running)
 		return (0);
 	memset(&r, 0, sizeof(r));
@@ -676,7 +676,7 @@ nfs_server(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	{
 		bool	enabled = false, running = false;
 
-		service_state(w, "nfsd", &enabled, &running);
+		service_state(w, "nfsd", &running, &enabled);
 		if (running) {
 			struct arc_service_action_rsp	r;
 

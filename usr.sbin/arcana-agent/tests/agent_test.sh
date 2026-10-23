@@ -138,6 +138,7 @@ fi
 name=\$1; verb=\$2
 case "\$verb" in
 rcvar)		echo "# \$name"; echo "\${name}_enable=\"NO\""; echo '#   (default: "")' ;;
+enabled)	grep -q "^\${name}_enable=\"YES\"" "\$conf" ;;
 status)		[ -f "running.\$name" ] && { echo "\$name is running as pid 4242."; exit 0; }
 		echo "\$name is not running."; exit 1 ;;
 start|onestart)	touch "running.\$name"; echo "Starting \$name." ;;
@@ -3638,8 +3639,10 @@ safe_mode_body()
 	atf_check -o not-match:'id' -o not-match:'sshd_first' cat rc.conf
 	atf_check -o not-match:'id' -o not-match:'x:' cat sysrc.log
 
-	# The queue has an end: jobs that wait hold memory.
-	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 down
+	# The queue has an end: jobs that wait hold memory.  The first holds
+	# the runner while it waits to be confirmed, longer than queueing the
+	# rest takes on a busy host (the daemon's own wait is 2 s).
+	atf_check -o match:'queued' "$JGC" -q -s -W 50 -c "$SOCK" interface lo0 down
 	for i in $(seq 1 255); do
 		"$JGC" -q -c "$SOCK" interface lo0 up > /dev/null ||
 		    atf_fail "job $i was refused"
@@ -5276,8 +5279,9 @@ stop_body()
 	touch slow hold
 	"$JGC" -c "$SOCK" service sshd restart > change.out 2>&1 &
 	change=$!
-	# Once the change is under way, not at a guess of when.
-	for i in $(seq 1 150); do
+	# Once the change is under way, not at a guess of when: a minute at
+	# most, for the whole suite at once can be slow to start it.
+	for i in $(seq 1 600); do
 		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Under way' && break
 		sleep 0.1
 	done
@@ -5286,7 +5290,7 @@ stop_body()
 	    -o not-match:'Stopping' "$JGC" -c "$SOCK" jobs
 	atf_check -o ignore "$JGC" -q -c "$SOCK" start web
 	kill "$pid"
-	for i in $(seq 1 100); do
+	for i in $(seq 1 600); do
 		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Stopping' && break
 		sleep 0.1
 	done
@@ -5315,7 +5319,7 @@ stop_body()
 	touch slow hold
 	"$JGC" -c "$SOCK" service sshd restart > /dev/null 2>&1 &
 	# Under way before the signals, however loaded the machine is.
-	for i in $(seq 1 150); do
+	for i in $(seq 1 600); do
 		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Under way' && break
 		sleep 0.1
 	done
@@ -8526,11 +8530,12 @@ EOS
 	DAEMON_ARGS="--bird-watch 1"
 	start_daemon
 	# All well: no fault, but the session turned off is none either.
+	# BIRD's alone: on a busy host the sampler may raise its own (cpu).
 	sleep 2.5
-	atf_check -o not-match:'sdwan-fault' "$JGC" -c "$SOCK" events
+	atf_check -o not-match:'"by":"bird"' "$JGC" -c "$SOCK" events
 	touch bgp.down ospf.gone bfd.down
 	for i in $(seq 1 40); do
-		[ $("$JGC" -c "$SOCK" events | grep -o '"state":"set"' | wc -l) -ge 3 ] && break
+		[ $("$JGC" -c "$SOCK" events | grep -oE '"type":"(bgp-neighbor|ospf-neighbor|bfd)"[^}]*"state":"set"' | wc -l) -ge 3 ] && break
 		sleep 0.2
 	done
 	atf_check -o match:'"type":"bgp-neighbor","severity":"Major","object":"host:bgp1","by":"bird","description":"BGP bgp1 to 192.0.2.7 is Active: Socket: Connection refused","state":"set"' \
@@ -8541,7 +8546,7 @@ EOS
 	# Well again: each cleared.
 	rm -f bgp.down ospf.gone bfd.down
 	for i in $(seq 1 40); do
-		[ $("$JGC" -c "$SOCK" events | grep -o '"state":"cleared"' | wc -l) -ge 3 ] && break
+		[ $("$JGC" -c "$SOCK" events | grep -oE '"type":"(bgp-neighbor|ospf-neighbor|bfd)"[^}]*"state":"cleared"' | wc -l) -ge 3 ] && break
 		sleep 0.2
 	done
 	atf_check -o match:'"type":"bgp-neighbor","severity":"Cleared","object":"host:bgp1","description":"BGP bgp1 is established","state":"cleared"' \

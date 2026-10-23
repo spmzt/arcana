@@ -23,7 +23,7 @@
 _Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
     "written for cblink 0.2: its wire, its structs");
 
-#define	ARCANA_AGENT_VERSION	"0.204.0"
+#define	ARCANA_AGENT_VERSION	"0.205.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10

@@ -253,7 +253,7 @@ do_clamav_job(struct work *w, const struct arc_job_spec *sp,
 	    "" : "s");
 	/* A running freshclam reads its mirrors as it starts again. */
 	enabled = running = false;
-	service_state(w, "clamav_freshclam", &enabled, &running);
+	service_state(w, "clamav_freshclam", &running, &enabled);
 	if (running) {
 		struct arc_service_action_rsp	r;
 
