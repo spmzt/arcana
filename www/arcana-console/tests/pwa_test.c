@@ -7005,6 +7005,60 @@ part_mesh(void)
 	click_at("button[data-act=topo-ospfmap]");
 	wait_js("!document.querySelector('.map-legend.om') && document."
 	    "querySelector('svg.topo .tnode')", 10);
+	/*
+	 * The Leaking tab: each host's tables (three here); the LTE link's
+	 * network leaked from FIB 2 into FIB 0 by the form, listed as a
+	 * route, and taken out again.
+	 */
+	run("document.querySelector('.netsect button.tab[data-arg=leaks]')"
+	    ".click()");
+	/* Changes sent at once, not held in the queue. */
+	run("const q = document.querySelector('button[data-act=queue].on'); "
+	    "if (q) q.click();");
+	wait_js("[...document.querySelectorAll('table.leaks-sys tbody tr')]"
+	    ".some(r => r.textContent.startsWith('arcmesh4') && r.children[1]"
+	    ".textContent === '3')", 30);
+	/* The lab's own: the LTE link was given its address before it
+	 * moved to FIB 2, so the kernel left its network in FIB 0; taken
+	 * out (an interface's route is the kernel's, deleted by force). */
+	wait_js("[...document.querySelectorAll('table.leaks tbody tr')].some(r => "
+	    "r.textContent.includes('192.0.2.0/30') && r.textContent.includes("
+	    "'left from its earlier FIB'))", 30);
+	/* On both ends of the link. */
+	wait_js("[...document.querySelectorAll('table.leaks tbody tr')].filter(r "
+	    "=> r.children[1].textContent === '192.0.2.0/30').length === 2", 30);
+	run("[...document.querySelectorAll('table.leaks tbody tr')].filter(r => r."
+	    "textContent.includes('192.0.2.0/30')).forEach(r => r.querySelector("
+	    "'button[data-act=lk-remove]').click())");
+	wait_js("![...document.querySelectorAll('table.leaks tbody tr')].some(r => "
+	    "r.textContent.includes('192.0.2.0/30'))", 90);
+	run("const s = document.querySelector('select[data-input=lk-node]'); "
+	    "s.value = [...s.options].find(o => o.textContent === 'arcmesh4')"
+	    ".value; s.dispatchEvent(new Event('input', { bubbles: true }));");
+	wait_js("document.querySelector('select[data-input=lk-if] option[value=lte0]')",
+	    5);
+	run("const s = document.querySelector('select[data-input=lk-if]'); "
+	    "s.value = 'lte0'; s.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("document.querySelector('select[data-input=lk-prefix] option[value="
+	    "\"192.0.2.0/30\"]')", 5);
+	run("const p = document.querySelector('select[data-input=lk-prefix]'); "
+	    "p.value = '192.0.2.0/30'; p.dispatchEvent(new Event('input', "
+	    "{ bubbles: true })); const f = document.querySelector('select["
+	    "data-input=lk-fib]'); f.value = '0'; f.dispatchEvent(new Event("
+	    "'input', { bubbles: true }));");
+	run("document.querySelector('button[data-act=lk-add]').click()");
+	wait_js("[...document.querySelectorAll('table.leaks tbody tr')].some(r => "
+	    "r.textContent.includes('192.0.2.0/30') && r.textContent.includes("
+	    "'lte0') && r.textContent.includes('a route'))", 90);
+	shot("9-mesh-leaks");
+	run("[...document.querySelectorAll('table.leaks tbody tr')].find(r => r."
+	    "textContent.includes('192.0.2.0/30')).querySelector('button["
+	    "data-act=lk-remove]').click()");
+	wait_js("![...document.querySelectorAll('table.leaks tbody tr')].some(r => "
+	    "r.textContent.includes('192.0.2.0/30'))", 90);
+	run("document.querySelector('.netsect button.tab[data-arg=map]')"
+	    ".click()");
 	click_at("button[data-act=topo-fit]");
 	usleep(300000);
 	run("const s = document.querySelector('select[data-input=topo-fib]');"

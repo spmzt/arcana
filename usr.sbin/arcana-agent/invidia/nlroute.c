@@ -528,6 +528,11 @@ route_change(struct snl_state *ss, bool del, int argc, char **argv)
 		snl_add_msg_attr_u32(&nw, RTA_OIF, oif);
 	if (!del)
 		snl_add_msg_attr_u32(&nw, NL_RTA_RTFLAGS, flags);
+	else if (!has_gw && !many)
+		/* An interface's route: the kernel's own (an address's
+		 * network, left in a table the interface moved out of) is
+		 * pinned and goes only when forced. */
+		snl_add_msg_attr_u32(&nw, NL_RTA_RTFLAGS, RTF_PINNED);
 	if (metric != 0)
 		snl_add_msg_attr_u32(&nw, NL_RTA_PRIORITY, metric);
 	if (weight != 0)

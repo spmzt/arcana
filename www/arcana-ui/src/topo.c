@@ -4923,6 +4923,699 @@ view_overlay(struct html *h)
 	ucl_object_unref(all);
 }
 
+/*
+ * The Leaking tab: where one routing table (FIB) reaches into another.
+ * A route of a table that is an interface's own (no gateway, the
+ * interface named) while the interface is in another table is a leak:
+ * made by net.add_addr_allfibs, which gives every table an address's
+ * network, or by a route added there, route(8)'s -fib N ... -iface.
+ * Beside them each node's settings: how many tables (net.fibs, at
+ * boot), net.add_addr_allfibs (live), and whether sockets bound in one
+ * table take traffic of all (net.inet.{tcp,udp,raw}.bind_all_fibs,
+ * tunables: for the next boot, in the host's loader.conf.d).
+ */
+#define	LK_FIBS		16
+#define	LK_POLL_MS	30000
+
+enum { LKS_FIBS, LKS_ALLFIBS, LKS_TCP, LKS_UDP, LKS_RAW, LKS_N };
+static const char *const lk_names[LKS_N] = { "net.fibs",
+    "net.add_addr_allfibs", "net.inet.tcp.bind_all_fibs",
+    "net.inet.udp.bind_all_fibs", "net.inet.raw.bind_all_fibs" };
+
+static struct {
+	double		 fetched[MAX_NODES];
+	int		 wait[MAX_NODES];
+	int		 val[MAX_NODES][LKS_N];	/* -1: not known */
+	ucl_object_t	*routes[MAX_NODES][LK_FIBS];
+	char		*loader[MAX_NODES];	/* a host's loader.conf.d */
+	bool		 sys_loading[MAX_NODES];
+	int		 boot_k[MAX_NODES], boot_v[MAX_NODES];	/* asked, file not read */
+	/* The form: a network of an interface into another table. */
+	char		 f_node[80], f_if[16], f_prefix[64];
+	int		 f_fib;
+	bool		 f_keep;
+} lkg;
+
+struct lkreq {
+	char	key[80];
+	int	what;		/* LKS_*, or 100 + a table's routes */
+};
+
+static void	lk_sysctl_cb(int, const ucl_object_t *, const char *, void *);
+
+/* One of a node's settings asked for. */
+static void
+lk_ask(int i, int k)
+{
+	struct lkreq	*rq;
+	char		 url[240];
+
+	if ((rq = calloc(1, sizeof(*rq))) == NULL)
+		abort();
+	snprintf(rq->key, sizeof(rq->key), "%s", tn[i].key);
+	rq->what = k;
+	snprintf(url, sizeof(url), "/api/servers/%s/sysctl?filter=%s%s%s",
+	    app.servers[tn[i].srv].id, lk_names[k], tn[i].jail[0] != '\0' ?
+	    "&jail=" : "", tn[i].jail);
+	lkg.wait[i]++;
+	api("GET", url, NULL, lk_sysctl_cb, rq);
+}
+
+static void	lk_routes_cb(int, const ucl_object_t *, const char *, void *);
+
+/* A node's table f's routes asked for. */
+static void
+lk_table(int i, int f)
+{
+	struct lkreq	*rq;
+	char		 url[240], more[32];
+
+	if ((rq = calloc(1, sizeof(*rq))) == NULL)
+		abort();
+	snprintf(rq->key, sizeof(rq->key), "%s", tn[i].key);
+	rq->what = 100 + f;
+	snprintf(more, sizeof(more), "fib=%d", f);
+	node_url(i, "routes", more, url, sizeof(url));
+	lkg.wait[i]++;
+	api("GET", url, NULL, lk_routes_cb, rq);
+}
+
+static void
+lk_routes_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct lkreq	*rq = arg;
+	int		 i, f;
+
+	(void)err;
+	if ((i = node_index(rq->key)) != -1) {
+		lkg.wait[i]--;
+		f = rq->what - 100;
+		if (f >= 0 && f < LK_FIBS) {
+			const ucl_object_t	*fam, *e;
+			ucl_object_iter_t	 fit = NULL;
+			bool			 other = false;
+
+			/* Its entries say their table: another's reply (a
+			 * read of the host's shared) is not this one's. */
+			while (status == 200 && (fam = ucl_object_iterate(jget(o,
+			    "data.statistics.route-information.route-table."
+			    "rt-family"), &fit, true)) != NULL)
+				if ((e = ucl_array_find_index(jget(fam, "rt-entry"),
+				    0)) != NULL && jint(e, "fib", f) != f)
+					other = true;
+			if (status == 200 && jbool(o, "ok") && jget(o, "data") !=
+			    NULL && !other) {
+				if (lkg.routes[i][f] != NULL)
+					ucl_object_unref(lkg.routes[i][f]);
+				lkg.routes[i][f] = ucl_object_ref((ucl_object_t *)
+				    (uintptr_t)jget(o, "data"));
+			} else
+				lkg.fetched[i] = 0;
+			/* The next table. */
+			if (f + 1 < lkg.val[i][LKS_FIBS] && f + 1 < LK_FIBS)
+				lk_table(i, f + 1);
+		}
+	}
+	free(rq);
+}
+
+static void
+lk_sysctl_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct lkreq		*rq = arg;
+	const ucl_object_t	*v;
+	int			 i;
+
+	(void)err;
+	if ((i = node_index(rq->key)) != -1) {
+		lkg.wait[i]--;
+		/* The value of the name asked for alone: a reply of another
+		 * read of the host's is not taken for it. */
+		{
+			ucl_object_iter_t	vit = NULL;
+
+			while ((v = status == 200 && jbool(o, "ok") ?
+			    ucl_object_iterate(jget(o, "data.values"), &vit, true) :
+			    NULL) != NULL)
+				if (jstr(v, "name") != NULL && strcmp(jstr(v, "name"),
+				    lk_names[rq->what]) == 0)
+					break;
+		}
+		if (v != NULL && jstr(v, "value") != NULL)
+			lkg.val[i][rq->what] = atoi(jstr(v, "value"));
+		else
+			lkg.fetched[i] = 0;	/* read again */
+		/* One read at a time of a host's: the next name, then each
+		 * table's routes. */
+		if (rq->what + 1 < LKS_N)
+			lk_ask(i, rq->what + 1);
+		else if (lkg.val[i][LKS_FIBS] > 0)
+			lk_table(i, 0);
+	}
+	free(rq);
+}
+
+static void	lk_boot_write(int, int, int);
+
+/* A host's loader.conf.d, read from its system read. */
+static void
+lk_sys_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	char	*key = arg;
+	int	 i;
+
+	(void)err;
+	if ((i = node_index(key)) != -1) {
+		lkg.sys_loading[i] = false;
+		free(lkg.loader[i]);
+		lkg.loader[i] = NULL;
+		if (status == 200 && jbool(o, "ok")) {
+			/* Its name has dots: looked up as one key. */
+			const ucl_object_t	*lf = ucl_object_lookup(jget(o,
+			    "data.files"), "loader.conf.d");
+
+			lkg.loader[i] = strdup(jstr(lf, "text") != NULL ?
+			    jstr(lf, "text") : "");
+		}
+		/* A change asked for while the file was being read. */
+		if (lkg.loader[i] != NULL && lkg.boot_k[i] != 0) {
+			lk_boot_write(i, lkg.boot_k[i], lkg.boot_v[i]);
+			lkg.boot_k[i] = 0;
+		}
+	}
+	free(key);
+}
+
+/* Each node's settings and tables read again, every half minute. */
+static void
+lk_poll(bool now)
+{
+	int		 i;
+
+	for (i = 0; i < ntn; i++) {
+		if (lkg.wait[i] > 0 || (!now && arc_now() - lkg.fetched[i] <
+		    LK_POLL_MS))
+			continue;
+		lkg.fetched[i] = arc_now();
+		lk_ask(i, 0);
+	}
+}
+
+/* Is dest/plen the network address a/its length? */
+static bool
+lk_net_of(const char *dest, int plen, const char *addr, int alen)
+{
+	unsigned char	d[16], a[16];
+	int		 df, af, k, bits;
+
+	if (plen != alen || !addr_bytes(dest, &df, d) || !addr_bytes(addr,
+	    &af, a) || df != af)
+		return (false);
+	for (k = 0; k < (df == AF_INET ? 4 : 16); k++) {
+		bits = plen - 8 * k;
+		if (bits >= 8)
+			continue;
+		a[k] &= bits <= 0 ? 0 : (unsigned char)(0xff << (8 - bits));
+		d[k] &= bits <= 0 ? 0 : (unsigned char)(0xff << (8 - bits));
+	}
+	return (memcmp(a, d, df == AF_INET ? 4 : 16) == 0);
+}
+
+/* Is the route the network of one of the interface's own addresses? */
+static bool
+lk_own_net(const ucl_object_t *ifo, const char *dest, int plen)
+{
+	const ucl_object_t	*a;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((a = ucl_object_iterate(jget(ifo, "addresses"), &it, true)) !=
+	    NULL)
+		if (jstr(a, "address") != NULL && lk_net_of(dest, plen, jstr(a,
+		    "address"), (int)jint(a, "prefixlen", -1)))
+			return (true);
+	return (false);
+}
+
+/* Every leak of every node, as rows. */
+static ucl_object_t *
+lk_rows(void)
+{
+	const ucl_object_t	*fam, *r, *ifo;
+	ucl_object_iter_t	 it, rit;
+	ucl_object_t		*all, *row;
+	struct thost		*t;
+	const char		*ifn, *flags, *dest;
+	char			 buf[128];
+	int			 i, f, g, plen;
+
+	all = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < ntn; i++) {
+		if ((t = thost(tn[i].key, false)) == NULL || t->ifs == NULL)
+			continue;
+		for (f = 0; f < LK_FIBS; f++) {
+			it = NULL;
+			while ((fam = ucl_object_iterate(jget(lkg.routes[i][f],
+			    "statistics.route-information.route-table.rt-family"),
+			    &it, true)) != NULL) {
+				rit = NULL;
+				while ((r = ucl_object_iterate(jget(fam,
+				    "rt-entry"), &rit, true)) != NULL) {
+					ifn = jstr(r, "interface-name");
+					flags = jstr(r, "flags");
+					dest = jstr(r, "destination");
+					/* Connected: no gateway; the host's
+					 * own addresses (lo0) left out. */
+					if (ifn == NULL || dest == NULL || flags ==
+					    NULL || strchr(flags, 'G') != NULL ||
+					    strncmp(ifn, "lo", 2) == 0 ||
+					    strncmp(dest, "fe80:", 5) == 0 ||
+					    (ifo = if_named(t, ifn)) == NULL)
+						continue;
+					g = (int)jint(ifo, "fib", 0);
+					if (g == f)
+						continue;
+					plen = (int)jint(r, "prefixlen", -1);
+					row = ucl_object_typed_new(UCL_OBJECT);
+					ov_set(row, "key", tn[i].key);
+					ov_set(row, "host", tn[i].label);
+					/* A network says its length; a host not. */
+					if (strchr(dest, '/') != NULL)
+						snprintf(buf, sizeof(buf), "%s", dest);
+					else
+						snprintf(buf, sizeof(buf), "%s/%d",
+						    dest, plen);
+					ov_set(row, "prefix", buf);
+					ov_set(row, "if", ifn);
+					snprintf(buf, sizeof(buf), "%d", g);
+					ov_set(row, "from", buf);
+					snprintf(buf, sizeof(buf), "%d", f);
+					ov_set(row, "into", buf);
+					/* A static route; or the kernel's own:
+					 * every table's by add_addr_allfibs, or
+					 * left in the table the interface was
+					 * in when it was given the address. */
+					ov_set(row, "how", strchr(flags, 'S') !=
+					    NULL ? "a route" : lkg.val[i][LKS_ALLFIBS]
+					    == 1 && lk_own_net(ifo, dest, plen) ?
+					    "net.add_addr_allfibs" : "left from its "
+					    "earlier FIB");
+					ucl_array_append(all, row);
+				}
+			}
+		}
+	}
+	return (all);
+}
+
+/* The networks of a node's interface, for the form: address/length. */
+static void
+lk_prefixes(struct html *h, const ucl_object_t *ifo)
+{
+	const ucl_object_t	*a;
+	ucl_object_iter_t	 it;
+	unsigned char		 raw[16];
+	char			 net[64], pfx[80];
+	int			 af, plen, k, bits;
+
+	it = NULL;
+	while ((a = ucl_object_iterate(jget(ifo, "addresses"), &it, true)) !=
+	    NULL) {
+		if (jstr(a, "address") == NULL || strncmp(jstr(a, "address"),
+		    "fe80:", 5) == 0 || !addr_bytes(jstr(a, "address"), &af,
+		    raw))
+			continue;
+		plen = (int)jint(a, "prefixlen", af == AF_INET ? 32 : 128);
+		for (k = 0; k < (af == AF_INET ? 4 : 16); k++) {
+			bits = plen - 8 * k;
+			if (bits < 8)
+				raw[k] &= bits <= 0 ? 0 : (unsigned char)(0xff <<
+				    (8 - bits));
+		}
+		if (inet_ntop(af, raw, net, sizeof(net)) == NULL)
+			continue;
+		snprintf(pfx, sizeof(pfx), "%s/%d", net, plen);
+		h_raw(h, "<option");
+		h_attr(h, "value", pfx);
+		if (strcmp(lkg.f_prefix, pfx) == 0)
+			h_raw(h, " selected");
+		h_raw(h, ">");
+		h_txt(h, pfx);
+		h_raw(h, "</option>");
+	}
+}
+
+static const char *
+lk_val(int i, int k)
+{
+	static char	b[8][16];
+	static int	n;
+	char		*p = b[n++ % 8];
+
+	if (lkg.val[i][k] < 0)
+		return ("…");
+	snprintf(p, 16, "%d", lkg.val[i][k]);
+	return (p);
+}
+
+/* What a host's loader.conf.d sets a tunable to: "1", "0", or "". */
+static const char *
+lk_boot(int i, const char *name)
+{
+	static char	v[16];
+	const char	*p, *q;
+	size_t		 n = strlen(name);
+
+	v[0] = '\0';
+	for (p = lkg.loader[i]; p != NULL && *p != '\0'; p = q != NULL ? q + 1 :
+	    NULL) {
+		q = strchr(p, '\n');
+		while (*p == ' ' || *p == '\t')
+			p++;
+		if (strncmp(p, name, n) == 0 && p[n] == '=') {
+			p += n + 1;
+			if (*p == '"')
+				p++;
+			snprintf(v, sizeof(v), "%.*s", (int)strcspn(p, "\"\n"),
+			    p);
+		}
+	}
+	return (v);
+}
+
+void
+view_leaks(struct html *h)
+{
+	static const struct tcol cols[] = {
+		{ "Host", "host", false }, { "Network", "prefix", false },
+		{ "Interface", "if", false }, { "Its FIB", "from", true },
+		{ "Leaked into FIB", "into", true }, { "By", "how", false },
+	};
+	const ucl_object_t	**rows, *r, *o;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*all;
+	struct thost		*t;
+	int			 i, n, total, k, fibs, fn;
+
+	nodes_build();
+	lk_poll(false);
+	all = lk_rows();
+	total = (int)ucl_array_size(all);
+	rows = tbl_rows("leaks", all, cols, (int)nitems(cols), app.filter);
+	for (n = 0; rows[n] != NULL; n++)
+		;
+	h_raw(h, "<div class=\"leaks-page\"><p class=\"dim leaks-note\">Where "
+	    "one routing table reaches into another: a network of an interface "
+	    "of one FIB that another FIB has too, given by <code>net."
+	    "add_addr_allfibs</code> or by a route of its own (<code>route add "
+	    "-fib N network -iface interface</code>). Sockets bound in one "
+	    "table take traffic of all with <code>bind_all_fibs</code>, set at "
+	    "boot.</p><div class=\"toolbar\"><input class=\"filter\" id=\""
+	    "filter\" data-input=\"filter\" placeholder=\"Filter by host, "
+	    "network, interface…\" autocomplete=\"off\" spellcheck=\"false\"");
+	h_attr(h, "value", app.filter);
+	h_fmt(h, "><span class=\"tally\"><b>%d</b> of %d leak%s</span></div>",
+	    n, total, total == 1 ? "" : "s");
+	if (total == 0)
+		h_raw(h, "<div class=\"empty\"><p>No table reaches into "
+		    "another: every interface's networks are in its own FIB "
+		    "alone.</p></div>");
+	else {
+		h_raw(h, "<div class=\"scrollx\"><table class=\"net leaks\">");
+		tbl_head(h, "leaks", cols, (int)nitems(cols), 1);
+		h_raw(h, "<tbody>");
+		for (i = 0; (r = rows[i]) != NULL; i++) {
+			h_raw(h, "<tr><td><b>");
+			h_txt(h, jstr(r, "host"));
+			h_raw(h, "</b></td><td class=\"mono\">");
+			h_txt(h, jstr(r, "prefix"));
+			h_raw(h, "</td><td class=\"mono\">");
+			h_txt(h, jstr(r, "if"));
+			h_raw(h, "</td><td class=\"num\">");
+			h_txt(h, jstr(r, "from"));
+			h_raw(h, "</td><td class=\"num\">");
+			h_txt(h, jstr(r, "into"));
+			h_raw(h, "</td><td>");
+			h_txt(h, jstr(r, "how"));
+			h_raw(h, "</td><td>");
+			if (strcmp(jstr(r, "how"), "net.add_addr_allfibs") != 0) {
+				h_raw(h, "<button class=\"ghost small danger\" "
+				    "data-act=\"lk-remove\"");
+				h_attr(h, "data-arg", jstr(r, "key"));
+				h_fmt(h, " data-value=\"%s %s %s\" title=\"route "
+				    "delete -fib %s, and out of rc.conf\">Remove"
+				    "</button>", jstr(r, "into"), jstr(r,
+				    "prefix"), jstr(r, "if"), jstr(r, "into"));
+			}
+			h_raw(h, "</td></tr>");
+		}
+		h_raw(h, "</tbody></table></div>");
+	}
+	free(rows);
+	ucl_object_unref(all);
+
+	/* A network leaked by hand. */
+	h_raw(h, "<section class=\"pane leaks-form\"><h4>Leak a network into "
+	    "another table</h4><div class=\"lkform\"><label>Host<select "
+	    "data-input=\"lk-node\"><option value=\"\">a host…</option>");
+	for (i = 0; i < ntn; i++) {
+		h_raw(h, "<option");
+		h_attr(h, "value", tn[i].key);
+		if (strcmp(lkg.f_node, tn[i].key) == 0)
+			h_raw(h, " selected");
+		h_raw(h, ">");
+		h_txt(h, tn[i].label);
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select></label>");
+	k = node_index(lkg.f_node);
+	t = k != -1 ? thost(tn[k].key, false) : NULL;
+	h_raw(h, "<label>Interface<select data-input=\"lk-if\"><option value="
+	    "\"\">an interface…</option>");
+	it = NULL;
+	while (t != NULL && (o = ucl_object_iterate(jget(t->ifs, "interfaces"),
+	    &it, true)) != NULL) {
+		if (jstr(o, "name") == NULL || strncmp(jstr(o, "name"), "lo",
+		    2) == 0 || ucl_array_size(jget(o, "addresses")) == 0)
+			continue;
+		h_raw(h, "<option");
+		h_attr(h, "value", jstr(o, "name"));
+		if (strcmp(lkg.f_if, jstr(o, "name")) == 0)
+			h_raw(h, " selected");
+		h_fmt(h, ">%s · FIB %lld</option>", jstr(o, "name"), (long long)
+		    jint(o, "fib", 0));
+	}
+	h_raw(h, "</select></label><label>Network<select name=\"prefix\" "
+	    "data-input=\"lk-prefix\"><option value=\"\">a network…</option>");
+	if (t != NULL && (o = if_named(t, lkg.f_if)) != NULL)
+		lk_prefixes(h, o);
+	fibs = k != -1 && lkg.val[k][LKS_FIBS] > 0 ? lkg.val[k][LKS_FIBS] : 1;
+	fn = t != NULL && if_named(t, lkg.f_if) != NULL ? (int)jint(if_named(t,
+	    lkg.f_if), "fib", 0) : -1;
+	h_raw(h, "</select></label><label>Into FIB<select name=\"fib\" "
+	    "data-input=\"lk-fib\">");
+	for (i = 0; i < fibs && i < LK_FIBS; i++)
+		if (i != fn)
+			h_fmt(h, "<option value=\"%d\"%s>%d</option>", i,
+			    lkg.f_fib == i ? " selected" : "", i);
+	h_fmt(h, "</select></label><label class=\"check\"><input type=\""
+	    "checkbox\" data-input=\"lk-keep\"%s> Kept in rc.conf</label>"
+	    "<button type=\"button\" class=\"primary small\" data-act=\"lk-add\">"
+	    "Leak it</button></div><p class=\"dim\">A safe change: undone unless "
+	    "the host is still reached after it.</p></section>", lkg.f_keep ?
+	    " checked" : "");
+
+	/* Each node's settings. */
+	h_raw(h, "<section class=\"pane\"><h4>Each host's tables</h4><div "
+	    "class=\"scrollx\"><table class=\"net leaks-sys\"><thead><tr><th>"
+	    "Host</th><th title=\"net.fibs, set at boot\">FIBs</th><th title="
+	    "\"net.add_addr_allfibs: an address's network in every table, "
+	    "changed live\">Addresses in all FIBs</th><th title=\"net.inet.tcp."
+	    "bind_all_fibs\">TCP binds all</th><th title=\"net.inet.udp."
+	    "bind_all_fibs\">UDP binds all</th><th title=\"net.inet.raw."
+	    "bind_all_fibs\">Raw binds all</th></tr></thead><tbody>");
+	for (i = 0; i < ntn; i++) {
+		h_raw(h, "<tr><td><b>");
+		h_txt(h, tn[i].label);
+		h_fmt(h, "</b></td><td class=\"num\">%s</td><td>%s ",
+		    lk_val(i, LKS_FIBS), lk_val(i, LKS_ALLFIBS));
+		if (lkg.val[i][LKS_ALLFIBS] >= 0) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "lk-allfibs\"");
+			h_attr(h, "data-arg", tn[i].key);
+			h_fmt(h, " data-value=\"%d\">Turn %s</button>",
+			    !lkg.val[i][LKS_ALLFIBS], lkg.val[i][LKS_ALLFIBS] ?
+			    "off" : "on");
+		}
+		h_raw(h, "</td>");
+		for (k = LKS_TCP; k <= LKS_RAW; k++) {
+			h_fmt(h, "<td>%s", lk_val(i, k));
+			/* A tunable: the host's next boot. */
+			if (tn[i].jail[0] == '\0' && lkg.loader[i] != NULL) {
+				const char	*b = lk_boot(i, lk_names[k]);
+				int		 next = b[0] != '\0' ? atoi(b) :
+				    lkg.val[i][k];
+
+				if (b[0] != '\0' && next != lkg.val[i][k])
+					h_fmt(h, " <small class=\"dim\">%d at the "
+					    "next boot</small>", next);
+				h_raw(h, " <button class=\"ghost small\" "
+				    "data-act=\"lk-boot\"");
+				h_attr(h, "data-arg", tn[i].key);
+				h_fmt(h, " data-value=\"%d %d\" title=\"In "
+				    "/boot/loader.conf.d/arcana.conf: from the "
+				    "next boot\">%s at boot</button>", k, !next,
+				    next ? "Off" : "On");
+			} else if (tn[i].jail[0] != '\0')
+				h_raw(h, " <small class=\"dim\">its host's"
+				    "</small>");
+			h_raw(h, "</td>");
+		}
+		h_raw(h, "</tr>");
+	}
+	h_raw(h, "</tbody></table></div></section></div>");
+}
+
+/* A tunable set for the next boot: the host's loader.conf.d written
+ * whole, the line replaced or added. */
+static void
+lk_boot_write(int i, int k, int v)
+{
+	struct server	*s;
+	char		 title[200], *text, line[96];
+
+		/* The file written whole: the tunable's line replaced, or
+		 * added. */
+		{
+			struct html	 b;
+			const char	*p, *q;
+			size_t		 n = strlen(lk_names[k]);
+			bool		 put = false;
+
+			memset(&b, 0, sizeof(b));
+			snprintf(line, sizeof(line), "%s=\"%d\"", lk_names[k], v);
+			for (p = lkg.loader[i]; *p != '\0'; p = q != NULL ? q + 1 :
+			    p + strlen(p)) {
+				q = strchr(p, '\n');
+				if (strncmp(p, lk_names[k], n) == 0 && p[n] ==
+				    '=') {
+					h_raw(&b, line);
+					h_raw(&b, "\n");
+					put = true;
+				} else if (q != NULL || *p != '\0') {
+					h_fmt(&b, "%.*s\n", (int)(q != NULL ? (size_t)(q - p) :
+					    strlen(p)), p);
+				}
+				if (q == NULL)
+					break;
+			}
+			if (!put) {
+				h_raw(&b, line);
+				h_raw(&b, "\n");
+			}
+			text = h_take(&b);
+		}
+		s = &app.servers[tn[i].srv];
+		snprintf(title, sizeof(title), "%s at the next boot", line);
+		job_send(s, job_json("sysfile", "loader.conf.d", NULL, 0, text,
+		    NULL), title, JOB_SYSTEM, s->name);
+		/* As written: the read after the job says it again. */
+		free(lkg.loader[i]);
+		lkg.loader[i] = text;
+}
+
+bool
+leaks_action(const char *act, const char *arg, const char *value)
+{
+	char	 fib[16], pfx[80], ifn[32], title[200];
+	int	 i, k, v;
+
+	if (strcmp(act, "input:lk-node") == 0) {
+		snprintf(lkg.f_node, sizeof(lkg.f_node), "%s", value);
+		lkg.f_if[0] = lkg.f_prefix[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "input:lk-if") == 0) {
+		snprintf(lkg.f_if, sizeof(lkg.f_if), "%s", value);
+		lkg.f_prefix[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "input:lk-prefix") == 0) {
+		snprintf(lkg.f_prefix, sizeof(lkg.f_prefix), "%s", value);
+		return (true);
+	}
+	if (strcmp(act, "input:lk-fib") == 0) {
+		lkg.f_fib = atoi(value);
+		return (true);
+	}
+	if (strcmp(act, "input:lk-keep") == 0) {
+		lkg.f_keep = strcmp(value, "true") == 0 || strcmp(value, "on") ==
+		    0 || strcmp(value, "1") == 0;
+		return (true);
+	}
+	if (strcmp(act, "lk-add") == 0) {
+		if ((i = node_index(lkg.f_node)) == -1 || lkg.f_if[0] == '\0' ||
+		    lkg.f_prefix[0] == '\0') {
+			toast(true, "A host, an interface and a network");
+			return (true);
+		}
+		snprintf(title, sizeof(title), "leak %s of %s into FIB %d",
+		    lkg.f_prefix, lkg.f_if, lkg.f_fib);
+		node_job(i, title, lkg.f_if, "{\"kind\":\"route\",\"destination\":"
+		    "\"%s\",\"gateway\":\"%s\",\"remove\":false,\"persist\":%s,"
+		    "\"fib\":%d,\"safe\":true}", lkg.f_prefix, lkg.f_if, lkg.f_keep ?
+		    "true" : "false", lkg.f_fib);
+		lkg.fetched[i] = 0;
+		return (true);
+	}
+	if (strcmp(act, "lk-remove") == 0) {
+		if ((i = node_index(arg)) == -1 || sscanf(value, "%15s %79s %31s",
+		    fib, pfx, ifn) != 3)
+			return (true);
+		snprintf(title, sizeof(title), "leak %s of %s out of FIB %s",
+		    pfx, ifn, fib);
+		node_job(i, title, ifn, "{\"kind\":\"route\",\"destination\":"
+		    "\"%s\",\"gateway\":\"%s\",\"remove\":true,\"persist\":true,"
+		    "\"fib\":%d,\"safe\":true}", pfx, ifn, atoi(fib));
+		lkg.fetched[i] = 0;
+		return (true);
+	}
+	if (strcmp(act, "lk-allfibs") == 0) {
+		if ((i = node_index(arg)) == -1)
+			return (true);
+		snprintf(title, sizeof(title), "sysctl net.add_addr_allfibs=%d",
+		    atoi(value));
+		node_job(i, title, "net.add_addr_allfibs", "{\"kind\":\"sysctl\","
+		    "\"args\":[\"net.add_addr_allfibs\",\"%d\"],\"persist\":true,"
+		    "\"safe\":true}", atoi(value));
+		lkg.fetched[i] = 0;
+		return (true);
+	}
+	if (strcmp(act, "lk-boot") == 0) {
+		if ((i = node_index(arg)) == -1 || tn[i].jail[0] != '\0' ||
+		    sscanf(value, "%d %d", &k, &v) != 2 || k < LKS_TCP || k >
+		    LKS_RAW)
+			return (true);
+		/* The file is written whole: read first, when it was not. */
+		if (lkg.loader[i] == NULL) {
+			char	url[240];
+
+			lkg.boot_k[i] = k;
+			lkg.boot_v[i] = v;
+			if (!lkg.sys_loading[i]) {
+				lkg.sys_loading[i] = true;
+				snprintf(url, sizeof(url), "/api/servers/%s/system",
+				    app.servers[tn[i].srv].id);
+				api("GET", url, NULL, lk_sys_cb, strdup(tn[i].key));
+			}
+			return (true);
+		}
+		lk_boot_write(i, k, v);
+		return (true);
+	}
+	return (false);
+}
+
 /* Nothing picked: what there is, and where the traffic goes. */
 static void
 panel_overview(struct html *h)

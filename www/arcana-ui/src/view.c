@@ -788,6 +788,9 @@ stage(struct html *h)
 		    "data-arg=\"overlay\" title=\"Every tunnel of every host: "
 		    "gre, gif, WireGuard, geneve, vxlan, VPNs, both ends\">"
 		    "Overlay</button><button class=\"tab%s\" data-act=\"netsect-tab\" "
+		    "data-arg=\"leaks\" title=\"Where one routing table reaches "
+		    "into another: networks leaked, and the FIB settings\">"
+		    "Leaking</button><button class=\"tab%s\" data-act=\"netsect-tab\" "
 		    "data-arg=\"groups\" title=\"How each route of several next "
 		    "hops shares what it sends, as the agents sampled it, at "
 		    "both ends\">Load balance</button><button class=\"tab%s\" "
@@ -805,7 +808,8 @@ stage(struct html *h)
 		    "console, for ipfw tables, BIRD sets and SD-WAN zones on any "
 		    "host\">Prefix lists</button></nav>",
 		    app.netsect == NETSECT_MAP ? " on" : "", app.netsect ==
-		    NETSECT_OVERLAY ? " on" : "", app.netsect ==
+		    NETSECT_OVERLAY ? " on" : "", app.netsect == NETSECT_LEAKS ?
+		    " on" : "", app.netsect ==
 		    NETSECT_GROUPS ? " on" : "", app.netsect == NETSECT_TRACE ?
 		    " on" : "", app.netsect == NETSECT_BGP ? " on" : "",
 		    app.netsect == NETSECT_OSPF ? " on" : "", app.netsect ==
@@ -813,6 +817,8 @@ stage(struct html *h)
 		    " on" : "");
 		if (app.netsect == NETSECT_OVERLAY)
 			view_overlay(h);
+		else if (app.netsect == NETSECT_LEAKS)
+			view_leaks(h);
 		else 		if (app.netsect == NETSECT_GROUPS)
 			view_ecmp(h);
 		else if (app.netsect == NETSECT_TRACE)

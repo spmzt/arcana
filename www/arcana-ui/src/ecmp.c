@@ -574,13 +574,14 @@ ecmp_action(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "bgp") == 0 ? NETSECT_BGP : strcmp(arg,
 		    "ospf") == 0 ? NETSECT_OSPF : strcmp(arg, "bfd") == 0 ?
 		    NETSECT_BFD : strcmp(arg, "lists") == 0 ? NETSECT_PREFIXES :
-		    strcmp(arg, "overlay") == 0 ? NETSECT_OVERLAY : NETSECT_MAP;
+		    strcmp(arg, "overlay") == 0 ? NETSECT_OVERLAY : strcmp(arg,
+		    "leaks") == 0 ? NETSECT_LEAKS : NETSECT_MAP;
 		if (app.netsect == NETSECT_PREFIXES)
 			pfxlists_load();
 		ec.ifs_asked = 0;
 		if (app.netsect == NETSECT_GROUPS)
 			ecmp_tick(arc_now());
-		else if (app.netsect >= NETSECT_BGP && app.netsect !=
+		else if (app.netsect >= NETSECT_BGP && app.netsect <
 		    NETSECT_OVERLAY)
 			topo_bird_now();
 		return (true);

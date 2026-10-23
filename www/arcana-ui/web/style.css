@@ -5282,3 +5282,10 @@ svg.topo .omnote { font-size: 14px; text-anchor: middle; fill: var(--dim); }
 .overlay-page > .pane { margin-top: 1rem; }
 .ecmp-list .ecmp-key li span { flex: none; }
 .ecmp-list .ecmp-key li small { min-width: 0; }
+/* The Leaking tab's form: its fields in a row where there is room. */
+.leaks-form .lkform { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr)); gap: .6rem .8rem; align-items: end; }
+.leaks-form label { display: grid; gap: .25rem; font-size: .78rem; color: var(--fg-2); }
+.leaks-form label.check { display: flex; align-items: center; gap: .4rem; padding-bottom: .45rem; }
+.leaks-form label.check input { width: auto; margin: 0; }
+.leaks-form .primary { justify-self: start; }
+.leaks-page .leaks-note { max-width: 62rem; font-size: .78rem; }
