@@ -363,7 +363,7 @@ paths:
   /api/users/{name}:
     put:
       tags: [auth]
-      summary: Keep the user of the name (as POST /api/users with it: tenant, roles)
+      summary: "Keep the user of the name (as POST /api/users with it: tenant, roles)"
       parameters:
         - { name: name, in: path, required: true, schema: { type: string } }
       responses:
@@ -1210,7 +1210,7 @@ paths:
     post:
       tags: [users]
       summary: Make a group
-      description: '{"name", "roles", "members"}; the owner's.'
+      description: "{\"name\", \"roles\", \"members\"}; the owner's."
       responses:
         "200":
           description: ok.
@@ -1585,7 +1585,8 @@ paths:
     get:
       tags: [servers]
       summary: What happened on the host, as it happened
-      description: Under data. events is each event with its number n,
+      description: >-
+        Under data. events is each event with its number n,
         its time t, its kind and data; last the number of the newest,
         first that of the oldest still kept, kept how many are at most.
         Ask again with after set to the last number seen and none is
@@ -1834,7 +1835,8 @@ paths:
     post:
       tags: [servers]
       summary: Make the host what a bundle says
-      description: With bundle, a host's bundle, or from, another host's
+      description: >-
+        With bundle, a host's bundle, or from, another host's
         id, whose bundle the console reads there without its secrets (a
         host's keys are its own identity and are never copied), or
         template, a template's name, and values, the value of each of
@@ -3611,8 +3613,8 @@ components:
           type: string
           enum: [running, done, failed, cancelled, interrupted]
           description: interrupted when the console stopped while it ran.
-        started: { type: number, description: Unix time, to the millisecond. }
-        ended: { type: number, description: Unix time, to the millisecond. }
+        started: { type: number, description: "Unix time, to the millisecond." }
+        ended: { type: number, description: "Unix time, to the millisecond." }
         params: { type: object, additionalProperties: { type: string } }
         event: { type: object, description: The event that began it. }
         cancel: { type: boolean, description: A stop was asked for. }
@@ -3648,8 +3650,8 @@ components:
                     job: { type: integer, description: The host's job number. }
                     title: { type: string }
                     error: { type: string }
-                    started: { type: number, description: Unix time, to the millisecond. }
-                    ended: { type: number, description: Unix time, to the millisecond. }
+                    started: { type: number, description: "Unix time, to the millisecond." }
+                    ended: { type: number, description: "Unix time, to the millisecond." }
                     trace:
                       type: object
                       description: >-

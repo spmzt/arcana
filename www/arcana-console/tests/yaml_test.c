@@ -133,10 +133,39 @@ ATF_TC_BODY(by_hand, tc)
 	ATF_CHECK(strstr(err, "line 2") != NULL);
 }
 
+/* docs/openapi.yaml parses: a ": " or an apostrophe loose in a plain
+ * scalar stops every YAML reader at that line, the app's included. */
+ATF_TC_WITHOUT_HEAD(openapi);
+ATF_TC_BODY(openapi, tc)
+{
+	ucl_object_t	*o;
+	FILE		*fp;
+	char		*text, err[256];
+	long		 len;
+
+	ATF_REQUIRE_MSG((fp = fopen(OPENAPI, "r")) != NULL, "%s", OPENAPI);
+	ATF_REQUIRE(fseek(fp, 0, SEEK_END) == 0 && (len = ftell(fp)) > 0);
+	rewind(fp);
+	ATF_REQUIRE((text = malloc((size_t)len + 1)) != NULL);
+	ATF_REQUIRE(fread(text, 1, (size_t)len, fp) == (size_t)len);
+	text[len] = '\0';
+	fclose(fp);
+	err[0] = '\0';
+	o = yaml_parse(text, err, sizeof(err));
+	ATF_REQUIRE_MSG(o != NULL, "docs/openapi.yaml: %s", err);
+	ATF_CHECK(ucl_object_lookup(o, "openapi") != NULL);
+	ATF_CHECK(ucl_object_lookup(o, "paths") != NULL);
+	ATF_CHECK(ucl_object_lookup(ucl_object_lookup(ucl_object_lookup(o,
+	    "components"), "schemas"), "Run") != NULL);
+	ucl_object_unref(o);
+	free(text);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 
 	ATF_TP_ADD_TC(tp, round_trip);
 	ATF_TP_ADD_TC(tp, by_hand);
+	ATF_TP_ADD_TC(tp, openapi);
 	return (atf_no_error());
 }
