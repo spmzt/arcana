@@ -6465,6 +6465,23 @@ part_netsect(void)
 		    my - jy < 70, "the jail moved by %.0f,%.0f, not 80,60",
 		    mx - jx, my - jy);
 	}
+	/* The vnet jails: those linked to more than their host (the
+	 * default), all of them, none, and round again. */
+	ATF_CHECK(js_true("document.querySelector('button[data-act=topo-vnet]')"
+	    ".textContent.includes('linked')"));
+	run("window.vj = document.querySelectorAll('svg.topo .tnode.vjail').length;");
+	click_at("button[data-act=topo-vnet]");
+	wait_js("document.querySelector('button[data-act=topo-vnet]').textContent"
+	    ".includes('all') && document.querySelectorAll('svg.topo .tnode.vjail')"
+	    ".length >= window.vj", 5);
+	click_at("button[data-act=topo-vnet]");
+	wait_js("document.querySelector('button[data-act=topo-vnet]').textContent"
+	    ".includes('none') && !document.querySelector('svg.topo .tnode.vjail')",
+	    5);
+	click_at("button[data-act=topo-vnet]");
+	wait_js("document.querySelector('button[data-act=topo-vnet]').textContent"
+	    ".includes('linked') && document.querySelectorAll('svg.topo "
+	    ".tnode.vjail').length === window.vj", 10);
 	/* Its network is its host's Network tab, the jail picked there. */
 	run("document.querySelector('.map-panel button[data-act="
 	    "topo-open-host]').click()");

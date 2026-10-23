@@ -176,6 +176,7 @@ static struct tlink	links[TOPO_LINKS];
 static int		nlinks;
 static struct seg	segs[TOPO_SEGS];
 static bool	seg_same(const struct seg *, const struct seg *);
+static bool	node_lone(int);
 static void	bgp_label(char *, size_t, const char *, const char *);
 static int		nsegs;
 
@@ -186,6 +187,7 @@ static struct {
 	bool	refitted;		/* and again, with neighbours outside */
 	bool	jails;			/* each host's running jails around it */
 	bool	novnet;			/* the vnet jails folded into their hosts */
+	bool	lonevnet;		/* and those linked to their host alone shown */
 	bool	nopeers;		/* routing neighbours outside are hidden */
 	char	sel[80];		/* the node picked, or "" */
 	char	sel_if[16];		/* and its interface charted */
@@ -511,6 +513,7 @@ peers_load(void)
 	/* Whether the vnet jails are shown, as last chosen here. */
 	text = arc_store_get("arc_topo_vnet");
 	tp.novnet = text != NULL && strcmp(text, "hidden") == 0;
+	tp.lonevnet = text != NULL && strcmp(text, "all") == 0;
 	free(text);
 	text = arc_store_get("arc_topo_peers");
 	p = text;
@@ -2370,20 +2373,52 @@ link_in_fib(const struct tlink *l, int fib)
 	    fib)));
 }
 
-/* An interface's name with its tables, each in its table's colour:
- * "gre0 fib 1", "gre0 fib 0 → 1" (a tunnel whose outer packets go by
- * another table); the name alone in table 0. */
+/*
+ * Is node i a vnet jail left out of the drawing: one whose links all
+ * go to its own host (an epair, the host's bridge), with no other host,
+ * no network others are in, and no routing neighbour, unless asked for
+ * them all.
+ */
+static bool
+node_lone(int i)
+{
+	int	k, m, p, s;
+
+	if (tp.lonevnet || i < 0 || i >= ntn || tn[i].jail[0] == '\0')
+		return (false);
+	p = node_host(i);
+	for (k = 0; k < nlinks; k++) {
+		if (links[k].a != i && links[k].b != i)
+			continue;
+		if (links[k].b < 0) {
+			s = -links[k].b - 1;
+			for (m = 0; s < nsegs && m < segs[s].n; m++)
+				if (segs[s].member[m] != i &&
+				    segs[s].member[m] != p)
+					return (false);
+			continue;
+		}
+		if ((links[k].a == i ? links[k].b : links[k].a) != p)
+			return (false);
+	}
+	for (k = 0; k < nexts; k++)
+		if (exts[k].host == i)
+			return (false);
+	return (true);
+}
+
+/* An interface's name with its own table in the table's colour, "gre0
+ * fib 1", when the link has to do with any table past the first (say);
+ * the name alone otherwise.  Each end says its own: the far end's label
+ * says the other, and a tunnel's outer table is its dashed line. */
 static void
-if_label(struct html *h, const char *name, int fib, int tfib)
+if_label(struct html *h, const char *name, int fib, bool say)
 {
 
 	h_txt(h, name);
-	if (fib > 0 || (tfib >= 0 && tfib != fib))
+	if (say)
 		h_fmt(h, " <tspan class=\"fib fib%d\">fib %d</tspan>", fib > 6 ? 6
 		    : fib, fib);
-	if (tfib >= 0 && tfib != fib)
-		h_fmt(h, " <tspan class=\"fib fib%d\">→ %d</tspan>", tfib > 6 ? 6
-		    : tfib, tfib);
 }
 
 /*
@@ -2407,6 +2442,8 @@ map_links(struct html *h)
 	h_reset(&tlab);
 	for (i = 0; i < nlinks; i++) {
 		l = &links[i];
+		if (node_lone(l->a) || node_lone(l->b))
+			continue;
 		if (tp.hide[l->kind] || !place(l->a, &x1, &y1) || !place(l->b,
 		    &x2, &y2))
 			continue;
@@ -2479,14 +2516,15 @@ map_links(struct html *h)
 			    y2, bend, true), &ex, &ey);
 			h_fmt(lh, "<text class=\"lbl end\" x=\"%.1f\" y=\"%.1f\">",
 			    ex, ey - 5);
-			if_label(lh, l->ifa, fa, ta);
+			if_label(lh, l->ifa, fa, fa > 0 || fb > 0 || ta > 0 || tb > 0);
 			h_raw(lh, "</text>");
 			if (l->ifb[0] != '\0') {
 				curve(NULL, x1, y1, x2, y2, bend, leave_t(x1, y1,
 				    x2, y2, bend, false), &ex, &ey);
 				h_fmt(lh, "<text class=\"lbl end\" x=\"%.1f\" "
 				    "y=\"%.1f\">", ex, ey - 5);
-				if_label(lh, l->ifb, fb, tb);
+				if_label(lh, l->ifb, fb, fa > 0 || fb > 0 || ta > 0 ||
+				    tb > 0);
 				h_raw(lh, "</text>");
 			}
 		} else if (l->b >= 0) {
@@ -2762,7 +2800,8 @@ map_nodes(struct html *h)
 				snprintf(other, sizeof(other), "%.*sb", len - 1,
 				    mn);
 				for (k = 0; k < ntn; k++) {
-					if (tn[k].srv != tn[i].srv || tn[k].jail[0]
+					if (node_lone(k) || tn[k].srv != tn[i].srv ||
+					    tn[k].jail[0]
 					    == '\0' || (jt = thost(tn[k].key,
 					    false)) == NULL || !jt->placed)
 						continue;
@@ -2837,6 +2876,8 @@ map_nodes(struct html *h)
 	for (i = 0; i < ntn; i++) {
 		const char	*key = tn[i].key;
 
+		if (node_lone(i))
+			continue;
 		s = &app.servers[tn[i].srv];
 		if ((t = thost(key, false)) == NULL || !t->placed)
 			continue;
@@ -2982,9 +3023,10 @@ map(struct html *h)
 	    "title=\"Each host's running jails\">Jails</button>", tp.jails ?
 	    " on" : "");
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-vnet\" "
-	    "title=\"The vnet jails as nodes of their own, with their links; "
-	    "off, they are hidden\">VNet jails</button>", tp.novnet ? "" :
-	    " on");
+	    "title=\"The vnet jails as nodes of their own: those linked to more "
+	    "than their own host, all of them, or none; pressed, the next\">VNet "
+	    "jails: %s</button>", tp.novnet ? "" : " on", tp.novnet ? "none" :
+	    tp.lonevnet ? "all" : "linked");
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-labels\" "
 	    "title=\"What each kind of line is and carries, written on it\">"
 	    "Labels ▾</button>", tp.labels_open ? " on" : "");
@@ -4765,7 +4807,8 @@ fit(void)
 	n = 0;
 	x0 = y0 = x1 = y1 = 0;
 	for (i = 0; i < nhosts; i++) {
-		if (!hosts[i].placed || node_index(hosts[i].sid) == -1)
+		if (!hosts[i].placed || node_index(hosts[i].sid) == -1 ||
+		    node_lone(node_index(hosts[i].sid)))
 			continue;
 		if (n == 0 || hosts[i].x < x0)
 			x0 = hosts[i].x;
@@ -5028,8 +5071,15 @@ topo_action(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "topo-jails") == 0) {
 		tp.jails = !tp.jails;
 	} else if (strcmp(act, "topo-vnet") == 0) {
-		tp.novnet = !tp.novnet;
-		arc_store_set("arc_topo_vnet", tp.novnet ? "hidden" : "shown");
+		/* Linked, all, none, and round again. */
+		if (tp.novnet)
+			tp.novnet = tp.lonevnet = false;
+		else if (tp.lonevnet)
+			tp.novnet = !(tp.lonevnet = false);
+		else
+			tp.lonevnet = true;
+		arc_store_set("arc_topo_vnet", tp.novnet ? "hidden" : tp.lonevnet ?
+		    "all" : "linked");
 		tp.touched = false;
 	} else if (strcmp(act, "topo-open-wg") == 0 || strcmp(act,
 	    "topo-open-bird") == 0) {
