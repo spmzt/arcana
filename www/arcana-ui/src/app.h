@@ -181,6 +181,7 @@ enum tab {
 	TAB_SYSTEM,
 	TAB_SECURITY,
 	TAB_MAIL,
+	TAB_RELAY,
 	TAB_KERNEL,
 	TAB_SYSCTL,
 	TAB_CERTS,
@@ -227,6 +228,7 @@ enum netkind {
 	NET_CARP,		/* carp(4)'s vhids, from the interfaces */
 	NET_MULTICAST,		/* IGMP's and MLD's state, ifmcstat(8) */
 	NET_KEPT,		/* the static routes rc.conf keeps */
+	NET_MONITORS,		/* the tunnels measured (monitors.c) */
 };
 /* A plugin's view: a tab of its own on a host that has it. */
 #define	NET_PLUGIN(k)	((k) == NET_BIRD || (k) == NET_IPSEC)
@@ -358,6 +360,8 @@ enum {
 	JOB_NETSTORE,		/* the Storage page's NFS, iSCSI or HAST */
 	JOB_SYSTEM,		/* a host's own configuration (sysview.c) */
 	JOB_MAIL,		/* a host's OpenSMTPD (mail.c) */
+	JOB_RELAY,		/* a host's FEC relay (relay.c) */
+	JOB_MONITOR,		/* a tunnel measured (monitors.c) */
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -384,6 +388,8 @@ enum modal {
 	MODAL_IF_ADDRESS,
 	MODAL_ROUTE,
 	MODAL_KEPT_RENAME,
+	MODAL_PASSWORD,
+	MODAL_MONITOR,
 	MODAL_TUNNEL,
 	MODAL_IF_CREATE,
 	MODAL_IF_SET,
@@ -491,7 +497,9 @@ struct app {
 	bool		 auth_busy;
 	bool		 by_token;	/* signed in with an API token, or by LDAP: limited */
 	bool		 by_ldap;	/* ... by a directory's user */
-	bool		 ldap_on;	/* the console takes a user and password */
+	bool		 by_password;	/* ... by a password of the console's */
+	bool		 ldap_on;	/* the console asks a directory */
+	bool		 password_on;	/* a user has a password of its own */
 	char		 user[64];	/* the console user signed in, or "" */
 	char		 console_role[16];	/* owner, operator, member */
 	char		 tenant[64];	/* the user's fleet, or "" */
@@ -521,6 +529,7 @@ struct app {
 	bool		 peek;		/* app.jail is shown in a box over the page */
 	bool		 rail_open;	/* the tree, on a narrow screen, is unfolded */
 	bool		 who_open;	/* the top bar's menu, on a phone */
+	bool		 acct_open;	/* the account button's menu */
 	char		 theme[16];	/* "" for the default */
 	ucl_object_t	*settings;	/* /api/settings, while its dialog is open */
 	ucl_object_t	*push;		/* /api/push: the devices that are told */
@@ -677,7 +686,8 @@ void		 check_update(void);
 void		 auth_status(void);
 void		 login(bool);
 void		 login_token(const char *);
-void		 login_ldap(const char *, const char *);
+void		 login_password(const char *, const char *);
+const char	*signed_in_how(void);
 void		 enrol(const char *, const char *);
 void		 add_key(const char *);
 void		 logout(void);
@@ -940,6 +950,7 @@ void		 set_aaa(struct html *);
 bool		 user_modal(struct html *);
 bool		 user_form(const char *, const ucl_object_t *);
 bool		 user_action(const char *, const char *);
+bool		 password_modal(struct html *);
 /* ca.c: Settings, Certificate authority. */
 void		 ca_load(void);
 void		 cluster_tick(double);
@@ -986,6 +997,21 @@ void		 view_mail(struct html *, struct server *);
 bool		 mail_form(const char *, const ucl_object_t *);
 bool		 mail_action(const char *, const char *, const char *);
 void		 mail_refresh(void);
+/* monitors.c: Network › Tunnel quality, the tunnels measured. */
+void		 view_monitors(struct html *, struct server *,
+		    const ucl_object_t *);
+bool		 monitor_modal(struct html *);
+bool		 monitor_form(const char *, const ucl_object_t *);
+bool		 monitor_action(const char *, const char *, const char *);
+void		 monitors_refresh(void);
+void		 monitors_tick(double);
+void		 probe_spark(struct html *, const ucl_object_t *);
+/* relay.c: the host's UDPspeeder FEC relay. */
+void		 view_relay(struct html *, struct server *);
+bool		 relay_form(const char *, const ucl_object_t *);
+bool		 relay_action(const char *, const char *, const char *);
+void		 relay_refresh(void);
+void		 relay_tick(double);
 const char	*plugin_anywhere(const struct server *, const char *);
 void		 view_hostsec(struct html *, struct server *);
 void		 view_storage_geom(struct html *, struct server *, int);

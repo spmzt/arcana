@@ -24,6 +24,12 @@
  * /api/users/<name>, POST /api/users/<name>/invite; POST /api/roles,
  * PUT and DELETE /api/roles/<name>; POST /api/groups, PUT and DELETE
  * /api/groups/<name>.
+ *
+ * A user the console keeps may also have a password of the console's
+ * own, beside their keys: kept as crypt(3)'s bcrypt ("$2b$"), never
+ * said back, set from a session opened with a key (auth.c), and a
+ * session it opens is limited as a directory user's is.  A user the
+ * directory keeps (source ldap) signs in with the directory's.
  */
 
 #include <sys/param.h>
@@ -34,6 +40,7 @@
 #include <string.h>
 #include <syslog.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <openssl/evp.h>
 
@@ -47,6 +54,8 @@
 #define	INVITE_BYTES	24
 
 static ucl_object_t	*udoc;
+
+static const char	*pw_of(const char *);
 
 /* Base64url of bytes, without padding. */
 static void
@@ -670,6 +679,9 @@ reply_all(struct http_request *req)
 		put(e, "invites", ucl_object_fromint(n));
 		put(e, "keys", ucl_object_fromint(cred_count_of(ucl_str(u,
 		    "name"))));
+		/* Whether they have a password; the hash is never said. */
+		put(e, "password", ucl_object_frombool(pw_of(ucl_str(u,
+		    "name")) != NULL));
 		put(e, "console", ucl_object_fromstring(crole_name(user_console(
 		    ucl_str(u, "name")))));
 		ucl_array_append(a, e);
@@ -756,6 +768,148 @@ users_ldap_sync(const char *name, const char **roles, int nroles)
 	}
 	if (old != NULL || nroles > 0)
 		(void)store_save(USERS_FILE, udoc);
+}
+
+/* ---- Passwords ---------------------------------------------------- */
+
+#define	BCRYPT_COST	"12"		/* 2^12 rounds: a quarter second */
+
+/* A bcrypt hash of pw, in out ("$2b$12$" and 53 more), or false. */
+static bool
+pw_hash(const char *pw, char *out, size_t len)
+{
+	static const char	alphabet[] = "./ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	    "abcdefghijklmnopqrstuvwxyz0123456789";
+	struct crypt_data	cd;
+	uint8_t			r[22];
+	char			salt[40];
+	const char		*h;
+	size_t			i;
+	bool			ok;
+
+	arc4random_buf(r, sizeof(r));
+	snprintf(salt, sizeof(salt), "$2b$%s$", BCRYPT_COST);
+	for (i = 0; i < sizeof(r); i++)
+		salt[7 + i] = alphabet[r[i] & 0x3f];
+	salt[7 + sizeof(r)] = '\0';
+	memset(&cd, 0, sizeof(cd));
+	/* The hash is in cd: copied out before cd is wiped. */
+	h = crypt_r(pw, salt, &cd);
+	ok = h != NULL && strncmp(h, "$2b$", 4) == 0 && strlen(h) < len;
+	if (ok)
+		snprintf(out, len, "%s", h);
+	explicit_bzero(&cd, sizeof(cd));
+	return (ok);
+}
+
+/* A user's hash, or NULL: none, or one the directory keeps. */
+static const char *
+pw_of(const char *name)
+{
+	const ucl_object_t	*u;
+	const char		*h;
+
+	if ((u = by_name("users", name)) == NULL || ((h = ucl_str(u,
+	    "password")) == NULL) || strncmp(h, "$2b$", 4) != 0)
+		return (NULL);
+	return (h);
+}
+
+bool
+user_has_password(const char *name)
+{
+
+	return (name != NULL && pw_of(name) != NULL);
+}
+
+/*
+ * Is pw the user's password?  One with none is compared all the same,
+ * with a hash of nothing, so the time taken says not which users have
+ * one.
+ */
+bool
+user_password_ok(const char *name, const char *pw)
+{
+	static const char	 none[] = "$2b$" BCRYPT_COST "$"
+	    "......................" "...............................";
+	struct crypt_data	 cd;
+	const char		*want, *got;
+	bool			 ok;
+
+	want = name != NULL ? pw_of(name) : NULL;
+	if (pw == NULL || strlen(pw) > PASSWORD_MAX)
+		pw = "";
+	memset(&cd, 0, sizeof(cd));
+	got = crypt_r(pw, want != NULL ? want : none, &cd);
+	ok = want != NULL && got != NULL && strlen(got) == strlen(want) &&
+	    timingsafe_bcmp(got, want, strlen(want)) == 0;
+	explicit_bzero(&cd, sizeof(cd));
+	return (ok);
+}
+
+/* Does any user have one?  The sign-in page then asks for it. */
+bool
+users_any_password(void)
+{
+	const ucl_object_t	*u;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((u = ucl_object_iterate(list_of("users"), &it, true)) != NULL)
+		if (pw_of(ucl_str(u, "name")) != NULL)
+			return (true);
+	return (false);
+}
+
+/*
+ * The user's password set to pw, or taken away when pw is NULL or "".
+ * NULL when kept, or what is wrong.
+ */
+const char *
+user_password_set(const char *name, const char *pw)
+{
+	const ucl_object_t	*old;
+	ucl_object_t		*u;
+	char			 h[128];
+	size_t			 i, n;
+
+	if ((old = by_name("users", name)) == NULL)
+		return ("no such user");
+	if (ucl_str(old, "source") != NULL && strcmp(ucl_str(old, "source"),
+	    "ldap") == 0)
+		return ("a user the directory keeps signs in with the "
+		    "directory's password");
+	h[0] = '\0';
+	if (pw != NULL && pw[0] != '\0') {
+		n = strlen(pw);
+		if (n > PASSWORD_MAX)
+			return ("a password is " __XSTRING(PASSWORD_MAX)
+			    " bytes at most (bcrypt reads no more)");
+		for (i = 0; i < n; i++)
+			if ((unsigned char)pw[i] < 0x20 || pw[i] == 0x7f)
+				return ("a password has no control characters");
+		/* Characters, not bytes: a UTF-8 one counts once. */
+		for (i = n = 0; pw[i] != '\0'; i++)
+			if (((unsigned char)pw[i] & 0xc0) != 0x80)
+				n++;
+		if (n < PASSWORD_MIN)
+			return ("a password is " __XSTRING(PASSWORD_MIN)
+			    " characters at least");
+		if (!pw_hash(pw, h, sizeof(h)))
+			return ("crypt(3) made no bcrypt hash");
+	}
+	u = ucl_object_copy(old);
+	if (h[0] != '\0')
+		put(u, "password", ucl_object_fromstring(h));
+	else
+		ucl_object_delete_key(u, "password");
+	explicit_bzero(h, sizeof(h));
+	ucl_object_unref(ucl_array_delete(list_of("users"), (ucl_object_t *)
+	    (uintptr_t)old));
+	ucl_array_append(list_of("users"), u);
+	if (store_save(USERS_FILE, udoc) != 0)
+		return ("the users could not be written");
+	return (NULL);
 }
 
 /* Is body a role that may be kept?  NULL, or what is wrong with it. */
@@ -930,6 +1084,9 @@ user_keep(struct http_request *req, ucl_object_t *body)
 	put(u, "created", ucl_object_fromint(old != NULL && ucl_object_lookup(
 	    old, "created") != NULL ? ucl_object_toint(ucl_object_lookup(old,
 	    "created")) : time(NULL)));
+	/* Its password is set apart (auth.c), and kept through an edit. */
+	if (old != NULL && pw_of(name) != NULL)
+		put(u, "password", ucl_object_fromstring(pw_of(name)));
 	ucl_object_unref(body);
 	if (old != NULL)
 		ucl_object_unref(ucl_array_delete(list_of("users"), (ucl_object_t *)

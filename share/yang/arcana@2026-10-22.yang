@@ -52,10 +52,10 @@ module arcana {
     }
     leaf action {
       type uint8 {
-        range "0..3";
+        range "0..5";
       }
       description
-        "One of action: 0 start 1 stop 2 restart 3 kill.";
+        "One of action: 0 start 1 stop 2 restart 3 kill 4 enable 5 disable.";
     }
     leaf address {
       type string {
@@ -981,7 +981,13 @@ module arcana {
       type string;
       description
         "Of a running jail: its allow.* parameters as the kernel has
-         them, each \"allow.name=0|1\" (jail-allow sets them).
+         them, each \"allow.name=0|1\" (jail-allow sets them).";
+    }
+    leaf boot {
+      type boolean;
+      description
+        "Of a jail defined: started at boot by rc.d/jail, jail_enable
+         being yes and jail_list empty or naming it.
          ";
     }
   }
@@ -1101,10 +1107,10 @@ module arcana {
       "One change to queue; the attributes its kind needs.";
     leaf kind {
       type uint8 {
-        range "0..47";
+        range "0..50";
       }
       description
-        "One of job-kind: 0 jail-action 1 address 2 service-action 3 service-config 4 pkg-upgrade 5 if-address 6 if-state 7 route 8 if-set 9 if-create 10 if-destroy 11 netgraph 12 wireguard 13 bird 14 if-vnet 15 kmod 16 zfs 17 zpool 18 mount 19 gpart 20 cam 21 sysctl 22 ipfw 23 bridge 24 geneve 25 process 26 pkg-clean 27 ipsec 28 pkg-install 29 ntp 30 rtadvd 31 ipsec-sa 32 jail-conf 33 neighbour 34 cert 35 ssh 36 carp 37 poudriere 38 clamav 39 suricata 40 nfs 41 iscsi 42 hast 43 sysfile 44 geom 45 smtpd 46 jail-allow 47 jail-base.";
+        "One of job-kind: 0 jail-action 1 address 2 service-action 3 service-config 4 pkg-upgrade 5 if-address 6 if-state 7 route 8 if-set 9 if-create 10 if-destroy 11 netgraph 12 wireguard 13 bird 14 if-vnet 15 kmod 16 zfs 17 zpool 18 mount 19 gpart 20 cam 21 sysctl 22 ipfw 23 bridge 24 geneve 25 process 26 pkg-clean 27 ipsec 28 pkg-install 29 ntp 30 rtadvd 31 ipsec-sa 32 jail-conf 33 neighbour 34 cert 35 ssh 36 carp 37 poudriere 38 clamav 39 suricata 40 nfs 41 iscsi 42 hast 43 sysfile 44 geom 45 smtpd 46 jail-allow 47 jail-base 48 reboot 49 speeder 50 monitor.";
     }
     leaf jail {
       type string {
@@ -1113,10 +1119,10 @@ module arcana {
     }
     leaf action {
       type uint8 {
-        range "0..3";
+        range "0..5";
       }
       description
-        "One of action: 0 start 1 stop 2 restart 3 kill.";
+        "One of action: 0 start 1 stop 2 restart 3 kill 4 enable 5 disable.";
     }
     leaf address {
       type string {
@@ -1541,10 +1547,10 @@ module arcana {
     }
     leaf kind {
       type uint8 {
-        range "0..47";
+        range "0..50";
       }
       description
-        "One of job-kind: 0 jail-action 1 address 2 service-action 3 service-config 4 pkg-upgrade 5 if-address 6 if-state 7 route 8 if-set 9 if-create 10 if-destroy 11 netgraph 12 wireguard 13 bird 14 if-vnet 15 kmod 16 zfs 17 zpool 18 mount 19 gpart 20 cam 21 sysctl 22 ipfw 23 bridge 24 geneve 25 process 26 pkg-clean 27 ipsec 28 pkg-install 29 ntp 30 rtadvd 31 ipsec-sa 32 jail-conf 33 neighbour 34 cert 35 ssh 36 carp 37 poudriere 38 clamav 39 suricata 40 nfs 41 iscsi 42 hast 43 sysfile 44 geom 45 smtpd 46 jail-allow 47 jail-base.";
+        "One of job-kind: 0 jail-action 1 address 2 service-action 3 service-config 4 pkg-upgrade 5 if-address 6 if-state 7 route 8 if-set 9 if-create 10 if-destroy 11 netgraph 12 wireguard 13 bird 14 if-vnet 15 kmod 16 zfs 17 zpool 18 mount 19 gpart 20 cam 21 sysctl 22 ipfw 23 bridge 24 geneve 25 process 26 pkg-clean 27 ipsec 28 pkg-install 29 ntp 30 rtadvd 31 ipsec-sa 32 jail-conf 33 neighbour 34 cert 35 ssh 36 carp 37 poudriere 38 clamav 39 suricata 40 nfs 41 iscsi 42 hast 43 sysfile 44 geom 45 smtpd 46 jail-allow 47 jail-base 48 reboot 49 speeder 50 monitor.";
     }
     leaf title {
       type string;
@@ -1821,10 +1827,10 @@ module arcana {
   grouping attr-action {
     leaf action {
       type uint8 {
-        range "0..3";
+        range "0..5";
       }
       description
-        "One of action: 0 start 1 stop 2 restart 3 kill.";
+        "One of action: 0 start 1 stop 2 restart 3 kill 4 enable 5 disable.";
     }
   }
 
@@ -4874,6 +4880,60 @@ module arcana {
     input {
       uses attr-names;
       uses attr-jail;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc speeder {
+    fam:command 69;
+    fam:auth;
+    description
+      "UDPspeeder's FEC relay (speederv2) on this host, as a JSON object:
+       \"installed\", \"enabled\", \"running\"; \"flags\" (speederv2_flags, the
+       key left out), and read from them \"role\" (client or server),
+       \"listen\", \"remote\", \"mode\", \"mtu\", \"fec\" (the ratios as given),
+       \"timeout\", \"report_every\", \"fifo\", \"key\" (whether one is set, never
+       what), \"extra\" (the words not understood); \"fec_groups\" (the
+       redundant packets the relay adds for each group size, as it
+       logged them at its start); \"report\" (the last counters the relay
+       logged with --report: each way, the packets and bytes it took in
+       and sent, the overhead the FEC added, in all and over the last
+       interval with its rates); \"series\" (each interval between two
+       reports since its last start, the oldest first: the time, the
+       overhead to the server and to the client, the plain rates each
+       way); \"log\" (its last lines).  Of the host,
+       or with jail of that jail.  Nothing is changed.";
+    input {
+      uses attr-names;
+      uses attr-jail;
+    }
+    output {
+      uses attr-ok;
+      uses attr-error;
+      uses attr-json;
+      uses attr-trace;
+    }
+  }
+
+  rpc monitors {
+    fam:command 70;
+    fam:auth;
+    description
+      "The admin's tunnel monitors (monitor jobs) as a JSON object:
+       \"monitors\", each as the sdwan read has a target (id, address,
+       family, fib, state, since, interval, size, eval, dscp, sent,
+       received, misses, last_rtt, now, samples, kept) with its jail,
+       interface, history, down, up and tca; \"probing\".  With after,
+       the samples after that time alone.  A monitor that goes down or
+       comes up is an event, monitor; a metric over its threshold or
+       under it again, monitor-threshold.  Nothing is changed.";
+    input {
+      uses attr-after;
     }
     output {
       uses attr-ok;

@@ -699,6 +699,40 @@ part_shell(void)
 	    "'owner'))", 10);
 	ATF_CHECK(js_true("document.querySelector('header .who-user')?."
 	    "textContent.includes('admin')"));
+	/* The account: a button at the bar's end with the name and the
+	 * role; its menu says who is signed in and holds Log out. */
+	ATF_CHECK(js_true("document.querySelector('header .acct-btn .acct-id "
+	    "small')?.textContent === 'owner' && !document.querySelector("
+	    "'.acct-menu.open')"));
+	shot("0a-account");
+	run("document.querySelector('header .acct-btn').click()");
+	wait_js("document.querySelector('.acct-menu.open') && document."
+	    "querySelector('.acct-menu.open .acct-who').textContent.includes("
+	    "'admin') && document.querySelector('.acct-menu.open button["
+	    "data-act=logout]')", 5);
+	shot("0b-account-menu");
+	/* A password of the console's own, from that menu: two that are
+	 * not the same refused, then set; the users table says so. */
+	run("document.querySelector('.acct-menu.open button[data-act="
+	    "password]').click()");
+	wait_js("document.querySelector('.modal form[data-form=password-set]"
+	    "') && !document.querySelector('.acct-menu.open')", 5);
+	run("const f = document.querySelector('form[data-form=password-set]');"
+	    " f.password.value = 'a long lab password'; f.again.value = "
+	    "'another lab password'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal .err')?.textContent.includes("
+	    "'not the same')", 5);
+	shot("0b1-password");
+	run("const f = document.querySelector('form[data-form=password-set]');"
+	    " f.password.value = 'a long lab password'; f.again.value = "
+	    "'a long lab password'; f.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('.toast')].some(t => t.textContent.includes("
+	    "'admin password set')) && [...document.querySelectorAll("
+	    "'table.users tbody tr')].some(tr => tr.textContent.includes("
+	    "'admin') && tr.textContent.includes('password'))", 15);
+	ATF_CHECK(system("grep -q '\"password\": *\"\\$2b\\$' "
+	    "data/users.json") == 0);
 	run("document.querySelector('button[data-act=user-add]').click()");
 	wait_js("document.querySelector('.modal form[data-form=user] "
 	    "input[name=tenant]') !== null && document.querySelector('.modal "
@@ -811,6 +845,22 @@ part_shell(void)
 	wait_js("document.querySelector('.set-body')?.textContent.includes("
 	    "'not one of a cluster') && !document.querySelector("
 	    "'.set-body .notice.bad')", 20);
+	/* Signed in with the password: the page offers it now, and the
+	 * session is limited as the token's was. */
+	run("document.querySelector('button[data-act=logout]').click()");
+	wait_js("document.querySelector('form[data-form=login-password]')", 10);
+	run("const f = document.querySelector('form[data-form=login-password]'"
+	    "); f.user.value = 'admin'; f.password.value = 'a long lab "
+	    "password'; f.requestSubmit();");
+	wait_js("document.querySelector('.shell')", 20);
+	go("/#/settings/aaa/keys");
+	wait_js("document.querySelector('.set-body .keys-token')?.textContent"
+	    ".includes('opened with a password') && !document.querySelector("
+	    "'form[data-form=add-key]')", 20);
+	run("document.querySelector('header .acct-btn').click()");
+	wait_js("document.querySelector('.acct-menu.open') && !document."
+	    "querySelector('.acct-menu.open button[data-act=password]')", 5);
+	run("document.querySelector('header .acct-btn').click()");
 	run("document.querySelector('button[data-act=logout]').click()");
 	click_when("button[data-act=login]", 10);
 	wait_js("document.querySelector('.shell')", 20);
@@ -1116,13 +1166,16 @@ part_hosts(void)
 	    "querySelector('.dock-body').getBoundingClientRect().top - 200) < 3"
 	    " && JSON.parse(localStorage.getItem('arc_sizes')).rail === 400", 5);
 	shot("3a-resized");
+	/* One handle at a time: the page may draw again between them. */
 	run("document.querySelector('.rail > .resizer').dispatchEvent("
-	    "new MouseEvent('dblclick', { bubbles: true }));"
-	    "document.querySelector('.dock > .resizer').dispatchEvent("
 	    "new MouseEvent('dblclick', { bubbles: true }));");
 	wait_js("Math.round(document.querySelector('.rail')."
-	    "getBoundingClientRect().width) === 250 && "
-	    "localStorage.getItem('arc_sizes') === '{}'", 5);
+	    "getBoundingClientRect().width) === 250 && !('rail' in JSON.parse("
+	    "localStorage.getItem('arc_sizes')))", 15);
+	wait_js("document.querySelector('.dock > .resizer')", 15);
+	run("document.querySelector('.dock > .resizer').dispatchEvent("
+	    "new MouseEvent('dblclick', { bubbles: true }));");
+	wait_js("localStorage.getItem('arc_sizes') === '{}'", 15);
 
 	/* The workflow and the raw output of jail(8): sending the queue
 	 * opened the dock, and the graph fills in as the job runs. */
@@ -1167,6 +1220,18 @@ part_hosts(void)
 	    "etc/jail.conf -c web')", 5);
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	run("document.querySelector('.dock > header').click()");
+	/* Started at boot or not: rc.conf's jail_list, the jail as it is. */
+	wait_js("document.querySelector('#j-web button[data-act=jail-boot]"
+	    "[data-value=enable]')", 20);
+	run("document.querySelector('#j-web button[data-act=jail-boot]')"
+	    ".click()");
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 100 && system("grep -q '^jail_list=\"web\"$' rc.conf && "
+	    "grep -q '^jail_enable=\"YES\"$' rc.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 100, "web is not in jail_list");
+	wait_js("document.querySelector('#j-web button[data-act=jail-boot].on"
+	    "[data-value=disable]')", 20);
 
 	/* Previewing a persistent address change shows the diff. */
 	run("document.querySelector('#j-db').click()");
@@ -1224,9 +1289,9 @@ part_hosts(void)
 	    "t.textContent.includes('list services')) && document."
 	    "querySelector('.dock.open .trace.o-live .node.k-exec."
 	    "st-incomplete') && document.querySelectorAll('.services .svc')"
-	    ".length === 2", 20);
-	ATF_CHECK(js_true("[...document.querySelectorAll('.dock.open .trace "
-	    ".node.k-exec')].some(n => n.textContent.includes('status'))"));
+	    ".length === 2 && [...document.querySelectorAll('.dock.open "
+	    ".trace .node.k-exec')].some(n => n.textContent.includes("
+	    "'status'))", 20);
 	shot("6a-services-live");
 	(void)unlink("hold.status");
 	wait_js("[...document.querySelectorAll('.dock .op.o-ok')].some(t => "
@@ -1241,10 +1306,14 @@ part_hosts(void)
 	 */
 	ATF_REQUIRE((fp = fopen("fake-pkg", "r")) != NULL);
 	fclose(fp);
+	/* Held until the test lets it go, not for a time a busy host may
+	 * outlast before Cancel is pressed. */
+	put("hold.pkg", "");
 	ATF_REQUIRE(system("cp fake-pkg fake-pkg.fast && "
-	    "{ echo '#!/bin/sh'; echo 'sleep 3'; echo 'exec ./fake-pkg.fast "
-	    "\"$@\"'; } > fake-pkg.slow && chmod +x fake-pkg.slow && "
-	    "mv fake-pkg.slow fake-pkg") == 0);
+	    "{ echo '#!/bin/sh'; echo 'i=0; while [ -e hold.pkg ] && "
+	    "[ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done'; echo 'exec "
+	    "./fake-pkg.fast \"$@\"'; } > fake-pkg.slow && chmod +x "
+	    "fake-pkg.slow && mv fake-pkg.slow fake-pkg") == 0);
 	/* Asked with GET, or over the console's socket. */
 	run("window.pkgAsked = 0; const of = window.fetch; window.fetch = "
 	    "function (u, o) { if (String(u).includes('/packages')) "
@@ -1261,11 +1330,21 @@ part_hosts(void)
 	ATF_CHECK(js_true("window.pkgAsked === 1"));
 	/* Given up: the entry ends as cancelled, and the tab says so. */
 	run("document.querySelector('.dock > header').click()");
-	wait_js("document.querySelector('.ops button[data-act=op-cancel]')", 5);
+	/* The packages read's own entry: on a busy host other reads may
+	 * be on their way too, each with its own cancel. */
+	wait_js("(window.pkgOp = [...document.querySelectorAll('.ops .op')]"
+	    ".find(o => o.querySelector('.t')?.textContent.includes('packages')"
+	    " && o.querySelector('button[data-act=op-cancel]'))) !== undefined",
+	    5);
 	shot("6a-cancel");
-	run("document.querySelector('.ops button[data-act=op-cancel]').click()");
-	wait_js("!document.querySelector('.ops button[data-act=op-cancel]') && "
-	    "document.querySelector('.ops .op.o-failed')", 5);
+	run("window.pkgId = window.pkgOp.querySelector('button[data-act="
+	    "op-cancel]').dataset.arg; window.pkgOp.querySelector('button"
+	    "[data-act=op-cancel]').click()");
+	wait_js("[...document.querySelectorAll('.ops .op.o-failed')].some(o =>"
+	    " o.querySelector('.t')?.textContent.includes('packages')) && "
+	    "!document.querySelector('.ops button[data-act=op-cancel][data-arg="
+	    "\"' + window.pkgId + '\"]')", 15);
+	(void)unlink("hold.pkg");
 	run("document.querySelector('.dock > header').click()");
 	ATF_REQUIRE(system("mv fake-pkg.fast fake-pkg") == 0);
 	/*
@@ -1524,6 +1603,59 @@ part_nettab(void)
 	(void)fp;
 	(void)i;
 
+	/* Reboot, on the System tab, asks for the host's name typed; closed
+	 * here, never sent: this agent has no stand-in for shutdown(8). */
+	run("document.querySelector('button.tab[data-arg=system]').click()");
+	click_when("button[data-act=host-reboot]", 10);
+	wait_js("document.querySelector('form[data-form=confirm].danger') && "
+	    "document.querySelector('form[data-form=confirm] h2').textContent "
+	    "=== 'Reboot the host' && document.querySelector("
+	    "'form[data-form=confirm] input[name=typed]')", 5);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('form[data-form=confirm]')", 5);
+
+	/*
+	 * Network › Tunnel quality: no tunnel here, so a monitor is set
+	 * as a job would; its row, changed by its dialog (kept in
+	 * monitors.json), and stopped, asked first.
+	 */
+	run("window.mset = false; fetch('/api/servers').then(r => r.json())"
+	    ".then(j => fetch('/api/servers/' + j.servers[0].id + '/jobs', { "
+	    "method: 'POST', headers: { 'Content-Type': 'application/json', "
+	    "'X-Arcana': '1' }, body: JSON.stringify({ jobs: [{ kind: "
+	    "'monitor', verb: 'set', args: ['name=gre9', 'interface=gre9', "
+	    "'address=192.0.2.9', 'loss-max=2'] }] }) })).then(r => { "
+	    "window.mset = r.ok; });");
+	wait_js("window.mset === true", 10);
+	run("document.querySelector('button.tab[data-arg=network]').click()");
+	click_when("button[data-act=net-kind][data-arg=monitors]", 10);
+	wait_js("[...document.querySelectorAll('table.mon tbody tr.mon')]"
+	    ".some(r => r.textContent.includes('gre9') && r.textContent."
+	    "includes('192.0.2.9'))", 20);
+	shot("7t-tunnel-quality");
+	click_when("button[data-act=mon-edit][data-arg=gre9]", 10);
+	wait_js("document.querySelector('form[data-form=mon-set] input"
+	    "[name=address]')?.value === '192.0.2.9' && document.querySelector("
+	    "'form[data-form=mon-set] input[name=loss-max]')?.value === '2'",
+	    10);
+	run("const f = document.querySelector('form[data-form=mon-set]'); "
+	    "f.interval.value = '1000'; f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '\"interval\":1000' "
+	    "monitors.json") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the monitor is not changed");
+	click_when("button[data-act=mon-remove][data-arg=gre9]", 20);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')"
+	    ".requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && access("monitors.json", F_OK) == 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the monitor is not removed");
+	wait_js("!document.querySelector('table.mon tbody tr.mon:not(.off)')",
+	    20);
+
 	/* The interfaces, in the network tab: an address is added to one
 	 * through the queue, as any change is. */
 	run("document.querySelector('button.tab[data-arg=network]').click()");
@@ -1557,8 +1689,12 @@ part_nettab(void)
 	run("const i = document.querySelector('input[data-input=filter]'); "
 	    "i.value = '*:22'; i.dispatchEvent(new Event('input', { bubbles: "
 	    "true }));");
-	wait_js("[...document.querySelectorAll('.stage table.net tbody tr')]"
-	    ".some(r => r.textContent.includes('sshd'))", 10);
+	/* Port 22 in every row: the table drawn for this filter, not the
+	 * one before, which a 22 anywhere let in. */
+	wait_js("(rows => rows.length > 0 && rows.some(r => r.textContent."
+	    "includes('sshd')) && rows.every(r => /:22(?![0-9])/.test(r."
+	    "textContent)))([...document.querySelectorAll('.stage table.net "
+	    "tbody tr')])", 10);
 	run("const i = document.querySelector('input[data-input=filter]'); "
 	    "i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true "
 	    "}));");
@@ -1639,9 +1775,11 @@ part_nettab(void)
 	    "f.elements['net.inet.igmp.default_version'].value = '2'; f."
 	    "elements['net.inet.igmp.sendra'].checked = false; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	for (i = 0; i < 100 && system("grep -q 'sysctl net.inet.igmp.sendra=0' "
+	/* Set live first, kept in sysctl.conf after: wait for both. */
+	for (i = 0; i < 300 && system("grep -q 'sysctl net.inet.igmp.sendra=0' "
 	    "kld.log && grep -q 'sysctl net.inet.igmp.default_version=2' "
-	    "kld.log") != 0; i++)
+	    "kld.log && grep -q 'net.inet.igmp.sendra=0' sysctl.conf") != 0;
+	    i++)
 		usleep(100000);
 	if (system("grep -q 'sysctl net.inet.igmp.sendra=0' kld.log && "
 	    "grep -q 'sysctl net.inet.igmp.default_version=2' kld.log && ! "
@@ -1953,8 +2091,9 @@ part_nettab(void)
 	run("const f = document.querySelector('form[data-form=kept-rename]'); "
 	    "f.name.value = 'edge2_lan'; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	for (i = 0; i < 100 && system("grep -q '^route_edge2_lan=' rc.conf") !=
-	    0; i++)
+	/* The new name is written first, the old one taken out after. */
+	for (i = 0; i < 100 && system("grep -q '^route_edge2_lan=' rc.conf && "
+	    "! grep -q lan_fib2 rc.conf") != 0; i++)
 		usleep(100000);
 	ATF_CHECK(system("grep -q '^route_edge2_lan=\"10.88.0.0/16 10.0.0.1 "
 	    "-fib 2 -ifa 10.0.0.9 -metric 5 -weight 20\"$' rc.conf && ! grep "
@@ -3442,6 +3581,74 @@ part_dma(void)
 	shot("0c-dma");
 }
 
+/* The FEC relay tab: its flags from the form, in safe mode, the key
+ * never on the page; what the FEC costs, from the relay's report; the
+ * ratios changed. */
+static void
+part_relay(void)
+{
+	int	i;
+
+	run("document.querySelector('button.tab[data-arg=relay]').click()");
+	wait_js("document.querySelector('section.relayview form[data-form="
+	    "rl-conf]')", 20);
+	run("const f = document.querySelector('form[data-form=rl-conf]'); "
+	    "f.listen.value = '127.0.0.1:51821'; f.remote.value = "
+	    "'192.0.2.1:14350'; f.fec.value = '1:2,2:3,8:4,20:10'; f.mode.value "
+	    "= '1'; f.key.value = 'pwasecret'; f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^speederv2_flags=\"-c "
+	    "-l127.0.0.1:51821 -r192.0.2.1:14350 -k pwasecret --mode 1 "
+	    "-f1:2,2:3,8:4,20:10 --report 10 --fifo /var/run/speederv2/fifo\"$' "
+	    "rc.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the relay's flags are not written");
+	wait_js("[...document.querySelectorAll('table.relay-report td')].some("
+	    "t => t.textContent === '50.0 %') && document.querySelector("
+	    "'table.relay-groups') && document.querySelector('form[data-form="
+	    "rl-fec]')", 20);
+	ATF_CHECK(js_true("!document.body.innerHTML.includes('pwasecret') && "
+	    "document.querySelector('.relayview dl.kv').textContent.includes("
+	    "'set (not shown)')"));
+	run("const d = document.querySelector('.dock.open > header'); "
+	    "if (d) d.click();");
+	wait_js("!document.querySelector('.dock.open')", 5);
+	shot("8r-relay");
+	run("const f = document.querySelector('form[data-form=rl-fec]'); "
+	    "f.fec.value = '10:5'; f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q -- '-f10:5 ' rc.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the ratios are not kept");
+	/* The overhead's history, and what FEC does: two monitors, the
+	 * underlay's far relay host filled in from remote=, compared. */
+	wait_js("document.querySelector('figure.relay-series path.w1')", 20);
+	click_when("button[data-act=rl-compare]", 20);
+	wait_js("document.querySelector('form[data-form=rl-compare] input"
+	    "[name=raw]')?.value === '192.0.2.1'", 10);
+	run("const f = document.querySelector('form[data-form=rl-compare]'); "
+	    "f.tunnel.value = '10.9.9.2'; f.requestSubmit();");
+	queued_run();
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '\"fec-raw\"' monitors.json && "
+	    "grep -q '\"fec-tunnel\"' monitors.json && grep -q '10.9.9.2' "
+	    "monitors.json") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the comparison's monitors are not set");
+	wait_js("document.querySelector('table.relay-compare') && document."
+	    "querySelector('.relay-impact').textContent.includes('192.0.2.1')",
+	    20);
+	run("const d = document.querySelector('.dock.open > header'); "
+	    "if (d) d.click();");
+	shot("8s-relay-fec");
+	click_when("button[data-act=rl-compare-stop]", 10);
+	queued_run();
+	queued_run();
+	for (i = 0; i < 300 && access("monitors.json", F_OK) == 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the comparison's monitors stayed");
+}
+
 /* The Mail tab: OpenSMTPD's form rendered on the host; a table written. */
 static void
 part_mail(void)
@@ -4052,9 +4259,9 @@ part_storage(void)
 	    "kmod-keep]').dataset.arg; document.querySelector('table.kmods "
 	    "button[data-act=kmod-keep]').click()");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
-	    "t.textContent.includes(window.kept + ' into kld_list')) && "
-	    "document.querySelector('table.kmods button.on[data-act="
+	/* Done when the tab, read again after the job, has it kept: the
+	 * dock, just closed, may or may not open with the queue. */
+	wait_js("document.querySelector('table.kmods button.on[data-act="
 	    "kmod-forget][data-arg=\"' + window.kept + '\"]')", 20);
 	ATF_CHECK(system("grep -q '^kld_list=' rc.conf && test \"$(grep -c "
 	    "'^kldload' kld.log)\" = 1") == 0);
@@ -4712,18 +4919,15 @@ part_firewall(void)
 	    "${fwcmd} add 200 allow ip from any to any via lo0\\n' > fw.sh && "
 	    "printf 'firewall_script=\"%s/fw.sh\"\\n' \"$(pwd)\" >> rc.conf")
 	    == 0);
-	run("window.fwn = 0; window.fetch = function (u, o) { if (String(u)"
-	    ".includes('/net/ipfw')) window.fwn++; return window.fetch1(u, o); "
-	    "};");
-	run("document.querySelector('button.tab[data-arg=summary]').click()");
-	run("document.querySelector('button.tab[data-arg=firewall]').click()");
-	wait_js("window.fwn >= 1", 15);
-	run("window.fetch = window.fetch1;");
+	/* Read again: a read still on its way is not asked twice, so the
+	 * tab is refreshed until the page has the script's name. */
 	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-3\"]')."
 	    "click()");
-	wait_js("document.querySelector('button[data-act=fw-load-rc]') && "
-	    "document.querySelector('button[data-act=fw-load-rc]').title"
-	    ".includes('fw.sh')", 10);
+	wait_js("(() => { const b = document.querySelector('button[data-act="
+	    "fw-load-rc]'); if (b && b.title.includes('fw.sh')) return true; "
+	    "if (!window.fwk || Date.now() - window.fwk > 3000) { window.fwk "
+	    "= Date.now(); document.querySelector('button[data-act=refresh]')"
+	    "?.click(); } return false; })()", 30);
 	run("document.querySelector('button[data-act=fw-load-rc]').click()");
 	wait_js("document.querySelector('form[data-form=fw-text] textarea')"
 	    ".value === '# left out, the script\\'s own: fwcmd=\"/sbin/ipfw -q\""
@@ -5166,11 +5370,17 @@ part_firewall(void)
 	    == 0);
 	shot("1g-template");
 	/* Applied to the host, as lab2: checked, nothing written. */
+	/* The target first: the page draws again, then the value. */
 	run("const s = document.querySelector('select[data-input=tp-target]');"
 	    " s.value = s.options[1].value; s.dispatchEvent(new Event('input', "
-	    "{ bubbles: true })); const v = document.querySelector('input["
-	    "data-input=tp-val][data-arg=hostname]'); v.value = 'lab2'; v."
-	    "dispatchEvent(new Event('input', { bubbles: true }));");
+	    "{ bubbles: true }));");
+	wait_js("document.querySelector('input[data-input=tp-val][data-arg="
+	    "hostname]')", 10);
+	run("const v = document.querySelector('input[data-input=tp-val]["
+	    "data-arg=hostname]'); v.value = 'lab2'; v.dispatchEvent(new Event("
+	    "'input', { bubbles: true }));");
+	wait_js("document.querySelector('input[data-input=tp-val][data-arg="
+	    "hostname]')?.value === 'lab2'", 10);
 	click_when("button[data-act=tp-check]:not([disabled])", 10);
 	wait_js("document.querySelector('section.template .hcreport')?."
 	    "textContent.includes('what it would do') && [...document."
@@ -5575,7 +5785,7 @@ part_flows(void)
 	    20);
 	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
 	    ".click()");
-	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 22",
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 23",
 	    5);
 	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
 	    ".click()");
@@ -7270,6 +7480,7 @@ ATF_TC_BODY(pwa_storage, tc)
 	part_storage();
 	part_system();
 	part_mail();
+	part_relay();
 	part_dma();
 }
 ATF_TC_CLEANUP(pwa_storage, tc)
@@ -7864,13 +8075,18 @@ part_security(void)
 	wait_js("document.querySelector('table.secids') && document."
 	    "querySelector('table.secids').textContent.includes('Own rules "
 	    "(1)')", 10);
-	/* Removed, after asking. */
+	/* Removed, after asking; once the last change is applied, for the
+	 * page takes one at a time and drops another meanwhile. */
+	wait_js("document.querySelector('table.secids') && !document."
+	    "querySelector('table.secids.applying')", 30);
 	click_when("table.secids button[data-act=sec-remove]", 10);
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
 	wait_js("!document.querySelector('table.secids') && document."
 	    "querySelector('.secpage .empty')", 30);
 	click_when("button[data-act=sec-tab][data-arg=url]", 10);
+	wait_js("document.querySelector('table.secproxy') && !document."
+	    "querySelector('table.secproxy.applying')", 30);
 	click_when("table.secproxy button[data-act=sec-remove]", 10);
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]').requestSubmit()");

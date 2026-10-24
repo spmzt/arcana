@@ -662,7 +662,16 @@ job_finished(struct op *op, bool ok, const char *err)
 		refresh_ssh(s, false);
 		break;
 	case JOB_MAIL:
+		/* Installed, the host's plugins say so too. */
+		refresh_jails(s, false);
 		mail_refresh();
+		break;
+	case JOB_RELAY:
+		refresh_jails(s, false);
+		relay_refresh();
+		break;
+	case JOB_MONITOR:
+		monitors_refresh();
 		break;
 	case JOB_PROCESS:
 		refresh_procs(s, true);
@@ -1413,7 +1422,9 @@ jail_action(const char *jail, const char *action)
 	    "\"action\":\"%s\"}", qj, action) == -1)
 		abort();
 	free(qj);
-	if (!app.queue_on) {
+	/* At boot or not changes rc.conf alone: the jail is as it was. */
+	if (!app.queue_on && strcmp(action, "enable") != 0 && strcmp(action,
+	    "disable") != 0) {
 		jailui(s, jail)->pending = strcmp(action, "start") == 0 ?
 		    PEND_START : strcmp(action, "stop") == 0 ? PEND_STOP :
 		    strcmp(action, "restart") == 0 ? PEND_RESTART : PEND_KILL;
@@ -2301,7 +2312,8 @@ refresh_network(struct server *s, bool user)
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
 	    "bridges", "geneve", "nhgroups", "neighbours", "ipsec",
-	    "bridges", "interfaces", "multicast", "kept-routes" };
+	    "bridges", "interfaces", "multicast", "kept-routes",
+	    "interfaces" };
 	struct ctx	*c;
 	struct op	*op;
 	char		 url[640], title[160], fib[24], c0jail[270];
@@ -2563,8 +2575,10 @@ status_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	app.setup_required = jbool(o, "setup_required");
 	app.by_ldap = jbool(o, "by_ldap");
-	app.by_token = jbool(o, "by_token") || app.by_ldap;
+	app.by_password = jbool(o, "by_password");
+	app.by_token = jbool(o, "by_token") || app.by_ldap || app.by_password;
 	app.ldap_on = jbool(o, "ldap");
+	app.password_on = jbool(o, "password");
 	who_set(o);
 	origin_check(jstr(o, "origin"), jstr(o, "rp_id"));
 	if (jbool(o, "authenticated")) {
@@ -2593,7 +2607,9 @@ auth_done_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	app.auth_busy = false;
 	if (status == 200 && jbool(o, "authenticated")) {
 		app.by_ldap = jbool(o, "by_ldap");
-		app.by_token = jbool(o, "by_token") || app.by_ldap;
+		app.by_password = jbool(o, "by_password");
+		app.by_token = jbool(o, "by_token") || app.by_ldap ||
+		    app.by_password;
 		who_set(o);
 		app.invite_token[0] = '\0';
 		app.screen = SCREEN_CONSOLE;
@@ -2660,9 +2676,18 @@ login_token(const char *token)
 	free(body);
 }
 
-/* A directory's user and password: the console asks the directory. */
+/* How a limited session was opened, for what the page says of it. */
+const char *
+signed_in_how(void)
+{
+
+	return (app.by_ldap ? "by a directory's user" : app.by_password ?
+	    "with a password" : "with an API token");
+}
+
+/* A user and password: the console's own, or the directory's. */
 void
-login_ldap(const char *user, const char *password)
+login_password(const char *user, const char *password)
 {
 	char	*qu, *qp, *body;
 
@@ -2677,7 +2702,7 @@ login_ldap(const char *user, const char *password)
 	explicit_bzero(qp, strlen(qp));
 	free(qu);
 	free(qp);
-	api("POST", "/api/auth/login/ldap", body, auth_done_cb, NULL);
+	api("POST", "/api/auth/login/password", body, auth_done_cb, NULL);
 	explicit_bzero(body, strlen(body));
 	free(body);
 }
@@ -2821,6 +2846,12 @@ logout_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	app.screen = SCREEN_LOGIN;
 	app.auth_error[0] = '\0';
+	/* The reply is the status: which ways in the sign-in page offers. */
+	if (status == 200) {
+		app.ldap_on = jbool(o, "ldap");
+		app.password_on = jbool(o, "password");
+	}
+	app.by_token = app.by_ldap = app.by_password = false;
 }
 
 void

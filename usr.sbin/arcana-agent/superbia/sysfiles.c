@@ -122,6 +122,28 @@ shows(struct work *w, const char *cmd)
 	return (wtext(w, res.out));
 }
 
+/* ntpq -pn, with a timeout of its own (ntpq(8)'s "timeout"). */
+static const char *
+ntp_peers(struct work *w)
+{
+	struct execres	 res;
+	const char	*bin;
+	char		*argv[7];
+
+	if ((bin = tool(w, "ntpq")) == NULL)
+		return (NULL);
+	argv[0] = (char *)(uintptr_t)bin;
+	argv[1] = (char *)(uintptr_t)"-n";
+	argv[2] = (char *)(uintptr_t)"-c";
+	argv[3] = (char *)(uintptr_t)"timeout 500";
+	argv[4] = (char *)(uintptr_t)"-c";
+	argv[5] = (char *)(uintptr_t)"peers";
+	argv[6] = NULL;
+	if (run_exec(w, argv, &res) != 0 && res.outlen == 0)
+		return (NULL);
+	return (wtext(w, res.out));
+}
+
 static const struct sysfile *
 file_of(const char *name)
 {
@@ -146,7 +168,7 @@ file_json(struct work *w, const struct sysfile *f)
 		put_s(o, "text", wtext(w, v));
 	if (f->service != NULL) {
 		enabled = running = false;
-		service_state(w, f->service, &enabled, &running);
+		service_state(w, f->service, &running, &enabled);
 		put_s(o, "service", f->service);
 		ucl_object_insert_key(o, ucl_object_frombool(enabled),
 		    "enabled", 0, false);
@@ -350,20 +372,22 @@ do_system(struct work *w, const char *const *names, size_t n,
 		/* NTP: its servers as ntp.conf has them, its peers. */
 		o = ucl_object_typed_new(UCL_OBJECT);
 		enabled = running = false;
-		service_state(w, "ntpd", &enabled, &running);
+		service_state(w, "ntpd", &running, &enabled);
 		ucl_object_insert_key(o, ucl_object_frombool(enabled), "enabled",
 		    0, false);
 		ucl_object_insert_key(o, ucl_object_frombool(running), "running",
 		    0, false);
 		if ((v = slurp(w, opts.ntp_conf)) != NULL)
 			put_s(o, "conf", wtext(w, v));
-		if ((v = shows(w, "ntpq -pn")) != NULL)
+		/* Its peers, asked a second at most: an ntpd that will not
+		 * answer queries leaves ntpq waiting 5 s, twice. */
+		if ((v = ntp_peers(w)) != NULL)
 			put_s(o, "peers", v);
 		ucl_object_insert_key(top, o, "ntp", 0, false);
 		/* Linux compatibility: the service, its modules. */
 		o = ucl_object_typed_new(UCL_OBJECT);
 		enabled = running = false;
-		service_state(w, "linux", &enabled, &running);
+		service_state(w, "linux", &running, &enabled);
 		ucl_object_insert_key(o, ucl_object_frombool(enabled), "enabled",
 		    0, false);
 		ucl_object_insert_key(o, modules_json(linux, nitems(linux)),
@@ -384,7 +408,7 @@ do_system(struct work *w, const char *const *names, size_t n,
 		/* auditd. */
 		o = ucl_object_typed_new(UCL_OBJECT);
 		enabled = running = false;
-		service_state(w, "auditd", &enabled, &running);
+		service_state(w, "auditd", &running, &enabled);
 		ucl_object_insert_key(o, ucl_object_frombool(enabled), "enabled",
 		    0, false);
 		ucl_object_insert_key(o, ucl_object_frombool(running), "running",
@@ -883,7 +907,7 @@ do_sysfile_job(struct work *w, const struct arc_job_spec *sp,
 	 * back and is told again. */
 	if (f->service != NULL) {
 		enabled = running = false;
-		service_state(w, f->service, &enabled, &running);
+		service_state(w, f->service, &running, &enabled);
 		if (running || enabled) {
 			memset(&r, 0, sizeof(r));
 			if (do_service_action(w, f->service, f->action, &r) != 0 ||
@@ -937,7 +961,7 @@ sysfile_tell(struct work *w, const char *verb, const char **errp)
 	if ((f = file_of(verb)) == NULL || f->service == NULL)
 		return (0);
 	enabled = running = false;
-	service_state(w, f->service, &enabled, &running);
+	service_state(w, f->service, &running, &enabled);
 	if (!running && !enabled)
 		return (0);
 	memset(&r, 0, sizeof(r));

@@ -290,6 +290,8 @@ module: arcana-jobs
        |        |     +---w force?      boolean
        |        |     +---w pkg-ip?     uint32
        |        |     +---w pkg-repo?   string
+       |        +--:(reboot)
+       |        |  +---w reboot!
        |        +--:(jail-conf)
        |        |  +---w jail-conf!
        |        |     +---w verb        enumeration
@@ -383,11 +385,22 @@ module: arcana-jobs
        |        |     +---w args*   string
        |        |     +---w text?   string
        |        +--:(smtpd)
-       |           +---w smtpd!
-       |              +---w verb     enumeration
-       |              +---w jail?    string
-       |              +---w args*    string
-       |              +---w text?    string
-       |              +---w force?   boolean
+       |        |  +---w smtpd!
+       |        |     +---w verb     enumeration
+       |        |     +---w jail?    string
+       |        |     +---w args*    string
+       |        |     +---w text?    string
+       |        |     +---w force?   boolean
+       |        +--:(monitor)
+       |        |  +---w monitor!
+       |        |     +---w verb    enumeration
+       |        |     +---w args*   string
+       |        |     +---w jail?   string
+       |        +--:(speeder)
+       |           +---w speeder!
+       |              +---w verb    enumeration
+       |              +---w jail?   string
+       |              +---w args*   string
+       |              +---w safe?   boolean
        +--ro output
           +--ro id*   uint64

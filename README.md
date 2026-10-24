@@ -38,8 +38,8 @@ for the console.
 
 ## Building
 
-Base `make(1)` and `bsd.*.mk`, on FreeBSD 15.1 or later (15-STABLE and
-16-CURRENT among them).
+Base `make(1)` and `bsd.*.mk`, on FreeBSD 16.0 or later (16-CURRENT
+until 16.0 is released); FreeBSD 15 is not supported.
 
 For the host's programs (arcana-agent, arcanactl, arcana-enrol,
 jailconf):
@@ -71,6 +71,9 @@ For the console as well:
   `/usr/src/contrib/libucl` when the system sources are installed, or a
   checkout of the [0.9.4 release](https://github.com/vstakhov/libucl)
   named with `LIBUCL_SRC`;
+- a libyaml source tree, likewise compiled to wasm for the PWA's YAML:
+  `/usr/src/contrib/libyaml` with the system sources, or a checkout of
+  [libyaml](https://github.com/yaml/libyaml) named with `LIBYAML_SRC`;
 - optionally `www/chromium`, which includes chromedriver, for the browser
   test.
 
@@ -82,13 +85,13 @@ Then:
 
 ```sh
 cp config.mk.sample config.mk     # where Kore is, if not /usr/local
-make                              # LIBUCL_SRC=/path/to/libucl without /usr/src
+make                              # LIBUCL_SRC=, LIBYAML_SRC= without /usr/src
 make check                        # the test suite, with kyua(1)
 make install                      # PREFIX=/usr/local by default
 ```
 
 `make WITHOUT_CONSOLE=yes` builds only what a host runs, without
-Kore, emscripten or libucl's sources. The ports,
+Kore, emscripten or libucl's and libyaml's sources. The ports,
 `port/sysutils/arcana` (with a `CONSOLE` option) and `port/www/kore`,
 build the same way; `devel/cblink` comes from cblink's own tree.
 

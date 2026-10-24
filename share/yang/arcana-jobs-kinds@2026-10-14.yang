@@ -167,6 +167,15 @@ submodule arcana-jobs-kinds {
       enum jail-base {
         value 47;
       }
+      enum reboot {
+        value 48;
+      }
+      enum speeder {
+        value 49;
+      }
+      enum monitor {
+        value 50;
+      }
     }
     description
       "A kind of job, by its number in arcana.yaml's job-kind.";
@@ -184,7 +193,7 @@ submodule arcana-jobs-kinds {
           presence
             "This kind of job.";
           description
-            "A jail started, stopped, restarted or killed";
+            "A jail started, stopped, restarted or killed, or started at boot or not";
           leaf jail {
             type string;
             mandatory true;
@@ -197,6 +206,8 @@ submodule arcana-jobs-kinds {
               enum stop;
               enum restart;
               enum kill;
+              enum enable;
+              enum disable;
             }
             mandatory true;
             description
@@ -1489,6 +1500,14 @@ submodule arcana-jobs-kinds {
           }
         }
       }
+      case reboot {
+        container reboot {
+          presence
+            "This kind of job.";
+          description
+            "The host rebooted, a minute after (destroys: always)";
+        }
+      }
       case jail-conf {
         container jail-conf {
           presence
@@ -2088,6 +2107,72 @@ submodule arcana-jobs-kinds {
             type boolean;
             description
               "Force";
+          }
+        }
+      }
+      case monitor {
+        container monitor {
+          presence
+            "This kind of job.";
+          description
+            "A tunnel measured, or no longer, outside SD-WAN";
+          leaf verb {
+            type enumeration {
+              enum set;
+              enum remove;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+        }
+      }
+      case speeder {
+        container speeder {
+          presence
+            "This kind of job.";
+          description
+            "UDPspeeder's FEC relay configured, its ratios changed, started or stopped";
+          leaf verb {
+            type enumeration {
+              enum conf;
+              enum fec;
+              enum enable;
+              enum disable;
+              enum start;
+              enum stop;
+              enum restart;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
           }
         }
       }

@@ -366,6 +366,13 @@ view_system(struct html *h, struct server *s)
 {
 	const ucl_object_t	*o;
 
+	/* The host's power, before what is read: there while it comes. */
+	h_raw(h, "<section class=\"sysview\"><h3 class=\"secsub\">Power</h3>"
+	    "<p><button class=\"ghost small\" data-act=\"host-reboot\" "
+	    "title=\"Reboot this host: shutdown -r, a minute after\">Reboot"
+	    "</button> <span class=\"dim\">shutdown(8) -r, a minute after it "
+	    "is asked; never undone, so never in safe mode.</span></p>"
+	    "</section>");
 	if ((o = data(h, s)) == NULL)
 		return;
 	h_raw(h, "<section class=\"sysview\">");

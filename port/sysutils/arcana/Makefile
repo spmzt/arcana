@@ -56,9 +56,9 @@ do-test:
 
 .include <bsd.port.pre.mk>
 
-# FreeBSD 15.1 and later alone (15-STABLE, 16-CURRENT among them).
-.if ${OSVERSION} < 1501000
-IGNORE=		needs FreeBSD 15.1 or later
+# FreeBSD 16.0 and later alone (16-CURRENT among them).
+.if ${OSVERSION} < 1600000
+IGNORE=		needs FreeBSD 16.0 or later
 .endif
 
 .include <bsd.port.post.mk>

@@ -10,7 +10,7 @@ Measured against the port, security/suricata 8.0.7 with its default
 options: IPFW (divert), NETMAP, Lua (built in since 8.0), JA3/JA4, NSS,
 plugin support; **no profiling** (`Profiling enabled: no`, `Profiling
 rules enabled: no` in `suricata --build-info`), no Hyperscan. Arcana
-installs nothing by itself; FreeBSD 15.1 and later.
+installs nothing by itself; FreeBSD 16.0 and later.
 
 ## What there is
 

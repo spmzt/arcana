@@ -20,7 +20,7 @@ ARC_CLUSTER=	yes
 .error Kore must be built with tasks (TASKS=1): KORE_FEATURES is "${KORE_FEATURES}"
 .endif
 CFLAGS+=	-I${KORE_INCLUDE} ${KORE_FEATURES} ${UCL_CFLAGS} ${SSL_CFLAGS}
-LDADD+=		${UCL_LIBS} ${SSL_LDFLAGS} -lssl -lcrypto -lfetch
+LDADD+=		${UCL_LIBS} ${SSL_LDFLAGS} -lssl -lcrypto -lfetch -lcrypt
 
 # Configuration samples, the routes, and the rc.d(8) script.
 FILESGROUPS+=	CONF RC

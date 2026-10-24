@@ -766,6 +766,7 @@ view_network(struct html *h, struct server *s)
 		{ "nhgroups", "Load balance" }, { "neighbours", "Neighbours" },
 		{ "ipsec", "IPsec" }, { "span", "Span" }, { "carp", "CARP" },
 		{ "multicast", "Multicast" }, { "kept-routes", "Kept routes" },
+		{ "monitors", "Tunnel quality" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
@@ -823,8 +824,9 @@ view_network(struct html *h, struct server *s)
 		    "kept-routes\">Kept in rc.conf</button></nav>",
 		    app.net.kind == NET_ROUTES ? " on" : "", app.net.kind ==
 		    NET_KEPT ? " on" : "");
-	/* rc.conf's routes are of both families, read at once. */
-	if (app.net.kind != NET_KEPT) {
+	/* rc.conf's routes are of both families, read at once; so are
+	 * the tunnels measured. */
+	if (app.net.kind != NET_KEPT && app.net.kind != NET_MONITORS) {
 		h_raw(h, "<nav class=\"sub\">");
 		for (i = 0; i < 3 && !plug && app.net.kind != NET_SPAN; i++) {
 			static const int fams[] = { 0, 4, 6 };
@@ -921,6 +923,10 @@ view_network(struct html *h, struct server *s)
 	}
 	if (app.net.kind == NET_CARP) {
 		view_carp(h, s, jget(app.net.data, "data"));
+		return;
+	}
+	if (app.net.kind == NET_MONITORS) {
+		view_monitors(h, s, jget(app.net.data, "data.interfaces"));
 		return;
 	}
 	/*

@@ -3,7 +3,7 @@
 Asked for on 2026-10-19 ("Plan for supporting the ssl/ssh inspection
 too"), after the decisions of 2026-10-18 said SSL inspection is wanted;
 on 2026-10-20 the engine was chosen: SSLproxy, transparent. Nothing
-here is built yet. FreeBSD 15.1 and later only; Arcana installs
+here is built yet. FreeBSD 16.0 and later only; Arcana installs
 nothing by itself (a button the admin presses is fine); no pf.
 
 ## What there is today

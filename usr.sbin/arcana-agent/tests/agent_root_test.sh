@@ -132,24 +132,26 @@ atf_test_case jail_events_nested cleanup
 jail_events_nested_head()
 {
 	atf_set "descr" "a jail made inside another, an LNE in an LNE, is an" \
-	    "event when made and when removed (EVFILT_JAIL; PLAN-SDN-YANG" \
-	    "2.7.5)"
+	    "event when made and when removed (EVFILT_JAIL)"
 	atf_set "require.user" "root"
 	atf_set "is.exclusive" "true"
 }
+# The jail the nested events are made in, its own name.
+NJAIL=arcana-nested
+
 jail_events_nested_body()
 {
 	start_daemon
-	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
-	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist \
+	jls -j "$NJAIL" >/dev/null 2>&1 && atf_skip "a jail named $NJAIL exists"
+	atf_check -o ignore jail -c name="$NJAIL" path=/ vnet persist \
 	    children.max=1
-	atf_check -o ignore jexec "$YJAIL" jail -c name=inner path=/ persist
-	atf_check -o ignore jls -j "$YJAIL.inner"
-	atf_check -o ignore jexec "$YJAIL" jail -r inner
-	atf_check -o ignore jail -r "$YJAIL"
+	atf_check -o ignore jexec "$NJAIL" jail -c name=inner path=/ persist
+	atf_check -o ignore jls -j "$NJAIL.inner"
+	atf_check -o ignore jexec "$NJAIL" jail -r inner
+	atf_check -o ignore jail -r "$NJAIL"
 	sleep 0.5
 	atf_check -o save:ev.json "$JGC" -c "$SOCK" events
-	for j in "$YJAIL" "$YJAIL.inner"; do
+	for j in "$NJAIL" "$NJAIL.inner"; do
 		for st in running stopped; do
 			atf_check -o inline:"$j $st 1\n" sh -c "echo $j $st \$(grep -o '\"jail\":\"$j\",\"state\":\"$st\"' ev.json | wc -l | tr -d ' ')"
 		done
@@ -157,7 +159,7 @@ jail_events_nested_body()
 }
 jail_events_nested_cleanup()
 {
-	jail -r "$YJAIL" >/dev/null 2>&1
+	jail -r "$NJAIL" >/dev/null 2>&1
 	cleanup
 }
 
@@ -1724,11 +1726,60 @@ devd_watch_cleanup()
 	true
 }
 
+atf_test_case monitors_probe cleanup
+monitors_probe_head()
+{
+	atf_set "descr" "A tunnel monitor really probing: lo0 answers, up with samples of no loss; a gif's far end, found from the interface, does not, down, told as an event"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+monitors_probe_body()
+{
+	start_daemon
+	last=$("$JGC" -c "$SOCK" events | sed -E 's/^\{"last":([0-9]+).*/\1/')
+	atf_check -o match:done "$JGC" -c "$SOCK" monitor set name=lo \
+	    interface=lo0 address=127.0.0.1 interval=50 eval=200
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" monitor | grep -q '"state":"up"' && break
+		sleep 0.1
+	done
+	sleep 0.5
+	atf_check -o match:'"id":"lo","address":"127.0.0.1","family":"inet","fib":0,"state":"up"' \
+	    -o match:'"samples":\[\[[0-9]+,[0-9.e-]+,[0-9.e-]+,0(\.0*)?,' \
+	    "$JGC" -c "$SOCK" monitor
+	atf_check -o match:'"kind":"monitor","data":\{"id":"lo","address":"127.0.0.1","state":"up"' \
+	    "$JGC" -c "$SOCK" events "$last"
+	# A gif: its far end from the interface; nothing answers there.
+	g=$(ifconfig gif create)
+	echo "$g" > gif
+	atf_check ifconfig "$g" inet 10.250.99.1 10.250.99.2 tunnel 127.0.0.1 \
+	    127.0.0.2 up
+	atf_check -o match:"done +monitor set g on $g" "$JGC" -c "$SOCK" \
+	    monitor set name=g interface="$g" interval=50 timeout=100 down=2
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" monitor | grep -q '"id":"g"[^}]*"state":"down"' &&
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'"id":"g","address":"10.250.99.2","family":"inet","fib":0,"state":"down"' \
+	    "$JGC" -c "$SOCK" monitor
+	atf_check -o match:"\"kind\":\"monitor\",\"data\":\\{\"id\":\"g\",\"address\":\"10.250.99.2\",\"state\":\"down\",\"misses\":[0-9]+,\"interface\":\"$g\"" \
+	    "$JGC" -c "$SOCK" events "$last"
+	atf_check -o match:done "$JGC" -c "$SOCK" monitor remove name=g
+	atf_check -o match:done "$JGC" -c "$SOCK" monitor remove name=lo
+}
+monitors_probe_cleanup()
+{
+	[ -f gif ] && ifconfig "$(cat gif)" destroy 2>/dev/null
+	cleanup
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case devd_watch
 	atf_add_test_case lifecycle
 	atf_add_test_case jail_events_nested
+	atf_add_test_case monitors_probe
 	atf_add_test_case jail_allow_live
 	atf_add_test_case live_address
 	atf_add_test_case aliases

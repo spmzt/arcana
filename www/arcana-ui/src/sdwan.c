@@ -2800,9 +2800,10 @@ ms(double v, char *buf, size_t len)
 	return (buf);
 }
 
-/* The last samples' delay as a line, loss as marks under it. */
-static void
-spark(struct html *h, const ucl_object_t *samples)
+/* The last samples' delay as a line, loss as marks under it (the
+ * tunnel monitors' view draws them so too). */
+void
+probe_spark(struct html *h, const ucl_object_t *samples)
 {
 	const ucl_object_t	*s;
 	double			 max, v, loss;
@@ -3244,7 +3245,7 @@ view_paths(struct html *h)
 			h_fmt(h, "<td class=\"num\">%lld / %lld</td><td>",
 			    (long long)jint(tg, "received", 0), (long long)jint(
 			    tg, "sent", 0));
-			spark(h, jget(tg, "samples"));
+			probe_spark(h, jget(tg, "samples"));
 			h_raw(h, "</td></tr>");
 		}
 		h_raw(h, "</tbody></table>");

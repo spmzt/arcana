@@ -4,7 +4,7 @@ Asked for on 2026-10-20 ("Plan integration support for opensmtpd
 too"), then built the same day (agent 0.162.0, console 0.236.0):
 phases 1, 2, 4 (filters as installed, the smart host) and the queue's
 actions of 3; left: the counters as graphs, a fault when the queue
-grows, and phase 5's restart on a renewed certificate. FreeBSD 15.1 and later only; Arcana
+grows, and phase 5's restart on a renewed certificate. FreeBSD 16.0 and later only; Arcana
 installs nothing by itself (a button the admin presses is fine).
 
 ## What there is today

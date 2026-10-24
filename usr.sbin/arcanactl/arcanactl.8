@@ -101,6 +101,23 @@ only configured ones.
 Change the jail's state.
 .Cm kill
 removes the jail without running its stop scripts.
+.It Cm enable | disable Ar jail
+Start the jail at boot, or not, by
+.Xr rc.conf 5 Ns 's
+.Va jail_list
+and
+.Va jail_enable ,
+as rc.d/jail reads them; the running jail is left as it is.
+rc.d/jail starts every jail when
+.Va jail_list
+is empty, so an empty list is never left: disabling one of all makes
+the list every other jail, enabling one with
+.Va jail_enable
+off makes it the list alone, and disabling the last one named turns
+.Va jail_enable
+off.
+.Nm list
+says of each jail whether it starts at boot.
 .It Cm address add | remove Oo Fl lnp Oc Oo Fl i Ar interface Oc Ar jail Ar address Ns Op / Ns Ar len
 Add or remove an address:
 .Fl l
@@ -579,6 +596,105 @@ Enabled and started, or stopped and disabled.
 .It Cm smtpd update Ar table
 .Xr smtpctl 8 Ap s
 own, as it takes them.
+.It Cm monitor
+The tunnels measured outside SD-WAN, as JSON: each monitor with its
+address, interface, routing table, state (up, down, unknown, error),
+its probes sent and answered, the sample in progress and the samples
+kept, each the one-way delay (half the mean round trip), the delay
+variation and the loss of one interval, with the least and the most.
+Nothing is changed.
+.It Cm monitor set Cm name Ns = Ns Ar name Oo Ar key Ns = Ns Ar value ... Oc
+A tunnel measured from now on, by ICMP echo through its routing table,
+or a monitor of that name changed (its samples kept when it probes the
+same address the same way):
+.Cm interface Ns = ,
+.Cm address Ns =
+(on the host, a point-to-point interface's far end when not given, a
+gre's or a gif's inner address),
+.Cm fib Ns =
+(the interface's when not given),
+.Cm interval Ns = ,
+.Cm size Ns = ,
+.Cm dscp Ns = ,
+.Cm eval Ns =
+(the milliseconds a sample is of),
+.Cm history Ns =
+(samples kept),
+.Cm down Ns =
+and
+.Cm up Ns =
+(misses and answers in a row that make it down or up),
+.Cm timeout Ns = ,
+and the thresholds
+.Cm delay-max Ns =
+and
+.Cm ipdv-max Ns =
+(milliseconds),
+.Cm loss-max Ns =
+(per cent) with
+.Cm damping Ns =
+(samples in a row).
+With
+.Fl j ,
+probed from that vnet jail's network.
+Kept for the next start; an SD-WAN apply never touches it.
+A monitor that goes down or comes up is an event,
+.Cm monitor ;
+a metric over its threshold, or under it again,
+.Cm monitor-threshold .
+.It Cm monitor remove Cm name Ns = Ns Ar name
+No longer measured.
+.It Cm speeder
+UDPspeeder's FEC relay, the
+.Nm speederv2
+service of net/udpspeeder, of the host or of
+.Fl j Ns 's
+jail, as JSON: installed, enabled and running; its flags, the key left
+out, and what they say (role, listen, remote, mode, mtu, fec, timeout,
+report, fifo, whether a key is set, the extra words); the redundant
+packets it adds for each group size, as it logged them at its start;
+with
+.Fl -report ,
+its last counters each way, the bytes it took in plain and sent with
+FEC, and the overhead the FEC added, in all and over the last interval
+with its rates; its last lines in the log.
+Nothing is changed.
+.It Cm speeder conf Ar name Ns = Ns Ar value ...
+The relay's flags written to
+.Va speederv2_flags :
+.Cm role Ns = Ns Cm client | server ,
+.Cm listen Ns = Ns Ar address : Ns Ar port ,
+.Cm remote Ns = Ns Ar address : Ns Ar port
+(those three are needed),
+.Cm mode Ns = Ns Cm 0 | 1 ,
+.Cm mtu Ns = ,
+.Cm fec Ns = Ns Ar x : Ns Ar y Ns Op , Ns Ar x : Ns Ar y ... ,
+.Cm timeout Ns = ,
+.Cm report Ns = Ns Ar seconds ,
+.Cm fifo Ns = Ns Ar path ,
+.Cm key Ns = Ns Ar key
+(kept when not given;
+.Cm nokey
+takes it away; never in a trace),
+.Cm extra Ns = Ns Ar words
+(options of speederv2's own, such as
+.Fl -jitter
+or
+.Fl -sock-buf ,
+passed on).
+Each value is checked word by word, as rc.subr hands them to a shell.
+The relay is restarted when it runs.
+.It Cm speeder fec Ar x : Ns Ar y Ns Op , Ns Ar x : Ns Ar y ...
+The ratios changed: kept in the flags and, where the relay runs with a
+.Fl -fifo ,
+sent to it there, the tunnel kept up; without one, it is restarted.
+.It Cm speeder enable | disable | start | stop | restart
+.Va speederv2_enable
+set and the relay started, or stopped and unset; or the service told.
+With
+.Fl s ,
+on the host, a job of these is undone when not confirmed: the two
+variables and whether it ran put back.
 .It Cm netstore Op Cm nfs | Cm iscsi | Cm hast
 The host's network storage services, as JSON: the NFS server, NFSv4 alone
 .Xr ( nfsd 8 ,
@@ -1719,6 +1835,15 @@ a probe a hop, a second's wait, 30 hops at most, as JSON.
 The console's Traceroute asks again and again, as
 .Xr mtr 8
 does.
+.It Cm reboot
+Reboot the host, by
+.Xr shutdown 8
+.Fl r
+a minute from now: the job is done when the shutdown is set, so its
+answer comes back before the host goes.
+It is never undone, so not with
+.Fl s ,
+and a jail is restarted, not rebooted.
 .It Cm interface Ar name Cm mtu Ar number
 .It Cm interface Ar name Cm description Ar text
 Set an interface's MTU or its description; an empty text takes the

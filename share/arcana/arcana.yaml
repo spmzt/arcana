@@ -527,6 +527,33 @@ definitions:
           left to merge; the jail is to be restarted after.  With force, past OSVERSION for
           the other packages (IGNORE_OSVERSION); pkg-ip as pkg -4 or
           -6.  Needs FreeBSD 15.1 or later in the jail.
+      - name: reboot
+        doc: |
+          The host itself rebooted, by shutdown(8) -r a minute from
+          now, so that the job's answer reaches whoever asked before
+          the host goes; it is not undone, so never in safe mode, and
+          a jail is restarted (jail-action), not rebooted.
+      - name: speeder
+        doc: |
+          UDPspeeder's FEC relay, a plugin (speederv2, its rc service):
+          conf (args: role=client|server, listen=, remote=, mode=,
+          mtu=, fec=, timeout=, report=, fifo=, key=, nokey, extra=,
+          written to speederv2_flags, restarted when it runs), fec
+          (args: the ratios, sent to the running relay by its fifo and
+          kept in the flags), enable, disable, start, stop, restart.
+          Of the host, or with jail of that jail.  Undone in safe mode
+          on the host: the rc.conf variables and whether it ran.
+      - name: monitor
+        doc: |
+          A tunnel measured outside SD-WAN: set (args: name=, and
+          interface=, address= (on the host, a point-to-point
+          interface's far end when not given), fib= (the interface's
+          when not given), interval=, size=, dscp=, eval=, history=,
+          down=, up=, timeout=, delay-max= and ipdv-max= (ms),
+          loss-max= (per cent), damping=) or remove (args: name=).
+          Probed by ICMP echo from the host, or with jail from that
+          vnet jail's network; kept in monitors.json beside
+          history.conf for the next start; never touched by SD-WAN.
   - name: job-state
     type: enum
     entries:
@@ -738,6 +765,17 @@ definitions:
       - restart
       - name: kill
         doc: Remove the jail with jail_remove(2), without its stop scripts.
+      - name: enable
+        doc: |
+          Started at boot from now: rc.conf's jail_list names it, and
+          jail_enable is yes.  With jail_enable off before, the list is
+          the jail alone, not every jail rc.d/jail would start with an
+          empty one; with an empty list and jail_enable on, every jail
+          starts already and nothing is written.
+      - name: disable
+        doc: |
+          Not started at boot: taken out of jail_list.  An empty list
+          (every jail started) becomes every jail defined but this one.
   - name: jail-state
     type: enum
     entries:
@@ -1505,6 +1543,11 @@ attribute-sets:
         doc: |
           Of a running jail: its allow.* parameters as the kernel has
           them, each "allow.name=0|1" (jail-allow sets them).
+      - name: boot
+        type: bool
+        doc: |
+          Of a jail defined: started at boot by rc.d/jail, jail_enable
+          being yes and jail_list empty or naming it.
 
   - name: param
     attributes:
@@ -3900,6 +3943,58 @@ operations:
         attributes:
           - names
           - jail
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+  - name: speeder
+    attribute-set: arcana
+    auth: true
+    doc: |
+      UDPspeeder's FEC relay (speederv2) on this host, as a JSON object:
+      "installed", "enabled", "running"; "flags" (speederv2_flags, the
+      key left out), and read from them "role" (client or server),
+      "listen", "remote", "mode", "mtu", "fec" (the ratios as given),
+      "timeout", "report_every", "fifo", "key" (whether one is set, never
+      what), "extra" (the words not understood); "fec_groups" (the
+      redundant packets the relay adds for each group size, as it
+      logged them at its start); "report" (the last counters the relay
+      logged with --report: each way, the packets and bytes it took in
+      and sent, the overhead the FEC added, in all and over the last
+      interval with its rates); "series" (each interval between two
+      reports since its last start, the oldest first: the time, the
+      overhead to the server and to the client, the plain rates each
+      way); "log" (its last lines).  Of the host,
+      or with jail of that jail.  Nothing is changed.
+    do:
+      request:
+        attributes:
+          - names
+          - jail
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+  - name: monitors
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The admin's tunnel monitors (monitor jobs) as a JSON object:
+      "monitors", each as the sdwan read has a target (id, address,
+      family, fib, state, since, interval, size, eval, dscp, sent,
+      received, misses, last_rtt, now, samples, kept) with its jail,
+      interface, history, down, up and tca; "probing".  With after,
+      the samples after that time alone.  A monitor that goes down or
+      comes up is an event, monitor; a metric over its threshold or
+      under it again, monitor-threshold.  Nothing is changed.
+    do:
+      request:
+        attributes:
+          - after
       reply:
         attributes:
           - ok

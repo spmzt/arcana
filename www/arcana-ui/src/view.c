@@ -271,6 +271,42 @@ topbar(struct html *h)
 	    "<div class=\"who%s\">", app.who_open ? " on" : "", app.who_open ?
 	    " open" : "");
 	help_button(h);
+	/*
+	 * Who is signed in, as an account button at the end: its menu says
+	 * the name and the role, and holds Notify and Log out.  Without a
+	 * name (a token), those two stand in the bar as they are.
+	 */
+	if (app.user[0] != '\0') {
+		h_fmt(h, "<div class=\"acct\"><button class=\"ghost acct-btn%s\" "
+		    "data-act=\"acct-toggle\" title=\"Your account\" "
+		    "aria-haspopup=\"menu\" aria-expanded=\"%s\"><span "
+		    "class=\"avatar\" aria-hidden=\"true\">", app.acct_open ?
+		    " on" : "", app.acct_open ? "true" : "false");
+		h_fmt(h, "%c", toupper((unsigned char)app.user[0]));
+		h_raw(h, "</span><span class=\"acct-id who-user\"><b>");
+		h_txt(h, app.user);
+		h_raw(h, "</b>");
+		if (app.console_role[0] != '\0') {
+			h_raw(h, "<small>");
+			h_txt(h, app.console_role);
+			h_raw(h, "</small>");
+		}
+		h_fmt(h, "</span></button><div class=\"acct-menu%s\" role=\"menu\">"
+		    "<div class=\"acct-who\">Signed in as <b>", app.acct_open ?
+		    " open" : "");
+		h_txt(h, app.user);
+		h_raw(h, "</b>");
+		if (app.console_role[0] != '\0') {
+			h_raw(h, "<span>Role: ");
+			h_txt(h, app.console_role);
+			h_raw(h, "</span>");
+		}
+		h_raw(h, "</div>");
+		/* One's own password: set from a session a key opened. */
+		if (!app.by_token)
+			h_raw(h, "<button class=\"ghost\" data-act=\"password\" "
+			    "data-arg=\"\">Password…</button>");
+	}
 	if (app.notify != 3)
 		h_fmt(h, "<button class=\"ghost%s\" data-act=\"notify\" title=\""
 		    "Notify when a task that took more than ten seconds "
@@ -279,17 +315,10 @@ topbar(struct html *h)
 		    app.notify_off ? "off, press to turn on" : "on, press to "
 		    "turn off" : app.notify == 2 ? "blocked in the browser's "
 		    "settings" : "off, press to allow");
-	if (app.user[0] != '\0') {
-		h_raw(h, "<span class=\"dim who-user\" title=\"Signed in as\">");
-		h_txt(h, app.user);
-		if (app.console_role[0] != '\0') {
-			h_raw(h, " · ");
-			h_txt(h, app.console_role);
-		}
-		h_raw(h, "</span>");
-	}
-	h_raw(h, "<button class=\"ghost\" data-act=\"logout\">Log out</button>"
-	    "</div></header>");
+	h_raw(h, "<button class=\"ghost\" data-act=\"logout\">Log out</button>");
+	if (app.user[0] != '\0')
+		h_raw(h, "</div></div>");
+	h_raw(h, "</div></header>");
 }
 
 /*
@@ -580,6 +609,19 @@ actions(struct html *h, struct server *s, const ucl_object_t *j,
 		h_attr(h, "data-arg", name);
 		h_raw(h, " title=\"jail_remove(2): no stop scripts\">"
 		    "Kill</button>");
+	}
+	/* Started at boot, by rc.conf's jail_list: said by the agent. */
+	if (configured && ucl_object_lookup(j, "boot") != NULL) {
+		bool	boot = jbool(j, "boot");
+
+		h_fmt(h, "<button class=\"act boot%s\" data-act=\"jail-boot\" "
+		    "data-value=\"%s\"%s title=\"%s\"", boot ? " on" : "",
+		    boot ? "disable" : "enable", busy ? " disabled" : "",
+		    boot ? "Started at boot (rc.conf's jail_list): press to "
+		    "leave it out" : "Not started at boot: press to add it to "
+		    "rc.conf's jail_list");
+		h_attr(h, "data-arg", name);
+		h_raw(h, boot ? ">At boot</button>" : ">Not at boot</button>");
 	}
 	h_raw(h, "</div>");
 }
@@ -890,7 +932,7 @@ stage(struct html *h)
 			{ "firewall", "Firewall" },
 			{ "packages", "Packages" }, { "storage", "Storage" },
 			{ "system", "System" }, { "security", "Security" },
-			{ "mail", "Mail" },
+			{ "mail", "Mail" }, { "relay", "FEC relay" },
 			{ "kernel", "Kernel" }, { "sysctl", "Sysctl" },
 			{ "certificates", "Certificates" }, { "ssh", "SSH" },
 			{ "processes", "Processes" }, { "log", "Log" },
@@ -915,8 +957,8 @@ stage(struct html *h)
 		plug = app.tab == TAB_NETWORK && NET_PLUGIN(app.net.kind);
 		h_raw(h, "<nav class=\"tabs\">");
 		for (t = 0; t < (int)(sizeof(tabs) / sizeof(tabs[0])); t++) {
-			/* Mail is a plugin's: drawn with them. */
-			if (t == TAB_MAIL)
+			/* Mail and the relay are plugins': drawn with them. */
+			if (t == TAB_MAIL || t == TAB_RELAY)
 				continue;
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
@@ -950,8 +992,20 @@ stage(struct html *h)
 			    "OpenSMTPD, a plugin, on ", at != NULL && at[0] != '\0' ?
 			    at : at != NULL ? "the host" : "");
 		}
+		/* UDPspeeder's FEC relay, likewise. */
+		{
+			const char	*at = plugin_anywhere(s, "speederv2");
+
+			h_fmt(h, "<button class=\"tab plugin%s%s\" data-act=\"tab\" "
+			    "data-arg=\"relay\" title=\"%s%s\">FEC relay</button>",
+			    app.tab == TAB_RELAY ? " on" : "", s->list != NULL && at
+			    == NULL ? " missing" : "", at == NULL ? "A plugin, not "
+			    "installed here: open it to install its package" :
+			    "UDPspeeder, a plugin, on ", at != NULL && at[0] != '\0' ?
+			    at : at != NULL ? "the host" : "");
+		}
 		if (app.tab != TAB_JOBS && app.tab != TAB_SYSTEM && app.tab !=
-		    TAB_SECURITY && app.tab != TAB_MAIL)
+		    TAB_SECURITY && app.tab != TAB_MAIL && app.tab != TAB_RELAY)
 			export_bar(h, plug ? (app.net.kind == NET_BIRD ? "bird" :
 			    "ipsec") : tabs[app.tab].arg);
 		h_raw(h, "</nav>");
@@ -998,6 +1052,11 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_MAIL) {
 		view_mail(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_RELAY) {
+		view_relay(h, s);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -1659,8 +1718,7 @@ set_keys(struct html *h)
 		h_fmt(h, "<p class=\"notice keys-token\">This session was opened "
 		    "%s, so the keys that sign in are neither listed nor added "
 		    "here. Sign out, and sign in with a security key or a "
-		    "passkey to see and manage them.</p>", app.by_ldap ? "by a "
-		    "directory's user" : "with an API token");
+		    "passkey to see and manage them.</p>", signed_in_how());
 		return;
 	}
 	h_raw(h, "<form data-form=\"add-key\" class=\"set-form\"><ul class=\""
@@ -2193,8 +2251,7 @@ view_settings(struct html *h)
 		h_fmt(h, "<div class=\"notice warn\">Signed in %s: the console's "
 		    "settings, its sign-in keys, tokens and CA are shown and "
 		    "changed only to one signed in with a security key or a "
-		    "passkey.</div>", app.by_ldap ? "by a directory's user" :
-		    "with an API token");
+		    "passkey.</div>", signed_in_how());
 	else if (app.user[0] != '\0' && strcmp(app.console_role, "owner") != 0) {
 		h_raw(h, "<div class=\"notice warn\">Signed in as <b>");
 		h_txt(h, app.user);
@@ -2493,6 +2550,14 @@ modal(struct html *h)
 			h_fmt(h, " value=\"%d\"", app.net.fib);
 		h_raw(h, " placeholder=\"0\"><small>The table the route goes "
 		    "into; 0 is the first.</small></label></div>");
+		break;
+	case MODAL_PASSWORD:
+		if (!password_modal(h))
+			return;
+		break;
+	case MODAL_MONITOR:
+		if (!monitor_modal(h))
+			return;
 		break;
 	case MODAL_KEPT_RENAME:
 		h_raw(h, "<form data-form=\"kept-rename\"><h2>Rename the kept "
@@ -2826,6 +2891,16 @@ modal(struct html *h)
 		case MODAL_KEPT_RENAME:
 			h_raw(h, "<button class=\"primary\">Rename</button>");
 			break;
+		case MODAL_MONITOR:
+			h_raw(h, "<button class=\"primary\">Measure</button>");
+			break;
+		case MODAL_PASSWORD:
+			h_fmt(h, "<button type=\"button\" class=\"ghost danger\" "
+			    "data-act=\"password-remove\"%s>Take it away</button>"
+			    "<button class=\"primary\"%s>Set the password</button>",
+			    app.modal_busy ? " disabled" : "", app.modal_busy ?
+			    " disabled" : "");
+			break;
 		case MODAL_TUNNEL:
 		case MODAL_IF_CREATE:
 		case MODAL_NG_MKPEER:
@@ -3095,19 +3170,24 @@ auth_screen(struct html *h)
 		h_fmt(h, "<button class=\"ghost\" data-act=\"login-passkey\"%s "
 		    "title=\"A passkey on this device, or on a phone nearby\">"
 		    "Use a passkey</button>", app.auth_busy ? " disabled" : "");
-		/* A directory's user, where the console asks one. */
-		if (app.ldap_on)
-			h_fmt(h, "<form data-form=\"login-ldap\" class=\"login-ldap"
-			    "\"><label>User<input name=\"user\" required "
-			    "autocomplete=\"username\" spellcheck=\"false\" "
-			    "maxlength=\"64\"></label><label>Password<input type=\""
-			    "password\" name=\"password\" required autocomplete=\""
-			    "current-password\"></label><button class=\"ghost\"%s>"
-			    "Sign in with the directory</button><p class=\"dim\">"
-			    "Your LDAP user and password. Signed in so, the "
-			    "console's own settings, sign-in keys, tokens and CA "
-			    "stay with a security key.</p></form>", app.auth_busy ?
-			    " disabled" : "");
+		/* A user and password, where a user has one of the console's
+		 * own or the console asks a directory. */
+		if (app.ldap_on || app.password_on)
+			h_fmt(h, "<form data-form=\"login-password\" class=\""
+			    "login-password\"><label>User<input name=\"user\" "
+			    "required autocomplete=\"username\" spellcheck=\""
+			    "false\" maxlength=\"64\"></label><label>Password"
+			    "<input type=\"password\" name=\"password\" required "
+			    "autocomplete=\"current-password\"></label><button "
+			    "class=\"ghost\"%s>Sign in with a password</button>"
+			    "<p class=\"dim\">%s Signed in so, the console's own "
+			    "settings, sign-in keys, users, tokens and CA stay with "
+			    "a security key.</p></form>", app.auth_busy ?
+			    " disabled" : "", app.ldap_on && app.password_on ?
+			    "The password the console keeps for you, or your "
+			    "directory's (LDAP)." : app.ldap_on ? "Your directory's "
+			    "(LDAP) user and password." : "The password the "
+			    "console keeps for you.");
 		/* No key at hand: an API token that writes. */
 		h_fmt(h, "<details class=\"login-token\"><summary>Sign in with "
 		    "an API token</summary><form data-form=\"login-token\">"

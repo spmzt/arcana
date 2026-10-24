@@ -111,6 +111,36 @@ exec_set_secret(bool on)
 }
 
 /*
+ * A word the command lines this thread runs are traced without, shown
+ * as <hidden>: a key that is an argument (sysrc of a variable holding
+ * one).  Until set again; NULL for none.
+ */
+static _Thread_local const char	*exec_hide;
+
+void
+exec_set_hide(const char *word)
+{
+
+	exec_hide = word != NULL && word[0] != '\0' ? word : NULL;
+}
+
+/* The command line as traced: the hidden word shown as <hidden>. */
+static const char *
+traced(struct work *w, const char *s)
+{
+	const char	*p, *out;
+
+	if (exec_hide == NULL)
+		return (s);
+	out = "";
+	while ((p = strstr(s, exec_hide)) != NULL) {
+		out = wfmt(w, "%s%.*s<hidden>", out, (int)(p - s), s);
+		s = p + strlen(exec_hide);
+	}
+	return (wfmt(w, "%s%s", out, s));
+}
+
+/*
  * The programs this thread runs while this is set (pkg): each in a
  * process group of its own, so that what it starts (pkg -j's child in
  * the jail) is stopped with it; stopped too once nothing has come from
@@ -207,6 +237,7 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	cmdline = wvis(w, argv[0]);
 	for (i = 1; argv[i] != NULL; i++)
 		cmdline = wfmt(w, "%s %s", cmdline, wvis(w, argv[i]));
+	cmdline = traced(w, cmdline);
 	step = step_begin(w, ARC_STEP_KIND_EXEC, cmdline,
 	    "posix_spawn(3), no shell");
 
@@ -434,6 +465,7 @@ run_exec_lines(struct work *w, char *const argv[],
 	cmdline = wvis(w, argv[0]);
 	for (i = 1; argv[i] != NULL; i++)
 		cmdline = wfmt(w, "%s %s", cmdline, wvis(w, argv[i]));
+	cmdline = traced(w, cmdline);
 	step = step_begin(w, ARC_STEP_KIND_EXEC, cmdline,
 	    "posix_spawn(3), no shell; read line by line");
 	if (pipe2(op, O_CLOEXEC) == -1)

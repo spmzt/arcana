@@ -138,13 +138,16 @@ fi
 name=\$1; verb=\$2
 case "\$verb" in
 rcvar)		echo "# \$name"; echo "\${name}_enable=\"NO\""; echo '#   (default: "")' ;;
+enabled)	grep -q "^\${name}_enable=\"YES\"" "\$conf" ;;
 status)		[ -f "running.\$name" ] && { echo "\$name is running as pid 4242."; exit 0; }
 		echo "\$name is not running."; exit 1 ;;
 start|onestart)	touch "running.\$name"; echo "Starting \$name." ;;
 stop)		rm -f "running.\$name"; echo "Stopping \$name." ;;
 restart)	[ -f slow ] && sleep 2
-		# Held while the test wants it under way, a minute at most.
-		i=0; while [ -f hold ] && [ \$i -lt 600 ]; do sleep 0.1; i=\$((i + 1)); done
+		# Held while the test wants it under way (it lets go by taking
+		# hold away), five minutes at most: a loaded run is slow to
+		# look.
+		i=0; while [ -f hold ] && [ \$i -lt 3000 ]; do sleep 0.1; i=\$((i + 1)); done
 		touch "running.\$name"; echo "Restarting \$name." ;;
 reload|onereload)	echo "Reloading \$name." ;;
 describe)	echo "The \$name daemon." ;;
@@ -298,6 +301,9 @@ start_daemon()
 	write_rc
 	write_net
 	write_pkg
+	# Emptied here, before the daemon starts: its child empties it only
+	# once it runs, and the "ready" of the one before would be read.
+	: > daemon.out
 	"$JGD" -F -l "$SOCK" -f "$(pwd)/etc/jail.conf" \
 	    -D "$(pwd)/etc/jail.conf.d" -j "$(pwd)/fake-jail" \
 	    -R "$(pwd)/rc.d:$(pwd)/local/rc.d" -s "$(pwd)/fake-service" \
@@ -320,7 +326,9 @@ start_daemon()
 	    --bird-watch 0 $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
-	for i in $(seq 1 100); do
+	# Ready a minute at most: the whole suite at once can make it slow,
+	# and a case that went on before would find no socket.
+	for i in $(seq 1 1200); do
 		grep -q 'ready' daemon.out 2>/dev/null && return
 		sleep 0.05
 	done
@@ -335,9 +343,15 @@ stop_daemon()
 	pid=$(cat daemon.pid)
 	kill "$pid" 2>/dev/null
 	# Gone before anything follows: one that left later would take
-	# away the socket the next one had made.
+	# away the socket the next one had made.  A minute on a busy host,
+	# then for good.
+	for i in $(seq 1 1200); do
+		kill -0 "$pid" 2>/dev/null || return 0
+		sleep 0.05
+	done
+	kill -9 "$pid" 2>/dev/null
 	for i in $(seq 1 100); do
-		kill -0 "$pid" 2>/dev/null || break
+		kill -0 "$pid" 2>/dev/null || return 0
 		sleep 0.05
 	done
 	true
@@ -886,9 +900,8 @@ EOS
 	# Converted: the repository's file in the jail, /etc kept aside,
 	# pkg update then install of the default set from FreeBSD-base.
 	atf_check -o save:cv.out "$JGC" -t -c "$SOCK" jail-base web convert
-	atf_check -o match:'base_release_1' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
 	atf_check -o match:'pkg.FreeBSD.org/\$\{ABI\}/base_release_1' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
-	test -s "$R/var/backups/etc-before-pkgbase.tar"
+	atf_check test -s "$R/var/backups/etc-before-pkgbase.tar"
 	atf_check -o match:'rc.conf' tar -tf "$R/var/backups/etc-before-pkgbase.tar"
 	atf_check -o match:'fake-pkg -j web update -r arcana-base' cat cv.out
 	atf_check -o match:'^install -r arcana-base -y FreeBSD-set-base-jail$' cat install.log
@@ -905,7 +918,7 @@ EOS
 	rm install.log "$R/usr/local/etc/pkg/repos/arcana-base.conf"
 	atf_check -o ignore "$JGC" -c "$SOCK" jail-base web convert -r builder
 	atf_check -o match:'^install -r builder -y FreeBSD-set-base-jail$' cat install.log
-	test ! -e "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	atf_check test ! -e "$R/usr/local/etc/pkg/repos/arcana-base.conf"
 	atf_check -s exit:1 -o match:'pkg has no repository nosuch in jail web' \
 	    "$JGC" -c "$SOCK" jail-base web convert -r nosuch
 	atf_check -s exit:1 -o match:'repository arcana-base has no FreeBSD-set-tests; its sets: FreeBSD-set-base-jail, FreeBSD-set-minimal-jail' \
@@ -2714,6 +2727,7 @@ notify_cleanup()
 }
 
 atf_test_case safe_mode cleanup
+atf_test_case safe_sysctl cleanup
 safe_sysctl_head()
 {
 	atf_set "descr" "A sysctl set in safe mode is put back: the kernel's value and sysctl.conf's line; one that cannot be read is not changed"
@@ -2806,7 +2820,12 @@ EOS
 	atf_check -s exit:1 -o match:'it was so before, and is left so' \
 	    "$JGC" -c "$SOCK" job 6
 }
+safe_sysctl_cleanup()
+{
+	stop_daemon
+}
 
+atf_test_case safe_route_delete cleanup
 safe_route_delete_head()
 {
 	atf_set "descr" "A route deleted without its gateway in safe mode is put back as the kernel listed it; a route of several ways, or none, is not deleted"
@@ -2893,7 +2912,12 @@ EOS
 	atf_check -o match:'^0 route-del 10.78.0.0/16 - - 0 0$' \
 	    -o not-match:'route-add' cat route.log
 }
+safe_route_delete_cleanup()
+{
+	stop_daemon
+}
 
+atf_test_case safe_bird cleanup
 safe_bird_head()
 {
 	atf_set "descr" "BIRD told something in safe mode: a protocol put back as it was, configure on BIRD's own timer confirmed or undone with the job, a reload with nothing to put back"
@@ -3007,7 +3031,12 @@ EOS
 	atf_check -o match:'^configure undo$' cat birdc.log
 	atf_check -o match:'done' "$JGC" -c "$SOCK" bird configure
 }
+safe_bird_cleanup()
+{
+	stop_daemon
+}
 
+atf_test_case safe_wireguard cleanup
 safe_wireguard_head()
 {
 	atf_set "descr" "A WireGuard change in safe mode is put back with wg syncconf from what showconf printed before; wg-quick's file and rc.conf as they were; the key never in the trace"
@@ -3101,7 +3130,12 @@ EOS
 	    "$JGC" -s -c "$SOCK" wg wg9 peer $PEER
 	atf_check -o not-match:'set wg9' cat wg.log
 }
+safe_wireguard_cleanup()
+{
+	stop_daemon
+}
 
+atf_test_case safe_ipsec cleanup
 safe_ipsec_head()
 {
 	atf_set "descr" "An IPsec connection changed in safe mode: its files back as they were and the daemon told; up and down each other's undo; init and start refused"
@@ -3192,6 +3226,10 @@ EOS
 		sleep 0.1
 	done
 	atf_check -o inline:'--initiate --child t1 --timeout 20\n--terminate --ike t1 --timeout 10\n--terminate --ike t1 --timeout 10\n--initiate --child t1 --timeout 20\n' cat swanctl.log
+}
+safe_ipsec_cleanup()
+{
+	stop_daemon
 }
 
 atf_test_case safe_ipsec_sa cleanup
@@ -3316,6 +3354,7 @@ safe_ipsec_sa_cleanup()
 	stop_daemon
 }
 
+atf_test_case safe_sysfile cleanup
 safe_sysfile_head()
 {
 	atf_set "descr" "A file of the system's written in safe mode goes back as it was and its daemon is told again; periodic.conf and rc.conf's variables too; dma is refused"
@@ -3375,7 +3414,12 @@ safe_sysfile_body()
 	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
 	    "$JGC" -s -c "$SOCK" sysfile dma smarthost=mail.example.net
 }
+safe_sysfile_cleanup()
+{
+	stop_daemon
+}
 
+atf_test_case safe_if_destroy cleanup
 safe_if_destroy_head()
 {
 	atf_set "descr" "An interface destroyed in safe mode is made again as it was: addresses, MTU, state and rc.conf; only a tunnel, tap, tun or lo"
@@ -3421,7 +3465,12 @@ safe_if_destroy_body()
 	    "$JGC" -c "$SOCK" job 2
 	atf_check -o inline:'gif9 destroy\n' cat ifconfig.log
 }
+safe_if_destroy_cleanup()
+{
+	stop_daemon
+}
 
+atf_test_case safe_l2 cleanup
 safe_l2_head()
 {
 	atf_set "descr" "A bridge's member, flag, vlanfilter or static address in safe mode is taken back by the inverse word, a geneve made destroyed again, rc.conf as it was; what sets a value is refused"
@@ -3471,6 +3520,10 @@ safe_l2_body()
 		atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
 		    "$JGC" -s -c "$SOCK" $c
 	done
+}
+safe_l2_cleanup()
+{
+	stop_daemon
 }
 
 safe_mode_head()
@@ -3638,15 +3691,16 @@ safe_mode_body()
 	atf_check -o not-match:'id' -o not-match:'sshd_first' cat rc.conf
 	atf_check -o not-match:'id' -o not-match:'x:' cat sysrc.log
 
-	# The queue has an end: jobs that wait hold memory.
-	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 down
+	# The queue has an end: jobs that wait hold memory.  The first holds
+	# the runner while it waits to be confirmed, longer than queueing the
+	# rest takes on a busy host (the daemon's own wait is 2 s).
+	atf_check -o match:'queued' "$JGC" -q -s -W 50 -c "$SOCK" interface lo0 down
 	for i in $(seq 1 255); do
 		"$JGC" -q -c "$SOCK" interface lo0 up > /dev/null ||
 		    atf_fail "job $i was refused"
 	done
 	atf_check -s exit:1 -e match:'too many jobs wait already' -o ignore \
 	    "$JGC" -q -c "$SOCK" interface lo0 up
-	# Confirming what does not wait is refused.
 }
 safe_mode_cleanup()
 {
@@ -4820,6 +4874,159 @@ smtpd_cleanup()
 	stop_daemon
 }
 
+atf_test_case speeder cleanup
+speeder_head()
+{
+	atf_set "descr" "UDPspeeder's relay, a plugin: read (its flags, the key never; the groups and the reports from its log, the overhead in all and of the last interval); conf written word by word, the key kept or taken away and never traced; what a shell would take refused; the ratios sent by its fifo; enabled and disabled; a safe conf undone"
+}
+speeder_body()
+{
+	mkdir -p tools
+	printf '#!/bin/sh\nexit 0\n' > tools/speederv2
+	chmod +x tools/speederv2
+	cat > messages <<'EOM'
+Oct 23 14:22:39 h speederv2[44253]: [2026-10-23 14:22:39][INFO]fec_inner_parameter=1:2,2:3,3:4,4:4
+Oct 23 14:22:40 h sshd[1]: unrelated
+Oct 23 14:22:49 h speederv2[44253]: [2026-10-23 14:22:49][INFO][report]client-->server:(original:100 pkt;100000 byte) (fec:150 pkt,160000 byte)  server-->client:(original:50 pkt;40000 byte) (fec:80 pkt;60000 byte)
+Oct 23 14:22:59 h speederv2[44253]: [2026-10-23 14:22:59][INFO][report]client-->server:(original:200 pkt;200000 byte) (fec:300 pkt,330000 byte)  server-->client:(original:100 pkt;80000 byte) (fec:160 pkt;120000 byte)
+EOM
+	DAEMON_ARGS="-2 $(pwd)/tools --speederv2-log $(pwd)/messages"
+	start_daemon
+	printf '#!/bin/sh\n' > rc.d/speederv2
+	chmod +x rc.d/speederv2
+	atf_check -o match:'Plugins: .*speederv2' "$JGC" -c "$SOCK" hello
+	# Not set yet: what the log says; 65 % over all, 70 % of late.
+	atf_check -o match:'"installed":true' -o match:'"running":false' \
+	    -o not-match:'"role"' -o not-match:'sshd' \
+	    -o match:'"fec_groups":\[\[1,2\],\[2,3\],\[3,4\],\[4,4\]\]' \
+	    -o match:'"interval":10' \
+	    -o match:'"client_to_server":\{"plain_packets":200,"plain_bytes":200000,"fec_packets":300,"fec_bytes":330000,"overhead":65(\.0*)?,"overhead_now":70(\.0*)?,"plain_rate":10000(\.0*)?,"fec_rate":17000' \
+	    -o match:'"server_to_client":\{[^}]*"overhead":50(\.0*)?,' \
+	    -o match:'"series":\[\[[0-9]+,70(\.0*)?,50(\.0*)?,10000(\.0*)?,4000(\.0*)?\]\]' \
+	    "$JGC" -c "$SOCK" speeder
+
+	# The flags, word by word; the key in rc.conf alone.
+	atf_check -o match:'done +speederv2: conf, a client from 127.0.0.1:51821 to 192.0.2.1:14350' \
+	    "$JGC" -c "$SOCK" speeder conf role=client listen=127.0.0.1:51821 \
+	    remote=192.0.2.1:14350 mode=1 mtu=1456 fec=1:2,2:3,8:4,20:10 report=10 \
+	    fifo=$(pwd)/fifo key=s3cr3tkey 'extra=--sock-buf 2048'
+	atf_check -o match:'^speederv2_flags="-c -l127.0.0.1:51821 -r192.0.2.1:14350 -k s3cr3tkey --mode 1 --mtu 1456 -f1:2,2:3,8:4,20:10 --report 10 --fifo .*/fifo --sock-buf 2048"$' \
+	    cat rc.conf
+	atf_check -o match:'"key":true' -o match:'-k <hidden>' -o not-match:'s3cr3tkey' \
+	    -o match:'"role":"client"' -o match:'"mtu":1456' -o match:'"extra":"--sock-buf 2048"' \
+	    "$JGC" -c "$SOCK" speeder
+	atf_check -o match:'<hidden>' -o not-match:'s3cr3tkey' "$JGC" -c "$SOCK" job 1
+	# Kept when not given; nokey takes it away.
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder conf role=client \
+	    listen=127.0.0.1:51821 remote=192.0.2.1:14350 fifo=$(pwd)/fifo
+	atf_check -o match:'-k s3cr3tkey --fifo' cat rc.conf
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder conf role=client \
+	    listen=127.0.0.1:51821 remote=192.0.2.1:14350 fifo=$(pwd)/fifo nokey
+	atf_check -o not-match:'s3cr3tkey' cat rc.conf
+	# What a shell would take, and options not passed on, refused.
+	atf_check -s exit:1 -e match:'listen is an address' -o ignore "$JGC" -c "$SOCK" \
+	    speeder conf role=client 'listen=127.0.0.1:1;reboot' remote=192.0.2.1:1
+	atf_check -s exit:1 -e match:'a key is 64' -o ignore "$JGC" -c "$SOCK" \
+	    speeder conf role=client listen=127.0.0.1:1 remote=192.0.2.1:1 'key=a$(id)'
+	atf_check -s exit:1 -e match:'not an option passed on' -o ignore "$JGC" -c "$SOCK" \
+	    speeder conf role=client listen=127.0.0.1:1 remote=192.0.2.1:1 'extra=--exec x'
+	atf_check -s exit:1 -e match:'needs role=, listen= and remote=' -o ignore \
+	    "$JGC" -c "$SOCK" speeder conf role=client
+	atf_check -s exit:1 -e match:'fec takes the ratios' -o ignore "$JGC" -c "$SOCK" speeder fec 0:3
+
+	# Enabled: started.  The ratios then by its fifo, not restarted,
+	# and kept in the flags.
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder enable
+	atf_check -o match:'^speederv2_enable="YES"$' cat rc.conf
+	atf_check test -f running.speederv2
+	: > fifo
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder fec 1:3,10:8
+	atf_check -o inline:'fec 1:3,10:8\n' cat fifo
+	atf_check -o match:'-f1:3,10:8' cat rc.conf
+
+	# Safe: a conf not confirmed is undone, the flags as they were and
+	# the relay running again.
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" speeder conf role=server \
+	    listen=192.0.2.2:14350 remote=127.0.0.1:51820
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 6
+	atf_check -o match:'^speederv2_flags="-c -l127.0.0.1:51821' cat rc.conf
+	atf_check test -f running.speederv2
+	# Disabled: stopped.  A jail's is not undone, so not safe there.
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder disable
+	atf_check -o match:'^speederv2_enable="NO"$' cat rc.conf
+	atf_check test ! -f running.speederv2
+	atf_check -s exit:1 -e match:"a jail's relay is not undone" -o ignore \
+	    "$JGC" -j web -s -c "$SOCK" speeder stop
+}
+speeder_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case monitors cleanup
+monitors_head()
+{
+	atf_set "descr" "Tunnel monitors outside SD-WAN: set with an interface, an address, a table and thresholds, read back and kept; SD-WAN's targets a list apart that never takes them; changed in place; again at a start; what is wrong refused; removed with their file"
+}
+monitors_body()
+{
+	start_daemon
+	atf_check -o match:'done +monitor set m1 on lo0' "$JGC" -c "$SOCK" \
+	    monitor set name=m1 interface=lo0 address=192.0.2.9 fib=0 \
+	    interval=500 eval=2000 delay-max=50 loss-max=5
+	atf_check -o match:'"monitors":\[\{"id":"m1","address":"192.0.2.9","family":"inet","fib":0,"state":"(unknown|error)",' \
+	    -o match:'"interval":500,' -o match:'"eval":2000,' \
+	    -o match:'"interface":"lo0"' \
+	    -o match:'"tca":\{"delay":50(\.0*)?,"ipdv":0(\.0*)?,"loss":0\.05' \
+	    "$JGC" -c "$SOCK" monitor
+	atf_check -o match:'"id":"m1"' cat monitors.json
+	# SD-WAN's targets are a list of their own: set, and emptied, they
+	# leave the monitors as they were, and its read shows none of them.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '[{"id":"t1","address":"192.0.2.10"}]'
+	atf_check -o not-match:'"m1"' -o match:'"id":"t1"' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '[]'
+	atf_check -o match:'"id":"m1"' -o not-match:'"t1"' "$JGC" -c "$SOCK" monitor
+	# Changed in place; at a start, read from its file again.
+	atf_check -o match:done "$JGC" -c "$SOCK" monitor set name=m1 \
+	    interface=lo0 address=192.0.2.9 interval=1000
+	atf_check -o match:'"interval":1000,' -o not-match:'"tca"' \
+	    "$JGC" -c "$SOCK" monitor
+	stop_daemon
+	start_daemon
+	atf_check -o match:'"id":"m1","address":"192.0.2.9"' \
+	    -o match:'"interval":1000,' "$JGC" -c "$SOCK" monitor
+	# What is wrong, refused: no far end on a link that is not point to
+	# point, a loss over 100 %, safe mode, an interval out of bounds, a
+	# name that is none, one not there.
+	atf_check -s exit:1 -o match:'lo0 has no far end to probe' \
+	    "$JGC" -c "$SOCK" monitor set name=m2 interface=lo0
+	atf_check -s exit:1 -e match:'loss-max a per cent' -o ignore \
+	    "$JGC" -c "$SOCK" monitor set name=m2 address=192.0.2.1 loss-max=150
+	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
+	    "$JGC" -s -c "$SOCK" monitor set name=m2 address=192.0.2.1
+	atf_check -s exit:1 -o match:'interval \(10-60000 ms\)' \
+	    "$JGC" -c "$SOCK" monitor set name=m2 address=192.0.2.1 interval=5
+	atf_check -s exit:1 -e match:'a monitor has a name' -o ignore \
+	    "$JGC" -c "$SOCK" monitor set name=a/b address=192.0.2.1
+	atf_check -s exit:1 -o match:'no monitor nosuch' \
+	    "$JGC" -c "$SOCK" monitor remove name=nosuch
+	# Removed: none left, and no file.
+	atf_check -o match:done "$JGC" -c "$SOCK" monitor remove name=m1
+	atf_check -o match:'"monitors":\[\]' "$JGC" -c "$SOCK" monitor
+	atf_check test ! -f monitors.json
+}
+monitors_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case netstore cleanup
 netstore_head()
 {
@@ -5054,10 +5261,9 @@ MASQUERADE arcana@example.org
 	atf_check -s exit:1 -e match:'lines of printable characters' "$JGC" -c "$SOCK" sysfile krb5.conf ctl.new
 	atf_check -s exit:1 -e match:'name_enable=YES or NO' "$JGC" -c "$SOCK" sysfile periodic daily_x=1
 	atf_check -s exit:1 -e match:"the system's files are the host's" "$JGC" -j web -c "$SOCK" sysfile krb5.conf syslog.new
-	# Safe: the file is kept to be put back (safe_sysfile); dma's smart
-	# host is not.
+	# Safe: the file is kept to be put back (safe_sysfile, which also
+	# has dma refused as safe).
 	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" sysfile krb5.conf syslog.new
-	atf_check -s exit:1 -e match:'not undone: not in safe mode' "$JGC" -s -c "$SOCK" sysfile dma smarthost=mail.example.net
 }
 sysfiles_cleanup()
 {
@@ -5276,8 +5482,9 @@ stop_body()
 	touch slow hold
 	"$JGC" -c "$SOCK" service sshd restart > change.out 2>&1 &
 	change=$!
-	# Once the change is under way, not at a guess of when.
-	for i in $(seq 1 150); do
+	# Once the change is under way, not at a guess of when: a minute at
+	# most, for the whole suite at once can be slow to start it.
+	for i in $(seq 1 600); do
 		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Under way' && break
 		sleep 0.1
 	done
@@ -5286,7 +5493,7 @@ stop_body()
 	    -o not-match:'Stopping' "$JGC" -c "$SOCK" jobs
 	atf_check -o ignore "$JGC" -q -c "$SOCK" start web
 	kill "$pid"
-	for i in $(seq 1 100); do
+	for i in $(seq 1 600); do
 		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Stopping' && break
 		sleep 0.1
 	done
@@ -5299,7 +5506,7 @@ stop_body()
 	    -o match:'queued, will not run: job 1: start web' cat daemon.out
 	rm hold
 	wait $change
-	atf_check -o match:'sshd' cat change.out
+	atf_check -o match:'^Service: sshd ' -o match:'^Running: yes' cat change.out
 	for i in $(seq 1 60); do
 		kill -0 "$pid" 2>/dev/null || break
 		sleep 0.1
@@ -5315,7 +5522,7 @@ stop_body()
 	touch slow hold
 	"$JGC" -c "$SOCK" service sshd restart > /dev/null 2>&1 &
 	# Under way before the signals, however loaded the machine is.
-	for i in $(seq 1 150); do
+	for i in $(seq 1 600); do
 		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Under way' && break
 		sleep 0.1
 	done
@@ -5486,7 +5693,6 @@ EOS
 	# In parts, as a dump: the whole tree, nothing left out for size,
 	# each part an array of its own; and a part of the tree the same.
 	atf_check -o save:parts.json "$JGC" -c "$SOCK" sysctl parts
-	atf_check -o match:'^[1-9][0-9]*$' sh -c 'wc -l < parts.json | tr -d " "'
 	[ "$(wc -l < parts.json)" -gt 10 ] || atf_fail "the tree came in $(wc -l < parts.json) parts"
 	atf_check -o match:'^\[\{"name":"kern.ostype","value":"FreeBSD"' head -1 parts.json
 	atf_check -o match:'"name":"vm\.' -o match:'"name":"net\.' cat parts.json
@@ -5789,9 +5995,9 @@ EOS
 	    -o match:'"ncpu":[0-9]+,"elapsed":[0-9.]+' cat ps.json
 	atf_check -s exit:1 -e match:'not running' -o ignore \
 	    "$JGC" -j nosuchjail -c "$SOCK" ps
-	# Each jail's share, added up; and one process with its files and
-	# threads.
-	atf_check -o match:'"jails":\[' cat ps.json
+	# Each jail's share, added up: none here, the host's own processes
+	# being no jail's; and one process with its files and threads.
+	atf_check -o match:'"jails":\[\],"ncpu"' cat ps.json
 	atf_check -o save:one.json "$JGC" -c "$SOCK" ps $pid
 	atf_check -o match:"^\{\"pid\":$pid,\"comm\":\"sleep\",\"files\":\[" \
 	    -o match:'"threads":\[\{"tid":[0-9]+,"name":"sleep","state":"sleep","wait":"nanslp","pri":-?[0-9]+,"wcpu":[0-9.]+,"time":[0-9.]+,"cpu":[0-9]+\}\]' \
@@ -5971,9 +6177,16 @@ EOS
 	# All there: the older are thinned, not dropped; the newest half
 	# keeps every look, the oldest are further apart.
 	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 8
-	sleep 14
-	atf_check -o save:h3.json "$JGC" -c "$SOCK" history
-	grep -o '\[[0-9][0-9]*,' h3.json | tr -d '[,' > t3
+	# Thinned once the eight are full and more came: a loaded run
+	# samples late, so a minute at most, not a guess of when.
+	for i in $(seq 1 60); do
+		sleep 1
+		"$JGC" -c "$SOCK" history > h3.json
+		grep -o '\[[0-9][0-9]*,' h3.json | tr -d '[,' > t3
+		[ "$(awk 'NR > 1 { g[NR - 1] = $1 - p } { p = $1 }
+		    END { print (g[1] >= 2 && g[7] <= 2 && g[1] > g[7]) ? "ok" :
+		    "no" }' t3)" = ok ] && break
+	done
 	atf_check -o inline:'8\n' sh -c "wc -l < t3 | tr -d ' '"
 	atf_check -o inline:'ok\n' awk 'NR > 1 { g[NR - 1] = $1 - p } { p = $1 }
 	    END { print (g[1] >= 2 && g[7] <= 2 && g[1] > g[7]) ? "ok" : "gaps " g[1] " " g[7] }' t3
@@ -7014,7 +7227,6 @@ EOS
 	atf_check -o match:'^600$' -o match:'^setkey -f /tmp/arcana-sa\.' cat setkey.log
 	atf_check -o match:"^add 10.202.0.1 10.202.0.2 esp 0x1002 -m tunnel -u 100 -r 128 -esn -natt 10.202.0.1\[4500\] 10.202.0.2\[4500\] -E aes-cbc 0x$K -A hmac-sha1 0x$A ;\$" \
 	    -o match:"^add 10.202.0.2 10.202.0.1 esp 0x1001 -m tunnel -u 100 -r 128 -esn -natt 10.202.0.2\[4500\] 10.202.0.1\[4500\] -E aes-cbc 0x$K -A hmac-sha1 0x$A ;\$" cat setkey.conf
-	test ! -e /tmp/arcana-sa.* 2>/dev/null || true
 	# GCM: no auth; neither flag.
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa set ipsec1 101 10.202.0.1 10.202.0.2 spi-in 0x2001 spi-out 0x2002 enc aes-gcm-16 key-in ${K}00112233 key-out ${K}00112233
 	atf_check -o match:"^add 10.202.0.1 10.202.0.2 esp 0x2002 -m tunnel -u 101 -r 128 -E aes-gcm-16 0x${K}00112233 ;\$" cat setkey.conf
@@ -7027,8 +7239,8 @@ EOS
 	# half and come out with the same SAs, mirrored.
 	atf_check -s exit:1 -o match:'no key pair yet' -e ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= enc aes-cbc auth hmac-sha2-256
 	atf_check -o match:'ipsec sa key ipsec0' -o match:'public [A-Za-z0-9+/]{43}=' "$JGC" -t -c "$SOCK" ipsec-sa key ipsec0
-	atf_check -o match:'^600$' stat -f %Lp "$(dirname "$f")/sdwan-key-ipsec0.pem"
-	atf_check -o match:'BEGIN PRIVATE KEY' cat "$(dirname "$f")/sdwan-key-ipsec0.pem"
+	atf_check -o match:'^600$' stat -f %Lp "./sdwan-key-ipsec0.pem"
+	atf_check -o match:'BEGIN PRIVATE KEY' cat "./sdwan-key-ipsec0.pem"
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec1
 	P0=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec0"' | sed -E 's/.*"public":"([^"]*)".*/\1/')
 	P1=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec1"' | sed -E 's/.*"public":"([^"]*)".*/\1/')
@@ -7066,7 +7278,7 @@ EOS
 	atf_check -o match:'"type":"key-rotation"' -o match:'"object":"ipsec0"' "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'sdwan-key-ipsec0-next.pem' "$JGC" -t -c "$SOCK" ipsec-sa key ipsec0 next
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec1 next
-	atf_check -o match:'^600$' stat -f %Lp "$(dirname "$f")/sdwan-key-ipsec0-next.pem"
+	atf_check -o match:'^600$' stat -f %Lp "./sdwan-key-ipsec0-next.pem"
 	N0=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec0"' | sed -E 's/.*"next":"([^"]*)".*/\1/')
 	N1=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec1"' | sed -E 's/.*"next":"([^"]*)".*/\1/')
 	test ${#N0} -eq 44 -a ${#N1} -eq 44 -a "$N0" != "$P0" -a "$N0" != "$N1" || atf_fail "the next halves: $N0 $N1"
@@ -7099,13 +7311,13 @@ EOS
 	atf_check -o match:'ipsec sa commit ipsec0 reqid 100' -o match:'spi in 0x' "$JGC" -t -c "$SOCK" ipsec-sa commit ipsec0 100 10.202.0.1 10.202.0.2
 	atf_check -o inline:'1\n' sh -c "grep -c '^delete ' setkey.conf"
 	atf_check -o match:"^delete 10.202.0.2 10.202.0.1 esp $(printf '0x%x' "$O_IN") ;\$" -o not-match:'^add ' cat setkey.conf
-	test ! -e "$(dirname "$f")/sdwan-key-ipsec0-next.pem" || atf_fail "the next pair still there"
+	test ! -e "./sdwan-key-ipsec0-next.pem" || atf_fail "the next pair still there"
 	atf_check -o match:"\"interface\":\"ipsec0\",\"public\":\"$(echo "$N0" | sed 's|/|\\/|g; s|+|\\+|g')\"" -o match:'"interface":"ipsec0",.*"pending":false' -o match:'"type":"key-rotation",.*"cleared":true' "$JGC" -c "$SOCK" sdwan
 	atf_check -s exit:1 -o match:'nothing to commit' -e ignore "$JGC" -c "$SOCK" ipsec-sa commit ipsec0 100 10.202.0.1 10.202.0.2
 	# Cleared: the next pair and what was kept go with the SAs.
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec1 next
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa clear ipsec1 101 10.202.0.2 10.202.0.1
-	test ! -e "$(dirname "$f")/sdwan-key-ipsec1-next.pem" -a ! -e "$(dirname "$f")/sdwan-sa-ipsec1.json" || atf_fail "ipsec1 not cleared"
+	test ! -e "./sdwan-key-ipsec1-next.pem" -a ! -e "./sdwan-sa-ipsec1.json" || atf_fail "ipsec1 not cleared"
 }
 ipsec_sa_cleanup()
 {
@@ -8353,11 +8565,6 @@ EOF
 	atf_check -o match:'"options_dir_exists":true,[^}]*"configured":true' \
 	    "$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
 	    ports=opt set=debug origin=net/bird3
-	# The read and a port's options as arcana-builder has them, and
-	# notify's request as arcana-notify: through YANG-CBOR and back.
-	"$JGC" -c "$SOCK" poudriere > builder.json
-	"$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
-	    ports=opt set=debug origin=net/bird3 > options.json
 	# One the port has not, refused; one that is no option's name, too.
 	atf_check -s exit:1 -o match:'bird3-3.4.0 has no option NOPE' -e ignore \
 	    "$JGC" -c "$SOCK" poudriere options jail=FreeBSD:16:amd64 \
@@ -8526,11 +8733,12 @@ EOS
 	DAEMON_ARGS="--bird-watch 1"
 	start_daemon
 	# All well: no fault, but the session turned off is none either.
+	# BIRD's alone: on a busy host the sampler may raise its own (cpu).
 	sleep 2.5
-	atf_check -o not-match:'sdwan-fault' "$JGC" -c "$SOCK" events
+	atf_check -o not-match:'"by":"bird"' "$JGC" -c "$SOCK" events
 	touch bgp.down ospf.gone bfd.down
 	for i in $(seq 1 40); do
-		[ $("$JGC" -c "$SOCK" events | grep -o '"state":"set"' | wc -l) -ge 3 ] && break
+		[ $("$JGC" -c "$SOCK" events | grep -oE '"type":"(bgp-neighbor|ospf-neighbor|bfd)"[^}]*"state":"set"' | wc -l) -ge 3 ] && break
 		sleep 0.2
 	done
 	atf_check -o match:'"type":"bgp-neighbor","severity":"Major","object":"host:bgp1","by":"bird","description":"BGP bgp1 to 192.0.2.7 is Active: Socket: Connection refused","state":"set"' \
@@ -8541,7 +8749,7 @@ EOS
 	# Well again: each cleared.
 	rm -f bgp.down ospf.gone bfd.down
 	for i in $(seq 1 40); do
-		[ $("$JGC" -c "$SOCK" events | grep -o '"state":"cleared"' | wc -l) -ge 3 ] && break
+		[ $("$JGC" -c "$SOCK" events | grep -oE '"type":"(bgp-neighbor|ospf-neighbor|bfd)"[^}]*"state":"cleared"' | wc -l) -ge 3 ] && break
 		sleep 0.2
 	done
 	atf_check -o match:'"type":"bgp-neighbor","severity":"Cleared","object":"host:bgp1","description":"BGP bgp1 is established","state":"cleared"' \
@@ -8554,8 +8762,77 @@ bird_watch_cleanup()
 	stop_daemon
 }
 
+atf_test_case jail_boot cleanup
+jail_boot_head()
+{
+	atf_set "descr" "a jail started at boot or not, by jail_list and jail_enable, never left an empty list that starts every jail"
+}
+jail_boot_body()
+{
+	start_daemon
+	# jail_enable off: the list is the jail alone, then turned on.
+	atf_check -o match:'^At boot: +started$' "$JGC" -c "$SOCK" enable web
+	atf_check -o match:'^jail_list="web"$' -o match:'^jail_enable="YES"$' \
+	    cat rc.conf
+	atf_check -o match:'^At boot: +not started$' "$JGC" -c "$SOCK" \
+	    disable db
+	atf_check -o match:'^At boot: +started$' "$JGC" -c "$SOCK" enable db
+	atf_check -o match:'^jail_list="web db"$' cat rc.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" disable web
+	atf_check -o match:'^jail_list="db"$' cat rc.conf
+	# The last one named: jail_enable off, not an empty list.
+	atf_check -o match:'^At boot: +not started$' "$JGC" -c "$SOCK" \
+	    disable db
+	atf_check -o match:'^jail_enable="NO"$' cat rc.conf
+	# Every jail started (an empty list): one left out is every other.
+	sed -i '' -e '/^jail_list=/d' -e 's/^jail_enable=.*/jail_enable="YES"/' \
+	    rc.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" disable vpn
+	atf_check -o match:'^jail_list=".*web' -o match:'^jail_list=".*db' \
+	    -o match:'^jail_list=".*mail' -o not-match:'vpn' cat rc.conf
+	# Started at boot already: nothing written.
+	cp rc.conf rc.before
+	atf_check -o ignore "$JGC" -c "$SOCK" enable web
+	atf_check -o empty diff rc.before rc.conf
+	# Only a jail defined.
+	atf_check -s exit:1 -o ignore -e match:'not defined' \
+	    "$JGC" -c "$SOCK" enable nosuch
+}
+jail_boot_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case reboot cleanup
+reboot_head()
+{
+	atf_set "descr" "the host rebooted by shutdown(8) -r a minute from now; never in safe mode, never a jail"
+}
+reboot_body()
+{
+	mkdir -p tools
+	# shutdown(8): the parent says its child's pid and goes.
+	printf '#!/bin/sh\necho "$*" >> %s/shutdown.log\necho "shutdown: [pid 4242]" >&2\nexit 0\n' \
+	    "$(pwd)" > tools/shutdown
+	chmod +x tools/shutdown
+	DAEMON_ARGS="-2 $(pwd)/tools"
+	start_daemon
+	atf_check -o match:'done +reboot, a minute after' "$JGC" -c "$SOCK" reboot
+	atf_check -o inline:'-r +1 rebooted from Arcana\n' cat shutdown.log
+	atf_check -s exit:1 -e match:'not undone: not in safe mode' \
+	    "$JGC" -s -c "$SOCK" reboot
+	atf_check -s exit:2 -e match:'restarted' "$JGC" -j web -c "$SOCK" reboot
+	atf_check -o inline:'-r +1 rebooted from Arcana\n' cat shutdown.log
+}
+reboot_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case reboot
+	atf_add_test_case jail_boot
 	atf_add_test_case bird_watch
 	atf_add_test_case poudriere
 	atf_add_test_case host_watch
@@ -8571,6 +8848,8 @@ atf_init_test_cases()
 	atf_add_test_case sdwan
 	atf_add_test_case netstore
 	atf_add_test_case smtpd
+	atf_add_test_case speeder
+	atf_add_test_case monitors
 	atf_add_test_case sysfiles
 	atf_add_test_case sdwan_jail
 	atf_add_test_case jail_conf

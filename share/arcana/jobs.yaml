@@ -248,9 +248,9 @@ fields:
 
 kinds:
   - kind: jail-action
-    title: A jail started, stopped, restarted or killed
+    title: A jail started, stopped, restarted or killed, or started at boot or not
     needs: jail action
-    values: action=start|stop|restart|kill
+    values: action=start|stop|restart|kill|enable|disable
   - kind: address
     title: An address of a jail
     needs: jail address
@@ -396,6 +396,9 @@ kinds:
     needs: jail verb
     uses: packages release force pkg_ip pkg_repo
     values: verb=convert|upgrade
+  - kind: reboot
+    title: The host rebooted, a minute after
+    destroys: always
   - kind: jail-conf
     title: A jail made, removed; the jails' defaults or a template
     needs: verb
@@ -477,3 +480,13 @@ kinds:
     needs: verb
     uses: jail args text force
     values: verb=conf|conf-text|table|entry|unentry|enable|pause|resume|schedule|remove|update
+  - kind: monitor
+    title: A tunnel measured, or no longer, outside SD-WAN
+    needs: verb args
+    uses: jail
+    values: verb=set|remove
+  - kind: speeder
+    title: UDPspeeder's FEC relay configured, its ratios changed, started or stopped
+    needs: verb
+    uses: jail args safe
+    values: verb=conf|fec|enable|disable|start|stop|restart

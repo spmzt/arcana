@@ -1831,6 +1831,13 @@ static const struct evk {
 	{ "job", "a job ends", "job", NULL, NULL, NULL, NULL },
 	{ "sdwan-tunnel", "an SD-WAN tunnel goes up or down", "sdwan-tunnel",
 	    NULL, NULL, NULL, NULL },
+	{ "monitor-down", "a measured tunnel stops answering", "monitor",
+	    "state", "down", "interface", "Which tunnel (any, if empty)" },
+	{ "monitor-up", "a measured tunnel answers again", "monitor", "state",
+	    "up", "interface", "Which tunnel (any, if empty)" },
+	{ "monitor-threshold", "a measured tunnel's delay, delay variation or "
+	    "loss crosses its threshold", "monitor-threshold", NULL, NULL,
+	    "interface", "Which tunnel (any, if empty)" },
 	{ "sdwan-fault", "a fault is raised or cleared: SD-WAN's, or a "
 	    "BIRD session's",
 	    "sdwan-fault", NULL, NULL, NULL, NULL },

@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana",
     "module-revision": "2026-10-22",
-    "sid-file-version": 1,
+    "sid-file-version": 4,
     "description": "Arcana's SIDs for arcana (RFC 9595's experimental range; share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -8299,6 +8299,216 @@
         "namespace": "data",
         "identifier": "/arcana:list/output/jails/allow",
         "sid": "74654"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:action/output/result/boot",
+        "sid": "74655"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:address/output/result/boot",
+        "sid": "74656"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:list/output/jails/boot",
+        "sid": "74657"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder",
+        "sid": "74658"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/input",
+        "sid": "74659"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/input/jail",
+        "sid": "74660"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/input/names",
+        "sid": "74661"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output",
+        "sid": "74662"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/error",
+        "sid": "74663"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/json",
+        "sid": "74664"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/ok",
+        "sid": "74665"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace",
+        "sid": "74666"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/argv",
+        "sid": "74667"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/detail",
+        "sid": "74668"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/duration-us",
+        "sid": "74669"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/error-output",
+        "sid": "74670"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/exit",
+        "sid": "74671"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/id",
+        "sid": "74672"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/kind",
+        "sid": "74673"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/label",
+        "sid": "74674"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/output",
+        "sid": "74675"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/parent",
+        "sid": "74676"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/status",
+        "sid": "74677"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors",
+        "sid": "74678"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/input",
+        "sid": "74679"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/input/after",
+        "sid": "74680"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output",
+        "sid": "74681"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/error",
+        "sid": "74682"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/json",
+        "sid": "74683"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/ok",
+        "sid": "74684"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/trace",
+        "sid": "74685"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/trace/argv",
+        "sid": "74686"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/trace/detail",
+        "sid": "74687"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/trace/duration-us",
+        "sid": "74688"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/trace/error-output",
+        "sid": "74689"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/trace/exit",
+        "sid": "74690"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/trace/id",
+        "sid": "74691"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/trace/kind",
+        "sid": "74692"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/trace/label",
+        "sid": "74693"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/trace/output",
+        "sid": "74694"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/trace/parent",
+        "sid": "74695"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:monitors/output/trace/status",
+        "sid": "74696"
       }
     ]
   }

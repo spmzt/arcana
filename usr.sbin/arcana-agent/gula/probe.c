@@ -24,6 +24,14 @@
  * (bytes), count (0: without end), dscp, down and up (misses and
  * answers), timeout (ms), eval (ms), history (samples kept) and report.
  * A raw socket needs root: without it the target says so.
+ *
+ * The same prober measures tunnels outside SD-WAN too: the monitors an
+ * admin puts on any tunnel interface (the monitor job), each target's
+ * owner "monitor" rather than "sdwan".  An owner's list is replaced by
+ * its own alone, so an SD-WAN apply never takes a monitor away, and is
+ * kept in its own file (monitors.json, monitors@j.json).  A monitor's
+ * state and thresholds are events (monitor, monitor-threshold), not
+ * SD-WAN's faults.
  */
 
 #include <sys/param.h>
@@ -39,6 +47,7 @@
 #include <arpa/inet.h>
 
 #include <dirent.h>
+#include <ifaddrs.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <jail.h>
@@ -56,6 +65,9 @@
 #include "agent.h"
 
 #define	PROBE_FILE	"sdwan-probes.json"
+#define	MONITOR_FILE	"monitors.json"
+#define	OWN_SDWAN	"sdwan"
+#define	OWN_MONITOR	"monitor"
 #define	TARGETS_MAX	256
 #define	OUT_MAX		64	/* probes in the air, each */
 #define	SAMPLES_MAX	100000
@@ -75,6 +87,8 @@ struct target {
 	char			 id[128];
 	char			 address[64];
 	char			 jail[64];	/* its network's; "" the host's */
+	char			 owner[8];	/* sdwan, monitor */
+	char			 ifname[IFNAMSIZ];	/* a monitor's tunnel */
 	int			 af;
 	struct sockaddr_storage	 sa;
 	int			 fib, interval, size, count, dscp, down, up;
@@ -142,17 +156,28 @@ now_s(void)
 	return ((double)ts.tv_sec + (double)ts.tv_nsec / 1e9);
 }
 
-/* The file of an edge's targets: the host's, or jail's. */
+static bool
+is_monitor(const struct target *t)
+{
+
+	return (strcmp(t->owner, OWN_MONITOR) == 0);
+}
+
+/* The file of an owner's targets at an edge: the host's, or jail's. */
 static const char *
-conf_path(char *buf, size_t len, const char *jail)
+conf_path(char *buf, size_t len, const char *jail, const char *owner)
 {
 	const char	*slash;
 	char		 base[128];
+	bool		 mon;
 
+	mon = owner != NULL && strcmp(owner, OWN_MONITOR) == 0;
 	if (jail != NULL && jail[0] != '\0')
-		snprintf(base, sizeof(base), "sdwan-probes@%s.json", jail);
+		snprintf(base, sizeof(base), "%s@%s.json", mon ? "monitors" :
+		    "sdwan-probes", jail);
 	else
-		snprintf(base, sizeof(base), "%s", PROBE_FILE);
+		snprintf(base, sizeof(base), "%s", mon ? MONITOR_FILE :
+		    PROBE_FILE);
 	if ((slash = strrchr(opts.history_conf, '/')) != NULL)
 		snprintf(buf, len, "%.*s/%s", (int)(slash - opts.history_conf),
 		    opts.history_conf, base);
@@ -287,18 +312,40 @@ state_set(struct target *t, int state)
 	}
 	*p = '\0';
 	/* A jail's: said, its name a jail's (letters, digits, - _ .). */
-	event_add("sdwan-tunnel", "{\"id\":\"%s\",\"address\":\"%s\",\"state\":"
-	    "\"%s\",\"misses\":%d%s%s%s}", id, t->address, state_names[state],
-	    t->misses, t->jail[0] != '\0' ? ",\"jail\":\"" : "", t->jail,
-	    t->jail[0] != '\0' ? "\"" : "");
-	logmsg(state == ST_UP ? LOG_NOTICE : LOG_WARNING, "sdwan: %s (%s) is "
-	    "%s", target_name(t, id, sizeof(id)), t->address,
-	    state_names[state]);
+	event_add(is_monitor(t) ? "monitor" : "sdwan-tunnel", "{\"id\":\"%s\","
+	    "\"address\":\"%s\",\"state\":\"%s\",\"misses\":%d%s%s%s%s%s%s}",
+	    id, t->address, state_names[state], t->misses, t->jail[0] != '\0' ?
+	    ",\"jail\":\"" : "", t->jail, t->jail[0] != '\0' ? "\"" : "",
+	    t->ifname[0] != '\0' ? ",\"interface\":\"" : "", t->ifname,
+	    t->ifname[0] != '\0' ? "\"" : "");
+	logmsg(state == ST_UP ? LOG_NOTICE : LOG_WARNING, "%s: %s (%s) is "
+	    "%s", is_monitor(t) ? "monitor" : "sdwan", target_name(t, id,
+	    sizeof(id)), t->address, state_names[state]);
+	/* A monitor is the admin's own: an event, not SD-WAN's fault. */
+	if (is_monitor(t))
+		return;
 	if (state == ST_DOWN)
 		fault_set("tunnel", "Major", id, "probe", "no answer from %s "
 		    "after %d probes", t->address, t->misses);
 	else
 		fault_clear("tunnel", id, "%s answers again", t->address);
+}
+
+/* A monitor's metric over its threshold, or under it again: an event. */
+static void
+monitor_tca(const struct target *t, const char *metric, double v, bool over)
+{
+	char	name[200];
+
+	event_add("monitor-threshold", "{\"id\":\"%s\",\"metric\":\"%s\","
+	    "\"value\":%.6g,\"threshold\":%.6g,\"over\":%s%s%s%s}",
+	    target_name(t, name, sizeof(name)), metric, v,
+	    t->tca[strcmp(metric, "delay") == 0 ? 0 : strcmp(metric, "ipdv") ==
+	    0 ? 1 : 2], over ? "true" : "false", t->ifname[0] != '\0' ?
+	    ",\"interface\":\"" : "", t->ifname, t->ifname[0] != '\0' ? "\"" :
+	    "");
+	logmsg(over ? LOG_WARNING : LOG_NOTICE, "monitor: %s: %s %.3g %s the "
+	    "threshold", name, metric, v, over ? "over" : "under");
 }
 
 /* The sample against the thresholds: an alert set or cleared. */
@@ -323,17 +370,24 @@ tca_check(struct target *t, const struct sample *s)
 			t->tca_under[i] = 0;
 			if (!t->tca_on[i] && ++t->tca_over[i] >= t->damping) {
 				t->tca_on[i] = true;
-				fault_set("tca", "Minor", obj, "probe", "%s %.3g%s "
-				    "over the threshold %.3g%s", names[i], v[i],
-				    units[i], t->tca[i], units[i]);
+				if (is_monitor(t))
+					monitor_tca(t, names[i], v[i], true);
+				else
+					fault_set("tca", "Minor", obj, "probe",
+					    "%s %.3g%s over the threshold %.3g%s",
+					    names[i], v[i], units[i], t->tca[i],
+					    units[i]);
 			}
 		} else {
 			t->tca_over[i] = 0;
 			if (t->tca_on[i] && ++t->tca_under[i] >= t->damping) {
 				t->tca_on[i] = false;
-				fault_clear("tca", obj, "%s %.3g%s, under the "
-				    "threshold %.3g%s again", names[i], v[i],
-				    units[i], t->tca[i], units[i]);
+				if (is_monitor(t))
+					monitor_tca(t, names[i], v[i], false);
+				else
+					fault_clear("tca", obj, "%s %.3g%s, under "
+					    "the threshold %.3g%s again", names[i],
+					    v[i], units[i], t->tca[i], units[i]);
 			}
 		}
 	}
@@ -629,7 +683,7 @@ num(const ucl_object_t *o, const char *key, int64_t dflt, int64_t lo,
  */
 static int
 targets_parse(struct work *w, const char *json, struct target *new,
-    char *jail, size_t jlen, const char **errp)
+    char *jail, size_t jlen, const char *owner, const char **errp)
 {
 	struct ucl_parser	*p;
 	ucl_object_t		*top;
@@ -699,6 +753,12 @@ targets_parse(struct work *w, const char *json, struct target *new,
 		snprintf(t->address, sizeof(t->address), "%s", addr);
 		/* At an edge that is a vnet jail: probed from its network. */
 		snprintf(t->jail, sizeof(t->jail), "%s", jail);
+		snprintf(t->owner, sizeof(t->owner), "%s", owner);
+		if ((v = ucl_object_lookup(o, "interface")) != NULL &&
+		    ucl_object_type(v) == UCL_STRING && strlen(
+		    ucl_object_tostring(v)) < sizeof(t->ifname))
+			snprintf(t->ifname, sizeof(t->ifname), "%s",
+			    ucl_object_tostring(v));
 		s4 = (struct sockaddr_in *)&t->sa;
 		s6 = (struct sockaddr_in6 *)&t->sa;
 		if (inet_pton(AF_INET, addr, &s4->sin_addr) == 1) {
@@ -767,7 +827,7 @@ bad:
  * more than TARGETS_MAX (new has room for that many).
  */
 static bool
-targets_swap(struct target *new, int n, const char *jail)
+targets_swap(struct target *new, int n, const char *jail, const char *owner)
 {
 	struct target	*old, *t, *o;
 	int		 nold, i, k, total;
@@ -778,7 +838,8 @@ targets_swap(struct target *new, int n, const char *jail)
 	nold = ntargets;
 	total = n;
 	for (k = 0; k < nold; k++)
-		if (strcmp(old[k].jail, jail) != 0)
+		if (strcmp(old[k].jail, jail) != 0 || strcmp(old[k].owner,
+		    owner) != 0)
 			total++;
 	if (total > TARGETS_MAX) {
 		pthread_mutex_unlock(&lock);
@@ -790,6 +851,7 @@ targets_swap(struct target *new, int n, const char *jail)
 		for (k = 0; k < nold; k++) {
 			o = &old[k];
 			if (o->id[0] != '\0' && strcmp(o->jail, jail) == 0 &&
+			    strcmp(o->owner, owner) == 0 &&
 			    strcmp(o->id, t->id) == 0 &&
 			    strcmp(o->address, t->address) == 0 && o->fib ==
 			    t->fib && o->dscp == t->dscp && o->size == t->size)
@@ -799,6 +861,9 @@ targets_swap(struct target *new, int n, const char *jail)
 			int	iv = t->interval, cnt = t->count, dn = t->down;
 			int	up = t->up, to = t->timeout, ev = t->eval;
 			int	hi = t->history, rp = t->report, dm = t->damping;
+			char	ifn[IFNAMSIZ];
+
+			snprintf(ifn, sizeof(ifn), "%s", t->ifname);
 			double	tc[3] = { t->tca[0], t->tca[1], t->tca[2] };
 
 			/* As it was, with what may change under it. */
@@ -814,6 +879,7 @@ targets_swap(struct target *new, int n, const char *jail)
 			t->timeout = to;
 			t->eval = ev;
 			t->report = rp;
+			snprintf(t->ifname, sizeof(t->ifname), "%s", ifn);
 			if (t->history != hi) {
 				free(t->samples);
 				t->samples = NULL;
@@ -832,9 +898,10 @@ targets_swap(struct target *new, int n, const char *jail)
 		t->next_send = now;
 		t->state = target_open(t) ? ST_UNKNOWN : ST_ERROR;
 	}
-	/* The other edges', moved over as they are. */
+	/* The other edges' and owners', moved over as they are. */
 	for (k = 0; k < nold; k++)
-		if (strcmp(old[k].jail, jail) != 0) {
+		if (strcmp(old[k].jail, jail) != 0 || strcmp(old[k].owner,
+		    owner) != 0) {
 			new[n++] = old[k];
 			memset(&old[k], 0, sizeof(old[k]));
 			old[k].sock = -1;
@@ -849,12 +916,13 @@ targets_swap(struct target *new, int n, const char *jail)
 }
 
 static int
-conf_write(const char *json, const char *jail, const char **errp)
+conf_write(const char *json, const char *jail, const char *owner,
+    const char **errp)
 {
 	char	path[MAXPATHLEN], tmp[MAXPATHLEN];
 	FILE	*fp;
 
-	conf_path(path, sizeof(path), jail);
+	conf_path(path, sizeof(path), jail, owner);
 	/* Its directory, where the host has none yet. */
 	if (strrchr(path, '/') != NULL) {
 		snprintf(tmp, sizeof(tmp), "%.*s", (int)(strrchr(path, '/') -
@@ -886,11 +954,12 @@ do_probes_set(struct work *w, const char *json, const char **errp)
 		*errp = strerror(errno);
 		return (-1);
 	}
-	if ((n = targets_parse(w, json, new, jail, sizeof(jail), errp)) < 0) {
+	if ((n = targets_parse(w, json, new, jail, sizeof(jail), OWN_SDWAN,
+	    errp)) < 0) {
 		free(new);
 		return (-1);
 	}
-	if (!targets_swap(new, n, jail)) {
+	if (!targets_swap(new, n, jail, OWN_SDWAN)) {
 		*errp = wfmt(w, "%d targets at most, all edges' together",
 		    TARGETS_MAX);
 		for (n--; n >= 0; n--)
@@ -901,12 +970,13 @@ do_probes_set(struct work *w, const char *json, const char **errp)
 	if (links_set(w, json, jail, errp) != 0)
 		return (-1);
 	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", conf_path(path,
-	    sizeof(path), jail));
+	    sizeof(path), jail, OWN_SDWAN));
 	e = NULL;
 	/* None left: no file, so that a start makes no edge of it. */
 	if (n == 0 && jail[0] != '\0' && !has_links(json) ? unlink(path) ==
 	    -1 && errno != ENOENT &&
-	    (e = strerror(errno)) != NULL : conf_write(json, jail, &e) != 0) {
+	    (e = strerror(errno)) != NULL : conf_write(json, jail, OWN_SDWAN,
+	    &e) != 0) {
 		step_end(w, step, false, "%s", e);
 		*errp = wfmt(w, "%s: %s", path, e);
 		return (-1);
@@ -935,9 +1005,9 @@ has_links(const char *json)
 	return (yes);
 }
 
-/* An edge's kept targets, probed again. */
+/* An edge's kept targets, an owner's, probed again. */
 static void
-start_file(const char *path)
+start_file(const char *path, const char *owner)
 {
 	struct work	 w;
 	struct target	*new;
@@ -957,12 +1027,13 @@ start_file(const char *path)
 		new = calloc(TARGETS_MAX, sizeof(*new));
 		e = NULL;
 		if (new != NULL && (n = targets_parse(&w, json, new, jail,
-		    sizeof(jail), &e)) >= 0) {
-			if (!targets_swap(new, n, jail)) {
+		    sizeof(jail), owner, &e)) >= 0) {
+			if (!targets_swap(new, n, jail, owner)) {
 				logmsg(LOG_WARNING, "%s: more than %d targets",
 				    path, TARGETS_MAX);
 				free(new);
-			} else if (links_set(&w, json, jail, &e) != 0)
+			} else if (strcmp(owner, OWN_SDWAN) == 0 &&
+			    links_set(&w, json, jail, &e) != 0)
 				logmsg(LOG_WARNING, "%s: %s", path, e);
 		} else {
 			logmsg(LOG_WARNING, "%s: %s", path, e != NULL ? e :
@@ -1141,8 +1212,10 @@ probe_start(void)
 	char		 path[MAXPATHLEN], *slash;
 
 	started = true;
-	/* The host's, and each jail's beside it. */
-	start_file(conf_path(path, sizeof(path), NULL));
+	/* The host's, and each jail's beside it; the monitors likewise. */
+	start_file(conf_path(path, sizeof(path), NULL, OWN_MONITOR),
+	    OWN_MONITOR);
+	start_file(conf_path(path, sizeof(path), NULL, OWN_SDWAN), OWN_SDWAN);
 	if ((slash = strrchr(path, '/')) != NULL)
 		*slash = '\0';
 	else
@@ -1153,7 +1226,10 @@ probe_start(void)
 		while ((de = readdir(d)) != NULL)
 			if (strncmp(de->d_name, "sdwan-probes@", 13) == 0) {
 				snprintf(f, sizeof(f), "%s/%s", path, de->d_name);
-				start_file(f);
+				start_file(f, OWN_SDWAN);
+			} else if (strncmp(de->d_name, "monitors@", 9) == 0) {
+				snprintf(f, sizeof(f), "%s/%s", path, de->d_name);
+				start_file(f, OWN_MONITOR);
 			}
 		closedir(d);
 	}
@@ -1173,8 +1249,8 @@ probe_state_of(const char *jail, const char *id)
 	st = PROBE_NONE;
 	pthread_mutex_lock(&lock);
 	for (i = 0; i < ntargets; i++)
-		if (strcmp(targets[i].jail, jail) == 0 && strcmp(targets[i].id,
-		    id) == 0) {
+		if (!is_monitor(&targets[i]) && strcmp(targets[i].jail, jail) ==
+		    0 && strcmp(targets[i].id, id) == 0) {
 			st = targets[i].state;
 			break;
 		}
@@ -1182,16 +1258,122 @@ probe_state_of(const char *jail, const char *id)
 	return (st);
 }
 
+/* A target as JSON: what it is, its state, the sample in progress and
+ * those kept after the time after.  The lock is held. */
+static ucl_object_t *
+target_json(const struct target *t, double now, uint64_t after)
+{
+	ucl_object_t	*o, *s, *row, *cur;
+	struct sample	*sm;
+	int		 k, from;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(o, ucl_object_fromstring(t->id), "id", 0,
+	    false);
+	ucl_object_insert_key(o, ucl_object_fromstring(t->address),
+	    "address", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromstring(t->af == AF_INET ?
+	    "inet" : "inet6"), "family", 0, false);
+	if (t->jail[0] != '\0')
+		ucl_object_insert_key(o, ucl_object_fromstring(t->jail),
+		    "jail", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->fib), "fib", 0,
+	    false);
+	ucl_object_insert_key(o, ucl_object_fromstring(state_names[
+	    t->state]), "state", 0, false);
+	if (t->error[0] != '\0')
+		ucl_object_insert_key(o, ucl_object_fromstring(t->error),
+		    "error", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->since), "since",
+	    0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->interval),
+	    "interval", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->size), "size", 0,
+	    false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->eval), "eval", 0,
+	    false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->dscp), "dscp", 0,
+	    false);
+	ucl_object_insert_key(o, ucl_object_fromint((int64_t)t->sent),
+	    "sent", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint((int64_t)
+	    t->received), "received", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->misses), "misses",
+	    0, false);
+	ucl_object_insert_key(o, ucl_object_fromdouble(t->last_rtt),
+	    "last_rtt", 0, false);
+	/* The interval in progress, so far. */
+	cur = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(cur, ucl_object_fromint(t->w_sent), "sent",
+	    0, false);
+	ucl_object_insert_key(cur, ucl_object_fromint(t->w_recv), "recv",
+	    0, false);
+	ucl_object_insert_key(cur, ucl_object_fromdouble(t->w_recv > 0 ?
+	    t->w_sum / t->w_recv / 2 : 0), "delay", 0, false);
+	ucl_object_insert_key(cur, ucl_object_fromdouble(t->w_ipdv_n >
+	    0 ? t->w_ipdv_sum / t->w_ipdv_n : 0), "ipdv", 0, false);
+	ucl_object_insert_key(cur, ucl_object_fromdouble(t->w_sent > 0 ?
+	    (double)(t->w_sent - t->w_recv) / t->w_sent : 0), "loss", 0,
+	    false);
+	ucl_object_insert_key(cur, ucl_object_fromdouble(now -
+	    t->win_start), "age", 0, false);
+	ucl_object_insert_key(o, cur, "now", 0, false);
+	/* The samples, the oldest first: t, delay, ipdv, loss, min,
+	 * max, sent, received; the last report * eval ms are the
+	 * report's. */
+	s = ucl_object_typed_new(UCL_ARRAY);
+	from = t->nsamples > 3600 ? t->nsamples - 3600 : 0;
+	for (k = from; k < t->nsamples; k++) {
+		sm = &t->samples[(t->head + k) % t->history];
+		if ((uint64_t)sm->t <= after)
+			continue;
+		row = ucl_object_typed_new(UCL_ARRAY);
+		ucl_array_append(row, ucl_object_fromint((int64_t)
+		    sm->t));
+		ucl_array_append(row, ucl_object_fromdouble(sm->delay));
+		ucl_array_append(row, ucl_object_fromdouble(sm->ipdv));
+		ucl_array_append(row, ucl_object_fromdouble(sm->loss));
+		ucl_array_append(row, ucl_object_fromdouble(sm->min));
+		ucl_array_append(row, ucl_object_fromdouble(sm->max));
+		ucl_array_append(row, ucl_object_fromint(sm->sent));
+		ucl_array_append(row, ucl_object_fromint(sm->recv));
+		ucl_array_append(s, row);
+	}
+	ucl_object_insert_key(o, s, "samples", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->nsamples),
+	    "kept", 0, false);
+	if (t->ifname[0] != '\0')
+		ucl_object_insert_key(o, ucl_object_fromstring(t->ifname),
+		    "interface", 0, false);
+	if (t->tca[0] > 0 || t->tca[1] > 0 || t->tca[2] > 0) {
+		cur = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(cur, ucl_object_fromdouble(t->tca[0]),
+		    "delay", 0, false);
+		ucl_object_insert_key(cur, ucl_object_fromdouble(t->tca[1]),
+		    "ipdv", 0, false);
+		ucl_object_insert_key(cur, ucl_object_fromdouble(t->tca[2]),
+		    "loss", 0, false);
+		ucl_object_insert_key(cur, ucl_object_fromint(t->damping),
+		    "damping", 0, false);
+		ucl_object_insert_key(o, cur, "tca", 0, false);
+	}
+	ucl_object_insert_key(o, ucl_object_fromint(t->history), "history", 0,
+	    false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->down), "down", 0,
+	    false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->up), "up", 0, false);
+	return (o);
+}
+
 /* What the probes have seen, as JSON. */
 int
 do_sdwan(struct work *w, uint64_t after, struct arc_sdwan_rsp *rsp)
 {
-	ucl_object_t	*top, *arr, *o, *s, *row, *cur;
+	ucl_object_t	*top, *arr;
 	struct target	*t;
-	struct sample	*sm;
 	unsigned char	*json;
 	double		 now;
-	int		 i, k, from;
+	int		 i;
 
 	rsp->has_ok = true;
 	top = ucl_object_typed_new(UCL_OBJECT);
@@ -1200,82 +1382,10 @@ do_sdwan(struct work *w, uint64_t after, struct arc_sdwan_rsp *rsp)
 	pthread_mutex_lock(&lock);
 	for (i = 0; i < ntargets; i++) {
 		t = &targets[i];
-		o = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(o, ucl_object_fromstring(t->id), "id", 0,
-		    false);
-		ucl_object_insert_key(o, ucl_object_fromstring(t->address),
-		    "address", 0, false);
-		ucl_object_insert_key(o, ucl_object_fromstring(t->af == AF_INET ?
-		    "inet" : "inet6"), "family", 0, false);
-		if (t->jail[0] != '\0')
-			ucl_object_insert_key(o, ucl_object_fromstring(t->jail),
-			    "jail", 0, false);
-		ucl_object_insert_key(o, ucl_object_fromint(t->fib), "fib", 0,
-		    false);
-		ucl_object_insert_key(o, ucl_object_fromstring(state_names[
-		    t->state]), "state", 0, false);
-		if (t->error[0] != '\0')
-			ucl_object_insert_key(o, ucl_object_fromstring(t->error),
-			    "error", 0, false);
-		ucl_object_insert_key(o, ucl_object_fromint(t->since), "since",
-		    0, false);
-		ucl_object_insert_key(o, ucl_object_fromint(t->interval),
-		    "interval", 0, false);
-		ucl_object_insert_key(o, ucl_object_fromint(t->size), "size", 0,
-		    false);
-		ucl_object_insert_key(o, ucl_object_fromint(t->eval), "eval", 0,
-		    false);
-		ucl_object_insert_key(o, ucl_object_fromint(t->dscp), "dscp", 0,
-		    false);
-		ucl_object_insert_key(o, ucl_object_fromint((int64_t)t->sent),
-		    "sent", 0, false);
-		ucl_object_insert_key(o, ucl_object_fromint((int64_t)
-		    t->received), "received", 0, false);
-		ucl_object_insert_key(o, ucl_object_fromint(t->misses), "misses",
-		    0, false);
-		ucl_object_insert_key(o, ucl_object_fromdouble(t->last_rtt),
-		    "last_rtt", 0, false);
-		/* The interval in progress, so far. */
-		cur = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(cur, ucl_object_fromint(t->w_sent), "sent",
-		    0, false);
-		ucl_object_insert_key(cur, ucl_object_fromint(t->w_recv), "recv",
-		    0, false);
-		ucl_object_insert_key(cur, ucl_object_fromdouble(t->w_recv > 0 ?
-		    t->w_sum / t->w_recv / 2 : 0), "delay", 0, false);
-		ucl_object_insert_key(cur, ucl_object_fromdouble(t->w_ipdv_n >
-		    0 ? t->w_ipdv_sum / t->w_ipdv_n : 0), "ipdv", 0, false);
-		ucl_object_insert_key(cur, ucl_object_fromdouble(t->w_sent > 0 ?
-		    (double)(t->w_sent - t->w_recv) / t->w_sent : 0), "loss", 0,
-		    false);
-		ucl_object_insert_key(cur, ucl_object_fromdouble(now -
-		    t->win_start), "age", 0, false);
-		ucl_object_insert_key(o, cur, "now", 0, false);
-		/* The samples, the oldest first: t, delay, ipdv, loss, min,
-		 * max, sent, received; the last report * eval ms are the
-		 * report's. */
-		s = ucl_object_typed_new(UCL_ARRAY);
-		from = t->nsamples > 3600 ? t->nsamples - 3600 : 0;
-		for (k = from; k < t->nsamples; k++) {
-			sm = &t->samples[(t->head + k) % t->history];
-			if ((uint64_t)sm->t <= after)
-				continue;
-			row = ucl_object_typed_new(UCL_ARRAY);
-			ucl_array_append(row, ucl_object_fromint((int64_t)
-			    sm->t));
-			ucl_array_append(row, ucl_object_fromdouble(sm->delay));
-			ucl_array_append(row, ucl_object_fromdouble(sm->ipdv));
-			ucl_array_append(row, ucl_object_fromdouble(sm->loss));
-			ucl_array_append(row, ucl_object_fromdouble(sm->min));
-			ucl_array_append(row, ucl_object_fromdouble(sm->max));
-			ucl_array_append(row, ucl_object_fromint(sm->sent));
-			ucl_array_append(row, ucl_object_fromint(sm->recv));
-			ucl_array_append(s, row);
-		}
-		ucl_object_insert_key(o, s, "samples", 0, false);
-		ucl_object_insert_key(o, ucl_object_fromint(t->nsamples),
-		    "kept", 0, false);
-		ucl_array_append(arr, o);
+		/* The admin's monitors are read apart (do_monitors). */
+		if (is_monitor(t))
+			continue;
+		ucl_array_append(arr, target_json(t, now, after));
 	}
 	pthread_mutex_unlock(&lock);
 	ucl_object_insert_key(top, arr, "targets", 0, false);
@@ -1301,5 +1411,407 @@ do_sdwan(struct work *w, uint64_t after, struct arc_sdwan_rsp *rsp)
 	}
 	rsp->json = wadopt(w, (char *)json);
 	rsp->ok = true;
+	return (0);
+}
+
+/* ---- Monitors: the admin's own, on any tunnel ----------------------- */
+
+/* What the monitors have seen, as JSON, the host's and the jails'. */
+int
+do_monitors(struct work *w, uint64_t after, struct arc_monitors_rsp *rsp)
+{
+	ucl_object_t	*top, *arr;
+	unsigned char	*json;
+	double		 now;
+	int		 i;
+
+	rsp->has_ok = true;
+	top = ucl_object_typed_new(UCL_OBJECT);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	now = now_s();
+	pthread_mutex_lock(&lock);
+	for (i = 0; i < ntargets; i++)
+		if (is_monitor(&targets[i]))
+			ucl_array_append(arr, target_json(&targets[i], now,
+			    after));
+	pthread_mutex_unlock(&lock);
+	ucl_object_insert_key(top, arr, "monitors", 0, false);
+	ucl_object_insert_key(top, ucl_object_fromint(time(NULL)), "time", 0,
+	    false);
+	ucl_object_insert_key(top, ucl_object_frombool(started), "probing", 0,
+	    false);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	if (json == NULL) {
+		rsp->ok = false;
+		rsp->error = "no memory";
+		return (0);
+	}
+	rsp->json = wadopt(w, (char *)json);
+	rsp->ok = true;
+	return (0);
+}
+
+/* A monitor's name: letters, digits and _ . @ -, 63 at most. */
+static bool
+mon_name_ok(const char *s)
+{
+	size_t	n;
+
+	return (s != NULL && (n = strlen(s)) > 0 && n < 64 && strspn(s,
+	    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	    "_.@-") == n);
+}
+
+static const char *
+arg_of(const char *word, const char *name)
+{
+	size_t	n;
+
+	n = strlen(name);
+	return (strncmp(word, name, n) == 0 && word[n] == '=' ? word + n + 1 :
+	    NULL);
+}
+
+/* The name a monitor job is for (name=), or NULL. */
+static const char *
+mon_name(const struct arc_job_spec *sp)
+{
+	const char	*v;
+	size_t		 i;
+
+	for (i = 0; i < sp->names.n; i++)
+		if ((v = arg_of(sp->names.v[i], "name")) != NULL)
+			return (v);
+	return (NULL);
+}
+
+/* A monitor's settings, as targets_parse takes them back. */
+static ucl_object_t *
+target_conf(const struct target *t)
+{
+	ucl_object_t	*o, *tc;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(o, ucl_object_fromstring(t->id), "id", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromstring(t->address), "address",
+	    0, false);
+	if (t->ifname[0] != '\0')
+		ucl_object_insert_key(o, ucl_object_fromstring(t->ifname),
+		    "interface", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->fib), "fib", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->interval), "interval",
+	    0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->size), "size", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->dscp), "dscp", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->down), "down", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->up), "up", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->timeout), "timeout", 0,
+	    false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->eval), "eval", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(t->history), "history", 0,
+	    false);
+	if (t->tca[0] > 0 || t->tca[1] > 0 || t->tca[2] > 0) {
+		tc = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(tc, ucl_object_fromdouble(t->tca[0]),
+		    "delay", 0, false);
+		ucl_object_insert_key(tc, ucl_object_fromdouble(t->tca[1]),
+		    "ipdv", 0, false);
+		ucl_object_insert_key(tc, ucl_object_fromdouble(t->tca[2]),
+		    "loss", 0, false);
+		ucl_object_insert_key(tc, ucl_object_fromint(t->damping),
+		    "damping", 0, false);
+		ucl_object_insert_key(o, tc, "tca", 0, false);
+	}
+	return (o);
+}
+
+/*
+ * The far end of a point-to-point interface of the host (a gre's or a
+ * gif's inner address): its first inet destination, else its first
+ * inet6 one that is not link-local.  NULL with none.
+ */
+static const char *
+ptp_dst(struct work *w, const char *ifname)
+{
+	struct ifaddrs	*ifap, *i;
+	const char	*v4, *v6;
+	char		 buf[INET6_ADDRSTRLEN];
+
+	if (getifaddrs(&ifap) == -1)
+		return (NULL);
+	v4 = v6 = NULL;
+	for (i = ifap; i != NULL; i = i->ifa_next) {
+		if (strcmp(i->ifa_name, ifname) != 0 || (i->ifa_flags &
+		    IFF_POINTOPOINT) == 0 || i->ifa_dstaddr == NULL)
+			continue;
+		if (i->ifa_dstaddr->sa_family == AF_INET && v4 == NULL &&
+		    inet_ntop(AF_INET, &((struct sockaddr_in *)(void *)
+		    i->ifa_dstaddr)->sin_addr, buf, sizeof(buf)) != NULL)
+			v4 = wstrdup(w, buf);
+		else if (i->ifa_dstaddr->sa_family == AF_INET6 && v6 == NULL &&
+		    !IN6_IS_ADDR_LINKLOCAL(&((struct sockaddr_in6 *)(void *)
+		    i->ifa_dstaddr)->sin6_addr) && inet_ntop(AF_INET6,
+		    &((struct sockaddr_in6 *)(void *)i->ifa_dstaddr)->sin6_addr,
+		    buf, sizeof(buf)) != NULL)
+			v6 = wstrdup(w, buf);
+	}
+	freeifaddrs(ifap);
+	return (v4 != NULL ? v4 : v6);
+}
+
+static const char *const mon_keys[] = { "name", "interface", "address",
+    "fib", "interval", "size", "dscp", "eval", "history", "down", "up",
+    "timeout", "delay-max", "ipdv-max", "loss-max", "damping", NULL };
+
+const char *
+monitor_check(const struct arc_job_spec *sp)
+{
+	const char	*v;
+	char		*end;
+	double		 d;
+	size_t		 i, k;
+
+	if (sp->verb == NULL || (strcmp(sp->verb, "set") != 0 && strcmp(
+	    sp->verb, "remove") != 0))
+		return ("a monitor job is set or remove");
+	if (sp->safe)
+		return ("a monitor measures, it changes nothing to undo: not in "
+		    "safe mode");
+	if (!mon_name_ok(mon_name(sp)))
+		return ("a monitor has a name: name=, letters, digits and _ . "
+		    "@ -, 63 at most");
+	for (i = 0; i < sp->names.n; i++) {
+		for (k = 0; mon_keys[k] != NULL; k++)
+			if (arg_of(sp->names.v[i], mon_keys[k]) != NULL)
+				break;
+		if (mon_keys[k] == NULL || (strcmp(sp->verb, "remove") == 0 &&
+		    k != 0))
+			return (strcmp(sp->verb, "remove") == 0 ? "remove takes "
+			    "the monitor's name= alone" : "set takes name=, "
+			    "interface=, address=, fib=, interval=, size=, dscp=, "
+			    "eval=, history=, down=, up=, timeout=, delay-max=, "
+			    "ipdv-max=, loss-max= and damping=");
+		/* The numbers' form here; their bounds where they are kept. */
+		v = strchr(sp->names.v[i], '=') + 1;
+		if (k >= 12 && k <= 14) {
+			d = strtod(v, &end);
+			if (*v == '\0' || *end != '\0' || d < 0 || (k == 14 &&
+			    d > 100))
+				return ("a threshold is a number, loss-max a per "
+				    "cent");
+		} else if (k >= 3) {
+			(void)strtol(v, &end, 10);
+			if (*v == '\0' || *end != '\0')
+				return ("fib=, interval=, size=, dscp=, eval=, "
+				    "history=, down=, up=, timeout= and damping= "
+				    "are whole numbers");
+		}
+	}
+	return (NULL);
+}
+
+char *
+monitor_title(const struct arc_job_spec *sp)
+{
+	const char	*v;
+	size_t		 i;
+	char		*t;
+
+	v = NULL;
+	for (i = 0; i < sp->names.n && v == NULL; i++)
+		v = arg_of(sp->names.v[i], "interface");
+	if (asprintf(&t, "monitor %s %s%s%s%s%s", sp->verb, mon_name(sp),
+	    v != NULL ? " on " : "", v != NULL ? v : "", sp->jail != NULL &&
+	    sp->jail[0] != '\0' ? " in " : "", sp->jail != NULL ? sp->jail :
+	    "") == -1)
+		return (NULL);
+	return (t);
+}
+
+/* A whole number argument into o's key, checked by targets_parse after. */
+static int
+put_num(ucl_object_t *o, const char *key, const char *v, const char **errp)
+{
+	char	*end;
+	long	 n;
+
+	errno = 0;
+	n = strtol(v, &end, 10);
+	if (errno != 0 || *v == '\0' || *end != '\0') {
+		*errp = "is not a whole number";
+		return (-1);
+	}
+	ucl_object_insert_key(o, ucl_object_fromint(n), key, 0, true);
+	return (0);
+}
+
+/*
+ * A monitor set (added, or changed in place: its samples kept when it
+ * probes the same address the same way) or removed, at the host or at
+ * the vnet jail sp->jail; the owner's file written again.
+ */
+int
+do_monitor_job(struct work *w, const struct arc_job_spec *sp,
+    const char **errp)
+{
+	struct target	*new;
+	ucl_object_t	*arr, *o, *tc, *top;
+	const char	*name, *jail, *a, *v, *ifname, *e;
+	char		*json, path[MAXPATHLEN], jbuf[64];
+	double		 d;
+	size_t		 i;
+	int		 n, k, step;
+	bool		 found;
+
+	name = mon_name(sp);
+	jail = sp->jail != NULL ? sp->jail : "";
+	if (jail[0] != '\0' && !valid_jail(jail)) {
+		*errp = "invalid jail name";
+		return (-1);
+	}
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	found = false;
+	pthread_mutex_lock(&lock);
+	for (k = 0; k < ntargets; k++) {
+		if (!is_monitor(&targets[k]) || strcmp(targets[k].jail, jail) !=
+		    0)
+			continue;
+		if (strcmp(targets[k].id, name) == 0) {
+			found = true;
+			continue;
+		}
+		ucl_array_append(arr, target_conf(&targets[k]));
+	}
+	pthread_mutex_unlock(&lock);
+	if (strcmp(sp->verb, "remove") == 0 && !found) {
+		ucl_object_unref(arr);
+		*errp = wfmt(w, "no monitor %s%s%s", name, jail[0] != '\0' ?
+		    " in jail " : "", jail);
+		return (-1);
+	}
+	if (strcmp(sp->verb, "set") == 0) {
+		o = ucl_object_typed_new(UCL_OBJECT);
+		tc = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(name), "id", 0,
+		    false);
+		ifname = NULL;
+		e = NULL;
+		for (i = 0; i < sp->names.n && e == NULL; i++) {
+			a = sp->names.v[i];
+			if (arg_of(a, "name") != NULL)
+				continue;
+			if ((v = arg_of(a, "interface")) != NULL) {
+				if (*v == '\0' || strlen(v) >= IFNAMSIZ)
+					e = "interface= is an interface's name";
+				ifname = v;
+				ucl_object_insert_key(o, ucl_object_fromstring(v),
+				    "interface", 0, true);
+			} else if ((v = arg_of(a, "address")) != NULL)
+				ucl_object_insert_key(o, ucl_object_fromstring(v),
+				    "address", 0, true);
+			else if ((v = arg_of(a, "delay-max")) != NULL ||
+			    (v = arg_of(a, "ipdv-max")) != NULL ||
+			    (v = arg_of(a, "loss-max")) != NULL) {
+				char	*end;
+
+				d = strtod(v, &end);
+				if (*v == '\0' || *end != '\0' || d < 0 ||
+				    (arg_of(a, "loss-max") != NULL && d > 100))
+					e = "a threshold is a number, loss-max a "
+					    "per cent";
+				ucl_object_insert_key(tc, ucl_object_fromdouble(
+				    arg_of(a, "loss-max") != NULL ? d / 100 : d),
+				    arg_of(a, "delay-max") != NULL ? "delay" :
+				    arg_of(a, "ipdv-max") != NULL ? "ipdv" : "loss",
+				    0, true);
+			} else if ((v = arg_of(a, "damping")) != NULL) {
+				if (put_num(tc, "damping", v, &e) != 0)
+					e = wfmt(w, "damping %s", e);
+			} else {
+				const char	*key = wstrndup(w, a, strcspn(a,
+				    "="));
+
+				if (put_num(o, key, strchr(a, '=') + 1, &e) != 0)
+					e = wfmt(w, "%s %s", key, e);
+			}
+		}
+		/* On the host, a tunnel's far end and its table found. */
+		if (e == NULL && ucl_object_lookup(o, "address") == NULL) {
+			if (ifname != NULL && jail[0] == '\0' && (v = ptp_dst(w,
+			    ifname)) != NULL)
+				ucl_object_insert_key(o, ucl_object_fromstring(v),
+				    "address", 0, true);
+			else
+				e = ifname != NULL && jail[0] == '\0' ? wfmt(w,
+				    "%s has no far end to probe (not point to "
+				    "point): give address=", ifname) : "address= "
+				    "is needed";
+		}
+		if (e == NULL && ucl_object_lookup(o, "fib") == NULL && ifname !=
+		    NULL && jail[0] == '\0' && if_fib(ifname) > 0)
+			ucl_object_insert_key(o, ucl_object_fromint(if_fib(
+			    ifname)), "fib", 0, true);
+		if (e != NULL) {
+			ucl_object_unref(o);
+			ucl_object_unref(tc);
+			ucl_object_unref(arr);
+			*errp = e;
+			return (-1);
+		}
+		if (ucl_object_lookup(tc, "delay") != NULL || ucl_object_lookup(
+		    tc, "ipdv") != NULL || ucl_object_lookup(tc, "loss") != NULL)
+			ucl_object_insert_key(o, tc, "tca", 0, false);
+		else
+			ucl_object_unref(tc);
+		ucl_array_append(arr, o);
+	}
+	if (jail[0] != '\0') {
+		top = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(top, ucl_object_fromstring(jail), "jail", 0,
+		    false);
+		ucl_object_insert_key(top, arr, "targets", 0, false);
+	} else
+		top = arr;
+	n = (int)ucl_array_size(ucl_object_lookup(top, "targets") != NULL ?
+	    ucl_object_lookup(top, "targets") : top);
+	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	if (json == NULL) {
+		*errp = "no memory";
+		return (-1);
+	}
+	if ((new = calloc(TARGETS_MAX, sizeof(*new))) == NULL) {
+		free(json);
+		*errp = strerror(errno);
+		return (-1);
+	}
+	if ((n = targets_parse(w, json, new, jbuf, sizeof(jbuf), OWN_MONITOR,
+	    errp)) < 0) {
+		free(new);
+		free(json);
+		return (-1);
+	}
+	if (!targets_swap(new, n, jail, OWN_MONITOR)) {
+		*errp = wfmt(w, "%d targets at most, monitors and SD-WAN's "
+		    "together", TARGETS_MAX);
+		for (n--; n >= 0; n--)
+			target_free(&new[n]);
+		free(new);
+		free(json);
+		return (-1);
+	}
+	conf_path(path, sizeof(path), jail, OWN_MONITOR);
+	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
+	e = NULL;
+	if (n == 0 ? unlink(path) == -1 && errno != ENOENT && (e = strerror(
+	    errno)) != NULL : conf_write(json, jail, OWN_MONITOR, &e) != 0) {
+		step_end(w, step, false, "%s", e);
+		*errp = wfmt(w, "%s: %s", path, e);
+		free(json);
+		return (-1);
+	}
+	step_end(w, step, true, "%d monitor%s", n, n == 1 ? "" : "s");
+	free(json);
 	return (0);
 }

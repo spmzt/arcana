@@ -196,7 +196,7 @@ static const char loader_lua[] =
 /*
  * Every name f settles, once, whose value the loader gives as f has it
  * (but loader_conf_files, which config.lua keeps from the environment).
- * SIZE_MAX: no loader here to ask.
+ * The loader's own reader, the base system's flua, is required.
  */
 static size_t
 check_loader(const struct vc_file *f)
@@ -206,8 +206,9 @@ check_loader(const struct vc_file *f)
 	size_t n = 0, outlen, clen = 0;
 	FILE *fp;
 
-	if (access(FLUA, X_OK) == -1 || access(CONFIG_LUA, R_OK) == -1)
-		return (SIZE_MAX);
+	/* The base system's: every FreeBSD Arcana runs on has them. */
+	ATF_REQUIRE_MSG(access(FLUA, X_OK) == 0 && access(CONFIG_LUA, R_OK) ==
+	    0, "no " FLUA " or " CONFIG_LUA " to ask the loader with");
 	ATF_REQUIRE((names = calloc(f->na + 1, sizeof(*names))) != NULL);
 	for (size_t i = 0; i < f->na; i++) {
 		const struct vc_assign *a = &f->a[i];
@@ -779,7 +780,7 @@ ATF_TC_BODY(edits_lines, tc)
 	unset(&f, "dup");
 	check_absent(&f, "dup");
 	/* The loader reads the edited file as it is read here. */
-	ATF_CHECK(check_loader(&f) == SIZE_MAX || check_loader(&f) >= 10);
+	ATF_CHECK(check_loader(&f) >= 10);
 	ATF_CHECK_EQ(-1, vc_set(&f, "q", "a\"b", err, sizeof(err)));
 	ATF_CHECK_EQ(EINVAL, errno);
 	ATF_CHECK_EQ(-1, vc_set(&f, "exec", "x", err, sizeof(err)));
@@ -845,31 +846,28 @@ static const char rtcap_c[] =
     "\t\t} else\n\t\t\tprintf(\"%d\", agetflag(q + 2));\n"
     "\t\tputchar('\\0');\n\t}\n\treturn (0);\n}\n";
 
-static bool
+/* rtadvd's own reader, from /usr/src: rtadvd_read's head requires it. */
+static void
 rtcap_built(void)
 {
 
-	if (access(ADVCAP, R_OK) == -1)
-		return (false);
 	if (access("rtcap", X_OK) == 0)
-		return (true);
+		return;
 	put("rtcap.c", rtcap_c, sizeof(rtcap_c) - 1);
 	ATF_REQUIRE_EQ(0, system("cc -w -I/usr/src/usr.sbin/rtadvd -o rtcap "
 	    "rtcap.c " ADVCAP));
-	return (true);
 }
 
 /*
  * Every capability of every record, and of those its tc= brings, read
- * by each getter as rtadvd(8) reads it.  SIZE_MAX: no advcap.c here.
+ * by each getter as rtadvd(8) reads it.
  */
 static size_t
 check_rtadvd(const struct vc_capfile *f)
 {
 	size_t compared = 0;
 
-	if (!rtcap_built())
-		return (SIZE_MAX);
+	rtcap_built();
 	put("input.conf", f->text, f->len);
 	for (size_t i = 0; i < f->nr; i++) {
 		const struct vc_record *r = &f->r[i], *t;
@@ -958,7 +956,7 @@ ATF_TC_BODY(rtadvd, tc)
 	for (size_t i = 0; i < nitems(names); i++) {
 		const struct fixture *x = fixture(names[i]);
 		char err[256], *back;
-		size_t len, n;
+		size_t len;
 
 		rtparse(&f, x->text, x->len);
 		ATF_REQUIRE_MSG(vc_cap_write(&f, "back.conf", 0644, err,
@@ -966,9 +964,6 @@ ATF_TC_BODY(rtadvd, tc)
 		back = slurp("back.conf", &len);
 		ATF_CHECK(len == x->len && memcmp(back, x->text, len) == 0);
 		free(back);
-		n = check_rtadvd(&f);
-		ATF_CHECK_MSG(n == SIZE_MAX || n >= 30, "%s: %zu", names[i],
-		    n);
 		vc_cap_free(&f);
 	}
 	/* What the edge's lines are, each, here too. */
@@ -990,53 +985,64 @@ ATF_TC_BODY(rtadvd, tc)
 	vc_cap_free(&f);
 }
 
+/* rtadvd-man.conf with a field of each kind set, taken away and a
+ * record added and removed, each edit's bytes checked. */
+static void
+rtadvd_edited(struct vc_capfile *f)
+{
+	const struct fixture *x = fixture("rtadvd-man.conf");
+	static const char *const em9[] = { "addr=\"2001:db8:9::\"",
+	    "prefixlen#64" };
+	char err[256];
+
+	rtparse(f, x->text, x->len);
+	ATF_REQUIRE_EQ(0, vc_cap_set(f, "ef0", "prefixlen", '#', "48", err,
+	    sizeof(err)));
+	ATF_CHECK(strstr(f->text, "\nef0:\\\n\t:addr=\"2001:db8:ffff:1000::\""
+	    ":prefixlen#48:\n") != NULL);
+	/* A string with colons, replaced whole. */
+	ATF_REQUIRE_EQ(0, vc_cap_set(f, "ef0", "addr", '=', "2001:db8:1::",
+	    err, sizeof(err)));
+	ATF_CHECK(strstr(f->text, "\t:addr=\"2001:db8:1::\":prefixlen#48:\n") !=
+	    NULL);
+	/* Before tc=, which stays last; a number with no leading 0. */
+	ATF_REQUIRE_EQ(0, vc_cap_set(f, "ef1", "rltime", '#', "0600", err,
+	    sizeof(err)));
+	ATF_CHECK(strstr(f->text, ":prefixlen#64:rltime#600:tc=default:\n") !=
+	    NULL);
+	/* At a record's end; a flag. */
+	ATF_REQUIRE_EQ(0, vc_cap_set(f, "ne0", "mtu", '#', "1280", err,
+	    sizeof(err)));
+	ATF_CHECK(strstr(f->text, "\t:rltime#0:mtu#1280:\n") != NULL);
+	ATF_REQUIRE_EQ(0, vc_cap_set(f, "wlan0", "noifprefix", 0, NULL, err,
+	    sizeof(err)));
+	ATF_CHECK(strstr(f->text, ":pref64=\"64:ff9b::\":noifprefix:\n") !=
+	    NULL);
+	/* A string with colons removed, nothing of it left. */
+	ATF_REQUIRE_EQ(0, vc_cap_unset(f, "wlan0", "rdnss", err,
+	    sizeof(err)));
+	ATF_CHECK(strstr(f->text, "ffff::10") == NULL);
+	ATF_CHECK(strstr(f->text, "\t:\\\n\t:dnssl=") != NULL);
+	ATF_REQUIRE_EQ(0, vc_cap_add_record(f, "em9", em9, 2, err,
+	    sizeof(err)));
+	ATF_CHECK(strstr(f->text, "\nem9:\\\n\t:addr=\"2001:db8:9::\":\\\n"
+	    "\t:prefixlen#64:\n") != NULL);
+	ATF_REQUIRE_EQ(0, vc_cap_remove_record(f, "ne0", err, sizeof(err)));
+	ATF_CHECK(vc_cap_record(f, "ne0") == NULL);
+	ATF_CHECK(strncmp(f->text, "# rtadvd.conf(5)'s examples.\nef0:", 33) ==
+	    0);
+}
+
 /* rtadvd.conf's edits: a field's bytes, a record's lines, and no more. */
 ATF_TC_WITHOUT_HEAD(rtadvd_edits);
 ATF_TC_BODY(rtadvd_edits, tc)
 {
-	const struct fixture *x = fixture("rtadvd-man.conf");
 	static const char *const em9[] = { "addr=\"2001:db8:9::\"",
 	    "prefixlen#64" };
 	struct vc_capfile f;
 	char err[256];
 
-	rtparse(&f, x->text, x->len);
-	ATF_REQUIRE_EQ(0, vc_cap_set(&f, "ef0", "prefixlen", '#', "48", err,
-	    sizeof(err)));
-	ATF_CHECK(strstr(f.text, "\nef0:\\\n\t:addr=\"2001:db8:ffff:1000::\""
-	    ":prefixlen#48:\n") != NULL);
-	/* A string with colons, replaced whole. */
-	ATF_REQUIRE_EQ(0, vc_cap_set(&f, "ef0", "addr", '=', "2001:db8:1::",
-	    err, sizeof(err)));
-	ATF_CHECK(strstr(f.text, "\t:addr=\"2001:db8:1::\":prefixlen#48:\n") !=
-	    NULL);
-	/* Before tc=, which stays last; a number with no leading 0. */
-	ATF_REQUIRE_EQ(0, vc_cap_set(&f, "ef1", "rltime", '#', "0600", err,
-	    sizeof(err)));
-	ATF_CHECK(strstr(f.text, ":prefixlen#64:rltime#600:tc=default:\n") !=
-	    NULL);
-	/* At a record's end; a flag. */
-	ATF_REQUIRE_EQ(0, vc_cap_set(&f, "ne0", "mtu", '#', "1280", err,
-	    sizeof(err)));
-	ATF_CHECK(strstr(f.text, "\t:rltime#0:mtu#1280:\n") != NULL);
-	ATF_REQUIRE_EQ(0, vc_cap_set(&f, "wlan0", "noifprefix", 0, NULL, err,
-	    sizeof(err)));
-	ATF_CHECK(strstr(f.text, ":pref64=\"64:ff9b::\":noifprefix:\n") !=
-	    NULL);
-	/* A string with colons removed, nothing of it left. */
-	ATF_REQUIRE_EQ(0, vc_cap_unset(&f, "wlan0", "rdnss", err,
-	    sizeof(err)));
-	ATF_CHECK(strstr(f.text, "ffff::10") == NULL);
-	ATF_CHECK(strstr(f.text, "\t:\\\n\t:dnssl=") != NULL);
-	ATF_REQUIRE_EQ(0, vc_cap_add_record(&f, "em9", em9, 2, err,
-	    sizeof(err)));
-	ATF_CHECK(strstr(f.text, "\nem9:\\\n\t:addr=\"2001:db8:9::\":\\\n"
-	    "\t:prefixlen#64:\n") != NULL);
-	ATF_REQUIRE_EQ(0, vc_cap_remove_record(&f, "ne0", err, sizeof(err)));
-	ATF_CHECK(vc_cap_record(&f, "ne0") == NULL);
-	ATF_CHECK(strncmp(f.text, "# rtadvd.conf(5)'s examples.\nef0:", 33) ==
-	    0);
-	ATF_CHECK(check_rtadvd(&f) == SIZE_MAX || check_rtadvd(&f) >= 30);
+	rtadvd_edited(&f);
 	/* Refused. */
 	ATF_CHECK_EQ(-1, vc_cap_set(&f, "ef0", "tc", '=', "x", err,
 	    sizeof(err)));
@@ -1048,6 +1054,38 @@ ATF_TC_BODY(rtadvd_edits, tc)
 	ATF_CHECK_EQ(-1, vc_cap_add_record(&f, "ef0", em9, 2, err,
 	    sizeof(err)));
 	ATF_CHECK_EQ(EEXIST, errno);
+	vc_cap_free(&f);
+}
+
+/*
+ * rtadvd(8) reads the fixtures, and the file the edits made, as they
+ * are read here: by its own advcap.c, from the system's sources.
+ */
+ATF_TC(rtadvd_read);
+ATF_TC_HEAD(rtadvd_read, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "rtadvd.conf read by rtadvd(8)'s "
+	    "own advcap.c as libvarconf reads it");
+	atf_tc_set_md_var(tc, "require.files", ADVCAP);
+}
+ATF_TC_BODY(rtadvd_read, tc)
+{
+	static const char *const names[] = { "rtadvd-man.conf",
+	    "rtadvd-edge.conf" };
+	struct vc_capfile f;
+	size_t n;
+
+	for (size_t i = 0; i < nitems(names); i++) {
+		const struct fixture *x = fixture(names[i]);
+
+		rtparse(&f, x->text, x->len);
+		n = check_rtadvd(&f);
+		ATF_CHECK_MSG(n >= 30, "%s: %zu", names[i], n);
+		vc_cap_free(&f);
+	}
+	rtadvd_edited(&f);
+	ATF_CHECK(check_rtadvd(&f) >= 30);
 	vc_cap_free(&f);
 }
 
@@ -1066,5 +1104,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, edits_lines);
 	ATF_TP_ADD_TC(tp, rtadvd);
 	ATF_TP_ADD_TC(tp, rtadvd_edits);
+	ATF_TP_ADD_TC(tp, rtadvd_read);
 	return (atf_no_error());
 }

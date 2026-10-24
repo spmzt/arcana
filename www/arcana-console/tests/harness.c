@@ -337,6 +337,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "done; exit 0; fi\n"
 	    "case \"$2\" in\n"
 	    "rcvar) echo \"${1}_enable=\\\"NO\\\"\" ;;\n"
+	    "enabled) grep -q \"^${1}_enable=\\\"YES\\\"\" \"$conf\" ;;\n"
 	    "status) while [ -f hold.status ]; do sleep 0.1; done; "
 	    "[ -f running.$1 ] && { echo \"$1 is running as pid 7.\"; "
 	    "exit 0; }; echo \"$1 is not running.\"; exit 1 ;;\n"
@@ -791,6 +792,21 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(chmod("tools/smtpd", 0755) == 0);
 	ATF_REQUIRE(chmod("tools/smtpctl", 0755) == 0);
 	ATF_REQUIRE(chmod("tools/encrypt", 0755) == 0);
+	/* UDPspeeder's relay, a plugin, and its lines in syslog's file. */
+	put("tools/speederv2", "#!/bin/sh\nexit 0\n");
+	ATF_REQUIRE(chmod("tools/speederv2", 0755) == 0);
+	put("speeder.log", "Oct 23 14:22:39 h speederv2[7]: [2026-10-23 "
+	    "14:22:39][INFO]fec_inner_parameter=1:2,2:3\nOct 23 14:22:49 h "
+	    "speederv2[7]: [2026-10-23 14:22:49][INFO][report]client-->server:"
+	    "(original:10 pkt;1000 byte) (fec:20 pkt,1500 byte)  server-->"
+	    "client:(original:10 pkt;1000 byte) (fec:20 pkt;1500 byte)\nOct 23 "
+	    "14:22:59 h speederv2[7]: [2026-10-23 14:22:59][INFO][report]"
+	    "client-->server:(original:20 pkt;2000 byte) (fec:40 pkt,3000 byte)"
+	    "  server-->client:(original:20 pkt;2000 byte) (fec:40 pkt;3000 "
+	    "byte)\nOct 23 14:23:09 h speederv2[7]: [2026-10-23 14:23:09][INFO]"
+	    "[report]client-->server:(original:30 pkt;3000 byte) (fec:60 pkt,"
+	    "4500 byte)  server-->client:(original:30 pkt;3000 byte) (fec:60 "
+	    "pkt;4500 byte)\n");
 	put("tools/ctladm", "#!/bin/sh\necho \"ctladm $*\" >> netstore.log\n"
 	    "case \"$1\" in devlist) echo 'LUN Backend Size (Blocks) BS "
 	    "Serial Number Device ID'; echo '  0 block 2048 512 LABSERIAL0 "
@@ -1303,7 +1319,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* The lanes of pkg jobs, kept in the test's directory. */
 	argv[126] = (char *)(uintptr_t)"--jobs-conf";
 	argv[127] = (char *)(uintptr_t)"jobs.conf";
-	argv[128] = NULL;
+	argv[128] = (char *)(uintptr_t)"--speederv2-log";
+	argv[129] = (char *)(uintptr_t)"speeder.log";
+	argv[130] = NULL;
 	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
 	snprintf(surules, sizeof(surules), "%s/rules", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);

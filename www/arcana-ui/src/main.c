@@ -106,7 +106,7 @@ static const char *const tabnames[] = {
 	[TAB_SERVICES] = "services", [TAB_NETWORK] = "network",
 	[TAB_FIREWALL] = "firewall", [TAB_PACKAGES] = "packages",
 	[TAB_STORAGE] = "storage", [TAB_SYSTEM] = "system",
-	[TAB_SECURITY] = "security", [TAB_MAIL] = "mail",
+	[TAB_SECURITY] = "security", [TAB_MAIL] = "mail", [TAB_RELAY] = "relay",
 	[TAB_KERNEL] = "kernel",
 	[TAB_SYSCTL] = "sysctl", [TAB_CERTS] = "certificates",
 	[TAB_SSH] = "ssh",
@@ -510,6 +510,8 @@ tick(void *arg)
 			ca_tick(now);
 			cluster_tick(now);
 			net_live_tick(now);
+			monitors_tick(now);
+			relay_tick(now);
 			firewall_tick(now);
 			procs_tick(now);
 			logs_tick(now);
@@ -651,7 +653,7 @@ submit(const char *form, const ucl_object_t *f)
 	    ca_form(form, f) || certs_form(form, f) || ssh_form(form, f) || span_form(form, f) ||
 	    ipsec_form(form, f) || workflows_form(form, f) || sdwan_form(form, f) ||
 	    trouble_form(form, f) || secpage_form(form, f) ||
-	    naspage_form(form, f) || sysview_form(form, f) || mail_form(form, f) ||
+	    naspage_form(form, f) || sysview_form(form, f) || mail_form(form, f) || relay_form(form, f) || monitor_form(form, f) ||
 	    builder_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
@@ -834,8 +836,8 @@ submit_form(const char *form, const ucl_object_t *f)
 	} else if (iflabel_form(form, f) || pfxlists_form(form, f) ||
 	    user_form(form, f)) {
 		;
-	} else if (strcmp(form, "login-ldap") == 0) {
-		login_ldap(jstr(f, "user") != NULL ? jstr(f, "user") : "",
+	} else if (strcmp(form, "login-password") == 0) {
+		login_password(jstr(f, "user") != NULL ? jstr(f, "user") : "",
 		    jstr(f, "password") != NULL ? jstr(f, "password") : "");
 	} else if (strcmp(form, "enrol") == 0) {
 		enrol(jstr(f, "token") != NULL ? jstr(f, "token") : "",
@@ -1086,7 +1088,8 @@ dispatch(const char *act, const char *arg, const char *value)
 	    span_action(act, arg, value) ||
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
 	    sdwan_action(act, arg, value) || trouble_action(act, arg, value) ||
-	    sysview_action(act, arg, value) || mail_action(act, arg, value) ||
+	    sysview_action(act, arg, value) || mail_action(act, arg, value) || relay_action(act, arg, value) ||
+	    monitor_action(act, arg, value) ||
 	    secpage_action(act, arg, value) || naspage_action(act, arg, value) ||
 	    builder_action(act, arg, value) ||
 	    iflabel_action(act, arg) || pfxlists_action(act, arg, value) ||
@@ -1189,6 +1192,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "system") == 0 ? TAB_SYSTEM :
 		    strcmp(arg, "security") == 0 ? TAB_SECURITY :
 		    strcmp(arg, "mail") == 0 ? TAB_MAIL :
+		    strcmp(arg, "relay") == 0 ? TAB_RELAY :
 		    strcmp(arg, "jails") == 0 ? TAB_JAILS :
 		    strcmp(arg, "jobs") == 0 ? TAB_JOBS : TAB_SUMMARY;
 		app.node = NODE_HOST;
@@ -1516,7 +1520,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "span") == 0 ? NET_SPAN :
 		    strcmp(arg, "carp") == 0 ? NET_CARP :
 		    strcmp(arg, "multicast") == 0 ? NET_MULTICAST :
-		    strcmp(arg, "kept-routes") == 0 ? NET_KEPT : NET_ROUTES;
+		    strcmp(arg, "kept-routes") == 0 ? NET_KEPT :
+		    strcmp(arg, "monitors") == 0 ? NET_MONITORS : NET_ROUTES;
 		if (app.net.kind == NET_INTERFACES)
 			topo_poll(s);
 		app.net.loading = false;
@@ -1560,6 +1565,23 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "off.");
 		confirm("Delete the route", body, "Delete", true, "",
 		    "do-route-delete", arg, value);
+	} else if (strcmp(act, "host-reboot") == 0 && s != NULL) {
+		char body[400];
+
+		snprintf(body, sizeof(body), "%s reboots, by shutdown -r a "
+		    "minute after: every jail, service and connection on it "
+		    "stops until it is up again. Type its name to go on.",
+		    s->name);
+		confirm("Reboot the host", body, "Reboot", true, s->name,
+		    "do-host-reboot", s->id, "");
+	} else if (strcmp(act, "do-host-reboot") == 0 && s != NULL &&
+	    strcmp(arg, s->id) == 0) {
+		char	*json;
+
+		if ((json = strdup("{\"kind\":\"reboot\"}")) == NULL)
+			abort();
+		job_send_host(s, json, "reboot, a minute after", JOB_SYSTEM,
+		    s->name);
 	} else if (strcmp(act, "kept-rename") == 0 && s != NULL) {
 		/* arg: the destination; value: its table, a space, its
 		 * name. */
@@ -1825,6 +1847,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_system(s, true);
 		} else if (app.tab == TAB_MAIL) {
 			mail_refresh();
+		} else if (app.tab == TAB_RELAY) {
+			relay_refresh();
 		} else if (app.tab == TAB_PACKAGES) {
 			app.pkg.loading = false;
 			refresh_packages(s, true);
@@ -1880,6 +1904,9 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "describes.", arg);
 		confirm("Kill jail", body, "Kill", true, arg, "do-kill", arg,
 		    "");
+	} else if (strcmp(act, "jail-boot") == 0 && (strcmp(value, "enable") ==
+	    0 || strcmp(value, "disable") == 0)) {
+		jail_action(arg, value);
 	} else if (strcmp(act, "do-stop") == 0) {
 		jail_action(arg, "stop");
 	} else if (strcmp(act, "do-restart") == 0) {
@@ -2015,6 +2042,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.rail_open = !app.rail_open;
 	} else if (strcmp(act, "who-toggle") == 0) {
 		app.who_open = !app.who_open;
+	} else if (strcmp(act, "acct-toggle") == 0) {
+		app.acct_open = !app.acct_open;
 	} else if (strcmp(act, "quiet-toggle") == 0) {
 		app.show_quiet = !app.show_quiet;
 	} else if (strcmp(act, "settings") == 0 || strcmp(act, "keys") == 0 ||
@@ -2143,6 +2172,10 @@ arc_on_action(char *act, char *arg, char *value)
 	if (app.who_open && strcmp(act, "who-toggle") != 0 && strcmp(act,
 	    "resize") != 0)
 		app.who_open = false;
+	/* So does the account menu, but at Notify, which it holds. */
+	if (app.acct_open && strcmp(act, "acct-toggle") != 0 && strcmp(act,
+	    "resize") != 0 && strcmp(act, "notify") != 0)
+		app.acct_open = false;
 	dispatch(act, arg, value);
 	free(act);
 	free(arg);

@@ -60,6 +60,9 @@ struct qjob {
 	bool			 undo_kept;	/* rc.conf had the route */
 	bool			 undo_enabled;	/* bird: the protocol was */
 	const char		*undo_note;	/* why nothing is put back */
+	const char		*undo_sflags;	/* speeder: its two variables */
+	const char		*undo_senable;
+	bool			 undo_srunning;	/* ... and whether it ran */
 	char			*undo_secret;	/* malloc'd, zeroed at the end:
 						 * wireguard: showconf before */
 	struct undo_file {		/* files as they were: text, or none */
@@ -113,7 +116,8 @@ static const char *undo(struct qjob *);
 static void	*runner(void *);
 static void	 fill(struct work *, struct arc_job *, struct qjob *, bool);
 
-static const char *action_names[] = { "start", "stop", "restart", "kill" };
+static const char *action_names[] = { "start", "stop", "restart", "kill",
+    "enable", "disable" };
 static const char *svc_names[] = { "start", "stop", "restart", "reload",
     "enable", "disable" };
 
@@ -244,6 +248,12 @@ title_of(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_SMTPD:
 		rc = (t = smtpd_title(sp)) != NULL ? 0 : -1;
 		break;
+	case ARC_JOB_KIND_SPEEDER:
+		rc = (t = speeder_title(sp)) != NULL ? 0 : -1;
+		break;
+	case ARC_JOB_KIND_MONITOR:
+		rc = (t = monitor_title(sp)) != NULL ? 0 : -1;
+		break;
 	case ARC_JOB_KIND_CARP:
 		rc = asprintf(&t, "%s: carp %s vhid %s%s%s", sp->interface,
 		    sp->verb, carp_vhid_of(sp), sp->address != NULL &&
@@ -337,6 +347,9 @@ title_of(const struct arc_job_spec *sp)
 		rc = asprintf(&t, "pkg clean%s%s%s", sp->force ? " -a" : "",
 		    sp->jail != NULL && sp->jail[0] != '\0' ? " in " : "",
 		    sp->jail != NULL ? sp->jail : "");
+		break;
+	case ARC_JOB_KIND_REBOOT:
+		rc = asprintf(&t, "reboot, a minute after");
 		break;
 	case ARC_JOB_KIND_JAIL_BASE:
 		rc = asprintf(&t, "jail %s: %s%s%s", sp->jail != NULL ? sp->jail :
@@ -716,6 +729,34 @@ undo_forget(struct qjob *j)
 }
 
 /*
+ * The host rebooted by shutdown(8) a minute from now: its parent says
+ * the child's pid and goes, so the job is done, and its answer and the
+ * console's next read are out before the host stops.
+ */
+static int
+do_reboot(struct work *w, const char **errp)
+{
+	struct execres	 res;
+	const char	*sh;
+	char		*argv[5];
+
+	if ((sh = tool(w, "shutdown")) == NULL) {
+		*errp = "this host has no shutdown(8)";
+		return (-1);
+	}
+	argv[0] = (char *)(uintptr_t)sh;
+	argv[1] = (char *)(uintptr_t)"-r";
+	argv[2] = (char *)(uintptr_t)"+1";
+	argv[3] = (char *)(uintptr_t)"rebooted from Arcana";
+	argv[4] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "shutdown"));
+		return (-1);
+	}
+	return (0);
+}
+
+/*
  * Before a safe change: what it will take to put things back, which
  * afterwards can no longer be read.
  */
@@ -972,6 +1013,12 @@ undo_prepare(struct qjob *j)
 			j->undo_vars[i].remove = v == NULL;
 		}
 		j->undo_nvars = sp->variables.n;
+		break;
+	case ARC_JOB_KIND_SPEEDER:
+		/* The host's relay alone (a jail's is refused as safe):
+		 * its flags, whether it is enabled and whether it runs. */
+		speeder_snap(&j->w, &j->undo_sflags, &j->undo_senable,
+		    &j->undo_srunning);
 		break;
 	default:
 		break;
@@ -1379,6 +1426,10 @@ undo(struct qjob *j)
 			}
 		}
 		break;
+	case ARC_JOB_KIND_SPEEDER:
+		rc = speeder_back(&j->w, j->undo_sflags, j->undo_senable,
+		    j->undo_srunning, &e);
+		break;
 	default:
 		/* A kind with no undo is refused as safe at its check: this
 		 * is never reached, and says so rather than doing harm. */
@@ -1561,6 +1612,17 @@ run(struct qjob *j, bool lane)
 		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
 		    do_smtpd_job(&j->w, sp, &error) == 0;
 		break;
+	case ARC_JOB_KIND_SPEEDER:
+		error = NULL;
+		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
+		    do_speeder_job(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_MONITOR:
+		/* A jail's is probed from its network by the prober; the
+		 * job itself stays on the host. */
+		error = NULL;
+		ok = do_monitor_job(&j->w, sp, &error) == 0;
+		break;
 	case ARC_JOB_KIND_CERT:
 		/* Any jail's: its files, not its network. */
 		error = NULL;
@@ -1614,6 +1676,10 @@ run(struct qjob *j, bool lane)
 	case ARC_JOB_KIND_JAIL_BASE:
 		error = NULL;
 		ok = do_jail_base(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_REBOOT:
+		error = NULL;
+		ok = do_reboot(&j->w, &error) == 0;
 		break;
 	case ARC_JOB_KIND_PKG_INSTALL:
 		error = NULL;

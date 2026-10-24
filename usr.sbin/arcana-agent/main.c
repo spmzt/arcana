@@ -74,6 +74,8 @@ struct opts opts = {
 	.smtpctl_bin = "/usr/local/sbin/smtpctl",
 	.smtpd_conf = "/usr/local/etc/mail/smtpd.conf",
 	.smtpd_dir = "/usr/local/etc/mail/arcana",
+	.speederv2_bin = "/usr/local/bin/speederv2",
+	.speederv2_log = "/var/log/messages",
 	.log_dir = "/var/log",
 	.history_conf = "/usr/local/etc/arcana/history.conf",
 	.jobs_conf = "/usr/local/etc/arcana/jobs.conf",
@@ -119,7 +121,8 @@ static bool	foreground;
 enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API,
     OPT_POUDRIERE, OPT_POUDRIERE_ETC, OPT_IFMCSTAT, OPT_FRESHCLAM_CONF,
     OPT_SURICATA_RULES, OPT_EXPORTS, OPT_CTL_CONF, OPT_HAST_CONF,
-    OPT_SMTPD_CONF, OPT_SMTPD_DIR, OPT_PKG_IDLE, OPT_JOBS_CONF };
+    OPT_SMTPD_CONF, OPT_SMTPD_DIR, OPT_PKG_IDLE, OPT_JOBS_CONF,
+    OPT_SPEEDER_LOG };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
@@ -149,6 +152,8 @@ static const struct option longopts[] = {
 	/* OpenSMTPD's smtpd.conf, and the directory of the agent's tables. */
 	{ "smtpd-conf", required_argument, NULL, OPT_SMTPD_CONF },
 	{ "smtpd-dir", required_argument, NULL, OPT_SMTPD_DIR },
+	/* The log UDPspeeder's relay writes to, through syslogd. */
+	{ "speederv2-log", required_argument, NULL, OPT_SPEEDER_LOG },
 	{ NULL, 0, NULL, 0 },
 };
 
@@ -190,6 +195,7 @@ usage(void)
 	    "                 [--suricata-rules directory]\n"
 	    "                 [--exports file] [--ctl-conf file] [--hast-conf file]\n"
 	    "                 [--smtpd-conf file] [--smtpd-dir directory]\n"
+	    "                 [--speederv2-log file]\n"
 	    "                 [--jobs-conf file]\n");
 	exit(2);
 }
@@ -427,6 +433,9 @@ main(int argc, char *argv[])
 			break;
 		case OPT_SMTPD_DIR:
 			opts.smtpd_dir = optarg;
+			break;
+		case OPT_SPEEDER_LOG:
+			opts.speederv2_log = optarg;
 			break;
 			break;
 		case OPT_JOBS_CONF:

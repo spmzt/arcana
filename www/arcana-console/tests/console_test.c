@@ -1044,6 +1044,137 @@ ATF_TC_BODY(agent_update, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(monitors, "Tunnel monitors through the console: set by a job as "
+    "the page sends it, read back with their settings, a refusal said, "
+    "removed")
+ATF_TC_BODY(monitors, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		path[160], jobs[160], body[512], cwd[MAXPATHLEN];
+	int		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(path, sizeof(path), "/api/servers/%s/monitors", jstr(&r,
+	    "servers.0.id"));
+	snprintf(jobs, sizeof(jobs), "/api/servers/%s/jobs", jstr(&r,
+	    "servers.0.id"));
+	resp_free(&r);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"monitors\":[]") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", jobs, "{\"jobs\":[{\"kind\":\"monitor\",\"verb\":\"set\","
+	    "\"args\":[\"name=gre9\",\"interface=gre9\",\"address=192.0.2.9\","
+	    "\"interval=500\",\"eval=10000\",\"delay-max=40\",\"loss-max=2\"]}]}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 100; i++) {
+		http("GET", path, NULL, &r);
+		if (jstr(&r, "data.monitors.0.id") != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_CHECK_STREQ("gre9", jstr(&r, "data.monitors.0.id"));
+	ATF_CHECK_STREQ("192.0.2.9", jstr(&r, "data.monitors.0.address"));
+	ATF_CHECK_STREQ("gre9", jstr(&r, "data.monitors.0.interface"));
+	ATF_CHECK_STREQ("500", jstr(&r, "data.monitors.0.interval"));
+	ATF_CHECK_STREQ("0.020000", jstr(&r, "data.monitors.0.tca.loss"));
+	resp_free(&r);
+	/* What the host refuses comes back as the job's failure. */
+	http("POST", jobs, "{\"jobs\":[{\"kind\":\"monitor\",\"verb\":\"set\","
+	    "\"args\":[\"name=x\",\"address=192.0.2.1\",\"loss-max=150\"]}]}",
+	    &r);
+	EXPECT(&r, 502);
+	ATF_CHECK_MSG(strstr(r.body, "loss-max a per cent") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	http("POST", jobs, "{\"jobs\":[{\"kind\":\"monitor\",\"verb\":"
+	    "\"remove\",\"args\":[\"name=gre9\"]}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 100; i++) {
+		http("GET", path, NULL, &r);
+		if (r.body != NULL && strstr(r.body, "\"monitors\":[]") != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_CHECK_MSG(i < 100, "the monitor is not removed");
+	resp_free(&r);
+}
+
+CONSOLE_TC(speeder, "UDPspeeder's relay read through the console, its "
+    "overhead from its log; its flags written by a safe job as the page "
+    "sends it, confirmed by the console; the key in no reply")
+ATF_TC_BODY(speeder, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		path[160], jobs[160], body[1024], cwd[MAXPATHLEN];
+	int		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(path, sizeof(path), "/api/servers/%s/speeder", jstr(&r,
+	    "servers.0.id"));
+	snprintf(jobs, sizeof(jobs), "/api/servers/%s/jobs", jstr(&r,
+	    "servers.0.id"));
+	resp_free(&r);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "data.installed"));
+	ATF_CHECK_STREQ("50.0", jstr(&r,
+	    "data.report.client_to_server.overhead"));
+	ATF_CHECK_STREQ("2", jstr(&r, "data.fec_groups.1.0"));
+	resp_free(&r);
+	/* The flags, by a safe job as the tab sends it. */
+	http("POST", jobs, "{\"jobs\":[{\"kind\":\"speeder\",\"verb\":\"conf\","
+	    "\"args\":[\"role=client\",\"listen=127.0.0.1:51821\",\"remote="
+	    "192.0.2.1:14350\",\"fec=20:10\",\"report=10\",\"key=t0psecret\"],"
+	    "\"safe\":true}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "t0psecret") == NULL, "%s", r.body);
+	resp_free(&r);
+	for (i = 0; i < 300 && system("grep -q '^speederv2_flags=\"-c "
+	    "-l127.0.0.1:51821 -r192.0.2.1:14350 -k t0psecret -f20:10 --report "
+	    "10\"$' rc.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the flags are not written");
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "data.key"));
+	ATF_CHECK_MSG(strstr(r.body, "t0psecret") == NULL, "%s", r.body);
+	resp_free(&r);
+	/* Confirmed by the console's next look: not undone after. */
+	sleep(3);
+	ATF_CHECK(system("grep -q '^speederv2_flags=\"-c ' rc.conf") == 0);
+	http("GET", jobs, NULL, &r);
+	ATF_CHECK_MSG(strstr(r.body, "t0psecret") == NULL && strstr(r.body,
+	    "undone") == NULL, "%.800s", r.body);
+	resp_free(&r);
+	/* What the host refuses comes back as the job's failure. */
+	http("POST", jobs, "{\"jobs\":[{\"kind\":\"speeder\",\"verb\":\"fec\","
+	    "\"args\":[\"0:9\"]}]}", &r);
+	EXPECT(&r, 502);
+	ATF_CHECK_MSG(strstr(r.body, "fec takes the ratios") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(smtpd, "OpenSMTPD read through the console; smtpd.conf rendered on "
     "the host from the form; a table's passwords hashed there, never read back")
 ATF_TC_BODY(smtpd, tc)
@@ -1833,15 +1964,18 @@ ATF_TC_BODY(workflows, tc)
 	    "\"swap\":90}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	for (i = 0; i < 200; i++) {
+	/* The next tick's, which a busy host makes late. */
+	for (i = 0; i < 400; i++) {
 		http("GET", "/api/runs", NULL, &r);
-		if (strstr(r.body, "\"event threshold\"") != NULL)
+		if (r.body != NULL && strstr(r.body, "\"event threshold\"") !=
+		    NULL)
 			break;
 		resp_free(&r);
 		usleep(100000);
 	}
-	ATF_CHECK_MSG(i < 200, "no run begun by the threshold");
-	ATF_CHECK(strstr(r.body, "\"what\":\"mem\"") != NULL);
+	ATF_CHECK_MSG(i < 400, "no run begun by the threshold");
+	ATF_CHECK(r.body != NULL && strstr(r.body, "\"what\":\"mem\"") !=
+	    NULL);
 	resp_free(&r);
 	/*
 	 * A program that crashes (the kernel's line, kern.logsigexit):
@@ -2231,6 +2365,167 @@ slapd_stop(void)
 	    "true");
 }
 
+CONSOLE_TC(password, "A password of the console's own: set from a key's "
+    "session, said as set but never its hash, kept through an edit; a "
+    "sign-in with it limited as a token's; a wrong one, an unknown user, a "
+    "short one refused; another's the owner's alone to set; taken away, "
+    "the sessions it opened end; too many failures throttled")
+ATF_TC_BODY(password, tc)
+{
+	struct authn	a, b;
+	struct resp	r;
+	char		keycookie[160], pwcookie[160], invite[80];
+	int		i, k;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(keycookie, sizeof(keycookie), "%s", cookie);
+	/* None yet: the page offers none, and none signs in. */
+	http("GET", "/api/auth/status", NULL, &r);
+	ATF_CHECK_STREQ("false", jstr(&r, "password"));
+	resp_free(&r);
+	cookie[0] = '\0';
+	http("POST", "/api/auth/login/password", "{\"user\":\"admin\","
+	    "\"password\":\"correct horse battery\"}", &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	/* Not without a session. */
+	http("POST", "/api/auth/password", "{\"password\":\"correct horse "
+	    "battery\"}", &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	snprintf(cookie, sizeof(cookie), "%s", keycookie);
+	/* Too short, a control character; then the session's own. */
+	http("POST", "/api/auth/password", "{\"password\":\"short one\"}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "12 characters") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	http("POST", "/api/auth/password", "{\"password\":\"correct\\thorse "
+	    "battery\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/auth/password", "{\"password\":\"correct horse "
+	    "battery\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("admin", jstr(&r, "user"));
+	ATF_CHECK_STREQ("true", jstr(&r, "password"));
+	resp_free(&r);
+	/* Said as set; its hash never, nor kept anywhere but users.json. */
+	http("GET", "/api/users", NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "users.0.password"));
+	ATF_CHECK_MSG(strstr(r.body, "$2b$") == NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '\"password\": *\"\\$2b\\$12\\$' "
+	    "data/users.json") == 0);
+	http("GET", "/api/auth/status", NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "password"));
+	resp_free(&r);
+	/* Bob, a viewer: the owner sets his, and an edit keeps it. */
+	http("PUT", "/api/users/bob", "{\"roles\":[\"viewer\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/auth/password", "{\"user\":\"bob\",\"password\":"
+	    "\"bob's own long password\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("PUT", "/api/users/bob", "{\"roles\":[\"viewer\",\"operator\"]}",
+	    &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "users.1.password"));
+	resp_free(&r);
+	http("POST", "/api/auth/password", "{\"user\":\"nosuch\",\"password\":"
+	    "\"a long enough one\"}", &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	/* Signed in by it: a wrong one and an unknown user alike refused,
+	 * then bob, limited as a token's session is. */
+	cookie[0] = '\0';
+	http("POST", "/api/auth/login/password", "{\"user\":\"bob\","
+	    "\"password\":\"not his password\"}", &r);
+	ATF_CHECK_MSG(r.status == 401 && strstr(r.body, "not right") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("POST", "/api/auth/login/password", "{\"user\":\"nobody\","
+	    "\"password\":\"bob's own long password\"}", &r);
+	ATF_CHECK_MSG(r.status == 401 && strstr(r.body, "not right") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(cookie[0] == '\0');
+	http("POST", "/api/auth/login/password", "{\"user\":\"bob\","
+	    "\"password\":\"bob's own long password\"}", &r);
+	ATF_CHECK_MSG(r.status == 200, "%s", r.body);
+	ATF_CHECK_STREQ("bob", jstr(&r, "user"));
+	ATF_CHECK_STREQ("true", jstr(&r, "by_password"));
+	ATF_CHECK_STREQ("true", jstr(&r, "by_token"));
+	resp_free(&r);
+	ATF_CHECK(cookie[0] != '\0');
+	snprintf(pwcookie, sizeof(pwcookie), "%s", cookie);
+	http("GET", "/api/auth/status", NULL, &r);
+	ATF_CHECK_STREQ("true", jstr(&r, "by_password"));
+	resp_free(&r);
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* Nor its own password, nor the keys, users or settings. */
+	http("POST", "/api/auth/password", "{\"password\":\"a new long "
+	    "password\"}", &r);
+	ATF_CHECK_MSG(r.status == 403, "%s", r.body);
+	resp_free(&r);
+	http("GET", "/api/auth/credentials", NULL, &r);
+	ATF_CHECK_MSG(r.status == 403, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/users/bob", "{\"roles\":[\"owner\"]}", &r);
+	ATF_CHECK_MSG(r.status == 403, "%s", r.body);
+	resp_free(&r);
+	/* Bob with a key of his own sets his, not the owner's. */
+	snprintf(cookie, sizeof(cookie), "%s", keycookie);
+	http("POST", "/api/users/bob/invite", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(invite, sizeof(invite), "%s", jstr(&r, "token"));
+	resp_free(&r);
+	cookie[0] = '\0';
+	authn_new(&b, -8);
+	do_register(&b, invite, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/auth/password", "{\"user\":\"admin\",\"password\":"
+	    "\"taken over now\"}", &r);
+	ATF_CHECK_MSG(r.status == 403, "%s", r.body);
+	resp_free(&r);
+	/* Taken away by the owner: the session it opened ends. */
+	snprintf(cookie, sizeof(cookie), "%s", keycookie);
+	http("POST", "/api/auth/password", "{\"user\":\"bob\",\"password\":"
+	    "\"\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "password"));
+	resp_free(&r);
+	snprintf(cookie, sizeof(cookie), "%s", pwcookie);
+	for (i = 0; i < 50; i++) {
+		http("GET", "/api/servers", NULL, &r);
+		if (r.status == 401)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	EXPECT(&r, 401);
+	resp_free(&r);
+	/* Throttled: five failures in a minute (counted again should one
+	 * begin on the way), then a wait, even for the right password. */
+	cookie[0] = '\0';
+	for (i = 0; i < 12; i++) {
+		http("POST", "/api/auth/login/password", "{\"user\":\"admin\","
+		    "\"password\":\"not the password\"}", &r);
+		k = r.status;
+		resp_free(&r);
+		if (k == 429)
+			break;
+	}
+	http("POST", "/api/auth/login/password", "{\"user\":\"admin\","
+	    "\"password\":\"correct horse battery\"}", &r);
+	ATF_CHECK_MSG(r.status == 429, "%d %s", r.status, r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(ldap, "Sign-in by LDAP over TLS: the user looked up and bound "
     "as, a group's members alone, a role by a directory group, a session "
     "limited as a token's without one; a wrong "
@@ -2252,7 +2547,7 @@ ATF_TC_BODY(ldap, tc)
 	http("GET", "/api/auth/status", NULL, &r);
 	ATF_CHECK_STREQ("false", jstr(&r, "ldap"));
 	resp_free(&r);
-	http("POST", "/api/auth/login/ldap", "{\"user\":\"alice\",\"password\":"
+	http("POST", "/api/auth/login/password", "{\"user\":\"alice\",\"password\":"
 	    "\"alicepw\"}", &r);
 	EXPECT(&r, 404);
 	resp_free(&r);
@@ -2286,23 +2581,23 @@ ATF_TC_BODY(ldap, tc)
 	/* The key's session kept aside: the sign-ins open their own. */
 	snprintf(keycookie, sizeof(keycookie), "%s", cookie);
 	cookie[0] = '\0';
-	http("POST", "/api/auth/login/ldap", "{\"user\":\"alice\",\"password\":"
+	http("POST", "/api/auth/login/password", "{\"user\":\"alice\",\"password\":"
 	    "\"\"}", &r);
 	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "anonymous") != NULL,
 	    "%s", r.body);
 	resp_free(&r);
-	http("POST", "/api/auth/login/ldap", "{\"user\":\"alice\",\"password\":"
+	http("POST", "/api/auth/login/password", "{\"user\":\"alice\",\"password\":"
 	    "\"wrong\"}", &r);
 	ATF_CHECK_MSG(r.status == 401 && strstr(r.body, "wrong password") !=
 	    NULL, "%s", r.body);
 	resp_free(&r);
-	http("POST", "/api/auth/login/ldap", "{\"user\":\"nobody\",\"password\":"
+	http("POST", "/api/auth/login/password", "{\"user\":\"nobody\",\"password\":"
 	    "\"x\"}", &r);
 	ATF_CHECK_MSG(r.status == 401 && strstr(r.body, "no such user") != NULL,
 	    "%s", r.body);
 	resp_free(&r);
 	/* Bob is a user, but not of the group. */
-	http("POST", "/api/auth/login/ldap", "{\"user\":\"bob\",\"password\":"
+	http("POST", "/api/auth/login/password", "{\"user\":\"bob\",\"password\":"
 	    "\"bobpw\"}", &r);
 	ATF_CHECK_MSG(r.status == 401 && strstr(r.body, "not a member") != NULL,
 	    "%s", r.body);
@@ -2311,7 +2606,7 @@ ATF_TC_BODY(ldap, tc)
 	/* Alice: in, said to be by LDAP, and the user alice the console
 	 * made for her, with the role of her group noc: a member of the
 	 * console, a viewer of the hosts. */
-	http("POST", "/api/auth/login/ldap", "{\"user\":\"alice\",\"password\":"
+	http("POST", "/api/auth/login/password", "{\"user\":\"alice\",\"password\":"
 	    "\"alicepw\"}", &r);
 	ATF_CHECK_MSG(r.status == 200, "%s", r.body);
 	ATF_CHECK_STREQ("true", jstr(&r, "authenticated"));
@@ -2339,11 +2634,11 @@ ATF_TC_BODY(ldap, tc)
 	/* Throttled: after the failures above and two more, a minute's
 	 * wait, even for the right password. */
 	for (i = 0; i < 3; i++) {
-		http("POST", "/api/auth/login/ldap", "{\"user\":\"alice\","
+		http("POST", "/api/auth/login/password", "{\"user\":\"alice\","
 		    "\"password\":\"wrong\"}", &r);
 		resp_free(&r);
 	}
-	http("POST", "/api/auth/login/ldap", "{\"user\":\"alice\",\"password\":"
+	http("POST", "/api/auth/login/password", "{\"user\":\"alice\",\"password\":"
 	    "\"alicepw\"}", &r);
 	ATF_CHECK_MSG(r.status == 429, "%d %s", r.status, r.body);
 	resp_free(&r);
@@ -2358,7 +2653,7 @@ ATF_TC_BODY(ldap, tc)
 	resp_free(&r);
 	restart_console();
 	cookie[0] = '\0';
-	http("POST", "/api/auth/login/ldap", "{\"user\":\"bob\",\"password\":"
+	http("POST", "/api/auth/login/password", "{\"user\":\"bob\",\"password\":"
 	    "\"bobpw\"}", &r);
 	ATF_CHECK_MSG(r.status == 200, "%d %s", r.status, r.body);
 	/* No group of his gives a role: no user is made for him, and the
@@ -2380,7 +2675,7 @@ ATF_TC_BODY(ldap, tc)
 	EXPECT(&r, 200);
 	resp_free(&r);
 	cookie[0] = '\0';
-	http("POST", "/api/auth/login/ldap", "{\"user\":\"bob\",\"password\":"
+	http("POST", "/api/auth/login/password", "{\"user\":\"bob\",\"password\":"
 	    "\"bobpw\"}", &r);
 	ATF_CHECK_MSG(r.status == 401 && strstr(r.body, "TLS") != NULL, "%d %s",
 	    r.status, r.body);
@@ -6449,8 +6744,6 @@ ATF_TC_BODY(sdwan_jail, tc)
 	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
 		snprintf(doc, sizeof(doc), "%s", t1);
 	/* Not a jail's name, or no server: refused. */
-	ATF_REQUIRE(swap_in(doc, "@J", "@A/a b", t1, sizeof(t1)));
-	ATF_REQUIRE(swap_in(t1, "@A", sa, body, sizeof(body)) || true);
 	{
 		char	bad[4096], bad2[4096];
 
@@ -8788,7 +9081,7 @@ ATF_TC_BODY(cluster, tc)
 	ATF_REQUIRE(chdir(cwd) == 0);
 	strlcpy(cookie, body, sizeof(cookie));
 	ATF_REQUIRE(chdir(cl_nodes[2]) == 0);
-	for (k = 0; k < 100; k++) {
+	for (k = 0; k < 300; k++) {
 		http("GET", "/api/servers", NULL, &r);
 		n = r.status;
 		resp_free(&r);
@@ -8819,6 +9112,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, agent_build);
 	ATF_TP_ADD_TC(tp, update_notes);
 	ATF_TP_ADD_TC(tp, smtpd);
+	ATF_TP_ADD_TC(tp, speeder);
+	ATF_TP_ADD_TC(tp, monitors);
 	ATF_TP_ADD_TC(tp, settings);
 	ATF_TP_ADD_TC(tp, mail);
 	ATF_TP_ADD_TC(tp, telegram);
@@ -8832,6 +9127,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, templates);
 	ATF_TP_ADD_TC(tp, pfxlists);
 	ATF_TP_ADD_TC(tp, labels);
+	ATF_TP_ADD_TC(tp, password);
 	ATF_TP_ADD_TC(tp, ldap);
 	ATF_TP_ADD_TC(tp, troubleshoot);
 	ATF_TP_ADD_TC(tp, workflows);
