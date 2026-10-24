@@ -1044,6 +1044,69 @@ ATF_TC_BODY(agent_update, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(speeder, "UDPspeeder's relay read through the console, its "
+    "overhead from its log; its flags written by a safe job as the page "
+    "sends it, confirmed by the console; the key in no reply")
+ATF_TC_BODY(speeder, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		path[160], jobs[160], body[1024], cwd[MAXPATHLEN];
+	int		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(path, sizeof(path), "/api/servers/%s/speeder", jstr(&r,
+	    "servers.0.id"));
+	snprintf(jobs, sizeof(jobs), "/api/servers/%s/jobs", jstr(&r,
+	    "servers.0.id"));
+	resp_free(&r);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "data.installed"));
+	ATF_CHECK_STREQ("50.0", jstr(&r,
+	    "data.report.client_to_server.overhead"));
+	ATF_CHECK_STREQ("2", jstr(&r, "data.fec_groups.1.0"));
+	resp_free(&r);
+	/* The flags, by a safe job as the tab sends it. */
+	http("POST", jobs, "{\"jobs\":[{\"kind\":\"speeder\",\"verb\":\"conf\","
+	    "\"args\":[\"role=client\",\"listen=127.0.0.1:51821\",\"remote="
+	    "192.0.2.1:14350\",\"fec=20:10\",\"report=10\",\"key=t0psecret\"],"
+	    "\"safe\":true}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "t0psecret") == NULL, "%s", r.body);
+	resp_free(&r);
+	for (i = 0; i < 300 && system("grep -q '^speederv2_flags=\"-c "
+	    "-l127.0.0.1:51821 -r192.0.2.1:14350 -k t0psecret -f20:10 --report "
+	    "10\"$' rc.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the flags are not written");
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "data.key"));
+	ATF_CHECK_MSG(strstr(r.body, "t0psecret") == NULL, "%s", r.body);
+	resp_free(&r);
+	/* Confirmed by the console's next look: not undone after. */
+	sleep(3);
+	ATF_CHECK(system("grep -q '^speederv2_flags=\"-c ' rc.conf") == 0);
+	http("GET", jobs, NULL, &r);
+	ATF_CHECK_MSG(strstr(r.body, "t0psecret") == NULL && strstr(r.body,
+	    "undone") == NULL, "%.800s", r.body);
+	resp_free(&r);
+	/* What the host refuses comes back as the job's failure. */
+	http("POST", jobs, "{\"jobs\":[{\"kind\":\"speeder\",\"verb\":\"fec\","
+	    "\"args\":[\"0:9\"]}]}", &r);
+	EXPECT(&r, 502);
+	ATF_CHECK_MSG(strstr(r.body, "fec takes the ratios") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(smtpd, "OpenSMTPD read through the console; smtpd.conf rendered on "
     "the host from the form; a table's passwords hashed there, never read back")
 ATF_TC_BODY(smtpd, tc)
@@ -8983,6 +9046,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, agent_build);
 	ATF_TP_ADD_TC(tp, update_notes);
 	ATF_TP_ADD_TC(tp, smtpd);
+	ATF_TP_ADD_TC(tp, speeder);
 	ATF_TP_ADD_TC(tp, settings);
 	ATF_TP_ADD_TC(tp, mail);
 	ATF_TP_ADD_TC(tp, telegram);

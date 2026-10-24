@@ -170,6 +170,9 @@ submodule arcana-jobs-kinds {
       enum reboot {
         value 48;
       }
+      enum speeder {
+        value 49;
+      }
     }
     description
       "A kind of job, by its number in arcana.yaml's job-kind.";
@@ -2101,6 +2104,44 @@ submodule arcana-jobs-kinds {
             type boolean;
             description
               "Force";
+          }
+        }
+      }
+      case speeder {
+        container speeder {
+          presence
+            "This kind of job.";
+          description
+            "UDPspeeder's FEC relay configured, its ratios changed, started or stopped";
+          leaf verb {
+            type enumeration {
+              enum conf;
+              enum fec;
+              enum enable;
+              enum disable;
+              enum start;
+              enum stop;
+              enum restart;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
           }
         }
       }

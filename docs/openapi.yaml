@@ -1301,6 +1301,32 @@ paths:
       responses:
         "200":
           description: The read, under data, with the agent's trace.
+  /api/servers/{server}/speeder:
+    get:
+      tags: [servers]
+      summary: UDPspeeder's FEC relay on the host
+      description: 'Under data: installed, enabled, running; flags
+        (speederv2_flags, the key shown as <hidden>) and what they say -
+        role (client or server), listen, remote, mode, mtu, fec, timeout,
+        report_every, fifo, key (whether one is set, never what), extra;
+        fec_groups (each group size with the redundant packets the relay
+        adds, as it logged them at its start); report (with --report, the
+        relay''s last counters: time, interval, and client_to_server and
+        server_to_client, each with plain_packets, plain_bytes,
+        fec_packets, fec_bytes, overhead in per cent, and over the last
+        interval overhead_now, plain_rate and fec_rate in bytes a
+        second); log (its last lines) and log_path.  The changes are jobs
+        of kind speeder: verb conf with name=value words (role, listen,
+        remote, mode, mtu, fec, timeout, report, fifo, key, nokey,
+        extra), fec with the ratios, enable, disable, start, stop,
+        restart; with safe on the host, undone when not confirmed.  With
+        jail, that jail''s relay; the jobs take jail too.'
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - { name: jail, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The read, under data, with the agent's trace.
   /api/servers/{server}/jails/files:
     get:
       tags: [servers]

@@ -385,11 +385,17 @@ module: arcana-jobs
        |        |     +---w args*   string
        |        |     +---w text?   string
        |        +--:(smtpd)
-       |           +---w smtpd!
-       |              +---w verb     enumeration
-       |              +---w jail?    string
-       |              +---w args*    string
-       |              +---w text?    string
-       |              +---w force?   boolean
+       |        |  +---w smtpd!
+       |        |     +---w verb     enumeration
+       |        |     +---w jail?    string
+       |        |     +---w args*    string
+       |        |     +---w text?    string
+       |        |     +---w force?   boolean
+       |        +--:(speeder)
+       |           +---w speeder!
+       |              +---w verb    enumeration
+       |              +---w jail?   string
+       |              +---w args*   string
+       |              +---w safe?   boolean
        +--ro output
           +--ro id*   uint64

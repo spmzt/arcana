@@ -663,11 +663,11 @@ view_mail(struct html *h, struct server *s)
 			h_raw(h, "in jail ");
 			h_txt(h, jstr(o, "jail"));
 			h_raw(h, ": a plugin, the port mail/opensmtpd, installed "
-			    "there with pkg -j.</span></div>");
+			    "there with pkg -j.");
 		} else
-			h_raw(h, "on this host: a plugin.</span><button "
-			    "class=\"primary small\" data-act=\"sec-install\" "
-			    "data-arg=\"opensmtpd\">Install opensmtpd</button></div>");
+			h_raw(h, "on this host: a plugin.");
+		h_raw(h, "</span><button class=\"primary small\" "
+		    "data-act=\"ml-install\">Install opensmtpd</button></div>");
 		h_raw(h, "<div class=\"empty\"><p>No mail server here.</p><p "
 		    "class=\"dim\">FreeBSD comes with sendmail(8) and dma(8) for "
 		    "the host's own mail; OpenSMTPD, a port, serves a domain's."
@@ -1210,6 +1210,22 @@ mail_action(const char *act, const char *arg, const char *value)
 	}
 	if ((s = ml_server()) == NULL)
 		return (true);
+	if (strcmp(act, "ml-install") == 0) {
+		char	*json, *qj;
+		const char *jail = ml_where(s);
+
+		/* Where the tab looks: the host, or the jail by pkg -j. */
+		qj = json_quote(jail);
+		if (asprintf(&json, "{\"kind\":\"pkg-install\",\"packages\":"
+		    "[\"opensmtpd\"]%s%s}", jail[0] != '\0' ? ",\"jail\":" : "",
+		    jail[0] != '\0' ? qj : "") == -1)
+			abort();
+		free(qj);
+		snprintf(title, sizeof(title), "pkg install opensmtpd%s%s",
+		    jail[0] != '\0' ? " in " : "", jail);
+		job_send(s, json, title, JOB_MAIL, jail);
+		return (true);
+	}
 	if (strcmp(act, "ml-enable") == 0 && strcmp(arg, "no") == 0) {
 		confirm("Stop OpenSMTPD?", "smtpd is stopped and disabled: mail "
 		    "to this host is refused, and what is queued waits until it "

@@ -28,7 +28,7 @@
 _Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
     "written for cblink 0.2: its wire, its structs");
 
-#define	ARCW_VERSION		"0.302.0"
+#define	ARCW_VERSION		"0.303.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -380,6 +380,7 @@ int		 api_suricata_rules(struct http_request *);
 int		 api_netstore(struct http_request *);
 int		 api_system(struct http_request *);
 int		 api_smtpd(struct http_request *);
+int		 api_speeder(struct http_request *);
 int		 api_certs(struct http_request *);
 int		 api_ssh(struct http_request *);
 int		 api_capture(struct http_request *);

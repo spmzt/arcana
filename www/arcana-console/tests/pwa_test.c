@@ -3535,6 +3535,47 @@ part_dma(void)
 	shot("0c-dma");
 }
 
+/* The FEC relay tab: its flags from the form, in safe mode, the key
+ * never on the page; what the FEC costs, from the relay's report; the
+ * ratios changed. */
+static void
+part_relay(void)
+{
+	int	i;
+
+	run("document.querySelector('button.tab[data-arg=relay]').click()");
+	wait_js("document.querySelector('section.relayview form[data-form="
+	    "rl-conf]')", 20);
+	run("const f = document.querySelector('form[data-form=rl-conf]'); "
+	    "f.listen.value = '127.0.0.1:51821'; f.remote.value = "
+	    "'192.0.2.1:14350'; f.fec.value = '1:2,2:3,8:4,20:10'; f.mode.value "
+	    "= '1'; f.key.value = 'pwasecret'; f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^speederv2_flags=\"-c "
+	    "-l127.0.0.1:51821 -r192.0.2.1:14350 -k pwasecret --mode 1 "
+	    "-f1:2,2:3,8:4,20:10 --report 10 --fifo /var/run/speederv2/fifo\"$' "
+	    "rc.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the relay's flags are not written");
+	wait_js("[...document.querySelectorAll('table.relay-report td')].some("
+	    "t => t.textContent === '50.0 %') && document.querySelector("
+	    "'table.relay-groups') && document.querySelector('form[data-form="
+	    "rl-fec]')", 20);
+	ATF_CHECK(js_true("!document.body.innerHTML.includes('pwasecret') && "
+	    "document.querySelector('.relayview dl.kv').textContent.includes("
+	    "'set (not shown)')"));
+	run("const d = document.querySelector('.dock.open > header'); "
+	    "if (d) d.click();");
+	wait_js("!document.querySelector('.dock.open')", 5);
+	shot("8r-relay");
+	run("const f = document.querySelector('form[data-form=rl-fec]'); "
+	    "f.fec.value = '10:5'; f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q -- '-f10:5 ' rc.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the ratios are not kept");
+}
+
 /* The Mail tab: OpenSMTPD's form rendered on the host; a table written. */
 static void
 part_mail(void)
@@ -7360,6 +7401,7 @@ ATF_TC_BODY(pwa_storage, tc)
 	part_storage();
 	part_system();
 	part_mail();
+	part_relay();
 	part_dma();
 }
 ATF_TC_CLEANUP(pwa_storage, tc)

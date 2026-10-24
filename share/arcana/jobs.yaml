@@ -480,3 +480,8 @@ kinds:
     needs: verb
     uses: jail args text force
     values: verb=conf|conf-text|table|entry|unentry|enable|pause|resume|schedule|remove|update
+  - kind: speeder
+    title: UDPspeeder's FEC relay configured, its ratios changed, started or stopped
+    needs: verb
+    uses: jail args safe
+    values: verb=conf|fec|enable|disable|start|stop|restart

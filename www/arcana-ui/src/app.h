@@ -181,6 +181,7 @@ enum tab {
 	TAB_SYSTEM,
 	TAB_SECURITY,
 	TAB_MAIL,
+	TAB_RELAY,
 	TAB_KERNEL,
 	TAB_SYSCTL,
 	TAB_CERTS,
@@ -358,6 +359,7 @@ enum {
 	JOB_NETSTORE,		/* the Storage page's NFS, iSCSI or HAST */
 	JOB_SYSTEM,		/* a host's own configuration (sysview.c) */
 	JOB_MAIL,		/* a host's OpenSMTPD (mail.c) */
+	JOB_RELAY,		/* a host's FEC relay (relay.c) */
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -992,6 +994,11 @@ void		 view_mail(struct html *, struct server *);
 bool		 mail_form(const char *, const ucl_object_t *);
 bool		 mail_action(const char *, const char *, const char *);
 void		 mail_refresh(void);
+/* relay.c: the host's UDPspeeder FEC relay. */
+void		 view_relay(struct html *, struct server *);
+bool		 relay_form(const char *, const ucl_object_t *);
+bool		 relay_action(const char *, const char *, const char *);
+void		 relay_refresh(void);
 const char	*plugin_anywhere(const struct server *, const char *);
 void		 view_hostsec(struct html *, struct server *);
 void		 view_storage_geom(struct html *, struct server *, int);

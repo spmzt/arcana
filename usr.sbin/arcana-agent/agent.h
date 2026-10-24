@@ -23,7 +23,7 @@
 _Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
     "written for cblink 0.2: its wire, its structs");
 
-#define	ARCANA_AGENT_VERSION	"0.206.0"
+#define	ARCANA_AGENT_VERSION	"0.207.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -132,6 +132,8 @@ struct opts {
 	const char	*smtpctl_bin;	/* and smtpctl(8) */
 	const char	*smtpd_conf;	/* its smtpd.conf(5) */
 	const char	*smtpd_dir;	/* the agent's tables and kept form */
+	const char	*speederv2_bin;	/* UDPspeeder's FEC relay, a plugin */
+	const char	*speederv2_log;	/* where syslogd(8) writes its lines */
 	const char	*log_dir;	/* where syslogd(8) writes */
 	const char	*history_conf;	/* how the host is sampled */
 	const char	*tools_dir;	/* where programs without an option are */
@@ -284,6 +286,7 @@ void		 exec_set_home(struct work *, const char *);
 void		 exec_set_env(struct work *, const char *, const char *);
 void		 exec_set_stdin(const char *, size_t);
 void		 exec_set_secret(bool);
+void		 exec_set_hide(const char *);
 void		 exec_set_watch(int);
 int		 run_exec_lines(struct work *, char *const [],
 		    void (*)(const char *, void *), void *);
@@ -683,6 +686,20 @@ const char	*netstore_check(const struct arc_job_spec *);
 char		*netstore_title(const struct arc_job_spec *);
 int		 do_netstore_job(struct work *, const struct arc_job_spec *,
 		    const char **);
+/* luxuria/speeder.c: UDPspeeder's FEC relay, a plugin. */
+struct arc_speeder_rsp;
+void		 do_speeder(struct work *, struct arc_speeder_rsp *);
+const char	*speeder_check(const struct arc_job_spec *);
+char		*speeder_title(const struct arc_job_spec *);
+int		 do_speeder_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+bool		 speeder_running(struct work *);
+int		 speeder_service(struct work *, const char *, const char **);
+void		 speeder_snap(struct work *, const char **, const char **,
+		    bool *);
+int		 speeder_back(struct work *, const char *, const char *, bool,
+		    const char **);
+
 /* luxuria/smtpd.c: OpenSMTPD, a plugin: its read, and its job. */
 struct arc_smtpd_rsp;
 void		 do_smtpd(struct work *, struct arc_smtpd_rsp *);

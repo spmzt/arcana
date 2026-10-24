@@ -7,7 +7,7 @@ SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c n
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c fwmatch.c pathcheck.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
 		routes.c rtimes.c scope.c sdwan.c vnet.c wireguard.c
 # Luxuria: what is not FreeBSD's own, the plugins.
-SRCS+=		bird.c birdwatch.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c idsconf.c surules.c smtpd.c telegram.c poudriere.c clamav.c
+SRCS+=		bird.c birdwatch.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c idsconf.c surules.c smtpd.c speeder.c telegram.c poudriere.c clamav.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c jailallow.c packages.c pkgbase.c \
 		services.c update.c

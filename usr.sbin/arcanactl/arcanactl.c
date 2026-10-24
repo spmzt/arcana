@@ -227,6 +227,9 @@ usage(void)
 	    "    smtpd\n"
 	    "    smtpd conf form.json | table name file | enable yes|no |\n"
 	    "        pause|resume mta|mda|smtp | schedule|remove id|all | update name\n"
+	    "    speeder\n"
+	    "    speeder conf name=value ... | fec x:y[,x:y...] |\n"
+	    "        enable | disable | start | stop | restart\n"
 	    "    sysfile file path | periodic name=YES|NO ... |\n"
 	    "        rc kern_securelevel_enable=YES|NO kern_securelevel=N |\n"
 	    "        dma smarthost=host [port=N] [tls=none|starttls|opportunistic|tls] [user=name]\n"	    "    geom class subcommand [word ...] [-P passfile]\n"
@@ -2758,6 +2761,41 @@ cmd_smtpd(struct arc_client *cl, int argc, char **argv)
 	return (submit(cl, &sp));
 }
 
+/* speeder: UDPspeeder's FEC relay, read; with words, a job of it. */
+static int
+cmd_speeder(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_speeder_req	 rq;
+	struct arc_speeder_rsp	*rs;
+	struct arc_job_spec	 sp;
+	int			 error;
+
+	if (argc == 1) {
+		memset(&rq, 0, sizeof(rq));
+		rq.jail = netjail;
+		if ((error = arc_speeder(cl, &rq, &rs)) != 0)
+			fail(cl, error, "speeder");
+		if (rs->json != NULL)
+			xo_emit("{:json/%s}\n", rs->json);
+		else if (rs->error != NULL)
+			warnx("%s", rs->error);
+		emit_trace(rs->trace.v, rs->trace.n);
+		error = rs->ok ? 0 : 1;
+		arc_speeder_rsp_free(rs);
+		return (error);
+	}
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_SPEEDER;
+	sp.verb = argv[1];
+	/* conf's name=value words, fec's ratios: the agent checks them. */
+	sp.names.v = (const char **)(uintptr_t)&argv[2];
+	sp.names.n = (size_t)(argc - 2);
+	sp.jail = netjail;
+	sp.safe = safe;
+	return (submit(cl, &sp));
+}
+
 /* netstore [nfs | iscsi | hast]: the host's storage services. */
 static int
 cmd_netstore(struct arc_client *cl, int argc, char **argv)
@@ -4795,6 +4833,8 @@ main(int argc, char *argv[])
 		rc = cmd_clamav(&cl, argc, argv);
 	else if (strcmp(argv[0], "smtpd") == 0)
 		rc = cmd_smtpd(&cl, argc, argv);
+	else if (strcmp(argv[0], "speeder") == 0)
+		rc = cmd_speeder(&cl, argc, argv);
 	else if (strcmp(argv[0], "system") == 0)
 		rc = cmd_system(&cl, argc, argv);
 	else if (strcmp(argv[0], "geom") == 0)

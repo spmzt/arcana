@@ -60,6 +60,9 @@ struct qjob {
 	bool			 undo_kept;	/* rc.conf had the route */
 	bool			 undo_enabled;	/* bird: the protocol was */
 	const char		*undo_note;	/* why nothing is put back */
+	const char		*undo_sflags;	/* speeder: its two variables */
+	const char		*undo_senable;
+	bool			 undo_srunning;	/* ... and whether it ran */
 	char			*undo_secret;	/* malloc'd, zeroed at the end:
 						 * wireguard: showconf before */
 	struct undo_file {		/* files as they were: text, or none */
@@ -244,6 +247,9 @@ title_of(const struct arc_job_spec *sp)
 		break;
 	case ARC_JOB_KIND_SMTPD:
 		rc = (t = smtpd_title(sp)) != NULL ? 0 : -1;
+		break;
+	case ARC_JOB_KIND_SPEEDER:
+		rc = (t = speeder_title(sp)) != NULL ? 0 : -1;
 		break;
 	case ARC_JOB_KIND_CARP:
 		rc = asprintf(&t, "%s: carp %s vhid %s%s%s", sp->interface,
@@ -1005,6 +1011,12 @@ undo_prepare(struct qjob *j)
 		}
 		j->undo_nvars = sp->variables.n;
 		break;
+	case ARC_JOB_KIND_SPEEDER:
+		/* The host's relay alone (a jail's is refused as safe):
+		 * its flags, whether it is enabled and whether it runs. */
+		speeder_snap(&j->w, &j->undo_sflags, &j->undo_senable,
+		    &j->undo_srunning);
+		break;
 	default:
 		break;
 	}
@@ -1411,6 +1423,10 @@ undo(struct qjob *j)
 			}
 		}
 		break;
+	case ARC_JOB_KIND_SPEEDER:
+		rc = speeder_back(&j->w, j->undo_sflags, j->undo_senable,
+		    j->undo_srunning, &e);
+		break;
 	default:
 		/* A kind with no undo is refused as safe at its check: this
 		 * is never reached, and says so rather than doing harm. */
@@ -1592,6 +1608,11 @@ run(struct qjob *j, bool lane)
 		error = NULL;
 		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
 		    do_smtpd_job(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_SPEEDER:
+		error = NULL;
+		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
+		    do_speeder_job(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_CERT:
 		/* Any jail's: its files, not its network. */

@@ -662,7 +662,13 @@ job_finished(struct op *op, bool ok, const char *err)
 		refresh_ssh(s, false);
 		break;
 	case JOB_MAIL:
+		/* Installed, the host's plugins say so too. */
+		refresh_jails(s, false);
 		mail_refresh();
+		break;
+	case JOB_RELAY:
+		refresh_jails(s, false);
+		relay_refresh();
 		break;
 	case JOB_PROCESS:
 		refresh_procs(s, true);

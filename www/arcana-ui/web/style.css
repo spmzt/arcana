@@ -5361,3 +5361,30 @@ svg.topo .omnote { font-size: 14px; text-anchor: middle; fill: var(--dim); }
 .leaks-form label.check input { width: auto; margin: 0; }
 .leaks-form .primary { justify-self: start; }
 .leaks-page .leaks-note { max-width: 62rem; font-size: .78rem; }
+
+/* The FEC relay tab: how it is set beside what it costs. */
+.relay-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+	gap: 24px;
+	align-items: start;
+}
+.relayview .inline-form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: flex-end;
+}
+.relayview .inline-form label {
+	flex: 1 1 200px;
+}
+.relayview .inline-form .help {
+	flex-basis: 100%;
+}
+.relay-report, .relay-groups {
+	width: 100%;
+	font-variant-numeric: tabular-nums;
+}
+.relay-report th:last-child, .relay-groups th:last-child {
+	width: 32px;
+}

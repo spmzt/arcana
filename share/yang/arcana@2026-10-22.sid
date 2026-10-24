@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana",
     "module-revision": "2026-10-22",
-    "sid-file-version": 2,
+    "sid-file-version": 3,
     "description": "Arcana's SIDs for arcana (RFC 9595's experimental range; share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -8314,6 +8314,106 @@
         "namespace": "data",
         "identifier": "/arcana:list/output/jails/boot",
         "sid": "74657"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder",
+        "sid": "74658"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/input",
+        "sid": "74659"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/input/jail",
+        "sid": "74660"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/input/names",
+        "sid": "74661"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output",
+        "sid": "74662"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/error",
+        "sid": "74663"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/json",
+        "sid": "74664"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/ok",
+        "sid": "74665"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace",
+        "sid": "74666"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/argv",
+        "sid": "74667"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/detail",
+        "sid": "74668"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/duration-us",
+        "sid": "74669"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/error-output",
+        "sid": "74670"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/exit",
+        "sid": "74671"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/id",
+        "sid": "74672"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/kind",
+        "sid": "74673"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/label",
+        "sid": "74674"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/output",
+        "sid": "74675"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/parent",
+        "sid": "74676"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:speeder/output/trace/status",
+        "sid": "74677"
       }
     ]
   }

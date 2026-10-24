@@ -75,6 +75,7 @@ enum op {
 	OP_NETSTORE,
 	OP_SYSTEM,
 	OP_SMTPD,
+	OP_SPEEDER,
 	OP_CERTS,
 	OP_SSH,
 	OP_CAPTURE,
@@ -1229,7 +1230,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_SURICATA_RULES ? "arc_suricata_rules" : c->op == OP_NETSTORE ? "arc_netstore" : c->op == OP_SYSTEM ? "arc_system" : c->op == OP_SMTPD ? "arc_smtpd" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_SURICATA_RULES ? "arc_suricata_rules" : c->op == OP_NETSTORE ? "arc_netstore" : c->op == OP_SYSTEM ? "arc_system" : c->op == OP_SMTPD ? "arc_smtpd" : c->op == OP_SPEEDER ? "arc_speeder" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1590,6 +1591,8 @@ call_run(struct kore_task *t)
 	struct arc_system_rsp	*sysr;
 	struct arc_smtpd_req	 smq;
 	struct arc_smtpd_rsp	*smr;
+	struct arc_speeder_req	 speq;
+	struct arc_speeder_rsp	*sper;
 	struct arc_certs_req	 ceq;
 	struct arc_certs_rsp	*cer;
 	struct arc_ssh_req	 sshq;
@@ -2735,6 +2738,18 @@ connected:
 			put(top, "data", e);
 		steps = smr->trace.v;
 		nsteps = smr->trace.n;
+		break;
+	case OP_SPEEDER:
+		memset(&speq, 0, sizeof(speq));
+		speq.jail = c->scope[0] != '\0' ? c->scope : NULL;
+		if ((error = arc_speeder(&cl, &speq, &sper)) != 0)
+			goto rpcfail;
+		ok = sper->ok;
+		put_str(top, "error", sper->error);
+		if ((e = parse_json(sper->json)) != NULL)
+			put(top, "data", e);
+		steps = sper->trace.v;
+		nsteps = sper->trace.n;
 		break;
 	case OP_SYSTEM:
 		/* One of its files, or host, when the page wants it alone. */
@@ -4690,6 +4705,14 @@ api_smtpd(struct http_request *req)
 	return (read_route(req, OP_SMTPD, setup_scope));
 }
 
+/* GET /api/servers/<id>/speeder[?jail=]: UDPspeeder's FEC relay. */
+int
+api_speeder(struct http_request *req)
+{
+
+	return (read_route(req, OP_SPEEDER, setup_scope));
+}
+
 /* GET /api/servers/<id>/ssh[?jail=]: the base system's sshd there. */
 int
 api_ssh(struct http_request *req)
@@ -5240,6 +5263,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_SYSFILE:
 	case ARC_JOB_KIND_GEOM:
 	case ARC_JOB_KIND_SMTPD:
+	case ARC_JOB_KIND_SPEEDER:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
@@ -5715,6 +5739,7 @@ static const struct hread {
 	{ "netstore", OP_NETSTORE, setup_netstore },
 	{ "system", OP_SYSTEM, setup_system },
 	{ "smtpd", OP_SMTPD, setup_scope },
+	{ "speeder", OP_SPEEDER, setup_scope },
 	{ "services", OP_SERVICES, NULL },
 	{ "packages", OP_PACKAGES, setup_packages },
 	{ "net/", OP_NETWORK, setup_network },

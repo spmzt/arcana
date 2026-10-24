@@ -52,6 +52,7 @@ static const struct {
 	{ "suricata", &opts.suricata_bin },
 	{ "poudriere", &opts.poudriere_bin },
 	{ "smtpd", &opts.smtpd_bin },
+	{ "speederv2", &opts.speederv2_bin },
 };
 
 /*

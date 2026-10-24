@@ -4831,6 +4831,100 @@ smtpd_cleanup()
 	stop_daemon
 }
 
+atf_test_case speeder cleanup
+speeder_head()
+{
+	atf_set "descr" "UDPspeeder's relay, a plugin: read (its flags, the key never; the groups and the reports from its log, the overhead in all and of the last interval); conf written word by word, the key kept or taken away and never traced; what a shell would take refused; the ratios sent by its fifo; enabled and disabled; a safe conf undone"
+}
+speeder_body()
+{
+	mkdir -p tools
+	printf '#!/bin/sh\nexit 0\n' > tools/speederv2
+	chmod +x tools/speederv2
+	cat > messages <<'EOM'
+Oct 23 14:22:39 h speederv2[44253]: [2026-10-23 14:22:39][INFO]fec_inner_parameter=1:2,2:3,3:4,4:4
+Oct 23 14:22:40 h sshd[1]: unrelated
+Oct 23 14:22:49 h speederv2[44253]: [2026-10-23 14:22:49][INFO][report]client-->server:(original:100 pkt;100000 byte) (fec:150 pkt,160000 byte)  server-->client:(original:50 pkt;40000 byte) (fec:80 pkt;60000 byte)
+Oct 23 14:22:59 h speederv2[44253]: [2026-10-23 14:22:59][INFO][report]client-->server:(original:200 pkt;200000 byte) (fec:300 pkt,330000 byte)  server-->client:(original:100 pkt;80000 byte) (fec:160 pkt;120000 byte)
+EOM
+	DAEMON_ARGS="-2 $(pwd)/tools --speederv2-log $(pwd)/messages"
+	start_daemon
+	printf '#!/bin/sh\n' > rc.d/speederv2
+	chmod +x rc.d/speederv2
+	atf_check -o match:'Plugins: .*speederv2' "$JGC" -c "$SOCK" hello
+	# Not set yet: what the log says; 65 % over all, 70 % of late.
+	atf_check -o match:'"installed":true' -o match:'"running":false' \
+	    -o not-match:'"role"' -o not-match:'sshd' \
+	    -o match:'"fec_groups":\[\[1,2\],\[2,3\],\[3,4\],\[4,4\]\]' \
+	    -o match:'"interval":10' \
+	    -o match:'"client_to_server":\{"plain_packets":200,"plain_bytes":200000,"fec_packets":300,"fec_bytes":330000,"overhead":65(\.0*)?,"overhead_now":70(\.0*)?,"plain_rate":10000(\.0*)?,"fec_rate":17000' \
+	    -o match:'"server_to_client":\{[^}]*"overhead":50(\.0*)?,' \
+	    "$JGC" -c "$SOCK" speeder
+
+	# The flags, word by word; the key in rc.conf alone.
+	atf_check -o match:'done +speederv2: conf, a client from 127.0.0.1:51821 to 192.0.2.1:14350' \
+	    "$JGC" -c "$SOCK" speeder conf role=client listen=127.0.0.1:51821 \
+	    remote=192.0.2.1:14350 mode=1 mtu=1456 fec=1:2,2:3,8:4,20:10 report=10 \
+	    fifo=$(pwd)/fifo key=s3cr3tkey 'extra=--sock-buf 2048'
+	atf_check -o match:'^speederv2_flags="-c -l127.0.0.1:51821 -r192.0.2.1:14350 -k s3cr3tkey --mode 1 --mtu 1456 -f1:2,2:3,8:4,20:10 --report 10 --fifo .*/fifo --sock-buf 2048"$' \
+	    cat rc.conf
+	atf_check -o match:'"key":true' -o match:'-k <hidden>' -o not-match:'s3cr3tkey' \
+	    -o match:'"role":"client"' -o match:'"mtu":1456' -o match:'"extra":"--sock-buf 2048"' \
+	    "$JGC" -c "$SOCK" speeder
+	atf_check -o match:'<hidden>' -o not-match:'s3cr3tkey' "$JGC" -c "$SOCK" job 1
+	# Kept when not given; nokey takes it away.
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder conf role=client \
+	    listen=127.0.0.1:51821 remote=192.0.2.1:14350 fifo=$(pwd)/fifo
+	atf_check -o match:'-k s3cr3tkey --fifo' cat rc.conf
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder conf role=client \
+	    listen=127.0.0.1:51821 remote=192.0.2.1:14350 fifo=$(pwd)/fifo nokey
+	atf_check -o not-match:'s3cr3tkey' cat rc.conf
+	# What a shell would take, and options not passed on, refused.
+	atf_check -s exit:1 -e match:'listen is an address' -o ignore "$JGC" -c "$SOCK" \
+	    speeder conf role=client 'listen=127.0.0.1:1;reboot' remote=192.0.2.1:1
+	atf_check -s exit:1 -e match:'a key is 64' -o ignore "$JGC" -c "$SOCK" \
+	    speeder conf role=client listen=127.0.0.1:1 remote=192.0.2.1:1 'key=a$(id)'
+	atf_check -s exit:1 -e match:'not an option passed on' -o ignore "$JGC" -c "$SOCK" \
+	    speeder conf role=client listen=127.0.0.1:1 remote=192.0.2.1:1 'extra=--exec x'
+	atf_check -s exit:1 -e match:'needs role=, listen= and remote=' -o ignore \
+	    "$JGC" -c "$SOCK" speeder conf role=client
+	atf_check -s exit:1 -e match:'fec takes the ratios' -o ignore "$JGC" -c "$SOCK" speeder fec 0:3
+
+	# Enabled: started.  The ratios then by its fifo, not restarted,
+	# and kept in the flags.
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder enable
+	atf_check -o match:'^speederv2_enable="YES"$' cat rc.conf
+	atf_check test -f running.speederv2
+	: > fifo
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder fec 1:3,10:8
+	atf_check -o inline:'fec 1:3,10:8\n' cat fifo
+	atf_check -o match:'-f1:3,10:8' cat rc.conf
+
+	# Safe: a conf not confirmed is undone, the flags as they were and
+	# the relay running again.
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" speeder conf role=server \
+	    listen=192.0.2.2:14350 remote=127.0.0.1:51820
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 6
+	atf_check -o match:'^speederv2_flags="-c -l127.0.0.1:51821' cat rc.conf
+	atf_check test -f running.speederv2
+	# Disabled: stopped.  A jail's is not undone, so not safe there.
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder disable
+	atf_check -o match:'^speederv2_enable="NO"$' cat rc.conf
+	atf_check test ! -f running.speederv2
+	atf_check -s exit:1 -e match:"a jail's relay is not undone" -o ignore \
+	    "$JGC" -j web -s -c "$SOCK" speeder stop
+}
+speeder_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case netstore cleanup
 netstore_head()
 {
@@ -8653,6 +8747,7 @@ atf_init_test_cases()
 	atf_add_test_case sdwan
 	atf_add_test_case netstore
 	atf_add_test_case smtpd
+	atf_add_test_case speeder
 	atf_add_test_case sysfiles
 	atf_add_test_case sdwan_jail
 	atf_add_test_case jail_conf

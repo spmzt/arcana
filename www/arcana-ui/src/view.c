@@ -932,7 +932,7 @@ stage(struct html *h)
 			{ "firewall", "Firewall" },
 			{ "packages", "Packages" }, { "storage", "Storage" },
 			{ "system", "System" }, { "security", "Security" },
-			{ "mail", "Mail" },
+			{ "mail", "Mail" }, { "relay", "FEC relay" },
 			{ "kernel", "Kernel" }, { "sysctl", "Sysctl" },
 			{ "certificates", "Certificates" }, { "ssh", "SSH" },
 			{ "processes", "Processes" }, { "log", "Log" },
@@ -957,8 +957,8 @@ stage(struct html *h)
 		plug = app.tab == TAB_NETWORK && NET_PLUGIN(app.net.kind);
 		h_raw(h, "<nav class=\"tabs\">");
 		for (t = 0; t < (int)(sizeof(tabs) / sizeof(tabs[0])); t++) {
-			/* Mail is a plugin's: drawn with them. */
-			if (t == TAB_MAIL)
+			/* Mail and the relay are plugins': drawn with them. */
+			if (t == TAB_MAIL || t == TAB_RELAY)
 				continue;
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
@@ -992,8 +992,20 @@ stage(struct html *h)
 			    "OpenSMTPD, a plugin, on ", at != NULL && at[0] != '\0' ?
 			    at : at != NULL ? "the host" : "");
 		}
+		/* UDPspeeder's FEC relay, likewise. */
+		{
+			const char	*at = plugin_anywhere(s, "speederv2");
+
+			h_fmt(h, "<button class=\"tab plugin%s%s\" data-act=\"tab\" "
+			    "data-arg=\"relay\" title=\"%s%s\">FEC relay</button>",
+			    app.tab == TAB_RELAY ? " on" : "", s->list != NULL && at
+			    == NULL ? " missing" : "", at == NULL ? "A plugin, not "
+			    "installed here: open it to install its package" :
+			    "UDPspeeder, a plugin, on ", at != NULL && at[0] != '\0' ?
+			    at : at != NULL ? "the host" : "");
+		}
 		if (app.tab != TAB_JOBS && app.tab != TAB_SYSTEM && app.tab !=
-		    TAB_SECURITY && app.tab != TAB_MAIL)
+		    TAB_SECURITY && app.tab != TAB_MAIL && app.tab != TAB_RELAY)
 			export_bar(h, plug ? (app.net.kind == NET_BIRD ? "bird" :
 			    "ipsec") : tabs[app.tab].arg);
 		h_raw(h, "</nav>");
@@ -1040,6 +1052,11 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_MAIL) {
 		view_mail(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_RELAY) {
+		view_relay(h, s);
 		h_raw(h, "</main>");
 		return;
 	}

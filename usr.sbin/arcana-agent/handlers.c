@@ -358,6 +358,7 @@ worker(void *arg)
 	struct arc_suricata_rules_rsp surr;
 	struct arc_netstore_rsp	 nsr;
 	struct arc_smtpd_rsp	 smr;
+	struct arc_speeder_rsp	 sper;
 	struct arc_system_rsp	 syr;
 	struct arc_job_spec	 bsp;
 	struct arc_certs_rsp	 cer;
@@ -971,6 +972,21 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &smr.trace.v, &smr.trace.n);
 		rc = arc_smtpd_reply(j->req, &smr);
+		break;
+	case ARC_CMD_SPEEDER:
+		what = "speeder";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "UDPspeeder's relay read");
+		memset(&sper, 0, sizeof(sper));
+		if (scope_enter_jail(&w, j->jail, &sper.error, false) == 0)
+			do_speeder(&w, &sper);
+		else
+			sper.has_ok = true;
+		ok = sper.ok;
+		error = sper.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sper.trace.v, &sper.trace.n);
+		rc = arc_speeder_reply(j->req, &sper);
 		break;
 	case ARC_CMD_NETSTORE:
 		what = "netstore";
@@ -2573,6 +2589,25 @@ arc_smtpd_doit(cbl_req *req, const struct arc_smtpd_req *rq,
 	return (start(j));
 }
 
+int
+arc_speeder_doit(cbl_req *req, const struct arc_speeder_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->names.n > 0)
+		return (reject(req, "speeder is read whole: no words"));
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SPEEDER;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	return (start(j));
+}
+
 /* The storage services: NFS, iSCSI, HAST, or all. */
 int
 arc_netstore_doit(cbl_req *req, const struct arc_netstore_req *rq,
@@ -3015,6 +3050,8 @@ check_spec(const struct arc_job_spec *sp)
 		return (geom_check(sp));
 	case ARC_JOB_KIND_SMTPD:
 		return (smtpd_check(sp));
+	case ARC_JOB_KIND_SPEEDER:
+		return (speeder_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->interface == NULL || !valid_ifname(sp->interface))
 			return ("invalid interface name");

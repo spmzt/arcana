@@ -596,6 +596,57 @@ Enabled and started, or stopped and disabled.
 .It Cm smtpd update Ar table
 .Xr smtpctl 8 Ap s
 own, as it takes them.
+.It Cm speeder
+UDPspeeder's FEC relay, the
+.Nm speederv2
+service of net/udpspeeder, of the host or of
+.Fl j Ns 's
+jail, as JSON: installed, enabled and running; its flags, the key left
+out, and what they say (role, listen, remote, mode, mtu, fec, timeout,
+report, fifo, whether a key is set, the extra words); the redundant
+packets it adds for each group size, as it logged them at its start;
+with
+.Fl -report ,
+its last counters each way, the bytes it took in plain and sent with
+FEC, and the overhead the FEC added, in all and over the last interval
+with its rates; its last lines in the log.
+Nothing is changed.
+.It Cm speeder conf Ar name Ns = Ns Ar value ...
+The relay's flags written to
+.Va speederv2_flags :
+.Cm role Ns = Ns Cm client | server ,
+.Cm listen Ns = Ns Ar address : Ns Ar port ,
+.Cm remote Ns = Ns Ar address : Ns Ar port
+(those three are needed),
+.Cm mode Ns = Ns Cm 0 | 1 ,
+.Cm mtu Ns = ,
+.Cm fec Ns = Ns Ar x : Ns Ar y Ns Op , Ns Ar x : Ns Ar y ... ,
+.Cm timeout Ns = ,
+.Cm report Ns = Ns Ar seconds ,
+.Cm fifo Ns = Ns Ar path ,
+.Cm key Ns = Ns Ar key
+(kept when not given;
+.Cm nokey
+takes it away; never in a trace),
+.Cm extra Ns = Ns Ar words
+(options of speederv2's own, such as
+.Fl -jitter
+or
+.Fl -sock-buf ,
+passed on).
+Each value is checked word by word, as rc.subr hands them to a shell.
+The relay is restarted when it runs.
+.It Cm speeder fec Ar x : Ns Ar y Ns Op , Ns Ar x : Ns Ar y ...
+The ratios changed: kept in the flags and, where the relay runs with a
+.Fl -fifo ,
+sent to it there, the tunnel kept up; without one, it is restarted.
+.It Cm speeder enable | disable | start | stop | restart
+.Va speederv2_enable
+set and the relay started, or stopped and unset; or the service told.
+With
+.Fl s ,
+on the host, a job of these is undone when not confirmed: the two
+variables and whether it ran put back.
 .It Cm netstore Op Cm nfs | Cm iscsi | Cm hast
 The host's network storage services, as JSON: the NFS server, NFSv4 alone
 .Xr ( nfsd 8 ,
