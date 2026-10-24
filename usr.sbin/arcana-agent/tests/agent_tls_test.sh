@@ -273,10 +273,13 @@ renew_body()
 	atf_check -o match:'"chain":\[\{"subject":"CN=inter","issuer":"CN=ca2"' \
 	    "$JGC" -c "$URI" $C3 tls install new3.pem
 	atf_check -o match:'Host:' "$JGC" -c "$URI" $C3 hello
-	# Leaf alone, without its intermediate: does not verify, refused.
-	atf_check -o ignore "$JGC" -c "$URI" $C3 tls csr
-	atf_check -s exit:1 -e match:'not for the key that waits|does not verify' -o ignore \
-	    "$JGC" -c "$URI" $C3 tls install leaf3.pem
+	# Leaf alone, for the key that waits but without its intermediate:
+	# does not verify, refused.
+	atf_check -o save:csr4.json "$JGC" -c "$URI" $C3 tls csr
+	csr_of csr4.json > new4.csr
+	sign inter new4.csr leaf4.pem
+	atf_check -s exit:1 -e match:'does not verify' -o ignore \
+	    "$JGC" -c "$URI" $C3 tls install leaf4.pem
 	atf_check -o match:'Host:' "$JGC" -c "$URI" $C3 hello
 }
 renew_cleanup()

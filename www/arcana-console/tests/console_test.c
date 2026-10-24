@@ -6676,8 +6676,6 @@ ATF_TC_BODY(sdwan_jail, tc)
 	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
 		snprintf(doc, sizeof(doc), "%s", t1);
 	/* Not a jail's name, or no server: refused. */
-	ATF_REQUIRE(swap_in(doc, "@J", "@A/a b", t1, sizeof(t1)));
-	ATF_REQUIRE(swap_in(t1, "@A", sa, body, sizeof(body)) || true);
 	{
 		char	bad[4096], bad2[4096];
 

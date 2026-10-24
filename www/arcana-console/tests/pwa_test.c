@@ -5297,11 +5297,17 @@ part_firewall(void)
 	    == 0);
 	shot("1g-template");
 	/* Applied to the host, as lab2: checked, nothing written. */
+	/* The target first: the page draws again, then the value. */
 	run("const s = document.querySelector('select[data-input=tp-target]');"
 	    " s.value = s.options[1].value; s.dispatchEvent(new Event('input', "
-	    "{ bubbles: true })); const v = document.querySelector('input["
-	    "data-input=tp-val][data-arg=hostname]'); v.value = 'lab2'; v."
-	    "dispatchEvent(new Event('input', { bubbles: true }));");
+	    "{ bubbles: true }));");
+	wait_js("document.querySelector('input[data-input=tp-val][data-arg="
+	    "hostname]')", 10);
+	run("const v = document.querySelector('input[data-input=tp-val]["
+	    "data-arg=hostname]'); v.value = 'lab2'; v.dispatchEvent(new Event("
+	    "'input', { bubbles: true }));");
+	wait_js("document.querySelector('input[data-input=tp-val][data-arg="
+	    "hostname]')?.value === 'lab2'", 10);
 	click_when("button[data-act=tp-check]:not([disabled])", 10);
 	wait_js("document.querySelector('section.template .hcreport')?."
 	    "textContent.includes('what it would do') && [...document."

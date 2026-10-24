@@ -895,9 +895,8 @@ EOS
 	# Converted: the repository's file in the jail, /etc kept aside,
 	# pkg update then install of the default set from FreeBSD-base.
 	atf_check -o save:cv.out "$JGC" -t -c "$SOCK" jail-base web convert
-	atf_check -o match:'base_release_1' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
 	atf_check -o match:'pkg.FreeBSD.org/\$\{ABI\}/base_release_1' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
-	test -s "$R/var/backups/etc-before-pkgbase.tar"
+	atf_check test -s "$R/var/backups/etc-before-pkgbase.tar"
 	atf_check -o match:'rc.conf' tar -tf "$R/var/backups/etc-before-pkgbase.tar"
 	atf_check -o match:'fake-pkg -j web update -r arcana-base' cat cv.out
 	atf_check -o match:'^install -r arcana-base -y FreeBSD-set-base-jail$' cat install.log
@@ -914,7 +913,7 @@ EOS
 	rm install.log "$R/usr/local/etc/pkg/repos/arcana-base.conf"
 	atf_check -o ignore "$JGC" -c "$SOCK" jail-base web convert -r builder
 	atf_check -o match:'^install -r builder -y FreeBSD-set-base-jail$' cat install.log
-	test ! -e "$R/usr/local/etc/pkg/repos/arcana-base.conf"
+	atf_check test ! -e "$R/usr/local/etc/pkg/repos/arcana-base.conf"
 	atf_check -s exit:1 -o match:'pkg has no repository nosuch in jail web' \
 	    "$JGC" -c "$SOCK" jail-base web convert -r nosuch
 	atf_check -s exit:1 -o match:'repository arcana-base has no FreeBSD-set-tests; its sets: FreeBSD-set-base-jail, FreeBSD-set-minimal-jail' \
@@ -2723,6 +2722,7 @@ notify_cleanup()
 }
 
 atf_test_case safe_mode cleanup
+atf_test_case safe_sysctl cleanup
 safe_sysctl_head()
 {
 	atf_set "descr" "A sysctl set in safe mode is put back: the kernel's value and sysctl.conf's line; one that cannot be read is not changed"
@@ -2815,7 +2815,12 @@ EOS
 	atf_check -s exit:1 -o match:'it was so before, and is left so' \
 	    "$JGC" -c "$SOCK" job 6
 }
+safe_sysctl_cleanup()
+{
+	stop_daemon
+}
 
+atf_test_case safe_route_delete cleanup
 safe_route_delete_head()
 {
 	atf_set "descr" "A route deleted without its gateway in safe mode is put back as the kernel listed it; a route of several ways, or none, is not deleted"
@@ -2902,7 +2907,12 @@ EOS
 	atf_check -o match:'^0 route-del 10.78.0.0/16 - - 0 0$' \
 	    -o not-match:'route-add' cat route.log
 }
+safe_route_delete_cleanup()
+{
+	stop_daemon
+}
 
+atf_test_case safe_bird cleanup
 safe_bird_head()
 {
 	atf_set "descr" "BIRD told something in safe mode: a protocol put back as it was, configure on BIRD's own timer confirmed or undone with the job, a reload with nothing to put back"
@@ -3016,7 +3026,12 @@ EOS
 	atf_check -o match:'^configure undo$' cat birdc.log
 	atf_check -o match:'done' "$JGC" -c "$SOCK" bird configure
 }
+safe_bird_cleanup()
+{
+	stop_daemon
+}
 
+atf_test_case safe_wireguard cleanup
 safe_wireguard_head()
 {
 	atf_set "descr" "A WireGuard change in safe mode is put back with wg syncconf from what showconf printed before; wg-quick's file and rc.conf as they were; the key never in the trace"
@@ -3110,7 +3125,12 @@ EOS
 	    "$JGC" -s -c "$SOCK" wg wg9 peer $PEER
 	atf_check -o not-match:'set wg9' cat wg.log
 }
+safe_wireguard_cleanup()
+{
+	stop_daemon
+}
 
+atf_test_case safe_ipsec cleanup
 safe_ipsec_head()
 {
 	atf_set "descr" "An IPsec connection changed in safe mode: its files back as they were and the daemon told; up and down each other's undo; init and start refused"
@@ -3201,6 +3221,10 @@ EOS
 		sleep 0.1
 	done
 	atf_check -o inline:'--initiate --child t1 --timeout 20\n--terminate --ike t1 --timeout 10\n--terminate --ike t1 --timeout 10\n--initiate --child t1 --timeout 20\n' cat swanctl.log
+}
+safe_ipsec_cleanup()
+{
+	stop_daemon
 }
 
 atf_test_case safe_ipsec_sa cleanup
@@ -3325,6 +3349,7 @@ safe_ipsec_sa_cleanup()
 	stop_daemon
 }
 
+atf_test_case safe_sysfile cleanup
 safe_sysfile_head()
 {
 	atf_set "descr" "A file of the system's written in safe mode goes back as it was and its daemon is told again; periodic.conf and rc.conf's variables too; dma is refused"
@@ -3384,7 +3409,12 @@ safe_sysfile_body()
 	atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
 	    "$JGC" -s -c "$SOCK" sysfile dma smarthost=mail.example.net
 }
+safe_sysfile_cleanup()
+{
+	stop_daemon
+}
 
+atf_test_case safe_if_destroy cleanup
 safe_if_destroy_head()
 {
 	atf_set "descr" "An interface destroyed in safe mode is made again as it was: addresses, MTU, state and rc.conf; only a tunnel, tap, tun or lo"
@@ -3430,7 +3460,12 @@ safe_if_destroy_body()
 	    "$JGC" -c "$SOCK" job 2
 	atf_check -o inline:'gif9 destroy\n' cat ifconfig.log
 }
+safe_if_destroy_cleanup()
+{
+	stop_daemon
+}
 
+atf_test_case safe_l2 cleanup
 safe_l2_head()
 {
 	atf_set "descr" "A bridge's member, flag, vlanfilter or static address in safe mode is taken back by the inverse word, a geneve made destroyed again, rc.conf as it was; what sets a value is refused"
@@ -3480,6 +3515,10 @@ safe_l2_body()
 		atf_check -s exit:1 -o ignore -e match:'not in safe mode' \
 		    "$JGC" -s -c "$SOCK" $c
 	done
+}
+safe_l2_cleanup()
+{
+	stop_daemon
 }
 
 safe_mode_head()
@@ -3657,7 +3696,6 @@ safe_mode_body()
 	done
 	atf_check -s exit:1 -e match:'too many jobs wait already' -o ignore \
 	    "$JGC" -q -c "$SOCK" interface lo0 up
-	# Confirming what does not wait is refused.
 }
 safe_mode_cleanup()
 {
@@ -5159,10 +5197,9 @@ MASQUERADE arcana@example.org
 	atf_check -s exit:1 -e match:'lines of printable characters' "$JGC" -c "$SOCK" sysfile krb5.conf ctl.new
 	atf_check -s exit:1 -e match:'name_enable=YES or NO' "$JGC" -c "$SOCK" sysfile periodic daily_x=1
 	atf_check -s exit:1 -e match:"the system's files are the host's" "$JGC" -j web -c "$SOCK" sysfile krb5.conf syslog.new
-	# Safe: the file is kept to be put back (safe_sysfile); dma's smart
-	# host is not.
+	# Safe: the file is kept to be put back (safe_sysfile, which also
+	# has dma refused as safe).
 	atf_check -o match:'confirmed: it stays' "$JGC" -s -c "$SOCK" sysfile krb5.conf syslog.new
-	atf_check -s exit:1 -e match:'not undone: not in safe mode' "$JGC" -s -c "$SOCK" sysfile dma smarthost=mail.example.net
 }
 sysfiles_cleanup()
 {
@@ -5592,7 +5629,6 @@ EOS
 	# In parts, as a dump: the whole tree, nothing left out for size,
 	# each part an array of its own; and a part of the tree the same.
 	atf_check -o save:parts.json "$JGC" -c "$SOCK" sysctl parts
-	atf_check -o match:'^[1-9][0-9]*$' sh -c 'wc -l < parts.json | tr -d " "'
 	[ "$(wc -l < parts.json)" -gt 10 ] || atf_fail "the tree came in $(wc -l < parts.json) parts"
 	atf_check -o match:'^\[\{"name":"kern.ostype","value":"FreeBSD"' head -1 parts.json
 	atf_check -o match:'"name":"vm\.' -o match:'"name":"net\.' cat parts.json
@@ -7120,7 +7156,6 @@ EOS
 	atf_check -o match:'^600$' -o match:'^setkey -f /tmp/arcana-sa\.' cat setkey.log
 	atf_check -o match:"^add 10.202.0.1 10.202.0.2 esp 0x1002 -m tunnel -u 100 -r 128 -esn -natt 10.202.0.1\[4500\] 10.202.0.2\[4500\] -E aes-cbc 0x$K -A hmac-sha1 0x$A ;\$" \
 	    -o match:"^add 10.202.0.2 10.202.0.1 esp 0x1001 -m tunnel -u 100 -r 128 -esn -natt 10.202.0.2\[4500\] 10.202.0.1\[4500\] -E aes-cbc 0x$K -A hmac-sha1 0x$A ;\$" cat setkey.conf
-	test ! -e /tmp/arcana-sa.* 2>/dev/null || true
 	# GCM: no auth; neither flag.
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa set ipsec1 101 10.202.0.1 10.202.0.2 spi-in 0x2001 spi-out 0x2002 enc aes-gcm-16 key-in ${K}00112233 key-out ${K}00112233
 	atf_check -o match:"^add 10.202.0.1 10.202.0.2 esp 0x2002 -m tunnel -u 101 -r 128 -E aes-gcm-16 0x${K}00112233 ;\$" cat setkey.conf
@@ -7133,8 +7168,8 @@ EOS
 	# half and come out with the same SAs, mirrored.
 	atf_check -s exit:1 -o match:'no key pair yet' -e ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= enc aes-cbc auth hmac-sha2-256
 	atf_check -o match:'ipsec sa key ipsec0' -o match:'public [A-Za-z0-9+/]{43}=' "$JGC" -t -c "$SOCK" ipsec-sa key ipsec0
-	atf_check -o match:'^600$' stat -f %Lp "$(dirname "$f")/sdwan-key-ipsec0.pem"
-	atf_check -o match:'BEGIN PRIVATE KEY' cat "$(dirname "$f")/sdwan-key-ipsec0.pem"
+	atf_check -o match:'^600$' stat -f %Lp "./sdwan-key-ipsec0.pem"
+	atf_check -o match:'BEGIN PRIVATE KEY' cat "./sdwan-key-ipsec0.pem"
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec1
 	P0=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec0"' | sed -E 's/.*"public":"([^"]*)".*/\1/')
 	P1=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec1"' | sed -E 's/.*"public":"([^"]*)".*/\1/')
@@ -7172,7 +7207,7 @@ EOS
 	atf_check -o match:'"type":"key-rotation"' -o match:'"object":"ipsec0"' "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'sdwan-key-ipsec0-next.pem' "$JGC" -t -c "$SOCK" ipsec-sa key ipsec0 next
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec1 next
-	atf_check -o match:'^600$' stat -f %Lp "$(dirname "$f")/sdwan-key-ipsec0-next.pem"
+	atf_check -o match:'^600$' stat -f %Lp "./sdwan-key-ipsec0-next.pem"
 	N0=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec0"' | sed -E 's/.*"next":"([^"]*)".*/\1/')
 	N1=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec1"' | sed -E 's/.*"next":"([^"]*)".*/\1/')
 	test ${#N0} -eq 44 -a ${#N1} -eq 44 -a "$N0" != "$P0" -a "$N0" != "$N1" || atf_fail "the next halves: $N0 $N1"
@@ -7205,13 +7240,13 @@ EOS
 	atf_check -o match:'ipsec sa commit ipsec0 reqid 100' -o match:'spi in 0x' "$JGC" -t -c "$SOCK" ipsec-sa commit ipsec0 100 10.202.0.1 10.202.0.2
 	atf_check -o inline:'1\n' sh -c "grep -c '^delete ' setkey.conf"
 	atf_check -o match:"^delete 10.202.0.2 10.202.0.1 esp $(printf '0x%x' "$O_IN") ;\$" -o not-match:'^add ' cat setkey.conf
-	test ! -e "$(dirname "$f")/sdwan-key-ipsec0-next.pem" || atf_fail "the next pair still there"
+	test ! -e "./sdwan-key-ipsec0-next.pem" || atf_fail "the next pair still there"
 	atf_check -o match:"\"interface\":\"ipsec0\",\"public\":\"$(echo "$N0" | sed 's|/|\\/|g; s|+|\\+|g')\"" -o match:'"interface":"ipsec0",.*"pending":false' -o match:'"type":"key-rotation",.*"cleared":true' "$JGC" -c "$SOCK" sdwan
 	atf_check -s exit:1 -o match:'nothing to commit' -e ignore "$JGC" -c "$SOCK" ipsec-sa commit ipsec0 100 10.202.0.1 10.202.0.2
 	# Cleared: the next pair and what was kept go with the SAs.
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec1 next
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa clear ipsec1 101 10.202.0.2 10.202.0.1
-	test ! -e "$(dirname "$f")/sdwan-key-ipsec1-next.pem" -a ! -e "$(dirname "$f")/sdwan-sa-ipsec1.json" || atf_fail "ipsec1 not cleared"
+	test ! -e "./sdwan-key-ipsec1-next.pem" -a ! -e "./sdwan-sa-ipsec1.json" || atf_fail "ipsec1 not cleared"
 }
 ipsec_sa_cleanup()
 {
@@ -8459,11 +8494,6 @@ EOF
 	atf_check -o match:'"options_dir_exists":true,[^}]*"configured":true' \
 	    "$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
 	    ports=opt set=debug origin=net/bird3
-	# The read and a port's options as arcana-builder has them, and
-	# notify's request as arcana-notify: through YANG-CBOR and back.
-	"$JGC" -c "$SOCK" poudriere > builder.json
-	"$JGC" -c "$SOCK" poudriere show-options jail=FreeBSD:16:amd64 \
-	    ports=opt set=debug origin=net/bird3 > options.json
 	# One the port has not, refused; one that is no option's name, too.
 	atf_check -s exit:1 -o match:'bird3-3.4.0 has no option NOPE' -e ignore \
 	    "$JGC" -c "$SOCK" poudriere options jail=FreeBSD:16:amd64 \

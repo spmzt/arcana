@@ -132,24 +132,26 @@ atf_test_case jail_events_nested cleanup
 jail_events_nested_head()
 {
 	atf_set "descr" "a jail made inside another, an LNE in an LNE, is an" \
-	    "event when made and when removed (EVFILT_JAIL; PLAN-SDN-YANG" \
-	    "2.7.5)"
+	    "event when made and when removed (EVFILT_JAIL)"
 	atf_set "require.user" "root"
 	atf_set "is.exclusive" "true"
 }
+# The jail the nested events are made in, its own name.
+NJAIL=arcana-nested
+
 jail_events_nested_body()
 {
 	start_daemon
-	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
-	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist \
+	jls -j "$NJAIL" >/dev/null 2>&1 && atf_skip "a jail named $NJAIL exists"
+	atf_check -o ignore jail -c name="$NJAIL" path=/ vnet persist \
 	    children.max=1
-	atf_check -o ignore jexec "$YJAIL" jail -c name=inner path=/ persist
-	atf_check -o ignore jls -j "$YJAIL.inner"
-	atf_check -o ignore jexec "$YJAIL" jail -r inner
-	atf_check -o ignore jail -r "$YJAIL"
+	atf_check -o ignore jexec "$NJAIL" jail -c name=inner path=/ persist
+	atf_check -o ignore jls -j "$NJAIL.inner"
+	atf_check -o ignore jexec "$NJAIL" jail -r inner
+	atf_check -o ignore jail -r "$NJAIL"
 	sleep 0.5
 	atf_check -o save:ev.json "$JGC" -c "$SOCK" events
-	for j in "$YJAIL" "$YJAIL.inner"; do
+	for j in "$NJAIL" "$NJAIL.inner"; do
 		for st in running stopped; do
 			atf_check -o inline:"$j $st 1\n" sh -c "echo $j $st \$(grep -o '\"jail\":\"$j\",\"state\":\"$st\"' ev.json | wc -l | tr -d ' ')"
 		done
@@ -157,7 +159,7 @@ jail_events_nested_body()
 }
 jail_events_nested_cleanup()
 {
-	jail -r "$YJAIL" >/dev/null 2>&1
+	jail -r "$NJAIL" >/dev/null 2>&1
 	cleanup
 }
 
