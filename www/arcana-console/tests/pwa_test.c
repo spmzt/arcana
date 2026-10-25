@@ -2013,6 +2013,14 @@ part_nettab(void)
 	    " return l.length > 2 && !l[0].startsWith(',') && l.some(x => "
 	    "x.startsWith('lo0')) && !window.arcCsvLast.includes('+ "
 	    "address'); })()"));
+	/* A cell a spreadsheet would take for a formula goes as text; a
+	 * number, a negative one too, as a number. */
+	run("const t = document.createElement('table'); t.innerHTML = "
+	    "'<thead><tr><th>Name</th><th>Delta</th></tr></thead><tbody><tr>"
+	    "<td>=HYPERLINK(1)</td><td>-3.5</td></tr><tr><td>-x</td><td>-</td>"
+	    "</tr></tbody>'; window.arcCsvSave(t);");
+	ATF_CHECK(js_true("window.arcCsvLast === 'Name,Delta\\n\\'=HYPERLINK"
+	    "(1),-3.5\\n\\'-x,-'"));
 	/* An address changed: the form with what it is now; the new one
 	 * added, then the old one taken off. */
 	run("document.querySelector('tr[data-if=lo0] button[data-act="
@@ -3587,7 +3595,8 @@ part_dma(void)
 static void
 part_relay(void)
 {
-	int	i;
+	FILE	*fp;
+	int	 i;
 
 	run("document.querySelector('button.tab[data-arg=relay]').click()");
 	wait_js("document.querySelector('section.relayview form[data-form="
@@ -3647,6 +3656,61 @@ part_relay(void)
 	for (i = 0; i < 300 && access("monitors.json", F_OK) == 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the comparison's monitors stayed");
+	/* Another relay, a profile of the rc script's: its own flags, the
+	 * plain one's said not to run while profiles are listed; picked,
+	 * started and removed (asked first).  The port's rc script that
+	 * runs several, here for these steps alone (a service of the
+	 * host's otherwise). */
+	ATF_REQUIRE((fp = fopen("rc.d/speederv2", "w")) != NULL);
+	fputs("#!/bin/sh\n# speederv2_profiles\n", fp);
+	fclose(fp);
+	click_when("button[data-act=rl-add]", 30);
+	wait_js("document.querySelector('form[data-form=rl-conf] input"
+	    "[name=profile]')", 10);
+	run("const f = document.querySelector('form[data-form=rl-conf]'); "
+	    "f.profile.value = 'lte'; f.role.value = 'server'; f.listen.value = "
+	    "'192.0.2.2:14351'; f.remote.value = '127.0.0.1:51822'; "
+	    "f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '^speederv2_profiles=\"lte\"$' "
+	    "rc.conf && grep -q '^speederv2_lte_flags=\"-s -l192.0.2.2:14351 "
+	    "-r127.0.0.1:51822' rc.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the second relay's flags are not written");
+	dock_closed();
+	wait_js("document.querySelector('nav.relays button.on[data-act=rl-pick]"
+	    "[data-arg=lte]') && document.querySelector('.relayview .notice."
+	    "warn code')?.textContent === 'speederv2_flags' && document."
+	    "querySelector('.relayview dl.kv').textContent.includes("
+	    "'192.0.2.2:14351')", 20);
+	click_when("button[data-act=rl-start]", 10);
+	queued_run();
+	for (i = 0; i < 300 && access("running.speederv2-lte", F_OK) != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the second relay is not started");
+	dock_closed();
+	wait_js("document.querySelector('nav.relays button[data-arg=lte] "
+	    ".dot.st-up')", 20);
+	shot("8t-relay-profiles");
+	/* The plain one is still there to pick. */
+	click_when("nav.relays button[data-act=rl-pick][data-arg='']", 10);
+	wait_js("document.querySelector('.relayview dl.kv').textContent."
+	    "includes('192.0.2.1:14350')", 10);
+	click_when("nav.relays button[data-act=rl-pick][data-arg=lte]", 10);
+	click_when("button[data-act=rl-remove]", 10);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')"
+	    ".requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("! grep -q 'speederv2_lte_\\|"
+	    "speederv2_profiles' rc.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the second relay is not removed");
+	ATF_CHECK(access("running.speederv2-lte", F_OK) != 0);
+	dock_closed();
+	wait_js("!document.querySelector('nav.relays button[data-arg=lte]')",
+	    20);
+	unlink("rc.d/speederv2");
 }
 
 /* The Mail tab: OpenSMTPD's form rendered on the host; a table written. */
@@ -4260,9 +4324,14 @@ part_storage(void)
 	    "button[data-act=kmod-keep]').click()");
 	click_when("button[data-act=queue-run]", 5);
 	/* Done when the tab, read again after the job, has it kept: the
-	 * dock, just closed, may or may not open with the queue. */
+	 * dock, just closed, may or may not open with the queue.  The host
+	 * first, then the page, which reads it again after the job (later
+	 * under a loaded run). */
+	for (int k = 0; k < 300 && system("grep -q '^kld_list=' rc.conf") != 0;
+	    k++)
+		usleep(100000);
 	wait_js("document.querySelector('table.kmods button.on[data-act="
-	    "kmod-forget][data-arg=\"' + window.kept + '\"]')", 20);
+	    "kmod-forget][data-arg=\"' + window.kept + '\"]')", 45);
 	ATF_CHECK(system("grep -q '^kld_list=' rc.conf && test \"$(grep -c "
 	    "'^kldload' kld.log)\" = 1") == 0);
 	run("document.querySelector('.dock > header').click()");
@@ -6336,6 +6405,22 @@ part_netsect(void)
 	    "document.querySelector('svg.topo g.tbridge circle.p-block') && "
 	    "document.querySelector('svg.topo g.tbridge circle.p-off')", 30);
 	shot("8-network");
+	/* The traffic runs as the SVG's dashes, a link with some; the
+	 * WebGL layer's canvas under the map, where there is WebGL 2,
+	 * for what it adds. */
+	wait_js("window.arcGl !== undefined", 15);
+	fprintf(stderr, "WebGL 2: %s\n", js_true("window.arcGl.ok") ? "yes" :
+	    "no");
+	ATF_CHECK(js_true("document.querySelector('svg.topo .tlink .flow') && "
+	    "(window.arcGl.ok ? document.querySelector('.map-wrap > "
+	    "canvas#map-gl + svg.topo') && window.arcGl.flows >= 1 : "
+	    "!document.querySelector('canvas#map-gl'))"));
+	run("for (let i = 0; i < 3; i++) document.querySelector('button"
+	    "[data-act=topo-zoom-in]').click();");
+	usleep(800000);
+	shot("8-network-traffic");
+	run("for (let i = 0; i < 3; i++) document.querySelector('button"
+	    "[data-act=topo-zoom-out]').click();");
 	/* The legend takes a kind of line out of the map, and puts it back. */
 	/* Picked with the mouse itself: it has to be reached by one. */
 	ATF_REQUIRE(js_true("document.querySelector('svg.topo .tlink.lan')"));
@@ -6604,6 +6689,21 @@ part_netsect(void)
 	wait_js("document.querySelector('form[data-form=tunnel]')", 5);
 	ATF_CHECK(js_true("document.querySelector('form[data-form=tunnel]')."
 	    "inner_a.value === '10.255.0.1/30'"));
+	/* What each end is to run, from the fields, and again as they
+	 * change. */
+	ATF_CHECK(js_true("document.querySelector('section.tun-plan')."
+	    "textContent.includes('ifconfig gif0 inet 10.255.0.1/30 "
+	    "10.255.0.2')"));
+	run("const t = document.querySelector('form[data-form=tunnel]').type; "
+	    "t.value = 'gre'; t.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("document.querySelector('section.tun-plan').textContent."
+	    "includes('ifconfig gre0 tunnel')", 5);
+	run("const t = document.querySelector('form[data-form=tunnel]').type; "
+	    "t.value = 'gif'; t.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("document.querySelector('section.tun-plan').textContent."
+	    "includes('ifconfig gif0 tunnel')", 5);
 	shot("8b-tunnel");
 	/* Not kept: the two hosts here are one, with one rc.conf, which
 	 * would have the second end's name already. */
@@ -6653,6 +6753,94 @@ part_netsect(void)
 	    "[^ ]+:51820 allowed-ips 10.254.0.2/32$' wg.log && grep -q "
 	    "'allowed-ips 10.254.0.1/32$' wg.log") == 0);
 	run("document.querySelector('.dock > header').click()");
+
+	/*
+	 * A BGP session drawn the same way: the dialog asks what joins
+	 * them, what the session goes over and each end's AS, and opens
+	 * the first end's BIRD with the neighbour filled in.  Saved there,
+	 * the other end is offered, filled in from its side.
+	 */
+	run("const ns = document.querySelectorAll('svg.topo .tnode'), p = "
+	    "ns[0].querySelector('.port'), b = ns[1].querySelector('.box')."
+	    "getBoundingClientRect(); window.bx = b.x + b.width / 2; "
+	    "window.by = b.y + b.height / 2; ptr(p, 'pointerdown'); "
+	    "ptr(p, 'pointermove', window.bx, window.by);");
+	wait_js("document.querySelector('svg.topo .tdraft')", 5);
+	/* The line alive in the WebGL layer, and the host it can go to
+	 * lit round its box. */
+	wait_js("!window.arcGl.ok || window.arcGl.points >= 72", 5);
+	shot("8b-join-draft");
+	run("ptr(document.body, 'pointerup', window.bx, window.by);");
+	wait_js("document.querySelector('form[data-form=tunnel] nav.join-kinds')",
+	    5);
+	run("document.querySelector('button[data-act=topo-join][data-arg=bgp]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=join] select[name=over]"
+	    " option') && document.querySelector('form[data-form=join] input"
+	    "[name=as_a]')", 5);
+	run("const f = document.querySelector('form[data-form=join]'); "
+	    "window.over = f.over.options[f.over.selectedIndex].textContent; "
+	    "f.as_a.value = '64512'; f.as_b.value = '64513';");
+	shot("8b-join-bgp");
+	run("document.querySelector('form[data-form=join]').requestSubmit();");
+	wait_js("document.querySelector('form[data-form=bird-pform]') && "
+	    "document.querySelector('form[data-form=bird-pform]').las.value "
+	    "=== '64512' && document.querySelector('form[data-form=bird-pform]')"
+	    ".nas.value === '64513' && document.querySelector('form[data-form="
+	    "bird-pform]').nbr.value !== '' && window.over.includes(document."
+	    "querySelector('form[data-form=bird-pform]').nbr.value)", 20);
+	run("window.nbr1 = document.querySelector('form[data-form=bird-pform]')"
+	    ".nbr.value; window.src1 = document.querySelector('form[data-form="
+	    "bird-pform]').src.value;");
+	shot("8b-join-bgp-first");
+	run("document.querySelector('form[data-form=bird-pform]')"
+	    ".requestSubmit();");
+	wait_js("document.querySelector('button[data-act=bird-sess-next]')", 30);
+	for (int k = 0; k < 100 && system("grep -q '^protocol bgp to_' "
+	    "bird/bird.conf") != 0; k++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q '^protocol bgp to_' bird/bird.conf && grep -q "
+	    "'local as 64512;' bird/bird.conf && grep -q 'as 64513;' "
+	    "bird/bird.conf") == 0);
+	click_when("button[data-act=bird-sess-next]", 5);
+	/* The other end: its own AS, the first end's address its
+	 * neighbour. */
+	wait_js("document.querySelector('form[data-form=bird-pform]') && "
+	    "document.querySelector('form[data-form=bird-pform]').las.value "
+	    "=== '64513' && document.querySelector('form[data-form=bird-pform]')"
+	    ".nas.value === '64512' && document.querySelector('form[data-form="
+	    "bird-pform]').nbr.value === window.src1 && document.querySelector("
+	    "'form[data-form=bird-pform]').src.value === window.nbr1", 20);
+	run("document.querySelector('.scrim[data-act=close]')"
+	    "?.click();");
+	wait_js("!document.querySelector('form[data-form=bird-pform]')", 5);
+	run("document.querySelector('li[data-act=select-network]').click()");
+	wait_js("document.querySelectorAll('svg.topo .tnode').length >= 2", 20);
+	/* OSPF: the interface the session goes over, in the form of an
+	 * OSPF instance, the one the host runs or a new one. */
+	run("const ns = document.querySelectorAll('svg.topo .tnode'), p = "
+	    "ns[0].querySelector('.port'), b = ns[1].querySelector('.box')."
+	    "getBoundingClientRect(); window.bx = b.x + b.width / 2; "
+	    "window.by = b.y + b.height / 2; ptr(p, 'pointerdown'); "
+	    "ptr(p, 'pointermove', window.bx, window.by);");
+	wait_js("document.querySelector('svg.topo .tdraft')", 5);
+	run("ptr(document.body, 'pointerup', window.bx, window.by);");
+	wait_js("document.querySelector('form[data-form=tunnel] nav.join-kinds')",
+	    5);
+	run("document.querySelector('button[data-act=topo-join][data-arg=ospf]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=join] select[name=over]"
+	    " option')", 5);
+	run("const f = document.querySelector('form[data-form=join]'); "
+	    "window.ifa = f.over.options[f.over.selectedIndex].textContent."
+	    "split(' ')[0]; f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=bird-pform]') && [..."
+	    "document.querySelectorAll('form[data-form=bird-pform] input[name^="
+	    "if]')].some(i => i.value === window.ifa)", 20);
+	run("document.querySelector('.scrim[data-act=close]')?.click();");
+	wait_js("!document.querySelector('form[data-form=bird-pform]')", 5);
+	run("document.querySelector('li[data-act=select-network]').click()");
+	wait_js("document.querySelectorAll('svg.topo .tnode').length >= 2", 20);
 
 	/* The route from a host to an address: asked of the host, drawn
 	 * over the map, and told hop by hop. */
@@ -7327,6 +7515,106 @@ part_mesh(void)
 	wait_js("!document.querySelector('svg.topo.stencil')", 5);
 	usleep(500000);
 	shot("9-mesh-map-fib1");
+
+	/*
+	 * Overlay › Quality: each tunnel with both its ends.  The gre
+	 * between arcmesh4 and arcmesh5 over underlay A (overlay in FIB 1,
+	 * its outer packets in FIB 0) is measured from both sides, each
+	 * probe in its own table, the dialog filled in from what the
+	 * agents say; the four monitors' samples, real here, drawn per
+	 * criterion; then stopped.  (The one over the lte link is not: its
+	 * underlay is the Leaking tab's example, its route left in FIB 0.)
+	 */
+	run("document.querySelector('.netsect button.tab[data-arg=overlay]')"
+	    ".click()");
+	click_when("button[data-act=ov-sub][data-arg=quality]", 10);
+	wait_js("document.querySelectorAll('table.tq tbody tr.pick').length "
+	    ">= 10", 30);
+	run("window.tqk = [...document.querySelectorAll('table.tq tbody "
+	    "tr.pick')].filter(r => r.textContent.includes('arcmesh4') && r."
+	    "textContent.includes('arcmesh5')).map(r => r.dataset.arg);");
+	for (k = 0; k < 4; k++) {
+		snprintf(script, sizeof(script), "(() => { const a = window.tqk"
+		    "[%d]; if (!a) return false; document.querySelector('button"
+		    "[data-act=tq-measure][data-arg=\"' + a + '\"]').click(); "
+		    "return true; })()", k);
+		if (!js_true(script))
+			break;
+		wait_js("document.querySelector('form[data-form=tq-set]')", 10);
+		if (js_true("(f => f.A_ulfib.value === '0' && f.A_ovfib.value "
+		    "=== '1')(document.querySelector('form[data-form=tq-set]'))"))
+			break;
+		run("document.querySelector('.modal button[data-act=close]')"
+		    ".click()");
+		wait_js("!document.querySelector('form[data-form=tq-set]')", 5);
+	}
+	ATF_REQUIRE_MSG(js_true("document.querySelector('form[data-form="
+	    "tq-set]')?.A_ulfib.value === '0'"), "no tunnel over underlay A "
+	    "between arcmesh4 and arcmesh5");
+	/* Both ends filled in: inner addresses in FIB 1, outer in FIB 0. */
+	ATF_CHECK(js_true("(f => f.A_ov.value !== '' && f.B_ov.value !== '' "
+	    "&& f.A_ul.value.startsWith('203.0.113.') && f.B_ul.value."
+	    "startsWith('203.0.113.') && f.A_ovfib.value === '1' && f.B_ovfib."
+	    "value === '1' && f.B_ulfib.value === '0')(document.querySelector("
+	    "'form[data-form=tq-set]'))"));
+	shot("9-mesh-tq-dialog");
+	run("const f = document.querySelector('form[data-form=tq-set]'); "
+	    "f.interval.value = '100'; f.eval.value = '1000'; f.requestSubmit();");
+	queued_run();
+	queued_run();
+	/* All four answered, nothing lost: delay figures in each of the
+	 * row's cells, each up. */
+	wait_js("(r => r && r.querySelectorAll('td.tq-cell.st-up').length === "
+	    "4)("
+	    "document.querySelector('table.tq tbody tr.pick[data-arg=\"' + "
+	    "window.tqk.find(a => document.querySelector('button[data-act="
+	    "tq-stop][data-arg=\"' + a + '\"]')) + '\"]'))", 90);
+	run("const d = document.querySelector('.dock.open > header'); "
+	    "if (d) d.click();");
+	wait_js("!document.querySelector('.dock.open')", 5);
+	/* Measured, the tunnel's charts open by themselves: three, a line
+	 * each for the four monitors.  Charts closes them and opens them
+	 * again. */
+	wait_js("document.querySelectorAll('section.tq-detail figure.tq-chart')."
+	    "length === 3 && [...document.querySelectorAll('section.tq-detail "
+	    "figure.tq-chart')].every(f => f.querySelectorAll('path').length "
+	    "=== 4)", 30);
+	run("window.tqb = () => document.querySelector('button[data-act="
+	    "tq-pick][data-arg=\"' + window.tqk.find(a => document."
+	    "querySelector('button[data-act=tq-stop][data-arg=\"' + a + "
+	    "'\"]')) + '\"]'); window.tqb().click();");
+	wait_js("!document.querySelector('section.tq-detail')", 10);
+	run("window.tqb().click();");
+	wait_js("document.querySelectorAll('section.tq-detail figure.tq-chart')."
+	    "length === 3 && window.tqb().classList.contains('on')", 10);
+	run("document.querySelector('section.tq-detail').scrollIntoView({ block: "
+	    "'start' });");
+	usleep(500000);
+	shot("9-mesh-tunnel-quality");
+	/* On the map, the tunnel measured carries its probes: its last
+	 * sample under its rate, the probes crossing it in WebGL. */
+	run("document.querySelector('.netsect button.tab[data-arg=map]')"
+	    ".click()");
+	wait_js("document.querySelector('svg.topo .tlink.tunnel text.probe, "
+	    "svg.topo .tlabels text.probe') && (!window.arcGl.ok || "
+	    "window.arcGl.probes >= 1)", 40);
+	run("document.querySelector('svg.topo text.probe').scrollIntoView({"
+	    "block: 'center'});");
+	shot("9-mesh-probes");
+	run("document.querySelector('.netsect button.tab[data-arg=overlay]')"
+	    ".click()");
+	wait_js("document.querySelector('table.tq button[data-act=tq-stop]')",
+	    20);
+	run("document.querySelector('button[data-act=tq-stop][data-arg=\"' + "
+	    "window.tqk.find(a => document.querySelector('button[data-act="
+	    "tq-stop][data-arg=\"' + a + '\"]')) + '\"]').click();");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')"
+	    ".requestSubmit();");
+	queued_run();
+	queued_run();
+	wait_js("!document.querySelector('table.tq button[data-act=tq-stop]')",
+	    60);
 }
 
 /*
@@ -7408,6 +7696,42 @@ part_scale(void)
 	    k);
 }
 
+/*
+ * A safe change the console cannot confirm, on the map: its socket moved
+ * away, the host is still talked to over the connection kept open but
+ * not dialled anew, which is the console's proof; the change waits, and
+ * the host's box burns down a fuse (the WebGL layer's) with what happens
+ * under it.  The socket back, the next read confirms it, and both go.
+ */
+static void
+part_safefuse(void)
+{
+
+	run("document.querySelector('.tree .titem.fleet').click()");
+	click_when(".hosts .hostcard", 10);
+	wait_js("document.querySelector('.hostbar[data-server]')", 10);
+	run("document.querySelector('button.tab[data-arg=relay]').click()");
+	wait_js("document.querySelector('section.relayview form[data-form="
+	    "rl-conf]')", 20);
+	ATF_REQUIRE(rename("jgd.sock", "jgd.sock.away") == 0);
+	run("const f = document.querySelector('form[data-form=rl-conf]'); "
+	    "f.listen.value = '127.0.0.1:51821'; f.remote.value = "
+	    "'192.0.2.1:14350'; f.requestSubmit();");
+	queued_run();
+	wait_js("[...document.querySelectorAll('.dock .op')].some(o => o."
+	    "textContent.includes('unless confirmed'))", 30);
+	run("const d = document.querySelector('.dock.open > header'); "
+	    "if (d) d.click();");
+	run("document.querySelector('li[data-act=select-network]').click()");
+	wait_js("document.querySelector('svg.topo text.tsafe') && document."
+	    "querySelector('svg.topo text.tsafe').textContent.includes("
+	    "'unless confirmed') && (!window.arcGl.ok || window.arcGl.points "
+	    ">= 120)", 20);
+	shot("8-network-safe");
+	ATF_REQUIRE(rename("jgd.sock.away", "jgd.sock") == 0);
+	wait_js("!document.querySelector('svg.topo text.tsafe')", 60);
+}
+
 ATF_TC_WITH_CLEANUP(pwa_plugins);
 ATF_TC_HEAD(pwa_plugins, tc)
 {
@@ -7421,6 +7745,7 @@ ATF_TC_BODY(pwa_plugins, tc)
 	prologue(tc, 1);
 	part_plugins();
 	part_netsect();
+	part_safefuse();
 }
 ATF_TC_CLEANUP(pwa_plugins, tc)
 {

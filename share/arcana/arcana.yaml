@@ -540,9 +540,12 @@ definitions:
           mtu=, fec=, timeout=, report=, fifo=, key=, nokey, extra=,
           written to speederv2_flags, restarted when it runs), fec
           (args: the ratios, sent to the running relay by its fifo and
-          kept in the flags), enable, disable, start, stop, restart.
-          Of the host, or with jail of that jail.  Undone in safe mode
-          on the host: the rc.conf variables and whether it ran.
+          kept in the flags), enable, disable, start, stop, restart;
+          with profile=<name> (where the rc script has
+          speederv2_profiles) one of several relays, its words in
+          speederv2_<name>_flags, and remove takes one away.  Of the
+          host, or with jail of that jail.  Undone in safe mode on the
+          host: the rc.conf variables and whether it ran.
       - name: monitor
         doc: |
           A tunnel measured outside SD-WAN: set (args: name=, and
@@ -3966,8 +3969,11 @@ operations:
       interval with its rates); "series" (each interval between two
       reports since its last start, the oldest first: the time, the
       overhead to the server and to the client, the plain rates each
-      way); "log" (its last lines).  Of the host,
-      or with jail of that jail.  Nothing is changed.
+      way); "log" (its last lines); "profiles_supported" (whether the
+      rc script runs several relays) and "profiles" (each listed in
+      speederv2_profiles: "name", "running" and the same fields of its
+      own, from speederv2_<name>_flags and its tag speederv2-<name>).
+      Of the host, or with jail of that jail.  Nothing is changed.
     do:
       request:
         attributes:

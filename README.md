@@ -41,59 +41,48 @@ for the console.
 Base `make(1)` and `bsd.*.mk`, on FreeBSD 16.0 or later (16-CURRENT
 until 16.0 is released); FreeBSD 15 is not supported.
 
-For the host's programs (arcana-agent, arcanactl, arcana-enrol,
-jailconf):
-
-- [cblink](https://github.com/spmzt/cblink): libcblink, `cblink-gen` and
-  `cblink.mk`. It is the submodule `cblink/` of this tree, built by
-  `make` before the rest and used from its build directory, so nothing
-  of it need be installed; `make install` installs it with the rest. A
-  tree without the submodule (a release tarball, the port) uses an
-  installed `devel/cblink`;
-- `devel/libcbor`, which cblink needs.
-- `net/libyang3`, which `cblink-gen` needs to read the YANG modules the
-  wire is written in (a build dependency only: nothing links it).
-
 ```sh
 git clone --recurse-submodules https://github.com/spmzt/arcana.git
-# or, in a checkout: git submodule update --init
-pkg install libcbor
-```
-
-For the console as well:
-
-- Kore 4.3, built with `TASKS=1`: its headers to build, `kore(1)` to run.
-  The ports tree has no Kore; the port shipped here in `port/www/kore`
-  builds it with tasks on, as does `Containerfile` from the release
-  tarball;
-- `devel/emscripten`, for the PWA;
-- a libucl source tree, which the PWA compiles to wasm:
-  `/usr/src/contrib/libucl` when the system sources are installed, or a
-  checkout of the [0.9.4 release](https://github.com/vstakhov/libucl)
-  named with `LIBUCL_SRC`;
-- a libyaml source tree, likewise compiled to wasm for the PWA's YAML:
-  `/usr/src/contrib/libyaml` with the system sources, or a checkout of
-  [libyaml](https://github.com/yaml/libyaml) named with `LIBYAML_SRC`;
-- optionally `www/chromium`, which includes chromedriver, for the browser
-  test.
-
-```sh
-pkg install emscripten chromium
-```
-
-Then:
-
-```sh
-cp config.mk.sample config.mk     # where Kore is, if not /usr/local
-make                              # LIBUCL_SRC=, LIBYAML_SRC= without /usr/src
+cd arcana
+make check-deps                   # what the build needs, and what is missing
+make install-missing-packages     # as root: pkg install what is missing
+make install-kore                 # as root, once, for the console: Kore
+make                              # it checks the same first, and says
 make check                        # the test suite, with kyua(1)
 make install                      # PREFIX=/usr/local by default
 ```
 
-`make WITHOUT_CONSOLE=yes` builds only what a host runs, without
-Kore, emscripten or libucl's and libyaml's sources. The ports,
-`port/sysutils/arcana` (with a `CONSOLE` option) and `port/www/kore`,
-build the same way; `devel/cblink` comes from cblink's own tree.
+`make check-deps` asks pkg(8) what is installed and lists what is not,
+as packages; `make install-missing-packages` installs those with
+`pkg install` (`WITH_TEST_TOOLS=yes` adds the tests' tools). `make`
+itself checks first and stops with that list, not a compiler's error.
+
+What it needs:
+
+- for the host's programs (arcana-agent, arcanactl, arcana-enrol,
+  jailconf): `devel/libcbor`, and `net/libyang3` for `cblink-gen` (a
+  build dependency only). [cblink](https://github.com/spmzt/cblink) is
+  the submodule `cblink/`, built by `make` first and installed with the
+  rest; a tree without it (a release tarball, the port) uses an
+  installed `devel/cblink`;
+- for the console as well: `devel/emscripten` for the page; Kore 4.3
+  built with `TASKS=1`, which is no package: `make install-kore` builds
+  the port shipped here, `port/www/kore`, with the ports framework (the
+  ports tree in `/usr/ports`), and `config.mk.sample` says how to use a
+  copy elsewhere;
+- the sources of libucl and libyaml, which the page compiles to
+  WebAssembly (a built library cannot be): the system's in `/usr/src`,
+  which pkgbase's `FreeBSD-src` installs (`make
+  install-missing-packages` lists it where `/usr/src` is missing), or
+  trees named with `LIBUCL_SRC` and `LIBYAML_SRC` (the releases base
+  imports, libucl 0.9.4 and libyaml 0.2.5, as the port fetches them);
+- for the tests: `devel/git`, `ftp/curl`, `lang/python3`, and
+  `www/chromium` (with chromedriver) for the browser test.
+
+`make WITHOUT_CONSOLE=yes` builds only what a host runs, without Kore,
+emscripten or the libraries' sources. The ports, `port/sysutils/arcana`
+(with a `CONSOLE` option) and `port/www/kore`, build the same way;
+`devel/cblink` comes from cblink's own tree.
 
 `make check` skips the tests that need root; run it as root to drive a
 throwaway jail (`arcana-test`, on `127.0.10.0/24` on `lo0`) through

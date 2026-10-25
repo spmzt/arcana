@@ -1678,6 +1678,20 @@ relays_ok(struct ck *c, const ucl_object_t *doc, const ucl_object_t *u,
 		if (!is_int(ucl_object_lookup(r, "port"), 1, 65535, NULL))
 			return (fail(c, "a relay's port is the far relay's, 1 "
 			    "to 65535"));
+		/* Made by the apply: the plugin's two ends, with the
+		 * ratios and the mode both ends need the same. */
+		if (str(r, "plugin") != NULL && strcmp(str(r, "plugin"),
+		    "speederv2") != 0)
+			return (fail(c, "a relay's plugin is speederv2, or none "
+			    "for a relay of the admin's own"));
+		if (str(r, "fec") != NULL && (str(r, "plugin") == NULL ||
+		    strlen(str(r, "fec")) > 80 || str(r, "fec")[strspn(str(r,
+		    "fec"), "0123456789:,")] != '\0'))
+			return (fail(c, "a relay's fec is its plugin's ratios: "
+			    "x:y or x1:y1,x2:y2,..."));
+		if (ucl_object_lookup(r, "mode") != NULL && (str(r, "plugin") ==
+		    NULL || !is_int(ucl_object_lookup(r, "mode"), 0, 1, NULL)))
+			return (fail(c, "a relay's mode is 0 or 1, its plugin's"));
 	}
 	return (true);
 }

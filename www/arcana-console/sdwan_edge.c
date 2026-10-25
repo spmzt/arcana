@@ -819,6 +819,105 @@ loop_obj(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    NULL));
 }
 
+/* A relay's profile name: letters, digits and _, as its rc script takes. */
+static void
+relay_profile(char *buf, size_t len, const char *role, const char *ifn)
+{
+	size_t	o;
+
+	o = (size_t)snprintf(buf, len, "%s_", role);
+	for (; *ifn != '\0' && o + 1 < len && o < 32; ifn++)
+		buf[o++] = isalnum((unsigned char)*ifn) ? *ifn : '_';
+	buf[o < len ? o : len - 1] = '\0';
+}
+
+/* A word name=value for a speeder job's args. */
+static void
+word(ucl_object_t *args, const char *name, const char *fmt, ...)
+{
+	char	v[200], w[220];
+	va_list	ap;
+
+	va_start(ap, fmt);
+	vsnprintf(v, sizeof(v), fmt, ap);
+	va_end(ap);
+	snprintf(w, sizeof(w), "%s=%s", name, v);
+	ucl_array_append(args, S(w));
+}
+
+/*
+ * A relay the document makes (its plugin speederv2): this end's client,
+ * listening where the wg peer points (its endpoint) and sending to the
+ * far underlay at the relay's port; the far end's server, taking it
+ * there and handing it to the far wg's own port.  Each a profile of
+ * the plugin's rc script, named for its interface, with a fifo of its
+ * own so that its ratios change without dropping the tunnel; started,
+ * and taken away when the tunnel is.
+ */
+static void
+relay_objs(struct plan *pl, const ucl_object_t *a, const ucl_object_t *b,
+    const ucl_object_t *rl)
+{
+	ucl_object_t	*o, *args;
+	const char	*fec, *bu;
+	char		 prof[40], key[200];
+	int64_t		 mode;
+	int		 side;
+	bool		 v6;
+
+	if (str(rl, "plugin") == NULL || strcmp(str(rl, "plugin"),
+	    "speederv2") != 0)
+		return;
+	fec = str(rl, "fec") != NULL ? str(rl, "fec") : "20:10";
+	mode = ucl_object_lookup(rl, "mode") != NULL ? ucl_object_toint(
+	    ucl_object_lookup(rl, "mode")) : 1;
+	bu = str(b, "underlay");
+	v6 = family(bu) == AF_INET6;
+	for (side = 0; side < 2; side++) {
+		const ucl_object_t	*me = side == 0 ? a : b;
+
+		relay_profile(prof, sizeof(prof), side == 0 ? "c" : "s", str(me,
+		    "ifname"));
+		snprintf(key, sizeof(key), "relay:%s", prof);
+		o = object(pl, str(me, "edge"), key, PH_TVC, side == 0 ?
+		    "%s: its FEC relay toward %s, speederv2 %s, a client" :
+		    "%s: the FEC relay from %s, speederv2 %s, a server",
+		    str(me, "ifname"), str(side == 0 ? b : a, "edge"), prof);
+		if (o == NULL)
+			continue;
+		args = ucl_object_typed_new(UCL_ARRAY);
+		word(args, "profile", "%s", prof);
+		if (side == 0) {
+			word(args, "role", "client");
+			word(args, "listen", "%s", str(rl, "endpoint"));
+			word(args, "remote", "%s%s%s:%jd", v6 ? "[" : "", bu, v6 ?
+			    "]" : "", (intmax_t)ucl_object_toint(
+			    ucl_object_lookup(rl, "port")));
+		} else {
+			word(args, "role", "server");
+			word(args, "listen", "%s%s%s:%jd", v6 ? "[" : "", bu, v6 ?
+			    "]" : "", (intmax_t)ucl_object_toint(
+			    ucl_object_lookup(rl, "port")));
+			word(args, "remote", "%s:%jd", v6 ? "[::1]" : "127.0.0.1",
+			    (intmax_t)(WG_PORT + ucl_object_toint(
+			    ucl_object_lookup(b, "unit"))));
+		}
+		word(args, "fec", "%s", fec);
+		word(args, "mode", "%jd", (intmax_t)mode);
+		word(args, "report", "10");
+		word(args, "fifo", "/var/run/speederv2/%s.fifo", prof);
+		make(o, job("speeder", "verb", S("conf"), "args", args, NULL));
+		make(o, job("speeder", "verb", S("enable"), NULL));
+		args = ucl_object_typed_new(UCL_ARRAY);
+		word(args, "profile", "%s", prof);
+		make(o, job("speeder", "verb", S("start"), "args", args, NULL));
+		args = ucl_object_typed_new(UCL_ARRAY);
+		word(args, "profile", "%s", prof);
+		unmake(o, job("speeder", "verb", S("remove"), "args", args,
+		    NULL));
+	}
+}
+
 /* One end of a tunnel: its interface, and how it knows the far end. */
 static void
 tvc_end(struct plan *pl, const ucl_object_t *t, int me)
@@ -1001,8 +1100,10 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 		 * behind NAT (it finds this end, and the keepalive holds
 		 * the mapping); else the far underlay's address and port.
 		 */
-		if ((rl = relay_of(pl, a, b)) != NULL)
+		if ((rl = relay_of(pl, a, b)) != NULL) {
 			snprintf(port, sizeof(port), "%s", str(rl, "endpoint"));
+			relay_objs(pl, a, b, rl);
+		}
 		else
 			snprintf(port, sizeof(port), "%s%s%s:%jd", family(str(b,
 			    "underlay")) == AF_INET6 ? "[" : "", str(b,
@@ -9683,6 +9784,8 @@ static const struct sdwan_need {
 } sdwan_needs[] = {
 	{ "ipsec", "strongswan", "strongswan",
 	    "strongSwan, for the tunnels under IPsec IKEv2" },
+	{ "speeder", "speederv2", "udpspeeder",
+	    "UDPspeeder, for the FEC relays the UCS End Points name" },
 	{ "sdwan-bird", "bird", "bird3",
 	    "BIRD, for routing at the UNIs, BGP between the edges and BFD" },
 	{ "sdwan-dhcp", "dnsmasq", "dnsmasq",

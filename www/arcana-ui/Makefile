@@ -6,10 +6,8 @@
 .include "${.CURDIR}/../../share/mk/arcana.mk"
 
 EMCC?=		emcc
-# JSON: base's libucl, compiled to wasm from the source tree.
-LIBUCL_SRC?=	/usr/src/contrib/libucl
-# YAML: base's libyaml (its private library's source), the same way.
-LIBYAML_SRC?=	/usr/src/contrib/libyaml
+# JSON and YAML: libucl and libyaml, compiled to wasm from their source
+# trees, LIBUCL_SRC and LIBYAML_SRC (share/mk/arcana.mk: the system's).
 # emcc links at -O2 and above only with its JS optimizer's npm modules
 # (acorn); the FreeBSD package lacks them.  The C is -O2 either way.
 EMLDOPT?=	-O1
@@ -17,7 +15,7 @@ WWWDIR?=	${PREFIX}/www/arcana-console
 
 DIST=		${.OBJDIR}/dist
 
-APP_SRCS=	cluster.c users.c pfxlists.c iflabels.c templates.c main.c actions.c ca.c carp.c api.c apidoc.c bird.c ecmp.c mtr.c fleet.c ipfw.c l2.c kernel.c storage.c sysctl.c procs.c logs.c usage.c tbl.c topo.c vpn.c jailmk.c certs.c sshd.c span.c ipsec.c workflow.c sdwan.c graph.c html.c json.c netview.c \
+APP_SRCS=	cluster.c glmap.c users.c pfxlists.c iflabels.c templates.c main.c actions.c ca.c carp.c api.c apidoc.c bird.c ecmp.c mtr.c fleet.c ipfw.c l2.c kernel.c storage.c sysctl.c procs.c logs.c usage.c tbl.c topo.c vpn.c jailmk.c certs.c sshd.c span.c ipsec.c workflow.c sdwan.c graph.c html.c json.c netview.c \
 		schema.c view.c live.c yaml.c export.c hostconf.c trouble.c routing.c birdform.c help.c secpage.c surules.c idsown.c idsstats.c nas.c sysview.c builder.c res.c mail.c relay.c monitors.c
 UCL_SRCS=	ucl_emitter_streamline.c ucl_emitter_utils.c ucl_emitter.c \
 		ucl_hash.c ucl_msgpack.c ucl_parser.c ucl_schema.c ucl_sexp.c \
@@ -38,6 +36,7 @@ EMLDFLAGS=	-sENVIRONMENT=web \
 		-sDYNAMIC_EXECUTION=0 \
 		-sALLOW_MEMORY_GROWTH=1 \
 		-sSTACK_SIZE=524288 \
+		-sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2 \
 		-sEXPORTED_FUNCTIONS=_main,_malloc,_free,_arc_on_action,_arc_on_http,_arc_on_webauthn,_arc_on_net,_arc_on_visible \
 		--js-library ${.CURDIR}/js/bridge.js
 

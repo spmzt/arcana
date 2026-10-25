@@ -489,4 +489,4 @@ kinds:
     title: UDPspeeder's FEC relay configured, its ratios changed, started or stopped
     needs: verb
     uses: jail args safe
-    values: verb=conf|fec|enable|disable|start|stop|restart
+    values: verb=conf|fec|enable|disable|start|stop|restart|remove

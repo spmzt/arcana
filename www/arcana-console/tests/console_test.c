@@ -6987,6 +6987,47 @@ ATF_TC_BODY(sdwan_mesh, tc)
 	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "to is one of the "
 	    "edges") != NULL, "%s", r.body);
 	resp_free(&r);
+	/*
+	 * A relay the apply makes, speederv2's: b's client listening where
+	 * its wg peer points and sending to a's underlay at the relay's
+	 * port; a's server there, handing it to a's wg port; each a
+	 * profile, started, taken away with the tunnel; the plugin is
+	 * what the edges need.
+	 */
+	ATF_REQUIRE(swap_in(doc, "\"port\":14350}", "\"port\":14350,"
+	    "\"plugin\":\"speederv2\",\"fec\":\"10:5\",\"mode\":0}", t1,
+	    sizeof(t1)));
+	ATF_REQUIRE(swap_in(t1, "\"version\":0", "\"version\":1", doc,
+	    sizeof(doc)));
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"relay:c_") != NULL &&
+	    strstr(r.body, "\"key\":\"relay:s_") != NULL && strstr(r.body,
+	    "\"role=client\",\"listen=127.0.0.1:51821\",\"remote=192.0.2.1:"
+	    "14350\",\"fec=10:5\",\"mode=0\",\"report=10\",\"fifo=/var/run/"
+	    "speederv2/c_") != NULL && strstr(r.body, "\"role=server\",\""
+	    "listen=192.0.2.1:14350\",\"remote=127.0.0.1:51") != NULL &&
+	    strstr(r.body, "\"kind\":\"speeder\",\"verb\":\"remove\"") != NULL &&
+	    strstr(r.body, "UDPspeeder, for the FEC relays") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	/* Another plugin, or ratios for a relay of the admin's own, are
+	 * refused. */
+	ATF_REQUIRE(swap_in(doc, "\"plugin\":\"speederv2\"", "\"plugin\":"
+	    "\"udp2raw\"", t1, sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "plugin is speederv2")
+	    != NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_REQUIRE(swap_in(doc, "\"plugin\":\"speederv2\",", "", t1,
+	    sizeof(t1)));
+	http("POST", "/api/sdwan/check", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "fec is its plugin's")
+	    != NULL, "%s", r.body);
+	resp_free(&r);
 }
 
 CONSOLE_TC(sdwan_host, "A host-as-subscriber edge (own_table): the service's "

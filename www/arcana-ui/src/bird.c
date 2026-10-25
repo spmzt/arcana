@@ -92,10 +92,28 @@ static struct {
 
 #define	CONFIRM_AFTER_MS	5000
 
+/*
+ * A session drawn on the map, written one end at a time: this end's form
+ * opened filled in once its host's file is here; saved, the other end
+ * offered, filled in the same way.
+ */
+static struct {
+	bool		 on;		/* this end's form to open, or open */
+	bool		 opened;
+	struct bfsess	 s;
+	char		 sid[9], jail[256];
+	bool		 offer;		/* saved: the other end is offered */
+	char		 next_key[80];	/* the other end's node */
+	char		 next_label[140];
+	struct bfsess	 next;
+	bool		 has_next;
+} sess;
+
 static void	conf_load(struct server *, bool);
 static bool	name_ok(const char *);
 static const char *past(const char *);
 static void	want_open(void);
+static void	sess_open(void);
 static void	proto_view(struct html *, const ucl_object_t *, int);
 static int	filter_names(const char **, int);
 static int	template_names(const char **, int);
@@ -418,6 +436,7 @@ conf_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		    NULL ? jstr(o, "sha256") : "");
 		blocks();
 		want_open();
+		sess_open();
 	}
 	if (jget(o, "files") != NULL) {
 		if (bd.files != NULL)
@@ -428,6 +447,11 @@ conf_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (save) {
 		free(bd.draft);
 		bd.draft = NULL;
+		/* A session's end written: the other end is offered. */
+		if (sess.on && sess.opened && app.modal == MODAL_BIRD_FORM) {
+			sess.on = false;
+			sess.offer = sess.has_next;
+		}
 		app.modal = MODAL_NONE;
 		if (jint(o, "confirm_by", 0) > 0) {
 			/* Kept only when told so: BIRD runs its own timer,
@@ -544,6 +568,79 @@ want_open(void)
 	bd.want[0] = '\0';
 	bd.edit = block_find("protocol", bd.proto);
 	app.modal = MODAL_BIRD_PROTO;
+}
+
+/*
+ * A session from the map: key the node its host is (a server's id, or
+ * id/jail), mine what its form is to say, and when there is one, the
+ * other end's node, its name, and what its form is to say.
+ */
+void
+bird_session(const char *sid, const char *jail, const struct bfsess *mine,
+    const char *next_key, const char *next_label, const struct bfsess *next)
+{
+	struct bfsess	m, n;
+	char		nk[80], nl[140];
+
+	/* Copied first: they may be this end's next, about to go. */
+	m = *mine;
+	if (next != NULL) {
+		n = *next;
+		snprintf(nk, sizeof(nk), "%s", next_key);
+		snprintf(nl, sizeof(nl), "%s", next_label);
+	}
+	memset(&sess, 0, sizeof(sess));
+	sess.on = true;
+	sess.s = m;
+	snprintf(sess.sid, sizeof(sess.sid), "%s", sid);
+	snprintf(sess.jail, sizeof(sess.jail), "%s", jail);
+	if (next != NULL) {
+		sess.has_next = true;
+		sess.next = n;
+		snprintf(sess.next_key, sizeof(sess.next_key), "%s", nk);
+		snprintf(sess.next_label, sizeof(sess.next_label), "%s", nl);
+	}
+	app.modal = MODAL_NONE;
+	bd.want[0] = '\0';
+}
+
+/*
+ * The session's form, once its host's file is here: a BGP neighbour new;
+ * OSPF and BFD into the instance of the family the host runs, when it
+ * runs one, else a new one.
+ */
+static void
+sess_open(void)
+{
+	char	*text;
+	bool	 v6;
+	int	 i;
+
+	if (!sess.on || sess.opened || bd.text == NULL || bd.loading ||
+	    strcmp(bd.sid, sess.sid) != 0 || strcmp(bd.jail, sess.jail) != 0 ||
+	    app.node != NODE_HOST || app.tab != TAB_NETWORK || app.net.kind !=
+	    NET_BIRD || app.modal != MODAL_NONE)
+		return;
+	sess.opened = true;
+	snprintf(bd.fkind, sizeof(bd.fkind), "%s", sess.s.kind);
+	bd.edit = -1;
+	v6 = strchr(sess.s.nbr, ':') != NULL;
+	for (i = 0; strcmp(sess.s.kind, "bgp") != 0 && i < bd.nb; i++) {
+		if (strcmp(bd.b[i].kind, "protocol") != 0 || strcmp(bd.b[i].type,
+		    sess.s.kind) != 0)
+			continue;
+		text = block_text(i);
+		/* OSPF v3 is IPv6's, v2 IPv4's. */
+		if (strcmp(sess.s.kind, "ospf") != 0 || (text != NULL &&
+		    (strstr(text, "ospf v3") != NULL) == v6)) {
+			free(text);
+			bd.edit = i;
+			break;
+		}
+		free(text);
+	}
+	app.modal = MODAL_BIRD_FORM;
+	app.modal_error[0] = '\0';
 }
 
 /* The names of the file's filters, at most max. */
@@ -1374,6 +1471,21 @@ view_bird(struct html *h, struct server *s, const ucl_object_t *data)
 	int			 i, n, pr;
 
 	conf_load(s, false);
+	/* A session's form closed without being saved: forgotten. */
+	if (sess.on && sess.opened && app.modal != MODAL_BIRD_FORM &&
+	    !bd.saving)
+		sess.on = false;
+	sess_open();
+	if (sess.offer) {
+		h_raw(h, "<div class=\"notice sess-next\"><span>This end is "
+		    "written. The other end, <b>");
+		h_txt(h, sess.next_label);
+		h_raw(h, "</b>, is to have its own, filled in the same way."
+		    "</span><button class=\"primary small\" data-act=\""
+		    "bird-sess-next\">Open its BIRD</button><button class=\""
+		    "ghost small\" data-act=\"bird-sess-drop\">Not now</button>"
+		    "</div>");
+	}
 	h_raw(h, "<section class=\"pane bird\"><h4><span>BIRD</span><span "
 	    "class=\"pane-actions\"><button class=\"ghost small\" data-act=\""
 	    "bird-file\" title=\"The configuration, whole\">Configuration"
@@ -1997,6 +2109,10 @@ bird_modal(struct html *h)
 		text = i >= 0 && i < bd.nb ? block_text(i) : NULL;
 		c = text != NULL ? bf_parse(bd.fkind, text) : bf_new(bd.fkind);
 		free(text);
+		/* A session drawn on the map, put in. */
+		if (c != NULL && sess.on && sess.opened && strcmp(bd.fkind,
+		    sess.s.kind) == 0)
+			bf_prefill(c, &sess.s);
 		bd.form_ok = c != NULL;
 		h_raw(h, "<form data-form=\"bird-pform\" class=\"wide bf\"><h2>");
 		if (i >= 0 && i < bd.nb) {
@@ -2346,6 +2462,22 @@ bird_action(const char *act, const char *arg, const char *value)
 	free(bd.draft);
 	bd.draft = NULL;
 	app.modal_error[0] = '\0';
+	/* Another form opened by hand: the session's is not the one. */
+	if (strcmp(act, "bird-pnew") == 0 || strcmp(act, "bird-pedit") == 0 ||
+	    strcmp(act, "bird-edit") == 0 || strcmp(act, "bird-open") == 0 ||
+	    strcmp(act, "bird-new") == 0)
+		sess.on = false;
+	if (strcmp(act, "bird-sess-next") == 0) {
+		sess.offer = false;
+		if (sess.has_next)
+			topo_bird_session(sess.next_key, sess.next_label,
+			    &sess.next);
+		return (true);
+	}
+	if (strcmp(act, "bird-sess-drop") == 0) {
+		sess.offer = false;
+		return (true);
+	}
 	if (strcmp(act, "input:bird-path") == 0) {
 		snprintf(bd.path, sizeof(bd.path), "%s", value);
 		conf_load(s, true);

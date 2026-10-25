@@ -4924,18 +4924,29 @@ sdwan_modal(struct html *h)
 			    "relay"), &rit, true)) != NULL && rn < sizeof(rtext) -
 			    200)
 				rn += (size_t)snprintf(rtext + rn, sizeof(rtext) - rn,
-				    "%s %s %lld\n", jstr(rl, "to") != NULL ? jstr(rl,
-				    "to") : "", jstr(rl, "endpoint") != NULL ? jstr(rl,
-				    "endpoint") : "", (long long)jint(rl, "port", 0));
+				    "%s %s %lld%s%s%s%s%s\n", jstr(rl, "to") != NULL ?
+				    jstr(rl, "to") : "", jstr(rl, "endpoint") != NULL ?
+				    jstr(rl, "endpoint") : "", (long long)jint(rl,
+				    "port", 0), jstr(rl, "plugin") != NULL ? " " : "",
+				    jstr(rl, "plugin") != NULL ? jstr(rl, "plugin") :
+				    "", jstr(rl, "plugin") != NULL ? " " : "", jstr(rl,
+				    "plugin") != NULL ? (jstr(rl, "fec") != NULL ?
+				    jstr(rl, "fec") : "20:10") : "", jstr(rl,
+				    "plugin") != NULL ? (jint(rl, "mode", 1) == 0 ?
+				    " 0" : " 1") : "");
 			h_raw(h, "<label>Relays, WireGuard only<textarea name=\""
 			    "relay\" rows=\"2\" spellcheck=\"false\" placeholder=\"edge "
-			    "127.0.0.1:51821 14350\">");
+			    "127.0.0.1:51821 14350 speederv2 20:10 1\">");
 			h_txt(h, rtext);
 			h_raw(h, "</textarea><small>One a line: the far edge's id, "
 			    "the relay's listener here that the wg peer points at "
 			    "(host:port), and the port the relay reaches the far "
-			    "underlay at. The relay process is yours; its flow goes "
-			    "by this uplink's table.</small></label>");
+			    "underlay at; its flow goes by this uplink's table. "
+			    "Then, for the apply to make both its ends, "
+			    "<code>speederv2</code> with its ratios and mode (both "
+			    "ends the same): a client here, a server on the far "
+			    "edge, each a profile of the plugin. Without, the "
+			    "relay process is yours.</small></label>");
 		}
 		/* How the interface is addressed and routed (Mplify 119
 		 * §12.2.3): by DHCP or SLAAC the address is learned from the
@@ -7032,10 +7043,12 @@ sd_forms(const char *form, const ucl_object_t *f)
 			char		*copy = strdup(v), *it2 = copy, *line;
 
 			while (it2 != NULL && (line = strsep(&it2, "\n")) != NULL) {
-				char	to[80], ep[96];
-				long	port;
+				char	to[80], ep[96], plug[24], fec[96];
+				long	port, mode;
+				int	nw;
 
-				if (sscanf(line, "%79s %95s %ld", to, ep, &port) == 3) {
+				if ((nw = sscanf(line, "%79s %95s %ld %23s %95s %ld",
+				    to, ep, &port, plug, fec, &mode)) >= 3) {
 					ucl_object_t	*rl = ucl_object_typed_new(
 					    UCL_OBJECT);
 
@@ -7043,6 +7056,16 @@ sd_forms(const char *form, const ucl_object_t *f)
 					put_str(rl, "endpoint", ep);
 					ucl_object_insert_key(rl, ucl_object_fromint(
 					    port), "port", 0, false);
+					/* Made by the apply: its plugin, ratios
+					 * and mode. */
+					if (nw >= 4)
+						put_str(rl, "plugin", plug);
+					if (nw >= 5)
+						put_str(rl, "fec", fec);
+					if (nw >= 6)
+						ucl_object_insert_key(rl,
+						    ucl_object_fromint(mode), "mode",
+						    0, false);
 					ucl_array_append(rls, rl);
 				}
 			}

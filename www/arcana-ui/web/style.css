@@ -2869,6 +2869,14 @@ ul.devices em { color: var(--cyan); font-style: normal; font-size: .7rem; }
 	    var(--panel);
 	overflow: hidden;
 }
+/* The map's traffic, drawn by WebGL under the drawing (glmap.c). */
+canvas.map-gl {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+}
 svg.topo {
 	position: absolute;
 	inset: 0;
@@ -2879,6 +2887,21 @@ svg.topo {
 	-webkit-user-select: none;
 }
 svg.topo .bg { cursor: grab; }
+/* A measured tunnel's last probe sample, under its rate. */
+svg.topo text.probe {
+	text-anchor: middle;
+	font-size: 9px;
+	fill: var(--fg-2);
+}
+svg.topo text.probe.lossy { fill: var(--red); }
+/* A safe change waiting on a host, under its box (its fuse is glmap.c's). */
+svg.topo text.tsafe {
+	text-anchor: middle;
+	font-size: 10px;
+	fill: var(--amber);
+	pointer-events: auto;
+}
+svg.topo text.tsafe.soon { fill: var(--red); }
 svg.topo .bg:active { cursor: grabbing; }
 svg.topo pattern circle { fill: rgba(var(--accent-rgb), .16); }
 svg.topo text {
@@ -5420,3 +5443,41 @@ table.mon .spark { width: 120px; height: 24px; }
 }
 .relay-compare th:last-child { width: 32px; }
 .relay-impact { margin-top: 1rem; }
+
+/* Network › Overlay › Quality: a line each, overlay solid, underlay
+ * dashed, A's end cyan and B's violet; the picked tunnel's three charts
+ * side by side where there is room. */
+.tq-detail { margin-top: 1rem; }
+.tq-detail h3 { font-weight: 600; }
+.tq-a { color: var(--cyan); }
+.tq-b { color: var(--violet); }
+.tq-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+	gap: 1rem;
+}
+.tq-chart { margin: 0; }
+.tq-chart svg { width: 100%; height: 140px; display: block; }
+.tq-chart path { fill: none; stroke-width: 1.75; vector-effect: non-scaling-stroke; }
+.tq-chart .tq0, .tq-legend .tq0 { stroke: var(--cyan); color: var(--cyan); }
+.tq-chart .tq1, .tq-legend .tq1 { stroke: var(--violet); color: var(--violet); }
+.tq-chart .tq2, .tq-legend .tq2 { stroke: var(--cyan); color: var(--cyan); stroke-dasharray: 5 3; }
+.tq-chart .tq3, .tq-legend .tq3 { stroke: var(--violet); color: var(--violet); stroke-dasharray: 5 3; }
+.tq-legend { display: flex; flex-wrap: wrap; gap: .3rem 1rem; font-size: .85em; }
+.tq-legend span::before { content: "— "; }
+.tq-legend .tq2::before, .tq-legend .tq3::before { content: "- - "; }
+table.tq td.tq-cell small { display: block; opacity: .75; }
+
+/* The FEC relay tab's relays: each one's running state by a dot. */
+nav.relays .dot {
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	margin-right: 6px;
+	border-radius: 50%;
+	vertical-align: 1px;
+	background: currentColor;
+	opacity: .4;
+}
+nav.relays .dot.st-up { background: var(--green); opacity: 1; }
+nav.relays .dot.st-down { background: var(--red); opacity: .8; }

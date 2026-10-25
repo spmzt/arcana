@@ -23,7 +23,7 @@
 _Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
     "written for cblink 0.2: its wire, its structs");
 
-#define	ARCANA_AGENT_VERSION	"0.209.0"
+#define	ARCANA_AGENT_VERSION	"0.210.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -702,9 +702,14 @@ int		 do_speeder_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 bool		 speeder_running(struct work *);
 int		 speeder_service(struct work *, const char *, const char **);
-void		 speeder_snap(struct work *, const char **, const char **,
-		    bool *);
-int		 speeder_back(struct work *, const char *, const char *, bool,
+/* A relay as it was, for safe mode: its profile (NULL: the plain one). */
+struct speeder_was {
+	const char	*profile, *flags, *enable, *profiles;
+	bool		 running;
+};
+void		 speeder_snap(struct work *, const struct arc_job_spec *,
+		    struct speeder_was *);
+int		 speeder_back(struct work *, const struct speeder_was *,
 		    const char **);
 
 /* luxuria/smtpd.c: OpenSMTPD, a plugin: its read, and its job. */

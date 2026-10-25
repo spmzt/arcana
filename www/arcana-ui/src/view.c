@@ -2559,6 +2559,10 @@ modal(struct html *h)
 		if (!monitor_modal(h))
 			return;
 		break;
+	case MODAL_TQ:
+		if (!tq_modal(h))
+			return;
+		break;
 	case MODAL_KEPT_RENAME:
 		h_raw(h, "<form data-form=\"kept-rename\"><h2>Rename the kept "
 		    "route</h2><p>The route <code>rc.conf</code> keeps to <b>");
@@ -2892,6 +2896,7 @@ modal(struct html *h)
 			h_raw(h, "<button class=\"primary\">Rename</button>");
 			break;
 		case MODAL_MONITOR:
+		case MODAL_TQ:
 			h_raw(h, "<button class=\"primary\">Measure</button>");
 			break;
 		case MODAL_PASSWORD:
@@ -2902,6 +2907,10 @@ modal(struct html *h)
 			    " disabled" : "");
 			break;
 		case MODAL_TUNNEL:
+			h_raw(h, topo_joining() ? "<button class=\"primary\">"
+			    "Open the first end's BIRD</button>" : "<button "
+			    "class=\"primary\">Create</button>");
+			break;
 		case MODAL_IF_CREATE:
 		case MODAL_NG_MKPEER:
 			h_raw(h, "<button class=\"primary\">Create</button>");

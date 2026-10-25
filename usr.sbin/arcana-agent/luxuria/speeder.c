@@ -16,6 +16,13 @@
  * --fifo without dropping the tunnel, and starts, stops and enables it.
  * On the host a safe change is undone: the two rc.conf variables and
  * whether it ran, put back (ira/jobs.c).
+ *
+ * Several relays, where the port's rc script has speederv2_profiles: each
+ * a profile, its words in speederv2_<name>_flags, run as "service
+ * speederv2 <verb> <name>" and logged with the tag speederv2-<name>.  A
+ * job names one with profile=<name>; without, it is the relay of
+ * speederv2_flags, which the rc script runs only while no profile is
+ * listed.
  */
 
 #include <sys/param.h>
@@ -41,6 +48,7 @@
 #define	SERIES_MAX	240		/* intervals of the overhead kept */
 #define	FLAGS_MAX	1024
 #define	KEY_MAX		64
+#define	PROFILE_MAX	32
 
 /* The words of speederv2_flags, read or to be written. */
 struct sflags {
@@ -273,37 +281,173 @@ extra_check(struct work *w, const char *extra)
  * trace: sysrc's output is left out (it says the value before and after)
  * and its command line shows the key as <hidden>.
  */
+/* A profile's variable, or the plain relay's (prof NULL). */
 static const char *
-flags_get(struct work *w)
+var_of(struct work *w, const char *prof, const char *what)
+{
+
+	return (prof == NULL ? wfmt(w, SPEEDER "_%s", what) : wfmt(w, SPEEDER
+	    "_%s_%s", prof, what));
+}
+
+static const char *
+flags_get(struct work *w, const char *prof)
 {
 	const char	*v;
 
 	exec_set_secret(true);
-	v = rc_get(w, SPEEDER "_flags");
+	v = rc_get(w, var_of(w, prof, "flags"));
 	exec_set_secret(false);
 	return (v);
 }
 
 static int
-flags_set(struct work *w, const char *flags, const char **errp)
+flags_set(struct work *w, const char *prof, const char *flags,
+    const char **errp)
 {
 	struct sflags	 f;
 	int		 rc;
 
 	if (flags == NULL) {
-		rc_unset(w, SPEEDER "_flags");
+		rc_unset(w, var_of(w, prof, "flags"));
 		return (0);
 	}
 	flags_parse(w, flags, &f);
 	exec_set_secret(true);
 	exec_set_hide(f.key);
-	rc = rc_set(w, SPEEDER "_flags", "=", flags, errp);
+	rc = rc_set(w, var_of(w, prof, "flags"), "=", flags, errp);
 	exec_set_hide(NULL);
 	exec_set_secret(false);
 	return (rc);
 }
 
+/* A profile's name: letters, digits and _, as the rc script takes. */
+static bool
+profile_ok(const char *s)
+{
+	size_t	i;
+
+	for (i = 0; s[i] != '\0'; i++)
+		if (!isalnum((unsigned char)s[i]) && s[i] != '_')
+			return (false);
+	return (i > 0 && i <= PROFILE_MAX);
+}
+
+/* speederv2_profiles, its names one by one (n of them), or NULL. */
+static const char **
+profiles_get(struct work *w, const char **listp, size_t *np)
+{
+	const char	**v;
+	char		 *list, *p, *word;
+	size_t		  n;
+
+	*np = 0;
+	*listp = rc_get(w, SPEEDER "_profiles");
+	if (*listp == NULL)
+		return (NULL);
+	list = wstrdup(w, *listp);
+	v = wcalloc(w, strlen(list) / 2 + 2, sizeof(*v));
+	for (n = 0, p = list; (word = strsep(&p, " \t")) != NULL; )
+		if (*word != '\0' && profile_ok(word))
+			v[n++] = word;
+	*np = n;
+	return (v);
+}
+
+static bool
+listed(const char **v, size_t n, const char *prof)
+{
+	size_t	i;
+
+	for (i = 0; i < n; i++)
+		if (strcmp(v[i], prof) == 0)
+			return (true);
+	return (false);
+}
+
+/* speederv2_profiles written with prof added (add) or taken out. */
+static int
+profiles_put(struct work *w, const char *prof, bool add, const char **errp)
+{
+	const char	**v, *list, *out;
+	size_t		  n, i;
+
+	v = profiles_get(w, &list, &n);
+	if (add == listed(v, n, prof))
+		return (0);
+	out = "";
+	for (i = 0; i < n; i++)
+		if (strcmp(v[i], prof) != 0)
+			out = wfmt(w, "%s%s%s", out, *out != '\0' ? " " : "", v[i]);
+	if (add)
+		out = wfmt(w, "%s%s%s", out, *out != '\0' ? " " : "", prof);
+	if (*out == '\0') {
+		rc_unset(w, SPEEDER "_profiles");
+		return (0);
+	}
+	return (rc_set(w, SPEEDER "_profiles", "=", out, errp));
+}
+
+/*
+ * Does the rc script run several relays?  Its text names
+ * speederv2_profiles (the port's since it took them); looked for in the
+ * scope's rc.d directories.
+ */
+static bool
+profiles_supported(struct work *w)
+{
+	char	*dirs, *p, *d, *text;
+	bool	 yes;
+
+	yes = false;
+	dirs = wstrdup(w, opts.rc_dirs);
+	for (p = dirs; !yes && (d = strsep(&p, ":")) != NULL; )
+		if (*d != '\0' && (text = scope_slurp(w, wfmt(w, "%s/" SPEEDER,
+		    d), NULL)) != NULL)
+			yes = strstr(text, SPEEDER "_profiles") != NULL;
+	return (yes);
+}
+
+/* A profile's relay, by "service speederv2 one<verb> <name>". */
+static int
+profile_service(struct work *w, const char *prof, const char *verb,
+    const char **errp)
+{
+	struct execres	 res;
+	char		*argv[5];
+
+	argv[0] = (char *)(uintptr_t)opts.service_bin;
+	argv[1] = (char *)(uintptr_t)SPEEDER;
+	argv[2] = wfmt(w, "one%s", verb);
+	argv[3] = (char *)(uintptr_t)prof;
+	argv[4] = NULL;
+	if (run_exec(w, scope_jexec(w, argv), &res) != 0 || res.status != 0) {
+		if (errp != NULL)
+			*errp = wtext(w, exec_error(w, &res, wfmt(w, "service "
+			    SPEEDER " one%s %s", verb, prof)));
+		return (-1);
+	}
+	return (0);
+}
+
 /* Its service, of the host or of the jail the work is in. */
+static bool
+running_of(struct work *w, const char *prof)
+{
+
+	return (prof == NULL ? speeder_running(w) : profile_service(w, prof,
+	    "status", NULL) == 0);
+}
+
+static int
+service_of(struct work *w, const char *prof, const char *verb,
+    const char **errp)
+{
+
+	return (prof == NULL ? speeder_service(w, verb, errp) :
+	    profile_service(w, prof, verb, errp));
+}
+
 bool
 speeder_running(struct work *w)
 {
@@ -401,14 +545,13 @@ log_tail(struct work *w, const char *path)
 	return (p);
 }
 
-/* A line of the relay's: syslog's tag is the service's. */
+/* A line of the relay's: syslog's tag is the service's, " tag[". */
 static bool
-ours(const char *line)
+ours(const char *line, const char *tag)
 {
 	const char	*t;
 
-	return ((t = strstr(line, " " SPEEDER "[")) != NULL && strchr(t,
-	    ':') != NULL);
+	return ((t = strstr(line, tag)) != NULL && strchr(t, ':') != NULL);
 }
 
 /* The relay's own time at a line's start, [YYYY-mm-dd HH:MM:SS]. */
@@ -554,7 +697,7 @@ groups_of(struct work *w, const char *line)
  * last few lines.
  */
 static void
-log_read(struct work *w, ucl_object_t *top)
+log_read(struct work *w, ucl_object_t *top, const char *prof)
 {
 	struct way	 up[2], down[2], u, d;
 	ucl_object_t	*rep, *lines, *groups, *series, *row;
@@ -562,10 +705,13 @@ log_read(struct work *w, ucl_object_t *top)
 	char		*text, *line, *nl;
 	time_t		 at[2];
 	double		 secs;
+	const char	*tag;
 	int		 n, i, k;
 
 	if ((text = log_tail(w, opts.speederv2_log)) == NULL)
 		return;
+	tag = prof == NULL ? " " SPEEDER "[" : wfmt(w, " " SPEEDER "-%s[",
+	    prof);
 	memset(up, 0, sizeof(up));
 	memset(down, 0, sizeof(down));
 	at[0] = at[1] = -1;
@@ -575,7 +721,7 @@ log_read(struct work *w, ucl_object_t *top)
 	for (line = text; line != NULL && *line != '\0'; line = nl) {
 		if ((nl = strchr(line, '\n')) != NULL)
 			*nl++ = '\0';
-		if (!ours(line))
+		if (!ours(line, tag))
 			continue;
 		last[n % LOG_LINES] = line;
 		n++;
@@ -701,24 +847,14 @@ installed(struct work *w)
 	return (rc == 0);
 }
 
-void
-do_speeder(struct work *w, struct arc_speeder_rsp *rsp)
+/* A relay's flags read into o, the key never. */
+static void
+relay_json(struct work *w, ucl_object_t *top, const char *prof)
 {
 	struct sflags	 f;
-	ucl_object_t	*top;
 	const char	*flags;
-	char		*json;
 
-	rsp->has_ok = true;
-	rsp->ok = false;
-	top = ucl_object_typed_new(UCL_OBJECT);
-	ucl_object_insert_key(top, ucl_object_frombool(installed(w)),
-	    "installed", 0, false);
-	ucl_object_insert_key(top, ucl_object_frombool(enabled_of(w)),
-	    "enabled", 0, false);
-	ucl_object_insert_key(top, ucl_object_frombool(speeder_running(w)),
-	    "running", 0, false);
-	if ((flags = flags_get(w)) != NULL && *flags != '\0') {
+	if ((flags = flags_get(w, prof)) != NULL && *flags != '\0') {
 		flags_parse(w, flags, &f);
 		put_str(top, "flags", unkeyed(w, flags, f.key));
 		put_str(top, "role", f.role);
@@ -735,7 +871,43 @@ do_speeder(struct work *w, struct arc_speeder_rsp *rsp)
 		if (f.extra[0] != '\0')
 			put_str(top, "extra", unkeyed(w, f.extra, f.key));
 	}
-	log_read(w, top);
+	log_read(w, top, prof);
+}
+
+void
+do_speeder(struct work *w, struct arc_speeder_rsp *rsp)
+{
+	ucl_object_t	*top, *list, *o;
+	const char	**v, *names;
+	char		*json;
+	size_t		  n, i;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, ucl_object_frombool(installed(w)),
+	    "installed", 0, false);
+	ucl_object_insert_key(top, ucl_object_frombool(enabled_of(w)),
+	    "enabled", 0, false);
+	ucl_object_insert_key(top, ucl_object_frombool(
+	    profiles_supported(w)), "profiles_supported", 0, false);
+	v = profiles_get(w, &names, &n);
+	/* The plain relay runs only while no profile is listed. */
+	ucl_object_insert_key(top, ucl_object_frombool(n == 0 &&
+	    speeder_running(w)), "running", 0, false);
+	relay_json(w, top, NULL);
+	if (n > 0) {
+		list = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < n; i++) {
+			o = ucl_object_typed_new(UCL_OBJECT);
+			put_str(o, "name", v[i]);
+			ucl_object_insert_key(o, ucl_object_frombool(
+			    running_of(w, v[i])), "running", 0, false);
+			relay_json(w, o, v[i]);
+			ucl_array_append(list, o);
+		}
+		ucl_object_insert_key(top, list, "profiles", 0, false);
+	}
 	put_str(top, "log_path", opts.speederv2_log);
 	if (w->jail != NULL)
 		put_str(top, "jail", w->jail);
@@ -763,6 +935,34 @@ arg_of(const char *word, const char *name)
 	    NULL);
 }
 
+/* The relay a job is for: its profile=, or NULL for the plain one. */
+static const char *
+profile_of(const struct arc_job_spec *sp)
+{
+	const char	*v;
+	size_t		 i;
+
+	for (i = 0; i < sp->names.n; i++)
+		if ((v = arg_of(sp->names.v[i], "profile")) != NULL)
+			return (v);
+	return (NULL);
+}
+
+/* The job's words but profile=, how many. */
+static size_t
+words_of(const struct arc_job_spec *sp, const char **first)
+{
+	size_t	i, n;
+
+	*first = NULL;
+	for (i = n = 0; i < sp->names.n; i++)
+		if (arg_of(sp->names.v[i], "profile") == NULL) {
+			if (n++ == 0)
+				*first = sp->names.v[i];
+		}
+	return (n);
+}
+
 /*
  * conf's arguments into f: the key kept from the flags before (old) but
  * given key= or nokey.  NULL, or what is wrong.
@@ -783,6 +983,8 @@ conf_of(struct work *w, const struct arc_job_spec *sp, const char *old,
 	nokey = key = false;
 	for (i = 0; i < sp->names.n; i++) {
 		a = sp->names.v[i];
+		if (arg_of(a, "profile") != NULL)
+			continue;
 		if (strcmp(a, "nokey") == 0)
 			nokey = true;
 		else if ((v = arg_of(a, "role")) != NULL) {
@@ -834,7 +1036,8 @@ conf_of(struct work *w, const struct arc_job_spec *sp, const char *old,
 		} else
 			return (wfmt(w, "conf takes role=, listen=, remote=, "
 			    "mode=, mtu=, fec=, timeout=, report=, fifo=, key=, "
-			    "nokey and extra=, not %s", wvis(w, wstrndup(w, a, 40))));
+			    "nokey, extra= and profile=, not %s", wvis(w,
+			    wstrndup(w, a, 40))));
 	}
 	if (f->role == NULL || f->listen == NULL || f->remote == NULL)
 		return ("conf needs role=, listen= and remote=");
@@ -853,13 +1056,32 @@ speeder_check(const struct arc_job_spec *sp)
 	static _Thread_local char	 errbuf[300];
 	struct work			 cw;
 	struct sflags			 f;
-	const char			*e;
+	const char			*e, *prof, *word;
+	size_t				 i, n, np;
 
 	if (sp->verb == NULL)
 		return ("a speeder job has a verb: conf, fec, enable, disable, "
-		    "start, stop, restart");
+		    "start, stop, restart, remove");
 	if (sp->safe && sp->jail != NULL && sp->jail[0] != '\0')
 		return ("a jail's relay is not undone: not in safe mode");
+	for (i = np = 0; i < sp->names.n; i++)
+		if ((prof = arg_of(sp->names.v[i], "profile")) != NULL) {
+			if (!profile_ok(prof))
+				return ("a profile is 32 letters, digits and _ at "
+				    "most");
+			np++;
+		}
+	if (np > 1)
+		return ("one profile= at most");
+	prof = profile_of(sp);
+	n = words_of(sp, &word);
+	if ((strcmp(sp->verb, "enable") == 0 || strcmp(sp->verb, "disable") ==
+	    0) && prof != NULL)
+		return ("enable and disable are the service's, every relay's: "
+		    "no profile=");
+	if (strcmp(sp->verb, "remove") == 0)
+		return (prof != NULL && n == 0 ? NULL : "remove takes "
+		    "profile=<name> alone");
 	if (strcmp(sp->verb, "conf") == 0) {
 		work_init(&cw);
 		e = conf_of(&cw, sp, NULL, &f);
@@ -871,26 +1093,33 @@ speeder_check(const struct arc_job_spec *sp)
 		return (e);
 	}
 	if (strcmp(sp->verb, "fec") == 0)
-		return (sp->names.n == 1 && fec_ok(sp->names.v[0]) ? NULL : "fec "
-		    "takes the ratios: x:y or x1:y1,x2:y2,..., x 1 or more, "
-		    "x + y 254 at most");
+		return (n == 1 && fec_ok(word) ? NULL : "fec takes the ratios: "
+		    "x:y or x1:y1,x2:y2,..., x 1 or more, x + y 254 at most");
 	if (strcmp(sp->verb, "enable") == 0 || strcmp(sp->verb, "disable") ==
 	    0 || strcmp(sp->verb, "start") == 0 || strcmp(sp->verb, "stop") ==
 	    0 || strcmp(sp->verb, "restart") == 0)
-		return (sp->names.n == 0 ? NULL : "enable, disable, start, stop "
-		    "and restart take no words");
-	return ("a speeder job is conf, fec, enable, disable, start, stop or "
-	    "restart");
+		return (n == 0 ? NULL : "enable, disable, start, stop and "
+		    "restart take no words but profile=");
+	return ("a speeder job is conf, fec, enable, disable, start, stop, "
+	    "restart or remove");
 }
 
 /* What the job is, the key never in it. */
 char *
 speeder_title(const struct arc_job_spec *sp)
 {
-	const char	*role, *listen, *remote, *v;
+	const char	*role, *listen, *remote, *v, *who, *word;
 	size_t		 i;
-	char		*t;
+	char		*t, *out;
+	int		 rc;
 
+	who = SPEEDER;
+	if ((v = profile_of(sp)) != NULL && asprintf(&t, SPEEDER " %s", v) !=
+	    -1)
+		who = t;
+	else
+		t = NULL;
+	rc = -1;
 	if (strcmp(sp->verb, "conf") == 0) {
 		role = listen = remote = "";
 		for (i = 0; i < sp->names.n; i++) {
@@ -901,19 +1130,14 @@ speeder_title(const struct arc_job_spec *sp)
 			else if ((v = arg_of(sp->names.v[i], "remote")) != NULL)
 				remote = v;
 		}
-		if (asprintf(&t, SPEEDER ": conf, a %s from %s to %s", role,
-		    listen, remote) == -1)
-			return (NULL);
-		return (t);
-	}
-	if (strcmp(sp->verb, "fec") == 0 && sp->names.n == 1) {
-		if (asprintf(&t, SPEEDER ": fec %s", sp->names.v[0]) == -1)
-			return (NULL);
-		return (t);
-	}
-	if (asprintf(&t, SPEEDER ": %s", sp->verb) == -1)
-		return (NULL);
-	return (t);
+		rc = asprintf(&out, "%s: conf, a %s from %s to %s", who, role,
+		    listen, remote);
+	} else if (strcmp(sp->verb, "fec") == 0 && words_of(sp, &word) == 1)
+		rc = asprintf(&out, "%s: fec %s", who, word);
+	else
+		rc = asprintf(&out, "%s: %s", who, sp->verb);
+	free(t);
+	return (rc == -1 ? NULL : out);
 }
 
 /* The ratios sent to the running relay by its fifo: "fec x:y,...". */
@@ -956,35 +1180,53 @@ do_speeder_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
 {
 	struct sflags	 f;
-	const char	*old, *e;
+	const char	*old, *e, *prof, *word;
 	bool		 running;
 
-	running = speeder_running(w);
+	prof = profile_of(sp);
+	if (prof != NULL && !profiles_supported(w)) {
+		*errp = "the rc script of " SPEEDER " runs one relay: a port "
+		    "with " SPEEDER "_profiles runs several";
+		return (-1);
+	}
+	running = strcmp(sp->verb, "enable") == 0 || strcmp(sp->verb,
+	    "disable") == 0 ? speeder_running(w) : running_of(w, prof);
 	if (strcmp(sp->verb, "conf") == 0) {
-		old = flags_get(w);
+		old = flags_get(w, prof);
 		if ((e = conf_of(w, sp, old, &f)) != NULL) {
 			*errp = e;
 			return (-1);
 		}
-		if (flags_set(w, flags_of(w, &f), errp) != 0)
+		if (flags_set(w, prof, flags_of(w, &f), errp) != 0)
+			return (-1);
+		if (prof != NULL && profiles_put(w, prof, true, errp) != 0)
 			return (-1);
 		/* Taken where it runs; else at its next start. */
-		return (running ? speeder_service(w, "restart", errp) : 0);
+		return (running ? service_of(w, prof, "restart", errp) : 0);
+	}
+	if (strcmp(sp->verb, "remove") == 0) {
+		if (running && service_of(w, prof, "stop", errp) != 0)
+			return (-1);
+		if (flags_set(w, prof, NULL, errp) != 0)
+			return (-1);
+		rc_unset(w, var_of(w, prof, "user"));
+		return (profiles_put(w, prof, false, errp));
 	}
 	if (strcmp(sp->verb, "fec") == 0) {
-		if ((old = flags_get(w)) == NULL || *old == '\0') {
-			*errp = SPEEDER "_flags is not set: configure the relay "
-			    "first";
+		if ((old = flags_get(w, prof)) == NULL || *old == '\0') {
+			*errp = wfmt(w, "%s is not set: configure the relay "
+			    "first", var_of(w, prof, "flags"));
 			return (-1);
 		}
 		flags_parse(w, old, &f);
 		if (f.role == NULL || f.listen == NULL || f.remote == NULL) {
-			*errp = SPEEDER "_flags says no role, listen or remote: "
-			    "configure the relay again";
+			*errp = wfmt(w, "%s says no role, listen or remote: "
+			    "configure the relay again", var_of(w, prof, "flags"));
 			return (-1);
 		}
-		f.fec = sp->names.v[0];
-		if (flags_set(w, flags_of(w, &f), errp) != 0)
+		words_of(sp, &word);
+		f.fec = word;
+		if (flags_set(w, prof, flags_of(w, &f), errp) != 0)
 			return (-1);
 		/* A running relay takes them by its fifo, the tunnel kept;
 		 * without one, by a restart. */
@@ -992,7 +1234,7 @@ do_speeder_job(struct work *w, const struct arc_job_spec *sp,
 			return (0);
 		if (f.fifo != NULL)
 			return (fifo_send(w, f.fifo, f.fec, errp));
-		return (speeder_service(w, "restart", errp));
+		return (service_of(w, prof, "restart", errp));
 	}
 	if (strcmp(sp->verb, "enable") == 0 || strcmp(sp->verb, "disable") ==
 	    0) {
@@ -1007,35 +1249,46 @@ do_speeder_job(struct work *w, const struct arc_job_spec *sp,
 	}
 	if (strcmp(sp->verb, "stop") == 0 && !running)
 		return (0);
-	return (speeder_service(w, strcmp(sp->verb, "start") == 0 && running ?
+	return (service_of(w, prof, strcmp(sp->verb, "start") == 0 && running ?
 	    "restart" : sp->verb, errp));
 }
 
 /* ---- Safe mode (ira/jobs.c) -------------------------------------- */
 
+/* The relay the job is for, as it is: its flags, the service's enable,
+ * the list of profiles, and whether it runs. */
 void
-speeder_snap(struct work *w, const char **flags, const char **enable,
-    bool *running)
+speeder_snap(struct work *w, const struct arc_job_spec *sp,
+    struct speeder_was *was)
 {
+	size_t	n;
 
-	*flags = flags_get(w);
-	*enable = rc_get(w, SPEEDER "_enable");
-	*running = speeder_running(w);
+	was->profile = profile_of(sp);
+	was->flags = flags_get(w, was->profile);
+	was->enable = rc_get(w, SPEEDER "_enable");
+	profiles_get(w, &was->profiles, &n);
+	was->running = running_of(w, was->profile);
 }
 
 int
-speeder_back(struct work *w, const char *flags, const char *enable,
-    bool running, const char **errp)
+speeder_back(struct work *w, const struct speeder_was *was,
+    const char **errp)
 {
+	const char	*prof;
 
-	if (flags_set(w, flags, errp) != 0)
+	prof = was->profile;
+	if (flags_set(w, prof, was->flags, errp) != 0)
 		return (-1);
-	if (enable == NULL)
+	if (was->profiles == NULL)
+		rc_unset(w, SPEEDER "_profiles");
+	else if (rc_set(w, SPEEDER "_profiles", "=", was->profiles, errp) != 0)
+		return (-1);
+	if (was->enable == NULL)
 		rc_unset(w, SPEEDER "_enable");
-	else if (rc_set(w, SPEEDER "_enable", "=", enable, errp) != 0)
+	else if (rc_set(w, SPEEDER "_enable", "=", was->enable, errp) != 0)
 		return (-1);
-	if (running)
-		return (speeder_service(w, speeder_running(w) ? "restart" :
+	if (was->running)
+		return (service_of(w, prof, running_of(w, prof) ? "restart" :
 		    "start", errp));
-	return (speeder_running(w) ? speeder_service(w, "stop", errp) : 0);
+	return (running_of(w, prof) ? service_of(w, prof, "stop", errp) : 0);
 }

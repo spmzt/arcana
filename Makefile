@@ -43,7 +43,41 @@ SUBDIR_DEPEND_usr.sbin/arcana-agent=	lib/libjailconf lib/libvarconf
 .for _d in ${SUBDIR} ${SUBDIR.yes}
 all_subdir_${_d}: cblink-build
 .endfor
+cblink-build: _deps-build
+.else
+.for _d in ${SUBDIR} ${SUBDIR.yes}
+all_subdir_${_d}: _deps-build
+.endfor
 .endif
+
+# What the build needs, said before it starts, and stopped with a list
+# rather than a compiler's error when something is missing: check-deps
+# says it alone, with the tests' tools too, asking pkg(8) what is
+# installed; install-missing-packages installs what is missing with
+# pkg(8), as root (WITH_TEST_TOOLS=yes: the tests' too), the system's
+# sources being pkgbase's FreeBSD-src; install-kore builds Kore, which is
+# no package, from its port in port/www/kore with the ports framework.
+_DEPS_ENV=	CONSOLE=${MK_CONSOLE} LOCALBASE=${LOCALBASE} \
+		LIBUCL_SRC=${LIBUCL_SRC} LIBYAML_SRC=${LIBYAML_SRC} \
+		KORE_INCLUDE=${KORE_INCLUDE}
+check-deps: .PHONY
+	@env ${_DEPS_ENV} TESTS=yes sh ${.CURDIR}/share/mk/deps.sh check
+install-missing-packages: .PHONY
+	@env ${_DEPS_ENV} TESTS=${WITH_TEST_TOOLS:Dyes:Uno} \
+	    sh ${.CURDIR}/share/mk/deps.sh install
+_deps-build: .PHONY
+	@env ${_DEPS_ENV} TESTS=no sh ${.CURDIR}/share/mk/deps.sh check > \
+	    ${.OBJDIR}/deps.out 2>&1 || { cat ${.OBJDIR}/deps.out; \
+	    echo "The build needs what is missing above." >&2; exit 1; }
+PORTSDIR?=	/usr/ports
+install-kore: .PHONY
+	@if [ ! -f ${PORTSDIR}/Mk/bsd.port.mk ]; then \
+	    echo "install-kore builds port/www/kore with the ports framework," \
+		"which is not in ${PORTSDIR}:" >&2; \
+	    echo "  git clone --depth 1 https://git.FreeBSD.org/ports.git" \
+		"${PORTSDIR}" >&2; exit 1; fi
+	@${MAKE} -C ${.CURDIR}/port/www/kore PORTSDIR=${PORTSDIR} BATCH=yes \
+	    install clean
 
 TESTDIRS=	lib/libjailconf/tests \
 		lib/libvarconf/tests \

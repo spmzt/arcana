@@ -635,7 +635,7 @@ function out_h(    i, j, s, op, e, u, d, famset, st) {
 		}
 	}
 	printf "\n/* ---- The client ---------------------------------------------- */\n\n"
-	printf "struct %s_client {\n\tcbl_conn\t*conn;\n\tuint16_t\t family;\n\tuint32_t\t version;\n\tuint32_t\t groups[%s_MCGRP_COUNT > 0 ? %s_MCGRP_COUNT : 1];\n\tcbl_msg\t\t*err;\t/* ERROR of the last failed call */\n};\n\n",
+	printf "struct %s_client {\n\tcbl_conn\t*conn;\n\tuint16_t\t family;\n\tuint32_t\t version;\n\tuint32_t\t groups[%s_MCGRP_COUNT > 0 ? %s_MCGRP_COUNT : 1];\n\tcbl_msg\t\t*err;\t/* ERROR of the last failed call */\n\tint\t\t timeout_ms;\t/* a call's longest wait; 0 none */\n};\n\n",
 	    pfx, u, u
 	printf "int\t%s_client_init(struct %s_client *, cbl_conn *);\n", pfx, pfx
 	printf "int\t%s_client_init_info(struct %s_client *, cbl_conn *,\n\t    const cbl_family_info *);\n",
@@ -879,7 +879,7 @@ function out_c_client(    i, op, u, st) {
 			if (opn[op ":do:request:attrs"] > 0)
 				printf "\tif (req != NULL && (error = %s_%s_input_put(msg, req)) != 0) {\n\t\tcbl_msg_free(msg);\n\t\treturn (error);\n\t}\n",
 				    cname(spec), cname(op)
-			printf "\terror = cbl_request(cl->conn, msg, &rsp, -1);\n\tif (error != 0) {\n\t\t%s__err(cl, rsp);\n\t\treturn (error);\n\t}\n\t%s__err(cl, NULL);\n\tif (rsp == NULL)\n\t\treturn (EPROTO);\n",
+			printf "\terror = cbl_request(cl->conn, msg, &rsp, cl->timeout_ms > 0 ?\n\t    cl->timeout_ms : -1);\n\tif (error != 0) {\n\t\t%s__err(cl, rsp);\n\t\treturn (error);\n\t}\n\t%s__err(cl, NULL);\n\tif (rsp == NULL)\n\t\treturn (EPROTO);\n",
 			    pfx, pfx
 			printf "\tif ((b = %s__box_new(rsp, sizeof(struct %s_%s_rsp))) == NULL) {\n\t\tcbl_msg_free(rsp);\n\t\treturn (ENOMEM);\n\t}\n",
 			    pfx, pfx, cname(op)

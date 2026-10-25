@@ -1344,12 +1344,17 @@ paths:
         second); series (each interval between two reports since the
         relay last started, the oldest first: time, overhead to the
         server and to the client in per cent, plain rates each way in
-        bytes a second); log (its last lines) and log_path.  The changes are jobs
-        of kind speeder: verb conf with name=value words (role, listen,
-        remote, mode, mtu, fec, timeout, report, fifo, key, nokey,
-        extra), fec with the ratios, enable, disable, start, stop,
-        restart; with safe on the host, undone when not confirmed.  With
-        jail, that jail''s relay; the jobs take jail too.'
+        bytes a second); log (its last lines) and log_path;
+        profiles_supported (whether the rc script runs several relays)
+        and profiles (each relay of speederv2_profiles: name, running and
+        the same fields of its own).  The changes are jobs of kind
+        speeder: verb conf with name=value words (role, listen, remote,
+        mode, mtu, fec, timeout, report, fifo, key, nokey, extra), fec
+        with the ratios, enable, disable, start, stop, restart, and
+        remove; profile=name among the words of any but enable and
+        disable for one of several relays (remove needs it); with safe
+        on the host, undone when not confirmed.  With jail, that jail''s
+        relay; the jobs take jail too.'
       parameters:
         - $ref: "#/components/parameters/server"
         - { name: jail, in: query, schema: { type: string } }

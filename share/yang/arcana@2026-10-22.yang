@@ -4906,8 +4906,11 @@ module arcana {
        interval with its rates); \"series\" (each interval between two
        reports since its last start, the oldest first: the time, the
        overhead to the server and to the client, the plain rates each
-       way); \"log\" (its last lines).  Of the host,
-       or with jail of that jail.  Nothing is changed.";
+       way); \"log\" (its last lines); \"profiles_supported\" (whether the
+       rc script runs several relays) and \"profiles\" (each listed in
+       speederv2_profiles: \"name\", \"running\" and the same fields of its
+       own, from speederv2_<name>_flags and its tag speederv2-<name>).
+       Of the host, or with jail of that jail.  Nothing is changed.";
     input {
       uses attr-names;
       uses attr-jail;

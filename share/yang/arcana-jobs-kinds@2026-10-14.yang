@@ -2153,6 +2153,7 @@ submodule arcana-jobs-kinds {
               enum start;
               enum stop;
               enum restart;
+              enum remove;
             }
             mandatory true;
             description

@@ -27,9 +27,12 @@ FROM ${EMSCRIPTEN_IMAGE} AS build
 ARG ARCANA_TESTS=yes
 ARG KORE_VERSION=4.3.0
 ARG KORE_SHA256=94f767eb113f2c97a133b9609c78c4e3795c420dc8726154edce49965df6b8ed
-# The libucl release base imports; the PWA compiles it to wasm.
+# The libucl and libyaml releases base imports; the PWA compiles them to
+# wasm (the image has no /usr/src).
 ARG LIBUCL_VERSION=0.9.4
 ARG LIBUCL_SHA256=319d8ff13441f55d91cd7f3708a54bd03779733e26958c2346c5109014520aaf
+ARG LIBYAML_VERSION=0.2.5
+ARG LIBYAML_SHA256=fa240dbf262be053f3898006d502d514936c818e422afdcf33921c63bed9bf2e
 # jail(8) for the tests, gmake for Kore, libcbor for libcblink, libyang
 # for cblink-gen.
 RUN pkg install -y FreeBSD-jail gmake libcbor libyang3 && \
@@ -61,18 +64,25 @@ RUN fetch -o libucl.tar.gz \
         "${LIBUCL_SHA256}" ] && \
     tar -xzf libucl.tar.gz --strip-components 1 && rm libucl.tar.gz
 
+WORKDIR /usr/src/libyaml
+RUN fetch -o libyaml.tar.gz \
+        https://github.com/yaml/libyaml/archive/refs/tags/${LIBYAML_VERSION}.tar.gz && \
+    [ "$(openssl dgst -sha256 -r libyaml.tar.gz | cut -d' ' -f1)" = \
+        "${LIBYAML_SHA256}" ] && \
+    tar -xzf libyaml.tar.gz --strip-components 1 && rm libyaml.tar.gz
+
 # The submodule cblink/ must be checked out in what is copied.
 COPY . /usr/src/arcana
 WORKDIR /usr/src/arcana
 RUN test -f cblink/Makefile || { echo "cblink/ is empty: git submodule update --init" >&2; exit 1; } && \
-    make -j "$(sysctl -n hw.ncpu)" LIBUCL_SRC=/usr/src/libucl
+    make -j "$(sysctl -n hw.ncpu)" LIBUCL_SRC=/usr/src/libucl LIBYAML_SRC=/usr/src/libyaml
 # The tests that need root drive real jails; as another user they are
 # skipped, as is the browser test without Chromium.
 RUN if [ "${ARCANA_TESTS}" = yes ]; then \
         pw useradd -n arctest -m -s /bin/sh && \
         chown -R arctest /usr/src/arcana && \
         su arctest -c 'make -C /usr/src/arcana check \
-            LIBUCL_SRC=/usr/src/libucl'; \
+            LIBUCL_SRC=/usr/src/libucl LIBYAML_SRC=/usr/src/libyaml'; \
     fi
 RUN make install WITHOUT_TESTS=yes WITHOUT_DEBUG_FILES=yes DESTDIR=/dist && \
     install -d /dist/usr/local/libexec && \

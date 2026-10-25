@@ -1774,12 +1774,149 @@ monitors_probe_cleanup()
 	cleanup
 }
 
+# Two vnet jails, an epair the underlay between them and a gif the
+# overlay over it, A's underlay in its FIB 1 (the gif's tunnelfib);
+# dummynet(4) shaping both: a pipe on A's underlay (delay and loss,
+# which the overlay crosses too) and one on B's gif alone (delay the
+# overlay has, the underlay not).
+QOS_A=arc-tqa
+QOS_B=arc-tqb
+
+qos_lab_up()
+{
+	atf_check jail -c name=$QOS_A vnet persist path=/ host.hostname=$QOS_A
+	atf_check jail -c name=$QOS_B vnet persist path=/ host.hostname=$QOS_B
+	ep=$(ifconfig epair create)
+	echo "$ep" > qos.epair
+	atf_check ifconfig "$ep" vnet $QOS_A
+	atf_check ifconfig "${ep%a}b" vnet $QOS_B
+	atf_check -o ignore jexec $QOS_A sysctl net.fibs=2
+	atf_check jexec $QOS_A ifconfig "$ep" fib 1
+	atf_check jexec $QOS_A ifconfig "$ep" inet 192.0.2.1/30 up
+	atf_check jexec $QOS_B ifconfig "${ep%a}b" inet 192.0.2.2/30 up
+	atf_check -o save:qos.gifa jexec $QOS_A ifconfig gif create
+	atf_check -o save:qos.gifb jexec $QOS_B ifconfig gif create
+	ga=$(cat qos.gifa)
+	gb=$(cat qos.gifb)
+	atf_check jexec $QOS_A ifconfig "$ga" tunnelfib 1
+	atf_check jexec $QOS_A ifconfig "$ga" tunnel 192.0.2.1 192.0.2.2
+	atf_check jexec $QOS_A ifconfig "$ga" inet 10.99.0.1 10.99.0.2 up
+	atf_check jexec $QOS_B ifconfig "$gb" tunnel 192.0.2.2 192.0.2.1
+	atf_check jexec $QOS_B ifconfig "$gb" inet 10.99.0.2 10.99.0.1 up
+	# The underlay: 20 ms and a fifth lost, each way's probes crossing
+	# it once; the overlay alone: 30 ms more, at B.
+	atf_check -o ignore jexec $QOS_A ipfw pipe 1 config delay 20ms plr 0.2
+	atf_check -o ignore jexec $QOS_A ipfw add 100 pipe 1 ip from any to any \
+	    out xmit "$ep"
+	atf_check -o ignore jexec $QOS_B ipfw pipe 2 config delay 30ms
+	atf_check -o ignore jexec $QOS_B ipfw add 100 pipe 2 ip from any to any \
+	    out xmit "$gb"
+}
+
+# Taken down as vnet jails must be: what was made in them destroyed
+# there, the epair's ends brought home first, then the jails.
+qos_lab_down()
+{
+	[ -f qos.gifa ] && jexec $QOS_A ifconfig "$(cat qos.gifa)" destroy 2>/dev/null
+	[ -f qos.gifb ] && jexec $QOS_B ifconfig "$(cat qos.gifb)" destroy 2>/dev/null
+	jexec $QOS_A ipfw -q flush 2>/dev/null
+	jexec $QOS_B ipfw -q flush 2>/dev/null
+	jexec $QOS_A ipfw -q pipe flush 2>/dev/null
+	jexec $QOS_B ipfw -q pipe flush 2>/dev/null
+	if [ -f qos.epair ]; then
+		ep=$(cat qos.epair)
+		ifconfig "$ep" -vnet $QOS_A 2>/dev/null
+		ifconfig "${ep%a}b" -vnet $QOS_B 2>/dev/null
+		ifconfig "$ep" destroy 2>/dev/null
+	fi
+	jail -r $QOS_A $QOS_B >/dev/null 2>&1
+	true
+}
+
+atf_test_case monitors_qos cleanup
+monitors_qos_head()
+{
+	atf_set "descr" "Tunnel monitors against what dummynet(4) makes: a gif between two vnet jails measured from both sides, overlay and underlay, each in its own FIB; the underlay's delay and loss seen in both, the overlay's own delay in it alone, a probe in the wrong FIB reaching nothing"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+monitors_qos_body()
+{
+	kldstat -q -m dummynet || atf_skip "dummynet(4) is not loaded"
+	kldstat -q -m ipfw || atf_skip "ipfw(4) is not loaded"
+	# A new vnet's ipfw starts with the default rule: deny would cut it.
+	[ "$(sysctl -n net.inet.ip.fw.default_to_accept)" = 1 ] ||
+	    atf_skip "net.inet.ip.fw.default_to_accept is not 1"
+	command -v python3 >/dev/null || atf_skip "no python3 to read the samples"
+	start_daemon
+	qos_lab_up
+	ga=$(cat qos.gifa)
+	gb=$(cat qos.gifb)
+	# Each end, as the fleet's Quality view sets them: the overlay to
+	# the far inner address in the interface's table, the underlay to
+	# the far outer address in its tunnelfib.
+	atf_check -o match:done "$JGC" -c "$SOCK" -j $QOS_A monitor set \
+	    name=ov-"$ga" interface="$ga" address=10.99.0.2 interval=50 eval=1000
+	atf_check -o match:done "$JGC" -c "$SOCK" -j $QOS_A monitor set \
+	    name=ul-"$ga" interface="$ga" address=192.0.2.2 fib=1 interval=50 \
+	    eval=1000
+	atf_check -o match:done "$JGC" -c "$SOCK" -j $QOS_B monitor set \
+	    name=ov-"$gb" interface="$gb" address=10.99.0.1 interval=50 eval=1000
+	atf_check -o match:done "$JGC" -c "$SOCK" -j $QOS_B monitor set \
+	    name=ul-"$gb" interface="$gb" address=192.0.2.1 interval=50 eval=1000
+	# A's underlay is in its FIB 1: from FIB 0 nothing is reached.
+	atf_check -o match:done "$JGC" -c "$SOCK" -j $QOS_A monitor set \
+	    name=wrong-fib address=192.0.2.2 fib=0 interval=50 eval=1000 down=3
+	sleep 12
+	atf_check -o save:m.json "$JGC" -c "$SOCK" monitor
+	cat > qos.py <<'EOF'
+import json, sys
+m = {(x.get("jail", ""), x["id"]): x for x in json.load(open("m.json"))["monitors"]}
+def means(key):
+    s = [r for r in m[key]["samples"][1:] if r[6] > 0]
+    sent = sum(r[6] for r in s); recv = sum(r[7] for r in s)
+    got = [r for r in s if r[7] > 0]
+    return (sum(r[1] for r in got) / len(got) if got else -1,
+        sum(r[2] for r in got) / len(got) if got else -1,
+        1 - recv / sent if sent else -1, sent, m[key]["state"])
+bad = []
+for side, jail, gif in (("A", sys.argv[1], sys.argv[3]), ("B", sys.argv[2], sys.argv[4])):
+    ov = means((jail, "ov-" + gif)); ul = means((jail, "ul-" + gif))
+    print(side, "overlay delay %.1f ipdv %.1f loss %.2f (%d) %s" % ov)
+    print(side, "underlay delay %.1f ipdv %.1f loss %.2f (%d) %s" % ul)
+    # Half of a 10-20 ms round trip (dummynet's ticks), and 30 more.
+    if not 4 <= ul[0] <= 15: bad.append(side + " underlay delay")
+    if not 15 <= ov[0] <= 35: bad.append(side + " overlay delay")
+    if not ov[0] > ul[0] + 7: bad.append(side + " overlay not slower")
+    # A fifth lost, each probe crossing the shaped underlay once.
+    for n, v in (("overlay", ov), ("underlay", ul)):
+        if v[3] < 100: bad.append(side + " " + n + " too few probes")
+        if not 0.05 <= v[2] <= 0.45: bad.append(side + " " + n + " loss")
+        if not v[1] > 0: bad.append(side + " " + n + " no variation")
+        if v[4] != "up": bad.append(side + " " + n + " not up")
+w = means((sys.argv[1], "wrong-fib"))
+print("A wrong fib loss %.2f %s" % (w[2], w[4]))
+if w[2] != 1 or w[4] != "down": bad.append("A's FIB 0 reached the underlay")
+print("bad:", ", ".join(bad) if bad else "none")
+sys.exit(1 if bad else 0)
+EOF
+	atf_check -o match:'^bad: none$' python3 qos.py $QOS_A $QOS_B "$ga" "$gb"
+	atf_check -o match:'"kind":"monitor","data":\{"id":"wrong-fib","address":"192.0.2.2","state":"down"' \
+	    "$JGC" -c "$SOCK" events
+}
+monitors_qos_cleanup()
+{
+	qos_lab_down
+	cleanup
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case devd_watch
 	atf_add_test_case lifecycle
 	atf_add_test_case jail_events_nested
 	atf_add_test_case monitors_probe
+	atf_add_test_case monitors_qos
 	atf_add_test_case jail_allow_live
 	atf_add_test_case live_address
 	atf_add_test_case aliases

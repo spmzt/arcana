@@ -615,6 +615,69 @@ bf_new(const char *kind)
 	return (c);
 }
 
+/*
+ * A session drawn on the map put into a form: a new BGP neighbour whole;
+ * for OSPF and BFD, into an instance the host has (or a new one), the
+ * interface or the neighbour added when it is not there yet.
+ */
+void
+bf_prefill(struct bfconf *c, const struct bfsess *p)
+{
+	bool	v6, fresh;
+	int	i;
+
+	v6 = strchr(p->nbr, ':') != NULL;
+	fresh = c->name[0] == '\0';
+	if (fresh)
+		snprintf(c->name, sizeof(c->name), "%s", p->name);
+	if (strcmp(c->kind, "bgp") == 0) {
+		snprintf(c->desc, sizeof(c->desc), "%s", p->desc);
+		snprintf(c->las, sizeof(c->las), "%s", p->las);
+		snprintf(c->nas, sizeof(c->nas), "%s", p->nas);
+		snprintf(c->nbr, sizeof(c->nbr), "%s", p->nbr);
+		snprintf(c->src, sizeof(c->src), "%s", p->src);
+		c->bfd = p->bfd ? 1 : -1;
+		c->ch[0] = !v6;
+		c->ch[1] = v6;
+		return;
+	}
+	if (strcmp(c->kind, "ospf") == 0) {
+		if (fresh) {
+			snprintf(c->ver, sizeof(c->ver), "%s", v6 ? "v3" : "v2");
+			c->chan = v6 ? 1 : 0;
+			snprintf(c->area, sizeof(c->area), "0");
+		}
+		for (i = 0; i < c->nifs; i++)
+			if (strcmp(c->ifs[i].name, p->ifname) == 0)
+				break;
+		if (i == c->nifs && c->nifs < BF_IFS)
+			memset(&c->ifs[c->nifs++], 0, sizeof(c->ifs[0]));
+		if (i < BF_IFS) {
+			snprintf(c->ifs[i].name, sizeof(c->ifs[i].name), "%s",
+			    p->ifname);
+			c->ifs[i].bfd = c->ifs[i].bfd || p->bfd;
+			if (p->ptp && c->ifs[i].type[0] == '\0')
+				snprintf(c->ifs[i].type, sizeof(c->ifs[i].type),
+				    "ptp");
+		}
+		return;
+	}
+	/* BFD: the neighbour, by the interface it is reached on. */
+	for (i = 0; i < c->nnbrs; i++)
+		if (strcmp(c->nbrs[i].addr, p->nbr) == 0)
+			return;
+	if (c->nnbrs == BF_IFS)
+		return;
+	memset(&c->nbrs[c->nnbrs], 0, sizeof(c->nbrs[0]));
+	snprintf(c->nbrs[c->nnbrs].addr, sizeof(c->nbrs[0].addr), "%s",
+	    p->nbr);
+	snprintf(c->nbrs[c->nnbrs].dev, sizeof(c->nbrs[0].dev), "%s",
+	    p->ifname);
+	snprintf(c->nbrs[c->nnbrs].local, sizeof(c->nbrs[0].local), "%s",
+	    p->src);
+	c->nnbrs++;
+}
+
 /* The protocol's text read into a form; NULL when it has more. */
 struct bfconf *
 bf_parse(const char *kind, const char *text)

@@ -13,6 +13,9 @@ name: FreeBSD OCI Image
 on:
   workflow_dispatch:
 
+# Each job asks for what it needs; nothing by default.
+permissions: {}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,7 +24,7 @@ jobs:
       packages: write
     steps:
       - name: Free disk space
-        uses: endersonmenezes/free-disk-space@v3
+        uses: endersonmenezes/free-disk-space@7901478139cff6e9d44df5972fd8ab8fcade4db1 # v3
         with:
           remove_tool_cache: true
           remove_android: true
@@ -33,7 +36,7 @@ jobs:
           rm_cmd: rmz
 
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           submodules: recursive
 
@@ -41,7 +44,7 @@ jobs:
       # pull request is checked the same way; only pushes publish the
       # image.
       - name: build oci image
-        uses: vmactions/freebsd-vm@v1.4.8
+        uses: vmactions/freebsd-vm@b84ab5559b5a1bb4b8ee2737d2506a16e1737636 # v1.4.8
         env:
           AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           USERNAME: ${{ github.actor }}

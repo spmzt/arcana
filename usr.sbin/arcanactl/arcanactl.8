@@ -658,6 +658,13 @@ with
 its last counters each way, the bytes it took in plain and sent with
 FEC, and the overhead the FEC added, in all and over the last interval
 with its rates; its last lines in the log.
+Where the port's rc script runs several relays, whether it does, and
+each relay of
+.Va speederv2_profiles
+with the same fields, read from its
+.Va speederv2_ Ns Ar name Ns Va _flags
+and its log lines, tagged
+.Li speederv2- Ns Ar name .
 Nothing is changed.
 .It Cm speeder conf Ar name Ns = Ns Ar value ...
 The relay's flags written to
@@ -695,6 +702,27 @@ With
 .Fl s ,
 on the host, a job of these is undone when not confirmed: the two
 variables and whether it ran put back.
+.Pp
+.Cm profile Ns = Ns Ar name ,
+added to any of these but
+.Cm enable
+and
+.Cm disable
+(which are every relay's), is for one of several relays:
+.Cm conf
+writes
+.Va speederv2_ Ns Ar name Ns Va _flags
+and adds the name to
+.Va speederv2_profiles ,
+and the service is told
+.Dq Li service speederv2 one Ns Ar verb Ar name .
+The rc script runs only the relays it lists while it lists any.
+.It Cm speeder remove Cm profile Ns = Ns Ar name
+That relay stopped, its variables unset and its name taken out of
+.Va speederv2_profiles ;
+undone with
+.Fl s
+as the others.
 .It Cm netstore Op Cm nfs | Cm iscsi | Cm hast
 The host's network storage services, as JSON: the NFS server, NFSv4 alone
 .Xr ( nfsd 8 ,

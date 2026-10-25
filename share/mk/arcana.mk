@@ -86,6 +86,12 @@ KORE_FEATURES?=	-DTLS_BACKEND_OPENSSL -DKORE_USE_TASKS
 KORE_BIN?=	${LOCALBASE}/bin/kore
 KORE_DHPARAM?=	${KORE_SHARE}/ffdhe4096.pem
 
+# The C libraries the console's page compiles to WebAssembly: their
+# sources, not a built library, the system's (pkgbase's FreeBSD-src
+# installs them); LIBUCL_SRC and LIBYAML_SRC name other trees.
+LIBUCL_SRC?=	/usr/src/contrib/libucl
+LIBYAML_SRC?=	/usr/src/contrib/libyaml
+
 # OpenSSL's libcrypto, for WebAuthn signatures: base's unless these name
 # another one, which must be the one Kore uses.
 SSL_CFLAGS?=

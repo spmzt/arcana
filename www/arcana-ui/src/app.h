@@ -78,6 +78,9 @@ void		 arc_notify_ask(void);
 void		 arc_push_off(void);
 int		 arc_install_state(void);
 void		 arc_install_prompt(void);
+int		 arc_gl_probe(void);
+void		 arc_gl_report(int, int, int, int);
+int		 arc_css_rgb(const char *);
 void		 arc_install_dismiss(void);
 
 /* Called from bridge.js. */
@@ -390,6 +393,7 @@ enum modal {
 	MODAL_KEPT_RENAME,
 	MODAL_PASSWORD,
 	MODAL_MONITOR,
+	MODAL_TQ,
 	MODAL_TUNNEL,
 	MODAL_IF_CREATE,
 	MODAL_IF_SET,
@@ -732,6 +736,13 @@ void		 view_jobs(struct html *, struct server *);
 /* topo.c: the fleet's network as a map, traffic, routes, netgraph. */
 void		 view_netmap(struct html *);
 void		 view_overlay(struct html *);
+/* topo.c: Overlay › Quality, the tunnels measured from both ends. */
+bool		 overlay_quality(struct html *);
+bool		 tq_modal(struct html *);
+bool		 tq_form(const char *, const ucl_object_t *);
+bool		 tq_action(const char *, const char *, const char *);
+void		 tq_refresh(void);
+void		 tq_tick(double);
 void		 view_leaks(struct html *);
 bool		 leaks_action(const char *, const char *, const char *);
 void		 view_netgraph(struct html *, struct server *,
@@ -788,6 +799,27 @@ bool		 bird_form(const char *, const ucl_object_t *);
 bool		 bird_modal(struct html *);
 void		 bird_tick(double);
 void		 bird_show(const char *);
+/*
+ * A routing session drawn on the map between two hosts, as one end's
+ * BIRD is to have it (topo.c, bird.c, birdform.c).
+ */
+struct bfsess {
+	char	kind[8];		/* bgp, ospf or bfd */
+	char	name[64];		/* a new protocol's */
+	char	desc[96];
+	char	nbr[64];		/* the far end's address */
+	char	src[64];		/* this end's */
+	char	las[12], nas[12];	/* BGP: this end's AS, the far end's */
+	char	ifname[32];		/* this end's interface toward it */
+	bool	bfd;
+	bool	ptp;			/* the interface is point to point */
+};
+void		 bird_session(const char *, const char *,
+		    const struct bfsess *, const char *, const char *,
+		    const struct bfsess *);
+void		 topo_bird_session(const char *, const char *,
+		    const struct bfsess *);
+bool		 topo_joining(void);
 /* birdform.c: BGP, OSPF and BFD protocols as forms. */
 struct bfconf;
 struct bfconf	*bf_new(const char *);
@@ -801,6 +833,7 @@ const char	*bf_name(const struct bfconf *);
 void		 bf_summary(char *, size_t, const struct bfconf *);
 void		 bf_free(struct bfconf *);
 void		 bf_set_ver(const char *);
+void		 bf_prefill(struct bfconf *, const struct bfsess *);
 /* tbl.c: every table sorts by its columns and is filtered. */
 struct tcol {
 	const char	*title;
@@ -882,6 +915,19 @@ int		 topo_gw_owner(const char *, int, const char *, char *, size_t,
 		    char *, size_t);
 int		 topo_if_rates(int, const char *, const char *, bool, double *,
 		    double *, int);
+/* glmap.c: the map's traffic, drawn by WebGL under its SVG. */
+void		 glmap_html(struct html *);
+bool		 glmap_on(void);
+void		 glmap_begin(double, double, double, double);
+void		 glmap_link(double, double, double, double, double, double,
+		    double, double, double, double, int, bool);
+void		 glmap_fuse(double, double, double, double, long long, double);
+void		 glmap_draft(double, double, double, double);
+void		 glmap_target(double, double, double, double);
+void		 glmap_probe(double, double, double, double, double, double,
+		    double, double, double, double);
+void		 glmap_end(void);
+void		 topo_probe_tick(double);
 bool		 ecmp_shown(void);
 void		 ecmp_tick(double);
 void		 ecmp_group(struct html *, const struct server *,

@@ -1,3 +1,5 @@
 TIMESTAMP = 1790954089
 SHA256 (vstakhov-libucl-0.9.4_GH0.tar.gz) = 319d8ff13441f55d91cd7f3708a54bd03779733e26958c2346c5109014520aaf
 SIZE (vstakhov-libucl-0.9.4_GH0.tar.gz) = 2049442
+SHA256 (yaml-libyaml-0.2.5_GH0.tar.gz) = fa240dbf262be053f3898006d502d514936c818e422afdcf33921c63bed9bf2e
+SIZE (yaml-libyaml-0.2.5_GH0.tar.gz) = 85055

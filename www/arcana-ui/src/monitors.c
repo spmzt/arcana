@@ -108,9 +108,11 @@ far_end(const ucl_object_t *o)
 	return (v6);
 }
 
-/* The monitor on this interface, in the scope shown, or NULL. */
+/* The monitor on this interface, in the scope shown, or NULL: over the
+ * tunnel, or (underlay) under it, ul-<if> as the fleet's Overlay ›
+ * Quality names it. */
 static const ucl_object_t *
-monitor_of(const char *ifname)
+monitor_of(const char *ifname, bool underlay)
 {
 	const ucl_object_t	*m;
 	ucl_object_iter_t	 it;
@@ -121,7 +123,8 @@ monitor_of(const char *ifname)
 	    NULL) {
 		j = jstr(m, "jail") != NULL ? jstr(m, "jail") : "";
 		if (strcmp(j, net_scope()) == 0 && jstr(m, "interface") != NULL &&
-		    strcmp(jstr(m, "interface"), ifname) == 0)
+		    strcmp(jstr(m, "interface"), ifname) == 0 && jstr(m, "id") !=
+		    NULL && (strncmp(jstr(m, "id"), "ul-", 3) == 0) == underlay)
 			return (m);
 	}
 	return (NULL);
@@ -253,8 +256,11 @@ view_monitors(struct html *h, struct server *s, const ucl_object_t *ifaces)
 		if (app.filter[0] != '\0' && strstr(name, app.filter) == NULL)
 			continue;
 		tunnels++;
-		if ((m = monitor_of(name)) != NULL) {
+		if ((m = monitor_of(name, false)) != NULL) {
 			monitor_row(h, name, m);
+			/* Its underlay too, where measured. */
+			if ((m = monitor_of(name, true)) != NULL)
+				monitor_row(h, name, m);
 			continue;
 		}
 		far = far_end(o);

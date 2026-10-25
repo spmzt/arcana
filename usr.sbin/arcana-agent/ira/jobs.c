@@ -60,9 +60,7 @@ struct qjob {
 	bool			 undo_kept;	/* rc.conf had the route */
 	bool			 undo_enabled;	/* bird: the protocol was */
 	const char		*undo_note;	/* why nothing is put back */
-	const char		*undo_sflags;	/* speeder: its two variables */
-	const char		*undo_senable;
-	bool			 undo_srunning;	/* ... and whether it ran */
+	struct speeder_was	 undo_speeder;	/* speeder: as it was */
 	char			*undo_secret;	/* malloc'd, zeroed at the end:
 						 * wireguard: showconf before */
 	struct undo_file {		/* files as they were: text, or none */
@@ -1016,9 +1014,9 @@ undo_prepare(struct qjob *j)
 		break;
 	case ARC_JOB_KIND_SPEEDER:
 		/* The host's relay alone (a jail's is refused as safe):
-		 * its flags, whether it is enabled and whether it runs. */
-		speeder_snap(&j->w, &j->undo_sflags, &j->undo_senable,
-		    &j->undo_srunning);
+		 * its flags, whether it is enabled, the profiles and
+		 * whether it runs. */
+		speeder_snap(&j->w, sp, &j->undo_speeder);
 		break;
 	default:
 		break;
@@ -1427,8 +1425,7 @@ undo(struct qjob *j)
 		}
 		break;
 	case ARC_JOB_KIND_SPEEDER:
-		rc = speeder_back(&j->w, j->undo_sflags, j->undo_senable,
-		    j->undo_srunning, &e);
+		rc = speeder_back(&j->w, &j->undo_speeder, &e);
 		break;
 	default:
 		/* A kind with no undo is refused as safe at its check: this

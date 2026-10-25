@@ -27,6 +27,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include <ctype.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -125,6 +126,10 @@ static struct wgpair	wgpairs[WG_PAIRS];
 
 enum { LK_TUNNEL, LK_P2P, LK_LAN, LK_BGP, LK_OSPF, LK_VNET, LK_KINDS };
 
+/* What a line drawn from one host to another makes between them. */
+enum { JOIN_TUNNEL, JOIN_BGP, JOIN_OSPF, JOIN_BFD };
+static const char *const join_kinds[] = { "tunnel", "bgp", "ospf", "bfd" };
+
 struct tlink {
 	int	a, b;			/* servers; b < 0: segment -b - 1 */
 	int	kind;
@@ -208,6 +213,7 @@ static struct {
 	double	link_x, link_y;
 	bool	loaded;			/* the places kept were read */
 	char	tun_a[80], tun_b[80];	/* the tunnel asked for */
+	int	join;			/* what joins them: JOIN_* */
 	char	create_sid[80];		/* the node an interface is made on */
 	char	create_kind[16];	/* and the kind of interface chosen */
 	int	fit_n;			/* the nodes there were when fitted */
@@ -2919,6 +2925,32 @@ if_label(struct html *h, const char *name, int fib, bool say)
  */
 static struct html	tlab;
 
+static bool	link_probe(const struct tlink *, double *, double *,
+		    double *);
+
+/* A link's bytes a second each way, a to b and back, as its a end
+ * counted them (else its b end, the other way round). */
+static void
+link_dirs(const struct tlink *l, double *ab, double *ba)
+{
+	struct thost	*t;
+	struct ifrate	*r;
+
+	*ab = *ba = 0;
+	if ((t = thost(tn[l->a].key, false)) != NULL && (r = rate_of(t, l->ifa,
+	    false)) != NULL && r->n > 0) {
+		*ab = r->out[r->n - 1];
+		*ba = r->in[r->n - 1];
+		return;
+	}
+	if (l->b >= 0 && l->ifb[0] != '\0' && (t = thost(tn[l->b].key,
+	    false)) != NULL && (r = rate_of(t, l->ifb, false)) != NULL &&
+	    r->n > 0) {
+		*ab = r->in[r->n - 1];
+		*ba = r->out[r->n - 1];
+	}
+}
+
 static void
 map_links(struct html *h)
 {
@@ -2926,9 +2958,10 @@ map_links(struct html *h)
 	    "ospf", "vnet" };
 	struct tlink	*l;
 	char		 rate[24];
-	double		 x1, y1, x2, y2, mx, my, bend, w;
+	double		 x1, y1, x2, y2, mx, my, bend, w, ab, ba, pd, pj, pl;
 	struct html	*lh;
 	int		 i, flow, fa, ta, fb, tb, outer;
+	bool		 pr_ok;
 
 	h_reset(&tlab);
 	for (i = 0; i < nlinks; i++) {
@@ -2985,6 +3018,23 @@ map_links(struct html *h)
 			curve(h, x1, y1, x2, y2, bend, 0.5, NULL, NULL);
 			h_raw(h, "\"/>");
 		}
+		/* Its state in the WebGL layer (a link down breathes red);
+		 * its traffic the SVG's own dashes. */
+		if (link_in_fib(l, tp.fib)) {
+			link_dirs(l, &ab, &ba);
+			glmap_link(x1, y1, x2, y2, bend, l->b >= 0 ? leave_t(x1,
+			    y1, x2, y2, bend, true) : 0.08, l->b >= 0 ? leave_t(x1,
+			    y1, x2, y2, bend, false) : 0.92, ab, ba, w, l->kind,
+			    l->up);
+		}
+		/* A tunnel measured (Quality's monitors): its probes cross
+		 * it as the last sample did. */
+		pr_ok = l->kind == LK_TUNNEL && l->b >= 0 && link_in_fib(l,
+		    tp.fib) && link_probe(l, &pd, &pj, &pl);
+		if (pr_ok)
+			glmap_probe(x1, y1, x2, y2, bend, leave_t(x1, y1, x2, y2,
+			    bend, true), leave_t(x1, y1, x2, y2, bend, false), pd,
+			    pj, pl);
 		if (flow > 0) {
 			h_raw(h, "<path class=\"flow\" d=\"");
 			curve(h, x1, y1, x2, y2, bend, 0.5, NULL, NULL);
@@ -3049,6 +3099,12 @@ map_links(struct html *h)
 			h_txt(lh, rate);
 			h_raw(lh, "</text>");
 		}
+		/* What its probes last measured, under the rate. */
+		if (pr_ok)
+			h_fmt(lh, "<text class=\"probe%s\" x=\"%.1f\" y=\"%.1f\">"
+			    "%.1f ms · %.1f ms · %.1f %% lost</text>", pl > 0 ?
+			    " lossy" : "", mx, my + (l->rate >= 1 ? 15.5 : 3.5), pd,
+			    pj, pl * 100);
 		if (lh == &tlab)
 			h_raw(lh, "</g>");
 		h_raw(h, "</g>");
@@ -3443,8 +3499,8 @@ map_nodes(struct html *h)
 		h_fmt(h, "</title><circle class=\"port\" cx=\"%d\" cy=\"0\" "
 		    "r=\"7\" data-drag=\"topo-link\"", tp.stencil ? 28 : NODE_W / 2);
 		h_attr(h, "data-arg", key);
-		h_raw(h, "><title>Drag to another host to join them with a "
-		    "tunnel</title></circle></g>");
+		h_raw(h, "><title>Drag to another host to join them: a "
+		    "tunnel, or a BGP, OSPF or BFD session</title></circle></g>");
 	}
 }
 
@@ -4072,6 +4128,45 @@ om_legend(struct html *h)
 	h_raw(h, "</li></ul>");
 }
 
+/*
+ * A host with a safe change waiting to be confirmed: a fuse round its box
+ * (the WebGL layer's), and under it what happens when it burns out.  The
+ * console confirms a change by reaching the host after it, so one stays
+ * waiting when the change cut the console off.
+ */
+static void
+map_safe(struct html *h)
+{
+	const struct op	*o;
+	struct thost	*t;
+	long long	 left;
+	int		 i, k;
+
+	for (i = 0; i < ntn; i++) {
+		if (tn[i].jail[0] != '\0' || node_lone(i) || (t = thost(tn[i].key,
+		    false)) == NULL || !t->placed)
+			continue;
+		for (k = 0; k < app.nops; k++) {
+			o = &app.ops[k];
+			if (o->state != OP_RUNNING || o->confirm_by <= 0 ||
+			    strcmp(o->sid, app.servers[tn[i].srv].id) != 0)
+				continue;
+			left = o->confirm_by - (long long)(arc_now() / 1000);
+			if (left <= 0)
+				continue;
+			glmap_fuse(t->x, t->y, NODE_W, NODE_H, o->confirm_by,
+			    (double)o->confirm_by - o->started / 1000.0);
+			h_fmt(h, "<text class=\"tsafe%s\" x=\"%.1f\" y=\"%.1f\">"
+			    "undone in %llds unless confirmed<title>", left <= 10 ?
+			    " soon" : "", t->x, t->y + NODE_H / 2 + 22, left);
+			h_txt(h, o->title);
+			h_raw(h, ": in safe mode; the agent puts it back when the "
+			    "console has not reached the host since</title></text>");
+			break;
+		}
+	}
+}
+
 static void
 map(struct html *h)
 {
@@ -4080,7 +4175,11 @@ map(struct html *h)
 
 	w = VIEW_W / tp.zoom;
 	ht = VIEW_H / tp.zoom;
-	h_fmt(h, "<div class=\"map-wrap\"><svg class=\"topo%s\" viewBox=\""
+	/* The traffic's layer under the drawing, in the same view. */
+	glmap_begin(tp.panx - w / 2, tp.pany - ht / 2, w, ht);
+	h_raw(h, "<div class=\"map-wrap\">");
+	glmap_html(h);
+	h_fmt(h, "<svg class=\"topo%s\" viewBox=\""
 	    "%.1f %.1f %.1f %.1f\" data-wheel=\"topo-zoom\">"
 	    "<defs><marker id=\"arrow\" viewBox=\"0 0 10 10\" refX=\"9\" "
 	    "refY=\"5\" markerWidth=\"5\" markerHeight=\"5\" orient=\""
@@ -4099,11 +4198,29 @@ map(struct html *h)
 		om_draw(h);
 	else {
 		map_links(h);
+		glmap_end();
 		map_path(h);
-		if (tp.linking && (t = thost(tp.link_from, false)) != NULL)
+		if (tp.linking && (t = thost(tp.link_from, false)) != NULL) {
+			int	k;
+
 			h_fmt(h, "<path class=\"tdraft\" d=\"M%.1f %.1f L%.1f "
 			    "%.1f\"/>", t->x + NODE_W / 2, t->y, tp.link_x, tp.link_y);
+			/* And in the WebGL layer: the line alive, and every
+			 * host it can be dropped on lit. */
+			glmap_draft(t->x + NODE_W / 2, t->y, tp.link_x,
+			    tp.link_y);
+			for (k = 0; k < ntn; k++) {
+				struct thost	*o;
+
+				if (node_lone(k) || strcmp(tn[k].key,
+				    tp.link_from) == 0 || (o = thost(tn[k].key,
+				    false)) == NULL || !o->placed || o->ifs == NULL)
+					continue;
+				glmap_target(o->x, o->y, NODE_W, NODE_H);
+			}
+		}
 		map_nodes(h);
+		map_safe(h);
 		if (tlab.len > 0) {
 			h_raw(h, "<g class=\"tlabels\">");
 			h_raw(h, tlab.s);
@@ -4855,6 +4972,8 @@ view_overlay(struct html *h)
 
 	nodes_build();
 	links_build();
+	if (overlay_quality(h))
+		return;
 	for (reading = 0, i = 0; i < ntn; i++)
 		if (thost(tn[i].key, false) == NULL || thost(tn[i].key,
 		    false)->ifs == NULL)
@@ -6211,6 +6330,446 @@ topo_if_create_open(const char *sid, const char *kind)
 	app.modal_error[0] = '\0';
 }
 
+/*
+ * A way two hosts reach each other, for a routing session between them:
+ * a tunnel or a point-to-point link the map has between them (their
+ * inner addresses), else a network both have an address in.
+ */
+#define	JOIN_OVER	8
+struct over {
+	char	ifa[16], ifb[16];
+	char	aa[64], ab[64];		/* the addresses, without a length */
+	bool	ptp;
+	char	label[160];
+};
+
+/* An interface's first address of a family, not link-local. */
+static bool
+if_addr(const struct thost *t, const char *ifn, int af, char *buf,
+    size_t len)
+{
+	const ucl_object_t	*a;
+	ucl_object_iter_t	 it;
+	unsigned char		 raw[16];
+	int			 f;
+
+	it = NULL;
+	while ((a = ucl_object_iterate(jget(if_named(t, ifn), "addresses"), &it,
+	    true)) != NULL)
+		if (jstr(a, "address") != NULL && !addr_local(jstr(a,
+		    "address")) && addr_bytes(jstr(a, "address"), &f, raw) &&
+		    f == af) {
+			snprintf(buf, len, "%s", jstr(a, "address"));
+			return (true);
+		}
+	return (false);
+}
+
+static int
+join_over(int a, int b, struct over *v, int max)
+{
+	const ucl_object_t	*o, *x, *o2, *x2;
+	ucl_object_iter_t	 it, xit, it2, xit2;
+	struct thost		*ta, *tb;
+	const struct tlink	*l;
+	unsigned char		 raw[16];
+	char			 na[64], nb[64];
+	int			 i, n, af, k;
+	bool			 fwd;
+
+	if ((ta = thost(tn[a].key, false)) == NULL || (tb = thost(tn[b].key,
+	    false)) == NULL)
+		return (0);
+	n = 0;
+	for (i = 0; i < nlinks && n < max; i++) {
+		l = &links[i];
+		if ((l->kind != LK_TUNNEL && l->kind != LK_P2P) || l->b < 0 ||
+		    !((l->a == a && l->b == b) || (l->a == b && l->b == a)))
+			continue;
+		fwd = l->a == a;
+		for (k = 0; k < 2 && n < max; k++) {
+			af = k == 0 ? AF_INET : AF_INET6;
+			memset(&v[n], 0, sizeof(v[n]));
+			snprintf(v[n].ifa, sizeof(v[n].ifa), "%s", fwd ? l->ifa :
+			    l->ifb);
+			snprintf(v[n].ifb, sizeof(v[n].ifb), "%s", fwd ? l->ifb :
+			    l->ifa);
+			if (!if_addr(ta, v[n].ifa, af, v[n].aa, sizeof(v[n].aa)) ||
+			    !if_addr(tb, v[n].ifb, af, v[n].ab, sizeof(v[n].ab)))
+				continue;
+			v[n].ptp = true;
+			snprintf(v[n].label, sizeof(v[n].label), "%s %s and %s %s "
+			    "(the %s)", v[n].ifa, v[n].aa, v[n].ifb, v[n].ab,
+			    l->kind == LK_TUNNEL ? "tunnel" : "link");
+			n++;
+		}
+	}
+	/* The networks both are in. */
+	it = NULL;
+	while (n < max && (o = ucl_object_iterate(jget(ta->ifs, "interfaces"),
+	    &it, true)) != NULL) {
+		xit = NULL;
+		while (n < max && if_joins(o) && (x = ucl_object_iterate(jget(o,
+		    "addresses"), &xit, true)) != NULL) {
+			if (jstr(x, "address") == NULL || addr_local(jstr(x,
+			    "address")) || !addr_bytes(jstr(x, "address"), &af,
+			    raw) || !net_of(jstr(x, "address"), (int)jint(x,
+			    "prefixlen", 0), na, sizeof(na)))
+				continue;
+			it2 = NULL;
+			while (n < max && (o2 = ucl_object_iterate(jget(tb->ifs,
+			    "interfaces"), &it2, true)) != NULL) {
+				xit2 = NULL;
+				while ((x2 = ucl_object_iterate(jget(o2,
+				    "addresses"), &xit2, true)) != NULL) {
+					if (jstr(x2, "address") == NULL ||
+					    !net_of(jstr(x2, "address"), (int)jint(
+					    x2, "prefixlen", 0), nb, sizeof(nb)) ||
+					    strcmp(na, nb) != 0)
+						continue;
+					/* A tunnel's own network is above. */
+					for (k = 0; k < n; k++)
+						if (strcmp(v[k].aa, jstr(x,
+						    "address")) == 0)
+							break;
+					if (k < n)
+						break;
+					memset(&v[n], 0, sizeof(v[n]));
+					snprintf(v[n].ifa, sizeof(v[n].ifa), "%s",
+					    jstr(o, "name"));
+					snprintf(v[n].ifb, sizeof(v[n].ifb), "%s",
+					    jstr(o2, "name"));
+					snprintf(v[n].aa, sizeof(v[n].aa), "%s",
+					    jstr(x, "address"));
+					snprintf(v[n].ab, sizeof(v[n].ab), "%s",
+					    jstr(x2, "address"));
+					snprintf(v[n].label, sizeof(v[n].label),
+					    "%s %s and %s %s (%s)", v[n].ifa,
+					    v[n].aa, v[n].ifb, v[n].ab, na);
+					n++;
+					break;
+				}
+			}
+		}
+	}
+	return (n);
+}
+
+/* A host's own AS, as its BIRD's BGP sessions say it, or "". */
+static const char *
+node_as(int n)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	struct thost		*t;
+
+	if ((t = thost(tn[n].key, false)) == NULL)
+		return ("");
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(t->bird, "status"), &it, true)) !=
+	    NULL)
+		if (jstr(o, "proto") != NULL && strcmp(jstr(o, "proto"),
+		    "BGP") == 0 && jstr(o, "local-as") != NULL)
+			return (jstr(o, "local-as"));
+	return ("");
+}
+
+/* Letters, digits and _ of a name, for a protocol's. */
+static void
+proto_name(char *buf, size_t len, const char *prefix, const char *name)
+{
+	size_t	o;
+
+	o = (size_t)snprintf(buf, len, "%s", prefix);
+	for (; *name != '\0' && o + 1 < len && o < 40; name++)
+		buf[o++] = isalnum((unsigned char)*name) ? *name : '_';
+	buf[o < len ? o : len - 1] = '\0';
+}
+
+/* What a line between two hosts makes, picked at the dialog's top. */
+static void
+join_kinds_nav(struct html *h)
+{
+	static const char *const titles[] = { "A tunnel", "A BGP session",
+	    "An OSPF adjacency", "BFD" };
+	size_t	i;
+
+	h_raw(h, "<nav class=\"sub join-kinds\" aria-label=\"What joins "
+	    "them\">");
+	for (i = 0; i < nitems(titles); i++)
+		h_fmt(h, "<button type=\"button\" class=\"ghost small%s\" "
+		    "data-act=\"topo-join\" data-arg=\"%s\">%s</button>",
+		    (int)i == tp.join ? " on" : "", join_kinds[i], titles[i]);
+	h_raw(h, "</nav>");
+}
+
+/* A routing session between two hosts: what it goes over, and its own. */
+static void
+join_form(struct html *h, int a, int b)
+{
+	struct over	v[JOIN_OVER];
+	int		i, n;
+
+	n = join_over(a, b, v, JOIN_OVER);
+	h_raw(h, "<form data-form=\"join\"><h2>Join ");
+	h_txt(h, tn[a].label);
+	h_raw(h, " and ");
+	h_txt(h, tn[b].label);
+	h_raw(h, "</h2>");
+	join_kinds_nav(h);
+	h_raw(h, "<p>Written into each host's BIRD, one end at a time: ");
+	h_txt(h, tn[a].label);
+	h_raw(h, "'s BIRD opens with the protocol filled in, to be looked at "
+	    "and saved; BIRD takes a change back by itself unless this page "
+	    "still reaches the host after it. Then ");
+	h_txt(h, tn[b].label);
+	h_raw(h, "'s is offered, filled in the same way.</p>");
+	if (n == 0) {
+		h_raw(h, "<p class=\"notice warn\">The two have no tunnel and "
+		    "no network between them that this page knows of: draw a "
+		    "tunnel first.</p>");
+		return;
+	}
+	h_raw(h, "<label>Over<select name=\"over\">");
+	for (i = 0; i < n; i++) {
+		h_fmt(h, "<option value=\"%d\">", i);
+		h_txt(h, v[i].label);
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select><small>A session between the hosts' addresses on "
+	    "it; OSPF and BFD on its interfaces.</small></label>");
+	if (tp.join == JOIN_BGP) {
+		h_raw(h, "<div class=\"two\"><label>AS of ");
+		h_txt(h, tn[a].label);
+		h_raw(h, "<input name=\"as_a\" inputmode=\"numeric\" "
+		    "required");
+		h_attr(h, "value", node_as(a));
+		h_raw(h, "></label><label>AS of ");
+		h_txt(h, tn[b].label);
+		h_raw(h, "<input name=\"as_b\" inputmode=\"numeric\" "
+		    "required");
+		h_attr(h, "value", node_as(b));
+		h_raw(h, "></label></div><small>As each host's BIRD says it "
+		    "in a BGP session it has; the same for iBGP.</small>");
+	}
+	if (tp.join == JOIN_OSPF)
+		h_raw(h, "<p class=\"dim\">Area 0, on the interface of each "
+		    "end, added to the OSPF instance of that family the host "
+		    "runs, else in a new one.</p>");
+	if (tp.join != JOIN_BFD)
+		h_raw(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+		    "name=\"bfd\" checked><span>With BFD, so that a failure "
+		    "is seen in under a second; BIRD's BFD protocol is needed "
+		    "on both ends</span></label>");
+}
+
+/* The session's two ends as forms: this one's opened, the other's next. */
+static void
+join_create(const ucl_object_t *f)
+{
+	struct over	 v[JOIN_OVER];
+	struct bfsess	 sa, sb;
+	const char	*as_a, *as_b;
+	int		 a, b, n, i;
+
+	if ((a = node_index(tp.tun_a)) == -1 || (b = node_index(
+	    tp.tun_b)) == -1)
+		return;
+	n = join_over(a, b, v, JOIN_OVER);
+	i = jstr(f, "over") != NULL ? atoi(jstr(f, "over")) : 0;
+	if (i < 0 || i >= n) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "Pick what "
+		    "the session goes over.");
+		return;
+	}
+	as_a = jstr(f, "as_a") != NULL ? jstr(f, "as_a") : "";
+	as_b = jstr(f, "as_b") != NULL ? jstr(f, "as_b") : "";
+	if (tp.join == JOIN_BGP && (as_a[0] == '\0' || as_b[0] == '\0' ||
+	    as_a[strspn(as_a, "0123456789")] != '\0' || as_b[strspn(as_b,
+	    "0123456789")] != '\0')) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "An AS for "
+		    "each end, a number: 64512");
+		return;
+	}
+	memset(&sa, 0, sizeof(sa));
+	snprintf(sa.kind, sizeof(sa.kind), "%s", join_kinds[tp.join]);
+	sa.bfd = tp.join == JOIN_BFD || jbool(f, "bfd");
+	sb = sa;
+	/* BGP: a protocol named for the far end; OSPF and BFD: the
+	 * instance's name, when one is made. */
+	if (tp.join == JOIN_BGP) {
+		proto_name(sa.name, sizeof(sa.name), "to_", tn[b].name);
+		proto_name(sb.name, sizeof(sb.name), "to_", tn[a].name);
+		snprintf(sa.desc, sizeof(sa.desc), "%.80s, drawn on the map",
+		    tn[b].label);
+		snprintf(sb.desc, sizeof(sb.desc), "%.80s, drawn on the map",
+		    tn[a].label);
+		snprintf(sa.las, sizeof(sa.las), "%s", as_a);
+		snprintf(sa.nas, sizeof(sa.nas), "%s", as_b);
+		snprintf(sb.las, sizeof(sb.las), "%s", as_b);
+		snprintf(sb.nas, sizeof(sb.nas), "%s", as_a);
+	} else {
+		snprintf(sa.name, sizeof(sa.name), "%s", tp.join == JOIN_OSPF ?
+		    (strchr(v[i].aa, ':') != NULL ? "ospf6" : "ospf4") : "bfd1");
+		snprintf(sb.name, sizeof(sb.name), "%s", sa.name);
+	}
+	snprintf(sa.nbr, sizeof(sa.nbr), "%s", v[i].ab);
+	snprintf(sa.src, sizeof(sa.src), "%s", v[i].aa);
+	snprintf(sa.ifname, sizeof(sa.ifname), "%s", v[i].ifa);
+	snprintf(sb.nbr, sizeof(sb.nbr), "%s", v[i].aa);
+	snprintf(sb.src, sizeof(sb.src), "%s", v[i].ab);
+	snprintf(sb.ifname, sizeof(sb.ifname), "%s", v[i].ifb);
+	sa.ptp = sb.ptp = v[i].ptp;
+	bird_session(app.servers[tn[a].srv].id, tn[a].jail, &sa, tn[b].key,
+	    tn[b].label, &sb);
+	node_open(a, NET_BIRD);
+}
+
+/* The other end of a session, from BIRD's page: its node's BIRD, filled
+ * in. */
+void
+topo_bird_session(const char *key, const char *label, const struct bfsess *s)
+{
+	int	n;
+
+	nodes_build();
+	if ((n = node_index(key)) == -1) {
+		toast(true, "%s is not on the map any longer", label);
+		return;
+	}
+	bird_session(app.servers[tn[n].srv].id, tn[n].jail, s, NULL, NULL,
+	    NULL);
+	node_open(n, NET_BIRD);
+}
+
+/* Whether the line drawn is to make a routing session, not a tunnel. */
+bool
+topo_joining(void)
+{
+
+	return (app.modal == MODAL_TUNNEL && tp.join != JOIN_TUNNEL);
+}
+
+/* The tunnel dialog's fields as they are now: its plan is drawn from
+ * them as they are typed. */
+static struct {
+	char	type[8];
+	char	la[64], lb[64], ia[64], ib[64];
+	char	mtu[8], vni[12];
+	bool	keep;
+} tunf;
+
+static void
+tunf_set(const char *arg, const char *v)
+{
+	static const struct {
+		const char	*name;
+		size_t		 off, len;
+	} f[] = {
+		{ "type", offsetof(__typeof__(tunf), type), sizeof(tunf.type) },
+		{ "local_a", offsetof(__typeof__(tunf), la), sizeof(tunf.la) },
+		{ "local_b", offsetof(__typeof__(tunf), lb), sizeof(tunf.lb) },
+		{ "inner_a", offsetof(__typeof__(tunf), ia), sizeof(tunf.ia) },
+		{ "inner_b", offsetof(__typeof__(tunf), ib), sizeof(tunf.ib) },
+		{ "mtu", offsetof(__typeof__(tunf), mtu), sizeof(tunf.mtu) },
+		{ "vni", offsetof(__typeof__(tunf), vni), sizeof(tunf.vni) },
+	};
+	size_t	i;
+
+	if (strcmp(arg, "persist") == 0) {
+		tunf.keep = strcmp(v, "true") == 0;
+		return;
+	}
+	for (i = 0; i < nitems(f); i++)
+		if (strcmp(arg, f[i].name) == 0)
+			snprintf((char *)&tunf + f[i].off, f[i].len, "%s", v);
+}
+
+/* A line of the plan: a command as the host runs it. */
+static void
+plan_line(struct html *h, const char *fmt, ...)
+{
+	char	buf[400];
+	va_list	ap;
+
+	va_start(ap, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, ap);
+	va_end(ap);
+	h_raw(h, "<li><code>");
+	h_txt(h, buf);
+	h_raw(h, "</code></li>");
+}
+
+/*
+ * What each end of the tunnel is to run, from the fields as they are:
+ * the commands in FreeBSD's own words, as the agent's jobs do them, so
+ * that what is drawn is seen before it is made.
+ */
+static void
+tunnel_plan(struct html *h, int a, int b)
+{
+	const char	*la, *lb, *ia, *ib;
+	char		 n[2][16], peer[2][64];
+	int		 e, nd;
+	bool		 wg, vx;
+
+	wg = strcmp(tunf.type, "wg") == 0;
+	vx = strcmp(tunf.type, "vxlan") == 0;
+	for (e = 0; e < 2; e++) {
+		nd = e == 0 ? a : b;
+		snprintf(n[e], sizeof(n[e]), "%s%d", tunf.type, next_unit(
+		    thost(tn[nd].key, false), tunf.type));
+		snprintf(peer[e], sizeof(peer[e]), "%.*s", (int)strcspn(e == 0 ?
+		    tunf.ib : tunf.ia, "/"), e == 0 ? tunf.ib : tunf.ia);
+	}
+	h_raw(h, "<section class=\"tun-plan\"><h3>What each host is to "
+	    "run</h3><div class=\"two\">");
+	for (e = 0; e < 2; e++) {
+		la = e == 0 ? tunf.la : tunf.lb;
+		lb = e == 0 ? tunf.lb : tunf.la;
+		ia = e == 0 ? tunf.ia : tunf.ib;
+		ib = e == 0 ? tunf.ib : tunf.ia;
+		h_raw(h, "<div><b>");
+		h_txt(h, tn[e == 0 ? a : b].label);
+		h_raw(h, "</b><ol class=\"mono\">");
+		plan_line(h, "ifconfig %s create", n[e]);
+		if (wg) {
+			plan_line(h, "wg genkey > its key, kept on the host");
+			plan_line(h, "wg set %s listen-port 51820", n[e]);
+			if (ia[0] != '\0')
+				plan_line(h, "ifconfig %s inet%s %s", n[e],
+				    strchr(ia, ':') != NULL ? "6" : "", ia);
+			plan_line(h, "wg set %s peer <%s's public key> endpoint "
+			    "%s%s%s:51820 allowed-ips %s", n[e], tn[e == 0 ? b :
+			    a].label, strchr(lb, ':') != NULL ? "[" : "", lb,
+			    strchr(lb, ':') != NULL ? "]" : "", ib[0] != '\0' ?
+			    peer[e] : "0.0.0.0/0");
+		} else if (vx) {
+			plan_line(h, "ifconfig %s vxlanid %s vxlanlocal %s "
+			    "vxlanremote %s", n[e], tunf.vni[0] != '\0' ?
+			    tunf.vni : "<id>", la, lb);
+			if (ia[0] != '\0')
+				plan_line(h, "ifconfig %s inet%s %s", n[e],
+				    strchr(ia, ':') != NULL ? "6" : "", ia);
+		} else {
+			plan_line(h, "ifconfig %s tunnel %s %s", n[e], la, lb);
+			if (ia[0] != '\0')
+				plan_line(h, "ifconfig %s inet%s %s %s", n[e],
+				    strchr(ia, ':') != NULL ? "6" : "", ia, peer[e]);
+		}
+		if (tunf.mtu[0] != '\0')
+			plan_line(h, "ifconfig %s mtu %s", n[e], tunf.mtu);
+		plan_line(h, "ifconfig %s up", n[e]);
+		if (tunf.keep)
+			plan_line(h, "sysrc cloned_interfaces+=%s ifconfig_%s=…",
+			    n[e], n[e]);
+		h_raw(h, "</ol></div>");
+	}
+	h_raw(h, "</div><small>In safe mode: a host that cannot be reached "
+	    "after its end is made takes it away by itself.</small>"
+	    "</section>");
+}
+
 static const char keep_field[] = "<label class=\"toggle\"><input type=\""
     "checkbox\" name=\"persist\" checked><span>Keep it in <code>rc.conf"
     "</code>, to be there after a boot</span></label>";
@@ -6231,49 +6790,75 @@ topo_modal(struct html *h)
 		if ((a = node_index(tp.tun_a)) == -1 || (b = node_index(
 		    tp.tun_b)) == -1)
 			return (false);
+		if (tp.join != JOIN_TUNNEL) {
+			join_form(h, a, b);
+			return (true);
+		}
 		h_raw(h, "<form data-form=\"tunnel\"><h2>Join ");
 		h_txt(h, tn[a].label);
 		h_raw(h, " and ");
 		h_txt(h, tn[b].label);
-		h_raw(h, "</h2><p>An interface is created on each host, the "
+		h_raw(h, "</h2>");
+		join_kinds_nav(h);
+		h_raw(h, "<p>An interface is created on each host, the "
 		    "two ends of one tunnel, with <code>ifconfig</code>. Each "
 		    "is made in safe mode: a host that cannot be reached "
 		    "again afterwards destroys its end by itself. For "
 		    "WireGuard each host makes its own key and keeps it; the "
 		    "two are told of each other by their public keys once "
 		    "both have one.</p>"
-		    "<label>Kind<select name=\"type\"><option value=\"gif\">"
-		    "gif: IP in IP</option><option value=\"gre\">gre</option>"
-		    "<option value=\"wg\">wg: WireGuard, encrypted</option>"
-		    "<option value=\"vxlan\">vxlan: Ethernet over UDP</option>"
-		    "</select></label><div class=\"two\"><label>Outer address "
-		    "of ");
+		    "<label>Kind<select name=\"type\" data-input=\"topo-tunf\" "
+		    "data-arg=\"type\">");
+		{
+			static const char *const kinds[][2] = { { "gif",
+			    "gif: IP in IP" }, { "gre", "gre" }, { "wg",
+			    "wg: WireGuard, encrypted" }, { "vxlan",
+			    "vxlan: Ethernet over UDP" } };
+			size_t	k;
+
+			for (k = 0; k < nitems(kinds); k++)
+				h_fmt(h, "<option value=\"%s\"%s>%s</option>",
+				    kinds[k][0], strcmp(tunf.type, kinds[k][0]) ==
+				    0 ? " selected" : "", kinds[k][1]);
+		}
+		h_raw(h, "</select></label><div class=\"two\"><label>Outer "
+		    "address of ");
 		h_txt(h, tn[a].label);
-		h_raw(h, "<select name=\"local_a\">");
-		addr_options(h, thost(tp.tun_a, false), offer.oa);
+		h_raw(h, "<select name=\"local_a\" data-input=\"topo-tunf\" "
+		    "data-arg=\"local_a\">");
+		addr_options(h, thost(tp.tun_a, false), tunf.la);
 		h_raw(h, "</select></label><label>Outer address of ");
 		h_txt(h, tn[b].label);
-		h_raw(h, "<select name=\"local_b\">");
-		addr_options(h, thost(tp.tun_b, false), offer.ob);
+		h_raw(h, "<select name=\"local_b\" data-input=\"topo-tunf\" "
+		    "data-arg=\"local_b\">");
+		addr_options(h, thost(tp.tun_b, false), tunf.lb);
 		h_raw(h, "</select></label></div><div class=\"two\"><label>"
 		    "Inner address of ");
 		h_txt(h, tn[a].label);
 		h_raw(h, "<input name=\"inner_a\" spellcheck=\"false\" "
-		    "autocomplete=\"off\"");
+		    "autocomplete=\"off\" data-input=\"topo-tunf\" "
+		    "data-arg=\"inner_a\"");
 		h_attr(h, "value", offer.ia);
 		h_raw(h, "></label><label>Inner address of ");
 		h_txt(h, tn[b].label);
 		h_raw(h, "<input name=\"inner_b\" spellcheck=\"false\" "
-		    "autocomplete=\"off\"");
+		    "autocomplete=\"off\" data-input=\"topo-tunf\" "
+		    "data-arg=\"inner_b\"");
 		h_attr(h, "value", offer.ib);
 		h_raw(h, "></label></div><small>With their prefix length; "
 		    "leave both empty for a tunnel without addresses.</small>"
 		    "<div class=\"two\"><label>MTU<input name=\"mtu\" "
 		    "inputmode=\"numeric\" placeholder=\"as the kernel sets "
-		    "it\"></label><label>VXLAN identifier<input name=\"vni\" "
-		    "inputmode=\"numeric\" placeholder=\"for vxlan only\">"
-		    "</label></div>");
-		h_raw(h, keep_field);
+		    "it\" data-input=\"topo-tunf\" data-arg=\"mtu\"></label><label>"
+		    "VXLAN identifier<input name=\"vni\" inputmode=\"numeric\" "
+		    "placeholder=\"for vxlan only\" data-input=\"topo-tunf\" "
+		    "data-arg=\"vni\"></label></div>");
+		h_raw(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+		    "name=\"persist\" data-input=\"topo-tunf\" data-arg=\"persist\"");
+		h_raw(h, tunf.keep ? " checked" : "");
+		h_raw(h, "><span>Keep it in <code>rc.conf</code>, to be there "
+		    "after a boot</span></label>");
+		tunnel_plan(h, a, b);
 		return (true);
 	case MODAL_IF_VNET:
 		if ((s = cur_server()) == NULL || net_scope()[0] == '\0')
@@ -6731,6 +7316,10 @@ topo_form(const char *form, const ucl_object_t *f)
 		tunnel_create(f);
 		return (true);
 	}
+	if (strcmp(form, "join") == 0) {
+		join_create(f);
+		return (true);
+	}
 	if (strcmp(form, "if-create") == 0) {
 		const char	*kind, *num;
 		char		 nbuf[32], *rq;
@@ -7078,12 +7667,27 @@ topo_action(const char *act, const char *arg, const char *value)
 		snprintf(tp.tun_a, sizeof(tp.tun_a), "%s", arg);
 		snprintf(tp.tun_b, sizeof(tp.tun_b), "%s", drop);
 		tunnel_offer(thost(arg, false), thost(drop, false));
+		tp.join = JOIN_TUNNEL;
+		memset(&tunf, 0, sizeof(tunf));
+		snprintf(tunf.type, sizeof(tunf.type), "gif");
+		snprintf(tunf.la, sizeof(tunf.la), "%s", offer.oa);
+		snprintf(tunf.lb, sizeof(tunf.lb), "%s", offer.ob);
+		snprintf(tunf.ia, sizeof(tunf.ia), "%s", offer.ia);
+		snprintf(tunf.ib, sizeof(tunf.ib), "%s", offer.ib);
+		tunf.keep = true;
 		app.modal = MODAL_TUNNEL;
+		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "input:topo-tunf") == 0) {
+		tunf_set(arg, value != NULL ? value : "");
+	} else if (strcmp(act, "topo-join") == 0) {
+		for (i = 0; i < (int)nitems(join_kinds); i++)
+			if (strcmp(arg, join_kinds[i]) == 0)
+				tp.join = i;
 		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "topo-link-click") == 0) {
 		tp.linking = false;
 		toast(false, "Drag the dot onto another host to join the two "
-		    "with a tunnel");
+		    "with a tunnel or a routing session");
 	} else if (strcmp(act, "topo-zoom") == 0) {
 		/* The wheel says which way; two fingers say how much. */
 		if (sscanf(value, "%lf,%lf,%lf", &k, &x, &y) == 3) {
@@ -7817,4 +8421,863 @@ view_lookup(struct html *h, const struct server *s)
 		h_raw(h, "</tbody></table><small>The most specific is the one "
 		    "taken; the others are what is left when it goes.</small>");
 	h_raw(h, "</div>");
+}
+
+/* ---- Overlay › Quality: a tunnel measured from both its ends -------- */
+
+/*
+ * Each tunnel of the fleet with both its ends (gre, gif and the like
+ * paired by their outer addresses, WireGuard by its peers' keys), or
+ * the one end the fleet has.  Measured, it is four tunnel monitors, two
+ * an end, each the agent's ICMP prober in a routing table of that end's:
+ * the overlay, the far end's inner address in the interface's own FIB
+ * (ov-<if>), and the underlay, the far end's outer address in the
+ * interface's tunnelfib (ul-<if>).  Their samples are drawn per
+ * criterion, loss, delay and jitter (the delay's variation), one line a
+ * monitor.
+ */
+#define	TQ_PAIRS	256
+#define	TQ_SERVERS	64
+#define	TQ_TICK_MS	5000
+
+struct tqend {
+	int	node;			/* in tn[] */
+	char	ifname[32];
+	int	fib, tfib;
+	char	inner[64];		/* its own inner address */
+	char	far_outer[64];		/* the far end's outer, as it has it */
+	char	ptp[64];		/* its point-to-point far end */
+};
+struct tqpair {
+	struct tqend	a, b;
+	bool		has_b;
+	char		kind[24];
+	char		key[200];
+};
+static struct tqpair	tqp[TQ_PAIRS];
+static int		ntqp;
+
+static struct {
+	bool		 quality;	/* Overlay's sub-tab */
+	char		 pick[200];	/* the pair whose charts are shown */
+	char		 edit[200];	/* the pair in the dialog */
+	struct {
+		char		 sid[16];
+		ucl_object_t	*o;	/* its monitors read's data */
+		bool		 loading;
+	}		 mon[TQ_SERVERS];
+	int		 nmon;
+	double		 fetched;
+} tq;
+
+/* An address without its port: host:port, [v6]:port. */
+static void
+tq_host(const char *ep, char *buf, size_t len)
+{
+	const char	*c;
+
+	buf[0] = '\0';
+	if (ep == NULL || (c = strrchr(ep, ':')) == NULL)
+		return;
+	if (ep[0] == '[')
+		snprintf(buf, len, "%.*s", (int)(c - ep - 2), ep + 1);
+	else
+		snprintf(buf, len, "%.*s", (int)(c - ep), ep);
+}
+
+/* An interface's own inner address (inet first) and its far end. */
+static void
+tq_end_fill(struct tqend *e, int node, const char *ifname,
+    const ucl_object_t *o)
+{
+	const ucl_object_t	*a;
+	ucl_object_iter_t	 it;
+	const char		*v6, *p6;
+
+	memset(e, 0, sizeof(*e));
+	e->node = node;
+	snprintf(e->ifname, sizeof(e->ifname), "%s", ifname);
+	e->fib = (int)jint(o, "fib", 0);
+	e->tfib = (int)jint(o, "tunnelfib", 0);
+	if (jstr(o, "tunnel.remote") != NULL)
+		snprintf(e->far_outer, sizeof(e->far_outer), "%s", jstr(o,
+		    "tunnel.remote"));
+	v6 = p6 = NULL;
+	it = NULL;
+	while ((a = ucl_object_iterate(jget(o, "addresses"), &it, true)) !=
+	    NULL) {
+		if (jstr(a, "address") == NULL || strncmp(jstr(a, "address"),
+		    "fe80", 4) == 0)
+			continue;
+		if (strchr(jstr(a, "address"), ':') == NULL) {
+			if (e->inner[0] == '\0')
+				snprintf(e->inner, sizeof(e->inner), "%s",
+				    jstr(a, "address"));
+			if (e->ptp[0] == '\0' && jstr(a, "destination") != NULL)
+				snprintf(e->ptp, sizeof(e->ptp), "%s", jstr(a,
+				    "destination"));
+		} else {
+			if (v6 == NULL)
+				v6 = jstr(a, "address");
+			if (p6 == NULL && jstr(a, "destination") != NULL)
+				p6 = jstr(a, "destination");
+		}
+	}
+	if (e->inner[0] == '\0' && v6 != NULL)
+		snprintf(e->inner, sizeof(e->inner), "%s", v6);
+	if (e->ptp[0] == '\0' && p6 != NULL)
+		snprintf(e->ptp, sizeof(e->ptp), "%s", p6);
+}
+
+/* Its end's interface object: from the interfaces read, else a name. */
+static const ucl_object_t *
+tq_ifobj(struct thost *t, const char *name)
+{
+
+	return (if_named(t, name));
+}
+
+static void
+tq_add(int i, const char *ifn, const ucl_object_t *o, int p, const char *pf,
+    const ucl_object_t *fo, const char *kind)
+{
+	struct tqpair	*q;
+	char		 ka[160], kb[160];
+
+	if (ntqp == TQ_PAIRS)
+		return;
+	snprintf(ka, sizeof(ka), "%s/%s", tn[i].key, ifn);
+	if (p >= 0) {
+		snprintf(kb, sizeof(kb), "%s/%s", tn[p].key, pf);
+		/* Each pair once, from its first end. */
+		if (strcmp(ka, kb) > 0)
+			return;
+	}
+	q = &tqp[ntqp++];
+	memset(q, 0, sizeof(*q));
+	tq_end_fill(&q->a, i, ifn, o);
+	if (p >= 0) {
+		tq_end_fill(&q->b, p, pf, fo);
+		q->has_b = true;
+	}
+	snprintf(q->kind, sizeof(q->kind), "%s", kind);
+	snprintf(q->key, sizeof(q->key), "%s%s%s", ka, p >= 0 ? " " : "",
+	    p >= 0 ? kb : "");
+}
+
+/* The fleet's tunnels, paired. */
+static void
+tq_build(void)
+{
+	const ucl_object_t	*o, *f, *wi, *pr, *fw, *fp;
+	ucl_object_iter_t	 it, fit, wit, pit, fwit, fpit;
+	struct thost		*t, *ft;
+	const char		*kind, *n, *other, *mykey;
+	char			 host[64];
+	int			 i, p, k;
+
+	ntqp = 0;
+	for (i = 0; i < ntn; i++) {
+		if ((t = thost(tn[i].key, false)) == NULL)
+			continue;
+		/* gre, gif and the like: the far end by the outer addresses. */
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(t->ifs, "interfaces"), &it,
+		    true)) != NULL) {
+			if ((n = jstr(o, "name")) == NULL || (kind = overlay_kind(t,
+			    o)) == NULL || strcmp(kind, "WireGuard") == 0)
+				continue;
+			f = NULL;
+			p = -1;
+			if (jstr(o, "tunnel.remote") != NULL && (p = owner(jstr(o,
+			    "tunnel.remote"), NULL, 0)) != -1 && (ft = thost(
+			    tn[p].key, false)) != NULL) {
+				fit = NULL;
+				while ((f = ucl_object_iterate(jget(ft->ifs,
+				    "interfaces"), &fit, true)) != NULL)
+					if (jstr(f, "tunnel.remote") != NULL &&
+					    jstr(o, "tunnel.local") != NULL &&
+					    addr_same(jstr(f, "tunnel.remote"),
+					    jstr(o, "tunnel.local")) && jstr(f,
+					    "name") != NULL)
+						break;
+			}
+			if (f == NULL)
+				p = -1;
+			tq_add(i, n, o, p, f != NULL ? jstr(f, "name") : "", f,
+			    kind);
+		}
+		/* WireGuard: the far end by its peers' keys; the outer
+		 * addresses each end's peer endpoint. */
+		wit = NULL;
+		while ((wi = ucl_object_iterate(jget(t->wg, "interfaces"), &wit,
+		    true)) != NULL) {
+			if ((n = jstr(wi, "name")) == NULL)
+				continue;
+			mykey = jstr(wi, "public-key");
+			pit = NULL;
+			while ((pr = ucl_object_iterate(jget(wi, "peers"), &pit,
+			    true)) != NULL) {
+				other = NULL;
+				for (k = 0; k < nhosts && other == NULL; k++)
+					if (&hosts[k] != t && (other = wg_iface(
+					    &hosts[k], jstr(pr, "public-key"),
+					    NULL)) != NULL)
+						break;
+				p = other != NULL ? node_index(hosts[k].sid) : -1;
+				if (p == -1)
+					other = NULL;
+				tq_add(i, n, tq_ifobj(t, n), p, other != NULL ? other :
+				    "", other != NULL ? tq_ifobj(&hosts[k], other) :
+				    NULL, "WireGuard");
+				if (ntqp == 0 || strcmp(tqp[ntqp - 1].a.ifname, n) !=
+				    0 || tqp[ntqp - 1].a.node != i)
+					continue;
+				/* This end's far outer: its peer's endpoint. */
+				tq_host(jstr(pr, "endpoint"), host, sizeof(host));
+				snprintf(tqp[ntqp - 1].a.far_outer, sizeof(
+				    tqp[0].a.far_outer), "%s", host);
+				/* The far end's, its peer of this end's key. */
+				fwit = NULL;
+				while (other != NULL && (fw = ucl_object_iterate(
+				    jget(hosts[k].wg, "interfaces"), &fwit,
+				    true)) != NULL) {
+					if (jstr(fw, "name") == NULL || strcmp(
+					    jstr(fw, "name"), other) != 0)
+						continue;
+					fpit = NULL;
+					while ((fp = ucl_object_iterate(jget(fw,
+					    "peers"), &fpit, true)) != NULL)
+						if (mykey != NULL && jstr(fp,
+						    "public-key") != NULL && strcmp(
+						    jstr(fp, "public-key"), mykey) ==
+						    0) {
+							tq_host(jstr(fp, "endpoint"),
+							    host, sizeof(host));
+							snprintf(tqp[ntqp - 1].b.
+							    far_outer, sizeof(tqp[0].
+							    b.far_outer), "%s", host);
+						}
+				}
+			}
+		}
+	}
+}
+
+/* What a end probes: the far end's inner address, else its own
+ * point-to-point far end. */
+static const char *
+tq_overlay_to(const struct tqend *e, const struct tqend *far)
+{
+
+	if (far != NULL && far->inner[0] != '\0')
+		return (far->inner);
+	return (e->ptp);
+}
+
+static void
+tq_mon_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	int	k = (int)(intptr_t)arg;
+
+	(void)err;
+	if (k < 0 || k >= tq.nmon)
+		return;
+	tq.mon[k].loading = false;
+	if (status != 200 || jget(o, "data") == NULL)
+		return;
+	if (tq.mon[k].o != NULL)
+		ucl_object_unref(tq.mon[k].o);
+	tq.mon[k].o = ucl_object_copy(jget(o, "data"));
+	render();
+}
+
+/* A server's monitors, read when not yet, or again when asked. */
+static const ucl_object_t *
+tq_monitors(const char *sid, bool again)
+{
+	char	url[96];
+	int	k;
+
+	for (k = 0; k < tq.nmon; k++)
+		if (strcmp(tq.mon[k].sid, sid) == 0)
+			break;
+	if (k == tq.nmon) {
+		if (tq.nmon == TQ_SERVERS)
+			return (NULL);
+		memset(&tq.mon[k], 0, sizeof(tq.mon[k]));
+		snprintf(tq.mon[k].sid, sizeof(tq.mon[k].sid), "%s", sid);
+		tq.nmon++;
+	}
+	if ((tq.mon[k].o == NULL || again) && !tq.mon[k].loading) {
+		tq.mon[k].loading = true;
+		snprintf(url, sizeof(url), "/api/servers/%s/monitors", sid);
+		api("GET", url, NULL, tq_mon_cb, (void *)(intptr_t)k);
+	}
+	return (tq.mon[k].o);
+}
+
+/* An end's monitor by its id (ov-<if>, ul-<if>), or NULL. */
+static const ucl_object_t *
+tq_find(const struct tqend *e, const char *prefix)
+{
+	const ucl_object_t	*all, *m;
+	ucl_object_iter_t	 it;
+	char			 id[48];
+
+	snprintf(id, sizeof(id), "%s%s", prefix, e->ifname);
+	if ((all = tq_monitors(app.servers[tn[e->node].srv].id, false)) ==
+	    NULL)
+		return (NULL);
+	it = NULL;
+	while ((m = ucl_object_iterate(jget(all, "monitors"), &it, true)) !=
+	    NULL)
+		if (strcmp(jstr(m, "jail") != NULL ? jstr(m, "jail") : "",
+		    tn[e->node].jail) == 0 && jstr(m, "id") != NULL &&
+		    strcmp(jstr(m, "id"), id) == 0)
+			return (m);
+	return (NULL);
+}
+
+/*
+ * A tunnel's last probe sample, as Quality's monitor over it (ov-<if>)
+ * on either end measured it: the one-way delay and its variation in ms,
+ * the share lost.
+ */
+static bool
+link_probe(const struct tlink *l, double *delay, double *ipdv, double *loss)
+{
+	const ucl_object_t	*all, *m, *last;
+	ucl_object_iter_t	 it;
+	const char		*ifn;
+	char			 id[48];
+	int			 end, n;
+
+	for (end = 0; end < 2; end++) {
+		n = end == 0 ? l->a : l->b;
+		ifn = end == 0 ? l->ifa : l->ifb;
+		if (n < 0 || n >= ntn || ifn[0] == '\0' || (all = tq_monitors(
+		    app.servers[tn[n].srv].id, false)) == NULL)
+			continue;
+		snprintf(id, sizeof(id), "ov-%s", ifn);
+		it = NULL;
+		while ((m = ucl_object_iterate(jget(all, "monitors"), &it,
+		    true)) != NULL) {
+			if (jstr(m, "id") == NULL || strcmp(jstr(m, "id"), id) !=
+			    0 || strcmp(jstr(m, "jail") != NULL ? jstr(m, "jail") :
+			    "", tn[n].jail) != 0)
+				continue;
+			last = jget(m, "samples");
+			if (last == NULL || ucl_array_size(last) == 0)
+				continue;
+			last = ucl_array_find_index(last,
+			    ucl_array_size(last) - 1);
+			if (ucl_array_size(last) < 4)
+				continue;
+			*delay = ucl_object_todouble(ucl_array_find_index(last,
+			    1));
+			*ipdv = ucl_object_todouble(ucl_array_find_index(last,
+			    2));
+			*loss = ucl_object_todouble(ucl_array_find_index(last,
+			    3));
+			return (true);
+		}
+	}
+	return (false);
+}
+
+/* While the map is shown, the monitors of the hosts at a tunnel's end
+ * read again now and then: its probes are drawn from them. */
+void
+topo_probe_tick(double now)
+{
+	static double	fetched;
+	int		i;
+
+	if (!app.visible || app.node != NODE_NETWORK || app.netsect !=
+	    NETSECT_MAP || now - fetched < 3 * TQ_TICK_MS)
+		return;
+	fetched = now;
+	for (i = 0; i < nlinks; i++)
+		if (links[i].kind == LK_TUNNEL && links[i].b >= 0) {
+			(void)tq_monitors(app.servers[tn[links[i].a].srv].id,
+			    true);
+			(void)tq_monitors(app.servers[tn[links[i].b].srv].id,
+			    true);
+		}
+}
+
+void
+tq_refresh(void)
+{
+	int	k;
+
+	for (k = 0; k < tq.nmon; k++)
+		(void)tq_monitors(tq.mon[k].sid, true);
+}
+
+/* While Quality is shown, its monitors read again every few seconds. */
+void
+tq_tick(double now)
+{
+
+	if (!app.visible || app.node != NODE_NETWORK || app.netsect !=
+	    NETSECT_OVERLAY || !tq.quality || now - tq.fetched < TQ_TICK_MS)
+		return;
+	tq.fetched = now;
+	tq_refresh();
+}
+
+/* A monitor's last sample, in a cell: delay · jitter · loss. */
+static void
+tq_cell(struct html *h, const ucl_object_t *m)
+{
+	const ucl_object_t	*sm, *last;
+	unsigned int		 n;
+
+	if (m == NULL) {
+		h_raw(h, "<td class=\"dim\">–</td>");
+		return;
+	}
+	sm = jget(m, "samples");
+	n = sm != NULL ? ucl_array_size(sm) : 0;
+	if (n == 0 || strcmp(jstr(m, "state") != NULL ? jstr(m, "state") :
+	    "", "error") == 0) {
+		h_raw(h, "<td class=\"dim\">");
+		h_txt(h, jstr(m, "error") != NULL ? jstr(m, "error") : jstr(m,
+		    "state") != NULL ? jstr(m, "state") : "no sample yet");
+		h_raw(h, "</td>");
+		return;
+	}
+	last = ucl_array_find_index(sm, n - 1);
+	h_fmt(h, "<td class=\"num tq-cell st-%s\">%.1f ms<small> ± %.1f · "
+	    "%.1f %%</small></td>", jstr(m, "state") != NULL ? jstr(m, "state") :
+	    "unknown", ucl_object_todouble(ucl_array_find_index(last, 1)),
+	    ucl_object_todouble(ucl_array_find_index(last, 2)),
+	    ucl_object_todouble(ucl_array_find_index(last, 3)) * 100);
+}
+
+/* A chart's top: 1, 2 or 5 of a power of ten, at or over v. */
+static double
+nice_top(double v)
+{
+	double	m = 1;
+
+	while (v / m >= 10)
+		m *= 10;
+	while (v / m < 1)
+		m /= 10;
+	return (v / m <= 1 ? m : v / m <= 2 ? 2 * m : v / m <= 5 ? 5 * m :
+	    10 * m);
+}
+
+/* One criterion's chart: a line for each monitor, over their samples'
+ * times. */
+static void
+tq_chart(struct html *h, const char *title, const char *unit, int col,
+    double scale, const ucl_object_t *const *ms, const char *const *names)
+{
+	const ucl_object_t	*sm, *row;
+	double			 t0, t1, top, v, t;
+	unsigned int		 n, i;
+	int			 k, any;
+
+	t0 = t1 = 0;
+	top = 0;
+	any = 0;
+	for (k = 0; k < 4; k++) {
+		if (ms[k] == NULL || (sm = jget(ms[k], "samples")) == NULL)
+			continue;
+		n = ucl_array_size(sm);
+		for (i = 0; i < n; i++) {
+			row = ucl_array_find_index(sm, i);
+			t = ucl_object_todouble(ucl_array_find_index(row, 0));
+			v = ucl_object_todouble(ucl_array_find_index(row, col)) *
+			    scale;
+			if (any == 0 || t < t0)
+				t0 = t;
+			if (any == 0 || t > t1)
+				t1 = t;
+			if (v > top)
+				top = v;
+			any = 1;
+		}
+	}
+	h_fmt(h, "<figure class=\"tq-chart\"><figcaption><b>%s</b>", title);
+	if (!any) {
+		h_raw(h, " <span class=\"dim\">no sample yet</span></figcaption>"
+		    "</figure>");
+		return;
+	}
+	top = nice_top(top > 0 ? top : 1);
+	h_fmt(h, " <span class=\"dim\">up to %g %s</span></figcaption><svg "
+	    "viewBox=\"0 0 600 120\" preserveAspectRatio=\"none\" role=\"img\" "
+	    "aria-label=\"%s over time, each end, overlay and underlay\">",
+	    top, unit, title);
+	for (k = 0; k < 4; k++) {
+		if (ms[k] == NULL || (sm = jget(ms[k], "samples")) == NULL ||
+		    (n = ucl_array_size(sm)) == 0)
+			continue;
+		h_fmt(h, "<path class=\"tq%d\" d=\"", k);
+		for (i = 0; i < n; i++) {
+			row = ucl_array_find_index(sm, i);
+			t = ucl_object_todouble(ucl_array_find_index(row, 0));
+			v = ucl_object_todouble(ucl_array_find_index(row, col)) *
+			    scale;
+			h_fmt(h, "%c%.1f %.1f ", i == 0 ? 'M' : 'L', t1 > t0 ?
+			    (t - t0) / (t1 - t0) * 600 : 600, 118 - v / top *
+			    114);
+		}
+		h_raw(h, "\"/>");
+	}
+	h_raw(h, "</svg><div class=\"tq-legend\">");
+	for (k = 0; k < 4; k++)
+		if (ms[k] != NULL) {
+			h_fmt(h, "<span class=\"tq%d\">", k);
+			h_txt(h, names[k]);
+			h_raw(h, "</span>");
+		}
+	h_raw(h, "</div></figure>");
+}
+
+/* A pair's ends, named: host · interface. */
+static void
+tq_end_name(const struct tqend *e, char *buf, size_t len)
+{
+
+	snprintf(buf, len, "%s · %s", tn[e->node].label, e->ifname);
+}
+
+static void
+tq_view(struct html *h)
+{
+	const ucl_object_t	*ms[4];
+	const struct tqpair	*q;
+	char			 an[200], bn[200], names[4][240];
+	const char		*np[4];
+	int			 i, k;
+
+	tq_build();
+	h_raw(h, "<p class=\"dim tq-about\">Each tunnel measured from both its "
+	    "ends: over the tunnel (overlay), the far end's inner address in "
+	    "the interface's own routing table; under it (underlay), the far "
+	    "end's outer address in the interface's tunnelfib. The last "
+	    "sample's delay, jitter (its variation) and loss; a tunnel picked, "
+	    "each criterion over time.</p>");
+	if (ntqp == 0) {
+		h_raw(h, "<div class=\"empty\"><h2>No tunnels</h2><p>No host of "
+		    "the fleet has a tunnel, or their interfaces are being read."
+		    "</p></div>");
+		return;
+	}
+	h_raw(h, "<div class=\"scrollx\"><table class=\"net tq\"><thead><tr><th>"
+	    "Tunnel</th><th>Kind</th><th class=\"num\">Overlay A → B</th><th "
+	    "class=\"num\">Overlay B → A</th><th class=\"num\">Underlay A → B"
+	    "</th><th class=\"num\">Underlay B → A</th><th></th></tr></thead>"
+	    "<tbody>");
+	for (i = 0; i < ntqp; i++) {
+		q = &tqp[i];
+		if (app.filter[0] != '\0' && strstr(q->key, app.filter) == NULL)
+			continue;
+		tq_end_name(&q->a, an, sizeof(an));
+		if (q->has_b)
+			tq_end_name(&q->b, bn, sizeof(bn));
+		ms[0] = tq_find(&q->a, "ov-");
+		ms[1] = q->has_b ? tq_find(&q->b, "ov-") : NULL;
+		ms[2] = tq_find(&q->a, "ul-");
+		ms[3] = q->has_b ? tq_find(&q->b, "ul-") : NULL;
+		h_fmt(h, "<tr class=\"pick%s\" data-act=\"tq-pick\"", strcmp(
+		    tq.pick, q->key) == 0 ? " on" : "");
+		h_attr(h, "data-arg", q->key);
+		h_raw(h, "><td><b>A</b> ");
+		h_txt(h, an);
+		h_raw(h, "<br><b>B</b> ");
+		if (q->has_b)
+			h_txt(h, bn);
+		else
+			h_raw(h, "<span class=\"dim\">not in the fleet: measured "
+			    "from A alone</span>");
+		h_raw(h, "</td><td>");
+		h_txt(h, q->kind);
+		h_raw(h, "</td>");
+		for (k = 0; k < 4; k++)
+			tq_cell(h, ms[k]);
+		h_raw(h, "<td class=\"acts\">");
+		if (ms[0] == NULL && ms[1] == NULL && ms[2] == NULL && ms[3] ==
+		    NULL) {
+			h_raw(h, "<button class=\"small\" data-act=\"tq-measure\"");
+			h_attr(h, "data-arg", q->key);
+			h_raw(h, ">Measure</button>");
+		} else {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "tq-measure\"");
+			h_attr(h, "data-arg", q->key);
+			h_fmt(h, ">Change</button> <button class=\"ghost small%s\" "
+			    "data-act=\"tq-pick\" title=\"Loss, delay and jitter "
+			    "over time\"", strcmp(tq.pick, q->key) == 0 ? " on" : "");
+			h_attr(h, "data-arg", q->key);
+			h_raw(h, ">Charts</button> <button class=\"ghost small\" "
+			    "data-act=\"tq-stop\"");
+			h_attr(h, "data-arg", q->key);
+			h_raw(h, ">Stop</button>");
+		}
+		h_raw(h, "</td></tr>");
+	}
+	h_raw(h, "</tbody></table></div>");
+	/* The tunnel picked: each criterion over time, a chart each. */
+	for (i = 0; i < ntqp; i++) {
+		q = &tqp[i];
+		if (strcmp(tq.pick, q->key) != 0)
+			continue;
+		ms[0] = tq_find(&q->a, "ov-");
+		ms[1] = q->has_b ? tq_find(&q->b, "ov-") : NULL;
+		ms[2] = tq_find(&q->a, "ul-");
+		ms[3] = q->has_b ? tq_find(&q->b, "ul-") : NULL;
+		tq_end_name(&q->a, an, sizeof(an));
+		if (q->has_b)
+			tq_end_name(&q->b, bn, sizeof(bn));
+		snprintf(names[0], sizeof(names[0]), "overlay, A → B");
+		snprintf(names[1], sizeof(names[1]), "overlay, B → A");
+		snprintf(names[2], sizeof(names[2]), "underlay, A → B");
+		snprintf(names[3], sizeof(names[3]), "underlay, B → A");
+		for (k = 0; k < 4; k++)
+			np[k] = names[k];
+		h_raw(h, "<section class=\"tq-detail\"><h3><span class=\"tq-a\">"
+		    "A</span> ");
+		h_txt(h, an);
+		h_raw(h, " and <span class=\"tq-b\">B</span> ");
+		h_txt(h, q->has_b ? bn : "outside the fleet");
+		h_raw(h, "</h3><div class=\"tq-grid\">");
+		tq_chart(h, "Loss", "%", 3, 100, ms, np);
+		tq_chart(h, "Delay", "ms", 1, 1, ms, np);
+		tq_chart(h, "Jitter", "ms", 2, 1, ms, np);
+		h_raw(h, "</div></section>");
+	}
+}
+
+static const struct tqpair *
+tq_pair(const char *key)
+{
+	int	i;
+
+	tq_build();
+	for (i = 0; key != NULL && i < ntqp; i++)
+		if (strcmp(tqp[i].key, key) == 0)
+			return (&tqp[i]);
+	return (NULL);
+}
+
+/* An end's fields in the dialog: its overlay's and underlay's targets and
+ * tables, as now measured or as the hosts say. */
+static void
+tq_modal_end(struct html *h, const char *side, const struct tqend *e,
+    const struct tqend *far)
+{
+	const ucl_object_t	*ov, *ul;
+	char			 nm[200], buf[32];
+
+	ov = tq_find(e, "ov-");
+	ul = tq_find(e, "ul-");
+	tq_end_name(e, nm, sizeof(nm));
+	h_fmt(h, "<fieldset><legend>%s: ", side);
+	h_txt(h, nm);
+	h_raw(h, "</legend><div class=\"two\"><label>Overlay: probe<input "
+	    "spellcheck=\"false\" autocomplete=\"off\"");
+	h_fmt(h, " name=\"%s_ov\"", side);
+	h_attr(h, "value", ov != NULL ? jstr(ov, "address") : tq_overlay_to(e,
+	    far));
+	h_raw(h, "><small>The far end's inner address.</small></label><label>"
+	    "in FIB<input inputmode=\"numeric\"");
+	h_fmt(h, " name=\"%s_ovfib\"", side);
+	snprintf(buf, sizeof(buf), "%lld", ov != NULL ? (long long)jint(ov,
+	    "fib", 0) : (long long)e->fib);
+	h_attr(h, "value", buf);
+	h_raw(h, "><small>The interface's.</small></label></div><div class="
+	    "\"two\"><label>Underlay: probe<input spellcheck=\"false\" "
+	    "autocomplete=\"off\"");
+	h_fmt(h, " name=\"%s_ul\"", side);
+	h_attr(h, "value", ul != NULL ? jstr(ul, "address") : e->far_outer);
+	h_raw(h, "><small>The far end's outer address; empty: not "
+	    "measured.</small></label><label>in FIB<input inputmode=\"numeric\"");
+	h_fmt(h, " name=\"%s_ulfib\"", side);
+	snprintf(buf, sizeof(buf), "%lld", ul != NULL ? (long long)jint(ul,
+	    "fib", 0) : (long long)e->tfib);
+	h_attr(h, "value", buf);
+	h_raw(h, "><small>The tunnel's outer packets' (tunnelfib).</small>"
+	    "</label></div></fieldset>");
+}
+
+bool
+tq_modal(struct html *h)
+{
+	const struct tqpair	*q;
+
+	if ((q = tq_pair(tq.edit)) == NULL)
+		return (false);
+	h_raw(h, "<form data-form=\"tq-set\"><h2>Measure the tunnel</h2><p>"
+	    "Each end probes the other by ICMP echo, over the tunnel and under "
+	    "it, each in its own routing table: four monitors, kept by the "
+	    "agents and read here.</p>");
+	tq_modal_end(h, "A", &q->a, q->has_b ? &q->b : NULL);
+	if (q->has_b)
+		tq_modal_end(h, "B", &q->b, &q->a);
+	h_raw(h, "<div class=\"two\"><label>Every (ms)<input name=\"interval\" "
+	    "inputmode=\"numeric\" value=\"500\"></label><label>A sample of "
+	    "(ms)<input name=\"eval\" inputmode=\"numeric\" value=\"10000\">"
+	    "</label></div>");
+	return (true);
+}
+
+/* An end's monitor set (or, address empty, taken away when there). */
+static void
+tq_send(const struct tqend *e, const char *prefix, const char *addr,
+    const char *fib, const char *interval, const char *eval)
+{
+	struct server	*s;
+	const char	*w[6];
+	char		 a[6][96], title[160], extra[96], *q, *json;
+	size_t		 n;
+
+	s = &app.servers[tn[e->node].srv];
+	extra[0] = '\0';
+	if (tn[e->node].jail[0] != '\0') {
+		q = json_quote(tn[e->node].jail);
+		snprintf(extra, sizeof(extra), ",\"jail\":%s", q);
+		free(q);
+	}
+	snprintf(a[0], sizeof(a[0]), "name=%s%s", prefix, e->ifname);
+	w[0] = a[0];
+	if (addr == NULL || addr[0] == '\0') {
+		if (tq_find(e, prefix) == NULL)
+			return;
+		snprintf(title, sizeof(title), "monitor remove %s%s", prefix,
+		    e->ifname);
+		json = job_json("monitor", "remove", w, 1, NULL, extra[0] !=
+		    '\0' ? extra : NULL);
+	} else {
+		n = 1;
+		snprintf(a[n], sizeof(a[n]), "interface=%s", e->ifname);
+		w[n] = a[n];
+		n++;
+		snprintf(a[n], sizeof(a[n]), "address=%s", addr);
+		w[n] = a[n];
+		n++;
+		snprintf(a[n], sizeof(a[n]), "fib=%s", fib[0] != '\0' ? fib : "0");
+		w[n] = a[n];
+		n++;
+		if (interval[0] != '\0') {
+			snprintf(a[n], sizeof(a[n]), "interval=%s", interval);
+			w[n] = a[n];
+			n++;
+		}
+		if (eval[0] != '\0') {
+			snprintf(a[n], sizeof(a[n]), "eval=%s", eval);
+			w[n] = a[n];
+			n++;
+		}
+		snprintf(title, sizeof(title), "monitor set %s%s", prefix,
+		    e->ifname);
+		json = job_json("monitor", "set", w, n, NULL, extra[0] != '\0' ?
+		    extra : NULL);
+	}
+	job_send(s, json, title, JOB_MONITOR, tn[e->node].jail[0] != '\0' ?
+	    tn[e->node].jail : s->name);
+}
+
+static const char *
+tq_fv(const ucl_object_t *f, const char *key)
+{
+
+	return (jstr(f, key) != NULL ? jstr(f, key) : "");
+}
+
+bool
+tq_form(const char *form, const ucl_object_t *f)
+{
+	const struct tqpair	*q;
+	const char		*iv, *ev;
+
+	if (strcmp(form, "tq-set") != 0)
+		return (false);
+	if ((q = tq_pair(tq.edit)) != NULL) {
+		iv = tq_fv(f, "interval");
+		ev = tq_fv(f, "eval");
+		tq_send(&q->a, "ov-", tq_fv(f, "A_ov"), tq_fv(f, "A_ovfib"), iv,
+		    ev);
+		tq_send(&q->a, "ul-", tq_fv(f, "A_ul"), tq_fv(f, "A_ulfib"), iv,
+		    ev);
+		if (q->has_b) {
+			tq_send(&q->b, "ov-", tq_fv(f, "B_ov"), tq_fv(f,
+			    "B_ovfib"), iv, ev);
+			tq_send(&q->b, "ul-", tq_fv(f, "B_ul"), tq_fv(f,
+			    "B_ulfib"), iv, ev);
+		}
+		snprintf(tq.pick, sizeof(tq.pick), "%s", q->key);
+	}
+	app.modal = MODAL_NONE;
+	return (true);
+}
+
+bool
+tq_action(const char *act, const char *arg, const char *value)
+{
+	const struct tqpair	*q;
+	char			 body[300];
+
+	(void)value;
+	if (strcmp(act, "ov-sub") == 0) {
+		tq.quality = arg != NULL && strcmp(arg, "quality") == 0;
+		if (tq.quality)
+			tq_refresh();
+		return (true);
+	}
+	if (strncmp(act, "tq-", 3) != 0)
+		return (false);
+	if (strcmp(act, "tq-pick") == 0) {
+		snprintf(tq.pick, sizeof(tq.pick), "%s", arg != NULL && strcmp(
+		    tq.pick, arg) != 0 ? arg : "");
+		return (true);
+	}
+	if (strcmp(act, "tq-measure") == 0) {
+		snprintf(tq.edit, sizeof(tq.edit), "%s", arg != NULL ? arg : "");
+		app.modal = MODAL_TQ;
+		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "tq-stop") == 0) {
+		snprintf(body, sizeof(body), "Its monitors stop, at both ends: "
+		    "their samples go with them. The tunnel is not touched.");
+		confirm("Stop measuring the tunnel?", body, "Stop", true, "",
+		    "tq-do-stop", arg, "");
+		return (true);
+	}
+	if (strcmp(act, "tq-do-stop") == 0 && (q = tq_pair(arg)) != NULL) {
+		tq_send(&q->a, "ov-", "", "", "", "");
+		tq_send(&q->a, "ul-", "", "", "", "");
+		if (q->has_b) {
+			tq_send(&q->b, "ov-", "", "", "", "");
+			tq_send(&q->b, "ul-", "", "", "", "");
+		}
+		return (true);
+	}
+	return (false);
+}
+
+/* Overlay's sub-tabs: its tunnels' table, or their quality. */
+bool
+overlay_quality(struct html *h)
+{
+
+	h_fmt(h, "<div class=\"toolbar\"><nav class=\"sub ov-sub\"><button "
+	    "class=\"ghost small%s\" "
+	    "data-act=\"ov-sub\" data-arg=\"tunnels\">Tunnels</button><button "
+	    "class=\"ghost small%s\" data-act=\"ov-sub\" data-arg=\"quality\" "
+	    "title=\"Loss, delay and jitter, each tunnel from both its ends, "
+	    "over it and under it\">Quality</button></nav></div>", tq.quality ?
+	    "" :
+	    " on", tq.quality ? " on" : "");
+	if (!tq.quality)
+		return (false);
+	tq_view(h);
+	return (true);
 }

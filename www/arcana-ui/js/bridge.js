@@ -81,6 +81,11 @@ addToLibrary({
 			onBeforeElUpdated: function (from, to) {
 				var tag = from.tagName, i, was, now;
 
+				/* An element the page draws into itself, a
+				 * WebGL canvas: kept as it is. */
+				if (from.hasAttribute("data-keep"))
+					return (false);
+
 				if (tag === "DETAILS") {
 					now = to.hasAttribute("open");
 					if (from._arcOpen === now) {
@@ -725,9 +730,17 @@ addToLibrary({
 			return (k.textContent.replace(/\s+/g, " ").trim());
 		}
 
+		/*
+		 * A cell a spreadsheet would read as a formula (a name a host
+		 * or jail chose, say "=cmd|...") is made text by a leading
+		 * quote; a number, negative ones too, stays a number.
+		 */
 		function csvField(v) {
-			return (/[",\n]/.test(v) ? "\"" + v.replace(/"/g, "\"\"") +
-			    "\"" : v);
+			if (/^[=+@\t\r]/.test(v) || (/^-./.test(v) &&
+			    !/^-[0-9.,]+%?$/.test(v)))
+				v = "'" + v;
+			return (/[",\n\r]/.test(v) ? "\"" + v.replace(/"/g,
+			    "\"\"") + "\"" : v);
 		}
 
 		/* The table's rows as shown, as a file to save. */
@@ -1702,6 +1715,49 @@ addToLibrary({
 			localStorage.setItem("arc_queue", on ? "1" : "0");
 		} catch (e) {
 		}
+	},
+
+	/*
+	 * The map's WebGL canvas: 0 when there is none; 1 when there is,
+	 * 2 more when the page has just made it (a context is to be made
+	 * on it), 4 more when motion is not wanted.
+	 */
+	arc_gl_probe: function () {
+		var c = document.getElementById("map-gl"), s;
+
+		if (c === null)
+			return (0);
+		s = 1;
+		if (!c._arcSeen) {
+			c._arcSeen = true;
+			s |= 2;
+		}
+		if (window.matchMedia && window.matchMedia(
+		    "(prefers-reduced-motion: reduce)").matches)
+			s |= 4;
+		return (s);
+	},
+	/* What it drew, for whoever looks (the tests): whether WebGL 2 is
+	 * there, the points of the last frame, the links with traffic, the
+	 * tunnels whose probes are drawn. */
+	arc_gl_report: function (ok, points, flows, probes) {
+		window.arcGl = { ok: ok !== 0, points: points, flows: flows,
+		    probes: probes };
+	},
+	/* A colour the theme defines (--name), as 0xrrggbb, or -1. */
+	arc_css_rgb__deps: ["$UTF8ToString"],
+	arc_css_rgb: function (namep) {
+		var v = getComputedStyle(document.documentElement)
+		    .getPropertyValue(UTF8ToString(namep)).trim(), m;
+
+		if ((m = /^#([0-9a-f]{6})$/i.exec(v)) !== null)
+			return (parseInt(m[1], 16));
+		if ((m = /^#([0-9a-f]{3})$/i.exec(v)) !== null)
+			return (parseInt(m[1].replace(/(.)/g, "$1$1"), 16));
+		if ((m = /^rgba?\(\s*(\d+)[ ,]+(\d+)[ ,]+(\d+)/.exec(v)) !==
+		    null)
+			return ((+m[1] << 16) | (+m[2] << 8) | +m[3]);
+		return (-1);
 	},
 
 	/* Visual effects on or off, kept per browser; index.html applies

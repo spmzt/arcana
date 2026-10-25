@@ -3142,6 +3142,12 @@ connected:
 		auq.signature.p = sig;
 		auq.signature.len = siglen;
 		auq.restart = c->restart;
+		/*
+		 * Not waited for without end: an agent that restarts as its
+		 * answer leaves can leave the connection open with no answer
+		 * on it, and the update would show as under way for ever.
+		 */
+		cl.timeout_ms = AGENT_UPDATE_WAIT_MS;
 		error = arc_agent_update(&cl, &auq, &aur);
 		free(sig);
 		sig = NULL;

@@ -135,20 +135,23 @@ if [ "\$1" = -e ]; then
 	done
 	exit 0
 fi
-name=\$1; verb=\$2
+# A third word: speederv2's, a relay's profile; dhclient's, its
+# interface, the same service.
+name=\$1; verb=\$2; r=\$name
+[ "\$name" = speederv2 ] && r=\$name\${3:+-\$3}
 case "\$verb" in
 rcvar)		echo "# \$name"; echo "\${name}_enable=\"NO\""; echo '#   (default: "")' ;;
 enabled)	grep -q "^\${name}_enable=\"YES\"" "\$conf" ;;
-status)		[ -f "running.\$name" ] && { echo "\$name is running as pid 4242."; exit 0; }
-		echo "\$name is not running."; exit 1 ;;
-start|onestart)	touch "running.\$name"; echo "Starting \$name." ;;
-stop)		rm -f "running.\$name"; echo "Stopping \$name." ;;
-restart)	[ -f slow ] && sleep 2
+status|onestatus)	[ -f "running.\$r" ] && { echo "\$r is running as pid 4242."; exit 0; }
+		echo "\$r is not running."; exit 1 ;;
+start|onestart)	touch "running.\$r"; echo "Starting \$r." ;;
+stop|onestop)	rm -f "running.\$r"; echo "Stopping \$r." ;;
+restart|onerestart)	[ -f slow ] && sleep 2
 		# Held while the test wants it under way (it lets go by taking
 		# hold away), five minutes at most: a loaded run is slow to
 		# look.
 		i=0; while [ -f hold ] && [ \$i -lt 3000 ]; do sleep 0.1; i=\$((i + 1)); done
-		touch "running.\$name"; echo "Restarting \$name." ;;
+		touch "running.\$r"; echo "Restarting \$r." ;;
 reload|onereload)	echo "Reloading \$name." ;;
 describe)	echo "The \$name daemon." ;;
 extracommands)	echo "reload configtest" ;;
@@ -596,7 +599,8 @@ many_jails_body()
 	done
 	atf_check -o save:many.out "$JGC" -c "$SOCK" list
 	atf_check -o match:'^j399 ' cat many.out
-	atf_check -o inline:'405\n' sh -c "grep -c '' many.out"
+	# Its own 400, each once (a jail running on the host is listed too).
+	atf_check -o inline:'400\n' sh -c "grep -Ec '^j[0-9]+ ' many.out"
 }
 many_jails_cleanup()
 {
@@ -4963,6 +4967,54 @@ EOM
 	atf_check test ! -f running.speederv2
 	atf_check -s exit:1 -e match:"a jail's relay is not undone" -o ignore \
 	    "$JGC" -j web -s -c "$SOCK" speeder stop
+
+	# Several relays, each a profile, where the rc script runs them.
+	atf_check -s exit:1 -o match:'runs one relay' "$JGC" -c "$SOCK" \
+	    speeder conf profile=b role=server listen=192.0.2.2:14351 \
+	    remote=127.0.0.1:51822
+	printf '#!/bin/sh\n# speederv2_profiles: several relays\n' > rc.d/speederv2
+	atf_check -o match:'done +speederv2 b: conf, a server from 192.0.2.2:14351 to 127.0.0.1:51822' \
+	    "$JGC" -c "$SOCK" speeder conf profile=b role=server \
+	    listen=192.0.2.2:14351 remote=127.0.0.1:51822 key=bkey
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder conf profile=c \
+	    role=client listen=127.0.0.1:51823 remote=192.0.2.3:14352
+	atf_check -o match:'^speederv2_profiles="b c"$' \
+	    -o match:'^speederv2_b_flags="-s -l192.0.2.2:14351 -r127.0.0.1:51822 -k bkey' \
+	    -o match:'^speederv2_c_flags="-c -l127.0.0.1:51823' cat rc.conf
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder start profile=b
+	atf_check test -f running.speederv2-b
+	# Each read with its own lines, by its tag; the key never.
+	cat >> messages <<'EOM'
+Oct 23 14:23:09 h speederv2-b[45]: [2026-10-23 14:23:09][INFO][report]client-->server:(original:10 pkt;1000 byte) (fec:20 pkt,2000 byte)  server-->client:(original:10 pkt;1000 byte) (fec:20 pkt;2000 byte)
+EOM
+	atf_check -o match:'"profiles_supported":true' \
+	    -o match:'"profiles":\[\{"name":"b","running":true,"flags":"-s -l192.0.2.2:14351 -r127.0.0.1:51822 -k <hidden>"' \
+	    -o match:'"name":"b".*"plain_bytes":1000,"fec_packets":20,"fec_bytes":2000,"overhead":100' \
+	    -o match:'\{"name":"c","running":false,"flags":"-c -l127.0.0.1:51823' \
+	    -o not-match:'bkey' "$JGC" -c "$SOCK" speeder
+	atf_check -s exit:1 -e match:'no profile=' -o ignore "$JGC" -c "$SOCK" \
+	    speeder enable profile=b
+	atf_check -s exit:1 -e match:'remove takes profile=<name> alone' -o ignore \
+	    "$JGC" -c "$SOCK" speeder remove
+	atf_check -s exit:1 -e match:'a profile is 32 letters' -o ignore \
+	    "$JGC" -c "$SOCK" speeder start 'profile=b;x'
+	# Taken away safe, not confirmed: back, listed and running.
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" speeder remove profile=b
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    -o match:'speederv2 b: remove' "$JGC" -c "$SOCK" job 12
+	atf_check -o match:'^speederv2_profiles="b c"$' \
+	    -o match:'^speederv2_b_flags="-s ' cat rc.conf
+	atf_check test -f running.speederv2-b
+	# Taken away for good.
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder remove profile=b
+	atf_check -o match:'^speederv2_profiles="c"$' -o not-match:'speederv2_b_' \
+	    cat rc.conf
+	atf_check test ! -f running.speederv2-b
 }
 speeder_cleanup()
 {

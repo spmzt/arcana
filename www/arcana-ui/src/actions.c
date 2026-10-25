@@ -672,6 +672,7 @@ job_finished(struct op *op, bool ok, const char *err)
 		break;
 	case JOB_MONITOR:
 		monitors_refresh();
+		tq_refresh();
 		break;
 	case JOB_PROCESS:
 		refresh_procs(s, true);
@@ -3178,7 +3179,16 @@ agent_update_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (status == 200 && !ok)
 		err = jstr(o, "error");
 	op_done(op_find(c->op), ok, o, err);
-	if (!ok)
+	if (!ok && status != 200 && (s = server_by_id(c->sid)) != NULL) {
+		/* No answer about it, which an agent that restarted as it
+		 * answered can leave: whether it runs the new build is
+		 * asked of the host, and said either way. */
+		toast(true, "%s: no answer about the agent update (%s); "
+		    "asking the host which agent it runs", c->name, err !=
+		    NULL ? err : "no answer");
+		s->restart_until = arc_now() + RESTART_WATCH_MS;
+		s->restart_asked = arc_now();
+	} else if (!ok)
 		toast(true, "%s: agent not updated: %s", c->name, err != NULL ?
 		    err : "failed");
 	else if (jbool(o, "restarting")) {

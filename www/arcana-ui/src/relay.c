@@ -31,6 +31,11 @@ static struct {
 	bool		 conf;		/* the flags' form open */
 	bool		 picked;	/* where, chosen by hand: jail */
 	char		 jail[64];	/* "" the host */
+	char		 prof[40];	/* the relay picked: a profile, "" the
+					 * plain one (speederv2_flags) */
+	char		 shown[40];	/* the one shown, and its jobs': the
+					 * pick while the read has it */
+	bool		 adding;	/* a new profile's form open */
 } rl;
 
 /* Read again at the next draw. */
@@ -114,12 +119,24 @@ rl_extra(struct server *s)
 	return (extra);
 }
 
+/* A relay job; for one of several, its profile= added (not to enable and
+ * disable, which are every relay's). */
 static void
 rl_send(struct server *s, const char *verb, const char *const *words,
     size_t n, const char *title)
 {
-	char	*json;
+	const char	*w[20];
+	char		*json, pw[64];
+	size_t		 i;
 
+	if (rl.shown[0] != '\0' && strcmp(verb, "enable") != 0 && strcmp(verb,
+	    "disable") != 0 && n < nitems(w)) {
+		for (i = 0; i < n; i++)
+			w[i] = words[i];
+		snprintf(pw, sizeof(pw), "profile=%s", rl.shown);
+		w[n++] = pw;
+		words = w;
+	}
 	json = job_json("speeder", verb, words, n, NULL, rl_extra(s));
 	job_send(s, json, title, JOB_RELAY, rl_where(s)[0] != '\0' ?
 	    rl_where(s) : s->name);
@@ -303,7 +320,7 @@ input(struct html *h, const char *label, const char *name, const char *value,
 	h_raw(h, "</label>");
 }
 
-/* The flags' form, filled from what is set. */
+/* The flags' form, filled from what is set; a new relay's with its name. */
 static void
 conf_form(struct html *h, const ucl_object_t *o)
 {
@@ -313,11 +330,28 @@ conf_form(struct html *h, const ucl_object_t *o)
 	server = jstr(o, "role") != NULL && strcmp(jstr(o, "role"), "server") ==
 	    0;
 	h_raw(h, "<form data-form=\"rl-conf\" class=\"set-form relay-conf\">"
-	    "<h3>The relay's flags</h3><p class=\"dim\">Written to "
-	    "<code>speederv2_flags</code> in rc.conf, each word checked; the "
-	    "relay restarted when it runs. Both ends need the same mode, key "
-	    "and ratios' scheme.</p><div class=\"two\"><label>Role<select "
-	    "name=\"role\">");
+	    "<h3>");
+	h_txt(h, rl.adding ? "Another relay" : "The relay's flags");
+	h_raw(h, "</h3><p class=\"dim\">Written to <code>");
+	if (rl.adding)
+		h_raw(h, "speederv2_&lt;name&gt;_flags</code>, the name added "
+		    "to <code>speederv2_profiles");
+	else if (rl.shown[0] != '\0') {
+		h_raw(h, "speederv2_");
+		h_txt(h, rl.shown);
+		h_raw(h, "_flags");
+	} else
+		h_raw(h, "speederv2_flags");
+	h_raw(h, "</code> in rc.conf, each word checked; the relay restarted "
+	    "when it runs. Both ends need the same mode, key and ratios' "
+	    "scheme.</p>");
+	if (rl.adding)
+		h_raw(h, "<label>Name<input name=\"profile\" required "
+		    "pattern=\"[A-Za-z0-9_]{1,32}\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"lte\"><small>Letters, "
+		    "digits and _: the rc script's profile, and its syslog tag "
+		    "speederv2-&lt;name&gt;.</small></label>");
+	h_raw(h, "<div class=\"two\"><label>Role<select name=\"role\">");
 	h_fmt(h, "<option value=\"client\"%s>client: takes plain packets, "
 	    "sends them with FEC</option><option value=\"server\"%s>server: "
 	    "takes FEC, gives back plain</option></select></label>", server ?
@@ -365,9 +399,9 @@ conf_form(struct html *h, const ucl_object_t *o)
 	    "speederv2's own, passed on: --jitter, --interval, --queue-len, "
 	    "--sock-buf, --out-addr, --log-level and the like.");
 	h_raw(h, "<div class=\"actions\">");
-	if (jstr(o, "flags") != NULL)
-		h_raw(h, "<button type=\"button\" class=\"ghost\" data-act=\""
-		    "rl-conf\">Cancel</button>");
+	if (jstr(o, "flags") != NULL || rl.adding)
+		h_fmt(h, "<button type=\"button\" class=\"ghost\" data-act=\""
+		    "%s\">Cancel</button>", rl.adding ? "rl-add" : "rl-conf");
 	h_raw(h, "<button class=\"primary\">Write the flags</button></div>"
 	    "</form>");
 }
@@ -564,10 +598,84 @@ series_chart(struct html *h, const ucl_object_t *series)
 	    "</figcaption></figure>", n, max);
 }
 
+/*
+ * The relay shown: the profile picked, else the first profile when there
+ * are some and speederv2_flags is not set, else the plain one (o).
+ */
+static const ucl_object_t *
+rl_relay(const ucl_object_t *o)
+{
+	const ucl_object_t	*p, *first;
+	ucl_object_iter_t	 it;
+
+	first = NULL;
+	it = NULL;
+	while ((p = ucl_object_iterate(jget(o, "profiles"), &it, true)) !=
+	    NULL) {
+		if (jstr(p, "name") == NULL)
+			continue;
+		if (first == NULL)
+			first = p;
+		if (strcmp(jstr(p, "name"), rl.prof) == 0) {
+			snprintf(rl.shown, sizeof(rl.shown), "%s", rl.prof);
+			return (p);
+		}
+	}
+	/* None picked, or not (or not yet) read: the plain one while it is
+	 * set or alone, else the first of them. */
+	if (first == NULL || jstr(o, "flags") != NULL) {
+		rl.shown[0] = '\0';
+		return (o);
+	}
+	snprintf(rl.shown, sizeof(rl.shown), "%s", jstr(first, "name"));
+	return (first);
+}
+
+/* Several relays: one picked to be shown, another added. */
+static void
+relays_bar(struct html *h, const ucl_object_t *o)
+{
+	const ucl_object_t	*p;
+	ucl_object_iter_t	 it;
+
+	if (!jbool(o, "profiles_supported") && jget(o, "profiles") == NULL)
+		return;
+	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub relays\" "
+	    "aria-label=\"Relays\">");
+	if (jstr(o, "flags") != NULL || jget(o, "profiles") == NULL)
+		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"rl-pick\" "
+		    "data-arg=\"\" title=\"speederv2_flags\">the plain one"
+		    "</button>", rl.shown[0] == '\0' && !rl.adding ? " on" : "");
+	it = NULL;
+	while ((p = ucl_object_iterate(jget(o, "profiles"), &it, true)) !=
+	    NULL) {
+		if (jstr(p, "name") == NULL)
+			continue;
+		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"rl-pick\"",
+		    strcmp(jstr(p, "name"), rl.shown) == 0 && !rl.adding ? " on" :
+		    "");
+		h_attr(h, "data-arg", jstr(p, "name"));
+		h_raw(h, "><span class=\"dot ");
+		h_raw(h, jbool(p, "running") ? "st-up" : "st-down");
+		h_raw(h, "\"></span>");
+		h_txt(h, jstr(p, "name"));
+		h_raw(h, "</button>");
+	}
+	if (jbool(o, "profiles_supported"))
+		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"rl-add\">+ "
+		    "Another relay</button>", rl.adding ? " on" : "");
+	h_raw(h, "</nav></div>");
+	if (jstr(o, "flags") != NULL && jget(o, "profiles") != NULL)
+		h_raw(h, "<p class=\"notice warn\">The plain relay's "
+		    "<code>speederv2_flags</code> is set but not run: the rc "
+		    "script runs the relays of <code>speederv2_profiles</code> "
+		    "while it lists any.</p>");
+}
+
 void
 view_relay(struct html *h, struct server *s)
 {
-	const ucl_object_t	*o, *e, *lines, *l;
+	const ucl_object_t	*o, *e, *lines, *l, *top;
 	ucl_object_iter_t	 it;
 	bool			 running, enabled, set;
 
@@ -616,13 +724,21 @@ view_relay(struct html *h, struct server *s)
 		    "again.</p></div></section>");
 		return;
 	}
+	top = o;
+	o = rl_relay(top);
+	relays_bar(h, top);
+	if (rl.adding) {
+		conf_form(h, NULL);
+		h_raw(h, "</section>");
+		return;
+	}
 	running = jbool(o, "running");
-	enabled = jbool(o, "enabled");
+	enabled = jbool(top, "enabled");
 	set = jstr(o, "flags") != NULL;
 	h_raw(h, "<div class=\"toolbar\">");
-	if (jstr(o, "jail") != NULL) {
+	if (jstr(top, "jail") != NULL) {
 		h_raw(h, "<span class=\"chip\">in jail ");
-		h_txt(h, jstr(o, "jail"));
+		h_txt(h, jstr(top, "jail"));
 		h_raw(h, "</span> ");
 	}
 	chip(h, enabled, "Enabled at boot", "Not at boot");
@@ -640,14 +756,19 @@ view_relay(struct html *h, struct server *s)
 		if (running)
 			h_raw(h, "<button class=\"ghost small\" data-act=\""
 			    "rl-stop\">Stop</button> ");
-		h_fmt(h, "<button class=\"ghost small\" data-act=\"%s\">%s"
-		    "</button> <button class=\"small%s\" data-act=\"rl-conf\">"
-		    "Configure</button>", enabled ? "rl-disable" : "rl-enable",
-		    enabled ? "Disable" : "Enable", rl.conf ? " on" : "");
+		h_fmt(h, "<button class=\"ghost small\" data-act=\"%s\" title="
+		    "\"%s\">%s</button> <button class=\"small%s\" data-act=\""
+		    "rl-conf\">Configure</button>", enabled ? "rl-disable" :
+		    "rl-enable", jget(top, "profiles") != NULL ? "speederv2_enable: "
+		    "every relay of the host's" : "speederv2_enable", enabled ?
+		    "Disable" : "Enable", rl.conf ? " on" : "");
+		if (rl.shown[0] != '\0')
+			h_raw(h, " <button class=\"ghost small danger\" data-act=\""
+			    "rl-remove\">Remove</button>");
 	}
 	h_raw(h, "</div>");
 	if (!set || rl.conf) {
-		if (!set)
+		if (!set && rl.shown[0] == '\0')
 			h_raw(h, "<p class=\"notice\">The relay is installed but "
 			    "not set up: <code>speederv2_flags</code> is empty.</p>");
 		conf_form(h, o);
@@ -713,7 +834,7 @@ view_relay(struct html *h, struct server *s)
 	lines = jget(o, "log");
 	if (lines != NULL && ucl_array_size(lines) > 0) {
 		h_raw(h, "<details class=\"relay-log\"><summary>Its last lines in ");
-		h_txt(h, jstr(o, "log_path") != NULL ? jstr(o, "log_path") :
+		h_txt(h, jstr(top, "log_path") != NULL ? jstr(top, "log_path") :
 		    "the log");
 		h_raw(h, "</summary><pre class=\"out\">");
 		it = NULL;
@@ -726,7 +847,8 @@ view_relay(struct html *h, struct server *s)
 	h_raw(h, "<p class=\"freebsd-note dim\">FreeBSD: the port's rc "
 	    "script runs speederv2 under daemon(8), which restarts it and "
 	    "sends its lines to syslogd(8); rc.conf's speederv2_flags are its "
-	    "words.</p></section>");
+	    "words, or for several relays speederv2_profiles and each one's "
+	    "speederv2_&lt;name&gt;_flags.</p></section>");
 }
 
 static struct server *
@@ -791,7 +913,8 @@ relay_form(const char *form, const ucl_object_t *f)
 		if ((s = rl_server()) == NULL)
 			return (true);
 		w[0] = fv(f, "fec");
-		snprintf(title, sizeof(title), "speederv2: ratios %s", w[0]);
+		snprintf(title, sizeof(title), "speederv2%s%s: ratios %s",
+		    rl.shown[0] != '\0' ? " " : "", rl.shown, w[0]);
 		rl_send(s, "fec", w, 1, title);
 		return (true);
 	}
@@ -799,6 +922,12 @@ relay_form(const char *form, const ucl_object_t *f)
 		return (false);
 	if ((s = rl_server()) == NULL)
 		return (true);
+	if (rl.adding) {
+		/* The new relay's name; the job then carries profile=. */
+		snprintf(rl.prof, sizeof(rl.prof), "%s", fv(f, "profile"));
+		snprintf(rl.shown, sizeof(rl.shown), "%s", rl.prof);
+		rl.adding = false;
+	}
 	n = 0;
 	for (i = 0; i < nitems(keys); i++) {
 		if (fv(f, keys[i])[0] == '\0')
@@ -814,8 +943,9 @@ relay_form(const char *form, const ucl_object_t *f)
 	n++;
 	if (jbool(f, "nokey") && fv(f, "key")[0] == '\0')
 		words[n++] = "nokey";
-	snprintf(title, sizeof(title), "speederv2: a %s from %s to %s",
-	    fv(f, "role"), fv(f, "listen"), fv(f, "remote"));
+	snprintf(title, sizeof(title), "speederv2%s%s: a %s from %s to %s",
+	    rl.shown[0] != '\0' ? " " : "", rl.shown, fv(f, "role"), fv(f,
+	    "listen"), fv(f, "remote"));
 	rl_send(s, "conf", words, n, title);
 	explicit_bzero(buf, sizeof(buf));
 	rl.conf = false;
@@ -839,12 +969,12 @@ relay_action(const char *act, const char *arg, const char *value)
 	const char	*jail;
 	size_t		 i;
 
-	(void)arg;
 	if (strcmp(act, "input:rl-where") == 0) {
 		rl.picked = true;
 		snprintf(rl.jail, sizeof(rl.jail), "%s", value != NULL ? value :
 		    "");
-		rl.conf = false;
+		rl.conf = rl.adding = false;
+		rl.prof[0] = rl.shown[0] = '\0';
 		res_drop(&rl.r);
 		render();
 		return (true);
@@ -858,6 +988,17 @@ relay_action(const char *act, const char *arg, const char *value)
 	}
 	if (strcmp(act, "rl-conf") == 0) {
 		rl.conf = !rl.conf;
+		return (true);
+	}
+	if (strcmp(act, "rl-pick") == 0) {
+		snprintf(rl.prof, sizeof(rl.prof), "%s", arg != NULL ? arg : "");
+		snprintf(rl.shown, sizeof(rl.shown), "%s", rl.prof);
+		rl.conf = rl.adding = false;
+		return (true);
+	}
+	if (strcmp(act, "rl-add") == 0) {
+		rl.adding = !rl.adding;
+		rl.conf = false;
 		return (true);
 	}
 	if (strcmp(act, "rl-compare") == 0) {
@@ -882,6 +1023,20 @@ relay_action(const char *act, const char *arg, const char *value)
 	}
 	if ((s = rl_server()) == NULL)
 		return (true);
+	if (strcmp(act, "rl-remove") == 0) {
+		snprintf(title, sizeof(title), "Remove the relay %s?", rl.shown);
+		confirm(title, "It is stopped, its speederv2_<name>_flags "
+		    "unset and its name taken out of speederv2_profiles. A "
+		    "tunnel carried by it is down. On the host the job is in "
+		    "safe mode, and is undone if the console cannot reach the "
+		    "host after it.", "Remove", true, "", "rl-do-remove", "", "");
+		return (true);
+	}
+	if (strcmp(act, "rl-do-remove") == 0) {
+		snprintf(title, sizeof(title), "speederv2 %s: remove", rl.shown);
+		rl_send(s, "remove", NULL, 0, title);
+		return (true);
+	}
 	if (strcmp(act, "rl-stop") == 0 || strcmp(act, "rl-disable") == 0) {
 		confirm(strcmp(act, "rl-stop") == 0 ? "Stop the relay?" :
 		    "Stop and disable the relay?", "What goes through it stops: "
@@ -907,7 +1062,13 @@ relay_action(const char *act, const char *arg, const char *value)
 	}
 	for (i = 0; i < nitems(verbs); i++)
 		if (strcmp(act, verbs[i].act) == 0) {
-			rl_send(s, verbs[i].verb, NULL, 0, verbs[i].title);
+			snprintf(title, sizeof(title), "%s", verbs[i].title);
+			/* speederv2 <name>: start, for one of several. */
+			if (rl.shown[0] != '\0' && strcmp(verbs[i].verb,
+			    "enable") != 0 && strcmp(verbs[i].verb, "disable") != 0)
+				snprintf(title, sizeof(title), "speederv2 %s%s",
+				    rl.shown, verbs[i].title + 9);
+			rl_send(s, verbs[i].verb, NULL, 0, title);
 			return (true);
 		}
 	return (false);

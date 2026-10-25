@@ -1,0 +1,43 @@
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
+ * Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
+ */
+
+/*
+ * Visual effects are on unless this browser turned them off.  Loaded in
+ * the head so the class is there before the first paint; a file of its
+ * own because the page's Content-Security-Policy allows no inline script.
+ */
+try {
+	if (localStorage.getItem("arc_fx") !== "0")
+		document.documentElement.classList.add("fx");
+} catch (e) {
+	document.documentElement.classList.add("fx");
+}
+
+/*
+ * The theme chosen in this browser; none is the default one, Graphite.
+ * Those of glow and capitals are "neon": the stylesheet's plain rules
+ * are for the others.
+ */
+try {
+	var arcTheme;
+
+	/*
+	 * Graphite became the default after other themes were kept as
+	 * one: every browser is moved to it once, and keeps what is
+	 * picked after.
+	 */
+	if (localStorage.getItem("arc_theme_v") !== "2") {
+		localStorage.removeItem("arc_theme");
+		localStorage.setItem("arc_theme_v", "2");
+	}
+	arcTheme = localStorage.getItem("arc_theme");
+
+	if (arcTheme)
+		document.documentElement.dataset.theme = arcTheme;
+	if (/^(tron|amber|matrix|synth)$/.test(arcTheme || ""))
+		document.documentElement.classList.add("neon");
+} catch (e) {
+}
