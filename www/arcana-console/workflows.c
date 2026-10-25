@@ -2526,7 +2526,7 @@ workflows_kinds_check(void)
 
 	for (i = 0; i < nitems(jobkinds); i++)
 		if (!hosts_job_kind_known(jobkinds[i].kind)) {
-			kore_log(LOG_ERR, "the job kind %s of jobs.yaml is not "
+			log_msg(LOG_ERR, "the job kind %s of jobs.yaml is not "
 			    "in hosts.c's job_kind_names", jobkinds[i].kind);
 			rc = -1;
 		}
@@ -2544,7 +2544,7 @@ workflows_init(void)
 	bool			 changed;
 
 	refs_copy();
-	(void)kore_timer_add(refs_tick, 2000, NULL, 0);
+	(void)timer_add(refs_tick, 2000, NULL, 0);
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, RUNS_DIR);
 	(void)mkdir(path, 0700);
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, WF_LOCK);
@@ -2635,11 +2635,11 @@ api_workflows(struct http_request *req)
 	refs_copy();
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		return (reply_list(req, WF_FILE, "workflows", true));
 	}
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	/* /api/workflows/<id>[/run] */
 	wid[0] = '\0';
 	if (strncmp(req->path, "/api/workflows/", 15) == 0)
@@ -2670,7 +2670,7 @@ api_workflows(struct http_request *req)
 			    true, false)) {
 				ucl_object_unref(w);
 				ucl_object_unref(body);
-				return (KORE_RESULT_OK);
+				return (WEB_OK);
 			}
 		}
 		n = run_start(w, hosts, params, NULL, "hand", &why);
@@ -2694,7 +2694,7 @@ api_workflows(struct http_request *req)
 			if (strcmp(ucl_str(e, "id"), wid) == 0) {
 				found = true;
 				/* Said in the log, as a server removed is. */
-				kore_log(LOG_NOTICE, "workflow %s deleted: %s", wid,
+				log_msg(LOG_NOTICE, "workflow %s deleted: %s", wid,
 				    ucl_str(e, "name") != NULL ? ucl_str(e, "name") :
 				    "");
 			} else
@@ -2746,7 +2746,7 @@ api_workflows(struct http_request *req)
 		ucl_array_append(keep, ucl_object_ref(w));
 	put(top, "workflows", keep);
 	(void)store_save(WF_FILE, top);
-	kore_log(LOG_NOTICE, "workflow %s %s: %s", ucl_str(w, "id") != NULL ?
+	log_msg(LOG_NOTICE, "workflow %s %s: %s", ucl_str(w, "id") != NULL ?
 	    ucl_str(w, "id") : "", found ? "changed" : "made", ucl_str(w,
 	    "name") != NULL ? ucl_str(w, "name") : "");
 	pthread_mutex_unlock(&wf_lock);
@@ -2766,11 +2766,11 @@ api_runs(struct http_request *req)
 	all = strcmp(req->path, "/api/runs") == 0;
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		if (all)
 			return (reply_list(req, RUNS_FILE, "runs", false));
 	} else if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	n = (uint32_t)strtoul(req->path + sizeof("/api/runs/") - 1, NULL, 10);
 	pthread_mutex_lock(&wf_lock);
 	top = store_load(RUNS_FILE);
@@ -2835,7 +2835,7 @@ api_runs(struct http_request *req)
 		put(one_ap, "at", ucl_object_fromint(time(NULL)));
 		ucl_array_append(a, one_ap);
 		(void)store_save(RUNS_FILE, top);
-		kore_log(LOG_NOTICE, "run %u: step %s approved by %s", n, id,
+		log_msg(LOG_NOTICE, "run %u: step %s approved by %s", n, id,
 		    ucl_str(one_ap, "by"));
 		pthread_mutex_unlock(&wf_lock);
 		ucl_object_unref(top);

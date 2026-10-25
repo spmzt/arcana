@@ -9,9 +9,6 @@
 #CBLINK_PREFIX=	/path/to/cblink-root/usr/local
 #LDFLAGS+=	-Wl,-rpath,${CBLINK_PREFIX}/lib
 
-# Kore (4.3, with TASKS=1), if not installed in ${LOCALBASE}: its headers,
-# and the features it was built with, read from KORE_SHARE/features or
-# given as KORE_FEATURES (see kore.features in its build):
-#KORE_INCLUDE=	/path/to/kore/include
-#KORE_SHARE=	/path/to/kore/share/kore
-#KORE_FEATURES=	-DTLS_BACKEND_OPENSSL -DKORE_USE_TASKS
+# libwebsockets, if not installed in ${LOCALBASE} (net/libwebsockets):
+#LWS_CFLAGS=	-I/path/to/libwebsockets/include
+#LWS_LIBS=	-L/path/to/libwebsockets/lib -lwebsockets

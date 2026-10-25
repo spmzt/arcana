@@ -2,7 +2,7 @@
 .\"
 .\" Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
 .\"
-.Dd October 12, 2026
+.Dd October 25, 2026
 .Dt ARCANA-CONSOLE 8
 .Os
 .Sh NAME
@@ -13,16 +13,14 @@
 .Cm arcana_console
 .Cm start | stop | restart | status
 .Pp
-.Ev ARCANA_WEB_CONF Ns = Ns Pa web.conf
-.Nm kore
-.Op Fl d
-.Fl c Pa kore.conf
+.Nm
+.Op Fl dn
+.Op Fl c Pa web.conf
 .Sh DESCRIPTION
-The arcana console is
-.Xr kore 1
-with the module
-.Pa arcana-console.so :
-it serves the web application and its JSON API, logs its one user in
+The arcana console serves the web application and its JSON API over
+HTTPS, with
+.Xr libwebsockets 3 ;
+it logs its users in
 with WebAuthn, keeps the list of hosts, and talks to the
 .Xr arcana-agent 8
 of each host over cblink, with mutual TLS over TCP or through a local
@@ -30,6 +28,31 @@ socket.
 It runs unprivileged; everything that changes a host is done by that
 host's
 .Xr arcana-agent 8 .
+.Pp
+It is two processes.
+The supervisor, root when started by
+.Xr rc 8 ,
+listens on the addresses configured, keeps the pid file and starts the
+worker again when it dies, logging how it ended; the worker serves on
+the supervisor's sockets as the console's user, one at a time on one
+loop, and runs what takes time (a call to a host) on task threads.
+A worker that cannot start, its configuration or data being wrong,
+stops the supervisor too.
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl c Pa web.conf
+The configuration; by default
+.Ev ARCANA_WEB_CONF ,
+or
+.Pa /usr/local/etc/arcana/web.conf .
+.It Fl d
+Become a daemon: the pid file is written, and the log goes to
+.Xr syslog 3
+instead of the standard error.
+.It Fl n
+No supervisor: the worker alone, for debugging.
+.El
 .Pp
 The console shows, per host: its jails with their state and actions;
 its rc.d services with their
@@ -39,19 +62,40 @@ packages that can be upgraded, on the host and in running jails; and
 CPU, memory and ZFS usage.
 Every call to a host is listed with a trace of what the host did.
 .Sh CONFIGURATION
-Two files configure it.
-.Pa kore.conf
-is Kore's own: the address to bind (one
-.Cm bind
-line per address family), the RSA certificate for HTTPS, the user the
-worker runs as, and an
-.Cm include
-of
-.Pa routes.conf .
 .Pa web.conf ,
-named by the environment variable
-.Ev ARCANA_WEB_CONF ,
-is the console's, in UCL:
+in UCL, configures it.
+Its
+.Va server
+block is the server's:
+.Bl -tag -width "task_threads"
+.It Va listen
+A list of where to listen:
+.Dq Ar address : Ns Ar port ,
+.Dq Bq Ar address : Ns Ar port
+for IPv6 (which then listens for IPv6 alone), or
+.Dq unix: Ns Ar path .
+By default 0.0.0.0:443 and [::]:443.
+.It Va certfile , certkey
+The certificate (with its chain) and key for HTTPS, RSA or EC, read as
+root before the worker becomes its user; without them the console
+speaks plain HTTP, for a proxy in front of it or a local socket.
+.It Va webroot
+The web application; by default
+.Pa /usr/local/www/arcana-console .
+.It Va user
+The user the worker runs as when started as root, by default
+.Dq arcana ;
+an empty one keeps the user it was started as.
+.It Va task_threads
+The task threads, by default 32: one per call to a host under way.
+.It Va body_max
+The largest request body, by default 8 MB.
+.It Va pidfile
+By default
+.Pa /var/run/arcana-console.pid .
+.El
+.Pp
+The rest is the console's:
 .Bl -tag -width "update_check"
 .It Va rp_id
 The WebAuthn relying party: the console's host name as the browser sees
@@ -216,9 +260,8 @@ The others are read once, when the console starts, from
 .Pa web.conf
 alone.
 .Pp
-The module checks every certificate it is configured with when it
-loads, and refuses to start with the reason in the log; Kore serves
-HTTPS only with an RSA certificate.
+The worker checks every certificate it is configured with when it
+starts, and refuses to start with the reason in the log.
 .Sh FIRST LOGIN
 With no security key registered, the console writes a one-time token to
 .Pa setup-token
@@ -230,12 +273,10 @@ from a logged-in session.
 A key may be a hardware key or a passkey, such as a phone's.
 .Sh FILES
 .Bl -tag -width Ds -compact
-.It Pa /usr/local/etc/arcana/kore.conf
 .It Pa /usr/local/etc/arcana/web.conf
-.It Pa /usr/local/etc/arcana/routes.conf
-The configuration; the first two have samples next to them.
-.It Pa /usr/local/lib/arcana/arcana-console.so
-The module.
+The configuration, with a sample next to it.
+.It Pa /usr/local/sbin/arcana-console
+The program.
 .It Pa /usr/local/www/arcana-console
 The web application.
 .It Pa /var/db/arcana
@@ -247,17 +288,17 @@ and with the console's own authority
 .Pa ca.key ,
 .Pa console.pem ,
 .Pa console.key .
-.It Pa /usr/local/etc/rc.d/arcana
+.It Pa /usr/local/etc/rc.d/arcana_console
 The
 .Xr rc 8
 script; variables
 .Va arcana_console_enable ,
-.Va arcana_console_config
+.Va arcana_console_web_conf
 and
-.Va arcana_console_web_conf .
+.Va arcana_console_pidfile .
 .El
 .Sh SEE ALSO
-.Xr kore 1 ,
+.Xr libwebsockets 3 ,
 .Xr arcana-agent 8 ,
 .Xr arcana-enrol 8 ,
 .Xr arcanactl 8 ,

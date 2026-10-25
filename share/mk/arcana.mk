@@ -24,7 +24,7 @@ __objdir!=	mkdir -p ${ARC_OBJDIR} && echo ${ARC_OBJDIR}
 .include <bsd.opts.mk>
 
 # WITHOUT_CONSOLE builds only what a jail host runs (arcana-agent, jailconf,
-# arcanactl), with no need for Kore or emcc.
+# arcanactl), with no need for libwebsockets or emcc.
 __DEFAULT_YES_OPTIONS=	CONSOLE
 .include <bsd.mkopt.mk>
 
@@ -74,17 +74,9 @@ CBLINK_CFLAGS?=	-I${CBLINK_PREFIX}/include
 CBLINK_LIBS?=	-L${CBLINK_PREFIX}/lib -lcblink
 .endif
 
-# Kore, for the web console module: its headers and the feature flags it
-# was built with, which change struct layouts; an installed Kore records
-# them in share/kore/features.
-KORE_INCLUDE?=	${LOCALBASE}/include
-KORE_SHARE?=	${LOCALBASE}/share/kore
-.if !defined(KORE_FEATURES) && exists(${KORE_SHARE}/features)
-KORE_FEATURES!=	cat ${KORE_SHARE}/features
-.endif
-KORE_FEATURES?=	-DTLS_BACKEND_OPENSSL -DKORE_USE_TASKS
-KORE_BIN?=	${LOCALBASE}/bin/kore
-KORE_DHPARAM?=	${KORE_SHARE}/ffdhe4096.pem
+# libwebsockets(3), the console's HTTP server (net/libwebsockets).
+LWS_CFLAGS?=	-I${LOCALBASE}/include
+LWS_LIBS?=	-L${LOCALBASE}/lib -lwebsockets
 
 # The C libraries the console's page compiles to WebAssembly: their
 # sources, not a built library, the system's (pkgbase's FreeBSD-src
@@ -93,7 +85,7 @@ LIBUCL_SRC?=	/usr/src/contrib/libucl
 LIBYAML_SRC?=	/usr/src/contrib/libyaml
 
 # OpenSSL's libcrypto, for WebAuthn signatures: base's unless these name
-# another one, which must be the one Kore uses.
+# another one, which must be the one libwebsockets uses.
 SSL_CFLAGS?=
 SSL_LDFLAGS?=
 

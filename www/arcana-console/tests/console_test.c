@@ -5,14 +5,14 @@
  */
 
 /*
- * The console end to end: kore(1) with arcana-console.so and a arcana-agent(8)
- * with a stand-in for jail(8), both on sockets in the work directory,
+ * The console end to end: arcana-console(8) and an arcana-agent(8) with a
+ * stand-in for jail(8), both on sockets in the work directory,
  * driven over HTTP.  The test is its own WebAuthn authenticator: it makes
  * ES256 and Ed25519 keys with libcrypto and builds authenticator data and
  * clientDataJSON byte by byte, the way a security key and a browser do.
  *
- * Configuration variables: kore (the kore binary), dhparam (Kore's DH
- * parameters), arcana-agent.
+ * Configuration variables: arcana-console, arcana-agent (the programs,
+ * when not the ones built beside the tests).
  */
 
 #include <sys/param.h>
@@ -1627,7 +1627,7 @@ ATF_TC_BODY(load, tc)
 	http("GET", "/api/health", NULL, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	ATF_CHECK(system("! grep -Ei 'exited|signal|crash|fatal' kore.out") ==
+	ATF_CHECK(system("! grep -Ei 'exited|signal|crash|fatal' console.out") ==
 	    0);
 }
 
@@ -1886,8 +1886,8 @@ ATF_TC_BODY(workflows, tc)
 	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
 	resp_free(&r);
 	sleep(2);
-	ATF_REQUIRE(system("kill -9 $(sed -n 's/.*wrk 1\\] log=\\[started "
-	    "(#\\([0-9]*\\).*/\\1/p' kore.out | tail -1)") == 0);
+	ATF_REQUIRE(system("kill -9 $(sed -n 's/.*worker started (pid "
+	    "\\([0-9]*\\)).*/\\1/p' console.out | tail -1)") == 0);
 	(void)unlink("slow");
 	for (i = 0; i < 100; i++) {
 		snprintf(body, sizeof(body), "/api/runs/%s", run);
@@ -1907,7 +1907,7 @@ ATF_TC_BODY(workflows, tc)
 	ATF_CHECK_STREQ("not run", jstr(&r, "hosts.0.steps.1.state"));
 	resp_free(&r);
 	/* What a run whose worker died is not, the console's end. */
-	ATF_REQUIRE(system("sed -i '' '/exited with status/d' kore.out") == 0);
+	ATF_REQUIRE(system("sed -i '' '/exited with status/d' console.out") == 0);
 
 	/*
 	 * At an interval, counted from when it last ran by it, which a
@@ -2045,7 +2045,7 @@ ATF_TC_BODY(workflows, tc)
 		close(ws);
 		/* Its follow gone: the ticker runs on, with none. */
 		sleep(1);
-		ATF_CHECK(system("! grep -q 'exited with status' kore.out") ==
+		ATF_CHECK(system("! grep -q 'exited with status' console.out") ==
 		    0);
 	}
 	for (i = 0; i < 200; i++) {
@@ -2056,14 +2056,14 @@ ATF_TC_BODY(workflows, tc)
 		usleep(100000);
 	}
 	if (i == 200)
-		(void)system("tail -20 kore.out >&2");
+		(void)system("tail -20 console.out >&2");
 	ATF_CHECK_MSG(i < 200, "no run begun by the host going away");
 	/* Subscribed to, not asked every few seconds: a host that goes is
 	 * known at once. */
 	ATF_CHECK_MSG(i < 30, "host-down came after %d ms", i * 100);
 	resp_free(&r);
 
-	ATF_CHECK(system("! grep -q 'exited with status' kore.out") == 0);
+	ATF_CHECK(system("! grep -q 'exited with status' console.out") == 0);
 	/* Gone. */
 	snprintf(path, sizeof(path), "/api/workflows/%s", wid);
 	http("DELETE", path, NULL, &r);
@@ -3193,7 +3193,7 @@ ATF_TC_BODY(transfers, tc)
 	}
 	if (i == 300)
 		(void)system("cat data/transfers.json; tail -5 storage.log; "
-		    "ls -l zrecv.data; tail -20 kore.out; tail -20 "
+		    "ls -l zrecv.data; tail -20 console.out; tail -20 "
 		    "arcana-agent.out");
 	ATF_REQUIRE(i < 300);
 	ATF_CHECK_STREQ("done", jstr(&r, "transfers.0.state"));
@@ -4419,7 +4419,8 @@ ATF_TC_BODY(services, tc)
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^--scope-helper 0 route-get 10.77.5.5 1$' helper.log")
 	    == 0);
-	snprintf(path, sizeof(path), "%.*s/net/lookup?to=10.0.0.1;id",
+	/* Not an address (a ; is an argument's end, as forms had it). */
+	snprintf(path, sizeof(path), "%.*s/net/lookup?to=10.0.0.1%%3Bid",
 	    (int)(strlen(base) - strlen("/services")), base);
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 400);
@@ -4452,7 +4453,7 @@ ATF_TC_BODY(services, tc)
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^--scope-helper 4 route-get 192.0.2.9 0$' helper.log")
 	    == 0);
-	snprintf(path, sizeof(path), "%.*s/net/interfaces?jail=a;b",
+	snprintf(path, sizeof(path), "%.*s/net/interfaces?jail=a%%3Bb",
 	    (int)(strlen(base) - strlen("/services")), base);
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 400);
@@ -4899,7 +4900,7 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("5", jstr(&r, "data.limit"));
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^tick-2s$' trace.d") == 0);
-	snprintf(path, sizeof(path), "%.*s/ipfw/trace?address=10.0.0.2;x",
+	snprintf(path, sizeof(path), "%.*s/ipfw/trace?address=10.0.0.2%%3Bx",
 	    (int)(strlen(base) - strlen("/services")), base);
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 400);
@@ -5834,7 +5835,7 @@ ca_change(const char *path, const char *body)
 	ca_wait(&r);
 	if (jstr(&r, "state.phase") == NULL || strcmp(jstr(&r, "state.phase"),
 	    "switched") != 0)
-		(void)system("tail -30 kore.out >&2");
+		(void)system("tail -30 console.out >&2");
 	ATF_CHECK_MSG(jstr(&r, "state.phase") != NULL && strcmp(jstr(&r,
 	    "state.phase"), "switched") == 0, "%s", r.body);
 	resp_free(&r);
@@ -9134,6 +9135,54 @@ ATF_TC_BODY(cluster, tc)
 	ATF_REQUIRE(chdir(cwd) == 0);
 }
 
+/*
+ * HTTPS with an EC certificate (P-256), which the console serves as it
+ * does an RSA one, on TLS 1.3.
+ */
+ATF_TC_WITH_CLEANUP(tls_ec);
+ATF_TC_HEAD(tls_ec, tc)
+{
+	atf_tc_set_md_var(tc, "descr", "the console serves HTTPS with an EC "
+	    "certificate");
+	atf_tc_set_md_var(tc, "require.progs", "curl openssl");
+}
+ATF_TC_BODY(tls_ec, tc)
+{
+	char	cwd[MAXPATHLEN], cmd[MAXPATHLEN * 2];
+	int	port, i;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	ATF_REQUIRE(system("openssl req -x509 -newkey ec -pkeyopt "
+	    "ec_paramgen_curve:P-256 -nodes -keyout ec.key -out ec.pem -days 1 "
+	    "-subj /CN=localhost 2>/dev/null") == 0);
+	snprintf(harness_server, sizeof(harness_server), "\tcertfile = "
+	    "\"%s/ec.pem\";\n\tcertkey = \"%s/ec.key\";\n", cwd, cwd);
+	port = 20000 + (int)(getpid() % 20000);
+	start(tc, port, NULL);
+	for (i = 0; i < 50; i++) {
+		snprintf(cmd, sizeof(cmd), "curl -sk https://127.0.0.1:%d/api/"
+		    "health | grep -q '\"ok\":true'", port);
+		if (system(cmd) == 0)
+			break;
+		usleep(100000);
+	}
+	ATF_CHECK_MSG(i < 50, "no answer over HTTPS");
+	snprintf(cmd, sizeof(cmd), "echo | openssl s_client -connect "
+	    "127.0.0.1:%d 2>/dev/null | grep -q 'Peer signature type: "
+	    "ecdsa_secp256r1_sha256'", port);
+	ATF_CHECK_MSG(system(cmd) == 0, "not signed with the EC key");
+	/* Plain HTTP on that port is not served. */
+	snprintf(cmd, sizeof(cmd), "! curl -s http://127.0.0.1:%d/api/health "
+	    "| grep -q ok", port);
+	ATF_CHECK(system(cmd) == 0);
+}
+ATF_TC_CLEANUP(tls_ec, tc)
+{
+
+	(void)tc;
+	stop();
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, cluster);
@@ -9190,5 +9239,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, unreachable);
 	ATF_TP_ADD_TC(tp, mtls);
 	ATF_TP_ADD_TC(tp, enrol);
+	ATF_TP_ADD_TC(tp, tls_ec);
 	return (atf_no_error());
 }

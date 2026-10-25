@@ -1,7 +1,6 @@
 -- The arcana test suite, installed in ${TESTSBASE}/arcana.
 --
---	kyua -v test_suites.FreeBSD.kore=/usr/local/bin/kore test \
---	    -k /usr/local/tests/arcana/Kyuafile
+--	kyua test -k /usr/local/tests/arcana/Kyuafile
 
 syntax(2)
 

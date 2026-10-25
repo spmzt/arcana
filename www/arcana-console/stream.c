@@ -46,7 +46,6 @@
  */
 
 #include <sys/param.h>
-#include <sys/ioctl.h>
 #include <sys/queue.h>
 
 #include <ctype.h>
@@ -64,9 +63,9 @@
 #define	STREAM_WINDOW	(2 * 1024 * 1024)	/* the host sends ahead */
 
 struct stream {
-	struct kore_task	 task;	/* first */
+	struct task	 task;	/* first */
 	LIST_ENTRY(stream)	 list;
-	struct connection	*c;	/* NULL once the socket is gone */
+	struct conn	*c;	/* NULL once the socket is gone */
 	atomic_bool		 stop;
 	uint64_t		 id;
 	char			 sid[9];
@@ -86,10 +85,10 @@ static int			nstreams;
 static char			*part;	/* what the worker reads a part into */
 
 static void
-say(struct kore_task *t, const char *fmt, ...) __printflike(2, 3);
+say(struct task *t, const char *fmt, ...) __printflike(2, 3);
 
 static void
-say(struct kore_task *t, const char *fmt, ...)
+say(struct task *t, const char *fmt, ...)
 {
 	va_list	 ap;
 	char	*s;
@@ -100,7 +99,7 @@ say(struct kore_task *t, const char *fmt, ...)
 	va_end(ap);
 	if (n == -1)
 		return;
-	kore_task_channel_write(t, s, (u_int32_t)n);
+	task_channel_write(t, s, (u_int32_t)n);
 	free(s);
 }
 
@@ -346,7 +345,7 @@ read_step(const char *json, void *arg)
 
 /* In a task thread: a read, its steps as they come, then its answer. */
 static int
-read_run(struct kore_task *t)
+read_run(struct task *t)
 {
 	struct stream	*s;
 	char		*json;
@@ -367,12 +366,12 @@ read_run(struct kore_task *t)
 		say(t, "{\"id\":%ju,\"status\":%d,\"reply\":%s}",
 		    (uintmax_t)s->id, status, json);
 	free(json);
-	return (KORE_RESULT_OK);
+	return (WEB_OK);
 }
 
 /* In a task thread: the host's parts, as they come, into the channel. */
 static int
-stream_run(struct kore_task *t)
+stream_run(struct task *t)
 {
 	struct stream		*s;
 	struct arc_client	 cl;
@@ -388,8 +387,8 @@ stream_run(struct kore_task *t)
 	if ((msg = hosts_shared(s->uri, s->peer, &conn, &cl)) != NULL) {
 		say(t, "{\"id\":%ju,\"error\":\"the host does not answer\"}",
 		    (uintmax_t)s->id);
-		kore_log(LOG_NOTICE, "stream %s: %s", s->sid, msg);
-		return (KORE_RESULT_OK);
+		log_msg(LOG_NOTICE, "stream %s: %s", s->sid, msg);
+		return (WEB_OK);
 	}
 	memset(&r, 0, sizeof(r));
 	pthread_mutex_init(&r.lock, NULL);
@@ -464,7 +463,7 @@ out:
 	}
 	pthread_mutex_destroy(&r.lock);
 	pthread_cond_destroy(&r.wake);
-	return (KORE_RESULT_OK);
+	return (WEB_OK);
 }
 
 static void
@@ -473,41 +472,36 @@ stream_free(struct stream *s)
 
 	LIST_REMOVE(s, list);
 	nstreams--;
-	kore_task_destroy(&s->task);
-	kore_free(s->uri);
-	kore_free(s->peer);
-	kore_free(s->name);
-	kore_free(s);
+	task_destroy(&s->task);
+	free(s->uri);
+	free(s->peer);
+	free(s->name);
+	free(s);
 }
 
 /* In the worker: what the task wrote goes to the socket, if it is there. */
 static void
-stream_ready(struct kore_task *t)
+stream_ready(struct task *t)
 {
 	struct stream	*s;
 	u_int32_t	 len;
-	int		 avail;
 
 	s = (struct stream *)t;
 	/* Every part that is there: the event comes once for several. */
-	for (;;) {
-		avail = 0;
-		if (t->fds[0] == -1 || ioctl(t->fds[0], FIONREAD, &avail) ==
-		    -1 || avail < (int)sizeof(u_int32_t))
-			break;
-		len = kore_task_channel_read(t, part, STREAM_PART);
+	while (task_channel_pending(t)) {
+		len = task_channel_read(t, part, STREAM_PART);
 		if (len > STREAM_PART)
 			continue;
 		if (s->c != NULL)
-			kore_websocket_send(s->c, WEBSOCKET_OP_TEXT, part,
+			ws_send(s->c, WS_OP_TEXT, part,
 			    len);
 	}
-	if (kore_task_finished(t))
+	if (task_finished(t))
 		stream_free(s);
 }
 
 void
-stream_connect(struct connection *c)
+stream_connect(struct conn *c)
 {
 
 	(void)c;
@@ -519,7 +513,7 @@ stream_connect(struct connection *c)
  * host asked for is theirs to read, or refused as if it were not.
  */
 static bool
-stream_host_ok(struct connection *c, const char *sid)
+stream_host_ok(struct conn *c, const char *sid)
 {
 
 	return (user_host(c->hdlr_extra, sid) != ROLE_NONE);
@@ -527,7 +521,7 @@ stream_host_ok(struct connection *c, const char *sid)
 
 /* The socket went: its requests stop, and end with nobody to tell. */
 void
-stream_disconnect(struct connection *c)
+stream_disconnect(struct conn *c)
 {
 	struct stream	*s;
 
@@ -537,23 +531,23 @@ stream_disconnect(struct connection *c)
 			atomic_store(&s->stop, true);
 		}
 	(void)follow_stop(c, 0, true);
-	kore_free(c->hdlr_extra);
+	free(c->hdlr_extra);
 	c->hdlr_extra = NULL;
 }
 
 static void
-refuse(struct connection *c, uint64_t id, const char *why)
+refuse(struct conn *c, uint64_t id, const char *why)
 {
 	char	buf[256];
 	int	n;
 
 	n = snprintf(buf, sizeof(buf), "{\"id\":%ju,\"error\":\"%s\"}",
 	    (uintmax_t)id, why);
-	kore_websocket_send(c, WEBSOCKET_OP_TEXT, buf, (size_t)n);
+	ws_send(c, WS_OP_TEXT, buf, (size_t)n);
 }
 
 void
-stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
+stream_message(struct conn *c, u_int8_t op, void *data, size_t len)
 {
 	const struct server	*sv;
 	struct ucl_parser	*p;
@@ -563,7 +557,7 @@ stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
 	uint64_t		 id;
 	uint8_t			 kind;
 
-	if (op != WEBSOCKET_OP_TEXT || len == 0 || len > 1024)
+	if (op != WS_OP_TEXT || len == 0 || len > 1024)
 		return;
 	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
 	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
@@ -609,22 +603,22 @@ stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
 			    "again");
 		else {
 			if (part == NULL)
-				part = kore_malloc(STREAM_PART);
-			s = kore_calloc(1, sizeof(*s));
+				part = xmalloc(STREAM_PART);
+			s = xcalloc(1, sizeof(*s));
 			s->c = c;
 			s->id = id;
 			atomic_init(&s->stop, false);
 			strlcpy(s->sid, sv->id, sizeof(s->sid));
 			strlcpy(s->read, rd, sizeof(s->read));
-			s->uri = kore_strdup(sv->uri);
+			s->uri = xstrdup(sv->uri);
 			s->peer = sv->peer_name != NULL ?
-			    kore_strdup(sv->peer_name) : NULL;
-			s->name = kore_strdup(sv->name);
+			    xstrdup(sv->peer_name) : NULL;
+			s->name = xstrdup(sv->name);
 			LIST_INSERT_HEAD(&streams, s, list);
 			nstreams++;
-			kore_task_create(&s->task, read_run);
-			kore_task_bind_callback(&s->task, stream_ready);
-			kore_task_run(&s->task);
+			task_create(&s->task, read_run);
+			task_bind_callback(&s->task, stream_ready);
+			task_run(&s->task);
 		}
 		ucl_object_unref(o);
 		return;
@@ -661,14 +655,14 @@ stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
 		refuse(c, id, "too much is being read at once: try again");
 	else {
 		if (part == NULL)
-			part = kore_malloc(STREAM_PART);
-		s = kore_calloc(1, sizeof(*s));
+			part = xmalloc(STREAM_PART);
+		s = xcalloc(1, sizeof(*s));
 		s->c = c;
 		s->id = id;
 		atomic_init(&s->stop, false);
 		strlcpy(s->sid, sv->id, sizeof(s->sid));
-		s->uri = kore_strdup(sv->uri);
-		s->peer = sv->peer_name != NULL ? kore_strdup(sv->peer_name) :
+		s->uri = xstrdup(sv->uri);
+		s->peer = sv->peer_name != NULL ? xstrdup(sv->peer_name) :
 		    NULL;
 		strlcpy(s->filter, filter, sizeof(s->filter));
 		s->kind = kind;
@@ -681,9 +675,9 @@ stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
 			strlcpy(s->jail, jail, sizeof(s->jail));
 		LIST_INSERT_HEAD(&streams, s, list);
 		nstreams++;
-		kore_task_create(&s->task, stream_run);
-		kore_task_bind_callback(&s->task, stream_ready);
-		kore_task_run(&s->task);
+		task_create(&s->task, stream_run);
+		task_bind_callback(&s->task, stream_ready);
+		task_run(&s->task);
 	}
 	ucl_object_unref(o);
 }
@@ -699,16 +693,15 @@ api_stream(struct http_request *req)
 	const char	*v;
 
 	if (!guard(req, false))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (!http_request_header(req, "origin", &v) || (strcmp(v,
 	    cfg.origin) != 0 && !cluster_origin(v)))
 		return (reply_error(req, 403, "csrf", "not from the console's "
 		    "own page"));
 	/* Whose socket: the user's name stays with the connection. */
-	kore_free(req->owner->hdlr_extra);
-	req->owner->hdlr_extra = session_user(req) != NULL ? kore_strdup(
+	free(req->owner->hdlr_extra);
+	req->owner->hdlr_extra = session_user(req) != NULL ? xstrdup(
 	    session_user(req)) : NULL;
-	kore_websocket_handshake(req, "stream_connect", "stream_message",
-	    "stream_disconnect");
-	return (KORE_RESULT_OK);
+	ws_handshake(req, stream_connect, stream_message, stream_disconnect);
+	return (WEB_OK);
 }

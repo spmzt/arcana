@@ -5,7 +5,7 @@
  */
 
 /*
- * Requests to arcana-agent.  Each one runs in a Kore task thread, which
+ * Requests to arcana-agent.  Each one runs in a task thread, which
  * makes a synchronous cblink call (mutual TLS over TCP, or the local
  * socket) so the event loop never waits on a jail(8) that takes minutes.
  * The reply's typed structures become JSON here, and the console's own
@@ -99,7 +99,7 @@ enum op {
 };
 
 struct call {
-	struct kore_task	 task;		/* first: Kore frees the call */
+	struct task	 task;		/* first: the server frees the call */
 	enum op			 op;
 	char			 sid[9];
 	char			*sname;
@@ -393,7 +393,7 @@ static ucl_object_t *step_object(int, int, const char *, const char *,
 		    const char *, bool, uint64_t);
 static ucl_object_t *trace_object(struct call *, const struct arc_step *,
 		    size_t, const char *, bool, uint64_t);
-static int	 call_run(struct kore_task *);
+static int	 call_run(struct task *);
 static void	 call_release(struct call *);
 static int	 call_start(struct http_request *, struct call *);
 static int	 call_finish(struct http_request *);
@@ -504,12 +504,12 @@ sloop_start(void)
 	int		error;
 
 	if ((error = cbl_loop_new(ctx, &sloop)) != 0) {
-		kore_log(LOG_ERR, "cbl_loop_new: %s", strerror(error));
+		log_msg(LOG_ERR, "cbl_loop_new: %s", strerror(error));
 		sloop = NULL;
 		return;
 	}
 	if ((error = pthread_create(&tid, NULL, sloop_run, NULL)) != 0) {
-		kore_log(LOG_ERR, "pthread_create: %s", strerror(error));
+		log_msg(LOG_ERR, "pthread_create: %s", strerror(error));
 		cbl_loop_free(sloop);
 		sloop = NULL;
 		return;
@@ -1026,7 +1026,7 @@ hosts_init(void)
 	int	error;
 
 	if ((error = cbl_ctx_new(&ctx)) != 0) {
-		kore_log(LOG_ERR, "cbl_ctx_new: %s", strerror(error));
+		log_msg(LOG_ERR, "cbl_ctx_new: %s", strerror(error));
 		return (-1);
 	}
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_FRAME, CBLINK_MAX_FRAME);
@@ -1134,10 +1134,10 @@ call_free_vars(struct call *c)
 	size_t	i;
 
 	for (i = 0; i < c->nvars; i++) {
-		kore_free((char *)(uintptr_t)c->vars[i].key);
-		kore_free((char *)(uintptr_t)c->vars[i].value);
+		free((char *)(uintptr_t)c->vars[i].key);
+		free((char *)(uintptr_t)c->vars[i].value);
 	}
-	kore_free(c->vars);
+	free(c->vars);
 	c->vars = NULL;
 	c->nvars = 0;
 }
@@ -1557,7 +1557,7 @@ bundle_of(const char *uri, const char *peer, char **out)
 }
 
 static int
-call_run(struct kore_task *t)
+call_run(struct task *t)
 {
 	struct call		*c;
 	struct arc_client	 cl;
@@ -2067,7 +2067,7 @@ connected:
 				hosts_release(c->uri, c->peer, fconn, ftls,
 				    &fcl, true);
 			} else
-				kore_log(LOG_WARNING, "%s: job %ju unconfirmed: "
+				log_msg(LOG_WARNING, "%s: job %ju unconfirmed: "
 				    "no new connection to the host: %s", c->uri,
 				    (uintmax_t)c->jobid, fe);
 		}
@@ -2697,8 +2697,8 @@ connected:
 			size_t		  n;
 
 			/* A copy: the call's own may be sent again. */
-			copy = kore_strdup(c->text != NULL ? c->text : "");
-			nv = kore_calloc(4, sizeof(*nv));
+			copy = xstrdup(c->text != NULL ? c->text : "");
+			nv = xcalloc(4, sizeof(*nv));
 			n = 0;
 			for (p = copy; p != NULL && n < 4; ) {
 				line = strsep(&p, "\n");
@@ -2708,8 +2708,8 @@ connected:
 			boq.names.v = nv;
 			boq.names.n = n;
 			error = arc_builder_options(&cl, &boq, &bor);
-			kore_free(nv);
-			kore_free(copy);
+			free(nv);
+			free(copy);
 		}
 		if (error != 0)
 			goto rpcfail;
@@ -2839,8 +2839,8 @@ connected:
 			char		 *p, *line, *copy;
 			size_t		  n;
 
-			copy = kore_strdup(c->text != NULL ? c->text : "");
-			nv = kore_calloc(10, sizeof(*nv));
+			copy = xstrdup(c->text != NULL ? c->text : "");
+			nv = xcalloc(10, sizeof(*nv));
 			n = 0;
 			for (p = copy; p != NULL && n < 10; ) {
 				line = strsep(&p, "\n");
@@ -2850,8 +2850,8 @@ connected:
 			surq.names.v = nv;
 			surq.names.n = n;
 			error = arc_suricata_rules(&cl, &surq, &surr);
-			kore_free(nv);
-			kore_free(copy);
+			free(nv);
+			free(copy);
 		}
 		if (error != 0)
 			goto rpcfail;
@@ -3341,7 +3341,7 @@ done:
 	    NULL) && cbl_conn_is_open(conn)) {
 		arc_client_fini(&cl);
 		pool_give(c->uri, c->peer, conn, tls, &cl, box);
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	}
 	if (cl.conn != NULL)
 		arc_client_fini(&cl);
@@ -3351,7 +3351,7 @@ done:
 		cbl_tls_free(tls);
 	/* The connection, and with it the subscription, is gone. */
 	free(box);
-	return (KORE_RESULT_OK);
+	return (WEB_OK);
 }
 
 /*
@@ -3400,15 +3400,15 @@ call_new(struct http_request *req, enum op op)
 	if (!host_allowed(req, sid, mutate, op == OP_AGENT_UPDATE || op ==
 	    OP_AGENT_BUILD || op == OP_CONSOLE_UPDATE))
 		return (NULL);
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	c->op = op;
 	c->reads = req->method == HTTP_METHOD_GET;
 	c->t0 = t0;
 	c->auth_us = t1 - t0;
 	strlcpy(c->sid, s->id, sizeof(c->sid));
-	c->sname = kore_strdup(s->name);
-	c->uri = kore_strdup(s->uri);
-	c->peer = s->peer_name != NULL ? kore_strdup(s->peer_name) : NULL;
+	c->sname = xstrdup(s->name);
+	c->uri = xstrdup(s->uri);
+	c->peer = s->peer_name != NULL ? xstrdup(s->peer_name) : NULL;
 	c->safe_wait = servers_safe_wait(s->uri);
 	snprintf(c->route, sizeof(c->route), "%s %s",
 	    req->method == HTTP_METHOD_GET ? "GET" :
@@ -3421,10 +3421,10 @@ call_start(struct http_request *req, struct call *c)
 {
 
 	req->hdlr_extra = c;
-	kore_task_create(&c->task, call_run);
-	kore_task_bind_request(&c->task, req);
-	kore_task_run(&c->task);
-	return (KORE_RESULT_RETRY);
+	task_create(&c->task, call_run);
+	task_bind_request(&c->task, req);
+	task_run(&c->task);
+	return (WEB_RETRY);
 }
 
 /*
@@ -3441,25 +3441,25 @@ read_route(struct http_request *req, enum op op, read_setup *setup)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, op)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (setup != NULL && (why = setup(c, RQ_OF(req))) != NULL) {
 		call_release(c);
-		kore_free(c);
+		free(c);
 		return (reply_error(req, 400, "invalid", "%s", why));
 	}
 	return (call_start(req, c));
 }
 
-/* Called again by Kore until the task is done, then replies. */
+/* Called again by the server until the task is done, then replies. */
 static int
 call_finish(struct http_request *req)
 {
 	struct call	*c;
 
 	c = req->hdlr_extra;
-	if (kore_task_state(&c->task) != KORE_TASK_STATE_FINISHED) {
+	if (task_state(&c->task) != TASK_STATE_FINISHED) {
 		http_request_sleep(req);
-		return (KORE_RESULT_RETRY);
+		return (WEB_RETRY);
 	}
 	http_response_header(req, "content-type",
 	    "application/json; charset=utf-8");
@@ -3469,12 +3469,12 @@ call_finish(struct http_request *req)
 		http_response(req, c->status, c->json, strlen(c->json));
 	else
 		http_response(req, HTTP_STATUS_INTERNAL_ERROR, NULL, 0);
-	return (KORE_RESULT_OK);
+	return (WEB_OK);
 }
 
 /*
  * on_free of the host routes: what the call holds goes with the request,
- * whether it was answered or the browser went away first.  Kore asks
+ * whether it was answered or the browser went away first.  The server asks
  * every time it tries to free the request, also while the task still
  * runs; it destroys the finished task and frees the call itself.
  */
@@ -3483,7 +3483,7 @@ api_call_free(struct http_request *req)
 {
 	struct call	*c;
 
-	if ((c = req->hdlr_extra) == NULL || !kore_task_finished(&c->task))
+	if ((c = req->hdlr_extra) == NULL || !task_finished(&c->task))
 		return;
 	call_release(c);
 }
@@ -3496,38 +3496,38 @@ call_release(struct call *c)
 
 	free(c->json);
 	c->json = NULL;
-	kore_free(c->sname);
-	kore_free(c->uri);
-	kore_free(c->peer);
+	free(c->sname);
+	free(c->uri);
+	free(c->peer);
 	c->sname = c->uri = c->peer = NULL;
-	kore_free(c->host_keys);
+	free(c->host_keys);
 	c->host_keys = NULL;
-	kore_free(c->text);
+	free(c->text);
 	c->text = NULL;
-	kore_free(c->listen);
-	kore_free(c->unlisten);
-	kore_free(c->sctp_also);
-	kore_free(c->chat);
+	free(c->listen);
+	free(c->unlisten);
+	free(c->sctp_also);
+	free(c->chat);
 	c->listen = c->unlisten = c->sctp_also = c->chat = NULL;
-	kore_free(c->from_uri);
-	kore_free(c->from_peer);
+	free(c->from_uri);
+	free(c->from_peer);
 	c->from_uri = c->from_peer = NULL;
 	if (c->key != NULL)
 		explicit_bzero(c->key, strlen(c->key));
 	if (c->new_key != NULL)
 		explicit_bzero(c->new_key, strlen(c->new_key));
-	kore_free(c->key);
-	kore_free(c->new_key);
+	free(c->key);
+	free(c->new_key);
 	c->key = c->new_key = NULL;
 	call_free_vars(c);
 	for (i = 0; i < c->nnames; i++)
-		kore_free(c->names[i]);
-	kore_free(c->names);
+		free(c->names[i]);
+	free(c->names);
 	c->names = NULL;
 	c->nnames = 0;
 	for (i = 0; i < c->nspecs; i++)
 		spec_free(&c->specs[i]);
-	kore_free(c->specs);
+	free(c->specs);
 	c->specs = NULL;
 	c->nspecs = 0;
 }
@@ -3552,7 +3552,7 @@ api_service_action(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_SERVICE_ACTION)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	body = read_json(req);
 	a = body != NULL ? ucl_str(body, "action") : NULL;
 	for (i = 0; a != NULL && i < nitems(service_action_names); i++)
@@ -3561,10 +3561,10 @@ api_service_action(struct http_request *req)
 	ucl_object_unref(body);
 	if (a == NULL || i == nitems(service_action_names) ||
 	    !capture(req, 5, c->jail, sizeof(c->jail))) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "action is one of "
 		    "start, stop, restart, reload, enable, disable"));
 	}
@@ -3588,20 +3588,20 @@ api_agent_build(struct http_request *req)
 	/* The same repository, for the console itself, where it runs. */
 	if ((c = call_new(req, strstr(req->path, "/console-update") != NULL ?
 	    OP_CONSOLE_UPDATE : OP_AGENT_BUILD)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (cfg.agent_source == NULL) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 409, "unconfigured", "agent_source "
 		    "in web.conf names no repository to build from"));
 	}
 	if (c->op == OP_CONSOLE_UPDATE && strncmp(c->uri, "unix:", 5) != 0) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 409, "remote", "the console is "
 		    "updated through the agent of the host it runs on: a "
 		    "server added by its local socket"));
@@ -3610,7 +3610,7 @@ api_agent_build(struct http_request *req)
 	if ((body = read_json(req)) != NULL) {
 		if ((v = ucl_object_lookup(body, "host_keys")) != NULL &&
 		    ucl_object_type(v) == UCL_STRING)
-			c->host_keys = kore_strdup(ucl_object_tostring(v));
+			c->host_keys = xstrdup(ucl_object_tostring(v));
 		ucl_object_unref(body);
 	}
 	return (call_start(req, c));
@@ -3629,7 +3629,7 @@ api_agent_update(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_AGENT_UPDATE)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((body = read_json(req)) != NULL) {
 		c->restart = ucl_object_toboolean(ucl_object_lookup(body,
 		    "restart"));
@@ -3655,12 +3655,12 @@ api_service_config(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_SERVICE_CONFIG)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (!capture(req, 5, c->jail, sizeof(c->jail))) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "bad service name"));
 	}
 	if (req->method == HTTP_METHOD_POST && (body = read_json(req)) != NULL) {
@@ -3672,13 +3672,13 @@ api_service_config(struct http_request *req)
 		    ucl_object_iterate(set, &it, true) != NULL)
 			n++;
 		if (n > 0 && n <= 64) {
-			c->vars = kore_calloc(n, sizeof(*c->vars));
+			c->vars = xcalloc(n, sizeof(*c->vars));
 			it = NULL;
 			while (set != NULL && ucl_object_type(set) == UCL_OBJECT &&
 			    (v = ucl_object_iterate(set, &it, true)) != NULL) {
 				c->vars[c->nvars].key =
-				    kore_strdup(ucl_object_key(v));
-				c->vars[c->nvars].value = kore_strdup(
+				    xstrdup(ucl_object_key(v));
+				c->vars[c->nvars].value = xstrdup(
 				    ucl_object_tostring_forced(v));
 				c->nvars++;
 			}
@@ -3688,7 +3688,7 @@ api_service_config(struct http_request *req)
 				if (ucl_object_type(v) != UCL_STRING)
 					continue;
 				c->vars[c->nvars].key =
-				    kore_strdup(ucl_object_tostring(v));
+				    xstrdup(ucl_object_tostring(v));
 				c->vars[c->nvars].remove = true;
 				c->nvars++;
 			}
@@ -3736,7 +3736,7 @@ api_action(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_ACTION)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	body = read_json(req);
 	a = body != NULL ? ucl_str(body, "action") : NULL;
 	for (i = 0; a != NULL && i < nitems(action_names); i++)
@@ -3745,10 +3745,10 @@ api_action(struct http_request *req)
 	ucl_object_unref(body);
 	if (a == NULL || i == nitems(action_names) ||
 	    !capture(req, 5, c->jail, sizeof(c->jail))) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid",
 		    "action is one of start, stop, restart, kill"));
 	}
@@ -3771,7 +3771,7 @@ api_address(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_ADDRESS)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	body = read_json(req);
 	addr = body != NULL ? ucl_str(body, "address") : NULL;
 	ifname = body != NULL ? ucl_str(body, "interface") : NULL;
@@ -3781,10 +3781,10 @@ api_address(struct http_request *req)
 	    sizeof(c->ifname)) || !capture(req, 5, c->jail,
 	    sizeof(c->jail))) {
 		ucl_object_unref(body);
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "an address is "
 		    "needed, an interface name is at most 15 characters"));
 	}
@@ -3952,7 +3952,7 @@ api_bird_config(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_BIRD_CONFIG)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	bad = false;
 	if ((body = read_json(req)) == NULL)
 		bad = true;
@@ -3967,7 +3967,7 @@ api_bird_config(struct http_request *req)
 		c->refresh = ucl_flag(body, "safe");
 		c->config_only = ucl_flag(body, "confirm");
 		if ((s = ucl_str(body, "text")) != NULL)
-			c->text = kore_strdup(s);
+			c->text = xstrdup(s);
 		else if (!c->config_only)
 			bad = true;
 		c->dry_run = ucl_flag(body, "check");
@@ -3981,11 +3981,11 @@ api_bird_config(struct http_request *req)
 		ucl_object_unref(body);
 	}
 	if (bad) {
-		kore_free(c->text);
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->text);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "path is a whole path "
 		    "of letters, digits and . _ / -; a change needs text and "
 		    "the sha256 of what it was made from"));
@@ -4058,7 +4058,7 @@ api_ipfw_rules(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_IPFW_RULES)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	bad = !pick_scope(RQ_OF(req), c);
 	if (!bad) {
 		if ((body = read_json(req)) == NULL)
@@ -4067,7 +4067,7 @@ api_ipfw_rules(struct http_request *req)
 			if ((s = ucl_str(body, "sha256")) != NULL)
 				strlcpy(c->address, s, sizeof(c->address));
 			if ((s = ucl_str(body, "text")) != NULL)
-				c->text = kore_strdup(s);
+				c->text = xstrdup(s);
 			else
 				bad = true;
 			c->dry_run = ucl_flag(body, "check");
@@ -4075,11 +4075,11 @@ api_ipfw_rules(struct http_request *req)
 		}
 	}
 	if (bad) {
-		kore_free(c->text);
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->text);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "a change needs text "
 		    "and the sha256 of what it was made from; jail is a "
 		    "jail's name; from is rc"));
@@ -4104,7 +4104,7 @@ api_fstab(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_FSTAB)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	bad = false;
 	{
 		if ((body = read_json(req)) == NULL)
@@ -4113,7 +4113,7 @@ api_fstab(struct http_request *req)
 			if ((s = ucl_str(body, "sha256")) != NULL)
 				strlcpy(c->address, s, sizeof(c->address));
 			if ((s = ucl_str(body, "text")) != NULL)
-				c->text = kore_strdup(s);
+				c->text = xstrdup(s);
 			else
 				bad = true;
 			c->dry_run = ucl_flag(body, "check");
@@ -4121,11 +4121,11 @@ api_fstab(struct http_request *req)
 		}
 	}
 	if (bad) {
-		kore_free(c->text);
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->text);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "a change needs text "
 		    "and the sha256 of what it was made from"));
 	}
@@ -4149,11 +4149,11 @@ api_transport(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_TRANSPORT)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((body = read_json(req)) != NULL) {
 		c->retry = ucl_flag(body, "retry");
 		if (ucl_str(body, "sctp_also") != NULL)
-			c->sctp_also = kore_strdup(ucl_str(body, "sctp_also"));
+			c->sctp_also = xstrdup(ucl_str(body, "sctp_also"));
 		ucl_object_unref(body);
 	}
 	return (call_start(req, c));
@@ -4173,7 +4173,7 @@ api_config_export(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_CONFIG_EXPORT)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	c->reads = true;
 	if (req->method == HTTP_METHOD_POST && (body = read_json(req)) !=
 	    NULL) {
@@ -4205,10 +4205,10 @@ api_config_apply(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_CONFIG_APPLY)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((body = read_json(req)) == NULL) {
 		call_release(c);
-		kore_free(c);
+		free(c);
 		return (reply_error(req, 400, "invalid", "a JSON object: bundle "
 		    "or from"));
 	}
@@ -4227,25 +4227,25 @@ api_config_apply(struct http_request *req)
 		    NULL) {
 			ucl_object_unref(body);
 			call_release(c);
-			kore_free(c);
+			free(c);
 			return (reply_error(req, 400, "invalid", "%s",
 			    template_name_ok(tn) ? why : "a template's name"));
 		}
-		c->text = kore_strdup(json);
+		c->text = xstrdup(json);
 		free(json);
 	} else if (fid != NULL && (from = server_find(fid)) != NULL &&
 	    host_role_ok(req, fid, false, false)) {
-		c->from_uri = kore_strdup(from->uri);
+		c->from_uri = xstrdup(from->uri);
 		c->from_peer = from->peer_name != NULL ?
-		    kore_strdup(from->peer_name) : NULL;
+		    xstrdup(from->peer_name) : NULL;
 	} else if (b != NULL && ucl_object_type(b) == UCL_OBJECT &&
 	    (text = ucl_object_emit(b, UCL_EMIT_JSON_COMPACT)) != NULL) {
-		c->text = kore_strdup((char *)text);
+		c->text = xstrdup((char *)text);
 		free(text);
 	} else {
 		ucl_object_unref(body);
 		call_release(c);
-		kore_free(c);
+		free(c);
 		return (reply_error(req, 400, "invalid", fid != NULL ? "no "
 		    "such host to read the bundle from" : "bundle, a host's "
 		    "bundle as config-export made it, or from, a host"));
@@ -4271,7 +4271,7 @@ api_transport_switch(struct http_request *req)
 	size_t		 len;
 
 	if ((c = req->hdlr_extra) != NULL) {
-		if (kore_task_state(&c->task) == KORE_TASK_STATE_FINISHED &&
+		if (task_state(&c->task) == TASK_STATE_FINISHED &&
 		    c->moved) {
 			c->moved = false;
 			if (servers_move(c->sid, c->uri) == -1) {
@@ -4286,7 +4286,7 @@ api_transport_switch(struct http_request *req)
 		return (call_finish(req));
 	}
 	if ((c = call_new(req, OP_HELLO)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	to = NULL;
 	if ((body = read_json(req)) != NULL)
 		to = ucl_str(body, "transport");
@@ -4296,18 +4296,18 @@ api_transport_switch(struct http_request *req)
 	    strcmp(to, "tcp") != 0)) {
 		if (body != NULL)
 			ucl_object_unref(body);
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "transport is sctp "
 		    "or tcp, for a server reached over one of them"));
 	}
 	len = strlen(rest) + 8;
-	uri = kore_malloc(len);
+	uri = xmalloc(len);
 	snprintf(uri, len, "%s://%s", to, rest);
 	ucl_object_unref(body);
-	kore_free(c->uri);
+	free(c->uri);
 	c->uri = uri;
 	c->fresh = true;
 	c->reads = false;
@@ -4409,7 +4409,7 @@ api_history(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_HISTORY)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	body = read_json(req);
 	step = body != NULL ? ucl_object_toint(ucl_object_lookup(body,
 	    "step")) : 0;
@@ -4430,28 +4430,28 @@ api_history(struct http_request *req)
 		for (k = 0; k < nl; k++)
 			if (l[k] < 0 || l[k] > 100)
 				step = 0;
-		c->names = kore_calloc(nl, sizeof(*c->names));
+		c->names = xcalloc(nl, sizeof(*c->names));
 		c->nnames = nl;
 		for (k = 0; k < nl; k++) {
-			c->names[k] = kore_malloc(8);
+			c->names[k] = xmalloc(8);
 			snprintf(c->names[k], 8, "%lld", (long long)l[k]);
 		}
 	}
 	/* "net:igb0=125000000,jail-cpu:web=80": the agent checks them. */
 	if (body != NULL && ucl_str(body, "rules") != NULL && strlen(
 	    ucl_str(body, "rules")) <= 2048)
-		c->text = kore_strdup(ucl_str(body, "rules"));
+		c->text = xstrdup(ucl_str(body, "rules"));
 	if (body != NULL)
 		ucl_object_unref(body);
 	if (step < 1 || step > 3600 || keep < 0 || keep > 5000) {
-		kore_free(c->text);
+		free(c->text);
 		for (keep = 0; keep < (int64_t)c->nnames; keep++)
-			kore_free(c->names[keep]);
-		kore_free(c->names);
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+			free(c->names[keep]);
+		free(c->names);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "step is 1 to 3600 "
 		    "seconds, keep 0 to 5000 samples"));
 	}
@@ -4610,7 +4610,7 @@ setup_builder_options(struct call *c, const struct rq *q)
 		len += (size_t)snprintf(buf + len, sizeof(buf) - len, "%s=%s\n",
 		    keys[i], v);
 	}
-	c->text = kore_strdup(buf);
+	c->text = xstrdup(buf);
 	return (NULL);
 }
 
@@ -4645,7 +4645,7 @@ setup_suricata_rules(struct call *c, const struct rq *q)
 		len += (size_t)snprintf(buf + len, sizeof(buf) - len, "%s=%s\n",
 		    keys[i], v);
 	}
-	c->text = kore_strdup(buf);
+	c->text = xstrdup(buf);
 	return (NULL);
 }
 
@@ -4667,7 +4667,7 @@ setup_netstore(struct call *c, const struct rq *q)
 		if (strcmp(v, "nfs") != 0 && strcmp(v, "iscsi") != 0 &&
 		    strcmp(v, "hast") != 0)
 			return ("of is nfs, iscsi or hast");
-		c->text = kore_strdup(v);
+		c->text = xstrdup(v);
 	}
 	return (NULL);
 }
@@ -4690,7 +4690,7 @@ setup_system(struct call *c, const struct rq *q)
 		if (strspn(v, "abcdefghijklmnopqrstuvwxyz0123456789._") !=
 		    strlen(v))
 			return ("of is a file's name, or host");
-		c->text = kore_strdup(v);
+		c->text = xstrdup(v);
 	}
 	return (NULL);
 }
@@ -4769,7 +4769,7 @@ api_capture(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_CAPTURE)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	bad = !pick_scope(RQ_OF(req), c) || (body = read_json(req)) == NULL;
 	if (!bad) {
 		if ((s = ucl_str(body, "source")) != NULL) {
@@ -4784,7 +4784,7 @@ api_capture(struct http_request *req)
 			if (strlen(s) > 128 || strpbrk(s, "\r\n") != NULL)
 				bad = true;
 			else
-				c->text = kore_strdup(s);
+				c->text = xstrdup(s);
 		}
 		if ((v = ucl_object_lookup(body, "seconds")) != NULL)
 			c->fib = (uint32_t)MAX(0, MIN(60, ucl_object_toint(v)));
@@ -4795,11 +4795,11 @@ api_capture(struct http_request *req)
 		ucl_object_unref(body);
 	}
 	if (bad) {
-		kore_free(c->text);
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->text);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "a source is an "
 		    "interface's or a tap's name, a filter one line of 128 "
 		    "characters at most; jail is a jail's name"));
@@ -4825,18 +4825,18 @@ api_zfs_key(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_ZFS_KEY)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	bad = (body = read_json(req)) == NULL;
 	if (!bad) {
 		if ((s = ucl_str(body, "dataset")) == NULL || s[0] == '\0' ||
 		    strlen(s) > 255)
 			bad = true;
 		else
-			c->text = kore_strdup(s);
+			c->text = xstrdup(s);
 		if ((s = ucl_str(body, "key")) != NULL && s[0] != '\0')
-			c->key = kore_strdup(s);
+			c->key = xstrdup(s);
 		if ((s = ucl_str(body, "new_key")) != NULL && s[0] != '\0')
-			c->new_key = kore_strdup(s);
+			c->new_key = xstrdup(s);
 		/* Made encrypted, with the new key: its encryption. */
 		if ((s = ucl_str(body, "create")) != NULL && s[0] != '\0') {
 			if (strlen(s) >= sizeof(c->zcreate) || strspn(s,
@@ -4862,13 +4862,13 @@ api_zfs_key(struct http_request *req)
 			explicit_bzero(c->key, strlen(c->key));
 		if (c->new_key != NULL)
 			explicit_bzero(c->new_key, strlen(c->new_key));
-		kore_free(c->key);
-		kore_free(c->new_key);
-		kore_free(c->text);
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->key);
+		free(c->new_key);
+		free(c->text);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "a dataset, and a key "
 		    "to load or a new one, 512 characters at most"));
 	}
@@ -4889,7 +4889,7 @@ api_tls(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_TLS)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	c->renew = true;
 	return (call_start(req, c));
 }
@@ -4986,14 +4986,14 @@ api_pkg_upgrade(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_PKG_UPGRADE)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	body = read_json(req);
 	if (body == NULL || !pick_jail(c, ucl_str(body, "jail"))) {
 		ucl_object_unref(body);
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "a JSON object with "
 		    "an optional jail and packages"));
 	}
@@ -5008,13 +5008,13 @@ api_pkg_upgrade(struct http_request *req)
 		    "pkg_repo"));
 	a = ucl_object_lookup(body, "packages");
 	if ((n = ucl_array_size(a)) > 0) {
-		c->names = kore_calloc(n, sizeof(*c->names));
+		c->names = xcalloc(n, sizeof(*c->names));
 		it = NULL;
 		while ((v = ucl_object_iterate(a, &it, true)) != NULL &&
 		    c->nnames < n)
 			if (ucl_object_type(v) == UCL_STRING)
 				c->names[c->nnames++] =
-				    kore_strdup(ucl_object_tostring(v));
+				    xstrdup(ucl_object_tostring(v));
 	}
 	ucl_object_unref(body);
 	return (call_start(req, c));
@@ -5079,56 +5079,56 @@ spec_free(struct arc_job_spec *sp)
 {
 	size_t	i;
 
-	kore_free((char *)(uintptr_t)sp->jail);
-	kore_free((char *)(uintptr_t)sp->address);
-	kore_free((char *)(uintptr_t)sp->interface);
-	kore_free((char *)(uintptr_t)sp->service);
-	kore_free((char *)(uintptr_t)sp->destination);
-	kore_free((char *)(uintptr_t)sp->gateway);
-	kore_free((char *)(uintptr_t)sp->tunnel_local);
-	kore_free((char *)(uintptr_t)sp->tunnel_remote);
-	kore_free((char *)(uintptr_t)sp->parent);
-	kore_free((char *)(uintptr_t)sp->verb);
-	kore_free((char *)(uintptr_t)sp->source);
-	kore_free((char *)(uintptr_t)sp->peer);
-	kore_free((char *)(uintptr_t)sp->endpoint);
-	kore_free((char *)(uintptr_t)sp->allowed_ips);
-	kore_free((char *)(uintptr_t)sp->description);
-	kore_free((char *)(uintptr_t)sp->conn);
-	kore_free((char *)(uintptr_t)sp->ipsec_mode);
-	kore_free((char *)(uintptr_t)sp->local_ts);
-	kore_free((char *)(uintptr_t)sp->remote_ts);
-	kore_free((char *)(uintptr_t)sp->pubkey);
-	kore_free((char *)(uintptr_t)sp->start_action);
-	kore_free((char *)(uintptr_t)sp->local_id);
-	kore_free((char *)(uintptr_t)sp->remote_id);
-	kore_free((char *)(uintptr_t)sp->child);
-	kore_free((char *)(uintptr_t)sp->local_cert);
-	kore_free((char *)(uintptr_t)sp->remote_cert);
-	kore_free((char *)(uintptr_t)sp->remote_ca);
-	kore_free((char *)(uintptr_t)sp->addressing);
-	kore_free((char *)(uintptr_t)sp->dataset);
-	kore_free((char *)(uintptr_t)sp->snapshot);
-	kore_free((char *)(uintptr_t)sp->copy);
-	kore_free((char *)(uintptr_t)sp->path);
+	free((char *)(uintptr_t)sp->jail);
+	free((char *)(uintptr_t)sp->address);
+	free((char *)(uintptr_t)sp->interface);
+	free((char *)(uintptr_t)sp->service);
+	free((char *)(uintptr_t)sp->destination);
+	free((char *)(uintptr_t)sp->gateway);
+	free((char *)(uintptr_t)sp->tunnel_local);
+	free((char *)(uintptr_t)sp->tunnel_remote);
+	free((char *)(uintptr_t)sp->parent);
+	free((char *)(uintptr_t)sp->verb);
+	free((char *)(uintptr_t)sp->source);
+	free((char *)(uintptr_t)sp->peer);
+	free((char *)(uintptr_t)sp->endpoint);
+	free((char *)(uintptr_t)sp->allowed_ips);
+	free((char *)(uintptr_t)sp->description);
+	free((char *)(uintptr_t)sp->conn);
+	free((char *)(uintptr_t)sp->ipsec_mode);
+	free((char *)(uintptr_t)sp->local_ts);
+	free((char *)(uintptr_t)sp->remote_ts);
+	free((char *)(uintptr_t)sp->pubkey);
+	free((char *)(uintptr_t)sp->start_action);
+	free((char *)(uintptr_t)sp->local_id);
+	free((char *)(uintptr_t)sp->remote_id);
+	free((char *)(uintptr_t)sp->child);
+	free((char *)(uintptr_t)sp->local_cert);
+	free((char *)(uintptr_t)sp->remote_cert);
+	free((char *)(uintptr_t)sp->remote_ca);
+	free((char *)(uintptr_t)sp->addressing);
+	free((char *)(uintptr_t)sp->dataset);
+	free((char *)(uintptr_t)sp->snapshot);
+	free((char *)(uintptr_t)sp->copy);
+	free((char *)(uintptr_t)sp->path);
 	if (sp->text != NULL)
 		explicit_bzero((char *)(uintptr_t)sp->text, strlen(sp->text));
-	kore_free((char *)(uintptr_t)sp->text);
+	free((char *)(uintptr_t)sp->text);
 	if (sp->preshared_key != NULL)
 		explicit_bzero((char *)(uintptr_t)sp->preshared_key,
 		    strlen(sp->preshared_key));
-	kore_free((char *)(uintptr_t)sp->preshared_key);
-	kore_free((char *)(uintptr_t)sp->lladdr);
-	kore_free((char *)(uintptr_t)sp->user);
-	kore_free((char *)(uintptr_t)sp->pkg_repo);
+	free((char *)(uintptr_t)sp->preshared_key);
+	free((char *)(uintptr_t)sp->lladdr);
+	free((char *)(uintptr_t)sp->user);
+	free((char *)(uintptr_t)sp->pkg_repo);
 	for (i = 0; i < sp->variables.n; i++) {
-		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
-		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
+		free((char *)(uintptr_t)sp->variables.v[i].key);
+		free((char *)(uintptr_t)sp->variables.v[i].value);
 	}
-	kore_free((void *)(uintptr_t)sp->variables.v);
+	free((void *)(uintptr_t)sp->variables.v);
 	for (i = 0; i < sp->names.n; i++)
-		kore_free((char *)(uintptr_t)sp->names.v[i]);
-	kore_free((void *)(uintptr_t)sp->names.v);
+		free((char *)(uintptr_t)sp->names.v[i]);
+	free((void *)(uintptr_t)sp->names.v);
 	memset(sp, 0, sizeof(*sp));
 }
 
@@ -5168,7 +5168,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		case JM_TEXT:
 			if ((a = ucl_str(o, m->field)) != NULL && (*a != '\0' ||
 			    m->keep_empty))
-				*(const char **)at = kore_strdup(a);
+				*(const char **)at = xstrdup(a);
 			break;
 		case JM_NUM:
 			if (v != NULL && ucl_object_type(v) == UCL_INT &&
@@ -5233,8 +5233,8 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			return ("a route's route_name is a list of one name");
 		if ((v = ucl_array_head(names)) != NULL && ucl_object_type(v) ==
 		    UCL_STRING && ucl_object_tostring(v)[0] != '\0') {
-			nv = kore_calloc(1, sizeof(*nv));
-			nv[0] = kore_strdup(ucl_object_tostring(v));
+			nv = xcalloc(1, sizeof(*nv));
+			nv[0] = xstrdup(ucl_object_tostring(v));
 			sp->names.v = nv;
 			sp->names.n = 1;
 		}
@@ -5302,7 +5302,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			if (ucl_array_size(names) != 2)
 				return ("a sysctl job needs a name and a "
 				    "value as its args");
-			kore_free((void *)(uintptr_t)sp->verb);
+			free((void *)(uintptr_t)sp->verb);
 			sp->verb = NULL;
 		} else if (sp->kind == ARC_JOB_KIND_IPSEC_SA) {
 			/* The verb and the interface; but for key, its reqid and
@@ -5323,7 +5323,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 				return ("a jail-allow job names a jail, its "
 				    "allow.name=0|1|unset words as args, 1 to 32, and "
 				    "live, persist or both");
-			kore_free((void *)(uintptr_t)sp->verb);
+			free((void *)(uintptr_t)sp->verb);
 			sp->verb = NULL;
 		} else if (sp->kind == ARC_JOB_KIND_RTADVD) {
 			/* The interface; the prefix and the DNS servers, or
@@ -5333,7 +5333,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 				return ("an rtadvd job needs an interface, and "
 				    "the prefix then up to 8 DNS servers as "
 				    "its args, or says remove");
-			kore_free((void *)(uintptr_t)sp->verb);
+			free((void *)(uintptr_t)sp->verb);
 			sp->verb = NULL;
 		} else if (sp->kind == ARC_JOB_KIND_NTP) {
 			/* The servers, and no verb; none with remove. */
@@ -5341,7 +5341,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			    == 0 && !sp->remove))
 				return ("an ntp job names 1 to 8 servers, or "
 				    "says remove");
-			kore_free((void *)(uintptr_t)sp->verb);
+			free((void *)(uintptr_t)sp->verb);
 			sp->verb = NULL;
 		} else
 		if (sp->verb == NULL || (n = ucl_array_size(names)) >
@@ -5353,14 +5353,14 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		n = ucl_array_size(names);
 		if (n == 0)
 			break;
-		nv = kore_calloc(n, sizeof(*nv));
+		nv = xcalloc(n, sizeof(*nv));
 		sp->names.v = nv;
 		it = NULL;
 		while ((v = ucl_object_iterate(names, &it, true)) != NULL &&
 		    sp->names.n < n)
 			if (ucl_object_type(v) == UCL_STRING)
 				nv[sp->names.n++] =
-				    kore_strdup(ucl_object_tostring(v));
+				    xstrdup(ucl_object_tostring(v));
 		break;
 	case ARC_JOB_KIND_IF_STATE:
 		if (sp->interface == NULL || (v = ucl_object_lookup(o,
@@ -5382,14 +5382,14 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			n++;
 		if (n == 0 || n > 64)
 			return ("a service-config needs variables to set");
-		vars = kore_calloc(n, sizeof(*vars));
+		vars = xcalloc(n, sizeof(*vars));
 		sp->variables.v = vars;
 		it = NULL;
 		while (set != NULL && ucl_object_type(set) == UCL_OBJECT &&
 		    (v = ucl_object_iterate(set, &it, true)) != NULL) {
-			vars[sp->variables.n].key = kore_strdup(ucl_object_key(v));
+			vars[sp->variables.n].key = xstrdup(ucl_object_key(v));
 			vars[sp->variables.n].value =
-			    kore_strdup(ucl_object_tostring_forced(v));
+			    xstrdup(ucl_object_tostring_forced(v));
 			sp->variables.n++;
 		}
 		it = NULL;
@@ -5398,7 +5398,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			if (ucl_object_type(v) != UCL_STRING)
 				continue;
 			vars[sp->variables.n].key =
-			    kore_strdup(ucl_object_tostring(v));
+			    xstrdup(ucl_object_tostring(v));
 			vars[sp->variables.n].remove = true;
 			sp->variables.n++;
 		}
@@ -5406,14 +5406,14 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	default:
 		names = ucl_object_lookup(o, "packages");
 		if ((n = ucl_array_size(names)) > 0) {
-			nv = kore_calloc(n, sizeof(*nv));
+			nv = xcalloc(n, sizeof(*nv));
 			sp->names.v = nv;
 			it = NULL;
 			while ((v = ucl_object_iterate(names, &it, true)) !=
 			    NULL && sp->names.n < n)
 				if (ucl_object_type(v) == UCL_STRING)
 					nv[sp->names.n++] =
-					    kore_strdup(ucl_object_tostring(v));
+					    xstrdup(ucl_object_tostring(v));
 		}
 		break;
 	}
@@ -5439,14 +5439,14 @@ api_jobs(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_JOB_SUBMIT)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	e = NULL;
 	body = read_json(req);
 	a = body != NULL ? ucl_object_lookup(body, "jobs") : NULL;
 	if ((n = ucl_array_size(a)) == 0 || n > ARC_MAX_BATCH)
 		e = "jobs is a list of 1 to 64 jobs";
 	else {
-		c->specs = kore_calloc(n, sizeof(*c->specs));
+		c->specs = xcalloc(n, sizeof(*c->specs));
 		it = NULL;
 		while (e == NULL && (v = ucl_object_iterate(a, &it, true)) !=
 		    NULL)
@@ -5472,11 +5472,11 @@ api_jobs(struct http_request *req)
 	if (e != NULL) {
 		for (n = 0; n < c->nspecs; n++)
 			spec_free(&c->specs[n]);
-		kore_free(c->specs);
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->specs);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "%s", e));
 	}
 	return (call_start(req, c));
@@ -5496,17 +5496,17 @@ api_jobs_config(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_JOBS_SET)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	body = read_json(req);
 	lanes = body != NULL && ucl_object_lookup(body, "lanes") != NULL ?
 	    ucl_object_toint(ucl_object_lookup(body, "lanes")) : 0;
 	if (body != NULL)
 		ucl_object_unref(body);
 	if (lanes < 1 || lanes > 32) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "lanes is 1 to 32"));
 	}
 	c->fib = (uint32_t)lanes;
@@ -5536,12 +5536,12 @@ api_job(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_JOB_CANCEL)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (!capture(req, 5, id, sizeof(id))) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
+		free(c->sname);
+		free(c->uri);
+		free(c->peer);
+		free(c);
 		return (reply_error(req, 400, "invalid", "bad job number"));
 	}
 	c->jobid = strtoull(id, NULL, 10);
@@ -5559,9 +5559,9 @@ self_call(struct call *c, const char *uri, const char *peer,
 {
 	char	*json;
 
-	c->uri = kore_strdup(uri);
-	c->peer = peer != NULL && peer[0] != '\0' ? kore_strdup(peer) : NULL;
-	c->sname = kore_strdup(name != NULL ? name : uri);
+	c->uri = xstrdup(uri);
+	c->peer = peer != NULL && peer[0] != '\0' ? xstrdup(peer) : NULL;
+	c->sname = xstrdup(name != NULL ? name : uri);
 	c->t0 = now_us();
 	if (c->route[0] == '\0')
 		snprintf(c->route, sizeof(c->route), "workflow %s", what);
@@ -5570,7 +5570,7 @@ self_call(struct call *c, const char *uri, const char *peer,
 	c->json = NULL;
 	*status = c->status;
 	call_release(c);
-	kore_free(c);
+	free(c);
 	return (json);
 }
 
@@ -5584,11 +5584,11 @@ hosts_notify(const char *uri, const char *peer, const char *name,
 {
 	struct call	*c;
 
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	c->op = OP_NOTIFY;
-	c->key = kore_strdup(token);
-	c->chat = kore_strdup(chat);
-	c->text = kore_strdup(text);
+	c->key = xstrdup(token);
+	c->chat = xstrdup(chat);
+	c->text = xstrdup(text);
 	snprintf(c->route, sizeof(c->route), "notify %s", chat);
 	return (self_call(c, uri, peer, name, "notify", status));
 }
@@ -5604,11 +5604,11 @@ hosts_listen(const char *uri, const char *peer, const char *name,
 {
 	struct call	*c;
 
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	c->op = OP_TRANSPORT;
 	c->fresh = true;
-	c->listen = listen != NULL ? kore_strdup(listen) : NULL;
-	c->unlisten = unlisten != NULL ? kore_strdup(unlisten) : NULL;
+	c->listen = listen != NULL ? xstrdup(listen) : NULL;
+	c->unlisten = unlisten != NULL ? xstrdup(unlisten) : NULL;
 	c->listen_keep = keep;
 	snprintf(c->route, sizeof(c->route), "move %s%s%s", listen != NULL ?
 	    "listen " : "", listen != NULL ? listen : "", unlisten != NULL ?
@@ -5628,7 +5628,7 @@ hosts_path_check(const char *uri, const char *peer, const char *name,
 {
 	struct call	*c;
 
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	c->op = OP_PATH_CHECK;
 	c->preply = reply;
 	c->reads = true;
@@ -5652,14 +5652,14 @@ hosts_submit(const char *uri, const char *peer, const char *name,
 	struct call	*c;
 	const char	*e;
 
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	c->op = OP_JOB_SUBMIT;
-	c->specs = kore_calloc(1, sizeof(*c->specs));
+	c->specs = xcalloc(1, sizeof(*c->specs));
 	c->nspecs = 1;
 	if ((e = spec_from_json(job, &c->specs[0])) != NULL) {
 		*errp = e;
 		call_release(c);
-		kore_free(c);
+		free(c);
 		return (NULL);
 	}
 	*errp = NULL;
@@ -5674,7 +5674,7 @@ hosts_job(const char *uri, const char *peer, const char *name, uint64_t id,
 {
 	struct call	*c;
 
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	c->op = OP_JOB;
 	c->jobid = id;
 	c->reads = true;
@@ -5710,7 +5710,7 @@ hosts_arcana(const char *uri, const char *peer, const char *name,
 			break;
 	if (i == nitems(ops))
 		return (NULL);
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	c->op = ops[i].op;
 	c->restart = ops[i].op == OP_AGENT_UPDATE;
 	c->reads = ops[i].op == OP_SOURCE_HEAD || ops[i].op == OP_SOURCE_LOG;
@@ -5744,7 +5744,7 @@ hosts_read(const char *uri, const char *peer, const char *name,
 			break;
 	if (i == nitems(reads))
 		return (NULL);
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	c->op = reads[i].op;
 	c->reads = true;
 	c->installed = reads[i].op == OP_PACKAGES;
@@ -5842,7 +5842,7 @@ hosts_read_live(const char *sid, const char *uri, const char *peer,
 		    n == l && strncmp(read, hreads[i].path, l) == 0)
 			h = &hreads[i];
 	}
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	c->op = h != NULL ? h->op : OP_HELLO;
 	c->reads = true;
 	snprintf(c->sid, sizeof(c->sid), "%s", sid);
@@ -5855,7 +5855,7 @@ hosts_read_live(const char *sid, const char *uri, const char *peer,
 	    h->setup != NULL ? h->setup(c, &q) : NULL;
 	if (why != NULL) {
 		call_release(c);
-		kore_free(c);
+		free(c);
 		top = ucl_object_typed_new(UCL_OBJECT);
 		e = ucl_object_typed_new(UCL_OBJECT);
 		ucl_object_insert_key(e, ucl_object_fromstring("invalid"),
@@ -5902,7 +5902,7 @@ hosts_net_in(const char *uri, const char *peer, const char *name,
 			break;
 	if (i == nitems(net_kind_names))
 		return (NULL);
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	c->op = OP_NETWORK;
 	c->action = (uint8_t)i;
 	c->family = ARC_NET_FAMILY_ALL;
@@ -5924,14 +5924,14 @@ hosts_sdwan_set(const char *uri, const char *peer, const char *name,
 	struct call	*c;
 	char		 label[32];
 
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	c->op = strcmp(what, "rules") == 0 ? OP_SDWAN_RULES : strcmp(what,
 	    "steer") == 0 ? OP_SDWAN_STEER : strcmp(what, "bird") == 0 ?
 	    OP_SDWAN_BIRD : strcmp(what, "dhcp") == 0 ? OP_SDWAN_DHCP :
 	    strcmp(what, "dns") == 0 ? OP_SDWAN_DNS : strcmp(what, "proxy") ==
 	    0 ? OP_SDWAN_PROXY : strcmp(what, "ids") == 0 ? OP_SDWAN_IDS :
 	    OP_SDWAN_PROBES;
-	c->text = kore_strdup(json);
+	c->text = xstrdup(json);
 	snprintf(label, sizeof(label), "sdwan-%s", what);
 	return (self_call(c, uri, peer, name, label, status));
 }
@@ -5959,13 +5959,13 @@ api_security(struct http_request *req)
 	if ((c = call_new(req, strcmp(what, "ids") == 0 ? OP_SDWAN_IDS :
 	    OP_SDWAN_PROXY)) == NULL) {
 		ucl_object_unref(body);
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	}
 	if ((json = security_build(what, ucl_object_lookup(body,
 	    "instances"), c->sname, err, sizeof(err))) == NULL) {
 		ucl_object_unref(body);
 		call_release(c);
-		kore_free(c);
+		free(c);
 		return (reply_error(req, 400, "invalid", "%s", err));
 	}
 	ucl_object_unref(body);
@@ -5984,7 +5984,7 @@ api_sdwan_state(struct http_request *req)
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_SDWAN)) == NULL)
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	/* Only the samples after a time, for a page that keeps the rest. */
 	c->has_pos = query_u64(req, "after", INT64_MAX, &c->pos);
 	return (call_start(req, c));
@@ -6006,7 +6006,7 @@ hosts_sysctl_in(const char *uri, const char *peer, const char *name,
 {
 	struct call	*c;
 
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	c->op = OP_SYSCTL;
 	c->reads = true;
 	snprintf(c->jail, sizeof(c->jail), "%s", prefix);
@@ -6022,7 +6022,7 @@ hosts_events(const char *uri, const char *peer, const char *name,
 {
 	struct call	*c;
 
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	c->op = OP_EVENTS;
 	c->reads = true;
 	c->has_pos = true;

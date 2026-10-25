@@ -234,7 +234,7 @@ cluster_config(const ucl_object_t *top, const char *path)
 	    (o = ucl_object_lookup(c, "listen")) == NULL ||
 	    ucl_object_tostring(o) == NULL ||
 	    (ns = ucl_object_lookup(c, "nodes")) == NULL) {
-		kore_log(LOG_ERR, "%s: cluster needs self, listen and nodes",
+		log_msg(LOG_ERR, "%s: cluster needs self, listen and nodes",
 		    path);
 		return (-1);
 	}
@@ -242,7 +242,7 @@ cluster_config(const ucl_object_t *top, const char *path)
 	it = NULL;
 	while ((n = ucl_object_iterate(ns, &it, true)) != NULL) {
 		if (cl.nn == CRAFT_NODES_MAX) {
-			kore_log(LOG_ERR, "%s: %d nodes at most", path,
+			log_msg(LOG_ERR, "%s: %d nodes at most", path,
 			    CRAFT_NODES_MAX);
 			return (-1);
 		}
@@ -253,7 +253,7 @@ cluster_config(const ucl_object_t *top, const char *path)
 		    sizeof(nd->uri)) >= sizeof(nd->uri) || (strncmp(nd->uri,
 		    "unix:", 5) != 0 && !uri_host(nd->uri, nd->host,
 		    sizeof(nd->host)))) {
-			kore_log(LOG_ERR, "%s: cluster node %s: a uri, "
+			log_msg(LOG_ERR, "%s: cluster node %s: a uri, "
 			    "tcp://host:port", path, ucl_object_key(n));
 			return (-1);
 		}
@@ -263,7 +263,7 @@ cluster_config(const ucl_object_t *top, const char *path)
 		cl.nn++;
 	}
 	if ((cl.self = node_of(self)) == -1) {
-		kore_log(LOG_ERR, "%s: cluster self %s is not one of its nodes",
+		log_msg(LOG_ERR, "%s: cluster self %s is not one of its nodes",
 		    path, self);
 		return (-1);
 	}
@@ -285,7 +285,7 @@ write_file(const char *path, const void *p, size_t len, mode_t mode)
 	if ((len > 0 && write(fd, p, len) != (ssize_t)len) || fchmod(fd,
 	    mode) == -1 || fsync(fd) == -1 || close(fd) == -1 ||
 	    rename(tmp, path) == -1) {
-		kore_log(LOG_ERR, "writing %s: %s", path, strerror(errno));
+		log_msg(LOG_ERR, "writing %s: %s", path, strerror(errno));
 		unlink(tmp);
 		return (-1);
 	}
@@ -571,10 +571,10 @@ apply_one(const struct craft_entry *e)
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, e->name);
 	if (e->gone) {
 		if (unlink(path) == -1 && errno != ENOENT)
-			kore_log(LOG_ERR, "cluster: %s: %s", path,
+			log_msg(LOG_ERR, "cluster: %s: %s", path,
 			    strerror(errno));
 	} else if (store_write(e->name, e->body, e->len) == -1)
-		kore_log(LOG_ERR, "cluster: %s could not be written", path);
+		log_msg(LOG_ERR, "cluster: %s could not be written", path);
 	cl.gen++;
 	changed(e->name);
 }
@@ -734,7 +734,7 @@ peer_fail(struct peer *p, const char *what, int error)
 	snprintf(why, sizeof(why), "%s: %s", what, error != 0 ?
 	    strerror(error) : "refused");
 	if (strcmp(why, p->why) != 0)
-		kore_log(LOG_NOTICE, "cluster: %s: %s", cl.nodes[p->idx].name,
+		log_msg(LOG_NOTICE, "cluster: %s: %s", cl.nodes[p->idx].name,
 		    why);
 	strlcpy(p->why, why, sizeof(p->why));
 }
@@ -917,7 +917,7 @@ send_snapshot(struct peer *p, uint64_t *seqp)
 			peer_fail(p, "documents", err);
 		if (err != 0 || rsp == NULL || !rsp->ok) {
 			if (rsp != NULL && rsp->error != NULL)
-				kore_log(LOG_NOTICE, "cluster: %s refused the "
+				log_msg(LOG_NOTICE, "cluster: %s refused the "
 				    "documents: %s", cl.nodes[p->idx].name,
 				    rsp->error);
 			acl_snapshot_rsp_free(rsp);
@@ -1271,7 +1271,7 @@ acl_snapshot_doit(cbl_req *req, const struct acl_snapshot_req *rq,
 			snprintf(path, sizeof(path), "%s/%s", stage, name);
 			snprintf(to, sizeof(to), "%s/%s", cfg.datadir, name);
 			if (mkdirs_for(to) == -1 || rename(path, to) == -1)
-				kore_log(LOG_ERR, "cluster: %s: %s", to,
+				log_msg(LOG_ERR, "cluster: %s: %s", to,
 				    strerror(errno));
 		}
 		closedir(d);
@@ -1282,7 +1282,7 @@ acl_snapshot_doit(cbl_req *req, const struct acl_snapshot_req *rq,
 	changed(NULL);
 	pump(-1, NULL, NULL);
 	pthread_mutex_unlock(&cl.mu);
-	kore_log(LOG_NOTICE, "cluster: the documents of %s as of %ju taken",
+	log_msg(LOG_NOTICE, "cluster: the documents of %s as of %ju taken",
 	    rq->node, (uintmax_t)rq->last_seq);
 	return (snap_reply(req, true, NULL));
 }
@@ -1599,8 +1599,8 @@ cluster_save(const char *name, const void *body, size_t len, bool gone)
 	if (!replicated(name))
 		return (store_write(name, body, len));
 	/*
-	 * While the worker starts, no majority can be waited for (Kore
-	 * gives a worker a few seconds): what is written then is the
+	 * While the worker starts, no majority can be waited for (the
+	 * loop is not running yet): what is written then is the
 	 * defaults each node makes alike, in memory; the next change
 	 * writes them.
 	 */
@@ -1656,7 +1656,7 @@ cluster_save(const char *name, const void *body, size_t len, bool gone)
 		}
 	}
 	pthread_mutex_unlock(&cl.mu);
-	kore_log(LOG_ERR, "cluster: %s not written: %s", name, err);
+	log_msg(LOG_ERR, "cluster: %s not written: %s", name, err);
 	return (-1);
 }
 
@@ -1742,7 +1742,7 @@ cluster_lock(const char *name)
 		}
 		usleep(50000);
 	}
-	kore_log(LOG_ERR, "cluster: the lock %s not had in time", name);
+	log_msg(LOG_ERR, "cluster: the lock %s not had in time", name);
 	return (false);
 }
 
@@ -1798,7 +1798,7 @@ cluster_init(void)
 		return (0);
 	snprintf(cl.dir, sizeof(cl.dir), "%s/%s", cfg.datadir, CL_DIR);
 	if (mkdir(cl.dir, 0700) == -1 && errno != EEXIST) {
-		kore_log(LOG_ERR, "%s: %s", cl.dir, strerror(errno));
+		log_msg(LOG_ERR, "%s: %s", cl.dir, strerror(errno));
 		return (-1);
 	}
 	unix_ = strncmp(cl.listen, "unix:", 5) == 0;
@@ -1806,7 +1806,7 @@ cluster_init(void)
 	snprintf(cl.key, sizeof(cl.key), "%s/node.key", cl.dir);
 	if (!unix_ && pki_node_cert(cl.nodes[cl.self].host, cl.cert, cl.key,
 	    err, sizeof(err)) == -1) {
-		kore_log(LOG_ERR, "cluster: %s", err);
+		log_msg(LOG_ERR, "cluster: %s", err);
 		return (-1);
 	}
 	np = 0;
@@ -1818,7 +1818,7 @@ cluster_init(void)
 	restore();
 	if ((error = cbl_ctx_new(&cl.ctx)) != 0 ||
 	    (error = cbl_loop_new(cl.ctx, &cl.loop)) != 0) {
-		kore_log(LOG_ERR, "cluster: cblink: %s", strerror(error));
+		log_msg(LOG_ERR, "cluster: cblink: %s", strerror(error));
 		return (-1);
 	}
 	(void)cbl_ctx_set_limit(cl.ctx, CBL_LIM_MAX_FRAME, CL_FRAME);
@@ -1826,12 +1826,12 @@ cluster_init(void)
 	    64);
 	(void)cbl_ctx_set_limit(cl.ctx, CBL_LIM_REQUEST_MS, 5000);
 	if ((error = acl_register(cl.ctx, NULL, NULL)) != 0) {
-		kore_log(LOG_ERR, "cluster: its family: %s", strerror(error));
+		log_msg(LOG_ERR, "cluster: its family: %s", strerror(error));
 		return (-1);
 	}
 	if ((error = cbl_listener_new(cl.ctx, cl.listen, unix_ ?
 	    CBL_LF_UNIX_TRUSTED : 0, &cl.ls)) != 0) {
-		kore_log(LOG_ERR, "cluster: %s: %s", cl.listen,
+		log_msg(LOG_ERR, "cluster: %s: %s", cl.listen,
 		    strerror(error));
 		return (-1);
 	}
@@ -1844,13 +1844,13 @@ cluster_init(void)
 	else
 		error = cbl_listener_set_tls(cl.ls, tls);
 	if (error != 0 || (error = cbl_listener_start(cl.ls, cl.loop)) != 0) {
-		kore_log(LOG_ERR, "cluster: %s: %s", cl.listen,
+		log_msg(LOG_ERR, "cluster: %s: %s", cl.listen,
 		    cbl_listener_errstr(cl.ls));
 		return (-1);
 	}
 	if (cbl_loop_timer(cl.loop, CL_TICK_MS, CBL_TF_REPEAT, tick, NULL,
 	    &t) != 0) {
-		kore_log(LOG_ERR, "cluster: its clock");
+		log_msg(LOG_ERR, "cluster: its clock");
 		return (-1);
 	}
 	for (i = 0; i < cl.nn; i++) {
@@ -1860,7 +1860,7 @@ cluster_init(void)
 		pthread_cond_init(&cl.peers[i].cv, NULL);
 		if (pthread_create(&cl.peers[i].thread, NULL, peer_run,
 		    &cl.peers[i]) != 0) {
-			kore_log(LOG_ERR, "cluster: pthread_create");
+			log_msg(LOG_ERR, "cluster: pthread_create");
 			return (-1);
 		}
 		(void)pthread_detach(cl.peers[i].thread);
@@ -1868,7 +1868,7 @@ cluster_init(void)
 	if (pthread_create(&tid, NULL, loop_run, NULL) != 0)
 		return (-1);
 	(void)pthread_detach(tid);
-	kore_log(LOG_NOTICE, "cluster: node %s of %d, on %s",
+	log_msg(LOG_NOTICE, "cluster: node %s of %d, on %s",
 	    cl.nodes[cl.self].name, cl.nn, cl.listen);
 	return (0);
 }
@@ -1953,7 +1953,7 @@ api_cluster(struct http_request *req)
 	ucl_object_t	*o;
 
 	if (!guard(req, false))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	o = ucl_object_typed_new(UCL_OBJECT);
 	cluster_status(o);
 	return (reply_json(req, 200, o));

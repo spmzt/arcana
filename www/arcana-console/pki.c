@@ -198,7 +198,7 @@ write_pem(const char *path, X509 *x, EVP_PKEY *key, mode_t mode)
 	snprintf(tmp, sizeof(tmp), "%s.XXXXXX", path);
 	if ((fd = mkstemp(tmp)) == -1 || fchmod(fd, mode) == -1 ||
 	    (fp = fdopen(fd, "w")) == NULL) {
-		kore_log(LOG_ERR, "%s: %s", tmp, strerror(errno));
+		log_msg(LOG_ERR, "%s: %s", tmp, strerror(errno));
 		if (fd != -1) {
 			close(fd);
 			unlink(tmp);
@@ -209,7 +209,7 @@ write_pem(const char *path, X509 *x, EVP_PKEY *key, mode_t mode)
 	    PEM_write_PrivateKey(fp, key, NULL, NULL, 0, NULL, NULL);
 	if (!ok || fflush(fp) != 0 || fsync(fd) == -1 || fclose(fp) != 0 ||
 	    rename(tmp, path) == -1) {
-		kore_log(LOG_ERR, "writing %s: %s", path, ok ? strerror(errno) :
+		log_msg(LOG_ERR, "writing %s: %s", path, ok ? strerror(errno) :
 		    ssl_err());
 		unlink(tmp);
 		return (-1);
@@ -280,10 +280,10 @@ pki_init(void)
 	snprintf(path[1], MAXPATHLEN, "%s/ca.key", cfg.datadir);
 	snprintf(path[2], MAXPATHLEN, "%s/console.pem", cfg.datadir);
 	snprintf(path[3], MAXPATHLEN, "%s/console.key", cfg.datadir);
-	cfg.tls_ca = kore_strdup(path[0]);
-	cfg.tls_ca_key = kore_strdup(path[1]);
-	cfg.tls_cert = kore_strdup(path[2]);
-	cfg.tls_key = kore_strdup(path[3]);
+	cfg.tls_ca = xstrdup(path[0]);
+	cfg.tls_ca_key = xstrdup(path[1]);
+	cfg.tls_cert = xstrdup(path[2]);
+	cfg.tls_key = xstrdup(path[3]);
 	if (access(path[0], F_OK) == 0 && access(path[1], F_OK) == 0 &&
 	    access(path[2], F_OK) == 0 && access(path[3], F_OK) == 0)
 		return (0);
@@ -295,7 +295,7 @@ pki_init(void)
 	    (ca = cert_new(cakey, "arcana CA", NULL, NULL, NULL,
 	    CA_DAYS)) == NULL || (cert = cert_new(key, "arcana console", ca,
 	    cakey, NULL, CA_DAYS)) == NULL) {
-		kore_log(LOG_ERR, "making the CA: %s", ssl_err());
+		log_msg(LOG_ERR, "making the CA: %s", ssl_err());
 		goto out;
 	}
 	if (write_pem(path[1], NULL, cakey, 0600) == -1 ||
@@ -303,7 +303,7 @@ pki_init(void)
 	    write_pem(path[3], NULL, key, 0600) == -1 ||
 	    write_pem(path[2], cert, NULL, 0644) == -1)
 		goto out;
-	kore_log(LOG_NOTICE, "made the arcana CA and the console's "
+	log_msg(LOG_NOTICE, "made the arcana CA and the console's "
 	    "certificate in %s", cfg.datadir);
 	rc = 0;
 out:
@@ -572,7 +572,7 @@ api_enrol_tokens(struct http_request *req)
 	int			 i;
 
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (cfg.tls_ca_key == NULL)
 		return (reply_error(req, 409, "no_ca", "the console has no "
 		    "CA key (tls.ca_key in web.conf); enrolment is off"));
@@ -611,7 +611,7 @@ api_enrol_tokens(struct http_request *req)
 	t->expires = time(NULL) + TOKEN_TTL;
 	snprintf(portstr, sizeof(portstr), "%d", t->port);
 	ucl_object_unref(body);
-	kore_log(LOG_NOTICE, "enrolment token for %s (%s) made", t->host,
+	log_msg(LOG_NOTICE, "enrolment token for %s (%s) made", t->host,
 	    t->name);
 
 	/* Options first: getopt(3) stops at the first argument. */
@@ -669,7 +669,7 @@ api_enrol(struct http_request *req)
 	if (token == NULL || (t = token_find(token)) == NULL) {
 		status = 403;
 		err = "unknown or expired token";
-		kore_log(LOG_NOTICE, "enrolment refused: %s", err);
+		log_msg(LOG_NOTICE, "enrolment refused: %s", err);
 		goto out;
 	}
 	if (pem == NULL || (b = BIO_new_mem_buf(pem, -1)) == NULL) {
@@ -695,7 +695,7 @@ api_enrol(struct http_request *req)
 	    NULL) {
 		status = 500;
 		err = "cannot sign the certificate";
-		kore_log(LOG_ERR, "enrolment: signing for %s: %s", t->host,
+		log_msg(LOG_ERR, "enrolment: signing for %s: %s", t->host,
 		    s == NULL ? why : "no root in the CA file");
 		goto out;
 	}
@@ -713,7 +713,7 @@ api_enrol(struct http_request *req)
 	    false);
 	ucl_object_insert_key(o, ucl_object_frombool(servers_add(t->name, uri,
 	    NULL) == 0), "added", 0, false);
-	kore_log(LOG_NOTICE, "enrolled %s (%s) as %s", t->host, t->name, uri);
+	log_msg(LOG_NOTICE, "enrolled %s (%s) as %s", t->host, t->name, uri);
 	memset(t, 0, sizeof(*t));
 	status = 200;
 out:
@@ -1556,7 +1556,7 @@ api_ca(struct http_request *req)
 	bool		 busy, staged;
 
 	if (!guard(req, req->method == HTTP_METHOD_POST))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (req->method == HTTP_METHOD_GET)
 		return (reply_json(req, 200, ca_view()));
 	if (!cfg.tls_own)

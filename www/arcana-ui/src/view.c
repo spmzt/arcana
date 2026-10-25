@@ -2647,9 +2647,10 @@ modal(struct html *h)
 		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
 		    "anyos\"><span>Also packages built for a newer FreeBSD "
 		    "<em>IGNORE_OSVERSION</em></span></label><p class=\"dim\">Its "
-		    "/etc is kept aside in /var/backups first; what pkg leaves "
-		    "beside a file it did not replace (.pkgnew, .pkgsave) is "
-		    "named in the job's trace, to merge by hand. Restart the "
+		    "/etc is kept aside in /var/backups first, and its own files "
+		    "(its users and groups among them) are kept; the packages' "
+		    "versions left beside them (.pkgnew) are named in the "
+		    "job's trace, to merge by hand. Restart the "
 		    "jail after%s.</p>", app.pkg.ip == 4 ? "; over IPv4" :
 		    app.pkg.ip == 6 ? "; over IPv6" : "");
 		break;

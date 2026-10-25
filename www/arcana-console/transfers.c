@@ -547,7 +547,7 @@ api_transfers(struct http_request *req)
 
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		pthread_mutex_lock(&xf_lock);
 		top = store_load(XF_FILE);
 		pthread_mutex_unlock(&xf_lock);
@@ -558,7 +558,7 @@ api_transfers(struct http_request *req)
 		return (reply_json(req, 200, top));
 	}
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (req->method == HTTP_METHOD_DELETE) {
 		/* A stop: a mark the transfer's thread looks for. */
 		id = strrchr(req->path, '/') + 1;
@@ -609,7 +609,7 @@ api_transfers(struct http_request *req)
 	if (!host_allowed(req, from, true, false) || !host_allowed(req, to,
 	    true, false)) {
 		ucl_object_unref(body);
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	}
 	if (strcmp(from, to) == 0) {
 		ucl_object_unref(body);

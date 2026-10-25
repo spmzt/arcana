@@ -41,9 +41,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <kore/kore.h>
-#include <kore/http.h>
-
 #include <openssl/evp.h>
 
 #include <ucl.h>
@@ -911,7 +908,7 @@ api_mail_test(struct http_request *req)
 	char		 err[300], to[1024], body[600];
 
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	mc_load(&mc);
 	recipients(&mc, to, sizeof(to));
 	snprintf(body, sizeof(body), "This mail says the console's mail "
@@ -933,14 +930,14 @@ api_mail_test(struct http_request *req)
  * the chats, sent by the host Settings name (a task: an agent is asked).
  */
 struct tgtest {
-	struct kore_task task;		/* first */
+	struct task task;		/* first */
 	int		 rc;
 	char		 err[400];
 	char		 chats[512];
 };
 
 static int
-tgtest_run(struct kore_task *t)
+tgtest_run(struct task *t)
 {
 	struct tgtest	*tt = (struct tgtest *)t;
 	struct mailconf	 mc;
@@ -952,7 +949,7 @@ tgtest_run(struct kore_task *t)
 	    "and workflow runs come the same way, as Settings, Notifications "
 	    "says.", tt->err, sizeof(tt->err));
 	mc_free(&mc);
-	return (KORE_RESULT_OK);
+	return (WEB_OK);
 }
 
 int
@@ -962,9 +959,9 @@ api_telegram_test(struct http_request *req)
 	ucl_object_t	*o;
 
 	if ((tt = req->hdlr_extra) != NULL) {
-		if (kore_task_state(&tt->task) != KORE_TASK_STATE_FINISHED) {
+		if (task_state(&tt->task) != TASK_STATE_FINISHED) {
 			http_request_sleep(req);
-			return (KORE_RESULT_RETRY);
+			return (WEB_RETRY);
 		}
 		if (tt->rc != 0)
 			return (reply_error(req, 502, "not-sent", "%s", tt->err));
@@ -976,15 +973,15 @@ api_telegram_test(struct http_request *req)
 		return (reply_json(req, 200, o));
 	}
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	/* The servers as they are now, for the task: one just added. */
 	host_refs();
-	tt = kore_calloc(1, sizeof(*tt));
+	tt = xcalloc(1, sizeof(*tt));
 	req->hdlr_extra = tt;
-	kore_task_create(&tt->task, tgtest_run);
-	kore_task_bind_request(&tt->task, req);
-	kore_task_run(&tt->task);
-	return (KORE_RESULT_RETRY);
+	task_create(&tt->task, tgtest_run);
+	task_bind_request(&tt->task, req);
+	task_run(&tt->task);
+	return (WEB_RETRY);
 }
 
 void
@@ -993,9 +990,9 @@ api_telegram_test_free(struct http_request *req)
 	struct tgtest	*tt = req->hdlr_extra;
 
 	/* Asked while the task runs too: only once it is done. */
-	if (tt == NULL || !kore_task_finished(&tt->task))
+	if (tt == NULL || !task_finished(&tt->task))
 		return;
-	kore_task_destroy(&tt->task);
-	kore_free(tt);
+	task_destroy(&tt->task);
+	free(tt);
 	req->hdlr_extra = NULL;
 }

@@ -1,16 +1,16 @@
-# arcana: the arcana console on FreeBSD, kore(1) with arcana-console.so and
-# the PWA, unprivileged, on the cblink image.
+# arcana: the arcana console on FreeBSD, arcana-console(8) and the PWA,
+# unprivileged, on the cblink image.
 #
 #	buildah build -f Containerfile --network=host -t arcana .
 #	podman run -d --name arcana -p 8443:8443 \
 #	    -e ARCANA_RP_ID=console.example -v arcana:/var/db/arcana \
 #	    arcana
 #
-# It serves HTTPS on 8443 with a mounted RSA certificate, or plain HTTP
+# It serves HTTPS on 8443 with a mounted certificate, or plain HTTP
 # for a reverse proxy that terminates TLS; container/arcana-container.sh
 # lists its settings.
 #
-# The first stage builds Kore and the tree on the emscripten image (base
+# The first stage builds the tree on the emscripten image (base
 # toolchain and emcc, from spmzt/images), cblink from the submodule with
 # it, runs the test suite as an unprivileged user (a failing test fails
 # the build; set ARCANA_TESTS=no to skip it) and installs the runtime
@@ -25,37 +25,16 @@ FROM ${CBLINK_IMAGE} AS cblink
 
 FROM ${EMSCRIPTEN_IMAGE} AS build
 ARG ARCANA_TESTS=yes
-ARG KORE_VERSION=4.3.0
-ARG KORE_SHA256=94f767eb113f2c97a133b9609c78c4e3795c420dc8726154edce49965df6b8ed
 # The libucl and libyaml releases base imports; the PWA compiles them to
 # wasm (the image has no /usr/src).
 ARG LIBUCL_VERSION=0.9.4
 ARG LIBUCL_SHA256=319d8ff13441f55d91cd7f3708a54bd03779733e26958c2346c5109014520aaf
 ARG LIBYAML_VERSION=0.2.5
 ARG LIBYAML_SHA256=fa240dbf262be053f3898006d502d514936c818e422afdcf33921c63bed9bf2e
-# jail(8) for the tests, gmake for Kore, libcbor for libcblink, libyang
-# for cblink-gen.
-RUN pkg install -y FreeBSD-jail gmake libcbor libyang3 && \
+# jail(8) for the tests, libcbor for libcblink, libyang for cblink-gen,
+# libwebsockets for the console's server.
+RUN pkg install -y FreeBSD-jail libcbor libyang3 libwebsockets && \
     pkg-cleanup
-
-# Kore, with tasks, as arcana-console.so needs it.  It builds as C99 with
-# -Werror, and base's basename(3) is a C11 _Generic macro.  The port's
-# patch has it share memory between its processes with mmap(2): SysV
-# shared memory is not there in a jail without sysvshm, as a container is.
-WORKDIR /usr/src/kore
-COPY port/www/kore/files/ /usr/src/kore-patches/
-RUN fetch -o kore.tar.gz \
-        https://kore.io/releases/kore-${KORE_VERSION}.tar.gz && \
-    [ "$(openssl dgst -sha256 -r kore.tar.gz | cut -d' ' -f1)" = \
-        "${KORE_SHA256}" ] && \
-    tar -xzf kore.tar.gz --strip-components 1 && rm kore.tar.gz && \
-    for p in /usr/src/kore-patches/patch-*; do patch -p0 < "$p"; done && \
-    mkdir obj && env CFLAGS=-Wno-c11-extensions gmake TASKS=1 kore && \
-    install -d /usr/local/include/kore /usr/local/share/kore && \
-    install -m 0555 kore /usr/local/bin/kore && \
-    install -m 0444 include/kore/*.h /usr/local/include/kore && \
-    install -m 0444 kore.features /usr/local/share/kore/features && \
-    install -m 0444 misc/ffdhe4096.pem /usr/local/share/kore
 
 WORKDIR /usr/src/libucl
 RUN fetch -o libucl.tar.gz \
@@ -92,20 +71,19 @@ RUN make install WITHOUT_TESTS=yes WITHOUT_DEBUG_FILES=yes DESTDIR=/dist && \
 FROM cblink
 LABEL org.opencontainers.image.source="https://github.com/spmzt/arcana" \
     org.opencontainers.image.title="arcana" \
-    org.opencontainers.image.description="Arcana, The Seven Archives of FreeBSD: the fleet console, a PWA with WebAuthn login, served by Kore" \
+    org.opencontainers.image.description="Arcana, The Seven Archives of FreeBSD: the fleet console, a PWA with WebAuthn login, served on libwebsockets" \
     org.opencontainers.image.licenses="BSD-2-Clause" \
     org.opencontainers.image.authors="spmzt" \
     io.containers.autoupdate=registry
 # The build stage's base can be newer than the cblink image's.
 RUN env IGNORE_OSVERSION=yes pkg upgrade -y && \
+    pkg install -y libwebsockets && \
     pkg clean -ay && \
     pw groupadd arcana -g 4310 && \
     pw useradd arcana -u 4310 -g arcana -c "arcana console" \
         -d /var/db/arcana -s /usr/sbin/nologin && \
     install -d -o arcana -g arcana -m 0700 /var/db/arcana && \
     install -d -o arcana -g arcana -m 0755 /var/run/arcana
-COPY --from=build /usr/local/bin/kore /usr/local/bin/kore
-COPY --from=build /usr/local/share/kore/ffdhe4096.pem /usr/local/share/kore/
 COPY --from=build /dist/usr/local/ /usr/local/
 USER arcana
 WORKDIR /var/db/arcana

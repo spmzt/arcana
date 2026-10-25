@@ -13,14 +13,14 @@ own: <https://spmzt.github.io/arcana-docs/> (its source is
 <https://github.com/spmzt/arcana-docs>).
 
 ```
- browser (PWA, C → wasm) ──HTTPS──▶ kore + arcana-console.so ──cblink/mTLS──▶ arcana-agent ──▶ jails
-                                      (console host)                     (each host)
+ browser (PWA, C → wasm) ──HTTPS──▶ arcana-console ──cblink/mTLS──▶ arcana-agent ──▶ jails
+                                    (console host)                 (each host)
 ```
 
 | | |
 |---|---|
 | `usr.sbin/arcana-agent` | The daemon on each host: libjail(3), libprocstat(3), jail(8), served over cblink with mutual TLS. The only privileged part. |
-| `www/arcana-console` | The console: a Kore module with WebAuthn login (libcrypto), the server list, and the JSON API ([OpenAPI](docs/openapi.yaml)). |
+| `www/arcana-console` | The console: its own HTTP server on libwebsockets, WebAuthn login (libcrypto), the server list, and the JSON API ([OpenAPI](docs/openapi.yaml)). |
 | `www/arcana-ui` | The PWA: C compiled with Emscripten, base libucl for JSON, installable and usable offline as a shell. |
 | `usr.sbin/jailconf` | `jailconf(8)`: change one value of a jail parameter in `jail.conf` in place, like `sysrc(8)` for `rc.conf`. |
 | `usr.sbin/arcanactl` | `arcanactl(8)`: talk to an arcana-agent from a shell, with libxo(3) output. |
@@ -46,7 +46,6 @@ git clone --recurse-submodules https://github.com/spmzt/arcana.git
 cd arcana
 make check-deps                   # what the build needs, and what is missing
 make install-missing-packages     # as root: pkg install what is missing
-make install-kore                 # as root, once, for the console: Kore
 make                              # it checks the same first, and says
 make check                        # the test suite, with kyua(1)
 make install                      # PREFIX=/usr/local by default
@@ -65,11 +64,9 @@ What it needs:
   the submodule `cblink/`, built by `make` first and installed with the
   rest; a tree without it (a release tarball, the port) uses an
   installed `devel/cblink`;
-- for the console as well: `devel/emscripten` for the page; Kore 4.3
-  built with `TASKS=1`, which is no package: `make install-kore` builds
-  the port shipped here, `port/www/kore`, with the ports framework (the
-  ports tree in `/usr/ports`), and `config.mk.sample` says how to use a
-  copy elsewhere;
+- for the console as well: `devel/emscripten` for the page, and
+  `net/libwebsockets` for its HTTP server (`config.mk.sample` says how
+  to use a copy elsewhere);
 - the sources of libucl and libyaml, which the page compiles to
   WebAssembly (a built library cannot be): the system's in `/usr/src`,
   which pkgbase's `FreeBSD-src` installs (`make
@@ -79,9 +76,9 @@ What it needs:
 - for the tests: `devel/git`, `ftp/curl`, `lang/python3`, and
   `www/chromium` (with chromedriver) for the browser test.
 
-`make WITHOUT_CONSOLE=yes` builds only what a host runs, without Kore,
-emscripten or the libraries' sources. The ports, `port/sysutils/arcana`
-(with a `CONSOLE` option) and `port/www/kore`, build the same way;
+`make WITHOUT_CONSOLE=yes` builds only what a host runs, without
+libwebsockets, emscripten or the libraries' sources. The port,
+`port/sysutils/arcana` (with a `CONSOLE` option), builds the same way;
 `devel/cblink` comes from cblink's own tree.
 
 `make check` skips the tests that need root; run it as root to drive a
@@ -161,17 +158,17 @@ and URI, with no enrolment.
 
 ### On the console host
 
-Kore serves the PWA and the API. WebAuthn and PWA installation on Android
-need HTTPS with a certificate the phone trusts, such as one from Let's
-Encrypt. The certificate must be RSA: Kore's key manager, which keeps
-the private key out of the worker, signs with nothing else.
+arcana-console serves the PWA and the API. WebAuthn and PWA installation
+on Android need HTTPS with a certificate the phone trusts, such as one
+from Let's Encrypt, RSA or EC. Its supervisor listens and reads the
+certificate and key as root; the worker that serves runs as `arcana`.
 
 ```sh
 pw useradd arcana -d /var/db/arcana -s /usr/sbin/nologin
 install -d -o arcana -m 0700 /var/db/arcana
 cd /usr/local/etc/arcana
-cp kore.conf.sample kore.conf      # domain, certificate, bind address
-cp web.conf.sample web.conf        # rp_id, origin, client certificate
+cp web.conf.sample web.conf        # server { }: listen, certificate;
+                                   # rp_id, origin, client certificate
 sysrc arcana_console_enable=YES
 service arcana_console start
 ```
@@ -187,9 +184,10 @@ it through a socket only its group can open.
 (the base toolchain and emscripten, from
 [spmzt/images](https://github.com/spmzt/images)) and ships it on the
 cblink image; the workflow in `.github/workflows` publishes it as
-`ghcr.io/spmzt/arcana`. It runs Kore unprivileged (uid 4310) on port 8443:
-HTTPS with an RSA certificate mounted as `console.pem` and `console.key`
-in `/usr/local/etc/arcana`, plain HTTP for a reverse proxy without one.
+`ghcr.io/spmzt/arcana`. It runs the console unprivileged (uid 4310) on
+port 8443: HTTPS with a certificate (RSA or EC) mounted as `console.pem`
+and `console.key` in `/usr/local/etc/arcana`, plain HTTP for a reverse
+proxy without one.
 
 ```sh
 podman run -d --name arcana -p 8443:8443 \
@@ -200,8 +198,7 @@ podman exec arcana cat /var/db/arcana/setup-token
 ```
 
 `ARCANA_ORIGIN` (default `https://` and the RP ID) and `ARCANA_PORT`
-change the rest; a mounted `web.conf` or `kore.conf` replaces the
-generated one. The CA lives in the `arcana` volume; to use your own
+change the rest; a mounted `web.conf` replaces the generated one. The CA lives in the `arcana` volume; to use your own
 instead, mount `ca.pem`, `client.pem` and `client.key` into
 `/usr/local/etc/arcana`, readable by uid 4310.
 

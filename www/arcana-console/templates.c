@@ -136,16 +136,16 @@ static char *
 render(const char *text, const ucl_object_t *values,
     const ucl_object_t *variables, char *missing, size_t mlen)
 {
-	struct kore_buf	*b;
+	struct buf	*b;
 	const char	*p, *q, *e, *v;
 	char		 name[40], *out;
 
-	b = kore_buf_alloc(strlen(text) + 64);
+	b = buf_alloc(strlen(text) + 64);
 	for (p = text; (q = strstr(p, "{{")) != NULL; ) {
 		if ((e = strstr(q + 2, "}}")) == NULL ||
 		    !var_ok(q + 2, (size_t)(e - q - 2))) {
 			/* Not a placeholder: as it is. */
-			kore_buf_append(b, p, (size_t)(q + 2 - p));
+			buf_append(b, p, (size_t)(q + 2 - p));
 			p = q + 2;
 			continue;
 		}
@@ -154,21 +154,21 @@ render(const char *text, const ucl_object_t *values,
 			v = str(ucl_object_lookup(variables, name), "default");
 		if (v == NULL || v[0] == '\0') {
 			snprintf(missing, mlen, "%s", name);
-			kore_buf_free(b);
+			buf_free(b);
 			return (NULL);
 		}
-		kore_buf_append(b, p, (size_t)(q - p));
-		kore_buf_append(b, v, strlen(v));
+		buf_append(b, p, (size_t)(q - p));
+		buf_append(b, v, strlen(v));
 		p = e + 2;
 	}
-	kore_buf_append(b, p, strlen(p));
+	buf_append(b, p, strlen(p));
 	if ((out = malloc(b->offset + 1)) == NULL) {
-		kore_buf_free(b);
+		buf_free(b);
 		return (NULL);
 	}
 	memcpy(out, b->data, b->offset);
 	out[b->offset] = '\0';
-	kore_buf_free(b);
+	buf_free(b);
 	return (out);
 }
 
@@ -396,7 +396,7 @@ api_templates(struct http_request *req)
 	ucl_object_iter_t	 it;
 
 	if (!guard(req, false))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	all = all_load();
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
@@ -440,7 +440,7 @@ api_template(struct http_request *req)
 	switch (req->method) {
 	case HTTP_METHOD_GET:
 		if (!guard(req, false))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		if ((t = template_get(name)) == NULL)
 			return (reply_error(req, 404, "not_found", "no template "
 			    "%s", name));
@@ -449,7 +449,7 @@ api_template(struct http_request *req)
 		return (reply_json(req, 200, t));
 	case HTTP_METHOD_PUT:
 		if (!guard(req, true))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		if ((body = read_json(req)) == NULL)
 			return (reply_error(req, 400, "invalid", "a template, "
 			    "a JSON object"));
@@ -481,14 +481,14 @@ api_template(struct http_request *req)
 		if (rc != 0)
 			return (reply_error(req, 500, "store", "the template "
 			    "was not kept"));
-		kore_log(LOG_NOTICE, "template %s kept by %s", name,
+		log_msg(LOG_NOTICE, "template %s kept by %s", name,
 		    session_who(req) != NULL ? session_who(req) : "?");
 		top = ucl_object_typed_new(UCL_OBJECT);
 		put(top, "ok", ucl_object_frombool(true));
 		return (reply_json(req, 200, top));
 	case HTTP_METHOD_DELETE:
 		if (!guard(req, true))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		fd = lock_take();
 		all = all_load();
 		tmpls = (ucl_object_t *)(uintptr_t)ucl_object_lookup(all,
@@ -505,7 +505,7 @@ api_template(struct http_request *req)
 		lock_give(fd);
 		if (rc != 0)
 			return (reply_error(req, 500, "store", "not forgotten"));
-		kore_log(LOG_NOTICE, "template %s forgotten by %s", name,
+		log_msg(LOG_NOTICE, "template %s forgotten by %s", name,
 		    session_who(req) != NULL ? session_who(req) : "?");
 		top = ucl_object_typed_new(UCL_OBJECT);
 		put(top, "ok", ucl_object_frombool(true));

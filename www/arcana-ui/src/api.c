@@ -140,7 +140,7 @@ arc_on_http(int id, int status, char *text)
 	}
 	/*
 	 * An error without a reason of ours did not come from the console's
-	 * own handlers: a proxy in front of it, or Kore itself.  Say what
+	 * own handlers: a proxy in front of it, or its server.  Say what
 	 * came, so that it can be looked for.
 	 */
 	if (err == NULL && status >= 400) {

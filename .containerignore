@@ -1,7 +1,6 @@
 .git
 .github
 port
-!port/www/kore/files
 **/*.core
 
 # As in .gitignore: machine-local settings, third-party builds, build

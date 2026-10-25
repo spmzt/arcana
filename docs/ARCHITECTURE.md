@@ -11,7 +11,7 @@ Each program does one thing.  There is one daemon per role.
 | Program | Runs on | Does |
 |---|---|---|
 | `arcana-agent(8)` | every host, as root | Serves the `arcana` cblink family: reports jails and changes them. The only privileged component. |
-| Kore module `arcana-console.so` | the console host, unprivileged | Serves the PWA and its JSON API, authenticates you with WebAuthn, talks to `arcana-agent` instances as a cblink client. |
+| `arcana-console(8)` | the console host, unprivileged | Its own HTTP server on libwebsockets: serves the PWA and its JSON API, authenticates you with WebAuthn, talks to `arcana-agent` instances as a cblink client. |
 | PWA (C → wasm) | the browser | The console. |
 | `jailconf(8)` | anywhere | Adds or removes a value of one jail's parameter in jail.conf, in place, like sysrc(8) does for rc.conf. |
 | `arcanactl(8)` | anywhere | Command-line client for `arcana-agent`. |
@@ -20,7 +20,7 @@ Each program does one thing.  There is one daemon per role.
 ```
  browser                 console host                         hosts
 ┌──────────┐  HTTPS   ┌──────────────────────┐  cblink     ┌──────────────────────┐
-│ PWA      │ ───────▶ │ kore + arcana-console.so   │ ──────────▶ │ arcana-agent            │
+│ PWA      │ ───────▶ │ arcana-console       │ ──────────▶ │ arcana-agent         │
 │ C → wasm │   JSON   │ WebAuthn, sessions,  │ TCP, mTLS   │ libjail, libprocstat │
 │          │ ◀─────── │ server registry      │ ◀────────── │ jail(8) -e / -c / -r │
 └──────────┘  cookie  └──────────────────────┘    CBOR     │ libjailconf          │
@@ -91,7 +91,7 @@ Base system first; packages only where they remove real work.
 | Component | Privilege | Holds |
 |---|---|---|
 | Browser | none | an HttpOnly, SameSite=Strict session cookie |
-| Kore module | unprivileged user | WebAuthn public key, its cblink client certificate and key, and the CA's key when it runs its own CA |
+| `arcana-console` | unprivileged user (its supervisor root, to listen and read the HTTPS key) | WebAuthn public key, its cblink client certificate and key, and the CA's key when it runs its own CA |
 | `arcana-agent` | root | its server certificate and key, the CA certificate |
 
 ## Authentication (browser to console)
@@ -231,7 +231,7 @@ usr.sbin/jailconf/   jailconf(8)
 usr.sbin/arcana-agent/  arcana-agent(8)
 usr.sbin/arcanactl/ arcanactl(8)
 usr.sbin/arcana-enrol/ arcana-enrol(8)
-www/arcana-console/        Kore module
+www/arcana-console/  arcana-console(8)
 www/arcana-ui/     the PWA
 docs/                this file, TOOLS.md, NAMING.md, openapi.yaml
 tests/               the top of the installed test suite

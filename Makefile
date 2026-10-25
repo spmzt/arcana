@@ -6,9 +6,9 @@
 # Build products go to obj/, mirroring the tree (share/mk/arcana.mk).
 # cblink (libcblink, cblink-gen, cblink.mk) is the submodule cblink/,
 # checked out with git submodule update --init and built first, in its
-# own obj/; devel/libcbor is what it needs.  The console needs Kore's
-# headers and emcc(1); see config.mk.sample to point at copies not
-# installed in ${LOCALBASE}.  WITHOUT_CONSOLE=yes builds only the jail
+# own obj/; devel/libcbor is what it needs.  The console needs
+# net/libwebsockets and emcc(1); see config.mk.sample to point at copies
+# not installed in ${LOCALBASE}.  WITHOUT_CONSOLE=yes builds only the jail
 # host's programs.  "make check" runs the tests in the build tree: those
 # that need root are skipped unless it runs as root, the browser test
 # unless Chromium and chromedriver are installed.
@@ -55,11 +55,9 @@ all_subdir_${_d}: _deps-build
 # says it alone, with the tests' tools too, asking pkg(8) what is
 # installed; install-missing-packages installs what is missing with
 # pkg(8), as root (WITH_TEST_TOOLS=yes: the tests' too), the system's
-# sources being pkgbase's FreeBSD-src; install-kore builds Kore, which is
-# no package, from its port in port/www/kore with the ports framework.
+# sources being pkgbase's FreeBSD-src.
 _DEPS_ENV=	CONSOLE=${MK_CONSOLE} LOCALBASE=${LOCALBASE} \
-		LIBUCL_SRC=${LIBUCL_SRC} LIBYAML_SRC=${LIBYAML_SRC} \
-		KORE_INCLUDE=${KORE_INCLUDE}
+		LIBUCL_SRC=${LIBUCL_SRC} LIBYAML_SRC=${LIBYAML_SRC}
 check-deps: .PHONY
 	@env ${_DEPS_ENV} TESTS=yes sh ${.CURDIR}/share/mk/deps.sh check
 install-missing-packages: .PHONY
@@ -69,15 +67,6 @@ _deps-build: .PHONY
 	@env ${_DEPS_ENV} TESTS=no sh ${.CURDIR}/share/mk/deps.sh check > \
 	    ${.OBJDIR}/deps.out 2>&1 || { cat ${.OBJDIR}/deps.out; \
 	    echo "The build needs what is missing above." >&2; exit 1; }
-PORTSDIR?=	/usr/ports
-install-kore: .PHONY
-	@if [ ! -f ${PORTSDIR}/Mk/bsd.port.mk ]; then \
-	    echo "install-kore builds port/www/kore with the ports framework," \
-		"which is not in ${PORTSDIR}:" >&2; \
-	    echo "  git clone --depth 1 https://git.FreeBSD.org/ports.git" \
-		"${PORTSDIR}" >&2; exit 1; fi
-	@${MAKE} -C ${.CURDIR}/port/www/kore PORTSDIR=${PORTSDIR} BATCH=yes \
-	    install clean
 
 TESTDIRS=	lib/libjailconf/tests \
 		lib/libvarconf/tests \
@@ -136,8 +125,6 @@ check: .PHONY
 	for d in ${TESTDIRS}; do \
 	    ( set -o pipefail; cd ${.OBJDIR}/$$d && kyua \
 	        -v parallelism=${CHECK_JOBS} \
-	        -v test_suites.FreeBSD.kore=${KORE_BIN} \
-	        -v test_suites.FreeBSD.dhparam=${KORE_DHPARAM} \
 	        test -k Kyuafile 2>&1 | sed -n '/->/p;$$p' | \
 	        sed "s|^|$$d: |" || { kyua report --verbose \
 	        --results-filter broken,failed | awk '/^===> /{ \

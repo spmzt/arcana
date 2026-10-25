@@ -70,7 +70,7 @@ RFC 8309's three models and RFC 8969's three tiers, placed:
 ```
  customer                 orchestrator / controller                 devices
  ┌──────────┐  RESTCONF   ┌─────────────────────────────┐  cblink 2  ┌───────────────┐
- │ PWA, apps│ ──────────▶ │ arcana-console (Kore)       │ ─────────▶ │ arcana-agent  │
+ │ PWA, apps│ ──────────▶ │ arcana-console              │ ─────────▶ │ arcana-agent  │
  │ arcanactl│  JSON 7951  │ customer models: ietf-vn,   │  YANG-CBOR │ device models:│
  │          │  YANG-Push  │   MEF 70.2 (import/export)  │  SIDs      │ interfaces,ip,│
  │          │  over SSE   │ network models: l3vpn-ntw,  │  NMDA      │ routing, NI,  │
@@ -89,7 +89,7 @@ RFC 8309's three models and RFC 8969's three tiers, placed:
 | Operations | `GET` (do and dump, one instance per MULTI frame), `EDIT` (YANG Patch with instance-identifier targets; merge, replace, create, delete, remove, insert, move; rollback-on-error), `RPC` (rpcs and actions), `GET-SID`; subscriptions as push streams |
 | Datastores | `running` = the configuration files (rc.conf, jail.conf, loader.conf, sysctl.conf, rtadvd.conf, the kept ipfw rules, swanctl conf.d); `intended` = running; `candidate` optional, with confirmed commit = today's `job-confirm`; `arcana:live` a dynamic datastore for what is changed in the kernel and not persisted (today's `address live`); `operational` = the kernel, with origin |
 | CAL | an `arcana-steer` module: the steering state (candidates, chosen, reasons) and the events that change it, read and written by the console and by the agent's local failover, carried on a stream of its own |
-| NBI | RESTCONF (RFC 8040) with JSON (RFC 7951) over Kore, YANG Patch, `ietf-restconf-monitoring` streams as SSE, YANG-Push with the RESTCONF binding; `application/yang-data+cbor` passed through for the PWA; the fleet as `arcana-fleet:hosts/host[name]/root`, an inline schema mount per host |
+| NBI | RESTCONF (RFC 8040) with JSON (RFC 7951) over the console's libwebsockets server, YANG Patch, `ietf-restconf-monitoring` streams as SSE, YANG-Push with the RESTCONF binding; `application/yang-data+cbor` passed through for the PWA; the fleet as `arcana-fleet:hosts/host[name]/root`, an inline schema mount per host |
 | Service models | RFC 9181 common types; RFC 9182 L3NM as the network model of a service; RFC 9408 SAPs as the inventory of attachment points; RFC 9731 VN as the customer view of a service; RFC 9375 PM as the performance view; the MEF 70.2 document kept as an import/export format over them (D-4) |
 | Control plane | BIRD stays the distributed part (BGP, OSPF, BFD, Babel); the console is the controller for steering policy, slices, flowspec origination, ACLs; the agent keeps local failover |
 | Measurement | STAMP (RFC 8762, 8972) sender and reflector in the agent; ICMP kept as fallback; alternate marking (RFC 9341, 9342) passively by ipfw colour counters; percentiles per measurement interval |
@@ -758,7 +758,7 @@ Depends on Y-2.
   enforcement at the three points, counters; the console passes the
   user. ~1.5 k.
 - **3.4 Event-driven console.** C: subscriptions replace the one-second
-  polls of jobs, stats, lists and the SD-WAN read; the Kore module's
+  polls of jobs, stats, lists and the SD-WAN read; the console's
   one connection per agent carries long-lived streams; reconnect
   logic. Benchmarks before and after (8.1).
 - **3.5 `arcana-steer`, the CAL.** A, C: candidates, chosen, reasons,

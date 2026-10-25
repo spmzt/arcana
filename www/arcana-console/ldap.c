@@ -91,7 +91,7 @@ ber_room(struct ber *b, size_t n)
 
 	while (b->len + n > b->cap) {
 		b->cap = b->cap == 0 ? 256 : b->cap * 2;
-		b->p = kore_realloc(b->p, b->cap);
+		b->p = xrealloc(b->p, b->cap);
 	}
 }
 
@@ -173,7 +173,7 @@ ber_wrap(struct ber *b, unsigned char tag, size_t mark)
 	memmove(b->p + mark + h.len, b->p + mark, n);
 	memcpy(b->p + mark, h.p, h.len);
 	b->len += h.len;
-	kore_free(h.p);
+	free(h.p);
 }
 
 /* ---- BER in ------------------------------------------------------- */
@@ -308,16 +308,16 @@ lconn_message(struct lconn *c, int id, struct tlv *op, unsigned char **bufp)
 		    "large (%zu bytes)", len);
 		return (-1);
 	}
-	buf = kore_malloc(hlen + len);
+	buf = xmalloc(hlen + len);
 	memcpy(buf, head, hlen);
 	if (lconn_read(c, buf + hlen, len) != 0) {
-		kore_free(buf);
+		free(buf);
 		return (-1);
 	}
 	p = buf;
 	end = buf + hlen + len;
 	if (!ber_next(&p, end, &msg) || msg.tag != T_SEQ) {
-		kore_free(buf);
+		free(buf);
 		snprintf(c->err, c->errlen, "the directory's answer is not BER");
 		return (-1);
 	}
@@ -325,7 +325,7 @@ lconn_message(struct lconn *c, int id, struct tlv *op, unsigned char **bufp)
 	end = msg.v + msg.len;
 	if (!ber_next(&p, end, &mid) || mid.tag != T_INT || ber_toint(&mid) !=
 	    id || !ber_next(&p, end, op)) {
-		kore_free(buf);
+		free(buf);
 		snprintf(c->err, c->errlen, "the directory answered another "
 		    "message");
 		return (-1);
@@ -350,9 +350,9 @@ lconn_send(struct lconn *c, struct ber *b)
 	ber_wrap(&m, T_SEQ, 0);
 	rc = lconn_write(c, m.p, m.len);
 	explicit_bzero(m.p, m.len);
-	kore_free(m.p);
+	free(m.p);
 	explicit_bzero(b->p, b->len);
-	kore_free(b->p);
+	free(b->p);
 	memset(b, 0, sizeof(*b));
 	return (rc != 0 ? -1 : id);
 }
@@ -536,7 +536,7 @@ starttls(struct lconn *c, const char *host, const char *cafile)
 	if (lconn_message(c, id, &op, &buf) != 0)
 		return (-1);
 	code = op.tag == T_EXT_RSP ? result_of(&op, diag, sizeof(diag)) : -1;
-	kore_free(buf);
+	free(buf);
 	if (code != 0) {
 		snprintf(c->err, c->errlen, "StartTLS refused: %s%s%s",
 		    code_words(code), diag[0] != '\0' ? ", " : "", diag);
@@ -566,7 +566,7 @@ bind_as(struct lconn *c, const char *dn, const char *password, long *codep)
 	if (lconn_message(c, id, &op, &buf) != 0)
 		return (-1);
 	code = op.tag == T_BIND_RSP ? result_of(&op, diag, sizeof(diag)) : -1;
-	kore_free(buf);
+	free(buf);
 	*codep = code;
 	if (code != 0) {
 		snprintf(c->err, c->errlen, "bind as %s: %s%s%s", dn[0] != '\0' ?
@@ -638,7 +638,7 @@ search(struct lconn *c, const char *base, int scope, struct ber *f, char *dn,
 	ber_room(&b, f->len);
 	memcpy(b.p + b.len, f->p, f->len);
 	b.len += f->len;
-	kore_free(f->p);
+	free(f->p);
 	memset(f, 0, sizeof(*f));
 	{
 		size_t	mark = b.len;
@@ -660,12 +660,12 @@ search(struct lconn *c, const char *base, int scope, struct ber *f, char *dn,
 				snprintf(dn, dnlen, "%.*s", (int)MIN(name.len,
 				    dnlen - 1), (const char *)name.v);
 			(*np)++;
-			kore_free(buf);
+			free(buf);
 			continue;
 		}
 		if (op.tag == T_SEARCH_DONE) {
 			code = result_of(&op, diag, sizeof(diag));
-			kore_free(buf);
+			free(buf);
 			/* sizeLimitExceeded (4) with entries is an answer. */
 			if (code == 0 || (code == 4 && *np > 0))
 				return (0);
@@ -675,7 +675,7 @@ search(struct lconn *c, const char *base, int scope, struct ber *f, char *dn,
 			return (-1);
 		}
 		/* A referral or an intermediate response: passed over. */
-		kore_free(buf);
+		free(buf);
 	}
 }
 
@@ -843,7 +843,7 @@ ldap_login(const char *user, const char *password, char *who, size_t wholen,
 		goto out;
 	if (n == 0) {
 		snprintf(err, errlen, "no such user, or a wrong password");
-		kore_log(LOG_NOTICE, "LDAP sign-in of %s refused: no entry with "
+		log_msg(LOG_NOTICE, "LDAP sign-in of %s refused: no entry with "
 		    "%s=%s under %s", user, attr, user, base);
 		signin_failed();
 		goto out;
@@ -859,10 +859,10 @@ ldap_login(const char *user, const char *password, char *who, size_t wholen,
 		if (code == 49) {
 			snprintf(err, errlen, "no such user, or a wrong "
 			    "password");
-			kore_log(LOG_NOTICE, "LDAP sign-in of %s refused: "
+			log_msg(LOG_NOTICE, "LDAP sign-in of %s refused: "
 			    "invalid credentials for %s", user, dn);
 		} else
-			kore_log(LOG_NOTICE, "LDAP sign-in of %s failed: %s",
+			log_msg(LOG_NOTICE, "LDAP sign-in of %s failed: %s",
 			    user, err);
 		signin_failed();
 		goto out;
@@ -876,7 +876,7 @@ ldap_login(const char *user, const char *password, char *who, size_t wholen,
 		filter_eq(&f, "memberUid", user);
 		ber_wrap(&f, T_CTXC(1), (size_t)fmark);	/* or */
 		if (search(&c, group, 0, &f, gdn, sizeof(gdn), &n) != 0) {
-			kore_log(LOG_NOTICE, "LDAP sign-in of %s failed: %s",
+			log_msg(LOG_NOTICE, "LDAP sign-in of %s failed: %s",
 			    user, err);
 			signin_failed();
 			goto out;
@@ -884,7 +884,7 @@ ldap_login(const char *user, const char *password, char *who, size_t wholen,
 		if (n == 0) {
 			snprintf(err, errlen, "not a member of the group the "
 			    "console admits");
-			kore_log(LOG_NOTICE, "LDAP sign-in of %s refused: %s is "
+			log_msg(LOG_NOTICE, "LDAP sign-in of %s refused: %s is "
 			    "not in %s", user, dn, group);
 			signin_failed();
 			goto out;
@@ -906,14 +906,14 @@ ldap_login(const char *user, const char *password, char *who, size_t wholen,
 			roles[(*nroles)++] = rnames[ri];
 	}
 	snprintf(who, wholen, "LDAP user %s", user);
-	kore_log(LOG_NOTICE, "LDAP sign-in of %s (%s), %d role%s by its groups",
+	log_msg(LOG_NOTICE, "LDAP sign-in of %s (%s), %d role%s by its groups",
 	    user, dn, *nroles, *nroles == 1 ? "" : "s");
 	ok = true;
 out:
 	if (!ok && err[0] == '\0')
 		snprintf(err, errlen, "the directory did not answer");
 	if (!ok && c.fd != -1 && !(n == 0 && err[0] != '\0'))
-		kore_log(LOG_NOTICE, "LDAP sign-in of %s failed: %s", user, err);
+		log_msg(LOG_NOTICE, "LDAP sign-in of %s failed: %s", user, err);
 	lconn_close(&c);
 	return (ok);
 }

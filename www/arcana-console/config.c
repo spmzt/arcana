@@ -33,7 +33,7 @@ get(const ucl_object_t *top, const char *path, const char *def)
 
 	o = ucl_object_lookup_path(top, path);
 	s = o != NULL ? ucl_object_tostring_forced(o) : def;
-	return (s != NULL ? kore_strdup(s) : NULL);
+	return (s != NULL ? xstrdup(s) : NULL);
 }
 
 /*
@@ -70,7 +70,7 @@ config_load(const char *path)
 	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
 	    UCL_PARSER_DISABLE_MACRO);
 	if (!ucl_parser_add_file(p, path)) {
-		kore_log(LOG_ERR, "%s: %s", path, ucl_parser_get_error(p));
+		log_msg(LOG_ERR, "%s: %s", path, ucl_parser_get_error(p));
 		ucl_parser_free(p);
 		return (-1);
 	}
@@ -120,7 +120,7 @@ config_load(const char *path)
 	ucl_object_unref(top);
 
 	if (cfg.rp_id == NULL || cfg.origin == NULL) {
-		kore_log(LOG_ERR, "%s: rp_id and origin are required", path);
+		log_msg(LOG_ERR, "%s: rp_id and origin are required", path);
 		return (-1);
 	}
 	/* What the console itself changed overrides some of that. */
@@ -153,7 +153,7 @@ android_load(const ucl_object_t *top, const char *path)
 	    strspn(cfg.android_package, "abcdefghijklmnopqrstuvwxyz"
 	    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.") !=
 	    strlen(cfg.android_package)) {
-		kore_log(LOG_ERR, "%s: android.package must be the app's "
+		log_msg(LOG_ERR, "%s: android.package must be the app's "
 		    "package name", path);
 		return (-1);
 	}
@@ -162,7 +162,7 @@ android_load(const ucl_object_t *top, const char *path)
 	while (fps != NULL && (fp = ucl_object_iterate(fps, &it, true)) !=
 	    NULL) {
 		if (cfg.nandroid_keys == ANDROID_KEYS) {
-			kore_log(LOG_ERR, "%s: android.fingerprints: at most %d",
+			log_msg(LOG_ERR, "%s: android.fingerprints: at most %d",
 			    path, ANDROID_KEYS);
 			return (-1);
 		}
@@ -179,7 +179,7 @@ android_load(const ucl_object_t *top, const char *path)
 			s += 2;
 		}
 		if (*s != '\0' || n != 32) {
-			kore_log(LOG_ERR, "%s: android.fingerprints: %s is not "
+			log_msg(LOG_ERR, "%s: android.fingerprints: %s is not "
 			    "a SHA-256 fingerprint", path,
 			    ucl_object_tostring_forced(fp));
 			return (-1);
@@ -187,10 +187,10 @@ android_load(const ucl_object_t *top, const char *path)
 		cfg.nandroid_keys++;
 	}
 	if (cfg.nandroid_keys == 0) {
-		kore_log(LOG_ERR, "%s: android.fingerprints names no key", path);
+		log_msg(LOG_ERR, "%s: android.fingerprints names no key", path);
 		return (-1);
 	}
-	kore_log(LOG_INFO, "the Android app %s may log in (%d signing key%s)",
+	log_msg(LOG_INFO, "the Android app %s may log in (%d signing key%s)",
 	    cfg.android_package, cfg.nandroid_keys,
 	    cfg.nandroid_keys == 1 ? "" : "s");
 	return (0);
@@ -212,7 +212,8 @@ hexval(int c)
 /*
  * Read a PEM certificate or key at path; *keytype gets the key's
  * EVP_PKEY type.  A file the worker may not read is reported but not
- * an error: Kore's key manager reads the server's keys as root.
+ * an error: the server reads its own certificate and key as root, before
+ * it becomes the console's user.
  */
 static int
 check_pem(const char *what, const char *path, bool cert, int *keytype)
@@ -225,11 +226,11 @@ check_pem(const char *what, const char *path, bool cert, int *keytype)
 		return (0);
 	if ((fp = fopen(path, "r")) == NULL) {
 		if (errno == EACCES) {
-			kore_log(LOG_NOTICE, "%s %s: not readable by the worker; "
+			log_msg(LOG_NOTICE, "%s %s: not readable by the worker; "
 			    "not checked", what, path);
 			return (0);
 		}
-		kore_log(LOG_ERR, "%s %s: %s", what, path, strerror(errno));
+		log_msg(LOG_ERR, "%s %s: %s", what, path, strerror(errno));
 		return (-1);
 	}
 	if (cert) {
@@ -240,7 +241,7 @@ check_pem(const char *what, const char *path, bool cert, int *keytype)
 		pk = PEM_read_PrivateKey(fp, NULL, NULL, NULL);
 	fclose(fp);
 	if (pk == NULL) {
-		kore_log(LOG_ERR, "%s %s: not a PEM %s: %s", what, path,
+		log_msg(LOG_ERR, "%s %s: not a PEM %s: %s", what, path,
 		    cert ? "certificate" : "private key",
 		    ERR_reason_error_string(ERR_get_error()));
 		ERR_clear_error();
@@ -252,36 +253,20 @@ check_pem(const char *what, const char *path, bool cert, int *keytype)
 }
 
 /*
- * Check the certificates before serving: the console's own in Kore's
- * domains, which its key manager signs with only when they are RSA and
- * otherwise refuses with "unknown public key in certificate" once the
- * workers are up, and the client certificate and CA of web.conf.
+ * Check the certificates before serving: the server's own, of web.conf's
+ * server { } (RSA or EC alike), and the client certificate and CA of its
+ * tls { }.
  */
 int
 config_check_certs(void)
 {
-	struct kore_server	*srv;
-	struct kore_domain	*dom;
-	int			 type, rc;
+	int	type, rc;
 
 	rc = 0;
-	LIST_FOREACH(srv, &kore_servers, list) {
-		TAILQ_FOREACH(dom, &srv->domains, list) {
-			type = EVP_PKEY_NONE;
-			if (check_pem("certfile", dom->certfile, true,
-			    &type) == -1)
-				rc = -1;
-			else if (type != EVP_PKEY_NONE && type != EVP_PKEY_RSA) {
-				kore_log(LOG_ERR, "certfile %s: not an RSA "
-				    "certificate; kore(1) serves no other kind",
-				    dom->certfile);
-				rc = -1;
-			}
-			if (check_pem("certkey", dom->certkey, false,
-			    &type) == -1)
-				rc = -1;
-		}
-	}
+	if (web_certfile != NULL && (check_pem("certfile", web_certfile, true,
+	    &type) == -1 || check_pem("certkey", web_certkey, false, &type) ==
+	    -1))
+		rc = -1;
 	if (check_pem("tls.ca", cfg.tls_ca, true, &type) == -1 ||
 	    check_pem("tls.ca_key", cfg.tls_ca_key, false, &type) == -1 ||
 	    check_pem("tls.cert", cfg.tls_cert, true, &type) == -1 ||

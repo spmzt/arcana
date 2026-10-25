@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Arcana console API
   version: 0.127.0
-  summary: The JSON API of arcana-console.so, the console's Kore module.
+  summary: The JSON API of arcana-console(8).
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
     the console sets an HttpOnly, SameSite=Strict `arc_session` cookie;

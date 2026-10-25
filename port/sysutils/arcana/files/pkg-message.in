@@ -6,11 +6,12 @@ way is to enrol the host from the console, which gives a one-time command:
 
   arcana-enrol -s https://console.example <token>
 
-The console (CONSOLE option) runs kore(1) as an unprivileged user:
+The console (CONSOLE option), arcana-console(8), serves as an
+unprivileged user:
 
   pw useradd arcana -d /var/db/arcana -s /usr/sbin/nologin
   install -d -o arcana -m 0700 /var/db/arcana
-  edit %%PREFIX%%/etc/arcana/kore.conf and web.conf
+  edit %%PREFIX%%/etc/arcana/web.conf (its server { } and the rest)
   sysrc arcana_console_enable=YES && service arcana_console start
 
 The host the console runs on is its first: start its agent, and the
@@ -19,8 +20,7 @@ group arcana may use:
 
   sysrc arcana_agent_enable=YES && service arcana_agent start
 
-Its TLS certificate must be RSA: Kore's key manager signs nothing else.
-The first login needs the token in /var/db/arcana/setup-token.
+Its TLS certificate may be RSA or EC.  The first login needs the token in /var/db/arcana/setup-token.
 EOM
 }
 ]

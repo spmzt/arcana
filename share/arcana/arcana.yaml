@@ -523,8 +523,11 @@ definitions:
           so that a repository of the admin's is not merged into it;
           with pkg-repo, one of the jail's own repositories is used
           instead, as it is.  Both keep the jail's /etc aside in
-          /var/backups first and name the .pkgnew and .pkgsave files
-          left to merge; the jail is to be restarted after.  With force, past OSVERSION for
+          /var/backups first and put back the jail's own files that pkg
+          put aside as .pkgsave (master.passwd and group merged with the
+          new base's accounts, pwd_mkdb run in the jail), naming the
+          packages' versions left as .pkgnew to merge; the jail is to be
+          restarted after.  With force, past OSVERSION for
           the other packages (IGNORE_OSVERSION); pkg-ip as pkg -4 or
           -6.  Needs FreeBSD 15.1 or later in the jail.
       - name: reboot

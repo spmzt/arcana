@@ -56,7 +56,7 @@ struct place {
 };
 
 struct tsh {
-	struct kore_task task;
+	struct task task;
 	char		 src[64], dst[64], proto[8];
 	uint32_t	 port;
 	struct place	 p[TS_PLACES];
@@ -525,7 +525,7 @@ follow(struct tsh *t, const char *from, const char *to, bool reply,
 }
 
 static int
-ts_run(struct kore_task *task)
+ts_run(struct task *task)
 {
 	struct tsh		*t = (struct tsh *)task;
 	ucl_object_t		*top, *hops, *back, *end, *bend, *findings;
@@ -642,7 +642,7 @@ ts_run(struct kore_task *task)
 	for (i = 0; i < t->n; i++)
 		if (t->p[i].survey != NULL)
 			ucl_object_unref(t->p[i].survey);
-	return (KORE_RESULT_OK);
+	return (WEB_OK);
 }
 
 static bool
@@ -667,9 +667,9 @@ api_troubleshoot_path(struct http_request *req)
 
 	if (req->hdlr_extra != NULL) {
 		t = req->hdlr_extra;
-		if (kore_task_state(&t->task) != KORE_TASK_STATE_FINISHED) {
+		if (task_state(&t->task) != TASK_STATE_FINISHED) {
 			http_request_sleep(req);
-			return (KORE_RESULT_RETRY);
+			return (WEB_RETRY);
 		}
 		http_response_header(req, "content-type",
 		    "application/json; charset=utf-8");
@@ -678,11 +678,11 @@ api_troubleshoot_path(struct http_request *req)
 			http_response(req, 200, t->json, strlen(t->json));
 		else
 			http_response(req, 500, NULL, 0);
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	}
 	/* It changes nothing: who may read may ask. */
 	if (!guard(req, false))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "a JSON object: src, "
 		    "dst, proto, port, places"));
@@ -701,7 +701,7 @@ api_troubleshoot_path(struct http_request *req)
 		return (reply_error(req, 400, "invalid", "proto is tcp, udp, "
 		    "sctp, icmp or ip"));
 	}
-	t = kore_calloc(1, sizeof(*t));
+	t = xcalloc(1, sizeof(*t));
 	snprintf(t->src, sizeof(t->src), "%s", ucl_str(body, "src"));
 	snprintf(t->dst, sizeof(t->dst), "%s", ucl_str(body, "dst"));
 	snprintf(t->proto, sizeof(t->proto), "%s", proto != NULL ? proto : "");
@@ -742,15 +742,15 @@ api_troubleshoot_path(struct http_request *req)
 		}
 	ucl_object_unref(body);
 	if (t->n == 0) {
-		kore_free(t);
+		free(t);
 		return (reply_error(req, 400, "invalid", "no place to ask: the "
 		    "console has no such host"));
 	}
 	req->hdlr_extra = t;
-	kore_task_create(&t->task, ts_run);
-	kore_task_bind_request(&t->task, req);
-	kore_task_run(&t->task);
-	return (KORE_RESULT_RETRY);
+	task_create(&t->task, ts_run);
+	task_bind_request(&t->task, req);
+	task_run(&t->task);
+	return (WEB_RETRY);
 }
 
 /* on_free: what the task made goes with the request. */
@@ -760,10 +760,10 @@ api_troubleshoot_free(struct http_request *req)
 	struct tsh	*t = req->hdlr_extra;
 
 	/* Asked while the task runs too: only once it is done. */
-	if (t == NULL || !kore_task_finished(&t->task))
+	if (t == NULL || !task_finished(&t->task))
 		return;
-	kore_task_destroy(&t->task);
+	task_destroy(&t->task);
 	free(t->json);
-	kore_free(t);
+	free(t);
 	req->hdlr_extra = NULL;
 }

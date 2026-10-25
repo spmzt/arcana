@@ -14,8 +14,8 @@
  * no attestation statement to verify; the one-time setup token is what
  * makes the first registration trustworthy.
  *
- * Kore runs this module in one worker, so challenges and sessions live
- * in that process; restarting the console logs you out.
+ * The server runs the console in one worker, so challenges and sessions
+ * live in that process; restarting the console logs you out.
  */
 
 #include <sys/param.h>
@@ -121,28 +121,24 @@ put(ucl_object_t *o, const char *key, ucl_object_t *v)
 	ucl_object_insert_key(o, v, key, 0, true);
 }
 
-/* base64url without padding; the caller frees with kore_free(). */
+/* base64url without padding; the caller frees with free(). */
 static char *
 b64url(const void *data, size_t len)
 {
 	char	*out;
 
-	if (!kore_base64url_encode(data, len, &out, KORE_BASE64_RAW))
+	if (!b64url_encode(data, len, &out, B64_RAW))
 		return (NULL);
 	return (out);
 }
 
-/*
- * Kore's decoder refuses KORE_BASE64_RAW input whose length is already a
- * multiple of 4 (nothing to pad), so ask for padding only when needed.
- */
+/* base64url, padded or not. */
 static uint8_t *
 unb64url(const char *s, size_t *lenp)
 {
 	uint8_t	*out;
 
-	if (s == NULL || *s == '\0' || !kore_base64url_decode(s, &out, lenp,
-	    strlen(s) % 4 == 0 ? 0 : KORE_BASE64_RAW))
+	if (s == NULL || *s == '\0' || !b64url_decode(s, &out, lenp, B64_RAW))
 		return (NULL);
 	return (out);
 }
@@ -164,7 +160,7 @@ challenge_new(struct challenge *c)
 	arc4random_buf(raw, sizeof(raw));
 	s = b64url(raw, sizeof(raw));
 	strlcpy(c->value, s, sizeof(c->value));
-	kore_free(s);
+	free(s);
 	c->expires = time(NULL) + CHALLENGE_TTL;
 }
 
@@ -186,7 +182,7 @@ login_challenge(char *out, size_t len)
 	memcpy(raw + 16, mac, 16);
 	s = b64url(raw, sizeof(raw));
 	strlcpy(out, s, len);
-	kore_free(s);
+	free(s);
 }
 
 /* Is value a login challenge of ours, in time, and not used before? */
@@ -212,7 +208,7 @@ login_challenge_take(const char *value)
 	}
 	now = time(NULL);
 	expires = ok ? (time_t)be32dec(raw + 12) : 0;
-	kore_free(raw);
+	free(raw);
 	if (!ok || now > expires)
 		return (false);
 	/* Used once: noted until it would have ended anyway. */
@@ -262,7 +258,7 @@ origin_ours(const char *origin)
 	for (i = 0; !ok && i < cfg.nandroid_keys; i++) {
 		h = b64url(cfg.android_keys[i], sizeof(cfg.android_keys[i]));
 		ok = h != NULL && strcmp(origin + sizeof(pfx) - 1, h) == 0;
-		kore_free(h);
+		free(h);
 	}
 	return (ok);
 }
@@ -440,12 +436,12 @@ setup_token_init(void)
 	if ((fd = mkstemp(tmp)) == -1 || fchmod(fd, 0600) == -1 ||
 	    dprintf(fd, "%s\n", setup_token) < 0 || close(fd) == -1 ||
 	    rename(tmp, path) == -1) {
-		kore_log(LOG_ERR, "%s: %s", path, strerror(errno));
+		log_msg(LOG_ERR, "%s: %s", path, strerror(errno));
 		if (fd != -1)
 			(void)unlink(tmp);
 		return;
 	}
-	kore_log(LOG_NOTICE, "no security key registered yet: the setup "
+	log_msg(LOG_NOTICE, "no security key registered yet: the setup "
 	    "token is in %s", path);
 }
 
@@ -476,7 +472,7 @@ auth_init(void)
 		arc4random_buf(uid, sizeof(uid));
 		s = b64url(uid, sizeof(uid));
 		put(creds, "user_id", ucl_object_fromstring(s));
-		kore_free(s);
+		free(s);
 	}
 	if (cred_list() == NULL)
 		put(creds, "credentials", ucl_object_typed_new(UCL_ARRAY));
@@ -628,7 +624,6 @@ session_of(struct http_request *req)
 	char		*cookie;
 	int		 i;
 
-	http_populate_cookies(req);
 	if (!http_request_cookie(req, SESSION_COOKIE, &cookie) ||
 	    strlen(cookie) != 64)
 		return (NULL);
@@ -706,7 +701,6 @@ session_who(struct http_request *req)
 	char	*cookie;
 	int	 i;
 
-	http_populate_cookies(req);
 	if (!http_request_cookie(req, SESSION_COOKIE, &cookie) ||
 	    strlen(cookie) != 64)
 		return (token_who(req));
@@ -997,7 +991,7 @@ api_register_begin(struct http_request *req)
 
 		if (!guard(req, true)) {
 			ucl_object_unref(body);
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		}
 		u = session_user(req);
 		forname = body != NULL ? ucl_str(body, "user") : NULL;
@@ -1090,7 +1084,7 @@ api_register_finish(struct http_request *req)
 	 * taken at the start, was it; the challenge ties the two. */
 	if (ucl_array_size(cred_list()) > 0 && !reg_invited && !guard(req,
 	    true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "bad_request",
 		    "expected a JSON object"));
@@ -1162,16 +1156,16 @@ api_register_finish(struct http_request *req)
 		err = "cannot save the credential";
 		goto out;
 	}
-	kore_log(LOG_NOTICE, "registered security key \"%s\" of %s",
+	log_msg(LOG_NOTICE, "registered security key \"%s\" of %s",
 	    ucl_str(c, "name"), cred_user(c));
 	setup_token_init();
 	session_start(req, ucl_str(c, "name"), NULL, cred_user(c));
 	status = 200;
 out:
-	kore_free(cd);
-	kore_free(ad);
-	kore_free(spki);
-	kore_free(credid);
+	free(cd);
+	free(ad);
+	free(spki);
+	free(credid);
 	ucl_object_unref(body);
 	if (status != 200)
 		return (reply_error(req, status, "registration", "%s", err));
@@ -1275,7 +1269,7 @@ api_login_finish(struct http_request *req)
 	    "sign_count"));
 	if ((count != 0 || stored != 0) && count <= stored) {
 		err = "signature counter went backwards";
-		kore_log(LOG_WARNING, "security key \"%s\": counter %u after "
+		log_msg(LOG_WARNING, "security key \"%s\": counter %u after "
 		    "%u: possibly cloned", ucl_str(c, "name"), count, stored);
 		goto out;
 	}
@@ -1285,17 +1279,17 @@ api_login_finish(struct http_request *req)
 	    ucl_object_fromint(time(NULL)), "last_used", 0, true);
 	(void)store_save(CREDENTIALS, creds);
 	session_start(req, ucl_str(c, "name"), NULL, cred_user(c));
-	kore_log(LOG_NOTICE, "login with \"%s\" of %s", ucl_str(c, "name"),
+	log_msg(LOG_NOTICE, "login with \"%s\" of %s", ucl_str(c, "name"),
 	    cred_user(c));
 out:
-	kore_free(cd);
-	kore_free(ad);
-	kore_free(sig);
-	kore_free(spki);
+	free(cd);
+	free(ad);
+	free(sig);
+	free(spki);
 	free(msg);
 	ucl_object_unref(body);
 	if (err != NULL) {
-		kore_log(LOG_NOTICE, "login refused: %s", err);
+		log_msg(LOG_NOTICE, "login refused: %s", err);
 		return (reply_error(req, 401, "login", "%s", err));
 	}
 	return (status_reply(req, true));
@@ -1324,14 +1318,14 @@ api_login_token(struct http_request *req)
 	name = v != NULL ? token_login(v, id, sizeof(id)) : NULL;
 	if (name == NULL) {
 		ucl_object_unref(body);
-		kore_log(LOG_NOTICE, "login with a token refused");
+		log_msg(LOG_NOTICE, "login with a token refused");
 		return (reply_error(req, 401, "login", "not a write token of "
 		    "this console's: a read token does not sign in, and a "
 		    "deleted one opens nothing"));
 	}
 	snprintf(who, sizeof(who), "API token %s", name);
 	session_start(req, who, id, NULL);
-	kore_log(LOG_NOTICE, "login with %s", who);
+	log_msg(LOG_NOTICE, "login with %s", who);
 	ucl_object_unref(body);
 	/* Its cookie is only on its way: said so here. */
 	return (status_reply_as(req, true, true, BY_KEY));
@@ -1398,7 +1392,7 @@ api_login_password(struct http_request *req)
 	if (password != NULL)
 		explicit_bzero((char *)(uintptr_t)password, strlen(password));
 	if (!ok) {
-		kore_log(LOG_NOTICE, "login by password refused: %s", err);
+		log_msg(LOG_NOTICE, "login by password refused: %s", err);
 		ucl_object_unref(body);
 		return (reply_error(req, strstr(err, "too many") != NULL ? 429 :
 		    strstr(err, "not set") != NULL || strstr(err, "characters")
@@ -1412,7 +1406,7 @@ api_login_password(struct http_request *req)
 	else
 		s->ldap = true;
 	session_put(s);
-	kore_log(LOG_NOTICE, "login by %s", who);
+	log_msg(LOG_NOTICE, "login by %s", who);
 	ucl_object_unref(body);
 	return (status_reply_as(req, true, true, own ? BY_PASSWORD : BY_LDAP));
 }
@@ -1436,7 +1430,7 @@ api_auth_password(struct http_request *req)
 	if (req->method != HTTP_METHOD_POST)
 		return (reply_error(req, 405, "method", "POST"));
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "bad_request", "{\"user\", "
 		    "\"password\"}"));
@@ -1466,7 +1460,7 @@ api_auth_password(struct http_request *req)
 		    strstr(e, "written") != NULL || strstr(e, "crypt") != NULL ?
 		    500 : 400, "invalid", "%s", e));
 	sessions_end_password(name);
-	kore_log(LOG_NOTICE, "password of %s %s by %s", name, set ? "set" :
+	log_msg(LOG_NOTICE, "password of %s %s by %s", name, set ? "set" :
 	    "taken away", session_who(req) != NULL ? session_who(req) : "?");
 	o = ucl_object_typed_new(UCL_OBJECT);
 	put(o, "ok", ucl_object_frombool(true));
@@ -1482,7 +1476,6 @@ api_logout(struct http_request *req)
 	char	*cookie, clear[128];
 	int	 i;
 
-	http_populate_cookies(req);
 	if (http_request_cookie(req, SESSION_COOKIE, &cookie)) {
 		sha256(cookie, strlen(cookie), h);
 		for (i = 0; i < SESSIONS; i++)
@@ -1509,7 +1502,7 @@ api_credentials(struct http_request *req)
 	size_t			 i;
 
 	if (!guard(req, false))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	/* The owner sees them all, with whose each is; others their own. */
 	u = session_user(req);
 	a = ucl_object_typed_new(UCL_ARRAY);
@@ -1555,7 +1548,7 @@ api_credential(struct http_request *req)
 	char			 id[512];
 
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (req->method != HTTP_METHOD_DELETE || !capture(req, 4, id,
 	    sizeof(id)))
 		return (reply_error(req, 400, "bad_request", "bad request"));

@@ -99,11 +99,11 @@ add(const char *id, const char *name, const char *uri, const char *peer,
 	pthread_mutex_lock(&table_lock);
 	s = &servers[nservers++];
 	strlcpy(s->id, id, sizeof(s->id));
-	s->name = kore_strdup(name);
-	s->uri = kore_strdup(uri);
-	s->peer_name = peer != NULL && *peer != '\0' ? kore_strdup(peer) :
+	s->name = xstrdup(name);
+	s->uri = xstrdup(uri);
+	s->peer_name = peer != NULL && *peer != '\0' ? xstrdup(peer) :
 	    NULL;
-	s->tenant = tenant != NULL && *tenant != '\0' ? kore_strdup(tenant) :
+	s->tenant = tenant != NULL && *tenant != '\0' ? xstrdup(tenant) :
 	    NULL;
 	s->safe_wait = 0;
 	s->pkg_repos = NULL;
@@ -118,10 +118,10 @@ servers_reload(void)
 
 	pthread_mutex_lock(&table_lock);
 	for (i = 0; i < nservers; i++) {
-		kore_free(servers[i].name);
-		kore_free(servers[i].uri);
-		kore_free(servers[i].peer_name);
-		kore_free(servers[i].tenant);
+		free(servers[i].name);
+		free(servers[i].uri);
+		free(servers[i].peer_name);
+		free(servers[i].tenant);
 	}
 	nservers = 0;
 	pthread_mutex_unlock(&table_lock);
@@ -246,8 +246,8 @@ local_enrol(void)
 	local_done = true;
 	local_state = "added";
 	if (save() == -1)
-		kore_log(LOG_ERR, "cannot save the list of servers");
-	kore_log(LOG_NOTICE, "server %s added by itself: the agent beside "
+		log_msg(LOG_ERR, "cannot save the list of servers");
+	log_msg(LOG_NOTICE, "server %s added by itself: the agent beside "
 	    "the console, %s", id, cfg.local_agent);
 }
 
@@ -284,7 +284,7 @@ servers_add(const char *name, const char *uri, const char *peer)
 	add(id, name, uri, peer, NULL);
 	if (save() == -1)
 		return (-1);
-	kore_log(LOG_NOTICE, "server %s added: %s", id, uri);
+	log_msg(LOG_NOTICE, "server %s added: %s", id, uri);
 	return (0);
 }
 
@@ -311,18 +311,18 @@ servers_move(const char *id, const char *uri)
 			return (-1);
 	old = servers[i].uri;
 	pthread_mutex_lock(&table_lock);
-	servers[i].uri = kore_strdup(uri);
+	servers[i].uri = xstrdup(uri);
 	pthread_mutex_unlock(&table_lock);
 	if (save() == -1) {
 		pthread_mutex_lock(&table_lock);
-		kore_free(servers[i].uri);
+		free(servers[i].uri);
 		servers[i].uri = old;
 		pthread_mutex_unlock(&table_lock);
 		return (-1);
 	}
-	kore_log(LOG_NOTICE, "server %s moved: %s to %s", id, old, uri);
+	log_msg(LOG_NOTICE, "server %s moved: %s to %s", id, old, uri);
 	hosts_forget(old);
-	kore_free(old);
+	free(old);
 	return (0);
 }
 
@@ -430,7 +430,7 @@ api_servers(struct http_request *req)
 	int		 i;
 
 	if (!guard(req, req->method != HTTP_METHOD_GET))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (req->method == HTTP_METHOD_POST) {
 		if ((body = read_json(req)) == NULL)
 			return (reply_error(req, 400, "bad_request",
@@ -469,7 +469,7 @@ api_servers(struct http_request *req)
 		ucl_object_unref(body);
 		if (save() == -1)
 			return (reply_error(req, 500, "store", "cannot save"));
-		kore_log(LOG_NOTICE, "server %s added: %s", id,
+		log_msg(LOG_NOTICE, "server %s added: %s", id,
 		    servers[nservers - 1].uri);
 	}
 	/* The agent beside the console may have come up since. */
@@ -511,7 +511,7 @@ api_server(struct http_request *req)
 	int64_t		 k;
 
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (!capture(req, 3, id, sizeof(id)))
 		return (reply_error(req, 400, "bad_request", "bad server id"));
 	for (i = 0; i < nservers; i++)
@@ -520,7 +520,7 @@ api_server(struct http_request *req)
 	if (i == nservers)
 		return (reply_error(req, 404, "not_found", "no such server"));
 	if (!host_allowed(req, id, true, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (req->method == HTTP_METHOD_POST) {
 		if ((body = read_json(req)) == NULL)
 			return (reply_error(req, 400, "bad_request",
@@ -536,15 +536,15 @@ api_server(struct http_request *req)
 				    "at most"));
 			}
 			pthread_mutex_lock(&table_lock);
-			kore_free(servers[i].tenant);
-			servers[i].tenant = t[0] != '\0' ? kore_strdup(t) : NULL;
+			free(servers[i].tenant);
+			servers[i].tenant = t[0] != '\0' ? xstrdup(t) : NULL;
 			pthread_mutex_unlock(&table_lock);
 			if (ucl_object_lookup(body, "safe_wait") == NULL) {
 				ucl_object_unref(body);
 				if (save() == -1)
 					return (reply_error(req, 500, "store",
 					    "cannot save"));
-				kore_log(LOG_NOTICE, "server %s: tenant %s", id,
+				log_msg(LOG_NOTICE, "server %s: tenant %s", id,
 				    t[0] != '\0' ? t : "none");
 				req->method = HTTP_METHOD_GET;
 				return (api_servers(req));
@@ -608,7 +608,7 @@ api_server(struct http_request *req)
 				if (save() == -1)
 					return (reply_error(req, 500, "store",
 					    "cannot save"));
-				kore_log(LOG_NOTICE, "server %s: pkg repositories "
+				log_msg(LOG_NOTICE, "server %s: pkg repositories "
 				    "chosen", id);
 				req->method = HTTP_METHOD_GET;
 				return (api_servers(req));
@@ -632,18 +632,18 @@ api_server(struct http_request *req)
 			pthread_mutex_unlock(&table_lock);
 			return (reply_error(req, 500, "store", "cannot save"));
 		}
-		kore_log(LOG_NOTICE, "server %s: rollback timer %d s", id,
+		log_msg(LOG_NOTICE, "server %s: rollback timer %d s", id,
 		    (int)k);
 		req->method = HTTP_METHOD_GET;
 		return (api_servers(req));
 	}
-	kore_log(LOG_NOTICE, "server %s removed: %s", id, servers[i].uri);
+	log_msg(LOG_NOTICE, "server %s removed: %s", id, servers[i].uri);
 	hosts_forget(servers[i].uri);
 	pthread_mutex_lock(&table_lock);
-	kore_free(servers[i].name);
-	kore_free(servers[i].uri);
-	kore_free(servers[i].peer_name);
-	kore_free(servers[i].tenant);
+	free(servers[i].name);
+	free(servers[i].uri);
+	free(servers[i].peer_name);
+	free(servers[i].tenant);
 	if (servers[i].pkg_repos != NULL)
 		ucl_object_unref(servers[i].pkg_repos);
 	memmove(&servers[i], &servers[i + 1],
@@ -667,7 +667,7 @@ api_server(struct http_request *req)
  * reached as before.
  */
 struct mv {
-	struct kore_task task;		/* first */
+	struct task task;		/* first */
 	int		 stage;		/* MV_* */
 	char		 sid[16];
 	char		 from[256];
@@ -715,7 +715,7 @@ mv_why(const char *json, int status, char *buf, size_t len)
 }
 
 static int
-mv_run(struct kore_task *t)
+mv_run(struct task *t)
 {
 	struct mv	*m = (struct mv *)t;
 	char		*json, why[400];
@@ -768,7 +768,7 @@ mv_run(struct kore_task *t)
 		free(json);
 		break;
 	}
-	return (KORE_RESULT_OK);
+	return (WEB_OK);
 }
 
 static void
@@ -776,9 +776,9 @@ mv_start(struct http_request *req, struct mv *m, int stage)
 {
 
 	m->stage = stage;
-	kore_task_create(&m->task, mv_run);
-	kore_task_bind_request(&m->task, req);
-	kore_task_run(&m->task);
+	task_create(&m->task, mv_run);
+	task_bind_request(&m->task, req);
+	task_run(&m->task);
 }
 
 int
@@ -791,12 +791,12 @@ api_server_move(struct http_request *req)
 	char			 id[16];
 
 	if ((m = req->hdlr_extra) != NULL) {
-		if (kore_task_state(&m->task) != KORE_TASK_STATE_FINISHED) {
+		if (task_state(&m->task) != TASK_STATE_FINISHED) {
 			http_request_sleep(req);
-			return (KORE_RESULT_RETRY);
+			return (WEB_RETRY);
 		}
 		if (m->stage == MV_TRY && m->ok) {
-			kore_task_destroy(&m->task);
+			task_destroy(&m->task);
 			if (servers_move(m->sid, m->to) == -1) {
 				m->ok = false;
 				snprintf(m->error, sizeof(m->error), "It answers "
@@ -806,7 +806,7 @@ api_server_move(struct http_request *req)
 				mv_start(req, m, MV_BACK);
 			} else
 				mv_start(req, m, MV_DROP);
-			return (KORE_RESULT_RETRY);
+			return (WEB_RETRY);
 		}
 		top = ucl_object_typed_new(UCL_OBJECT);
 		ucl_object_insert_key(top, ucl_object_frombool(m->ok), "ok", 0,
@@ -819,16 +819,16 @@ api_server_move(struct http_request *req)
 		if (m->note[0] != '\0')
 			ucl_object_insert_key(top, ucl_object_fromstring(m->note),
 			    "note", 0, false);
-		kore_log(LOG_NOTICE, "server %s: move to %s: %s", m->sid, m->to,
+		log_msg(LOG_NOTICE, "server %s: move to %s: %s", m->sid, m->to,
 		    m->ok ? "done" : m->error);
 		return (reply_json(req, 200, top));
 	}
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (!capture(req, 3, id, sizeof(id)) || (s = server_find(id)) == NULL)
 		return (reply_error(req, 404, "not_found", "no such server"));
 	if (!host_allowed(req, id, true, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "a JSON object: uri"));
 	to = ucl_str(body, "uri");
@@ -845,7 +845,7 @@ api_server_move(struct http_request *req)
 		    0 ? "it is reached there already" : "a host reached by "
 		    "its local socket is not moved"));
 	}
-	m = kore_calloc(1, sizeof(*m));
+	m = xcalloc(1, sizeof(*m));
 	snprintf(m->sid, sizeof(m->sid), "%s", s->id);
 	snprintf(m->from, sizeof(m->from), "%s", s->uri);
 	snprintf(m->to, sizeof(m->to), "%s", to);
@@ -855,7 +855,7 @@ api_server_move(struct http_request *req)
 	ucl_object_unref(body);
 	req->hdlr_extra = m;
 	mv_start(req, m, MV_TRY);
-	return (KORE_RESULT_RETRY);
+	return (WEB_RETRY);
 }
 
 void
@@ -864,9 +864,9 @@ api_server_move_free(struct http_request *req)
 	struct mv	*m = req->hdlr_extra;
 
 	/* Asked while the task runs too: only once it is done. */
-	if (m == NULL || !kore_task_finished(&m->task))
+	if (m == NULL || !task_finished(&m->task))
 		return;
-	kore_task_destroy(&m->task);
-	kore_free(m);
+	task_destroy(&m->task);
+	free(m);
 	req->hdlr_extra = NULL;
 }

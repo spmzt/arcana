@@ -1039,7 +1039,7 @@ role_keep(struct http_request *req, ucl_object_t *body)
 	if (store_save(USERS_FILE, udoc) != 0)
 		return (reply_error(req, 500, "store", "the roles could not be "
 		    "written"));
-	kore_log(LOG_NOTICE, "role %s %s by %s", name, old != NULL ? "changed" :
+	log_msg(LOG_NOTICE, "role %s %s by %s", name, old != NULL ? "changed" :
 	    "added", session_who(req) != NULL ? session_who(req) : "?");
 	return (reply_all(req));
 }
@@ -1104,7 +1104,7 @@ user_keep(struct http_request *req, ucl_object_t *body)
 	if (store_save(USERS_FILE, udoc) != 0)
 		return (reply_error(req, 500, "store", "the users could not be "
 		    "written"));
-	kore_log(LOG_NOTICE, "user %s %s by %s", name, old != NULL ? "changed" :
+	log_msg(LOG_NOTICE, "user %s %s by %s", name, old != NULL ? "changed" :
 	    "added", session_who(req) != NULL ? session_who(req) : "?");
 	return (reply_all(req));
 }
@@ -1117,7 +1117,7 @@ api_users(struct http_request *req)
 	ucl_object_t	*body;
 
 	if (!guard(req, req->method != HTTP_METHOD_GET))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (req->method == HTTP_METHOD_GET)
 		return (reply_all(req));
 	if ((body = read_json(req)) == NULL)
@@ -1139,7 +1139,7 @@ api_user(struct http_request *req)
 		return (reply_error(req, 400, "invalid", "a user's name"));
 	if (req->method == HTTP_METHOD_PUT) {
 		if (!guard(req, true))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		if ((body = read_json(req)) == NULL)
 			return (reply_error(req, 400, "invalid", "a user"));
 		put(body, "name", ucl_object_fromstring(name));
@@ -1148,7 +1148,7 @@ api_user(struct http_request *req)
 	if (req->method != HTTP_METHOD_DELETE)
 		return (reply_error(req, 405, "method", "PUT or DELETE"));
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((u = by_name("users", name)) == NULL)
 		return (reply_error(req, 404, "not_found", "no user %s", name));
 	if (user_console(name) == CROLE_OWNER && owners() == 1)
@@ -1162,7 +1162,7 @@ api_user(struct http_request *req)
 		    "written"));
 	creds_forget_user(name);
 	sessions_end_user(name);
-	kore_log(LOG_NOTICE, "user %s removed by %s", name, session_who(req) !=
+	log_msg(LOG_NOTICE, "user %s removed by %s", name, session_who(req) !=
 	    NULL ? session_who(req) : "?");
 	return (reply_all(req));
 }
@@ -1177,14 +1177,14 @@ api_user_invite(struct http_request *req)
 	if (req->method != HTTP_METHOD_POST)
 		return (reply_error(req, 405, "method", "POST"));
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (!capture(req, 3, name, sizeof(name)) || !user_exists(name))
 		return (reply_error(req, 404, "not_found", "no such user"));
 	invites_drop(NULL);
 	if (!invite_make(name, token, sizeof(token)))
 		return (reply_error(req, 500, "store", "the invitation could not "
 		    "be written"));
-	kore_log(LOG_NOTICE, "user %s invited by %s", name, session_who(req) !=
+	log_msg(LOG_NOTICE, "user %s invited by %s", name, session_who(req) !=
 	    NULL ? session_who(req) : "?");
 	o = ucl_object_typed_new(UCL_OBJECT);
 	put(o, "user", ucl_object_fromstring(name));
@@ -1203,7 +1203,7 @@ api_roles(struct http_request *req)
 		return (reply_error(req, 405, "method", "POST; the roles come "
 		    "with GET /api/users"));
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "a role: {\"name\", "
 		    "\"console\", \"hosts\": {\"*\": \"viewer\"}}"));
@@ -1223,7 +1223,7 @@ api_role(struct http_request *req)
 		return (reply_error(req, 400, "invalid", "a role's name"));
 	if (req->method == HTTP_METHOD_PUT) {
 		if (!guard(req, true))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		if ((body = read_json(req)) == NULL)
 			return (reply_error(req, 400, "invalid", "a role"));
 		put(body, "name", ucl_object_fromstring(name));
@@ -1232,7 +1232,7 @@ api_role(struct http_request *req)
 	if (req->method != HTTP_METHOD_DELETE)
 		return (reply_error(req, 405, "method", "PUT or DELETE"));
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((r = by_name("roles", name)) == NULL)
 		return (reply_error(req, 404, "not_found", "no role %s", name));
 	if (role_users(name) > 0)
@@ -1249,7 +1249,7 @@ api_role(struct http_request *req)
 	if (store_save(USERS_FILE, udoc) != 0)
 		return (reply_error(req, 500, "store", "the roles could not be "
 		    "written"));
-	kore_log(LOG_NOTICE, "role %s removed by %s", name, session_who(req) !=
+	log_msg(LOG_NOTICE, "role %s removed by %s", name, session_who(req) !=
 	    NULL ? session_who(req) : "?");
 	return (reply_all(req));
 }
@@ -1386,7 +1386,7 @@ group_keep(struct http_request *req, ucl_object_t *body)
 	if (store_save(USERS_FILE, udoc) != 0)
 		return (reply_error(req, 500, "store", "the groups could not be "
 		    "written"));
-	kore_log(LOG_NOTICE, "group %s %s by %s", name, old != NULL ? "changed" :
+	log_msg(LOG_NOTICE, "group %s %s by %s", name, old != NULL ? "changed" :
 	    "added", session_who(req) != NULL ? session_who(req) : "?");
 	return (reply_all(req));
 }
@@ -1401,7 +1401,7 @@ api_groups(struct http_request *req)
 		return (reply_error(req, 405, "method", "POST; the groups come "
 		    "with GET /api/users"));
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "a group: {\"name\", "
 		    "\"roles\": [...], \"members\": [...]}"));
@@ -1422,7 +1422,7 @@ api_group(struct http_request *req)
 		return (reply_error(req, 400, "invalid", "a group's name"));
 	if (req->method == HTTP_METHOD_PUT) {
 		if (!guard(req, true))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		if ((body = read_json(req)) == NULL)
 			return (reply_error(req, 400, "invalid", "a group"));
 		put(body, "name", ucl_object_fromstring(name));
@@ -1431,7 +1431,7 @@ api_group(struct http_request *req)
 	if (req->method != HTTP_METHOD_DELETE)
 		return (reply_error(req, 405, "method", "PUT or DELETE"));
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((g = by_name("groups", name)) == NULL)
 		return (reply_error(req, 404, "not_found", "no group %s", name));
 	it = NULL;
@@ -1444,7 +1444,7 @@ api_group(struct http_request *req)
 	if (store_save(USERS_FILE, udoc) != 0)
 		return (reply_error(req, 500, "store", "the groups could not be "
 		    "written"));
-	kore_log(LOG_NOTICE, "group %s removed by %s", name, session_who(req) !=
+	log_msg(LOG_NOTICE, "group %s removed by %s", name, session_who(req) !=
 	    NULL ? session_who(req) : "?");
 	return (reply_all(req));
 }

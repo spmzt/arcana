@@ -1,4 +1,20 @@
-# The arcana console (arcana-console.so), in UCL.  Named by ARCANA_WEB_CONF.
+# The arcana console, arcana-console(8), in UCL.  Named by its -c, by
+# ARCANA_WEB_CONF, or /usr/local/etc/arcana/web.conf.
+
+# The server: where it listens, HTTPS, the user it runs as.  The
+# certificate may be RSA or EC; it and its key are read as root.
+server {
+	listen = [ "0.0.0.0:443", "[::]:443" ];
+	certfile = "/usr/local/etc/arcana/console.pem";
+	certkey = "/usr/local/etc/arcana/console.key";
+	#webroot = "/usr/local/www/arcana-console";
+	#user = "arcana";
+	# One task thread per call to a host under way: more for a larger
+	# fleet, or for many pages open at once.
+	#task_threads = 32;
+	#body_max = 8388608;
+	#pidfile = "/var/run/arcana-console.pid";
+}
 
 # WebAuthn relying party: the console's host name, and the exact origin
 # the browser uses.  WebAuthn needs HTTPS except on localhost.

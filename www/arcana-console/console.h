@@ -5,21 +5,41 @@
  */
 
 /*
- * arcana-console.so: the Kore module that serves the arcana console.
+ * arcana-console: the arcana console, its API and its pages, served by
+ * the HTTP server of web.c on libwebsockets(3).
  */
 
 #ifndef _CONSOLE_H_
 #define _CONSOLE_H_
 
+/* What the sources take for granted, as the server's headers once gave
+ * it them. */
 #include <sys/types.h>
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/un.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
+#include <errno.h>
+#include <pthread.h>
+#include <regex.h>
+#include <signal.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <syslog.h>
+#include <unistd.h>
 
-#include <kore/kore.h>
-#include <kore/http.h>
-#include <kore/tasks.h>
 #include <ucl.h>
+
+#include "web.h"
 
 /* Generated into the object directory; <> so that a stale copy next
  * to the sources is never picked up. */
@@ -31,9 +51,8 @@ _Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.312.1"
+#define	ARCW_VERSION		"0.313.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
-#define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
 
@@ -288,7 +307,7 @@ char		*pki_sign_host(const char *, const char *, char *, size_t);
 const char	*pki_sign_data(const uint8_t *, size_t, uint8_t **, size_t *);
 int		 api_ca(struct http_request *);
 
-/* hosts.c: requests to arcana-agent over cblink, in Kore task threads. */
+/* hosts.c: requests to arcana-agent over cblink, in task threads. */
 int		 hosts_init(void);
 bool		 hosts_job_kind_known(const char *);
 int		 workflows_kinds_check(void);
@@ -345,7 +364,7 @@ const char	*hosts_connect(const char *, const char *, cbl_conn **,
 void		 hosts_release(const char *, const char *, cbl_conn *,
 		    cbl_tls *, struct arc_client *, bool);
 
-/* Route handlers, named in the Kore configuration. */
+/* Route handlers, named in routes.c. */
 int		 api_health(struct http_request *);
 int		 api_assetlinks(struct http_request *);
 int		 api_auth_status(struct http_request *);
@@ -416,12 +435,12 @@ int		 api_fw_trace(struct http_request *);
 int		 api_path(struct http_request *);
 int		 api_ipfw_rules(struct http_request *);
 int		 api_stream(struct http_request *);
-void		 stream_connect(struct connection *);
-void		 stream_message(struct connection *, u_int8_t, void *, size_t);
-void		 stream_disconnect(struct connection *);
-const char	*follow_start(struct connection *, uint64_t,
+void		 stream_connect(struct conn *);
+void		 stream_message(struct conn *, u_int8_t, void *, size_t);
+void		 stream_disconnect(struct conn *);
+const char	*follow_start(struct conn *, uint64_t,
 		    const struct server *);
-bool		 follow_stop(struct connection *, uint64_t, bool);
+bool		 follow_stop(struct conn *, uint64_t, bool);
 int		 api_storage(struct http_request *);
 int		 api_fstab(struct http_request *);
 int		 api_bird_config(struct http_request *);
@@ -432,6 +451,5 @@ int		 api_jobs_config(struct http_request *);
 int		 api_job(struct http_request *);
 void		 api_call_free(struct http_request *);
 
-int		 arcw_onload(int);
 
 #endif /* !_CONSOLE_H_ */

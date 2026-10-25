@@ -32,9 +32,6 @@
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 
-#include <kore/kore.h>
-#include <kore/http.h>
-
 #include <ucl.h>
 
 #include "console.h"
@@ -103,16 +100,16 @@ mac(const uint8_t key[32], const char *prev, const char *body, char out[65])
 /* A string as a JSON string's inside: quotes, backslashes and controls
  * escaped. */
 static void
-jesc(struct kore_buf *b, const char *s)
+jesc(struct buf *b, const char *s)
 {
 
 	for (; s != NULL && *s != '\0'; s++) {
 		if (*s == '"' || *s == '\\')
-			kore_buf_appendf(b, "\\%c", *s);
+			buf_appendf(b, "\\%c", *s);
 		else if ((unsigned char)*s < 0x20)
-			kore_buf_appendf(b, "\\u%04x", (unsigned char)*s);
+			buf_appendf(b, "\\u%04x", (unsigned char)*s);
 		else
-			kore_buf_append(b, s, 1);
+			buf_append(b, s, 1);
 	}
 }
 
@@ -152,7 +149,7 @@ void
 audit_add(const char *event, const char *action, const char *policy,
     const char *how, const char *where, const char *who, const char *fmt, ...)
 {
-	struct kore_buf	*b;
+	struct buf	*b;
 	va_list		 ap;
 	uint8_t		 key[32];
 	char		 path[MAXPATHLEN], prev[65], hash[65], *why, *body;
@@ -162,7 +159,7 @@ audit_add(const char *event, const char *action, const char *policy,
 	int		 fd;
 
 	if (audit_key(key) == -1) {
-		kore_log(LOG_ERR, "audit: no key: %s", errno_s);
+		log_msg(LOG_ERR, "audit: no key: %s", strerror(errno));
 		return;
 	}
 	va_start(ap, fmt);
@@ -172,7 +169,7 @@ audit_add(const char *event, const char *action, const char *policy,
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, AUDIT_FILE);
 	if ((fd = open(path, O_RDWR | O_CREAT | O_APPEND | O_CLOEXEC, 0600)) ==
 	    -1) {
-		kore_log(LOG_ERR, "audit: %s: %s", path, errno_s);
+		log_msg(LOG_ERR, "audit: %s: %s", path, strerror(errno));
 		free(why);
 		explicit_bzero(key, sizeof(key));
 		return;
@@ -181,38 +178,38 @@ audit_add(const char *event, const char *action, const char *policy,
 	last_of(fd, &seq, prev);
 	now = time(NULL);
 	strftime(when, sizeof(when), "%Y-%m-%dT%H:%M:%SZ", gmtime(&now));
-	b = kore_buf_alloc(512);
-	kore_buf_appendf(b, "{\"seq\":%jd,\"t\":%jd,\"when\":\"%s\",\"event\":\"",
+	b = buf_alloc(512);
+	buf_appendf(b, "{\"seq\":%jd,\"t\":%jd,\"when\":\"%s\",\"event\":\"",
 	    (intmax_t)seq + 1, (intmax_t)now, when);
 	jesc(b, event);
-	kore_buf_appendf(b, "\",\"action\":\"");
+	buf_appendf(b, "\",\"action\":\"");
 	jesc(b, action);
-	kore_buf_appendf(b, "\",\"policy\":\"");
+	buf_appendf(b, "\",\"policy\":\"");
 	jesc(b, policy);
-	kore_buf_appendf(b, "\",\"how\":\"");
+	buf_appendf(b, "\",\"how\":\"");
 	jesc(b, how);
-	kore_buf_appendf(b, "\",\"where\":\"");
+	buf_appendf(b, "\",\"where\":\"");
 	jesc(b, where);
-	kore_buf_appendf(b, "\",\"who\":\"");
+	buf_appendf(b, "\",\"who\":\"");
 	jesc(b, who);
-	kore_buf_appendf(b, "\",\"why\":\"");
+	buf_appendf(b, "\",\"why\":\"");
 	jesc(b, why);
-	kore_buf_appendf(b, "\",\"prev\":\"%s\"", prev);
+	buf_appendf(b, "\",\"prev\":\"%s\"", prev);
 	/* What the hash covers, then the line with it. */
 	if ((body = strndup((char *)b->data, b->offset)) == NULL) {
-		kore_log(LOG_ERR, "audit: out of memory");
+		log_msg(LOG_ERR, "audit: out of memory");
 		goto out;
 	}
 	mac(key, prev, body, hash);
 	free(body);
-	kore_buf_appendf(b, ",\"hash\":\"%s\"}\n", hash);
+	buf_appendf(b, ",\"hash\":\"%s\"}\n", hash);
 	if (write(fd, b->data, b->offset) != (ssize_t)b->offset)
-		kore_log(LOG_ERR, "audit: %s: %s", path, errno_s);
+		log_msg(LOG_ERR, "audit: %s: %s", path, strerror(errno));
 	(void)fsync(fd);
 out:
 	(void)flock(fd, LOCK_UN);
 	close(fd);
-	kore_buf_free(b);
+	buf_free(b);
 	free(why);
 	explicit_bzero(key, sizeof(key));
 }
@@ -315,15 +312,14 @@ api_sdwan_audit(struct http_request *req)
 	ucl_object_t		*events, *out;
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
-	struct kore_buf		*b;
+	struct buf		*b;
 	char			*q;
 	int64_t			 broken, count;
 	bool			 intact, csv;
 
 	if (!guard(req, false))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	csv = strstr(req->path, ".csv") != NULL;
-	http_populate_get(req);
 	q = NULL;
 	(void)http_argument_get_string(req, "q", &q);
 	events = audit_read(q, &intact, &broken, &count);
@@ -338,8 +334,8 @@ api_sdwan_audit(struct http_request *req)
 		ucl_object_insert_key(out, events, "events", 0, false);
 		return (reply_json(req, 200, out));
 	}
-	b = kore_buf_alloc(4096);
-	kore_buf_appendf(b, "seq,when,event,action,policy,how,where,who,why\n");
+	b = buf_alloc(4096);
+	buf_appendf(b, "seq,when,event,action,policy,how,where,who,why\n");
 	it = NULL;
 	while ((e = ucl_object_iterate(events, &it, true)) != NULL) {
 		static const char *const k[] = { "when", "event", "action",
@@ -347,28 +343,28 @@ api_sdwan_audit(struct http_request *req)
 		const char	*v;
 		size_t		 i, j;
 
-		kore_buf_appendf(b, "%jd", (intmax_t)ucl_object_toint(
+		buf_appendf(b, "%jd", (intmax_t)ucl_object_toint(
 		    ucl_object_lookup(e, "seq")));
 		for (i = 0; i < nitems(k); i++) {
 			v = ucl_object_lookup(e, k[i]) != NULL ?
 			    ucl_object_tostring_forced(ucl_object_lookup(e, k[i])) :
 			    "";
-			kore_buf_appendf(b, ",\"");
+			buf_appendf(b, ",\"");
 			for (j = 0; v[j] != '\0'; j++) {
 				if (v[j] == '"')
-					kore_buf_appendf(b, "\"\"");
+					buf_appendf(b, "\"\"");
 				else
-					kore_buf_append(b, &v[j], 1);
+					buf_append(b, &v[j], 1);
 			}
-			kore_buf_appendf(b, "\"");
+			buf_appendf(b, "\"");
 		}
-		kore_buf_appendf(b, "\n");
+		buf_appendf(b, "\n");
 	}
 	ucl_object_unref(events);
 	http_response_header(req, "content-type", "text/csv; charset=utf-8");
 	http_response_header(req, "content-disposition", "attachment; "
 	    "filename=\"sdwan-audit.csv\"");
 	http_response(req, 200, b->data, b->offset);
-	kore_buf_free(b);
-	return (KORE_RESULT_OK);
+	buf_free(b);
+	return (WEB_OK);
 }

@@ -198,7 +198,7 @@ api_prefix_lists(struct http_request *req)
 	if (req->method != HTTP_METHOD_GET)
 		return (reply_error(req, 405, "method", "GET"));
 	if (!guard(req, false))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	return (reply_json(req, 200, all_load()));
 }
 
@@ -217,7 +217,7 @@ api_prefix_list(struct http_request *req)
 	if (req->method != HTTP_METHOD_PUT && req->method != HTTP_METHOD_DELETE)
 		return (reply_error(req, 405, "method", "PUT or DELETE"));
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	body = NULL;
 	if (req->method == HTTP_METHOD_PUT) {
 		if ((body = read_json(req)) == NULL)
@@ -259,7 +259,7 @@ api_prefix_list(struct http_request *req)
 		return (reply_error(req, 500, "store", "the prefix lists could "
 		    "not be written"));
 	}
-	kore_log(LOG_NOTICE, "prefix list %s %s", name, req->method ==
+	log_msg(LOG_NOTICE, "prefix list %s %s", name, req->method ==
 	    HTTP_METHOD_PUT ? "kept" : "taken away");
 	return (reply_json(req, 200, all));
 }

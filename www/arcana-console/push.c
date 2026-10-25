@@ -56,7 +56,7 @@ struct target {
 };
 
 struct send {
-	struct kore_task	 task;		/* first: Kore frees the send */
+	struct task	 task;		/* first: the server frees the send */
 	struct target		 targets[PUSH_MAX];
 	size_t			 ntargets;
 	char			*payload;
@@ -103,7 +103,7 @@ push_init(void)
 		(void)unlink(path);
 		if ((fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0600)) == -1 ||
 		    (fp = fdopen(fd, "w")) == NULL) {
-			kore_log(LOG_ERR, "%s: %s", path, strerror(errno));
+			log_msg(LOG_ERR, "%s: %s", path, strerror(errno));
 			return (-1);
 		}
 		PEM_write_PrivateKey(fp, vapid, NULL, NULL, 0, NULL, NULL);
@@ -272,7 +272,7 @@ out:
 
 /* In a task thread: the message, to each device in turn. */
 static int
-send_run(struct kore_task *t)
+send_run(struct task *t)
 {
 	struct send	*s;
 	struct target	*tg;
@@ -315,7 +315,7 @@ send_run(struct kore_task *t)
 		free(auth);
 		free(body);
 	}
-	return (KORE_RESULT_OK);
+	return (WEB_OK);
 }
 
 static void
@@ -342,7 +342,7 @@ api_push_free(struct http_request *req)
 {
 	struct send	*s;
 
-	if ((s = req->hdlr_extra) != NULL && kore_task_finished(&s->task))
+	if ((s = req->hdlr_extra) != NULL && task_finished(&s->task))
 		send_free(s);
 }
 
@@ -388,7 +388,7 @@ api_push(struct http_request *req)
 	char			 host[256];
 
 	if (!guard(req, false))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	o = ucl_object_typed_new(UCL_OBJECT);
 	put(o, "public_key", ucl_object_fromstring(vapid_pub));
 	a = ucl_object_typed_new(UCL_ARRAY);
@@ -429,7 +429,7 @@ api_push_subscribe(struct http_request *req)
 	bool			 remove;
 
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	remove = strstr(req->path, "unsubscribe") != NULL;
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "a JSON body is "
@@ -520,9 +520,9 @@ api_push_send(struct http_request *req)
 
 	if (req->hdlr_extra != NULL) {
 		s = req->hdlr_extra;
-		if (kore_task_state(&s->task) != KORE_TASK_STATE_FINISHED) {
+		if (task_state(&s->task) != TASK_STATE_FINISHED) {
 			http_request_sleep(req);
-			return (KORE_RESULT_RETRY);
+			return (WEB_RETRY);
 		}
 		/* 404 and 410: the browser has left; forget it. */
 		sent = gone = 0;
@@ -564,7 +564,7 @@ api_push_send(struct http_request *req)
 		return (reply_json(req, 200, o));
 	}
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "a JSON body is "
 		    "needed"));
@@ -574,7 +574,7 @@ api_push_send(struct http_request *req)
 		text = "";
 	if ((except = ucl_str(body, "except")) == NULL)
 		except = "";
-	s = kore_calloc(1, sizeof(*s));
+	s = xcalloc(1, sizeof(*s));
 	msg = ucl_object_typed_new(UCL_OBJECT);
 	put(msg, "title", ucl_object_fromlstring(title, strnlen(title, 120)));
 	put(msg, "body", ucl_object_fromlstring(text, strnlen(text, 600)));
@@ -605,15 +605,15 @@ api_push_send(struct http_request *req)
 	ucl_object_unref(body);
 	if (s->ntargets == 0 || s->payload == NULL) {
 		send_free(s);
-		kore_free(s);
+		free(s);
 		o = ucl_object_typed_new(UCL_OBJECT);
 		put(o, "ok", ucl_object_frombool(true));
 		put(o, "sent", ucl_object_fromint(0));
 		return (reply_json(req, 200, o));
 	}
 	req->hdlr_extra = s;
-	kore_task_create(&s->task, send_run);
-	kore_task_bind_request(&s->task, req);
-	kore_task_run(&s->task);
-	return (KORE_RESULT_RETRY);
+	task_create(&s->task, send_run);
+	task_bind_request(&s->task, req);
+	task_run(&s->task);
+	return (WEB_RETRY);
 }

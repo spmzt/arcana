@@ -4,8 +4,8 @@
  */
 
 /*
- * What the network map shows moving, drawn by WebGL 2 under its SVG: a
- * link that is down breathes red at its middle.  The SVG keeps
+ * What the network map shows moving, drawn by WebGL 2 under its SVG.
+ * The SVG keeps
  * everything a reader or a pointer needs (boxes, names, links, labels,
  * and its own dashes for the traffic, which read better than points
  * along a link); where WebGL 2 is not to be had, this layer is not
@@ -575,7 +575,9 @@ hash01(unsigned int n, unsigned int salt)
  * PROBE_EVERY seconds, crossing in a time that grows with the delay
  * measured (a millisecond about half a second, a hundred about two),
  * sent early or late by up to the variation's share of the delay, and
- * lost, a red flash where it is lost, at the share measured.
+ * lost, at the share measured: it fades out where it goes, without a
+ * colour of its own (a red flash read as a mark in a random place); the
+ * loss in numbers is the tunnel's label's.
  */
 #define	PROBE_EVERY	0.55
 static void
@@ -605,27 +607,27 @@ probes(const struct glprobe *p, int which, double secs, float dpr,
 			if (age < 0)
 				continue;
 			t = (float)(age / cross);
-			cut = 1.5f;
-			if (hash01(n, (unsigned int)which + 7919u) < p->loss)
+			f = -1;
+			if (hash01(n, (unsigned int)which + 7919u) < p->loss) {
+				/* Lost: it fades out where it went, within the
+				 * tunnel. */
 				cut = 0.15f + 0.7f * hash01(n, (unsigned int)which +
 				    104729u);
-			if (t > cut) {
-				/* Lost: a red flash that fades where it went. */
-				f = (t - cut) * (float)cross / 0.35f;
-				if (f > 1)
-					continue;
-				t = cut;
+				if (t > cut) {
+					f = (t - cut) * (float)cross / 0.35f;
+					if (f > 1)
+						continue;
+					t = cut;
+				}
 			} else if (t > 1)
+				/* Arrived: gone at the far end. */
 				continue;
-			else
-				f = -1;
 			if (dir == 1)
 				t = 1 - t;
 			t = l->t0 + t * (l->t1 - l->t0);
 			at(l, t, &x, &y, &nx, &ny);
 			if (f >= 0)
-				point(x, y, size * (1.4f + 2.0f * f), gl.red,
-				    0.9f * (1 - f));
+				point(x, y, size, white, 0.95f * (1 - f));
 			else
 				point(x, y, size, white, 0.95f);
 		}
@@ -637,7 +639,7 @@ frame(double now, void *data)
 {
 	const struct gllink	*l;
 	double			 css_w, css_h, secs, s;
-	float			 dpr, x, y, nx, ny, a;
+	float			 dpr;
 	int			 state, i, w, h, flows;
 
 	state = arc_gl_probe();
@@ -686,16 +688,10 @@ frame(double now, void *data)
 	secs = now / 1000.0;
 	for (i = 0; app.fx && (state & 4) == 0 && i < gl.n; i++) {
 		l = &gl.l[i];
-		if (!l->up) {
-			/* Down: a slow red breath at its middle. */
-			at(l, 0.5f, &x, &y, &nx, &ny);
-			a = 0.25f + 0.25f * sinf((float)(secs * 2.4) + (float)i);
-			point(x, y, 26 * dpr * (float)fmin(1.4, fmax(0.6, s)),
-			    gl.red, a);
-			continue;
-		}
 		/* Its traffic is the SVG's dashes, which read better than
-		 * points along it. */
+		 * points along it, and a link down is the SVG's to show:
+		 * a mark at its middle was taken for one in a random place
+		 * (the middle can be behind another host). */
 		if (l->ab >= 1 || l->ba >= 1)
 			flows++;
 	}

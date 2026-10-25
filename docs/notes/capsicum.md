@@ -86,17 +86,20 @@ targets and states.
 
 ### The console
 
-The console is a Kore application.  Kore's worker opens files by path
-on every request (its filemap serves `www/` through `open`), and the
-console itself opens its settings, tokens, PKI and the Raft log by
-path, connects to agents (cblink: `connect`, DNS), and runs
-`sendmail`.  Capability mode would need: Kore's filemap preloaded or
-served from a directory descriptor (a change in Kore), every file of
-the console's opened `*at` a data-directory descriptor, cblink taught
-to connect through Casper's cap_net, and a forked runner for sendmail.
-That is a project of its own; the design would follow the agent's
-split.  What the console has today from Kore: the TLS private key in
-Kore's keymgr process, never in a worker.
+The console is its own server on libwebsockets (web.c): a root
+supervisor that listens, and a worker that serves as the console's
+user.  The worker opens the web root's files by path on every request
+(lws_serve_http_file), and opens its settings, tokens, PKI and the Raft
+log by path, connects to agents (cblink: `connect`, DNS), and runs
+`sendmail`.  Capability mode would need: the web root served from a
+directory descriptor (`openat` before lws_serve_http_file's own open,
+or the files read whole), every file of the console's opened `*at` a
+data-directory descriptor, cblink taught to connect through Casper's
+cap_net, and a forked runner for sendmail.  That is a project of its
+own; the design would follow the agent's split.  The HTTPS private key
+is read as root but held in the worker (Kore kept it in a key manager
+process of its own); a signing process beside the worker, as cblink's
+server frame proxy would be, is the way to put it back out.
 
 ## Order of work, if the split is wanted
 
@@ -107,5 +110,5 @@ Kore's keymgr process, never in a worker.
    it is the one parser of input from arbitrary hosts).
 3. The agent's frontend/backend split, operation by operation,
    generated from the IDL as the job parser is.
-4. The console: files `*at`, Kore's filemap, cap_net, the sendmail
-   runner.
+4. The console: files `*at`, the web root by descriptor, cap_net, the
+   sendmail runner, the HTTPS key out of the worker.

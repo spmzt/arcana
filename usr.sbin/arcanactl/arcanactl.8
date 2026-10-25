@@ -1659,11 +1659,19 @@ Both write the repository's file in the jail, keep its
 .Pa /etc
 aside in
 .Pa /var/backups/etc-before-pkgbase.tar
-first, and name the
-.Pa .pkgnew
-and
+first, and put back the jail's own files that pkg put aside as
 .Pa .pkgsave
-files left to merge; the jail is to be restarted after.
+when it installed the packages' in their place:
+.Pa master.passwd
+and
+.Pa group
+are the jail's with the accounts the new base adds, the others the
+jail's as they were, and the databases made of them
+.Pq Xr pwd_mkdb 8 , Xr cap_mkdb 1 , Xr services_mkdb 8
+are made again in the jail.
+The packages' versions stay beside them as
+.Pa .pkgnew ,
+named at the end to merge; the jail is to be restarted after.
 .Fl O
 reads past
 .Ev OSVERSION

@@ -40,6 +40,17 @@
   of the conformance list's "no" rows come next (session states, an
   external IdP with OAuth 2.0, Context Policies, SAAN/SSEN as
   notifications, event-based Continuous Monitoring).
+- Game mode (asked 2026-10-25): the console used on a Steam Deck in
+  its Game Mode, by its controls alone. The page reads the controller
+  through the Gamepad API (navigator.getGamepads(), which Steam's
+  browser and a PWA added as a non-Steam game both give): the D-pad
+  and left stick move a visible focus between the controls of the
+  page, A presses, B goes back or closes a dialog, the bumpers go
+  between tabs and the side bar's pages, the right stick scrolls a
+  page or pans the network map, the triggers zoom it; a key on the
+  screen's keyboard (Steam + X) for the inputs. A layout for 1280x800
+  with targets large enough for it, and the console's own words for
+  each button shown while a controller is in use. Not started.
 - Asked for on 2026-10-17:
   - poudriere as a plugin, a Builder page in the side bar with Jails,
     Ports and Bulk tabs: tested with a stand-in poudriere
@@ -123,11 +134,8 @@
     for a close(2) of a descriptor already closed, in the console's
     threads (the SD-WAN manager, the subscriptions, the pool).
     A review of every close in the console (2026-10-22) found none;
-    what it found instead, to do: kore_log() called from threads that
-    are not the worker (the SD-WAN manager's identities_tick and
-    job_run, stream_run, call_run, the cluster peers), against api.c's
-    own rule, which races Kore's log channel and may close its
-    descriptor twice; apply_begin() reads the run after pthread_detach,
+    what it found instead, to do: apply_begin() reads the run after
+    pthread_detach,
     when run_main may have freed it; descriptors leaked on error paths
     in pki.c, nodes.c, auth.c, push.c and mail.c; a retried request in
     hosts.c keeps the dropped connection's steps box, so the retry never
@@ -551,9 +559,6 @@ it found and could be fixed was, and this is what stays:
 - A change made in safe mode that fails half way (the MTU set, the
   description refused) reports the failure and leaves what was done.
 
-- EC keys for the console's own HTTPS certificate: Kore's key manager
-  signs with RSA only, so `console.pem` must be RSA until Kore (or a
-  patch like the one in `port/www/kore/files`) handles ECDSA.
 - A web terminal in the console: it could not be built.
 - Luxuria in the agent is the plugins, BIRD among them (WireGuard's
   `wg` is the base system's and Invidia's since 2026-10-19); what

@@ -48,7 +48,7 @@ struct said {
 
 struct follow {
 	LIST_ENTRY(follow)	 list;
-	struct connection	*c;	/* NULL once the socket is gone */
+	struct conn	*c;	/* NULL once the socket is gone */
 	uint64_t		 id;
 	char			 sid[9];
 	char			*uri;
@@ -64,7 +64,7 @@ struct follow {
 
 static LIST_HEAD(, follow)	follows = LIST_HEAD_INITIALIZER(follows);
 static int			nfollows;
-static struct kore_timer	*ticker;
+static struct timer	*ticker;
 
 /* In the follow's thread: something for the page, queued. */
 static void
@@ -178,9 +178,9 @@ follow_free(struct follow *f)
 		free(s);
 	}
 	pthread_mutex_destroy(&f->lock);
-	kore_free(f->uri);
-	kore_free(f->peer);
-	kore_free(f);
+	free(f->uri);
+	free(f->peer);
+	free(f);
 }
 
 /* In the worker: what each follow heard, to its socket. */
@@ -208,13 +208,13 @@ follow_tick(void *arg, u_int64_t now)
 		if (lost && f->c != NULL) {
 			n = snprintf(buf, sizeof(buf), "{\"id\":%ju,\"lost\":"
 			    "true}", (uintmax_t)f->id);
-			kore_websocket_send(f->c, WEBSOCKET_OP_TEXT, buf,
+			ws_send(f->c, WS_OP_TEXT, buf,
 			    (size_t)n);
 		}
 		while ((s = STAILQ_FIRST(&q)) != NULL) {
 			STAILQ_REMOVE_HEAD(&q, next);
 			if (f->c != NULL)
-				kore_websocket_send(f->c, WEBSOCKET_OP_TEXT,
+				ws_send(f->c, WS_OP_TEXT,
 				    s->text, strlen(s->text));
 			free(s->text);
 			free(s);
@@ -222,17 +222,12 @@ follow_tick(void *arg, u_int64_t now)
 		if (atomic_load(&f->ended))
 			follow_free(f);
 	}
-	/*
-	 * The ticker stays, follows or none: a timer taken out in its own
-	 * callback is freed under kore_timer_run(), which puts it back in
-	 * the list after (the worker died of it when the agent of a page
-	 * following its events restarted, an update's).
-	 */
+	/* The ticker stays, follows or none. */
 }
 
 /* A page's ask for a host's events; NULL, or why it is refused. */
 const char *
-follow_start(struct connection *c, uint64_t id, const struct server *sv)
+follow_start(struct conn *c, uint64_t id, const struct server *sv)
 {
 	struct follow	*f;
 
@@ -241,33 +236,33 @@ follow_start(struct connection *c, uint64_t id, const struct server *sv)
 	LIST_FOREACH(f, &follows, list)
 		if (f->c == c && f->id == id)
 			return ("that id follows already");
-	f = kore_calloc(1, sizeof(*f));
+	f = xcalloc(1, sizeof(*f));
 	f->c = c;
 	f->id = id;
 	strlcpy(f->sid, sv->id, sizeof(f->sid));
-	f->uri = kore_strdup(sv->uri);
-	f->peer = sv->peer_name != NULL ? kore_strdup(sv->peer_name) : NULL;
+	f->uri = xstrdup(sv->uri);
+	f->peer = sv->peer_name != NULL ? xstrdup(sv->peer_name) : NULL;
 	atomic_init(&f->stop, false);
 	atomic_init(&f->ended, false);
 	pthread_mutex_init(&f->lock, NULL);
 	STAILQ_INIT(&f->queue);
 	if (pthread_create(&f->thread, NULL, follow_run, f) != 0) {
 		pthread_mutex_destroy(&f->lock);
-		kore_free(f->uri);
-		kore_free(f->peer);
-		kore_free(f);
+		free(f->uri);
+		free(f->peer);
+		free(f);
 		return ("cannot follow now: try again");
 	}
 	LIST_INSERT_HEAD(&follows, f, list);
 	nfollows++;
 	if (ticker == NULL)
-		ticker = kore_timer_add(follow_tick, FOLLOW_TICK_MS, NULL, 0);
+		ticker = timer_add(follow_tick, FOLLOW_TICK_MS, NULL, 0);
 	return (NULL);
 }
 
 /* The page's stop: of one id, or of all of a socket's when it went. */
 bool
-follow_stop(struct connection *c, uint64_t id, bool all)
+follow_stop(struct conn *c, uint64_t id, bool all)
 {
 	struct follow	*f;
 	bool		 some;

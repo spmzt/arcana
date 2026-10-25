@@ -3437,6 +3437,8 @@ table.datasets td:first-child, table.snapshots td:first-child { overflow-wrap: a
 .map-legend li:hover { background: rgba(var(--accent-rgb), .08); }
 .map-legend li.off { opacity: .4; text-decoration: line-through; }
 .map-legend .vnet::before { border-top: 2px dotted var(--dim); }
+/* The measured tunnels' probes: white points. */
+.map-legend .quality::before { border-top: 3px dotted var(--fg); }
 .map-tools button { min-width: 2.2rem; min-height: 2.2rem; }
 
 /* Labels left out of a kind of line: one only where the pointer is, or

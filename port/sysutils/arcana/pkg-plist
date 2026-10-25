@@ -1,9 +1,7 @@
-%%CONSOLE%%@sample %%ETCDIR%%/kore.conf.sample
-%%CONSOLE%%%%ETCDIR%%/routes.conf
 %%CONSOLE%%@sample %%ETCDIR%%/web.conf.sample
 %%CONSOLE%%etc/rc.d/arcana_console
 etc/rc.d/arcana_agent
-%%CONSOLE%%lib/arcana/arcana-console.so
+%%CONSOLE%%sbin/arcana-console
 sbin/jailconf
 sbin/arcana-enrol
 sbin/arcanactl

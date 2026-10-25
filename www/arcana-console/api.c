@@ -5,9 +5,8 @@
  */
 
 /*
- * HTTP plumbing: JSON in and out with libucl (Kore's own JSON writer does
- * not escape strings), errors in one shape, and the one guard every
- * protected route goes through.
+ * HTTP plumbing: JSON in and out with libucl, errors in one shape, and
+ * the one guard every protected route goes through.
  */
 
 #include <sys/types.h>
@@ -33,7 +32,7 @@ reply_json(struct http_request *req, int status, ucl_object_t *o)
 	ucl_object_unref(o);
 	if (json == NULL) {
 		http_response(req, HTTP_STATUS_INTERNAL_ERROR, NULL, 0);
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	}
 	http_response_header(req, "content-type",
 	    "application/json; charset=utf-8");
@@ -41,12 +40,12 @@ reply_json(struct http_request *req, int status, ucl_object_t *o)
 	http_response_header(req, "x-content-type-options", "nosniff");
 	http_response(req, status, json, strlen((char *)json));
 	free(json);
-	return (KORE_RESULT_OK);
+	return (WEB_OK);
 }
 
 /*
- * An /api/ path the console does not have (routes.conf's last route):
- * a JSON 404 like every other error, not Kore's page.
+ * An /api/ path the console does not have (routes.c's last route): a
+ * JSON 404 like every other error, not the server's plain one.
  */
 int
 api_not_found(struct http_request *req)
@@ -108,7 +107,7 @@ read_json(struct http_request *req)
 	 * memory given back. */
 	explicit_bzero(buf, len);
 	free(buf);
-	/* And Kore's own copy (in memory: http_body_disk_offload is 0). */
+	/* And the server's own copy. */
 	if (req->http_body != NULL && req->http_body->data != NULL)
 		explicit_bzero(req->http_body->data, req->http_body->length);
 	if (o != NULL && ucl_object_type(o) != UCL_OBJECT) {
@@ -193,8 +192,8 @@ guard(struct http_request *req, bool mutate)
 
 /*
  * Path segment idx, counting from 1: in /api/servers/<id>/jails/<name>,
- * the server is 3 and the jail 5.  Kore compiles the routes of C modules
- * with REG_NOSUB, so their capture groups are not available; the route's
+ * the server is 3 and the jail 5.  The routes are compiled with
+ * REG_NOSUB, so their capture groups are not available; the route's
  * regular expression has already checked the characters.
  */
 bool
@@ -328,28 +327,12 @@ api_assetlinks(struct http_request *req)
 	return (reply_json(req, 200, top));
 }
 
-/*
- * kore_log() is the worker's: it writes on the worker's channel to the
- * parent, which a thread of the console's own (a workflow's run, a
- * transfer, a host's events followed) must not touch while the worker
- * does.  Such a thread's line waits here, and the worker logs it at its
- * next tick.
- */
-struct tlog {
-	STAILQ_ENTRY(tlog)	 next;
-	int			 prio;
-	char			*msg;
-};
-static STAILQ_HEAD(, tlog) tlogs = STAILQ_HEAD_INITIALIZER(tlogs);
-static pthread_mutex_t	tlog_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_t	worker_thread;
-
+/* A line of the log from any thread: log_msg() is safe from all. */
 void
 thread_log(int prio, const char *fmt, ...)
 {
-	struct tlog	*t;
-	va_list		 ap;
-	char		*msg;
+	va_list	 ap;
+	char	*msg;
 
 	va_start(ap, fmt);
 	if (vasprintf(&msg, fmt, ap) == -1)
@@ -357,40 +340,8 @@ thread_log(int prio, const char *fmt, ...)
 	va_end(ap);
 	if (msg == NULL)
 		return;
-	if (pthread_equal(pthread_self(), worker_thread)) {
-		kore_log(prio, "%s", msg);
-		free(msg);
-		return;
-	}
-	if ((t = malloc(sizeof(*t))) == NULL) {
-		free(msg);
-		return;
-	}
-	t->prio = prio;
-	t->msg = msg;
-	pthread_mutex_lock(&tlog_lock);
-	STAILQ_INSERT_TAIL(&tlogs, t, next);
-	pthread_mutex_unlock(&tlog_lock);
-}
-
-static void
-tlog_tick(void *arg, u_int64_t now)
-{
-	STAILQ_HEAD(, tlog)	 q;
-	struct tlog		*t;
-
-	(void)arg;
-	(void)now;
-	STAILQ_INIT(&q);
-	pthread_mutex_lock(&tlog_lock);
-	STAILQ_CONCAT(&q, &tlogs);
-	pthread_mutex_unlock(&tlog_lock);
-	while ((t = STAILQ_FIRST(&q)) != NULL) {
-		STAILQ_REMOVE_HEAD(&q, next);
-		kore_log(t->prio, "%s", t->msg);
-		free(t->msg);
-		free(t);
-	}
+	log_msg(prio, "%s", msg);
+	free(msg);
 }
 
 /* A store another node of the cluster wrote, read again by what keeps
@@ -418,22 +369,14 @@ cluster_tick(void *arg __unused, uint64_t now __unused)
 	cluster_changes(reload_one);
 }
 
-/* Called by Kore in every worker when the module is loaded. */
+/* Called by the server in its worker, once it listens as its user. */
 int
-arcw_onload(int action)
+arcw_init(void)
 {
-	const char	*path;
 
-	if (action != KORE_MODULE_LOAD)
-		return (KORE_RESULT_OK);
-	worker_thread = pthread_self();
-	(void)kore_timer_add(tlog_tick, 500, NULL, 0);
 	/* vis(3) treats UTF-8 in program output as printable. */
 	(void)setlocale(LC_CTYPE, "C.UTF-8");
-	if ((path = getenv("ARCANA_WEB_CONF")) == NULL)
-		path = ARCW_CONF;
-	/* Kore goes on serving after a failed onload: stop it here. */
-	if (config_load(path) == -1 || pki_init() == -1 ||
+	if (config_load(web_conf_path) == -1 || pki_init() == -1 ||
 	    config_check_certs() == -1 || hosts_init() == -1 ||
 	    workflows_kinds_check() == -1 || cluster_init() == -1 ||
 	    push_init() == -1)
@@ -442,12 +385,12 @@ arcw_onload(int action)
 	auth_init();
 	users_init();
 	if (cluster_on())
-		(void)kore_timer_add(cluster_tick, 500, NULL, 0);
+		(void)timer_add(cluster_tick, 500, NULL, 0);
 	servers_init();
 	transfers_init();
 	workflows_init();
 	sdwan_init();
 	mail_init();
 	cluster_started();
-	return (KORE_RESULT_OK);
+	return (WEB_OK);
 }

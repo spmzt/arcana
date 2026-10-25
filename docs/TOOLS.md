@@ -159,22 +159,26 @@ touched.
 
 ## arcana, the console
 
-Not a program of its own: `kore(1)` with the module `arcana-console.so`,
-started by the `arcana` rc script.
+`arcana-console(8)`, its own HTTP server on libwebsockets: a supervisor
+that listens and starts the worker again when it dies, and the worker,
+which serves as the console's user. Started by the `arcana_console` rc
+script.
 
 ```sh
 cd /usr/local/etc/arcana
-cp kore.conf.sample kore.conf      # bind addresses, RSA certificate, user
-cp web.conf.sample web.conf        # rp_id, origin
+cp web.conf.sample web.conf        # server { }: listen, certificate; rp_id, origin
 sysrc arcana_console_enable=YES
 service arcana_console start
 cat /var/db/arcana/setup-token   # for the first login
 ```
 
-`web.conf` (UCL), named by `ARCANA_WEB_CONF`:
+`web.conf` (UCL), named by `-c` or `ARCANA_WEB_CONF`:
 
 | Key | Meaning | Default |
 |---|---|---|
+| `server { listen }` | Where to listen: `address:port`, `[address]:port` (IPv6 alone), `unix:/path`. | `0.0.0.0:443`, `[::]:443` |
+| `server { certfile, certkey }` | The certificate (RSA or EC) and key for HTTPS, read as root; without them, plain HTTP. | none |
+| `server { webroot, user, task_threads, body_max, pidfile }` | The PWA's files; the worker's user (`""`: the one started as); threads for calls to hosts; the largest body; the pid file. | `/usr/local/www/arcana-console`, `arcana`, 32, 8 MB, `/var/run/arcana-console.pid` |
 | `rp_id` | The console's host name, as the browser sees it, or a parent domain. Keys are bound to it. | required |
 | `origin` | The exact origin, `https://console.example`. Opened anywhere else, security keys fail with "SecurityError"; the login screen says so. | required |
 | `rp_name` | The name security keys show. | `Arcana` |
@@ -188,15 +192,15 @@ cat /var/db/arcana/setup-token   # for the first login
 | `agent_source`, `agent_ref` | A git repository, and a branch or tag, a host can be asked to build `arcana-agent` from; what it builds is sent instead of `agent_binary`. | none |
 | `agent_ssh_key` | For a repository over SSH: a private key on the build host for git, readable by `nobody`. | a key the host makes |
 
-rc.conf variables: `arcana_console_enable`, `arcana_console_config` (the
-`kore.conf`), `arcana_console_web_conf`. The HTTP API is in
+rc.conf variables: `arcana_console_enable`, `arcana_console_web_conf`,
+`arcana_console_pidfile`. The HTTP API is in
 [openapi.yaml](openapi.yaml).
 
 ## arcana-container
 
 The entry point of the container image (`ghcr.io/spmzt/arcana`): it
-writes `web.conf` and `kore.conf` from the environment unless they are
-mounted in `/usr/local/etc/arcana`, and starts Kore in the foreground
+writes `web.conf` from the environment unless it is mounted in
+`/usr/local/etc/arcana`, and starts `arcana-console` in the foreground
 as the image's unprivileged user.
 
 | Variable | Meaning |

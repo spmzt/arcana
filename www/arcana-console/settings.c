@@ -572,16 +572,16 @@ apply(void)
 {
 	const char	*v;
 
-	cfg.rp_name = kore_strdup(value("rp_name"));
+	cfg.rp_name = xstrdup(value("rp_name"));
 	cfg.update_url = truth(value("update_check")) ?
-	    kore_strdup(value("update_url")) : NULL;
-	cfg.agent_binary = kore_strdup(value("agent_binary"));
+	    xstrdup(value("update_url")) : NULL;
+	cfg.agent_binary = xstrdup(value("agent_binary"));
 	v = value("agent_source");
-	cfg.agent_source = v[0] != '\0' ? kore_strdup(v) : NULL;
+	cfg.agent_source = v[0] != '\0' ? xstrdup(v) : NULL;
 	v = value("agent_ref");
-	cfg.agent_ref = v[0] != '\0' ? kore_strdup(v) : NULL;
+	cfg.agent_ref = v[0] != '\0' ? xstrdup(v) : NULL;
 	v = value("agent_ssh_key");
-	cfg.agent_ssh_key = v[0] != '\0' ? kore_strdup(v) : NULL;
+	cfg.agent_ssh_key = v[0] != '\0' ? xstrdup(v) : NULL;
 	cfg.session_idle = v_minutes(value("session_idle")) == NULL ? atoi(
 	    value("session_idle")) * 60 : SESSION_IDLE;
 	cfg.session_max = v_hours(value("session_max")) == NULL ? atoi(
@@ -608,13 +608,13 @@ load(void)
 		if (o == NULL || (v = ucl_object_lookup(o,
 		    settings[i].key)) == NULL)
 			continue;
-		settings[i].over = kore_strdup(settings[i].kind == K_BOOL ?
+		settings[i].over = xstrdup(settings[i].kind == K_BOOL ?
 		    (ucl_object_toboolean(v) ? "true" : "false") :
 		    ucl_object_tostring_forced(v));
 		/* A hand-edited file is checked as a request is. */
 		if (settings[i].valid != NULL && settings[i].over[0] != '\0' &&
 		    settings[i].valid(settings[i].over) != NULL) {
-			kore_log(LOG_WARNING, "%s: %s: not %s; ignored", path,
+			log_msg(LOG_WARNING, "%s: %s: not %s; ignored", path,
 			    settings[i].key,
 			    settings[i].valid(settings[i].over));
 			settings[i].over = NULL;
@@ -634,24 +634,24 @@ settings_init(const char *update_check, const char *update_url)
 {
 
 	find("rp_name")->base = cfg.rp_name;
-	find("update_check")->base = kore_strdup(update_check);
-	find("update_url")->base = kore_strdup(update_url);
+	find("update_check")->base = xstrdup(update_check);
+	find("update_url")->base = xstrdup(update_url);
 	find("agent_binary")->base = cfg.agent_binary;
 	find("agent_source")->base = cfg.agent_source;
 	find("agent_ref")->base = cfg.agent_ref;
 	find("agent_ssh_key")->base = cfg.agent_ssh_key;
-	find("session_idle")->base = kore_strdup("30");
-	find("session_max")->base = kore_strdup("12");
-	find("telegram_faults")->base = kore_strdup("Major");
-	find("telegram_jobs")->base = kore_strdup("failed");
-	find("telegram_runs")->base = kore_strdup("failed");
-	find("telegram_limits")->base = kore_strdup("false");
+	find("session_idle")->base = xstrdup("30");
+	find("session_max")->base = xstrdup("12");
+	find("telegram_faults")->base = xstrdup("Major");
+	find("telegram_jobs")->base = xstrdup("failed");
+	find("telegram_runs")->base = xstrdup("failed");
+	find("telegram_limits")->base = xstrdup("false");
 	find("mail_to")->base = cfg.mail_to;
 	find("mail_from")->base = cfg.mail_from;
 	find("mail_faults")->base = cfg.mail_faults;
 	find("mail_jobs")->base = cfg.mail_jobs;
 	find("mail_runs")->base = cfg.mail_runs;
-	find("mail_limits")->base = kore_strdup(cfg.mail_limits ? "true" :
+	find("mail_limits")->base = xstrdup(cfg.mail_limits ? "true" :
 	    "false");
 	load();
 }
@@ -760,7 +760,7 @@ api_settings(struct http_request *req)
 	size_t			 i;
 
 	if (!guard(req, req->method == HTTP_METHOD_POST))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (req->method != HTTP_METHOD_POST)
 		return (reply(req));
 	if ((body = read_json(req)) == NULL || (set = ucl_object_lookup(body,
@@ -779,7 +779,7 @@ api_settings(struct http_request *req)
 			reply_error(req, 400, "invalid", "%s cannot be set "
 			    "here", ucl_object_key(v));
 			ucl_object_unref(body);
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		}
 		i = (size_t)(s - settings);
 		if (ucl_object_type(v) == UCL_NULL) {
@@ -799,10 +799,10 @@ api_settings(struct http_request *req)
 			reply_error(req, 400, "invalid", "%s: not %s", s->label,
 			    why);
 			ucl_object_unref(body);
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		}
 		next[i] = strcmp(val, s->base != NULL ? s->base : "") == 0 ?
-		    NULL : kore_strdup(val);
+		    NULL : xstrdup(val);
 	}
 	ucl_object_unref(body);
 
@@ -820,7 +820,7 @@ api_settings(struct http_request *req)
 		    "data directory", SETTINGS_FILE));
 	}
 	ucl_object_unref(out);
-	kore_log(LOG_NOTICE, "settings changed from the console");
+	log_msg(LOG_NOTICE, "settings changed from the console");
 	load();
 	return (reply(req));
 }

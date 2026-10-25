@@ -307,7 +307,7 @@ api_tokens(struct http_request *req)
 
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		tokens_load();
 		top = ucl_object_typed_new(UCL_OBJECT);
 		a = ucl_object_typed_new(UCL_ARRAY);
@@ -327,7 +327,7 @@ api_tokens(struct http_request *req)
 	/* Made and deleted in a session only: guard() lets no token
 	 * through where something changes. */
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	tokens_load();
 	if (req->method == HTTP_METHOD_DELETE) {
 		id = strrchr(req->path, '/') != NULL ? strrchr(req->path, '/') +

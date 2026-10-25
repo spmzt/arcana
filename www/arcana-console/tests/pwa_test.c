@@ -6,11 +6,11 @@
 
 /*
  * The PWA in a real browser: Chromium, driven through chromedriver's
- * WebDriver interface, with a virtual CTAP2 authenticator, against kore
- * and arcana-agent in the work directory.  Skipped when Chromium or
- * chromedriver are not installed.
+ * WebDriver interface, with a virtual CTAP2 authenticator, against
+ * arcana-console and arcana-agent in the work directory.  Skipped when
+ * Chromium or chromedriver are not installed.
  *
- * Configuration variables: kore, dhparam, arcana-agent (as for console_test),
+ * Configuration variables: arcana-console, arcana-agent (as for console_test),
  * chrome, chromedriver, webroot (the built PWA).
  */
 
@@ -7601,6 +7601,53 @@ part_mesh(void)
 	run("document.querySelector('svg.topo text.probe').scrollIntoView({"
 	    "block: 'center'});");
 	shot("9-mesh-probes");
+	/* The links' words shown do not cover one another. */
+	ATF_CHECK(js_true("(() => { const b = [...document.querySelectorAll("
+	    "'svg.topo .tlabels text.lbl:not(.end), svg.topo .tlabels text.rate,"
+	    " svg.topo text.probe')].filter(t => getComputedStyle(t).display !=="
+	    " 'none' && getComputedStyle(t).visibility !== 'hidden').map(t => t."
+	    "getBoundingClientRect()); for (let i = 0; i < b.length; i++) for "
+	    "(let j = i + 1; j < b.length; j++) if (b[i].left < b[j].right - 1 "
+	    "&& b[j].left < b[i].right - 1 && b[i].top < b[j].bottom - 1 && b[j]"
+	    ".top < b[i].bottom - 1) return false; return b.length > 0; })()"));
+	/* Every point the WebGL layer draws lies on a link the SVG draws:
+	 * none is left past a tunnel's end.  Read from what it hands the
+	 * GPU (only the slice drawn), over two seconds of frames. */
+	if (js_true("!!(window.arcGl && window.arcGl.ok)")) {
+		run("const P = WebGL2RenderingContext.prototype; if (!P.__o) { "
+		    "P.__o = P.bufferSubData; P.bufferSubData = function (t, o, s, "
+		    "so, len) { if (len !== undefined && s && s.buffer) window."
+		    "__glbuf = new Float32Array(s.buffer.slice(s.byteOffset + so, "
+		    "s.byteOffset + so + len)); return P.__o.apply(this, arguments);"
+		    " }; } window.__off = 0; window.__seen = 0; window.__tick = "
+		    "setInterval(() => { const c = document.querySelector("
+		    "'canvas#map-gl'), r = c.getBoundingClientRect(), b = window."
+		    "__glbuf || [], sv = document.querySelector('svg.topo'), segs ="
+		    " []; for (const g of sv.querySelectorAll('g.tlink')) { const p "
+		    "= g.querySelector('path.wire'); if (!p) continue; const L = p."
+		    "getTotalLength(), m = p.getScreenCTM(); for (let k = 0; k <= "
+		    "60; k++) { const q = p.getPointAtLength(L * k / 60), z = sv."
+		    "createSVGPoint(); z.x = q.x; z.y = q.y; segs.push(z."
+		    "matrixTransform(m)); } } for (let i = 0; i + 6 < b.length; i "
+		    "+= 7) { const x = r.x + (b[i] + 1) / 2 * r.width, y = r.y + (1"
+		    " - b[i + 1]) / 2 * r.height; let d = 1e9; for (const z of segs)"
+		    " d = Math.min(d, Math.hypot(z.x - x, z.y - y)); window.__seen++;"
+		    " if (d > 8) window.__off++; } }, 100);");
+		usleep(2500000);
+		run("clearInterval(window.__tick);");
+		fprintf(stderr, "probe points: %g seen, %g off a link\n",
+		    js_num("window.__seen"), js_num("window.__off"));
+		ATF_CHECK(js_true("window.__seen > 0 && window.__off === 0"));
+	}
+	/* Tunnel quality is a layer of the legend's: off, no probes nor
+	 * sample on the map; on again, both back. */
+	click_at(".map-legend li.quality");
+	wait_js("document.querySelector('.map-legend li.quality.off') && "
+	    "!document.querySelector('svg.topo text.probe') && (!window.arcGl."
+	    "ok || window.arcGl.probes === 0)", 10);
+	click_at(".map-legend li.quality");
+	wait_js("!document.querySelector('.map-legend li.quality.off') && "
+	    "document.querySelector('svg.topo text.probe')", 10);
 	run("document.querySelector('.netsect button.tab[data-arg=overlay]')"
 	    ".click()");
 	wait_js("document.querySelector('table.tq button[data-act=tq-stop]')",

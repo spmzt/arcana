@@ -46,6 +46,8 @@ extern const char	*origin_hdr;
 extern char		 harness_origin[64];
 extern int		 harness_port;
 extern char		 harness_webconf[1024];
+/* Appended inside web.conf's server { }. */
+extern char		 harness_server[1024];
 extern bool		 harness_other_agent;
 extern bool		 harness_newer_agent;
 extern bool		 harness_local_agent;

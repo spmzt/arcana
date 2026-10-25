@@ -274,6 +274,17 @@ upgrade|install)
 		echo 'Your packages are up to date.'
 		exit 0
 	fi
+	# What pkg does on a conversion: a file of stock/ that the jail
+	# (its root in ./jroot) has otherwise is put aside as .pkgsave.
+	if [ "$1" = install -a -d stock ]; then
+		R=$(cat jroot)
+		for f in stock/*; do
+			n=${f#stock/}
+			[ -e "$R/etc/$n" ] && ! cmp -s "$f" "$R/etc/$n" &&
+			    mv "$R/etc/$n" "$R/etc/$n.pkgsave"
+			cp "$f" "$R/etc/$n"
+		done
+	fi
 	[ "$1" = install ] && { echo "$*" >> install.log; exit 0; }
 	shift
 	[ "$1" = -r ] && { echo "upgrade from $2" >> repo.log; shift 2; }
@@ -911,6 +922,39 @@ EOS
 	atf_check -o match:'^install -r arcana-base -y FreeBSD-set-base-jail$' cat install.log
 	atf_check -o match:'^arcana-base: \{' cat "$R/usr/local/etc/pkg/repos/arcana-base.conf"
 	atf_check -o match:'restart the jail' cat cv.out
+	# The jail's own files, which pkg put aside as it installed the
+	# stock ones, back in place: its users and groups with the new
+	# base's added (not one whose id the jail uses), the stock files
+	# beside them as .pkgnew, the databases made again in the jail; a
+	# .pkgsave from before left as it is.
+	echo "$R" > jroot
+	mkdir stock
+	printf 'root:*:0:0::0:0:Charlie:/root:/bin/sh\n_newd:*:77:77::0:0:d:/:/usr/sbin/nologin\n_clash:*:2001:2001::0:0:c:/:/usr/sbin/nologin\n' > stock/master.passwd
+	printf 'wheel:*:0:root\n_newd:*:77:\n' > stock/group
+	printf 'stock\n' > stock/login.conf
+	printf 'same\n' > stock/hosts
+	printf 'root:*:0:0::0:0:Charlie:/root:/bin/sh\nalice:*:2001:2001::0:0:Alice:/home/alice:/bin/sh\n' > "$R/etc/master.passwd"
+	printf 'wheel:*:0:root\nalice:*:2001:\n' > "$R/etc/group"
+	printf 'own\n' > "$R/etc/login.conf"
+	printf 'same\n' > "$R/etc/hosts"
+	printf 'old\n' > "$R/etc/hosts.pkgsave"
+	printf '#!/bin/sh\necho "jexec $*" >> %s/jexec.log\n' "$(pwd)" > fake-jexec
+	chmod +x fake-jexec
+	atf_check -o save:keep.out "$JGC" -t -c "$SOCK" jail-base web convert
+	atf_check -o match:'^alice:' -o match:'^_newd:' -o not-match:'_clash' \
+	    cat "$R/etc/master.passwd"
+	atf_check -o match:'^alice:' -o match:'^_newd:' cat "$R/etc/group"
+	atf_check -o inline:'own\n' cat "$R/etc/login.conf"
+	atf_check -o inline:'stock\n' cat "$R/etc/login.conf.pkgnew"
+	atf_check cmp stock/master.passwd "$R/etc/master.passwd.pkgnew"
+	atf_check test ! -e "$R/etc/master.passwd.pkgsave" -a ! -e "$R/etc/login.conf.pkgsave"
+	atf_check -o inline:'old\n' cat "$R/etc/hosts.pkgsave"
+	atf_check -o match:'^jexec 7 /usr/sbin/pwd_mkdb -p /etc/master.passwd$' \
+	    -o match:'^jexec 7 /usr/bin/cap_mkdb /etc/login.conf$' cat jexec.log
+	atf_check -o match:'kept: .*master.passwd \(not added from the new base, its name or id taken: _clash\)' \
+	    -o match:"the new base's users added: 1; its groups added: 1" \
+	    -o match:'/etc/login.conf.pkgnew' cat keep.out
+	rm -r stock jexec.log
 	# Sets named, and one the repository has not; a branch named.
 	rm install.log
 	atf_check -o ignore "$JGC" -c "$SOCK" jail-base web convert -b 16 \

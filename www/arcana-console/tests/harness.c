@@ -5,7 +5,7 @@
  */
 
 /*
- * What the console's tests share: starting kore(1) with arcana-console.so and a
+ * What the console's tests share: starting arcana-console(8) and an
  * arcana-agent(8) in the work directory, and talking HTTP to them.
  */
 
@@ -36,7 +36,8 @@ const char	*origin_hdr = ORIGIN;
 char		 harness_origin[64] = ORIGIN;
 int		 harness_port;
 char		 harness_webconf[1024];	/* appended to web.conf */
-static char	 kore_path[MAXPATHLEN];
+char		 harness_server[1024];	/* and inside its server { } */
+static char	 console_path[MAXPATHLEN];
 
 static void	 terminate(const char *);
 /* The console sends another build of arcana-agent than the host runs. */
@@ -95,8 +96,7 @@ spawn(char *const argv[], const char *out)
 
 /*
  * A server, in a process group of its own: kyua kills the test's group
- * when the body returns, and a kore killed before its shutdown leaks
- * its SysV shared memory segment.  The cleanup's stop() ends it.
+ * when the body returns, before the cleanup's stop() has ended it.
  */
 pid_t
 spawn_server(char *const argv[], const char *out)
@@ -143,7 +143,7 @@ wait_for(const char *path)
 		usleep(25000);
 	}
 	/* What the servers said goes into kyua's report. */
-	show("kore.out");
+	show("console.out");
 	show("arcana-agent.out");
 	atf_tc_fail("%s did not appear", path);
 }
@@ -178,7 +178,7 @@ locate(const atf_tc_t *tc, const char *rel, const char *var, const char *def)
  * The servers of an earlier test that never ran its cleanup (its kyua
  * killed, or the program run by hand) stay, each in its process group,
  * init's now, and load every test after: an arcana-agent on a test's
- * jgd.sock, kore with -c kore.conf, chromedriver and its browsers.  A
+ * jgd.sock, arcana-console, chromedriver and its browsers.  A
  * test's own servers are its children, so those of tests running now
  * are left be.  Only the user's own processes are looked at.
  */
@@ -186,47 +186,41 @@ static void
 sweep_orphans(void)
 {
 
-	/* kore names its parent "kore: [parent]" once it runs. */
+	/* The console names its supervisor "arcana-console: supervisor". */
 	(void)system("ps -ax -o pid=,ppid=,pgid=,command= -U \"$(id -u)\" | "
 	    "awk '$2 == 1 && ($0 ~ /arcana-agent -F -l unix:.*jgd[0-9]*\\.sock/ "
-	    "|| $4 == \"kore:\" && $5 == \"[parent]\" || $4 ~ /chromedriver$/ "
+	    "|| $4 == \"arcana-console:\" && $5 == \"supervisor\" || $4 ~ /chromedriver$/ "
 	    "&& $5 ~ /^--port=/) { print $3 }' | sort -u | "
 	    "while read g; do kill -TERM -\"$g\" 2>/dev/null; done");
 }
 
 /*
  * arcana-agent on ./jgd.sock with a lab configuration and a stand-in for
- * jail(8), and kore on ./k.sock.  Their pids go to files for cleanup.
+ * jail(8), and the console on ./k.sock.  Their pids go to files for
+ * cleanup.
  */
 void
 start(const atf_tc_t *tc, int port, const char *webroot)
 {
-	char	 cwd[MAXPATHLEN], buf[4096], so[MAXPATHLEN], routes[MAXPATHLEN];
+	char	 cwd[MAXPATHLEN], buf[4096], console[MAXPATHLEN];
 	char	 jgd[MAXPATHLEN], listen[MAXPATHLEN + 16], www[MAXPATHLEN];
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN], surules[MAXPATHLEN];
-	const char *kore, *dh;
 	char	*argv[132];
 	FILE	*fp;
 	pid_t	 pid;
 
 	sweep_orphans();
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
-	kore = atf_tc_get_config_var_wd(tc, "kore", "/usr/local/bin/kore");
-	dh = atf_tc_get_config_var_wd(tc, "dhparam",
-	    "/usr/local/share/kore/ffdhe4096.pem");
 	snprintf(jgd, sizeof(jgd), "%s", locate(tc,
 	    "../../../usr.sbin/arcana-agent/arcana-agent", "arcana-agent",
 	    "/usr/local/sbin/arcana-agent"));
-	snprintf(so, sizeof(so), "%s", locate(tc, "../arcana-console.so", "module",
-	    "/usr/local/lib/arcana/arcana-console.so"));
-	snprintf(routes, sizeof(routes), "%s", locate(tc,
-	    "../conf/routes.conf", "routes",
-	    "/usr/local/etc/arcana/routes.conf"));
-	if (access(kore, X_OK) == -1)
-		atf_tc_skip("no kore at %s (set the kore variable)", kore);
+	snprintf(console, sizeof(console), "%s", locate(tc, "../arcana-console",
+	    "arcana-console", "/usr/local/sbin/arcana-console"));
+	ATF_REQUIRE_MSG(access(console, X_OK) == 0, "no arcana-console at %s",
+	    console);
 	ATF_REQUIRE_MSG(access(jgd, X_OK) == 0, "no arcana-agent at %s", jgd);
 
 	ATF_REQUIRE(mkdir("etc", 0755) == 0);
@@ -1155,30 +1149,22 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(mkdir("tools", 0755) == 0 || errno == EEXIST);
 	put("tools/sendmail", buf);
 	ATF_REQUIRE(chmod("tools/sendmail", 0755) == 0);
+	if (port != 0)
+		snprintf(listen, sizeof(listen), "127.0.0.1:%d", port);
+	else
+		snprintf(listen, sizeof(listen), "unix:%s/k.sock", cwd);
+	snprintf(www, sizeof(www), "%s/www", cwd);
 	/* No test asks the Internet: the release feed is a port nothing
-	 * listens on, refused at once. */
-	snprintf(buf, sizeof(buf), "rp_id = \"%s\";\norigin = \"%s\";\n"
+	 * listens on, refused at once.  The console stays the user's. */
+	snprintf(buf, sizeof(buf), "server {\n\tlisten = [ \"%s\" ];\n"
+	    "\twebroot = \"%s\";\n\tuser = \"\";\n\ttask_threads = 4;\n%s}\n"
+	    "rp_id = \"%s\";\norigin = \"%s\";\n"
 	    "datadir = \"%s/data\";\ncookie_secure = false;\n"
 	    "agent_binary = \"%s\";\nsendmail = \"%s/tools/sendmail\";\n"
 	    "update_url = \"https://127.0.0.1:9/releases/latest\";\n"
-	    "%s%s", RP_ID, harness_origin, cwd, send, cwd, local,
-	    harness_webconf);
+	    "%s%s", listen, webroot != NULL ? webroot : www, harness_server, RP_ID,
+	    harness_origin, cwd, send, cwd, local, harness_webconf);
 	put("web.conf", buf);
-	if (port != 0)
-		snprintf(listen, sizeof(listen), "bind 127.0.0.1 %d", port);
-	else
-		snprintf(listen, sizeof(listen), "unix %s/k.sock", cwd);
-	snprintf(www, sizeof(www), "%s/www", cwd);
-	snprintf(buf, sizeof(buf), "server t {\n\t%s\n\ttls no\n}\n"
-	    "load %s arcw_onload\ntls_dhparam %s\nworkers 1\ntask_threads 4\n"
-	    "http_body_max 8388608\nfilemap_index index.html\n"
-	    "http_media_type application/wasm wasm\n"
-	    "http_media_type application/manifest+json webmanifest\n"
-	    "http_media_type image/svg+xml svg\n"
-	    "http_media_type font/woff2 woff2\n"
-	    "domain * {\n\tattach t\n\tinclude %s\n\tfilemap / %s\n}\n",
-	    listen, so, dh, routes, webroot != NULL ? webroot : www);
-	put("kore.conf", buf);
 
 	snprintf(buf, sizeof(buf), "unix:%s/jgd.sock", cwd);
 	argv[0] = jgd;
@@ -1349,16 +1335,13 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 
 	snprintf(buf, sizeof(buf), "%s/web.conf", cwd);
 	setenv("ARCANA_WEB_CONF", buf, 1);
-	argv[0] = (char *)(uintptr_t)kore;
-	argv[1] = (char *)(uintptr_t)"-f";
-	argv[2] = (char *)(uintptr_t)"-n";
-	argv[3] = (char *)(uintptr_t)"-r";
-	argv[4] = (char *)(uintptr_t)"-c";
-	argv[5] = (char *)(uintptr_t)"kore.conf";
-	argv[6] = NULL;
-	snprintf(kore_path, sizeof(kore_path), "%s", kore);
-	pid = spawn_server(argv, "kore.out");
-	ATF_REQUIRE((fp = fopen("kore.pid", "w")) != NULL);
+	argv[0] = console;
+	argv[1] = (char *)(uintptr_t)"-c";
+	argv[2] = (char *)(uintptr_t)"web.conf";
+	argv[3] = NULL;
+	snprintf(console_path, sizeof(console_path), "%s", console);
+	pid = spawn_server(argv, "console.out");
+	ATF_REQUIRE((fp = fopen("console.pid", "w")) != NULL);
 	fprintf(fp, "%d\n", (int)pid);
 	fclose(fp);
 	wait_for("jgd.sock");
@@ -1388,7 +1371,7 @@ void
 console_stop(void)
 {
 
-	terminate("kore.pid");
+	terminate("console.pid");
 	(void)unlink("k.sock");
 }
 
@@ -1400,15 +1383,12 @@ console_start(void)
 	FILE	*fp;
 	pid_t	 pid;
 
-	argv[0] = kore_path;
-	argv[1] = (char *)(uintptr_t)"-f";
-	argv[2] = (char *)(uintptr_t)"-n";
-	argv[3] = (char *)(uintptr_t)"-r";
-	argv[4] = (char *)(uintptr_t)"-c";
-	argv[5] = (char *)(uintptr_t)"kore.conf";
-	argv[6] = NULL;
-	pid = spawn_server(argv, "kore.out");
-	ATF_REQUIRE((fp = fopen("kore.pid", "w")) != NULL);
+	argv[0] = console_path;
+	argv[1] = (char *)(uintptr_t)"-c";
+	argv[2] = (char *)(uintptr_t)"web.conf";
+	argv[3] = NULL;
+	pid = spawn_server(argv, "console.out");
+	ATF_REQUIRE((fp = fopen("console.pid", "w")) != NULL);
 	fprintf(fp, "%d\n", (int)pid);
 	fclose(fp);
 	wait_for("k.sock");
@@ -1453,7 +1433,7 @@ stop(void)
 {
 
 	terminate("arcana-agent2.pid");
-	terminate("kore.pid");
+	terminate("console.pid");
 	terminate("arcana-agent.pid");
 }
 
@@ -1683,7 +1663,7 @@ again:
 			break;
 		len += (size_t)n;
 		buf[len] = '\0';
-		/* Stop at the end of the body: Kore may keep the socket. */
+		/* Stop at the end of the body: the server may keep the socket. */
 		if ((b = strstr(buf, "\r\n\r\n")) != NULL && need == 0) {
 			if ((c = strcasestr(buf, "content-length:")) != NULL &&
 			    c < b)

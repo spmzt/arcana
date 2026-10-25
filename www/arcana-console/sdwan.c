@@ -3210,14 +3210,14 @@ api_sdwan(struct http_request *req)
 
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		pthread_mutex_lock(&sd_lock);
 		doc = sd_load();
 		pthread_mutex_unlock(&sd_lock);
 		return (reply_json(req, 200, doc));
 	}
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	keep = strcmp(req->path, "/api/sdwan") == 0;
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "the SD-WAN document, "

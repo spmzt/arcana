@@ -351,7 +351,7 @@ static const char *ucs_address(struct plan *, const char *,
 		    const ucl_object_t *);
 static int64_t	 sysctl_of(const char *, const char *);
 static ucl_object_t *parse(const char *);
-static void	 bird_routing(struct kore_buf *, const ucl_object_t *,
+static void	 bird_routing(struct buf *, const ucl_object_t *,
 		    const char *, const char *, const char *, const char *,
 		    int64_t);
 static const ucl_object_t *at_path(const ucl_object_t *, const char *,
@@ -2047,7 +2047,7 @@ v4str(uint32_t n, char *buf, size_t len)
  * dhcp-range lines.
  */
 static void
-dhcp_ranges4(struct kore_buf *b, const ucl_object_t *v, const char *tag)
+dhcp_ranges4(struct buf *b, const ucl_object_t *v, const char *tag)
 {
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
@@ -2098,7 +2098,7 @@ dhcp_ranges4(struct kore_buf *b, const ucl_object_t *v, const char *tag)
 			if (end > to)
 				end = to;
 			if (from <= end && from > lo)
-				kore_buf_appendf(b, "dhcp-range=set:%s,%s,%s,%s,%s\n",
+				buf_appendf(b, "dhcp-range=set:%s,%s,%s,%s,%s\n",
 				    tag, v4str(from, s1, sizeof(s1)), v4str(end, s2,
 				    sizeof(s2)), mask, lease);
 		}
@@ -2112,7 +2112,7 @@ dhcp_ranges4(struct kore_buf *b, const ucl_object_t *v, const char *tag)
  * reserved prefix that overlaps it, which splits it, by the low 64 bits.
  */
 static void
-dhcp_ranges6(struct kore_buf *b, const ucl_object_t *v, const char *tag)
+dhcp_ranges6(struct buf *b, const ucl_object_t *v, const char *tag)
 {
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
@@ -2165,7 +2165,7 @@ dhcp_ranges6(struct kore_buf *b, const ucl_object_t *v, const char *tag)
 				    (uintmax_t)(end >> 48), (uintmax_t)((end >> 32) &
 				    0xffff), (uintmax_t)((end >> 16) & 0xffff),
 				    (uintmax_t)(end & 0xffff));
-				kore_buf_appendf(b, "dhcp-range=set:%s,%s,%s,64,%s\n",
+				buf_appendf(b, "dhcp-range=set:%s,%s,%s,64,%s\n",
 				    tag, s1, s2, lease);
 			}
 		}
@@ -2178,7 +2178,7 @@ dhcp_ranges6(struct kore_buf *b, const ucl_object_t *v, const char *tag)
 static char *
 dhcp_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 {
-	struct kore_buf		*b;
+	struct buf		*b;
 	const ucl_object_t	*ep, *u, *v, *a, *e;
 	ucl_object_iter_t	 it, ait;
 	const char		*ifn;
@@ -2186,8 +2186,8 @@ dhcp_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	int			 i;
 	bool			 ra = false;
 
-	b = kore_buf_alloc(2048);
-	kore_buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
+	b = buf_alloc(2048);
+	buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
 	    "at %s, in routing table %jd.\n# The hosts' addresses at the UNIs "
 	    "(MEF 70.2 §11.4, §11.5); no DNS served here.\nport=0\n"
 	    "bind-interfaces\nno-resolv\nno-hosts\ndhcp-authoritative\n", str(sw,
@@ -2206,7 +2206,7 @@ dhcp_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 			if (str(v, "mode") == NULL || strcmp(str(v, "mode"), "dhcp")
 			    != 0)
 				continue;
-			kore_buf_appendf(b, "\n# UNI %s, %s\ninterface=%s\n", str(u,
+			buf_appendf(b, "\n# UNI %s, %s\ninterface=%s\n", str(u,
 			    "id"), str(v, "prefix"), ifn);
 			if (i == 0) {
 				dhcp_ranges4(b, v, ifn);
@@ -2214,7 +2214,7 @@ dhcp_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 				a = ucl_array_find_index(ucl_object_lookup(v,
 				    "provider"), 0);
 				if (a != NULL)
-					kore_buf_appendf(b, "dhcp-option=tag:%s,option:"
+					buf_appendf(b, "dhcp-option=tag:%s,option:"
 					    "router,%s\n", ifn,
 					    ucl_object_tostring_forced(a));
 			} else {
@@ -2224,23 +2224,23 @@ dhcp_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 			/* The DNS servers told to the hosts, one line. */
 			if (ucl_object_lookup(v, "dns") != NULL && ucl_array_size(
 			    ucl_object_lookup(v, "dns")) > 0) {
-				kore_buf_appendf(b, "dhcp-option=tag:%s,option%s:"
+				buf_appendf(b, "dhcp-option=tag:%s,option%s:"
 				    "dns-server", ifn, i == 0 ? "" : "6");
 				ait = NULL;
 				while ((e = ucl_object_iterate(ucl_object_lookup(v,
 				    "dns"), &ait, true)) != NULL)
-					kore_buf_appendf(b, ",%s%s%s", i == 0 ? "" : "[",
+					buf_appendf(b, ",%s%s%s", i == 0 ? "" : "[",
 					    ucl_object_tostring_forced(e), i == 0 ? "" :
 					    "]");
-				kore_buf_appendf(b, "\n");
+				buf_appendf(b, "\n");
 			}
 		}
 	}
 	if (ra)
-		kore_buf_appendf(b, "\n# IPv6: the hosts told by router advertisements "
+		buf_appendf(b, "\n# IPv6: the hosts told by router advertisements "
 		    "to ask (M flag)\nenable-ra\n");
-	out = strdup(kore_buf_stringify(b, NULL));
-	kore_buf_free(b);
+	out = strdup(buf_stringify(b, NULL));
+	buf_free(b);
 	return (out);
 }
 
@@ -2439,13 +2439,13 @@ malware_scan(const ucl_object_t *sw)
 static char *
 icap_conf(const ucl_object_t *sw, const char *sid, const char *own)
 {
-	struct kore_buf	*b;
+	struct buf	*b;
 	char		*out;
 	intmax_t	 fib;
 
 	fib = (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib"));
-	b = kore_buf_alloc(1024);
-	kore_buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
+	b = buf_alloc(1024);
+	buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
 	    "at %s, in routing table %jd.\n# Malware scanning of its security "
 	    "policies (MEF 88), by c-icap and ClamAV, for its Squid.\n"
 	    "PidFile @ICAPPID@\nCommandsSocket @ICAPCMD@\n"
@@ -2461,8 +2461,8 @@ icap_conf(const ucl_object_t *sw, const char *sid, const char *own)
 	    "2M\nvirus_scan.MaxObjectSize 32M\nvirus_scan.DefaultEngine clamav\n",
 	    str(sw, "id"), server_name_of(sid), fib, own, ICAP_PORT(fib), own,
 	    fib, fib);
-	out = strdup(kore_buf_stringify(b, NULL));
-	kore_buf_free(b);
+	out = strdup(buf_stringify(b, NULL));
+	buf_free(b);
 	return (out);
 }
 
@@ -2521,7 +2521,7 @@ static char *
 proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
     bool inspect, char **denyp)
 {
-	struct kore_buf		*b, *d;
+	struct buf		*b, *d;
 	const ucl_object_t	*ep, *o, *pol, *sec, *sc, *uf, *e, *p;
 	ucl_object_iter_t	 it, pit, dit, eit;
 	ucl_object_t		*owns, *pfx;
@@ -2529,9 +2529,9 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	int			 i, si;
 	bool			 dnsproto;
 
-	b = kore_buf_alloc(4096);
-	d = kore_buf_alloc(1024);
-	kore_buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
+	b = buf_alloc(4096);
+	d = buf_alloc(1024);
+	buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
 	    "at %s, in routing table %jd.\n# The URL filter of its security "
 	    "policies (MEF 88), by Squid, mode %s.\npid_filename @PID@\n"
 	    "access_log /var/log/squid/sdwan-sw%jd-access.log\ncache_log "
@@ -2545,22 +2545,22 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	edge_own4(pl, sw, sid, owns);
 	it = NULL;
 	while ((o = ucl_object_iterate(owns, &it, true)) != NULL)
-		kore_buf_appendf(b, "# %s\nhttp_port %s:3128 intercept\n"
+		buf_appendf(b, "# %s\nhttp_port %s:3128 intercept\n"
 		    "https_port %s:3129 intercept ssl-bump tls-cert=@CA@ "
 		    "generate-host-certificates=on dynamic_cert_mem_cache_size=4MB"
 		    "\n", str(o, "end_point"), str(o, "address"), str(o, "address"));
 	/* The names it is asked for, resolved by the service's DNS filter
 	 * where there is one, else by the edge's own resolver. */
 	if (dns_filters(sw, &dnsproto) && ucl_array_size(owns) > 0)
-		kore_buf_appendf(b, "dns_nameservers %s\n", str(
+		buf_appendf(b, "dns_nameservers %s\n", str(
 		    ucl_array_find_index(owns, 0), "address"));
 	snprintf(own, sizeof(own), "%s", ucl_array_size(owns) > 0 ? str(
 	    ucl_array_find_index(owns, 0), "address") : "127.0.0.1");
 	ucl_object_unref(owns);
-	kore_buf_appendf(b, "sslcrtd_program @CERTGEN@ -s @SSLDB@ -M 4MB\n"
+	buf_appendf(b, "sslcrtd_program @CERTGEN@ -s @SSLDB@ -M 4MB\n"
 	    "sslcrtd_children 3\n");
 	/* The service's own hosts: every end point's prefixes. */
-	kore_buf_appendf(b, "acl localnet src");
+	buf_appendf(b, "acl localnet src");
 	i = 0;
 	it = NULL;
 	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
@@ -2569,16 +2569,16 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 		uni_prefixes(ep, pfx);
 		eit = NULL;
 		while ((p = ucl_object_iterate(pfx, &eit, true)) != NULL) {
-			kore_buf_appendf(b, " %s", ucl_object_tostring(p));
+			buf_appendf(b, " %s", ucl_object_tostring(p));
 			i++;
 		}
 		ucl_object_unref(pfx);
 	}
 	if (i == 0)
-		kore_buf_appendf(b, " 0.0.0.0/0");
+		buf_appendf(b, " 0.0.0.0/0");
 	/* What comes back, to c-icap by ICAP, where malware is scanned. */
 	if (malware_scan(sw))
-		kore_buf_appendf(b, "\nicap_enable on\nicap_send_client_ip on\n"
+		buf_appendf(b, "\nicap_enable on\nicap_send_client_ip on\n"
 		    "icap_service sdwan_av respmod_precache bypass=off "
 		    "icap://%s:%d/avscan\nadaptation_access sdwan_av allow "
 		    "all", own, ICAP_PORT(ucl_object_toint(ucl_object_lookup(sw,
@@ -2586,7 +2586,7 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	/* Domains let through whatever is denied (url-filter.allow): a
 	 * site under a denied one, a list's mistake; inline, few. */
 	{
-		struct kore_buf	*al = kore_buf_alloc(512);
+		struct buf	*al = buf_alloc(512);
 
 		pit = NULL;
 		while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
@@ -2601,14 +2601,14 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 				dit = NULL;
 				while ((e = ucl_object_iterate(ucl_object_lookup(uf,
 				    "allow"), &dit, true)) != NULL)
-					kore_buf_appendf(al, " .%s",
+					buf_appendf(al, " .%s",
 					    ucl_object_tostring_forced(e));
 			}
 		if (al->offset > 0) {
-			kore_buf_appendf(b, "\nacl allowed_site ssl::server_name%s"
-			    "\nacl allowed_url dstdomain%s\n", kore_buf_stringify(
-			    al, NULL), kore_buf_stringify(al, NULL));
-			kore_buf_appendf(b, "acl denied_site ssl::server_name "
+			buf_appendf(b, "\nacl allowed_site ssl::server_name%s"
+			    "\nacl allowed_url dstdomain%s\n", buf_stringify(
+			    al, NULL), buf_stringify(al, NULL));
+			buf_appendf(b, "acl denied_site ssl::server_name "
 			    "\"@DENY@\"\nacl denied_url dstdomain \"@DENY@\"\nacl "
 			    "step1 at_step SslBump1\nssl_bump peek step1\nssl_bump "
 			    "splice allowed_site\nssl_bump terminate denied_site\n"
@@ -2616,13 +2616,13 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 			    "http_access deny denied_url\nhttp_access allow localnet"
 			    "\nhttp_access deny all\n", inspect ? "bump" : "splice");
 		} else
-			kore_buf_appendf(b, "\nacl denied_site ssl::server_name "
+			buf_appendf(b, "\nacl denied_site ssl::server_name "
 			    "\"@DENY@\"\nacl denied_url dstdomain \"@DENY@\"\nacl "
 			    "step1 at_step SslBump1\nssl_bump peek step1\nssl_bump "
 			    "terminate denied_site\nssl_bump %s all\nhttp_access deny "
 			    "denied_url\nhttp_access allow localnet\nhttp_access deny "
 			    "all\n", inspect ? "bump" : "splice");
-		kore_buf_free(al);
+		buf_free(al);
 	}
 	/* The domains denied, each with the names beneath it. */
 	pit = NULL;
@@ -2639,7 +2639,7 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 			dit = NULL;
 			while ((e = ucl_object_iterate(ucl_object_lookup(uf, "deny"),
 			    &dit, true)) != NULL)
-				kore_buf_appendf(d, ".%s\n", ucl_object_tostring_forced(
+				buf_appendf(d, ".%s\n", ucl_object_tostring_forced(
 				    e));
 			dit = NULL;
 			while ((e = ucl_object_iterate(ucl_object_lookup(uf, "lists"),
@@ -2658,14 +2658,14 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 					    strchr(s, '.') != NULL && strpbrk(s,
 					    "abcdefghijklmnopqrstuvwxyz") == NULL))
 						continue;	/* a prefix */
-					kore_buf_appendf(d, ".%s\n", s);
+					buf_appendf(d, ".%s\n", s);
 				}
 			}
 		}
-	*denyp = strdup(kore_buf_stringify(d, NULL));
-	kore_buf_free(d);
-	out = strdup(kore_buf_stringify(b, NULL));
-	kore_buf_free(b);
+	*denyp = strdup(buf_stringify(d, NULL));
+	buf_free(d);
+	out = strdup(buf_stringify(b, NULL));
+	buf_free(b);
 	return (out);
 }
 
@@ -2760,7 +2760,7 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
  * ids.
  */
 static bool
-ids_of(const ucl_object_t *sw, struct kore_buf *rules, bool *rulesetp,
+ids_of(const ucl_object_t *sw, struct buf *rules, bool *rulesetp,
     bool *preventp)
 {
 	const ucl_object_t	*pol, *sec, *ids, *r;
@@ -2799,7 +2799,7 @@ ids_of(const ucl_object_t *sw, struct kore_buf *rules, bool *rulesetp,
 				ucl_object_insert_key(seen, ucl_object_frombool(true),
 				    ucl_object_tostring(r), 0, true);
 				if (rules != NULL)
-					kore_buf_appendf(rules, "%s\n",
+					buf_appendf(rules, "%s\n",
 					    ucl_object_tostring(r));
 			}
 		}
@@ -2862,7 +2862,7 @@ ids_build(struct plan *pl, const ucl_object_t *doc)
 	const ucl_object_t	*sw, *edge, *ep;
 	ucl_object_iter_t	 it, eit, pit;
 	ucl_object_t		*o, *inst, *list, *ifs, *seen;
-	struct kore_buf		*rules;
+	struct buf		*rules;
 	char			 name[32], ifn[64];
 	const char		*sid, *in;
 	char			*text;
@@ -2909,11 +2909,11 @@ ids_build(struct plan *pl, const ucl_object_t *doc)
 				    ucl_object_lookup(sw, "fib")))));
 				prevents = true;
 			}
-			rules = kore_buf_alloc(1024);
+			rules = buf_alloc(1024);
 			(void)ids_of(sw, rules, &ruleset, NULL);
-			text = kore_buf_stringify(rules, NULL);
+			text = buf_stringify(rules, NULL);
 			put(inst, "rules", S(text));
-			kore_buf_free(rules);
+			buf_free(rules);
 			ucl_array_append(list, inst);
 		}
 		if (ucl_array_size(list) == 0) {
@@ -2946,14 +2946,14 @@ ids_build(struct plan *pl, const ucl_object_t *doc)
 static char *
 dns_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *lists)
 {
-	struct kore_buf		*b;
+	struct buf		*b;
 	const ucl_object_t	*ep, *u, *v, *a, *pol, *sec, *sc, *d;
 	ucl_object_iter_t	 it, pit, dit;
 	char			*out;
 	int			 i, si;
 
-	b = kore_buf_alloc(2048);
-	kore_buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
+	b = buf_alloc(2048);
+	buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
 	    "at %s, in routing table %jd.\n# The DNS filter of its security "
 	    "policies (MEF 88), by the base system's unbound.\nserver:\n\t"
 	    "verbosity: 0\n\tdo-daemonize: yes\n\tmodule-config: \"iterator\"\n"
@@ -2973,7 +2973,7 @@ dns_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *lists)
 			a = ucl_array_find_index(ucl_object_lookup(v, "provider"), 0);
 			if (a == NULL)
 				continue;
-			kore_buf_appendf(b, "\t# UNI %s\n\tinterface: %s\n\t"
+			buf_appendf(b, "\t# UNI %s\n\tinterface: %s\n\t"
 			    "access-control: %s allow\n", str(u, "id"),
 			    ucl_object_tostring_forced(a), str(v, "prefix"));
 		}
@@ -2991,7 +2991,7 @@ dns_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *lists)
 			while ((d = ucl_object_iterate(ucl_object_lookup(
 			    ucl_object_lookup(sc, "dns-domain-filter"), "deny"),
 			    &dit, true)) != NULL)
-				kore_buf_appendf(b, "\tlocal-zone: \"%s.\" "
+				buf_appendf(b, "\tlocal-zone: \"%s.\" "
 				    "always_nxdomain\n",
 				    ucl_object_tostring_forced(d));
 			/* And the named lists' domains, as kept. */
@@ -3013,13 +3013,13 @@ dns_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *lists)
 					    strchr(s, '.') != NULL && strpbrk(s,
 					    "abcdefghijklmnopqrstuvwxyz") == NULL))
 						continue;	/* a prefix */
-					kore_buf_appendf(b, "\tlocal-zone: \"%s.\" "
+					buf_appendf(b, "\tlocal-zone: \"%s.\" "
 					    "always_nxdomain\n", s);
 				}
 			}
 		}
-	out = strdup(kore_buf_stringify(b, NULL));
-	kore_buf_free(b);
+	out = strdup(buf_stringify(b, NULL));
+	buf_free(b);
 	return (out);
 }
 
@@ -5364,18 +5364,18 @@ sw_routes(const ucl_object_t *sw)
 /* BIRD's channel of a family, with what comes in and goes out. */
 /* A channel of a protocol, with what else it says (next hop self). */
 static void
-bird_channel_x(struct kore_buf *b, const char *fam, int64_t pref,
+bird_channel_x(struct buf *b, const char *fam, int64_t pref,
     const char *export, const char *extra)
 {
 
 	/* BIRD 3 has a route's preference in the channel, not the
 	 * protocol. */
-	kore_buf_appendf(b, "\t%s {\n\t\tpreference %jd;\n\t\timport all;\n"
+	buf_appendf(b, "\t%s {\n\t\tpreference %jd;\n\t\timport all;\n"
 	    "\t\texport %s;\n%s\t};\n", fam, (intmax_t)pref, export, extra);
 }
 
 static void
-bird_channel(struct kore_buf *b, const char *fam, int64_t pref,
+bird_channel(struct buf *b, const char *fam, int64_t pref,
     const char *export)
 {
 
@@ -5406,7 +5406,7 @@ entry_at(const ucl_object_t *rs, int k)
  * multihop session; bfd watches the one that says so.
  */
 static void
-bird_routing(struct kore_buf *b, const ucl_object_t *u, const char *what,
+bird_routing(struct buf *b, const ucl_object_t *u, const char *what,
     const char *id, const char *sym, const char *ifn, int64_t as)
 {
 	const ucl_object_t	*rs, *r, *m;
@@ -5452,28 +5452,28 @@ bird_routing(struct kore_buf *b, const ucl_object_t *u, const char *what,
 				snprintf(exp + strlen(exp), sizeof(exp) - strlen(exp),
 				    "\t\t\taccept;\n\t\t}");
 			}
-			kore_buf_appendf(b, "# %s %s, the neighbour's %s%s%s\nprotocol "
+			buf_appendf(b, "# %s %s, the neighbour's %s%s%s\nprotocol "
 			    "bgp %s_%s_%d {\n", what, id, ucl_object_tostring_forced(m),
 			    ibgp ? ", iBGP" : "", mh ? ", multihop" : "", pfx, sym,
 			    n++);
 			if (src != NULL)
-				kore_buf_appendf(b, "\tlocal %s as %jd;\n", src,
+				buf_appendf(b, "\tlocal %s as %jd;\n", src,
 				    (intmax_t)as);
 			else
-				kore_buf_appendf(b, "\tlocal as %jd;\n", (intmax_t)as);
-			kore_buf_appendf(b, "\tneighbor %s as %jd;\n",
+				buf_appendf(b, "\tlocal as %jd;\n", (intmax_t)as);
+			buf_appendf(b, "\tneighbor %s as %jd;\n",
 			    ucl_object_tostring_forced(m), (intmax_t)ras);
 			if (mh)
-				kore_buf_appendf(b, "\tmultihop;\n");
+				buf_appendf(b, "\tmultihop;\n");
 			else
-				kore_buf_appendf(b, "\tinterface \"%s\";\n", ifn);
+				buf_appendf(b, "\tinterface \"%s\";\n", ifn);
 			if (ucl_flag(r, "bfd"))
-				kore_buf_appendf(b, "\tbfd on;\n");
+				buf_appendf(b, "\tbfd on;\n");
 			if (str(r, "password") != NULL)
-				kore_buf_appendf(b, "\tauthentication md5;\n\tpassword "
+				buf_appendf(b, "\tauthentication md5;\n\tpassword "
 				    "\"%s\";\n", str(r, "password"));
 			if (ucl_object_lookup(r, "hold_time") != NULL)
-				kore_buf_appendf(b, "\thold time %jd;\n", (intmax_t)
+				buf_appendf(b, "\thold time %jd;\n", (intmax_t)
 				    ucl_object_toint(ucl_object_lookup(r,
 				    "hold_time")));
 			if (strcmp(fam, "ipv6") != 0 && family(
@@ -5484,7 +5484,7 @@ bird_routing(struct kore_buf *b, const ucl_object_t *u, const char *what,
 			    ucl_object_tostring_forced(m)) == AF_INET6)
 				bird_channel_x(b, "ipv6", 256 - dist, exp, ibgp ?
 				    "\t\tnext hop self;\n" : "");
-			kore_buf_appendf(b, "}\n\n");
+			buf_appendf(b, "}\n\n");
 		}
 	}
 	rs = ucl_object_lookup(u, "ospf");
@@ -5499,31 +5499,31 @@ bird_routing(struct kore_buf *b, const ucl_object_t *u, const char *what,
 			if ((vi == 0 && strcmp(fam, "ipv6") == 0) || (vi == 1 &&
 			    strcmp(fam, "ipv4") == 0))
 				continue;
-			kore_buf_appendf(b, "# %s %s, OSPF%s with the neighbour\n"
+			buf_appendf(b, "# %s %s, OSPF%s with the neighbour\n"
 			    "protocol ospf %s %s_%s_%s", what, id, vi == 0 ? "v2" :
 			    "v3", vers[vi], pfx, sym, vers[vi]);
 			if (k > 0)
-				kore_buf_appendf(b, "_%d", k);
-			kore_buf_appendf(b, " {\n");
+				buf_appendf(b, "_%d", k);
+			buf_appendf(b, " {\n");
 			bird_channel(b, vi == 0 ? "ipv4" : "ipv6", 256 - dist, "all");
-			kore_buf_appendf(b, "\tarea %jd {\n\t\tinterface \"%s\" {\n",
+			buf_appendf(b, "\tarea %jd {\n\t\tinterface \"%s\" {\n",
 			    (intmax_t)(ucl_object_lookup(r, "area") != NULL ?
 			    ucl_object_toint(ucl_object_lookup(r, "area")) : 0), ifn);
 			if (ucl_object_lookup(r, "cost") != NULL)
-				kore_buf_appendf(b, "\t\t\tcost %jd;\n", (intmax_t)
+				buf_appendf(b, "\t\t\tcost %jd;\n", (intmax_t)
 				    ucl_object_toint(ucl_object_lookup(r, "cost")));
 			if (ucl_object_lookup(r, "hello") != NULL)
-				kore_buf_appendf(b, "\t\t\thello %jd;\n", (intmax_t)
+				buf_appendf(b, "\t\t\thello %jd;\n", (intmax_t)
 				    ucl_object_toint(ucl_object_lookup(r, "hello")));
 			if (ucl_object_lookup(r, "dead") != NULL)
-				kore_buf_appendf(b, "\t\t\tdead %jd;\n", (intmax_t)
+				buf_appendf(b, "\t\t\tdead %jd;\n", (intmax_t)
 				    ucl_object_toint(ucl_object_lookup(r, "dead")));
 			if (ucl_flag(r, "bfd"))
-				kore_buf_appendf(b, "\t\t\tbfd on;\n");
+				buf_appendf(b, "\t\t\tbfd on;\n");
 			if (str(r, "password") != NULL)
-				kore_buf_appendf(b, "\t\t\tauthentication cryptographic;"
+				buf_appendf(b, "\t\t\tauthentication cryptographic;"
 				    "\n\t\t\tpassword \"%s\";\n", str(r, "password"));
-			kore_buf_appendf(b, "\t\t};\n\t};\n}\n\n");
+			buf_appendf(b, "\t\t};\n\t};\n}\n\n");
 		}
 	}
 }
@@ -5535,7 +5535,7 @@ bird_routing(struct kore_buf *b, const ucl_object_t *u, const char *what,
  */
 static bool
 uni_bfd(struct plan *pl, const ucl_object_t *sw, const char *sid,
-    struct kore_buf *b, int *first, bool *mhp)
+    struct buf *b, int *first, bool *mhp)
 {
 	const ucl_object_t	*ep, *u, *r;
 	ucl_object_iter_t	 it;
@@ -5566,7 +5566,7 @@ uni_bfd(struct plan *pl, const ucl_object_t *sw, const char *sid,
 			continue;
 		any = true;
 		if (b != NULL) {
-			kore_buf_appendf(b, "%s\"%s\"", *first ? "" : ", ", uni_ifname(
+			buf_appendf(b, "%s\"%s\"", *first ? "" : ", ", uni_ifname(
 			    pl, sw, ep, ifbuf, sizeof(ifbuf)));
 			*first = 0;
 		}
@@ -5593,7 +5593,7 @@ uni_bfd(struct plan *pl, const ucl_object_t *sw, const char *sid,
  */
 static void
 bird_loop(struct plan *pl, const ucl_object_t *sw, const char *sid,
-    struct kore_buf *b, int64_t as)
+    struct buf *b, int64_t as)
 {
 	const ucl_object_t	*edge, *t, *e0, *e1, *far, *ep, *u, *v, *e;
 	ucl_object_iter_t	 it, tit, rit;
@@ -5648,7 +5648,7 @@ bird_loop(struct plan *pl, const ucl_object_t *sw, const char *sid,
 					    "inner6") == NULL)
 						continue;
 					if (n++ == 0)
-						kore_buf_appendf(b, "# %s's loopback, by "
+						buf_appendf(b, "# %s's loopback, by "
 						    "%s tunnel to it, each path watched "
 						    "by BFD\nprotocol static loop%d%s_%d "
 						    "{\n\t%s%s;\n\troute %s/%d",
@@ -5658,16 +5658,16 @@ bird_loop(struct plan *pl, const ucl_object_t *sw, const char *sid,
 						    "b", k, fams[i], pass == 0 ? "" :
 						    " { preference 150; }", fa, af ==
 						    AF_INET ? 32 : 128);
-					kore_buf_appendf(b, " via %s bfd", str(far, af ==
+					buf_appendf(b, " via %s bfd", str(far, af ==
 					    AF_INET ? "inner4" : "inner6"));
 				}
 				if (n > 0)
-					kore_buf_appendf(b, ";\n}\n\n");
+					buf_appendf(b, ";\n}\n\n");
 			}
 		}
 		/* The session, loopback to loopback, of the family both have. */
 		if (me4 != NULL && far4 != NULL) {
-			kore_buf_appendf(b, "# to %s, loopback to loopback%s\nprotocol "
+			buf_appendf(b, "# to %s, loopback to loopback%s\nprotocol "
 			    "bgp edge%d from edge {\n\tlocal %s as %jd;\n\tneighbor "
 			    "%s as %jd;\n\tmultihop;\n%s}\n\n", server_name_of(fsid),
 			    edge_transit(pl, sid) ? ", a client of this edge's "
@@ -5675,7 +5675,7 @@ bird_loop(struct plan *pl, const ucl_object_t *sw, const char *sid,
 			    (intmax_t)as, edge_transit(pl, sid) ? "\trr client;\n"
 			    : "");
 		} else if (me6 != NULL && far6 != NULL)
-			kore_buf_appendf(b, "# to %s, loopback to loopback%s\nprotocol "
+			buf_appendf(b, "# to %s, loopback to loopback%s\nprotocol "
 			    "bgp edge%d from edge {\n\tlocal %s as %jd;\n\tneighbor "
 			    "%s as %jd;\n\tmultihop;\n%s}\n\n", server_name_of(fsid),
 			    edge_transit(pl, sid) ? ", a client of this edge's "
@@ -5703,7 +5703,7 @@ bird_loop(struct plan *pl, const ucl_object_t *sw, const char *sid,
 				v = ucl_object_lookup(ep, "remote");
 				if (str(v, "prefix") != NULL && family(str(v,
 				    "prefix")) == af && n++ == 0)
-					kore_buf_appendf(b, "# %s's own\nprotocol static "
+					buf_appendf(b, "# %s's own\nprotocol static "
 					    "orig%d_%s {\n\t%s;\n\troute %s via \"%s\";\n",
 					    str(ep, "id"), af == AF_INET ? 4 : 6, sym,
 					    fams[i], str(v, "prefix"), ifn);
@@ -5714,17 +5714,17 @@ bird_loop(struct plan *pl, const ucl_object_t *sw, const char *sid,
 				    == 0 || strcmp(str(v, "mode"), "slaac") == 0) &&
 				    str(v, "prefix") != NULL) {
 					if (n++ == 0)
-						kore_buf_appendf(b, "# %s's own\nprotocol "
+						buf_appendf(b, "# %s's own\nprotocol "
 						    "static orig%d_%s {\n\t%s;\n", str(ep,
 						    "id"), af == AF_INET ? 4 : 6, sym,
 						    fams[i]);
-					kore_buf_appendf(b, "\troute %s via \"%s\";\n",
+					buf_appendf(b, "\troute %s via \"%s\";\n",
 					    str(v, "prefix"), ifn);
 					rit = NULL;
 					while ((e = ucl_object_iterate(ucl_object_lookup(
 					    v, "secondary"), &rit, true)) != NULL)
 						if (str(e, "prefix") != NULL)
-							kore_buf_appendf(b, "\troute %s via "
+							buf_appendf(b, "\troute %s via "
 							    "\"%s\";\n", str(e, "prefix"), ifn);
 				}
 				rit = NULL;
@@ -5735,16 +5735,16 @@ bird_loop(struct plan *pl, const ucl_object_t *sw, const char *sid,
 					    "prefix")) != af)
 						continue;
 					if (n++ == 0)
-						kore_buf_appendf(b, "# %s's own\nprotocol "
+						buf_appendf(b, "# %s's own\nprotocol "
 						    "static orig%d_%s {\n\t%s;\n", str(ep,
 						    "id"), af == AF_INET ? 4 : 6, sym,
 						    fams[i]);
-					kore_buf_appendf(b, "\troute %s via %s;\n", str(e,
+					buf_appendf(b, "\troute %s via %s;\n", str(e,
 					    "prefix"), str(e, "next_hop"));
 				}
 			}
 			if (n > 0)
-				kore_buf_appendf(b, "}\n\n");
+				buf_appendf(b, "}\n\n");
 		}
 	}
 }
@@ -5757,7 +5757,7 @@ bird_loop(struct plan *pl, const ucl_object_t *sw, const char *sid,
  */
 static bool
 edge_sets(struct plan *pl, const ucl_object_t *sw, const char *sid,
-    struct kore_buf *b)
+    struct buf *b)
 {
 	const ucl_object_t	*edge, *bs, *set, *uep, *m;
 	ucl_object_iter_t	 it, mit;
@@ -5772,7 +5772,7 @@ edge_sets(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	    0)
 		return (false);
 	for (fam = 4; fam <= 6; fam += 2) {
-		kore_buf_appendf(b, "# Destination sets by BGP attribute, each by "
+		buf_appendf(b, "# Destination sets by BGP attribute, each by "
 		    "the uplink named for it\nfilter to_kernel%d {\n\tif source = "
 		    "RTS_DEVICE || source = RTS_INHERIT || dest != RTD_UNICAST "
 		    "then reject;\n%s", fam, sw_loop(sw) ? "\tif proto ~ \"orig*\" "
@@ -5788,35 +5788,35 @@ edge_sets(struct plan *pl, const ucl_object_t *sw, const char *sid,
 			if (set == NULL || gw == NULL || (family(gw) == AF_INET) !=
 			    (fam == 4))
 				continue;
-			kore_buf_appendf(b, "\t# %s, by %s\n\tif ", str(set, "name"),
+			buf_appendf(b, "\t# %s, by %s\n\tif ", str(set, "name"),
 			    str(uep, "id"));
 			n = 0;
 			if (ucl_array_size(ucl_object_lookup(set, "as_path")) > 0) {
-				kore_buf_appendf(b, "bgp_path ~ [");
+				buf_appendf(b, "bgp_path ~ [");
 				mit = NULL;
 				while ((m = ucl_object_iterate(ucl_object_lookup(set,
 				    "as_path"), &mit, true)) != NULL)
-					kore_buf_appendf(b, "%s%jd", n++ > 0 ? ", " : "",
+					buf_appendf(b, "%s%jd", n++ > 0 ? ", " : "",
 					    (intmax_t)ucl_object_toint(m));
-				kore_buf_appendf(b, "]");
+				buf_appendf(b, "]");
 			}
 			if (ucl_array_size(ucl_object_lookup(set, "communities")) >
 			    0) {
-				kore_buf_appendf(b, "%sbgp_community ~ [", n > 0 ? " || "
+				buf_appendf(b, "%sbgp_community ~ [", n > 0 ? " || "
 				    : "");
 				n = 0;
 				mit = NULL;
 				while ((m = ucl_object_iterate(ucl_object_lookup(set,
 				    "communities"), &mit, true)) != NULL)
-					kore_buf_appendf(b, "%s(%jd, %jd)", n++ > 0 ? ", " :
+					buf_appendf(b, "%s(%jd, %jd)", n++ > 0 ? ", " :
 					    "", (intmax_t)ucl_object_toint(
 					    ucl_array_find_index(m, 0)), (intmax_t)
 					    ucl_object_toint(ucl_array_find_index(m, 1)));
-				kore_buf_appendf(b, "]");
+				buf_appendf(b, "]");
 			}
-			kore_buf_appendf(b, " then { gw = %s; accept; }\n", gw);
+			buf_appendf(b, " then { gw = %s; accept; }\n", gw);
 		}
-		kore_buf_appendf(b, "%s\taccept;\n}\n\n", only ? "\tif source = RTS_BGP "
+		buf_appendf(b, "%s\taccept;\n}\n\n", only ? "\tif source = RTS_BGP "
 		    "then reject;\n" : "");
 	}
 	return (true);
@@ -5833,7 +5833,7 @@ edge_sets(struct plan *pl, const ucl_object_t *sw, const char *sid,
 static char *
 bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 {
-	struct kore_buf		*b;
+	struct buf		*b;
 	const ucl_object_t	*ep, *u, *t, *e0, *e1, *me, *far, *v, *cp;
 	ucl_object_iter_t	 it, tit;
 	const char		*rid, *ifn;
@@ -5844,7 +5844,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	int64_t			 as;
 	int			 n, k;
 
-	b = kore_buf_alloc(8192);
+	b = buf_alloc(8192);
 	as = ucl_object_lookup(sw, "as") != NULL ? ucl_object_toint(
 	    ucl_object_lookup(sw, "as")) : DEFAULT_AS;
 	/* The router id: the edge's first inner IPv4 address in the
@@ -5884,7 +5884,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	if (sw_loop(sw) && loop_addr(pl, sw, sid, AF_INET, l4, sizeof(l4)) !=
 	    NULL)
 		rid = l4;
-	kore_buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s at %s, "
+	buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s at %s, "
 	    "in routing table %jd.\n# Changed by the console's next apply.\n"
 	    "router id %s;\nlog syslog { warning, error };\n\n"
 	    "protocol device {\n}\n\n", str(sw, "id"), server_name_of(sid),
@@ -5911,7 +5911,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		    "%s\"lo%jd\"", n++ > 0 ? ", " : "", (intmax_t)ucl_object_toint(
 		    ucl_object_lookup(loop_alloc(pl, sw, sid), "unit")));
 	if (n > 0)
-		kore_buf_appendf(b, "protocol direct {\n\tipv4;\n\tipv6;\n\tinterface "
+		buf_appendf(b, "protocol direct {\n\tipv4;\n\tipv6;\n\tinterface "
 		    "%s;\n}\n\n", ifaces);
 	/* The kernel's table: what the console put there is learned and
 	 * kept, and outranks what BGP brings (preference 200 to 100), so
@@ -5951,7 +5951,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		kexp = "export filter to_kernel4;";
 		kexp6 = "export filter to_kernel6;";
 	}
-	kore_buf_appendf(b, "protocol kernel kernel4 {\n%s\tlearn;\n"
+	buf_appendf(b, "protocol kernel kernel4 {\n%s\tlearn;\n"
 	    "\tmerge paths on;\n"
 	    "\tpersist;\n\tipv4 {\n\t\timport filter { preference = 200; accept; "
 	    "};\n\t\t%s\n\t};\n}\n\nprotocol kernel kernel6 {\n"
@@ -5967,7 +5967,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		int			 first = 1;
 		int64_t			 bi, bm;
 
-		kore_buf_appendf(b, "protocol bfd {\n\tinterface ");
+		buf_appendf(b, "protocol bfd {\n\tinterface ");
 		it = NULL;
 		while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
 			if (strcmp(str(t, "swvc"), str(sw, "id")) != 0)
@@ -5977,7 +5977,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 			    "ends"), &tit, true)) != NULL)
 				if (strcmp(str(me, "edge"), sid) == 0 && str(me,
 				    "ifname") != NULL) {
-					kore_buf_appendf(b, "%s\"%s\"", first ? "" :
+					buf_appendf(b, "%s\"%s\"", first ? "" :
 					    ", ", str(me, "ifname"));
 					first = 0;
 				}
@@ -5985,19 +5985,19 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		/* The UNIs whose neighbours are watched by BFD too. */
 		(void)uni_bfd(pl, sw, sid, b, &first, &mh);
 		if (first)
-			kore_buf_appendf(b, "\"none\"");
+			buf_appendf(b, "\"none\"");
 		bi = ucl_object_lookup(bfd, "interval") != NULL ?
 		    ucl_object_toint(ucl_object_lookup(bfd, "interval")) : 200;
 		bm = ucl_object_lookup(bfd, "multiplier") != NULL ?
 		    ucl_object_toint(ucl_object_lookup(bfd, "multiplier")) : 3;
-		kore_buf_appendf(b, " {\n\t\tinterval %jd ms;\n\t\tmultiplier "
+		buf_appendf(b, " {\n\t\tinterval %jd ms;\n\t\tmultiplier "
 		    "%jd;\n\t};\n", (intmax_t)bi, (intmax_t)bm);
 		/* The sessions between loopbacks are multihop, watched by
 		 * multihop BFD alike. */
 		if (sw_loop(sw) || mh)
-			kore_buf_appendf(b, "\tmultihop {\n\t\tinterval %jd ms;\n\t\t"
+			buf_appendf(b, "\tmultihop {\n\t\tinterval %jd ms;\n\t\t"
 			    "multiplier %jd;\n\t};\n", (intmax_t)bi, (intmax_t)bm);
-		kore_buf_appendf(b, "}\n\n");
+		buf_appendf(b, "}\n\n");
 	}
 	/* iBGP with each other edge, by each tunnel between them; or, with
 	 * a control plane (Mplify 119 §8.3), with its host alone, which
@@ -6027,18 +6027,18 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 			snprintf(resv + strlen(resv), sizeof(resv) - strlen(resv),
 			    "%s%s+", nr++ > 0 ? ", " : "",
 			    ucl_object_tostring_forced(rp));
-		kore_buf_appendf(b, "filter to_edges {\n\tif source = RTS_INHERIT "
+		buf_appendf(b, "filter to_edges {\n\tif source = RTS_INHERIT "
 		    "then reject;\n%s%s%s\taccept;\n}\n\n", nr > 0 ? "\tif net ~ [ "
 		    : "", nr > 0 ? resv : "", nr > 0 ? " ] then reject;\n" : "");
 	}
-	kore_buf_appendf(b, "template bgp edge {\n\tlocal as %jd;\n\thold time 30;\n"
+	buf_appendf(b, "template bgp edge {\n\tlocal as %jd;\n\thold time 30;\n"
 	    "\terror wait time 10, 60;\n%s", (intmax_t)as, sw_bfd(sw) ?
 	    "\tbfd on;\n" : "");
 	/* TCP MD5 on the sessions (Mplify 119 R11, R12). */
 	if (str(sw, "md5") != NULL)
-		kore_buf_appendf(b, "\tauthentication md5;\n\tpassword \"%s\";\n",
+		buf_appendf(b, "\tauthentication md5;\n\tpassword \"%s\";\n",
 		    str(sw, "md5"));
-	kore_buf_appendf(b, "\tipv4 {\n\t\timport all;\n\t\texport filter "
+	buf_appendf(b, "\tipv4 {\n\t\timport all;\n\t\texport filter "
 	    "to_edges;\n\t\tnext hop self;\n\t};\n\tipv6 {\n\t\timport all;\n\t\t"
 	    "export filter to_edges;\n\t\tnext hop self;\n\t};\n}\n\n");
 	/* Or between the loopbacks, one session with each edge. */
@@ -6073,7 +6073,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		if ((cp != NULL && str(cp, "ctvc") != NULL) != ucl_flag(t,
 		    "control"))
 			continue;
-		kore_buf_appendf(b, "# %s, to %s%s\nprotocol bgp edge%d from edge {\n\t"
+		buf_appendf(b, "# %s, to %s%s\nprotocol bgp edge%d from edge {\n\t"
 		    "local %s as %jd;\n\tneighbor %s as %jd;\n", str(t, "id"),
 		    server_name_of(str(far, "edge")), cp == NULL ? "" : strcmp(sid,
 		    str(cp, "host")) == 0 ? ", a client of this reflector" : ", "
@@ -6081,12 +6081,12 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		    "inner4") : str(me, "inner6"), (intmax_t)as, str(far, "inner4")
 		    != NULL ? str(far, "inner4") : str(far, "inner6"), (intmax_t)as);
 		if (cp != NULL && strcmp(sid, str(cp, "host")) == 0) {
-			kore_buf_appendf(b, "\trr client;\n");
+			buf_appendf(b, "\trr client;\n");
 			if (str(cp, "cluster_id") != NULL)
-				kore_buf_appendf(b, "\trr cluster id %s;\n", str(cp,
+				buf_appendf(b, "\trr cluster id %s;\n", str(cp,
 				    "cluster_id"));
 		}
-		kore_buf_appendf(b, "}\n\n");
+		buf_appendf(b, "}\n\n");
 	}
 	/* At each UNI here: BGP, OSPF, as its entry says. */
 	it = NULL;
@@ -6100,8 +6100,8 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		symbol(str(ep, "id"), sym, sizeof(sym));
 		bird_routing(b, u, "UNI", str(u, "id"), sym, ifn, as);
 	}
-	out = strdup(kore_buf_stringify(b, NULL));
-	kore_buf_free(b);
+	out = strdup(buf_stringify(b, NULL));
+	buf_free(b);
 	return (out);
 }
 
@@ -6121,12 +6121,12 @@ static char *
 ucs_bird_conf(struct plan *pl, const ucl_object_t *edge,
     const ucl_object_t *uep, int64_t vrf)
 {
-	struct kore_buf	*b;
+	struct buf	*b;
 	const char	*addr;
 	char		 sym[80], *out;
 	int64_t		 as;
 
-	b = kore_buf_alloc(4096);
+	b = buf_alloc(4096);
 	addr = ucs_address(pl, str(edge, "server"), uep);
 	as = ucl_object_lookup(ucl_object_lookup(ucl_object_lookup(uep,
 	    "routing"), "bgp"), "as") != NULL ? ucl_object_toint(
@@ -6135,7 +6135,7 @@ ucs_bird_conf(struct plan *pl, const ucl_object_t *edge,
 	if (ucl_object_lookup(ucl_object_lookup(ucl_object_lookup(uep,
 	    "routing"), "bgp"), "local_as") == NULL)
 		as = DEFAULT_AS;
-	kore_buf_appendf(b, "# Written by the Arcana console: UCS end point %s at "
+	buf_appendf(b, "# Written by the Arcana console: UCS end point %s at "
 	    "%s, routing with the underlay in table %jd.\n# Changed by the "
 	    "console's next apply.\nrouter id %s;\nlog syslog { warning, error "
 	    "};\n\nprotocol device {\n}\n\nprotocol direct {\n\tipv4;\n\tipv6;\n\t"
@@ -6151,8 +6151,8 @@ ucs_bird_conf(struct plan *pl, const ucl_object_t *edge,
 	symbol(str(uep, "id"), sym, sizeof(sym));
 	bird_routing(b, ucl_object_lookup(uep, "routing"), "UCS", str(uep, "id"),
 	    sym, str(uep, "interface"), as);
-	out = strdup(kore_buf_stringify(b, NULL));
-	kore_buf_free(b);
+	out = strdup(buf_stringify(b, NULL));
+	buf_free(b);
 	return (out);
 }
 
@@ -7363,7 +7363,7 @@ job_run(const char *sid, const ucl_object_t *j, char *why, size_t wlen)
 	 * fresh connection to the host, is what confirms it. */
 	json = workflow_submit(uri, peer, name, jj, &status, &e, &note);
 	if (note != NULL)
-		kore_log(LOG_NOTICE, "sdwan apply: %s: %s %s: %s", name, str(j,
+		log_msg(LOG_NOTICE, "sdwan apply: %s: %s %s: %s", name, str(j,
 		    "kind"), str(j, "interface") != NULL ? str(j, "interface") :
 		    "", note);
 	ucl_object_unref(jj);
@@ -8081,7 +8081,7 @@ api_sdwan_lists(struct http_request *req)
 	fetch = strcmp(req->path, "/api/sdwan/lists/fetch") == 0;
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		kept = lists_kept();
 		out = ucl_object_typed_new(UCL_OBJECT);
 		put(out, "interval", I(ucl_object_lookup(kept, "interval") != NULL
@@ -8109,7 +8109,7 @@ api_sdwan_lists(struct http_request *req)
 		return (reply_json(req, 200, out));
 	}
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	kept = lists_kept();
 	if (fetch) {
 		body = read_json(req);
@@ -8232,16 +8232,16 @@ wg_keypair(char *priv, size_t plen, char *pub, size_t publen)
 	ok = false;
 	n = sizeof(raw);
 	if (EVP_PKEY_get_raw_private_key(k, raw, &n) == 1 && n == sizeof(raw) &&
-	    kore_base64_encode(raw, n, &b64) == KORE_RESULT_OK) {
+	    b64_encode(raw, n, &b64) == WEB_OK) {
 		snprintf(priv, plen, "%s", b64);
 		explicit_bzero(b64, strlen(b64));
-		kore_free(b64);
+		free(b64);
 		n = sizeof(raw);
 		if (EVP_PKEY_get_raw_public_key(k, raw, &n) == 1 && n ==
-		    sizeof(raw) && kore_base64_encode(raw, n, &b64) ==
-		    KORE_RESULT_OK) {
+		    sizeof(raw) && b64_encode(raw, n, &b64) ==
+		    WEB_OK) {
 			snprintf(pub, publen, "%s", b64);
-			kore_free(b64);
+			free(b64);
 			ok = true;
 		}
 	}
@@ -8265,7 +8265,7 @@ api_wg_keypair(struct http_request *req)
 	char		 priv[64], pub[64], *psk;
 
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (!wg_keypair(priv, sizeof(priv), pub, sizeof(pub)))
 		return (reply_error(req, 500, "keygen", "no X25519 key pair"));
 	out = ucl_object_typed_new(UCL_OBJECT);
@@ -8274,10 +8274,10 @@ api_wg_keypair(struct http_request *req)
 	explicit_bzero(priv, sizeof(priv));
 	/* A preshared key too, 32 random bytes, for the client to use. */
 	arc4random_buf(raw, sizeof(raw));
-	if (kore_base64_encode(raw, sizeof(raw), &psk) == KORE_RESULT_OK) {
+	if (b64_encode(raw, sizeof(raw), &psk) == WEB_OK) {
 		put(out, "preshared_key", S(psk));
 		explicit_bzero(psk, strlen(psk));
-		kore_free(psk);
+		free(psk);
 	}
 	explicit_bzero(raw, sizeof(raw));
 	return (reply_json(req, 200, out));
@@ -8434,7 +8434,7 @@ identity_config(struct plan *pl, const ucl_object_t *doc,
 	const ucl_object_t	*r, *edge, *ue, *u, *e2, *p;
 	ucl_object_iter_t	 it, pit;
 	ucl_object_t		*pfx, *ans;
-	struct kore_buf		*b;
+	struct buf		*b;
 	struct net		 n;
 	char			 addr[80], own[80], uri[256], peer[256], hname[128];
 	char			*json, *text, jail[64];
@@ -8476,13 +8476,13 @@ identity_config(struct plan *pl, const ucl_object_t *doc,
 		    "type"), "public") == 0))
 			endpoint = str(ue, "address");
 	}
-	b = kore_buf_alloc(2048);
-	kore_buf_appendf(b, "# %s, identity %s of %s: shown once, kept nowhere "
+	b = buf_alloc(2048);
+	buf_appendf(b, "# %s, identity %s of %s: shown once, kept nowhere "
 	    "by the console.\n[Interface]\nPrivateKey = %s\nAddress = %s/%d\n",
 	    str(sw, "id"), name, str(ep, "id"), priv, addr, n.len);
 	if (dns_filters(sw, &proto))
-		kore_buf_appendf(b, "DNS = %s\n", own);
-	kore_buf_appendf(b, "\n[Peer]\nPublicKey = %s\nEndpoint = %s%s%s:%jd\n"
+		buf_appendf(b, "DNS = %s\n", own);
+	buf_appendf(b, "\n[Peer]\nPublicKey = %s\nEndpoint = %s%s%s:%jd\n"
 	    "AllowedIPs = ", key != NULL ? key : "(the edge's, once applied: wg "
 	    "show the interface public-key there)", endpoint != NULL && strchr(
 	    endpoint, ':') != NULL ? "[" : "", endpoint != NULL ? endpoint :
@@ -8498,14 +8498,14 @@ identity_config(struct plan *pl, const ucl_object_t *doc,
 		uni_prefixes(e2, pfx);
 		pit = NULL;
 		while ((p = ucl_object_iterate(pfx, &pit, true)) != NULL)
-			kore_buf_appendf(b, "%s%s", k++ > 0 ? ", " : "",
+			buf_appendf(b, "%s%s", k++ > 0 ? ", " : "",
 			    ucl_object_tostring(p));
 		ucl_object_unref(pfx);
 	}
-	kore_buf_appendf(b, "\nPersistentKeepalive = 25\n");
-	text = kore_buf_stringify(b, NULL);
+	buf_appendf(b, "\nPersistentKeepalive = 25\n");
+	text = buf_stringify(b, NULL);
 	text = strdup(text);
-	kore_buf_free(b);
+	buf_free(b);
 	if (ans != NULL)
 		ucl_object_unref(ans);
 	return (text);
@@ -8537,7 +8537,7 @@ api_sdwan_identities(struct http_request *req)
 
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		doc = sdwan_load();
 		pthread_mutex_lock(&st_lock);
 		st = state_load();
@@ -8549,9 +8549,8 @@ api_sdwan_identities(struct http_request *req)
 		return (reply_json(req, 200, out));
 	}
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (req->method == HTTP_METHOD_DELETE) {
-		http_populate_qs(req);
 		swvc = epid = name = NULL;
 		(void)http_argument_get_string(req, "swvc", &swvc);
 		(void)http_argument_get_string(req, "end_point", &epid);
@@ -8594,7 +8593,7 @@ api_sdwan_identities(struct http_request *req)
 		    "Administrator", name);
 		why[0] = '\0';
 		applied = apply_now(doc, why, sizeof(why));
-		kore_log(LOG_NOTICE, "identity %s of %s/%s revoked%s%s", name, swvc,
+		log_msg(LOG_NOTICE, "identity %s of %s/%s revoked%s%s", name, swvc,
 		    epid, applied ? ", the edges applied" : ": no apply, ",
 		    applied ? "" : why);
 		out = ucl_object_typed_new(UCL_OBJECT);
@@ -8710,7 +8709,7 @@ api_sdwan_identities(struct http_request *req)
 	    "Administrator", name, user ? ", a console user's," : "");
 	why[0] = '\0';
 	applied = apply_now(doc, why, sizeof(why));
-	kore_log(LOG_NOTICE, "identity %s of %s/%s issued%s%s%s", name, swvc,
+	log_msg(LOG_NOTICE, "identity %s of %s/%s issued%s%s%s", name, swvc,
 	    epid, user ? ", a console user's" : "", applied ? ", the edges "
 	    "applied" : ": no apply, ", applied ? "" : why);
 	out = ucl_object_typed_new(UCL_OBJECT);
@@ -8789,7 +8788,7 @@ identities_tick(const ucl_object_t *doc, time_t now)
 	}
 	prev = now;
 	if (due && !apply_now(ucl_object_copy(doc), why, sizeof(why)))
-		kore_log(LOG_NOTICE, "identities: an authorisation ran out, no "
+		log_msg(LOG_NOTICE, "identities: an authorisation ran out, no "
 		    "apply: %s", why);
 }
 
@@ -8811,15 +8810,14 @@ api_sdwan_record(struct http_request *req)
 	char			 name[128], *v;
 	char			 want[130];
 	ucl_object_t		*ans;
-	struct kore_buf		*b;
+	struct buf		*b;
 	int			 status;
 	int64_t			 from;
 	bool			 csv;
 
 	if (!guard(req, false))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	csv = strstr(req->path, ".csv") != NULL;
-	http_populate_get(req);
 	swvc = policy = since = only = NULL;
 	want[0] = '\0';
 	if (http_argument_get_string(req, "swvc", &v))
@@ -8871,8 +8869,8 @@ api_sdwan_record(struct http_request *req)
 		put(out, "record", all);
 		return (reply_json(req, 200, out));
 	}
-	b = kore_buf_alloc(4096);
-	kore_buf_appendf(b, "time,edge,rule,action,source,destination,interface,"
+	b = buf_alloc(4096);
+	buf_appendf(b, "time,edge,rule,action,source,destination,interface,"
 	    "comment\n");
 	eit = NULL;
 	while ((e = ucl_object_iterate(all, &eit, true)) != NULL) {
@@ -8880,7 +8878,7 @@ api_sdwan_record(struct http_request *req)
 		time_t	t = (time_t)ucl_object_toint(ucl_object_lookup(e, "t"));
 
 		strftime(when, sizeof(when), "%Y-%m-%dT%H:%M:%SZ", gmtime(&t));
-		kore_buf_appendf(b, "%s,%s,%jd,%s,%s,%s,%s,\"%s\"\n", when,
+		buf_appendf(b, "%s,%s,%jd,%s,%s,%s,%s,\"%s\"\n", when,
 		    str(e, "name"), (intmax_t)ucl_object_toint(ucl_object_lookup(e,
 		    "rule")), str(e, "action") != NULL ? str(e, "action") : "",
 		    str(e, "src") != NULL ? str(e, "src") : "", str(e, "dst") !=
@@ -8893,8 +8891,8 @@ api_sdwan_record(struct http_request *req)
 	http_response_header(req, "content-disposition", "attachment; "
 	    "filename=\"sdwan-record.csv\"");
 	http_response(req, 200, b->data, b->offset);
-	kore_buf_free(b);
-	return (KORE_RESULT_OK);
+	buf_free(b);
+	return (WEB_OK);
 }
 
 /* ---- The manager: each policy's tunnels ordered by performance ------ */
@@ -9522,7 +9520,7 @@ api_sdwan_rekey(struct http_request *req)
 
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		pthread_mutex_lock(&st_lock);
 		st = state_load();
 		pthread_mutex_unlock(&st_lock);
@@ -9535,7 +9533,7 @@ api_sdwan_rekey(struct http_request *req)
 		return (reply_json(req, 200, body));
 	}
 	if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	body = read_json(req);
 	id = body != NULL ? str(body, "tunnel") : NULL;
 	if (id == NULL || id[0] == '\0' || strlen(id) > 150) {
@@ -10119,7 +10117,7 @@ api_sdwan_edges(struct http_request *req)
 	apply = strcmp(req->path, "/api/sdwan/apply") == 0;
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
-			return (KORE_RESULT_OK);
+			return (WEB_OK);
 		if (strcmp(req->path, "/api/sdwan/steer") == 0) {
 			pthread_mutex_lock(&st_lock);
 			st = state_load();
@@ -10147,7 +10145,7 @@ api_sdwan_edges(struct http_request *req)
 			return (reply_json(req, 200, body));
 		}
 	} else if (!guard(req, true))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	doc = sdwan_load();
 	if (!sdwan_valid(doc, why, sizeof(why))) {
 		ucl_object_unref(doc);

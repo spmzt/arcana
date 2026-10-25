@@ -135,7 +135,7 @@ api_labels(struct http_request *req)
 	if (req->method != HTTP_METHOD_GET)
 		return (reply_error(req, 405, "method", "GET"));
 	if (!guard(req, false))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	all = all_load();
 	return (reply_json(req, 200, all));
 }
@@ -162,7 +162,7 @@ api_label(struct http_request *req)
 	snprintf(sid, sizeof(sid), "%.*s", (int)n, p);
 	snprintf(ifname, sizeof(ifname), "%s", p + n + 1);
 	if (!guard(req, true) || !host_allowed(req, sid, true, false))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "{\"label\": \"text\"}; "
 		    "empty to take it away"));
@@ -197,7 +197,7 @@ api_label(struct http_request *req)
 		return (reply_error(req, 500, "store", "the labels could not be "
 		    "written"));
 	}
-	kore_log(LOG_NOTICE, "label of %s %s", key, label != NULL && label[0] !=
+	log_msg(LOG_NOTICE, "label of %s %s", key, label != NULL && label[0] !=
 	    '\0' ? "set" : "taken away");
 	ucl_object_unref(body);
 	return (reply_json(req, 200, all));

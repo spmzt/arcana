@@ -8,7 +8,7 @@
  * Web Push, the parts that are arithmetic: the encryption of a message
  * for one subscription (RFC 8291, the aes128gcm content coding of
  * RFC 8188) and the token that says who sends it (VAPID, RFC 8292).
- * No Kore in here: the tests link this file by itself.
+ * Nothing of the server in here: the tests link this file by itself.
  */
 
 #include <sys/types.h>

@@ -11,8 +11,8 @@ used, with the programs' output.
 
 Each host runs arcana-agent(8), the only privileged part, served over
 cblink with mutual TLS; arcana-enrol(8) joins a host to the console with
-a one-time token.  The console, arcana-console(8), is a Kore module and
-runs unprivileged.  arcanactl(8) talks to an agent from a shell, and
+a one-time token.  The console, arcana-console(8), serves on libwebsockets
+and runs unprivileged.  arcanactl(8) talks to an agent from a shell, and
 jailconf(8) changes one value in jail.conf in place, like sysrc(8) does
 for rc.conf.
 

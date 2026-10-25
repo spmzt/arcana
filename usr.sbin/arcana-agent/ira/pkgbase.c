@@ -11,10 +11,10 @@
  * the jail; the official repository's file is written under the jail's
  * root under a name of arcana's own, or one of the jail's own
  * repositories is used (pkg-repo);
- * its /etc is kept aside in a tar before anything changes; and what
- * pkg left beside a changed file (.pkgnew, .pkgsave) is named at the
- * end, for the admin to merge.  The jail is to be restarted after
- * either, for the new base to run.
+ * its /etc is kept aside in a tar before anything changes; the jail's
+ * own files that pkg put aside come back (keep_own()); and what is left
+ * beside them (.pkgnew) is named at the end, for the admin to merge.
+ * The jail is to be restarted after either, for the new base to run.
  */
 
 #include <sys/param.h>
@@ -241,35 +241,271 @@ etc_backup(struct work *w, const char *root)
 	return (NULL);
 }
 
-/* What pkg left beside the files it did not replace, under /etc, named
- * in a step for the admin to merge; nothing is an error. */
+/*
+ * The files named name under the jail's /etc, as the jail has them
+ * ("/etc/group.pkgsave"), one a line; "" for none.
+ */
+static char *
+etc_named(struct work *w, const char *root, const char *name)
+{
+	struct execres	 res;
+	char		*argv[8], *out, *line, *next, *o;
+	size_t		 rl;
+
+	argv[0] = (char *)(uintptr_t)PATH_FIND;
+	argv[1] = wfmt(w, "%s/etc", root);
+	argv[2] = (char *)(uintptr_t)"-type";
+	argv[3] = (char *)(uintptr_t)"f";
+	argv[4] = (char *)(uintptr_t)"-name";
+	argv[5] = (char *)(uintptr_t)name;
+	argv[6] = NULL;
+	if (run_exec(w, argv, &res) != 0 || res.out == NULL)
+		return (wstrdup(w, ""));
+	rl = strlen(root);
+	out = o = wcalloc(w, res.outlen + 1, 1);
+	for (line = wstrndup(w, res.out, res.outlen); line != NULL &&
+	    *line != '\0'; line = next) {
+		if ((next = strchr(line, '\n')) != NULL)
+			*next++ = '\0';
+		if (strncmp(line, root, rl) != 0 || line[rl] != '/')
+			continue;
+		o = stpcpy(o, line + rl);
+		*o++ = '\n';
+	}
+	*o = '\0';
+	return (out);
+}
+
+/* Is path one of the lines of list? */
+static bool
+listed(const char *list, const char *path)
+{
+	const char	*p;
+	size_t		 n;
+
+	n = strlen(path);
+	for (p = list; (p = strstr(p, path)) != NULL; p += n)
+		if ((p == list || p[-1] == '\n') && p[n] == '\n')
+			return (true);
+	return (false);
+}
+
+/* Does a line of an account file have value as its field n (0: the
+ * name, 2: the uid or gid)? */
+static bool
+has_field(const char *text, int n, const char *value, size_t len)
+{
+	const char	*l, *f;
+	int		 i;
+
+	for (l = text; *l != '\0'; l += strcspn(l, "\n"), l += *l == '\n') {
+		if (*l == '#')
+			continue;
+		for (f = l, i = 0; i < n; i++) {
+			f += strcspn(f, ":\n");
+			if (*f != ':')
+				break;
+			f++;
+		}
+		if (i == n && strncmp(f, value, len) == 0 && (f[len] == ':' ||
+		    f[len] == '\n' || f[len] == '\0'))
+			return (true);
+	}
+	return (false);
+}
+
+/*
+ * The jail's account file (master.passwd, group) with the accounts of
+ * the package's that it has not, added at its end: the jail's users
+ * and groups are kept, and the new base's own (a daemon's user that
+ * came with the release) are there too.  One whose name or id the jail
+ * has already is left out, and named in *skippedp.
+ */
+static char *
+accounts_merge(struct work *w, const char *own, const char *pkgs,
+    int *addedp, const char **skippedp)
+{
+	const char	*l, *colon, *id;
+	char		*out, *o;
+	size_t		 ll, nl, il;
+
+	*addedp = 0;
+	*skippedp = NULL;
+	out = o = wcalloc(w, strlen(own) + strlen(pkgs) + 2, 1);
+	o = stpcpy(o, own);
+	if (o > out && o[-1] != '\n')
+		*o++ = '\n';
+	for (l = pkgs; *l != '\0'; l += ll + (l[ll] == '\n')) {
+		ll = strcspn(l, "\n");
+		if (ll == 0 || *l == '#' || (colon = memchr(l, ':', ll)) ==
+		    NULL)
+			continue;
+		nl = (size_t)(colon - l);
+		if (has_field(own, 0, l, nl))
+			continue;
+		/* The id: the third field. */
+		id = colon + 1;
+		id += strcspn(id, ":\n");
+		id += *id == ':';
+		il = strcspn(id, ":\n");
+		if (il > 0 && has_field(own, 2, id, il)) {
+			*skippedp = *skippedp == NULL ? wstrndup(w, l, nl) :
+			    wfmt(w, "%s, %.*s", *skippedp, (int)nl, l);
+			continue;
+		}
+		memcpy(o, l, ll);
+		o += ll;
+		*o++ = '\n';
+		(*addedp)++;
+	}
+	*o = '\0';
+	return (out);
+}
+
+/* A program of the jail's own run in it; NULL, or what went wrong. */
+static const char *
+in_jail(struct work *w, const char *prog, const char *a1, const char *a2,
+    const char *a3, const char *a4)
+{
+	struct execres	 res;
+	char		*argv[6];
+
+	argv[0] = (char *)(uintptr_t)prog;
+	argv[1] = (char *)(uintptr_t)a1;
+	argv[2] = (char *)(uintptr_t)a2;
+	argv[3] = (char *)(uintptr_t)a3;
+	argv[4] = (char *)(uintptr_t)a4;
+	argv[5] = NULL;
+	if (run_exec(w, scope_jexec(w, argv), &res) != 0)
+		return (wtext(w, exec_error(w, &res, prog)));
+	return (NULL);
+}
+
+/*
+ * The jail's own files back, those of /etc that pkg put aside as it
+ * installed the packages' in their place: on a conversion no package
+ * had them before, so pkg had nothing to merge with, moved the jail's
+ * master.passwd, group, login.conf... to .pkgsave and put the stock
+ * ones there, and FreeBSD-runtime's pwd_mkdb then made the user
+ * database of the stock master.passwd: the jail's users and groups
+ * were gone.  Each comes back in its place, the package's left beside
+ * it as .pkgnew; the account files are merged instead (accounts_merge());
+ * the databases made of them are made again, in the jail.  Only the
+ * .pkgsave files that were not there before (before) are taken.
+ * NULL, or what went wrong.
+ */
+static const char *
+keep_own(struct work *w, const char *root, const char *before)
+{
+	const char	*e, *skipped, *done, *base;
+	char		*list, *p, *next, *live, *own, *pkgs, *merged, *keep;
+	size_t		 n;
+	int		 step, added, users, groups;
+	bool		 pw, cap, svc, ok;
+
+	list = etc_named(w, root, "*.pkgsave");
+	done = NULL;
+	e = NULL;
+	users = groups = 0;
+	pw = cap = svc = false;
+	for (p = list; *p != '\0'; p = next) {
+		next = p + strcspn(p, "\n");
+		if (*next == '\n')
+			*next++ = '\0';
+		if (listed(before, p))
+			continue;
+		n = strlen(p) - strlen(".pkgsave");
+		live = wstrndup(w, p, n);
+		base = strrchr(live, '/') + 1;
+		keep = wfmt(w, "%s.pkgnew", base);
+		if (strcmp(live, "/etc/master.passwd") == 0 ||
+		    strcmp(live, "/etc/group") == 0) {
+			if ((own = scope_slurp(w, p, NULL)) == NULL ||
+			    (pkgs = scope_slurp(w, live, NULL)) == NULL) {
+				e = wfmt(w, "%s: %s", own == NULL ? p : live,
+				    strerror(errno));
+				break;
+			}
+			merged = accounts_merge(w, own, pkgs, &added, &skipped);
+			if (scope_replace(w, live, merged, strlen(merged),
+			    live[5] == 'm' ? 0600 : 0644, keep) == -1 ||
+			    scope_unlink(w, p) == -1) {
+				e = wfmt(w, "%s: %s", live, strerror(errno));
+				break;
+			}
+			if (live[5] == 'm')
+				users += added;
+			else
+				groups += added;
+			if (skipped != NULL)
+				done = wfmt(w, "%s%s%s (not added from the new "
+				    "base, its name or id taken: %s)", done !=
+				    NULL ? done : "", done != NULL ? ", " : "",
+				    base, skipped);
+			else
+				done = wfmt(w, "%s%s%s", done != NULL ? done : "",
+				    done != NULL ? ", " : "", base);
+			pw = pw || live[5] == 'm';
+			continue;
+		}
+		/* The package's aside, the jail's back in its place. */
+		if ((scope_rename(w, live, base, keep) == -1 && errno !=
+		    ENOENT) || scope_rename(w, live, wfmt(w, "%s.pkgsave",
+		    base), base) == -1) {
+			e = wfmt(w, "%s: %s", live, strerror(errno));
+			break;
+		}
+		done = wfmt(w, "%s%s%s", done != NULL ? done : "", done != NULL ?
+		    ", " : "", base);
+		cap = cap || strcmp(live, "/etc/login.conf") == 0;
+		svc = svc || strcmp(live, "/etc/services") == 0;
+	}
+	if (done == NULL && e == NULL)
+		return (NULL);
+	step = step_begin(w, ARC_STEP_KIND_FILE, "keep", "the jail's own files "
+	    "that pkg put aside");
+	ok = e == NULL;
+	if (ok && pw)
+		e = in_jail(w, "/usr/sbin/pwd_mkdb", "-p", "/etc/master.passwd",
+		    NULL, NULL);
+	if (ok && e == NULL && cap)
+		e = in_jail(w, "/usr/bin/cap_mkdb", "/etc/login.conf", NULL,
+		    NULL, NULL);
+	if (ok && e == NULL && svc)
+		e = in_jail(w, "/usr/sbin/services_mkdb", "-q", "-o",
+		    "/var/db/services.db", "/etc/services");
+	if (e != NULL) {
+		step_end(w, step, false, "%s%s%s: the jail's /etc is in %s",
+		    done != NULL ? done : "", done != NULL ? " kept; " : "", e,
+		    ETC_BACKUP);
+		return (wfmt(w, "the jail's own files: %s", e));
+	}
+	step_end(w, step, true, "kept: %s%s%s", done, users > 0 ? wfmt(w,
+	    "; the new base's users added: %d", users) : "", groups > 0 ?
+	    wfmt(w, "; its groups added: %d", groups) : "");
+	return (NULL);
+}
+
+/* What pkg left beside the jail's files, under /etc, named in a step
+ * for the admin to merge; nothing is an error. */
 static void
 leftovers(struct work *w, const char *root)
 {
-	struct execres	 res;
-	char		*argv[12];
-	const char	*etc;
-	int		 step;
+	char	*list, *p;
+	int	 step;
 
-	etc = wfmt(w, "%s/etc", root);
-	argv[0] = (char *)(uintptr_t)PATH_FIND;
-	argv[1] = (char *)(uintptr_t)etc;
-	argv[2] = (char *)(uintptr_t)"(";
-	argv[3] = (char *)(uintptr_t)"-name";
-	argv[4] = (char *)(uintptr_t)"*.pkgnew";
-	argv[5] = (char *)(uintptr_t)"-o";
-	argv[6] = (char *)(uintptr_t)"-name";
-	argv[7] = (char *)(uintptr_t)"*.pkgsave";
-	argv[8] = (char *)(uintptr_t)")";
-	argv[9] = NULL;
-	if (run_exec(w, argv, &res) != 0)
-		return;
+	list = etc_named(w, root, "*.pkgnew");
+	for (p = list; (p = strchr(p, '\n')) != NULL; p++)
+		if (p[1] != '\0')
+			*p = ' ';
+	if ((p = strrchr(list, '\n')) != NULL)
+		*p = '\0';
 	step = step_begin(w, ARC_STEP_KIND_FILE, "merge", "what pkg left beside "
 	    "the files it kept");
-	step_end(w, step, true, "%s", res.out != NULL && res.outlen > 0 ?
-	    "the .pkgnew files hold the packages' versions of files that "
-	    "differed, the .pkgsave ones the jail's: merge them, then restart "
-	    "the jail" : "none: restart the jail for the new base to run");
+	step_end(w, step, true, "%s%s", list[0] != '\0' ? list : "none: restart "
+	    "the jail for the new base to run", list[0] != '\0' ? ": the "
+	    "packages' versions of the jail's own files, which were kept; "
+	    "merge what is new in them, then restart the jail" : "");
 }
 
 /* A set's name as the repository has them. */
@@ -366,6 +602,7 @@ convert(struct work *w, const struct arc_job_spec *sp, const char *root,
 	struct execres	 res;
 	const char *const *sets;
 	const char	**args, **one, *e, *branch, *repo, *update[3];
+	char		 *before;
 	size_t		 nsets, n, i;
 	bool		 major_alone;
 
@@ -431,6 +668,7 @@ convert(struct work *w, const struct arc_job_spec *sp, const char *root,
 		*errp = e;
 		return (-1);
 	}
+	before = etc_named(w, root, "*.pkgsave");
 	args = wcalloc(w, nsets + 5, sizeof(*args));
 	n = 0;
 	args[n++] = "install";
@@ -442,6 +680,11 @@ convert(struct work *w, const struct arc_job_spec *sp, const char *root,
 	if (pkg(w, sp, sp->force, NULL, NULL, args, n, &res) != 0 || (e =
 	    pkg_repo_error(w, &res, "pkg install")) != NULL) {
 		*errp = e != NULL ? e : pkg_failed(w, &res, "pkg install");
+		keep_own(w, root, before);
+		return (-1);
+	}
+	if ((e = keep_own(w, root, before)) != NULL) {
+		*errp = e;
 		return (-1);
 	}
 	leftovers(w, root);
@@ -463,6 +706,7 @@ upgrade(struct work *w, const struct arc_job_spec *sp, const char *root,
 	struct release	 r;
 	struct execres	 res;
 	const char	*e, *abi, *osversion, *repo, *update[3], *base[4];
+	char		*before;
 	char		 arch[64];
 	size_t		 len;
 	int		 hostrel;
@@ -517,10 +761,16 @@ upgrade(struct work *w, const struct arc_job_spec *sp, const char *root,
 		    pkg_failed(w, &res, "pkg update"));
 		return (-1);
 	}
+	before = etc_named(w, root, "*.pkgsave");
 	if (pkg(w, sp, true, abi, osversion, base, 4, &res) != 0 || (e =
 	    pkg_repo_error(w, &res, "pkg upgrade")) != NULL) {
 		*errp = wfmt(w, "repository %s: %s", repo, e != NULL ? e :
 		    pkg_failed(w, &res, "pkg upgrade of the base"));
+		keep_own(w, root, before);
+		return (-1);
+	}
+	if ((e = keep_own(w, root, before)) != NULL) {
+		*errp = e;
 		return (-1);
 	}
 	if (pkg(w, sp, sp->force, abi, osversion, rest, 2, &res) != 0 || (e =

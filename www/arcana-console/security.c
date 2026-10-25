@@ -125,7 +125,7 @@ domain_ok(const char *s)
  */
 static bool
 list_of(const ucl_object_t *in, const char *k, bool (*ok)(const char *),
-    bool need, struct kore_buf *out, const char *pre, const char *sep,
+    bool need, struct buf *out, const char *pre, const char *sep,
     const char *name, const char *what, char *err, size_t errlen)
 {
 	const ucl_object_t	*e;
@@ -155,7 +155,7 @@ list_of(const ucl_object_t *in, const char *k, bool (*ok)(const char *),
 		}
 		/* ".example.org" as typed is example.org's, not a dot more. */
 		if (out != NULL)
-			kore_buf_appendf(out, "%s%s%s", n > 0 ? sep : "", pre,
+			buf_appendf(out, "%s%s%s", n > 0 ? sep : "", pre,
 			    ucl_object_tostring(e) + (strcmp(pre, ".") == 0 &&
 			    ucl_object_tostring(e)[0] == '.' ? 1 : 0));
 		n++;
@@ -189,7 +189,7 @@ static ucl_object_t *
 proxy_one(const ucl_object_t *in, int idx, const char *host, char *err,
     size_t errlen)
 {
-	struct kore_buf		*b, *d;
+	struct buf		*b, *d;
 	ucl_object_t		*o;
 	const char		*name, *mode;
 	const ucl_object_t	*e;
@@ -215,9 +215,9 @@ proxy_one(const ucl_object_t *in, int idx, const char *host, char *err,
 		return (NULL);
 	}
 	malware = ucl_object_toboolean(ucl_object_lookup(in, "malware"));
-	b = kore_buf_alloc(4096);
-	d = kore_buf_alloc(1024);
-	kore_buf_appendf(b, "# Written by the Arcana console: the Security "
+	b = buf_alloc(4096);
+	d = buf_alloc(1024);
+	buf_appendf(b, "# Written by the Arcana console: the Security "
 	    "section's URL filter %s at %s,\n# by Squid, mode %s, in routing "
 	    "table %jd.\npid_filename @PID@\naccess_log /var/log/squid/%s-"
 	    "access.log\ncache_log /var/log/squid/%s-cache.log\ncache deny all\n"
@@ -237,10 +237,10 @@ proxy_one(const ucl_object_t *in, int idx, const char *host, char *err,
 			    "address", name, ucl_object_tostring_forced(e));
 			goto bad;
 		}
-		kore_buf_appendf(b, strchr(ucl_object_tostring(e), ':') != NULL ?
+		buf_appendf(b, strchr(ucl_object_tostring(e), ':') != NULL ?
 		    "http_port [%s]:%jd" : "http_port %s:%jd",
 		    ucl_object_tostring(e), (intmax_t)port);
-		kore_buf_appendf(b, " ssl-bump tls-cert=@CA@ "
+		buf_appendf(b, " ssl-bump tls-cert=@CA@ "
 		    "generate-host-certificates=on dynamic_cert_mem_cache_size="
 		    "4MB\n");
 	}
@@ -248,17 +248,17 @@ proxy_one(const ucl_object_t *in, int idx, const char *host, char *err,
 		snprintf(err, errlen, "%s: listen: at least one address", name);
 		goto bad;
 	}
-	kore_buf_appendf(b, "sslcrtd_program @CERTGEN@ -s @SSLDB@ -M 4MB\n"
+	buf_appendf(b, "sslcrtd_program @CERTGEN@ -s @SSLDB@ -M 4MB\n"
 	    "sslcrtd_children 3\nacl localnet src");
 	if (!list_of(in, "allow", prefix_ok, true, b, " ", "", name, "allow "
 	    "(the networks that may use it)", err, errlen))
 		goto bad;
 	if (malware)
-		kore_buf_appendf(b, "\nicap_enable on\nicap_send_client_ip on\n"
+		buf_appendf(b, "\nicap_enable on\nicap_send_client_ip on\n"
 		    "icap_service sec_av respmod_precache bypass=off "
 		    "icap://127.0.0.1:%d/avscan\nadaptation_access sec_av allow "
 		    "all", SEC_ICAP_PORT(idx));
-	kore_buf_appendf(b, "\nacl denied_site ssl::server_name \"@DENY@\"\n"
+	buf_appendf(b, "\nacl denied_site ssl::server_name \"@DENY@\"\n"
 	    "acl denied_url dstdomain \"@DENY@\"\nacl step1 at_step SslBump1\n"
 	    "ssl_bump peek step1\nssl_bump terminate denied_site\nssl_bump %s all"
 	    "\nhttp_access deny denied_url\nhttp_access allow localnet\n"
@@ -268,22 +268,22 @@ proxy_one(const ucl_object_t *in, int idx, const char *host, char *err,
 	if (!list_of(in, "deny", domain_ok, false, d, ".", "\n", name, "deny",
 	    err, errlen))
 		goto bad;
-	if (kore_buf_stringify(d, NULL)[0] != '\0')
-		kore_buf_appendf(d, "\n");
+	if (buf_stringify(d, NULL)[0] != '\0')
+		buf_appendf(d, "\n");
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, ucl_object_fromstring(name), "name", 0,
 	    false);
 	ucl_object_insert_key(o, ucl_object_fromint(fib), "fib", 0, false);
 	ucl_object_insert_key(o, ucl_object_fromstring(mode), "mode", 0, false);
-	ucl_object_insert_key(o, ucl_object_fromstring(kore_buf_stringify(b,
+	ucl_object_insert_key(o, ucl_object_fromstring(buf_stringify(b,
 	    NULL)), "conf", 0, false);
 	/* ".a\n.a.b\n": Squid takes the first of two the second is under,
 	 * and warns of the other. */
-	ucl_object_insert_key(o, ucl_object_fromstring(kore_buf_stringify(d,
+	ucl_object_insert_key(o, ucl_object_fromstring(buf_stringify(d,
 	    NULL)), "deny", 0, false);
 	if (malware) {
-		kore_buf_reset(b);
-		kore_buf_appendf(b, "# Written by the Arcana console: the "
+		buf_reset(b);
+		buf_appendf(b, "# Written by the Arcana console: the "
 		    "Security section's malware scanning for %s at %s,\n# by "
 		    "c-icap and ClamAV, for its Squid.\nPidFile @ICAPPID@\n"
 		    "CommandsSocket @ICAPCMD@\nPort 127.0.0.1:%d\nacl squid src "
@@ -299,15 +299,15 @@ proxy_one(const ucl_object_t *in, int idx, const char *host, char *err,
 		    "virus_scan.MaxObjectSize 32M\nvirus_scan.DefaultEngine "
 		    "clamav\n", name, host, SEC_ICAP_PORT(idx), name, name);
 		ucl_object_insert_key(o, ucl_object_fromstring(
-		    kore_buf_stringify(b, NULL)), "icap", 0, false);
+		    buf_stringify(b, NULL)), "icap", 0, false);
 	}
 	ucl_object_insert_key(o, ucl_object_copy(in), "spec", 0, false);
-	kore_buf_free(b);
-	kore_buf_free(d);
+	buf_free(b);
+	buf_free(d);
 	return (o);
 bad:
-	kore_buf_free(b);
-	kore_buf_free(d);
+	buf_free(b);
+	buf_free(d);
 	return (NULL);
 }
 
@@ -560,7 +560,7 @@ security_build(const char *what, const ucl_object_t *list, const char *host,
 	}
 	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);
-	out = json != NULL ? kore_strdup(json) : NULL;
+	out = json != NULL ? xstrdup(json) : NULL;
 	free(json);
 	return (out);
 }

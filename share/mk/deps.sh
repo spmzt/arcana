@@ -7,7 +7,7 @@
 #	deps.sh install		pkg install the packages missing
 #
 # Told by the environment (the top Makefile sets it): CONSOLE and TESTS
-# (yes, no), LOCALBASE, LIBUCL_SRC, LIBYAML_SRC, KORE_INCLUDE.  What is
+# (yes, no), LOCALBASE, LIBUCL_SRC, LIBYAML_SRC.  What is
 # installed is pkg(8)'s to say; a copy built by hand in a package's place
 # (a file it would install, a command) counts too.
 
@@ -67,15 +67,8 @@ want libyang3 "$LOCALBASE/include/libyang/libyang.h" \
 if [ "$CONSOLE" = yes ]; then
 	echo "for the console (WITHOUT_CONSOLE=yes builds without it):"
 	want emscripten emcc "the page, C to WebAssembly (devel/emscripten)" yes
-	if [ -e "${KORE_INCLUDE:-$LOCALBASE/include}/kore/kore.h" ]; then
-		say ok "Kore" "its server (${KORE_INCLUDE:-$LOCALBASE/include}/kore)"
-	else
-		say missing "Kore" "its server: make install-kore (port/www/kore)"
-		other="$other\n  Kore 4.3 with tasks is no package: as root, make"
-		other="$other install-kore builds port/www/kore (the ports tree)"
-		want gmake gmake "to build Kore (devel/gmake)" no
-		fatal=1
-	fi
+	want libwebsockets "$LOCALBASE/include/libwebsockets.h" \
+	    "its HTTP server (net/libwebsockets)" yes
 	src libucl "${LIBUCL_SRC:-}" src/ucl_parser.c
 	src libyaml "${LIBYAML_SRC:-}" src/parser.c
 fi

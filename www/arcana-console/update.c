@@ -29,7 +29,7 @@
 #define	NOTES_CACHE	(5 * 60)
 
 struct check {
-	struct kore_task	 task;		/* first: Kore frees the check */
+	struct task	 task;		/* first: the server frees the check */
 	char			 latest[64];
 	char			 url[512];
 	char			 error[256];
@@ -44,7 +44,7 @@ static struct {
 } cache;
 
 static int	 newer(const char *, const char *);
-static int	 check_run(struct kore_task *);
+static int	 check_run(struct task *);
 static int	 reply(struct http_request *);
 
 /* Is version a newer than b?  "v1.2.3" and "1.2.3" compare as numbers. */
@@ -72,7 +72,7 @@ newer(const char *a, const char *b)
 
 /* In a task thread: the release feed's newest tag. */
 static int
-check_run(struct kore_task *t)
+check_run(struct task *t)
 {
 	struct check		*c;
 	struct ucl_parser	*p;
@@ -85,12 +85,12 @@ check_run(struct kore_task *t)
 	c = (struct check *)t;
 	if ((fp = fetchGetURL(c->feed, "")) == NULL) {
 		snprintf(c->error, sizeof(c->error), "%s", fetchLastErrString);
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	}
 	if ((buf = malloc(UPDATE_MAX)) == NULL) {
 		fclose(fp);
 		snprintf(c->error, sizeof(c->error), "out of memory");
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	}
 	for (len = 0; len < UPDATE_MAX - 1; len += n)
 		if ((n = fread(buf + len, 1, UPDATE_MAX - 1 - len, fp)) == 0)
@@ -115,7 +115,7 @@ check_run(struct kore_task *t)
 	}
 	if (o != NULL)
 		ucl_object_unref(o);
-	return (KORE_RESULT_OK);
+	return (WEB_OK);
 }
 
 static int
@@ -216,8 +216,7 @@ api_update_notes(struct http_request *req)
 	bool			 usetags, before_from, after_to, fresh;
 
 	if (!guard(req, false))
-		return (KORE_RESULT_OK);
-	http_populate_get(req);
+		return (WEB_OK);
 	fresh = http_argument_get_string(req, "fresh", &v) && v[0] != '\0';
 	comp = "console";
 	if (http_argument_get_string(req, "component", &v) && strcmp(v,
@@ -376,9 +375,9 @@ api_update(struct http_request *req)
 
 	if (req->hdlr_extra != NULL) {
 		c = req->hdlr_extra;
-		if (kore_task_state(&c->task) != KORE_TASK_STATE_FINISHED) {
+		if (task_state(&c->task) != TASK_STATE_FINISHED) {
 			http_request_sleep(req);
-			return (KORE_RESULT_RETRY);
+			return (WEB_RETRY);
 		}
 		cache.checked = time(NULL);
 		strlcpy(cache.error, c->error, sizeof(cache.error));
@@ -389,17 +388,17 @@ api_update(struct http_request *req)
 		return (reply(req));
 	}
 	if (!guard(req, false))
-		return (KORE_RESULT_OK);
+		return (WEB_OK);
 	if (cfg.update_url == NULL ||
 	    time(NULL) - cache.checked < UPDATE_CACHE)
 		return (reply(req));
-	c = kore_calloc(1, sizeof(*c));
+	c = xcalloc(1, sizeof(*c));
 	strlcpy(c->feed, cfg.update_url, sizeof(c->feed));
 	/* A feed that takes the connection and says nothing is given up. */
 	fetchTimeout = 30;
 	req->hdlr_extra = c;
-	kore_task_create(&c->task, check_run);
-	kore_task_bind_request(&c->task, req);
-	kore_task_run(&c->task);
-	return (KORE_RESULT_RETRY);
+	task_create(&c->task, check_run);
+	task_bind_request(&c->task, req);
+	task_run(&c->task);
+	return (WEB_RETRY);
 }

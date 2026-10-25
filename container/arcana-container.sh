@@ -4,12 +4,13 @@
 #
 # Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
 #
-# The arcana console in a container: kore(1) with arcana-console.so, in the
-# foreground, logging to standard output, as the unprivileged user the
-# container runs as.
+# The arcana console in a container: arcana-console(8), in the foreground,
+# logging to standard error, as the unprivileged user the container runs
+# as.
 #
-# A web.conf or kore.conf in /usr/local/etc/arcana is used as it is.
-# A missing one is written to /var/run/arcana from the environment:
+# A web.conf in /usr/local/etc/arcana is used as it is (its server { }
+# says where to listen, with user = "").  A missing one is written to
+# /var/run/arcana from the environment:
 #
 # ARCANA_RP_ID	The console's host name, as the browser sees it.
 #			Required without a web.conf.
@@ -23,9 +24,8 @@
 #
 # and from the files in /usr/local/etc/arcana:
 #
-# console.pem, console.key	Kore serves HTTPS with these.  The key
-#				must be RSA: Kore's key manager signs
-#				nothing else.  Without them, plain HTTP,
+# console.pem, console.key	The console serves HTTPS with these, RSA
+#				or EC.  Without them, plain HTTP,
 #				for a reverse proxy that terminates TLS;
 #				WebAuthn needs HTTPS but on localhost.
 # ca.pem, client.pem,		The console's certificates for arcana-agent
@@ -63,8 +63,24 @@ if [ ! -f "${web}" ]; then
 	*[!A-Za-z0-9._:/@~+-]*)	die "ARCANA_AGENT_SOURCE or ARCANA_AGENT_REF: "\
 "not a repository and a branch" ;;
 	esac
+	port=${ARCANA_PORT:-8443}
+	case "${port}" in
+	''|*[!0-9]*)	die "ARCANA_PORT: not a port number" ;;
+	esac
 	web=${run}/web.conf
 	{
+		# The container runs as the console's user already.
+		printf 'server {\n'
+		printf '\tlisten = [ "0.0.0.0:%s", "[::]:%s" ];\n' \
+		    "${port}" "${port}"
+		if [ -f ${etc}/console.pem -a -f ${etc}/console.key ]; then
+			printf '\tcertfile = "%s/console.pem";\n' ${etc}
+			printf '\tcertkey = "%s/console.key";\n' ${etc}
+			tls=HTTPS
+		else
+			tls=HTTP
+		fi
+		printf '\tuser = "";\n\ttask_threads = 8;\n}\n'
 		printf 'rp_id = "%s";\n' "${ARCANA_RP_ID}"
 		printf 'origin = "%s";\n' "${origin}"
 		printf 'datadir = "/var/db/arcana";\n'
@@ -80,59 +96,7 @@ if [ ! -f "${web}" ]; then
 			printf '}\n'
 		fi
 	} > "${web}"
+	echo "arcana-container: serving ${tls} on port ${port}"
 fi
 
-conf=${etc}/kore.conf
-if [ ! -f "${conf}" ]; then
-	port=${ARCANA_PORT:-8443}
-	case "${port}" in
-	''|*[!0-9]*)	die "ARCANA_PORT: not a port number" ;;
-	esac
-	if [ -f ${etc}/console.pem -a -f ${etc}/console.key ]; then
-		openssl x509 -in ${etc}/console.pem -noout -text |
-		    grep -q 'Public Key Algorithm: rsaEncryption$' ||
-		    die "console.pem: Kore needs an RSA certificate"
-		tls=yes
-		certs=$(printf '\tcertfile\t%s\n\tcertkey\t\t%s\n' \
-		    ${etc}/console.pem ${etc}/console.key)
-	else
-		tls=no
-		certs=
-	fi
-	conf=${run}/kore.conf
-	cat > "${conf}" <<EOF
-server console {
-	bind		0.0.0.0 ${port}
-	bind		:: ${port}
-	tls		${tls}
-}
-
-load		/usr/local/lib/arcana/arcana-console.so arcw_onload
-pidfile		${run}/kore.pid
-tls_dhparam	/usr/local/share/kore/ffdhe4096.pem
-
-workers			1
-task_threads		8
-http_body_max		8388608
-http_media_type		application/wasm wasm
-http_media_type		application/manifest+json webmanifest
-http_media_type		image/svg+xml svg
-http_media_type		font/woff2 woff2
-http_media_type		image/x-icon ico
-filemap_index		index.html
-
-domain * {
-	attach		console${certs:+
-${certs}}
-	include		${etc}/routes.conf
-	filemap		/ /usr/local/www/arcana-console
-}
-EOF
-	echo "arcana-container: serving $([ ${tls} = yes ] &&
-	    echo HTTPS || echo HTTP) on port ${port}"
-fi
-
-export ARCANA_WEB_CONF="${web}"
-# -n and -r: no chroot and no change of user; the container already
-# runs as the console's user.
-exec /usr/local/bin/kore -f -n -r -c "${conf}"
+exec /usr/local/sbin/arcana-console -c "${web}"

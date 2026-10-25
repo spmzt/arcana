@@ -241,6 +241,8 @@ static struct {
 	bool	peers_loaded;
 	bool	hide[LK_KINDS];		/* kinds of links not drawn */
 	bool	hide_best, hide_alt;	/* nor the route traced */
+	bool	hide_q;			/* nor the measured tunnels' probes */
+	int	nprobed;		/* tunnels measured, as last drawn */
 	int	fib;			/* the routing table shown alone, or -1 */
 	bool	stencil;		/* drawn as a network diagram: glyphs, straight lines */
 	double	last_poll;
@@ -536,6 +538,9 @@ peers_load(void)
 	tp.peers_loaded = true;
 	tp.npeers = 0;
 	/* Whether the vnet jails are shown, as last chosen here. */
+	text = arc_store_get("arc_topo_quality");
+	tp.hide_q = text != NULL && strcmp(text, "hidden") == 0;
+	free(text);
 	text = arc_store_get("arc_topo_vnet");
 	tp.novnet = text != NULL && strcmp(text, "hidden") == 0;
 	tp.lonevnet = text != NULL && strcmp(text, "all") == 0;
@@ -609,6 +614,59 @@ peer_key(char *buf, size_t len, const struct ext *e)
  * dragged; "Fit" sets it again), on two rings, every other one further
  * out, side by side on one ring they would lie on each other.
  */
+static bool	place(int, double *, double *);
+
+static int
+angle_cmp(const void *a, const void *b)
+{
+	double	x = *(const double *)a, y = *(const double *)b;
+
+	return (x < y ? -1 : x > y);
+}
+
+/*
+ * Where a host's routing neighbours outside are to stand: the middle of
+ * the widest way out between its links (the way to the fleet's middle
+ * counted as one), so that none stands on a link of its own host's.
+ */
+static double
+free_angle(const struct thost *t, double cx, double cy)
+{
+	double	ang[TOPO_LINKS + 1], best, gap, x, y;
+	int	n, k, me, other;
+
+	if ((me = node_index(t->sid)) == -1)
+		return (-M_PI / 2);
+	n = 0;
+	if (fabs(t->x - cx) + fabs(t->y - cy) >= 1)
+		ang[n++] = atan2(cy - t->y, cx - t->x);
+	for (k = 0; k < nlinks && n < TOPO_LINKS; k++) {
+		if (links[k].a == me)
+			other = links[k].b;
+		else if (links[k].b == me)
+			other = links[k].a;
+		else
+			continue;
+		if (!place(other, &x, &y) || fabs(x - t->x) + fabs(y - t->y) < 1)
+			continue;
+		ang[n++] = atan2(y - t->y, x - t->x);
+	}
+	if (n == 0)
+		return (-M_PI / 2);
+	if (n == 1)
+		return (ang[0] + M_PI);
+	qsort(ang, (size_t)n, sizeof(ang[0]), angle_cmp);
+	/* The widest gap, round the circle too. */
+	best = ang[0] + 2 * M_PI - ang[n - 1];
+	x = ang[n - 1] + best / 2;
+	for (k = 1; k < n; k++)
+		if ((gap = ang[k] - ang[k - 1]) > best) {
+			best = gap;
+			x = ang[k - 1] + gap / 2;
+		}
+	return (x);
+}
+
 static void
 peer_place(const struct ext *e, struct thost *t, double *exp, double *eyp)
 {
@@ -625,8 +683,7 @@ peer_place(const struct ext *e, struct thost *t, double *exp, double *eyp)
 	cx = m > 0 ? cx / m : 0;
 	cy = m > 0 ? cy / m : 0;
 	if (!t->out_set) {
-		t->out_a = fabs(t->x - cx) + fabs(t->y - cy) < 1 ? -M_PI / 2 :
-		    atan2(t->y - cy, t->x - cx);
+		t->out_a = free_angle(t, cx, cy);
 		t->out_set = true;
 	}
 	step = e->of > 1 && 1.6 / (e->of - 1) < 0.36 ? 1.6 / (e->of - 1) : 0.36;
@@ -773,6 +830,61 @@ peers_outside(const bool *fixed)
  * own place, then pushed apart from the others and from the hosts
  * where they overlap, a few rounds, the dragged ones staying put.
  */
+/*
+ * How far a neighbour's node is kept from a link between hosts: its
+ * cloud's half width and the link's words above and below it.
+ */
+#define	PEER_LINK_GAP	64.0
+
+static bool	place(int, double *, double *);
+
+/* Neighbour i moved off any link between two hosts it lies on: across
+ * the link, the side it is on.  1 when it moved. */
+static int
+peer_off_links(int i)
+{
+	const struct tlink	*l;
+	double			 x1, y1, x2, y2, dx, dy, len2, t, px, py, d, nx,
+				 ny;
+	int			 k, moved;
+
+	moved = 0;
+	for (k = 0; k < nlinks; k++) {
+		l = &links[k];
+		if (l->kind == LK_OSPF && !l->ospf_stray)
+			continue;
+		if (tp.hide[l->kind] || node_lone(l->a) || node_lone(l->b) ||
+		    !place(l->a, &x1, &y1) || !place(l->b, &x2, &y2))
+			continue;
+		dx = x2 - x1;
+		dy = y2 - y1;
+		if ((len2 = dx * dx + dy * dy) < 1)
+			continue;
+		/* The nearest point of the link (as a straight line; its
+		 * bend is small beside the gap). */
+		t = ((peer_x[i] - x1) * dx + (peer_y[i] - y1) * dy) / len2;
+		if (t < 0.05 || t > 0.95)
+			continue;
+		px = x1 + t * dx;
+		py = y1 + t * dy;
+		d = hypot(peer_x[i] - px, peer_y[i] - py);
+		if (d >= PEER_LINK_GAP)
+			continue;
+		if (d < 0.5) {
+			/* On it: off to the left of it. */
+			nx = -dy / sqrt(len2);
+			ny = dx / sqrt(len2);
+		} else {
+			nx = (peer_x[i] - px) / d;
+			ny = (peer_y[i] - py) / d;
+		}
+		peer_x[i] = px + nx * PEER_LINK_GAP;
+		peer_y[i] = py + ny * PEER_LINK_GAP;
+		moved = 1;
+	}
+	return (moved);
+}
+
 static void
 peers_layout(void)
 {
@@ -861,6 +973,9 @@ peers_layout(void)
 					peer_y[i] += (dy >= 0 ? 1 : -1) * oy;
 				moved++;
 			}
+			/* And of the links between hosts, their words with
+			 * them: pushed off a link across it. */
+			moved += peer_off_links(i);
 		}
 		/* None inside the circle of the core: out past it. */
 		moved += peers_outside(fixed);
@@ -2928,6 +3043,81 @@ static struct html	tlab;
 static bool	link_probe(const struct tlink *, double *, double *,
 		    double *);
 
+/*
+ * The links' words placed apart: the room each takes on the map, in its
+ * own units (the SVG's, which zoom with it), from its length in the
+ * monospace font; one that would cover another, or a host's box, moved
+ * off a line at a time, down, up, further, until it is clear.
+ */
+#define	LAB_MAX		2048
+static struct {
+	double	x0, y0, x1, y1;
+} labr[LAB_MAX];
+static int	nlabr;
+
+/* Characters, not bytes: "·" is one. */
+static size_t
+u8len(const char *s)
+{
+	size_t	n;
+
+	for (n = 0; *s != '\0'; s++)
+		if (((unsigned char)*s & 0xc0) != 0x80)
+			n++;
+	return (n);
+}
+
+static bool
+lab_free(double x0, double y0, double x1, double y1)
+{
+	int	i;
+
+	for (i = 0; i < nlabr; i++)
+		if (x0 < labr[i].x1 && x1 > labr[i].x0 && y0 < labr[i].y1 &&
+		    y1 > labr[i].y0)
+			return (false);
+	return (true);
+}
+
+static void
+lab_take(double x0, double y0, double x1, double y1)
+{
+
+	if (nlabr == LAB_MAX)
+		return;
+	labr[nlabr].x0 = x0;
+	labr[nlabr].y0 = y0;
+	labr[nlabr].x1 = x1;
+	labr[nlabr].y1 = y1;
+	nlabr++;
+}
+
+/*
+ * x, y (the text's middle and baseline) moved to where it is clear, with
+ * room around it (LAB_GAP of the font's size) so that stacked words read
+ * as apart.
+ */
+#define	LAB_GAP		0.45
+static void
+lab_place(double x, double *y, const char *text, double fs)
+{
+	double	w, h, dy, g;
+	int	k;
+
+	g = fs * LAB_GAP;
+	w = (double)u8len(text) * fs * 0.62 + 2 * g;
+	h = fs * 1.3 + 2 * g;
+	for (k = 0; k < 15; k++) {
+		dy = k == 0 ? 0 : ((k + 1) / 2) * h * (k % 2 == 1 ? 1 : -1);
+		if (lab_free(x - w / 2, *y + dy - fs - g, x + w / 2, *y + dy +
+		    fs * 0.3 + g)) {
+			*y += dy;
+			break;
+		}
+	}
+	lab_take(x - w / 2, *y - fs - g, x + w / 2, *y + fs * 0.3 + g);
+}
+
 /* A link's bytes a second each way, a to b and back, as its a end
  * counted them (else its b end, the other way round). */
 static void
@@ -2964,6 +3154,31 @@ map_links(struct html *h)
 	bool		 pr_ok;
 
 	h_reset(&tlab);
+	tp.nprobed = 0;
+	/* The hosts' boxes, which no word is to cover. */
+	nlabr = 0;
+	for (i = 0; i < ntn; i++) {
+		struct thost	*bt;
+
+		if (node_lone(i) || (bt = thost(tn[i].key, false)) == NULL ||
+		    !bt->placed)
+			continue;
+		if (tp.stencil)
+			lab_take(bt->x - 30, bt->y - 30, bt->x + 30, bt->y + 48);
+		else
+			lab_take(bt->x - NODE_W / 2, bt->y - NODE_H / 2, bt->x +
+			    NODE_W / 2, bt->y + NODE_H / 2);
+	}
+	/* And the routing neighbours outside, where they stand. */
+	peers_layout();
+	for (i = 0; !tp.nopeers && i < nexts; i++) {
+		double	px, py;
+
+		if (as_leader(i) != i || tp.hide[exts[i].ospf ? LK_OSPF : LK_BGP])
+			continue;
+		as_place(i, &px, &py);
+		lab_take(px - 40, py - 28, px + 40, py + 52);
+	}
 	for (i = 0; i < nlinks; i++) {
 		l = &links[i];
 		if (node_lone(l->a) || node_lone(l->b))
@@ -3032,6 +3247,9 @@ map_links(struct html *h)
 		pr_ok = l->kind == LK_TUNNEL && l->b >= 0 && link_in_fib(l,
 		    tp.fib) && link_probe(l, &pd, &pj, &pl);
 		if (pr_ok)
+			tp.nprobed++;
+		pr_ok = pr_ok && !tp.hide_q;
+		if (pr_ok)
 			glmap_probe(x1, y1, x2, y2, bend, leave_t(x1, y1, x2, y2,
 			    bend, true), leave_t(x1, y1, x2, y2, bend, false), pd,
 			    pj, pl);
@@ -3068,43 +3286,75 @@ map_links(struct html *h)
 		if (l->b >= 0 && l->kind < LK_LAN) {
 			double	ex, ey;
 
+			char	en[48];
+
 			curve(NULL, x1, y1, x2, y2, bend, leave_t(x1, y1, x2,
 			    y2, bend, true), &ex, &ey);
+			ey -= 5;
+			/* Each end's name too, apart from the other ends' at
+			 * the same host (parallel tunnels). */
+			snprintf(en, sizeof(en), "%s fib %d", l->ifa, fa);
+			if (lh == &tlab)
+				lab_place(ex, &ey, en, 9);
 			h_fmt(lh, "<text class=\"lbl end\" x=\"%.1f\" y=\"%.1f\">",
-			    ex, ey - 5);
+			    ex, ey);
 			if_label(lh, l->ifa, fa, fa > 0 || fb > 0 || ta > 0 || tb > 0);
 			h_raw(lh, "</text>");
 			if (l->ifb[0] != '\0') {
 				curve(NULL, x1, y1, x2, y2, bend, leave_t(x1, y1,
 				    x2, y2, bend, false), &ex, &ey);
+				ey -= 5;
+				snprintf(en, sizeof(en), "%s fib %d", l->ifb, fb);
+				if (lh == &tlab)
+					lab_place(ex, &ey, en, 9);
 				h_fmt(lh, "<text class=\"lbl end\" x=\"%.1f\" "
-				    "y=\"%.1f\">", ex, ey - 5);
+				    "y=\"%.1f\">", ex, ey);
 				if_label(lh, l->ifb, fb, fa > 0 || fb > 0 || ta > 0 ||
 				    tb > 0);
 				h_raw(lh, "</text>");
 			}
 		} else if (l->b >= 0) {
+			char	words[200];
+			double	ly = my - 7;
+
+			snprintf(words, sizeof(words), "%s%s", l->label, l->more >
+			    0 ? " +0" : "");
+			/* Placed apart from the others, when it shows. */
+			if (lh == &tlab)
+				lab_place(mx, &ly, words, 9.5);
 			h_fmt(lh, "<text class=\"lbl\" x=\"%.1f\" y=\"%.1f\">", mx,
-			    my - 7);
+			    ly);
 			h_txt(lh, l->label);
 			if (l->more > 0)
 				h_fmt(lh, " +%d", l->more);
 			h_raw(lh, "</text>");
 		}
 		if (l->rate >= 1) {
+			double	ry;
+
 			fmt_rate(rate, sizeof(rate), l->rate);
+			ry = l->b >= 0 && l->kind < LK_LAN ? my + 3.5 : my + 14;
+			if (lh == &tlab)
+				lab_place(mx, &ry, rate, 9);
 			h_fmt(lh, "<text class=\"rate\" x=\"%.1f\" y=\"%.1f\">",
-			    mx, l->b >= 0 && l->kind < LK_LAN ? my + 3.5 : my +
-			    14);
+			    mx, ry);
 			h_txt(lh, rate);
 			h_raw(lh, "</text>");
 		}
-		/* What its probes last measured, under the rate. */
-		if (pr_ok)
-			h_fmt(lh, "<text class=\"probe%s\" x=\"%.1f\" y=\"%.1f\">"
-			    "%.1f ms · %.1f ms · %.1f %% lost</text>", pl > 0 ?
-			    " lossy" : "", mx, my + (l->rate >= 1 ? 15.5 : 3.5), pd,
-			    pj, pl * 100);
+		/* What its probes last measured, under the rate, apart from
+		 * the other tunnels' between the same hosts. */
+		if (pr_ok) {
+			char	words[120];
+			double	py = my + (l->rate >= 1 ? 15.5 : 3.5);
+
+			snprintf(words, sizeof(words), "%.1f ms · %.1f ms · %.1f %% "
+			    "lost", pd, pj, pl * 100);
+			lab_place(mx, &py, words, 9);
+			h_fmt(lh, "<text class=\"probe%s\" x=\"%.1f\" y=\"%.1f\">",
+			    pl > 0 ? " lossy" : "", mx, py);
+			h_txt(lh, words);
+			h_raw(lh, "</text>");
+		}
 		if (lh == &tlab)
 			h_raw(lh, "</g>");
 		h_raw(h, "</g>");
@@ -4350,6 +4600,14 @@ map(struct html *h)
 			    off ? "Show" : "Hide", lg[k].title);
 		}
 	}
+	/* Tunnel quality, a layer of its own: the probes of the tunnels
+	 * Overlay > Quality measures, and their last sample, on or off. */
+	if (tp.nprobed > 0 || tp.hide_q)
+		h_fmt(h, "<li class=\"quality%s\" data-act=\"topo-legend\" "
+		    "data-arg=\"quality\" title=\"%s the probes and the last "
+		    "sample of the tunnels measured (Overlay, Quality)\">tunnel "
+		    "quality</li>", tp.hide_q ? " off" : "", tp.hide_q ? "Show" :
+		    "Hide");
 	/* The routing tables' colours, when there is more than the first:
 	 * a key, not a switch (the toolbar's FIB picks one). */
 	{
@@ -7807,6 +8065,11 @@ topo_action(const char *act, const char *arg, const char *value)
 			tp.hide_best = !tp.hide_best;
 		if (strcmp(arg, "alt") == 0)
 			tp.hide_alt = !tp.hide_alt;
+		if (strcmp(arg, "quality") == 0) {
+			tp.hide_q = !tp.hide_q;
+			arc_store_set("arc_topo_quality", tp.hide_q ? "hidden" :
+			    "shown");
+		}
 	} else if (strcmp(act, "topo-fit") == 0) {
 		/* Asked for: and kept fitted until moved again. */
 		for (i = 0; i < nhosts; i++)

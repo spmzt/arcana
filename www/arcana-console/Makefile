@@ -1,11 +1,12 @@
-# arcana-console.so: the Kore module serving the console and its API.
+# arcana-console: the console, its API and its pages, served on
+# libwebsockets(3) (web.c).
 
-SHLIB_NAME=	arcana-console.so
-SRCS=		api.c auth.c config.c hosts.c pki.c push.c servers.c settings.c security.c troubleshoot.c \
+PROG=		arcana-console
+SRCS=		web.c routes.c api.c auth.c config.c hosts.c pki.c push.c servers.c settings.c security.c troubleshoot.c \
 		stream.c follow.c tokens.c transfers.c workflows.c sdwan.c sdwan_edge.c \
 		store.c update.c webpush.c audit.c mail.c templates.c ldap.c labels.c prefixlists.c users.c \
 		craft.c nodes.c
-LIBDIR?=	${PREFIX}/lib/arcana
+BINDIR?=	${PREFIX}/sbin
 MAN=		arcana-console.8
 
 .include "${.CURDIR}/../../share/mk/arcana.mk"
@@ -16,15 +17,15 @@ ARC_WIRE=	client
 ARC_CLUSTER=	yes
 .include "${.CURDIR}/../../share/mk/arcana.wire.mk"
 
-.if empty(KORE_FEATURES:M-DKORE_USE_TASKS)
-.error Kore must be built with tasks (TASKS=1): KORE_FEATURES is "${KORE_FEATURES}"
-.endif
-CFLAGS+=	-I${KORE_INCLUDE} ${KORE_FEATURES} ${UCL_CFLAGS} ${SSL_CFLAGS}
-LDADD+=		${UCL_LIBS} ${SSL_LDFLAGS} -lssl -lcrypto -lfetch -lcrypt
+CFLAGS+=	${LWS_CFLAGS} ${UCL_CFLAGS} ${SSL_CFLAGS} \
+		-DARCW_WEBROOT=\"${PREFIX}/www/arcana-console\" \
+		-DARCW_CONF=\"${PREFIX}/etc/arcana/web.conf\"
+LDADD+=		${LWS_LIBS} ${UCL_LIBS} ${SSL_LDFLAGS} -lssl -lcrypto -lfetch \
+		-lcrypt -lutil -lm -lpthread
 
-# Configuration samples, the routes, and the rc.d(8) script.
+# The configuration's sample and the rc.d(8) script.
 FILESGROUPS+=	CONF RC
-CONF=		conf/routes.conf conf/kore.conf.sample conf/web.conf.sample
+CONF=		conf/web.conf.sample
 CONFDIR=	${PREFIX}/etc/arcana
 RC=		arcana_console.sh
 RCDIR=		${PREFIX}/etc/rc.d
@@ -35,7 +36,7 @@ arcana_console.sh: conf/arcana_console.in
 	sed -e 's|%%PREFIX%%|${PREFIX}|g' -e 's|%%LOCALBASE%%|${LOCALBASE}|g' \
 	    ${.ALLSRC} > ${.TARGET}
 beforeinstall: .PHONY
-	${INSTALL} -d ${DESTDIR}${LIBDIR} ${DESTDIR}${CONFDIR}
+	${INSTALL} -d ${DESTDIR}${BINDIR} ${DESTDIR}${CONFDIR}
 
 # The kinds of job, as share/arcana/jobs.yaml says: a workflow's steps
 # are checked against it, and it against arcana.yaml's job-kind and
@@ -48,7 +49,7 @@ jobs_table.h: ${ARC_TOP}/share/arcana/jobs.yaml ${ARC_TOP}/share/arcana/jobs.awk
 	    ${ARC_TOP}/share/arcana/arcana.yaml \
 	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}.tmp
 	mv ${.TARGET}.tmp ${.TARGET}
-workflows.pico workflows.o: jobs_table.h
+workflows.o: jobs_table.h
 # The parser of a job as the API takes it: the kinds' names and each
 # field's member, from the same files.
 DPSRCS+=	jobs_spec.h
@@ -59,9 +60,9 @@ jobs_spec.h: ${ARC_TOP}/share/arcana/jobs.yaml ${ARC_TOP}/share/arcana/jobs.awk 
 	    ${ARC_TOP}/share/arcana/arcana.yaml \
 	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}.tmp
 	mv ${.TARGET}.tmp ${.TARGET}
-hosts.pico hosts.o: jobs_spec.h
+hosts.o: jobs_spec.h
 
 HAS_TESTS=
 SUBDIR.${MK_TESTS}+= tests
 
-.include <bsd.lib.mk>
+.include <bsd.prog.mk>
