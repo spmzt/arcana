@@ -21,7 +21,7 @@ it, with pictures:
 | Workflows, their steps, triggers and runs | [Workflows](https://spmzt.github.io/arcana-docs/sections/workflows.html) |
 | Settings, API tokens, What's new | [Settings](https://spmzt.github.io/arcana-docs/sections/settings.html) |
 
-SD-WAN, in MEF 70.2's terms with Mplify 119 and MEF 88:
+SD-WAN, in MEF 70.2's terms with Mplify 119 and MEF 138:
 
 | Part | Chapter |
 |---|---|

@@ -522,6 +522,19 @@ run_exec_lines(struct work *w, char *const argv[],
 	return (rc);
 }
 
+/* Whether pid is a process that has not ended (a zombie has). */
+bool
+pid_alive(pid_t pid)
+{
+	struct kinfo_proc	*kp;
+	bool			 alive;
+
+	if (pid <= 1 || (kp = kinfo_getproc(pid)) == NULL)
+		return (false);
+	alive = kp->ki_stat != SZOMB;
+	free(kp);
+	return (alive);
+}
 
 /*
  * Is the process of a pid the program it is taken for?  A pid file
@@ -540,6 +553,12 @@ pid_is(pid_t pid, const char *prog)
 		return (false);
 	if ((kp = kinfo_getproc(pid)) == NULL)
 		return (false);
+	/* A zombie has ended; only its reaper, slow in a container, is
+	 * yet to collect it. */
+	if (kp->ki_stat == SZOMB) {
+		free(kp);
+		return (false);
+	}
 	base = strrchr(prog, '/') != NULL ? strrchr(prog, '/') + 1 : prog;
 	is = strcmp(kp->ki_comm, base) == 0;
 	free(kp);

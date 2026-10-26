@@ -229,7 +229,7 @@ running(const char *name)
 	if (fscanf(fp, "%ld", &pid) != 1)
 		pid = 0;
 	fclose(fp);
-	return (pid > 1 && kill((pid_t)pid, 0) == 0);
+	return (pid_alive((pid_t)pid));
 }
 
 static pid_t
@@ -799,14 +799,17 @@ read_eve(struct instance *in)
 	ssize_t		 n;
 	int		 told;
 
+	/* Opened first, then sized: the file read is the file sized. */
 	eve_path(in->name, path, sizeof(path));
-	if (stat(path, &st) != 0)
+	if ((fp = fopen(path, "r")) == NULL)
 		return;
+	if (fstat(fileno(fp), &st) != 0) {
+		fclose(fp);
+		return;
+	}
 	if (st.st_size < in->off)	/* turned over, or made anew */
 		in->off = 0;
-	if (st.st_size == in->off || (fp = fopen(path, "r")) == NULL)
-		return;
-	if (fseeko(fp, in->off, SEEK_SET) != 0) {
+	if (st.st_size == in->off || fseeko(fp, in->off, SEEK_SET) != 0) {
 		fclose(fp);
 		return;
 	}

@@ -34,12 +34,15 @@
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
-- To decide (the user's): whether the security policies move to MEF
-  138's model (Security Function Policies each with Block, Allow and
-  Quarantine lists, No-match, Duration; PDNS and DLP added), and which
-  of the conformance list's "no" rows come next (session states, an
-  external IdP with OAuth 2.0, Context Policies, SAAN/SSEN as
-  notifications, event-based Continuous Monitoring).
+- MEF 138's model, the rest (the model itself is console 0.317.0,
+  2026-10-26, docs/PLAN-119-SASE.md SASE-6): SEN and SAN with their
+  IDs, neutralised domains and recipients (R24-R36); MD+R's lists of
+  hashes given to ClamAV; DNF's wildcards inside a name (R71); PDNS's
+  other record types (R104) and DoT or DoH (D19-D22); DPF's message
+  types; an MBSF for IPsec. DLP has no engine on FreeBSD. To decide
+  (the user's): which of the conformance list's "no" rows come next
+  (session states, an external IdP with OAuth 2.0, Context Policies,
+  event-based Continuous Monitoring).
 - Game mode (asked 2026-10-25): the console used on a Steam Deck in
   its Game Mode, by its controls alone. The page reads the controller
   through the Gamepad API (navigator.getGamepads(), which Steam's

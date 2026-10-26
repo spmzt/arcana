@@ -28,8 +28,8 @@ module arcana-sdwan {
      their own, tables, dummynet and NAT objects); the policy tables'
      candidates in the console's order, the first whose far end the
      probes do not say is down chosen (sdwan-steer); the BIRD, dnsmasq,
-     unbound (MEF 88's DNS filter), Squid (MEF 88's url-filter, with a
-     CA of its own where TLS is opened) and Suricata (the ids
+     unbound (MEF 138's DNF and PDNS), Squid (MEF 138's URLF, MBSF and
+     MD+R, with a CA of its own where TLS is opened) and Suricata (the ids
      criterion) instances of the services, one each in its FIB
      (setfib), as the console writes them; and as state what each is
      doing, the security policies' record (ipfw's logdst rtsock), the

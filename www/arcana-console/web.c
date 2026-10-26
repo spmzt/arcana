@@ -66,6 +66,17 @@
  * SETTINGS_MAX_FRAME_SIZE as browsers leave it); a larger one ends the
  * connection and every stream on it. */
 #define	WRITE_CHUNK	16384
+/*
+ * A reply's last piece, at most, written only while nothing waits in the
+ * connection's buffer: the socket then takes it whole (a writable socket
+ * has room for 2 KB, its low-water mark), so the HTTP/2 stream it ends
+ * closes before the client has its end.  Closing one while output waits
+ * is put off by libwebsockets until it is sent, the client may open its
+ * next stream first, and one stream past libwebsockets' limit (24, which
+ * its 50 pending frames, two for each new stream, do not let us raise)
+ * ends the whole connection.
+ */
+#define	FINAL_MAX	1024
 #define	WS_IN_MAX	(1024 * 1024)	/* a message from a page, at most */
 /* A message goes out in fragments of this much at most: over HTTP/2 a
  * WebSocket frame may not be larger than an HTTP/2 frame (16 KB), and
@@ -428,11 +439,22 @@ pool_thread(void *arg)
 		t->state = TASK_STATE_RUNNING;
 		pthread_mutex_unlock(&t->lock);
 		rc = t->entry(t);
+		/*
+		 * Finished and on the loop's list in one step: the loop may
+		 * destroy and free t as soon as it sees it finished (a
+		 * request's on_free), so t is not touched after.
+		 */
+		pthread_mutex_lock(&ready_lock);
 		pthread_mutex_lock(&t->lock);
 		t->result = rc;
 		t->state = TASK_STATE_FINISHED;
 		pthread_mutex_unlock(&t->lock);
-		task_ready(t);
+		if (!t->queued) {
+			t->queued = true;
+			TAILQ_INSERT_TAIL(&ready_q, t, list);
+		}
+		pthread_mutex_unlock(&ready_lock);
+		lws_cancel_service(ctx);
 	}
 	return (NULL);
 }
@@ -453,7 +475,6 @@ task_bind_request(struct task *t, struct http_request *req)
 {
 
 	t->req = req;
-	req->ntasks++;
 	LIST_INSERT_HEAD(&req->tasks, t, rlist);
 }
 
@@ -645,8 +666,10 @@ hdr_add(struct http_header_list *l, const char *name, size_t nlen,
 
 /*
  * The request gone from the server: answered, or its client gone.  The
- * route's on_free first, every time, as long as a task of it runs; then
- * the finished tasks, hdlr_extra and the rest.
+ * route's on_free first, every time, as long as a task of it runs (it
+ * may destroy one that is done, and free what holds it); then the
+ * finished tasks, hdlr_extra and the rest.  Called again when a task of
+ * it is done.
  */
 static void
 req_free(struct http_request *req)
@@ -661,8 +684,9 @@ req_free(struct http_request *req)
 	}
 	if (req->rt != NULL && req->rt->on_free != NULL)
 		req->rt->on_free(req);
-	if (req->ntasks > 0)
-		return;
+	LIST_FOREACH(t, &req->tasks, rlist)
+		if (!task_finished(t))
+			return;
 	for (t = LIST_FIRST(&req->tasks); t != NULL; t = nt) {
 		nt = LIST_NEXT(t, rlist);
 		task_destroy(t);
@@ -741,16 +765,11 @@ tasks_drain(void)
 			t->cb(t);	/* may destroy and free t */
 			continue;
 		}
-		if ((req = t->req) == NULL || !task_finished(t) || t->counted)
+		if ((req = t->req) == NULL || !task_finished(t))
 			continue;
-		t->counted = true;
-		req->ntasks--;
-		if (req->flags & F_DELETED) {
-			if (req->ntasks == 0)
-				req_free(req);
-			else if (req->rt != NULL && req->rt->on_free != NULL)
-				req->rt->on_free(req);
-		} else {
+		if (req->flags & F_DELETED)
+			req_free(req);
+		else {
 			req->flags &= ~F_SLEEPING;
 			runq_add(req);
 		}
@@ -1141,6 +1160,60 @@ req_plain(struct lws *wsi, const char *path, int status)
 	return (req);
 }
 
+/* A connection or stream ended by the server, said when ARCANA_DEBUG is
+ * set: libwebsockets says nothing of those its user ends. */
+static bool	debug_ends;
+
+static int
+ending(struct lws *wsi, const char *why)
+{
+	char	path[256];
+
+	if (debug_ends) {
+		path[0] = '\0';
+		(void)lws_hdr_copy(wsi, path, sizeof(path), WSI_TOKEN_GET_URI);
+		if (path[0] == '\0')
+			(void)lws_hdr_copy(wsi, path, sizeof(path),
+			    WSI_TOKEN_POST_URI);
+		log_msg(LOG_NOTICE, "ending %s: %s", path[0] != '\0' ? path :
+		    "a connection", why);
+	}
+	return (-1);
+}
+
+/*
+ * How much of want may be written now: over HTTP/2 the peer's window
+ * (libwebsockets counts it), which is not to be passed, or it ends the
+ * connection; 0 is to wait: the window's update calls the stream again.
+ */
+static size_t
+allowed(struct lws *wsi, size_t want)
+{
+	lws_fileofs_t	a;
+
+	if ((a = lws_get_peer_write_allowance(wsi)) < 0)
+		return (want);
+	return ((size_t)a < want ? (size_t)a : want);
+}
+
+/*
+ * A reply sent: the transaction done, -1 when the stream or connection
+ * is to close.  An HTTP/2 stream is closed whatever libwebsockets says:
+ * while output waits in the connection's buffer it puts the transaction
+ * off and, for a stream, never comes back to it, which left the stream
+ * open for good, one of the client's concurrent streams.  What waits is
+ * the connection's: closing the stream loses none of it.
+ */
+static int
+done(struct lws *wsi, const char *why)
+{
+
+	if (lws_http_transaction_completed(wsi) ||
+	    lws_get_network_wsi(wsi) != wsi)
+		return (ending(wsi, why));
+	return (0);
+}
+
 /* The next piece of the reply; -1 when the connection is to close. */
 static int
 req_write(struct lws *wsi, struct pss *pss)
@@ -1155,6 +1228,11 @@ req_write(struct lws *wsi, struct pss *pss)
 	if (req == NULL || req->status == 0)
 		return (0);
 	if (!req->headers_sent) {
+		/* A reply without a body is its last piece too. */
+		if (req->resp_len == 0 && lws_send_pipe_choked(wsi)) {
+			lws_callback_on_writable(wsi);
+			return (0);
+		}
 		cap = LWS_PRE + HDR_MAX;
 		TAILQ_FOREACH(h, &req->resp_headers, list)
 			cap += strlen(h->name) + strlen(h->value) + 8;
@@ -1177,7 +1255,7 @@ req_write(struct lws *wsi, struct pss *pss)
 			rc = lws_finalize_write_http_header(wsi, start, &p, end);
 		free(buf);
 		if (rc != 0)
-			return (-1);
+			return (ending(wsi, "the reply's headers could not be written"));
 		req->headers_sent = true;
 		if (req->resp_len > 0) {
 			lws_callback_on_writable(wsi);
@@ -1188,11 +1266,21 @@ req_write(struct lws *wsi, struct pss *pss)
 		rc = lws_write(wsi, buf + LWS_PRE, 0, LWS_WRITE_HTTP_FINAL);
 		free(buf);
 		if (rc < 0)
-			return (-1);
+			return (ending(wsi, "the end of a reply without "
+			    "a body could not be written"));
 	} else if (req->resp_off < req->resp_len) {
 		n = req->resp_len - req->resp_off;
 		if (n > WRITE_CHUNK)
 			n = WRITE_CHUNK;
+		else if (n > FINAL_MAX)
+			n -= FINAL_MAX;		/* the last piece apart */
+		if ((n = allowed(wsi, n)) == 0)
+			return (0);
+		if (req->resp_off + n == req->resp_len &&
+		    lws_send_pipe_choked(wsi)) {
+			lws_callback_on_writable(wsi);
+			return (0);
+		}
 		buf = xmalloc(LWS_PRE + n);
 		memcpy(buf + LWS_PRE, req->resp + req->resp_off, n);
 		req->resp_off += n;
@@ -1200,7 +1288,7 @@ req_write(struct lws *wsi, struct pss *pss)
 		    req->resp_len ? LWS_WRITE_HTTP_FINAL : LWS_WRITE_HTTP);
 		free(buf);
 		if (rc < 0)
-			return (-1);
+			return (ending(wsi, "a reply's body could not be written"));
 		if (req->resp_off < req->resp_len) {
 			lws_callback_on_writable(wsi);
 			return (0);
@@ -1210,7 +1298,7 @@ req_write(struct lws *wsi, struct pss *pss)
 	pss->req = NULL;
 	req->wsi = NULL;
 	req_free(req);
-	return (lws_http_transaction_completed(wsi) ? -1 : 0);
+	return (done(wsi, "the reply done, the connection to close"));
 }
 
 /* A request whose headers and body are in: to its handler. */
@@ -1285,14 +1373,14 @@ ws_filter(struct lws *wsi, struct pss *pss)
 	if (lws_hdr_copy(wsi, path, sizeof(path), WSI_TOKEN_GET_URI) <= 0 &&
 	    lws_hdr_copy(wsi, path, sizeof(path), WSI_TOKEN_HTTP_COLON_PATH) <=
 	    0)
-		return (-1);
+		return (ending(wsi, "a WebSocket without a path"));
 	path[strcspn(path, "?")] = '\0';
 	req = req_new(wsi, path);
 	req->method = HTTP_METHOD_GET;
 	if ((req->rt = route_find(req->path, req->method, &known)) == NULL) {
 		req->wsi = NULL;
 		req_free(req);
-		return (-1);
+		return (ending(wsi, "a WebSocket of no route"));
 	}
 	c = xcalloc(1, sizeof(*c));
 	STAILQ_INIT(&c->out);
@@ -1305,7 +1393,7 @@ ws_filter(struct lws *wsi, struct pss *pss)
 	req_free(req);
 	if (!ok) {
 		conn_free(c);
-		return (-1);
+		return (ending(wsi, "a WebSocket refused"));
 	}
 	pss->conn = c;
 	return (0);
@@ -1342,7 +1430,7 @@ callback(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	switch (reason) {
 	case LWS_CALLBACK_HTTP:
 		if (pss->req != NULL)
-			return (-1);
+			return (ending(wsi, "a request while one is under way"));
 		req = req_new(wsi, (const char *)in);
 		if ((req->rt = route_find(req->path, req->method, &known)) ==
 		    NULL) {
@@ -1353,7 +1441,7 @@ callback(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				if ((rc = serve_file(wsi, (const char *)in)) == 0)
 					return (0);
 				if (rc == -2)
-					return (-1);
+					return (ending(wsi, "a file could not be served"));
 				req = req_plain(wsi, (const char *)in, 404);
 			} else {
 				req->wsi = NULL;
@@ -1365,7 +1453,18 @@ callback(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return (0);
 		}
 		pss->req = req;
-		/* A body to come first. */
+		cl[0] = '\0';
+		/* A chunked body libwebsockets does not take in: its length
+		 * is asked for (browsers always say it). */
+		if (lws_hdr_total_length(wsi, WSI_TOKEN_HTTP_TRANSFER_ENCODING) >
+		    0) {
+			http_response(req, 411, NULL, 0);
+			return (0);
+		}
+		/*
+		 * A body to come first.  Its memory grows as it comes, not to
+		 * what the client says it will send.
+		 */
 		if (lws_hdr_copy(wsi, cl, sizeof(cl),
 		    WSI_TOKEN_HTTP_CONTENT_LENGTH) > 0 && strtoull(cl, NULL, 10) >
 		    0) {
@@ -1373,8 +1472,7 @@ callback(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				http_response(req, 413, NULL, 0);
 				return (0);
 			}
-			b = req->http_body = xcalloc(1, sizeof(*b));
-			b->data = xmalloc((size_t)strtoull(cl, NULL, 10));
+			req->http_body = xcalloc(1, sizeof(*req->http_body));
 			return (0);
 		}
 		req_dispatch(req);
@@ -1387,7 +1485,12 @@ callback(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			http_response(req, 413, NULL, 0);
 			return (0);
 		}
-		b->data = xrealloc(b->data, b->length + len);
+		if (b->length + len > b->cap) {
+			b->cap = b->cap == 0 ? 16384 : b->cap;
+			while (b->cap < b->length + len)
+				b->cap *= 2;
+			b->data = xrealloc(b->data, b->cap);
+		}
 		memcpy(b->data + b->length, in, len);
 		b->length += len;
 		return (0);
@@ -1398,7 +1501,7 @@ callback(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	case LWS_CALLBACK_HTTP_WRITEABLE:
 		return (req_write(wsi, pss));
 	case LWS_CALLBACK_HTTP_FILE_COMPLETION:
-		return (lws_http_transaction_completed(wsi) ? -1 : 0);
+		return (done(wsi, "the file done, the connection to close"));
 	case LWS_CALLBACK_CLOSED_HTTP:
 		if ((req = pss->req) != NULL) {
 			pss->req = NULL;
@@ -1410,18 +1513,18 @@ callback(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		return (ws_filter(wsi, pss));
 	case LWS_CALLBACK_ESTABLISHED:
 		if ((c = pss->conn) == NULL)
-			return (-1);
+			return (ending(wsi, "a WebSocket without its connection"));
 		c->wsi = wsi;
 		if (c->on_connect != NULL)
 			c->on_connect(c);
 		return (0);
 	case LWS_CALLBACK_RECEIVE:
 		if ((c = pss->conn) == NULL)
-			return (-1);
+			return (ending(wsi, "a WebSocket's message without its connection"));
 		if (c->in == NULL)
 			c->in = buf_alloc(len + 1);
 		if (c->in->offset + len > WS_IN_MAX)
-			return (-1);
+			return (ending(wsi, "a WebSocket's message too large"));
 		buf_append(c->in, in, len);
 		if (!lws_is_final_fragment(wsi) ||
 		    lws_remaining_packet_payload(wsi) > 0)
@@ -1439,12 +1542,15 @@ callback(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		n = m->len - m->off;
 		if (n > WS_FRAG)
 			n = WS_FRAG;
+		/* A message of none (n = 0) is written as it is. */
+		if (n > 0 && (n = allowed(wsi, n)) == 0)
+			return (0);
 		rc = lws_write(wsi, m->data + LWS_PRE + m->off, n,
 		    (enum lws_write_protocol)lws_write_ws_flags(m->binary ?
 		    LWS_WRITE_BINARY : LWS_WRITE_TEXT, m->off == 0, m->off + n ==
 		    m->len));
 		if (rc < 0)
-			return (-1);
+			return (ending(wsi, "a WebSocket's message could not be written"));
 		if ((m->off += n) == m->len) {
 			STAILQ_REMOVE_HEAD(&c->out, next);
 			free(m);
@@ -1548,8 +1654,13 @@ conf_read(void)
 		errx(EX_CONFIG, "%s: server: task_threads is 1 to 1024",
 		    web_conf_path);
 	srv.body_max = 8 * 1024 * 1024;
-	if ((e = ucl_object_lookup(s, "body_max")) != NULL)
+	if ((e = ucl_object_lookup(s, "body_max")) != NULL) {
+		if (ucl_object_toint(e) < 1024 || ucl_object_toint(e) >
+		    1024 * 1024 * 1024)
+			errx(EX_CONFIG, "%s: server: body_max is 1 KB to 1 GB",
+			    web_conf_path);
 		srv.body_max = (size_t)ucl_object_toint(e);
+	}
 	web_certfile = srv.certfile;
 	web_certkey = srv.certkey;
 	ucl_object_unref(top);
@@ -1654,6 +1765,17 @@ listen_open(void)
 	}
 }
 
+/*
+ * No validity timer: libwebsockets hangs up a connection it has not
+ * seen valid for 50 s, and over HTTP/2 its streams' traffic (a page's
+ * WebSocket among them) does not count, so a busy connection went too.
+ * A peer that is gone is found by TCP's keepalive instead (vhost_new).
+ */
+static const lws_retry_bo_t no_validity = {
+	.secs_since_valid_ping = 0,
+	.secs_since_valid_hangup = 0,
+};
+
 static struct lws_vhost *
 vhost_new(int k)
 {
@@ -1678,6 +1800,10 @@ vhost_new(int k)
 	info.alpn = "http/1.1";
 	info.keepalive_timeout = 60;
 	info.timeout_secs = 60;
+	info.retry_and_idle_policy = &no_validity;
+	info.ka_time = 120;
+	info.ka_probes = 4;
+	info.ka_interval = 15;
 	info.vh_listen_sockfd = srv.lfd[k];
 	if (fam == AF_UNIX) {
 		info.options |= LWS_SERVER_OPTION_UNIX_SOCK;
@@ -1728,6 +1854,7 @@ worker(void)
 	int					 k;
 
 	setproctitle("worker");
+	debug_ends = getenv("ARCANA_DEBUG") != NULL;
 	/* The key's own process, before anything else is started here. */
 	if (srv.certfile != NULL && keymgr_start(srv.certfile, srv.certkey,
 	    srv.user, srv.lfd, srv.nlisten) != 0)

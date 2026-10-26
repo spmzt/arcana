@@ -9,8 +9,13 @@
 # echoes everything else.  Nothing outside the work directory changes.
 #
 
-# Programs next to the tests in the build tree, else the configuration
-# variables arcana-agent and arcanactl, else the installed ones.
+# Whether a process is there and not a zombie: in a container no reaper
+# may wait for one that ended, and kill -0 still finds it.
+alive()
+{
+	ps -o state= -p "$1" 2>/dev/null | grep -qv Z
+}
+
 # Does the kernel have SCTP: compiled in (kern.features.sctp) or the
 # module loaded.
 has_sctp()
@@ -19,6 +24,8 @@ has_sctp()
 	    kldstat -q -m sctp 2>/dev/null
 }
 
+# Programs next to the tests in the build tree, else the configuration
+# variables arcana-agent and arcanactl, else the installed ones.
 programs()
 {
 	JGD="$(atf_get_srcdir)/../arcana-agent"
@@ -360,12 +367,12 @@ stop_daemon()
 	# away the socket the next one had made.  A minute on a busy host,
 	# then for good.
 	for i in $(seq 1 1200); do
-		kill -0 "$pid" 2>/dev/null || return 0
+		alive "$pid" || return 0
 		sleep 0.05
 	done
 	kill -9 "$pid" 2>/dev/null
 	for i in $(seq 1 100); do
-		kill -0 "$pid" 2>/dev/null || return 0
+		alive "$pid" || return 0
 		sleep 0.05
 	done
 	true
@@ -3789,7 +3796,7 @@ cd $(pwd)
 [ "\$1 \$2" = "arcana_agent restart" ] || exit 2
 pid=\$(cat daemon.pid)
 kill "\$pid"
-while kill -0 "\$pid" 2>/dev/null; do sleep 0.1; done
+while ps -o state= -p "\$pid" 2>/dev/null | grep -qv Z; do sleep 0.1; done
 echo "stopped \$pid" >> restarts
 exec ./run-agent
 EOS
@@ -4371,6 +4378,21 @@ EOS
 	atf_check -o match:'^squid -k reconfigure -f .*sdwan-proxy-sw1.conf$' -o match:'^certgen -c -s .*sdwan-proxy-sw1.ssl_db -M 4MB$' cat squid.log
 	atf_check -o match:'^sslcrtd_program .*tools/security_file_certgen -s .*sdwan-proxy-sw1.ssl_db -M 4MB$' cat "$(dirname "$f")/sdwan-proxy-sw1.conf"
 	atf_check cmp -s ca.was "$(dirname "$f")/sdwan-proxy-sw1.crt"
+	# Lists by name (a zone's Block and Allow): each a file beside the
+	# conf, its place filled; those not named again gone; names of
+	# other letters refused.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\nacl z0_block dstdomain \"@LIST:z0-block@\"\nacl z0_allow dstdomain \"@LIST:z0-allow@\"\n","deny":"","lists":{"z0-block":".bad.example\n","z0-allow":".good.example\n"}}]}'
+	atf_check -o match:'^acl z0_block dstdomain ".*sdwan-proxy-sw1.list-z0-block"$' -o match:'^acl z0_allow dstdomain ".*sdwan-proxy-sw1.list-z0-allow"$' \
+	    cat "$(dirname "$f")/sdwan-proxy-sw1.conf"
+	atf_check -o inline:'.bad.example\n' cat "$(dirname "$f")/sdwan-proxy-sw1.list-z0-block"
+	atf_check -o inline:'.good.example\n' cat "$(dirname "$f")/sdwan-proxy-sw1.list-z0-allow"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\nacl z0_block dstdomain \"@LIST:z0-block@\"\n","deny":"","lists":{"z0-block":".worse.example\n"}}]}'
+	atf_check -o inline:'.worse.example\n' cat "$(dirname "$f")/sdwan-proxy-sw1.list-z0-block"
+	test ! -f "$(dirname "$f")/sdwan-proxy-sw1.list-z0-allow" || atf_fail "a list not named stayed"
+	atf_check -s exit:1 -e match:'its lists' -o ignore "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\n","deny":"","lists":{"../x":"y"}}]}'
 	# Malware scanned: c-icap of the instance's own, started first in its
 	# table, its pid file and command socket placed, told in the read;
 	# gone with the instance.
@@ -4384,7 +4406,7 @@ EOS
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"instances":[]}'
 	test ! -f "$(dirname "$f")/sdwan-proxy-sw1.conf" || atf_fail "the proxy instance's file stayed"
 	test ! -f "$(dirname "$f")/sdwan-icap-sw1.conf" || atf_fail "the c-icap file stayed"
-	kill -0 "$ipid" 2>/dev/null && atf_fail "c-icap still runs"
+	alive "$ipid" && atf_fail "c-icap still runs"
 	atf_check -o match:'"proxy":\[\]' "$JGC" -c "$SOCK" sdwan
 	# The Security section's own (group security, named sec-): kept
 	# apart, neither list stopping the other's; its forms told back.
@@ -4451,7 +4473,7 @@ EOS
 	    "$JGC" -c "$SOCK" events
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
 	test ! -f "$(dirname "$f")/sdwan-ids-sw1.yaml" || atf_fail "the suricata file stayed"
-	kill -0 "$spid" 2>/dev/null && atf_fail "suricata still runs"
+	alive "$spid" && atf_fail "suricata still runs"
 	atf_check -o match:'"ids":\[\]' "$JGC" -c "$SOCK" sdwan
 	# Made again, its old alerts are not told again: the one it writes
 	# now is.
@@ -4679,7 +4701,7 @@ EOS
 	rs6=$(echo "$rs4" | sed 's/"name":"sw1",/"name":"sw1","stopped":true,/')
 	atf_check -o match:'suricata sw1 stopped, kept' \
 	    "$JGC" -t -c "$SOCK" sdwan ids "$rs6"
-	kill -0 "$pid" 2>/dev/null && atf_fail "a stopped suricata still runs"
+	alive "$pid" && atf_fail "a stopped suricata still runs"
 	test -f "$(dirname "$f")/sdwan-ids-sw1.yaml" || atf_fail "a stopped suricata lost its file"
 	atf_check -o match:'"name":"sw1","interfaces":\[[^]]*\],"mode":"detect","running":false,"stopped":true' \
 	    "$JGC" -c "$SOCK" sdwan
@@ -5564,10 +5586,10 @@ stop_body()
 	# Idle, it stops at once.
 	kill "$pid"
 	for i in $(seq 1 40); do
-		kill -0 "$pid" 2>/dev/null || break
+		alive "$pid" || break
 		sleep 0.1
 	done
-	atf_check -s exit:1 -e ignore kill -0 "$pid"
+	alive "$pid" && atf_fail "it still runs"
 	atf_check -o match:'signal 15, stopping' cat daemon.out
 
 	# In the middle of a change, with more queued: the change ends
@@ -5604,10 +5626,10 @@ stop_body()
 	wait $change
 	atf_check -o match:'^Service: sshd ' -o match:'^Running: yes' cat change.out
 	for i in $(seq 1 60); do
-		kill -0 "$pid" 2>/dev/null || break
+		alive "$pid" || break
 		sleep 0.1
 	done
-	atf_check -s exit:1 -e ignore kill -0 "$pid"
+	alive "$pid" && atf_fail "it still runs"
 	atf_check test -e running.sshd
 	# The queued job did not start behind the change.
 	atf_check -o not-match:'job 1: start web: ok' cat daemon.out
@@ -5627,10 +5649,10 @@ stop_body()
 	sleep 0.3
 	kill "$pid"
 	for i in $(seq 1 15); do
-		kill -0 "$pid" 2>/dev/null || break
+		alive "$pid" || break
 		sleep 0.1
 	done
-	atf_check -s exit:1 -e ignore kill -0 "$pid"
+	alive "$pid" && atf_fail "it still runs"
 	atf_check -o match:'signalled again' cat daemon.out
 	rm hold
 	wait

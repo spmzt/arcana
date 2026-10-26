@@ -4225,11 +4225,13 @@ api_config_apply(struct http_request *req)
 		if (!template_name_ok(tn) || (json = template_render(tn,
 		    ucl_object_lookup(body, "values"), why, sizeof(why))) ==
 		    NULL) {
+			/* tn is the body's: the reply first. */
+			if (!template_name_ok(tn))
+				strlcpy(why, "a template's name", sizeof(why));
 			ucl_object_unref(body);
 			call_release(c);
 			free(c);
-			return (reply_error(req, 400, "invalid", "%s",
-			    template_name_ok(tn) ? why : "a template's name"));
+			return (reply_error(req, 400, "invalid", "%s", why));
 		}
 		c->text = xstrdup(json);
 		free(json);
@@ -5968,10 +5970,10 @@ api_security(struct http_request *req)
 		free(c);
 		return (reply_error(req, 400, "invalid", "%s", err));
 	}
-	ucl_object_unref(body);
 	c->text = json;
 	c->reads = false;
 	snprintf(c->route, sizeof(c->route), "POST security %s", what);
+	ucl_object_unref(body);		/* what is its */
 	return (call_start(req, c));
 }
 

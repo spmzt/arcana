@@ -513,3 +513,56 @@ Not supported: see the summary above. No tasks.
   118; the book's Conformance: SASE.) With MEF 117 and MEF 88 at hand: each
   attribute mapped, a conformance list. Done when every attribute is
   in one of the two.
+
+### SASE-6 MEF 138's model (decided 2026-10-26)
+
+The security policies move from MEF 88's criteria to MEF 138's
+Security Function Policies (SFPs): `security_function_policies` of
+the service, each a Policy ID (`id`, unique in the service, R119/R120)
+and one Security Function (`function`), with a Block, an Allow and a
+Quarantine list (inline entries, and console-kept lists by name under
+`lists`), `no-match` (allow or block), `duration` (hours between
+updates of the threat data: the named lists are fetched at least that
+often) and `notify` (the lists whose matches are told, by default
+block and quarantine, R20/R21). A security policy, still named by a
+policy's AF-SECURITY-INGRESS or -EGRESS, is `function-policies` (the
+SFPs it is made of, one per function at most) beside Arcana's own
+`rate-limit` and `ids`, which no MEF function has. Within an SFP the
+more specific entry wins over the more general (§6.1.6), the same
+specificity going to Block; Quarantine blocks (§6.1.3). No
+compatibility with the criteria: none is deployed.
+
+- **IPPF** (Table 5): entries `sav4`, `dav4`, `protv4`, `sav6`, `dav6`,
+  `nextheadv6`, `sport`, `dport`, as a flow's criteria. ipfw per flow:
+  entries most specific first, an Allow tagging the packet (`count
+  tag`), a Block or Quarantine dropping what is not tagged; the lists'
+  prefixes in one table an SFP and family with the list as its value,
+  longest match deciding; No-match block drops the rest of the flow.
+- **DNF**: a domain, or `*.domain`, each with the names beneath it;
+  unbound `local-zone`s in a view per zone (`access-control-view` by
+  the zone's prefixes), Allow `always_transparent`, Block and
+  Quarantine `always_nxdomain`, No-match block the root's. Wildcards
+  inside a name (host.*.tld) are not taken (R71 partly).
+- **URLF**: a host, `*.host`, or a host and a path (`*` ending it);
+  Squid per zone (`src` acls): host entries by `ssl::server_name` and
+  `dstdomain`, paths by `url_regex`, which over HTTPS need the policy's
+  MBSF to open TLS; the lists in files of the instance, per zone and
+  list.
+- **MBSF**: TLS only (R45): Arcana keeps the Supported (TLS 1.2, 1.3)
+  and Unsupported lists; Block and Allow name TLS versions; Squid
+  bumps what it may open, `pass-through` (Arcana's) names hosts never
+  opened; `invalid-server-certificate`, `unencrypted`. Without MBSF a
+  zone's URLF looks at names only (SNI).
+- **MD+R**: `detection-type` signature (ClamAV), `removal` block-subset
+  (the object), No-match allow; lists of hashes not yet.
+- **DPF** (Table 6): addresses and `message-type` any; ipfw on DNS's
+  ports, a Block answered at once (`unreach port`, `reset`, R100);
+  `redirect` (Arcana's, the Alter action) sends what is not allowed to
+  the service's resolver instead of blocking it.
+- **PDNS** (Table 8): `encryption` unencrypted, `type` A or AAAA,
+  `value` a prefix or any; unbound `response-ip` in the zone's view.
+- **DLP**: none; FreeBSD has no engine for it.
+
+Steps: the agent's proxy instances take list files by name (agent);
+the model, its rendering and the forms (console, UI); the book and the
+conformance tables.

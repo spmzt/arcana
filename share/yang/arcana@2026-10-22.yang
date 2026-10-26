@@ -4269,8 +4269,9 @@ module arcana {
     fam:command 48;
     fam:auth;
     description
-      "The DNS filters of the SD-WAN services at this edge (MEF 88: the
-       base system's unbound, local-unbound, one instance per service,
+      "The resolvers of the SD-WAN services at this edge (MEF 138's DNF
+       and PDNS: the base system's unbound, local-unbound, one instance
+       per service, a view a zone,
        in its table), as the console writes them: json, an object with
        \"instances\", each a \"name\", the \"fib\" it runs in and its \"conf\",
        unbound's configuration text, to which the agent adds the pid
@@ -4297,8 +4298,8 @@ module arcana {
     fam:command 49;
     fam:auth;
     description
-      "The proxies of the SD-WAN services at this edge (MEF 88's
-       url-filter: Squid, a plugin the host has installed, one instance
+      "The proxies of the SD-WAN services at this edge (MEF 138's URLF,
+       MBSF and MD+R: Squid, a plugin the host has installed, one instance
        per service in its table), as the console writes them: json, an
        object with \"instances\", each a \"name\", the \"fib\" it runs in,
        its \"mode\" (sni, the TLS names looked at and nothing opened;

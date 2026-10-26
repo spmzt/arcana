@@ -5,9 +5,9 @@
  */
 
 /*
- * The DNS filters of the SD-WAN services at this edge (MEF 88, the
- * dns-domain-filter and dns-protocol-filter criteria of a security
- * policy): the base system's unbound(8), local-unbound, one instance
+ * The resolvers of the SD-WAN services at this edge (MEF 138's DNF and
+ * PDNS, the function policies of a zone, and where a DPF redirects):
+ * the base system's unbound(8), local-unbound, one instance
  * per service run in the service's routing table (setfib), its
  * configuration written by the console (the UNIs' provider addresses
  * it listens on, the domains denied as local zones), its pid file

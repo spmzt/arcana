@@ -1638,7 +1638,10 @@ domains(struct ck *c, const ucl_object_t *sw)
 	return (true);
 }
 
-static bool security_policy(struct ck *, const ucl_object_t *);
+static bool function_policy(struct ck *, const ucl_object_t *);
+static bool security_policy(struct ck *, const ucl_object_t *,
+		    const ucl_object_t *);
+static bool sec_scope(struct ck *, const ucl_object_t *);
 
 /*
  * A UCS End Point's relays: each toward an edge of the document, with
@@ -1993,8 +1996,19 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 			return (false);
 	}
 	c->where[base] = '\0';
-	/* Security policies (§9.10; their criteria MEF 88's) and importance
-	 * levels (§9.11). */
+	/* Security Function Policies (MEF 138 §9), security policies made
+	 * of them (§9.10), and importance levels (§9.11). */
+	if (!objects(c, ucl_object_lookup(sw, "security_function_policies"),
+	    "security_function_policies", "id", true, NULL, "R119"))
+		return (false);
+	it = NULL;
+	while ((v = ucl_object_iterate(ucl_object_lookup(sw,
+	    "security_function_policies"), &it, true)) != NULL) {
+		at(c, base, "function policy %s", str(v, "id"));
+		if (!function_policy(c, v))
+			return (false);
+	}
+	c->where[base] = '\0';
 	if (!objects(c, ucl_object_lookup(sw, "security_policies"),
 	    "security_policies", "name", true, NULL, "§9.10"))
 		return (false);
@@ -2002,7 +2016,7 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 	while ((v = ucl_object_iterate(ucl_object_lookup(sw,
 	    "security_policies"), &it, true)) != NULL) {
 		at(c, base, "security policy %s", str(v, "name"));
-		if (!security_policy(c, v))
+		if (!security_policy(c, sw, v))
 			return (false);
 	}
 	c->where[base] = '\0';
@@ -2275,6 +2289,9 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 			return (fail(c, "availability is a percentage"));
 	}
 	c->where[base] = '\0';
+	/* What the security policies serve a zone with (MEF 138). */
+	if (!sec_scope(c, sw))
+		return (false);
 	/* BFD on the tunnels (Mplify 119 §10.5, R58-R60, R159). */
 	if ((v = ucl_object_lookup(sw, "bfd")) != NULL && !is_null(v)) {
 		if (ucl_object_type(v) != UCL_OBJECT)
@@ -2397,178 +2414,539 @@ ids_rule_ok(const ucl_object_t *e)
 	    r[n - 1] == ')' && strstr(r, "sid:") != NULL);
 }
 
-/*
- * A security policy (MEF 88): a name and criteria, each optional:
- * ip-block with allow and deny lists of prefixes, dns-domain-filter with
- * the domains denied, dns-protocol-filter, rate-limit in bits per
- * second, and log.
- */
+/* ---- Security Function Policies (MEF 138 §9) ----------------------- */
+
+/* The Security Functions, MEF 138's names (§8): IP, port and protocol
+ * filtering, domain name filtering, URL filtering, the middlebox
+ * (TLS opened), malware detection and removal, DNS protocol filtering,
+ * protective DNS, data loss prevention. */
+static const char *const sf_names[] = { "ippf", "dnf", "urlf", "mbsf",
+    "mdr", "dpf", "pdns", "dlp", NULL };
+/* Those an edge serves a zone's clients with, by a daemon (unbound,
+ * Squid, c-icap): one policy of each a zone.  IPPF and DPF are rules
+ * of each flow. */
+static const char *const sf_zoned[] = { "dnf", "urlf", "mbsf", "mdr",
+    "pdns", NULL };
+static const char *const sf_lists[] = { "block", "allow", "quarantine",
+    NULL };
+
+/* An IPPF entry's (Table 5) or a DPF entry's (Table 6) addresses and
+ * what goes with them: as a flow's criteria, one family. */
 static bool
-security_policy(struct ck *c, const ucl_object_t *v)
+sf_tuple(struct ck *c, const char *fn, const ucl_object_t *e)
 {
-	static const char *const known[] = { "ip-block", "dns-domain-filter",
-	    "dns-protocol-filter", "rate-limit", "log", "url-filter", "malware",
-	    "ids", NULL };
-	const ucl_object_t	*cr, *k, *e;
-	ucl_object_iter_t	 it, eit;
-	struct pfx		 p;
+	static const char *const ippf[] = { "sav4", "dav4", "protv4", "sav6",
+	    "dav6", "nextheadv6", "sport", "dport", NULL };
+	static const char *const dpf[] = { "sav4", "dav4", "sav6", "dav6",
+	    "message-type", NULL };
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	const char		*k;
+	bool			 v4 = false, v6 = false;
+
+	if (ucl_object_type(e) != UCL_OBJECT || nkeys(e) == 0)
+		return (fail(c, "%s: an entry is an object of %s", fn,
+		    strcmp(fn, "ippf") == 0 ? "sav4, dav4, protv4, sav6, dav6, "
+		    "nextheadv6, sport, dport (Table 5)" : "sav4, dav4, sav6, "
+		    "dav6, message-type (Table 6)"));
+	it = NULL;
+	while ((v = ucl_object_iterate(e, &it, true)) != NULL) {
+		k = ucl_object_key(v);
+		if (!one_of(k, strcmp(fn, "ippf") == 0 ? ippf : dpf))
+			return (fail(c, "%s: %s is not of an entry", fn, k));
+		if (strcmp(k, "message-type") == 0) {
+			if (strcmp(ucl_object_tostring_forced(v), "any") != 0)
+				return (fail(c, "dpf: message-type is any: ipfw "
+				    "does not read DNS messages"));
+			continue;
+		}
+		if (strcmp(k, "sav4") == 0 || strcmp(k, "dav4") == 0 ||
+		    strcmp(k, "protv4") == 0)
+			v4 = true;
+		if (strcmp(k, "sav6") == 0 || strcmp(k, "dav6") == 0 ||
+		    strcmp(k, "nextheadv6") == 0)
+			v6 = true;
+		if (!(strcmp(k, "protv4") == 0 || strcmp(k, "nextheadv6") == 0 ?
+		    values(c, k, v, 0, 255, proto_names, false, 0) :
+		    strcmp(k, "sport") == 0 || strcmp(k, "dport") == 0 ?
+		    values(c, k, v, 0, 65535, NULL, true, 0) :
+		    values(c, k, v, 0, 0, NULL, false, k[strlen(k) - 1] == '4' ?
+		    AF_INET : AF_INET6)))
+			return (false);
+	}
+	if (v4 && v6)
+		return (fail(c, "%s: an entry is of IPv4 (sav4, dav4, protv4) "
+		    "or IPv6 (sav6, dav6, nextheadv6), not both", fn));
+	return (true);
+}
+
+/* A URL filter's entry: a host, *.host, either with a path, a * at its
+ * end at most; http:// or https:// before it if one likes. */
+static bool
+url_entry_ok(const char *s, bool *pathp)
+{
+	char		 host[256];
+	const char	*sl, *h;
+	size_t		 n;
+
+	*pathp = false;
+	if (strncmp(s, "http://", 7) == 0)
+		s += 7;
+	else if (strncmp(s, "https://", 8) == 0)
+		s += 8;
+	sl = strchr(s, '/');
+	n = sl != NULL ? (size_t)(sl - s) : strlen(s);
+	if (n == 0 || n >= sizeof(host))
+		return (false);
+	snprintf(host, sizeof(host), "%.*s", (int)n, s);
+	h = strncmp(host, "*.", 2) == 0 ? host + 2 : host;
+	if (!domain_ok(h))
+		return (false);
+	if (sl == NULL)
+		return (true);
+	*pathp = true;
+	if (strlen(sl) > 1024)
+		return (false);
+	for (; *sl != '\0'; sl++)
+		if ((unsigned char)*sl <= 0x20 || (unsigned char)*sl > 0x7e ||
+		    *sl == '"' || (*sl == '*' && sl[1] != '\0'))
+			return (false);
+	return (true);
+}
+
+/* One entry of a function's list, as its function takes it. */
+static bool
+sf_entry(struct ck *c, const char *fn, const ucl_object_t *e, bool *pathp)
+{
+	static const char *const tls[] = { "ssl3", "tls1.0", "tls1.1",
+	    "tls1.2", "tls1.3", NULL };
+	const char	*s;
+	struct pfx	 p;
+	bool		 path;
+
+	s = ucl_object_type(e) == UCL_STRING ? ucl_object_tostring(e) : NULL;
+	if (strcmp(fn, "ippf") == 0 || strcmp(fn, "dpf") == 0)
+		return (sf_tuple(c, fn, e));
+	if (strcmp(fn, "dnf") == 0) {
+		if (s == NULL || !domain_ok(strncmp(s, "*.", 2) == 0 ? s + 2 :
+		    s))
+			return (fail(c, "dnf: %s is not a domain name or *. and "
+			    "one (a * inside a name is not taken)",
+			    ucl_object_tostring_forced(e)));
+		return (true);
+	}
+	if (strcmp(fn, "urlf") == 0) {
+		if (s == NULL || !url_entry_ok(s, &path))
+			return (fail(c, "urlf: %s is not a host, *. and one, "
+			    "either with a path (a * ending it at most)",
+			    ucl_object_tostring_forced(e)));
+		if (path)
+			*pathp = true;
+		return (true);
+	}
+	if (strcmp(fn, "mbsf") == 0) {
+		if (!one_of(s, tls))
+			return (fail(c, "mbsf: %s is not a protocol version: "
+			    "ssl3, tls1.0, tls1.1, tls1.2, tls1.3 (TLS alone, "
+			    "R45)", ucl_object_tostring_forced(e)));
+		return (true);
+	}
+	if (strcmp(fn, "pdns") == 0) {
+		const char	*t, *v;
+		char		 vp[80];
+
+		t = str(e, "type");
+		v = str(e, "value");
+		/* An address alone is a prefix of its length. */
+		if (v != NULL && strchr(v, '/') == NULL && t != NULL)
+			snprintf(vp, sizeof(vp), "%s/%d", v, strcmp(t, "A") == 0 ?
+			    32 : 128);
+		else
+			snprintf(vp, sizeof(vp), "%s", v != NULL ? v : "");
+		if (ucl_object_type(e) != UCL_OBJECT || (str(e, "encryption")
+		    != NULL && strcmp(str(e, "encryption"), "unencrypted") != 0)
+		    || t == NULL || (strcmp(t, "A") != 0 && strcmp(t, "AAAA") !=
+		    0) || v == NULL || (strcmp(v, "any") != 0 && (!prefix(vp, &p,
+		    true) || p.af != (strcmp(t, "A") == 0 ? AF_INET :
+		    AF_INET6))))
+			return (fail(c, "pdns: an entry is an encryption "
+			    "(unencrypted), a type (A or AAAA) and a value, a "
+			    "prefix of the type's family or any (Table 8)"));
+		return (true);
+	}
+	/* mdr: hashes are not given to ClamAV yet. */
+	return (fail(c, "mdr: its lists are hashes, which ClamAV is not "
+	    "given yet: the signatures freshclam keeps decide"));
+}
+
+/* The same entry on two lists: by its text, an object by its JSON. */
+static bool
+sf_twice(const ucl_object_t *sfp, const ucl_object_t *e, int upto)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	char			*a, *b;
+	bool			 same = false;
 	int			 i;
 
-	if ((cr = ucl_object_lookup(v, "criteria")) == NULL ||
-	    ucl_object_type(cr) != UCL_OBJECT)
-		return (fail(c, "it has criteria: ip-block, dns-domain-filter, "
-		    "dns-protocol-filter, rate-limit, log, url-filter, malware "
-		    "(MEF 88), ids (Arcana's)"));
+	a = (char *)ucl_object_emit(e, UCL_EMIT_JSON_COMPACT);
+	for (i = 0; i < upto && !same; i++) {
+		it = NULL;
+		while (!same && (o = ucl_object_iterate(ucl_object_lookup(sfp,
+		    sf_lists[i]), &it, true)) != NULL) {
+			b = (char *)ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
+			same = a != NULL && b != NULL && strcmp(a, b) == 0;
+			free(b);
+		}
+	}
+	free(a);
+	return (same);
+}
+
+/*
+ * A Security Function Policy (MEF 138 §9, Tables 9-16): its Policy ID
+ * (id, R119), a function, Block, Allow and Quarantine lists of entries
+ * as the function takes them and lists by name of the console's (feeds
+ * or pasted), No-match, Duration (hours between updates of the threat
+ * data), the lists whose matches are told (the Notification modifier,
+ * R20; Block and Quarantine as a rule, R21), and the function's own.
+ */
+static bool
+function_policy(struct ck *c, const ucl_object_t *v)
+{
+	static const char *const known[] = { "id", "function", "block",
+	    "allow", "quarantine", "lists", "no-match", "duration", "notify",
+	    "detection-type", "removal", "invalid-server-certificate",
+	    "invalid-client-certificate", "unencrypted", "trusted-cas",
+	    "pass-through", "redirect", NULL };
+	static const char *const allow_block[] = { "allow", "block", NULL };
+	const ucl_object_t	*k, *e, *l;
+	ucl_object_iter_t	 it, eit;
+	const char		*fn;
+	bool			 path = false;
+	int			 i;
+
+	fn = str(v, "function");
+	if (fn != NULL && strcmp(fn, "dlp") == 0)
+		return (fail(c, "function dlp: FreeBSD has no engine for data "
+		    "loss prevention, nor its packages Arcana uses"));
+	if (!one_of(fn, sf_names))
+		return (fail(c, "function is one of MEF 138's: ippf, dnf, urlf, "
+		    "mbsf, mdr, dpf, pdns"));
 	it = NULL;
-	while ((k = ucl_object_iterate(cr, &it, true)) != NULL) {
+	while ((k = ucl_object_iterate(v, &it, true)) != NULL)
 		if (!one_of(ucl_object_key(k), known))
-			return (fail(c, "%s is not a criterion: ip-block, "
-			    "dns-domain-filter, dns-protocol-filter, rate-limit, "
-			    "log, url-filter, malware or ids", ucl_object_key(k)));
-		if (strcmp(ucl_object_key(k), "ip-block") == 0) {
-			static const char *const lists[] = { "allow", "deny" };
+			return (fail(c, "%s is not of a function policy",
+			    ucl_object_key(k)));
+	for (i = 0; sf_lists[i] != NULL; i++) {
+		if ((e = ucl_object_lookup(v, sf_lists[i])) == NULL)
+			continue;
+		if (strcmp(fn, "mbsf") == 0 && i == 2)
+			return (fail(c, "mbsf has no Quarantine List (Table 9)"));
+		if (ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e) >
+		    LIST_MAX)
+			return (fail(c, "%s is a list, %d at most", sf_lists[i],
+			    LIST_MAX));
+		eit = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(v,
+		    sf_lists[i]), &eit, true)) != NULL) {
+			if (!sf_entry(c, fn, e, &path))
+				return (false);
+			if (sf_twice(v, e, i))
+				return (fail(c, "%s: an entry is on one list at "
+				    "most (R14): %.80s", sf_lists[i],
+				    ucl_object_tostring_forced(e)));
+		}
+	}
+	if ((l = ucl_object_lookup(v, "lists")) != NULL) {
+		if (!one_of(fn, (const char *const[]){ "ippf", "dnf", "urlf",
+		    "pdns", NULL }))
+			return (fail(c, "%s takes no lists by name: those are of "
+			    "prefixes or domains", fn));
+		if (ucl_object_type(l) != UCL_OBJECT)
+			return (fail(c, "lists has block, allow and quarantine, "
+			    "each the names of lists (feeds or pasted, under "
+			    "Security)"));
+		it = NULL;
+		while ((k = ucl_object_iterate(l, &it, true)) != NULL) {
+			if (!one_of(ucl_object_key(k), sf_lists) ||
+			    ucl_object_type(k) != UCL_ARRAY)
+				return (fail(c, "lists has block, allow and "
+				    "quarantine, each the names of lists"));
+			eit = NULL;
+			while ((e = ucl_object_iterate(k, &eit, true)) != NULL)
+				if (ucl_object_type(e) != UCL_STRING ||
+				    !sdwan_list_exists(ucl_object_tostring(e)))
+					return (fail(c, "lists.%s: no list %s (a "
+					    "feed or a pasted list, under "
+					    "Security)", ucl_object_key(k),
+					    ucl_object_tostring_forced(e)));
+		}
+	}
+	if (!one_of(str(v, "no-match"), allow_block))
+		return (fail(c, "no-match is allow or block (R68-R70)"));
+	if (strcmp(fn, "mdr") == 0 && strcmp(str(v, "no-match"), "allow") !=
+	    0)
+		return (fail(c, "mdr: no-match is allow: what ClamAV finds is "
+		    "what is blocked"));
+	if (strcmp(fn, "mbsf") == 0) {
+		if (ucl_object_lookup(v, "duration") != NULL)
+			return (fail(c, "mbsf has no duration (Table 9)"));
+	} else if (!is_int(ucl_object_lookup(v, "duration"), 1, 720, NULL))
+		return (fail(c, "duration is hours between updates of the "
+		    "threat data, 1 to 720 (Tables 10-16)"));
+	if ((e = ucl_object_lookup(v, "notify")) != NULL) {
+		if (ucl_object_type(e) != UCL_ARRAY)
+			return (fail(c, "notify is the lists whose matches are "
+			    "told: block, allow, quarantine (R20)"));
+		eit = NULL;
+		while ((k = ucl_object_iterate(e, &eit, true)) != NULL)
+			if (!one_of(ucl_object_tostring_forced(k), sf_lists))
+				return (fail(c, "notify: %s is not a list",
+				    ucl_object_tostring_forced(k)));
+	}
+	/* The function's own (Tables 9, 13). */
+	if (strcmp(fn, "mdr") == 0 && (!one_of(str(v, "detection-type"),
+	    (const char *const[]){ "signature", NULL }) || !one_of(str(v,
+	    "removal"), (const char *const[]){ "block-subset", NULL })))
+		return (fail(c, "mdr has detection-type signature (ClamAV's, "
+		    "R84) and removal block-subset (what is found is not "
+		    "passed on, R87)"));
+	if (strcmp(fn, "mbsf") == 0) {
+		if (!one_of(str(v, "invalid-server-certificate"), allow_block)
+		    || !one_of(str(v, "unencrypted"), allow_block))
+			return (fail(c, "mbsf has invalid-server-certificate "
+			    "and unencrypted, each allow or block (Table 9)"));
+		if ((e = ucl_object_lookup(v, "invalid-client-certificate")) !=
+		    NULL && strcmp(ucl_object_tostring_forced(e), "allow") != 0)
+			return (fail(c, "mbsf: invalid-client-certificate is "
+			    "allow: Squid asks for no client certificate"));
+		if ((e = ucl_object_lookup(v, "trusted-cas")) != NULL &&
+		    strcmp(ucl_object_tostring_forced(e), "system") != 0)
+			return (fail(c, "mbsf: trusted-cas is system, the edge's "
+			    "own (/usr/local/share/certs)"));
+		eit = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(v,
+		    "pass-through"), &eit, true)) != NULL)
+			if (ucl_object_type(e) != UCL_STRING || !domain_ok(
+			    strncmp(ucl_object_tostring(e), "*.", 2) == 0 ?
+			    ucl_object_tostring(e) + 2 : ucl_object_tostring(e)))
+				return (fail(c, "mbsf: pass-through is hosts never "
+				    "opened, %s is not one",
+				    ucl_object_tostring_forced(e)));
+	} else if (ucl_object_lookup(v, "pass-through") != NULL ||
+	    ucl_object_lookup(v, "invalid-server-certificate") != NULL ||
+	    ucl_object_lookup(v, "unencrypted") != NULL ||
+	    ucl_object_lookup(v, "trusted-cas") != NULL ||
+	    ucl_object_lookup(v, "invalid-client-certificate") != NULL)
+		return (fail(c, "pass-through and the certificates' are mbsf's"));
+	if (strcmp(fn, "mdr") != 0 && (ucl_object_lookup(v, "detection-type")
+	    != NULL || ucl_object_lookup(v, "removal") != NULL))
+		return (fail(c, "detection-type and removal are mdr's"));
+	if ((e = ucl_object_lookup(v, "redirect")) != NULL && (strcmp(fn,
+	    "dpf") != 0 || ucl_object_type(e) != UCL_BOOLEAN))
+		return (fail(c, "redirect is dpf's, true or false"));
+	(void)path;
+	return (true);
+}
 
-			if (ucl_object_type(k) != UCL_OBJECT)
-				return (fail(c, "ip-block has allow and deny, lists "
-				    "of prefixes"));
-			if ((e = ucl_object_lookup(k, "lists")) != NULL) {
-				if (ucl_object_type(e) != UCL_ARRAY)
-					return (fail(c, "ip-block.lists names lists, "
-					    "feeds or pasted (Security)"));
-				eit = NULL;
-				while ((e = ucl_object_iterate(ucl_object_lookup(k,
-				    "lists"), &eit, true)) != NULL)
-					if (ucl_object_type(e) != UCL_STRING ||
-					    !sdwan_list_exists(ucl_object_tostring(e)))
-						return (fail(c, "ip-block.lists: no list "
-						    "%s (a feed or a pasted list, under "
-						    "Security)", ucl_object_tostring_forced(
-						    e)));
-			}
-			for (i = 0; i < 2; i++) {
-				if ((e = ucl_object_lookup(k, lists[i])) == NULL)
+/*
+ * A security policy (§9.10), as a policy's AF-SECURITY-INGRESS or
+ * -EGRESS names it: the Security Function Policies it is made of
+ * (function-policies, one of a function at most), and Arcana's own,
+ * which no MEF 138 function is: rate-limit in bits per second and
+ * intrusion detection (ids).
+ */
+static bool
+security_policy(struct ck *c, const ucl_object_t *sw, const ucl_object_t *v)
+{
+	static const char *const known[] = { "name", "function-policies",
+	    "rate-limit", "ids", NULL };
+	const ucl_object_t	*k, *e, *f, *g;
+	ucl_object_iter_t	 it, eit, git;
+
+	it = NULL;
+	while ((k = ucl_object_iterate(v, &it, true)) != NULL)
+		if (!one_of(ucl_object_key(k), known))
+			return (fail(c, "%s is not of a security policy: it has "
+			    "function-policies (MEF 138), rate-limit and ids "
+			    "(Arcana's)", ucl_object_key(k)));
+	if ((k = ucl_object_lookup(v, "function-policies")) != NULL &&
+	    ucl_object_type(k) != UCL_ARRAY)
+		return (fail(c, "function-policies is a list of the ids of "
+		    "function policies"));
+	eit = NULL;
+	while ((e = ucl_object_iterate(k, &eit, true)) != NULL) {
+		if ((f = by(ucl_object_lookup(sw, "security_function_policies"),
+		    "id", ucl_object_tostring_forced(e))) == NULL)
+			return (fail(c, "function-policies: no function policy "
+			    "%s", ucl_object_tostring_forced(e)));
+		git = NULL;
+		while ((g = ucl_object_iterate(k, &git, true)) != NULL && g != e)
+			if (strcmp(str(by(ucl_object_lookup(sw,
+			    "security_function_policies"), "id",
+			    ucl_object_tostring_forced(g)), "function"), str(f,
+			    "function")) == 0)
+				return (fail(c, "function-policies: %s and %s are "
+				    "both %s: one of a function", ucl_object_tostring_forced(
+				    g), ucl_object_tostring_forced(e), str(f,
+				    "function")));
+	}
+	if ((k = ucl_object_lookup(v, "ids")) != NULL) {
+		/* SASE-4: Suricata on the edge, a plugin, watching the
+		 * service's UNIs (detect) or in their way (prevent). */
+		static const char *const modes[] = { "detect", "prevent",
+		    NULL };
+
+		if (ucl_object_type(k) != UCL_OBJECT || !one_of(str(k, "mode"),
+		    modes))
+			return (fail(c, "ids has a mode, detect or prevent, its "
+			    "own rules, and ruleset, whether the rules "
+			    "suricata-update keeps are added"));
+		if ((e = ucl_object_lookup(k, "ruleset")) != NULL &&
+		    ucl_object_type(e) != UCL_BOOLEAN)
+			return (fail(c, "ids.ruleset is true or false"));
+		if ((e = ucl_object_lookup(k, "rules")) != NULL && (
+		    ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e) >
+		    LIST_MAX))
+			return (fail(c, "ids.rules is a list of Suricata rules, "
+			    "%d at most", LIST_MAX));
+		eit = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(k, "rules"),
+		    &eit, true)) != NULL)
+			if (!ids_rule_ok(e))
+				return (fail(c, "ids.rules: %.60s is not a "
+				    "Suricata rule: an action (alert, pass, drop, "
+				    "reject), a header, options in parentheses "
+				    "with a sid, on one line",
+				    ucl_object_tostring_forced(e)));
+		if (ucl_object_lookup(k, "rules") == NULL &&
+		    !ucl_object_toboolean(ucl_object_lookup(k, "ruleset")))
+			return (fail(c, "ids has rules of its own or the ruleset, "
+			    "or both"));
+	}
+	if ((k = ucl_object_lookup(v, "rate-limit")) != NULL && !is_int(k,
+	    1000, 1000000000000LL, NULL))
+		return (fail(c, "rate-limit is bits per second, 1000 or more"));
+	return (true);
+}
+
+/* The function policy of a function in a security policy, by name. */
+static const ucl_object_t *
+sec_function(const ucl_object_t *sw, const char *secname, const char *fn)
+{
+	const ucl_object_t	*sec, *e, *f;
+	ucl_object_iter_t	 it;
+
+	if (secname == NULL || (sec = by(ucl_object_lookup(sw,
+	    "security_policies"), "name", secname)) == NULL)
+		return (NULL);
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(sec,
+	    "function-policies"), &it, true)) != NULL)
+		if ((f = by(ucl_object_lookup(sw, "security_function_policies"),
+		    "id", ucl_object_tostring_forced(e))) != NULL &&
+		    strcmp(str(f, "function"), fn) == 0)
+			return (f);
+	return (NULL);
+}
+
+/* The security policy a policy names by its ingress criterion. */
+static const char *
+sec_ingress(const ucl_object_t *sw, const char *polname)
+{
+	const ucl_object_t	*pol;
+
+	if (polname == NULL || (pol = by(ucl_object_lookup(sw, "policies"),
+	    "name", polname)) == NULL)
+		return (NULL);
+	return (str(ucl_object_lookup(pol, "criteria"),
+	    "af-security-ingress"));
+}
+
+/*
+ * The functions an edge serves a zone's clients with (DNF, PDNS, URLF,
+ * MBSF, MD+R) are its by zone: whatever its policies and the end
+ * points' maps name for it, one function policy of each (MEF 138 §9
+ * leaves to the service where policies attach).  They serve what a
+ * client asks for, so an egress policy names none of them; a URL with
+ * a path is seen over HTTPS only where the zone's MBSF opens TLS.
+ */
+static bool
+sec_scope(struct ck *c, const ucl_object_t *sw)
+{
+	const ucl_object_t	*z, *m, *ep, *pol, *f, *got[8];
+	ucl_object_iter_t	 zit, mit, eit;
+	const char		*names[64];
+	size_t			 nn, i, j;
+	bool			 path;
+
+	zit = NULL;
+	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+	    &zit, true)) != NULL) {
+		const char *sn = str(ucl_object_lookup(pol, "criteria"),
+		    "af-security-egress");
+
+		for (j = 0; sf_zoned[j] != NULL; j++)
+			if (sec_function(sw, sn, sf_zoned[j]) != NULL)
+				return (fail(c, "policy %s: af-security-egress "
+				    "names %s, whose %s serves a zone's clients "
+				    "as they ask: name it by af-security-ingress",
+				    str(pol, "name"), sn, sf_zoned[j]));
+	}
+	zit = NULL;
+	while ((z = ucl_object_iterate(ucl_object_lookup(sw, "zones"), &zit,
+	    true)) != NULL) {
+		nn = 0;
+		mit = NULL;
+		while ((m = ucl_object_iterate(ucl_object_lookup(z, "policies"),
+		    &mit, true)) != NULL && nn < nitems(names))
+			names[nn++] = sec_ingress(sw, str(m, "policy"));
+		eit = NULL;
+		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+		    "end_points"), &eit, true)) != NULL) {
+			mit = NULL;
+			while ((m = ucl_object_iterate(ucl_object_lookup(ep,
+			    "policy_map"), &mit, true)) != NULL &&
+			    nn < nitems(names))
+				if (str(m, "zone") != NULL && strcmp(str(m,
+				    "zone"), str(z, "name")) == 0)
+					names[nn++] = sec_ingress(sw, str(m,
+					    "ingress"));
+		}
+		for (j = 0; sf_zoned[j] != NULL; j++) {
+			got[j] = NULL;
+			for (i = 0; i < nn; i++) {
+				if ((f = sec_function(sw, names[i], sf_zoned[j]))
+				    == NULL)
 					continue;
-				if (ucl_object_type(e) != UCL_ARRAY || ucl_array_size(
-				    e) > LIST_MAX)
-					return (fail(c, "ip-block.%s is a list of "
-					    "prefixes, %d at most", lists[i], LIST_MAX));
-				eit = NULL;
-				while ((e = ucl_object_iterate(ucl_object_lookup(k,
-				    lists[i]), &eit, true)) != NULL)
-					if (ucl_object_type(e) != UCL_STRING || !prefix(
-					    ucl_object_tostring(e), &p, true))
-						return (fail(c, "ip-block.%s: %s is not a "
-						    "prefix", lists[i],
-						    ucl_object_tostring_forced(e)));
+				if (got[j] != NULL && got[j] != f)
+					return (fail(c, "zone %s: its policies "
+					    "name %s function policies %s and %s; "
+					    "a zone's clients are served by one",
+					    str(z, "name"), sf_zoned[j], str(got[j],
+					    "id"), str(f, "id")));
+				got[j] = f;
 			}
-		} else if (strcmp(ucl_object_key(k), "dns-domain-filter") == 0) {
-			if (ucl_object_type(k) != UCL_OBJECT || ((e =
-			    ucl_object_lookup(k, "deny")) == NULL &&
-			    ucl_object_lookup(k, "lists") == NULL) || (e != NULL && (
-			    ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e) >
-			    LIST_MAX)))
-				return (fail(c, "dns-domain-filter has deny, a list "
-				    "of domains, %d at most, or lists by name",
-				    LIST_MAX));
-			eit = NULL;
-			while ((e = ucl_object_iterate(ucl_object_lookup(k, "lists"),
-			    &eit, true)) != NULL)
-				if (ucl_object_type(e) != UCL_STRING ||
-				    !sdwan_list_exists(ucl_object_tostring(e)))
-					return (fail(c, "dns-domain-filter.lists: no "
-					    "list %s (a feed or a pasted list, under "
-					    "Security)", ucl_object_tostring_forced(e)));
-			eit = NULL;
-			while ((e = ucl_object_iterate(ucl_object_lookup(k, "deny"),
-			    &eit, true)) != NULL)
-				if (ucl_object_type(e) != UCL_STRING || !domain_ok(
-				    ucl_object_tostring(e)))
-					return (fail(c, "dns-domain-filter.deny: %s is "
-					    "not a domain name",
-					    ucl_object_tostring_forced(e)));
-		} else if (strcmp(ucl_object_key(k), "url-filter") == 0) {
-			/* SASE-4: by a proxy on the edge, a plugin; the TLS
-			 * names looked at (sni) or TLS opened (inspect). */
-			static const char *const modes[] = { "sni", "inspect",
-			    NULL };
-
-			if (ucl_object_type(k) != UCL_OBJECT || !one_of(str(k,
-			    "mode"), modes))
-				return (fail(c, "url-filter has a mode, sni or "
-				    "inspect, and deny, a list of domains, or lists "
-				    "by name"));
-			if ((e = ucl_object_lookup(k, "deny")) != NULL && (
-			    ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e) >
-			    LIST_MAX))
-				return (fail(c, "url-filter.deny is a list of "
-				    "domains, %d at most", LIST_MAX));
-			eit = NULL;
-			while ((e = ucl_object_iterate(ucl_object_lookup(k, "deny"),
-			    &eit, true)) != NULL)
-				if (ucl_object_type(e) != UCL_STRING || !domain_ok(
-				    ucl_object_tostring(e)))
-					return (fail(c, "url-filter.deny: %s is not a "
-					    "domain name", ucl_object_tostring_forced(e)));
-			/* Domains let through whatever the deny and lists say:
-			 * a site under a denied one, or one a list has wrong. */
-			if ((e = ucl_object_lookup(k, "allow")) != NULL && (
-			    ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e) >
-			    LIST_MAX))
-				return (fail(c, "url-filter.allow is a list of "
-				    "domains, %d at most", LIST_MAX));
-			eit = NULL;
-			while ((e = ucl_object_iterate(ucl_object_lookup(k, "allow"),
-			    &eit, true)) != NULL)
-				if (ucl_object_type(e) != UCL_STRING || !domain_ok(
-				    ucl_object_tostring(e)))
-					return (fail(c, "url-filter.allow: %s is not a "
-					    "domain name", ucl_object_tostring_forced(e)));
-			eit = NULL;
-			while ((e = ucl_object_iterate(ucl_object_lookup(k, "lists"),
-			    &eit, true)) != NULL)
-				if (ucl_object_type(e) != UCL_STRING ||
-				    !sdwan_list_exists(ucl_object_tostring(e)))
-					return (fail(c, "url-filter.lists: no list %s (a "
-					    "feed or a pasted list, under Security)",
-					    ucl_object_tostring_forced(e)));
-		} else if (strcmp(ucl_object_key(k), "ids") == 0) {
-			/* SASE-4: Suricata on the edge, a plugin, watching the
-			 * service's UNIs (detect) or in their way (prevent). */
-			static const char *const modes[] = { "detect", "prevent",
-			    NULL };
-
-			if (ucl_object_type(k) != UCL_OBJECT || !one_of(str(k,
-			    "mode"), modes))
-				return (fail(c, "ids has a mode, detect or prevent, its own "
-				    "rules, and ruleset, whether the rules "
-				    "suricata-update keeps are added"));
-			if ((e = ucl_object_lookup(k, "ruleset")) != NULL &&
-			    ucl_object_type(e) != UCL_BOOLEAN)
-				return (fail(c, "ids.ruleset is true or false"));
-			if ((e = ucl_object_lookup(k, "rules")) != NULL && (
-			    ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e) >
-			    LIST_MAX))
-				return (fail(c, "ids.rules is a list of Suricata "
-				    "rules, %d at most", LIST_MAX));
-			eit = NULL;
-			while ((e = ucl_object_iterate(ucl_object_lookup(k,
-			    "rules"), &eit, true)) != NULL)
-				if (!ids_rule_ok(e))
-					return (fail(c, "ids.rules: %.60s is not a "
-					    "Suricata rule: an action (alert, pass, "
-					    "drop, reject), a header, options in "
-					    "parentheses with a sid, on one line",
-					    ucl_object_tostring_forced(e)));
-			if (ucl_object_lookup(k, "rules") == NULL &&
-			    !ucl_object_toboolean(ucl_object_lookup(k, "ruleset")))
-				return (fail(c, "ids has rules of its own or the "
-				    "ruleset, or both"));
-		} else if (strcmp(ucl_object_key(k), "rate-limit") == 0) {
-			if (!is_int(k, 1000, 1000000000000LL, NULL))
-				return (fail(c, "rate-limit is bits per second, 1000 "
-				    "or more"));
-		} else if (ucl_object_type(k) != UCL_BOOLEAN)
-			return (fail(c, "%s is true or false", ucl_object_key(k)));
+		}
+		/* urlf is sf_zoned[1], mbsf [2]. */
+		if (got[1] != NULL && got[2] == NULL) {
+			for (i = 0; sf_lists[i] != NULL; i++) {
+				eit = NULL;
+				while ((m = ucl_object_iterate(ucl_object_lookup(
+				    got[1], sf_lists[i]), &eit, true)) != NULL)
+					if (url_entry_ok(ucl_object_tostring_forced(
+					    m), &path) && path &&
+					    strncmp(ucl_object_tostring_forced(m),
+					    "http://", 7) != 0)
+						return (fail(c, "zone %s: urlf %s has "
+						    "%s, a path, which is seen over "
+						    "HTTPS where the zone's mbsf opens "
+						    "TLS: add one, or write http://",
+						    str(z, "name"), str(got[1], "id"),
+						    ucl_object_tostring_forced(m)));
+			}
+		}
 	}
 	return (true);
 }

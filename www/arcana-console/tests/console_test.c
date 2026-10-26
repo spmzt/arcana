@@ -4947,7 +4947,10 @@ ATF_TC_BODY(services, tc)
 		snprintf(what, sizeof(what), "kill -TERM %s", pid);
 		ATF_CHECK_STREQ(what, jstr(&r, "jobs.0.title"));
 		resp_free(&r);
-		snprintf(what, sizeof(what), "kill -0 %s 2>/dev/null", pid);
+		/* Alive: there, and not a zombie (one no reaper waits for,
+		 * as in a container, stays one). */
+		snprintf(what, sizeof(what), "kill -0 %s 2>/dev/null && ! ps "
+		    "-o state= -p %s | grep -q Z", pid, pid);
 		for (i = 0; i < 100 && system(what) == 0; i++)
 			usleep(50000);
 		ATF_CHECK(system(what) != 0);
@@ -6213,14 +6216,23 @@ static const char sdwan_good[] =
     "\"tca\":{\"delay\":30,\"loss\":0.05,\"damping\":2},"
     "\"rate_limiters\":[{\"name\":\"shared\",\"commit\":1000000,\"limit\":"
     "5000000}],"
-    "\"security_policies\":[{\"name\":\"guard\",\"criteria\":{\"ip-block\":{"
-    "\"allow\":[\"10.1.0.0/16\"],\"deny\":[\"192.0.2.0/24\"]},"
-    "\"dns-domain-filter\":{\"deny\":[\"ads.example\"]},"
-    "\"dns-protocol-filter\":true,\"rate-limit\":2000000,\"log\":true,"
-    "\"url-filter\":{\"mode\":\"sni\",\"deny\":[\"bad.example\"]},"
-    "\"malware\":true,\"ids\":{\"mode\":\"prevent\",\"ruleset\":true,"
+    "\"security_function_policies\":[{\"id\":\"g-ippf\",\"function\":"
+    "\"ippf\",\"allow\":[{\"dav4\":[\"192.0.2.8/29\"]}],\"block\":[{\"dav4\":"
+    "[\"192.0.2.0/24\"]}],\"no-match\":\"allow\",\"duration\":6},"
+    "{\"id\":\"g-dnf\",\"function\":\"dnf\",\"block\":[\"ads.example\"],"
+    "\"allow\":[\"ok.ads.example\"],\"no-match\":\"allow\",\"duration\":6},"
+    "{\"id\":\"g-dpf\",\"function\":\"dpf\",\"no-match\":\"block\","
+    "\"redirect\":true,\"duration\":6},"
+    "{\"id\":\"g-urlf\",\"function\":\"urlf\",\"block\":[\"bad.example\"],"
+    "\"no-match\":\"allow\",\"duration\":6},"
+    "{\"id\":\"g-mdr\",\"function\":\"mdr\",\"detection-type\":"
+    "\"signature\",\"removal\":\"block-subset\",\"no-match\":\"allow\","
+    "\"duration\":24}],"
+    "\"security_policies\":[{\"name\":\"guard\",\"function-policies\":["
+    "\"g-ippf\",\"g-dnf\",\"g-dpf\",\"g-urlf\",\"g-mdr\"],\"rate-limit\":"
+    "2000000,\"ids\":{\"mode\":\"prevent\",\"ruleset\":true,"
     "\"rules\":[\"alert http any any -> $HOME_NET any (msg:\\\"x\\\"; "
-    "sid:1000001; rev:1;)\"]}}}],"
+    "sid:1000001; rev:1;)\"]}}],"
     "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
     "\"groups\":[\"bulk\"],"
     "\"flows\":[{\"name\":\"web\",\"criteria\":{\"dport\":[80,\"https\"],"
@@ -6373,26 +6385,44 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"hold_time\":90", "\"hold_time\":90,\"as_override\":true",
 		    "as_override" },
 		{ "\"as\":65010", "\"as\":0", "subscriber's AS" },
-		{ "\"deny\":[\"192.0.2.0/24\"]", "\"deny\":[\"192.0.2.0/33\"]",
-		    "is not a prefix" },
-		{ "\"deny\":[\"ads.example\"]", "\"deny\":[\"ads..example\"]",
+		/* The security function policies (MEF 138) and the security
+		 * policies made of them. */
+		{ "\"dav4\":[\"192.0.2.0/24\"]", "\"dav4\":[\"192.0.2.0/33\"]",
+		    "dav4" },
+		{ "\"block\":[\"ads.example\"]", "\"block\":[\"ads..example\"]",
 		    "not a domain name" },
 		{ "\"rate-limit\":2000000", "\"rate-limit\":10", "1000 or more" },
-		{ "\"log\":true,", "\"log\":true,\"nope\":true,", "not a criterion" },
-		/* The URL filter (SASE-4): a mode, sni or inspect; domains. */
-		{ "\"mode\":\"sni\"", "\"mode\":\"spy\"", "sni or inspect" },
+		{ "\"rate-limit\":2000000", "\"rate-limit\":2000000,\"nope\":true",
+		    "is not of a security policy" },
+		{ "\"function\":\"ippf\"", "\"function\":\"fw\"",
+		    "one of MEF 138's" },
+		{ "\"function\":\"ippf\"", "\"function\":\"dlp\"",
+		    "no engine for data loss" },
+		{ "\"no-match\":\"block\",\"redirect\"",
+		    "\"no-match\":\"drop\",\"redirect\"", "allow or block" },
+		{ "\"duration\":24}", "\"duration\":0}", "duration is hours" },
+		{ "\"allow\":[\"ok.ads.example\"]", "\"allow\":[\"ads.example\"]",
+		    "one list at most (R14)" },
+		{ "\"removal\":\"block-subset\"", "\"removal\":\"remove\"",
+		    "removal block-subset" },
+		{ "\"g-mdr\"],", "\"g-mdr\",\"g-ippf\"],", "one of a function" },
+		{ "\"g-mdr\"],", "\"g-none\"],", "no function policy g-none" },
+		{ "\"allow\":[\"ok.ads.example\"],", "\"allow\":[\"ok.ads.example\"],"
+		    "\"lists\":{\"block\":[\"nowhere\"]},", "no list nowhere" },
+		{ "\"block\":[\"bad.example\"]", "\"block\":[\"bad.example/x\"]",
+		    "seen over HTTPS where the zone's mbsf" },
+		{ "\"block\":[\"bad.example\"]", "\"block\":[\"bad example\"]",
+		    "is not a host" },
+		{ "\"egress-block\":\"discard\"", "\"egress-block\":\"discard\","
+		    "\"af-security-egress\":\"guard\"", "serves a zone's clients" },
+		{ "\"redirect\":true", "\"redirect\":true,\"pass-through\":[\"x.example\"]",
+		    "are mbsf's" },
 		/* Intrusion detection (SASE-4): detect, rules with a sid. */
 		{ "\"mode\":\"prevent\"", "\"mode\":\"block\"",
 		    "a mode, detect or prevent" },
 		{ "sid:1000001; rev:1;)", "rev:1;)", "is not a Suricata rule" },
 		{ "\"alert http any", "\"shout http any", "is not a Suricata rule" },
 		{ "\"ruleset\":true", "\"ruleset\":\"yes\"", "ids.ruleset is true" },
-		{ "\"deny\":[\"bad.example\"]", "\"deny\":[\"bad example\"]",
-		    "not a domain name" },
-		{ "\"deny\":[\"192.0.2.0/24\"]", "\"deny\":[\"192.0.2.0/24\"],"
-		    "\"lists\":[\"nowhere\"]", "no list nowhere" },
-		{ "\"dns-protocol-filter\":true", "\"dns-protocol-filter\":\"yes\"",
-		    "true or false" },
 		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
 		    "\"control_plane\":{\"host\":\"nobody\"},", "control_plane.host" },
 		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
@@ -6545,6 +6575,187 @@ changes_of(const struct resp *r, const char *change)
 		    "change")), change) == 0)
 			n++;
 	return (n);
+}
+
+/* The plan's change of a key at the first edge that has it, and the
+ * conf of its first instance; NULL for none. */
+static const char *
+plan_conf(struct resp *r, const char *key)
+{
+	char	path[96];
+	int	i;
+
+	for (i = 0; i < 200; i++) {
+		snprintf(path, sizeof(path), "changes.%d.key", i);
+		if (jstr(r, path) == NULL)
+			return (NULL);
+		if (strcmp(jstr(r, path), key) != 0)
+			continue;
+		snprintf(path, sizeof(path), "changes.%d.make.0.instances.0.conf",
+		    i);
+		return (jstr(r, path));
+	}
+	return (NULL);
+}
+
+/*
+ * The security function policies (MEF 138) the edges serve a zone with:
+ * an MBSF (TLS opened, old versions refused, a host never opened, plain
+ * HTTP blocked), a URLF with paths and No-match block, a PDNS by the
+ * answers' addresses, the Default zone with the same; what is made
+ * taken by the real unbound and Squid, where the host has them.
+ */
+CONSOLE_TC(sdwan_sfp, "SD-WAN security function policies: Squid and unbound "
+    "by zone")
+ATF_TC_BODY(sdwan_sfp, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	const char	*c;
+	FILE		*fp;
+	size_t		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	static const char *const edits[][2] = {
+		{ "{\"id\":\"g-urlf\",\"function\":\"urlf\",\"block\":["
+		    "\"bad.example\"],\"no-match\":\"allow\"",
+		    "{\"id\":\"g-mbsf\",\"function\":\"mbsf\",\"block\":[\"tls1.0\","
+		    "\"tls1.1\"],\"allow\":[\"tls1.2\",\"tls1.3\"],\"no-match\":"
+		    "\"block\",\"invalid-server-certificate\":\"block\","
+		    "\"unencrypted\":\"block\",\"pass-through\":[\"bank.example\"]},"
+		    "{\"id\":\"g-pdns\",\"function\":\"pdns\",\"block\":[{\"type\":"
+		    "\"A\",\"value\":\"192.0.2.66\"}],\"allow\":[{\"type\":\"AAAA\","
+		    "\"value\":\"any\"}],\"no-match\":\"allow\",\"duration\":6},"
+		    "{\"id\":\"g-urlf\",\"function\":\"urlf\",\"block\":["
+		    "\"bad.example\",\"*.worse.example/ads/*\"],\"allow\":["
+		    "\"bad.example/ok\"],\"no-match\":\"block\"" },
+		{ "\"g-urlf\",\"g-mdr\"]", "\"g-urlf\",\"g-mdr\",\"g-mbsf\","
+		    "\"g-pdns\"]" },
+		{ "{\"name\":\"rest\",\"prefixes\":\"Default\"}",
+		    "{\"name\":\"rest\",\"prefixes\":\"Default\",\"policies\":[{"
+		    "\"app\":\"web\",\"policy\":\"fast\"}]}" },
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+		{ "\"kind\":\"geneve\"", "\"kind\":\"gif\"" },
+	};
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)), "%s is not in the document", edits[i][0]);
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	/* Squid at a: TLS opened (inspect), the oldest let through 1.2 both
+	 * ways; the office zone first, Default after it; bank.example never
+	 * opened; plain HTTP blocked; the URLF's paths by their regex, the
+	 * more specific Allow before the Block of its host; No-match block. */
+	ATF_REQUIRE_MSG((c = plan_conf(&r, "proxy")) != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"mode\":\"inspect\"") != NULL &&
+	    strstr(c, " tls-min-version=1.2\n") != NULL && strstr(c,
+	    "tls_outgoing_options min-version=1.2\n") != NULL, "%s", c);
+	ATF_CHECK_MSG(strstr(c, "acl z0 src 10.1.0.0/16") != NULL && strstr(c,
+	    "acl z1 src all\n") != NULL && strstr(c, "acl z0") <
+	    strstr(c, "acl z1 "), "%s", c);
+	ATF_CHECK(strstr(c, "acl z0_pass ssl::server_name bank.example\n") !=
+	    NULL && strstr(c, "ssl_bump splice z0 z0_pass\n") != NULL);
+	ATF_CHECK(strstr(c, "http_access deny z0 plain\n") != NULL);
+	ATF_CHECK_MSG(strstr(c, "url_regex -i ^https?://bad\\.example/ok$\n") !=
+	    NULL && strstr(c, "url_regex -i ^https?://([^/]*\\.)?worse\\."
+	    "example/ads/.*\n") != NULL, "%s", c);
+	ATF_CHECK_MSG(strstr(c, "http_access allow z0 z0_u0_r\nhttp_access "
+	    "deny z0 z0_u1_d\nhttp_access deny z0 z0_u2_r\nhttp_access deny "
+	    "z0\n") != NULL, "%s", c);
+	/* TLS opened, the requests decide: no name ends a connection. */
+	ATF_CHECK(strstr(c, "ssl_bump splice z0 z0_pass\nssl_bump bump z0\n")
+	    != NULL && strstr(c, "ssl::server_name bad.example") == NULL);
+	/* By the real Squid, where the host has it. */
+	if (access("/usr/local/sbin/squid", X_OK) == 0) {
+		/* The instance's CA, as the agent makes it: key and
+		 * certificate in one file. */
+		ATF_REQUIRE(system("openssl req -x509 -newkey ec -pkeyopt "
+		    "ec_paramgen_curve:P-256 -nodes -keyout squid-t.key -out "
+		    "squid-t.crt -days 1 -subj /CN=test 2>/dev/null && cat "
+		    "squid-t.crt squid-t.key > squid-t.pem") == 0);
+		ATF_REQUIRE((fp = fopen("squid-t.conf", "w")) != NULL);
+		for (; *c != '\0'; c++) {
+			if (strncmp(c, "@PID@", 5) == 0) {
+				fprintf(fp, "%s/squid-t.pid", cwd);
+				c += 4;
+			} else if (strncmp(c, "@CA@", 4) == 0) {
+				fprintf(fp, "%s/squid-t.pem", cwd);
+				c += 3;
+			} else if (strncmp(c, "@SSLDB@", 7) == 0) {
+				fprintf(fp, "%s/squid-t.db", cwd);
+				c += 6;
+			} else if (strncmp(c, "@CERTGEN@", 9) == 0) {
+				fprintf(fp, "/usr/local/libexec/squid/"
+				    "security_file_certgen");
+				c += 8;
+			} else
+				fputc(*c, fp);
+		}
+		fclose(fp);
+		if (system("/usr/local/sbin/squid -k parse -f squid-t.conf > "
+		    "squid-t.out 2>&1") != 0) {
+			(void)system("grep -iE 'fatal|error|bungled' squid-t.out");
+			atf_tc_fail_nonfatal("squid does not take it");
+		}
+	}
+	/* unbound at a: the zones' views; the PDNS's answers by
+	 * response-ip, the Default zone's by all its prefixes. */
+	ATF_REQUIRE_MSG((c = plan_conf(&r, "dns")) != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(c, "\taccess-control-view: 0.0.0.0/0 z1\n") !=
+	    NULL && strstr(c, "\tresponse-ip: 192.0.2.66/32 always_nxdomain\n")
+	    != NULL && strstr(c, "\tresponse-ip: ::/0 always_transparent\n") !=
+	    NULL, "%s", c);
+	ATF_REQUIRE((fp = fopen("unbound-t.conf", "w")) != NULL);
+	fputs(c, fp);
+	fclose(fp);
+	if (system("local-unbound-checkconf unbound-t.conf > unbound-t.out "
+	    "2>&1") != 0) {
+		(void)system("cat unbound-t.out");
+		atf_tc_fail_nonfatal("unbound does not take it");
+	}
+	resp_free(&r);
 }
 
 /*
@@ -7929,12 +8140,11 @@ ATF_TC_BODY(sdwan_apply, tc)
 	/* The good one, its underlays with addresses, its UNIs on lo0. */
 	snprintf(doc, sizeof(doc), "%s", sdwan_good);
 	static const char *const edits[][2] = {
-		{ "\"ip-block\":{\"allow\":[\"10.1.0.0/16\"],\"deny\":[\"192.0.2.0/24\"]}",
-		    "\"ip-block\":{\"allow\":[\"10.1.0.0/16\"],\"deny\":[\"192.0.2.0/24\"],"
-		    "\"lists\":[\"blocked\",\"feedlist\"]}" },
-		{ "\"dns-domain-filter\":{\"deny\":[\"ads.example\"]}",
-		    "\"dns-domain-filter\":{\"deny\":[\"ads.example\"],\"lists\":["
-		    "\"feedlist\",\"blocked\"]}" },
+		{ "\"block\":[{\"dav4\":[\"192.0.2.0/24\"]}],",
+		    "\"block\":[{\"dav4\":[\"192.0.2.0/24\"]}],\"lists\":{\"block\":"
+		    "[\"blocked\",\"feedlist\"]}," },
+		{ "\"allow\":[\"ok.ads.example\"],", "\"allow\":[\"ok.ads.example\"],"
+		    "\"lists\":{\"block\":[\"feedlist\",\"blocked\"]}," },
 		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
 		    "\"control_plane\":{\"host\":\"@A\",\"cluster_id\":\"192.0.2.1\","
 		    "\"ctvc\":\"inet\"}," },
@@ -8064,48 +8274,72 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * UNI. */
 	ATF_CHECK(strstr(r.body, "\"11 deny ip from any to any src-ip table("
 	    "sw1_zp0) out xmit lo0\"") != NULL);
-	/* The security policy guard, named by fast (MEF 88): before the
-	 * forward, web to or from a denied prefix dropped and logged, the
-	 * allowed prefixes excepted, by tables of the policy's own; its
-	 * rate limit a pipe of its own on the way out by the tunnels. */
-	ATF_CHECK_MSG(strstr(r.body, "\"12 deny log logdst rtsock logamount 1000 "
-	    "tcp from any to table(sw1_s0d4) dst-port 80,https not dst-ip table("
-	    "sw1_s0a4) // security acme guard dst\"") != NULL, "%s", r.body);
+	/*
+	 * The security policy guard, named by fast, its function policies
+	 * (MEF 138).  IPPF before the forward: its entries most specific
+	 * first, the Allow tagging, the Block dropping the untagged and
+	 * logged; its lists' prefixes in a table of its own, the list the
+	 * value.  Its rate limit a pipe of its own on the way out by the
+	 * tunnels.
+	 */
+	ATF_CHECK_MSG(strstr(r.body, "\"12 count tag 1 tcp from any to any "
+	    "dst-port 80,https dst-ip 192.0.2.8/29\"") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "\"12 deny log logdst rtsock logamount 1000 tcp "
-	    "from any to any dst-port 80,https src-ip table(sw1_s0d4) not src-ip "
-	    "table(sw1_s0a4) // security acme guard src\"") != NULL);
-	/* With the lists' prefixes after the policy's own, the domains of
-	 * both in the DNS filter. */
-	ATF_CHECK_MSG(strstr(r.body, "\"name\":\"sw1_s0d4\",\"valtype\":\"legacy\","
-	    "\"entries\":[[\"192.0.2.0/24\",\"0\"],[\"198.51.100.0/24\",\"0\"],"
-	    "[\"203.0.113.0/24\",\"0\"]]") != NULL, "%s", r.body);
-	ATF_CHECK(strstr(r.body, "\\tlocal-zone: \\\"bad-feed.example.\\\" "
-	    "always_nxdomain\\n\\tlocal-zone: \\\"bad.example.\\\" always_nxdomain"
-	    "\\n") != NULL);
-	ATF_CHECK(strstr(r.body, "\"name\":\"sw1_s0a4\",\"valtype\":\"legacy\","
-	    "\"entries\":[[\"10.1.0.0/16\",\"0\"]]") != NULL);
-	ATF_CHECK(strstr(r.body, "sw1_s0d6") == NULL);
+	    "from any to any dst-port 80,https dst-ip 192.0.2.0/24 not tagged 1 "
+	    "// security acme g-ippf block\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"12 count tag 1 tcp from any to any dst-port "
+	    "80,https dst-ip 192.0.2.8/29\",\"12 deny") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"name\":\"sw1_f0v4\",\"valtype\":\"legacy\","
+	    "\"entries\":[[\"198.51.100.0/24\",\"1\"],[\"203.0.113.0/24\",\"1\"]]")
+	    != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"12 deny log logdst rtsock logamount 1000 tcp "
+	    "from any to any dst-port 80,https dst-ip table(sw1_f0v4,1) not "
+	    "tagged 1 // security acme g-ippf block\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"12 deny log logdst rtsock logamount 1000 tcp "
+	    "from any to any dst-port 80,https src-ip table(sw1_f0v4,1) not "
+	    "tagged 1 // security acme g-ippf block\"") != NULL);
+	ATF_CHECK(strstr(r.body, "sw1_f0v6") == NULL);
 	ATF_CHECK(strstr(r.body, "\"pipe 3002 config bw 2000000bit/s\"") != NULL);
 	ATF_CHECK_MSG(strstr(r.body, "\"11 pipe 3002 tcp from any to any "
 	    "dst-port 80,https src-ip table(sw1_zp0) out { xmit gre100 or xmit "
 	    "gif102 }\"") != NULL, "%s", r.body);
-	/* Its DNS: an unbound instance of the service at a, on hq's
-	 * provider address, the denied domain a local zone; every query
-	 * from the UNI forwarded to it (dns-protocol-filter). */
+	/* DPF, No-match block with redirect: the flow's DNS not to the
+	 * edge sent to the service's resolver on hq's address; DNS over
+	 * TLS answered at once, port unreachable (R100). */
+	ATF_CHECK_MSG(strstr(r.body, "\"12 fwd 10.1.0.1,53 tcp from any to any "
+	    "dst-port 80,https ipversion 4 proto udp dst-port 53 not dst-ip me "
+	    "not tagged 3 in recv lo0\"") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"12 unreach port log logdst rtsock logamount 1000 "
+	    "tcp from any to any dst-port 80,https proto tcp dst-port 853 not "
+	    "dst-ip me not tagged 3 // security acme g-dpf no-match\"") != NULL);
+	/* The DNF of the office zone: an unbound instance of the service at
+	 * a, on hq's provider address, a view of the zone's own by its
+	 * prefixes, the Block's names nxdomain, the Allow's transparent, the
+	 * lists' domains too. */
 	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"dns\",\"phase\":10,\"title\":"
-	    "\"DNS filters: unbound, 1 instance in the services' tables, the "
-	    "domains the security policies deny\"") != NULL, "%s", r.body);
+	    "\"DNS filtering and protective DNS (MEF 138): unbound, 1 instance "
+	    "in the services' tables, a view a zone\"") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "\"kind\":\"sdwan-dns\",\"instances\":[{\"name\":"
 	    "\"sw1\",\"fib\":1,\"conf\":\"# Written by the Arcana console: SD-WAN "
 	    "service acme at a, in routing table 1.") != NULL);
 	ATF_CHECK(strstr(r.body, "\\tinterface: 10.1.0.1\\n\\taccess-control: "
 	    "10.1.0.0/24 allow\\n") != NULL);
-	ATF_CHECK(strstr(r.body, "\\tlocal-zone: \\\"ads.example.\\\" "
+	ATF_CHECK_MSG(strstr(r.body, "\\taccess-control-view: 10.1.0.0/16 z0\\n")
+	    != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "view:\\n\\tname: \\\"z0\\\"\\n\\tview-first: "
+	    "yes\\n\\tlocal-zone: \\\"ads.example.\\\" always_nxdomain\\n") != NULL);
+	ATF_CHECK(strstr(r.body, "\\tlocal-zone: \\\"bad-feed.example.\\\" "
 	    "always_nxdomain\\n") != NULL);
-	ATF_CHECK_MSG(strstr(r.body, "\"10 fwd 10.1.0.1,53 udp from any to any "
-	    "dst-port 53 in recv lo0\"") != NULL, "%s", r.body);
-	ATF_CHECK(strstr(r.body, "\"10 fwd 10.1.0.1,53 tcp from any to any "
-	    "dst-port 53 in recv lo0\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\\tlocal-zone: \\\"bad.example.\\\" "
+	    "always_nxdomain\\n") != NULL);
+	ATF_CHECK(strstr(r.body, "\\tlocal-zone: \\\"ok.ads.example.\\\" "
+	    "always_transparent\\n") != NULL);
+	ATF_CHECK(strstr(r.body, "\"10 fwd 10.1.0.1,53") == NULL);
+	/* HTTP and TLS of the office zone to its proxy, by its table. */
+	ATF_CHECK_MSG(strstr(r.body, "\"10 fwd 10.1.0.1,3128 tcp from table("
+	    "sw1_zp0) to any dst-port 80 in recv lo0\"") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"10 fwd 10.1.0.1,3129 tcp from table("
+	    "sw1_zp0) to any dst-port 443 in recv lo0\"") != NULL);
 	/* Breakout at a, by a-inet: the NAT of hq's public prefix, out by
 	 * vtnet0 and back in to the service's table; the default route
 	 * by the gateway, reached by the interface.  At b, by a tunnel to
@@ -8303,21 +8537,30 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "table(sw1_g1) in recv wg5\",\"10 deny ip from table(sw1_g1) to "
 	    "table(sw1_g0) in recv wg5\",\"10 skipto tablearg ip from "
 	    "table(sw1_zone) to any in recv wg5\"") != NULL);
-	/* The URL filter (SASE-4): HTTP and TLS from the end points forwarded
-	 * to Squid on the edge's own addresses, its instance in the plan
-	 * with the TLS names looked at and the domain denied. */
-	ATF_CHECK(strstr(r.body, "\"10 fwd 10.1.0.1,3128 tcp from any to any "
-	    "dst-port 80 in recv lo0\"") != NULL);
-	ATF_CHECK(strstr(r.body, "\"10 fwd 10.30.0.1,3129 tcp from any to any "
-	    "dst-port 443 in recv wg5\"") != NULL);
+	/*
+	 * URLF (MEF 138): HTTP and TLS of the office zone forwarded to Squid
+	 * on the edge's own addresses, the remote end point's too, where
+	 * the zone's identities come from; its instance in the plan with
+	 * the zone by its prefixes, the TLS name of the Block's host ended,
+	 * the rest let through unopened (no MBSF), the zone's malware
+	 * scanned.
+	 */
+	ATF_CHECK(strstr(r.body, "\"10 fwd 10.30.0.1,3129 tcp from table("
+	    "sw1_zp0) to any dst-port 443 in recv wg5\"") != NULL);
 	ATF_CHECK_MSG(strstr(r.body, "{\"kind\":\"sdwan-proxy\",\"instances\":[{"
 	    "\"name\":\"sw1\",\"fib\":1,\"mode\":\"sni\",\"conf\":\"# Written by "
 	    "the Arcana console") != NULL && strstr(r.body, "https_port "
 	    "10.1.0.1:3129 intercept ssl-bump tls-cert=@CA@") != NULL && strstr(
-	    r.body, "ssl_bump terminate denied_site\\nssl_bump splice all") !=
-	    NULL && strstr(r.body, "\"deny\":\".bad.example\\n\"") != NULL, "%s",
+	    r.body, "acl z0 src 10.1.0.0/16") != NULL && strstr(r.body,
+	    "acl z0_u0_n ssl::server_name bad.example\\nacl z0_u0_d dstdomain "
+	    "bad.example\\n") != NULL && strstr(r.body, "ssl_bump peek step1\\n"
+	    "ssl_bump terminate z0 z0_u0_n\\nssl_bump splice z0\\nssl_bump splice "
+	    "all\\n") != NULL && strstr(r.body, "adaptation_access sdwan_av allow "
+	    "z0\\nhttp_access deny z0 z0_u0_d\\nhttp_access allow z0\\n"
+	    "adaptation_access sdwan_av deny all\\nhttp_access deny all\\n") !=
+	    NULL && strstr(r.body, "\"deny\":\"\",\"lists\":{}") != NULL, "%s",
 	    r.body);
-	/* Malware (MEF 88): what comes back goes to c-icap by ICAP, on the
+	/* MD+R (MEF 138): what comes back goes to c-icap by ICAP, on the
 	 * edge's own address in the service at the service's port, which
 	 * takes Squid's address alone; c-icap scans with ClamAV. */
 	ATF_CHECK_MSG(strstr(r.body, "icap_service sdwan_av respmod_precache "
@@ -8329,7 +8572,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    r.body, "\"plugin\":"
 	    "\"c-icap\",\"package\":\"c-icap c-icap-modules clamav\"") !=
 	    NULL, "%s", r.body);
-	/* Intrusion detection (MEF 88): Suricata on the service's UNIs at
+	/* Intrusion detection (Arcana's own): Suricata on the service's UNIs at
 	 * each edge, its home the UNIs' subnets, the policy's rules and the
 	 * ruleset suricata-update keeps; Suricata a need.  It prevents: the
 	 * UNI's traffic both ways diverted to it as it comes in, on the
@@ -8355,7 +8598,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "%s", r.body);
 	resp_free(&r);
 	/* The record: the edges' logged packets read now; none yet. */
-	http("GET", "/api/sdwan/record?swvc=acme&policy=guard", NULL, &r);
+	http("GET", "/api/sdwan/record?swvc=acme&policy=g-ippf", NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_MSG(strstr(r.body, "\"record\":[]") != NULL, "%s", r.body);
 	resp_free(&r);
@@ -9238,6 +9481,28 @@ ATF_TC_BODY(tls_ec, tc)
 		atf_tc_fail("a large reply did not come whole over HTTP/2");
 	}
 	/*
+	 * Forty large replies on one connection, to a client with
+	 * HTTP/2's own window (64 KB, nghttp's; curl's is far larger)
+	 * that keeps to the 24 streams the console allows.  Written past
+	 * the window, the client ended the connection with
+	 * FLOW_CONTROL_ERROR; a stream ended while output waited stayed
+	 * open to libwebsockets after the client had its end, and the
+	 * client's next one, past the limit, ended the connection.
+	 */
+	snprintf(cmd, sizeof(cmd), "command -v nghttp >/dev/null || exit 0; "
+	    "S=$(sed 's/.*\"id\":\"\\([0-9a-f]*\\)\".*/\\1/' "
+	    "servers.out) && C=$(awk '/arc_session/ { print $7 }' jar) && "
+	    "nghttp -nv -M 24 -H \"cookie: arc_session=$C\" $(for i in "
+	    "$(seq 1 40); do echo https://127.0.0.1:%d/api/servers/$S/"
+	    "sysctl?n=$i; done) > nghttp.out 2>&1; "
+	    "[ $(grep -c ':status: 200' nghttp.out) -eq 40 ] && "
+	    "! grep -q 'recv GOAWAY\\|FLOW_CONTROL' nghttp.out", port);
+	if (system(cmd) != 0) {
+		(void)system("grep -i 'goaway\\|status\\|processed' -A1 "
+		    "nghttp.out | head -20");
+		atf_tc_fail("not every large reply on one HTTP/2 connection came");
+	}
+	/*
 	 * The key is the key manager's, the worker's child: killed, the
 	 * worker goes with it and the supervisor starts both again.
 	 */
@@ -9320,6 +9585,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan_neigh);
 	ATF_TP_ADD_TC(tp, sdwan_lists);
 	ATF_TP_ADD_TC(tp, sdwan_uswe);
+	ATF_TP_ADD_TC(tp, sdwan_sfp);
 	ATF_TP_ADD_TC(tp, sdwan_jail);
 	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, session_restart);

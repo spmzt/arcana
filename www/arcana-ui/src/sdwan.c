@@ -2507,9 +2507,11 @@ view_needs(struct html *h, bool brief)
 		{ "bird3", "BIRD", "routing at a UNI (static, BGP, OSPF), BFD, "
 		    "a control plane, a WAN link routed on its underlay" },
 		{ "dnsmasq", "dnsmasq", "DHCP at a UNI" },
-		{ "squid", "Squid", "a security policy with url-filter or malware" },
-		{ "c-icap c-icap-modules clamav", "c-icap and ClamAV", "a security "
-		    "policy with malware; then freshclam, for ClamAV's signatures" },
+		{ "squid", "Squid", "a zone's URL filtering, middlebox or malware "
+		    "scanning (MEF 138's URLF, MBSF, MD+R)" },
+		{ "c-icap c-icap-modules clamav", "c-icap and ClamAV", "a zone's "
+		    "malware scanning (MD+R); then freshclam, for ClamAV's "
+		    "signatures" },
 		{ "suricata", "Suricata", "a security policy with ids; then "
 		    "suricata-update, where the policy adds the ruleset" },
 	};
@@ -3870,12 +3872,14 @@ view_zt(struct html *h, const ucl_object_t *sw)
 		xit = NULL;
 		while ((x = ucl_object_iterate(jget(st, "dns"), &xit, true)) !=
 		    NULL)
-			h_raw(h, "; unbound, DNS filter");
+			h_raw(h, "; unbound, DNF and PDNS");
 		xit = NULL;
 		while ((x = ucl_object_iterate(jget(st, "proxy"), &xit, true)) !=
 		    NULL)
-			h_fmt(h, "; Squid, URL filter%s", jbool(x, "icap") ?
-			    "; c-icap and ClamAV, malware" : "");
+			h_fmt(h, "; Squid, URLF%s%s", strcmp(jstr(x, "mode") !=
+			    NULL ? jstr(x, "mode") : "", "inspect") == 0 ?
+			    " and MBSF" : "", jbool(x, "icap") ? "; c-icap and "
+			    "ClamAV, MD+R" : "");
 		xit = NULL;
 		while ((x = ucl_object_iterate(jget(st, "ids"), &xit, true)) !=
 		    NULL)
@@ -3982,15 +3986,163 @@ view_zt(struct html *h, const ucl_object_t *sw)
 	h_raw(h, "</div>");
 }
 
+/* MEF 138's Security Functions, as the forms name them. */
+static const char *const sfp_fns[][2] = {
+	{ "ippf", "IP, port and protocol filtering (IPPF)" },
+	{ "dnf", "Domain name filtering (DNF)" },
+	{ "urlf", "URL filtering (URLF)" },
+	{ "mbsf", "Middlebox, TLS opened (MBSF)" },
+	{ "mdr", "Malware detection and removal (MD+R)" },
+	{ "dpf", "DNS protocol filtering (DPF)" },
+	{ "pdns", "Protective DNS (PDNS)" },
+};
+
+static const char *
+sfp_function_name(const char *fn)
+{
+	size_t	i;
+
+	for (i = 0; fn != NULL && i < nitems(sfp_fns); i++)
+		if (strcmp(sfp_fns[i][0], fn) == 0)
+			return (sfp_fns[i][1]);
+	return (fn != NULL ? fn : "");
+}
+
 /*
- * The security policies of the service shown (MEF 88): each a name and
- * its criteria, where a policy's af-security-ingress or -egress names
- * it; what each denied comes with the counts (SASE-1).
+ * A function policy's entries as the form shows them, one a line: an
+ * IPPF or DPF entry as key=value words, a list's values by commas; a
+ * PDNS one as its type and value; the rest as they are.
+ */
+static void
+sfp_entries_text(struct html *h, const ucl_object_t *arr)
+{
+	const ucl_object_t	*e, *k, *x;
+	ucl_object_iter_t	 it, kit, xit;
+	bool			 first, firstx;
+
+	it = NULL;
+	while ((e = ucl_object_iterate(arr, &it, true)) != NULL) {
+		if (ucl_object_type(e) != UCL_OBJECT) {
+			h_txt(h, ucl_object_tostring_forced(e));
+			h_raw(h, "\n");
+			continue;
+		}
+		if (jstr(e, "type") != NULL) {
+			h_txt(h, jstr(e, "type"));
+			h_raw(h, " ");
+			h_txt(h, jstr(e, "value") != NULL ? jstr(e, "value") : "any");
+			h_raw(h, "\n");
+			continue;
+		}
+		first = true;
+		kit = NULL;
+		while ((k = ucl_object_iterate(e, &kit, true)) != NULL) {
+			h_raw(h, first ? "" : " ");
+			first = false;
+			h_txt(h, ucl_object_key(k));
+			h_raw(h, "=");
+			firstx = true;
+			xit = NULL;
+			while ((x = ucl_object_iterate(k, &xit, true)) != NULL) {
+				h_raw(h, firstx ? "" : ",");
+				firstx = false;
+				h_txt(h, ucl_object_tostring_forced(x));
+			}
+		}
+		h_raw(h, "\n");
+	}
+}
+
+/* A value as the document has it: a number where it is one. */
+static ucl_object_t *
+sfp_value(const char *s, size_t n)
+{
+	size_t	i;
+
+	for (i = 0; i < n && isdigit((unsigned char)s[i]); i++)
+		;
+	if (n > 0 && i == n && n < 10)
+		return (ucl_object_fromint(strtol(s, NULL, 10)));
+	return (ucl_object_fromlstring(s, n));
+}
+
+/* And back: the form's lines as entries of the function's. */
+static ucl_object_t *
+sfp_entries_parse(const char *fn, const char *text)
+{
+	ucl_object_t	*arr, *o, *l;
+	const char	*t, *e, *w, *we, *eq, *c, *ce;
+	size_t		 n;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (t = text; t != NULL && *t != '\0'; t = e != NULL ? e + 1 : NULL) {
+		e = strchr(t, '\n');
+		n = e != NULL ? (size_t)(e - t) : strlen(t);
+		while (n > 0 && isspace((unsigned char)t[n - 1]))
+			n--;
+		while (n > 0 && isspace((unsigned char)*t)) {
+			t++;
+			n--;
+		}
+		if (n == 0 || *t == '#')
+			continue;
+		if (strcmp(fn, "ippf") == 0 || strcmp(fn, "dpf") == 0) {
+			o = ucl_object_typed_new(UCL_OBJECT);
+			for (w = t; w < t + n; w = we) {
+				while (w < t + n && *w == ' ')
+					w++;
+				for (we = w; we < t + n && *we != ' '; we++)
+					;
+				if (we == w)
+					break;
+				if ((eq = memchr(w, '=', (size_t)(we - w))) == NULL)
+					continue;
+				/* message-type is a word; the rest lists. */
+				if ((size_t)(eq - w) == 12 && strncmp(w,
+				    "message-type", 12) == 0) {
+					ucl_object_insert_key(o, ucl_object_fromlstring(
+					    eq + 1, (size_t)(we - eq - 1)),
+					    "message-type", 0, true);
+					continue;
+				}
+				l = ucl_object_typed_new(UCL_ARRAY);
+				for (c = eq + 1; c < we; c = ce + 1) {
+					for (ce = c; ce < we && *ce != ','; ce++)
+						;
+					if (ce > c)
+						ucl_array_append(l, sfp_value(c,
+						    (size_t)(ce - c)));
+				}
+				ucl_object_insert_key(o, l, w, (size_t)(eq - w), true);
+			}
+			ucl_array_append(arr, o);
+		} else if (strcmp(fn, "pdns") == 0) {
+			o = ucl_object_typed_new(UCL_OBJECT);
+			for (we = t; we < t + n && *we != ' '; we++)
+				;
+			ucl_object_insert_key(o, ucl_object_fromlstring(t,
+			    (size_t)(we - t)), "type", 0, false);
+			while (we < t + n && *we == ' ')
+				we++;
+			ucl_object_insert_key(o, ucl_object_fromlstring(we, (size_t)(
+			    t + n - we)), "value", 0, false);
+			ucl_array_append(arr, o);
+		} else
+			ucl_array_append(arr, ucl_object_fromlstring(t, n));
+	}
+	return (arr);
+}
+
+/*
+ * The security functions of the service shown (MEF 138): the function
+ * policies, each a function's lists, and the security policies made of
+ * them, where a policy's af-security-ingress or -egress names one; what
+ * each denied comes with the counts (SASE-1).
  */
 static void
 view_security(struct html *h)
 {
-	const ucl_object_t	*sw, *v, *cr, *b, *pol, *pc;
+	const ucl_object_t	*sw, *v, *b, *pol, *pc;
 	ucl_object_iter_t	 it, pit;
 	char			 age[32];
 	int			 n;
@@ -4021,58 +4173,75 @@ view_security(struct html *h)
 	}
 	view_zt(h, sw);
 	h_raw(h, "<h2 class=\"sd-sect\">Security Functions</h2>");
-	h_raw(h, "<div class=\"sd-block\"><h3>Security policies <small class=\""
-	    "dim\">MEF 88, by name (§9.10): addresses allowed and denied "
-	    "(ipfw tables), domains denied and DNS kept to the provider's "
-	    "resolver (unbound), a rate limit (dummynet), a log; a flow's "
-	    "policy names one by af-security-ingress or -egress; what each "
-	    "denied, counted on the edges' rules since they were made</small>"
-	    "<span class=\"pane-actions\"><button class=\"ghost small\" data-act="
-	    "\"sd-secpol-add\">+ policy</button></span></h3><table class=\"net "
-	    "sd\"><thead><tr><th>Name</th><th>Addresses</th><th>Denied</th><th>"
-	    "DNS</th><th>Rate</th><th>Log</th><th>Malware</th><th>IDS</th><th>"
-	    "Named by</th>"
-	    "<th></th></tr>"
-	    "</thead><tbody>");
+	/* The function policies (MEF 138), each a function's lists. */
+	h_raw(h, "<div class=\"sd-block\"><h3>Security function policies <small "
+	    "class=\"dim\">MEF 138: each a function's Block, Allow and "
+	    "Quarantine lists and what is done where none matches; IPPF and DPF "
+	    "by ipfw on each flow, DNF and PDNS by unbound, URLF and the "
+	    "middlebox by Squid, malware by c-icap and ClamAV, a zone's clients "
+	    "served by one of each; what each denied, counted on the edges' "
+	    "rules since they were made</small><span class=\"pane-actions\">"
+	    "<button class=\"ghost small\" data-act=\"sd-sfp-add\">+ function "
+	    "policy</button></span></h3><table class=\"net sd\"><thead><tr><th>"
+	    "ID</th><th>Function</th><th>Block</th><th>Allow</th><th>Quarantine"
+	    "</th><th>No-match</th><th>Duration</th><th>Denied</th><th>In</th>"
+	    "<th></th></tr></thead><tbody>");
 	n = 0;
 	it = NULL;
-	while ((v = ucl_object_iterate(jget(sw, "security_policies"), &it,
-	    true)) != NULL) {
-		const ucl_object_t	*f, *cn;
-		ucl_object_iter_t	 fit, cit;
-		char			 tbl[64];
+	while ((v = ucl_object_iterate(jget(sw, "security_function_policies"),
+	    &it, true)) != NULL) {
+		static const char *const lists[] = { "block", "allow",
+		    "quarantine" };
+		const ucl_object_t	*f, *cn, *sp, *e;
+		ucl_object_iter_t	 fit, cit, sit, eit;
+		char			 mark[160];
 		long long		 pkts = 0, bytes = 0;
+		int			 k;
 
-		/* The deny rules of this policy, by its tables' names, on
-		 * every edge: sw<fib>_s<n>d4 and d6. */
-		snprintf(tbl, sizeof(tbl), "table(sw%lld_s%dd", (long long)jint(sw,
-		    "fib", 0), n);
+		/* Its deny rules on every edge, by their comment. */
+		snprintf(mark, sizeof(mark), "security %s %s ", jstr(sw, "id"),
+		    jstr(v, "id"));
 		fit = NULL;
 		while (sd.paths != NULL && (f = ucl_object_iterate(sd.paths, &fit,
 		    true)) != NULL) {
 			cit = NULL;
 			while ((cn = ucl_object_iterate(jget(jget(f, "rules"),
 			    "counters"), &cit, true)) != NULL)
-				if (jstr(cn, "text") != NULL && strncmp(jstr(cn, "text"),
-				    "deny", 4) == 0 && strstr(jstr(cn, "text"), tbl) !=
-				    NULL) {
+				if (jstr(cn, "text") != NULL && strstr(jstr(cn,
+				    "text"), mark) != NULL) {
 					pkts += jint(cn, "pkts", 0);
 					bytes += jint(cn, "bytes", 0);
 				}
 		}
 		n++;
-		cr = jget(v, "criteria");
 		h_raw(h, "<tr><td class=\"mono\">");
-		h_txt(h, jstr(v, "name"));
+		h_txt(h, jstr(v, "id"));
 		h_raw(h, "</td><td>");
-		b = jget(cr, "ip-block");
-		if (b != NULL) {
-			h_fmt(h, "<span class=\"chip st-up\">%u allowed</span> <span "
-			    "class=\"chip st-down\">%u denied</span>", jget(b,
-			    "allow") != NULL ? ucl_array_size(jget(b, "allow")) : 0,
-			    jget(b, "deny") != NULL ? ucl_array_size(jget(b, "deny"))
-			    : 0);
-		} else
+		h_txt(h, sfp_function_name(jstr(v, "function")));
+		for (k = 0; k < 3; k++) {
+			unsigned	ne = jget(v, lists[k]) != NULL ?
+			    ucl_array_size(jget(v, lists[k])) : 0;
+
+			h_raw(h, "</td><td>");
+			if (ne > 0)
+				h_fmt(h, "<span class=\"chip %s\">%u</span> ", k == 1 ?
+				    "st-up" : "st-down", ne);
+			eit = NULL;
+			while ((e = ucl_object_iterate(jget(jget(v, "lists"),
+			    lists[k]), &eit, true)) != NULL) {
+				h_raw(h, "<span class=\"chip\">");
+				h_txt(h, ucl_object_tostring_forced(e));
+				h_raw(h, "</span> ");
+			}
+			if (ne == 0 && jget(jget(v, "lists"), lists[k]) == NULL)
+				h_raw(h, "<span class=\"dim\">—</span>");
+		}
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(v, "no-match") != NULL ? jstr(v, "no-match") : "");
+		h_raw(h, "</td><td>");
+		if (jget(v, "duration") != NULL)
+			h_fmt(h, "%lld h", jint(v, "duration", 0));
+		else
 			h_raw(h, "<span class=\"dim\">—</span>");
 		h_raw(h, "</td><td>");
 		if (pkts > 0)
@@ -4080,30 +4249,79 @@ view_security(struct html *h)
 			    "" : "s", bytes);
 		else
 			h_raw(h, "<span class=\"dim\">none</span>");
+		h_raw(h, "</td><td class=\"dim\">");
+		sit = NULL;
+		while ((sp = ucl_object_iterate(jget(sw, "security_policies"),
+		    &sit, true)) != NULL) {
+			eit = NULL;
+			while ((e = ucl_object_iterate(jget(sp, "function-policies"),
+			    &eit, true)) != NULL)
+				if (strcmp(ucl_object_tostring_forced(e), jstr(v,
+				    "id")) == 0) {
+					h_txt(h, jstr(sp, "name"));
+					h_raw(h, " ");
+				}
+		}
+		h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" data-act=\""
+		    "sd-sfp-edit\" title=\"Change it\"");
+		h_attr(h, "data-arg", jstr(v, "id"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "sd-sfp-del\" title=\"Take the function policy away\"");
+		h_attr(h, "data-arg", jstr(v, "id"));
+		h_raw(h, ">×</button></td></tr>");
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"10\" class=\"dim\">None yet.</td></tr>");
+	h_raw(h, "</tbody></table></div>");
+	/* The security policies: function policies together, and Arcana's
+	 * own, as a policy names them. */
+	h_raw(h, "<div class=\"sd-block\"><h3>Security policies <small class=\""
+	    "dim\">by name (§9.10), as a flow's policy names one by "
+	    "af-security-ingress or -egress: the function policies it is "
+	    "made of, one of a function, and Arcana's own, which no MEF 138 "
+	    "function is: a rate limit (dummynet) and intrusion detection "
+	    "(Suricata)</small><span class=\"pane-actions\"><button class=\""
+	    "ghost small\" data-act=\"sd-secpol-add\">+ policy</button></span>"
+	    "</h3><table class=\"net sd\"><thead><tr><th>Name</th><th>Function "
+	    "policies</th><th>Rate</th><th>IDS</th><th>Named by</th><th></th>"
+	    "</tr></thead><tbody>");
+	n = 0;
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(sw, "security_policies"), &it,
+	    true)) != NULL) {
+		const ucl_object_t	*e;
+		ucl_object_iter_t	 eit;
+
+		n++;
+		h_raw(h, "<tr><td class=\"mono\">");
+		h_txt(h, jstr(v, "name"));
 		h_raw(h, "</td><td>");
-		b = jget(cr, "dns-domain-filter");
-		if (b != NULL)
-			h_fmt(h, "<span class=\"chip st-down\">%u domain%s denied"
-			    "</span> ", jget(b, "deny") != NULL ? ucl_array_size(
-			    jget(b, "deny")) : 0, jget(b, "deny") != NULL &&
-			    ucl_array_size(jget(b, "deny")) == 1 ? "" : "s");
-		if (jbool(cr, "dns-protocol-filter"))
-			h_raw(h, "<span class=\"chip\">provider's resolver only"
-			    "</span>");
-		if (b == NULL && !jbool(cr, "dns-protocol-filter"))
+		eit = NULL;
+		while ((e = ucl_object_iterate(jget(v, "function-policies"), &eit,
+		    true)) != NULL) {
+			const ucl_object_t *fp = jfind(jget(sw,
+			    "security_function_policies"), "id",
+			    ucl_object_tostring_forced(e));
+
+			h_raw(h, "<span class=\"chip\">");
+			h_txt(h, ucl_object_tostring_forced(e));
+			if (fp != NULL && jstr(fp, "function") != NULL) {
+				h_raw(h, " <span class=\"dim\">");
+				h_txt(h, jstr(fp, "function"));
+				h_raw(h, "</span>");
+			}
+			h_raw(h, "</span> ");
+		}
+		if (jget(v, "function-policies") == NULL || ucl_array_size(jget(v,
+		    "function-policies")) == 0)
 			h_raw(h, "<span class=\"dim\">—</span>");
 		h_raw(h, "</td><td>");
-		if (jget(cr, "rate-limit") != NULL)
-			h_fmt(h, "%lld kbit/s", jint(cr, "rate-limit", 0) / 1000);
+		if (jget(v, "rate-limit") != NULL)
+			h_fmt(h, "%lld kbit/s", jint(v, "rate-limit", 0) / 1000);
 		else
 			h_raw(h, "<span class=\"dim\">—</span>");
 		h_raw(h, "</td><td>");
-		h_raw(h, jbool(cr, "log") ? "yes" : "<span class=\"dim\">no</span>");
-		h_raw(h, "</td><td>");
-		h_raw(h, jbool(cr, "malware") ? "scanned" : "<span class=\"dim\">"
-		    "no</span>");
-		h_raw(h, "</td><td>");
-		if ((b = jget(cr, "ids")) != NULL) {
+		if ((b = jget(v, "ids")) != NULL) {
 			unsigned	nr = jget(b, "rules") != NULL ?
 			    ucl_array_size(jget(b, "rules")) : 0;
 
@@ -4134,15 +4352,17 @@ view_security(struct html *h)
 		h_raw(h, ">×</button></td></tr>");
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"10\" class=\"dim\">None yet.</td></tr>");
+		h_raw(h, "<tr><td colspan=\"6\" class=\"dim\">None yet.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 	/* The lists the policies name: feeds the console fetches, and
 	 * pasted ones, each as kept with its version. */
 	h_fmt(h, "<div class=\"sd-block\"><h3>Lists <small class=\"dim\">named "
-	    "by a policy's ip-block or dns-domain-filter: feeds the console's "
-	    "host fetches every %lld hours with the base system's fetch(3), "
-	    "and lists pasted here; prefixes go to the policy's tables, "
-	    "domains to its DNS filter; a feed that fails keeps its last"
+	    "by a function policy's lists (IPPF, DNF, URLF, PDNS): feeds the "
+	    "console's host fetches every %lld hours, or as often as the "
+	    "shortest Duration of the function policies naming lists, with "
+	    "the base system's fetch(3), and lists pasted here; a function "
+	    "takes the prefixes or the domains it filters by; a feed that "
+	    "fails keeps its last"
 	    "</small><span class=\"pane-actions\"><button class=\"ghost small\" "
 	    "data-act=\"sd-list-add\">+ list</button><button class=\"ghost "
 	    "small\" data-act=\"sd-lists-fetch\" title=\"Every feed fetched now"
@@ -4267,12 +4487,11 @@ view_security(struct html *h)
 	}
 	/* The DNS filters on the edges: each edge's unbound instances, a
 	 * service each, as the edges' reads tell them. */
-	h_raw(h, "<div class=\"sd-block\"><h3>DNS filters <small class=\"dim\">"
-	    "the base system's unbound, an instance of each service whose "
-	    "policies filter DNS, on each edge in the service's table, on the "
-	    "UNIs' provider addresses; the denied domains do not resolve, and "
-	    "with the protocol filter every query from the UNI is sent to it"
-	    "</small></h3><table class=\"net sd\"><thead><tr><th>Edge</th><th>"
+	h_raw(h, "<div class=\"sd-block\"><h3>Resolvers <small class=\"dim\">"
+	    "the base system's unbound, an instance of each service with a "
+	    "zone's DNF or PDNS, or a DPF that redirects, on each edge in the "
+	    "service's table, on the UNIs' provider addresses; each zone "
+	    "served by a view of its own</small></h3><table class=\"net sd\"><thead><tr><th>Edge</th><th>"
 	    "Instance</th><th>State</th></tr></thead><tbody>");
 	n = 0;
 	it = NULL;
@@ -4294,17 +4513,18 @@ view_security(struct html *h)
 		}
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"3\" class=\"dim\">None: no policy "
-		    "filters DNS, or nothing is applied yet.</td></tr>");
+		h_raw(h, "<tr><td colspan=\"3\" class=\"dim\">None: no zone has "
+		    "a DNF or PDNS, or nothing is applied yet.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 	/* The proxies on the edges (SASE-4): each edge's Squid instances,
 	 * a service each, with the CA of one that opens TLS. */
-	h_raw(h, "<div class=\"sd-block\"><h3>URL filters <small class=\"dim\">"
+	h_raw(h, "<div class=\"sd-block\"><h3>Proxies <small class=\"dim\">"
 	    "Squid on each edge, a plugin installed there by hand, an instance "
-	    "of each service whose policies filter URLs, in the service's "
-	    "table; HTTP and TLS from the end points are forwarded to it; it "
-	    "looks at the TLS names (sni) or opens TLS with a CA of its own "
-	    "(inspect), which the clients then trust</small></h3><table class="
+	    "of each service with a zone's URLF, MBSF or MD+R, in the "
+	    "service's table; those zones' HTTP and TLS are forwarded to it; "
+	    "it looks at the TLS names (sni) or, where a zone's MBSF says, "
+	    "opens TLS with a CA of its own (inspect), which the clients then "
+	    "trust</small></h3><table class="
 	    "\"net sd\"><thead><tr><th>Edge</th><th>Instance</th><th>Mode</th>"
 	    "<th>State</th><th>CA</th></tr></thead><tbody>");
 	n = 0;
@@ -4362,8 +4582,8 @@ view_security(struct html *h)
 		}
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None: no policy "
-		    "filters URLs, or nothing is applied yet.</td></tr>");
+		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None: no zone has a "
+		    "URLF, MBSF or MD+R, or nothing is applied yet.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 	view_ids(h);
 }
@@ -4426,7 +4646,7 @@ view_sdwan(struct html *h)
 	    "paths\" title=\"What the edges' probes see of each tunnel: "
 	    "delay, variation, loss\">Paths</button><button class=\"tab%s\" "
 	    "data-act=\"sd-tab\" data-arg=\"security\" title=\"The security "
-	    "policies of each service, MEF 88\">Security</button><button class="
+	    "functions of each service, MEF 138\">Security</button><button class="
 	    "\"tab%s\" data-act=\"sd-tab\" data-arg=\"identities\" title=\"Who "
 	    "reaches a service from afar: the remote end points' identities, "
 	    "issued and revoked\">Identities</button><button class="
@@ -5841,95 +6061,178 @@ sdwan_modal_service(struct html *h)
 		free(text);
 		return (true);
 	}
+	if (app.modal == MODAL_SD_SFP) {
+		static const char *const lists[] = { "block", "allow",
+		    "quarantine" };
+		static const char *const lnames[] = { "Block", "Allow",
+		    "Quarantine" };
+		const char	*fn, *nm;
+		size_t		 i;
+		int		 k;
+
+		o = sd.edit[0] != '\0' ? jfind(jget(sw,
+		    "security_function_policies"), "id", sd.edit) : NULL;
+		fn = jstr(o, "function");
+		h_fmt(h, "<form data-form=\"sd-sfp\"><h2>%s</h2><p>A security "
+		    "function policy (MEF 138): one function's Block, Allow and "
+		    "Quarantine lists, the more specific entry winning, and what "
+		    "is done where none matches. A security policy names it among "
+		    "its function policies.</p><input type=\"hidden\" name=\"was\"",
+		    o != NULL ? "A function policy, changed" : "A function policy");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, ">");
+		text_field(h, "Policy ID", "id", jstr(o, "id"), "office-urlf",
+		    "Its name, one in the service (R119).");
+		h_raw(h, "<label>Function <select name=\"function\">");
+		for (i = 0; i < nitems(sfp_fns); i++) {
+			h_raw(h, "<option");
+			h_attr(h, "value", sfp_fns[i][0]);
+			h_raw(h, fn != NULL && strcmp(fn, sfp_fns[i][0]) == 0 ?
+			    " selected>" : ">");
+			h_txt(h, sfp_fns[i][1]);
+			h_raw(h, "</option>");
+		}
+		h_raw(h, "</select><small>IPPF and DPF by ipfw on each flow; DNF "
+		    "and PDNS by unbound, URLF and the middlebox by Squid, "
+		    "malware by c-icap and ClamAV, for the clients of a zone. "
+		    "Data loss prevention has no engine on FreeBSD.</small>"
+		    "</label>");
+		for (k = 0; k < 3; k++) {
+			h_fmt(h, "<label>%s<textarea name=\"%s\" rows=\"3\" "
+			    "placeholder=\"%s\">", lnames[k], lists[k], k == 0 ?
+			    "dav4=192.0.2.0/24 dport=443 (IPPF), ads.example (DNF), "
+			    "bad.example/ads/* (URLF), tls1.0 (MBSF), A 192.0.2.66 "
+			    "(PDNS)" : "");
+			sfp_entries_text(h, jget(o, lists[k]));
+			h_fmt(h, "</textarea><small>%s</small></label>", k == 0 ?
+			    "One entry a line: IPPF and DPF as sav4, dav4, sav6, "
+			    "dav6, protv4, nextheadv6, sport, dport =values by "
+			    "commas (Tables 5, 6); DNF a name or *.name; URLF a "
+			    "host, *.host, either with a path, a * ending it; MBSF a "
+			    "TLS version; PDNS A or AAAA and an address, a prefix "
+			    "or any. Blocked." : k == 1 ? "Let through, where more "
+			    "specific than a Block or Quarantine entry." :
+			    "Suspicious: blocked as the Block's are, kept apart "
+			    "(not MBSF's).");
+			v = jget(jget(o, "lists"), lists[k]);
+			nm = v != NULL ? csv(v, buf, sizeof(buf)) : "";
+			text_field(h, k == 0 ? "Block lists" : k == 1 ? "Allow "
+			    "lists" : "Quarantine lists", k == 0 ? "lblock" : k ==
+			    1 ? "lallow" : "lquarantine", nm, "blocked",
+			    "Lists by name (below), feeds or pasted; IPPF, DNF, URLF "
+			    "and PDNS.");
+		}
+		h_fmt(h, "<label>No-match <select name=\"nomatch\"><option value="
+		    "\"allow\"%s>allow</option><option value=\"block\"%s>block"
+		    "</option></select><small>What is done where no entry "
+		    "matches (R68-R70); malware's is allow.</small></label>",
+		    jstr(o, "no-match") == NULL || strcmp(jstr(o, "no-match"),
+		    "allow") == 0 ? " selected" : "", jstr(o, "no-match") != NULL
+		    && strcmp(jstr(o, "no-match"), "block") == 0 ? " selected" :
+		    "");
+		snprintf(buf, sizeof(buf), "%lld", (long long)jint(o, "duration",
+		    6));
+		text_field(h, "Duration, hours", "duration", buf, "6", "Between "
+		    "updates of the threat data: its lists fetched at least so "
+		    "often (Tables 10-16); not the middlebox's.");
+		h_raw(h, "<fieldset><legend>Told (Notification, R20)</legend>");
+		for (k = 0; k < 3; k++) {
+			bool	on = false;
+			const ucl_object_t *e;
+			ucl_object_iter_t eit = NULL;
+
+			if (jget(o, "notify") == NULL)
+				on = k != 1;
+			while ((e = ucl_object_iterate(jget(o, "notify"), &eit,
+			    true)) != NULL)
+				if (strcmp(ucl_object_tostring_forced(e), lists[k]) ==
+				    0)
+					on = true;
+			h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+			    "name=\"n%s\" value=\"1\"%s> %s's matches</label>",
+			    lists[k], on ? " checked" : "", lnames[k]);
+		}
+		h_raw(h, "</fieldset><fieldset><legend>The middlebox's (MBSF)"
+		    "</legend>");
+		h_fmt(h, "<label>A server's certificate not trusted <select name="
+		    "\"badcert\"><option value=\"block\"%s>block</option><option "
+		    "value=\"allow\"%s>allow</option></select></label>", jstr(o,
+		    "invalid-server-certificate") == NULL || strcmp(jstr(o,
+		    "invalid-server-certificate"), "block") == 0 ? " selected" :
+		    "", jstr(o, "invalid-server-certificate") != NULL && strcmp(
+		    jstr(o, "invalid-server-certificate"), "allow") == 0 ?
+		    " selected" : "");
+		h_fmt(h, "<label>Unencrypted HTTP <select name=\"plain\"><option "
+		    "value=\"allow\"%s>allow</option><option value=\"block\"%s>"
+		    "block</option></select></label>", jstr(o, "unencrypted") ==
+		    NULL || strcmp(jstr(o, "unencrypted"), "allow") == 0 ?
+		    " selected" : "", jstr(o, "unencrypted") != NULL && strcmp(
+		    jstr(o, "unencrypted"), "block") == 0 ? " selected" : "");
+		v = jget(o, "pass-through");
+		text_field(h, "Never opened", "pass", v != NULL ? csv(v, buf,
+		    sizeof(buf)) : "", "bank.example, *.health.example", "Hosts "
+		    "let through as they are (Arcana's): a bank, a doctor.");
+		h_raw(h, "</fieldset><fieldset><legend>DNS protocol filtering's "
+		    "(DPF)</legend>");
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "redirect\" value=\"1\"%s> Send what it does not let through "
+		    "to the service's resolver, rather than refuse it (Arcana's: "
+		    "MEF 138's Alter)</label></fieldset>", jbool(o, "redirect") ?
+		    " checked" : "");
+		h_raw(h, "<p class=\"dim\">Malware (MD+R): signatures (ClamAV), "
+		    "what is found not passed on.</p>");
+		return (true);
+	}
 	if (app.modal == MODAL_SD_SECPOL) {
+		const ucl_object_t	*fp, *e;
+		ucl_object_iter_t	 fit, eit;
+		int			 k;
+
 		o = sd.edit[0] != '\0' ? jfind(jget(sw, "security_policies"),
 		    "name", sd.edit) : NULL;
-		cr = jget(o, "criteria");
 		h_fmt(h, "<form data-form=\"sd-secpol\"><h2>%s</h2><p>A security "
-		    "policy (MEF 88): what a flow's traffic may not do, where a "
-		    "policy names it by af-security-ingress or -egress. Each "
-		    "part is optional.</p><input type=\"hidden\" name=\"was\"", o !=
-		    NULL ? "A security policy, changed" : "A security policy");
+		    "policy: function policies together, where a policy names it "
+		    "by af-security-ingress or -egress, one of a function; and "
+		    "Arcana's own, which no MEF 138 function is.</p><input type="
+		    "\"hidden\" name=\"was\"", o != NULL ? "A security policy, "
+		    "changed" : "A security policy");
 		h_attr(h, "value", sd.edit);
 		h_raw(h, ">");
 		text_field(h, "Name", "name", jstr(o, "name"), "guard", NULL);
-		v = jget(jget(cr, "ip-block"), "allow");
-		text_field(h, "Addresses allowed", "allow", v != NULL &&
-		    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "",
-		    "10.1.0.0/16", "Prefixes let through before the denied are "
-		    "looked at (ip-block).");
-		v = jget(jget(cr, "ip-block"), "deny");
-		text_field(h, "Addresses denied", "deny", v != NULL &&
-		    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "",
-		    "192.0.2.0/24, 2001:db8:bad::/48", "Prefixes dropped, as "
-		    "source or destination (ip-block).");
-		v = jget(jget(cr, "ip-block"), "lists");
-		text_field(h, "Address lists", "iplists", v != NULL &&
-		    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "",
-		    "blocked", "Lists by name (the Security tab's), their "
-		    "prefixes denied (ip-block).");
-		v = jget(jget(cr, "dns-domain-filter"), "deny");
-		text_field(h, "Domains denied", "domains", v != NULL &&
-		    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "",
-		    "ads.example, tracker.example", "Names that do not resolve, "
-		    "with everything under them (dns-domain-filter).");
-		v = jget(jget(cr, "dns-domain-filter"), "lists");
-		text_field(h, "Domain lists", "dnslists", v != NULL &&
-		    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "",
-		    "blocked", "Lists by name, their domains denied.");
-		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
-		    "dnsproto\" value=\"1\"%s> DNS only to the provider's resolver "
-		    "(dns-protocol-filter)</label>", jbool(cr, "dns-protocol-filter")
-		    ? " checked" : "");
-		snprintf(buf, sizeof(buf), "%lld", (long long)jint(cr, "rate-limit",
-		    0));
-		text_field(h, "Rate limit, bits per second", "rate", jget(cr,
-		    "rate-limit") != NULL ? buf : "", "2000000", "A cap on the "
-		    "flow's traffic, by dummynet (rate-limit); empty for none.");
-		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
-		    "log\" value=\"1\"%s> Log what is denied (log)</label>", jbool(
-		    cr, "log") ? " checked" : "");
-		/* URLs, by a proxy on the edge (SASE-4): a plugin, Squid. */
-		{
-			const char	*mode = jstr(jget(cr, "url-filter"), "mode");
+		h_raw(h, "<fieldset><legend>Function policies</legend>");
+		k = 0;
+		fit = NULL;
+		while ((fp = ucl_object_iterate(jget(sw,
+		    "security_function_policies"), &fit, true)) != NULL) {
+			bool	on = false;
 
-			h_fmt(h, "<label>URL filter <select name=\"urlmode\"><option "
-			    "value=\"\"%s>none</option><option value=\"sni\"%s>the "
-			    "TLS names looked at, nothing opened (sni)</option>"
-			    "<option value=\"inspect\"%s>TLS opened with the edge's "
-			    "CA (inspect)</option></select><small>By Squid on the "
-			    "edge, a plugin installed there by hand; HTTP and TLS "
-			    "from the end points go through it (url-filter).</small>"
-			    "</label>", mode == NULL ? " selected" : "", mode != NULL
-			    && strcmp(mode, "sni") == 0 ? " selected" : "", mode !=
-			    NULL && strcmp(mode, "inspect") == 0 ? " selected" : "");
-			v = jget(jget(cr, "url-filter"), "deny");
-			text_field(h, "URL domains denied", "urldomains", v != NULL &&
-			    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf))
-			    : "", "bad.example", "Sites refused, with everything "
-			    "under them, by name in TLS or HTTP.");
-			v = jget(jget(cr, "url-filter"), "lists");
-			text_field(h, "URL domain lists", "urllists", v != NULL &&
-			    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf))
-			    : "", "blocked", "Lists by name, their domains refused.");
-			v = jget(jget(cr, "url-filter"), "allow");
-			text_field(h, "URL domains allowed", "urlallow", v != NULL &&
-			    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf))
-			    : "", "ok.bad.example", "Let through whatever the denied "
-			    "domains and lists say: a site under a denied one, a "
-			    "list's mistake.");
+			eit = NULL;
+			while ((e = ucl_object_iterate(jget(o, "function-policies"),
+			    &eit, true)) != NULL)
+				if (strcmp(ucl_object_tostring_forced(e), jstr(fp,
+				    "id")) == 0)
+					on = true;
+			h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+			    "name=\"fp%d\"", k++);
+			h_attr(h, "value", jstr(fp, "id"));
+			h_raw(h, on ? " checked> " : "> ");
+			h_txt(h, jstr(fp, "id"));
+			h_raw(h, " <span class=\"dim\">");
+			h_txt(h, sfp_function_name(jstr(fp, "function")));
+			h_raw(h, "</span></label>");
 		}
-		/* Malware, by c-icap and ClamAV behind the same Squid. */
-		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
-		    "malware\" value=\"1\"%s> Scan for malware (malware)<small>"
-		    "What comes back over HTTP, and over TLS where it is opened "
-		    "(inspect), scanned by ClamAV through c-icap, behind the "
-		    "same Squid: plugins installed by hand (c-icap, "
-		    "c-icap-modules, clamav and its signatures).</small></label>",
-		    jbool(cr, "malware") ? " checked" : "");
+		if (k == 0)
+			h_raw(h, "<p class=\"dim\">None yet: add function policies "
+			    "first.</p>");
+		h_raw(h, "</fieldset>");
+		snprintf(buf, sizeof(buf), "%lld", (long long)jint(o, "rate-limit",
+		    0));
+		text_field(h, "Rate limit, bits per second", "rate", jget(o,
+		    "rate-limit") != NULL ? buf : "", "2000000", "A cap on the "
+		    "flow's traffic, by dummynet; empty for none.");
 		/* Intrusion detection, by Suricata on the UNIs (SASE-4). */
 		{
-			const ucl_object_t	*ids = jget(cr, "ids"), *r;
+			const ucl_object_t	*ids = jget(o, "ids"), *r;
 			ucl_object_iter_t	 rit = NULL;
 
 			const char		*m = jstr(ids, "mode");
@@ -6115,7 +6418,7 @@ sdwan_modal_service(struct html *h)
 			    true)) != NULL)
 				option(h, jstr(m, "name"), jstr(m, "name"), jstr(cr, "af-security-egress"));
 			h_raw(h, "</select><small>What it is let through, under <b>"
-			    "Security</b> (MEF 88).</small></label>");
+			    "Security</b> (MEF 138).</small></label>");
 			return (true);
 		}
 		h_raw(h, "<div class=\"two\">");
@@ -6222,7 +6525,7 @@ sdwan_modal_service(struct html *h)
 		    true)) != NULL)
 			option(h, jstr(m, "name"), jstr(m, "name"), jstr(cr, "af-security-ingress"));
 		h_raw(h, "</select><small>What it is let through, under <b>"
-		    "Security</b> (MEF 88).</small></label>");
+		    "Security</b> (MEF 138).</small></label>");
 		h_raw(h, "</div>");
 		{
 			const ucl_object_t	*sc;
@@ -7465,7 +7768,7 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 	if (strcmp(form, "sd-swvc") != 0 && strcmp(form, "sd-zone") != 0 &&
 	    strcmp(form, "sd-flow") != 0 && strcmp(form, "sd-policy") != 0 &&
 	    strcmp(form, "sd-ep") != 0 && strcmp(form, "sd-map") != 0 &&
-	    strcmp(form, "sd-secpol") != 0)
+	    strcmp(form, "sd-secpol") != 0 && strcmp(form, "sd-sfp") != 0)
 		return (false);
 	if (sd.doc == NULL)
 		return (true);
@@ -7756,8 +8059,105 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
 			    "policies", 0, false);
 		list_put(sw, "zones", "name", was, o);
+	} else if (strcmp(form, "sd-sfp") == 0) {
+		static const char *const lists[] = { "block", "allow",
+		    "quarantine" };
+		static const char *const keys[] = { "id", "function", "block",
+		    "allow", "quarantine", "lists", "no-match", "duration", "notify",
+		    "detection-type", "removal", "invalid-server-certificate",
+		    "unencrypted", "pass-through", "redirect", NULL };
+		ucl_object_t	*ls, *nt;
+		const char	*fn = jstr(f, "function"), *t;
+		char		 key[16];
+		int		 k;
+
+		if (jstr(f, "id") == NULL || jstr(f, "id")[0] == '\0' || fn ==
+		    NULL) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A "
+			    "function policy has a policy ID and a function");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		o = merged_from(jfind(jget(sw, "security_function_policies"),
+		    "id", was), keys);
+		put_str(o, "id", jstr(f, "id"));
+		put_str(o, "function", fn);
+		ls = ucl_object_typed_new(UCL_OBJECT);
+		nt = ucl_object_typed_new(UCL_ARRAY);
+		for (k = 0; k < 3; k++) {
+			ucl_object_t	*arr;
+
+			if (strcmp(fn, "mbsf") == 0 && k == 2)
+				continue;
+			arr = sfp_entries_parse(fn, jstr(f, lists[k]));
+			if (ucl_array_size(arr) > 0)
+				ucl_object_insert_key(o, arr, lists[k], 0, false);
+			else
+				ucl_object_unref(arr);
+			snprintf(key, sizeof(key), "l%s", lists[k]);
+			if ((t = jstr(f, key)) != NULL && t[0] != '\0')
+				put_list(ls, lists[k], t);
+			snprintf(key, sizeof(key), "n%s", lists[k]);
+			if (checked(f, key))
+				ucl_array_append(nt, ucl_object_fromstring(lists[k]));
+		}
+		if (ucl_object_lookup(ls, "block") != NULL || ucl_object_lookup(ls,
+		    "allow") != NULL || ucl_object_lookup(ls, "quarantine") !=
+		    NULL)
+			ucl_object_insert_key(o, ls, "lists", 0, false);
+		else
+			ucl_object_unref(ls);
+		ucl_object_insert_key(o, nt, "notify", 0, false);
+		put_str(o, "no-match", jstr(f, "nomatch") != NULL ? jstr(f,
+		    "nomatch") : "allow");
+		if (strcmp(fn, "mbsf") != 0)
+			put_int(o, "duration", jstr(f, "duration"));
+		if (strcmp(fn, "mdr") == 0) {
+			put_str(o, "detection-type", "signature");
+			put_str(o, "removal", "block-subset");
+		}
+		if (strcmp(fn, "mbsf") == 0) {
+			put_str(o, "invalid-server-certificate", jstr(f, "badcert"));
+			put_str(o, "unencrypted", jstr(f, "plain"));
+			if (jstr(f, "pass") != NULL && jstr(f, "pass")[0] != '\0')
+				put_list(o, "pass-through", jstr(f, "pass"));
+		}
+		if (strcmp(fn, "dpf") == 0 && checked(f, "redirect"))
+			ucl_object_insert_key(o, ucl_object_frombool(true),
+			    "redirect", 0, false);
+		list_put(sw, "security_function_policies", "id", was, o);
+		/* A new ID: the security policies naming the old one name
+		 * the new one. */
+		if (was[0] != '\0' && strcmp(was, jstr(f, "id")) != 0) {
+			const ucl_object_t	*sp, *e;
+			ucl_object_iter_t	 sit, eit;
+			ucl_object_t		*na;
+
+			sit = NULL;
+			while ((sp = ucl_object_iterate(jget(sw,
+			    "security_policies"), &sit, true)) != NULL) {
+				if (jget(sp, "function-policies") == NULL)
+					continue;
+				na = ucl_object_typed_new(UCL_ARRAY);
+				eit = NULL;
+				while ((e = ucl_object_iterate(jget(sp,
+				    "function-policies"), &eit, true)) != NULL)
+					ucl_array_append(na, ucl_object_fromstring(
+					    strcmp(ucl_object_tostring_forced(e), was)
+					    == 0 ? jstr(f, "id") :
+					    ucl_object_tostring_forced(e)));
+				ucl_object_replace_key((ucl_object_t *)(uintptr_t)
+				    sp, na, "function-policies", 0, false);
+			}
+		}
 	} else if (strcmp(form, "sd-secpol") == 0) {
-		ucl_object_t	*cr, *b;
+		static const char *const keys[] = { "name", "function-policies",
+		    "rate-limit", "ids", NULL };
+		ucl_object_t	*b, *fps;
+		const ucl_object_t *fp;
+		ucl_object_iter_t fit;
+		char		 key[16];
+		int		 k;
 
 		if (jstr(f, "name") == NULL || jstr(f, "name")[0] == '\0') {
 			snprintf(app.modal_error, sizeof(app.modal_error), "A "
@@ -7765,62 +8165,23 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			ucl_object_unref(doc);
 			return (true);
 		}
-		{
-			static const char *const keys[] = { "name", "criteria",
-			    NULL };
-
-			o = merged_from(jfind(jget(sw, "security_policies"),
-			    "name", was), keys);
-		}
+		o = merged_from(jfind(jget(sw, "security_policies"), "name", was),
+		    keys);
 		put_str(o, "name", jstr(f, "name"));
-		cr = ucl_object_typed_new(UCL_OBJECT);
-		if ((jstr(f, "allow") != NULL && jstr(f, "allow")[0] != '\0') ||
-		    (jstr(f, "deny") != NULL && jstr(f, "deny")[0] != '\0') ||
-		    (jstr(f, "iplists") != NULL && jstr(f, "iplists")[0] != '\0')) {
-			b = ucl_object_typed_new(UCL_OBJECT);
-			if (jstr(f, "allow") != NULL && jstr(f, "allow")[0] != '\0')
-				put_list(b, "allow", jstr(f, "allow"));
-			if (jstr(f, "deny") != NULL && jstr(f, "deny")[0] != '\0')
-				put_list(b, "deny", jstr(f, "deny"));
-			if (jstr(f, "iplists") != NULL && jstr(f, "iplists")[0] != '\0')
-				put_list(b, "lists", jstr(f, "iplists"));
-			ucl_object_insert_key(cr, b, "ip-block", 0, false);
+		fps = ucl_object_typed_new(UCL_ARRAY);
+		k = 0;
+		fit = NULL;
+		while ((fp = ucl_object_iterate(jget(sw,
+		    "security_function_policies"), &fit, true)) != NULL) {
+			snprintf(key, sizeof(key), "fp%d", k++);
+			if (checked(f, key) || (jstr(f, key) != NULL && strcmp(jstr(
+			    f, key), jstr(fp, "id")) == 0))
+				ucl_array_append(fps, ucl_object_fromstring(jstr(fp,
+				    "id")));
 		}
-		if ((jstr(f, "domains") != NULL && jstr(f, "domains")[0] != '\0') ||
-		    (jstr(f, "dnslists") != NULL && jstr(f, "dnslists")[0] != '\0')) {
-			b = ucl_object_typed_new(UCL_OBJECT);
-			if (jstr(f, "domains") != NULL && jstr(f, "domains")[0] != '\0')
-				put_list(b, "deny", jstr(f, "domains"));
-			if (jstr(f, "dnslists") != NULL && jstr(f, "dnslists")[0] !=
-			    '\0')
-				put_list(b, "lists", jstr(f, "dnslists"));
-			ucl_object_insert_key(cr, b, "dns-domain-filter", 0, false);
-		}
-		if (checked(f, "dnsproto"))
-			ucl_object_insert_key(cr, ucl_object_frombool(true),
-			    "dns-protocol-filter", 0, false);
+		ucl_object_insert_key(o, fps, "function-policies", 0, false);
 		if (jstr(f, "rate") != NULL && jstr(f, "rate")[0] != '\0')
-			put_int(cr, "rate-limit", jstr(f, "rate"));
-		if (checked(f, "log"))
-			ucl_object_insert_key(cr, ucl_object_frombool(true), "log", 0,
-			    false);
-		if (jstr(f, "urlmode") != NULL && jstr(f, "urlmode")[0] != '\0') {
-			b = ucl_object_typed_new(UCL_OBJECT);
-			put_str(b, "mode", jstr(f, "urlmode"));
-			if (jstr(f, "urldomains") != NULL && jstr(f, "urldomains")[0]
-			    != '\0')
-				put_list(b, "deny", jstr(f, "urldomains"));
-			if (jstr(f, "urllists") != NULL && jstr(f, "urllists")[0] !=
-			    '\0')
-				put_list(b, "lists", jstr(f, "urllists"));
-			if (jstr(f, "urlallow") != NULL && jstr(f, "urlallow")[0] !=
-			    '\0')
-				put_list(b, "allow", jstr(f, "urlallow"));
-			ucl_object_insert_key(cr, b, "url-filter", 0, false);
-		}
-		if (checked(f, "malware"))
-			ucl_object_insert_key(cr, ucl_object_frombool(true),
-			    "malware", 0, false);
+			put_int(o, "rate-limit", jstr(f, "rate"));
 		if (jstr(f, "idsmode") != NULL && jstr(f, "idsmode")[0] != '\0') {
 			ucl_object_t	*rl = ucl_object_typed_new(UCL_ARRAY);
 			const char	*t = jstr(f, "idsrules"), *e;
@@ -7850,9 +8211,9 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			if (checked(f, "idsruleset"))
 				ucl_object_insert_key(b, ucl_object_frombool(true),
 				    "ruleset", 0, false);
-			ucl_object_insert_key(cr, b, "ids", 0, false);
-		}
-		ucl_object_insert_key(o, cr, "criteria", 0, false);
+			ucl_object_insert_key(o, b, "ids", 0, true);
+		} else
+			ucl_object_delete_key(o, "ids");
 		list_put(sw, "security_policies", "name", was, o);
 	} else if (strcmp(form, "sd-flow") == 0) {
 		static const char *const apps[] = { "dns", "http", "https", "ssh",
@@ -8297,9 +8658,11 @@ sd_service_remove(const char *what, const char *arg, const char *value)
 		list = strcmp(what, "zone") == 0 ? "zones" : strcmp(what, "flow")
 		    == 0 ? "flows" : strcmp(what, "policy") == 0 ? "policies" :
 		    strcmp(what, "secpol") == 0 ? "security_policies" :
+		    strcmp(what, "sfp") == 0 ? "security_function_policies" :
 		    strcmp(what, "lim") == 0 ? "rate_limiters" : strcmp(what,
 		    "topo") == 0 ? "topologies" : "end_points";
-		key = strcmp(what, "ep") == 0 ? "id" : "name";
+		key = strcmp(what, "ep") == 0 || strcmp(what, "sfp") == 0 ? "id" :
+		    "name";
 		arr = (ucl_object_t *)(uintptr_t)jget(sw, list);
 	}
 	n = arr != NULL ? ucl_array_size(arr) : 0;
@@ -8474,12 +8837,20 @@ example(void)
 	    "\t\t\t\t\"internet-breakout\": \"enabled\",\n"
 	    "\t\t\t\t\"af-security-ingress\": \"guard\"}}\n"
 	    "\t\t],\n"
+	    "\t\t\"security_function_policies\": [\n"
+	    "\t\t\t{\"id\": \"guard-ippf\", \"function\": \"ippf\", "
+	    "\"block\": [{\"dav4\": [\"192.0.2.0/24\"]}],\n"
+	    "\t\t\t \"no-match\": \"allow\", \"duration\": 6},\n"
+	    "\t\t\t{\"id\": \"guard-dnf\", \"function\": \"dnf\", "
+	    "\"block\": [\"ads.example\"],\n"
+	    "\t\t\t \"no-match\": \"allow\", \"duration\": 6},\n"
+	    "\t\t\t{\"id\": \"guard-dpf\", \"function\": \"dpf\", "
+	    "\"no-match\": \"block\", \"redirect\": true,\n"
+	    "\t\t\t \"duration\": 6}\n"
+	    "\t\t],\n"
 	    "\t\t\"security_policies\": [\n"
-	    "\t\t\t{\"name\": \"guard\", \"criteria\": {\n"
-	    "\t\t\t\t\"ip-block\": {\"deny\": [\"192.0.2.0/24\"]},\n"
-	    "\t\t\t\t\"dns-domain-filter\": {\"deny\": [\"ads.example\"]},\n"
-	    "\t\t\t\t\"dns-protocol-filter\": true,\n"
-	    "\t\t\t\t\"log\": true}}\n"
+	    "\t\t\t{\"name\": \"guard\", \"function-policies\": "
+	    "[\"guard-ippf\", \"guard-dnf\", \"guard-dpf\"]}\n"
 	    "\t\t],\n"
 	    "\t\t\"end_points\": [\n"
 	    "\t\t\t{\"id\": \"hq\", \"edge\": \"%s\", \"uni\": {\"id\": "
@@ -8775,7 +9146,7 @@ sdwan_action(const char *act, const char *arg, const char *value)
 	    0 || strncmp(act, "sd-flow-", 8) == 0 || strncmp(act, "sd-policy-",
 	    10) == 0 || strncmp(act, "sd-ep-", 6) == 0 || strncmp(act,
 	    "sd-map-", 7) == 0 || strncmp(act, "sd-zmap-", 8) == 0 || strncmp(
-	    act, "sd-secpol-", 10) == 0) {
+	    act, "sd-secpol-", 10) == 0 || strncmp(act, "sd-sfp-", 7) == 0) {
 		const char	*what, *verb;
 		char		 kind[12], body[300];
 
@@ -8795,7 +9166,8 @@ sdwan_action(const char *act, const char *arg, const char *value)
 			    "flow") == 0 ? MODAL_SD_FLOW : strcmp(kind, "policy") ==
 			    0 ? MODAL_SD_POLICY : strcmp(kind, "ep") == 0 ?
 			    MODAL_SD_EP : strcmp(kind, "secpol") == 0 ?
-			    MODAL_SD_SECPOL : MODAL_SD_MAP;
+			    MODAL_SD_SECPOL : strcmp(kind, "sfp") == 0 ?
+			    MODAL_SD_SFP : MODAL_SD_MAP;
 			app.modal_error[0] = '\0';
 			if (app.modal == MODAL_SD_EP) {
 				const ucl_object_t	*ep = jfind(jget(swvc_shown(),
@@ -8827,7 +9199,10 @@ sdwan_action(const char *act, const char *arg, const char *value)
 			    "document; what names it will not pass the check "
 			    "until changed. Nothing is made or unmade until "
 			    "Apply.", strcmp(kind, "map") == 0 || strcmp(kind,
-			    "zmap") == 0 || strcmp(kind, "swvc") == 0 ? arg : kind);
+			    "zmap") == 0 || strcmp(kind, "swvc") == 0 ? arg :
+			    strcmp(kind, "sfp") == 0 ? "function policy" :
+			    strcmp(kind, "secpol") == 0 ? "security policy" :
+			    strcmp(kind, "ep") == 0 ? "end point" : kind);
 			confirm("Take it away", body, "Take away", true, "", daction,
 			    arg, value);
 			return (true);
@@ -8839,7 +9214,7 @@ sdwan_action(const char *act, const char *arg, const char *value)
 	    "flow", 4) == 0 || strncmp(act + 6, "policy", 6) == 0 || strncmp(
 	    act + 6, "ep-", 3) == 0 || strncmp(act + 6, "map", 3) == 0 ||
 	    strncmp(act + 6, "zmap", 4) == 0 || strncmp(act + 6, "secpol", 6)
-	    == 0)) {
+	    == 0 || strncmp(act + 6, "sfp", 3) == 0)) {
 		char	kind[12];
 
 		snprintf(kind, sizeof(kind), "%.*s", (int)(strrchr(act, '-') -

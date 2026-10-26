@@ -992,6 +992,7 @@ role_keep(struct http_request *req, ucl_object_t *body)
 	ucl_object_t		*r;
 	const ucl_object_t	*old;
 	const char		*e, *name;
+	char			 kept[65];	/* name, the body's, kept */
 	bool			 was_owner;
 
 	name = ucl_str(body, "name");
@@ -1004,6 +1005,7 @@ role_keep(struct http_request *req, ucl_object_t *body)
 		ucl_object_unref(body);
 		return (reply_error(req, 400, "invalid", "%s", e));
 	}
+	strlcpy(kept, name, sizeof(kept));
 	old = by_name("roles", name);
 	if (old == NULL && ucl_array_size(list_of("roles")) >= ROLES_MAX) {
 		ucl_object_unref(body);
@@ -1039,7 +1041,7 @@ role_keep(struct http_request *req, ucl_object_t *body)
 	if (store_save(USERS_FILE, udoc) != 0)
 		return (reply_error(req, 500, "store", "the roles could not be "
 		    "written"));
-	log_msg(LOG_NOTICE, "role %s %s by %s", name, old != NULL ? "changed" :
+	log_msg(LOG_NOTICE, "role %s %s by %s", kept, old != NULL ? "changed" :
 	    "added", session_who(req) != NULL ? session_who(req) : "?");
 	return (reply_all(req));
 }
@@ -1051,6 +1053,7 @@ user_keep(struct http_request *req, ucl_object_t *body)
 	ucl_object_t		*u;
 	const ucl_object_t	*old;
 	const char		*e, *name;
+	char			 kept[65];	/* name, the body's, kept */
 	bool			 was_owner;
 
 	name = ucl_str(body, "name");
@@ -1063,6 +1066,7 @@ user_keep(struct http_request *req, ucl_object_t *body)
 		ucl_object_unref(body);
 		return (reply_error(req, 400, "invalid", "%s", e));
 	}
+	strlcpy(kept, name, sizeof(kept));
 	old = by_name("users", name);
 	if (old == NULL && ucl_array_size(list_of("users")) >= USERS_MAX) {
 		ucl_object_unref(body);
@@ -1104,7 +1108,7 @@ user_keep(struct http_request *req, ucl_object_t *body)
 	if (store_save(USERS_FILE, udoc) != 0)
 		return (reply_error(req, 500, "store", "the users could not be "
 		    "written"));
-	log_msg(LOG_NOTICE, "user %s %s by %s", name, old != NULL ? "changed" :
+	log_msg(LOG_NOTICE, "user %s %s by %s", kept, old != NULL ? "changed" :
 	    "added", session_who(req) != NULL ? session_who(req) : "?");
 	return (reply_all(req));
 }
@@ -1337,6 +1341,7 @@ group_keep(struct http_request *req, ucl_object_t *body)
 	const ucl_object_t	*old, *m, *u, *e;
 	ucl_object_iter_t	 it, mit;
 	const char		*err, *name;
+	char			 kept[65];	/* name, the body's, kept */
 	bool			 named;
 
 	name = ucl_str(body, "name");
@@ -1349,6 +1354,7 @@ group_keep(struct http_request *req, ucl_object_t *body)
 		ucl_object_unref(body);
 		return (reply_error(req, 400, "invalid", "%s", err));
 	}
+	strlcpy(kept, name, sizeof(kept));
 	old = by_name("groups", name);
 	if (old == NULL && ucl_array_size(list_of("groups")) >= GROUPS_MAX) {
 		ucl_object_unref(body);
@@ -1386,7 +1392,7 @@ group_keep(struct http_request *req, ucl_object_t *body)
 	if (store_save(USERS_FILE, udoc) != 0)
 		return (reply_error(req, 500, "store", "the groups could not be "
 		    "written"));
-	log_msg(LOG_NOTICE, "group %s %s by %s", name, old != NULL ? "changed" :
+	log_msg(LOG_NOTICE, "group %s %s by %s", kept, old != NULL ? "changed" :
 	    "added", session_who(req) != NULL ? session_who(req) : "?");
 	return (reply_all(req));
 }

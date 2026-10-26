@@ -1845,15 +1845,16 @@ operation takes them: each a name, the fib it runs in and its
 configuration; checked first, started or started again, those not
 named stopped.
 .It Cm sdwan proxy Ar json
-The URL filters of the services at this edge (MEF 88), as the
-sdwan-proxy operation takes them: each a name, its fib, its mode (sni
-or inspect), Squid's configuration and the domains denied.
+The proxies of the services at this edge (MEF 138's URLF, MBSF and
+MD+R), as the sdwan-proxy operation takes them: each a name, its fib,
+its mode (sni or inspect), Squid's configuration, the domains denied
+and its lists, files by name.
 .It Cm sdwan ids Ar json
 The intrusion detection of the services at this edge, as the
 sdwan-ids operation takes them: each a name, its interfaces, Suricata's
 configuration, its rules and, to prevent, its divert port.
 .It Cm sdwan dns Ar json
-The DNS filters of the services at this edge (MEF 88), as the
+The resolvers of the services at this edge (MEF 138's DNF and PDNS), as the
 sdwan-dns operation takes them: each a name, the fib it runs in and
 its
 .Xr unbound 8

@@ -6008,9 +6008,9 @@ part_flows(void)
 	run("const t = document.querySelector('form[data-form=sd-doc] "
 	    "textarea'); t.value = window.sdText.replaceAll('\"vtnet2\"', "
 	    "'\"lo0\"').replace('\"geneve\"', '\"gif\"').replace(', "
-	    "\"fd00:64::/64\"', '').replace('\"log\": true}}', '\"log\": "
-	    "true, \"ids\": {\"mode\": \"detect\", \"ruleset\": true, "
-	    "\"rules\": [\"alert tcp any any -> any 80 (sid:1000001; rev:1;)\"]}}}');");
+	    "\"fd00:64::/64\"', '').replace('\"guard-dpf\"]}', '\"guard-dpf\"], "
+	    "\"ids\": {\"mode\": \"detect\", \"ruleset\": true, "
+	    "\"rules\": [\"alert tcp any any -> any 80 (sid:1000001; rev:1;)\"]}}');");
 	run("document.querySelector('form[data-form=sd-doc] button[value="
 	    "keep]').click()");
 	wait_js("/version [0-9]+/.test((document.querySelector('section."
@@ -6332,8 +6332,33 @@ part_flows(void)
 	    ".value === 'detect' && document.querySelector('.modal textarea[name="
 	    "idsrules]').value.includes('sid:1000001') && document.querySelector("
 	    "'.modal input[name=idsruleset]').checked"));
+	ATF_CHECK(js_true("[...document.querySelectorAll('.modal input[name^=fp]')]"
+	    ".filter(i => i.checked).map(i => i.value).join() === "
+	    "'guard-ippf,guard-dnf,guard-dpf'"));
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	/* The function policies (MEF 138): each with its function and lists,
+	 * the security policy it is in; the IPPF's form with its entry as
+	 * words, its No-match and Duration. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan table.sd "
+	    "tbody tr')].some(tr => tr.textContent.startsWith('guard-ippf') && "
+	    "tr.textContent.includes('IP, port and protocol filtering (IPPF)') && "
+	    "tr.textContent.includes('6 h') && tr.textContent.includes('guard'))"));
+	run("document.querySelector('button[data-act=sd-sfp-edit][data-arg="
+	    "guard-ippf]').click()");
+	wait_js("document.querySelector('.modal form[data-form=sd-sfp]') !== "
+	    "null", 5);
+	ATF_CHECK(js_true("document.querySelector('.modal textarea[name=block]')"
+	    ".value.trim() === 'dav4=192.0.2.0/24' && document.querySelector("
+	    "'.modal select[name=function]').value === 'ippf' && document"
+	    ".querySelector('.modal select[name=nomatch]').value === 'allow' && "
+	    "document.querySelector('.modal input[name=nblock]').checked && "
+	    "!document.querySelector('.modal input[name=nallow]').checked"));
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	shot("9-sdwan-security");
+	run("[...document.querySelectorAll('section.sdwan h3')].find(h => "
+	    "h.textContent.startsWith('Security function policies'))"
+	    ".scrollIntoView()");
+	shot("9-sdwan-security-functions");
 	/* Identities: the example's alice, at the remote end point, with
 	 * the address the plan gave her. */
 	run("document.querySelector('button[data-act=sd-tab][data-arg="

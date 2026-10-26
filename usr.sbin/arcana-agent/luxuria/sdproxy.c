@@ -4,13 +4,14 @@
  */
 
 /*
- * The proxies of the SD-WAN services at this edge (MEF 88's url-filter
- * criterion of a security policy): Squid, a plugin the host has
+ * The proxies of the SD-WAN services at this edge (MEF 138's URLF, MBSF
+ * and MD+R, the function policies of a zone): Squid, a plugin the host has
  * installed (nothing is installed by Arcana), one instance per service
  * run in the service's routing table (setfib), its configuration
  * written by the console with places for what the agent knows: the
- * pid file, the CA, the certificate cache, the certificate maker and
- * the file of denied domains.  In mode sni the TLS names are looked
+ * pid file, the CA, the certificate cache, the certificate maker, the
+ * file of denied domains and the files of the lists it names
+ * (@LIST:name@, each written beside it).  In mode sni the TLS names are looked
  * at (peek) and a connection to a denied one ended, the rest let
  * through unopened (splice); in mode inspect TLS is opened (bump) with
  * a CA of the instance's own, made once by openssl(1) and kept, its
@@ -55,6 +56,7 @@
 #define	INSTANCES_MAX	64
 #define	CONF_MAX	(256 * 1024)
 #define	DENY_MAX	(8 * 1024 * 1024)
+#define	LISTS_MAX	64		/* list files an instance */
 #define	PATH_CERTGEN	"/usr/local/libexec/squid/security_file_certgen"
 
 struct instance {
@@ -408,20 +410,99 @@ inst_ssldb(struct work *w, const char *name, const char **errp)
 	return (true);
 }
 
-/* An instance's file: the console's text with the agent's places filled. */
+/*
+ * An instance's file: the console's text with the agent's places filled,
+ * a list's (@LIST:name@) with the path of its file.
+ */
 static char *
-inst_conf(struct work *w, const char *name, const char *conf)
+inst_conf(struct work *w, const char *name, const char *conf,
+    const ucl_object_t *lists)
 {
-	const char	*from[] = { "@PID@", "@CA@", "@SSLDB@", "@CERTGEN@",
-			    "@DENY@" };
-	const char	*to[5];
+	const char		*from[5 + LISTS_MAX], *to[5 + LISTS_MAX];
+	const ucl_object_t	*l;
+	ucl_object_iter_t	 it;
+	size_t			 n;
 
+	from[0] = "@PID@";
 	to[0] = inst_path(w, name, "pid");
+	from[1] = "@CA@";
 	to[1] = inst_path(w, name, "pem");
+	from[2] = "@SSLDB@";
 	to[2] = inst_path(w, name, "ssl_db");
+	from[3] = "@CERTGEN@";
 	to[3] = certgen_bin(w);
+	from[4] = "@DENY@";
 	to[4] = inst_path(w, name, "deny");
-	return ((char *)(uintptr_t)sdwan_subst(w, conf, from, to, 5));
+	n = 5;
+	it = NULL;
+	while ((l = ucl_object_iterate(lists, &it, true)) != NULL &&
+	    n < 5 + LISTS_MAX) {
+		from[n] = wfmt(w, "@LIST:%s@", ucl_object_key(l));
+		to[n++] = inst_path(w, name, wfmt(w, "list-%s",
+		    ucl_object_key(l)));
+	}
+	return ((char *)(uintptr_t)sdwan_subst(w, conf, from, to, n));
+}
+
+/* An instance's list files gone, all of them. */
+static void
+lists_clear(struct work *w, const char *name)
+{
+	DIR		*d;
+	struct dirent	*de;
+	const char	*path, *dir, *pre;
+	size_t		 n;
+
+	path = inst_path(w, name, "x");
+	dir = strrchr(path, '/') != NULL ? wfmt(w, "%.*s", (int)(strrchr(path,
+	    '/') - path), path) : ".";
+	pre = wfmt(w, "sdwan-proxy-%s.list-", name);
+	n = strlen(pre);
+	if ((d = opendir(dir)) == NULL)
+		return;
+	while ((de = readdir(d)) != NULL)
+		if (strncmp(de->d_name, pre, n) == 0)
+			(void)unlinkat(dirfd(d), de->d_name, 0);
+	closedir(d);
+}
+
+/* An instance's list files, those it had before gone. */
+static bool
+lists_write(struct work *w, const char *name, const ucl_object_t *lists,
+    const char **errp)
+{
+	const ucl_object_t	*l;
+	ucl_object_iter_t	 it;
+
+	lists_clear(w, name);
+	it = NULL;
+	while ((l = ucl_object_iterate(lists, &it, true)) != NULL)
+		if (sdwan_conf_write(wfmt(w, "sdwan-proxy-%s.list-%s", name,
+		    ucl_object_key(l)), ucl_object_tostring(l), errp) != 0)
+			return (false);
+	return (true);
+}
+
+/* An instance's lists as the console sends them: names to texts. */
+static bool
+lists_ok(const ucl_object_t *lists)
+{
+	const ucl_object_t	*l;
+	ucl_object_iter_t	 it;
+	size_t			 n;
+
+	if (lists == NULL)
+		return (true);
+	if (ucl_object_type(lists) != UCL_OBJECT)
+		return (false);
+	n = 0;
+	it = NULL;
+	while ((l = ucl_object_iterate(lists, &it, true)) != NULL)
+		if (++n > LISTS_MAX || !name_ok(ucl_object_key(l)) ||
+		    ucl_object_type(l) != UCL_STRING || strlen(
+		    ucl_object_tostring(l)) > DENY_MAX)
+			return (false);
+	return (true);
 }
 
 /* An instance started in its table, or told its file again. */
@@ -463,6 +544,7 @@ inst_down(struct work *w, const char *name)
 	icap_down(w, name);
 	(void)unlink(inst_path(w, name, "conf"));
 	(void)unlink(inst_path(w, name, "deny"));
+	lists_clear(w, name);
 	(void)unlink(inst_path(w, name, "pid"));
 }
 
@@ -527,12 +609,14 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 		    ucl_object_lookup(in, "fib")) > 65535 || conf == NULL ||
 		    strlen(conf) > CONF_MAX || (deny != NULL && strlen(deny) >
 		    DENY_MAX) || mode == NULL || (strcmp(mode, "sni") != 0 &&
-		    strcmp(mode, "inspect") != 0)) {
+		    strcmp(mode, "inspect") != 0) || !lists_ok(ucl_object_lookup(
+		    in, "lists"))) {
 			ucl_object_unref(top);
 			*errp = wfmt(w, "an instance is a name of letters, digits, "
 			    "_ and -, 32 at most, a fib, a mode (sni or inspect), "
-			    "its conf and its deny, %d of them at most",
-			    INSTANCES_MAX);
+			    "its conf, its deny and its lists (names of the same "
+			    "letters to texts, %d at most), %d of them at most",
+			    LISTS_MAX, INSTANCES_MAX);
 			return (-1);
 		}
 		for (i = 0; i < n; i++)
@@ -626,9 +710,11 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 		}
 		inst_chown(w, inst_path(w, ni[k].name, "pem"), false);
 		if (sdwan_conf_write(wfmt(w, "sdwan-proxy-%s.deny", ni[k].name),
-		    deny != NULL ? deny : "", &e) != 0 || sdwan_conf_write(wfmt(w,
-		    "sdwan-proxy-%s.conf", ni[k].name), text = inst_conf(w,
-		    ni[k].name, conf), &e) != 0) {
+		    deny != NULL ? deny : "", &e) != 0 || !lists_write(w,
+		    ni[k].name, ucl_object_lookup(in, "lists"), &e) ||
+		    sdwan_conf_write(wfmt(w, "sdwan-proxy-%s.conf", ni[k].name),
+		    text = inst_conf(w, ni[k].name, conf, ucl_object_lookup(in,
+		    "lists")), &e) != 0) {
 			step_end(w, step, false, "%s", e);
 			*errp = wfmt(w, "%s: %s", ni[k].name, e);
 			ok = false;

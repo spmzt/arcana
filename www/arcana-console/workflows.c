@@ -1313,6 +1313,7 @@ run_job(struct hostrun *hr, int k, const ucl_object_t *step)
 		if ((json = hosts_job(hr->h.uri, hr->h.peer, hr->h.name, id,
 		    &status)) == NULL || (jr = parse(json)) == NULL) {
 			free(json);
+			json = NULL;
 			if (time(NULL) > until) {
 				step_set(hr, k, "failed", "the host did not "
 				    "say how the job ended");
@@ -1345,6 +1346,7 @@ run_job(struct hostrun *hr, int k, const ucl_object_t *step)
 		}
 		ucl_object_unref(jr);
 		free(json);
+		json = NULL;
 		if (cancelled(hr->run) || time(NULL) > until) {
 			step_set(hr, k, "cancelled", cancelled(hr->run) ?
 			    "stopped" : "it took more than an hour");
@@ -2819,9 +2821,11 @@ api_runs(struct http_request *req)
 		if (strcmp(ucl_str(one, "state"), "running") != 0 || !waits) {
 			pthread_mutex_unlock(&wf_lock);
 			ucl_object_unref(top);
+			/* id is in's: the reply first. */
+			reply_error(req, 409, "not-waiting", "no step %s waits "
+			    "for an approval", id);
 			ucl_object_unref(in);
-			return (reply_error(req, 409, "not-waiting", "no step %s "
-			    "waits for an approval", id));
+			return (WEB_OK);
 		}
 		if ((a = (ucl_object_t *)(uintptr_t)ucl_object_lookup(one,
 		    "approved")) == NULL) {

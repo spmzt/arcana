@@ -1,0 +1,131 @@
+name: CodeQL
+
+# The C analysed as FreeBSD builds it.  CodeQL runs on Linux alone, so
+# the tree is built in the Containerfile's build stage (a FreeBSD
+# userland, in a FreeBSD VM) with every compile written down
+# (tools/codeql/capture.sh), and each compile is done again on a Linux
+# runner under CodeQL, for FreeBSD's target and against the headers
+# and generated sources of that build (tools/codeql/replay.py).  The
+# workflow files and the JavaScript are analysed as they are.
+#
+# This replaces GitHub's default setup, which guessed at a build it
+# could not make: without FreeBSD's headers, calls it could not read
+# came out as alerts.
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+# Each job asks for what it needs; nothing by default.
+permissions: {}
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Free disk space
+        uses: endersonmenezes/free-disk-space@7901478139cff6e9d44df5972fd8ab8fcade4db1 # v3
+        with:
+          remove_tool_cache: true
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_swap: true
+          remove_packages: "azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox mono-complete"
+          remove_packages_one_command: true
+          rm_cmd: rmz
+
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          submodules: recursive
+
+      - name: Build on FreeBSD, the compiles written down
+        uses: vmactions/freebsd-vm@b84ab5559b5a1bb4b8ee2737d2506a16e1737636 # v1.4.8
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y podman-suite
+          run: |
+            set -eu
+            buildah build -f Containerfile --network=host --target build \
+                --build-arg ARCANA_TESTS=no --build-arg ARCANA_CODEQL=yes \
+                -t arcana-codeql .
+            c=$(buildah from arcana-codeql)
+            cp "$(buildah mount "$c")/tmp/codeql.tar.zst" .
+            buildah umount "$c"
+            buildah rm "$c"
+
+      - name: Keep the capture
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codeql-capture
+          path: codeql.tar.zst
+          retention-days: 3
+
+  analyze-c:
+    needs: capture
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          submodules: recursive
+
+      - name: Take the capture
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: codeql-capture
+          path: ${{ runner.temp }}
+
+      - name: Unpack it
+        run: |
+          mkdir "${RUNNER_TEMP}/capture"
+          tar -C "${RUNNER_TEMP}/capture" --zstd -xf "${RUNNER_TEMP}/codeql.tar.zst"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: c-cpp
+          build-mode: manual
+
+      - name: Compile again, as FreeBSD did
+        run: python3 tools/codeql/replay.py "${RUNNER_TEMP}/capture"
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: /language:c-cpp
+
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ actions, javascript-typescript ]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: /language:${{ matrix.language }}

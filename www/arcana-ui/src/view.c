@@ -2483,6 +2483,7 @@ modal(struct html *h)
 	case MODAL_SD_NLIST:
 	case MODAL_SD_GROUP:
 	case MODAL_SD_SECPOL:
+	case MODAL_SD_SFP:
 	case MODAL_SD_LIST:
 	case MODAL_SD_IDENTITY:
 	case MODAL_SD_CONFIG:

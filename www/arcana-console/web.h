@@ -106,6 +106,7 @@ void		 ws_send(struct conn *, uint8_t, const void *, size_t);
 /* The request's body, kept in memory whole. */
 struct http_body {
 	uint8_t	*data;
+	size_t	 cap;		/* of data */
 	size_t	 length;
 	size_t	 offset;	/* how far http_body_read() has read */
 };
@@ -147,7 +148,6 @@ struct http_request {
 	size_t			 resp_len, resp_off;
 	bool			 headers_sent;
 	int			 flags;
-	int			 ntasks;	/* bound to it, not yet done */
 	TAILQ_ENTRY(http_request) list;
 };
 
@@ -205,7 +205,6 @@ struct task {
 	int			 state;
 	int			 result;
 	bool			 queued;	/* on the loop's list of ready */
-	bool			 counted;	/* its request was told */
 	bool			 destroyed;
 	pthread_mutex_t		 lock;
 	STAILQ_HEAD(, task_msg)	 chan;		/* from the task to the loop */

@@ -23,7 +23,7 @@
 _Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
     "written for cblink 0.2: its wire, its structs");
 
-#define	ARCANA_AGENT_VERSION	"0.210.3"
+#define	ARCANA_AGENT_VERSION	"0.211.1"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -279,6 +279,7 @@ struct execres {
 };
 
 int		 run_exec(struct work *, char *const [], struct execres *);
+bool		 pid_alive(pid_t);
 bool		 pid_is(pid_t, const char *);
 pid_t		 pidfile_of(const char *, const char *);
 void		 pid_stop(pid_t, const char *, int);

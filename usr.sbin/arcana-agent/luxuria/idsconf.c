@@ -6,7 +6,7 @@
  * is checked (a plugin's path, a Lua script's name, the keys the form
  * owns) is what runs.  Two shapes: the Security section's, with every
  * setting of the form; and SD-WAN's, a service's security policies
- * (MEF 88) on its UNIs.  The places the agent fills (@LOGDIR@ and the
+ * (Arcana's own) on its UNIs.  The places the agent fills (@LOGDIR@ and the
  * like) are left in the text for inst_conf().
  */
 
@@ -718,7 +718,7 @@ bad:
 }
 
 /*
- * An SD-WAN service's instance (MEF 88): its home the UNIs' prefixes,
+ * An SD-WAN service's instance (Arcana's own): its home the UNIs' prefixes,
  * pcap on the UNIs' interfaces, alerts alone; where the edge itself
  * answers some of the UNIs' traffic it sees one side of those flows
  * (oneside), taken as they come.
@@ -741,7 +741,7 @@ ids_conf_sdwan(struct work *w, const ucl_object_t *in, const char *name,
 	}
 	fprintf(b, "%%YAML 1.1\n---\n# Written by arcana-agent for the Arcana "
 	    "console: SD-WAN service %s at %s.\n# The intrusion detection of "
-	    "its security policies (MEF 88), by Suricata.\nvars:\n  "
+	    "its security policies (Arcana's own), by Suricata.\nvars:\n  "
 	    "address-groups:\n    HOME_NET: \"[", sstr(in, "service") != NULL ?
 	    sstr(in, "service") : name, host);
 	if (ucl_array_size(ucl_object_lookup(in, "home")) == 0)

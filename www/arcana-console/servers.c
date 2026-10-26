@@ -459,9 +459,11 @@ api_servers(struct http_request *req)
 		}
 		for (i = 0; i < nservers; i++) {
 			if (strcmp(servers[i].uri, uri) == 0) {
+				/* uri is the body's: the reply first. */
+				reply_error(req, 409, "duplicate", "%s is already "
+				    "%s", uri, servers[i].name);
 				ucl_object_unref(body);
-				return (reply_error(req, 409, "duplicate",
-				    "%s is already %s", uri, servers[i].name));
+				return (WEB_OK);
 			}
 		}
 		new_id(id, sizeof(id));
@@ -540,12 +542,17 @@ api_server(struct http_request *req)
 			servers[i].tenant = t[0] != '\0' ? xstrdup(t) : NULL;
 			pthread_mutex_unlock(&table_lock);
 			if (ucl_object_lookup(body, "safe_wait") == NULL) {
+				char	tenant[80];
+
+				/* t is the body's. */
+				strlcpy(tenant, t[0] != '\0' ? t : "none",
+				    sizeof(tenant));
 				ucl_object_unref(body);
 				if (save() == -1)
 					return (reply_error(req, 500, "store",
 					    "cannot save"));
 				log_msg(LOG_NOTICE, "server %s: tenant %s", id,
-				    t[0] != '\0' ? t : "none");
+				    tenant);
 				req->method = HTTP_METHOD_GET;
 				return (api_servers(req));
 			}
@@ -840,10 +847,12 @@ api_server_move(struct http_request *req)
 	}
 	if ((strncmp(s->uri, "tcp://", 6) != 0 && strncmp(s->uri, "sctp://",
 	    7) != 0) || strcmp(s->uri, to) == 0) {
+		/* to is the body's: the reply first. */
+		reply_error(req, 400, "invalid", strcmp(s->uri, to) == 0 ?
+		    "it is reached there already" : "a host reached by its "
+		    "local socket is not moved");
 		ucl_object_unref(body);
-		return (reply_error(req, 400, "invalid", strcmp(s->uri, to) ==
-		    0 ? "it is reached there already" : "a host reached by "
-		    "its local socket is not moved"));
+		return (WEB_OK);
 	}
 	m = xcalloc(1, sizeof(*m));
 	snprintf(m->sid, sizeof(m->sid), "%s", s->id);

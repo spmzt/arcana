@@ -2319,109 +2319,203 @@ dhcp_build(struct plan *pl, const ucl_object_t *doc)
 }
 
 
-/* ---- DNS filters (MEF 88): the base system's unbound, a service an
- * instance ------------------------------------------------------------- */
+/* ---- Security functions (MEF 138): ipfw, the base system's unbound,
+ * Squid, c-icap; a service an instance ----------------------------------- */
 
 static const ucl_object_t *sec_of(const ucl_object_t *, const ucl_object_t *,
     const char *, int *);
-static bool	 url_filters(const ucl_object_t *, bool *);
-static bool	 malware_scan(const ucl_object_t *);
 static bool	 remote_addr(struct plan *, const ucl_object_t *,
 		    const ucl_object_t *, const char *, char *, size_t);
 static const char *uni_ifname(struct plan *, const ucl_object_t *,
 		    const ucl_object_t *, char *, size_t);
 
-/*
- * The security policies of a service that filter DNS, as any of its
- * policies names them by af-security-ingress or -egress: whether any
- * denies domains, whether any keeps DNS to the provider's resolver.
- */
-static bool
-dns_filters(const ucl_object_t *sw, bool *protop)
-{
-	const ucl_object_t	*pol, *cr, *sec, *sc;
-	ucl_object_iter_t	 it;
-	int			 si, i;
-	bool			 any = false;
+/* ---- Security functions (MEF 138) --------------------------------- */
 
-	*protop = false;
+/*
+ * The function policy of a function in a security policy, and its place
+ * in the service's list, for the names of its tables and its tag; NULL
+ * where the security policy has none.
+ */
+static const ucl_object_t *
+sec_fn(const ucl_object_t *sw, const ucl_object_t *sec, const char *fn,
+    int *ip)
+{
+	const ucl_object_t	*e, *f;
+	ucl_object_iter_t	 it, fit;
+	int			 i;
+
 	it = NULL;
-	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
-	    &it, true)) != NULL) {
-		for (i = 0; i < 2; i++) {
-			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
-			    "af-security-egress", &si);
-			if (sec == NULL)
-				continue;
-			sc = ucl_object_lookup(sec, "criteria");
-			if (ucl_object_lookup(sc, "dns-domain-filter") != NULL)
-				any = true;
-			if (ucl_flag(sc, "dns-protocol-filter")) {
-				any = true;
-				*protop = true;
+	while ((e = ucl_object_iterate(ucl_object_lookup(sec,
+	    "function-policies"), &it, true)) != NULL) {
+		i = 0;
+		fit = NULL;
+		while ((f = ucl_object_iterate(ucl_object_lookup(sw,
+		    "security_function_policies"), &fit, true)) != NULL) {
+			if (str(f, "id") != NULL && strcmp(str(f, "id"),
+			    ucl_object_tostring_forced(e)) == 0 && str(f,
+			    "function") != NULL && strcmp(str(f, "function"), fn) ==
+			    0) {
+				if (ip != NULL)
+					*ip = i;
+				return (f);
 			}
+			i++;
 		}
-		(void)cr;
 	}
-	return (any);
+	return (NULL);
+}
+
+/* The security policy a policy names by af-security-ingress. */
+static const ucl_object_t *
+sec_in(const ucl_object_t *sw, const char *polname)
+{
+	const ucl_object_t	*pol;
+	const char		*name;
+
+	if (polname == NULL || (pol = by(ucl_object_lookup(sw, "policies"),
+	    "name", polname)) == NULL || (name = str(ucl_object_lookup(pol,
+	    "criteria"), "af-security-ingress")) == NULL)
+		return (NULL);
+	return (by(ucl_object_lookup(sw, "security_policies"), "name", name));
 }
 
 /*
- * The security policies of a service that filter URLs (SASE-4), as any
- * of its policies names them: whether any does, and whether any opens
- * TLS (inspect) rather than looking at its names (sni).
+ * A zone's function policy of a function an edge serves its clients
+ * with (dnf, pdns, urlf, mbsf, mdr): as the zone's policies and the end
+ * points' maps for it name it; one a zone, as the console checked.
  */
-static bool
-url_filters(const ucl_object_t *sw, bool *inspectp)
+static const ucl_object_t *
+zone_fn(const ucl_object_t *sw, const ucl_object_t *zone, const char *fn)
 {
-	const ucl_object_t	*pol, *sec, *sc, *uf;
-	ucl_object_iter_t	 it;
-	int			 si, i;
-	bool			 any = false;
+	const ucl_object_t	*m, *ep, *f;
+	ucl_object_iter_t	 it, eit;
 
-	*inspectp = false;
 	it = NULL;
-	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+	while ((m = ucl_object_iterate(ucl_object_lookup(zone, "policies"),
 	    &it, true)) != NULL)
-		for (i = 0; i < 2; i++) {
-			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
-			    "af-security-egress", &si);
-			if (sec == NULL)
-				continue;
-			sc = ucl_object_lookup(sec, "criteria");
-			if ((uf = ucl_object_lookup(sc, "url-filter")) == NULL)
-				continue;
-			any = true;
-			if (str(uf, "mode") != NULL && strcmp(str(uf, "mode"),
-			    "inspect") == 0)
-				*inspectp = true;
-		}
-	return (any);
+		if ((f = sec_fn(sw, sec_in(sw, str(m, "policy")), fn, NULL)) !=
+		    NULL)
+			return (f);
+	eit = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &eit, true)) != NULL) {
+		it = NULL;
+		while ((m = ucl_object_iterate(ucl_object_lookup(ep,
+		    "policy_map"), &it, true)) != NULL)
+			if (str(m, "zone") != NULL && strcmp(str(m, "zone"),
+			    str(zone, "name")) == 0 && (f = sec_fn(sw, sec_in(sw,
+			    str(m, "ingress")), fn, NULL)) != NULL)
+				return (f);
+	}
+	return (NULL);
 }
 
-/*
- * Whether a service's security policies, as its policies name them,
- * scan for malware (SASE-4, MEF 88's malware criterion): what comes
- * back over cleartext HTTP, and over TLS where it is opened, goes from
- * Squid to c-icap by ICAP and is scanned there by ClamAV.
- */
+/* Whether a zone of the service has a function policy of any of fns. */
 static bool
-malware_scan(const ucl_object_t *sw)
+svc_fn(const ucl_object_t *sw, const char *const *fns)
 {
-	const ucl_object_t	*pol, *sec;
+	const ucl_object_t	*z;
 	ucl_object_iter_t	 it;
-	int			 si, i;
+	size_t			 i;
 
 	it = NULL;
-	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
-	    &it, true)) != NULL)
-		for (i = 0; i < 2; i++) {
-			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
-			    "af-security-egress", &si);
-			if (sec != NULL && ucl_object_toboolean(ucl_object_lookup(
-			    ucl_object_lookup(sec, "criteria"), "malware")))
+	while ((z = ucl_object_iterate(ucl_object_lookup(sw, "zones"), &it,
+	    true)) != NULL)
+		for (i = 0; fns[i] != NULL; i++)
+			if (zone_fn(sw, z, fns[i]) != NULL)
 				return (true);
+	return (false);
+}
+
+/* Whether a service's flows have a DPF that redirects (the Alter of
+ * MEF 138 §6.1): DNS not let through goes to its resolver here. */
+static bool
+dpf_redirects(const ucl_object_t *sw)
+{
+	const ucl_object_t	*f;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((f = ucl_object_iterate(ucl_object_lookup(sw,
+	    "security_function_policies"), &it, true)) != NULL)
+		if (str(f, "function") != NULL && strcmp(str(f, "function"),
+		    "dpf") == 0 && ucl_flag(f, "redirect"))
+			return (true);
+	return (false);
+}
+
+static const char *const fn_dns[] = { "dnf", "pdns", NULL };
+static const char *const fn_proxy[] = { "urlf", "mbsf", "mdr", NULL };
+
+/* Whether the service has a resolver at its edges: a zone's DNF or
+ * PDNS, or a DPF sending DNS to it. */
+static bool
+svc_resolver(const ucl_object_t *sw)
+{
+
+	return (svc_fn(sw, fn_dns) || dpf_redirects(sw));
+}
+
+/* Whether a list's entry is a prefix rather than a domain. */
+static bool
+prefix_like(const char *s)
+{
+
+	return (strchr(s, '/') != NULL || strchr(s, ':') != NULL || (isdigit(
+	    (unsigned char)s[0]) && strchr(s, '.') != NULL && strpbrk(s,
+	    "abcdefghijklmnopqrstuvwxyz") == NULL));
+}
+
+/* The order of a function policy's lists: equal entries go to Block
+ * (MEF 138 §6.1.6 leaves it), Quarantine blocks too (§6.1.3). */
+static const char *const sfl[] = { "block", "quarantine", "allow" };
+
+/*
+ * The strings of a function policy's list: its own where own says, then
+ * those of the lists it names (feeds or pasted, as kept), domains or
+ * prefixes as prefixes says; into out.
+ */
+static void
+sfp_strings(const ucl_object_t *f, const char *list, bool own,
+    const ucl_object_t *lists_of, bool prefixes, ucl_object_t *out)
+{
+	const ucl_object_t	*e, *ln, *le;
+	ucl_object_iter_t	 it, lit, eit;
+	const char		*s;
+
+	it = NULL;
+	while (own && (e = ucl_object_iterate(ucl_object_lookup(f, list), &it,
+	    true)) != NULL)
+		if (ucl_object_type(e) == UCL_STRING)
+			ucl_array_append(out, ucl_object_copy(e));
+	lit = NULL;
+	while ((ln = ucl_object_iterate(ucl_object_lookup(ucl_object_lookup(f,
+	    "lists"), list), &lit, true)) != NULL) {
+		eit = NULL;
+		while ((le = ucl_object_iterate(at_path(ucl_object_lookup(
+		    lists_of, "lists"), ucl_object_tostring_forced(ln),
+		    "entries"), &eit, true)) != NULL) {
+			s = ucl_object_tostring_forced(le);
+			if (prefix_like(s) == prefixes)
+				ucl_array_append(out, S(s));
 		}
+	}
+}
+
+/* Whether a function policy tells the matches of a list (R20; Block
+ * and Quarantine where it does not say, R21). */
+static bool
+sfp_notifies(const ucl_object_t *f, const char *list)
+{
+	const ucl_object_t	*n, *e;
+	ucl_object_iter_t	 it;
+
+	if ((n = ucl_object_lookup(f, "notify")) == NULL)
+		return (strcmp(list, "allow") != 0);
+	it = NULL;
+	while ((e = ucl_object_iterate(n, &it, true)) != NULL)
+		if (strcmp(ucl_object_tostring_forced(e), list) == 0)
+			return (true);
 	return (false);
 }
 
@@ -2447,7 +2541,7 @@ icap_conf(const ucl_object_t *sw, const char *sid, const char *own)
 	b = buf_alloc(1024);
 	buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
 	    "at %s, in routing table %jd.\n# Malware scanning of its security "
-	    "policies (MEF 88), by c-icap and ClamAV, for its Squid.\n"
+	    "zones (MEF 138's MD+R), by c-icap and ClamAV, for its Squid.\n"
 	    "PidFile @ICAPPID@\nCommandsSocket @ICAPCMD@\n"
 	    "Port %s:%d\nacl squid src %s/255.255.255.255\nacl all src "
 	    "0.0.0.0/0.0.0.0\nclient_access allow squid\nclient_access deny all\n"
@@ -2507,183 +2601,509 @@ edge_own4(struct plan *pl, const ucl_object_t *sw, const char *sid,
 }
 
 /*
- * Squid's configuration for a service at an edge (SASE-4): it takes
- * what ipfw forwards to it on each UNI's address, ports 3128 (HTTP)
- * and 3129 (TLS); it looks at the TLS names (peek) and ends a
- * connection to a denied one (terminate), the rest let through
- * unopened (splice) or, in mode inspect, opened (bump) with the
- * instance's CA; HTTP to a denied domain is denied.  What the agent
- * places is marked: @PID@, @CA@, @SSLDB@, @CERTGEN@, @DENY@.  The
- * domains denied go in the deny text, one a line, each with the names
- * beneath it.
+ * A zone's prefixes at an edge, as its table has them: its own, all of
+ * them for Default, and the addresses of its identities at the edge's
+ * remote end points (SASE-3); into out.
+ */
+static void
+zone_pfx(struct plan *pl, const ucl_object_t *sw, const char *sid,
+    const ucl_object_t *zone, ucl_object_t *out)
+{
+	const ucl_object_t	*v, *p, *rep, *id;
+	ucl_object_iter_t	 it, rit, iit;
+	char			 ia[80];
+
+	v = ucl_object_lookup(zone, "prefixes");
+	if (ucl_object_type(v) == UCL_STRING) {
+		ucl_array_append(out, S("0.0.0.0/0"));
+		ucl_array_append(out, S("::/0"));
+		return;
+	}
+	it = NULL;
+	while ((p = ucl_object_iterate(v, &it, true)) != NULL)
+		ucl_array_append(out, S(ucl_object_tostring_forced(p)));
+	rit = NULL;
+	while ((rep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &rit, true)) != NULL) {
+		if (strcmp(str(rep, "edge"), sid) != 0 || ucl_object_lookup(rep,
+		    "remote") == NULL)
+			continue;
+		iit = NULL;
+		while ((id = ucl_object_iterate(ucl_object_lookup(
+		    ucl_object_lookup(rep, "remote"), "identities"), &iit, true))
+		    != NULL) {
+			if (ident_zone(ucl_object_lookup(rep, "remote"), id) ==
+			    NULL || strcmp(ident_zone(ucl_object_lookup(rep,
+			    "remote"), id), str(zone, "name")) != 0 ||
+			    !identity_live(ucl_object_lookup(rep, "remote"), id,
+			    time(NULL)) || !remote_addr(pl, sw, rep, str(id,
+			    "name"), ia, sizeof(ia)))
+				continue;
+			snprintf(ia + strlen(ia), sizeof(ia) - strlen(ia), "/%d",
+			    family(ia) == AF_INET ? 32 : 128);
+			ucl_array_append(out, S(ia));
+		}
+	}
+}
+
+/* Whether a zone is Default: the rest's prefixes are matched first. */
+static bool
+zone_default(const ucl_object_t *zone)
+{
+
+	return (ucl_object_type(ucl_object_lookup(zone, "prefixes")) ==
+	    UCL_STRING);
+}
+
+/*
+ * How specific a URL filter's entry is (MEF 138 §6.1.6: the more
+ * specific overrules): a path over a host alone, a longer one over a
+ * shorter, a host over *. and one, a longer name over a shorter.
+ */
+static int
+url_specific(const char *s, const char **hostp, size_t *hlenp,
+    const char **pathp)
+{
+	const char	*sl;
+	int		 n;
+
+	if (strncmp(s, "http://", 7) == 0)
+		s += 7;
+	else if (strncmp(s, "https://", 8) == 0)
+		s += 8;
+	sl = strchr(s, '/');
+	*hostp = s;
+	*hlenp = sl != NULL ? (size_t)(sl - s) : strlen(s);
+	*pathp = sl;
+	n = (int)*hlenp + (strncmp(s, "*.", 2) == 0 ? 0 : 300);
+	if (sl != NULL)
+		n += 1000 + (int)strlen(sl) * 2 - (sl[strlen(sl) - 1] == '*' ?
+		    1 : 0);
+	return (n);
+}
+
+struct uentry {
+	const char	*s;
+	int		 list;	/* 0 block, 1 quarantine, 2 allow (sfl) */
+	int		 spec;
+};
+
+static int
+uentry_cmp(const void *a, const void *b)
+{
+	const struct uentry	*x = a, *y = b;
+
+	if (x->spec != y->spec)
+		return (y->spec - x->spec);
+	return (x->list - y->list);
+}
+
+/* A host as Squid's dstdomain and ssl::server_name take it: *.host as
+ * .host, the host and the names beneath it. */
+static void
+squid_host(struct buf *b, const char *h, size_t n)
+{
+
+	if (n > 2 && strncmp(h, "*.", 2) == 0)
+		buf_appendf(b, " .%.*s", (int)(n - 2), h + 2);
+	else
+		buf_appendf(b, " %.*s", (int)n, h);
+}
+
+/* A host and a path as Squid's url_regex takes it, anchored, its *
+ * anything, both schemes. */
+static void
+squid_regex(struct buf *b, const char *h, size_t n, const char *path)
+{
+	const char	*p;
+
+	buf_appendf(b, " ^https?://");
+	if (n > 2 && strncmp(h, "*.", 2) == 0) {
+		buf_appendf(b, "([^/]*\\.)?");
+		h += 2;
+		n -= 2;
+	}
+	for (; n > 0; h++, n--)
+		buf_appendf(b, "%s%c", *h == '.' ? "\\" : "", *h);
+	for (p = path; *p != '\0'; p++) {
+		if (*p == '*')
+			buf_appendf(b, ".*");
+		else if (strchr(".+?()[]{}|^$\\", *p) != NULL)
+			buf_appendf(b, "\\%c", *p);
+		else
+			buf_appendf(b, "%c", *p);
+	}
+	if (path[0] != '\0' && path[strlen(path) - 1] != '*')
+		buf_appendf(b, "$");
+}
+
+/* The lowest TLS version an MBSF lets through: above every one it
+ * blocks, and those on no list where its No-match blocks (Table 9). */
+static int
+mbsf_min(const ucl_object_t *f)
+{
+	static const char *const v[] = { "ssl3", "tls1.0", "tls1.1", "tls1.2",
+	    "tls1.3" };
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	int			 i, min = 0;
+	bool			 listed;
+
+	for (i = 0; i < (int)nitems(v); i++) {
+		listed = false;
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(f, "allow"),
+		    &it, true)) != NULL)
+			if (strcmp(ucl_object_tostring_forced(e), v[i]) == 0)
+				listed = true;
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(f, "block"),
+		    &it, true)) != NULL)
+			if (strcmp(ucl_object_tostring_forced(e), v[i]) == 0)
+				min = i + 1;
+		if (!listed && strcmp(str(f, "no-match"), "block") == 0)
+			min = i + 1 > min ? i + 1 : min;
+	}
+	return (min);
+}
+
+/*
+ * An end point's own IPv4 address in the service: its UNI's first
+ * provider address, or the edge's own at a remote end point; into buf,
+ * NULL for none.
+ */
+static const char *
+ep_own4(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
+    char *buf, size_t len)
+{
+	const ucl_object_t	*pv, *pa;
+
+	pv = ucl_object_lookup(ucl_object_lookup(ep, "uni"), "ipv4");
+	pa = pv != NULL ? ucl_array_find_index(ucl_object_lookup(pv,
+	    "provider"), 0) : NULL;
+	if (pa != NULL) {
+		snprintf(buf, len, "%s", ucl_object_tostring_forced(pa));
+		return (buf);
+	}
+	if (ucl_object_lookup(ep, "remote") != NULL && remote_addr(pl, sw, ep,
+	    NULL, buf, len) && family(buf) == AF_INET)
+		return (buf);
+	return (NULL);
+}
+
+/*
+ * Squid's configuration for a service at an edge (MEF 138's URLF, MBSF
+ * and MD+R): it takes what ipfw forwards to it from the zones that
+ * have them, on each UNI's address, ports 3128 (HTTP) and 3129 (TLS),
+ * and decides by zone (src).  Where the zone's MBSF opens TLS, all of
+ * it is opened (bump) but the hosts its pass-through names, and each
+ * request decided by host and path, the URLF's entries most specific
+ * first, so that an Allow of a path overrules the Block of its host;
+ * elsewhere the TLS name is looked at (peek) and the connection ended
+ * (terminate) or let through unopened (splice) by the entries' hosts,
+ * as cleartext HTTP's requests are.  The lists named by the URLF are
+ * files of the instance's (its Allow before its Block), and the
+ * No-match last.  What the agent
+ * places is marked: @PID@, @CA@, @SSLDB@, @CERTGEN@, @LIST:name@.  The
+ * lists' texts go in *listsp, an object of names to texts.
  */
 static char *
 proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
-    bool inspect, char **denyp)
+    bool inspect, ucl_object_t **listsp)
 {
-	struct buf		*b, *d;
-	const ucl_object_t	*ep, *o, *pol, *sec, *sc, *uf, *e, *p;
-	ucl_object_iter_t	 it, pit, dit, eit;
-	ucl_object_t		*owns, *pfx;
-	char			*out, own[80];
-	int			 i, si;
-	bool			 dnsproto;
+	struct buf		*b, *sb, *hb, *t;
+	const ucl_object_t	*o, *zone, *uf, *mb, *md, *e;
+	ucl_object_iter_t	 it, zit;
+	ucl_object_t		*owns, *pfx, *lists, *fl[3];
+	struct uentry		*ue;
+	char			*out, own[80], zn[16], an[40];
+	const char		*final, *host, *path;
+	size_t			 hlen, nue, i, j, k;
+	int			 zi, pass, acl, tlsmin, z;
+	intmax_t		 fib;
 
+	fib = (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib"));
 	b = buf_alloc(4096);
-	d = buf_alloc(1024);
+	sb = buf_alloc(2048);
+	hb = buf_alloc(2048);
+	lists = ucl_object_typed_new(UCL_OBJECT);
 	buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
-	    "at %s, in routing table %jd.\n# The URL filter of its security "
-	    "policies (MEF 88), by Squid, mode %s.\npid_filename @PID@\n"
-	    "access_log /var/log/squid/sdwan-sw%jd-access.log\ncache_log "
-	    "/var/log/squid/sdwan-sw%jd-cache.log\ncache deny all\n"
-	    "visible_hostname sdwan-sw%jd\n", str(sw, "id"), server_name_of(sid),
-	    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")), inspect ?
-	    "inspect" : "sni", (intmax_t)ucl_object_toint(ucl_object_lookup(sw,
-	    "fib")), (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")),
-	    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")));
+	    "at %s, in routing table %jd.\n# The URL filtering, middlebox and "
+	    "malware scanning of its zones (MEF 138), by Squid.\n"
+	    "pid_filename @PID@\naccess_log /var/log/squid/sdwan-sw%jd-access."
+	    "log\ncache_log /var/log/squid/sdwan-sw%jd-cache.log\ncache deny "
+	    "all\nvisible_hostname sdwan-sw%jd\n", str(sw, "id"),
+	    server_name_of(sid), fib, fib, fib, fib);
 	owns = ucl_object_typed_new(UCL_ARRAY);
 	edge_own4(pl, sw, sid, owns);
+	/* The oldest TLS let through: the strictest zone's MBSF. */
+	tlsmin = 0;
+	zit = NULL;
+	while ((zone = ucl_object_iterate(ucl_object_lookup(sw, "zones"),
+	    &zit, true)) != NULL)
+		if ((mb = zone_fn(sw, zone, "mbsf")) != NULL && mbsf_min(mb) >
+		    tlsmin)
+			tlsmin = mbsf_min(mb);
 	it = NULL;
-	while ((o = ucl_object_iterate(owns, &it, true)) != NULL)
+	while ((o = ucl_object_iterate(owns, &it, true)) != NULL) {
 		buf_appendf(b, "# %s\nhttp_port %s:3128 intercept\n"
 		    "https_port %s:3129 intercept ssl-bump tls-cert=@CA@ "
-		    "generate-host-certificates=on dynamic_cert_mem_cache_size=4MB"
-		    "\n", str(o, "end_point"), str(o, "address"), str(o, "address"));
-	/* The names it is asked for, resolved by the service's DNS filter
-	 * where there is one, else by the edge's own resolver. */
-	if (dns_filters(sw, &dnsproto) && ucl_array_size(owns) > 0)
+		    "generate-host-certificates=on dynamic_cert_mem_cache_size=4MB",
+		    str(o, "end_point"), str(o, "address"), str(o, "address"));
+		if (tlsmin > 1)
+			buf_appendf(b, " tls-min-version=1.%d", tlsmin - 1);
+		buf_appendf(b, "\n");
+	}
+	if (tlsmin > 1)
+		buf_appendf(b, "tls_outgoing_options min-version=1.%d\n",
+		    tlsmin - 1);
+	/* The names it is asked for, resolved by the service's resolver
+	 * where there is one, else by the edge's own. */
+	if (svc_resolver(sw) && ucl_array_size(owns) > 0)
 		buf_appendf(b, "dns_nameservers %s\n", str(
 		    ucl_array_find_index(owns, 0), "address"));
 	snprintf(own, sizeof(own), "%s", ucl_array_size(owns) > 0 ? str(
 	    ucl_array_find_index(owns, 0), "address") : "127.0.0.1");
 	ucl_object_unref(owns);
 	buf_appendf(b, "sslcrtd_program @CERTGEN@ -s @SSLDB@ -M 4MB\n"
-	    "sslcrtd_children 3\n");
-	/* The service's own hosts: every end point's prefixes. */
-	buf_appendf(b, "acl localnet src");
-	i = 0;
-	it = NULL;
-	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
-	    &it, true)) != NULL) {
-		pfx = ucl_object_typed_new(UCL_ARRAY);
-		uni_prefixes(ep, pfx);
-		eit = NULL;
-		while ((p = ucl_object_iterate(pfx, &eit, true)) != NULL) {
-			buf_appendf(b, " %s", ucl_object_tostring(p));
-			i++;
-		}
-		ucl_object_unref(pfx);
-	}
-	if (i == 0)
-		buf_appendf(b, " 0.0.0.0/0");
-	/* What comes back, to c-icap by ICAP, where malware is scanned. */
-	if (malware_scan(sw))
-		buf_appendf(b, "\nicap_enable on\nicap_send_client_ip on\n"
+	    "sslcrtd_children 3\nacl step1 at_step SslBump1\nacl plain "
+	    "localport 3128\n");
+	if (svc_fn(sw, (const char *const[]){ "mdr", NULL }))
+		buf_appendf(b, "icap_enable on\nicap_send_client_ip on\n"
 		    "icap_service sdwan_av respmod_precache bypass=off "
-		    "icap://%s:%d/avscan\nadaptation_access sdwan_av allow "
-		    "all", own, ICAP_PORT(ucl_object_toint(ucl_object_lookup(sw,
-		    "fib"))));
-	/* Domains let through whatever is denied (url-filter.allow): a
-	 * site under a denied one, a list's mistake; inline, few. */
-	{
-		struct buf	*al = buf_alloc(512);
-
-		pit = NULL;
-		while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
-		    &pit, true)) != NULL)
-			for (i = 0; i < 2; i++) {
-				sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
-				    "af-security-egress", &si);
-				if (sec == NULL || (uf = ucl_object_lookup(
-				    ucl_object_lookup(sec, "criteria"), "url-filter"))
-				    == NULL)
-					continue;
-				dit = NULL;
-				while ((e = ucl_object_iterate(ucl_object_lookup(uf,
-				    "allow"), &dit, true)) != NULL)
-					buf_appendf(al, " .%s",
-					    ucl_object_tostring_forced(e));
+		    "icap://%s:%d/avscan\n", own, ICAP_PORT(fib));
+	buf_appendf(sb, "ssl_bump peek step1\n");
+	/* Each zone with any of them, Default last. */
+	for (pass = 0; pass < 2; pass++) {
+		zi = -1;
+		zit = NULL;
+		while ((zone = ucl_object_iterate(ucl_object_lookup(sw, "zones"),
+		    &zit, true)) != NULL) {
+			zi++;
+			if (zone_default(zone) != (pass == 1))
+				continue;
+			uf = zone_fn(sw, zone, "urlf");
+			mb = zone_fn(sw, zone, "mbsf");
+			md = zone_fn(sw, zone, "mdr");
+			if (uf == NULL && mb == NULL && md == NULL)
+				continue;
+			snprintf(zn, sizeof(zn), "z%d", zi);
+			buf_appendf(b, "acl %s src", zn);
+			pfx = ucl_object_typed_new(UCL_ARRAY);
+			zone_pfx(pl, sw, sid, zone, pfx);
+			/* Default is all, as Squid will have it said. */
+			it = NULL;
+			while (!zone_default(zone) && (o = ucl_object_iterate(pfx,
+			    &it, true)) != NULL)
+				buf_appendf(b, " %s", ucl_object_tostring(o));
+			if (zone_default(zone))
+				buf_appendf(b, " all");
+			else if (ucl_array_size(pfx) == 0)
+				buf_appendf(b, " 127.0.0.255/32");	/* none */
+			ucl_object_unref(pfx);
+			buf_appendf(b, "\n");
+			final = mb != NULL ? "bump" : "splice";
+			/* Malware scanned where the zone's MD+R says. */
+			if (md != NULL)
+				buf_appendf(hb, "adaptation_access sdwan_av allow "
+				    "%s\n", zn);
+			/* MBSF: hosts never opened (Arcana's), the server's
+			 * certificate not trusted let through or not, HTTP. */
+			if (mb != NULL) {
+				it = NULL;
+				t = buf_alloc(256);
+				while ((e = ucl_object_iterate(ucl_object_lookup(mb,
+				    "pass-through"), &it, true)) != NULL)
+					squid_host(t, ucl_object_tostring_forced(
+					    e), strlen(ucl_object_tostring_forced(
+					    e)));
+				if (t->offset > 0) {
+					buf_appendf(b, "acl %s_pass ssl::server_name"
+					    "%s\n", zn, buf_stringify(t, NULL));
+					buf_appendf(sb, "ssl_bump splice %s %s_pass\n",
+					    zn, zn);
+				}
+				buf_free(t);
+				if (strcmp(str(mb, "invalid-server-certificate"),
+				    "allow") == 0)
+					buf_appendf(b, "sslproxy_cert_error allow %s\n",
+					    zn);
+				if (strcmp(str(mb, "unencrypted"), "block") == 0)
+					buf_appendf(hb, "http_access deny %s plain\n",
+					    zn);
 			}
-		if (al->offset > 0) {
-			buf_appendf(b, "\nacl allowed_site ssl::server_name%s"
-			    "\nacl allowed_url dstdomain%s\n", buf_stringify(
-			    al, NULL), buf_stringify(al, NULL));
-			buf_appendf(b, "acl denied_site ssl::server_name "
-			    "\"@DENY@\"\nacl denied_url dstdomain \"@DENY@\"\nacl "
-			    "step1 at_step SslBump1\nssl_bump peek step1\nssl_bump "
-			    "splice allowed_site\nssl_bump terminate denied_site\n"
-			    "ssl_bump %s all\nhttp_access allow allowed_url\n"
-			    "http_access deny denied_url\nhttp_access allow localnet"
-			    "\nhttp_access deny all\n", inspect ? "bump" : "splice");
-		} else
-			buf_appendf(b, "\nacl denied_site ssl::server_name "
-			    "\"@DENY@\"\nacl denied_url dstdomain \"@DENY@\"\nacl "
-			    "step1 at_step SslBump1\nssl_bump peek step1\nssl_bump "
-			    "terminate denied_site\nssl_bump %s all\nhttp_access deny "
-			    "denied_url\nhttp_access allow localnet\nhttp_access deny "
-			    "all\n", inspect ? "bump" : "splice");
-		buf_free(al);
-	}
-	/* The domains denied, each with the names beneath it. */
-	pit = NULL;
-	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
-	    &pit, true)) != NULL)
-		for (i = 0; i < 2; i++) {
-			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
-			    "af-security-egress", &si);
-			if (sec == NULL)
-				continue;
-			sc = ucl_object_lookup(sec, "criteria");
-			if ((uf = ucl_object_lookup(sc, "url-filter")) == NULL)
-				continue;
-			dit = NULL;
-			while ((e = ucl_object_iterate(ucl_object_lookup(uf, "deny"),
-			    &dit, true)) != NULL)
-				buf_appendf(d, ".%s\n", ucl_object_tostring_forced(
-				    e));
-			dit = NULL;
-			while ((e = ucl_object_iterate(ucl_object_lookup(uf, "lists"),
-			    &dit, true)) != NULL) {
-				const ucl_object_t	*le;
-				const char		*s;
+			/* URLF: its entries most specific first, a run of
+			 * the same list one acl. */
+			if (uf != NULL) {
+				for (k = 0; k < 3; k++) {
+					fl[k] = ucl_object_typed_new(UCL_ARRAY);
+					it = NULL;
+					while ((e = ucl_object_iterate(
+					    ucl_object_lookup(uf, sfl[k]), &it, true))
+					    != NULL)
+						ucl_array_append(fl[k],
+						    ucl_object_copy(e));
+				}
+				nue = ucl_array_size(fl[0]) + ucl_array_size(fl[1]) +
+				    ucl_array_size(fl[2]);
+				ue = xcalloc(nue + 1, sizeof(*ue));
+				for (i = k = 0; k < 3; k++) {
+					it = NULL;
+					while ((e = ucl_object_iterate(fl[k], &it,
+					    true)) != NULL) {
+						ue[i].s = ucl_object_tostring(e);
+						ue[i].list = (int)k;
+						ue[i].spec = url_specific(ue[i].s, &host,
+						    &hlen, &path);
+						i++;
+					}
+				}
+				qsort(ue, nue, sizeof(*ue), uentry_cmp);
+				acl = 0;
+				for (i = 0; i < nue; i = j) {
+					bool	anyhost = false, anypath = false;
 
-				eit = NULL;
-				while ((le = ucl_object_iterate(at_path(
-				    ucl_object_lookup(pl->lists, "lists"),
-				    ucl_object_tostring_forced(e), "entries"), &eit,
-				    true)) != NULL) {
-					s = ucl_object_tostring_forced(le);
-					if (strchr(s, '/') != NULL || strchr(s, ':') !=
-					    NULL || (isdigit((unsigned char)s[0]) &&
-					    strchr(s, '.') != NULL && strpbrk(s,
-					    "abcdefghijklmnopqrstuvwxyz") == NULL))
-						continue;	/* a prefix */
-					buf_appendf(d, ".%s\n", s);
+					for (j = i; j < nue && (ue[j].list != 2) ==
+					    (ue[i].list != 2); j++)
+						;
+					/* Hosts at the TLS name; hosts and paths
+					 * in the requests. */
+					t = buf_alloc(512);
+					for (k = i; k < j; k++) {
+						(void)url_specific(ue[k].s, &host,
+						    &hlen, &path);
+						if (path == NULL) {
+							squid_host(t, host, hlen);
+							anyhost = true;
+						}
+					}
+					if (anyhost) {
+						snprintf(an, sizeof(an), "%s_u%d", zn,
+						    acl++);
+						if (mb == NULL)
+							buf_appendf(b, "acl %s_n ssl::"
+							    "server_name%s\n", an,
+							    buf_stringify(t, NULL));
+						buf_appendf(b, "acl %s_d dstdomain%s\n",
+						    an, buf_stringify(t, NULL));
+						if (mb == NULL)
+							buf_appendf(sb, "ssl_bump %s %s "
+							    "%s_n\n", ue[i].list == 2 ?
+							    "splice" : "terminate", zn, an);
+						buf_appendf(hb, "http_access %s %s %s_d\n",
+						    ue[i].list == 2 ? "allow" : "deny", zn,
+						    an);
+					}
+					buf_free(t);
+					t = buf_alloc(512);
+					for (k = i; k < j; k++) {
+						(void)url_specific(ue[k].s, &host,
+						    &hlen, &path);
+						if (path != NULL) {
+							squid_regex(t, host, hlen, path);
+							anypath = true;
+						}
+					}
+					if (anypath) {
+						snprintf(an, sizeof(an), "%s_u%d", zn,
+						    acl++);
+						buf_appendf(b, "acl %s_r url_regex -i%s\n",
+						    an, buf_stringify(t, NULL));
+						buf_appendf(hb, "http_access %s %s %s_r\n",
+						    ue[i].list == 2 ? "allow" : "deny", zn,
+						    an);
+					}
+					buf_free(t);
+				}
+				free(ue);
+				for (k = 0; k < 3; k++)
+					ucl_object_unref(fl[k]);
+				/* The named lists: Allow, then Block and
+				 * Quarantine together, each a file. */
+				for (k = 0; k < 2; k++) {
+					ucl_object_t	*hosts;
+					const char	*kind = k == 0 ? "allow" :
+					    "block";
+
+					hosts = ucl_object_typed_new(UCL_ARRAY);
+					for (z = 0; z < 3; z++)
+						if ((z == 2) == (k == 0))
+							sfp_strings(uf, sfl[z], false,
+							    pl->lists, false, hosts);
+					if (ucl_array_size(hosts) > 0) {
+						t = buf_alloc(4096);
+						it = NULL;
+						while ((e = ucl_object_iterate(hosts,
+						    &it, true)) != NULL)
+							buf_appendf(t, ".%s\n",
+							    ucl_object_tostring(e));
+						snprintf(an, sizeof(an), "%s-%s", zn,
+						    kind);
+						ucl_object_insert_key(lists, S(
+						    buf_stringify(t, NULL)), an, 0,
+						    true);
+						buf_free(t);
+						if (mb == NULL)
+							buf_appendf(b, "acl %s_f%s_n ssl::"
+							    "server_name \"@LIST:%s@\"\n",
+							    zn, kind, an);
+						buf_appendf(b, "acl %s_f%s_d dstdomain "
+						    "\"@LIST:%s@\"\n", zn, kind, an);
+						if (mb == NULL)
+							buf_appendf(sb, "ssl_bump %s %s "
+							    "%s_f%s_n\n", k == 0 ? "splice" :
+							    "terminate", zn, zn, kind);
+						buf_appendf(hb, "http_access %s %s "
+						    "%s_f%s_d\n", k == 0 ? "allow" :
+						    "deny", zn, zn, kind);
+					}
+					ucl_object_unref(hosts);
 				}
 			}
+			/* No-match: the URLF's; without one, let on.  Where
+			 * TLS is opened, the requests decide. */
+			if (uf != NULL && strcmp(str(uf, "no-match"), "block") == 0)
+			{
+				buf_appendf(sb, "ssl_bump %s %s\n", mb != NULL ?
+				    "bump" : "terminate", zn);
+				buf_appendf(hb, "http_access deny %s\n", zn);
+			} else {
+				buf_appendf(sb, "ssl_bump %s %s\n", final, zn);
+				buf_appendf(hb, "http_access allow %s\n", zn);
+			}
 		}
-	*denyp = strdup(buf_stringify(d, NULL));
-	buf_free(d);
+	}
+	buf_appendf(sb, "ssl_bump splice all\n");
+	buf_appendf(hb, "%shttp_access deny all\n", svc_fn(sw,
+	    (const char *const[]){ "mdr", NULL }) ? "adaptation_access sdwan_av "
+	    "deny all\n" : "");
+	buf_appendf(b, "%s%s", buf_stringify(sb, NULL), buf_stringify(hb,
+	    NULL));
+	(void)inspect;
+	buf_free(sb);
+	buf_free(hb);
+	*listsp = lists;
 	out = strdup(buf_stringify(b, NULL));
 	buf_free(b);
 	return (out);
 }
 
 /*
- * Each edge's proxies (SASE-4): an instance per service whose policies
- * name a security policy that filters URLs, where the edge has an end
- * point of the service, in the service's table; Squid is a plugin the
- * edge has installed, which the apply tells when it has not.
+ * Each edge's proxies: an instance per service whose zones have a URLF,
+ * MBSF or MD+R, where the edge has an end point of the service, in the
+ * service's table; Squid is a plugin the edge has installed, which the
+ * apply tells when it has not, and c-icap with ClamAV beside it where
+ * a zone's MD+R scans.
  */
 static void
 proxy_build(struct plan *pl, const ucl_object_t *doc)
 {
 	const ucl_object_t	*sw, *edge, *ep;
 	ucl_object_iter_t	 it, eit, pit;
-	ucl_object_t		*o, *inst, *list;
+	ucl_object_t		*o, *inst, *list, *lists;
 	char			 name[32];
 	const char		*sid;
-	char			*text, *deny;
+	char			*text;
 	bool			 here, inspect;
 
 	it = NULL;
@@ -2694,7 +3114,7 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 		eit = NULL;
 		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
 		    &eit, true)) != NULL) {
-			if (!url_filters(sw, &inspect) && !malware_scan(sw))
+			if (!svc_fn(sw, fn_proxy))
 				continue;
 			here = false;
 			pit = NULL;
@@ -2704,18 +3124,19 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 					here = true;
 			if (!here)
 				continue;
+			inspect = svc_fn(sw, (const char *const[]){ "mbsf", NULL });
 			snprintf(name, sizeof(name), "sw%jd", (intmax_t)
 			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
 			inst = ucl_object_typed_new(UCL_OBJECT);
 			put(inst, "name", S(name));
 			put(inst, "fib", I(efib(pl, sw, sid)));
 			put(inst, "mode", S(inspect ? "inspect" : "sni"));
-			text = proxy_conf(pl, sw, sid, inspect, &deny);
+			text = proxy_conf(pl, sw, sid, inspect, &lists);
 			put(inst, "conf", S(text));
-			put(inst, "deny", S(deny));
+			put(inst, "deny", S(""));
+			put(inst, "lists", lists);
 			free(text);
-			free(deny);
-			if (malware_scan(sw)) {
+			if (svc_fn(sw, (const char *const[]){ "mdr", NULL })) {
 				ucl_object_t	*owns = ucl_object_typed_new(
 				    UCL_ARRAY);
 
@@ -2733,10 +3154,11 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 			ucl_object_unref(list);
 			continue;
 		}
-		o = object(pl, sid, "proxy", PH_BIRD, "URL filters and malware "
-		    "scanning: Squid (and c-icap with ClamAV where malware is "
-		    "scanned), plugins, %u instance%s in the services' tables",
-		    ucl_array_size(list), ucl_array_size(list) == 1 ? "" : "s");
+		o = object(pl, sid, "proxy", PH_BIRD, "URL filtering, the "
+		    "middlebox and malware scanning (MEF 138): Squid (and c-icap "
+		    "with ClamAV where malware is scanned), plugins, %u instance%s "
+		    "in the services' tables", ucl_array_size(list),
+		    ucl_array_size(list) == 1 ? "" : "s");
 		if (o == NULL) {
 			ucl_object_unref(list);
 			continue;
@@ -2780,9 +3202,8 @@ ids_of(const ucl_object_t *sw, struct buf *rules, bool *rulesetp,
 		for (i = 0; i < 2; i++) {
 			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
 			    "af-security-egress", &si);
-			if (sec == NULL || (ids = ucl_object_lookup(
-			    ucl_object_lookup(sec, "criteria"), "ids")) == NULL ||
-			    ucl_object_type(ids) != UCL_OBJECT)
+			if (sec == NULL || (ids = ucl_object_lookup(sec, "ids")) ==
+			    NULL || ucl_object_type(ids) != UCL_OBJECT)
 				continue;
 			any = true;
 			if (ucl_object_toboolean(ucl_object_lookup(ids, "ruleset")))
@@ -2823,7 +3244,7 @@ ids_spec(const ucl_object_t *sw, const ucl_object_t *ifs, bool ruleset)
 	ucl_object_iter_t	 it;
 	ucl_object_t		*spec, *home;
 	int			 i;
-	bool			 x, prevent, rs;
+	bool			 prevent, rs;
 
 	spec = ucl_object_typed_new(UCL_OBJECT);
 	put(spec, "flavor", S("sdwan"));
@@ -2843,8 +3264,8 @@ ids_spec(const ucl_object_t *sw, const ucl_object_t *ifs, bool ruleset)
 	put(spec, "home", home);
 	put(spec, "interfaces", ucl_object_copy(ifs));
 	put(spec, "ruleset", ucl_object_frombool(ruleset));
-	if (ids_of(sw, NULL, &rs, &prevent) && prevent && (url_filters(sw,
-	    &x) || malware_scan(sw) || (dns_filters(sw, &x) && x)))
+	if (ids_of(sw, NULL, &rs, &prevent) && prevent && (svc_fn(sw,
+	    fn_proxy) || dpf_redirects(sw)))
 		put(spec, "oneside", ucl_object_frombool(true));
 	return (spec);
 }
@@ -2940,25 +3361,35 @@ ids_build(struct plan *pl, const ucl_object_t *doc)
 /*
  * unbound's configuration for a service at an edge: it listens on the
  * UNIs' provider addresses, answers the UNIs' subnets, resolves by
- * itself, and denies every domain the service's filtering policies
- * deny (always_nxdomain, the names beneath too).
+ * itself, and serves each zone with a DNF or PDNS by a view of its own
+ * (access-control-view by the zone's prefixes): the DNF's domains as
+ * local zones, Block and Quarantine always_nxdomain and Allow
+ * always_transparent, each with the names beneath it, the most
+ * specific deciding as unbound has it, the root's where its No-match
+ * blocks; the PDNS's answers by response-ip (respip), A and AAAA.
  */
 static char *
-dns_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *lists)
+dns_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 {
+	static const char *const zt[] = { "always_nxdomain",
+	    "always_nxdomain", "always_transparent" };
 	struct buf		*b;
-	const ucl_object_t	*ep, *u, *v, *a, *pol, *sec, *sc, *d;
-	ucl_object_iter_t	 it, pit, dit;
+	const ucl_object_t	*ep, *u, *v, *a, *zone, *df, *pd, *e;
+	ucl_object_iter_t	 it, zit;
+	ucl_object_t		*pfx, *seen, *names;
 	char			*out;
-	int			 i, si;
+	const char		*val, *n;
+	bool			 logit = false;
+	int			 i, zi, k;
 
 	b = buf_alloc(2048);
 	buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
-	    "at %s, in routing table %jd.\n# The DNS filter of its security "
-	    "policies (MEF 88), by the base system's unbound.\nserver:\n\t"
-	    "verbosity: 0\n\tdo-daemonize: yes\n\tmodule-config: \"iterator\"\n"
-	    "\tdo-not-query-localhost: no\n", str(sw, "id"), server_name_of(sid),
-	    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")));
+	    "at %s, in routing table %jd.\n# The DNS filtering and protective "
+	    "DNS of its zones (MEF 138), by the base system's unbound.\n"
+	    "server:\n\tverbosity: 0\n\tdo-daemonize: yes\n\tmodule-config: "
+	    "\"respip iterator\"\n\tdo-not-query-localhost: no\n", str(sw,
+	    "id"), server_name_of(sid), (intmax_t)ucl_object_toint(
+	    ucl_object_lookup(sw, "fib")));
 	it = NULL;
 	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
 	    &it, true)) != NULL) {
@@ -2978,54 +3409,104 @@ dns_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *lists)
 			    ucl_object_tostring_forced(a), str(v, "prefix"));
 		}
 	}
-	pit = NULL;
-	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
-	    &pit, true)) != NULL)
-		for (i = 0; i < 2; i++) {
-			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
-			    "af-security-egress", &si);
-			if (sec == NULL)
-				continue;
-			sc = ucl_object_lookup(sec, "criteria");
-			dit = NULL;
-			while ((d = ucl_object_iterate(ucl_object_lookup(
-			    ucl_object_lookup(sc, "dns-domain-filter"), "deny"),
-			    &dit, true)) != NULL)
-				buf_appendf(b, "\tlocal-zone: \"%s.\" "
-				    "always_nxdomain\n",
-				    ucl_object_tostring_forced(d));
-			/* And the named lists' domains, as kept. */
-			dit = NULL;
-			while ((d = ucl_object_iterate(ucl_object_lookup(
-			    ucl_object_lookup(sc, "dns-domain-filter"), "lists"),
-			    &dit, true)) != NULL) {
-				const ucl_object_t	*le;
-				ucl_object_iter_t	 eit = NULL;
-				const char		*s;
-
-				while ((le = ucl_object_iterate(at_path(
-				    ucl_object_lookup(lists, "lists"),
-				    ucl_object_tostring_forced(d), "entries"), &eit,
-				    true)) != NULL) {
-					s = ucl_object_tostring_forced(le);
-					if (strchr(s, '/') != NULL || strchr(s, ':') !=
-					    NULL || (isdigit((unsigned char)s[0]) &&
-					    strchr(s, '.') != NULL && strpbrk(s,
-					    "abcdefghijklmnopqrstuvwxyz") == NULL))
-						continue;	/* a prefix */
-					buf_appendf(b, "\tlocal-zone: \"%s.\" "
-					    "always_nxdomain\n", s);
-				}
+	/* The zones' views: whose prefixes are whose. */
+	zi = -1;
+	zit = NULL;
+	while ((zone = ucl_object_iterate(ucl_object_lookup(sw, "zones"), &zit,
+	    true)) != NULL) {
+		zi++;
+		df = zone_fn(sw, zone, "dnf");
+		pd = zone_fn(sw, zone, "pdns");
+		if (df == NULL && pd == NULL)
+			continue;
+		for (k = 0; k < 3; k++)
+			if ((df != NULL && sfp_notifies(df, sfl[k])) || (pd !=
+			    NULL && sfp_notifies(pd, sfl[k])))
+				logit = true;
+		pfx = ucl_object_typed_new(UCL_ARRAY);
+		zone_pfx(pl, sw, sid, zone, pfx);
+		it = NULL;
+		while ((e = ucl_object_iterate(pfx, &it, true)) != NULL)
+			buf_appendf(b, "\taccess-control-view: %s z%d\n",
+			    ucl_object_tostring(e), zi);
+		ucl_object_unref(pfx);
+	}
+	/* Told, where a zone's DNF or PDNS says so: into unbound's log. */
+	if (logit)
+		buf_appendf(b, "\tlog-local-actions: yes\n\tlog-servfail: yes\n");
+	zi = -1;
+	zit = NULL;
+	while ((zone = ucl_object_iterate(ucl_object_lookup(sw, "zones"), &zit,
+	    true)) != NULL) {
+		zi++;
+		df = zone_fn(sw, zone, "dnf");
+		pd = zone_fn(sw, zone, "pdns");
+		if (df == NULL && pd == NULL)
+			continue;
+		buf_appendf(b, "view:\n\tname: \"z%d\"\n\tview-first: yes\n", zi);
+		/* DNF: each name once, the first list (Block) winning. */
+		seen = ucl_object_typed_new(UCL_OBJECT);
+		if (df != NULL && strcmp(str(df, "no-match"), "block") == 0)
+			buf_appendf(b, "\tlocal-zone: \".\" always_nxdomain\n");
+		for (k = 0; df != NULL && k < 3; k++) {
+			names = ucl_object_typed_new(UCL_ARRAY);
+			sfp_strings(df, sfl[k], true, pl->lists, false, names);
+			it = NULL;
+			while ((e = ucl_object_iterate(names, &it, true)) != NULL) {
+				n = ucl_object_tostring(e);
+				if (strncmp(n, "*.", 2) == 0)
+					n += 2;
+				if (ucl_object_lookup(seen, n) != NULL)
+					continue;
+				ucl_object_insert_key(seen, ucl_object_frombool(
+				    true), n, 0, true);
+				buf_appendf(b, "\tlocal-zone: \"%s.\" %s\n", n,
+				    zt[k]);
 			}
+			ucl_object_unref(names);
 		}
+		ucl_object_unref(seen);
+		/* PDNS: the answers' addresses; its lists' prefixes too. */
+		if (pd != NULL && strcmp(str(pd, "no-match"), "block") == 0)
+			buf_appendf(b, "\tresponse-ip: 0.0.0.0/0 always_nxdomain\n"
+			    "\tresponse-ip: ::/0 always_nxdomain\n");
+		seen = ucl_object_typed_new(UCL_OBJECT);
+		for (k = 0; pd != NULL && k < 3; k++) {
+			names = ucl_object_typed_new(UCL_ARRAY);
+			it = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(pd, sfl[k]),
+			    &it, true)) != NULL) {
+				val = str(e, "value");
+				if (val != NULL && strcmp(val, "any") == 0)
+					val = strcmp(str(e, "type"), "A") == 0 ?
+					    "0.0.0.0/0" : "::/0";
+				if (val != NULL)
+					ucl_array_append(names, S(val));
+			}
+			sfp_strings(pd, sfl[k], false, pl->lists, true, names);
+			it = NULL;
+			while ((e = ucl_object_iterate(names, &it, true)) != NULL) {
+				n = ucl_object_tostring(e);
+				if (ucl_object_lookup(seen, n) != NULL)
+					continue;
+				ucl_object_insert_key(seen, ucl_object_frombool(
+				    true), n, 0, true);
+				buf_appendf(b, "\tresponse-ip: %s%s %s\n", n,
+				    strchr(n, '/') == NULL ? (strchr(n, ':') != NULL ?
+				    "/128" : "/32") : "", zt[k]);
+			}
+			ucl_object_unref(names);
+		}
+		ucl_object_unref(seen);
+	}
 	out = strdup(buf_stringify(b, NULL));
 	buf_free(b);
 	return (out);
 }
 
 /*
- * Each edge's DNS filters: an instance per service whose policies name
- * a security policy that filters DNS, where the edge has a UNI of the
+ * Each edge's resolvers: an instance per service with a zone's DNF or
+ * PDNS, or a DPF sending DNS to it, where the edge has a UNI of the
  * service, in the service's table.
  */
 static void
@@ -3037,7 +3518,7 @@ dns_build(struct plan *pl, const ucl_object_t *doc)
 	char			 name[32];
 	const char		*sid;
 	char			*text;
-	bool			 here, proto;
+	bool			 here;
 
 	it = NULL;
 	while ((edge = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
@@ -3047,7 +3528,7 @@ dns_build(struct plan *pl, const ucl_object_t *doc)
 		eit = NULL;
 		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
 		    &eit, true)) != NULL) {
-			if (!dns_filters(sw, &proto))
+			if (!svc_resolver(sw))
 				continue;
 			here = false;
 			pit = NULL;
@@ -3062,7 +3543,7 @@ dns_build(struct plan *pl, const ucl_object_t *doc)
 			inst = ucl_object_typed_new(UCL_OBJECT);
 			put(inst, "name", S(name));
 			put(inst, "fib", I(efib(pl, sw, sid)));
-			text = dns_conf(sw, sid, pl->lists);
+			text = dns_conf(pl, sw, sid);
 			put(inst, "conf", S(text));
 			free(text);
 			ucl_array_append(list, inst);
@@ -3071,10 +3552,10 @@ dns_build(struct plan *pl, const ucl_object_t *doc)
 			ucl_object_unref(list);
 			continue;
 		}
-		o = object(pl, sid, "dns", PH_BIRD, "DNS filters: unbound, %u "
-		    "instance%s in the services' tables, the domains the security "
-		    "policies deny", ucl_array_size(list), ucl_array_size(list) ==
-		    1 ? "" : "s");
+		o = object(pl, sid, "dns", PH_BIRD, "DNS filtering and protective "
+		    "DNS (MEF 138): unbound, %u instance%s in the services' "
+		    "tables, a view a zone", ucl_array_size(list),
+		    ucl_array_size(list) == 1 ? "" : "s");
 		if (o == NULL) {
 			ucl_object_unref(list);
 			continue;
@@ -3991,7 +4472,7 @@ dn_objects(const struct dn *dn, ucl_object_t *objects)
 }
 
 /*
- * A security policy's rate limit (MEF 88): a pipe of its own, one per
+ * A security policy's rate limit (Arcana's own): a pipe of its own, one per
  * policy of the service; -1 for none or too many.
  */
 static int
@@ -4001,7 +4482,7 @@ sec_pipe(struct dn *dn, const ucl_object_t *sw, const ucl_object_t *sec)
 	char			 key[160];
 	int			 i;
 
-	v = ucl_object_lookup(ucl_object_lookup(sec, "criteria"), "rate-limit");
+	v = ucl_object_lookup(sec, "rate-limit");
 	if (v == NULL || ucl_object_type(v) != UCL_INT)
 		return (-1);
 	snprintf(key, sizeof(key), "%s/security/%s", str(sw, "id"), str(sec,
@@ -4045,111 +4526,351 @@ sec_of(const ucl_object_t *sw, const ucl_object_t *pol, const char *crit,
 	return (NULL);
 }
 
+/* A criterion's values as ipfw takes a list: a, b, c. */
+static void
+vals(const ucl_object_t *v, char *out, size_t len)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	size_t			 n;
+
+	out[0] = '\0';
+	if (ucl_object_type(v) != UCL_ARRAY) {
+		snprintf(out, len, "%s", ucl_object_tostring_forced(v));
+		return;
+	}
+	it = NULL;
+	while ((e = ucl_object_iterate(v, &it, true)) != NULL) {
+		n = strlen(out);
+		snprintf(out + n, len - n, "%s%s", n > 0 ? "," : "",
+		    ucl_object_tostring_forced(e));
+	}
+}
+
 /*
- * The rules of a security policy's ip-block for a flow (MEF 88): what
- * is to or from a denied prefix is dropped, unless the prefix is among
- * the allowed, logged where the policy says; the prefixes in tables of
- * the policy's own, sw<fib>_s<i>d4, d6, a4 and a6, filled once.  The
+ * An IPPF or DPF entry (MEF 138 Tables 5, 6) as ipfw options: src-ip,
+ * dst-ip, src-port, dst-port, and the protocol the caller is given
+ * (proto); its family into *famp (0 for either).
+ */
+static void
+tuple_words(const ucl_object_t *e, const char *proto, char *out, size_t len,
+    int *famp)
+{
+	const ucl_object_t	*v;
+	char			 l[600];
+	size_t			 n;
+
+	out[0] = '\0';
+	*famp = 0;
+	if ((v = ucl_object_lookup(e, "sav4")) != NULL ||
+	    (v = ucl_object_lookup(e, "sav6")) != NULL) {
+		vals(v, l, sizeof(l));
+		n = strlen(out);
+		snprintf(out + n, len - n, " src-ip %s", l);
+	}
+	if ((v = ucl_object_lookup(e, "dav4")) != NULL ||
+	    (v = ucl_object_lookup(e, "dav6")) != NULL) {
+		vals(v, l, sizeof(l));
+		n = strlen(out);
+		snprintf(out + n, len - n, " dst-ip %s", l);
+	}
+	if (proto != NULL) {
+		n = strlen(out);
+		snprintf(out + n, len - n, " proto %s", proto);
+	}
+	if ((v = ucl_object_lookup(e, "sport")) != NULL) {
+		vals(v, l, sizeof(l));
+		n = strlen(out);
+		snprintf(out + n, len - n, " src-port %s", l);
+	}
+	if ((v = ucl_object_lookup(e, "dport")) != NULL) {
+		vals(v, l, sizeof(l));
+		n = strlen(out);
+		snprintf(out + n, len - n, " dst-port %s", l);
+	}
+	if (ucl_object_lookup(e, "sav4") != NULL || ucl_object_lookup(e,
+	    "dav4") != NULL || ucl_object_lookup(e, "protv4") != NULL)
+		*famp = 4;
+	else if (ucl_object_lookup(e, "sav6") != NULL || ucl_object_lookup(e,
+	    "dav6") != NULL || ucl_object_lookup(e, "nextheadv6") != NULL)
+		*famp = 6;
+	if (*famp != 0 && ucl_object_lookup(e, "sav4") == NULL &&
+	    ucl_object_lookup(e, "dav4") == NULL && ucl_object_lookup(e,
+	    "sav6") == NULL && ucl_object_lookup(e, "dav6") == NULL) {
+		n = strlen(out);
+		snprintf(out + n, len - n, " ipversion %d", *famp);
+	}
+}
+
+/* How specific an IPPF or DPF entry is (§6.1.6): its prefixes' lengths
+ * (the shortest of a list), a port given, a protocol given. */
+static int
+tuple_specific(const ucl_object_t *e)
+{
+	static const char *const addrs[] = { "sav4", "dav4", "sav6", "dav6" };
+	const ucl_object_t	*v, *x;
+	ucl_object_iter_t	 it;
+	const char		*sl;
+	int			 n, i, len, min;
+
+	n = 0;
+	for (i = 0; i < 4; i++) {
+		if ((v = ucl_object_lookup(e, addrs[i])) == NULL)
+			continue;
+		min = 128;
+		it = NULL;
+		while ((x = ucl_object_iterate(v, &it, true)) != NULL) {
+			sl = strchr(ucl_object_tostring_forced(x), '/');
+			len = sl != NULL ? atoi(sl + 1) : i % 2 == 0 && i < 2 ?
+			    32 : i < 2 ? 32 : 128;
+			if (len < min)
+				min = len;
+		}
+		n += min;
+	}
+	if (ucl_object_lookup(e, "sport") != NULL)
+		n += 16;
+	if (ucl_object_lookup(e, "dport") != NULL)
+		n += 16;
+	if (ucl_object_lookup(e, "protv4") != NULL || ucl_object_lookup(e,
+	    "nextheadv6") != NULL)
+		n += 8;
+	return (n);
+}
+
+struct tentry {
+	const ucl_object_t	*e;
+	int			 list;	/* sfl's */
+	int			 spec;
+};
+
+static int
+tentry_cmp(const void *a, const void *b)
+{
+	const struct tentry	*x = a, *y = b;
+
+	if (x->spec != y->spec)
+		return (y->spec - x->spec);
+	return (x->list - y->list);
+}
+
+/* A function policy's entries in the order they are tried. */
+static struct tentry *
+tuple_order(const ucl_object_t *f, size_t *np)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	struct tentry		*t;
+	size_t			 n;
+	int			 k;
+
+	n = 0;
+	for (k = 0; k < 3; k++)
+		n += ucl_object_lookup(f, sfl[k]) != NULL ? ucl_array_size(
+		    ucl_object_lookup(f, sfl[k])) : 0;
+	t = xcalloc(n + 1, sizeof(*t));
+	n = 0;
+	for (k = 0; k < 3; k++) {
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(f, sfl[k]), &it,
+		    true)) != NULL) {
+			t[n].e = e;
+			t[n].list = k;
+			t[n].spec = tuple_specific(e);
+			n++;
+		}
+	}
+	qsort(t, n, sizeof(*t), tentry_cmp);
+	*np = n;
+	return (t);
+}
+
+/*
+ * A flow's IPPF (MEF 138 §8.1), as its security policy has one: the
+ * function policy's entries most specific first, an Allow tagging the
+ * packet (count tag, a tag the function policy's own), a Block or a
+ * Quarantine dropping what is not tagged; then the named lists'
+ * prefixes, to or from, in a table of the policy's a family with the
+ * list as the value (1 Block, 2 Quarantine, 3 Allow), its longest match
+ * deciding; then, where its No-match blocks, the rest of the flow
+ * dropped.  What a list's notify says is told (logdst rtsock, read by
+ * the agent into its record), the No-match's always (R24), each rule's
+ * comment naming the service, the function policy and the list.  The
  * tail is what ends each rule: where it comes in, or goes out.
  */
 static void
-sec_rules(ucl_object_t *tables, ucl_object_t *rules, int num,
-    const ucl_object_t *sw, const ucl_object_t *sec, int si,
-    const ucl_object_t *cr, const char *appid, const char *tail,
-    const ucl_object_t *lists_of)
+ippf_rules(ucl_object_t *tables, ucl_object_t *rules, int num,
+    const ucl_object_t *sw, const ucl_object_t *sec, const ucl_object_t *cr,
+    const char *appid, const char *tail, const ucl_object_t *lists_of)
 {
-	static const char *const lists[] = { "deny", "allow" };
-	const ucl_object_t	*ib, *p;
-	ucl_object_iter_t	 it;
-	char			 name[2][64], tbl[80], words[2000], not[100];
-	const char		*s;
-	bool			 has[2], logit;
-	int			 fam, f2, i;
+	static const char *const vals3[] = { "1", "2", "3" };
+	const ucl_object_t	*f, *pv, *p;
+	ucl_object_iter_t	 it, pit;
+	ucl_object_t		*seen, *pfx;
+	struct tentry		*t;
+	char			 flow[2000], ew[1600], tbl[64], logw[64];
+	size_t			 n, i;
+	int			 fi, tag, fam, f2, k, ef;
 
-	ib = ucl_object_lookup(ucl_object_lookup(sec, "criteria"), "ip-block");
-	if (ib == NULL)
+	if ((f = sec_fn(sw, sec, "ippf", &fi)) == NULL)
 		return;
-	logit = ucl_flag(ucl_object_lookup(sec, "criteria"), "log");
-	for (fam = 4; fam <= 6; fam += 2) {
-		for (i = 0; i < 2; i++) {
-			bool	fresh;
+	tag = 1 + fi;
+	if (!afs_words(cr, NULL, appid, flow, sizeof(flow), &f2))
+		return;
+	t = tuple_order(f, &n);
+	for (i = 0; i < n; i++) {
+		const ucl_object_t	*pr;
+		char			 one[16];
 
-			snprintf(name[i], sizeof(name[i]), "sw%jd_s%d%c%d",
-			    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")),
-			    si, lists[i][0], fam);
-			has[i] = false;
-			fresh = by(tables, "name", name[i]) == NULL;
-			it = NULL;
-			while ((p = ucl_object_iterate(ucl_object_lookup(ib,
-			    lists[i]), &it, true)) != NULL) {
-				s = ucl_object_tostring_forced(p);
-				if ((strchr(s, ':') != NULL) != (fam == 6))
-					continue;
-				if (fresh)
-					entry(table(tables, name[i], "legacy"), s,
-					    "0");
-				has[i] = true;
-			}
-			/* And the named lists' prefixes (the deny ones; feeds
-			 * and pasted lists, as kept), of the family. */
-			if (i == 0) {
-				const ucl_object_t	*ln, *le;
-				ucl_object_iter_t	 lit, eit;
-
-				lit = NULL;
-				while ((ln = ucl_object_iterate(ucl_object_lookup(ib,
-				    "lists"), &lit, true)) != NULL) {
-					eit = NULL;
-					while ((le = ucl_object_iterate(at_path(
-					    ucl_object_lookup(lists_of, "lists"),
-					    ucl_object_tostring_forced(ln), "entries"),
-					    &eit, true)) != NULL) {
-						s = ucl_object_tostring_forced(le);
-						if (strchr(s, '/') == NULL && !(
-						    strchr(s, ':') != NULL || (isdigit(
-						    (unsigned char)s[0]) && strchr(s,
-						    '.') != NULL)))
-							continue;	/* a domain */
-						if ((strchr(s, ':') != NULL) != (fam ==
-						    6))
-							continue;
-						if (fresh)
-							entry(table(tables, name[i],
-							    "legacy"), s, "0");
-						has[i] = true;
-					}
-				}
-			}
-			if (has[i] && !fresh)
-				table(tables, name[i], "legacy");
-		}
-		if (!has[0])
-			continue;
-		/* To a denied prefix, and from one.  With log, each packet is
-		 * told on the routing socket (ipfw's logdst rtsock), which
-		 * the agent reads into its record; the rule's comment names
-		 * the service and the policy for it (SASE-2).  A thousand a
-		 * rule between resets, which the agent asks for. */
-		snprintf(tbl, sizeof(tbl), "table(%s)", name[0]);
-		not[0] = '\0';
-		if (has[1])
-			snprintf(not, sizeof(not), " not dst-ip table(%s)", name[1]);
-		if (afs_words(cr, tbl, appid, words, sizeof(words), &f2) && (f2 ==
-		    0 || f2 == fam))
-			rule(rules, num, "deny%s %s%s%s%s%.30s %.30s dst", logit ?
-			    " log logdst rtsock logamount 1000" : "", words, not, tail,
-			    logit ? " // security " : "", logit ? str(sw, "id") : "",
-			    logit ? str(sec, "name") : "");
-		not[0] = '\0';
-		if (has[1])
-			snprintf(not, sizeof(not), " not src-ip table(%s)", name[1]);
-		if (afs_words(cr, NULL, appid, words, sizeof(words), &f2) && (f2 ==
-		    0 || f2 == fam))
-			rule(rules, num, "deny%s %s src-ip table(%s)%s%s%s%.30s %.30s "
-			    "src", logit ? " log logdst rtsock logamount 1000" : "",
-			    words, name[0], not, tail, logit ? " // security " : "",
-			    logit ? str(sw, "id") : "", logit ? str(sec, "name") : "");
+		pr = ucl_object_lookup(t[i].e, "protv4") != NULL ?
+		    ucl_object_lookup(t[i].e, "protv4") : ucl_object_lookup(
+		    t[i].e, "nextheadv6");
+		/* A rule a protocol where the entry names several. */
+		pit = NULL;
+		do {
+			p = pr != NULL ? ucl_object_iterate(pr, &pit, true) : NULL;
+			if (pr != NULL && p == NULL)
+				break;
+			snprintf(one, sizeof(one), "%s", p != NULL ?
+			    ucl_object_tostring_forced(p) : "");
+			tuple_words(t[i].e, p != NULL ? one : NULL, ew, sizeof(ew),
+			    &ef);
+			if (ef != 0 && f2 != 0 && ef != f2)
+				break;
+			if (t[i].list == 2)
+				rule(rules, num, "count tag %d %s%s%s", tag, flow, ew,
+				    tail);
+			else
+				rule(rules, num, "deny%s %s%s not tagged %d%s // "
+				    "security %.30s %.30s %s", sfp_notifies(f,
+				    sfl[t[i].list]) ? " log logdst rtsock logamount "
+				    "1000" : "", flow, ew, tag, tail, str(sw, "id"),
+				    str(f, "id"), sfl[t[i].list]);
+		} while (pr != NULL);
 	}
+	free(t);
+	/* The named lists' prefixes: a table a family, each prefix once,
+	 * Block before Quarantine before Allow. */
+	for (fam = 4; fam <= 6; fam += 2) {
+		bool	fresh, has[3] = { false, false, false };
+
+		if (f2 != 0 && f2 != fam)
+			continue;
+		snprintf(tbl, sizeof(tbl), "sw%jd_f%dv%d", (intmax_t)
+		    ucl_object_toint(ucl_object_lookup(sw, "fib")), fi, fam);
+		fresh = by(tables, "name", tbl) == NULL;
+		seen = ucl_object_typed_new(UCL_OBJECT);
+		for (k = 0; k < 3; k++) {
+			pfx = ucl_object_typed_new(UCL_ARRAY);
+			sfp_strings(f, sfl[k], false, lists_of, true, pfx);
+			it = NULL;
+			while ((pv = ucl_object_iterate(pfx, &it, true)) != NULL) {
+				const char *ps = ucl_object_tostring(pv);
+
+				if ((strchr(ps, ':') != NULL) != (fam == 6) ||
+				    ucl_object_lookup(seen, ps) != NULL)
+					continue;
+				ucl_object_insert_key(seen, ucl_object_frombool(
+				    true), ps, 0, true);
+				if (fresh)
+					entry(table(tables, tbl, "legacy"), ps,
+					    vals3[k]);
+				has[k] = true;
+			}
+			ucl_object_unref(pfx);
+		}
+		ucl_object_unref(seen);
+		if (has[2]) {
+			rule(rules, num, "count tag %d %s dst-ip table(%s,3)%s",
+			    tag, flow, tbl, tail);
+			rule(rules, num, "count tag %d %s src-ip table(%s,3)%s",
+			    tag, flow, tbl, tail);
+		}
+		for (k = 0; k < 2; k++) {
+			if (!has[k])
+				continue;
+			snprintf(logw, sizeof(logw), "%s", sfp_notifies(f,
+			    sfl[k]) ? " log logdst rtsock logamount 1000" : "");
+			rule(rules, num, "deny%s %s dst-ip table(%s,%s) not tagged "
+			    "%d%s // security %.30s %.30s %s", logw, flow, tbl,
+			    vals3[k], tag, tail, str(sw, "id"), str(f, "id"),
+			    sfl[k]);
+			rule(rules, num, "deny%s %s src-ip table(%s,%s) not tagged "
+			    "%d%s // security %.30s %.30s %s", logw, flow, tbl,
+			    vals3[k], tag, tail, str(sw, "id"), str(f, "id"),
+			    sfl[k]);
+		}
+	}
+	if (strcmp(str(f, "no-match"), "block") == 0)
+		rule(rules, num, "deny log logdst rtsock logamount 1000 %s not "
+		    "tagged %d%s // security %.30s %.30s no-match", flow, tag, tail,
+		    str(sw, "id"), str(f, "id"));
+}
+
+/*
+ * A flow's DPF (MEF 138 §8.6.1), as its security policy has one: DNS of
+ * the flow (UDP and TCP 53, TCP 853 for DNS over TLS) not to the edge
+ * itself, by the function policy's entries most specific first, an
+ * Allow tagging it, a Block or Quarantine answered at once (R100: port
+ * unreachable); the rest, where its No-match blocks, the
+ * same, or, where it redirects (Arcana's: MEF 138's Alter), sent to
+ * the service's resolver on the edge (resolver, its address there).
+ */
+static void
+dpf_rules(ucl_object_t *rules, int num, const ucl_object_t *sw,
+    const ucl_object_t *sec, const ucl_object_t *cr, const char *appid,
+    const char *tail, const char *resolver)
+{
+	/* Port unreachable for TCP too: it ends the connection's attempt
+	 * as a reset would, and the agent takes no rule with "set" in it. */
+	static const struct { const char *proto, *rej; int port; } dns[] = {
+		{ "udp", "unreach port", 53 },
+		{ "tcp", "unreach port", 53 },
+		{ "tcp", "unreach port", 853 },
+	};
+	const ucl_object_t	*f;
+	struct tentry		*t;
+	char			 flow[2000], ew[1600];
+	size_t			 n, i, d;
+	int			 fi, tag, f2, ef;
+
+	if ((f = sec_fn(sw, sec, "dpf", &fi)) == NULL)
+		return;
+	tag = 1 + fi;
+	if (!afs_words(cr, NULL, appid, flow, sizeof(flow), &f2))
+		return;
+	t = tuple_order(f, &n);
+	for (d = 0; d < nitems(dns); d++) {
+		for (i = 0; i < n; i++) {
+			tuple_words(t[i].e, dns[d].proto, ew, sizeof(ew), &ef);
+			if (ef != 0 && f2 != 0 && ef != f2)
+				continue;
+			if (t[i].list == 2)
+				rule(rules, num, "count tag %d %s%s dst-port %d not "
+				    "dst-ip me%s", tag, flow, ew, dns[d].port, tail);
+			else
+				rule(rules, num, "%s%s %s%s dst-port %d not dst-ip me "
+				    "not tagged %d%s // security %.30s %.30s %s",
+				    dns[d].rej, sfp_notifies(f, sfl[t[i].list]) ?
+				    " log logdst rtsock logamount 1000" : "", flow,
+				    ew, dns[d].port, tag, tail, str(sw, "id"), str(f,
+				    "id"), sfl[t[i].list]);
+		}
+		if (strcmp(str(f, "no-match"), "block") != 0)
+			continue;
+		if (ucl_flag(f, "redirect") && resolver != NULL && dns[d].port ==
+		    53 && f2 != 6)
+			rule(rules, num, "fwd %s,53 %s ipversion 4 proto %s dst-port "
+			    "53 not dst-ip me not tagged %d%s", resolver, flow,
+			    dns[d].proto, tag, tail);
+		else
+			rule(rules, num, "%s log logdst rtsock logamount 1000 %s "
+			    "proto %s dst-port %d not dst-ip me not tagged %d%s // "
+			    "security %.30s %.30s no-match", dns[d].rej, flow,
+			    dns[d].proto, dns[d].port, tag, tail, str(sw, "id"),
+			    str(f, "id"));
+	}
+	free(t);
 }
 
 /* The flows an application names: the one of the name, or a group's. */
@@ -4616,41 +5337,35 @@ rules_build(struct plan *pl, const char *sid)
 						    ucl_object_lookup(sw, "fib")), pfx[x]);
 				}
 			}
-			/* DNS kept to the provider's resolver, where a security
-			 * policy says so (MEF 88 dns-protocol-filter): every
-			 * query from the UNI goes to the filter here. */
+			/* HTTP and TLS to the proxy (MEF 138's URLF, MBSF,
+			 * MD+R), on the edge's own address there, from the
+			 * zones that have them, each by its table. */
 			{
-				const ucl_object_t	*pv, *pa;
-				bool			 proto;
-
-				char			 rown[80];
+				const ucl_object_t	*pz;
+				ucl_object_iter_t	 pzit;
+				char			 pown[80];
 				const char		*at;
+				int			 pzi;
 
-				pv = ucl_object_lookup(ucl_object_lookup(ep, "uni"),
-				    "ipv4");
-				pa = pv != NULL ? ucl_array_find_index(
-				    ucl_object_lookup(pv, "provider"), 0) : NULL;
-				at = pa != NULL ? ucl_object_tostring_forced(pa) :
-				    NULL;
-				/* A remote end point's: the edge's own there. */
-				if (pa == NULL && ucl_object_lookup(ep, "remote") !=
-				    NULL && remote_addr(pl, sw, ep, NULL, rown,
-				    sizeof(rown)) && family(rown) == AF_INET)
-					at = rown;
-				if (at != NULL && dns_filters(sw, &proto) && proto) {
-					rule(rules, RULE_FROM, "fwd %s,53 udp from any "
-					    "to any dst-port 53 in recv %s", at, uni);
-					rule(rules, RULE_FROM, "fwd %s,53 tcp from any "
-					    "to any dst-port 53 in recv %s", at, uni);
-				}
-				/* URLs filtered by the proxy (SASE-4): HTTP and
-				 * TLS from the end point to it, on the edge's own
-				 * address there. */
-				if (at != NULL && url_filters(sw, &proto)) {
-					rule(rules, RULE_FROM, "fwd %s,3128 tcp from any "
-					    "to any dst-port 80 in recv %s", at, uni);
-					rule(rules, RULE_FROM, "fwd %s,3129 tcp from any "
-					    "to any dst-port 443 in recv %s", at, uni);
+				at = ep_own4(pl, sw, ep, pown, sizeof(pown));
+				pzi = -1;
+				pzit = NULL;
+				while (at != NULL && (pz = ucl_object_iterate(
+				    ucl_object_lookup(sw, "zones"), &pzit, true)) !=
+				    NULL) {
+					pzi++;
+					if (zone_fn(sw, pz, "urlf") == NULL &&
+					    zone_fn(sw, pz, "mbsf") == NULL &&
+					    zone_fn(sw, pz, "mdr") == NULL)
+						continue;
+					rule(rules, RULE_FROM, "fwd %s,3128 tcp from "
+					    "table(sw%jd_zp%d) to any dst-port 80 in "
+					    "recv %s", at, (intmax_t)ucl_object_toint(
+					    ucl_object_lookup(sw, "fib")), pzi, uni);
+					rule(rules, RULE_FROM, "fwd %s,3129 tcp from "
+					    "table(sw%jd_zp%d) to any dst-port 443 in "
+					    "recv %s", at, (intmax_t)ucl_object_toint(
+					    ucl_object_lookup(sw, "fib")), pzi, uni);
 				}
 			}
 			if (ucl_object_lookup(ep, "remote") != NULL)
@@ -4886,7 +5601,7 @@ rules_build(struct plan *pl, const char *sid)
 					if (pol != NULL && (lim = limiter_of(dn,
 					    sw, pol, ep)) >= 0)
 						q = queue_of(dn, lim, sw, pol);
-					/* Its security policy (MEF 88, by
+					/* Its security policy (MEF 138, by
 					 * af-security-ingress): a pipe for its
 					 * rate limit, its denies before the
 					 * forward. */
@@ -4899,10 +5614,18 @@ rules_build(struct plan *pl, const char *sid)
 						    ucl_object_tostring_forced(
 						    ucl_object_iterate(ap, &apit,
 						    true)) : NULL;
-						if (pol != NULL && sec != NULL)
-							sec_rules(tables, rules, next,
-							    sw, sec, si, cr, appid,
+						if (pol != NULL && sec != NULL) {
+							char	rown[80];
+
+							ippf_rules(tables, rules,
+							    next, sw, sec, cr, appid,
 							    recv, pl->lists);
+							dpf_rules(rules, next, sw,
+							    sec, cr, appid, recv,
+							    svc_resolver(sw) ?
+							    ep_own4(pl, sw, ep, rown,
+							    sizeof(rown)) : NULL);
+						}
 						if (pol == NULL) {
 							/* None, or Block (R112,
 							 * R113). */
@@ -5108,7 +5831,7 @@ rules_build(struct plan *pl, const char *sid)
 					v = epol != NULL ? ucl_object_lookup(
 					    ucl_object_lookup(epol, "criteria"),
 					    "egress-block") : NULL;
-					/* And its security policy (MEF 88, by
+					/* And its security policy (MEF 138, by
 					 * af-security-egress): the denies on the
 					 * way out by the UNI. */
 					sec = sec_of(sw, epol, "af-security-egress",
@@ -5140,11 +5863,16 @@ rules_build(struct plan *pl, const char *sid)
 							    ucl_object_iterate(ap,
 							    &apit, true)) : NULL;
 
-							if (sec != NULL)
-								sec_rules(tables, pre,
+							if (sec != NULL) {
+								ippf_rules(tables, pre,
 								    RULE_FROM + 1, sw,
-								    sec, si, cr, appid,
-								    tail, pl->lists);
+								    sec, cr, appid, tail,
+								    pl->lists);
+								dpf_rules(pre,
+								    RULE_FROM + 1, sw,
+								    sec, cr, appid, tail,
+								    NULL);
+							}
 							if (v != NULL && afs_words(cr,
 							    NULL, appid, words,
 							    sizeof(words), &fam))
@@ -7792,7 +8520,7 @@ run_main(void *arg)
 }
 
 
-/* ---- The lists (MEF 88, SASE-2): feeds fetched by the console, pasted
+/* ---- The lists (MEF 138, SASE-2): feeds fetched by the console, pasted
  * lists, versioned and named by the security policies -------------------- */
 
 #define	LISTS_FILE	"sdwan-lists.json"
@@ -8031,16 +8759,52 @@ lists_fetch(ucl_object_t *kept, const char *only)
 	pthread_mutex_unlock(&st_lock);
 }
 
-/* The feeds fetched again when the interval has passed. */
+/*
+ * The shortest Duration (MEF 138, Tables 10-16: the time between
+ * updates of the threat data) of the function policies that name
+ * lists; 0 for none.
+ */
+static int64_t
+lists_duration(void)
+{
+	ucl_object_t		*doc;
+	const ucl_object_t	*sw, *f;
+	ucl_object_iter_t	 it, fit;
+	int64_t			 d, min = 0;
+
+	if ((doc = sdwan_load()) == NULL)
+		return (0);
+	it = NULL;
+	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
+	    true)) != NULL) {
+		fit = NULL;
+		while ((f = ucl_object_iterate(ucl_object_lookup(sw,
+		    "security_function_policies"), &fit, true)) != NULL) {
+			if (ucl_object_lookup(f, "lists") == NULL ||
+			    (d = ucl_object_toint(ucl_object_lookup(f,
+			    "duration"))) <= 0)
+				continue;
+			if (min == 0 || d < min)
+				min = d;
+		}
+	}
+	ucl_object_unref(doc);
+	return (min);
+}
+
+/* The feeds fetched again when the interval has passed, or the
+ * shortest Duration of the function policies naming lists. */
 static void
 lists_tick(time_t now)
 {
 	ucl_object_t	*kept;
-	int64_t		 hours;
+	int64_t		 hours, d;
 
 	kept = lists_kept();
 	hours = ucl_object_lookup(kept, "interval") != NULL ? ucl_object_toint(
 	    ucl_object_lookup(kept, "interval")) : FEED_INTERVAL_H;
+	if ((d = lists_duration()) > 0 && d < hours)
+		hours = d;
 	if (ucl_array_size(ucl_object_lookup(kept, "feeds")) > 0 && now -
 	    ucl_object_toint(ucl_object_lookup(kept, "fetched_at")) >= hours *
 	    3600)
@@ -8440,7 +9204,6 @@ identity_config(struct plan *pl, const ucl_object_t *doc,
 	char			*json, *text, jail[64];
 	const char		*endpoint, *key;
 	int			 status, k;
-	bool			 proto;
 
 	r = ucl_object_lookup(ep, "remote");
 	if (!net_parse(str(r, "prefix"), &n) || !remote_addr(pl, sw, ep, name,
@@ -8480,7 +9243,7 @@ identity_config(struct plan *pl, const ucl_object_t *doc,
 	buf_appendf(b, "# %s, identity %s of %s: shown once, kept nowhere "
 	    "by the console.\n[Interface]\nPrivateKey = %s\nAddress = %s/%d\n",
 	    str(sw, "id"), name, str(ep, "id"), priv, addr, n.len);
-	if (dns_filters(sw, &proto))
+	if (svc_resolver(sw))
 		buf_appendf(b, "DNS = %s\n", own);
 	buf_appendf(b, "\n[Peer]\nPublicKey = %s\nEndpoint = %s%s%s:%jd\n"
 	    "AllowedIPs = ", key != NULL ? key : "(the edge's, once applied: wg "

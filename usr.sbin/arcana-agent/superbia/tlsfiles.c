@@ -270,7 +270,7 @@ static int
 put_file(struct work *w, const char *path, const char *text, size_t len,
     mode_t mode, const char **errp)
 {
-	const char	*tmp;
+	const char	*tmp, *before;
 	size_t		 off;
 	ssize_t		 n;
 	int		 fd;
@@ -287,8 +287,10 @@ put_file(struct work *w, const char *path, const char *text, size_t len,
 		}
 	if (fsync(fd) == -1 || close(fd) == -1)
 		goto fail;
-	if (access(path, F_OK) == 0 && (unlink(wfmt(w, "%s.before", path)),
-	    link(path, wfmt(w, "%s.before", path))) == -1)
+	/* The one before kept, if there is one (none: ENOENT). */
+	before = wfmt(w, "%s.before", path);
+	(void)unlink(before);
+	if (link(path, before) == -1 && errno != ENOENT)
 		goto fail;
 	if (rename(tmp, path) == -1)
 		goto fail;
@@ -304,9 +306,9 @@ put_back(struct work *w, const char *path)
 {
 	const char	*before;
 
+	/* None kept (ENOENT): what is there stays. */
 	before = wfmt(w, "%s.before", path);
-	if (access(before, F_OK) == 0)
-		(void)rename(before, path);
+	(void)rename(before, path);
 }
 
 /* A new key beside the host's, and a request for it named as the host. */
