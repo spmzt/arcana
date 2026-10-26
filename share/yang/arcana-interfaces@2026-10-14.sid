@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-interfaces",
     "module-revision": "2026-10-14",
-    "sid-file-version": 4,
+    "sid-file-version": 5,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 61 000, 200.",
     "dependency-revision": [
       {
@@ -28,6 +28,14 @@
       {
         "module-name": "ieee802-dot1ax-linkagg",
         "module-revision": "2025-09-30"
+      },
+      {
+        "module-name": "ietf-ip",
+        "module-revision": "2018-02-22"
+      },
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
       },
       {
         "module-name": "ieee802-dot1q-bridge",
@@ -334,6 +342,31 @@
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/arcana-interfaces:flags",
         "sid": "61052"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:tunnel",
+        "sid": "61053"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:tunnel/local",
+        "sid": "61054"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:tunnel/remote",
+        "sid": "61055"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv4/address/arcana-interfaces:peer",
+        "sid": "61056"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/address/arcana-interfaces:peer",
+        "sid": "61057"
       }
     ]
   }

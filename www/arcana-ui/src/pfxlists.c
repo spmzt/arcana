@@ -65,35 +65,61 @@ pfxlist_get(const char *name)
 	    ucl_object_lookup(px.all, name) : NULL);
 }
 
-/* The prefixes of the list named, joined by sep; to be freed. */
+/*
+ * The prefixes of the lists named, one or several by commas (what a
+ * select of several gives), joined by sep; NULL when none is a list; to
+ * be freed.
+ */
 char *
-pfxlist_joined(const char *name, const char *sep)
+pfxlist_joined(const char *names, const char *sep)
 {
 	const ucl_object_t	*l, *e;
 	ucl_object_iter_t	 it;
 	struct html		 b;
-	bool			 first;
+	char			 one[128];
+	const char		*p, *q;
+	size_t			 n;
+	bool			 first, any;
 
-	if ((l = pfxlist_get(name)) == NULL)
+	if (names == NULL)
 		return (NULL);
 	memset(&b, 0, sizeof(b));
 	first = true;
-	it = NULL;
-	while ((e = ucl_object_iterate(jget(l, "prefixes"), &it, true)) !=
-	    NULL) {
-		h_fmt(&b, "%s%s", first ? "" : sep, ucl_object_tostring_forced(e));
-		first = false;
+	any = false;
+	for (p = names; *p != '\0'; p = *q != '\0' ? q + 1 : q) {
+		while (*p == ' ')
+			p++;
+		q = strchr(p, ',') != NULL ? strchr(p, ',') : p + strlen(p);
+		n = (size_t)(q - p);
+		while (n > 0 && p[n - 1] == ' ')
+			n--;
+		if (n == 0 || n >= sizeof(one))
+			continue;
+		snprintf(one, sizeof(one), "%.*s", (int)n, p);
+		if ((l = pfxlist_get(one)) == NULL)
+			continue;
+		any = true;
+		it = NULL;
+		while ((e = ucl_object_iterate(jget(l, "prefixes"), &it,
+		    true)) != NULL) {
+			h_fmt(&b, "%s%s", first ? "" : sep,
+			    ucl_object_tostring_forced(e));
+			first = false;
+		}
 	}
+	if (!any)
+		return (NULL);
 	return (b.s != NULL ? b.s : strdup(""));
 }
 
 /*
- * A select of the lists for a form, named field: "none" first.  The
- * form takes the list's prefixes in with what else it says.
+ * A select of the lists for a form, named field: "none" first, or, with
+ * multi, several to pick (a form gives them by commas).  The form takes
+ * their prefixes in with what else it says.
  */
 void
 pfxlist_select(struct html *h, const char *label, const char *field,
-    const char *hint)
+    const char *hint, bool multi)
 {
 	const ucl_object_t	*l;
 	ucl_object_iter_t	 it;
@@ -104,7 +130,17 @@ pfxlist_select(struct html *h, const char *label, const char *field,
 	h_txt(h, label);
 	h_raw(h, "<select");
 	h_attr(h, "name", field);
-	h_raw(h, "><option value=\"\">none</option>");
+	/* Several at once where the form takes them: no "none" then,
+	 * none picked says it. */
+	if (multi) {
+		unsigned	n = 0;
+
+		it = NULL;
+		while (ucl_object_iterate(px.all, &it, true) != NULL)
+			n++;
+		h_fmt(h, " multiple size=\"%u\">", n < 2 ? 2 : n > 6 ? 6 : n);
+	} else
+		h_raw(h, "><option value=\"\">none</option>");
 	it = NULL;
 	while ((l = ucl_object_iterate(px.all, &it, true)) != NULL) {
 		h_raw(h, "<option");

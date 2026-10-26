@@ -32,6 +32,7 @@
 #include <openssl/evp.h>
 
 #include "console.h"
+#include "ytrans.h"
 
 enum op {
 	OP_HELLO,
@@ -109,6 +110,7 @@ struct call {
 	uint64_t		 t0;		/* µs, request arrived */
 	uint64_t		 auth_us;	/* the session check */
 	bool			 config_only;
+	bool			 yang;		/* by the standard models */
 	int			 safe_wait;	/* s, the host's rollback timer */
 	char			 jail[256];
 	uint8_t			 action;
@@ -2149,6 +2151,25 @@ connected:
 		nsteps = str->trace.n;
 		break;
 	case OP_NETWORK:
+		/*
+		 * The interfaces by the standard models, a GET of cblink's
+		 * YANG family (ytrans.c), as the Network tab asks: an agent
+		 * before 0.213.0, which serves none, is asked its table.
+		 */
+		if (c->yang && c->action == ARC_NET_KIND_INTERFACES &&
+		    c->scope[0] == '\0') {
+			char	yerr[256];
+
+			if (ytrans_interfaces(cl.conn, c->family !=
+			    ARC_NET_FAMILY_INET6, c->family != ARC_NET_FAMILY_INET,
+			    &e, yerr, sizeof(yerr)) == 0) {
+				ok = true;
+				put(top, "data", e);
+				break;
+			}
+			thread_log(LOG_INFO, "%s: interfaces by the models: %s; "
+			    "by its table", c->sname, yerr);
+		}
 		memset(&nq, 0, sizeof(nq));
 		nq.has_net_kind = true;
 		nq.net_kind = c->action;
@@ -3869,6 +3890,9 @@ setup_network(struct call *c, const struct rq *q)
 			c->offset = 0;
 	}
 	c->family = ARC_NET_FAMILY_ALL;
+	/* ?source=yang: by the standard models (the Network tab's). */
+	if (q->query != NULL && strstr(q->query, "source=yang") != NULL)
+		c->yang = true;
 	if (q->query != NULL) {
 		if (strstr(q->query, "family=inet6") != NULL)
 			c->family = ARC_NET_FAMILY_INET6;

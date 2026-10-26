@@ -1704,6 +1704,23 @@ part_nettab(void)
 	    "[data-arg=interfaces]').click()");
 	wait_js("document.querySelector('tr.iface[data-if=lo0] button[data-act="
 	    "if-label-edit]')", 20);
+	/* Read by the standard models (the console's ytrans.c), shown as
+	 * the agent's table was: the addresses with their prefixes, a
+	 * link-local one with its zone; no link state for a loopback. */
+	{
+		ucl_object_t	*t = js("return document.querySelector("
+		    "'tr.iface[data-if=lo0]').textContent;");
+
+		ATF_CHECK_MSG(js_true("(r => r.textContent.includes("
+		    "'127.0.0.1/8') && r.textContent.includes('::1/128') && "
+		    "r.textContent.includes('fe80::1%lo0/64') && "
+		    "!r.textContent.includes('link'))(document.querySelector("
+		    "'tr.iface[data-if=lo0]'))"), "lo0's row: %s", t != NULL &&
+		    ucl_object_tostring(t) != NULL ? ucl_object_tostring(t) :
+		    "none");
+		if (t != NULL)
+			ucl_object_unref(t);
+	}
 	run("document.querySelector('tr.iface[data-if=lo0] button[data-act="
 	    "if-label-edit]').click()");
 	wait_js("document.querySelector('tr.iface[data-if=lo0] form[data-form="
@@ -5812,6 +5829,12 @@ part_flows(void)
 	wait_js("document.querySelector('.wfgraph button.wfstep') && "
 	    "!document.querySelector('.loader')", 10);
 	run("document.querySelector('button[data-act=wf-back]').click()");
+	/* The history cleared, asked first: no run left in the list. */
+	click_when("button[data-act=wf-runs-clear]", 10);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("!document.querySelector('ul.wfruns li.done') && "
+	    "!document.querySelector('button[data-act=wf-runs-clear]')", 10);
 	host_open(NULL);
 	click_when("button.tab[data-arg=services]", 10);
 	wait_js("document.querySelector('button[data-act=svc][data-value="
@@ -8180,6 +8203,9 @@ part_security(void)
 	click_when("button[data-act=sec-tab][data-arg=ids]", 10);
 	click_when("button[data-act=sec-new]", 10);
 	wait_js("document.querySelector('form[data-form=sec-ids]')", 10);
+	/* The networks it guards from several of the console's lists. */
+	ATF_CHECK(js_true("document.querySelector('form[data-form=sec-ids] "
+	    "select[name=home_pfx]').multiple"));
 	run("const f = document.querySelector('form[data-form=sec-ids]'); "
 	    "f.interfaces.value = 'lo0'; f.ruleset.checked = false; "
 	    "f.requestSubmit();");

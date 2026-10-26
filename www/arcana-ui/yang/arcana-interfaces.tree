@@ -4,6 +4,9 @@ module: arcana-interfaces
     +--ro driver-name?              string
     +--rw group*                    string
     +--rw tunnel-fib?               uint32
+    +--rw tunnel
+    |  +--rw local?    inet:ip-address-no-zone
+    |  +--rw remote?   inet:ip-address-no-zone
     +--rw capabilities?             capabilities
     +--ro capabilities-supported?   capabilities
     +--rw media
@@ -14,6 +17,10 @@ module: arcana-interfaces
     |  +--ro status?      enumeration
     |  +--ro supported*   string
     +--ro peer-vnet?                boolean
+  augment /if:interfaces/if:interface/ip:ipv4/ip:address:
+    +--ro peer?   inet:ipv4-address-no-zone
+  augment /if:interfaces/if:interface/ip:ipv6/ip:address:
+    +--ro peer?   inet:ipv6-address-no-zone
   augment /if:interfaces/if:interface/dot1ax:lag:
     +--rw protocol?   enumeration
     +--rw hash?       bits

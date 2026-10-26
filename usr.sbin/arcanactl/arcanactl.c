@@ -32,6 +32,7 @@
 /* Generated into the object directory; <> so that a stale copy next
  * to the sources is never picked up. */
 #include <arcana.h>
+#include <ymodel.h>
 
 _Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
     "written for cblink 0.2: its wire, its structs");
@@ -141,6 +142,7 @@ usage(void)
 	    "command\n"
 	    "commands:\n"
 	    "    hello\n"
+	    "    get [node ...]\n"
 	    "    list [-c]\n"
 	    "    start | stop | restart | kill | enable | disable jail\n"
 	    "    address add | remove [-lnp] [-i interface] jail address\n"
@@ -556,6 +558,96 @@ emit_trace(const struct arc_step *v, size_t n)
 		xo_close_instance("step");
 	}
 	xo_close_list("step");
+}
+
+/* A top-level data node of the models served, by its name. */
+static const struct cbl_ynode *
+ytop_named(const char *name)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*n;
+	uint32_t			 i, k;
+
+	for (i = 0; i < ymodel_schema.nmod; i++) {
+		m = ymodel_schema.mod[i];
+		for (k = 0; k < m->ntop; k++) {
+			n = m->top[k];
+			if ((n->kind == CBL_YN_CONTAINER || n->kind ==
+			    CBL_YN_LIST) && strcmp(n->name, name) == 0)
+				return (n);
+		}
+	}
+	return (NULL);
+}
+
+/*
+ * get [node ...]: what the agent serves of the standard models, by
+ * cblink's YANG family (family 1, docs/PLAN-SDN-YANG.md 1.11), as RFC
+ * 7951's JSON: the top-level nodes named (arcanactl(8) lists them), or
+ * all of them.
+ */
+static int
+cmd_get(struct arc_client *cl, int argc, char **argv)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*n;
+	struct cbl_ybuf			 b = { NULL, 0, 0 };
+	cbl_msg				*req, *rep = NULL;
+	cbl_yarena			*a;
+	uint64_t			 sids[16];
+	size_t				 ns = 0;
+	uint32_t			 i, k;
+	void				*data;
+	char				 why[256], *out;
+	bool				 first = true;
+	int				 error;
+
+	for (i = 1; i < (uint32_t)argc; i++) {
+		if ((n = ytop_named(argv[i])) == NULL)
+			xo_errx(1, "get: %s is no node the agent serves "
+			    "(arcanactl(8) names them)", argv[i]);
+		if (ns == nitems(sids))
+			xo_errx(1, "get: %zu nodes at most", nitems(sids));
+		sids[ns++] = n->sid;
+	}
+	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_GET, 0, &req)) != 0 || (ns > 0 && (error =
+	    cbl_msg_put_yget(req, sids, ns)) != 0))
+		xo_errx(1, "get: %s", strerror(error));
+	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
+		xo_errx(1, "get: %s", rep != NULL && cbl_msg_err_str(rep) !=
+		    NULL ? cbl_msg_err_str(rep) : strerror(error));
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "get");
+	/* Each module's top-level nodes the reply has, into its data. */
+	for (i = 0; i < ymodel_schema.nmod; i++) {
+		m = ymodel_schema.mod[i];
+		if (m->size == 0 || (data = cbl_yarena_alloc(a, m->size)) ==
+		    NULL)
+			continue;
+		memset(data, 0, m->size);
+		for (k = 0; k < m->ntop; k++) {
+			n = m->top[k];
+			if (n->kind != CBL_YN_CONTAINER && n->kind != CBL_YN_LIST)
+				continue;
+			error = cbl_msg_ydecode_member(rep, n, data, a, 0, why,
+			    sizeof(why));
+			if (error != 0 && error != ENOENT)
+				xo_errx(1, "get: %s: %s", n->name, why[0] != '\0' ?
+				    why : strerror(error));
+		}
+		if ((error = cbl_yjson_members(m, data, &b, &first)) != 0)
+			xo_errx(1, "get: %s: %s", m->name, strerror(error));
+	}
+	if (asprintf(&out, "{%.*s}", (int)b.len, b.p != NULL ? (const char *)
+	    b.p : "") == -1)
+		xo_err(1, "get");
+	xo_emit("{:json/%s}\n", out);
+	free(out);
+	cbl_ybuf_free(&b);
+	cbl_yarena_free(a);
+	cbl_msg_free(rep);
+	return (0);
 }
 
 static int
@@ -4814,6 +4906,8 @@ main(int argc, char *argv[])
 	xo_open_container("arcana");
 	if (strcmp(argv[0], "hello") == 0 && argc == 1)
 		rc = cmd_hello(&cl);
+	else if (strcmp(argv[0], "get") == 0)
+		rc = cmd_get(&cl, argc, argv);
 	else if (strcmp(argv[0], "list") == 0)
 		rc = cmd_list(&cl, argc, argv);
 	else if (strcmp(argv[0], "start") == 0)

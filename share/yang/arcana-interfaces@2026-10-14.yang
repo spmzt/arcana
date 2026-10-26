@@ -31,6 +31,16 @@ module arcana-interfaces {
     reference
       "IEEE Std 802.1AX: Link Aggregation";
   }
+  import ietf-ip {
+    prefix ip;
+    reference
+      "RFC 8344: A YANG Data Model for IP Management";
+  }
+  import ietf-inet-types {
+    prefix inet;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
   import ieee802-dot1q-bridge {
     prefix dot1q;
     reference
@@ -275,6 +285,24 @@ module arcana-interfaces {
         "A tunnel's FIB for its outer packets: SIOCGTUNFIB,
          SIOCSTUNFIB, ifconfig(8) tunnelfib.";
     }
+    container tunnel {
+      description
+        "A tunnel's outer addresses, of a gif(4), gre(4) or me(4):
+         SIOCGIFPSRCADDR and SIOCGIFPDSTADDR (their _IN6 forms for
+         IPv6), ifconfig(8) tunnel.  No ratified model has an IP
+         tunnel's endpoints; IANA's tunnel types (RFC 8675) name its
+         kind, as its interface's type does.";
+      leaf local {
+        type inet:ip-address-no-zone;
+        description
+          "The address its outer packets are sent from.";
+      }
+      leaf remote {
+        type inet:ip-address-no-zone;
+        description
+          "The address they are sent to.";
+      }
+    }
     leaf capabilities {
       type capabilities;
       description
@@ -348,6 +376,32 @@ module arcana-interfaces {
          driver-name.  Where one has, it is ietf-if-extensions'
          peer-interface (two interfaces may share a name, one back from
          a vnet jail, and the list has the first only).";
+    }
+  }
+
+  augment "/if:interfaces/if:interface/ip:ipv4/ip:address" {
+    description
+      "An IPv4 address's other end, on a point-to-point interface.";
+    leaf peer {
+      config false;
+      type inet:ipv4-address-no-zone;
+      description
+        "The address of the far end of the link: ifconfig(8)'s
+         'inet a dest b', SIOCAIFADDR's ifra_dstaddr, as getifaddrs(3)
+         gives it where the interface is IFF_POINTOPOINT.";
+    }
+  }
+
+  augment "/if:interfaces/if:interface/ip:ipv6/ip:address" {
+    description
+      "An IPv6 address's other end, on a point-to-point interface.";
+    leaf peer {
+      config false;
+      type inet:ipv6-address-no-zone;
+      description
+        "The address of the far end of the link: ifconfig(8)'s
+         'inet6 a dest b', as getifaddrs(3) gives it where the
+         interface is IFF_POINTOPOINT.";
     }
   }
 

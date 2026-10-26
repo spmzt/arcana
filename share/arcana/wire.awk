@@ -44,6 +44,14 @@ function uname(s) {
 	return toupper(cname(s))
 }
 
+# The struct a set is, by its name: the name, but where the module
+# arcana-<name>'s data struct is struct arcana_<name> already (the
+# standard models' tables, share/mk/arcana.yang.mk, are built in the
+# same programs): host is struct arcana_host_info.
+function sname(s) {
+	return s == "host" ? "host-info" : s
+}
+
 function value(line) {
 	sub(/^[^:]*:[ \t]*/, "", line)
 	sub(/[ \t]+$/, "", line)
@@ -316,7 +324,7 @@ function ynode(s, a, ind,    ak, t, e, n, i, desc, lo, hi, yt) {
 	if (t == "nest") {
 		if (amulti[ak]) {
 			printf "%slist %s {\n", ind, a
-			printf "%s  cg:struct %s;\n", ind, ystr(anest[ak])
+			printf "%s  cg:struct %s;\n", ind, ystr(sname(anest[ak]))
 			if ((ak, "max-count") in achk)
 				printf "%s  max-elements %s;\n", ind,
 				    cval(achk[ak, "max-count"])
@@ -325,7 +333,7 @@ function ynode(s, a, ind,    ak, t, e, n, i, desc, lo, hi, yt) {
 				    cval(achk[ak, "min-count"])
 		} else {
 			printf "%scontainer %s {\n", ind, a
-			printf "%s  cg:struct %s;\n", ind, ystr(anest[ak])
+			printf "%s  cg:struct %s;\n", ind, ystr(sname(anest[ak]))
 		}
 		ydesc(desc, ind "  ")
 		printf "%s  uses set-%s;\n", ind, anest[ak]
@@ -512,7 +520,7 @@ function out_yang(    i, j, s, op, famset, st, cmd) {
 			continue
 		done[s] = 1
 		printf "  sx:structure %s {\n", s
-		printf "    cg:struct %s;\n", ystr(s)
+		printf "    cg:struct %s;\n", ystr(sname(s))
 		ydesc("A data message of a stream of " s "s.", "    ")
 		printf "    uses set-%s;\n", s
 		printf "  }\n\n"
@@ -562,9 +570,10 @@ function out_h(    i, j, s, op, e, u, d, famset, st) {
 		s = setname[i]
 		if (!isstruct[s])
 			continue
-		printf "#define\t%s_%s\t%s_%s\n", pfx, cname(s), cname(spec), cname(s)
+		printf "#define\t%s_%s\t%s_%s\n", pfx, cname(s), cname(spec),
+		    cname(sname(s))
 		printf "#define\t%s_%s_put_fields\t%s_%s_put\n", pfx, cname(s),
-		    cname(spec), cname(s)
+		    cname(spec), cname(sname(s))
 	}
 	for (i = 1; i <= nop; i++) {
 		op = opname[i]

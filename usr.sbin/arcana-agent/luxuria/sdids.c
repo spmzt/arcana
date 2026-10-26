@@ -59,6 +59,8 @@
 #define	IS_SEC(name)	(strncmp((name), "sec-", 4) == 0)
 #define	INSTANCES_MAX	64
 #define	IFS_MAX		16
+#define	START_WAIT	180	/* s, for its engine to start */
+#define	DIVERT_EVERY	10	/* s, ipfw read again for one down */
 #define	CONF_MAX	(256 * 1024)
 #define	RULES_MAX	(4 * 1024 * 1024)
 #define	ALERTS_KEPT	200	/* an instance's latest, for the read */
@@ -82,6 +84,9 @@ struct instance {
 	int	 nifs;
 	int	 divert;		/* its divert port, prevent; 0 detect */
 	bool	 down;			/* one that prevents, told not running */
+	int	 sev;			/* told as: 0 not, 1 Warning, 2 Critical */
+	time_t	 checked;		/* when ipfw was read for its port */
+	bool	 diverted;		/* a rule of ipfw's diverts to its port */
 	bool	 stopped;		/* stopped by the admin, kept */
 	bool	 netmap;		/* by netmap(4), not pcap(3) */
 	bool	 nooffload;		/* its interfaces' offloading off */
@@ -392,6 +397,9 @@ ruleset_only(struct work *w, const struct execres *res)
 	}
 	if (bad == 0 || !failed)
 		return (NULL);
+	if (why != NULL && strstr(why, "Complete IP space negated") != NULL)
+		why = "they say what is outside HOME_NET, and with home any "
+		    "nothing is (give the networks it guards to keep them)";
 	return (wfmt(w, "%zu rule%s of the ruleset left out, as Suricata does "
 	    "when it runs: %s", bad, bad == 1 ? "" : "s", why != NULL ? why :
 	    "they do not parse with these networks"));
@@ -521,15 +529,16 @@ log_size(struct work *w, const char *name)
 }
 
 /*
- * Why an instance did not start, as its suricata.log says: the last
- * errors written from from on, by this start (not -T's before it, which
- * logs there too, nor an earlier start's), or NULL.
+ * Why an instance did not start, as its suricata.log says: the first
+ * and the last errors written from from on, by this start (not -T's
+ * before it, which logs there too, nor an earlier start's), or NULL.
+ * The rules it left out are not why: it goes on without them.
  */
 static const char *
 log_errors(struct work *w, const char *name, long from)
 {
 	FILE		*fp;
-	char		 buf[512], *last[2];
+	char		 buf[512], *first, *last;
 	const char	*p;
 	long		 size;
 	int		 n;
@@ -540,22 +549,79 @@ log_errors(struct work *w, const char *name, long from)
 	if (fseek(fp, 0, SEEK_END) == 0 && (size = ftell(fp)) > from + 65536)
 		from = size - 65536;
 	(void)fseek(fp, from, SEEK_SET);
-	last[0] = last[1] = NULL;
+	first = last = NULL;
 	n = 0;
 	while (fgets(buf, sizeof(buf), fp) != NULL) {
 		buf[strcspn(buf, "\n")] = '\0';
 		if ((p = strstr(buf, "Error: ")) == NULL && (p = strstr(buf,
 		    "<Error>")) == NULL && strncmp(p = buf, "E: ", 3) != 0)
 			continue;
-		last[0] = last[1];
-		last[1] = wstrdup(w, p);
-		n++;
+		if (strstr(p, "error parsing signature") != NULL ||
+		    strstr(p, "Complete IP space negated") != NULL ||
+		    strstr(p, "Loading signatures failed") != NULL)
+			continue;
+		last = wstrdup(w, p);
+		if (n++ == 0)
+			first = last;
 	}
 	fclose(fp);
 	if (n == 0)
 		return (NULL);
-	return (last[0] != NULL ? wfmt(w, "%s; %s", last[0], last[1]) :
-	    last[1]);
+	return (n > 1 ? wfmt(w, "%s; %s", first, last) : last);
+}
+
+/* Did its log say, from from on, that its engine started, or failed? */
+static int
+log_started(struct work *w, const char *name, long from)
+{
+	FILE	*fp;
+	char	 buf[512];
+	int	 r;
+
+	if ((fp = fopen(wfmt(w, "%s/suricata.log", inst_path(w, name, "d")),
+	    "r")) == NULL)
+		return (0);
+	(void)fseek(fp, from, SEEK_SET);
+	r = 0;
+	while (r == 0 && fgets(buf, sizeof(buf), fp) != NULL)
+		if (strstr(buf, "Engine started") != NULL)
+			r = 1;
+		else if (strstr(buf, "initialization failed") != NULL ||
+		    strstr(buf, "aborting") != NULL)
+			r = -1;
+	fclose(fp);
+	return (r);
+}
+
+/*
+ * ipfw's divert sockets, divert(4), are ipdivert.ko's: loaded for one
+ * that prevents, as Suricata cannot open its port without them (it
+ * says "Address family not supported" and stops).  Not kept in
+ * kld_list: the agent loads it again when it starts the instance.
+ */
+static int
+divert_ready(struct work *w, const char **errp)
+{
+	struct execres	 res;
+	char		*argv[4];
+	int		 step;
+
+	if (kmod_loaded("ipdivert"))
+		return (0);
+	step = step_begin(w, ARC_STEP_KIND_EXEC, "kldload",
+	    "ipdivert, for ipfw divert");
+	argv[0] = (char *)(uintptr_t)opts.kldload_bin;
+	argv[1] = (char *)(uintptr_t)"-n";
+	argv[2] = (char *)(uintptr_t)"ipdivert";
+	argv[3] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wfmt(w, "ipfw divert needs ipdivert.ko: %s",
+		    exec_error(w, &res, "kldload"));
+		step_end(w, step, false, "%s", *errp);
+		return (-1);
+	}
+	step_end(w, step, true, NULL);
+	return (0);
 }
 
 static int
@@ -565,9 +631,12 @@ inst_start(struct work *w, const char *name, int divert, bool netmap,
 	struct execres	 res;
 	char		*argv[10];
 	long		 from;
-	int		 n, i;
+	int		 n, i, started;
 
+	started = 0;
 	(void)mkdir(inst_path(w, name, "d"), 0750);
+	if (divert > 0 && divert_ready(w, errp) != 0)
+		return (-1);
 	/* A pid file of one that is not running (a start that failed, a
 	 * crash) keeps Suricata from starting: it is not ours to keep. */
 	if (inst_pid(w, name) == 0)
@@ -594,10 +663,21 @@ inst_start(struct work *w, const char *name, int divert, bool netmap,
 			*errp = wtext(w, exec_error(w, &res, "suricata"));
 		return (-1);
 	}
-	/* It forks, and loads its rules first: up once its pid file is. */
-	for (i = 0; i < 300 && inst_pid(w, name) == 0; i++)
+	/*
+	 * It forks and writes its pid file, then loads its rules and opens
+	 * its capture or its divert port: up once its log says its engine
+	 * started, not when the pid file is there (it may stop after).
+	 * One still loading after START_WAIT is taken as up; the reader
+	 * says so if it stops.
+	 */
+	for (i = 0; i < START_WAIT * 10; i++) {
+		if ((started = log_started(w, name, from)) != 0)
+			break;
+		if (i >= 30 && inst_pid(w, name) == 0)
+			break;
 		usleep(100000);
-	if (inst_pid(w, name) == 0) {
+	}
+	if (started < 0 || inst_pid(w, name) == 0) {
 		*errp = (*errp = log_errors(w, name, from)) != NULL ? wfmt(w,
 		    "suricata did not start: %s", *errp) : wfmt(w, "suricata "
 		    "did not start: see %s", inst_path(w, name, "d"));
@@ -836,15 +916,46 @@ read_eve(struct instance *in)
 	fclose(fp);
 }
 
+/* Does a rule of ipfw's divert (or tee) to port? */
+static bool
+diverts_to(int port)
+{
+	struct work	 w;
+	struct execres	 res;
+	char		*argv[3], *p, *line, *want[2];
+	bool		 found;
+
+	work_init(&w);
+	argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
+	argv[1] = (char *)(uintptr_t)"list";
+	argv[2] = NULL;
+	found = false;
+	want[0] = wfmt(&w, " divert %d ", port);
+	want[1] = wfmt(&w, " tee %d ", port);
+	if (run_exec_max(&w, argv, &res, 16 * 1024 * 1024) == 0 &&
+	    res.out != NULL) {
+		p = wstrndup(&w, res.out, res.outlen);
+		while (!found && (line = strsep(&p, "\n")) != NULL)
+			found = strstr(line, want[0]) != NULL ||
+			    strstr(line, want[1]) != NULL;
+	}
+	work_free(&w);
+	return (found);
+}
+
 /*
- * One that prevents and is not running: what its UNIs send and get is
- * diverted to no one and passes not, which is said as a fault until it
- * runs again.
+ * One that prevents and is not running: what ipfw diverts to its port
+ * goes to no one and passes not, which is said as a Critical fault
+ * until it runs again; while no rule diverts to it, nothing is held
+ * up, and it is a Warning.  ipfw is read again every DIVERT_EVERY s
+ * while it is down, so a rule added meanwhile makes it Critical.
  */
 static void
 guard(struct instance *in)
 {
+	time_t	now;
 	bool	up;
+	int	sev;
 
 	/* Stopped and started again by an apply: not down. */
 	if (applying)
@@ -852,13 +963,37 @@ guard(struct instance *in)
 	if (in->divert == 0)
 		return;
 	up = running(in->name);
-	if (!up && !in->down)
+	if (up) {
+		if (in->sev != 0)
+			fault_clear("ids", in->name, "Suricata %s runs again",
+			    in->name);
+		in->sev = 0;
+		in->down = false;
+		return;
+	}
+	now = time(NULL);
+	if (!in->down || now - in->checked >= DIVERT_EVERY) {
+		in->diverted = diverts_to(in->divert);
+		in->checked = now;
+	}
+	in->down = true;
+	sev = in->diverted ? 2 : 1;
+	if (sev == in->sev)
+		return;
+	/* Told before at another severity (by this agent or, kept, by
+	 * the one before it): cleared, and told again. */
+	fault_clear("ids", in->name, "Suricata %s: %s", in->name, sev == 2 ?
+	    "ipfw diverts to it now" : "ipfw diverts nothing to it now");
+	if (sev == 2)
 		fault_set("ids", "Critical", in->name, "suricata", "Suricata %s, "
-		    "which prevents, is not running: the UNIs it guards pass "
-		    "nothing (ipfw divert %d)", in->name, in->divert);
-	else if (up && in->down)
-		fault_clear("ids", in->name, "Suricata %s runs again", in->name);
-	in->down = !up;
+		    "which prevents, is not running: what ipfw diverts to it "
+		    "passes not (divert %d)", in->name, in->divert);
+	else
+		fault_set("ids", "Warning", in->name, "suricata", "Suricata %s, "
+		    "which prevents, is not running; no rule of ipfw's diverts "
+		    "to it (divert %d), so nothing is held up yet", in->name,
+		    in->divert);
+	in->sev = sev;
 }
 
 static void *
@@ -1392,6 +1527,10 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 					ni[k].seen = instances[i].seen;
 					ni[k].down = instances[i].down &&
 					    ni[k].divert > 0;
+					ni[k].sev = ni[k].divert > 0 ?
+					    instances[i].sev : 0;
+					ni[k].diverted = instances[i].diverted;
+					ni[k].checked = instances[i].checked;
 					if (instances[i].divert > 0 &&
 					    ni[k].divert == 0)
 						fault_clear("ids", ni[k].name,

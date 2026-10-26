@@ -1058,7 +1058,7 @@ view_tables(struct html *h)
 		    "autocomplete=\"off\" placeholder=\"a value, or nothing\" "
 		    "size=\"14\">");
 		if (jstr(t, "type") == NULL || strcmp(jstr(t, "type"), "addr") == 0)
-			pfxlist_select(h, "or every prefix of", "pfx", NULL);
+			pfxlist_select(h, "or every prefix of", "pfx", NULL, false);
 		h_raw(h, "<label class=\"toggle\"><input type=\"checkbox\""
 		    " name=\"persist\"><span>keep</span></label><button class="
 		    "\"small\">Add</button></form><table class=\"net fwentries\">");
@@ -3599,7 +3599,7 @@ view_firewall(struct html *h, struct server *s)
 	 * list's name after pl_, which the rule names as table(pl_name). */
 	pfxlist_select(h, "A prefix list as a table", "pfx", "Made as table "
 	    "pl_<name> from the list when the rule is added; write table(pl_"
-	    "<name>) in the rule for it.");
+	    "<name>) in the rule for it.", false);
 	h_raw(h, "<button class=\"small\">Add</button></form>");
 	rule_words(h);
 	h_raw(h, "<table class=\"net fw-rules\">");

@@ -111,7 +111,7 @@ module arcana {
          the local socket, whose root is root already.";
     }
     container host {
-      cg:struct "host";
+      cg:struct "host-info";
       uses set-host;
     }
     list jails {
@@ -1919,7 +1919,7 @@ module arcana {
 
   grouping attr-host {
     container host {
-      cg:struct "host";
+      cg:struct "host-info";
       uses set-host;
     }
   }

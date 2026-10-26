@@ -108,7 +108,7 @@ const struct route routes[] = {
 	{ "/api/sdwan/record.csv", api_sdwan_record, NULL,
 	    HTTP_METHOD_GET },
 	{ "/api/runs", api_runs, NULL,
-	    HTTP_METHOD_GET },
+	    HTTP_METHOD_GET | HTTP_METHOD_DELETE },
 	{ "^/api/runs/[0-9]+$", api_runs, NULL,
 	    HTTP_METHOD_GET | HTTP_METHOD_DELETE },
 	{ "^/api/runs/[0-9]+/approve$", api_runs, NULL,

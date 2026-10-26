@@ -1120,7 +1120,7 @@ const ucl_object_t *pfxlist_get(const char *);
 char		*with_list(const char *, const char *);
 char		*pfxlist_joined(const char *, const char *);
 void		 pfxlist_select(struct html *, const char *, const char *,
-		    const char *);
+		    const char *, bool);
 void		 view_pfxlists(struct html *);
 bool		 pfxlists_form(const char *, const ucl_object_t *);
 bool		 pfxlists_action(const char *, const char *, const char *);

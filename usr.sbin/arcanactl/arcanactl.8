@@ -92,6 +92,39 @@ The commands are:
 .Bl -tag -width Ds
 .It Cm hello
 Show the host.
+.It Cm get Op Ar node ...
+What the agent serves of the standard models, by cblink's YANG family:
+ietf-interfaces' interfaces with ietf-ip's addresses and neighbours and
+what augments them
+.Pq Cm interfaces ,
+IEEE 802.1AX's link aggregations
+.Pq Cm linkagg ,
+IEEE 802.1Q's bridges
+.Pq Cm bridges ,
+the FIBs as RFC 8529's network instances, named in
+.Pa fibs.conf
+.Pq Cm network-instances ,
+RFC 8349's routing: the host's routes as
+.Xr netlink 4
+dumps them and
+.Xr rc.conf 5 Ns 's
+static routes
+.Pq Cm routing ,
+the vnet jails as RFC 8530's logical network elements
+.Pq Cm logical-network-elements ,
+.Xr syslog.conf 5
+as ietf-syslog
+.Pq Cm syslog ,
+and Arcana's own modules, each read as the operation that reads the
+same:
+.Cm jails , services , packages , jobs , storage , sysctl , kernel ,
+.Cm processes , logs , firewall , troubleshoot , history , events ,
+.Cm bird , wireguard , netgraph , host , agent , probes , sdwan , sshd
+and
+.Cm builder ;
+those named, or all of them, as RFC 7951's JSON.
+What a plugin's program reads (BIRD, WireGuard, netgraph) is left out
+where the program is not there.
 .It Cm list Op Fl c
 List running and configured jails.
 With

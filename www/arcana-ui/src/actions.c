@@ -2387,12 +2387,14 @@ refresh_network(struct server *s, bool user)
 	if (app.net.fib > 0 && (app.net.kind == NET_ROUTES || app.net.kind ==
 	    NET_NEXTHOPS))
 		snprintf(fib, sizeof(fib), "&fib=%d", app.net.fib);
-	snprintf(url, sizeof(url), "/api/servers/%s/net/%s?family=%s%s%s%s%s",
+	/* The Interfaces table by the standard models (the console's
+	 * ytrans.c); the other tabs of the same table by the agent's. */
+	snprintf(url, sizeof(url), "/api/servers/%s/net/%s?family=%s%s%s%s%s%s",
 	    s->id, kinds[app.net.kind], app.net.family == 4 ? "inet" :
 	    app.net.family == 6 ? "inet6" : "all", app.net.kind ==
 	    NET_ROUTES && app.net.host_filter[0] != '\0' ? "&filter=" : "",
 	    app.net.kind == NET_ROUTES ? app.net.host_filter : "", fib,
-	    c0jail);
+	    c0jail, app.net.kind == NET_INTERFACES ? "&source=yang" : "");
 	if (user) {
 		/* Asked for: its steps drawn as the host takes them. */
 		live_read(s->id, url + strlen("/api/servers/") +

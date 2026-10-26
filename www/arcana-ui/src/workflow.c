@@ -753,7 +753,25 @@ view_list(struct html *h)
 		h_raw(h, "<li class=\"dim\">No workflow yet: <b>+ workflow</b> "
 		    "makes one, and what waits in the queue can be kept as "
 		    "one.</li>");
-	h_raw(h, "</ul><h4 class=\"family\">Runs</h4><ul class=\"wfruns\">");
+	h_raw(h, "</ul><h4 class=\"family\">Runs");
+	/* The history cleared, where a run has ended. */
+	{
+		const ucl_object_t	*e;
+		ucl_object_iter_t	 eit = NULL;
+		bool			 ended = false;
+
+		while ((e = ucl_object_iterate(jget(wf.runs, "runs"), &eit,
+		    true)) != NULL)
+			if (jstr(e, "state") == NULL || strcmp(jstr(e, "state"),
+			    "running") != 0)
+				ended = true;
+		if (ended)
+			h_raw(h, "<span class=\"pane-actions\"><button class=\""
+			    "ghost small\" data-act=\"wf-runs-clear\" title=\"Every "
+			    "run that has ended forgotten\">Clear history</button>"
+			    "</span>");
+	}
+	h_raw(h, "</h4><ul class=\"wfruns\">");
 	n = 0;
 	it = NULL;
 	/* The newest first. */
@@ -3071,6 +3089,15 @@ workflows_action(const char *act, const char *arg, const char *value)
 		json = ucl_object_emit(wf.draft, UCL_EMIT_JSON_COMPACT);
 		api("POST", "/api/workflows", (char *)json, saved_cb, NULL);
 		free(json);
+	} else if (strcmp(act, "wf-runs-clear") == 0) {
+		confirm("Clear the history", "Every run that has ended is "
+		    "forgotten, with what its steps answered; a run going on "
+		    "stays.", "Clear", true, "", "do-wf-runs-clear", "", "");
+	} else if (strcmp(act, "do-wf-runs-clear") == 0) {
+		/* The run shown goes with the rest. */
+		if (wf.mode == WM_RUN)
+			wf.mode = WM_LIST;
+		api("DELETE", "/api/runs", NULL, done_cb, NULL);
 	} else if (strcmp(act, "wf-del") == 0) {
 		w = wf_by_id(arg);
 		confirm("Delete the workflow", "It no longer runs, by itself or "

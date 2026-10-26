@@ -6,6 +6,7 @@ MAN=		arcanactl.8
 
 ARC_WIRE=	client
 .include "${.CURDIR}/../../share/mk/arcana.wire.mk"
+.include "${.CURDIR}/../../share/mk/arcana.yang.mk"
 
 LDADD+=		-lxo -lmd -lcasper -lcap_fileargs -lnv
 

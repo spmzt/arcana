@@ -528,8 +528,8 @@ ipsec_child_modal(struct html *h)
 	    "placeholder=\"10.2.0.0/24\"></label></div>");
 	h_raw(h, "<div class=\"two\">");
 	pfxlist_select(h, "This side's, from a list", "lts_pfx", "A prefix list "
-	    "of the console's, added to the traffic selectors.");
-	pfxlist_select(h, "The peer's, from a list", "rts_pfx", NULL);
+	    "of the console's, added to the traffic selectors.", true);
+	pfxlist_select(h, "The peer's, from a list", "rts_pfx", NULL, true);
 	h_raw(h, "</div>"
 	    "<div class=\"two\"><label>reqid<input name=\"reqid\" inputmode="
 	    "\"numeric\" placeholder=\"none\"></label><label>Started<select "

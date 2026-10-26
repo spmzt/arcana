@@ -317,7 +317,7 @@ proxy_form(struct html *h, const ucl_object_t *f)
 	h_raw(h, "><small class=\"help\">networks, the rest refused</small>"
 	    "</label>");
 	pfxlist_select(h, "And the networks of a list", "allow_pfx", "A prefix "
-	    "list of the console's, added to the networks when kept.");
+	    "list of the console's, added to the networks when kept.", true);
 	h_raw(h, "<label>TLS <select name=\"mode\">");
 	h_fmt(h, "<option value=\"sni\"%s>its name looked at (sni): denied "
 	    "ones ended, the rest left unopened</option><option value=\""
@@ -679,7 +679,7 @@ ids_form(struct html *h, const ucl_object_t *f)
 	h_raw(h, "><small class=\"help\">HOME_NET of the rules; any for every address; empty: the "
 	    "private ranges</small></label>");
 	pfxlist_select(h, "And the networks of a list", "home_pfx", "A prefix "
-	    "list of the console's, added to HOME_NET when kept.");
+	    "list of the console's, added to HOME_NET when kept.", true);
 	h_raw(h, "<label class=\"check\"><input type=\"checkbox\" name=\""
 	    "ruleset\"");
 	if (f == NULL || jbool(f, "ruleset"))

@@ -807,6 +807,14 @@ paths:
           in: query
           description: For lookup, an IPv4 or IPv6 address.
           schema: { type: string }
+        - name: source
+          in: query
+          description: For interfaces, `yang` reads them by the standard
+            models (a GET of ietf-interfaces and ietf-network-instance by
+            cblink's YANG family), the rows made of what comes, with
+            "source":"yang" under `data`; an agent that serves no models,
+            or a jail's network, is read as without it.
+          schema: { type: string, enum: [yang] }
         - name: fib
           in: query
           description: The routing table, when not the first.
@@ -2616,6 +2624,28 @@ paths:
                   runs:
                     type: array
                     items: { $ref: "#/components/schemas/Run" }
+    delete:
+      tags: [workflows]
+      summary: The history cleared
+      description: Every run that has ended is forgotten, with its
+        steps' traces; a run going on stays.
+      parameters:
+        - name: workflow
+          in: query
+          required: false
+          description: One workflow's runs alone, by its id.
+          schema: { type: string }
+      responses:
+        "200":
+          description: How many runs were cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cleared]
+                properties:
+                  cleared: { type: integer }
+        "403": { $ref: "#/components/responses/Error" }
   /api/runs/{n}:
     get:
       tags: [workflows]

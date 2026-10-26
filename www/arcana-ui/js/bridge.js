@@ -244,8 +244,13 @@ addToLibrary({
 				/* Of a radio group, the one picked. */
 				if (el.type === "radio" && !el.checked)
 					continue;
+				/* Of a select of several, every one picked,
+				 * by commas, as a text field gives them. */
 				o[el.name] = el.type === "checkbox" ?
-				    el.checked : el.value;
+				    el.checked : el.type === "select-multiple" ?
+				    Array.from(el.selectedOptions, function (op) {
+					    return (op.value);
+				    }).join(", ") : el.value;
 			}
 			/* By its attribute: a field named dataset or id
 			 * would stand for the form's own property. */

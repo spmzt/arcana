@@ -31,6 +31,7 @@
 #include <openssl/x509.h>
 
 #include "agent.h"
+#include "collect.h"
 
 #define	PATH_SOCKET	"unix:/var/run/arcana-agent.sock"
 #define	PATH_PIDFILE	"/var/run/arcana-agent.pid"
@@ -728,6 +729,9 @@ main(int argc, char *argv[])
 		    strerror(error));
 	event_family(fam);
 	trace_family(fam);
+	/* The standard models, by cblink's YANG family. */
+	if ((error = yang_serve(ctx)) != 0)
+		fatal(pfh, "serving the models: %s", strerror(error));
 	if ((error = cbl_loop_new(ctx, &loop)) != 0)
 		fatal(pfh, "cbl_loop_new: %s", strerror(error));
 	for (i = 0; i < nl; i++) {

@@ -8,6 +8,37 @@ generated lines.  The YANG modules in `share/yang` stay, shown beside
 each operation's schema in the console; the collectors are in git's
 history (before agent 0.159.0) for when an operation carries YANG.
 
+**2026-10-27:** they come back as cblink's YANG family serves them (a
+GET, family 1, beside the agent's own; 1.11.1), each with its test
+programs and cases, the structs generated at the build
+(`share/mk/arcana.yang.mk`), not committed.  Served now: interfaces
+with ietf-ip and the IEEE and Arcana augments, linkagg, bridges, the
+FIBs as network instances (2.6.1, bind-ni-name 2.6.3's read), routing
+(2.4.1, 2.4.2, the RIB's active-route 2.4.5, last-updated from route
+events 2.4.6, rc.conf's static routes 2.4.3's read), the vnet jails as
+logical network elements (2.7.1), syslog.conf as ietf-syslog, and
+Arcana's own modules (Y-3's 3.1.x reads): jails, services, packages,
+jobs, storage, sysctl, kernel, processes, logs, firewall, history,
+events, BIRD, WireGuard, netgraph, host, agent, probes, SD-WAN, sshd,
+builder (invidia/yarcana.c), each GET running the operation that reads
+the same and its collector making the module's structs of the reply.
+The Network tab's interfaces are read so (1.11.2).  What writes
+(rcr_apply, yni_grow, yni_bind_apply, rtadv_write, ysysctl_conf_write,
+ykernel_kld_write, yservices_apply, the jails' and packages' actions)
+is in the tree and tested, not yet behind an EDIT or an action: those
+answer operation-not-supported.  arcana-jobs' submit needs jobs.yaml's
+spec table, which jobs.awk made before 0.159.0, again.  Each request
+of family 1 runs on a thread of its own (libcblink 0.2.2's
+cbl_yserver_threads()), so a slow read (ZFS, BIRD) holds no other; a
+read's work goes with its answer's arena (cbl_yarena_atfree()).
+
+The generator and library steps of Y-1 and Y-2 (1.12.x; 2.1.1 to
+2.1.5, the instance tree, its edits, insert and move, its diff and
+references; 2.2.1 to 2.2.6, XPath-lite, when and must, the filters,
+NACM's path matcher, tested against libyang; RFC 6243's modes for
+2.3.10) are cblink's, done there (cblink 0.2.0 and 0.2.1, its git log
+names each).
+
 Written 2026-10-13 from a reading of the RFCs listed at the end and of
 the tree as it is (agent 0.103.0, console 0.164.0). It says where
 Arcana stands in the IETF's SDN vocabulary, what it becomes, how the
@@ -1150,10 +1181,27 @@ A step never leaves `main` unbuildable; where a step would, it says
   instance tree, which keeps each node's origin.
 - 1.11.1 A, branch: family 1 registered with `GET` and dump for
   interfaces and ip; check: `arcanactl` (a `get` verb) dumps them.
+  (Done 2026-10-27, agent 0.212.0, on `main`: since version 1 went,
+  family 1 beside Arcana's own family is no coexistence D-9 forbids.
+  The collectors of 0.159.0 back as they were, yif.c and yip.c, the
+  structs generated at the build, share/mk/arcana.yang.mk; the handlers
+  in invidia/yserve.c, another host refused as of the agent's family;
+  `arcanactl get` prints RFC 7951's JSON by libcblink 0.2.1's
+  `cbl_yjson`.)
 - 1.11.2 C, branch: a translator from the dump to the Network tab's
   rows; check: the browser test's Network tab unchanged in look.
+  (Done 2026-10-27, console 0.320.0 with agent 0.213.0: the console's
+  ytrans.c makes the Interfaces table's rows of a GET of interfaces and
+  network-instances, asked with ?source=yang by that table alone; the
+  FIB as bind-ni-name, a tunnel's ends and a link's peer added to
+  arcana-interfaces for it. What differs: IPv4's addresses before
+  IPv6's; no link state where the interface has no medium, as before.
+  CARP, the flags and a jail's table stay on the agent's own; ietf-vrrp
+  for CARP is the next model they need.)
 - 1.11.3 L: every interface type Arcana makes, read through the new
   path on the VM; written to TODO's verified list.
+  (Done 2026-10-27: TODO's verified list has each kind and what the
+  models do not carry: a vxlan's and geneve's VNI and ends.)
 - 1.12.1 G: generator corpus test (`make check` runs cblink-gen on
   every module and diffs trees against `yanglint`); check: CI green.
 - 1.12.2 G: decoder fuzzer extended with tags and deltas; check: an

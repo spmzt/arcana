@@ -138,6 +138,11 @@ mtls_body()
 	    "$JGC" -c "$URI" -A ca.pem -C otherhost.pem -K otherhost.key hello
 	atf_check -o match:"a host's certificate asked for hello: refused" \
 	    cat daemon.out
+	# Nor of the standard models (cblink's YANG family).
+	atf_check -s exit:1 -e not-empty -o ignore \
+	    "$JGC" -c "$URI" -A ca.pem -C otherhost.pem -K otherhost.key get
+	atf_check -o match:"a host's certificate asked for a model: refused" \
+	    cat daemon.out
 	atf_check -o match:'^Host:' \
 	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key hello
 	# No TLS configuration at all is refused before connecting.

@@ -187,6 +187,23 @@ Written and tested with stand-ins, never run for real:
 
 What was once in the list above, and when it was run:
 
+- Every interface kind Arcana makes, read by the standard models
+  (PLAN-SDN-YANG 1.11.3; 2026-10-27, the lab VM as root, agent 0.213.0,
+  `arcanactl get interfaces linkagg bridges`): epair (ethernetCsmacd,
+  each end the other's peer-interface, peer-vnet false), gif, gre and
+  me (tunnel, their outer addresses), ipsec, wg and ovpn (tunnel), vlan
+  (l2vlan, its tag as dot1q-vlan, its parent as parent-interface and
+  lower-layer-if, and the parent's higher-layer-if), bridge (bridge,
+  its member a bridge-port with its flags, an 802.1Q bridge of one
+  component), lagg (ieee8023adLag, its protocol and hash, a key group
+  and an aggregation system), tap (ethernetCsmacd), tun (ppp), lo
+  (softwareLoopback), vxlan and geneve (ethernetCsmacd).  Not in the
+  models: a vxlan's or geneve's VNI and ends (no model has them; the
+  agent's own table never showed them either), and an ipsec(4)
+  interface's ends, which ifconfig(8) did not set from addresses not
+  the host's (it said nothing and returned 0).  All destroyed after,
+  nothing left in the routing tables.
+
 - Kept in rc.conf on a host itself, and wg-quick(8) for real
   (2026-10-17, the lab VM as root, its /etc/rc.conf kept first and put
   back byte for byte): an interface's address and a static route kept
@@ -513,6 +530,17 @@ What was once in the list above, and when it was run:
   one.
 
 ## Known limits
+
+- FreeBSD (16-CURRENT, seen 2026-10-27 on the lab VM): an interface given
+  an IPv6 address in FIB 0, moved to another FIB (ifconfig fib), then
+  destroyed, leaves its link-local prefix route (fe80::%N/64) in FIB 0
+  on an interface index that no longer exists (netstat shows "---");
+  route(8) cannot delete it, the index not resolving.  The detach
+  purges the interface's FIB at that time, not the one its routes were
+  added in.  The collectors show such a route with no interface.  A FIB
+  set before the addresses avoids it; whether the agent's if-create and
+  if-set jobs always do so is to check.  For a kernel fix (in6_ifdetach
+  / rt_flushifroutes over every FIB).
 
 - RFC 4364 VPN routes (Mplify 119 R14-R20: VPNv4 and VPNv6 with the
   domains' route distinguishers, targets and labels) are not written

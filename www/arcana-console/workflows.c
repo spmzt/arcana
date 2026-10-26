@@ -37,6 +37,8 @@
  *	DELETE /api/workflows/<id>
  *	POST   /api/workflows/<id>/run	run now: {"params", "hosts"}
  *	GET    /api/runs		the last runs
+ *	DELETE /api/runs		those ended forgotten, their traces
+ *					too; ?workflow=<id>, one's alone
  *	GET    /api/runs/<n>		one, each host and step with its trace
  *	DELETE /api/runs/<n>		one running stopped
  *	POST   /api/runs/<n>/approve	{"step"}: a step waiting approved
@@ -2756,6 +2758,53 @@ api_workflows(struct http_request *req)
 	return (reply_json(req, 200, w));
 }
 
+/*
+ * The history cleared: every run that has ended, of one workflow where
+ * ?workflow= says, out of runs.json with its traces' file; a run going
+ * on stays, its threads writing it still.
+ */
+static int
+runs_clear(struct http_request *req)
+{
+	ucl_object_t		*top, *keep, *out;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	char			 file[64], path[MAXPATHLEN], *wid;
+	int			 n = 0;
+
+	wid = NULL;
+	(void)http_argument_get_string(req, "workflow", &wid);
+	pthread_mutex_lock(&wf_lock);
+	if ((top = store_load(RUNS_FILE)) == NULL)
+		top = ucl_object_typed_new(UCL_OBJECT);
+	keep = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(top, "runs"), &it,
+	    true)) != NULL) {
+		if ((ucl_str(e, "state") != NULL && strcmp(ucl_str(e, "state"),
+		    "running") == 0) || (wid != NULL && (ucl_str(e, "workflow") ==
+		    NULL || strcmp(ucl_str(e, "workflow"), wid) != 0))) {
+			ucl_array_append(keep, ucl_object_copy(e));
+			continue;
+		}
+		snprintf(path, sizeof(path), "%s/%s", cfg.datadir, run_file(
+		    (uint32_t)ucl_object_toint(ucl_object_lookup(e, "id")), file,
+		    sizeof(file)));
+		(void)unlink(path);
+		n++;
+	}
+	put(top, "runs", keep);
+	(void)store_save(RUNS_FILE, top);
+	pthread_mutex_unlock(&wf_lock);
+	ucl_object_unref(top);
+	log_msg(LOG_NOTICE, "runs: %d cleared%s%s by %s", n, wid != NULL ?
+	    " of workflow " : "", wid != NULL ? wid : "", session_user(req) !=
+	    NULL ? session_user(req) : "a token");
+	out = ucl_object_typed_new(UCL_OBJECT);
+	put(out, "cleared", ucl_object_fromint(n));
+	return (reply_json(req, 200, out));
+}
+
 int
 api_runs(struct http_request *req)
 {
@@ -2773,6 +2822,8 @@ api_runs(struct http_request *req)
 			return (reply_list(req, RUNS_FILE, "runs", false));
 	} else if (!guard(req, true))
 		return (WEB_OK);
+	if (all)
+		return (runs_clear(req));
 	n = (uint32_t)strtoul(req->path + sizeof("/api/runs/") - 1, NULL, 10);
 	pthread_mutex_lock(&wf_lock);
 	top = store_load(RUNS_FILE);

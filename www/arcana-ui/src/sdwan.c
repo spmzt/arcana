@@ -5414,7 +5414,7 @@ sdwan_modal_service(struct html *h)
 		    "its preference (the higher taken first). Not for services."
 		    "</small></label>");
 		pfxlist_select(h, "Prefixes from the console's list", "pfx_console",
-		    "Added to the items when kept (Network, Prefix lists).");
+		    "Added to the items when kept (Network, Prefix lists).", true);
 		h_raw(h, "<div class=\"two\">");
 		text_field(h, "Protocols", "protocols", csv(jget(o, "protocols"),
 		    lb, sizeof(lb)), "tcp, udp", "Services only: as an AFS's "
@@ -5833,7 +5833,7 @@ sdwan_modal_service(struct html *h)
 		nlist_select(h, "And the prefixes of the list", "prefix_list",
 		    "prefixes", jstr(o, "prefix-list"), "Kept once, under Lists.");
 		pfxlist_select(h, "Prefixes from the console's list", "pfx_console",
-		    "Added to the zone's when kept (Network, Prefix lists).");
+		    "Added to the zone's when kept (Network, Prefix lists).", true);
 		return (true);
 	}
 	if (app.modal == MODAL_SD_CONFIG) {

@@ -2087,6 +2087,25 @@ ATF_TC_BODY(workflows, tc)
 	resp_free(&r);
 
 	ATF_CHECK(system("! grep -q 'exited with status' console.out") == 0);
+	/* The history cleared: another workflow's alone is none of
+	 * these; all of it, every run that has ended, its traces too, the
+	 * one going on left. */
+	http("DELETE", "/api/runs?workflow=ffffffff", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("0", jstr(&r, "cleared"));
+	resp_free(&r);
+	http("DELETE", "/api/runs", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "cleared") != NULL && atoi(jstr(&r, "cleared"))
+	    >= 1, "%s", r.body);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "test ! -e data/runs/%s.json", run);
+	ATF_CHECK(system(body) == 0);
+	http("GET", "/api/runs", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"state\":\"done\"") == NULL &&
+	    strstr(r.body, "\"state\":\"failed\"") == NULL, "%s", r.body);
+	resp_free(&r);
 	/* Gone. */
 	snprintf(path, sizeof(path), "/api/workflows/%s", wid);
 	http("DELETE", path, NULL, &r);
@@ -4263,6 +4282,69 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK(jstr(&r, "data.interfaces.0.name") != NULL);
 	ATF_CHECK(jstr(&r, "data.interfaces.0.up") != NULL);
+	/* The same rows by the standard models (ytrans.c), as the Network
+	 * tab asks: a GET of cblink's YANG family, translated. */
+	{
+		static const char *const same[] = { "name", "up", "mtu",
+		    "ether" };
+		char	*was[nitems(same)], *addrs[32];
+		char	 p2[512], key[64];
+		size_t	 k, na, nb;
+		bool	 found;
+
+		for (k = 0; k < nitems(same); k++) {
+			snprintf(key, sizeof(key), "data.interfaces.0.%s",
+			    same[k]);
+			was[k] = jstr(&r, key) != NULL ? strdup(jstr(&r, key)) :
+			    NULL;
+		}
+		/* Its addresses, "address/prefixlen", in whatever order. */
+		for (na = 0; na < nitems(addrs); na++) {
+			snprintf(key, sizeof(key), "data.interfaces.0."
+			    "addresses.%zu.address", na);
+			if (jstr(&r, key) == NULL)
+				break;
+			snprintf(p2, sizeof(p2), "%s/%s", jstr(&r, key), (
+			    snprintf(key, sizeof(key), "data.interfaces.0."
+			    "addresses.%zu.prefixlen", na), jstr(&r, key) !=
+			    NULL ? jstr(&r, key) : "-"));
+			addrs[na] = strdup(p2);
+		}
+		resp_free(&r);
+		snprintf(p2, sizeof(p2), "%s?source=yang", path);
+		http("GET", p2, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+		ATF_CHECK_STREQ("yang", jstr(&r, "data.source"));
+		for (k = 0; k < nitems(same); k++) {
+			snprintf(key, sizeof(key), "data.interfaces.0.%s",
+			    same[k]);
+			ATF_CHECK_MSG((was[k] == NULL) == (jstr(&r, key) ==
+			    NULL) && (was[k] == NULL || strcmp(was[k],
+			    jstr(&r, key)) == 0), "%s: %s by the table, %s by "
+			    "the models", same[k], was[k] != NULL ? was[k] :
+			    "none", jstr(&r, key) != NULL ? jstr(&r, key) :
+			    "none");
+			free(was[k]);
+		}
+		for (nb = 0; nb < nitems(addrs); nb++) {
+			snprintf(key, sizeof(key), "data.interfaces.0."
+			    "addresses.%zu.address", nb);
+			if (jstr(&r, key) == NULL)
+				break;
+			snprintf(p2, sizeof(p2), "%s/%s", jstr(&r, key), (
+			    snprintf(key, sizeof(key), "data.interfaces.0."
+			    "addresses.%zu.prefixlen", nb), jstr(&r, key) !=
+			    NULL ? jstr(&r, key) : "-"));
+			for (k = 0, found = false; k < na && !found; k++)
+				found = strcmp(addrs[k], p2) == 0;
+			ATF_CHECK_MSG(found, "%s by the models, not by the "
+			    "table", p2);
+		}
+		ATF_CHECK_EQ(na, nb);
+		for (k = 0; k < na; k++)
+			free(addrs[k]);
+	}
 	resp_free(&r);
 	snprintf(path, sizeof(path), "%.*s/jobs",
 	    (int)(strlen(base) - strlen("/services")), base);

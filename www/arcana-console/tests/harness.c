@@ -858,8 +858,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "[ -n \"$k\" ] && [ -x /usr/local/bin/python3 ] && "
 	    "/usr/local/bin/python3 tools/scsrv.py \"$k\" > /dev/null 2>&1 &\n"
 	    "\"$0\" --hold \"$4\" > /dev/null 2>&1 &\n"
-	    /* An alert in its eve.json, a second after it starts. */
 	    "d=$(sed -n 's/^default-log-dir: //p' \"$2\")\n"
+	    /* Its engine started, as its log says (the agent waits for it). */
+	    "[ -n \"$d\" ] && { mkdir -p \"$d\"; echo 'Notice: threads: "
+	    "Engine started.' >> \"$d/suricata.log\"; }\n"
+	    /* An alert in its eve.json, a second after it starts. */
 	    "[ -n \"$d\" ] && (sleep 1; mkdir -p \"$d\"; echo '{\"timestamp\":"
 	    "\"2026-10-19T10:00:00.000000+0000\",\"event_type\":\"alert\","
 	    "\"src_ip\":\"10.0.0.9\",\"src_port\":4444,\"dest_ip\":"

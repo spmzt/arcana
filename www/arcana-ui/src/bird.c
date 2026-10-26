@@ -2050,7 +2050,7 @@ bird_modal(struct html *h)
 			h_raw(h, "></label>");
 			pfxlist_select(h, "Prefixes from the console's list", "pfx",
 			    "Added to the entries below when kept (Network, Prefix "
-			    "lists).");
+			    "lists).", true);
 			h_raw(h, "<label");
 			h_fmt(h, "%s></label><label>Entries, one a line"
 			    "<textarea name=\"text\" class=\"code\" "
