@@ -54,7 +54,7 @@ struct stinfo {
 
 /* The value of the table entry a rule's address last matched: what
  * its tablearg stands for (fwd, setfib, skipto). */
-static char	tablearg[64];
+static _Thread_local char tablearg[64];	/* each walk is a thread's */
 
 /* ---- Tables ---------------------------------------------------------- */
 

@@ -29,7 +29,7 @@ It runs unprivileged; everything that changes a host is done by that
 host's
 .Xr arcana-agent 8 .
 .Pp
-It is two processes.
+It is three processes.
 The supervisor, root when started by
 .Xr rc 8 ,
 listens on the addresses configured, keeps the pid file and starts the
@@ -38,6 +38,15 @@ the supervisor's sockets as the console's user, one at a time on one
 loop, and runs what takes time (a call to a host) on task threads.
 A worker that cannot start, its configuration or data being wrong,
 stops the supervisor too.
+Over HTTPS the worker never reads the key: the key manager, a process
+it forks while still root, reads it, becomes the console's user, enters
+capability mode
+.Pq Xr capsicum 4
+and signs what the worker's TLS handshakes need, digests sent on a
+socket pair; a flaw that discloses the worker's memory discloses no
+key.
+Should the key manager end, the worker ends at its next handshake and
+the supervisor starts both again.
 .Pp
 The options are as follows:
 .Bl -tag -width Ds
@@ -76,9 +85,15 @@ for IPv6 (which then listens for IPv6 alone), or
 .Dq unix: Ns Ar path .
 By default 0.0.0.0:443 and [::]:443.
 .It Va certfile , certkey
-The certificate (with its chain) and key for HTTPS, RSA or EC, read as
-root before the worker becomes its user; without them the console
-speaks plain HTTP, for a proxy in front of it or a local socket.
+The certificate (with its chain) and key for HTTPS, RSA or EC; the key
+is read by the key manager alone, as root.
+TLS 1.2's key exchange is ECDHE alone (the key manager signs and
+decrypts nothing), and TLS 1.0 and 1.1 are not spoken.
+Over HTTPS the console speaks HTTP/2 to a client that offers it, as
+browsers do, and HTTP/1.1 to one that does not; a WebSocket is carried
+over HTTP/2 too (RFC 8441).
+Without them the console speaks plain HTTP/1.1, for a proxy in front
+of it or a local socket.
 .It Va webroot
 The web application; by default
 .Pa /usr/local/www/arcana-console .
@@ -262,6 +277,24 @@ alone.
 .Pp
 The worker checks every certificate it is configured with when it
 starts, and refuses to start with the reason in the log.
+.Sh ENVIRONMENT
+.Bl -tag -width "ARCANA_LWS_LOG"
+.It Ev ARCANA_WEB_CONF
+The configuration, when
+.Fl c
+does not name one.
+.It Ev ARCANA_LWS_LOG
+What
+.Xr libwebsockets 3
+logs of its own, as its
+.Dv LLL_
+bits: 7 adds its warnings and notices to its errors, 15 information
+too.
+By default its errors alone.
+In
+.Xr rc.conf 5 :
+.Va arcana_console_env Ns = Ns Qq ARCANA_LWS_LOG=7 .
+.El
 .Sh FIRST LOGIN
 With no security key registered, the console writes a one-time token to
 .Pa setup-token

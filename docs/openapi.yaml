@@ -9,9 +9,11 @@ info:
     every route below except health, auth status and the four ceremony
     routes requires it.
 
-    Requests that change something (POST, DELETE) on a protected route
-    also need the header `X-Arcana: 1` and, when the browser sends one,
-    an `Origin` equal to the console's configured origin.
+    Requests that change something (POST, PUT, DELETE) on a protected
+    route also need an `Origin` equal to the console's configured
+    origin, which a browser sends by itself; a client that sends no
+    `Origin` sends the header `X-Arcana: 1` instead.  A bearer API
+    token needs neither.
 
     Replies about a host carry a `trace`: what the console and arcana-agent(8)
     did, step by step.  Steps of kind `exec` are programs that ran, with

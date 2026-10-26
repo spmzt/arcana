@@ -254,8 +254,8 @@ check_pem(const char *what, const char *path, bool cert, int *keytype)
 
 /*
  * Check the certificates before serving: the server's own, of web.conf's
- * server { } (RSA or EC alike), and the client certificate and CA of its
- * tls { }.
+ * server { } (RSA or EC alike; its key is the key manager's, which checks
+ * it), and the client certificate and CA of its tls { }.
  */
 int
 config_check_certs(void)
@@ -263,9 +263,8 @@ config_check_certs(void)
 	int	type, rc;
 
 	rc = 0;
-	if (web_certfile != NULL && (check_pem("certfile", web_certfile, true,
-	    &type) == -1 || check_pem("certkey", web_certkey, false, &type) ==
-	    -1))
+	if (web_certfile != NULL && check_pem("certfile", web_certfile, true,
+	    &type) == -1)
 		rc = -1;
 	if (check_pem("tls.ca", cfg.tls_ca, true, &type) == -1 ||
 	    check_pem("tls.ca_key", cfg.tls_ca_key, false, &type) == -1 ||

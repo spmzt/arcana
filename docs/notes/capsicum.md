@@ -97,9 +97,11 @@ or the files read whole), every file of the console's opened `*at` a
 data-directory descriptor, cblink taught to connect through Casper's
 cap_net, and a forked runner for sendmail.  That is a project of its
 own; the design would follow the agent's split.  The HTTPS private key
-is read as root but held in the worker (Kore kept it in a key manager
-process of its own); a signing process beside the worker, as cblink's
-server frame proxy would be, is the way to put it back out.
+is out of the worker already (console 0.316.0, keymgr.c): a key manager
+the worker forks as root reads it, becomes the console's user, enters
+capability mode with its socket pair limited to CAP_READ|CAP_WRITE, and
+signs the digests the worker's TLS handshakes send it; the worker's
+OpenSSL key is a provider's public half.
 
 ## Order of work, if the split is wanted
 
@@ -111,4 +113,4 @@ server frame proxy would be, is the way to put it back out.
 3. The agent's frontend/backend split, operation by operation,
    generated from the IDL as the job parser is.
 4. The console: files `*at`, the web root by descriptor, cap_net, the
-   sendmail runner, the HTTPS key out of the worker.
+   sendmail runner.

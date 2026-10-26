@@ -271,10 +271,12 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 		    "a fib and its conf";
 		return (-1);
 	}
+	/* The jail's name, in w's memory: it is used after top goes. */
 	if ((jail = sdwan_payload_jail(top, errp)) == NULL) {
 		ucl_object_unref(top);
 		return (-1);
 	}
+	jail = wstrdup(w, jail);
 	if (jail[0] != '\0' && scope_enter(w, jail, errp) != 0) {
 		ucl_object_unref(top);
 		return (-1);

@@ -47,8 +47,10 @@
 #include <unistd.h>
 
 #include <libwebsockets.h>
+#include <openssl/ssl.h>
 #include <ucl.h>
 
+#include "keymgr.h"
 #include "web.h"
 
 #ifndef ARCW_CONF
@@ -59,8 +61,16 @@
 #endif
 #define	LISTEN_MAX	8
 #define	HDR_MAX		16384		/* one header, the query, a cookie */
-#define	WRITE_CHUNK	(64 * 1024)
+/* A reply's body goes out this much at a time: over HTTP/2 a write is
+ * one DATA frame, which may not be larger than 16 KB (the peer's
+ * SETTINGS_MAX_FRAME_SIZE as browsers leave it); a larger one ends the
+ * connection and every stream on it. */
+#define	WRITE_CHUNK	16384
 #define	WS_IN_MAX	(1024 * 1024)	/* a message from a page, at most */
+/* A message goes out in fragments of this much at most: over HTTP/2 a
+ * WebSocket frame may not be larger than an HTTP/2 frame (16 KB), and
+ * one that is ends the connection, every socket on it. */
+#define	WS_FRAG		8192
 
 /* web.conf's server { }. */
 static struct {
@@ -100,6 +110,7 @@ struct pss {
 struct wsmsg {
 	STAILQ_ENTRY(wsmsg)	 next;
 	size_t			 len;
+	size_t			 off;		/* sent so far */
 	bool			 binary;
 	uint8_t			 data[];
 };
@@ -915,13 +926,14 @@ custom_hdr(const char *name, int nlen, void *arg)
 	char	*v;
 	int	 n, vlen;
 
-	if ((vlen = lws_hdr_custom_length(c->wsi, name, nlen)) < 0 || nlen < 2)
+	if ((vlen = lws_hdr_custom_length(c->wsi, name, nlen)) < 0 || nlen < 1)
 		return;
 	v = xmalloc((size_t)vlen + 1);
 	n = lws_hdr_custom_copy(c->wsi, v, vlen + 1, name, nlen);
+	/* "x-arcana:" over HTTP/1.1, "x-arcana" over HTTP/2. */
 	if (n >= 0)
-		/* "x-arcana:" */
-		hdr_add(&c->req->headers, name, (size_t)nlen - 1, v);
+		hdr_add(&c->req->headers, name, (size_t)nlen - (name[nlen -
+		    1] == ':'), v);
 	free(v);
 }
 
@@ -1171,6 +1183,12 @@ req_write(struct lws *wsi, struct pss *pss)
 			lws_callback_on_writable(wsi);
 			return (0);
 		}
+		/* No body: HTTP/2's stream still has to be ended. */
+		buf = xmalloc(LWS_PRE + 1);
+		rc = lws_write(wsi, buf + LWS_PRE, 0, LWS_WRITE_HTTP_FINAL);
+		free(buf);
+		if (rc < 0)
+			return (-1);
 	} else if (req->resp_off < req->resp_len) {
 		n = req->resp_len - req->resp_off;
 		if (n > WRITE_CHUNK)
@@ -1231,6 +1249,7 @@ ws_send(struct conn *c, uint8_t op, const void *d, size_t len)
 		return;
 	m = xmalloc(sizeof(*m) + LWS_PRE + len);
 	m->len = len;
+	m->off = 0;
 	m->binary = op == WS_OP_BINARY;
 	memcpy(m->data + LWS_PRE, d, len);
 	STAILQ_INSERT_TAIL(&c->out, m, next);
@@ -1261,9 +1280,15 @@ ws_filter(struct lws *wsi, struct pss *pss)
 	bool			 known;
 	int			 ok;
 
-	if (lws_hdr_copy(wsi, path, sizeof(path), WSI_TOKEN_GET_URI) <= 0)
+	/* Over HTTP/1.1 a GET; over HTTP/2 a CONNECT (RFC 8441), its path
+	 * in :path, the query with it. */
+	if (lws_hdr_copy(wsi, path, sizeof(path), WSI_TOKEN_GET_URI) <= 0 &&
+	    lws_hdr_copy(wsi, path, sizeof(path), WSI_TOKEN_HTTP_COLON_PATH) <=
+	    0)
 		return (-1);
+	path[strcspn(path, "?")] = '\0';
 	req = req_new(wsi, path);
+	req->method = HTTP_METHOD_GET;
 	if ((req->rt = route_find(req->path, req->method, &known)) == NULL) {
 		req->wsi = NULL;
 		req_free(req);
@@ -1298,6 +1323,7 @@ callback(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	struct http_body	*b;
 	struct conn		*c;
 	struct wsmsg		*m;
+	size_t			 n;
 	char			 cl[32];
 	bool			 known;
 	int			 rc;
@@ -1306,6 +1332,10 @@ callback(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		tasks_drain();
 		return (0);
 	}
+	/* A vhost's SSL_CTX, in user: its certificate and key. */
+	if (reason == LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS)
+		return (srv.certfile != NULL && user != NULL && keymgr_tls(user,
+		    srv.certfile) != 0 ? -1 : 0);
 	/* A connection that went before it was given its data. */
 	if (pss == NULL)
 		return (lws_callback_http_dummy(wsi, reason, user, in, len));
@@ -1404,12 +1434,21 @@ callback(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if ((c = pss->conn) == NULL || (m = STAILQ_FIRST(&c->out)) ==
 		    NULL)
 			return (0);
-		STAILQ_REMOVE_HEAD(&c->out, next);
-		rc = lws_write(wsi, m->data + LWS_PRE, m->len, m->binary ?
-		    LWS_WRITE_BINARY : LWS_WRITE_TEXT);
-		free(m);
+		/* The next fragment; what lws puts before it overwrites
+		 * the end of the one sent before, which is gone. */
+		n = m->len - m->off;
+		if (n > WS_FRAG)
+			n = WS_FRAG;
+		rc = lws_write(wsi, m->data + LWS_PRE + m->off, n,
+		    (enum lws_write_protocol)lws_write_ws_flags(m->binary ?
+		    LWS_WRITE_BINARY : LWS_WRITE_TEXT, m->off == 0, m->off + n ==
+		    m->len));
 		if (rc < 0)
 			return (-1);
+		if ((m->off += n) == m->len) {
+			STAILQ_REMOVE_HEAD(&c->out, next);
+			free(m);
+		}
 		if (!STAILQ_EMPTY(&c->out))
 			lws_callback_on_writable(wsi);
 		return (0);
@@ -1628,6 +1667,14 @@ vhost_new(int k)
 	info.vhost_name = name;
 	info.protocols = protocols;
 	info.max_http_header_data = HDR_MAX;
+	/*
+	 * HTTP/2 over TLS (no browser speaks it plain), HTTP/1.1 beside it
+	 * and on plain connections.  libwebsockets 5.0 drops, over HTTP/2,
+	 * a header it has no name for (X-Arcana) when the client sends it
+	 * as an index into HPACK's dynamic table, as browsers do from its
+	 * second use on a connection: the console judges a browser's
+	 * change by its Origin (api.c guard()), a standard header.
+	 */
 	info.alpn = "http/1.1";
 	info.keepalive_timeout = 60;
 	info.timeout_secs = 60;
@@ -1642,10 +1689,20 @@ vhost_new(int k)
 			info.options |= LWS_SERVER_OPTION_DISABLE_IPV6;
 		/* TLS is the vhost's own choice in libwebsockets: without
 		 * the option here too it speaks plain HTTP. */
+		/*
+		 * The vhost's SSL_CTX made empty, its certificate and the
+		 * key manager's key put on it by the callback
+		 * (LOAD_EXTRA_SERVER_VERIFY_CERTS): the key is never read
+		 * here.  TLS 1.2 and 1.3, 1.2's key exchange ECDHE alone:
+		 * the key manager signs, it decrypts nothing.
+		 */
 		if (srv.certfile != NULL) {
-			info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
-			info.ssl_cert_filepath = srv.certfile;
-			info.ssl_private_key_filepath = srv.certkey;
+			info.alpn = "h2,http/1.1";
+			info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT |
+			    LWS_SERVER_OPTION_CREATE_VHOST_SSL_CTX;
+			info.ssl_cipher_list = "ECDHE+AESGCM:ECDHE+CHACHA20";
+			info.ssl_options_set = SSL_OP_NO_TLSv1 |
+			    SSL_OP_NO_TLSv1_1;
 		}
 	}
 	return (lws_create_vhost(ctx, &info));
@@ -1671,11 +1728,18 @@ worker(void)
 	int					 k;
 
 	setproctitle("worker");
+	/* The key's own process, before anything else is started here. */
+	if (srv.certfile != NULL && keymgr_start(srv.certfile, srv.certkey,
+	    srv.user, srv.lfd, srv.nlisten) != 0)
+		fatalx("the HTTPS key: not starting, see above");
 	signal(SIGTERM, on_term);
 	signal(SIGINT, on_term);
 	signal(SIGHUP, SIG_IGN);
 	signal(SIGPIPE, SIG_IGN);
-	lws_set_log_level(LLL_ERR, lws_emit);
+	/* libwebsockets' own log: its errors, or what ARCANA_LWS_LOG asks
+	 * (its LLL_ bits: 7 adds warnings and notices, 15 information). */
+	lws_set_log_level(getenv("ARCANA_LWS_LOG") != NULL ?
+	    atoi(getenv("ARCANA_LWS_LOG")) : LLL_ERR, lws_emit);
 	route_re = xcalloc(nroutes, sizeof(*route_re));
 	for (i = 0; i < nroutes; i++)
 		if (routes[i].path[0] == '^' && regcomp(&route_re[i],

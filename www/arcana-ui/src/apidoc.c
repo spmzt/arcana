@@ -166,8 +166,10 @@ view_apidoc(struct html *h)
 			}
 			if (strcmp(method, "get") != 0)
 				h_raw(h, "<p class=\"dim\">It changes "
-				    "something: it needs the header <code>"
-				    "X-Arcana: 1</code> beside the session."
+				    "something: beside the session, the "
+				    "console's own Origin (a browser sends it) "
+				    "or, from a client without one, the header "
+				    "<code>X-Arcana: 1</code>."
 				    "</p>");
 			h_raw(h, "</div>");
 		}

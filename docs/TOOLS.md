@@ -177,7 +177,7 @@ cat /var/db/arcana/setup-token   # for the first login
 | Key | Meaning | Default |
 |---|---|---|
 | `server { listen }` | Where to listen: `address:port`, `[address]:port` (IPv6 alone), `unix:/path`. | `0.0.0.0:443`, `[::]:443` |
-| `server { certfile, certkey }` | The certificate (RSA or EC) and key for HTTPS, read as root; without them, plain HTTP. | none |
+| `server { certfile, certkey }` | The certificate (RSA or EC) and key for HTTPS: HTTP/2 by ALPN, else HTTP/1.1; the key is read and held by the key manager alone (capsicum(4)), never by the worker. Without them, plain HTTP/1.1. | none |
 | `server { webroot, user, task_threads, body_max, pidfile }` | The PWA's files; the worker's user (`""`: the one started as); threads for calls to hosts; the largest body; the pid file. | `/usr/local/www/arcana-console`, `arcana`, 32, 8 MB, `/var/run/arcana-console.pid` |
 | `rp_id` | The console's host name, as the browser sees it, or a parent domain. Keys are bound to it. | required |
 | `origin` | The exact origin, `https://console.example`. Opened anywhere else, security keys fail with "SecurityError"; the login screen says so. | required |

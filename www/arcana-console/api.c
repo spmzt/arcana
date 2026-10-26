@@ -119,10 +119,9 @@ read_json(struct http_request *req)
 
 /*
  * Every protected route starts here.  It needs a valid session; a request
- * that changes something also needs the X-Arcana header, which other
- * origins cannot send without a CORS preflight we never answer, and an
- * Origin, when the browser sends one, that is ours.  On failure the
- * reply has been sent.
+ * that changes something also needs our page's Origin, or, from a client
+ * that sends no Origin, the X-Arcana header.  On failure the reply has
+ * been sent.
  */
 bool
 guard(struct http_request *req, bool mutate)
@@ -177,14 +176,25 @@ guard(struct http_request *req, bool mutate)
 	}
 	if (!mutate)
 		return (true);
-	if (!http_request_header(req, "x-arcana", &v) ||
-	    strcmp(v, "1") != 0) {
-		reply_error(req, 403, "csrf", "missing X-Arcana header");
+	/*
+	 * That our page asked: its Origin, which a browser sends with every
+	 * change and no page can make another's; from a client that sends
+	 * none (a script with the cookie, an app), X-Arcana: 1, which
+	 * another origin cannot send without a CORS preflight we never
+	 * answer.  Over HTTP/2 a browser's X-Arcana does not reach the
+	 * console from its second use on a connection on (web.c): the
+	 * Origin is what a browser is judged by.
+	 */
+	if (http_request_header(req, "origin", &v)) {
+		if (strcmp(v, cfg.origin) == 0 || cluster_origin(v))
+			return (true);
+		reply_error(req, 403, "csrf", "origin %s not allowed", v);
 		return (false);
 	}
-	if (http_request_header(req, "origin", &v) &&
-	    strcmp(v, cfg.origin) != 0 && !cluster_origin(v)) {
-		reply_error(req, 403, "csrf", "origin %s not allowed", v);
+	if (!http_request_header(req, "x-arcana", &v) ||
+	    strcmp(v, "1") != 0) {
+		reply_error(req, 403, "csrf", "missing X-Arcana header (or "
+		    "the Origin of the console's page)");
 		return (false);
 	}
 	return (true);

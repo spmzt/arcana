@@ -107,7 +107,8 @@ One user, one or more WebAuthn credentials (a YubiKey and a spare).
   signature with libcrypto.  ES256 and EdDSA, which covers YubiKey 5.
 * **Sessions.**  32 random bytes in a cookie; only its SHA-256 is kept.
   Idle timeout 30 min, absolute 12 h.  One guard checks every protected
-  route; state-changing requests also need `X-Arcana: 1` and a matching
+  route; state-changing requests also need the console's own `Origin`
+  (a browser sends it), or `X-Arcana: 1` from a client that sends no
   `Origin`.
 
 ## Enrolment (host to console)

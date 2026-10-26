@@ -496,24 +496,48 @@ fwd_note(struct pc *c, const struct fwverdict *v, const struct fwset *set,
 		    set->rules[v->rule].text);
 }
 
+/* In the job's own memory: path checks run side by side. */
 static const char *
-where(const struct fwverdict *v, const struct fwset *set)
+where(struct pc *c, const struct fwverdict *v, const struct fwset *set)
 {
-	static char	buf[1100];
 
 	if (strcmp(v->verdict, "none") == 0)
 		return ("no rule");
-	snprintf(buf, sizeof(buf), "rule %ld (%s)", set->rules[v->rule].num,
-	    set->rules[v->rule].text);
-	return (buf);
+	return (wfmt(c->w, "rule %ld (%s)", set->rules[v->rule].num,
+	    set->rules[v->rule].text));
 }
 
+static int	path_check(struct work *, const char *, const char *,
+		    const char *, uint32_t, const char *, bool, uint32_t, bool,
+		    struct arc_path_check_rsp *, struct fwset *);
+
+/*
+ * The rule set is the call's own, freed when it ends: several path
+ * checks run at once (the console asks the places of a path together),
+ * and one kept from call to call was freed under another's walk.
+ */
 int
 do_path_check(struct work *w, const char *srcs, const char *dsts,
     const char *proto, uint32_t port, const char *iface, bool has_fib,
     uint32_t fib0, bool reply, struct arc_path_check_rsp *rsp)
 {
-	static struct fwset	 set;
+	struct fwset	set;
+	int		rc;
+
+	memset(&set, 0, sizeof(set));
+	rc = path_check(w, srcs, dsts, proto, port, iface, has_fib, fib0,
+	    reply, rsp, &set);
+	fw_free(&set);
+	return (rc);
+}
+
+static int
+path_check(struct work *w, const char *srcs, const char *dsts,
+    const char *proto, uint32_t port, const char *iface, bool has_fib,
+    uint32_t fib0, bool reply, struct arc_path_check_rsp *rsp,
+    struct fwset *setp)
+{
+#define	set	(*setp)
 	struct pc		 c;
 	struct fwpkt		 k;
 	struct fwverdict	 rin, rout, pin, pout;
@@ -622,7 +646,6 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 	step = step_begin(w, ARC_STEP_KIND_EXEC, "ipfw", "list, and the "
 	    "tables: the ruleset to walk%s", fw_on ? "" : " (the firewall "
 	    "is off)");
-	fw_free(&set);
 	have_fw = ruleset(&c, &set);
 	step_end(w, step, have_fw, "%zu rules", set.n);
 	fw = ucl_object_typed_new(UCL_OBJECT);
@@ -672,7 +695,7 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 		if (strcmp(rin.verdict, "deny") == 0)
 			finding(&c, DROP_SEV(&c), "%s it coming in%s%s: %s",
 			    DROPS(&c), ingress != NULL ? " on " : "", ingress !=
-			    NULL ? ingress : "", where(&rin, &set));
+			    NULL ? ingress : "", where(&c, &rin, &set));
 		if (rin.setfib >= 0) {
 			fib = rin.setfib;
 			k.fib = fib;
@@ -751,7 +774,7 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 		fwd_note(&c, &rout, &set, "it");
 		if (strcmp(rout.verdict, "deny") == 0)
 			finding(&c, DROP_SEV(&c), "%s it going out by %s: %s",
-			    DROPS(&c), egress, where(&rout, &set));
+			    DROPS(&c), egress, where(&c, &rout, &set));
 	}
 
 	/* The reply: in where the request went out, back by the receive
@@ -810,9 +833,9 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 			fwd_note(&c, &pin, &set, "the reply");
 			if (strcmp(pin.verdict, "deny") == 0)
 				finding(&c, DROP_SEV(&c), "%s the reply coming in "
-				    "on %s: %s%s", DROPS(&c), egress, where(&pin,
-				    &set), state ? "" : " (no state of the "
-				    "request's here to let it in)");
+				    "on %s: %s%s", DROPS(&c), egress, where(&c,
+				    &pin, &set), state ? "" : " (no state of "
+				    "the request's here to let it in)");
 		}
 		if (!src_local && backif != NULL) {
 			r.out = true;
@@ -824,8 +847,8 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 				fwd_note(&c, &pout, &set, "the reply");
 			if (strcmp(pout.verdict, "deny") == 0)
 				finding(&c, DROP_SEV(&c), "%s the reply going out "
-				    "by %s: %s", DROPS(&c), backif, where(&pout,
-				    &set));
+				    "by %s: %s", DROPS(&c), backif, where(&c,
+				    &pout, &set));
 		}
 	}
 	ucl_object_insert_key(c.top, fw, "firewall", 0, true);
@@ -843,4 +866,5 @@ do_path_check(struct work *w, const char *srcs, const char *dsts,
 	rsp->json = wtext(w, wadopt(w, json));
 	rsp->ok = true;
 	return (0);
+#undef	set
 }

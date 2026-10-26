@@ -160,8 +160,10 @@ and URI, with no enrolment.
 
 arcana-console serves the PWA and the API. WebAuthn and PWA installation
 on Android need HTTPS with a certificate the phone trusts, such as one
-from Let's Encrypt, RSA or EC. Its supervisor listens and reads the
-certificate and key as root; the worker that serves runs as `arcana`.
+from Let's Encrypt, RSA or EC; browsers get HTTP/2 over it, others
+HTTP/1.1. Its supervisor listens as root; the worker that serves runs
+as `arcana` and never reads the key, which a key manager of its own
+holds in capability mode (capsicum(4)) and signs the handshakes with.
 
 ```sh
 pw useradd arcana -d /var/db/arcana -s /usr/sbin/nologin

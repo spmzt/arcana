@@ -367,12 +367,15 @@ ATF_TC_BODY(register_login, tc)
 	ATF_CHECK_EQ(NULL, jstr(&r, "credentials.0.public_key"));
 	resp_free(&r);
 
-	/* Once a key exists, the setup token is no longer a way in. */
+	/* Once a key exists, the setup token is no longer a way in: a
+	 * request neither from our page nor marked X-Arcana is refused. */
 	send_xjg = false;
+	origin_hdr = NULL;
 	http("POST", "/api/auth/register/begin", "{}", &r);
 	EXPECT(&r, 403);
 	resp_free(&r);
 	send_xjg = true;
+	origin_hdr = ORIGIN;
 
 	http("POST", "/api/auth/logout", NULL, &r);
 	EXPECT(&r, 200);
@@ -861,28 +864,48 @@ ATF_TC_BODY(users, tc)
 	resp_free(&r);
 }
 
-CONSOLE_TC(csrf, "Changes need X-Arcana and our Origin")
+CONSOLE_TC(csrf, "Changes need our Origin, or X-Arcana from a client "
+    "without one")
 ATF_TC_BODY(csrf, tc)
 {
 	struct authn	a;
 	struct resp	r;
-	const char	*add = "{\"name\":\"x\",\"uri\":\"unix:/x.sock\"}";
 
 	start(tc, 0, NULL);
 	enrol(&a);
+	/* Neither: refused. */
 	send_xjg = false;
-	http("POST", "/api/servers", add, &r);
+	origin_hdr = NULL;
+	http("POST", "/api/servers", "{\"name\":\"x\",\"uri\":\"unix:/x.sock\"}",
+	    &r);
 	EXPECT(&r, 403);
+	resp_free(&r);
+	/* A browser's: our page's Origin is enough (over HTTP/2 its
+	 * X-Arcana is lost from the second use on); another's, or none
+	 * ("null"), is refused, X-Arcana or not. */
+	origin_hdr = ORIGIN;
+	http("POST", "/api/servers", "{\"name\":\"x\",\"uri\":\"unix:/x.sock\"}",
+	    &r);
+	EXPECT(&r, 200);
 	resp_free(&r);
 	send_xjg = true;
 	origin_hdr = "https://evil.example";
-	http("POST", "/api/servers", add, &r);
+	http("POST", "/api/servers", "{\"name\":\"y\",\"uri\":\"unix:/y.sock\"}",
+	    &r);
 	EXPECT(&r, 403);
 	resp_free(&r);
-	origin_hdr = ORIGIN;
-	http("POST", "/api/servers", add, &r);
+	origin_hdr = "null";
+	http("POST", "/api/servers", "{\"name\":\"y\",\"uri\":\"unix:/y.sock\"}",
+	    &r);
+	EXPECT(&r, 403);
+	resp_free(&r);
+	/* A client without an Origin: X-Arcana. */
+	origin_hdr = NULL;
+	http("POST", "/api/servers", "{\"name\":\"y\",\"uri\":\"unix:/y.sock\"}",
+	    &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
+	origin_hdr = ORIGIN;
 }
 
 CONSOLE_TC(jails, "Servers, jails, actions and addresses through arcana-agent")
@@ -9137,13 +9160,14 @@ ATF_TC_BODY(cluster, tc)
 
 /*
  * HTTPS with an EC certificate (P-256), which the console serves as it
- * does an RSA one, on TLS 1.3.
+ * does an RSA one, on TLS 1.3: HTTP/2 to a client that offers it (by
+ * ALPN), HTTP/1.1 to one that does not.
  */
 ATF_TC_WITH_CLEANUP(tls_ec);
 ATF_TC_HEAD(tls_ec, tc)
 {
 	atf_tc_set_md_var(tc, "descr", "the console serves HTTPS with an EC "
-	    "certificate");
+	    "certificate, over HTTP/2 and HTTP/1.1");
 	atf_tc_set_md_var(tc, "require.progs", "curl openssl");
 }
 ATF_TC_BODY(tls_ec, tc)
@@ -9171,6 +9195,69 @@ ATF_TC_BODY(tls_ec, tc)
 	    "127.0.0.1:%d 2>/dev/null | grep -q 'Peer signature type: "
 	    "ecdsa_secp256r1_sha256'", port);
 	ATF_CHECK_MSG(system(cmd) == 0, "not signed with the EC key");
+	snprintf(cmd, sizeof(cmd), "curl -sk --http2 -o /dev/null -w "
+	    "'%%{http_version} %%{http_code}' https://127.0.0.1:%d/api/health "
+	    "| grep -qx '2 200'", port);
+	ATF_CHECK_MSG(system(cmd) == 0, "no HTTP/2");
+	/* A request with a body, and a reply without one (over the
+	 * largest body), each to the end of its stream. */
+	snprintf(cmd, sizeof(cmd), "curl -sk --http2 -m 5 -o /dev/null -w "
+	    "'%%{http_version} %%{http_code}' -H 'content-type: application/"
+	    "json' -d '{}' https://127.0.0.1:%d/api/auth/status | grep -qx "
+	    "'2 [0-9][0-9][0-9]'", port);
+	ATF_CHECK_MSG(system(cmd) == 0, "no answer to a body over HTTP/2");
+	snprintf(cmd, sizeof(cmd), "curl -sk --http1.1 -o /dev/null -w "
+	    "'%%{http_version} %%{http_code}' https://127.0.0.1:%d/api/health "
+	    "| grep -qx '1.1 200'", port);
+	ATF_CHECK_MSG(system(cmd) == 0, "no HTTP/1.1");
+	/*
+	 * A reply of a handler's larger than an HTTP/2 frame (16 KB): a
+	 * host's sysctl, read with a session opened by an API token, its
+	 * host added with the console's Origin.  Written whole, it ended
+	 * the connection (curl: exit 16).
+	 */
+	snprintf(cmd, sizeof(cmd), "T=arcw_$(printf 'b%%.0s' $(seq 1 64)); "
+	    "printf '{\"tokens\":[{\"hash\":\"%%s\",\"name\":\"t\","
+	    "\"created\":1,\"last\":0,\"write\":true}]}' $(printf %%s $T "
+	    "| sha256 -q) > data/tokens.json && "
+	    "curl -sk --http2 -c jar -H 'content-type: application/json' -d "
+	    "\"{\\\"token\\\":\\\"$T\\\"}\" https://127.0.0.1:%d/api/auth/"
+	    "login/token -o /dev/null && "
+	    "curl -sk --http2 -b jar -H 'origin: %s' -H 'content-type: "
+	    "application/json' -d '{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}' https://127.0.0.1:%d/api/servers > servers.out && "
+	    "S=$(sed 's/.*\"id\":\"\\([0-9a-f]*\\)\".*/\\1/' servers.out) && "
+	    "curl -sk --http2 -b jar -o sysctl.out -w '%%{http_version} "
+	    "%%{http_code}' https://127.0.0.1:%d/api/servers/$S/sysctl | grep "
+	    "-qx '2 200' && [ $(wc -c < sysctl.out) -gt 65536 ]", port,
+	    harness_origin, cwd, port, port);
+	if (system(cmd) != 0) {
+		(void)system("echo servers:; head -c 300 servers.out; echo; "
+		    "echo sysctl:; head -c 300 sysctl.out; echo; wc -c sysctl.out; "
+		    "tail -5 console.out; tail -5 arcana-agent.out");
+		atf_tc_fail("a large reply did not come whole over HTTP/2");
+	}
+	/*
+	 * The key is the key manager's, the worker's child: killed, the
+	 * worker goes with it and the supervisor starts both again.
+	 */
+	ATF_REQUIRE(system("W=$(sed -n 's/.*worker started (pid "
+	    "\\([0-9]*\\)).*/\\1/p' console.out | tail -1) && "
+	    "ps -o command= -p $(pgrep -P $W) | grep -q 'arcana-console: "
+	    "keymgr' && pkill -TERM -P $W -f 'arcana-console: keymgr'") == 0);
+	for (i = 0; i < 50; i++) {
+		snprintf(cmd, sizeof(cmd), "curl -sk https://127.0.0.1:%d/api/"
+		    "health | grep -q '\"ok\":true'", port);
+		/* The next handshake finds it gone; one after, both are
+		 * back. */
+		if (system(cmd) == 0 && system("grep -q 'keymgr: gone' "
+		    "console.out") == 0)
+			break;
+		usleep(200000);
+	}
+	ATF_CHECK_MSG(i < 50, "no HTTPS after the key manager was killed");
+	ATF_CHECK(system("[ $(grep -c 'worker started' console.out) -ge 2 ]")
+	    == 0);
 	/* Plain HTTP on that port is not served. */
 	snprintf(cmd, sizeof(cmd), "! curl -s http://127.0.0.1:%d/api/health "
 	    "| grep -q ok", port);

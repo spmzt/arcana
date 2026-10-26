@@ -7,7 +7,7 @@ ways to get there, and a recommendation.  Nothing here is built yet.
 
 ## What the console keeps today
 
-One Kore process, several workers, one data directory.  Everything
+One arcana-console process (a supervisor and its one worker), one data directory.  Everything
 durable is a JSON document written whole by `store_save()` under a
 lock file where several writers may meet (`templates.c` pattern):
 

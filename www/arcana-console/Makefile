@@ -2,7 +2,7 @@
 # libwebsockets(3) (web.c).
 
 PROG=		arcana-console
-SRCS=		web.c routes.c api.c auth.c config.c hosts.c pki.c push.c servers.c settings.c security.c troubleshoot.c \
+SRCS=		web.c keymgr.c routes.c api.c auth.c config.c hosts.c pki.c push.c servers.c settings.c security.c troubleshoot.c \
 		stream.c follow.c tokens.c transfers.c workflows.c sdwan.c sdwan_edge.c \
 		store.c update.c webpush.c audit.c mail.c templates.c ldap.c labels.c prefixlists.c users.c \
 		craft.c nodes.c

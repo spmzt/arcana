@@ -397,9 +397,9 @@ expressions. Pattern checking via XSD→ERE translation + `regcomp`.
 
 ---------------------------------------------------------------------------------------
 
-## (e) Console: RESTCONF north-bound over Kore, YANG-Push over SSE
+## (e) Console: RESTCONF north-bound over its HTTP server, YANG-Push over SSE
 
-What the Kore module must implement (from rfc8040.md):
+What the console (arcana-console, its server on libwebsockets) must implement (from rfc8040.md):
 - Discovery: `GET /.well-known/host-meta` (XRD, `rel="restconf"`), `{+restconf}` root
   (`/restconf`), `GET {+restconf}` → `ietf-restconf:restconf {data, operations,
   yang-library-version}`, `GET /yang-library-version` → `"2019-01-04"`.
@@ -581,7 +581,7 @@ but Arcana modules avoid it).
 | 18 | Subscriptions: ietf-subscribed-notifications + YANG-Push on push streams (periodic timers, on-change diff + dampening + YANG Patch emission, subtree filter, XPath filter via #9, state-change notifications, suspension on credit, monitoring counters, configured subscriptions/call-home) | 3.5–4k | 5 | medium | on-change for routes must use rtsock/netlink events, not table diffing |
 | 19 | NACM (groups from cert subject/uid, rule-lists, 3 enforcement points, counters, default-deny extensions) | 1.5k | 2 | high | algorithm is exact in 8341 §3.4 |
 | 20 | yang-library + schema-mount runtime (per-mount library, nested mounts, dispatch, parent-reference injection) | 1.5k | 2 | medium | |
-| 21 | Console: RESTCONF layer in Kore (host-meta, api-path, methods, status table, ETag, query params, errors, YANG Patch, restconf-monitoring, SSE) | 3k | 4 | medium-high | |
+| 21 | Console: RESTCONF layer in arcana-console (host-meta, api-path, methods, status table, ETag, query params, errors, YANG Patch, restconf-monitoring, SSE) | 3k | 4 | medium-high | |
 | 22 | Console: JSON ↔ CBOR translator (7951 ↔ 9254, schema-driven, instance-identifier strings, annotations/origin) | 2.5k | 3 | high | |
 | 23 | Console: fleet schema mount + per-host SID/library cache + proxy + YANG-Push fan-out/relay + NACM identity passing | 1.5k | 2.5 | medium | |
 | 24 | PWA: switch to RESTCONF JSON (or CBOR pass-through), SSE subscriptions, schema-driven forms from yang-library | JS/wasm, not C | 3–4 | medium | outside the C count |
