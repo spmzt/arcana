@@ -78,6 +78,8 @@ struct rcreq {
 	struct fsel	*fields;
 };
 
+static char	*errors_of(int, const char *, const char *, const char *);
+
 /* The error-tag and its status (RFC 8040 section 7) of the console's
  * own error codes. */
 static const char *
@@ -102,6 +104,15 @@ tag_of(int status)
 char *
 restconf_errors(int status, const char *msg)
 {
+
+	return (errors_of(status, NULL, NULL, msg));
+}
+
+/* ietf-restconf:errors of status, its error-tag tag (NULL: status's),
+ * the node at fault path (NULL: none), the message msg. */
+static char *
+errors_of(int status, const char *tag, const char *path, const char *msg)
+{
 	ucl_object_t	*top, *errs, *arr, *e;
 	char		*json;
 
@@ -109,8 +120,11 @@ restconf_errors(int status, const char *msg)
 	ucl_object_insert_key(e, ucl_object_fromstring(status == 401 ||
 	    status == 403 ? "protocol" : "application"), "error-type", 0,
 	    false);
-	ucl_object_insert_key(e, ucl_object_fromstring(tag_of(status)),
-	    "error-tag", 0, false);
+	ucl_object_insert_key(e, ucl_object_fromstring(tag != NULL ? tag :
+	    tag_of(status)), "error-tag", 0, false);
+	if (path != NULL)
+		ucl_object_insert_key(e, ucl_object_fromstring(path),
+		    "error-path", 0, false);
 	if (msg != NULL)
 		ucl_object_insert_key(e, ucl_object_fromstring(msg),
 		    "error-message", 0, false);
@@ -150,6 +164,13 @@ reply_doc(struct http_request *req, ucl_object_t *top)
 	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);
 	return (reply_yang(req, 200, json));
+}
+
+int
+restconf_reply(struct http_request *req, ucl_object_t *top)
+{
+
+	return (reply_doc(req, top));
 }
 
 int
@@ -229,10 +250,14 @@ fleet_object(struct http_request *req)
 	return (fleet);
 }
 
-/* restconf-state: what the server can (section 9.1.1), no streams yet. */
+/* restconf-state: what the server can (section 9.1.1), and each host's
+ * stream this user may read (9.1.2), its events as Server-Sent Events. */
 static ucl_object_t *
-state_object(void)
+state_object(struct http_request *req)
 {
+	const struct server	*s;
+	ucl_object_t		*streams, *list, *st1, *acc, *a1;
+	char			 loc[512];
 	static const char *const caps[] = {
 		("urn:ietf:params:restconf:capability:defaults:1.0"
 		    "?basic-mode=explicit"),
@@ -249,6 +274,30 @@ state_object(void)
 	ucl_object_insert_key(c, arr, "capability", 0, false);
 	st = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(st, c, "capabilities", 0, false);
+	list = ucl_object_typed_new(UCL_ARRAY);
+	for (int i = 0; (s = server_at(i)) != NULL; i++) {
+		if (!host_role_ok(req, s->id, false, false))
+			continue;
+		st1 = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(st1, ucl_object_fromstring(s->id), "name",
+		    0, false);
+		ucl_object_insert_key(st1, ucl_object_fromstring(s->name),
+		    "description", 0, false);
+		a1 = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(a1, ucl_object_fromstring("json"),
+		    "encoding", 0, false);
+		snprintf(loc, sizeof(loc), "%s/restconf/streams/%s/json",
+		    cfg.origin != NULL ? cfg.origin : "", s->id);
+		ucl_object_insert_key(a1, ucl_object_fromstring(loc),
+		    "location", 0, false);
+		acc = ucl_object_typed_new(UCL_ARRAY);
+		ucl_array_append(acc, a1);
+		ucl_object_insert_key(st1, acc, "access", 0, false);
+		ucl_array_append(list, st1);
+	}
+	streams = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(streams, list, "stream", 0, false);
+	ucl_object_insert_key(st, streams, "streams", 0, false);
 	return (st);
 }
 
@@ -319,6 +368,17 @@ api_restconf_data(struct http_request *req)
 	const char	*p = req->path + strlen("/restconf/data");
 	char		 sid[16];
 
+	/* Of POSTs, establish-subscription under a host's entry alone. */
+	if (req->method == HTTP_METHOD_POST) {
+		const char	*e = strrchr(req->path, '/');
+
+		if (!restconf_host(req->path, sid, sizeof(sid)) || e == NULL ||
+		    strcmp(e, "/ietf-subscribed-notifications:"
+		    "establish-subscription") != 0)
+			return (restconf_error(req, 405, "of what is POSTed, "
+			    "establish-subscription under a host's entry alone"));
+		return (restconf_establish(req, sid));
+	}
 	if (restconf_host(req->path, sid, sizeof(sid)))
 		return (api_restconf_host(req));
 	if (!guard(req, false))
@@ -330,7 +390,7 @@ api_restconf_data(struct http_request *req)
 	if (*p == '\0' || strcmp(p, "/") == 0) {
 		ucl_object_insert_key(top, fleet_object(req),
 		    "arcana-fleet:fleet", 0, false);
-		ucl_object_insert_key(top, state_object(),
+		ucl_object_insert_key(top, state_object(req),
 		    "ietf-restconf-monitoring:restconf-state", 0, false);
 		ucl_object_insert_key(top, library_object(),
 		    "ietf-yang-library:yang-library", 0, false);
@@ -338,7 +398,7 @@ api_restconf_data(struct http_request *req)
 		ucl_object_insert_key(top, fleet_object(req),
 		    "arcana-fleet:fleet", 0, false);
 	else if (strcmp(p, "/ietf-restconf-monitoring:restconf-state") == 0)
-		ucl_object_insert_key(top, state_object(),
+		ucl_object_insert_key(top, state_object(req),
 		    "ietf-restconf-monitoring:restconf-state", 0, false);
 	else if (strcmp(p, "/ietf-yang-library:yang-library") == 0)
 		ucl_object_insert_key(top, library_object(),
@@ -1095,6 +1155,29 @@ select_node(const struct rcreq *r, const ucl_object_t *doc, int *status)
 	return (top);
 }
 
+/* The data node of that SID as an instance-identifier without keys,
+ * /module:a/b, its module named where it changes; NULL: none. */
+static const char *
+node_path(uint64_t sid, char *buf, size_t len)
+{
+	const struct cbl_ynode	*v[32], *n;
+	size_t			 nv = 0, off = 0;
+
+	if (sid == 0 || (n = cbl_yschema_node(&ymodel_schema, sid)) == NULL)
+		return (NULL);
+	for (; n != NULL && nv < nitems(v); n = n->parent)
+		v[nv++] = n;
+	buf[0] = '\0';
+	while (nv > 0 && off < len) {
+		n = v[--nv];
+		off += (size_t)snprintf(buf + off, len - off, "/%s%s%s",
+		    n->parent == NULL || n->parent->module != n->module ?
+		    n->module->name : "", n->parent == NULL || n->parent->module
+		    != n->module ? ":" : "", n->name);
+	}
+	return (off < len ? buf : NULL);
+}
+
 /*
  * A host's part of the datastore, read from its agent over conn: its
  * entry (id, name and what is mounted under it) or the node r names.
@@ -1109,16 +1192,52 @@ restconf_run(cbl_conn *conn, const struct rcreq *r, const char *id,
 	const ucl_object_t	*v;
 	ucl_object_iter_t	 it = NULL;
 	ucl_object_t		*doc, *top, *h, *arr, *s;
-	uint64_t		 sid;
-	char			 err[256];
+	uint64_t		 sid, errsid;
+	char			 err[256], path[512];
 	int			 error;
 
 	*status = 200;
 	sid = r->nseg > 0 ? r->seg[0].n->sid : 0;
 	if ((error = ytrans_get(conn, r->nseg > 0 ? &sid : NULL, r->nseg > 0 ?
-	    1 : 0, r->xpath, &doc, err, sizeof(err))) != 0) {
-		*status = error == ENOENT ? 404 : error == EACCES ? 403 : 502;
-		*json = restconf_errors(*status, err);
+	    1 : 0, r->xpath, &doc, err, sizeof(err), &errsid)) != 0) {
+		/* The agent's refusal as RFC 8040 section 7 has it. */
+		const char	*tag;
+
+		switch (error) {
+		case ENOENT:
+			*status = 404;
+			tag = "invalid-value";
+			break;
+		case EACCES:
+		case EPERM:
+			*status = 403;
+			tag = "access-denied";
+			break;
+		case EINVAL:
+		case ERANGE:
+			*status = 400;
+			tag = "invalid-value";
+			break;
+		case EOPNOTSUPP:
+			*status = 501;
+			tag = "operation-not-supported";
+			break;
+		case EBUSY:
+			*status = 409;
+			tag = "in-use";
+			break;
+		case ENOMEM:
+		case ENOSPC:
+			*status = 500;
+			tag = "resource-denied";
+			break;
+		default:
+			*status = 502;
+			tag = "operation-failed";
+			break;
+		}
+		*json = errors_of(*status, tag, node_path(errsid, path,
+		    sizeof(path)), err);
 		return;
 	}
 	if (r->nseg > 0) {

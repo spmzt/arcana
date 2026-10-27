@@ -551,15 +551,18 @@ part_pad(void)
 	    "mapping: 'standard', axes: [0, 0, 0, 0], buttons: Array.from({ "
 	    "length: 17 }, () => ({ pressed: false, value: 0 })) }; "
 	    "navigator.getGamepads = () => [window.__pad]; window.padPress = "
-	    "(n) => { window.__pad.buttons[n].pressed = true; setTimeout(() => "
-	    "{ window.__pad.buttons[n].pressed = false; }, 150); }; "
+	    "(n) => { window.__pad.buttons[n].pressed = true; }; "
+	    "window.padUp = (n) => { window.__pad.buttons[n].pressed = false; "
+	    "}; "
 	    "window.dispatchEvent(new Event('gamepadconnected'));");
 	wait_js("document.documentElement.classList.contains('pad') && "
 	    "document.querySelector('.padhint') && document.querySelector("
 	    "'.padhint').textContent.includes('Press')", 5);
+	/* Held until the page has seen it, however slow its frames. */
 	run("window.padPress(13)");
 	wait_js("document.activeElement && document.activeElement !== "
-	    "document.body", 5);
+	    "document.body", 10);
+	run("window.padUp(13)");
 	/* No tabs on the page: the side bar's next page. */
 	wait_js("document.querySelector('aside.rail li.titem.selected')", 20);
 	run("window.tab0 = document.querySelector('aside.rail li.titem."
@@ -568,6 +571,7 @@ part_pad(void)
 	wait_js("document.querySelector('aside.rail li.titem.selected') && "
 	    "document.querySelector('aside.rail li.titem.selected')."
 	    "textContent !== window.tab0", 10);
+	run("window.padUp(5)");
 	shot("0p-game-mode");
 }
 
@@ -1036,6 +1040,21 @@ part_hosts(void)
 	    "document.querySelector('.rail .titem.leaf')"));
 	ATF_CHECK(js_true("document.querySelector('.tiles .tile')"));
 	shot("1-host-summary");
+	/* Its events by RESTCONF's stream, as a browser reads one
+	 * (EventSource): a job's event comes as a message. */
+	run("window.esMsgs = []; fetch('/restconf/data/arcana-fleet:fleet')"
+	    ".then(r => r.json()).then(j => { const id = j['arcana-fleet:"
+	    "fleet'].host[0].id; window.es = new EventSource('/restconf/"
+	    "streams/' + id + '/json'); window.es.onmessage = e => window."
+	    "esMsgs.push(e.data); window.es.onopen = () => setTimeout(() => "
+	    "fetch('/api/servers/' + id + '/jobs', { method: 'POST', headers: "
+	    "{ 'Content-Type': 'application/json', 'X-Arcana': '1' }, body: "
+	    "JSON.stringify({ jobs: [{ kind: 'monitor', verb: 'set', args: "
+	    "['name=gre8', 'interface=gre8', 'address=192.0.2.8', "
+	    "'interval=500', 'eval=10000'] }] }) }), 1500); });");
+	wait_js("window.esMsgs.some(m => m.includes('arcana-events:event'))",
+	    30);
+	run("window.es.close()");
 	/*
 	 * The host runs an older arcana-agent than the console has: its
 	 * bar says so and leads to Devices, where each host's agent is

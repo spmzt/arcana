@@ -1429,17 +1429,18 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 	if (create != NULL && rc_set(w, wfmt(w, "create_args_%s", name), "=",
 	    create, &e) != 0)
 		goto undo_said;
-	if (rc_set(w, wfmt(w, "ifconfig_%s", rcif), "=", wfmt(w, "%s%s%s%s%s%s"
-	    "%s%sup", how == CL_TUNNEL ? six ? "inet6 tunnel " : "tunnel " :
-	    "", how == CL_TUNNEL ?
-	    sp->tunnel_local : "", how == CL_TUNNEL ? " " : "",
-	    how == CL_TUNNEL ? sp->tunnel_remote : "", how == CL_TUNNEL ? " " :
-	    "", how == CL_BRIDGE && sp->parent != NULL ? wfmt(w, "addm %s ",
-	    sp->parent) : "", sp->has_mtu && sp->mtu != 0 ? wfmt(w, "mtu %u ",
-	    sp->mtu) : "", wfmt(w, "%s%s", sp->has_fib && sp->fib != 0 ?
+	/* Its tables first, as above: at boot ifconfig(8) takes the words
+	 * in order. */
+	if (rc_set(w, wfmt(w, "ifconfig_%s", rcif), "=", wfmt(w, "%s%s%s%s%s"
+	    "%s%s%sup", wfmt(w, "%s%s", sp->has_fib && sp->fib != 0 ?
 	    wfmt(w, "fib %u ", sp->fib) : "", sp->has_tunnelfib &&
 	    sp->tunnelfib != 0 ? wfmt(w, "tunnelfib %u ", sp->tunnelfib) :
-	    "")), &e) != 0)
+	    ""), how == CL_TUNNEL ? six ? "inet6 tunnel " : "tunnel " : "",
+	    how == CL_TUNNEL ? sp->tunnel_local : "", how == CL_TUNNEL ? " " :
+	    "", how == CL_TUNNEL ? sp->tunnel_remote : "", how == CL_TUNNEL ?
+	    " " : "", how == CL_BRIDGE && sp->parent != NULL ? wfmt(w,
+	    "addm %s ", sp->parent) : "", sp->has_mtu && sp->mtu != 0 ?
+	    wfmt(w, "mtu %u ", sp->mtu) : ""), &e) != 0)
 		goto undo_said;
 	if (alias != NULL && rc_set(w, wfmt(w, "ifconfig_%s_alias0", rcif), "=",
 	    alias, &e) != 0)

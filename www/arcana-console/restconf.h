@@ -11,6 +11,7 @@
 #include <stddef.h>
 
 #include <cblink.h>
+#include <ucl.h>
 
 struct http_request;
 
@@ -33,5 +34,9 @@ struct rcreq	*restconf_parse(const char *path, const char *query,
 void		 restconf_free(struct rcreq *r);
 void		 restconf_run(cbl_conn *conn, const struct rcreq *r,
 		    const char *id, const char *name, char **json, int *status);
+/* A reply of RFC 8040's media type, of top (consumed). */
+int		 restconf_reply(struct http_request *req, ucl_object_t *top);
+/* establish-subscription POSTed under host sid's entry (rcstream.c). */
+int		 restconf_establish(struct http_request *req, const char *sid);
 
 #endif	/* !_ARCANA_RESTCONF_H_ */

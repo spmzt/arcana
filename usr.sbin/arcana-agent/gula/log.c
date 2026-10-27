@@ -11,6 +11,12 @@
  * A line of syslog's is taken apart into its time, host, tag, pid and
  * text, in either of the two forms syslogd writes; any other line is
  * its text.
+ *
+ * A position is the file's as well as the offset in it: above its low
+ * POS_BITS, a tag of the file's inode.  A log newsyslog(8) turned over
+ * since is followed on in the file it now is (name.0, while it is that
+ * file and not packed), then the new one from its start, so that no
+ * line is lost to the turn nor read from its middle.
  */
 
 #include <sys/param.h>
@@ -34,6 +40,12 @@
 #define	LOG_READ_MAX	(8 * 1024 * 1024)	/* of the end of a file */
 #define	LOG_LINE_MAX	2048		/* of one line, and no more */
 #define	LOG_FILES_MAX	256
+#define	POS_BITS	40		/* a position's offset; above, its file */
+#define	POS_OFF(p)	((p) & ((UINT64_C(1) << POS_BITS) - 1))
+#define	POS_TAG(p)	((p) >> POS_BITS)
+/* 1 to 4096 (0 is a position of no file's), to stay a safe integer for
+ * a page's JavaScript. */
+#define	FILE_TAG(sb)	(((uint64_t)(sb).st_ino & 0xfff) + 1)
 
 /* A file's name in the log directory: no way out of it, nothing hidden. */
 bool
@@ -422,11 +434,14 @@ do_log(struct work *w, const char *name, const char *filter, bool from,
 	ucl_object_t	*top, *arr;
 	unsigned char	*json;
 	char		*buf, *p, *e, *end, **keep;
+	struct stat	 osb;
 	off_t		 start;
 	ssize_t		 n;
-	size_t		 len, nkeep, i, first;
+	size_t		 len, nkeep, i, first, plen;
 	const char	*unpack;
-	int		 dfd, fd, step;
+	char		*prev;
+	uint64_t	 tag;
+	int		 dfd, fd, ofd, step;
 	bool		 rotated;
 
 	rsp->has_ok = true;
@@ -461,9 +476,35 @@ do_log(struct work *w, const char *name, const char *filter, bool from,
 		close(dfd);
 		return (0);
 	}
-	rotated = from && position > (uint64_t)sb.st_size;
-	if (rotated)
+	/* Turned over since the position: the rest of the file it was,
+	 * name.0 now, then this one whole. */
+	tag = from ? POS_TAG(position) : 0;
+	position = POS_OFF(position);
+	prev = NULL;
+	plen = 0;
+	rotated = false;
+	if (tag != 0 && tag != FILE_TAG(sb)) {
+		ofd = openat(dfd, wfmt(w, "%s.0", name), O_RDONLY | O_NOFOLLOW |
+		    O_NONBLOCK | O_CLOEXEC);
+		if (ofd != -1 && fstat(ofd, &osb) == 0 && S_ISREG(osb.st_mode) &&
+		    FILE_TAG(osb) == tag && (uint64_t)osb.st_size >= position &&
+		    osb.st_size - (off_t)position <= LOG_READ_MAX) {
+			plen = (size_t)(osb.st_size - (off_t)position);
+			prev = wcalloc(w, plen + 1, 1);
+			if (pread(ofd, prev, plen, (off_t)position) !=
+			    (ssize_t)plen)
+				prev = NULL;
+		}
+		if (ofd != -1)
+			close(ofd);
+		if (prev == NULL)
+			plen = 0;
+		rotated = prev == NULL;
+		position = 0;
+	} else if (from && position > (uint64_t)sb.st_size) {
+		rotated = true;
 		from = false;
+	}
 	start = from ? (off_t)position : 0;
 	if ((unpack = packed(name)) != NULL) {
 		/* Unpacked by its program, whole; it is not followed. */
@@ -499,8 +540,12 @@ do_log(struct work *w, const char *name, const char *filter, bool from,
 		if (sb.st_size - start > LOG_READ_MAX)
 			start = sb.st_size - LOG_READ_MAX;
 		len = (size_t)(sb.st_size - start);
-		buf = wcalloc(w, len + 1, 1);
-		n = len > 0 ? pread(fd, buf, len, start) : 0;
+		buf = wcalloc(w, plen + len + 1, 1);
+		if (plen > 0)
+			memcpy(buf, prev, plen);
+		n = len > 0 ? pread(fd, buf + plen, len, start) : 0;
+		if (n >= 0)
+			n += (ssize_t)plen;
 		close(fd);
 	}
 	if (n < 0) {
@@ -559,8 +604,10 @@ do_log(struct work *w, const char *name, const char *filter, bool from,
 	ucl_object_insert_key(top, arr, "lines", 0, false);
 	ucl_object_insert_key(top, ucl_object_fromint(sb.st_size), "size", 0,
 	    false);
-	ucl_object_insert_key(top, ucl_object_fromint(start + (end - buf)),
-	    "position", 0, false);
+	/* Of this file: what was read of the one before is not. */
+	ucl_object_insert_key(top, ucl_object_fromint((int64_t)(FILE_TAG(sb) <<
+	    POS_BITS | (uint64_t)(start + (end - buf > (ptrdiff_t)plen ?
+	    end - buf - (ptrdiff_t)plen : 0)))), "position", 0, false);
 	if (rotated)
 		ucl_object_insert_key(top, ucl_object_frombool(true),
 		    "rotated", 0, false);

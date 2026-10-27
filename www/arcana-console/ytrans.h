@@ -28,8 +28,10 @@ int	ytrans_interfaces(cbl_conn *conn, bool v4, bool v6,
 int	ytrans_data(cbl_conn *conn, const char *names, ucl_object_t **out,
 	    char *err, size_t errlen);
 /* The same of the nodes by SID (none: all), what xpath selects of them
- * when it is not NULL. */
+ * when it is not NULL; refused, the node at fault's SID in *errsid (0:
+ * none said) when errsid is not NULL. */
 int	ytrans_get(cbl_conn *conn, const uint64_t *sids, size_t ns,
-	    const char *xpath, ucl_object_t **out, char *err, size_t errlen);
+	    const char *xpath, ucl_object_t **out, char *err, size_t errlen,
+	    uint64_t *errsid);
 
 #endif	/* !_ARCANA_YTRANS_H_ */

@@ -334,7 +334,7 @@ ATF_TC_BODY(restconf, tc)
 	struct authn	 a;
 	struct resp	 r;
 	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 64];
-	char		 host[128], path[256];
+	char		 host[128], path[256], id[16];
 
 	start(tc, 0, NULL);
 	http("GET", "/.well-known/host-meta", NULL, &r);
@@ -354,8 +354,9 @@ ATF_TC_BODY(restconf, tc)
 	    "jgd.sock\"}", cwd);
 	http("POST", "/api/servers", body, &r);
 	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
 	snprintf(host, sizeof(host), "/restconf/data/arcana-fleet:fleet/"
-	    "host=%s", jstr(&r, "servers.0.id"));
+	    "host=%s", id);
 	resp_free(&r);
 	http("GET", "/restconf", NULL, &r);
 	EXPECT(&r, 200);
@@ -372,6 +373,131 @@ ATF_TC_BODY(restconf, tc)
 	ATF_CHECK_STREQ("urn:ietf:params:restconf:capability:depth:1.0",
 	    jstr(&r, "ietf-restconf-monitoring:restconf-state.capabilities."
 	    "capability.1"));
+	ATF_CHECK_STREQ(id, jstr(&r, "ietf-restconf-monitoring:restconf-state."
+	    "streams.stream.0.name"));
+	ATF_CHECK(strstr(r.body, "/restconf/streams/") != NULL);
+	resp_free(&r);
+	/* The host's events as Server-Sent Events: a job's comes. */
+	{
+		struct timeval	 tv = { 10, 0 };
+		char		 rq[512], buf[16384];
+		size_t		 len = 0;
+		ssize_t		 n;
+		int		 s, i;
+
+		s = console_socket();
+		ATF_REQUIRE(setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv,
+		    sizeof(tv)) == 0);
+		snprintf(rq, sizeof(rq), "GET /restconf/streams/%s/json "
+		    "HTTP/1.1\r\nHost: localhost:8443\r\nCookie: %s\r\n\r\n",
+		    id, cookie);
+		ATF_REQUIRE(write(s, rq, strlen(rq)) == (ssize_t)strlen(rq));
+		buf[0] = '\0';
+		for (i = 0; i < 50 && strstr(buf, "NETCONF stream") == NULL;
+		    i++) {
+			if ((n = read(s, buf + len, sizeof(buf) - 1 - len)) <= 0)
+				break;
+			len += (size_t)n;
+			buf[len] = '\0';
+		}
+		ATF_CHECK_MSG(strstr(buf, "200") != NULL && strstr(buf,
+		    "text/event-stream") != NULL, "%s", buf);
+		/* Subscribed once the thread has the host: then a job. */
+		usleep(1500000);
+		snprintf(path, sizeof(path), "/api/servers/%s/jobs", id);
+		http("POST", path, "{\"jobs\":[{\"kind\":\"monitor\","
+		    "\"verb\":\"set\",\"args\":[\"name=gre9\",\"interface="
+		    "gre9\",\"address=192.0.2.9\",\"interval=500\",\"eval="
+		    "10000\"]}]}", &r);
+		resp_free(&r);
+		for (i = 0; i < 50 && strstr(buf, "arcana-events:event") ==
+		    NULL; i++) {
+			if ((n = read(s, buf + len, sizeof(buf) - 1 - len)) <= 0)
+				break;
+			len += (size_t)n;
+			buf[len] = '\0';
+		}
+		ATF_CHECK_MSG(strstr(buf, "\nid: 20") != NULL && strstr(buf,
+		    "\ndata: {\"ietf-restconf:notification\":{\"eventTime\":")
+		    != NULL && strstr(buf, "\"arcana-events:event\":") != NULL,
+		    "%s", buf);
+		close(s);
+		/* Back with the id of one before: the agent's kept events
+		 * since then first, the job's among them, then its replay
+		 * said done. */
+		s = console_socket();
+		ATF_REQUIRE(setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv,
+		    sizeof(tv)) == 0);
+		snprintf(rq, sizeof(rq), "GET /restconf/streams/%s/json "
+		    "HTTP/1.1\r\nHost: localhost:8443\r\nCookie: %s\r\n"
+		    "Last-Event-ID: 2001-01-01T00:00:00Z\r\n\r\n", id, cookie);
+		ATF_REQUIRE(write(s, rq, strlen(rq)) == (ssize_t)strlen(rq));
+		len = 0;
+		buf[0] = '\0';
+		for (i = 0; i < 50 && strstr(buf, "replay-completed") == NULL;
+		    i++) {
+			if ((n = read(s, buf + len, sizeof(buf) - 1 - len)) <= 0)
+				break;
+			len += (size_t)n;
+			buf[len] = '\0';
+		}
+		ATF_CHECK_MSG(strstr(buf, "\"arcana-events:event\":") != NULL &&
+		    strstr(buf, "replay-completed") != NULL, "%s", buf);
+		close(s);
+	}
+	/* A subscription of one's own (RFC 8650): POSTed, its id and URI
+	 * answered; that URI's GET its stream, the operational datastore
+	 * every half second; taken once. */
+	snprintf(path, sizeof(path), "%s/ietf-subscribed-notifications:"
+	    "establish-subscription", host);
+	http("POST", path, "{\"ietf-subscribed-notifications:input\":{"
+	    "\"ietf-yang-push:datastore\":\"ietf-datastores:operational\","
+	    "\"ietf-yang-push:datastore-xpath-filter\":\"/ietf-interfaces:"
+	    "interfaces/interface[name='lo0']/oper-status\","
+	    "\"ietf-yang-push:periodic\":{\"period\":50}}}", &r);
+	EXPECT(&r, 200);
+	{
+		struct timeval	 tv = { 10, 0 };
+		char		 rq[512], buf[16384], sub[64];
+		const char	*uri;
+		size_t		 len = 0;
+		ssize_t		 n;
+		int		 s, i;
+
+		uri = jstr(&r, "ietf-subscribed-notifications:output."
+		    "ietf-restconf-subscribed-notifications:uri");
+		ATF_REQUIRE_MSG(uri != NULL && strstr(uri, "/restconf/"
+		    "subscriptions/") != NULL, "%s", r.body);
+		snprintf(sub, sizeof(sub), "%s", strstr(uri, "/restconf/"));
+		resp_free(&r);
+		s = console_socket();
+		ATF_REQUIRE(setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv,
+		    sizeof(tv)) == 0);
+		snprintf(rq, sizeof(rq), "GET %s HTTP/1.1\r\nHost: "
+		    "localhost:8443\r\nCookie: %s\r\n\r\n", sub, cookie);
+		ATF_REQUIRE(write(s, rq, strlen(rq)) == (ssize_t)strlen(rq));
+		buf[0] = '\0';
+		for (i = 0; i < 50 && strstr(buf, "push-update") == NULL;
+		    i++) {
+			if ((n = read(s, buf + len, sizeof(buf) - 1 - len)) <= 0)
+				break;
+			len += (size_t)n;
+			buf[len] = '\0';
+		}
+		ATF_CHECK_MSG(strstr(buf, "\"ietf-yang-push:push-update\":") !=
+		    NULL && strstr(buf, "\"oper-status\":\"up\"") != NULL,
+		    "%s", buf);
+		close(s);
+		http("GET", sub, NULL, &r);
+		EXPECT(&r, 404);
+		resp_free(&r);
+	}
+	http("POST", path, "{\"ietf-subscribed-notifications:input\":{"
+	    "\"stream\":\"OTHER\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/restconf/data/arcana-fleet:fleet", "{}", &r);
+	EXPECT(&r, 405);
 	resp_free(&r);
 	/* A leaf of the agent's, by its path. */
 	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces/"

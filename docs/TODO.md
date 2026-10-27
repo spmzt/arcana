@@ -91,9 +91,6 @@
   ("one that died is not undone after"), so BIRD's next start reads a
   change nobody confirmed.  Safe mode takes an unconfirmed change back
   elsewhere: put the file back here too?
-- FIBs and link-local routes: whether the agent's if-create and if-set
-  jobs always set an interface's FIB before its addresses (see Known
-  limits).
 
 ## Not yet run for real
 
@@ -112,7 +109,6 @@ Written and tested with stand-ins only:
 - The firewall, bridges and geneve: any of it in a vnet jail; what is
   kept in rc.conf for a bridge or a tunnel; NAT and NAT64; a spanning
   tree of more than one bridge; traffic through a geneve tunnel.
-- Logs: one turned over by the real newsyslog while it is followed.
 - SD-WAN: the steering by BFD on the lab, resource faults; DNS sent to
   the service's resolver by ipfw `fwd` (ipfw takes the rule; no query
   has gone through it); DHCPv6 at a UNI (dnsmasq's enable-ra) and the

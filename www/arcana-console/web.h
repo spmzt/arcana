@@ -147,6 +147,9 @@ struct http_request {
 	uint8_t			*resp;
 	size_t			 resp_len, resp_off;
 	bool			 headers_sent;
+	struct buf		*stream;	/* a reply that does not end: what
+						 * waits to be written */
+	bool			 stream_end;
 	int			 flags;
 	TAILQ_ENTRY(http_request) list;
 };
@@ -170,6 +173,15 @@ void		 http_response(struct http_request *, int, const void *,
 		    size_t);
 void		 http_response_header(struct http_request *, const char *,
 		    const char *);
+/*
+ * A reply that does not end (Server-Sent Events): http_stream() sends
+ * the headers set, with no length; http_stream_put() each piece of its
+ * body, in the worker; http_stream_end() ends it once what was put is
+ * out.  The client going frees the request, its route's on_free first.
+ */
+void		 http_stream(struct http_request *, int);
+void		 http_stream_put(struct http_request *, const void *, size_t);
+void		 http_stream_end(struct http_request *);
 int		 http_request_header(struct http_request *, const char *,
 		    const char **);
 int		 http_request_cookie(struct http_request *, const char *,

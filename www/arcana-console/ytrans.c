@@ -306,12 +306,13 @@ ytrans_data(cbl_conn *conn, const char *names, ucl_object_t **out,
 		}
 		sids[ns++] = n->sid;
 	}
-	return (ytrans_get(conn, sids, ns, NULL, out, err, errlen));
+	return (ytrans_get(conn, sids, ns, NULL, out, err, errlen, NULL));
 }
 
 int
 ytrans_get(cbl_conn *conn, const uint64_t *sids, size_t ns,
-    const char *xpath, ucl_object_t **out, char *err, size_t errlen)
+    const char *xpath, ucl_object_t **out, char *err, size_t errlen,
+    uint64_t *errsid)
 {
 	const struct cbl_ymodule	*m;
 	const struct cbl_ynode		*n;
@@ -327,6 +328,8 @@ ytrans_get(cbl_conn *conn, const uint64_t *sids, size_t ns,
 
 	*out = NULL;
 	err[0] = '\0';
+	if (errsid != NULL)
+		*errsid = 0;
 	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_GET, 0, &req)) != 0 || (xpath != NULL ?
 	    (error = cbl_msg_put_yget_xpath(req, sids, ns, xpath)) != 0 :
@@ -338,6 +341,8 @@ ytrans_get(cbl_conn *conn, const uint64_t *sids, size_t ns,
 		snprintf(err, errlen, "%s", rep != NULL &&
 		    cbl_msg_err_str(rep) != NULL ? cbl_msg_err_str(rep) :
 		    strerror(error));
+		if (errsid != NULL && rep != NULL)
+			*errsid = cbl_msg_err_sid(rep);
 		cbl_msg_free(rep);
 		return (error);
 	}

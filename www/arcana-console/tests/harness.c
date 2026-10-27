@@ -51,7 +51,6 @@ char		 harness_telegram_api[128];	/* the agent's Bot API, or "" */
 
 extern char	**environ;
 
-static int	console_socket(void);
 void	show(const char *);
 
 void
@@ -840,7 +839,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\"\\n\").encode())\n        f.flush()\n    c.close()\n");
 	put("tools/suricata", "#!/bin/sh\n"
 	    /* Started: the daemon, under its own name, its pid where told. */
-	    "[ \"$1\" = --hold ] && { echo $$ > \"$2\"; trap : USR2; sleep 60; "
+	    "[ \"$1\" = --hold ] && { echo $$ > \"$2\"; trap : USR2; sleep 600; "
 	    "exit 0; }\n"
 	    "echo \"suricata $*\" >> squid.log\n"
 	    "[ \"$1\" = --build-info ] && { printf 'This is Suricata version "
@@ -1452,7 +1451,7 @@ resp_free(struct resp *r)
 }
 
 /* A connected socket to the console: ./k.sock, or its TCP port. */
-static int
+int
 console_socket(void)
 {
 	struct sockaddr_un	sun;

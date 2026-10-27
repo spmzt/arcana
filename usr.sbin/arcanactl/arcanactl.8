@@ -1322,6 +1322,11 @@ With
 .Fl f ,
 only what was written after that position, which is how a log is
 followed.
+A position is the file's as well as the offset in it: a log
+.Xr newsyslog 8
+turned over since is followed on in the file it now is
+.Pq Pa name.0 ,
+then the new one from its start.
 A file
 .Xr newsyslog 8
 has packed is unpacked and read whole.

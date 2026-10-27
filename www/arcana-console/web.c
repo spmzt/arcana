@@ -712,6 +712,8 @@ req_free(struct http_request *req)
 		free(req->http_body);
 	}
 	free(req->resp);
+	if (req->stream != NULL)
+		buf_free(req->stream);
 	free(req->path);
 	free(req->query_string);
 	free(req);
@@ -803,6 +805,40 @@ http_response(struct http_request *req, int status, const void *d,
 	}
 	req->resp_len = len;
 	if (req->wsi != NULL && !(req->flags & F_UPGRADE))
+		lws_callback_on_writable(req->wsi);
+}
+
+void
+http_stream(struct http_request *req, int status)
+{
+
+	if (req->status != 0)
+		return;
+	req->status = status;
+	req->stream = buf_alloc(512);
+	if (req->wsi != NULL)
+		lws_callback_on_writable(req->wsi);
+}
+
+void
+http_stream_put(struct http_request *req, const void *d, size_t len)
+{
+
+	if (req->stream == NULL || req->stream_end || len == 0)
+		return;
+	buf_append(req->stream, d, len);
+	if (req->wsi != NULL && req->headers_sent)
+		lws_callback_on_writable(req->wsi);
+}
+
+void
+http_stream_end(struct http_request *req)
+{
+
+	if (req->stream == NULL)
+		return;
+	req->stream_end = true;
+	if (req->wsi != NULL)
 		lws_callback_on_writable(req->wsi);
 }
 
@@ -1248,7 +1284,8 @@ req_write(struct lws *wsi, struct pss *pss)
 				    (unsigned char *)name, (unsigned char *)
 				    h->value, (int)strlen(h->value), &p, end);
 		}
-		if (rc == 0)
+		/* A stream's length is not known: it goes until it ends. */
+		if (rc == 0 && req->stream == NULL)
 			rc = lws_add_http_header_content_length(wsi,
 			    (lws_filepos_t)req->resp_len, &p, end);
 		if (rc == 0)
@@ -1257,7 +1294,7 @@ req_write(struct lws *wsi, struct pss *pss)
 		if (rc != 0)
 			return (ending(wsi, "the reply's headers could not be written"));
 		req->headers_sent = true;
-		if (req->resp_len > 0) {
+		if (req->stream != NULL || req->resp_len > 0) {
 			lws_callback_on_writable(wsi);
 			return (0);
 		}
@@ -1268,6 +1305,34 @@ req_write(struct lws *wsi, struct pss *pss)
 		if (rc < 0)
 			return (ending(wsi, "the end of a reply without "
 			    "a body could not be written"));
+	} else if (req->stream != NULL) {
+		/* What was put, a write at a time; its end once all is out. */
+		if ((n = req->stream->offset) > 0) {
+			if (n > WRITE_CHUNK)
+				n = WRITE_CHUNK;
+			if ((n = allowed(wsi, n)) == 0)
+				return (0);
+			buf = xmalloc(LWS_PRE + n);
+			memcpy(buf + LWS_PRE, req->stream->data, n);
+			rc = lws_write(wsi, buf + LWS_PRE, n, LWS_WRITE_HTTP);
+			free(buf);
+			if (rc < 0)
+				return (ending(wsi, "a stream's piece could not be "
+				    "written"));
+			memmove(req->stream->data, req->stream->data + n,
+			    req->stream->offset - n);
+			req->stream->offset -= n;
+			if (req->stream->offset > 0 || req->stream_end)
+				lws_callback_on_writable(wsi);
+			return (0);
+		}
+		if (!req->stream_end)
+			return (0);
+		buf = xmalloc(LWS_PRE + 1);
+		rc = lws_write(wsi, buf + LWS_PRE, 0, LWS_WRITE_HTTP_FINAL);
+		free(buf);
+		if (rc < 0)
+			return (ending(wsi, "a stream's end could not be written"));
 	} else if (req->resp_off < req->resp_len) {
 		n = req->resp_len - req->resp_off;
 		if (n > WRITE_CHUNK)

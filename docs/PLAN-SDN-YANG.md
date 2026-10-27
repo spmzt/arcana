@@ -874,12 +874,14 @@ whose first part is served.
   `EDIT`; check: RFC 8072's examples.
 - 4.1.6 C: ETag and Last-Modified from the host's commit counter;
   conditional requests; check: §3.4.1.2 and §3.4.1.3.
-- 4.1.7 C: `ietf-restconf:errors` from the agent's error structure
-  with §7's status mapping; check: one test per error-tag.
-- 4.1.8 C: `restconf-state/streams` and SSE delivery with the §6.4
-  envelope; `Last-Event-ID` → replay; check: a stream over curl.
-- 4.1.9 C: `establish-subscription` by POST with the SSE location;
-  check: a periodic subscription from curl.
+- 4.1.7 C (the rest): one test per error-tag. `ietf-restconf:errors`
+  from the agent's refusal (its errno as §7's status and tag, the node
+  at fault as error-path) is done.
+- 4.1.8 done (console rcstream.c): `restconf-state/streams`, a host's
+  NETCONF stream each, as SSE with the §6.4 envelope; an event's time
+  its id, `Last-Event-ID` the agent's replay from it.
+- 4.1.9 done (console rcstream.c): `establish-subscription` POSTed under
+  a host's entry, its id and URI answered, the URI's GET its stream.
 - 4.1.10 C: `application/yang-data+cbor` pass-through; check: the
   PWA's decoder reads it.
 - 4.2.1 C: JSON → CBOR by schema (names → SIDs with module

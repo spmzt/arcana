@@ -192,9 +192,10 @@ rc_alias(struct work *w, const char *ifname, const char *af, const char *addr,
 }
 
 /*
- * "word N" in ifconfig_<if>, word mtu, fib or tunnelfib: the number
- * replaced where the word is, the pair added where it is not; with
- * value NULL, the pair taken out.
+ * "word N" in ifconfig_<if>, word mtu, fib or tunnelfib: mtu's number
+ * replaced where the word is, the pair added at the end where it is
+ * not; a table's pair first on the line; with value NULL, the pair
+ * taken out.
  */
 int
 rc_word(struct work *w, const char *ifname, const char *word,
@@ -207,6 +208,20 @@ rc_word(struct work *w, const char *ifname, const char *word,
 	name = wfmt(w, "ifconfig_%s", rc_ifname(w, ifname));
 	key = wfmt(w, "%s ", word);
 	len = strlen(key);
+	/*
+	 * A table leads the line: ifconfig(8) takes its words in order at
+	 * boot, and an address set before the table has its route in
+	 * table 0.  Taken out where it was, put first.
+	 */
+	if (value != NULL && (strcmp(word, "fib") == 0 || strcmp(word,
+	    "tunnelfib") == 0)) {
+		if (rc_word(w, ifname, word, NULL, errp) != 0)
+			return (-1);
+		v = rc_get(w, name);
+		return (rc_set(w, name, "=", v != NULL && v[0] != '\0' ?
+		    wfmt(w, "%s%s %s", key, value, v) : wfmt(w, "%s%s", key,
+		    value), errp));
+	}
 	if ((v = rc_get(w, name)) == NULL)
 		return (value == NULL ? 0 : rc_set(w, name, "=", wfmt(w,
 		    "%s%s", key, value), errp));

@@ -71,6 +71,7 @@ void		 http_abandon(const char *);
 int		 tcp_socket(int);
 void		 http(const char *, const char *, const char *, struct resp *);
 int		 ws_open(const char *);
+int		 console_socket(void);
 void		 ws_send(int, const char *);
 char		*ws_recv(int);
 void		 http_bearer(const char *, const char *, const char *,

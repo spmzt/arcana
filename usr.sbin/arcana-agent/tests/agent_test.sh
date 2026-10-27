@@ -3565,10 +3565,16 @@ EOS
 	atf_check -s exit:1 -o match:'Invalid argument' \
 	    "$JGC" -c "$SOCK" interface lo0 mtu 9999
 	# Its routing tables: what it receives, and a tunnel's outer
-	# packets; kept as words of ifconfig_<if>, 0 taken out again.
+	# packets; kept as words of ifconfig_<if>, first, so that at boot
+	# its addresses come after (their routes in its table); 0 taken
+	# out again.
 	atf_check -o match:'fake-ifconfig lo0 fib 2' -o match:'set fib' \
 	    "$JGC" -p -c "$SOCK" interface lo0 fib 2
-	atf_check -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up fib 2"$' \
+	atf_check -o match:'^ifconfig_lo0="fib 2 inet 127.0.0.1/8 mtu 1300 up"$' \
+	    cat rc.conf
+	sed -i '' -e 's|^ifconfig_lo0=.*|ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up fib 2"|' rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 fib 3
+	atf_check -o match:'^ifconfig_lo0="fib 3 inet 127.0.0.1/8 mtu 1300 up"$' \
 	    cat rc.conf
 	atf_check -o match:'fake-ifconfig lo0 tunnelfib 1' \
 	    "$JGC" -c "$SOCK" interface lo0 tunnelfib 1
@@ -3666,7 +3672,7 @@ EOS
 	    tunnelfib 0
 	atf_check -o inline:'gre4 create\ngre4 fib 3\ngre4 tunnelfib 0\ngre4 tunnel 192.0.2.1 192.0.2.2\ngre4 inet 10.255.1.0/31 10.255.1.1\ngre4 up\n' \
 	    cat ifconfig.log
-	atf_check -o match:'^ifconfig_gre4="tunnel 192.0.2.1 192.0.2.2 fib 3 up"$' \
+	atf_check -o match:'^ifconfig_gre4="fib 3 tunnel 192.0.2.1 192.0.2.2 up"$' \
 	    cat rc.conf
 	atf_check -o ignore "$JGC" -p -c "$SOCK" interface gre4 destroy
 	atf_check -o not-match:'gre4' cat rc.conf
@@ -8587,7 +8593,11 @@ EOS
 	    -o match:'"tag":"syslogd","text":"last message repeated 2 times"' \
 	    cat log.json
 	size=$(wc -c < log/messages | tr -d ' ')
-	atf_check -o match:"\"size\":$size,\"position\":$size" cat log.json
+	atf_check -o match:"\"size\":$size,\"position\":[0-9]+" cat log.json
+	# A position: the file's (its inode's tag, above 40 bits) and the
+	# offset in it.
+	pos=$(grep -o '"position":[0-9]*' log.json | cut -d: -f2)
+	[ $((pos % 1099511627776)) -eq "$size" ] || atf_fail "position $pos"
 	# By text, in either case; the last of them only; another log.
 	atf_check -o match:'"lines":\[\{[^}]*"tag":"sshd"[^}]*\}\]' \
 	    "$JGC" -c "$SOCK" log messages PUBLICKEY
@@ -8608,15 +8618,26 @@ EOS
 	atf_check -s exit:1 -e match:'@dmesg or @audit' -o ignore "$JGC" -c "$SOCK" log @nosuch
 	# Followed: only what was written since, a line half written not
 	# yet; a file shorter than it was is read again from its start.
-	atf_check -o match:'"lines":\[\]' -o match:"\"position\":$size" \
-	    "$JGC" -c "$SOCK" log -f "$size"
+	atf_check -o match:'"lines":\[\]' -o match:"\"position\":$pos" \
+	    "$JGC" -c "$SOCK" log -f "$pos"
 	printf 'Oct  5 12:00:09 web1 ntpd[5]: time set\nOct  5 12:00:10 web1 half' >> log/messages
 	atf_check -o match:'"lines":\[\{[^}]*"tag":"ntpd","text":"time set"\}\]' \
-	    -o match:"\"position\":$((size + 39))" \
-	    "$JGC" -c "$SOCK" log -f "$size"
+	    -o match:"\"position\":$((pos + 39))" \
+	    "$JGC" -c "$SOCK" log -f "$pos"
+	pos=$((pos + 39))
+	# Turned over as newsyslog(8) does, moved aside and a new one: the
+	# rest of the file before (now messages.0), then the new one whole,
+	# nothing lost and nothing read from its middle.
+	printf ' done\n' >> log/messages
+	mv log/messages log/messages.0
 	printf 'Oct  5 13:00:00 web1 newsyslog[9]: logfile turned over\n' > log/messages
-	atf_check -o match:'"rotated":true' -o match:'"tag":"newsyslog"' \
-	    "$JGC" -c "$SOCK" log -f "$size"
+	atf_check -o match:'"lines":\[\{[^}]*"text":"half done"\},\{[^}]*"tag":"newsyslog"[^}]*\}\]' \
+	    -o not-match:'"rotated"' "$JGC" -c "$SOCK" log -f "$pos"
+	pos=$("$JGC" -c "$SOCK" log | grep -o '"position":[0-9]*' | cut -d: -f2)
+	# The same file shorter than it was: read again from its start.
+	printf 'Oct  5 14:00:00 web1 sshd[9]: again\n' > log/messages
+	atf_check -o match:'"rotated":true' -o match:'"tag":"sshd"' \
+	    "$JGC" -c "$SOCK" log -f "$pos"
 	# Only a file of the log directory, by its name, and not a packed one.
 	for bad in ../rc.conf .hidden a/b; do
 		atf_check -s exit:1 -e match:'named' -o ignore \
