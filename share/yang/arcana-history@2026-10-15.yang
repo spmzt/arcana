@@ -3,6 +3,9 @@ module arcana-history {
   namespace "urn:arcana:yang:arcana-history";
   prefix archist;
 
+  import cblink-gen {
+    prefix cg;
+  }
   import ietf-yang-types {
     prefix yang;
     reference
@@ -317,6 +320,7 @@ module arcana-history {
           "The jails told apart.";
       }
       list sample {
+        cg:struct "sample";
         key "time";
         description
           "The samples kept, oldest first.";
@@ -336,6 +340,7 @@ module arcana-history {
       }
       output {
         list sample {
+          cg:struct "sample";
           key "time";
           description
             "The samples, oldest first.";

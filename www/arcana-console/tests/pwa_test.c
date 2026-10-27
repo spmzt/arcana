@@ -538,6 +538,39 @@ prologue(const atf_tc_t *tc, int nservers)
 	wait_js("document.querySelector('.tiles .tile')", 10);
 }
 
+/*
+ * Game mode: a controller (a stand-in for the Gamepad API's) shows the
+ * buttons' words, moves a visible focus with the D-pad, and goes to the
+ * next tab with RB, the side bar's next page where there is none.
+ */
+static void
+part_pad(void)
+{
+
+	run("window.__pad = { connected: true, index: 0, id: 'stand-in', "
+	    "mapping: 'standard', axes: [0, 0, 0, 0], buttons: Array.from({ "
+	    "length: 17 }, () => ({ pressed: false, value: 0 })) }; "
+	    "navigator.getGamepads = () => [window.__pad]; window.padPress = "
+	    "(n) => { window.__pad.buttons[n].pressed = true; setTimeout(() => "
+	    "{ window.__pad.buttons[n].pressed = false; }, 150); }; "
+	    "window.dispatchEvent(new Event('gamepadconnected'));");
+	wait_js("document.documentElement.classList.contains('pad') && "
+	    "document.querySelector('.padhint') && document.querySelector("
+	    "'.padhint').textContent.includes('Press')", 5);
+	run("window.padPress(13)");
+	wait_js("document.activeElement && document.activeElement !== "
+	    "document.body", 5);
+	/* No tabs on the page: the side bar's next page. */
+	wait_js("document.querySelector('aside.rail li.titem.selected')", 20);
+	run("window.tab0 = document.querySelector('aside.rail li.titem."
+	    "selected').textContent; setTimeout(() => window.padPress(5), "
+	    "300);");
+	wait_js("document.querySelector('aside.rail li.titem.selected') && "
+	    "document.querySelector('aside.rail li.titem.selected')."
+	    "textContent !== window.tab0", 10);
+	shot("0p-game-mode");
+}
+
 static void
 part_shell(void)
 {
@@ -3730,7 +3763,8 @@ part_relay(void)
 	unlink("rc.d/speederv2");
 }
 
-/* The Mail tab: OpenSMTPD's form rendered on the host; a table written. */
+/* The Mail tab: OpenSMTPD's form rendered on the host; a table written;
+ * the queue's limit set. */
 static void
 part_mail(void)
 {
@@ -3810,6 +3844,17 @@ part_mail(void)
 	run("document.querySelector('form[data-form=ml-conftext]')."
 	    "scrollIntoView({block: 'start'})");
 	shot("7q-mail");
+	/* The queue's limit, over which it is a fault: kept on the host. */
+	run("const f = document.querySelector('form[data-form=ml-watch]'); "
+	    "f.max.value = '25'; f.requestSubmit();");
+	queued_run();
+	for (i = 0; i < 300 && system("grep -q '\"queue_max\":25' "
+	    "smtpd.d/watch.json") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "the queue's limit is not kept");
+	dock_closed();
+	wait_js("document.querySelector('form[data-form=ml-watch]').max.value "
+	    "=== '25'", 20);
 }
 
 static void
@@ -7355,6 +7400,25 @@ ATF_TC_CLEANUP(pwa_shell, tc)
 	browser_stop();
 }
 
+ATF_TC_WITH_CLEANUP(pwa_pad);
+ATF_TC_HEAD(pwa_pad, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Game mode: a controller moves the focus, presses and goes between tabs, its buttons' words shown");
+	atf_tc_set_md_var(tc, "timeout", "120");
+}
+ATF_TC_BODY(pwa_pad, tc)
+{
+
+	prologue(tc, 0);
+	part_pad();
+}
+ATF_TC_CLEANUP(pwa_pad, tc)
+{
+
+	browser_stop();
+}
+
 ATF_TC_WITH_CLEANUP(pwa_hosts);
 ATF_TC_HEAD(pwa_hosts, tc)
 {
@@ -8372,6 +8436,27 @@ part_security(void)
 	    "document.querySelector('table.surules .chip.st-up')", 30);
 	dock_closed();
 	shot("9w-security-ids-rules");
+	/* A class's rules set whole, and modify.conf kept. */
+	click_when("button[data-act=sur-set][data-arg='classtype:policy-"
+	    "violation'][data-value=off]", 10);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('.secpage table.net tr')].some("
+	    "r => r.textContent.includes('policy-violation') && r.textContent."
+	    "includes('off') && r.querySelector('button[data-value=default]'))",
+	    30);
+	dock_closed();
+	run("const f = document.querySelector('form[data-form=sur-modify]'); "
+	    "f.text.value = '2000005 \"flow:established\" \"flow:established,"
+	    "to_server\"\\n'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 300 && system("grep -q to_server data/agent/suricata-"
+	    "modify.conf 2>/dev/null || grep -rq to_server --include="
+	    "suricata-modify.conf . 2>/dev/null") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 300, "modify.conf is not kept");
+	dock_closed();
 	/* Its sources: the list fetched, a commercial one enabled with its
 	 * secret code, which the host keeps alone. */
 	click_when("button[data-act=sec-idsview][data-arg=sources]", 10);
@@ -8654,6 +8739,7 @@ ATF_TP_ADD_TCS(tp)
 {
 
 	ATF_TP_ADD_TC(tp, pwa_shell);
+	ATF_TP_ADD_TC(tp, pwa_pad);
 	ATF_TP_ADD_TC(tp, pwa_routes);
 	ATF_TP_ADD_TC(tp, pwa_hosts);
 	ATF_TP_ADD_TC(tp, pwa_nettab);

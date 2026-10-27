@@ -8,6 +8,12 @@
  * the console sends (so what runs is what was checked, by smtpd -n
  * here), writes a table (a password hashed by OpenSMTPD's encrypt,
  * never kept clear), or does what smtpctl does to the queue.
+ *
+ * Watched every --smtpd-watch seconds (60 unless said, never with 0),
+ * on the host and in each jail that has it: smtpctl's counters kept, a
+ * day of them, for the read's graphs; a mail fault when smtpd is
+ * enabled and not running (Major), or when more are queued than the
+ * limit the tab set (watch.json beside the tables; Minor).
  */
 
 #include <sys/param.h>
@@ -20,9 +26,12 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <ucl.h>
@@ -819,6 +828,116 @@ line_key(struct work *w, const char *backend, const char *line)
  * The entries of a table smtpd.conf declares, as JSON: each its key,
  * and its value unless the table holds passwords or a sign-in.
  */
+static const char *
+makemap_bin(struct work *w)
+{
+	const char	*p;
+
+	return ((p = tool(w, "makemap")) != NULL ? p :
+	    "/usr/local/sbin/makemap");
+}
+
+static bool
+is_db(const struct ctable *ct)
+{
+
+	return (strcmp(ct->backend, "db") == 0);
+}
+
+/* A db: table's text, as makemap makes the database of: its path
+ * without .db, the way makemap names the one by the other. */
+static const char *
+db_source(struct work *w, const char *path)
+{
+	size_t	n = strlen(path);
+
+	if (n > 3 && strcmp(path + n - 3, ".db") == 0)
+		return (wstrndup(w, path, n - 3));
+	return (wfmt(w, "%s.txt", path));
+}
+
+/* A db: table's lines: its text, else what makemap -U dumps of it. */
+static char *
+db_text(struct work *w, const struct ctable *ct, size_t *lenp)
+{
+	struct execres	 res;
+	char		*text, *argv[4];
+
+	if ((text = scope_slurp(w, db_source(w, ct->path), lenp)) != NULL)
+		return (text);
+	argv[0] = (char *)(uintptr_t)makemap_bin(w);
+	argv[1] = (char *)(uintptr_t)"-U";
+	argv[2] = (char *)(uintptr_t)ct->path;
+	argv[3] = NULL;
+	if (run_exec(w, scope_jexec(w, argv), &res) != 0 || res.out == NULL)
+		return (NULL);
+	*lenp = res.outlen;
+	return (wstrndup(w, res.out, res.outlen));
+}
+
+/*
+ * The kind of map smtpd.conf uses a table as, for makemap -t: aliases
+ * where it is an action's alias table, set where it is a list matched
+ * against (domain, mail-from, rcpt-to, src, helo-src), a map else.
+ */
+static const char *
+db_type(const char *conf, const char *name)
+{
+	static const char *const sets[] = { "domain", "mail-from", "rcpt-to",
+	    "src", "helo-src", "for", "from" };
+	const char	*p, *b, *e;
+	char		 tok[80], prev[32];
+	size_t		 n, i;
+
+	snprintf(tok, sizeof(tok), "<%s>", name);
+	for (p = conf; p != NULL && (p = strstr(p, tok)) != NULL; p++) {
+		/* The word before it, a "!" passed over. */
+		for (e = p; e > conf && (e[-1] == ' ' || e[-1] == '\t' ||
+		    e[-1] == '!'); e--)
+			;
+		for (b = e; b > conf && !isspace((unsigned char)b[-1]); b--)
+			;
+		n = (size_t)(e - b) < sizeof(prev) - 1 ? (size_t)(e - b) :
+		    sizeof(prev) - 1;
+		memcpy(prev, b, n);
+		prev[n] = '\0';
+		if (strcmp(prev, "alias") == 0)
+			return ("aliases");
+		for (i = 0; i < nitems(sets); i++)
+			if (strcmp(prev, sets[i]) == 0)
+				return ("set");
+	}
+	return (NULL);
+}
+
+/* A db: table made again from its text by makemap(8). */
+static int
+db_make(struct work *w, const struct ctable *ct, const char **errp)
+{
+	struct execres	 res;
+	const char	*type;
+	char		*argv[8], *conf;
+	size_t		 len;
+	int		 n = 0;
+
+	conf = scope_slurp(w, opts.smtpd_conf, &len);
+	type = conf != NULL ? db_type(conf, ct->name) : NULL;
+	argv[n++] = (char *)(uintptr_t)makemap_bin(w);
+	if (type != NULL) {
+		argv[n++] = (char *)(uintptr_t)"-t";
+		argv[n++] = (char *)(uintptr_t)type;
+	}
+	argv[n++] = (char *)(uintptr_t)"-o";
+	argv[n++] = (char *)(uintptr_t)ct->path;
+	argv[n++] = (char *)(uintptr_t)db_source(w, ct->path);
+	argv[n] = NULL;
+	if (run_exec(w, scope_jexec(w, argv), &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "makemap"));
+		return (-1);
+	}
+	return (0);
+}
+
 static ucl_object_t *
 ctable_json(struct work *w, const struct ctable *ct)
 {
@@ -842,17 +961,22 @@ ctable_json(struct work *w, const struct ctable *ct)
 	ucl_object_insert_key(o, ucl_object_frombool(secret), "secret", 0,
 	    false);
 	if (strcmp(ct->backend, "file") != 0 && strcmp(ct->backend,
-	    "passwd") != 0) {
-		/* db: and the others: their source is the admin's. */
+	    "passwd") != 0 && !is_db(ct)) {
+		/* What no file holds (a database's server, a socket): its
+		 * own. */
 		ucl_object_insert_key(o, ucl_object_frombool(false), "editable",
 		    0, false);
 		return (o);
 	}
 	ucl_object_insert_key(o, ucl_object_frombool(true), "editable", 0,
 	    false);
+	if (is_db(ct))
+		ucl_object_insert_key(o, ucl_object_fromstring(db_source(w,
+		    ct->path)), "source", 0, false);
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	n = 0;
-	if ((text = scope_slurp(w, ct->path, &len)) != NULL) {
+	if ((text = is_db(ct) ? db_text(w, ct, &len) : scope_slurp(w, ct->path,
+	    &len)) != NULL) {
 		copy = wstrdup(w, text);
 		while ((line = strsep(&copy, "\n")) != NULL && n < 5000) {
 			line += strspn(line, " \t");
@@ -900,6 +1024,278 @@ table_json(struct work *w, const char *name)
 		ucl_array_append(arr, ucl_object_fromstring(line));
 	}
 	return (arr);
+}
+
+#define	WATCH_PLACES	16
+#define	WATCH_KEPT	1440		/* samples a place, a day of minutes */
+
+/* A sample of smtpctl show stats: what is queued, deliveries so far. */
+struct msample {
+	time_t		t;
+	int64_t		queued, ok, tempfail, permfail, sessions;
+};
+
+static struct {
+	char		 place[MAXHOSTNAMELEN];	/* the jail, "" the host */
+	struct msample	*v;
+	int		 first, n;
+} rings[WATCH_PLACES];
+static pthread_mutex_t	rings_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static int64_t
+stat_num(const ucl_object_t *o, const char *key)
+{
+	const ucl_object_t	*v;
+
+	return ((v = ucl_object_lookup(o, key)) != NULL &&
+	    ucl_object_type(v) == UCL_INT ? ucl_object_toint(v) : 0);
+}
+
+/* A place's ring, made when asked to; NULL, none.  The lock is held. */
+static int
+ring_of(const char *place, bool make)
+{
+	int	i, free_at = -1;
+
+	for (i = 0; i < WATCH_PLACES; i++) {
+		if (rings[i].v != NULL && strcmp(rings[i].place, place) == 0)
+			return (i);
+		if (rings[i].v == NULL && free_at == -1)
+			free_at = i;
+	}
+	if (!make || free_at == -1 || (rings[free_at].v = calloc(WATCH_KEPT,
+	    sizeof(struct msample))) == NULL)
+		return (-1);
+	snprintf(rings[free_at].place, sizeof(rings[0].place), "%s", place);
+	rings[free_at].first = rings[free_at].n = 0;
+	return (free_at);
+}
+
+static void
+ring_add(const char *place, const struct msample *m)
+{
+	int	i;
+
+	pthread_mutex_lock(&rings_lock);
+	if ((i = ring_of(place, true)) != -1) {
+		if (rings[i].n < WATCH_KEPT)
+			rings[i].v[(rings[i].first + rings[i].n++) % WATCH_KEPT] =
+			    *m;
+		else {
+			rings[i].v[rings[i].first] = *m;
+			rings[i].first = (rings[i].first + 1) % WATCH_KEPT;
+		}
+	}
+	pthread_mutex_unlock(&rings_lock);
+}
+
+/* A place's samples, oldest first, as [t, queued, ok, tempfail,
+ * permfail, sessions] each. */
+static ucl_object_t *
+ring_json(const char *place)
+{
+	const struct msample	*m;
+	ucl_object_t		*arr, *e;
+	int			 i, k;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	pthread_mutex_lock(&rings_lock);
+	if ((i = ring_of(place, false)) != -1)
+		for (k = 0; k < rings[i].n; k++) {
+			m = &rings[i].v[(rings[i].first + k) % WATCH_KEPT];
+			e = ucl_object_typed_new(UCL_ARRAY);
+			ucl_array_append(e, ucl_object_fromint(m->t));
+			ucl_array_append(e, ucl_object_fromint(m->queued));
+			ucl_array_append(e, ucl_object_fromint(m->ok));
+			ucl_array_append(e, ucl_object_fromint(m->tempfail));
+			ucl_array_append(e, ucl_object_fromint(m->permfail));
+			ucl_array_append(e, ucl_object_fromint(m->sessions));
+			ucl_array_append(arr, e);
+		}
+	pthread_mutex_unlock(&rings_lock);
+	return (arr);
+}
+
+static const char *
+watch_path(struct work *w)
+{
+
+	return (wfmt(w, "%s/watch.json", opts.smtpd_dir));
+}
+
+/* The queue's limit the tab set where the work is; 0, none. */
+static int64_t
+watch_limit(struct work *w)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o;
+	int64_t			 n = 0;
+	size_t			 len;
+	char			*text;
+
+	if ((text = scope_slurp(w, watch_path(w), &len)) == NULL)
+		return (0);
+	p = ucl_parser_new(UCL_PARSER_NO_TIME);
+	if (ucl_parser_add_string(p, text, 0) && (o = ucl_parser_get_object(p))
+	    != NULL) {
+		n = stat_num(o, "queue_max");
+		ucl_object_unref(o);
+	}
+	ucl_parser_free(p);
+	return (n > 0 ? n : 0);
+}
+
+/* One place, the host ("") or a jail the work is in: sampled, judged. */
+static void
+place_watch(struct work *w, const char *place)
+{
+	struct msample	 m;
+	ucl_object_t	*st;
+	const char	*text;
+	char		 obj[MAXHOSTNAMELEN + 16], where[MAXHOSTNAMELEN + 8];
+	int64_t		 limit;
+	bool		 enabled, running;
+
+	snprintf(obj, sizeof(obj), "%s%s%ssmtpd", place[0] != '\0' ? "jail:" :
+	    "host:", place, place[0] != '\0' ? "/" : "");
+	snprintf(where, sizeof(where), "%s%s", place[0] != '\0' ? " in " : "",
+	    place);
+	enabled = running = false;
+	svc_state(w, &enabled, &running);
+	if (!running) {
+		if (enabled)
+			fault_set("mail", "Major", obj, "smtpd", "smtpd%s is "
+			    "enabled and not running", where);
+		else
+			fault_clear("mail", obj, "smtpd%s is turned off", where);
+		return;
+	}
+	if ((text = ctl(w, "show", "stats", NULL)) == NULL)
+		return;
+	st = stats_json(w, text);
+	memset(&m, 0, sizeof(m));
+	m.t = time(NULL);
+	m.queued = stat_num(st, "scheduler.envelope");
+	m.ok = stat_num(st, "scheduler.delivery.ok");
+	m.tempfail = stat_num(st, "scheduler.delivery.tempfail");
+	m.permfail = stat_num(st, "scheduler.delivery.permfail");
+	m.sessions = stat_num(st, "smtp.session");
+	ucl_object_unref(st);
+	ring_add(place, &m);
+	if ((limit = watch_limit(w)) > 0 && m.queued > limit)
+		fault_set("mail", "Minor", obj, "smtpd", "%jd messages queued%s, "
+		    "over %jd", (intmax_t)m.queued, where, (intmax_t)limit);
+	else
+		fault_clear("mail", obj, "smtpd%s runs, %jd queued", where,
+		    (intmax_t)m.queued);
+}
+
+static bool
+has_smtpd(struct work *w, int jid, const char *path)
+{
+	const char *const	*pl;
+	size_t			 np, k;
+
+	plugins_there(w, jid, path, &pl, &np);
+	for (k = 0; k < np; k++)
+		if (strcmp(pl[k], "smtpd") == 0)
+			return (true);
+	return (false);
+}
+
+static void *
+watch(void *arg __unused)
+{
+	struct work	 w;
+	struct jinfo	*list;
+	const char	*e;
+	size_t		 n, i;
+	int		 k;
+	bool		 listed;
+
+	for (;;) {
+		sleep((unsigned int)opts.smtpd_watch_s);
+		work_init(&w);
+		if (has_smtpd(&w, 0, NULL))
+			place_watch(&w, "");
+		list = NULL;
+		n = 0;
+		if ((listed = jails_running(&w, &list, &n, &e) == 0))
+			for (i = 0; i < n; i++) {
+				if (list[i].dying || !has_smtpd(&w, list[i].jid,
+				    list[i].path) || scope_enter(&w,
+				    list[i].name, &e) != 0)
+					continue;
+				place_watch(&w, list[i].name);
+				(void)scope_enter(&w, NULL, &e);
+			}
+		/* The rings of the places gone (a jail stopped) let go;
+		 * none when the jails could not be listed. */
+		pthread_mutex_lock(&rings_lock);
+		for (k = 0; listed && k < WATCH_PLACES; k++) {
+			if (rings[k].v == NULL || rings[k].place[0] == '\0')
+				continue;
+			for (i = 0; i < n; i++)
+				if (!list[i].dying && strcmp(list[i].name,
+				    rings[k].place) == 0)
+					break;
+			if (i == n) {
+				free(rings[k].v);
+				rings[k].v = NULL;
+			}
+		}
+		pthread_mutex_unlock(&rings_lock);
+		work_free(&w);
+	}
+	return (NULL);
+}
+
+void
+smtpd_watch_start(void)
+{
+	pthread_t	tid;
+	int		error;
+
+	if (opts.smtpd_watch_s <= 0)
+		return;
+	if ((error = pthread_create(&tid, NULL, watch, NULL)) != 0) {
+		logmsg(LOG_ERR, "smtpd watch: %s", strerror(error));
+		return;
+	}
+	(void)pthread_detach(tid);
+}
+
+static int	restart(struct work *, const char **);
+
+/* The host's smtpd.conf serves with the agent's own certificate. */
+static bool
+uses_host_cert(const char *conf)
+{
+	const char	*cert;
+
+	return (conf != NULL && (cert = tls_files_cert()) != NULL &&
+	    strstr(conf, cert) != NULL);
+}
+
+/*
+ * The agent's certificate renewed (tls install): the host's smtpd, when
+ * a pki of its is that certificate, started again to read it.
+ */
+void
+smtpd_cert_renewed(struct work *w)
+{
+	const char	*e;
+	size_t		 len;
+	int		 step;
+	char		*conf;
+
+	if (w->jail != NULL || (conf = scope_slurp(w, opts.smtpd_conf, &len))
+	    == NULL || !uses_host_cert(conf))
+		return;
+	step = step_begin(w, ARC_STEP_KIND_DAEMON, "smtpd", "serves with the "
+	    "certificate renewed: started again");
+	e = NULL;
+	step_end(w, step, restart(w, &e) == 0, e != NULL ? "%s" : NULL, e);
 }
 
 void
@@ -955,6 +1351,11 @@ do_smtpd(struct work *w, struct arc_smtpd_rsp *rsp)
 	}
 	ucl_object_insert_key(top, ucl_object_fromstring(opts.smtpd_conf),
 	    "conf_path", 0, false);
+	/* The watcher's samples of this place, and the tab's limit. */
+	ucl_object_insert_key(top, ring_json(w->jail != NULL ? w->jail : ""),
+	    "series", 0, false);
+	ucl_object_insert_key(top, ucl_object_fromint(watch_limit(w)),
+	    "queue_max", 0, false);
 	/* The form it was rendered from, kept beside. */
 	if ((text = scope_slurp(w, spec_path(w), &len)) != NULL) {
 		p = ucl_parser_new(UCL_PARSER_NO_TIME);
@@ -997,6 +1398,20 @@ do_smtpd(struct work *w, struct arc_smtpd_rsp *rsp)
 	/* A jail serves with no certificate of the host's. */
 	ucl_object_insert_key(top, ucl_object_frombool(w->jail == NULL &&
 	    tls_files_cert() != NULL), "pki", 0, false);
+	/* The host's certificate, when smtpd serves with it: its dates. */
+	if (w->jail == NULL && (text = scope_slurp(w, opts.smtpd_conf, &len)) !=
+	    NULL && uses_host_cert(text)) {
+		time_t	nb, na;
+
+		if (tls_cert_dates(w, &nb, &na)) {
+			o = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(o, ucl_object_fromint(nb),
+			    "not_before", 0, false);
+			ucl_object_insert_key(o, ucl_object_fromint(na),
+			    "not_after", 0, false);
+			ucl_object_insert_key(top, o, "pki_cert", 0, false);
+		}
+	}
 	if (w->jail != NULL)
 		ucl_object_insert_key(top, ucl_object_fromstring(w->jail), "jail",
 		    0, false);
@@ -1050,7 +1465,7 @@ smtpd_check(const struct arc_job_spec *sp)
 		return ("mail is not undone: not in safe mode");
 	if (sp->verb == NULL)
 		return ("an smtpd job has a verb: conf, table, enable, pause, "
-		    "resume, schedule, remove, update");
+		    "resume, schedule, remove, update, watch");
 	v = sp->names.n > 0 ? sp->names.v[0] : NULL;
 	if (strcmp(sp->verb, "conf") == 0) {
 		if (sp->names.n != 0 || (o = spec_of(sp->text)) == NULL)
@@ -1122,8 +1537,16 @@ smtpd_check(const struct arc_job_spec *sp)
 			return ("update takes a table's name");
 		return (NULL);
 	}
+	if (strcmp(sp->verb, "watch") == 0) {
+		if (sp->names.n != 1 || v == NULL || v[0] == '\0' ||
+		    v[strspn(v, "0123456789")] != '\0' || strlen(v) > 9)
+			return ("watch takes how many may be queued before it is "
+			    "a fault, 0 for no limit");
+		return (NULL);
+	}
 	return ("an smtpd job's verb is conf, conf-text, table, entry, "
-	    "unentry, enable, pause, resume, schedule, remove or update");
+	    "unentry, enable, pause, resume, schedule, remove, update or "
+	    "watch");
 }
 
 char *
@@ -1234,17 +1657,22 @@ ctable_put(struct work *w, const struct ctable *ct, const char *text,
     const char **errp)
 {
 	struct execres	 res;
+	const char	*file;
 	char		*argv[5];
 	bool		 enabled, running, secret;
 
 	secret = ct->kind[0] != '\0' || strcmp(ct->backend, "passwd") == 0;
 	if (!ct->declared)
 		scoped_mkdir(w, opts.smtpd_dir);
-	if (scope_replace(w, ct->path, text, strlen(text), scoped_mode(w,
-	    ct->path, secret ? 0600 : 0644), NULL) != 0) {
-		*errp = wfmt(w, "%s: %s", ct->path, strerror(errno));
+	/* A db: table's text written, the database made from it. */
+	file = is_db(ct) ? db_source(w, ct->path) : ct->path;
+	if (scope_replace(w, file, text, strlen(text), scoped_mode(w,
+	    is_db(ct) ? ct->path : file, secret ? 0600 : 0644), NULL) != 0) {
+		*errp = wfmt(w, "%s: %s", file, strerror(errno));
 		return (-1);
 	}
+	if (is_db(ct) && db_make(w, ct, errp) != 0)
+		return (-1);
 	enabled = running = false;
 	svc_state(w, &enabled, &running);
 	if (!running)
@@ -1387,13 +1815,13 @@ table_entries(struct work *w, const char *name, const char *text,
 		return (-1);
 	}
 	if (strcmp(ct.backend, "file") != 0 && strcmp(ct.backend, "passwd") !=
-	    0) {
-		*errp = wfmt(w, "table %s is %s:%s, made the admin's way "
-		    "(makemap for db:): not written here", name, ct.backend,
-		    ct.path);
+	    0 && !is_db(&ct)) {
+		*errp = wfmt(w, "table %s is %s:%s, kept where no file is: not "
+		    "written here", name, ct.backend, ct.path);
 		return (-1);
 	}
-	if ((old = scope_slurp(w, ct.path, &len)) == NULL)
+	if ((old = is_db(&ct) ? db_text(w, &ct, &len) : scope_slurp(w, ct.path,
+	    &len)) == NULL)
 		old = wstrdup(w, "");
 	add = NULL;
 	if (drop == NULL) {
@@ -1563,6 +1991,16 @@ do_smtpd_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		return (table_entries(w, v, sp->text, NULL, errp));
 	if (strcmp(sp->verb, "unentry") == 0)
 		return (table_entries(w, v, NULL, sp->names.v[1], errp));
+	if (strcmp(sp->verb, "watch") == 0) {
+		text = wfmt(w, "{\"queue_max\":%s}\n", v);
+		scoped_mkdir(w, opts.smtpd_dir);
+		if (scope_replace(w, watch_path(w), text, strlen(text), 0644,
+		    NULL) != 0) {
+			*errp = wfmt(w, "%s: %s", watch_path(w), strerror(errno));
+			return (-1);
+		}
+		return (0);
+	}
 	if (strcmp(sp->verb, "enable") == 0) {
 		if (strcmp(v, "enable=yes") == 0)
 			return (rc_set(w, "smtpd_enable", "=", "YES", errp) != 0 ||

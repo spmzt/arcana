@@ -142,8 +142,8 @@ usage(void)
 	    "    get [-x xpath] [node ...]\n"
 	    "    action path [key ...] action [leaf=value ...]\n"
 	    "    notifications\n"
-	    "    subscribe [-n count] [-o seconds | -p seconds] [-s stop-time]\n"
-	    "              [-x xpath]\n"
+	    "    subscribe [-n count] [-o seconds | -p seconds | -r time]\n"
+	    "              [-s stop-time] [-x xpath]\n"
 	    "    list [-c]\n"
 	    "    start | stop | restart | kill | enable | disable jail\n"
 	    "    address add | remove [-lnp] [-i interface] jail address\n"
@@ -561,6 +561,23 @@ emit_trace(const struct arc_step *v, size_t n)
 	xo_close_list("step");
 }
 
+/* A module's rpc of that name. */
+static const struct cbl_ynode *
+yrpc_named(const char *name)
+{
+	const struct cbl_ymodule	*m;
+	uint32_t			 i, k;
+
+	for (i = 0; i < ymodel_schema.nmod; i++) {
+		m = ymodel_schema.mod[i];
+		for (k = 0; k < m->ntop; k++)
+			if (m->top[k]->kind == CBL_YN_RPC &&
+			    strcmp(m->top[k]->name, name) == 0)
+				return (m->top[k]);
+	}
+	return (NULL);
+}
+
 /* A top-level data node of the models served, by its name. */
 static const struct cbl_ynode *
 ytop_named(const char *name)
@@ -703,16 +720,25 @@ cmd_yaction(struct arc_client *cl, int argc, char **argv)
 	uint32_t		 k;
 	int			 i, error;
 
-	if (argc < 3)
+	if (argc < 2)
 		xo_errx(1, "action: a node's path, its keys, the action");
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "action");
 	/* The node, from its top-level one down by the names given. */
 	path = strdup(argv[1]);
-	n = NULL;
-	while (path != NULL && (seg = strsep(&path, "/")) != NULL)
-		if ((n = n == NULL ? ytop_named(seg) : ychild(n, seg)) == NULL)
-			xo_errx(1, "action: %s: no such node", seg);
+	n = strchr(argv[1], '/') == NULL && ytop_named(argv[1]) == NULL ?
+	    yrpc_named(argv[1]) : NULL;
+	if (n == NULL)
+		while (path != NULL && (seg = strsep(&path, "/")) != NULL)
+			if ((n = n == NULL ? ytop_named(seg) : ychild(n,
+			    seg)) == NULL)
+				xo_errx(1, "action: %s: no such node", seg);
+	/* A module's rpc: the name alone, its input after it. */
+	if (n != NULL && n->kind == CBL_YN_RPC) {
+		act = n;
+		i = 1;
+		goto input;
+	}
 	if (n == NULL || (n->kind != CBL_YN_LIST && n->kind != CBL_YN_CONTAINER))
 		xo_errx(1, "action: %s is no list or container", argv[1]);
 	/* Its keys, if a list; the keys of lists above it are not taken. */
@@ -731,6 +757,7 @@ cmd_yaction(struct arc_client *cl, int argc, char **argv)
 	    act->kind != CBL_YN_ACTION)
 		xo_errx(1, "action: %s has no action %s", n->name, i < argc ?
 		    argv[i] : "");
+input:
 	in = ychild(act, "input");
 	out = ychild(act, "output");
 	if (in == NULL || out == NULL ||
@@ -748,12 +775,12 @@ cmd_yaction(struct arc_client *cl, int argc, char **argv)
 			    argv[i]);
 		yset(c, pin, eq + 1, a);
 	}
-	if ((error = cbl_yiid_write(n, vals, n->kind == CBL_YN_LIST ?
-	    n->nkeys : 0, &t)) != 0 ||
+	if ((act != n && (error = cbl_yiid_write(n, vals, n->kind ==
+	    CBL_YN_LIST ? n->nkeys : 0, &t)) != 0) ||
 	    (error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_RPC, 0, &req)) != 0 ||
 	    (error = cbl_msg_put_ynode(req, in, pin)) != 0 ||
-	    (error = cbl_msg_put_yaction(req, t.p, t.len)) != 0)
+	    (act != n && (error = cbl_msg_put_yaction(req, t.p, t.len)) != 0))
 		xo_errx(1, "action: %s", strerror(error));
 	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
 		xo_errx(1, "action: %s", rep != NULL && cbl_msg_err_str(rep) !=
@@ -891,7 +918,7 @@ cmd_subscribe(struct arc_client *cl, int argc, char **argv)
 	cbl_msg			*m;
 	est_per			 per;
 	est_in			 ein;
-	const char		*xpath = NULL, *stop = NULL;
+	const char		*xpath = NULL, *stop = NULL, *replay = NULL;
 	double			 secs = 0, damp = 0;
 	bool			 onchange = false;
 	struct ietf_subscribed_notifications_establish_subscription_input_yp_on_change
@@ -916,12 +943,15 @@ cmd_subscribe(struct arc_client *cl, int argc, char **argv)
 			onchange = true;
 		} else if (strcmp(argv[k], "-s") == 0)
 			stop = argv[k + 1];
+		else if (strcmp(argv[k], "-r") == 0)
+			replay = argv[k + 1];
 		else if (strcmp(argv[k], "-x") == 0)
 			xpath = argv[k + 1];
 		else
 			break;
 	}
-	if (k != argc || (onchange && secs != 0))
+	if (k != argc || (onchange && secs != 0) || (replay != NULL &&
+	    (secs != 0 || onchange)))
 		usage();
 	rpc = in = NULL;
 	for (i = 0; i < ymodel_schema.nmod && rpc == NULL; i++)
@@ -980,6 +1010,7 @@ cmd_subscribe(struct arc_client *cl, int argc, char **argv)
 	}
 #undef SN
 	ein.stop_time = stop;
+	ein.replay_start_time = replay;
 	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
 	    CBL_YCMD_SUBSCRIBE, 0, &m)) != 0 ||
 	    (error = cbl_msg_put_ynode(m, in, &ein)) != 0 ||
@@ -3462,6 +3493,12 @@ cmd_suricata(struct arc_client *cl, int argc, char **argv)
 	sp.verb = argv[1];
 	sp.names.v = (const char **)(uintptr_t)&argv[2];
 	sp.names.n = (size_t)argc - 2;
+	/* rule modify FILE: modify.conf's text. */
+	if (strcmp(argv[1], "rule") == 0 && argc == 4 && strcmp(argv[2],
+	    "modify") == 0) {
+		sp.names.n = 1;
+		sp.text = slurp(argv[3]);
+	}
 	sp.jail = netjail;
 	return (submit(cl, &sp));
 }

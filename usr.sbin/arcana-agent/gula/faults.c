@@ -42,6 +42,7 @@ struct fault {
 	char	by[12];
 	char	descr[200];
 	bool	cleared;
+	bool	compressed;	/* its history the clearing alone */
 };
 
 static pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
@@ -95,6 +96,9 @@ faults_array(time_t since)
 		if (faults[i].cleared)
 			ucl_object_insert_key(o, ucl_object_fromint(
 			    faults[i].cleared_at), "cleared_at", 0, false);
+		if (faults[i].compressed)
+			ucl_object_insert_key(o, ucl_object_frombool(true),
+			    "compressed", 0, false);
 		ucl_array_append(arr, o);
 	}
 	return (arr);
@@ -174,6 +178,7 @@ fault_set(const char *type, const char *severity, const char *object,
 	va_end(ap);
 	faults_keep();
 	pthread_mutex_unlock(&lock);
+	yang_changed(YANG_ALARMS);
 	event_add("sdwan-fault", "{\"type\":\"%s\",\"severity\":\"%s\",\"object\":"
 	    "\"%s\",\"by\":\"%s\",\"description\":\"%s\",\"state\":\"set\"}", type,
 	    severity, jq(object, qo, sizeof(qo)), by, jq(f->descr, qd,
@@ -205,6 +210,7 @@ fault_clear(const char *type, const char *object, const char *fmt, ...)
 	snprintf(f->descr, sizeof(f->descr), "%s", descr);
 	faults_keep();
 	pthread_mutex_unlock(&lock);
+	yang_changed(YANG_ALARMS);
 	event_add("sdwan-fault", "{\"type\":\"%s\",\"severity\":\"Cleared\","
 	    "\"object\":\"%s\",\"description\":\"%s\",\"state\":\"cleared\"}", type,
 	    jq(object, qo, sizeof(qo)), jq(descr, qd, sizeof(qd)));
@@ -232,7 +238,80 @@ fault_update(const char *type, const char *object, const char *fmt, ...)
 	va_end(ap);
 	faults_keep();
 	pthread_mutex_unlock(&lock);
+	yang_changed(YANG_ALARMS);
 	return (true);
+}
+
+/* A severity's rank, by its word: Warning 3 to Critical 6 (RFC 8632). */
+static int
+rank(const char *s)
+{
+	static const char *const words[] = { "Warning", "Minor", "Major",
+	    "Critical" };
+
+	for (size_t i = 0; i < nitems(words); i++)
+		if (strcasecmp(s, words[i]) == 0)
+			return ((int)i + 3);
+	return (2);
+}
+
+/*
+ * The faults that match taken away: cleared or not (clearance 1, 2; 0
+ * either), last changed before before (0: any time), of a severity
+ * below (-1), at (0) or above (1) sev (sev 0: any).  How many.
+ */
+int
+faults_purge(int clearance, time_t before, int sevop, int sev)
+{
+	struct fault	*f;
+	time_t		 last;
+	int		 i, k, r;
+
+	pthread_mutex_lock(&lock);
+	for (i = k = 0; i < nfaults; i++) {
+		f = &faults[i];
+		last = f->cleared ? f->cleared_at : f->t;
+		r = rank(f->severity);
+		if ((clearance == 0 || (clearance == 1) == f->cleared) &&
+		    (before == 0 || last < before) && (sev == 0 ||
+		    (sevop < 0 ? r < sev : sevop > 0 ? r > sev : r == sev)))
+			continue;
+		faults[k++] = *f;
+	}
+	r = nfaults - k;
+	nfaults = k;
+	if (r > 0)
+		faults_keep();
+	pthread_mutex_unlock(&lock);
+	if (r > 0)
+		yang_changed(YANG_ALARMS);
+	return (r);
+}
+
+/* The cleared faults of object and type (NULL: any) left with their
+ * last status change alone.  How many. */
+int
+faults_compress(const char *object, const char *type)
+{
+	struct fault	*f;
+	int		 i, n = 0;
+
+	pthread_mutex_lock(&lock);
+	for (i = 0; i < nfaults; i++) {
+		f = &faults[i];
+		if (!f->cleared || f->compressed || (object != NULL &&
+		    strcmp(f->object, object) != 0) || (type != NULL &&
+		    strcmp(f->type, type) != 0))
+			continue;
+		f->compressed = true;
+		n++;
+	}
+	if (n > 0)
+		faults_keep();
+	pthread_mutex_unlock(&lock);
+	if (n > 0)
+		yang_changed(YANG_ALARMS);
+	return (n);
 }
 
 /* The day's faults into the sdwan reply. */
@@ -289,6 +368,8 @@ faults_start(void)
 		    "cleared"));
 		f->cleared_at = (time_t)ucl_object_toint(ucl_object_lookup(o,
 		    "cleared_at"));
+		f->compressed = ucl_object_toboolean(ucl_object_lookup(o,
+		    "compressed"));
 		if (f->type[0] != '\0')
 			nfaults++;
 	}

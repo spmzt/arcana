@@ -1,0 +1,55 @@
+module arcana-fleet {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-fleet";
+  prefix arcfleet;
+
+  import ietf-yang-schema-mount {
+    prefix yangmnt;
+    reference
+      "RFC 8528: YANG Schema Mount";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The hosts a console reaches, as its RESTCONF server (RFC 8040)
+     serves them: each host's entry is a mount point (RFC 8528) whose
+     schema is the models its agent serves, read through the console
+     from the agent's YANG family.  A path below a host's entry is the
+     agent's own, its first node qualified by its module:
+     /restconf/data/arcana-fleet:fleet/host=<id>/ietf-interfaces:interfaces.";
+
+  revision 2026-10-27 {
+    description
+      "Initial revision.";
+  }
+
+  container fleet {
+    config false;
+    description
+      "The hosts the console has.";
+    list host {
+      key "id";
+      description
+        "A host, its agent's data mounted under it.";
+      yangmnt:mount-point "agent" {
+        description
+          "The models the host's agent serves.";
+      }
+      leaf id {
+        type string {
+          pattern '[0-9a-f]{1,8}';
+        }
+        description
+          "The console's name for the host.";
+      }
+      leaf name {
+        type string;
+        description
+          "The host's name, as the console shows it.";
+      }
+    }
+  }
+}

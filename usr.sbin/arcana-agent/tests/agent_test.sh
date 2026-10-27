@@ -2521,13 +2521,39 @@ yang_subscribe_body()
 	atf_check -o match:'"ietf-yang-push:push-update":' head -1 change.out
 	atf_check -o match:'"ietf-yang-push:push-change-update":\{"datastore-changes":\{"yang-patch":\{"edit":\[\{"edit-id":"1","operation":"create","target":"/arcana-jobs:jobs/job=[0-9]+","value":\{"arcana-jobs:job":\[\{"id":"[0-9]+","title":"arcw1: up"\}\]\}\}\],"patch-id":"1"\}\},"id":[0-9]+\}' \
 	    tail -1 change.out
+	# The events are read when one is told, not every period: the
+	# newest's number replaced when a job's event comes.
+	"$JGC" -c "$SOCK" subscribe -n 2 -o 0 -x '/arcana-events:events/last' \
+	    > told.out 2>&1 &
+	echo $! > sub4.pid
+	sleep 1.5
+	atf_check -o ignore "$(atf_get_srcdir)/ysubmit" "$SOCK" arcw2
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		kill -0 "$(cat sub4.pid)" 2>/dev/null || break
+		sleep 0.5
+	done
+	atf_check -o match:'^2$' sh -c 'wc -l < told.out | tr -d " "'
+	atf_check -o match:'"operation":"replace","target":"/arcana-events:events/last"' \
+	    tail -1 told.out
+	# Replay: the job events kept since an hour ago, then
+	# replay-completed; the stream then ends at its stop-time.
+	from=$(date -u -v-1H '+%Y-%m-%dT%H:%M:%SZ')
+	stop=$(date -u -v+3S '+%Y-%m-%dT%H:%M:%SZ')
+	atf_check -o save:replay.out -e ignore "$JGC" -c "$SOCK" subscribe \
+	    -r "$from" -s "$stop" -x '/arcana-events:event/job'
+	atf_check -o match:'"arcana-events:event":\{.*"job":\{' \
+	    -o match:'"ietf-subscribed-notifications:replay-completed":\{"id":[0-9]+\}' \
+	    cat replay.out
+	atf_check -o match:'"replay-support":\[null\]' \
+	    -o match:'"replay-log-creation-time":"[0-9T:-]+Z"' \
+	    "$JGC" -c "$SOCK" get streams
 	# A filter that is no XPath: refused at the open.
 	atf_check -s exit:1 -e match:'subscribe: ' -o empty \
 	    "$JGC" -c "$SOCK" subscribe -p 0.2 -x '/ietf-interfaces:interfaces['
 }
 yang_subscribe_cleanup()
 {
-	for f in sub.pid sub2.pid sub3.pid; do
+	for f in sub.pid sub2.pid sub3.pid sub4.pid; do
 		[ -f "$f" ] && kill "$(cat "$f")" 2>/dev/null
 	done
 	stop_daemon
@@ -2563,6 +2589,24 @@ yang_actions_body()
 	    "$JGC" -c "$SOCK" action processes/process x signal signal=TERM
 	atf_check -s exit:1 -e match:'has no action reset' -o ignore \
 	    "$JGC" -c "$SOCK" action processes reset
+	# The reads by a time or a number; what refuses before a program
+	# runs; a module's rpc by its name alone.
+	atf_check -o match:'^\{.*\}$' "$JGC" -c "$SOCK" action events read \
+	    after=0
+	atf_check -o match:'^\{.*\}$' "$JGC" -c "$SOCK" action history read
+	atf_check -o inline:'{"purged-alarms":0}\n' "$JGC" -c "$SOCK" \
+	    action alarms/alarm-list purge-alarms alarm-clearance-status=cleared
+	atf_check -o inline:'{}\n' "$JGC" -c "$SOCK" action agent/transport \
+	    retry
+	atf_check -s exit:1 -e match:"not a module's name" -o ignore \
+	    "$JGC" -c "$SOCK" action load 'name=a;b'
+	atf_check -s exit:1 -e match:'no such file in the kernel' -o ignore \
+	    "$JGC" -c "$SOCK" action kernel/file 99999 unload
+	atf_check -s exit:1 -e match:'a dataset is pool/name' -o ignore \
+	    "$JGC" -c "$SOCK" action storage/dataset 'bad;x' load-key key=12345678
+	atf_check -s exit:1 -e match:'not the one this was made from' \
+	    -o ignore "$JGC" -c "$SOCK" action storage/fstab replace text=x \
+	    sha256=00
 	# A jail's or a service's name is checked whoever asks: neither
 	# reaches jail(8) or service(8).
 	atf_check -s exit:1 -e match:'invalid jail name' -o ignore \
@@ -6811,7 +6855,7 @@ EOS
 	    "$JGC" -c "$SOCK" suricata rules q=bad\ NAME
 	atf_check -o match:'"matched":1,.*"sid":2000005,' "$JGC" -c "$SOCK" suricata rules only=disabled
 	atf_check -o match:'"matched":1,.*"sid":2000005,' "$JGC" -c "$SOCK" suricata rules classtype=policy-violation
-	atf_check -o match:'"matched":3,"offset":1,"limit":1,"rules":\[\{"sid":2000005,[^]]*\]\}' \
+	atf_check -o match:'"matched":3,"offset":1,"limit":1,"rules":\[\{"sid":2000005,[^]]*\],"groups"' \
 	    "$JGC" -c "$SOCK" suricata rules offset=1 limit=1
 	atf_check -s exit:1 -e match:'only is enabled, disabled or changed' "$JGC" -c "$SOCK" suricata rules only=x
 	atf_check -s exit:1 -e match:'searched by q=' "$JGC" -c "$SOCK" suricata rules color=red
@@ -6833,6 +6877,35 @@ EOS
 	atf_check -o match:'"sid":2000001,[^}]*"enabled":false,"state":"off"' "$JGC" -c "$SOCK" suricata rules sid=2000001
 	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata rule default=2000001,2000005,2000006
 	atf_check -o match:'"changed":0,.*"total":3,"enabled":2' "$JGC" -c "$SOCK" suricata rules
+	# A group at a time: a classtype's rules (matched by their option),
+	# a source's file; each classtype counted; modify.conf kept and
+	# given; each back to the default.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata rule \
+	    off=classtype:policy-violation on=group:emerging-games.rules
+	atf_check -o match:'^re:classtype:\\s\*policy-violation\\s\*;$' cat suricata-disable.conf
+	atf_check -o match:'^group:emerging-games.rules$' cat suricata-enable.conf
+	atf_check -o match:'"groups":\[\{"match":"classtype:policy-violation","state":"off"\},\{"match":"group:emerging-games.rules","state":"on"\}\]' \
+	    -o match:'"classes":\[\{"classtype":"policy-violation","rules":1,"enabled":0\},\{"classtype":"bad-unknown","rules":1,"enabled":1\}\]' \
+	    "$JGC" -c "$SOCK" suricata rules
+	atf_check -s exit:1 -e match:'a group classtype:NAME or group:FILE' \
+	    "$JGC" -c "$SOCK" suricata rule off=classtype:Bad!
+	printf '2000005 "flow:established" "flow:established,to_server"\n' > mod.txt
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata rule modify mod.txt
+	atf_check -o match:' --modify-conf .*/suricata-modify.conf --offline$' tail -1 suricata-update.log
+	atf_check -o match:'"modify":"2000005 \\"flow:established\\" \\"flow:established,to_server\\"\\n"' \
+	    "$JGC" -c "$SOCK" suricata rules
+	printf 'foo "a" "b"\n' > mod2.txt
+	atf_check -s exit:1 -e match:'begins with a sid, group: or re:' \
+	    "$JGC" -c "$SOCK" suricata rule modify mod2.txt
+	printf '2000005 "a"\n' > mod2.txt
+	atf_check -s exit:1 -e match:'which rules, "the pattern" "what it becomes"' \
+	    "$JGC" -c "$SOCK" suricata rule modify mod2.txt
+	printf '' > mod3.txt
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata rule modify mod3.txt
+	atf_check -o match:'done' "$JGC" -c "$SOCK" suricata rule \
+	    default=classtype:policy-violation,group:emerging-games.rules
+	atf_check -o match:'"groups":\[\]' -o not-match:'"modify":"2000005' "$JGC" -c "$SOCK" suricata rules
+	atf_check -o not-match:'modify-conf' tail -1 suricata-update.log
 	# Rule sources: none known until the index is fetched, Emerging
 	# Threats Open the default; then the index's, each enabled or not
 	# by a file of the data directory's that the agent writes, a
@@ -6905,8 +6978,16 @@ EOS
 	atf_check -o match:"^threshold-file: /.*/sdwan-ids-sw1.threshold\$" \
 	    cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	atf_check -o match:'detects: as it was' "$JGC" -t -c "$SOCK" sdwan ids "$rs7"
-	atf_check -o match:'detects: started' "$JGC" -t -c "$SOCK" sdwan ids \
+	# Only its thresholds new: read again live, not started again.
+	n0=$(grep -c '^usr2$' suricata.log)
+	atf_check -o match:'detects: its rules read again' "$JGC" -t -c "$SOCK" sdwan ids \
 	    "$(echo "$rs7" | sed 's/ip 10.0.0.9/ip 10.0.0.8/')"
+	for i in $(seq 1 30); do
+		[ "$(grep -c '^usr2$' suricata.log)" -gt "$n0" ] && break
+		sleep 0.1
+	done
+	[ "$(grep -c '^usr2$' suricata.log)" -gt "$n0" ] || atf_fail "no USR2"
+	atf_check -o match:'ip 10.0.0.8' cat "$(dirname "$f")/sdwan-ids-sw1.threshold"
 	atf_check -s exit:1 -e match:'an instance is a name' -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    "$(echo "$rs4" | sed 's|"rules":|"thresholds":5,"rules":|')"
 	# By netmap(4), not pcap(3); its interfaces' offloading turned off
@@ -6921,7 +7002,7 @@ EOS
 	atf_check -o inline:'ifconfig wg5 -rxcsum -txcsum -rxcsum6 -txcsum6 -tso -lro -vlanhwtso\nifconfig wg5 -rxcsum -txcsum -rxcsum6 -txcsum6 -tso -lro -vlanhwtso\n' \
 	    cat ifconfig.log
 	atf_check -o match:'"name":"sw1",[^]]*\],"mode":"detect",.*"capture":"netmap"' \
-	    -o match:'"ids_host":\{"ncpu":[1-9][0-9]*,"ndomains":[1-9]' \
+	    -o match:'"ids_host":\{"ncpu":[1-9][0-9]*,"ndomains":[1-9][0-9]*,"irqs":\[' \
 	    "$JGC" -c "$SOCK" sdwan
 	atf_check -s exit:1 -e match:"netmap's alone" -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    "$(echo "$rs4" | sed 's/"interfaces":\["any"\]/"interfaces":["wg5^"]/')"
@@ -7011,7 +7092,17 @@ EOS
 	atf_check -o match:'suricata sec-x on 1 interface, detects: started' "$JGC" -t -c "$SOCK" sdwan ids \
 	    '{"group":"security","instances":[{"name":"sec-x","host":"edge-a","interfaces":["lo0"],"spec":{"interfaces":["lo0"],"home":["any"],"preset":"small","eve":["http"],"reassembly_depth":"1mb","yaml":"# mine\n"},"rules":"alert tcp any any -> any 23 (sid:1000001;)\n"}]}'
 	atf_check -o match:'^    HOME_NET: "any"$' -o match:'^runmode: autofp$' -o match:'^    depth: 1mb$' \
-	    -o match:'^        - http$' -o match:'^# mine$' -o match:'^unix-command:$' cat "$(dirname "$f")/sdwan-ids-sec-x.yaml"
+	    -o match:'^        - http$' -o match:'^# mine$' -o match:'^unix-command:$' \
+	    -o match:'^autofp-scheduler: hash$' cat "$(dirname "$f")/sdwan-ids-sec-x.yaml"
+	atf_check -s exit:1 -e match:"autofp's scheduler is hash, ippair or ftp-hash" -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"group":"security","instances":[{"name":"sec-x","interfaces":["lo0"],"spec":{"interfaces":["lo0"],"autofp_scheduler":"round-robin"},"rules":"x"}]}'
+	# netmap's pair of a bridge's member: refused, the bridge would
+	# carry its packets around the pair.
+	cp fake-ifconfig fake-ifconfig.was
+	printf '#!/bin/sh\n[ "$1" = -av ] && printf "bridge0: flags=8843<UP> metric 0 mtu 1500\\n\\tid 58:9c:fc:10:ff:aa priority 32768 hellotime 2 fwddelay 15\\n\\tmember: wg6 flags=143<LEARNING,DISCOVER>\\n"\nexit 0\n' > fake-ifconfig
+	atf_check -s exit:1 -e match:'sec-y: wg6 is a member of bridge0' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"group":"security","instances":[{"name":"sec-y","interfaces":["wg6","wg7"],"spec":{"pairs":["wg6:wg7"],"capture":"netmap","home":["any"]},"rules":"x"}]}'
+	mv fake-ifconfig.was fake-ifconfig
 	atf_check -s exit:1 -e match:'sec-x: its own YAML may not set plugins' -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    '{"group":"security","instances":[{"name":"sec-x","interfaces":["lo0"],"spec":{"interfaces":["lo0"],"yaml":"plugins:\n  - /tmp/x.so\n"},"rules":"x"}]}'
 	atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids '{"group":"security","instances":[]}'
@@ -7057,7 +7148,7 @@ sleep 0.2
 echo "nice \$(ps -o nice= -p \$\$ | tr -d ' ') \$*" >> $(pwd)/nice.log
 case "\$*" in
 "show status") printf 'MDA running\\nMTA paused\\nSMTP running\\n' ;;
-"show stats") printf 'control.session=1\\nscheduler.delivery.ok=2\\nscheduler.delivery.permfail=4\\nuptime=44\\nuptime.human=44s\\n' ;;
+"show stats") printf 'control.session=1\\nscheduler.delivery.ok=2\\nscheduler.delivery.permfail=4\\nscheduler.envelope=7\\nuptime=44\\nuptime.human=44s\\n' ;;
 "show queue") printf '6022923fc9341b9d|local|mta|auth|root@edge-a.example|nobody@example.invalid|nobody@example.invalid|1792491081|1792491081|3|1792491200|pending|-2|(TempFail) no route\\n' ;;
 "update table "*) echo "command succeeded" ;;
 pause*|resume*) echo "command succeeded" ;;
@@ -7071,8 +7162,15 @@ EOS
 read -r p; echo "encrypt \$* <\$p" >> $(pwd)/encrypt.log
 echo '\$6\$fake\$hashOf\$1'
 EOS
-	chmod +x tools/smtpd tools/smtpctl tools/encrypt
-	DAEMON_ARGS="-2 $(pwd)/tools --smtpd-conf $(pwd)/smtpd.conf --smtpd-dir $(pwd)/smtpd.d"
+	cat > tools/makemap <<EOS
+#!/bin/sh
+echo "makemap \$*" >> $(pwd)/makemap.log
+[ "\$1" = -U ] && { printf 'x.example\\n'; exit 0; }
+while [ \$# -gt 1 ]; do [ "\$1" = -o ] && out=\$2; shift; done
+cp "\$1" "\$out"
+EOS
+	chmod +x tools/smtpd tools/smtpctl tools/encrypt tools/makemap
+	DAEMON_ARGS="-2 $(pwd)/tools --smtpd-conf $(pwd)/smtpd.conf --smtpd-dir $(pwd)/smtpd.d --smtpd-watch 1"
 	start_daemon
 	printf '#!/bin/sh\n' > rc.d/smtpd
 	chmod +x rc.d/smtpd
@@ -7156,9 +7254,23 @@ EOF
 	atf_check -o match:'^smtpd_enable="YES"$' cat rc.conf
 	test -f running.smtpd || atf_fail "smtpd was not started"
 	atf_check -o match:'"running":true' -o match:'"status":\{"mda":"running","mta":"paused","smtp":"running"\}' \
-	    -o match:'"stats":\{"control.session":1,"scheduler.delivery.ok":2,"scheduler.delivery.permfail":4,"uptime":44,"uptime.human":"44s"\}' \
+	    -o match:'"stats":\{"control.session":1,"scheduler.delivery.ok":2,"scheduler.delivery.permfail":4,"scheduler.envelope":7,"uptime":44,"uptime.human":"44s"\}' \
 	    -o match:'"queue":\[\{"evpid":"6022923fc9341b9d","source":"local","type":"mta","flags":"auth","from":"root@edge-a.example","to":"nobody@example.invalid","dest":"nobody@example.invalid","created":1792491081,"expires":1792491081,"retries":3,"lasttry":1792491200,"state":"pending","next":-2,"error":"\(TempFail\) no route"\}\]' \
 	    -o match:'"queued":1' "$JGC" -c "$SOCK" smtpd
+	# Watched while it runs: its counters kept for the graphs; more
+	# queued than the tab's limit a mail fault, cleared under it.
+	atf_check -o match:'done +smtpd watch 5' "$JGC" -c "$SOCK" smtpd watch 5
+	atf_check -o inline:'{"queue_max":5}\n' cat smtpd.d/watch.json
+	sleep 2.5
+	atf_check -o match:'"queue_max":5' -o match:'"series":\[\[[0-9]+,7,2,0,4,0\]' \
+	    "$JGC" -c "$SOCK" smtpd
+	atf_check -o match:'"arcana-alarms:mail"' -o match:'"alarm-text":"7 messages queued, over 5"' \
+	    "$JGC" -c "$SOCK" get alarms
+	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd watch 0
+	sleep 2.5
+	atf_check -o match:'"arcana-alarms:mail"' -o match:'"is-cleared":true' \
+	    "$JGC" -c "$SOCK" get alarms
+	atf_check -s exit:1 -e match:'how many may be queued' -o ignore "$JGC" -c "$SOCK" smtpd watch many
 	# A table written while it runs is read again; the queue's commands.
 	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd table aliases aliases.txt
 	atf_check -o match:'^smtpctl update table aliases$' cat smtpctl.log
@@ -7197,12 +7309,13 @@ table big db:$(pwd)/own/big.db
 table inl { a.example, b.example }
 listen on lo0 port submission auth <passwd>
 action "out" relay host smtp+tls://relay@smtp.example.net:587 auth <secrets>
+match from any for domain <big> action "out"
 EOS
 	atf_check -o match:'"conf_arcana":false' \
 	    -o match:'"conf_tables":\[\{"name":"aliases","backend":"file","path":"[^"]*own/aliases","kind":"","secret":false,"editable":true,"entries":\[\{"key":"root","value":"admin@example.org"\}\]\}' \
 	    -o match:'\{"name":"passwd","backend":"passwd","path":"[^"]*own/passwd","kind":"auth","secret":true,"editable":true,"entries":\[\{"key":"carol"\},\{"key":"dave"\}\]\}' \
 	    -o match:'\{"name":"secrets","backend":"file","path":"[^"]*own/secrets","kind":"relay","secret":true' \
-	    -o match:'\{"name":"big","backend":"db","path":"[^"]*own/big.db","kind":"","secret":false,"editable":false\}' \
+	    -o match:'\{"name":"big","backend":"db","path":"[^"]*own/big.db","kind":"","secret":false,"editable":true,"source":"[^"]*own/big","entries":\[\{"key":"x.example","value":""\}\]\}' \
 	    -o not-match:'"name":"inl"' -o not-match:'old\$hash' -o not-match:'user@example.net:pw' \
 	    "$JGC" -c "$SOCK" smtpd
 	printf 'carol newpass\nerin pw5\n' > pw.txt
@@ -7214,7 +7327,16 @@ EOS
 	printf 'postmaster: root\n' > a3.txt
 	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd entry aliases a3.txt
 	atf_check -o inline:'root: admin@example.org\npostmaster: root\n' cat own/aliases
-	atf_check -s exit:1 -o match:'made the admin.s way' "$JGC" -c "$SOCK" smtpd entry big a3.txt
+	# A db: table: its lines as makemap -U dumps them (no text beside
+	# it yet), written back as text and made by makemap as the set
+	# smtpd.conf matches domains against.
+	printf 'y.example\n' > d.txt
+	atf_check -o match:'done' "$JGC" -c "$SOCK" smtpd entry big d.txt
+	atf_check -o inline:'x.example\ny.example\n' cat own/big
+	atf_check -o inline:'x.example\ny.example\n' cat own/big.db
+	atf_check -o match:"^makemap -t set -o $(pwd)/own/big.db $(pwd)/own/big\$" cat makemap.log
+	atf_check -o match:'"entries":\[\{"key":"x.example","value":""\},\{"key":"y.example","value":""\}\]' \
+	    "$JGC" -c "$SOCK" smtpd
 	atf_check -s exit:1 -o match:'is not Arcana.s' "$JGC" -c "$SOCK" smtpd conf form.json
 	atf_check -o match:'^# the admin.s own$' cat smtpd.conf
 	cp smtpd.conf mine.conf

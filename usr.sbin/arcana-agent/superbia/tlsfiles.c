@@ -225,6 +225,24 @@ cert_obj(struct work *w, X509 *x)
 	return (o);
 }
 
+/* The agent's own certificate's dates; false: it has none. */
+bool
+tls_cert_dates(struct work *w, time_t *not_before, time_t *not_after)
+{
+	X509		*v[TLS_CHAIN_MAX];
+	const char	*t;
+	size_t		 len;
+	int		 n;
+
+	if (f_cert[0] == '\0' || (t = file_text(w, f_cert, &len)) == NULL ||
+	    (n = certs_of(t, len, v, TLS_CHAIN_MAX)) <= 0)
+		return (false);
+	*not_before = epoch(X509_get0_notBefore(v[0]));
+	*not_after = epoch(X509_get0_notAfter(v[0]));
+	certs_free(v, n);
+	return (true);
+}
+
 static const char *
 pending_path(struct work *w)
 {
@@ -571,8 +589,11 @@ do_tls(struct work *w, const char *verb, const char *certpem,
 		if (csr(w, &o, &e) != 0)
 			o = NULL;
 	} else if (strcmp(verb, "install") == 0) {
-		if (install(w, certpem, capem, peerpem, peerfp, &e) == 0)
+		if (install(w, certpem, capem, peerpem, peerfp, &e) == 0) {
 			o = status(w);
+			/* What serves with it reads it again. */
+			smtpd_cert_renewed(w);
+		}
 	} else
 		e = "tls: status, csr or install";
 	step_end(w, step, o != NULL, "%s", e != NULL ? e : "done");

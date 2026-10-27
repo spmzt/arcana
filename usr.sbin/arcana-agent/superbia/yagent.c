@@ -251,6 +251,90 @@ out:
 	return (error);
 }
 
+static void
+put_str(ucl_object_t *o, const char *key, const char *v)
+{
+
+	if (v != NULL)
+		ucl_object_insert_key(o, ucl_object_fromstring(v), key, 0,
+		    false);
+}
+
+/* The apply's bundle as config-export wrote it, malloc'd; NULL: out of
+ * memory. */
+char *
+yagent_bundle_json(const struct arcana_agent_agent_config_apply_input_bundle *b)
+{
+	const struct arcana_agent_agent_config_apply_input_bundle_facts *f;
+	ucl_object_t	*top, *o, *arr, *e;
+	char		*json;
+	size_t		 i;
+
+	top = ucl_object_typed_new(UCL_OBJECT);
+	put_str(top, "host", b->host);
+	put_str(top, "agent", b->agent);
+	put_str(top, "taken", b->taken);
+	if ((f = b->facts) != NULL) {
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put_str(o, "arch", f->arch);
+		put_str(o, "release", f->release);
+		put_str(o, "cpu", f->cpu);
+		if (f->has_ncpu)
+			ucl_object_insert_key(o, ucl_object_fromint(f->ncpu),
+			    "ncpu", 0, false);
+		if (f->has_memory)
+			ucl_object_insert_key(o, ucl_object_fromint(
+			    (int64_t)f->memory), "memory", 0, false);
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < f->interface.n; i++) {
+			e = ucl_object_typed_new(UCL_OBJECT);
+			put_str(e, "name", f->interface.v[i].name);
+			put_str(e, "driver", f->interface.v[i].driver);
+			put_str(e, "mac", f->interface.v[i].mac);
+			ucl_array_append(arr, e);
+		}
+		ucl_object_insert_key(o, arr, "interfaces", 0, false);
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < f->disk.n; i++) {
+			e = ucl_object_typed_new(UCL_OBJECT);
+			put_str(e, "name", f->disk.v[i].name);
+			if (f->disk.v[i].has_size)
+				ucl_object_insert_key(e, ucl_object_fromint(
+				    (int64_t)f->disk.v[i].size), "size", 0,
+				    false);
+			ucl_array_append(arr, e);
+		}
+		ucl_object_insert_key(o, arr, "disks", 0, false);
+		ucl_object_insert_key(top, o, "facts", 0, false);
+	}
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < b->package.n; i++) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put_str(e, "name", b->package.v[i].name);
+		put_str(e, "origin", b->package.v[i].origin);
+		put_str(e, "version", b->package.v[i].version);
+		ucl_array_append(arr, e);
+	}
+	ucl_object_insert_key(top, arr, "packages", 0, false);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < b->file.n; i++) {
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put_str(e, "path", b->file.v[i].path);
+		put_str(e, "mode", b->file.v[i].mode);
+		put_str(e, "owner", b->file.v[i].owner);
+		put_str(e, "group", b->file.v[i].group);
+		put_str(e, "text", b->file.v[i].text);
+		if (b->file.v[i].has_secret)
+			ucl_object_insert_key(e, ucl_object_frombool(
+			    b->file.v[i].secret), "secret", 0, false);
+		ucl_array_append(arr, e);
+	}
+	ucl_object_insert_key(top, arr, "files", 0, false);
+	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	return (json);
+}
+
 int
 yagent_apply_from_json(const char *json, cbl_yarena *a,
     struct arcana_agent_agent_config_apply_output *out)

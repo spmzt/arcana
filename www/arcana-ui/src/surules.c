@@ -10,7 +10,8 @@
  * 70000 rules.  Each is turned on, off, made a drop or put back as it
  * ships by sid, a suricata job (verb rule) whose choice the agent keeps
  * and gives suricata-update every time it runs, so that it holds across
- * updates.
+ * updates; so are those of a whole class or of a source's file, and the
+ * admin's modify.conf.
  */
 
 #include <stdint.h>
@@ -100,6 +101,110 @@ rule_button(struct html *h, long long sid, const char *to, const char *label,
 	h_fmt(h, "<button class=\"ghost small\" data-act=\"sur-set\" "
 	    "data-arg=\"%lld\" data-value=\"%s\" title=\"%s\">%s</button>", sid,
 	    to, title, label);
+}
+
+/* A group's state as set here (classtype:NAME, group:FILE), or NULL. */
+static const char *
+group_state(const char *match)
+{
+	const ucl_object_t	*g;
+	ucl_object_iter_t	 it = NULL;
+
+	while ((g = ucl_object_iterate(jget(sr.r.o, "groups"), &it, true)) !=
+	    NULL)
+		if (jstr(g, "match") != NULL && strcmp(jstr(g, "match"), match) ==
+		    0)
+			return (jstr(g, "state"));
+	return (NULL);
+}
+
+static void
+group_buttons(struct html *h, const char *match, const char *st)
+{
+	static const struct {
+		const char	*to, *label;
+	} b[] = { { "on", "Enable" }, { "off", "Disable" }, { "drop", "Drop" },
+	    { "default", "As it ships" } };
+	size_t	i;
+
+	for (i = 0; i < nitems(b); i++) {
+		if ((st == NULL && strcmp(b[i].to, "default") == 0) ||
+		    (st != NULL && strcmp(st, b[i].to) == 0))
+			continue;
+		h_raw(h, "<button class=\"ghost small\" data-act=\"sur-set\"");
+		h_attr(h, "data-arg", match);
+		h_fmt(h, " data-value=\"%s\">%s</button>", b[i].to, b[i].label);
+	}
+}
+
+/*
+ * Rules a group at a time: each class with its rules and those on, set
+ * whole (re:classtype:); a source's file by its name (group:); and
+ * modify.conf, the rules' text changed by a pattern.
+ */
+static void
+view_groups(struct html *h)
+{
+	const ucl_object_t	*c, *g;
+	ucl_object_iter_t	 it;
+	char			 m[96];
+	const char		*st;
+
+	h_raw(h, "<h3 class=\"secsub\">By class</h3>");
+	if (ucl_array_size(jget(sr.r.o, "classes")) == 0)
+		h_raw(h, "<p class=\"dim\">No rule of the ruleset names a "
+		    "class.</p>");
+	else {
+		h_raw(h, "<table class=\"net\"><thead><tr><th>Class</th><th>"
+		    "Rules</th><th>Enabled</th><th>Set here</th><th></th></tr>"
+		    "</thead><tbody>");
+		it = NULL;
+		while ((c = ucl_object_iterate(jget(sr.r.o, "classes"), &it,
+		    true)) != NULL) {
+			snprintf(m, sizeof(m), "classtype:%s", jstr(c,
+			    "classtype") != NULL ? jstr(c, "classtype") : "");
+			st = group_state(m);
+			h_raw(h, "<tr><td class=\"mono\">");
+			h_txt(h, jstr(c, "classtype"));
+			h_fmt(h, "</td><td>%lld</td><td>%lld</td><td>%s</td><td "
+			    "class=\"acts\">", (long long)jint(c, "rules", 0),
+			    (long long)jint(c, "enabled", 0), st != NULL ? st :
+			    "");
+			group_buttons(h, m, st);
+			h_raw(h, "</td></tr>");
+		}
+		h_raw(h, "</tbody></table>");
+	}
+	h_raw(h, "<h3 class=\"secsub\">By a source's file</h3>");
+	it = NULL;
+	while ((g = ucl_object_iterate(jget(sr.r.o, "groups"), &it, true)) !=
+	    NULL) {
+		if (jstr(g, "match") == NULL || strncmp(jstr(g, "match"),
+		    "group:", 6) != 0)
+			continue;
+		h_raw(h, "<div class=\"row\"><span class=\"mono\">");
+		h_txt(h, jstr(g, "match") + 6);
+		h_fmt(h, "</span> <span class=\"chip\">%s</span> ", jstr(g,
+		    "state") != NULL ? jstr(g, "state") : "");
+		group_buttons(h, jstr(g, "match"), jstr(g, "state"));
+		h_raw(h, "</div>");
+	}
+	h_raw(h, "<form class=\"row\" data-form=\"sur-group\"><input name="
+	    "\"file\" placeholder=\"emerging-games.rules\" autocomplete="
+	    "\"off\" spellcheck=\"false\"><select name=\"to\"><option value="
+	    "\"off\">Disable</option><option value=\"on\">Enable</option>"
+	    "<option value=\"drop\">Drop</option></select><button class=\""
+	    "ghost\">Set its rules</button></form>");
+	h_raw(h, "<h3 class=\"secsub\">modify.conf</h3><p class=\"help\">A "
+	    "shipped rule changed by a pattern, kept across updates: a line "
+	    "a change, which rules (a sid, group: or re:), then \"the "
+	    "pattern\" \"what it becomes\".</p><form class=\"stack\" "
+	    "data-form=\"sur-modify\"><textarea name=\"text\" rows=\"4\" "
+	    "class=\"mono\" spellcheck=\"false\" placeholder='2019401 "
+	    "\"seconds \\d+\" \"seconds 3600\"'>");
+	h_txt(h, jstr(sr.r.o, "modify") != NULL ? jstr(sr.r.o, "modify") : "");
+	h_raw(h, "</textarea><div class=\"toolbar\"><button class=\"ghost\">"
+	    "Keep modify.conf</button></div></form>");
 }
 
 void
@@ -199,12 +304,50 @@ view_surules(struct html *h, const char *sid)
 		h_raw(h, "<button class=\"ghost\" data-act=\"sur-page\" "
 		    "data-arg=\"next\">Next</button>");
 	h_raw(h, "</div>");
+	view_groups(h);
+}
+
+/* A rule job of words, and modify.conf's text or NULL. */
+static void
+rule_job(char **jsonp, const char *word, const char *text)
+{
+	char	*q, *t;
+
+	q = json_quote(word);
+	t = text != NULL ? json_quote(text) : NULL;
+	if (asprintf(jsonp, "{\"kind\":\"suricata\",\"verb\":\"rule\","
+	    "\"args\":[%s]%s%s}", q, t != NULL ? ",\"text\":" : "", t != NULL ?
+	    t : "") == -1)
+		abort();
+	free(q);
+	free(t);
 }
 
 bool
-surules_form(const char *form, const ucl_object_t *f)
+surules_form(const char *form, const ucl_object_t *f, char **jsonp,
+    char *title, size_t tlen)
 {
+	char	*w;
 
+	*jsonp = NULL;
+	if (strcmp(form, "sur-group") == 0) {
+		if (jstr(f, "file") == NULL || jstr(f, "file")[0] == '\0' ||
+		    jstr(f, "to") == NULL)
+			return (true);
+		if (asprintf(&w, "%s=group:%s", jstr(f, "to"), jstr(f, "file"))
+		    == -1)
+			abort();
+		rule_job(jsonp, w, NULL);
+		snprintf(title, tlen, "suricata rules set: %s", w);
+		free(w);
+		return (true);
+	}
+	if (strcmp(form, "sur-modify") == 0) {
+		rule_job(jsonp, "modify", jstr(f, "text") != NULL ? jstr(f,
+		    "text") : "");
+		snprintf(title, tlen, "suricata modify.conf kept");
+		return (true);
+	}
 	if (strcmp(form, "sur-search") != 0)
 		return (false);
 	snprintf(sr.q, sizeof(sr.q), "%s", jstr(f, "q") != NULL ? jstr(f,
@@ -241,10 +384,12 @@ surules_action(const char *act, const char *arg, const char *value,
 	}
 	if (strcmp(act, "sur-set") != 0)
 		return (false);
+	/* A rule by its sid, or a group (classtype:NAME, group:FILE). */
 	if (value == NULL || (strcmp(value, "on") != 0 && strcmp(value,
 	    "off") != 0 && strcmp(value, "drop") != 0 && strcmp(value,
-	    "default") != 0) || strspn(arg, "0123456789") != strlen(arg) ||
-	    arg[0] == '\0')
+	    "default") != 0) || arg[0] == '\0' || (strspn(arg, "0123456789") !=
+	    strlen(arg) && strncmp(arg, "classtype:", 10) != 0 && strncmp(arg,
+	    "group:", 6) != 0))
 		return (true);
 	if (asprintf(&w, "%s=%s", value, arg) == -1)
 		abort();

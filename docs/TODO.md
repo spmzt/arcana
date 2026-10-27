@@ -22,9 +22,8 @@
   fragments rendered (the agent edits rc.conf through sysrc(8)), the
   running datastore's use of rtadvd.conf (2.5.1), syslog.conf written
   from ietf-syslog; 2.6.2 (the vrf-root mount) and parent-reference;
-  2.7.2 to 2.7.4; the rest of 3.2's subscriptions (suspension, modify,
-  replay, configured, on-change from the event sources rather than a
-  read each second) and NACM (3.3); 3.4's streams (the JSON stays on
+  2.7.2 to 2.7.4; the rest of 3.2's subscriptions (configured ones, and
+  on-change from the event sources rather than a read each second) and NACM (3.3); 3.4's streams (the JSON stays on
   the wire until then); RESTCONF (Y-4); and Y-3's conversions of the
   interim module's operations onto the standard models, a module at a
   time.  Each operation converted to YANG shows its YANG model beside
@@ -32,17 +31,6 @@
   For the user: the CORECONF draft's examples number some
   ietf-interfaces items otherwise than SIDS.md.
 - MEF 138's model, the rest: docs/PLAN-119-SASE.md, SASE-6.
-- Game mode: the console used on a Steam Deck in its Game Mode, by its
-  controls alone. The page reads the controller through the Gamepad
-  API (navigator.getGamepads(), which Steam's browser and a PWA added
-  as a non-Steam game both give): the D-pad and left stick move a
-  visible focus between the controls of the page, A presses, B goes
-  back or closes a dialog, the bumpers go between tabs and the side
-  bar's pages, the right stick scrolls a page or pans the network map,
-  the triggers zoom it; a key on the screen's keyboard (Steam + X) for
-  the inputs. A layout for 1280x800 with targets large enough for it,
-  and the console's own words for each button shown while a controller
-  is in use.
 - Each a task of its own, in no order yet:
   - Disaster recovery across console clusters.
   - Agents in an HA pair on identical hardware and ports, the pair's
@@ -85,40 +73,16 @@
     sending on. End to end needs a cblink connection that runs over a
     cblink stream, which cblink has not got, or a bridge through a
     local socket at both ends.
-- The console's descriptors and threads:
-  - store_write() can get EBADF on the descriptor mkstemp(3) just gave
-    it, which means another thread closed a number it did not own (a
-    double close, the number reused meanwhile).  Not reproduced; look
-    for a close(2) of a descriptor already closed in the console's
-    threads (the SD-WAN manager, the subscriptions, the pool).
-  - apply_begin() (sdwan_edge.c) reads the run after pthread_detach,
-    when run_main may have freed it.
-  - Descriptors leaked on error paths in pki.c, nodes.c, auth.c,
-    push.c and mail.c.
-  - A retried request in hosts.c keeps the dropped connection's steps
-    box, so the retry never subscribes to steps.
+- The console's store_write() can get EBADF on the descriptor
+  mkstemp(3) just gave it, which means another thread closed a number
+  it did not own.  Not reproduced; none of the console's own close(2)
+  calls closes one twice, so look in libwebsockets and cblink.
 - Squid, c-icap, unbound, dnsmasq and BIRD are written by the console
   with places the agent fills; to be rendered on the agent from a
   form, as Suricata's YAML and smtpd.conf are.
-- OpenSMTPD (the Mail tab):
-  - its counters (`smtpctl show stats`) kept in a ring and graphed;
-  - a fault when the queue grows past a size or smtpd stops;
-  - smtpd restarted when a listener's `pki` is the host's certificate
-    and that certificate is renewed, and the certificate's dates shown;
-  - `db:` tables written by the tab (makemap), not only `file:` ones.
 - Suricata (IDS/IPS):
-  - ruleset rules set a group at a time (by classtype or source file,
-    suricata-update's `group:` lines), and `modify.conf` to change a
-    shipped rule;
-  - rules reloaded live (`reload-rules` over the instance's socket)
-    instead of a restart;
   - packet profiling (Suricata built with `--enable-profiling`): ticks
     per protocol and per stage;
-  - `autofp-scheduler: hash` for the autofp runmode;
-  - the NIC queues' interrupt binding (cpuset -x) shown beside the
-    threads' CPU sets;
-  - a netmap IPS pair refused when an interface of it is a bridge
-    member;
   - a capture uploaded from the browser for replay (only a file the
     host has is taken), and the pcap-log files downloaded from an
     alert's row.
@@ -156,6 +120,9 @@ Written and tested with stand-ins only:
   with the underlay.
 - The Security section (URL filters, Antivirus, IDS/IPS) without
   SD-WAN, with the real plugins.
+- Suricata's interfaces' queue interrupts (hw.intrnames, cpuset -x) on
+  a NIC with RSS queues: the lab VM's interrupts are virtio's, named by
+  no interface.
 - Firefox: the console is tested in headless Chromium only.
 - The install offer on a real phone: Chrome's prompt on Android, the
   wording for Safari on iOS and for Firefox.
@@ -177,7 +144,10 @@ Written and tested with stand-ins only:
   %253D) comes to the console cut at it: libwebsockets' argument
   parsing.  So /api/servers/<id>/data takes node names, not an XPath
   filter; the filter is arcanactl get -x's and cblink's.  To look at
-  in lws's parser, or read the raw query from :path ourselves.
+  in lws's parser, or read the raw query from :path ourselves. The
+  same parser decodes the path's %-escapes before the console sees it,
+  so RESTCONF cannot name a list entry whose key has "/" or "," in it
+  (RFC 8040 escapes them as %2F and %2C).
 
 - FreeBSD 16-CURRENT: an interface given an IPv6 address in FIB 0,
   moved to another FIB (ifconfig fib), then destroyed, leaves its

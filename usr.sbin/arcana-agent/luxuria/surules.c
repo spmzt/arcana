@@ -10,7 +10,11 @@
  * commented out.  The admin's choices of rules by sid, on, off or drop,
  * are kept in suricata-rule-state beside the agent's other files and
  * given to suricata-update as its own enable.conf, disable.conf and
- * drop.conf each time it runs, so that they hold across updates.
+ * drop.conf each time it runs, so that they hold across updates; so are
+ * the choices of rules a group at a time (suricata-group-state): those
+ * of a classtype (re:classtype:), or of a source's file (group:).  The
+ * admin's modify.conf, a rule's text changed by a pattern, is kept and
+ * given too.
  */
 
 #include <sys/param.h>
@@ -36,17 +40,30 @@
 
 #define	STATE_FILE	"suricata-rule-state"
 #define	STATES_MAX	20000
+#define	GROUP_FILE	"suricata-group-state"
+#define	GROUPS_MAX	256
+#define	GROUPS_JOB	64	/* groups a rule job sets, at most */
+#define	MODIFY_FILE	"suricata-modify.conf"
+#define	MODIFY_MAX	(64 * 1024)
+#define	CLASSES_MAX	300	/* classtypes counted, at most */
 #define	SIDS_JOB	1000	/* sids a rule job sets, at most */
 #define	LIMIT_DEFAULT	100
 #define	LIMIT_MAX	500
 
 static void	sources_json(struct work *, ucl_object_t *);
+static const char *matcher_line(struct work *, const char *);
 static bool	sc_read(struct work *, const char *const *, size_t,
 		    struct arc_suricata_rules_rsp *);
 
 /* A rule the admin set: 'e' on, 'd' off, 'p' drop. */
 struct rstate {
 	uint32_t	sid;
+	char		st;
+};
+
+/* Rules a group at a time: classtype:NAME, or group:FILE. */
+struct gstate {
+	char		match[160];
 	char		st;
 };
 
@@ -115,10 +132,11 @@ state_of(const struct rstate *v, size_t n, uint32_t sid)
 	return (r != NULL ? r->st : '\0');
 }
 
-/* suricata-update's file of the sids in state st (a drop is on too). */
+/* suricata-update's file of the sids, then the groups, in state st (a
+ * drop is on too). */
 static const char *
-conf_text(struct work *w, const struct rstate *v, size_t n, char st,
-    const char *what)
+conf_text(struct work *w, const struct rstate *v, size_t n,
+    const struct gstate *g, size_t ng, char st, const char *what)
 {
 	char	*text;
 	size_t	 i, len, off;
@@ -126,11 +144,15 @@ conf_text(struct work *w, const struct rstate *v, size_t n, char st,
 	len = 128 + n * 12;
 	text = wcalloc(w, len, 1);
 	off = (size_t)snprintf(text, len, "# Written by arcana-agent: the "
-	    "rules the admin %s, by sid.\n", what);
+	    "rules the admin %s, by sid and by group.\n", what);
 	for (i = 0; i < n && off < len; i++)
 		if (v[i].st == st || (st == 'e' && v[i].st == 'p'))
 			off += (size_t)snprintf(text + off, len - off, "%u\n",
 			    v[i].sid);
+	for (i = 0; i < ng; i++)
+		if (g[i].st == st || (st == 'e' && g[i].st == 'p'))
+			text = wfmt(w, "%s%s\n", text, matcher_line(w,
+			    g[i].match));
 	return (text);
 }
 
@@ -150,6 +172,115 @@ state_save(struct work *w, const struct rstate *v, size_t n,
 	return (sdwan_conf_write(STATE_FILE, text, errp));
 }
 
+/* classtype:NAME or group:FILE, as a job gives one. */
+static bool
+matcher_ok(const char *m)
+{
+	const char	*v;
+
+	if (strncmp(m, "classtype:", 10) == 0) {
+		v = m + 10;
+		return (v[0] != '\0' && strlen(v) <= 64 && v[strspn(v,
+		    "abcdefghijklmnopqrstuvwxyz0123456789_-")] == '\0');
+	}
+	if (strncmp(m, "group:", 6) == 0) {
+		v = m + 6;
+		return (v[0] != '\0' && v[0] != '.' && strlen(v) <= 128 &&
+		    v[strspn(v, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"
+		    "WXYZ0123456789._-")] == '\0');
+	}
+	return (false);
+}
+
+/* The admin's groups, GROUPS_MAX of room in *vp; how many. */
+static size_t
+groups_load(struct work *w, struct gstate **vp)
+{
+	struct gstate	*v;
+	char		*text, *it, *line, *sp;
+	size_t		 n = 0;
+
+	v = wcalloc(w, GROUPS_MAX, sizeof(*v));
+	if ((text = sdwan_kept_read(GROUP_FILE)) != NULL) {
+		for (it = text; (line = strsep(&it, "\n")) != NULL &&
+		    n < GROUPS_MAX;) {
+			if ((sp = strrchr(line, ' ')) == NULL)
+				continue;
+			*sp++ = '\0';
+			if (!matcher_ok(line) || (v[n].st = strcmp(sp, "on") ==
+			    0 ? 'e' : strcmp(sp, "off") == 0 ? 'd' : strcmp(sp,
+			    "drop") == 0 ? 'p' : '\0') == '\0')
+				continue;
+			snprintf(v[n++].match, sizeof(v[0].match), "%s", line);
+		}
+		free(text);
+	}
+	*vp = v;
+	return (n);
+}
+
+static int
+groups_save(struct work *w, const struct gstate *v, size_t n,
+    const char **errp)
+{
+	char	*text = wstrdup(w, "");
+	size_t	 i;
+
+	for (i = 0; i < n; i++)
+		text = wfmt(w, "%s%s %s\n", text, v[i].match,
+		    state_word(v[i].st));
+	return (sdwan_conf_write(GROUP_FILE, text, errp));
+}
+
+/* A group as suricata-update matches it: a classtype by its option. */
+static const char *
+matcher_line(struct work *w, const char *m)
+{
+
+	if (strncmp(m, "classtype:", 10) == 0)
+		return (wfmt(w, "re:classtype:\\s*%s\\s*;", m + 10));
+	return (m);
+}
+
+/*
+ * modify.conf's lines (suricata-update's): a sid, sids by commas, a
+ * group: or a re: to say which rules, then the pattern and what it
+ * becomes, each in double quotes.  NULL when they are so, else why.
+ */
+static const char *
+modify_wrong(const char *text)
+{
+	const char	*p, *e;
+	int		 q;
+
+	if (strlen(text) > MODIFY_MAX)
+		return ("modify.conf is 64 KB at most");
+	for (p = text; *p != '\0'; p = *e != '\0' ? e + 1 : e) {
+		e = strchrnul(p, '\n');
+		p += strspn(p, " \t");
+		if (p == e || *p == '#')
+			continue;
+		if (!isdigit((unsigned char)*p) && strncmp(p, "group:", 6) != 0 &&
+		    strncmp(p, "re:", 3) != 0)
+			return ("a modify line begins with a sid, group: or re:");
+		/* Then two quoted strings, nothing after. */
+		p += strcspn(p, " \t");
+		for (q = 0; q < 2; q++) {
+			p += strspn(p, " \t");
+			if (p >= e || *p != '"' || (p = strchr(p + 1, '"')) ==
+			    NULL || p >= e)
+				break;
+			p++;
+		}
+		if (q == 2)
+			p += strspn(p, " \t");
+		if (q != 2 || p != e)
+			return ("a modify line is: which rules, \"the pattern\" "
+			    "\"what it becomes\"");
+	}
+	return (NULL);
+}
+
 /*
  * suricata-update's arguments for the admin's rules, after argv[*np]:
  * its three files written from the state first.  -1 and why when one
@@ -167,41 +298,75 @@ suricata_rule_args(struct work *w, char **argv, int *np, const char **errp)
 		{ "--drop-conf", "suricata-drop.conf", "made drops", 'p' },
 	};
 	struct rstate	*v;
-	char		 path[MAXPATHLEN];
-	size_t		 n, i;
+	struct gstate	*g;
+	char		 path[MAXPATHLEN], *mod;
+	size_t		 n, ng, i;
 
 	v = state_load(w, &n);
+	ng = groups_load(w, &g);
 	for (i = 0; i < nitems(confs); i++) {
-		if (sdwan_conf_write(confs[i].file, conf_text(w, v, n,
+		if (sdwan_conf_write(confs[i].file, conf_text(w, v, n, g, ng,
 		    confs[i].st, confs[i].what), errp) != 0)
 			return (-1);
 		argv[(*np)++] = (char *)(uintptr_t)confs[i].opt;
 		argv[(*np)++] = wstrdup(w, sdwan_conf_path(confs[i].file, path,
 		    sizeof(path)));
 	}
+	/* The admin's modify.conf, kept as given. */
+	if ((mod = sdwan_kept_read(MODIFY_FILE)) != NULL) {
+		if (mod[strspn(mod, " \t\n")] != '\0') {
+			argv[(*np)++] = (char *)(uintptr_t)"--modify-conf";
+			argv[(*np)++] = wstrdup(w, sdwan_conf_path(MODIFY_FILE,
+			    path, sizeof(path)));
+		}
+		free(mod);
+	}
 	return (0);
 }
 
-/* A list of sids, joined by commas: their count, or -1. */
+/*
+ * A list of sids and groups (classtype:NAME, group:FILE), joined by
+ * commas: the sids into out (room of them) and their count, the groups
+ * into m (mroom) and their count in *nm; -1 when it is none.
+ */
 static int
-sids_parse(const char *s, uint32_t *out, int room)
+items_parse(const char *s, uint32_t *out, int room, char (*m)[160],
+    int mroom, int *nm)
 {
 	unsigned long	 sid;
-	char		*end;
+	const char	*end;
+	char		 item[160];
+	size_t		 len;
 	int		 n;
 
-	n = 0;
+	n = *nm = 0;
 	while (*s != '\0') {
-		if (!isdigit((unsigned char)*s))
+		len = strcspn(s, ",");
+		end = s + len;
+		if (len == 0 || len >= sizeof(item))
 			return (-1);
-		errno = 0;
-		sid = strtoul(s, &end, 10);
-		if (errno != 0 || sid == 0 || sid > UINT32_MAX || n == room ||
-		    (*end != ',' && *end != '\0'))
-			return (-1);
-		if (out != NULL)
-			out[n] = (uint32_t)sid;
-		n++;
+		memcpy(item, s, len);
+		item[len] = '\0';
+		if (strchr(item, ':') != NULL) {
+			if (!matcher_ok(item) || *nm == mroom)
+				return (-1);
+			if (m != NULL)
+				snprintf(m[*nm], sizeof(m[0]), "%s", item);
+			(*nm)++;
+		} else {
+			char	*e;
+
+			if (!isdigit((unsigned char)item[0]))
+				return (-1);
+			errno = 0;
+			sid = strtoul(item, &e, 10);
+			if (errno != 0 || sid == 0 || sid > UINT32_MAX ||
+			    *e != '\0' || n == room)
+				return (-1);
+			if (out != NULL)
+				out[n] = (uint32_t)sid;
+			n++;
+		}
 		s = *end == ',' ? end + 1 : end;
 	}
 	return (n);
@@ -225,27 +390,37 @@ verb_state(const char *word, const char **sidsp)
 	return ('\0');
 }
 
-/* A rule job's words: on=, off=, drop= or default=, each of sids. */
+/*
+ * A rule job's words: on=, off=, drop= or default=, each of sids and
+ * groups (classtype:NAME, group:FILE); or modify alone, its text
+ * modify.conf's.
+ */
 const char *
 suricata_rule_check(const struct arc_job_spec *sp)
 {
 	const char	*sids;
 	size_t		 i;
-	int		 k, total;
+	int		 k, ng, total, groups;
 
+	if (sp->names.n == 1 && sp->names.v[0] != NULL &&
+	    strcmp(sp->names.v[0], "modify") == 0)
+		return (sp->text == NULL ? "modify takes modify.conf's text" :
+		    modify_wrong(sp->text));
 	if (sp->names.n == 0 || sp->names.n > 4)
 		return ("rule sets rules on=, off=, drop= or default=, each "
-		    "sids joined by commas");
-	total = 0;
+		    "sids and groups joined by commas; or modify");
+	total = groups = 0;
 	for (i = 0; i < sp->names.n; i++) {
 		if (sp->names.v[i] == NULL || verb_state(sp->names.v[i],
 		    &sids) == '\0')
 			return ("rule sets rules on=, off=, drop= or default=, "
-			    "each sids joined by commas");
-		if ((k = sids_parse(sids, NULL, SIDS_JOB)) <= 0 ||
-		    (total += k) > SIDS_JOB)
-			return ("a rule's sid is a number; 1000 of them a job, "
-			    "at most");
+			    "each sids and groups joined by commas; or modify");
+		if ((k = items_parse(sids, NULL, SIDS_JOB, NULL, GROUPS_JOB,
+		    &ng)) < 0 || k + ng == 0 || (total += k) > SIDS_JOB ||
+		    (groups += ng) > GROUPS_JOB)
+			return ("a rule's sid is a number, a group classtype:NAME "
+			    "or group:FILE; 1000 sids and 64 groups a job, at "
+			    "most");
 	}
 	return (NULL);
 }
@@ -256,19 +431,25 @@ suricata_rule_set(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
 {
 	struct rstate	*v, key, *r;
+	struct gstate	*g;
 	uint32_t	*sids;
+	char		(*m)[160];
 	const char	*s;
-	size_t		 n, i, k;
+	size_t		 n, ng, i, k;
 	char		 st;
-	int		 ns, j;
+	int		 ns, nm, j, gi;
 
 	if ((*errp = suricata_rule_check(sp)) != NULL)
 		return (-1);
+	if (strcmp(sp->names.v[0], "modify") == 0)
+		return (sdwan_conf_write(MODIFY_FILE, sp->text, errp));
 	v = state_load(w, &n);
+	ng = groups_load(w, &g);
 	sids = wcalloc(w, SIDS_JOB, sizeof(*sids));
+	m = wcalloc(w, GROUPS_JOB, sizeof(*m));
 	for (i = 0; i < sp->names.n; i++) {
 		st = verb_state(sp->names.v[i], &s);
-		ns = sids_parse(s, sids, SIDS_JOB);
+		ns = items_parse(s, sids, SIDS_JOB, m, GROUPS_JOB, &nm);
 		for (j = 0; j < ns; j++) {
 			key.sid = sids[j];
 			r = bsearch(&key, v, n, sizeof(*v), state_cmp);
@@ -293,8 +474,29 @@ suricata_rule_set(struct work *w, const struct arc_job_spec *sp,
 			v[n++].st = st;
 			qsort(v, n, sizeof(*v), state_cmp);
 		}
+		for (j = 0; j < nm; j++) {
+			for (gi = 0; gi < (int)ng && strcmp(g[gi].match, m[j]) !=
+			    0; gi++)
+				;
+			if (st == 'x') {
+				if (gi < (int)ng)
+					g[gi] = g[--ng];
+				continue;
+			}
+			if (gi == (int)ng) {
+				if (ng == GROUPS_MAX) {
+					*errp = "256 groups set, at most";
+					return (-1);
+				}
+				snprintf(g[ng++].match, sizeof(g[0].match), "%s",
+				    m[j]);
+			}
+			g[gi].st = st;
+		}
 	}
-	return (state_save(w, v, n, errp));
+	if (state_save(w, v, n, errp) != 0)
+		return (-1);
+	return (groups_save(w, g, ng, errp));
 }
 
 /*
@@ -389,9 +591,15 @@ do_suricata_rules(struct work *w, const char *const *names, size_t nn,
 {
 	static const char *const keys[] = { "q", "sid", "only", "classtype",
 	    "offset", "limit", "sources", "instance", "command", "iface" };
+	struct {
+		char	name[64];
+		size_t	rules, on;
+	}		*cl;
 	struct rstate	*v;
+	struct gstate	*g;
 	struct stat	 sb;
 	ucl_object_t	*top, *arr, *o;
+	size_t		 ng, ncl = 0, ci;
 	const char	*q, *only, *ct, *s, *path, *sev, *meta;
 	char		*map, *line, *json, *end;
 	const char	*p, *nl, *rule;
@@ -455,6 +663,8 @@ do_suricata_rules(struct work *w, const char *const *names, size_t nn,
 		return;
 	}
 	v = state_load(w, &n);
+	ng = groups_load(w, &g);
+	cl = wcalloc(w, CLASSES_MAX, sizeof(*cl));
 	top = ucl_object_typed_new(UCL_OBJECT);
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	ucl_object_insert_key(top, ucl_object_fromint((int64_t)n), "changed",
@@ -509,6 +719,24 @@ do_suricata_rules(struct work *w, const char *const *names, size_t nn,
 			total++;
 			if (on)
 				enabled++;
+			/* Each classtype's rules, and those on. */
+			if ((s = opt_span(rule, "classtype", &k)) != NULL &&
+			    k > 0 && k < sizeof(cl[0].name)) {
+				for (ci = 0; ci < ncl && (strlen(cl[ci].name) != k ||
+				    strncmp(cl[ci].name, s, k) != 0); ci++)
+					;
+				if (ci == ncl && ncl < CLASSES_MAX) {
+					memcpy(cl[ncl].name, s, k);
+					cl[ncl].name[k] = '\0';
+					cl[ncl].rules = cl[ncl].on = 0;
+					ncl++;
+				}
+				if (ci < ncl) {
+					cl[ci].rules++;
+					if (on)
+						cl[ci].on++;
+				}
+			}
 			st = state_of(v, n, (uint32_t)sid);
 			if ((want != 0 && sid != want) || (only != NULL &&
 			    ((strcmp(only, "enabled") == 0 && !on) ||
@@ -561,6 +789,30 @@ do_suricata_rules(struct work *w, const char *const *names, size_t nn,
 	ucl_object_insert_key(top, ucl_object_fromint((int64_t)limit),
 	    "limit", 0, false);
 	ucl_object_insert_key(top, arr, "rules", 0, false);
+	/* The groups set, each classtype with its rules, modify.conf. */
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < ng; i++) {
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put_s(o, "match", g[i].match);
+		put_s(o, "state", state_word(g[i].st));
+		ucl_array_append(arr, o);
+	}
+	ucl_object_insert_key(top, arr, "groups", 0, false);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (ci = 0; ci < ncl; ci++) {
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put_s(o, "classtype", cl[ci].name);
+		ucl_object_insert_key(o, ucl_object_fromint((int64_t)cl[ci].rules),
+		    "rules", 0, false);
+		ucl_object_insert_key(o, ucl_object_fromint((int64_t)cl[ci].on),
+		    "enabled", 0, false);
+		ucl_array_append(arr, o);
+	}
+	ucl_object_insert_key(top, arr, "classes", 0, false);
+	if ((json = sdwan_kept_read(MODIFY_FILE)) != NULL) {
+		put_s(top, "modify", json);
+		free(json);
+	}
 	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);
 	if (json == NULL) {

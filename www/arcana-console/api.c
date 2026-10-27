@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "console.h"
+#include "restconf.h"
 
 #define	BODY_MAX	(8 * 1024 * 1024)	/* as http_body_max */
 
@@ -67,6 +68,10 @@ reply_error(struct http_request *req, int status, const char *code,
 	va_start(ap, fmt);
 	vsnprintf(msg, sizeof(msg), fmt, ap);
 	va_end(ap);
+	/* RESTCONF's own shape on its paths (RFC 8040 section 7). */
+	if (strcmp(req->path, "/restconf") == 0 || strncmp(req->path,
+	    "/restconf/", 10) == 0)
+		return (restconf_error(req, status, msg));
 	top = ucl_object_typed_new(UCL_OBJECT);
 	e = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(e, ucl_object_fromstring(code), "code", 0,

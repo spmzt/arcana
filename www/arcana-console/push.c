@@ -101,9 +101,11 @@ push_init(void)
 		    NULL)
 			return (-1);
 		(void)unlink(path);
-		if ((fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0600)) == -1 ||
-		    (fp = fdopen(fd, "w")) == NULL) {
+		if ((fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC,
+		    0600)) == -1 || (fp = fdopen(fd, "w")) == NULL) {
 			log_msg(LOG_ERR, "%s: %s", path, strerror(errno));
+			if (fd != -1)
+				close(fd);
 			return (-1);
 		}
 		PEM_write_PrivateKey(fp, vapid, NULL, NULL, 0, NULL, NULL);

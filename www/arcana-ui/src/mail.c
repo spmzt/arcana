@@ -46,6 +46,63 @@ ml_where(struct server *s)
 	return (at != NULL ? at : "");
 }
 
+/*
+ * The agent's samples (a minute each, a day of them, [t, queued, ok,
+ * tempfail, permfail, sessions]): the queue as a line, what was
+ * delivered each minute as bars under it.
+ */
+static void
+ml_graph(struct html *h, const ucl_object_t *series)
+{
+	const ucl_object_t	*a, *b;
+	unsigned int		 n, i;
+	int64_t			 qmax, dmax, d;
+
+	n = series != NULL ? ucl_array_size(series) : 0;
+	if (n < 2) {
+		h_raw(h, "<p class=\"dim\">The graphs come with the agent's "
+		    "first samples, a minute apart.</p>");
+		return;
+	}
+	qmax = dmax = 1;
+	for (i = 0; i < n; i++) {
+		a = ucl_array_find_index(series, i);
+		if (ucl_object_toint(ucl_array_find_index(a, 1)) > qmax)
+			qmax = ucl_object_toint(ucl_array_find_index(a, 1));
+		if (i > 0) {
+			b = ucl_array_find_index(series, i - 1);
+			d = ucl_object_toint(ucl_array_find_index(a, 2)) -
+			    ucl_object_toint(ucl_array_find_index(b, 2));
+			if (d > dmax)
+				dmax = d;
+		}
+	}
+	h_fmt(h, "<figure class=\"mlgraph\"><svg viewBox=\"0 0 %u 60\" "
+	    "preserveAspectRatio=\"none\" role=\"img\" aria-label=\"The "
+	    "queue and what was delivered each minute\">", n);
+	for (i = 1; i < n; i++) {
+		a = ucl_array_find_index(series, i);
+		b = ucl_array_find_index(series, i - 1);
+		/* A counter that went back: smtpd started again. */
+		if ((d = ucl_object_toint(ucl_array_find_index(a, 2)) -
+		    ucl_object_toint(ucl_array_find_index(b, 2))) <= 0)
+			continue;
+		h_fmt(h, "<rect class=\"sent\" x=\"%u\" y=\"%.1f\" width=\"1\" "
+		    "height=\"%.1f\"/>", i, 60 - (double)d / dmax * 24,
+		    (double)d / dmax * 24);
+	}
+	h_raw(h, "<path class=\"queue\" d=\"");
+	for (i = 0; i < n; i++) {
+		a = ucl_array_find_index(series, i);
+		h_fmt(h, "%c%u %.1f ", i == 0 ? 'M' : 'L', i, 34 - (double)
+		    ucl_object_toint(ucl_array_find_index(a, 1)) / qmax * 32);
+	}
+	h_fmt(h, "\"/></svg><figcaption class=\"dim\">The last %u minutes: "
+	    "the queue, up to %lld (the line), and what was delivered each "
+	    "minute, up to %lld (the bars)</figcaption></figure>", n,
+	    (long long)qmax, (long long)dmax);
+}
+
 static void
 ml_load(const char *sid)
 {
@@ -520,7 +577,7 @@ ctables_view(struct html *h, const ucl_object_t *o)
 		    == 0 ? "signs users in" : strcmp(kind, "relay") == 0 ?
 		    "the smart host's sign-in" : "");
 		if (!jbool(r, "editable"))
-			h_raw(h, "<span class=\"dim\">made the admin's way</span>");
+			h_raw(h, "<span class=\"dim\">kept where no file is</span>");
 		else if (jstr(r, "error") != NULL) {
 			h_raw(h, "<span class=\"dim\">");
 			h_txt(h, strcmp(jstr(r, "error"), "No such file or directory")
@@ -733,9 +790,27 @@ view_mail(struct html *h, struct server *s)
 			h_raw(h, "</span></div>");
 		}
 		h_raw(h, "</div>");
+		ml_graph(h, jget(o, "series"));
 	} else
 		h_raw(h, "<p class=\"dim\">Stopped: nothing is received or sent; "
 		    "what waits in the queue waits.</p>");
+	/* The host's certificate, when smtpd serves with it. */
+	if ((e = jget(o, "pki_cert")) != NULL) {
+		char	from[32], to[32];
+
+		day_text(from, sizeof(from), jint(e, "not_before", 0));
+		day_text(to, sizeof(to), jint(e, "not_after", 0));
+		h_fmt(h, "<p class=\"dim\">Serves with the host's own "
+		    "certificate, valid from %s to %s; smtpd is started again "
+		    "when the console renews it.</p>", from, to);
+	}
+	/* The limit over which the queue is a fault. */
+	h_fmt(h, "<form class=\"row\" data-form=\"ml-watch\"><label>A fault "
+	    "when more than <input type=\"number\" name=\"max\" min=\"0\" "
+	    "max=\"999999999\" value=\"%lld\" class=\"narrow\"> are queued "
+	    "<small class=\"dim\">0, never</small></label><button class=\""
+	    "ghost small\">Save</button></form>", (long long)jint(o,
+	    "queue_max", 0));
 	/* Its configuration: the form's summary, the form on Edit. */
 	h_raw(h, "<h3 class=\"secsub\">Configuration</h3>");
 	if (ml.conf) {
@@ -1039,6 +1114,16 @@ mail_form(const char *form, const ucl_object_t *f)
 		    "smtpd.conf written");
 		if (!check)
 			ml.text = false;
+		return (true);
+	}
+	if (strcmp(form, "ml-watch") == 0) {
+		if ((s = ml_server()) == NULL || (v = jstr(f, "max")) == NULL ||
+		    v[0] == '\0' || v[strspn(v, "0123456789")] != '\0')
+			return (true);
+		w[0] = v;
+		send(s, job_json("smtpd", "watch", w, 1, NULL, ml_extra(s)),
+		    strcmp(v, "0") == 0 ? "The queue is no fault, however long" :
+		    "The queue's limit set");
 		return (true);
 	}
 	if (strcmp(form, "ml-entry") == 0) {

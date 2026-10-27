@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.223.0"
+#define	ARCANA_AGENT_VERSION	"0.224.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -173,6 +173,7 @@ struct opts {
 	const char	*build_conf;	/* this host's config.mk for it */
 	const char	*root;		/* --root: the system's files under it */
 	int		 bird_watch_s;	/* --bird-watch: BIRD's sessions, how often */
+	int		 smtpd_watch_s;	/* --smtpd-watch: OpenSMTPD, how often */
 	int		 pkg_idle_s;	/* --pkg-idle: a silent pkg, stopped after */
 	int		 pkg_lanes;	/* jobs of pkg in jails at once, at start */
 	const char	*jobs_conf;	/* where lanes is kept */
@@ -554,6 +555,8 @@ int		 ipsec_toggle(struct work *, const char *, bool, const char **);
 /* luxuria/bird.c: a plugin, through birdc(8). */
 int		 do_bird(struct work *, struct arc_network_rsp *);
 void		 bird_watch_start(void);
+void		 smtpd_watch_start(void);
+void		 smtpd_cert_renewed(struct work *);
 const char	*bird_check(const char *, const char *const *, size_t);
 int		 bird_proto_enabled(struct work *, const char *, bool *,
 		    const char **);
@@ -767,6 +770,8 @@ bool		 fault_update(const char *, const char *, const char *, ...)
 		    __printflike(3, 4);
 void		 faults_json(struct ucl_object_s *);
 void		 faults_start(void);
+int		 faults_purge(int, time_t, int, int);
+int		 faults_compress(const char *, const char *);
 /* gula/record.c: what the security rules logged, a day of it. */
 void		 record_start(void);
 void		 record_json(struct ucl_object_s *);
@@ -784,6 +789,12 @@ const char	*sysctl_conf_get(struct work *, const char *);
 int		 sysctl_conf_restore(struct work *, const char *, const char *,
 		    const char **);
 bool		 valid_jail(const char *);
+/* What builds share: the build directory's keys and clones. */
+extern pthread_mutex_t	 build_lock;
+/* After an update's answer, the console's service restarted, then the
+ * agent's. */
+void		 restart_after(bool, bool);
+const char	*change_busy(struct work *);
 bool		 valid_service(const char *);
 bool		 valid_ifname(const char *);
 bool		 sysctl_part(struct cbl_dump_state *, const char *, char **,
@@ -816,6 +827,7 @@ int		 admit_register(cbl_ctx *, cbl_family **);
 /* superbia/tlsfiles.c: the agent's own TLS files renewed */
 const char	*tls_files_ca(void);
 const char	*tls_files_cert(void);
+bool		 tls_cert_dates(struct work *, time_t *, time_t *);
 const char	*tls_files_key(void);
 void		 tls_files_init(cbl_tls *, const char *, const char *,
 		    const char *);
@@ -907,9 +919,15 @@ struct ucl_object_s *swap_list(struct work *);
 void		 route_watch_start(void);
 void		 event_add(const char *, const char *, ...) __printflike(2, 3);
 void		 event_family(cbl_family *);
+void		 events_replay(time_t, void (*)(const char *, time_t, void *),
+		    void (*)(void *), void *, time_t *, time_t *, bool *);
 /* invidia/yserve.c: an event's JSON told as arcana-events' notification
- * on cblink's YANG family too. */
+ * on cblink's YANG family too; the events or the alarms changed, for
+ * their on-change subscriptions. */
 void		 yang_event(const char *);
+#define	YANG_EVENTS	0
+#define	YANG_ALARMS	1
+void		 yang_changed(int);
 void		 event_add_jail(const char *, const char *, const char *, ...)
 		    __printflike(3, 4);
 int		 do_events(struct work *, uint64_t, struct arc_events_rsp *);

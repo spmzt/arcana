@@ -4768,6 +4768,13 @@ table.sd-plan details summary { cursor: pointer; color: var(--fg-2); }
 svg.spark { width: 120px; height: 24px; display: block; }
 svg.spark path { fill: none; stroke: var(--cyan); stroke-width: 1; vector-effect: non-scaling-stroke; }
 svg.spark rect.loss { fill: var(--red); }
+/* Mail: the queue as a line, what was delivered each minute as bars. */
+figure.mlgraph { margin: .5rem 0 1rem; }
+figure.mlgraph svg { width: 100%; height: 72px; display: block; border-bottom: 1px solid var(--line); }
+figure.mlgraph path.queue { fill: none; stroke: var(--cyan); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+figure.mlgraph rect.sent { fill: var(--green); fill-opacity: .55; }
+figure.mlgraph figcaption { font-size: .78rem; margin-top: .25rem; }
+input.narrow { width: 7rem; }
 .chip.st-up { border-color: var(--green); }
 .chip.st-down, .chip.st-error { border-color: var(--red); }
 table.net.sd small.bad { display: block; color: var(--red); }
@@ -5483,3 +5490,52 @@ nav.relays .dot {
 }
 nav.relays .dot.st-up { background: var(--green); opacity: 1; }
 nav.relays .dot.st-down { background: var(--red); opacity: .8; }
+
+/*
+ * Game mode: the page used by a game controller (bridge.js), a Steam
+ * Deck's 1280x800 in mind: the control in focus plain to see, targets a
+ * thumb's size, and the buttons' words at the foot of the screen.
+ */
+html.pad :focus {
+	outline: 3px solid var(--cyan);
+	outline-offset: 2px;
+	border-radius: var(--radius);
+}
+html.pad button, html.pad .tab, html.pad li.titem, html.pad select,
+html.pad input:not([type=checkbox]):not([type=radio]) {
+	min-height: 40px;
+}
+html.pad input[type=checkbox], html.pad input[type=radio] {
+	width: 22px;
+	height: 22px;
+}
+html.pad body { padding-bottom: calc(44px + env(safe-area-inset-bottom, 0px)); }
+.padhint {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 200;
+	display: flex;
+	flex-wrap: wrap;
+	gap: .4rem 1.25rem;
+	justify-content: center;
+	padding: .5rem 1rem calc(.5rem + env(safe-area-inset-bottom, 0px));
+	background: var(--bg-2);
+	border-top: 1px solid var(--line-2);
+	color: var(--fg-2);
+	font-size: .85rem;
+}
+.padhint b {
+	display: inline-block;
+	min-width: 1.7em;
+	margin-right: .35em;
+	padding: 0 .4em;
+	border: 1px solid var(--line-2);
+	border-radius: 4px;
+	color: var(--fg);
+	text-align: center;
+}
+@media (max-width: 1280px) and (max-height: 820px) {
+	html.pad { font-size: 17px; }
+}

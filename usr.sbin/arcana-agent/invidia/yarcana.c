@@ -28,7 +28,9 @@
  */
 
 #include <sys/param.h>
+#include <sys/linker.h>
 
+#include <ctype.h>
 #include <errno.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -40,6 +42,7 @@
 
 #include "agent.h"
 #include "collect.h"
+#include "yjson.h"
 
 static void
 ywork_free(void *p)
@@ -105,6 +108,53 @@ keys_of(const struct cbl_bytes *target, size_t want, cbl_yarena *a)
 }
 
 /*
+ * An action of a jail's (its target a jail's entry, the key its name):
+ * the work in the jail's scope.  0, or the error said.
+ */
+static int
+yjail_scope(cbl_req *req, const struct cbl_bytes *target, struct work *w,
+    cbl_yarena *a)
+{
+	const void	**k;
+	const char	*e;
+
+	if ((k = keys_of(target, 1, a)) == NULL)
+		return (0);
+	if (!valid_jail(*(const char *const *)k[0]))
+		return (said(req, "invalid jail name"));
+	e = NULL;
+	if (scope_enter(w, *(const char *const *)k[0], &e) != 0)
+		return (said(req, e));
+	return (0);
+}
+
+/* yang:date-and-time into *t, to the second; false: it is none. */
+static bool
+ytime_parse(const char *s, time_t *t)
+{
+	struct tm	 tm;
+	const char	*p;
+	int		 oh, om;
+
+	memset(&tm, 0, sizeof(tm));
+	if ((p = strptime(s, "%Y-%m-%dT%H:%M:%S", &tm)) == NULL)
+		return (false);
+	if (*p == '.')
+		for (p++; isdigit((unsigned char)*p); p++)
+			;
+	if ((*t = timegm(&tm)) == -1)
+		return (false);
+	if (*p == 'Z' || *p == 'z')
+		return (p[1] == '\0');
+	if ((*p == '+' || *p == '-') && sscanf(p + 1, "%2d:%2d", &oh, &om) ==
+	    2 && strlen(p) == 6) {
+		*t += (*p == '+' ? -1 : 1) * (oh * 3600 + om * 60);
+		return (true);
+	}
+	return (false);
+}
+
+/*
  * A change, one at a time as the agent's own (change_lock), its note
  * the agent's current activity; false: the agent is stopping.
  */
@@ -130,6 +180,83 @@ change_end(void)
 
 	(void)change_note(NULL);
 	pthread_mutex_unlock(&change_lock);
+}
+
+/* kldload or kldunload of a module, as the kmod job does it. */
+static int
+kmod(cbl_req *req, const char *verb, const char *name, cbl_yarena *a)
+{
+	const char	*e;
+	struct work	*w;
+	int		 rc;
+
+	if (name == NULL || !kmod_name_ok(name))
+		return (said(req, "not a module's name"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	e = NULL;
+	if (!change_begin(wfmt(w, "kld%s %s", verb, name)))
+		return (said(req, "not done: arcana-agent is stopping"));
+	rc = do_kmod(w, verb, name, false, &e);
+	change_end();
+	return (rc != 0 ? said(req, e) : 0);
+}
+
+/* A dataset's key loaded (key), or changed (new_key), as zfs-key does. */
+static int
+zfs_key(cbl_req *req, const struct cbl_bytes *target, const char *key,
+    const char *new_key, cbl_yarena *a)
+{
+	struct arc_zfs_key_req	 q;
+	struct arc_zfs_key_rsp	 r;
+	const void		**k;
+	struct work		*w;
+
+	if (yang_refused(req))
+		return (EACCES);
+	if ((k = keys_of(target, 1, a)) == NULL)
+		return (EINVAL);
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&q, 0, sizeof(q));
+	q.zfs_dataset = *(const char *const *)k[0];
+	q.zfs_key = key;
+	q.zfs_new_key = new_key;
+	memset(&r, 0, sizeof(r));
+	r.has_ok = true;
+	if (!change_begin(wfmt(w, "zfs key of %s", q.zfs_dataset)))
+		return (said(req, "not done: arcana-agent is stopping"));
+	do_zfs_key(w, &q, &r);
+	change_end();
+	/* The keys go as soon as they are used, as zfs-key's do. */
+	if (key != NULL)
+		explicit_bzero((void *)(uintptr_t)key, strlen(key));
+	if (new_key != NULL)
+		explicit_bzero((void *)(uintptr_t)new_key, strlen(new_key));
+	return (r.ok ? 0 : said(req, r.error));
+}
+
+static void *
+restart_thread(void *arg)
+{
+
+	restart_after((uintptr_t)arg != 0, true);
+	return (NULL);
+}
+
+/* The agent restarted (and first the console, with console) once the
+ * answer is on its way: service(8) runs a second after. */
+static void
+restart_later(bool console)
+{
+	pthread_t	t;
+
+	if (pthread_create(&t, NULL, restart_thread, (void *)(uintptr_t)
+	    console) == 0)
+		(void)pthread_detach(t);
+	else
+		logmsg(LOG_ERR, "restart: no thread: restart the service by "
+		    "hand");
 }
 
 /* A jail's action (ARC_ACTION_*) as the action operation does it. */
@@ -274,13 +401,33 @@ arcana_agent_agent_build_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_agent_agent_build_input *in,
     struct arcana_agent_agent_build_output *out, cbl_yarena *a)
 {
+	struct arc_agent_build_rsp	 r;
+	struct work			*w;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (in->source == NULL)
+		return (said(req, "a repository is needed"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	/* One build at a time: they share the directory. */
+	pthread_mutex_lock(&build_lock);
+	(void)do_agent_build(w, in->source, in->ref != NULL && in->ref[0] !=
+	    '\0' ? in->ref : NULL, in->host_keys, in->ssh_key, &r);
+	pthread_mutex_unlock(&build_lock);
+	if (!r.ok)
+		return (said(req, r.error));
+	out->binary = r.binary;
+	out->sha256 = r.sha256;
+	out->version = r.agent_version;
+	out->commit = r.commit;
+	out->host_keys = r.host_keys;
+	out->fingerprint.n = r.fingerprints.n;
+	out->fingerprint.v = r.fingerprints.v;
+	out->deploy_key = r.deploy_key;
+	return (0);
 }
 
 int
@@ -289,13 +436,33 @@ arcana_agent_agent_config_apply_action(cbl_req *req,
     const struct arcana_agent_agent_config_apply_input *in,
     struct arcana_agent_agent_config_apply_output *out, cbl_yarena *a)
 {
+	struct arc_config_apply_rsp	 r;
+	struct work			*w;
+	char				*json;
+	bool				 dry;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (in->bundle == NULL)
+		return (said(req, "a bundle is needed"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	if ((json = yagent_bundle_json(in->bundle)) == NULL)
+		return (ENOMEM);
+	dry = in->has_dry_run && in->dry_run;
+	memset(&r, 0, sizeof(r));
+	if (!change_begin(dry ? "config-apply, a dry run" : "config-apply")) {
+		free(json);
+		return (said(req, "not done: arcana-agent is stopping"));
+	}
+	(void)do_config_apply(w, json, dry, in->has_anyway && in->anyway,
+	    in->hostname, &r);
+	change_end();
+	free(json);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (yagent_apply_from_json(r.json, a, out));
 }
 
 int
@@ -304,13 +471,19 @@ arcana_agent_agent_config_export_action(cbl_req *req,
     const struct arcana_agent_agent_config_export_input *in,
     struct arcana_agent_agent_config_export_output *out, cbl_yarena *a)
 {
+	struct arc_config_export_rsp	 r;
+	struct work			*w;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	(void)do_config_export(w, in->has_secrets && in->secrets, &r);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (yagent_bundle_from_json(r.json, a, out));
 }
 
 int
@@ -319,13 +492,31 @@ arcana_agent_agent_console_update_action(cbl_req *req,
     const struct arcana_agent_agent_console_update_input *in,
     struct arcana_agent_agent_console_update_output *out, cbl_yarena *a)
 {
+	struct arc_console_update_rsp	 r;
+	struct work			*w;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (in->source == NULL)
+		return (said(req, "a repository is needed"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	pthread_mutex_lock(&build_lock);
+	(void)do_console_update(w, in->source, in->ref != NULL &&
+	    in->ref[0] != '\0' ? in->ref : NULL, in->host_keys, in->ssh_key,
+	    &r);
+	pthread_mutex_unlock(&build_lock);
+	if (!r.ok)
+		return (said(req, r.error));
+	out->host_keys = r.host_keys;
+	out->fingerprint.n = r.fingerprints.n;
+	out->fingerprint.v = r.fingerprints.v;
+	out->deploy_key = r.deploy_key;
+	/* The tree installed has this daemon in it too: both restart. */
+	restart_later(true);
+	return (0);
 }
 
 int
@@ -384,13 +575,29 @@ arcana_agent_agent_source_head_action(cbl_req *req,
     const struct arcana_agent_agent_source_head_input *in,
     struct arcana_agent_agent_source_head_output *out, cbl_yarena *a)
 {
+	struct arc_source_head_rsp	 r;
+	struct work			*w;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (in->source == NULL)
+		return (said(req, "a repository is needed"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	pthread_mutex_lock(&build_lock);
+	(void)do_source_head(w, in->source, in->ref != NULL && in->ref[0] !=
+	    '\0' ? in->ref : NULL, in->host_keys, in->ssh_key, &r);
+	pthread_mutex_unlock(&build_lock);
+	if (!r.ok)
+		return (said(req, r.error));
+	out->commit = r.commit;
+	out->host_keys = r.host_keys;
+	out->fingerprint.n = r.fingerprints.n;
+	out->fingerprint.v = r.fingerprints.v;
+	out->deploy_key = r.deploy_key;
+	return (0);
 }
 
 int
@@ -399,13 +606,25 @@ arcana_agent_agent_source_log_action(cbl_req *req,
     const struct arcana_agent_agent_source_log_input *in,
     struct arcana_agent_agent_source_log_output *out, cbl_yarena *a)
 {
+	struct arc_source_log_rsp	 r;
+	struct work			*w;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (in->source == NULL)
+		return (said(req, "a repository is needed"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	pthread_mutex_lock(&build_lock);
+	(void)do_source_log(w, in->source, in->ref != NULL && in->ref[0] !=
+	    '\0' ? in->ref : NULL, in->host_keys, in->ssh_key,
+	    in->has_count ? in->count : 0, &r);
+	pthread_mutex_unlock(&build_lock);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (yagent_log_from_json(r.commit, r.log, r.tags, a, out));
 }
 
 int
@@ -413,13 +632,28 @@ arcana_agent_agent_tls_csr_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_agent_agent_tls_csr_input *in,
     struct arcana_agent_agent_tls_csr_output *out, cbl_yarena *a)
 {
+	struct arc_tls_rsp	 r;
+	struct work		*w;
+	ucl_object_t		*top;
 
-	(void)req;
 	(void)target;
 	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	if (!change_begin("tls csr"))
+		return (said(req, "not done: arcana-agent is stopping"));
+	do_tls(w, "csr", NULL, NULL, NULL, NULL, &r);
+	change_end();
+	if (!r.ok)
+		return (said(req, r.error));
+	if ((top = yj_parse(r.json)) == NULL)
+		return (EINVAL);
+	out->csr = yj_str(a, top, "csr");
+	ucl_object_unref(top);
+	return (0);
 }
 
 int
@@ -428,13 +662,34 @@ arcana_agent_agent_tls_install_action(cbl_req *req,
     const struct arcana_agent_agent_tls_install_input *in,
     struct arcana_agent_agent_tls_install_output *out, cbl_yarena *a)
 {
+	struct arc_tls_rsp	 r;
+	const cbl_peer		*pe;
+	struct work		*w;
+	uint8_t			 fp[64];
+	size_t			 fplen;
+	bool			 have;
 
-	(void)req;
 	(void)target;
-	(void)in;
 	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (in->certificate == NULL)
+		return (said(req, "a certificate is needed"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	/* The peer asking, kept trusted across the change. */
+	fplen = sizeof(fp);
+	pe = cbl_req_peer(req);
+	have = pe != NULL && (cbl_peer_flags(pe) & CBL_PEER_AUTHENTICATED) !=
+	    0 && cbl_peer_fingerprint(pe, "sha256", fp, &fplen) == 0 &&
+	    fplen == 32;
+	memset(&r, 0, sizeof(r));
+	if (!change_begin("tls install"))
+		return (said(req, "not done: arcana-agent is stopping"));
+	do_tls(w, "install", in->certificate, in->ca, in->peer, have ? fp :
+	    NULL, &r);
+	change_end();
+	return (r.ok ? 0 : said(req, r.error));
 }
 
 int
@@ -443,13 +698,19 @@ arcana_agent_agent_transport_retry_action(cbl_req *req,
     const struct arcana_agent_agent_transport_retry_input *in,
     struct arcana_agent_agent_transport_retry_output *out, cbl_yarena *a)
 {
+	struct arc_transport_rsp	 r;
+	struct work			*w;
 
-	(void)req;
 	(void)target;
 	(void)in;
 	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	(void)do_transport(w, true, NULL, NULL, false, NULL, &r);
+	return (r.ok ? 0 : said(req, r.error));
 }
 
 int
@@ -457,13 +718,42 @@ arcana_agent_agent_update_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_agent_agent_update_input *in,
     struct arcana_agent_agent_update_output *out, cbl_yarena *a)
 {
+	struct arc_agent_update_rsp	 r;
+	const cbl_peer			*pe;
+	struct work			*w;
+	bool				 local, restart;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (in->binary.len == 0 || in->sha256 == NULL ||
+	    strlen(in->sha256) != 64)
+		return (said(req, "a program and its SHA-256 are needed"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	/* The local socket's root is root already: its program is taken
+	 * unsigned; any other peer's must be signed by the CA. */
+	pe = cbl_req_peer(req);
+	local = pe != NULL && cbl_peer_transport(pe) == CBL_TR_UNIX;
+	restart = in->has_restart && in->restart;
+	memset(&r, 0, sizeof(r));
+	/* Not while a change runs: a restart would cut it short. */
+	if (pthread_mutex_trylock(&change_lock) != 0)
+		return (said(req, change_busy(w)));
+	if (change_note("agent update"))
+		(void)do_agent_update(w, in->binary.p, in->binary.len,
+		    in->sha256, in->signature.p, in->signature.len, local, &r);
+	else
+		r.error = "not done: arcana-agent is stopping";
+	change_end();
+	if (!r.ok)
+		return (said(req, r.error));
+	out->version = r.agent_version;
+	out->has_restarting = true;
+	out->restarting = restart;
+	if (restart)
+		restart_later(false);
+	return (0);
 }
 
 int
@@ -516,12 +806,14 @@ arcana_bird_bird_routes_action(cbl_req *req, const struct cbl_bytes *target,
 {
 	struct arc_network_rsp	 r;
 	struct work		*w;
+	int			 error;
 
-	(void)target;
 	if (yang_refused(req))
 		return (EACCES);
 	if ((w = ywork(a)) == NULL)
 		return (ENOMEM);
+	if ((error = yjail_scope(req, target, w, a)) != 0)
+		return (error);
 	memset(&r, 0, sizeof(r));
 	(void)do_bird_routes(w, in->filter != NULL ? in->filter : "all", &r);
 	if (!r.ok)
@@ -584,13 +876,30 @@ arcana_events_events_read_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_events_events_read_input *in,
     struct arcana_events_events_read_output *out, cbl_yarena *a)
 {
+	struct arc_events_rsp		 r;
+	struct arcana_events_events	 o;
+	struct work			*w;
+	int				 error;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	(void)do_events(w, in->has_after ? in->after : 0, &r);
+	if (!r.ok)
+		return (failed("events", r.error));
+	memset(&o, 0, sizeof(o));
+	if ((error = yev_from_json(r.json, a, &o)) != 0)
+		return (error);
+	out->has_last = o.has_last;
+	out->last = o.last;
+	out->has_first = o.has_first;
+	out->first = o.first;
+	out->event.n = o.event.n;
+	out->event.v = o.event.v;
+	return (0);
 }
 
 int
@@ -649,13 +958,34 @@ arcana_firewall_firewall_trace_action(cbl_req *req,
     const struct arcana_firewall_firewall_trace_input *in,
     struct arcana_firewall_firewall_trace_output *out, cbl_yarena *a)
 {
+	struct arc_fw_trace_rsp	 r;
+	const char		*addr, *e;
+	const void		**k;
+	struct work		*w;
 
-	(void)req;
-	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	addr = in->has_address ? in->address.v.m0 : NULL;
+	if (addr == NULL || strlen(addr) > 64)
+		return (said(req, "the address to follow is an IPv4 or IPv6 "
+		    "address"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	/* A jail's firewall: the jail's own network, a vnet. */
+	if ((k = keys_of(target, 1, a)) != NULL) {
+		if (!valid_jail(*(const char *const *)k[0]))
+			return (said(req, "invalid jail name"));
+		e = NULL;
+		if (scope_enter_jail(w, *(const char *const *)k[0], &e,
+		    true) != 0)
+			return (said(req, e));
+	}
+	(void)do_fw_trace(w, addr, in->has_seconds ? in->seconds : 0,
+	    in->has_packets ? in->packets : 0, &r);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (yfw_trace_from_json(r.json, a, out));
 }
 
 int
@@ -699,13 +1029,31 @@ arcana_history_history_read_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_history_history_read_input *in,
     struct arcana_history_history_read_output *out, cbl_yarena *a)
 {
+	struct arc_history_rsp		 r;
+	struct arcana_history_history	 o;
+	struct work			*w;
+	time_t				 after = 0;
+	int				 error;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (in->after != NULL && !ytime_parse(in->after, &after))
+		return (said(req, "after is no date-and-time"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	(void)do_history(w, (uint64_t)after, false, 0, 0, NULL, NULL, &r);
+	if (!r.ok)
+		return (failed("history", r.error));
+	memset(&o, 0, sizeof(o));
+	if ((error = yhist_from_json(r.json, a, &o)) != 0)
+		return (error);
+	if (o.state != NULL) {
+		out->sample.n = o.state->sample.n;
+		out->sample.v = o.state->sample.v;
+	}
+	return (0);
 }
 
 int
@@ -723,38 +1071,6 @@ arcana_jails_jails_get(cbl_req *req, struct arcana_jails *data, cbl_yarena *a)
 	if (!r.ok)
 		return (failed("list", r.error));
 	return (yjails_from_list(&r, a, data));
-}
-
-int
-arcana_jails_jails_jail_arcbird_bird_routes_action(cbl_req *req,
-    const struct cbl_bytes *target,
-    const struct arcana_jails_jails_jail_arcbird_bird_routes_input *in,
-    struct arcana_jails_jails_jail_arcbird_bird_routes_output *out,
-    cbl_yarena *a)
-{
-
-	(void)req;
-	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
-}
-
-int
-arcana_jails_jails_jail_arcfw_firewall_trace_action(cbl_req *req,
-    const struct cbl_bytes *target,
-    const struct arcana_jails_jails_jail_arcfw_firewall_trace_input *in,
-    struct arcana_jails_jails_jail_arcfw_firewall_trace_output *out,
-    cbl_yarena *a)
-{
-
-	(void)req;
-	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
 }
 
 int
@@ -939,13 +1255,21 @@ arcana_kernel_kernel_file_unload_action(cbl_req *req,
     const struct arcana_kernel_kernel_file_unload_input *in,
     struct arcana_kernel_kernel_file_unload_output *out, cbl_yarena *a)
 {
+	struct kld_file_stat	 st;
+	const void		**k;
 
-	(void)req;
-	(void)target;
 	(void)in;
 	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if ((k = keys_of(target, 1, a)) == NULL)
+		return (EINVAL);
+	/* The file's name, as kldunload(8) takes it. */
+	memset(&st, 0, sizeof(st));
+	st.version = sizeof(st);
+	if (kldstat((int)*(const uint32_t *)k[0], &st) == -1)
+		return (said(req, "no such file in the kernel"));
+	return (kmod(req, "unload", st.name, a));
 }
 
 int
@@ -978,11 +1302,10 @@ arcana_kernel_load_rpc(cbl_req *req, const struct arcana_kernel_load_input *in,
     struct arcana_kernel_load_output *out, cbl_yarena *a)
 {
 
-	(void)req;
-	(void)in;
 	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	return (kmod(req, "load", in->name, a));
 }
 
 int
@@ -1074,12 +1397,22 @@ arcana_notify_notify_rpc(cbl_req *req,
     const struct arcana_notify_notify_input *in,
     struct arcana_notify_notify_output *out, cbl_yarena *a)
 {
+	const char	*e;
+	struct work	*w;
+	int		 rc;
 
-	(void)req;
-	(void)in;
 	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (in->token == NULL || in->chat == NULL || in->text == NULL)
+		return (said(req, "a token, a chat and a text are needed"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	e = NULL;
+	rc = do_notify(w, in->token, in->chat, in->text, &e);
+	/* The token goes as soon as it is used. */
+	explicit_bzero((void *)(uintptr_t)in->token, strlen(in->token));
+	return (rc != 0 ? said(req, e) : 0);
 }
 
 int
@@ -1146,13 +1479,43 @@ arcana_packages_packages_upgrade_action(cbl_req *req,
     const struct arcana_packages_packages_upgrade_input *in,
     struct arcana_packages_packages_upgrade_output *out, cbl_yarena *a)
 {
+	struct arc_pkg_upgrade_req	 q;
+	struct arc_pkg_upgrade_rsp	 r;
+	const void			**k;
+	const char			*jail = NULL;
+	struct work			*w;
 
-	(void)req;
-	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if ((k = keys_of(target, 1, a)) != NULL &&
+	    !valid_jail(jail = *(const char *const *)k[0]))
+		return (said(req, "invalid jail name"));
+	for (size_t i = 0; i < in->name.n; i++)
+		if (in->name.v[i] == NULL || in->name.v[i][0] == '\0')
+			return (said(req, "a package without a name"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&q, 0, sizeof(q));
+	q.jail = jail;
+	q.names.v = in->name.v;
+	q.names.n = in->name.n;
+	q.dry_run = in->has_dry_run && in->dry_run;
+	q.has_ignore_osversion = in->has_ignore_osversion;
+	q.ignore_osversion = in->ignore_osversion;
+	/* ip-version's values are pkg-ip's: 0, 4, 6. */
+	q.has_pkg_ip = in->has_ip_version;
+	q.pkg_ip = in->has_ip_version ? (uint8_t)in->ip_version : 0;
+	q.pkg_repo = in->repository != NULL && in->repository[0] != '\0' ?
+	    in->repository : NULL;
+	memset(&r, 0, sizeof(r));
+	if (!change_begin(wfmt(w, "pkg upgrade%s%s", jail != NULL ?
+	    " in jail " : "", jail != NULL ? jail : "")))
+		return (said(req, "not done: arcana-agent is stopping"));
+	(void)do_pkg_upgrade(w, &q, &r);
+	change_end();
+	if (!r.ok)
+		return (said(req, r.error));
+	return (ypackages_upgraded(&r, a, out));
 }
 
 int
@@ -1199,13 +1562,40 @@ arcana_probe_probes_read_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_probe_probes_read_input *in,
     struct arcana_probe_probes_read_output *out, cbl_yarena *a)
 {
+	struct arcana_probe_probes_read_output_target	*v;
+	struct arcana_probe_probes_state		 st;
+	struct arc_sdwan_rsp				 r;
+	struct work					*w;
+	time_t						 after = 0;
+	int						 error;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (in->after != NULL && !ytime_parse(in->after, &after))
+		return (said(req, "after is no date-and-time"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	(void)do_sdwan(w, (uint64_t)after, &r);
+	if (!r.ok)
+		return (failed("sdwan", r.error));
+	memset(&st, 0, sizeof(st));
+	if ((error = yprobe_state_from_json(r.json, a, &st)) != 0)
+		return (error);
+	if (st.target.n == 0)
+		return (0);
+	if ((v = cbl_yarena_alloc(a, st.target.n * sizeof(*v))) == NULL)
+		return (ENOMEM);
+	for (size_t i = 0; i < st.target.n; i++) {
+		v[i].id = st.target.v[i].id;
+		v[i].sample.n = st.target.v[i].sample.n;
+		v[i].sample.v = st.target.v[i].sample.v;
+		v[i].jail = st.target.v[i].jail;
+	}
+	out->target.n = st.target.n;
+	out->target.v = v;
+	return (0);
 }
 
 int
@@ -1435,12 +1825,10 @@ arcana_storage_storage_dataset_change_key_action(cbl_req *req,
     struct arcana_storage_storage_dataset_change_key_output *out, cbl_yarena *a)
 {
 
-	(void)req;
-	(void)target;
-	(void)in;
 	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (in->new_key == NULL)
+		return (said(req, "a new key is needed"));
+	return (zfs_key(req, target, in->key, in->new_key, a));
 }
 
 int
@@ -1450,12 +1838,10 @@ arcana_storage_storage_dataset_load_key_action(cbl_req *req,
     struct arcana_storage_storage_dataset_load_key_output *out, cbl_yarena *a)
 {
 
-	(void)req;
-	(void)target;
-	(void)in;
 	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (in->key == NULL)
+		return (said(req, "a key is needed"));
+	return (zfs_key(req, target, in->key, NULL, a));
 }
 
 int
@@ -1464,13 +1850,33 @@ arcana_storage_storage_dataset_unload_key_action(cbl_req *req,
     const struct arcana_storage_storage_dataset_unload_key_input *in,
     struct arcana_storage_storage_dataset_unload_key_output *out, cbl_yarena *a)
 {
+	struct arc_job_spec	 sp;
+	const char		*names[1], *e;
+	const void		**k;
+	struct work		*w;
+	int			 rc;
 
-	(void)req;
-	(void)target;
 	(void)in;
 	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if ((k = keys_of(target, 1, a)) == NULL)
+		return (EINVAL);
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	/* As the zfs job's unload-key. */
+	memset(&sp, 0, sizeof(sp));
+	sp.kind = ARC_JOB_KIND_ZFS;
+	sp.verb = "unload-key";
+	names[0] = *(const char *const *)k[0];
+	sp.names.v = names;
+	sp.names.n = 1;
+	e = NULL;
+	if (!change_begin(wfmt(w, "zfs unload-key %s", names[0])))
+		return (said(req, "not done: arcana-agent is stopping"));
+	rc = do_storage_job(w, &sp, &e);
+	change_end();
+	return (rc != 0 ? said(req, e) : 0);
 }
 
 int
@@ -1479,13 +1885,37 @@ arcana_storage_storage_fstab_replace_action(cbl_req *req,
     const struct arcana_storage_storage_fstab_replace_input *in,
     struct arcana_storage_storage_fstab_replace_output *out, cbl_yarena *a)
 {
+	struct arc_fstab_req	 q;
+	struct arc_fstab_rsp	 r;
+	struct work		*w;
+	bool			 dry;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (in->text == NULL || in->sha256 == NULL)
+		return (said(req, "the text and the SHA-256 of the one it was "
+		    "made from are needed"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	dry = in->has_dry_run && in->dry_run;
+	memset(&q, 0, sizeof(q));
+	q.conf_text = in->text;
+	q.sha256 = in->sha256;
+	q.dry_run = dry;
+	memset(&r, 0, sizeof(r));
+	if (dry)
+		(void)do_fstab(w, &q, &r);
+	else {
+		if (!change_begin("fstab write"))
+			return (said(req, "not done: arcana-agent is stopping"));
+		(void)do_fstab(w, &q, &r);
+		change_end();
+	}
+	if (!r.ok)
+		return (said(req, r.error));
+	out->sha256 = r.sha256;
+	return (0);
 }
 
 int
@@ -1580,15 +2010,38 @@ int
 arcana_troubleshoot_troubleshoot_capture_action(cbl_req *req,
     const struct cbl_bytes *target,
     const struct arcana_troubleshoot_troubleshoot_capture_input *in,
-    struct arcana_troubleshoot_troubleshoot_capture_output *out, cbl_yarena *a)
+    struct arcana_troubleshoot_troubleshoot_capture_output *out,
+    cbl_yarena *a)
 {
+	struct arc_capture_req	 q;
+	struct arc_capture_rsp	 r;
+	const char		*e;
+	struct work		*w;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (in->jail != NULL && in->jail[0] != '\0' && !valid_jail(in->jail))
+		return (said(req, "invalid jail name"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&q, 0, sizeof(q));
+	q.interface = in->interface;
+	q.net_filter = in->filter;
+	q.has_seconds = in->has_seconds;
+	q.seconds = in->seconds;
+	q.has_packets = in->has_packets;
+	q.packets = in->packets;
+	memset(&r, 0, sizeof(r));
+	r.has_ok = true;
+	e = NULL;
+	if (scope_enter(w, in->jail != NULL && in->jail[0] != '\0' ?
+	    in->jail : NULL, &e) != 0)
+		return (said(req, e));
+	do_capture(w, &q, &r);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (yts_capture_from_json(r.json, a, out));
 }
 
 int
@@ -1620,13 +2073,34 @@ arcana_troubleshoot_troubleshoot_path_check_action(cbl_req *req,
     struct arcana_troubleshoot_troubleshoot_path_check_output *out,
     cbl_yarena *a)
 {
+	static const char *const protos[] = { "tcp", "udp", "icmp", "ip" };
+	struct arc_path_check_rsp	 r;
+	const char			*e;
+	struct work			*w;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (!in->has_source || !in->has_destination)
+		return (said(req, "a source and a destination are needed"));
+	if (in->jail != NULL && in->jail[0] != '\0' && !valid_jail(in->jail))
+		return (said(req, "invalid jail name"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	r.has_ok = true;
+	e = NULL;
+	if (scope_enter(w, in->jail != NULL && in->jail[0] != '\0' ?
+	    in->jail : NULL, &e) != 0)
+		return (said(req, e));
+	do_path_check(w, in->source.v.m0, in->destination.v.m0,
+	    in->has_protocol && (size_t)in->protocol < nitems(protos) ?
+	    protos[in->protocol] : NULL, in->has_port ? in->port : 0,
+	    in->interface, in->has_fib, in->has_fib ? in->fib : 0,
+	    in->has_reply && in->reply, &r);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (yts_path_from_json(r.json, a, out));
 }
 
 int
@@ -1636,13 +2110,25 @@ arcana_troubleshoot_troubleshoot_traceroute_action(cbl_req *req,
     struct arcana_troubleshoot_troubleshoot_traceroute_output *out,
     cbl_yarena *a)
 {
+	struct arc_traceroute_rsp	 r;
+	const char			*addr;
+	struct work			*w;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	addr = in->has_address ? in->address.v.m0 : NULL;
+	if (addr == NULL || addr[0] == '-' || addr[strspn(addr,
+	    "0123456789abcdefABCDEF.:")] != '\0')
+		return (said(req, "an address to trace the route to is "
+		    "needed"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	(void)do_traceroute(w, addr, &r);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (yts_traceroute_from_json(r.json, a, out));
 }
 
 int
@@ -1743,11 +2229,34 @@ arcana_builder_builder_port_options_action(cbl_req *req,
     const struct arcana_builder_builder_port_options_input *in,
     struct arcana_builder_builder_port_options_output *out, cbl_yarena *a)
 {
+	struct arc_builder_options_rsp	 r;
+	struct arc_job_spec		 sp;
+	const char			*names[8];
+	struct work			*w;
+	size_t				 n = 0;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	/* As the builder-options operation takes them: jail=, ports=,
+	 * set=, origin=. */
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	if (in->jail != NULL)
+		names[n++] = wfmt(w, "jail=%s", in->jail);
+	if (in->ports != NULL)
+		names[n++] = wfmt(w, "ports=%s", in->ports);
+	if (in->set != NULL)
+		names[n++] = wfmt(w, "set=%s", in->set);
+	if (in->origin != NULL)
+		names[n++] = wfmt(w, "origin=%s", in->origin);
+	memset(&sp, 0, sizeof(sp));
+	sp.names.v = names;
+	sp.names.n = n;
+	memset(&r, 0, sizeof(r));
+	r.has_ok = true;
+	do_builder_options(w, &sp, &r);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (ybuilder_options_from_json(r.json, a, out));
 }

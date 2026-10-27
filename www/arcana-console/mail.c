@@ -245,8 +245,15 @@ send_with(const struct mailconf *mc, const char *subject, const char *body,
 		snprintf(err, errlen, "out of memory");
 		return (-1);
 	}
-	if (pipe2(in, O_CLOEXEC) == -1 || pipe2(out, O_CLOEXEC) == -1) {
+	if (pipe2(in, O_CLOEXEC) == -1) {
 		snprintf(err, errlen, "pipe: %s", strerror(errno));
+		free(msg);
+		return (-1);
+	}
+	if (pipe2(out, O_CLOEXEC) == -1) {
+		snprintf(err, errlen, "pipe: %s", strerror(errno));
+		close(in[0]);
+		close(in[1]);
 		free(msg);
 		return (-1);
 	}

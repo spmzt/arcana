@@ -73,6 +73,9 @@ bool
 token_readable(const char *path)
 {
 
+	if (strcmp(path, "/restconf") == 0 || strncmp(path, "/restconf/",
+	    10) == 0)
+		return (true);
 	return (strncmp(path, "/api/", 5) == 0 && strncmp(path,
 	    "/api/settings", 13) != 0 && strncmp(path, "/api/auth", 9) != 0 &&
 	    strncmp(path, "/api/push", 9) != 0 && strncmp(path, "/api/enrol",

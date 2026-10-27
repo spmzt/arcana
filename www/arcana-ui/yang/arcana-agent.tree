@@ -38,9 +38,10 @@ module: arcana-agent
      |        +---w peer?          string
      +---x update
      |  +---w input
-     |  |  +---w binary     binary
-     |  |  +---w sha256     string
-     |  |  +---w restart?   boolean
+     |  |  +---w binary       binary
+     |  |  +---w sha256       string
+     |  |  +---w restart?     boolean
+     |  |  +---w signature?   binary
      |  +--ro output
      |     +--ro version?      string
      |     +--ro restarting?   boolean

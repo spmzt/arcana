@@ -326,6 +326,146 @@ ATF_TC_BODY(unauthenticated, tc)
 	ATF_CHECK_EQ(0, access("data/setup-token", R_OK));
 }
 
+CONSOLE_TC(restconf, "RESTCONF's reads: discovery, the root, the fleet "
+    "and a host's data by api-path, content, depth, fields and "
+    "with-defaults; its errors")
+ATF_TC_BODY(restconf, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 64];
+	char		 host[128], path[256];
+
+	start(tc, 0, NULL);
+	http("GET", "/.well-known/host-meta", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "<Link rel='restconf' href='/restconf'/>") !=
+	    NULL);
+	resp_free(&r);
+	/* Without a session: refused, as ietf-restconf's errors say it. */
+	http("GET", "/restconf", NULL, &r);
+	EXPECT(&r, 401);
+	ATF_CHECK_STREQ("access-denied",
+	    jstr(&r, "ietf-restconf:errors.error.0.error-tag"));
+	resp_free(&r);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(host, sizeof(host), "/restconf/data/arcana-fleet:fleet/"
+	    "host=%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	http("GET", "/restconf", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("2019-01-04",
+	    jstr(&r, "ietf-restconf:restconf.yang-library-version"));
+	resp_free(&r);
+	http("GET", "/restconf/data/arcana-fleet:fleet", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("lab", jstr(&r, "arcana-fleet:fleet.host.0.name"));
+	resp_free(&r);
+	http("GET", "/restconf/data/ietf-restconf-monitoring:restconf-state",
+	    NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("urn:ietf:params:restconf:capability:depth:1.0",
+	    jstr(&r, "ietf-restconf-monitoring:restconf-state.capabilities."
+	    "capability.1"));
+	resp_free(&r);
+	/* A leaf of the agent's, by its path. */
+	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces/"
+	    "interface=lo0/name", host);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("lo0", jstr(&r, "ietf-interfaces:name"));
+	resp_free(&r);
+	/* An entry: depth 1 is the entry alone; content=config keeps
+	 * its key and leaves out its state. */
+	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces/"
+	    "interface=lo0?depth=1", host);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ_MSG("{\"ietf-interfaces:interface\":[{}]}", r.body,
+	    "%s", r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces/"
+	    "interface=lo0?content=config", host);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("lo0", jstr(&r, "ietf-interfaces:interface.0.name"));
+	ATF_CHECK(jstr(&r, "ietf-interfaces:interface.0.oper-status") == NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces/"
+	    "interface=lo0?content=nonconfig", host);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("up", jstr(&r,
+	    "ietf-interfaces:interface.0.oper-status"));
+	resp_free(&r);
+	/* fields: the members named, the key always; with-defaults: an
+	 * enabled interface's enabled is its default, true. */
+	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces/"
+	    "interface=lo0?fields=type;statistics(in-octets)", host);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("lo0", jstr(&r, "ietf-interfaces:interface.0.name"));
+	ATF_CHECK(jstr(&r, "ietf-interfaces:interface.0.type") != NULL);
+	ATF_CHECK(jstr(&r, "ietf-interfaces:interface.0.statistics.in-octets")
+	    != NULL);
+	ATF_CHECK(jstr(&r, "ietf-interfaces:interface.0.statistics."
+	    "out-octets") == NULL);
+	ATF_CHECK(jstr(&r, "ietf-interfaces:interface.0.oper-status") == NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces/"
+	    "interface=lo0?with-defaults=trim", host);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "ietf-interfaces:interface.0.enabled") == NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces/"
+	    "interface=lo0?with-defaults=report-all-tagged", host);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ietf-interfaces:interface.0.enabled"));
+	ATF_CHECK_STREQ("true", jstr(&r, "ietf-interfaces:interface.0."
+	    "@enabled.ietf-netconf-with-defaults:default"));
+	resp_free(&r);
+	/* What is not there, a query not taken, a path that is none. */
+	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces/"
+	    "interface=nosuch9", host);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 404);
+	ATF_CHECK_STREQ("invalid-value",
+	    jstr(&r, "ietf-restconf:errors.error.0.error-tag"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces?point=x",
+	    host);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* fields with an empty node, first or after one: refused. */
+	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces?fields="
+	    "interface//name", host);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/ietf-interfaces:interfaces?fields="
+	    "(name)", host);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/interfaces", host);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 400);
+	ATF_CHECK(strstr(r.body, "named with its module") != NULL);
+	resp_free(&r);
+	http("GET", "/restconf/data/arcana-fleet:fleet/host=ffffffff", NULL,
+	    &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+}
+
 CONSOLE_TC(setup_token, "The first key needs the setup token")
 ATF_TC_BODY(setup_token, tc)
 {
@@ -9659,6 +9799,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, users);
 	ATF_TP_ADD_TC(tp, csrf);
 	ATF_TP_ADD_TC(tp, jails);
+	ATF_TP_ADD_TC(tp, restconf);
 	ATF_TP_ADD_TC(tp, services);
 	ATF_TP_ADD_TC(tp, agent_update);
 	ATF_TP_ADD_TC(tp, agent_build);

@@ -283,8 +283,13 @@ write_file(const char *path, const void *p, size_t len, mode_t mode)
 	if ((fd = mkstemp(tmp)) == -1)
 		return (-1);
 	if ((len > 0 && write(fd, p, len) != (ssize_t)len) || fchmod(fd,
-	    mode) == -1 || fsync(fd) == -1 || close(fd) == -1 ||
-	    rename(tmp, path) == -1) {
+	    mode) == -1 || fsync(fd) == -1) {
+		log_msg(LOG_ERR, "writing %s: %s", path, strerror(errno));
+		(void)close(fd);
+		unlink(tmp);
+		return (-1);
+	}
+	if (close(fd) == -1 || rename(tmp, path) == -1) {
 		log_msg(LOG_ERR, "writing %s: %s", path, strerror(errno));
 		unlink(tmp);
 		return (-1);

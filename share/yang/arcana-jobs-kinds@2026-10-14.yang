@@ -1888,6 +1888,11 @@ submodule arcana-jobs-kinds {
             description
               "Arguments";
           }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
         }
       }
       case nfs {
@@ -2080,6 +2085,7 @@ submodule arcana-jobs-kinds {
               enum schedule;
               enum remove;
               enum update;
+              enum watch;
             }
             mandatory true;
             description

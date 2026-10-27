@@ -243,6 +243,8 @@ settings(struct work *w, const ucl_object_t *in, const char *name, FILE *b,
 	    "quic", "http2", "ike", "rfb", "dnp3", "modbus", NULL };
 	static const char *const runmodes[] = { "autofp", "workers", "single",
 	    NULL };
+	static const char *const schedulers[] = { "hash", "ippair", "ftp-hash",
+	    NULL };
 	static const char *const mpms[] = { "auto", "ac", "ac-ks", "hs", NULL };
 	static const char *const profiles[] = { "low", "medium", "high", NULL };
 	static const char *const presets[] = { "small", "medium", "large",
@@ -269,6 +271,7 @@ settings(struct work *w, const ucl_object_t *in, const char *name, FILE *b,
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
 	const char		*v, *rm, *mpm, *prof, *inl, *pol, *mg, *wk, *extra;
+	const char		*sched;
 	const char		*preset, *p;
 	const char		*sz[nitems(memcaps)];
 	int64_t			 k64, stats, pending;
@@ -302,6 +305,12 @@ settings(struct work *w, const ucl_object_t *in, const char *name, FILE *b,
 	}
 	inl = sstr(in, "stream_inline");
 	pol = sstr(in, "exception_policy");
+	sched = sstr(in, "autofp_scheduler");
+	if (sched != NULL && sched[0] != '\0' && !one_of(sched, schedulers)) {
+		*errp = wfmt(w, "%s: autofp's scheduler is hash, ippair or "
+		    "ftp-hash", name);
+		return (false);
+	}
 	if ((rm != NULL && rm[0] != '\0' && !one_of(rm, runmodes)) ||
 	    (mpm != NULL && mpm[0] != '\0' && !one_of(mpm, mpms)) ||
 	    (prof != NULL && prof[0] != '\0' && !one_of(prof, profiles)) ||
@@ -449,6 +458,11 @@ settings(struct work *w, const ucl_object_t *in, const char *name, FILE *b,
 		rm = "workers";
 	if (rm != NULL && rm[0] != '\0')
 		fprintf(b, "runmode: %s\n", rm);
+	/* autofp's packets to its workers by flow, as hash keeps a flow's
+	 * on one, unless the form says otherwise. */
+	if (rm != NULL && strcmp(rm, "autofp") == 0)
+		fprintf(b, "autofp-scheduler: %s\n", sched != NULL && sched[0] !=
+		    '\0' ? sched : "hash");
 	if (pending > 0)
 		fprintf(b, "max-pending-packets: %jd\n", (intmax_t)pending);
 	if (mpm != NULL && mpm[0] != '\0')
@@ -593,6 +607,21 @@ capture(struct work *w, const ucl_object_t *in, const char *name,
 			*errp = wfmt(w, "%s: a pair is two interfaces, em0:em1 or "
 			    "em0:em0^", name);
 			return (false);
+		}
+		/* A bridge's member: the bridge forwards its packets around
+		 * the pair, which would see some and stop none. */
+		for (int k = 0; k < 2; k++) {
+			const char	*br, *ifn;
+
+			ifn = wstrndup(w, k == 0 ? a : c, strcspn(k == 0 ? a : c,
+			    "^"));
+			if ((br = bridge_holding(w, ifn)) != NULL) {
+				*errp = wfmt(w, "%s: %s is a member of %s: netmap's "
+				    "pair takes it whole, the bridge's members "
+				    "are not its; take it out of the bridge, or "
+				    "pair the bridge itself", name, ifn, br);
+				return (false);
+			}
 		}
 		fprintf(b, "  - interface: %s\n    threads: auto\n"
 		    "    copy-mode: ips\n    copy-iface: %s\n  - interface: %s\n"

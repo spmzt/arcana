@@ -3,6 +3,9 @@ module arcana-firewall {
   namespace "urn:arcana:yang:arcana-firewall";
   prefix arcfw;
 
+  import cblink-gen {
+    prefix cg;
+  }
   import ietf-inet-types {
     prefix inet;
     reference
@@ -144,6 +147,7 @@ module arcana-firewall {
     description
       "A firewall, the host's or a vnet jail's.";
     container firewall {
+      cg:struct "firewall";
       description
         "ipfw(8), where this network lives.";
       container kept {

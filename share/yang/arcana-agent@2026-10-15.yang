@@ -418,6 +418,12 @@ module arcana-agent {
           description
             "Restart the service after the reply.";
         }
+        leaf signature {
+          type binary;
+          description
+            "The program's signature by the console's CA key; one sent
+             over the local socket is taken without.";
+        }
       }
       output {
         leaf version {

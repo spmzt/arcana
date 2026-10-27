@@ -32,6 +32,7 @@
 #include <openssl/evp.h>
 
 #include "console.h"
+#include "restconf.h"
 #include "ytrans.h"
 
 enum op {
@@ -44,6 +45,7 @@ enum op {
 	OP_SERVICE_CONFIG,
 	OP_NETWORK,
 	OP_YDATA,
+	OP_RESTCONF,
 	OP_STATS,
 	OP_PACKAGES,
 	OP_PKG_UPGRADE,
@@ -138,6 +140,9 @@ struct call {
 	bool			 restart;	/* agent-update */
 	char			*host_keys;	/* agent-build: confirmed */
 	char			*text;		/* bird-config: the new text */
+	struct rcreq		*rc;		/* restconf: what is asked */
+	char			*rc_json;	/* and its body */
+	int			 rc_status;
 	char			*key;		/* zfs-key: as typed, zeroed */
 	char			*new_key;
 	char			 zcreate[16];	/* zfs-key: made encrypted so */
@@ -265,6 +270,19 @@ struct tellbox {
 	struct call	*c;		/* the call on it now, or NULL */
 	cbl_sub		*sub;		/* NULL: the agent has no steps */
 };
+
+/* A box no call uses again: its subscription ended while its connection
+ * is still there (one shared stays for the others), then freed. */
+static void
+box_free(struct tellbox *box)
+{
+
+	if (box == NULL)
+		return;
+	if (box->sub != NULL)
+		(void)arc_steps_unsubscribe(box->sub);
+	free(box);
+}
 
 struct pooled {
 	char		*uri;
@@ -400,6 +418,7 @@ static int	 call_run(struct task *);
 static void	 call_release(struct call *);
 static int	 call_start(struct http_request *, struct call *);
 static int	 call_finish(struct http_request *);
+static int	 restconf_finish(struct http_request *, struct call *);
 static struct call *call_new(struct http_request *, enum op);
 
 static uint64_t
@@ -801,7 +820,7 @@ pool_give(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
 	int		i, n;
 
 	if (is_sctp(uri)) {
-		free(box);
+		box_free(box);
 		if (!shared_give(uri, peer, conn, tls, cl)) {
 			cbl_conn_free(conn);
 			cbl_tls_free(tls);
@@ -2167,6 +2186,11 @@ connected:
 			put(top, "data", e);
 		}
 		break;
+	case OP_RESTCONF:
+		restconf_run(cl.conn, c->rc, c->sid, c->sname, &c->rc_json,
+		    &c->rc_status);
+		ok = true;
+		break;
 	case OP_NETWORK:
 		/*
 		 * The interfaces by the standard models, a GET of cblink's
@@ -3234,6 +3258,9 @@ rpcfail:
 	 * new one.  What changes something is not: it may have arrived.
 	 */
 	if (reused && c->reads && cl.err == NULL) {
+		/* The new one subscribes to the steps anew. */
+		box_free(box);
+		box = NULL;
 		arc_client_fini(&cl);
 		pool_drop(conn, tls);
 		conn = NULL;
@@ -3381,14 +3408,13 @@ done:
 		pool_give(c->uri, c->peer, conn, tls, &cl, box);
 		return (WEB_OK);
 	}
+	box_free(box);
 	if (cl.conn != NULL)
 		arc_client_fini(&cl);
 	if (conn != NULL)
 		pool_drop(conn, tls);
 	else
 		cbl_tls_free(tls);
-	/* The connection, and with it the subscription, is gone. */
-	free(box);
 	return (WEB_OK);
 }
 
@@ -3428,8 +3454,9 @@ call_new(struct http_request *req, enum op op)
 	if (!guard(req, mutate))
 		return (NULL);
 	t1 = now_us();
-	if (!capture(req, 3, sid, sizeof(sid)) || (s = server_find(sid)) ==
-	    NULL) {
+	if (!(op == OP_RESTCONF ? restconf_host(req->path, sid,
+	    sizeof(sid)) : capture(req, 3, sid, sizeof(sid))) ||
+	    (s = server_find(sid)) == NULL) {
 		reply_error(req, 404, "not_found", "no such server");
 		return (NULL);
 	}
@@ -3499,6 +3526,8 @@ call_finish(struct http_request *req)
 		http_request_sleep(req);
 		return (WEB_RETRY);
 	}
+	if (c->op == OP_RESTCONF)
+		return (restconf_finish(req, c));
 	http_response_header(req, "content-type",
 	    "application/json; charset=utf-8");
 	http_response_header(req, "cache-control", "no-store");
@@ -3534,6 +3563,10 @@ call_release(struct call *c)
 
 	free(c->json);
 	c->json = NULL;
+	restconf_free(c->rc);
+	free(c->rc_json);
+	c->rc = NULL;
+	c->rc_json = NULL;
 	free(c->sname);
 	free(c->uri);
 	free(c->peer);
@@ -3971,6 +4004,66 @@ setup_ydata(struct call *c, const struct rq *q)
 		return ("node is names of nodes, by commas: letters, digits "
 		    "and -");
 	return (NULL);
+}
+
+/* RESTCONF's path below a host's entry, and its query. */
+static const char *
+setup_restconf(struct call *c, const struct rq *q)
+{
+	const char	*why = NULL;
+
+	if ((c->rc = restconf_parse(q->path, q->query, &why)) == NULL)
+		return (why);
+	return (NULL);
+}
+
+/* GET /restconf/data/arcana-fleet:fleet/host=<id>[/...] (restconf.c). */
+int
+api_restconf_host(struct http_request *req)
+{
+
+	return (read_route(req, OP_RESTCONF, setup_restconf));
+}
+
+/*
+ * A host's RESTCONF reply: what restconf_run() made, else the call's
+ * own error (the host not reached, the request refused) as
+ * ietf-restconf's.
+ */
+static int
+restconf_finish(struct http_request *req, struct call *c)
+{
+	const ucl_object_t	*e;
+	struct ucl_parser	*p;
+	ucl_object_t		*top;
+	const char		*msg;
+
+	if (c->rc_json != NULL) {
+		http_response_header(req, "content-type",
+		    "application/yang-data+json");
+		http_response_header(req, "cache-control", "no-store");
+		http_response_header(req, "x-content-type-options", "nosniff");
+		http_response(req, c->rc_status, c->rc_json,
+		    strlen(c->rc_json));
+		return (WEB_OK);
+	}
+	top = NULL;
+	msg = "the host was not reached";
+	if (c->json != NULL) {
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+		if (ucl_parser_add_string(p, c->json, 0))
+			top = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+		if ((e = ucl_object_lookup(top, "error")) != NULL &&
+		    ucl_object_lookup(e, "message") != NULL)
+			msg = ucl_object_tostring(ucl_object_lookup(e,
+			    "message"));
+	}
+	(void)restconf_error(req, c->status != 0 && c->status != 200 ?
+	    c->status : 502, msg);
+	ucl_object_unref(top);
+	return (WEB_OK);
 }
 
 /*

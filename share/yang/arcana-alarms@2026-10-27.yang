@@ -111,4 +111,11 @@ module arcana-alarms {
       "A process died of a signal that dumps core, the times it did
        in a day counted: the host's, or a jail's.";
   }
+
+  identity mail {
+    base arcana-fault;
+    description
+      "OpenSMTPD enabled and not running, or more queued than the
+       limit set: the host's, or a jail's.";
+  }
 }

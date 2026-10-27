@@ -358,6 +358,7 @@ module: arcana-jobs
        |        |  +---w suricata!
        |        |     +---w verb    enumeration
        |        |     +---w args*   string
+       |        |     +---w text?   string
        |        +--:(nfs)
        |        |  +---w nfs!
        |        |     +---w verb    enumeration

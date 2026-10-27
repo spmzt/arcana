@@ -82,7 +82,7 @@ ARC_YFEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-yang-library: -F ietf-datastores: \
 		-F ietf-alarms:alarm-summary,alarm-history -F arcana-alarms: \
 		-F iana-hardware: -F ietf-hardware:hardware-sensor \
-		-F ietf-subscribed-notifications:xpath -F ietf-yang-push:on-change
+		-F ietf-subscribed-notifications:xpath,replay -F ietf-yang-push:on-change
 
 .if ${ARC_YANG_SERVER:Uno} == "yes"
 _arc_yparts=	h,schema,server

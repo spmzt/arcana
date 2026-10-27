@@ -207,10 +207,15 @@ write_pem(const char *path, X509 *x, EVP_PKEY *key, mode_t mode)
 	}
 	ok = x != NULL ? PEM_write_X509(fp, x) :
 	    PEM_write_PrivateKey(fp, key, NULL, NULL, 0, NULL, NULL);
-	if (!ok || fflush(fp) != 0 || fsync(fd) == -1 || fclose(fp) != 0 ||
-	    rename(tmp, path) == -1) {
+	if (!ok || fflush(fp) != 0 || fsync(fd) == -1) {
 		log_msg(LOG_ERR, "writing %s: %s", path, ok ? strerror(errno) :
 		    ssl_err());
+		(void)fclose(fp);
+		unlink(tmp);
+		return (-1);
+	}
+	if (fclose(fp) != 0 || rename(tmp, path) == -1) {
+		log_msg(LOG_ERR, "writing %s: %s", path, strerror(errno));
 		unlink(tmp);
 		return (-1);
 	}
@@ -774,8 +779,12 @@ write_text(const char *path, const char *text, mode_t mode)
 	for (off = 0; off < len; off += (size_t)n)
 		if ((n = write(fd, text + off, len - off)) <= 0)
 			break;
-	if (off < len || fchmod(fd, mode) == -1 || fsync(fd) == -1 ||
-	    close(fd) == -1 || rename(tmp, path) == -1) {
+	if (off < len || fchmod(fd, mode) == -1 || fsync(fd) == -1) {
+		(void)close(fd);
+		unlink(tmp);
+		return (-1);
+	}
+	if (close(fd) == -1 || rename(tmp, path) == -1) {
 		unlink(tmp);
 		return (-1);
 	}

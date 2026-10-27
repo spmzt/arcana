@@ -3,6 +3,9 @@ module arcana-events {
   namespace "urn:arcana:yang:arcana-events";
   prefix arcev;
 
+  import cblink-gen {
+    prefix cg;
+  }
   import ietf-inet-types {
     prefix inet;
     reference
@@ -821,6 +824,7 @@ module arcana-events {
         "How many are kept at most.";
     }
     list event {
+      cg:struct "event-entry";
       key "number";
       description
         "The events, oldest first.";
@@ -848,6 +852,7 @@ module arcana-events {
             "The oldest still kept.";
         }
         list event {
+          cg:struct "event-entry";
           key "number";
           description
             "The events, oldest first.";

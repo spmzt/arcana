@@ -308,11 +308,12 @@ ietf_routing_routing_state_ribs_rib_active_route_action(cbl_req *req,
     cbl_yarena *a)
 {
 
-	(void)req;
 	(void)target;
 	(void)in;
 	(void)out;
 	(void)a;
+	(void)cbl_req_set_yerr(req, "routing-state is not served: ask "
+	    "/routing/ribs/rib/active-route", 0);
 	return (EOPNOTSUPP);
 }
 
@@ -597,6 +598,96 @@ ietf_alarms_alarms_edit(cbl_req *req, const struct ietf_alarms *before,
 	return (EOPNOTSUPP);
 }
 
+/* An alarm type's name in arcana-alarms, by its SID; NULL: none. */
+static const char *
+ident_name(uint64_t sid)
+{
+	const struct cbl_yident	*id;
+	uint32_t		 i;
+
+	for (i = 0; i < ymodel_schema.nident; i++) {
+		id = &ymodel_schema.ident[i];
+		if (id->sid == sid && strcmp(id->module->name,
+		    "arcana-alarms") == 0)
+			return (id->name);
+	}
+	return (NULL);
+}
+
+/* purge-alarms on the faults: how many went in *np. */
+static int
+alarms_purge(const struct ietf_alarms_alarms_alarm_list_purge_alarms_input
+    *in, uint32_t *np)
+{
+	const struct ietf_alarms_alarms_alarm_list_purge_alarms_input_older_than
+	    *o = in->older_than;
+	const struct ietf_alarms_alarms_alarm_list_purge_alarms_input_severity
+	    *s = in->severity;
+	time_t	before = 0;
+	int	clearance = 0, sevop = 0, sev = 0;
+
+	if (in->has_alarm_clearance_status)
+		clearance = in->alarm_clearance_status ==
+		    IETF_ALARMS_ALARMS_ALARM_LIST_PURGE_ALARMS_INPUT_ALARM_CLEARANCE_STATUS_CLEARED ?
+		    1 : in->alarm_clearance_status ==
+		    IETF_ALARMS_ALARMS_ALARM_LIST_PURGE_ALARMS_INPUT_ALARM_CLEARANCE_STATUS_NOT_CLEARED ?
+		    2 : 0;
+	if (o != NULL) {
+		/* In time_t: 25000 days of seconds are past an int. */
+		time_t	age = o->has_seconds ? (time_t)o->seconds :
+		    o->has_minutes ? (time_t)o->minutes * 60 : o->has_hours ?
+		    (time_t)o->hours * 3600 : o->has_days ? (time_t)o->days *
+		    86400 : o->has_weeks ? (time_t)o->weeks * 7 * 86400 : 0;
+
+		before = time(NULL) - age;
+	}
+	if (s != NULL) {
+		/* The three are one enumeration, the same values. */
+		if (s->has_below) {
+			sevop = -1;
+			sev = (int)s->below;
+		} else if (s->has_is)
+			sev = (int)s->is;
+		else if (s->has_above) {
+			sevop = 1;
+			sev = (int)s->above;
+		}
+	}
+	*np = (uint32_t)faults_purge(clearance, before, sevop, sev);
+	return (0);
+}
+
+/* compress-alarms on the faults: how many in *np. */
+static int
+alarms_compress(
+    const struct ietf_alarms_alarms_alarm_list_compress_alarms_input *in,
+    uint32_t *np)
+{
+	const char	*object = NULL, *type = NULL;
+
+	/* Only the string member is ever a fault's resource. */
+	if (in->has_resource) {
+		if (in->resource.which != 2) {
+			*np = 0;
+			return (0);
+		}
+		object = in->resource.v.m2;
+	}
+	if (in->has_alarm_type_id && (type = ident_name(in->alarm_type_id)) ==
+	    NULL) {
+		*np = 0;
+		return (0);
+	}
+	/* No fault has a qualifier: one asked for matches none. */
+	if (in->alarm_type_qualifier != NULL &&
+	    in->alarm_type_qualifier[0] != '\0') {
+		*np = 0;
+		return (0);
+	}
+	*np = (uint32_t)faults_compress(object, type);
+	return (0);
+}
+
 int
 ietf_alarms_alarms_alarm_list_purge_alarms_action(cbl_req *req,
     const struct cbl_bytes *target,
@@ -605,12 +696,12 @@ ietf_alarms_alarms_alarm_list_purge_alarms_action(cbl_req *req,
     cbl_yarena *a)
 {
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
 	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	out->has_purged_alarms = true;
+	return (alarms_purge(in, &out->purged_alarms));
 }
 
 int
@@ -621,16 +712,94 @@ ietf_alarms_alarms_alarm_list_compress_alarms_action(cbl_req *req,
     cbl_yarena *a)
 {
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
 	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	out->has_compressed_alarms = true;
+	return (alarms_compress(in, &out->compressed_alarms));
 }
 
 /* The context the models are served on, for their notifications. */
 static cbl_ctx		*yctx;
+
+/* A module's top-level node of that name, in the tables. */
+static const struct cbl_ynode *
+ynode_named(const char *mod, const char *name)
+{
+	const struct cbl_ymodule	*m;
+	uint32_t			 i, j;
+
+	for (i = 0; i < ymodel_schema.nmod; i++) {
+		m = ymodel_schema.mod[i];
+		if (strcmp(m->name, mod) != 0)
+			continue;
+		for (j = 0; j < m->ntop; j++)
+			if (strcmp(m->top[j]->name, name) == 0)
+				return (m->top[j]);
+	}
+	return (NULL);
+}
+
+/* yang:date-and-time of t, in the arena. */
+static const char *
+ytime(cbl_yarena *a, time_t t)
+{
+	struct tm	 tm;
+	char		 buf[32], *p;
+
+	if (gmtime_r(&t, &tm) == NULL)
+		return (NULL);
+	strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
+	if ((p = cbl_yarena_alloc(a, strlen(buf) + 1)) != NULL)
+		memcpy(p, buf, strlen(buf) + 1);
+	return (p);
+}
+
+/*
+ * A stream subscription's replay: the events kept since from, each as
+ * its arcana-events:event at its time; the subscription live before the
+ * event ring's lock is let go, so that none is lost or told twice.
+ */
+static void
+yreplay_one(const char *json, time_t t, void *arg)
+{
+	struct cbl_ysub_replay		*r = arg;
+	struct arcana_events_event	 ev;
+	struct timespec			 ts = { t, 0 };
+	cbl_yarena			*a;
+
+	if ((a = cbl_yarena_new()) == NULL)
+		return;
+	memset(&ev, 0, sizeof(ev));
+	if (yev_one_from_json(json, a, &ev) == 0)
+		(void)cbl_ysub_replay_emit(r, ynode_named("arcana-events",
+		    "event"), &ev, &ts);
+	cbl_yarena_free(a);
+}
+
+static void
+yreplay_live(void *arg)
+{
+
+	cbl_ysub_replay_live(arg);
+}
+
+static int
+yreplay(const struct timespec *from, struct cbl_ysub_replay *r, void *arg)
+{
+	struct timespec	 ts;
+	time_t		 since, oldest;
+	bool		 aged;
+
+	(void)arg;
+	events_replay(from->tv_sec, yreplay_one, yreplay_live, r, &since,
+	    &oldest, &aged);
+	ts.tv_sec = oldest != 0 ? oldest : time(NULL);
+	ts.tv_nsec = 0;
+	cbl_ysub_replay_oldest(r, &ts);
+	return (0);
+}
 
 /*
  * RFC 8639's subscriptions and RFC 8641's YANG-Push: cblink keeps them
@@ -657,6 +826,18 @@ ietf_subscribed_notifications_streams_get(cbl_req *req,
 	v->name = "NETCONF";
 	v->description = "every event the agent tells: arcana-events' event "
 	    "notifications";
+	/* Replayed from the events kept (gula/events.c). */
+	{
+		time_t	 since, oldest;
+		bool	 aged;
+
+		events_replay(time(NULL) + 1, NULL, NULL, NULL, &since,
+		    &oldest, &aged);
+		v->replay_support = true;
+		v->replay_log_creation_time = ytime(a, since);
+		if (aged && oldest != 0)
+			v->replay_log_aged_time = ytime(a, oldest);
+	}
 	st->stream.n = 1;
 	st->stream.v = v;
 	data->streams = st;
@@ -782,7 +963,8 @@ ysub_one(const struct cbl_ysub_info *in, void *arg)
 	r->has_excluded_event_records = true;
 	r->excluded_event_records = in->excluded;
 	r->has_state = true;
-	r->state = YSUB(RECEIVERS_RECEIVER_STATE_ACTIVE);
+	r->state = in->suspended ? YSUB(RECEIVERS_RECEIVER_STATE_SUSPENDED) :
+	    YSUB(RECEIVERS_RECEIVER_STATE_ACTIVE);
 	rs->receiver.n = 1;
 	rs->receiver.v = r;
 	s->receivers = rs;
@@ -845,6 +1027,7 @@ ietf_subscribed_notifications_establish_subscription_rpc(cbl_req *req,
 	return (EOPNOTSUPP);
 }
 
+/* The filter, stop-time or period of one's own subscription: cblink's. */
 int
 ietf_subscribed_notifications_modify_subscription_rpc(cbl_req *req,
     const struct ietf_subscribed_notifications_modify_subscription_input *in,
@@ -852,27 +1035,25 @@ ietf_subscribed_notifications_modify_subscription_rpc(cbl_req *req,
     cbl_yarena *a)
 {
 
-	(void)in;
 	(void)out;
 	(void)a;
-	(void)cbl_req_set_yerr(req, "a subscription is not modified: delete "
-	    "it and establish another", 0);
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	return (cbl_ysub_modify(req, in));
 }
 
-/* On-change pushes each change as it is seen: no resync to ask for. */
+/* An on-change subscription's whole contents pushed again. */
 int
 ietf_yang_push_resync_subscription_rpc(cbl_req *req,
     const struct ietf_yang_push_resync_subscription_input *in,
     struct ietf_yang_push_resync_subscription_output *out, cbl_yarena *a)
 {
 
-	(void)in;
 	(void)out;
 	(void)a;
-	(void)cbl_req_set_yerr(req, "no resync: establish another "
-	    "subscription, its first push the whole of it", 0);
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	return (cbl_ysub_resync(req, in->id));
 }
 
 /* The subscriber's own, on this connection. */
@@ -933,16 +1114,42 @@ yang_event(const char *json)
 	cbl_yarena_free(a);
 }
 
+/*
+ * What the agent tells the changes of, so that an on-change subscription
+ * of them is read when told and not every period: the events, each
+ * added (events.c); the alarms, each fault set, cleared, said anew,
+ * purged or compressed (faults.c).  A fault older than a day goes with
+ * the next of those.
+ */
+void
+yang_changed(int what)
+{
+	static const char *const tops[][2] = {
+		[YANG_EVENTS] = { "arcana-events", "events" },
+		[YANG_ALARMS] = { "ietf-alarms", "alarms" },
+	};
+	const struct cbl_ynode	*n;
+
+	if (yctx != NULL && what >= 0 && what < (int)nitems(tops) &&
+	    (n = ynode_named(tops[what][0], tops[what][1])) != NULL)
+		cbl_ysub_changed(yctx, n);
+}
+
 /* The models served, family 1 beside the agent's own. */
 int
 yang_serve(cbl_ctx *ctx)
 {
-	int	error;
+	const struct cbl_ynode	*told[2];
+	int			 error;
 
 	/* Each request on a thread of its own: a read of the storage or of
 	 * BIRD holds no other, as the agent's own family's slow reads. */
 	if ((error = cbl_yserver_add(ctx, &ymodel_server, NULL)) != 0)
 		return (error);
 	yctx = ctx;
+	(void)cbl_ysub_set_replay(ctx, yreplay, NULL);
+	if ((told[0] = ynode_named("arcana-events", "events")) != NULL &&
+	    (told[1] = ynode_named("ietf-alarms", "alarms")) != NULL)
+		(void)cbl_ysub_told(ctx, told, nitems(told));
 	return (cbl_yserver_threads(ctx, true));
 }

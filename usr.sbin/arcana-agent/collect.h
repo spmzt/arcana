@@ -334,7 +334,8 @@ int	yhost_from(const struct arc_host *h, const struct arc_stats *st,
 /*
  * arcana-agent (superbia/yagent.c): the transport and tls operations'
  * JSON as state; config-export's bundle and config-apply's report, and
- * source-log's commits and tags, as the actions' outputs.
+ * source-log's commits and tags, as the actions' outputs; the apply's
+ * bundle as the JSON config-export writes.
  */
 int	yagent_transport_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_agent_agent_transport *out);
@@ -342,6 +343,8 @@ int	yagent_tls_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_agent_agent_tls *out);
 int	yagent_bundle_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_agent_agent_config_export_output *out);
+char	*yagent_bundle_json(
+	    const struct arcana_agent_agent_config_apply_input_bundle *b);
 int	yagent_apply_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_agent_agent_config_apply_output *out);
 int	yagent_log_from_json(const char *commit, const char *log,

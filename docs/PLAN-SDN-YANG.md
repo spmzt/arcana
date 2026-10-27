@@ -94,9 +94,9 @@ not set a vxlan's VNI or ends, so they are set before the move;
 does, but leaky: loopback visible in every FIB unless
 `net.add_addr_allfibs=0`, daemons need `setfib`, FIB count is a boot
 tunable) versus a vnet jail per `vpn-node` (real isolation, own lo0,
-own sysctls, own BIRD, dhcpd, pimd and ipfw; more processes, jail
+own sysctls, own BIRD, dhcpd and ipfw; more processes, jail
 lifecycle). Recommendation: both, chosen per service: FIB by default,
-jail when the service needs multicast, DHCP, NAT or its own firewall.
+jail when the service needs DHCP, NAT or its own firewall.
 Both are modelled: FIB = `ietf-network-instance`, jail =
 `ietf-logical-network-element`.
 
@@ -380,7 +380,7 @@ for open sets.
 | IS-IS, S-BFD, OSPF sham links, `max-lsa`, RIP holddown, TCP-AO, IPv6 site-of-origin, BGP warning-threshold, native as-override, IPv6 router-id (9182) | BIRD lacks them; FreeBSD has no TCP-AO |
 | VRRP on the wire (9181, 9182) | carp(4) only, wire-incompatible: an Arcana `carp` identity instead |
 | `priority-tagged` (L3NM's default) and `qinany` encapsulations | vlan(4) refuses VID 0 and has no wildcard inner tag |
-| Multicast beyond pimd: MLD router side, PIMv6, bidir PIM, Auto-RP, anycast RP, MSDP, IGMP snooping in if_bridge, group limits (9181, 9182, 8578) | no maintained daemons; bridge has no snooping |
+| Multicast routing: IGMP and MLD router side, PIM, MSDP, IGMP snooping in if_bridge, group limits (9181, 9182, 8578) | out of scope |
 | MACsec (9182 layer-2 encryption, 9543 security SLE) | not in FreeBSD |
 | IP-TFS / AGGFRAG, TFC padding (9348, 9061) | not in netipsec; strongSwan's IP-TFS is Linux-XFRM only |
 | `sadb-bad-spi`; per-SA replay drop counters; port ranges in selectors; `espintcp`; PFP; per-SA DF and DSCP mapping; packet and idle lifetimes (9061) | PF_KEY has no such notification and no range extension; the kernel ignores or lacks them |
@@ -462,11 +462,11 @@ Depends on Y-2 for every write.
   draft's followed, an Arcana module only where none exists. With each
   operation converted, its task's { } Schema panel in the console
   shows its YANG model beside the CBOR schema, in the same commit.
-- **3.1 The Arcana modules.** A: each module's read is served; what
-  is left is its configuration written through `EDIT`, its actions
-  that answer `operation-not-supported` served, and its operations of
-  arcana.yaml retired from the interim module (D-9), the JSON blobs
-  replaced by typed lists.
+- **3.1 The Arcana modules.** A: each module's read and its actions
+  are served (a snapshot's send and receive wait for streams, 3.4);
+  what is left is its configuration written through `EDIT` and its
+  operations of arcana.yaml retired from the interim module (D-9), the
+  JSON blobs replaced by typed lists.
 - **3.2 Subscriptions.** A: on-change from the event sources rather
   than a read every dampening period, subtree filters, suspension on
   credit, `modify`, replay, monitoring counters, configured
@@ -792,59 +792,47 @@ whose first part is served.
 - 3.1.2 A: `arcana-services`: rcvars and rc.conf variables as leaves
   in `running`; the services, service-action and service-config
   operations retired; check: the services tests.
-- 3.1.3 A: `arcana-packages`: the upgrade action with a job, the
-  host's and a jail's, and a jail's refresh; the packages and
-  pkg-upgrade operations retired; check: the packages tests.
+- 3.1.3 A: `arcana-packages`: the packages and pkg-upgrade
+  operations retired; check: the packages tests.
 - 3.1.4 A: `arcana-jobs`: the job-submit, jobs, job, job-cancel and
   job-confirm operations retired; check: the jobs tests; the trace
   tree rebuilt in the page.
-- 3.1.5 A: `arcana-storage`: a dataset's key loaded, unloaded and
-  changed, fstab replaced, a snapshot sent and one received (streams)
-  as actions; the storage, fstab, zfs-send, zfs-receive and zfs-key
-  operations retired; check: the storage tests, the root ZFS test.
+- 3.1.5 A: `arcana-storage`: a snapshot sent and one received
+  (streams) as actions; the storage, fstab, zfs-send, zfs-receive and
+  zfs-key operations retired; check: the storage tests, the root ZFS
+  test.
 - 3.1.6 A: `arcana-sysctl` (`running` ↔ sysctl.conf) and
-  `arcana-kernel` (`kld_list` in `running`, load and unload); the
-  sysctl, sysctl-parts and kernel operations retired; check: tests.
-- 3.1.7 A: syslog.conf written from `ietf-syslog`; `arcana-history`'s
-  and `arcana-events`' read actions; the processes, log, history,
-  events and event operations retired; check: tests.
+  `arcana-kernel` (`kld_list` in `running`); the sysctl, sysctl-parts
+  and kernel operations retired; check: tests.
+- 3.1.7 A: syslog.conf written from `ietf-syslog`; the processes,
+  log, history, events and event operations retired; check: tests.
 - 3.1.8 A: `arcana-bird`, `arcana-wireguard`, `arcana-netgraph`: the
-  network operation's kinds and bird-config retired, a jail's BIRD
-  routes action; check: the plugin tests.
-- 3.1.9 A: `arcana-agent`'s actions (transport, TLS csr and install,
-  update, build, console-update, source-head, source-log,
-  config-export, config-apply) and `arcana-builder`'s; the hello,
-  list, stats, certs, agent and jail-files operations retired; check:
-  `hello`'s tests.
-- 3.1.10 A: `arcana-firewall`'s trace action, the host's and a jail's;
-  `arcana-troubleshoot`'s path-check, traceroute and capture; the
-  ipfw-rules, fw-trace, path-check, traceroute and capture operations
-  retired; check: the firewall tests.
-- 3.1.11 A: `arcana-probe`'s targets written through `EDIT`, its read
-  action; the sdwan-probes operation retired; check: the probe tests.
+  network operation's kinds and bird-config retired; check: the plugin
+  tests.
+- 3.1.9 A: the hello, list, stats, certs, agent and jail-files
+  operations retired; check: `hello`'s tests.
+- 3.1.10 A: the ipfw-rules, fw-trace, path-check, traceroute and
+  capture operations retired; check: the firewall tests.
+- 3.1.11 A: `arcana-probe`'s targets written through `EDIT`; the
+  sdwan-probes operation retired; check: the probe tests.
 - 3.1.12 A: `arcana-sdwan` written through `EDIT` in place of the
   console's JSON; the sdwan, sdwan-rules, sdwan-steer, sdwan-bird,
   sdwan-dhcp, sdwan-dns, sdwan-proxy and sdwan-ids operations retired;
   check: the SD-WAN tests and the two-jail lab.
-- 3.2.3 A (the rest): on-change from the event sources (interfaces,
-  addresses, routes, jails, jobs) in place of a read every dampening
-  period. The kernel announces nothing, on netlink or rtsock, for a
+- 3.2.3 A (the rest): on-change from the event sources in place of a
+  read every dampening period. The events and the alarms are told
+  (cbl_ysub_told, cbl_ysub_changed); interfaces, addresses, routes,
+  jails and jobs are still read each period. The kernel announces nothing, on netlink or rtsock, for a
   description, a FIB, a group, a link-layer address, media,
   capabilities, or a vlan's, lagg's or bridge's settings: those are
   told by the agent's own jobs that change them, or polled; check: an
   address added arrives as a patch within the dampening period.
-- 3.2.4 A (the rest): subtree filters on subscriptions; check: one
-  interface's counters only.
-- 3.2.5 A: state-change notifications; suspension on credit
-  exhaustion and resumption; `modify` and `resync` rpcs; check: a slow
-  subscriber suspended and resumed.
-- 3.2.6 A: replay from the event number for events and job traces;
-  check: a subscription from an old number.
+- 3.2.4 A (the rest): subtree filters on subscriptions, once their
+  YANG-CBOR has an encoding (RFC 6241's are XML); the XPath filter
+  meanwhile; check: one interface's counters only.
 - 3.2.7 A: configured subscriptions: the agent calling the console
   as receiver over cblink; check: the console restarted, records
   resume.
-- 3.2.8 A: subscription monitoring counters; check: `GET` of
-  `subscriptions`.
 - 3.3.1 A: NACM groups from the certificate's subject or the socket's
   uid, rule-lists in `running`; check: RFC 8341's examples.
 - 3.3.2 A: enforcement for rpcs, data nodes (read as omission) and
@@ -876,12 +864,10 @@ whose first part is served.
 
 ### Y-4
 
-- 4.1.1 C: `/.well-known/host-meta`, `/restconf`, `yang-library-
-  version`; check: RFC 8040 §3.1's examples.
-- 4.1.2 C: api-path parser (percent-decoding, module qualification,
-  list keys, leaf-list values, empty keys); check: §3.5.3's examples.
-- 4.1.3 C: GET with `content`, `depth`, `fields`, `with-defaults`;
-  check: §4.8's examples.
+- 4.1.1 to 4.1.3 done (console restconf.c): discovery, the root,
+  `yang-library-version`, the api-path parsed against the console's
+  tables and sent to the agent as an XPath filter, GET with `content`,
+  `depth`, `fields` and `with-defaults`.
 - 4.1.4 C: POST, PUT, PATCH (plain), DELETE with the status table,
   `Location`, 409 on `data-exists`; check: §4's examples.
 - 4.1.5 C: YANG Patch (`application/yang-patch+json`) forwarded as one
@@ -902,9 +888,10 @@ whose first part is served.
   check: RFC 7951's examples both ways.
 - 4.2.2 C: CBOR → JSON including origin as `@` annotations; check:
   RFC 7952's example shape.
-- 4.3.1 C: `arcana-fleet` module; the host prefix stripped and the
-  remainder resolved against the host's cached library and SID
-  tables; check: a GET to two hosts of different revisions.
+- 4.3.1 C (the rest): the remainder resolved against the host's cached
+  library and SID tables rather than the console's own; check: a GET
+  to two hosts of different revisions. `arcana-fleet` and the host
+  prefix are done.
 - 4.3.2 C: the SID and library cache refreshed on
   `yang-library-update`; check: an agent updated under the console.
 - 4.3.3 C: fan-out subscriptions merged with the host prefix on each
@@ -1242,8 +1229,7 @@ configuration files' round trip (2.3) is where the work would overrun.
 
 ## Open questions, short
 
-Beyond D-5, D-6, D-11 and D-12: whether multicast (pimd) is in scope
-at all; whether the SD-WAN edge may host customer CEs as jails (slice
+Beyond D-5, D-6, D-11 and D-12: whether the SD-WAN edge may host customer CEs as jails (slice
 SDP placement 1, which blurs the trust boundary); which RFC 8578 bands
 to market; whether `match-on-payload` is wired through ng_bpf or
 Suricata or neither; whether flow records leave the edge or only

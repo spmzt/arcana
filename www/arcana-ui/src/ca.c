@@ -80,7 +80,8 @@ ca_post(const char *json)
 	api("POST", "/api/ca", json, ca_cb, (void *)1);
 }
 
-static void
+/* A time as its day, UTC: 2026-10-27. */
+void
 day_text(char *buf, size_t len, int64_t t)
 {
 	struct tm	tm;

@@ -26,7 +26,7 @@
 #include "collect.h"
 #include "yjson.h"
 
-typedef struct arcana_events_events_event yevent;
+typedef struct arcana_events_event_entry yevent;
 
 static char *
 datetime(cbl_yarena *a, int64_t t)
@@ -61,7 +61,7 @@ ident(const char *mod, const char *name)
 static bool
 addr_union(cbl_yarena *a, const ucl_object_t *o, const char *key, void *u)
 {
-	struct arcana_events_events_event_address_address	*s = u;
+	struct arcana_events_event_entry_address_address	*s = u;
 	const char						*v;
 
 	if ((v = yj_str(a, o, key)) == NULL)
@@ -94,11 +94,11 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 {
 	const char	*v;
 
-	y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_NONE;
+	y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_NONE;
 	if (d == NULL)
 		return (0);
 	if (strcmp(kind, "route-add") == 0 || strcmp(kind, "route-del") == 0) {
-		struct arcana_events_events_event_route	*r;
+		struct arcana_events_event_entry_route	*r;
 		int64_t					 n;
 
 		if (!ALLOC(a, r))
@@ -121,17 +121,17 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		YJ_NUM(d, "mtu", r, mtu);
 		r->source = yj_str(a, d, "source");
 		y->route = r;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_ROUTE;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_ROUTE;
 	} else if (strcmp(kind, "routes") == 0) {
-		struct arcana_events_events_event_routes	*r;
+		struct arcana_events_event_entry_routes	*r;
 
 		if (!ALLOC(a, r))
 			return (ENOMEM);
 		YJ_NUM(d, "changed", r, changed);
 		y->routes = r;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_ROUTES;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_ROUTES;
 	} else if (strcmp(kind, "link") == 0 || strcmp(kind, "link-del") == 0) {
-		struct arcana_events_events_event_link	*l;
+		struct arcana_events_event_entry_link	*l;
 
 		if (!ALLOC(a, l))
 			return (ENOMEM);
@@ -140,10 +140,10 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		l->carrier = yj_yes(d, "carrier", &l->has_carrier);
 		YJ_NUM(d, "mtu", l, mtu);
 		y->link = l;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_LINK;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_LINK;
 	} else if (strcmp(kind, "address-add") == 0 || strcmp(kind,
 	    "address-del") == 0) {
-		struct arcana_events_events_event_address	*ad;
+		struct arcana_events_event_entry_address	*ad;
 
 		if (!ALLOC(a, ad))
 			return (ENOMEM);
@@ -151,10 +151,10 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		ad->has_address = addr_union(a, d, "address", &ad->address);
 		YJ_NUM(d, "prefixlen", ad, prefix_length);
 		y->address = ad;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_ADDRESS;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_ADDRESS;
 	} else if (strcmp(kind, "neigh") == 0 || strcmp(kind, "neigh-del") ==
 	    0) {
-		struct arcana_events_events_event_neighbor	*nb;
+		struct arcana_events_event_entry_neighbor	*nb;
 
 		if (!ALLOC(a, nb))
 			return (ENOMEM);
@@ -164,11 +164,11 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		nb->state = yj_str(a, d, "state");
 		nb->router = yj_yes(d, "router", &nb->has_router);
 		y->neighbor = nb;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_NEIGHBOR;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_NEIGHBOR;
 	} else if (strcmp(kind, "threshold") == 0) {
 		static const char *const whats[] = { "cpu", "mem", "swap",
 		    "net", "disk", "jail-cpu", "jail-mem" };
-		struct arcana_events_events_event_threshold	*t;
+		struct arcana_events_event_entry_threshold	*t;
 		size_t						 i;
 
 		if (!ALLOC(a, t))
@@ -184,9 +184,9 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		YJ_NUM(d, "limit", t, limit);
 		t->over = yj_yes(d, "over", &t->has_over);
 		y->threshold = t;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_THRESHOLD;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_THRESHOLD;
 	} else if (strcmp(kind, "kmsg") == 0) {
-		struct arcana_events_events_event_kmsg	*k;
+		struct arcana_events_event_entry_kmsg	*k;
 
 		if (!ALLOC(a, k))
 			return (ENOMEM);
@@ -194,9 +194,9 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		k->text = yj_str(a, d, "text");
 		YJ_NUM(d, "more", k, more);
 		y->kmsg = k;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_KMSG;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_KMSG;
 	} else if (strcmp(kind, "sdwan-tunnel") == 0) {
-		struct arcana_events_events_event_tunnel	*t;
+		struct arcana_events_event_entry_tunnel	*t;
 
 		if (!ALLOC(a, t))
 			return (ENOMEM);
@@ -206,15 +206,15 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		if ((v = yj_str(a, d, "state")) != NULL) {
 			t->has_state = true;
 			t->state = strcmp(v, "up") == 0 ?
-			    ARCANA_EVENTS_EVENTS_EVENT_TUNNEL_STATE_UP :
-			    ARCANA_EVENTS_EVENTS_EVENT_TUNNEL_STATE_DOWN;
+			    ARCANA_EVENTS_EVENT_ENTRY_TUNNEL_STATE_UP :
+			    ARCANA_EVENTS_EVENT_ENTRY_TUNNEL_STATE_DOWN;
 		}
 		YJ_NUM(d, "misses", t, misses);
 		t->by = yj_str(a, d, "by");
 		y->tunnel = t;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_TUNNEL;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_TUNNEL;
 	} else if (strcmp(kind, "sdwan-fault") == 0) {
-		struct arcana_events_events_event_fault	*f;
+		struct arcana_events_event_entry_fault	*f;
 
 		if (!ALLOC(a, f))
 			return (ENOMEM);
@@ -226,13 +226,13 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		if ((v = yj_str(a, d, "state")) != NULL) {
 			f->has_state = true;
 			f->state = strcmp(v, "cleared") == 0 ?
-			    ARCANA_EVENTS_EVENTS_EVENT_FAULT_STATE_CLEARED :
-			    ARCANA_EVENTS_EVENTS_EVENT_FAULT_STATE_SET;
+			    ARCANA_EVENTS_EVENT_ENTRY_FAULT_STATE_CLEARED :
+			    ARCANA_EVENTS_EVENT_ENTRY_FAULT_STATE_SET;
 		}
 		y->fault = f;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_FAULT;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_FAULT;
 	} else if (strcmp(kind, "sdwan-security") == 0) {
-		struct arcana_events_events_event_security	*s;
+		struct arcana_events_event_entry_security	*s;
 
 		if (!ALLOC(a, s))
 			return (ENOMEM);
@@ -244,9 +244,9 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		s->interface = yj_str(a, d, "iface");
 		s->comment = yj_str(a, d, "comment");
 		y->security = s;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_SECURITY;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_SECURITY;
 	} else if (strcmp(kind, "job") == 0) {
-		struct arcana_events_events_event_job	*j;
+		struct arcana_events_event_entry_job	*j;
 
 		if (!ALLOC(a, j))
 			return (ENOMEM);
@@ -255,9 +255,9 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		j->ok = yj_yes(d, "ok", &j->has_ok);
 		j->error = yj_str(a, d, "error");
 		y->job = j;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_JOB;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_JOB;
 	} else if (strcmp(kind, "jail-state") == 0) {
-		struct arcana_events_events_event_jail_state	*j;
+		struct arcana_events_event_entry_jail_state	*j;
 
 		if (!ALLOC(a, j))
 			return (ENOMEM);
@@ -265,14 +265,14 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		if ((v = yj_str(a, d, "state")) != NULL) {
 			j->has_state = true;
 			j->state = strcmp(v, "running") == 0 ?
-			    ARCANA_EVENTS_EVENTS_EVENT_JAIL_STATE_STATE_RUNNING :
-			    ARCANA_EVENTS_EVENTS_EVENT_JAIL_STATE_STATE_STOPPED;
+			    ARCANA_EVENTS_EVENT_ENTRY_JAIL_STATE_STATE_RUNNING :
+			    ARCANA_EVENTS_EVENT_ENTRY_JAIL_STATE_STATE_STOPPED;
 		}
 		YJ_NUM(d, "jid", j, jid);
 		y->jail_state = j;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_JAIL_STATE;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_JAIL_STATE;
 	} else if (strcmp(kind, "crash") == 0) {
-		struct arcana_events_events_event_crash	*c;
+		struct arcana_events_event_entry_crash	*c;
 
 		if (!ALLOC(a, c))
 			return (ENOMEM);
@@ -285,44 +285,44 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		c->core = yj_yes(d, "core", &c->has_core);
 		c->reason = yj_str(a, d, "reason");
 		y->crash = c;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_CRASH;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_CRASH;
 	} else if (strcmp(kind, "conf") == 0) {
-		struct arcana_events_events_event_conf	*c;
+		struct arcana_events_event_entry_conf	*c;
 
 		if (!ALLOC(a, c))
 			return (ENOMEM);
 		c->file = yj_str(a, d, "file");
 		y->conf = c;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_CONF;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_CONF;
 	} else if (strcmp(kind, "device") == 0) {
-		struct arcana_events_events_event_device	*c;
+		struct arcana_events_event_entry_device	*c;
 
 		if (!ALLOC(a, c))
 			return (ENOMEM);
 		c->cdev = yj_str(a, d, "cdev");
 		c->state = yj_str(a, d, "state");
 		y->device = c;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_DEVICE;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_DEVICE;
 	} else if (strcmp(kind, "zfs") == 0) {
-		struct arcana_events_events_event_zfs	*c;
+		struct arcana_events_event_entry_zfs	*c;
 
 		if (!ALLOC(a, c))
 			return (ENOMEM);
 		c->type = yj_str(a, d, "type");
 		c->pool = yj_str(a, d, "pool");
 		y->zfs = c;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_ZFS;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_ZFS;
 	} else if (strcmp(kind, "procs") == 0) {
-		struct arcana_events_events_event_procs	*c;
+		struct arcana_events_event_entry_procs	*c;
 
 		if (!ALLOC(a, c))
 			return (ENOMEM);
 		YJ_NUM(d, "started", c, started);
 		YJ_NUM(d, "exited", c, exited);
 		y->procs = c;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_PROCS;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_PROCS;
 	} else if (strcmp(kind, "monitor-threshold") == 0) {
-		struct arcana_events_events_event_monitor	*c;
+		struct arcana_events_event_entry_monitor	*c;
 
 		if (!ALLOC(a, c))
 			return (ENOMEM);
@@ -333,9 +333,9 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		c->over = yj_yes(d, "over", &c->has_over);
 		c->interface = yj_str(a, d, "interface");
 		y->monitor = c;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_MONITOR;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_MONITOR;
 	} else if (strcmp(kind, "sdwan-ids") == 0) {
-		struct arcana_events_events_event_alert	*c;
+		struct arcana_events_event_entry_alert	*c;
 
 		if (!ALLOC(a, c))
 			return (ENOMEM);
@@ -354,7 +354,7 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		YJ_NUM(d, "severity", c, severity);
 		c->action = yj_str(a, d, "action");
 		y->alert = c;
-		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_ALERT;
+		y->data = ARCANA_EVENTS_EVENT_ENTRY_DATA_ALERT;
 	}
 	return (0);
 }

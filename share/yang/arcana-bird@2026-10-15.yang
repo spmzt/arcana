@@ -3,6 +3,9 @@ module arcana-bird {
   namespace "urn:arcana:yang:arcana-bird";
   prefix arcbird;
 
+  import cblink-gen {
+    prefix cg;
+  }
   import ietf-inet-types {
     prefix inet;
     reference
@@ -44,6 +47,7 @@ module arcana-bird {
     description
       "A BIRD daemon.";
     container bird {
+      cg:struct "bird";
       description
         "BIRD, where it runs.";
       container configuration {

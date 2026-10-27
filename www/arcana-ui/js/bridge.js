@@ -279,6 +279,284 @@ addToLibrary({
 			if (e.key === "Escape")
 				act("escape", "", "");
 		});
+
+		/*
+		 * Game mode: the console used by a game controller alone (a
+		 * Steam Deck in its Game Mode, the page a non-Steam game), by
+		 * the Gamepad API.  While one is in use the root has the class
+		 * pad: a visible focus, larger targets, and the buttons' words
+		 * at the foot of the screen.  The D-pad and the left stick
+		 * move the focus to the nearest control that way; A presses
+		 * it (a field takes the screen's keyboard, Steam + X); B
+		 * closes a dialog, else goes back; the bumpers go to the tab
+		 * before or after, else to the side bar's page before or
+		 * after; the right stick scrolls, or pans the network map;
+		 * the triggers zoom it.  The standard mapping's buttons.
+		 */
+		var pad = { on: false, shown: false, frame: 0, held: {},
+		    next: {}, hint: null };
+
+		function padVisible(el) {
+			var r = el.getBoundingClientRect();
+
+			return (r.width > 0 && r.height > 0 && r.bottom > 0 &&
+			    r.right > 0 && r.top < window.innerHeight &&
+			    r.left < window.innerWidth &&
+			    getComputedStyle(el).visibility !== "hidden");
+		}
+		function padTargets() {
+			var modal = document.querySelector(".modal"), all;
+
+			all = (modal || document).querySelectorAll("a[href], " +
+			    "button:not([disabled]), input:not([type=hidden]), " +
+			    "select, textarea, summary, [data-act], " +
+			    "[tabindex]:not([tabindex='-1'])");
+			return (Array.prototype.filter.call(all, padVisible));
+		}
+		function padFocus(el) {
+			if (!el.hasAttribute("tabindex") &&
+			    !/^(A|BUTTON|INPUT|SELECT|TEXTAREA|SUMMARY)$/
+			    .test(el.tagName))
+				el.setAttribute("tabindex", "-1");
+			el.focus({ preventScroll: true });
+			el.scrollIntoView({ block: "nearest", inline: "nearest" });
+		}
+		/* The nearest control from the one in focus, toward dx, dy. */
+		function padMove(dx, dy) {
+			var cur = document.activeElement, list = padTargets(),
+			    best = null, bd = Infinity, a, b, ox, oy, d, along,
+			    across, i;
+
+			if (list.length === 0)
+				return;
+			if (!cur || cur === document.body || list.indexOf(cur) < 0) {
+				padFocus(list[0]);
+				return;
+			}
+			a = cur.getBoundingClientRect();
+			for (i = 0; i < list.length; i++) {
+				if (list[i] === cur || cur.contains(list[i]) ||
+				    list[i].contains(cur))
+					continue;
+				b = list[i].getBoundingClientRect();
+				ox = (b.left + b.width / 2) - (a.left + a.width / 2);
+				oy = (b.top + b.height / 2) - (a.top + a.height / 2);
+				along = ox * dx + oy * dy;
+				across = Math.abs(ox * dy - oy * dx);
+				/* Ahead, and more ahead than aside. */
+				if (along <= 0 || across > along * 2)
+					continue;
+				d = along + across * 2;
+				if (d < bd) {
+					bd = d;
+					best = list[i];
+				}
+			}
+			if (best !== null)
+				padFocus(best);
+		}
+		/* A tab, else a side bar's page, before (-1) or after (1). */
+		function padTab(dir) {
+			var tabs = document.querySelector("nav.tabs"), list, i;
+
+			list = tabs !== null ? tabs.querySelectorAll("button.tab") :
+			    document.querySelectorAll("aside.rail li.titem");
+			list = Array.prototype.filter.call(list, padVisible);
+			if (list.length === 0)
+				return;
+			for (i = 0; i < list.length; i++)
+				if (list[i].classList.contains("on") ||
+				    list[i].classList.contains("selected") ||
+				    list[i].getAttribute("aria-selected") === "true")
+					break;
+			i = i === list.length ? 0 : (i + dir + list.length) %
+			    list.length;
+			list[i].click();
+		}
+		function padPress() {
+			var el = document.activeElement, o;
+
+			if (!el || el === document.body) {
+				padMove(0, 1);
+				return;
+			}
+			if (el.tagName === "SELECT") {
+				/* No list opens by script: the next choice. */
+				o = el.selectedIndex + 1;
+				el.selectedIndex = o >= el.options.length ? 0 : o;
+				el.dispatchEvent(new Event("input", { bubbles: true }));
+				el.dispatchEvent(new Event("change", { bubbles: true }));
+				return;
+			}
+			if (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" &&
+			    !/^(checkbox|radio|button|submit|reset|file)$/
+			    .test(el.type))) {
+				el.focus();
+				return;
+			}
+			el.click();
+		}
+		function padBack() {
+			if (document.querySelector(".modal, .scrim") !== null)
+				act("escape", "", "");
+			else
+				history.back();
+		}
+		/* The map, when it is shown: zoomed about its middle, panned
+		 * by a drag of its ground. */
+		function padMap(zoom, px, py) {
+			var svg = document.querySelector("svg[data-wheel]"), r, m,
+			    p, ground, o;
+
+			if (svg === null || !padVisible(svg))
+				return (false);
+			r = svg.getBoundingClientRect();
+			if (zoom !== 0 && (m = svg.getScreenCTM())) {
+				p = new DOMPoint(r.left + r.width / 2, r.top +
+				    r.height / 2).matrixTransform(m.inverse());
+				act(svg.dataset.wheel, "", zoom + "," +
+				    p.x.toFixed(1) + "," + p.y.toFixed(1));
+			}
+			ground = svg.querySelector("[data-drag]");
+			if ((px !== 0 || py !== 0) && ground !== null) {
+				o = { bubbles: true, pointerId: 7, button: 0,
+				    clientX: r.left + r.width / 2,
+				    clientY: r.top + r.height / 2 };
+				ground.dispatchEvent(new PointerEvent("pointerdown", o));
+				o.clientX -= px;
+				o.clientY -= py;
+				document.dispatchEvent(new PointerEvent("pointermove",
+				    o));
+				document.dispatchEvent(new PointerEvent("pointerup", o));
+			}
+			return (true);
+		}
+		/* A button pressed now, not held: and again while held. */
+		function padEdge(k, down, now) {
+			if (!down) {
+				delete pad.held[k];
+				return (false);
+			}
+			if (!pad.held[k]) {
+				pad.held[k] = true;
+				pad.next[k] = now + 350;
+				return (true);
+			}
+			if (now >= pad.next[k]) {
+				pad.next[k] = now + 110;
+				return (true);
+			}
+			return (false);
+		}
+		/* A button pressed now, once however long it is held. */
+		function padOnce(k, down) {
+			var was = pad.held[k] === true;
+
+			if (down)
+				pad.held[k] = true;
+			else
+				delete pad.held[k];
+			return (down && !was);
+		}
+		function padTick() {
+			var gps = navigator.getGamepads ? navigator.getGamepads() :
+			    [], g = null, i, now = performance.now(), b, ax;
+
+			for (i = 0; i < gps.length; i++)
+				if (gps[i] && gps[i].connected) {
+					g = gps[i];
+					break;
+				}
+			if (g === null) {
+				padOff();
+				return;
+			}
+			/* Used again after the mouse: shown again. */
+			if (!pad.shown && (g.buttons.some(function (x) {
+				return (x.pressed);
+			}) || g.axes.some(function (v) {
+				return (Math.abs(v) > 0.5);
+			})))
+				padShow(true);
+			b = function (n) {
+				return (g.buttons[n] !== undefined &&
+				    g.buttons[n].pressed);
+			};
+			ax = function (n) {
+				var v = g.axes[n] || 0;
+
+				return (Math.abs(v) < 0.35 ? 0 : v);
+			};
+			if (padEdge("up", b(12) || ax(1) < 0, now))
+				padMove(0, -1);
+			if (padEdge("down", b(13) || ax(1) > 0, now))
+				padMove(0, 1);
+			if (padEdge("left", b(14) || ax(0) < 0, now))
+				padMove(-1, 0);
+			if (padEdge("right", b(15) || ax(0) > 0, now))
+				padMove(1, 0);
+			if (padOnce("a", b(0)))
+				padPress();
+			if (padOnce("b", b(1)))
+				padBack();
+			if (padOnce("lb", b(4)))
+				padTab(-1);
+			if (padOnce("rb", b(5)))
+				padTab(1);
+			/* The triggers zoom, the right stick scrolls or pans. */
+			if (padEdge("lt", b(6), now))
+				padMap(100, 0, 0);
+			if (padEdge("rt", b(7), now))
+				padMap(-100, 0, 0);
+			if (ax(2) !== 0 || ax(3) !== 0) {
+				if (!padMap(0, ax(2) * 12, ax(3) * 12))
+					(document.scrollingElement || document.body)
+					    .scrollBy(ax(2) * 18, ax(3) * 18);
+			}
+			pad.frame = requestAnimationFrame(padTick);
+		}
+		/* The look of Game mode, and the buttons' words, on or off. */
+		function padShow(on) {
+			pad.shown = on;
+			document.documentElement.classList.toggle("pad", on);
+			if (on && pad.hint === null) {
+				pad.hint = document.createElement("div");
+				pad.hint.className = "padhint";
+				pad.hint.setAttribute("aria-hidden", "true");
+				pad.hint.innerHTML = "<span><b>D-pad</b> Move</span>" +
+				    "<span><b>A</b> Press</span><span><b>B</b> " +
+				    "Back</span><span><b>LB RB</b> Tabs</span>" +
+				    "<span><b>R stick</b> Scroll</span><span><b>" +
+				    "LT RT</b> Zoom the map</span><span><b>Steam + " +
+				    "X</b> Keyboard</span>";
+				document.body.appendChild(pad.hint);
+			} else if (!on && pad.hint !== null) {
+				pad.hint.remove();
+				pad.hint = null;
+			}
+		}
+		function padOn() {
+			if (pad.on)
+				return;
+			pad.on = true;
+			padShow(true);
+			pad.frame = requestAnimationFrame(padTick);
+		}
+		function padOff() {
+			if (!pad.on)
+				return;
+			pad.on = false;
+			cancelAnimationFrame(pad.frame);
+			padShow(false);
+			pad.held = {};
+		}
+		window.addEventListener("gamepadconnected", padOn);
+		/* The mouse or a touch: the page as it is without one, until
+		 * the controller is used again. */
+		document.addEventListener("pointerdown", function (e) {
+			if (pad.shown && e.isTrusted)
+				padShow(false);
+		}, true);
 		/* A file picked in [data-file]: its text given to the page,
 		 * as file:<what> with the file's name; the field emptied, so
 		 * that the same file can be picked again. */

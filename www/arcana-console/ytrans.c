@@ -283,19 +283,10 @@ int
 ytrans_data(cbl_conn *conn, const char *names, ucl_object_t **out,
     char *err, size_t errlen)
 {
-	const struct cbl_ymodule	*m;
 	const struct cbl_ynode		*n;
-	struct cbl_ybuf			 b = { NULL, 0, 0 };
-	struct ucl_parser		*p;
-	cbl_msg				*req, *rep = NULL;
-	cbl_yarena			*a;
 	uint64_t			 sids[16];
-	char				 copy[256], *s, *w, *json;
+	char				 copy[256], *s, *w;
 	size_t				 ns = 0;
-	uint32_t			 i, k;
-	void				*data;
-	bool				 first = true;
-	int				 error;
 
 	*out = NULL;
 	err[0] = '\0';
@@ -315,9 +306,31 @@ ytrans_data(cbl_conn *conn, const char *names, ucl_object_t **out,
 		}
 		sids[ns++] = n->sid;
 	}
+	return (ytrans_get(conn, sids, ns, NULL, out, err, errlen));
+}
+
+int
+ytrans_get(cbl_conn *conn, const uint64_t *sids, size_t ns,
+    const char *xpath, ucl_object_t **out, char *err, size_t errlen)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*n;
+	struct cbl_ybuf			 b = { NULL, 0, 0 };
+	struct ucl_parser		*p;
+	cbl_msg				*req, *rep = NULL;
+	cbl_yarena			*a;
+	char				*json;
+	uint32_t			 i, k;
+	void				*data;
+	bool				 first = true;
+	int				 error;
+
+	*out = NULL;
+	err[0] = '\0';
 	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
-	    CBL_YCMD_GET, 0, &req)) != 0 || (ns > 0 &&
-	    (error = cbl_msg_put_yget(req, sids, ns)) != 0)) {
+	    CBL_YCMD_GET, 0, &req)) != 0 || (xpath != NULL ?
+	    (error = cbl_msg_put_yget_xpath(req, sids, ns, xpath)) != 0 :
+	    ns > 0 && (error = cbl_msg_put_yget(req, sids, ns)) != 0)) {
 		snprintf(err, errlen, "%s", strerror(error));
 		return (error);
 	}

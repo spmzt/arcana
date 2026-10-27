@@ -774,6 +774,8 @@ ids_settings_form(struct html *h, const ucl_object_t *f)
 {
 	static const char *const runmodes[] = { "autofp", "workers",
 	    "single" };
+	static const char *const schedulers[] = { "hash", "ippair",
+	    "ftp-hash" };
 	static const char *const mpms[] = { "ac", "ac-ks", "hs" };
 	static const char *const profiles[] = { "low", "medium", "high" };
 	static const char *const inlines[] = { "auto", "yes", "no" };
@@ -854,6 +856,26 @@ ids_settings_form(struct html *h, const ucl_object_t *f)
 			    (long long)jint(hc, "ncpu", 0), (long long)jint(hc,
 			    "ncpu", 0) - 1, (long long)jint(hc, "ndomains", 1),
 			    jint(hc, "ndomains", 1) == 1 ? "" : "s");
+		/* Its interfaces' queues' interrupts, and their CPUs: a
+		 * worker best on its queue's. */
+		if (hc != NULL && ucl_array_size(jget(hc, "irqs")) > 0) {
+			const ucl_object_t	*q;
+			ucl_object_iter_t	 qit = NULL;
+
+			h_raw(h, "<p class=\"help\">Its interfaces' interrupts "
+			    "run on: ");
+			while ((q = ucl_object_iterate(jget(hc, "irqs"), &qit,
+			    true)) != NULL) {
+				h_raw(h, "<span class=\"mono\">");
+				h_txt(h, jstr(q, "name") != NULL ? jstr(q, "name") :
+				    "?");
+				h_raw(h, "</span> CPU ");
+				h_txt(h, jstr(q, "cpus") != NULL ? jstr(q, "cpus") :
+				    "?");
+				h_raw(h, "; ");
+			}
+			h_raw(h, "cpuset -l CPU -x IRQ moves one.</p>");
+		}
 		h_raw(h, "<div class=\"rowform\">");
 		set_select(h, "Preset", "preset", jstr(f, "preset"), presets,
 		    nitems(presets), "for a host of its size: what the fields "
@@ -863,6 +885,9 @@ ids_settings_form(struct html *h, const ucl_object_t *f)
 	h_raw(h, "<div class=\"rowform\">");
 	set_select(h, "Runmode", "runmode", jstr(f, "runmode"), runmodes,
 	    nitems(runmodes), "workers: a thread does all of a packet");
+	set_select(h, "autofp scheduler", "autofp_scheduler", jstr(f,
+	    "autofp_scheduler"), schedulers, nitems(schedulers), "autofp's "
+	    "packets to its workers: hash keeps a flow on one");
 	set_select(h, "Pattern matcher", "mpm", jstr(f, "mpm"), mpms,
 	    nitems(mpms), "hs: Hyperscan, where it is built in");
 	set_select(h, "Detect profile", "profile", jstr(f, "profile"),
@@ -1422,14 +1447,14 @@ secpage_form(const char *form, const ucl_object_t *f)
 	ucl_object_t	*list, *o;
 	bool		 ids;
 
-	if (surules_form(form, f) || idsown_form(form, f) || idsstats_form(
-	    form, f))
+	if (idsown_form(form, f) || idsstats_form(form, f))
 		return (true);
 	{
 		char		*json[1], title[96];
 		const char	*t[1];
 
-		if (susources_form(form, f, &json[0], title, sizeof(title))) {
+		if (surules_form(form, f, &json[0], title, sizeof(title)) ||
+		    susources_form(form, f, &json[0], title, sizeof(title))) {
 			if (json[0] != NULL) {
 				t[0] = title;
 				sec_jobs(json, t, 1);
@@ -1525,7 +1550,7 @@ secpage_form(const char *form, const ucl_object_t *f)
 		/* Its settings: each only when given. */
 		{
 			static const char *const strs[] = { "capture",
-			    "preset", "runmode", "mpm",
+			    "preset", "runmode", "autofp_scheduler", "mpm",
 			    "profile", "management_cpus", "worker_cpus",
 			    "flow_memcap", "stream_memcap", "reassembly_memcap",
 			    "defrag_memcap", "host_memcap", "http_memcap",

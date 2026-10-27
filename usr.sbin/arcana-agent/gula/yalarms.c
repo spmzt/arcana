@@ -46,6 +46,7 @@ static const struct kind {
 	{ "cpu", { 5, 0 }, "the CPU has been too busy" },
 	{ "memory", { 5, 0 }, "the memory has been too full" },
 	{ "crash", { 5, 0 }, "a process died of a signal that dumps core" },
+	{ "mail", { 4, 5 }, "smtpd stopped, or too much queued" },
 };
 
 /* An identity's SID, by its module and name; 0: none. */
@@ -196,7 +197,8 @@ yalarms_from_json(const char *json, cbl_yarena *a, struct ietf_alarms *out)
 		v[n].alarm_text = yj_str(a, e, "description");
 		if (v[n].alarm_text == NULL)
 			v[n].alarm_text = "";
-		/* Its history: raised, and cleared when it was. */
+		/* Its history: raised, and cleared when it was; compressed,
+		 * the clearing alone. */
 		if ((sc = cbl_yarena_alloc(a, 2 * sizeof(*sc))) == NULL)
 			goto nomem;
 		sc[0].time = v[n].last_raised;
@@ -214,6 +216,11 @@ yalarms_from_json(const char *json, cbl_yarena *a, struct ietf_alarms *out)
 		}
 		v[n].status_change.n = v[n].is_cleared && cl != 0 ? 2 : 1;
 		v[n].status_change.v = sc;
+		if (v[n].status_change.n == 2 && yj_yes(e, "compressed",
+		    &has)) {
+			v[n].status_change.n = 1;
+			v[n].status_change.v = &sc[1];
+		}
 		sv[sev - 2].total++;
 		if (v[n].is_cleared)
 			sv[sev - 2].cleared++;

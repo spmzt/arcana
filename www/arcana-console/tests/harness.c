@@ -840,7 +840,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\"\\n\").encode())\n        f.flush()\n    c.close()\n");
 	put("tools/suricata", "#!/bin/sh\n"
 	    /* Started: the daemon, under its own name, its pid where told. */
-	    "[ \"$1\" = --hold ] && { echo $$ > \"$2\"; sleep 60; exit 0; }\n"
+	    "[ \"$1\" = --hold ] && { echo $$ > \"$2\"; trap : USR2; sleep 60; "
+	    "exit 0; }\n"
 	    "echo \"suricata $*\" >> squid.log\n"
 	    "[ \"$1\" = --build-info ] && { printf 'This is Suricata version "
 	    "8.0.7 RELEASE\\nFeatures: NETMAP HAVE_LUA\\n  Netmap support: "

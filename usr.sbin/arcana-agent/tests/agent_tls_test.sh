@@ -68,7 +68,7 @@ start_daemon()
 		PORT=$(jot -r 1 20000 59999)
 		"$JGD" -F -l "tcp://127.0.0.1:$PORT" -A ca.pem -C server.pem \
 		    -K server.key -f "$(pwd)/etc/jail.conf" \
-		    -D "$(pwd)/etc/jail.conf.d" -I /usr/bin/false \
+		    -D "$(pwd)/etc/jail.conf.d" -I /usr/bin/false $DAEMON_ARGS \
 		    > daemon.out 2>&1 &
 		pid=$!
 		echo $pid > daemon.pid
@@ -220,6 +220,14 @@ renew_head()
 }
 renew_body()
 {
+	# A smtpd.conf that serves with the agent's own certificate: its
+	# dates read with it, the new ones once it is renewed.
+	printf 'pki arcana cert "%s/server.pem"\npki arcana key "%s/server.key"\n' \
+	    "$(pwd)" "$(pwd)" > smtpd.conf
+	# The host's own services out of reach: no rc.d script found, no
+	# service(8) or sysrc(8) run.
+	mkdir -p rc.d
+	DAEMON_ARGS="--smtpd-conf $(pwd)/smtpd.conf --smtpd-watch 0 -R $(pwd)/rc.d -s /usr/bin/false -y /usr/bin/false"
 	start_daemon
 	URI="tcp://127.0.0.1:$PORT"
 	C1="-A ca.pem -C client.pem -K client.key"
@@ -234,12 +242,19 @@ renew_body()
 	test -f server.key.next || atf_fail "no key waiting"
 	atf_check -o match:'^-rw------- ' ls -l server.key.next
 	atf_check -o not-match:'PRIVATE' cat csr.json
+	# A second on, so that its dates are not the first one's.
+	sleep 1
 	sign ca new.csr new.pem
 	# One not for that key is refused, the files as they were.
 	atf_check -s exit:1 -e match:'not for the key that waits' -o ignore \
 	    "$JGC" -c "$URI" $C1 tls install server.pem
+	atf_check -o save:m1.json "$JGC" -c "$URI" $C1 smtpd
+	atf_check -o match:'"pki_cert":\{"not_before":[0-9]+,"not_after":[0-9]+\}' \
+	    cat m1.json
 	atf_check -o save:st2.json "$JGC" -c "$URI" $C1 tls install new.pem
 	grep -q "\"sha256\":\"$(sha new.pem)\"" st2.json || atf_fail "not installed"
+	atf_check -o save:m2.json "$JGC" -c "$URI" $C1 smtpd
+	cmp -s m1.json m2.json && atf_fail "the certificate's dates are the old ones"
 	test -f server.pem.before || atf_fail "the certificate before was not kept"
 	test -f server.key.next && atf_fail "the waiting key stayed"
 	# New connections are served with it.

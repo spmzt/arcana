@@ -48,7 +48,7 @@ main(int argc, char **argv)
 	for (size_t i = 0; i < s->jail.n; i++)
 		printf("jail %s\n", s->jail.v[i]);
 	for (size_t i = 0; i < s->sample.n; i++) {
-		const struct arcana_history_history_state_sample *p =
+		const struct arcana_history_sample *p =
 		    &s->sample.v[i];
 
 		printf("sample %s cpu=%jd load=%jd memory=%ju swap=%ju rx=%ju "

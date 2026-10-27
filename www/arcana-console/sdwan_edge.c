@@ -10731,7 +10731,8 @@ apply_begin(struct plan *plp, ucl_object_t *st, ucl_object_t *chg, bool fresh,
 	struct run		*r;
 	pthread_t		 tid;
 	char			 path[MAXPATHLEN];
-	int			 fd;
+	int			 fd, nsteps, error;
+
 	/* One apply at a time, in this worker and every other. */
 	pthread_mutex_lock(&st_lock);
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, LOCK_FILE);
@@ -10807,11 +10808,16 @@ apply_begin(struct plan *plp, ucl_object_t *st, ucl_object_t *chg, bool fresh,
 	r->keys = ucl_object_typed_new(UCL_OBJECT);
 	r->lockfd = fd;
 	ucl_object_unref(chg);
-	fd = r->lockfd;
 	plan_free(plp);
-	if (pthread_create(&tid, NULL, run_main, r) != 0) {
-		snprintf(why, wlen, "%s", strerror(errno));
+	/* Counted before the thread runs: it frees r when it is done. */
+	nsteps = (int)ucl_array_size(r->steps);
+	if ((error = pthread_create(&tid, NULL, run_main, r)) != 0) {
+		snprintf(why, wlen, "%s", strerror(error));
 		close(fd);
+		ucl_object_unref(r->st);
+		ucl_object_unref(r->alloc);
+		ucl_object_unref(r->keys);
+		free(r);
 		pthread_mutex_lock(&st_lock);
 		applying = false;
 		pthread_mutex_unlock(&st_lock);
@@ -10819,7 +10825,7 @@ apply_begin(struct plan *plp, ucl_object_t *st, ucl_object_t *chg, bool fresh,
 		return (-1);
 	}
 	(void)pthread_detach(tid);
-	return ((int)ucl_array_size(r->steps));
+	return (nsteps);
 }
 
 /*

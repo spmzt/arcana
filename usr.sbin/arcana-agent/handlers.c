@@ -83,7 +83,7 @@ struct job {
 #define	JOBS_WAITING_MAX 256	/* jobs queued or running, at most */
 
 pthread_mutex_t	change_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t build_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t build_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* What holds change_lock now, for the log when asked to stop. */
 static pthread_mutex_t	note_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -294,7 +294,7 @@ changes_current(struct work *w, time_t *sincep)
  * What holds the change lock, a job too, and for how long: for a request
  * that does not wait for it.
  */
-static const char *
+const char *
 change_busy(struct work *w)
 {
 	const char	*s;
@@ -1439,10 +1439,18 @@ worker(void *arg)
 	(void)cbl_req_complete(j->req, rc);
 	work_free(&w);
 	job_free(j);
-	/* The console's own service, once it has its answer; then ours. */
+	restart_after(console, restart);
+	return (NULL);
+}
+
+/* The console's own service, once it has its answer; then ours. */
+void
+restart_after(bool console, bool agent)
+{
+
 	if (console)
 		service_restart("arcana_console");
-	if (restart) {
+	if (agent) {
 		/*
 		 * No change starts while the service is on its way to stop
 		 * this daemon, and nothing is held that would keep it from
@@ -1459,7 +1467,6 @@ worker(void *arg)
 		    "The new program is in place and runs from the next "
 		    "start", RESTART_WAIT);
 	}
-	return (NULL);
 }
 
 static void

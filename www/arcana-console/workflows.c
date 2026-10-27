@@ -1907,6 +1907,7 @@ run_start(const ucl_object_t *wf, const ucl_object_t *hosts,
 	const ucl_object_t	*v, *p;
 	ucl_object_iter_t	 it;
 	pthread_t		 tid;
+	uint32_t		 id;
 	int			 k;
 
 	if (hosts == NULL || ucl_array_size(hosts) == 0)
@@ -1985,6 +1986,8 @@ run_start(const ucl_object_t *wf, const ucl_object_t *hosts,
 	pthread_mutex_lock(&r->lock);
 	run_save(r);
 	pthread_mutex_unlock(&r->lock);
+	/* Taken before the thread runs: it frees r when it is done. */
+	id = r->id;
 	if (pthread_create(&tid, NULL, run_main, r) != 0) {
 		*whyp = "no thread for it";
 		pthread_mutex_lock(&running_lock);
@@ -1993,7 +1996,7 @@ run_start(const ucl_object_t *wf, const ucl_object_t *hosts,
 		goto fail;
 	}
 	(void)pthread_detach(tid);
-	return (r->id);
+	return (id);
 fail:
 	for (k = 0; k < r->nhosts; k++)
 		ucl_object_unref(r->hosts[k].answers);

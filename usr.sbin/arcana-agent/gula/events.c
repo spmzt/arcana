@@ -40,6 +40,7 @@ static pthread_mutex_t	ev_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct event	ring[EVENTS_KEPT];
 static size_t		ring_first, ring_n;
 static uint64_t		ev_last;
+static time_t		ev_since;	/* the first event's, or the start */
 static cbl_family	*ev_family;	/* what a subscriber hears it on */
 
 /*
@@ -118,6 +119,8 @@ event_vadd(const char *jail, const char *kind, const char *fmt, va_list ap)
 	}
 	e->n = ++ev_last;
 	e->t = time(NULL);
+	if (ev_since == 0)
+		ev_since = e->t;
 	e->kind = kind;
 	e->jail = jname;
 	e->data = data;
@@ -136,6 +139,44 @@ event_vadd(const char *jail, const char *kind, const char *fmt, va_list ap)
 	}
 	pthread_mutex_unlock(&ev_lock);
 	free(json);
+	yang_changed(YANG_EVENTS);
+}
+
+/*
+ * The events kept since from, the oldest first, each as the subscribers
+ * are told it (JSON) with its time, to fn; then done, both under the
+ * lock that orders the events, so that what comes after is told live.
+ * *since: when the events began to be kept; *oldest: the oldest still
+ * kept; *aged: whether older ones were let go.
+ */
+void
+events_replay(time_t from, void (*fn)(const char *, time_t, void *),
+    void (*done)(void *), void *arg, time_t *since, time_t *oldest,
+    bool *aged)
+{
+	struct event	*e;
+	char		*json;
+	size_t		 i;
+
+	pthread_mutex_lock(&ev_lock);
+	*since = ev_since != 0 ? ev_since : time(NULL);
+	*oldest = ring_n > 0 ? ring[ring_first].t : 0;
+	*aged = ev_last > ring_n;
+	for (i = 0; fn != NULL && i < ring_n; i++) {
+		e = &ring[(ring_first + i) % EVENTS_KEPT];
+		if (e->t < from)
+			continue;
+		if (asprintf(&json, "{\"n\":%ju,\"t\":%jd,\"kind\":\"%s\"%s%s%s,"
+		    "\"data\":%s}", (uintmax_t)e->n, (intmax_t)e->t, e->kind,
+		    e->jail != NULL ? ",\"jail\":\"" : "", e->jail != NULL ?
+		    e->jail : "", e->jail != NULL ? "\"" : "", e->data) == -1)
+			continue;
+		fn(json, e->t, arg);
+		free(json);
+	}
+	if (done != NULL)
+		done(arg);
+	pthread_mutex_unlock(&ev_lock);
 }
 
 /*

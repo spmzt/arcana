@@ -3,6 +3,9 @@ module arcana-probe {
   namespace "urn:arcana:yang:arcana-probe";
   prefix arcprobe;
 
+  import cblink-gen {
+    prefix cg;
+  }
   import ietf-inet-types {
     prefix inet;
     reference
@@ -397,6 +400,7 @@ module arcana-probe {
             "Samples kept.";
         }
         list sample {
+          cg:struct "sample";
           key "time";
           description
             "The samples kept, oldest first.";
@@ -431,6 +435,7 @@ module arcana-probe {
               "The tunnel.";
           }
           list sample {
+            cg:struct "sample";
             key "time";
             description
               "The samples, oldest first.";

@@ -158,9 +158,9 @@ nth(const ucl_object_t *arr, size_t i, double *v)
 /* A target's samples, each a row. */
 static int
 samples_of(cbl_yarena *a, const ucl_object_t *arr, size_t *np,
-    const struct arcana_probe_probes_state_target_sample **vp)
+    const struct arcana_probe_sample **vp)
 {
-	struct arcana_probe_probes_state_target_sample	*v;
+	struct arcana_probe_sample	*v;
 	const ucl_object_t				*e;
 	ucl_object_iter_t				 it;
 	double						 d;

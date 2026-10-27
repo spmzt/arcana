@@ -24,6 +24,7 @@
  */
 
 #include <sys/param.h>
+#include <sys/cpuset.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/sockio.h>
@@ -1177,7 +1178,7 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 	const char		*raw;
 	struct was		 held[INSTANCES_MAX];
 	int			 n, i, k, step, nkeep, nheld;
-	bool			 ok, same, sec, luach;
+	bool			 ok, same, samerun, sec, luach;
 
 	if ((top = parse(json)) == NULL || ucl_object_type(top) != UCL_OBJECT) {
 		if (top != NULL)
@@ -1418,19 +1419,22 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		    "";
 		/* Its Lua scripts written first: suricata -T loads them. */
 		luach = lua_sync(w, ni[k].name, ucl_object_lookup(in, "lua"));
-		/* Running with the same files: left as it is. */
+		/* Running with the same files: left as it is.  With only
+		 * its rules or thresholds new: they are read again live
+		 * (SIGUSR2, as after the ruleset's update), not a restart. */
 		was = file_text(w, inst_path(w, ni[k].name, "yaml"));
-		same = was != NULL && strcmp(was, conf) == 0 && (was = file_text(w,
-		    inst_path(w, ni[k].name, "rules"))) != NULL && strcmp(was,
-		    rules) == 0 && strcmp((was = file_text(w, inst_path(w,
-		    ni[k].name, "threshold"))) != NULL ? was : "", thr) == 0 &&
+		samerun = was != NULL && strcmp(was, conf) == 0 &&
 		    inst_pid(w, ni[k].name) != 0 && divert_was(held, nheld,
-		    ni[k].name) ==
-		    ni[k].divert && !luach;
+		    ni[k].name) == ni[k].divert && !luach;
+		same = samerun && (was = file_text(w, inst_path(w, ni[k].name,
+		    "rules"))) != NULL && strcmp(was, rules) == 0 &&
+		    strcmp((was = file_text(w, inst_path(w, ni[k].name,
+		    "threshold"))) != NULL ? was : "", thr) == 0;
 		what = wfmt(w, "suricata %s on %d interface%s, %s: %s",
 		    ni[k].name, ni[k].nifs, ni[k].nifs == 1 ? "" : "s",
 		    ni[k].divert > 0 ? wfmt(w, "prevents by divert %d",
-		    ni[k].divert) : "detects", same ? "as it was" : "started");
+		    ni[k].divert) : "detects", same ? "as it was" : samerun ?
+		    "its rules read again" : "started");
 		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
 		    what);
 		if (same) {
@@ -1473,6 +1477,14 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		    strstr(conf, SURICATA_RULESET) == NULL)
 			note = "the ruleset is not fetched yet (suricata-update): "
 			    "its own rules alone until it is";
+		if (samerun && kill((pid_t)inst_pid(w, ni[k].name), SIGUSR2) ==
+		    0) {
+			if (note != NULL)
+				step_end(w, step, true, "%s; %s", what, note);
+			else
+				step_end(w, step, true, NULL);
+			continue;
+		}
 		inst_stop(w, ni[k].name);
 		if (ni[k].nooffload)
 			offload_off(w, &ni[k]);
@@ -1766,6 +1778,81 @@ stats_json(const struct instance *in)
 	return (o);
 }
 
+/* A CPU set as cpuset(1) writes one: 0-3,6. */
+static const char *
+cpus_text(struct work *w, const cpuset_t *set)
+{
+	char	*t = wstrdup(w, "");
+	int	 c, from;
+
+	for (c = 0; c < CPU_SETSIZE; c++) {
+		if (!CPU_ISSET(c, set))
+			continue;
+		for (from = c; c + 1 < CPU_SETSIZE && CPU_ISSET(c + 1, set); c++)
+			;
+		t = wfmt(w, "%s%s%d", t, t[0] != '\0' ? "," : "", from);
+		if (c > from)
+			t = wfmt(w, "%s-%d", t, c);
+	}
+	return (t);
+}
+
+/*
+ * The interrupts of the instances' interfaces (hw.intrnames, as vmstat
+ * -i reads them: "irq264: ix0:rxq0"), each with the CPUs it may run on
+ * (cpuset -g -x): beside the threads' sets, a queue's interrupt and its
+ * worker best on the same CPU.  The lock is held.
+ */
+static ucl_object_t *
+irqs_json(struct work *w)
+{
+	ucl_object_t	*arr, *o;
+	cpuset_t	 set;
+	char		*names, *p, *desc, *end;
+	size_t		 len, n;
+	long		 irq;
+	int		 i, k;
+	bool		 ours;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	if (sysctlbyname("hw.intrnames", NULL, &len, NULL, 0) != 0 ||
+	    len == 0 || (names = wcalloc(w, len + 1, 1)) == NULL ||
+	    sysctlbyname("hw.intrnames", names, &len, NULL, 0) != 0)
+		return (arr);
+	for (p = names; p < names + len && ucl_array_size(arr) < 256;
+	    p += strlen(p) + 1) {
+		if (strncmp(p, "irq", 3) != 0)
+			continue;
+		irq = strtol(p + 3, &end, 10);
+		if (end == p + 3 || *end != ':')
+			continue;
+		desc = end + 1 + strspn(end + 1, " ");
+		ours = false;
+		for (i = 0; !ours && i < ninstances; i++)
+			for (k = 0; !ours && k < instances[i].nifs; k++) {
+				n = strlen(instances[i].ifs[k]);
+				ours = n > 0 && strncmp(desc, instances[i].ifs[k],
+				    n) == 0 && (desc[n] == '\0' || desc[n] ==
+				    ':' || desc[n] == ' ');
+			}
+		if (!ours)
+			continue;
+		CPU_ZERO(&set);
+		if (cpuset_getaffinity(CPU_LEVEL_WHICH, CPU_WHICH_IRQ, irq,
+		    sizeof(set), &set) != 0)
+			continue;
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromint(irq), "irq", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(desc), "name", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(cpus_text(w,
+		    &set)), "cpus", 0, false);
+		ucl_array_append(arr, o);
+	}
+	return (arr);
+}
+
 /* The instances as they are, into the sdwan reply: each its name, its
  * interfaces, whether it runs, how many alerts were read, the latest. */
 void
@@ -1861,6 +1948,9 @@ sdwan_ids_json(struct work *w, ucl_object_t *top)
 		    false);
 		ucl_object_insert_key(o, ucl_object_fromint(ndom), "ndomains", 0,
 		    false);
+		pthread_mutex_lock(&lock);
+		ucl_object_insert_key(o, irqs_json(w), "irqs", 0, false);
+		pthread_mutex_unlock(&lock);
 		ucl_object_insert_key(top, o, "ids_host", 0, false);
 	}
 	/* The ruleset, when suricata-update has fetched it: when, and its

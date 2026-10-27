@@ -432,12 +432,19 @@ setup_token_init(void)
 		snprintf(setup_token + i * 2, 3, "%02x", raw[i]);
 	/* Whole or not at all: whoever reads it never finds it empty. */
 	snprintf(tmp, sizeof(tmp), "%s.XXXXXX", path);
-	if ((fd = mkstemp(tmp)) == -1 || fchmod(fd, 0600) == -1 ||
-	    dprintf(fd, "%s\n", setup_token) < 0 || close(fd) == -1 ||
-	    rename(tmp, path) == -1) {
+	if ((fd = mkstemp(tmp)) == -1) {
 		log_msg(LOG_ERR, "%s: %s", path, strerror(errno));
-		if (fd != -1)
-			(void)unlink(tmp);
+		return;
+	}
+	if (fchmod(fd, 0600) == -1 || dprintf(fd, "%s\n", setup_token) < 0) {
+		log_msg(LOG_ERR, "%s: %s", path, strerror(errno));
+		(void)close(fd);
+		(void)unlink(tmp);
+		return;
+	}
+	if (close(fd) == -1 || rename(tmp, path) == -1) {
+		log_msg(LOG_ERR, "%s: %s", path, strerror(errno));
+		(void)unlink(tmp);
 		return;
 	}
 	log_msg(LOG_NOTICE, "no security key registered yet: the setup "

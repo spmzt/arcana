@@ -1,0 +1,47 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-fleet",
+    "module-revision": "2026-10-27",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-schema-mount",
+        "module-revision": "2019-01-14"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "78400",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-fleet",
+        "sid": "78400"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-fleet:fleet",
+        "sid": "78401"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-fleet:fleet/host",
+        "sid": "78402"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-fleet:fleet/host/id",
+        "sid": "78403"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-fleet:fleet/host/name",
+        "sid": "78404"
+      }
+    ]
+  }
+}

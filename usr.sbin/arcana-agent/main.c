@@ -97,6 +97,7 @@ struct opts opts = {
 	.swanctl_dir = PATH_SWANCTL_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
 	.bird_watch_s = 15,
+	.smtpd_watch_s = 60,
 	.pkg_idle_s = PKG_IDLE_SEC,
 	.pkg_lanes = PKG_LANES,
 	.bird_bin = PATH_BIRD_BIN,
@@ -123,7 +124,7 @@ enum { OPT_ROOT = 1000, OPT_BIRD_WATCH, OPT_SCTP_ALSO, OPT_TELEGRAM_API,
     OPT_POUDRIERE, OPT_POUDRIERE_ETC, OPT_IFMCSTAT, OPT_FRESHCLAM_CONF,
     OPT_SURICATA_RULES, OPT_EXPORTS, OPT_CTL_CONF, OPT_HAST_CONF,
     OPT_SMTPD_CONF, OPT_SMTPD_DIR, OPT_PKG_IDLE, OPT_JOBS_CONF,
-    OPT_SPEEDER_LOG };
+    OPT_SPEEDER_LOG, OPT_SMTPD_WATCH };
 static const struct option longopts[] = {
 	/* The system's files read and written under a directory: a test's
 	 * tree (config-export, config-apply). */
@@ -133,6 +134,7 @@ static const struct option longopts[] = {
 	{ "jobs-conf", required_argument, NULL, OPT_JOBS_CONF },
 	/* How often BIRD's sessions are looked at for faults; 0, never. */
 	{ "bird-watch", required_argument, NULL, OPT_BIRD_WATCH },
+	{ "smtpd-watch", required_argument, NULL, OPT_SMTPD_WATCH },
 	/* More addresses each SCTP listener is bound to (sctp_bindx(3)),
 	 * separated by spaces: an association with the console over
 	 * several paths. */
@@ -196,6 +198,7 @@ usage(void)
 	    "                 [--suricata-rules directory]\n"
 	    "                 [--exports file] [--ctl-conf file] [--hast-conf file]\n"
 	    "                 [--smtpd-conf file] [--smtpd-dir directory]\n"
+	    "                 [--smtpd-watch seconds]\n"
 	    "                 [--speederv2-log file]\n"
 	    "                 [--jobs-conf file]\n");
 	exit(2);
@@ -413,7 +416,6 @@ main(int argc, char *argv[])
 		case OPT_IFMCSTAT:
 			opts.ifmcstat_bin = optarg;
 			break;
-			break;
 		case OPT_FRESHCLAM_CONF:
 			opts.freshclam_conf = optarg;
 			break;
@@ -438,7 +440,6 @@ main(int argc, char *argv[])
 		case OPT_SPEEDER_LOG:
 			opts.speederv2_log = optarg;
 			break;
-			break;
 		case OPT_JOBS_CONF:
 			opts.jobs_conf = optarg;
 			break;
@@ -451,6 +452,11 @@ main(int argc, char *argv[])
 			opts.bird_watch_s = (int)strtonum(optarg, 0, 3600, &errstr);
 			if (errstr != NULL)
 				errx(1, "--bird-watch %s: %s", optarg, errstr);
+			break;
+		case OPT_SMTPD_WATCH:
+			opts.smtpd_watch_s = (int)strtonum(optarg, 0, 3600, &errstr);
+			if (errstr != NULL)
+				errx(1, "--smtpd-watch %s: %s", optarg, errstr);
 			break;
 		case 'A':
 			cafile = optarg;
@@ -774,6 +780,7 @@ main(int argc, char *argv[])
 	jail_watch_start();
 	host_watch_start();
 	bird_watch_start();
+	smtpd_watch_start();
 	logmsg(LOG_INFO, "version %s ready", ARCANA_AGENT_VERSION);
 	stop_loop = loop;
 	stop_pfh = pfh;

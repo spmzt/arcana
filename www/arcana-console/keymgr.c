@@ -236,6 +236,8 @@ keymgr_start(const char *certfile, const char *keyfile, const char *user,
 	}
 	if ((pid = fork()) == -1) {
 		log_msg(LOG_ERR, "keymgr: fork: %s", strerror(errno));
+		close(sp[0]);
+		close(sp[1]);
 		return (-1);
 	}
 	if (pid == 0) {

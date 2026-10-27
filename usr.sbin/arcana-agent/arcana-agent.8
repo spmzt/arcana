@@ -64,6 +64,7 @@
 .Op Fl -pkg-idle Ar seconds
 .Op Fl -jobs-conf Ar file
 .Op Fl -bird-watch Ar seconds
+.Op Fl -smtpd-watch Ar seconds
 .Op Fl -sctp-also Ar addresses
 .Op Fl -telegram-api Ar url
 .Op Fl -poudriere Ar poudriere
@@ -383,6 +384,18 @@ does, dumps none while
 is 0
 .Pc ;
 said anew at each crash, cleared after an hour without one.
+.It Fl -smtpd-watch Ar seconds
+How often OpenSMTPD is looked at, on the host and in each running jail
+where
+.Xr smtpd 8
+is: its counters
+.Pq Ql smtpctl show stats
+kept, a day of them, for the Mail tab's graphs, and a
+.Ql mail
+fault when it is enabled and not running, or when more are queued than
+the limit the tab set
+.Pq Pa watch.json No beside its tables .
+Default 60; 0 looks never.
 .It Fl I Ar ifconfig , Fl n Ar ngctl , Fl k Ar wg , Fl b Ar birdc
 The
 .Xr ifconfig 8 ,

@@ -27,7 +27,7 @@
 #include "collect.h"
 #include "yjson.h"
 
-typedef struct arcana_history_history_state_sample ysample;
+typedef struct arcana_history_sample ysample;
 
 static char *
 datetime(cbl_yarena *a, int64_t t)
@@ -71,9 +71,9 @@ samples_of(cbl_yarena *a, const ucl_object_t *top, const char *const *nets,
     const char *const *jails, size_t njails, size_t *np,
     const ysample **vp)
 {
-	struct arcana_history_history_state_sample_interface	*ni;
-	struct arcana_history_history_state_sample_disk		*nd;
-	struct arcana_history_history_state_sample_jail		*nj;
+	struct arcana_history_sample_interface	*ni;
+	struct arcana_history_sample_disk		*nd;
+	struct arcana_history_sample_jail		*nj;
 	const ucl_object_t					*e;
 	ucl_object_iter_t					 it;
 	ysample							*v;

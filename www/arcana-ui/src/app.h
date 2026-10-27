@@ -998,8 +998,9 @@ bool		 user_modal(struct html *);
 bool		 user_form(const char *, const ucl_object_t *);
 bool		 user_action(const char *, const char *);
 bool		 password_modal(struct html *);
-/* ca.c: Settings, Certificate authority. */
+/* ca.c: Settings, Certificate authority; a time as its day. */
 void		 ca_load(void);
+void		 day_text(char *, size_t, int64_t);
 void		 cluster_tick(double);
 void		 set_cluster(struct html *);
 void		 ca_tick(double);
@@ -1104,7 +1105,8 @@ void		 idsown_reset(void);
 /* surules.c: Suricata's ruleset, rule by rule, in IDS/IPS. */
 void		 view_surules(struct html *, const char *);
 void		 surules_load(const char *);
-bool		 surules_form(const char *, const ucl_object_t *);
+bool		 surules_form(const char *, const ucl_object_t *, char **,
+		    char *, size_t);
 bool		 surules_action(const char *, const char *, const char *,
 		    char **, char *, size_t);
 void		 view_susources(struct html *, const char *);
