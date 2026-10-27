@@ -5,8 +5,8 @@
  */
 
 /*
- * Invidia: FreeBSD's vnet jails as RFC 8530's logical network elements
- * (PLAN-SDN-YANG 2.7.1, docs/notes/rfc8530.md).  A jail with a vnet of
+ * Invidia: FreeBSD's vnet jails as RFC 8530's logical network elements.
+ * A jail with a vnet of
  * its own (jail(8)'s vnet = new, VIMAGE) has a whole network stack:
  * interfaces, addresses, FIBs, sockets, firewalls, net.* sysctls, an
  * LNE.  One sharing the host's stack is not.  Each is listed as

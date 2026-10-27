@@ -355,7 +355,6 @@ key_matches(int alg, const uint8_t *spki, size_t len)
 	return (ok);
 }
 
-/* Verify sig over msg with the stored key. */
 static bool
 verify_sig(int alg, const uint8_t *spki, size_t spkilen, const uint8_t *msg,
     size_t msglen, const uint8_t *sig, size_t siglen)
@@ -797,7 +796,6 @@ cred_user(const ucl_object_t *c)
 	return (ucl_str(c, "user") != NULL ? ucl_str(c, "user") : ADMIN_USER);
 }
 
-/* How many keys a user has. */
 int
 cred_count_of(const char *user)
 {
@@ -1523,7 +1521,7 @@ api_credentials(struct http_request *req)
 	return (reply_json(req, 200, e));
 }
 
-/* Is there a sign-in key of this name: a console user (SASE-3)? */
+/* Is there a sign-in key of this name: a console user? */
 bool
 cred_named(const char *name)
 {

@@ -1,0 +1,114 @@
+module arcana-alarms {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-alarms";
+  prefix arcal;
+
+  import ietf-alarms {
+    prefix al;
+    reference
+      "RFC 8632: A YANG Data Model for Alarm Management";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The kinds of fault the agent raises, as RFC 8632's alarm types:
+     its faults (gula/faults.c) are the alarm list, each fault's
+     object its resource, its kind the alarm type, no qualifier.  A
+     fault is raised once and cleared once; its severity is Warning,
+     Minor, Major or Critical.";
+
+  revision 2026-10-27 {
+    description
+      "Initial revision.";
+  }
+
+  identity arcana-fault {
+    base al:alarm-type-id;
+    description
+      "A fault the agent watches for and clears when it is gone.";
+  }
+
+  identity tunnel {
+    base arcana-fault;
+    description
+      "An SD-WAN tunnel's far end did not answer its probes.";
+  }
+
+  identity tca {
+    base arcana-fault;
+    description
+      "A probe's metric crossed its threshold (a threshold-crossing
+       alert): delay, delay variation or loss.";
+  }
+
+  identity bfd {
+    base arcana-fault;
+    description
+      "A BFD session went down.";
+  }
+
+  identity bgp-neighbor {
+    base arcana-fault;
+    description
+      "A BGP session left the Established state.";
+  }
+
+  identity ospf-neighbor {
+    base arcana-fault;
+    description
+      "An OSPF neighbour left the Full state.";
+  }
+
+  identity bird-instance {
+    base arcana-fault;
+    description
+      "BIRD does not answer: the host's, or an SD-WAN service's
+       instance.";
+  }
+
+  identity interface {
+    base arcana-fault;
+    description
+      "The interface of an SD-WAN UNI or UCS end point has no link.";
+  }
+
+  identity ids {
+    base arcana-fault;
+    description
+      "A Suricata instance that prevents is not running.";
+  }
+
+  identity key-rotation {
+    base arcana-fault;
+    description
+      "Manual IPsec keys were not rotated in time.";
+  }
+
+  identity storage {
+    base arcana-fault;
+    description
+      "A pool or file system is fuller than its threshold.";
+  }
+
+  identity cpu {
+    base arcana-fault;
+    description
+      "The host's CPU has been busier than its threshold.";
+  }
+
+  identity memory {
+    base arcana-fault;
+    description
+      "The host's memory has been fuller than its threshold.";
+  }
+
+  identity crash {
+    base arcana-fault;
+    description
+      "A process died of a signal that dumps core, the times it did
+       in a day counted: the host's, or a jail's.";
+  }
+}

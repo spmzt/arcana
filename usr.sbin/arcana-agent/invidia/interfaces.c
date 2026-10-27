@@ -1583,7 +1583,6 @@ if_exists(struct work *w, const char *ifname)
 	return ((a = ifq(w, "exists", ifname, NULL)) != NULL && a[0] == '1');
 }
 
-/* Is the interface up?  False when it could not be told. */
 /* Has it its link, where w works?  False when it could not be told
  * (none of the name, say). */
 bool
@@ -1598,6 +1597,7 @@ if_link(struct work *w, const char *ifname, bool *okp)
 	return (true);
 }
 
+/* Is the interface up?  False when it could not be told. */
 bool
 if_is_up(struct work *w, const char *ifname, bool *upp)
 {

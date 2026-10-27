@@ -5,7 +5,7 @@
  */
 
 /*
- * Gula: the record of what the security rules logged (SASE-2, MEF 138).
+ * Gula: the record of what the security rules logged (MEF 138).
  * A rule with "log logdst rtsock" tells each packet it sees on the
  * routing socket (RTM_IPFWLOG): the rule's
  * number, its action, the packet's addresses, the interface and the

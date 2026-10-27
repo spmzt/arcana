@@ -761,6 +761,30 @@ paths:
           description: ok, or error with what bird said; confirm_by after
             a change with safe
 
+  /api/servers/{server}/data:
+    get:
+      tags: [servers]
+      summary: The host's YANG data, as the agent serves it
+      description: The top-level nodes named, or every one, of the models
+        the agent serves by cblink's YANG family (the IETF's and IEEE's
+        standard models, Arcana's own modules), as RFC 7951's JSON under
+        `data`, each member qualified by its module
+        (`ietf-interfaces:interfaces`). A node the agent does not serve
+        is said under `error`, with `ok` false.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: node
+          in: query
+          description: Top-level nodes by name, by commas
+            (`interfaces,routing`); letters, digits and - each.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The data under `data`, or why not under `error`.
+          content:
+            application/json:
+              schema:
+                type: object
   /api/servers/{server}/net/{kind}:
     get:
       tags: [servers]

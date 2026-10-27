@@ -546,7 +546,6 @@ bird_tick(double now)
 	}
 }
 
-/* Past what is at p: a comment or a string whole, else one character. */
 /*
  * The protocol asked for from elsewhere, once its host's file is here:
  * its box, as if picked in the table, so that what it edits is known.
@@ -876,6 +875,7 @@ bird_show(const char *proto)
 		want_open();
 }
 
+/* Past what is at p: a comment or a string whole, else one character. */
 static const char *
 past(const char *p)
 {

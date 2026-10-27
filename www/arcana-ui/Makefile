@@ -145,7 +145,8 @@ check-yang: .PHONY
 	@t=$$(mktemp -d) && trap 'rm -rf "$$t"' EXIT && mkdir "$$t/k" && \
 	    ${MAKE} -C ${.CURDIR} regen-yang YANG_OUT="$$t" \
 	    YANG_KINDS_OUT="$$t/k" >/dev/null && \
-	    for f in $$(cd "$$t" && ls | grep -v '^k$$'); do \
+	    for f in $$(cd ${.CURDIR}/yang && ls) $$(cd "$$t" && ls | \
+		grep -v '^k$$'); do \
 		cmp -s "$$t/$$f" ${.CURDIR}/yang/$$f || { echo \
 		    "www/arcana-ui: yang/$$f is not what make regen-yang makes" >&2; \
 		    exit 1; }; \

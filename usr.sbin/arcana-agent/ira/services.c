@@ -337,6 +337,11 @@ do_service_action(struct work *w, const char *name, uint8_t action,
 
 	rsp->has_ok = true;
 	rsp->ok = false;
+	/* Whoever asks (the operation, a YANG action): service(8) gets it. */
+	if (name == NULL || !valid_service(name)) {
+		rsp->error = "invalid service name";
+		return (0);
+	}
 	scan_scripts(w, &all, &n);
 	if ((sc = script_find(all, n, name)) == NULL) {
 		rsp->error = wfmt(w, "no rc.d script '%s' in %s", name,

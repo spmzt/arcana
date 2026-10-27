@@ -390,8 +390,7 @@ profiles_put(struct work *w, const char *prof, bool add, const char **errp)
 
 /*
  * Does the rc script run several relays?  Its text names
- * speederv2_profiles (the port's since it took them); looked for in the
- * scope's rc.d directories.
+ * speederv2_profiles; looked for in the scope's rc.d directories.
  */
 static bool
 profiles_supported(struct work *w)

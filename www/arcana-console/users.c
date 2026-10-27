@@ -189,12 +189,6 @@ role_host(const ucl_object_t *role, const char *sid)
 }
 
 /*
- * A user's role on the console: the most its roles allow.  NULL, a
- * session that carries no user (an API token's, a directory's user
- * the console has no record of), is an operator's: what a write token
- * may.
- */
-/*
  * A user's roles: its own, and its groups'; into v, max at most, each
  * once.  How many.
  */
@@ -231,6 +225,12 @@ roles_of(const ucl_object_t *u, const ucl_object_t **v, int max)
 	return (n);
 }
 
+/*
+ * A user's role on the console: the most its roles allow.  NULL, a
+ * session that carries no user (an API token's, a directory's user
+ * the console has no record of), is an operator's: what a write token
+ * may.
+ */
 enum crole
 user_console(const char *name)
 {
@@ -266,7 +266,7 @@ user_tenant(const char *name)
 /*
  * A user's role on a host: the most its roles allow there; none on a
  * host of another tenant.  A session with no user has every host as
- * an admin, as before there were users.
+ * an admin.
  */
 enum role
 user_host(const char *name, const char *sid)
@@ -607,7 +607,6 @@ role_groups(const char *role)
 	return (n);
 }
 
-/* Is the user in the group? */
 static bool
 in_group(const ucl_object_t *u, const char *group)
 {

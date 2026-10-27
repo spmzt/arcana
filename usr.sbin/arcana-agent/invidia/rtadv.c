@@ -7,7 +7,7 @@
 /*
  * Invidia: rtadvd.conf(5) and RFC 8349's router advertisement submodule
  * (ietf-ipv6-router-advertisements, an interface's ipv6-router-
- * advertisements), both ways (PLAN-SDN-YANG 2.5.1).  rtadvd.conf is read
+ * advertisements), both ways.  rtadvd.conf is read
  * as rtadvd(8)'s config.c reads it, the interface's record and what its
  * tc= brings: maxinterval, mininterval, chlim, rltime (default-
  * lifetime), rtime (reachable-time), retrans (retrans-timer), mtu (a

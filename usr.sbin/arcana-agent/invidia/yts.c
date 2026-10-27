@@ -5,8 +5,8 @@
  */
 
 /*
- * Invidia: what the host says of a packet, as YANG, arcana-troubleshoot
- * (PLAN-SDN-YANG 3.1.10): the path-check operation's JSON (pathcheck.c)
+ * Invidia: what the host says of a packet, as YANG, arcana-troubleshoot:
+ * the path-check operation's JSON (pathcheck.c)
  * as the path-check action's output, the traceroute operation's
  * (network.c) as traceroute's, the capture operation's (capture.c) as
  * capture's, each read back into the module's structs.

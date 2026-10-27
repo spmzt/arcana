@@ -985,7 +985,6 @@ do_probes_set(struct work *w, const char *json, const char **errp)
 	return (0);
 }
 
-/* Does the payload watch any link? */
 static bool
 has_links(const char *json)
 {

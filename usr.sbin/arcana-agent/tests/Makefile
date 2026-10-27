@@ -44,6 +44,10 @@ PROGS+=		ysystem
 SRCS.ysystem=	ysystem_test.c ysystem.c yjson.c ymodel_schema.c
 LDADD.ysystem+=	${CBLINK_LIBS} ${UCL_LIBS} \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
+# yhw: a host's hardware as ietf-hardware has it.
+PROGS+=		yhw
+SRCS.yhw=	yhw_test.c yhw.c yjson.c ymodel_schema.c
+LDADD.yhw+=	${CBLINK_LIBS} ${UCL_LIBS} -lgeom
 # ylog: the log operation's replies as arcana-log has them, and
 # syslog.conf as ietf-syslog.
 PROGS+=		ylog
@@ -100,6 +104,10 @@ LDADD.ypackages+=	${CBLINK_LIBS}
 PROGS+=		yservices
 SRCS.yservices=	yservices_test.c yservices.c ymodel_schema.c
 LDADD.yservices+=	${CBLINK_LIBS}
+# ysubmit: arcana-jobs' submit over the YANG family.
+PROGS+=		ysubmit
+SRCS.ysubmit=	ysubmit.c ymodel_schema.c
+LDADD.ysubmit+=	${CBLINK_LIBS}
 # kmsg: the kernel's line for a crash, as the event and fault of it.
 PROGS+=		kmsg
 SRCS.kmsg=	kmsg_test.c kmsg.c

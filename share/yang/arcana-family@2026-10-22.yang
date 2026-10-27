@@ -20,7 +20,7 @@ module arcana-family {
     description
       "Initial revision.";
     reference
-      "cblink docs/FAMILIES.md; Arcana docs/PLAN-SDN-YANG.md.";
+      "cblink docs/FAMILIES.md.";
   }
 
   extension family {

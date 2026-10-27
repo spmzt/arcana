@@ -29,8 +29,8 @@ own: <https://spmzt.github.io/arcana-docs/> (its source is
 | `share/arcana/arcana.yaml` | The cblink family: the contract between arcana-agent and its clients; `share/yang/arcana@<rev>.yang` is its wire, the YANG module `share/arcana/wire.awk` writes from it. |
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the design and the
-trust boundaries; [docs/NAMING.md](docs/NAMING.md) is the naming design
-the project is growing into; [docs/TOOLS.md](docs/TOOLS.md) describes
+trust boundaries; [docs/NAMING.md](docs/NAMING.md) is the naming design;
+[docs/TOOLS.md](docs/TOOLS.md) describes
 every program
 with its options and examples, and each has a man page: `arcana-agent(8)`,
 `arcanactl(8)`, `arcana-enrol(8)`, `jailconf(8)` and `arcana-console(8)`
@@ -39,7 +39,7 @@ for the console.
 ## Building
 
 Base `make(1)` and `bsd.*.mk`, on FreeBSD 16.0 or later (16-CURRENT
-until 16.0 is released); FreeBSD 15 is not supported.
+until 16.0 is released).
 
 ```sh
 git clone --recurse-submodules https://github.com/spmzt/arcana.git
@@ -221,7 +221,8 @@ the passkey of another device nearby), and register from **Keys**;
 Android stores a synced passkey. From then on **Use a passkey** on the
 login screen logs in with it, on the phone or, through the phone, on
 any browser. Registration asks for a discoverable credential where the
-authenticator offers one, so security keys keep working as before.
+authenticator offers one; a security key that offers none still
+works.
 
 An Android app can log in with the same keys once `web.conf` names it
 in an `android { }` block, its package and the SHA-256 fingerprints of

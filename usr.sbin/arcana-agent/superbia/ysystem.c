@@ -6,7 +6,7 @@
 
 /*
  * Superbia: the kernel's state as arcana-sysctl has it and its modules
- * and memory as arcana-kernel has them (PLAN-SDN-YANG 3.1.6), from the
+ * and memory as arcana-kernel has them, from the
  * sysctl and kernel operations' JSON (sysctl.c, kernel.c); and their
  * configuration written: sysctl.conf(5)'s settings, rc.conf(5)'s
  * kld_list, in place, every other line kept (libvarconf).

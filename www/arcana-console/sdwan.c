@@ -1386,7 +1386,7 @@ uni(struct ck *c, const ucl_object_t *u, struct pfx *nets, int *nnets)
 }
 
 /*
- * A remote end point (SASE-3): no UNI, but a WireGuard interface of
+ * A remote end point: no UNI, but a WireGuard interface of
  * the edge in the service's table, a prefix the identities' addresses
  * come from, the port it listens on, and the identities, each a name,
  * a zone of the service and a WireGuard public key.
@@ -1395,7 +1395,7 @@ uni(struct ck *c, const ucl_object_t *u, struct pfx *nets, int *nnets)
 #define	GROUPS_MAX	64
 
 /*
- * The groups of a remote end point (SASE-3): each a zone its members'
+ * The groups of a remote end point: each a zone its members'
  * flows get the policies of, a pool their addresses come from (inside
  * the remote's prefix, not holding the edge's own) and the groups
  * whose members they reach; members of one group reach each other.
@@ -2134,7 +2134,7 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 			return (fail(c, "its edge is one of the edges"));
 		u = ucl_object_lookup(ep, "uni");
 		if (ucl_object_lookup(ep, "remote") != NULL) {
-			/* A remote end point (SASE-3): the identities' own. */
+			/* A remote end point: the identities' own. */
 			if (u != NULL)
 				return (fail(c, "a UNI or a remote, not both"));
 			if (!remote(c, sw, ucl_object_lookup(ep, "remote"), nets,
@@ -2793,7 +2793,7 @@ security_policy(struct ck *c, const ucl_object_t *sw, const ucl_object_t *v)
 				    "function")));
 	}
 	if ((k = ucl_object_lookup(v, "ids")) != NULL) {
-		/* SASE-4: Suricata on the edge, a plugin, watching the
+		/* Suricata on the edge, a plugin, watching the
 		 * service's UNIs (detect) or in their way (prevent). */
 		static const char *const modes[] = { "detect", "prevent",
 		    NULL };
@@ -3472,7 +3472,6 @@ sdwan_load(void)
 	return (doc);
 }
 
-/* Is it one MEF 70.2 allows, as far as checked; why not, when not. */
 /*
  * A document changed by the console itself (an identity issued or
  * revoked): checked, its version the kept one's plus one, kept.
@@ -3554,6 +3553,7 @@ sdwan_ready(const ucl_object_t *doc, ucl_object_t *notes)
 	return (out);
 }
 
+/* Is it one MEF 70.2 allows, as far as checked; why not, when not. */
 bool
 sdwan_valid(const ucl_object_t *doc, char *why, size_t len)
 {

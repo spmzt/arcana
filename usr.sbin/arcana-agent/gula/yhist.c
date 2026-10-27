@@ -5,7 +5,7 @@
  */
 
 /*
- * Gula: the history as YANG, arcana-history (PLAN-SDN-YANG 3.1.7): the
+ * Gula: the history as YANG, arcana-history: the
  * history operation's JSON (history.c) read back into the module's
  * structs: how the agent samples and its limits as configuration,
  * the sampler and its samples as state.  A sample is an array of the

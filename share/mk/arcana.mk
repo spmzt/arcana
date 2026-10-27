@@ -57,8 +57,17 @@ CBLINK_OBJ?=	${ARC_TOP}/cblink/obj
 CBLINK_MK?=	${ARC_TOP}/cblink/share/cblink/cblink.mk
 CBLINK_GEN?=	${CBLINK_OBJ}/usr.bin/cblink-gen/cblink-gen
 CBLINK_CFLAGS?=	-I${ARC_TOP}/cblink/lib/libcblink
+.if defined(CBLINK_STATIC)
+# A program shipped to other hosts (the agent, by agent-update) carries
+# its own libcblink, the submodule's: a host's may be older, and the
+# program would not run there.  libcbor and OpenSSL stay shared.
+CBLINK_LIBS?=	${CBLINK_OBJ}/lib/libcblink/libcblink_pic.a \
+		${LOCALBASE}/lib/libcbor.so -lssl -lcrypto -lm
+DPADD+=		${CBLINK_OBJ}/lib/libcblink/libcblink_pic.a
+.else
 CBLINK_LIBS?=	-L${CBLINK_OBJ}/lib/libcblink -lcblink
 LDFLAGS+=	-Wl,-rpath,${CBLINK_OBJ}/lib/libcblink
+.endif
 .else
 CBLINK_SUBMODULE=	no
 CBLINK_PREFIX?=	${LOCALBASE}

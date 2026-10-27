@@ -1400,15 +1400,6 @@ tmp_gone(struct work *w, const char *dir, const char *ca, int nkeys)
 	(void)rmdir(dir);
 }
 
-/*
- * Each host key signed by the CA key given, its certificate beside it,
- * and sshd told of each (HostCertificate).  The signing is the host's,
- * through an ssh-agent of its own whose socket is in a directory of
- * /tmp only root reads: the CA's key is in that agent's memory alone,
- * for two minutes at most, never in a file and never in a jail, whose
- * root could read it there; of a jail, only its public host keys come
- * out, and only their certificates go in.
- */
 /* The signing's ssh-agent ended, and what it left taken away. */
 static void
 agent_stop(struct work *w, pid_t apid, const char *sock, const char *dir,
@@ -1421,6 +1412,15 @@ agent_stop(struct work *w, pid_t apid, const char *sock, const char *dir,
 	tmp_gone(w, dir, ca, 0);
 }
 
+/*
+ * Each host key signed by the CA key given, its certificate beside it,
+ * and sshd told of each (HostCertificate).  The signing is the host's,
+ * through an ssh-agent of its own whose socket is in a directory of
+ * /tmp only root reads: the CA's key is in that agent's memory alone,
+ * for two minutes at most, never in a file and never in a jail, whose
+ * root could read it there; of a jail, only its public host keys come
+ * out, and only their certificates go in.
+ */
 static int
 sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {

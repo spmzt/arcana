@@ -5,7 +5,7 @@
  */
 
 /*
- * Invidia: when each route last changed (PLAN-SDN-YANG 2.4.6), for
+ * Invidia: when each route last changed, for
  * ietf-routing's last-updated.  The kernel keeps no such time; the route
  * events netlink(4) sends (RTM_NEWROUTE, RTM_DELROUTE, every FIB on one
  * socket, RTA_TABLE saying which) do: each is noted here by its FIB and

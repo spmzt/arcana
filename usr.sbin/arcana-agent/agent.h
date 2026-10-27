@@ -20,10 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-_Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
-    "written for cblink 0.2: its wire, its structs");
-
-#define	ARCANA_AGENT_VERSION	"0.215.0"
+#define	ARCANA_AGENT_VERSION	"0.223.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -787,6 +784,7 @@ const char	*sysctl_conf_get(struct work *, const char *);
 int		 sysctl_conf_restore(struct work *, const char *, const char *,
 		    const char **);
 bool		 valid_jail(const char *);
+bool		 valid_service(const char *);
 bool		 valid_ifname(const char *);
 bool		 sysctl_part(struct cbl_dump_state *, const char *, char **,
 		    uint64_t *);
@@ -909,6 +907,9 @@ struct ucl_object_s *swap_list(struct work *);
 void		 route_watch_start(void);
 void		 event_add(const char *, const char *, ...) __printflike(2, 3);
 void		 event_family(cbl_family *);
+/* invidia/yserve.c: an event's JSON told as arcana-events' notification
+ * on cblink's YANG family too. */
+void		 yang_event(const char *);
 void		 event_add_jail(const char *, const char *, const char *, ...)
 		    __printflike(3, 4);
 int		 do_events(struct work *, uint64_t, struct arc_events_rsp *);
@@ -945,12 +946,14 @@ void		 jobs_init(void);
 int		 jobs_submit(const struct arc_job_spec *, size_t, const char *,
 		    struct work *, const struct arc_job **, size_t *);
 void		 jobs_list(struct work *, const struct arc_job **, size_t *);
+int		 jobs_submit_checked(cbl_req *, const struct arc_job_spec *,
+		    size_t, struct work *, const struct arc_job **, size_t *,
+		    const char **);
 size_t		 jobs_waiting(void);
 const struct arc_job *jobs_get(struct work *, uint64_t);
 const struct arc_job *jobs_cancel(struct work *, uint64_t, const char **);
 const struct arc_job *jobs_confirm(struct work *, uint64_t, const char **);
 
-/* handlers.c */
 /* invidia/address.c, superbia/confedit.c */
 int		 ifaddr_change(struct work *, const char *, int, const void *,
 		    int, bool, const char **);
@@ -991,6 +994,7 @@ int		 do_agent_update(struct work *, const uint8_t *, size_t,
 void		 service_restart(const char *);
 void		 service_detached(const char *, const char *);
 
+/* handlers.c */
 bool		 change_note(const char *, ...) __printflike(1, 2);
 void		 changes_stop(bool);
 void		 changes_log(int);

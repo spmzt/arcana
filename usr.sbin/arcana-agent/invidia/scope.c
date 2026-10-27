@@ -597,7 +597,6 @@ fail:
 	return (-1);
 }
 
-/* Move a file's name in its directory, or with to NULL take it away. */
 /* A file taken away, in the scope; 0, or -1 with errno. */
 int
 scope_unlink(struct work *w, const char *path)
@@ -612,6 +611,7 @@ scope_unlink(struct work *w, const char *path)
 	return (rc);
 }
 
+/* Move a file's name in its directory, or with to NULL take it away. */
 int
 scope_rename(struct work *w, const char *path, const char *from,
     const char *to)

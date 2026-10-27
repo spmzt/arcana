@@ -1,16 +1,15 @@
 # Trinity Seven naming and architecture guide
 
-This is the project's naming design. It records how components are to
-be named as the system grows from a jail console into a FreeBSD-native
-fleet orchestration and agent-based management system. The project and
-its programs carry the names; see [Programs](#programs) and
-[Status](#status) at the end.
+This is the project's naming design: how the components of a
+FreeBSD-native fleet orchestration and agent-based management system
+are named. The project and its programs carry the names; see
+[Programs](#programs) and [The agent's sources](#the-agents-sources)
+at the end.
 
 ## Purpose
 
-The project is meant to eventually manage a whole fleet of FreeBSD
-machines, and to stay extensible enough to coordinate things outside a
-single host: routing between servers, network services, scheduled
+The project manages a fleet of FreeBSD machines, and stays extensible
+enough to coordinate things outside a single host: routing between servers, network services, scheduled
 tasks, deployments, system services, jails, storage, resource
 management, monitoring and telemetry, notifications, external APIs,
 Telegram and other integrations, and future plugins and automation.
@@ -255,13 +254,13 @@ prefix; Archives name what is *inside* them. A tool called
 `superbia-enrol` would make you recall which Archive owns a task before
 you could type it, and seven families of tools would multiply that. So:
 
-| Program | Role | Was |
-|---|---|---|
-| `arcana-agent` | the Agent: the daemon on every host, the only privileged part | `jailgridd` |
-| `arcana-console` | the Orchestrator's first form: the web console, one user, many hosts | `jailgrid` |
-| `arcanactl` | a shell's way to one agent | `jailgridctl` |
-| `arcana-enrol` | joins a host to the console; a Superbia task (identity, trust) | `jailgrid-enrol` |
-| `jailconf` | a general `jail.conf` editor; not Arcana-specific, so not renamed | |
+| Program | Role |
+|---|---|
+| `arcana-agent` | the Agent: the daemon on every host, the only privileged part |
+| `arcana-console` | the Orchestrator: the web console, its users, many hosts |
+| `arcanactl` | a shell's way to one agent |
+| `arcana-enrol` | joins a host to the console; a Superbia task (identity, trust) |
+| `jailconf` | a general `jail.conf` editor; not Arcana-specific, so without the prefix |
 
 Each stays a small tool that does one thing. The Archive a tool or an
 operation belongs to is said in its manual and here, and is the name to
@@ -272,10 +271,10 @@ The service names are `arcana_agent` and `arcana_console` (rc.d names
 take no hyphen), the configuration lives in `/usr/local/etc/arcana`, the
 console's data in `/var/db/arcana`, and the cblink family is `arcana`.
 
-## Status
+## The agent's sources
 
 The agent's sources are laid out by Archive, in
-`usr.sbin/arcana-agent`:
+`usr.sbin/arcana-agent`; the main files of each:
 
 | Directory | Archive | What is in it |
 |---|---|---|
@@ -291,11 +290,11 @@ The agent's sources are laid out by Archive, in
 One feature can touch several: changing a jail's address is Invidia's
 operation, done live through the kernel and persistently through
 Superbia's edit of the configuration, and traced by Gula. A file is
-where its main concern lives.
+where its main concern lives; the `y*.c` files in each directory fill
+that Archive's YANG modules.
 
-How the operations (the cblink family in `share/arcana/arcana.yaml`, its
-wire the YANG module written from it)
-fall under the Archives:
+How the operations (the cblink family in `share/arcana/arcana.yaml`,
+its wire the YANG module written from it) fall under the Archives:
 
 | Operations | Archive |
 |---|---|

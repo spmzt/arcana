@@ -21,7 +21,7 @@
 
 #include "collect.h"
 
-typedef struct arcana_packages_packages_package ypkg;
+typedef struct arcana_packages_package ypkg;
 
 static const struct arc_package inst[] = {
 	{ .name = "bash", .installed = "5.3.3", .has_automatic = true,

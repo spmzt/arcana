@@ -402,8 +402,8 @@ hello_cleanup()
 atf_test_case yang_active_route
 yang_active_route_head()
 {
-	atf_set "descr" "ietf-routing's active-route action (PLAN-SDN-YANG" \
-	    "2.4.5): the route an address goes by, as route -n get finds it"
+	atf_set "descr" "ietf-routing's active-route action:" \
+	    "the route an address goes by, as route -n get finds it"
 }
 yang_active_route_body()
 {
@@ -472,7 +472,7 @@ atf_test_case yang_lne
 yang_lne_head()
 {
 	atf_set "descr" "the vnet jails as RFC 8530's logical network" \
-	    "elements (PLAN-SDN-YANG 2.7.1): as jls(8) lists them"
+	    "elements: as jls(8) lists them"
 }
 yang_lne_body()
 {
@@ -485,8 +485,8 @@ yang_lne_body()
 atf_test_case yang_ni_conf
 yang_ni_conf_head()
 {
-	atf_set "descr" "FIBs as RFC 8529's network instances (PLAN-SDN-YANG" \
-	    "2.6.1): one each from FIB 1 to net.fibs - 1, fibs.conf's names" \
+	atf_set "descr" "FIBs as RFC 8529's network instances:" \
+	    "one each from FIB 1 to net.fibs - 1, fibs.conf's names" \
 	    "and descriptions read and written, what cannot be said"
 }
 yang_ni_conf_body()
@@ -564,7 +564,7 @@ yang-cbor 60 bytes, the same back
 atf_test_case yang_ni_grow
 yang_ni_grow_head()
 {
-	atf_set "descr" "an instance past the last FIB (PLAN-SDN-YANG 2.6.4):" \
+	atf_set "descr" "an instance past the last FIB:" \
 	    "net.fibs kept in loader.conf; not raised live, unprivileged," \
 	    "so a reboot required"
 	# Never root: a live raise of the host's net.fibs is for good.
@@ -608,7 +608,7 @@ fib5_name="far"
 atf_test_case yang_ni_rc
 yang_ni_rc_head()
 {
-	atf_set "descr" "bind-ni-name kept in rc.conf (PLAN-SDN-YANG 2.6.3):" \
+	atf_set "descr" "bind-ni-name kept in rc.conf:" \
 	    "the fib words of ifconfig_<if> set, replaced, taken out"
 }
 yang_ni_rc_body()
@@ -639,7 +639,7 @@ atf_test_case yang_rtadv_conf
 yang_rtadv_conf_head()
 {
 	atf_set "descr" "rtadvd.conf as RFC 8349's router advertisement" \
-	    "submodule (PLAN-SDN-YANG 2.5.1): read through tc=, an edit of" \
+	    "submodule: read through tc=, an edit of" \
 	    "one leaf alone, written and read back"
 }
 yang_rtadv_conf_body()
@@ -701,7 +701,7 @@ atf_test_case yang_rc_routes
 yang_rc_routes_head()
 {
 	atf_set "descr" "rc.conf's static routes as ietf-routing's static" \
-	    "control-plane-protocol (PLAN-SDN-YANG 2.4.3), read and written" \
+	    "control-plane-protocol, read and written" \
 	    "back to a fragment"
 }
 yang_rc_routes_body()
@@ -847,7 +847,7 @@ EOF
 atf_test_case yang_routes
 yang_routes_head()
 {
-	atf_set "descr" "ietf-routing's RIBs (PLAN-SDN-YANG 2.4.1): every" \
+	atf_set "descr" "ietf-routing's RIBs: every" \
 	    "FIB's routes as netstat -rn shows them, through YANG-CBOR" \
 	    "and back"
 }
@@ -1217,7 +1217,7 @@ atf_test_case yang_jails
 yang_jails_head()
 {
 	atf_set "descr" "the list operation's reply as arcana-jails has it" \
-	    "(PLAN-SDN-YANG 3.1.1): every field, a running vnet jail's lne," \
+	    "every field, a running vnet jail's lne," \
 	    "the cpu share in hundredths, through YANG-CBOR and back"
 }
 yang_jails_body()
@@ -1243,12 +1243,39 @@ EOF
 	atf_check -o file:want sh -c "sed -n '/^-- back\$/,\$p' out | sed 1d"
 }
 
+atf_test_case yang_hardware
+yang_hardware_head()
+{
+	atf_set "descr" "a host's hardware as ietf-hardware has it (RFC" \
+	    "8348): the chassis from SMBIOS, a CPU" \
+	    "each with its temperature as a sensor, the disks; through" \
+	    "YANG-CBOR and back"
+}
+yang_hardware_body()
+{
+	cat > hw.json <<'EOF'
+{"chassis":{"maker":"Example Systems","product":"EX-1000","version":"1.2","serial":"EX123456","uuid":"4c4c4544-0042-3510-8051-b4c04f4e3332","bios":"2.14.1","os":"16.0-CURRENT"},"model":"Example CPU @ 2.00GHz","cpus":[452,null],"disks":[{"name":"nda0","descr":"Example NVMe 1TB","ident":"S5H9NX0N","rotation":"0","size":1000204886016},{"name":"ada0","descr":"Example HDD 4TB","ident":"WD-WX12","rotation":"7200","size":4000787030016},{"name":"vtbd0","ident":"BHYVE-1","size":58720256000}]}
+EOF
+	cat > want <<'EOF'
+chassis chassis parent=- pos=-1 mfg=Example Systems model=EX-1000 serial=EX123456 hw=1.2 fw=2.14.1 sw=16.0-CURRENT uuid=4c4c4544-0042-3510-8051-b4c04f4e3332 fru=no descr=the host children=cpu0,cpu1,nda0,ada0,vtbd0
+cpu0 cpu parent=chassis pos=0 mfg=- model=Example CPU @ 2.00GHz serial=- hw=- fw=- sw=- uuid=- fru=no descr=logical CPU 0 children=cpu0-temperature
+cpu0-temperature sensor parent=cpu0 pos=0 mfg=- model=- serial=- hw=- fw=- sw=- uuid=- fru=- descr=the temperature of CPU 0 value=452 precision=1 type=8
+cpu1 cpu parent=chassis pos=1 mfg=- model=Example CPU @ 2.00GHz serial=- hw=- fw=- sw=- uuid=- fru=no descr=logical CPU 1
+nda0 storage-drive parent=chassis pos=0 mfg=- model=Example NVMe 1TB serial=S5H9NX0N hw=- fw=- sw=- uuid=- fru=yes descr=1.0 TB, solid state
+ada0 storage-drive parent=chassis pos=1 mfg=- model=Example HDD 4TB serial=WD-WX12 hw=- fw=- sw=- uuid=- fru=yes descr=4.0 TB, 7200 rpm
+vtbd0 storage-drive parent=chassis pos=2 mfg=- model=- serial=BHYVE-1 hw=- fw=- sw=- uuid=- fru=yes descr=59 GB
+EOF
+	"$(atf_get_srcdir)/yhw" hw.json > out || atf_fail "yhw failed"
+	atf_check -o file:want sed '$d' out
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' tail -1 out
+}
+
 atf_test_case yang_system
 yang_system_head()
 {
 	atf_set "descr" "the sysctl and kernel operations' replies as" \
-	    "arcana-sysctl and arcana-kernel have them (PLAN-SDN-YANG" \
-	    "3.1.6), through YANG-CBOR and back; their configuration" \
+	    "arcana-sysctl and arcana-kernel have them," \
+	    "through YANG-CBOR and back; their configuration" \
 	    "written in place: sysctl.conf's settings, rc.conf's kld_list"
 }
 yang_system_body()
@@ -1414,8 +1441,8 @@ config_bundle_cleanup()
 atf_test_case yang_firewall
 yang_firewall_head()
 {
-	atf_set "descr" "the firewall as arcana-firewall has it (PLAN-SDN-YANG" \
-	    "3.1.10): the ipfw read's kept rules, aliases, rc.conf, the rules" \
+	atf_set "descr" "the firewall as arcana-firewall has it:" \
+	    "the ipfw read's kept rules, aliases, rc.conf, the rules" \
 	    "with counters, dynamic rules, tables, NAT and dummynet; the kept" \
 	    "file's text with its rules, other lines and aliases taken from" \
 	    "it; a kernel trace's packets; through YANG-CBOR and back"
@@ -1593,7 +1620,7 @@ yang_events_body()
 	local y="$(atf_get_srcdir)/yev"
 
 	cat > ev.json <<'EOT'
-{"last":12,"first":3,"kept":512,"events":[{"n":3,"t":1791995110,"kind":"route-add","data":{"destination":"10.9.0.0","gateway":"10.0.0.1","flags":"UGS","nhop":5,"metric":0,"weight":1,"fib":0,"prefixlen":16,"interface":"em0","source":"static"}},{"n":4,"t":1791995111,"kind":"routes","data":{"changed":40}},{"n":5,"t":1791995112,"kind":"link","jail":"r1","data":{"interface":"epair0b","up":true,"carrier":true,"mtu":1500}},{"n":6,"t":1791995113,"kind":"address-add","data":{"interface":"em0","address":"2001:db8::7","prefixlen":64}},{"n":7,"t":1791995114,"kind":"neigh","data":{"family":"inet","interface":"em0","address":"10.0.0.9","lladdr":"02:00:00:00:00:09","state":"reachable","router":false}},{"n":8,"t":1791995115,"kind":"threshold","data":{"what":"jail-cpu","name":"web","value":55,"limit":50,"over":true}},{"n":9,"t":1791995116,"kind":"kmsg","data":{"seq":41,"text":"em0: link state changed to UP"}},{"n":10,"t":1791995117,"kind":"sdwan-tunnel","data":{"id":"tvc-1","address":"10.202.0.2","state":"down","misses":3}},{"n":11,"t":1791995118,"kind":"sdwan-fault","data":{"type":"tunnel","severity":"Major","object":"tvc-1","by":"probe","description":"no reply","state":"set"}},{"n":12,"t":1791995119,"kind":"sdwan-security","data":{"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"em0","comment":"deny-ssh"}},{"n":13,"t":1791995120,"kind":"job","data":{"id":77,"title":"ipfw table T46 add","ok":false,"error":"ipfw: bad"}},{"n":14,"t":1791995121,"kind":"jail-state","data":{"jail":"web","state":"running","jid":5}},{"n":15,"t":1791995122,"kind":"crash","data":{"pid":812,"process":"nginx","jid":5,"jail":"web","uid":80,"signal":11,"core":false,"reason":"sugid process denied by kern.sugid_coredump"}}]}
+{"last":12,"first":3,"kept":512,"events":[{"n":3,"t":1791995110,"kind":"route-add","data":{"destination":"10.9.0.0","gateway":"10.0.0.1","flags":"UGS","nhop":5,"metric":0,"weight":1,"fib":0,"prefixlen":16,"interface":"em0","source":"static"}},{"n":4,"t":1791995111,"kind":"routes","data":{"changed":40}},{"n":5,"t":1791995112,"kind":"link","jail":"r1","data":{"interface":"epair0b","up":true,"carrier":true,"mtu":1500}},{"n":6,"t":1791995113,"kind":"address-add","data":{"interface":"em0","address":"2001:db8::7","prefixlen":64}},{"n":7,"t":1791995114,"kind":"neigh","data":{"family":"inet","interface":"em0","address":"10.0.0.9","lladdr":"02:00:00:00:00:09","state":"reachable","router":false}},{"n":8,"t":1791995115,"kind":"threshold","data":{"what":"jail-cpu","name":"web","value":55,"limit":50,"over":true}},{"n":9,"t":1791995116,"kind":"kmsg","data":{"seq":41,"text":"em0: link state changed to UP"}},{"n":10,"t":1791995117,"kind":"sdwan-tunnel","data":{"id":"tvc-1","address":"10.202.0.2","state":"down","misses":3}},{"n":11,"t":1791995118,"kind":"sdwan-fault","data":{"type":"tunnel","severity":"Major","object":"tvc-1","by":"probe","description":"no reply","state":"set"}},{"n":12,"t":1791995119,"kind":"sdwan-security","data":{"seq":7,"rule":30010,"action":"Deny","src":"10.1.0.2:4000","dst":"10.3.0.2:22","iface":"em0","comment":"deny-ssh"}},{"n":13,"t":1791995120,"kind":"job","data":{"id":77,"title":"ipfw table T46 add","ok":false,"error":"ipfw: bad"}},{"n":14,"t":1791995121,"kind":"jail-state","data":{"jail":"web","state":"running","jid":5}},{"n":15,"t":1791995122,"kind":"crash","data":{"pid":812,"process":"nginx","jid":5,"jail":"web","uid":80,"signal":11,"core":false,"reason":"sugid process denied by kern.sugid_coredump"}},{"n":16,"t":1791995123,"kind":"conf","data":{"file":"/etc/rc.conf"}},{"n":17,"t":1791995124,"kind":"device","data":{"cdev":"md3","state":"created"}},{"n":18,"t":1791995125,"kind":"zfs","data":{"type":"pool_import","pool":"tank"}},{"n":19,"t":1791995126,"kind":"procs","data":{"started":4,"exited":3}},{"n":20,"t":1791995127,"kind":"monitor-threshold","data":{"id":"edge-b","metric":"delay","value":42.5,"threshold":40,"over":true,"interface":"gre0"}},{"n":21,"t":1791995128,"kind":"sdwan-ids","data":{"name":"sec-lan","time":"2026-10-14T16:25:28+0000","src":"10.0.0.9","sport":4444,"dst":"10.0.0.1","dport":23,"proto":"TCP","iface":"em0","sid":1000009,"rev":1,"signature":"LOCAL telnet","category":"","severity":2,"action":"allowed"}}]}
 EOT
 	cat > want <<'EOT'
 events last=12 first=3 kept=512
@@ -1610,7 +1637,13 @@ events last=12 first=3 kept=512
 13 2026-10-14T16:25:20Z job: job 77 ipfw table T46 add ok=no error=ipfw: bad
 14 2026-10-14T16:25:21Z jail-state: jail-state web running jid=5
 15 2026-10-14T16:25:22Z crash: crash pid=812 nginx jid=5 jail=web uid=80 signal=11 core=no reason=sugid process denied by kern.sugid_coredump
-yang-cbor 915 bytes, the same back
+16 2026-10-14T16:25:23Z conf: conf /etc/rc.conf
+17 2026-10-14T16:25:24Z device: device md3 created
+18 2026-10-14T16:25:25Z zfs: zfs pool_import pool=tank
+19 2026-10-14T16:25:26Z procs: procs started=4 exited=3
+20 2026-10-14T16:25:27Z monitor-threshold: monitor edge-b delay value=42500 threshold=40000 over=yes on gre0
+21 2026-10-14T16:25:28Z sdwan-ids: alert sec-lan sid=1000009 rev=1 10.0.0.9:4444 -> 10.0.0.1:23 TCP on em0 severity=2 allowed: LOCAL telnet
+yang-cbor 1332 bytes, the same back
 EOT
 	atf_check -o file:want "$y" list ev.json
 	cat > one.json <<'EOT'
@@ -2163,7 +2196,7 @@ atf_test_case yang_log
 yang_log_head()
 {
 	atf_set "descr" "the log operation's replies as arcana-log has" \
-	    "them (PLAN-SDN-YANG 3.1.7), a line's facility and severity" \
+	    "them, a line's facility and severity" \
 	    "ietf-syslog's; syslog.conf and newsyslog.conf as ietf-syslog," \
 	    "what it cannot hold said; through YANG-CBOR and back"
 }
@@ -2269,7 +2302,7 @@ atf_test_case yang_processes
 yang_processes_head()
 {
 	atf_set "descr" "the processes operation's replies as" \
-	    "arcana-processes has them (PLAN-SDN-YANG 3.1.7), OpenConfig" \
+	    "arcana-processes has them, OpenConfig" \
 	    "procmon's shape with FreeBSD's besides: one process's files" \
 	    "and threads on its entry, through YANG-CBOR and back"
 }
@@ -2304,7 +2337,7 @@ atf_test_case yang_storage
 yang_storage_head()
 {
 	atf_set "descr" "the storage operation's replies as arcana-storage" \
-	    "has them (PLAN-SDN-YANG 3.1.5): each kind's JSON in typed" \
+	    "has them: each kind's JSON in typed" \
 	    "lists, health on its disks, a truncated list's total, through" \
 	    "YANG-CBOR and back"
 }
@@ -2371,7 +2404,7 @@ atf_test_case yang_packages
 yang_packages_head()
 {
 	atf_set "descr" "the packages operations' replies as arcana-packages" \
-	    "has them (PLAN-SDN-YANG 3.1.3): installed and outdated merged," \
+	    "has them: installed and outdated merged," \
 	    "the host's and a jail's through YANG-CBOR and back, an" \
 	    "upgrade's output"
 }
@@ -2404,7 +2437,7 @@ atf_test_case yang_services
 yang_services_head()
 {
 	atf_set "descr" "the services operations' replies as arcana-services" \
-	    "has them (PLAN-SDN-YANG 3.1.2), through YANG-CBOR and back; a" \
+	    "has them, through YANG-CBOR and back; a" \
 	    "configuration wanted made into service-action and" \
 	    "service-config's terms"
 }
@@ -2435,6 +2468,137 @@ EOF
 	atf_check -o file:diffs sh -c "sed -n '/^changed:/,\$p' out"
 }
 
+atf_test_case yang_subscribe cleanup
+yang_subscribe_head()
+{
+	atf_set "descr" "RFC 8639's subscriptions over cblink's YANG family" \
+	    "the operational datastore" \
+	    "pushed every period, filtered; the NETCONF stream filtered to" \
+	    "job events; the streams and the subscriptions listed; a bad" \
+	    "filter refused"
+}
+yang_subscribe_body()
+{
+	start_daemon
+	# RFC 8641's periodic push-update, what the filter selects alone.
+	atf_check -o save:push "$JGC" -c "$SOCK" subscribe -n 2 -p 0.2 \
+	    -x "/ietf-interfaces:interfaces/interface[name='lo0']/oper-status"
+	atf_check -o match:'^2$' sh -c 'wc -l < push | tr -d " "'
+	atf_check -o match:'^\{"ietf-restconf:notification":\{"eventTime":"[0-9T:.-]+Z","ietf-yang-push:push-update":\{"datastore-contents":\{"ietf-interfaces:interfaces":\{"interface":\[\{"name":"lo0","oper-status":"up"\}\]\}\},"id":[0-9]+\}\}\}$' \
+	    head -1 push
+	# The NETCONF stream, the events that have a job; and a periodic
+	# one left running, both listed.
+	"$JGC" -c "$SOCK" subscribe -n 1 -x '/arcana-events:event/job' \
+	    > stream.out 2>&1 &
+	echo $! > sub.pid
+	"$JGC" -c "$SOCK" subscribe -p 30 > /dev/null 2>&1 &
+	echo $! > sub2.pid
+	sleep 0.5
+	atf_check -o match:'"stream":"NETCONF","stream-xpath-filter":"/arcana-events:event/job"' \
+	    -o match:'"period":3000' -o match:'"sent-event-records":"[0-9]+"' \
+	    "$JGC" -c "$SOCK" get subscriptions
+	atf_check -o match:'"name":"NETCONF"' "$JGC" -c "$SOCK" get streams
+	atf_check -o ignore "$(atf_get_srcdir)/ysubmit" "$SOCK" arcw0
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		kill -0 "$(cat sub.pid)" 2>/dev/null || break
+		sleep 0.5
+	done
+	atf_check -o match:'^1$' sh -c 'wc -l < stream.out | tr -d " "'
+	atf_check -o match:'"arcana-events:event":\{' -o match:'"job":\{' \
+	    cat stream.out
+	# On-change: the jobs' titles whole first, then a job made as
+	# a YANG Patch's create, its target the entry's api-path.
+	"$JGC" -c "$SOCK" subscribe -n 2 -o 0 -x '/arcana-jobs:jobs/job/title' \
+	    > change.out 2>&1 &
+	echo $! > sub3.pid
+	sleep 1.5
+	atf_check -o ignore "$(atf_get_srcdir)/ysubmit" "$SOCK" arcw1
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		kill -0 "$(cat sub3.pid)" 2>/dev/null || break
+		sleep 0.5
+	done
+	atf_check -o match:'^2$' sh -c 'wc -l < change.out | tr -d " "'
+	atf_check -o match:'"ietf-yang-push:push-update":' head -1 change.out
+	atf_check -o match:'"ietf-yang-push:push-change-update":\{"datastore-changes":\{"yang-patch":\{"edit":\[\{"edit-id":"1","operation":"create","target":"/arcana-jobs:jobs/job=[0-9]+","value":\{"arcana-jobs:job":\[\{"id":"[0-9]+","title":"arcw1: up"\}\]\}\}\],"patch-id":"1"\}\},"id":[0-9]+\}' \
+	    tail -1 change.out
+	# A filter that is no XPath: refused at the open.
+	atf_check -s exit:1 -e match:'subscribe: ' -o empty \
+	    "$JGC" -c "$SOCK" subscribe -p 0.2 -x '/ietf-interfaces:interfaces['
+}
+yang_subscribe_cleanup()
+{
+	for f in sub.pid sub2.pid sub3.pid; do
+		[ -f "$f" ] && kill "$(cat "$f")" 2>/dev/null
+	done
+	stop_daemon
+}
+
+atf_test_case yang_actions cleanup
+yang_actions_head()
+{
+	atf_set "descr" "Actions of the models over cblink's YANG family: a " \
+	    "log read, a process signalled, a job and a key refused"
+}
+yang_actions_body()
+{
+	mkdir logs
+	printf 'one\ntwo\nthree\n' > logs/test.log
+	DAEMON_ARGS="-v $(pwd)/logs"
+	start_daemon
+	# arcana-log's read, on the logs container: its last lines.
+	atf_check -o match:'"name":"test.log"' -o match:'"text":"three"' \
+	    -o not-match:'"text":"one"' \
+	    "$JGC" -c "$SOCK" action logs read name=test.log lines=2
+	# A process of this test's, signalled by its pid, the list's key.
+	sleep 60 &
+	echo $! > sleep.pid
+	atf_check -o inline:'{}\n' "$JGC" -c "$SOCK" action processes/process \
+	    "$(cat sleep.pid)" signal signal=TERM
+	sleep 0.5
+	kill -0 "$(cat sleep.pid)" 2>/dev/null && atf_fail "not signalled"
+	# What the agent refuses, and what arcanactl does before asking.
+	atf_check -s exit:1 -e match:'no such job' -o ignore \
+	    "$JGC" -c "$SOCK" action jobs/job 99999 cancel
+	atf_check -s exit:1 -e match:'pid: x is not one' -o ignore \
+	    "$JGC" -c "$SOCK" action processes/process x signal signal=TERM
+	atf_check -s exit:1 -e match:'has no action reset' -o ignore \
+	    "$JGC" -c "$SOCK" action processes reset
+	# A jail's or a service's name is checked whoever asks: neither
+	# reaches jail(8) or service(8).
+	atf_check -s exit:1 -e match:'invalid jail name' -o ignore \
+	    "$JGC" -c "$SOCK" action jails/jail 'a;b' restart
+	atf_check -s exit:1 -e match:'invalid service name' -o ignore \
+	    "$JGC" -c "$SOCK" action services/service 'a;b' restart
+	# arcana-jobs' submit: changes made jobs as jobs.yaml says, queued
+	# as job-submit queues them, their ids back; one of them confirmed
+	# is refused, not waiting for it.  The events of it told as
+	# arcana-events' notifications on the family's group, RFC 8040's
+	# JSON of each.
+	"$JGC" -c "$SOCK" notifications > notif.out 2>&1 &
+	echo $! > notif.pid
+	sleep 0.5
+	atf_check -o save:ids "$(atf_get_srcdir)/ysubmit" "$SOCK" arcw0 arcw1
+	atf_check -o match:'^2$' sh -c 'wc -l < ids | tr -d " "'
+	atf_check -o match:'"arcana-jobs:jobs":\{"job":\[' \
+	    -o match:'"title":"arcw0: up"' -o match:'"title":"arcw1: up"' \
+	    "$JGC" -c "$SOCK" get jobs
+	atf_check -s exit:1 -e match:'not waiting to be confirmed' -o ignore \
+	    "$JGC" -c "$SOCK" action jobs/job "$(head -1 ids)" confirm
+	sleep 1
+	kill "$(cat notif.pid)"
+	atf_check -o match:'^\{"ietf-restconf:notification":\{"eventTime":"[0-9T:.-]+Z","arcana-events:event":\{' \
+	    -o match:'"kind":"arcana-events:job' cat notif.out
+	# A change the agent refuses for itself: none queued.
+	atf_check -s exit:1 -e match:'invalid interface name' -o empty \
+	    "$(atf_get_srcdir)/ysubmit" "$SOCK" 'bad;name'
+}
+yang_actions_cleanup()
+{
+	[ -f sleep.pid ] && kill "$(cat sleep.pid)" 2>/dev/null
+	[ -f notif.pid ] && kill "$(cat notif.pid)" 2>/dev/null
+	stop_daemon
+}
+
 atf_test_case yang_get cleanup
 yang_get_head()
 {
@@ -2462,6 +2626,33 @@ yang_get_body()
 	    -o match:'"name":"ipv4-master"' -o match:'"name":"ipv6-master"' \
 	    -o match:'"ietf-ipv4-unicast-routing:destination-prefix":"127.0.0.1/32"' \
 	    cat rt.json
+	# RFC 8525's YANG library: the modules it implements with their
+	# revisions and features, those imported only, the operational
+	# datastore.
+	atf_check -o match:'"name":"ietf-interfaces","namespace":"urn:ietf:params:xml:ns:yang:ietf-interfaces","revision":"2018-02-20"' \
+	    -o match:'"import-only-module":\[\{"name":"ietf-ospf"' \
+	    -o match:'"name":"ietf-datastores:operational"' \
+	    -o match:'"content-id":"[0-9a-f]{16}"' \
+	    "$JGC" -c "$SOCK" get yang-library
+	# RFC 8348's hardware: the chassis holding the CPUs and disks.
+	atf_check -o match:'"class":"iana-hardware:chassis","contains-child":\["cpu0"' \
+	    -o match:'"class":"iana-hardware:cpu"' \
+	    "$JGC" -c "$SOCK" get hardware
+	# RFC 8632's alarms: the faults' kinds as arcana-alarms' types,
+	# the list and the summary by severity.
+	atf_check -o match:'"alarm-type-id":"arcana-alarms:tunnel","alarm-type-qualifier":"","description":"[^"]+","severity-level":\["major"\],"will-clear":true' \
+	    -o match:'"alarm-list":\{' -o match:'"number-of-alarms":[0-9]+' \
+	    -o match:'"alarm-summary":\[\{"cleared":[0-9]+,"not-cleared":[0-9]+,"severity":"indeterminate"' \
+	    "$JGC" -c "$SOCK" get alarms
+	# One interface, by an XPath filter (RFC 6241's): its entry alone,
+	# the containers above it with it.
+	atf_check -o save:lo0.json "$JGC" -c "$SOCK" get \
+	    -x "/ietf-interfaces:interfaces/interface[name='lo0']" interfaces
+	atf_check -o match:'^\{"ietf-interfaces:interfaces":\{"interface":\[' \
+	    -o match:'"name":"lo0"' cat lo0.json
+	atf_check -o inline:'1\n' sh -c "grep -o '{\"admin-status\"' lo0.json | wc -l | tr -d ' '"
+	atf_check -s exit:1 -e match:'unexpected text after the expression' -o ignore \
+	    "$JGC" -c "$SOCK" get -x '/[' interfaces
 	# Arcana's own modules, each the operation that reads the same:
 	# the kernel's settings, the jobs, the agent's listeners.
 	atf_check -o match:'^\{"arcana-sysctl:sysctl":\{' \
@@ -6514,7 +6705,7 @@ EOS
 	atf_check -o match:'"proxy":\[\{"name":"sec-web"' "$JGC" -c "$SOCK" sdwan
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"group":"security","instances":[]}'
 	atf_check -o match:'"proxy":\[\]' -o match:'"security_proxy":\[\]' "$JGC" -c "$SOCK" sdwan
-	# Intrusion detection (SASE-4): Suricata of each instance checked,
+	# Intrusion detection: Suricata of each instance checked,
 	# started on its interfaces, its alerts read into events and the
 	# read; the same files again leave it be; gone with the instance.
 	atf_check -s exit:1 -e match:'watches no interface' -o ignore "$JGC" -c "$SOCK" sdwan ids \
@@ -8483,6 +8674,63 @@ fw_trace_cleanup()
 	stop_daemon
 }
 
+atf_test_case firewall_long cleanup
+firewall_long_head()
+{
+	atf_set "descr" "the kept rules written again however long they grow:" \
+	    "a long port list changed under ten rules, twenty unpadded" \
+	    "lines renumbered; a number past ipfw's from ipfw is no rule"
+}
+firewall_long_body()
+{
+	cat > fake-ipfw <<EOS
+#!/bin/sh
+echo "ipfw \$*" >> $(pwd)/ipfw.log
+case "\$*" in
+"-S list") echo "99999999999 set 0 allow ip from any to any" ;;
+"-S list "*) echo "ipfw: rule \$3 does not exist" >&2 ;;
+"-n /dev/stdin") sed -e 's/^add //' ;;
+esac
+exit 0
+EOS
+	chmod +x fake-ipfw
+	mkdir fw
+	i=1
+	while [ $i -le 20 ]; do
+		echo "add 7 count ip from any to any" >> fw/ipfw.rules
+		i=$((i + 1))
+	done
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules"
+	start_daemon
+	# Twenty kept lines of one number, unpadded, renumbered: each
+	# written whole, none cut.
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw keep renumber 7 8
+	atf_check -o match:'^20$' sh -c \
+	    "grep -c '^add 00008 count ip from any to any\$' fw/ipfw.rules"
+	# A port list, then a longer one, under ten kept rules.
+	short=$(seq -s, 1000 1150)
+	long=$(seq -s, 2000 2400)
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias p ports "$short"
+	i=100
+	while [ $i -lt 110 ]; do
+		atf_check -o ignore "$JGC" -c "$SOCK" -p ipfw add $i allow tcp \
+		    from any to me '$p' in
+		i=$((i + 1))
+	done
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw alias p ports "$long"
+	atf_check -o match:'^10$' sh -c \
+	    "grep -c '^add 001[0-9][0-9] allow tcp from any to me $long in\$' fw/ipfw.rules"
+	atf_check -o match:'^10$' sh -c \
+	    "grep -c '^#arcana add 001[0-9][0-9] allow tcp from any to me \\\$p in\$' fw/ipfw.rules"
+	# The kernel's rule numbered past ipfw's: none to move.
+	atf_check -s exit:1 -o match:'there is no rule 100 to move' \
+	    sh -c '"$0" -c "$1" ipfw renumber 100 200 2>&1' "$JGC" "$SOCK"
+}
+firewall_long_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case firewall_aliases cleanup
 firewall_aliases_head()
 {
@@ -10243,332 +10491,6 @@ capture_cleanup()
 	stop_daemon
 }
 
-atf_test_case config_bundle cleanup
-config_bundle_head()
-{
-	atf_set "descr" "the host as a bundle (config-export) and a bundle" \
-	    "made the host (config-apply): the files Arcana manages, secrets" \
-	    "only when asked, the agent's identity never; the hardware" \
-	    "checked, a diff, the files before kept, no path but those a" \
-	    "bundle may carry"
-}
-config_bundle_body()
-{
-	local r="$(pwd)/root"
-
-	mkdir -p "$r/etc/rc.conf.d" "$r/boot" arcana wg
-	printf 'hostname="lab"\nsshd_enable="YES"\n' > "$r/etc/rc.conf"
-	echo 'ntpd_flags="-g"' > "$r/etc/rc.conf.d/ntpd"
-	echo 'hidden' > "$r/etc/rc.conf.d/.hidden"
-	echo '127.0.0.1 localhost' > "$r/etc/hosts"
-	echo 'kern.ipc.maxsockbuf=4194304' > "$r/boot/loader.conf"
-	printf '[Interface]\nPrivateKey = c2VjcmV0\n' > wg/wg0.conf
-	chmod 600 wg/wg0.conf
-	echo 'every 10' > arcana/history.conf
-	echo 'id' > arcana/id_ed25519
-	DAEMON_ARGS="--root $r -1 $(pwd)/arcana/history.conf"
-	start_daemon
-
-	# Without secrets: WireGuard's file said, its text not there; a
-	# hidden file and the agent's SSH key not at all.
-	atf_check -o save:b.json "$JGC" -c "$SOCK" config-export
-	atf_check -o match:'"arcana":"host","format":1' \
-	    -o match:'"path":"/etc/rc.conf","mode":"0644",' \
-	    -o match:'"text":"hostname=\\"lab\\"\\nsshd_enable=\\"YES\\"\\n"' \
-	    -o match:'"path":"/etc/rc.conf.d/ntpd"' \
-	    -o match:'"path":"/boot/loader.conf"' \
-	    -o match:'"path":"/usr/local/etc/wireguard/wg0.conf","mode":"0600","owner":"[a-z0-9]+","group":"[a-z0-9]+","secret":true\}' \
-	    -o match:'"path":"/usr/local/etc/arcana/history.conf"' \
-	    -o match:'"facts":\{"arch":"[a-z0-9_]+"' -o match:'"interfaces":\[' \
-	    -o not-match:'hidden' -o not-match:'id_ed25519' \
-	    -o not-match:'c2VjcmV0' cat b.json
-	# With them, the key's text too.
-	atf_check -o match:'"path":"/usr/local/etc/wireguard/wg0.conf".*"text":"\[Interface\]\\nPrivateKey = c2VjcmV0\\n","secret":true' \
-	    "$JGC" -c "$SOCK" config-export -s
-
-	# Another host's state: rc.conf changed, ntpd's file gone, the key
-	# another.  The report first: a diff, a new file, the key withheld.
-	printf 'hostname="other"\n' > "$r/etc/rc.conf"
-	rm "$r/etc/rc.conf.d/ntpd"
-	printf '[Interface]\nPrivateKey = b3RoZXI=\n' > wg/wg0.conf
-	atf_check -o save:n.json "$JGC" -c "$SOCK" config-apply -n b.json
-	atf_check -o match:'"path":"/etc/rc.conf","state":"changed","diff":"[^"]*-hostname=\\"other\\"\\n\+hostname=\\"lab\\"\\n\+sshd_enable=\\"YES\\"' \
-	    -o match:'"path":"/etc/rc.conf.d/ntpd","state":"new"' \
-	    -o match:'"path":"/etc/hosts","state":"same"' \
-	    -o match:'"path":"/usr/local/etc/wireguard/wg0.conf","state":"withheld"' \
-	    -o match:'"mismatches":\[\]' -o not-match:'"applied"' cat n.json
-	atf_check -o inline:'hostname="other"\n' cat "$r/etc/rc.conf"
-	# Done: in place, the ones before kept, the key as it was, a
-	# reboot said; another host name asked for.
-	atf_check -o save:a.json "$JGC" -c "$SOCK" config-apply -H lab2 b.json
-	atf_check -o match:'"applied":true' -o match:'"reboot":true' \
-	    -o match:"\"backup\":\"$r/var/backups/arcana/config-[0-9]{8}-[0-9]{6}\"" \
-	    cat a.json
-	atf_check -o inline:'sshd_enable="YES"\nhostname="lab2"\n' \
-	    cat "$r/etc/rc.conf"
-	atf_check -o inline:'ntpd_flags="-g"\n' cat "$r/etc/rc.conf.d/ntpd"
-	atf_check -o match:'b3RoZXI=' cat wg/wg0.conf
-	atf_check -o inline:'hostname="other"\n' \
-	    sh -c "cat $r/var/backups/arcana/config-*/etc/rc.conf"
-	# Again: nothing to change, nothing written; without the other
-	# name, rc.conf's would be.
-	atf_check -o not-match:'"state":"changed"' -o not-match:'"state":"new"' \
-	    -o not-match:'"applied"' "$JGC" -c "$SOCK" config-apply -H lab2 \
-	    b.json
-	atf_check -o match:'"path":"/etc/rc.conf","state":"changed"' \
-	    "$JGC" -c "$SOCK" config-apply -n b.json
-
-	# Hardware not the bundle's: refused unless anyway.
-	sed 's/"interfaces":\[/"interfaces":[{"name":"nosuch0","driver":"nosuch"},/' \
-	    b.json > hw.json
-	atf_check -s exit:1 -o match:'"mismatches":\["no interface nosuch0 here"\]' \
-	    -e match:'not the bundle.s \(1 differences\): nothing was done' \
-	    "$JGC" -c "$SOCK" config-apply hw.json
-	atf_check -o match:'"mismatches":\["no interface nosuch0 here"\]' \
-	    -o match:'"applied":true' "$JGC" -c "$SOCK" config-apply -a hw.json
-
-	# A path no bundle carries: refused, nothing written.
-	for p in /root/.ssh/authorized_keys /etc/rc.conf.d/../passwd \
-	    /usr/local/etc/arcana/id_ed25519 /etc/rc.conf.d/.hidden; do
-		sed "s|\"files\":\[|\"files\":[{\"path\":\"$p\",\"text\":\"x\"},|" \
-		    b.json > bad.json
-		atf_check -s exit:1 -e match:"$p: not a file a bundle may carry" \
-		    -o empty "$JGC" -c "$SOCK" config-apply bad.json
-	done
-	atf_check -o inline:'id\n' cat arcana/id_ed25519
-	atf_check -o inline:'hidden\n' cat "$r/etc/rc.conf.d/.hidden"
-	echo '{"arcana":"tab"}' > tab.json
-	atf_check -s exit:1 -e match:'not a host.s bundle' -o empty \
-	    "$JGC" -c "$SOCK" config-apply tab.json
-}
-config_bundle_cleanup()
-{
-	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
-	true
-}
-
-atf_test_case crash_fault
-crash_fault_head()
-{
-	atf_set "descr" "the kernel's line for a program that died of a" \
-	    "signal (kmsg.c): the crash event with the kernel's reason for" \
-	    "no core, the crash fault of the program with the signal's name" \
-	    "and the day's count, said anew at each crash, cleared after an" \
-	    "hour without one"
-}
-crash_fault_body()
-{
-	local f="$(atf_get_srcdir)/kmsg"
-
-	cat > lines <<'EOF'
-100 pid 13939 (bird), jid 0, uid 0: exited on signal 10 (no core dump - sugid process denied by kern.sugid_coredump)
-200 pid 14000 (bird), jid 0, uid 0: exited on signal 10 (no core dump - sugid process denied by kern.sugid_coredump)
-250 pid 812 (nginx), jid 7, uid 80: exited on signal 11 (core dumped)
-300 em0: link state changed to UP
-86500 pid 14100 (bird), jid 0, uid 0: exited on signal 6 (no core dump - bad address)
-sweep 90000
-sweep 90101
-sweep 90151
-EOF
-	atf_check -o save:out "$f" < lines
-	# The event, with the reason; the fault, by the kernel.
-	atf_check -o match:'^event crash \{"pid":13939,"process":"bird","jid":0,"jail":"","uid":0,"signal":10,"core":false,"reason":"sugid process denied by kern.sugid_coredump"\}$' \
-	    cat out
-	atf_check -o match:'^set crash Major host:bird kernel: bird died of SIGBUS \(pid 13939\), 1 time in 24 h; no core: sugid process denied by kern.sugid_coredump$' \
-	    cat out
-	# The second crash: the same fault, its line said anew.
-	atf_check -o match:'^update crash host:bird: bird died of SIGBUS \(pid 14000\), 2 times in 24 h; no core: sugid' \
-	    cat out
-	atf_check -o not-match:'set again' cat out
-	# A jail's, by its id when it has no name any more; a core dumped.
-	atf_check -o match:'^event crash \{"pid":812,"process":"nginx","jid":7,"jail":"","uid":80,"signal":11,"core":true\}$' \
-	    cat out
-	atf_check -o match:'^set crash Major jail:7/nginx kernel: nginx died of SIGSEGV \(pid 812\), 1 time in 24 h; a core was dumped$' \
-	    cat out
-	atf_check -o match:'^not a crash: em0: link state changed to UP$' cat out
-	# A day on: the crash of a day ago no longer counts.
-	atf_check -o match:'^update crash host:bird: bird died of SIGABRT \(pid 14100\), 2 times in 24 h; no core: bad address$' \
-	    cat out
-	# An hour without one, each: nginx's at the first sweep, its last
-	# crash a day before it; bird's at the second, an hour and a
-	# second after its last; the third clears none.
-	atf_check -o inline:'clear crash jail:7/nginx: nginx ran an hour without crashing\nclear crash host:bird: bird ran an hour without crashing\n' \
-	    grep '^clear' out
-	atf_check -o inline:'2\n' sh -c "grep -c '^set' out"
-}
-
-atf_test_case fw_walk
-fw_walk_head()
-{
-	atf_set "descr" "ipfw's ruleset walked for a packet (fwmatch.c), as" \
-	    "path-check does: skipto, uRPF, a table, setup and keep-state," \
-	    "a reply let in by its state, a socket's rule for a packet" \
-	    "passing through, fwd by a table's value, what is not known"
-}
-fw_walk_body()
-{
-	local f="$(atf_get_srcdir)/fwmatch" l
-
-	cat > list <<'EOF'
-00100 allow ip from any to any via lo0
-00200 deny ip from any to 127.0.0.0/8
-00300 deny ip from any to any not verrevpath in
-00400 check-state :default
-00500 count ip from any to any in recv vtnet0
-00600 skipto 1000 ip from 10.0.0.0/8 to any
-00700 deny log ip from table(bad) to any in
-00800 allow tcp from any to me 22 in recv vtnet0 setup keep-state :default
-00900 deny ip from any to any in recv vtnet0
-01000 setfib 1 ip from 10.1.0.0/16 to any in
-01100 allow udp from any to any 53,123 out keep-state :default
-01200 allow ip from { 10.0.0.1 or 10.0.0.2 } to any
-01300 allow tcp from any to any established
-01400 deny ip from any to any uid 1001
-01500 nat 1 ip from 10.2.0.0/16 to any out xmit vtnet0
-01600 allow icmp from any to any icmptypes 0,8
-01700 fwd 192.0.2.1 ip from 10.3.0.0/16 to any in recv em*
-65535 deny ip from any to any
-65535 count ip from any to any not // orphaned dynamic states counter
-00012 fwd tablearg ip4 from any to table(swt)
-EOF
-	cat > tables <<'EOF'
---- table(bad), set(0) ---
-198.51.100.0/24 0
---- table(swt), set(0) ---
-10.20.0.0/24 100.64.0.9
-EOF
-	l="local=192.0.2.10@vtnet0 local=10.0.0.10@em0"
-	t() { "$f" list tables $l "$@"; }
-	atf_check -o inline:'allow 800 keep-state\n' "$f" list tables $l in \
-	    rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 \
-	    dport=22 syn rpf reach
-	# The rules met, in order, with what each did.
-	atf_check -o inline:'allow 800 keep-state\n  400 check-state :default: no state of it yet, on\n  500 met, on\n  800 decides\n' \
-	    "$f" list tables $l in rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 \
-	    proto=tcp sport=40000 dport=22 syn rpf reach walk
-	# call and return as the kernel's O_CALLRETURN: into the block
-	# called, back to the rule numbered after the call (next-rulenum);
-	# a return with nothing called goes on; reass goes on; a rule of
-	# options alone (return via any) names no protocol.
-	cat > chain <<'EOT'
-00001 call 9000 ip6 from any to any
-00020 call 9100 ip from any to any in
-00099 reass ip from any to any in
-00200 check-state :default
-00300 call 9200 ip from any to any in
-00999 deny ip from any to any
-09000 allow icmp6 from fe80::/10 to fe80::/10
-09099 return via any
-09100 deny udp from any to 255.255.255.255 1900 in
-09199 return via any
-09200 allow tcp from any to me 22 in
-09299 return next-rule via any
-65535 deny ip from any to any
-EOT
-	atf_check -o inline:'deny 9100\n  20 call 9100\n  9100 decides\n' "$f" chain tables $l \
-	    in rcv=em0 src=10.0.0.5 dst=255.255.255.255 proto=udp sport=1900 \
-	    dport=1900 rpf reach walk
-	atf_check -o inline:'allow 9200\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state :default: no state of it yet, on\n  300 call 9200\n  9200 decides\n' \
-	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
-	    proto=tcp sport=4000 dport=22 syn rpf reach walk
-	atf_check -o inline:'deny 999\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 check-state :default: no state of it yet, on\n  300 call 9200\n  9299 return, after 300\n  999 decides\n' \
-	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
-	    proto=tcp sport=4000 dport=80 syn rpf reach walk
-	# As edge-a's ruleset writes them: a return of no addresses
-	# (return next-rulenum proto ip) returns; tcpflags and ipoptions
-	# are judged of the packet modelled (a SYN, no IP option); a long
-	# { a or b } list is read whole.
-	{
-		echo '00020 call 9100 ip from any to any in'
-		echo '00030 call 9200 ip from any to any in'
-		echo '00099 allow tcp from any to any 443 in'
-		echo '09100 deny udp from any to any 1900 in'
-		echo '09199 return next-rulenum proto ip'
-		echo '09251 deny log logamount 500 tcp from any to any tcpflags fin,psh,urg in'
-		echo '09252 deny log logamount 500 tcp from any to any tcpflags !syn,!fin,!ack,!psh,!rst,!urg in'
-		echo '09253 deny log logamount 500 tcp from any to any tcpflags syn,fin in'
-		echo '09255 deny log logamount 500 ip from any to any ipoptions ssrr,lsrr,rr,ts in'
-		printf '09301 deny ip4 from { '
-		n=0; while [ $n -lt 60 ]; do printf '198.18.%d.0/24 or ' $n; n=$((n + 1)); done
-		echo '198.19.0.1 } to any in'
-		echo '09999 return next-rulenum proto ip'
-		echo '65535 deny ip from any to any'
-	} > edge-a
-	atf_check -o inline:'allow 99\n  20 call 9100\n  9199 return, after 20\n  30 call 9200\n  9999 return, after 30\n  99 decides\n' \
-	    "$f" edge-a tables $l in rcv=em0 src=203.0.113.9 dst=10.0.0.10 \
-	    proto=tcp sport=40000 dport=443 syn rpf reach walk
-	atf_check -o inline:'deny 9301\n  20 call 9100\n  9199 return, after 20\n  30 call 9200\n  9301 decides\n' \
-	    "$f" edge-a tables $l in rcv=em0 src=198.18.59.7 dst=10.0.0.10 \
-	    proto=tcp sport=40000 dport=443 syn rpf reach walk
-	# A segment of no flags at all: 9252 drops it.
-	atf_check -o inline:'deny 9252\n  20 call 9100\n  9199 return, after 20\n  30 call 9200\n  9252 decides\n' \
-	    "$f" edge-a tables $l in rcv=em0 src=203.0.113.9 dst=10.0.0.10 \
-	    proto=tcp sport=40000 dport=443 rpf reach walk
-	# record-state with defer-immediate-action, as edge-a's outgoing
-	# rules: the state made, the packet on, and a check-state of the
-	# same flow decides by it (of another flow, not).
-	{
-		echo '00001 call 9000 ip6 from any to any'
-		echo '00005 skipto 500 ip from any to any out'
-		echo '00200 check-state :default'
-		echo '00510 call 5000 ip6 from me6 to any out'
-		echo '00700 check-state :default'
-		echo '00999 deny log logamount 500 ip from any to any'
-		echo '05012 allow ip6 from me6 to any out record-state :default defer-immediate-action'
-		echo '05999 return next-rulenum proto ip'
-		echo '09000 allow icmp6 from fe80::/10 to fe80::/10'
-		echo '09099 return next-rulenum proto ip'
-		echo '65535 deny ip from any to any'
-	} > defer
-	atf_check -o inline:'allow 700 by-state keep-state\n  1 call 9000\n  9099 return, after 1\n  5 skipto 500\n  510 call 5000\n  5012 makes a state :default, its allow deferred: on\n  5999 return, after 510\n  700 decides: the state 5012 made (:default)\n' \
-	    "$f" defer tables local=2001:db8::10@em0 out xmit=wg0 \
-	    src=2001:db8::10 dst=2001:db8:99::1 proto=tcp sport=40000 \
-	    dport=4310 syn reach walk
-	sed 's/:default defer/:other defer/' defer > defer2
-	atf_check -o match:'^deny 999' -o match:'700 check-state :default: no state of it yet, on' \
-	    "$f" defer2 tables local=2001:db8::10@em0 out xmit=wg0 \
-	    src=2001:db8::10 dst=2001:db8:99::1 proto=tcp sport=40000 \
-	    dport=4310 syn reach walk
-	# A reply with its state: check-state decides.
-	atf_check -o inline:'allow 200 by-state\n  20 call 9100\n  9199 return, after 20\n  99 met, on\n  200 decides: its state lets it by\n' \
-	    "$f" chain tables $l in rcv=em0 src=10.0.0.5 dst=10.0.0.10 \
-	    proto=tcp sport=4000 dport=80 ack state rpf reach walk
-	atf_check -o inline:'deny 900\n' "$f" list tables $l in rcv=vtnet0 \
-	    src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 dport=80 syn \
-	    rpf reach
-	# The route back is another way: uRPF.
-	atf_check -o inline:'deny 300\n' "$f" list tables $l in rcv=vtnet0 \
-	    src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 dport=22 syn \
-	    reach
-	atf_check -o inline:'deny 700\n' "$f" list tables $l in rcv=vtnet0 \
-	    src=198.51.100.9 dst=192.0.2.10 proto=tcp sport=1 dport=22 syn \
-	    rpf reach
-	# The reply, by the state its request made.
-	atf_check -o inline:'allow 400 by-state\n' "$f" list tables $l in \
-	    rcv=vtnet0 src=203.0.113.5 dst=192.0.2.10 proto=tcp sport=40000 \
-	    dport=22 ack state rpf reach
-	# Passing through: no socket, so no uid rule.
-	atf_check -o inline:'deny 65535 setfib=1\n' "$f" list tables $l in \
-	    rcv=em0 src=10.1.2.3 dst=8.8.8.8 proto=udp sport=5353 dport=53 \
-	    rpf reach
-	# Made here: the uid rule cannot be judged.
-	atf_check -o inline:'allow 1100 keep-state\n' "$f" list tables $l out \
-	    xmit=vtnet0 src=192.0.2.10 dst=8.8.8.8 proto=udp sport=5353 \
-	    dport=53 srclocal
-	atf_check -o inline:'deny 65535 uncertain=1400(uid)\n' "$f" list \
-	    tables $l out xmit=vtnet0 src=192.0.2.10 dst=8.8.4.4 proto=tcp \
-	    sport=1 dport=443 syn srclocal
-	atf_check -o inline:'allow 1200\n' "$f" list tables $l in rcv=em0 \
-	    src=10.0.0.1 dst=8.8.4.4 proto=tcp sport=1 dport=443 syn rpf reach
-	atf_check -o inline:'allow 100\n' "$f" list tables $l in rcv=lo0 \
-	    src=127.0.0.1 dst=127.0.0.1 proto=tcp sport=1 dport=443 syn
-	atf_check -o inline:'allow 1600\n' "$f" list tables $l in rcv=em1 \
-	    src=10.3.0.4 dst=8.8.8.8 proto=icmp icmp=8 rpf reach
-	# fwd by a table: to the table's value.
-	atf_check -o inline:'fwd 12 fwd=100.64.0.9\n' "$f" list tables $l in \
-	    rcv=em0 src=10.0.0.5 dst=10.20.0.7 proto=icmp icmp=8 rpf reach
-}
-
 atf_test_case host_watch cleanup
 host_watch_head()
 {
@@ -11059,6 +10981,7 @@ atf_init_test_cases()
 	atf_add_test_case fw_walk
 	atf_add_test_case crash_fault
 	atf_add_test_case firewall_aliases
+	atf_add_test_case firewall_long
 	atf_add_test_case config_bundle
 	atf_add_test_case ntp
 	atf_add_test_case rtadvd
@@ -11107,6 +11030,8 @@ atf_init_test_cases()
 	atf_add_test_case stop
 	atf_add_test_case hello
 	atf_add_test_case yang_get
+	atf_add_test_case yang_actions
+	atf_add_test_case yang_subscribe
 	atf_add_test_case yang_interfaces
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_origins
@@ -11119,6 +11044,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_ni_grow
 	atf_add_test_case yang_active_route
 	atf_add_test_case yang_jails
+	atf_add_test_case yang_hardware
 	atf_add_test_case yang_system
 	atf_add_test_case yang_processes
 	atf_add_test_case yang_log

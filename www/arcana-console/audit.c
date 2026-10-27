@@ -4,7 +4,7 @@
  */
 
 /*
- * The audit trail (SASE-5, MEF 118.1 §13.1): an Audit Event for each
+ * The audit trail (MEF 118.1 §13.1): an Audit Event for each
  * Policy Action the console applies or sees applied, and for each
  * change to the Policies, kept in the data directory one a line, oldest
  * first.  Each carries what [R65] lists: the Policy applied, how, where,

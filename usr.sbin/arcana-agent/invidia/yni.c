@@ -5,8 +5,8 @@
  */
 
 /*
- * Invidia: FreeBSD's FIBs as RFC 8529's network instances (PLAN-SDN-YANG
- * 2.6.1, docs/notes/rfc8529.md).  The kernel makes net.fibs FIBs at boot
+ * Invidia: FreeBSD's FIBs as RFC 8529's network instances.  The
+ * kernel makes net.fibs FIBs at boot
  * (a vnet jail its own), numbered from 0, and none after; FIB 0 is the
  * host's, ietf-routing's at the top, and each other one an instance, a
  * VRF (arcana-network-instance: the fib case, the vrf-root root).
@@ -29,7 +29,7 @@
  * at the next boot: a reboot is required, and the caller is told.
  *
  * An interface is bound to the instance whose FIB is its own (ifconfig
- * fib, SIOCSIFFIB, PLAN-SDN-YANG 2.6.3), none in FIB 0, the host's; so
+ * fib, SIOCSIFFIB), none in FIB 0, the host's; so
  * are its addresses, of both families: FreeBSD binds an interface, not
  * an address family, and refuses a family bound apart.
  */

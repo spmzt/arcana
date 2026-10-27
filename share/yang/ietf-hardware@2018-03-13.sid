@@ -1,0 +1,285 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-hardware",
+    "module-revision": "2018-03-13",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "iana-hardware",
+        "module-revision": "2018-03-13"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "77700",
+        "size": "200"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-hardware",
+        "sid": "77700"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "entity-mib",
+        "sid": "77701"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "hardware-sensor",
+        "sid": "77702"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "hardware-state",
+        "sid": "77703"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware",
+        "sid": "77704"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware-state-change",
+        "sid": "77705"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware-state-oper-disabled",
+        "sid": "77706"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware-state-oper-disabled/admin-state",
+        "sid": "77707"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware-state-oper-disabled/alarm-state",
+        "sid": "77708"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware-state-oper-disabled/name",
+        "sid": "77709"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware-state-oper-enabled",
+        "sid": "77710"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware-state-oper-enabled/admin-state",
+        "sid": "77711"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware-state-oper-enabled/alarm-state",
+        "sid": "77712"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware-state-oper-enabled/name",
+        "sid": "77713"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component",
+        "sid": "77714"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/alias",
+        "sid": "77715"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/asset-id",
+        "sid": "77716"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/class",
+        "sid": "77717"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/contains-child",
+        "sid": "77718"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/description",
+        "sid": "77719"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/firmware-rev",
+        "sid": "77720"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/hardware-rev",
+        "sid": "77721"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/is-fru",
+        "sid": "77722"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/mfg-date",
+        "sid": "77723"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/mfg-name",
+        "sid": "77724"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/model-name",
+        "sid": "77725"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/name",
+        "sid": "77726"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/parent",
+        "sid": "77727"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/parent-rel-pos",
+        "sid": "77728"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/physical-index",
+        "sid": "77729"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/sensor-data",
+        "sid": "77730"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/sensor-data/oper-status",
+        "sid": "77731"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/sensor-data/units-display",
+        "sid": "77732"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/sensor-data/value",
+        "sid": "77733"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/sensor-data/value-precision",
+        "sid": "77734"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/sensor-data/value-scale",
+        "sid": "77735"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/sensor-data/value-timestamp",
+        "sid": "77736"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/sensor-data/value-type",
+        "sid": "77737"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/sensor-data/value-update-rate",
+        "sid": "77738"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/serial-num",
+        "sid": "77739"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/software-rev",
+        "sid": "77740"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/state",
+        "sid": "77741"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/state/admin-state",
+        "sid": "77742"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/state/alarm-state",
+        "sid": "77743"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/state/oper-state",
+        "sid": "77744"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/state/standby-state",
+        "sid": "77745"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/state/state-last-changed",
+        "sid": "77746"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/state/usage-state",
+        "sid": "77747"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/uri",
+        "sid": "77748"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/component/uuid",
+        "sid": "77749"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-hardware:hardware/last-change",
+        "sid": "77750"
+      }
+    ]
+  }
+}

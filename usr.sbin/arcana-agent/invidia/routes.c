@@ -263,11 +263,6 @@ route_rename(struct work *w, const char *dest, uint32_t fib,
 }
 
 /*
- * Add a static route to destination by gateway, an address or the name
- * of an interface, or delete the route to destination; in the routing
- * table fib, and with persist in rc.conf as well.
- */
-/*
  * The name of an interface of a kind that is cloned, with its unit:
  * one not there yet may be made by the same apply (a tunnel before
  * its routes), and the kernel refuses a route by it otherwise.
@@ -294,6 +289,11 @@ ifname_cloneable(const char *s)
 	return (true);
 }
 
+/*
+ * Add a static route to destination by gateway, an address or the name
+ * of an interface, or delete the route to destination; in the routing
+ * table fib, and with persist in rc.conf as well.
+ */
 int
 do_route(struct work *w, const char *destination, const char *gateway,
     bool remove, uint32_t fib, const struct route_more *more, bool persist,

@@ -329,7 +329,6 @@ send_recv(struct work *w, const char *snap, const char *ds,
 	return (0);
 }
 
-/* Does a dataset exist? */
 static bool
 ds_exists(struct work *w, const char *ds)
 {

@@ -34,9 +34,6 @@
 #include <arcana.h>
 #include <ymodel.h>
 
-_Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
-    "written for cblink 0.2: its wire, its structs");
-
 #define	PATH_SOCKET	"unix:/var/run/arcana-agent.sock"
 #define	MAX_FRAME	(8 * 1024 * 1024)
 #define	MAX_ATTRS	(1024 * 1024)
@@ -142,7 +139,11 @@ usage(void)
 	    "command\n"
 	    "commands:\n"
 	    "    hello\n"
-	    "    get [node ...]\n"
+	    "    get [-x xpath] [node ...]\n"
+	    "    action path [key ...] action [leaf=value ...]\n"
+	    "    notifications\n"
+	    "    subscribe [-n count] [-o seconds | -p seconds] [-s stop-time]\n"
+	    "              [-x xpath]\n"
 	    "    list [-c]\n"
 	    "    start | stop | restart | kill | enable | disable jail\n"
 	    "    address add | remove [-lnp] [-i interface] jail address\n"
@@ -581,10 +582,9 @@ ytop_named(const char *name)
 }
 
 /*
- * get [node ...]: what the agent serves of the standard models, by
- * cblink's YANG family (family 1, docs/PLAN-SDN-YANG.md 1.11), as RFC
- * 7951's JSON: the top-level nodes named (arcanactl(8) lists them), or
- * all of them.
+ * get [-x xpath] [node ...]: what the agent serves of the models, by
+ * cblink's YANG family (family 1), as RFC 7951's JSON: the top-level
+ * nodes named (arcanactl(8) lists them), or all of them.
  */
 static int
 cmd_get(struct arc_client *cl, int argc, char **argv)
@@ -599,10 +599,18 @@ cmd_get(struct arc_client *cl, int argc, char **argv)
 	uint32_t			 i, k;
 	void				*data;
 	char				 why[256], *out;
+	const char			*xpath;
 	bool				 first = true;
 	int				 error;
 
-	for (i = 1; i < (uint32_t)argc; i++) {
+	/* -x expression: what an XPath selects of them alone. */
+	xpath = NULL;
+	i = 1;
+	if (argc > 2 && strcmp(argv[1], "-x") == 0) {
+		xpath = argv[2];
+		i = 3;
+	}
+	for (; i < (uint32_t)argc; i++) {
 		if ((n = ytop_named(argv[i])) == NULL)
 			xo_errx(1, "get: %s is no node the agent serves "
 			    "(arcanactl(8) names them)", argv[i]);
@@ -611,8 +619,8 @@ cmd_get(struct arc_client *cl, int argc, char **argv)
 		sids[ns++] = n->sid;
 	}
 	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
-	    CBL_YCMD_GET, 0, &req)) != 0 || (ns > 0 && (error =
-	    cbl_msg_put_yget(req, sids, ns)) != 0))
+	    CBL_YCMD_GET, 0, &req)) != 0 || ((ns > 0 || xpath != NULL) &&
+	    (error = cbl_msg_put_yget_xpath(req, sids, ns, xpath)) != 0))
 		xo_errx(1, "get: %s", strerror(error));
 	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
 		xo_errx(1, "get: %s", rep != NULL && cbl_msg_err_str(rep) !=
@@ -648,6 +656,394 @@ cmd_get(struct arc_client *cl, int argc, char **argv)
 	cbl_yarena_free(a);
 	cbl_msg_free(rep);
 	return (0);
+}
+
+/* Child name of n, NULL where there is none. */
+static const struct cbl_ynode *
+ychild(const struct cbl_ynode *n, const char *name)
+{
+	uint32_t	i;
+
+	for (i = 0; i < n->nchild; i++)
+		if (strcmp(n->child[i]->name, name) == 0)
+			return (n->child[i]);
+	return (NULL);
+}
+
+/* One value of leaf n's, its member at p in a struct, as a person gave it. */
+static void
+yset(const struct cbl_ynode *n, void *p, const char *s, cbl_yarena *a)
+{
+	int	error;
+
+	if ((error = cbl_yvalue_parse(n, n->type, s, (char *)p + n->off,
+	    a)) != 0)
+		xo_errx(1, "action: %s: %s is not one: %s", n->name, s,
+		    strerror(error));
+	if (n->hoff != CBL_YOFF_NONE)
+		*(bool *)(void *)((char *)p + n->hoff) = true;
+}
+
+/*
+ * action path [key ...] name [leaf=value ...]: an action of a module the
+ * agent serves (cblink's YANG family), on the node path names from its
+ * top (jails/jail), a list entry by its keys, the input's leaves given
+ * as name=value; its output as RFC 7951's JSON.
+ */
+static int
+cmd_yaction(struct arc_client *cl, int argc, char **argv)
+{
+	const struct cbl_ynode	*n, *act, *in, *out, *c;
+	struct cbl_ybuf		 t = { NULL, 0, 0 }, b = { NULL, 0, 0 };
+	const void		*vals[8];
+	char			*path, *seg, *eq, why[256];
+	cbl_msg			*req, *rep = NULL;
+	cbl_yarena		*a;
+	void			*pin, *pout, *key;
+	uint32_t		 k;
+	int			 i, error;
+
+	if (argc < 3)
+		xo_errx(1, "action: a node's path, its keys, the action");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "action");
+	/* The node, from its top-level one down by the names given. */
+	path = strdup(argv[1]);
+	n = NULL;
+	while (path != NULL && (seg = strsep(&path, "/")) != NULL)
+		if ((n = n == NULL ? ytop_named(seg) : ychild(n, seg)) == NULL)
+			xo_errx(1, "action: %s: no such node", seg);
+	if (n == NULL || (n->kind != CBL_YN_LIST && n->kind != CBL_YN_CONTAINER))
+		xo_errx(1, "action: %s is no list or container", argv[1]);
+	/* Its keys, if a list; the keys of lists above it are not taken. */
+	i = 2;
+	for (k = 0; n->kind == CBL_YN_LIST && k < n->nkeys; k++, i++) {
+		c = n->child[n->keys[k]];
+		if (i >= argc)
+			xo_errx(1, "action: %s takes its %s", n->name, c->name);
+		if ((key = cbl_yarena_alloc(a, c->type->csize)) == NULL)
+			xo_err(1, "action");
+		if ((error = cbl_yvalue_parse(c, c->type, argv[i], key, a)) != 0)
+			xo_errx(1, "action: %s: %s is not one", c->name, argv[i]);
+		vals[k] = key;
+	}
+	if (i >= argc || (act = ychild(n, argv[i])) == NULL ||
+	    act->kind != CBL_YN_ACTION)
+		xo_errx(1, "action: %s has no action %s", n->name, i < argc ?
+		    argv[i] : "");
+	in = ychild(act, "input");
+	out = ychild(act, "output");
+	if (in == NULL || out == NULL ||
+	    (pin = cbl_yarena_alloc(a, in->size)) == NULL ||
+	    (pout = cbl_yarena_alloc(a, out->size)) == NULL)
+		xo_errx(1, "action: %s's tables have no input or output",
+		    act->name);
+	for (i++; i < argc; i++) {
+		if ((eq = strchr(argv[i], '=')) == NULL)
+			xo_errx(1, "action: %s: an input is name=value",
+			    argv[i]);
+		*eq = '\0';
+		if ((c = ychild(in, argv[i])) == NULL || c->kind != CBL_YN_LEAF)
+			xo_errx(1, "action: %s has no input %s", act->name,
+			    argv[i]);
+		yset(c, pin, eq + 1, a);
+	}
+	if ((error = cbl_yiid_write(n, vals, n->kind == CBL_YN_LIST ?
+	    n->nkeys : 0, &t)) != 0 ||
+	    (error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_RPC, 0, &req)) != 0 ||
+	    (error = cbl_msg_put_ynode(req, in, pin)) != 0 ||
+	    (error = cbl_msg_put_yaction(req, t.p, t.len)) != 0)
+		xo_errx(1, "action: %s", strerror(error));
+	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
+		xo_errx(1, "action: %s", rep != NULL && cbl_msg_err_str(rep) !=
+		    NULL ? cbl_msg_err_str(rep) : strerror(error));
+	if ((error = cbl_msg_ydecode(rep, out, pout, a, 0, why,
+	    sizeof(why))) != 0 && error != ENOENT)
+		xo_errx(1, "action: %s", why);
+	if ((error = cbl_yjson(out, pout, &b)) != 0)
+		xo_errx(1, "action: %s", strerror(error));
+	xo_emit("{:json/%.*s}\n", (int)b.len, b.p != NULL ? (const char *)
+	    b.p : "{}");
+	cbl_ybuf_free(&b);
+	cbl_ybuf_free(&t);
+	cbl_yarena_free(a);
+	cbl_msg_free(rep);
+	return (0);
+}
+
+/*
+ * A notification of family 1's group: RFC 8040's JSON of it, a line of
+ * its own (ietf-restconf:notification, its eventTime, the notification
+ * qualified by its module); one of a module these tables have not, its
+ * SID.
+ */
+static void
+ynotif_print(const cbl_msg *msg)
+{
+	const struct cbl_ynode	*n;
+	struct cbl_ynotif	 nt;
+	struct cbl_ybuf		 b = { NULL, 0, 0 };
+	cbl_yarena		*a;
+	void			*data;
+
+	if ((a = cbl_yarena_new()) == NULL)
+		return;
+	if (cbl_msg_ynotif(msg, &nt, a) != 0)
+		goto out;
+	if ((n = cbl_yschema_node(&ymodel_schema, nt.sid)) == NULL ||
+	    (data = cbl_yarena_alloc(a, n->size)) == NULL ||
+	    cbl_ydecode(n, nt.content, nt.len, data, a, 0, NULL, 0) != 0 ||
+	    cbl_yjson(n, data, &b) != 0)
+		printf("{\"ietf-restconf:notification\":{\"eventTime\":\"%s\","
+		    "\"sid\":\"%ju\"}}\n", nt.event_time, (uintmax_t)nt.sid);
+	else
+		printf("{\"ietf-restconf:notification\":{\"eventTime\":\"%s\","
+		    "\"%s:%s\":%.*s}}\n", nt.event_time, n->module->name,
+		    n->name, (int)b.len, (const char *)b.p);
+	fflush(stdout);
+out:
+	cbl_ybuf_free(&b);
+	cbl_yarena_free(a);
+}
+
+static void
+ynotif_line(cbl_conn *conn, cbl_msg *msg, void *arg)
+{
+
+	(void)conn;
+	(void)arg;
+	ynotif_print(msg);
+}
+
+/* What a SUBSCRIBE stream has come to. */
+struct ysubscribe {
+	int		 opened, error, records, count;
+	bool		 closed;
+	char		 why[256];
+	char		 close_text[128];
+};
+
+static void
+ysub_open(cbl_stream *s, cbl_msg *accept, int error, void *arg)
+{
+	struct ysubscribe	*ys = arg;
+
+	(void)s;
+	ys->opened = 1;
+	ys->error = error;
+	if (error != 0 && accept != NULL && cbl_msg_err_str(accept) != NULL)
+		strlcpy(ys->why, cbl_msg_err_str(accept), sizeof(ys->why));
+}
+
+static void
+ysub_data(cbl_stream *s, cbl_msg *data, void *arg)
+{
+	struct ysubscribe	*ys = arg;
+
+	ynotif_print(data);
+	if (++ys->records == ys->count)
+		(void)cbl_stream_close(s, 0, NULL);
+}
+
+static void
+ysub_close(cbl_stream *s, int code, const char *text, void *arg)
+{
+	struct ysubscribe	*ys = arg;
+
+	(void)s;
+	(void)code;
+	ys->closed = true;
+	if (text != NULL)
+		strlcpy(ys->close_text, text, sizeof(ys->close_text));
+}
+
+static const struct cbl_stream_cbs ysub_cbs = {
+	.on_open = ysub_open,
+	.on_data = ysub_data,
+	.on_close = ysub_close,
+};
+
+/*
+ * subscribe [-n count] [-o seconds | -p seconds] [-s stop-time]
+ * [-x xpath]: RFC 8639's dynamic subscription on a SUBSCRIBE stream
+ * (cblink's family 1): the NETCONF stream, every event the agent tells;
+ * with -p, the operational datastore pushed every that many seconds
+ * (RFC 8641's periodic YANG-Push, a tenth of a second at least); with
+ * -o, its changes as they are seen, -o's seconds the dampening period
+ * (read every second at least), the first push the whole of it.  -x is the
+ * stream's or the datastore's XPath filter, -s a stop-time (RFC 3339),
+ * -n how many records before it ends.  A record a line, RFC 8040's
+ * notification JSON.
+ */
+static int
+cmd_subscribe(struct arc_client *cl, int argc, char **argv)
+{
+	typedef struct ietf_subscribed_notifications_establish_subscription_input
+	    est_in;
+	typedef struct ietf_subscribed_notifications_establish_subscription_input_yp_periodic
+	    est_per;
+	struct ysubscribe	 ys;
+	const struct cbl_ynode	*rpc, *in;
+	const struct cbl_yident	*id;
+	struct pollfd		 pfd;
+	cbl_stream		*s;
+	cbl_msg			*m;
+	est_per			 per;
+	est_in			 ein;
+	const char		*xpath = NULL, *stop = NULL;
+	double			 secs = 0, damp = 0;
+	bool			 onchange = false;
+	struct ietf_subscribed_notifications_establish_subscription_input_yp_on_change
+				 oc;
+	char			*end;
+	uint32_t		 i;
+	int			 error, ev, ms, k;
+
+	memset(&ys, 0, sizeof(ys));
+	for (k = 1; k + 1 < argc && argv[k][0] == '-'; k += 2) {
+		if (strcmp(argv[k], "-n") == 0)
+			ys.count = (int)strtol(argv[k + 1], NULL, 10);
+		else if (strcmp(argv[k], "-p") == 0) {
+			secs = strtod(argv[k + 1], &end);
+			if (*end != '\0' || secs < 0.1)
+				xo_errx(1, "subscribe: -p is seconds, a tenth "
+				    "at least");
+		} else if (strcmp(argv[k], "-o") == 0) {
+			damp = strtod(argv[k + 1], &end);
+			if (*end != '\0' || damp < 0)
+				xo_errx(1, "subscribe: -o is seconds");
+			onchange = true;
+		} else if (strcmp(argv[k], "-s") == 0)
+			stop = argv[k + 1];
+		else if (strcmp(argv[k], "-x") == 0)
+			xpath = argv[k + 1];
+		else
+			break;
+	}
+	if (k != argc || (onchange && secs != 0))
+		usage();
+	rpc = in = NULL;
+	for (i = 0; i < ymodel_schema.nmod && rpc == NULL; i++)
+		if (strcmp(ymodel_schema.mod[i]->name,
+		    "ietf-subscribed-notifications") == 0)
+			for (uint32_t j = 0; j < ymodel_schema.mod[i]->ntop; j++)
+				if (strcmp(ymodel_schema.mod[i]->top[j]->name,
+				    "establish-subscription") == 0)
+					rpc = ymodel_schema.mod[i]->top[j];
+	for (i = 0; rpc != NULL && i < rpc->nchild; i++)
+		if (rpc->child[i]->kind == CBL_YN_INPUT)
+			in = rpc->child[i];
+	if (in == NULL)
+		xo_errx(1, "subscribe: no ietf-subscribed-notifications in "
+		    "the tables");
+	memset(&ein, 0, sizeof(ein));
+#define	SN(x)	IETF_SUBSCRIBED_NOTIFICATIONS_ESTABLISH_SUBSCRIPTION_INPUT_##x
+	if (secs == 0 && !onchange) {
+		ein.target = SN(TARGET_STREAM);
+		ein.stream = "NETCONF";
+		if (xpath != NULL) {
+			ein.stream_filter = SN(STREAM_FILTER_WITHIN_SUBSCRIPTION);
+			ein.filter_spec = SN(FILTER_SPEC_STREAM_XPATH_FILTER);
+			ein.stream_xpath_filter = xpath;
+		}
+	} else {
+		ein.target = SN(TARGET_DATASTORE);
+		for (i = 0; i < ymodel_schema.nident; i++) {
+			id = &ymodel_schema.ident[i];
+			if (strcmp(id->name, "operational") == 0 &&
+			    strcmp(id->module->name, "ietf-datastores") == 0) {
+				ein.has_yp_datastore = true;
+				ein.yp_datastore = id->sid;
+			}
+		}
+		if (xpath != NULL) {
+			ein.yp_selection_filter =
+			    SN(YP_SELECTION_FILTER_WITHIN_SUBSCRIPTION);
+			ein.yp_filter_spec =
+			    SN(YP_FILTER_SPEC_DATASTORE_XPATH_FILTER);
+			ein.yp_datastore_xpath_filter = xpath;
+		}
+		memset(&per, 0, sizeof(per));
+		memset(&oc, 0, sizeof(oc));
+		if (onchange) {
+			oc.has_dampening_period = true;
+			oc.dampening_period = (uint32_t)(damp * 100 + 0.5);
+			ein.yp_update_trigger = SN(YP_UPDATE_TRIGGER_ON_CHANGE);
+			ein.yp_on_change = &oc;
+		} else {
+			per.has_period = true;
+			per.period = (uint32_t)(secs * 100 + 0.5);
+			ein.yp_update_trigger = SN(YP_UPDATE_TRIGGER_PERIODIC);
+			ein.yp_periodic = &per;
+		}
+	}
+#undef SN
+	ein.stop_time = stop;
+	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_SUBSCRIBE, 0, &m)) != 0 ||
+	    (error = cbl_msg_put_ynode(m, in, &ein)) != 0 ||
+	    (error = cbl_stream_open(cl->conn, m, CBL_SF_PUSH, &ysub_cbs, &ys,
+	    &s)) != 0)
+		xo_errx(1, "subscribe: %s", strerror(error));
+	while (!ys.closed && (!ys.opened || ys.error == 0)) {
+		ev = 0;
+		ms = -1;
+		(void)cbl_conn_interest(cl->conn, &ev, &ms);
+		pfd.fd = cbl_conn_fd(cl->conn);
+		pfd.events = ((ev & CBL_EV_READ) != 0 ? POLLIN : 0) |
+		    ((ev & CBL_EV_WRITE) != 0 ? POLLOUT : 0);
+		pfd.revents = 0;
+		if (poll(&pfd, 1, ms) == -1)
+			continue;
+		ev = ((pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0 ?
+		    CBL_EV_READ : 0) | ((pfd.revents & POLLOUT) != 0 ?
+		    CBL_EV_WRITE : 0);
+		if ((error = cbl_conn_process(cl->conn, ev)) != 0)
+			xo_errx(1, "subscribe: the host is gone: %s",
+			    strerror(error));
+	}
+	if (ys.error != 0)
+		xo_errx(1, "subscribe: %s", ys.why[0] != '\0' ? ys.why :
+		    strerror(ys.error));
+	if (ys.close_text[0] != '\0' && (ys.count == 0 ||
+	    ys.records < ys.count))
+		xo_warnx("subscribe: ended: %s", ys.close_text);
+	return (0);
+}
+
+/*
+ * notifications: those of the models the agent serves (cblink's YANG
+ * family's group, notify), as they come, until the host goes or we are
+ * stopped.
+ */
+static int
+cmd_notifications(struct arc_client *cl)
+{
+	struct pollfd	 pfd;
+	cbl_sub		*sub;
+	int		 error, ev, ms;
+
+	if ((error = cbl_subscribe(cl->conn, "cblink.yang", "notify",
+	    ynotif_line, NULL, &sub)) != 0)
+		xo_errx(1, "notifications: %s", strerror(error));
+	for (;;) {
+		ev = 0;
+		ms = -1;
+		(void)cbl_conn_interest(cl->conn, &ev, &ms);
+		pfd.fd = cbl_conn_fd(cl->conn);
+		pfd.events = ((ev & CBL_EV_READ) != 0 ? POLLIN : 0) |
+		    ((ev & CBL_EV_WRITE) != 0 ? POLLOUT : 0);
+		pfd.revents = 0;
+		if (poll(&pfd, 1, ms) == -1)
+			continue;
+		ev = ((pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0 ?
+		    CBL_EV_READ : 0) | ((pfd.revents & POLLOUT) != 0 ?
+		    CBL_EV_WRITE : 0);
+		if ((error = cbl_conn_process(cl->conn, ev)) != 0)
+			break;
+	}
+	xo_errx(1, "notifications: the host is gone: %s", strerror(error));
 }
 
 static int
@@ -4908,6 +5304,12 @@ main(int argc, char *argv[])
 		rc = cmd_hello(&cl);
 	else if (strcmp(argv[0], "get") == 0)
 		rc = cmd_get(&cl, argc, argv);
+	else if (strcmp(argv[0], "action") == 0)
+		rc = cmd_yaction(&cl, argc, argv);
+	else if (strcmp(argv[0], "notifications") == 0)
+		rc = cmd_notifications(&cl);
+	else if (strcmp(argv[0], "subscribe") == 0)
+		rc = cmd_subscribe(&cl, argc, argv);
 	else if (strcmp(argv[0], "list") == 0)
 		rc = cmd_list(&cl, argc, argv);
 	else if (strcmp(argv[0], "start") == 0)

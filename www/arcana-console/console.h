@@ -12,8 +12,7 @@
 #ifndef _CONSOLE_H_
 #define _CONSOLE_H_
 
-/* What the sources take for granted, as the server's headers once gave
- * it them. */
+/* What the sources take for granted. */
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/queue.h>
@@ -45,13 +44,10 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-_Static_assert(CBLINK_VERSION_MAJOR == 0 && CBLINK_VERSION_MINOR == 2,
-    "written for cblink 0.2: its wire, its structs");
-
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.320.0"
+#define	ARCW_VERSION		"0.322.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -393,6 +389,7 @@ const char	*agent_build(void);
 const char	*agent_version(void);
 int		 api_agent_build(struct http_request *);
 int		 api_network(struct http_request *);
+int		 api_ydata(struct http_request *);
 int		 api_stats(struct http_request *);
 int		 api_kernel(struct http_request *);
 int		 api_jail_files(struct http_request *);

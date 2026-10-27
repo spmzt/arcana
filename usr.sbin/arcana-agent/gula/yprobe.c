@@ -5,7 +5,7 @@
  */
 
 /*
- * Gula: the probes as YANG, arcana-probe (PLAN-SDN-YANG 3.1.11): the
+ * Gula: the probes as YANG, arcana-probe: the
  * sdwan-probes operation's targets (probe.c) as configuration, the
  * sdwan read's targets as state, each sample taken apart from its
  * row.

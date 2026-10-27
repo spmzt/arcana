@@ -5,7 +5,7 @@
  */
 
 /*
- * Superbia: the host as YANG, arcana-host (PLAN-SDN-YANG 3.1.9): the
+ * Superbia: the host as YANG, arcana-host: the
  * host attribute set of hello and list, the stats attribute set, and
  * the certs operation's JSON (certs.c) read back into the module's
  * structs.

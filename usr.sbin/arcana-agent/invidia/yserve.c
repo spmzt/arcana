@@ -5,7 +5,7 @@
  */
 
 /*
- * Invidia: the standard models served (docs/PLAN-SDN-YANG.md 1.11), by
+ * Invidia: the standard models served, by
  * cblink's YANG family, family 1, beside the agent's own: a GET of
  * ietf-interfaces' interfaces, with ietf-ip and what augments them,
  * read as it is asked (yif.c, yip.c), each bound to the network
@@ -30,6 +30,7 @@
 #include <syslog.h>
 
 #include <cblink.h>
+#include <ucl.h>
 #include <cbl_schema.h>
 
 #include "agent.h"
@@ -406,6 +407,532 @@ ietf_interfaces_interfaces_interface_dot1q_bridge_port_rstp_bridge_rstp_port_pro
 	return (EOPNOTSUPP);
 }
 
+/*
+ * RFC 8525's YANG library: one module set of every module the tables
+ * implement, with the features they have on, and those imported only
+ * (ARC_YIMPORT_LIST, the build's); one schema of it; the operational
+ * datastore's, the only one served.  Its content-id changes
+ * with what the set has (FNV-1a of its words).
+ */
+int
+ietf_yang_library_yang_library_get(cbl_req *req, struct ietf_yang_library *data,
+    cbl_yarena *a)
+{
+	struct ietf_yang_library_yang_library			*yl;
+	struct ietf_yang_library_yang_library_module_set	*ms;
+	struct ietf_yang_library_yang_library_module_set_module *mv;
+	struct ietf_yang_library_yang_library_module_set_import_only_module *iv;
+	struct ietf_yang_library_yang_library_schema		*sc;
+	struct ietf_yang_library_yang_library_datastore	*ds;
+	const struct cbl_ymodule				*m;
+	const char						**fv, **sets;
+	char							*imports, *s, *w,
+								*at, id[24];
+	uint64_t						 h;
+	size_t							 ni, nf, k;
+	uint32_t						 i, j;
+
+	if (yang_refused(req))
+		return (EACCES);
+	if ((yl = cbl_yarena_alloc(a, sizeof(*yl))) == NULL ||
+	    (ms = cbl_yarena_alloc(a, sizeof(*ms))) == NULL ||
+	    (sc = cbl_yarena_alloc(a, sizeof(*sc))) == NULL ||
+	    (ds = cbl_yarena_alloc(a, sizeof(*ds))) == NULL ||
+	    (sets = cbl_yarena_alloc(a, sizeof(*sets))) == NULL ||
+	    (mv = cbl_yarena_alloc(a, (ymodel_schema.nmod + 1) *
+	    sizeof(*mv))) == NULL)
+		return (ENOMEM);
+	h = UINT64_C(0xcbf29ce484222325);
+#define	FNV(s)	do {							\
+	for (const char *p_ = (s); p_ != NULL && *p_ != '\0'; p_++)	\
+		h = (h ^ (uint8_t)*p_) * UINT64_C(0x100000001b3);	\
+	h = (h ^ ' ') * UINT64_C(0x100000001b3);			\
+} while (0)
+	for (i = 0; i < ymodel_schema.nmod; i++) {
+		m = ymodel_schema.mod[i];
+		mv[i].name = m->name;
+		mv[i].revision = m->revision;
+		mv[i].namespace = m->ns;
+		FNV(m->name);
+		FNV(m->revision);
+		for (j = nf = 0; j < m->nfeature; j++)
+			nf += m->feature[j].enabled;
+		if (nf > 0 && (fv = cbl_yarena_alloc(a, nf * sizeof(*fv))) ==
+		    NULL)
+			return (ENOMEM);
+		for (j = k = 0; j < m->nfeature; j++)
+			if (m->feature[j].enabled) {
+				fv[k++] = m->feature[j].name;
+				FNV(m->feature[j].name);
+			}
+		mv[i].feature.n = nf;
+		mv[i].feature.v = nf > 0 ? fv : NULL;
+	}
+	/* name@revision, by commas. */
+	if ((imports = cbl_yarena_alloc(a, sizeof(ARC_YIMPORT_LIST))) == NULL)
+		return (ENOMEM);
+	memcpy(imports, ARC_YIMPORT_LIST, sizeof(ARC_YIMPORT_LIST));
+	for (ni = 1, s = imports; *s != '\0'; s++)
+		ni += *s == ',';
+	if ((iv = cbl_yarena_alloc(a, ni * sizeof(*iv))) == NULL)
+		return (ENOMEM);
+	for (ni = 0, s = imports; (w = strsep(&s, ",")) != NULL;) {
+		if (w[0] == '\0')
+			continue;
+		if ((at = strchr(w, '@')) != NULL)
+			*at++ = '\0';
+		iv[ni].name = w;
+		/* A revision-identifier, or the empty string. */
+		iv[ni].revision.which = at != NULL ? 0 : 1;
+		iv[ni].revision.v.m0 = at != NULL ? at : "";
+		/* Its namespace, by an identity of it the tables have. */
+		for (j = 0; j < ymodel_schema.nident; j++)
+			if (strcmp(ymodel_schema.ident[j].module->name, w) ==
+			    0) {
+				iv[ni].namespace =
+				    ymodel_schema.ident[j].module->ns;
+				break;
+			}
+		ni++;
+		FNV(w);
+		FNV(at);
+	}
+#undef	FNV
+	ms->name = "arcana-agent";
+	ms->module.n = ymodel_schema.nmod;
+	ms->module.v = mv;
+	ms->import_only_module.n = ni;
+	ms->import_only_module.v = ni > 0 ? iv : NULL;
+	sets[0] = ms->name;
+	sc->name = "arcana-agent";
+	sc->module_set.n = 1;
+	sc->module_set.v = sets;
+	ds->name = ident_sid("ietf-datastores", "operational");
+	ds->schema = sc->name;
+	yl->module_set.n = 1;
+	yl->module_set.v = ms;
+	yl->schema.n = 1;
+	yl->schema.v = sc;
+	yl->datastore.n = 1;
+	yl->datastore.v = ds;
+	snprintf(id, sizeof(id), "%016jx", (uintmax_t)h);
+	if ((yl->content_id = cbl_yarena_alloc(a, strlen(id) + 1)) == NULL)
+		return (ENOMEM);
+	memcpy((char *)(uintptr_t)yl->content_id, id, strlen(id) + 1);
+	data->yang_library = yl;
+	return (0);
+}
+
+/* Deprecated, and yang-library says it all: not there. */
+int
+ietf_yang_library_modules_state_get(cbl_req *req, struct ietf_yang_library *data,
+    cbl_yarena *a)
+{
+
+	(void)data;
+	(void)a;
+	return (yang_refused(req) ? EACCES : 0);
+}
+
+/* RFC 8348's hardware: the chassis, CPUs and disks (superbia/yhw.c). */
+int
+ietf_hardware_hardware_get(cbl_req *req, struct ietf_hardware *data,
+    cbl_yarena *a)
+{
+	char	*json;
+	int	 error;
+
+	if (yang_refused(req))
+		return (EACCES);
+	if ((error = yhw_json(&json)) != 0)
+		return (error);
+	error = yhw_from_json(json, a, data);
+	free(json);
+	return (error);
+}
+
+/* Its configuration (alias, asset-id, uri) is not kept. */
+int
+ietf_hardware_hardware_edit(cbl_req *req, const struct ietf_hardware *before,
+    const struct ietf_hardware *after)
+{
+
+	(void)req;
+	(void)before;
+	(void)after;
+	return (EOPNOTSUPP);
+}
+
+/* RFC 8632's alarms: the agent's faults (gula/yalarms.c). */
+int
+ietf_alarms_alarms_get(cbl_req *req, struct ietf_alarms *data, cbl_yarena *a)
+{
+	ucl_object_t	*top;
+	char		*json;
+	int		 error;
+
+	if (yang_refused(req))
+		return (EACCES);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	faults_json(top);
+	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	if (json == NULL)
+		return (ENOMEM);
+	error = yalarms_from_json(json, a, data);
+	free(json);
+	return (error);
+}
+
+/* Its control is configuration, and purging and compressing operator
+ * actions: neither served. */
+int
+ietf_alarms_alarms_edit(cbl_req *req, const struct ietf_alarms *before,
+    const struct ietf_alarms *after)
+{
+
+	(void)req;
+	(void)before;
+	(void)after;
+	return (EOPNOTSUPP);
+}
+
+int
+ietf_alarms_alarms_alarm_list_purge_alarms_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct ietf_alarms_alarms_alarm_list_purge_alarms_input *in,
+    struct ietf_alarms_alarms_alarm_list_purge_alarms_output *out,
+    cbl_yarena *a)
+{
+
+	(void)req;
+	(void)target;
+	(void)in;
+	(void)out;
+	(void)a;
+	return (EOPNOTSUPP);
+}
+
+int
+ietf_alarms_alarms_alarm_list_compress_alarms_action(cbl_req *req,
+    const struct cbl_bytes *target,
+    const struct ietf_alarms_alarms_alarm_list_compress_alarms_input *in,
+    struct ietf_alarms_alarms_alarm_list_compress_alarms_output *out,
+    cbl_yarena *a)
+{
+
+	(void)req;
+	(void)target;
+	(void)in;
+	(void)out;
+	(void)a;
+	return (EOPNOTSUPP);
+}
+
+/* The context the models are served on, for their notifications. */
+static cbl_ctx		*yctx;
+
+/*
+ * RFC 8639's subscriptions and RFC 8641's YANG-Push: cblink keeps them
+ * (cbl_ysub.c), each a SUBSCRIBE stream; establish-subscription is that
+ * stream's open, not an rpc.  The NETCONF stream is every event the
+ * agent tells (yang_event()).
+ */
+typedef struct ietf_subscribed_notifications_subscriptions_subscription
+    ysubscription;
+#define	YSUB(x)	IETF_SUBSCRIBED_NOTIFICATIONS_SUBSCRIPTIONS_SUBSCRIPTION_##x
+
+int
+ietf_subscribed_notifications_streams_get(cbl_req *req,
+    struct ietf_subscribed_notifications *data, cbl_yarena *a)
+{
+	struct ietf_subscribed_notifications_streams		*st;
+	struct ietf_subscribed_notifications_streams_stream	*v;
+
+	if (yang_refused(req))
+		return (EACCES);
+	if ((st = cbl_yarena_alloc(a, sizeof(*st))) == NULL ||
+	    (v = cbl_yarena_alloc(a, sizeof(*v))) == NULL)
+		return (ENOMEM);
+	v->name = "NETCONF";
+	v->description = "every event the agent tells: arcana-events' event "
+	    "notifications";
+	st->stream.n = 1;
+	st->stream.v = v;
+	data->streams = st;
+	return (0);
+}
+
+/* No filters are kept: a subscription carries its own. */
+int
+ietf_subscribed_notifications_filters_get(cbl_req *req,
+    struct ietf_subscribed_notifications *data, cbl_yarena *a)
+{
+
+	(void)data;
+	(void)a;
+	return (yang_refused(req) ? EACCES : 0);
+}
+
+int
+ietf_subscribed_notifications_filters_edit(cbl_req *req,
+    const struct ietf_subscribed_notifications *before,
+    const struct ietf_subscribed_notifications *after)
+{
+
+	(void)before;
+	(void)after;
+	(void)cbl_req_set_yerr(req, "no filters are kept: a subscription "
+	    "carries its own", 0);
+	return (EOPNOTSUPP);
+}
+
+struct ysubs {
+	cbl_yarena	*a;
+	ysubscription	*v;
+	size_t		 n, cap;
+};
+
+static const char *
+ystr(cbl_yarena *a, const char *s)
+{
+	char	*p;
+
+	if (s == NULL || (p = cbl_yarena_alloc(a, strlen(s) + 1)) == NULL)
+		return (NULL);
+	memcpy(p, s, strlen(s) + 1);
+	return (p);
+}
+
+/* One of cblink's subscriptions, copied into the arena. */
+static int
+ysub_one(const struct cbl_ysub_info *in, void *arg)
+{
+	struct ietf_subscribed_notifications_subscriptions_subscription_receivers
+	    *rs;
+	struct ietf_subscribed_notifications_subscriptions_subscription_receivers_receiver
+	    *r;
+	struct ietf_subscribed_notifications_subscriptions_subscription_yp_periodic
+	    *per;
+	struct ietf_subscribed_notifications_subscriptions_subscription_yp_on_change
+	    *oc;
+	struct ysubs	*ys = arg;
+	ysubscription	*v, *s;
+
+	if (ys->n == ys->cap) {
+		if ((v = cbl_yarena_alloc(ys->a, (ys->cap + 8) *
+		    sizeof(*v))) == NULL)
+			return (ENOMEM);
+		if (ys->n > 0)
+			memcpy(v, ys->v, ys->n * sizeof(*v));
+		ys->v = v;
+		ys->cap += 8;
+	}
+	s = &ys->v[ys->n];
+	memset(s, 0, sizeof(*s));
+	if ((rs = cbl_yarena_alloc(ys->a, sizeof(*rs))) == NULL ||
+	    (r = cbl_yarena_alloc(ys->a, sizeof(*r))) == NULL)
+		return (ENOMEM);
+	s->id = in->id;
+	if (in->stream != NULL) {
+		s->target = YSUB(TARGET_STREAM);
+		s->stream = ystr(ys->a, in->stream);
+		if (in->xpath != NULL) {
+			s->stream_filter =
+			    YSUB(STREAM_FILTER_WITHIN_SUBSCRIPTION);
+			s->filter_spec = YSUB(FILTER_SPEC_STREAM_XPATH_FILTER);
+			s->stream_xpath_filter = ystr(ys->a, in->xpath);
+		}
+	} else {
+		s->target = YSUB(TARGET_DATASTORE);
+		s->has_yp_datastore = true;
+		s->yp_datastore = in->datastore;
+		if (in->xpath != NULL) {
+			s->yp_selection_filter =
+			    YSUB(YP_SELECTION_FILTER_WITHIN_SUBSCRIPTION);
+			s->yp_filter_spec =
+			    YSUB(YP_FILTER_SPEC_DATASTORE_XPATH_FILTER);
+			s->yp_datastore_xpath_filter = ystr(ys->a, in->xpath);
+		}
+		if (in->on_change) {
+			if ((oc = cbl_yarena_alloc(ys->a, sizeof(*oc))) ==
+			    NULL)
+				return (ENOMEM);
+			memset(oc, 0, sizeof(*oc));
+			oc->has_dampening_period = true;
+			oc->dampening_period = in->dampening;
+			s->yp_update_trigger = YSUB(YP_UPDATE_TRIGGER_ON_CHANGE);
+			s->yp_on_change = oc;
+		} else {
+			if ((per = cbl_yarena_alloc(ys->a, sizeof(*per))) ==
+			    NULL)
+				return (ENOMEM);
+			per->has_period = true;
+			per->period = in->period;
+			per->anchor_time = ystr(ys->a, in->anchor_time);
+			s->yp_update_trigger = YSUB(YP_UPDATE_TRIGGER_PERIODIC);
+			s->yp_periodic = per;
+		}
+	}
+	s->stop_time = ystr(ys->a, in->stop_time);
+	r->name = in->receiver != NULL ? ystr(ys->a, in->receiver) :
+	    "the subscriber";
+	r->has_sent_event_records = true;
+	r->sent_event_records = in->sent;
+	r->has_excluded_event_records = true;
+	r->excluded_event_records = in->excluded;
+	r->has_state = true;
+	r->state = YSUB(RECEIVERS_RECEIVER_STATE_ACTIVE);
+	rs->receiver.n = 1;
+	rs->receiver.v = r;
+	s->receivers = rs;
+	ys->n++;
+	return (0);
+}
+
+int
+ietf_subscribed_notifications_subscriptions_get(cbl_req *req,
+    struct ietf_subscribed_notifications *data, cbl_yarena *a)
+{
+	struct ietf_subscribed_notifications_subscriptions	*ss;
+	struct ysubs						 ys;
+	int							 error;
+
+	if (yang_refused(req))
+		return (EACCES);
+	memset(&ys, 0, sizeof(ys));
+	ys.a = a;
+	if (yctx != NULL && (error = cbl_ysub_each(yctx, ysub_one, &ys)) != 0)
+		return (error);
+	if (ys.n == 0)
+		return (0);
+	if ((ss = cbl_yarena_alloc(a, sizeof(*ss))) == NULL)
+		return (ENOMEM);
+	ss->subscription.n = ys.n;
+	ss->subscription.v = ys.v;
+	data->subscriptions = ss;
+	return (0);
+}
+
+/* Configured subscriptions are not made: dynamic ones alone. */
+int
+ietf_subscribed_notifications_subscriptions_edit(cbl_req *req,
+    const struct ietf_subscribed_notifications *before,
+    const struct ietf_subscribed_notifications *after)
+{
+
+	(void)before;
+	(void)after;
+	(void)cbl_req_set_yerr(req, "configured subscriptions are not "
+	    "made: a subscription is a SUBSCRIBE stream", 0);
+	return (EOPNOTSUPP);
+}
+
+int
+ietf_subscribed_notifications_establish_subscription_rpc(cbl_req *req,
+    const struct ietf_subscribed_notifications_establish_subscription_input
+    *in,
+    struct ietf_subscribed_notifications_establish_subscription_output *out,
+    cbl_yarena *a)
+{
+
+	(void)in;
+	(void)out;
+	(void)a;
+	(void)cbl_req_set_yerr(req, "a subscription is established by "
+	    "opening a SUBSCRIBE stream (family 1, command 6), its records "
+	    "on it", 0);
+	return (EOPNOTSUPP);
+}
+
+int
+ietf_subscribed_notifications_modify_subscription_rpc(cbl_req *req,
+    const struct ietf_subscribed_notifications_modify_subscription_input *in,
+    struct ietf_subscribed_notifications_modify_subscription_output *out,
+    cbl_yarena *a)
+{
+
+	(void)in;
+	(void)out;
+	(void)a;
+	(void)cbl_req_set_yerr(req, "a subscription is not modified: delete "
+	    "it and establish another", 0);
+	return (EOPNOTSUPP);
+}
+
+/* On-change pushes each change as it is seen: no resync to ask for. */
+int
+ietf_yang_push_resync_subscription_rpc(cbl_req *req,
+    const struct ietf_yang_push_resync_subscription_input *in,
+    struct ietf_yang_push_resync_subscription_output *out, cbl_yarena *a)
+{
+
+	(void)in;
+	(void)out;
+	(void)a;
+	(void)cbl_req_set_yerr(req, "no resync: establish another "
+	    "subscription, its first push the whole of it", 0);
+	return (EOPNOTSUPP);
+}
+
+/* The subscriber's own, on this connection. */
+int
+ietf_subscribed_notifications_delete_subscription_rpc(cbl_req *req,
+    const struct ietf_subscribed_notifications_delete_subscription_input *in,
+    struct ietf_subscribed_notifications_delete_subscription_output *out,
+    cbl_yarena *a)
+{
+
+	(void)out;
+	(void)a;
+	if (yang_refused(req))
+		return (EACCES);
+	if (cbl_ysub_delete(req, in->id) != 0) {
+		(void)cbl_req_set_yerr(req, "no such subscription of this "
+		    "connection", 0);
+		return (ENOENT);
+	}
+	return (0);
+}
+
+/* Any one: the console's to do. */
+int
+ietf_subscribed_notifications_kill_subscription_rpc(cbl_req *req,
+    const struct ietf_subscribed_notifications_kill_subscription_input *in,
+    struct ietf_subscribed_notifications_kill_subscription_output *out,
+    cbl_yarena *a)
+{
+
+	(void)out;
+	(void)a;
+	if (yang_refused(req))
+		return (EACCES);
+	if (yctx == NULL || cbl_ysub_kill(yctx, in->id) != 0) {
+		(void)cbl_req_set_yerr(req, "no such subscription", 0);
+		return (ENOENT);
+	}
+	return (0);
+}
+
+/*
+ * An event (gula/events.c's JSON of it, as the agent's own family tells
+ * it) told as arcana-events' event notification too, to the subscribers
+ * of family 1's group: nobody subscribed, no work (cblink's).
+ */
+void
+yang_event(const char *json)
+{
+	struct arcana_events_event	 ev;
+	cbl_yarena			*a;
+
+	if (yctx == NULL || (a = cbl_yarena_new()) == NULL)
+		return;
+	memset(&ev, 0, sizeof(ev));
+	if (yev_one_from_json(json, a, &ev) == 0)
+		(void)arcana_events_event_notify(yctx, &ev);
+	cbl_yarena_free(a);
+}
+
 /* The models served, family 1 beside the agent's own. */
 int
 yang_serve(cbl_ctx *ctx)
@@ -416,5 +943,6 @@ yang_serve(cbl_ctx *ctx)
 	 * BIRD holds no other, as the agent's own family's slow reads. */
 	if ((error = cbl_yserver_add(ctx, &ymodel_server, NULL)) != 0)
 		return (error);
+	yctx = ctx;
 	return (cbl_yserver_threads(ctx, true));
 }

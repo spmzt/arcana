@@ -5,7 +5,7 @@
  */
 
 /*
- * Ira: the jails as arcana-jails has them (PLAN-SDN-YANG 3.1.1), from
+ * Ira: the jails as arcana-jails has them, from
  * what the list operation finds (do_list(): jail_get(2) and jail(8) -e
  * of each configuration file); its actions, start, stop, restart and
  * kill, are the action operation's (yjails_action(), lifecycle.c).  One

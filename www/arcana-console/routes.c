@@ -167,6 +167,8 @@ const struct route routes[] = {
 	    HTTP_METHOD_GET | HTTP_METHOD_POST },
 	{ "^/api/servers/([0-9a-f]+)/net/(routes|nexthops|connections|sockets|interfaces|netgraph|wireguard|bird|bird-routes|bird-ospf|bridges|geneve|ipfw|nhgroups|neighbours|ipsec|multicast|kept-routes|lookup|traceroute)$", api_network, api_call_free,
 	    HTTP_METHOD_GET },
+	{ "^/api/servers/([0-9a-f]+)/data$", api_ydata, api_call_free,
+	    HTTP_METHOD_GET },
 	{ "^/api/servers/([0-9a-f]+)/bird/config$", api_bird_config, api_call_free,
 	    HTTP_METHOD_GET | HTTP_METHOD_POST },
 	{ "^/api/servers/([0-9a-f]+)/storage/(disks|pools|datasets|snapshots|mounts|importable|health)$", api_storage, api_call_free,

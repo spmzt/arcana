@@ -9,7 +9,7 @@ where its manual is. The man pages are the reference; this is the map.
 | [`arcana-enrol`](#arcana-enrol) | a host, once, as root | `arcana-enrol(8)` |
 | [`arcanactl`](#arcanactl) | anywhere | `arcanactl(8)` |
 | [`jailconf`](#jailconf) | anywhere | `jailconf(8)` |
-| [`arcana`](#arcana-the-console) (the console) | the console host, unprivileged | `arcana-console(8)` |
+| [`arcana-console`](#arcana-console) | the console host, unprivileged | `arcana-console(8)` |
 | [`arcana-container`](#arcana-container) | the container image | below |
 
 `make install WITHOUT_CONSOLE=yes` installs the first four; a full
@@ -157,9 +157,9 @@ and writes; `-f file` names the file (default
 Values the jail inherits from global statements or `*` blocks are not
 touched.
 
-## arcana, the console
+## arcana-console
 
-`arcana-console(8)`, its own HTTP server on libwebsockets: a supervisor
+The console, `arcana-console(8)`: its own HTTP server on libwebsockets: a supervisor
 that listens and starts the worker again when it dies, and the worker,
 which serves as the console's user. Started by the `arcana_console` rc
 script.
@@ -210,6 +210,6 @@ as the image's unprivileged user.
 | `ARCANA_PORT` | Default 8443. |
 | `ARCANA_AGENT_SOURCE`, `ARCANA_AGENT_REF` | A git repository, and a branch or tag, a host can be asked to build `arcana-agent` from. |
 
-With `console.pem` and `console.key` (RSA) mounted it serves HTTPS,
+With `console.pem` and `console.key` (RSA or EC) mounted it serves HTTPS,
 otherwise plain HTTP for a reverse proxy. The console's CA and data
 live in the volume at `/var/db/arcana`.

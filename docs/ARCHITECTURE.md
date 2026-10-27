@@ -1,7 +1,7 @@
 # Arcana architecture
 
-Arcana manages a fleet of FreeBSD hosts for one user: an agent on each
-host, and a console that coordinates them.  The vocabulary of Archives,
+Arcana manages a fleet of FreeBSD hosts: an agent on each host, and a
+console that coordinates them for its users.  The vocabulary of Archives,
 Agent and Orchestrator is in [NAMING.md](NAMING.md).
 
 ## Programs
@@ -35,13 +35,16 @@ AF_UNIX socket.
 ## The arcana family
 
 `share/arcana/arcana.yaml` is the contract between `arcana-agent` and
-its clients.  Its wire is cblink version 2: `share/arcana/wire.awk`
-writes the YANG module `share/yang/arcana@<rev>.yang` from it (an rpc
-an operation, a structure an event or a stream's payload, the SIDs in
-`arcana@<rev>.sid`), cblink-gen(1) generates the C structures and the
-schema tables from the module, and wire.awk writes the header that keeps
-the version-1 names over them and the glue to cblink (the handlers'
-trampolines, the replies, the client calls).
+its clients.  `share/arcana/wire.awk` writes its wire, the YANG module
+`share/yang/arcana@<rev>.yang`, from it (an rpc an operation, a
+structure an event or a stream's payload, the SIDs in
+`arcana@<rev>.sid`); cblink-gen(1) generates the C structures and the
+schema tables from the module, and wire.awk writes the header that
+names those structures as the programs call them and the glue to
+cblink (the handlers' trampolines, the replies, the client calls).
+
+The core operations, and what each runs on the host (the rest are in
+`arcana.yaml`):
 
 | Operation | Does | Mechanism in `arcana-agent` |
 |---|---|---|
@@ -91,20 +94,29 @@ Base system first; packages only where they remove real work.
 | Component | Privilege | Holds |
 |---|---|---|
 | Browser | none | an HttpOnly, SameSite=Strict session cookie |
-| `arcana-console` | unprivileged user (its supervisor root, to listen and read the HTTPS key) | WebAuthn public key, its cblink client certificate and key, and the CA's key when it runs its own CA |
+| `arcana-console` | unprivileged user (its supervisor root, to listen and read the HTTPS key) | the users, their roles and WebAuthn public keys, its cblink client certificate and key, and the CA's key when it runs its own CA |
 | `arcana-agent` | root | its server certificate and key, the CA certificate |
 
 ## Authentication (browser to console)
 
-One user, one or more WebAuthn credentials (a YubiKey and a spare).
+Users, each with one or more WebAuthn credentials (a security key and
+a spare), and roles that say what each may do on the console and on
+which hosts (`users.json` in the data directory).  A user may belong to
+a tenant, a fleet of its own, and then sees that tenant's hosts alone.
 
 * **Enrolment.**  With no credential stored, the backend writes a random
   one-time setup token to `<datadir>/setup-token` (mode 0600).  The first
-  registration needs it; later ones need a logged-in session.
+  registration needs it and makes the built-in owner; an invited user
+  registers with the invitation's token; adding a key needs a logged-in
+  session.
 * **Ceremonies.**  32-byte single-use challenges, valid two minutes.  The
   backend checks `clientDataJSON` (type, challenge, origin) and the
   authenticator data (RP ID hash, flags, counter) and verifies the
-  signature with libcrypto.  ES256 and EdDSA, which covers YubiKey 5.
+  signature with libcrypto.  ES256, EdDSA and RS256.
+* **Passwords.**  A user may also sign in with a password of the
+  console's own (bcrypt) or, when **Settings** name a directory, by LDAP
+  over TLS.  A session opened so cannot change sign-ins, tokens, users,
+  the CA or the settings; that takes a key.
 * **Sessions.**  32 random bytes in a cookie; only its SHA-256 is kept.
   Idle timeout 30 min, absolute 12 h.  One guard checks every protected
   route; state-changing requests also need the console's own `Origin`
@@ -225,17 +237,20 @@ is not, and reconnects by itself.
 ## Layout
 
 ```
-share/arcana/      the cblink family spec
-share/mk/            build settings shared by every Makefile
-lib/libjailconf/     in-place jail.conf editing
-usr.sbin/jailconf/   jailconf(8)
+cblink/                 the transport, a submodule
+share/arcana/           the cblink family specs, wire.awk
+share/mk/               build settings shared by every Makefile
+share/yang/             the YANG modules and their SIDs
+lib/libjailconf/        in-place jail.conf editing
+lib/libvarconf/         in-place rc.conf, loader.conf, sysctl.conf editing
+usr.sbin/jailconf/      jailconf(8)
 usr.sbin/arcana-agent/  arcana-agent(8)
-usr.sbin/arcanactl/ arcanactl(8)
-usr.sbin/arcana-enrol/ arcana-enrol(8)
-www/arcana-console/  arcana-console(8)
-www/arcana-ui/     the PWA
-docs/                this file, TOOLS.md, NAMING.md, openapi.yaml
-tests/               the top of the installed test suite
+usr.sbin/arcanactl/     arcanactl(8)
+usr.sbin/arcana-enrol/  arcana-enrol(8)
+www/arcana-console/     arcana-console(8)
+www/arcana-ui/          the PWA
+docs/                   this file, the other guides, openapi.yaml
+tests/                  the top of the installed test suite
 ```
 
 Each directory has a `tests/` with atf-c or atf-sh tests; `make check`

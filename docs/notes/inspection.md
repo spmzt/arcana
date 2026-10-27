@@ -1,10 +1,9 @@
 # SSL/TLS and SSH inspection: a plan
 
-Asked for on 2026-10-19 ("Plan for supporting the ssl/ssh inspection
-too"), after the decisions of 2026-10-18 said SSL inspection is wanted;
-on 2026-10-20 the engine was chosen: SSLproxy, transparent. Nothing
-here is built yet. FreeBSD 16.0 and later only; Arcana installs
-nothing by itself (a button the admin presses is fine); no pf.
+Not built. TLS is inspected transparently by SSLproxy: clients set no
+proxy, they trust one root and nothing else. FreeBSD 16.0 and later
+only; Arcana installs nothing by itself (a button the admin presses is
+fine); no pf.
 
 ## What there is today
 
@@ -28,7 +27,7 @@ The Security page's filter is an explicit proxy; SD-WAN's intercepts
 TLS, the SNI, the server certificate's subject, issuer, validity and
 fingerprint, and the JA3/JA4 fingerprints of client and server; for SSH,
 the client's and server's version banners and their hassh fingerprints.
-Arcana reads Suricata's alerts today, not these records.
+Arcana reads Suricata's alerts, not these records.
 
 ## What is missing
 
@@ -46,11 +45,8 @@ Arcana reads Suricata's alerts today, not these records.
 
 ## The plan, for TLS: SSLproxy, transparent
 
-**Decided 2026-10-20:** "integrate and use sslproxy. I want to have the
-ability to transparent inspection without asking clients to set a
-proxy!" The engine is SSLproxy (security/sslproxy, 0.9.11 in ports), a
-plugin with an install button as BIRD is; clients set no proxy, they
-trust one root (1.) and nothing else.
+The engine is SSLproxy (security/sslproxy), a plugin with an install
+button as BIRD is.
 
 ### 0. How the traffic reaches it
 
@@ -71,28 +67,32 @@ trust one root (1.) and nothing else.
   opened), **Block**, **Split** (opened and re-encrypted, logged), or
   **Divert** (opened and handed to a listening program).
 
-### 1. One inspection CA, the console's (first)
+### 1. Inspection CAs, the console's (first)
 
 The console already makes and rotates its own CA (pki.c, Settings ›
-Certificate authority). Beside it, an **inspection CA**, apart from the
+Certificate authority). Beside it, **inspection CAs**, apart from the
 CA the agents trust (that one must never be trusted by browsers):
 
-- a root made by the console, its key kept there, and never sent to an
-  edge;
-- for each edge that inspects, an **intermediate** signed by that root,
-  its key made on the edge (a request, as enrolment does): SSLproxy's
-  `CACert`/`CAKey`/`CAChain`, so an edge lost gives away its own
-  intermediate alone, which is then revoked by issuing a new one;
-- the root's certificate to download (PEM and DER) from Settings and
-  the inspection page: what the clients install once, for every edge;
+- one root **per tenant fleet**, made by the console, its key kept
+  there and never sent to an edge: a tenant's clients trust only its
+  own root;
+- for each edge that inspects, an **intermediate** signed by its
+  fleet's root, its key made on the edge (a request, as enrolment
+  does): SSLproxy's `CACert`/`CAKey`/`CAChain`, so an edge lost gives
+  away its own intermediate alone, which is then revoked by issuing a
+  new one;
+- each root's certificate to download (PEM and DER) from Settings and
+  the inspection page: what the fleet's clients install once, for
+  every edge;
 - rotated as the console's CA is.
 
 ### 2. What is not opened
 
 - A **do-not-decrypt list**: domains and destination prefixes (the
-  console's prefix lists), as SSLproxy `Pass` rules (`PassSite`), plus
-  a small default list (the FreeBSD update and package servers, the
-  console itself), editable; no category feed (a third party's).
+  console's prefix lists), as SSLproxy `Pass` rules (`PassSite`):
+  Arcana's small default list (the FreeBSD update and package servers,
+  the console itself) and the admin's own; no category feed (a third
+  party's).
 - **Source classes**: the clients inspected (a prefix list, the guests'
   network); the rest never reach SSLproxy, the `fwd` rule names them.
 - **Pinned or failing**: SSLproxy passes a connection whose handshake
@@ -111,13 +111,12 @@ the Security page and in the event log.
 - **Suricata**: SSLproxy's mirror (`MirrorIf`, `MirrorTarget`) sends
   what it opened as emulated packets to an interface; an epair(4) pair
   whose other end Suricata reads (in IDS mode) gives it the plaintext.
-  This answers the old open question.
 - **Content logs and pcap** per connection (`ContentLogDir`,
   `PcapLogDir`): off by default; a troubleshooting switch, kept a short
   while.
 - **Divert to a program**: SSLproxy inserts its `SSLproxy:` line for
   the program, which neither Squid nor c-icap read; not planned unless a
-  program of Arcana's own is wanted later.
+  program of Arcana's own is wanted.
 
 ### 5. Squid beside it
 
@@ -135,15 +134,16 @@ open TLS without a proxy setting.
   blocked and failed.
 - SD-WAN: the url-filter criterion of a security policy says
   "inspected" and names the same lists.
-- Settings › Certificate authority: the inspection CA beside the
-  console's, with its edges' intermediates.
+- Settings › Certificate authority: the inspection CAs beside the
+  console's, with their edges' intermediates.
 
 ## The plan, for SSH
 
 Opening SSH as TLS is opened would mean a proxy that ends every session
 with a host key of its own: every client's known_hosts would warn, keys
 and agent forwarding break, and no such proxy is in base or a well kept
-port. Not planned. What can be done:
+port. Not planned. SSH sessions are seen and logged; they are not
+recorded, and there is no bastion.
 
 ### 1. Seen, not opened (first)
 
@@ -153,7 +153,7 @@ Shown on the IDS/IPS tab as SSH sessions, with rules on them (an
 unknown client fingerprint, a server banner that is not OpenSSH, SSH on
 a port that is not 22). ET Open has SSH rules already.
 
-### 2. Controlled where Arcana runs the server
+### 2. Logged where Arcana runs the server
 
 The hosts' own sshd is already Arcana's to configure (the SSH tab: keys,
 user CAs, options). For SSH into the fleet:
@@ -163,17 +163,7 @@ user CAs, options). For SSH into the fleet:
   role (who may log in where, from where);
 - **every session logged**: sshd's `LogLevel VERBOSE` (which key and
   certificate), read by the agent as an event (`ssh-session`: who, from
-  where, how long);
-- optionally **a session recorded**: `ForceCommand` running script(1)
-  with timing (`script -r -T`), the recording kept on the host and
-  played back from the console. It is visible to the user, and their
-  interactive session only (not scp or forwarding).
-
-### 3. A bastion (if wanted)
-
-A jump host that records every session (sshpiper, Teleport) is a third
-party's program: possible as a plugin the admin installs with a button,
-as BIRD is, but not planned unless asked.
+  where, how long).
 
 ## Order
 
@@ -181,38 +171,14 @@ as BIRD is, but not planned unless asked.
    conf rendered on the agent from a form (as smtpd.conf and
    suricata.yaml are), the `fwd` rules in an Arcana range of the kept
    rules (0.).
-2. The inspection CA, its intermediates, its download (1.).
+2. The inspection CAs, their intermediates, their download (1.).
 3. The do-not-decrypt and source lists (2.).
 4. The connect log read, and Suricata's TLS and SSH records (3., SSH
    1.), one reader of the logs.
 5. The mirror to Suricata (4.).
 6. SD-WAN's transparent TLS moved from Squid to SSLproxy (5.).
-7. SSH sessions logged, and recorded if wanted (SSH 2.).
+7. SSH sessions logged (SSH 2.).
 
 Each step is tested with stand-ins for sslproxy and ipfw in agent_test,
 and a lab run with the real SSLproxy in a vnet jail before it is called
 done.
-
-## For the user to decide
-
-1. One inspection root for the console, or one for each tenant fleet?
-2. Per-edge intermediates with the root key on the console only
-   (recommended), or one key shared by every edge?
-3. The default do-not-decrypt list: Arcana's small one and the admin's
-   own, with no category feed — enough?
-4. SD-WAN's transparent TLS moved from Squid's ssl-bump to SSLproxy
-   (recommended: one way to inspect without a proxy setting), or both
-   kept?
-5. SSH: sessions seen (Suricata) and logged (sshd) only, or also
-   recorded (script(1))?
-
-## Decided (the user, 2026-10-23)
-
-1. One inspection root **per tenant fleet**: a tenant's clients trust only
-   its own root.
-2. **Per-edge intermediates**, each root's key on the console only.
-3. The do-not-decrypt list is Arcana's small default and the admin's own;
-   no category feed.
-4. SD-WAN's transparent TLS **moves from Squid's ssl-bump to SSLproxy**;
-   Squid keeps the explicit-proxy URL filter and ICAP.
-5. SSH: **seen** (Suricata) **and logged** (sshd) only; not recorded.

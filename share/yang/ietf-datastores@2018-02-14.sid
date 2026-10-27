@@ -1,0 +1,61 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-datastores",
+    "module-revision": "2018-02-14",
+    "sid-file-version": 0,
+    "description": "No IETF range: RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "assignment-range": [
+      {
+        "entry-point": "77300",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-datastores",
+        "sid": "77300"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "candidate",
+        "sid": "77301"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "conventional",
+        "sid": "77302"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "datastore",
+        "sid": "77303"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "dynamic",
+        "sid": "77304"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "intended",
+        "sid": "77305"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "operational",
+        "sid": "77306"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "running",
+        "sid": "77307"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "startup",
+        "sid": "77308"
+      }
+    ]
+  }
+}

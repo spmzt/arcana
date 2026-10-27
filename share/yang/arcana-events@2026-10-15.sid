@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-events",
     "module-revision": "2026-10-15",
-    "sid-file-version": 2,
+    "sid-file-version": 3,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -1410,6 +1410,531 @@
         "namespace": "data",
         "identifier": "/arcana-events:events/read/output/event/crash/reason",
         "sid": "71077"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "conf",
+        "sid": "71078"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "device",
+        "sid": "71079"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "monitor-threshold",
+        "sid": "71080"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "procs",
+        "sid": "71081"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "sdwan-ids",
+        "sid": "71082"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "zfs",
+        "sid": "71083"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert",
+        "sid": "71084"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/action",
+        "sid": "71085"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/category",
+        "sid": "71086"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/dport",
+        "sid": "71087"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/dst",
+        "sid": "71088"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/instance",
+        "sid": "71089"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/interface",
+        "sid": "71090"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/proto",
+        "sid": "71091"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/rev",
+        "sid": "71092"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/severity",
+        "sid": "71093"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/sid",
+        "sid": "71094"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/signature",
+        "sid": "71095"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/sport",
+        "sid": "71096"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/src",
+        "sid": "71097"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/alert/time",
+        "sid": "71098"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/conf",
+        "sid": "71099"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/conf/file",
+        "sid": "71100"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/device",
+        "sid": "71101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/device/cdev",
+        "sid": "71102"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/device/state",
+        "sid": "71103"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/monitor",
+        "sid": "71104"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/monitor/id",
+        "sid": "71105"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/monitor/interface",
+        "sid": "71106"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/monitor/metric",
+        "sid": "71107"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/monitor/over",
+        "sid": "71108"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/monitor/threshold",
+        "sid": "71109"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/monitor/value",
+        "sid": "71110"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/procs",
+        "sid": "71111"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/procs/exited",
+        "sid": "71112"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/procs/started",
+        "sid": "71113"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/zfs",
+        "sid": "71114"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/zfs/pool",
+        "sid": "71115"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:event/zfs/type",
+        "sid": "71116"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert",
+        "sid": "71117"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/action",
+        "sid": "71118"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/category",
+        "sid": "71119"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/dport",
+        "sid": "71120"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/dst",
+        "sid": "71121"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/instance",
+        "sid": "71122"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/interface",
+        "sid": "71123"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/proto",
+        "sid": "71124"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/rev",
+        "sid": "71125"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/severity",
+        "sid": "71126"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/sid",
+        "sid": "71127"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/signature",
+        "sid": "71128"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/sport",
+        "sid": "71129"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/src",
+        "sid": "71130"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/alert/time",
+        "sid": "71131"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/conf",
+        "sid": "71132"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/conf/file",
+        "sid": "71133"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/device",
+        "sid": "71134"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/device/cdev",
+        "sid": "71135"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/device/state",
+        "sid": "71136"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/monitor",
+        "sid": "71137"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/monitor/id",
+        "sid": "71138"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/monitor/interface",
+        "sid": "71139"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/monitor/metric",
+        "sid": "71140"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/monitor/over",
+        "sid": "71141"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/monitor/threshold",
+        "sid": "71142"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/monitor/value",
+        "sid": "71143"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/procs",
+        "sid": "71144"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/procs/exited",
+        "sid": "71145"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/procs/started",
+        "sid": "71146"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/zfs",
+        "sid": "71147"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/zfs/pool",
+        "sid": "71148"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/event/zfs/type",
+        "sid": "71149"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert",
+        "sid": "71150"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/action",
+        "sid": "71151"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/category",
+        "sid": "71152"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/dport",
+        "sid": "71153"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/dst",
+        "sid": "71154"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/instance",
+        "sid": "71155"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/interface",
+        "sid": "71156"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/proto",
+        "sid": "71157"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/rev",
+        "sid": "71158"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/severity",
+        "sid": "71159"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/sid",
+        "sid": "71160"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/signature",
+        "sid": "71161"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/sport",
+        "sid": "71162"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/src",
+        "sid": "71163"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/alert/time",
+        "sid": "71164"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/conf",
+        "sid": "71165"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/conf/file",
+        "sid": "71166"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/device",
+        "sid": "71167"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/device/cdev",
+        "sid": "71168"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/device/state",
+        "sid": "71169"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/monitor",
+        "sid": "71170"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/monitor/id",
+        "sid": "71171"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/monitor/interface",
+        "sid": "71172"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/monitor/metric",
+        "sid": "71173"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/monitor/over",
+        "sid": "71174"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/monitor/threshold",
+        "sid": "71175"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/monitor/value",
+        "sid": "71176"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/procs",
+        "sid": "71177"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/procs/exited",
+        "sid": "71178"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/procs/started",
+        "sid": "71179"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/zfs",
+        "sid": "71180"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/zfs/pool",
+        "sid": "71181"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-events:events/read/output/event/zfs/type",
+        "sid": "71182"
       }
     ]
   }

@@ -2758,9 +2758,9 @@ taken_in(int lo, int hi)
  * Room for a rule just after number anchor (after) or just before it:
  * *tp the number it takes, and pairs, from and to with the farthest
  * first, that move the rules in its way on by one when no number is
- * free there (what the user asked for: the next rules make room, as
- * BASIC's lines did).  *sidesp has what the pairs touch, now (1) and
- * kept (2).  False, and why, when the part has no room left.
+ * free there (the next rules make room, as BASIC's lines did).
+ * *sidesp has what the pairs touch, now (1) and kept (2).  False, and
+ * why, when the part has no room left.
  */
 static bool
 plan_place(const uint8_t *taken, int lo, int hi, long long anchor,

@@ -5,11 +5,12 @@
  */
 
 /*
- * Ira: the jobs as arcana-jobs has them (PLAN-SDN-YANG 3.1.4): the
+ * Ira: the jobs as arcana-jobs has them: the
  * queue the jobs operation lists (jobs_list()) and one job with its trace
- * (jobs_get()), the trace a flat list of steps each naming its parent.
- * A submit's changes as job-specs need jobs.yaml's table of them, which
- * jobs.awk made (yjobs_spec.c) before agent 0.159.0: not yet again.
+ * (jobs_get()), the trace a flat list of steps each naming its parent;
+ * and a submit's changes made the job-specs jobs_submit() queues
+ * (yjobs_spec(), made from jobs.yaml by jobs.awk).  cancel and confirm
+ * are jobs_cancel() and jobs_confirm() as they are.
  */
 
 #include <errno.h>
@@ -108,5 +109,32 @@ yjobs_from(const struct arc_job *v, size_t n, const char *activity,
 	js->job.n = n;
 	js->job.v = y;
 	out->jobs = js;
+	return (0);
+}
+
+/*
+ * A submit's changes made job-specs, the arena's; *bad the change
+ * refused, when one is.
+ */
+int
+yjobs_specs(const struct arcana_jobs_submit_input *in, cbl_yarena *a,
+    const struct arc_job_spec **out, size_t *n, size_t *bad)
+{
+	struct arc_job_spec *v;
+	int error;
+
+	*out = NULL;
+	*n = 0;
+	if (in->change.n == 0)
+		return (EINVAL);
+	if ((v = cbl_yarena_alloc(a, in->change.n * sizeof(*v))) == NULL)
+		return (ENOMEM);
+	for (size_t i = 0; i < in->change.n; i++)
+		if ((error = yjobs_spec(&in->change.v[i], a, &v[i])) != 0) {
+			*bad = i;
+			return (error);
+		}
+	*out = v;
+	*n = in->change.n;
 	return (0);
 }

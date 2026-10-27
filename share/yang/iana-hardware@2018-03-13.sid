@@ -1,0 +1,96 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "iana-hardware",
+    "module-revision": "2018-03-13",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "assignment-range": [
+      {
+        "entry-point": "77900",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "iana-hardware",
+        "sid": "77900"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "backplane",
+        "sid": "77901"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "battery",
+        "sid": "77902"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "chassis",
+        "sid": "77903"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "container",
+        "sid": "77904"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "cpu",
+        "sid": "77905"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "energy-object",
+        "sid": "77906"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "fan",
+        "sid": "77907"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "hardware-class",
+        "sid": "77908"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "module",
+        "sid": "77909"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "port",
+        "sid": "77910"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "power-supply",
+        "sid": "77911"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "sensor",
+        "sid": "77912"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "stack",
+        "sid": "77913"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "storage-drive",
+        "sid": "77914"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "unknown",
+        "sid": "77915"
+      }
+    ]
+  }
+}

@@ -37,8 +37,6 @@ module arcana-events {
   revision 2026-10-15 {
     description
       "Initial revision.";
-    reference
-      "Arcana docs/PLAN-SDN-YANG.md step 3.1.7.";
   }
 
   identity event-kind {
@@ -129,6 +127,45 @@ module arcana-events {
     base event-kind;
     description
       "A process died of a signal that dumps core.";
+  }
+
+  identity conf {
+    base event-kind;
+    description
+      "A configuration file the host watches changed (kqueue(2)'s
+       EVFILT_VNODE): rc.conf, jail.conf, and the like.";
+  }
+
+  identity device {
+    base event-kind;
+    description
+      "A device node came or went, as devd(8) tells it.";
+  }
+
+  identity zfs {
+    base event-kind;
+    description
+      "ZFS told devd(8) of a pool: an event of its sysevent class.";
+  }
+
+  identity procs {
+    base event-kind;
+    description
+      "Processes started and exited since the last such event
+       (kqueue(2)'s EVFILT_PROC), counted rather than each told.";
+  }
+
+  identity monitor-threshold {
+    base event-kind;
+    description
+      "A monitor's metric crossed its threshold, over or back
+       under.";
+  }
+
+  identity sdwan-ids {
+    base event-kind;
+    description
+      "Suricata raised an alert in an IDS instance.";
   }
 
   grouping event {
@@ -596,6 +633,169 @@ module arcana-events {
             "Why there is no core, in the kernel's words (sugid process
              denied by kern.sugid_coredump, bad address); absent when
              there is one, or the kernel gave none.";
+        }
+      }
+      container conf {
+        description
+          "conf: the file that changed.";
+        leaf file {
+          type string;
+          description
+            "Its path.";
+        }
+      }
+      container device {
+        description
+          "device: the node and what became of it.";
+        leaf cdev {
+          type string;
+          description
+            "The device's name under /dev.";
+        }
+        leaf state {
+          type string;
+          description
+            "created or destroyed, as devd(8) says it.";
+        }
+      }
+      container zfs {
+        description
+          "zfs: the pool and the event's type.";
+        leaf type {
+          type string;
+          description
+            "The sysevent's subclass, as devd(8) gives it.";
+        }
+        leaf pool {
+          type string;
+          description
+            "The pool's name.";
+        }
+      }
+      container procs {
+        description
+          "procs: how many, since the last such event.";
+        leaf started {
+          type uint32;
+          description
+            "Processes started.";
+        }
+        leaf exited {
+          type uint32;
+          description
+            "Processes exited.";
+        }
+      }
+      container monitor {
+        description
+          "monitor-threshold: the monitor, its metric and the crossing.";
+        leaf id {
+          type string;
+          description
+            "The monitor: its target's name.";
+        }
+        leaf metric {
+          type string;
+          description
+            "delay, ipdv or loss.";
+        }
+        leaf value {
+          type decimal64 {
+            fraction-digits 3;
+          }
+          description
+            "What it measured: milliseconds, or percent of loss.";
+        }
+        leaf threshold {
+          type decimal64 {
+            fraction-digits 3;
+          }
+          description
+            "The threshold it crossed.";
+        }
+        leaf over {
+          type boolean;
+          description
+            "Over it; false, back under.";
+        }
+        leaf interface {
+          type string;
+          description
+            "The interface it was sent by, when one was named.";
+        }
+      }
+      container alert {
+        description
+          "sdwan-ids: Suricata's alert, as its eve.json has it.";
+        leaf instance {
+          type string;
+          description
+            "The IDS instance.";
+        }
+        leaf time {
+          type string;
+          description
+            "When, as Suricata wrote it.";
+        }
+        leaf src {
+          type string;
+          description
+            "The source address.";
+        }
+        leaf sport {
+          type uint16;
+          description
+            "The source port.";
+        }
+        leaf dst {
+          type string;
+          description
+            "The destination address.";
+        }
+        leaf dport {
+          type uint16;
+          description
+            "The destination port.";
+        }
+        leaf proto {
+          type string;
+          description
+            "The protocol.";
+        }
+        leaf interface {
+          type string;
+          description
+            "The interface it was seen on.";
+        }
+        leaf sid {
+          type uint32;
+          description
+            "The rule's signature id.";
+        }
+        leaf rev {
+          type uint32;
+          description
+            "The rule's revision.";
+        }
+        leaf signature {
+          type string;
+          description
+            "The rule's message.";
+        }
+        leaf category {
+          type string;
+          description
+            "Its classification.";
+        }
+        leaf severity {
+          type uint8;
+          description
+            "Its severity, 1 the most.";
+        }
+        leaf action {
+          type string;
+          description
+            "allowed or blocked.";
         }
       }
     }

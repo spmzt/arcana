@@ -1776,8 +1776,8 @@ set_ldap(struct html *h)
 /*
  * The rollback timer each host has, by where it comes from: its own
  * (the host's System tab), the one above for every host, or its agent's
- * own (-w), which the agent says (an older one does not).  The timer
- * goes with each change, so what is shown is what the next one gets.
+ * own (-w), which the agent says.  The timer goes with each change, so
+ * what is shown is what the next one gets.
  */
 static const struct tcol	safecols[] = {
 	{ "Host", "name", false }, { "Its own", "own", true },

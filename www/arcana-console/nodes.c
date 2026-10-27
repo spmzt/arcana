@@ -1331,10 +1331,6 @@ acl_write_doit(cbl_req *req, const struct acl_write_req *rq,
 	return (0);
 }
 
-/*
- * The leader's lock name taken by holder for ttl ms, or held already by
- * it: true; the newest committed write into commitp.  With the lock.
- */
 /* The lock written to the log (the lock held, so the others know it,
  * or let go): the write's place in *seqp, which the holder waits for. */
 static void
@@ -1354,6 +1350,10 @@ lock_write(const char *name, const char *holder, uint64_t until, bool gone,
 	}
 }
 
+/*
+ * The leader's lock name taken by holder for ttl ms, or held already by
+ * it: true; the newest committed write into commitp.  With the lock.
+ */
 static bool
 lock_try(const char *name, const char *holder, uint64_t ttl,
     uint64_t *commitp, const char **why)

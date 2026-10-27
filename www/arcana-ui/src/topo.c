@@ -4977,7 +4977,7 @@ wg_sessions(struct html *h)
  * end named when a host of this console has it: gre(4), gif(4) and the
  * like by their outer addresses, WireGuard by its peers' keys, and the
  * VPNs' tun and tap.  WireGuard's peers with when each last shook hands
- * come under it, as the map's panel had them.
+ * come under it.
  */
 /* A row's cell, as text. */
 static void
@@ -5408,7 +5408,6 @@ lk_routes_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 				    (uintptr_t)jget(o, "data"));
 			} else
 				lkg.fetched[i] = 0;
-			/* The next table. */
 			if (f + 1 < lkg.val[i][LKS_FIBS] && f + 1 < LK_FIBS)
 				lk_table(i, f + 1);
 		}

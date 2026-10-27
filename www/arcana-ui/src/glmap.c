@@ -5,11 +5,10 @@
 
 /*
  * What the network map shows moving, drawn by WebGL 2 under its SVG.
- * The SVG keeps
- * everything a reader or a pointer needs (boxes, names, links, labels,
- * and its own dashes for the traffic, which read better than points
- * along a link); where WebGL 2 is not to be had, this layer is not
- * drawn.
+ * The SVG keeps everything a reader or a pointer needs (boxes, names,
+ * links, labels, and its own dashes for the traffic, which read better
+ * than points along a link); where WebGL 2 is not to be had, this layer
+ * is not drawn.
  *
  * A host with a safe change waiting to be confirmed has a fuse round its
  * box: points that burn down as the time the agent gives it runs out,

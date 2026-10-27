@@ -6,7 +6,7 @@ SRCS=		main.c handlers.c work.c
 SRCS+=		yjson.c
 # Superbia: identity, configuration, what is true of the host.
 SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c bundle.c l2.c ipfw.c netstore.c sysfiles.c geomjob.c \
-		yagent.c yhost.c ysshd.c ysystem.c
+		yagent.c yhost.c yhw.c ysshd.c ysystem.c
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c fwmatch.c pathcheck.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
 		routes.c rtimes.c scope.c sdwan.c vnet.c wireguard.c \
@@ -22,19 +22,32 @@ SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c 
 SRCS+=		record.c \
 		pools.c storage.c zfskey.c xfer.c health.c resources.c stats.c trace.c procs.c log.c \
 		history.c events.c faults.c kmsg.c probe.c hostwatch.c crashes.c \
-		ystorage.c yev.c yhist.c ylog.c yprobe.c yprocs.c
+		ystorage.c yev.c yhist.c ylog.c yprobe.c yprocs.c yalarms.c
 .PATH:		${.CURDIR}/superbia ${.CURDIR}/invidia ${.CURDIR}/ira \
 		${.CURDIR}/acedia ${.CURDIR}/avaritia ${.CURDIR}/gula \
 		${.CURDIR}/luxuria
 CFLAGS+=	-I${.CURDIR}
 MAN=		arcana-agent.8
 
+# Shipped to the hosts by agent-update: libcblink linked in (arcana.mk).
+CBLINK_STATIC=	yes
 .include "${.CURDIR}/../../share/mk/arcana.mk"
 
 ARC_WIRE=	server
 .include "${.CURDIR}/../../share/mk/arcana.wire.mk"
 ARC_YANG_SERVER= yes
 .include "${.CURDIR}/../../share/mk/arcana.yang.mk"
+# arcana-jobs' submit: a change made a job-spec as jobs.yaml says, by
+# jobs.awk over the wire's header (which members have a has_).
+SRCS+=		yjobs_spec.c
+CLEANFILES+=	yjobs_spec.c yjobs_spec.c.tmp
+yjobs_spec.c: ${ARC_TOP}/share/arcana/jobs.awk ${ARC_TOP}/share/arcana/jobs.yaml \
+    ${ARC_TOP}/share/arcana/arcana.yaml arcana_v2.h ymodel.h
+	awk -v out=yspec -f ${ARC_TOP}/share/arcana/jobs.awk \
+	    ${ARC_TOP}/share/arcana/arcana.yaml \
+	    ${ARC_TOP}/share/arcana/jobs.yaml ${.OBJDIR}/arcana_v2.h \
+	    > ${.TARGET}.tmp
+	mv ${.TARGET}.tmp ${.TARGET}
 
 CFLAGS+=	${JAILCONF_CFLAGS} ${UCL_CFLAGS}
 LDADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a

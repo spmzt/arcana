@@ -92,7 +92,7 @@ The commands are:
 .Bl -tag -width Ds
 .It Cm hello
 Show the host.
-.It Cm get Op Ar node ...
+.It Cm get Oo Fl x Ar xpath Oc Op Ar node ...
 What the agent serves of the standard models, by cblink's YANG family:
 ietf-interfaces' interfaces with ietf-ip's addresses and neighbours and
 what augments them
@@ -115,6 +115,14 @@ the vnet jails as RFC 8530's logical network elements
 .Xr syslog.conf 5
 as ietf-syslog
 .Pq Cm syslog ,
+RFC 8525's YANG library, the modules the agent implements
+.Pq Cm yang-library ,
+RFC 8639's streams and the subscriptions running
+.Pq Cm streams , subscriptions ,
+its faults as RFC 8632's alarms
+.Pq Cm alarms ,
+its chassis, CPUs and disks as RFC 8348's components
+.Pq Cm hardware ,
 and Arcana's own modules, each read as the operation that reads the
 same:
 .Cm jails , services , packages , jobs , storage , sysctl , kernel ,
@@ -123,8 +131,77 @@ same:
 and
 .Cm builder ;
 those named, or all of them, as RFC 7951's JSON.
+With
+.Fl x ,
+only what the XPath expression selects of them, with the nodes above
+it, as NETCONF's xpath filter; its prefixes are the modules' names:
+.Dl arcanactl get -x \(dq/ietf-interfaces:interfaces/interface[name='lo0']\(dq interfaces
 What a plugin's program reads (BIRD, WireGuard, netgraph) is left out
 where the program is not there.
+.It Cm action Ar path Oo Ar key ... Oc Ar name Oo Ar leaf Ns = Ns Ar value ... Oc
+Call action
+.Ar name
+of a module the agent serves on the node
+.Ar path
+names from its top
+.Pq Li jails/jail ,
+a list entry by its keys, the action's input leaves given as
+.Ar leaf Ns = Ns Ar value ;
+its output is printed as RFC 7951's JSON.
+Served: a jail's
+.Cm start , stop , restart
+and
+.Cm kill ,
+a service's
+.Cm start , stop , restart
+and
+.Cm reload ,
+a process's
+.Cm signal
+and
+.Cm renice ,
+a job's
+.Cm cancel
+and
+.Cm confirm ,
+the packages'
+.Cm refresh ,
+a log's
+.Cm read
+and BIRD's
+.Cm routes ;
+what changes the host is done one change at a time, as the agent's own.
+For example
+.Dl arcanactl action jails/jail web restart
+.Dl arcanactl action logs read name=messages lines=20
+.It Cm notifications
+The notifications of the models the agent serves, as they come, each a
+line of RFC 8040's JSON, until interrupted: every event the agent tells
+.Pq Cm events
+as arcana-events' event, its kind and its data.
+.It Xo
+.Cm subscribe
+.Op Fl n Ar count
+.Op Fl o Ar seconds | Fl p Ar seconds
+.Op Fl s Ar stop-time
+.Op Fl x Ar xpath
+.Xc
+An RFC 8639 dynamic subscription, on a stream of its own: the NETCONF
+stream, every event the agent tells; with
+.Fl p ,
+the operational datastore, pushed every that many seconds (RFC 8641's
+periodic push-update, a tenth of a second at least); with
+.Fl o ,
+its changes as they are seen, a YANG Patch each (RFC 8641's on-change,
+read every that many seconds and every second at least), the first
+record the whole of it.
+.Fl x
+is the XPath filter of the stream's events or of the datastore,
+.Fl s
+an RFC 3339 time the subscription ends at,
+.Fl n
+how many records to take before ending it.
+Each record is a line of RFC 8040's JSON.
 .It Cm list Op Fl c
 List running and configured jails.
 With

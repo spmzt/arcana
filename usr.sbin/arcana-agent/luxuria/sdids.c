@@ -6,22 +6,21 @@
 /*
  * The intrusion detection of the SD-WAN services at this edge (the ids
  * criterion of a security policy, Arcana's own: neither MEF 88 nor MEF
- * 138 has intrusion detection among its Security Functions): Suricata, a plugin the host has
- * installed (nothing is installed by Arcana), one instance per service,
- * watching the service's UNIs, its configuration written by the
- * console with places for what the agent knows: its log directory, its
- * rules file and its pid file.  What it finds it writes as eve.json,
- * which a thread of the agent reads every second: each alert an event,
- * sdwan-ids, and the latest kept for the sdwan read.  One that prevents
- * (a divert port given) takes the UNIs' packets from ipfw's divert rules
- * instead and gives back those its rules let by: while it is not
- * running they pass nothing, so the thread says it, a fault, until it
- * runs again.  One the admin stopped (stopped: true) stays in the list,
- * kept for the next start, but is not run until it is started again.
- * Like the proxies
- * of sdproxy.c: those named are started (again when their files
- * changed), those not named any more are stopped, and the list is kept
- * for the next start.
+ * 138 has intrusion detection among its Security Functions): Suricata,
+ * a plugin the host has installed (nothing is installed by Arcana), one
+ * instance per service, watching the service's UNIs, its configuration
+ * written by the console with places for what the agent knows: its log
+ * directory, its rules file and its pid file.  What it finds it writes
+ * as eve.json, which a thread of the agent reads every second: each
+ * alert an event, sdwan-ids, and the latest kept for the sdwan
+ * read.  One that prevents (a divert port given) takes the UNIs' packets
+ * from ipfw's divert rules instead and gives back those its rules let
+ * by: while it is not running they pass nothing, so the thread says it,
+ * a fault, until it runs again.  One the admin stopped (stopped: true)
+ * stays in the list, kept for the next start, but is not run until it
+ * is started again. Like the proxies of sdproxy.c: those named are
+ * started (again when their files changed), those not named any more
+ * are stopped, and the list is kept for the next start.
  */
 
 #include <sys/param.h>

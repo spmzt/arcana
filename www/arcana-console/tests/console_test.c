@@ -4346,6 +4346,34 @@ ATF_TC_BODY(services, tc)
 			free(addrs[k]);
 	}
 	resp_free(&r);
+	/* The agent's YANG data, the nodes named, as RFC 7951's JSON. */
+	snprintf(path, sizeof(path), "%.*s/data?node=interfaces,sysctl",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_MSG(jstr(&r, "data.ietf-interfaces:interfaces.interface.0."
+	    "name") != NULL, "%.600s", r.body);
+	ATF_CHECK(jstr(&r, "data.arcana-sysctl:sysctl.value.0.name") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/data?node=interfaces&filter=x",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/data?node=nowhere",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK(jstr(&r, "error") != NULL && strstr(jstr(&r, "error"),
+	    "nowhere is no node") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/data?node=a;b",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
 	snprintf(path, sizeof(path), "%.*s/jobs",
 	    (int)(strlen(base) - strlen("/services")), base);
 	http("POST", path, "{\"jobs\":[{\"kind\":\"if-address\","
@@ -6499,7 +6527,7 @@ ATF_TC_BODY(sdwan, tc)
 		    "\"af-security-egress\":\"guard\"", "serves a zone's clients" },
 		{ "\"redirect\":true", "\"redirect\":true,\"pass-through\":[\"x.example\"]",
 		    "are mbsf's" },
-		/* Intrusion detection (SASE-4): detect, rules with a sid. */
+		/* Intrusion detection: detect, rules with a sid. */
 		{ "\"mode\":\"prevent\"", "\"mode\":\"block\"",
 		    "a mode, detect or prevent" },
 		{ "sid:1000001; rev:1;)", "rev:1;)", "is not a Suricata rule" },
@@ -6535,7 +6563,7 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"egress-block\":\"discard\"", "\"encryption\":\"optional\"",
 		    "egress policy" },
 		{ "\"ipv6\":{", "\"ipv6\":{\"mode\":\"none\"},\"x\":{", "(R128)" },
-		/* A remote end point (SASE-3): its port, an identity's zone
+		/* A remote end point: its port, an identity's zone
 		 * and key, and not a UNI besides. */
 		{ "\"port\":51820", "\"port\":70000", "port is 1 to 65535" },
 		{ "\"zone\":\"office\",\"public_key\"", "\"zone\":\"nowhere\","
@@ -8179,7 +8207,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
 	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
 	resp_free(&r);
-	/* The lists the security policy names (SASE-2): one pasted, one a
+	/* The lists the security policy names: one pasted, one a
 	 * feed from a file the console's host reads with libfetch; each
 	 * kept with a version, a failed feed with its error. */
 	snprintf(t2, sizeof(t2), "%s/feed.txt", cwd);
@@ -8585,7 +8613,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * over the private tunnel first, the public one after. */
 	ATF_CHECK_MSG(strstr(r.body, "\"table\":\"sw1_z1p1_6\",\"prefix\":"
 	    "\"2001:db8:1::/64\"") == NULL, "%s", r.body);
-	/* A remote end point (SASE-3): wg5 in the service's table with the
+	/* A remote end point: wg5 in the service's table with the
 	 * prefix's first host, listening; the identity a peer allowed its
 	 * address, the second host, which the zone table sends to its
 	 * zone's block, and its packets in by wg5 as a UNI's. */
@@ -8735,7 +8763,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	/* Its scanner, c-icap, started in the table before it. */
 	ATF_CHECK(system("grep -q '^setfib -F 1 .*tools/c-icap -f .*sdwan-icap-"
 	    "sw1.conf' setfib.log") == 0);
-	/* Identities (SASE-3): one issued for a name, its key pair made
+	/* Identities: one issued for a name, its key pair made
 	 * here, the configuration answered once with its address, the
 	 * second host after alice's, and the edges applied; listed with
 	 * both; revoked, gone and the peer removed; alice past the

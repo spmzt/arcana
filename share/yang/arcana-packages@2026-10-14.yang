@@ -3,6 +3,9 @@ module arcana-packages {
   namespace "urn:arcana:yang:arcana-packages";
   prefix arcpkg;
 
+  import cblink-gen {
+    prefix cg;
+  }
   import arcana-jails {
     prefix arcj;
   }
@@ -23,8 +26,6 @@ module arcana-packages {
   revision 2026-10-14 {
     description
       "Initial revision.";
-    reference
-      "Arcana docs/PLAN-SDN-YANG.md step 3.1.3.";
   }
 
   typedef ip-version {
@@ -95,10 +96,12 @@ module arcana-packages {
     description
       "The packages of a host or of a jail, and what is done to them.";
     container packages {
+      cg:struct "packages";
       config false;
       description
         "Its packages.";
       list package {
+        cg:struct "package";
         key "name";
         description
           "An installed package.";
@@ -165,6 +168,7 @@ module arcana-packages {
               "How many were upgraded, or would be.";
           }
           list package {
+            cg:struct "package";
             key "name";
             description
               "Those upgraded, or that would be: the version before,

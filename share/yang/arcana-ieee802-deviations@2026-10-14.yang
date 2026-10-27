@@ -24,8 +24,6 @@ module arcana-ieee802-deviations {
   revision 2026-10-14 {
     description
       "Initial revision.";
-    reference
-      "Arcana docs/notes/standard-models.md: the duplicates converted.";
   }
 
   deviation "/dot1ax:linkagg/dot1ax:key-group/dot1ax:actor-admin-key" {

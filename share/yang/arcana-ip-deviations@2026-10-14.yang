@@ -32,8 +32,6 @@ module arcana-ip-deviations {
   revision 2026-10-14 {
     description
       "Initial revision.";
-    reference
-      "Arcana docs/PLAN-SDN-YANG.md step 1.10.3.";
   }
 
   deviation "/if:interfaces/if:interface/ip:ipv4/ip:enabled" {

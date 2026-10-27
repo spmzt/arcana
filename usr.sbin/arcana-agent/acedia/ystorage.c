@@ -5,7 +5,7 @@
  */
 
 /*
- * Acedia: the storage as arcana-storage has it (PLAN-SDN-YANG 3.1.5),
+ * Acedia: the storage as arcana-storage has it,
  * typed lists where the storage operation gives a JSON object of each
  * kind (storage.c, health.c): each kind's object read back and put in
  * its place; health's on its disk.  fstab(5)'s text and its SHA-256 are

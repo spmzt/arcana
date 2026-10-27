@@ -91,15 +91,54 @@ module: arcana-events
      |     |     +--ro state?   enumeration
      |     |     +--ro jid?     uint32
      |     +--:(crash)
-     |        +--ro crash
-     |           +--ro pid?       uint32
-     |           +--ro process?   string
-     |           +--ro jid?       uint32
-     |           +--ro jail?      string
-     |           +--ro uid?       uint32
-     |           +--ro signal?    uint8
-     |           +--ro core?      boolean
-     |           +--ro reason?    string
+     |     |  +--ro crash
+     |     |     +--ro pid?       uint32
+     |     |     +--ro process?   string
+     |     |     +--ro jid?       uint32
+     |     |     +--ro jail?      string
+     |     |     +--ro uid?       uint32
+     |     |     +--ro signal?    uint8
+     |     |     +--ro core?      boolean
+     |     |     +--ro reason?    string
+     |     +--:(conf)
+     |     |  +--ro conf
+     |     |     +--ro file?   string
+     |     +--:(device)
+     |     |  +--ro device
+     |     |     +--ro cdev?    string
+     |     |     +--ro state?   string
+     |     +--:(zfs)
+     |     |  +--ro zfs
+     |     |     +--ro type?   string
+     |     |     +--ro pool?   string
+     |     +--:(procs)
+     |     |  +--ro procs
+     |     |     +--ro started?   uint32
+     |     |     +--ro exited?    uint32
+     |     +--:(monitor)
+     |     |  +--ro monitor
+     |     |     +--ro id?          string
+     |     |     +--ro metric?      string
+     |     |     +--ro value?       decimal64
+     |     |     +--ro threshold?   decimal64
+     |     |     +--ro over?        boolean
+     |     |     +--ro interface?   string
+     |     +--:(alert)
+     |        +--ro alert
+     |           +--ro instance?    string
+     |           +--ro time?        string
+     |           +--ro src?         string
+     |           +--ro sport?       uint16
+     |           +--ro dst?         string
+     |           +--ro dport?       uint16
+     |           +--ro proto?       string
+     |           +--ro interface?   string
+     |           +--ro sid?         uint32
+     |           +--ro rev?         uint32
+     |           +--ro signature?   string
+     |           +--ro category?    string
+     |           +--ro severity?    uint8
+     |           +--ro action?      string
      +---x read
         +---w input
         |  +---w after?   uint64
@@ -194,15 +233,54 @@ module: arcana-events
                  |     +--ro state?   enumeration
                  |     +--ro jid?     uint32
                  +--:(crash)
-                    +--ro crash
-                       +--ro pid?       uint32
-                       +--ro process?   string
-                       +--ro jid?       uint32
-                       +--ro jail?      string
-                       +--ro uid?       uint32
-                       +--ro signal?    uint8
-                       +--ro core?      boolean
-                       +--ro reason?    string
+                 |  +--ro crash
+                 |     +--ro pid?       uint32
+                 |     +--ro process?   string
+                 |     +--ro jid?       uint32
+                 |     +--ro jail?      string
+                 |     +--ro uid?       uint32
+                 |     +--ro signal?    uint8
+                 |     +--ro core?      boolean
+                 |     +--ro reason?    string
+                 +--:(conf)
+                 |  +--ro conf
+                 |     +--ro file?   string
+                 +--:(device)
+                 |  +--ro device
+                 |     +--ro cdev?    string
+                 |     +--ro state?   string
+                 +--:(zfs)
+                 |  +--ro zfs
+                 |     +--ro type?   string
+                 |     +--ro pool?   string
+                 +--:(procs)
+                 |  +--ro procs
+                 |     +--ro started?   uint32
+                 |     +--ro exited?    uint32
+                 +--:(monitor)
+                 |  +--ro monitor
+                 |     +--ro id?          string
+                 |     +--ro metric?      string
+                 |     +--ro value?       decimal64
+                 |     +--ro threshold?   decimal64
+                 |     +--ro over?        boolean
+                 |     +--ro interface?   string
+                 +--:(alert)
+                    +--ro alert
+                       +--ro instance?    string
+                       +--ro time?        string
+                       +--ro src?         string
+                       +--ro sport?       uint16
+                       +--ro dst?         string
+                       +--ro dport?       uint16
+                       +--ro proto?       string
+                       +--ro interface?   string
+                       +--ro sid?         uint32
+                       +--ro rev?         uint32
+                       +--ro signature?   string
+                       +--ro category?    string
+                       +--ro severity?    uint8
+                       +--ro action?      string
 
   notifications:
     +---n event
@@ -293,12 +371,51 @@ module: arcana-events
           |     +---- state?   enumeration
           |     +---- jid?     uint32
           +--:(crash)
-             +---- crash
-                +---- pid?       uint32
-                +---- process?   string
-                +---- jid?       uint32
-                +---- jail?      string
-                +---- uid?       uint32
-                +---- signal?    uint8
-                +---- core?      boolean
-                +---- reason?    string
+          |  +---- crash
+          |     +---- pid?       uint32
+          |     +---- process?   string
+          |     +---- jid?       uint32
+          |     +---- jail?      string
+          |     +---- uid?       uint32
+          |     +---- signal?    uint8
+          |     +---- core?      boolean
+          |     +---- reason?    string
+          +--:(conf)
+          |  +---- conf
+          |     +---- file?   string
+          +--:(device)
+          |  +---- device
+          |     +---- cdev?    string
+          |     +---- state?   string
+          +--:(zfs)
+          |  +---- zfs
+          |     +---- type?   string
+          |     +---- pool?   string
+          +--:(procs)
+          |  +---- procs
+          |     +---- started?   uint32
+          |     +---- exited?    uint32
+          +--:(monitor)
+          |  +---- monitor
+          |     +---- id?          string
+          |     +---- metric?      string
+          |     +---- value?       decimal64
+          |     +---- threshold?   decimal64
+          |     +---- over?        boolean
+          |     +---- interface?   string
+          +--:(alert)
+             +---- alert
+                +---- instance?    string
+                +---- time?        string
+                +---- src?         string
+                +---- sport?       uint16
+                +---- dst?         string
+                +---- dport?       uint16
+                +---- proto?       string
+                +---- interface?   string
+                +---- sid?         uint32
+                +---- rev?         uint32
+                +---- signature?   string
+                +---- category?    string
+                +---- severity?    uint8
+                +---- action?      string

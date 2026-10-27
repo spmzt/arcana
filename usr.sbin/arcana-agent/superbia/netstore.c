@@ -488,8 +488,9 @@ netstore_check(const struct arc_job_spec *sp)
 		if ((v = word(sp, "minor")) != NULL && strcmp(v, "0") != 0 &&
 		    strcmp(v, "1") != 0 && strcmp(v, "2") != 0)
 			return ("minor is NFSv4's 0, 1 or 2");
-		if ((v = word(sp, "threads")) != NULL && (strspn(v,
-		    "0123456789") != strlen(v) || atoi(v) < 1 || atoi(v) > 256))
+		if ((v = word(sp, "threads")) != NULL && (strlen(v) > 3 ||
+		    strspn(v, "0123456789") != strlen(v) || atoi(v) < 1 ||
+		    atoi(v) > 256))
 			return ("threads is 1 to 256");
 		if ((v = word(sp, "pnfs")) != NULL && v[0] != '\0' && !ds_ok(v))
 			return ("pnfs is the data servers, host:/path joined by "
@@ -619,6 +620,12 @@ nfs_server(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		char		*copy, *it, *tok, out[1024];
 		size_t		 off;
 
+		/* Each word put while there is room; past it, refused. */
+#define	PUT(...)	do {						\
+	if (off < sizeof(out))						\
+		off += (size_t)snprintf(out + off, sizeof(out) - off,	\
+		    __VA_ARGS__);					\
+} while (0)
 		copy = wstrdup(w, was != NULL ? was : "-u -t -n 4");
 		out[0] = '\0';
 		off = 0;
@@ -635,23 +642,20 @@ nfs_server(struct work *w, const struct arc_job_spec *sp, const char **errp)
 			}
 			if (strcmp(tok, "-p") == 0 && has_p == NULL)
 				has_p = "kept";
-			off += (size_t)snprintf(out + off, sizeof(out) - off,
-			    "%s%s", off > 0 ? " " : "", tok);
+			PUT("%s%s", off > 0 ? " " : "", tok);
 		}
 		if (threads != NULL)
-			off += (size_t)snprintf(out + off, sizeof(out) - off,
-			    " -n %s", threads);
+			PUT(" -n %s", threads);
 		if (pnfs != NULL && pnfs[0] != '\0')
-			off += (size_t)snprintf(out + off, sizeof(out) - off,
-			    " -p %s", pnfs);
+			PUT(" -p %s", pnfs);
 		if (mirror != NULL && mirror[0] != '\0') {
 			if (has_p == NULL || has_p[0] == '\0') {
 				*errp = "mirror needs pNFS's data servers (pnfs=)";
 				return (-1);
 			}
-			off += (size_t)snprintf(out + off, sizeof(out) - off,
-			    " -m %s", mirror);
+			PUT(" -m %s", mirror);
 		}
+#undef	PUT
 		if (off >= sizeof(out)) {
 			*errp = "nfsd's flags are too long";
 			return (-1);

@@ -109,7 +109,7 @@ static struct {
 } sd;
 
 /*
- * Identities (SASE-3): who reaches a service from afar, at its remote
+ * Identities: who reaches a service from afar, at its remote
  * end points, each with the address the plan gave it and whether it is
  * still authorised; issued here, revoked here.
  */
@@ -2032,7 +2032,7 @@ view_service(struct html *h)
 		h_txt(h, host_name(jstr(e, "edge")));
 		h_raw(h, "</td><td class=\"mono\">");
 		if (u == NULL && jget(e, "remote") != NULL) {
-			/* A remote end point (SASE-3): the identities' own
+			/* A remote end point: the identities' own
 			 * WireGuard interface, its prefix theirs. */
 			u = jget(e, "remote");
 			h_txt(h, jstr(u, "interface"));
@@ -3594,7 +3594,7 @@ view_paths(struct html *h)
 /* ---- The document ----------------------------------------------------- */
 
 /*
- * Intrusion detection on the edges (SASE-4): each edge's Suricata
+ * Intrusion detection on the edges: each edge's Suricata
  * instances, with how many alerts each read, and the latest alerts of
  * them all, newest first as each edge keeps them.
  */
@@ -3704,7 +3704,7 @@ view_ids(struct html *h)
 }
 
 /*
- * The service in MEF 118.1's terms (SASE-5): the Zero Trust Framework's
+ * The service in MEF 118.1's terms: the Zero Trust Framework's
  * parts as Arcana has them, then the Access Control Policies, Subject
  * Actor to Target Actor, as the policy map gives them, the Policy End
  * Points, the Continuous Monitoring and the audit trail.
@@ -4137,7 +4137,7 @@ sfp_entries_parse(const char *fn, const char *text)
  * The security functions of the service shown (MEF 138): the function
  * policies, each a function's lists, and the security policies made of
  * them, where a policy's af-security-ingress or -egress names one; what
- * each denied comes with the counts (SASE-1).
+ * each denied comes with the counts.
  */
 static void
 view_security(struct html *h)
@@ -4516,7 +4516,7 @@ view_security(struct html *h)
 		h_raw(h, "<tr><td colspan=\"3\" class=\"dim\">None: no zone has "
 		    "a DNF or PDNS, or nothing is applied yet.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
-	/* The proxies on the edges (SASE-4): each edge's Squid instances,
+	/* The proxies on the edges: each edge's Squid instances,
 	 * a service each, with the CA of one that opens TLS. */
 	h_raw(h, "<div class=\"sd-block\"><h3>Proxies <small class=\"dim\">"
 	    "Squid on each edge, a plugin installed there by hand, an instance "
@@ -4718,7 +4718,6 @@ checked(const ucl_object_t *f, const char *name)
 	    ucl_object_tostring_forced(v), "true") == 0));
 }
 
-/* Is the string in the list? */
 static bool
 jfind_str(const ucl_object_t *arr, const char *s)
 {
@@ -5545,7 +5544,7 @@ sdwan_modal_service(struct html *h)
 			    0));
 			text_field(h, "Service domain: FIB", "dom_sfib", jint(ds,
 			    "fib", 0) > 0 ? nb : "", "3", "Kept for the control "
-			    "plane interface (119-4).");
+			    "plane interface.");
 			text_field(h, "Route distinguishers", "dom_rd", (jstr(ds,
 			    "rd") != NULL || jstr(db, "rd") != NULL || jstr(du, "rd")
 			    != NULL) ? (snprintf(rt, sizeof(rt), "%s, %s, %s", jstr(
@@ -5934,7 +5933,7 @@ sdwan_modal_service(struct html *h)
 
 		h_raw(h, "<form data-form=\"sd-identity\"><h2>An identity</h2><p>"
 		    "Someone reaching a service from afar, by WireGuard, at one of "
-		    "its remote end points (SASE-3): a console user, by the name "
+		    "its remote end points: a console user, by the name "
 		    "of their sign-in key, or a name of its own. The key pair is "
 		    "made here, and the configuration shown once.</p>");
 		{
@@ -6230,7 +6229,7 @@ sdwan_modal_service(struct html *h)
 		text_field(h, "Rate limit, bits per second", "rate", jget(o,
 		    "rate-limit") != NULL ? buf : "", "2000000", "A cap on the "
 		    "flow's traffic, by dummynet; empty for none.");
-		/* Intrusion detection, by Suricata on the UNIs (SASE-4). */
+		/* Intrusion detection, by Suricata on the UNIs. */
 		{
 			const ucl_object_t	*ids = jget(o, "ids"), *r;
 			ucl_object_iter_t	 rit = NULL;

@@ -5,26 +5,32 @@
  */
 
 /*
- * Invidia: Arcana's own modules served by cblink's YANG family
- * (docs/PLAN-SDN-YANG.md Y-3), beside the standard models (yserve.c):
+ * Invidia: Arcana's own modules served by cblink's YANG family,
+ * beside the standard models (yserve.c):
  * a GET runs the operation that reads the same, as its job would
  * (do_sysctl(), do_list(), ...), and the module's collector makes its
- * reply the module's structs (y*.c).  The troubleshooting module has
- * actions alone.  Edits,
- * actions and rpcs go by the agent's own operations still: here they
- * are not supported (cblink says operation-not-supported).
+ * reply the module's structs (y*.c).  An action is its operation too:
+ * a jail's start, stop, restart and kill as the action operation's, a
+ * service's as service-action's, a process's signal and renice as the
+ * proc job's, a job's cancel and confirm, the packages' refresh, a
+ * log's read, BIRD's routes; arcana-jobs' submit as job-submit, its
+ * changes the job-specs jobs.yaml makes them (yjobs_spec.c).  What
+ * changes the host is one change at a time, as the agent's own
+ * (change_lock).  The other edits, actions and rpcs answer
+ * operation-not-supported.
  *
  * Each runs on a thread of its own (cbl_yserver_threads(), yserve.c),
  * as the agent's own slow reads do, so a slow one (the storage's ZFS,
- * BIRD) holds no other request.  What
- * a plugin's program reads (BIRD, WireGuard, netgraph) is left out where
- * the program is not there or will not answer, logged: a GET of every
- * module is not lost for one host's lack of BIRD.
+ * BIRD) holds no other request.  What a plugin's program reads (BIRD,
+ * WireGuard, netgraph) is left out where the program is not there or
+ * will not answer, logged: a GET of every module is not lost for one
+ * host's lack of BIRD.
  */
 
 #include <sys/param.h>
 
 #include <errno.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -74,6 +80,194 @@ failed(const char *what, const char *why)
 	    why != NULL ? why : "no reason given");
 	return (EIO);
 }
+
+/* What an action failed of, said for the request: cblink's error. */
+static int
+said(cbl_req *req, const char *why)
+{
+
+	(void)cbl_req_set_yerr(req, why != NULL ? why : "it failed", 0);
+	return (EIO);
+}
+
+/* The keys of the list entry an action is on, want of them; NULL: not. */
+static const void **
+keys_of(const struct cbl_bytes *target, size_t want, cbl_yarena *a)
+{
+	const struct cbl_ynode	*n;
+	const void		**vals;
+	size_t			  nvals;
+
+	if (cbl_yiid_read(&ymodel_schema, target, &n, &vals, &nvals, a) != 0 ||
+	    nvals != want)
+		return (NULL);
+	return (vals);
+}
+
+/*
+ * A change, one at a time as the agent's own (change_lock), its note
+ * the agent's current activity; false: the agent is stopping.
+ */
+static bool	change_begin(const char *) __trylocks_exclusive(true,
+		    change_lock);
+static void	change_end(void) __unlocks(change_lock);
+
+static bool
+change_begin(const char *what)
+{
+
+	pthread_mutex_lock(&change_lock);
+	if (change_note("%s", what))
+		return (true);
+	(void)change_note(NULL);
+	pthread_mutex_unlock(&change_lock);
+	return (false);
+}
+
+static void
+change_end(void)
+{
+
+	(void)change_note(NULL);
+	pthread_mutex_unlock(&change_lock);
+}
+
+/* A jail's action (ARC_ACTION_*) as the action operation does it. */
+static int
+jail_action(cbl_req *req, const struct cbl_bytes *target, uint8_t action,
+    bool *has_state, int *state, bool *has_jid, uint32_t *jid, cbl_yarena *a)
+{
+	static const char *const names[] = { "start", "stop", "restart",
+	    "kill" };
+	struct arc_action_rsp	 r;
+	const void		**k;
+	const char		*name;
+	struct work		*w;
+
+	if (yang_refused(req))
+		return (EACCES);
+	if ((k = keys_of(target, 1, a)) == NULL)
+		return (EINVAL);
+	name = *(const char *const *)k[0];
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	if (!change_begin(wfmt(w, "%s %s", action < nitems(names) ?
+	    names[action] : "action", name)))
+		return (said(req, "not done: arcana-agent is stopping"));
+	(void)do_action(w, name, action, &r);
+	change_end();
+	if (!r.ok)
+		return (said(req, r.error));
+	/* jail-state's values are the operation's. */
+	if ((*has_state = r.result != NULL && r.result->has_state))
+		*state = r.result->state;
+	if ((*has_jid = r.result != NULL && r.result->has_jid))
+		*jid = r.result->jid;
+	return (0);
+}
+
+/* A service's action (ARC_SERVICE_ACTION_*) as service-action does it. */
+static int
+service_action(cbl_req *req, const struct cbl_bytes *target, uint8_t action,
+    bool *has_running, bool *running, bool *has_pid, uint32_t *pid,
+    const char **status, cbl_yarena *a)
+{
+	struct arc_service_action_rsp	 r;
+	const struct arc_service	*sv;
+	const void			**k;
+	const char			*name;
+	struct work			*w;
+
+	if (yang_refused(req))
+		return (EACCES);
+	if ((k = keys_of(target, 1, a)) == NULL)
+		return (EINVAL);
+	name = *(const char *const *)k[0];
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	if (!change_begin(wfmt(w, "service %s", name)))
+		return (said(req, "not done: arcana-agent is stopping"));
+	(void)do_service_action(w, name, action, &r);
+	change_end();
+	if (!r.ok)
+		return (said(req, r.error));
+	if ((sv = r.service_result) != NULL) {
+		*has_running = sv->has_running;
+		*running = sv->has_running && sv->running;
+		if ((*has_pid = sv->has_pid))
+			*pid = sv->pid;
+		*status = sv->status;
+	}
+	return (0);
+}
+
+/* A process's signal or renice as the proc job does it. */
+static int
+process_action(cbl_req *req, const struct cbl_bytes *target, const char *verb,
+    const char *arg, bool has_start, uint64_t start, cbl_yarena *a)
+{
+	struct arc_job_spec	 sp;
+	const char		*names[3], *e;
+	const void		**k;
+	struct work		*w;
+	uint64_t		 pid;
+	int			 rc;
+
+	if (yang_refused(req))
+		return (EACCES);
+	if ((k = keys_of(target, 1, a)) == NULL)
+		return (EINVAL);
+	pid = *(const uint64_t *)k[0];
+	if (arg == NULL)
+		return (said(req, verb[0] == 's' ? "which signal" :
+		    "which nice value"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&sp, 0, sizeof(sp));
+	sp.verb = verb;
+	names[0] = wfmt(w, "%ju", (uintmax_t)pid);
+	names[1] = arg;
+	/* The start-time it was read with, in nanoseconds, as seconds. */
+	names[2] = wfmt(w, "%ju", (uintmax_t)(start / 1000000000u));
+	sp.names.v = names;
+	sp.names.n = has_start && start != 0 ? 3 : 2;
+	e = NULL;
+	if (!change_begin(wfmt(w, "%s %ju", verb, (uintmax_t)pid)))
+		return (said(req, "not done: arcana-agent is stopping"));
+	rc = do_proc_job(w, &sp, &e);
+	change_end();
+	return (rc != 0 ? said(req, e) : 0);
+}
+
+/* A job of the queue cancelled, or confirmed. */
+static int
+job_action(cbl_req *req, const struct cbl_bytes *target, bool confirm,
+    bool *has_state, int *state, cbl_yarena *a)
+{
+	const struct arc_job	*j;
+	const void		**k;
+	const char		*e;
+	struct work		*w;
+
+	if (yang_refused(req))
+		return (EACCES);
+	if ((k = keys_of(target, 1, a)) == NULL)
+		return (EINVAL);
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	e = NULL;
+	j = confirm ? jobs_confirm(w, *(const uint64_t *)k[0], &e) :
+	    jobs_cancel(w, *(const uint64_t *)k[0], &e);
+	if (j == NULL)
+		return (said(req, e));
+	/* job-state's values are the operation's. */
+	if ((*has_state = j->has_state))
+		*state = j->state;
+	return (0);
+}
+
 
 int
 arcana_agent_agent_build_action(cbl_req *req, const struct cbl_bytes *target,
@@ -320,13 +514,19 @@ arcana_bird_bird_routes_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_bird_bird_routes_input *in,
     struct arcana_bird_bird_routes_output *out, cbl_yarena *a)
 {
+	struct arc_network_rsp	 r;
+	struct work		*w;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	(void)do_bird_routes(w, in->filter != NULL ? in->filter : "all", &r);
+	if (!r.ok)
+		return (said(req, r.error));
+	return (ybird_routes_from_json(r.json, a, out));
 }
 
 int
@@ -558,50 +758,22 @@ arcana_jails_jails_jail_arcfw_firewall_trace_action(cbl_req *req,
 }
 
 int
-arcana_jails_jails_jail_arcpkg_packages_refresh_action(cbl_req *req,
-    const struct cbl_bytes *target,
-    const struct arcana_jails_jails_jail_arcpkg_packages_refresh_input *in,
-    struct arcana_jails_jails_jail_arcpkg_packages_refresh_output *out,
-    cbl_yarena *a)
-{
-
-	(void)req;
-	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
-}
-
-int
-arcana_jails_jails_jail_arcpkg_packages_upgrade_action(cbl_req *req,
-    const struct cbl_bytes *target,
-    const struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input *in,
-    struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output *out,
-    cbl_yarena *a)
-{
-
-	(void)req;
-	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
-}
-
-int
 arcana_jails_jails_jail_kill_action(cbl_req *req,
     const struct cbl_bytes *target,
     const struct arcana_jails_jails_jail_kill_input *in,
     struct arcana_jails_jails_jail_kill_output *out, cbl_yarena *a)
 {
+	bool	hs, hj;
+	int	st, error;
 
-	(void)req;
-	(void)target;
 	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if ((error = jail_action(req, target, ARC_ACTION_KILL, &hs, &st, &hj,
+	    &out->jid, a)) != 0)
+		return (error);
+	if ((out->has_state = hs))
+		out->state = st;
+	out->has_jid = hj;
+	return (0);
 }
 
 int
@@ -610,13 +782,17 @@ arcana_jails_jails_jail_restart_action(cbl_req *req,
     const struct arcana_jails_jails_jail_restart_input *in,
     struct arcana_jails_jails_jail_restart_output *out, cbl_yarena *a)
 {
+	bool	hs, hj;
+	int	st, error;
 
-	(void)req;
-	(void)target;
 	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if ((error = jail_action(req, target, ARC_ACTION_RESTART, &hs, &st, &hj,
+	    &out->jid, a)) != 0)
+		return (error);
+	if ((out->has_state = hs))
+		out->state = st;
+	out->has_jid = hj;
+	return (0);
 }
 
 int
@@ -625,13 +801,17 @@ arcana_jails_jails_jail_start_action(cbl_req *req,
     const struct arcana_jails_jails_jail_start_input *in,
     struct arcana_jails_jails_jail_start_output *out, cbl_yarena *a)
 {
+	bool	hs, hj;
+	int	st, error;
 
-	(void)req;
-	(void)target;
 	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if ((error = jail_action(req, target, ARC_ACTION_START, &hs, &st, &hj,
+	    &out->jid, a)) != 0)
+		return (error);
+	if ((out->has_state = hs))
+		out->state = st;
+	out->has_jid = hj;
+	return (0);
 }
 
 int
@@ -640,13 +820,17 @@ arcana_jails_jails_jail_stop_action(cbl_req *req,
     const struct arcana_jails_jails_jail_stop_input *in,
     struct arcana_jails_jails_jail_stop_output *out, cbl_yarena *a)
 {
+	bool	hs, hj;
+	int	st, error;
 
-	(void)req;
-	(void)target;
 	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if ((error = jail_action(req, target, ARC_ACTION_STOP, &hs, &st, &hj,
+	    &out->jid, a)) != 0)
+		return (error);
+	if ((out->has_state = hs))
+		out->state = st;
+	out->has_jid = hj;
+	return (0);
 }
 
 int
@@ -674,13 +858,16 @@ arcana_jobs_jobs_job_cancel_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_jobs_jobs_job_cancel_input *in,
     struct arcana_jobs_jobs_job_cancel_output *out, cbl_yarena *a)
 {
+	bool	hs;
+	int	st;
+	int	error;
 
-	(void)req;
-	(void)target;
 	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if ((error = job_action(req, target, false, &hs, &st, a)) != 0)
+		return (error);
+	if ((out->has_state = hs))
+		out->state = st;
+	return (0);
 }
 
 int
@@ -689,25 +876,50 @@ arcana_jobs_jobs_job_confirm_action(cbl_req *req,
     const struct arcana_jobs_jobs_job_confirm_input *in,
     struct arcana_jobs_jobs_job_confirm_output *out, cbl_yarena *a)
 {
+	bool	hs;
+	int	st;
+	int	error;
 
-	(void)req;
-	(void)target;
 	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if ((error = job_action(req, target, true, &hs, &st, a)) != 0)
+		return (error);
+	if ((out->has_state = hs))
+		out->state = st;
+	return (0);
 }
 
 int
 arcana_jobs_submit_rpc(cbl_req *req, const struct arcana_jobs_submit_input *in,
     struct arcana_jobs_submit_output *out, cbl_yarena *a)
 {
+	const struct arc_job_spec	*specs;
+	const struct arc_job		*v;
+	struct work			*w;
+	const char			*e;
+	uint64_t			*ids;
+	size_t				 n, nv, bad, i;
+	int				 error;
 
-	(void)req;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	bad = 0;
+	if ((error = yjobs_specs(in, a, &specs, &n, &bad)) != 0)
+		return (said(req, error == ENOMEM ? "out of memory" :
+		    in->change.n == 0 ? "no change to make" : "a change is "
+		    "no kind of job, or not the one it names"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	/* As job-submit: each change checked, the queue's room. */
+	if (jobs_submit_checked(req, specs, n, w, &v, &nv, &e) != 0)
+		return (said(req, e));
+	if ((ids = cbl_yarena_alloc(a, (nv > 0 ? nv : 1) * sizeof(*ids))) ==
+	    NULL)
+		return (ENOMEM);
+	for (i = 0; i < nv; i++)
+		ids[i] = v[i].id;
+	out->id.n = nv;
+	out->id.v = ids;
+	return (0);
 }
 
 int
@@ -802,13 +1014,29 @@ arcana_log_logs_read_action(cbl_req *req, const struct cbl_bytes *target,
     const struct arcana_log_logs_read_input *in,
     struct arcana_log_logs_read_output *out, cbl_yarena *a)
 {
+	struct arc_log_rsp	 r;
+	struct work		*w;
+	int			 error;
 
-	(void)req;
 	(void)target;
-	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	if (in->name == NULL || (in->name[0] != '@' && !log_name_ok(in->name)))
+		return (said(req, "a log is named with letters, digits and "
+		    ". _ -"));
+	if (in->jail != NULL && !valid_jail(in->jail))
+		return (said(req, "invalid jail name"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	w->jail = in->jail;
+	memset(&r, 0, sizeof(r));
+	(void)do_log(w, in->name, in->filter, in->has_position,
+	    in->position, in->has_lines ? in->lines : 0, &r);
+	if (!r.ok)
+		return (said(req, r.error));
+	if ((error = ylog_read_from_json(r.json, a, out)) != 0)
+		return (error);
+	return (0);
 }
 
 int
@@ -887,13 +1115,29 @@ arcana_packages_packages_refresh_action(cbl_req *req,
     const struct arcana_packages_packages_refresh_input *in,
     struct arcana_packages_packages_refresh_output *out, cbl_yarena *a)
 {
+	struct arc_packages_rsp	 r;
+	const void		**k;
+	const char		*jail = NULL;
+	struct work		*w;
 
-	(void)req;
-	(void)target;
-	(void)in;
 	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if (yang_refused(req))
+		return (EACCES);
+	/* The host's packages, or a jail's (the target's key, the jail). */
+	if ((k = keys_of(target, 1, a)) != NULL &&
+	    !valid_jail(jail = *(const char *const *)k[0]))
+		return (said(req, "invalid jail name"));
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	memset(&r, 0, sizeof(r));
+	if (!change_begin(jail != NULL ? wfmt(w, "packages of %s (refresh)",
+	    jail) : "packages (refresh)"))
+		return (said(req, "not done: arcana-agent is stopping"));
+	/* ip-version's values are pkg-ip's: 0, 4, 6. */
+	(void)do_packages(w, jail, true, false, in->has_ip_version ?
+	    (uint8_t)in->ip_version : 0, false, &r);
+	change_end();
+	return (r.ok ? 0 : said(req, r.error));
 }
 
 int
@@ -1006,13 +1250,14 @@ arcana_processes_processes_process_renice_action(cbl_req *req,
     const struct arcana_processes_processes_process_renice_input *in,
     struct arcana_processes_processes_process_renice_output *out, cbl_yarena *a)
 {
+	struct work	*w;
 
-	(void)req;
-	(void)target;
-	(void)in;
 	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	if ((w = ywork(a)) == NULL)
+		return (ENOMEM);
+	return (process_action(req, target, "renice", in->has_nice ?
+	    wfmt(w, "%d", in->nice) : NULL, in->has_start_time,
+	    in->start_time, a));
 }
 
 int
@@ -1021,13 +1266,9 @@ arcana_processes_processes_process_signal_action(cbl_req *req,
     const struct arcana_processes_processes_process_signal_input *in,
     struct arcana_processes_processes_process_signal_output *out, cbl_yarena *a)
 {
-
-	(void)req;
-	(void)target;
-	(void)in;
 	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	return (process_action(req, target, "signal", in->signal,
+	    in->has_start_time, in->start_time, a));
 }
 
 int
@@ -1105,12 +1346,10 @@ arcana_services_services_service_reload_action(cbl_req *req,
     struct arcana_services_services_service_reload_output *out, cbl_yarena *a)
 {
 
-	(void)req;
-	(void)target;
 	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	return (service_action(req, target, ARC_SERVICE_ACTION_RELOAD,
+	    &out->has_running, &out->running, &out->has_pid, &out->pid,
+	    &out->status, a));
 }
 
 int
@@ -1120,12 +1359,10 @@ arcana_services_services_service_restart_action(cbl_req *req,
     struct arcana_services_services_service_restart_output *out, cbl_yarena *a)
 {
 
-	(void)req;
-	(void)target;
 	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	return (service_action(req, target, ARC_SERVICE_ACTION_RESTART,
+	    &out->has_running, &out->running, &out->has_pid, &out->pid,
+	    &out->status, a));
 }
 
 int
@@ -1135,12 +1372,10 @@ arcana_services_services_service_start_action(cbl_req *req,
     struct arcana_services_services_service_start_output *out, cbl_yarena *a)
 {
 
-	(void)req;
-	(void)target;
 	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	return (service_action(req, target, ARC_SERVICE_ACTION_START,
+	    &out->has_running, &out->running, &out->has_pid, &out->pid,
+	    &out->status, a));
 }
 
 int
@@ -1150,12 +1385,10 @@ arcana_services_services_service_stop_action(cbl_req *req,
     struct arcana_services_services_service_stop_output *out, cbl_yarena *a)
 {
 
-	(void)req;
-	(void)target;
 	(void)in;
-	(void)out;
-	(void)a;
-	return (EOPNOTSUPP);
+	return (service_action(req, target, ARC_SERVICE_ACTION_STOP,
+	    &out->has_running, &out->running, &out->has_pid, &out->pid,
+	    &out->status, a));
 }
 
 int

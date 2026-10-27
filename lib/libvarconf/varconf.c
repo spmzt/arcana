@@ -1717,8 +1717,8 @@ out:
 }
 
 /*
- * Whether one of the user's files sets name, as the conflict rule asks
- * (PLAN-SDN-YANG 2.3.2): a fragment's variable another file of the
+ * Whether one of the user's files sets name, as the conflict rule asks:
+ * a fragment's variable another file of the
  * service sets too is read one way by the service and another by those
  * that read rc.conf alone.  Any assignment counts, conditional or
  * opaque ones too.  -1, EEXIST, the file and line said; 0: none.

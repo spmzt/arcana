@@ -9,9 +9,8 @@
  * CBOR maps keyed by attribute number, written the way CDDL writes
  * them, with the attribute sets they nest.  The schema is the family's
  * own (share/arcana/arcana.yaml), made into schema.json by the build.
- * Beside it, for an operation converted to YANG (PLAN-SDN-YANG Y-3,
- * share/arcana/yang-ops), the module it is now, as its RFC 8340 tree
- * (yang.json).
+ * Beside it, for an operation converted to YANG
+ * (share/arcana/yang-ops), its module, as its RFC 8340 tree (yang.json).
  */
 
 #include <stdio.h>

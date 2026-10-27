@@ -179,6 +179,11 @@ do_action(struct work *w, const char *name, uint8_t action,
 
 	rsp->has_ok = true;
 	rsp->ok = false;
+	/* Whoever asks (the operation, a YANG action): jail(8) gets it. */
+	if (name == NULL || !valid_jail(name)) {
+		rsp->error = "invalid jail name";
+		return (0);
+	}
 	conf_read(w, &conf);
 	cj = conf_jail(&conf, name);
 	jid = jail_lookup(w, name);

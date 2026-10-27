@@ -5,7 +5,7 @@
  */
 
 /*
- * Luxuria: BIRD as YANG, arcana-bird (PLAN-SDN-YANG 3.1.8): the bird
+ * Luxuria: BIRD as YANG, arcana-bird: the bird
  * kind of the network operation (bird.c, do_bird()) read back as the
  * module's state, the bird-routes kind as the routes action's output,
  * the bird-config operation's reply as the configuration's file.

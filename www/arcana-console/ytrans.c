@@ -5,11 +5,10 @@
  */
 
 /*
- * The Network tab's interfaces from the standard models
- * (docs/PLAN-SDN-YANG.md 1.11.2): a GET of ietf-interfaces' interfaces
- * and of RFC 8529's network instances, by cblink's YANG family (family
- * 1), made into the rows the agent's interfaces table has, so that the
- * page shows them as it did:
+ * The Network tab's interfaces from the standard models: a GET of
+ * ietf-interfaces' interfaces and of RFC 8529's network instances, by
+ * cblink's YANG family (family 1), made into the rows the agent's
+ * interfaces table has:
  *
  *	name, description		the interface's
  *	up				enabled (IFF_UP)
@@ -46,6 +45,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <time.h>
@@ -258,5 +258,119 @@ ytrans_interfaces(cbl_conn *conn, bool v4, bool v6, ucl_object_t **out,
 	cbl_yarena_free(a);
 	cbl_msg_free(rep);
 	*out = top;
+	return (0);
+}
+
+/* A top-level data node by its name, in any module; NULL: none. */
+static const struct cbl_ynode *
+top_named(const char *name)
+{
+	const struct cbl_ymodule	*m;
+	uint32_t			 i, k;
+
+	for (i = 0; i < ymodel_schema.nmod; i++) {
+		m = ymodel_schema.mod[i];
+		for (k = 0; k < m->ntop; k++)
+			if ((m->top[k]->kind == CBL_YN_CONTAINER ||
+			    m->top[k]->kind == CBL_YN_LIST) &&
+			    strcmp(m->top[k]->name, name) == 0)
+				return (m->top[k]);
+	}
+	return (NULL);
+}
+
+int
+ytrans_data(cbl_conn *conn, const char *names, ucl_object_t **out,
+    char *err, size_t errlen)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*n;
+	struct cbl_ybuf			 b = { NULL, 0, 0 };
+	struct ucl_parser		*p;
+	cbl_msg				*req, *rep = NULL;
+	cbl_yarena			*a;
+	uint64_t			 sids[16];
+	char				 copy[256], *s, *w, *json;
+	size_t				 ns = 0;
+	uint32_t			 i, k;
+	void				*data;
+	bool				 first = true;
+	int				 error;
+
+	*out = NULL;
+	err[0] = '\0';
+	snprintf(copy, sizeof(copy), "%s", names != NULL ? names : "");
+	for (s = copy; (w = strsep(&s, ",")) != NULL;) {
+		if (w[0] == '\0')
+			continue;
+		if ((n = top_named(w)) == NULL) {
+			snprintf(err, errlen, "%s is no node the agent serves",
+			    w);
+			return (ENOENT);
+		}
+		if (ns == nitems(sids)) {
+			snprintf(err, errlen, "%zu nodes at most",
+			    nitems(sids));
+			return (E2BIG);
+		}
+		sids[ns++] = n->sid;
+	}
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_GET, 0, &req)) != 0 || (ns > 0 &&
+	    (error = cbl_msg_put_yget(req, sids, ns)) != 0)) {
+		snprintf(err, errlen, "%s", strerror(error));
+		return (error);
+	}
+	if ((error = cbl_request(conn, req, &rep, -1)) != 0) {
+		snprintf(err, errlen, "%s", rep != NULL &&
+		    cbl_msg_err_str(rep) != NULL ? cbl_msg_err_str(rep) :
+		    strerror(error));
+		cbl_msg_free(rep);
+		return (error);
+	}
+	if ((a = cbl_yarena_new()) == NULL) {
+		cbl_msg_free(rep);
+		return (ENOMEM);
+	}
+	/* Each module's top-level nodes the reply has, as RFC 7951 has
+	 * them: one object of all, its members qualified. */
+	for (i = 0; error == 0 && i < ymodel_schema.nmod; i++) {
+		m = ymodel_schema.mod[i];
+		if (m->size == 0 || (data = cbl_yarena_alloc(a, m->size)) ==
+		    NULL)
+			continue;
+		for (k = 0; error == 0 && k < m->ntop; k++) {
+			n = m->top[k];
+			if (n->kind != CBL_YN_CONTAINER && n->kind != CBL_YN_LIST)
+				continue;
+			if ((error = cbl_msg_ydecode_member(rep, n, data, a, 0,
+			    err, errlen)) == ENOENT)
+				error = 0;
+		}
+		if (error == 0)
+			error = cbl_yjson_members(m, data, &b, &first);
+	}
+	cbl_yarena_free(a);
+	cbl_msg_free(rep);
+	if (error != 0) {
+		cbl_ybuf_free(&b);
+		return (error);
+	}
+	if (asprintf(&json, "{%.*s}", (int)b.len, b.p != NULL ?
+	    (const char *)b.p : "") == -1) {
+		cbl_ybuf_free(&b);
+		return (ENOMEM);
+	}
+	cbl_ybuf_free(&b);
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	if (ucl_parser_add_string(p, json, 0))
+		*out = ucl_parser_get_object(p);
+	ucl_parser_free(p);
+	free(json);
+	if (*out == NULL) {
+		snprintf(err, errlen, "the agent's JSON did not read back");
+		return (EINVAL);
+	}
 	return (0);
 }

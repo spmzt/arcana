@@ -5,12 +5,11 @@
  */
 
 /*
- * Invidia: the SD-WAN edge as YANG, arcana-sdwan (PLAN-SDN-YANG
- * 3.1.12): what the console writes (sdwan-rules, sdwan-steer, the
- * instances of sdwan-bird, -dhcp, -dns, -proxy and -ids) read back as
- * the module's configuration, and the sdwan read (probe.c do_sdwan()
- * with sdwan.c's, the luxuria instances', record.c's, sa.c's and
- * faults.c's parts) as its state.
+ * Invidia: the SD-WAN edge as YANG, arcana-sdwan: what the console
+ * writes (sdwan-rules, sdwan-steer, the instances of sdwan-bird, -dhcp,
+ * -dns, -proxy and -ids) read back as the module's configuration, and
+ * the sdwan read (probe.c do_sdwan() with sdwan.c's, the luxuria
+ * instances', record.c's, sa.c's and faults.c's parts) as its state.
  */
 
 #include <sys/param.h>
@@ -335,30 +334,19 @@ state_enum(const char *s)
 /*
  * An edge's rules, as the kernel has them, and its steering, from o
  * (the sdwan read, or one of its edges) into out's rules, steered and
- * steer.  A jail's edge has them in types of their own, of the same
- * shape (the grouping edge-state): filled here and given over.
+ * steer: the grouping edge-state's structs (cg:struct), the host's and
+ * a jail edge's alike.
  */
-_Static_assert(sizeof(struct arcana_sdwan_sdwan_state_rules) ==
-    sizeof(struct arcana_sdwan_sdwan_state_edge_rules), "edge-state");
-_Static_assert(sizeof(struct arcana_sdwan_sdwan_state_rules_table) ==
-    sizeof(struct arcana_sdwan_sdwan_state_edge_rules_table), "edge-state");
-_Static_assert(sizeof(struct arcana_sdwan_sdwan_state_rules_counter) ==
-    sizeof(struct arcana_sdwan_sdwan_state_edge_rules_counter), "edge-state");
-_Static_assert(sizeof(struct arcana_sdwan_sdwan_state_steer) ==
-    sizeof(struct arcana_sdwan_sdwan_state_edge_steer), "edge-state");
-_Static_assert(sizeof(struct arcana_sdwan_sdwan_state_steer_candidate) ==
-    sizeof(struct arcana_sdwan_sdwan_state_edge_steer_candidate),
-    "edge-state");
 
 static int
 edge_state(cbl_yarena *a, const ucl_object_t *top,
     struct arcana_sdwan_sdwan_state *out)
 {
-	struct arcana_sdwan_sdwan_state_rules		*ru;
-	struct arcana_sdwan_sdwan_state_rules_table	*rt;
-	struct arcana_sdwan_sdwan_state_rules_counter	*rc;
-	struct arcana_sdwan_sdwan_state_steer		*st;
-	struct arcana_sdwan_sdwan_state_steer_candidate	*sc;
+	struct arcana_sdwan_rules		*ru;
+	struct arcana_sdwan_rules_table	*rt;
+	struct arcana_sdwan_rules_counter	*rc;
+	struct arcana_sdwan_steer		*st;
+	struct arcana_sdwan_steer_candidate	*sc;
 	const ucl_object_t				*e, *o, *ee;
 	ucl_object_iter_t				 it, eit;
 	const char					*v;
@@ -493,11 +481,11 @@ ysd_state_from_json(const char *json, cbl_yarena *a,
 		memset(&one, 0, sizeof(one));
 		if (edge_state(a, e, &one) != 0)
 			goto nomem;
-		ed[k].rules = (const void *)one.rules;
+		ed[k].rules = one.rules;
 		ed[k].has_steered = one.has_steered;
 		ed[k].steered = one.steered;
 		ed[k].steer.n = one.steer.n;
-		ed[k].steer.v = (const void *)one.steer.v;
+		ed[k].steer.v = one.steer.v;
 		k++;
 	}
 	out->edge.n = k;

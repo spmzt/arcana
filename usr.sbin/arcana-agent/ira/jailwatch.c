@@ -9,7 +9,7 @@
  * EVFILT_JAIL): a jail made is a child of the host's or of another
  * jail, NOTE_JAIL_CHILD with its number; each is then watched for
  * NOTE_JAIL_REMOVE, and for children of its own: a jail in a jail, a
- * logical network element in another (PLAN-SDN-YANG 2.7.5), is told as
+ * logical network element in another, is told as
  * one of the host's is.  Each is an event, jail-state, with the jail's
  * name and "running" or "stopped", as it happens: nothing has to look
  * again to see it.

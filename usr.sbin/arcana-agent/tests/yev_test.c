@@ -115,6 +115,34 @@ event(const struct arcana_events_events_event *e)
 		    e->crash->signal, e->crash->core ? "yes" : "no", str(
 		    e->crash->reason));
 		break;
+	case ARCANA_EVENTS_EVENTS_EVENT_DATA_CONF:
+		printf("conf %s", str(e->conf->file));
+		break;
+	case ARCANA_EVENTS_EVENTS_EVENT_DATA_DEVICE:
+		printf("device %s %s", str(e->device->cdev),
+		    str(e->device->state));
+		break;
+	case ARCANA_EVENTS_EVENTS_EVENT_DATA_ZFS:
+		printf("zfs %s pool=%s", str(e->zfs->type), str(e->zfs->pool));
+		break;
+	case ARCANA_EVENTS_EVENTS_EVENT_DATA_PROCS:
+		printf("procs started=%u exited=%u", e->procs->started,
+		    e->procs->exited);
+		break;
+	case ARCANA_EVENTS_EVENTS_EVENT_DATA_MONITOR:
+		printf("monitor %s %s value=%jd threshold=%jd over=%s on %s",
+		    str(e->monitor->id), str(e->monitor->metric),
+		    (intmax_t)e->monitor->value, (intmax_t)e->monitor->threshold,
+		    e->monitor->over ? "yes" : "no", str(e->monitor->interface));
+		break;
+	case ARCANA_EVENTS_EVENTS_EVENT_DATA_ALERT:
+		printf("alert %s sid=%u rev=%u %s:%u -> %s:%u %s on %s "
+		    "severity=%u %s: %s", str(e->alert->instance), e->alert->sid,
+		    e->alert->rev, str(e->alert->src), e->alert->sport,
+		    str(e->alert->dst), e->alert->dport, str(e->alert->proto),
+		    str(e->alert->interface), e->alert->severity,
+		    str(e->alert->action), str(e->alert->signature));
+		break;
 	default:
 		printf("no data");
 	}

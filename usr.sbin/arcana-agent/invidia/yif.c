@@ -6,7 +6,7 @@
 
 /*
  * Invidia: the interfaces as ietf-interfaces (RFC 8343) has them in the
- * operational datastore (PLAN-SDN-YANG 1.9.1), read as ifconfig(8) and
+ * operational datastore, read as ifconfig(8) and
  * netstat(1) -i read them:
  *
  * - every interface getifaddrs(3) gives, by its AF_LINK entry: its
@@ -19,7 +19,7 @@
  *   discontinuity-time);
  * - its flags: IFF_UP is enabled and admin-status;
  * - its description: SIOCGIFDESCR, as ifconfig(8) shows it;
- * - its layers (PLAN-SDN-YANG 1.9.2), lower-layer-if and the other end's
+ * - its layers, lower-layer-if and the other end's
  *   higher-layer-if: a vlan's parent (SIOCGETVLAN), a lagg's ports
  *   (SIOCGLAGG), a bridge's members (SIOCGDRVSPEC, BRDGGIFS), as
  *   ifconfig(8) asks them.  if_type does not tell a lagg: it stays
@@ -28,7 +28,7 @@
  *   InfiniBand interface, and one that answers is IANA's ieee8023adLag,
  *   the aggregate; SIOCGETVLAN of an l2vlan and of a lagg's port, which
  *   may be a vlan; a port that is not is the ethernetCsmacd it was;
- * - what arcana-interfaces adds (PLAN-SDN-YANG 1.9.3), each leaf as its
+ * - what arcana-interfaces adds, each leaf as its
  *   description in the module says: the driver name, groups, the tunnel
  *   FIB, capabilities, media, and the parts of a vlan, a lagg and a
  *   bridge, from the ioctls that tell their layers; an epair end's other

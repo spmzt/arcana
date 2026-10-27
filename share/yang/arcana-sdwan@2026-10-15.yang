@@ -3,6 +3,9 @@ module arcana-sdwan {
   namespace "urn:arcana:yang:arcana-sdwan";
   prefix arcsd;
 
+  import cblink-gen {
+    prefix cg;
+  }
   import ietf-inet-types {
     prefix inet;
     reference
@@ -42,14 +45,13 @@ module arcana-sdwan {
   revision 2026-10-15 {
     description
       "Initial revision.";
-    reference
-      "Arcana docs/PLAN-SDN-YANG.md step 3.1.12.";
   }
 
   grouping edge-state {
     description
       "An edge's rules as the kernel has them, and its steering.";
     container rules {
+      cg:struct "rules";
       description
         "The rules as the kernel has them.";
       leaf set {
@@ -114,6 +116,7 @@ module arcana-sdwan {
         "The policy tables are filled as the steer says.";
     }
     list steer {
+      cg:struct "steer";
       key "table prefix";
       description
         "What the policy tables hold now.";

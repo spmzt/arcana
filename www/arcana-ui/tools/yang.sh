@@ -22,8 +22,9 @@ trees)
 	gen=$2 dir=$3 map=$4 out=$5
 	mkdir -p "$out"
 	for m in $(awk '!/^#/ && NF == 2 { print $2 }' "$map" | sort -u); do
+		# cblink's own modules (cblink-gen's extensions) beside.
 		"$gen" -m tree -b "${m%@*}" -o "$out" -p "$dir" \
-		    "$dir/$m.yang" >/dev/null
+		    -p "$dir/../../cblink/share/yang" "$dir/$m.yang" >/dev/null
 	done
 	;;
 json)

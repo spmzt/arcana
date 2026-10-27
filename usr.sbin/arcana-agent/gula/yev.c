@@ -5,7 +5,7 @@
  */
 
 /*
- * Gula: the events as YANG, arcana-events (PLAN-SDN-YANG 3.1.7): the
+ * Gula: the events as YANG, arcana-events: the
  * events operation's JSON (events.c) read back into the module's
  * structs, each event's kind an identity and its data the case of
  * that kind, typed; one event's JSON (the event mcast) the same, as
@@ -68,6 +68,20 @@ addr_union(cbl_yarena *a, const ucl_object_t *o, const char *key, void *u)
 		return (false);
 	s->which = strchr(v, ':') != NULL ? 1 : 0;
 	s->v.m0 = v;
+	return (true);
+}
+
+/* A number of o's, a double the agent printed, in thousandths. */
+static bool
+thousandths(const ucl_object_t *o, const char *key, int64_t *v)
+{
+	const ucl_object_t	*x;
+	double			 d;
+
+	if ((x = ucl_object_lookup(o, key)) == NULL ||
+	    !ucl_object_todouble_safe(x, &d))
+		return (false);
+	*v = (int64_t)(d * 1000 + (d < 0 ? -0.5 : 0.5));
 	return (true);
 }
 
@@ -272,6 +286,75 @@ data_of(cbl_yarena *a, const char *kind, const ucl_object_t *d, yevent *y)
 		c->reason = yj_str(a, d, "reason");
 		y->crash = c;
 		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_CRASH;
+	} else if (strcmp(kind, "conf") == 0) {
+		struct arcana_events_events_event_conf	*c;
+
+		if (!ALLOC(a, c))
+			return (ENOMEM);
+		c->file = yj_str(a, d, "file");
+		y->conf = c;
+		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_CONF;
+	} else if (strcmp(kind, "device") == 0) {
+		struct arcana_events_events_event_device	*c;
+
+		if (!ALLOC(a, c))
+			return (ENOMEM);
+		c->cdev = yj_str(a, d, "cdev");
+		c->state = yj_str(a, d, "state");
+		y->device = c;
+		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_DEVICE;
+	} else if (strcmp(kind, "zfs") == 0) {
+		struct arcana_events_events_event_zfs	*c;
+
+		if (!ALLOC(a, c))
+			return (ENOMEM);
+		c->type = yj_str(a, d, "type");
+		c->pool = yj_str(a, d, "pool");
+		y->zfs = c;
+		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_ZFS;
+	} else if (strcmp(kind, "procs") == 0) {
+		struct arcana_events_events_event_procs	*c;
+
+		if (!ALLOC(a, c))
+			return (ENOMEM);
+		YJ_NUM(d, "started", c, started);
+		YJ_NUM(d, "exited", c, exited);
+		y->procs = c;
+		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_PROCS;
+	} else if (strcmp(kind, "monitor-threshold") == 0) {
+		struct arcana_events_events_event_monitor	*c;
+
+		if (!ALLOC(a, c))
+			return (ENOMEM);
+		c->id = yj_str(a, d, "id");
+		c->metric = yj_str(a, d, "metric");
+		c->has_value = thousandths(d, "value", &c->value);
+		c->has_threshold = thousandths(d, "threshold", &c->threshold);
+		c->over = yj_yes(d, "over", &c->has_over);
+		c->interface = yj_str(a, d, "interface");
+		y->monitor = c;
+		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_MONITOR;
+	} else if (strcmp(kind, "sdwan-ids") == 0) {
+		struct arcana_events_events_event_alert	*c;
+
+		if (!ALLOC(a, c))
+			return (ENOMEM);
+		c->instance = yj_str(a, d, "name");
+		c->time = yj_str(a, d, "time");
+		c->src = yj_str(a, d, "src");
+		YJ_NUM(d, "sport", c, sport);
+		c->dst = yj_str(a, d, "dst");
+		YJ_NUM(d, "dport", c, dport);
+		c->proto = yj_str(a, d, "proto");
+		c->interface = yj_str(a, d, "iface");
+		YJ_NUM(d, "sid", c, sid);
+		YJ_NUM(d, "rev", c, rev);
+		c->signature = yj_str(a, d, "signature");
+		c->category = yj_str(a, d, "category");
+		YJ_NUM(d, "severity", c, severity);
+		c->action = yj_str(a, d, "action");
+		y->alert = c;
+		y->data = ARCANA_EVENTS_EVENTS_EVENT_DATA_ALERT;
 	}
 	return (0);
 }
@@ -369,5 +452,11 @@ yev_one_from_json(const char *json, cbl_yarena *a,
 	out->job = (const void *)y.job;
 	out->jail_state = (const void *)y.jail_state;
 	out->crash = (const void *)y.crash;
+	out->conf = (const void *)y.conf;
+	out->device = (const void *)y.device;
+	out->zfs = (const void *)y.zfs;
+	out->procs = (const void *)y.procs;
+	out->monitor = (const void *)y.monitor;
+	out->alert = (const void *)y.alert;
 	return (0);
 }

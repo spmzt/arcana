@@ -510,6 +510,7 @@ job_free(struct qjob *j)
 	free((char *)(uintptr_t)j->spec.snapshot);
 	free((char *)(uintptr_t)j->spec.copy);
 	free((char *)(uintptr_t)j->spec.path);
+	free((char *)(uintptr_t)j->spec.release);
 	/* A key may ride in either: not left in freed memory. */
 	if (j->spec.text != NULL)
 		explicit_bzero((char *)(uintptr_t)j->spec.text,

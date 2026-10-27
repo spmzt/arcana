@@ -1561,7 +1561,7 @@ uni_prefixes(const ucl_object_t *ep, ucl_object_t *out)
 
 	u = ucl_object_lookup(ep, "uni");
 	if (u == NULL && ucl_object_lookup(ep, "remote") != NULL) {
-		/* A remote end point's: the identities' addresses (SASE-3). */
+		/* A remote end point's: the identities' addresses. */
 		ucl_array_append(out, S(str(ucl_object_lookup(ep, "remote"),
 		    "prefix")));
 		return;
@@ -1645,7 +1645,7 @@ breakout_uni_routes(struct plan *pl, const char *sid, const ucl_object_t *sw,
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
 		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
-			continue;	/* a remote end point (SASE-3) */
+			continue;	/* a remote end point */
 		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
 		for (i = 0; i < 2; i++) {
 			v = ucl_object_lookup(u, fams[i]);
@@ -1673,13 +1673,6 @@ breakout_uni_routes(struct plan *pl, const char *sid, const ucl_object_t *sw,
 	}
 }
 
-/*
- * A remote end point's addresses (SASE-3): the edge's own is the
- * prefix's first host; each identity's is kept in the allocations as
- * ident:SWVC/EP/NAME with its host number, so that it keeps it while
- * others come and go, a new one taking the lowest free from the
- * second.
- */
 /* An identity's zone: its group's when it is in one, else its own. */
 static const char *
 ident_zone(const ucl_object_t *r, const ucl_object_t *id)
@@ -1735,6 +1728,13 @@ host_pooled(const ucl_object_t *r, const struct net *n, uint64_t host)
 	return (false);
 }
 
+/*
+ * A remote end point's addresses: the edge's own is the
+ * prefix's first host; each identity's is kept in the allocations as
+ * ident:SWVC/EP/NAME with its host number, so that it keeps it while
+ * others come and go, a new one taking the lowest free from the
+ * second.
+ */
 static bool
 remote_addr(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
     const char *name, char *buf, size_t len)
@@ -1801,7 +1801,7 @@ remote_addr(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
 
 /*
  * Is an identity still authorised: issued within the remote's
- * re-authorisation interval, when it has one (SASE-3)?  Not so, it has
+ * re-authorisation interval, when it has one?  Not so, it has
  * no peer and no place in the zone table until it is issued again.
  */
 static bool
@@ -1818,7 +1818,7 @@ identity_live(const ucl_object_t *r, const ucl_object_t *id, time_t now)
 }
 
 /*
- * A remote end point (SASE-3): its wg interface in the service's table
+ * A remote end point: its wg interface in the service's table
  * with the edge's own address, listening on its port; each identity a
  * peer allowed its address alone, so that the rules tell it by that
  * address as they do a UNI's host.  An identity gone, or past its
@@ -2199,7 +2199,7 @@ dhcp_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
 		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
-			continue;	/* a remote end point (SASE-3) */
+			continue;	/* a remote end point */
 		ifn = uni_ifname(pl, sw, ep, vif, sizeof(vif));
 		for (i = 0; i < 2; i++) {
 			v = ucl_object_lookup(u, i == 0 ? "ipv4" : "ipv6");
@@ -2328,8 +2328,6 @@ static bool	 remote_addr(struct plan *, const ucl_object_t *,
 		    const ucl_object_t *, const char *, char *, size_t);
 static const char *uni_ifname(struct plan *, const ucl_object_t *,
 		    const ucl_object_t *, char *, size_t);
-
-/* ---- Security functions (MEF 138) --------------------------------- */
 
 /*
  * The function policy of a function in a security policy, and its place
@@ -2603,7 +2601,7 @@ edge_own4(struct plan *pl, const ucl_object_t *sw, const char *sid,
 /*
  * A zone's prefixes at an edge, as its table has them: its own, all of
  * them for Default, and the addresses of its identities at the edge's
- * remote end points (SASE-3); into out.
+ * remote end points; into out.
  */
 static void
 zone_pfx(struct plan *pl, const ucl_object_t *sw, const char *sid,
@@ -3169,12 +3167,11 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 	}
 }
 
-/* The rules suricata-update keeps, where its defaults put them. */
 /* The divert port of a service's Suricata, where it prevents. */
 #define	IDS_PORT(fib)	(8000 + (int)(fib))
 
 /*
- * A service's intrusion detection (SASE-4, the ids criterion, Arcana's
+ * A service's intrusion detection (the ids criterion, Arcana's
  * own: no MEF Security Function is intrusion detection), as
  * its policies name it: the rules of its own, one a line, each once,
  * whether the ruleset is added, and whether it prevents (one of its
@@ -3271,7 +3268,7 @@ ids_spec(const ucl_object_t *sw, const ucl_object_t *ifs, bool ruleset)
 }
 
 /*
- * Each edge's intrusion detection (SASE-4): an instance per service
+ * Each edge's intrusion detection: an instance per service
  * whose policies name a security policy with ids, where the edge has an
  * end point of the service, watching the service's UNIs here; Suricata
  * is a plugin the edge has installed, which the apply tells when it has
@@ -3396,7 +3393,7 @@ dns_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
 		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
-			continue;	/* a remote end point (SASE-3) */
+			continue;	/* a remote end point */
 		for (i = 0; i < 2; i++) {
 			v = ucl_object_lookup(u, i == 0 ? "ipv4" : "ipv6");
 			if (str(v, "prefix") == NULL)
@@ -4884,13 +4881,6 @@ app_has(const ucl_object_t *afs, const char *app)
 }
 
 /*
- * The MSS to clamp TCP to on a tunnel of a UCS, for a family: what
- * its tunnel entry says, or for auto 1500 less the tunnel's overhead
- * (gre 24, gif 20, geneve 50, wg 60, uswe 73), IPsec's 64 under gre,
- * gif and geneve, and 20 more over an IPv6 underlay, less the inner
- * headers (40 for IPv4, 60 for IPv6); 0 when none is to be clamped.
- */
-/*
  * What a tunnel's kind takes off the outer MTU: its own header (gre
  * 24 with its key, gif 20, geneve 50, wg 60, uswe 73), IPsec's 64 when
  * ESP is under it, and 20 more when the outer packets are IPv6.
@@ -4935,6 +4925,13 @@ tunnel_mtu(const ucl_object_t *doc, const ucl_object_t *t,
 	return (1500 - tunnel_overhead(t, end));
 }
 
+/*
+ * The MSS to clamp TCP to on a tunnel of a UCS, for a family: what
+ * its tunnel entry says, or for auto 1500 less the tunnel's overhead
+ * (gre 24, gif 20, geneve 50, wg 60, uswe 73), IPsec's 64 under gre,
+ * gif and geneve, and 20 more over an IPv6 underlay, less the inner
+ * headers (40 for IPv4, 60 for IPv6); 0 when none is to be clamped.
+ */
 static int
 tunnel_mss(const ucl_object_t *doc, const ucl_object_t *t,
     const ucl_object_t *end, int fam)
@@ -5075,7 +5072,7 @@ own_words(struct plan *pl, const ucl_object_t *sw, const char *sid,
 }
 
 /*
- * The groups of a remote end point (SASE-3): a table each of its live
+ * The groups of a remote end point: a table each of its live
  * members' addresses, and the members of two groups neither of which
  * reaches the other kept apart, both ways, before the zone table
  * sends anyone on.
@@ -5514,7 +5511,7 @@ rules_build(struct plan *pl, const char *sid)
 				}
 			}
 			/* The identities of the zone at this edge's remote end
-			 * points (SASE-3): each by its address; a Default
+			 * points: each by its address; a Default
 			 * zone has them already. */
 			if (ucl_object_type(v) != UCL_STRING) {
 				const ucl_object_t	*rep, *id;
@@ -6089,7 +6086,6 @@ sw_routes(const ucl_object_t *sw)
 	return (false);
 }
 
-/* BIRD's channel of a family, with what comes in and goes out. */
 /* A channel of a protocol, with what else it says (next hop self). */
 static void
 bird_channel_x(struct buf *b, const char *fam, int64_t pref,
@@ -6102,6 +6098,7 @@ bird_channel_x(struct buf *b, const char *fam, int64_t pref,
 	    "\t\texport %s;\n%s\t};\n", fam, (intmax_t)pref, export, extra);
 }
 
+/* BIRD's channel of a family, with what comes in and goes out. */
 static void
 bird_channel(struct buf *b, const char *fam, int64_t pref,
     const char *export)
@@ -6600,7 +6597,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
 		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
-			continue;	/* a remote end point (SASE-3) */
+			continue;	/* a remote end point */
 		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
 		snprintf(ifaces + strlen(ifaces), sizeof(ifaces) - strlen(ifaces),
 		    "%s\"%s\"", n++ > 0 ? ", " : "", ifn);
@@ -6823,7 +6820,7 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
 		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
-			continue;	/* a remote end point (SASE-3) */
+			continue;	/* a remote end point */
 		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
 		symbol(str(ep, "id"), sym, sizeof(sym));
 		bird_routing(b, u, "UNI", str(u, "id"), sym, ifn, as);
@@ -8520,7 +8517,7 @@ run_main(void *arg)
 }
 
 
-/* ---- The lists (MEF 138, SASE-2): feeds fetched by the console, pasted
+/* ---- The lists (MEF 138): feeds fetched by the console, pasted
  * lists, versioned and named by the security policies -------------------- */
 
 #define	LISTS_FILE	"sdwan-lists.json"
@@ -8979,7 +8976,7 @@ api_sdwan_lists(struct http_request *req)
 
 static bool	 apply_now(ucl_object_t *, char *, size_t);
 
-/* ---- Identities (SASE-3): issued, listed, revoked ------------------- */
+/* ---- Identities: issued, listed, revoked ------------------- */
 
 /* A WireGuard key pair, X25519, both halves in base64. */
 static bool
@@ -9064,7 +9061,7 @@ remote_of(const ucl_object_t *doc, const char *swvc, const char *epid,
 }
 
 /*
- * An identity's session (S3.4): its peer as the edge's wg(8) tells it,
+ * An identity's session: its peer as the edge's wg(8) tells it,
  * the last handshake and the bytes each way; the edges' reads kept
  * by server id for the one listing.
  */
@@ -9275,7 +9272,7 @@ identity_config(struct plan *pl, const ucl_object_t *doc,
 }
 
 /*
- * /api/sdwan/identities (SASE-3): GET lists every remote end point's
+ * /api/sdwan/identities: GET lists every remote end point's
  * identities with their addresses; POST {swvc, end_point, name, zone,
  * user} issues one, a console user's (a sign-in key's name) or a
  * name's, its key pair made here, the private half in the WireGuard
@@ -9555,7 +9552,7 @@ identities_tick(const ucl_object_t *doc, time_t now)
 		    "apply: %s", why);
 }
 
-/* ---- The record (SASE-2): what the edges' security rules logged ----- */
+/* ---- The record: what the edges' security rules logged ----- */
 
 /*
  * GET /api/sdwan/record[.csv]?swvc=&policy=&edge=&since=: the edges'
@@ -9821,7 +9818,6 @@ sent_of(const ucl_object_t *st, const char *sid)
 	return (ucl_object_lookup(ucl_object_lookup(st, "steer_sent"), sid));
 }
 
-/* One tick: every edge's steering looked at, and sent where changed. */
 /* ---- The keys turned at the half-life (Mplify 119 R110, R112) -------- */
 
 #define	MGR_REKEY_RETRY_S	120	/* a rotation that failed, tried again after */
@@ -10123,6 +10119,7 @@ rekey_tick(ucl_object_t *st, time_t now)
 	ucl_object_unref(seen);
 }
 
+/* One tick: every edge's steering looked at, and sent where changed. */
 static void
 manager_tick(void)
 {

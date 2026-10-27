@@ -5,7 +5,7 @@
  */
 
 /*
- * Superbia: the agent as YANG, arcana-agent (PLAN-SDN-YANG 3.1.9): the
+ * Superbia: the agent as YANG, arcana-agent: the
  * transport operation's JSON (invidia/transport.c) and the tls
  * operation's status (tlsfiles.c) read back as the module's state;
  * config-export's bundle (bundle.c) as the export action's output,

@@ -1910,7 +1910,7 @@ monitors_qos_cleanup()
 	cleanup
 }
 
-# ietf-interfaces' layers (PLAN-SDN-YANG 1.9.2): a vlan on a lagg of two
+# ietf-interfaces' layers: a vlan on a lagg of two
 # ports, a bridge of two members, all made here of epairs and destroyed.
 atf_test_case yang_layers cleanup
 yang_layers_head()
@@ -1958,7 +1958,7 @@ yang_layers_cleanup()
 	true
 }
 
-# arcana-interfaces (PLAN-SDN-YANG 1.9.3): each kind of interface the
+# arcana-interfaces: each kind of interface the
 # agent's jobs make, read back.  What no job sets (a lagg's ports, a
 # vlan's priority, STP on a bridge's member) ifconfig does.
 YJAIL=arcana-ytest
@@ -2102,7 +2102,7 @@ yang_kinds_cleanup()
 	true
 }
 
-# The events ietf-interfaces' list changes by (PLAN-SDN-YANG 1.9.4),
+# The events ietf-interfaces' list changes by,
 # netlink(4)'s RTNLGRP_LINK as the agent watches it: an interface made,
 # changed, renamed (gone by its old name, come by its new one) and
 # destroyed, the collector's list agreeing after each.
@@ -2152,7 +2152,7 @@ yang_events_cleanup()
 	true
 }
 
-# ietf-ip's origins and statuses (PLAN-SDN-YANG 1.10.1) on a lab epair:
+# ietf-ip's origins and statuses on a lab epair:
 # deprecated, autoconfigured from the link address or not, link-local,
 # IPv4 link-local, a duplicate DAD finds against the other end in a vnet
 # jail, and IPv6 turned off.  (dhcp needs a server base has not.)
@@ -2220,8 +2220,8 @@ yang_ip_body()
 atf_test_case yang_ecmp cleanup
 yang_ecmp_head()
 {
-	atf_set "descr" "ietf-routing's next-hop-list (PLAN-SDN-YANG" \
-	    "2.4.2): a prefix with two gateways, IPv4 and IPv6, in a vnet" \
+	atf_set "descr" "ietf-routing's next-hop-list:" \
+	    "a prefix with two gateways, IPv4 and IPv6, in a vnet" \
 	    "jail's FIB"
 	atf_set "require.user" "root"
 }
@@ -2267,7 +2267,7 @@ atf_test_case yang_static_apply cleanup
 yang_static_apply_head()
 {
 	atf_set "descr" "rc.conf's static routes made a vnet jail's FIBs'" \
-	    "by netlink (PLAN-SDN-YANG 2.4.4), undone, and undone on a" \
+	    "by netlink, undone, and undone on a" \
 	    "failure"
 	atf_set "require.user" "root"
 }
@@ -2351,7 +2351,7 @@ inet6 ::/0 fe80::1%$b $b - static -
 atf_test_case yang_route_times cleanup
 yang_route_times_head()
 {
-	atf_set "descr" "ietf-routing's last-updated (PLAN-SDN-YANG 2.4.6):" \
+	atf_set "descr" "ietf-routing's last-updated:" \
 	    "a route added while route events are heard has the time, one" \
 	    "not seen to change none"
 	atf_set "require.user" "root"
@@ -2396,7 +2396,7 @@ yang_route_times_cleanup()
 atf_test_case yang_lne cleanup
 yang_lne_head()
 {
-	atf_set "descr" "logical network elements (PLAN-SDN-YANG 2.7.1): a" \
+	atf_set "descr" "logical network elements: a" \
 	    "vnet jail is one, a jail sharing the host's stack is not; as" \
 	    "jls says"
 	atf_set "require.user" "root"
@@ -2430,7 +2430,7 @@ atf_test_case yang_ni cleanup
 yang_ni_head()
 {
 	atf_set "descr" "network instances on a host with net.fibs=4" \
-	    "(PLAN-SDN-YANG 2.6.1): a vnet jail's, raised to 4"
+	    ": a vnet jail's, raised to 4"
 	atf_set "require.user" "root"
 }
 yang_ni_body()
@@ -2451,7 +2451,7 @@ yang-cbor 59 bytes, the same back
 atf_test_case yang_ni_grow cleanup
 yang_ni_grow_head()
 {
-	atf_set "descr" "an instance past the last FIB (PLAN-SDN-YANG 2.6.4):" \
+	atf_set "descr" "an instance past the last FIB:" \
 	    "net.fibs raised live and kept in loader.conf; a vnet jail's"
 	atf_set "require.user" "root"
 }
@@ -2488,7 +2488,7 @@ yang_ni_cleanup()
 atf_test_case yang_ni_bind cleanup
 yang_ni_bind_head()
 {
-	atf_set "descr" "bind-ni-name (PLAN-SDN-YANG 2.6.3): ifconfig's fib" \
+	atf_set "descr" "bind-ni-name: ifconfig's fib" \
 	    "read back as the instance's name, a name applied by SIOCSIFFIB" \
 	    "and kept in rc.conf, bind-ni-name-failed; a vnet jail's epair"
 	atf_set "require.user" "root"
@@ -2545,7 +2545,7 @@ atf_test_case yang_rtadv cleanup
 yang_rtadv_head()
 {
 	atf_set "descr" "rtadvd.conf edited as the router advertisement" \
-	    "submodule, rtadvctl reload, rtadvctl show (PLAN-SDN-YANG 2.5.1)," \
+	    "submodule, rtadvctl reload, rtadvctl show," \
 	    "a lab rtadvd in a vnet jail"
 	atf_set "require.user" "root"
 }
@@ -2626,6 +2626,37 @@ yang_ip_cleanup()
 	true
 }
 
+atf_test_case yang_jail_actions cleanup
+yang_jail_actions_head()
+{
+	atf_set "descr" "arcana-jails' start, restart and stop actions on a " \
+	    "real jail, over cblink's YANG family; the jail read as the " \
+	    "module has it in between"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+yang_jail_actions_body()
+{
+	start_daemon
+	atf_check -o match:'^\{"jid":[0-9]+,"state":"running"\}$' \
+	    "$JGC" -c "$SOCK" action jails/jail "$JAIL" start
+	atf_check -o ignore jls -j "$JAIL"
+	atf_check -o match:"\"name\":\"$JAIL\"" -o match:'"state":"running"' \
+	    "$JGC" -c "$SOCK" get jails
+	atf_check -o match:'"state":"running"' \
+	    "$JGC" -c "$SOCK" action jails/jail "$JAIL" restart
+	atf_check -o match:'"state":"stopped"' \
+	    "$JGC" -c "$SOCK" action jails/jail "$JAIL" stop
+	atf_check -s exit:1 -o ignore -e ignore jls -j "$JAIL"
+	# Already stopped: the action operation's own refusal.
+	atf_check -s exit:1 -o ignore -e match:'not running' \
+	    "$JGC" -c "$SOCK" action jails/jail "$JAIL" stop
+}
+yang_jail_actions_cleanup()
+{
+	cleanup
+}
+
 atf_test_case yang_tunnel cleanup
 yang_tunnel_head()
 {
@@ -2674,6 +2705,7 @@ atf_init_test_cases()
 {
 	atf_add_test_case devd_watch
 	atf_add_test_case yang_tunnel
+	atf_add_test_case yang_jail_actions
 	atf_add_test_case yang_layers
 	atf_add_test_case yang_kinds
 	atf_add_test_case yang_events

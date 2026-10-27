@@ -5,7 +5,7 @@
  */
 
 /*
- * Invidia: the BIRD routing daemon, through birdc(8): what it says of
+ * Luxuria: the BIRD routing daemon, through birdc(8): what it says of
  * itself and of its protocols, and the few things it is told about one
  * of them.
  */

@@ -1021,7 +1021,6 @@ submit_form(const char *form, const ucl_object_t *f)
 		if (app.confirm.value[0] != '\0') {
 			char	old[160];
 
-			/* Unchanged: nothing to do. */
 			if (strcmp(app.confirm.value, s) == 0)
 				return;
 			/* The new one first, then the old one off. */

@@ -5,10 +5,10 @@
  */
 
 /*
- * Gula: the processes as arcana-processes has them (PLAN-SDN-YANG
- * 3.1.7), OpenConfig's procmon shape with FreeBSD's besides, from the
- * processes operation's JSON (procs.c): the list, and one process's
- * files and threads put on it.
+ * Gula: the processes as arcana-processes has them, OpenConfig's
+ * procmon shape with FreeBSD's besides, from the processes operation's
+ * JSON (procs.c): the list, and one process's files and threads put on
+ * it.
  */
 
 #include <errno.h>

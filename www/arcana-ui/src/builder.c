@@ -1364,6 +1364,9 @@ builder_form(const char *form, const ucl_object_t *f)
 			v = jstr(f, k[i]);
 			if (v == NULL || v[0] == '\0')
 				continue;
+			/* No room left for a key: the query as far as it got. */
+			if (len + strlen(k[i]) + 2 >= sizeof(bld.optq))
+				break;
 			len += (size_t)snprintf(bld.optq + len,
 			    sizeof(bld.optq) - len, "%s%s=", len > 0 ? "&" : "",
 			    k[i]);

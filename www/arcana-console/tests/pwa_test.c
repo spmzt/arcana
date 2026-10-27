@@ -7287,8 +7287,7 @@ part_routes(void)
 	wait_js("[...document.querySelectorAll('.dock [data-act=trace]')]"
 	    ".some(t => t.textContent.includes('list jails'))", 20);
 	/* list is converted to YANG: its task shows arcana-jails beside
-	 * its CBOR schema, as RFC 8340 draws the module (PLAN-SDN-YANG
-	 * 3.1.1). */
+	 * its CBOR schema, as RFC 8340 draws the module. */
 	run("[...document.querySelectorAll('.dock [data-act=trace]')].find(t "
 	    "=> t.textContent.includes('list jails')).click()");
 	/* The schema shown on asking ({ }, off by default): its CBOR

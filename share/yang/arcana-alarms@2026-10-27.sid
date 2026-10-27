@@ -1,0 +1,97 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-alarms",
+    "module-revision": "2026-10-27",
+    "sid-file-version": 0,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-alarms",
+        "module-revision": "2019-09-11"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "77600",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-alarms",
+        "sid": "77600"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "arcana-fault",
+        "sid": "77601"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "bfd",
+        "sid": "77602"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "bgp-neighbor",
+        "sid": "77603"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "bird-instance",
+        "sid": "77604"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "cpu",
+        "sid": "77605"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "crash",
+        "sid": "77606"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "ids",
+        "sid": "77607"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "interface",
+        "sid": "77608"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "key-rotation",
+        "sid": "77609"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "memory",
+        "sid": "77610"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "ospf-neighbor",
+        "sid": "77611"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "storage",
+        "sid": "77612"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "tca",
+        "sid": "77613"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "tunnel",
+        "sid": "77614"
+      }
+    ]
+  }
+}

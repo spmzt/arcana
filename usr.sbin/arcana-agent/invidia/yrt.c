@@ -5,7 +5,7 @@
  */
 
 /*
- * Invidia: ietf-routing's RIBs (RFC 8349, PLAN-SDN-YANG 2.4.1), a FIB's
+ * Invidia: ietf-routing's RIBs (RFC 8349), a FIB's
  * routes as netlink(4) dumps them (RTM_GETROUTE with RTA_TABLE, as
  * netstat(1) asks), into /routing/ribs: ipv4-master and ipv6-master, the
  * FIB's two tables; another FIB's are its network instance's (2.6).

@@ -43,6 +43,7 @@ enum op {
 	OP_SERVICE_ACTION,
 	OP_SERVICE_CONFIG,
 	OP_NETWORK,
+	OP_YDATA,
 	OP_STATS,
 	OP_PACKAGES,
 	OP_PKG_UPGRADE,
@@ -1231,7 +1232,8 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_ACTION ? "arc_action" : c->op == OP_ADDRESS ?
 	    "arc_address" : c->op == OP_SERVICES ? "arc_services" :
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
-	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
+	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_YDATA ?
+	    "get" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
 	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_SURICATA_RULES ? "arc_suricata_rules" : c->op == OP_NETSTORE ? "arc_netstore" : c->op == OP_SYSTEM ? "arc_system" : c->op == OP_SMTPD ? "arc_smtpd" : c->op == OP_SPEEDER ? "arc_speeder" : c->op == OP_MONITORS ? "arc_monitors" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
@@ -1282,7 +1284,6 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	return (a);
 }
 
-/* In a task thread: one cblink request, its reply as JSON. */
 /*
  * The arcana-agent this console hands to hosts: the one a host built
  * for it from agent_source, once there is one, and otherwise the one
@@ -1558,6 +1559,7 @@ bundle_of(const char *uri, const char *peer, char **out)
 	return (why[0] != '\0' ? why : NULL);
 }
 
+/* In a task thread: one cblink request, its reply as JSON. */
 static int
 call_run(struct task *t)
 {
@@ -2150,11 +2152,26 @@ connected:
 		steps = str->trace.v;
 		nsteps = str->trace.n;
 		break;
+	case OP_YDATA:
+		/* The models the agent serves, the nodes named in jail. */
+		{
+			char	yerr[256];
+
+			if ((error = ytrans_data(cl.conn, c->jail, &e, yerr,
+			    sizeof(yerr))) != 0) {
+				ok = false;
+				put_str(top, "error", yerr);
+				break;
+			}
+			ok = true;
+			put(top, "data", e);
+		}
+		break;
 	case OP_NETWORK:
 		/*
 		 * The interfaces by the standard models, a GET of cblink's
 		 * YANG family (ytrans.c), as the Network tab asks: an agent
-		 * before 0.213.0, which serves none, is asked its table.
+		 * that serves none is asked its table.
 		 */
 		if (c->yang && c->action == ARC_NET_KIND_INTERFACES &&
 		    c->scope[0] == '\0') {
@@ -3931,6 +3948,42 @@ api_network(struct http_request *req)
 	return (read_route(req, OP_NETWORK, setup_network));
 }
 
+/*
+ * The top-level nodes of the models the agent serves, by name: ?node=
+ * interfaces,routing; none, all of them.  A name is letters, digits
+ * and - only.
+ */
+static const char *
+setup_ydata(struct call *c, const struct rq *q)
+{
+	const char	*p;
+
+	/* node= alone, of letters, digits, - and commas. */
+	if (q->query != NULL && strncmp(q->query, "node=", 5) != 0)
+		return ("node is names of nodes, by commas");
+	if (rq_param(q, "node", c->jail, sizeof(c->jail)))
+		for (p = c->jail; *p != '\0'; p++)
+			if (!isalnum((unsigned char)*p) && *p != '-' &&
+			    *p != ',')
+				return ("node is names of nodes, by commas: "
+				    "letters, digits and -");
+	if (q->query != NULL && strlen(q->query) != 5 + strlen(c->jail))
+		return ("node is names of nodes, by commas: letters, digits "
+		    "and -");
+	return (NULL);
+}
+
+/*
+ * GET /api/servers/<id>/data[?node=a,b]: the agent's YANG data as RFC
+ * 7951's JSON, under "data", by cblink's YANG family.
+ */
+int
+api_ydata(struct http_request *req)
+{
+
+	return (read_route(req, OP_YDATA, setup_ydata));
+}
+
 /* A path of a configuration file: nothing a URL or a shell reads into. */
 static bool
 conf_path_ok(const char *s)
@@ -4017,7 +4070,6 @@ api_bird_config(struct http_request *req)
 	return (call_start(req, c));
 }
 
-/* GET /api/servers/<id>/stats */
 /* GET /api/servers/<id>/storage/<kind>[?filter=dataset]. */
 static const char *
 setup_storage(struct call *c, const struct rq *q)
@@ -4928,6 +4980,7 @@ api_kernel(struct http_request *req)
 	return (read_route(req, OP_KERNEL, NULL));
 }
 
+/* GET /api/servers/<id>/stats */
 int
 api_stats(struct http_request *req)
 {
@@ -5997,7 +6050,7 @@ api_security(struct http_request *req)
 	c->text = json;
 	c->reads = false;
 	snprintf(c->route, sizeof(c->route), "POST security %s", what);
-	ucl_object_unref(body);		/* what is its */
+	ucl_object_unref(body);
 	return (call_start(req, c));
 }
 

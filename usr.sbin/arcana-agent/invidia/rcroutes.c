@@ -6,8 +6,7 @@
 
 /*
  * Invidia: static routes in rc.conf, as rc.d/routing installs them, and
- * ietf-routing's static control-plane-protocol (RFC 8349, PLAN-SDN-YANG
- * 2.4.3), both ways.
+ * ietf-routing's static control-plane-protocol (RFC 8349), both ways.
  *
  * rc.d/routing's static_inet(): each name of static_routes (a name, or
  * name:interface, installed when the interface is), route_<name> its
@@ -807,7 +806,7 @@ rcr_write(struct vc_file *f, int fib, const ysr *sr, char *err,
 
 /*
  * Applying: a FIB's static routes made the kernel's, by netlink(4) as
- * route(8) does it (PLAN-SDN-YANG 2.4.4).  A hop is a route's prefix
+ * route(8) does it.  A hop is a route's prefix
  * and one of its next hops: a gateway address (a link-local one's zone
  * its interface), an interface, both, or blackhole or unreachable.
  */

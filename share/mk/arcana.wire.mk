@@ -1,8 +1,8 @@
 # The family on the wire, for a program that speaks it: the YANG module
 # written from share/arcana/arcana.yaml (share/yang/arcana@<rev>.yang,
 # its SIDs beside it), the structs and schema tables cblink-gen writes
-# from it (arcana_v2.h, arcana_v2_schema.c), the version-1 names kept
-# over them (arcana.h) and the glue to cblink (arcana_wire.c), both
+# from it (arcana_v2.h, arcana_v2_schema.c), the programs' names for
+# them (arcana.h) and the glue to cblink (arcana_wire.c), both
 # written by share/arcana/wire.awk.
 #
 #	ARC_WIRE=	server | client | both

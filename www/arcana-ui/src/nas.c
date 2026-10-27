@@ -515,7 +515,6 @@ naspage_form(const char *form, const ucl_object_t *f)
 			    "16 characters");
 			return (true);
 		}
-		/* Its portal group and auth group, then the target. */
 		/* Its portal group and auth group, named after it (two
 		 * targets on one address would else name one group twice),
 		 * then the target. */

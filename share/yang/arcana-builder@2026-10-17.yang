@@ -27,8 +27,6 @@ module arcana-builder {
   revision 2026-10-17 {
     description
       "Initial revision.";
-    reference
-      "Arcana docs/PLAN-SDN-YANG.md, step 3.1.";
   }
 
   typedef port-origin {

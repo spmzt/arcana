@@ -199,6 +199,41 @@ number_ok(const char *s)
 }
 
 /*
+ * Text made by appending, a memstream's: nothing is cut short, however
+ * long aliases make it.  ms_close(): the text in w's arena, its length
+ * in *lenp; NULL when memory ran out.
+ */
+struct ms {
+	FILE	*fp;
+	char	*buf;
+	size_t	 len;
+};
+
+static bool
+ms_open(struct ms *m)
+{
+
+	m->buf = NULL;
+	m->len = 0;
+	return ((m->fp = open_memstream(&m->buf, &m->len)) != NULL);
+}
+
+static char *
+ms_close(struct work *w, struct ms *m, size_t *lenp)
+{
+	char	*s = NULL;
+
+	if (fclose(m->fp) == 0 && m->buf != NULL) {
+		s = wcalloc(w, m->len + 1, 1);
+		memcpy(s, m->buf, m->len);
+		if (lenp != NULL)
+			*lenp = m->len;
+	}
+	free(m->buf);
+	return (s);
+}
+
+/*
  * A line of the kept file as a rule: its number, and where its words
  * begin; false for what is not "add <number> ...".
  */
@@ -216,6 +251,9 @@ kept_rule(const char *line, long *nump, const char **restp)
 		return (false);
 	*nump = strtol(p, &end, 10);
 	if (*end != ' ' && *end != '\t')
+		return (false);
+	/* ipfw's numbers are 1 to 65535: past it, no rule of ours. */
+	if (*nump < 1 || *nump > 65535)
 		return (false);
 	end += strspn(end, " \t");
 	/*
@@ -1439,7 +1477,6 @@ out:
 	return (0);
 }
 
-/* What is wrong with the job, or NULL. */
 /* Is the verb one of what ipfw has beside its rules? */
 static bool
 object_verb(const char *verb)
@@ -1454,6 +1491,7 @@ object_verb(const char *verb)
 	return (false);
 }
 
+/* What is wrong with the job, or NULL. */
 const char *
 ipfw_check(const struct arc_job_spec *sp)
 {
@@ -1688,8 +1726,10 @@ live_rules(struct work *w, long num, struct liverule **outp)
 			set = strtol(end + 4, &end, 10);
 			end += strspn(end, " ");
 		}
-		if (set != 0 || v[n].num == 65535 || (num > 0 && v[n].num !=
-		    num))
+		/* A number out of ipfw's range (a jail's ipfw says what its
+		 * root has it say) is no rule: renumber() indexes by it. */
+		if (set != 0 || v[n].num < 1 || v[n].num >= 65535 ||
+		    (num > 0 && v[n].num != num))
 			continue;
 		v[n].text = end;
 		n++;
@@ -1708,6 +1748,7 @@ ipfw_norm(struct work *w, int n, const long *nums, const char *const *texts,
     const char **out, const char **errp)
 {
 	struct execres	 res;
+	struct ms	 m;
 	char		*in, *argv[4], *t, *p, *line;
 	size_t		 len, off;
 	int		 i, k, rc;
@@ -1731,11 +1772,16 @@ ipfw_norm(struct work *w, int n, const long *nums, const char *const *texts,
 		*errp = "too many rules to check at once";
 		return (-1);
 	}
-	in = wcalloc(w, len, 1);
-	off = 0;
+	if (!ms_open(&m)) {
+		*errp = "out of memory";
+		return (-1);
+	}
 	for (i = 0; i < n; i++)
-		off += (size_t)snprintf(in + off, len - off, "add %ld %s\n",
-		    nums[i], texts[i]);
+		fprintf(m.fp, "add %ld %s\n", nums[i], texts[i]);
+	if ((in = ms_close(w, &m, &off)) == NULL) {
+		*errp = "out of memory";
+		return (-1);
+	}
 	argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
 	argv[1] = (char *)(uintptr_t)"-n";
 	argv[2] = (char *)(uintptr_t)"/dev/stdin";
@@ -2105,9 +2151,10 @@ kept_drop_one(struct work *w, long num, const char *words, bool dry,
 static int
 kept_renumber(struct work *w, long from, long to, const char **errp)
 {
+	struct ms	 m;
 	char		*old, *out, **lines, *moved;
 	const char	*rest;
-	size_t		 oldlen, len, mlen, cap;
+	size_t		 oldlen, len, mlen;
 	long		 n;
 	int		 nl, i;
 	bool		 put;
@@ -2130,19 +2177,22 @@ kept_renumber(struct work *w, long from, long to, const char **errp)
 			pthread_mutex_unlock(&file_lock);
 			return (-1);
 		}
-	cap = oldlen + 64;
-	moved = wcalloc(w, cap, 1);
-	mlen = 0;
+	if (!ms_open(&m)) {
+		*errp = "out of memory";
+		pthread_mutex_unlock(&file_lock);
+		return (-1);
+	}
 	for (i = 0; i < nl; i++) {
 		if (src_rule(lines[i], &n, &rest) && n == from)
-			mlen += (size_t)snprintf(moved + mlen, cap - mlen,
-			    "#arcana add %05ld %s\n", to, rest);
+			fprintf(m.fp, "#arcana add %05ld %s\n", to, rest);
 		else if (kept_rule(lines[i], &n, &rest) && n == from)
-			mlen += (size_t)snprintf(moved + mlen, cap - mlen,
-			    "add %05ld %s\n", to, rest);
+			fprintf(m.fp, "add %05ld %s\n", to, rest);
 	}
-	out = wcalloc(w, oldlen + mlen + 2, 1);
-	len = 0;
+	if ((moved = ms_close(w, &m, &mlen)) == NULL || !ms_open(&m)) {
+		*errp = "out of memory";
+		pthread_mutex_unlock(&file_lock);
+		return (-1);
+	}
 	put = mlen == 0;
 	for (i = 0; i < nl; i++) {
 		if ((src_rule(lines[i], &n, &rest) || kept_rule(lines[i], &n,
@@ -2150,16 +2200,18 @@ kept_renumber(struct work *w, long from, long to, const char **errp)
 			continue;
 		if (!put && (kept_rule(lines[i], &n, &rest) || src_rule(
 		    lines[i], &n, &rest)) && n > to) {
-			len += (size_t)snprintf(out + len, oldlen + mlen + 2 -
-			    len, "%s", moved);
+			fputs(moved, m.fp);
 			put = true;
 		}
-		len += (size_t)snprintf(out + len, oldlen + mlen + 2 - len,
-		    "%s\n", lines[i]);
+		fprintf(m.fp, "%s\n", lines[i]);
 	}
 	if (!put)
-		len += (size_t)snprintf(out + len, oldlen + mlen + 2 - len, "%s",
-		    moved);
+		fputs(moved, m.fp);
+	if ((out = ms_close(w, &m, &len)) == NULL) {
+		*errp = "out of memory";
+		pthread_mutex_unlock(&file_lock);
+		return (-1);
+	}
 	rc = file_write(w, out, len, errp);
 	pthread_mutex_unlock(&file_lock);
 	return (rc);
@@ -2178,9 +2230,10 @@ static int
 kept_change_src(struct work *w, long num, const char *rule, const char *src,
     const char **errp)
 {
+	struct ms	 m;
 	char		*old, *out, *p, *line;
 	const char	*rest;
-	size_t		 oldlen, cap, len;
+	size_t		 oldlen, len;
 	long		 n;
 	bool		 done;
 	int		 rc;
@@ -2216,7 +2269,7 @@ kept_change_src(struct work *w, long num, const char *rule, const char *src,
 		if (!any && (nl = live_rules(w, 0, &lv)) > 0) {
 			const char	*nr, *e;
 			char		*seed;
-			size_t		 slen, soff;
+			size_t		 soff;
 			int		 same = -1;
 
 			/* The rule kept now may be in the kernel already
@@ -2231,27 +2284,33 @@ kept_change_src(struct work *w, long num, const char *rule, const char *src,
 					if (lv[i].num == num && strcmp(lv[i].text,
 					    nr) == 0)
 						same = i;
-			slen = oldlen + 200;
-			for (i = 0; i < nl; i++)
-				slen += strlen(lv[i].text) + 16;
-			seed = wcalloc(w, slen, 1);
-			soff = (size_t)snprintf(seed, slen, "%s%s# The kernel's "
-			    "rules when the first rule was kept, by Arcana: "
-			    "the kept rules are the whole ruleset once applied.\n",
-			    old, oldlen > 0 && old[oldlen - 1] != '\n' ? "\n" : "");
+			if (!ms_open(&m)) {
+				*errp = "out of memory";
+				pthread_mutex_unlock(&file_lock);
+				return (-1);
+			}
+			fprintf(m.fp, "%s%s# The kernel's rules when the first "
+			    "rule was kept, by Arcana: the kept rules are the "
+			    "whole ruleset once applied.\n", old, oldlen > 0 &&
+			    old[oldlen - 1] != '\n' ? "\n" : "");
 			for (i = 0; i < nl; i++)
 				if (i != same)
-					soff += (size_t)snprintf(seed + soff, slen -
-					    soff, "add %05ld %s\n", lv[i].num,
-					    lv[i].text);
+					fprintf(m.fp, "add %05ld %s\n",
+					    lv[i].num, lv[i].text);
+			if ((seed = ms_close(w, &m, &soff)) == NULL) {
+				*errp = "out of memory";
+				pthread_mutex_unlock(&file_lock);
+				return (-1);
+			}
 			old = seed;
 			oldlen = soff;
 		}
 	}
-	cap = oldlen + (rule != NULL ? strlen(rule) : 0) + (src != NULL ?
-	    strlen(src) : 0) + 128;
-	out = wcalloc(w, cap, 1);
-	len = 0;
+	if (!ms_open(&m)) {
+		*errp = "out of memory";
+		pthread_mutex_unlock(&file_lock);
+		return (-1);
+	}
 	done = rule == NULL;
 	p = old;
 	while (p != NULL && *p != '\0' && (line = strsep(&p, "\n")) != NULL) {
@@ -2265,22 +2324,23 @@ kept_change_src(struct work *w, long num, const char *rule, const char *src,
 			/* Added: before the first of a higher number. */
 			if (!done && n > num) {
 				if (src != NULL)
-					len += (size_t)snprintf(out + len,
-					    cap - len, "#arcana add %05ld %s\n",
+					fprintf(m.fp, "#arcana add %05ld %s\n",
 					    num, src);
-				len += (size_t)snprintf(out + len, cap - len,
-				    "add %05ld %s\n", num, rule);
+				fprintf(m.fp, "add %05ld %s\n", num, rule);
 				done = true;
 			}
 		}
-		len += (size_t)snprintf(out + len, cap - len, "%s\n", line);
+		fprintf(m.fp, "%s\n", line);
 	}
 	if (!done) {
 		if (src != NULL)
-			len += (size_t)snprintf(out + len, cap - len,
-			    "#arcana add %05ld %s\n", num, src);
-		len += (size_t)snprintf(out + len, cap - len, "add %05ld %s\n",
-		    num, rule);
+			fprintf(m.fp, "#arcana add %05ld %s\n", num, src);
+		fprintf(m.fp, "add %05ld %s\n", num, rule);
+	}
+	if ((out = ms_close(w, &m, &len)) == NULL) {
+		*errp = "out of memory";
+		pthread_mutex_unlock(&file_lock);
+		return (-1);
 	}
 	rc = file_write(w, out, len, errp);
 	pthread_mutex_unlock(&file_lock);
@@ -2456,16 +2516,19 @@ static char *
 text_expand(struct work *w, const char *text, const char **errp)
 {
 	struct alias	 a[ALIAS_MAX];
+	struct ms	 m;
 	const char	*v[IPFW_WORDS], **e, *rest;
 	char		*copy, *p, *line, *out;
-	size_t		 na, nv, cap, len;
+	size_t		 na, nv;
 	long		 num, pend = -1;
 	int		 ln = 0;
 
 	na = aliases_of(w, text, a, nitems(a));
-	cap = strlen(text) * 2 + 1024;
-	out = wcalloc(w, cap, 1);
-	len = 0;
+	/* An alias expanded makes a line as long as it likes. */
+	if (!ms_open(&m)) {
+		*errp = "out of memory";
+		return (NULL);
+	}
 	copy = wstrdup(w, text);
 	for (p = copy; p != NULL && *p != '\0' &&
 	    (line = strsep(&p, "\n")) != NULL; ) {
@@ -2474,10 +2537,11 @@ text_expand(struct work *w, const char *text, const char **errp)
 			nv = split(w, rest, v, nitems(v));
 			if ((e = expand(w, a, na, v, nv, errp)) == NULL) {
 				*errp = wfmt(w, "line %d: %s", ln, *errp);
+				(void)ms_close(w, &m, NULL);
 				return (NULL);
 			}
-			len += (size_t)snprintf(out + len, cap - len, "%s\n"
-			    "add %05ld %s\n", line, num, join(w, e, nv));
+			fprintf(m.fp, "%s\nadd %05ld %s\n", line, num,
+			    join(w, e, nv));
 			pend = num;
 			continue;
 		}
@@ -2492,17 +2556,19 @@ text_expand(struct work *w, const char *text, const char **errp)
 			if (uses_alias(v, nv)) {
 				if ((e = expand(w, a, na, v, nv, errp)) == NULL) {
 					*errp = wfmt(w, "line %d: %s", ln, *errp);
+					(void)ms_close(w, &m, NULL);
 					return (NULL);
 				}
-				len += (size_t)snprintf(out + len, cap - len,
-				    "#arcana add %05ld %s\nadd %05ld %s\n", num,
-				    rest, num, join(w, e, nv));
+				fprintf(m.fp, "#arcana add %05ld %s\nadd %05ld "
+				    "%s\n", num, rest, num, join(w, e, nv));
 				continue;
 			}
 		} else
 			pend = -1;
-		len += (size_t)snprintf(out + len, cap - len, "%s\n", line);
+		fprintf(m.fp, "%s\n", line);
 	}
+	if ((out = ms_close(w, &m, NULL)) == NULL)
+		*errp = "out of memory";
 	return (out);
 }
 
@@ -2515,9 +2581,10 @@ static int
 apply(struct work *w, bool hold, const char **errp)
 {
 	struct execres	 res;
+	struct ms	 m;
 	char		*text, *p, *line, *load, *tmp, *argv[4];
 	const char	*rest;
-	size_t		 len, cap, n;
+	size_t		 len, n;
 	long		 num;
 	int		 fd, step;
 
@@ -2530,23 +2597,26 @@ apply(struct work *w, bool hold, const char **errp)
 		return (-1);
 	}
 	/* What ipfw is to read: the file's lines, each in set 1. */
-	cap = len * 2 + 256;
-	load = wcalloc(w, cap, 1);
-	n = 0;
+	if (!ms_open(&m)) {
+		*errp = "out of memory";
+		return (-1);
+	}
 	p = text;
 	while ((line = strsep(&p, "\n")) != NULL) {
 		line += strspn(line, " \t");
 		if (line[0] == '\0' || line[0] == '#')
 			continue;
 		if (kept_rule(line, &num, &rest))
-			n += (size_t)snprintf(load + n, cap - n,
-			    "add %05ld set 1 %s\n", num, rest);
+			fprintf(m.fp, "add %05ld set 1 %s\n", num, rest);
 		else if (strncmp(line, "table ", 6) == 0 || strncmp(line,
 		    "nat64", 5) == 0 || strncmp(line, "nptv6 ", 6) == 0)
-			n += (size_t)snprintf(load + n, cap - n, "set 1 %s\n",
-			    line);
+			fprintf(m.fp, "set 1 %s\n", line);
 		else
-			n += (size_t)snprintf(load + n, cap - n, "%s\n", line);
+			fprintf(m.fp, "%s\n", line);
+	}
+	if ((load = ms_close(w, &m, &n)) == NULL) {
+		*errp = "out of memory";
+		return (-1);
 	}
 	if (n == 0) {
 		*errp = "the kept rules are empty: applied, they would leave "
@@ -2946,9 +3016,10 @@ static int
 alias_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
 	struct alias	 a[ALIAS_MAX];
+	struct ms	 m;
 	const char	*name, *kind, *rest, *v[IPFW_WORDS], **e;
 	char		*text, *copy, *p, *line, *out, *val;
-	size_t		 len, cap, olen, na, nv, i, k;
+	size_t		 len, na, nv, i, k;
 	long		 num;
 	bool		 del, addr, named;
 	struct {
@@ -2988,19 +3059,19 @@ alias_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	    (sp->names.v + 2), sp->names.n - 2);
 	/* The file again: the alias's lines out, its new ones in at the
 	 * head; an address list's table made there too. */
-	cap = len + 4096 + (sp->names.n * 80);
-	out = wcalloc(w, cap, 1);
-	olen = 0;
+	if (!ms_open(&m)) {
+		pthread_mutex_unlock(&file_lock);
+		*errp = "out of memory";
+		return (-1);
+	}
 	if (!del) {
-		olen += (size_t)snprintf(out + olen, cap - olen, "#arcana alias "
-		    "%s %s%s%s\n", name, kind, val != NULL ? " " : "", val !=
-		    NULL ? val : "");
+		fprintf(m.fp, "#arcana alias %s %s%s%s\n", name, kind,
+		    val != NULL ? " " : "", val != NULL ? val : "");
 		if (addr) {
-			olen += (size_t)snprintf(out + olen, cap - olen, "table %s "
-			    "create type addr\n", name);
+			fprintf(m.fp, "table %s create type addr\n", name);
 			for (i = 2; i < sp->names.n; i++)
-				olen += (size_t)snprintf(out + olen, cap - olen,
-				    "table %s add %s\n", name, sp->names.v[i]);
+				fprintf(m.fp, "table %s add %s\n", name,
+				    sp->names.v[i]);
 		}
 	}
 	copy = wstrdup(w, text);
@@ -3023,7 +3094,12 @@ alias_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 			if (k < na || addr)
 				continue;
 		}
-		olen += (size_t)snprintf(out + olen, cap - olen, "%s\n", line);
+		fprintf(m.fp, "%s\n", line);
+	}
+	if ((out = ms_close(w, &m, NULL)) == NULL) {
+		pthread_mutex_unlock(&file_lock);
+		*errp = "out of memory";
+		return (-1);
 	}
 	/* The rules that name it, written again from their own words. */
 	if ((out = text_expand(w, out, errp)) == NULL) {

@@ -1,8 +1,8 @@
-# A family spec (arcana.yaml, cluster.yaml) as its wire on cblink 2: the
+# A family spec (arcana.yaml, cluster.yaml) as its wire on cblink: the
 # YANG module whose rpcs mirror the operations (out=yang), the C header
-# that keeps the version-1 names over the structs cblink-gen writes from
-# that module (out=h), and the C glue between the programs' handlers
-# and cblink (out=c).
+# that names the structs cblink-gen writes from that module as the
+# programs call them (out=h), and the C glue between the programs'
+# handlers and cblink (out=c).
 #
 #	awk -v out=yang -v rev=2026-10-22 -f wire.awk arcana.yaml > \
 #	    arcana@2026-10-22.yang
@@ -15,13 +15,12 @@
 #
 # Every attribute set of the spec is a grouping, and one used as a
 # nested attribute carries cg:struct, so that cblink-gen writes one
-# struct for it wherever it is used (step, job, host...), as version 1
-# did; each operation is an rpc whose input and output use the family
-# set's attributes one grouping each; a dump's forms are an rpc of
-# their own; an event is a structure of its multicast group; a stream's
-# payload is a structure.  Enums travel as uint8 with their names in the
-# description, as version 1 sent them, so that the C member stays a
-# uint8_t.
+# struct for it wherever it is used (step, job, host...); each
+# operation is an rpc whose input and output use the family set's
+# attributes one grouping each; a dump's forms are an rpc of their own;
+# an event is a structure of its multicast group; a stream's payload is
+# a structure.  Enums travel as uint8 with their names in the
+# description, so that the C member stays a uint8_t.
 
 function die(msg) {
 	printf "wire.awk: %s\n", msg > "/dev/stderr"
@@ -274,8 +273,7 @@ function cval(v) {
 }
 
 # The command number of an operation: its place among the operations,
-# from 1, events counted, as version 1 numbered them (an event's is its
-# notification's command).
+# from 1, events counted (an event's is its notification's command).
 function cmd_of(op,    i) {
 	for (i = 1; i <= nop; i++)
 		if (opname[i] == op)
@@ -528,7 +526,7 @@ function out_yang(    i, j, s, op, famset, st, cmd) {
 	printf "}\n"
 }
 
-# ---- out=h: the version-1 names over the generated structs ----------
+# ---- out=h: the programs' names over the generated structs ----------
 
 function out_h(    i, j, s, op, e, u, d, famset, st) {
 	mark_structs()
@@ -565,7 +563,7 @@ function out_h(    i, j, s, op, e, u, d, famset, st) {
 	for (i = 1; i <= ngrp; i++)
 		printf "\t%s_MCGRP_%s%s,\n", u, uname(grpname[i]), (i == 1 ? " = 0" : "")
 	printf "\t%s_MCGRP_COUNT\n};\n\n", u
-	printf "/* The structs, by their version-1 names. */\n"
+	printf "/* The structs, by the programs' names. */\n"
 	for (i = 1; i <= nset; i++) {
 		s = setname[i]
 		if (!isstruct[s])
@@ -919,8 +917,8 @@ function out_c_client(    i, op, u, st) {
 	}
 }
 
-# The items of a dump live as long as the dump (version 1 had them in
-# its messages): kept by the dump, freed by pfx_dump_free().
+# The items of a dump live as long as the dump: kept by the dump, freed
+# by pfx_dump_free().
 function out_c_dumps(    u) {
 	printf "struct %s__dumped {\n\tcbl_dump\t\t*d;\n\tstruct %s__box\t*b;\n\tstruct %s__dumped\t*next;\n};\n\nstatic struct %s__dumped *%s__dumped;\nstatic pthread_mutex_t %s__dumped_lock = PTHREAD_MUTEX_INITIALIZER;\n\n",
 	    pfx, pfx, pfx, pfx, pfx, pfx
@@ -976,11 +974,11 @@ BEGIN {
 
 # ---- out=schema: the reference the console's Schema panel shows ------
 #
-# The JSON tools/schema.awk made from version 1's reference: the sets'
-# attributes (id, name, type, checks, doc) and the operations (cmd, set,
-# doc, request, reply), with the SIDs of the module beside them (the
-# rpc's, and each attribute's under it) read from the .sid file named
-# by sids, so that the panel can say what keys the CBOR carries.
+# The JSON: the sets' attributes (id, name, type, checks, doc) and the
+# operations (cmd, set, doc, request, reply), with the SIDs of the
+# module beside them (the rpc's, and each attribute's under it) read
+# from the .sid file named by sids, so that the panel can say what keys
+# the CBOR carries.
 
 function jstr(s) {
 	gsub(/\\/, "\\\\", s)

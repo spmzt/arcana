@@ -5,7 +5,7 @@
  */
 
 /*
- * Ira: the services as arcana-services has them (PLAN-SDN-YANG 3.1.2):
+ * Ira: the services as arcana-services has them:
  * the services operation's reply (do_services(): the rc.d scripts, each
  * enabled or not, running or not), each with its service-config reply
  * where one was read (do_service_config(): its rc.conf variables as

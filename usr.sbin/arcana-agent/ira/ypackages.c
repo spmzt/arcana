@@ -5,7 +5,7 @@
  */
 
 /*
- * Ira: the packages as arcana-packages has them (PLAN-SDN-YANG 3.1.3),
+ * Ira: the packages as arcana-packages has them,
  * the host's or a jail's alike: those installed, as the packages
  * operation reads them with pkg-installed (pkg query), each with the
  * version the repository has where that is newer, as it reads them
@@ -21,13 +21,8 @@
 
 #include "collect.h"
 
-typedef struct arcana_packages_packages_package ypkg;
-
-/* A jail's are the same grouping's: the same layout, another name. */
-_Static_assert(sizeof(struct arcana_jails_jails_jail_arcpkg_packages) ==
-    sizeof(struct arcana_packages_packages), "the grouping's structs");
-_Static_assert(sizeof(struct arcana_jails_jails_jail_arcpkg_packages_package)
-    == sizeof(ypkg), "the grouping's structs");
+/* The host's, a jail's and an upgrade's: one struct (cg:struct). */
+typedef struct arcana_packages_package ypkg;
 
 static void
 pkg_of(ypkg *y, const struct arc_package *p)
@@ -91,9 +86,8 @@ int
 ypackages_upgraded(const struct arc_pkg_upgrade_rsp *rsp, cbl_yarena *a,
     struct arcana_packages_packages_upgrade_output *out)
 {
-	struct arcana_packages_packages_upgrade_output_package *v = NULL;
+	ypkg	*v = NULL;
 
-	_Static_assert(sizeof(*v) == sizeof(ypkg), "the grouping's structs");
 	memset(out, 0, sizeof(*out));
 	if ((out->has_upgraded = rsp->has_upgraded))
 		out->upgraded = rsp->upgraded;
@@ -102,7 +96,7 @@ ypackages_upgraded(const struct arc_pkg_upgrade_rsp *rsp, cbl_yarena *a,
 	if ((v = cbl_yarena_alloc(a, rsp->packages.n * sizeof(*v))) == NULL)
 		return (ENOMEM);
 	for (size_t i = 0; i < rsp->packages.n; i++)
-		pkg_of((ypkg *)(void *)&v[i], &rsp->packages.v[i]);
+		pkg_of(&v[i], &rsp->packages.v[i]);
 	out->package.n = rsp->packages.n;
 	out->package.v = v;
 	return (0);

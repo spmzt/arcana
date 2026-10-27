@@ -255,11 +255,11 @@ view_pfxlists(struct html *h)
 		k = 0;
 		eit = NULL;
 		while ((e = ucl_object_iterate(jget(l, "prefixes"), &eit, true))
-		    != NULL && k < 4)
+		    != NULL && k < 4 && so < sizeof(sample))
 			so += (size_t)snprintf(sample + so, sizeof(sample) - so,
 			    "%s%s", k++ > 0 ? ", " : "",
 			    ucl_object_tostring_forced(e));
-		if (ucl_array_size(jget(l, "prefixes")) > 4)
+		if (ucl_array_size(jget(l, "prefixes")) > 4 && so < sizeof(sample))
 			snprintf(sample + so, sizeof(sample) - so, ", …");
 		ucl_object_insert_key(o, ucl_object_fromstring(sample), "sample",
 		    0, false);

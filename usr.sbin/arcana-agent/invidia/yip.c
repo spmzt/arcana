@@ -6,7 +6,7 @@
 
 /*
  * Invidia: each interface's IPv4 and IPv6 as ietf-ip (RFC 8344) has them
- * in the operational datastore (PLAN-SDN-YANG 1.10), read as ifconfig(8)
+ * in the operational datastore, read as ifconfig(8)
  * reads them, for yif_interfaces() to give with the rest:
  *
  * - the addresses getifaddrs(3) gives after each interface's link entry
@@ -28,7 +28,7 @@
  *   interface's.  FreeBSD cannot turn IPv4 off on one interface: it is
  *   there where an address is, enabled, its MTU the interface's.
  *
- * - the neighbours (PLAN-SDN-YANG 1.10.2), ARP's and NDP's, as netlink(4)
+ * - the neighbours, ARP's and NDP's, as netlink(4)
  *   dumps them (RTM_GETNEIGH) and arp(8) and ndp(8) list them, but the
  *   interface's own addresses, which the kernel keeps among them
  *   (NTF_SELF), and those not yet resolved, which have no link-layer
@@ -37,7 +37,7 @@
  *   and its state (NUD_*), where it is not static.
  *
  * - what FreeBSD sets for the whole host by sysctl(8), on every
- *   interface (PLAN-SDN-YANG 1.10.3): forwarding (net.inet.ip.forwarding,
+ *   interface: forwarding (net.inet.ip.forwarding,
  *   net.inet6.ip6.forwarding), DAD's probes (net.inet6.ip6.dad_count),
  *   temporary addresses (net.inet6.ip6.use_tempaddr, tempvltime,
  *   temppltime); arcana-ip-deviations makes them config false.  Whether

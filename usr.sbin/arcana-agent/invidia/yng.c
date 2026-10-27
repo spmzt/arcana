@@ -5,7 +5,7 @@
  */
 
 /*
- * Invidia: netgraph as YANG, arcana-netgraph (PLAN-SDN-YANG 3.1.8): the
+ * Invidia: netgraph as YANG, arcana-netgraph: the
  * netgraph kind of the network operation (netgraph.c, ngctl list -l)
  * read back as the module has it.
  */

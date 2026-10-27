@@ -761,7 +761,6 @@ bad:
 	return (-1);
 }
 
-/* The steering set: checked, kept, and the tables filled by it. */
 /* The steered routes of the payload (routes, an array; none is fine). */
 static int
 routes_parse(struct work *w, const char *json, struct sroute **outp,
@@ -837,6 +836,7 @@ bad:
 	return (-1);
 }
 
+/* The steering set: checked, kept, and the tables filled by it. */
 int
 do_sdwan_steer(struct work *w, const char *json, const char **errp)
 {
@@ -1263,7 +1263,7 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 			fprintf(fp, "table %s create type addr valtype %s\n", sval(t,
 			    "name"), sval(t, "valtype"));
 		/* Its entries, ADD_CHUNK an atomic add: a line each, not a call
-		 * each (SASE-2, large lists). */
+		 * each (large lists). */
 		eit = NULL;
 		kk = 0;
 		while ((e = ucl_object_iterate(ucl_object_lookup(t, "entries"),
@@ -1485,7 +1485,7 @@ sdwan_start(void)
  * The counters of the rules in the set, as ipfw -S show prints them
  * ("number packets bytes set N rest"): each its rule number, packets,
  * bytes and text, for the console to count what a policy denied (MEF
- * 88, SASE-1); none when no set is applied.
+ * 88); none when no set is applied.
  */
 static ucl_object_t *
 counters_json(struct work *w, int inset)

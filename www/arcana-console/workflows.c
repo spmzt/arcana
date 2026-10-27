@@ -2476,11 +2476,6 @@ refs_tick(void *arg __unused, uint64_t now __unused)
 }
 
 /*
- * At the worker's start: the servers copied, and copied again every
- * few seconds; runs a restart cut said to be interrupted; and the one
- * worker that takes the lock watches for what runs by itself.
- */
-/*
  * A run a restart cut: its hosts and steps that were running said to
  * be interrupted, why with them; those not yet begun not run.
  */
@@ -2537,6 +2532,11 @@ workflows_kinds_check(void)
 	return (rc);
 }
 
+/*
+ * At the worker's start: the servers copied, and copied again every
+ * few seconds; runs a restart cut said to be interrupted; and the one
+ * worker that takes the lock watches for what runs by itself.
+ */
 void
 workflows_init(void)
 {

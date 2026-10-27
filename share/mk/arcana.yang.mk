@@ -1,11 +1,11 @@
 # The standard models a program speaks over cblink's YANG family, family
-# 1 (docs/PLAN-SDN-YANG.md 1.11): ietf-interfaces and ietf-ip, with the
-# IETF and IEEE modules that augment them and Arcana's augments and
-# deviations, the FIBs as RFC 8529's network instances, the routes
-# (RFC 8349) and the vnet jails as RFC 8530's logical network elements, their structs and schema tables written by cblink-gen at
-# the build (ymodel.h, ymodel_schema.c); with ARC_YANG_SERVER=yes the
-# server's handler table too (ymodel_server.c), whose handlers the
-# program defines.
+# 1: ietf-interfaces and ietf-ip, with the IETF and IEEE modules that
+# augment them and Arcana's augments and deviations, the FIBs as RFC
+# 8529's network instances, the routes (RFC 8349) and the vnet jails as
+# RFC 8530's logical network elements, their structs and schema tables
+# written by cblink-gen at the build (ymodel.h, ymodel_schema.c); with
+# ARC_YANG_SERVER=yes the server's handler table too (ymodel_server.c),
+# whose handlers the program defines.
 #
 #	ARC_YANG_SERVER=	yes	(the agent)
 #	.include "${.CURDIR}/../../share/mk/arcana.yang.mk"
@@ -43,7 +43,12 @@ ARC_YMODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		arcana-agent@2026-10-15 arcana-jail-files@2026-10-15 \
 		arcana-probe@2026-10-15 arcana-sdwan@2026-10-15 \
 		arcana-sshd@2026-10-15 arcana-builder@2026-10-17 \
-		arcana-notify@2026-10-17
+		arcana-notify@2026-10-17 \
+		ietf-yang-library@2019-01-04 ietf-datastores@2018-02-14 \
+		ietf-alarms@2019-09-11 arcana-alarms@2026-10-27 \
+		iana-hardware@2018-03-13 ietf-hardware@2018-03-13 \
+		ietf-subscribed-notifications@2019-09-09 \
+		ietf-yang-push@2019-09-09
 # Modules only imported whose identities are used: their .sid files
 # alone (a VLAN tag's types, the PHY types, the port algorithms; the
 # routing protocols', whose identities name a route's origin).
@@ -73,10 +78,17 @@ ARC_YFEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F arcana-events: -F arcana-bird: -F arcana-wireguard: \
 		-F arcana-netgraph: -F arcana-host: -F arcana-agent: \
 		-F arcana-jail-files: -F arcana-probe: -F arcana-sdwan: \
-		-F arcana-sshd: -F arcana-builder: -F arcana-notify:
+		-F arcana-sshd: -F arcana-builder: -F arcana-notify: \
+		-F ietf-yang-library: -F ietf-datastores: \
+		-F ietf-alarms:alarm-summary,alarm-history -F arcana-alarms: \
+		-F iana-hardware: -F ietf-hardware:hardware-sensor \
+		-F ietf-subscribed-notifications:xpath -F ietf-yang-push:on-change
 
 .if ${ARC_YANG_SERVER:Uno} == "yes"
 _arc_yparts=	h,schema,server
+# The modules imported only, name@revision by commas: ietf-yang-library's
+# import-only-module list (the tables have the implemented ones alone).
+CFLAGS+=	-DARC_YIMPORT_LIST=\"${ARC_YIMPORTS:ts,}\"
 SRCS+=		ymodel_server.c
 CLEANFILES+=	ymodel_server.c
 ymodel_server.c: ymodel.h

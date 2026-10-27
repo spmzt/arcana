@@ -33,13 +33,13 @@ the page, the agent and the tools), and restarts the `arcana_console`
 service and then itself, `arcana_agent`: the console and the agent of
 one host are of one version, and read each other. Updating by hand,
 restart both too. The agent the console then sends to the other hosts
-is the one installed with it, when that is newer than the one a host
-built for it earlier. The page reconnects by itself, still logged in: the
-console keeps its sessions over a restart. When the console answers with another version
+is the one installed with it, unless one a host built for it is newer.
+The page reconnects by itself, still logged in: the console keeps its
+sessions over a restart. When the console answers with another version
 than the page was loaded from, the page loads itself again, after
-letting its service worker take the new files. A repository over SSH asks for
-its host key as a build does. From a shell: `arcanactl console-update
-[-y] [-i key] repository [ref]`.
+letting its service worker take the new files. A repository over SSH
+asks for its host key as a build does. From a shell: `arcanactl
+console-update [-y] [-i key] repository [ref]`.
 
 The build's programs run with the build directory
 (`/var/cache/arcana-build`) as their home: emcc keeps its cache there,
@@ -58,8 +58,9 @@ The console marks a host whose `arcana-agent` is not the one it has,
 and can update it: **Update agent** beside the version on the host's
 page, or **Update N agents** on the fleet page for every such host.
 Builds are told apart by the program's SHA-256, which each agent
-reports, so a rebuilt agent of the same version counts as another. The console sends the `arcana-agent` installed with it
-(`agent_binary` in `web.conf` names another). Each host
+reports, so a rebuilt agent of the same version counts as another. The
+console sends the `arcana-agent` installed with it (`agent_binary` in
+`web.conf` names another). Each host
 
 1. checks the program against the SHA-256 sent with it,
 2. writes it beside the installed one and runs it with `-V`: a program
@@ -73,13 +74,14 @@ its `arcana_agent` service. The console watches for it to answer as the
 new build and says when it does; if it has not after 45 seconds, it
 says the service did not restart, which is what happens when
 `arcana_agent_enable` is not set or the agent was started by hand (the
-host's log says which); without it, the new program runs from the next start of the
-service. A restart drops jobs still queued on the host; one that is
+host's log says which); without it, the new program runs from the next
+start of the service. A restart drops jobs still queued on the host; one that is
 running finishes first. From a shell, `arcanactl agent-update [-r]
 program` does the same for one host.
 
-The program has to suit the host: the same architecture and a FreeBSD
-version it runs on, with `libcblink` there as before. Hosts that differ
+The program has to suit the host: the same architecture, a FreeBSD
+version it runs on, and `devel/libcbor` installed (libcblink is linked
+into the agent). Hosts that differ
 from the console's machine are updated with `pkg upgrade arcana`
 instead, which the Packages tab can do. If an update goes wrong, put
 `arcana-agent.old` back and restart the service.
@@ -95,9 +97,9 @@ agent_ref = "main";            # a branch or tag; optional
 ```
 
 and each host's header gets **Build agent here**. That host clones the
-repository afresh into `/var/cache/arcana-build`, builds `libjailconf`
-and `arcana-agent` with `make`, and sends the program back; nothing is
-installed there. The console checks it against its SHA-256, keeps it in
+repository afresh into `/var/cache/arcana-build`, builds cblink, the
+libraries and `arcana-agent` with `make`, and sends the program back;
+nothing is installed there. The console checks it against its SHA-256, keeps it in
 `agent/` under its data directory, and sends that one from then on, so
 the hosts that run another build are offered the update. The build is
 in the activity bar with the output of git and make.
@@ -130,46 +132,11 @@ From a shell, `arcanactl agent-build -y` confirms the keys shown, and
 The host that builds needs what the build needs: `git`, the base
 compiler, `devel/libcbor` and `net/libyang3` (for cblink-gen, which
 reads the wire's YANG modules); cblink is cloned with the tree, a
-submodule, and built with it. If the linker
-are somewhere else on it, `/usr/local/etc/arcana/config.mk` there is
-copied into the tree as its `config.mk`. When the agent is root, git
-and make run as `nobody`. From a shell, `arcanactl agent-build [-o
-file] repository [ref]` builds and saves the program.
-
-## The wire of cblink 0.2
-
-Since agent 0.195.0 and console 0.276.0 the agent, arcanactl and the
-console speak cblink's wire version 2 alone (YANG-CBOR bodies keyed by
-SID, `share/yang/arcana@<rev>.yang`), on `libcblink.so.2`; a version-2
-program and a version-1 one do not understand each other.  Moving a
-fleet over, host by host from the tree, in an order that never leaves
-you without a working arcanactl.  The library comes with the tree:
-the submodule `cblink/` is built first and `make install` at the top
-installs `libcblink.so.2` with the programs, so no cblink package is
-needed; `net/libyang3` is, to build cblink-gen.
-
-1. On every host but the console's, in the tree there:
-
-   ```
-   git pull && git submodule update --init
-   make && make install
-   service arcana_agent restart
-   ```
-
-   Each becomes version 2 and the old console can no longer reach it:
-   expected.  Check it with the new arcanactl, from the build tree of
-   any updated host or the console host's (`obj/usr.sbin/arcanactl/
-   arcanactl`, which finds the submodule's library by its rpath):
-   `hello` shows the version.  A host goes back with the program it
-   had (`arcana-agent.old` when the console updated it last) and a
-   restart; after step 2 there is no going back.
-2. Last, the console host: the same, then `service arcana_console
-   restart` too.  Then `arcanactl hello` locally and to each host; the
-   fleet page green.
-
-The console's own agent update (the fleet page) sends a program built
-on one host to the others: it works again once every host has the new
-library, that is, from the next change after this one.
+submodule, and built with it. If the linker or a library is somewhere
+else on it, `/usr/local/etc/arcana/config.mk` there is copied into the
+tree as its `config.mk`. When the agent is root, git and make run as
+`nobody`. From a shell, `arcanactl agent-build [-o file] repository
+[ref]` builds and saves the program.
 
 ## Versions
 

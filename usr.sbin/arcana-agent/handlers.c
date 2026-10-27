@@ -130,7 +130,6 @@ static const char *service_action_names[] = {
 	[ARC_SERVICE_ACTION_DISABLE] = "disable",
 };
 
-static bool	valid_service(const char *);
 static char	*peer_name(cbl_req *);
 static void	*worker(void *);
 static int	start(struct job *);
@@ -175,7 +174,7 @@ valid_ifname(const char *s)
 }
 
 /* rc.d script names: letters, digits, '_', '-', '.'; not hidden. */
-static bool
+bool
 valid_service(const char *s)
 {
 
@@ -3284,6 +3283,34 @@ cuts_off(cbl_req *req, const struct arc_job_spec *sp)
 	    "it back when it does not hear from you again" : NULL);
 }
 
+/*
+ * A batch of jobs req asks for, checked and queued: each spec's own
+ * checks, what would cut its sender off, the queue's room; the jobs
+ * into *v, *n, w's.  -1 and *errp: none queued.  job-submit's, and
+ * arcana-jobs' submit's (yarcana.c).
+ */
+int
+jobs_submit_checked(cbl_req *req, const struct arc_job_spec *specs, size_t n,
+    struct work *w, const struct arc_job **v, size_t *nv, const char **errp)
+{
+	char	*peer;
+	size_t	 i;
+
+	for (i = 0; i < n; i++)
+		if ((*errp = check_spec(&specs[i])) != NULL ||
+		    (*errp = cuts_off(req, &specs[i])) != NULL)
+			return (-1);
+	if (jobs_waiting() + n > JOBS_WAITING_MAX) {
+		*errp = "too many jobs wait already: let some finish, or "
+		    "cancel them";
+		return (-1);
+	}
+	peer = peer_name(req);
+	jobs_submit(specs, n, peer, w, v, nv);
+	free(peer);
+	return (0);
+}
+
 /* Jobs are queued, listed and read on the loop: none of it waits. */
 int
 arc_job_submit_doit(cbl_req *req, const struct arc_job_submit_req *rq,
@@ -3292,25 +3319,17 @@ arc_job_submit_doit(cbl_req *req, const struct arc_job_submit_req *rq,
 	struct arc_job_submit_rsp	 rsp;
 	struct work			 w;
 	const char			*e;
-	char				*peer;
-	size_t				 i;
 	int				 error;
 
-	for (i = 0; i < rq->batch.n; i++)
-		if ((e = check_spec(&rq->batch.v[i])) != NULL ||
-		    (e = cuts_off(req, &rq->batch.v[i])) != NULL)
-			return (reject(req, e));
-	if (jobs_waiting() + rq->batch.n > JOBS_WAITING_MAX)
-		return (reject(req, "too many jobs wait already: let some "
-		    "finish, or cancel them"));
 	work_init(&w);
 	memset(&rsp, 0, sizeof(rsp));
+	if (jobs_submit_checked(req, rq->batch.v, rq->batch.n, &w,
+	    &rsp.jobs.v, &rsp.jobs.n, &e) != 0) {
+		work_free(&w);
+		return (reject(req, e));
+	}
 	rsp.has_ok = true;
 	rsp.ok = true;
-	peer = peer_name(req);
-	jobs_submit(rq->batch.v, rq->batch.n, peer, &w, &rsp.jobs.v,
-	    &rsp.jobs.n);
-	free(peer);
 	error = arc_job_submit_reply(req, &rsp);
 	work_free(&w);
 	return (error);

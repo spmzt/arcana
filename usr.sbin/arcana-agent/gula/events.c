@@ -131,6 +131,8 @@ event_vadd(const char *jail, const char *kind, const char *fmt, va_list ap)
 		memset(&ntf, 0, sizeof(ntf));
 		ntf.json = json;
 		(void)arc_event_notify(ev_family, &ntf);
+		/* And as arcana-events' notification, in the same order. */
+		yang_event(json);
 	}
 	pthread_mutex_unlock(&ev_lock);
 	free(json);

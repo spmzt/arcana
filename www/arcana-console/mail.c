@@ -13,8 +13,9 @@
  *
  * The console's host sends it: sendmail(8) -t, as FreeBSD comes, is
  * mailwrapper(8) and dma(8), which relays as /etc/dma/dma.conf says;
- * web.conf's sendmail names another.  Arcana sets up no mail server.  A Telegram message is sent by an
- * agent (luxuria/telegram.c), the one of the host telegram_via names
+ * web.conf's sendmail names another.  Arcana sets up no mail server.
+ * A Telegram message is sent by an agent (luxuria/telegram.c), the one
+ * of the host telegram_via names
  * or the one beside the console: the host that reaches the world
  * outside, not the console.
  *

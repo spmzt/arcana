@@ -5,7 +5,7 @@
  */
 
 /*
- * Gula: the logs as YANG (PLAN-SDN-YANG 3.1.7).
+ * Gula: the logs as YANG.
  *
  * - arcana-log: the log operation's JSON (log.c) read back: the files
  *   of the log directory, and a read's lines, each line's facility and

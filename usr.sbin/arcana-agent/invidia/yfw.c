@@ -5,14 +5,14 @@
  */
 
 /*
- * Invidia: the firewall as YANG, arcana-firewall (PLAN-SDN-YANG
- * 3.1.10).  The network operation's ipfw kind (ipfw.c, read_ipfw())
- * read back into the module's structs: the kept rules with their
- * aliases and what rc.conf says as configuration, what the kernel has
- * (the rules with their counters, the dynamic rules, the tables, NAT,
- * dummynet) as state; the ipfw-rules operation's text with its SHA-256
- * as the kept container; the fw-trace operation's packets as the trace
- * action's output.  A rule stays ipfw's words: the model carries them.
+ * Invidia: the firewall as YANG, arcana-firewall.  The network
+ * operation's ipfw kind (ipfw.c, read_ipfw()) read back into the
+ * module's structs: the kept rules with their aliases and what rc.conf
+ * says as configuration, what the kernel has (the rules with their
+ * counters, the dynamic rules, the tables, NAT, dummynet) as state; the
+ * ipfw-rules operation's text with its SHA-256 as the kept container;
+ * the fw-trace operation's packets as the trace action's output.  A rule
+ * stays ipfw's words: the model carries them.
  */
 
 #include <sys/param.h>

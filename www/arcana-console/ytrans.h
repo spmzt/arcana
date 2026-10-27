@@ -19,5 +19,12 @@
  */
 int	ytrans_interfaces(cbl_conn *conn, bool v4, bool v6,
 	    ucl_object_t **out, char *err, size_t errlen);
+/*
+ * The top-level nodes named, by commas (none: all of them), as RFC
+ * 7951's JSON, one object, from a GET of the agent's models over conn.
+ * 0, or an errno and err says why.
+ */
+int	ytrans_data(cbl_conn *conn, const char *names, ucl_object_t **out,
+	    char *err, size_t errlen);
 
 #endif	/* !_ARCANA_YTRANS_H_ */

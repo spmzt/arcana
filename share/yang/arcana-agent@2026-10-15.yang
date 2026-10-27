@@ -31,8 +31,6 @@ module arcana-agent {
   revision 2026-10-15 {
     description
       "Initial revision.";
-    reference
-      "Arcana docs/PLAN-SDN-YANG.md step 3.1.9.";
   }
 
   grouping repository {
