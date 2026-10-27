@@ -5383,7 +5383,7 @@ part_firewall(void)
 	ATF_CHECK(system("grep -q '^geneve9 create genevemode l3 geneveid 9 "
 	    "genevelocal 192.0.2.1 genevegroup 239.0.0.9 genevedev em0 "
 	    "genevettl inherit genevelearn -genevedscpinherit "
-	    "-geneveexternal$' ifconfig.log") == 0);
+	    "-geneveexternal up$' ifconfig.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 
 	/*

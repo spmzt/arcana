@@ -423,6 +423,27 @@ route_get(struct rl *c, struct snl_state *ss, const char *address,
 	return (0);
 }
 
+/* Whether table fib has a route to gw: the kernel takes a gateway it
+ * reaches there alone. */
+static bool
+reached(struct snl_state *ss, const struct sockaddr_storage *gw, uint32_t fib)
+{
+	struct snl_writer	 nw;
+	struct nlmsghdr		*hdr;
+	struct rtmsg		*rtm;
+
+	snl_init_writer(ss, &nw);
+	hdr = snl_create_msg_request(&nw, RTM_GETROUTE);
+	rtm = snl_reserve_msg_object(&nw, struct rtmsg);
+	rtm->rtm_family = gw->ss_family;
+	rtm->rtm_dst_len = gw->ss_family == AF_INET ? 32 : 128;
+	snl_add_msg_attr_ip(&nw, RTA_DST, (const struct sockaddr *)gw);
+	snl_add_msg_attr_u32(&nw, RTA_TABLE, fib);
+	return ((hdr = snl_finalize_msg(&nw)) != NULL && snl_send_message(ss,
+	    hdr) && (hdr = snl_read_reply(ss, hdr->nlmsg_seq)) != NULL &&
+	    hdr->nlmsg_type == NL_RTM_NEWROUTE);
+}
+
 /* argv: destination gateway interface fib metric [weight source]. */
 static int
 route_change(struct snl_state *ss, bool del, int argc, char **argv)
@@ -541,6 +562,16 @@ route_change(struct snl_state *ss, bool del, int argc, char **argv)
 	    hdr) || !snl_read_reply_code(ss, hdr->nlmsg_seq, &e)) {
 		if (e.error == 0)
 			e.error = errno != 0 ? errno : EINVAL;
+		/* The kernel's EINVAL for a gateway its table does not
+		 * reach, said so. */
+		if (!del && e.error == EINVAL && has_gw && !many && oif == 0 &&
+		    gw.ss_family == af && !reached(ss, &gw, fib)) {
+			fprintf(stderr, "%s: the gateway %s is not reached in "
+			    "routing table %u: no route there leads to it (an "
+			    "address of its network on an interface of that "
+			    "table first)\n", argv[0], argv[1], fib);
+			return (1);
+		}
 		fprintf(stderr, "%s: %s%s%s\n", argv[0], e.error == ESRCH ?
 		    "there is no such route" : e.error == EEXIST ?
 		    "the route is there already" : strerror(e.error),

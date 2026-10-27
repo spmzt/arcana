@@ -147,6 +147,8 @@ step_exec(struct work *w, int idx, char *const argv[], int status,
 	s->err = errout;
 	s->errlen = errlen;
 	pthread_mutex_unlock(&w->lock);
+	if (w->told)
+		yang_changed(YANG_JOBS);
 }
 
 /*
@@ -260,6 +262,8 @@ tell(struct work *w, int idx)
 	struct arc_step		 v;
 	cbl_msg			*msg;
 
+	if (w->told)
+		yang_changed(YANG_JOBS);
 	if (w->tell == NULL || idx < 0)
 		return;
 	memset(&v, 0, sizeof(v));

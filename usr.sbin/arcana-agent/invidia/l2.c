@@ -975,6 +975,14 @@ do_l2_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	}
 	create = sp->kind == ARC_JOB_KIND_GENEVE && strcmp(sp->verb,
 	    "create") == 0;
+	/*
+	 * A geneve made is up at once, then and at boot (ifconfig_<if>
+	 * comes before its aliases): one first started by an address
+	 * given to it is left not running when it is the first of its
+	 * network, and only down and up again starts it.
+	 */
+	if (create && n < L2_WORDS)
+		out[n++] = "up";
 	k = 0;
 	argv[k++] = (char *)(uintptr_t)opts.ifconfig_bin;
 	argv[k++] = (char *)(uintptr_t)sp->interface;
@@ -985,6 +993,12 @@ do_l2_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	argv[k] = NULL;
 	if (run_exec(w, scope_argv(w, argv), &res) != 0) {
 		*errp = scope_missing(w, &res, "ifconfig", NULL);
+		/* bridgestp: RSTP's hello time is fixed, only STP's is set. */
+		if (*errp == NULL && res.err != NULL && strstr(res.err,
+		    "BRDGSHT") != NULL && strstr(res.err, "not permitted") !=
+		    NULL)
+			*errp = "the hello time is set in the legacy STP alone: "
+			    "set proto stp first (RSTP's is 2 seconds)";
 		if (*errp == NULL)
 			*errp = wtext(w, exec_error(w, &res, "ifconfig"));
 		return (-1);
@@ -998,8 +1012,39 @@ do_l2_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		argv[3] = NULL;
 		(void)run_exec(w, scope_argv(w, argv), &res);
 	}
-	if (sp->persist && w->jail == NULL)
-		keep(w, sp->interface, out, n, create);
+	if (!sp->persist)
+		return (0);
+	/* And at boot: a member no ifconfig_<if> brings up stays down. */
+	if (sp->kind == ARC_JOB_KIND_BRIDGE && strcmp(sp->verb, "addm") ==
+	    0) {
+		const char	*var, *cur;
+		char		*copy, *p, *t;
+		bool		 up = false;
+
+		var = wfmt(w, "ifconfig_%s", rc_ifname(w, sp->names.v[0]));
+		cur = rc_get(w, var);
+		copy = wstrdup(w, cur != NULL ? cur : "");
+		for (p = copy; !up && (t = strsep(&p, " \t")) != NULL; )
+			up = strcmp(t, "up") == 0;
+		e = NULL;
+		if (!up)
+			(void)rc_set(w, var, "=", cur != NULL ? wfmt(w, "%s up",
+			    cur) : "up", &e);
+	}
+	/* The mode is a geneve's own from its making: create_args, which
+	 * rc(8) makes it with; ifconfig refuses it after. */
+	for (i = k = 0; i < n; i++) {
+		if (create && strcmp(out[i], "genevemode") == 0 && i + 1 < n) {
+			e = NULL;
+			(void)rc_set(w, wfmt(w, "create_args_%s", rc_ifname(w,
+			    sp->interface)), "=", wfmt(w, "genevemode %s",
+			    out[i + 1]), &e);
+			i++;
+			continue;
+		}
+		out[k++] = out[i];
+	}
+	keep(w, sp->interface, out, k, create);
 	return (0);
 }
 

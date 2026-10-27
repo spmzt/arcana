@@ -249,6 +249,7 @@ change_note(const char *fmt, ...)
 		note_since = time(NULL);
 	}
 	pthread_mutex_unlock(&note_lock);
+	yang_changed(YANG_JOBS);
 	return (go);
 }
 
@@ -260,6 +261,7 @@ changes_stop(bool on)
 	pthread_mutex_lock(&note_lock);
 	stopping = on;
 	pthread_mutex_unlock(&note_lock);
+	yang_changed(YANG_JOBS);
 }
 
 bool

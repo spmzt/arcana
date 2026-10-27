@@ -820,9 +820,10 @@ whose first part is served.
   sdwan-dhcp, sdwan-dns, sdwan-proxy and sdwan-ids operations retired;
   check: the SD-WAN tests and the two-jail lab.
 - 3.2.3 A (the rest): on-change from the event sources in place of a
-  read every dampening period. The events and the alarms are told
-  (cbl_ysub_told, cbl_ysub_changed); interfaces, addresses, routes,
-  jails and jobs are still read each period. The kernel announces nothing, on netlink or rtsock, for a
+  read every dampening period. The events, the alarms and the jobs are
+  told (cbl_ysub_told, cbl_ysub_changed); interfaces, addresses, routes
+  and jails are still read each period, as they change outside the
+  agent too. The kernel announces nothing, on netlink or rtsock, for a
   description, a FIB, a group, a link-layer address, media,
   capabilities, or a vlan's, lagg's or bridge's settings: those are
   told by the agent's own jobs that change them, or polled; check: an
@@ -896,8 +897,8 @@ whose first part is served.
   prefix are done.
 - 4.3.2 C: the SID and library cache refreshed on
   `yang-library-update`; check: an agent updated under the console.
-- 4.3.3 C: fan-out subscriptions merged with the host prefix on each
-  record; check: two hosts' events on one stream.
+- 4.3.3 done (console rcstream.c): the `fleet` stream, every host's on
+  one thread and one reply, each record nested in its host's entry.
 - 4.4.1 C: `arcana-console` module served from the libucl files
   (settings, tokens, workflows, enrolment tokens, users); check: GET
   and PUT of a setting.

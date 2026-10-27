@@ -96,19 +96,12 @@
 
 Written and tested with stand-ins only:
 
-- A route in another routing table that the kernel takes (the one
-  tried was refused, its gateway not reached in that table); and
-  whether the source address route(8) takes is the one the route then
-  uses.
 - The map with a real vnet jail as a node.
 - A jail's share of the CPUs and its memory from rctl_get_racct(2): the
   lab VM's kernel has kern.racct.enable off, and turning it on needs a
   reboot; what is read when it is off is run for real.
 - The switch to SCTP from the page (the API is run for real, between a
   console and an agent on one machine).
-- The firewall, bridges and geneve: any of it in a vnet jail; what is
-  kept in rc.conf for a bridge or a tunnel; NAT and NAT64; a spanning
-  tree of more than one bridge; traffic through a geneve tunnel.
 - SD-WAN: the steering by BFD on the lab, resource faults; DNS sent to
   the service's resolver by ipfw `fwd` (ipfw takes the rule; no query
   has gone through it); DHCPv6 at a UNI (dnsmasq's enable-ra) and the
@@ -154,6 +147,21 @@ Written and tested with stand-ins only:
   show such a route with no interface.  A FIB set before the addresses
   avoids it.  For a kernel fix (in6_ifdetach / rt_flushifroutes over
   every FIB).
+
+- NAT64 (nat64lsn) through a vnet jail answered only with
+  net.inet.ip.fw.nat64_direct_output=1: with 0, the translated replies
+  are counted as "discarded due to some errors" and go nowhere.  Not
+  looked into further.  With the well-known prefix 64:ff9b::/96 an
+  IPv4 address that is not global (RFC 1918, the documentation
+  ranges) is translated only with allow_private.
+
+- FreeBSD 16-CURRENT, if_geneve: geneve_init() marks the softc
+  running (geneve_init_complete()) even when it failed to set up its
+  socket, so a failed start is never retried until the interface goes
+  down and up again.  The first geneve of a network started by an
+  address given to it (SIOCSIFADDR, under in_control) fails so; one
+  brought up first does not.  The agent brings a geneve up as it makes
+  it, and keeps "up" in its rc.conf line.  For a kernel fix.
 
 - RFC 4364 VPN routes are not written for the control plane: the
   FreeBSD port of BIRD 3 does not build its l3vpn protocol

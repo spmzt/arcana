@@ -1118,8 +1118,11 @@ yang_event(const char *json)
  * What the agent tells the changes of, so that an on-change subscription
  * of them is read when told and not every period: the events, each
  * added (events.c); the alarms, each fault set, cleared, said anew,
- * purged or compressed (faults.c).  A fault older than a day goes with
- * the next of those.
+ * purged or compressed (faults.c), a fault older than a day going with
+ * the next of those; the jobs, each queued, begun, confirmed, finished
+ * or forgotten, each step of one, and what holds the changes (jobs.c,
+ * trace.c, handlers.c).  The rest changes outside the agent too, or
+ * where the kernel does not say: read every period.
  */
 void
 yang_changed(int what)
@@ -1127,6 +1130,7 @@ yang_changed(int what)
 	static const char *const tops[][2] = {
 		[YANG_EVENTS] = { "arcana-events", "events" },
 		[YANG_ALARMS] = { "ietf-alarms", "alarms" },
+		[YANG_JOBS] = { "arcana-jobs", "jobs" },
 	};
 	const struct cbl_ynode	*n;
 
@@ -1139,7 +1143,7 @@ yang_changed(int what)
 int
 yang_serve(cbl_ctx *ctx)
 {
-	const struct cbl_ynode	*told[2];
+	const struct cbl_ynode	*told[3];
 	int			 error;
 
 	/* Each request on a thread of its own: a read of the storage or of
@@ -1149,7 +1153,8 @@ yang_serve(cbl_ctx *ctx)
 	yctx = ctx;
 	(void)cbl_ysub_set_replay(ctx, yreplay, NULL);
 	if ((told[0] = ynode_named("arcana-events", "events")) != NULL &&
-	    (told[1] = ynode_named("ietf-alarms", "alarms")) != NULL)
+	    (told[1] = ynode_named("ietf-alarms", "alarms")) != NULL &&
+	    (told[2] = ynode_named("arcana-jobs", "jobs")) != NULL)
 		(void)cbl_ysub_told(ctx, told, nitems(told));
 	return (cbl_yserver_threads(ctx, true));
 }

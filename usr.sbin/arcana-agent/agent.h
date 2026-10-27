@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.225.0"
+#define	ARCANA_AGENT_VERSION	"0.226.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -232,6 +232,8 @@ struct work {
 	pthread_mutex_t	 lock;
 	/* The peer told each step as it begins and ends, or NULL. */
 	cbl_conn	*tell;
+	/* A job's: its steps changing are the jobs' change (yang_changed). */
+	bool		 told;
 	/*
 	 * A job's, set by another thread when it is cancelled at work: a
 	 * watched program it runs (exec_set_watch()) is stopped.
@@ -927,6 +929,7 @@ void		 events_replay(time_t, void (*)(const char *, time_t, void *),
 void		 yang_event(const char *);
 #define	YANG_EVENTS	0
 #define	YANG_ALARMS	1
+#define	YANG_JOBS	2
 void		 yang_changed(int);
 void		 event_add_jail(const char *, const char *, const char *, ...)
 		    __printflike(3, 4);

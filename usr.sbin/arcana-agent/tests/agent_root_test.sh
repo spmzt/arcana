@@ -2701,8 +2701,144 @@ yang_tunnel_cleanup()
 	cleanup
 }
 
+# A route in a vnet jail's routing table 1, whose gateway that table
+# alone reaches; one with a source leaves from it; one whose gateway the
+# table does not reach is refused, saying so.
+FIB_J=arc-tfib
+
+atf_test_case route_fib cleanup
+route_fib_head()
+{
+	atf_set "descr" "A route added in another routing table, its source used"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+route_fib_body()
+{
+	start_daemon
+	atf_check jail -c name=$FIB_J vnet persist path=/ host.hostname=$FIB_J
+	ep=$(ifconfig epair create)
+	echo "$ep" > fib.epair
+	atf_check ifconfig "$ep" vnet $FIB_J
+	atf_check ifconfig "${ep%a}b" vnet $FIB_J
+	atf_check -o ignore jexec $FIB_J sysctl net.fibs=2
+	atf_check jexec $FIB_J ifconfig "$ep" fib 1
+	atf_check jexec $FIB_J ifconfig "$ep" inet 192.0.2.1/24 up
+	atf_check jexec $FIB_J ifconfig "$ep" inet 192.0.2.5/32 alias
+	atf_check jexec $FIB_J ifconfig "${ep%a}b" inet 192.0.2.2/24 up
+	atf_check -o ignore "$JGC" -c "$SOCK" -j $FIB_J -F 1 route add \
+	    198.51.100.0/24 192.0.2.2 source 192.0.2.5
+	atf_check -o match:"^198\.51\.100\.0/24 +192\.0\.2\.2 +UGS +$ep" \
+	    jexec $FIB_J netstat -rn -F 1 -f inet
+	atf_check -s not-exit:0 -o ignore -e ignore \
+	    jexec $FIB_J route -n get -fib 0 198.51.100.7
+	# Out of the far end, from the route's source.
+	jexec $FIB_J timeout 10 tcpdump -n -c 1 -i "${ep%a}b" icmp \
+	    > td.out 2>/dev/null &
+	td=$!
+	sleep 1
+	jexec $FIB_J setfib 1 ping -c 1 -t 1 198.51.100.7 >/dev/null 2>&1
+	wait $td
+	atf_check -o match:'IP 192\.0\.2\.5 > 198\.51\.100\.7: ICMP echo request' \
+	    cat td.out
+	atf_check -s exit:1 -e ignore -o match:'gateway 10\.9\.9\.9 is not reached in routing table 1' \
+	    "$JGC" -c "$SOCK" -j $FIB_J -F 1 route add 198.18.0.0/24 10.9.9.9
+}
+route_fib_cleanup()
+{
+	if [ -f fib.epair ]; then
+		ep=$(cat fib.epair)
+		ifconfig "$ep" -vnet $FIB_J 2>/dev/null
+		ifconfig "${ep%a}b" -vnet $FIB_J 2>/dev/null
+		ifconfig "$ep" destroy 2>/dev/null
+	fi
+	jail -r $FIB_J 2>/dev/null
+	cleanup
+}
+
+# Two vnet jails, an underlay and two more epairs between them: a
+# geneve tunnel each side made by the agent, traffic through it; and a
+# bridge each side over the two epairs, a loop the spanning tree breaks.
+L2_A=arc-tla
+L2_B=arc-tlb
+
+atf_test_case l2_vnet cleanup
+l2_vnet_head()
+{
+	atf_set "descr" "Geneve tunnels pass traffic, two bridges in a loop have one port discarding"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+l2_vnet_body()
+{
+	kldload -n if_geneve 2>/dev/null || atf_skip "no if_geneve"
+	start_daemon
+	for j in $L2_A $L2_B; do
+		atf_check jail -c name=$j vnet persist path=/ host.hostname=$j
+	done
+	: > l2.epairs
+	for i in 1 2 3; do
+		ep=$(ifconfig epair create)
+		echo "$ep" >> l2.epairs
+		atf_check ifconfig "$ep" vnet $L2_A
+		atf_check ifconfig "${ep%a}b" vnet $L2_B
+	done
+	set -- $(cat l2.epairs)
+	atf_check jexec $L2_A ifconfig "$1" inet 192.0.2.1/30 up
+	atf_check jexec $L2_B ifconfig "${1%a}b" inet 192.0.2.2/30 up
+	# Made, then addressed: up from its making, so it runs.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" -j $L2_A geneve geneve0 \
+	    create mode l3 id 7 local 192.0.2.1 remote 192.0.2.2
+	atf_check -o match:'done' "$JGC" -c "$SOCK" -j $L2_B geneve geneve0 \
+	    create mode l3 id 7 local 192.0.2.2 remote 192.0.2.1
+	atf_check -o ignore "$JGC" -c "$SOCK" -j $L2_A interface geneve0 add 10.97.0.1/24
+	atf_check -o ignore "$JGC" -c "$SOCK" -j $L2_B interface geneve0 add 10.97.0.2/24
+	atf_check -o match:'RUNNING' jexec $L2_A ifconfig geneve0
+	atf_check -o match:'1 packets received' \
+	    jexec $L2_A ping -c 1 -t 5 10.97.0.2
+	# The loop: the second and third epairs in a bridge each side.
+	for j in $L2_A $L2_B; do
+		if [ $j = $L2_A ]; then m2=$2; m3=$3; else m2=${2%a}b; m3=${3%a}b; fi
+		atf_check -o ignore "$JGC" -c "$SOCK" -j $j interface bridge0 create
+		for c in "set fwddelay 4" "set maxage 6" "addm $m2" "addm $m3" \
+		    "flag $m2 stp" "flag $m3 stp"; do
+			atf_check -o ignore "$JGC" -c "$SOCK" -j $j bridge bridge0 $c
+		done
+		atf_check jexec $j ifconfig bridge0 up
+	done
+	atf_check -s exit:1 -o match:'legacy STP alone' -e ignore \
+	    "$JGC" -c "$SOCK" -j $L2_A bridge bridge0 set hellotime 1
+	for i in $(seq 1 40); do
+		[ "$( (jexec $L2_A ifconfig bridge0; jexec $L2_B ifconfig \
+		    bridge0) | grep -c 'state discarding')" -eq 1 ] && break
+		sleep 0.5
+	done
+	atf_check -o inline:'1\n' sh -c "(jexec $L2_A ifconfig bridge0; \
+	    jexec $L2_B ifconfig bridge0) | grep -c 'state discarding'"
+}
+l2_vnet_cleanup()
+{
+	for j in $L2_A $L2_B; do
+		jexec $j ifconfig bridge0 destroy 2>/dev/null
+		jexec $j ifconfig geneve0 destroy 2>/dev/null
+	done
+	if [ -f l2.epairs ]; then
+		for ep in $(cat l2.epairs); do
+			ifconfig "$ep" -vnet $L2_A 2>/dev/null
+			ifconfig "${ep%a}b" -vnet $L2_B 2>/dev/null
+			ifconfig "$ep" destroy 2>/dev/null
+		done
+	fi
+	for j in $L2_A $L2_B; do
+		jail -r $j 2>/dev/null
+	done
+	cleanup
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case l2_vnet
+	atf_add_test_case route_fib
 	atf_add_test_case devd_watch
 	atf_add_test_case yang_tunnel
 	atf_add_test_case yang_jail_actions

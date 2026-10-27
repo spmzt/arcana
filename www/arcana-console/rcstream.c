@@ -21,6 +21,13 @@
  * host's stream ending ends the reply, with an error event saying why;
  * the client going stops the thread.
  *
+ * The fleet's stream, /restconf/streams/fleet/json: every host's this
+ * user may read, on one thread and one reply, each record its
+ * notification nested in its host's entry of arcana-fleet (RFC 8528's
+ * mount point; RFC 7950 section 7.16.2's notification in a list).  A
+ * host whose stream ends is said in an error event naming it; the
+ * reply ends with the last of them.
+ *
  * A subscription of one's own (RFC 8650, RESTCONF's transport of RFC
  * 8639 and RFC 8641): establish-subscription POSTed under a host's
  * entry, a stream or the operational datastore, periodic or on-change,
@@ -73,12 +80,28 @@ struct rcsub {
 
 static struct rcsub	subs[SUBS_MAX];
 
-struct rcs {
-	LIST_ENTRY(rcs)		 list;
-	struct http_request	*req;	/* NULL once the client went */
+struct rcs;
+
+/* A host a stream hears, its connection the thread's alone. */
+struct rch {
+	struct rcs		*rs;
 	char			 sid[9];
 	char			*uri;
 	char			*peer;
+	cbl_conn		*conn;	/* NULL: not connected, or let go */
+	cbl_tls			*tls;
+	struct arc_client	 cl;
+	cbl_stream		*s;
+	bool			 closed;	/* its stream ended */
+	char			 why[200];	/* why */
+};
+
+struct rcs {
+	LIST_ENTRY(rcs)		 list;
+	struct http_request	*req;	/* NULL once the client went */
+	struct rch		*h;
+	size_t			 nh;
+	bool			 fleet;	/* records nested in their hosts */
 	pthread_t		 thread;
 	atomic_bool		 stop;
 	atomic_bool		 ended;	/* the thread is done */
@@ -87,9 +110,8 @@ struct rcs {
 	bool			 lost;
 	char			 since[40];	/* replay from, or "" */
 	struct rcsub		 sub;	/* its input: id 0, the NETCONF stream */
-	char			 why[200];	/* why the host's ended */
+	char			 why[200];	/* why the stream ended */
 	time_t			 said;	/* when the reply had a line last */
-	bool			 opened, closed;
 };
 
 static LIST_HEAD(, rcs)	streams = LIST_HEAD_INITIALIZER(streams);
@@ -97,10 +119,10 @@ static int		nstreams;
 static struct timer	*ticker;
 
 /* A notification as RFC 8040's JSON (section 6.4): its event time, the
- * notification qualified by its module; malloc'd, or NULL.  Its event
- * time in when. */
+ * notification qualified by its module, in host's entry of the fleet
+ * when host is not NULL; malloc'd, or NULL.  Its event time in when. */
 static char *
-notif_json(const cbl_msg *msg, char *when, size_t wlen)
+notif_json(const cbl_msg *msg, const char *host, char *when, size_t wlen)
 {
 	const struct cbl_ynode	*n;
 	struct cbl_ynotif	 nt;
@@ -122,9 +144,14 @@ notif_json(const cbl_msg *msg, char *when, size_t wlen)
 		    "\"eventTime\":\"%s\",\"sid\":\"%ju\"}}", nt.event_time,
 		    (uintmax_t)nt.sid) == -1)
 			json = NULL;
-	} else if (asprintf(&json, "{\"ietf-restconf:notification\":{"
-	    "\"eventTime\":\"%s\",\"%s:%s\":%.*s}}", nt.event_time,
-	    n->module->name, n->name, (int)b.len, (const char *)b.p) == -1)
+	} else if (host != NULL ? asprintf(&json,
+	    "{\"ietf-restconf:notification\":{\"eventTime\":\"%s\","
+	    "\"arcana-fleet:fleet\":{\"host\":[{\"id\":\"%s\",\"%s:%s\":"
+	    "%.*s}]}}}", nt.event_time, host, n->module->name, n->name,
+	    (int)b.len, (const char *)b.p) == -1 : asprintf(&json,
+	    "{\"ietf-restconf:notification\":{\"eventTime\":\"%s\","
+	    "\"%s:%s\":%.*s}}", nt.event_time, n->module->name, n->name,
+	    (int)b.len, (const char *)b.p) == -1)
 		json = NULL;
 out:
 	cbl_ybuf_free(&b);
@@ -135,27 +162,28 @@ out:
 static void
 rcs_open(cbl_stream *s, cbl_msg *accept, int error, void *arg)
 {
-	struct rcs	*rs = arg;
+	struct rch	*h = arg;
 
 	(void)s;
-	rs->opened = true;
 	if (error != 0) {
-		snprintf(rs->why, sizeof(rs->why), "the host refused: %s",
+		snprintf(h->why, sizeof(h->why), "the host refused: %s",
 		    accept != NULL && cbl_msg_err_str(accept) != NULL ?
 		    cbl_msg_err_str(accept) : strerror(error));
-		rs->closed = true;
+		h->closed = true;
 	}
 }
 
 static void
 rcs_data(cbl_stream *s, cbl_msg *data, void *arg)
 {
-	struct rcs	*rs = arg;
+	struct rch	*h = arg;
+	struct rcs	*rs = h->rs;
 	char		*json, when[64];
 
 	(void)s;
 	when[0] = '\0';
-	if ((json = notif_json(data, when, sizeof(when))) == NULL)
+	if ((json = notif_json(data, rs->fleet ? h->sid : NULL, when,
+	    sizeof(when))) == NULL)
 		return;
 	/* Its event time its id, where it has one. */
 	pthread_mutex_lock(&rs->lock);
@@ -172,12 +200,12 @@ rcs_data(cbl_stream *s, cbl_msg *data, void *arg)
 static void
 rcs_close(cbl_stream *s, int code, const char *text, void *arg)
 {
-	struct rcs	*rs = arg;
+	struct rch	*h = arg;
 
 	(void)s;
 	(void)code;
-	rs->closed = true;
-	snprintf(rs->why, sizeof(rs->why), "%s", text != NULL && text[0] !=
+	h->closed = true;
+	snprintf(h->why, sizeof(h->why), "%s", text != NULL && text[0] !=
 	    '\0' ? text : "the host ended the stream");
 }
 
@@ -284,71 +312,142 @@ sub_clear(struct rcsub *sb)
 	memset(sb, 0, sizeof(*sb));
 }
 
-static void *
-rcs_run(void *arg)
+/* Host h's stream opened on a connection of its own; false, why in h. */
+static bool
+rch_open(struct rch *h)
 {
 	struct ietf_subscribed_notifications_establish_subscription_input in;
 	struct ietf_subscribed_notifications_establish_subscription_input_yp_periodic
 				 per;
 	struct ietf_subscribed_notifications_establish_subscription_input_yp_on_change
 				 oc;
-	struct rcs		*rs = arg;
 	const struct cbl_ynode	*inode;
-	struct arc_client	 cl;
-	struct pollfd		 pfd;
-	cbl_stream		*s = NULL;
-	cbl_conn		*conn;
-	cbl_tls			*tls;
-	cbl_msg			*m;
 	const char		*msg;
-	int			 error, ev, ms;
+	cbl_msg			*m;
 
-	if ((msg = hosts_connect(rs->uri, rs->peer, &conn, &tls, &cl)) !=
-	    NULL) {
-		snprintf(rs->why, sizeof(rs->why), "the host does not answer: "
-		    "%s", msg);
-		atomic_store(&rs->ended, true);
-		return (NULL);
+	if ((msg = hosts_connect(h->uri, h->peer, &h->conn, &h->tls,
+	    &h->cl)) != NULL) {
+		h->conn = NULL;
+		snprintf(h->why, sizeof(h->why), "the host does not answer: %s",
+		    msg);
+		return (false);
 	}
-	sub_input(rs, &in, &per, &oc);
-	if ((inode = est_input()) == NULL || (error = cbl_msg_new(
-	    cbl_conn_ctx(conn), CBL_YANG_FAMILY, CBL_YCMD_SUBSCRIBE, 0,
-	    &m)) != 0 || (error = cbl_msg_put_ynode(m, inode, &in)) != 0 ||
-	    (error = cbl_stream_open(conn, m, CBL_SF_PUSH, &rcs_cbs, rs, &s)) !=
-	    0) {
-		snprintf(rs->why, sizeof(rs->why), "the host's stream could "
-		    "not be opened");
-		hosts_release(rs->uri, rs->peer, conn, tls, &cl, false);
-		atomic_store(&rs->ended, true);
-		return (NULL);
+	sub_input(h->rs, &in, &per, &oc);
+	if ((inode = est_input()) == NULL || cbl_msg_new(cbl_conn_ctx(h->conn),
+	    CBL_YANG_FAMILY, CBL_YCMD_SUBSCRIBE, 0, &m) != 0 ||
+	    cbl_msg_put_ynode(m, inode, &in) != 0 || cbl_stream_open(h->conn, m,
+	    CBL_SF_PUSH, &rcs_cbs, h, &h->s) != 0) {
+		snprintf(h->why, sizeof(h->why), "the host's stream could not "
+		    "be opened");
+		hosts_release(h->uri, h->peer, h->conn, h->tls, &h->cl, false);
+		h->conn = NULL;
+		return (false);
 	}
-	error = 0;
-	while (!atomic_load(&rs->stop) && !rs->closed) {
-		ev = 0;
-		ms = -1;
-		(void)cbl_conn_interest(conn, &ev, &ms);
-		pfd.fd = cbl_conn_fd(conn);
-		pfd.events = ((ev & CBL_EV_READ) != 0 ? POLLIN : 0) |
-		    ((ev & CBL_EV_WRITE) != 0 ? POLLOUT : 0);
-		pfd.revents = 0;
-		if (poll(&pfd, 1, ms < 0 || ms > RCS_WAKE_MS ? RCS_WAKE_MS :
-		    ms) == -1)
-			continue;
-		ev = ((pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0 ?
-		    CBL_EV_READ : 0) | ((pfd.revents & POLLOUT) != 0 ?
-		    CBL_EV_WRITE : 0);
-		if ((error = cbl_conn_process(conn, ev)) != 0) {
-			snprintf(rs->why, sizeof(rs->why), "the host stopped "
-			    "answering: %s", strerror(error));
+	return (true);
+}
+
+/* Host h let go, its stream closed first while it is open and its
+ * connection whole; in the fleet's, said in an error event naming it. */
+static void
+rch_done(struct rch *h, bool broken)
+{
+	struct rcs	*rs = h->rs;
+	char		*why, text[260];
+
+	if (h->conn != NULL) {
+		/* A connection with a stream on it is no one else's. */
+		if (!h->closed && !broken)
+			(void)cbl_stream_close(h->s, 0, NULL);
+		hosts_release(h->uri, h->peer, h->conn, h->tls, &h->cl, false);
+		h->conn = NULL;
+	}
+	h->closed = true;
+	if (!rs->fleet || atomic_load(&rs->stop))
+		return;
+	snprintf(text, sizeof(text), "host %s: %s", h->sid, h->why);
+	if ((why = restconf_errors(502, text)) == NULL)
+		return;
+	pthread_mutex_lock(&rs->lock);
+	buf_appendf(rs->out, "event: error\ndata: %s\n\n", why);
+	pthread_mutex_unlock(&rs->lock);
+	free(why);
+}
+
+static void *
+rcs_run(void *arg)
+{
+	struct rcs	*rs = arg;
+	struct pollfd	*pfd;
+	struct rch	*h;
+	size_t		 i, n, *at;
+	int		 error, ev, ms, wait;
+
+	pfd = xcalloc(rs->nh, sizeof(*pfd));
+	at = xcalloc(rs->nh, sizeof(*at));
+	for (i = 0; i < rs->nh && !atomic_load(&rs->stop); i++)
+		if (!rch_open(&rs->h[i]))
+			rch_done(&rs->h[i], true);
+	while (!atomic_load(&rs->stop)) {
+		wait = RCS_WAKE_MS;
+		for (i = n = 0; i < rs->nh; i++) {
+			h = &rs->h[i];
+			if (h->conn == NULL)
+				continue;
+			if (h->closed) {
+				rch_done(h, false);
+				continue;
+			}
+			ev = 0;
+			ms = -1;
+			(void)cbl_conn_interest(h->conn, &ev, &ms);
+			if (ms >= 0 && ms < wait)
+				wait = ms;
+			pfd[n].fd = cbl_conn_fd(h->conn);
+			pfd[n].events = ((ev & CBL_EV_READ) != 0 ? POLLIN : 0) |
+			    ((ev & CBL_EV_WRITE) != 0 ? POLLOUT : 0);
+			pfd[n].revents = 0;
+			at[n++] = i;
+		}
+		if (n == 0)
 			break;
+		if (poll(pfd, n, wait) == -1)
+			continue;
+		for (i = 0; i < n; i++) {
+			h = &rs->h[at[i]];
+			ev = ((pfd[i].revents & (POLLIN | POLLHUP | POLLERR)) !=
+			    0 ? CBL_EV_READ : 0) | ((pfd[i].revents & POLLOUT) !=
+			    0 ? CBL_EV_WRITE : 0);
+			if ((error = cbl_conn_process(h->conn, ev)) != 0) {
+				snprintf(h->why, sizeof(h->why), "the host stopped "
+				    "answering: %s", strerror(error));
+				rch_done(h, true);
+			}
 		}
 	}
-	/* A connection with a stream on it is no one else's. */
-	if (!rs->closed && error == 0)
-		(void)cbl_stream_close(s, 0, NULL);
-	hosts_release(rs->uri, rs->peer, conn, tls, &cl, false);
+	for (i = 0; i < rs->nh; i++)
+		if (rs->h[i].conn != NULL)
+			rch_done(&rs->h[i], false);
+	snprintf(rs->why, sizeof(rs->why), "%s", rs->fleet ?
+	    "every host's stream ended" : rs->h[0].why);
+	free(pfd);
+	free(at);
 	atomic_store(&rs->ended, true);
 	return (NULL);
+}
+
+static void
+rcs_clear(struct rcs *rs)
+{
+
+	pthread_mutex_destroy(&rs->lock);
+	buf_free(rs->out);
+	sub_clear(&rs->sub);
+	for (size_t i = 0; i < rs->nh; i++) {
+		free(rs->h[i].uri);
+		free(rs->h[i].peer);
+	}
+	free(rs->h);
+	free(rs);
 }
 
 static void
@@ -358,12 +457,7 @@ rcs_free(struct rcs *rs)
 	(void)pthread_join(rs->thread, NULL);
 	LIST_REMOVE(rs, list);
 	nstreams--;
-	pthread_mutex_destroy(&rs->lock);
-	buf_free(rs->out);
-	sub_clear(&rs->sub);
-	free(rs->uri);
-	free(rs->peer);
-	free(rs);
+	rcs_clear(rs);
 }
 
 static void
@@ -438,11 +532,12 @@ api_restconf_stream_free(struct http_request *req)
 	atomic_store(&rs->stop, true);
 }
 
-/* The stream of s to req, of sb's input (NULL: the NETCONF stream),
+/* The stream of the n hosts sv to req, the fleet's (records nested in
+ * their hosts) or one host's, of sb's input (NULL: the NETCONF stream),
  * from since when it is not NULL; the reply begun. */
 static int
-rcs_start(struct http_request *req, const struct server *s,
-    struct rcsub *sb, const char *since)
+rcs_start(struct http_request *req, const struct server *const *sv,
+    size_t n, bool fleet, struct rcsub *sb, const char *since)
 {
 	struct rcs	*rs;
 
@@ -450,9 +545,16 @@ rcs_start(struct http_request *req, const struct server *s,
 		return (restconf_error(req, 503, "too many streams are open: "
 		    "try again"));
 	rs = xcalloc(1, sizeof(*rs));
-	strlcpy(rs->sid, s->id, sizeof(rs->sid));
-	rs->uri = xstrdup(s->uri);
-	rs->peer = s->peer_name != NULL ? xstrdup(s->peer_name) : NULL;
+	rs->h = xcalloc(n, sizeof(*rs->h));
+	rs->nh = n;
+	rs->fleet = fleet;
+	for (size_t i = 0; i < n; i++) {
+		rs->h[i].rs = rs;
+		strlcpy(rs->h[i].sid, sv[i]->id, sizeof(rs->h[i].sid));
+		rs->h[i].uri = xstrdup(sv[i]->uri);
+		rs->h[i].peer = sv[i]->peer_name != NULL ?
+		    xstrdup(sv[i]->peer_name) : NULL;
+	}
 	rs->out = buf_alloc(512);
 	rs->said = time(NULL);
 	if (sb != NULL) {
@@ -465,12 +567,7 @@ rcs_start(struct http_request *req, const struct server *s,
 	atomic_init(&rs->ended, false);
 	pthread_mutex_init(&rs->lock, NULL);
 	if (pthread_create(&rs->thread, NULL, rcs_run, rs) != 0) {
-		pthread_mutex_destroy(&rs->lock);
-		buf_free(rs->out);
-		sub_clear(&rs->sub);
-		free(rs->uri);
-		free(rs->peer);
-		free(rs);
+		rcs_clear(rs);
 		return (restconf_error(req, 503, "no thread for it"));
 	}
 	LIST_INSERT_HEAD(&streams, rs, list);
@@ -483,10 +580,25 @@ rcs_start(struct http_request *req, const struct server *s,
 	http_stream(req, 200);
 	/* A first line at once: the client knows it is open. */
 	put(req, sb != NULL || rs->sub.datastore ? ": the subscription\n\n" :
+	    fleet ? ": the fleet's stream\n\n" :
 	    ": the host's NETCONF stream\n\n");
 	if (ticker == NULL)
 		ticker = timer_add(rcs_tick, RCS_TICK_MS, NULL, 0);
 	return (WEB_OK);
+}
+
+/* Back after a cut: what came meanwhile first.  An id is an event time,
+ * RFC 3339's characters alone; NULL: none. */
+static const char *
+last_event(struct http_request *req)
+{
+	const char	*leid;
+
+	if (!http_request_header(req, "last-event-id", &leid) || leid[0] ==
+	    '\0' || strlen(leid) >= 40 || leid[strspn(leid,
+	    "0123456789-:.TZ+")] != '\0')
+		return (NULL);
+	return (leid);
 }
 
 /* GET /restconf/streams/<id>/json: the host's NETCONF stream as events. */
@@ -494,7 +606,6 @@ int
 api_restconf_stream(struct http_request *req)
 {
 	const struct server	*s;
-	const char		*leid;
 	char			 sid[16];
 
 	if (!guard(req, false))
@@ -504,13 +615,30 @@ api_restconf_stream(struct http_request *req)
 		return (restconf_error(req, 404, "no such host"));
 	if (!host_allowed(req, sid, false, false))
 		return (WEB_OK);
-	/* Back after a cut: what came meanwhile first.  An id is an event
-	 * time, RFC 3339's characters alone. */
-	if (!http_request_header(req, "last-event-id", &leid) || leid[0] ==
-	    '\0' || strlen(leid) >= 40 || leid[strspn(leid,
-	    "0123456789-:.TZ+")] != '\0')
-		leid = NULL;
-	return (rcs_start(req, s, NULL, leid));
+	return (rcs_start(req, &s, 1, false, NULL, last_event(req)));
+}
+
+/* GET /restconf/streams/fleet/json: every host's this user may read. */
+int
+api_restconf_fleet_stream(struct http_request *req)
+{
+	const struct server	*s, **sv;
+	size_t			 n = 0;
+	int			 rv;
+
+	if (!guard(req, false))
+		return (WEB_OK);
+	for (int i = 0; server_at(i) != NULL; i++)
+		n++;
+	sv = xcalloc(n + 1, sizeof(*sv));
+	n = 0;
+	for (int i = 0; (s = server_at(i)) != NULL; i++)
+		if (host_role_ok(req, s->id, false, false))
+			sv[n++] = s;
+	rv = n == 0 ? restconf_error(req, 404, "no host to hear") :
+	    rcs_start(req, sv, n, true, NULL, last_event(req));
+	free(sv);
+	return (rv);
 }
 
 /* A string member of o, a copy; NULL when there is none. */
@@ -683,7 +811,7 @@ api_restconf_subscription(struct http_request *req)
 		if (!host_allowed(req, subs[i].sid, false, false))
 			return (WEB_OK);
 		subs[i].id = 0;
-		return (rcs_start(req, s, &subs[i], NULL));
+		return (rcs_start(req, &s, 1, false, &subs[i], NULL));
 	}
 	return (restconf_error(req, 404, "no such subscription"));
 }

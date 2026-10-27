@@ -376,6 +376,8 @@ ATF_TC_BODY(restconf, tc)
 	ATF_CHECK_STREQ(id, jstr(&r, "ietf-restconf-monitoring:restconf-state."
 	    "streams.stream.0.name"));
 	ATF_CHECK(strstr(r.body, "/restconf/streams/") != NULL);
+	ATF_CHECK(strstr(r.body, "\"name\":\"fleet\"") != NULL &&
+	    strstr(r.body, "/restconf/streams/fleet/json") != NULL);
 	resp_free(&r);
 	/* The host's events as Server-Sent Events: a job's comes. */
 	{
@@ -443,6 +445,29 @@ ATF_TC_BODY(restconf, tc)
 		}
 		ATF_CHECK_MSG(strstr(buf, "\"arcana-events:event\":") != NULL &&
 		    strstr(buf, "replay-completed") != NULL, "%s", buf);
+		close(s);
+		/* The fleet's: the same, each record in its host's entry. */
+		s = console_socket();
+		ATF_REQUIRE(setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv,
+		    sizeof(tv)) == 0);
+		snprintf(rq, sizeof(rq), "GET /restconf/streams/fleet/json "
+		    "HTTP/1.1\r\nHost: localhost:8443\r\nCookie: %s\r\n"
+		    "Last-Event-ID: 2001-01-01T00:00:00Z\r\n\r\n", cookie);
+		ATF_REQUIRE(write(s, rq, strlen(rq)) == (ssize_t)strlen(rq));
+		len = 0;
+		buf[0] = '\0';
+		for (i = 0; i < 50 && strstr(buf, "replay-completed") == NULL;
+		    i++) {
+			if ((n = read(s, buf + len, sizeof(buf) - 1 - len)) <= 0)
+				break;
+			len += (size_t)n;
+			buf[len] = '\0';
+		}
+		snprintf(rq, sizeof(rq), "\"arcana-fleet:fleet\":{\"host\":"
+		    "[{\"id\":\"%s\",\"arcana-events:event\":", id);
+		ATF_CHECK_MSG(strstr(buf, "fleet's stream") != NULL &&
+		    strstr(buf, rq) != NULL && strstr(buf,
+		    "replay-completed") != NULL, "%s", buf);
 		close(s);
 	}
 	/* A subscription of one's own (RFC 8650): POSTed, its id and URI
@@ -5436,7 +5461,7 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK(system("grep -q '^bridge0 ifuntagged epair5a 20 iftagged "
 	    "epair5a none$' ifconfig.log && grep -q '^geneve7 create "
 	    "genevemode l3 geneveid 7 genevelocal 192.0.2.1 geneveremote "
-	    "192.0.2.2$' ifconfig.log") == 0);
+	    "192.0.2.2 up$' ifconfig.log") == 0);
 
 	/*
 	 * How the agent is reached: its listeners and who is connected.

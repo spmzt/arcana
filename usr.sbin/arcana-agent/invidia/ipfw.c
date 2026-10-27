@@ -122,6 +122,51 @@ file_read(struct work *w, size_t *lenp)
 	return (text);
 }
 
+/*
+ * What rc.d/ipfw loads a module for at boot before the kept rules, by
+ * the rc.conf variable that says so: each a kept rule needs is set.
+ * One set already, or no longer needed, is left as it is.
+ */
+static void
+file_modules(struct work *w, const char *text, size_t len)
+{
+	static const struct {
+		const char	*word, *var;
+	} need[] = {
+		{ "nat", "firewall_nat_enable" },
+		{ "nat64lsn", "firewall_nat64_enable" },
+		{ "nat64stl", "firewall_nat64_enable" },
+		{ "nat64clat", "firewall_nat64_enable" },
+		{ "nptv6", "firewall_nptv6_enable" },
+		{ "tcp-setmss", "firewall_pmod_enable" },
+		{ "pipe", "dummynet_enable" },
+		{ "queue", "dummynet_enable" },
+		{ "sched", "dummynet_enable" },
+	};
+	bool		 set[nitems(need)];
+	const char	*v, *e;
+	char		*copy, *line, *p, *t;
+	size_t		 k;
+
+	memset(set, 0, sizeof(set));
+	copy = wstrndup(w, text, len);
+	while ((line = strsep(&copy, "\n")) != NULL) {
+		if (line[strspn(line, " \t")] == '#')
+			continue;
+		for (p = line; (t = strsep(&p, " \t")) != NULL; )
+			for (k = 0; k < nitems(need); k++)
+				if (strcmp(t, need[k].word) == 0)
+					set[k] = true;
+	}
+	for (k = 0; k < nitems(need); k++) {
+		if (!set[k] || ((v = rc_get(w, need[k].var)) != NULL &&
+		    strcasecmp(v, "YES") == 0))
+			continue;
+		e = NULL;
+		(void)rc_set(w, need[k].var, "=", "YES", &e);
+	}
+}
+
 static int
 file_write(struct work *w, const char *text, size_t len, const char **errp)
 {
@@ -135,6 +180,7 @@ file_write(struct work *w, const char *text, size_t len, const char **errp)
 			    errno));
 			return (-1);
 		}
+		file_modules(w, text, len);
 		return (0);
 	}
 	dir = wstrdup(w, opts.ipfw_rules);
@@ -161,6 +207,7 @@ file_write(struct work *w, const char *text, size_t len, const char **errp)
 		(void)unlink(tmp);
 		return (-1);
 	}
+	file_modules(w, text, len);
 	return (0);
 }
 
@@ -869,15 +916,15 @@ do_ipfw(struct work *w, struct arc_network_rsp *rsp)
 	ucl_object_insert_key(top, ucl_object_frombool(text != NULL), "file", 0,
 	    false);
 	put(top, "path", opts.ipfw_rules);
+	/* A vnet jail's own rc.conf, its firewall loaded at its start
+	 * (rc.d/ipfw is nojailvnet). */
 	rc = ucl_object_typed_new(UCL_OBJECT);
-	if (w->jail == NULL) {
-		if ((v = rc_get(w, "firewall_enable")) != NULL)
-			put(rc, "firewall_enable", v);
-		if ((v = rc_get(w, "firewall_type")) != NULL)
-			put(rc, "firewall_type", v);
-		if ((v = rc_get(w, "firewall_script")) != NULL)
-			put(rc, "firewall_script", v);
-	}
+	if ((v = rc_get(w, "firewall_enable")) != NULL)
+		put(rc, "firewall_enable", v);
+	if ((v = rc_get(w, "firewall_type")) != NULL)
+		put(rc, "firewall_type", v);
+	if ((v = rc_get(w, "firewall_script")) != NULL)
+		put(rc, "firewall_script", v);
 	ucl_object_insert_key(top, rc, "rc", 0, false);
 	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);
@@ -2732,8 +2779,27 @@ kept_line(struct work *w, const char *line, const char **errp)
 		}
 		old = keep;
 	}
-	/* Before the rules: a rule may name what the line makes. */
-	out = wfmt(w, "%s\n%s", line, old);
+	/*
+	 * Before the rules, a rule may name what the line makes; after the
+	 * object lines already there, in the order they were given (one
+	 * configured is made first).
+	 */
+	{
+		const char	*q, *at, *t;
+
+		at = old;
+		for (q = old; *q != '\0'; q = *t == '\n' ? t + 1 : t) {
+			t = q + strcspn(q, "\n");
+			l = wstrndup(w, q, (size_t)(t - q));
+			l += strspn(l, " \t");
+			if (strncmp(l, "add ", 4) == 0)
+				break;
+			if (l[0] != '\0' && l[0] != '#')
+				at = *t == '\n' ? t + 1 : t;
+		}
+		out = wfmt(w, "%.*s%s%s\n%s", (int)(at - old), old, at > old &&
+		    at[-1] != '\n' ? "\n" : "", line, at);
+	}
 	rc = file_write(w, out, strlen(out), errp);
 	pthread_mutex_unlock(&file_lock);
 	return (rc);
@@ -3236,8 +3302,19 @@ do_ipfw_job(struct work *w, const struct arc_job_spec *sp, bool *heldp,
 		if (sp->persist) {
 			rule = join(w, words + 1, sp->names.n - 1);
 			if (kept_change_src(w, strtol(sp->names.v[0], NULL, 10),
-			    rule, src, errp) != 0)
+			    rule, src, errp) != 0) {
+				struct arc_job_spec	 now;
+				const char		*e;
+
+				/* Not kept: nor left in the kernel, the job
+				 * failing whole. */
+				now = *sp;
+				now.persist = false;
+				if (sp->live && (e = ipfw_unadd(w, &now)) != NULL)
+					*errp = wfmt(w, "%s; the rule added now "
+					    "stays: %s", *errp, e);
 				return (-1);
+			}
 		}
 		return (0);
 	}
@@ -3313,7 +3390,7 @@ do_ipfw_job(struct work *w, const struct arc_job_spec *sp, bool *heldp,
 	if (ipfw(w, errp, true, on ? "enable" : "disable", "firewall", NULL) !=
 	    0)
 		return (-1);
-	if (sp->persist && w->jail == NULL) {
+	if (sp->persist) {
 		if (rc_set(w, "firewall_enable", "=", on ? "YES" : "NO",
 		    errp) != 0)
 			return (-1);

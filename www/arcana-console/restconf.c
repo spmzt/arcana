@@ -250,14 +250,38 @@ fleet_object(struct http_request *req)
 	return (fleet);
 }
 
+/* A stream's entry (section 9.1.2): its name, what it is, where its
+ * events are read as Server-Sent Events. */
+static ucl_object_t *
+stream_entry(const char *name, const char *descr, const char *loc)
+{
+	ucl_object_t	*st1, *acc, *a1;
+
+	st1 = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(st1, ucl_object_fromstring(name), "name", 0,
+	    false);
+	ucl_object_insert_key(st1, ucl_object_fromstring(descr),
+	    "description", 0, false);
+	a1 = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(a1, ucl_object_fromstring("json"), "encoding",
+	    0, false);
+	ucl_object_insert_key(a1, ucl_object_fromstring(loc), "location", 0,
+	    false);
+	acc = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(acc, a1);
+	ucl_object_insert_key(st1, acc, "access", 0, false);
+	return (st1);
+}
+
 /* restconf-state: what the server can (section 9.1.1), and each host's
- * stream this user may read (9.1.2), its events as Server-Sent Events. */
+ * stream this user may read (9.1.2), then the fleet's, all of theirs. */
 static ucl_object_t *
 state_object(struct http_request *req)
 {
 	const struct server	*s;
-	ucl_object_t		*streams, *list, *st1, *acc, *a1;
+	ucl_object_t		*streams, *list;
 	char			 loc[512];
+	bool			 any = false;
 	static const char *const caps[] = {
 		("urn:ietf:params:restconf:capability:defaults:1.0"
 		    "?basic-mode=explicit"),
@@ -278,22 +302,16 @@ state_object(struct http_request *req)
 	for (int i = 0; (s = server_at(i)) != NULL; i++) {
 		if (!host_role_ok(req, s->id, false, false))
 			continue;
-		st1 = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(st1, ucl_object_fromstring(s->id), "name",
-		    0, false);
-		ucl_object_insert_key(st1, ucl_object_fromstring(s->name),
-		    "description", 0, false);
-		a1 = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(a1, ucl_object_fromstring("json"),
-		    "encoding", 0, false);
 		snprintf(loc, sizeof(loc), "%s/restconf/streams/%s/json",
 		    cfg.origin != NULL ? cfg.origin : "", s->id);
-		ucl_object_insert_key(a1, ucl_object_fromstring(loc),
-		    "location", 0, false);
-		acc = ucl_object_typed_new(UCL_ARRAY);
-		ucl_array_append(acc, a1);
-		ucl_object_insert_key(st1, acc, "access", 0, false);
-		ucl_array_append(list, st1);
+		ucl_array_append(list, stream_entry(s->id, s->name, loc));
+		any = true;
+	}
+	if (any) {
+		snprintf(loc, sizeof(loc), "%s/restconf/streams/fleet/json",
+		    cfg.origin != NULL ? cfg.origin : "");
+		ucl_array_append(list, stream_entry("fleet", "every host's "
+		    "events, each in its host's entry of arcana-fleet", loc));
 	}
 	streams = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(streams, list, "stream", 0, false);

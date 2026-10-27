@@ -1444,13 +1444,19 @@ sticky, private, span, qinq.
 With
 .Fl p
 it is kept in
-.Xr rc.conf 5 .
+.Xr rc.conf 5 ,
+a member taken in kept up as well.
 A member of a bridge is given no address.
 .It Cm geneve Ar name Cm create | set Ar option Ar value ...
 .It Cm geneve Ar name Cm flush Op Cm all
 Make a
 .Xr geneve 4
-tunnel, or change one, by a job.
+tunnel, up, or change one, by a job; with
+.Fl p
+kept in
+.Xr rc.conf 5 ,
+its mode in
+.Va create_args_ Ns Ar name .
 The options are mode
 .Pq l2 or l3, of a new one only ,
 id, local, remote, group, dev, localport, remoteport, portrange, ttl
@@ -1529,7 +1535,16 @@ own words:
 .Li pipe 1 config bw 10Mbit/s .
 With
 .Fl p ,
-the same words are also a line at the head of the kept rules.
+the same words are also a line at the head of the kept rules, after
+those there already, and what it needs loaded at boot is said in
+.Xr rc.conf 5
+.Po
+.Va firewall_nat_enable ,
+.Va firewall_nat64_enable ,
+.Va firewall_nptv6_enable ,
+.Va firewall_pmod_enable ,
+.Va dummynet_enable
+.Pc .
 With
 .Fl j ,
 of that jail's own firewall, as every

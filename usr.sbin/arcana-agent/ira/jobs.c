@@ -581,12 +581,14 @@ await_confirm(struct qjob *j)
 	pthread_mutex_lock(&jobs_lock);
 	j->state = ARC_JOB_STATE_UNCONFIRMED;
 	j->confirm_by = ts.tv_sec;
+	yang_changed(YANG_JOBS);
 	while (!j->confirmed && !j->rejected && !changes_stopping())
 		if (pthread_cond_timedwait(&confirm_cv, &jobs_lock, &ts) != 0)
 			break;
 	confirmed = j->confirmed;
 	rejected = j->rejected;
 	j->state = ARC_JOB_STATE_RUNNING;
+	yang_changed(YANG_JOBS);
 	pthread_mutex_unlock(&jobs_lock);
 	if (rejected)
 		step_end(&j->w, step, false, "cancelled by the client while it "
@@ -819,8 +821,14 @@ undo_prepare(struct qjob *j)
 		if (sp->persist) {
 			undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s", rc_ifname(&j->w,
 			    sp->interface)));
-			if (sp->kind == ARC_JOB_KIND_GENEVE)
+			if (sp->kind == ARC_JOB_KIND_GENEVE) {
 				undo_snap_rc(j, "cloned_interfaces");
+				undo_snap_rc(j, wfmt(&j->w, "create_args_%s",
+				    rc_ifname(&j->w, sp->interface)));
+			} else if (strcmp(sp->verb, "addm") == 0)
+				/* Its member kept up. */
+				undo_snap_rc(j, wfmt(&j->w, "ifconfig_%s",
+				    rc_ifname(&j->w, sp->names.v[0])));
 		}
 		break;
 	case ARC_JOB_KIND_IF_DESTROY:
@@ -1808,6 +1816,7 @@ run(struct qjob *j, bool lane)
 	j->finished = time(NULL);
 	j->state = ARC_JOB_STATE_DONE;
 	trim();
+	yang_changed(YANG_JOBS);
 	pthread_mutex_unlock(&jobs_lock);
 }
 
@@ -1919,6 +1928,7 @@ lanes(void)
 			j->state = ARC_JOB_STATE_RUNNING;
 			j->started = time(NULL);
 			lanes_busy++;
+			yang_changed(YANG_JOBS);
 			if ((error = pthread_create(&tid, &attr, lane, j)) != 0)
 				errc(1, error, "pthread_create");
 			continue;
@@ -2011,6 +2021,7 @@ runner(void *arg __unused)
 		}
 		j->state = ARC_JOB_STATE_RUNNING;
 		j->started = time(NULL);
+		yang_changed(YANG_JOBS);
 		pthread_mutex_unlock(&jobs_lock);
 		run(j, false);
 	}
@@ -2092,11 +2103,13 @@ jobs_submit(const struct arc_job_spec *specs, size_t n, const char *peer,
 		j->title = title_of(&j->spec);
 		j->peer = xdup(peer);
 		work_init(&j->w);
+		j->w.told = true;
 		TAILQ_INSERT_TAIL(&jobs, j, link);
 		fill(w, &v[i], j, false);
 		logmsg(LOG_INFO, "%s: job %ju queued: %s", peer,
 		    (uintmax_t)j->id, j->title);
 	}
+	yang_changed(YANG_JOBS);
 	pthread_cond_signal(&jobs_cv);
 	pthread_mutex_unlock(&jobs_lock);
 	*vp = v;
@@ -2203,6 +2216,7 @@ jobs_cancel(struct work *w, uint64_t id, const char **errp)
 		}
 		j->state = ARC_JOB_STATE_CANCELLED;
 		j->finished = time(NULL);
+		yang_changed(YANG_JOBS);
 		o = wcalloc(w, 1, sizeof(*o));
 		fill(w, o, j, false);
 		break;

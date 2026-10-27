@@ -5884,15 +5884,16 @@ safe_l2_body()
 	    -o match:'^bridge0 -stp tap9$' -o match:'^bridge0 stp tap9$' \
 	    -o match:'^bridge0 static tap9 00:11:22:33:44:55$' \
 	    -o match:'^bridge0 deladdr 00:11:22:33:44:55$' \
-	    -o match:'^geneve7 create geneveid 7 genevelocal 192.0.2.1 generemote 192.0.2.2$|^geneve7 create geneveid 7 genevelocal 192.0.2.1 geneveremote 192.0.2.2$' \
+	    -o match:'^geneve7 create geneveid 7 genevelocal 192.0.2.1 geneveremote 192.0.2.2 up$' \
 	    -o match:'^geneve7 destroy$' cat ifconfig.log
 	atf_check -o match:'^ifconfig_bridge0="addm em1 up"$' -o not-match:'geneve7' \
-	    -o not-match:'cloned_interfaces' cat rc.conf
+	    -o not-match:'cloned_interfaces' -o not-match:'ifconfig_tap9' cat rc.conf
 
 	# Confirmed: it stays, in rc.conf too.
 	atf_check -o match:'done' -o match:'confirmed: it stays' \
 	    "$JGC" -s -p -c "$SOCK" bridge bridge0 addm tap9
-	atf_check -o match:'^ifconfig_bridge0="addm em1 up addm tap9"$' cat rc.conf
+	atf_check -o match:'^ifconfig_bridge0="addm em1 up addm tap9"$' \
+	    -o match:'^ifconfig_tap9="up"$' cat rc.conf
 
 	# What sets a value over another, or forgets what was learned, is
 	# not taken back.
@@ -8414,8 +8415,9 @@ EOS
 	    cat rc.conf
 	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 addm tap9
 	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 flag tap9 stp
+	# Its member kept up too: a bridge passes nothing to one down.
 	atf_check -o match:'^ifconfig_bridge0="vlanfilter iftagged epair5a 30-40 addm tap9 stp tap9"$' \
-	    cat rc.conf
+	    -o match:'^ifconfig_tap9="up"$' cat rc.conf
 	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 flag tap9 -stp
 	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 vlanfilter off
 	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 deletem tap9
@@ -8456,11 +8458,12 @@ EOS
 	    "$JGC" -c "$SOCK" interface em1 add 10.1.1.1/24
 	atf_check -o empty cat ifconfig.log
 
-	# A geneve tunnel made, in the mode it will keep; its options set.
+	# A geneve tunnel made, in the mode it will keep, and up; its
+	# options set.
 	atf_check -o match:'done +geneve5 create' "$JGC" -c "$SOCK" geneve \
 	    geneve5 create mode l3 id 77 local 192.0.2.1 remote 192.0.2.2 \
 	    ttl inherit df inherit
-	atf_check -o match:'^geneve5 create genevemode l3 geneveid 77 genevelocal 192.0.2.1 geneveremote 192.0.2.2 genevettl inherit genevedf inherit$' \
+	atf_check -o match:'^geneve5 create genevemode l3 geneveid 77 genevelocal 192.0.2.1 geneveremote 192.0.2.2 genevettl inherit genevedf inherit up$' \
 	    tail -1 ifconfig.log
 	atf_check -o ignore "$JGC" -c "$SOCK" geneve geneve0 set learn off \
 	    portrange 5000-6000 group ff08::1 dev em0 dscpinherit on
@@ -8470,10 +8473,12 @@ EOS
 	atf_check -o match:'^geneve0 geneveflushall$' tail -1 ifconfig.log
 	atf_check -o ignore "$JGC" -p -c "$SOCK" geneve geneve6 create mode l2 \
 	    id 9 local 192.0.2.1 group 239.0.0.9 dev em0
-	atf_check -o match:'^ifconfig_geneve6="genevemode l2 geneveid 9 genevelocal 192.0.2.1 genevegroup 239.0.0.9 genevedev em0"$' \
+	# Kept: its mode in create_args, which it is made with at boot.
+	atf_check -o match:'^ifconfig_geneve6="geneveid 9 genevelocal 192.0.2.1 genevegroup 239.0.0.9 genevedev em0 up"$' \
+	    -o match:'^create_args_geneve6="genevemode l2"$' \
 	    -o match:'^cloned_interfaces="geneve6"$' cat rc.conf
 	atf_check -o ignore "$JGC" -p -c "$SOCK" geneve geneve6 set id 10
-	atf_check -o match:'^ifconfig_geneve6="genevemode l2 genevelocal 192.0.2.1 genevegroup 239.0.0.9 genevedev em0 geneveid 10"$' \
+	atf_check -o match:'^ifconfig_geneve6="genevelocal 192.0.2.1 genevegroup 239.0.0.9 genevedev em0 up geneveid 10"$' \
 	    cat rc.conf
 	: > ifconfig.log
 	for bad in "set mode l3" "create mode l4" "set id 99999999" \
@@ -9343,6 +9348,18 @@ add 00310 nat64lsn NAT64 ipv4 from any to 192.0.2.64/27 in
 	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw nat 1 config if em0 same_ports
 	atf_check -o inline:'1\n' sh -c "grep -c '^nat 1 config if em0 same_ports\$' fw/ipfw.rules"
 	atf_check -o match:'^nat 1 config if em0 same_ports$' sed -n 1p fw/ipfw.rules
+	# What the kept rules need loaded at boot, said in rc.conf for
+	# rc.d/ipfw.
+	atf_check -o match:'^firewall_nat_enable="YES"$' \
+	    -o not-match:'dummynet_enable' cat rc.conf
+	# Object lines in the order given, so one is made before it is
+	# configured, all before the rules.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw nat64lsn n1 create \
+	    prefix4 192.0.2.9/32 prefix6 64:ff9b::/96
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw nat64lsn n1 config allow_private
+	atf_check -o inline:'nat 1 config if em0 same_ports|nat64lsn n1 create prefix4 192.0.2.9/32 prefix6 64:ff9b::/96|nat64lsn n1 config allow_private|' \
+	    sh -c "grep -v '^#' fw/ipfw.rules | grep -v '^add' | grep . | tr '\n' '|'"
+	atf_check -o match:'^firewall_nat64_enable="YES"$' cat rc.conf
 	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw pipe 1 config bw 10Mbit/s
 	# Undone, kept: so are the lines it had made, and no others.
 	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw table T9 create type addr

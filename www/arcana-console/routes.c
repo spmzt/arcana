@@ -31,6 +31,8 @@ const struct route routes[] = {
 	    api_restconf_stream_free, HTTP_METHOD_GET },
 	{ "^/restconf/streams/([0-9a-f]+)/json$", api_restconf_stream,
 	    api_restconf_stream_free, HTTP_METHOD_GET },
+	{ "^/restconf/streams/fleet/json$", api_restconf_fleet_stream,
+	    api_restconf_stream_free, HTTP_METHOD_GET },
 	{ "/api/auth/status", api_auth_status, NULL,
 	    HTTP_METHOD_GET },
 	{ "/api/auth/register/begin", api_register_begin, NULL,
