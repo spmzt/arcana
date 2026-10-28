@@ -1639,6 +1639,9 @@ domains(struct ck *c, const ucl_object_t *sw)
 }
 
 static bool function_policy(struct ck *, const ucl_object_t *);
+static bool pdns_agree(struct ck *, const ucl_object_t *);
+static bool hash_ok(const char *);
+static bool mdr_hashes(struct ck *, const ucl_object_t *);
 static bool security_policy(struct ck *, const ucl_object_t *,
 		    const ucl_object_t *);
 static bool sec_scope(struct ck *, const ucl_object_t *);
@@ -2009,6 +2012,8 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 			return (false);
 	}
 	c->where[base] = '\0';
+	if (!pdns_agree(c, sw))
+		return (false);
 	if (!objects(c, ucl_object_lookup(sw, "security_policies"),
 	    "security_policies", "name", true, NULL, "§9.10"))
 		return (false);
@@ -2388,6 +2393,45 @@ domain_ok(const char *s)
 }
 
 /*
+ * A name a DNF takes (R71, R72): a domain name, *. and one, or either
+ * with a * for a whole label inside it (host.*.tld, host.domain.*), a
+ * label of its own at least; *innerp says whether it has such a *.
+ */
+static bool
+dnf_name_ok(const char *s, bool *innerp)
+{
+	char	buf[256], *p, *lab;
+	bool	inner, own;
+
+	if (s == NULL || strlen(s) >= sizeof(buf))
+		return (false);
+	if (strncmp(s, "*.", 2) == 0)
+		s += 2;
+	if (strchr(s, '*') == NULL) {
+		if (innerp != NULL)
+			*innerp = false;
+		return (domain_ok(s));
+	}
+	/* Each * stands for a label: made one to check the name. */
+	snprintf(buf, sizeof(buf), "%s", s);
+	inner = own = false;
+	for (p = buf; (lab = strsep(&p, ".")) != NULL; ) {
+		if (strcmp(lab, "*") == 0) {
+			inner = true;
+			lab[0] = 'x';
+		} else if (strchr(lab, '*') != NULL)
+			return (false);
+		else if (lab[0] != '\0')
+			own = true;
+		if (p != NULL)
+			p[-1] = '.';
+	}
+	if (innerp != NULL)
+		*innerp = inner;
+	return (own && domain_ok(buf));
+}
+
+/*
  * A Suricata rule, as far as the console tells: one line of printable
  * text, an action first, its options in parentheses with a sid.
  * suricata -T on the edge says the rest.
@@ -2455,9 +2499,12 @@ sf_tuple(struct ck *c, const char *fn, const ucl_object_t *e)
 		if (!one_of(k, strcmp(fn, "ippf") == 0 ? ippf : dpf))
 			return (fail(c, "%s: %s is not of an entry", fn, k));
 		if (strcmp(k, "message-type") == 0) {
-			if (strcmp(ucl_object_tostring_forced(v), "any") != 0)
-				return (fail(c, "dpf: message-type is any: ipfw "
-				    "does not read DNS messages"));
+			if (!one_of(ucl_object_tostring_forced(v), (const char
+			    *const[]){ "any", "query", "response", NULL }))
+				return (fail(c, "dpf: message-type is any, query or "
+				    "response, which ipfw tells by the port (to 53, "
+				    "from 53); an update or another is inside the "
+				    "message, which ipfw does not read (Table 6)"));
 			continue;
 		}
 		if (strcmp(k, "sav4") == 0 || strcmp(k, "dav4") == 0 ||
@@ -2514,6 +2561,85 @@ url_entry_ok(const char *s, bool *pathp)
 	return (true);
 }
 
+/*
+ * The ways DNS is carried that PDNS names (Table 8's Encryption Method,
+ * D21, D22): unencrypted, DNS over TLS (dot), or any; one or a list, as
+ * bits into *maskp (1 unencrypted, 2 dot).  DNS over HTTPS is not one:
+ * the base system's unbound is built without it.
+ */
+#define	DNS_PLAIN	0x1
+#define	DNS_DOT		0x2
+
+static bool
+pdns_methods(struct ck *c, const ucl_object_t *v, const char *what,
+    unsigned *maskp)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*s;
+	unsigned		 m;
+	bool			 list;
+
+	m = 0;
+	list = v != NULL && ucl_object_type(v) == UCL_ARRAY;
+	it = NULL;
+	for (e = list ? ucl_object_iterate(v, &it, true) : v; e != NULL;
+	    e = list ? ucl_object_iterate(v, &it, true) : NULL) {
+		s = ucl_object_type(e) == UCL_STRING ? ucl_object_tostring(e) :
+		    "";
+		if (strcmp(s, "doh") == 0)
+			return (fail(c, "%s: doh is not taken: the base system's "
+			    "unbound is built without DNS over HTTPS (D19)",
+			    what));
+		if (strcmp(s, "unencrypted") == 0)
+			m |= DNS_PLAIN;
+		else if (strcmp(s, "dot") == 0)
+			m |= DNS_DOT;
+		else if (strcmp(s, "any") == 0)
+			m |= DNS_PLAIN | DNS_DOT;
+		else
+			return (fail(c, "%s is unencrypted, dot (DNS over TLS) or "
+			    "any, one or a list", what));
+	}
+	if (maskp != NULL)
+		*maskp = m;
+	return (true);
+}
+
+/* A server unbound sends its questions to: address[@port][#name], the
+ * name the one its certificate has (DNS over TLS). */
+static bool
+upstream_ok(const char *s, bool tls)
+{
+	char		 a[64];
+	const char	*at, *hash, *end;
+	struct pfx	 p;
+	long		 port;
+	char		*pe;
+
+	if (s == NULL || strlen(s) > 300)
+		return (false);
+	hash = strchr(s, '#');
+	at = strchr(s, '@');
+	if (at != NULL && hash != NULL && at > hash)
+		return (false);
+	end = at != NULL ? at : hash != NULL ? hash : s + strlen(s);
+	if ((size_t)(end - s) >= sizeof(a))
+		return (false);
+	snprintf(a, sizeof(a), "%.*s", (int)(end - s), s);
+	if (!address(a, &p))
+		return (false);
+	if (at != NULL) {
+		port = strtol(at + 1, &pe, 10);
+		if (pe == at + 1 || port < 1 || port > 65535 || (*pe != '\0' &&
+		    *pe != '#'))
+			return (false);
+	}
+	if (hash != NULL && !domain_ok(hash + 1))
+		return (false);
+	return (!tls || hash != NULL);
+}
+
 /* One entry of a function's list, as its function takes it. */
 static bool
 sf_entry(struct ck *c, const char *fn, const ucl_object_t *e, bool *pathp)
@@ -2528,11 +2654,10 @@ sf_entry(struct ck *c, const char *fn, const ucl_object_t *e, bool *pathp)
 	if (strcmp(fn, "ippf") == 0 || strcmp(fn, "dpf") == 0)
 		return (sf_tuple(c, fn, e));
 	if (strcmp(fn, "dnf") == 0) {
-		if (s == NULL || !domain_ok(strncmp(s, "*.", 2) == 0 ? s + 2 :
-		    s))
-			return (fail(c, "dnf: %s is not a domain name or *. and "
-			    "one (a * inside a name is not taken)",
-			    ucl_object_tostring_forced(e)));
+		if (s == NULL || !dnf_name_ok(s, NULL))
+			return (fail(c, "dnf: %s is not a domain name, *. and "
+			    "one, or one with a * for a whole label inside it "
+			    "(host.*.tld, R71)", ucl_object_tostring_forced(e)));
 		return (true);
 	}
 	if (strcmp(fn, "urlf") == 0) {
@@ -2552,31 +2677,75 @@ sf_entry(struct ck *c, const char *fn, const ucl_object_t *e, bool *pathp)
 		return (true);
 	}
 	if (strcmp(fn, "pdns") == 0) {
+		static const char *const none[] = { "SOA", "MX", "SRV", "PTR",
+		    NULL };
 		const char	*t, *v;
 		char		 vp[80];
 
 		t = str(e, "type");
 		v = str(e, "value");
+		if (ucl_object_type(e) != UCL_OBJECT || t == NULL || v == NULL)
+			return (fail(c, "pdns: an entry is a type, a value and "
+			    "the encryption it is for (Table 8)"));
+		if (one_of(t, none))
+			return (fail(c, "pdns: %s is not taken: unbound looks at "
+			    "the addresses of A and AAAA answers, the names "
+			    "aliases lead to and the name servers' names and "
+			    "addresses, not at a %s's value (R104)", t, t));
 		/* An address alone is a prefix of its length. */
-		if (v != NULL && strchr(v, '/') == NULL && t != NULL)
-			snprintf(vp, sizeof(vp), "%s/%d", v, strcmp(t, "A") == 0 ?
-			    32 : 128);
+		if (strchr(v, '/') == NULL && strcmp(v, "any") != 0)
+			snprintf(vp, sizeof(vp), "%s/%d", v, strchr(v, ':') ==
+			    NULL ? 32 : 128);
 		else
-			snprintf(vp, sizeof(vp), "%s", v != NULL ? v : "");
-		if (ucl_object_type(e) != UCL_OBJECT || (str(e, "encryption")
-		    != NULL && strcmp(str(e, "encryption"), "unencrypted") != 0)
-		    || t == NULL || (strcmp(t, "A") != 0 && strcmp(t, "AAAA") !=
-		    0) || v == NULL || (strcmp(v, "any") != 0 && (!prefix(vp, &p,
-		    true) || p.af != (strcmp(t, "A") == 0 ? AF_INET :
-		    AF_INET6))))
-			return (fail(c, "pdns: an entry is an encryption "
-			    "(unencrypted), a type (A or AAAA) and a value, a "
-			    "prefix of the type's family or any (Table 8)"));
-		return (true);
+			snprintf(vp, sizeof(vp), "%s", v);
+		if (strcmp(t, "A") == 0 || strcmp(t, "AAAA") == 0) {
+			if (strcmp(v, "any") != 0 && (!prefix(vp, &p, true) ||
+			    p.af != (strcmp(t, "A") == 0 ? AF_INET : AF_INET6)))
+				return (fail(c, "pdns: an %s entry's value is a "
+				    "prefix of its family or any", t));
+		} else if (strcmp(t, "CNAME") == 0) {
+			if (!domain_ok(strncmp(v, "*.", 2) == 0 ? v + 2 : v))
+				return (fail(c, "pdns: a CNAME entry's value is "
+				    "the name an alias leads to, or *. and one"));
+		} else if (strcmp(t, "NS") == 0) {
+			if (!domain_ok(v) && !prefix(vp, &p, false))
+				return (fail(c, "pdns: an NS entry's value is a "
+				    "name server's name, or its address or "
+				    "prefix"));
+		} else
+			return (fail(c, "pdns: type is A, AAAA, CNAME or NS "
+			    "(R104)"));
+		return (pdns_methods(c, ucl_object_lookup(e, "encryption"),
+		    "pdns: an entry's encryption", NULL));
 	}
-	/* mdr: hashes are not given to ClamAV yet. */
-	return (fail(c, "mdr: its lists are hashes, which ClamAV is not "
-	    "given yet: the signatures freshclam keeps decide"));
+	/* mdr: a hash of what is scanned, for ClamAV's signature files. */
+	if (s == NULL || !hash_ok(s))
+		return (fail(c, "mdr: %s is not a hash: MD5, SHA-1 or SHA-256 "
+		    "in hex, :size in bytes after it if one knows it (ClamAV's "
+		    "hash signatures)", ucl_object_tostring_forced(e)));
+	return (true);
+}
+
+/* An MD+R entry: an MD5, SHA-1 or SHA-256 in hex, its size in bytes
+ * after a colon if one likes, as ClamAV's hash signatures have them. */
+static bool
+hash_ok(const char *s)
+{
+	size_t	n, i;
+	char	*end;
+	long	 size;
+
+	n = strcspn(s, ":");
+	if (n != 32 && n != 40 && n != 64)
+		return (false);
+	for (i = 0; i < n; i++)
+		if (!isxdigit((unsigned char)s[i]))
+			return (false);
+	if (s[n] == '\0')
+		return (true);
+	size = strtol(s + n + 1, &end, 10);
+	return (s[n + 1] != '\0' && *end == '\0' && size > 0 && size <=
+	    INT32_MAX);
 }
 
 /* The same entry on two lists: by its text, an object by its JSON. */
@@ -2604,6 +2773,74 @@ sf_twice(const ucl_object_t *sfp, const ucl_object_t *e, int upto)
 }
 
 /*
+ * How a PDNS's resolver carries DNS (D21, D22): southbound, to the
+ * zone's clients, unencrypted always (DNF and a DPF's redirect use it
+ * too) and DNS over TLS where it says dot; northbound, to the servers it
+ * asks, unencrypted (by itself, or through upstream) or dot through the
+ * upstream servers, each with the name its certificate has.  An entry's
+ * encryption, where it says one, is every way the resolver serves: a
+ * zone's clients have their view however they ask.
+ */
+static bool
+pdns_dns(struct ck *c, const ucl_object_t *v)
+{
+	const ucl_object_t	*e, *u;
+	ucl_object_iter_t	 it, eit;
+	unsigned		 south, m;
+	bool			 tls;
+	int			 i;
+
+	south = DNS_PLAIN;
+	if ((e = ucl_object_lookup(v, "southbound")) != NULL &&
+	    !pdns_methods(c, e, "pdns: southbound", &south))
+		return (false);
+	if ((south & DNS_PLAIN) == 0)
+		return (fail(c, "pdns: southbound has unencrypted: the resolver "
+		    "answers on port 53 too, for DNF and a DPF's redirect"));
+	for (i = 0; sf_lists[i] != NULL; i++) {
+		eit = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(v,
+		    sf_lists[i]), &eit, true)) != NULL) {
+			if (ucl_object_lookup(e, "encryption") == NULL)
+				continue;
+			(void)pdns_methods(c, ucl_object_lookup(e, "encryption"),
+			    "", &m);
+			if ((m & south) != south)
+				return (fail(c, "pdns: an entry's encryption is "
+				    "each way the resolver serves (southbound), or "
+				    "any: unbound answers a zone's clients by its "
+				    "view, however they ask"));
+		}
+	}
+	tls = false;
+	if ((e = ucl_object_lookup(v, "northbound")) != NULL) {
+		if (ucl_object_type(e) != UCL_STRING || (strcmp(
+		    ucl_object_tostring(e), "unencrypted") != 0 && strcmp(
+		    ucl_object_tostring(e), "dot") != 0))
+			return (fail(c, "pdns: northbound is unencrypted or dot, "
+			    "DNS over TLS to the upstream servers (D21)%s",
+			    ucl_object_type(e) == UCL_STRING && strcmp(
+			    ucl_object_tostring(e), "doh") == 0 ? "; the base "
+			    "system's unbound has no DNS over HTTPS" : ""));
+		tls = strcmp(ucl_object_tostring(e), "dot") == 0;
+	}
+	u = ucl_object_lookup(v, "upstream");
+	if (u != NULL && (ucl_object_type(u) != UCL_ARRAY || ucl_array_size(u)
+	    > 8))
+		return (fail(c, "pdns: upstream is a list of servers, 8 at most"));
+	if (tls && count(u) == 0)
+		return (fail(c, "pdns: northbound dot names its upstream servers"));
+	it = NULL;
+	while ((e = ucl_object_iterate(u, &it, true)) != NULL)
+		if (ucl_object_type(e) != UCL_STRING || !upstream_ok(
+		    ucl_object_tostring(e), tls))
+			return (fail(c, "pdns: upstream: %s is not address[@port]"
+			    "%s", ucl_object_tostring_forced(e), tls ? "#name, "
+			    "the name its certificate has" : "[#name]"));
+	return (true);
+}
+
+/*
  * A Security Function Policy (MEF 138 §9, Tables 9-16): its Policy ID
  * (id, R119), a function, Block, Allow and Quarantine lists of entries
  * as the function takes them and lists by name of the console's (feeds
@@ -2618,12 +2855,13 @@ function_policy(struct ck *c, const ucl_object_t *v)
 	    "allow", "quarantine", "lists", "no-match", "duration", "notify",
 	    "detection-type", "removal", "invalid-server-certificate",
 	    "invalid-client-certificate", "unencrypted", "trusted-cas",
-	    "pass-through", "redirect", NULL };
+	    "pass-through", "redirect", "southbound", "northbound",
+	    "upstream", NULL };
 	static const char *const allow_block[] = { "allow", "block", NULL };
 	const ucl_object_t	*k, *e, *l;
 	ucl_object_iter_t	 it, eit;
 	const char		*fn;
-	bool			 path = false;
+	bool			 path = false, inner;
 	int			 i;
 
 	fn = str(v, "function");
@@ -2652,6 +2890,14 @@ function_policy(struct ck *c, const ucl_object_t *v)
 		    sf_lists[i]), &eit, true)) != NULL) {
 			if (!sf_entry(c, fn, e, &path))
 				return (false);
+			if (strcmp(fn, "dnf") == 0 && i == 1 && dnf_name_ok(
+			    ucl_object_tostring(e), &inner) && inner)
+				return (fail(c, "dnf: allow: %s: a * inside a name is "
+				    "a Block's or a Quarantine's: Squid ends such "
+				    "names at the TLS name and the request's host, "
+				    "unbound, which looks names up, takes none, and "
+				    "an Allow there would not let them by",
+				    ucl_object_tostring(e)));
 			if (sf_twice(v, e, i))
 				return (fail(c, "%s: an entry is on one list at "
 				    "most (R14): %.80s", sf_lists[i],
@@ -2746,7 +2992,59 @@ function_policy(struct ck *c, const ucl_object_t *v)
 	if ((e = ucl_object_lookup(v, "redirect")) != NULL && (strcmp(fn,
 	    "dpf") != 0 || ucl_object_type(e) != UCL_BOOLEAN))
 		return (fail(c, "redirect is dpf's, true or false"));
+	if (strcmp(fn, "pdns") == 0) {
+		if (!pdns_dns(c, v))
+			return (false);
+	} else if (ucl_object_lookup(v, "southbound") != NULL ||
+	    ucl_object_lookup(v, "northbound") != NULL ||
+	    ucl_object_lookup(v, "upstream") != NULL)
+		return (fail(c, "southbound, northbound and upstream are pdns's"));
 	(void)path;
+	return (true);
+}
+
+/* The service's PDNS policies agree on how its one resolver carries
+ * DNS: southbound, northbound and upstream alike. */
+static bool
+pdns_agree(struct ck *c, const ucl_object_t *sw)
+{
+	static const char *const keys[] = { "southbound", "northbound",
+	    "upstream" };
+	const ucl_object_t	*f, *first;
+	ucl_object_iter_t	 it;
+	char			*a, *b;
+	size_t			 i;
+	bool			 same;
+
+	first = NULL;
+	it = NULL;
+	while ((f = ucl_object_iterate(ucl_object_lookup(sw,
+	    "security_function_policies"), &it, true)) != NULL) {
+		if (str(f, "function") == NULL || strcmp(str(f, "function"),
+		    "pdns") != 0)
+			continue;
+		if (first == NULL) {
+			first = f;
+			continue;
+		}
+		for (i = 0; i < nitems(keys); i++) {
+			a = ucl_object_lookup(first, keys[i]) != NULL ? (char *)
+			    ucl_object_emit(ucl_object_lookup(first, keys[i]),
+			    UCL_EMIT_JSON_COMPACT) : NULL;
+			b = ucl_object_lookup(f, keys[i]) != NULL ? (char *)
+			    ucl_object_emit(ucl_object_lookup(f, keys[i]),
+			    UCL_EMIT_JSON_COMPACT) : NULL;
+			same = (a == NULL && b == NULL) || (a != NULL && b !=
+			    NULL && strcmp(a, b) == 0);
+			free(a);
+			free(b);
+			if (!same)
+				return (fail(c, "function policies %s and %s: "
+				    "their %s differ, and the service has one "
+				    "resolver", str(first, "id"), str(f, "id"),
+				    keys[i]));
+		}
+	}
 	return (true);
 }
 
@@ -3449,11 +3747,86 @@ check_doc(const ucl_object_t *doc, struct ck *c)
 				    "point of the SWVC's UCSs", str(e, "id"));
 		}
 	}
+	if (ok) {
+		c->where[0] = '\0';
+		ok = mdr_hashes(c, doc);
+	}
 	ucl_object_unref(seen_ep);
 	ucl_object_unref(seen_uni);
 	ucl_object_unref(seen_if);
 	ucl_object_unref(fibs);
 	return (ok);
+}
+
+/*
+ * An edge's ClamAV is one for all its services: c-icap's module reads
+ * ClamAV's database directory, every service's hash signatures in it.
+ * So a hash is not on an Allow of one MD+R and the Block or Quarantine
+ * of another, of the services with an end point at one edge.
+ */
+static bool
+mdr_hashes(struct ck *c, const ucl_object_t *doc)
+{
+	const ucl_object_t	*edge, *sw, *ep, *f, *e, *had;
+	ucl_object_iter_t	 it, sit, eit, fit, lit;
+	ucl_object_t		*seen;
+	char			 h[65];
+	size_t			 i;
+	bool			 here;
+	int			 k;
+
+	it = NULL;
+	while ((edge = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		seen = ucl_object_typed_new(UCL_OBJECT);
+		sit = NULL;
+		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
+		    &sit, true)) != NULL) {
+			here = false;
+			eit = NULL;
+			while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+			    "end_points"), &eit, true)) != NULL)
+				if (str(ep, "edge") != NULL && str(edge, "server") !=
+				    NULL && strcmp(str(ep, "edge"), str(edge,
+				    "server")) == 0)
+					here = true;
+			fit = NULL;
+			while (here && (f = ucl_object_iterate(ucl_object_lookup(sw,
+			    "security_function_policies"), &fit, true)) != NULL) {
+				if (str(f, "function") == NULL || strcmp(str(f,
+				    "function"), "mdr") != 0)
+					continue;
+				for (k = 0; sf_lists[k] != NULL; k++) {
+					lit = NULL;
+					while ((e = ucl_object_iterate(ucl_object_lookup(
+					    f, sf_lists[k]), &lit, true)) != NULL) {
+						snprintf(h, sizeof(h), "%.*s", (int)strcspn(
+						    ucl_object_tostring_forced(e), ":"),
+						    ucl_object_tostring_forced(e));
+						for (i = 0; h[i] != '\0'; i++)
+							h[i] = (char)tolower((unsigned char)
+							    h[i]);
+						had = ucl_object_lookup(seen, h);
+						if (had != NULL && (strcmp(
+						    ucl_object_tostring(had), "allow") ==
+						    0) != (k == 1)) {
+							ucl_object_unref(seen);
+							return (fail(c, "md+r: %s is on an "
+							    "Allow and on a Block or a "
+							    "Quarantine of services at one "
+							    "edge, whose ClamAV is one for "
+							    "them all", h));
+						}
+						ucl_object_insert_key(seen,
+						    ucl_object_fromstring(sf_lists[k]), h, 0,
+						    true);
+					}
+				}
+			}
+		}
+		ucl_object_unref(seen);
+	}
+	return (true);
 }
 
 /* ---- The API --------------------------------------------------------- */
@@ -3583,6 +3956,7 @@ api_sdwan(struct http_request *req)
 {
 	ucl_object_t	*body, *doc, *o;
 	struct ck	 c;
+	char		 peer[80];
 	int64_t		 have, sent;
 	bool		 keep;
 
@@ -3615,9 +3989,9 @@ api_sdwan(struct http_request *req)
 	doc = sd_load();
 	have = ucl_object_toint(ucl_object_lookup(doc, "version"));
 	sent = ucl_object_toint(ucl_object_lookup(body, "version"));
-	ucl_object_unref(doc);
 	if (sent != have) {
 		pthread_mutex_unlock(&sd_lock);
+		ucl_object_unref(doc);
 		ucl_object_unref(body);
 		return (reply_error(req, 409, "stale", "it was changed since: "
 		    "version %jd, not %jd", (intmax_t)have, (intmax_t)sent));
@@ -3630,6 +4004,7 @@ api_sdwan(struct http_request *req)
 	    0, false);
 	if (store_save(SDWAN_FILE, body) != 0) {
 		pthread_mutex_unlock(&sd_lock);
+		ucl_object_unref(doc);
 		ucl_object_unref(body);
 		return (reply_error(req, 500, "store", "it could not be "
 		    "written"));
@@ -3641,5 +4016,9 @@ api_sdwan(struct http_request *req)
 	    "the whole document kept, checked first as MEF 70.2 says",
 	    "the console (the Policy Administration Point)", session_who(req), "version %jd kept", (intmax_t)(have
 	    + 1));
+	/* Each function policy whose values changed: a SAN (MEF 138 R31). */
+	san_changes(doc, body, web_peer(req, peer, sizeof(peer)),
+	    session_who(req));
+	ucl_object_unref(doc);
 	return (reply_json(req, 200, body));
 }

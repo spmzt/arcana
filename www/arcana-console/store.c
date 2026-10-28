@@ -51,6 +51,7 @@ int
 store_write(const char *name, const void *body, size_t len)
 {
 	char		 path[MAXPATHLEN], tmp[MAXPATHLEN], *p;
+	const char	*step;
 	ssize_t		 w;
 	int		 fd, e;
 
@@ -70,14 +71,31 @@ store_write(const char *name, const void *body, size_t len)
 	/* A short write sets no errno: a full disk, as a rule. */
 	if (w >= 0 && w != (ssize_t)len)
 		errno = ENOSPC;
-	if (w != (ssize_t)len || fchmod(fd, 0600) == -1 || fsync(fd) == -1) {
+	if (w != (ssize_t)len)
+		step = "write";
+	else if (fchmod(fd, 0600) == -1)
+		step = "fchmod";
+	else if (fsync(fd) == -1)
+		step = "fsync";
+	else if (close(fd) == -1)
+		step = "close";
+	else
+		step = NULL;
+	if (step != NULL) {
 		e = errno;
-		(void)close(fd);
-		thread_log(LOG_ERR, "writing %s: %s", path, strerror(e));
+		/*
+		 * EBADF: another thread closed fd, a number that was not its
+		 * own, and it may be a third's by now: not closed again
+		 * here.  Which step and which number, for finding the other.
+		 */
+		if (e != EBADF && strcmp(step, "close") != 0)
+			(void)close(fd);
+		thread_log(LOG_ERR, "writing %s: %s(%d): %s", path, step, fd,
+		    strerror(e));
 		unlink(tmp);
 		return (-1);
 	}
-	if (close(fd) == -1 || rename(tmp, path) == -1) {
+	if (rename(tmp, path) == -1) {
 		thread_log(LOG_ERR, "writing %s: %s", path, strerror(errno));
 		unlink(tmp);
 		return (-1);

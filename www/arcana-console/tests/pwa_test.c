@@ -3739,22 +3739,29 @@ part_relay(void)
 	run("const f = document.querySelector('form[data-form=rl-conf]'); "
 	    "f.profile.value = 'lte'; f.role.value = 'server'; f.listen.value = "
 	    "'192.0.2.2:14351'; f.remote.value = '127.0.0.1:51822'; "
-	    "f.requestSubmit();");
+	    "f.svcj.checked = true; f.svcj_ipaddrs.value = "
+	    "'192.0.2.2,127.0.0.1'; f.requestSubmit();");
 	queued_run();
 	for (i = 0; i < 300 && system("grep -q '^speederv2_profiles=\"lte\"$' "
 	    "rc.conf && grep -q '^speederv2_lte_flags=\"-s -l192.0.2.2:14351 "
 	    "-r127.0.0.1:51822' rc.conf") != 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the second relay's flags are not written");
+	/* In rc.subr's service jail of its own, held to its addresses. */
+	ATF_CHECK(system("grep -q '^speederv2_lte_svcj=\"YES\"$' rc.conf && "
+	    "grep -q '^speederv2_lte_svcj_options=\"net_basic\"$' rc.conf && "
+	    "grep -q '^speederv2_lte_svcj_ipaddrs=\"192.0.2.2 127.0.0.1\"$' "
+	    "rc.conf") == 0);
 	dock_closed();
 	wait_js("document.querySelector('nav.relays button.on[data-act=rl-pick]"
 	    "[data-arg=lte]') && document.querySelector('.relayview .notice."
 	    "warn code')?.textContent === 'speederv2_flags' && document."
 	    "querySelector('.relayview dl.kv').textContent.includes("
-	    "'192.0.2.2:14351')", 20);
+	    "'192.0.2.2:14351') && document.querySelector('.relayview dl.kv')"
+	    ".textContent.includes('svcj-speederv2_lte')", 20);
 	click_when("button[data-act=rl-start]", 10);
 	queued_run();
-	for (i = 0; i < 300 && access("running.speederv2-lte", F_OK) != 0; i++)
+	for (i = 0; i < 300 && access("running.speederv2_lte", F_OK) != 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the second relay is not started");
 	dock_closed();
@@ -3775,11 +3782,47 @@ part_relay(void)
 	    "speederv2_profiles' rc.conf") != 0; i++)
 		usleep(100000);
 	ATF_CHECK_MSG(i < 300, "the second relay is not removed");
-	ATF_CHECK(access("running.speederv2-lte", F_OK) != 0);
+	ATF_CHECK(access("running.speederv2_lte", F_OK) != 0);
 	dock_closed();
 	wait_js("!document.querySelector('nav.relays button[data-arg=lte]')",
 	    20);
 	unlink("rc.d/speederv2");
+	/*
+	 * Its overhead kept in the host's history, beside the interfaces'
+	 * rates: two reports of now in its log, read on by the sampler, and
+	 * drawn under Utilization with what the FEC added of what it carried.
+	 */
+	{
+		char		 was[32], now[32];
+		struct tm	 tm;
+		time_t		 t;
+
+		t = time(NULL) - 10;
+		strftime(was, sizeof(was), "%Y-%m-%d %H:%M:%S", localtime_r(&t,
+		    &tm));
+		t += 10;
+		strftime(now, sizeof(now), "%Y-%m-%d %H:%M:%S", localtime_r(&t,
+		    &tm));
+		ATF_REQUIRE((fp = fopen("speeder.log", "a")) != NULL);
+		fprintf(fp, "Oct 28 10:00:00 h speederv2[7]: [%s][INFO][report]"
+		    "client-->server:(original:100 pkt;100000 byte) (fec:150 pkt,"
+		    "160000 byte)  server-->client:(original:50 pkt;40000 byte) "
+		    "(fec:80 pkt;60000 byte)\n", was);
+		fprintf(fp, "Oct 28 10:00:10 h speederv2[7]: [%s][INFO][report]"
+		    "client-->server:(original:200 pkt;200000 byte) (fec:300 pkt,"
+		    "330000 byte)  server-->client:(original:100 pkt;80000 byte) "
+		    "(fec:160 pkt;120000 byte)\n", now);
+		fclose(fp);
+	}
+	run("document.querySelector('li[data-act=select-usage]').click()");
+	wait_js("[...document.querySelectorAll('section.ucard figure.uplot "
+	    "figcaption b')].some(b => b.textContent === 'FEC relay · "
+	    "speederv2') && [...document.querySelectorAll('.urelays + .upick "
+	    "+ p.ujails')].some(p => p.textContent.includes('Overhead over "
+	    "the window: 64.3%'))", 40);
+	run("document.querySelector('.urelays').scrollIntoView({block: "
+	    "'center'})");
+	shot("8u-relay-history");
 }
 
 /* The Mail tab: OpenSMTPD's form rendered on the host; a table written;
@@ -5394,6 +5437,15 @@ part_firewall(void)
 	run("document.querySelector('button.tab[data-arg=summary]').click()");
 	wait_js("document.querySelector('.transport ul.listeners li.up') && "
 	    "document.querySelector('table.sessions tbody tr')", 20);
+	/* The drift box: the host's addresses beyond the fake rc.conf,
+	 * each with its origin and api-path. */
+	wait_js("document.querySelector('#drift table.drift tbody tr')", 20);
+	ATF_CHECK(js_true("document.querySelector('#drift').textContent."
+	    "includes('Configuration drift') && [...document.querySelectorAll("
+	    "'#drift table.drift tbody tr')].some(r => r.textContent.includes("
+	    "'/ietf-interfaces:interfaces/interface=') && (r.textContent."
+	    "includes('the kernel') || r.textContent.includes('learned') || "
+	    "r.textContent.includes('set by hand')))"));
 	ATF_CHECK(js_true("document.querySelector('.transport ul.listeners')."
 	    "textContent.includes('the console\\'s way in') && !document."
 	    "querySelector('button[data-act=tr-switch]') && document."
@@ -6405,6 +6457,17 @@ part_flows(void)
 	    "=== 'intact') && document.querySelector('a[href=\"/api/sdwan/audit"
 	    ".csv\"]') !== null && [...document.querySelectorAll('section.sdwan "
 	    "h4')].some(h => h.textContent.startsWith('Policy End Points'))"));
+	/* MEF 138's notifications: the SENs and SANs kept, the SANs of the
+	 * example's function policies there, with their IDs. */
+	wait_js("[...document.querySelectorAll('section.sdwan h4')].some(h => "
+	    "h.textContent.startsWith('Security Admin Notifications')) && "
+	    "document.querySelectorAll('table.sd-san tbody tr').length >= 3",
+	    20);
+	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h4')]"
+	    ".some(h => h.textContent.startsWith('Security Event Notifications'"
+	    ")) && document.querySelector('a[href=\"/api/sdwan/sen.csv\"]') !== "
+	    "null && document.querySelector('table.sd-san tbody tr td:nth-child"
+	    "(2)').textContent.length === 36"));
 	/* Intrusion detection: the policy's IDS in its column, the block of
 	 * the edges' Suricata, and the form's mode, rules and ruleset. */
 	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
@@ -8386,6 +8449,12 @@ part_security(void)
 	wait_js("document.querySelector('.secpage').textContent.includes("
 	    "'built without rule profiling') && document.querySelector("
 	    "'ul.advice')", 10);
+	/* Packet profiling, which it has not either: how to get it. */
+	ATF_CHECK(js_true("document.querySelector('.secpage').textContent."
+	    "includes('built without packet profiling') && document."
+	    "querySelector('.secpage').textContent.includes('CONFIGURE_ARGS+="
+	    "--enable-profiling\\n') && !document.querySelector('button"
+	    "[data-act=ist-prof]')"));
 	dock_closed();
 	shot("9v-security-ids-stats");
 	/* A capture replayed through it: a job, its alerts shown. */
@@ -8404,6 +8473,21 @@ part_security(void)
 	wait_js("document.querySelector('.secpage').textContent.includes("
 	    "'lab.pcap, replayed') && document.querySelector('.secpage')."
 	    "textContent.includes('ET REPLAYED')", 40);
+	/* A capture this browser has: up to the host, in two parts (a
+	 * part 4 MB), kept beside the replay, then replayed. */
+	run("const i = document.querySelector('input[data-upload=ist-capture]'); "
+	    "const b = new Uint8Array(4 * 1024 * 1024 + 6); b.set([80, 67, 65, "
+	    "80, 85, 80], 0); const dt = new DataTransfer(); dt.items.add(new "
+	    "File([b], 'up.pcap')); i.files = dt.files; i.dispatchEvent(new "
+	    "Event('change', { bubbles: true }));");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 20);
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('.secpage').textContent.includes("
+	    "'captures/up.pcap, replayed') && document.querySelector('button"
+	    "[data-act=ist-replay-cap]')", 40);
+	ATF_CHECK(system("[ \"$(stat -f %z sdwan-ids-sec-lan.replay.d/captures/"
+	    "up.pcap)\" = 4194310 ] && head -c 6 sdwan-ids-sec-lan.replay.d/"
+	    "captures/up.pcap | grep -qx PCAPUP") == 0);
 	run("document.querySelector('ul.advice').scrollIntoView()");
 	shot("9v-security-ids-engine");
 	ATF_CHECK(js_true("document.scrollingElement.scrollWidth <= "
@@ -8414,6 +8498,21 @@ part_security(void)
 	/* Applied and read again before the next change. */
 	wait_js("document.querySelector('table.secids') && !document."
 	    "querySelector('table.secids.applying')", 20);
+	/* Its alert's packets, kept by pcap-log in a file begun before it:
+	 * a link on its row, which downloads the file through the
+	 * console. */
+	ATF_CHECK(system("mkdir -p sdwan-ids-sec-lan.d && printf PCAPLOG > "
+	    "sdwan-ids-sec-lan.d/log.pcap.1792403990") == 0);
+	wait_js("document.querySelector('ul.secalerts a[href*=\"ids/pcap-log"
+	    "?instance=sec-lan&file=log.pcap.1792403990\"]')", 40);
+	run("window.arcGot = null; window.arcSt = -1; fetch(document."
+	    "querySelector('ul.secalerts a[href*=\"ids/pcap-log\"]').href, { "
+	    "credentials: 'same-origin' }).then(r => { window.arcSt = r.status; "
+	    "return r.text(); }).then(t => { window.arcGot = t; });");
+	wait_js("window.arcGot !== null", 20);
+	ATF_CHECK_MSG(js_true("window.arcGot === 'PCAPLOG'"), "status %d, %d "
+	    "bytes", (int)js_num("window.arcSt"), (int)js_num("window.arcGot."
+	    "length"));
 	/* Stopped, after asking, its form kept; started again. */
 	click_when("table.secids button[data-act=sec-ids-stop]", 30);
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);

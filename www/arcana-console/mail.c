@@ -57,8 +57,11 @@ extern char	**environ;
 
 static pthread_mutex_t	 lock = PTHREAD_MUTEX_INITIALIZER;
 
-/* Each way alerts go: what waits for its next message, the hour's. */
-enum { CH_MAIL, CH_TELEGRAM, CH_N };
+/* Each way alerts go: what waits for its next message, the hour's;
+ * then MEF 138's SENs and SANs (sen.c), each way to their own
+ * recipients. */
+enum { CH_MAIL, CH_TELEGRAM, CH_SEN_MAIL, CH_SEN_TG, CH_SAN_MAIL,
+    CH_SAN_TG, CH_N };
 static struct chan {
 	time_t	 sent_at[MAIL_HOUR_MAX];	/* the last hour's */
 	char	*held;		/* lines not yet sent */
@@ -81,6 +84,7 @@ struct mailconf {
 	bool	 limits;
 	char	*tg_chats, *tg_token, *tg_via, *tg_faults, *tg_jobs, *tg_runs;
 	bool	 tg_limits;
+	char	*sen_to, *san_to, *tg_sen, *tg_san;	/* the notices' */
 };
 
 static void
@@ -105,6 +109,10 @@ mc_load(struct mailconf *mc)
 	l = settings_peek("telegram_limits");
 	mc->tg_limits = strcmp(l, "true") == 0;
 	free(l);
+	mc->sen_to = settings_peek("mail_sen");
+	mc->san_to = settings_peek("mail_san");
+	mc->tg_sen = settings_peek("telegram_sen");
+	mc->tg_san = settings_peek("telegram_san");
 }
 
 static void
@@ -123,6 +131,38 @@ mc_free(struct mailconf *mc)
 	free(mc->tg_faults);
 	free(mc->tg_jobs);
 	free(mc->tg_runs);
+	free(mc->sen_to);
+	free(mc->san_to);
+	free(mc->tg_sen);
+	free(mc->tg_san);
+}
+
+/* Where a way goes: the addresses, or the chats. */
+static const char *
+chan_to(const struct mailconf *mc, int ch)
+{
+
+	switch (ch) {
+	case CH_MAIL:
+		return (mc->to);
+	case CH_TELEGRAM:
+		return (mc->tg_chats);
+	case CH_SEN_MAIL:
+		return (mc->sen_to);
+	case CH_SEN_TG:
+		return (mc->tg_sen);
+	case CH_SAN_MAIL:
+		return (mc->san_to);
+	default:
+		return (mc->tg_san);
+	}
+}
+
+static bool
+chan_mail(int ch)
+{
+
+	return (ch == CH_MAIL || ch == CH_SEN_MAIL || ch == CH_SAN_MAIL);
 }
 
 /* Is the way on: somewhere to tell, and for Telegram a bot. */
@@ -130,8 +170,27 @@ static bool
 chan_on(const struct mailconf *mc, int ch)
 {
 
-	return (ch == CH_MAIL ? mc->to[0] != '\0' : mc->tg_chats[0] != '\0' &&
-	    mc->tg_token[0] != '\0');
+	return (chan_to(mc, ch)[0] != '\0' && (chan_mail(ch) ||
+	    mc->tg_token[0] != '\0'));
+}
+
+/* The settings as a way has them: the alerts' with that way's
+ * recipients in place of mail_to or telegram_chats. */
+static void
+chan_conf(struct mailconf *mc, int ch)
+{
+	char	*to;
+
+	if (ch == CH_MAIL || ch == CH_TELEGRAM)
+		return;
+	to = xstrdup(chan_to(mc, ch));
+	if (chan_mail(ch)) {
+		free(mc->to);
+		mc->to = to;
+	} else {
+		free(mc->tg_chats);
+		mc->tg_chats = to;
+	}
 }
 
 static const char *
@@ -604,7 +663,8 @@ tg_job(const char *when, const char *host, const ucl_object_t *d,
 
 /* One event of a host, held when it is one asked for. */
 static void
-event(const struct mailconf *mc, const char *host, const ucl_object_t *e)
+event(const struct mailconf *mc, const char *id, const char *host,
+    const ucl_object_t *e)
 {
 	const ucl_object_t	*d;
 	const char		*kind;
@@ -617,11 +677,15 @@ event(const struct mailconf *mc, const char *host, const ucl_object_t *e)
 	d = ucl_object_lookup(e, "data");
 	if (kind == NULL || d == NULL)
 		return;
+	/* What a security function told: a SEN (MEF 138 R24). */
+	if (strcmp(kind, "sdwan-security") == 0 || strcmp(kind, "sdwan-ids") ==
+	    0)
+		sen_event(id, host, e);
 	t = (time_t)ucl_object_toint(ucl_object_lookup(e, "t"));
 	localtime_r(&t, &tm);
 	strftime(when, sizeof(when), "%H:%M:%S", &tm);
 	/* Each way, as its own settings say. */
-	for (ch = 0; ch < CH_N; ch++) {
+	for (ch = CH_MAIL; ch <= CH_TELEGRAM; ch++) {
 		const char	*faults, *jobs;
 		bool		 limits;
 
@@ -747,6 +811,15 @@ mail_run(const char *workflow, unsigned int run, const char *state)
 		mail_flush();
 }
 
+/* A notice (sen.c's SEN or SAN) held for its recipients, each way. */
+void
+mail_hold_notice(int which, const char *text)
+{
+
+	hold(which == NOTICE_SEN ? CH_SEN_MAIL : CH_SAN_MAIL, "%s", text);
+	hold(which == NOTICE_SEN ? CH_SEN_TG : CH_SAN_TG, "%s", text);
+}
+
 /* What is held, sent: one message on each way, within its hour's. */
 void
 mail_flush(void)
@@ -765,6 +838,19 @@ mail_flush(void)
 		if (c->nheld == 0) {
 			pthread_mutex_unlock(&lock);
 			continue;
+		}
+		/* A notice with no recipient is kept by sen.c alone. */
+		if (ch > CH_TELEGRAM) {
+			mc_load(&mc);
+			if (!chan_on(&mc, ch)) {
+				c->nheld = 0;
+				c->held_lines = 0;
+				c->held[0] = '\0';
+				pthread_mutex_unlock(&lock);
+				mc_free(&mc);
+				continue;
+			}
+			mc_free(&mc);
 		}
 		now = time(NULL);
 		free_slot = MAIL_HOUR_MAX;
@@ -790,15 +876,23 @@ mail_flush(void)
 			snprintf(subject, sizeof(subject), "Arcana: %.*s",
 			    (int)(nl != NULL ? nl - body : (ptrdiff_t)strlen(
 			    body)), body);
-		} else
+		} else if (ch > CH_TELEGRAM)
+			snprintf(subject, sizeof(subject), "Arcana: %zu Security "
+			    "%s Notifications", lines, ch == CH_SEN_MAIL || ch ==
+			    CH_SEN_TG ? "Event" : "Admin");
+		else
 			snprintf(subject, sizeof(subject), "Arcana: %zu things "
 			    "happened", lines);
-		if (ch == CH_MAIL) {
-			if (mail_send(subject, body, err, sizeof(err)) != 0)
+		if (chan_mail(ch)) {
+			mc_load(&mc);
+			chan_conf(&mc, ch);
+			if (send_with(&mc, subject, body, err, sizeof(err)) != 0)
 				thread_log(LOG_WARNING, "mail: not sent: %s",
 				    err);
+			mc_free(&mc);
 		} else {
 			mc_load(&mc);
+			chan_conf(&mc, ch);
 			/* A heading, how many, then each, a blank line
 			 * between. */
 			for (i = strlen(body); i > 0 && body[i - 1] == '\n'; i--)
@@ -849,7 +943,9 @@ tick(void)
 	bool			 fresh;
 
 	mc_load(&mc);
-	if (!chan_on(&mc, CH_MAIL) && !chan_on(&mc, CH_TELEGRAM)) {
+	for (i = 0; i < CH_N && !chan_on(&mc, i); i++)
+		;
+	if (i == CH_N) {
 		ncursors = 0;		/* when it is set, from then on */
 		mc_free(&mc);
 		return;
@@ -858,6 +954,7 @@ tick(void)
 	if ((all = calloc(MAIL_HOSTS, sizeof(*all))) == NULL)
 		abort();
 	n = host_refs_get(all, MAIL_HOSTS);
+	sen_begin();
 	for (i = 0; i < n; i++) {
 		name = all[i].name;
 		uri = all[i].uri;
@@ -878,7 +975,7 @@ tick(void)
 			while (!fresh && (e = ucl_object_iterate(
 			    ucl_object_lookup(data, "events"), &it, true)) !=
 			    NULL)
-				event(&mc, name, e);
+				event(&mc, all[i].id, name, e);
 			if (ucl_object_lookup(data, "last") != NULL)
 				c->last = (uint64_t)ucl_object_toint(
 				    ucl_object_lookup(data, "last"));
@@ -888,7 +985,9 @@ tick(void)
 done:
 		free(ans);		/* hosts_events() mallocs it */
 	}
+	sen_end();
 	free(all);
+	mc_free(&mc);
 	mail_flush();
 }
 

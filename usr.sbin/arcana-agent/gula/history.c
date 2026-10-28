@@ -12,7 +12,11 @@
  * to and from each disk (devstat(3)) between two looks, and each
  * running jail's share of the CPUs and its memory as the kernel's
  * resource accounting has them (rctl_get_racct(2)), when it is on
- * (kern.racct.enable, a tunable of loader.conf).
+ * (kern.racct.enable, a tunable of loader.conf).  And each FEC relay's
+ * (UDPspeeder, luxuria/speeder.c) bytes taken in plain, the tunnel's
+ * rate as it carries it, and the bytes its FEC adds to them, both ways
+ * over its last --report interval, read from its lines in syslog: the
+ * overhead, beside the rate of the tunnel's interface.
  *
  * Besides the limits of the CPU, the memory and the swap, rules set
  * limits of one interface (bytes a second, both ways), one disk (bytes
@@ -64,7 +68,8 @@
 #define	JAIL_NAME	HIST_NAME	/* a jail's column, named for it */
 
 /* What every row begins with; then in and out of each interface,
- * read and written of each disk, and each jail's CPU and memory. */
+ * read and written of each disk, each jail's CPU and memory, and each
+ * FEC relay's bytes a second taken in plain and added by its FEC. */
 enum { H_CPU, H_LOAD, H_MEM, H_SWAP, H_RX, H_TX, H_RD, H_WR, H_BASE };
 
 struct dev {
@@ -118,7 +123,8 @@ static double		*times;		/* hist_keep of them, when any */
 static float		*rows;		/* hist_keep rows of width */
 static size_t		 nrows, width = H_BASE;
 static struct dev	 nets[HIST_DEVS], disks[HIST_DEVS], jails[HIST_DEVS];
-static size_t		 nnets, ndisks, njails;
+static struct dev	 relays[HIST_DEVS];
+static size_t		 nnets, ndisks, njails, nrelays;
 static bool		 racct;		/* the kernel accounts for jails */
 static uint64_t		 mem_total, swap_total;
 static long		 cp_was[CPUSTATES];
@@ -189,13 +195,13 @@ room(size_t keep, size_t w, double **tp, float **rp)
  * Called with the lock held.
  */
 static void
-reshape(size_t keep, size_t nn, size_t nd, size_t nj)
+reshape(size_t keep, size_t nn, size_t nd, size_t nj, size_t nr)
 {
 	double	*t;
 	float	*r, *from, *to;
 	size_t	 w, n, i, skip;
 
-	w = H_BASE + 2 * nn + 2 * nd + 2 * nj;
+	w = H_BASE + 2 * nn + 2 * nd + 2 * nj + 2 * nr;
 	if (!room(keep, w, &t, &r)) {
 		logmsg(LOG_WARNING, "history: no memory for %zu samples",
 		    keep);
@@ -212,6 +218,9 @@ reshape(size_t keep, size_t nn, size_t nd, size_t nj)
 		    2 * ndisks * sizeof(float));
 		memcpy(to + H_BASE + 2 * nn + 2 * nd, from + H_BASE + 2 *
 		    nnets + 2 * ndisks, 2 * njails * sizeof(float));
+		memcpy(to + H_BASE + 2 * nn + 2 * nd + 2 * nj, from + H_BASE +
+		    2 * nnets + 2 * ndisks + 2 * njails, 2 * nrelays *
+		    sizeof(float));
 	}
 	free(times);
 	free(rows);
@@ -222,6 +231,7 @@ reshape(size_t keep, size_t nn, size_t nd, size_t nj)
 	nnets = nn;
 	ndisks = nd;
 	njails = nj;
+	nrelays = nr;
 	hist_keep = (unsigned int)keep;
 }
 
@@ -244,11 +254,13 @@ slot(struct dev *v, size_t *n, const char *given)
 	if (*n == HIST_DEVS)
 		return (-1);
 	if (v == nets)
-		reshape(hist_keep, nnets + 1, ndisks, njails);
+		reshape(hist_keep, nnets + 1, ndisks, njails, nrelays);
 	else if (v == disks)
-		reshape(hist_keep, nnets, ndisks + 1, njails);
+		reshape(hist_keep, nnets, ndisks + 1, njails, nrelays);
+	else if (v == jails)
+		reshape(hist_keep, nnets, ndisks, njails + 1, nrelays);
 	else
-		reshape(hist_keep, nnets, ndisks, njails + 1);
+		reshape(hist_keep, nnets, ndisks, njails, nrelays + 1);
 	memset(&v[i], 0, sizeof(v[i]));
 	strlcpy(v[i].name, name, sizeof(v[i].name));
 	return ((int)i);
@@ -339,12 +351,13 @@ look(void)
 	struct timespec		 at;
 	struct loadavg		 la;
 	struct jfig		 jf[HIST_DEVS];
+	struct speeder_rate	 fr[HIST_DEVS];
 	char			 name[HIST_NAME];
 	float			*row;
 	uint64_t		 st, su;
 	double			 secs;
 	long			 cp[CPUSTATES], total, idle;
-	size_t			 len, k, nj;
+	size_t			 len, k, nj, nr;
 	int			 i, s;
 	bool			 first;
 
@@ -358,6 +371,7 @@ look(void)
 		dstat.dinfo->numdevs = 0;
 	swap(&st, &su);
 	nj = jail_figures(jf, nitems(jf));
+	nr = speeder_rates(fr, nitems(fr), hist_step);
 
 	pthread_mutex_lock(&hist_lock);
 	first = !have_was;
@@ -382,6 +396,8 @@ look(void)
 	}
 	for (k = 0; k < nj; k++)
 		(void)slot(jails, &njails, jf[k].name);
+	for (k = 0; k < nr; k++)
+		(void)slot(relays, &nrelays, fr[k].tag);
 	if (rows == NULL || hist_keep == 0) {
 		pthread_mutex_unlock(&hist_lock);
 		if (ifa0 != NULL)
@@ -443,6 +459,15 @@ look(void)
 		row[H_BASE + 2 * nnets + 2 * ndisks + 2 * s] = (float)jf[k].pcpu;
 		row[H_BASE + 2 * nnets + 2 * ndisks + 2 * s + 1] =
 		    (float)jf[k].mem;
+	}
+	/* And a relay's, those of its last interval. */
+	for (k = 0; k < nr; k++) {
+		if ((s = slot(relays, &nrelays, fr[k].tag)) == -1)
+			continue;
+		row[H_BASE + 2 * nnets + 2 * ndisks + 2 * njails + 2 * s] =
+		    (float)fr[k].plain;
+		row[H_BASE + 2 * nnets + 2 * ndisks + 2 * njails + 2 * s + 1] =
+		    (float)fr[k].added;
 	}
 	/* One that went away and comes back begins anew. */
 	for (k = 0; k < nnets; k++)
@@ -825,8 +850,8 @@ samples_write(void)
 	}
 	if ((fp = fopen(tmp, "we")) == NULL)
 		return;
-	fprintf(fp, "# arcana-agent samples: step keep nets | disks | jails\n"
-	    "%u %u", hist_step, hist_keep);
+	fprintf(fp, "# arcana-agent samples: step keep nets | disks | jails | "
+	    "relays\n%u %u", hist_step, hist_keep);
 	for (k = 0; k < nnets; k++)
 		fprintf(fp, " %s", nets[k].name);
 	fprintf(fp, " |");
@@ -835,6 +860,9 @@ samples_write(void)
 	fprintf(fp, " |");
 	for (k = 0; k < njails; k++)
 		fprintf(fp, " %s", jails[k].name);
+	fprintf(fp, " |");
+	for (k = 0; k < nrelays; k++)
+		fprintf(fp, " %s", relays[k].name);
 	fprintf(fp, "\n");
 	for (i = 0; i < nrows; i++) {
 		fprintf(fp, "%.0f", times[i]);
@@ -885,11 +913,16 @@ samples_read(void)
 			strlcpy(disks[n++].name, w, sizeof(disks[0].name));
 	ndisks = n;
 	n = 0;
-	while ((w = strsep(&p, " \n")) != NULL)
+	while ((w = strsep(&p, " \n")) != NULL && strcmp(w, "|") != 0)
 		if (w[0] != '\0' && (int)n < HIST_DEVS)
 			strlcpy(jails[n++].name, w, sizeof(jails[0].name));
 	njails = n;
-	reshape(hist_keep, nnets, ndisks, njails);
+	n = 0;
+	while ((w = strsep(&p, " \n")) != NULL)
+		if (w[0] != '\0' && (int)n < HIST_DEVS)
+			strlcpy(relays[n++].name, w, sizeof(relays[0].name));
+	nrelays = n;
+	reshape(hist_keep, nnets, ndisks, njails, nrelays);
 	while (rows != NULL && getline(&line, &cap, fp) != -1) {
 		p = line;
 		t = strtod(strsep(&p, " "), NULL);
@@ -1024,7 +1057,7 @@ history_start(void)
 
 	hconf_read();
 	pthread_mutex_lock(&hist_lock);
-	reshape(hist_keep, 0, 0, 0);
+	reshape(hist_keep, 0, 0, 0, 0);
 	samples_read();
 	saved = time(NULL);
 	pthread_mutex_unlock(&hist_lock);
@@ -1112,7 +1145,7 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 		}
 		pthread_mutex_lock(&hist_lock);
 		hist_step = step;
-		reshape(keep, nnets, ndisks, njails);
+		reshape(keep, nnets, ndisks, njails, nrelays);
 		pthread_cond_broadcast(&hist_wake);
 		pthread_mutex_unlock(&hist_lock);
 		step_end(w, st, true, NULL);
@@ -1145,6 +1178,7 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 	names(fp, "nets", nets, nnets);
 	names(fp, "disks", disks, ndisks);
 	names(fp, "jails", jails, njails);
+	names(fp, "relays", relays, nrelays);
 	fprintf(fp, "\"samples\":[");
 	for (i = n = 0; i < nrows; i++) {
 		if (times[i] <= (double)after)

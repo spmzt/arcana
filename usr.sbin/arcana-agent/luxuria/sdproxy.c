@@ -8,12 +8,13 @@
  * and MD+R, the function policies of a zone): Squid, a plugin the host has
  * installed (nothing is installed by Arcana), one instance per service
  * run in the service's routing table (setfib), its configuration
- * written by the console with places for what the agent knows: the
- * pid file, the CA, the certificate cache, the certificate maker, the
- * file of denied domains and the files of the lists it names
- * (@LIST:name@, each written beside it).  In mode sni the TLS names are looked
- * at (peek) and a connection to a denied one ended, the rest let
- * through unopened (splice); in mode inspect TLS is opened (bump) with
+ * rendered here from the console's form (sdconf.c), with the agent's
+ * own paths in it: the pid file, the CA, the certificate cache, the
+ * certificate maker, the file of denied domains and the files of the
+ * lists the console sends beside the form, each written beside it.  In
+ * mode sni the TLS names are looked at (peek) and a connection to a
+ * denied one ended, the rest let through unopened (splice); in mode
+ * inspect TLS is opened (bump) with
  * a CA of the instance's own, made once by openssl(1) and kept, its
  * certificate told in the sdwan read for the clients to trust.  Where
  * its security policies scan for malware, a c-icap of the service's own
@@ -54,7 +55,6 @@
 #define	CLAMAV_DB	"/var/db/clamav"
 #define	FRESHCLAM_PID	"/var/run/clamav/freshclam.pid"
 #define	INSTANCES_MAX	64
-#define	CONF_MAX	(256 * 1024)
 #define	DENY_MAX	(8 * 1024 * 1024)
 #define	LISTS_MAX	64		/* list files an instance */
 #define	PATH_CERTGEN	"/usr/local/libexec/squid/security_file_certgen"
@@ -230,28 +230,24 @@ icap_missing(struct work *w)
 }
 
 /*
- * An instance's c-icap, (re)started in its table with its file: the
- * console's text, its pid file and command socket placed.  Restarted
- * rather than told, so that what changed is what runs.
+ * An instance's c-icap, (re)started in its table with its file, as
+ * icap_conf_render() made it.  Restarted rather than told, so that what
+ * changed is what runs.
  */
 static int
-icap_start(struct work *w, const struct instance *in, const char *conf,
+icap_start(struct work *w, const struct instance *in, const char *text,
     const char **errp)
 {
 	struct execres	 res;
-	char		*argv[7], *text;
-	const char	*from[] = { "@ICAPPID@", "@ICAPCMD@" }, *to[2];
+	char		*argv[7];
 	int		 k;
 
-	to[0] = icap_path(w, in->name, "pid");
-	to[1] = icap_path(w, in->name, "ctl");
-	text = (char *)(uintptr_t)sdwan_subst(w, conf, from, to, 2);
 	if (sdwan_conf_write(wfmt(w, "sdwan-icap-%s.conf", in->name), text,
 	    errp) != 0)
 		return (-1);
 	(void)mkdir("/var/log/c-icap", 0755);
 	icap_stop(w, in->name);
-	(void)unlink(to[1]);
+	(void)unlink(icap_path(w, in->name, "ctl"));
 	k = 0;
 	argv[k++] = (char *)(uintptr_t)opts.setfib_bin;
 	argv[k++] = (char *)(uintptr_t)"-F";
@@ -411,37 +407,22 @@ inst_ssldb(struct work *w, const char *name, const char **errp)
 }
 
 /*
- * An instance's file: the console's text with the agent's places filled,
- * a list's (@LIST:name@) with the path of its file.
+ * Where an instance's files are, as its configuration names them: its
+ * own, its c-icap's, a list's (list-<name>) beside them.
  */
-static char *
-inst_conf(struct work *w, const char *name, const char *conf,
-    const ucl_object_t *lists)
+static void
+inst_paths(struct work *w, const char *name, struct sqpaths *p)
 {
-	const char		*from[5 + LISTS_MAX], *to[5 + LISTS_MAX];
-	const ucl_object_t	*l;
-	ucl_object_iter_t	 it;
-	size_t			 n;
 
-	from[0] = "@PID@";
-	to[0] = inst_path(w, name, "pid");
-	from[1] = "@CA@";
-	to[1] = inst_path(w, name, "pem");
-	from[2] = "@SSLDB@";
-	to[2] = inst_path(w, name, "ssl_db");
-	from[3] = "@CERTGEN@";
-	to[3] = certgen_bin(w);
-	from[4] = "@DENY@";
-	to[4] = inst_path(w, name, "deny");
-	n = 5;
-	it = NULL;
-	while ((l = ucl_object_iterate(lists, &it, true)) != NULL &&
-	    n < 5 + LISTS_MAX) {
-		from[n] = wfmt(w, "@LIST:%s@", ucl_object_key(l));
-		to[n++] = inst_path(w, name, wfmt(w, "list-%s",
-		    ucl_object_key(l)));
-	}
-	return ((char *)(uintptr_t)sdwan_subst(w, conf, from, to, n));
+	p->pid = inst_path(w, name, "pid");
+	p->ca = inst_path(w, name, "pem");
+	p->ssldb = inst_path(w, name, "ssl_db");
+	p->certgen = certgen_bin(w);
+	p->deny = inst_path(w, name, "deny");
+	p->list_pre = inst_path(w, name, "list-");
+	p->list_suf = "";
+	p->icap_pid = icap_path(w, name, "pid");
+	p->icap_cmd = icap_path(w, name, "ctl");
 }
 
 /* An instance's list files gone, all of them. */
@@ -548,6 +529,65 @@ inst_down(struct work *w, const char *name)
 	(void)unlink(inst_path(w, name, "pid"));
 }
 
+/* ClamAV's hash signature files the MD+R's hashes go to. */
+static const char *const sig_ext[] = { "hdb", "hsb", "fp", "sfp" };
+
+/* Where ClamAV reads its signatures, under --root when one is given. */
+static const char *
+clamav_db(struct work *w)
+{
+
+	return (opts.root != NULL ? wfmt(w, "%s%s", opts.root,
+	    PATH_CLAMAV_DB) : PATH_CLAMAV_DB);
+}
+
+/*
+ * The MD+R's hashes as ClamAV's signature files (clamav_sigs_render),
+ * arcana-sdwan.hdb, .hsb, .fp and .sfp in its database directory, each
+ * written beside and moved in, those with nothing in them gone.
+ * c-icap's ClamAV module reads the whole directory as it starts, as
+ * the instances' c-icap do next; the host's ClamAV is one for every
+ * service.
+ */
+static int
+hashes_write(struct work *w, const ucl_object_t *h, const char **errp)
+{
+	const ucl_object_t	*f;
+	const char		*path, *tmp;
+	char			*dir, *p;
+	FILE			*fp;
+	size_t			 i;
+
+	/* The directory, where the host has no ClamAV yet. */
+	dir = wstrdup(w, clamav_db(w));
+	for (p = dir + 1; (p = strchr(p, '/')) != NULL; p++) {
+		*p = '\0';
+		(void)mkdir(dir, 0755);
+		*p = '/';
+	}
+	(void)mkdir(dir, 0755);
+	for (i = 0; i < nitems(sig_ext); i++) {
+		path = wfmt(w, "%s/arcana-sdwan.%s", clamav_db(w), sig_ext[i]);
+		if ((f = ucl_object_lookup(h, sig_ext[i])) == NULL) {
+			(void)unlink(path);
+			continue;
+		}
+		tmp = wfmt(w, "%s.new", path);
+		if ((fp = fopen(tmp, "w")) == NULL) {
+			*errp = wfmt(w, "%s: %s", tmp, strerror(errno));
+			return (-1);
+		}
+		(void)fchmod(fileno(fp), 0644);
+		fputs(ucl_object_tostring(f), fp);
+		if (fclose(fp) != 0 || rename(tmp, path) != 0) {
+			*errp = wfmt(w, "%s: %s", path, strerror(errno));
+			(void)unlink(tmp);
+			return (-1);
+		}
+	}
+	return (0);
+}
+
 static ucl_object_t *
 parse(const char *json)
 {
@@ -563,24 +603,30 @@ parse(const char *json)
 }
 
 /*
- * The instances applied: {"instances": [{"name", "fib", "mode", "conf",
- * "deny"}, ...]}, of SD-WAN; with "group": "security", of the Security
- * section, each named sec-, those of the other group left as they are.  Squid must be there (a plugin); each instance's CA
- * is made once; its file, the places filled, is checked by squid -k
- * parse before it is made the instance's; a running one is told to
- * reconfigure, one not yet is started in its table; those not named
- * any more are stopped.  Kept for the next start.
+ * The instances applied: {"instances": [{"name", "fib", "mode", "host",
+ * "spec", "lists"}, ...]}, of SD-WAN; with "group": "security", of the
+ * Security section, each named sec-, those of the other group left as
+ * they are.  spec is the instance's form, an SD-WAN service's or the
+ * Security section's, rendered by squid_conf_render() and, where it
+ * scans for malware, icap_conf_render(), every one before any is
+ * changed; host names the host in their comments.  Squid must be there
+ * (a plugin); each instance's CA is made once; its file is checked by
+ * squid -k parse before it is made the instance's; a running one is
+ * told to reconfigure, one not yet is started in its table; those not
+ * named any more are stopped.  Kept for the next start.
  */
 int
 do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 {
-	ucl_object_t		*top;
+	ucl_object_t		*top, *hashes;
 	const ucl_object_t	*in, *v;
-	ucl_object_iter_t	 it;
+	ucl_object_iter_t	 it, hit;
 	struct instance		 ni[INSTANCES_MAX];
 	struct execres		 res;
-	char			*argv[6], *text;
-	const char		*conf, *deny, *mode, *e;
+	struct sqpaths		 pp;
+	char			*argv[6], *confs[INSTANCES_MAX];
+	char			*denies[INSTANCES_MAX], *icaps[INSTANCES_MAX];
+	const char		*mode, *e, *host;
 	int			 n, i, k, step, nkeep;
 	bool			 was, ok, sec;
 
@@ -588,7 +634,7 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 		if (top != NULL)
 			ucl_object_unref(top);
 		*errp = "the instances are an object: instances, each a name, "
-		    "a fib, a mode, its conf and its deny";
+		    "a fib, a mode, a host, its spec and its lists";
 		return (-1);
 	}
 	sec = ucl_object_lookup(top, "group") != NULL && strcmp(
@@ -599,22 +645,19 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 	while ((in = ucl_object_iterate(ucl_object_lookup(top, "instances"),
 	    &it, true)) != NULL) {
 		v = ucl_object_lookup(in, "name");
-		conf = ucl_object_tostring(ucl_object_lookup(in, "conf"));
-		deny = ucl_object_tostring(ucl_object_lookup(in, "deny"));
 		mode = ucl_object_tostring(ucl_object_lookup(in, "mode"));
 		if (n == INSTANCES_MAX || v == NULL || ucl_object_type(v) !=
 		    UCL_STRING || !name_ok(ucl_object_tostring(v)) ||
 		    ucl_object_lookup(in, "fib") == NULL || ucl_object_toint(
 		    ucl_object_lookup(in, "fib")) < 0 || ucl_object_toint(
-		    ucl_object_lookup(in, "fib")) > 65535 || conf == NULL ||
-		    strlen(conf) > CONF_MAX || (deny != NULL && strlen(deny) >
-		    DENY_MAX) || mode == NULL || (strcmp(mode, "sni") != 0 &&
-		    strcmp(mode, "inspect") != 0) || !lists_ok(ucl_object_lookup(
-		    in, "lists"))) {
+		    ucl_object_lookup(in, "fib")) > 65535 || ucl_object_type(
+		    ucl_object_lookup(in, "spec")) != UCL_OBJECT || mode ==
+		    NULL || (strcmp(mode, "sni") != 0 && strcmp(mode, "inspect")
+		    != 0) || !lists_ok(ucl_object_lookup(in, "lists"))) {
 			ucl_object_unref(top);
 			*errp = wfmt(w, "an instance is a name of letters, digits, "
 			    "_ and -, 32 at most, a fib, a mode (sni or inspect), "
-			    "its conf, its deny and its lists (names of the same "
+			    "a host, its spec and its lists (names of the same "
 			    "letters to texts, %d at most), %d of them at most",
 			    LISTS_MAX, INSTANCES_MAX);
 			return (-1);
@@ -637,12 +680,22 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 		    ucl_object_tostring(v));
 		snprintf(ni[n].mode, sizeof(ni[n].mode), "%s", mode);
 		ni[n].fib = (int)ucl_object_toint(ucl_object_lookup(in, "fib"));
-		ni[n].icap = ucl_object_lookup(in, "icap") != NULL;
-		if (ni[n].icap && (ucl_object_type(ucl_object_lookup(in,
-		    "icap")) != UCL_STRING || strlen(ucl_object_tostring(
-		    ucl_object_lookup(in, "icap"))) > CONF_MAX)) {
+		ni[n].icap = squid_conf_icap(ucl_object_lookup(in, "spec"));
+		/* Its files made of its form, here: what squid refuses is
+		 * said before any instance is touched. */
+		host = ucl_object_type(ucl_object_lookup(in, "host")) ==
+		    UCL_STRING ? ucl_object_tostring(ucl_object_lookup(in,
+		    "host")) : "";
+		inst_paths(w, ni[n].name, &pp);
+		e = NULL;
+		icaps[n] = NULL;
+		if ((confs[n] = squid_conf_render(w, ucl_object_lookup(in,
+		    "spec"), ni[n].name, host, n, ucl_object_lookup(in, "lists"),
+		    &pp, &denies[n], &e)) == NULL || (ni[n].icap && (icaps[n] =
+		    icap_conf_render(w, ucl_object_lookup(in, "spec"),
+		    ni[n].name, host, n, &pp, &e)) == NULL)) {
 			ucl_object_unref(top);
-			*errp = "an instance's icap is c-icap's configuration, a text";
+			*errp = wfmt(w, "%s: %s", ni[n].name, e);
 			return (-1);
 		}
 		n++;
@@ -673,6 +726,27 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 			*errp = e;
 			return (-1);
 		}
+	/* The MD+R policies' hashes as ClamAV's signatures first: the
+	 * instances' c-icap read them as they start. */
+	if (!sec) {
+		e = NULL;
+		if ((hashes = clamav_sigs_render(w, ucl_object_lookup(top,
+		    "instances"), &e)) == NULL) {
+			ucl_object_unref(top);
+			*errp = e;
+			return (-1);
+		}
+		hit = NULL;
+		k = ucl_object_iterate(hashes, &hit, true) != NULL ||
+		    access(clamav_db(w), W_OK) == 0 ? hashes_write(w, hashes, &e) :
+		    0;
+		ucl_object_unref(hashes);
+		if (k != 0) {
+			ucl_object_unref(top);
+			*errp = e;
+			return (-1);
+		}
+	}
 	pthread_mutex_lock(&lock);
 	for (i = 0; i < ninstances; i++) {
 		/* The other group's are not this list's to stop. */
@@ -693,8 +767,6 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 	for (k = 0; k < n; k++) {
 		in = ucl_object_iterate(ucl_object_lookup(top, "instances"), &it,
 		    true);
-		conf = ucl_object_tostring(ucl_object_lookup(in, "conf"));
-		deny = ucl_object_tostring(ucl_object_lookup(in, "deny"));
 		was = inst_pid(w, ni[k].name) != 0;
 		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "squid %s in fib %d, %s: %s", ni[k].name, ni[k].fib, ni[k].mode,
@@ -710,11 +782,9 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 		}
 		inst_chown(w, inst_path(w, ni[k].name, "pem"), false);
 		if (sdwan_conf_write(wfmt(w, "sdwan-proxy-%s.deny", ni[k].name),
-		    deny != NULL ? deny : "", &e) != 0 || !lists_write(w,
-		    ni[k].name, ucl_object_lookup(in, "lists"), &e) ||
-		    sdwan_conf_write(wfmt(w, "sdwan-proxy-%s.conf", ni[k].name),
-		    text = inst_conf(w, ni[k].name, conf, ucl_object_lookup(in,
-		    "lists")), &e) != 0) {
+		    denies[k], &e) != 0 || !lists_write(w, ni[k].name,
+		    ucl_object_lookup(in, "lists"), &e) || sdwan_conf_write(wfmt(w,
+		    "sdwan-proxy-%s.conf", ni[k].name), confs[k], &e) != 0) {
 			step_end(w, step, false, "%s", e);
 			*errp = wfmt(w, "%s: %s", ni[k].name, e);
 			ok = false;
@@ -722,8 +792,7 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 		}
 		/* Its scanner first: Squid sends to it and waits. */
 		if (ni[k].icap) {
-			if (icap_start(w, &ni[k], ucl_object_tostring(
-			    ucl_object_lookup(in, "icap")), &e) != 0) {
+			if (icap_start(w, &ni[k], icaps[k], &e) != 0) {
 				step_end(w, step, false, "%s", e);
 				*errp = wfmt(w, "%s: %s", ni[k].name, e);
 				ok = false;

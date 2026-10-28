@@ -2938,6 +2938,40 @@ commit_interface_cleanup()
 # it, kept in Arcana's rc.conf file (cloned_interfaces, ifconfig_gif57's
 # tunnel); not confirmed, destroyed again; confirmed, kept; then taken
 # away by a commit of its own.
+atf_test_case onchange_address cleanup
+onchange_address_head()
+{
+	atf_set "descr" "An address added arrives as an on-change patch, told" \
+	    "by netlink(4)'s event"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+onchange_address_body()
+{
+	ifconfig lo57 >/dev/null 2>&1 && atf_skip "lo57 is there already"
+	atf_check -o ignore ifconfig lo57 create
+	start_daemon
+	"$JGC" -c "$SOCK" subscribe -n 2 -o 1 \
+	    -x "/ietf-interfaces:interfaces/interface[name='lo57']/ietf-ip:ipv4/address" \
+	    > change.out 2>&1 &
+	echo $! > sub.pid
+	sleep 1.5
+	atf_check ifconfig lo57 inet 198.51.100.57/32 alias
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		kill -0 "$(cat sub.pid)" 2>/dev/null || break
+		sleep 0.5
+	done
+	atf_check -o match:'^2$' sh -c 'wc -l < change.out | tr -d " "'
+	atf_check -o match:'"ietf-yang-push:push-change-update":.*"operation":"create".*198\.51\.100\.57' \
+	    tail -1 change.out
+}
+onchange_address_cleanup()
+{
+	[ -f sub.pid ] && kill "$(cat sub.pid)" 2>/dev/null
+	ifconfig lo57 destroy 2>/dev/null
+	cleanup
+}
+
 atf_test_case commit_create cleanup
 commit_create_head()
 {
@@ -3070,10 +3104,160 @@ commit_fib_route_cleanup()
 	cleanup
 }
 
+# A vnet jail's root (RFC 8530, an inline mount of RFC 8528's), read
+# through a helper attached to the jail: its interfaces, and the routes
+# of its FIB 1 inside the network instance mounted in it; the host's
+# interfaces name the jail of one in it.  The helper killed is started
+# again; with the jail it goes, the jail not held dying.
+atf_test_case lne_root cleanup
+lne_root_head()
+{
+	atf_set "descr" "A vnet jail's LNE root read through its attached" \
+	    "helper: its interfaces and a FIB's routes"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+lne_root_body()
+{
+	jls -j lne57 >/dev/null 2>&1 && atf_skip "a jail lne57 is there already"
+	ifconfig epair57a >/dev/null 2>&1 && atf_skip "epair57a is there already"
+	touch mine
+	atf_check -o ignore jail -c name=lne57 vnet persist path=/
+	[ "$(jexec lne57 sysctl -n net.fibs)" -ge 2 ] ||
+	    atf_check -o ignore jexec lne57 sysctl net.fibs=2
+	atf_check -o match:'^epair57a$' ifconfig epair57 create
+	atf_check ifconfig epair57b vnet lne57
+	atf_check jexec lne57 ifconfig epair57b fib 1
+	atf_check jexec lne57 ifconfig epair57b inet 198.51.100.57/24 up
+	atf_check -o ignore jexec lne57 setfib 1 route -q add -net 203.0.113.0/24 \
+	    198.51.100.1
+	start_daemon
+	atf_check -o save:lne.json "$JGC" -c "$SOCK" get logical-network-elements
+	atf_check -o match:'"name":"lne57"' \
+	    -o match:'"name":"epair57b"' \
+	    -o match:'"ip":"198\.51\.100\.57"' \
+	    -o match:'"ietf-yang-library:yang-library"' \
+	    -o match:'"vrf-root":\{.*destination-prefix":"203\.0\.113\.0/24"' \
+	    cat lne.json
+	pid=$(pgrep -P "$(cat daemon.pid)" -f 'lne-serve')
+	[ -n "$pid" ] || atf_fail "no helper of lne57's"
+	# The host's: epair57b, bound to lne57.
+	atf_check -o match:'"name":"epair57b"[^}]*"ietf-logical-network-element:bind-lne-name":"lne57"' \
+	    "$JGC" -c "$SOCK" get interfaces
+	atf_check -o match:'"inline":\{\},"label":"root"' \
+	    "$JGC" -c "$SOCK" get schema-mounts
+	# Killed: started again at the next read.
+	atf_check kill -9 "$pid"
+	atf_check -o match:'"ip":"198\.51\.100\.57"' \
+	    "$JGC" -c "$SOCK" get logical-network-elements
+	atf_check -o not-match:"^$pid\$" pgrep -P "$(cat daemon.pid)" -f 'lne-serve'
+	# With the jail, its helper goes: reaped, the jail not held dying.
+	# Its interfaces out first: a vnet torn down with an address in it
+	# panics a debug kernel.
+	atf_check ifconfig epair57a destroy
+	atf_check -o ignore jail -r lne57
+	sleep 0.5
+	atf_check -s not-exit:0 pgrep -P "$(cat daemon.pid)" -f 'lne-serve'
+	atf_check -s not-exit:0 -e match:"not found" jls -d -j lne57 jid
+}
+lne_root_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	if [ -f mine ]; then
+		ifconfig epair57a destroy >/dev/null 2>&1
+		jail -r lne57 >/dev/null 2>&1
+	fi
+	cleanup
+}
+
+# An epair's side bound to a vnet jail by commits (bind-lne-name, RFC
+# 8530): moved there (SIOCSIFVNET) and kept as the jail's vnet.interface
+# in jail.conf; not confirmed, moved back with its address and the file
+# as it was; confirmed, and given back by a commit of its own.  Moved
+# with more changed at once: refused, lne-assignment-failed.
+atf_test_case lne_bind cleanup
+lne_bind_head()
+{
+	atf_set "descr" "An epair moved into a vnet jail and back by commits"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+lne_bind_body()
+{
+	jls -j lne57 >/dev/null 2>&1 && atf_skip "a jail lne57 is there already"
+	ifconfig epair57a >/dev/null 2>&1 && atf_skip "epair57a is there already"
+	touch mine
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\n' > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	cat >> etc/jail.conf <<EOF2
+lne57 {
+	path = "/";
+	vnet;
+	persist;
+}
+EOF2
+	atf_check -o ignore jail -f etc/jail.conf -c lne57
+	atf_check -o match:'^epair57a$' ifconfig epair57 create
+	atf_check ifconfig epair57a inet 198.51.100.57/32 alias
+	"$JGC" -c "$SOCK" get -d running interfaces > run.json
+	atf_check -o match:'"name":"lne57"' \
+	    "$JGC" -c "$SOCK" get -d running logical-network-elements
+	sed -e 's|"name":"epair57a"|"name":"epair57a","ietf-logical-network-element:bind-lne-name":"lne57"|' \
+	    run.json > in.json
+	atf_check "$JGC" -c "$SOCK" edit interfaces @in.json
+	atf_check -o match:'confirm within 3 seconds' \
+	    "$JGC" -c "$SOCK" commit -c 3
+	atf_check -s not-exit:0 -e ignore ifconfig epair57a
+	atf_check -o match:'^epair57a' ifconfig -j lne57 epair57a
+	atf_check -o match:'vnet.interface.*epair57a' cat etc/jail.conf
+	atf_check -o match:'"name":"epair57a"[^}]*"ietf-logical-network-element:bind-lne-name":"lne57"' \
+	    "$JGC" -c "$SOCK" get -d running interfaces
+	# Not confirmed: back, its address with it, jail.conf as it was.
+	sleep 5
+	atf_check -o match:'inet 198.51.100.57 ' ifconfig epair57a
+	atf_check -o not-match:'epair57a' cat etc/jail.conf
+	# Confirmed: kept; then given back by a commit of running without
+	# the binding.
+	atf_check "$JGC" -c "$SOCK" edit interfaces @in.json
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -o match:'^epair57a' ifconfig -j lne57 epair57a
+	"$JGC" -c "$SOCK" get -d running interfaces > bound.json
+	sed -e 's|,"ietf-logical-network-element:bind-lne-name":"lne57"||' \
+	    bound.json > out.json
+	atf_check -o not-match:'bind-lne-name' cat out.json
+	atf_check "$JGC" -c "$SOCK" edit interfaces @out.json
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -o match:'^epair57a' ifconfig epair57a
+	atf_check -o not-match:'epair57a' cat etc/jail.conf
+	# Moved and changed at once: refused.
+	sed -e 's|"name":"epair57a"|"name":"epair57a","description":"lab","ietf-logical-network-element:bind-lne-name":"lne57"|' \
+	    run.json > both.json
+	atf_check "$JGC" -c "$SOCK" edit interfaces @both.json
+	atf_check -s not-exit:0 -e match:'moved alone' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check -o match:'^epair57a' ifconfig epair57a
+}
+lne_bind_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	if [ -f mine ]; then
+		ifconfig epair57a destroy >/dev/null 2>&1
+		ifconfig -j lne57 epair57a destroy >/dev/null 2>&1
+		jail -r lne57 >/dev/null 2>&1
+	fi
+	cleanup
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case lne_root
+	atf_add_test_case lne_bind
 	atf_add_test_case commit_fib_route
 	atf_add_test_case commit_fib
+	atf_add_test_case onchange_address
 	atf_add_test_case commit_create
 	atf_add_test_case commit_interface
 	atf_add_test_case commit_route

@@ -18,15 +18,27 @@
  * whether it ran, put back (ira/jobs.c).
  *
  * Several relays, where the port's rc script has speederv2_profiles: each
- * a profile, its words in speederv2_<name>_flags, run as "service
- * speederv2 <verb> <name>" and logged with the tag speederv2-<name>.  A
+ * a profile, run as "service speederv2 <verb> <name>" under rc.subr's
+ * name speederv2_<name>, so its variables are that name's
+ * (speederv2_<name>_flags, _user, _svcj) and so is its syslog tag.  A
  * job names one with profile=<name>; without, it is the relay of
  * speederv2_flags, which the rc script runs only while no profile is
- * listed.
+ * listed.  The port's script has no profiles yet: one relay a scope
+ * there, the host's and each jail's.
+ *
+ * Each relay may run in a service jail of rc.subr's own (rc.conf(5)'s
+ * <name>_svcj, the jail svcj-<name>), held to the addresses of
+ * <name>_svcj_ipaddrs: the ones it listens at and sends from.  A jail's
+ * parameters are its own from its start, so a change of them is a stop
+ * under the old and a start, not a restart in the jail.
  */
 
 #include <sys/param.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include <ctype.h>
 #include <errno.h>
@@ -49,6 +61,8 @@
 #define	FLAGS_MAX	1024
 #define	KEY_MAX		64
 #define	PROFILE_MAX	32
+#define	JADDRS_MAX	8		/* a service jail's addresses */
+#define	SVCJ_OPTIONS	"net_basic"	/* its sockets, of both families */
 
 /* The words of speederv2_flags, read or to be written. */
 struct sflags {
@@ -60,6 +74,12 @@ struct sflags {
 	const char	*key;
 	int		 mode, mtu, timeout, report;	/* -1: not given */
 	const char	*extra;		/* the other words, as they were */
+};
+
+/* A conf's service jail: <name>_svcj and <name>_svcj_ipaddrs. */
+struct sjail {
+	int		 on;		/* 1, 0, or -1: kept as it is */
+	const char	*ipaddrs;	/* by spaces; "" none; NULL kept */
 };
 
 /* The options passed on as extra words, each taking one value or none. */
@@ -319,6 +339,107 @@ flags_set(struct work *w, const char *prof, const char *flags,
 	exec_set_hide(NULL);
 	exec_set_secret(false);
 	return (rc);
+}
+
+/* rc.subr's checkyesno: yes, true, on or 1, in any case. */
+static bool
+yes(const char *v)
+{
+
+	return (v != NULL && (strcasecmp(v, "yes") == 0 || strcasecmp(v,
+	    "true") == 0 || strcasecmp(v, "on") == 0 || strcmp(v, "1") == 0));
+}
+
+/*
+ * svcj_ipaddrs= as rc.subr takes it: each address of the list by commas
+ * an IPv4 or an IPv6 one, given by spaces; "" for none.  NULL when one
+ * is not an address.
+ */
+static const char *
+jaddrs_of(struct work *w, const char *list)
+{
+	unsigned char	 buf[sizeof(struct in6_addr)];
+	const char	*out;
+	char		*s, *p, *a;
+	size_t		 n;
+
+	if (*list == '\0')
+		return ("");
+	out = "";
+	s = wstrdup(w, list);
+	for (n = 0, p = s; (a = strsep(&p, ",")) != NULL; n++) {
+		if (n == JADDRS_MAX || (inet_pton(AF_INET, a, buf) != 1 &&
+		    inet_pton(AF_INET6, a, buf) != 1))
+			return (NULL);
+		out = wfmt(w, "%s%s%s", out, *out != '\0' ? " " : "", a);
+	}
+	return (out);
+}
+
+/* Whether a conf moves the relay: its service jail taken or left, or a
+ * jailed one's addresses changed. */
+static bool
+svcj_moves(struct work *w, const char *prof, const struct sjail *j)
+{
+	const char	*ips;
+	bool		 was, now;
+
+	was = yes(rc_get(w, var_of(w, prof, "svcj")));
+	now = j->on == -1 ? was : j->on == 1;
+	if (was != now)
+		return (true);
+	if (!now || j->ipaddrs == NULL)
+		return (false);
+	ips = rc_get(w, var_of(w, prof, "svcj_ipaddrs"));
+	return (strcmp(ips != NULL ? ips : "", j->ipaddrs) != 0);
+}
+
+/*
+ * The relay's service jail written: on, with the admin's options or
+ * else its sockets of both families; off, its variables unset; its
+ * addresses when given.
+ */
+static int
+svcj_set(struct work *w, const char *prof, const struct sjail *j,
+    const char **errp)
+{
+	const char	*v;
+
+	if (j->on == 0) {
+		rc_unset(w, var_of(w, prof, "svcj"));
+		rc_unset(w, var_of(w, prof, "svcj_options"));
+		rc_unset(w, var_of(w, prof, "svcj_ipaddrs"));
+		return (0);
+	}
+	if (j->on == 1) {
+		if (rc_set(w, var_of(w, prof, "svcj"), "=", "YES", errp) != 0)
+			return (-1);
+		if (((v = rc_get(w, var_of(w, prof, "svcj_options"))) == NULL ||
+		    *v == '\0') && rc_set(w, var_of(w, prof, "svcj_options"),
+		    "=", SVCJ_OPTIONS, errp) != 0)
+			return (-1);
+	}
+	if (j->ipaddrs == NULL)
+		return (0);
+	if (*j->ipaddrs == '\0') {
+		rc_unset(w, var_of(w, prof, "svcj_ipaddrs"));
+		return (0);
+	}
+	return (rc_set(w, var_of(w, prof, "svcj_ipaddrs"), "=", j->ipaddrs,
+	    errp));
+}
+
+/* A variable put back as it was: unset when it was not set. */
+static int
+var_back(struct work *w, const char *var, const char *was,
+    const char **errp)
+{
+
+	if (was == NULL) {
+		rc_unset(w, var);
+		return (0);
+	}
+	return (rc_set(w, var, "=", was, errp));
 }
 
 /* A profile's name: letters, digits and _, as the rc script takes. */
@@ -709,7 +830,7 @@ log_read(struct work *w, ucl_object_t *top, const char *prof)
 
 	if ((text = log_tail(w, opts.speederv2_log)) == NULL)
 		return;
-	tag = prof == NULL ? " " SPEEDER "[" : wfmt(w, " " SPEEDER "-%s[",
+	tag = prof == NULL ? " " SPEEDER "[" : wfmt(w, " " SPEEDER "_%s[",
 	    prof);
 	memset(up, 0, sizeof(up));
 	memset(down, 0, sizeof(down));
@@ -870,6 +991,15 @@ relay_json(struct work *w, ucl_object_t *top, const char *prof)
 		if (f.extra[0] != '\0')
 			put_str(top, "extra", unkeyed(w, f.extra, f.key));
 	}
+	/* Its service jail, rc.subr's svcj-<name>, and what it is let do. */
+	if (yes(rc_get(w, var_of(w, prof, "svcj")))) {
+		ucl_object_insert_key(top, ucl_object_frombool(true), "svcj", 0,
+		    false);
+		put_str(top, "svcj_options", rc_get(w, var_of(w, prof,
+		    "svcj_options")));
+		put_str(top, "svcj_ipaddrs", rc_get(w, var_of(w, prof,
+		    "svcj_ipaddrs")));
+	}
 	log_read(w, top, prof);
 }
 
@@ -921,6 +1051,147 @@ do_speeder(struct work *w, struct arc_speeder_rsp *rsp)
 	rsp->ok = true;
 }
 
+/* ---- For the history (gula/history.c) --------------------------- */
+
+#define	RATES_MAX	16		/* relays told apart */
+#define	RATES_READ	(64 * 1024)	/* of the log, a look at most */
+
+/* Each relay's last report, its tag's, and the interval before it. */
+static struct {
+	char		 tag[48];
+	struct way	 up, down;
+	time_t		 at, span;
+	double		 plain, added;
+} rates[RATES_MAX];
+static size_t	nrates;
+static off_t	rates_off = -1;		/* how far the log is read */
+static ino_t	rates_ino;
+
+/* The tag of a relay's line, " speederv2[" or " speederv2_<name>[", into
+ * tag; false for another's. */
+static bool
+tag_of(const char *line, char *tag, size_t len)
+{
+	const char	*p, *b;
+
+	for (p = line; (p = strstr(p, " " SPEEDER)) != NULL; p++) {
+		p++;
+		b = p + strlen(SPEEDER);
+		if (*b == '_')
+			for (b++; isalnum((unsigned char)*b) || *b == '_'; b++)
+				;
+		if (*b == '[' && (size_t)(b - p) < len && strchr(b, ':') !=
+		    NULL) {
+			memcpy(tag, p, (size_t)(b - p));
+			tag[b - p] = '\0';
+			return (true);
+		}
+	}
+	return (false);
+}
+
+/* A report taken in: the rates of the interval since the one before,
+ * when the counters only grew; else it begins anew. */
+static void
+rate_take(const char *tag, const struct way *up, const struct way *down,
+    time_t at)
+{
+	size_t	i;
+	double	secs, plain, fec;
+
+	for (i = 0; i < nrates; i++)
+		if (strcmp(rates[i].tag, tag) == 0)
+			break;
+	if (i == nrates) {
+		if (nrates == RATES_MAX)
+			return;
+		memset(&rates[i], 0, sizeof(rates[i]));
+		strlcpy(rates[i].tag, tag, sizeof(rates[i].tag));
+		nrates++;
+	}
+	rates[i].plain = rates[i].added = 0;
+	rates[i].span = 0;
+	if (rates[i].at > 0 && at > rates[i].at && up->obyte >=
+	    rates[i].up.obyte && up->fbyte >= rates[i].up.fbyte &&
+	    down->obyte >= rates[i].down.obyte && down->fbyte >=
+	    rates[i].down.fbyte) {
+		secs = difftime(at, rates[i].at);
+		plain = (double)(up->obyte - rates[i].up.obyte + down->obyte -
+		    rates[i].down.obyte);
+		fec = (double)(up->fbyte - rates[i].up.fbyte + down->fbyte -
+		    rates[i].down.fbyte);
+		rates[i].plain = plain / secs;
+		rates[i].added = fec > plain ? (fec - plain) / secs : 0;
+		rates[i].span = at - rates[i].at;
+	}
+	rates[i].up = *up;
+	rates[i].down = *down;
+	rates[i].at = at;
+}
+
+/*
+ * The relays of the host's log, each by its tag, with the rates of its
+ * last interval while its last report is fresh (within two intervals
+ * and a look, step), else none.  The log is read on from where the look
+ * before left it, its end at the first look, and from its start again
+ * once it was turned over.  Called by the history's thread alone.
+ */
+size_t
+speeder_rates(struct speeder_rate *v, size_t max, unsigned int step)
+{
+	struct stat	 st;
+	struct way	 up, down;
+	char		*buf, *line, *nl, tag[48];
+	ssize_t		 n;
+	time_t		 now, at;
+	size_t		 i;
+	int		 fd;
+
+	if ((fd = open(opts.speederv2_log, O_RDONLY | O_CLOEXEC)) != -1 &&
+	    fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && (buf =
+	    malloc(RATES_READ + 1)) != NULL) {
+		if (rates_off == -1 || st.st_ino != rates_ino || st.st_size <
+		    rates_off)
+			rates_off = rates_off == -1 ? st.st_size : 0;
+		rates_ino = st.st_ino;
+		/* Fallen behind: the last of it. */
+		if (st.st_size - rates_off > RATES_READ)
+			rates_off = st.st_size - RATES_READ;
+		n = pread(fd, buf, RATES_READ, rates_off);
+		if (n > 0) {
+			buf[n] = '\0';
+			/* The lines that are whole; the rest at the next. */
+			if ((nl = strrchr(buf, '\n')) != NULL) {
+				nl[1] = '\0';
+				rates_off += nl + 1 - buf;
+			}
+			for (line = buf; nl != NULL && *line != '\0'; line =
+			    nl + 1) {
+				nl = strchr(line, '\n');
+				*nl = '\0';
+				if (tag_of(line, tag, sizeof(tag)) &&
+				    report_of(line, &up, &down) && (at =
+				    line_time(line)) != -1)
+					rate_take(tag, &up, &down, at);
+			}
+		}
+		free(buf);
+	}
+	if (fd != -1)
+		close(fd);
+	now = time(NULL);
+	for (i = 0; i < nrates && i < max; i++) {
+		strlcpy(v[i].tag, rates[i].tag, sizeof(v[i].tag));
+		v[i].plain = v[i].added = 0;
+		if (rates[i].span > 0 && now - rates[i].at <= 2 *
+		    rates[i].span + (time_t)step) {
+			v[i].plain = rates[i].plain;
+			v[i].added = rates[i].added;
+		}
+	}
+	return (i);
+}
+
 /* ---- The job ---------------------------------------------------- */
 
 /* An argument name=value: its value, or NULL when it is not name's. */
@@ -963,12 +1234,13 @@ words_of(const struct arc_job_spec *sp, const char **first)
 }
 
 /*
- * conf's arguments into f: the key kept from the flags before (old) but
- * given key= or nokey.  NULL, or what is wrong.
+ * conf's arguments into f and j: the key kept from the flags before (old)
+ * but given key= or nokey; the service jail kept but given svcj= or
+ * svcj_ipaddrs=.  NULL, or what is wrong.
  */
 static const char *
 conf_of(struct work *w, const struct arc_job_spec *sp, const char *old,
-    struct sflags *f)
+    struct sflags *f, struct sjail *j)
 {
 	struct sflags	 was;
 	const char	*a, *v, *e;
@@ -979,6 +1251,8 @@ conf_of(struct work *w, const struct arc_job_spec *sp, const char *old,
 	memset(f, 0, sizeof(*f));
 	f->mode = f->mtu = f->timeout = f->report = -1;
 	f->extra = "";
+	j->on = -1;
+	j->ipaddrs = NULL;
 	nokey = key = false;
 	for (i = 0; i < sp->names.n; i++) {
 		a = sp->names.v[i];
@@ -986,6 +1260,16 @@ conf_of(struct work *w, const struct arc_job_spec *sp, const char *old,
 			continue;
 		if (strcmp(a, "nokey") == 0)
 			nokey = true;
+		else if ((v = arg_of(a, "svcj")) != NULL) {
+			if (strcmp(v, "yes") != 0 && strcmp(v, "no") != 0)
+				return ("svcj is yes or no: the relay in a "
+				    "service jail of its own, or not");
+			j->on = strcmp(v, "yes") == 0;
+		} else if ((v = arg_of(a, "svcj_ipaddrs")) != NULL) {
+			if ((j->ipaddrs = jaddrs_of(w, v)) == NULL)
+				return ("svcj_ipaddrs is up to 8 addresses by "
+				    "commas: 192.0.2.1,127.0.0.1,2001:db8::1");
+		}
 		else if ((v = arg_of(a, "role")) != NULL) {
 			if (strcmp(v, "client") != 0 && strcmp(v, "server") != 0)
 				return ("role is client or server");
@@ -1035,11 +1319,13 @@ conf_of(struct work *w, const struct arc_job_spec *sp, const char *old,
 		} else
 			return (wfmt(w, "conf takes role=, listen=, remote=, "
 			    "mode=, mtu=, fec=, timeout=, report=, fifo=, key=, "
-			    "nokey, extra= and profile=, not %s", wvis(w,
-			    wstrndup(w, a, 40))));
+			    "nokey, extra=, svcj=, svcj_ipaddrs= and profile=, "
+			    "not %s", wvis(w, wstrndup(w, a, 40))));
 	}
 	if (f->role == NULL || f->listen == NULL || f->remote == NULL)
 		return ("conf needs role=, listen= and remote=");
+	if (j->on == 0 && j->ipaddrs != NULL && *j->ipaddrs != '\0')
+		return ("svcj=no takes no svcj_ipaddrs: they are the jail's");
 	if (!key && !nokey)
 		f->key = was.key;
 	if (nokey)
@@ -1055,6 +1341,7 @@ speeder_check(const struct arc_job_spec *sp)
 	static _Thread_local char	 errbuf[300];
 	struct work			 cw;
 	struct sflags			 f;
+	struct sjail			 j;
 	const char			*e, *prof, *word;
 	size_t				 i, n, np;
 
@@ -1083,7 +1370,7 @@ speeder_check(const struct arc_job_spec *sp)
 		    "profile=<name> alone");
 	if (strcmp(sp->verb, "conf") == 0) {
 		work_init(&cw);
-		e = conf_of(&cw, sp, NULL, &f);
+		e = conf_of(&cw, sp, NULL, &f, &j);
 		if (e != NULL) {
 			snprintf(errbuf, sizeof(errbuf), "%s", e);
 			e = errbuf;
@@ -1179,8 +1466,9 @@ do_speeder_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
 {
 	struct sflags	 f;
+	struct sjail	 j;
 	const char	*old, *e, *prof, *word;
-	bool		 running;
+	bool		 running, moves;
 
 	prof = profile_of(sp);
 	if (prof != NULL && !profiles_supported(w)) {
@@ -1192,16 +1480,25 @@ do_speeder_job(struct work *w, const struct arc_job_spec *sp,
 	    "disable") == 0 ? speeder_running(w) : running_of(w, prof);
 	if (strcmp(sp->verb, "conf") == 0) {
 		old = flags_get(w, prof);
-		if ((e = conf_of(w, sp, old, &f)) != NULL) {
+		if ((e = conf_of(w, sp, old, &f, &j)) != NULL) {
 			*errp = e;
 			return (-1);
 		}
+		/* Out of the jail it runs in, by the variables that made it,
+		 * before they change. */
+		moves = svcj_moves(w, prof, &j);
+		if (running && moves && service_of(w, prof, "stop", errp) != 0)
+			return (-1);
 		if (flags_set(w, prof, flags_of(w, &f), errp) != 0)
+			return (-1);
+		if (svcj_set(w, prof, &j, errp) != 0)
 			return (-1);
 		if (prof != NULL && profiles_put(w, prof, true, errp) != 0)
 			return (-1);
 		/* Taken where it runs; else at its next start. */
-		return (running ? service_of(w, prof, "restart", errp) : 0);
+		if (!running)
+			return (0);
+		return (service_of(w, prof, moves ? "start" : "restart", errp));
 	}
 	if (strcmp(sp->verb, "remove") == 0) {
 		if (running && service_of(w, prof, "stop", errp) != 0)
@@ -1209,6 +1506,9 @@ do_speeder_job(struct work *w, const struct arc_job_spec *sp,
 		if (flags_set(w, prof, NULL, errp) != 0)
 			return (-1);
 		rc_unset(w, var_of(w, prof, "user"));
+		j.on = 0;
+		j.ipaddrs = NULL;
+		(void)svcj_set(w, prof, &j, errp);
 		return (profiles_put(w, prof, false, errp));
 	}
 	if (strcmp(sp->verb, "fec") == 0) {
@@ -1254,8 +1554,8 @@ do_speeder_job(struct work *w, const struct arc_job_spec *sp,
 
 /* ---- Safe mode (ira/jobs.c) -------------------------------------- */
 
-/* The relay the job is for, as it is: its flags, the service's enable,
- * the list of profiles, and whether it runs. */
+/* The relay the job is for, as it is: its flags and service jail, the
+ * service's enable, the list of profiles, and whether it runs. */
 void
 speeder_snap(struct work *w, const struct arc_job_spec *sp,
     struct speeder_was *was)
@@ -1264,6 +1564,11 @@ speeder_snap(struct work *w, const struct arc_job_spec *sp,
 
 	was->profile = profile_of(sp);
 	was->flags = flags_get(w, was->profile);
+	was->svcj = rc_get(w, var_of(w, was->profile, "svcj"));
+	was->svcj_options = rc_get(w, var_of(w, was->profile,
+	    "svcj_options"));
+	was->svcj_ipaddrs = rc_get(w, var_of(w, was->profile,
+	    "svcj_ipaddrs"));
 	was->enable = rc_get(w, SPEEDER "_enable");
 	profiles_get(w, &was->profiles, &n);
 	was->running = running_of(w, was->profile);
@@ -1276,18 +1581,17 @@ speeder_back(struct work *w, const struct speeder_was *was,
 	const char	*prof;
 
 	prof = was->profile;
-	if (flags_set(w, prof, was->flags, errp) != 0)
+	/* Stopped by the variables it runs by now, its jail's among them;
+	 * started again by those it ran by. */
+	if (running_of(w, prof) && service_of(w, prof, "stop", errp) != 0)
 		return (-1);
-	if (was->profiles == NULL)
-		rc_unset(w, SPEEDER "_profiles");
-	else if (rc_set(w, SPEEDER "_profiles", "=", was->profiles, errp) != 0)
+	if (flags_set(w, prof, was->flags, errp) != 0 || var_back(w,
+	    var_of(w, prof, "svcj"), was->svcj, errp) != 0 || var_back(w,
+	    var_of(w, prof, "svcj_options"), was->svcj_options, errp) != 0 ||
+	    var_back(w, var_of(w, prof, "svcj_ipaddrs"), was->svcj_ipaddrs,
+	    errp) != 0 || var_back(w, SPEEDER "_profiles", was->profiles,
+	    errp) != 0 || var_back(w, SPEEDER "_enable", was->enable, errp) !=
+	    0)
 		return (-1);
-	if (was->enable == NULL)
-		rc_unset(w, SPEEDER "_enable");
-	else if (rc_set(w, SPEEDER "_enable", "=", was->enable, errp) != 0)
-		return (-1);
-	if (was->running)
-		return (service_of(w, prof, running_of(w, prof) ? "restart" :
-		    "start", errp));
-	return (running_of(w, prof) ? service_of(w, prof, "stop", errp) : 0);
+	return (was->running ? service_of(w, prof, "start", errp) : 0);
 }

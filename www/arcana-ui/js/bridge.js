@@ -580,6 +580,65 @@ addToLibrary({
 			};
 			r.readAsText(f);
 		});
+		/*
+		 * A file picked in [data-upload]: sent as it is, bytes, to
+		 * the console at data-url, in parts of 4 MB (a body may be 8
+		 * unless web.conf says more), each where the one before ended
+		 * (&offset=), the last said (&last=1); the page hears
+		 * upload:<what> with the file's name and {"sent", "size"} as
+		 * it goes, then the console's answer to the last part, or
+		 * {"error"}.
+		 */
+		document.addEventListener("change", function (e) {
+			var t = e.target, f, part = 4 * 1024 * 1024, what, url;
+
+			if (t.type !== "file" || !t.dataset || !t.dataset.upload ||
+			    !t.dataset.url || t.files.length === 0)
+				return;
+			f = t.files[0];
+			what = "upload:" + t.dataset.upload;
+			url = t.dataset.url + (t.dataset.url.indexOf("?") < 0 ?
+			    "?" : "&") + "file=" + encodeURIComponent(f.name);
+			t.value = "";
+			(function send(off) {
+				var end = Math.min(f.size, off + part),
+				    last = end >= f.size;
+
+				act(what, f.name, JSON.stringify({ sent: off,
+				    size: f.size }));
+				fetch(url + "&offset=" + off + (last ? "&last=1" :
+				    ""), {
+					method: "POST",
+					credentials: "same-origin",
+					cache: "no-store",
+					headers: { "Content-Type":
+					    "application/octet-stream",
+					    "X-Arcana": "1" },
+					body: f.slice(off, end)
+				}).then(function (r) {
+					return (r.text().then(function (b) {
+						if (r.status !== 200) {
+							var m = b, j;
+
+							try {
+								j = JSON.parse(b);
+								m = (j.error &&
+								    j.error.message) || b;
+							} catch (x) {
+							}
+							act(what, f.name, JSON.stringify({
+							    error: String(m || r.status) }));
+						} else if (!last)
+							send(end);
+						else
+							act(what, f.name, b);
+					}));
+				}).catch(function (err) {
+					act(what, f.name, JSON.stringify({ error:
+					    String(err) }));
+				});
+			})(0);
+		});
 
 		/*
 		 * Rows put in another order by dragging: a row with

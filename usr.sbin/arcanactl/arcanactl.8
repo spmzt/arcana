@@ -100,7 +100,7 @@ The commands are:
 .Bl -tag -width Ds
 .It Cm hello
 Show the host.
-.It Cm get Oo Fl d Ar datastore Oc Oo Fl x Ar xpath Oc Op Ar node ...
+.It Cm get Oo Fl d Ar datastore Oc Oo Fl w Ar mode Oc Oo Fl o Oc Oo Fl x Ar xpath Oc Op Ar node ...
 What the agent serves of the standard models, by cblink's YANG family:
 ietf-interfaces' interfaces with ietf-ip's addresses and neighbours and
 what augments them
@@ -138,6 +138,22 @@ same:
 .Cm bird , wireguard , netgraph , host , agent , probes , sdwan , sshd
 and
 .Cm builder ;
+of
+.Cm sysctl
+and
+.Cm kernel
+the configuration alone with
+.Fl d Cm running
+(what
+.Xr sysctl.conf 5
+sets,
+.Va kld_list ) ,
+which
+.Cm edit
+and
+.Cm commit
+change: sysctl.conf written in place and the kernel set to each value
+changed, kld_list in Arcana's rc.conf file;
 those named, or all of them, as RFC 7951's JSON.
 With
 .Fl x ,
@@ -158,6 +174,38 @@ the configuration being made, shared by every session; both without
 state.
 .Cm operational ,
 the default, is what is.
+With
+.Fl w ,
+RFC 6243's retrieval of defaults:
+.Cm explicit ,
+the default, what the host has;
+.Cm report-all ,
+the defaults in use too;
+.Cm trim ,
+a leaf at its default left out;
+.Cm report-all-tagged ,
+the defaults in use too, each leaf whose value is its default
+annotated
+.Ql ietf-defaults:default
+as RFC 7952 writes an annotation in JSON.
+With
+.Fl o ,
+of the operational datastore, each configuration node annotated with
+its origin, RFC 8342's
+.Ql ietf-origin:origin ,
+where it is not its parent's:
+.Cm intended
+where running has it,
+.Cm default
+where it is a default in use,
+.Cm learned
+where DHCP, SLAAC or a temporary address gave it, or the host found a
+neighbour,
+.Cm system
+where the kernel has it (an interface it made, a link-local address, a
+value it took),
+.Cm unknown
+where it was set by hand since.
 .It Cm edit Oo Fl r Oc Oo Fl a Ar warning Oc ... Ar node Ar value | @ Ns Ar file
 Replace a top-level node of the candidate with
 .Ar value ,
@@ -350,7 +398,9 @@ settings, which
 .Cm sysctl
 sets.
 .It Cm kmod Op Cm load | unload | keep | forget Ar module
-The kernel's modules and its memory: every file linked into the kernel
+The kernel's modules and its memory, as
+.Cm get kernel
+has them (arcana-kernel): every file linked into the kernel
 with its size, the references to it and the modules it holds; the
 modules that could be loaded; what
 .Xr rc.conf 5 Ns 's
@@ -499,7 +549,7 @@ not there yet is made from the port's sample, without its
 line.
 A running freshclam takes them when it is restarted.
 A job.
-.It Cm suricata Cm update | Cm rules Oo Ar key Ns = Ns Ar value ... Oc | Cm rule Ar state Ns = Ns Ar sid Ns Oo , Ns Ar sid ... Oc ... | Cm rule Cm modify Ar file | Cm sources | Cm source- Ns Ar verb Cm name Ns = Ns Ar source Oo Ar key Ns = Ns Ar value ... Oc | Cm pcap Cm instance Ns = Ns Ar name Cm file Ns = Ns Ar path
+.It Cm suricata Cm update | Cm rules Oo Ar key Ns = Ns Ar value ... Oc | Cm rule Ar state Ns = Ns Ar sid Ns Oo , Ns Ar sid ... Oc ... | Cm rule Cm modify Ar file | Cm sources | Cm source- Ns Ar verb Cm name Ns = Ns Ar source Oo Ar key Ns = Ns Ar value ... Oc | Cm pcap Cm instance Ns = Ns Ar name Cm file Ns = Ns Ar path | Cm pcap-put Ar word ... | Cm pcap-get Ar word ...
 .Cm update
 runs
 .Xr suricata-update 8 ,
@@ -580,6 +630,16 @@ the commands that read alone:
 or
 .Cm dump-counters ,
 and prints its answer as JSON.
+.Cm rules Cm instance Ns = Ns Ar name Cm profiling Ns =1
+reads what the instance's profiling wrote, Suricata built with
+.Fl -enable-profiling
+(the port has no option for it): the packets' ticks per protocol and
+per stage
+.Pq Pa packet_stats.log ,
+the rules'
+.Pq Pa rule_perf.log
+and the keywords', prefilter's, rule groups' and locks' as text, of the
+running instance (written as it stops) and of its last replay.
 .Cm rules Cm sources Ns =1
 shows the rule sources instead: those of the index
 .Cm sources
@@ -614,6 +674,27 @@ into a directory of its own; the alerts it raised are kept, told in
 the sdwan read as the instance's
 .Dq replay .
 A job.
+.Cm pcap-put Cm instance Ns = Ns Ar name Cm file Ns = Ns Ar name
+.Op Cm offset Ns = Ns Ar N
+.Op Cm last Ns =1
+sends the standard input as a capture for the instance's replay, a
+stream: kept in the captures directory of its replay directory, where
+.Cm pcap
+replays it; prints, as JSON, the path it is kept at.
+A capture comes whole, or in parts, each beginning where the one
+before ended
+.Pq Cm offset ,
+the last said
+.Pq Cm last Ns =1 ;
+without
+.Cm last ,
+it waits as
+.Ar name Ns Pa .part .
+Eight are kept; a capture is 1 GiB at most.
+.Cm pcap-get Cm instance Ns = Ns Ar name Cm file Ns = Ns Ar name
+writes a file of the instance's pcap-log (the packets of its alerts,
+.Pa log.pcap
+and its rotations) to the standard output, a stream.
 .It Cm system Op Ar file | Cm host
 The system's own configuration, as JSON: each file of the
 .Cm sysfile
@@ -859,14 +940,17 @@ with
 .Fl -report ,
 its last counters each way, the bytes it took in plain and sent with
 FEC, and the overhead the FEC added, in all and over the last interval
-with its rates; its last lines in the log.
+with its rates; whether it runs in
+.Xr rc.subr 8 Ns 's
+service jail, with its options and addresses; its last lines in the log.
 Where the port's rc script runs several relays, whether it does, and
 each relay of
 .Va speederv2_profiles
 with the same fields, read from its
 .Va speederv2_ Ns Ar name Ns Va _flags
 and its log lines, tagged
-.Li speederv2- Ns Ar name .
+.Li speederv2_ Ns Ar name ,
+the name the rc script runs it under.
 Nothing is changed.
 .It Cm speeder conf Ar name Ns = Ns Ar value ...
 The relay's flags written to
@@ -890,9 +974,21 @@ takes it away; never in a trace),
 .Fl -jitter
 or
 .Fl -sock-buf ,
-passed on).
+passed on),
+.Cm svcj Ns = Ns Cm yes | no
+(the relay in a service jail of its own,
+.Va speederv2_svcj
+with
+.Va speederv2_svcj_options
+.Dq net_basic
+unless set; kept when not given) and
+.Cm svcj_ipaddrs Ns = Ns Ar address Ns Op , Ns Ar address ...
+(the jail's,
+.Va speederv2_svcj_ipaddrs :
+those it listens at and sends from; empty for all of the host's).
 Each value is checked word by word, as rc.subr hands them to a shell.
-The relay is restarted when it runs.
+The relay is restarted when it runs; stopped and started when its
+service jail changes, whose parameters are set at its start.
 .It Cm speeder fec Ar x : Ns Ar y Ns Op , Ns Ar x : Ns Ar y ...
 The ratios changed: kept in the flags and, where the relay runs with a
 .Fl -fifo ,
@@ -917,8 +1013,13 @@ writes
 and adds the name to
 .Va speederv2_profiles ,
 and the service is told
-.Dq Li service speederv2 one Ns Ar verb Ar name .
+.Dq Li service speederv2 one Ns Ar verb Ar name ;
+its service jail's variables are
+.Va speederv2_ Ns Ar name Ns Va _svcj
+and the like, its jail
+.Li svcj-speederv2_ Ns Ar name .
 The rc script runs only the relays it lists while it lists any.
+The port's script runs one relay a host or jail as yet.
 .It Cm speeder remove Cm profile Ns = Ns Ar name
 That relay stopped, its variables unset and its name taken out of
 .Va speederv2_profiles ;
@@ -1308,15 +1409,17 @@ it is.
 The kernel's state, as
 .Xr sysctl 8
 .Fl a
-has it: every variable whose name begins with
+has it, by arcana-sysctl's read action: every variable whose name
+begins with
 .Ar name ,
-with its value, its type, whether it can be set and what it is said to
-be, and what
-.Xr sysctl.conf 5
-sets at boot.
+with its value, its type, whether it can be set, whether the loader
+sets it too and what it is said to be, as the action's output.
 Without
 .Ar name
-the whole tree, of which only the beginning is sent.
+the whole tree, of which only the first part is sent; what
+.Xr sysctl.conf 5
+sets at boot is
+.Cm get -d running sysctl .
 With
 .Fl j Ar jail ,
 those of that vnet jail's network as its own
@@ -1325,8 +1428,9 @@ reads them, under
 .Ar name
 in net.: each its name and value.
 .It Cm sysctl parts Op Ar name
-The same values as a dump: in parts, each printed as an array of its
-own when it comes, with none left out for size.
+The same values in parts, each printed when it comes as the action's
+output, the next asked for from where it ended, with none left out for
+size.
 .It Cm sysctl Ar name Ns = Ns Ar value
 Set a variable with
 .Xr sysctl 8 ,
@@ -1447,7 +1551,11 @@ memory and swap in use, and the bytes a second on the network and the
 disks, added up and then for each interface and each disk, which are
 named, and each running jail's share of one CPU and its memory, as the
 kernel's resource accounting has them
-.Pq Va kern.racct.enable .
+.Pq Va kern.racct.enable ,
+and each FEC relay's bytes a second taken in plain and added by its
+FEC, both ways over its last
+.Fl -report
+interval, named by its syslog tag.
 With
 .Ar after ,
 only the samples after that time, in seconds since the epoch.
@@ -2057,20 +2165,21 @@ chosen, and chosen again when a probe's state changes.
 With jail, a jail's edge's.
 .It Cm sdwan bird Ar json
 The BIRD instances of the services at this edge, as the sdwan-bird
-operation takes them: each a name, the fib it runs in and its
-configuration; parsed first, started or told to read it again, those
-not named stopped.
+operation takes them: each a name, the fib it runs in and its form,
+which the agent renders into BIRD's configuration; parsed first,
+started or told to read it again, those not named stopped.
 .It Cm sdwan dhcp Ar json
 The DHCP servers of the services at this edge, as the sdwan-dhcp
-operation takes them: each a name, the fib it runs in and its
+operation takes them: each a name, the fib it runs in and its form,
+which the agent renders into
 .Xr dnsmasq 8
 configuration; checked first, started or started again, those not
 named stopped.
 .It Cm sdwan proxy Ar json
 The proxies of the services at this edge (MEF 138's URLF, MBSF and
 MD+R), as the sdwan-proxy operation takes them: each a name, its fib,
-its mode (sni or inspect), Squid's configuration, the domains denied
-and its lists, files by name.
+its mode (sni or inspect), its form, which the agent renders into
+Squid's configuration and c-icap's, and its lists, files by name.
 .It Cm sdwan ids Ar json
 The intrusion detection of the services at this edge, as the
 sdwan-ids operation takes them: each a name, its interfaces, Suricata's
@@ -2078,7 +2187,7 @@ configuration, its rules and, to prevent, its divert port.
 .It Cm sdwan dns Ar json
 The resolvers of the services at this edge (MEF 138's DNF and PDNS), as the
 sdwan-dns operation takes them: each a name, the fib it runs in and
-its
+its form, which the agent renders into
 .Xr unbound 8
 configuration, run by the base system's local-unbound; checked by
 local-unbound-checkconf first, started or started again, those not
@@ -2478,7 +2587,7 @@ accepts on the next
 .Cm edit
 or
 .Cm commit :
-.Bl -tag -width rc-conf-conflict
+.Bl -tag -width syslog-conf-conflict
 .It Cm rc-conf-files
 Arcana keeps what it writes of
 .Xr rc.conf 5
@@ -2494,7 +2603,34 @@ once.
 .It Cm rc-conf-conflict
 A variable Arcana would write, or take out, is set in your files too:
 accepted, it is taken out of yours and kept in Arcana's alone.
+.It Cm syslog-include
+Arcana keeps what it writes of
+.Xr syslog.conf 5
+in
+.Pa /usr/local/etc/syslog.d/arcana.conf
+and of
+.Xr newsyslog.conf 5
+in
+.Pa /usr/local/etc/newsyslog.conf.d/arcana.conf ,
+read where
+.Pa /etc/syslog.conf
+and
+.Pa /etc/newsyslog.conf
+include them, as FreeBSD's own do: accepted, the include is added at
+the end of the one that has none, once.
+.It Cm syslog-conf-conflict
+A line of your files writes to a log action the commit changes or
+takes away, or turns over a log whose rotation it changes: accepted, it
+is commented out where it is
+.Pq Dq # taken by Arcana:
+and the action written in Arcana's file alone.
 .El
+.Pp
+A commit of ietf-syslog where
+.Xr syslogd 8
+is not running says
+.Cm syslogd-stopped :
+it reads the files when it starts.
 .Pp
 With
 .Fl q ,

@@ -5,8 +5,25 @@ module: arcana-sysctl
      |  +--rw value    string
      +--ro total?   uint64
      +--ro value* [name]
-        +--ro name           string
-        +--ro value?         string
-        +--ro type?          string
-        +--ro writable?      boolean
-        +--ro description?   string
+     |  +--ro name           string
+     |  +--ro value?         string
+     |  +--ro type?          string
+     |  +--ro writable?      boolean
+     |  +--ro description?   string
+     |  +--ro tunable?       boolean
+     +---x read
+        +---w input
+        |  +---w prefix?   string
+        |  +---w after?    string
+        |  +---w count?    uint16
+        |  +---w jail?     string
+        +--ro output
+           +--ro value*
+           |  +--ro name?          string
+           |  +--ro value?         string
+           |  +--ro type?          string
+           |  +--ro writable?      boolean
+           |  +--ro tunable?       boolean
+           |  +--ro description?   string
+           +--ro next?    string
+           +--ro total?   uint64

@@ -12,6 +12,7 @@
  *	ylog read reply.json	a read's lines
  *	ylog conf syslog.conf [newsyslog.conf]
  *				syslogd's actions, what is not held
+ *	ylog plan root		a commit of root's files as they are
  *
  * Through YANG-CBOR and back, the same bytes.
  */
@@ -113,7 +114,7 @@ conf(const char *path, const char *ns, cbl_yarena *a)
 	size_t nu;
 	int error;
 
-	if ((error = ysyslog_read(path, ns, a, &y, &u, &nu)) != 0)
+	if ((error = ysyslog_read(NULL, path, ns, a, &y, &u, &nu)) != 0)
 		errc(1, error, "ysyslog_read");
 	const struct ietf_syslog_syslog_actions *ac = y.syslog->actions;
 	if (ac->console != NULL) {
@@ -155,6 +156,36 @@ conf(const char *path, const char *ns, cbl_yarena *a)
 	    y.syslog, &back, a);
 }
 
+/* A commit of root's files as they are, through YANG-CBOR first: the
+ * plan changes nothing. */
+static void
+plan(const char *root, cbl_yarena *a)
+{
+	struct ietf_syslog y, back;
+	struct ietf_syslog_syslog bs;
+	struct ysyslog_plan pl;
+	struct yunread *u;
+	char conf[1024], ns[1024], err[1024];
+	size_t nu;
+	int error;
+
+	snprintf(conf, sizeof(conf), "%s%s", root, SYSLOG_CONF);
+	snprintf(ns, sizeof(ns), "%s%s", root, NEWSYSLOG_CONF);
+	if ((error = ysyslog_read(root, conf, ns, a, &y, &u, &nu)) != 0)
+		errc(1, error, "ysyslog_read");
+	same((void *)ietf_syslog_syslog_encode, (void *)
+	    ietf_syslog_syslog_decode, y.syslog, &bs, a);
+	back.syslog = &bs;
+	if ((error = ysyslog_plan(root, &back, a, &pl, err, sizeof(err))) != 0)
+		errx(1, "ysyslog_plan: %s", err);
+	printf("changed %s take %zu create %zu included %s/%s\n",
+	    pl.changed ? "yes" : "no", pl.ntake, pl.ncreate, pl.included ?
+	    "yes" : "no", pl.rot_included ? "yes" : "no");
+	for (size_t i = 0; i < pl.ntake; i++)
+		printf("take %s:%d\n", pl.take[i].path + strlen(root),
+		    pl.take[i].line);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -163,7 +194,7 @@ main(int argc, char **argv)
 
 	if (argc < 3 || argc > 4)
 		errx(2, "usage: ylog files|read reply.json | "
-		    "ylog conf syslog.conf [newsyslog.conf]");
+		    "ylog conf syslog.conf [newsyslog.conf] | ylog plan root");
 	if ((a = cbl_yarena_new()) == NULL)
 		err(1, "cbl_yarena_new");
 	if (strcmp(argv[1], "files") == 0) {
@@ -205,7 +236,9 @@ main(int argc, char **argv)
 		    arcana_log_logs_read_output_decode, &r, &back, a);
 	} else if (strcmp(argv[1], "conf") == 0)
 		conf(argv[2], argc > 3 ? argv[3] : NULL, a);
+	else if (strcmp(argv[1], "plan") == 0)
+		plan(argv[2], a);
 	else
-		errx(2, "%s: files, read or conf", argv[1]);
+		errx(2, "%s: files, read, conf or plan", argv[1]);
 	return (0);
 }

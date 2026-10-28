@@ -76,7 +76,10 @@ origin.
 | `ietf-hardware@2018-03-13.yang` | module | RFC 8348 |
 | `ietf-keystore@2024-10-10.yang` | module | RFC 9642; `ietf-syslog`'s TLS import |
 | `ietf-datastores@2018-02-14.yang` | module | RFC 8342 |
+| `ietf-defaults@2024-04-03.yang` | module | draft-ietf-netconf-default-attribute (RFC 6243's `default` annotation) |
 | `ietf-ethertypes@2019-03-04.yang` | module | RFC 8519 |
+| `ietf-http-client@2024-08-15.yang` | module | draft-ietf-netconf-http-client-server (YangModels/yang, experimental); `ietf-https-notif-transport`'s endpoints |
+| `ietf-https-notif-transport@2026-06-30.yang` | module | draft-ietf-netconf-https-notif (YangModels/yang, experimental); a configured subscription's HTTPS receiver |
 | `ietf-i2nsf-ike@2021-07-14.yang` | module | RFC 9061 |
 | `ietf-i2nsf-ikec@2021-07-14.yang` | module | RFC 9061 |
 | `ietf-i2nsf-ikeless@2021-07-14.yang` | module | RFC 9061 |
@@ -115,6 +118,7 @@ origin.
 | `ietf-sap-ntw@2023-06-20.yang` | module | RFC 9408 |
 | `ietf-sid-file@2024-07-31.yang` | module | RFC 9595 |
 | `ietf-syslog@2025-04-30.yang` | module | RFC 9742; syslog.conf(5) and newsyslog.conf(5) read as it (gula/ylog.c) |
+| `ietf-subscribed-notif-receivers@2026-06-30.yang` | module | draft-ietf-netconf-https-notif (YangModels/yang, experimental); receiver instances for configured subscriptions |
 | `ietf-subscribed-notifications@2019-09-09.yang` | module | RFC 8639 |
 | `ietf-tcp-common@2024-10-10.yang` | module | RFC 9643 |
 | `ietf-tcp@2024-10-10.yang` | module | RFC 9648 |
@@ -130,6 +134,7 @@ origin.
 | `ietf-yang-push@2019-09-09.yang` | module | RFC 8641 |
 | `ietf-yang-schema-mount@2019-01-14.yang` | module | RFC 8528 |
 | `ietf-yang-semver@2026-03-03.yang` | module | draft-ietf-netmod-yang-semver (YangModels/yang) |
+| `ietf-x509-cert-to-name@2014-12-10.yang` | module | RFC 7407; `ietf-https-notif-transport`'s import |
 | `ietf-yang-structure-ext@2020-06-17.yang` | module | RFC 8791 |
 | `ietf-yang-types@2025-12-22.yang` | module | IANA, RFC 9911 |
 | `openconfig-extensions@2025-01-02.yang` | module | OpenConfig (Apache-2.0), from YANG Catalog; `openconfig-procmon`'s import |

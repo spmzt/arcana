@@ -14,7 +14,8 @@
  *
  * A commit changes an interface's description, whether it is enabled,
  * its IPv4 MTU (the link's), its network instance (bind-ni-name, its
- * FIB: SIOCSIFFIB), and its static IPv4 and IPv6 addresses;
+ * FIB: SIOCSIFFIB), its logical network element (bind-lne-name, a vnet
+ * jail: SIOCSIFVNET), and its static IPv4 and IPv6 addresses;
  * makes one a cloner makes (with a gif's or gre's tunnel ends, a vlan's
  * tag and parent), and destroys one; what else the tree changes is
  * refused as not supported yet.  Each is
@@ -31,6 +32,11 @@
  *	made		cloned_interfaces; create_args_<if> for a vlan,
  *			"tunnel a b" first on ifconfig_<if>
  *	destroyed	off cloned_interfaces, its variables dropped
+ *	element		ifconfig(8) vnet and -vnet; vnet.interface of the
+ *			jail in jail.conf (vnet.c, libjailconf), where the
+ *			jail is defined; moved into one alone, what else
+ *			it has there the element's own (its root); back
+ *			on the host, made live again as given
  *	an address	ifconfig_<if>_alias<n> "inet a/len", "inet6 a/len";
  *			taken out of whichever of ifconfig_<if>,
  *			ifconfig_<if>_ipv6 or the aliases has it, the
@@ -381,6 +387,10 @@ rest_of(const yif *e, struct cbl_ybuf *b)
 	x.description = NULL;
 	x.has_enabled = false;
 	x.ni_bind_ni_name = NULL;
+	x.lne_bind_lne_name = NULL;
+	/* An epair's other end: the kernel's to say, and gone from here
+	 * when the other end is moved into a jail. */
+	x.if_ext_peer_interface = NULL;
 	/* A container of addresses alone: as none (the first address
 	 * makes it, the last one's going takes it). */
 	if (x.ip_ipv4 != NULL) {
@@ -411,6 +421,85 @@ rest_of(const yif *e, struct cbl_ybuf *b)
 	top.interfaces_state = NULL;
 	return (cbl_yencode_member(ynode_named("ietf-interfaces",
 	    "interfaces"), &top, b));
+}
+
+/* The logical network element e is bound to, a vnet jail; NULL: none. */
+static const char *
+lne_of(const yif *e)
+{
+
+	return (e != NULL && e->lne_bind_lne_name != NULL &&
+	    e->lne_bind_lne_name[0] != '\0' ? e->lne_bind_lne_name : NULL);
+}
+
+static bool
+lne_same(const char *a, const char *b)
+{
+
+	return (a == NULL ? b == NULL : b != NULL && strcmp(a, b) == 0);
+}
+
+/* Whether a and b differ in more than their logical network element. */
+static int
+lne_alone(const yif *a, const yif *b, bool *more)
+{
+	struct ietf_interfaces_interfaces	 c;
+	struct ietf_interfaces			 top;
+	struct cbl_ybuf				 ba = { NULL, 0, 0 },
+						 bb = { NULL, 0, 0 };
+	yif					 x;
+	int					 error;
+
+	memset(&c, 0, sizeof(c));
+	c.interface.n = 1;
+	c.interface.v = &x;
+	top.interfaces = &c;
+	top.interfaces_state = NULL;
+	x = *a;
+	x.lne_bind_lne_name = NULL;
+	if ((error = cbl_yencode_member(ynode_named("ietf-interfaces",
+	    "interfaces"), &top, &ba)) == 0) {
+		x = *b;
+		x.lne_bind_lne_name = NULL;
+		error = cbl_yencode_member(ynode_named("ietf-interfaces",
+		    "interfaces"), &top, &bb);
+	}
+	*more = error == 0 && (ba.len != bb.len || memcmp(ba.p, bb.p,
+	    ba.len) != 0);
+	cbl_ybuf_free(&ba);
+	cbl_ybuf_free(&bb);
+	return (error);
+}
+
+/*
+ * ifname taken out of the jail from (back to the host) and given to
+ * the jail to, either NULL; kept in jail.conf where the jail is defined
+ * in one, said in a warning where it is not.  Half done, put back.
+ */
+static int
+lne_move(struct work *w, cbl_req *req, const char *ifname, const char *from,
+    const char *to, const char **errp)
+{
+	struct cconf	 conf;
+	const char	*e;
+	bool		 kf, kt;
+
+	conf_read(w, &conf);
+	kf = from != NULL && conf_jail(&conf, from) != NULL;
+	kt = to != NULL && conf_jail(&conf, to) != NULL;
+	if (from != NULL && do_if_vnet(w, ifname, from, true, kf, errp) != 0)
+		return (-1);
+	if (to != NULL && do_if_vnet(w, ifname, to, false, kt, errp) != 0) {
+		if (from != NULL)
+			(void)do_if_vnet(w, ifname, from, false, kf, &e);
+		return (-1);
+	}
+	if (req != NULL && ((from != NULL && !kf) || (to != NULL && !kt)))
+		(void)cbl_req_ywarn(req, ynode_named("ietf-interfaces",
+		    "interfaces")->sid, "not-kept", wfmt(w, "%s: the jail %s is "
+		    "in no jail.conf: the move lasts while it runs", ifname,
+		    to != NULL && !kt ? to : from));
+	return (0);
 }
 
 static const yif *
@@ -845,13 +934,14 @@ rtadvd_again(struct work *w, struct rca *x, const char **errp)
 /* What was made live, to be undone in the other order. */
 struct made {
 	enum { M_ADDR, M_STATE, M_DESCR, M_MTU, M_CREATE, M_DESTROY,
-	    M_FIB, M_RTADV } kind;
+	    M_FIB, M_RTADV, M_LNE } kind;
 	const char	*ifname;
 	struct addr	 ad;
 	bool		 add;		/* M_ADDR: added; M_STATE: brought up */
 	const char	*was;		/* M_DESCR: the description before */
 	unsigned	 mtu, was_mtu;	/* M_MTU */
 	int		 fib, was_fib;	/* M_FIB */
+	const char	*lne, *was_lne;	/* M_LNE: the jails, NULL the host */
 	const yif	*entry;		/* M_CREATE, M_DESTROY: its entry */
 };
 
@@ -923,7 +1013,7 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 	struct rca	 x;
 	struct made	*m = NULL;
 	cbl_yarena	*ya;
-	size_t		 nm = 0, cap = 0;
+	size_t		 nm = 0, cap = 0, nlive = 0;
 	char		 err[512];
 	const char	*e = NULL;
 	bool		 opened = false;
@@ -948,7 +1038,12 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 
 		if ((b = named(before, a->name)) == NULL) {
 			/* Made: by a cloner, of what spec_of() takes. */
-			if (!if_clonable(&w, a->name, NULL) ||
+			if (lne_of(a) != NULL) {
+				(void)snprintf(err, sizeof(err), "%s: made on "
+				    "the host first, then bound to a logical "
+				    "network element", a->name);
+				error = EOPNOTSUPP;
+			} else if (!if_clonable(&w, a->name, NULL) ||
 			    strncmp(a->name, "epair", 5) == 0) {
 				(void)snprintf(err, sizeof(err), "%s: no such "
 				    "interface; a commit makes one a cloner makes "
@@ -961,6 +1056,22 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 				    "description, state, IPv4 MTU and static "
 				    "addresses alone, so far", a->name);
 				error = EOPNOTSUPP;
+			}
+		} else if (lne_of(a) != NULL || lne_of(b) != NULL) {
+			bool more;
+
+			/* Into a logical network element, or in one: moved
+			 * alone (RFC 8530 section 3.1).  Out of one, what it
+			 * has is made live again on the host. */
+			if (lne_of(a) != NULL && (error = lne_alone(a, b,
+			    &more)) == 0 && more) {
+				(void)snprintf(err, sizeof(err), "%s: moved "
+				    "alone to or from a logical network element; "
+				    "what else it has there is changed in the "
+				    "element's root", a->name);
+				(void)cbl_req_set_yapptag(req,
+				    "lne-assignment-failed");
+				error = EIO;
 			}
 		} else if ((error = rest_of(a, &b1)) == 0 &&
 		    (error = rest_of(b, &b2)) == 0 && (b1.len != b2.len ||
@@ -976,7 +1087,15 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 	for (size_t i = 0; error == 0 && before != NULL && before->interfaces
 	    != NULL && i < before->interfaces->interface.n; i++)
 		if (named(after, before->interfaces->interface.v[i].name) ==
-		    NULL && (!if_clonable(&w, before->interfaces->interface.v[i].
+		    NULL && lne_of(&before->interfaces->interface.v[i]) !=
+		    NULL) {
+			(void)snprintf(err, sizeof(err), "%s: in the logical "
+			    "network element %s: given back to the host first",
+			    before->interfaces->interface.v[i].name,
+			    lne_of(&before->interfaces->interface.v[i]));
+			error = EOPNOTSUPP;
+		} else if (named(after, before->interfaces->interface.v[i].
+		    name) == NULL && (!if_clonable(&w, before->interfaces->interface.v[i].
 		    name, NULL) || strncmp(before->interfaces->interface.v[i].
 		    name, "epair", 5) == 0)) {
 			(void)snprintf(err, sizeof(err), "%s: not one a cloner "
@@ -1004,6 +1123,82 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 		bool up_a, up_b, mtu4;
 		const char *da, *db;
 
+		/* Its logical network element: moved. */
+		if (!made && (lne_of(a) != NULL || lne_of(b0) != NULL)) {
+			if (lne_same(lne_of(a), lne_of(b0)))
+				continue;
+			if ((mk = made_new(&m, &nm, &cap)) == NULL) {
+				error = ENOMEM;
+				break;
+			}
+			mk->kind = M_LNE;
+			mk->ifname = wstrdup(&w, a->name);
+			mk->lne = lne_of(a) != NULL ? wstrdup(&w, lne_of(a)) :
+			    NULL;
+			mk->was_lne = lne_of(b0) != NULL ? wstrdup(&w,
+			    lne_of(b0)) : NULL;
+			nlive++;
+			if (lne_of(a) != NULL)
+				continue;
+			/*
+			 * Back on the host, its addresses gone with the move
+			 * (if_vmove()): what a has is made live again, its
+			 * description, addresses, MTU and state; rc.conf
+			 * kept them all along.
+			 */
+			if (a->description != NULL && a->description[0] !=
+			    '\0') {
+				if ((mk = made_new(&m, &nm, &cap)) == NULL) {
+					error = ENOMEM;
+					break;
+				}
+				mk->kind = M_DESCR;
+				mk->ifname = wstrdup(&w, a->name);
+				mk->was = "";
+				mk->ad.ip = wstrdup(&w, a->description);
+				nlive++;
+			}
+			if (addrs_of(a, &va, &na) == 0) {
+				for (size_t k = 0; error == 0 && k < na; k++) {
+					if ((mk = made_new(&m, &nm, &cap)) ==
+					    NULL) {
+						error = ENOMEM;
+						break;
+					}
+					mk->kind = M_ADDR;
+					mk->ifname = wstrdup(&w, a->name);
+					mk->ad = va[k];
+					mk->ad.ip = wstrdup(&w, va[k].ip);
+					mk->add = true;
+					nlive++;
+				}
+				free(va);
+			}
+			if (error == 0 && a->ip_ipv4 != NULL &&
+			    a->ip_ipv4->has_mtu) {
+				if ((mk = made_new(&m, &nm, &cap)) == NULL) {
+					error = ENOMEM;
+					break;
+				}
+				mk->kind = M_MTU;
+				mk->ifname = wstrdup(&w, a->name);
+				mk->mtu = a->ip_ipv4->mtu;
+				nlive++;
+			}
+			if (error == 0 && (!a->has_enabled || a->enabled)) {
+				if ((mk = made_new(&m, &nm, &cap)) == NULL) {
+					error = ENOMEM;
+					break;
+				}
+				mk->kind = M_STATE;
+				mk->ifname = wstrdup(&w, a->name);
+				mk->add = true;
+				nlive++;
+			}
+			if (error != 0)
+				break;
+			continue;
+		}
 		memset(&none, 0, sizeof(none));
 		none.name = a->name;
 		b = made ? &none : b0;
@@ -1208,7 +1403,8 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 			t->ifname = "rtadvd";
 		}
 	}
-	if (error == 0 && nm > 0)
+	/* rc.conf when more than what is made live alone changes. */
+	if (error == 0 && nm > nlive)
 		error = rca_write(&x, req, err, sizeof(err));
 	if (error != 0) {
 		if (error != EEXIST && err[0] != '\0')
@@ -1260,6 +1456,15 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 		case M_RTADV:
 			error = rtadvd_again(&w, &x, &e);
 			break;
+		case M_LNE:
+			/* RFC 8530 section 3.1: lne-assignment-failed. */
+			if ((error = lne_move(&w, req, t->ifname, t->was_lne,
+			    t->lne, &e)) != 0) {
+				(void)cbl_req_set_yapptag(req,
+				    "lne-assignment-failed");
+				error = EIO;
+			}
+			break;
 		}
 		if (error == 0)
 			continue;
@@ -1272,7 +1477,9 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 			ch.descr = t->kind == M_DESCR ? t->was : NULL;
 			ch.mtu = t->kind == M_MTU ? t->was_mtu : 0;
 			ch.fib = t->kind == M_FIB ? t->was_fib : -1;
-			if ((t->kind == M_FIB && do_if_set(&w, t->ifname, &ch,
+			if ((t->kind == M_LNE && lne_move(&w, NULL, t->ifname,
+			    t->lne, t->was_lne, &ue) != 0) ||
+			    (t->kind == M_FIB && do_if_set(&w, t->ifname, &ch,
 			    false, &ue) != 0) || (t->kind == M_CREATE &&
 			    do_if_destroy(&w,
 			    t->ifname, false, &ue) != 0) || (t->kind ==
@@ -1299,6 +1506,10 @@ ietf_interfaces_interfaces_edit(cbl_req *req,
 		error = error > 0 ? error : EIO;
 		break;
 	}
+	/* Bound by it: told when the jail goes (lneroot.c). */
+	for (size_t k = 0; error == 0 && k < nm; k++)
+		if (m[k].kind == M_LNE)
+			lne_bound(m[k].ifname, m[k].lne, m[k].lne != NULL);
 	rca_close(&x);
 	if (rt.read)
 		vc_cap_free(&rt.f);

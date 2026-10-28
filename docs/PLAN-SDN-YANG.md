@@ -760,12 +760,16 @@ whose first part is served.
 - 2.3.8 A: `confirmed-commit` with timeout and `persist`, the revert
   = safe mode; check: the safe-mode tests pass through it, including
   the one that cuts the connection.
-- 2.3.9 A: operational with `with-origin` (intended, system, dynamic,
-  learned, default), origin an RFC 7952 annotation; `ietf-ip`'s
-  host-global sysctls with origin `system`; check: a system interface,
-  a configured one, a live address.
-- 2.3.10 A: `with-defaults` report-all, report-all-tagged, trim,
-  explicit served on GET; check: RFC 6243's examples.
+- 2.3.9 A (done, cblink 0.2.15): operational with `with-origin`
+  (intended, system, learned, default; unknown for what was set by
+  hand), origin an RFC 7952 annotation in YANG-CBOR (tag 109) and JSON;
+  `ietf-ip`'s host-global sysctls with origin `system`; check: a system
+  address, a configured interface (`agent_test:datastores`,
+  `yds_test:with_origin`, `console_test:restconf_write`). `dynamic`
+  waits on 2.3.6's `arcana:live`.
+- 2.3.10 A (done): `with-defaults` report-all, report-all-tagged
+  (ietf-defaults' `default`, draft-ietf-netconf-default-attribute),
+  trim, explicit served on GET; check: RFC 6243's examples.
 - 2.4.3 A (the rest): static routes in `running` written to rc.conf
   `static_routes`, `route_<name>`, `defaultrouter`, IPv6 variants by
   an `EDIT`; check: fixtures.
@@ -774,31 +778,49 @@ whose first part is served.
 - 2.5.1 A: rtadvd.conf ↔ the RA submodule in `running` (`rtadv_write`
   behind an `EDIT`), `rtadvctl reload`; check: `rtadvctl show` after
   an edit.
-- 2.6.2 A: `vrf-root` mount serving routing per FIB, with
-  `parent-reference`; check: the FIB's table under the mount.
+- 2.6.2 A (done): `vrf-root` mount serving routing per FIB, with
+  `parent-reference` (`/if:interfaces`, in `schema-mounts`); check: the
+  FIB's table under the mount.
 - 2.6.3 A (the rest): `bind-ni-name` written by an `EDIT`
   (`yni_bind_apply`: SIOCSIFFIB and rc.conf `fib`);
   `bind-ni-name-failed`; check: `ifconfig em0 fib 2` reads back.
 - 2.6.4 A (the rest): a new instance asked for by an `EDIT`
   (`yni_grow`: `net.fibs` raised and kept in loader.conf) with the
   reboot-required flag in the reply; check: the flag in the reply.
-- 2.7.2 A: the attached helper: fork, `jail_attach`, cblink 2 over a
-  socketpair, lazily started, stopped with the jail; check: a jail's
-  interfaces read through it.
-- 2.7.3 A: `root` mount dispatching to the helper; nested NIs inside;
-  check: a FIB's routes inside a jail.
-- 2.7.4 A: `bind-lne-name` by SIOCSIFVNET and jail.conf
-  `vnet.interface` through libjailconf; `bind-lne-name-failed`; check:
-  an epair moved and moved back.
-- 2.8.1 A (the rest): `ietf-yang-library` under each mount with its
-  `content-id`; `yang-library-update` on change; check: `GET` of a
-  mount's library.
-- 2.8.2 A: `ietf-yang-schema-mount` state (`schema-mounts`); check:
-  RFC 8528's examples' shape.
+- 2.7.2 A (done): the attached helper (`invidia/lneroot.c`): the
+  agent run again as `--scope-helper JID lne-serve`, `jail_attach`,
+  the same YANG handler table served over a socketpair
+  (cblink's `cbl_conn_new_fd()`), started at the jail's first
+  read, one request at a time, stopped with the jail (EVFILT_JAIL),
+  started again where it died; check: `agent_root_test:lne_root`.
+- 2.7.3 A (done): the `root` mount filled from the helper's GET
+  (`cbl_msg_ydecode_member` into `cbl_ymount_data`): the jail's
+  interfaces, routing, network instances with their `vrf-root`s, its
+  YANG library and schema-mounts; `schema-mounts` lists `root`
+  inline; `max_depth` 32 everywhere (a jail's instances' routing goes
+  past 16); check: a FIB's routes inside a jail, the same case.
+- 2.7.4 A (done): `bind-lne-name` written by a commit (`yifedit.c`):
+  `do_if_vnet()` (ifconfig vnet, jail.conf `vnet.interface` by
+  libjailconf where the jail is defined; `not-kept` warned otherwise),
+  moved alone or refused `lne-assignment-failed`; back on the host its
+  addresses, MTU, state made live again; undone at the timeout; the
+  jails' interfaces listed in the host's with their `bind-lne-name`;
+  `bind-lne-name-failed` when the jail stops with a bound interface;
+  check: `agent_root_test:lne_bind`.
+- 2.8.1 A (done): `ietf-yang-library` under each `vrf-root` with its
+  `content-id`, and the top's with NMDA's three datastores. The set
+  changes only with a new agent, whose restart ends every session, so
+  `yang-library-update` has nothing to say while one runs; check:
+  `GET` of a mount's library (`agent_test:datastores_instances`).
+- 2.8.2 A (done): `ietf-yang-schema-mount` state (`schema-mounts`): the
+  agent's `vrf-root` shared, the console's `arcana-fleet` `agent`
+  mount inline; check: RFC 8528's examples' shape.
 - 2.9.1 C: persistent and live address edits through `EDIT`; a static
   route; an interface moved into a jail; check: the browser test.
-- 2.9.2 L: a hand edit of rc.conf shown as drift (intended ≠
-  running); written to TODO's verified list.
+- 2.9.2 L (done, console drift.c): a hand edit shown as drift: a host's
+  Summary reads running and the operational configuration with its
+  origins and shows the edit between them (`GET /api/servers/<id>/drift`,
+  `console_test:services`, `pwa_test:pwa_firewall`).
 - 2.10.1 G, A: the fixture corpus for every file editor under
   `tests/fixtures/`; validator tests from RFC 7950's examples; XPath
   tests; check: `make check`.
@@ -810,7 +832,22 @@ whose first part is served.
   tests pass through the module.
 - 3.1.2 A: `arcana-services`: rcvars and rc.conf variables as leaves
   in `running`; the services, service-action and service-config
-  operations retired; check: the services tests.
+  operations retired; check: the services tests.  Done, the first
+  half (ira/ysvcedit.c): running is each script with `enabled`
+  (`<name>_enable`) and its `<name>_*` variables from the files rc(8)
+  reads (libvarconf), the operational read has them beside the
+  operation's; a commit writes what differs to Arcana's rc.conf file
+  by rcarcana.c's rules, a service at a time (its rcvar as `service
+  <name> rcvar` names it, a variable of its own or its rcvar's stem's;
+  the rcvar is `enabled`'s alone), every file put back where a later
+  one fails; check: `datastores_services`.  Left: the three
+  operations' retirement, which turns the console's enable, disable
+  and config writes into an EDIT and commit: those meet
+  `rc-conf-conflict` on every host whose /etc/rc.conf sets the
+  variable (sshd_enable does), so the console must carry the accept
+  from the page, or keep those writes as the service-action and
+  service-config jobs (3.1.4) and retire the operations alone.  A
+  decision for the user.
 - 3.1.3 A: `arcana-packages`: the packages and pkg-upgrade
   operations retired; check: the packages tests.
 - 3.1.4 A: `arcana-jobs`: the job-submit, jobs, job, job-cancel and
@@ -820,11 +857,40 @@ whose first part is served.
   (streams) as actions; the storage, fstab, zfs-send, zfs-receive and
   zfs-key operations retired; check: the storage tests, the root ZFS
   test.
-- 3.1.6 A: `arcana-sysctl` (`running` ↔ sysctl.conf) and
+- 3.1.6 A (done): `arcana-sysctl` (`running` ↔ sysctl.conf) and
   `arcana-kernel` (`kld_list` in `running`); the sysctl, sysctl-parts
-  and kernel operations retired; check: tests.
+  and kernel operations retired; check: tests.  Done
+  (superbia/ysysedit.c, sysctl.c): running is sysctl.conf's settings
+  and kld_list from the files rc(8) reads (libvarconf); a commit of
+  `sysctl` writes sysctl.conf in place and sets the kernel to each
+  value changed as sysctl(8) does, a value refused puts the file back,
+  a tunable the loader alone sets (CTLFLAG_TUN, not writable) is
+  refused for loader.conf, one taken out is said to keep its value
+  (`sysctl-unset`); a commit of `kernel` writes kld_list to Arcana's
+  rc.conf file (rcarcana.c's rules), the kernel as it is, said where
+  the list and it differ (`kld-list`); the load rpc and the unload
+  action load and unload now.  The kernel's values are read by the
+  module's `read` action a part at a time (prefix, after, count; a
+  jail's network's), which the console's /sysctl and its WebSocket
+  parts and arcanactl's `sysctl` use, `kmod` is `get kernel`.  The
+  jobs of kind sysctl and kmod stay as jobs (3.1.4).  Check:
+  `datastores_sysctl`, `datastores_kernel`, `kernel`, `yang_system`;
+  the console's `services`, `churn`, `mtls`, `tls_ec`.
 - 3.1.7 A: syslog.conf written from `ietf-syslog`; the processes,
   log, history, events and event operations retired; check: tests.
+  Done, the first half (gula/ylog.c, gula/ysyslog.c): a commit of
+  `syslog` writes Arcana's lines in /usr/local/etc/syslog.d/arcana.conf
+  and their rotation (file-limit-size, file-limit-duration) in
+  /usr/local/etc/newsyslog.conf.d/arcana.conf, which FreeBSD's
+  syslog.conf and newsyslog.conf include (`syslog-include` where they
+  do not); an action left as it is stays where it is, one changed is
+  written whole in Arcana's file and the user's lines of it commented
+  out only where accepted (`syslog-conf-conflict`); read back before
+  `service syslogd onereload` (syslogd has no check of its own), every
+  file put back where that fails; refused: TLS, a destination named
+  otherwise than by its address, facility-override, block and stop,
+  cron2, retention, a rollover not in whole hours. Check:
+  `datastores_syslog`, `yang_log`. Left: the operations' retirement.
 - 3.1.8 A: `arcana-bird`, `arcana-wireguard`, `arcana-netgraph`: the
   network operation's kinds and bird-config retired; check: the plugin
   tests.
@@ -838,8 +904,12 @@ whose first part is served.
   console's JSON; the sdwan, sdwan-rules, sdwan-steer, sdwan-bird,
   sdwan-dhcp, sdwan-dns, sdwan-proxy and sdwan-ids operations retired;
   check: the SD-WAN tests and the two-jail lab.
-- 3.2.3 A (the rest): on-change from the event sources in place of a
-  read every dampening period. The events, the alarms and the jobs are
+- 3.2.3 A (done): on-change from the event sources in place of a
+  read every dampening period: interfaces, routing, network instances
+  and logical network elements are told by netlink(4)'s and the jails'
+  events, a job's, a changed file rc(8) reads, a commit (cblink tells
+  those itself), and a minute on for what the kernel announces nowhere
+  (`agent_root_test:onchange_address`). Was: The events, the alarms and the jobs are
   told (cbl_ysub_told, cbl_ysub_changed); interfaces, addresses, routes
   and jails are still read each period, as they change outside the
   agent too. The kernel announces nothing, on netlink or rtsock, for a
@@ -851,8 +921,37 @@ whose first part is served.
   YANG-CBOR has an encoding (RFC 6241's are XML); the XPath filter
   meanwhile; check: one interface's counters only.
 - 3.2.7 A: configured subscriptions: the agent calling the console
-  as receiver over cblink; check: the console restarted, records
-  resume.
+  as receiver; check: the console restarted, records resume.  Done
+  (2026-10-28): RFC 8639's `configured` feature, the transport
+  HTTPS-notif (draft-ietf-netconf-https-notif, its
+  `ietf-subscribed-notif-receivers` and `ietf-https-notif-transport`
+  vendored with SIDs) with JSON encoding; publisher the agent, receiver
+  the console.  cblink keeps them beside the dynamic ones
+  (cbl_ysub.c): running's `subscriptions` told by
+  `cbl_ysub_configure()` from the program's edit handler and at its
+  start, each receiver its state machine (connecting, active) and a
+  thread of the subscription's own, records to the program's transport
+  (`cbl_ysub_set_transport()`), a receiver connected again told
+  `subscription-started` with `replay-previous-event-time` and replayed
+  what it missed from the stream's replay, then `replay-completed`.
+  The agent (invidia/ynotif.c) keeps the container in
+  `--subscriptions` (subscriptions.cbor) and is the HTTP/1.1 client
+  over OpenSSL: GET capabilities once, POST relay-notification per
+  record, its own certificate shown, the console's CA and the system's
+  trusted.  The console (notif.c) is the receiver at
+  `/api/notif/<host>/{capabilities,relay-notification}` on its TLS
+  listeners, the agent authenticated by its certificate (role, the
+  host's name), the records kept in `notif/<host>.jsonl` of the data
+  directory, read at `/api/servers/<host>/notifications`;
+  `/api/servers/<host>/subscription` says what to PUT in the host's
+  candidate (RESTCONF) and commit.  Checked: cblink's ysub_test
+  (configured), agent_tls_test (configured, with a stand-in receiver),
+  console_test (notif_receiver: the console restarted, the records
+  there, the agent back and what it missed replayed).  Left: no UI
+  form yet (the API gives the document to PUT); a plain-HTTP console
+  listener takes no records (no certificate to judge by); a receiver's
+  `reset` action and `suspended` are there but untested; subtree
+  filters as 3.2.4.
 - 3.3.1 A: NACM groups from the certificate's subject or the socket's
   uid, rule-lists in `running`; check: RFC 8341's examples. RFC 8341
   followed strictly (decided 2026-10-28): its groups, rule-lists and
@@ -895,15 +994,39 @@ whose first part is served.
   `yang-library-version`, the api-path parsed against the console's
   tables and sent to the agent as an XPath filter, GET with `content`,
   `depth`, `fields` and `with-defaults`.
-- 4.1.4 C: POST, PUT, PATCH (plain), DELETE with the status table,
-  `Location`, 409 on `data-exists`; check: §4's examples.
-- 4.1.5 C: YANG Patch (`application/yang-patch+json`) forwarded as one
-  `EDIT`; check: RFC 8072's examples.
-- 4.1.6 C: ETag and Last-Modified from the host's commit counter;
-  conditional requests; check: §3.4.1.2 and §3.4.1.3.
-- 4.1.7 C (the rest): one test per error-tag. `ietf-restconf:errors`
-  from the agent's refusal (its errno as §7's status and tag, the node
-  at fault as error-path) is done.
+- 4.1.4 done (console restconf.c): POST (201, `Location`; 409
+  `data-exists`), PUT (201 made, 204 replaced), plain PATCH (204; 404
+  where its target is not; of the datastore, its top-level nodes
+  merged), DELETE (204; 409 `data-missing`), `insert` and `point`,
+  OPTIONS with `Accept-Patch`, all of the candidate.  The agents take a
+  top-level node whole: the console reads the candidate's nodes an edit
+  goes through, makes the edit in its own instance tree
+  (`cbl_dtree_edit()`) and sends them back in one `EDIT`.  Open: PUT of
+  the whole datastore (501), HEAD, edits through a mount point.
+- 4.1.5 done (console restconf.c): YANG Patch
+  (`application/yang-patch+json`), its seven operations, `where` and
+  `point`, made as 4.1.4's edits are, in order, and sent as one `EDIT`,
+  all or nothing; `yang-patch-status` ok, an edit's errors by its
+  `edit-id`, or the agent's refusal as global errors; the `:yang-patch`
+  capability.
+- 4.1.6 done (console restconf.c): ETag and Last-Modified of running and
+  the candidate, on reads and on changes; `If-Match`, `If-None-Match`,
+  `If-Modified-Since`, `If-Unmodified-Since` (304, 412), `*` by what is
+  there.  The agents keep no change counter: the console keeps one per
+  host, counting the changes it forwards (an `EDIT`, commit,
+  cancel-commit, discard-changes), a confirmed commit's undo at its
+  timeout, and the events that say the configuration changed (`conf`,
+  `job`, `undo-failed`) whenever it reads them; its run's number is in
+  each tag.  Open: a change the console does not hear of (another
+  client's commit) changes no tag; a counter in cblink's datastores
+  would be exact.
+- 4.1.7 done (console restconf.c): a test per error-tag the console says
+  (access-denied, invalid-value, operation-not-supported,
+  operation-failed, in-use, data-exists, data-missing,
+  missing-attribute, bad-attribute, unknown-element, unknown-namespace,
+  bad-element, malformed-message), §7's status of each.  Open: the
+  agent's own error-tag, which cblink puts on the wire but has no
+  accessor for (the console maps its errno).
 - 4.1.8 done (console rcstream.c): `restconf-state/streams`, a host's
   NETCONF stream each, as SSE with the §6.4 envelope; an event's time
   its id, `Last-Event-ID` the agent's replay from it.

@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-sysctl",
     "module-revision": "2026-10-14",
-    "sid-file-version": 1,
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 63 600, 100.",
     "assignment-range": [
       {
@@ -70,6 +70,91 @@
         "namespace": "data",
         "identifier": "/arcana-sysctl:sysctl/value/writable",
         "sid": "63611"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read",
+        "sid": "63612"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/input",
+        "sid": "63613"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/input/after",
+        "sid": "63614"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/input/count",
+        "sid": "63615"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/input/jail",
+        "sid": "63616"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/input/prefix",
+        "sid": "63617"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/output",
+        "sid": "63618"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/output/next",
+        "sid": "63619"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/output/total",
+        "sid": "63620"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/output/value",
+        "sid": "63621"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/output/value/description",
+        "sid": "63622"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/output/value/name",
+        "sid": "63623"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/output/value/tunable",
+        "sid": "63624"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/output/value/type",
+        "sid": "63625"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/output/value/value",
+        "sid": "63626"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/read/output/value/writable",
+        "sid": "63627"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/value/tunable",
+        "sid": "63628"
       }
     ]
   }

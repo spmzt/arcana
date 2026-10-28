@@ -225,6 +225,79 @@ static const char *const groups =
     "4789\n    TEREDO_PORTS: 3544\n";
 
 /*
+ * Its profiling, where Suricata is built with it (--enable-profiling;
+ * rules alone with --enable-profiling-rules, locks with
+ * --enable-profiling-locks): the sections named on, the others off,
+ * each its file in the log directory, written as it stops (a replay's
+ * in the replay's directory); rules from the start, sorted by ticks,
+ * as JSON.  None named: no profiling: section, Suricata's default.  A
+ * Suricata built without it reads the section and does nothing.
+ */
+static bool
+profiling(struct work *w, const ucl_object_t *in, const char *name,
+    FILE *b, const char **errp)
+{
+	static const struct {
+		const char	*key, *file;
+	} secs[] = {
+		{ "rules", "rule_perf.log" }, { "keywords", "keyword_perf.log" },
+		{ "prefilter", "prefilter_perf.log" },
+		{ "rulegroups", "rule_group_perf.log" },
+		{ "packets", "packet_stats.log" }, { "locks", "lock_stats.log" },
+	};
+	static const char *const keys[] = { "rules", "keywords", "prefilter",
+	    "rulegroups", "packets", "locks", NULL };
+	const ucl_object_t	*list, *e;
+	ucl_object_iter_t	 it;
+	int64_t			 rate;
+	size_t			 i;
+	bool			 on;
+
+	list = ucl_object_lookup(in, "profiling");
+	if (list != NULL && ucl_object_type(list) != UCL_ARRAY) {
+		*errp = wfmt(w, "%s: profiling is a list of its sections",
+		    name);
+		return (false);
+	}
+	it = NULL;
+	while ((e = ucl_object_iterate(list, &it, true)) != NULL)
+		if (ucl_object_type(e) != UCL_STRING ||
+		    !one_of(ucl_object_tostring(e), keys)) {
+			*errp = wfmt(w, "%s: profiling's sections are rules, "
+			    "keywords, prefilter, rulegroups, packets and locks",
+			    name);
+			return (false);
+		}
+	if (!num_of(in, "profiling_sample_rate", 1, 65536, 1, &rate) ||
+	    (rate & (rate - 1)) != 0) {
+		*errp = wfmt(w, "%s: profiling's sample rate is a power of 2, "
+		    "1 to 65536", name);
+		return (false);
+	}
+	if (ucl_array_size(list) == 0)
+		return (true);
+	fprintf(b, "profiling:\n");
+	if (rate > 1)
+		fprintf(b, "  sample-rate: %jd\n", (intmax_t)rate);
+	for (i = 0; i < nitems(secs); i++) {
+		on = false;
+		it = NULL;
+		while ((e = ucl_object_iterate(list, &it, true)) != NULL)
+			if (strcmp(ucl_object_tostring(e), secs[i].key) == 0)
+				on = true;
+		fprintf(b, "  %s:\n    enabled: %s\n    filename: %s\n"
+		    "    append: yes\n", secs[i].key, on ? "yes" : "no",
+		    secs[i].file);
+		if (strcmp(secs[i].key, "rules") == 0)
+			fprintf(b, "    active: yes\n    sort: ticks\n"
+			    "    limit: 100\n    json: yes\n");
+		else if (strcmp(secs[i].key, "packets") == 0)
+			fprintf(b, "    csv:\n      enabled: no\n");
+	}
+	return (true);
+}
+
+/*
  * The settings: the event types eve.json has (alerts always) and the
  * alert's payload, the statistics every so many seconds, the runmode,
  * the CPUs its threads run on, its memory and the TCP stream and HTTP
@@ -267,7 +340,8 @@ settings(struct work *w, const ucl_object_t *in, const char *name, FILE *b,
 	    "unix-command:", "default-rule-path:", "outputs:", "rule-files:",
 	    "pcap:", "netmap:", "security:", "threshold-file:",
 	    "classification-file:", "reference-config-file:",
-	    "default-log-dir:", "logging:", "af-packet:", "ipfw:" };
+	    "default-log-dir:", "logging:", "af-packet:", "ipfw:",
+	    "profiling:" };
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
 	const char		*v, *rm, *mpm, *prof, *inl, *pol, *mg, *wk, *extra;
@@ -525,6 +599,8 @@ settings(struct work *w, const ucl_object_t *in, const char *name, FILE *b,
 	}
 	if (pol != NULL && pol[0] != '\0')
 		fprintf(b, "exception-policy: %s\n", pol);
+	if (!profiling(w, in, name, b, errp))
+		return (false);
 	if (extra != NULL && extra[strspn(extra, " \t\r\n")] != '\0') {
 		fprintf(b, "# The admin's own:\n%s", extra);
 		v = extra + strlen(extra);

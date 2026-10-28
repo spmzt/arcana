@@ -24,7 +24,9 @@ module arcana-history {
      but the loopback (getifaddrs(3)) and read from and written to
      each disk (devstat(3)), and each running jail's share of a CPU
      and memory as the kernel's resource accounting has them
-     (rctl(8), kern.racct.enable=1).  How it samples (step, keep) and
+     (rctl(8), kern.racct.enable=1), and each FEC relay's (UDPspeeder,
+     net/udpspeeder) rates as its --report lines in syslog(3) have
+     them.  How it samples (step, keep) and
      the limits above which an event (threshold) is made are
      configuration, kept for the agent's next start; the samples are
      state, written down when the agent stops and read again when it
@@ -164,6 +166,33 @@ module arcana-history {
         units "bytes";
         description
           "Its memory.";
+      }
+    }
+    list relay {
+      key "name";
+      description
+        "Each FEC relay told apart, at most 16, by its syslog tag:
+         speederv2, or speederv2_<profile> for one of several.  Its
+         figures are those of its last --report interval, both ways
+         summed, while its last report is fresh; zero else.";
+      leaf name {
+        type string;
+        description
+          "The relay's tag.";
+      }
+      leaf plain {
+        type uint64;
+        units "bytes/second";
+        description
+          "Taken in plain: the tunnel's traffic as the relay carries
+           it.";
+      }
+      leaf added {
+        type uint64;
+        units "bytes/second";
+        description
+          "Added to it by the FEC: its overhead, the redundant packets
+           and their headers.";
       }
     }
   }
@@ -318,6 +347,11 @@ module arcana-history {
         type string;
         description
           "The jails told apart.";
+      }
+      leaf-list relay {
+        type string;
+        description
+          "The FEC relays told apart.";
       }
       list sample {
         cg:struct "sample";

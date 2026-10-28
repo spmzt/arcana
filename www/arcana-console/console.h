@@ -47,7 +47,7 @@
 /* The longest an agent update (the program sent, put in place) is
  * waited for. */
 #define	AGENT_UPDATE_WAIT_MS	(5 * 60 * 1000)
-#define	ARCW_VERSION		"0.327.0"
+#define	ARCW_VERSION		"0.328.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -62,6 +62,7 @@
 #define	CHALLENGE_TTL		120
 #define	CBLINK_MAX_FRAME	(8 * 1024 * 1024)
 #define	CBLINK_MAX_ATTRS	(1024 * 1024)
+#define	CBLINK_MAX_DEPTH	32	/* a jail's root, its instances' routing in it */
 #define	CBLINK_TIMEOUT_MS	(15 * 60 * 1000)
 
 /* config.c: web.conf, a UCL file named by $ARCANA_WEB_CONF. */
@@ -84,6 +85,8 @@ struct config {
 	int		 session_idle;	/* seconds a sign-in may sit idle */
 	int		 session_max;	/* seconds a sign-in lasts at most */
 	char		*local_agent;	/* the agent beside the console, or NULL */
+	char		*notif_base;	/* where the hosts reach the console's
+					 * receiver (notif.c), or NULL: the origin */
 	char		*sendmail;	/* what mail is sent by */
 	int		 mail_tick;	/* s between reads of the events */
 	/* web.conf's for the mail; what is in force: settings_peek(). */
@@ -196,6 +199,12 @@ ucl_object_t	*prefix_list_get(const char *);
 /* labels.c: the console's own tags on hosts' interfaces. */
 int		 api_labels(struct http_request *);
 int		 api_label(struct http_request *);
+/* notif.c: the console as a host's HTTPS-notif receiver; the records
+ * kept; what to put in a host's candidate. */
+int		 api_notif_capabilities(struct http_request *);
+int		 api_notif_relay(struct http_request *);
+int		 api_notifications(struct http_request *);
+int		 api_subscription(struct http_request *);
 const char	*label_of(const char *, const char *, char *, size_t);
 const char	*token_who(struct http_request *);
 bool		 token_readable(const char *);
@@ -219,6 +228,10 @@ void		 sdwan_init(void);
 void		 workflows_init(void);
 void		 thread_log(int, const char *, ...) __printflike(2, 3);
 int		 api_transfers(struct http_request *);
+int		 api_ids_pcap(struct http_request *);
+void		 api_ids_pcap_free(struct http_request *);
+int		 api_ids_pcap_log(struct http_request *);
+void		 api_ids_pcap_log_free(struct http_request *);
 void		 transfers_init(void);
 bool		 capture(struct http_request *, int, char *, size_t);
 bool		 capture_path(const char *, int, char *, size_t);
@@ -269,6 +282,18 @@ bool		 user_has_password(const char *);
 bool		 user_password_ok(const char *, const char *);
 const char	*user_password_set(const char *, const char *);
 bool		 users_any_password(void);
+/* sen.c: MEF 138's Security Event and Security Admin Notifications. */
+#define	NOTICE_SEN	0
+#define	NOTICE_SAN	1
+void		 mail_hold_notice(int, const char *);
+void		 sen_begin(void);
+void		 sen_end(void);
+void		 sen_event(const char *, const char *, const ucl_object_t *);
+void		 san_changes(const ucl_object_t *, const ucl_object_t *,
+		    const char *, const char *);
+char		*sen_neutralise(const char *);
+int		 api_sdwan_sen(struct http_request *);
+int		 api_sdwan_san(struct http_request *);
 /* audit.c: the audit trail of Policy Actions (MEF 118.1 §13.1). */
 void		 audit_add(const char *, const char *, const char *,
 		    const char *, const char *, const char *, const char *, ...)
@@ -392,6 +417,7 @@ const char	*agent_version(void);
 int		 api_agent_build(struct http_request *);
 int		 api_network(struct http_request *);
 int		 api_ydata(struct http_request *);
+int		 api_drift(struct http_request *);
 /* RESTCONF's reads (restconf.c); a host's part, hosts.c's. */
 int		 api_host_meta(struct http_request *);
 int		 api_restconf(struct http_request *);

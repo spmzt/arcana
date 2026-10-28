@@ -590,7 +590,8 @@ do_suricata_rules(struct work *w, const char *const *names, size_t nn,
     struct arc_suricata_rules_rsp *rsp)
 {
 	static const char *const keys[] = { "q", "sid", "only", "classtype",
-	    "offset", "limit", "sources", "instance", "command", "iface" };
+	    "offset", "limit", "sources", "instance", "command", "iface",
+	    "profiling" };
 	struct {
 		char	name[64];
 		size_t	rules, on;
@@ -623,6 +624,11 @@ do_suricata_rules(struct work *w, const char *const *names, size_t nn,
 			    "the rule sources";
 			return;
 		}
+	}
+	/* instance= profiling=1: what its profiling wrote. */
+	if (word_value(names, nn, "profiling") != NULL) {
+		suricata_profiling(w, word_value(names, nn, "instance"), rsp);
+		return;
 	}
 	/* instance= command=: Suricata's own answer. */
 	if (sc_read(w, names, nn, rsp))

@@ -60,17 +60,66 @@ Each its own task when taken up:
 
 ### SASE-6 MEF 138's model, the rest
 
-The security policies are MEF 138's Security Function Policies. Left:
+The security policies are MEF 138's Security Function Policies. Done
+(console 0.327 and after, agent 0.229 and after):
 
-- SEN and SAN with their IDs, neutralised domains and recipients
-  (R24–R36).
-- MD+R: lists of hashes given to ClamAV.
-- DNF: wildcards inside a name (host.*.tld, R71).
-- PDNS: the other record types (SOA, NS, CNAME, MX, SRV, PTR; R104),
-  and DNS over TLS or HTTPS (D19–D22).
-- DPF: message types beyond `any`.
-- MBSF for IPsec (TLS only today, R45).
-- DLP: none; FreeBSD has no engine for it.
+- SEN and SAN (R24–R36): `www/arcana-console/sen.c`. A SEN for each
+  deny the edges' rules logged (the record's `sdwan-security` events)
+  and each Suricata alert (`sdwan-ids`), with Table 3's items: issuer,
+  UTC timestamp, a UUID, the function and its policy, IOC or OTHER,
+  the event, source, details, action, and the UNI where known (D2);
+  domains and URLs neutralised with `[.]` (R28, D3). A SAN for each
+  function policy whose values a kept document changes (R31), with
+  Table 4's: who, from where, the values that changed alone, a Block's
+  and Quarantine's names neutralised (R34). Both kept in the data
+  directory, readable by the console alone (R26, R32), read by
+  `GET /api/sdwan/sen` and `/san` (`.csv` too), shown on the Security
+  tab, and sent to their recipients (R30, R36): `mail_sen`, `mail_san`,
+  `telegram_sen`, `telegram_san` in Settings, Notifications. SENs are
+  made from the events the console reads for its alerts: when no
+  recipient of any kind is set, none are read and none are made.
+- MD+R: the lists are hashes (MD5, SHA-1, SHA-256, `:size` if known),
+  written on each edge as ClamAV's hash signatures in its database
+  directory (`arcana-sdwan.hdb`, `.hsb`; an Allow's as its false
+  positives, `.fp`, `.sfp`) before the services' c-icap starts, which
+  reads the directory whole. One ClamAV an edge: a hash on an Allow
+  and on a Block or Quarantine of services at one edge is refused.
+- DNF: a `*` for a whole label inside a name (`host.*.tld`, R71) on a
+  Block or Quarantine; unbound takes none, so such names are ended
+  by the zone's Squid at the TLS name and refused by the request's
+  host (the zone's HTTP and TLS are forwarded to it as a URLF's are).
+  An Allow with one is refused: unbound would still answer it, and
+  Squid cannot let through what unbound blocks. `*.name` stays
+  unbound's.
+- PDNS: CNAME and NS entries (R104) by a response policy zone of each
+  zone's (unbound's RPZ, tagged with the zone's prefixes): a CNAME's
+  value the name an alias leads to (a QNAME trigger, applied to each
+  name of an answer's chain), an NS's a name server's name
+  (`rpz-nsdname`) or address (`rpz-nsip`). SOA, MX, SRV and PTR are not
+  taken: unbound's RPZ has no trigger on an MX's exchange, an SRV's
+  target, a SOA's or a PTR's value. DNS over TLS southbound (D22, port
+  853, a certificate of the instance's own the Security tab offers)
+  and northbound (D21, `forward-tls-upstream` to the `upstream`
+  servers, each `address[@port]#name`). DNS over HTTPS is not taken
+  (D19): the base system's unbound is built without it.
+- DPF: `message-type` `query` and `response` (Table 6) by the port, a
+  query to 53, a response from it; `any` is both. An update or
+  another is inside the message, which ipfw does not read.
+
+Left, and why:
+
+- MBSF for IPsec (R38, R45, R50, R63, R65): not done. A middlebox for
+  IPsec would impersonate the responder to the initiator with a
+  certificate of the edge's CA and initiate to the real responder,
+  as Squid does for TLS; neither strongSwan nor the base system is
+  such a proxy, and the IKEv2 and IPsec parameters its lists would
+  name (Table 9's criteria) are inside IKE_SA_INIT, which ipfw does
+  not read. Blocking or allowing IPsec as a protocol is IPPF's
+  (`protv4` esp, ah, udp 500 and 4500). TLS alone meets R45.
+- DLP: none; FreeBSD has no engine for it, nor do the packages Arcana
+  uses (c-icap's modules scan for malware alone).
+- The book's conformance rows (arcana-docs, sdwan/conformance.md and
+  sdwan/security.md) are to say the above.
 
 To decide (the user's): which of the conformance list's "no" rows come
 next: session states, an external IdP with OAuth 2.0, Context

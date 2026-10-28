@@ -1,0 +1,32 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-defaults",
+    "module-revision": "2024-04-03",
+    "sid-file-version": 0,
+    "description": "No IETF range: RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-metadata",
+        "module-revision": "2016-08-05"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "78800",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-defaults",
+        "sid": "78800"
+      },
+      {
+        "namespace": "annotation",
+        "identifier": "default",
+        "sid": "78801"
+      }
+    ]
+  }
+}

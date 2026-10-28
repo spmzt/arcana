@@ -5,18 +5,16 @@
  */
 
 /*
- * ysystem: the sysctl and kernel operations' JSON as arcana-sysctl and
- * arcana-kernel have them (ysystem.c), and their configuration written,
- * for agent_test.sh.
+ * ysystem: do_kernel()'s JSON as arcana-kernel has it (ysystem.c), and
+ * the configuration of arcana-sysctl and arcana-kernel written, for
+ * agent_test.sh.
  *
- *	ysystem sysctl file [total]	the values and settings, a line each;
- *					total: a truncated reply's
  *	ysystem kernel file		the files, modules, memory
  *	ysystem -s sysctl.conf name=value ...
  *					sysctl.conf made to set those, in order
  *	ysystem -k rc.conf module ...	kld_list made those
  *
- * The first two through YANG-CBOR and back, the same bytes.
+ * The first through YANG-CBOR and back, the same bytes.
  */
 
 #include <err.h>
@@ -73,31 +71,7 @@ main(int argc, char **argv)
 
 	if ((a = cbl_yarena_new()) == NULL)
 		err(1, "cbl_yarena_new");
-	if (argc >= 3 && strcmp(argv[1], "sysctl") == 0) {
-		struct arcana_sysctl_sysctl s, back;
-		uint64_t total = argc > 3 ? strtoull(argv[3], NULL, 10) : 0;
-
-		if ((error = ysysctl_from_json(slurp(argv[2]), total,
-		    total != 0, a, &s)) != 0)
-			errc(1, error, "ysysctl_from_json");
-		if (s.has_total)
-			printf("total %ju\n", (uintmax_t)s.total);
-		for (size_t i = 0; i < s.value.n; i++)
-			printf("value %s=%s type=%s writable=%s description=%s\n",
-			    s.value.v[i].name, str(s.value.v[i].value),
-			    str(s.value.v[i].type), s.value.v[i].has_writable ?
-			    (s.value.v[i].writable ? "yes" : "no") : "-",
-			    str(s.value.v[i].description));
-		for (size_t i = 0; i < s.kept.n; i++)
-			printf("kept %s=%s\n", s.kept.v[i].name,
-			    s.kept.v[i].value);
-		if (arcana_sysctl_sysctl_encode(&s, &b1) != 0 ||
-		    arcana_sysctl_sysctl_decode(b1.p, b1.len, &back, a,
-		    CBL_YD_STRICT, why, sizeof(why)) != 0 ||
-		    arcana_sysctl_sysctl_encode(&back, &b2) != 0)
-			errx(1, "the round trip: %s", why);
-		same(&b1, &b2);
-	} else if (argc == 3 && strcmp(argv[1], "kernel") == 0) {
+	if (argc == 3 && strcmp(argv[1], "kernel") == 0) {
 		struct arcana_kernel_kernel k, back;
 		const struct arcana_kernel_kernel_memory *m;
 
@@ -178,7 +152,7 @@ main(int argc, char **argv)
 		    vc_write(&f, argv[2], 0644, why, sizeof(why)) == -1)
 			errx(1, "%s", why);
 	} else
-		errx(2, "usage: ysystem sysctl file [total] | kernel file | "
+		errx(2, "usage: ysystem kernel file | "
 		    "-s sysctl.conf name=value ... | -k rc.conf module ...");
 	cbl_ybuf_free(&b1);
 	cbl_ybuf_free(&b2);

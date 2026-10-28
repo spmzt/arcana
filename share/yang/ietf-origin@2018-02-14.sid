@@ -1,0 +1,67 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-origin",
+    "module-revision": "2018-02-14",
+    "sid-file-version": 0,
+    "description": "No IETF range: RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-metadata",
+        "module-revision": "2016-08-05"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "78700",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-origin",
+        "sid": "78700"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "default",
+        "sid": "78701"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "dynamic",
+        "sid": "78702"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "intended",
+        "sid": "78703"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "learned",
+        "sid": "78704"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "origin",
+        "sid": "78705"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "system",
+        "sid": "78706"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "unknown",
+        "sid": "78707"
+      },
+      {
+        "namespace": "annotation",
+        "identifier": "origin",
+        "sid": "78708"
+      }
+    ]
+  }
+}

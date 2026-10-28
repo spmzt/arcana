@@ -8,8 +8,8 @@
  * The DHCP servers of the SD-WAN services at this edge (MEF 70.2 §11.4,
  * §11.5): FreeBSD's base has no DHCP server, so dnsmasq from packages,
  * one instance per service run in the service's routing table
- * (setfib), its configuration written by the console, its pid and
- * lease files beside the agent's kept files.  Like the BIRD instances
+ * (setfib), its configuration rendered here from the console's form
+ * (sdconf.c), its pid and lease files beside the agent's kept files.  Like the BIRD instances
  * of sdbird.c: those named are started or started again, those not
  * named any more are stopped, and the list is kept for the next start.
  */
@@ -33,7 +33,6 @@
 
 #define	DHCP_FILE	"sdwan-dhcp.json"
 #define	INSTANCES_MAX	64
-#define	CONF_MAX	(256 * 1024)
 
 struct instance {
 	char	name[40];
@@ -55,6 +54,17 @@ name_ok(const char *s)
 		if (!isalnum((unsigned char)s[i]) && s[i] != '_' && s[i] != '-')
 			return (false);
 	return (true);
+}
+
+/* A string of the instance's, as a comment takes it: "" for none. */
+static const char *
+sstr(const ucl_object_t *o, const char *k)
+{
+	const ucl_object_t	*v;
+
+	v = ucl_object_lookup(o, k);
+	return (v != NULL && ucl_object_type(v) == UCL_STRING ?
+	    ucl_object_tostring(v) : "");
 }
 
 /* Where an instance's files are: beside the agent's kept files. */
@@ -137,11 +147,13 @@ parse(const char *json)
 }
 
 /*
- * The instances applied: {"instances": [{"name", "fib", "conf"}, ...]}.
- * Each file, with the pid and lease files added, is checked by dnsmasq
- * --test before it is made the instance's; a running instance is
- * stopped and started again on it; those not named any more are
- * stopped.  Kept for the next start.
+ * The instances applied: {"instances": [{"name", "fib", "host",
+ * "spec"}, ...]}, spec the service's form, rendered by
+ * dhcp_conf_render() (host names the host in its comment), every one
+ * before any is changed.  Each file, with the pid and lease files
+ * added, is checked by dnsmasq --test before it is made the
+ * instance's; a running instance is stopped and started again on it;
+ * those not named any more are stopped.  Kept for the next start.
  */
 int
 do_sdwan_dhcp(struct work *w, const char *json, const char **errp)
@@ -151,7 +163,7 @@ do_sdwan_dhcp(struct work *w, const char *json, const char **errp)
 	ucl_object_iter_t	 it;
 	struct instance		 ni[INSTANCES_MAX];
 	struct execres		 res;
-	char			*argv[5], *text;
+	char			*argv[5], *text, *confs[INSTANCES_MAX];
 	const char		*conf, *e;
 	int			 n, i, k, step;
 	bool			 was, ok;
@@ -160,7 +172,7 @@ do_sdwan_dhcp(struct work *w, const char *json, const char **errp)
 		if (top != NULL)
 			ucl_object_unref(top);
 		*errp = "the instances are an object: instances, each a name, "
-		    "a fib and its conf";
+		    "a fib, a host and its spec";
 		return (-1);
 	}
 	n = 0;
@@ -168,17 +180,16 @@ do_sdwan_dhcp(struct work *w, const char *json, const char **errp)
 	while ((in = ucl_object_iterate(ucl_object_lookup(top, "instances"),
 	    &it, true)) != NULL) {
 		v = ucl_object_lookup(in, "name");
-		conf = ucl_object_tostring(ucl_object_lookup(in, "conf"));
 		if (n == INSTANCES_MAX || v == NULL || ucl_object_type(v) !=
 		    UCL_STRING || !name_ok(ucl_object_tostring(v)) ||
 		    ucl_object_lookup(in, "fib") == NULL || ucl_object_toint(
 		    ucl_object_lookup(in, "fib")) < 0 || ucl_object_toint(
-		    ucl_object_lookup(in, "fib")) > 65535 || conf == NULL ||
-		    strlen(conf) > CONF_MAX) {
+		    ucl_object_lookup(in, "fib")) > 65535 || ucl_object_type(
+		    ucl_object_lookup(in, "spec")) != UCL_OBJECT) {
 			ucl_object_unref(top);
 			*errp = wfmt(w, "an instance is a name of letters, digits, "
-			    "_ and -, 32 at most, a fib and its conf, %d of them "
-			    "at most", INSTANCES_MAX);
+			    "_ and -, 32 at most, a fib, a host and its spec, %d "
+			    "of them at most", INSTANCES_MAX);
 			return (-1);
 		}
 		for (i = 0; i < n; i++)
@@ -191,6 +202,13 @@ do_sdwan_dhcp(struct work *w, const char *json, const char **errp)
 		snprintf(ni[n].name, sizeof(ni[n].name), "%s",
 		    ucl_object_tostring(v));
 		ni[n].fib = (int)ucl_object_toint(ucl_object_lookup(in, "fib"));
+		e = NULL;
+		if ((confs[n] = dhcp_conf_render(w, ucl_object_lookup(in,
+		    "spec"), sstr(in, "host"), &e)) == NULL) {
+			ucl_object_unref(top);
+			*errp = wfmt(w, "%s: %s", ni[n].name, e);
+			return (-1);
+		}
 		n++;
 	}
 	pthread_mutex_lock(&lock);
@@ -206,11 +224,8 @@ do_sdwan_dhcp(struct work *w, const char *json, const char **errp)
 		}
 	}
 	ok = true;
-	it = NULL;
 	for (k = 0; k < n; k++) {
-		in = ucl_object_iterate(ucl_object_lookup(top, "instances"), &it,
-		    true);
-		conf = ucl_object_tostring(ucl_object_lookup(in, "conf"));
+		conf = confs[k];
 		was = inst_pid(w, ni[k].name) != 0;
 		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "dnsmasq %s in fib %d: %s", ni[k].name, ni[k].fib, was ?

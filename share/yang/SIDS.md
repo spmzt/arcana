@@ -134,6 +134,12 @@ on the wire.
 | 78 200 | 200 | `ietf-yang-push@2019-09-09`, RFC 8641 (no IETF range) | `share/yang/ietf-yang-push@2019-09-09.sid` (118 used) |
 | 78 400 | 100 | `arcana-fleet`, the console's RESTCONF fleet mount | `share/yang/arcana-fleet@2026-10-27.sid` (5 used) |
 | 78 500 | 200 | `ietf-netconf@2011-06-01`, RFC 6241: commit, cancel-commit, discard-changes (no IETF range) | `share/yang/ietf-netconf@2011-06-01.sid` (107 used) |
+| 78 700 | 100 | `ietf-origin@2018-02-14`, RFC 8342: the `origin` annotation and its identities, for a GET's with-origin (no IETF range) | `share/yang/ietf-origin@2018-02-14.sid` (9 used) |
+| 78 800 | 100 | `ietf-defaults@2024-04-03`, draft-ietf-netconf-default-attribute: RFC 6243's `default` annotation, for report-all-tagged (no IETF range) | `share/yang/ietf-defaults@2024-04-03.sid` (2 used) |
+| 78 900 | 100 | `ietf-yang-schema-mount@2019-01-14`, RFC 8528: `schema-mounts`, the mount points served (no IETF range) | `share/yang/ietf-yang-schema-mount@2019-01-14.sid` (12 used) |
+| 79 000 | 100 | `ietf-subscribed-notif-receivers@2026-06-30`, draft-ietf-netconf-https-notif: the receiver instances a configured subscription's receivers name (no IETF range) | `share/yang/ietf-subscribed-notif-receivers@2026-06-30.sid` (5 used) |
+| 79 100 | 100 | `ietf-https-notif-transport@2026-06-30`, draft-ietf-netconf-https-notif: the https-receiver, its endpoints (no IETF range) | `share/yang/ietf-https-notif-transport@2026-06-30.sid` (19 used) |
+| 79 200 | 100 | `ietf-http-client@2024-08-15`, draft-ietf-netconf-http-client-server: imported alone, its groupings the endpoints' (no IETF range) | `share/yang/ietf-http-client@2024-08-15.sid` (6 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

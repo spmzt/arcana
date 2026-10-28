@@ -147,6 +147,7 @@ struct http_request {
 	uint8_t			*resp;
 	size_t			 resp_len, resp_off;
 	bool			 headers_sent;
+	bool			 chunked;	/* a stream over HTTP/1.1: framed */
 	struct buf		*stream;	/* a reply that does not end: what
 						 * waits to be written */
 	bool			 stream_end;
@@ -171,11 +172,14 @@ extern const size_t		nroutes;
 
 void		 http_response(struct http_request *, int, const void *,
 		    size_t);
+const char	*web_peer(struct http_request *, char *, size_t);
 void		 http_response_header(struct http_request *, const char *,
 		    const char *);
 /*
- * A reply that does not end (Server-Sent Events): http_stream() sends
- * the headers set, with no length; http_stream_put() each piece of its
+ * A reply whose length is not known first (Server-Sent Events, a file
+ * read from a host): http_stream() sends the headers set, with no
+ * length (over HTTP/1.1 chunked, so that a client kept open knows where
+ * it ends; HTTP/2 frames its own); http_stream_put() each piece of its
  * body, in the worker; http_stream_end() ends it once what was put is
  * out.  The client going frees the request, its route's on_free first.
  */
@@ -257,5 +261,13 @@ int		 arcw_init(void);
 extern const char	*web_conf_path;
 /* Its certificate and key, of server { }; NULL without TLS. */
 extern const char	*web_certfile, *web_certkey;
+/*
+ * A client certificate asked for on the TLS listeners, verified by the
+ * CA file (the console's), any accepted: web_peer_cert() gives a
+ * request's where it verified (freed by the caller), else NULL.
+ */
+void		 web_client_ca(const char *);
+struct x509_st;
+struct x509_st	*web_peer_cert(struct http_request *);
 
 #endif /* !WEB_H */

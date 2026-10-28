@@ -154,6 +154,19 @@ int	ylne_elements(cbl_yarena *a,
 	    const struct ietf_logical_network_element_logical_network_elements **out);
 
 /*
+ * Their roots, each served by a helper attached to the jail
+ * (invidia/lneroot.c): lne_get() a GET of the top-level nodes sids
+ * there; lne_root() the root of the jail name, NULL where it could not
+ * be read; lne_bound_interfaces() the interfaces in the jails put in
+ * the host's data, with the jail each is bound to.
+ */
+int	lne_get(int jid, const uint64_t *sids, size_t n, cbl_msg **reply);
+const struct cbl_ynode *lne_root_node(void);
+int	lne_root(cbl_yarena *a, const char *name,
+	    const struct ietf_logical_network_element_logical_network_elements_logical_network_element_root **out);
+int	lne_bound_interfaces(struct ietf_interfaces *data, cbl_yarena *a);
+
+/*
  * FreeBSD's FIBs as RFC 8529's network instances, invidia/yni.c: FIB 1
  * to net.fibs - 1, named and described in fibs.conf f (NULL: none).
  * yni_nfibs(): net.fibs, this vnet's.  yni_read(): the instances, what
@@ -267,13 +280,11 @@ int	ystorage_fstab(const char *text, const char *sha256, cbl_yarena *a,
 	    struct arcana_storage_storage *st);
 
 /*
- * arcana-sysctl and arcana-kernel (superbia/ysystem.c): the sysctl and
- * kernel operations' JSON as the modules have them; their configuration
- * written in place: sysctl.conf's settings (f: VC_SYSCTL), rc.conf's
- * kld_list (f: VC_SH).
+ * arcana-kernel and arcana-sysctl (superbia/ysystem.c): do_kernel()'s
+ * JSON as the module has it; their configuration written in place:
+ * sysctl.conf's settings (f: VC_SYSCTL), rc.conf's kld_list (f: VC_SH).
+ * Served, the read action and the commits, by superbia/ysysedit.c.
  */
-int	ysysctl_from_json(const char *json, uint64_t total, bool truncated,
-	    cbl_yarena *a, struct arcana_sysctl_sysctl *out);
 int	ykernel_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_kernel_kernel *out);
 int	ysysctl_conf_write(struct vc_file *f,
@@ -299,12 +310,46 @@ int	ylog_files_from_json(const char *json, const char *dir, cbl_yarena *a,
 int	ylog_read_from_json(const char *json, cbl_yarena *a,
 	    struct arcana_log_logs_read_output *out);
 /*
- * ietf-syslog: syslog.conf conf, and the files it includes, with each
- * file's rotation from newsyslog.conf newsyslog (NULL: none); what the
- * model cannot hold in *u (the arena's), "file:line" and why.
+ * ietf-syslog: syslog.conf conf, and the files it includes (under root,
+ * NULL: the host's), with each file's rotation from newsyslog.conf
+ * newsyslog (NULL: none); what the model cannot hold in *u (the
+ * arena's), "file:line" and why.
  */
-int	ysyslog_read(const char *conf, const char *newsyslog, cbl_yarena *a,
-	    struct ietf_syslog *out, struct yunread **u, size_t *nu);
+int	ysyslog_read(const char *root, const char *conf, const char *newsyslog,
+	    cbl_yarena *a, struct ietf_syslog *out, struct yunread **u,
+	    size_t *nu);
+
+#define	SYSLOG_CONF		"/etc/syslog.conf"
+#define	NEWSYSLOG_CONF		"/etc/newsyslog.conf"
+#define	SYSLOG_ARCANA		"/usr/local/etc/syslog.d/arcana.conf"
+#define	NEWSYSLOG_ARCANA	"/usr/local/etc/newsyslog.conf.d/arcana.conf"
+
+/*
+ * A commit of ietf-syslog (gula/ylog.c), planned on the files under root
+ * as they are: Arcana's two files' text (NULL: not written), whether
+ * syslog.conf and newsyslog.conf include them, the user's lines taken
+ * over ("file:line", under root) and the log files to be made.  err
+ * says what is refused.  ysyslog_take() comments the lines out;
+ * ysyslog_check(): the files written read back as after asked.
+ */
+struct ysyslog_take {
+	const char	*path;
+	int		 line;
+};
+struct ysyslog_plan {
+	bool			 changed;
+	const char		*conf, *rot;
+	bool			 included, rot_included;
+	struct ysyslog_take	*take;
+	size_t			 ntake;
+	const char		**create;
+	size_t			 ncreate;
+};
+int	ysyslog_plan(const char *root, const struct ietf_syslog *after,
+	    cbl_yarena *a, struct ysyslog_plan *out, char *err, size_t errlen);
+int	ysyslog_take(const struct ysyslog_plan *pl);
+int	ysyslog_check(const char *root, const struct ietf_syslog *after,
+	    char *err, size_t errlen);
 
 /*
  * arcana-firewall (invidia/yfw.c): the network operation's ipfw kind
@@ -451,7 +496,9 @@ int	ybuilder_options_from_json(const char *json, cbl_yarena *a,
 /* running and the candidate, by confirmed commit (invidia/ynetconf.c). */
 int	ynetconf_datastores(cbl_ctx *);
 
-/* The models served (invidia/yserve.c, yarcana.c). */
+/* The models served (invidia/yserve.c, yarcana.c).  ywork(): the work
+ * of a read, freed with the answer's arena. */
 int	yang_serve(cbl_ctx *);
+struct work *ywork(cbl_yarena *a);
 
 #endif	/* !_ARCANA_COLLECT_H_ */

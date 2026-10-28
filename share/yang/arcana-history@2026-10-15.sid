@@ -2,9 +2,13 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-history",
     "module-revision": "2026-10-15",
-    "sid-file-version": 2,
+    "sid-file-version": 3,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
     "dependency-revision": [
+      {
+        "module-name": "cblink-gen",
+        "module-revision": "2026-10-22"
+      },
       {
         "module-name": "ietf-yang-types",
         "module-revision": "2025-12-22"
@@ -376,6 +380,51 @@
         "namespace": "data",
         "identifier": "/arcana-history:history/limits/storage",
         "sid": "70771"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/relay",
+        "sid": "70772"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/relay/added",
+        "sid": "70773"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/relay/name",
+        "sid": "70774"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/read/output/sample/relay/plain",
+        "sid": "70775"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/relay",
+        "sid": "70776"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/relay",
+        "sid": "70777"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/relay/added",
+        "sid": "70778"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/relay/name",
+        "sid": "70779"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-history:history/state/sample/relay/plain",
+        "sid": "70780"
       }
     ]
   }

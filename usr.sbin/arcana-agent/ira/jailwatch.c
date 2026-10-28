@@ -139,6 +139,8 @@ watcher(void *arg __unused)
 		    (ev.fflags & NOTE_JAIL_REMOVE) == 0)
 			continue;
 		told(w->name, w->jid, "stopped");
+		/* Its logical network element's helper, killed with it. */
+		lne_gone(w->jid);
 		LIST_REMOVE(w, list);
 		free(w->name);
 		free(w);

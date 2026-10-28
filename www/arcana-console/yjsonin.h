@@ -24,5 +24,25 @@ int	yjson_edit(cbl_conn *conn, const struct cbl_ynode *n,
 	    const ucl_object_t *v, enum cbl_yds_name ds,
 	    const char *const *accept, size_t naccept, char *err,
 	    size_t errlen, uint64_t *errsid, char *tag, size_t taglen);
+/*
+ * The same of the top-level nodes tops (ntop of them), each whole as
+ * tree t has it, deleted where t has none, in one EDIT: all or nothing.
+ * yjson_node(): node n's value v (as a member of its parent's object
+ * has it) made a child of parent, *made the node made, a list's or a
+ * leaf-list's last entry; EINVAL, a value not of its node, ENOENT, a
+ * member that names none.  yjson_text(): text (a key in a path) as leaf
+ * or leaf-list n's value, in a.
+ */
+int	yjson_edit_tree(cbl_conn *conn, const struct cbl_dtree *t,
+	    const struct cbl_ynode *const *tops, size_t ntop,
+	    enum cbl_yds_name ds, const char *const *accept, size_t naccept,
+	    char *err, size_t errlen, uint64_t *errsid, char *tag,
+	    size_t taglen);
+struct cbl_dnode;
+int	yjson_node(struct cbl_dnode *parent, const struct cbl_ynode *n,
+	    const ucl_object_t *v, cbl_yarena *a, struct cbl_dnode **made,
+	    char *why, size_t len);
+int	yjson_text(const struct cbl_ynode *n, const char *text, cbl_yarena *a,
+	    void **out, char *why, size_t len);
 
 #endif	/* !_ARCANA_YJSONIN_H_ */

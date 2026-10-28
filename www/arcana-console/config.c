@@ -52,7 +52,9 @@ get(const ucl_object_t *top, const char *path, const char *def)
  * mail goes out by (/usr/sbin/sendmail), mail_tick the seconds between
  * reads of the hosts' events for it (15); mail_to, mail_from,
  * mail_faults, mail_jobs, mail_runs and mail_limits what Settings
- * starts from.
+ * starts from.  notif_base is where the hosts reach the console's
+ * HTTPS-notif receiver (notif.c), "https://host[:port]"; the origin
+ * without it.
  *
  *	android { package = "..."; fingerprints = [ "AB:CD:..." ]; }
  *
@@ -111,6 +113,7 @@ config_load(const char *path)
 	    ucl_object_toint(o) <= 3600 ? (int)ucl_object_toint(o) : 15;
 	/* Empty says: do not look for an agent beside the console. */
 	cfg.local_agent = get(top, "local_agent", ARCW_LOCAL_AGENT);
+	cfg.notif_base = get(top, "notif_base", NULL);
 	if (cfg.local_agent != NULL && cfg.local_agent[0] == '\0')
 		cfg.local_agent = NULL;
 	if (cluster_config(top, path) == -1 || android_load(top, path) == -1) {

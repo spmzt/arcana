@@ -162,29 +162,28 @@ memory_of(struct work *w, bool zones, uint64_t *totalp)
 
 /*
  * {"files": [{"id", "name", "path", "refs", "size", "address",
- * "modules": [...]}], "available": [...], "kept": [...], "memory":
+ * "modules": [...]}], "available": [...], "memory":
  * {"files", "kmem_size", "kmem_map_size", "kmem_map_free", "malloc_total",
  * "malloc": [{"name", "bytes", "count", "requests"}],
- * "zones": [{"name", "bytes", "count", "free", "size", "requests"}]}}.
+ * "zones": [{"name", "bytes", "count", "free", "size", "requests"}]}},
+ * in w's pool; NULL with *errp set.
  */
-int
-do_kernel(struct work *w, struct arc_kernel_rsp *rsp)
+const char *
+do_kernel(struct work *w, const char **errp)
 {
 	struct kld_file_stat	 st;
 	struct module_stat	 ms;
 	struct dirent		*de;
 	ucl_object_t		*top, *files, *o, *mods, *arr, *mem;
 	unsigned char		*json;
-	const char		**loaded, **avail, *kept;
-	char			*path, *dir, *list, *name, addr[32];
+	const char		**loaded, **avail, *out;
+	char			*path, *dir, *name, addr[32];
 	u_long			 ul;
 	uint64_t		 total, sum;
 	size_t			 len, nloaded, navail, i, k;
 	DIR			*d;
 	int			 id, mid, step, n;
 
-	rsp->has_ok = true;
-	rsp->ok = false;
 	top = ucl_object_typed_new(UCL_OBJECT);
 	files = ucl_object_typed_new(UCL_ARRAY);
 	loaded = wcalloc(w, 1024, sizeof(*loaded));
@@ -260,17 +259,6 @@ do_kernel(struct work *w, struct arc_kernel_rsp *rsp)
 			ucl_array_append(arr, ucl_object_fromstring(avail[i]));
 	ucl_object_insert_key(top, arr, "available", 0, false);
 
-	/* What rc.conf loads at boot. */
-	arr = ucl_object_typed_new(UCL_ARRAY);
-	if ((kept = rc_get(w, "kld_list")) != NULL) {
-		list = wstrdup(w, kept);
-		while ((name = strsep(&list, " \t")) != NULL)
-			if (name[0] != '\0')
-				ucl_array_append(arr, ucl_object_fromstring(
-				    name));
-	}
-	ucl_object_insert_key(top, arr, "kept", 0, false);
-
 	mem = ucl_object_typed_new(UCL_OBJECT);
 	putn(mem, "files", sum);
 	static const char *const ctl[] = { "kmem_size", "kmem_map_size",
@@ -300,13 +288,11 @@ do_kernel(struct work *w, struct arc_kernel_rsp *rsp)
 	ucl_object_unref(top);
 	if (json == NULL || strlen((char *)json) > ARC_MAX_JSON) {
 		free(json);
-		rsp->error = "the kernel's modules are more than a reply "
-		    "carries";
-		return (0);
+		*errp = "the kernel's modules are more than a reply carries";
+		return (NULL);
 	}
-	rsp->json = wtext(w, wadopt(w, json));
-	rsp->ok = true;
-	return (0);
+	out = wtext(w, wadopt(w, json));
+	return (out);
 }
 
 /* Are the two the same module, with or without .ko? */

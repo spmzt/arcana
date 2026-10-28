@@ -11,8 +11,10 @@
  * opened; while it is shown, what came since is asked for and added.
  * The hosts are drawn over one another to be compared, and then each
  * by itself, where the network is all its interfaces or one of them,
- * and the disks likewise.  How often an agent samples and how much it
- * keeps is set here, with what that takes of its memory.
+ * and the disks likewise; and each FEC relay's overhead, the bytes its
+ * FEC adds beside the tunnel's rate it carries.  How often an agent
+ * samples and how much it keeps is set here, with what that takes of
+ * its memory.
  */
 
 #include <math.h>
@@ -41,9 +43,11 @@ struct uhost {
 	int	 lim[4];	/* cpu, mem, swap, storage, in percent; 0 none */
 	char	 nets[DEVS][DEVNAME], disks[DEVS][DEVNAME];
 	char	 jails[DEVS][DEVNAME];	/* told apart when racct is on */
-	int	 nn, nd, nj;
+	char	 relays[DEVS][DEVNAME];	/* the FEC relays, by syslog tag */
+	int	 nn, nd, nj, nr;
 	char	 net[DEVNAME], disk[DEVNAME];	/* the one drawn, "" all */
 	char	 jail[DEVNAME];		/* the jail drawn, "" the first */
+	char	 relay[DEVNAME];	/* the relay drawn, "" the first */
 	bool	 racct;			/* the kernel accounts for jails */
 	char	 rules[1024];		/* limits of devices and jails, a line
 					   each */
@@ -156,6 +160,7 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	other = devs(jget(d, "nets"), u->nets, &u->nn);
 	other = devs(jget(d, "disks"), u->disks, &u->nd) || other;
 	other = devs(jget(d, "jails"), u->jails, &u->nj) || other;
+	other = devs(jget(d, "relays"), u->relays, &u->nr) || other;
 	u->racct = jbool(d, "racct");
 	/* The rules as they are typed: "net:igb0=125000000", a line each. */
 	{
@@ -180,7 +185,7 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (other || keep != u->keep || u->v == NULL) {
 		free(u->v);
 		u->keep = keep;
-		u->stride = NF + 2 * (u->nn + u->nd + u->nj);
+		u->stride = NF + 2 * (u->nn + u->nd + u->nj + u->nr);
 		u->v = calloc((size_t)(keep > 0 ? keep : 1) *
 		    (size_t)u->stride, sizeof(*u->v));
 		if (u->v == NULL)
@@ -623,6 +628,50 @@ jail_picker(struct html *h, const struct uhost *u, int on, double t1)
 	h_raw(h, "</div>");
 }
 
+/* The FEC's overhead over the window: what it added of what it took. */
+static double
+overhead(const struct uhost *u, int base, double t1)
+{
+	double	plain, added;
+	int	i;
+
+	plain = added = 0;
+	for (i = first(u, t1); i < u->n; i++) {
+		plain += T(u, i)[base];
+		added += T(u, i)[base + 1];
+	}
+	return (plain > 0 ? 100 * added / plain : -1);
+}
+
+/* The relays, to pick the one drawn: each with its overhead. */
+static void
+relay_picker(struct html *h, const struct uhost *u, int on, double t1)
+{
+	char	buf[32];
+	double	oh;
+	int	k, base;
+
+	base = NF + 2 * (u->nn + u->nd + u->nj);
+	h_raw(h, "<div class=\"upick\">");
+	for (k = 0; k < u->nr; k++) {
+		oh = overhead(u, base + 2 * k, t1);
+		h_fmt(h, "<button class=\"ghost small%s%s\" data-act=\""
+		    "usage-relay\"", k == on ? " on" : "", oh < 0 ? " idle" : "");
+		h_attr(h, "data-arg", u->sid);
+		h_attr(h, "data-value", u->relays[k]);
+		h_raw(h, ">");
+		h_txt(h, u->relays[k]);
+		if (oh >= 0) {
+			snprintf(buf, sizeof(buf), " +%.0f%%", oh);
+			h_raw(h, "<small>");
+			h_txt(h, buf);
+			h_raw(h, "</small>");
+		}
+		h_raw(h, "</button>");
+	}
+	h_raw(h, "</div>");
+}
+
 /* How the agent samples the host, said and set. */
 static void
 sampling(struct html *h, const struct uhost *u)
@@ -663,12 +712,12 @@ sampling(struct html *h, const struct uhost *u)
 	fmt_size(buf, sizeof(buf), u->bytes);
 	h_fmt(h, ">Close</button><small class=\"dim\">Now %s of the agent's "
 	    "memory: 8 bytes a sample, and 4 for each figure in it, of "
-	    "which there are %d here with %d interfaces, %d disks and %d "
-	    "jails. With 0 kept the agent does not sample and holds nothing. "
+	    "which there are %d here with %d interfaces, %d disks, %d "
+	    "jails and %d FEC relays. With 0 kept the agent does not sample and holds nothing. "
 	    "It keeps this for its next start, and the samples with it. A "
 	    "limit crossed, either way, is an event, listed under events in "
 	    "the Log tab; 0 is no limit.</small></form>", buf, u->stride - 1,
-	    u->nn, u->nd, u->nj);
+	    u->nn, u->nd, u->nj, u->nr);
 }
 
 void
@@ -830,6 +879,36 @@ view_usage(struct html *h)
 			h_raw(h, "</div></div>");
 			jail_picker(h, u, k, t1);
 		}
+		/* Each FEC relay's: the tunnel's rate it carries, and what
+		 * its FEC adds to it. */
+		if (u->nr > 0) {
+			double	oh;
+			int	base;
+
+			k = picked_at(u->relays, u->nr, u->relay);
+			if (k < 0)
+				k = 0;
+			base = NF + 2 * (u->nn + u->nd + u->nj + k);
+			h_raw(h, "<div class=\"uplots wide urelays\"><div>");
+			snprintf(label, sizeof(label), "FEC relay · %s",
+			    u->relays[k]);
+			single(h, u, label, base, "carried", base + 1,
+			    "added by FEC", t1, 2);
+			h_raw(h, "</div></div>");
+			relay_picker(h, u, k, t1);
+			oh = overhead(u, base, t1);
+			h_raw(h, "<p class=\"dim ujails\">");
+			if (oh >= 0) {
+				snprintf(buf, sizeof(buf), "%.1f%%", oh);
+				h_raw(h, "Overhead over the window: <b>");
+				h_txt(h, buf);
+				h_raw(h, "</b> of the bytes carried. ");
+			}
+			h_raw(h, "UDPspeeder's own counters, both ways, from its "
+			    "<code>--report</code> lines in syslog: what it took "
+			    "in plain is the tunnel's rate as the relay carries "
+			    "it, beside its interface's above.</p>");
+		}
 		h_raw(h, "</section>");
 	}
 	h_raw(h, "</section>");
@@ -921,6 +1000,8 @@ usage_action(const char *act, const char *arg, const char *value)
 		snprintf(u->disk, sizeof(u->disk), "%s", value);
 	} else if (strcmp(act, "usage-jail") == 0) {
 		snprintf(u->jail, sizeof(u->jail), "%s", value);
+	} else if (strcmp(act, "usage-relay") == 0) {
+		snprintf(u->relay, sizeof(u->relay), "%s", value);
 	}
 	return (true);
 }

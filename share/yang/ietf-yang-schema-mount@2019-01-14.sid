@@ -1,0 +1,86 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-yang-schema-mount",
+    "module-revision": "2019-01-14",
+    "sid-file-version": 0,
+    "description": "No IETF range: RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "78900",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-yang-schema-mount",
+        "sid": "78900"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-yang-schema-mount:schema-mounts",
+        "sid": "78901"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-yang-schema-mount:schema-mounts/mount-point",
+        "sid": "78902"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-yang-schema-mount:schema-mounts/mount-point/config",
+        "sid": "78903"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-yang-schema-mount:schema-mounts/mount-point/inline",
+        "sid": "78904"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-yang-schema-mount:schema-mounts/mount-point/label",
+        "sid": "78905"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-yang-schema-mount:schema-mounts/mount-point/module",
+        "sid": "78906"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-yang-schema-mount:schema-mounts/mount-point/shared-schema",
+        "sid": "78907"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-yang-schema-mount:schema-mounts/mount-point/shared-schema/parent-reference",
+        "sid": "78908"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-yang-schema-mount:schema-mounts/namespace",
+        "sid": "78909"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-yang-schema-mount:schema-mounts/namespace/prefix",
+        "sid": "78910"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-yang-schema-mount:schema-mounts/namespace/uri",
+        "sid": "78911"
+      }
+    ]
+  }
+}

@@ -27,7 +27,9 @@
  * them on to the socket.  The host sends ahead only as far as the
  * stream's window, which a part gives back once it was written, so a
  * slow page slows the host down, nothing piles up between them, and
- * the other requests to the host go on beside it.
+ * the other requests to the host go on beside it.  The sysctls come by
+ * arcana-sysctl's read action instead (ytrans.c), a part asked for
+ * once the one before was written.
  *
  * what is events too: the host's events as they happen, which do not
  * end (follow.c).
@@ -57,10 +59,12 @@
 #include <string.h>
 
 #include "console.h"
+#include "ytrans.h"
 
 #define	STREAMS_MAX	16		/* at once, on all sockets */
 #define	STREAM_PART	(1024 * 1024)	/* one part's text, at most */
 #define	STREAM_WINDOW	(2 * 1024 * 1024)	/* the host sends ahead */
+#define	SYSCTL_PART	120		/* values asked for at once */
 
 struct stream {
 	struct task	 task;	/* first */
@@ -299,31 +303,22 @@ open_parts(struct stream *s, struct arc_client *cl, struct reader *r,
     cbl_stream **sp)
 {
 	struct arc_network_parts_req	 nq;
-	struct arc_sysctl_parts_req	 sq;
 	cbl_msg				*msg;
 	int				 error;
 
 	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), cl->family,
-	    s->kind != 255 ? ARC_CMD_NETWORK_PARTS : ARC_CMD_SYSCTL_PARTS,
-	    CBL_F_REQUEST | CBL_F_S_OPEN, &msg)) != 0)
+	    ARC_CMD_NETWORK_PARTS, CBL_F_REQUEST | CBL_F_S_OPEN, &msg)) != 0)
 		return (error);
-	if (s->kind != 255) {
-		memset(&nq, 0, sizeof(nq));
-		nq.has_net_kind = true;
-		nq.net_kind = s->kind;
-		nq.has_net_family = true;
-		nq.net_family = s->family;
-		nq.has_net_fib = s->fib != 0;
-		nq.net_fib = s->fib;
-		nq.jail = s->jail[0] != '\0' ? s->jail : NULL;
-		nq.net_filter = s->filter[0] != '\0' ? s->filter : NULL;
-		error = arc_network_parts_req_put_fields(msg, &nq);
-	} else {
-		memset(&sq, 0, sizeof(sq));
-		sq.net_filter = s->filter[0] != '\0' ? s->filter : NULL;
-		error = arc_sysctl_parts_req_put_fields(msg, &sq);
-	}
-	if (error != 0) {
+	memset(&nq, 0, sizeof(nq));
+	nq.has_net_kind = true;
+	nq.net_kind = s->kind;
+	nq.has_net_family = true;
+	nq.net_family = s->family;
+	nq.has_net_fib = s->fib != 0;
+	nq.net_fib = s->fib;
+	nq.jail = s->jail[0] != '\0' ? s->jail : NULL;
+	nq.net_filter = s->filter[0] != '\0' ? s->filter : NULL;
+	if ((error = arc_network_parts_req_put_fields(msg, &nq)) != 0) {
 		cbl_msg_free(msg);
 		return (error);
 	}
@@ -366,6 +361,63 @@ read_run(struct task *t)
 		say(t, "{\"id\":%ju,\"status\":%d,\"reply\":%s}",
 		    (uintmax_t)s->id, status, json);
 	free(json);
+	return (WEB_OK);
+}
+
+/*
+ * In a task thread: the kernel's values by arcana-sysctl's read action,
+ * a part at a time, each asked for once the one before was written.
+ */
+static int
+sysctl_run(struct task *t)
+{
+	struct stream		*s;
+	struct arc_client	 cl;
+	ucl_object_t		*rows;
+	cbl_conn		*conn;
+	const char		*msg;
+	unsigned char		*json;
+	char			*after = NULL, *next, err[256];
+	uint64_t		 total, sent = 0;
+	int			 error = 0;
+
+	s = (struct stream *)t;
+	if ((msg = hosts_shared(s->uri, s->peer, &conn, &cl)) != NULL) {
+		say(t, "{\"id\":%ju,\"error\":\"the host does not answer\"}",
+		    (uintmax_t)s->id);
+		log_msg(LOG_NOTICE, "stream %s: %s", s->sid, msg);
+		return (WEB_OK);
+	}
+	do {
+		if ((error = ytrans_sysctl_part(conn, s->filter, s->jail[0] !=
+		    '\0' ? s->jail : NULL, after, SYSCTL_PART, &rows, &next,
+		    &total, err, sizeof(err))) != 0)
+			break;
+		free(after);
+		after = next;
+		sent += ucl_array_size(rows);
+		json = ucl_object_emit(rows, UCL_EMIT_JSON_COMPACT);
+		ucl_object_unref(rows);
+		if (json != NULL && strlen((char *)json) < STREAM_PART - 64 &&
+		    !atomic_load(&s->stop))
+			say(t, "{\"id\":%ju,\"rows\":%s}", (uintmax_t)s->id,
+			    (char *)json);
+		free(json);
+	} while (after != NULL && !atomic_load(&s->stop));
+	free(after);
+	hosts_shared_done(conn, error == 0);
+	if (atomic_load(&s->stop))
+		;
+	else if (error == 0)
+		say(t, "{\"id\":%ju,\"done\":true,\"total\":%ju}",
+		    (uintmax_t)s->id, (uintmax_t)sent);
+	else {
+		for (char *p = err; *p != '\0'; p++)
+			if (*p == '"' || *p == '\\')
+				*p = '\'';
+		say(t, "{\"id\":%ju,\"error\":\"%s\"}", (uintmax_t)s->id,
+		    err);
+	}
 	return (WEB_OK);
 }
 
@@ -675,7 +727,7 @@ stream_message(struct conn *c, u_int8_t op, void *data, size_t len)
 			strlcpy(s->jail, jail, sizeof(s->jail));
 		LIST_INSERT_HEAD(&streams, s, list);
 		nstreams++;
-		task_create(&s->task, stream_run);
+		task_create(&s->task, kind == 255 ? sysctl_run : stream_run);
 		task_bind_callback(&s->task, stream_ready);
 		task_run(&s->task);
 	}

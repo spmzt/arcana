@@ -1812,7 +1812,8 @@ module arcana {
         length "0..262144";
       }
       description
-        "The next bytes of what zfs send wrote, or receive is to read.";
+        "The next bytes of what zfs send wrote, or receive is to read;
+         of a capture, or of a pcap-log file.";
     }
   }
 
@@ -3510,27 +3511,8 @@ module arcana {
     }
   }
 
-  rpc kernel {
-    fam:command 23;
-    fam:auth;
-    description
-      "The kernel's modules and its memory, as a JSON object: \"files\",
-       every file linked into the kernel with its id, name, path, the
-       references to it, its size, and the modules it holds; \"available\",
-       the modules of the module path that are not loaded; \"kept\", what
-       rc.conf's kld_list loads at boot; and \"memory\", with the sizes
-       of the kernel's memory map and the largest of its malloc(9) types
-       and uma(9) zones.";
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-json;
-      uses attr-trace;
-    }
-  }
-
   rpc storage {
-    fam:command 24;
+    fam:command 23;
     fam:auth;
     description
       "The host's storage, as a JSON object, of the kind asked for.  More
@@ -3557,7 +3539,7 @@ module arcana {
   }
 
   rpc fstab {
-    fam:command 25;
+    fam:command 24;
     fam:auth;
     description
       "fstab(5).  Without conf-text, read it, with the SHA-256 of its
@@ -3579,7 +3561,7 @@ module arcana {
   }
 
   rpc transport {
-    fam:command 26;
+    fam:command 25;
     fam:auth;
     description
       "How the agent is reached, as a JSON object: \"listeners\", each
@@ -3609,53 +3591,8 @@ module arcana {
     }
   }
 
-  rpc sysctl {
-    fam:command 27;
-    fam:auth;
-    description
-      "The kernel's state, sysctl(8), as a JSON object: \"values\", each
-       with its name, its value as sysctl prints it, whether it can be
-       set, and what it is said to be; \"kept\", what sysctl.conf(5) sets
-       at boot.  net-filter is where in the tree to begin, a name or
-       the start of one; without it the whole tree, of which more than
-       a reply carries comes as the first, with total and truncated.
-       As a dump the values come in parts, as the tree is walked and
-       as fast as they are taken: each item has json, an array of the
-       next of them, and nothing is left out for size.  With jail,
-       those of that vnet jail's network as its own sysctl(8) reads
-       them (net-filter then names where, under net.), name and value
-       each.";
-    input {
-      uses attr-net-filter;
-      uses attr-jail;
-    }
-    output {
-      uses attr-ok;
-      uses attr-error;
-      uses attr-json;
-      uses attr-total;
-      uses attr-truncated;
-      uses attr-trace;
-    }
-  }
-
-  rpc sysctl-dump {
-    fam:command 27;
-    fam:auth;
-    fam:dump "sysctl";
-    description
-      "The dump form of sysctl: each item of the dump is one output.";
-    input {
-      uses attr-net-filter;
-    }
-    output {
-      uses attr-json;
-      uses attr-total;
-    }
-  }
-
   rpc ipfw-rules {
-    fam:command 28;
+    fam:command 26;
     fam:auth;
     description
       "The kept rules of the firewall, a file of ipfw(8) commands, one
@@ -3692,7 +3629,7 @@ module arcana {
   }
 
   rpc processes {
-    fam:command 29;
+    fam:command 27;
     fam:auth;
     description
       "What runs on the host, as a JSON object: \"processes\", each with
@@ -3721,7 +3658,7 @@ module arcana {
   }
 
   rpc log {
-    fam:command 30;
+    fam:command 28;
     fam:auth;
     description
       "A log of the host, as syslogd(8) wrote it, as a JSON object:
@@ -3758,7 +3695,7 @@ module arcana {
   }
 
   rpc history {
-    fam:command 31;
+    fam:command 29;
     fam:auth;
     description
       "How busy the host has been, which the agent samples by itself
@@ -3770,9 +3707,12 @@ module arcana {
        swap in use, bytes a second received and sent on all interfaces
        but the loopback, and read from and written to all disks);
        \"nets\" and \"disks\", the names of the interfaces and the disks
-       told apart, at most 16 of each; \"samples\", each an array of the
-       fields, then bytes a second in and out of each of nets, then
-       read and written of each of disks; \"mem_total\", \"swap_total\" and
+       told apart, at most 16 of each; \"jails\" and \"relays\", the jails
+       racct accounts for and the FEC relays by their syslog tag;
+       \"samples\", each an array of the fields, then bytes a second in
+       and out of each of nets, then read and written of each of disks,
+       then each jail's CPU and memory, then the bytes a second each
+       relay took in plain and its FEC added; \"mem_total\", \"swap_total\" and
        \"ncpu\".  With after only the samples after that time.  With
        sample-step and sample-keep, both, the agent first samples that
        way from now on, and keeps it for its next start: an hour every
@@ -3809,7 +3749,7 @@ module arcana {
   }
 
   rpc events {
-    fam:command 32;
+    fam:command 30;
     fam:auth;
     description
       "What happened on the host, as it happened, as a JSON object:
@@ -3873,7 +3813,7 @@ module arcana {
   }
 
   sx:structure event-ntf {
-    fam:command 33;
+    fam:command 31;
     fam:group "events";
     description
       "One event, the moment it happens: json is it as events has
@@ -3885,7 +3825,7 @@ module arcana {
   }
 
   rpc fw-trace {
-    fam:command 34;
+    fam:command 32;
     fam:auth;
     description
       "Packets followed by the kernel itself through the firewall: each
@@ -3918,7 +3858,7 @@ module arcana {
   }
 
   rpc network-parts {
-    fam:command 35;
+    fam:command 33;
     fam:auth;
     fam:stream "part";
     fam:credit 2097152;
@@ -3947,24 +3887,8 @@ module arcana {
     }
   }
 
-  rpc sysctl-parts {
-    fam:command 36;
-    fam:auth;
-    fam:stream "part";
-    fam:credit 2097152;
-    description
-      "The kernel's state as sysctl's dump has it, as a stream: each
-       data message a part, json the next values.  As network-parts.";
-    input {
-      uses attr-net-filter;
-    }
-    output {
-      uses attr-ok;
-    }
-  }
-
   rpc zfs-send {
-    fam:command 37;
+    fam:command 34;
     fam:auth;
     fam:stream "chunk";
     fam:credit 4194304;
@@ -3986,7 +3910,7 @@ module arcana {
   }
 
   rpc zfs-receive {
-    fam:command 38;
+    fam:command 35;
     fam:auth;
     fam:stream "chunk";
     fam:credit 4194304;
@@ -4007,7 +3931,7 @@ module arcana {
   }
 
   rpc source-head {
-    fam:command 39;
+    fam:command 36;
     fam:auth;
     description
       "The commit at the head of a repository's branch (ref, or its
@@ -4036,7 +3960,7 @@ module arcana {
   }
 
   rpc source-log {
-    fam:command 40;
+    fam:command 37;
     fam:auth;
     description
       "What is new in a repository's branch: its latest commits (count,
@@ -4070,7 +3994,7 @@ module arcana {
   }
 
   rpc traceroute {
-    fam:command 41;
+    fam:command 38;
     fam:auth;
     description
       "One round of traceroute(8), or traceroute6(8), from this host to
@@ -4095,7 +4019,7 @@ module arcana {
   }
 
   rpc sdwan-probes {
-    fam:command 42;
+    fam:command 39;
     fam:auth;
     description
       "The tunnels the agent is to measure from now on, as the console
@@ -4126,7 +4050,7 @@ module arcana {
   }
 
   rpc sdwan {
-    fam:command 43;
+    fam:command 40;
     fam:auth;
     description
       "What the probes have seen, as a JSON object: \"targets\", each
@@ -4154,7 +4078,7 @@ module arcana {
   }
 
   rpc sdwan-rules {
-    fam:command 44;
+    fam:command 41;
     fam:auth;
     description
       "The rules that classify what comes in at the SD-WAN UNIs and
@@ -4183,7 +4107,7 @@ module arcana {
   }
 
   rpc sdwan-steer {
-    fam:command 45;
+    fam:command 42;
     fam:auth;
     description
       "What the policy tables of the rules hold: json, an object with
@@ -4207,17 +4131,23 @@ module arcana {
   }
 
   rpc sdwan-bird {
-    fam:command 46;
+    fam:command 43;
     fam:auth;
     description
       "The BIRD instances of the SD-WAN services at this edge, one each,
-       as the console writes them: json, an object with \"instances\",
-       each a \"name\", the \"fib\" it runs in and its \"conf\", BIRD's
-       configuration text.  Each file is parsed by bird(8) before it is
-       made the instance's; one running is told to read it again, one
-       not yet is started in its table (setfib) with a control socket
-       and a pid file of its own beside the agent's kept files; those
-       not named any more are stopped.  Kept for the next start.  The
+       and of the UCS End Points that route with the underlay: json, an
+       object with \"instances\", each a \"name\", the \"fib\" it runs in, the
+       \"host\" its file's comment names and its \"spec\", the form the
+       agent renders BIRD's configuration from: a service's (its table,
+       AS, router id, the interfaces of its connected routes, BFD, the
+       iBGP peers or the loopbacks', the destination sets, the UNIs'
+       BGP and OSPF entries as the service has them), or with \"flavor\"
+       ucs an end point's.  Every file is rendered before any instance is
+       changed, and parsed by bird(8) -p before it is made the
+       instance's; one running is told to read it again, one not yet is
+       started in its table (setfib) with a control socket and a pid
+       file of its own beside the agent's kept files; those not named
+       any more are stopped.  Kept for the next start.  The
        sdwan read tells each instance and its protocols.  With \"jail\"
        the instances are an edge's that is a vnet jail: each run in it
        by jexec(8) in the jail's table, its files beneath the jail's
@@ -4238,18 +4168,21 @@ module arcana {
   }
 
   rpc sdwan-dhcp {
-    fam:command 47;
+    fam:command 44;
     fam:auth;
     description
       "The DHCP servers of the SD-WAN services at this edge (dnsmasq,
-       one instance per service, in its table), as the console writes
-       them: json, an object with \"instances\", each a \"name\", the \"fib\"
-       it runs in and its \"conf\", dnsmasq's configuration text, to which
-       the agent adds the pid and lease files.  Each is checked by
-       dnsmasq --test before it is made the instance's; one running is
-       stopped and started again on it, one not yet is started in its
-       table (setfib); those not named any more are stopped.  Kept for
-       the next start.  The sdwan read tells each instance and the
+       one instance per service, in its table): json, an object with
+       \"instances\", each a \"name\", the \"fib\" it runs in, the \"host\" its
+       file's comment names and its \"spec\", the form the agent renders
+       dnsmasq's configuration from (the service, its UNIs here
+       addressed by DHCP, each its interface and families as the service
+       has them: the ranges, the router and the DNS servers told), with
+       the pid and lease files.  Each is checked by dnsmasq --test
+       before it is made the instance's; one running is stopped and
+       started again on it, one not yet is started in its table
+       (setfib); those not named any more are stopped.  Kept for the
+       next start.  The sdwan read tells each instance and the
        leases it gave.";
     input {
       uses attr-json {
@@ -4266,20 +4199,31 @@ module arcana {
   }
 
   rpc sdwan-dns {
-    fam:command 48;
+    fam:command 45;
     fam:auth;
     description
       "The resolvers of the SD-WAN services at this edge (MEF 138's DNF
        and PDNS: the base system's unbound, local-unbound, one instance
-       per service, a view a zone,
-       in its table), as the console writes them: json, an object with
-       \"instances\", each a \"name\", the \"fib\" it runs in and its \"conf\",
-       unbound's configuration text, to which the agent adds the pid
-       file.  Each is checked by local-unbound-checkconf before it is
-       made the instance's; one running is stopped and started again on
-       it, one not yet is started in its table (setfib); those not
-       named any more are stopped.  Kept for the next start.  The sdwan
-       read tells each instance.";
+       per service, a view a zone, in its table): json, an object with
+       \"instances\", each a \"name\",
+       the \"fib\" it runs in, the \"host\" its file's comment names and its
+       \"spec\", the form the agent renders unbound's configuration from
+       (the UNIs' provider addresses it listens on and the subnets it
+       answers, and the zones with a DNF or PDNS, each its prefixes here
+       and its function policies, the named lists' entries \"listed\";
+       \"dot\", whether it serves DNS over TLS on port 853 too, with a key
+       and a self-signed certificate the agent makes, openssl(1), the
+       UNIs' addresses its names, kept until they change; \"upstream\",
+       the servers it sends its questions to, address[@port][#name],
+       over TLS where \"upstream_tls\"), with the pid file.  A PDNS's
+       CNAME and NS entries become a response policy zone of the zone's,
+       a file beside the configuration.  Each is checked by
+       local-unbound-checkconf before it is made the instance's; one
+       running is stopped and started again on it, one not yet is
+       started in its table (setfib); those not named any more are
+       stopped.  Kept for the next start.  The sdwan read tells each
+       instance, with the certificate (tls_cert) where it serves DNS
+       over TLS.";
     input {
       uses attr-json {
         refine json {
@@ -4295,24 +4239,35 @@ module arcana {
   }
 
   rpc sdwan-proxy {
-    fam:command 49;
+    fam:command 46;
     fam:auth;
     description
       "The proxies of the SD-WAN services at this edge (MEF 138's URLF,
        MBSF and MD+R: Squid, a plugin the host has installed, one instance
-       per service in its table), as the console writes them: json, an
-       object with \"instances\", each a \"name\", the \"fib\" it runs in,
-       its \"mode\" (sni, the TLS names looked at and nothing opened;
-       inspect, TLS opened with a CA of the instance's own), its \"conf\",
-       Squid's configuration text with @PID@, @CA@, @SSLDB@, @CERTGEN@
-       and @DENY@ for what the agent places, and \"deny\", the domains
-       denied, one a line.  The CA is made by the agent, openssl(1),
-       once per instance and kept; its certificate is in the sdwan read
-       for the clients to trust where TLS is opened.  Each file is
-       checked by squid -k parse before it is made the instance's; one
-       running is told to reconfigure, one not yet is started in its
-       table (setfib); those not named any more are stopped.  Kept for
-       the next start.";
+       per service in its table): json, an object with \"instances\",
+       each a \"name\", the \"fib\" it runs in, its \"mode\" (sni, the TLS
+       names looked at and nothing opened; inspect, TLS opened with a CA
+       of the instance's own), the \"host\" its files' comments name, its
+       \"spec\", the form the agent renders Squid's configuration from,
+       and c-icap's where it scans for malware (an SD-WAN service's,
+       \"flavor\" sdwan: where it is reached, the resolver, c-icap, and the
+       zones with their URLF, MBSF and MD+R, and the DNF's names with a
+       * inside, which Squid ends; or the Security section's
+       form: listen, port, allow, deny, malware), with the agent's own
+       paths in them, and \"lists\", names (zone-allow, zone-block) to the
+       texts of the files a zone's URLF names.  The MD+R policies'
+       hashes are written as ClamAV's hash signature files of the
+       edge's (arcana-sdwan.hdb, .hsb, .fp, .sfp in its database
+       directory) before the instances' c-icap start, each named by its
+       service, policy and list.  c-icap has no checker of
+       its own: what it refuses it says as it starts.  The CA is made by
+       the agent, openssl(1), once per instance and kept; its
+       certificate is in the sdwan read for the clients to trust where
+       TLS is opened.  Every file is rendered before any instance is
+       changed, and checked by squid -k parse before it is made the
+       instance's; one running is told to reconfigure, one not yet is
+       started in its table (setfib); those not named any more are
+       stopped.  Kept for the next start.";
     input {
       uses attr-json {
         refine json {
@@ -4328,7 +4283,7 @@ module arcana {
   }
 
   rpc sdwan-ids {
-    fam:command 50;
+    fam:command 47;
     fam:auth;
     description
       "The intrusion detection of the SD-WAN services at this edge (the
@@ -4369,7 +4324,7 @@ module arcana {
   }
 
   rpc jail-files {
-    fam:command 51;
+    fam:command 48;
     fam:auth;
     description
       "The files jails are made with, as the jail-conf job writes them,
@@ -4387,7 +4342,7 @@ module arcana {
   }
 
   rpc certs {
-    fam:command 52;
+    fam:command 49;
     fam:auth;
     description
       "The certificates OpenSSL trusts, of the host or of jail, as a JSON
@@ -4410,7 +4365,7 @@ module arcana {
   }
 
   rpc ssh {
-    fam:command 53;
+    fam:command 50;
     fam:auth;
     description
       "The base system's sshd, of the host or of jail, as a JSON object:
@@ -4436,7 +4391,7 @@ module arcana {
   }
 
   rpc capture {
-    fam:command 54;
+    fam:command 51;
     fam:auth;
     description
       "Packets taken with tcpdump(1) off interface, of the host or of
@@ -4464,7 +4419,7 @@ module arcana {
   }
 
   rpc zfs-key {
-    fam:command 55;
+    fam:command 52;
     fam:auth;
     description
       "The key of an encrypted dataset whose keylocation is prompt, as
@@ -4493,7 +4448,7 @@ module arcana {
   }
 
   rpc tls {
-    fam:command 56;
+    fam:command 53;
     fam:auth;
     description
       "The host's own TLS files, those of -A, -C and -K, renewed without
@@ -4529,7 +4484,7 @@ module arcana {
   }
 
   sx:structure step-ntf {
-    fam:command 57;
+    fam:command 54;
     fam:group "steps";
     description
       "A step of what a request of the peer's own does, told while the
@@ -4543,7 +4498,7 @@ module arcana {
   }
 
   rpc config-export {
-    fam:command 58;
+    fam:command 55;
     fam:auth;
     description
       "All that makes the host what it is, as a JSON object, to keep or to
@@ -4575,7 +4530,7 @@ module arcana {
   }
 
   rpc config-apply {
-    fam:command 59;
+    fam:command 56;
     fam:auth;
     description
       "A bundle of config-export's made this host's configuration.  First
@@ -4609,7 +4564,7 @@ module arcana {
   }
 
   rpc path-check {
-    fam:command 60;
+    fam:command 57;
     fam:auth;
     description
       "What this host does with a packet from path-src to path-dst (of
@@ -4657,7 +4612,7 @@ module arcana {
   }
 
   rpc notify {
-    fam:command 61;
+    fam:command 58;
     fam:auth;
     description
       "A message sent to a Telegram chat by a bot, over the Bot API's
@@ -4690,7 +4645,7 @@ module arcana {
   }
 
   rpc builder {
-    fam:command 62;
+    fam:command 59;
     fam:auth;
     description
       "poudriere(8) on this host, as a JSON object: \"installed\" and
@@ -4729,7 +4684,7 @@ module arcana {
   }
 
   rpc builder-options {
-    fam:command 63;
+    fam:command 60;
     fam:auth;
     description
       "A port's options as a poudriere build takes them, names its
@@ -4754,7 +4709,7 @@ module arcana {
   }
 
   rpc crashes {
-    fam:command 64;
+    fam:command 61;
     fam:auth;
     description
       "The cores the kernel dumped where kern.corefile says, as a JSON
@@ -4776,7 +4731,7 @@ module arcana {
   }
 
   rpc suricata-rules {
-    fam:command 65;
+    fam:command 62;
     fam:auth;
     description
       "The rules of Suricata's ruleset, suricata.rules as suricata-update
@@ -4797,7 +4752,17 @@ module arcana {
        by the instance's unix command socket, one of the commands that
        read: uptime, version, running-mode, capture-mode, memcap-list,
        ruleset-stats, ruleset-failed-rules, ruleset-profile, iface-list,
-       iface-stat, dump-counters.  The host's only; nothing is changed.";
+       iface-stat, dump-counters.  With instance=NAME and profiling=1,
+       what its profiling wrote (Suricata built with
+       --enable-profiling): \"build\" (whether it profiles packets, rules
+       and locks), and \"running\" (its log directory) and \"replay\" (its
+       last replay's), each with \"packets\" (the last dump of
+       packet_stats.log: its \"sections\", each a \"title\" and \"rows\" of
+       name, ip, proto, cnt, min, max, avg, tot and pct, ticks per
+       protocol and per stage), \"rules\" (rule_perf.log's last, JSON),
+       and the last of \"keywords\", \"prefilter\", \"rulegroups\" and
+       \"locks\" as text, each with \"at\".  The host's only; nothing is
+       changed.";
     input {
       uses attr-names;
     }
@@ -4810,7 +4775,7 @@ module arcana {
   }
 
   rpc netstore {
-    fam:command 66;
+    fam:command 63;
     fam:auth;
     description
       "The host's network storage services, as a JSON object: \"nfs\" (the
@@ -4835,7 +4800,7 @@ module arcana {
   }
 
   rpc system {
-    fam:command 67;
+    fam:command 64;
     fam:auth;
     description
       "The system's own configuration, as a JSON object: \"files\", each
@@ -4862,7 +4827,7 @@ module arcana {
   }
 
   rpc smtpd {
-    fam:command 68;
+    fam:command 65;
     fam:auth;
     description
       "OpenSMTPD on this host, as a JSON object: \"installed\", \"enabled\",
@@ -4891,7 +4856,7 @@ module arcana {
   }
 
   rpc speeder {
-    fam:command 69;
+    fam:command 66;
     fam:auth;
     description
       "UDPspeeder's FEC relay (speederv2) on this host, as a JSON object:
@@ -4907,10 +4872,12 @@ module arcana {
        interval with its rates); \"series\" (each interval between two
        reports since its last start, the oldest first: the time, the
        overhead to the server and to the client, the plain rates each
-       way); \"log\" (its last lines); \"profiles_supported\" (whether the
-       rc script runs several relays) and \"profiles\" (each listed in
-       speederv2_profiles: \"name\", \"running\" and the same fields of its
-       own, from speederv2_<name>_flags and its tag speederv2-<name>).
+       way); \"svcj\" (true when it runs in rc.subr's service jail, with
+       \"svcj_options\" and \"svcj_ipaddrs\"); \"log\" (its last lines);
+       \"profiles_supported\" (whether the rc script runs several relays)
+       and \"profiles\" (each listed in speederv2_profiles: \"name\",
+       \"running\" and the same fields of its own, from
+       speederv2_<name>_flags and its tag speederv2_<name>).
        Of the host, or with jail of that jail.  Nothing is changed.";
     input {
       uses attr-names;
@@ -4925,7 +4892,7 @@ module arcana {
   }
 
   rpc monitors {
-    fam:command 70;
+    fam:command 67;
     fam:auth;
     description
       "The admin's tunnel monitors (monitor jobs) as a JSON object:
@@ -4944,6 +4911,54 @@ module arcana {
       uses attr-error;
       uses attr-json;
       uses attr-trace;
+    }
+  }
+
+  rpc suricata-pcap-put {
+    fam:command 68;
+    fam:auth;
+    fam:stream "chunk";
+    fam:credit 4194304;
+    description
+      "A capture for a Suricata instance to replay, written to the
+       host as a stream: names instance=NAME and file=NAME (a .pcap,
+       .pcapng or .cap, its name alone), offset=N (where this part
+       begins, 0 unless given) and last=1 on the last part; each data
+       message the next bytes.  It goes to the captures directory of
+       the instance's replay directory, as NAME.part until the last
+       part is in; a part that does not begin where the one before
+       ended is refused.  Eight are kept, the oldest let go; a capture
+       is 1 GiB at most.  json: \"path\", where the capture is (or will
+       be), which the suricata job's verb pcap replays.  The host
+       closes the stream once all was written, with what went wrong
+       when not.";
+    input {
+      uses attr-names;
+    }
+    output {
+      uses attr-ok;
+      uses attr-json;
+    }
+  }
+
+  rpc suricata-pcap-get {
+    fam:command 69;
+    fam:auth;
+    fam:stream "chunk";
+    fam:credit 4194304;
+    description
+      "A file of the packets an instance logged for its alerts
+       (Suricata's pcap-log, log.pcap and its rotations in its log
+       directory), read from the host as a stream: names instance=NAME
+       and file=NAME, the file's name alone; each data message the next
+       bytes.  json: \"path\" and \"size\".  The host half-closes the
+       stream once the file was sent whole.";
+    input {
+      uses attr-names;
+    }
+    output {
+      uses attr-ok;
+      uses attr-json;
     }
   }
 

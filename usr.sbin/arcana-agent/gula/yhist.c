@@ -10,8 +10,8 @@
  * structs: how the agent samples and its limits as configuration,
  * the sampler and its samples as state.  A sample is an array of the
  * fields the reply names, then each interface's in and out, each
- * disk's read and written, each jail's CPU and memory: it is taken
- * apart by those names.
+ * disk's read and written, each jail's CPU and memory, each FEC relay's
+ * plain and added rates: it is taken apart by those names.
  */
 
 #include <sys/param.h>
@@ -68,12 +68,13 @@ nth(const ucl_object_t *arr, size_t i, double *v)
 static int
 samples_of(cbl_yarena *a, const ucl_object_t *top, const char *const *nets,
     size_t nnets, const char *const *disks, size_t ndisks,
-    const char *const *jails, size_t njails, size_t *np,
-    const ysample **vp)
+    const char *const *jails, size_t njails, const char *const *relays,
+    size_t nrelays, size_t *np, const ysample **vp)
 {
 	struct arcana_history_sample_interface	*ni;
 	struct arcana_history_sample_disk		*nd;
 	struct arcana_history_sample_jail		*nj;
+	struct arcana_history_sample_relay		*nr;
 	const ucl_object_t					*e;
 	ucl_object_iter_t					 it;
 	ysample							*v;
@@ -102,7 +103,8 @@ samples_of(cbl_yarena *a, const ucl_object_t *top, const char *const *nets,
 		if ((ni = cbl_yarena_alloc(a, (nnets + 1) * sizeof(*ni))) ==
 		    NULL || (nd = cbl_yarena_alloc(a, (ndisks + 1) *
 		    sizeof(*nd))) == NULL || (nj = cbl_yarena_alloc(a,
-		    (njails + 1) * sizeof(*nj))) == NULL)
+		    (njails + 1) * sizeof(*nj))) == NULL || (nr =
+		    cbl_yarena_alloc(a, (nrelays + 1) * sizeof(*nr))) == NULL)
 			return (ENOMEM);
 		for (i = 0; i < nnets; i++, k += 2) {
 			memset(&ni[i], 0, sizeof(ni[i]));
@@ -123,12 +125,20 @@ samples_of(cbl_yarena *a, const ucl_object_t *top, const char *const *nets,
 				nj[i].cpu = (int64_t)(d * 10 + 0.5);
 			NTH_U64(e, k + 1, &nj[i], memory);
 		}
+		for (i = 0; i < nrelays; i++, k += 2) {
+			memset(&nr[i], 0, sizeof(nr[i]));
+			nr[i].name = relays[i];
+			NTH_U64(e, k, &nr[i], plain);
+			NTH_U64(e, k + 1, &nr[i], added);
+		}
 		v[n].interface.n = nnets;
 		v[n].interface.v = ni;
 		v[n].disk.n = ndisks;
 		v[n].disk.v = nd;
 		v[n].jail.n = njails;
 		v[n].jail.v = nj;
+		v[n].relay.n = nrelays;
+		v[n].relay.v = nr;
 		if (v[n].time != NULL)
 			n++;
 	}
@@ -200,11 +210,13 @@ yhist_from_json(const char *json, cbl_yarena *a,
 	if (yj_strs(a, ucl_object_lookup(top, "nets"), &st->interface.n,
 	    &st->interface.v) != 0 || yj_strs(a, ucl_object_lookup(top,
 	    "disks"), &st->disk.n, &st->disk.v) != 0 || yj_strs(a,
-	    ucl_object_lookup(top, "jails"), &st->jail.n, &st->jail.v) != 0)
+	    ucl_object_lookup(top, "jails"), &st->jail.n, &st->jail.v) != 0 ||
+	    yj_strs(a, ucl_object_lookup(top, "relays"), &st->relay.n,
+	    &st->relay.v) != 0)
 		goto out;
 	if ((error = samples_of(a, top, st->interface.v, st->interface.n,
-	    st->disk.v, st->disk.n, st->jail.v, st->jail.n, &st->sample.n,
-	    &st->sample.v)) != 0)
+	    st->disk.v, st->disk.n, st->jail.v, st->jail.n, st->relay.v,
+	    st->relay.n, &st->sample.n, &st->sample.v)) != 0)
 		goto out;
 	out->sampling = sp;
 	out->limits = li;

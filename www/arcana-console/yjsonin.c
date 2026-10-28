@@ -95,7 +95,7 @@ static int
 value_of(const struct cbl_ynode *sn, const ucl_object_t *v, cbl_yarena *a,
     void **out, char *why, size_t len)
 {
-	char	 num[64], *text;
+	char	 num[64];
 	const char *s;
 	void	*p;
 
@@ -121,16 +121,29 @@ value_of(const struct cbl_ynode *sn, const ucl_object_t *v, cbl_yarena *a,
 		s = "";
 		break;
 	case UCL_ARRAY:
-		/* empty: [null]. */
+		/* empty: [null], there: its member is a bool. */
 		if (ucl_array_size(v) == 1 && ucl_object_type(ucl_array_find_index(
 		    v, 0)) == UCL_NULL && sn->type->kind == CBL_YT_EMPTY) {
-			s = "";
-			break;
+			if ((p = cbl_yarena_alloc(a, sizeof(bool))) == NULL)
+				return (ENOMEM);
+			*(bool *)p = true;
+			*out = p;
+			return (0);
 		}
 		return (fail(why, len, "%s: not a value", sn->name));
 	default:
 		return (fail(why, len, "%s: not a value", sn->name));
 	}
+	return (yjson_text(sn, s, a, out, why, len));
+}
+
+int
+yjson_text(const struct cbl_ynode *sn, const char *s, cbl_yarena *a,
+    void **out, char *why, size_t len)
+{
+	char	*text;
+	void	*p;
+
 	if ((text = cbl_yarena_alloc(a, strlen(s) + 1)) == NULL ||
 	    (p = cbl_yarena_alloc(a, sn->type->csize > 0 ? sn->type->csize :
 	    1)) == NULL)
@@ -146,10 +159,11 @@ value_of(const struct cbl_ynode *sn, const ucl_object_t *v, cbl_yarena *a,
 static int	members(cbl_dnode *, const struct cbl_ynode *,
 		    const ucl_object_t *, cbl_yarena *, int, char *, size_t);
 
-/* Node sn's value v under parent. */
+/* Node sn's value v under parent; *out, if given, the node made, a
+ * list's or a leaf-list's last entry. */
 static int
 node(cbl_dnode *parent, const struct cbl_ynode *sn, const ucl_object_t *v,
-    cbl_yarena *a, int depth, char *why, size_t len)
+    cbl_yarena *a, int depth, char *why, size_t len, cbl_dnode **out)
 {
 	const ucl_object_t	*e, *k;
 	ucl_object_iter_t	 it;
@@ -167,11 +181,13 @@ node(cbl_dnode *parent, const struct cbl_ynode *sn, const ucl_object_t *v,
 		if ((error = cbl_dnode_add(parent, sn, NULL, &made)) != 0)
 			return (fail(why, len, "%s: %s", sn->name,
 			    strerror(error)));
+		if (out != NULL)
+			*out = made;
 		return (members(made, sn, v, a, depth, why, len));
 	case CBL_YN_LEAF:
 		if ((error = value_of(sn, v, a, &val, why, len)) != 0)
 			return (error);
-		if ((error = cbl_dnode_add(parent, sn, val, NULL)) != 0)
+		if ((error = cbl_dnode_add(parent, sn, val, out)) != 0)
 			return (fail(why, len, "%s: %s", sn->name,
 			    strerror(error)));
 		return (0);
@@ -182,7 +198,7 @@ node(cbl_dnode *parent, const struct cbl_ynode *sn, const ucl_object_t *v,
 		while ((e = ucl_object_iterate(v, &it, true)) != NULL) {
 			if ((error = value_of(sn, e, a, &val, why, len)) != 0)
 				return (error);
-			if ((error = cbl_dnode_add(parent, sn, val, NULL)) != 0)
+			if ((error = cbl_dnode_add(parent, sn, val, out)) != 0)
 				return (fail(why, len, "%s: %s", sn->name,
 				    strerror(error)));
 		}
@@ -217,6 +233,8 @@ node(cbl_dnode *parent, const struct cbl_ynode *sn, const ucl_object_t *v,
 				return (fail(why, len, "%s: %s", sn->name,
 				    error == EEXIST ? "an entry twice" :
 				    strerror(error)));
+			if (out != NULL)
+				*out = made;
 			if ((error = members(made, sn, e, a, depth, why,
 			    len)) != 0)
 				return (error);
@@ -240,13 +258,17 @@ members(cbl_dnode *made, const struct cbl_ynode *sn, const ucl_object_t *v,
 
 	it = NULL;
 	while ((m = ucl_object_iterate(v, &it, true)) != NULL) {
-		if ((c = child_named(sn, ucl_object_key(m))) == NULL)
-			return (fail(why, len, "%s: no member %s", sn->name,
-			    ucl_object_key(m)));
+		/* ENOENT: a member that is no node, apart from a bad value. */
+		if ((c = child_named(sn, ucl_object_key(m))) == NULL) {
+			(void)fail(why, len, "%s: no member %s", sn->name,
+			    ucl_object_key(m));
+			return (ENOENT);
+		}
 		if (sn->kind == CBL_YN_LIST &&
 		    (c->flags & CBL_YNF_KEY) != 0)
 			continue;
-		if ((error = node(made, c, m, a, depth + 1, why, len)) != 0)
+		if ((error = node(made, c, m, a, depth + 1, why, len,
+		    NULL)) != 0)
 			return (error);
 	}
 	return (0);
@@ -259,7 +281,19 @@ yjson_member(cbl_dtree *t, const struct cbl_ynode *n, const ucl_object_t *v,
 
 	if (why != NULL && len > 0)
 		why[0] = '\0';
-	return (node(cbl_dtree_root(t), n, v, a, 0, why, len));
+	return (node(cbl_dtree_root(t), n, v, a, 0, why, len, NULL));
+}
+
+int
+yjson_node(cbl_dnode *parent, const struct cbl_ynode *n,
+    const ucl_object_t *v, cbl_yarena *a, cbl_dnode **made, char *why,
+    size_t len)
+{
+
+	if (why != NULL && len > 0)
+		why[0] = '\0';
+	*made = NULL;
+	return (node(parent, n, v, a, 0, why, len, made));
 }
 
 /* len bytes of p after what *b holds (*cap of it), malloc'd. */
@@ -340,11 +374,36 @@ yjson_edit(cbl_conn *conn, const struct cbl_ynode *n, const ucl_object_t *v,
     enum cbl_yds_name ds, const char *const *accept, size_t naccept,
     char *err, size_t errlen, uint64_t *errsid, char *tag, size_t taglen)
 {
-	cbl_dtree	*t = NULL;
-	cbl_yarena	*a = NULL;
+	cbl_dtree	*t;
+	cbl_yarena	*a;
+	int		 error;
+
+	err[0] = '\0';
+	*errsid = 0;
+	if (tag != NULL && taglen > 0)
+		tag[0] = '\0';
+	if ((a = cbl_yarena_new()) == NULL ||
+	    (t = cbl_dtree_new(&ymodel_schema)) == NULL) {
+		cbl_yarena_free(a);
+		return (ENOMEM);
+	}
+	if (v == NULL || (error = yjson_member(t, n, v, a, err, errlen)) == 0)
+		error = yjson_edit_tree(conn, t, &n, 1, ds, accept, naccept, err,
+		    errlen, errsid, tag, taglen);
+	cbl_dtree_free(t);
+	cbl_yarena_free(a);
+	return (error);
+}
+
+int
+yjson_edit_tree(cbl_conn *conn, const cbl_dtree *t,
+    const struct cbl_ynode *const *tops, size_t ntop, enum cbl_yds_name ds,
+    const char *const *accept, size_t naccept, char *err, size_t errlen,
+    uint64_t *errsid, char *tag, size_t taglen)
+{
 	cbl_msg		*m = NULL, *rep = NULL;
-	uint8_t		*p = NULL;
-	size_t		 len = 0;
+	uint8_t		*p;
+	size_t		 len;
 	int		 error;
 
 	err[0] = '\0';
@@ -356,19 +415,16 @@ yjson_edit(cbl_conn *conn, const struct cbl_ynode *n, const ucl_object_t *v,
 		return (error);
 	if ((error = cbl_msg_set_datastore(m, ds)) == 0 && naccept > 0)
 		error = cbl_msg_set_accept(m, accept, naccept);
-	if (error != 0)
-		;
-	else if (v == NULL)
-		error = cbl_msg_put_ynull(m, n->sid);
-	else if ((a = cbl_yarena_new()) == NULL ||
-	    (t = cbl_dtree_new(&ymodel_schema)) == NULL)
-		error = ENOMEM;
-	else if ((error = yjson_member(t, n, v, a, err, errlen)) == 0 &&
-	    (error = yjson_top_cbor(t, n, &p, &len)) == 0)
-		error = cbl_msg_put_sid_raw(m, n->sid, p, len);
-	free(p);
-	cbl_dtree_free(t);
-	cbl_yarena_free(a);
+	/* Each node whole, as the tree has it; one it has none of null,
+	 * deleted. */
+	for (size_t i = 0; error == 0 && i < ntop; i++) {
+		p = NULL;
+		if ((error = yjson_top_cbor(t, tops[i], &p, &len)) == ENOENT)
+			error = cbl_msg_put_ynull(m, tops[i]->sid);
+		else if (error == 0)
+			error = cbl_msg_put_sid_raw(m, tops[i]->sid, p, len);
+		free(p);
+	}
 	if (error != 0) {
 		cbl_msg_free(m);
 		return (error);

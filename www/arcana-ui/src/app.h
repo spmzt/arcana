@@ -619,6 +619,8 @@ void		 ops_save(void);
 void		 op_retry(int);
 bool		 box_shut(const char *);
 void		 box_head(struct html *, const char *, const char *);
+/* drift.c: what the host has otherwise than running says. */
+void		 view_drift(struct html *, struct server *);
 void		 ops_load(void);
 void		 op_trace_fetch(struct op *);
 void		 job_send(struct server *, char *, const char *, int,
@@ -1097,7 +1099,10 @@ const ucl_object_t *sec_state(void);
 /* idsstats.c: an intrusion detection's statistics, as graphs. */
 void		 view_idsstats(struct html *);
 bool		 idsstats_active(void);
-bool		 idsstats_action(const char *, const char *);
+bool		 idsstats_action(const char *, const char *, const char *);
+void		 ids_pcap_link(struct html *, const char *, const char *,
+		    const char *);
+const char	*ids_pcap_of(const ucl_object_t *, const char *);
 bool		 idsstats_form(const char *, const ucl_object_t *);
 void		 idsstats_reset(void);
 /* idsown.c: an intrusion detection's rules of its own, as a table. */

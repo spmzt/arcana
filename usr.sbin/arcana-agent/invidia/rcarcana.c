@@ -343,7 +343,11 @@ rca_write(struct rca *x, cbl_req *req, char *err, size_t errlen)
 		if (asprintf(&nl, "%s %s", list, RC_ARCANA) == -1)
 			error = ENOMEM;
 		else {
-			if ((error = keep(x, path)) == 0 && (vc_set(&rc,
+			/* The file as taking the user's variables out left it. */
+			vc_free(&rc);
+			memset(&rc, 0, sizeof(rc));
+			if ((error = keep(x, path)) == 0 && (vc_read(&rc, VC_SH,
+			    path, err, errlen) == -1 || vc_set(&rc,
 			    "rc_conf_files", nl, err, errlen) == -1 ||
 			    vc_write(&rc, path, 0644, err, errlen) == -1))
 				error = errno != 0 ? errno : EIO;

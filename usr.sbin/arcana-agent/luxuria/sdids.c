@@ -336,6 +336,14 @@ ruleset_path(void)
 	return (ruleset_buf);
 }
 
+/* For idsfiles.c: where an instance's files are. */
+void
+suricata_inst_path(const char *name, const char *ext, char *buf, size_t len)
+{
+
+	ids_pathbuf(name, ext, buf, len);
+}
+
 /* For surules.c: an instance's name, and its command socket. */
 bool
 suricata_name_ok(const char *s)
@@ -1609,7 +1617,8 @@ sdwan_ids_start(void)
 /*
  * What this Suricata is built with (suricata --build-info), kept while
  * its program is the same: its version, and whether it profiles
- * packets and rules, has Hyperscan, netmap, ipfw, Lua and plugins.
+ * packets, rules and locks, has Hyperscan, netmap, ipfw, Lua and
+ * plugins.
  */
 static ucl_object_t *
 build_json(struct work *w)
@@ -1622,6 +1631,7 @@ build_json(struct work *w)
 	} yes[] = {
 		{ "Profiling enabled:", "profiling" },
 		{ "Profiling rules enabled:", "profiling_rules" },
+		{ "Profiling locks enabled:", "profiling_locks" },
 		{ "Hyperscan support:", "hyperscan" },
 		{ "Netmap support:", "netmap" },
 		{ "IPFW support:", "ipfw" },
@@ -1679,6 +1689,14 @@ build_json(struct work *w)
 	return (o);
 }
 
+/* For idsfiles.c: the same, a new object the caller lets go. */
+ucl_object_t *
+suricata_build_json(struct work *w)
+{
+
+	return (build_json(w));
+}
+
 /* The offloading an interface has on: what Suricata would rather it
  * had not (SIOCGIFCAP). */
 static ucl_object_t *
@@ -1715,7 +1733,10 @@ caps_json(const char *name)
 	return (arr);
 }
 
-/* The packets it logged for its alerts (pcap-log), in its directory. */
+/* The packets it logged for its alerts (pcap-log), in its directory:
+ * each file's path, size, when it was last written and when it was
+ * begun, as its name says (log.pcap.<seconds>): the time its packets
+ * span. */
 static ucl_object_t *
 pcaps_json(struct work *w, const char *name)
 {
@@ -1742,6 +1763,11 @@ pcaps_json(struct work *w, const char *name)
 		    sb.st_size), "size", 0, false);
 		ucl_object_insert_key(o, ucl_object_fromint((int64_t)
 		    sb.st_mtime), "at", 0, false);
+		if (de->d_name[8] == '.' && isdigit((unsigned char)
+		    de->d_name[9]))
+			ucl_object_insert_key(o, ucl_object_fromint((int64_t)
+			    strtoll(de->d_name + 9, NULL, 10)), "from", 0,
+			    false);
 		ucl_array_append(arr, o);
 	}
 	closedir(d);
@@ -1902,6 +1928,9 @@ sdwan_ids_json(struct work *w, ucl_object_t *top)
 		    "divert" : "pcap"), "capture", 0, false);
 		ucl_object_insert_key(o, pcaps_json(w, instances[i].name),
 		    "pcaps", 0, false);
+		/* The captures that came for its replay. */
+		ucl_object_insert_key(o, suricata_captures_json(
+		    instances[i].name), "captures", 0, false);
 		/* The last capture replayed through it. */
 		{
 			const char	*t;
@@ -2222,11 +2251,13 @@ suricata_replay(struct work *w, const struct arc_job_spec *sp,
 		    "followed)", file);
 		return (-1);
 	}
-	/* Its own directory, emptied: what this run writes alone. */
+	/* Its own directory, emptied: what this run writes alone; the
+	 * captures that came for it stay. */
 	dir = inst_path(w, inst, "replay.d");
 	if ((d = opendir(dir)) != NULL) {
 		while ((de = readdir(d)) != NULL)
-			if (de->d_name[0] != '.')
+			if (de->d_name[0] != '.' && strcmp(de->d_name,
+			    "captures") != 0)
 				(void)unlink(wfmt(w, "%s/%s", dir, de->d_name));
 		closedir(d);
 	}

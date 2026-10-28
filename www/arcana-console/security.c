@@ -11,9 +11,10 @@
  * scans what it fetches, on the loopback; Suricata watches interfaces
  * by pcap(3), or, where it prevents, takes the packets an ipfw(8)
  * divert rule hands it (divert(4)).  The page sends each instance's
- * form; here it is checked and made into what the agent's sdwan-proxy
- * and sdwan-ids take, as group "security": instances named sec-, kept
- * apart from SD-WAN's, each with its form as spec, to show again.  An
+ * form; here it is checked and passed on as what the agent's
+ * sdwan-proxy and sdwan-ids take, as group "security": instances named
+ * sec-, kept apart from SD-WAN's, each with its form as spec, which the
+ * agent renders into the daemons' files (and shows again).  An
  * intrusion detection the admin stopped stays in the list, not run.
  */
 
@@ -35,9 +36,6 @@
 
 #define	SEC_INSTANCES	16
 #define	SEC_LIST_MAX	4096	/* addresses, prefixes or names a list */
-/* c-icap of the i-th proxy, on the loopback: apart from SD-WAN's
- * (1344 + 10 * its table). */
-#define	SEC_ICAP_PORT(i)	(1345 + 10 * (int)(i))
 
 static const char *
 sstr(const ucl_object_t *o, const char *k)
@@ -119,14 +117,12 @@ domain_ok(const char *s)
 }
 
 /*
- * Each string of the list at k checked by ok, into out (which may be
- * NULL), joined by sep; false, and why, for one that is not, or for
- * none when one is needed.
+ * Each string of the list at k checked by ok; false, and why, for one
+ * that is not, or for none when one is needed.
  */
 static bool
 list_of(const ucl_object_t *in, const char *k, bool (*ok)(const char *),
-    bool need, struct buf *out, const char *pre, const char *sep,
-    const char *name, const char *what, char *err, size_t errlen)
+    bool need, const char *name, const char *what, char *err, size_t errlen)
 {
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
@@ -153,11 +149,6 @@ list_of(const ucl_object_t *in, const char *k, bool (*ok)(const char *),
 			    what, ucl_object_tostring_forced(e));
 			return (false);
 		}
-		/* ".example.org" as typed is example.org's, not a dot more. */
-		if (out != NULL)
-			buf_appendf(out, "%s%s%s", n > 0 ? sep : "", pre,
-			    ucl_object_tostring(e) + (strcmp(pre, ".") == 0 &&
-			    ucl_object_tostring(e)[0] == '.' ? 1 : 0));
 		n++;
 	}
 	if (need && n == 0) {
@@ -185,17 +176,22 @@ num_of(const ucl_object_t *in, const char *k, int64_t lo, int64_t hi,
 	return (*v >= lo && *v <= hi);
 }
 
+/*
+ * The Security section's URL filter as the agent takes it: its name,
+ * table, mode and the host's name, and the form itself (spec), which
+ * the agent renders into Squid's file and, where it scans for malware,
+ * c-icap's (sdconf.c).  What can be said wrong before the host is
+ * asked is said here.
+ */
 static ucl_object_t *
-proxy_one(const ucl_object_t *in, int idx, const char *host, char *err,
+proxy_one(const ucl_object_t *in, const char *host, char *err,
     size_t errlen)
 {
-	struct buf		*b, *d;
 	ucl_object_t		*o;
 	const char		*name, *mode;
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
 	int64_t			 fib, port;
-	bool			 malware;
 
 	name = sstr(in, "name");
 	mode = sstr(in, "mode") != NULL ? sstr(in, "mode") : "sni";
@@ -214,101 +210,37 @@ proxy_one(const ucl_object_t *in, int idx, const char *host, char *err,
 		    "65535", name);
 		return (NULL);
 	}
-	malware = ucl_object_toboolean(ucl_object_lookup(in, "malware"));
-	b = buf_alloc(4096);
-	d = buf_alloc(1024);
-	buf_appendf(b, "# Written by the Arcana console: the Security "
-	    "section's URL filter %s at %s,\n# by Squid, mode %s, in routing "
-	    "table %jd.\npid_filename @PID@\naccess_log /var/log/squid/%s-"
-	    "access.log\ncache_log /var/log/squid/%s-cache.log\ncache deny all\n"
-	    "visible_hostname %s\n", name, host, mode, (intmax_t)fib, name, name,
-	    name);
-	/* Where the clients reach it: each address told, its port. */
+	/* Where the clients reach it: each address told. */
 	if (ucl_object_type(ucl_object_lookup(in, "listen")) != UCL_ARRAY) {
 		snprintf(err, errlen, "%s: listen: a list of addresses", name);
-		goto bad;
+		return (NULL);
 	}
 	it = NULL;
 	while ((e = ucl_object_iterate(ucl_object_lookup(in, "listen"), &it,
-	    true)) != NULL) {
+	    true)) != NULL)
 		if (ucl_object_type(e) != UCL_STRING || !addr_ok(
 		    ucl_object_tostring(e))) {
 			snprintf(err, errlen, "%s: listen: %.64s is not an "
 			    "address", name, ucl_object_tostring_forced(e));
-			goto bad;
+			return (NULL);
 		}
-		buf_appendf(b, strchr(ucl_object_tostring(e), ':') != NULL ?
-		    "http_port [%s]:%jd" : "http_port %s:%jd",
-		    ucl_object_tostring(e), (intmax_t)port);
-		buf_appendf(b, " ssl-bump tls-cert=@CA@ "
-		    "generate-host-certificates=on dynamic_cert_mem_cache_size="
-		    "4MB\n");
-	}
 	if (ucl_array_size(ucl_object_lookup(in, "listen")) == 0) {
 		snprintf(err, errlen, "%s: listen: at least one address", name);
-		goto bad;
+		return (NULL);
 	}
-	buf_appendf(b, "sslcrtd_program @CERTGEN@ -s @SSLDB@ -M 4MB\n"
-	    "sslcrtd_children 3\nacl localnet src");
-	if (!list_of(in, "allow", prefix_ok, true, b, " ", "", name, "allow "
-	    "(the networks that may use it)", err, errlen))
-		goto bad;
-	if (malware)
-		buf_appendf(b, "\nicap_enable on\nicap_send_client_ip on\n"
-		    "icap_service sec_av respmod_precache bypass=off "
-		    "icap://127.0.0.1:%d/avscan\nadaptation_access sec_av allow "
-		    "all", SEC_ICAP_PORT(idx));
-	buf_appendf(b, "\nacl denied_site ssl::server_name \"@DENY@\"\n"
-	    "acl denied_url dstdomain \"@DENY@\"\nacl step1 at_step SslBump1\n"
-	    "ssl_bump peek step1\nssl_bump terminate denied_site\nssl_bump %s all"
-	    "\nhttp_access deny denied_url\nhttp_access allow localnet\n"
-	    "http_access deny all\n", strcmp(mode, "inspect") == 0 ? "bump" :
-	    "splice");
-	/* Each domain denied with the names beneath it. */
-	if (!list_of(in, "deny", domain_ok, false, d, ".", "\n", name, "deny",
-	    err, errlen))
-		goto bad;
-	if (buf_stringify(d, NULL)[0] != '\0')
-		buf_appendf(d, "\n");
+	if (!list_of(in, "allow", prefix_ok, true, name, "allow (the networks "
+	    "that may use it)", err, errlen) || !list_of(in, "deny", domain_ok,
+	    false, name, "deny", err, errlen))
+		return (NULL);
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, ucl_object_fromstring(name), "name", 0,
 	    false);
 	ucl_object_insert_key(o, ucl_object_fromint(fib), "fib", 0, false);
 	ucl_object_insert_key(o, ucl_object_fromstring(mode), "mode", 0, false);
-	ucl_object_insert_key(o, ucl_object_fromstring(buf_stringify(b,
-	    NULL)), "conf", 0, false);
-	/* ".a\n.a.b\n": Squid takes the first of two the second is under,
-	 * and warns of the other. */
-	ucl_object_insert_key(o, ucl_object_fromstring(buf_stringify(d,
-	    NULL)), "deny", 0, false);
-	if (malware) {
-		buf_reset(b);
-		buf_appendf(b, "# Written by the Arcana console: the "
-		    "Security section's malware scanning for %s at %s,\n# by "
-		    "c-icap and ClamAV, for its Squid.\nPidFile @ICAPPID@\n"
-		    "CommandsSocket @ICAPCMD@\nPort 127.0.0.1:%d\nacl squid src "
-		    "127.0.0.1/255.255.255.255\nacl all src 0.0.0.0/0.0.0.0\n"
-		    "client_access allow squid\nclient_access deny all\n"
-		    "StartServers 1\nMaxServers 4\n"
-		    "ServerLog /var/log/c-icap/%s-server.log\n"
-		    "AccessLog /var/log/c-icap/%s-access.log\n"
-		    "Module common clamav_mod.so\nService avscan virus_scan.so\n"
-		    "virus_scan.ScanFileTypes TEXT DATA EXECUTABLE ARCHIVE "
-		    "DOCUMENT\nvirus_scan.SendPercentData 5\n"
-		    "virus_scan.StartSendPercentDataAfter 2M\n"
-		    "virus_scan.MaxObjectSize 32M\nvirus_scan.DefaultEngine "
-		    "clamav\n", name, host, SEC_ICAP_PORT(idx), name, name);
-		ucl_object_insert_key(o, ucl_object_fromstring(
-		    buf_stringify(b, NULL)), "icap", 0, false);
-	}
+	ucl_object_insert_key(o, ucl_object_fromstring(host), "host", 0,
+	    false);
 	ucl_object_insert_key(o, ucl_object_copy(in), "spec", 0, false);
-	buf_free(b);
-	buf_free(d);
 	return (o);
-bad:
-	buf_free(b);
-	buf_free(d);
-	return (NULL);
 }
 
 /*
@@ -542,8 +474,8 @@ security_build(const char *what, const ucl_object_t *list, const char *host,
 			ucl_object_unref(top);
 			return (NULL);
 		}
-		o = proxy ? proxy_one(in, n, host, err, errlen) : ids_one(in,
-		    host, err, errlen);
+		o = proxy ? proxy_one(in, host, err, errlen) : ids_one(in, host,
+		    err, errlen);
 		if (o == NULL) {
 			ucl_object_unref(top);
 			return (NULL);

@@ -9,7 +9,10 @@
  * which the agent keeps an hour of: packets and drops, throughput,
  * alerts, memory and TCP sessions over time, its flows by protocol, and
  * of its latest alerts the signatures, sources and destinations seen
- * most.
+ * most.  Where Suricata is built with --enable-profiling, its packets'
+ * ticks per protocol and per stage, and its rules', as its profiling
+ * wrote them; a capture from this computer sent to the host and
+ * replayed; the files of its pcap-log to download.
  */
 
 #include <math.h>
@@ -30,6 +33,27 @@ static char	open_name[40];
 static void	view_engine(struct html *, const ucl_object_t *,
 		    const ucl_object_t *);
 static void	view_replay(struct html *, const ucl_object_t *);
+static void	view_profiling(struct html *);
+
+/* What its profiling wrote, as the host read it; the rows of its
+ * packets' tables and its rules', one table each, made when it came. */
+static struct {
+	ucl_object_t	*o;
+	ucl_object_t	*rows[2];	/* packets: running, replay */
+	ucl_object_t	*rules[2];
+	char		 error[256];
+	char		 filter[64];
+	bool		 loading;
+	unsigned	 gen;
+} prof;
+
+/* A capture going up from this computer, then replayed. */
+static struct {
+	char		 name[160];
+	long long	 sent, size;
+	char		 error[256];
+	bool		 busy;
+} up;
 
 /* Suricata's answers by its socket, a command each, of open_name. */
 static const char *const asks[] = { "memcap-list", "ruleset-stats",
@@ -101,6 +125,26 @@ eng_ask(const char *cmd, const char *ifn, unsigned slot)
 	    eng.gen & 0xffff) << 16) | slot));
 }
 
+static void
+prof_clear(void)
+{
+	size_t	i;
+
+	if (prof.o != NULL)
+		ucl_object_unref(prof.o);
+	prof.o = NULL;
+	for (i = 0; i < 2; i++) {
+		if (prof.rows[i] != NULL)
+			ucl_object_unref(prof.rows[i]);
+		if (prof.rules[i] != NULL)
+			ucl_object_unref(prof.rules[i]);
+		prof.rows[i] = prof.rules[i] = NULL;
+	}
+	prof.error[0] = '\0';
+	prof.loading = false;
+	prof.gen++;
+}
+
 /* The host changed: no instance of the one before is open. */
 void
 idsstats_reset(void)
@@ -108,6 +152,61 @@ idsstats_reset(void)
 
 	open_name[0] = '\0';
 	eng_clear();
+	prof_clear();
+	memset(&up, 0, sizeof(up));
+}
+
+/* Each table of a dump's packets, its rows as one, each with its
+ * table's title. */
+static ucl_object_t *
+prof_flat(const ucl_object_t *packets)
+{
+	const ucl_object_t	*s, *r;
+	ucl_object_iter_t	 it, rit;
+	ucl_object_t		*arr, *c;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((s = ucl_object_iterate(jget(packets, "sections"), &it,
+	    true)) != NULL) {
+		rit = NULL;
+		while ((r = ucl_object_iterate(jget(s, "rows"), &rit, true)) !=
+		    NULL) {
+			c = ucl_object_copy(r);
+			ucl_object_insert_key(c, ucl_object_fromstring(jstr(s,
+			    "title")), "section", 0, true);
+			ucl_array_append(arr, c);
+		}
+	}
+	return (arr);
+}
+
+static void
+prof_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	const ucl_object_t	*d, *w;
+	size_t			 i;
+
+	if ((unsigned)(uintptr_t)arg != prof.gen)
+		return;
+	prof.loading = false;
+	if (status != 200 || !jbool(o, "ok") || (d = jget(o, "data")) ==
+	    NULL) {
+		snprintf(prof.error, sizeof(prof.error), "%s", jstr(o, "error")
+		    != NULL ? jstr(o, "error") : err != NULL ? err :
+		    "the host did not answer");
+		render();
+		return;
+	}
+	prof.o = ucl_object_copy(d);
+	for (i = 0; i < 2; i++) {
+		w = jget(prof.o, i == 0 ? "running" : "replay");
+		prof.rows[i] = prof_flat(jget(w, "packets"));
+		prof.rules[i] = jget(jget(w, "rules"), "rules") != NULL ?
+		    ucl_object_copy(jget(jget(w, "rules"), "rules")) :
+		    ucl_object_typed_new(UCL_ARRAY);
+	}
+	render();
 }
 
 bool
@@ -452,27 +551,106 @@ view_idsstats(struct html *h)
 	tops(h, jget(l, "alerts"), "dst", "Destinations");
 	h_raw(h, "</div>");
 	view_engine(h, l, st);
+	view_profiling(h);
 	view_replay(h, l);
 }
 
+/* A capture's replay through the open instance, a suricata job. */
+static void
+replay_job(const char *file)
+{
+	char	*json, *a, *b, *qa, *qb, title[300];
+
+	if (asprintf(&a, "instance=%s", open_name) == -1 || asprintf(&b,
+	    "file=%s", file) == -1)
+		abort();
+	qa = json_quote(a);
+	qb = json_quote(b);
+	if (asprintf(&json, "{\"kind\":\"suricata\",\"verb\":\"pcap\","
+	    "\"args\":[%s,%s]}", qa, qb) == -1)
+		abort();
+	free(qa);
+	free(qb);
+	snprintf(title, sizeof(title), "suricata replays %s through %s", file,
+	    open_name);
+	sec_job(json, title);
+	free(a);
+	free(b);
+}
+
+/* A capture going up: its progress, the console's word on it, and its
+ * replay once it is there. */
+static void
+upload_said(const char *name, const char *value)
+{
+	ucl_object_t	*o;
+	char		 err[128];
+
+	err[0] = '\0';
+	if ((o = data_parse(value, err, sizeof(err))) == NULL)
+		return;
+	snprintf(up.name, sizeof(up.name), "%s", name);
+	if (jstr(o, "error") != NULL) {
+		snprintf(up.error, sizeof(up.error), "%s", jstr(o, "error"));
+		up.busy = false;
+	} else if (jget(o, "sent") != NULL) {
+		up.error[0] = '\0';
+		up.busy = true;
+		up.sent = jint(o, "sent", 0);
+		up.size = jint(o, "size", 0);
+	} else if (jbool(o, "ok") && jstr(o, "path") != NULL) {
+		up.busy = false;
+		up.sent = up.size;
+		replay_job(jstr(o, "path"));
+	}
+	ucl_object_unref(o);
+	render();
+}
+
 bool
-idsstats_action(const char *act, const char *arg)
+idsstats_action(const char *act, const char *arg, const char *value)
 {
 	const ucl_object_t	*l, *e;
 	ucl_object_iter_t	 it;
+	char			 url[256];
 	size_t			 i;
 	unsigned		 k;
 
 	if (strcmp(act, "ist-open") == 0) {
 		snprintf(open_name, sizeof(open_name), "%s", arg);
 		eng_clear();
+		prof_clear();
+		memset(&up, 0, sizeof(up));
 		render();
 		return (true);
 	}
 	if (strcmp(act, "ist-back") == 0) {
 		open_name[0] = '\0';
 		eng_clear();
+		prof_clear();
 		render();
+		return (true);
+	}
+	if (strcmp(act, "ist-prof") == 0) {
+		prof_clear();
+		prof.loading = true;
+		snprintf(url, sizeof(url), "/api/servers/%s/suricata/rules?"
+		    "instance=%s&profiling=1", sec_host_id(), open_name);
+		api("GET", url, NULL, prof_cb, (void *)(uintptr_t)prof.gen);
+		render();
+		return (true);
+	}
+	if (strcmp(act, "input:ist-pfilter") == 0) {
+		snprintf(prof.filter, sizeof(prof.filter), "%s", value);
+		render();
+		return (true);
+	}
+	if (strcmp(act, "upload:ist-capture") == 0) {
+		upload_said(arg, value);
+		return (true);
+	}
+	if (strcmp(act, "ist-replay-cap") == 0) {
+		replay_job(arg);
 		return (true);
 	}
 	if (strcmp(act, "ist-ask") == 0) {
@@ -733,7 +911,7 @@ view_replay(struct html *h, const ucl_object_t *l)
 {
 	const ucl_object_t	*r, *a, *p;
 	ucl_object_iter_t	 it;
-	char			 sz[32], age[32];
+	char			 sz[32], age[32], url[200];
 	int			 n;
 
 	h_raw(h, "<h4>Replay a capture</h4><form class=\"secform\" "
@@ -768,44 +946,349 @@ view_replay(struct html *h, const ucl_object_t *l)
 		}
 		h_raw(h, "</ul>");
 	}
-	if (ucl_array_size(jget(l, "pcaps")) > 0) {
-		h_raw(h, "<h4>The packets of its alerts</h4><ul class=\""
+	/* A capture this computer has: sent to the host, then replayed. */
+	h_raw(h, "<div class=\"toolbar\"><label class=\"button ghost small\" "
+	    "title=\"Sent to the host, in parts of 4 MB, kept beside its "
+	    "replay (eight at most, 1 GiB each), then replayed\">Replay a "
+	    "capture from this computer<input type=\"file\" accept=\".pcap,"
+	    ".pcapng,.cap,application/vnd.tcpdump.pcap\" data-upload=\""
+	    "ist-capture\"");
+	snprintf(url, sizeof(url), "/api/servers/%s/ids/pcap?instance=%s",
+	    sec_host_id(), open_name);
+	h_attr(h, "data-url", url);
+	h_raw(h, " hidden></label>");
+	if (up.busy && up.size > 0) {
+		h_raw(h, "<span class=\"dim\">");
+		h_txt(h, up.name);
+		h_fmt(h, ": %lld%% sent</span>", up.sent * 100 / up.size);
+	}
+	h_raw(h, "</div>");
+	if (up.error[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, up.name);
+		h_raw(h, ": ");
+		h_txt(h, up.error);
+		h_raw(h, "</div>");
+	}
+	if (ucl_array_size(jget(l, "captures")) > 0) {
+		h_raw(h, "<h4>Captures sent to the host</h4><ul class=\""
 		    "secalerts\">");
+		it = NULL;
+		while ((p = ucl_object_iterate(jget(l, "captures"), &it,
+		    true)) != NULL) {
+			fmt_bytes(sz, sizeof(sz), jint(p, "size", 0));
+			fmt_age(age, sizeof(age), (double)jint(p, "at", 0) * 1000);
+			h_raw(h, "<li><span class=\"mono\">");
+			h_txt(h, jstr(p, "path"));
+			h_fmt(h, "</span> <small class=\"dim\">%s, %s</small> "
+			    "<button class=\"ghost small\" data-act=\""
+			    "ist-replay-cap\"", sz, age);
+			h_attr(h, "data-arg", jstr(p, "path"));
+			h_raw(h, ">Replay</button></li>");
+		}
+		h_raw(h, "</ul>");
+	}
+	if (ucl_array_size(jget(l, "pcaps")) > 0) {
+		h_raw(h, "<h4>The packets of its alerts</h4><p class=\"dim\">"
+		    "Suricata's pcap-log, a file at a time, for Wireshark or a "
+		    "replay; an alert's row links the file of its packets."
+		    "</p><ul class=\"secalerts\">");
 		it = NULL;
 		while ((p = ucl_object_iterate(jget(l, "pcaps"), &it, true)) !=
 		    NULL) {
+			const char	*base;
+
 			fmt_bytes(sz, sizeof(sz), jint(p, "size", 0));
-			h_raw(h, "<li class=\"mono\">");
-			h_txt(h, jstr(p, "path"));
-			h_fmt(h, " <small class=\"dim\">%s</small></li>", sz);
+			fmt_age(age, sizeof(age), (double)jint(p, "at", 0) * 1000);
+			base = jstr(p, "path") != NULL && strrchr(jstr(p, "path"),
+			    '/') != NULL ? strrchr(jstr(p, "path"), '/') + 1 :
+			    jstr(p, "path");
+			h_raw(h, "<li>");
+			ids_pcap_link(h, open_name, base, base);
+			h_fmt(h, " <small class=\"dim\">%s, last written %s"
+			    "</small></li>", sz, age);
 		}
 		h_raw(h, "</ul>");
 	}
 }
 
+/* A link that downloads a file of an instance's pcap-log, through the
+ * console (GET /api/servers/<id>/ids/pcap-log). */
+void
+ids_pcap_link(struct html *h, const char *inst, const char *file,
+    const char *label)
+{
+	char	url[300], name[200];
+
+	if (file == NULL || inst == NULL)
+		return;
+	snprintf(url, sizeof(url), "/api/servers/%s/ids/pcap-log?instance=%s&"
+	    "file=%s", sec_host_id(), inst, file);
+	snprintf(name, sizeof(name), "%s-%s.pcap", inst, file);
+	h_raw(h, "<a class=\"mono\" title=\"The packets Suricata logged for "
+	    "its alerts (pcap-log), downloaded through the console\"");
+	h_attr(h, "href", url);
+	h_attr(h, "download", name);
+	h_raw(h, ">");
+	h_txt(h, label);
+	h_raw(h, "</a>");
+}
+
+/* A time as Suricata writes it, 2026-10-19T10:00:00.000000+0000, in
+ * seconds since the epoch; -1 for none. */
+static long long
+eve_time(const char *s)
+{
+	int		 y, mo, d, hh, mm, ss, oh, om, n;
+	long long	 days, era, yoe, doy, doe;
+	const char	*z;
+	char		 sign;
+
+	if (s == NULL || sscanf(s, "%d-%d-%dT%d:%d:%d%n", &y, &mo, &d, &hh,
+	    &mm, &ss, &n) != 6)
+		return (-1);
+	/* Days from the civil date (Howard Hinnant's). */
+	y -= mo <= 2;
+	era = (y >= 0 ? y : y - 399) / 400;
+	yoe = y - era * 400;
+	doy = (153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+	doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+	days = era * 146097 + doe - 719468;
+	z = s + n + strspn(s + n, ".0123456789");
+	oh = om = 0;
+	sign = '+';
+	if ((*z == '+' || *z == '-') && sscanf(z + 1, "%2d%2d", &oh, &om) ==
+	    2)
+		sign = *z;
+	return (days * 86400 + hh * 3600 + mm * 60 + ss - (sign == '-' ? -1 :
+	    1) * (oh * 3600 + om * 60));
+}
+
+/*
+ * The file of an instance's pcap-log that holds an alert's packets: the
+ * one begun last before the alert's time (log.pcap.<seconds>) and
+ * written since; NULL when none is kept.
+ */
+const char *
+ids_pcap_of(const ucl_object_t *live, const char *when)
+{
+	const ucl_object_t	*p, *best;
+	ucl_object_iter_t	 it;
+	long long		 t;
+	const char		*path;
+
+	if ((t = eve_time(when)) < 0)
+		return (NULL);
+	best = NULL;
+	it = NULL;
+	while ((p = ucl_object_iterate(jget(live, "pcaps"), &it, true)) !=
+	    NULL) {
+		if (jget(p, "from") == NULL || jint(p, "from", 0) > t ||
+		    jint(p, "at", 0) + 1 < t)
+			continue;
+		if (best == NULL || jint(p, "from", 0) > jint(best, "from", 0))
+			best = p;
+	}
+	if (best == NULL || (path = jstr(best, "path")) == NULL)
+		return (NULL);
+	return (strrchr(path, '/') != NULL ? strrchr(path, '/') + 1 : path);
+}
+
+/* The columns of its packets' ticks, and of its rules'. */
+static const struct tcol pcols[] = {
+	{ "Stage", "section", false }, { "Name", "name", false },
+	{ "IP", "ip", false }, { "Proto", "proto", true },
+	{ "Count", "cnt", true }, { "Min", "min", true },
+	{ "Max", "max", true }, { "Avg", "avg", true },
+	{ "Total", "tot", false }, { "%", "pct", true },
+};
+static const struct tcol rcols[] = {
+	{ "Sid", "signature_id", true }, { "Gid", "gid", true },
+	{ "Rev", "rev", true }, { "Checks", "checks", true },
+	{ "Matches", "matches", true }, { "Ticks", "ticks_total", true },
+	{ "Max", "ticks_max", true }, { "Avg", "ticks_avg", true },
+	{ "Avg match", "ticks_avg_match", true },
+	{ "Avg no match", "ticks_avg_nomatch", true },
+	{ "%", "percent", true },
+};
+
+static const char *
+proto_name(int64_t p)
+{
+
+	switch (p) {
+	case 1:
+		return ("icmp");
+	case 6:
+		return ("tcp");
+	case 17:
+		return ("udp");
+	case 47:
+		return ("gre");
+	case 50:
+		return ("esp");
+	case 58:
+		return ("ipv6-icmp");
+	case 132:
+		return ("sctp");
+	case 256:
+		return ("tunnel");
+	default:
+		return ("");
+	}
+}
+
+/* One dump's tables: its packets' ticks, its rules', the rest as text. */
+static void
+prof_one(struct html *h, int which, const char *title)
+{
+	static const struct {
+		const char	*key, *title;
+	} texts[] = {
+		{ "keywords", "Keywords" }, { "prefilter", "Prefilter" },
+		{ "rulegroups", "Rule groups" }, { "locks", "Locks" },
+	};
+	const ucl_object_t	*w, **rows, *r;
+	char			 age[32], id[24];
+	size_t			 i;
+	int			 k;
+
+	w = jget(prof.o, which == 0 ? "running" : "replay");
+	h_raw(h, "<h5>");
+	h_txt(h, title);
+	h_raw(h, "</h5>");
+	if (w == NULL) {
+		h_raw(h, which == 0 ? "<p class=\"dim\">Nothing written yet: "
+		    "Suricata writes its profiling as it stops. Stop and Start "
+		    "it (Instances), or replay a capture.</p>" : "<p class=\""
+		    "dim\">No replay since its profiling was on.</p>");
+		return;
+	}
+	if (ucl_array_size(prof.rows[which]) > 0) {
+		fmt_age(age, sizeof(age), (double)jint(jget(w, "packets"), "at",
+		    0) * 1000);
+		h_fmt(h, "<p class=\"dim\">Packets, CPU ticks per protocol and "
+		    "per stage (packet_stats.log, written %s).</p>", age);
+		snprintf(id, sizeof(id), "istprof-%d", which);
+		h_raw(h, "<div class=\"tablewrap\"><table class=\"net\">");
+		tbl_head(h, id, pcols, (int)nitems(pcols), 0);
+		h_raw(h, "<tbody>");
+		rows = tbl_rows(id, prof.rows[which], pcols, (int)nitems(pcols),
+		    prof.filter);
+		for (k = 0; (r = rows[k]) != NULL && k < 1000; k++) {
+			h_raw(h, "<tr><td>");
+			h_txt(h, jstr(r, "section"));
+			h_raw(h, "</td><td class=\"mono\">");
+			h_txt(h, jstr(r, "name"));
+			h_raw(h, "</td><td>");
+			h_txt(h, jstr(r, "ip"));
+			h_fmt(h, "</td><td>%lld <small class=\"dim\">%s</small>"
+			    "</td><td>%lld</td><td>%lld</td><td>%lld</td><td>"
+			    "%lld</td><td>", (long long)jint(r, "proto", 0),
+			    proto_name(jint(r, "proto", 0)), (long long)jint(r,
+			    "cnt", 0), (long long)jint(r, "min", 0), (long long)
+			    jint(r, "max", 0), (long long)jint(r, "avg", 0));
+			h_txt(h, jstr(r, "tot"));
+			h_fmt(h, "</td><td>%.2f</td></tr>", jnum(r, "pct", 0));
+		}
+		free(rows);
+		h_raw(h, "</tbody></table></div>");
+	}
+	if (ucl_array_size(prof.rules[which]) > 0) {
+		h_raw(h, "<p class=\"dim\">Rules, by ticks (rule_perf.log).</p>");
+		snprintf(id, sizeof(id), "istprofr-%d", which);
+		h_raw(h, "<div class=\"tablewrap\"><table class=\"net\">");
+		tbl_head(h, id, rcols, (int)nitems(rcols), 0);
+		h_raw(h, "<tbody>");
+		rows = tbl_rows(id, prof.rules[which], rcols, (int)nitems(rcols),
+		    prof.filter);
+		for (k = 0; (r = rows[k]) != NULL; k++) {
+			h_fmt(h, "<tr><td>%lld</td><td>%lld</td><td>%lld</td><td>"
+			    "%lld</td><td>%lld</td><td>%lld</td><td>%lld</td><td>"
+			    "%lld</td><td>%.0f</td><td>%.0f</td><td>%.2f</td>"
+			    "</tr>", (long long)jint(r, "signature_id", 0),
+			    (long long)jint(r, "gid", 0), (long long)jint(r, "rev",
+			    0), (long long)jint(r, "checks", 0), (long long)jint(r,
+			    "matches", 0), (long long)jint(r, "ticks_total", 0),
+			    (long long)jint(r, "ticks_max", 0), (long long)jint(r,
+			    "ticks_avg", 0), jnum(r, "ticks_avg_match", 0),
+			    jnum(r, "ticks_avg_nomatch", 0), jnum(r, "percent", 0));
+		}
+		free(rows);
+		h_raw(h, "</tbody></table></div>");
+	}
+	for (i = 0; i < nitems(texts); i++) {
+		if (jstr(jget(w, texts[i].key), "text") == NULL)
+			continue;
+		h_fmt(h, "<details class=\"wfmore\"><summary>%s</summary>"
+		    "<pre class=\"mono surule\">", texts[i].title);
+		h_txt(h, jstr(jget(w, texts[i].key), "text"));
+		h_raw(h, "</pre></details>");
+	}
+}
+
+/*
+ * Packet profiling, Suricata built with --enable-profiling: where the
+ * time goes, per protocol and per stage of each packet's way through
+ * it, and per rule, as its profiling wrote it (as it stops, or at the
+ * end of a replay).  Where it is built without, how to get it: the
+ * port has no option for it, the admin builds it so.
+ */
+static void
+view_profiling(struct html *h)
+{
+	const ucl_object_t	*b;
+
+	b = jget(sec_state(), "ids_build");
+	h_raw(h, "<div class=\"toolbar\"><strong>Packet profiling</strong>"
+	    "<span class=\"grow\"></span>");
+	if (b == NULL || jbool(b, "profiling") || jbool(b, "profiling_rules")) {
+		h_raw(h, "<input class=\"filter\" id=\"ist-pfilter\" data-input="
+		    "\"ist-pfilter\" placeholder=\"Filter\" autocomplete=\"off\" "
+		    "spellcheck=\"false\"");
+		h_attr(h, "value", prof.filter);
+		h_raw(h, "><button class=\"ghost\" data-act=\"ist-prof\" title="
+		    "\"What its profiling wrote: packet_stats.log, "
+		    "rule_perf.log and the others, in its log directory and "
+		    "its replay's\">");
+		h_raw(h, prof.o != NULL ? "Read again" : "Read its profiling");
+		h_raw(h, "</button>");
+	}
+	h_raw(h, "</div>");
+	if (b != NULL && !jbool(b, "profiling")) {
+		h_raw(h, "<p class=\"dim\">This Suricata is built without packet "
+		    "profiling: CPU ticks per protocol and per stage need it "
+		    "built with <code>--enable-profiling</code>, which the "
+		    "security/suricata port has no option for. Build it so with "
+		    "poudriere (Builder), in the build's make.conf, and install "
+		    "it in its place; Arcana installs nothing:</p><pre class=\""
+		    "mono surule\">.if ${.CURDIR:M*/security/suricata}\n"
+		    "CONFIGURE_ARGS+=--enable-profiling\n.endif</pre><p class=\""
+		    "dim\">Then turn its sections on in its form (Logging, "
+		    "Profiling). Profiling costs CPU while it is built in; a "
+		    "sample rate lowers it.</p>");
+		if (!jbool(b, "profiling_rules"))
+			return;
+	}
+	if (prof.loading)
+		h_raw(h, "<div class=\"loader\"></div>");
+	if (prof.error[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, prof.error);
+		h_raw(h, "</div>");
+	}
+	if (prof.o == NULL)
+		return;
+	prof_one(h, 0, "Running");
+	prof_one(h, 1, "Its last replay");
+}
+
 bool
 idsstats_form(const char *form, const ucl_object_t *f)
 {
-	char	*json, *a, *b, title[300];
 
 	if (strcmp(form, "ist-replay") != 0 || jstr(f, "file") == NULL)
 		return (false);
-	if (asprintf(&a, "instance=%s", open_name) == -1 || asprintf(&b,
-	    "file=%s", jstr(f, "file")) == -1)
-		abort();
-	{
-		char	*qa = json_quote(a), *qb = json_quote(b);
-
-		if (asprintf(&json, "{\"kind\":\"suricata\",\"verb\":\"pcap\","
-		    "\"args\":[%s,%s]}", qa, qb) == -1)
-			abort();
-		free(qa);
-		free(qb);
-	}
-	snprintf(title, sizeof(title), "suricata replays %s through %s",
-	    jstr(f, "file"), open_name);
-	sec_job(json, title);
-	free(a);
-	free(b);
+	replay_job(jstr(f, "file"));
 	return (true);
 }

@@ -641,6 +641,9 @@ scope_helper(int argc, char **argv)
 		return (carp_helper(argc - 1, argv + 1));
 	if (strcmp(argv[1], "zfs-pipe") == 0)
 		return (zfs_pipe(argc - 1, argv + 1));
+	/* The jail's models served on standard input, its LNE root. */
+	if (strcmp(argv[1], "lne-serve") == 0 && argc == 2)
+		return (lne_serve());
 	/* A raw ICMP socket of the jail's network, for the probes. */
 	if (strcmp(argv[1], "icmp-socket") == 0 && argc == 3) {
 		int	af, fd;

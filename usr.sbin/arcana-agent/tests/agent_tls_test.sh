@@ -53,7 +53,9 @@ start_daemon()
 	programs
 	ca ca
 	ca rogue
-	cert ca server "IP:127.0.0.1,DNS:localhost" serverAuth
+	# The agent's: a server's, and a client's to a receiver of its
+	# configured subscriptions, as the console signs a host's.
+	cert ca server "IP:127.0.0.1,DNS:localhost" "serverAuth,clientAuth"
 	cert ca client "DNS:console" clientAuth
 	cert rogue intruder "DNS:intruder" clientAuth
 	cert ca elsewhere "DNS:elsewhere.example" serverAuth
@@ -69,7 +71,8 @@ start_daemon()
 		"$JGD" -F -l "tcp://127.0.0.1:$PORT" -A ca.pem -C server.pem \
 		    -K server.key -f "$(pwd)/etc/jail.conf" \
 		    -D "$(pwd)/etc/jail.conf.d" -I /usr/bin/false \
-		    --nacm "$(pwd)/nacm.cbor" $DAEMON_ARGS \
+		    --nacm "$(pwd)/nacm.cbor" \
+		    --subscriptions "$(pwd)/subscriptions.cbor" $DAEMON_ARGS \
 		    > daemon.out 2>&1 &
 		pid=$!
 		echo $pid > daemon.pid
@@ -356,9 +359,132 @@ tls_files_body()
 	    "$JGD" -l "$URI" -A ca.pem -C server.pem -K other.key
 }
 
+# The stand-in HTTPS-notif receiver, on a free port, its log recv.log.
+start_receiver()
+{
+	local try i
+
+	for try in $(seq 1 20); do
+		[ -n "$RPORT" ] || RPORT=$(jot -r 1 20000 59999)
+		"$(atf_get_srcdir)/notifrecv" recv.pem recv.key ca.pem "$RPORT" \
+		    "$(pwd)/recv.log" > recv.out 2>&1 &
+		echo $! > recv.pid
+		for i in $(seq 1 100); do
+			grep -q ready recv.out 2>/dev/null && return
+			kill -0 "$(cat recv.pid)" 2>/dev/null || break
+			sleep 0.05
+		done
+		kill "$(cat recv.pid)" 2>/dev/null
+		wait "$(cat recv.pid)" 2>/dev/null
+		RPORT=
+	done
+	atf_fail "notifrecv did not start: $(cat recv.out)"
+}
+
+# wait_log PATTERN COUNT SECONDS: until the log has COUNT lines of it.
+wait_log()
+{
+	local i
+
+	for i in $(seq 1 $(( $3 * 10 ))); do
+		[ "$(grep -c -- "$1" recv.log 2>/dev/null)" -ge "$2" ] && return
+		sleep 0.1
+	done
+	atf_fail "no $2 of '$1' in $3 s: $(cat recv.log 2>/dev/null); the agent: $(grep subscription daemon.out | tail -5)"
+}
+
+atf_test_case configured cleanup
+configured_head()
+{
+	atf_set "descr" "A configured subscription (RFC 8639 section 2.5)" \
+	    "to an HTTPS-notif receiver: its capabilities read, each record" \
+	    "POSTed as RFC 8040's JSON, what it missed while away replayed" \
+	    "when it is back; listed with its receiver's state; ended by the" \
+	    "configuration"
+	atf_set "require.progs" "openssl"
+}
+configured_body()
+{
+	start_daemon
+	URI="tcp://127.0.0.1:$PORT"
+	JC="$JGC -c $URI -A ca.pem -C client.pem -K client.key"
+	cert ca recv "IP:127.0.0.1" serverAuth
+	RPORT=
+	start_receiver
+	# Refused: a receiver names no instance; an instance that is no
+	# https-receiver.
+	cat > bad.json <<EOF
+{"ietf-subscribed-notifications:subscriptions":{"subscription":[{"id":7,
+"stream":"NETCONF","receivers":{"receiver":[{"name":"console"}]}}]}}
+EOF
+	atf_check $JC edit subscriptions @bad.json
+	atf_check -s exit:1 -e match:'names a receiver instance' $JC commit
+	cat > subs.json <<EOF
+{"ietf-subscribed-notifications:subscriptions":{"subscription":[{"id":7,
+"stream":"NETCONF","stream-xpath-filter":"/arcana-events:event",
+"configured-replay":[null],"receivers":{"receiver":[{"name":"console",
+"ietf-subscribed-notif-receivers:receiver-instance-ref":"lab"}]}}],
+"ietf-subscribed-notif-receivers:receiver-instances":{"receiver-instance":[
+{"name":"lab","ietf-https-notif-transport:https-receiver":{
+"capabilities-endpoint":{"uri":"https://127.0.0.1:$RPORT/notif/capabilities"},
+"relay-notification-endpoint":{"uri":"https://127.0.0.1:$RPORT/notif/relay-notification"}}}]}}}
+EOF
+	atf_check $JC edit subscriptions @subs.json
+	atf_check $JC commit
+	# Connected: the capabilities asked, subscription-started and (a
+	# replay from its making, of nothing) replay-completed POSTed.
+	wait_log '^POST ' 2 5
+	atf_check -o match:'^GET /notif/capabilities$' \
+	    -o match:'^POST /notif/relay-notification$' \
+	    -o match:'"ietf-restconf:notification":\{"eventTime":"[0-9T:-]+Z","ietf-subscribed-notifications:subscription-started":\{"id":7,"stream":"NETCONF","stream-xpath-filter":"/arcana-events:event"\}\}' \
+	    -o match:'"ietf-subscribed-notifications:replay-completed":\{"id":7\}' \
+	    cat recv.log
+	atf_check -o match:'"id":7,' \
+	    -o match:'"ietf-subscribed-notif-receivers:receiver-instance-ref":"lab"' \
+	    -o match:'"state":"active"' -o match:'"configured-subscription-state":"valid"' \
+	    -o match:'"capabilities-endpoint":\{"uri":"https://127.0.0.1' \
+	    $JC get subscriptions
+	# An event: a record.
+	atf_check -s ignore -o ignore -e ignore $JC interface lo0 mtu 16384
+	wait_log '"arcana-events:event":{' 1 5
+	# The receiver gone: the next record fails, what follows is missed;
+	# back, it is told subscription-started with the time of the last
+	# record it had, what it missed replayed, then replay-completed.
+	kill "$(cat recv.pid)"
+	wait "$(cat recv.pid)" 2>/dev/null
+	atf_check -s ignore -o ignore -e ignore $JC interface lo0 mtu 1500
+	sleep 0.5
+	atf_check -s ignore -o ignore -e ignore $JC interface lo0 mtu 16384
+	sleep 0.5
+	start_receiver
+	wait_log 'subscription-started' 2 20
+	wait_log 'replay-completed' 2 20
+	atf_check -o match:'subscription-started":\{"id":7,"replay-previous-event-time":"[0-9T:-]+Z"' \
+	    cat recv.log
+	atf_check -o match:'^3$' \
+	    sh -c 'grep -c "ifconfig exited with status 1" recv.log'
+	atf_check -o match:'"excluded-event-records":"[1-9]' $JC get subscriptions
+	# Out of the configuration: told subscription-terminated, gone from
+	# the list; its file gone too.
+	atf_check $JC edit subscriptions null
+	atf_check $JC commit
+	wait_log 'subscription-terminated' 1 5
+	atf_check -o match:'reason":"ietf-subscribed-notifications:no-such-subscription"' \
+	    cat recv.log
+	atf_check -o not-match:'"id":7,' $JC get subscriptions
+	atf_check -s exit:1 -o ignore test -f subscriptions.cbor
+}
+configured_cleanup()
+{
+	stop_daemon
+	[ -f recv.pid ] && kill "$(cat recv.pid)" 2>/dev/null
+	true
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case tls_files
 	atf_add_test_case mtls
 	atf_add_test_case renew
+	atf_add_test_case configured
 }

@@ -45,6 +45,7 @@ enum op {
 	OP_SERVICE_CONFIG,
 	OP_NETWORK,
 	OP_YDATA,
+	OP_DRIFT,
 	OP_RESTCONF,
 	OP_STATS,
 	OP_PACKAGES,
@@ -1128,6 +1129,7 @@ hosts_init(void)
 	}
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_FRAME, CBLINK_MAX_FRAME);
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_ATTRS, CBLINK_MAX_ATTRS);
+	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_DEPTH, CBLINK_MAX_DEPTH);
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_REQUEST_MS, CBLINK_TIMEOUT_MS);
 	return (0);
 }
@@ -1326,8 +1328,8 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_ACTION ? "arc_action" : c->op == OP_ADDRESS ?
 	    "arc_address" : c->op == OP_SERVICES ? "arc_services" :
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
-	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_YDATA ?
-	    "get" : c->op == OP_STORAGE ?
+	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_YDATA ||
+	    c->op == OP_DRIFT ? "get" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
 	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_BUILDER ? "arc_builder" : c->op == OP_BUILDER_OPTIONS ? "arc_builder_options" : c->op == OP_SURICATA_RULES ? "arc_suricata_rules" : c->op == OP_NETSTORE ? "arc_netstore" : c->op == OP_SYSTEM ? "arc_system" : c->op == OP_SMTPD ? "arc_smtpd" : c->op == OP_SPEEDER ? "arc_speeder" : c->op == OP_MONITORS ? "arc_monitors" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" : c->op == OP_CONFIG_EXPORT ? "arc_config_export" : c->op == OP_CONFIG_APPLY ? "arc_config_apply" : c->op == OP_PATH_CHECK ? "arc_path_check" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
@@ -1677,7 +1679,6 @@ call_run(struct task *t)
 	struct arc_bird_config_req bcq;
 	struct arc_bird_config_rsp *bcr;
 	struct arc_stats_rsp	*str;
-	struct arc_kernel_rsp	*kr;
 	struct arc_jail_files_rsp *jfiles;
 	struct arc_builder_rsp	*bur;
 	struct arc_builder_options_req boq;
@@ -1715,8 +1716,6 @@ call_run(struct task *t)
 	struct arc_notify_req	 ntq;
 	struct arc_notify_rsp	*ntr;
 	char			*bundle;
-	struct arc_sysctl_req	 syq;
-	struct arc_sysctl_rsp	*syr;
 	struct arc_processes_req prq;
 	struct arc_processes_rsp *prr;
 	struct arc_log_req	 lgq;
@@ -1820,7 +1819,6 @@ call_run(struct task *t)
 	rlr = NULL;
 	bcr = NULL;
 	str = NULL;
-	kr = NULL;
 	jfiles = NULL;
 	bur = NULL;
 	bor = NULL;
@@ -1838,7 +1836,6 @@ call_run(struct task *t)
 	pcr = NULL;
 	ntr = NULL;
 	bundle = NULL;
-	syr = NULL;
 	prr = NULL;
 	lgr = NULL;
 	hsr = NULL;
@@ -2262,9 +2259,24 @@ connected:
 			put(top, "data", e);
 		}
 		break;
+	case OP_DRIFT:
+		/* What the host has otherwise than running says. */
+		{
+			char	yerr[256];
+
+			if ((error = drift_read(cl.conn, &e, yerr,
+			    sizeof(yerr))) != 0) {
+				ok = false;
+				put_str(top, "error", yerr);
+				break;
+			}
+			ok = true;
+			put(top, "drift", e);
+		}
+		break;
 	case OP_RESTCONF:
-		restconf_run(cl.conn, c->rc, c->sid, c->sname, &c->rc_json,
-		    &c->rc_status);
+		restconf_run(cl.conn, c->rc, c->sid, c->sname, c->uri,
+		    &c->rc_json, &c->rc_status);
 		ok = true;
 		break;
 	case OP_NETWORK:
@@ -2734,6 +2746,10 @@ connected:
 		if ((error = arc_events(&cl, &evq, &evr)) != 0)
 			goto rpcfail;
 		ok = evr->ok;
+		/* One that says the configuration changed: the host's
+		 * datastores' entity-tags (restconf.c). */
+		if (ok)
+			restconf_events(c->uri, evr->json);
 		put_str(top, "error", evr->error);
 		put_json(top, evr->json);
 		steps = evr->trace.v;
@@ -2757,34 +2773,29 @@ connected:
 		nsteps = ftr->trace.n;
 		break;
 	case OP_SYSCTL:
-		/* Where to begin rides where a jail's name does. */
-		memset(&syq, 0, sizeof(syq));
-		syq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
-		syq.jail = c->scope[0] != '\0' ? c->scope : NULL;
-		if ((error = arc_sysctl(&cl, &syq, &syr)) != 0)
-			goto rpcfail;
-		ok = syr->ok;
-		put_str(top, "error", syr->error);
-		if (syr->has_total) {
-			put(top, "total", ucl_object_fromint(
-			    (int64_t)syr->total));
-			put(top, "truncated", ucl_object_frombool(
-			    syr->truncated));
-		}
-		e = NULL;
-		if (syr->json != NULL) {
-			struct ucl_parser *p;
+		/* By arcana-sysctl's read action (ytrans.c): where to begin
+		 * rides where a jail's name does. */
+		{
+			char		yerr[256];
+			uint64_t	total;
+			bool		truncated;
 
-			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
-			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
-			if (ucl_parser_add_string(p, syr->json, 0))
-				e = ucl_parser_get_object(p);
-			ucl_parser_free(p);
-		}
-		if (e != NULL)
+			if (ytrans_sysctl(cl.conn, c->jail, c->scope[0] != '\0' ?
+			    c->scope : NULL, &e, &total, &truncated, yerr,
+			    sizeof(yerr)) != 0) {
+				ok = false;
+				put_str(top, "error", yerr);
+				break;
+			}
+			ok = true;
+			if (truncated) {
+				put(top, "total", ucl_object_fromint(
+				    (int64_t)total));
+				put(top, "truncated", ucl_object_frombool(
+				    true));
+			}
 			put(top, "data", e);
-		steps = syr->trace.v;
-		nsteps = syr->trace.n;
+		}
 		break;
 	case OP_JAIL_FILES:
 		if ((error = arc_jail_files(&cl, &jfiles)) != 0)
@@ -3136,24 +3147,18 @@ connected:
 		nsteps = sshr->trace.n;
 		break;
 	case OP_KERNEL:
-		if ((error = arc_kernel(&cl, &kr)) != 0)
-			goto rpcfail;
-		ok = kr->ok;
-		put_str(top, "error", kr->error);
-		e = NULL;
-		if (kr->json != NULL) {
-			struct ucl_parser *p;
+		/* A GET of arcana-kernel (ytrans.c). */
+		{
+			char	yerr[256];
 
-			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
-			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
-			if (ucl_parser_add_string(p, kr->json, 0))
-				e = ucl_parser_get_object(p);
-			ucl_parser_free(p);
-		}
-		if (e != NULL)
+			if (ytrans_kernel(cl.conn, &e, yerr, sizeof(yerr)) != 0) {
+				ok = false;
+				put_str(top, "error", yerr);
+				break;
+			}
+			ok = true;
 			put(top, "data", e);
-		steps = kr->trace.v;
-		nsteps = kr->trace.n;
+		}
 		break;
 	case OP_CONSOLE_UPDATE:
 		memset(&cuq, 0, sizeof(cuq));
@@ -3390,8 +3395,6 @@ done:
 		arc_bird_config_rsp_free(bcr);
 	if (str != NULL)
 		arc_stats_rsp_free(str);
-	if (kr != NULL)
-		arc_kernel_rsp_free(kr);
 	if (jfiles != NULL)
 		arc_jail_files_rsp_free(jfiles);
 	if (bur != NULL)
@@ -3425,8 +3428,6 @@ done:
 	if (ntr != NULL)
 		arc_notify_rsp_free(ntr);
 	free(bundle);
-	if (syr != NULL)
-		arc_sysctl_rsp_free(syr);
 	if (prr != NULL)
 		arc_processes_rsp_free(prr);
 	if (lgr != NULL)
@@ -3554,7 +3555,8 @@ call_new(struct http_request *req, enum op op)
 	snprintf(c->route, sizeof(c->route), "%s %s",
 	    req->method == HTTP_METHOD_GET ? "GET" :
 	    req->method == HTTP_METHOD_DELETE ? "DELETE" :
-	    req->method == HTTP_METHOD_PUT ? "PUT" : "POST", req->path);
+	    req->method == HTTP_METHOD_PUT ? "PUT" :
+	    req->method == HTTP_METHOD_PATCH ? "PATCH" : "POST", req->path);
 	return (c);
 }
 
@@ -4083,53 +4085,54 @@ setup_ydata(struct call *c, const struct rq *q)
 	return (NULL);
 }
 
-/* RESTCONF's path below a host's entry, and its query. */
-static const char *
-setup_restconf(struct call *c, const struct rq *q)
-{
-	const char	*why = NULL;
-
-	if ((c->rc = restconf_parse(q->path, q->query, &why)) == NULL)
-		return (why);
-	return (NULL);
-}
-
 /*
  * A host's entry below /restconf/data or a datastore's root
- * (restconf.c): GET reads; PUT and DELETE change the candidate; a POST
- * of ietf-netconf's commit, cancel-commit or discard-changes runs it,
- * the commit that confirms over a connection of its own.
+ * (restconf.c): GET reads; POST, PUT, PATCH and DELETE change the
+ * candidate; a POST of ietf-netconf's commit, cancel-commit or
+ * discard-changes runs it, the commit that confirms over a connection
+ * of its own.  The conditions on the datastore's entity-tag are the
+ * console's to judge, before the host is asked.
  */
 int
 api_restconf_host(struct http_request *req)
 {
 	struct call	*c;
-	ucl_object_t	*body;
-	const char	*why = NULL;
+	ucl_object_t	*body = NULL;
+	const char	*why = NULL, *ctype = NULL;
 	int		 st;
 
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
-	if (req->method == HTTP_METHOD_GET)
-		return (read_route(req, OP_RESTCONF, setup_restconf));
 	if ((c = call_new(req, OP_RESTCONF)) == NULL)
 		return (WEB_OK);
-	body = req->method != HTTP_METHOD_DELETE ? read_json(req) : NULL;
-	if (req->method == HTTP_METHOD_PUT && body == NULL) {
-		call_release(c);
-		free(c);
-		return (restconf_error(req, 400, "a PUT's body is the node, "
-		    "as RFC 7951's JSON"));
+	if (req->method != HTTP_METHOD_GET && req->method !=
+	    HTTP_METHOD_DELETE) {
+		body = read_json(req);
+		/* A body there that is not JSON (RFC 8040 section 7). */
+		if (body == NULL && req->http_body != NULL &&
+		    req->http_body->length > 0) {
+			call_release(c);
+			free(c);
+			return (restconf_error_tag(req, 400,
+			    "malformed-message", "the body is not JSON"));
+		}
 	}
+	(void)http_request_header(req, "content-type", &ctype);
 	if ((c->rc = restconf_parse(req->path, req->query_string, &why)) ==
-	    NULL || (st = restconf_prepare(c->rc, req->method, body,
-	    &why)) != 0) {
-		if (c->rc == NULL)
-			ucl_object_unref(body);
-		st = c->rc == NULL ? 400 : st;
+	    NULL) {
+		ucl_object_unref(body);
 		call_release(c);
 		free(c);
-		return (restconf_error(req, st, why));
+		return (restconf_error(req, 400, why));
+	}
+	if ((st = restconf_prepare(c->rc, req->method, ctype, body,
+	    &why)) == 0)
+		st = restconf_precondition(req, c->rc, c->uri);
+	if (st != 0) {
+		(void)restconf_refuse(req, c->rc, c->uri, st, why);
+		call_release(c);
+		free(c);
+		return (WEB_OK);
 	}
 	c->fresh = restconf_confirms(c->rc);
 	return (call_start(req, c));
@@ -4153,6 +4156,7 @@ restconf_finish(struct http_request *req, struct call *c)
 		    "application/yang-data+json");
 		http_response_header(req, "cache-control", "no-store");
 		http_response_header(req, "x-content-type-options", "nosniff");
+		restconf_headers(req, c->rc, c->uri, c->rc_status);
 		http_response(req, c->rc_status, c->rc_json,
 		    strlen(c->rc_json));
 		return (WEB_OK);
@@ -4185,6 +4189,17 @@ api_ydata(struct http_request *req)
 {
 
 	return (read_route(req, OP_YDATA, setup_ydata));
+}
+
+/*
+ * GET /api/servers/<id>/drift: what the host has otherwise than its
+ * running configuration says (drift.c), under "drift".
+ */
+int
+api_drift(struct http_request *req)
+{
+
+	return (read_route(req, OP_DRIFT, NULL));
 }
 
 /* A path of a configuration file: nothing a URL or a shell reads into. */
@@ -4910,8 +4925,9 @@ static const char *
 setup_suricata_rules(struct call *c, const struct rq *q)
 {
 	static const char *const keys[] = { "q", "sid", "only", "classtype",
-	    "offset", "limit", "sources", "instance", "command", "iface" };
-	char	 v[200], buf[10 * 216];
+	    "offset", "limit", "sources", "instance", "command", "iface",
+	    "profiling" };
+	char	 v[200], buf[11 * 216];
 	size_t	 i, len;
 
 	len = 0;
@@ -4921,7 +4937,8 @@ setup_suricata_rules(struct call *c, const struct rq *q)
 			continue;
 		if (!http_argument_urldecode(v, 1) || strchr(v, '\n') != NULL)
 			return ("q, sid, only, classtype, offset, limit, "
-			    "sources, instance, command and iface are words, "
+			    "sources, instance, command, iface and profiling "
+			    "are words, "
 			    "escaped as a URL has them");
 		len += (size_t)snprintf(buf + len, sizeof(buf) - len, "%s=%s\n",
 		    keys[i], v);

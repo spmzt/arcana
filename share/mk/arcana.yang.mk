@@ -49,7 +49,10 @@ ARC_YMODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		iana-hardware@2018-03-13 ietf-hardware@2018-03-13 \
 		ietf-subscribed-notifications@2019-09-09 \
 		ietf-yang-push@2019-09-09 ietf-netconf-acm@2018-02-14 \
-		ietf-netconf@2011-06-01
+		ietf-netconf@2011-06-01 ietf-origin@2018-02-14 \
+		ietf-defaults@2024-04-03 ietf-yang-schema-mount@2019-01-14 \
+		ietf-subscribed-notif-receivers@2026-06-30 \
+		ietf-https-notif-transport@2026-06-30
 # Modules only imported whose identities are used: their .sid files
 # alone (a VLAN tag's types, the PHY types, the port algorithms; the
 # routing protocols', whose identities name a route's origin).
@@ -58,7 +61,7 @@ ARC_YIMPORTS=	ietf-ospf@2022-10-19 ietf-rip@2020-02-20 ietf-isis@2022-10-19 \
 		ietf-bfd-types@2022-09-22 \
 		ieee802-dot1q-types@2023-10-26 \
 		ieee802-ethernet-phy-type@2025-09-10 \
-		ieee802-dot1ax-types@2025-09-30
+		ieee802-dot1ax-types@2025-09-30 ietf-http-client@2024-08-15
 ARC_YFEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-if-extensions:max-frame-size,peer-interface,sub-interfaces \
 		-F ietf-if-ethernet-like:configurable-mac-address \
@@ -83,8 +86,11 @@ ARC_YFEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-yang-library: -F ietf-datastores: \
 		-F ietf-alarms:alarm-summary,alarm-history -F arcana-alarms: \
 		-F iana-hardware: -F ietf-hardware:hardware-sensor \
-		-F ietf-subscribed-notifications:xpath,replay -F ietf-yang-push:on-change \
-		-F ietf-netconf-acm: -F ietf-netconf:candidate,confirmed-commit
+		-F ietf-subscribed-notifications:configured,xpath,replay \
+		-F ietf-yang-push:on-change \
+		-F ietf-netconf-acm: -F ietf-netconf:candidate,confirmed-commit \
+		-F ietf-origin: -F ietf-defaults: -F ietf-yang-schema-mount: \
+		-F ietf-subscribed-notif-receivers: -F ietf-https-notif-transport:
 
 .if ${ARC_YANG_SERVER:Uno} == "yes"
 _arc_yparts=	h,schema,server

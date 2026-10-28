@@ -769,6 +769,61 @@ has_word(const ucl_object_t *arr, const char *w)
 	return (false);
 }
 
+/* Suricata's profiling sections, and what each needs it built with. */
+static const struct {
+	const char	*key, *title, *needs;
+} prof_secs[] = {
+	{ "packets", "Packets, ticks per protocol and per stage", "profiling" },
+	{ "rules", "Rules", "profiling_rules" },
+	{ "keywords", "Keywords", "profiling_rules" },
+	{ "prefilter", "Prefilter", "profiling_rules" },
+	{ "rulegroups", "Rule groups", "profiling_rules" },
+	{ "locks", "Locks", "profiling_locks" },
+};
+
+/*
+ * Its profiling (profiling: in its YAML, rendered on the host): each
+ * section on or off, and a sample rate.  A section this Suricata is not
+ * built for is shown off and cannot be picked; how to build it is on
+ * the instance's Statistics.
+ */
+static void
+ids_profiling_form(struct html *h, const ucl_object_t *f)
+{
+	const ucl_object_t	*b;
+	char			 num[24];
+	size_t			 i;
+	bool			 can, any;
+
+	b = jget(sec.state, "ids_build");
+	h_raw(h, "<p class=\"help\">Profiling, where Suricata is built with "
+	    "it (<code>--enable-profiling</code>, which the port has no "
+	    "option for: see Statistics): where its time goes, written to "
+	    "its log directory as it stops.</p><div class=\"checks\">");
+	any = false;
+	for (i = 0; i < nitems(prof_secs); i++) {
+		can = b == NULL || jbool(b, prof_secs[i].needs) ||
+		    (strcmp(prof_secs[i].needs, "profiling_rules") == 0 &&
+		    jbool(b, "profiling"));
+		any = any || can;
+		h_fmt(h, "<label class=\"check\"%s><input type=\"checkbox\" "
+		    "name=\"prof_%s\"%s%s> %s</label>", can ? "" : " title=\""
+		    "This Suricata is not built for it\"", prof_secs[i].key,
+		    has_word(jget(f, "profiling"), prof_secs[i].key) ? " checked" :
+		    "", can ? "" : " disabled", prof_secs[i].title);
+	}
+	h_raw(h, "</div>");
+	if (!any)
+		return;
+	snprintf(num, sizeof(num), "%lld", (long long)jint(f,
+	    "profiling_sample_rate", 1));
+	h_raw(h, "<label>Profile one packet in <input name=\""
+	    "profiling_sample_rate\" type=\"number\" min=\"1\" max=\"65536\"");
+	h_attr(h, "value", num);
+	h_raw(h, "><small class=\"help\">a power of 2; 1 every packet, more "
+	    "costs less</small></label>");
+}
+
 static void
 ids_settings_form(struct html *h, const ucl_object_t *f)
 {
@@ -821,6 +876,7 @@ ids_settings_form(struct html *h, const ucl_object_t *f)
 	    "type=\"number\" min=\"1\" max=\"1000\"");
 	h_attr(h, "value", num);
 	h_raw(h, "></label></div>");
+	ids_profiling_form(h, f);
 	h_raw(h, "</details><details class=\"wfmore\"><summary>Capture"
 	    "</summary><div class=\"rowform\"><label>By <select name=\""
 	    "capture\"><option value=\"pcap\">pcap(3): it watches</option>"
@@ -1147,6 +1203,12 @@ view_ids(struct html *h)
 				h_attr(h, "data-arg", arg);
 				h_attr(h, "data-value", jstr(f, "name"));
 				h_raw(h, ">Suppress</button>");
+			}
+			/* Its packets, where pcap-log kept them. */
+			if (ids_pcap_of(l, jstr(a, "time")) != NULL) {
+				h_raw(h, " ");
+				ids_pcap_link(h, jstr(f, "name"), ids_pcap_of(l,
+				    jstr(a, "time")), "pcap");
 			}
 			h_raw(h, "</li>");
 		}
@@ -1589,6 +1651,21 @@ secpage_form(const char *form, const ucl_object_t *f)
 				put_num(o, "pcap_log_files", jstr(f,
 				    "pcap_log_files"));
 			}
+			/* Its profiling's sections, a list when any. */
+			ev = ucl_object_typed_new(UCL_ARRAY);
+			for (i = 0; i < nitems(prof_secs); i++) {
+				snprintf(k, sizeof(k), "prof_%s", prof_secs[i].key);
+				if (jbool(f, k))
+					ucl_array_append(ev, ucl_object_fromstring(
+					    prof_secs[i].key));
+			}
+			if (ucl_array_size(ev) > 0) {
+				ucl_object_insert_key(o, ev, "profiling", 0,
+				    false);
+				put_num(o, "profiling_sample_rate", jstr(f,
+				    "profiling_sample_rate"));
+			} else
+				ucl_object_unref(ev);
 			if (jstr(f, "plugins") != NULL && jstr(f, "plugins")[0] !=
 			    '\0')
 				ucl_object_insert_key(o, words(jstr(f,
@@ -1691,7 +1768,8 @@ secpage_action(const char *act, const char *arg, const char *value)
 		sec_load();
 		return (true);
 	}
-	if (idsown_action(act, arg, value) || idsstats_action(act, arg))
+	if (idsown_action(act, arg, value) || idsstats_action(act, arg,
+	    value))
 		return (true);
 	if (strncmp(act, "sur-", 4) == 0 || strncmp(act, "sus-", 4) == 0) {
 		char	*json[1], title[96];

@@ -105,8 +105,11 @@ ietf_interfaces_interfaces_get(cbl_req *req, struct ietf_interfaces *data,
 	if ((error = yif_rtadv(data, a)) != 0)
 		return (error);
 	/* Running: what was configured, not what DHCP or SLAAC made. */
-	return (cbl_req_ydatastore(req) == CBL_YDS_RUNNING ?
-	    yif_running(data, a) : 0);
+	if (cbl_req_ydatastore(req) == CBL_YDS_RUNNING &&
+	    (error = yif_running(data, a)) != 0)
+		return (error);
+	/* Those in the vnet jails, each bound to its jail (RFC 8530). */
+	return (lne_bound_interfaces(data, a));
 }
 
 static int	routing_of(cbl_yarena *, int, struct ietf_routing *);
@@ -135,7 +138,8 @@ vrf_root(void)
 
 /*
  * Each instance's vrf-root, mounted: its FIB's routing (ietf-routing,
- * the v4ur and v6ur augments with it), a shared schema.
+ * the v4ur and v6ur augments with it), a shared schema, and the YANG
+ * library that says it (RFC 8528 section 3), the host's own.
  */
 static int
 vrf_mounts(cbl_yarena *a,
@@ -143,6 +147,7 @@ vrf_mounts(cbl_yarena *a,
 {
 	struct ietf_network_instance_network_instances_network_instance *v;
 	struct ietf_network_instance_network_instances_network_instance_vrf_root *r;
+	struct ietf_yang_library *yl;
 	struct ietf_routing *rt;
 	const struct cbl_ynode *n = vrf_root();
 	int error;
@@ -162,6 +167,12 @@ vrf_mounts(cbl_yarena *a,
 		    "routing")->module, a)) == NULL)
 			return (ENOMEM);
 		if ((error = routing_of(a, (int)v[i].arcni_fib, rt)) != 0)
+			return (error);
+		if ((yl = cbl_ymount_data(n, r, ynode_named("ietf-yang-library",
+		    "yang-library")->module, a)) == NULL)
+			return (ENOMEM);
+		if ((error = ietf_yang_library_yang_library_get(NULL, yl,
+		    a)) != 0)
 			return (error);
 		v[i].vrf_root = r;
 	}
@@ -361,18 +372,41 @@ ietf_routing_routing_state_ribs_rib_active_route_action(cbl_req *req,
 	return (EOPNOTSUPP);
 }
 
+typedef struct ietf_logical_network_element_logical_network_elements_logical_network_element
+    ylne;
+typedef struct ietf_logical_network_element_logical_network_elements_logical_network_element_root
+    ylneroot;
+
+/*
+ * RFC 8530's logical network elements, the vnet jails (ylne.c), each
+ * with its root: an inline mount, what the jail has of the models the
+ * agent serves, as a helper attached to it reads (lneroot.c).
+ */
 int
 ietf_logical_network_element_logical_network_elements_get(cbl_req *req,
     struct ietf_logical_network_element *data, cbl_yarena *a)
 {
 	const struct ietf_logical_network_element_logical_network_elements *l;
+	ylne	*v;
 	int	error;
 
-	(void)req;
 	if ((error = ylne_elements(a, &l)) != 0)
 		return (error);
-	if (l != NULL && l->logical_network_element.n > 0)
-		data->logical_network_elements = l;
+	if (l == NULL || l->logical_network_element.n == 0)
+		return (0);
+	/* Each root as its helper reads it in the jail; in running none,
+	 * nothing in it being changed here. */
+	v = (ylne *)(uintptr_t)l->logical_network_element.v;
+	for (size_t i = 0; cbl_req_ydatastore(req) != CBL_YDS_RUNNING &&
+	    i < l->logical_network_element.n; i++) {
+		const ylneroot *r;
+
+		if ((error = lne_root(a, v[i].name, &r)) != 0)
+			return (error);
+		if (r != NULL)
+			v[i].root = r;
+	}
+	data->logical_network_elements = l;
 	return (0);
 }
 
@@ -793,7 +827,7 @@ ietf_yang_library_yang_library_get(cbl_req *req, struct ietf_yang_library *data,
 	if ((yl = cbl_yarena_alloc(a, sizeof(*yl))) == NULL ||
 	    (ms = cbl_yarena_alloc(a, sizeof(*ms))) == NULL ||
 	    (sc = cbl_yarena_alloc(a, sizeof(*sc))) == NULL ||
-	    (ds = cbl_yarena_alloc(a, sizeof(*ds))) == NULL ||
+	    (ds = cbl_yarena_alloc(a, 3 * sizeof(*ds))) == NULL ||
 	    (sets = cbl_yarena_alloc(a, sizeof(*sets))) == NULL ||
 	    (mv = cbl_yarena_alloc(a, (ymodel_schema.nmod + 1) *
 	    sizeof(*mv))) == NULL)
@@ -863,19 +897,73 @@ ietf_yang_library_yang_library_get(cbl_req *req, struct ietf_yang_library *data,
 	sc->name = "arcana-agent";
 	sc->module_set.n = 1;
 	sc->module_set.v = sets;
-	ds->name = ident_sid("ietf-datastores", "operational");
-	ds->schema = sc->name;
+	/* NMDA's three (RFC 8342), one schema. */
+	ds[0].name = ident_sid("ietf-datastores", "running");
+	ds[1].name = ident_sid("ietf-datastores", "candidate");
+	ds[2].name = ident_sid("ietf-datastores", "operational");
+	ds[0].schema = ds[1].schema = ds[2].schema = sc->name;
 	yl->module_set.n = 1;
 	yl->module_set.v = ms;
 	yl->schema.n = 1;
 	yl->schema.v = sc;
-	yl->datastore.n = 1;
+	yl->datastore.n = 3;
 	yl->datastore.v = ds;
 	snprintf(id, sizeof(id), "%016jx", (uintmax_t)h);
 	if ((yl->content_id = cbl_yarena_alloc(a, strlen(id) + 1)) == NULL)
 		return (ENOMEM);
 	memcpy((char *)(uintptr_t)yl->content_id, id, strlen(id) + 1);
 	data->yang_library = yl;
+	return (0);
+}
+
+/*
+ * RFC 8528's schema-mounts: the vrf-root of a network instance (RFC
+ * 8529), a shared schema whose routing names the host's interfaces
+ * (its parent-reference); its config: an instance's static routes are
+ * changed by an EDIT.  The root of a logical network element (RFC
+ * 8530), inline: the YANG library in it says its schema.
+ */
+int
+ietf_yang_schema_mount_schema_mounts_get(cbl_req *req,
+    struct ietf_yang_schema_mount *data, cbl_yarena *a)
+{
+	static const char *const parents[] = { "/if:interfaces" };
+	static const struct ietf_yang_schema_mount_schema_mounts_mount_point_shared_schema
+	    shared = { { nitems(parents), parents } };
+	static const struct ietf_yang_schema_mount_schema_mounts_mount_point_inline
+	    inl;
+	static const struct ietf_yang_schema_mount_schema_mounts_mount_point
+	    mp[] = { {
+		.module = "ietf-network-instance",
+		.label = "vrf-root",
+		.schema_ref =
+		    IETF_YANG_SCHEMA_MOUNT_SCHEMA_MOUNTS_MOUNT_POINT_SCHEMA_REF_SHARED_SCHEMA,
+		.shared_schema = &shared,
+	}, {
+		.module = "ietf-logical-network-element",
+		.label = "root",
+		.schema_ref =
+		    IETF_YANG_SCHEMA_MOUNT_SCHEMA_MOUNTS_MOUNT_POINT_SCHEMA_REF_INLINE,
+		.inline_ = &inl,
+	} };
+	struct ietf_yang_schema_mount_schema_mounts_namespace	*ns;
+	struct ietf_yang_schema_mount_schema_mounts		*sm;
+	const struct cbl_ynode					*n;
+
+	(void)req;
+	if (vrf_root() == NULL ||
+	    (n = ynode_named("ietf-interfaces", "interfaces")) == NULL)
+		return (0);
+	if ((sm = cbl_yarena_alloc(a, sizeof(*sm))) == NULL ||
+	    (ns = cbl_yarena_alloc(a, sizeof(*ns))) == NULL)
+		return (ENOMEM);
+	ns->prefix = "if";
+	ns->uri = n->module->ns;
+	sm->namespace.n = 1;
+	sm->namespace.v = ns;
+	sm->mount_point.n = nitems(mp);
+	sm->mount_point.v = mp;
+	data->schema_mounts = sm;
 	return (0);
 }
 
@@ -1220,147 +1308,8 @@ ietf_subscribed_notifications_filters_edit(cbl_req *req,
 	return (EOPNOTSUPP);
 }
 
-struct ysubs {
-	cbl_yarena	*a;
-	ysubscription	*v;
-	size_t		 n, cap;
-};
-
-static const char *
-ystr(cbl_yarena *a, const char *s)
-{
-	char	*p;
-
-	if (s == NULL || (p = cbl_yarena_alloc(a, strlen(s) + 1)) == NULL)
-		return (NULL);
-	memcpy(p, s, strlen(s) + 1);
-	return (p);
-}
-
-/* One of cblink's subscriptions, copied into the arena. */
-static int
-ysub_one(const struct cbl_ysub_info *in, void *arg)
-{
-	struct ietf_subscribed_notifications_subscriptions_subscription_receivers
-	    *rs;
-	struct ietf_subscribed_notifications_subscriptions_subscription_receivers_receiver
-	    *r;
-	struct ietf_subscribed_notifications_subscriptions_subscription_yp_periodic
-	    *per;
-	struct ietf_subscribed_notifications_subscriptions_subscription_yp_on_change
-	    *oc;
-	struct ysubs	*ys = arg;
-	ysubscription	*v, *s;
-
-	if (ys->n == ys->cap) {
-		if ((v = cbl_yarena_alloc(ys->a, (ys->cap + 8) *
-		    sizeof(*v))) == NULL)
-			return (ENOMEM);
-		if (ys->n > 0)
-			memcpy(v, ys->v, ys->n * sizeof(*v));
-		ys->v = v;
-		ys->cap += 8;
-	}
-	s = &ys->v[ys->n];
-	memset(s, 0, sizeof(*s));
-	if ((rs = cbl_yarena_alloc(ys->a, sizeof(*rs))) == NULL ||
-	    (r = cbl_yarena_alloc(ys->a, sizeof(*r))) == NULL)
-		return (ENOMEM);
-	s->id = in->id;
-	if (in->stream != NULL) {
-		s->target = YSUB(TARGET_STREAM);
-		s->stream = ystr(ys->a, in->stream);
-		if (in->xpath != NULL) {
-			s->stream_filter =
-			    YSUB(STREAM_FILTER_WITHIN_SUBSCRIPTION);
-			s->filter_spec = YSUB(FILTER_SPEC_STREAM_XPATH_FILTER);
-			s->stream_xpath_filter = ystr(ys->a, in->xpath);
-		}
-	} else {
-		s->target = YSUB(TARGET_DATASTORE);
-		s->has_yp_datastore = true;
-		s->yp_datastore = in->datastore;
-		if (in->xpath != NULL) {
-			s->yp_selection_filter =
-			    YSUB(YP_SELECTION_FILTER_WITHIN_SUBSCRIPTION);
-			s->yp_filter_spec =
-			    YSUB(YP_FILTER_SPEC_DATASTORE_XPATH_FILTER);
-			s->yp_datastore_xpath_filter = ystr(ys->a, in->xpath);
-		}
-		if (in->on_change) {
-			if ((oc = cbl_yarena_alloc(ys->a, sizeof(*oc))) ==
-			    NULL)
-				return (ENOMEM);
-			memset(oc, 0, sizeof(*oc));
-			oc->has_dampening_period = true;
-			oc->dampening_period = in->dampening;
-			s->yp_update_trigger = YSUB(YP_UPDATE_TRIGGER_ON_CHANGE);
-			s->yp_on_change = oc;
-		} else {
-			if ((per = cbl_yarena_alloc(ys->a, sizeof(*per))) ==
-			    NULL)
-				return (ENOMEM);
-			per->has_period = true;
-			per->period = in->period;
-			per->anchor_time = ystr(ys->a, in->anchor_time);
-			s->yp_update_trigger = YSUB(YP_UPDATE_TRIGGER_PERIODIC);
-			s->yp_periodic = per;
-		}
-	}
-	s->stop_time = ystr(ys->a, in->stop_time);
-	r->name = in->receiver != NULL ? ystr(ys->a, in->receiver) :
-	    "the subscriber";
-	r->has_sent_event_records = true;
-	r->sent_event_records = in->sent;
-	r->has_excluded_event_records = true;
-	r->excluded_event_records = in->excluded;
-	r->has_state = true;
-	r->state = in->suspended ? YSUB(RECEIVERS_RECEIVER_STATE_SUSPENDED) :
-	    YSUB(RECEIVERS_RECEIVER_STATE_ACTIVE);
-	rs->receiver.n = 1;
-	rs->receiver.v = r;
-	s->receivers = rs;
-	ys->n++;
-	return (0);
-}
-
-int
-ietf_subscribed_notifications_subscriptions_get(cbl_req *req,
-    struct ietf_subscribed_notifications *data, cbl_yarena *a)
-{
-	struct ietf_subscribed_notifications_subscriptions	*ss;
-	struct ysubs						 ys;
-	int							 error;
-
-	(void)req;
-	memset(&ys, 0, sizeof(ys));
-	ys.a = a;
-	if (yctx != NULL && (error = cbl_ysub_each(yctx, ysub_one, &ys)) != 0)
-		return (error);
-	if (ys.n == 0)
-		return (0);
-	if ((ss = cbl_yarena_alloc(a, sizeof(*ss))) == NULL)
-		return (ENOMEM);
-	ss->subscription.n = ys.n;
-	ss->subscription.v = ys.v;
-	data->subscriptions = ss;
-	return (0);
-}
-
-/* Configured subscriptions are not made: dynamic ones alone. */
-int
-ietf_subscribed_notifications_subscriptions_edit(cbl_req *req,
-    const struct ietf_subscribed_notifications *before,
-    const struct ietf_subscribed_notifications *after)
-{
-
-	(void)before;
-	(void)after;
-	(void)cbl_req_set_yerr(req, "configured subscriptions are not "
-	    "made: a subscription is a SUBSCRIBE stream", 0);
-	return (EOPNOTSUPP);
-}
-
+/* The subscriptions container, its get, its edit and its receivers'
+ * reset: invidia/ynotif.c, where the configured ones are kept. */
 int
 ietf_subscribed_notifications_establish_subscription_rpc(cbl_req *req,
     const struct ietf_subscribed_notifications_establish_subscription_input
@@ -1457,6 +1406,22 @@ yang_event(const char *json)
 	cbl_yarena_free(a);
 }
 
+/* RFC 8530's bind-lne-name-failed: an interface bound to a logical
+ * network element is not there, after the commit that bound it. */
+void
+yang_lne_failed(const char *ifname, const char *lne, const char *why)
+{
+	struct ietf_logical_network_element_bind_lne_name_failed	f;
+
+	if (yctx == NULL)
+		return;
+	f.name = ifname;
+	f.bind_lne_name = lne;
+	f.error_info = why;
+	(void)ietf_logical_network_element_bind_lne_name_failed_notify(yctx,
+	    &f);
+}
+
 /*
  * What the agent tells the changes of, so that an on-change subscription
  * of them is read when told and not every period: the events, each
@@ -1464,29 +1429,81 @@ yang_event(const char *json)
  * purged or compressed (faults.c), a fault older than a day going with
  * the next of those; the jobs, each queued, begun, confirmed, finished
  * or forgotten, each step of one, and what holds the changes (jobs.c,
- * trace.c, handlers.c).  The rest changes outside the agent too, or
- * where the kernel does not say: read every period.
+ * trace.c, handlers.c); the interfaces, the routing, the instances and
+ * the jails' networks by the events that say they changed
+ * (yang_event_changed()), by a commit (cblink tells those itself), and
+ * a minute on for what the kernel announces nowhere (hostwatch.c).
+ * The rest is read every period.
  */
+static const char *const told_tops[YANG_COUNT][2] = {
+	[YANG_EVENTS] = { "arcana-events", "events" },
+	[YANG_ALARMS] = { "ietf-alarms", "alarms" },
+	[YANG_JOBS] = { "arcana-jobs", "jobs" },
+	[YANG_INTERFACES] = { "ietf-interfaces", "interfaces" },
+	[YANG_ROUTING] = { "ietf-routing", "routing" },
+	[YANG_INSTANCES] = { "ietf-network-instance", "network-instances" },
+	[YANG_LNES] = { "ietf-logical-network-element",
+	    "logical-network-elements" },
+};
+
 void
 yang_changed(int what)
 {
-	static const char *const tops[][2] = {
-		[YANG_EVENTS] = { "arcana-events", "events" },
-		[YANG_ALARMS] = { "ietf-alarms", "alarms" },
-		[YANG_JOBS] = { "arcana-jobs", "jobs" },
-	};
 	const struct cbl_ynode	*n;
 
-	if (yctx != NULL && what >= 0 && what < (int)nitems(tops) &&
-	    (n = ynode_named(tops[what][0], tops[what][1])) != NULL)
+	if (yctx != NULL && what >= 0 && what < YANG_COUNT &&
+	    (n = ynode_named(told_tops[what][0], told_tops[what][1])) != NULL)
 		cbl_ysub_changed(yctx, n);
+}
+
+/*
+ * What an event says changed: netlink(4)'s links, addresses and
+ * neighbours the interfaces, its routes the routing and the instances'
+ * (each FIB's), of a jail's network its logical network element; a
+ * jail's state those and the interfaces (a vnet's move); a job, or a
+ * file rc(8) reads changed, any of them.
+ */
+void
+yang_event_changed(const char *kind, bool jailed)
+{
+	static const char *const ifs[] = { "link", "link-del", "address-add",
+	    "address-del", "neigh", "neigh-del" };
+	static const char *const rts[] = { "route-add", "route-del",
+	    "routes" };
+	bool	any;
+
+	any = strcmp(kind, "job") == 0 || strcmp(kind, "conf") == 0;
+	for (size_t i = 0; !any && i < nitems(ifs); i++)
+		if (strcmp(kind, ifs[i]) == 0) {
+			yang_changed(jailed ? YANG_LNES : YANG_INTERFACES);
+			return;
+		}
+	for (size_t i = 0; !any && i < nitems(rts); i++)
+		if (strcmp(kind, rts[i]) == 0) {
+			if (jailed)
+				yang_changed(YANG_LNES);
+			else {
+				yang_changed(YANG_ROUTING);
+				yang_changed(YANG_INSTANCES);
+			}
+			return;
+		}
+	if (any || strcmp(kind, "jail-state") == 0) {
+		yang_changed(YANG_INTERFACES);
+		yang_changed(YANG_LNES);
+	}
+	if (any) {
+		yang_changed(YANG_ROUTING);
+		yang_changed(YANG_INSTANCES);
+	}
 }
 
 /* The models served, family 1 beside the agent's own. */
 int
 yang_serve(cbl_ctx *ctx)
 {
-	const struct cbl_ynode	*told[3];
+	const struct cbl_ynode	*told[YANG_COUNT];
+	size_t			 k;
 	int			 error;
 
 	/* Each request on a thread of its own: a read of the storage or of
@@ -1496,9 +1513,12 @@ yang_serve(cbl_ctx *ctx)
 		return (error);
 	yctx = ctx;
 	(void)cbl_ysub_set_replay(ctx, yreplay, NULL);
-	if ((told[0] = ynode_named("arcana-events", "events")) != NULL &&
-	    (told[1] = ynode_named("ietf-alarms", "alarms")) != NULL &&
-	    (told[2] = ynode_named("arcana-jobs", "jobs")) != NULL)
+	for (k = 0; k < YANG_COUNT && (told[k] = ynode_named(told_tops[k][0],
+	    told_tops[k][1])) != NULL; k++)
+		;
+	if (k == YANG_COUNT)
 		(void)cbl_ysub_told(ctx, told, nitems(told));
+	if ((error = ysubs_init(ctx)) != 0)
+		return (error);
 	return (cbl_yserver_threads(ctx, true));
 }

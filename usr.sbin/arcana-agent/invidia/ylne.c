@@ -12,7 +12,7 @@
  * LNE.  One sharing the host's stack is not.  Each is listed as
  * jail_get(2) gives it, as jls(8) does, the dying ones left out; named
  * as the jail is; managed, the host being able to attach to it.  Its
- * root mount is 2.7.3's.
+ * root, lneroot.c's helper in the jail answering, is yserve.c's.
  */
 
 #include <sys/param.h>

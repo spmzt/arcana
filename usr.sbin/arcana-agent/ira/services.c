@@ -276,6 +276,40 @@ svc_rcvar(struct work *w, const char *name, const char **errp)
 	return (NULL);
 }
 
+/* The scripts there are, with their names and paths alone: running's. */
+void
+service_scripts(struct work *w, struct arc_services_rsp *rsp)
+{
+	struct arc_service	*v;
+	struct script		*sc;
+	size_t			 n, i;
+
+	rsp->has_ok = true;
+	rsp->ok = true;
+	scan_scripts(w, &sc, &n);
+	v = wcalloc(w, n + 1, sizeof(*v));
+	for (i = 0; i < n; i++) {
+		v[i].name = wtext(w, sc[i].name);
+		v[i].path = wtext(w, sc[i].path);
+	}
+	rsp->services.v = v;
+	rsp->services.n = n;
+}
+
+const char *
+service_rcvar(struct work *w, const char *name, const char **errp)
+{
+
+	return (svc_rcvar(w, name, errp));
+}
+
+bool
+valid_var_name(const char *s)
+{
+
+	return (valid_var(s));
+}
+
 int
 do_services(struct work *w, struct arc_services_rsp *rsp)
 {

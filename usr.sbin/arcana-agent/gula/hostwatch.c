@@ -385,6 +385,7 @@ devd_read(void)
 static void
 tick(int kq)
 {
+	static unsigned	ticks;
 
 	for (size_t i = 0; i < nitems(files); i++)
 		if (files[i].changed) {
@@ -406,6 +407,13 @@ tick(int kq)
 	nseen = 0;
 	if (devd == -1 && time(NULL) >= devd_next)
 		devd_open(kq);
+	/* What the kernel announces nowhere (a description, a FIB, a
+	 * group, media; a jail's), read again a minute on. */
+	if (++ticks % (60000 / TICK_MS) == 0) {
+		yang_changed(YANG_INTERFACES);
+		yang_changed(YANG_INSTANCES);
+		yang_changed(YANG_LNES);
+	}
 }
 
 static void *

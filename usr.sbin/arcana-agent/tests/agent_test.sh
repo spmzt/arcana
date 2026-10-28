@@ -146,10 +146,11 @@ if [ "\$1" = -e ]; then
 	done
 	exit 0
 fi
-# A third word: speederv2's, a relay's profile; dhclient's, its
-# interface, the same service.
+# A third word: speederv2's, a relay's profile, run as rc.subr's
+# speederv2_<profile> (its verbs noted); dhclient's, its interface,
+# the same service.
 name=\$1; verb=\$2; r=\$name
-[ "\$name" = speederv2 ] && r=\$name\${3:+-\$3}
+[ "\$name" = speederv2 ] && r=\$name\${3:+_\$3} && echo "\$verb \$r" >> speederv2.verbs
 case "\$verb" in
 rcvar)		echo "# \$name"; echo "\${name}_enable=\"NO\""; echo '#   (default: "")' ;;
 enabled)	grep -q "^\${name}_enable=\"YES\"" "\$conf" ;;
@@ -163,7 +164,9 @@ restart|onerestart)	[ -f slow ] && sleep 2
 		# look.
 		i=0; while [ -f hold ] && [ \$i -lt 3000 ]; do sleep 0.1; i=\$((i + 1)); done
 		touch "running.\$r"; echo "Restarting \$r." ;;
-reload|onereload)	echo "Reloading \$name." ;;
+reload|onereload)	[ -f "noreload.\$r" ] && { echo "\$r: not reloaded" >&2; exit 1; }
+		echo reloaded >> "reloads.\$r"
+		echo "Reloading \$name." ;;
 describe)	echo "The \$name daemon." ;;
 extracommands)	echo "reload configtest" ;;
 *)		echo "fake-service: \$*" >&2; exit 2 ;;
@@ -1281,30 +1284,18 @@ EOF
 atf_test_case yang_system
 yang_system_head()
 {
-	atf_set "descr" "the sysctl and kernel operations' replies as" \
-	    "arcana-sysctl and arcana-kernel have them," \
-	    "through YANG-CBOR and back; their configuration" \
-	    "written in place: sysctl.conf's settings, rc.conf's kld_list"
+	atf_set "descr" "the kernel's modules and memory as arcana-kernel" \
+	    "has them, through YANG-CBOR and back; the configuration of" \
+	    "arcana-sysctl and arcana-kernel written in place:" \
+	    "sysctl.conf's settings, rc.conf's kld_list"
 }
 yang_system_body()
 {
 	local y="$(atf_get_srcdir)/ysystem"
 
-	cat > sysctl.json <<'EOF'
-{"values":[{"name":"net.inet.ip.forwarding","value":"1","type":"integer","rw":true,"descr":"Enable IP forwarding between interfaces"},{"name":"kern.ostype","value":"FreeBSD","type":"string","rw":false,"descr":"Operating system type"}],"kept":[{"name":"net.inet.ip.forwarding","value":"1"},{"name":"kern.randompid","value":"1"}]}
-EOF
 	cat > kernel.json <<'EOF'
 {"files":[{"id":1,"name":"kernel","path":"/boot/kernel/kernel","refs":40,"size":34855640,"address":"0xffffffff80200000","modules":["if_lo","netlink"]},{"id":5,"name":"if_wg.ko","path":"/boot/kernel/if_wg.ko","refs":1,"size":86016,"address":"0xffffffff82a10000","modules":["wg"]}],"available":["aac","accf_data"],"kept":["if_wg","pf"],"memory":{"files":80888740,"kmem_size":25140678656,"kmem_map_size":7734583296,"kmem_map_free":17406095360,"malloc_total":632946880,"malloc":[{"name":"solaris","bytes":493063792,"count":1289305,"requests":550597237},{"name":"solaris","bytes":22530688,"count":446466,"requests":453687}],"zones":[{"name":"mbuf_cluster","bytes":2048000,"count":1000,"free":24,"size":2048,"requests":99999}]}}
 EOF
-	cat > want <<'EOF'
-total 900
-value net.inet.ip.forwarding=1 type=integer writable=yes description=Enable IP forwarding between interfaces
-value kern.ostype=FreeBSD type=string writable=no description=Operating system type
-kept net.inet.ip.forwarding=1
-kept kern.randompid=1
-yang-cbor 194 bytes, the same back
-EOF
-	atf_check -o file:want "$y" sysctl sysctl.json 900
 	cat > want <<'EOF'
 file 1 kernel path=/boot/kernel/kernel refs=40 size=34855640 address=0xffffffff80200000 modules=if_lo,netlink
 file 5 if_wg.ko path=/boot/kernel/if_wg.ko refs=1 size=86016 address=0xffffffff82a10000 modules=wg
@@ -1589,7 +1580,8 @@ yang_history_head()
 {
 	atf_set "descr" "the history operation's reply as arcana-history has" \
 	    "it: sampling and limits as configuration, the samples taken" \
-	    "apart by the names of the interfaces, disks and jails; through" \
+	    "apart by the names of the interfaces, disks, jails and FEC" \
+	    "relays; through" \
 	    "YANG-CBOR and back"
 }
 yang_history_body()
@@ -1597,7 +1589,7 @@ yang_history_body()
 	local y="$(atf_get_srcdir)/yhist"
 
 	cat > hist.json <<'EOT'
-{"limits":{"cpu":90,"mem":80,"swap":50},"rules":[{"kind":"net","name":"em0","limit":100000000,"over":false},{"kind":"jail-cpu","name":"web","limit":50,"over":true}],"racct":true,"step":5,"keep":720,"bytes":94560,"ncpu":12,"mem_total":25769803776,"swap_total":4294967296,"fields":["t","cpu","load","mem","swap","rx","tx","read","write"],"nets":["em0","em1"],"disks":["ada0"],"jails":["web"],"samples":[[1791995110,12.5,0.42,8589934592,0,120000,34000,4096,8192,100000,30000,20000,4000,4096,8192,3.5,268435456],[1791995115,80.0,1.10,8600000000,1024,130000,35000,0,0,110000,31000,20000,4000,0,0,55.0,268435456]]}
+{"limits":{"cpu":90,"mem":80,"swap":50},"rules":[{"kind":"net","name":"em0","limit":100000000,"over":false},{"kind":"jail-cpu","name":"web","limit":50,"over":true}],"racct":true,"step":5,"keep":720,"bytes":94560,"ncpu":12,"mem_total":25769803776,"swap_total":4294967296,"fields":["t","cpu","load","mem","swap","rx","tx","read","write"],"nets":["em0","em1"],"disks":["ada0"],"jails":["web"],"relays":["speederv2_c_wg0"],"samples":[[1791995110,12.5,0.42,8589934592,0,120000,34000,4096,8192,100000,30000,20000,4000,4096,8192,3.5,268435456,10000,7000],[1791995115,80.0,1.10,8600000000,1024,130000,35000,0,0,110000,31000,20000,4000,0,0,55.0,268435456,0,0]]}
 EOT
 	cat > want <<'EOT'
 sampling step=5 keep=720 limits cpu=90 mem=80 swap=50
@@ -1608,9 +1600,10 @@ interface em0
 interface em1
 disk ada0
 jail web
-sample 2026-10-14T16:25:10Z cpu=125 load=42 memory=8589934592 swap=0 rx=120000 tx=34000 read=4096 written=8192 em0=100000/30000 em1=20000/4000 ada0=4096/8192 web=35/268435456
-sample 2026-10-14T16:25:15Z cpu=800 load=110 memory=8600000000 swap=1024 rx=130000 tx=35000 read=0 written=0 em0=110000/31000 em1=20000/4000 ada0=0/0 web=550/268435456
-yang-cbor 376 bytes, the same back
+relay speederv2_c_wg0
+sample 2026-10-14T16:25:10Z cpu=125 load=42 memory=8589934592 swap=0 rx=120000 tx=34000 read=4096 written=8192 em0=100000/30000 em1=20000/4000 ada0=4096/8192 web=35/268435456 speederv2_c_wg0=10000+7000
+sample 2026-10-14T16:25:15Z cpu=800 load=110 memory=8600000000 swap=1024 rx=130000 tx=35000 read=0 written=0 em0=110000/31000 em1=20000/4000 ada0=0/0 web=550/268435456 speederv2_c_wg0=0+0
+yang-cbor 449 bytes, the same back
 EOT
 	atf_check -o file:want "$y" hist.json
 }
@@ -2206,7 +2199,8 @@ yang_log_head()
 	atf_set "descr" "the log operation's replies as arcana-log has" \
 	    "them, a line's facility and severity" \
 	    "ietf-syslog's; syslog.conf and newsyslog.conf as ietf-syslog," \
-	    "what it cannot hold said; through YANG-CBOR and back"
+	    "what it cannot hold said; through YANG-CBOR and back," \
+	    "committed as they read, nothing changed"
 }
 yang_log_body()
 {
@@ -2304,6 +2298,14 @@ unread newsyslog.conf:7: turned over at a time of day (@, $): ietf-syslog's roll
 yang-cbor 683 bytes, the same back
 EOF
 	atf_check -o file:want "$y" conf syslog.conf newsyslog.conf
+	# The same files committed as they read: nothing to change.
+	mkdir -p root/etc
+	cp syslog.conf newsyslog.conf root/etc/
+	cat > want <<'EOF'
+yang-cbor 683 bytes, the same back
+changed no take 0 create 0 included no/no
+EOF
+	atf_check -o file:want "$y" plan "$(pwd)/root"
 }
 
 atf_test_case yang_processes
@@ -2679,10 +2681,12 @@ yang_get_body()
 	    -o match:'"ietf-ipv4-unicast-routing:destination-prefix":"127.0.0.1/32"' \
 	    cat rt.json
 	# RFC 8525's YANG library: the modules it implements with their
-	# revisions and features, those imported only, the operational
-	# datastore.
+	# revisions and features, those imported only, NMDA's three
+	# datastores.
 	atf_check -o match:'"name":"ietf-interfaces","namespace":"urn:ietf:params:xml:ns:yang:ietf-interfaces","revision":"2018-02-20"' \
 	    -o match:'"import-only-module":\[\{"name":"ietf-ospf"' \
+	    -o match:'"name":"ietf-datastores:running"' \
+	    -o match:'"name":"ietf-datastores:candidate"' \
 	    -o match:'"name":"ietf-datastores:operational"' \
 	    -o match:'"content-id":"[0-9a-f]{16}"' \
 	    "$JGC" -c "$SOCK" get yang-library
@@ -4707,8 +4711,9 @@ EOS
 	    "$JGC" -c "$SOCK" -p -j gateway sysctl net.fibs=4
 	atf_check -o match:"^jexec 4 [^ ]*sysctl net.fibs=4$" cat jexec.log
 	atf_check -o inline:'net.fibs=4\n' cat "$R/etc/sysctl.conf"
-	# Read as its own sysctl reads them; only its network's.
-	atf_check -o match:'^\{"values":\[\{"name":"net.fibs","value":"4"\}\],"kept":\[\]\}$' \
+	# Read as its own sysctl reads them (arcana-sysctl's read action);
+	# only its network's.
+	atf_check -o match:'^\{"value":\[\{"name":"net.fibs","value":"4"\}\]\}$' \
 	    "$JGC" -c "$SOCK" -j gateway sysctl net.fibs
 	atf_check -o match:"^jexec 4 [^ ]*sysctl -e -- net.fibs$" cat jexec.log
 	atf_check -s exit:1 -e match:"under its network's, net." -o ignore \
@@ -6215,6 +6220,90 @@ traceroute_cleanup()
 	stop_daemon
 }
 
+# The SD-WAN services' daemons as stand-ins: bird(8) and birdc(8),
+# setfib(1) starting each, dnsmasq(8), local-unbound and its checker,
+# and in the tools directory (-2) squid(8), its certificate maker and
+# c-icap; each says what it was run with, and refuses a file that has
+# BROKEN in it.
+sdwan_daemons()
+{
+	cat > fake-bird <<EOS
+#!/bin/sh
+echo "bird \$*" >> $(pwd)/bird.log
+grep -q BROKEN "\$3" && { echo "bird: \$3:1:1 syntax error" >&2; exit 1; }
+exit 0
+EOS
+	cat > fake-birdc <<EOS
+#!/bin/sh
+echo "birdc \$*" >> $(pwd)/birdc.log
+sock="\$2"; shift 2
+[ -e "\$sock" ] || { echo "birdc: Unable to connect to server control socket (\$sock): No such file or directory" >&2; exit 1; }
+case "\$*" in
+'show status') printf 'BIRD 3.3.2 ready.\nBIRD 3.3.2\nDaemon is up and running\n' ;;
+'show protocols') printf 'BIRD 3.3.2 ready.\nName       Proto      Table      State  Since         Info\ndevice1    Device     ---        up     21:00:00.000  \nuni_hq_0   BGP        ---        start  21:00:00.000  Active        Socket: Connection refused\n' ;;
+'show bfd sessions') st=Up; [ -e $(pwd)/bfd.down ] && st=Down; printf 'BIRD 3.3.2 ready.\nbfd1:\nIP address                Interface  State      Since         Interval  Timeout\n100.64.0.1                gre100     %s         21:00:00.000    0.200    0.600\n' "\$st" ;;
+configure) printf 'BIRD 3.3.2 ready.\nReading configuration from %s\nReconfigured\n' "\$sock" ;;
+down) rm -f "\$sock" ;;
+esac
+exit 0
+EOS
+	cat > fake-setfib <<EOS
+#!/bin/sh
+echo "setfib \$*" >> $(pwd)/setfib.log
+shift 2
+case "\$1" in
+# dnsmasq -C conf -x pid: started, says the pid file, this agent's pid.
+*dnsmasq) "\$1" --hold "\$5" & ;;
+# local-unbound -c conf: started, says the pid file named in the conf.
+*local-unbound) p=\$(sed -n 's/.*pidfile: "\(.*\)"/\1/p' "\$3"); "\$1" --hold "\$p" & ;;
+# squid -f conf: started, says the pid file named in the conf.
+*squid) echo "squid \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^pid_filename //p' "\$3"); "\$1" --hold "\$p" & ;;
+# c-icap -f conf: started, says the pid file named in the conf.
+*c-icap) echo "c-icap \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^PidFile //p' "\$3"); "\$1" --hold "\$p" & ;;
+# bird -c conf -s sock -P pid: started, says the socket.
+*) shift 3; touch "\$2" ;;
+esac
+exit 0
+EOS
+	cat > fake-dnsmasq <<EOS
+#!/bin/sh
+[ "\$1" = --hold ] && { echo \$\$ > "\$2"; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
+echo "dnsmasq \$*" >> $(pwd)/dnsmasq.log
+[ "\$1" = --test ] && { grep -q BROKEN "\$3" && { echo "dnsmasq: bad option at line 1 of \$3" >&2; exit 1; }; exit 0; }
+exit 0
+EOS
+	cat > fake-local-unbound <<EOS
+#!/bin/sh
+[ "\$1" = --hold ] && { echo \$\$ > "\$2"; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
+echo "unbound \$*" >> $(pwd)/unbound.log
+exit 0
+EOS
+	cat > fake-local-unbound-checkconf <<EOS
+#!/bin/sh
+echo "checkconf \$*" >> $(pwd)/unbound.log
+grep -q BROKEN "\$1" && { echo "unbound-checkconf: error: syntax error" >&2; exit 1; }
+exit 0
+EOS
+	# squid(8) and its certificate maker, in the tools directory (-2).
+	mkdir -p tools
+	cat > tools/squid <<EOS
+#!/bin/sh
+[ "\$1" = --hold ] && { echo \$\$ > "\$2"; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
+echo "squid \$*" >> $(pwd)/squid.log
+[ "\$2" = parse ] && { grep -q BROKEN "\$4" && { echo "FATAL: Bungled \$4" >&2; exit 1; }; exit 0; }
+exit 0
+EOS
+	cat > tools/security_file_certgen <<EOS
+#!/bin/sh
+echo "certgen \$*" >> $(pwd)/squid.log
+mkdir -p "\$3"
+EOS
+	printf '#!/bin/sh\n[ "$1" = --hold ] && { echo $$ > "$2"; i=0; while [ $i -lt 300 ]; do sleep 1; i=$((i+1)); done; exit 0; }\nexit 0\n' > tools/c-icap
+	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq \
+	    fake-local-unbound fake-local-unbound-checkconf tools/squid \
+	    tools/security_file_certgen tools/c-icap
+}
+
 atf_test_case sdwan cleanup
 sdwan_head()
 {
@@ -6235,7 +6324,8 @@ EOS
 	chmod +x fake-ipfw
 	printf '#!/bin/sh\necho "kldload $*" >> %s/kldload.log\nexit 0\n' "$(pwd)" > fake-kldload
 	chmod +x fake-kldload
-	DAEMON_ARGS="-h $(pwd)/fake-ipfw -3 $(pwd)/fake-setfib -2 $(pwd)/tools --suricata-rules $(pwd)/rules"
+	mkdir -p root/var/db/clamav
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -3 $(pwd)/fake-setfib -2 $(pwd)/tools --suricata-rules $(pwd)/rules --root $(pwd)/root"
 	start_daemon
 	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
 	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],"objects":0,"counters":\[\]\}' \
@@ -6364,78 +6454,7 @@ EOS
 	# BIRD instances: a bad list refused; one started in its table by
 	# setfib once its file parses, told to read it again when running,
 	# stopped when not named; listed with its protocols.
-	cat > fake-bird <<EOS
-#!/bin/sh
-echo "bird \$*" >> $(pwd)/bird.log
-grep -q BROKEN "\$3" && { echo "bird: \$3:1:1 syntax error" >&2; exit 1; }
-exit 0
-EOS
-	cat > fake-birdc <<EOS
-#!/bin/sh
-echo "birdc \$*" >> $(pwd)/birdc.log
-sock="\$2"; shift 2
-[ -e "\$sock" ] || { echo "birdc: Unable to connect to server control socket (\$sock): No such file or directory" >&2; exit 1; }
-case "\$*" in
-'show status') printf 'BIRD 3.3.2 ready.\nBIRD 3.3.2\nDaemon is up and running\n' ;;
-'show protocols') printf 'BIRD 3.3.2 ready.\nName       Proto      Table      State  Since         Info\ndevice1    Device     ---        up     21:00:00.000  \nuni_hq_0   BGP        ---        start  21:00:00.000  Active        Socket: Connection refused\n' ;;
-'show bfd sessions') st=Up; [ -e $(pwd)/bfd.down ] && st=Down; printf 'BIRD 3.3.2 ready.\nbfd1:\nIP address                Interface  State      Since         Interval  Timeout\n100.64.0.1                gre100     %s         21:00:00.000    0.200    0.600\n' "\$st" ;;
-configure) printf 'BIRD 3.3.2 ready.\nReading configuration from %s\nReconfigured\n' "\$sock" ;;
-down) rm -f "\$sock" ;;
-esac
-exit 0
-EOS
-	cat > fake-setfib <<EOS
-#!/bin/sh
-echo "setfib \$*" >> $(pwd)/setfib.log
-shift 2
-case "\$1" in
-# dnsmasq -C conf -x pid: started, says the pid file, this agent's pid.
-*dnsmasq) "\$1" --hold "\$5" & ;;
-# local-unbound -c conf: started, says the pid file named in the conf.
-*local-unbound) p=\$(sed -n 's/.*pidfile: "\(.*\)"/\1/p' "\$3"); "\$1" --hold "\$p" & ;;
-# squid -f conf: started, says the pid file named in the conf.
-*squid) echo "squid \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^pid_filename //p' "\$3"); "\$1" --hold "\$p" & ;;
-# c-icap -f conf: started, says the pid file named in the conf.
-*c-icap) echo "c-icap \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^PidFile //p' "\$3"); "\$1" --hold "\$p" & ;;
-# bird -c conf -s sock -P pid: started, says the socket.
-*) shift 3; touch "\$2" ;;
-esac
-exit 0
-EOS
-	cat > fake-dnsmasq <<EOS
-#!/bin/sh
-[ "\$1" = --hold ] && { echo \$\$ > "\$2"; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
-echo "dnsmasq \$*" >> $(pwd)/dnsmasq.log
-[ "\$1" = --test ] && { grep -q BROKEN "\$3" && { echo "dnsmasq: bad option at line 1 of \$3" >&2; exit 1; }; exit 0; }
-exit 0
-EOS
-	cat > fake-local-unbound <<EOS
-#!/bin/sh
-[ "\$1" = --hold ] && { echo \$\$ > "\$2"; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
-echo "unbound \$*" >> $(pwd)/unbound.log
-exit 0
-EOS
-	cat > fake-local-unbound-checkconf <<EOS
-#!/bin/sh
-echo "checkconf \$*" >> $(pwd)/unbound.log
-grep -q BROKEN "\$1" && { echo "unbound-checkconf: error: syntax error" >&2; exit 1; }
-exit 0
-EOS
-	# squid(8) and its certificate maker, in the tools directory (-2).
-	mkdir -p tools
-	cat > tools/squid <<EOS
-#!/bin/sh
-[ "\$1" = --hold ] && { echo \$\$ > "\$2"; i=0; while [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; exit 0; }
-echo "squid \$*" >> $(pwd)/squid.log
-[ "\$2" = parse ] && { grep -q BROKEN "\$4" && { echo "FATAL: Bungled \$4" >&2; exit 1; }; exit 0; }
-exit 0
-EOS
-	cat > tools/security_file_certgen <<EOS
-#!/bin/sh
-echo "certgen \$*" >> $(pwd)/squid.log
-mkdir -p "\$3"
-EOS
-	printf '#!/bin/sh\n[ "$1" = --hold ] && { echo $$ > "$2"; i=0; while [ $i -lt 300 ]; do sleep 1; i=$((i+1)); done; exit 0; }\nexit 0\n' > tools/c-icap
+	sdwan_daemons
 	# suricata: -T checks, and refuses BROKEN, and a ruleset whose rule
 	# negates any as Suricata does; run, it writes an alert and a flow
 	# to eve.json in its log directory, says its pid, and notes a USR2.
@@ -6542,13 +6561,19 @@ EOS
 	chmod +x tools/squid tools/security_file_certgen tools/c-icap tools/suricata tools/suricata-update
 	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
-	    '{"instances":[{"name":"../x","fib":1,"conf":"router id 1.1.1.1;"}]}'
+	    '{"instances":[{"name":"../x","fib":1,"spec":{"router_id":"1.1.1.1"}}]}'
 	atf_check -s exit:1 -e match:'named twice' -o ignore "$JGC" -c "$SOCK" sdwan bird \
-	    '{"instances":[{"name":"sw1","fib":1,"conf":"a"},{"name":"sw1","fib":2,"conf":"b"}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"spec":{"router_id":"1.1.1.1"}},{"name":"sw1","fib":2,"spec":{"router_id":"1.1.1.1"}}]}'
+	# What the form is not: refused before any file is written; what
+	# bird -p refuses is not run.
+	atf_check -s exit:1 -e match:'sw1: the form.s router_id' -o ignore "$JGC" -c "$SOCK" sdwan bird \
+	    '{"instances":[{"name":"sw1","fib":1,"spec":{"router_id":"x"}}]}'
+	atf_check -s exit:1 -e match:'sw1: the form.s service: a word' -o ignore "$JGC" -c "$SOCK" sdwan bird \
+	    '{"instances":[{"name":"sw1","fib":1,"spec":{"service":"a\";\nprotocol x","router_id":"1.1.1.1"}}]}'
 	atf_check -s exit:1 -e match:'does not take it' -o ignore "$JGC" -c "$SOCK" sdwan bird \
-	    '{"instances":[{"name":"sw1","fib":1,"conf":"BROKEN"}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"spec":{"service":"BROKEN","router_id":"1.1.1.1"}}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
-	    '{"instances":[{"name":"sw1","fib":1,"conf":"router id 100.64.0.0;\nprotocol device {}\n"}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"host":"edge-a","spec":{"service":"acme","fib":1,"table":1,"router_id":"100.64.0.0"}}]}'
 	atf_check -o match:'^setfib -F 1 .*fake-bird -c .*sdwan-bird-sw1.conf -s .*sdwan-bird-sw1.ctl -P .*sdwan-bird-sw1.pid$' cat setfib.log
 	atf_check -o match:'^router id 100.64.0.0;$' cat "$(dirname "$f")/sdwan-bird-sw1.conf"
 	atf_check -o match:'"bird":\[\{"name":"sw1","fib":1,"running":true,"protocols":\[\{"name":"device1","proto":"Device","state":"up"\},\{"name":"uni_hq_0","proto":"BGP","state":"start","info":"Active        Socket: Connection refused"\}\]' \
@@ -6600,7 +6625,7 @@ EOS
 	atf_check -s exit:1 -e match:'a route is a fib, a destination' -o ignore "$JGC" -c "$SOCK" sdwan steer \
 	    '{"entries":[],"routes":[{"fib":"x"}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
-	    '{"instances":[{"name":"sw1","fib":1,"conf":"router id 100.64.0.0;\nprotocol device {}\nprotocol static {}\n"}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"host":"edge-a","spec":{"service":"acme","fib":1,"table":1,"router_id":"100.64.0.0","direct":["lo1"]}}]}'
 	atf_check -o match:'configure$' cat birdc.log
 	atf_check -o inline:'1\n' sh -c "grep -c '^setfib' setfib.log"
 	# An edge that is a vnet jail: its instance run in the jail by jexec,
@@ -6620,9 +6645,9 @@ exec "\$@"
 EOS
 	chmod +x fake-jexec
 	atf_check -s exit:1 -e match:'not running' -o ignore "$JGC" -c "$SOCK" sdwan bird \
-	    '{"jail":"nope","instances":[{"name":"sw1-nope","fib":1,"conf":"router id 100.64.0.2;\n"}]}'
+	    '{"jail":"nope","instances":[{"name":"sw1-nope","fib":1,"spec":{"service":"acme","router_id":"100.64.0.2"}}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
-	    '{"jail":"gw","instances":[{"name":"sw1-gw","fib":1,"conf":"router id 100.64.0.2;\nprotocol device {}\n"}]}'
+	    '{"jail":"gw","instances":[{"name":"sw1-gw","fib":1,"host":"edge-a/gw","spec":{"service":"acme","fib":1,"table":1,"router_id":"100.64.0.2"}}]}'
 	atf_check -o match:'^jexec 7 .*fake-bird -p -c /var/run/arcana-sdwan-bird-sw1-gw.conf$' \
 	    -o match:'^jexec 7 .*fake-setfib -F 1 .*fake-bird -c /var/run/arcana-sdwan-bird-sw1-gw.conf -s /var/run/arcana-sdwan-bird-sw1-gw.ctl -P /var/run/arcana-sdwan-bird-sw1-gw.pid$' \
 	    -o match:'^jexec 7 .*fake-birdc -s /var/run/arcana-sdwan-bird-sw1-gw.ctl show status$' cat jexec.log
@@ -6653,13 +6678,15 @@ EOS
 	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^ipfw -q queue 3001 delete' ipfw.log | cut -d: -f1 | head -1) -lt \$(grep -n '^ipfw -q pipe 3000 delete' ipfw.log | cut -d: -f1 | head -1) && echo yes"
 	atf_check -o match:'"rules":\{"set":0,' "$JGC" -c "$SOCK" sdwan
 	# DHCP instances (dnsmasq): a bad list refused, one not taken by
-	# dnsmasq --test not run; one started in its table with the pid and
-	# lease files added to its file; listed with the leases it gave;
-	# stopped when not named.
+	# dnsmasq --test not run; one rendered from its form, started in
+	# its table with the pid and lease files added to its file; listed
+	# with the leases it gave; stopped when not named.
+	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan dhcp \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"port=0\n"}]}'
 	atf_check -s exit:1 -e match:'does not take it' -o ignore "$JGC" -c "$SOCK" sdwan dhcp \
-	    '{"instances":[{"name":"sw1","fib":1,"conf":"BROKEN"}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"spec":{"service":"BROKEN","unis":[]}}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan dhcp \
-	    '{"instances":[{"name":"sw1","fib":1,"conf":"port=0\ninterface=lo1\ndhcp-range=10.1.0.2,10.1.0.254,255.255.255.0,12h"}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"host":"edge-a","spec":{"service":"acme","fib":1,"unis":[{"id":"uni-hq","interface":"lo1","ipv4":{"mode":"dhcp","prefix":"10.1.0.0/24","provider":["10.1.0.1"]}}]}}]}'
 	atf_check -o match:'^setfib -F 1 .*fake-dnsmasq -C .*sdwan-dhcp-sw1.conf -x .*sdwan-dhcp-sw1.pid$' cat setfib.log
 	atf_check -o match:'^dnsmasq --test -C .*sdwan-dhcp-sw1.conf$' cat dnsmasq.log
 	atf_check -o match:'^interface=lo1$' -o match:'^pid-file=.*sdwan-dhcp-sw1.pid$' -o match:'^dhcp-leasefile=.*sdwan-dhcp-sw1.leases$' \
@@ -6676,62 +6703,110 @@ EOS
 	# the pid file and the run as root added to its file; listed;
 	# stopped when not named.
 	atf_check -s exit:1 -e match:'does not take it' -o ignore "$JGC" -c "$SOCK" sdwan dns \
-	    '{"instances":[{"name":"sw1","fib":1,"conf":"BROKEN"}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"spec":{"service":"BROKEN"}}]}'
+	atf_check -s exit:1 -e match:'a zone is named' -o ignore "$JGC" -c "$SOCK" sdwan dns \
+	    '{"instances":[{"name":"sw1","fib":1,"spec":{"service":"acme","zones":[{"name":"z 0"}]}}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns \
-	    '{"instances":[{"name":"sw1","fib":1,"conf":"server:\n\tinterface: 10.1.0.1\n\tlocal-zone: \"ads.example.\" always_nxdomain\n"}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"host":"edge-a","spec":{"service":"acme","fib":1,"unis":[{"id":"uni-hq","address":"10.1.0.1","prefix":"10.1.0.0/24"}],"zones":[{"name":"z0","prefixes":["10.1.0.0/24"],"dnf":{"no-match":"allow","block":["ads.example"]}}]}}]}'
 	atf_check -o match:'^setfib -F 1 .*fake-local-unbound -c .*sdwan-dns-sw1.conf$' cat setfib.log
 	atf_check -o match:'^checkconf .*sdwan-dns-sw1.conf$' cat unbound.log
 	atf_check -o match:'^	interface: 10.1.0.1$' -o match:'^	pidfile: ".*sdwan-dns-sw1.pid"$' -o match:'^	username: ""$' \
 	    cat "$(dirname "$f")/sdwan-dns-sw1.conf"
 	atf_check -o match:'"dns":\[\{"name":"sw1","fib":1,"running":true\}\]' "$JGC" -c "$SOCK" sdwan
+	# A PDNS's CNAME and NS entries as a response policy zone of the
+	# zone's, a file of its own named in the configuration; DNS over
+	# TLS with a key and a certificate of the UNIs' addresses, made
+	# once and told in the read, made again for other addresses.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns \
+	    '{"instances":[{"name":"sw1","fib":1,"host":"edge-a","spec":{"service":"acme","fib":1,"dot":true,"unis":[{"id":"uni-hq","address":"10.1.0.1","prefix":"10.1.0.0/24"}],"zones":[{"name":"z0","prefixes":["10.1.0.0/24"],"pdns":{"no-match":"allow","block":[{"type":"CNAME","value":"bad.example"}]}}]}}]}'
+	atf_check -o match:'zonefile: ".*sdwan-dns-sw1.rpz-z0"$' -o match:'tls-service-key: ".*sdwan-dns-sw1.tls.key"$' \
+	    -o match:'tls-service-pem: ".*sdwan-dns-sw1.tls.pem"$' -o match:'^	interface: 10.1.0.1@853$' cat "$(dirname "$f")/sdwan-dns-sw1.conf"
+	atf_check -o match:'^bad.example CNAME \.$' cat "$(dirname "$f")/sdwan-dns-sw1.rpz-z0"
+	atf_check -o match:'IP Address:10.1.0.1' openssl x509 -noout -text -in "$(dirname "$f")/sdwan-dns-sw1.tls.pem"
+	atf_check -o match:'"dns":\[\{"name":"sw1","fib":1,"running":true,"tls_cert":"-----BEGIN CERTIFICATE-----' "$JGC" -c "$SOCK" sdwan
+	cp "$(dirname "$f")/sdwan-dns-sw1.tls.pem" tls.was
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns \
+	    '{"instances":[{"name":"sw1","fib":1,"host":"edge-a","spec":{"service":"acme","fib":1,"dot":true,"unis":[{"id":"uni-hq","address":"10.1.0.1","prefix":"10.1.0.0/24"}],"zones":[]}}]}'
+	atf_check cmp -s tls.was "$(dirname "$f")/sdwan-dns-sw1.tls.pem"
+	test ! -f "$(dirname "$f")/sdwan-dns-sw1.rpz-z0" || atf_fail "a response policy zone not named stayed"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns \
+	    '{"instances":[{"name":"sw1","fib":1,"host":"edge-a","spec":{"service":"acme","fib":1,"dot":true,"unis":[{"id":"uni-hq","address":"10.1.0.2","prefix":"10.1.0.0/24"}],"zones":[]}}]}'
+	atf_check -o match:'IP Address:10.1.0.2' openssl x509 -noout -text -in "$(dirname "$f")/sdwan-dns-sw1.tls.pem"
+	atf_check -s exit:1 -e match:'upstream: each a server' -o ignore "$JGC" -c "$SOCK" sdwan dns \
+	    '{"instances":[{"name":"sw1","fib":1,"spec":{"service":"acme","upstream":["not an address"]}}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns '{"instances":[]}'
 	test ! -f "$(dirname "$f")/sdwan-dns-sw1.conf" || atf_fail "the dns instance's file stayed"
 	atf_check -o match:'"dns":\[\]' "$JGC" -c "$SOCK" sdwan
 	# The proxies (Squid, a plugin): one not taken by squid -k parse not
-	# run; one started in its table, its places filled, its CA made by
-	# openssl once and told; the certificate cache made for inspect;
-	# a running one reconfigured; stopped when not named.
+	# run; one rendered from its form, started in its table with the
+	# agent's paths in it, its CA made by openssl once and told; the
+	# certificate cache made for inspect; a running one reconfigured;
+	# stopped when not named.
+	sni='{"flavor":"sdwan","service":"acme","fib":1,"listen":[{"end_point":"hq","address":"10.1.0.1"}],"zones":[]}'
+	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename /x\n"}]}'
 	atf_check -s exit:1 -e match:'does not take it' -o ignore "$JGC" -c "$SOCK" sdwan proxy \
-	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"BROKEN","deny":""}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","spec":{"flavor":"sdwan","service":"BROKEN"}}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
-	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\nhttps_port 10.1.0.1:3129 intercept ssl-bump tls-cert=@CA@\nacl denied_site ssl::server_name \"@DENY@\"\n","deny":".bad.example\n"}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","host":"edge-a","spec":'"$sni"'}]}'
 	atf_check -o match:'^setfib -F 1 .*tools/squid -f .*sdwan-proxy-sw1.conf$' cat setfib.log
 	atf_check -o match:'^squid -k parse -f .*sdwan-proxy-sw1.conf$' cat squid.log
-	atf_check -o match:'^pid_filename .*sdwan-proxy-sw1.pid$' -o match:'tls-cert=.*sdwan-proxy-sw1.pem$' -o match:'ssl::server_name ".*sdwan-proxy-sw1.deny"$' \
+	atf_check -o match:'^pid_filename .*sdwan-proxy-sw1.pid$' -o match:'^https_port 10.1.0.1:3129 intercept ssl-bump tls-cert=.*sdwan-proxy-sw1.pem generate-host' \
+	    -o match:'^sslcrtd_program .*tools/security_file_certgen -s .*sdwan-proxy-sw1.ssl_db -M 4MB$' \
 	    cat "$(dirname "$f")/sdwan-proxy-sw1.conf"
-	atf_check -o match:'^\.bad\.example$' cat "$(dirname "$f")/sdwan-proxy-sw1.deny"
+	atf_check -o empty cat "$(dirname "$f")/sdwan-proxy-sw1.deny"
 	atf_check -o match:'BEGIN CERTIFICATE' -o match:'BEGIN PRIVATE KEY' cat "$(dirname "$f")/sdwan-proxy-sw1.pem"
 	atf_check -o match:'"proxy":\[\{"name":"sw1","fib":1,"mode":"sni","running":true,"ca":"-----BEGIN CERTIFICATE-----' "$JGC" -c "$SOCK" sdwan
 	cp "$(dirname "$f")/sdwan-proxy-sw1.crt" ca.was
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
-	    '{"instances":[{"name":"sw1","fib":1,"mode":"inspect","conf":"pid_filename @PID@\nsslcrtd_program @CERTGEN@ -s @SSLDB@ -M 4MB\n","deny":""}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"inspect","host":"edge-a","spec":'"$sni"'}]}'
 	atf_check -o match:'^squid -k reconfigure -f .*sdwan-proxy-sw1.conf$' -o match:'^certgen -c -s .*sdwan-proxy-sw1.ssl_db -M 4MB$' cat squid.log
-	atf_check -o match:'^sslcrtd_program .*tools/security_file_certgen -s .*sdwan-proxy-sw1.ssl_db -M 4MB$' cat "$(dirname "$f")/sdwan-proxy-sw1.conf"
 	atf_check cmp -s ca.was "$(dirname "$f")/sdwan-proxy-sw1.crt"
 	# Lists by name (a zone's Block and Allow): each a file beside the
-	# conf, its place filled; those not named again gone; names of
-	# other letters refused.
+	# conf, named in it; those not named again gone; names of other
+	# letters refused.
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
-	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\nacl z0_block dstdomain \"@LIST:z0-block@\"\nacl z0_allow dstdomain \"@LIST:z0-allow@\"\n","deny":"","lists":{"z0-block":".bad.example\n","z0-allow":".good.example\n"}}]}'
-	atf_check -o match:'^acl z0_block dstdomain ".*sdwan-proxy-sw1.list-z0-block"$' -o match:'^acl z0_allow dstdomain ".*sdwan-proxy-sw1.list-z0-allow"$' \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","host":"edge-a","spec":{"flavor":"sdwan","service":"acme","fib":1,"listen":[],"zones":[{"name":"z0","prefixes":["10.1.0.0/24"],"urlf":{"no-match":"allow"}}]},"lists":{"z0-block":".bad.example\n","z0-allow":".good.example\n"}}]}'
+	atf_check -o match:'^acl z0_fblock_d dstdomain ".*sdwan-proxy-sw1.list-z0-block"$' -o match:'^acl z0_fallow_d dstdomain ".*sdwan-proxy-sw1.list-z0-allow"$' \
+	    -o match:'^acl z0_fblock_n ssl::server_name ".*sdwan-proxy-sw1.list-z0-block"$' \
 	    cat "$(dirname "$f")/sdwan-proxy-sw1.conf"
 	atf_check -o inline:'.bad.example\n' cat "$(dirname "$f")/sdwan-proxy-sw1.list-z0-block"
 	atf_check -o inline:'.good.example\n' cat "$(dirname "$f")/sdwan-proxy-sw1.list-z0-allow"
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
-	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\nacl z0_block dstdomain \"@LIST:z0-block@\"\n","deny":"","lists":{"z0-block":".worse.example\n"}}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","host":"edge-a","spec":{"flavor":"sdwan","service":"acme","fib":1,"listen":[],"zones":[{"name":"z0","prefixes":["10.1.0.0/24"],"urlf":{"no-match":"allow"}}]},"lists":{"z0-block":".worse.example\n"}}]}'
 	atf_check -o inline:'.worse.example\n' cat "$(dirname "$f")/sdwan-proxy-sw1.list-z0-block"
+	atf_check -o not-match:'z0_fallow' cat "$(dirname "$f")/sdwan-proxy-sw1.conf"
 	test ! -f "$(dirname "$f")/sdwan-proxy-sw1.list-z0-allow" || atf_fail "a list not named stayed"
 	atf_check -s exit:1 -e match:'its lists' -o ignore "$JGC" -c "$SOCK" sdwan proxy \
-	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\n","deny":"","lists":{"../x":"y"}}]}'
-	# Malware scanned: c-icap of the instance's own, started first in its
-	# table, its pid file and command socket placed, told in the read;
-	# gone with the instance.
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","spec":'"$sni"',"lists":{"../x":"y"}}]}'
+	# Malware scanned: c-icap of the instance's own, its file rendered
+	# from the same form, started first in its table, its pid file and
+	# command socket in it, told in the read; gone with the instance.
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
-	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\nicap_enable on\n","deny":"","icap":"PidFile @ICAPPID@\nCommandsSocket @ICAPCMD@\nPort 127.0.0.1:1354\n"}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","host":"edge-a","spec":{"flavor":"sdwan","service":"acme","fib":1,"listen":[{"end_point":"hq","address":"10.1.0.1"}],"icap":true,"zones":[]}}]}'
 	atf_check -o match:'^setfib -F 1 .*tools/c-icap -f .*sdwan-icap-sw1.conf$' cat setfib.log
 	atf_check -o match:'^PidFile .*sdwan-icap-sw1.pid$' -o match:'^CommandsSocket .*sdwan-icap-sw1.ctl$' \
-	    cat "$(dirname "$f")/sdwan-icap-sw1.conf"
+	    -o match:'^Port 10.1.0.1:1354$' cat "$(dirname "$f")/sdwan-icap-sw1.conf"
+	atf_check -o match:'^icap_service sdwan_av respmod_precache bypass=off icap://10.1.0.1:1354/avscan$' \
+	    cat "$(dirname "$f")/sdwan-proxy-sw1.conf"
 	atf_check -o match:'"proxy":\[\{"name":"sw1","fib":1,"mode":"sni","running":true,"icap":true' "$JGC" -c "$SOCK" sdwan
+	ipid=$(cat "$(dirname "$f")/sdwan-icap-sw1.pid")
+	# The MD+R policies' hashes as ClamAV's signature files in its
+	# database directory, rendered from the zones' forms (MD5 in hdb
+	# with its size, SHA-256 of an Allow in sfp, the name saying whose)
+	# and written before c-icap starts; a file with nothing for it
+	# gone; an entry that is not a hash refused.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","host":"edge-a","spec":{"flavor":"sdwan","service":"acme","fib":1,"listen":[{"end_point":"hq","address":"10.1.0.1"}],"icap":true,"zones":[{"name":"z0","prefixes":["10.1.0.0/24"],"mdr":{"id":"g-mdr","no-match":"allow","block":["44D88612FEA8A8F36DE82E1278ABB02F:68"],"allow":["275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"]}}]}}]}'
+	atf_check -o inline:'44d88612fea8a8f36de82e1278abb02f:68:Arcana.acme.g-mdr.block\n' cat root/var/db/clamav/arcana-sdwan.hdb
+	atf_check -o inline:'275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f:*:Arcana.acme.g-mdr.allow:73\n' cat root/var/db/clamav/arcana-sdwan.sfp
+	test ! -f root/var/db/clamav/arcana-sdwan.hsb || atf_fail "a signature file with nothing for it stayed"
+	atf_check -s exit:1 -e match:'is not a hash' -o ignore "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","host":"edge-a","spec":{"flavor":"sdwan","service":"acme","fib":1,"listen":[],"zones":[{"name":"z0","prefixes":["10.1.0.0/24"],"mdr":{"id":"g-mdr","no-match":"allow","block":["44d8; rm -rf /"]}}]}}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"instances":[]}'
+	test ! -f root/var/db/clamav/arcana-sdwan.hdb || atf_fail "the hashes stayed"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","host":"edge-a","spec":{"flavor":"sdwan","service":"acme","fib":1,"listen":[{"end_point":"hq","address":"10.1.0.1"}],"icap":true,"zones":[]}}]}'
 	ipid=$(cat "$(dirname "$f")/sdwan-icap-sw1.pid")
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"instances":[]}'
 	test ! -f "$(dirname "$f")/sdwan-proxy-sw1.conf" || atf_fail "the proxy instance's file stayed"
@@ -6739,17 +6814,26 @@ EOS
 	alive "$ipid" && atf_fail "c-icap still runs"
 	atf_check -o match:'"proxy":\[\]' "$JGC" -c "$SOCK" sdwan
 	# The Security section's own (group security, named sec-): kept
-	# apart, neither list stopping the other's; its forms told back.
+	# apart, neither list stopping the other's; rendered from its form
+	# (the page's), the domains it denies a file named in it; its
+	# forms told back.
+	web='{"name":"sec-web","listen":["10.1.0.1"],"allow":["10.1.0.0/24"],"deny":[".bad.example"]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
-	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\n","deny":""}]}'
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","host":"edge-a","spec":'"$sni"'}]}'
 	atf_check -s exit:1 -e match:'named sec-' -o ignore "$JGC" -c "$SOCK" sdwan proxy \
-	    '{"group":"security","instances":[{"name":"web","fib":0,"mode":"sni","conf":"pid_filename @PID@\n","deny":""}]}'
+	    '{"group":"security","instances":[{"name":"web","fib":0,"mode":"sni","spec":'"$web"'}]}'
 	atf_check -s exit:1 -e match:'named sec-' -o ignore "$JGC" -c "$SOCK" sdwan proxy \
-	    '{"instances":[{"name":"sec-web","fib":0,"mode":"sni","conf":"pid_filename @PID@\n","deny":""}]}'
+	    '{"instances":[{"name":"sec-web","fib":0,"mode":"sni","spec":'"$web"'}]}'
+	atf_check -s exit:1 -e match:'sec-web: allow \(the networks that may use it\): 10.1.0.0/x is not one' -o ignore "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"group":"security","instances":[{"name":"sec-web","fib":0,"mode":"sni","spec":{"name":"sec-web","listen":["10.1.0.1"],"allow":["10.1.0.0/x"]}}]}'
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
-	    '{"group":"security","instances":[{"name":"sec-web","fib":0,"mode":"sni","conf":"pid_filename @PID@\n","deny":"","spec":{"name":"sec-web","listen":["10.1.0.1"]}}]}'
+	    '{"group":"security","instances":[{"name":"sec-web","fib":0,"mode":"sni","host":"edge-a","spec":'"$web"'}]}'
+	atf_check -o match:'^acl denied_site ssl::server_name ".*sdwan-proxy-sec-web.deny"$' \
+	    -o match:'^http_port 10.1.0.1:3128 ssl-bump tls-cert=.*sdwan-proxy-sec-web.pem ' \
+	    cat "$(dirname "$f")/sdwan-proxy-sec-web.conf"
+	atf_check -o inline:'.bad.example\n' cat "$(dirname "$f")/sdwan-proxy-sec-web.deny"
 	atf_check -o match:'"name":"sw1",[^]]*"group":"sdwan"' -o match:'"name":"sec-web",[^]]*"group":"security"' \
-	    -o match:'"security_proxy":\[\{"name":"sec-web","listen":\["10.1.0.1"\]\}\]' "$JGC" -c "$SOCK" sdwan
+	    -o match:'"security_proxy":\[\{"name":"sec-web","listen":\["10.1.0.1"\],"allow":\["10.1.0.0/24"\],"deny":\[".bad.example"\]\}\]' "$JGC" -c "$SOCK" sdwan
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"instances":[]}'
 	atf_check -o match:'"proxy":\[\{"name":"sec-web"' "$JGC" -c "$SOCK" sdwan
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"group":"security","instances":[]}'
@@ -7066,8 +7150,68 @@ EOS
 	atf_check -s exit:1 -o match:'no instance nosuch here' "$JGC" -c "$SOCK" suricata pcap instance=nosuch file="$(pwd)/lab.pcap"
 	# The packets of its alerts it keeps (pcap-log), listed.
 	printf 'PCAPLOG' > sdwan-ids-sw1.d/log.pcap.1792400000
-	atf_check -o match:'"pcaps":\[\{"path":"[^"]*/sdwan-ids-sw1.d/log.pcap.1792400000","size":7,' \
+	atf_check -o match:'"pcaps":\[\{"path":"[^"]*/sdwan-ids-sw1.d/log.pcap.1792400000","size":7,"at":[0-9]+,"from":1792400000\}' \
 	    "$JGC" -c "$SOCK" sdwan
+	# One of them read back whole, as a stream (the alert's download);
+	# one past a stream's window too; what is not pcap-log's refused.
+	atf_check -o inline:'PCAPLOG' "$JGC" -c "$SOCK" suricata pcap-get instance=sw1 file=log.pcap.1792400000
+	dd if=/dev/random of=big.pcap bs=1m count=9 2>/dev/null
+	cp big.pcap sdwan-ids-sw1.d/log.pcap.1792400100
+	atf_check -o save:got.pcap "$JGC" -c "$SOCK" suricata pcap-get instance=sw1 file=log.pcap.1792400100
+	atf_check cmp big.pcap got.pcap
+	atf_check -s exit:1 -e match:'log.pcap or a rotation of it' "$JGC" -c "$SOCK" suricata pcap-get instance=sw1 file=eve.json
+	atf_check -s exit:1 -e match:'log.pcap or a rotation of it' "$JGC" -c "$SOCK" suricata pcap-get instance=sw1 file=../sdwan-ids-sw1.yaml
+	atf_check -s exit:1 -e match:'has no such file' "$JGC" -c "$SOCK" suricata pcap-get instance=sw1 file=log.pcap.1
+	ln -sf ../big.pcap sdwan-ids-sw1.d/log.pcap.1792400200
+	atf_check -s exit:1 -e match:'not a file of its pcap-log' "$JGC" -c "$SOCK" suricata pcap-get instance=sw1 file=log.pcap.1792400200
+	rm sdwan-ids-sw1.d/log.pcap.1792400100 sdwan-ids-sw1.d/log.pcap.1792400200
+	# A capture sent to the host (the console's upload): whole, or in
+	# parts each where the one before ended; kept beside the replay,
+	# which leaves it, replayed from there, listed.
+	atf_check -o match:'"path":"[^"]*/sdwan-ids-sw1.replay.d/captures/up.pcap"' \
+	    "$JGC" -c "$SOCK" suricata pcap-put instance=sw1 file=up.pcap last=1 < lab.pcap
+	atf_check -o inline:'PCAP' cat sdwan-ids-sw1.replay.d/captures/up.pcap
+	printf 'AB' > ab
+	printf 'CD' > cd
+	atf_check -o ignore "$JGC" -c "$SOCK" suricata pcap-put instance=sw1 file=two.pcap < ab
+	test -f sdwan-ids-sw1.replay.d/captures/two.pcap && atf_fail "a part was taken for the whole"
+	atf_check -s exit:1 -e match:'the part before ended at 2, not 5' \
+	    "$JGC" -c "$SOCK" suricata pcap-put instance=sw1 file=two.pcap offset=5 < cd
+	atf_check -o ignore "$JGC" -c "$SOCK" suricata pcap-put instance=sw1 file=two.pcap offset=2 last=1 < cd
+	atf_check -o inline:'ABCD' cat sdwan-ids-sw1.replay.d/captures/two.pcap
+	test -f sdwan-ids-sw1.replay.d/captures/two.pcap.part && atf_fail "the part stayed"
+	atf_check -s exit:1 -e match:'no part of it came before' \
+	    "$JGC" -c "$SOCK" suricata pcap-put instance=sw1 file=three.pcap offset=2 < cd
+	atf_check -o ignore "$JGC" -c "$SOCK" suricata pcap-put instance=sw1 file=big.pcap last=1 < big.pcap
+	atf_check cmp big.pcap sdwan-ids-sw1.replay.d/captures/big.pcap
+	atf_check -s exit:1 -e match:'its name alone' "$JGC" -c "$SOCK" suricata pcap-put instance=sw1 file=../x.pcap < ab
+	atf_check -s exit:1 -e match:'its name alone' "$JGC" -c "$SOCK" suricata pcap-put instance=sw1 file=x.txt < ab
+	atf_check -s exit:1 -e match:'no such instance here' "$JGC" -c "$SOCK" suricata pcap-put instance=nosuch file=x.pcap < ab
+	atf_check -o match:'done +suricata replays .*/captures/up.pcap through sw1' \
+	    "$JGC" -c "$SOCK" suricata pcap instance=sw1 file="$(pwd)/sdwan-ids-sw1.replay.d/captures/up.pcap"
+	test -f sdwan-ids-sw1.replay.d/captures/up.pcap || atf_fail "the replay emptied the captures"
+	atf_check -o match:'"captures":\[[^]]*"path":"[^"]*/captures/up.pcap","size":4,' "$JGC" -c "$SOCK" sdwan
+	rm big.pcap got.pcap
+	# What its profiling wrote, read back: the last dump of the packets'
+	# ticks, each table's rows; the rules' last JSON; the locks' text.
+	printf '\n\nPacket profile dump:\n\n IPv4       1             1              1              1              1  1   100.00\n' > sdwan-ids-sw1.d/packet_stats.log
+	printf '\n\nPacket profile dump:\n\nIP ver   Proto   cnt            min            max            avg            tot           %%%%\n------   -----   ------------   ------------   ------------   ------------   ------------  ---\n IPv4       6           100            200           9000            500          50.0k   80.00\n IPv6      17            10            100           1000            300           3000   20.00\n\nPer Thread module stats:\n\nThread Module              IP ver   Proto   cnt            min            max            avg            tot           %%%%\nPcapReceive                  IPv4       6           100             50            900             70           7000   12.50\n\nFlow Worker            IP ver   Proto   cnt            min            max            avg\ndetect                  IPv4     6           100            30            800            120         12.0k  30.00\n' >> sdwan-ids-sw1.d/packet_stats.log
+	printf '{"timestamp":"2026-10-19T11:00:00","sort":"ticks","rules":[{"signature_id":1}]}\n{"timestamp":"2026-10-19T12:00:00","sort":"ticks","rules":[{"signature_id":2000009,"gid":1,"rev":1,"checks":40,"matches":2,"ticks_total":9000,"ticks_max":800,"ticks_avg":225,"ticks_avg_match":400,"ticks_avg_nomatch":215,"percent":75}]}\n' > sdwan-ids-sw1.d/rule_perf.log
+	printf 'lock contention: none\n' > sdwan-ids-sw1.d/lock_stats.log
+	printf '\n\nPacket profile dump:\n\nIP ver   Proto   cnt\n IPv4      17             5             10             20             15             75  100.00\n' > sdwan-ids-sw1.replay.d/packet_stats.log
+	atf_check -o save:prof.json "$JGC" -c "$SOCK" suricata rules instance=sw1 profiling=1
+	atf_check -o match:'"build":\{"packets":false,"rules":false,"locks":false\}' \
+	    -o match:'"running":\{"packets":\{"sections":\[\{"title":"Packets","rows":\[\{"name":"","ip":"IPv4","proto":6,"cnt":100,"min":200,"max":9000,"avg":500,"tot":"50.0k","pct":80' \
+	    -o match:'"ip":"IPv6","proto":17,"cnt":10,' \
+	    -o match:'\{"title":"Thread Module","rows":\[\{"name":"PcapReceive","ip":"IPv4","proto":6,"cnt":100,"min":50,' \
+	    -o match:'\{"title":"Flow Worker","rows":\[\{"name":"detect",[^}]*"avg":120,"tot":"12.0k"' \
+	    -o not-match:'"proto":1,' \
+	    -o match:'"rules":\{"timestamp":"2026-10-19T12:00:00","sort":"ticks","rules":\[\{"signature_id":2000009,' \
+	    -o match:'"locks":\{"text":"lock contention: none\\n","at":[0-9]+\}' \
+	    -o match:'"replay":\{"packets":\{"sections":\[\{"title":"Packets","rows":\[\{"name":"","ip":"IPv4","proto":17,"cnt":5,' \
+	    cat prof.json
+	atf_check -s exit:1 -e match:'no instance nosuch here' "$JGC" -c "$SOCK" suricata rules instance=nosuch profiling=1
+	atf_check -s exit:1 -e match:'read by instance= and profiling=1' "$JGC" -c "$SOCK" suricata rules profiling=1
 	# Stopped by the admin: not run, its files and its place kept;
 	# started again as it was.
 	atf_check -o ignore "$JGC" -c "$SOCK" sdwan ids "$rs4"
@@ -7101,6 +7245,23 @@ EOS
 	    -o match:'^autofp-scheduler: hash$' cat "$(dirname "$f")/sdwan-ids-sec-x.yaml"
 	atf_check -s exit:1 -e match:"autofp's scheduler is hash, ippair or ftp-hash" -o ignore "$JGC" -c "$SOCK" sdwan ids \
 	    '{"group":"security","instances":[{"name":"sec-x","interfaces":["lo0"],"spec":{"interfaces":["lo0"],"autofp_scheduler":"round-robin"},"rules":"x"}]}'
+	# Its profiling: the sections named on, the others off, each its
+	# file; rules from the start, by ticks, as JSON.
+	atf_check -o match:'suricata sec-x on 1 interface, detects: started' "$JGC" -t -c "$SOCK" sdwan ids \
+	    '{"group":"security","instances":[{"name":"sec-x","host":"edge-a","interfaces":["lo0"],"spec":{"interfaces":["lo0"],"home":["any"],"profiling":["rules","packets"],"profiling_sample_rate":4},"rules":"alert tcp any any -> any 23 (sid:1000001;)\n"}]}'
+	atf_check -o match:'^profiling:$' -o match:'^  sample-rate: 4$' \
+	    -o match:'^  rules:$' -o match:'^    filename: rule_perf.log$' -o match:'^    active: yes$' \
+	    -o match:'^    sort: ticks$' -o match:'^    json: yes$' -o match:'^    filename: packet_stats.log$' \
+	    -o match:'^    filename: lock_stats.log$' cat "$(dirname "$f")/sdwan-ids-sec-x.yaml"
+	atf_check -o inline:'  rules: yes\n  keywords: no\n  prefilter: no\n  rulegroups: no\n  packets: yes\n  locks: no\n' \
+	    awk '/^profiling:/ { p = 1; next } p && /^[a-z]/ { p = 0 } p && /^  [a-z]+:$/ { s = $0 } p && /^    enabled:/ { print s " " $2 }' \
+	    "$(dirname "$f")/sdwan-ids-sec-x.yaml"
+	atf_check -s exit:1 -e match:"sec-x: profiling's sections are rules, keywords" -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"group":"security","instances":[{"name":"sec-x","interfaces":["lo0"],"spec":{"interfaces":["lo0"],"profiling":["cpu"]},"rules":"x"}]}'
+	atf_check -s exit:1 -e match:"sec-x: profiling's sample rate is a power of 2" -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"group":"security","instances":[{"name":"sec-x","interfaces":["lo0"],"spec":{"interfaces":["lo0"],"profiling":["rules"],"profiling_sample_rate":3},"rules":"x"}]}'
+	atf_check -s exit:1 -e match:'sec-x: its own YAML may not set profiling' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"group":"security","instances":[{"name":"sec-x","interfaces":["lo0"],"spec":{"interfaces":["lo0"],"yaml":"profiling:\n  rules:\n"},"rules":"x"}]}'
 	# netmap's pair of a bridge's member: refused, the bridge would
 	# carry its packets around the pair.
 	cp fake-ifconfig fake-ifconfig.was
@@ -7126,6 +7287,268 @@ EOS
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
 }
 sdwan_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case sdwan_forms cleanup
+sdwan_forms_head()
+{
+	atf_set "descr" "The SD-WAN daemons' files rendered from the console's forms: dnsmasq's, unbound's, Squid's, c-icap's and BIRD's, as the console's plans have them"
+}
+# Whether a file holds a text, lines and all, as written.
+has_text()
+{
+	case "$(cat "$1")" in
+	*"$2"*) return 0 ;;
+	esac
+	return 1
+}
+# The kept file of a name, beside the agent's kept files.
+kept()
+{
+	find . -name "$1" | head -1
+}
+sdwan_forms_body()
+{
+	mkdir -p tools
+	sdwan_daemons
+	DAEMON_ARGS="-3 $(pwd)/fake-setfib -2 $(pwd)/tools"
+	start_daemon
+	# dnsmasq: hq's IPv4 by DHCP, its ranges the subnet less the
+	# reserved prefixes and the provider's address, the router and the
+	# DNS servers told.
+	cat > dhcp.json <<'EOS'
+{"instances":[{"name":"sw1","fib":1,"host":"a","spec":{"service":"acme","fib":1,"unis":[{"id":"uni-hq","interface":"lo0","ipv4":{"mode":"dhcp","prefix":"10.1.0.0/24","provider":["10.1.0.1"],"reserved":["10.1.0.0/26","10.1.0.200/30"],"lease":"1h","dns":["10.1.0.1"]}}]}}]}
+EOS
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dhcp "$(cat dhcp.json)"
+	c=$(kept sdwan-dhcp-sw1.conf)
+	atf_check -o match:'^# Written by arcana-agent for the Arcana console: SD-WAN service acme at a, in routing table 1\.$' cat "$c"
+	has_text "$c" "$(printf 'interface=lo0\ndhcp-range=set:lo0,10.1.0.64,10.1.0.199,255.255.255.0,1h\ndhcp-range=set:lo0,10.1.0.204,10.1.0.254,255.255.255.0,1h\ndhcp-option=tag:lo0,option:router,10.1.0.1\ndhcp-option=tag:lo0,option:dns-server,10.1.0.1\n')" ||
+	    atf_fail "dnsmasq's ranges are not the subnet less the reserved"
+	# A form that would end a line early is refused.
+	atf_check -s exit:1 -e match:'a word of printable characters' -o ignore "$JGC" -c "$SOCK" sdwan dhcp \
+	    '{"instances":[{"name":"sw1","fib":1,"spec":{"service":"acme","unis":[{"id":"x","interface":"lo0\nenable-tftp"}]}}]}'
+
+	# unbound: hq's provider address, a view of the zone's own by its
+	# prefixes, the Block's names nxdomain, the Allow's transparent,
+	# the lists' domains too; checked by the base system's
+	# local-unbound-checkconf as well as the stand-in.
+	cat > dns.json <<'EOS'
+{"instances":[{"name":"sw1","fib":1,"host":"a","spec":{"service":"acme","fib":1,"unis":[{"id":"uni-hq","address":"10.1.0.1","prefix":"10.1.0.0/24"}],"zones":[{"name":"z0","prefixes":["10.1.0.0/16","10.30.0.2/32","10.30.0.64/32"],"dnf":{"no-match":"allow","block":["ads.example"],"allow":["ok.ads.example"],"listed":{"block":["bad-feed.example","bad.example"]}}}]}}]}
+EOS
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns "$(cat dns.json)"
+	c=$(kept sdwan-dns-sw1.conf)
+	has_text "$c" "$(printf '\tinterface: 10.1.0.1\n\taccess-control: 10.1.0.0/24 allow\n')" ||
+	    atf_fail "unbound does not listen on the UNI"
+	has_text "$c" "$(printf 'view:\n\tname: "z0"\n\tview-first: yes\n\tlocal-zone: "ads.example." always_nxdomain\n')" ||
+	    atf_fail "the zone's view is not there"
+	atf_check -o match:'^	access-control-view: 10.1.0.0/16 z0$' \
+	    -o match:'^	local-zone: "bad-feed.example." always_nxdomain$' \
+	    -o match:'^	local-zone: "bad.example." always_nxdomain$' \
+	    -o match:'^	local-zone: "ok.ads.example." always_transparent$' cat "$c"
+	atf_check -o ignore local-unbound-checkconf "$c"
+	# The PDNS's answers by response-ip, the Default zone's view by all
+	# its prefixes.
+	cat > dns.json <<'EOS'
+{"instances":[{"name":"sw1","fib":1,"host":"a","spec":{"service":"acme","fib":1,"unis":[{"id":"uni-hq","address":"10.1.0.1","prefix":"10.1.0.0/24"}],"zones":[{"name":"z0","prefixes":["10.1.0.0/16","10.30.0.2/32","10.30.0.64/32"],"dnf":{"no-match":"allow","block":["ads.example"],"allow":["ok.ads.example"]},"pdns":{"no-match":"allow","block":[{"type":"A","value":"192.0.2.66"}],"allow":[{"type":"AAAA","value":"any"}]}},{"name":"z1","prefixes":["0.0.0.0/0","::/0"],"dnf":{"no-match":"allow","block":["ads.example"],"allow":["ok.ads.example"]},"pdns":{"no-match":"allow","block":[{"type":"A","value":"192.0.2.66"}],"allow":[{"type":"AAAA","value":"any"}]}}]}}]}
+EOS
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns "$(cat dns.json)"
+	atf_check -o match:'^	access-control-view: 0.0.0.0/0 z1$' \
+	    -o match:'^	response-ip: 192.0.2.66/32 always_nxdomain$' \
+	    -o match:'^	response-ip: ::/0 always_transparent$' cat "$c"
+	atf_check -o ignore local-unbound-checkconf "$c"
+	# The PDNS's CNAME and NS entries (R104) by a response policy zone
+	# of the zone's, for the zone's prefixes alone (a tag); DNS over
+	# TLS on the UNI's address, port 853 (D22), and to the servers it
+	# asks (D21); a name with a * inside left to Squid; taken by the
+	# real unbound.
+	cat > dns.json <<'EOS'
+{"instances":[{"name":"sw1","fib":1,"host":"a","spec":{"service":"acme","fib":1,"dot":true,"upstream":["192.0.2.53#dns.example","2001:db8::53@8853#dns.example"],"upstream_tls":true,"unis":[{"id":"uni-hq","address":"10.1.0.1","prefix":"10.1.0.0/24"}],"zones":[{"name":"z0","prefixes":["10.1.0.0/16"],"dnf":{"no-match":"allow","block":["ads.example","cdn.*.example"]},"pdns":{"no-match":"allow","block":[{"type":"A","value":"192.0.2.66"},{"type":"CNAME","value":"*.tracker.example"},{"type":"NS","value":"ns.evil.example"},{"type":"NS","value":"198.51.100.53"},{"type":"NS","value":"2001:db8::53/128"}],"allow":[{"type":"CNAME","value":"ok.tracker.example"}]}},{"name":"z1","prefixes":["0.0.0.0/0","::/0"],"dnf":{"no-match":"allow","block":["ads.example"]}}]}}]}
+EOS
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns "$(cat dns.json)"
+	c=$(kept sdwan-dns-sw1.conf)
+	atf_check -o match:'^	define-tag: "z0"$' -o match:'^	access-control-tag: 10.1.0.0/16 "z0"$' \
+	    -o match:'^	interface: 10.1.0.1@853$' -o match:'^	tls-port: 853$' \
+	    -o match:'^	tls-service-key: ".*sdwan-dns-sw1.tls.key"$' -o match:'^	tls-cert-bundle: "/etc/ssl/cert.pem"$' \
+	    -o not-match:'cdn' cat "$c"
+	atf_check -o match:'^rpz:$' -o match:'^	name: "z0.rpz."$' -o match:'^	zonefile: ".*sdwan-dns-sw1.rpz-z0"$' \
+	    -o match:'^	tags: "z0"$' -o not-match:'name: "z1.rpz."' cat "$c"
+	has_text "$c" "$(printf 'forward-zone:\n\tname: "."\n\tforward-tls-upstream: yes\n\tforward-addr: 192.0.2.53@853#dns.example\n\tforward-addr: 2001:db8::53@8853#dns.example\n')" ||
+	    atf_fail "the upstream servers are not asked over TLS"
+	z=$(kept sdwan-dns-sw1.rpz-z0)
+	has_text "$z" "$(printf '*.tracker.example CNAME .\nns.evil.example.rpz-nsdname CNAME .\n32.53.100.51.198.rpz-nsip CNAME .\n128.53.0.0.0.0.0.db8.2001.rpz-nsip CNAME .\nok.tracker.example CNAME rpz-passthru.\n')" ||
+	    atf_fail "the response policy zone's triggers are not as the entries say"
+	atf_check -o ignore local-unbound-checkconf "$c"
+
+	# Squid, the URL filter alone (no MBSF): the zone by its prefixes,
+	# the TLS name of the Block's host ended, the rest let through
+	# unopened, the zone's malware scanned by c-icap, which takes
+	# Squid's address alone.
+	cat > proxy.json <<'EOS'
+{"instances":[{"name":"sw1","fib":1,"mode":"sni","host":"a","spec":{"flavor":"sdwan","service":"acme","fib":1,"listen":[{"end_point":"hq","address":"10.1.0.1"},{"end_point":"road","address":"10.30.0.1"}],"resolver":true,"icap":true,"zones":[{"name":"z0","prefixes":["10.1.0.0/16","10.30.0.2/32","10.30.0.64/32"],"urlf":{"no-match":"allow","block":["bad.example"]},"mdr":true}]},"lists":{}}]}
+EOS
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy "$(cat proxy.json)"
+	c=$(kept sdwan-proxy-sw1.conf)
+	atf_check -o match:'^https_port 10.1.0.1:3129 intercept ssl-bump tls-cert=.*sdwan-proxy-sw1.pem generate-host-certificates=on dynamic_cert_mem_cache_size=4MB$' \
+	    -o match:'^acl z0 src 10.1.0.0/16 10.30.0.2/32 10.30.0.64/32$' \
+	    -o match:'^dns_nameservers 10.1.0.1$' \
+	    -o match:'^icap_service sdwan_av respmod_precache bypass=off icap://10.1.0.1:1354/avscan$' cat "$c"
+	has_text "$c" "$(printf 'acl z0_u0_n ssl::server_name bad.example\nacl z0_u0_d dstdomain bad.example\n')" ||
+	    atf_fail "the Block's host is not an acl"
+	has_text "$c" "$(printf 'ssl_bump peek step1\nssl_bump terminate z0 z0_u0_n\nssl_bump splice z0\nssl_bump splice all\n')" ||
+	    atf_fail "the TLS steps are not in order"
+	has_text "$c" "$(printf 'adaptation_access sdwan_av allow z0\nhttp_access deny z0 z0_u0_d\nhttp_access allow z0\nadaptation_access sdwan_av deny all\nhttp_access deny all\n')" ||
+	    atf_fail "the requests' rules are not in order"
+	c=$(kept sdwan-icap-sw1.conf)
+	atf_check -o match:'^Service avscan virus_scan.so$' -o match:'^client_access deny all$' cat "$c"
+	has_text "$c" "$(printf 'Port 10.1.0.1:1354\nacl squid src 10.1.0.1/255.255.255.255\n')" ||
+	    atf_fail "c-icap does not take Squid's address alone"
+	# A DNF's names with a * inside (R71), which unbound does not take:
+	# the zone's Squid ends them at the TLS name and refuses them by
+	# the request's host, before the rest of the zone's.
+	cat > proxy.json <<'EOS'
+{"instances":[{"name":"sw1","fib":1,"mode":"sni","host":"a","spec":{"flavor":"sdwan","service":"acme","fib":1,"listen":[{"end_point":"hq","address":"10.1.0.1"}],"zones":[{"name":"z0","dnf":["cdn.*.example","*.track.*"],"prefixes":["10.1.0.0/16"],"urlf":{"no-match":"allow","block":["bad.example"]}}]},"lists":{}}]}
+EOS
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy "$(cat proxy.json)"
+	c=$(kept sdwan-proxy-sw1.conf)
+	has_text "$c" "$(printf 'acl z0_dw ssl::server_name_regex -i ^(.+\\.)?cdn\\.[^.]+\\.example$ ^(.+\\.)?track\\.[^.]+$\nacl z0_dwd dstdom_regex -i ^(.+\\.)?cdn\\.[^.]+\\.example$ ^(.+\\.)?track\\.[^.]+$\n')" ||
+	    atf_fail "the names with a * inside are not acls"
+	has_text "$c" "$(printf 'ssl_bump peek step1\nssl_bump terminate z0 z0_dw\nssl_bump terminate z0 z0_u0_n\n')" ||
+	    atf_fail "the names are not ended before the URLF's"
+	has_text "$c" "$(printf 'http_access deny z0 z0_dwd\nhttp_access deny z0 z0_u0_d\n')" ||
+	    atf_fail "the names are not refused before the URLF's"
+	# With an MBSF: TLS opened (inspect), the oldest let through 1.2
+	# both ways; the office zone first, Default after it; bank.example
+	# never opened; plain HTTP blocked; the URLF's paths by their regex,
+	# the more specific Allow before the Block of its host; No-match
+	# block, the requests deciding: no name ends a connection.
+	cat > proxy.json <<'EOS'
+{"instances":[{"name":"sw1","fib":1,"mode":"inspect","host":"a","spec":{"flavor":"sdwan","service":"acme","fib":1,"listen":[{"end_point":"hq","address":"10.1.0.1"},{"end_point":"road","address":"10.30.0.1"}],"resolver":true,"icap":true,"zones":[{"name":"z0","prefixes":["10.1.0.0/16","10.30.0.2/32","10.30.0.64/32"],"urlf":{"no-match":"block","block":["bad.example","*.worse.example/ads/*"],"allow":["bad.example/ok"]},"mbsf":{"no-match":"block","block":["tls1.0","tls1.1"],"allow":["tls1.2","tls1.3"],"pass-through":["bank.example"],"invalid-server-certificate":"block","unencrypted":"block"},"mdr":true},{"name":"z1","default":true,"urlf":{"no-match":"block","block":["bad.example","*.worse.example/ads/*"],"allow":["bad.example/ok"]},"mbsf":{"no-match":"block","block":["tls1.0","tls1.1"],"allow":["tls1.2","tls1.3"],"pass-through":["bank.example"],"invalid-server-certificate":"block","unencrypted":"block"},"mdr":true}]},"lists":{}}]}
+EOS
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy "$(cat proxy.json)"
+	c=$(kept sdwan-proxy-sw1.conf)
+	atf_check -o match:' tls-min-version=1\.2$' -o match:'^tls_outgoing_options min-version=1\.2$' \
+	    -o match:'^acl z1 src all$' -o match:'^acl z0_pass ssl::server_name bank\.example$' \
+	    -o match:'^ssl_bump splice z0 z0_pass$' -o match:'^http_access deny z0 plain$' \
+	    -o match:'url_regex -i \^https\?://bad\\\.example/ok\$$' \
+	    -o match:'url_regex -i \^https\?://\(\[\^/\]\*\\\.\)\?worse\\\.example/ads/\.\*$' \
+	    -o not-match:'ssl::server_name bad\.example' cat "$c"
+	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^acl z0 ' '$c' | cut -d: -f1) -lt \$(grep -n '^acl z1 ' '$c' | cut -d: -f1) && echo yes"
+	has_text "$c" "$(printf 'http_access allow z0 z0_u0_r\nhttp_access deny z0 z0_u1_d\nhttp_access deny z0 z0_u2_r\nhttp_access deny z0\n')" ||
+	    atf_fail "the URLF's entries are not most specific first"
+	has_text "$c" "$(printf 'ssl_bump splice z0 z0_pass\nssl_bump bump z0\n')" ||
+	    atf_fail "TLS is not opened but for the pass-through"
+
+	# BIRD of a service: the router id, the kernel's table learned and
+	# kept, the connected routes of the UNI and the tunnels, BFD on
+	# the tunnels, what does not go to the other edges, iBGP by the
+	# control tunnel alone (a the reflector), and BGP with the
+	# subscriber at hq's UNI as its entry says.
+	cat > bird.json <<'EOS'
+{"instances":[{"name":"sw1","fib":1,"host":"a","spec":{"service":"acme","fib":1,"table":1,"as":64600,"router_id":"100.64.0.0","direct":["lo0","gre100","gif102","gre104"],"bfd":{"interfaces":["gre100","gif102","gre104"],"interval":200,"multiplier":3,"sessions":true},"reject":["100.64.0.0/24","100.64.0.0/24"],"md5":"edges-secret","peers":[{"tunnel":"acme/a-inet-b-inet/ctvc","to":"b","local":"100.64.0.4","neighbor":"100.64.0.5","role":"client","cluster_id":"192.0.2.1"}],"unis":[{"id":"uni-hq","end_point":"hq","interface":"lo0","bgp":{"family":"ipv4","as":65010,"neighbors":["10.1.0.2"],"password":"s3cret","hold_time":90,"distance":150,"communities":[[64600,100]]}}]}},{"name":"ucs3","fib":3,"host":"a","spec":{"flavor":"ucs","end_point":"a-inet","table":3,"router_id":"192.0.2.1","interface":"vtnet0","as":64512,"bgp":{"family":"ipv4","as":65000,"neighbors":["192.0.2.254"],"password":"up"}}}]}
+EOS
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird "$(cat bird.json)"
+	c=$(kept sdwan-bird-sw1.conf)
+	atf_check -o match:'^# Written by arcana-agent for the Arcana console: SD-WAN service acme at a, in routing table 1\.$' \
+	    -o match:'^router id 100\.64\.0\.0;$' -o match:'&& dest = RTD_UNICAST;$' \
+	    -o match:'import filter \{ preference = 200; accept; \};' \
+	    -o match:'export filter to_edges;' -o not-match:'^# acme/a-inet-b-inet, to' \
+	    -o not-match:'protocol bgp edge1 from edge' cat "$c"
+	has_text "$c" "$(printf 'kernel table 1;\n\tlearn;\n\tmerge paths on;\n\tpersist;')" ||
+	    atf_fail "the kernel's table is not learned and kept"
+	has_text "$c" "$(printf 'protocol direct {\n\tipv4;\n\tipv6;\n\tinterface "lo0", "gre100", "gif102", "gre104";\n}')" ||
+	    atf_fail "the connected routes are not the UNI's and the tunnels'"
+	has_text "$c" "$(printf 'filter to_edges {\n\tif source = RTS_INHERIT then reject;\n\tif net ~ [ 100.64.0.0/24+, 100.64.0.0/24+ ] then reject;\n\taccept;\n}')" ||
+	    atf_fail "the reserved prefixes go to the edges"
+	has_text "$c" "$(printf '# acme/a-inet-b-inet/ctvc, to b, a client of this reflector\nprotocol bgp edge0 from edge {\n\tlocal 100.64.0.4 as 64600;\n\tneighbor 100.64.0.5 as 64600;\n\trr client;\n\trr cluster id 192.0.2.1;\n}')" ||
+	    atf_fail "a does not reflect to b by the control tunnel"
+	has_text "$c" "$(printf 'protocol bfd {\n\tinterface "gre100", "gif102", "gre104" {\n\t\tinterval 200 ms;\n\t\tmultiplier 3;\n\t};\n}')" ||
+	    atf_fail "BFD is not on the tunnels"
+	has_text "$c" "$(printf 'hold time 30;\n\terror wait time 10, 60;\n\tbfd on;\n\tauthentication md5;\n\tpassword "edges-secret";\n')" ||
+	    atf_fail "the iBGP template is not BFD's and MD5's"
+	has_text "$c" "$(printf 'protocol bgp uni_hq_0 {\n\tlocal as 64600;\n\tneighbor 10.1.0.2 as 65010;\n\tinterface "lo0";\n\tauthentication md5;\n\tpassword "s3cret";\n\thold time 90;\n\tipv4 {\n\t\tpreference 106;\n\t\timport all;\n\t\texport filter {\n\t\t\tbgp_community.add((64600, 100));\n\t\t\taccept;\n\t\t};\n\t};\n}')" ||
+	    atf_fail "BGP at hq's UNI is not as its entry says"
+	if [ -x /usr/local/sbin/bird ] && [ "$(sysctl -n net.fibs)" -ge 2 ]; then
+		atf_check /usr/local/sbin/bird -p -c "$c"
+	fi
+	# The UCS end point's, with the underlay in its table.
+	c=$(kept sdwan-bird-ucs3.conf)
+	atf_check -o match:'^# Written by arcana-agent for the Arcana console: UCS end point a-inet at a, routing with the underlay in table 3\.$' cat "$c"
+	has_text "$c" "$(printf 'protocol bgp ucs_a_inet_0 {\n\tlocal as 64512;\n\tneighbor 192.0.2.254 as 65000;\n\tinterface "vtnet0";')" ||
+	    atf_fail "BGP with the underlay is not there"
+	# b's: the control plane, a, its one peer.
+	cat > bird.json <<'EOS'
+{"instances":[{"name":"sw1","fib":1,"host":"b","spec":{"service":"acme","fib":1,"table":1,"as":64600,"router_id":"100.64.0.1","direct":["vlan106","gre101","gif103","gre105"],"bfd":{"interfaces":["gre101","gif103","gre105"],"interval":200,"multiplier":3,"sessions":true},"reject":["100.64.0.0/24","100.64.0.0/24"],"md5":"edges-secret","peers":[{"tunnel":"acme/a-inet-b-inet/ctvc","to":"a","local":"100.64.0.5","neighbor":"100.64.0.4","role":"control"}],"unis":[]}}]}
+EOS
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird "$(cat bird.json)"
+	c=$(kept sdwan-bird-sw1.conf)
+	atf_check -o match:'^# Written by arcana-agent for the Arcana console: SD-WAN service acme at b, in routing table 1\.$' cat "$c"
+	has_text "$c" "$(printf '# acme/a-inet-b-inet/ctvc, to a, the control plane\nprotocol bgp edge0 from edge {\n\tlocal 100.64.0.5 as 64600;\n\tneighbor 100.64.0.4 as 64600;\n}')" ||
+	    atf_fail "b does not peer with the control plane alone"
+	# iBGP between loopbacks: a static to b's loopback by the gre
+	# tunnel, the backup in a lower static, a multihop session from
+	# loopback to loopback with rr client (a carries transit), the
+	# UNI's subnet and static route and the remote end point's prefix
+	# as its own statics, kept out of the kernel.
+	cat > bird.json <<'EOS'
+{"instances":[{"name":"sw1","fib":1,"host":"a","spec":{"service":"acme","fib":1,"table":1,"as":64600,"router_id":"100.64.0.4","direct":["lo0","gre100","geneve102","lo104"],"loopback":true,"bfd":{"interfaces":["gre100","geneve102"],"interval":200,"multiplier":3,"multihop":true,"sessions":true},"reject":["100.64.0.0/24","100.64.0.0/24"],"md5":"edges-secret","loop":{"local4":"100.64.0.4","transit":true,"edges":[{"name":"b","ipv4":"100.64.0.6","paths4":["100.64.0.1"],"backup4":["100.64.0.3"]}],"origins":[{"id":"hq","interface":"lo0","ipv4":[{"prefix":"10.1.0.0/24"},{"prefix":"10.1.8.0/22","next_hop":"10.1.0.2"}]},{"id":"road","interface":"wg5","ipv4":[{"prefix":"10.30.0.0/24"}]}]},"peers":[],"unis":[]}}]}
+EOS
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird "$(cat bird.json)"
+	c=$(kept sdwan-bird-sw1.conf)
+	has_text "$c" "$(printf 'protocol static loop4_0 {\n\tipv4;\n\troute 100.64.0.6/32 via 100.64.0.1 bfd;\n}')" ||
+	    atf_fail "b's loopback is not by the tunnel"
+	has_text "$c" "$(printf 'protocol static loop4b_0 {\n\tipv4 { preference 150; };\n\troute 100.64.0.6/32 via 100.64.0.3 bfd;\n}')" ||
+	    atf_fail "the backup is not a lower static"
+	has_text "$c" "$(printf 'local 100.64.0.4 as 64600;\n\tneighbor 100.64.0.6 as 64600;\n\tmultihop;\n\trr client;\n}')" ||
+	    atf_fail "the session is not loopback to loopback"
+	has_text "$c" "$(printf 'protocol static orig4_hq {\n\tipv4;\n\troute 10.1.0.0/24 via "lo0";\n\troute 10.1.8.0/22 via 10.1.0.2;\n}')" ||
+	    atf_fail "hq's own are not its statics"
+	atf_check -o match:'route 10\.30\.0\.0/24 via "wg5";' -o match:'proto !~ "orig\*";' \
+	    -o match:'"gre100", "geneve102", "lo104"' cat "$c"
+	has_text "$c" "$(printf 'multihop {\n\t\tinterval 200 ms;')" ||
+	    atf_fail "multihop BFD is not there"
+	if [ -x /usr/local/sbin/bird ] && [ "$(sysctl -n net.fibs)" -ge 2 ]; then
+		atf_check /usr/local/sbin/bird -p -c "$c"
+	fi
+	# Destination sets by BGP attribute: the filters to the kernel, the
+	# gateway rewritten, the rest of BGP kept out.
+	cat > bird.json <<'EOS'
+{"instances":[{"name":"sw1","fib":1,"host":"a","spec":{"service":"acme","fib":1,"table":1,"as":64600,"router_id":"100.64.0.0","direct":["lo0","gre100","geneve102"],"sets":{"only":true,"sets":[{"name":"country","via":"a-inet","gateway":"192.0.2.254","as_path":[64600,64601],"communities":[[64600,100]]}]},"bfd":{"interfaces":["gre100","geneve102"],"interval":200,"multiplier":3,"sessions":true},"reject":["100.64.0.0/24","100.64.0.0/24"],"md5":"edges-secret","peers":[{"tunnel":"acme/a-inet-b-inet","to":"b","local":"100.64.0.0","neighbor":"100.64.0.1"},{"tunnel":"acme/a-mpls-b-mpls","to":"b","local":"100.64.0.2","neighbor":"100.64.0.3"}],"unis":[]}}]}
+EOS
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird "$(cat bird.json)"
+	c=$(kept sdwan-bird-sw1.conf)
+	has_text "$c" "$(printf 'filter to_kernel4 {\n\tif source = RTS_DEVICE || source = RTS_INHERIT || dest != RTD_UNICAST then reject;\n\t# country, by a-inet\n\tif bgp_path ~ [64600, 64601] || bgp_community ~ [(64600, 100)] then { gw = 192.0.2.254; accept; }\n\tif source = RTS_BGP then reject;\n\taccept;\n}')" ||
+	    atf_fail "the set's filter is not there"
+	has_text "$c" "$(printf 'filter to_kernel6 {\n\tif source = RTS_DEVICE || source = RTS_INHERIT || dest != RTD_UNICAST then reject;\n\tif source = RTS_BGP then reject;\n\taccept;\n}')" ||
+	    atf_fail "IPv6's filter is not there"
+	atf_check -o match:'export filter to_kernel4;' -o match:'export filter to_kernel6;' cat "$c"
+	# Routing neighbours at a UNI: several BGP entries, one multihop
+	# from a source of the edge's, BFD on both; OSPF of each family.
+	cat > bird.json <<'EOS'
+{"instances":[{"name":"sw1","fib":1,"host":"a","spec":{"service":"acme","fib":1,"table":1,"as":64600,"router_id":"100.64.0.0","direct":["lo0","gre100","geneve102"],"bfd":{"interfaces":["gre100","geneve102","lo0"],"interval":200,"multiplier":3,"multihop":true,"sessions":true},"reject":["100.64.0.0/24","100.64.0.0/24"],"md5":"edges-secret","peers":[{"tunnel":"acme/a-inet-b-inet","to":"b","local":"100.64.0.0","neighbor":"100.64.0.1"}],"unis":[{"id":"uni-hq","end_point":"hq","interface":"lo0","bgp":[{"family":"ipv4","as":65010,"neighbors":["10.1.0.2"],"password":"s3cret","hold_time":90,"distance":150,"communities":[[64600,100]],"bfd":true},{"family":"ipv4","as":64600,"neighbors":["10.1.0.3"],"source":"10.1.0.1","multihop":true,"bfd":true}]},{"id":"uni-br","end_point":"branch","interface":"vlan104","ospf":[{"family":"ipv6","area":0,"cost":50,"bfd":true},{"family":"ipv4","area":1}]}]}}]}
+EOS
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird "$(cat bird.json)"
+	c=$(kept sdwan-bird-sw1.conf)
+	has_text "$c" "$(printf 'protocol bgp uni_hq_0 {\n\tlocal as 64600;\n\tneighbor 10.1.0.2 as 65010;\n\tinterface "lo0";\n\tbfd on;\n\tauthentication md5;')" ||
+	    atf_fail "the first neighbour is not watched by BFD"
+	has_text "$c" "$(printf ', iBGP, multihop\nprotocol bgp uni_hq_1 {\n\tlocal 10.1.0.1 as 64600;\n\tneighbor 10.1.0.3 as 64600;\n\tmultihop;\n\tbfd on;\n\tipv4 {\n\t\tpreference 56;\n\t\timport all;\n\t\texport all;\n\t\tnext hop self;\n\t};\n}')" ||
+	    atf_fail "the multihop iBGP neighbour is not there"
+	has_text "$c" "$(printf 'protocol bfd {\n\tinterface "gre100", "geneve102", "lo0" {')" ||
+	    atf_fail "BFD is not on the UNI"
+	atf_check -o match:'^	multihop \{$' -o match:'^protocol ospf v3 uni_branch_v3 \{$' \
+	    -o match:'^protocol ospf v2 uni_branch_v2_1 \{$' -o match:'^	area 1 \{$' cat "$c"
+	has_text "$c" "$(printf '\tarea 0 {\n\t\tinterface "vlan104" {\n\t\t\tcost 50;\n\t\t\tbfd on;\n')" ||
+	    atf_fail "OSPFv3's area is not as its entry says"
+	# What a form may not hold: a quote that would end a word.
+	atf_check -s exit:1 -e match:'a word of printable characters' -o ignore "$JGC" -c "$SOCK" sdwan bird \
+	    '{"instances":[{"name":"sw1","fib":1,"spec":{"service":"acme","router_id":"100.64.0.0","md5":"x\";}\nprotocol x {"}}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird '{"instances":[]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"instances":[]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns '{"instances":[]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dhcp '{"instances":[]}'
+}
+sdwan_forms_cleanup()
 {
 	stop_daemon
 }
@@ -7468,10 +7891,38 @@ EOM
 	    -o match:'^speederv2_b_flags="-s -l192.0.2.2:14351 -r127.0.0.1:51822 -k bkey' \
 	    -o match:'^speederv2_c_flags="-c -l127.0.0.1:51823' cat rc.conf
 	atf_check -o match:done "$JGC" -c "$SOCK" speeder start profile=b
-	atf_check test -f running.speederv2-b
+	atf_check test -f running.speederv2_b
+	# In rc.subr's service jail, held to its addresses: a running relay
+	# stopped under the jail it is in and started in the new one, not
+	# restarted in the old; the same jail again is a restart.
+	: > speederv2.verbs
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder conf profile=b \
+	    role=server listen=192.0.2.2:14351 remote=127.0.0.1:51822 \
+	    svcj=yes svcj_ipaddrs=192.0.2.2,127.0.0.1
+	atf_check -o match:'^speederv2_b_svcj="YES"$' \
+	    -o match:'^speederv2_b_svcj_options="net_basic"$' \
+	    -o match:'^speederv2_b_svcj_ipaddrs="192.0.2.2 127.0.0.1"$' \
+	    -o match:'^speederv2_b_flags="-s -l192.0.2.2:14351 -r127.0.0.1:51822 -k bkey' \
+	    cat rc.conf
+	atf_check -o inline:'onestatus speederv2_b\nonestop speederv2_b\nonestart speederv2_b\n' \
+	    cat speederv2.verbs
+	: > speederv2.verbs
+	atf_check -o match:done "$JGC" -c "$SOCK" speeder conf profile=b \
+	    role=server listen=192.0.2.2:14351 remote=127.0.0.1:51822
+	atf_check -o inline:'onestatus speederv2_b\nonerestart speederv2_b\n' \
+	    cat speederv2.verbs
+	atf_check -o match:'"name":"b","running":true,[^]]*"svcj":true,"svcj_options":"net_basic","svcj_ipaddrs":"192.0.2.2 127.0.0.1"' \
+	    "$JGC" -c "$SOCK" speeder
+	atf_check -s exit:1 -e match:'svcj_ipaddrs is up to 8 addresses' -o ignore \
+	    "$JGC" -c "$SOCK" speeder conf profile=b role=server \
+	    listen=192.0.2.2:14351 remote=127.0.0.1:51822 'svcj_ipaddrs=192.0.2.2;x'
+	atf_check -s exit:1 -e match:'svcj=no takes no svcj_ipaddrs' -o ignore \
+	    "$JGC" -c "$SOCK" speeder conf profile=b role=server \
+	    listen=192.0.2.2:14351 remote=127.0.0.1:51822 svcj=no \
+	    svcj_ipaddrs=192.0.2.2
 	# Each read with its own lines, by its tag; the key never.
 	cat >> messages <<'EOM'
-Oct 23 14:23:09 h speederv2-b[45]: [2026-10-23 14:23:09][INFO][report]client-->server:(original:10 pkt;1000 byte) (fec:20 pkt,2000 byte)  server-->client:(original:10 pkt;1000 byte) (fec:20 pkt;2000 byte)
+Oct 23 14:23:09 h speederv2_b[45]: [2026-10-23 14:23:09][INFO][report]client-->server:(original:10 pkt;1000 byte) (fec:20 pkt,2000 byte)  server-->client:(original:10 pkt;1000 byte) (fec:20 pkt;2000 byte)
 EOM
 	atf_check -o match:'"profiles_supported":true' \
 	    -o match:'"profiles":\[\{"name":"b","running":true,"flags":"-s -l192.0.2.2:14351 -r127.0.0.1:51822 -k <hidden>"' \
@@ -7492,15 +7943,33 @@ EOM
 		sleep 0.1
 	done
 	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
-	    -o match:'speederv2 b: remove' "$JGC" -c "$SOCK" job 12
+	    -o match:'speederv2 b: remove' "$JGC" -c "$SOCK" job 14
 	atf_check -o match:'^speederv2_profiles="b c"$' \
-	    -o match:'^speederv2_b_flags="-s ' cat rc.conf
-	atf_check test -f running.speederv2-b
+	    -o match:'^speederv2_b_flags="-s ' \
+	    -o match:'^speederv2_b_svcj_ipaddrs="192.0.2.2 127.0.0.1"$' cat rc.conf
+	atf_check test -f running.speederv2_b
 	# Taken away for good.
 	atf_check -o match:done "$JGC" -c "$SOCK" speeder remove profile=b
 	atf_check -o match:'^speederv2_profiles="c"$' -o not-match:'speederv2_b_' \
 	    cat rc.conf
-	atf_check test ! -f running.speederv2-b
+	atf_check test ! -f running.speederv2_b
+
+	# Its overhead in the history, beside the interfaces' rates: the
+	# bytes taken in plain and added by the FEC, both ways, a second,
+	# over its last interval; read on from the log's end as it grows.
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 20
+	sleep 1.5
+	printf '%s h speederv2[7]: [%s][INFO][report]client-->server:(original:100 pkt;100000 byte) (fec:150 pkt,160000 byte)  server-->client:(original:50 pkt;40000 byte) (fec:80 pkt;60000 byte)\n' \
+	    "$(date '+%b %e %T')" "$(date -v-10S '+%Y-%m-%d %H:%M:%S')" >> messages
+	printf '%s h speederv2[7]: [%s][INFO][report]client-->server:(original:200 pkt;200000 byte) (fec:300 pkt,330000 byte)  server-->client:(original:100 pkt;80000 byte) (fec:160 pkt;120000 byte)\n' \
+	    "$(date '+%b %e %T')" "$(date '+%Y-%m-%d %H:%M:%S')" >> messages
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" history > h.json
+		grep -q ',14000,9000\]\]' h.json && break
+		sleep 0.1
+	done
+	atf_check -o match:'"relays":\["speederv2_b","speederv2"\]' \
+	    -o match:',14000,9000\]\]\}$' cat h.json
 }
 speeder_cleanup()
 {
@@ -8146,19 +8615,27 @@ exit 0
 EOS
 	chmod +x fake-sysctl
 	printf '# kept\nkern.ipc.somaxconn=1024\nnet.inet.ip.forwarding = 1 # routes\n' > sysctl.conf
-	DAEMON_ARGS="-Q $(pwd)/fake-sysctl -O $(pwd)/sysctl.conf"
+	# kld_list as running has it: the files rc(8) reads, under the
+	# agent's root; the jobs change ./rc.conf through sysrc.
+	mkdir -p root/etc/defaults
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'kld_list="if_bridge"\n' > root/etc/rc.conf
+	DAEMON_ARGS="-Q $(pwd)/fake-sysctl -O $(pwd)/sysctl.conf --root $(pwd)/root"
 	start_daemon
 	printf 'kld_list="if_bridge"\n' >> rc.conf
 
 	# What is in the kernel is read from the kernel: the kernel itself
-	# first, with the modules it holds; what its memory went to.
+	# first, with the modules it holds; what its memory went to; as
+	# arcana-kernel has them (get kernel).
 	atf_check -o save:k.json "$JGC" -c "$SOCK" kmod
-	atf_check -o match:'"files":\[\{"id":1,"name":"kernel","path":"/boot/[^"]*kernel"' \
-	    -o match:'"refs":[0-9]+,"size":[0-9]+' -o match:'"modules":\["' \
+	atf_check -o match:'^\{"arcana-kernel:kernel":\{' \
+	    -o match:'"file":\[\{"address":"0x[0-9a-f]+","id":1,"module":\["' \
+	    -o match:'"name":"kernel","path":"/boot/[^"]*kernel","refs":[0-9]+,"size":"[0-9]+"\}' \
 	    -o match:'"available":\[' -o match:'"kept":\["if_bridge"\]' \
-	    -o match:'"memory":\{"files":[0-9]+' \
-	    -o match:'"malloc_total":[0-9]+,"malloc":\[\{"name":"[^"]+","bytes":[0-9]+,"count":[0-9]+,"requests":[0-9]+\}' \
-	    -o match:'"zones":\[\{"name":"[^"]+","bytes":[0-9]+,"count":[0-9]+,"requests":[0-9]+,"size":[0-9]+,"free":[0-9]+\}' \
+	    -o match:'"memory":\{"files":"[0-9]+"' \
+	    -o match:'"malloc":\[\{"bytes":"[0-9]+","count":"[0-9]+","name":"[^"]+","requests":"[0-9]+"\}' \
+	    -o match:'"malloc-total":"[0-9]+"' \
+	    -o match:'"zone":\[\{"bytes":"[0-9]+","count":"[0-9]+","free":"[0-9]+","name":"[^"]+","requests":"[0-9]+","size":"[0-9]+"\}' \
 	    cat k.json
 
 	# Loaded: as kldload finds it, and one that is in already is no
@@ -8215,28 +8692,33 @@ EOS
 		atf_check -o match:'^kldunload sctp$' cat kld.log
 	fi
 
-	# The kernel's state: read from the kernel, a name or the start of
-	# one; with what sysctl.conf sets at boot.
+	# The kernel's state: read from the kernel by arcana-sysctl's read
+	# action, a name or the start of one; what sysctl.conf sets at
+	# boot is running's.
 	atf_check -o save:s.json "$JGC" -c "$SOCK" sysctl kern.ostype
-	atf_check -o match:'"values":\[\{"name":"kern.ostype","value":"FreeBSD","type":"string","rw":false' \
-	    -o match:'"kept":\[\{"name":"kern.ipc.somaxconn","value":"1024"\},\{"name":"net.inet.ip.forwarding","value":"1"\}\]' \
+	atf_check -o match:'^\{"value":\[\{"description":"[^"]+","name":"kern.ostype","tunable":false,"type":"string","value":"FreeBSD","writable":false\}' \
 	    cat s.json
-	atf_check -o match:'"name":"kern.maxproc","value":"[0-9]+","type":"integer"' \
-	    -o match:'"descr":"' "$JGC" -c "$SOCK" sysctl kern.maxproc
-	atf_check -o match:'"name":"kern.ipc.somaxconn"' \
+	atf_check -o inline:'{"arcana-sysctl:sysctl":{"kept":[{"name":"kern.ipc.somaxconn","value":"1024"},{"name":"net.inet.ip.forwarding","value":"1"}]}}\n' \
+	    "$JGC" -c "$SOCK" get -d running sysctl
+	atf_check -o match:'"name":"kern.maxproc","tunable":[a-z]+,"type":"integer","value":"[0-9]+"' \
+	    -o match:'"description":"' "$JGC" -c "$SOCK" sysctl kern.maxproc
+	atf_check -o match:'"name":"kern.ipc.maxsockbuf"' \
 	    -o not-match:'"name":"vm\.' "$JGC" -c "$SOCK" sysctl kern.ipc.
-	# All of it is more than a reply carries: the first, and counted.
-	atf_check -o match:'"name":"kern.ostype"' -e match:'the first of [0-9]+' \
+	# All of it is more than one part: the first, and where to go on.
+	atf_check -o match:'"name":"kern.ostype"' -o match:'"next":"' \
+	    -o match:'"total":"[0-9]+"' -e match:'the first part: go on after' \
 	    "$JGC" -c "$SOCK" sysctl
-	# In parts, as a dump: the whole tree, nothing left out for size,
-	# each part an array of its own; and a part of the tree the same.
+	# In parts: the whole tree, nothing left out for size, each part
+	# the action's output; and a part of the tree the same.
 	atf_check -o save:parts.json "$JGC" -c "$SOCK" sysctl parts
 	[ "$(wc -l < parts.json)" -gt 10 ] || atf_fail "the tree came in $(wc -l < parts.json) parts"
-	atf_check -o match:'^\[\{"name":"kern.ostype","value":"FreeBSD"' head -1 parts.json
+	atf_check -o match:'^\{"next":"[^"]+","total":"[0-9]+","value":\[\{"description":"[^"]*","name":"kern.ostype"' \
+	    head -1 parts.json
 	atf_check -o match:'"name":"vm\.' -o match:'"name":"net\.' cat parts.json
-	atf_check -o match:'^\[\{"name":"kern.ostype"[^]]*\]$' \
+	atf_check -o not-match:'"next"' tail -1 parts.json
+	atf_check -o match:'^\{"value":\[\{[^]]*"name":"kern.ostype"[^]]*\]\}$' \
 	    "$JGC" -c "$SOCK" sysctl parts kern.ostype
-	atf_check -s exit:1 -e match:'Invalid argument' -o ignore \
+	atf_check -s exit:1 -e match:'does not match pattern' -o ignore \
 	    "$JGC" -c "$SOCK" sysctl parts 'kern x'
 	# Set with sysctl(8); kept, the line that set it before is replaced
 	# and the rest of the file is as it was.
@@ -8253,10 +8735,11 @@ EOS
 	atf_check -o match:'done' "$JGC" -p -c "$SOCK" sysctl 'kern.corefile=/var/cores/%N core'
 	atf_check -o match:'^kern.corefile="/var/cores/%N core"$' cat sysctl.conf
 	atf_check -o match:'"kept":.*"name":"kern.corefile","value":"/var/cores/%N core"' \
-	    -o match:'"values":\[\]' "$JGC" -c "$SOCK" sysctl kern.nothing-there
+	    "$JGC" -c "$SOCK" get -d running sysctl
+	atf_check -o not-match:'"name"' "$JGC" -c "$SOCK" sysctl kern.nothing-there
 	# A name the kernel leaves out of its list is found by itself.
 	if sysctl -n kern.ipc.somaxconn >/dev/null 2>&1; then
-		atf_check -o match:'"values":\[\{"name":"kern.ipc.somaxconn","value":"[0-9]+"' \
+		atf_check -o match:'"value":\[\{[^]]*"name":"kern.ipc.somaxconn",[^]]*"value":"[0-9]+"' \
 		    "$JGC" -c "$SOCK" sysctl kern.ipc.somaxconn
 	fi
 	# What sysctl refuses is said, and is not kept.
@@ -11129,8 +11612,8 @@ reboot_cleanup()
 	stop_daemon
 }
 
-# The datastores (RFC 8342): running read from what rc(8) reads, the
-# candidate edited and committed; Arcana's rc.conf file named in
+# The datastores (RFC 8342): running read from what rc(8) reads, with
+# RFC 6243's modes and the origins; the candidate edited and committed; Arcana's rc.conf file named in
 # rc_conf_files and the user's variables taken out only where accepted;
 # a commit whose kernel change fails leaves every file as it was.
 atf_test_case datastores cleanup
@@ -11150,6 +11633,26 @@ datastores_body()
 	atf_check -o match:'"destination-prefix":"198.51.100.0/24"' \
 	    -o not-match:'"route-preference"' \
 	    "$JGC" -c "$SOCK" get -d running routing
+	# RFC 6243's modes: a default in use reported, or one left out.
+	atf_check -o not-match:'enable-external-groups' \
+	    "$JGC" -c "$SOCK" get nacm
+	atf_check -o match:'"enable-external-groups":true' \
+	    "$JGC" -c "$SOCK" get -w report-all nacm
+	atf_check -o not-match:'"read-default"' \
+	    "$JGC" -c "$SOCK" get -w trim nacm
+	atf_check -o match:'"@enable-external-groups":\{"ietf-defaults:default":true\}' \
+	    "$JGC" -c "$SOCK" get -w report-all-tagged nacm
+	# RFC 8342's origins, the operational datastore's alone: the
+	# interfaces running has, intended; what the host made, system.
+	atf_check -o match:'^\{"ietf-interfaces:interfaces":\{"@":\{"ietf-origin:origin":"ietf-origin:intended"\},' \
+	    "$JGC" -c "$SOCK" get -o interfaces
+	# lo0's link-local address, the host's own: system.
+	if ifconfig lo0 inet6 2>/dev/null | grep -q 'fe80::1%lo0'; then
+		atf_check -o match:'\{"@":\{"ietf-origin:origin":"ietf-origin:system"\},"ip":"fe80::1"' \
+		    "$JGC" -c "$SOCK" get -o interfaces
+	fi
+	atf_check -s exit:1 -e match:'with-origin is for the operational datastore' \
+	    "$JGC" -c "$SOCK" get -d running -o interfaces
 	# Running changes by a commit of the candidate alone.
 	"$JGC" -c "$SOCK" get -d running routing > run.json
 	sed -e 's|"route":\[|"route":[{"destination-prefix":"203.0.113.0/24","next-hop":{"next-hop-address":"127.0.0.1"}},|' \
@@ -11269,8 +11772,16 @@ datastores_instances_body()
 	printf 'hostname="lab"\n' > root/etc/rc.conf
 	DAEMON_ARGS="--root $(pwd)/root"
 	start_daemon
+	# Each vrf-root's schema, RFC 8528's: shared, the interfaces its
+	# parent-reference, its YANG library inside it.
+	atf_check -o match:'"label":"vrf-root","module":"ietf-network-instance","shared-schema":\{"parent-reference":\["/if:interfaces"\]\}' \
+	    -o match:'"namespace":\[\{"prefix":"if","uri":"urn:ietf:params:xml:ns:yang:ietf-interfaces"\}\]' \
+	    "$JGC" -c "$SOCK" get schema-mounts
+	atf_check -o match:'"vrf-root":\{.*"ietf-yang-library:yang-library":\{"content-id":"[0-9a-f]{16}"' \
+	    "$JGC" -c "$SOCK" get network-instances
 	"$JGC" -c "$SOCK" get -d running network-instances > run.json
 	atf_check -o match:'"name":"fib1"' cat run.json
+	atf_check -o not-match:'yang-library' cat run.json
 	sed -e 's|"name":"fib1"|"description":"the lab'"'"'s","name":"blue"|' \
 	    run.json > blue.json
 	atf_check "$JGC" -c "$SOCK" edit network-instances @blue.json
@@ -11334,9 +11845,329 @@ datastores_ra_cleanup()
 	stop_daemon
 }
 
+# arcana-sysctl (PLAN-SDN-YANG 3.1.6): running is what sysctl.conf sets
+# at boot; a commit writes the file in place and sets the kernel to each
+# value changed, a value refused puts the file back, a tunable the
+# loader alone sets is refused for loader.conf, one taken out is said to
+# keep its value.
+atf_test_case datastores_sysctl cleanup
+datastores_sysctl_head()
+{
+	atf_set "descr" "sysctl.conf as running, committed and applied"
+}
+datastores_sysctl_body()
+{
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\n' > root/etc/rc.conf
+	printf '# Kept.\nkern.ipc.somaxconn=1024\nnet.inet.ip.forwarding = 1 # routes\n' \
+	    > root/etc/sysctl.conf
+	cat > fake-sysctl <<EOS
+#!/bin/sh
+echo "sysctl \$*" >> $(pwd)/kld.log
+[ "\$1" = "kern.nosuch=1" ] && { echo "sysctl: unknown oid 'kern.nosuch'" >&2; exit 1; }
+exit 0
+EOS
+	chmod +x fake-sysctl
+	DAEMON_ARGS="--root $(pwd)/root -Q $(pwd)/fake-sysctl"
+	start_daemon
+	# Running: the file's settings, nothing of the kernel's.
+	atf_check -o inline:'{"arcana-sysctl:sysctl":{"kept":[{"name":"kern.ipc.somaxconn","value":"1024"},{"name":"net.inet.ip.forwarding","value":"1"}]}}\n' \
+	    "$JGC" -c "$SOCK" get -d running sysctl
+	# A commit: one changed in place, one new at the end, one taken out
+	# (said); the kernel set to the two, as sysctl(8).
+	atf_check "$JGC" -c "$SOCK" edit sysctl \
+	    '{"kept":[{"name":"kern.ipc.somaxconn","value":"4096"},{"name":"kern.corefile","value":"/var/cores/%N core"}]}'
+	atf_check -o match:'sysctl-unset: net.inet.ip.forwarding is no longer set at boot' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check -o match:'^# Kept.$' -o match:'^kern.ipc.somaxconn=4096$' \
+	    -o match:'^kern.corefile=/var/cores/%N core$' \
+	    -o not-match:'forwarding' -o not-match:'1024' cat root/etc/sysctl.conf
+	atf_check -o inline:'sysctl kern.ipc.somaxconn=4096\nsysctl kern.corefile=/var/cores/%N core\n' \
+	    cat kld.log
+	atf_check -o match:'"name":"kern.corefile","value":"/var/cores/%N core"' \
+	    -o not-match:'forwarding' "$JGC" -c "$SOCK" get -d running sysctl
+	# The kernel refuses one: the file as it was.
+	cp root/etc/sysctl.conf before
+	atf_check "$JGC" -c "$SOCK" edit sysctl \
+	    '{"kept":[{"name":"kern.ipc.somaxconn","value":"4096"},{"name":"kern.corefile","value":"/var/cores/%N core"},{"name":"kern.nosuch","value":"1"}]}'
+	atf_check -s exit:1 -e match:'kern.nosuch: .*unknown oid' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check cmp before root/etc/sysctl.conf
+	atf_check "$JGC" -c "$SOCK" discard
+	# A tunable the loader alone sets: not from here.
+	atf_check "$JGC" -c "$SOCK" edit sysctl \
+	    '{"kept":[{"name":"kern.maxusers","value":"512"}]}'
+	atf_check -s exit:1 -e match:'kern.maxusers is a tunable the loader sets' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check cmp before root/etc/sysctl.conf
+	atf_check "$JGC" -c "$SOCK" discard
+	# The same again: nothing to do, nothing set.
+	: > kld.log
+	atf_check "$JGC" -c "$SOCK" edit sysctl \
+	    '{"kept":[{"name":"kern.ipc.somaxconn","value":"4096"},{"name":"kern.corefile","value":"/var/cores/%N core"}]}'
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check cmp before root/etc/sysctl.conf
+	atf_check -o empty cat kld.log
+}
+datastores_sysctl_cleanup()
+{
+	stop_daemon
+}
+
+# arcana-services (PLAN-SDN-YANG 3.1.2): running is each script with
+# its rcvar and rc.conf variables from the files rc(8) reads; a commit
+# writes what differs to Arcana's rc.conf file by rcarcana.c's rules,
+# a service at a time; a variable not the service's own, or its rcvar
+# as a variable, is refused.
+atf_test_case datastores_services cleanup
+datastores_services_head()
+{
+	atf_set "descr" "Services' rcvars and variables as running, committed"
+}
+datastores_services_body()
+{
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\nsshd_enable="YES"\nsshd_flags="-4"\n' > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	# Running: the scripts, with what the files rc(8) reads set.
+	atf_check -o save:run.json "$JGC" -c "$SOCK" get -d running services
+	atf_check -o match:'\{"enabled":true,"name":"sshd","variable":\[\{"name":"sshd_flags","value":"-4"\}\]\}' \
+	    -o match:'\{"name":"ntpd"\}' -o not-match:'"path"' cat run.json
+	# The operational datastore: enabled as sysrc -A says, the
+	# variables beside.
+	atf_check -o match:'"name":"ntpd"' -o match:'"path":"' \
+	    -o match:'"name":"sshd_flags","value":"-4"' "$JGC" -c "$SOCK" get services
+	# A commit: disabled, a variable changed, one new; rc_conf_files
+	# first, then the user's variables, then Arcana's file has them.
+	atf_check "$JGC" -c "$SOCK" edit services \
+	    '{"service":[{"name":"sshd","enabled":false,"variable":[{"name":"sshd_flags","value":"-6"},{"name":"sshd_program","value":"/usr/local/sbin/sshd"}]}]}'
+	atf_check -s exit:1 -e match:'-a rc-conf-files' "$JGC" -c "$SOCK" commit
+	atf_check -s exit:1 -e match:'sshd_enable .*rc.conf line 2.*-a rc-conf-conflict' \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-files
+	atf_check "$JGC" -c "$SOCK" commit -a rc-conf-files -a rc-conf-conflict
+	atf_check -o match:'^sshd_enable="NO"$' -o match:'^sshd_flags="-6"$' \
+	    -o match:'^sshd_program="/usr/local/sbin/sshd"$' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o not-match:'sshd_' cat root/etc/rc.conf
+	atf_check -o match:'\{"enabled":false,"name":"sshd","variable":\[\{"name":"sshd_flags","value":"-6"\},\{"name":"sshd_program","value":"/usr/local/sbin/sshd"\}\]\}' \
+	    "$JGC" -c "$SOCK" get -d running services
+	# Not its own variable; its rcvar is enabled's alone.
+	atf_check "$JGC" -c "$SOCK" edit services \
+	    '{"service":[{"name":"sshd","variable":[{"name":"ntpd_flags","value":"x"}]}]}'
+	atf_check -s exit:1 -e match:"'ntpd_flags' is not a variable of sshd" \
+	    "$JGC" -c "$SOCK" commit
+	atf_check "$JGC" -c "$SOCK" discard
+	atf_check "$JGC" -c "$SOCK" edit services \
+	    '{"service":[{"name":"sshd","variable":[{"name":"sshd_enable","value":"YES"}]}]}'
+	atf_check -s exit:1 -e match:"'sshd_enable' is not a variable of sshd" \
+	    "$JGC" -c "$SOCK" commit
+	atf_check "$JGC" -c "$SOCK" discard
+	# One taken out: gone from Arcana's file; the rest as it was.
+	atf_check "$JGC" -c "$SOCK" edit services \
+	    '{"service":[{"name":"sshd","enabled":false,"variable":[{"name":"sshd_flags","value":"-6"}]}]}'
+	atf_check "$JGC" -c "$SOCK" commit
+	atf_check -o match:'^sshd_enable="NO"$' -o match:'^sshd_flags="-6"$' \
+	    -o not-match:'sshd_program' cat root/usr/local/etc/rc.conf.d/arcana
+}
+datastores_services_cleanup()
+{
+	stop_daemon
+}
+
+# arcana-kernel (3.1.6): kld_list as running, from the files rc(8)
+# reads; a commit writes it to Arcana's rc.conf file by rcarcana.c's
+# rules, the kernel as it is, said where the two differ.
+atf_test_case datastores_kernel cleanup
+datastores_kernel_head()
+{
+	atf_set "descr" "kld_list as running, committed to Arcana's rc.conf file"
+}
+datastores_kernel_body()
+{
+	mkdir -p root/etc/defaults root/usr/local/etc
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\nkld_list="if_bridge"\n' > root/etc/rc.conf
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	atf_check -o inline:'{"arcana-kernel:kernel":{"kept":["if_bridge"]}}\n' \
+	    "$JGC" -c "$SOCK" get -d running kernel
+	# The operational state's kept is sysrc(8)'s word (./rc.conf here,
+	# the jobs' file), running's the files under the root.
+	printf 'kld_list="if_bridge"\n' >> rc.conf
+	atf_check -o match:'"kept":\["if_bridge"\]' -o match:'"file":\[\{"address"' \
+	    "$JGC" -c "$SOCK" get kernel
+	# rc_conf_files first, then the user's variable; then Arcana's
+	# file has it, the user's not, and a module not loaded is said.
+	atf_check "$JGC" -c "$SOCK" edit kernel '{"kept":["if_bridge","if_nosuch"]}'
+	atf_check -s exit:1 -e match:'-a rc-conf-files' "$JGC" -c "$SOCK" commit
+	atf_check -s exit:1 -e match:'kld_list .*rc.conf line 2.*-a rc-conf-conflict' \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-files
+	atf_check -o match:'kld-list: if_nosuch is not loaded: kld_list loads it at the next boot' \
+	    "$JGC" -c "$SOCK" commit -a rc-conf-files -a rc-conf-conflict
+	atf_check -o match:'^kld_list="if_bridge if_nosuch"$' \
+	    cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o match:'^rc_conf_files=".*/usr/local/etc/rc.conf.d/arcana"$' \
+	    -o not-match:'kld_list' cat root/etc/rc.conf
+	atf_check -o inline:'{"arcana-kernel:kernel":{"kept":["if_bridge","if_nosuch"]}}\n' \
+	    "$JGC" -c "$SOCK" get -d running kernel
+	# A name is a name.
+	atf_check "$JGC" -c "$SOCK" edit kernel '{"kept":["/tmp/evil.ko"]}'
+	atf_check -s exit:1 -e match:'without a path' "$JGC" -c "$SOCK" commit
+	atf_check "$JGC" -c "$SOCK" discard
+	# None: the variable taken out.
+	atf_check "$JGC" -c "$SOCK" edit kernel '{}'
+	atf_check -o ignore "$JGC" -c "$SOCK" commit
+	atf_check -o not-match:'kld_list' cat root/usr/local/etc/rc.conf.d/arcana
+	atf_check -o inline:'{"arcana-kernel:kernel":{}}\n' \
+	    "$JGC" -c "$SOCK" get -d running kernel
+}
+datastores_kernel_cleanup()
+{
+	stop_daemon
+}
+
+# ietf-syslog (RFC 9742) in running, syslog.conf and newsyslog.conf as
+# syslogd and newsyslog read them; a commit writes Arcana's own files,
+# included by theirs, and takes the user's lines of what it changes
+# only where accepted; syslogd not told again, every file as it was.
+atf_test_case datastores_syslog cleanup
+datastores_syslog_head()
+{
+	atf_set "descr" "syslog.conf and newsyslog.conf read and committed"
+}
+datastores_syslog_body()
+{
+	mkdir -p root/etc/defaults root/etc/syslog.d root/usr/local/etc \
+	    root/var/log
+	cp /etc/defaults/rc.conf root/etc/defaults/
+	printf 'hostname="lab"\n' > root/etc/rc.conf
+	cat > root/etc/syslog.conf <<'EOF'
+*.err;kern.warning;auth.notice;mail.crit		/dev/console
+*.notice;authpriv.none;kern.debug;lpr.info;mail.crit;news.err	/var/log/messages
+security.*					/var/log/security
+cron.*						-/var/log/cron
+!-devd
+*.=debug					/var/log/debug.log
+!*
+include						/etc/syslog.d
+EOF
+	echo 'local7.*	/var/log/messages' > root/etc/syslog.d/l7.conf
+	cat > root/etc/newsyslog.conf <<'EOF'
+/var/log/messages	644  5	1000	@0101T JC
+/var/log/security	600  10	1000	*	JC
+/var/log/cron		600  3	1000	*	JC
+<include> /usr/local/etc/newsyslog.conf.d/[!.]*.conf
+EOF
+	touch root/var/log/messages root/var/log/security root/var/log/cron
+	cp root/etc/syslog.conf syslog.conf.before
+	cp root/etc/newsyslog.conf newsyslog.conf.before
+	DAEMON_ARGS="--root $(pwd)/root"
+	start_daemon
+	touch running.syslogd
+	"$JGC" -c "$SOCK" get -d running syslog > run.json
+	atf_check -o match:'"name":"file:/var/log/messages"' \
+	    -o match:'"facility":"ietf-syslog:local7"' cat run.json
+	# A file of its own, rotated, and a remote: Arcana's files,
+	# syslog.conf's include accepted first.
+	sed -e 's|"log-file":\[|"log-file":[{"name":"file:/var/log/arcana.log","filter":{"facility-list":[{"facility":"ietf-syslog:local3","severity":"info"}]},"file-rotation":{"number-of-files":4,"max-file-size":2,"rollover":1440}},|' \
+	    -e 's|\]}}}}$|]},"remote":{"destination":[{"name":"192.0.2.10","udp":{"udp":[{"address":"192.0.2.10","port":5514}]},"filter":{"facility-list":[{"facility":"ietf-syslog:local4","severity":"all"}]}}]}}}}|' \
+	    run.json > new.json
+	atf_check "$JGC" -c "$SOCK" edit syslog @new.json
+	atf_check -s exit:1 -e match:'include them.*/etc/syslog.conf.*-a syslog-include' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check cmp syslog.conf.before root/etc/syslog.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" commit -a syslog-include
+	atf_check -o file:syslog.conf.before head -n 8 root/etc/syslog.conf
+	atf_check -o match:'^include[[:space:]]+/usr/local/etc/syslog.d$' \
+	    tail -n 1 root/etc/syslog.conf
+	atf_check cmp newsyslog.conf.before root/etc/newsyslog.conf
+	printf 'local3.info\t/var/log/arcana.log\nlocal4.*\t@192.0.2.10:5514\n' \
+	    > want
+	atf_check -o file:want grep -v '^#' \
+	    root/usr/local/etc/syslog.d/arcana.conf
+	printf '/var/log/arcana.log\t600  4\t2048\t24\tJC\n' > want
+	atf_check -o file:want grep -v '^#' \
+	    root/usr/local/etc/newsyslog.conf.d/arcana.conf
+	atf_check test -f root/var/log/arcana.log
+	atf_check -o inline:'reloaded\n' cat reloads.syslogd
+	"$JGC" -c "$SOCK" get -d running syslog > run2.json
+	atf_check -o match:'"max-file-size":2,"number-of-files":4,"rollover":1440' \
+	    -o match:'"address":"192.0.2.10","port":5514' cat run2.json
+	# One of the user's: their lines of it taken over where accepted.
+	sed -e 's|{"facility":"ietf-syslog:lpr","severity":"info"},||' \
+	    run2.json > lpr.json
+	atf_check "$JGC" -c "$SOCK" edit syslog @lpr.json
+	atf_check -s exit:1 \
+	    -e match:'/etc/syslog.conf:2, /etc/syslog.d/l7.conf:1.*-a syslog-conf-conflict' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check -o ignore "$JGC" -c "$SOCK" commit -a syslog-conf-conflict
+	atf_check -o match:'^# taken by Arcana: \*\.notice;authpriv.none;kern.debug;lpr.info' \
+	    sed -n 2p root/etc/syslog.conf
+	atf_check -o match:'^# taken by Arcana: local7' cat root/etc/syslog.d/l7.conf
+	atf_check -o match:'^\*\.notice;authpriv\.none;kern\.debug;mail\.crit;news\.err;local7\.\*	/var/log/messages$' \
+	    cat root/usr/local/etc/syslog.d/arcana.conf
+	atf_check cmp newsyslog.conf.before root/etc/newsyslog.conf
+	"$JGC" -c "$SOCK" get -d running syslog > run3.json
+	atf_check -o not-match:'ietf-syslog:lpr' \
+	    -o match:'"facility":"ietf-syslog:local7"' cat run3.json
+	# A rotation the files cannot hold, a remote named otherwise than
+	# by its address: refused, said.
+	sed -e 's|"rollover":1440|"rollover":1440,"retention":600|' \
+	    run3.json > ret.json
+	atf_check "$JGC" -c "$SOCK" edit syslog @ret.json
+	atf_check -s exit:1 -e match:'retention: newsyslog keeps a number of files' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check "$JGC" -c "$SOCK" discard
+	sed -e 's|"name":"192.0.2.10"|"name":"loghost"|' run3.json > name.json
+	atf_check "$JGC" -c "$SOCK" edit syslog @name.json
+	atf_check -s exit:1 -e match:'loghost: a destination is named by its address' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check "$JGC" -c "$SOCK" discard
+	# syslogd will not read them again: every file as it was.
+	for f in etc/syslog.conf etc/newsyslog.conf etc/syslog.d/l7.conf \
+	    usr/local/etc/syslog.d/arcana.conf \
+	    usr/local/etc/newsyslog.conf.d/arcana.conf; do
+		cp "root/$f" "$(echo "$f" | tr / _).was"
+	done
+	sed -e 's|"number-of-files":3}|"number-of-files":6}|' run3.json > cron.json
+	atf_check "$JGC" -c "$SOCK" edit syslog @cron.json
+	touch noreload.syslogd
+	atf_check -s exit:1 -e match:'syslogd: not reloaded' \
+	    "$JGC" -c "$SOCK" commit -a syslog-conf-conflict
+	for f in etc/syslog.conf etc/newsyslog.conf etc/syslog.d/l7.conf \
+	    usr/local/etc/syslog.d/arcana.conf \
+	    usr/local/etc/newsyslog.conf.d/arcana.conf; do
+		atf_check cmp "$(echo "$f" | tr / _).was" "root/$f"
+	done
+	atf_check "$JGC" -c "$SOCK" discard
+	rm noreload.syslogd
+	# Taken away, syslogd not running: said, read when it starts.
+	rm running.syslogd
+	sed -e 's|,"remote":.*$|}}}|' run3.json > gone.json
+	atf_check -o not-match:'192.0.2.10' cat gone.json
+	atf_check "$JGC" -c "$SOCK" edit syslog @gone.json
+	atf_check -o match:'syslogd-stopped.*when it starts' \
+	    "$JGC" -c "$SOCK" commit
+	atf_check -o not-match:'@192.0.2.10' \
+	    cat root/usr/local/etc/syslog.d/arcana.conf
+	atf_check -o not-match:'192.0.2.10' \
+	    "$JGC" -c "$SOCK" get -d running syslog
+}
+datastores_syslog_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case datastores_syslog
 	atf_add_test_case datastores_ra
+	atf_add_test_case datastores_sysctl
+	atf_add_test_case datastores_services
+	atf_add_test_case datastores_kernel
 	atf_add_test_case datastores_instances
 	atf_add_test_case datastores_interfaces
 	atf_add_test_case datastores
@@ -11356,6 +12187,7 @@ atf_init_test_cases()
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
 	atf_add_test_case sdwan
+	atf_add_test_case sdwan_forms
 	atf_add_test_case netstore
 	atf_add_test_case smtpd
 	atf_add_test_case speeder

@@ -118,6 +118,11 @@ SRCS.kmsg=	kmsg_test.c kmsg.c
 CFLAGS.kmsg_test.c+=	-I${.CURDIR}/.. -I${.OBJDIR}/.. -I${.CURDIR}/../../../lib/libvarconf ${UCL_CFLAGS}
 CFLAGS.kmsg.c+=	-I${.CURDIR}/.. -I${.OBJDIR}/.. -I${.CURDIR}/../../../lib/libvarconf ${UCL_CFLAGS}
 LDADD.kmsg+=	${CBLINK_LIBS} -ljail -lpthread
+# notifrecv: a stand-in HTTPS-notif receiver, for the configured
+# subscriptions of agent_tls_test.sh.
+PROGS+=		notifrecv
+SRCS.notifrecv=	notifrecv.c
+LDADD.notifrecv+=	-lssl -lcrypto
 # fwmatch: a packet walked through an ipfw ruleset.
 PROGS+=		fwmatch
 SRCS.fwmatch=	fwmatch_test.c fwmatch.c

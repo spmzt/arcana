@@ -32,6 +32,7 @@
 /* Generated into the object directory; <> so that a stale copy next
  * to the sources is never picked up. */
 #include <arcana.h>
+#include <cbl_data.h>
 #include <ymodel.h>
 #include <ucl.h>
 
@@ -40,6 +41,7 @@
 #define	PATH_SOCKET	"unix:/var/run/arcana-agent.sock"
 #define	MAX_FRAME	(8 * 1024 * 1024)
 #define	MAX_ATTRS	(1024 * 1024)
+#define	MAX_DEPTH	32	/* a jail's root, its instances' routing in it */
 #define	TIMEOUT_MS	(15 * 60 * 1000)
 
 static const char *state_names[] = {
@@ -142,7 +144,7 @@ usage(void)
 	    "command\n"
 	    "commands:\n"
 	    "    hello\n"
-	    "    get [-d datastore] [-x xpath] [node ...]\n"
+	    "    get [-d datastore] [-w mode] [-o] [-x xpath] [node ...]\n"
 	    "    edit [-r] [-a warning]... node value | @file\n"
 	    "    commit [-c seconds [-p persist]] [-i persist-id] "
 	    "[-a warning]...\n"
@@ -216,7 +218,7 @@ usage(void)
 	    "    bird routes [prefix | for address] [protocol | export name]\n"
 	    "        [table name] [all]\n"
 	    "    stats\n"
-	    "    kmod [load | unload | keep | forget module]\n"
+	    "    kmod [load | unload | keep | forget module]   (kmod: get kernel)\n"
 	    "    jailconf make jail file [dataset snapshot clone|send path] "
 	    "[start]\n"
 	    "    jailconf edit jail file | remove jail [dataset] |\n"
@@ -253,12 +255,15 @@ usage(void)
 	    "        role init|primary|secondary resource\n"
 	    "    suricata update | rules [q=text sid=N only=enabled|disabled|changed\n"
 	    "        classtype=name offset=N limit=N | sources=1 |\n"
-	    "        instance=name command=command [iface=interface]] |\n"
+	    "        instance=name command=command [iface=interface] |\n"
+	    "        instance=name profiling=1] |\n"
 	    "        rule on=|off=|drop=|default=sid,... ... | sources |\n"
 	    "        source-enable name=source [param=value ...] |\n"
 	    "        source-disable|source-remove name=source |\n"
 	    "        source-add name=source url=address |\n"
-	    "        pcap instance=name file=path\n"
+	    "        pcap instance=name file=path |\n"
+	    "        pcap-put instance=name file=name [offset=N] [last=1] |\n"
+	    "        pcap-get instance=name file=name\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
 	    "    tls [status] | csr | install certfile|- [cafile]\n"
@@ -609,9 +614,11 @@ ytop_named(const char *name)
 static enum cbl_yds_name ds_named(const char *);
 
 /*
- * get [-x xpath] [node ...]: what the agent serves of the models, by
- * cblink's YANG family (family 1), as RFC 7951's JSON: the top-level
- * nodes named (arcanactl(8) lists them), or all of them.
+ * get [-d datastore] [-w mode] [-o] [-x xpath] [node ...]: what the agent
+ * serves of the models, by cblink's YANG family (family 1), as RFC 7951's
+ * JSON: the top-level nodes named (arcanactl(8) lists them), or all of
+ * them.  With -o, or -w report-all-tagged, with their annotations (RFC
+ * 7952): each configuration node's origin (RFC 8342), the defaults.
  */
 static int
 cmd_get(struct arc_client *cl, int argc, char **argv)
@@ -628,7 +635,9 @@ cmd_get(struct arc_client *cl, int argc, char **argv)
 	char				 why[256], *out;
 	const char			*xpath;
 	enum cbl_yds_name		 ds;
-	bool				 first = true, said;
+	enum cbl_ywd			 wd;
+	cbl_dtree			*t;
+	bool				 first = true, origin, said;
 	int				 error;
 
 	/* -d datastore: running's or the candidate's, configuration
@@ -643,6 +652,27 @@ cmd_get(struct arc_client *cl, int argc, char **argv)
 			xo_errx(2, "get: -d running, candidate or operational");
 		i = 3;
 	}
+	/* -w mode: RFC 6243's: explicit, report-all, trim,
+	 * report-all-tagged. */
+	wd = CBL_YWD_EXPLICIT;
+	if (argc > (int)i + 1 && strcmp(argv[i], "-w") == 0) {
+		wd = strcmp(argv[i + 1], "report-all") == 0 ?
+		    CBL_YWD_REPORT_ALL : strcmp(argv[i + 1], "trim") == 0 ?
+		    CBL_YWD_TRIM : strcmp(argv[i + 1], "explicit") == 0 ?
+		    CBL_YWD_EXPLICIT : strcmp(argv[i + 1],
+		    "report-all-tagged") == 0 ? CBL_YWD_REPORT_ALL_TAGGED :
+		    (enum cbl_ywd)-1;
+		if (wd == (enum cbl_ywd)-1)
+			xo_errx(2, "get: -w explicit, report-all, trim or "
+			    "report-all-tagged");
+		i += 2;
+	}
+	/* -o: the origins, the operational datastore's. */
+	origin = false;
+	if (argc > (int)i && strcmp(argv[i], "-o") == 0) {
+		origin = true;
+		i++;
+	}
 	if (argc > (int)i + 1 && strcmp(argv[i], "-x") == 0) {
 		xpath = argv[i + 1];
 		i += 2;
@@ -656,13 +686,31 @@ cmd_get(struct arc_client *cl, int argc, char **argv)
 		sids[ns++] = n->sid;
 	}
 	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
-	    CBL_YCMD_GET, 0, &req)) != 0 || ((ns > 0 || xpath != NULL) &&
-	    (error = cbl_msg_put_yget_xpath(req, sids, ns, xpath)) != 0) ||
+	    CBL_YCMD_GET, 0, &req)) != 0 || (error = cbl_msg_put_yget_opts(req,
+	    sids, ns, xpath, wd, origin)) != 0 ||
 	    (said && (error = cbl_msg_set_datastore(req, ds)) != 0))
 		xo_errx(1, "get: %s", strerror(error));
 	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
 		xo_errx(1, "get: %s", rep != NULL && cbl_msg_err_str(rep) !=
 		    NULL ? cbl_msg_err_str(rep) : strerror(error));
+	/* Annotated: as an instance tree, which has them. */
+	if (origin || wd == CBL_YWD_REPORT_ALL_TAGGED) {
+		if ((t = cbl_dtree_new(&ymodel_schema)) == NULL)
+			xo_err(1, "get");
+		if ((error = cbl_msg_ydtree(rep, t, 0, why, sizeof(why))) != 0)
+			xo_errx(1, "get: %s", why[0] != '\0' ? why :
+			    strerror(error));
+		if ((error = cbl_dtree_json(t, &b)) != 0)
+			xo_errx(1, "get: %s", strerror(error));
+		if ((out = strndup((const char *)b.p, b.len)) == NULL)
+			xo_err(1, "get");
+		xo_emit("{:json/%s}\n", out);
+		free(out);
+		cbl_ybuf_free(&b);
+		cbl_dtree_free(t);
+		cbl_msg_free(rep);
+		return (0);
+	}
 	if ((a = cbl_yarena_new()) == NULL)
 		xo_err(1, "get");
 	/* Each module's top-level nodes the reply has, into its data. */
@@ -3690,6 +3738,207 @@ cmd_clamav(struct arc_client *cl, int argc, char **argv)
 	return (submit(cl, &sp));
 }
 
+/* What a capture's stream or a pcap-log file's has come to. */
+struct sxfer {
+	bool	 opened, hclosed, closed;
+	int	 error, code;
+	char	 why[256];
+	char	 json[1100];
+	int64_t	 bytes;
+};
+
+static void
+sxf_open(cbl_stream *s, cbl_msg *accept, int error, void *arg)
+{
+	struct arcana_suricata_pcap_put_output	 o;
+	struct sxfer				*x = arg;
+	cbl_yarena				*a;
+
+	(void)s;
+	x->opened = true;
+	x->error = error;
+	if (error != 0) {
+		if (accept != NULL && cbl_msg_err_str(accept) != NULL)
+			strlcpy(x->why, cbl_msg_err_str(accept), sizeof(x->why));
+		return;
+	}
+	/* Both replies are ok and json: either reads them. */
+	if (accept != NULL && (a = cbl_yarena_new()) != NULL) {
+		memset(&o, 0, sizeof(o));
+		if (arcana_suricata_pcap_put_output_parse(accept, &o, a,
+		    CBL_YD_STRICT, NULL, 0) == 0 && o.json != NULL)
+			strlcpy(x->json, o.json, sizeof(x->json));
+		cbl_yarena_free(a);
+	}
+}
+
+/* A pcap-log file's next bytes, to the standard output. */
+static void
+sxf_data(cbl_stream *s, cbl_msg *data, void *arg)
+{
+	struct sxfer		*x = arg;
+	struct arc_chunk	 d;
+	cbl_yarena		*a;
+	size_t			 off;
+	ssize_t			 n;
+
+	if ((a = cbl_yarena_new()) == NULL || arcana_chunk_parse(data, &d, a,
+	    CBL_YD_STRICT, NULL, 0) != 0) {
+		if (a != NULL)
+			cbl_yarena_free(a);
+		(void)cbl_stream_reset(s, EBADMSG);
+		return;
+	}
+	for (off = 0; off < d.data.len; off += (size_t)n)
+		if ((n = write(STDOUT_FILENO, (const char *)d.data.p + off,
+		    d.data.len - off)) <= 0) {
+			cbl_yarena_free(a);
+			(void)cbl_stream_reset(s, EPIPE);
+			return;
+		}
+	x->bytes += (int64_t)d.data.len;
+	cbl_yarena_free(a);
+}
+
+static void
+sxf_hclose(cbl_stream *s, void *arg)
+{
+	struct sxfer	*x = arg;
+
+	x->hclosed = true;
+	(void)cbl_stream_close(s, 0, NULL);
+}
+
+static void
+sxf_close(cbl_stream *s, int code, const char *text, void *arg)
+{
+	struct sxfer	*x = arg;
+
+	(void)s;
+	x->closed = true;
+	x->code = code;
+	if (code != 0)
+		strlcpy(x->why, text != NULL && text[0] != '\0' ? text :
+		    strerror(code), sizeof(x->why));
+}
+
+static const struct cbl_stream_cbs sxf_cbs = {
+	.on_open = sxf_open,
+	.on_data = sxf_data,
+	.on_hclose = sxf_hclose,
+	.on_close = sxf_close,
+};
+
+/* The connection's next turn: what came read, what waits sent. */
+static void
+sxf_step(struct arc_client *cl, const char *what)
+{
+	struct pollfd	pfd;
+	int		ev, ms, error;
+
+	ev = 0;
+	ms = -1;
+	(void)cbl_conn_interest(cl->conn, &ev, &ms);
+	pfd.fd = cbl_conn_fd(cl->conn);
+	pfd.events = ((ev & CBL_EV_READ) != 0 ? POLLIN : 0) |
+	    ((ev & CBL_EV_WRITE) != 0 ? POLLOUT : 0);
+	pfd.revents = 0;
+	if (poll(&pfd, 1, ms) == -1)
+		return;
+	ev = ((pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0 ?
+	    CBL_EV_READ : 0) | ((pfd.revents & POLLOUT) != 0 ?
+	    CBL_EV_WRITE : 0);
+	if ((error = cbl_conn_process(cl->conn, ev)) != 0)
+		xo_errx(1, "%s: the host is gone: %s", what, strerror(error));
+}
+
+/* The connection run until done says so, or the host goes. */
+static void
+sxf_run(struct arc_client *cl, const char *what, const bool *done)
+{
+
+	while (!*done)
+		sxf_step(cl, what);
+}
+
+/*
+ * suricata pcap-put instance=name file=name [offset=N] [last=1]: the
+ * standard input sent as a capture (or a part of one) for the
+ * instance's replay, where it is kept said; suricata pcap-get
+ * instance=name file=name: a file of the instance's pcap-log written to
+ * the standard output.  Each a stream.
+ */
+static int
+cmd_suricata_xfer(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_suricata_pcap_put_req	 pq;
+	struct arc_suricata_pcap_get_req	 gq;
+	struct arc_chunk			 c;
+	struct sxfer				 x;
+	cbl_stream				*s;
+	cbl_msg					*m;
+	unsigned char				*buf;
+	ssize_t					 n;
+	bool					 put;
+	int					 error;
+
+	put = strcmp(argv[1], "pcap-put") == 0;
+	memset(&x, 0, sizeof(x));
+	n = 0;
+	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), cl->family, put ?
+	    ARC_CMD_SURICATA_PCAP_PUT : ARC_CMD_SURICATA_PCAP_GET,
+	    CBL_F_REQUEST | CBL_F_S_OPEN, &m)) != 0)
+		xo_errx(1, "suricata %s: %s", argv[1], strerror(error));
+	if (put) {
+		memset(&pq, 0, sizeof(pq));
+		pq.names.v = (const char **)(uintptr_t)&argv[2];
+		pq.names.n = (size_t)argc - 2;
+		error = arc_suricata_pcap_put_req_put_fields(m, &pq);
+	} else {
+		memset(&gq, 0, sizeof(gq));
+		gq.names.v = (const char **)(uintptr_t)&argv[2];
+		gq.names.n = (size_t)argc - 2;
+		error = arc_suricata_pcap_get_req_put_fields(m, &gq);
+	}
+	if (error == 0)
+		error = cbl_msg_set_window(m, 4 * 1024 * 1024);
+	if (error != 0 || (error = cbl_stream_open(cl->conn, m, 0, &sxf_cbs,
+	    &x, &s)) != 0)
+		xo_errx(1, "suricata %s: %s", argv[1], strerror(error));
+	sxf_run(cl, argv[1], &x.opened);
+	if (x.error != 0)
+		xo_errx(1, "suricata %s: %s", argv[1], x.why[0] != '\0' ? x.why :
+		    strerror(x.error));
+	if (put) {
+		if ((buf = malloc(256 * 1024)) == NULL)
+			xo_err(1, "malloc");
+		while (!x.closed && (n = read(STDIN_FILENO, buf, 256 * 1024)) >
+		    0) {
+			memset(&c, 0, sizeof(c));
+			c.data.p = buf;
+			c.data.len = (size_t)n;
+			/* No room: the host's, given back as it writes. */
+			while (!x.closed && (error = arc_suricata_pcap_put_send(s,
+			    &c)) == EAGAIN)
+				sxf_step(cl, argv[1]);
+			if (!x.closed && error != 0)
+				xo_errx(1, "suricata %s: %s", argv[1],
+				    strerror(error));
+		}
+		free(buf);
+		if (n == -1)
+			xo_err(1, "suricata %s: the standard input", argv[1]);
+		if (!x.closed)
+			(void)cbl_stream_half_close(s);
+	}
+	sxf_run(cl, argv[1], &x.closed);
+	if (x.code != 0)
+		xo_errx(1, "suricata %s: %s", argv[1], x.why);
+	if (put)
+		xo_emit("{:json/%s}\n", x.json);
+	return (0);
+}
+
 /*
  * suricata update | rules [key=value ...] | rule state=sids ... |
  * sources | source-verb name=source ...: suricata-update fetches the
@@ -3706,6 +3955,9 @@ cmd_suricata(struct arc_client *cl, int argc, char **argv)
 	struct arc_suricata_rules_rsp	*rs;
 	int				 error;
 
+	if (argc >= 2 && (strcmp(argv[1], "pcap-put") == 0 ||
+	    strcmp(argv[1], "pcap-get") == 0))
+		return (cmd_suricata_xfer(cl, argc, argv));
 	if (argc >= 2 && strcmp(argv[1], "rules") == 0) {
 		memset(&rq, 0, sizeof(rq));
 		rq.names.v = (const char **)(uintptr_t)&argv[2];
@@ -3858,13 +4110,18 @@ cmd_jailconf(struct arc_client *cl, int argc, char **argv)
 	return (submit(cl, &sp));
 }
 
+/*
+ * kmod: arcana-kernel, as get kernel has it.
+ * kmod load | unload module: a job; with -p also in rc.conf's kld_list.
+ * kmod keep | forget module: rc.conf's kld_list alone, the kernel as is.
+ */
 static int
 cmd_kmod(struct arc_client *cl, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
-	struct arc_kernel_rsp	*rsp;
 	const char		*name;
-	int			 error;
+	char			*get[] = { (char *)(uintptr_t)"get",
+				    (char *)(uintptr_t)"kernel", NULL };
 
 	if (argc == 3 && (strcmp(argv[1], "load") == 0 || strcmp(argv[1],
 	    "unload") == 0 || strcmp(argv[1], "keep") == 0 || strcmp(argv[1],
@@ -3883,32 +4140,76 @@ cmd_kmod(struct arc_client *cl, int argc, char **argv)
 	}
 	if (argc != 1)
 		usage();
-	if ((error = arc_kernel(cl, &rsp)) != 0)
-		fail(cl, error, "kmod");
-	if (rsp->json != NULL)
-		xo_emit("{:json/%s}\n", rsp->json);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("kmod: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_kernel_rsp_free(rsp);
-	return (error);
+	return (cmd_get(cl, 2, get));
 }
 
 /*
- * sysctl [prefix]: the kernel's state, as the host says it.
+ * arcana-sysctl's read action: the values whose names begin with
+ * prefix, count of them (0: the agent's most) from the one after after,
+ * printed as the output's JSON; *next the after of the next part, NULL
+ * at the end.  With -j, a vnet jail's network's.
+ */
+static void
+sysctl_read(struct arc_client *cl, const char *prefix, const char *after,
+    uint16_t count, const char **next)
+{
+	const struct cbl_ynode			*n, *act, *in, *out;
+	struct arcana_sysctl_sysctl_read_input	 i;
+	struct arcana_sysctl_sysctl_read_output	 o;
+	struct cbl_ybuf				 t = { NULL, 0, 0 }, b = { NULL, 0, 0 };
+	cbl_msg					*req, *rep = NULL;
+	cbl_yarena				*a;
+	char					 why[256];
+	int					 error;
+
+	*next = NULL;
+	if ((n = ytop_named("sysctl")) == NULL || (act = ychild(n, "read")) ==
+	    NULL || (in = ychild(act, "input")) == NULL || (out = ychild(act,
+	    "output")) == NULL)
+		xo_errx(1, "sysctl: arcana-sysctl is not in the tables");
+	if ((a = cbl_yarena_new()) == NULL)
+		xo_err(1, "sysctl");
+	memset(&i, 0, sizeof(i));
+	i.prefix = prefix;
+	i.after = after;
+	i.has_count = count > 0;
+	i.count = count;
+	i.jail = netjail;
+	if ((error = cbl_yiid_write(n, NULL, 0, &t)) != 0 ||
+	    (error = cbl_msg_new(cbl_conn_ctx(cl->conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_RPC, 0, &req)) != 0 ||
+	    (error = cbl_msg_put_ynode(req, in, &i)) != 0 ||
+	    (error = cbl_msg_put_yaction(req, t.p, t.len)) != 0)
+		xo_errx(1, "sysctl: %s", strerror(error));
+	if ((error = cbl_request(cl->conn, req, &rep, -1)) != 0)
+		xo_errx(1, "sysctl: %s", rep != NULL && cbl_msg_err_str(rep) !=
+		    NULL ? cbl_msg_err_str(rep) : strerror(error));
+	memset(&o, 0, sizeof(o));
+	if ((error = cbl_msg_ydecode(rep, out, &o, a, 0, why, sizeof(why))) !=
+	    0 && error != ENOENT)
+		xo_errx(1, "sysctl: %s", why);
+	if ((error = cbl_yjson(out, &o, &b)) != 0)
+		xo_errx(1, "sysctl: %s", strerror(error));
+	xo_emit("{:json/%.*s}\n", (int)b.len, b.p != NULL ? (const char *)
+	    b.p : "{}");
+	if (o.next != NULL && (*next = strdup(o.next)) == NULL)
+		xo_err(1, "sysctl");
+	cbl_ybuf_free(&b);
+	cbl_ybuf_free(&t);
+	cbl_yarena_free(a);
+	cbl_msg_free(rep);
+}
+
+/*
+ * sysctl [prefix]: the kernel's state, by arcana-sysctl's read action.
  * sysctl name=value: a job; with -p also in sysctl.conf.
  */
 static int
 cmd_sysctl(struct arc_client *cl, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
-	struct arc_sysctl_req	 req;
-	struct arc_sysctl_rsp	*rsp;
-	const char		*names[2];
+	const char		*names[2], *next, *after;
 	char			*eq;
-	int			 error;
 
 	if (argc == 2 && (eq = strchr(argv[1], '=')) != NULL) {
 		*eq = '\0';
@@ -3926,44 +4227,25 @@ cmd_sysctl(struct arc_client *cl, int argc, char **argv)
 	}
 	/* In parts, each printed as it comes: nothing left out for size. */
 	if (argc >= 2 && strcmp(argv[1], "parts") == 0) {
-		struct arc_sysctl_dump_req	 dq;
-		struct arc_sysctl_dump_rsp	*item;
-		cbl_dump			*d;
-
 		if (argc > 3)
 			usage();
-		memset(&dq, 0, sizeof(dq));
-		dq.net_filter = argc == 3 ? argv[2] : NULL;
-		if ((error = arc_sysctl_dump(cl, &dq, &d)) != 0)
-			fail(cl, error, "sysctl");
-		while ((error = arc_sysctl_dump_next(d, &item)) == 0 && item !=
-		    NULL)
-			if (item->json != NULL)
-				xo_emit("{:json/%s}\n", item->json);
-		cbl_dump_free(d);
-		if (error != 0)
-			fail(cl, error, "sysctl");
+		after = NULL;
+		do {
+			sysctl_read(cl, argc == 3 ? argv[2] : NULL, after, 120,
+			    &next);
+			free((void *)(uintptr_t)after);
+			after = next;
+		} while (after != NULL);
 		return (0);
 	}
 	if (argc > 2)
 		usage();
-	memset(&req, 0, sizeof(req));
-	req.net_filter = argc == 2 ? argv[1] : NULL;
-	req.jail = netjail;
-	if ((error = arc_sysctl(cl, &req, &rsp)) != 0)
-		fail(cl, error, "sysctl");
-	if (rsp->json != NULL)
-		xo_emit("{:json/%s}\n", rsp->json);
-	if (rsp->truncated)
-		xo_warnx("sysctl: the first of %ju: name where to begin",
-		    (uintmax_t)rsp->total);
-	emit_trace(rsp->trace.v, rsp->trace.n);
-	error = rsp->ok ? 0 : 1;
-	if (!rsp->ok)
-		xo_warnx("sysctl: %s", rsp->error != NULL ? rsp->error :
-		    "failed");
-	arc_sysctl_rsp_free(rsp);
-	return (error);
+	sysctl_read(cl, argc == 2 ? argv[1] : NULL, NULL, 0, &next);
+	if (next != NULL)
+		xo_warnx("sysctl: the first part: go on after %s, or sysctl "
+		    "parts", next);
+	free((void *)(uintptr_t)next);
+	return (0);
 }
 
 /* What a reply of JSON says, and how it went. */
@@ -5539,6 +5821,7 @@ main(int argc, char *argv[])
 		xo_errx(1, "cbl_ctx_new: %s", strerror(error));
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_FRAME, MAX_FRAME);
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_ATTRS, MAX_ATTRS);
+	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_DEPTH, MAX_DEPTH);
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_REQUEST_MS, TIMEOUT_MS);
 	if ((error = cbl_conn_new(ctx, uri, 0, &conn)) != 0)
 		xo_errx(1, "%s: %s", uri, strerror(error));

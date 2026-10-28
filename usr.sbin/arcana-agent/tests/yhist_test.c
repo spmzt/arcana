@@ -47,6 +47,8 @@ main(int argc, char **argv)
 		printf("disk %s\n", s->disk.v[i]);
 	for (size_t i = 0; i < s->jail.n; i++)
 		printf("jail %s\n", s->jail.v[i]);
+	for (size_t i = 0; i < s->relay.n; i++)
+		printf("relay %s\n", s->relay.v[i]);
 	for (size_t i = 0; i < s->sample.n; i++) {
 		const struct arcana_history_sample *p =
 		    &s->sample.v[i];
@@ -66,6 +68,9 @@ main(int argc, char **argv)
 		for (size_t k = 0; k < p->jail.n; k++)
 			printf(" %s=%jd/%ju", p->jail.v[k].name, (intmax_t)
 			    p->jail.v[k].cpu, (uintmax_t)p->jail.v[k].memory);
+		for (size_t k = 0; k < p->relay.n; k++)
+			printf(" %s=%ju+%ju", p->relay.v[k].name, (uintmax_t)
+			    p->relay.v[k].plain, (uintmax_t)p->relay.v[k].added);
 		printf("\n");
 	}
 	same((void *)arcana_history_history_encode, (void *)

@@ -1,0 +1,47 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-subscribed-notif-receivers",
+    "module-revision": "2026-06-30",
+    "sid-file-version": 0,
+    "description": "No IETF range: RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-subscribed-notifications",
+        "module-revision": "2019-09-09"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "79000",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-subscribed-notif-receivers",
+        "sid": "79000"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances",
+        "sid": "79001"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance",
+        "sid": "79002"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/name",
+        "sid": "79003"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/subscription/receivers/receiver/ietf-subscribed-notif-receivers:receiver-instance-ref",
+        "sid": "79004"
+      }
+    ]
+  }
+}

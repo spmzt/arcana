@@ -397,6 +397,8 @@ arcw_init(void)
 	    push_init() == -1)
 		fatalx("arcana: not starting, see above");
 	store_sweep();
+	/* The hosts' certificates, on the TLS listeners (notif.c). */
+	web_client_ca(cfg.tls_ca);
 	auth_init();
 	users_init();
 	if (cluster_on())

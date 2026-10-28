@@ -2147,7 +2147,9 @@ attribute-sets:
     attributes:
       - name: data
         type: bytes
-        doc: The next bytes of what zfs send wrote, or receive is to read.
+        doc: |
+          The next bytes of what zfs send wrote, or receive is to read;
+          of a capture, or of a pcap-log file.
         checks:
           max-len: max-output
 
@@ -2645,25 +2647,6 @@ operations:
           - trace
           - confirm-by
 
-  - name: kernel
-    attribute-set: arcana
-    auth: true
-    doc: |
-      The kernel's modules and its memory, as a JSON object: "files",
-      every file linked into the kernel with its id, name, path, the
-      references to it, its size, and the modules it holds; "available",
-      the modules of the module path that are not loaded; "kept", what
-      rc.conf's kld_list loads at boot; and "memory", with the sizes
-      of the kernel's memory map and the largest of its malloc(9) types
-      and uma(9) zones.
-    do:
-      reply:
-        attributes:
-          - ok
-          - error
-          - json
-          - trace
-
   - name: storage
     attribute-set: arcana
     auth: true
@@ -2741,44 +2724,6 @@ operations:
           - error
           - json
           - trace
-
-  - name: sysctl
-    attribute-set: arcana
-    auth: true
-    doc: |
-      The kernel's state, sysctl(8), as a JSON object: "values", each
-      with its name, its value as sysctl prints it, whether it can be
-      set, and what it is said to be; "kept", what sysctl.conf(5) sets
-      at boot.  net-filter is where in the tree to begin, a name or
-      the start of one; without it the whole tree, of which more than
-      a reply carries comes as the first, with total and truncated.
-      As a dump the values come in parts, as the tree is walked and
-      as fast as they are taken: each item has json, an array of the
-      next of them, and nothing is left out for size.  With jail,
-      those of that vnet jail's network as its own sysctl(8) reads
-      them (net-filter then names where, under net.), name and value
-      each.
-    do:
-      request:
-        attributes:
-          - net-filter
-          - jail
-      reply:
-        attributes:
-          - ok
-          - error
-          - json
-          - total
-          - truncated
-          - trace
-    dump:
-      request:
-        attributes:
-          - net-filter
-      reply:
-        attributes:
-          - json
-          - total
 
   - name: ipfw-rules
     attribute-set: arcana
@@ -2896,9 +2841,12 @@ operations:
       swap in use, bytes a second received and sent on all interfaces
       but the loopback, and read from and written to all disks);
       "nets" and "disks", the names of the interfaces and the disks
-      told apart, at most 16 of each; "samples", each an array of the
-      fields, then bytes a second in and out of each of nets, then
-      read and written of each of disks; "mem_total", "swap_total" and
+      told apart, at most 16 of each; "jails" and "relays", the jails
+      racct accounts for and the FEC relays by their syslog tag;
+      "samples", each an array of the fields, then bytes a second in
+      and out of each of nets, then read and written of each of disks,
+      then each jail's CPU and memory, then the bytes a second each
+      relay took in plain and its FEC added; "mem_total", "swap_total" and
       "ncpu".  With after only the samples after that time.  With
       sample-step and sample-keep, both, the agent first samples that
       way from now on, and keeps it for its next start: an hour every
@@ -3063,20 +3011,6 @@ operations:
           - jail
         required:
           - net-kind
-      reply:
-        attributes:
-          - ok
-
-  - name: sysctl-parts
-    attribute-set: arcana
-    auth: true
-    doc: |
-      The kernel's state as sysctl's dump has it, as a stream: each
-      data message a part, json the next values.  As network-parts.
-    do:
-      request:
-        attributes:
-          - net-filter
       reply:
         attributes:
           - ok
@@ -3309,13 +3243,19 @@ operations:
     auth: true
     doc: |
       The BIRD instances of the SD-WAN services at this edge, one each,
-      as the console writes them: json, an object with "instances",
-      each a "name", the "fib" it runs in and its "conf", BIRD's
-      configuration text.  Each file is parsed by bird(8) before it is
-      made the instance's; one running is told to read it again, one
-      not yet is started in its table (setfib) with a control socket
-      and a pid file of its own beside the agent's kept files; those
-      not named any more are stopped.  Kept for the next start.  The
+      and of the UCS End Points that route with the underlay: json, an
+      object with "instances", each a "name", the "fib" it runs in, the
+      "host" its file's comment names and its "spec", the form the
+      agent renders BIRD's configuration from: a service's (its table,
+      AS, router id, the interfaces of its connected routes, BFD, the
+      iBGP peers or the loopbacks', the destination sets, the UNIs'
+      BGP and OSPF entries as the service has them), or with "flavor"
+      ucs an end point's.  Every file is rendered before any instance is
+      changed, and parsed by bird(8) -p before it is made the
+      instance's; one running is told to read it again, one not yet is
+      started in its table (setfib) with a control socket and a pid
+      file of its own beside the agent's kept files; those not named
+      any more are stopped.  Kept for the next start.  The
       sdwan read tells each instance and its protocols.  With "jail"
       the instances are an edge's that is a vnet jail: each run in it
       by jexec(8) in the jail's table, its files beneath the jail's
@@ -3338,14 +3278,17 @@ operations:
     auth: true
     doc: |
       The DHCP servers of the SD-WAN services at this edge (dnsmasq,
-      one instance per service, in its table), as the console writes
-      them: json, an object with "instances", each a "name", the "fib"
-      it runs in and its "conf", dnsmasq's configuration text, to which
-      the agent adds the pid and lease files.  Each is checked by
-      dnsmasq --test before it is made the instance's; one running is
-      stopped and started again on it, one not yet is started in its
-      table (setfib); those not named any more are stopped.  Kept for
-      the next start.  The sdwan read tells each instance and the
+      one instance per service, in its table): json, an object with
+      "instances", each a "name", the "fib" it runs in, the "host" its
+      file's comment names and its "spec", the form the agent renders
+      dnsmasq's configuration from (the service, its UNIs here
+      addressed by DHCP, each its interface and families as the service
+      has them: the ranges, the router and the DNS servers told), with
+      the pid and lease files.  Each is checked by dnsmasq --test
+      before it is made the instance's; one running is stopped and
+      started again on it, one not yet is started in its table
+      (setfib); those not named any more are stopped.  Kept for the
+      next start.  The sdwan read tells each instance and the
       leases it gave.
     do:
       request:
@@ -3365,15 +3308,26 @@ operations:
     doc: |
       The resolvers of the SD-WAN services at this edge (MEF 138's DNF
       and PDNS: the base system's unbound, local-unbound, one instance
-      per service, a view a zone,
-      in its table), as the console writes them: json, an object with
-      "instances", each a "name", the "fib" it runs in and its "conf",
-      unbound's configuration text, to which the agent adds the pid
-      file.  Each is checked by local-unbound-checkconf before it is
-      made the instance's; one running is stopped and started again on
-      it, one not yet is started in its table (setfib); those not
-      named any more are stopped.  Kept for the next start.  The sdwan
-      read tells each instance.
+      per service, a view a zone, in its table): json, an object with
+      "instances", each a "name",
+      the "fib" it runs in, the "host" its file's comment names and its
+      "spec", the form the agent renders unbound's configuration from
+      (the UNIs' provider addresses it listens on and the subnets it
+      answers, and the zones with a DNF or PDNS, each its prefixes here
+      and its function policies, the named lists' entries "listed";
+      "dot", whether it serves DNS over TLS on port 853 too, with a key
+      and a self-signed certificate the agent makes, openssl(1), the
+      UNIs' addresses its names, kept until they change; "upstream",
+      the servers it sends its questions to, address[@port][#name],
+      over TLS where "upstream_tls"), with the pid file.  A PDNS's
+      CNAME and NS entries become a response policy zone of the zone's,
+      a file beside the configuration.  Each is checked by
+      local-unbound-checkconf before it is made the instance's; one
+      running is stopped and started again on it, one not yet is
+      started in its table (setfib); those not named any more are
+      stopped.  Kept for the next start.  The sdwan read tells each
+      instance, with the certificate (tls_cert) where it serves DNS
+      over TLS.
     do:
       request:
         attributes:
@@ -3392,19 +3346,30 @@ operations:
     doc: |
       The proxies of the SD-WAN services at this edge (MEF 138's URLF,
       MBSF and MD+R: Squid, a plugin the host has installed, one instance
-      per service in its table), as the console writes them: json, an
-      object with "instances", each a "name", the "fib" it runs in,
-      its "mode" (sni, the TLS names looked at and nothing opened;
-      inspect, TLS opened with a CA of the instance's own), its "conf",
-      Squid's configuration text with @PID@, @CA@, @SSLDB@, @CERTGEN@
-      and @DENY@ for what the agent places, and "deny", the domains
-      denied, one a line.  The CA is made by the agent, openssl(1),
-      once per instance and kept; its certificate is in the sdwan read
-      for the clients to trust where TLS is opened.  Each file is
-      checked by squid -k parse before it is made the instance's; one
-      running is told to reconfigure, one not yet is started in its
-      table (setfib); those not named any more are stopped.  Kept for
-      the next start.
+      per service in its table): json, an object with "instances",
+      each a "name", the "fib" it runs in, its "mode" (sni, the TLS
+      names looked at and nothing opened; inspect, TLS opened with a CA
+      of the instance's own), the "host" its files' comments name, its
+      "spec", the form the agent renders Squid's configuration from,
+      and c-icap's where it scans for malware (an SD-WAN service's,
+      "flavor" sdwan: where it is reached, the resolver, c-icap, and the
+      zones with their URLF, MBSF and MD+R, and the DNF's names with a
+      * inside, which Squid ends; or the Security section's
+      form: listen, port, allow, deny, malware), with the agent's own
+      paths in them, and "lists", names (zone-allow, zone-block) to the
+      texts of the files a zone's URLF names.  The MD+R policies'
+      hashes are written as ClamAV's hash signature files of the
+      edge's (arcana-sdwan.hdb, .hsb, .fp, .sfp in its database
+      directory) before the instances' c-icap start, each named by its
+      service, policy and list.  c-icap has no checker of
+      its own: what it refuses it says as it starts.  The CA is made by
+      the agent, openssl(1), once per instance and kept; its
+      certificate is in the sdwan read for the clients to trust where
+      TLS is opened.  Every file is rendered before any instance is
+      changed, and checked by squid -k parse before it is made the
+      instance's; one running is told to reconfigure, one not yet is
+      started in its table (setfib); those not named any more are
+      stopped.  Kept for the next start.
     do:
       request:
         attributes:
@@ -3866,7 +3831,17 @@ operations:
       by the instance's unix command socket, one of the commands that
       read: uptime, version, running-mode, capture-mode, memcap-list,
       ruleset-stats, ruleset-failed-rules, ruleset-profile, iface-list,
-      iface-stat, dump-counters.  The host's only; nothing is changed.
+      iface-stat, dump-counters.  With instance=NAME and profiling=1,
+      what its profiling wrote (Suricata built with
+      --enable-profiling): "build" (whether it profiles packets, rules
+      and locks), and "running" (its log directory) and "replay" (its
+      last replay's), each with "packets" (the last dump of
+      packet_stats.log: its "sections", each a "title" and "rows" of
+      name, ip, proto, cnt, min, max, avg, tot and pct, ticks per
+      protocol and per stage), "rules" (rule_perf.log's last, JSON),
+      and the last of "keywords", "prefilter", "rulegroups" and
+      "locks" as text, each with "at".  The host's only; nothing is
+      changed.
     do:
       request:
         attributes:
@@ -3973,10 +3948,12 @@ operations:
       interval with its rates); "series" (each interval between two
       reports since its last start, the oldest first: the time, the
       overhead to the server and to the client, the plain rates each
-      way); "log" (its last lines); "profiles_supported" (whether the
-      rc script runs several relays) and "profiles" (each listed in
-      speederv2_profiles: "name", "running" and the same fields of its
-      own, from speederv2_<name>_flags and its tag speederv2-<name>).
+      way); "svcj" (true when it runs in rc.subr's service jail, with
+      "svcj_options" and "svcj_ipaddrs"); "log" (its last lines);
+      "profiles_supported" (whether the rc script runs several relays)
+      and "profiles" (each listed in speederv2_profiles: "name",
+      "running" and the same fields of its own, from
+      speederv2_<name>_flags and its tag speederv2_<name>).
       Of the host, or with jail of that jail.  Nothing is changed.
     do:
       request:
@@ -4011,6 +3988,48 @@ operations:
           - error
           - json
           - trace
+  - name: suricata-pcap-put
+    attribute-set: arcana
+    auth: true
+    doc: |
+      A capture for a Suricata instance to replay, written to the
+      host as a stream: names instance=NAME and file=NAME (a .pcap,
+      .pcapng or .cap, its name alone), offset=N (where this part
+      begins, 0 unless given) and last=1 on the last part; each data
+      message the next bytes.  It goes to the captures directory of
+      the instance's replay directory, as NAME.part until the last
+      part is in; a part that does not begin where the one before
+      ended is refused.  Eight are kept, the oldest let go; a capture
+      is 1 GiB at most.  json: "path", where the capture is (or will
+      be), which the suricata job's verb pcap replays.  The host
+      closes the stream once all was written, with what went wrong
+      when not.
+    do:
+      request:
+        attributes:
+          - names
+      reply:
+        attributes:
+          - ok
+          - json
+  - name: suricata-pcap-get
+    attribute-set: arcana
+    auth: true
+    doc: |
+      A file of the packets an instance logged for its alerts
+      (Suricata's pcap-log, log.pcap and its rotations in its log
+      directory), read from the host as a stream: names instance=NAME
+      and file=NAME, the file's name alone; each data message the next
+      bytes.  json: "path" and "size".  The host half-closes the
+      stream once the file was sent whole.
+    do:
+      request:
+        attributes:
+          - names
+      reply:
+        attributes:
+          - ok
+          - json
 mcast-groups:
   - name: events
     auth: true
@@ -4027,11 +4046,6 @@ streams:
     direction: bidirectional
     payload: part
     initial-credit: 2097152
-  - name: sysctl-parts
-    open: sysctl-parts
-    direction: bidirectional
-    payload: part
-    initial-credit: 2097152
   - name: zfs-send
     open: zfs-send
     direction: bidirectional
@@ -4039,6 +4053,16 @@ streams:
     initial-credit: 4194304
   - name: zfs-receive
     open: zfs-receive
+    direction: bidirectional
+    payload: chunk
+    initial-credit: 4194304
+  - name: suricata-pcap-put
+    open: suricata-pcap-put
+    direction: bidirectional
+    payload: chunk
+    initial-credit: 4194304
+  - name: suricata-pcap-get
+    open: suricata-pcap-get
     direction: bidirectional
     payload: chunk
     initial-credit: 4194304

@@ -1,0 +1,137 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-https-notif-transport",
+    "module-revision": "2026-06-30",
+    "sid-file-version": 0,
+    "description": "No IETF range: RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-x509-cert-to-name",
+        "module-revision": "2014-12-10"
+      },
+      {
+        "module-name": "ietf-subscribed-notifications",
+        "module-revision": "2019-09-09"
+      },
+      {
+        "module-name": "ietf-subscribed-notif-receivers",
+        "module-revision": "2026-06-30"
+      },
+      {
+        "module-name": "ietf-yang-structure-ext",
+        "module-revision": "2020-06-17"
+      },
+      {
+        "module-name": "ietf-http-client",
+        "module-revision": "2024-08-15"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "79100",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-https-notif-transport",
+        "sid": "79100"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "https",
+        "sid": "79101"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "receiver-identity",
+        "sid": "79102"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-https-notif-transport:receiver-capabilities",
+        "sid": "79103"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-https-notif-transport:receiver-capabilities/receiver-capability",
+        "sid": "79104"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver",
+        "sid": "79105"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/capabilities-endpoint",
+        "sid": "79106"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/capabilities-endpoint/protocol-versions",
+        "sid": "79107"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/capabilities-endpoint/uri",
+        "sid": "79108"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/receiver-identity",
+        "sid": "79109"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/receiver-identity/cert-maps",
+        "sid": "79110"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/receiver-identity/cert-maps/cert-to-name",
+        "sid": "79111"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/receiver-identity/cert-maps/cert-to-name/fingerprint",
+        "sid": "79112"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/receiver-identity/cert-maps/cert-to-name/id",
+        "sid": "79113"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/receiver-identity/cert-maps/cert-to-name/map-type",
+        "sid": "79114"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/receiver-identity/cert-maps/cert-to-name/name",
+        "sid": "79115"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/relay-notification-endpoint",
+        "sid": "79116"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/relay-notification-endpoint/protocol-versions",
+        "sid": "79117"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-subscribed-notifications:subscriptions/ietf-subscribed-notif-receivers:receiver-instances/receiver-instance/ietf-https-notif-transport:https-receiver/relay-notification-endpoint/uri",
+        "sid": "79118"
+      }
+    ]
+  }
+}

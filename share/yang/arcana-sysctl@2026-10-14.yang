@@ -11,7 +11,8 @@ module arcana-sysctl {
     "FreeBSD's kernel state, sysctl(3): the values as sysctl(8) prints
      them, and what sysctl.conf(5) sets at boot, its configuration,
      written in place, every other line kept (libvarconf, read as
-     sysctl(8)'s parsefile() reads it).";
+     sysctl(8)'s parsefile() reads it), and set in the kernel at once
+     by a commit.";
 
   revision 2026-10-14 {
     description
@@ -75,6 +76,99 @@ module arcana-sysctl {
         type string;
         description
           "What it is said to be (sysctl -d).";
+      }
+      leaf tunable {
+        type boolean;
+        description
+          "Whether the loader sets it too, from loader.conf(5)
+           (CTLFLAG_TUN): one not writable is set there alone.";
+      }
+    }
+    action read {
+      description
+        "The values whose names begin with prefix, in the kernel's
+         order, as many as count, from the one after after: the tree
+         read a part at a time.";
+      input {
+        leaf prefix {
+          type string {
+            length "0..200";
+            pattern '[A-Za-z0-9_%.-]*';
+          }
+          description
+            "Where in the tree: a name, or the start of one.  A name
+             the kernel leaves out of its list (an old name for
+             another) is found when asked for by itself.";
+        }
+        leaf after {
+          type string {
+            length "1..256";
+          }
+          description
+            "Go on after this one, the last of the part before, as
+             the kernel names it (a name may have blanks).";
+        }
+        leaf count {
+          type uint16 {
+            range "1..4000";
+          }
+          default "4000";
+          description
+            "How many at most.";
+        }
+        leaf jail {
+          type string;
+          description
+            "A vnet jail's network's, under net., as its own sysctl(8)
+             prints them: name and value each, in one part.";
+        }
+      }
+      output {
+        list value {
+          description
+            "A value of the kernel's.";
+          leaf name {
+            type string;
+            description
+              "Its name.";
+          }
+          leaf value {
+            type string;
+            description
+              "Its value, as sysctl(8) prints it.";
+          }
+          leaf type {
+            type string;
+            description
+              "Its kind: integer, string, unsigned, ...";
+          }
+          leaf writable {
+            type boolean;
+            description
+              "Whether it can be set.";
+          }
+          leaf tunable {
+            type boolean;
+            description
+              "Whether the loader sets it too (CTLFLAG_TUN).";
+          }
+          leaf description {
+            type string;
+            description
+              "What it is said to be (sysctl -d).";
+          }
+        }
+        leaf next {
+          type string;
+          description
+            "There are more: the after of the next part.";
+        }
+        leaf total {
+          type uint64;
+          description
+            "How many there are under prefix, when count left some
+             out of a read from the start.";
+        }
       }
     }
   }

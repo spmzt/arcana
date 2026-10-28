@@ -5,12 +5,12 @@
  */
 
 /*
- * Invidia: the routes, connections, sockets and sysctls in parts, as
+ * Invidia: the routes, connections and sockets in parts, as
  * a cblink stream.  A dump has the reading of its connection to itself
  * while it lasts; a stream is one of many on a connection, so that over
  * SCTP it shares the association with whatever else asks the host at
  * once.  Each stream has a thread of its own, which takes the parts as
- * a dump does (network_part(), sysctl_part()) and sends one only when
+ * a dump does (network_part()) and sends one only when
  * the reader has room for it: the reader gives the room back as it
  * takes them, so a slow one slows its own stream and nothing else.
  */
@@ -29,7 +29,6 @@
 
 struct pstream {
 	cbl_stream		*s;
-	bool			 sysctl;
 	struct arc_network_dump_req rq;	/* what network_part() takes */
 	char			*filter;
 	char			*jail;
@@ -74,10 +73,6 @@ static const struct arc_network_parts_server_cbs net_cbs = {
 	.on_close = ps_close,
 };
 
-static const struct arc_sysctl_parts_server_cbs ctl_cbs = {
-	.on_writable = ps_writable,
-	.on_close = ps_close,
-};
 
 /*
  * A part sent: when the reader has no room for it (EAGAIN), once it
@@ -89,8 +84,7 @@ ps_send(struct pstream *p, const struct arc_part *part)
 	int	error;
 
 	for (;;) {
-		error = p->sysctl ? arc_sysctl_parts_server_send(p->s, part) :
-		    arc_network_parts_server_send(p->s, part);
+		error = arc_network_parts_server_send(p->s, part);
 		if (error != EAGAIN)
 			return (error);
 		pthread_mutex_lock(&p->lock);
@@ -124,10 +118,7 @@ ps_run(void *arg)
 	do {
 		json = NULL;
 		err = NULL;
-		if (p->sysctl)
-			more = sysctl_part(&st, p->filter, &json, &total);
-		else
-			more = network_part(&st, &p->rq, &json, &total, &err);
+		more = network_part(&st, &p->rq, &json, &total, &err);
 		if (json == NULL) {
 			error = ENOMEM;
 			break;
@@ -142,7 +133,7 @@ ps_run(void *arg)
 		routes = NULL;
 		keep = NULL;
 		/* The routes typed, as the spec has a route; the rest JSON. */
-		if (!p->sysctl && p->rq.net_kind == ARC_NET_KIND_ROUTES) {
+		if (p->rq.net_kind == ARC_NET_KIND_ROUTES) {
 			if ((error = network_routes(json, &routes, &nroutes,
 			    &keep)) != 0) {
 				free(json);
@@ -188,7 +179,7 @@ ps_start(struct pstream *p)
 }
 
 static struct pstream *
-ps_new(cbl_stream *s, bool sysctl, const char *filter, const char *jail)
+ps_new(cbl_stream *s, const char *filter, const char *jail)
 {
 	struct pstream	*p;
 
@@ -212,7 +203,6 @@ ps_new(cbl_stream *s, bool sysctl, const char *filter, const char *jail)
 		return (NULL);
 	}
 	p->s = s;
-	p->sysctl = sysctl;
 	p->refs = 2;
 	pthread_mutex_init(&p->lock, NULL);
 	pthread_cond_init(&p->wake, NULL);
@@ -268,7 +258,7 @@ arc_network_parts_stream_open(cbl_req *req,
 		    "128 bytes", NULL, 0, -1);
 		return (EINVAL);
 	}
-	if ((p = ps_new(s, false, rq->net_filter, rq->jail)) == NULL) {
+	if ((p = ps_new(s, rq->net_filter, rq->jail)) == NULL) {
 		(void)cbl_req_set_err(req, "too many parts at once", NULL, 0,
 		    -1);
 		return (EBUSY);
@@ -286,35 +276,6 @@ arc_network_parts_stream_open(cbl_req *req,
 	rsp.ok = true;
 	if (arc_network_parts_accept(s, &rsp, &net_cbs, p) != 0) {
 		/* Not accepted: no callback of it runs, and it is ours. */
-		ps_free(p);
-		return (ECONNREFUSED);
-	}
-	(void)ps_start(p);
-	return (0);
-}
-
-int
-arc_sysctl_parts_stream_open(cbl_req *req,
-    const struct arc_sysctl_parts_req *rq, cbl_stream *s, void *arg __unused)
-{
-	struct arc_sysctl_parts_rsp	 rsp;
-	struct pstream			*p;
-
-	if (rq->net_filter != NULL && rq->net_filter[0] != '\0' &&
-	    !sysctl_name_ok(rq->net_filter)) {
-		(void)cbl_req_set_err(req, "a sysctl is named with letters, "
-		    "digits and . _ - %", NULL, 0, -1);
-		return (EINVAL);
-	}
-	if ((p = ps_new(s, true, rq->net_filter, NULL)) == NULL) {
-		(void)cbl_req_set_err(req, "too many parts at once", NULL, 0,
-		    -1);
-		return (EBUSY);
-	}
-	memset(&rsp, 0, sizeof(rsp));
-	rsp.has_ok = true;
-	rsp.ok = true;
-	if (arc_sysctl_parts_accept(s, &rsp, &ctl_cbs, p) != 0) {
 		ps_free(p);
 		return (ECONNREFUSED);
 	}

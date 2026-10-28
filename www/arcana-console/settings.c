@@ -140,6 +140,21 @@ static struct setting {
 	{ "telegram_limits", K_BOOL, "Limits crossed to Telegram",
 	    "A figure of history over its limit, and back under.", NULL, NULL,
 	    NULL },
+	{ "mail_sen", K_TEXT, "Security Event Notifications mailed to",
+	    "MEF 138's SENs (what the SD-WAN services' security functions "
+	    "block and tell): addresses, a comma between them; empty for "
+	    "none. The recipients of the SEN policy (R30).", v_mails, NULL,
+	    NULL },
+	{ "mail_san", K_TEXT, "Security Admin Notifications mailed to",
+	    "MEF 138's SANs (a security function policy's values changed): "
+	    "addresses, a comma between them; empty for none. The recipients "
+	    "of the SAN policy (R36).", v_mails, NULL, NULL },
+	{ "telegram_sen", K_TEXT, "Security Event Notifications to Telegram",
+	    "Chats the SENs go to, a space between them; empty for none.",
+	    v_chats, NULL, NULL },
+	{ "telegram_san", K_TEXT, "Security Admin Notifications to Telegram",
+	    "Chats the SANs go to, a space between them; empty for none.",
+	    v_chats, NULL, NULL },
 	{ "ldap_url", K_TEXT, "LDAP directory",
 	    "ldaps://ldap.example.org or ldap://ldap.example.org (StartTLS is "
 	    "then required); empty for no sign-in by LDAP. The server's "

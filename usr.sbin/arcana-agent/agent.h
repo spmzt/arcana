@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.229.0"
+#define	ARCANA_AGENT_VERSION	"0.230.0"
 
 /* The nice(1) value of a program a read runs. */
 #define	READ_NICE		10
@@ -176,6 +176,8 @@ struct opts {
 	int		 pkg_lanes;	/* jobs of pkg in jails at once, at start */
 	const char	*jobs_conf;	/* where lanes is kept */
 	const char	*nacm_file;	/* NACM's rules (superbia/ynacm.c) */
+	const char	*subs_file;	/* the configured subscriptions
+					 * (invidia/ynotif.c) */
 	char		 build[65];	/* SHA-256 of the running program */
 	bool		 debug;
 };
@@ -442,6 +444,9 @@ int		 do_address(struct work *, const struct arc_address_req *,
 
 /* ira/services.c */
 int		 do_services(struct work *, struct arc_services_rsp *);
+void		 service_scripts(struct work *, struct arc_services_rsp *);
+const char	*service_rcvar(struct work *, const char *, const char **);
+bool		 valid_var_name(const char *);
 int		 do_service_action(struct work *, const char *, uint8_t,
 		    struct arc_service_action_rsp *);
 int		 do_service_config(struct work *,
@@ -581,7 +586,7 @@ int		 do_bird_routes(struct work *, const char *,
 int		 do_bird_ospf(struct work *, const char *,
 		    struct arc_network_rsp *);
 /* superbia/kernel.c: the kernel's modules and memory. */
-int		 do_kernel(struct work *, struct arc_kernel_rsp *);
+const char	*do_kernel(struct work *, const char **);
 bool		 kld_listed(struct work *, const char *);
 int		 do_kmod(struct work *, const char *, const char *, bool,
 		    const char **);
@@ -663,6 +668,42 @@ void		 sdwan_proxy_json(struct work *, struct ucl_object_s *);
 void		 clamav_mirrors_json(struct ucl_object_s *);
 void		 security_specs(const char *, struct ucl_object_s *, const char *);
 int		 do_sdwan_ids(struct work *, const char *, const char **);
+/*
+ * luxuria/sdconf.c: dnsmasq's, unbound's, Squid's, c-icap's and BIRD's files
+ * from the console's forms.  Where an instance's files are: Squid's
+ * and c-icap's own, a list's its name between list_pre and list_suf.
+ */
+struct sqpaths {
+	const char	*pid, *ca, *ssldb, *certgen, *deny;
+	const char	*list_pre, *list_suf;
+	const char	*icap_pid, *icap_cmd;
+};
+/* The port an SD-WAN service's c-icap answers its Squid on; the
+ * Security section's i-th, on the loopback. */
+#define	SDWAN_ICAP_PORT(fib)	(1344 + 10 * (int)(fib))
+#define	SEC_ICAP_PORT(i)	(1345 + 10 * (int)(i))
+char		*dhcp_conf_render(struct work *, const struct ucl_object_s *,
+		    const char *, const char **);
+/* Where an unbound instance's files are, as its configuration names
+ * them: its key and certificate for DNS over TLS, a response policy
+ * zone's file (rpz_pre + the zone's name). */
+struct dnspaths {
+	const char	*tlskey, *tlspem, *rpz_pre;
+};
+char		*dns_conf_render(struct work *, const struct ucl_object_s *,
+		    const char *, const struct dnspaths *, struct ucl_object_s *,
+		    const char **);
+char		*squid_conf_render(struct work *, const struct ucl_object_s *,
+		    const char *, const char *, int, const struct ucl_object_s *,
+		    const struct sqpaths *, char **, const char **);
+bool		 squid_conf_icap(const struct ucl_object_s *);
+struct ucl_object_s *clamav_sigs_render(struct work *,
+		    const struct ucl_object_s *, const char **);
+char		*icap_conf_render(struct work *, const struct ucl_object_s *,
+		    const char *, const char *, int, const struct sqpaths *,
+		    const char **);
+char		*bird_conf_render(struct work *, const struct ucl_object_s *,
+		    const char *, const char **);
 /* luxuria/idsconf.c: Suricata's YAML from an instance's settings. */
 char		*ids_conf_render(struct work *, const struct ucl_object_s *,
 		    const char *, const char *, int64_t, struct ucl_object_s *,
@@ -709,12 +750,20 @@ int		 speeder_service(struct work *, const char *, const char **);
 /* A relay as it was, for safe mode: its profile (NULL: the plain one). */
 struct speeder_was {
 	const char	*profile, *flags, *enable, *profiles;
+	const char	*svcj, *svcj_options, *svcj_ipaddrs;
 	bool		 running;
 };
 void		 speeder_snap(struct work *, const struct arc_job_spec *,
 		    struct speeder_was *);
 int		 speeder_back(struct work *, const struct speeder_was *,
 		    const char **);
+/* A relay's rates, for the history: by its syslog tag, bytes a second
+ * taken in plain and added by the FEC, both ways, over its last report. */
+struct speeder_rate {
+	char		 tag[48];
+	double		 plain, added;
+};
+size_t		 speeder_rates(struct speeder_rate *, size_t, unsigned int);
 
 /* luxuria/smtpd.c: OpenSMTPD, a plugin: its read, and its job. */
 struct arc_smtpd_rsp;
@@ -748,6 +797,12 @@ char		*suricata_title(const struct arc_job_spec *);
 int		 do_suricata_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 void		 sdwan_ids_json(struct work *, struct ucl_object_s *);
+void		 suricata_inst_path(const char *, const char *, char *, size_t);
+struct ucl_object_s *suricata_build_json(struct work *);
+/* luxuria/idsfiles.c: captures in, pcap-log out, profiling read. */
+struct ucl_object_s *suricata_captures_json(const char *);
+void		 suricata_profiling(struct work *, const char *,
+		    struct arc_suricata_rules_rsp *);
 int		 do_rtadvd(struct work *, const char *, const char *const *,
 		    size_t, bool, bool, const char **);
 /* invidia/sa.c: manually keyed SAs by setkey(8). */
@@ -780,10 +835,22 @@ void		 record_start(void);
 void		 record_json(struct ucl_object_s *);
 int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
-int		 do_sysctl(struct work *, const char *,
-		    struct arc_sysctl_rsp *);
-int		 do_sysctl_jail(struct work *, const char *,
-		    struct arc_sysctl_rsp *);
+/* superbia/sysctl.c: the kernel's values, as sysctl_read() gives them
+ * (arcana-sysctl's), the host's whole or a jail's network's. */
+struct sysctl_value {
+	const char	*name, *value, *type, *descr;
+	bool		 rw, tun;
+};
+typedef void	 sysctl_value_f(void *, const struct sysctl_value *);
+int		 sysctl_read(struct work *, const char *, const char *,
+		    size_t, sysctl_value_f *, void *, uint64_t *,
+		    const char **, const char **);
+int		 sysctl_read_jail(struct work *, const char *,
+		    sysctl_value_f *, void *, const char **);
+bool		 sysctl_flags(const char *, bool *, bool *);
+const char	*sysctl_conf_path(char *, size_t);
+void		 sysctl_conf_lock(void);
+void		 sysctl_conf_unlock(void);
 int		 do_sysctl_set(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 sysctl_name_ok(const char *);
@@ -800,8 +867,6 @@ void		 restart_after(bool, bool);
 const char	*change_busy(struct work *);
 bool		 valid_service(const char *);
 bool		 valid_ifname(const char *);
-bool		 sysctl_part(struct cbl_dump_state *, const char *, char **,
-		    uint64_t *);
 bool		 sysctl_value_ok(const char *);
 int		 do_l2(struct work *, bool, struct arc_network_rsp *);
 const char	*bridge_holding(struct work *, const char *);
@@ -931,9 +996,25 @@ void		 yang_event(const char *);
 #define	YANG_EVENTS	0
 #define	YANG_ALARMS	1
 #define	YANG_JOBS	2
+#define	YANG_INTERFACES	3
+#define	YANG_ROUTING	4
+#define	YANG_INSTANCES	5
+#define	YANG_LNES	6
+#define	YANG_COUNT	7
 void		 yang_changed(int);
+/* What an event of that kind changed (of a jail's network, jailed). */
+void		 yang_event_changed(const char *, bool);
 struct cbl_ynode;
 const struct cbl_ynode *ynode_named(const char *, const char *);
+/* A logical network element's root, by a helper attached to its jail
+ * (invidia/lneroot.c). */
+void		 yang_lne_failed(const char *, const char *, const char *);
+int		 lne_serve(void);
+void		 lne_gone(int);
+void		 lne_bound(const char *, const char *, bool);
+/* invidia/ynotif.c: the configured subscriptions kept, told to cblink,
+ * their receivers reached over HTTPS-notif; at the start. */
+int		 ysubs_init(struct cbl_ctx *);
 
 /* superbia/admit.c, ynacm.c: NACM (RFC 8341).  The console's users in
  * group admin by default: its admin, and the console itself for the

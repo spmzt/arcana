@@ -48,6 +48,9 @@ bool		 harness_local_agent;
 /* web.conf's local_agent is the test's own line. */
 bool		 harness_webconf_only_local;
 char		 harness_telegram_api[128];	/* the agent's Bot API, or "" */
+/* A TLS listener of the console's on this port of 127.0.0.1, the
+ * agent with a certificate for it; 0: none. */
+int		 harness_tls_port;
 
 extern char	**environ;
 
@@ -207,8 +210,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN], rootdir[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN], pdetc[MAXPATHLEN], surules[MAXPATHLEN];
-	char	 fjl[MAXPATHLEN], fjf[MAXPATHLEN + 8];
-	char	*argv[134];
+	char	 fjl[MAXPATHLEN], fjf[MAXPATHLEN + 8], tls[4 * MAXPATHLEN + 128];
+	char	 ca[MAXPATHLEN], acert[MAXPATHLEN], akey[MAXPATHLEN];
+	char	*argv[140];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -334,7 +338,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "if [ \"$1\" = -e ]; then for f in %s/rc.d/*; do n=${f##*/}; "
 	    "grep -q \"^${n}_enable=\\\"YES\\\"\" \"$conf\" && echo \"$f\"; "
 	    "done; exit 0; fi\n"
-	    "r=$1; [ \"$1\" = speederv2 ] && r=$1${3:+-$3}\n"
+	    "r=$1; [ \"$1\" = speederv2 ] && r=$1${3:+_$3}\n"
 	    "case \"$2\" in\n"
 	    "rcvar) echo \"${1}_enable=\\\"NO\\\"\" ;;\n"
 	    "enabled) grep -q \"^${1}_enable=\\\"YES\\\"\" \"$conf\" ;;\n"
@@ -1162,6 +1166,43 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 		snprintf(listen, sizeof(listen), "127.0.0.1:%d", port);
 	else
 		snprintf(listen, sizeof(listen), "unix:%s/k.sock", cwd);
+	/*
+	 * A TLS listener beside: a CA of the test's, the console's web
+	 * certificate and its own, and the agent's, as the console's PKI
+	 * makes a host's (its role, its name localhost); the hosts reach
+	 * the console's HTTPS-notif receiver there (notif_base).
+	 */
+	tls[0] = '\0';
+	if (harness_tls_port != 0) {
+		snprintf(buf, sizeof(buf), "openssl req -x509 -newkey ec "
+		    "-pkeyopt ec_paramgen_curve:P-256 -nodes -keyout ca.key "
+		    "-out ca.pem -days 2 -subj /CN=test-ca -addext "
+		    "basicConstraints=critical,CA:TRUE -addext "
+		    "keyUsage=critical,keyCertSign >/dev/null 2>&1 && "
+		    "for c in 'web|IP:127.0.0.1|serverAuth' "
+		    "'console|URI:urn:arcana:role:console|clientAuth' "
+		    "'agent|DNS:localhost,URI:urn:arcana:role:agent|"
+		    "serverAuth,clientAuth'; do n=${c%%%%|*}; r=${c#*|}; "
+		    "san=${r%%%%|*}; eku=${r#*|}; openssl req -newkey ec -pkeyopt "
+		    "ec_paramgen_curve:P-256 -nodes -keyout $n.key -out $n.csr "
+		    "-subj /CN=$n >/dev/null 2>&1 && printf 'subjectAltName=%%s"
+		    "\\nextendedKeyUsage=%%s\\n' \"$san\" \"$eku\" > $n.ext && "
+		    "openssl x509 -req -in $n.csr -CA ca.pem -CAkey ca.key "
+		    "-CAcreateserial -days 2 -extfile $n.ext -out $n.pem "
+		    ">/dev/null 2>&1 || exit 1; done");
+		ATF_REQUIRE_MSG(system(buf) == 0, "openssl: no test certificates");
+		snprintf(listen + strlen(listen), sizeof(listen) -
+		    strlen(listen), "\", \"127.0.0.1:%d", harness_tls_port);
+		snprintf(tls, sizeof(tls), "tls {\n\tca = \"%s/ca.pem\";\n"
+		    "\tca_key = \"%s/ca.key\";\n\tcert = \"%s/console.pem\";\n"
+		    "\tkey = \"%s/console.key\";\n}\n"
+		    "notif_base = \"https://127.0.0.1:%d\";\n", cwd, cwd, cwd,
+		    cwd, harness_tls_port);
+		snprintf(harness_server + strlen(harness_server),
+		    sizeof(harness_server) - strlen(harness_server),
+		    "\tcertfile = \"%s/web.pem\";\n\tcertkey = \"%s/web.key\";\n",
+		    cwd, cwd);
+	}
 	snprintf(www, sizeof(www), "%s/www", cwd);
 	/* No test asks the Internet: the release feed is a port nothing
 	 * listens on, refused at once.  The console stays the user's. */
@@ -1171,8 +1212,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "datadir = \"%s/data\";\ncookie_secure = false;\n"
 	    "agent_binary = \"%s\";\nsendmail = \"%s/tools/sendmail\";\n"
 	    "update_url = \"https://127.0.0.1:9/releases/latest\";\n"
-	    "%s%s", listen, webroot != NULL ? webroot : www, harness_server, RP_ID,
-	    harness_origin, cwd, send, cwd, local, harness_webconf);
+	    "%s%s%s", listen, webroot != NULL ? webroot : www, harness_server,
+	    RP_ID, harness_origin, cwd, send, cwd, local, tls, harness_webconf);
 	put("web.conf", buf);
 
 	snprintf(buf, sizeof(buf), "unix:%s/jgd.sock", cwd);
@@ -1319,7 +1360,23 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* Its access rules (NACM), the test's own. */
 	argv[128] = (char *)(uintptr_t)"--nacm";
 	argv[129] = (char *)(uintptr_t)"nacm.cbor";
-	argv[130] = NULL;
+	/* Its configured subscriptions, the test's own. */
+	argv[130] = (char *)(uintptr_t)"--subscriptions";
+	argv[131] = (char *)(uintptr_t)"subscriptions.cbor";
+	argv[132] = NULL;
+	/* Its certificate, to reach the console's receiver. */
+	if (harness_tls_port != 0) {
+		snprintf(ca, sizeof(ca), "%s/ca.pem", cwd);
+		snprintf(acert, sizeof(acert), "%s/agent.pem", cwd);
+		snprintf(akey, sizeof(akey), "%s/agent.key", cwd);
+		argv[132] = (char *)(uintptr_t)"-A";
+		argv[133] = ca;
+		argv[134] = (char *)(uintptr_t)"-C";
+		argv[135] = acert;
+		argv[136] = (char *)(uintptr_t)"-K";
+		argv[137] = akey;
+		argv[138] = NULL;
+	}
 	snprintf(pdetc, sizeof(pdetc), "%s/pe", cwd);
 	snprintf(surules, sizeof(surules), "%s/rules", cwd);
 	snprintf(rootdir, sizeof(rootdir), "%s/root", cwd);
@@ -1459,9 +1516,48 @@ resp_free(struct resp *r)
 {
 
 	free(r->body);
+	free(r->head);
 	if (r->json != NULL)
 		ucl_object_unref(r->json);
 	memset(r, 0, sizeof(*r));
+}
+
+/* A header of the reply, its value in buf; NULL: none. */
+const char *
+resp_header(const struct resp *r, const char *name, char *buf, size_t len)
+{
+	const char	*p;
+	size_t		 n = strlen(name);
+
+	for (p = r->head; p != NULL && (p = strstr(p, "\r\n")) != NULL;) {
+		p += 2;
+		if (strncasecmp(p, name, n) == 0 && p[n] == ':') {
+			p += n + 1;
+			p += strspn(p, " \t");
+			snprintf(buf, len, "%.*s", (int)strcspn(p, "\r\n"), p);
+			return (buf);
+		}
+	}
+	return (NULL);
+}
+
+/* One request to the console with headers of its own (each ending in
+ * CRLF) beside the session's. */
+void
+http_with(const char *method, const char *path, const char *extra,
+    const char *body, struct resp *r)
+{
+	char	hdrs[2048];
+
+	snprintf(hdrs, sizeof(hdrs), "%s%s%s%s%s%s%s%s",
+	    send_xjg ? "X-Arcana: 1\r\n" : "",
+	    origin_hdr != NULL ? "Origin: " : "",
+	    origin_hdr != NULL ? origin_hdr : "",
+	    origin_hdr != NULL ? "\r\n" : "",
+	    cookie[0] != '\0' ? "Cookie: " : "", cookie,
+	    cookie[0] != '\0' ? "\r\n" : "", extra);
+	http_on(console_socket(), "localhost:8443", hdrs, method, path, body,
+	    r);
 }
 
 /* A connected socket to the console: ./k.sock, or its TCP port. */
@@ -1659,10 +1755,12 @@ http_on(int s, const char *host, const char *hdrs, const char *method,
 	int			 attempt;
 
 	memset(r, 0, sizeof(*r));
+	/* JSON, unless the headers say what else. */
 	ATF_REQUIRE(asprintf(&req, "%s %s HTTP/1.1\r\nHost: %s\r\n"
-	    "Connection: close\r\n%sContent-Type: application/json\r\n"
-	    "Content-Length: %zu\r\n\r\n%s", method, path, host, hdrs,
-	    body != NULL ? strlen(body) : 0, body != NULL ? body : "") != -1);
+	    "Connection: close\r\n%s%sContent-Length: %zu\r\n\r\n%s", method,
+	    path, host, hdrs, strcasestr(hdrs, "content-type:") != NULL ? "" :
+	    "Content-Type: application/json\r\n", body != NULL ? strlen(body) :
+	    0, body != NULL ? body : "") != -1);
 	attempt = 0;
 again:
 	ATF_REQUIRE(write(s, req, strlen(req)) == (ssize_t)strlen(req));
@@ -1721,6 +1819,7 @@ again:
 			cookie[0] = '\0';
 	}
 	r->body = strdup(b + 4);
+	r->head = strdup(buf);
 	free(buf);
 	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
 	    UCL_PARSER_DISABLE_MACRO);

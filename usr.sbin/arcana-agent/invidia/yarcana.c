@@ -8,7 +8,7 @@
  * Invidia: Arcana's own modules served by cblink's YANG family,
  * beside the standard models (yserve.c):
  * a GET runs the operation that reads the same, as its job would
- * (do_sysctl(), do_list(), ...), and the module's collector makes its
+ * (do_list(), do_storage(), ...), and the module's collector makes its
  * reply the module's structs (y*.c).  An action is its operation too:
  * a jail's start, stop, restart and kill as the action operation's, a
  * service's as service-action's, a process's signal and renice as the
@@ -58,7 +58,7 @@ ywork_free(void *p)
  * encodes them after the handler returns, so it goes with the answer's
  * arena (cbl_yarena_atfree()).  NULL: out of memory.
  */
-static struct work *
+struct work *
 ywork(cbl_yarena *a)
 {
 	struct work	*w;
@@ -1192,17 +1192,6 @@ arcana_jobs_submit_rpc(cbl_req *req, const struct arcana_jobs_submit_input *in,
 }
 
 int
-arcana_kernel_kernel_edit(cbl_req *req, const struct arcana_kernel *before,
-    const struct arcana_kernel *after)
-{
-
-	(void)req;
-	(void)before;
-	(void)after;
-	return (EOPNOTSUPP);
-}
-
-int
 arcana_kernel_kernel_file_unload_action(cbl_req *req,
     const struct cbl_bytes *target,
     const struct arcana_kernel_kernel_file_unload_input *in,
@@ -1221,30 +1210,6 @@ arcana_kernel_kernel_file_unload_action(cbl_req *req,
 	if (kldstat((int)*(const uint32_t *)k[0], &st) == -1)
 		return (said(req, "no such file in the kernel"));
 	return (kmod(req, "unload", st.name, a));
-}
-
-int
-arcana_kernel_kernel_get(cbl_req *req, struct arcana_kernel *data,
-    cbl_yarena *a)
-{
-	struct arc_kernel_rsp		 r;
-	struct arcana_kernel_kernel	*o;
-	struct work			*w;
-	int				 error;
-
-	(void)req;
-	if ((w = ywork(a)) == NULL)
-		return (ENOMEM);
-	memset(&r, 0, sizeof(r));
-	(void)do_kernel(w, &r);
-	if (!r.ok)
-		return (failed("kernel", r.error));
-	if ((o = cbl_yarena_alloc(a, sizeof(*o))) == NULL)
-		return (ENOMEM);
-	if ((error = ykernel_from_json(r.json, a, o)) != 0)
-		return (error);
-	data->kernel = o;
-	return (0);
 }
 
 int
@@ -1633,34 +1598,6 @@ arcana_sdwan_sdwan_get(cbl_req *req, struct arcana_sdwan *data, cbl_yarena *a)
 }
 
 int
-arcana_services_services_edit(cbl_req *req,
-    const struct arcana_services *before, const struct arcana_services *after)
-{
-
-	(void)req;
-	(void)before;
-	(void)after;
-	return (EOPNOTSUPP);
-}
-
-int
-arcana_services_services_get(cbl_req *req, struct arcana_services *data,
-    cbl_yarena *a)
-{
-	struct arc_services_rsp	 r;
-	struct work		*w;
-
-	(void)req;
-	if ((w = ywork(a)) == NULL)
-		return (ENOMEM);
-	memset(&r, 0, sizeof(r));
-	(void)do_services(w, &r);
-	if (!r.ok)
-		return (failed("services", r.error));
-	return (yservices_from(&r, NULL, 0, a, data));
-}
-
-int
 arcana_services_services_service_reload_action(cbl_req *req,
     const struct cbl_bytes *target,
     const struct arcana_services_services_service_reload_input *in,
@@ -1895,42 +1832,6 @@ arcana_storage_storage_snapshot_send_action(cbl_req *req,
 }
 
 int
-arcana_sysctl_sysctl_edit(cbl_req *req, const struct arcana_sysctl *before,
-    const struct arcana_sysctl *after)
-{
-
-	(void)req;
-	(void)before;
-	(void)after;
-	return (EOPNOTSUPP);
-}
-
-int
-arcana_sysctl_sysctl_get(cbl_req *req, struct arcana_sysctl *data,
-    cbl_yarena *a)
-{
-	struct arc_sysctl_rsp		 r;
-	struct arcana_sysctl_sysctl	*o;
-	struct work			*w;
-	int				 error;
-
-	(void)req;
-	if ((w = ywork(a)) == NULL)
-		return (ENOMEM);
-	memset(&r, 0, sizeof(r));
-	(void)do_sysctl(w, NULL, &r);
-	if (!r.ok)
-		return (failed("sysctl", r.error));
-	if ((o = cbl_yarena_alloc(a, sizeof(*o))) == NULL)
-		return (ENOMEM);
-	if ((error = ysysctl_from_json(r.json, r.total, r.truncated, a, o)) !=
-	    0)
-		return (error);
-	data->sysctl = o;
-	return (0);
-}
-
-int
 arcana_troubleshoot_troubleshoot_capture_action(cbl_req *req,
     const struct cbl_bytes *target,
     const struct arcana_troubleshoot_troubleshoot_capture_input *in,
@@ -2075,33 +1976,6 @@ arcana_wireguard_wireguard_get(cbl_req *req, struct arcana_wireguard *data,
 	if ((error = ywg_from_json(r.json, a, o)) != 0)
 		return (error);
 	data->wireguard = o;
-	return (0);
-}
-
-int
-ietf_syslog_syslog_edit(cbl_req *req, const struct ietf_syslog *before,
-    const struct ietf_syslog *after)
-{
-
-	(void)req;
-	(void)before;
-	(void)after;
-	return (EOPNOTSUPP);
-}
-
-int
-ietf_syslog_syslog_get(cbl_req *req, struct ietf_syslog *data, cbl_yarena *a)
-{
-	struct yunread	*u;
-	size_t		 nu, i;
-	int		 error;
-
-	(void)req;
-	if ((error = ysyslog_read("/etc/syslog.conf", "/etc/newsyslog.conf", a,
-	    data, &u, &nu)) != 0)
-		return (error);
-	for (i = 0; i < nu; i++)
-		logmsg(LOG_INFO, "syslog.conf: %s: %s", u[i].var, u[i].why);
 	return (0);
 }
 

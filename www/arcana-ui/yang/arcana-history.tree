@@ -22,6 +22,7 @@ module: arcana-history
      |  +--ro interface*      string
      |  +--ro disk*           string
      |  +--ro jail*           string
+     |  +--ro relay*          string
      |  +--ro sample* [time]
      |     +--ro time        yang:date-and-time
      |     +--ro cpu?        percent
@@ -41,9 +42,13 @@ module: arcana-history
      |     |  +--ro read?      uint64
      |     |  +--ro written?   uint64
      |     +--ro jail* [name]
-     |        +--ro name      string
-     |        +--ro cpu?      percent
-     |        +--ro memory?   uint64
+     |     |  +--ro name      string
+     |     |  +--ro cpu?      percent
+     |     |  +--ro memory?   uint64
+     |     +--ro relay* [name]
+     |        +--ro name     string
+     |        +--ro plain?   uint64
+     |        +--ro added?   uint64
      +---x read
         +---w input
         |  +---w after?   yang:date-and-time
@@ -67,6 +72,10 @@ module: arcana-history
               |  +--ro read?      uint64
               |  +--ro written?   uint64
               +--ro jail* [name]
-                 +--ro name      string
-                 +--ro cpu?      percent
-                 +--ro memory?   uint64
+              |  +--ro name      string
+              |  +--ro cpu?      percent
+              |  +--ro memory?   uint64
+              +--ro relay* [name]
+                 +--ro name     string
+                 +--ro plain?   uint64
+                 +--ro added?   uint64

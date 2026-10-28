@@ -34,6 +34,9 @@
  *
  * What the models do not carry (CARP, the interface flags) is not
  * here: the other tabs that read the agent's table keep asking it.
+ *
+ * And the pages' /sysctl and /kernel from arcana-sysctl and
+ * arcana-kernel, their shapes kept (the end of this file).
  */
 
 #include <sys/param.h>
@@ -51,7 +54,9 @@
 #include <time.h>
 
 #include <cblink.h>
+#include <cbl_data.h>
 #include <cbl_schema.h>
+#include <cbl_data.h>
 #include <ucl.h>
 
 #include "ymodel.h"
@@ -320,9 +325,87 @@ ytrans_get(cbl_conn *conn, const uint64_t *sids, size_t ns,
 }
 
 int
+ytrans_get_tree(cbl_conn *conn, const struct cbl_ynode *const *tops,
+    size_t ntop, int ds, cbl_dtree **tp, char *err, size_t errlen,
+    uint64_t *errsid)
+{
+
+	return (ytrans_get_tree_origin(conn, tops, ntop, ds, false, tp, err,
+	    errlen, errsid));
+}
+
+int
+ytrans_get_tree_origin(cbl_conn *conn, const struct cbl_ynode *const *tops,
+    size_t ntop, int ds, bool origin, cbl_dtree **tp, char *err,
+    size_t errlen, uint64_t *errsid)
+{
+	uint64_t	 sids[32];
+	cbl_msg		*req, *rep = NULL;
+	cbl_dtree	*t;
+	const void	*p;
+	size_t		 len;
+	int		 error;
+
+	*tp = NULL;
+	err[0] = '\0';
+	*errsid = 0;
+	if (ntop > nitems(sids))
+		return (E2BIG);
+	for (size_t i = 0; i < ntop; i++)
+		sids[i] = tops[i]->sid;
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_GET, 0, &req)) != 0 ||
+	    (error = cbl_msg_put_yget_opts(req, sids, ntop, NULL,
+	    CBL_YWD_EXPLICIT, origin)) != 0 ||
+	    (ds >= 0 && (error = cbl_msg_set_datastore(req,
+	    (enum cbl_yds_name)ds)) != 0)) {
+		snprintf(err, errlen, "%s", strerror(error));
+		return (error);
+	}
+	if ((error = cbl_request(conn, req, &rep, -1)) != 0) {
+		snprintf(err, errlen, "%s", rep != NULL &&
+		    cbl_msg_err_str(rep) != NULL ? cbl_msg_err_str(rep) :
+		    strerror(error));
+		if (rep != NULL)
+			*errsid = cbl_msg_err_sid(rep);
+		cbl_msg_free(rep);
+		return (error);
+	}
+	if ((t = cbl_dtree_new(&ymodel_schema)) == NULL) {
+		cbl_msg_free(rep);
+		return (ENOMEM);
+	}
+	/* Each node the reply has; one not there is none.  Every one, as
+	 * the reply has them, with their annotations. */
+	if (ntop == 0)
+		error = cbl_msg_ydtree(rep, t, 0, err, errlen);
+	for (size_t i = 0; error == 0 && i < ntop; i++)
+		if (cbl_msg_sid_raw(rep, sids[i], &p, &len) == 0)
+			error = cbl_dnode_decode(cbl_dtree_root(t), tops[i], p,
+			    len, 0, err, errlen, NULL);
+	cbl_msg_free(rep);
+	if (error != 0) {
+		cbl_dtree_free(t);
+		return (error);
+	}
+	*tp = t;
+	return (0);
+}
+
+int
 ytrans_get_ds(cbl_conn *conn, const uint64_t *sids, size_t ns,
     const char *xpath, int ds, ucl_object_t **out, char *err, size_t errlen,
     uint64_t *errsid)
+{
+
+	return (ytrans_get_origin(conn, sids, ns, xpath, ds, false, out, err,
+	    errlen, errsid));
+}
+
+int
+ytrans_get_origin(cbl_conn *conn, const uint64_t *sids, size_t ns,
+    const char *xpath, int ds, bool origin, ucl_object_t **out, char *err,
+    size_t errlen, uint64_t *errsid)
 {
 	const struct cbl_ymodule	*m;
 	const struct cbl_ynode		*n;
@@ -330,6 +413,7 @@ ytrans_get_ds(cbl_conn *conn, const uint64_t *sids, size_t ns,
 	struct ucl_parser		*p;
 	cbl_msg				*req, *rep = NULL;
 	cbl_yarena			*a;
+	cbl_dtree			*t;
 	char				*json;
 	uint32_t			 i, k;
 	void				*data;
@@ -341,9 +425,9 @@ ytrans_get_ds(cbl_conn *conn, const uint64_t *sids, size_t ns,
 	if (errsid != NULL)
 		*errsid = 0;
 	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
-	    CBL_YCMD_GET, 0, &req)) != 0 || (xpath != NULL ?
-	    (error = cbl_msg_put_yget_xpath(req, sids, ns, xpath)) != 0 :
-	    ns > 0 && (error = cbl_msg_put_yget(req, sids, ns)) != 0) ||
+	    CBL_YCMD_GET, 0, &req)) != 0 ||
+	    (error = cbl_msg_put_yget_opts(req, sids, ns, xpath,
+	    CBL_YWD_EXPLICIT, origin)) != 0 ||
 	    (ds >= 0 && (error = cbl_msg_set_datastore(req,
 	    (enum cbl_yds_name)ds)) != 0)) {
 		snprintf(err, errlen, "%s", strerror(error));
@@ -357,6 +441,26 @@ ytrans_get_ds(cbl_conn *conn, const uint64_t *sids, size_t ns,
 			*errsid = cbl_msg_err_sid(rep);
 		cbl_msg_free(rep);
 		return (error);
+	}
+	/* Annotated: as an instance tree, which has them. */
+	if (origin) {
+		if ((t = cbl_dtree_new(&ymodel_schema)) == NULL)
+			error = ENOMEM;
+		else if ((error = cbl_msg_ydtree(rep, t, 0, err, errlen)) ==
+		    0)
+			error = cbl_dtree_json(t, &b);
+		cbl_dtree_free(t);
+		cbl_msg_free(rep);
+		if (error != 0) {
+			cbl_ybuf_free(&b);
+			return (error);
+		}
+		json = strndup(b.p != NULL ? (const char *)b.p : "{}",
+		    b.p != NULL ? b.len : 2);
+		cbl_ybuf_free(&b);
+		if (json == NULL)
+			return (ENOMEM);
+		goto parse;
 	}
 	if ((a = cbl_yarena_new()) == NULL) {
 		cbl_msg_free(rep);
@@ -392,6 +496,7 @@ ytrans_get_ds(cbl_conn *conn, const uint64_t *sids, size_t ns,
 		return (ENOMEM);
 	}
 	cbl_ybuf_free(&b);
+parse:
 	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
 	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
 	if (ucl_parser_add_string(p, json, 0))
@@ -402,5 +507,338 @@ ytrans_get_ds(cbl_conn *conn, const uint64_t *sids, size_t ns,
 		snprintf(err, errlen, "the agent's JSON did not read back");
 		return (EINVAL);
 	}
+	return (0);
+}
+
+/*
+ * arcana-sysctl and arcana-kernel (PLAN-SDN-YANG 3.1.6), as the pages'
+ * /sysctl and /kernel have them: the kernel's values by the module's
+ * read action, a part at a time; what sysctl.conf sets from running;
+ * the modules and memory by a GET.
+ */
+
+/* The child of n named; NULL where there is none. */
+static const struct cbl_ynode *
+child_of(const struct cbl_ynode *n, const char *name)
+{
+
+	for (uint32_t i = 0; n != NULL && i < n->nchild; i++)
+		if (strcmp(n->child[i]->name, name) == 0)
+			return (n->child[i]);
+	return (NULL);
+}
+
+/* A request of family 1 answered, rep the answer; err says why not. */
+static int
+ask(cbl_conn *conn, cbl_msg *req, cbl_msg **rep, char *err, size_t errlen)
+{
+	int	error;
+
+	*rep = NULL;
+	if ((error = cbl_request(conn, req, rep, -1)) != 0) {
+		snprintf(err, errlen, "%s", *rep != NULL &&
+		    cbl_msg_err_str(*rep) != NULL ? cbl_msg_err_str(*rep) :
+		    strerror(error));
+		cbl_msg_free(*rep);
+		*rep = NULL;
+	}
+	return (error);
+}
+
+/* Top-level node n of datastore ds, decoded into its module's data. */
+static int
+yget_into(cbl_conn *conn, const struct cbl_ynode *n, int ds, void *data,
+    cbl_yarena *a, char *err, size_t errlen)
+{
+	cbl_msg	*req, *rep;
+	int	 error;
+
+	if ((error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_GET, 0, &req)) != 0 || (error = cbl_msg_put_yget(req,
+	    &n->sid, 1)) != 0 || (ds >= 0 && (error = cbl_msg_set_datastore(req,
+	    (enum cbl_yds_name)ds)) != 0)) {
+		snprintf(err, errlen, "%s", strerror(error));
+		return (error);
+	}
+	if ((error = ask(conn, req, &rep, err, errlen)) != 0)
+		return (error);
+	error = cbl_msg_ydecode_member(rep, n, data, a, 0, err, errlen);
+	cbl_msg_free(rep);
+	return (error == ENOENT ? 0 : error);
+}
+
+/* Action act of container n (no keys), in its input, out its output. */
+static int
+yaction(cbl_conn *conn, const struct cbl_ynode *n,
+    const struct cbl_ynode *act, const void *in, void *out, cbl_yarena *a,
+    char *err, size_t errlen)
+{
+	const struct cbl_ynode	*inode, *onode;
+	struct cbl_ybuf		 t = { NULL, 0, 0 };
+	cbl_msg			*req, *rep;
+	int			 error;
+
+	if ((inode = child_of(act, "input")) == NULL || (onode = child_of(act,
+	    "output")) == NULL) {
+		snprintf(err, errlen, "%s: not in the tables", act->name);
+		return (ENOENT);
+	}
+	if ((error = cbl_yiid_write(n, NULL, 0, &t)) != 0 ||
+	    (error = cbl_msg_new(cbl_conn_ctx(conn), CBL_YANG_FAMILY,
+	    CBL_YCMD_RPC, 0, &req)) != 0) {
+		cbl_ybuf_free(&t);
+		snprintf(err, errlen, "%s", strerror(error));
+		return (error);
+	}
+	if ((error = cbl_msg_put_ynode(req, inode, in)) != 0 ||
+	    (error = cbl_msg_put_yaction(req, t.p, t.len)) != 0) {
+		cbl_msg_free(req);
+		cbl_ybuf_free(&t);
+		snprintf(err, errlen, "%s", strerror(error));
+		return (error);
+	}
+	cbl_ybuf_free(&t);
+	if ((error = ask(conn, req, &rep, err, errlen)) != 0)
+		return (error);
+	error = cbl_msg_ydecode(rep, onode, out, a, 0, err, errlen);
+	cbl_msg_free(rep);
+	return (error == ENOENT ? 0 : error);
+}
+
+/* A value as the sysctl page's row: name, value, type, rw, tun, descr. */
+static ucl_object_t *
+sysctl_row(const char *name, const char *value, const char *type,
+    bool has_rw, bool rw, bool has_tun, bool tun, const char *descr)
+{
+	ucl_object_t	*o;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "name", ucl_object_fromstring(name != NULL ? name : ""));
+	put(o, "value", ucl_object_fromstring(value != NULL ? value : ""));
+	if (type != NULL)
+		put(o, "type", ucl_object_fromstring(type));
+	if (has_rw)
+		put(o, "rw", ucl_object_frombool(rw));
+	if (has_tun && tun)
+		put(o, "tun", ucl_object_frombool(true));
+	if (descr != NULL)
+		put(o, "descr", ucl_object_fromstring(descr));
+	return (o);
+}
+
+int
+ytrans_sysctl_part(cbl_conn *conn, const char *prefix, const char *jail,
+    const char *after, uint16_t count, ucl_object_t **rows, char **next,
+    uint64_t *total, char *err, size_t errlen)
+{
+	const struct cbl_ymodule		*m;
+	const struct cbl_ynode			*n, *act;
+	struct arcana_sysctl_sysctl_read_input	 in;
+	struct arcana_sysctl_sysctl_read_output	 out;
+	cbl_yarena				*a;
+	int					 error;
+
+	*rows = NULL;
+	*next = NULL;
+	*total = 0;
+	err[0] = '\0';
+	if ((n = top_of("arcana-sysctl", "sysctl", &m)) == NULL ||
+	    (act = child_of(n, "read")) == NULL) {
+		snprintf(err, errlen, "arcana-sysctl is not in the tables");
+		return (ENOENT);
+	}
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	memset(&in, 0, sizeof(in));
+	in.prefix = prefix != NULL && prefix[0] != '\0' ? prefix : NULL;
+	in.jail = jail != NULL && jail[0] != '\0' ? jail : NULL;
+	in.after = after != NULL && after[0] != '\0' ? after : NULL;
+	in.has_count = count > 0;
+	in.count = count;
+	memset(&out, 0, sizeof(out));
+	if ((error = yaction(conn, n, act, &in, &out, a, err, errlen)) != 0) {
+		cbl_yarena_free(a);
+		return (error);
+	}
+	*rows = ucl_object_typed_new(UCL_ARRAY);
+	for (size_t i = 0; i < out.value.n; i++) {
+		const struct arcana_sysctl_sysctl_read_output_value *v =
+		    &out.value.v[i];
+
+		ucl_array_append(*rows, sysctl_row(v->name, v->value, v->type,
+		    v->has_writable, v->writable, v->has_tunable, v->tunable,
+		    v->description));
+	}
+	if (out.next != NULL)
+		*next = strdup(out.next);
+	*total = out.has_total ? out.total : out.value.n;
+	cbl_yarena_free(a);
+	return (0);
+}
+
+int
+ytrans_sysctl(cbl_conn *conn, const char *prefix, const char *jail,
+    ucl_object_t **data, uint64_t *total, bool *truncated, char *err,
+    size_t errlen)
+{
+	const struct cbl_ymodule	*m;
+	const struct cbl_ynode		*n;
+	struct arcana_sysctl		 s;
+	ucl_object_t			*rows, *kept;
+	cbl_yarena			*a;
+	char				*next;
+	int				 error;
+
+	*data = NULL;
+	*truncated = false;
+	if ((error = ytrans_sysctl_part(conn, prefix, jail, NULL, 0, &rows,
+	    &next, total, err, errlen)) != 0)
+		return (error);
+	*truncated = next != NULL;
+	free(next);
+	/* What sysctl.conf sets at boot: running's. */
+	kept = ucl_object_typed_new(UCL_ARRAY);
+	if ((jail == NULL || jail[0] == '\0') && (n = top_of("arcana-sysctl",
+	    "sysctl", &m)) != NULL && (a = cbl_yarena_new()) != NULL) {
+		memset(&s, 0, sizeof(s));
+		if ((error = yget_into(conn, n, CBL_YDS_RUNNING, &s, a, err,
+		    errlen)) != 0) {
+			cbl_yarena_free(a);
+			ucl_object_unref(kept);
+			ucl_object_unref(rows);
+			return (error);
+		}
+		for (size_t i = 0; s.sysctl != NULL && i < s.sysctl->kept.n;
+		    i++) {
+			ucl_object_t *k = ucl_object_typed_new(UCL_OBJECT);
+
+			put(k, "name", ucl_object_fromstring(
+			    s.sysctl->kept.v[i].name));
+			put(k, "value", ucl_object_fromstring(
+			    s.sysctl->kept.v[i].value));
+			ucl_array_append(kept, k);
+		}
+		cbl_yarena_free(a);
+	}
+	*data = ucl_object_typed_new(UCL_OBJECT);
+	put(*data, "values", rows);
+	put(*data, "kept", kept);
+	return (0);
+}
+
+static ucl_object_t *
+strings(size_t n, const char *const *v)
+{
+	ucl_object_t	*arr;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (size_t i = 0; i < n; i++)
+		ucl_array_append(arr, ucl_object_fromstring(v[i]));
+	return (arr);
+}
+
+static void
+put_u64(ucl_object_t *o, const char *key, bool has, uint64_t v)
+{
+
+	if (has)
+		put(o, key, ucl_object_fromint((int64_t)v));
+}
+
+int
+ytrans_kernel(cbl_conn *conn, ucl_object_t **data, char *err, size_t errlen)
+{
+	const struct cbl_ymodule		*m;
+	const struct cbl_ynode			*n;
+	const struct arcana_kernel_kernel	*k;
+	struct arcana_kernel			 d;
+	ucl_object_t				*files, *o, *mem, *arr;
+	cbl_yarena				*a;
+	int					 error;
+
+	*data = NULL;
+	err[0] = '\0';
+	if ((n = top_of("arcana-kernel", "kernel", &m)) == NULL) {
+		snprintf(err, errlen, "arcana-kernel is not in the tables");
+		return (ENOENT);
+	}
+	if ((a = cbl_yarena_new()) == NULL)
+		return (ENOMEM);
+	memset(&d, 0, sizeof(d));
+	if ((error = yget_into(conn, n, -1, &d, a, err, errlen)) != 0) {
+		cbl_yarena_free(a);
+		return (error);
+	}
+	if ((k = d.kernel) == NULL) {
+		cbl_yarena_free(a);
+		snprintf(err, errlen, "the agent serves no kernel");
+		return (ENOENT);
+	}
+	*data = ucl_object_typed_new(UCL_OBJECT);
+	files = ucl_object_typed_new(UCL_ARRAY);
+	for (size_t i = 0; i < k->file.n; i++) {
+		const struct arcana_kernel_kernel_file *f = &k->file.v[i];
+
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put(o, "id", ucl_object_fromint(f->id));
+		if (f->name != NULL)
+			put(o, "name", ucl_object_fromstring(f->name));
+		if (f->path != NULL)
+			put(o, "path", ucl_object_fromstring(f->path));
+		put_u64(o, "refs", f->has_refs, f->refs);
+		put_u64(o, "size", f->has_size, f->size);
+		if (f->address != NULL)
+			put(o, "address", ucl_object_fromstring(f->address));
+		put(o, "modules", strings(f->module.n, f->module.v));
+		ucl_array_append(files, o);
+	}
+	put(*data, "files", files);
+	put(*data, "available", strings(k->available.n, k->available.v));
+	put(*data, "kept", strings(k->kept.n, k->kept.v));
+	if (k->memory != NULL) {
+		const struct arcana_kernel_kernel_memory *km = k->memory;
+
+		mem = ucl_object_typed_new(UCL_OBJECT);
+		put_u64(mem, "files", km->has_files, km->files);
+		put_u64(mem, "kmem_size", km->has_kmem_size, km->kmem_size);
+		put_u64(mem, "kmem_map_size", km->has_kmem_map_size,
+		    km->kmem_map_size);
+		put_u64(mem, "kmem_map_free", km->has_kmem_map_free,
+		    km->kmem_map_free);
+		put_u64(mem, "malloc_total", km->has_malloc_total,
+		    km->malloc_total);
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		for (size_t i = 0; i < km->malloc.n; i++) {
+			const struct arcana_kernel_kernel_memory_malloc *t =
+			    &km->malloc.v[i];
+
+			o = ucl_object_typed_new(UCL_OBJECT);
+			if (t->name != NULL)
+				put(o, "name", ucl_object_fromstring(t->name));
+			put_u64(o, "bytes", t->has_bytes, t->bytes);
+			put_u64(o, "count", t->has_count, t->count);
+			put_u64(o, "requests", t->has_requests, t->requests);
+			ucl_array_append(arr, o);
+		}
+		put(mem, "malloc", arr);
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		for (size_t i = 0; i < km->zone.n; i++) {
+			const struct arcana_kernel_kernel_memory_zone *z =
+			    &km->zone.v[i];
+
+			o = ucl_object_typed_new(UCL_OBJECT);
+			if (z->name != NULL)
+				put(o, "name", ucl_object_fromstring(z->name));
+			put_u64(o, "bytes", z->has_bytes, z->bytes);
+			put_u64(o, "count", z->has_count, z->count);
+			put_u64(o, "free", z->has_free, z->free);
+			put_u64(o, "size", z->has_size, z->size);
+			put_u64(o, "requests", z->has_requests, z->requests);
+			ucl_array_append(arr, o);
+		}
+		put(mem, "zones", arr);
+		put(*data, "memory", mem);
+	}
+	cbl_yarena_free(a);
 	return (0);
 }

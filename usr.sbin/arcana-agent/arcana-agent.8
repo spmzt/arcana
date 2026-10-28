@@ -63,6 +63,7 @@
 .Op Fl -pkg-idle Ar seconds
 .Op Fl -jobs-conf Ar file
 .Op Fl -nacm Ar file
+.Op Fl -subscriptions Ar file
 .Op Fl -bird-watch Ar seconds
 .Op Fl -smtpd-watch Ar seconds
 .Op Fl -sctp-also Ar addresses
@@ -367,6 +368,33 @@ to the rules, never one of the console's users.
 An rpc or action of Arcana's modules that changes the host is
 .Ic nacm:default-deny-all :
 run only by a rule that permits it.
+.It Fl -subscriptions Ar file
+Where the configured subscriptions are kept (RFC 8639 section 2.5):
+ietf-subscribed-notifications' subscriptions container, as YANG-CBOR,
+written whole by a commit;
+.Pa /usr/local/etc/arcana/subscriptions.cbor
+by default.
+Each subscription's receivers name a receiver instance
+(ietf-subscribed-notif-receivers), an https-receiver
+(ietf-https-notif-transport) with its capabilities-endpoint and
+relay-notification-endpoint, both
+.Li https://host[:port]/path :
+the agent reads the capabilities once, which must take JSON, then
+POSTs each record as RFC 8040's notification JSON, over HTTP/1.1 on one
+TLS connection kept open, showing the certificate of
+.Fl C
+and
+.Fl K
+and trusting the CA of
+.Fl A
+and the system's.
+A receiver that fails is connected again, a second on and doubling to
+a minute, told subscription-started with the time of the last record
+it had, and sent what it missed from the events kept (configured-replay)
+then replay-completed.
+The console is the receiver meant: its
+.Pa /api/servers/<host>/subscription
+says what to put in the candidate.
 .It Fl -bird-watch Ar seconds
 How often the BIRD of the host, and that of each running jail with a
 network of its own where
@@ -458,11 +486,16 @@ The
 .Xr sysctl 8
 program, which sets a variable of the kernel's state, and the
 .Xr sysctl.conf 5
-that keeps one for the next boot.
+that keeps one for the next boot: arcana-sysctl's running datastore,
+which a commit writes in place, every other line kept, and sets the
+kernel to.
 Default:
 .Pa /sbin/sysctl
 and
-.Pa /etc/sysctl.conf .
+.Pa /etc/sysctl.conf
+(under the root
+.Fl -root
+names, where given).
 .It Fl v Ar log-directory
 Where
 .Xr syslogd 8
@@ -510,8 +543,17 @@ which makes a
 .Xr netlink 4
 socket inside each jail with a network of its own and hands it over,
 so that the daemon is told of that network's changes as of the
-host's: another helper cannot, and the jails' networks are then not
-watched.
+host's; and which serves, attached to each jail with a network of its
+own, the models as the jail has them, its logical network element's
+.Ic root
+(RFC 8530, an inline mount of RFC 8528's): its interfaces, its
+routing, its FIBs as network instances with their own
+.Ic vrf-root ,
+its YANG library.
+One such helper runs for each jail read, from its first read until
+the jail stops, and is started again where it died.
+Another helper cannot: the jails' networks are then not watched, and
+their elements have no root.
 .It Fl o Ar directory
 Where WireGuard interfaces are written for
 .Xr wg-quick 8 .
@@ -612,6 +654,28 @@ the network instance an interface is in, its FIB
 .Pq Dq fib Ar N No first on Va ifconfig_ Ns Ar if ,
 .Dv SIOCSIFFIB ;
 .It
+the logical network element an interface is in, a vnet jail
+.Pq Ic bind-lne-name , No RFC 8530 :
+moved there or back as
+.Xr ifconfig 8
+.Cm vnet
+and
+.Cm -vnet
+do, and kept as the jail's
+.Va vnet.interface
+in
+.Xr jail.conf 5
+where the jail is defined in one (a warning,
+.Cm not-kept ,
+where it is not); moved alone, with nothing else of it changed in the
+same commit, or refused with
+.Cm lne-assignment-failed ;
+back on the host, what the commit gives it is made live again, its
+addresses having gone with the move;
+when the jail stops the kernel gives the interface back, which
+.Ic bind-lne-name-failed
+tells;
+.It
 the network instances, a FIB each: their names and descriptions
 .Pq Pa fibs.conf ,
 and each one's static routes, its routing mounted at its
@@ -625,8 +689,18 @@ only where the request accepts
 .Cm net-fibs :
 FreeBSD never lowers it, not even for an undo;
 .It
+what
+.Xr syslogd 8
+logs where (RFC 9742's ietf-syslog): the console, a file and a remote
+host over UDP, each with its selectors, and a file's rotation, its
+line in
+.Xr newsyslog.conf 5 ;
+.It
 NACM's rules
 .Pq Fl -nacm ;
+.It
+the configured subscriptions
+.Pq Fl -subscriptions ;
 .El
 anything else is refused as not supported yet.
 .Pp
@@ -651,6 +725,53 @@ yours
 .Pq Cm rc-conf-conflict .
 Every file is put back where the kernel refuses the change; a route the
 table changed meanwhile is tried once more first.
+.Pp
+Running's ietf-syslog is what
+.Xr syslogd 8
+reads:
+.Pa /etc/syslog.conf
+and the files it includes, each file's rotation from
+.Pa /etc/newsyslog.conf
+and its includes; what the model cannot hold (a pipe, users told, a
+block of one program or host, a property filter, a comparison by
+.Ql < ,
+.Ql >
+or
+.Ql \&! ,
+a rotation at a time of day) is logged and left out.
+What a commit writes goes to
+.Pa /usr/local/etc/syslog.d/arcana.conf
+and its rotations to
+.Pa /usr/local/etc/newsyslog.conf.d/arcana.conf ,
+each action one line, read where
+.Pa /etc/syslog.conf
+and
+.Pa /etc/newsyslog.conf
+include them, as FreeBSD's own do.
+An action the commit leaves as it is stays where it is.
+Your files are left as they are but for what you accept: their
+include of Arcana's file, added once at their end
+.Pq Cm syslog-include ,
+and a line of yours that writes to an action the commit changes or
+takes away, or turns over a log whose rotation it changes, commented
+out where it is with
+.Dq # taken by Arcana:
+.Pq Cm syslog-conf-conflict .
+A log file new to syslogd is made, mode 0600, as
+.Nm syslogd Fl C
+would.
+.Xr syslogd 8
+has no check of its files of its own: what was written is read back
+first, as running is, and must be what was asked; then syslogd, where
+it runs, reads them again
+.Pq Ql service syslogd onereload ,
+and where it does not the commit says so
+.Pq Cm syslogd-stopped .
+Failing, every file is put back and syslogd told again.
+Refused, said: TLS, a destination named otherwise than by its address,
+more than one address, a facility override, an advanced compare that
+blocks or stops, the facility cron2, a retention, a rollover of other
+than whole hours.
 .Pp
 An undo that fails (a commit not confirmed in time, or cancelled) stops
 there, what is left as committed: a Critical alarm

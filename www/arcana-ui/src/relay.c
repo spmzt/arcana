@@ -349,8 +349,9 @@ conf_form(struct html *h, const ucl_object_t *o)
 		h_raw(h, "<label>Name<input name=\"profile\" required "
 		    "pattern=\"[A-Za-z0-9_]{1,32}\" spellcheck=\"false\" "
 		    "autocomplete=\"off\" placeholder=\"lte\"><small>Letters, "
-		    "digits and _: the rc script's profile, and its syslog tag "
-		    "speederv2-&lt;name&gt;.</small></label>");
+		    "digits and _: the rc script's profile, run under rc.subr's "
+		    "name speederv2_&lt;name&gt;, its syslog tag and its "
+		    "variables' prefix.</small></label>");
 	h_raw(h, "<div class=\"two\"><label>Role<select name=\"role\">");
 	h_fmt(h, "<option value=\"client\"%s>client: takes plain packets, "
 	    "sends them with FEC</option><option value=\"server\"%s>server: "
@@ -398,7 +399,26 @@ conf_form(struct html *h, const ucl_object_t *o)
 	input(h, "More options", "extra", jstr(o, "extra"), "--sock-buf 2048",
 	    "speederv2's own, passed on: --jitter, --interval, --queue-len, "
 	    "--sock-buf, --out-addr, --log-level and the like.");
-	h_raw(h, "<div class=\"actions\">");
+	/* rc.subr's service jail: the relay held to its addresses. */
+	h_fmt(h, "<div class=\"two\"><label class=\"toggle\"><input type=\""
+	    "checkbox\" name=\"svcj\"%s><span>In a service jail of its own"
+	    "</span><small>rc.subr(8)'s <code>_svcj</code>: a jail of the "
+	    "host's root, its sockets held to the addresses beside "
+	    "(<code>net_basic</code>, or the options already set).</small>"
+	    "</label>", jbool(o, "svcj") ? " checked" : "");
+	{
+		char	ips[200], *p;
+
+		snprintf(ips, sizeof(ips), "%s", jstr(o, "svcj_ipaddrs") !=
+		    NULL ? jstr(o, "svcj_ipaddrs") : "");
+		for (p = ips; *p != '\0'; p++)
+			if (*p == ' ')
+				*p = ',';
+		input(h, "Its addresses", "svcj_ipaddrs", ips,
+		    "192.0.2.2,127.0.0.1", "_svcj_ipaddrs, by commas: those it "
+		    "listens at and sends from. Empty: all of the host's.");
+	}
+	h_raw(h, "</div><div class=\"actions\">");
 	if (jstr(o, "flags") != NULL || rl.adding)
 		h_fmt(h, "<button type=\"button\" class=\"ghost\" data-act=\""
 		    "%s\">Cancel</button>", rl.adding ? "rl-add" : "rl-conf");
@@ -787,6 +807,17 @@ view_relay(struct html *h, struct server *s)
 		dt(h, "Fifo", jstr(o, "fifo"));
 		dt(h, "Key", jbool(o, "key") ? "set (not shown)" : "none");
 		dt(h, "More", jstr(o, "extra"));
+		if (jbool(o, "svcj")) {
+			char	jn[64];
+
+			snprintf(jn, sizeof(jn), "svcj-speederv2%s%s",
+			    rl.shown[0] != '\0' ? "_" : "", rl.shown);
+			dt(h, "Service jail", jn);
+			dt(h, "Its addresses", jstr(o, "svcj_ipaddrs") != NULL ?
+			    jstr(o, "svcj_ipaddrs") : "all of the host's");
+			dt(h, "It may", jstr(o, "svcj_options"));
+		} else
+			dt(h, "Service jail", "none");
 		h_raw(h, "</dl><p class=\"dim\"><code>");
 		h_txt(h, jstr(o, "flags"));
 		h_raw(h, "</code></p>");
@@ -848,7 +879,10 @@ view_relay(struct html *h, struct server *s)
 	    "script runs speederv2 under daemon(8), which restarts it and "
 	    "sends its lines to syslogd(8); rc.conf's speederv2_flags are its "
 	    "words, or for several relays speederv2_profiles and each one's "
-	    "speederv2_&lt;name&gt;_flags.</p></section>");
+	    "speederv2_&lt;name&gt;_flags. rc.subr(8) runs each in a service "
+	    "jail of its own with _svcj, held to _svcj_ipaddrs. The overhead "
+	    "is kept in the host's history beside its interfaces' rates "
+	    "(Utilization).</p></section>");
 }
 
 static struct server *
@@ -943,6 +977,14 @@ relay_form(const char *form, const ucl_object_t *f)
 	n++;
 	if (jbool(f, "nokey") && fv(f, "key")[0] == '\0')
 		words[n++] = "nokey";
+	/* Its service jail, said either way; its addresses with it. */
+	words[n++] = jbool(f, "svcj") ? "svcj=yes" : "svcj=no";
+	if (jbool(f, "svcj")) {
+		snprintf(buf[n], sizeof(buf[n]), "svcj_ipaddrs=%s", fv(f,
+		    "svcj_ipaddrs"));
+		words[n] = buf[n];
+		n++;
+	}
 	snprintf(title, sizeof(title), "speederv2%s%s: a %s from %s to %s",
 	    rl.shown[0] != '\0' ? " " : "", rl.shown, fv(f, "role"), fv(f,
 	    "listen"), fv(f, "remote"));

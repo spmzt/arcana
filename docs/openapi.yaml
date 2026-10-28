@@ -761,6 +761,29 @@ paths:
           description: ok, or error with what bird said; confirm_by after
             a change with safe
 
+  /api/servers/{server}/drift:
+    get:
+      tags: [hosts]
+      summary: What the host has otherwise than its running configuration says
+      description: >-
+        RFC 8342's intended against operational: the host's running
+        configuration (what rc(8) reads) and the configuration part of
+        its operational state are read by the standard models, and the
+        edit that would make the one the other is the drift, under
+        `drift`, a row a node: `kind` unapplied (running has it, it is
+        not in effect), differs (`value` running's, `was` the host's)
+        or extra (the host has it beyond running), `path` RFC 8040's
+        api-path of the node, `value` it as RFC 7951's JSON with the
+        nodes above it, and for what the host has beyond running its
+        `origin` (RFC 8342 section 5.3.4): unknown, set by hand since;
+        learned, DHCP, SLAAC, a temporary address or a neighbour the
+        host found; system, the kernel's own, an interface it made or
+        a link-local address.
+      parameters:
+        - $ref: '#/components/parameters/server'
+      responses:
+        '200':
+          description: ok and drift
   /api/servers/{server}/data:
     get:
       tags: [servers]
@@ -1378,12 +1401,15 @@ paths:
         second); series (each interval between two reports since the
         relay last started, the oldest first: time, overhead to the
         server and to the client in per cent, plain rates each way in
-        bytes a second); log (its last lines) and log_path;
+        bytes a second); svcj (true when it runs in rc.subr''s service
+        jail, with svcj_options and svcj_ipaddrs as rc.conf has them);
+        log (its last lines) and log_path;
         profiles_supported (whether the rc script runs several relays)
         and profiles (each relay of speederv2_profiles: name, running and
         the same fields of its own).  The changes are jobs of kind
         speeder: verb conf with name=value words (role, listen, remote,
-        mode, mtu, fec, timeout, report, fifo, key, nokey, extra), fec
+        mode, mtu, fec, timeout, report, fifo, key, nokey, extra, svcj
+        yes or no, svcj_ipaddrs by commas), fec
         with the ratios, enable, disable, start, stop, restart, and
         remove; profile=name among the words of any but enable and
         disable for one of several relays (remove needs it); with safe
@@ -1600,6 +1626,7 @@ paths:
         - { name: instance, in: query, schema: { type: string }, description: "With command: an instance, asked by its unix command socket" }
         - { name: command, in: query, schema: { type: string, enum: [uptime, version, running-mode, capture-mode, memcap-list, ruleset-stats, ruleset-failed-rules, ruleset-profile, iface-list, iface-stat, dump-counters] } }
         - { name: iface, in: query, schema: { type: string }, description: "iface-stat's interface" }
+        - { name: profiling, in: query, schema: { type: string, enum: ["1"] }, description: "With instance: what its profiling wrote (Suricata built with --enable-profiling), running and of its last replay: packets (ticks per protocol and per stage), rules, keywords, prefilter, rulegroups, locks; and build, what this Suricata profiles" }
         - { name: q, in: query, schema: { type: string }, description: "Text in the rule, any case" }
         - { name: sid, in: query, schema: { type: integer } }
         - { name: only, in: query, schema: { type: string, enum: [enabled, disabled, changed] } }
@@ -1609,6 +1636,47 @@ paths:
       responses:
         "200":
           description: The read, under data, with the agent's trace.
+  /api/servers/{server}/ids/pcap:
+    post:
+      tags: [servers]
+      summary: A capture sent to the host, for an instance's replay
+      description: >-
+        The body, a capture or a part of one (application/octet-stream),
+        sent to the host as a stream and kept in the captures directory
+        of the instance's replay directory, where the suricata job's
+        verb pcap replays it (file, the path said).  A capture larger
+        than a body may be (body_max) comes in parts, each where the one
+        before ended (offset), the last said (last=1); eight are kept,
+        1 GiB each at most.  Answered once the host wrote it.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - { name: instance, in: query, required: true, schema: { type: string } }
+        - { name: file, in: query, required: true, schema: { type: string, example: suspect.pcap }, description: "A .pcap, .pcapng or .cap, its name alone" }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+        - { name: last, in: query, schema: { type: string, enum: ["1"] } }
+      responses:
+        "200":
+          description: ok, path (where the capture is, or will be once the last part is in) and size (of this part).
+        "502":
+          description: The host refused it, and why.
+  /api/servers/{server}/ids/pcap-log:
+    get:
+      tags: [servers]
+      summary: A file of the packets of an instance's alerts
+      description: >-
+        One of the files Suricata's pcap-log keeps in the instance's log
+        directory (log.pcap and its rotations, log.pcap.<seconds> its
+        first packet's time), read from the host as a stream and passed
+        on as it comes, an attachment.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - { name: instance, in: query, required: true, schema: { type: string } }
+        - { name: file, in: query, required: true, schema: { type: string, example: log.pcap.1792400000 } }
+      responses:
+        "200":
+          description: The file, application/vnd.tcpdump.pcap.
+        "404":
+          description: The instance has no such file (Suricata let it go).
   /api/servers/{server}/netstore:
     get:
       tags: [servers]
@@ -2485,6 +2553,37 @@ paths:
             policies-changed, policies-applied), action (Allow, Block,
             Administer), policy, how, where, who and why.
             /api/sdwan/audit.csv gives the same as CSV.
+  /api/sdwan/sen:
+    get:
+      tags: [sdwan]
+      summary: MEF 138's Security Event Notifications, newest first
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: keeps the notices with it anywhere in them }
+      responses:
+        "200":
+          description: count; notices (500 at most), each id (a UUID),
+            when (UTC, RFC 3339), issuer, function, policy, service,
+            type (IOC or OTHER), event, source, details (domain names
+            and URLs neutralised, their periods in brackets), action,
+            uni and edge; one for each deny the edges' rules logged and
+            each Suricata alert, made from the events the console reads
+            for its notifications. /api/sdwan/sen.csv gives the same as
+            CSV.
+  /api/sdwan/san:
+    get:
+      tags: [sdwan]
+      summary: MEF 138's Security Admin Notifications, newest first
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: keeps the notices with it anywhere in them }
+      responses:
+        "200":
+          description: count; notices (500 at most), each id (a UUID),
+            when (UTC, RFC 3339), issuer, source (the address the change
+            came from), who, service, policy and details (the parameter
+            values that changed alone, a Block's and Quarantine's names
+            neutralised); one for each function policy a kept document
+            changes, adds or takes away. /api/sdwan/san.csv gives the
+            same as CSV.
   /api/sdwan/record:
     get:
       tags: [sdwan]
@@ -3935,6 +4034,12 @@ components:
           type: array
           description: the jails racct accounts for; at most 16.
           items: { type: string }
+        relays:
+          type: array
+          description: the FEC relays (UDPspeeder) by their syslog tag,
+            speederv2 or speederv2_<profile>, as their --report lines
+            came; at most 16.
+          items: { type: string }
         samples:
           type: array
           description: >-
@@ -3945,7 +4050,10 @@ components:
             a second of all disks), then bytes a second in and out of
             each of nets, then read and written of each of disks, then
             the CPU percent and memory bytes of each of jails, as racct
-            has them. All but cpu and load are whole numbers.
+            has them, then the bytes a second each of relays took in
+            plain and its FEC added, both ways over its last report
+            interval (0 while it reports none). All but cpu and load are
+            whole numbers.
           items:
             type: array
             prefixItems:

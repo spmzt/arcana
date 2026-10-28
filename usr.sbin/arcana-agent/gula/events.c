@@ -140,6 +140,7 @@ event_vadd(const char *jail, const char *kind, const char *fmt, va_list ap)
 	pthread_mutex_unlock(&ev_lock);
 	free(json);
 	yang_changed(YANG_EVENTS);
+	yang_event_changed(kind, jail != NULL);
 }
 
 /*

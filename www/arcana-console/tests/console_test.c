@@ -491,6 +491,21 @@ ATF_TC_BODY(restconf_write, tc)
 	    "arcana-fleet:fleet/host=%s", id);
 	snprintf(run, sizeof(run), "/restconf/ds/ietf-datastores:running/"
 	    "arcana-fleet:fleet/host=%s", id);
+	/* with-origin (RFC 8527 section 3.2.2), the operational
+	 * datastore's alone: nacm is running's, intended. */
+	snprintf(path, sizeof(path), "/restconf/ds/ietf-datastores:"
+	    "operational/arcana-fleet:fleet/host=%s/ietf-netconf-acm:nacm"
+	    "?with-origin", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ_MSG("ietf-origin:intended", jstr(&r,
+	    "ietf-netconf-acm:nacm.@.ietf-origin:origin"), "%s", r.body);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/ietf-netconf-acm:nacm?with-origin",
+	    run);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
 	/* Running is changed by a commit alone. */
 	snprintf(path, sizeof(path), "%s/ietf-netconf-acm:nacm", data);
 	http("PUT", path, rules, &r);
@@ -571,6 +586,562 @@ ATF_TC_BODY(restconf_mount, tc)
 	resp_free(&r);
 }
 
+#define	NACM		"/ietf-netconf-acm:nacm"
+#define	YANG_PATCH	"Content-Type: application/yang-patch+json\r\n"
+#define	ERROR_TAG	"ietf-restconf:errors.error.0.error-tag"
+
+/* The console with the lab host, the admin's session: its entry in
+ * /restconf/data (data) and in the candidate (cand), each len bytes. */
+static void
+rc_lab(const atf_tc_t *tc, char *data, char *cand, size_t len)
+{
+	struct authn	 a;
+	struct resp	 r;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 64], id[16];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	if (data != NULL)
+		snprintf(data, len, "/restconf/data/arcana-fleet:fleet/host=%s",
+		    id);
+	snprintf(cand, len, "/restconf/ds/ietf-datastores:candidate/"
+	    "arcana-fleet:fleet/host=%s", id);
+}
+
+/* method of what is below base, with headers extra (NULL: none), its
+ * status and error-tag what is said. */
+static void
+rc_expect(const char *method, const char *base, const char *below,
+    const char *extra, const char *body, int status, const char *tag)
+{
+	struct resp	 r;
+	char		 path[512];
+
+	snprintf(path, sizeof(path), "%s%s", base, below);
+	http_with(method, path, extra != NULL ? extra : "", body, &r);
+	ATF_CHECK_MSG(r.status == status, "%s %s: %d, not %d: %s", method,
+	    below, r.status, status, r.body);
+	if (tag != NULL)
+		ATF_CHECK_STREQ(tag, jstr(&r, ERROR_TAG));
+	resp_free(&r);
+}
+
+/* Whether a, b and c are in s in that order. */
+static bool
+in_order(const char *s, const char *a, const char *b, const char *c)
+{
+	const char	*pa, *pb, *pc;
+
+	return ((pa = strstr(s, a)) != NULL && (pb = strstr(s, b)) != NULL &&
+	    (pc = strstr(s, c)) != NULL && pa < pb && pb < pc);
+}
+
+/*
+ * RFC 8040 section 4's changes, of the candidate's NACM rules: POST
+ * makes a node under its target (201, its Location), data-exists the
+ * second time; PUT makes (201) or replaces (204); a plain PATCH merges,
+ * and makes nothing where its target is not; DELETE takes an entry and
+ * a leaf-list's value away, data-missing the second time; insert and
+ * point place an entry of an ordered-by user list; a plain PATCH of the
+ * datastore merges its top-level nodes.
+ */
+CONSOLE_TC(restconf_edit, "RESTCONF's POST, PUT, PATCH and DELETE of the "
+    "candidate, their status codes, Location, insert and point")
+ATF_TC_BODY(restconf_edit, tc)
+{
+	struct resp	 r;
+	char		 cand[256], path[512], loc[512];
+
+	rc_lab(tc, NULL, cand, sizeof(cand));
+	/* POST: a group made, where Location says. */
+	snprintf(path, sizeof(path), "%s" NACM "/groups", cand);
+	http("POST", path, "{\"ietf-netconf-acm:group\":[{\"name\":\"g1\","
+	    "\"user-name\":[\"u1\"]}]}", &r);
+	EXPECT(&r, 201);
+	ATF_REQUIRE_MSG(resp_header(&r, "location", loc, sizeof(loc)) != NULL,
+	    "%s", r.head);
+	ATF_CHECK_MSG(strstr(loc, cand) != NULL && strstr(loc, NACM
+	    "/groups/group=g1") != NULL, "%s", loc);
+	resp_free(&r);
+	rc_expect("POST", cand, NACM "/groups", NULL,
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"g1\"}]}", 409,
+	    "data-exists");
+	/* Of the datastore, a top-level node (section 4.4.1's jukebox). */
+	rc_expect("POST", cand, "", NULL, "{\"ietf-netconf-acm:nacm\":{}}",
+	    409, "data-exists");
+	http("GET", strstr(loc, "/restconf/"), NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("u1", jstr(&r, "ietf-netconf-acm:group.0.user-name.0"));
+	resp_free(&r);
+	/* PUT: made, then replaced; the body's key must be the path's. */
+	rc_expect("PUT", cand, NACM "/groups/group=g2", NULL,
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"g2\"}]}", 201, NULL);
+	rc_expect("PUT", cand, NACM "/groups/group=g2", NULL,
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"g2\",\"user-name\":"
+	    "[\"u2\"]}]}", 204, NULL);
+	rc_expect("PUT", cand, NACM "/groups/group=g2", NULL,
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"g3\"}]}", 400,
+	    "invalid-value");
+	/* Plain PATCH: merged; where nothing is, nothing made. */
+	rc_expect("PATCH", cand, NACM "/groups/group=g2", NULL,
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"g2\",\"user-name\":"
+	    "[\"u3\"]}]}", 204, NULL);
+	snprintf(path, sizeof(path), "%s" NACM "/groups/group=g2", cand);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"u2\"") != NULL && strstr(r.body,
+	    "\"u3\"") != NULL, "%s", r.body);
+	resp_free(&r);
+	rc_expect("PATCH", cand, NACM "/groups/group=nosuch", NULL,
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"nosuch\"}]}", 404,
+	    "invalid-value");
+	/* DELETE: a leaf-list's value, an entry; then data-missing. */
+	rc_expect("DELETE", cand, NACM "/groups/group=g2/user-name=u2", NULL,
+	    NULL, 204, NULL);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"u2\"") == NULL && strstr(r.body,
+	    "\"u3\"") != NULL, "%s", r.body);
+	resp_free(&r);
+	rc_expect("DELETE", cand, NACM "/groups/group=g2", NULL, NULL, 204,
+	    NULL);
+	rc_expect("DELETE", cand, NACM "/groups/group=g2", NULL, NULL, 409,
+	    "data-missing");
+	rc_expect("GET", cand, NACM "/groups/group=g2", NULL, NULL, 404,
+	    NULL);
+	/* insert and point (4.8.5, 4.8.6): rule-lists are ordered by the
+	 * user; PUT places one too. */
+	rc_expect("POST", cand, NACM, NULL, "{\"ietf-netconf-acm:rule-list\":"
+	    "[{\"name\":\"rl-b\"}]}", 201, NULL);
+	rc_expect("POST", cand, NACM "?insert=first", NULL,
+	    "{\"ietf-netconf-acm:rule-list\":[{\"name\":\"rl-a\"}]}", 201,
+	    NULL);
+	rc_expect("POST", cand, NACM "?insert=after&point=" NACM
+	    "/rule-list=rl-a", NULL, "{\"ietf-netconf-acm:rule-list\":"
+	    "[{\"name\":\"rl-m\"}]}", 201, NULL);
+	rc_expect("PUT", cand, NACM "/rule-list=rl-z?insert=before&point=%2F"
+	    "ietf-netconf-acm%3Anacm%2Frule-list%3Drl-a", NULL,
+	    "{\"ietf-netconf-acm:rule-list\":[{\"name\":\"rl-z\"}]}", 201,
+	    NULL);
+	snprintf(path, sizeof(path), "%s" NACM, cand);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(in_order(r.body, "\"rl-z\"", "\"rl-a\"", "\"rl-m\"") &&
+	    in_order(r.body, "\"rl-a\"", "\"rl-m\"", "\"rl-b\""), "%s",
+	    r.body);
+	resp_free(&r);
+	/* A plain PATCH of the datastore: its top-level nodes merged. */
+	rc_expect("PATCH", cand, "", NULL, "{\"ietf-netconf-acm:nacm\":"
+	    "{\"groups\":{\"group\":[{\"name\":\"g9\"}]}}}", 204, NULL);
+	rc_expect("GET", cand, NACM "/groups/group=g9", NULL, NULL, 200, NULL);
+	rc_expect("GET", cand, NACM "/groups/group=g1", NULL, NULL, 200, NULL);
+}
+
+/*
+ * RFC 8072's YANG Patch, its examples' kinds on the candidate's rule
+ * lists: two made (A.1.2); one that is there already and another, the
+ * whole refused and nothing made (A.1.1); an entry inserted after one
+ * (A.1.3), one moved (A.1.4); merge, replace, delete and remove at
+ * once; a datastore's edits by their whole paths (A.1.5); an edit not
+ * well made, its edit-id in the status.
+ */
+CONSOLE_TC(restconf_yang_patch, "RFC 8072's YANG Patch of the candidate, "
+    "all or nothing, its status")
+ATF_TC_BODY(restconf_yang_patch, tc)
+{
+	struct resp	 r;
+	char		 cand[256], path[512];
+
+	rc_lab(tc, NULL, cand, sizeof(cand));
+	snprintf(path, sizeof(path), "%s" NACM, cand);
+	http_with("PATCH", path, YANG_PATCH, "{\"ietf-yang-patch:yang-patch\":"
+	    "{\"patch-id\":\"add-lists\",\"edit\":[{\"edit-id\":\"edit1\","
+	    "\"operation\":\"create\",\"target\":\"/rule-list=p1\","
+	    "\"value\":{\"ietf-netconf-acm:rule-list\":[{\"name\":\"p1\"}]}},"
+	    "{\"edit-id\":\"edit2\",\"operation\":\"create\",\"target\":"
+	    "\"/rule-list=p3\",\"value\":{\"rule-list\":[{\"name\":\"p3\"}]}}"
+	    "]}}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("add-lists", jstr(&r,
+	    "ietf-yang-patch:yang-patch-status.patch-id"));
+	ATF_CHECK_MSG(strstr(r.body, "\"ok\":[null]") != NULL, "%s", r.body);
+	resp_free(&r);
+	/* One there already: refused whole, its edit said. */
+	http_with("PATCH", path, YANG_PATCH, "{\"ietf-yang-patch:yang-patch\":"
+	    "{\"patch-id\":\"again\",\"edit\":[{\"edit-id\":\"edit1\","
+	    "\"operation\":\"create\",\"target\":\"/rule-list=p4\","
+	    "\"value\":{\"rule-list\":[{\"name\":\"p4\"}]}},"
+	    "{\"edit-id\":\"edit2\",\"operation\":\"create\",\"target\":"
+	    "\"/rule-list=p1\",\"value\":{\"rule-list\":[{\"name\":\"p1\"}]}}"
+	    "]}}", &r);
+	EXPECT(&r, 409);
+	ATF_CHECK_STREQ("edit2", jstr(&r, "ietf-yang-patch:yang-patch-status."
+	    "edit-status.edit.0.edit-id"));
+	ATF_CHECK_STREQ("data-exists", jstr(&r, "ietf-yang-patch:"
+	    "yang-patch-status.edit-status.edit.0.errors.error.0.error-tag"));
+	ATF_CHECK_MSG(strstr(r.body, "rule-list[name='p1']") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	rc_expect("GET", cand, NACM "/rule-list=p4", NULL, NULL, 404, NULL);
+	/* insert after, then move after. */
+	http_with("PATCH", path, YANG_PATCH, "{\"ietf-yang-patch:yang-patch\":"
+	    "{\"patch-id\":\"insert\",\"edit\":[{\"edit-id\":\"edit1\","
+	    "\"operation\":\"insert\",\"target\":\"/rule-list=p2\","
+	    "\"point\":\"/rule-list=p1\",\"where\":\"after\",\"value\":"
+	    "{\"ietf-netconf-acm:rule-list\":[{\"name\":\"p2\"}]}}]}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", path, NULL, &r);
+	ATF_CHECK_MSG(in_order(r.body, "\"p1\"", "\"p2\"", "\"p3\""), "%s",
+	    r.body);
+	resp_free(&r);
+	http_with("PATCH", path, YANG_PATCH, "{\"ietf-yang-patch:yang-patch\":"
+	    "{\"patch-id\":\"move\",\"edit\":[{\"edit-id\":\"edit1\","
+	    "\"operation\":\"move\",\"target\":\"/rule-list=p1\","
+	    "\"point\":\"/rule-list=p3\",\"where\":\"after\"}]}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", path, NULL, &r);
+	ATF_CHECK_MSG(in_order(r.body, "\"p2\"", "\"p3\"", "\"p1\""), "%s",
+	    r.body);
+	resp_free(&r);
+	/* merge, replace, delete, remove (of what is not there) at once. */
+	http_with("PATCH", path, YANG_PATCH, "{\"ietf-yang-patch:yang-patch\":"
+	    "{\"patch-id\":\"four\",\"edit\":["
+	    "{\"edit-id\":\"m\",\"operation\":\"merge\",\"target\":"
+	    "\"/rule-list=p2\",\"value\":{\"rule-list\":[{\"name\":\"p2\","
+	    "\"group\":[\"gm\"]}]}},"
+	    "{\"edit-id\":\"r\",\"operation\":\"replace\",\"target\":"
+	    "\"/rule-list=p3\",\"value\":{\"rule-list\":[{\"name\":\"p3\","
+	    "\"group\":[\"gr\"]}]}},"
+	    "{\"edit-id\":\"d\",\"operation\":\"delete\",\"target\":"
+	    "\"/rule-list=p1\"},"
+	    "{\"edit-id\":\"x\",\"operation\":\"remove\",\"target\":"
+	    "\"/rule-list=nosuch\"}]}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", path, NULL, &r);
+	ATF_CHECK_MSG(strstr(r.body, "\"gm\"") != NULL && strstr(r.body,
+	    "\"gr\"") != NULL && strstr(r.body, "\"p1\"") == NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	/* The datastore's: edits by their whole paths. */
+	http_with("PATCH", cand, YANG_PATCH, "{\"ietf-yang-patch:yang-patch\":"
+	    "{\"patch-id\":\"datastore\",\"edit\":[{\"edit-id\":\"edit1\","
+	    "\"operation\":\"create\",\"target\":\"" NACM "/groups/group=pg\","
+	    "\"value\":{\"ietf-netconf-acm:group\":[{\"name\":\"pg\"}]}}]}}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	rc_expect("GET", cand, NACM "/groups/group=pg", NULL, NULL, 200, NULL);
+	/* Not well made: insert without where; a move of what is not
+	 * there. */
+	http_with("PATCH", path, YANG_PATCH, "{\"ietf-yang-patch:yang-patch\":"
+	    "{\"patch-id\":\"bad\",\"edit\":[{\"edit-id\":\"e9\","
+	    "\"operation\":\"insert\",\"target\":\"/rule-list=p9\","
+	    "\"value\":{\"rule-list\":[{\"name\":\"p9\"}]}}]}}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK_STREQ("e9", jstr(&r, "ietf-yang-patch:yang-patch-status."
+	    "edit-status.edit.0.edit-id"));
+	ATF_CHECK_STREQ("missing-attribute", jstr(&r, "ietf-yang-patch:"
+	    "yang-patch-status.edit-status.edit.0.errors.error.0.error-tag"));
+	resp_free(&r);
+	http_with("PATCH", path, YANG_PATCH, "{\"ietf-yang-patch:yang-patch\":"
+	    "{\"patch-id\":\"gone\",\"edit\":[{\"edit-id\":\"e8\","
+	    "\"operation\":\"move\",\"target\":\"/rule-list=p9\","
+	    "\"where\":\"first\"}]}}", &r);
+	EXPECT(&r, 409);
+	ATF_CHECK_STREQ("data-missing", jstr(&r, "ietf-yang-patch:"
+	    "yang-patch-status.edit-status.edit.0.errors.error.0.error-tag"));
+	resp_free(&r);
+	/* The capability, and OPTIONS's Accept-Patch. */
+	http("GET", "/restconf/data/ietf-restconf-monitoring:restconf-state",
+	    NULL, &r);
+	ATF_CHECK(strstr(r.body, "capability:yang-patch:1.0") != NULL);
+	resp_free(&r);
+	http("OPTIONS", path, NULL, &r);
+	EXPECT(&r, 200);
+	{
+		char	v[256];
+
+		ATF_CHECK_MSG(resp_header(&r, "accept-patch", v, sizeof(v)) !=
+		    NULL && strstr(v, "application/yang-patch+json") != NULL,
+		    "%s", r.head);
+	}
+	resp_free(&r);
+}
+
+/*
+ * ETag and Last-Modified (RFC 8040 section 3.4.1): a GET of the
+ * candidate has them, a conditional GET of the same is 304; an edit on
+ * a stale tag or date is 412, on the right one goes and changes the tag;
+ * If-Match: * and If-None-Match: * by what is there; running's tag
+ * changes with a commit.
+ */
+CONSOLE_TC(restconf_etag, "RESTCONF's entity-tags and times of change, "
+    "conditional reads and edits")
+ATF_TC_BODY(restconf_etag, tc)
+{
+	static const char rules[] = "{\"ietf-netconf-acm:nacm\":{"
+	    "\"groups\":{\"group\":[{\"name\":\"admin\",\"user-name\":"
+	    "[\"admin\",\"console\"]}]},\"rule-list\":[{\"name\":\"admin\","
+	    "\"group\":[\"admin\"],\"rule\":[{\"name\":\"all\",\"module-name\":"
+	    "\"*\",\"access-operations\":\"*\",\"action\":\"permit\"}]}]}}";
+	struct resp	 r;
+	char		 data[256], cand[256], path[512], hdr[256];
+	char		 e1[64], e2[64], lm[64], r1[64];
+
+	rc_lab(tc, data, cand, sizeof(cand));
+	snprintf(path, sizeof(path), "%s" NACM, cand);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE_MSG(resp_header(&r, "etag", e1, sizeof(e1)) != NULL &&
+	    resp_header(&r, "last-modified", lm, sizeof(lm)) != NULL, "%s",
+	    r.head);
+	resp_free(&r);
+	snprintf(hdr, sizeof(hdr), "If-None-Match: %s\r\n", e1);
+	rc_expect("GET", path, "", hdr, NULL, 304, NULL);
+	snprintf(hdr, sizeof(hdr), "If-Modified-Since: %s\r\n", lm);
+	rc_expect("GET", path, "", hdr, NULL, 304, NULL);
+	rc_expect("GET", path, "", "If-Modified-Since: Sat, 01 Jan 2000 "
+	    "00:00:00 GMT\r\n", NULL, 200, NULL);
+	/* Stale: refused. */
+	rc_expect("PUT", path, "/groups/group=e1", "If-Match: \"0-0\"\r\n",
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"e1\"}]}", 412,
+	    "operation-failed");
+	rc_expect("PUT", path, "/groups/group=e1", "If-Unmodified-Since: Sat, "
+	    "01 Jan 2000 00:00:00 GMT\r\n", "{\"ietf-netconf-acm:group\":"
+	    "[{\"name\":\"e1\"}]}", 412, "operation-failed");
+	/* As it is: made, the tag a new one. */
+	snprintf(hdr, sizeof(hdr), "If-Match: %s\r\n", e1);
+	snprintf(path, sizeof(path), "%s" NACM "/groups/group=e1", cand);
+	http_with("PUT", path, hdr, "{\"ietf-netconf-acm:group\":[{\"name\":"
+	    "\"e1\"}]}", &r);
+	EXPECT(&r, 201);
+	ATF_REQUIRE(resp_header(&r, "etag", e2, sizeof(e2)) != NULL);
+	ATF_CHECK_MSG(strcmp(e1, e2) != 0, "%s %s", e1, e2);
+	resp_free(&r);
+	snprintf(hdr, sizeof(hdr), "If-None-Match: %s\r\n", e1);
+	rc_expect("GET", path, "", hdr, NULL, 200, NULL);
+	/* * : there, or not. */
+	rc_expect("PUT", cand, NACM "/groups/group=e9", "If-Match: *\r\n",
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"e9\"}]}", 412,
+	    "operation-failed");
+	rc_expect("PUT", cand, NACM "/groups/group=e1", "If-None-Match: *\r\n",
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"e1\"}]}", 412,
+	    "operation-failed");
+	rc_expect("PUT", cand, NACM "/groups/group=e1", "If-Match: *\r\n",
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"e1\"}]}", 204, NULL);
+	/* Running's: a commit changes it. */
+	snprintf(path, sizeof(path), "%s" NACM, data);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(resp_header(&r, "etag", r1, sizeof(r1)) != NULL);
+	resp_free(&r);
+	rc_expect("PUT", cand, NACM, NULL, rules, 204, NULL);
+	rc_expect("POST", data, "/ietf-netconf:commit", NULL, "{}", 204, NULL);
+	snprintf(hdr, sizeof(hdr), "If-None-Match: %s\r\n", r1);
+	rc_expect("GET", path, "", hdr, NULL, 200, NULL);
+}
+
+/*
+ * RFC 8040 section 7: each error-tag the console says, a case each, of
+ * its status.  The rest it does not say: lock-denied (the agents lock
+ * nothing), rollback-failed and partial-operation (a change is all or
+ * nothing), resource-denied (the agent's lack of memory), too-big (a
+ * body too big is the server's 413 before RESTCONF's) and
+ * unknown-attribute (an annotation in a body is a member like another).
+ */
+CONSOLE_TC(restconf_tag_access_denied, "access-denied: 403, a viewer's "
+    "change")
+ATF_TC_BODY(restconf_tag_access_denied, tc)
+{
+	struct authn	 b;
+	struct resp	 r;
+	char		 cand[256], invite[80];
+
+	rc_lab(tc, NULL, cand, sizeof(cand));
+	http("PUT", "/api/roles/look", "{\"console\":\"member\",\"hosts\":"
+	    "{\"*\":\"viewer\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("PUT", "/api/users/vic", "{\"roles\":[\"look\"]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/users/vic/invite", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(invite, sizeof(invite), "%s", jstr(&r, "token"));
+	resp_free(&r);
+	cookie[0] = '\0';
+	authn_new(&b, -8);
+	do_register(&b, invite, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	rc_expect("PUT", cand, NACM "/groups/group=v", NULL,
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"v\"}]}", 403,
+	    "access-denied");
+}
+
+CONSOLE_TC(restconf_tag_invalid_value, "invalid-value: 400, a body's key "
+    "not the path's; 404, nothing there")
+ATF_TC_BODY(restconf_tag_invalid_value, tc)
+{
+	char	cand[256];
+
+	rc_lab(tc, NULL, cand, sizeof(cand));
+	rc_expect("PUT", cand, NACM "/groups/group=a", NULL,
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"b\"}]}", 400,
+	    "invalid-value");
+	rc_expect("GET", cand, NACM "/groups/group=nosuch", NULL, NULL, 404,
+	    "invalid-value");
+}
+
+CONSOLE_TC(restconf_tag_operation_not_supported, "operation-not-supported: "
+    "405, running PUT")
+ATF_TC_BODY(restconf_tag_operation_not_supported, tc)
+{
+	char	data[256], cand[256];
+
+	rc_lab(tc, data, cand, sizeof(cand));
+	rc_expect("PUT", data, NACM "/groups/group=a", NULL,
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"a\"}]}", 405,
+	    "operation-not-supported");
+}
+
+CONSOLE_TC(restconf_tag_operation_failed, "operation-failed: 412, an "
+    "If-Match not met")
+ATF_TC_BODY(restconf_tag_operation_failed, tc)
+{
+	char	cand[256];
+
+	rc_lab(tc, NULL, cand, sizeof(cand));
+	rc_expect("PUT", cand, NACM "/groups/group=a", "If-Match: \"x\"\r\n",
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"a\"}]}", 412,
+	    "operation-failed");
+}
+
+CONSOLE_TC(restconf_tag_in_use, "in-use: 409, a commit while another's "
+    "confirmed commit waits")
+ATF_TC_BODY(restconf_tag_in_use, tc)
+{
+	static const char rules[] = "{\"ietf-netconf-acm:nacm\":{"
+	    "\"groups\":{\"group\":[{\"name\":\"admin\",\"user-name\":"
+	    "[\"admin\",\"console\"]}]},\"rule-list\":[{\"name\":\"admin\","
+	    "\"group\":[\"admin\"],\"rule\":[{\"name\":\"all\",\"module-name\":"
+	    "\"*\",\"access-operations\":\"*\",\"action\":\"permit\"}]}]}}";
+	char	data[256], cand[256];
+
+	rc_lab(tc, data, cand, sizeof(cand));
+	rc_expect("PUT", cand, NACM, NULL, rules, 204, NULL);
+	rc_expect("POST", data, "/ietf-netconf:commit", NULL,
+	    "{\"ietf-netconf:input\":{\"confirmed\":[null],"
+	    "\"confirm-timeout\":60,\"persist\":\"p1\"}}", 204, NULL);
+	rc_expect("POST", data, "/ietf-netconf:commit", NULL, "{}", 409,
+	    "in-use");
+	rc_expect("POST", data, "/ietf-netconf:cancel-commit", NULL,
+	    "{\"ietf-netconf:input\":{\"persist-id\":\"p1\"}}", 204, NULL);
+}
+
+CONSOLE_TC(restconf_tag_data_exists, "data-exists: 409, a POST of what "
+    "is there")
+ATF_TC_BODY(restconf_tag_data_exists, tc)
+{
+	char	cand[256];
+
+	rc_lab(tc, NULL, cand, sizeof(cand));
+	rc_expect("POST", cand, NACM "/groups", NULL,
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"a\"}]}", 201, NULL);
+	rc_expect("POST", cand, NACM "/groups", NULL,
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"a\"}]}", 409,
+	    "data-exists");
+}
+
+CONSOLE_TC(restconf_tag_data_missing, "data-missing: 409, a DELETE of "
+    "what is not there")
+ATF_TC_BODY(restconf_tag_data_missing, tc)
+{
+	char	cand[256];
+
+	rc_lab(tc, NULL, cand, sizeof(cand));
+	rc_expect("DELETE", cand, NACM "/groups/group=nosuch", NULL, NULL,
+	    409, "data-missing");
+}
+
+CONSOLE_TC(restconf_tag_missing_attribute, "missing-attribute: 400, "
+    "insert=before without its point")
+ATF_TC_BODY(restconf_tag_missing_attribute, tc)
+{
+	char	cand[256];
+
+	rc_lab(tc, NULL, cand, sizeof(cand));
+	rc_expect("POST", cand, NACM "?insert=before", NULL,
+	    "{\"ietf-netconf-acm:rule-list\":[{\"name\":\"a\"}]}", 400,
+	    "missing-attribute");
+}
+
+CONSOLE_TC(restconf_tag_bad_attribute, "bad-attribute: 400, insert in a "
+    "list the system orders")
+ATF_TC_BODY(restconf_tag_bad_attribute, tc)
+{
+	char	cand[256];
+
+	rc_lab(tc, NULL, cand, sizeof(cand));
+	rc_expect("POST", cand, NACM "/groups?insert=first", NULL,
+	    "{\"ietf-netconf-acm:group\":[{\"name\":\"a\"}]}", 400,
+	    "bad-attribute");
+}
+
+CONSOLE_TC(restconf_tag_unknown_element, "unknown-element: 400, a member "
+    "that is no node")
+ATF_TC_BODY(restconf_tag_unknown_element, tc)
+{
+	char	cand[256];
+
+	rc_lab(tc, NULL, cand, sizeof(cand));
+	rc_expect("PUT", cand, NACM, NULL, "{\"ietf-netconf-acm:nacm\":"
+	    "{\"nosuch\":1}}", 400, "unknown-element");
+}
+
+CONSOLE_TC(restconf_tag_unknown_namespace, "unknown-namespace: 400, a "
+    "module there is not")
+ATF_TC_BODY(restconf_tag_unknown_namespace, tc)
+{
+	char	cand[256];
+
+	rc_lab(tc, NULL, cand, sizeof(cand));
+	rc_expect("PATCH", cand, "", NULL, "{\"example-nosuch:x\":{}}", 400,
+	    "unknown-namespace");
+}
+
+CONSOLE_TC(restconf_tag_bad_element, "bad-element: 400, a value not of "
+    "its leaf's type")
+ATF_TC_BODY(restconf_tag_bad_element, tc)
+{
+	char	cand[256];
+
+	rc_lab(tc, NULL, cand, sizeof(cand));
+	rc_expect("PUT", cand, NACM, NULL, "{\"ietf-netconf-acm:nacm\":"
+	    "{\"enable-nacm\":\"maybe\"}}", 400, "bad-element");
+}
+
+CONSOLE_TC(restconf_tag_malformed_message, "malformed-message: 400, a "
+    "body that is not JSON")
+ATF_TC_BODY(restconf_tag_malformed_message, tc)
+{
+	char	cand[256];
+
+	rc_lab(tc, NULL, cand, sizeof(cand));
+	rc_expect("PUT", cand, NACM, NULL, "{\"ietf-netconf-acm:nacm\": {",
+	    400, "malformed-message");
+}
+
 ATF_TC_BODY(restconf, tc)
 {
 	struct authn	 a;
@@ -608,6 +1179,14 @@ ATF_TC_BODY(restconf, tc)
 	http("GET", "/restconf/data/arcana-fleet:fleet", NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("lab", jstr(&r, "arcana-fleet:fleet.host.0.name"));
+	resp_free(&r);
+	/* Each host's agent mounted inline (RFC 8528). */
+	http("GET", "/restconf/data/ietf-yang-schema-mount:schema-mounts",
+	    NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("agent", jstr(&r, "ietf-yang-schema-mount:"
+	    "schema-mounts.mount-point.0.label"));
+	ATF_CHECK(strstr(r.body, "\"inline\":{}") != NULL);
 	resp_free(&r);
 	http("GET", "/restconf/data/ietf-restconf-monitoring:restconf-state",
 	    NULL, &r);
@@ -2185,6 +2764,158 @@ ATF_TC_BODY(load, tc)
 	resp_free(&r);
 	ATF_CHECK(system("! grep -Ei 'exited|signal|crash|fatal' console.out") ==
 	    0);
+}
+
+/*
+ * A stand-in for an agent that is never whole: on ./flaky.sock it takes
+ * each connection and lets it go at once, after the request, a while
+ * later, or after bytes that are no frame.
+ */
+static pid_t
+flaky_agent(void)
+{
+	struct sockaddr_un	sun;
+	char			buf[512];
+	pid_t			pid;
+	int			s, c, n;
+
+	memset(&sun, 0, sizeof(sun));
+	sun.sun_family = AF_UNIX;
+	strlcpy(sun.sun_path, "flaky.sock", sizeof(sun.sun_path));
+	ATF_REQUIRE((s = socket(AF_UNIX, SOCK_STREAM, 0)) != -1);
+	ATF_REQUIRE(bind(s, (struct sockaddr *)&sun, sizeof(sun)) == 0);
+	ATF_REQUIRE(listen(s, 64) == 0);
+	ATF_REQUIRE((pid = fork()) != -1);
+	if (pid != 0) {
+		close(s);
+		return (pid);
+	}
+	for (n = 0;; n++) {
+		if ((c = accept(s, NULL, NULL)) == -1)
+			continue;
+		switch (n % 4) {
+		case 1:
+			(void)read(c, buf, sizeof(buf));
+			break;
+		case 2:
+			usleep(200000);
+			break;
+		case 3:
+			(void)write(c, "\377\377\377\377 no frame", 13);
+			break;
+		}
+		close(c);
+	}
+}
+
+CONSOLE_TC(churn, "No descriptor is closed twice while the store is "
+    "written, hosts fail and pages come and go")
+ATF_TC_BODY(churn, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[1024], here[16], flaky[16];
+	char		wid[16], path[160], ask[160];
+	pid_t		pids[8], fake;
+	int		i, k, ws, status;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	fake = flaky_agent();
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(here, sizeof(here), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"flaky\",\"uri\":\"unix:%s/"
+	    "flaky.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(flaky, sizeof(flaky), "%s", jstr(&r, "servers.1.id"));
+	resp_free(&r);
+	/* Runs: threads that write the store as they go. */
+	snprintf(body, sizeof(body), "{\"name\":\"churn\",\"hosts\":[\"%s\","
+	    "\"%s\"],\"steps\":[{\"id\":\"a\",\"read\":\"hello\"},{\"id\":"
+	    "\"b\",\"read\":\"jails\"},{\"id\":\"c\",\"read\":\"services\"}]}",
+	    here, flaky);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	snprintf(wid, sizeof(wid), "%s", jstr(&r, "id"));
+	resp_free(&r);
+
+	for (k = 0; k < 8; k++) {
+		if ((pids[k] = fork()) != 0)
+			continue;
+		for (i = 0; i < 30; i++) {
+			switch ((i + k) % 5) {
+			case 0:
+				snprintf(path, sizeof(path), "/api/workflows/"
+				    "%s/run", wid);
+				http("POST", path, "{}", &r);
+				break;
+			case 1:
+				snprintf(path, sizeof(path), "/api/labels/%s/"
+				    "e%d", here, k);
+				snprintf(body, sizeof(body), "{\"label\":\"%d\"}",
+				    i);
+				http("PUT", path, body, &r);
+				break;
+			case 2:
+				snprintf(path, sizeof(path), "/api/servers/%s/"
+				    "jails", here);
+				http_abandon(path);
+				continue;
+			case 3:
+				snprintf(path, sizeof(path), "/api/servers/%s/"
+				    "jails", flaky);
+				http("GET", path, NULL, &r);
+				break;
+			default:
+				/* A page following both, gone at once. */
+				ws = ws_open("/api/stream");
+				snprintf(ask, sizeof(ask), "{\"id\":1,\"server\":"
+				    "\"%s\",\"what\":\"events\"}", here);
+				ws_send(ws, ask);
+				snprintf(ask, sizeof(ask), "{\"id\":2,\"server\":"
+				    "\"%s\",\"what\":\"events\"}", flaky);
+				ws_send(ws, ask);
+				snprintf(ask, sizeof(ask), "{\"id\":3,\"server\":"
+				    "\"%s\",\"what\":\"sysctl\",\"filter\":"
+				    "\"kern.\"}", here);
+				ws_send(ws, ask);
+				usleep(1000 * (useconds_t)(i % 4) * 30);
+				close(ws);
+				continue;
+			}
+			resp_free(&r);
+		}
+		_exit(0);
+	}
+	for (k = 0; k < 8; k++)
+		ATF_REQUIRE(waitpid(pids[k], &status, 0) == pids[k]);
+	/* The runs ended, the last of each label written. */
+	for (i = 0; i < 300; i++) {
+		http("GET", "/api/runs", NULL, &r);
+		k = strstr(r.body, "\"running\"") != NULL;
+		resp_free(&r);
+		if (!k)
+			break;
+		usleep(100000);
+	}
+	ATF_CHECK_MSG(i < 300, "runs still running");
+	(void)kill(fake, SIGKILL);
+	(void)waitpid(fake, NULL, 0);
+	http("GET", "/api/health", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	if (system("grep -q 'Bad file descriptor' console.out") == 0)
+		(void)system("grep -B2 -A2 'Bad file descriptor' console.out "
+		    ">&2");
+	ATF_CHECK(system("! grep -q 'Bad file descriptor' console.out") == 0);
+	ATF_CHECK(system("! grep -Ei 'exited|signal|crash|fatal' "
+	    "console.out") == 0);
 }
 
 /* Wait for a run to end; its JSON in r. */
@@ -4907,6 +5638,21 @@ ATF_TC_BODY(services, tc)
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 400);
 	resp_free(&r);
+	/* The drift: the operational configuration against running, each
+	 * row a node with its api-path; what the host has beyond running
+	 * says where it came from (the agent's rc.conf is a fake's:
+	 * every address of the host is beyond it). */
+	snprintf(path, sizeof(path), "%.*s/drift",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_MSG(jstr(&r, "drift.0.path") != NULL &&
+	    jstr(&r, "drift.0.path")[0] == '/' &&
+	    jstr(&r, "drift.0.kind") != NULL, "%.600s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"extra\"") != NULL &&
+	    strstr(r.body, "\"origin\":\"") != NULL, "%.600s", r.body);
+	resp_free(&r);
 	snprintf(path, sizeof(path), "%.*s/jobs",
 	    (int)(strlen(base) - strlen("/services")), base);
 	http("POST", path, "{\"jobs\":[{\"kind\":\"if-address\","
@@ -6864,12 +7610,17 @@ static const char sdwan_good[] =
     "[\"192.0.2.0/24\"]}],\"no-match\":\"allow\",\"duration\":6},"
     "{\"id\":\"g-dnf\",\"function\":\"dnf\",\"block\":[\"ads.example\"],"
     "\"allow\":[\"ok.ads.example\"],\"no-match\":\"allow\",\"duration\":6},"
-    "{\"id\":\"g-dpf\",\"function\":\"dpf\",\"no-match\":\"block\","
+    "{\"id\":\"g-dpf\",\"function\":\"dpf\",\"block\":[{\"sav4\":"
+    "[\"192.0.2.53/32\"],\"message-type\":\"response\"},{\"dav4\":"
+    "[\"192.0.2.54/32\"],\"message-type\":\"query\"}],\"no-match\":\"block\","
     "\"redirect\":true,\"duration\":6},"
     "{\"id\":\"g-urlf\",\"function\":\"urlf\",\"block\":[\"bad.example\"],"
     "\"no-match\":\"allow\",\"duration\":6},"
     "{\"id\":\"g-mdr\",\"function\":\"mdr\",\"detection-type\":"
-    "\"signature\",\"removal\":\"block-subset\",\"no-match\":\"allow\","
+    "\"signature\",\"removal\":\"block-subset\",\"block\":["
+    "\"44D88612FEA8A8F36DE82E1278ABB02F:68\",\"275a021bbfb6489e54d4718"
+    "99f7db9d1663fc695ec2fe2a2c4538aabf651fd0f\"],\"allow\":["
+    "\"3395856ce81f2b7382dee72602f798b642f14140\"],\"no-match\":\"allow\","
     "\"duration\":24}],"
     "\"security_policies\":[{\"name\":\"guard\",\"function-policies\":["
     "\"g-ippf\",\"g-dnf\",\"g-dpf\",\"g-urlf\",\"g-mdr\"],\"rate-limit\":"
@@ -7060,6 +7811,56 @@ ATF_TC_BODY(sdwan, tc)
 		    "\"af-security-egress\":\"guard\"", "serves a zone's clients" },
 		{ "\"redirect\":true", "\"redirect\":true,\"pass-through\":[\"x.example\"]",
 		    "are mbsf's" },
+		/* DPF: a message type ipfw tells by the port. */
+		{ "\"message-type\":\"query\"", "\"message-type\":\"update\"",
+		    "inside the message" },
+		/* MD+R: hashes, one list at an edge. */
+		{ "\"3395856ce81f2b7382dee72602f798b642f14140\"",
+		    "\"3395856ce81f2b7382dee72602f798b642f1414\"", "is not a hash" },
+		{ "\"3395856ce81f2b7382dee72602f798b642f14140\"",
+		    "\"3395856ce81f2b7382dee72602f798b642f14140:0\"", "is not a hash" },
+		{ "{\"id\":\"g-mdr\"", "{\"id\":\"g-mdr2\",\"function\":\"mdr\","
+		    "\"detection-type\":\"signature\",\"removal\":\"block-subset\","
+		    "\"quarantine\":[\"3395856CE81F2B7382DEE72602F798B642F14140:5\"],"
+		    "\"no-match\":\"allow\",\"duration\":24},{\"id\":\"g-mdr\"",
+		    "whose ClamAV is one for them all" },
+		/* DNF: a * for a whole label, a Block's or a Quarantine's. */
+		{ "\"allow\":[\"ok.ads.example\"]", "\"allow\":[\"ok.*.example\"]",
+		    "a * inside a name is a Block's" },
+		{ "\"block\":[\"ads.example\"]", "\"block\":[\"a*s.example\"]",
+		    "a * for a whole label" },
+		{ "\"block\":[\"ads.example\"]", "\"block\":[\"*.*\"]",
+		    "a * for a whole label" },
+		/* PDNS: what unbound takes of R104, D21 and D22. */
+		{ "{\"id\":\"g-mdr\"", "{\"id\":\"g-p\",\"function\":\"pdns\","
+		    "\"block\":[{\"type\":\"MX\",\"value\":\"mx.example\"}],"
+		    "\"no-match\":\"allow\",\"duration\":6},{\"id\":\"g-mdr\"",
+		    "MX is not taken" },
+		{ "{\"id\":\"g-mdr\"", "{\"id\":\"g-p\",\"function\":\"pdns\","
+		    "\"block\":[{\"type\":\"NS\",\"value\":\"not a name\"}],"
+		    "\"no-match\":\"allow\",\"duration\":6},{\"id\":\"g-mdr\"",
+		    "an NS entry's value" },
+		{ "{\"id\":\"g-mdr\"", "{\"id\":\"g-p\",\"function\":\"pdns\","
+		    "\"no-match\":\"allow\",\"duration\":6,\"southbound\":["
+		    "\"unencrypted\",\"doh\"]},{\"id\":\"g-mdr\"",
+		    "without DNS over HTTPS" },
+		{ "{\"id\":\"g-mdr\"", "{\"id\":\"g-p\",\"function\":\"pdns\","
+		    "\"block\":[{\"type\":\"A\",\"value\":\"192.0.2.1\","
+		    "\"encryption\":\"unencrypted\"}],\"no-match\":\"allow\","
+		    "\"duration\":6,\"southbound\":[\"unencrypted\",\"dot\"]},"
+		    "{\"id\":\"g-mdr\"", "however they ask" },
+		{ "{\"id\":\"g-mdr\"", "{\"id\":\"g-p\",\"function\":\"pdns\","
+		    "\"no-match\":\"allow\",\"duration\":6,\"southbound\":[\"dot\"]},"
+		    "{\"id\":\"g-mdr\"", "southbound has unencrypted" },
+		{ "{\"id\":\"g-mdr\"", "{\"id\":\"g-p\",\"function\":\"pdns\","
+		    "\"no-match\":\"allow\",\"duration\":6,\"northbound\":\"dot\","
+		    "\"upstream\":[\"192.0.2.53\"]},{\"id\":\"g-mdr\"",
+		    "the name its certificate has" },
+		{ "{\"id\":\"g-mdr\"", "{\"id\":\"g-p\",\"function\":\"pdns\","
+		    "\"no-match\":\"allow\",\"duration\":6,\"northbound\":\"dot\","
+		    "\"upstream\":[\"192.0.2.53#dns.example\"]},{\"id\":\"g-q\","
+		    "\"function\":\"pdns\",\"no-match\":\"allow\",\"duration\":6},"
+		    "{\"id\":\"g-mdr\"", "the service has one resolver" },
 		/* Intrusion detection: detect, rules with a sid. */
 		{ "\"mode\":\"prevent\"", "\"mode\":\"block\"",
 		    "a mode, detect or prevent" },
@@ -7183,6 +7984,127 @@ ATF_TC_BODY(sdwan, tc)
 	resp_free(&r);
 }
 
+/*
+ * MEF 138's Security Admin Notifications (§6.3): a document kept with a
+ * function policy's values changed issues a SAN of that policy (R31),
+ * with the values that changed alone, a Block's names neutralised
+ * (R34), who did it and from where; kept (R32), as CSV too, and mailed
+ * to the SAN recipients (R36).  No SEN without events.
+ */
+CONSOLE_TC(sdwan_notices, "SD-WAN security admin notifications: a function "
+    "policy changed is told")
+ATF_TC_BODY(sdwan_notices, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[12288], t1[12288];
+	int		i;
+
+	/* The hosts' events read each second: the notices go out a tick. */
+	snprintf(harness_webconf, sizeof(harness_webconf), "mail_tick = 1;\n");
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"mail_san\":\"soc@example.org"
+	    "\",\"mail_sen\":\"soc@example.org\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* The first document: every function policy added, a SAN each. */
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/san", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(ucl_object_toint(ucl_object_lookup(r.json, "count")) == 5
+	    && strcmp(jstr(&r, "notices.0.service"), "acme") == 0 && strlen(
+	    jstr(&r, "notices.0.id")) == 36 && strcmp(jstr(&r, "notices.0.who"),
+	    "key -7") == 0 && strstr(jstr(&r, "notices.0.when"), "T") != NULL &&
+	    jstr(&r, "notices.0.when")[strlen(jstr(&r, "notices.0.when")) - 1] ==
+	    'Z', "%s", r.body);
+	resp_free(&r);
+	/* The DNF's Block changed and its No-match: one SAN, of it, the
+	 * entries added and taken away neutralised, the No-match's values. */
+	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":1", t1,
+	    sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
+	ATF_REQUIRE(swap_in(doc, "\"block\":[\"ads.example\"],\"allow\":"
+	    "[\"ok.ads.example\"],\"no-match\":\"allow\"", "\"block\":"
+	    "[\"bad.example\",\"*.worse.example\"],\"allow\":[\"ok.ads.example\"]"
+	    ",\"no-match\":\"block\"", t1, sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/san?q=g-dnf", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(ucl_object_toint(ucl_object_lookup(r.json, "count")) == 6
+	    && strcmp(jstr(&r, "notices.0.policy"), "g-dnf") == 0 && strcmp(
+	    jstr(&r, "notices.1.policy"), "g-dnf") == 0 && jstr(&r,
+	    "notices.2.policy") == NULL && strstr(jstr(&r, "notices.0.details"),
+	    "block: added \"bad[.]example\", \"*[.]worse[.]example\", taken away "
+	    "\"ads[.]example\"") != NULL && strstr(jstr(&r, "notices.0.details"),
+	    "no-match: \"allow\" was now \"block\"") != NULL && strstr(jstr(&r,
+	    "notices.0.details"), "ok") == NULL, "%s", r.body);
+	resp_free(&r);
+	/* The same again: nothing changed, no SAN. */
+	ATF_REQUIRE(swap_in(doc, "\"version\":1", "\"version\":2", t1,
+	    sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/san", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(ucl_object_toint(ucl_object_lookup(r.json, "count")) == 6,
+	    "%s", r.body);
+	resp_free(&r);
+	http("GET", "/api/sdwan/san.csv", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strncmp(r.body, "id,when,issuer,source,who,service,policy,"
+	    "details\n", 48) == 0 && strstr(r.body, ",\"key -7\",\"acme\","
+	    "\"g-dnf\",\"block: added \"\"bad[.]example\"\"") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	/* None without a session; nothing of SENs yet. */
+	http("GET", "/api/sdwan/sen", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(ucl_object_toint(ucl_object_lookup(r.json, "count")) == 0);
+	resp_free(&r);
+	/* Mailed to the SAN recipients, the names neutralised, within the
+	 * tick; the alerts' address has none to go to. */
+	for (i = 0; i < 100 && system("grep -q 'Security Admin Notification' "
+	    "mail.out") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(system("grep -qx 'To: soc@example.org' mail.out && grep "
+	    "-q '^Subject: Arcana: [0-9]* Security Admin Notifications' mail.out "
+	    "&& grep -q 'Security Function Policy: g-dnf of service acme' "
+	    "mail.out && grep -q 'bad\\[\\.\\]example' mail.out && grep -q "
+	    "'Changed by key -7' mail.out") == 0, "no mail of the SANs");
+	cookie[0] = '\0';
+	http("GET", "/api/sdwan/san", NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+}
+
 /* The apply's end: done or failed; its state, into r. */
 static void
 sdwan_wait(struct resp *r)
@@ -7221,12 +8143,14 @@ changes_of(const struct resp *r, const char *change)
 }
 
 /* The plan's change of a key at the first edge that has it, and the
- * conf of its first instance; NULL for none. */
+ * form of its first instance, as JSON; NULL for none. */
 static const char *
-plan_conf(struct resp *r, const char *key)
+plan_spec(struct resp *r, const char *key)
 {
-	char	path[96];
-	int	i;
+	static char		*last;
+	const ucl_object_t	*o;
+	char			 path[96];
+	int			 i;
 
 	for (i = 0; i < 200; i++) {
 		snprintf(path, sizeof(path), "changes.%d.key", i);
@@ -7234,9 +8158,13 @@ plan_conf(struct resp *r, const char *key)
 			return (NULL);
 		if (strcmp(jstr(r, path), key) != 0)
 			continue;
-		snprintf(path, sizeof(path), "changes.%d.make.0.instances.0.conf",
+		snprintf(path, sizeof(path), "changes.%d.make.0.instances.0.spec",
 		    i);
-		return (jstr(r, path));
+		if ((o = ucl_object_lookup_path(r->json, path)) == NULL)
+			return (NULL);
+		free(last);
+		last = (char *)ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
+		return (last);
 	}
 	return (NULL);
 }
@@ -7245,8 +8173,9 @@ plan_conf(struct resp *r, const char *key)
  * The security function policies (MEF 138) the edges serve a zone with:
  * an MBSF (TLS opened, old versions refused, a host never opened, plain
  * HTTP blocked), a URLF with paths and No-match block, a PDNS by the
- * answers' addresses, the Default zone with the same; what is made
- * taken by the real unbound and Squid, where the host has them.
+ * answers' addresses, the Default zone with the same: the forms the
+ * agent renders, Squid's and unbound's (agent_test's sdwan_forms has
+ * their text, taken by the real local-unbound-checkconf).
  */
 CONSOLE_TC(sdwan_sfp, "SD-WAN security function policies: Squid and unbound "
     "by zone")
@@ -7257,7 +8186,6 @@ ATF_TC_BODY(sdwan_sfp, tc)
 	char		cwd[1024], body[400], sa[16], sb[16];
 	char		doc[12288], t1[12288];
 	const char	*c;
-	FILE		*fp;
 	size_t		i;
 
 	start(tc, 0, NULL);
@@ -7285,13 +8213,24 @@ ATF_TC_BODY(sdwan_sfp, tc)
 		    "\"block\",\"invalid-server-certificate\":\"block\","
 		    "\"unencrypted\":\"block\",\"pass-through\":[\"bank.example\"]},"
 		    "{\"id\":\"g-pdns\",\"function\":\"pdns\",\"block\":[{\"type\":"
-		    "\"A\",\"value\":\"192.0.2.66\"}],\"allow\":[{\"type\":\"AAAA\","
-		    "\"value\":\"any\"}],\"no-match\":\"allow\",\"duration\":6},"
+		    "\"A\",\"value\":\"192.0.2.66\"},{\"type\":\"CNAME\",\"value\":"
+		    "\"*.tracker.example\"},{\"type\":\"NS\",\"value\":"
+		    "\"ns.evil.example\",\"encryption\":\"any\"},{\"type\":\"NS\","
+		    "\"value\":\"198.51.100.53\"},{\"type\":\"NS\",\"value\":"
+		    "\"2001:db8::53/128\"}],\"allow\":[{\"type\":\"AAAA\","
+		    "\"value\":\"any\"},{\"type\":\"CNAME\",\"value\":"
+		    "\"ok.tracker.example\",\"encryption\":[\"unencrypted\","
+		    "\"dot\"]}],\"no-match\":\"allow\",\"duration\":6,"
+		    "\"southbound\":[\"unencrypted\",\"dot\"],\"northbound\":\"dot\","
+		    "\"upstream\":[\"192.0.2.53#dns.example\","
+		    "\"2001:db8::53@8853#dns.example\"]},"
 		    "{\"id\":\"g-urlf\",\"function\":\"urlf\",\"block\":["
 		    "\"bad.example\",\"*.worse.example/ads/*\"],\"allow\":["
 		    "\"bad.example/ok\"],\"no-match\":\"block\"" },
 		{ "\"g-urlf\",\"g-mdr\"]", "\"g-urlf\",\"g-mdr\",\"g-mbsf\","
 		    "\"g-pdns\"]" },
+		{ "\"block\":[\"ads.example\"]", "\"block\":[\"ads.example\","
+		    "\"cdn.*.example\"],\"quarantine\":[\"*.track.*\"]" },
 		{ "{\"name\":\"rest\",\"prefixes\":\"Default\"}",
 		    "{\"name\":\"rest\",\"prefixes\":\"Default\",\"policies\":[{"
 		    "\"app\":\"web\",\"policy\":\"fast\"}]}" },
@@ -7327,77 +8266,60 @@ ATF_TC_BODY(sdwan_sfp, tc)
 	resp_free(&r);
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
-	/* Squid at a: TLS opened (inspect), the oldest let through 1.2 both
-	 * ways; the office zone first, Default after it; bank.example never
-	 * opened; plain HTTP blocked; the URLF's paths by their regex, the
-	 * more specific Allow before the Block of its host; No-match block. */
-	ATF_REQUIRE_MSG((c = plan_conf(&r, "proxy")) != NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "\"mode\":\"inspect\"") != NULL &&
-	    strstr(c, " tls-min-version=1.2\n") != NULL && strstr(c,
-	    "tls_outgoing_options min-version=1.2\n") != NULL, "%s", c);
-	ATF_CHECK_MSG(strstr(c, "acl z0 src 10.1.0.0/16") != NULL && strstr(c,
-	    "acl z1 src all\n") != NULL && strstr(c, "acl z0") <
-	    strstr(c, "acl z1 "), "%s", c);
-	ATF_CHECK(strstr(c, "acl z0_pass ssl::server_name bank.example\n") !=
-	    NULL && strstr(c, "ssl_bump splice z0 z0_pass\n") != NULL);
-	ATF_CHECK(strstr(c, "http_access deny z0 plain\n") != NULL);
-	ATF_CHECK_MSG(strstr(c, "url_regex -i ^https?://bad\\.example/ok$\n") !=
-	    NULL && strstr(c, "url_regex -i ^https?://([^/]*\\.)?worse\\."
-	    "example/ads/.*\n") != NULL, "%s", c);
-	ATF_CHECK_MSG(strstr(c, "http_access allow z0 z0_u0_r\nhttp_access "
-	    "deny z0 z0_u1_d\nhttp_access deny z0 z0_u2_r\nhttp_access deny "
-	    "z0\n") != NULL, "%s", c);
-	/* TLS opened, the requests decide: no name ends a connection. */
-	ATF_CHECK(strstr(c, "ssl_bump splice z0 z0_pass\nssl_bump bump z0\n")
-	    != NULL && strstr(c, "ssl::server_name bad.example") == NULL);
-	/* By the real Squid, where the host has it. */
-	if (access("/usr/local/sbin/squid", X_OK) == 0) {
-		/* The instance's CA, as the agent makes it: key and
-		 * certificate in one file. */
-		ATF_REQUIRE(system("openssl req -x509 -newkey ec -pkeyopt "
-		    "ec_paramgen_curve:P-256 -nodes -keyout squid-t.key -out "
-		    "squid-t.crt -days 1 -subj /CN=test 2>/dev/null && cat "
-		    "squid-t.crt squid-t.key > squid-t.pem") == 0);
-		ATF_REQUIRE((fp = fopen("squid-t.conf", "w")) != NULL);
-		for (; *c != '\0'; c++) {
-			if (strncmp(c, "@PID@", 5) == 0) {
-				fprintf(fp, "%s/squid-t.pid", cwd);
-				c += 4;
-			} else if (strncmp(c, "@CA@", 4) == 0) {
-				fprintf(fp, "%s/squid-t.pem", cwd);
-				c += 3;
-			} else if (strncmp(c, "@SSLDB@", 7) == 0) {
-				fprintf(fp, "%s/squid-t.db", cwd);
-				c += 6;
-			} else if (strncmp(c, "@CERTGEN@", 9) == 0) {
-				fprintf(fp, "/usr/local/libexec/squid/"
-				    "security_file_certgen");
-				c += 8;
-			} else
-				fputc(*c, fp);
-		}
-		fclose(fp);
-		if (system("/usr/local/sbin/squid -k parse -f squid-t.conf > "
-		    "squid-t.out 2>&1") != 0) {
-			(void)system("grep -iE 'fatal|error|bungled' squid-t.out");
-			atf_tc_fail_nonfatal("squid does not take it");
-		}
-	}
-	/* unbound at a: the zones' views; the PDNS's answers by
-	 * response-ip, the Default zone's by all its prefixes. */
-	ATF_REQUIRE_MSG((c = plan_conf(&r, "dns")) != NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(c, "\taccess-control-view: 0.0.0.0/0 z1\n") !=
-	    NULL && strstr(c, "\tresponse-ip: 192.0.2.66/32 always_nxdomain\n")
-	    != NULL && strstr(c, "\tresponse-ip: ::/0 always_transparent\n") !=
+	/* Squid at a: TLS opened (inspect); the office zone by its prefixes
+	 * here (its remote end point's identities' too) first, Default after
+	 * it; each with its URLF, MBSF and MD+R as the service has them;
+	 * where it is reached, the resolver and c-icap here. */
+	ATF_REQUIRE_MSG((c = plan_spec(&r, "proxy")) != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"mode\":\"inspect\",\"host\":\"a\"") !=
+	    NULL && strstr(c, "\"flavor\":\"sdwan\",\"service\":\"acme\","
+	    "\"fib\":1,\"listen\":[{\"end_point\":\"hq\",\"address\":"
+	    "\"10.1.0.1\"},{\"end_point\":\"road\",\"address\":\"10.30.0.1\"}],"
+	    "\"resolver\":true,\"icap\":true,") != NULL, "%s", c);
+	/* The DNF's names with a * inside (R71) are the zone's Squid's. */
+	ATF_CHECK_MSG(strstr(c, "{\"name\":\"z0\",\"dnf\":[\"cdn.*.example\","
+	    "\"*.track.*\"],\"prefixes\":") != NULL, "%s", c);
+	ATF_CHECK_MSG(strstr(c, "\"zones\":[{\"name\":\"z0\",\"dnf\":[\"cdn.*."
+	    "example\",\"*.track.*\"],\"prefixes\":"
+	    "[\"10.1.0.0/16\",\"10.30.0.2/32\",\"10.30.0.64/32\"],") != NULL &&
+	    strstr(c, "{\"name\":\"z1\",\"dnf\":[\"cdn.*.example\",\"*.track.*\"],"
+	    "\"default\":true,\"urlf\"") != NULL &&
+	    strstr(c, "\"name\":\"z0\"") < strstr(c, "\"name\":\"z1\""), "%s",
+	    c);
+	ATF_CHECK_MSG(strstr(c, "\"urlf\":{\"no-match\":\"block\",\"block\":["
+	    "\"bad.example\",\"*.worse.example/ads/*\"],\"allow\":["
+	    "\"bad.example/ok\"]},\"mbsf\":{\"no-match\":\"block\",\"block\":["
+	    "\"tls1.0\",\"tls1.1\"],\"allow\":[\"tls1.2\",\"tls1.3\"],"
+	    "\"pass-through\":[\"bank.example\"],\"invalid-server-certificate\":"
+	    "\"block\",\"unencrypted\":\"block\"},\"mdr\":{\"no-match\":\"allow\","
+	    "\"block\":[\"44D88612FEA8A8F36DE82E1278ABB02F:68\",\"275a021bbfb6489e"
+	    "54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f\"],\"allow\":["
+	    "\"3395856ce81f2b7382dee72602f798b642f14140\"],\"id\":\"g-mdr\"}}") !=
+	    NULL, "%s",
+	    c);
+	/* unbound at a: the zones' views, the Default zone's by all its
+	 * prefixes; the DNF's names and the PDNS's answers. */
+	ATF_REQUIRE_MSG((c = plan_spec(&r, "dns")) != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(c, "\"unis\":[{\"id\":\"uni-hq\",\"address\":"
+	    "\"10.1.0.1\",\"prefix\":\"10.1.0.0/24\"}]") != NULL && strstr(c,
+	    "{\"name\":\"z1\",\"prefixes\":[\"0.0.0.0/0\",\"::/0\"],") != NULL &&
+	    strstr(c, "\"pdns\":{\"no-match\":\"allow\",\"block\":[{\"type\":"
+	    "\"A\",\"value\":\"192.0.2.66\"},{\"type\":\"CNAME\",\"value\":"
+	    "\"*.tracker.example\"},{\"type\":\"NS\",\"value\":\"ns.evil.example\""
+	    ",\"encryption\":\"any\"},{\"type\":\"NS\",\"value\":\"198.51.100.53\"}"
+	    ",{\"type\":\"NS\",\"value\":\"2001:db8::53/128\"}],\"allow\":[{"
+	    "\"type\":\"AAAA\",\"value\":\"any\"},{\"type\":\"CNAME\",\"value\":"
+	    "\"ok.tracker.example\",\"encryption\":[\"unencrypted\",\"dot\"]}]}")
+	    != NULL && strstr(c, "\"dnf\":{\"no-match\":"
+	    "\"allow\",\"block\":[\"ads.example\",\"cdn.*.example\"],"
+	    "\"quarantine\":[\"*.track.*\"],\"allow\":[\"ok.ads.example\"]}") !=
 	    NULL, "%s", c);
-	ATF_REQUIRE((fp = fopen("unbound-t.conf", "w")) != NULL);
-	fputs(c, fp);
-	fclose(fp);
-	if (system("local-unbound-checkconf unbound-t.conf > unbound-t.out "
-	    "2>&1") != 0) {
-		(void)system("cat unbound-t.out");
-		atf_tc_fail_nonfatal("unbound does not take it");
-	}
+	/* How the PDNS has DNS carried (D21, D22), the resolver's: DNS over
+	 * TLS to the clients too, its questions over TLS to the servers
+	 * named. */
+	ATF_CHECK_MSG(strstr(c, "\"fib\":1,\"dot\":true,\"upstream\":["
+	    "\"192.0.2.53#dns.example\",\"2001:db8::53@8853#dns.example\"],"
+	    "\"upstream_tls\":true,") != NULL, "%s", c);
 	resp_free(&r);
 }
 
@@ -7855,8 +8777,9 @@ ATF_TC_BODY(sdwan_mesh, tc)
 	    != NULL || strstr(r.body, "\"gateway\":\"100.64.0.2,100.64.0.0\"")
 	    != NULL || strstr(r.body, "\"gateway\":\"100.64.0.1,100.64.0.3\"")
 	    != NULL || strstr(r.body, "\"gateway\":\"100.64.0.3,100.64.0.1\"")
-	    != NULL) && strstr(r.body, "merge paths on") != NULL, "%s",
-	    r.body);
+	    != NULL) && strstr(r.body, "\"to\":\"b\",\"local\":\"100.64.0.0\"")
+	    != NULL && strstr(r.body, "\"to\":\"b\",\"local\":\"100.64.0.2\"")
+	    != NULL, "%s", r.body);
 	resp_free(&r);
 	/* A relay toward no edge, or on an underlay that is not WireGuard,
 	 * is refused. */
@@ -7888,6 +8811,9 @@ ATF_TC_BODY(sdwan_mesh, tc)
 	    "14350\",\"fec=10:5\",\"mode=0\",\"report=10\",\"fifo=/var/run/"
 	    "speederv2/c_") != NULL && strstr(r.body, "\"role=server\",\""
 	    "listen=192.0.2.1:14350\",\"remote=127.0.0.1:51") != NULL &&
+	    strstr(r.body, ".fifo\",\"svcj=yes\",\"svcj_ipaddrs=192.0.2.2,"
+	    "127.0.0.1\"]") != NULL && strstr(r.body, ".fifo\",\"svcj=yes\","
+	    "\"svcj_ipaddrs=192.0.2.1,127.0.0.1\"]") != NULL &&
 	    strstr(r.body, "\"kind\":\"speeder\",\"verb\":\"remove\"") != NULL &&
 	    strstr(r.body, "UDPspeeder, for the FEC relays") != NULL, "%s",
 	    r.body);
@@ -8089,31 +9015,30 @@ ATF_TC_BODY(sdwan_loop, tc)
 	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"loop:acme\"") != NULL &&
 	    strstr(r.body, "\"address\":\"100.64.0.4/32\"") != NULL && strstr(
 	    r.body, "\"address\":\"100.64.0.6/32\"") != NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "protocol static loop4_0 {\\n\\tipv4;\\n\\t"
-	    "route 100.64.0.6/32 via 100.64.0.1 bfd;\\n}") != NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "protocol static loop4b_0 {\\n\\tipv4 { "
-	    "preference 150; };\\n\\troute 100.64.0.6/32 via 100.64.0.3 bfd;\\n}")
-	    != NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "local 100.64.0.4 as 64600;\\n\\tneighbor "
-	    "100.64.0.6 as 64600;\\n\\tmultihop;\\n\\trr client;\\n}") != NULL,
-	    "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "local 100.64.0.6 as 64600;\\n\\tneighbor "
-	    "100.64.0.4 as 64600;\\n\\tmultihop;\\n}") != NULL, "%s", r.body);
-	for (n = 0, p = r.body; (p = strstr(p, "rr client")) != NULL; p++)
-		n++;
-	ATF_CHECK_MSG(n == 1, "rr client %d times", n);
-	ATF_CHECK_MSG(strstr(r.body, "multihop {\\n\\t\\tinterval 200 ms;") !=
-	    NULL && strstr(r.body, "proto !~ \\\"orig*\\\";") != NULL, "%s",
+	/* BIRD's forms (agent_test's sdwan_forms has their text). */
+	ATF_CHECK_MSG(strstr(r.body, "\"loopback\":true,") != NULL && strstr(
+	    r.body, "\"loop\":{\"local4\":\"100.64.0.4\",\"transit\":true,"
+	    "\"edges\":[{\"name\":\"b\",\"ipv4\":\"100.64.0.6\",\"paths4\":"
+	    "[\"100.64.0.1\"],\"backup4\":[\"100.64.0.3\"]}]") != NULL, "%s",
 	    r.body);
-	ATF_CHECK_MSG(strstr(r.body, "protocol static orig4_hq {\\n\\tipv4;\\n\\t"
-	    "route 10.1.0.0/24 via \\\"lo0\\\";\\n\\troute 10.1.8.0/22 via "
-	    "10.1.0.2;\\n}") != NULL && strstr(r.body, "route 10.30.0.0/24 via "
-	    "\\\"wg5\\\";") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"loop\":{\"local4\":\"100.64.0.6\","
+	    "\"edges\":[{\"name\":\"a\",\"ipv4\":\"100.64.0.4\",") != NULL,
+	    "%s", r.body);
+	for (n = 0, p = r.body; (p = strstr(p, "\"transit\":true")) != NULL; p++)
+		n++;
+	ATF_CHECK_MSG(n == 1, "transit %d times", n);
+	ATF_CHECK_MSG(strstr(r.body, "\"multihop\":true,\"sessions\":true}") !=
+	    NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"origins\":[{\"id\":\"hq\",\"interface\":"
+	    "\"lo0\",\"ipv4\":[{\"prefix\":\"10.1.0.0/24\"},{\"prefix\":"
+	    "\"10.1.8.0/22\",\"next_hop\":\"10.1.0.2\"}]},{\"id\":\"road\","
+	    "\"interface\":\"wg5\",\"ipv4\":[{\"prefix\":\"10.30.0.0/24\"}]}]")
+	    != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"route:acme:10.1.0.0/24\"") == NULL &&
 	    strstr(r.body, "\"key\":\"route:acme:10.30.0.0/24\"") == NULL, "%s",
 	    r.body);
-	ATF_CHECK_MSG(strstr(r.body, "\\\"gre100\\\", \\\"geneve102\\\", \\\"lo1") != NULL,
-	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"direct\":[\"lo0\",\"gre100\","
+	    "\"geneve102\",\"lo1") != NULL, "%s", r.body);
 	resp_free(&r);
 }
 
@@ -8426,19 +9351,14 @@ ATF_TC_BODY(sdwan_sets, tc)
 	 * BIRD as ever. */
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
-	ATF_CHECK_MSG(strstr(r.body, "filter to_kernel4 {\\n\\tif source = "
-	    "RTS_DEVICE || source = RTS_INHERIT || dest != RTD_UNICAST then "
-	    "reject;\\n\\t# country, by a-inet\\n\\tif bgp_path ~ [64600, 64601] || "
-	    "bgp_community ~ [(64600, 100)] then { gw = 192.0.2.254; accept; }"
-	    "\\n\\tif source = RTS_BGP then reject;\\n\\taccept;\\n}") != NULL,
-	    "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "filter to_kernel6 {\\n\\tif source = "
-	    "RTS_DEVICE || source = RTS_INHERIT || dest != RTD_UNICAST then "
-	    "reject;\\n\\tif source = RTS_BGP then reject;\\n\\taccept;\\n}") !=
-	    NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "export filter to_kernel4;") != NULL &&
-	    strstr(r.body, "export filter to_kernel6;") != NULL && strstr(
-	    r.body, "export where source != RTS_DEVICE") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"sets\":{\"only\":true,\"sets\":[{"
+	    "\"name\":\"country\",\"via\":\"a-inet\",\"gateway\":"
+	    "\"192.0.2.254\",\"as_path\":[64600,64601],\"communities\":[[64600,"
+	    "100]]}]}") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"host\":\"b\",\"spec\":{\"service\":"
+	    "\"acme\",\"fib\":1,\"table\":1,\"as\":64600,\"router_id\":"
+	    "\"100.64.0.1\",\"direct\":[\"vlan104\",\"gre101\",\"geneve103\"],"
+	    "\"bfd\"") != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"destination\":\"192.0.2.254/32\","
 	    "\"gateway\":\"vtnet0\",\"fib\":1") != NULL, "%s", r.body);
 	resp_free(&r);
@@ -8528,22 +9448,19 @@ ATF_TC_BODY(sdwan_neigh, tc)
 	resp_free(&r);
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
-	ATF_CHECK_MSG(strstr(r.body, "protocol bgp uni_hq_0 {\\n\\tlocal as "
-	    "64600;\\n\\tneighbor 10.1.0.2 as 65010;\\n\\tinterface \\\"lo0\\\";"
-	    "\\n\\tbfd on;\\n\\tauthentication md5;") != NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, ", iBGP, multihop\\nprotocol bgp uni_hq_1 "
-	    "{\\n\\tlocal 10.1.0.1 as 64600;\\n\\tneighbor 10.1.0.3 as 64600;\\n\\t"
-	    "multihop;\\n\\tbfd on;\\n\\tipv4 {\\n\\t\\tpreference 56;\\n\\t\\t"
-	    "import all;\\n\\t\\texport all;\\n\\t\\tnext hop self;\\n\\t};\\n}") !=
-	    NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "protocol bfd {\\n\\tinterface \\\"gre100\\\", "
-	    "\\\"geneve102\\\", \\\"lo0\\\" {") != NULL && strstr(r.body,
-	    "\\tmultihop {\\n") != NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "protocol ospf v3 uni_branch_v3 {") != NULL
-	    && strstr(r.body, "\\tarea 0 {\\n\\t\\tinterface \\\"vlan") != NULL &&
-	    strstr(r.body, "\\t\\t\\tcost 50;\\n\\t\\t\\tbfd on;\\n") != NULL &&
-	    strstr(r.body, "protocol ospf v2 uni_branch_v2_1 {") != NULL &&
-	    strstr(r.body, "\\tarea 1 {\\n") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"unis\":[{\"id\":\"uni-hq\",\"end_point\":"
+	    "\"hq\",\"interface\":\"lo0\",\"bgp\":[{\"family\":\"ipv4\",\"as\":"
+	    "65010,\"neighbors\":[\"10.1.0.2\"],") != NULL && strstr(r.body,
+	    "{\"family\":\"ipv4\",\"as\":64600,\"neighbors\":[\"10.1.0.3\"],"
+	    "\"source\":\"10.1.0.1\",\"multihop\":true,\"bfd\":true}") != NULL,
+	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"bfd\":{\"interfaces\":[\"gre100\","
+	    "\"geneve102\",\"lo0\"],\"interval\":200,\"multiplier\":3,"
+	    "\"multihop\":true,") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "{\"id\":\"uni-br\",\"end_point\":"
+	    "\"branch\",\"interface\":\"vlan104\",\"ospf\":[{\"family\":"
+	    "\"ipv6\",\"area\":0,\"cost\":50,\"bfd\":true},{\"family\":"
+	    "\"ipv4\",\"area\":1}]}") != NULL, "%s", r.body);
 	resp_free(&r);
 }
 
@@ -8724,6 +9641,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	size_t		i;
 	FILE		*fp;
 
+	/* The hosts' events read each second: the SENs come by them. */
+	snprintf(harness_webconf, sizeof(harness_webconf), "mail_tick = 1;\n");
 	start(tc, 0, NULL);
 	enrol(&a);
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
@@ -8732,6 +9651,10 @@ ATF_TC_BODY(sdwan_apply, tc)
 	http("POST", "/api/servers", body, &r);
 	EXPECT(&r, 200);
 	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"mail_sen\":\"soc@example.org"
+	    "\"}}", &r);
+	EXPECT(&r, 200);
 	resp_free(&r);
 	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
 	    "jgd.sock\"}", cwd);
@@ -8955,6 +9878,21 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(strstr(r.body, "\"12 unreach port log logdst rtsock logamount 1000 "
 	    "tcp from any to any dst-port 80,https proto tcp dst-port 853 not "
 	    "dst-ip me not tagged 3 // security acme g-dpf no-match\"") != NULL);
+	/* Its entries by message type (Table 6): a response from a server
+	 * by its source port, a query to one by its destination port; the
+	 * No-match blocks both ways. */
+	ATF_CHECK_MSG(strstr(r.body, "\"12 unreach port log logdst rtsock "
+	    "logamount 1000 tcp from any to any dst-port 80,https src-ip "
+	    "192.0.2.53/32 proto udp src-port 53 not src-ip me not tagged 3 in recv "
+	    "lo0 // security acme g-dpf block\"") != NULL && strstr(r.body,
+	    "\"12 unreach port log logdst rtsock logamount 1000 tcp from any to "
+	    "any dst-port 80,https dst-ip 192.0.2.54/32 proto udp dst-port 53 not "
+	    "dst-ip me not tagged 3 in recv lo0 // security acme g-dpf block\"")
+	    != NULL && strstr(r.body, "src-ip 192.0.2.53/32 proto udp dst-port 53")
+	    == NULL && strstr(r.body, "\"12 unreach port log logdst rtsock "
+	    "logamount 1000 tcp from any to any dst-port 80,https proto udp "
+	    "src-port 53 not src-ip me not tagged 3 in recv lo0 // security acme "
+	    "g-dpf no-match\"") != NULL, "%s", r.body);
 	/* The DNF of the office zone: an unbound instance of the service at
 	 * a, on hq's provider address, a view of the zone's own by its
 	 * prefixes, the Block's names nxdomain, the Allow's transparent, the
@@ -8962,21 +9900,15 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"dns\",\"phase\":10,\"title\":"
 	    "\"DNS filtering and protective DNS (MEF 138): unbound, 1 instance "
 	    "in the services' tables, a view a zone\"") != NULL, "%s", r.body);
-	ATF_CHECK(strstr(r.body, "\"kind\":\"sdwan-dns\",\"instances\":[{\"name\":"
-	    "\"sw1\",\"fib\":1,\"conf\":\"# Written by the Arcana console: SD-WAN "
-	    "service acme at a, in routing table 1.") != NULL);
-	ATF_CHECK(strstr(r.body, "\\tinterface: 10.1.0.1\\n\\taccess-control: "
-	    "10.1.0.0/24 allow\\n") != NULL);
-	ATF_CHECK_MSG(strstr(r.body, "\\taccess-control-view: 10.1.0.0/16 z0\\n")
-	    != NULL, "%s", r.body);
-	ATF_CHECK(strstr(r.body, "view:\\n\\tname: \\\"z0\\\"\\n\\tview-first: "
-	    "yes\\n\\tlocal-zone: \\\"ads.example.\\\" always_nxdomain\\n") != NULL);
-	ATF_CHECK(strstr(r.body, "\\tlocal-zone: \\\"bad-feed.example.\\\" "
-	    "always_nxdomain\\n") != NULL);
-	ATF_CHECK(strstr(r.body, "\\tlocal-zone: \\\"bad.example.\\\" "
-	    "always_nxdomain\\n") != NULL);
-	ATF_CHECK(strstr(r.body, "\\tlocal-zone: \\\"ok.ads.example.\\\" "
-	    "always_transparent\\n") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-dns\",\"instances\":[{"
+	    "\"name\":\"sw1\",\"fib\":1,\"host\":\"a\",\"spec\":{\"service\":"
+	    "\"acme\",\"fib\":1,\"unis\":[{\"id\":\"uni-hq\",\"address\":"
+	    "\"10.1.0.1\",\"prefix\":\"10.1.0.0/24\"}],\"zones\":[{\"name\":"
+	    "\"z0\",\"prefixes\":[\"10.1.0.0/16\",") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"dnf\":{\"no-match\":\"allow\",\"block\":"
+	    "[\"ads.example\"],\"allow\":[\"ok.ads.example\"],\"listed\":{"
+	    "\"block\":[\"bad-feed.example\",\"bad.example\"]}}") != NULL, "%s",
+	    r.body);
 	ATF_CHECK(strstr(r.body, "\"10 fwd 10.1.0.1,53") == NULL);
 	/* HTTP and TLS of the office zone to its proxy, by its table. */
 	ATF_CHECK_MSG(strstr(r.body, "\"10 fwd 10.1.0.1,3128 tcp from table("
@@ -9039,33 +9971,21 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"persist\":true,\"fib\":3") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "\"tunnel_remote\":\"192.0.2.2\",\"tunnelfib\":3")
 	    != NULL);
-	ATF_CHECK_MSG(strstr(r.body, "{\"name\":\"ucs3\",\"fib\":3,\"conf\":\"# "
-	    "Written by the Arcana console: UCS end point a-inet at a, routing "
-	    "with the underlay in table 3.") != NULL, "%s", r.body);
-	ATF_CHECK(strstr(r.body, "protocol bgp ucs_a_inet_0 {\\n\\tlocal as 64512;"
-	    "\\n\\tneighbor 192.0.2.254 as 65000;\\n\\tinterface \\\"vtnet0\\\";")
-	    != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "{\"name\":\"ucs3\",\"fib\":3,\"host\":"
+	    "\"a\",\"spec\":{\"flavor\":\"ucs\",\"end_point\":\"a-inet\","
+	    "\"table\":3,\"router_id\":\"192.0.2.1\",\"interface\":\"vtnet0\","
+	    "\"as\":64512,\"bgp\":{\"family\":\"ipv4\",\"as\":65000,"
+	    "\"neighbors\":[\"192.0.2.254\"]") != NULL, "%s", r.body);
 	/* Routing: a BIRD instance of the service on each edge, in its
 	 * table, iBGP between them by each tunnel, and at hq's UNI BGP
 	 * with the subscriber as the entry says. */
 	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-bird\",\"instances\":[{"
-	    "\"name\":\"sw1\",\"fib\":1,\"conf\":\"# Written by the Arcana "
-	    "console: SD-WAN service acme at a, in routing table 1.") != NULL,
-	    "%s", r.body);
-	ATF_CHECK(strstr(r.body, "router id 100.64.0.0;") != NULL);
-	ATF_CHECK(strstr(r.body, "kernel table 1;\\n\\tlearn;\\n\\tmerge paths on;\\n\\tpersist;") !=
-	    NULL);
-	ATF_CHECK_MSG(strstr(r.body, "protocol direct {\\n\\tipv4;\\n\\tipv6;\\n"
-	    "\\tinterface \\\"lo0\\\", \\\"gre100\\\", \\\"gif102\\\", \\\"gre104\\\";"
-	    "\\n}") != NULL, "%s", r.body);
-	ATF_CHECK(strstr(r.body, "&& dest = RTD_UNICAST;") != NULL);
-	ATF_CHECK(strstr(r.body, "import filter { preference = 200; accept; };") !=
-	    NULL);
-	ATF_CHECK_MSG(strstr(r.body, "filter to_edges {\\n\\tif source = RTS_INHERIT "
-	    "then reject;\\n\\tif net ~ [ 100.64.0.0/24+, 100.64.0.0/24+ ] then reject;"
-	    "\\n\\taccept;"
-	    "\\n}") != NULL, "%s", r.body);
-	ATF_CHECK(strstr(r.body, "export filter to_edges;") != NULL);
+	    "\"name\":\"sw1\",\"fib\":1,\"host\":\"a\",\"spec\":{\"service\":"
+	    "\"acme\",\"fib\":1,\"table\":1,\"as\":64600,\"router_id\":"
+	    "\"100.64.0.0\",\"direct\":[\"lo0\",\"gre100\",\"gif102\","
+	    "\"gre104\"],") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"reject\":[\"100.64.0.0/24\","
+	    "\"100.64.0.0/24\"]") != NULL, "%s", r.body);
 	/* The hosts' addresses: hq's IPv4 by DHCP, dnsmasq (a plugin,
 	 * installed before and never by the apply) in the service's table,
 	 * its ranges the subnet less the reserved prefixes and the
@@ -9077,16 +9997,14 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(strstr(r.body, "\"plugin\":\"dnsmasq\",\"package\":"
 	    "\"dnsmasq\"") != NULL && strstr(r.body, "\"plugin\":\"squid\"")
 	    != NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-dhcp\",\"instances\":[{"
-	    "\"name\":\"sw1\",\"fib\":1,\"conf\":\"# Written by the Arcana "
-	    "console: SD-WAN service acme at a, in routing table 1.") != NULL,
-	    "%s", r.body);
 	/* The UNI is lo0 here (swapped in for the apply). */
-	ATF_CHECK_MSG(strstr(r.body, "interface=lo0\\ndhcp-range=set:lo0,"
-	    "10.1.0.64,10.1.0.199,255.255.255.0,1h\\ndhcp-range=set:lo0,"
-	    "10.1.0.204,10.1.0.254,255.255.255.0,1h\\ndhcp-option=tag:lo0,"
-	    "option:router,10.1.0.1\\ndhcp-option=tag:lo0,option:dns-server,"
-	    "10.1.0.1\\n") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-dhcp\",\"instances\":[{"
+	    "\"name\":\"sw1\",\"fib\":1,\"host\":\"a\",\"spec\":{\"service\":"
+	    "\"acme\",\"fib\":1,\"unis\":[{\"id\":\"uni-hq\",\"interface\":"
+	    "\"lo0\",\"ipv4\":{\"mode\":\"dhcp\",\"prefix\":\"10.1.0.0/24\","
+	    "\"provider\":[\"10.1.0.1\"],\"reserved\":[\"10.1.0.0/26\","
+	    "\"10.1.0.200/30\"],\"lease\":\"1h\",\"dns\":[\"10.1.0.1\"]}}]}}") !=
+	    NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"rtadvd\",\"interface\":\"vlan")
 	    != NULL && strstr(r.body, "\"args\":[\"2001:db8:1::/64\",\"2001:db8:1::1"
 	    "\"],\"persist\":true") != NULL, "%s", r.body);
@@ -9094,39 +10012,34 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "forwarding\",\"1\"]") != NULL);
 	/* The iBGP by the control tunnel alone: the host a reflector, b its
 	 * client and nothing else; no session by the data tunnels. */
-	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet/ctvc, to b, a client of "
-	    "this reflector\\nprotocol bgp edge0 from edge {\\n\\tlocal 100.64.0.4 "
-	    "as 64600;\\n\\tneighbor 100.64.0.5 as 64600;\\n\\trr client;\\n\\trr "
-	    "cluster id 192.0.2.1;\\n}") != NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet/ctvc, to a, the control "
-	    "plane\\nprotocol bgp edge0 from edge {\\n\\tlocal 100.64.0.5 as "
-	    "64600;\\n\\tneighbor 100.64.0.4 as 64600;\\n}") != NULL, "%s",
+	ATF_CHECK_MSG(strstr(r.body, "\"peers\":[{\"tunnel\":"
+	    "\"acme/a-inet-b-inet/ctvc\",\"to\":\"b\",\"local\":\"100.64.0.4\","
+	    "\"neighbor\":\"100.64.0.5\",\"role\":\"client\",\"cluster_id\":"
+	    "\"192.0.2.1\"}]") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"peers\":[{\"tunnel\":"
+	    "\"acme/a-inet-b-inet/ctvc\",\"to\":\"a\",\"local\":\"100.64.0.5\","
+	    "\"neighbor\":\"100.64.0.4\",\"role\":\"control\"}]") != NULL, "%s",
 	    r.body);
-	ATF_CHECK(strstr(r.body, "# acme/a-inet-b-inet, to") == NULL);
-	ATF_CHECK(strstr(r.body, "protocol bgp edge1 from edge") == NULL);
+	ATF_CHECK(strstr(r.body, "\"tunnel\":\"acme/a-inet-b-inet\",") == NULL);
 	/* BFD on the edge's tunnel interfaces, the iBGP sessions by it. */
-	ATF_CHECK_MSG(strstr(r.body, "protocol bfd {\\n\\tinterface \\\"gre100\\\", "
-	    "\\\"gif102\\\", \\\"gre104\\\" {\\n\\t\\tinterval 200 ms;\\n\\t\\tmultiplier "
-	    "3;\\n\\t};\\n}") != NULL, "%s", r.body);
-	ATF_CHECK(strstr(r.body, "hold time 30;\\n\\terror wait time 10, 60;\\n\\tbfd "
-	    "on;\\n\\tauthentication md5;\\n\\tpassword \\\"edges-secret\\\";\\n")
-	    != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"bfd\":{\"interfaces\":[\"gre100\","
+	    "\"gif102\",\"gre104\"],\"interval\":200,\"multiplier\":3,"
+	    "\"sessions\":true},") != NULL && strstr(r.body, "\"md5\":"
+	    "\"edges-secret\"") != NULL, "%s", r.body);
 	/* NTP at a, with the FIBs, by the ntp job; taken away by it too. */
 	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"ntp\",\"phase\":1,\"title\":\"NTP: "
 	    "ntpd by 2 servers, for the time faults and keys go by\",\"make\":[{"
 	    "\"kind\":\"ntp\",\"args\":[\"ntp.example.org\",\"10.99.0.9\"],"
 	    "\"persist\":true}]") != NULL, "%s", r.body);
-	ATF_CHECK_MSG(strstr(r.body, "protocol bgp uni_hq_0 {\\n\\tlocal as "
-	    "64600;\\n\\tneighbor 10.1.0.2 as 65010;\\n\\tinterface \\\"lo0\\\";"
-	    "\\n\\tauthentication md5;\\n\\tpassword \\\"s3cret\\\";\\n\\thold time "
-	    "90;\\n\\tipv4 {\\n\\t\\tpreference 106;\\n\\t\\timport all;\\n\\t\\t"
-	    "export filter {\\n\\t\\t"
-	    "\\tbgp_community.add((64600, 100));\\n\\t\\t\\taccept;\\n\\t\\t};"
-	    "\\n\\t};\\n}") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"unis\":[{\"id\":\"uni-hq\",\"end_point\":"
+	    "\"hq\",\"interface\":\"lo0\",\"bgp\":{\"family\":\"ipv4\",\"as\":"
+	    "65010,\"neighbors\":[\"10.1.0.2\"],\"password\":\"s3cret\","
+	    "\"hold_time\":90,\"distance\":150,\"communities\":[[64600,100]]}}]")
+	    != NULL, "%s", r.body);
 	/* b has no routing at its UNI, but the service's instance all the
 	 * same: what hq learns reaches it. */
-	ATF_CHECK(strstr(r.body, "SD-WAN service acme at b, in routing table 1.")
-	    != NULL);
+	ATF_CHECK(strstr(r.body, "\"host\":\"b\",\"spec\":{\"service\":"
+	    "\"acme\",\"fib\":1,\"table\":1,") != NULL);
 	ATF_CHECK_MSG(strstr(r.body, "\"12 deny ip from any to any { src-port "
 	    "5060,5061 or dst-port 5060,5061 } dscp 46\"") != NULL, "%s",
 	    r.body);
@@ -9191,30 +10104,23 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(strstr(r.body, "\"10 fwd 10.30.0.1,3129 tcp from table("
 	    "sw1_zp0) to any dst-port 443 in recv wg5\"") != NULL);
 	ATF_CHECK_MSG(strstr(r.body, "{\"kind\":\"sdwan-proxy\",\"instances\":[{"
-	    "\"name\":\"sw1\",\"fib\":1,\"mode\":\"sni\",\"conf\":\"# Written by "
-	    "the Arcana console") != NULL && strstr(r.body, "https_port "
-	    "10.1.0.1:3129 intercept ssl-bump tls-cert=@CA@") != NULL && strstr(
-	    r.body, "acl z0 src 10.1.0.0/16") != NULL && strstr(r.body,
-	    "acl z0_u0_n ssl::server_name bad.example\\nacl z0_u0_d dstdomain "
-	    "bad.example\\n") != NULL && strstr(r.body, "ssl_bump peek step1\\n"
-	    "ssl_bump terminate z0 z0_u0_n\\nssl_bump splice z0\\nssl_bump splice "
-	    "all\\n") != NULL && strstr(r.body, "adaptation_access sdwan_av allow "
-	    "z0\\nhttp_access deny z0 z0_u0_d\\nhttp_access allow z0\\n"
-	    "adaptation_access sdwan_av deny all\\nhttp_access deny all\\n") !=
-	    NULL && strstr(r.body, "\"deny\":\"\",\"lists\":{}") != NULL, "%s",
-	    r.body);
-	/* MD+R (MEF 138): what comes back goes to c-icap by ICAP, on the
-	 * edge's own address in the service at the service's port, which
-	 * takes Squid's address alone; c-icap scans with ClamAV. */
-	ATF_CHECK_MSG(strstr(r.body, "icap_service sdwan_av respmod_precache "
-	    "bypass=off icap://10.1.0.1:1354/avscan") != NULL && strstr(r.body,
-	    "\"icap\":\"# Written by the Arcana console") != NULL && strstr(
-	    r.body, "Service avscan virus_scan.so") != NULL && strstr(r.body,
-	    "Port 10.1.0.1:1354\\nacl squid src 10.1.0.1/255.255.255.255") !=
-	    NULL && strstr(r.body, "client_access deny all") != NULL && strstr(
-	    r.body, "\"plugin\":"
-	    "\"c-icap\",\"package\":\"c-icap c-icap-modules clamav\"") !=
-	    NULL, "%s", r.body);
+	    "\"name\":\"sw1\",\"fib\":1,\"mode\":\"sni\",\"host\":\"a\","
+	    "\"spec\":{\"flavor\":\"sdwan\",\"service\":\"acme\",\"fib\":1,"
+	    "\"listen\":[{\"end_point\":\"hq\",\"address\":\"10.1.0.1\"},{"
+	    "\"end_point\":\"road\",\"address\":\"10.30.0.1\"}],\"resolver\":"
+	    "true,") != NULL && strstr(r.body, "\"zones\":[{\"name\":\"z0\","
+	    "\"prefixes\":[\"10.1.0.0/16\",\"10.30.0.2/32\",\"10.30.0.64/32\"],"
+	    "\"urlf\":{\"no-match\":\"allow\",\"block\":[\"bad.example\"]},"
+	    "\"mdr\":{\"no-match\":\"allow\",\"block\":[\"44D88612FEA8A8F36DE82E1278"
+	    "ABB02F:68\",\"275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aa"
+	    "bf651fd0f\"],\"allow\":[\"3395856ce81f2b7382dee72602f798b642f14140\"],"
+	    "\"id\":\"g-mdr\"}}]},\"lists\":{}") != NULL, "%s", r.body);
+	/* MD+R (MEF 138): what comes back goes to c-icap by ICAP, beside
+	 * Squid on the edge's own address (the agent renders its file of
+	 * the same form); c-icap scans with ClamAV, a need. */
+	ATF_CHECK_MSG(strstr(r.body, "\"resolver\":true,\"icap\":true,") != NULL
+	    && strstr(r.body, "\"plugin\":\"c-icap\",\"package\":\"c-icap "
+	    "c-icap-modules clamav\"") != NULL, "%s", r.body);
 	/* Intrusion detection (Arcana's own): Suricata on the service's UNIs at
 	 * each edge, its home the UNIs' subnets, the policy's rules and the
 	 * ruleset suricata-update keeps; Suricata a need.  It prevents: the
@@ -9276,6 +10182,38 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "history.1.state") == NULL, "%s", r.body);
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^gre100 create' ifconfig.log") == 0);
+	/* Suricata's alert (the stand-in writes one as it starts) is an
+	 * event, and the event a Security Event Notification (MEF 138
+	 * R24, Table 3): Arcana's own function, the service, the source,
+	 * the action, its ID; mailed to the SEN recipients. */
+	for (i = 0; i < 300; i++) {
+		http("GET", "/api/sdwan/sen", NULL, &r);
+		if (r.status == 200 && ucl_object_toint(ucl_object_lookup(r.json,
+		    "count")) > 0)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_CHECK_MSG(r.status == 200 && jstr(&r, "notices.0.id") != NULL &&
+	    strlen(jstr(&r, "notices.0.id")) == 36 && strncmp(jstr(&r,
+	    "notices.0.function"), "Intrusion detection", 19) == 0 && strcmp(
+	    jstr(&r, "notices.0.policy"), "ids") == 0 && strcmp(jstr(&r,
+	    "notices.0.service"), "acme") == 0 && strcmp(jstr(&r,
+	    "notices.0.source"), "10.0.0.9") == 0 && strcmp(jstr(&r,
+	    "notices.0.type"), "OTHER") == 0 && strncmp(jstr(&r,
+	    "notices.0.action"), "Alerted", 7) == 0 && strcmp(jstr(&r,
+	    "notices.0.uni"), strcmp(jstr(&r, "notices.0.edge"), "a") == 0 ?
+	    "uni-hq" : "uni-br") == 0 && strstr(jstr(&r, "notices.0.details"),
+	    "LOCAL telnet (severity 2): 10.0.0.9:4444 to 10.0.0.1:23 TCP on "
+	    "lo0 at ") != NULL, "%s", r.body);
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q 'Security Event Notification' "
+	    "mail.out") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(system("grep -q 'Security Function: Intrusion detection' "
+	    "mail.out && grep -q '^Subject: Arcana: .*Security Event "
+	    "Notification' mail.out && grep -qx 'To: soc@example.org' mail.out")
+	    == 0, "no mail of the SEN");
 	ATF_CHECK(system("grep -q '^gre100 fib 1' ifconfig.log") == 0);
 	ATF_CHECK(system("grep -q '^gre100 tunnel 192.0.2.1 192.0.2.2' "
 	    "ifconfig.log") == 0);
@@ -9676,6 +10614,64 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "threshold$' sdwan-ids-sec-lan.yaml && grep -qx 'suppress gen_id "
 	    "1, sig_id 1000009, track by_src, ip 10.0.0.9' "
 	    "sdwan-ids-sec-lan.threshold") == 0);
+	/* A capture up from the page, in two parts: on the host, beside its
+	 * replay; a part that does not follow, refused. */
+	snprintf(t1, sizeof(t1), "/api/servers/%s/ids/pcap?instance=sec-lan&"
+	    "file=up.pcap", sa);
+	http("POST", t1, "PCAP", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"ok\":true") != NULL && strstr(r.body,
+	    "/sdwan-ids-sec-lan.replay.d/captures/up.pcap\"") != NULL &&
+	    strstr(r.body, "\"size\":4") != NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(t1, sizeof(t1), "/api/servers/%s/ids/pcap?instance=sec-lan&"
+	    "file=up.pcap&offset=9&last=1", sa);
+	http("POST", t1, "DATA", &r);
+	EXPECT(&r, 502);
+	ATF_CHECK_MSG(strstr(r.body, "the part before ended at 4, not 9") !=
+	    NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(t1, sizeof(t1), "/api/servers/%s/ids/pcap?instance=sec-lan&"
+	    "file=up.pcap&offset=4&last=1", sa);
+	http("POST", t1, "DATA", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("[ \"$(cat sdwan-ids-sec-lan.replay.d/captures/"
+	    "up.pcap)\" = PCAPDATA ] && [ ! -e sdwan-ids-sec-lan.replay.d/"
+	    "captures/up.pcap.part ]") == 0);
+	snprintf(t1, sizeof(t1), "/api/servers/%s/ids/pcap?instance=sec-lan&"
+	    "file=../up.pcap", sa);
+	http("POST", t1, "PCAP", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* A file of its pcap-log down, as an alert's row links it; one it
+	 * has not, said. */
+	ATF_CHECK(system("mkdir -p sdwan-ids-sec-lan.d && printf PCAPLOG > "
+	    "sdwan-ids-sec-lan.d/log.pcap.1792400000") == 0);
+	snprintf(t1, sizeof(t1), "/api/servers/%s/ids/pcap-log?instance="
+	    "sec-lan&file=log.pcap.1792400000", sa);
+	http("GET", t1, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "PCAPLOG") != NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(t1, sizeof(t1), "/api/servers/%s/ids/pcap-log?instance="
+	    "sec-lan&file=log.pcap.1", sa);
+	http("GET", t1, NULL, &r);
+	EXPECT(&r, 404);
+	ATF_CHECK_MSG(strstr(r.body, "has no such file") != NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(t1, sizeof(t1), "/api/servers/%s/ids/pcap-log?instance="
+	    "sec-lan&file=eve.json", sa);
+	http("GET", t1, NULL, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* What its profiling wrote, read through the console. */
+	snprintf(t1, sizeof(t1), "/api/servers/%s/suricata/rules?instance="
+	    "sec-lan&profiling=1", sa);
+	http("GET", t1, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"build\":{") != NULL, "%s", r.body);
+	resp_free(&r);
 	/* Its settings: each into Suricata's YAML, checked first; where the
 	 * host has Suricata itself, what it makes of the whole. */
 	http("POST", t2, "{\"what\":\"ids\",\"instances\":[{\"name\":"
@@ -10178,9 +11174,160 @@ ATF_TC_CLEANUP(tls_ec, tc)
 	stop();
 }
 
+/* The host's records kept by the console, those after n: how many have
+ * what, within secs. */
+static int
+notif_count(const char *id, const char *what, int want, int secs)
+{
+	struct resp	 r;
+	char		 path[128];
+	int		 n = 0, i;
+
+	snprintf(path, sizeof(path), "/api/servers/%s/notifications", id);
+	for (i = 0; i < secs * 10; i++) {
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		n = 0;
+		for (const char *p = r.body; (p = strstr(p, what)) != NULL;
+		    p += strlen(what))
+			n++;
+		resp_free(&r);
+		if (n >= want)
+			break;
+		usleep(100000);
+	}
+	return (n);
+}
+
+/*
+ * The console as a host's receiver (RFC 8639 section 2.5 over
+ * HTTPS-notif): the host's candidate given what /subscription says and
+ * committed, the agent connects to the TLS listener with its
+ * certificate, the records come and are kept; the console restarted,
+ * they are still there, the agent connects again and what it missed
+ * meanwhile is replayed after them.
+ */
+CONSOLE_TC(notif_receiver, "A host's configured subscription to the "
+    "console over HTTPS-notif: records kept, resumed over a restart")
+ATF_TC_BODY(notif_receiver, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	ucl_object_t	*cand;
+	unsigned char	*json;
+	char		 cwd[MAXPATHLEN], body[MAXPATHLEN + 64], id[16];
+	char		 path[256];
+	int		 n, after;
+
+	harness_tls_port = 20000 + (int)(getpid() % 20000);
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	/* The host, known by the name its certificate has. */
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\",\"peer_name\":\"localhost\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	/* Not the agent: no certificate, refused. */
+	snprintf(path, sizeof(path), "/api/notif/%s/capabilities", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	/* Nothing yet. */
+	snprintf(path, sizeof(path), "/api/servers/%s/notifications", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("0", jstr(&r, "last"));
+	resp_free(&r);
+	/* What to put: the console's endpoints for the host. */
+	snprintf(path, sizeof(path), "/api/servers/%s/subscription", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(body, sizeof(body), "https://127.0.0.1:%d/api/notif/%s/"
+	    "capabilities", harness_tls_port, id);
+	ATF_CHECK_STREQ(body, jstr(&r, "candidate.ietf-subscribed-notifications:"
+	    "subscriptions.ietf-subscribed-notif-receivers:receiver-instances."
+	    "receiver-instance.0.ietf-https-notif-transport:https-receiver."
+	    "capabilities-endpoint.uri"));
+	cand = ucl_object_ref(ucl_object_lookup(r.json, "candidate"));
+	snprintf(path, sizeof(path), "%s", jstr(&r, "put"));
+	snprintf(body, sizeof(body), "%s", jstr(&r, "commit"));
+	resp_free(&r);
+	json = ucl_object_emit(cand, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(cand);
+	http("PUT", path, (const char *)json, &r);
+	/* Made in the candidate, which had none (RFC 8040 section 4.5). */
+	EXPECT(&r, 201);
+	resp_free(&r);
+	free(json);
+	http("POST", body, "{\"ietf-netconf:input\":{}}", &r);
+	EXPECT(&r, 204);
+	resp_free(&r);
+	/* The agent connected: told subscription-started, kept. */
+	ATF_REQUIRE_EQ(1, notif_count(id, "subscription-started", 1, 15));
+	ATF_REQUIRE_EQ(1, notif_count(id, "replay-completed", 1, 5));
+	/* An event of the host's: a record. */
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", id);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"sysctl\",\"verb\":\"set\","
+	    "\"args\":[\"kern.hostname\",\"lab\"]}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE(notif_count(id, "\"arcana-events:event\"", 1, 15) >= 1);
+	snprintf(path, sizeof(path), "/api/servers/%s/notifications", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	after = atoi(jstr(&r, "last"));
+	ATF_CHECK(after >= 3);
+	ATF_CHECK(strstr(r.body, "\"eventTime\":\"") != NULL);
+	resp_free(&r);
+	/* The subscription seen on the host, its receiver active. */
+	snprintf(path, sizeof(path), "/restconf/data/arcana-fleet:fleet/host=%s"
+	    "/ietf-subscribed-notifications:subscriptions", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"state\":\"active\"") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	/* The console restarted: the records kept are there; the agent,
+	 * whose POST failed meanwhile, connects again and replays what it
+	 * missed after them. */
+	restart_console();
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", id);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"sysctl\",\"verb\":\"set\","
+	    "\"args\":[\"kern.hostname\",\"lab2\"]}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE_EQ(2, notif_count(id, "subscription-started", 2, 30));
+	snprintf(path, sizeof(path), "/api/servers/%s/notifications?after=%d",
+	    id, after);
+	n = 0;
+	for (int i = 0; i < 100 && n == 0; i++) {
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		if (strstr(r.body, "replay-previous-event-time") != NULL &&
+		    strstr(r.body, "lab2") != NULL)
+			n = atoi(jstr(&r, "last"));
+		resp_free(&r);
+		if (n == 0)
+			usleep(100000);
+	}
+	ATF_CHECK_MSG(n > after, "no replay after the restart");
+	/* All of them, from the first: nothing lost over the restart. */
+	snprintf(path, sizeof(path), "/api/servers/%s/notifications", id);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("1", jstr(&r, "records.0.n"));
+	ATF_CHECK(strstr(r.body, "\"kern.hostname=lab\"") != NULL ||
+	    strstr(r.body, "lab") != NULL);
+	resp_free(&r);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, cluster);
+	ATF_TP_ADD_TC(tp, notif_receiver);
 
 	ATF_TP_ADD_TC(tp, unauthenticated);
 	ATF_TP_ADD_TC(tp, setup_token);
@@ -10195,6 +11342,22 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, restconf);
 	ATF_TP_ADD_TC(tp, restconf_write);
 	ATF_TP_ADD_TC(tp, restconf_mount);
+	ATF_TP_ADD_TC(tp, restconf_edit);
+	ATF_TP_ADD_TC(tp, restconf_yang_patch);
+	ATF_TP_ADD_TC(tp, restconf_etag);
+	ATF_TP_ADD_TC(tp, restconf_tag_access_denied);
+	ATF_TP_ADD_TC(tp, restconf_tag_invalid_value);
+	ATF_TP_ADD_TC(tp, restconf_tag_operation_not_supported);
+	ATF_TP_ADD_TC(tp, restconf_tag_operation_failed);
+	ATF_TP_ADD_TC(tp, restconf_tag_in_use);
+	ATF_TP_ADD_TC(tp, restconf_tag_data_exists);
+	ATF_TP_ADD_TC(tp, restconf_tag_data_missing);
+	ATF_TP_ADD_TC(tp, restconf_tag_missing_attribute);
+	ATF_TP_ADD_TC(tp, restconf_tag_bad_attribute);
+	ATF_TP_ADD_TC(tp, restconf_tag_unknown_element);
+	ATF_TP_ADD_TC(tp, restconf_tag_unknown_namespace);
+	ATF_TP_ADD_TC(tp, restconf_tag_bad_element);
+	ATF_TP_ADD_TC(tp, restconf_tag_malformed_message);
 	ATF_TP_ADD_TC(tp, nacm_user);
 	ATF_TP_ADD_TC(tp, nacm_console);
 	ATF_TP_ADD_TC(tp, services);
@@ -10232,10 +11395,12 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sdwan_sets);
 	ATF_TP_ADD_TC(tp, sdwan_neigh);
 	ATF_TP_ADD_TC(tp, sdwan_lists);
+	ATF_TP_ADD_TC(tp, sdwan_notices);
 	ATF_TP_ADD_TC(tp, sdwan_uswe);
 	ATF_TP_ADD_TC(tp, sdwan_sfp);
 	ATF_TP_ADD_TC(tp, sdwan_jail);
 	ATF_TP_ADD_TC(tp, load);
+	ATF_TP_ADD_TC(tp, churn);
 	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);
 	ATF_TP_ADD_TC(tp, mtls);

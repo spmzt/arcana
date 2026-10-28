@@ -50,6 +50,7 @@ static const char *const changes[] = {
 	"sdwan-steer", "sdwan-bird", "sdwan-dhcp", "sdwan-dns", "sdwan-proxy",
 	"sdwan-ids", "zfs-key", "tls", "config-apply", "notify",
 	"builder-options", "capture", "config-export", "zfs-send",
+	"suricata-pcap-put", "suricata-pcap-get",
 };
 
 /* Is the peer another host? */

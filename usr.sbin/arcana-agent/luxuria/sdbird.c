@@ -6,7 +6,8 @@
 
 /*
  * SD-WAN routing at the UNIs (MEF 70.2 §11.6): a BIRD instance of each
- * service on the edge, as the console writes its configuration, run in
+ * service on the edge, its configuration rendered here from the
+ * console's form (sdconf.c), run in
  * the service's routing table with a control socket of its own, kept
  * beside the probes and the rules and started again with the agent.
  * It talks BGP or OSPF with the subscriber at the UNI, and iBGP with
@@ -35,7 +36,6 @@
 
 #define	BIRD_FILE	"sdwan-bird.json"
 #define	INSTANCES_MAX	64
-#define	CONF_MAX	(256 * 1024)
 
 struct instance {
 	char	name[40];
@@ -245,9 +245,12 @@ parse(const char *json)
 }
 
 /*
- * The instances applied: {"instances": [{"name", "fib", "conf"}, ...]},
- * the host's, or with "jail" those of an edge that is a vnet jail, run
- * in it.  Each file is parsed by bird before it is made the instance's;
+ * The instances applied: {"instances": [{"name", "fib", "host",
+ * "spec"}, ...]}, the host's, or with "jail" those of an edge that is a
+ * vnet jail, run in it; spec the instance's form, rendered by
+ * bird_conf_render() (host names the host in its comment), every one
+ * before any is changed.  Each file is parsed by bird before it is made
+ * the instance's;
  * those of the same edge not named any more are stopped, the other
  * edges' left as they are.  Kept for the next start, a file per edge.
  */
@@ -259,8 +262,8 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 	ucl_object_iter_t	 it;
 	struct instance		 ni[INSTANCES_MAX], keep[INSTANCES_MAX];
 	struct execres		 res;
-	char			*argv[5], path[MAXPATHLEN];
-	const char		*conf, *e, *jail, *file;
+	char			*argv[5], path[MAXPATHLEN], *confs[INSTANCES_MAX];
+	const char		*conf, *e, *jail, *file, *host;
 	int			 n, i, k, step, nkeep;
 	bool			 was, ok;
 
@@ -268,7 +271,7 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 		if (top != NULL)
 			ucl_object_unref(top);
 		*errp = "the instances are an object: instances, each a name, "
-		    "a fib and its conf";
+		    "a fib, a host and its spec";
 		return (-1);
 	}
 	/* The jail's name, in w's memory: it is used after top goes. */
@@ -291,17 +294,16 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 	while ((in = ucl_object_iterate(ucl_object_lookup(top, "instances"),
 	    &it, true)) != NULL) {
 		v = ucl_object_lookup(in, "name");
-		conf = ucl_object_tostring(ucl_object_lookup(in, "conf"));
 		if (n == INSTANCES_MAX || v == NULL || ucl_object_type(v) !=
 		    UCL_STRING || !name_ok(ucl_object_tostring(v)) ||
 		    ucl_object_lookup(in, "fib") == NULL || ucl_object_toint(
 		    ucl_object_lookup(in, "fib")) < 0 || ucl_object_toint(
-		    ucl_object_lookup(in, "fib")) > 65535 || conf == NULL ||
-		    strlen(conf) > CONF_MAX) {
+		    ucl_object_lookup(in, "fib")) > 65535 || ucl_object_type(
+		    ucl_object_lookup(in, "spec")) != UCL_OBJECT) {
 			ucl_object_unref(top);
 			*errp = wfmt(w, "an instance is a name of letters, digits, "
-			    "_ and -, 32 at most, a fib and its conf, %d of them "
-			    "at most", INSTANCES_MAX);
+			    "_ and -, 32 at most, a fib, a host and its spec, %d "
+			    "of them at most", INSTANCES_MAX);
 			return (-1);
 		}
 		for (i = 0; i < n; i++)
@@ -318,6 +320,16 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 		ni[n].jid = jail[0] != '\0' ? w->jid : 0;
 		snprintf(ni[n].jroot, sizeof(ni[n].jroot), "%s", jail[0] != '\0' ?
 		    w->jroot : "");
+		host = ucl_object_type(ucl_object_lookup(in, "host")) ==
+		    UCL_STRING ? ucl_object_tostring(ucl_object_lookup(in,
+		    "host")) : "";
+		e = NULL;
+		if ((confs[n] = bird_conf_render(w, ucl_object_lookup(in,
+		    "spec"), host, &e)) == NULL) {
+			ucl_object_unref(top);
+			*errp = wfmt(w, "%s: %s", ni[n].name, e);
+			return (-1);
+		}
 		n++;
 	}
 	pthread_mutex_lock(&lock);
@@ -340,11 +352,8 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 		}
 	}
 	ok = true;
-	it = NULL;
 	for (k = 0; k < n; k++) {
-		in = ucl_object_iterate(ucl_object_lookup(top, "instances"), &it,
-		    true);
-		conf = ucl_object_tostring(ucl_object_lookup(in, "conf"));
+		conf = confs[k];
 		was = false;
 		for (i = 0; i < ninstances; i++)
 			if (strcmp(ni[k].name, instances[i].name) == 0)

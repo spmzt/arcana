@@ -5,11 +5,11 @@
  */
 
 /*
- * Superbia: the kernel's state as arcana-sysctl has it and its modules
- * and memory as arcana-kernel has them, from the
- * sysctl and kernel operations' JSON (sysctl.c, kernel.c); and their
- * configuration written: sysctl.conf(5)'s settings, rc.conf(5)'s
- * kld_list, in place, every other line kept (libvarconf).
+ * Superbia: the kernel's modules and memory as arcana-kernel has them,
+ * from do_kernel()'s JSON (kernel.c); and the configuration of
+ * arcana-sysctl and arcana-kernel written: sysctl.conf(5)'s settings,
+ * rc.conf(5)'s kld_list, in place, every other line kept (libvarconf).
+ * Served by ysysedit.c.
  */
 
 #include <errno.h>
@@ -21,58 +21,6 @@
 #include "collect.h"
 #include "varconf.h"
 #include "yjson.h"
-
-int
-ysysctl_from_json(const char *json, uint64_t total, bool truncated,
-    cbl_yarena *a, struct arcana_sysctl_sysctl *out)
-{
-	const ucl_object_t *arr, *e;
-	struct arcana_sysctl_sysctl_value *v = NULL;
-	struct arcana_sysctl_sysctl_kept *k = NULL;
-	ucl_object_iter_t it;
-	ucl_object_t *top;
-	size_t i;
-
-	memset(out, 0, sizeof(*out));
-	if ((top = yj_parse(json)) == NULL)
-		return (EINVAL);
-	if ((out->has_total = truncated))
-		out->total = total;
-	arr = ucl_object_lookup(top, "values");
-	if (yj_count(arr) > 0 && (v = cbl_yarena_alloc(a, yj_count(arr) *
-	    sizeof(*v))) == NULL)
-		goto nomem;
-	i = 0;
-	YJ_EACH(arr, it, e) {
-		bool has;
-
-		memset(&v[i], 0, sizeof(v[i]));
-		v[i].name = yj_str(a, e, "name");
-		v[i].value = yj_str(a, e, "value");
-		v[i].type = yj_str(a, e, "type");
-		v[i].writable = yj_yes(e, "rw", &has);
-		v[i].has_writable = has;
-		v[i++].description = yj_str(a, e, "descr");
-	}
-	out->value.n = i;
-	out->value.v = v;
-	arr = ucl_object_lookup(top, "kept");
-	if (yj_count(arr) > 0 && (k = cbl_yarena_alloc(a, yj_count(arr) *
-	    sizeof(*k))) == NULL)
-		goto nomem;
-	i = 0;
-	YJ_EACH(arr, it, e) {
-		k[i].name = yj_str(a, e, "name");
-		k[i++].value = yj_str(a, e, "value");
-	}
-	out->kept.n = i;
-	out->kept.v = k;
-	ucl_object_unref(top);
-	return (0);
-nomem:
-	ucl_object_unref(top);
-	return (ENOMEM);
-}
 
 int
 ykernel_from_json(const char *json, cbl_yarena *a,

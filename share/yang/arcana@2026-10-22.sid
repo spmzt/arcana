@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana",
     "module-revision": "2026-10-22",
-    "sid-file-version": 4,
+    "sid-file-version": 5,
     "description": "Arcana's SIDs for arcana (RFC 9595's experimental range; share/yang/SIDS.md).",
     "dependency-revision": [
       {
@@ -3623,92 +3623,110 @@
       {
         "namespace": "data",
         "identifier": "/arcana:kernel",
-        "sid": "73719"
+        "sid": "73719",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/input",
-        "sid": "73720"
+        "sid": "73720",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output",
-        "sid": "73721"
+        "sid": "73721",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/error",
-        "sid": "73722"
+        "sid": "73722",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/json",
-        "sid": "73723"
+        "sid": "73723",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/ok",
-        "sid": "73724"
+        "sid": "73724",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/trace",
-        "sid": "73725"
+        "sid": "73725",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/trace/argv",
-        "sid": "73726"
+        "sid": "73726",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/trace/detail",
-        "sid": "73727"
+        "sid": "73727",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/trace/duration-us",
-        "sid": "73728"
+        "sid": "73728",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/trace/error-output",
-        "sid": "73729"
+        "sid": "73729",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/trace/exit",
-        "sid": "73730"
+        "sid": "73730",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/trace/id",
-        "sid": "73731"
+        "sid": "73731",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/trace/kind",
-        "sid": "73732"
+        "sid": "73732",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/trace/label",
-        "sid": "73733"
+        "sid": "73733",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/trace/output",
-        "sid": "73734"
+        "sid": "73734",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/trace/parent",
-        "sid": "73735"
+        "sid": "73735",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:kernel/output/trace/status",
-        "sid": "73736"
+        "sid": "73736",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
@@ -7548,167 +7566,200 @@
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl",
-        "sid": "74504"
+        "sid": "74504",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl-dump",
-        "sid": "74505"
+        "sid": "74505",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl-dump/input",
-        "sid": "74506"
+        "sid": "74506",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl-dump/input/net-filter",
-        "sid": "74507"
+        "sid": "74507",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl-dump/output",
-        "sid": "74508"
+        "sid": "74508",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl-dump/output/json",
-        "sid": "74509"
+        "sid": "74509",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl-dump/output/total",
-        "sid": "74510"
+        "sid": "74510",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl-parts",
-        "sid": "74511"
+        "sid": "74511",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl-parts/input",
-        "sid": "74512"
+        "sid": "74512",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl-parts/input/net-filter",
-        "sid": "74513"
+        "sid": "74513",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl-parts/output",
-        "sid": "74514"
+        "sid": "74514",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl-parts/output/ok",
-        "sid": "74515"
+        "sid": "74515",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/input",
-        "sid": "74516"
+        "sid": "74516",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/input/jail",
-        "sid": "74517"
+        "sid": "74517",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/input/net-filter",
-        "sid": "74518"
+        "sid": "74518",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output",
-        "sid": "74519"
+        "sid": "74519",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/error",
-        "sid": "74520"
+        "sid": "74520",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/json",
-        "sid": "74521"
+        "sid": "74521",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/ok",
-        "sid": "74522"
+        "sid": "74522",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/total",
-        "sid": "74523"
+        "sid": "74523",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/trace",
-        "sid": "74524"
+        "sid": "74524",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/trace/argv",
-        "sid": "74525"
+        "sid": "74525",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/trace/detail",
-        "sid": "74526"
+        "sid": "74526",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/trace/duration-us",
-        "sid": "74527"
+        "sid": "74527",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/trace/error-output",
-        "sid": "74528"
+        "sid": "74528",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/trace/exit",
-        "sid": "74529"
+        "sid": "74529",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/trace/id",
-        "sid": "74530"
+        "sid": "74530",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/trace/kind",
-        "sid": "74531"
+        "sid": "74531",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/trace/label",
-        "sid": "74532"
+        "sid": "74532",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/trace/output",
-        "sid": "74533"
+        "sid": "74533",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/trace/parent",
-        "sid": "74534"
+        "sid": "74534",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/trace/status",
-        "sid": "74535"
+        "sid": "74535",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/arcana:sysctl/output/truncated",
-        "sid": "74536"
+        "sid": "74536",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
@@ -8509,6 +8560,66 @@
         "namespace": "data",
         "identifier": "/arcana:monitors/output/trace/status",
         "sid": "74696"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:suricata-pcap-get",
+        "sid": "74697"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:suricata-pcap-get/input",
+        "sid": "74698"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:suricata-pcap-get/input/names",
+        "sid": "74699"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:suricata-pcap-get/output",
+        "sid": "74700"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:suricata-pcap-get/output/json",
+        "sid": "74701"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:suricata-pcap-get/output/ok",
+        "sid": "74702"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:suricata-pcap-put",
+        "sid": "74703"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:suricata-pcap-put/input",
+        "sid": "74704"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:suricata-pcap-put/input/names",
+        "sid": "74705"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:suricata-pcap-put/output",
+        "sid": "74706"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:suricata-pcap-put/output/json",
+        "sid": "74707"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana:suricata-pcap-put/output/ok",
+        "sid": "74708"
       }
     ]
   }

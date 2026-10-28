@@ -351,7 +351,6 @@ worker(void *arg)
 	struct arc_bird_config_req bcq;
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
-	struct arc_kernel_rsp	 kr;
 	struct arc_jail_files_rsp jfr;
 	struct arc_builder_rsp	 bur;
 	struct arc_builder_options_rsp bor;
@@ -376,7 +375,6 @@ worker(void *arg)
 	struct arc_notify_rsp	 ntr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
-	struct arc_sysctl_rsp	 scr2;
 	struct arc_processes_rsp prr;
 	struct arc_log_rsp	 lgr;
 	struct arc_fw_trace_rsp	 ftr;
@@ -410,7 +408,6 @@ worker(void *arg)
 	case ARC_CMD_NOTIFY:
 	case ARC_CMD_CONFIG_APPLY:
 	case ARC_CMD_TRANSPORT:
-	case ARC_CMD_SYSCTL:
 	case ARC_CMD_ZFS_KEY:
 	case ARC_CMD_TLS:
 	case ARC_CMD_SDWAN_PROBES:
@@ -632,23 +629,6 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &tpr.trace.v, &tpr.trace.n);
 		rc = arc_transport_reply(j->req, &tpr);
-		break;
-	case ARC_CMD_SYSCTL:
-		what = "sysctl";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "sysctl");
-		memset(&scr2, 0, sizeof(scr2));
-		if (j->jail == NULL)
-			do_sysctl(&w, j->source, &scr2);
-		else if (scope_enter(&w, j->jail, &scr2.error) == 0)
-			do_sysctl_jail(&w, j->source, &scr2);
-		else
-			scr2.has_ok = true;
-		ok = scr2.ok;
-		error = scr2.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &scr2.trace.v, &scr2.trace.n);
-		rc = arc_sysctl_reply(j->req, &scr2);
 		break;
 	case ARC_CMD_PROCESSES:
 		what = "processes";
@@ -1013,18 +993,6 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &surr.trace.v, &surr.trace.n);
 		rc = arc_suricata_rules_reply(j->req, &surr);
-		break;
-	case ARC_CMD_KERNEL:
-		what = "kernel";
-		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "kernel");
-		memset(&kr, 0, sizeof(kr));
-		do_kernel(&w, &kr);
-		ok = kr.ok;
-		error = kr.error;
-		step_end(&w, root, ok, NULL);
-		trace_steps(&w, &kr.trace.v, &kr.trace.n);
-		rc = arc_kernel_reply(j->req, &kr);
 		break;
 	case ARC_CMD_NETWORK:
 		what = wfmt(&w, "network %s%s", net_kind_names[j->action],
@@ -2172,36 +2140,6 @@ arc_transport_doit(cbl_req *req, const struct arc_transport_req *rq,
 }
 
 int
-arc_sysctl_doit(cbl_req *req, const struct arc_sysctl_req *rq,
-    void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_SYSCTL;
-	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
-	    xstrdup(rq->net_filter) : NULL;
-	/* A vnet jail's network's, as its sysctl reads them. */
-	if (rq->jail != NULL && rq->jail[0] != '\0') {
-		if (!valid_jail(rq->jail)) {
-			free(j->source);
-			free(j);
-			return (reject(req, "invalid jail name"));
-		}
-		if (j->source == NULL || strncmp(j->source, "net.", 4) != 0) {
-			free(j->source);
-			free(j);
-			return (reject(req, "a jail's sysctls are read under its "
-			    "network's, net."));
-		}
-		j->jail = xstrdup(rq->jail);
-	}
-	return (start(j));
-}
-
-int
 arc_processes_doit(cbl_req *req, const struct arc_processes_req *rq,
     void *arg __unused)
 {
@@ -2369,38 +2307,6 @@ arc_network_dumpit(cbl_req *req, const struct arc_network_dump_req *rq,
 	return (more ? EAGAIN : 0);
 }
 
-/*
- * The kernel's state in parts: one for each call, in the loop's own
- * thread, which a part is short enough for.
- */
-int
-arc_sysctl_dumpit(cbl_req *req, const struct arc_sysctl_dump_req *rq,
-    struct cbl_dump_state *st, void *arg __unused)
-{
-	struct arc_sysctl_dump_rsp	 rsp;
-	char				*json;
-	uint64_t			 sent;
-	bool				 more;
-	int				 error;
-
-	if (rq->net_filter != NULL && rq->net_filter[0] != '\0' &&
-	    !sysctl_name_ok(rq->net_filter))
-		return (reject(req, "a sysctl is named with letters, digits "
-		    "and . _ - %"));
-	more = sysctl_part(st, rq->net_filter, &json, &sent);
-	if (json == NULL)
-		return (ENOMEM);
-	memset(&rsp, 0, sizeof(rsp));
-	rsp.json = json;
-	rsp.has_total = true;
-	rsp.total = sent;
-	error = arc_sysctl_dump_reply(req, &rsp);
-	free(json);
-	if (error != 0)
-		return (error);
-	return (more ? EAGAIN : 0);
-}
-
 int
 arc_fstab_doit(cbl_req *req, const struct arc_fstab_req *rq,
     void *arg __unused)
@@ -2414,18 +2320,6 @@ arc_fstab_doit(cbl_req *req, const struct arc_fstab_req *rq,
 	j->ref = rq->conf_text != NULL ? xstrdup(rq->conf_text) : NULL;
 	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
 	j->refresh = rq->dry_run;
-	return (start(j));
-}
-
-int
-arc_kernel_doit(cbl_req *req, void *arg __unused)
-{
-	struct job	*j;
-
-	if ((j = calloc(1, sizeof(*j))) == NULL)
-		return (ENOMEM);
-	j->req = req;
-	j->cmd = ARC_CMD_KERNEL;
 	return (start(j));
 }
 

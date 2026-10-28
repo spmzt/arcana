@@ -102,6 +102,10 @@ const char	*web_certfile, *web_certkey;
 
 static bool		 foreground = true;
 static struct lws_context *ctx;
+/* The TLS listeners' SSL_CTXs, for the client CA (web_client_ca()). */
+static SSL_CTX		*ssl_ctxs[LISTEN_MAX];
+static int		 nssl_ctx;
+static bool		 client_ca;
 static volatile sig_atomic_t quit;
 static regex_t		*route_re;
 
@@ -861,6 +865,19 @@ http_request_header(struct http_request *req, const char *name,
 	return (0);
 }
 
+/* The address a request came from, as libwebsockets tells it; "" for
+ * one it cannot (a UNIX socket's, a client gone). */
+const char *
+web_peer(struct http_request *req, char *buf, size_t len)
+{
+
+	buf[0] = '\0';
+	if (req->wsi != NULL && lws_get_peer_simple(req->wsi, buf, len) ==
+	    NULL)
+		buf[0] = '\0';
+	return (buf);
+}
+
 int
 http_request_cookie(struct http_request *req, const char *name, char **out)
 {
@@ -1292,7 +1309,16 @@ req_write(struct lws *wsi, struct pss *pss)
 				    (unsigned char *)name, (unsigned char *)
 				    h->value, (int)strlen(h->value), &p, end);
 		}
-		/* A stream's length is not known: it goes until it ends. */
+		/* A stream's length is not known: it goes until it ends,
+		 * chunked over HTTP/1.1 (no :method pseudo-header: not
+		 * HTTP/2, which frames its own) so that its end is told. */
+		if (rc == 0 && req->stream != NULL &&
+		    lws_hdr_total_length(wsi, WSI_TOKEN_HTTP_COLON_METHOD) == 0) {
+			rc = lws_add_http_header_by_token(wsi,
+			    WSI_TOKEN_HTTP_TRANSFER_ENCODING,
+			    (const unsigned char *)"chunked", 7, &p, end);
+			req->chunked = true;
+		}
 		if (rc == 0 && req->stream == NULL)
 			rc = lws_add_http_header_content_length(wsi,
 			    (lws_filepos_t)req->resp_len, &p, end);
@@ -1320,9 +1346,21 @@ req_write(struct lws *wsi, struct pss *pss)
 				n = WRITE_CHUNK;
 			if ((n = allowed(wsi, n)) == 0)
 				return (0);
-			buf = xmalloc(LWS_PRE + n);
-			memcpy(buf + LWS_PRE, req->stream->data, n);
-			rc = lws_write(wsi, buf + LWS_PRE, n, LWS_WRITE_HTTP);
+			buf = xmalloc(LWS_PRE + n + 24);
+			if (req->chunked) {
+				size_t	hl;
+
+				hl = (size_t)snprintf((char *)buf + LWS_PRE, 24,
+				    "%zx\r\n", n);
+				memcpy(buf + LWS_PRE + hl, req->stream->data, n);
+				memcpy(buf + LWS_PRE + hl + n, "\r\n", 2);
+				rc = lws_write(wsi, buf + LWS_PRE, hl + n + 2,
+				    LWS_WRITE_HTTP);
+			} else {
+				memcpy(buf + LWS_PRE, req->stream->data, n);
+				rc = lws_write(wsi, buf + LWS_PRE, n,
+				    LWS_WRITE_HTTP);
+			}
 			free(buf);
 			if (rc < 0)
 				return (ending(wsi, "a stream's piece could not be "
@@ -1336,8 +1374,12 @@ req_write(struct lws *wsi, struct pss *pss)
 		}
 		if (!req->stream_end)
 			return (0);
-		buf = xmalloc(LWS_PRE + 1);
-		rc = lws_write(wsi, buf + LWS_PRE, 0, LWS_WRITE_HTTP_FINAL);
+		buf = xmalloc(LWS_PRE + 8);
+		if (req->chunked) {
+			memcpy(buf + LWS_PRE, "0\r\n\r\n", 5);
+			rc = lws_write(wsi, buf + LWS_PRE, 5, LWS_WRITE_HTTP_FINAL);
+		} else
+			rc = lws_write(wsi, buf + LWS_PRE, 0, LWS_WRITE_HTTP_FINAL);
 		free(buf);
 		if (rc < 0)
 			return (ending(wsi, "a stream's end could not be written"));
@@ -1495,10 +1537,14 @@ callback(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		tasks_drain();
 		return (0);
 	}
-	/* A vhost's SSL_CTX, in user: its certificate and key. */
-	if (reason == LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS)
+	/* A vhost's SSL_CTX, in user: its certificate and key; kept, for
+	 * the client CA given later. */
+	if (reason == LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS) {
+		if (user != NULL && nssl_ctx < LISTEN_MAX)
+			ssl_ctxs[nssl_ctx++] = user;
 		return (srv.certfile != NULL && user != NULL && keymgr_tls(user,
 		    srv.certfile) != 0 ? -1 : 0);
+	}
 	/* A connection that went before it was given its data. */
 	if (pss == NULL)
 		return (lws_callback_http_dummy(wsi, reason, user, in, len));
@@ -1655,6 +1701,64 @@ static const struct lws_protocols protocols[] = {
 
 /* ---------------------------------------------------------------- */
 /* The configuration, the worker and its supervisor. */
+
+/* A client certificate, verified or not: the handlers judge it. */
+static int
+peer_verify(int ok __unused, X509_STORE_CTX *x __unused)
+{
+
+	return (1);
+}
+
+/*
+ * The TLS listeners ask the client for a certificate from the CA named
+ * (browsers, which have none of its, send none and ask their user
+ * nothing); what came is checked by web_peer_cert().
+ */
+void
+web_client_ca(const char *cafile)
+{
+	STACK_OF(X509_NAME)	*names;
+
+	if (cafile == NULL || nssl_ctx == 0)
+		return;
+	if ((names = SSL_load_client_CA_file(cafile)) == NULL) {
+		log_msg(LOG_WARNING, "%s: no CA read: the hosts' records are "
+		    "not taken", cafile);
+		return;
+	}
+	for (int i = 0; i < nssl_ctx; i++) {
+		if (SSL_CTX_load_verify_locations(ssl_ctxs[i], cafile, NULL) !=
+		    1) {
+			log_msg(LOG_WARNING, "%s: not loaded for a listener",
+			    cafile);
+			continue;
+		}
+		SSL_CTX_set_client_CA_list(ssl_ctxs[i], i + 1 < nssl_ctx ?
+		    SSL_dup_CA_list(names) : names);
+		SSL_CTX_set_verify(ssl_ctxs[i], SSL_VERIFY_PEER, peer_verify);
+	}
+	client_ca = true;
+}
+
+struct x509_st *
+web_peer_cert(struct http_request *req)
+{
+	struct lws	*wsi;
+	SSL		*ssl;
+	X509		*x;
+
+	if (!client_ca || req->wsi == NULL || (wsi = lws_get_network_wsi(
+	    req->wsi)) == NULL || (ssl = lws_get_ssl(wsi)) == NULL)
+		return (NULL);
+	if ((x = SSL_get1_peer_certificate(ssl)) == NULL)
+		return (NULL);
+	if (SSL_get_verify_result(ssl) != X509_V_OK) {
+		X509_free(x);
+		return (NULL);
+	}
+	return (x);
+}
 
 static void
 lws_emit(int level, const char *line)

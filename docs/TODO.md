@@ -2,10 +2,15 @@
 
 ## To do
 
-- FEC relays: the overhead kept in the history beside the tunnel's
-  rate.  Several relays a host, and SD-WAN's relays with `plugin:
-  speederv2`, need an integration of the port's rc script with
-  `_svcj` and `_svcj_ipaddrs`.
+- FEC relays, the user's (the port's maintainer): net/udpspeeder's rc
+  script runs one relay (`name=speederv2`, one pidfile), so a host has
+  one a scope and SD-WAN's relays (`plugin: speederv2`, each a
+  profile) are refused on it.  The agent and the console take a
+  script with `speederv2_profiles` that runs each profile under
+  rc.subr's name `speederv2_<profile>` (its `_flags`, `_user`, `_svcj`,
+  `_svcj_ipaddrs` its own, its jail `svcj-speederv2_<profile>`, its
+  syslog tag the name) and hands the profile on to `run_rc_command`
+  so that a service jail's `exec.start` runs it again.
 
 - IPFIX export in ng_netflow(4), kernel work and the user's:
   ng_netflow exports NetFlow v5 and v9 only (both hooks at once,
@@ -18,19 +23,25 @@
   D-5, D-11, D-12 (D-6 taken: a FIB per vpn-node).
   To do, the datastores first, to the safety design decided on
   2026-10-28 (in the plan, 2.3): 2.3.x (candidate and
-  running, with-origin 2.3.9, report-all-tagged), 2.3.5 the rc.conf.d
+  running), 2.3.5 the rc.conf.d
   fragments rendered (the agent edits rc.conf through sysrc(8)), the
-  running datastore's use of rtadvd.conf (2.5.1), syslog.conf written
-  from ietf-syslog; 2.6.2 (the vrf-root mount) and parent-reference;
-  2.7.2 to 2.7.4; the rest of 3.2's subscriptions (configured ones, and
-  on-change from the event sources rather than a read each second) and NACM (3.3); 3.4's streams (the JSON stays on
+  running datastore's use of rtadvd.conf (2.5.1); NACM (3.3); 3.4's streams (the JSON stays on
   the wire until then); RESTCONF (Y-4); and Y-3's conversions of the
   interim module's operations onto the standard models, a module at a
-  time.  Each operation converted to YANG shows its YANG model beside
+  time (3.1.6, arcana-sysctl and arcana-kernel, done: the first
+  operations retired from the interim module; 3.1.2, arcana-services,
+  written through the datastores, its operations' retirement waiting
+  on how the console's enable, disable and config writes meet
+  rc-conf-conflict: the plan's 3.1.2 says).  Each operation
+  converted to YANG shows its YANG model beside
   the CBOR schema in its task's { } Schema panel, in the same commit.
   For the user: the CORECONF draft's examples number some
   ietf-interfaces items otherwise than SIDS.md.
-- MEF 138's model, the rest: docs/PLAN-119-SASE.md, SASE-6.
+- MEF 138's model, what stays undone and why (docs/PLAN-119-SASE.md,
+  SASE-6): the middlebox for IPsec (no IPsec proxy on FreeBSD) and
+  DLP (no engine). The book's conformance rows are to be brought up to
+  SASE-6: SEN and SAN, MD+R hashes, DNF's inner wildcards, PDNS's
+  CNAME and NS entries and DNS over TLS, DPF's message types.
 - Each a task of its own, in no order yet:
   - Disaster recovery across console clusters.
   - Agents in an HA pair on identical hardware and ports, the pair's
@@ -73,19 +84,33 @@
     sending on. End to end needs a cblink connection that runs over a
     cblink stream, which cblink has not got, or a bridge through a
     local socket at both ends.
-- The console's store_write() can get EBADF on the descriptor
-  mkstemp(3) just gave it, which means another thread closed a number
-  it did not own.  Not reproduced; none of the console's own close(2)
-  calls closes one twice, so look in libwebsockets and cblink.
-- Squid, c-icap, unbound, dnsmasq and BIRD are written by the console
-  with places the agent fills; to be rendered on the agent from a
-  form, as Suricata's YAML and smtpd.conf are.
-- Suricata (IDS/IPS):
-  - packet profiling (Suricata built with `--enable-profiling`): ticks
-    per protocol and per stage;
-  - a capture uploaded from the browser for replay (only a file the
-    host has is taken), and the pcap-log files downloaded from an
-    alert's row.
+- The console's store_write() got EBADF once, on the descriptor
+  mkstemp(3) had just given it (console 0.275.0, on Kore): another
+  thread closed a number it did not own.  Looked for again on
+  2026-10-28 and not found in the console as it is now:
+  - every console_test case under `ktrace -i -t c`: no system call of
+    arcana-console or arcana-agent failed with EBADF;
+  - every case again, and console_test:churn twenty times, with a
+    preload in the console that reports a close(2) or libc's _close()
+    of a descriptor mkstemp(3) gave another thread, any close that
+    fails with EBADF, and libwebsockets called off the thread of
+    lws_service(): none;
+  - read: cblink closes a connection's descriptor in cbl_conn_fail()
+    alone, once (its state under the lock), on the loop's thread for a
+    connection on a loop; its TLS and DTLS BIOs are BIO_NOCLOSE.
+    libwebsockets is built LWS_MAX_SMP 1 and the console calls it
+    from the service thread only, lws_cancel_service() aside.
+  The likeliest cause was Kore's: kore_log() from threads that were
+  not the worker queued on the worker's message connection with no
+  lock (the 2026-10-22 review), gone with Kore on 2026-10-25.  Seen
+  again, store_write() now says which step failed and on which
+  number, and does not close a descriptor EBADF says is no longer
+  its own; start from that line, ktrace and the preload.
+- arcana-sdwan's instances (the grouping instance, ysd.c) still have
+  their configuration as text (conf), as the console wrote it before;
+  BIRD's, dnsmasq's, unbound's and Squid's are forms now (spec), which
+  the agent renders (luxuria/sdconf.c), as Suricata's already were.
+  The module to say the form, or the text the agent rendered.
 - To decide (the user's): BIRD that stops answering while a safe
   change waits leaves the unconfirmed file in place, as bird.c says
   ("one that died is not undone after"), so BIRD's next start reads a
@@ -97,6 +122,10 @@
 Written and tested with stand-ins only:
 
 - The map with a real vnet jail as a node.
+- Suricata's packet profiling: the VM's Suricata is the port's, built
+  without `--enable-profiling`; packet_stats.log is parsed from its
+  format as util-profiling.c writes it (8.0), with files written by
+  hand.
 - A jail's share of the CPUs and its memory from rctl_get_racct(2): the
   lab VM's kernel has kern.racct.enable off, and turning it on needs a
   reboot; what is read when it is off is run for real.

@@ -92,6 +92,7 @@ static struct {
 	ucl_object_t	*identities;	/* /api/sdwan/identities */
 	ucl_object_t	*audit;		/* /api/sdwan/audit */
 	char		 audit_filter[64];
+	ucl_object_t	*sen, *san;	/* /api/sdwan/sen, /api/sdwan/san */
 	char		*config;	/* an identity's configuration, shown once */
 	char		 config_name[72];
 	double		 paths_at;
@@ -702,6 +703,30 @@ audit_load(void)
 {
 
 	api("GET", "/api/sdwan/audit", NULL, audit_cb, NULL);
+}
+
+/* MEF 138's notifications: the SENs and the SANs kept. */
+static void
+notices_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	ucl_object_t	**where = arg;
+
+	(void)err;
+	if (status != 200)
+		return;
+	if (*where != NULL)
+		ucl_object_unref(*where);
+	*where = ucl_object_copy(o);
+	if (app.node == NODE_SDWAN && sd.tab == SD_SECURITY)
+		render();
+}
+
+static void
+notices_load(void)
+{
+
+	api("GET", "/api/sdwan/sen", NULL, notices_cb, &sd.sen);
+	api("GET", "/api/sdwan/san", NULL, notices_cb, &sd.san);
 }
 
 /* An identity issued: its configuration, shown once. */
@@ -3986,6 +4011,85 @@ view_zt(struct html *h, const ucl_object_t *sw)
 	h_raw(h, "</div>");
 }
 
+/*
+ * MEF 138's notifications (§6.2, §6.3): the Security Event
+ * Notifications, one for each subset of a flow a function blocked and
+ * told (what the edges' rules logged, Suricata's alerts), and the
+ * Security Admin Notifications, one for each function policy whose
+ * values a kept document changed; each with its ID, newest first, the
+ * names in them neutralised.
+ */
+static void
+view_notices(struct html *h)
+{
+	static const struct tcol	scols[] = {
+		{ "When", "when", false }, { "SEN ID", "id", false },
+		{ "Function", "function", false }, { "Policy", "policy", false },
+		{ "Type", "type", false }, { "Event", "event", false },
+		{ "Source", "source", false }, { "Details", "details", false },
+		{ "Action", "action", false }, { "UNI", "uni", false },
+	};
+	static const struct tcol	acols[] = {
+		{ "When", "when", false }, { "SAN ID", "id", false },
+		{ "Service", "service", false }, { "Policy", "policy", false },
+		{ "Who", "who", false }, { "From", "source", false },
+		{ "Changed", "details", false },
+	};
+	const ucl_object_t	*a, **rows;
+	int			 r, k;
+
+	h_raw(h, "<div class=\"sd-block\"><h3>Notifications <small class=\"dim\">"
+	    "MEF 138 §6.2 and §6.3: a Security Event Notification for each "
+	    "subset of a flow a function blocks and tells (R24), a Security "
+	    "Admin Notification for each function policy whose values are "
+	    "changed (R31), each with its ID, kept by the console (R26, R32) and "
+	    "sent to the recipients Settings, Notifications name (R30, R36); "
+	    "names and URLs in them neutralised, their periods in brackets "
+	    "(R28, R34)</small></h3>");
+	for (k = 0; k < 2; k++) {
+		const ucl_object_t	*n = k == 0 ? sd.sen : sd.san;
+		const struct tcol	*cols = k == 0 ? scols : acols;
+		int			 ncols = k == 0 ? 10 : 7;
+
+		h_fmt(h, "<h4>Security %s Notifications<span class=\"pane-actions"
+		    "\"><a class=\"ghost small\" href=\"/api/sdwan/%s.csv\" "
+		    "download=\"sdwan-%s.csv\" title=\"The notifications as CSV"
+		    "\">CSV</a></span></h4>", k == 0 ? "Event" : "Admin", k == 0 ?
+		    "sen" : "san", k == 0 ? "sen" : "san");
+		if (n == NULL) {
+			h_raw(h, "<p class=\"dim\">Reading…</p>");
+			continue;
+		}
+		h_fmt(h, "<p class=\"dim\">%lld kept%s</p>", (long long)jint(n,
+		    "count", 0), k == 0 ? ", from the events the console reads "
+		    "for its alerts and these" : "");
+		h_fmt(h, "<table class=\"net sd sd-%s\">", k == 0 ? "sen" : "san");
+		tbl_head(h, k == 0 ? "sd-sen" : "sd-san", cols, ncols, 0);
+		h_raw(h, "<tbody>");
+		rows = tbl_rows(k == 0 ? "sd-sen" : "sd-san", jget(n, "notices"),
+		    cols, ncols, app.filter);
+		for (r = 0; (a = rows[r]) != NULL; r++) {
+			int	i;
+
+			h_raw(h, "<tr>");
+			for (i = 0; i < ncols; i++) {
+				h_fmt(h, "<td class=\"%s\">", i == 0 || i == 1 ? "mono" :
+				    "");
+				h_txt(h, jstr(a, cols[i].key) != NULL ? jstr(a,
+				    cols[i].key) : "");
+				h_raw(h, "</td>");
+			}
+			h_raw(h, "</tr>");
+		}
+		if (r == 0)
+			h_fmt(h, "<tr><td colspan=\"%d\" class=\"dim\">None yet.</td>"
+			    "</tr>", ncols);
+		free(rows);
+		h_raw(h, "</tbody></table>");
+	}
+	h_raw(h, "</div>");
+}
+
 /* MEF 138's Security Functions, as the forms name them. */
 static const char *const sfp_fns[][2] = {
 	{ "ippf", "IP, port and protocol filtering (IPPF)" },
@@ -4011,7 +4115,8 @@ sfp_function_name(const char *fn)
 /*
  * A function policy's entries as the form shows them, one a line: an
  * IPPF or DPF entry as key=value words, a list's values by commas; a
- * PDNS one as its type and value; the rest as they are.
+ * PDNS one as its type and value, and the encryption it is for where it
+ * says one; the rest as they are.
  */
 static void
 sfp_entries_text(struct html *h, const ucl_object_t *arr)
@@ -4031,6 +4136,15 @@ sfp_entries_text(struct html *h, const ucl_object_t *arr)
 			h_txt(h, jstr(e, "type"));
 			h_raw(h, " ");
 			h_txt(h, jstr(e, "value") != NULL ? jstr(e, "value") : "any");
+			if ((x = jget(e, "encryption")) != NULL) {
+				firstx = true;
+				xit = NULL;
+				while ((k = ucl_object_iterate(x, &xit, true)) != NULL) {
+					h_raw(h, firstx ? " " : ",");
+					firstx = false;
+					h_txt(h, ucl_object_tostring_forced(k));
+				}
+			}
 			h_raw(h, "\n");
 			continue;
 		}
@@ -4124,13 +4238,65 @@ sfp_entries_parse(const char *fn, const char *text)
 			    (size_t)(we - t)), "type", 0, false);
 			while (we < t + n && *we == ' ')
 				we++;
-			ucl_object_insert_key(o, ucl_object_fromlstring(we, (size_t)(
-			    t + n - we)), "value", 0, false);
+			for (w = we; we < t + n && *we != ' '; we++)
+				;
+			ucl_object_insert_key(o, ucl_object_fromlstring(w, (size_t)(
+			    we - w)), "value", 0, false);
+			while (we < t + n && *we == ' ')
+				we++;
+			/* The encryption it is for, a word or words by commas. */
+			if (we < t + n && memchr(we, ',', (size_t)(t + n - we)) ==
+			    NULL)
+				ucl_object_insert_key(o, ucl_object_fromlstring(we,
+				    (size_t)(t + n - we)), "encryption", 0, false);
+			else if (we < t + n) {
+				l = ucl_object_typed_new(UCL_ARRAY);
+				for (c = we; c < t + n; c = ce + 1) {
+					for (ce = c; ce < t + n && *ce != ','; ce++)
+						;
+					if (ce > c)
+						ucl_array_append(l, ucl_object_fromlstring(c,
+						    (size_t)(ce - c)));
+				}
+				ucl_object_insert_key(o, l, "encryption", 0, false);
+			}
 			ucl_array_append(arr, o);
 		} else
 			ucl_array_append(arr, ucl_object_fromlstring(t, n));
 	}
 	return (arr);
+}
+
+/* A certificate to download: host-name-what.crt, as a data: link. */
+static void
+pem_link(struct html *h, const char *host, const char *name,
+    const char *what, const char *pem, const char *title)
+{
+	char	enc[8192];
+	size_t	i, k;
+
+	h_raw(h, "<a class=\"ghost small\" download=\"");
+	h_txt(h, host);
+	h_raw(h, "-");
+	h_txt(h, name);
+	h_fmt(h, "-%s.crt\" href=\"data:application/x-x509-ca-cert;charset="
+	    "utf-8,", what);
+	for (i = 0, k = 0; pem[i] != '\0' && k + 4 < sizeof(enc); i++) {
+		if (pem[i] == '\n')
+			k += (size_t)snprintf(enc + k, sizeof(enc) - k, "%%0A");
+		else if (pem[i] == '+' || pem[i] == '/' || pem[i] == '=' ||
+		    pem[i] == ' ' || pem[i] == '%' || pem[i] == '#' || pem[i] ==
+		    '&')
+			k += (size_t)snprintf(enc + k, sizeof(enc) - k, "%%%02X",
+			    (unsigned char)pem[i]);
+		else
+			enc[k++] = pem[i];
+	}
+	enc[k] = '\0';
+	h_raw(h, enc);
+	h_raw(h, "\" title=\"");
+	h_txt(h, title);
+	h_raw(h, "\">certificate</a>");
 }
 
 /*
@@ -4172,6 +4338,7 @@ view_security(struct html *h)
 		h_raw(h, "</select></label></div>");
 	}
 	view_zt(h, sw);
+	view_notices(h);
 	h_raw(h, "<h2 class=\"sd-sect\">Security Functions</h2>");
 	/* The function policies (MEF 138), each a function's lists. */
 	h_raw(h, "<div class=\"sd-block\"><h3>Security function policies <small "
@@ -4491,8 +4658,11 @@ view_security(struct html *h)
 	    "the base system's unbound, an instance of each service with a "
 	    "zone's DNF or PDNS, or a DPF that redirects, on each edge in the "
 	    "service's table, on the UNIs' provider addresses; each zone "
-	    "served by a view of its own</small></h3><table class=\"net sd\"><thead><tr><th>Edge</th><th>"
-	    "Instance</th><th>State</th></tr></thead><tbody>");
+	    "served by a view of its own; DNS over TLS on port 853 where the "
+	    "PDNS says so, with a certificate of the instance's own for the "
+	    "clients to trust</small></h3><table class=\"net sd\"><thead><tr>"
+	    "<th>Edge</th><th>Instance</th><th>State</th><th>DNS over TLS</th>"
+	    "</tr></thead><tbody>");
 	n = 0;
 	it = NULL;
 	while (sd.paths != NULL && (v = ucl_object_iterate(sd.paths, &it, true))
@@ -4507,13 +4677,21 @@ view_security(struct html *h)
 			h_txt(h, host_name(ucl_object_key(v)));
 			h_fmt(h, "</b></td><td class=\"mono\">%s <span class=\"dim\">"
 			    "fib %lld</span></td><td><span class=\"chip st-%s\">%s"
-			    "</span></td></tr>", jstr(di, "name"), (long long)jint(di,
+			    "</span></td><td>", jstr(di, "name"), (long long)jint(di,
 			    "fib", 0), jbool(di, "running") ? "up" : "down", jbool(
 			    di, "running") ? "running" : "not running");
+			if (jstr(di, "tls_cert") != NULL)
+				pem_link(h, host_name(ucl_object_key(v)), jstr(di,
+				    "name"), "dot", jstr(di, "tls_cert"), "The "
+				    "certificate the instance serves DNS over TLS with, "
+				    "for the clients to trust");
+			else
+				h_raw(h, "<span class=\"dim\">—</span>");
+			h_raw(h, "</td></tr>");
 		}
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"3\" class=\"dim\">None: no zone has "
+		h_raw(h, "<tr><td colspan=\"4\" class=\"dim\">None: no zone has "
 		    "a DNF or PDNS, or nothing is applied yet.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 	/* The proxies on the edges: each edge's Squid instances,
@@ -4545,38 +4723,12 @@ view_security(struct html *h)
 			    jint(pi, "fib", 0), jstr(pi, "mode") != NULL ? jstr(pi,
 			    "mode") : "", jbool(pi, "running") ? "up" : "down",
 			    jbool(pi, "running") ? "running" : "not running");
-			if (jstr(pi, "ca") != NULL) {
-				h_raw(h, "<a class=\"ghost small\" download=\"");
-				h_txt(h, host_name(ucl_object_key(v)));
-				h_raw(h, "-");
-				h_txt(h, jstr(pi, "name"));
-				h_raw(h, "-ca.crt\" href=\"data:application/x-x509-ca-cert"
-				    ";charset=utf-8,");
-				{
-					const char	*c = jstr(pi, "ca");
-					char		 enc[8192];
-					size_t		 i, k;
-
-					for (i = 0, k = 0; c[i] != '\0' && k + 4 <
-					    sizeof(enc); i++) {
-						if (c[i] == '\n')
-							k += (size_t)snprintf(enc + k, sizeof(enc)
-							    - k, "%%0A");
-						else if (c[i] == '+' || c[i] == '/' || c[i] ==
-						    '=' || c[i] == ' ' || c[i] == '%' || c[i]
-						    == '#' || c[i] == '&')
-							k += (size_t)snprintf(enc + k, sizeof(enc)
-							    - k, "%%%02X", (unsigned char)c[i]);
-						else
-							enc[k++] = c[i];
-					}
-					enc[k] = '\0';
-					h_raw(h, enc);
-				}
-				h_raw(h, "\" title=\"The instance's CA certificate, for "
-				    "the clients to trust where TLS is opened\">"
-				    "certificate</a>");
-			} else
+			if (jstr(pi, "ca") != NULL)
+				pem_link(h, host_name(ucl_object_key(v)), jstr(pi,
+				    "name"), "ca", jstr(pi, "ca"), "The instance's CA "
+				    "certificate, for the clients to trust where TLS is "
+				    "opened");
+			else
 				h_raw(h, "<span class=\"dim\">—</span>");
 			h_raw(h, "</td></tr>");
 		}
@@ -5164,8 +5316,10 @@ sdwan_modal(struct html *h)
 			    "Then, for the apply to make both its ends, "
 			    "<code>speederv2</code> with its ratios and mode (both "
 			    "ends the same): a client here, a server on the far "
-			    "edge, each a profile of the plugin. Without, the "
-			    "relay process is yours.</small></label>");
+			    "edge, each a profile of the plugin in rc.subr's "
+			    "service jail (<code>_svcj</code>), held to the "
+			    "addresses it uses (<code>_svcj_ipaddrs</code>). "
+			    "Without, the relay process is yours.</small></label>");
 		}
 		/* How the interface is addressed and routed (Mplify 119
 		 * §12.2.3): by DHCP or SLAAC the address is learned from the
@@ -6106,10 +6260,20 @@ sdwan_modal_service(struct html *h)
 			h_fmt(h, "</textarea><small>%s</small></label>", k == 0 ?
 			    "One entry a line: IPPF and DPF as sav4, dav4, sav6, "
 			    "dav6, protv4, nextheadv6, sport, dport =values by "
-			    "commas (Tables 5, 6); DNF a name or *.name; URLF a "
+			    "commas (Tables 5, 6), DPF's with message-type=any, "
+			    "query or response (what ipfw tells by the port); DNF "
+			    "a name or *.name, or a * for "
+			    "a label inside it (host.*.tld, R71: the Block's and "
+			    "the Quarantine's alone, ended by Squid at the TLS "
+			    "name and the request's host, since unbound takes "
+			    "none); URLF a "
 			    "host, *.host, either with a path, a * ending it; MBSF a "
-			    "TLS version; PDNS A or AAAA and an address, a prefix "
-			    "or any. Blocked." : k == 1 ? "Let through, where more "
+			    "TLS version; PDNS a type and its value: A or AAAA and "
+			    "an address, a prefix or any, CNAME and the name an "
+			    "alias leads to, NS and a name server's name or "
+			    "address, then the encryption it is for (unencrypted, "
+			    "dot, any) if one likes. Blocked." : k == 1 ? "Let "
+			    "through, where more "
 			    "specific than a Block or Quarantine entry." :
 			    "Suspicious: blocked as the Block's are, kept apart "
 			    "(not MBSF's).");
@@ -6178,7 +6342,44 @@ sdwan_modal_service(struct html *h)
 		    "to the service's resolver, rather than refuse it (Arcana's: "
 		    "MEF 138's Alter)</label></fieldset>", jbool(o, "redirect") ?
 		    " checked" : "");
-		h_raw(h, "<p class=\"dim\">Malware (MD+R): signatures (ClamAV), "
+		/* PDNS: how its resolver carries DNS (D21, D22). */
+		{
+			const ucl_object_t	*sb, *e;
+			ucl_object_iter_t	 eit = NULL;
+			bool			 dot = false;
+
+			sb = jget(o, "southbound");
+			while ((e = ucl_object_iterate(sb, &eit, true)) != NULL)
+				if (strcmp(ucl_object_tostring_forced(e), "dot") == 0 ||
+				    strcmp(ucl_object_tostring_forced(e), "any") == 0)
+					dot = true;
+			h_fmt(h, "<fieldset><legend>Protective DNS's (PDNS)</legend>"
+			    "<label class=\"toggle\"><input type=\"checkbox\" name="
+			    "\"dot\" value=\"1\"%s> DNS over TLS to the clients too, "
+			    "on port 853 (D22), with a certificate of the resolver's "
+			    "own; unencrypted on port 53 always</label>", dot ?
+			    " checked" : "");
+			h_fmt(h, "<label>To the servers it asks <select name=\"north\">"
+			    "<option value=\"unencrypted\"%s>unencrypted</option>"
+			    "<option value=\"dot\"%s>DNS over TLS, to the servers "
+			    "below</option></select><small>D21. DNS over HTTPS is not "
+			    "one: the base system's unbound is built without it."
+			    "</small></label>", jstr(o, "northbound") == NULL ||
+			    strcmp(jstr(o, "northbound"), "dot") != 0 ? " selected" :
+			    "", jstr(o, "northbound") != NULL && strcmp(jstr(o,
+			    "northbound"), "dot") == 0 ? " selected" : "");
+			v = jget(o, "upstream");
+			text_field(h, "Upstream servers", "upstream", v != NULL ?
+			    csv(v, buf, sizeof(buf)) : "", "192.0.2.53#dns.example",
+			    "Where it sends its questions, address[@port][#name], "
+			    "the name its certificate has for DNS over TLS; none: "
+			    "it resolves by itself. The service's PDNS policies "
+			    "say the same: it has one resolver.");
+			h_raw(h, "</fieldset>");
+		}
+		h_raw(h, "<p class=\"dim\">Malware (MD+R): ClamAV's signatures "
+		    "and the hashes above, given to it as hash signatures of the "
+		    "edge's (hdb, hsb; an Allow's its false positives, fp, sfp); "
 		    "what is found not passed on.</p>");
 		return (true);
 	}
@@ -8064,7 +8265,8 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		static const char *const keys[] = { "id", "function", "block",
 		    "allow", "quarantine", "lists", "no-match", "duration", "notify",
 		    "detection-type", "removal", "invalid-server-certificate",
-		    "unencrypted", "pass-through", "redirect", NULL };
+		    "unencrypted", "pass-through", "redirect", "southbound",
+		    "northbound", "upstream", NULL };
 		ucl_object_t	*ls, *nt;
 		const char	*fn = jstr(f, "function"), *t;
 		char		 key[16];
@@ -8124,6 +8326,16 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		if (strcmp(fn, "dpf") == 0 && checked(f, "redirect"))
 			ucl_object_insert_key(o, ucl_object_frombool(true),
 			    "redirect", 0, false);
+		if (strcmp(fn, "pdns") == 0) {
+			if (checked(f, "dot"))
+				put_list(o, "southbound", "unencrypted, dot");
+			if (jstr(f, "north") != NULL && strcmp(jstr(f, "north"),
+			    "dot") == 0)
+				put_str(o, "northbound", "dot");
+			if (jstr(f, "upstream") != NULL && jstr(f, "upstream")[0] !=
+			    '\0')
+				put_list(o, "upstream", jstr(f, "upstream"));
+		}
 		list_put(sw, "security_function_policies", "id", was, o);
 		/* A new ID: the security policies naming the old one name
 		 * the new one. */
@@ -9282,6 +9494,7 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		if (sd.tab == SD_SECURITY) {
 			identities_load();
 			audit_load();
+			notices_load();
 		}
 		else if (sd.tab == SD_IDENTITIES)
 			identities_load();

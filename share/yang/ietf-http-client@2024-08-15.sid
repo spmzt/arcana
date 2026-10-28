@@ -1,0 +1,60 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-http-client",
+    "module-revision": "2024-08-15",
+    "sid-file-version": 0,
+    "description": "No IETF range: RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-netconf-acm",
+        "module-revision": "2018-02-14"
+      },
+      {
+        "module-name": "ietf-tls-client",
+        "module-revision": "2024-10-10"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "79200",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-http-client",
+        "sid": "79200"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "http-11-supported",
+        "sid": "79201"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "http-2-supported",
+        "sid": "79202"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "http-3-supported",
+        "sid": "79203"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "proxy-connect",
+        "sid": "79204"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "tls-supported",
+        "sid": "79205"
+      }
+    ]
+  }
+}

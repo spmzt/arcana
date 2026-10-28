@@ -760,7 +760,7 @@ function out_c_server(    i, op, u, st, pl, n) {
 				printf "int\n%s_%s_server_send(cbl_stream *s, const struct %s_%s *data)\n{\n\tcbl_msg *msg;\n\tint error;\n\n",
 				    pfx, cname(op), pfx, cname(pl)
 				printf "\tif ((error = cbl_stream_msg_new(s, &msg)) != 0)\n\t\treturn (error);\n"
-				printf "\tif ((error = %s_%s_put(msg, data)) != 0) {\n\t\tcbl_msg_free(msg);\n\t\treturn (error);\n\t}\n\treturn (cbl_stream_send(s, msg));\n}\n\n",
+				printf "\tif ((error = %s_%s_put(msg, data)) != 0) {\n\t\tcbl_msg_free(msg);\n\t\treturn (error);\n\t}\n\t/* EAGAIN (no credit) leaves the message the caller's. */\n\tif ((error = cbl_stream_send(s, msg)) == EAGAIN)\n\t\tcbl_msg_free(msg);\n\treturn (error);\n}\n\n",
 				    cname(spec), cname(pl)
 			}
 			printf "int\n%s_%s_reply(cbl_req *req, const struct %s_%s_rsp *rsp)\n{\n\tcbl_msg *msg;\n\tint error;\n\n",
@@ -869,7 +869,7 @@ function out_c_client(    i, op, u, st) {
 			printf "int\n%s_%s_send(cbl_stream *s, const struct %s_%s *data)\n{\n\tcbl_msg *msg;\n\tint error;\n\n",
 			    pfx, cname(op), pfx, cname(stprop[stream_of(op), "payload"])
 			printf "\tif ((error = cbl_stream_msg_new(s, &msg)) != 0)\n\t\treturn (error);\n"
-			printf "\tif ((error = %s_%s_put(msg, data)) != 0) {\n\t\tcbl_msg_free(msg);\n\t\treturn (error);\n\t}\n\treturn (cbl_stream_send(s, msg));\n}\n\n",
+			printf "\tif ((error = %s_%s_put(msg, data)) != 0) {\n\t\tcbl_msg_free(msg);\n\t\treturn (error);\n\t}\n\t/* EAGAIN (no credit) leaves the message the caller's. */\n\tif ((error = cbl_stream_send(s, msg)) == EAGAIN)\n\t\tcbl_msg_free(msg);\n\treturn (error);\n}\n\n",
 			    cname(spec), cname(stprop[stream_of(op), "payload"])
 		}
 		if (opforms[op, "do"] && stream_of(op) == "") {

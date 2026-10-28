@@ -35,6 +35,7 @@ struct resp {
 	int		 status;
 	char		*body;
 	ucl_object_t	*json;
+	char		*head;		/* the status line and the headers */
 };
 
 #define	EXPECT(r, code) ATF_REQUIRE_MSG((r)->status == (code),		\
@@ -53,6 +54,7 @@ extern bool		 harness_newer_agent;
 extern bool		 harness_local_agent;
 extern bool		 harness_webconf_only_local;
 extern char		 harness_telegram_api[128];
+extern int		 harness_tls_port;
 
 const char	*locate(const atf_tc_t *, const char *, const char *,
 		    const char *);
@@ -78,7 +80,10 @@ void		 http_bearer(const char *, const char *, const char *,
 		    const char *, struct resp *);
 void		 http_on(int, const char *, const char *, const char *,
 		    const char *, const char *, struct resp *);
+void		 http_with(const char *, const char *, const char *,
+		    const char *, struct resp *);
 void		 resp_free(struct resp *);
+const char	*resp_header(const struct resp *, const char *, char *, size_t);
 /* A network made up for the troubleshooter: routers r1, r2, r3 as
  * jails 11, 12, 13 by the stand-ins; r2's routes back and ruleset given. */
 void		 ts_net(const char *, const char *, const char *);

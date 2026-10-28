@@ -6,23 +6,23 @@ SRCS=		main.c handlers.c work.c
 SRCS+=		yjson.c
 # Superbia: identity, configuration, what is true of the host.
 SRCS+=		admit.c ynacm.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c bundle.c l2.c ipfw.c netstore.c sysfiles.c geomjob.c \
-		yagent.c yhost.c yhw.c ysshd.c ysystem.c
+		yagent.c yhost.c yhw.c ysshd.c ysystem.c ysysedit.c
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c fwmatch.c pathcheck.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
 		routes.c rtimes.c scope.c sdwan.c vnet.c wireguard.c \
-		yif.c yip.c yni.c yrt.c rcroutes.c rcarcana.c ynetconf.c yifedit.c rtadv.c ylne.c yfw.c yng.c ysd.c \
-		yts.c ywg.c yserve.c yarcana.c
+		yif.c yip.c yni.c yrt.c rcroutes.c rcarcana.c ynetconf.c yifedit.c rtadv.c ylne.c lneroot.c yfw.c yng.c ysd.c \
+		yts.c ywg.c yserve.c yarcana.c ynotif.c
 # Luxuria: what is not FreeBSD's own, the plugins.
-SRCS+=		bird.c birdwatch.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c idsconf.c surules.c smtpd.c speeder.c telegram.c poudriere.c clamav.c \
+SRCS+=		bird.c birdwatch.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdconf.c sdids.c idsconf.c idsfiles.c surules.c smtpd.c speeder.c telegram.c poudriere.c clamav.c \
 		ybird.c ybuilder.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c jailallow.c packages.c pkgbase.c \
-		services.c update.c yjails.c yjf.c yjobs.c ypackages.c yservices.c
+		services.c update.c yjails.c yjf.c yjobs.c ypackages.c yservices.c ysvcedit.c
 # Acedia: storage.  Avaritia: resources.  Gula: observation.
 SRCS+=		record.c \
 		pools.c storage.c zfskey.c xfer.c health.c resources.c stats.c trace.c procs.c log.c \
 		history.c events.c faults.c kmsg.c probe.c hostwatch.c crashes.c \
-		ystorage.c yev.c yhist.c ylog.c yprobe.c yprocs.c yalarms.c
+		ystorage.c yev.c yhist.c ylog.c ysyslog.c yprobe.c yprocs.c yalarms.c
 .PATH:		${.CURDIR}/superbia ${.CURDIR}/invidia ${.CURDIR}/ira \
 		${.CURDIR}/acedia ${.CURDIR}/avaritia ${.CURDIR}/gula \
 		${.CURDIR}/luxuria
